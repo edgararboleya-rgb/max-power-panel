@@ -703,12 +703,52 @@
           ${desgloseHTML(p)}
           ${hitosHTML(p)}
           ${rfisHTML(p)}
+          ${fotosHTML(p)}
           ${accionesHTML(p)}
           ${facturasHTML(p)}
           ${docs}
           <div class="detalle-ref">Ref: ${esc(sinMontos(p.ref))}</div>
         </div>
       </article>`;
+  }
+
+  // Fotos de obra: las ve y las sube TODO el equipo
+  function fotosHTML(p) {
+    const fotos = (state.fotos || []).filter(f => f.proyecto === p.id);
+    const items = fotos.map(f => `
+      <figure class="foto-item">
+        <a class="foto-enlace" data-ruta="${esc(f.ruta)}" target="_blank" rel="noopener">
+          <img class="foto-mini" data-ruta="${esc(f.ruta)}" alt="${esc(f.nota || "Foto de obra")}" loading="lazy">
+        </a>
+        <figcaption class="foto-pie">${f.nota ? esc(sinMontos(f.nota)) + " · " : ""}${esc(f.autor)} ${esc(f.fecha)}</figcaption>
+      </figure>`).join("");
+    return `
+      <div class="detalle-seccion">
+        <h3>Fotos de obra</h3>
+        ${items ? `<div class="fotos-grid">${items}</div>` : `<span class="sin-docs">Sin fotos todavía.</span>`}
+        <button type="button" class="accion secundaria btn-agregar-foto">📸 Agregar foto</button>
+        <form class="cal-form form-foto" hidden>
+          <label>Foto (cámara o galería)
+            <input name="archivo" type="file" accept="image/*" required>
+          </label>
+          <label>Nota (opcional)
+            <input name="nota" type="text" placeholder="Ej: rough del segundo piso terminado" autocomplete="off">
+          </label>
+          <button type="submit" class="accion">⬆ Subir foto</button>
+        </form>
+      </div>`;
+  }
+
+  // Achica la foto antes de subirla (los teléfonos sacan fotos enormes)
+  async function reducirImagen(archivo) {
+    const imagen = await createImageBitmap(archivo);
+    const escala = Math.min(1, 1600 / Math.max(imagen.width, imagen.height));
+    const lienzo = document.createElement("canvas");
+    lienzo.width = Math.round(imagen.width * escala);
+    lienzo.height = Math.round(imagen.height * escala);
+    lienzo.getContext("2d").drawImage(imagen, 0, 0, lienzo.width, lienzo.height);
+    return new Promise((res, rej) =>
+      lienzo.toBlob(b => b ? res(b) : rej(new Error("No se pudo procesar")), "image/jpeg", 0.82));
   }
 
   // ============================================================
@@ -768,6 +808,47 @@
           avisar("No se pudo guardar: " + err.message, true);
         }
       });
+    }
+
+    // "📸 Agregar foto" (todo el equipo puede)
+    const btnFoto = $detalle.querySelector(".btn-agregar-foto");
+    if (btnFoto) {
+      const formFoto = $detalle.querySelector(".form-foto");
+      btnFoto.addEventListener("click", () => { formFoto.hidden = !formFoto.hidden; });
+      formFoto.addEventListener("submit", async e => {
+        e.preventDefault();
+        const archivo = formFoto.elements.archivo.files[0];
+        if (!archivo) return;
+        const nota = (formFoto.elements.nota.value || "").trim() || null;
+        const $btn = formFoto.querySelector('button[type="submit"]');
+        $btn.disabled = true;
+        $btn.textContent = "Subiendo…";
+        try {
+          // Si el navegador no puede achicarla, se sube tal cual
+          const blob = await reducirImagen(archivo).catch(() => archivo);
+          const ruta = await DB.subirFoto(p.id, blob, blob.type || archivo.type);
+          await DB.crearFoto({ proyecto_id: p.id, ruta, nota });
+          await recargar();
+          avisar("Foto subida ✓");
+        } catch (err) {
+          avisar("No se pudo subir la foto: " + err.message, true);
+          $btn.disabled = false;
+          $btn.textContent = "⬆ Subir foto";
+        }
+      });
+    }
+
+    // Pedir los enlaces temporales de las fotos y pintarlas
+    const rutas = [...$detalle.querySelectorAll(".foto-mini")].map(i => i.dataset.ruta);
+    if (rutas.length) {
+      DB.firmarFotos(rutas).then(mapa => {
+        $detalle.querySelectorAll(".foto-mini").forEach(img => {
+          if (mapa[img.dataset.ruta]) img.src = mapa[img.dataset.ruta];
+        });
+        $detalle.querySelectorAll(".foto-enlace").forEach(a => {
+          if (mapa[a.dataset.ruta]) a.href = mapa[a.dataset.ruta];
+        });
+      }).catch(() => {});
     }
   }
 

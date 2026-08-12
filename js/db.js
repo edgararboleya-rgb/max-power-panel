@@ -97,10 +97,51 @@
   const insertar = (tabla, fila) => api(tabla, { metodo: "POST", cuerpo: fila });
   const actualizar = (ruta, cambios) => api(ruta, { metodo: "PATCH", cuerpo: cambios });
 
+  // ---------- Fotos (Supabase Storage, almacén privado) ----------
+  async function subirFoto(proyectoId, blob, tipo) {
+    const ruta = `${proyectoId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+    const r = await fetch(`${SB.url}/storage/v1/object/fotos/${ruta}`, {
+      method: "POST",
+      headers: {
+        apikey: SB.key,
+        Authorization: `Bearer ${sesion ? sesion.access_token : SB.key}`,
+        "Content-Type": tipo || "image/jpeg"
+      },
+      body: blob
+    });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      throw new Error(data.message || `No se pudo subir la foto (${r.status})`);
+    }
+    return ruta;
+  }
+
+  // Convierte las rutas guardadas en enlaces temporales (1 hora)
+  async function firmarFotos(rutas) {
+    if (!rutas || !rutas.length) return {};
+    const r = await fetch(`${SB.url}/storage/v1/object/sign/fotos`, {
+      method: "POST",
+      headers: {
+        apikey: SB.key,
+        Authorization: `Bearer ${sesion ? sesion.access_token : SB.key}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ expiresIn: 3600, paths: rutas })
+    });
+    if (!r.ok) return {};
+    const lista = await r.json().catch(() => []);
+    const mapa = {};
+    for (const item of lista) {
+      const firma = item.signedURL || item.signedUrl;
+      if (item.path && firma) mapa[item.path] = `${SB.url}/storage/v1${firma}`;
+    }
+    return mapa;
+  }
+
   // ---------- Carga completa según el rol ----------
   async function cargarTodo() {
     const [perfiles, proyectos, finanzas, alcances, alcancesEquipo,
-           hitos, facturas, horas, eventos, pendientes, documentos] =
+           hitos, facturas, horas, eventos, pendientes, documentos, fotos] =
       await Promise.all([
         leer("perfiles?select=id,nombre,rol"),
         leer("proyectos?select=*&order=nombre"),
@@ -112,7 +153,9 @@
         leer("horas?select=*&order=fecha"),
         leer("eventos?select=*&order=fecha"),
         leer("pendientes?select=*&order=fecha"),
-        leer("documentos?select=*").catch(() => [])
+        leer("documentos?select=*").catch(() => []),
+        // La tabla de fotos puede no existir todavía: la app sigue andando
+        leer("fotos?select=*&order=creado").catch(() => [])
       ]);
 
     const nombrePorId = Object.fromEntries(perfiles.map(p => [p.id, p.nombre]));
@@ -199,6 +242,11 @@
         trabajador: nombrePorId[h.usuario_id] || "",
         proyecto: h.proyecto_id, fase: h.fase || "",
         horas: Number(h.horas), notas: h.notas || ""
+      })),
+      fotos: fotos.map(f => ({
+        id: f.id, proyecto: f.proyecto_id, ruta: f.ruta,
+        nota: f.nota || "", autor: nombrePorId[f.autor_id] || "",
+        fecha: f.creado ? String(f.creado).slice(0, 10) : ""
       }))
     };
   }
@@ -218,6 +266,9 @@
     crearFinanzas: fila => insertar("finanzas_proyecto", fila),
     reportarHoras: fila => insertar("horas", { ...fila, usuario_id: uid() }),
     crearDocumento: fila => insertar("documentos", fila),
+    subirFoto,
+    firmarFotos,
+    crearFoto: fila => insertar("fotos", { ...fila, autor_id: uid() }),
     crearEvento: fila => insertar("eventos", { ...fila, autor_id: uid() }),
     crearPendiente: fila => insertar("pendientes", { ...fila, autor_id: uid() }),
     resolverPendiente: id => actualizar(`pendientes?id=eq.${id}`,
