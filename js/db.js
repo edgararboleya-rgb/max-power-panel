@@ -333,14 +333,36 @@
     eliminarGestion: id => api(`gestiones?id=eq.${id}`, { metodo: "DELETE" }),
     // ---------- Estimador (solo dueño; se carga aparte, no pesa el arranque) ----------
     cargarEstimador: async () => {
-      const [catalogo, escenarios, estimados, items] = await Promise.all([
-        leer("catalogo_items?select=*&order=orden").catch(() => []),
-        leer("escenarios?select=*&order=id").catch(() => []),
-        leer("estimados?select=*&order=creado.desc").catch(() => []),
-        leer("estimado_items?select=*&order=orden").catch(() => [])
-      ]);
-      return { catalogo, escenarios, estimados, items };
+      const [catalogo, escenarios, estimados, items,
+             alias, config, generales, ensambles, ensambleItems, estEnsambles, horasTodas] =
+        await Promise.all([
+          leer("catalogo_items?select=*&order=orden").catch(() => []),
+          leer("escenarios?select=*&order=id").catch(() => []),
+          leer("estimados?select=*&order=creado.desc").catch(() => []),
+          leer("estimado_items?select=*&order=orden").catch(() => []),
+          leer("alias_takeoff?select=*").catch(() => []),
+          leer("config_estimador?select=*").catch(() => []),
+          leer("gastos_generales?select=*").catch(() => []),
+          leer("ensambles?select=*&order=orden").catch(() => []),
+          leer("ensamble_items?select=*").catch(() => []),
+          leer("estimado_ensambles?select=*").catch(() => []),
+          leer("horas?select=fecha,horas").catch(() => [])
+        ]);
+      return { catalogo, escenarios, estimados, items, alias,
+               config: Object.fromEntries(config.map(c => [c.clave, Number(c.valor)])),
+               generales, ensambles, ensambleItems, estEnsambles, horasTodas };
     },
+    crearAlias: fila => insertar("alias_takeoff", fila),
+    guardarConfig: (clave, valor) => api("config_estimador", {
+      metodo: "POST", cuerpo: { clave, valor },
+      headers: { Prefer: "resolution=merge-duplicates,return=representation" }
+    }),
+    ponerEnsamble: fila => insertar("estimado_ensambles", fila),
+    cambiarEnsambleQty: (id, cantidad) => actualizar(`estimado_ensambles?id=eq.${id}`, { cantidad }),
+    cambiarEnsamblePies: (id, pies) => actualizar(`estimado_ensambles?id=eq.${id}`, { pies }),
+    quitarEnsamble: id => api(`estimado_ensambles?id=eq.${id}`, { metodo: "DELETE" }),
+    crearItemCatalogo: fila => insertar("catalogo_items", fila),
+    actualizarOverhead: valor => actualizar("escenarios?id=in.(A,B,C)", { overhead_hh: valor }),
     crearEstimado: fila => insertar("estimados", fila),
     cambiarEstimado: (id, cambios) => actualizar(`estimados?id=eq.${id}`, cambios),
     eliminarEstimado: id => api(`estimados?id=eq.${id}`, { metodo: "DELETE" }),

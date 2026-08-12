@@ -2358,17 +2358,133 @@
     pintarEstimador();
   }
 
-  // La fórmula del Excel, línea por línea
+  // ---------- Motor v2: ítems + ensambles + automáticos ----------
+  const normTxt = s => String(s || "").replace(/\s+/g, " ").trim().toUpperCase();
+  const buscaCatalogo = frag => (estData.catalogo || [])
+    .find(c => normTxt(c.item).includes(normTxt(frag)));
+  const catalogoExacto = nombre => (estData.catalogo || [])
+    .find(c => normTxt(c.item) === normTxt(nombre));
+  const ES_LINEAL_CABLE = n => /ROMEX|MC\b|THHN|THW|MCM|SPEAKER WIRE|CAT ?[56]/.test(n) && !/CONNECTOR|STAPLE|SNAP/.test(n);
+  const ES_TUBERIA = n => /CONDUIT/.test(n);
+
+  // Lo que la app carga sola en modo PLANOS (lo que NO se mide en el plano)
+  function autosPlanos(base, cable, cfg) {
+    const autos = {};
+    const add = (cat, qty, motivo) => {
+      if (!cat || qty <= 0) return;
+      const k = cat.item;
+      (autos[k] = autos[k] || { item: cat.item, unidad: cat.unidad, precio: cat.precio,
+        horas: cat.horas_unidad, cantidad: 0, auto: motivo }).cantidad += qty;
+    };
+    for (const it of base) {
+      const nom = normTxt(it.item);
+      const qty = Number(it.cantidad) || 0;
+      const mTub = nom.match(/^([\d/ -]+")\s*(EMT|PVC)/);
+      if (mTub && ES_TUBERIA(nom)) {
+        const talla = mTub[1].trim(), tipo = mTub[2];
+        const corridas = Math.max(1, Math.ceil(qty / (cfg.corrida_ft || 25)));
+        add(buscaCatalogo(`${talla} ${tipo} COUPLING`), Math.max(0, Math.ceil(qty / 10) - corridas), "fittings");
+        add(buscaCatalogo(`${talla} ${tipo} CONNECTOR`), corridas * 2, "fittings");
+        if (tipo === "EMT") {
+          const straps = Math.ceil(qty / (cfg.strap_ft || 8)) + corridas;
+          add(buscaCatalogo(`${talla} EMT STRAP`), straps, "fijación");
+          add(buscaCatalogo("TAPCON"), straps * (cfg.tapcon_por_strap || 2), "fijación");
+        }
+      }
+      if (/ROMEX/.test(nom) && ES_LINEAL_CABLE(nom)) {
+        const pies = normTxt(it.unidad) === "MLF" ? qty * 1000 : qty;
+        add(buscaCatalogo("ROMEX STAPLES"), Math.ceil(pies / 4), "fijación");
+      }
+    }
+    // Conectores por cada luminaria/dispositivo, según el cable del trabajo
+    const luminarias = base.filter(i => {
+      const cat = catalogoExacto(i.item);
+      return (cat && cat.seccion === "LIGHTING FIXTURES")
+        || /RECESSED|FIXTURE|PENDANT|SCONCE|CHANDELIER|CEILING FAN/.test(normTxt(i.item));
+    }).reduce((s, i) => s + (Number(i.cantidad) || 0), 0);
+    if (luminarias > 0) {
+      if (cable !== "mc") add(buscaCatalogo("NM CABLE CONNECTOR"), Math.round(luminarias * (cable === "mixto" ? 0.5 : 1)), "conectores");
+      if (cable !== "romex") add(buscaCatalogo("MC SNAP-IN CONNECTOR"), Math.round(luminarias * (cable === "mixto" ? 0.5 : 1)), "conectores");
+    }
+    return Object.values(autos);
+  }
+
+  // Pies de cable promedio que trae un ensamble (su componente lineal)
+  function piesPromedioEnsamble(ensambleId) {
+    const cable = (estData.ensambleItems || [])
+      .filter(x => x.ensamble_id === ensambleId)
+      .find(x => ES_LINEAL_CABLE(normTxt(x.item)));
+    if (!cable) return null;
+    const cat = catalogoExacto(cable.item) || {};
+    return normTxt(cat.unidad) === "MLF" ? Number(cable.cantidad) * 1000 : Number(cable.cantidad);
+  }
+
+  // Ítems del estimado: manuales/takeoff + explosión de ensambles
+  function itemsDelEstimado(est) {
+    const manual = (estData.items || []).filter(i => i.estimado_id === est.id);
+    const porEnsamble = (estData.estEnsambles || [])
+      .filter(ee => ee.estimado_id === est.id && Number(ee.cantidad) > 0)
+      .flatMap(ee => {
+        const ens = (estData.ensambles || []).find(x => x.id === ee.ensamble_id);
+        // Circuitos específicos: si Edgar midió los pies, mandan los suyos
+        const piesMedidos = ens && ens.pies_editable && Number(ee.pies) > 0 ? Number(ee.pies) : null;
+        const piesProm = piesMedidos ? piesPromedioEnsamble(ee.ensamble_id) : null;
+        return (estData.ensambleItems || [])
+          .filter(x => x.ensamble_id === ee.ensamble_id)
+          .map(cmp => {
+            const cat = catalogoExacto(cmp.item) || {};
+            let porUnidad = Number(cmp.cantidad);
+            if (piesMedidos && piesProm) {
+              const nom = normTxt(cmp.item);
+              if (ES_LINEAL_CABLE(nom))
+                porUnidad = normTxt(cat.unidad) === "MLF" ? piesMedidos / 1000 : piesMedidos;
+              else if (/STAPLE/.test(nom))
+                porUnidad = Math.ceil(porUnidad * (piesMedidos / piesProm));
+            }
+            return { item: cmp.item, unidad: cat.unidad, precio: cat.precio || 0,
+                     horas: cat.horas_unidad || 0,
+                     cantidad: porUnidad * Number(ee.cantidad),
+                     deEnsamble: ens ? ens.nombre : "" };
+          });
+      });
+    return manual.concat(porEnsamble);
+  }
+
+  // La fórmula Max Power (motor del Excel) + automáticos del v2
   function calcularEstimado(est) {
-    const items = (estData.items || []).filter(i => i.estimado_id === est.id);
+    const cfg = estData.config || {};
+    const base = itemsDelEstimado(est);
     const esc = (estData.escenarios || []).find(e => e.id === est.escenario)
       || { foreman: 43, journeyman: 34, helper: 22, pct_foreman: .2, pct_journeyman: .5,
            pct_helper: .3, benefits: .25, tax_material: .07, overhead_hh: 30.19, profit: .12 };
     const n = v => Number(v) || 0;
-    const matSubtotal = items.reduce((s, i) => s + n(i.cantidad) * n(i.precio), 0);
+
+    const autos = (est.modo || "planos") === "planos"
+      ? autosPlanos(base, est.cable || "romex", cfg) : [];
+
+    // Merma sobre lo lineal (solo en modo planos: los pies que TÚ mediste)
+    let mermaMat = 0, mermaHoras = 0;
+    if ((est.modo || "planos") === "planos") {
+      for (const it of base) {
+        const nom = normTxt(it.item);
+        const pct = ES_LINEAL_CABLE(nom) ? (cfg.merma_cable ?? 0.10)
+          : ES_TUBERIA(nom) ? (cfg.merma_tuberia ?? 0.05) : 0;
+        if (pct > 0) {
+          mermaMat += n(it.cantidad) * n(it.precio) * pct;
+          mermaHoras += n(it.cantidad) * n(it.horas) * pct;
+        }
+      }
+    }
+
+    const matItems = base.reduce((s, i) => s + n(i.cantidad) * n(i.precio), 0)
+      + autos.reduce((s, i) => s + n(i.cantidad) * n(i.precio), 0) + mermaMat;
+    const misc = matItems * (cfg.misc_pct ?? 0.03);
+    const matSubtotal = matItems + misc;
     const tax = matSubtotal * n(esc.tax_material);
     const totalMaterial = matSubtotal + tax;
-    const horasBase = items.reduce((s, i) => s + n(i.cantidad) * n(i.horas), 0);
+
+    const horasBase = base.reduce((s, i) => s + n(i.cantidad) * n(i.horas), 0)
+      + autos.reduce((s, i) => s + n(i.cantidad) * n(i.horas), 0) + mermaHoras;
     const horas = horasBase * (n(est.factor) || 1);
     const laborBase = horas * (n(esc.pct_foreman) * n(esc.foreman)
       + n(esc.pct_journeyman) * n(esc.journeyman) + n(esc.pct_helper) * n(esc.helper));
@@ -2378,8 +2494,23 @@
     const overhead = horas * n(esc.overhead_hh);
     const profit = (prime + overhead) * n(esc.profit);
     const bid = prime + overhead + profit;
-    return { items, esc, matSubtotal, tax, totalMaterial, horasBase, horas,
-             laborBase, benefits, totalLabor, prime, overhead, profit, bid };
+    return { items: base, autos, mermaMat, mermaHoras, misc, esc, matSubtotal, tax,
+             totalMaterial, horasBase, horas, laborBase, benefits, totalLabor,
+             prime, overhead, profit, bid };
+  }
+
+  // Overhead real: gastos generales ÷ horas-hombre reales (últimos 90 días)
+  function overheadReal() {
+    const horas = estData.horasTodas || [];
+    if (!horas.length) return null;
+    const desde = new Date(); desde.setDate(desde.getDate() - 90);
+    const iso = desde.toISOString().slice(0, 10);
+    const total = horas.filter(h => h.fecha >= iso).reduce((s, h) => s + Number(h.horas || 0), 0);
+    const hMes = total / 3;
+    if (hMes < 40) return null; // muy poca historia todavía
+    const gastos = (estData.generales || []).reduce((s, g) => s + Number(g.monto_mensual || 0), 0);
+    if (!gastos) return null;
+    return Math.round((gastos / hMes) * 100) / 100;
   }
 
   function pintarEstimador() {
@@ -2409,6 +2540,13 @@
       <div class="cal-panel-card">
         <form id="form-nuevo-est" class="cal-form">
           <div class="cal-form-titulo">➕ Nuevo estimado</div>
+          <label>¿Cómo vas a estimar este trabajo?
+            <select name="modo">
+              <option value="planos">📐 Por planos (takeoff de Bluebeam)</option>
+              <option value="remodelacion">🏠 Remodelación (levantamiento, por ensambles)</option>
+              <option value="servicio">🔧 Servicio (rápido, plantillas)</option>
+            </select>
+          </label>
           <label>Nombre del trabajo
             <input name="nombre" type="text" required placeholder="Ej: Casa García — Rewire" autocomplete="off">
           </label>
@@ -2446,14 +2584,18 @@
       ev.preventDefault();
       const d = new FormData(ev.target);
       try {
+        const modoNuevo = d.get("modo") || "planos";
         const filasNueva = await DB.crearEstimado({
           nombre: (d.get("nombre") || "").toString().trim(),
           cliente: (d.get("cliente") || "").toString().trim() || null,
           tipo: d.get("tipo") || "Residential",
           sqft: d.get("sqft") ? Number(d.get("sqft")) : null,
-          escenario: d.get("escenario") || "B",
+          // Servicio arranca en C (margen sano), como estima Edgar
+          escenario: modoNuevo === "servicio" ? "C" : (d.get("escenario") || "B"),
           factor: 1,
-          estado: "borrador"
+          estado: "borrador",
+          modo: modoNuevo,
+          cable: "romex"
         });
         estimadoActivo = filasNueva[0].id;
         await recargarEstimador();
@@ -2475,35 +2617,210 @@
     });
   }
 
+  let takeoffPreview = null;  // filas analizadas del takeoff pendientes de aplicar
+
+  // Analiza el CSV exportado de Bluebeam (Markups List → Export)
+  function analizarTakeoff(texto) {
+    const lineas = texto.split(/\r?\n/).filter(l => l.trim());
+    if (!lineas.length) return [];
+    const sep = (lineas[0].match(/\t/g) || []).length >= 2 ? "\t" : ",";
+    const parsear = l => {
+      const celdas = []; let cur = "", dentro = false;
+      for (const ch of l) {
+        if (ch === '"') dentro = !dentro;
+        else if (ch === sep && !dentro) { celdas.push(cur); cur = ""; }
+        else cur += ch;
+      }
+      celdas.push(cur);
+      return celdas.map(c => c.trim());
+    };
+    const filas = lineas.map(parsear);
+    let encabezado = filas.findIndex(f => f.some(c => /^subject$/i.test(c)));
+    if (encabezado < 0) encabezado = 0;
+    const cols = filas[encabezado].map(c => c.toLowerCase());
+    const idx = nombre => cols.findIndex(c => c === nombre);
+    const iSubj = idx("subject"), iCode = idx("item code"),
+      iComments = idx("comments"), iCount = cols.findIndex(c => /^(count|#? ?of units)$/.test(c)),
+      iLen = cols.findIndex(c => /^(length|measurement)$/.test(c)),
+      iWire = cols.findIndex(c => c.includes("total wire")),
+      iSize = idx("size"), iCableCu = idx("cable cu"), iCableAl = idx("cable al");
+    const num = v => {
+      const n = Number(String(v || "").replace(/[^\d.\-]/g, ""));
+      return Number.isFinite(n) ? n : 0;
+    };
+    const agrupadas = {};
+    for (let r = encabezado + 1; r < filas.length; r++) {
+      const f = filas[r];
+      const subject = (iSubj >= 0 ? f[iSubj] : f[0] || "").trim();
+      if (!subject) continue;
+      let qty = 0;
+      if (iComments >= 0 && num(f[iComments]) > 0) qty = num(f[iComments]);
+      else if (iCount >= 0 && num(f[iCount]) > 0) qty = num(f[iCount]);
+      else if (iLen >= 0 && num(f[iLen]) > 0) qty = num(f[iLen]);
+      else qty = 1;
+      const clave = subject + "|" + (iSize >= 0 ? f[iSize] || "" : "");
+      (agrupadas[clave] = agrupadas[clave] || {
+        subject, size: iSize >= 0 ? (f[iSize] || "").trim() : "",
+        code: iCode >= 0 ? (f[iCode] || "").trim() : "", qty: 0, wireLF: 0,
+        cable: ((iCableCu >= 0 && f[iCableCu]) || (iCableAl >= 0 && f[iCableAl]) || "").trim()
+      }).qty += qty;
+      if (iWire >= 0) agrupadas[clave].wireLF += num(f[iWire]);
+    }
+    return Object.values(agrupadas);
+  }
+
+  // Empareja una fila del takeoff con el catálogo (código → alias → nombre)
+  function emparejarTakeoff(fila) {
+    const cat = estData.catalogo || [];
+    if (fila.code) {
+      const porCodigo = cat.find(c => String(c.orden) === String(fila.code).replace(/\D/g, ""));
+      if (porCodigo) return { item: porCodigo, factor: 1, via: "código" };
+    }
+    const nombreCompleto = fila.size ? `${fila.size} ${fila.subject}` : fila.subject;
+    const al = (estData.alias || []).find(a =>
+      normTxt(a.alias) === normTxt(nombreCompleto) || normTxt(a.alias) === normTxt(fila.subject));
+    if (al) {
+      const item = catalogoExacto(al.item) || buscaCatalogo(al.item);
+      if (item) return { item, factor: Number(al.factor) || 1, via: "alias" };
+    }
+    const exacto = catalogoExacto(nombreCompleto) || catalogoExacto(fila.subject);
+    if (exacto) return { item: exacto, factor: 1, via: "nombre" };
+    return null;
+  }
+
+  function sugerenciasCatalogo(texto, n) {
+    const palabras = normTxt(texto).split(" ").filter(w => w.length > 1);
+    return (estData.catalogo || [])
+      .map(c => ({ c, p: palabras.filter(w => normTxt(c.item).includes(w)).length }))
+      .filter(x => x.p > 0)
+      .sort((a, b) => b.p - a.p)
+      .slice(0, n || 5)
+      .map(x => x.c);
+  }
+
+  // El texto de la propuesta (SOW) que sale del estimado
+  function textoPropuesta(est, c) {
+    const r2 = v => Math.round(v * 100) / 100;
+    const bid = r2(c.bid);
+    const hoyTxt = new Date().toLocaleDateString("es-US", { day: "numeric", month: "long", year: "numeric" });
+    const lineas = [];
+    const ensDelEst = (estData.estEnsambles || []).filter(e => e.estimado_id === est.id && Number(e.cantidad) > 0);
+    if (ensDelEst.length) {
+      for (const ee of ensDelEst) {
+        const ens = (estData.ensambles || []).find(x => x.id === ee.ensamble_id);
+        if (ens) lineas.push(`• ${ens.nombre} — cantidad: ${ee.cantidad}`);
+      }
+    } else {
+      const porSeccion = {};
+      for (const it of c.items) {
+        const cat = catalogoExacto(it.item);
+        const s = (cat && cat.seccion) || "GENERAL";
+        (porSeccion[s] = porSeccion[s] || []).push(it);
+      }
+      for (const [s, its] of Object.entries(porSeccion)) {
+        lineas.push(`• ${s}: ${its.slice(0, 4).map(i => `${i.cantidad} ${i.item}`).join(", ")}${its.length > 4 ? "…" : ""}`);
+      }
+    }
+    const m1 = r2(bid * 0.35), m2 = r2(bid * 0.4), m3 = r2(bid - m1 - m2);
+    return `MAX POWER ELECTRICAL SOLUTIONS, INC.
+FL EC License #EC13016045 · mxpes.com
+PROPUESTA — ${est.nombre}
+Cliente: ${est.cliente || ""} · Fecha: ${hoyTxt}
+
+ALCANCE DEL TRABAJO:
+${lineas.join("\n")}
+
+Incluye mano de obra, materiales, misceláneas y supervisión según el alcance.
+No incluye trabajos no listados; cambios se manejan por Change Order.
+
+PRECIO TOTAL (LUMP SUM): ${fmt(bid)}${est.sqft ? `  (${fmt(r2(bid / est.sqft))}/sqft)` : ""}
+
+FORMA DE PAGO:
+• Milestone 1 — 35% a la aceptación (movilización): ${fmt(m1)}
+• Milestone 2 — 40% al completar el avance principal: ${fmt(m2)}
+• Milestone 3 — 25% al pasar inspección final: ${fmt(m3)}
+
+Propuesta válida por 15 días. Gracias por la oportunidad.
+Power done right the first time. ⚡`;
+  }
+
   function pintarEstimadorEditor() {
     const est = (estData.estimados || []).find(x => x.id === estimadoActivo);
     if (!est) { estimadoActivo = null; pintarEstimadorLista(); return; }
     if (!est.estado) est.estado = "borrador";
+    if (!est.modo) est.modo = "planos";
     const c = calcularEstimado(est);
     const soloLectura = est.estado !== "borrador";
     const r2 = v => Math.round(v * 100) / 100;
+    const MODO_ETIQ = { planos: "📐 Por planos", remodelacion: "🏠 Remodelación", servicio: "🔧 Servicio" };
 
     const filasItems = c.items.map(i => `
       <div class="mat-item">
         <span class="alcance-info">
-          <span class="alcance-titulo">${esc(i.item)}</span>
-          <span class="alcance-estado">${esc(i.cantidad)} ${esc(i.unidad || "")} × ${fmt(i.precio)} · ${r2(Number(i.cantidad) * Number(i.horas))} h</span>
+          <span class="alcance-titulo">${esc(i.item)}${i.deEnsamble ? ` <span class="mat-cant">— de: ${esc(i.deEnsamble)}</span>` : ""}</span>
+          <span class="alcance-estado">${esc(r2(Number(i.cantidad)))} ${esc(i.unidad || "")} × ${fmt(i.precio)} · ${r2(Number(i.cantidad) * Number(i.horas))} h</span>
         </span>
         <span class="mat-precio">${fmt(r2(Number(i.cantidad) * Number(i.precio)))}</span>
-        ${!soloLectura ? `<button class="insp-borrar btn-item-qty" data-id="${i.id}" data-qty="${esc(i.cantidad)}" title="Cambiar cantidad">✎</button>
+        ${!soloLectura && i.id ? `<button class="insp-borrar btn-item-qty" data-id="${i.id}" data-qty="${esc(i.cantidad)}" title="Cambiar cantidad">✎</button>
         <button class="insp-borrar btn-item-borrar" data-id="${i.id}" title="Quitar">🗑</button>` : ""}
       </div>`).join("");
 
+    const filasAutos = c.autos.map(a => `
+      <div class="mat-item auto-item">
+        <span class="recibo-chip leido">AUTO</span>
+        <span class="alcance-info">
+          <span class="alcance-titulo">${esc(a.item)}</span>
+          <span class="alcance-estado">${esc(r2(a.cantidad))} ${esc(a.unidad || "")} · ${esc(a.auto)}</span>
+        </span>
+        <span class="mat-precio">${fmt(r2(a.cantidad * a.precio))}</span>
+      </div>`).join("");
+
+    // Ensambles del estimado (modos remodelación / servicio)
+    const modoEns = est.modo === "servicio" ? "servicio" : "remodelacion";
+    const ensDisponibles = (estData.ensambles || []).filter(e => e.modo === modoEns);
+    const ensDelEst = (estData.estEnsambles || []).filter(e => e.estimado_id === est.id);
+    const filasEnsambles = ensDisponibles.map(ens => {
+      const enEst = ensDelEst.find(e => e.ensamble_id === ens.id);
+      const qty = enEst ? Number(enEst.cantidad) : 0;
+      const prom = ens.pies_editable ? piesPromedioEnsamble(ens.id) : null;
+      const piesLinea = ens.pies_editable && qty > 0
+        ? `<span class="alcance-estado">📏 ${enEst && Number(enEst.pies) > 0
+            ? `<strong>${Number(enEst.pies)} ft medidos</strong>`
+            : `${prom || "?"} ft (promedio)`} por circuito${!soloLectura
+            ? ` <button class="accion secundaria btn-ens-pies" data-eid="${enEst.id}" data-prom="${prom || ""}" style="padding:.05rem .45rem">✎ pies</button>` : ""}</span>`
+        : "";
+      return `
+        <div class="mat-item${qty > 0 ? "" : " ens-cero"}">
+          <span class="alcance-info">
+            <span class="alcance-titulo">${esc(ens.nombre)}</span>
+            ${ens.descripcion ? `<span class="alcance-estado">${esc(ens.descripcion)}</span>` : ""}
+            ${piesLinea}
+          </span>
+          ${!soloLectura ? `
+          <div class="ens-contador">
+            <button class="accion secundaria btn-ens-menos" data-ens="${ens.id}" ${qty <= 0 ? "disabled" : ""}>−</button>
+            <span class="ens-qty">${qty}</span>
+            <button class="accion btn-ens-mas" data-ens="${ens.id}">+</button>
+          </div>` : `<span class="ens-qty">${qty}</span>`}
+        </div>`;
+    }).join("");
+
+    const oReal = overheadReal();
+    const bannerOverhead = usuario.finanzas && oReal
+      && Math.abs(oReal - Number(c.esc.overhead_hh)) / Number(c.esc.overhead_hh) > 0.05
+      ? `<div class="inicio-card avisos">
+           <div class="aviso-texto" style="padding:.2rem 0">⚙ Tu overhead REAL (últimos 90 días) es
+           <strong>${fmt(oReal)}/h-h</strong> — los escenarios usan ${fmt(c.esc.overhead_hh)}.
+           <button class="accion secundaria" id="btn-overhead-real">Actualizar escenarios a ${fmt(oReal)}</button></div>
+         </div>` : "";
+
     $("estimador-panel").innerHTML = `
       <div class="cal-panel-card">
-        <div class="est-cabecera">
-          <div>
-            <div class="cal-form-titulo">${esc(est.nombre)}</div>
-            <div class="alcance-estado">${esc(est.cliente || "")}${est.sqft ? ` · ${esc(est.sqft)} sqft` : ""} ·
-              <span class="recibo-chip ${est.estado === "convertido" ? "insp-paso" : est.estado === "congelado" ? "leido" : "por_leer"}">${est.estado.toUpperCase()}</span>
-            </div>
-          </div>
+        <div class="cal-form-titulo">${esc(est.nombre)}
+          <span class="recibo-chip ${est.estado === "convertido" ? "insp-paso" : est.estado === "congelado" ? "leido" : "por_leer"}">${est.estado.toUpperCase()}</span>
+          <span class="recibo-chip leido">${MODO_ETIQ[est.modo]}</span>
         </div>
+        <div class="alcance-estado">${esc(est.cliente || "")}${est.sqft ? ` · ${esc(est.sqft)} sqft` : ""}</div>
         <div class="modal-fila" style="margin-top:.6rem">
           <label class="mat-filtro-label">Escenario
             <select id="est-escenario" ${soloLectura ? "disabled" : ""}>
@@ -2515,39 +2832,66 @@
             <input id="est-factor" type="number" min="0.5" max="2" step="0.05" value="${esc(est.factor || 1)}" ${soloLectura ? "disabled" : ""}>
           </label>
         </div>
+        ${est.modo === "planos" ? `
+        <label class="mat-filtro-label" style="margin-top:.5rem;display:block">Cableado del trabajo (para los conectores automáticos)
+          <select id="est-cable" ${soloLectura ? "disabled" : ""}>
+            <option value="romex"${est.cable === "romex" ? " selected" : ""}>Romex (NM)</option>
+            <option value="mc"${est.cable === "mc" ? " selected" : ""}>MC</option>
+            <option value="mixto"${est.cable === "mixto" ? " selected" : ""}>Mixto</option>
+          </select>
+        </label>` : ""}
       </div>
+      ${bannerOverhead}
+      ${est.modo === "planos" && !soloLectura ? `
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">📥 Takeoff de Bluebeam</div>
+        <p class="modal-nota">En Bluebeam: Markups List → Export → CSV. Abre el archivo, copia todo y pégalo aquí.</p>
+        <textarea id="takeoff-texto" rows="4" placeholder="Pega aquí el export…"
+          style="width:100%;font:inherit;font-size:.8rem;padding:.55rem .7rem;border:1px solid var(--mp-line);border-radius:10px"></textarea>
+        <button type="button" class="accion secundaria" id="btn-takeoff-analizar" style="margin-top:.45rem">🔎 Analizar</button>
+        <div id="takeoff-preview"></div>
+      </div>` : ""}
+      ${est.modo !== "planos" && (ensDisponibles.length || !soloLectura) ? `
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">🧩 Ensambles — cuenta como piensas</div>
+        ${filasEnsambles || `<p class="cal-sin-eventos">Los ensambles se siembran al correr el SQL v2.</p>`}
+      </div>` : ""}
       ${!soloLectura ? `
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">🔎 Buscar en el catálogo (${(estData.catalogo || []).length} ítems)</div>
-        <input id="est-buscar" type="text" placeholder="Ej: recessed, panel, 12/2, trenching…" autocomplete="off"
+        <div class="cal-form-titulo">🔎 Buscar en el catálogo (${(estData.catalogo || []).length})</div>
+        <input id="est-buscar" type="text" placeholder="Ej: recessed, breaker gfci, 12/2…" autocomplete="off"
           style="width:100%;font:inherit;padding:.55rem .7rem;border:1px solid var(--mp-line);border-radius:10px">
         <div id="est-resultados"></div>
+        <button type="button" class="accion secundaria" id="btn-cat-nuevo" style="margin-top:.45rem">➕ Crear ítem nuevo en el catálogo</button>
       </div>` : ""}
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">Ítems del estimado (${c.items.length})</div>
-        ${filasItems || `<p class="cal-sin-eventos">Busca arriba y toca un ítem para agregarlo con su cantidad.</p>`}
+        <div class="cal-form-titulo">Ítems (${c.items.length}${c.autos.length ? ` + ${c.autos.length} automáticos` : ""})</div>
+        ${filasItems || `<p class="cal-sin-eventos">Agrega ensambles, pega el takeoff o busca en el catálogo.</p>`}
+        ${filasAutos}
       </div>
       <div class="cal-panel-card">
         <div class="cal-form-titulo">💵 Resumen — fórmula Max Power</div>
-        <div class="rent-fila"><span>Material</span><span>${fmt(r2(c.matSubtotal))}</span></div>
+        <div class="rent-fila"><span>Material (ítems${c.autos.length ? " + automáticos" : ""})</span><span>${fmt(r2(c.matSubtotal - c.misc - c.mermaMat))}</span></div>
+        ${c.mermaMat > 0 ? `<div class="rent-fila"><span>+ Merma (cables ${Math.round((estData.config.merma_cable ?? .1) * 100)}% · tubería ${Math.round((estData.config.merma_tuberia ?? .05) * 100)}%)</span><span>${fmt(r2(c.mermaMat))}</span></div>` : ""}
+        <div class="rent-fila"><span>+ Misceláneas (${Math.round((estData.config.misc_pct ?? .03) * 100)}% — tape, wirenuts, fijación)</span><span>${fmt(r2(c.misc))}</span></div>
         <div class="rent-fila"><span>+ Sales tax (${Math.round(c.esc.tax_material * 100)}%)</span><span>${fmt(r2(c.tax))}</span></div>
         <div class="rent-fila"><span>Horas (${r2(c.horasBase)} × factor ${est.factor || 1})</span><span>${r2(c.horas)} h</span></div>
-        <div class="rent-fila"><span>Labor (F ${Math.round(c.esc.pct_foreman*100)}% · J ${Math.round(c.esc.pct_journeyman*100)}% · H ${Math.round(c.esc.pct_helper*100)}%)</span><span>${fmt(r2(c.laborBase))}</span></div>
-        <div class="rent-fila"><span>+ Benefits (${Math.round(c.esc.benefits * 100)}%)</span><span>${fmt(r2(c.benefits))}</span></div>
-        <div class="rent-fila"><span>Prime cost</span><span>${fmt(r2(c.prime))}</span></div>
+        <div class="rent-fila"><span>Labor + benefits (${Math.round(c.esc.benefits * 100)}%)</span><span>${fmt(r2(c.totalLabor))}</span></div>
         <div class="rent-fila"><span>+ Overhead (${r2(c.horas)} h × ${fmt(c.esc.overhead_hh)})</span><span>${fmt(r2(c.overhead))}</span></div>
         <div class="rent-fila"><span>+ Profit (${Math.round(c.esc.profit * 100)}%)</span><span>${fmt(r2(c.profit))}</span></div>
         <div class="rent-fila rent-total ok"><span>🎯 PRECIO DE LA PROPUESTA</span><span>${fmt(r2(c.bid))}</span></div>
         ${est.sqft ? `<p class="rent-nota">${fmt(r2(c.bid / est.sqft))} por sq ft</p>` : ""}
       </div>
       <div class="cal-panel-card acciones">
+        <button class="accion secundaria" id="btn-est-propuesta">📄 Generar propuesta</button>
         ${est.estado === "borrador" ? `<button class="accion secundaria" id="btn-est-congelar">🔒 Congelar</button>` : ""}
         ${est.estado === "congelado" ? `<button class="accion secundaria" id="btn-est-descongelar">🔓 Volver a borrador</button>` : ""}
         ${est.estado !== "convertido" ? `<button class="accion" id="btn-est-convertir">🚀 Convertir en proyecto</button>` : ""}
-      </div>`;
+      </div>
+      <div id="propuesta-caja"></div>`;
 
-    // Cabecera editable
-    const selEsc = $("est-escenario"), inpFactor = $("est-factor");
+    // --- cabecera ---
+    const selEsc = $("est-escenario"), inpFactor = $("est-factor"), selCable = $("est-cable");
     if (selEsc && !soloLectura) selEsc.addEventListener("change", async () => {
       await DB.cambiarEstimado(est.id, { escenario: selEsc.value }).catch(() => {});
       await recargarEstimador();
@@ -2558,8 +2902,75 @@
       await DB.cambiarEstimado(est.id, { factor: v }).catch(() => {});
       await recargarEstimador();
     });
+    if (selCable && !soloLectura) selCable.addEventListener("change", async () => {
+      await DB.cambiarEstimado(est.id, { cable: selCable.value }).catch(() => {});
+      await recargarEstimador();
+    });
 
-    // Búsqueda en el catálogo
+    // --- overhead real ---
+    const btnOver = $("btn-overhead-real");
+    if (btnOver) btnOver.addEventListener("click", async () => {
+      try {
+        await DB.actualizarOverhead(oReal);
+        await recargarEstimador();
+        avisar(`Overhead actualizado a ${fmt(oReal)}/h-h en los 3 escenarios ✓`);
+      } catch (err) { avisar("No se pudo: " + err.message, true); }
+    });
+
+    // --- takeoff ---
+    const btnAna = $("btn-takeoff-analizar");
+    if (btnAna) btnAna.addEventListener("click", () => {
+      const texto = $("takeoff-texto").value;
+      takeoffPreview = analizarTakeoff(texto).map(f => ({ ...f, match: emparejarTakeoff(f), decision: null }));
+      pintarTakeoffPreview(est);
+    });
+
+    // --- ensambles +/- ---
+    $("estimador-panel").querySelectorAll(".btn-ens-mas").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const enEst = ensDelEst.find(e => e.ensamble_id === Number(btn.dataset.ens));
+        try {
+          if (enEst) await DB.cambiarEnsambleQty(enEst.id, Number(enEst.cantidad) + 1);
+          else {
+            const fila = { estimado_id: est.id, ensamble_id: Number(btn.dataset.ens), cantidad: 1 };
+            const ens = ensDisponibles.find(e => e.id === fila.ensamble_id);
+            if (ens && ens.pies_editable) {
+              const prom = piesPromedioEnsamble(ens.id);
+              const resp = prompt(`¿Cuántos pies de cable hasta el panel?\n(Deja vacío para usar el promedio de ${prom || "?"} ft)`);
+              const pies = Number((resp || "").replace(/[^\d.]/g, ""));
+              if (pies > 0) fila.pies = pies;
+            }
+            await DB.ponerEnsamble(fila);
+          }
+          await recargarEstimador();
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    $("estimador-panel").querySelectorAll(".btn-ens-pies").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const resp = prompt(`Pies de cable medidos hasta el panel:\n(Deja vacío para volver al promedio de ${btn.dataset.prom || "?"} ft)`);
+        if (resp === null) return;
+        const pies = Number(resp.replace(/[^\d.]/g, ""));
+        try {
+          await DB.cambiarEnsamblePies(Number(btn.dataset.eid), pies > 0 ? pies : null);
+          await recargarEstimador();
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    $("estimador-panel").querySelectorAll(".btn-ens-menos").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const enEst = ensDelEst.find(e => e.ensamble_id === Number(btn.dataset.ens));
+        if (!enEst) return;
+        try {
+          const nueva = Number(enEst.cantidad) - 1;
+          if (nueva <= 0) await DB.quitarEnsamble(enEst.id);
+          else await DB.cambiarEnsambleQty(enEst.id, nueva);
+          await recargarEstimador();
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+
+    // --- búsqueda del catálogo + crear ítem ---
     const inpBuscar = $("est-buscar");
     if (inpBuscar) inpBuscar.addEventListener("input", () => {
       const q = inpBuscar.value.trim().toLowerCase();
@@ -2593,30 +3004,55 @@
         });
       });
     });
+    const btnCatNuevo = $("btn-cat-nuevo");
+    if (btnCatNuevo) btnCatNuevo.addEventListener("click", async () => {
+      const nombre = prompt("Nombre del ítem nuevo (como quieres verlo en el catálogo):");
+      if (!nombre || !nombre.trim()) return;
+      const precio = Number((prompt("Precio por unidad ($):") || "").replace(/[$,\s]/g, ""));
+      const horas = Number((prompt("Horas de labor por unidad (ej: 0.5):") || "").replace(/[,\s]/g, ""));
+      const unidad = prompt("Unidad (E, LF, MLF…):", "E") || "E";
+      if (!Number.isFinite(precio) || !Number.isFinite(horas)) { avisar("Precio u horas no válidos", true); return; }
+      try {
+        await DB.crearItemCatalogo({ seccion: "MISCELLANEOUS", item: nombre.trim().toUpperCase(),
+          unidad: unidad.trim(), precio, horas_unidad: horas, orden: 3000 });
+        await recargarEstimador();
+        avisar("Ítem creado en el catálogo ✓ — búscalo y agrégalo");
+      } catch (err) { avisar("No se pudo crear: " + err.message, true); }
+    });
 
-    // Ítems: cambiar cantidad / quitar
+    // --- items qty / quitar ---
     $("estimador-panel").querySelectorAll(".btn-item-qty").forEach(btn => {
       btn.addEventListener("click", async () => {
         const qty = prompt("Nueva cantidad:", btn.dataset.qty);
         if (qty === null) return;
         const cantidad = Number(qty.replace(/[,\s]/g, ""));
         if (!Number.isFinite(cantidad) || cantidad <= 0) { avisar("Cantidad no válida", true); return; }
-        try {
-          await DB.cambiarItemEstimado(btn.dataset.id, { cantidad });
-          await recargarEstimador();
-        } catch (err) { avisar("No se pudo: " + err.message, true); }
+        try { await DB.cambiarItemEstimado(btn.dataset.id, { cantidad }); await recargarEstimador(); }
+        catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
     $("estimador-panel").querySelectorAll(".btn-item-borrar").forEach(btn => {
       btn.addEventListener("click", async () => {
-        try {
-          await DB.eliminarItemEstimado(btn.dataset.id);
-          await recargarEstimador();
-        } catch (err) { avisar("No se pudo quitar: " + err.message, true); }
+        try { await DB.eliminarItemEstimado(btn.dataset.id); await recargarEstimador(); }
+        catch (err) { avisar("No se pudo quitar: " + err.message, true); }
       });
     });
 
-    // Congelar / descongelar
+    // --- propuesta / congelar / convertir ---
+    $("btn-est-propuesta").addEventListener("click", () => {
+      $("propuesta-caja").innerHTML = `
+        <div class="cal-panel-card">
+          <div class="cal-form-titulo">📄 Propuesta lista para copiar</div>
+          <textarea id="propuesta-texto" rows="16" readonly
+            style="width:100%;font-family:ui-monospace,monospace;font-size:.78rem;padding:.6rem;border:1px solid var(--mp-line);border-radius:10px">${esc(textoPropuesta(est, c))}</textarea>
+          <button class="accion" id="btn-copiar-propuesta" style="margin-top:.45rem">📋 Copiar</button>
+        </div>`;
+      $("btn-copiar-propuesta").addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText($("propuesta-texto").value); avisar("Propuesta copiada ✓"); }
+        catch { $("propuesta-texto").select(); document.execCommand("copy"); avisar("Propuesta copiada ✓"); }
+      });
+      $("propuesta-caja").scrollIntoView({ behavior: "smooth" });
+    });
     const btnCong = $("btn-est-congelar"), btnDesc = $("btn-est-descongelar");
     if (btnCong) btnCong.addEventListener("click", async () => {
       await DB.cambiarEstimado(est.id, { estado: "congelado" }).catch(() => {});
@@ -2627,11 +3063,9 @@
       await DB.cambiarEstimado(est.id, { estado: "borrador" }).catch(() => {});
       await recargarEstimador();
     });
-
-    // 🚀 Convertir en proyecto: nace con contrato, presupuestos e hitos
     const btnConv = $("btn-est-convertir");
     if (btnConv) btnConv.addEventListener("click", async () => {
-      if (!confirm(`¿Convertir "${est.nombre}" en proyecto?\n\nSe crea el proyecto con contrato ${fmt(r2(c.bid))}, sus horas estimadas, presupuesto de materiales y 3 hitos de pago (35/40/25).`)) return;
+      if (!confirm(`¿Convertir "${est.nombre}" en proyecto?\n\nSe crea con contrato ${fmt(r2(c.bid))}, horas estimadas, presupuesto de materiales, 3 hitos de pago y su alcance por puntos.`)) return;
       const idNuevo = est.nombre.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
         .slice(0, 30) + "-" + Math.random().toString(36).slice(2, 6);
       const bid = r2(c.bid);
@@ -2654,11 +3088,101 @@
         await DB.crearHito({ proyecto_id: idNuevo, titulo: "Milestone 1 — 35% movilización", condicion: "Al aceptar / movilización", monto: m1, estado: "pendiente", orden: 1 });
         await DB.crearHito({ proyecto_id: idNuevo, titulo: "Milestone 2 — 40% avance", condicion: "Rough / avance principal completo", monto: m2, estado: "pendiente", orden: 2 });
         await DB.crearHito({ proyecto_id: idNuevo, titulo: "Milestone 3 — 25% final", condicion: "Al pasar inspección final", monto: r2(bid - m1 - m2), estado: "pendiente", orden: 3 });
+        // El alcance por puntos nace de los ensambles (o secciones)
+        const ensDelEst2 = (estData.estEnsambles || []).filter(e => e.estimado_id === est.id && Number(e.cantidad) > 0);
+        let ordenP = 1;
+        if (ensDelEst2.length) {
+          for (const ee of ensDelEst2) {
+            const ens = (estData.ensambles || []).find(x => x.id === ee.ensamble_id);
+            if (ens) await DB.crearPunto({ proyecto_id: idNuevo, texto: `${ens.nombre} (${ee.cantidad})`, orden: ordenP++ });
+          }
+        } else {
+          const secciones = [...new Set(c.items.map(i => (catalogoExacto(i.item) || {}).seccion).filter(Boolean))];
+          for (const s of secciones.slice(0, 8))
+            await DB.crearPunto({ proyecto_id: idNuevo, texto: `Completar ${s.toLowerCase()}`, orden: ordenP++ });
+        }
+        await DB.crearPunto({ proyecto_id: idNuevo, texto: "Inspección final aprobada", orden: ordenP });
         await DB.cambiarEstimado(est.id, { estado: "convertido" });
         await recargar();
-        avisar(`Proyecto creado ✓ — contrato ${fmt(bid)} con hitos y presupuestos puestos`);
+        avisar(`Proyecto creado ✓ — contrato ${fmt(bid)} con hitos, presupuestos y alcance`);
         irDetalle(idNuevo);
       } catch (err) { avisar("No se pudo convertir: " + err.message, true); }
+    });
+  }
+
+  // Vista previa del takeoff: OK / SIN MAPEO con decisiones
+  function pintarTakeoffPreview(est) {
+    if (!takeoffPreview) return;
+    const filas = takeoffPreview.map((f, ix) => {
+      if (f.match) {
+        return `<div class="mat-item">
+          <span class="recibo-chip conciliado">OK</span>
+          <span class="alcance-info">
+            <span class="alcance-titulo">${esc(f.subject)}${f.size ? " · " + esc(f.size) : ""}</span>
+            <span class="alcance-estado">→ ${esc(f.match.item.item)} · ${Math.round(f.qty * f.match.factor * 1000) / 1000} ${esc(f.match.item.unidad || "")} (por ${f.match.via})</span>
+          </span>
+        </div>`;
+      }
+      const sugs = sugerenciasCatalogo(f.size ? `${f.size} ${f.subject}` : f.subject, 5);
+      return `<div class="mat-item recibo-por_leer">
+        <span class="recibo-chip por_leer">SIN MAPEO</span>
+        <span class="alcance-info">
+          <span class="alcance-titulo">${esc(f.subject)}${f.size ? " · " + esc(f.size) : ""} — cant. ${esc(f.qty)}</span>
+          <select class="takeoff-decision" data-ix="${ix}" style="font:inherit;font-size:.78rem;margin-top:.25rem;max-width:100%">
+            <option value="">— elige qué hacer —</option>
+            ${sugs.map(s => `<option value="cat:${s.id}">≈ ${esc(s.item)}</option>`).join("")}
+            <option value="nuevo">➕ Crear como ítem nuevo</option>
+            <option value="omitir">Omitir esta línea</option>
+          </select>
+        </span>
+      </div>`;
+    }).join("");
+    $("takeoff-preview").innerHTML = `
+      ${filas || `<p class="cal-sin-eventos">No encontré líneas — revisa que pegaste el CSV completo con encabezados.</p>`}
+      ${takeoffPreview.length ? `<button class="accion" id="btn-takeoff-aplicar" style="margin-top:.5rem">✓ Aplicar al estimado</button>` : ""}`;
+
+    $("takeoff-preview").querySelectorAll(".takeoff-decision").forEach(sel => {
+      sel.addEventListener("change", () => {
+        takeoffPreview[Number(sel.dataset.ix)].decision = sel.value || null;
+      });
+    });
+    const btnAplicar = $("btn-takeoff-aplicar");
+    if (btnAplicar) btnAplicar.addEventListener("click", async () => {
+      let puestos = 0, omitidos = 0, aprendidos = 0;
+      try {
+        for (const f of takeoffPreview) {
+          let cat = null, factor = 1;
+          if (f.match) { cat = f.match.item; factor = f.match.factor; }
+          else if (f.decision && f.decision.startsWith("cat:")) {
+            cat = (estData.catalogo || []).find(x => String(x.id) === f.decision.slice(4));
+          } else if (f.decision === "nuevo") {
+            const precio = Number((prompt(`Precio por unidad de "${f.subject}" ($):`) || "0").replace(/[$,\s]/g, "")) || 0;
+            const horas = Number((prompt(`Horas por unidad de "${f.subject}":`) || "0").replace(/[,\s]/g, "")) || 0;
+            const creado = await DB.crearItemCatalogo({ seccion: "MISCELLANEOUS",
+              item: f.subject.toUpperCase(), unidad: "E", precio, horas_unidad: horas, orden: 3000 });
+            cat = creado[0];
+          } else { omitidos++; continue; }
+          if (!cat) { omitidos++; continue; }
+          // La app aprende tu decisión: la próxima vez este tool sale OK solo
+          if (!f.match) {
+            try {
+              await DB.crearAlias({ alias: f.size ? `${f.size} ${f.subject}` : f.subject,
+                item: cat.item, factor: 1, nota: "aprendido al aplicar takeoff" });
+              aprendidos++;
+            } catch (e) { /* si no se pudo guardar el alias, el ítem entra igual */ }
+          }
+          await DB.crearItemEstimado({
+            estimado_id: est.id, item: cat.item, unidad: cat.unidad,
+            precio: cat.precio, horas: cat.horas_unidad,
+            cantidad: Math.round(f.qty * factor * 1000) / 1000,
+            orden: 100, origen: "takeoff"
+          });
+          puestos++;
+        }
+        takeoffPreview = null;
+        await recargarEstimador();
+        avisar(`Takeoff aplicado ✓ — ${puestos} líneas al estimado${aprendidos ? `, ${aprendidos} mapeos aprendidos` : ""}${omitidos ? `, ${omitidos} omitidas` : ""}`);
+      } catch (err) { avisar("No se pudo aplicar: " + err.message, true); }
     });
   }
 
