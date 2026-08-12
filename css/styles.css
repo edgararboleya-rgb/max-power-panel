@@ -1219,6 +1219,13 @@ table.desglose .neg { color: var(--mp-teal-text); font-weight: 800; }
 .mat-item.comprado { border-color: #BFE8A8; background: #F3FBEC; }
 .mat-item.comprado .mat-icono { color: #4C8A1F; font-weight: 800; }
 .mat-cant { font-weight: 400; color: var(--mp-ink-2); }
+.form-mat-editar {
+  margin: -0.15rem 0 0.55rem;
+  padding: 0.6rem 0.65rem;
+  border: 1px dashed var(--mp-line);
+  border-radius: 10px;
+  background: var(--mp-sky-1);
+}
 
 /* Rentabilidad real */
 .rent-fila {

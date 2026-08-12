@@ -1211,6 +1211,16 @@
       const p = proyectos().find(x => x.id === id);
       return p ? p.nombre : "General";
     };
+    // Opciones de proyecto para el formulario de edición: los activos
+    // más el proyecto actual del material (aunque ya esté completado)
+    const opcionesEditar = m => {
+      const activos = proyectos().filter(x =>
+        ["ejecucion", "aprobado", "pausa"].includes(x.estado) || x.id === m.proyecto);
+      return `<option value=""${!m.proyecto ? " selected" : ""}>— General —</option>` +
+        activos.map(x =>
+          `<option value="${esc(x.id)}"${x.id === m.proyecto ? " selected" : ""}>${esc(x.nombre)}</option>`).join("");
+    };
+
     const filaMat = m => `
       <div class="mat-item ${m.estado}">
         <span class="mat-icono">${m.estado === "falta" ? "🔴" : "✓"}</span>
@@ -1219,8 +1229,26 @@
           <span class="alcance-estado">${esc(nombreProy(m.proyecto))} · ${esc(m.autor)} ${esc(m.fecha)}</span>
         </span>
         ${usuario.editar && m.estado === "falta" ? `<button class="accion btn-mat-comprado" data-id="${m.id}">✓ Comprado</button>` : ""}
-        ${usuario.editar ? `<button class="insp-borrar btn-mat-borrar" data-id="${m.id}" title="Eliminar">🗑</button>` : ""}
-      </div>`;
+        ${usuario.editar ? `<button class="insp-borrar btn-mat-editar" data-id="${m.id}" title="Modificar o eliminar">✎</button>` : ""}
+      </div>
+      ${usuario.editar ? `
+      <form class="cal-form form-mat-editar" data-id="${m.id}" hidden>
+        <label>Material (corrige el nombre si te equivocaste)
+          <input name="descripcion" type="text" required value="${esc(m.descripcion)}" autocomplete="off">
+        </label>
+        <div class="modal-fila">
+          <label>Cantidad
+            <input name="cantidad" type="text" value="${esc(m.cantidad)}" autocomplete="off">
+          </label>
+          <label>Proyecto (cámbialo si era de otro)
+            <select name="proyecto">${opcionesEditar(m)}</select>
+          </label>
+        </div>
+        <div class="modal-botones">
+          <button type="button" class="accion secundaria btn-mat-eliminar" data-id="${m.id}">🗑 Eliminar</button>
+          <button type="submit" class="accion">Guardar cambios</button>
+        </div>
+      </form>` : ""}`;
 
     // Pendientes de obra abiertos que suenan a material (y que no
     // hayan sido pasados ya a la lista)
@@ -1300,9 +1328,32 @@
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
-    $("materiales-panel").querySelectorAll(".btn-mat-borrar").forEach(btn => {
+    // ✎ abre/cierra el formulario de corrección de ese material
+    $("materiales-panel").querySelectorAll(".btn-mat-editar").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const form = $("materiales-panel")
+          .querySelector(`.form-mat-editar[data-id="${btn.dataset.id}"]`);
+        if (form) form.hidden = !form.hidden;
+      });
+    });
+    $("materiales-panel").querySelectorAll(".form-mat-editar").forEach(form => {
+      form.addEventListener("submit", async e => {
+        e.preventDefault();
+        const d = new FormData(form);
+        try {
+          await DB.cambiarMaterial(form.dataset.id, {
+            descripcion: (d.get("descripcion") || "").toString().trim(),
+            cantidad: (d.get("cantidad") || "").toString().trim() || null,
+            proyecto_id: d.get("proyecto") || null
+          });
+          await recargar();
+          avisar("Material corregido ✓");
+        } catch (err) { avisar("No se pudo corregir: " + err.message, true); }
+      });
+    });
+    $("materiales-panel").querySelectorAll(".btn-mat-eliminar").forEach(btn => {
       btn.addEventListener("click", async () => {
-        if (!confirm("¿Eliminar este material de la lista?")) return;
+        if (!confirm("¿Eliminar este material de la lista?\n\nÚsalo si se anotó por error o su trabajo ya no existe.")) return;
         try {
           await DB.eliminarMaterial(btn.dataset.id);
           await recargar();
