@@ -659,12 +659,32 @@
 
   // FICHA completa: la pantalla dedicada a un solo proyecto
   function fichaProyectoHTML(p) {
-    const docs = usuario.finanzas && p.docs && p.docs.length
+    const linksDocs = (p.docs || [])
+      .map(d => `<a class="doc-link" href="${esc(d.url)}" target="_blank" rel="noopener">📄 ${esc(d.titulo)}</a>`)
+      .join("");
+    // El dueño siempre ve la sección, con el botón para agregar más
+    const docs = usuario.finanzas
       ? `<div class="detalle-seccion">
            <h3>Documentos en Drive</h3>
-           <div class="detalle-docs">
-             ${p.docs.map(d => `<a class="doc-link" href="${esc(d.url)}" target="_blank" rel="noopener">📄 ${esc(d.titulo)}</a>`).join("")}
-           </div>
+           <div class="detalle-docs">${linksDocs || `<span class="sin-docs">Este proyecto no tiene documentos todavía.</span>`}</div>
+           <button type="button" class="accion secundaria btn-agregar-doc">+ Agregar documento</button>
+           <form class="cal-form form-doc" hidden>
+             <div class="modal-fila">
+               <label>Tipo
+                 <select name="clase">
+                   <option value="doc">Documento</option>
+                   <option value="rfi">RFI</option>
+                 </select>
+               </label>
+               <label>Título
+                 <input name="titulo" type="text" required placeholder="Ej: SOW firmado" autocomplete="off">
+               </label>
+             </div>
+             <label>Enlace (pega aquí el link de Drive)
+               <input name="url" type="url" required placeholder="https://drive.google.com/…" autocomplete="off">
+             </label>
+             <button type="submit" class="accion">Guardar documento</button>
+           </form>
          </div>`
       : "";
 
@@ -724,6 +744,31 @@
     $detalle.querySelectorAll(".chip-select").forEach(sel => {
       sel.addEventListener("change", () => cambiarEstadoDirecto(sel.dataset.id, sel.value, sel));
     });
+
+    // "+ Agregar documento" (solo aparece para el dueño)
+    const btnDoc = $detalle.querySelector(".btn-agregar-doc");
+    if (btnDoc) {
+      const formDoc = $detalle.querySelector(".form-doc");
+      btnDoc.addEventListener("click", () => { formDoc.hidden = !formDoc.hidden; });
+      formDoc.addEventListener("submit", async e => {
+        e.preventDefault();
+        const d = new FormData(formDoc);
+        const clase = d.get("clase") === "rfi" ? "rfi" : "doc";
+        try {
+          await DB.crearDocumento({
+            proyecto_id: p.id,
+            clase,
+            titulo: (d.get("titulo") || "").toString().trim(),
+            url: (d.get("url") || "").toString().trim(),
+            estado: clase === "rfi" ? "Abierto" : null
+          });
+          await recargar();
+          avisar(clase === "rfi" ? "RFI guardado ✓" : "Documento guardado ✓");
+        } catch (err) {
+          avisar("No se pudo guardar: " + err.message, true);
+        }
+      });
+    }
   }
 
   // Re-pinta la pantalla correcta después de guardar un cambio

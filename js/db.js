@@ -217,6 +217,7 @@
     crearProyecto: fila => insertar("proyectos", fila),
     crearFinanzas: fila => insertar("finanzas_proyecto", fila),
     reportarHoras: fila => insertar("horas", { ...fila, usuario_id: uid() }),
+    crearDocumento: fila => insertar("documentos", fila),
     crearEvento: fila => insertar("eventos", { ...fila, autor_id: uid() }),
     crearPendiente: fila => insertar("pendientes", { ...fila, autor_id: uid() }),
     resolverPendiente: id => actualizar(`pendientes?id=eq.${id}`,

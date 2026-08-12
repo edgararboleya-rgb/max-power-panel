@@ -1128,6 +1128,9 @@ table.desglose .neg { color: var(--mp-teal-text); font-weight: 800; }
 .alcance-estado { display: block; font-size: 0.7rem; color: var(--mp-ink-2); margin-top: 1px; }
 
 .detalle-docs { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.sin-docs { font-size: 0.8rem; color: var(--mp-ink-3); }
+.btn-agregar-doc { margin-top: 0.55rem; }
+.form-doc { margin-top: 0.4rem; }
 .doc-link {
   display: inline-block;
   background: var(--mp-card);
