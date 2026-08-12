@@ -326,6 +326,7 @@
     }),
     crearEvento: fila => insertar("eventos", { ...fila, autor_id: uid() }),
     crearPendiente: fila => insertar("pendientes", { ...fila, autor_id: uid() }),
+    cambiarPendiente: (id, cambios) => actualizar(`pendientes?id=eq.${id}`, cambios),
     resolverPendiente: id => actualizar(`pendientes?id=eq.${id}`,
       { resuelto: true, resuelto_por: uid(), resuelto_el: new Date().toISOString() })
   };

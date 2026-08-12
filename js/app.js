@@ -307,6 +307,8 @@
           <span class="alcance-titulo">${esc(sinMontos(x.descripcion))}</span>
           <span class="alcance-estado">${esc(nombreProyecto(x.proyecto))}${x.autor ? " · " + esc(x.autor) : ""}</span>
         </span>
+        ${usuario.editar ? `<button class="insp-borrar btn-pen-editar" data-id="${x.id}" title="Corregir el texto">✎</button>
+        <button class="accion secundaria btn-hoy-resolver" data-id="${x.id}">✓ Resuelto</button>` : ""}
       </div>`).join("") +
       (pens.length > 3 ? `<div class="hoy-mas">+ ${pens.length - 3} pendientes más en el calendario</div>` : "");
 
@@ -317,6 +319,43 @@
         ${filasPen || ""}
         ${!evs.length ? `<div class="hoy-mas">Nada programado para hoy ni mañana.</div>` : ""}
       </div>`;
+
+    // "✓ Resuelto" directo desde el inicio (solo dueño)
+    $("inicio-hoy").querySelectorAll(".btn-hoy-resolver").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        try {
+          await DB.resolverPendiente(btn.dataset.id);
+          const pen = pendientesTodos().find(x => String(x.id) === String(btn.dataset.id));
+          if (pen) pen.resuelto = true;
+          pintarInicio();
+          avisar("Pendiente resuelto ✓");
+        } catch (err) {
+          avisar("No se pudo resolver: " + err.message, true);
+        }
+      });
+    });
+    // ✎ corrige el texto del pendiente rojo (solo dueño)
+    $("inicio-hoy").querySelectorAll(".btn-pen-editar").forEach(btn => {
+      btn.addEventListener("click", () => editarPendiente(btn.dataset.id, pintarInicio));
+    });
+  }
+
+  // Corregir el texto de un pendiente rojo (lo usan el inicio y el calendario)
+  async function editarPendiente(id, repintar) {
+    const pen = pendientesTodos().find(x => String(x.id) === String(id));
+    if (!pen) return;
+    const nuevo = prompt("Corrige el texto del pendiente:", pen.descripcion);
+    if (nuevo === null) return; // canceló
+    const limpio = nuevo.trim();
+    if (!limpio || limpio === pen.descripcion) return;
+    try {
+      await DB.cambiarPendiente(id, { descripcion: limpio });
+      pen.descripcion = limpio;
+      repintar();
+      avisar("Pendiente corregido ✓");
+    } catch (err) {
+      avisar("No se pudo corregir: " + err.message, true);
+    }
   }
 
   // Avisos del dueño: plata y proyectos que piden atención
@@ -1976,7 +2015,8 @@
             <span class="alcance-titulo">${esc(sinMontos(p.descripcion))}</span>
             <span class="alcance-estado">${pr ? esc(pr.nombre) + " · " : ""}${esc(p.autor || "")}</span>
           </span>
-          ${usuario.editar ? `<button class="accion secundaria btn-resolver" data-id="${p.id}">✓ Resuelto</button>` : ""}
+          ${usuario.editar ? `<button class="insp-borrar btn-pen-editar" data-id="${p.id}" title="Corregir el texto">✎</button>
+          <button class="accion secundaria btn-resolver" data-id="${p.id}">✓ Resuelto</button>` : ""}
         </div>`;
     }).join("");
 
@@ -2015,6 +2055,9 @@
         </form>
       </div>`;
 
+    $("cal-dia-panel").querySelectorAll(".btn-pen-editar").forEach(btn => {
+      btn.addEventListener("click", () => editarPendiente(btn.dataset.id, pintarCalendario));
+    });
     $("cal-dia-panel").querySelectorAll(".btn-resolver").forEach(btn => {
       btn.addEventListener("click", async () => {
         try {
