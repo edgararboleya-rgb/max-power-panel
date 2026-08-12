@@ -2419,41 +2419,44 @@
     return normTxt(cat.unidad) === "MLF" ? Number(cable.cantidad) * 1000 : Number(cable.cantidad);
   }
 
+  // Explosión de UN ensamble en sus componentes (cantidad = cuántas unidades)
+  function itemsDeEnsamble(ensambleId, cantidad, pies) {
+    const ens = (estData.ensambles || []).find(x => x.id === ensambleId);
+    // Circuitos específicos: si Edgar midió los pies, mandan los suyos
+    const piesMedidos = ens && ens.pies_editable && Number(pies) > 0 ? Number(pies) : null;
+    const piesProm = piesMedidos ? piesPromedioEnsamble(ensambleId) : null;
+    return (estData.ensambleItems || [])
+      .filter(x => x.ensamble_id === ensambleId)
+      .map(cmp => {
+        const cat = catalogoExacto(cmp.item) || {};
+        let porUnidad = Number(cmp.cantidad);
+        if (piesMedidos && piesProm) {
+          const nom = normTxt(cmp.item);
+          if (ES_LINEAL_CABLE(nom))
+            porUnidad = normTxt(cat.unidad) === "MLF" ? piesMedidos / 1000 : piesMedidos;
+          else if (/STAPLE/.test(nom))
+            porUnidad = Math.ceil(porUnidad * (piesMedidos / piesProm));
+        }
+        return { item: cmp.item, unidad: cat.unidad, precio: cat.precio || 0,
+                 horas: cat.horas_unidad || 0,
+                 cantidad: porUnidad * Number(cantidad),
+                 deEnsamble: ens ? ens.nombre : "" };
+      });
+  }
+
   // Ítems del estimado: manuales/takeoff + explosión de ensambles
   function itemsDelEstimado(est) {
     const manual = (estData.items || []).filter(i => i.estimado_id === est.id);
     const porEnsamble = (estData.estEnsambles || [])
       .filter(ee => ee.estimado_id === est.id && Number(ee.cantidad) > 0)
-      .flatMap(ee => {
-        const ens = (estData.ensambles || []).find(x => x.id === ee.ensamble_id);
-        // Circuitos específicos: si Edgar midió los pies, mandan los suyos
-        const piesMedidos = ens && ens.pies_editable && Number(ee.pies) > 0 ? Number(ee.pies) : null;
-        const piesProm = piesMedidos ? piesPromedioEnsamble(ee.ensamble_id) : null;
-        return (estData.ensambleItems || [])
-          .filter(x => x.ensamble_id === ee.ensamble_id)
-          .map(cmp => {
-            const cat = catalogoExacto(cmp.item) || {};
-            let porUnidad = Number(cmp.cantidad);
-            if (piesMedidos && piesProm) {
-              const nom = normTxt(cmp.item);
-              if (ES_LINEAL_CABLE(nom))
-                porUnidad = normTxt(cat.unidad) === "MLF" ? piesMedidos / 1000 : piesMedidos;
-              else if (/STAPLE/.test(nom))
-                porUnidad = Math.ceil(porUnidad * (piesMedidos / piesProm));
-            }
-            return { item: cmp.item, unidad: cat.unidad, precio: cat.precio || 0,
-                     horas: cat.horas_unidad || 0,
-                     cantidad: porUnidad * Number(ee.cantidad),
-                     deEnsamble: ens ? ens.nombre : "" };
-          });
-      });
+      .flatMap(ee => itemsDeEnsamble(ee.ensamble_id, Number(ee.cantidad), ee.pies));
     return manual.concat(porEnsamble);
   }
 
   // La fórmula Max Power (motor del Excel) + automáticos del v2
-  function calcularEstimado(est) {
+  function calcularEstimado(est, itemsOverride) {
     const cfg = estData.config || {};
-    const base = itemsDelEstimado(est);
+    const base = itemsOverride || itemsDelEstimado(est);
     const esc = (estData.escenarios || []).find(e => e.id === est.escenario)
       || { foreman: 43, journeyman: 34, helper: 22, pct_foreman: .2, pct_journeyman: .5,
            pct_helper: .3, benefits: .25, tax_material: .07, overhead_hh: 30.19, profit: .12 };
@@ -2783,6 +2786,11 @@ Power done right the first time. ⚡`;
       const enEst = ensDelEst.find(e => e.ensamble_id === ens.id);
       const qty = enEst ? Number(enEst.cantidad) : 0;
       const prom = ens.pies_editable ? piesPromedioEnsamble(ens.id) : null;
+      // Precio de venta por unidad de este ensamble (misma fórmula completa)
+      const compsUnit = itemsDeEnsamble(ens.id, 1, enEst ? enEst.pies : null);
+      const precioUnit = compsUnit.length ? calcularEstimado(est, compsUnit).bid : 0;
+      const lineaPrecio = precioUnit
+        ? `<span class="alcance-estado">≈ <strong>${fmt(Math.round(precioUnit * 100) / 100)}</strong> por unidad (escenario ${esc(est.escenario)})</span>` : "";
       const piesLinea = ens.pies_editable && qty > 0
         ? `<span class="alcance-estado">📏 ${enEst && Number(enEst.pies) > 0
             ? `<strong>${Number(enEst.pies)} ft medidos</strong>`
@@ -2794,6 +2802,7 @@ Power done right the first time. ⚡`;
           <span class="alcance-info">
             <span class="alcance-titulo">${esc(ens.nombre)}</span>
             ${ens.descripcion ? `<span class="alcance-estado">${esc(ens.descripcion)}</span>` : ""}
+            ${lineaPrecio}
             ${piesLinea}
           </span>
           ${!soloLectura ? `
@@ -2875,7 +2884,7 @@ Power done right the first time. ⚡`;
         ${c.mermaMat > 0 ? `<div class="rent-fila"><span>+ Merma (cables ${Math.round((estData.config.merma_cable ?? .1) * 100)}% · tubería ${Math.round((estData.config.merma_tuberia ?? .05) * 100)}%)</span><span>${fmt(r2(c.mermaMat))}</span></div>` : ""}
         <div class="rent-fila"><span>+ Misceláneas (${Math.round((estData.config.misc_pct ?? .03) * 100)}% — tape, wirenuts, fijación)</span><span>${fmt(r2(c.misc))}</span></div>
         <div class="rent-fila"><span>+ Sales tax (${Math.round(c.esc.tax_material * 100)}%)</span><span>${fmt(r2(c.tax))}</span></div>
-        <div class="rent-fila"><span>Horas (${r2(c.horasBase)} × factor ${est.factor || 1})</span><span>${r2(c.horas)} h</span></div>
+        <div class="rent-fila"><span>Horas de TODO el trabajo (${r2(c.horasBase)} × factor ${est.factor || 1})</span><span>${r2(c.horas)} h</span></div>
         <div class="rent-fila"><span>Labor + benefits (${Math.round(c.esc.benefits * 100)}%)</span><span>${fmt(r2(c.totalLabor))}</span></div>
         <div class="rent-fila"><span>+ Overhead (${r2(c.horas)} h × ${fmt(c.esc.overhead_hh)})</span><span>${fmt(r2(c.overhead))}</span></div>
         <div class="rent-fila"><span>+ Profit (${Math.round(c.esc.profit * 100)}%)</span><span>${fmt(r2(c.profit))}</span></div>
