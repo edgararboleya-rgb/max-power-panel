@@ -203,7 +203,7 @@
     else if (!$vHoras.hidden) prepararHoras();
     else if (!$vMat.hidden) pintarMateriales();
     else if (!$vCostos.hidden) pintarCostos();
-    else { pintarCategorias(); pintarResumen(); }
+    else { pintarInicio(); pintarCategorias(); pintarResumen(); }
   }
 
   // ---------- Cambio de vista ----------
@@ -231,8 +231,138 @@
     etapaActiva = null;
     mostrar("home", { kicker: "Panel de proyectos", titulo: "Categorías", volver: false, nuevo: true });
     $("btn-costos").hidden = !usuario.finanzas;
+    pintarInicio();
     pintarCategorias();
     pintarResumen();
+  }
+
+  // ---------- El inicio inteligente ----------
+  const hoyISO = () => {
+    const h = new Date();
+    return fechaISO(h.getFullYear(), h.getMonth(), h.getDate());
+  };
+  const diasDesde = iso => {
+    if (!iso) return null;
+    const [a, m, d] = String(iso).slice(0, 10).split("-").map(Number);
+    return Math.floor((new Date() - new Date(a, m - 1, d)) / 86400000);
+  };
+  const nombreProyecto = id => {
+    const p = proyectos().find(x => x.id === id);
+    return p ? p.nombre : "";
+  };
+
+  function pintarInicio() {
+    pintarInicioHoy();
+    pintarInicioAvisos();
+    pintarInicioEquipo();
+  }
+
+  // Franja "HOY": lo de hoy y mañana + los pendientes rojos (todos la ven)
+  function pintarInicioHoy() {
+    const hoy = hoyISO();
+    const man = (() => {
+      const t = new Date();
+      t.setDate(t.getDate() + 1);
+      return fechaISO(t.getFullYear(), t.getMonth(), t.getDate());
+    })();
+    const evs = eventosCal()
+      .filter(e => e.fecha === hoy || e.fecha === man)
+      .sort((a, b) => a.fecha.localeCompare(b.fecha));
+    const pens = pendientesAbiertos();
+    if (!evs.length && !pens.length) { $("inicio-hoy").innerHTML = ""; return; }
+
+    const filasEv = evs.map(e => `
+      <div class="hoy-item${e.alerta ? " alerta" : ""}">
+        <span class="hoy-chip ${e.fecha === hoy ? "es-hoy" : "es-man"}">${e.fecha === hoy ? "HOY" : "MAÑANA"}</span>
+        <span class="alcance-info">
+          <span class="alcance-titulo">${esc(sinMontos(e.titulo))}${e.hora ? ` · ${esc(e.hora)}` : ""}</span>
+          ${e.proyecto ? `<span class="alcance-estado">🔧 ${esc(nombreProyecto(e.proyecto))}</span>` : ""}
+        </span>
+      </div>`).join("");
+
+    const maxPens = pens.slice(0, 3);
+    const filasPen = maxPens.map(x => `
+      <div class="hoy-item rojo">
+        <span class="hoy-chip es-rojo">🔴</span>
+        <span class="alcance-info">
+          <span class="alcance-titulo">${esc(sinMontos(x.descripcion))}</span>
+          <span class="alcance-estado">${esc(nombreProyecto(x.proyecto))}${x.autor ? " · " + esc(x.autor) : ""}</span>
+        </span>
+      </div>`).join("") +
+      (pens.length > 3 ? `<div class="hoy-mas">+ ${pens.length - 3} pendientes más en el calendario</div>` : "");
+
+    $("inicio-hoy").innerHTML = `
+      <div class="inicio-card">
+        <div class="inicio-card-titulo">📅 Hoy en Max Power</div>
+        ${filasEv || ""}
+        ${filasPen || ""}
+        ${!evs.length ? `<div class="hoy-mas">Nada programado para hoy ni mañana.</div>` : ""}
+      </div>`;
+  }
+
+  // Avisos del dueño: plata y proyectos que piden atención
+  function pintarInicioAvisos() {
+    if (!usuario.finanzas) { $("inicio-avisos").innerHTML = ""; return; }
+    const avisos = [];
+    for (const p of proyectos()) {
+      for (const f of facturasPendientes(p)) {
+        const dias = diasDesde(f.fechaISO);
+        if (dias !== null && dias >= 30)
+          avisos.push({ id: p.id, icono: "💵", texto: `Factura #${f.num} de ${p.nombre} lleva ${dias} días sin pagar (${fmt(f.monto)})` });
+      }
+      if (p.estado === "enviado") {
+        const dias = diasDesde(p.actualizado);
+        if (dias !== null && dias >= 21)
+          avisos.push({ id: p.id, icono: "⏳", texto: `${p.nombre}: propuesta sin movimiento hace ${dias} días — revívela o márcala perdida` });
+      }
+      if (p.estado === "ejecucion" && p.horas && p.horas.estimadas > 0 && p.horas.reales > p.horas.estimadas) {
+        avisos.push({ id: p.id, icono: "⏱", texto: `${p.nombre}: ${p.horas.reales}h trabajadas de ${p.horas.estimadas}h estimadas — se está comiendo el margen` });
+      }
+    }
+    if (!avisos.length) { $("inicio-avisos").innerHTML = ""; return; }
+    $("inicio-avisos").innerHTML = `
+      <div class="inicio-card avisos">
+        <div class="inicio-card-titulo">⚠ Avisos</div>
+        ${avisos.map(a => `
+          <button class="aviso-linea" data-id="${esc(a.id)}">
+            <span>${a.icono}</span>
+            <span class="aviso-texto">${esc(a.texto)}</span>
+            <span class="cat-flecha">›</span>
+          </button>`).join("")}
+      </div>`;
+    $("inicio-avisos").querySelectorAll(".aviso-linea").forEach(btn => {
+      btn.addEventListener("click", () => irDetalle(btn.dataset.id));
+    });
+  }
+
+  // ¿Quién reportó horas? (solo dueño)
+  function pintarInicioEquipo() {
+    if (!usuario.finanzas) { $("inicio-equipo").innerHTML = ""; return; }
+    const equipo = (state.equipo || []).filter(u => u.rol !== "dueno");
+    if (!equipo.length) { $("inicio-equipo").innerHTML = ""; return; }
+    const filas = equipo.map(u => {
+      const mios = (state.registroHoras || []).filter(r => r.usuarioId === u.id);
+      const ultima = mios.length ? mios[mios.length - 1].fecha : null;
+      const dias = diasDesde(ultima);
+      let clase = "gris", texto = "sin reportes todavía";
+      if (dias !== null) {
+        if (dias <= 1) { clase = "verde"; texto = dias === 0 ? "reportó hoy ✓" : "reportó ayer ✓"; }
+        else if (dias <= 3) { clase = "amarillo"; texto = `hace ${dias} días`; }
+        else { clase = "rojo"; texto = `hace ${dias} días sin reportar`; }
+      }
+      return `<div class="equipo-item">
+          <span class="equipo-dot ${clase}"></span>
+          <span class="alcance-info">
+            <span class="alcance-titulo">${esc(u.nombre)}</span>
+            <span class="alcance-estado">${texto}</span>
+          </span>
+        </div>`;
+    }).join("");
+    $("inicio-equipo").innerHTML = `
+      <div class="inicio-card">
+        <div class="inicio-card-titulo">⏱ Reporte de horas del equipo</div>
+        ${filas}
+      </div>`;
   }
 
   function pintarCategorias() {

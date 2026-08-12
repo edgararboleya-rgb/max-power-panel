@@ -1247,6 +1247,82 @@ table.desglose .neg { color: var(--mp-teal-text); font-weight: 800; }
 .rent-total.warn span:last-child { color: var(--mp-warn-tx); }
 .rent-total.bad  span:last-child { color: #B23232; }
 .rent-nota { font-size: 0.7rem; color: var(--mp-ink-3); margin-top: 0.45rem; line-height: 1.5; }
+
+/* ============ Inicio inteligente ============ */
+.inicio-card {
+  background: var(--mp-card);
+  border: 1px solid var(--mp-line);
+  border-radius: 16px;
+  box-shadow: var(--mp-shadow);
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.9rem;
+}
+.inicio-card-titulo {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--mp-teal-text);
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+}
+.hoy-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0;
+  border-top: 1px solid var(--mp-sky-2);
+}
+.hoy-item:first-of-type { border-top: none; }
+.hoy-chip {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  border-radius: 999px;
+  padding: 0.22rem 0.5rem;
+  white-space: nowrap;
+}
+.hoy-chip.es-hoy { background: var(--mp-sky-2); color: var(--mp-teal-text); border: 1px solid var(--mp-line); }
+.hoy-chip.es-man { background: var(--mp-card); color: var(--mp-navy); border: 1px solid var(--mp-line); }
+.hoy-chip.es-rojo { background: none; border: none; padding: 0.22rem 0.1rem; }
+.hoy-mas { font-size: 0.72rem; color: var(--mp-ink-3); padding-top: 0.35rem; }
+
+.inicio-card.avisos { border-color: var(--mp-warn-bd); background: var(--mp-warn-bg); }
+.inicio-card.avisos .inicio-card-titulo { color: var(--mp-warn-tx); }
+.aviso-linea {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-top: 1px dashed var(--mp-warn-bd);
+  padding: 0.45rem 0;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--mp-warn-tx);
+  cursor: pointer;
+}
+.aviso-linea:first-of-type { border-top: none; }
+.aviso-texto { flex: 1; line-height: 1.4; }
+
+.equipo-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0;
+  border-top: 1px solid var(--mp-sky-2);
+}
+.equipo-item:first-of-type { border-top: none; }
+.equipo-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+.equipo-dot.verde    { background: #6FBF3C; box-shadow: 0 0 0 3px rgba(111,191,60,.18); }
+.equipo-dot.amarillo { background: #E8C51D; box-shadow: 0 0 0 3px rgba(232,197,29,.18); }
+.equipo-dot.rojo     { background: #D64545; box-shadow: 0 0 0 3px rgba(214,69,69,.18); }
+.equipo-dot.gris     { background: var(--mp-ink-3); }
 .doc-link {
   display: inline-block;
   background: var(--mp-card);

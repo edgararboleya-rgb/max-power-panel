@@ -204,6 +204,7 @@
         estadoDetalle: p.estado_detalle || "",
         proximaAccion: p.proxima_accion || "",
         ref: p.ref || "—",
+        actualizado: p.actualizado ? String(p.actualizado).slice(0, 10) : "",
         contrato: fin.contrato !== undefined && fin.contrato !== null ? Number(fin.contrato) : null,
         cobrado: fin.cobrado !== undefined && fin.cobrado !== null ? Number(fin.cobrado) : null,
         alcances: (alcPor[p.id] || []).map(a => ({
@@ -217,7 +218,7 @@
           monto: Number(h.monto), estado: h.estado
         })),
         facturas: (facPor[p.id] || []).map(f => ({
-          num: f.num, fecha: fechaCorta(f.fecha),
+          num: f.num, fecha: fechaCorta(f.fecha), fechaISO: f.fecha || "",
           monto: Number(f.monto), pagada: !!f.pagada
         })),
         docs: docs.filter(d => d.clase === "doc").map(d => ({ titulo: d.titulo, url: d.url })),
@@ -231,6 +232,7 @@
     return {
       perfil: miPerfil,
       nombrePorId,
+      equipo: perfiles,
       proyectos: lista,
       eventos: eventos.map(e => ({
         id: e.id, fecha: e.fecha, hora: e.hora || "", titulo: e.titulo,
