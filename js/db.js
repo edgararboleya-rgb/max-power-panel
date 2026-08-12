@@ -213,6 +213,7 @@
     cargarTodo,
     // Escrituras
     cambiarProyecto: (id, cambios) => actualizar(`proyectos?id=eq.${encodeURIComponent(id)}`, cambios),
+    eliminarProyecto: id => api(`proyectos?id=eq.${encodeURIComponent(id)}`, { metodo: "DELETE" }),
     crearProyecto: fila => insertar("proyectos", fila),
     crearFinanzas: fila => insertar("finanzas_proyecto", fila),
     reportarHoras: fila => insertar("horas", { ...fila, usuario_id: uid() }),

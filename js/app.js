@@ -340,9 +340,13 @@
       card.addEventListener("click", e => {
         const btn = e.target.closest(".accion");
         if (btn) { ejecutarAccion(btn.dataset.accion, btn.dataset.id); return; }
-        if (e.target.closest("a")) return;
+        if (e.target.closest("a") || e.target.closest(".chip-select")) return;
         card.classList.toggle("abierto");
       });
+    });
+    $lista.querySelectorAll(".chip-select").forEach(sel => {
+      sel.addEventListener("click", e => e.stopPropagation());
+      sel.addEventListener("change", () => cambiarEstadoDirecto(sel.dataset.id, sel.value, sel));
     });
   }
 
@@ -516,6 +520,50 @@
       </div>`;
   }
 
+  // Selector de estado con flechita — SOLO el dueño.
+  // Permite poner cualquier estado directamente, y hasta eliminar.
+  function selectorEstadoHTML(p) {
+    const opciones = Object.entries(ESTADOS)
+      .map(([clave, e]) =>
+        `<option value="${clave}"${clave === p.estado ? " selected" : ""}>${e.etiqueta}</option>`)
+      .join("");
+    return `<select class="chip-select" data-id="${esc(p.id)}" title="Cambiar estado">
+        ${opciones}
+        <option disabled>──────</option>
+        <option value="__eliminar">🗑 Eliminar proyecto…</option>
+      </select>`;
+  }
+
+  async function cambiarEstadoDirecto(id, valor, selectEl) {
+    const p = proyectos().find(x => x.id === id);
+    if (!p) return;
+    if (valor === "__eliminar") {
+      selectEl.value = p.estado; // regresa el selector mientras confirmamos
+      if (!confirm(`¿Eliminar "${p.nombre}" para siempre?\n\nSe borra el proyecto con sus finanzas, hitos, horas y pendientes. Esto no se puede deshacer.`)) return;
+      try {
+        await DB.eliminarProyecto(id);
+        state.proyectos = state.proyectos.filter(x => x.id !== id);
+        pintarLista();
+        avisar(`"${p.nombre}" eliminado.`);
+      } catch (err) {
+        avisar("No se pudo eliminar: " + err.message, true);
+      }
+      return;
+    }
+    const cambios = { estado: valor };
+    if (valor === "ejecucion" && !p.fase) cambios.fase = "mobilizacion";
+    try {
+      await DB.cambiarProyecto(id, cambios);
+      p.estado = valor;
+      if (cambios.fase) p.fase = cambios.fase;
+      pintarLista(id);
+      avisar(`Estado: ${ESTADOS[valor].etiqueta} ✓`);
+    } catch (err) {
+      selectEl.value = p.estado;
+      avisar("No se pudo cambiar: " + err.message, true);
+    }
+  }
+
   function accionesHTML(p) {
     if (!usuario.editar) return "";
     const b = [];
@@ -591,7 +639,7 @@
               <div class="proyecto-cliente">Cliente: <strong>${esc(p.cliente)}</strong> · vía ${esc(p.via)}</div>
             </div>
             <div class="chips-col">
-              ${chipHTML(p.estado)}
+              ${usuario.editar ? selectorEstadoHTML(p) : chipHTML(p.estado)}
               ${miniFase}
             </div>
           </div>
