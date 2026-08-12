@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Max Power — Proyectos</title>
-  <link rel="stylesheet" href="css/styles.css?v=6">
+  <link rel="stylesheet" href="css/styles.css?v=7">
 </head>
 <body>
 
@@ -64,6 +64,8 @@
         <div class="botones-rapidos">
           <button id="btn-horas" class="btn-horas">⏱ Reportar mis horas</button>
           <button id="btn-calendario" class="btn-horas">📅 Calendario</button>
+          <button id="btn-materiales" class="btn-horas">🛒 Materiales</button>
+          <button id="btn-costos" class="btn-horas" hidden>💲 Costos del equipo</button>
         </div>
         <section id="categorias" class="categorias"></section>
         <section id="resumen" class="resumen"></section>
@@ -130,6 +132,16 @@
           </form>
           <div id="horas-historial"></div>
         </div>
+      </section>
+
+      <!-- MATERIALES: lista de compras conectada a los pendientes -->
+      <section id="vista-materiales" hidden>
+        <div id="materiales-panel"></div>
+      </section>
+
+      <!-- COSTOS DEL EQUIPO: solo el dueño -->
+      <section id="vista-costos" hidden>
+        <div id="costos-panel"></div>
       </section>
 
       <!-- NIVEL 2 · SUBMENÚ: etapas de la categoría elegida -->
@@ -208,9 +220,9 @@
     </form>
   </dialog>
 
-  <script src="assets/logo.js?v=6"></script>
-  <script src="assets/config.js?v=6"></script>
-  <script src="js/db.js?v=6"></script>
-  <script src="js/app.js?v=6"></script>
+  <script src="assets/logo.js?v=7"></script>
+  <script src="assets/config.js?v=7"></script>
+  <script src="js/db.js?v=7"></script>
+  <script src="js/app.js?v=7"></script>
 </body>
 </html>

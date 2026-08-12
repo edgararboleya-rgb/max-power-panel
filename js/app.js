@@ -64,6 +64,7 @@
   const $home = $("vista-home"), $vEtapas = $("vista-etapas"), $vLista = $("vista-lista");
   const $vHoras = $("vista-horas"), $vCal = $("vista-calendario");
   const $vDetalle = $("vista-detalle"), $detalle = $("detalle");
+  const $vMat = $("vista-materiales"), $vCostos = $("vista-costos");
   const $categorias = $("categorias"), $resumen = $("resumen");
   const $etapas = $("etapas"), $lista = $("lista"), $buscador = $("buscador");
   const $kicker = $("kicker"), $titulo = $("titulo-vista");
@@ -200,6 +201,8 @@
     else if (!$vEtapas.hidden) pintarEtapas();
     else if (!$vCal.hidden) pintarCalendario();
     else if (!$vHoras.hidden) prepararHoras();
+    else if (!$vMat.hidden) pintarMateriales();
+    else if (!$vCostos.hidden) pintarCostos();
     else { pintarCategorias(); pintarResumen(); }
   }
 
@@ -211,6 +214,8 @@
     $vHoras.hidden = vista !== "horas";
     $vCal.hidden = vista !== "calendario";
     $vDetalle.hidden = vista !== "detalle";
+    $vMat.hidden = vista !== "materiales";
+    $vCostos.hidden = vista !== "costos";
     $kicker.textContent = kicker;
     $titulo.textContent = titulo;
     $btnVolver.hidden = !volver;
@@ -225,6 +230,7 @@
     tipoActivo = null;
     etapaActiva = null;
     mostrar("home", { kicker: "Panel de proyectos", titulo: "Categorías", volver: false, nuevo: true });
+    $("btn-costos").hidden = !usuario.finanzas;
     pintarCategorias();
     pintarResumen();
   }
@@ -493,6 +499,43 @@
       </div>`;
   }
 
+  // Rentabilidad real: contrato − mano de obra (SOLO el dueño)
+  function rentabilidadHTML(p) {
+    if (!usuario.finanzas || typeof p.contrato !== "number" || p.contrato <= 0) return "";
+    const costos = state.costos || {};
+    const tasas = Object.values(costos);
+    if (!tasas.length) {
+      return `<div class="detalle-seccion"><h3>Rentabilidad real</h3>
+        <p>Define el costo por hora del equipo en <strong>💲 Costos del equipo</strong>
+        (botón del inicio) y aquí verás la ganancia real de este proyecto.</p></div>`;
+    }
+    const promedio = tasas.reduce((s, x) => s + x, 0) / tasas.length;
+    const reg = (state.registroHoras || []).filter(r => r.proyecto === p.id);
+    const horasReg = reg.reduce((s, r) => s + r.horas, 0);
+    const costoReg = reg.reduce((s, r) =>
+      s + r.horas * (costos[r.usuarioId] != null ? costos[r.usuarioId] : promedio), 0);
+    // Horas anteriores a la app (sin trabajador asignado): al costo promedio
+    const horasBase = p.horas ? Math.max(0, p.horas.reales - horasReg) : 0;
+    const totalHoras = horasReg + horasBase;
+    if (totalHoras <= 0) {
+      return `<div class="detalle-seccion"><h3>Rentabilidad real</h3>
+        <p>Todavía no hay horas registradas en este proyecto.</p></div>`;
+    }
+    const costoMO = costoReg + horasBase * promedio;
+    const margen = p.contrato - costoMO;
+    const pct = Math.round((margen / p.contrato) * 100);
+    const clase = pct >= 50 ? "ok" : pct >= 30 ? "warn" : "bad";
+    return `
+      <div class="detalle-seccion">
+        <h3>Rentabilidad real</h3>
+        <div class="rent-fila"><span>Contrato</span><span>${fmt(p.contrato)}</span></div>
+        <div class="rent-fila"><span>Mano de obra (${Math.round(totalHoras * 10) / 10} h)</span><span>−${fmt(costoMO)}</span></div>
+        <div class="rent-fila rent-total ${clase}"><span>Margen bruto</span><span>${fmt(margen)} (${pct}%)</span></div>
+        <div class="barra horas-barra"><div class="barra-relleno ${clase}" style="width:${Math.max(0, Math.min(100, pct))}%"></div></div>
+        <p class="rent-nota">Antes de materiales y gastos. Sale de las horas reportadas × el costo de cada trabajador.</p>
+      </div>`;
+  }
+
   function rfisHTML(p) {
     if (!p.rfis || !p.rfis.length) return "";
     const items = p.rfis.map(r => `
@@ -712,6 +755,7 @@
           ${horasHTML(p)}
           ${desgloseHTML(p)}
           ${hitosHTML(p)}
+          ${rentabilidadHTML(p)}
           ${rfisHTML(p)}
           ${inspeccionesHTML(p)}
           ${fotosHTML(p)}
@@ -1146,6 +1190,186 @@
       avisar("No se pudo guardar: " + err.message, true);
     }
   });
+
+  // ============================================================
+  // MATERIALES — lista de compras de toda la empresa
+  // ============================================================
+  // Palabras que hacen que un pendiente "suene a material"
+  const REG_MATERIAL = /falt|material|cable|wire|breaker|conduit|emt|romex|tubo|caja|toma|receptacle|luminaria|fixture|comprar|alambre|panel/i;
+
+  function irMateriales() {
+    mostrar("materiales", { kicker: "Compras", titulo: "Materiales", volver: true, nuevo: false });
+    pintarMateriales();
+  }
+  $("btn-materiales").addEventListener("click", irMateriales);
+
+  function pintarMateriales() {
+    const mats = state.materiales || [];
+    const faltan = mats.filter(m => m.estado === "falta");
+    const comprados = mats.filter(m => m.estado === "comprado").slice(-10).reverse();
+    const nombreProy = id => {
+      const p = proyectos().find(x => x.id === id);
+      return p ? p.nombre : "General";
+    };
+    const filaMat = m => `
+      <div class="mat-item ${m.estado}">
+        <span class="mat-icono">${m.estado === "falta" ? "🔴" : "✓"}</span>
+        <span class="alcance-info">
+          <span class="alcance-titulo">${esc(sinMontos(m.descripcion))}${m.cantidad ? ` <span class="mat-cant">— ${esc(m.cantidad)}</span>` : ""}</span>
+          <span class="alcance-estado">${esc(nombreProy(m.proyecto))} · ${esc(m.autor)} ${esc(m.fecha)}</span>
+        </span>
+        ${usuario.editar && m.estado === "falta" ? `<button class="accion btn-mat-comprado" data-id="${m.id}">✓ Comprado</button>` : ""}
+        ${usuario.editar ? `<button class="insp-borrar btn-mat-borrar" data-id="${m.id}" title="Eliminar">🗑</button>` : ""}
+      </div>`;
+
+    // Pendientes de obra abiertos que suenan a material (y que no
+    // hayan sido pasados ya a la lista)
+    const yaPasados = new Set(mats.map(m => m.origenPendiente).filter(Boolean));
+    const sugeridos = pendientesAbiertos()
+      .filter(x => REG_MATERIAL.test(x.descripcion) && !yaPasados.has(x.id));
+
+    const opciones = proyectos()
+      .filter(x => ["ejecucion", "aprobado", "pausa"].includes(x.estado))
+      .map(x => `<option value="${esc(x.id)}">${esc(x.nombre)}</option>`).join("");
+
+    $("materiales-panel").innerHTML = `
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">Por comprar (${faltan.length})</div>
+        ${faltan.map(filaMat).join("") || `<p class="cal-sin-eventos">Nada pendiente de comprar. 👌</p>`}
+      </div>
+      ${sugeridos.length ? `
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">🔴 Pendientes de obra que suenan a material</div>
+        ${sugeridos.map(s => `
+          <div class="pendiente-item">
+            <span class="pendiente-icono">⚠</span>
+            <span class="alcance-info">
+              <span class="alcance-titulo">${esc(sinMontos(s.descripcion))}</span>
+              <span class="alcance-estado">${esc(nombreProy(s.proyecto))} · ${esc(s.autor)} ${esc(s.fecha)}</span>
+            </span>
+            <button class="accion secundaria btn-mat-pasar" data-id="${s.id}">→ Pasar a la lista</button>
+          </div>`).join("")}
+      </div>` : ""}
+      <div class="cal-panel-card">
+        <form id="form-material" class="cal-form">
+          <div class="cal-form-titulo">Agregar material</div>
+          <label>Proyecto
+            <select name="proyecto">
+              <option value="">— General (no es de un proyecto) —</option>
+              ${opciones}
+            </select>
+          </label>
+          <div class="modal-fila">
+            <label>Material
+              <input name="descripcion" type="text" required placeholder="Ej: cable 14/2" autocomplete="off">
+            </label>
+            <label>Cantidad (opcional)
+              <input name="cantidad" type="text" placeholder="Ej: 2 rollos" autocomplete="off">
+            </label>
+          </div>
+          <button type="submit" class="accion">Agregar a la lista</button>
+        </form>
+      </div>
+      ${comprados.length ? `
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">Comprados recientes</div>
+        ${comprados.map(filaMat).join("")}
+      </div>` : ""}`;
+
+    $("form-material").addEventListener("submit", async e => {
+      e.preventDefault();
+      const d = new FormData(e.target);
+      try {
+        await DB.crearMaterial({
+          proyecto_id: d.get("proyecto") || null,
+          descripcion: (d.get("descripcion") || "").toString().trim(),
+          cantidad: (d.get("cantidad") || "").toString().trim() || null
+        });
+        await recargar();
+        avisar("Material agregado ✓");
+      } catch (err) {
+        avisar("No se pudo agregar: " + err.message, true);
+      }
+    });
+    $("materiales-panel").querySelectorAll(".btn-mat-comprado").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        try {
+          await DB.cambiarMaterial(btn.dataset.id, { estado: "comprado" });
+          await recargar();
+          avisar("Marcado como comprado ✓");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    $("materiales-panel").querySelectorAll(".btn-mat-borrar").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("¿Eliminar este material de la lista?")) return;
+        try {
+          await DB.eliminarMaterial(btn.dataset.id);
+          await recargar();
+          avisar("Material eliminado ✓");
+        } catch (err) { avisar("No se pudo eliminar: " + err.message, true); }
+      });
+    });
+    $("materiales-panel").querySelectorAll(".btn-mat-pasar").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const pen = pendientesTodos().find(x => String(x.id) === String(btn.dataset.id));
+        if (!pen) return;
+        try {
+          await DB.crearMaterial({
+            proyecto_id: pen.proyecto || null,
+            descripcion: pen.descripcion,
+            origen_pendiente: pen.id
+          });
+          await recargar();
+          avisar("Pasado a la lista de compras ✓ (el pendiente sigue rojo hasta resolverse en obra)");
+        } catch (err) { avisar("No se pudo pasar: " + err.message, true); }
+      });
+    });
+  }
+
+  // ============================================================
+  // COSTOS DEL EQUIPO — solo el dueño
+  // ============================================================
+  function irCostos() {
+    if (!usuario.finanzas) return;
+    mostrar("costos", { kicker: "Solo dueño", titulo: "Costos del equipo", volver: true, nuevo: false });
+    pintarCostos();
+  }
+  $("btn-costos").addEventListener("click", irCostos);
+
+  function pintarCostos() {
+    const costos = state.costos || {};
+    const filas = Object.entries(state.nombrePorId).map(([id, nombre]) => `
+      <label>${esc(nombre)} — costo por hora ($)
+        <input name="c-${id}" type="number" min="0" step="0.5" inputmode="decimal"
+          value="${costos[id] != null ? costos[id] : ""}" placeholder="Ej: 35">
+      </label>`).join("");
+    $("costos-panel").innerHTML = `
+      <div class="cal-panel-card">
+        <form id="form-costos" class="cal-form">
+          <div class="cal-form-titulo">Costo por hora de cada trabajador</div>
+          <p class="modal-nota">El costo completo para la empresa (salario + taxes + seguro).
+          Solo tú ves esto — la base de datos lo protege igual que las finanzas.
+          Con esto, cada proyecto te muestra su <strong>rentabilidad real</strong>.</p>
+          ${filas}
+          <button type="submit" class="accion">Guardar costos</button>
+        </form>
+      </div>`;
+    $("form-costos").addEventListener("submit", async e => {
+      e.preventDefault();
+      const d = new FormData(e.target);
+      try {
+        for (const [id] of Object.entries(state.nombrePorId)) {
+          const v = (d.get("c-" + id) || "").toString().trim();
+          if (v !== "" && Number.isFinite(Number(v))) await DB.guardarCosto(id, Number(v));
+        }
+        await recargar();
+        avisar("Costos guardados ✓ — ya puedes ver la rentabilidad en cada proyecto");
+      } catch (err) {
+        avisar("No se pudo guardar: " + err.message, true);
+      }
+    });
+  }
 
   // ============================================================
   // CALENDARIO

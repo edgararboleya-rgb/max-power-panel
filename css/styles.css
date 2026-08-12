@@ -1203,6 +1203,43 @@ table.desglose .neg { color: var(--mp-teal-text); font-weight: 800; }
   line-height: 1;
 }
 .insp-borrar:hover { border-color: #F3B9B9; background: #FDF1F1; }
+
+/* Lista de materiales */
+.mat-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--mp-line);
+  border-radius: 10px;
+  margin-bottom: 0.4rem;
+  background: var(--mp-card);
+}
+.mat-item.falta    { border-color: #F3B9B9; background: #FDF1F1; }
+.mat-item.comprado { border-color: #BFE8A8; background: #F3FBEC; }
+.mat-item.comprado .mat-icono { color: #4C8A1F; font-weight: 800; }
+.mat-cant { font-weight: 400; color: var(--mp-ink-2); }
+
+/* Rentabilidad real */
+.rent-fila {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.88rem;
+  color: var(--mp-ink-2);
+  padding: 0.18rem 0;
+  font-variant-numeric: tabular-nums;
+}
+.rent-total {
+  font-weight: 800;
+  color: var(--mp-ink);
+  border-top: 1px solid var(--mp-line);
+  margin-top: 0.25rem;
+  padding-top: 0.4rem;
+}
+.rent-total.ok   span:last-child { color: #4C8A1F; }
+.rent-total.warn span:last-child { color: var(--mp-warn-tx); }
+.rent-total.bad  span:last-child { color: #B23232; }
+.rent-nota { font-size: 0.7rem; color: var(--mp-ink-3); margin-top: 0.45rem; line-height: 1.5; }
 .doc-link {
   display: inline-block;
   background: var(--mp-card);

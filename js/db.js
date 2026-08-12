@@ -142,7 +142,7 @@
   async function cargarTodo() {
     const [perfiles, proyectos, finanzas, alcances, alcancesEquipo,
            hitos, facturas, horas, eventos, pendientes, documentos, fotos,
-           inspecciones] =
+           inspecciones, materiales, costos] =
       await Promise.all([
         leer("perfiles?select=id,nombre,rol"),
         leer("proyectos?select=*&order=nombre"),
@@ -157,7 +157,9 @@
         leer("documentos?select=*").catch(() => []),
         // Estas tablas pueden no existir todavía: la app sigue andando
         leer("fotos?select=*&order=creado").catch(() => []),
-        leer("inspecciones?select=*&order=fecha").catch(() => [])
+        leer("inspecciones?select=*&order=fecha").catch(() => []),
+        leer("materiales?select=*&order=creado").catch(() => []),
+        leer("costos_equipo?select=*").catch(() => [])
       ]);
 
     const nombrePorId = Object.fromEntries(perfiles.map(p => [p.id, p.nombre]));
@@ -255,7 +257,15 @@
         jurisdiccion: i.jurisdiccion || "", tipo: i.tipo,
         fecha: i.fecha || "", resultado: i.resultado || "programada",
         notas: i.notas || ""
-      }))
+      })),
+      materiales: materiales.map(m => ({
+        id: m.id, proyecto: m.proyecto_id, descripcion: m.descripcion,
+        cantidad: m.cantidad || "", estado: m.estado || "falta",
+        origenPendiente: m.origen_pendiente || null,
+        autor: nombrePorId[m.autor_id] || "",
+        fecha: m.creado ? String(m.creado).slice(0, 10) : ""
+      })),
+      costos: Object.fromEntries(costos.map(c => [c.usuario_id, Number(c.costo_hora)]))
     };
   }
 
@@ -280,6 +290,15 @@
     crearInspeccion: fila => insertar("inspecciones", fila),
     cambiarInspeccion: (id, cambios) => actualizar(`inspecciones?id=eq.${id}`, cambios),
     eliminarInspeccion: id => api(`inspecciones?id=eq.${id}`, { metodo: "DELETE" }),
+    crearMaterial: fila => insertar("materiales", { ...fila, autor_id: uid() }),
+    cambiarMaterial: (id, cambios) => actualizar(`materiales?id=eq.${id}`, cambios),
+    eliminarMaterial: id => api(`materiales?id=eq.${id}`, { metodo: "DELETE" }),
+    // Guarda (o actualiza) el costo por hora de un trabajador
+    guardarCosto: (usuarioId, costoHora) => api("costos_equipo", {
+      metodo: "POST",
+      cuerpo: { usuario_id: usuarioId, costo_hora: costoHora },
+      headers: { Prefer: "resolution=merge-duplicates,return=representation" }
+    }),
     crearEvento: fila => insertar("eventos", { ...fila, autor_id: uid() }),
     crearPendiente: fila => insertar("pendientes", { ...fila, autor_id: uid() }),
     resolverPendiente: id => actualizar(`pendientes?id=eq.${id}`,
