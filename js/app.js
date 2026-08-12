@@ -93,6 +93,16 @@
   };
   const proyectos = () => (state ? state.proyectos : []);
   const eventos = () => (state ? state.eventos : []);
+  // El calendario junta los eventos con las inspecciones programadas
+  const eventosCal = () => eventos().concat(
+    (state ? state.inspecciones || [] : [])
+      .filter(i => i.fecha && i.resultado === "programada")
+      .map(i => ({
+        id: "insp-" + i.id, fecha: i.fecha, hora: "",
+        titulo: `🏛 Inspección ${i.tipo}`, proyecto: i.proyecto,
+        nota: i.jurisdiccion ? "Jurisdicción: " + i.jurisdiccion : "",
+        alerta: true
+      })));
   const pendientesTodos = () => (state ? state.pendientes : []);
   const pendientesAbiertos = pid =>
     pendientesTodos().filter(p => !p.resuelto && (!pid || p.proyecto === pid));
@@ -703,6 +713,7 @@
           ${desgloseHTML(p)}
           ${hitosHTML(p)}
           ${rfisHTML(p)}
+          ${inspeccionesHTML(p)}
           ${fotosHTML(p)}
           ${accionesHTML(p)}
           ${facturasHTML(p)}
@@ -710,6 +721,86 @@
           <div class="detalle-ref">Ref: ${esc(sinMontos(p.ref))}</div>
         </div>
       </article>`;
+  }
+
+  // Permisos e inspecciones: todos las ven; el dueño las maneja
+  const RES_INSP = {
+    programada: { etiqueta: "Programada", icono: "○", clase: "insp-prog" },
+    paso:       { etiqueta: "Pasó",       icono: "✓", clase: "insp-paso" },
+    fallo:      { etiqueta: "Falló",      icono: "✗", clase: "insp-fallo" }
+  };
+  const MES_CORTO = ["", "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+  const fechaBonita = iso => {
+    if (!iso) return "";
+    const [a, m, d] = String(iso).split("-").map(Number);
+    return `${d} ${MES_CORTO[m] || ""} ${a}`;
+  };
+
+  function inspeccionesHTML(p) {
+    const lista = (state.inspecciones || []).filter(i => i.proyecto === p.id);
+    const filas = lista.map(i => {
+      const r = RES_INSP[i.resultado] || RES_INSP.programada;
+      const detalles = [
+        i.fecha ? "📅 " + fechaBonita(i.fecha) : "",
+        i.permiso ? "Permiso " + esc(i.permiso) : "",
+        i.jurisdiccion ? esc(i.jurisdiccion) : "",
+        i.notas ? esc(sinMontos(i.notas)) : ""
+      ].filter(Boolean).join(" · ");
+      const control = usuario.editar
+        ? `<select class="insp-resultado" data-id="${i.id}" title="Cambiar resultado">
+             ${Object.entries(RES_INSP).map(([clave, x]) =>
+               `<option value="${clave}"${clave === i.resultado ? " selected" : ""}>${x.etiqueta}</option>`).join("")}
+           </select>`
+        : `<span class="insp-chip ${r.clase}">${r.etiqueta}</span>`;
+      return `<div class="insp-item ${r.clase}">
+          <span class="insp-icono">${r.icono}</span>
+          <span class="alcance-info">
+            <span class="alcance-titulo">Inspección ${esc(i.tipo)}</span>
+            <span class="alcance-estado">${detalles}</span>
+          </span>
+          ${control}
+        </div>`;
+    }).join("");
+
+    const form = usuario.editar
+      ? `<button type="button" class="accion secundaria btn-agregar-insp">+ Agregar inspección</button>
+         <form class="cal-form form-insp" hidden>
+           <div class="modal-fila">
+             <label>Tipo
+               <select name="tipo">
+                 <option value="Rough">Rough</option>
+                 <option value="Underground">Underground</option>
+                 <option value="Servicio / Panel">Servicio / Panel</option>
+                 <option value="Final">Final</option>
+                 <option value="Otra">Otra</option>
+               </select>
+             </label>
+             <label>Fecha (si ya está programada)
+               <input name="fecha" type="date">
+             </label>
+           </div>
+           <div class="modal-fila">
+             <label>Nº de permiso
+               <input name="permiso" type="text" placeholder="Ej: ELE2026-01234" autocomplete="off">
+             </label>
+             <label>Jurisdicción
+               <input name="jurisdiccion" type="text" placeholder="Ej: City of Tampa" autocomplete="off">
+             </label>
+           </div>
+           <label>Notas (opcional)
+             <input name="notas" type="text" placeholder="Ej: llamar al inspector antes de las 8am" autocomplete="off">
+           </label>
+           <button type="submit" class="accion">Guardar inspección</button>
+         </form>`
+      : "";
+
+    if (!filas && !form) return "";
+    return `
+      <div class="detalle-seccion">
+        <h3>Permisos e inspecciones</h3>
+        ${filas || `<span class="sin-docs">Sin inspecciones anotadas todavía.</span>`}
+        ${form}
+      </div>`;
   }
 
   // Fotos de obra: las ve y las sube TODO el equipo
@@ -809,6 +900,52 @@
         }
       });
     }
+
+    // "+ Agregar inspección" y cambio de resultado (solo dueño)
+    const btnInsp = $detalle.querySelector(".btn-agregar-insp");
+    if (btnInsp) {
+      const formInsp = $detalle.querySelector(".form-insp");
+      btnInsp.addEventListener("click", () => { formInsp.hidden = !formInsp.hidden; });
+      formInsp.addEventListener("submit", async e => {
+        e.preventDefault();
+        const d = new FormData(formInsp);
+        try {
+          await DB.crearInspeccion({
+            proyecto_id: p.id,
+            tipo: d.get("tipo"),
+            fecha: d.get("fecha") || null,
+            permiso: (d.get("permiso") || "").toString().trim() || null,
+            jurisdiccion: (d.get("jurisdiccion") || "").toString().trim() || null,
+            notas: (d.get("notas") || "").toString().trim() || null,
+            resultado: "programada"
+          });
+          await recargar();
+          avisar("Inspección guardada ✓" + (d.get("fecha") ? " — ya aparece en el calendario" : ""));
+        } catch (err) {
+          avisar("No se pudo guardar: " + err.message, true);
+        }
+      });
+    }
+    $detalle.querySelectorAll(".insp-resultado").forEach(sel => {
+      sel.addEventListener("change", async () => {
+        try {
+          await DB.cambiarInspeccion(sel.dataset.id, { resultado: sel.value });
+          await recargar();
+          if (sel.value === "paso") {
+            const h = proximoHito(p);
+            avisar(usuario.finanzas && h
+              ? `Inspección pasada ✓ — recuerda facturar: ${fmt(h.monto)} (${h.titulo})`
+              : "Inspección pasada ✓");
+          } else if (sel.value === "fallo") {
+            avisar("Inspección fallida anotada — programa la reinspección.", true);
+          } else {
+            avisar("Resultado actualizado ✓");
+          }
+        } catch (err) {
+          avisar("No se pudo cambiar: " + err.message, true);
+        }
+      });
+    });
 
     // "📸 Agregar foto" (todo el equipo puede)
     const btnFoto = $detalle.querySelector(".btn-agregar-foto");
@@ -1019,7 +1156,7 @@
     $("cal-mes").textContent = `${MESES[calMes]} ${calAno}`;
     const hoy = new Date();
     const hoyISO = fechaISO(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
-    const evs = eventos();
+    const evs = eventosCal();
     const pens = pendientesAbiertos();
 
     const primerDia = new Date(calAno, calMes, 1);
@@ -1062,7 +1199,7 @@
     const [a, m, d] = calDiaSel.split("-").map(Number);
     const nombreDia = new Date(a, m - 1, d).toLocaleDateString("es-US", { weekday: "long", day: "numeric", month: "long" });
 
-    const evsDia = eventos().filter(e => e.fecha === calDiaSel);
+    const evsDia = eventosCal().filter(e => e.fecha === calDiaSel);
     const listaEvs = evsDia.length
       ? evsDia.map(e => {
           const p = e.proyecto ? proyectos().find(x => x.id === e.proyecto) : null;

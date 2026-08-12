@@ -141,7 +141,8 @@
   // ---------- Carga completa según el rol ----------
   async function cargarTodo() {
     const [perfiles, proyectos, finanzas, alcances, alcancesEquipo,
-           hitos, facturas, horas, eventos, pendientes, documentos, fotos] =
+           hitos, facturas, horas, eventos, pendientes, documentos, fotos,
+           inspecciones] =
       await Promise.all([
         leer("perfiles?select=id,nombre,rol"),
         leer("proyectos?select=*&order=nombre"),
@@ -154,8 +155,9 @@
         leer("eventos?select=*&order=fecha"),
         leer("pendientes?select=*&order=fecha"),
         leer("documentos?select=*").catch(() => []),
-        // La tabla de fotos puede no existir todavía: la app sigue andando
-        leer("fotos?select=*&order=creado").catch(() => [])
+        // Estas tablas pueden no existir todavía: la app sigue andando
+        leer("fotos?select=*&order=creado").catch(() => []),
+        leer("inspecciones?select=*&order=fecha").catch(() => [])
       ]);
 
     const nombrePorId = Object.fromEntries(perfiles.map(p => [p.id, p.nombre]));
@@ -247,6 +249,12 @@
         id: f.id, proyecto: f.proyecto_id, ruta: f.ruta,
         nota: f.nota || "", autor: nombrePorId[f.autor_id] || "",
         fecha: f.creado ? String(f.creado).slice(0, 10) : ""
+      })),
+      inspecciones: inspecciones.map(i => ({
+        id: i.id, proyecto: i.proyecto_id, permiso: i.permiso || "",
+        jurisdiccion: i.jurisdiccion || "", tipo: i.tipo,
+        fecha: i.fecha || "", resultado: i.resultado || "programada",
+        notas: i.notas || ""
       }))
     };
   }
@@ -269,6 +277,8 @@
     subirFoto,
     firmarFotos,
     crearFoto: fila => insertar("fotos", { ...fila, autor_id: uid() }),
+    crearInspeccion: fila => insertar("inspecciones", fila),
+    cambiarInspeccion: (id, cambios) => actualizar(`inspecciones?id=eq.${id}`, cambios),
     crearEvento: fila => insertar("eventos", { ...fila, autor_id: uid() }),
     crearPendiente: fila => insertar("pendientes", { ...fila, autor_id: uid() }),
     resolverPendiente: id => actualizar(`pendientes?id=eq.${id}`,
