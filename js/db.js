@@ -93,7 +93,16 @@
     return r.json();
   }
 
-  const leer = ruta => api(ruta);
+  // La base entrega máximo 1,000 filas por petición: leer() pagina hasta traerlo todo
+  const leer = async ruta => {
+    const todo = [];
+    for (let desde = 0; ; desde += 1000) {
+      const pagina = await api(ruta, { headers: { Range: `${desde}-${desde + 999}` } });
+      if (!Array.isArray(pagina)) return pagina;
+      todo.push(...pagina);
+      if (pagina.length < 1000) return todo;
+    }
+  };
   const insertar = (tabla, fila) => api(tabla, { metodo: "POST", cuerpo: fila });
   const actualizar = (ruta, cambios) => api(ruta, { metodo: "PATCH", cuerpo: cambios });
 
