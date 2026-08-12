@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Max Power — Proyectos</title>
-  <link rel="stylesheet" href="css/styles.css?v=14">
+  <link rel="stylesheet" href="css/styles.css?v=15">
 </head>
 <body>
 
@@ -41,6 +41,7 @@
           <div class="wordmark-sub">Electrical Solutions Inc.</div>
         </div>
         <div class="membrete-der">
+          <button id="btn-idioma" class="btn-idioma" title="English / Español">EN</button>
           <span id="usuario-chip" class="usuario-chip"></span>
           <button id="btn-salir" class="btn-salir" title="Cambiar de usuario">Salir</button>
         </div>
@@ -62,11 +63,11 @@
       <!-- NIVEL 1 · HOME: solo las tres categorías (+ resumen del dueño) -->
       <section id="vista-home">
         <div class="botones-rapidos">
-          <button id="btn-horas" class="btn-horas">⏱ Reportar mis horas</button>
-          <button id="btn-calendario" class="btn-horas">📅 Calendario</button>
-          <button id="btn-materiales" class="btn-horas">🛒 Materiales</button>
-          <button id="btn-gastos" class="btn-horas" hidden>📊 Gastos</button>
-          <button id="btn-costos" class="btn-horas" hidden>💲 Costos del equipo</button>
+          <button id="btn-horas" class="btn-horas"><span class="tile-ico">⏱</span><span class="tile-txt">Reportar mis horas</span></button>
+          <button id="btn-calendario" class="btn-horas"><span class="tile-ico">📅</span><span class="tile-txt">Calendario</span></button>
+          <button id="btn-materiales" class="btn-horas"><span class="tile-ico">🛒</span><span class="tile-txt">Materiales</span></button>
+          <button id="btn-gastos" class="btn-horas" hidden><span class="tile-ico">📊</span><span class="tile-txt">Gastos</span></button>
+          <button id="btn-estimador" class="btn-horas" hidden><span class="tile-ico">🧮</span><span class="tile-txt">Estimador</span></button>
         </div>
         <section id="inicio-hoy"></section>
         <section id="inicio-avisos"></section>
@@ -144,12 +145,12 @@
         <div id="materiales-panel"></div>
       </section>
 
-      <!-- COSTOS DEL EQUIPO: solo el dueño -->
-      <section id="vista-costos" hidden>
-        <div id="costos-panel"></div>
+      <!-- ESTIMADOR: solo el dueño (su receta secreta) -->
+      <section id="vista-estimador" hidden>
+        <div id="estimador-panel"></div>
       </section>
 
-      <!-- CONTROL DE GASTOS: solo el dueño -->
+      <!-- CONTROL DE GASTOS (incluye costos del equipo): solo el dueño -->
       <section id="vista-gastos" hidden>
         <div id="gastos-panel"></div>
       </section>
@@ -230,9 +231,10 @@
     </form>
   </dialog>
 
-  <script src="assets/logo.js?v=14"></script>
-  <script src="assets/config.js?v=14"></script>
-  <script src="js/db.js?v=14"></script>
-  <script src="js/app.js?v=14"></script>
+  <script src="assets/logo.js?v=15"></script>
+  <script src="assets/config.js?v=15"></script>
+  <script src="js/db.js?v=15"></script>
+  <script src="js/app.js?v=15"></script>
+  <script src="js/i18n.js?v=15"></script>
 </body>
 </html>

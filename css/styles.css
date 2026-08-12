@@ -48,7 +48,10 @@
 
 body {
   font-family: system-ui, -apple-system, "Segoe UI Variable", "Segoe UI", sans-serif;
-  background: var(--mp-sky-2);
+  /* Fondo tech: textura de circuito casi invisible sobre el cielo */
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cg fill='none' stroke='%23CFE8F4' stroke-width='1'%3E%3Cpath d='M24 0v44h48M24 160v-34h66M160 68h-36V24M104 160v-28h56M0 110h30v-24'/%3E%3C/g%3E%3Cg fill='%23C2E2F1'%3E%3Ccircle cx='72' cy='44' r='2.2'/%3E%3Ccircle cx='90' cy='126' r='2.2'/%3E%3Ccircle cx='124' cy='24' r='2.2'/%3E%3Ccircle cx='30' cy='86' r='2.2'/%3E%3C/g%3E%3C/svg%3E"),
+    var(--mp-sky-2);
   color: var(--mp-ink);
   -webkit-font-smoothing: antialiased;
   position: relative;
@@ -246,6 +249,22 @@ body::after {
 }
 .btn-salir:hover, .btn-salir:focus-visible { color: var(--mp-cyan); outline: none; }
 
+/* 🌐 Cambio de idioma: muestra el idioma AL QUE cambias */
+.btn-idioma {
+  background: none;
+  color: var(--mp-cyan);
+  border: 1px dashed rgba(34,232,224,.5);
+  border-radius: 10px;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  font-family: inherit;
+}
+.btn-idioma::before { content: "🌐 "; }
+.btn-idioma:hover, .btn-idioma:focus-visible { border-style: solid; outline: none; }
+
 /* ============ Barra de herramientas (migas + acciones) ============ */
 .toolbar {
   max-width: 1120px;
@@ -341,10 +360,22 @@ body::after {
 }
 .categoria-card:hover, .categoria-card:focus-visible {
   transform: translateY(-3px);
-  box-shadow: var(--mp-shadow-lg);
+  box-shadow: var(--mp-shadow-lg), 0 0 22px rgba(34,232,224,.16);
   outline: none;
 }
-.cat-icono { font-size: 1.8rem; flex-shrink: 0; }
+.cat-icono { font-size: 1.8rem; flex-shrink: 0; display: flex; }
+.cat-icono svg {
+  width: 46px;
+  height: 46px;
+  filter: drop-shadow(0 0 7px rgba(34,232,224,.4));
+  transition: transform .24s var(--mp-ease), filter .24s var(--mp-ease);
+}
+.categoria-card:hover .cat-icono svg,
+.categoria-card:focus-visible .cat-icono svg {
+  transform: scale(1.07);
+  filter: drop-shadow(0 0 12px rgba(34,232,224,.65));
+}
+.categoria-card:active { transform: translateY(1px) scale(.985); }
 .cat-info { flex: 1; min-width: 0; }
 .cat-nombre { font-weight: 800; letter-spacing: -0.02em; font-size: 1.05rem; }
 .cat-conteo { font-size: 0.78rem; color: var(--mp-ink-2); margin-top: 3px; }
@@ -597,7 +628,23 @@ body::after {
   overflow: hidden;
   margin: 0.55rem 1rem 0 1.15rem;
 }
-.barra-relleno { height: 100%; background: var(--mp-grad); border-radius: 99px; }
+/* La energía fluye: el gradiente de las barras se mueve suavecito */
+.barra-relleno {
+  height: 100%;
+  background: var(--mp-grad);
+  background-size: 220% 100%;
+  border-radius: 99px;
+  animation: mp-flujo 5s linear infinite;
+}
+@keyframes mp-flujo {
+  from { background-position: 0% 0; }
+  to   { background-position: 220% 0; }
+}
+.accion:active, .aviso-linea:active, .etapa-card:active { transform: scale(.97); }
+@media (prefers-reduced-motion: reduce) {
+  .barra-relleno { animation: none; }
+  .btn-horas, .categoria-card, .cat-icono svg { transition: none; }
+}
 .barra-texto {
   font-size: 0.7rem;
   color: var(--mp-ink-2);
@@ -739,21 +786,52 @@ table.facturas tr.total td {
 .f-estado.pendiente { color: var(--mp-warn-tx); }
 
 /* ---------- Mis horas ---------- */
+/* Losetas de acción: teclas con profundidad que dan ganas de apretar */
 .btn-horas {
+  position: relative;
+  overflow: hidden;
   width: 100%;
-  background: var(--mp-deep);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  background: linear-gradient(160deg, #0E2A4C, var(--mp-deep) 60%);
   color: var(--mp-cyan);
   border: 1px solid rgba(34,232,224,.35);
-  border-radius: 14px;
-  padding: 0.8rem;
+  border-radius: 18px;
+  padding: 0.95rem 0.6rem 0.85rem;
   font-size: 0.92rem;
   font-weight: 800;
   cursor: pointer;
   font-family: inherit;
   margin-bottom: 0.9rem;
-  transition: transform .24s var(--mp-ease);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.08),
+    0 6px 16px rgba(7,26,46,.28),
+    0 2px 4px rgba(7,26,46,.22);
+  transition: transform .18s var(--mp-ease), box-shadow .18s var(--mp-ease);
 }
-.btn-horas:hover, .btn-horas:focus-visible { transform: translateY(-2px); outline: none; }
+/* Filo de luz con el gradiente firma */
+.btn-horas::after {
+  content: "";
+  position: absolute;
+  left: 12%; right: 12%; top: 0;
+  height: 2.5px;
+  background: var(--mp-grad);
+  border-radius: 99px;
+  opacity: .95;
+}
+.tile-ico { font-size: 1.5rem; line-height: 1; filter: drop-shadow(0 0 8px rgba(34,232,224,.55)); }
+.tile-txt { font-size: 0.8rem; letter-spacing: 0.01em; }
+.btn-horas:hover, .btn-horas:focus-visible {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.08),
+    0 10px 24px rgba(7,26,46,.32),
+    0 0 18px rgba(34,232,224,.22);
+  outline: none;
+}
+.btn-horas:active { transform: translateY(1px) scale(.97); box-shadow: 0 2px 6px rgba(7,26,46,.3); }
 .horas-form-card {
   background: var(--mp-card);
   border: 1px solid var(--mp-line);
@@ -1323,6 +1401,88 @@ table.desglose .neg { color: var(--mp-teal-text); font-weight: 800; }
 .equipo-dot.amarillo { background: #E8C51D; box-shadow: 0 0 0 3px rgba(232,197,29,.18); }
 .equipo-dot.rojo     { background: #D64545; box-shadow: 0 0 0 3px rgba(214,69,69,.18); }
 .equipo-dot.gris     { background: var(--mp-ink-3); }
+
+/* Alcance por puntos */
+.punto-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.4rem 0.2rem;
+  border-top: 1px solid var(--mp-sky-2);
+}
+.punto-item:first-of-type { border-top: none; }
+.punto-item.hecho .punto-texto { color: var(--mp-ink-3); text-decoration: line-through; }
+.punto-check, .punto-check-solo {
+  font-size: 1.05rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.1rem;
+  line-height: 1;
+}
+.punto-check-solo { cursor: default; }
+.punto-texto { flex: 1; font-size: 0.86rem; line-height: 1.4; color: var(--mp-ink); }
+.avance-linea { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.3rem; }
+.avance-num { font-size: 1.35rem; font-weight: 800; letter-spacing: -0.02em; color: var(--mp-teal-text); }
+.avance-detalle { font-size: 0.78rem; color: var(--mp-ink-2); }
+.punto-fila-form { grid-template-columns: 1fr auto; align-items: end; }
+.avance-mini {
+  font-size: 0.76rem;
+  color: var(--mp-ink-2);
+  padding: 0.45rem 1rem 0 1.15rem;
+}
+.avance-mini strong { color: var(--mp-teal-text); }
+
+/* Filtro y recibos en Materiales */
+.mat-filtro label {
+  display: grid;
+  gap: 0.28rem;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--mp-ink-2);
+}
+.mat-filtro select {
+  font: inherit;
+  font-size: 0.92rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--mp-line);
+  border-radius: 10px;
+  color: var(--mp-ink);
+  background: var(--mp-card);
+}
+.recibo-chip {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  border-radius: 999px;
+  padding: 0.24rem 0.5rem;
+  white-space: nowrap;
+  border: 1px solid var(--mp-line);
+}
+.recibo-chip.por_leer   { background: var(--mp-warn-bg); color: var(--mp-warn-tx); border-color: var(--mp-warn-bd); }
+.recibo-chip.leido      { background: var(--mp-sky-2); color: var(--mp-teal-text); }
+.recibo-chip.conciliado { background: #F3FBEC; color: #4C8A1F; border-color: #BFE8A8; }
+.mat-item.recibo-por_leer { border-color: var(--mp-warn-bd); background: var(--mp-warn-bg); }
+.mat-item.recibo-leido, .mat-item.recibo-conciliado { border-color: var(--mp-line); background: var(--mp-card); }
+.btn-importar-recibo { margin-bottom: 0.55rem; }
+
+/* Gaveta de costos dentro de Gastos */
+.costos-gaveta summary {
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--mp-ink);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.costos-gaveta summary::before { content: "▸"; color: var(--mp-teal-text); transition: transform .2s; }
+.costos-gaveta[open] summary::before { transform: rotate(90deg); }
+.costos-gaveta .gaveta-nota { font-size: 0.7rem; font-weight: 400; color: var(--mp-ink-3); }
+.costos-gaveta[open] { padding-bottom: 0.3rem; }
 
 /* Control de gastos */
 .mat-precio {

@@ -98,8 +98,9 @@
   const actualizar = (ruta, cambios) => api(ruta, { metodo: "PATCH", cuerpo: cambios });
 
   // ---------- Fotos (Supabase Storage, almacén privado) ----------
-  async function subirFoto(proyectoId, blob, tipo) {
-    const ruta = `${proyectoId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+  // carpeta opcional: "recibos" guarda la foto en recibos/<proyecto>/...
+  async function subirFoto(proyectoId, blob, tipo, carpeta) {
+    const ruta = `${carpeta ? carpeta + "/" : ""}${proyectoId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
     const r = await fetch(`${SB.url}/storage/v1/object/fotos/${ruta}`, {
       method: "POST",
       headers: {
@@ -142,9 +143,10 @@
   async function cargarTodo() {
     const [perfiles, proyectos, finanzas, alcances, alcancesEquipo,
            hitos, facturas, horas, eventos, pendientes, documentos, fotos,
-           inspecciones, materiales, materialesEquipo, costos, externos] =
+           inspecciones, materiales, materialesEquipo, costos, externos,
+           gestiones, recibos, recibosEquipo, alcancePuntos] =
       await Promise.all([
-        leer("perfiles?select=id,nombre,rol"),
+        leer("perfiles?select=*"),
         leer("proyectos?select=*&order=nombre"),
         leer("finanzas_proyecto?select=*").catch(() => []),
         leer("alcances?select=*&order=orden").catch(() => []),
@@ -161,7 +163,11 @@
         leer("materiales?select=*&order=creado").catch(() => []),
         leer("materiales_equipo?select=*&order=creado").catch(() => []),
         leer("costos_equipo?select=*").catch(() => []),
-        leer("trabajos_externos?select=*&order=fecha").catch(() => [])
+        leer("trabajos_externos?select=*&order=fecha").catch(() => []),
+        leer("gestiones?select=*&order=creado").catch(() => []),
+        leer("recibos?select=*&order=creado").catch(() => []),
+        leer("recibos_equipo?select=*&order=creado").catch(() => []),
+        leer("alcance_puntos?select=*&order=orden").catch(() => [])
       ]);
 
     const nombrePorId = Object.fromEntries(perfiles.map(p => [p.id, p.nombre]));
@@ -236,7 +242,10 @@
     return {
       perfil: miPerfil,
       nombrePorId,
-      equipo: perfiles,
+      equipo: perfiles.map(u => ({
+        id: u.id, nombre: u.nombre, rol: u.rol,
+        activo: u.activo !== false
+      })),
       proyectos: lista,
       eventos: eventos.map(e => ({
         id: e.id, fecha: e.fecha, hora: e.hora || "", titulo: e.titulo,
@@ -280,6 +289,23 @@
         fecha: x.fecha || "", tipo: x.tipo || "ajuste",
         horas: x.horas !== undefined && x.horas !== null ? Number(x.horas) : null,
         costo: Number(x.costo)
+      })),
+      gestiones: gestiones.map(g => ({
+        id: g.id, proyecto: g.proyecto_id, descripcion: g.descripcion,
+        hecha: !!g.hecha, autor: nombrePorId[g.autor_id] || "",
+        fecha: g.creado ? String(g.creado).slice(0, 10) : ""
+      })),
+      // El dueño lee la tabla completa (con totales); el equipo la versión sin dinero
+      recibos: (recibos.length ? recibos : recibosEquipo).map(r => ({
+        id: r.id, proyecto: r.proyecto_id, ruta: r.ruta || "",
+        total: r.total !== undefined && r.total !== null ? Number(r.total) : null,
+        proveedor: r.proveedor || "", notas: r.notas || "",
+        estado: r.estado || "por_leer", autor: nombrePorId[r.autor_id] || "",
+        fecha: r.creado ? String(r.creado).slice(0, 10) : ""
+      })),
+      puntos: alcancePuntos.map(a => ({
+        id: a.id, proyecto: a.proyecto_id, texto: a.texto,
+        hecho: !!a.hecho, orden: a.orden || 0
       }))
     };
   }
@@ -302,6 +328,33 @@
     eliminarHoras: id => api(`horas?id=eq.${id}`, { metodo: "DELETE" }),
     crearExterno: fila => insertar("trabajos_externos", fila),
     eliminarExterno: id => api(`trabajos_externos?id=eq.${id}`, { metodo: "DELETE" }),
+    crearGestion: fila => insertar("gestiones", { ...fila, autor_id: uid() }),
+    cambiarGestion: (id, cambios) => actualizar(`gestiones?id=eq.${id}`, cambios),
+    eliminarGestion: id => api(`gestiones?id=eq.${id}`, { metodo: "DELETE" }),
+    // ---------- Estimador (solo dueño; se carga aparte, no pesa el arranque) ----------
+    cargarEstimador: async () => {
+      const [catalogo, escenarios, estimados, items] = await Promise.all([
+        leer("catalogo_items?select=*&order=orden").catch(() => []),
+        leer("escenarios?select=*&order=id").catch(() => []),
+        leer("estimados?select=*&order=creado.desc").catch(() => []),
+        leer("estimado_items?select=*&order=orden").catch(() => [])
+      ]);
+      return { catalogo, escenarios, estimados, items };
+    },
+    crearEstimado: fila => insertar("estimados", fila),
+    cambiarEstimado: (id, cambios) => actualizar(`estimados?id=eq.${id}`, cambios),
+    eliminarEstimado: id => api(`estimados?id=eq.${id}`, { metodo: "DELETE" }),
+    crearItemEstimado: fila => insertar("estimado_items", fila),
+    cambiarItemEstimado: (id, cambios) => actualizar(`estimado_items?id=eq.${id}`, cambios),
+    eliminarItemEstimado: id => api(`estimado_items?id=eq.${id}`, { metodo: "DELETE" }),
+    crearHito: fila => insertar("hitos", fila),
+    cambiarPerfil: (id, cambios) => actualizar(`perfiles?id=eq.${id}`, cambios),
+    crearPunto: fila => insertar("alcance_puntos", fila),
+    cambiarPunto: (id, cambios) => actualizar(`alcance_puntos?id=eq.${id}`, cambios),
+    eliminarPunto: id => api(`alcance_puntos?id=eq.${id}`, { metodo: "DELETE" }),
+    crearRecibo: fila => insertar("recibos", { ...fila, autor_id: uid() }),
+    cambiarRecibo: (id, cambios) => actualizar(`recibos?id=eq.${id}`, cambios),
+    eliminarRecibo: id => api(`recibos?id=eq.${id}`, { metodo: "DELETE" }),
     crearDocumento: fila => insertar("documentos", fila),
     subirFoto,
     firmarFotos,

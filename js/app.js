@@ -17,10 +17,34 @@
   const DB = window.MXP_DB;
 
   // ---------- Constantes de la app ----------
+  // Íconos eléctricos dibujados a medida: trazo con el gradiente firma
+  // y nodos de circuito — la marca "electricidad + tecnología"
+  const GRAD = (id) => `<defs><linearGradient id="${id}" x1="0" y1="1" x2="1" y2="0">
+    <stop offset="0" stop-color="#1B3C8C"/><stop offset=".45" stop-color="#2A5BD7"/>
+    <stop offset=".78" stop-color="#22E8E0"/><stop offset="1" stop-color="#8CF06A"/>
+  </linearGradient></defs>`;
+  const ICONO_SVG = {
+    comercial: `<svg viewBox="0 0 48 48" aria-hidden="true">${GRAD("g-com")}
+      <g fill="none" stroke="url(#g-com)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 42V16h14v26"/><path d="M22 42V8h18v34"/><path d="M4 42h40"/>
+        <path d="M27 14h3M34 14h3M27 21h3M34 21h3M27 28h3M34 28h3M12 22h4M12 29h4"/>
+        <path d="M14 42v-6h5v6"/>
+      </g>
+      <circle cx="41" cy="7" r="2.4" fill="#22E8E0"/></svg>`,
+    residencial: `<svg viewBox="0 0 48 48" aria-hidden="true">${GRAD("g-res")}
+      <g fill="none" stroke="url(#g-res)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 25 24 9l18 16"/><path d="M11 23v19h26V23"/>
+      </g>
+      <path d="M26 21l-8 11h6l-4 9 11-13h-6l4-7z" fill="#22E8E0"/></svg>`,
+    servicio: `<svg viewBox="0 0 48 48" aria-hidden="true">${GRAD("g-ser")}
+      <path d="M24 4l16 9v20l-16 9-16-9V13z" fill="none" stroke="url(#g-ser)"
+        stroke-width="2.4" stroke-linejoin="round"/>
+      <path d="M27 13l-10 14h7l-5 12 13-15h-7l5-11z" fill="#22E8E0"/></svg>`
+  };
   const TIPOS = {
-    comercial:   { etiqueta: "Proyectos Comerciales",   icono: "🏢" },
-    residencial: { etiqueta: "Proyectos Residenciales", icono: "🏠" },
-    servicio:    { etiqueta: "Servicios",               icono: "🔧" }
+    comercial:   { etiqueta: "Proyectos Comerciales",   icono: ICONO_SVG.comercial },
+    residencial: { etiqueta: "Proyectos Residenciales", icono: ICONO_SVG.residencial },
+    servicio:    { etiqueta: "Servicios",               icono: ICONO_SVG.servicio }
   };
   const ESTADOS = {
     enviado:    { etiqueta: "Enviado" },
@@ -64,7 +88,7 @@
   const $home = $("vista-home"), $vEtapas = $("vista-etapas"), $vLista = $("vista-lista");
   const $vHoras = $("vista-horas"), $vCal = $("vista-calendario");
   const $vDetalle = $("vista-detalle"), $detalle = $("detalle");
-  const $vMat = $("vista-materiales"), $vCostos = $("vista-costos");
+  const $vMat = $("vista-materiales");
   const $categorias = $("categorias"), $resumen = $("resumen");
   const $etapas = $("etapas"), $lista = $("lista"), $buscador = $("buscador");
   const $kicker = $("kicker"), $titulo = $("titulo-vista");
@@ -202,7 +226,6 @@
     else if (!$vCal.hidden) pintarCalendario();
     else if (!$vHoras.hidden) prepararHoras();
     else if (!$vMat.hidden) pintarMateriales();
-    else if (!$vCostos.hidden) pintarCostos();
     else if (!$("vista-gastos").hidden) pintarGastos();
     else { pintarInicio(); pintarCategorias(); pintarResumen(); }
   }
@@ -216,8 +239,8 @@
     $vCal.hidden = vista !== "calendario";
     $vDetalle.hidden = vista !== "detalle";
     $vMat.hidden = vista !== "materiales";
-    $vCostos.hidden = vista !== "costos";
     $("vista-gastos").hidden = vista !== "gastos";
+    $("vista-estimador").hidden = vista !== "estimador";
     $kicker.textContent = kicker;
     $titulo.textContent = titulo;
     $btnVolver.hidden = !volver;
@@ -232,8 +255,8 @@
     tipoActivo = null;
     etapaActiva = null;
     mostrar("home", { kicker: "Panel de proyectos", titulo: "Categorías", volver: false, nuevo: true });
-    $("btn-costos").hidden = !usuario.finanzas;
     $("btn-gastos").hidden = !usuario.finanzas;
+    $("btn-estimador").hidden = !usuario.finanzas;
     pintarInicio();
     pintarCategorias();
     pintarResumen();
@@ -362,10 +385,20 @@
   function pintarInicioAvisos() {
     if (!usuario.finanzas) { $("inicio-avisos").innerHTML = ""; return; }
     const avisos = [];
-    // Materiales que el equipo pidió y siguen sin comprarse
-    const porComprar = (state.materiales || []).filter(m => m.estado === "falta").length;
-    if (porComprar)
-      avisos.push({ accion: "materiales", icono: "🛒", texto: `${porComprar} material${porComprar > 1 ? "es" : ""} por comprar — toca para ver la lista` });
+    // 🚀 Proyectos con cosas pendientes para arrancar (materiales + gestiones)
+    for (const p of proyectos()) {
+      if (!["aprobado", "ejecucion"].includes(p.estado)) continue;
+      const fa = faltaArranque(p.id);
+      if (fa.materiales + fa.gestiones === 0) continue;
+      const partes = [];
+      if (fa.materiales) partes.push(`${fa.materiales} material${fa.materiales > 1 ? "es" : ""}`);
+      if (fa.gestiones) partes.push(`${fa.gestiones} gestión${fa.gestiones > 1 ? "es" : ""}`);
+      avisos.push({ accion: "arranque", id: p.id, icono: "🚀", texto: `${p.nombre} — ${partes.join(" y ")} para arrancar` });
+    }
+    // Materiales generales (sin proyecto) que siguen sin comprarse
+    const porComprarGral = (state.materiales || []).filter(m => m.estado === "falta" && !m.proyecto).length;
+    if (porComprarGral)
+      avisos.push({ accion: "materiales", icono: "🛒", texto: `${porComprarGral} material${porComprarGral > 1 ? "es" : ""} general${porComprarGral > 1 ? "es" : ""} por comprar` });
     for (const p of proyectos()) {
       for (const f of facturasPendientes(p)) {
         const dias = diasDesde(f.fechaISO);
@@ -406,15 +439,19 @@
           </button>`).join("")}
       </div>`;
     $("inicio-avisos").querySelectorAll(".aviso-linea").forEach(btn => {
-      btn.addEventListener("click", () =>
-        btn.dataset.accion === "materiales" ? irMateriales() : irDetalle(btn.dataset.id));
+      btn.addEventListener("click", () => {
+        if (btn.dataset.accion === "materiales") irMateriales();
+        else if (btn.dataset.accion === "arranque") irMateriales(btn.dataset.id);
+        else irDetalle(btn.dataset.id);
+      });
     });
   }
 
   // ¿Quién reportó horas? (solo dueño)
   function pintarInicioEquipo() {
     if (!usuario.finanzas) { $("inicio-equipo").innerHTML = ""; return; }
-    const equipo = (state.equipo || []).filter(u => u.rol !== "dueno");
+    // Solo los de campo ACTIVOS: Gustavo (license) no reporta horas de obra
+    const equipo = (state.equipo || []).filter(u => u.rol === "campo" && u.activo);
     if (!equipo.length) { $("inicio-equipo").innerHTML = ""; return; }
     const filas = equipo.map(u => {
       const mios = (state.registroHoras || []).filter(r => r.usuarioId === u.id);
@@ -542,6 +579,11 @@
   }
 
   $btnVolver.addEventListener("click", () => {
+    if (!$("vista-estimador").hidden) {
+      if (estimadoActivo) { estimadoActivo = null; pintarEstimador(); return; }
+      irHome();
+      return;
+    }
     if (!$vDetalle.hidden) {
       proyectoActivo = null;
       if (tipoActivo && etapaActiva) { irLista(etapaActiva); return; }
@@ -725,10 +767,19 @@
       presupuesto: p.horas && p.horas.estimadas > 0 ? p.horas.estimadas * promedio : null
     };
   }
-  // Materiales comprados con precio anotado
-  const gastoMateriales = pid => (state.materiales || [])
-    .filter(m => m.proyecto === pid && m.estado === "comprado" && typeof m.precio === "number")
-    .reduce((s, m) => s + m.precio, 0);
+  // Materiales comprados con precio anotado + recibos con total
+  const gastoMateriales = pid =>
+    (state.materiales || [])
+      .filter(m => m.proyecto === pid && m.estado === "comprado" && typeof m.precio === "number")
+      .reduce((s, m) => s + m.precio, 0) +
+    (state.recibos || [])
+      .filter(r => r.proyecto === pid && typeof r.total === "number")
+      .reduce((s, r) => s + r.total, 0);
+  // Lo que falta para arrancar un proyecto (materiales + gestiones)
+  const faltaArranque = pid => ({
+    materiales: (state.materiales || []).filter(m => m.proyecto === pid && m.estado === "falta").length,
+    gestiones: (state.gestiones || []).filter(g => g.proyecto === pid && !g.hecha).length
+  });
   // Ayuda externa (contratados por día o por ajuste)
   const gastoExternos = pid => (state.externos || [])
     .filter(x => x.proyecto === pid)
@@ -749,8 +800,8 @@
     const mo = costoManoDeObra(p);
     if (!mo) {
       return `<div class="detalle-seccion"><h3>Rentabilidad y gastos</h3>
-        <p>Define el costo por hora del equipo en <strong>💲 Costos del equipo</strong>
-        (botón del inicio) y aquí verás la ganancia real de este proyecto.</p></div>`;
+        <p>Define el costo por hora del equipo en <strong>📊 Gastos → 💲 Costos del equipo</strong>
+        y aquí verás la ganancia real de este proyecto.</p></div>`;
     }
     const matGasto = gastoMateriales(p.id);
     const matPresu = p.presupuestoMateriales;
@@ -775,6 +826,81 @@
         <div class="barra horas-barra"><div class="barra-relleno ${clase}" style="width:${Math.max(0, Math.min(100, pct))}%"></div></div>
         <p class="rent-nota">Sale de las horas reportadas × el costo de cada trabajador, más los
         materiales comprados con precio. El presupuesto de materiales se define en 📊 Gastos.</p>
+      </div>`;
+  }
+
+  // Avance de obra: % de cumplimiento según los puntos del alcance
+  function avanceObra(pid) {
+    const puntos = (state.puntos || []).filter(x => x.proyecto === pid);
+    if (!puntos.length) return null;
+    const hechos = puntos.filter(x => x.hecho).length;
+    return { hechos, total: puntos.length, pct: Math.round((hechos / puntos.length) * 100) };
+  }
+
+  // Alcance por puntos: el scope con palomitas (todos lo ven; dueño palomea)
+  function puntosHTML(p) {
+    const puntos = (state.puntos || []).filter(x => x.proyecto === p.id);
+    const av = avanceObra(p.id);
+    const filas = puntos.map(x => `
+      <div class="punto-item${x.hecho ? " hecho" : ""}">
+        ${usuario.editar
+          ? `<button class="punto-check" data-id="${x.id}" data-hecho="${x.hecho ? "1" : ""}" title="Marcar ${x.hecho ? "pendiente" : "terminado"}">${x.hecho ? "✅" : "⬜"}</button>`
+          : `<span class="punto-check-solo">${x.hecho ? "✅" : "⬜"}</span>`}
+        <span class="punto-texto">${esc(sinMontos(x.texto))}</span>
+        ${usuario.editar ? `<button class="insp-borrar btn-punto-borrar" data-id="${x.id}" title="Eliminar punto">🗑</button>` : ""}
+      </div>`).join("");
+    const formAgregar = usuario.editar ? `
+      <form class="cal-form form-punto">
+        <div class="modal-fila punto-fila-form">
+          <label>Agregar punto al alcance
+            <input name="texto" type="text" required placeholder="Ej: instalar los 25 recessed del living" autocomplete="off">
+          </label>
+          <button type="submit" class="accion secundaria">+ Agregar</button>
+        </div>
+      </form>` : "";
+    if (!puntos.length && !usuario.editar) return "";
+    return `
+      <div class="detalle-seccion">
+        <h3>Alcance del trabajo — ¿qué se dijo que se iba a hacer?</h3>
+        ${av ? `
+        <div class="avance-linea">
+          <span class="avance-num">${av.pct}%</span>
+          <span class="avance-detalle">completado · ${av.hechos} de ${av.total} puntos</span>
+        </div>
+        <div class="barra horas-barra"><div class="barra-relleno ${av.pct >= 100 ? "ok" : ""}" style="width:${av.pct}%"></div></div>` : ""}
+        ${filas || `<p class="sin-docs">Sin puntos todavía — agrégalos aquí abajo.</p>`}
+        ${formAgregar}
+      </div>`;
+  }
+
+  // 🚀 Arranque: lo que falta para empezar (mismos registros que 🛒)
+  function arranqueHTML(p) {
+    if (!["enviado", "aprobado", "ejecucion", "pausa"].includes(p.estado)) return "";
+    const matsFalta = (state.materiales || []).filter(m => m.proyecto === p.id && m.estado === "falta");
+    const gests = (state.gestiones || []).filter(g => g.proyecto === p.id && !g.hecha);
+    if (!matsFalta.length && !gests.length) return "";
+    const filasM = matsFalta.map(m => `
+      <div class="mat-item falta">
+        <span class="mat-icono">🛒</span>
+        <span class="alcance-info">
+          <span class="alcance-titulo">${esc(sinMontos(m.descripcion))}${m.cantidad ? ` <span class="mat-cant">— ${esc(m.cantidad)}</span>` : ""}</span>
+          <span class="alcance-estado">material por comprar</span>
+        </span>
+      </div>`).join("");
+    const filasG = gests.map(g => `
+      <div class="mat-item falta">
+        <span class="mat-icono">📌</span>
+        <span class="alcance-info">
+          <span class="alcance-titulo">${esc(sinMontos(g.descripcion))}</span>
+          <span class="alcance-estado">gestión pendiente · ${esc(g.autor)}</span>
+        </span>
+        ${usuario.editar ? `<button class="accion btn-gestion-hecha-ficha" data-id="${g.id}">✓ Hecha</button>` : ""}
+      </div>`).join("");
+    return `
+      <div class="detalle-seccion">
+        <h3>🚀 Arranque — lo que falta para empezar</h3>
+        ${filasM}${filasG}
+        <button type="button" class="accion secundaria btn-ir-materiales" data-id="${esc(p.id)}">Ver en Materiales ›</button>
       </div>`;
   }
 
@@ -1007,6 +1133,12 @@
         ${avisoFacturasHTML(p)}
         ${franjaDineroHTML(p)}
         ${proximoCobroHTML(p)}
+        ${(() => {
+          const av = avanceObra(p.id);
+          return av && p.estado !== "completado"
+            ? `<div class="avance-mini">🔧 Avance de obra: <strong>${av.pct}%</strong> (${av.hechos} de ${av.total} puntos)</div>`
+            : "";
+        })()}
         <div class="abrir-ficha">Ver proyecto completo <span class="cat-flecha">›</span></div>
       </article>`;
   }
@@ -1053,6 +1185,8 @@
         <div class="proyecto-detalle">
           <div class="detalle-seccion"><h3>Situación</h3><p>${esc(sinMontos(p.estadoDetalle))}</p></div>
           <div class="detalle-seccion"><h3>Próxima acción</h3><p>${esc(sinMontos(p.proximaAccion))}</p></div>
+          ${puntosHTML(p)}
+          ${arranqueHTML(p)}
           ${stepperHTML(p)}
           ${horasHTML(p)}
           ${desgloseHTML(p)}
@@ -1308,6 +1442,55 @@
         }
       });
     });
+
+    // Alcance por puntos: palomear, agregar y eliminar (solo dueño)
+    $detalle.querySelectorAll(".punto-check").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        try {
+          await DB.cambiarPunto(btn.dataset.id, { hecho: !btn.dataset.hecho });
+          await recargar();
+          avisar(btn.dataset.hecho ? "Punto devuelto a pendiente" : "Punto completado ✓");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    const formPunto = $detalle.querySelector(".form-punto");
+    if (formPunto) {
+      formPunto.addEventListener("submit", async e => {
+        e.preventDefault();
+        const texto = (new FormData(formPunto).get("texto") || "").toString().trim();
+        if (!texto) return;
+        const maxOrden = Math.max(0, ...(state.puntos || [])
+          .filter(x => x.proyecto === p.id).map(x => x.orden));
+        try {
+          await DB.crearPunto({ proyecto_id: p.id, texto, orden: maxOrden + 1 });
+          await recargar();
+          avisar("Punto agregado ✓");
+        } catch (err) { avisar("No se pudo agregar: " + err.message, true); }
+      });
+    }
+    $detalle.querySelectorAll(".btn-punto-borrar").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("¿Eliminar este punto del alcance?")) return;
+        try {
+          await DB.eliminarPunto(btn.dataset.id);
+          await recargar();
+          avisar("Punto eliminado ✓");
+        } catch (err) { avisar("No se pudo eliminar: " + err.message, true); }
+      });
+    });
+
+    // 🚀 Arranque: marcar gestión hecha o saltar a Materiales
+    $detalle.querySelectorAll(".btn-gestion-hecha-ficha").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        try {
+          await DB.cambiarGestion(btn.dataset.id, { hecha: true });
+          await recargar();
+          avisar("Gestión hecha ✓");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    const btnIrMat = $detalle.querySelector(".btn-ir-materiales");
+    if (btnIrMat) btnIrMat.addEventListener("click", () => irMateriales(btnIrMat.dataset.id));
 
     // "+ Anotar trabajo externo" (solo dueño)
     const btnExt = $detalle.querySelector(".btn-agregar-ext");
@@ -1618,16 +1801,21 @@
   // Palabras que hacen que un pendiente "suene a material"
   const REG_MATERIAL = /falt|material|cable|wire|breaker|conduit|emt|romex|tubo|caja|toma|receptacle|luminaria|fixture|comprar|alambre|panel/i;
 
-  function irMateriales() {
-    mostrar("materiales", { kicker: "Compras", titulo: "Materiales", volver: true, nuevo: false });
+  let filtroMateriales = "";  // "" = todos los proyectos
+  function irMateriales(proyectoId) {
+    filtroMateriales = proyectoId || "";
+    mostrar("materiales", { kicker: "Compras y arranque", titulo: "Materiales", volver: true, nuevo: false });
     pintarMateriales();
   }
-  $("btn-materiales").addEventListener("click", irMateriales);
+  $("btn-materiales").addEventListener("click", () => irMateriales());
 
   function pintarMateriales() {
-    const mats = state.materiales || [];
+    const pasaFiltro = x => !filtroMateriales || x.proyecto === filtroMateriales;
+    const mats = (state.materiales || []).filter(pasaFiltro);
     const faltan = mats.filter(m => m.estado === "falta");
     const comprados = mats.filter(m => m.estado === "comprado").slice(-10).reverse();
+    const gestAbiertas = (state.gestiones || []).filter(g => !g.hecha && pasaFiltro(g));
+    const recibosVista = (state.recibos || []).filter(pasaFiltro).slice(-8).reverse();
     const nombreProy = id => {
       const p = proyectos().find(x => x.id === id);
       return p ? p.nombre : "General";
@@ -1679,18 +1867,97 @@
 
     // Pendientes de obra abiertos que suenan a material (y que no
     // hayan sido pasados ya a la lista)
-    const yaPasados = new Set(mats.map(m => m.origenPendiente).filter(Boolean));
+    const yaPasados = new Set((state.materiales || []).map(m => m.origenPendiente).filter(Boolean));
     const sugeridos = pendientesAbiertos()
-      .filter(x => REG_MATERIAL.test(x.descripcion) && !yaPasados.has(x.id));
+      .filter(x => REG_MATERIAL.test(x.descripcion) && !yaPasados.has(x.id) && pasaFiltro(x));
 
-    const opciones = proyectos()
-      .filter(x => ["ejecucion", "aprobado", "pausa"].includes(x.estado))
+    const activosLista = proyectos()
+      .filter(x => ["ejecucion", "aprobado", "pausa"].includes(x.estado));
+    const opciones = activosLista
       .map(x => `<option value="${esc(x.id)}">${esc(x.nombre)}</option>`).join("");
+    const opcionesFiltro = `<option value=""${!filtroMateriales ? " selected" : ""}>Todos los proyectos</option>` +
+      activosLista.map(x =>
+        `<option value="${esc(x.id)}"${x.id === filtroMateriales ? " selected" : ""}>${esc(x.nombre)}</option>`).join("");
+
+    const RES_RECIBO = { por_leer: "POR LEER", leido: "LEÍDO", conciliado: "CONCILIADO ✓" };
+    const filaRecibo = r => `
+      <div class="mat-item recibo-${esc(r.estado)}">
+        <span class="recibo-chip ${esc(r.estado)}">${RES_RECIBO[r.estado] || r.estado}</span>
+        <span class="alcance-info">
+          <span class="alcance-titulo">${esc(r.proveedor || "Recibo")}${r.notas ? ` <span class="mat-cant">— ${esc(sinMontos(r.notas))}</span>` : ""}</span>
+          <span class="alcance-estado">${esc(nombreProy(r.proyecto))} · ${esc(r.autor)} ${esc(r.fecha)}</span>
+        </span>
+        ${usuario.finanzas && typeof r.total === "number" ? `<span class="mat-precio">${fmt(r.total)}</span>` : ""}
+        ${r.ruta ? `<a class="doc-link recibo-ver" data-ruta="${esc(r.ruta)}" target="_blank" rel="noopener">📄 Ver</a>` : ""}
+        ${usuario.finanzas ? `<button class="insp-borrar btn-recibo-total" data-id="${r.id}" title="Poner o corregir el total">✎</button>` : ""}
+        ${usuario.editar ? `<button class="insp-borrar btn-recibo-borrar" data-id="${r.id}" title="Eliminar">🗑</button>` : ""}
+      </div>`;
 
     $("materiales-panel").innerHTML = `
+      <div class="cal-panel-card mat-filtro">
+        <label>Ver
+          <select id="filtro-mat">${opcionesFiltro}</select>
+        </label>
+      </div>
       <div class="cal-panel-card">
         <div class="cal-form-titulo">Por comprar (${faltan.length})</div>
         ${faltan.map(filaMat).join("") || `<p class="cal-sin-eventos">Nada pendiente de comprar. 👌</p>`}
+      </div>
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">🚀 Gestiones de arranque (${gestAbiertas.length})</div>
+        ${gestAbiertas.map(g => `
+          <div class="mat-item falta">
+            <span class="mat-icono">📌</span>
+            <span class="alcance-info">
+              <span class="alcance-titulo">${esc(sinMontos(g.descripcion))}</span>
+              <span class="alcance-estado">${esc(nombreProy(g.proyecto))} · ${esc(g.autor)} ${esc(g.fecha)}</span>
+            </span>
+            ${usuario.editar ? `<button class="accion btn-gestion-hecha" data-id="${g.id}">✓ Hecha</button>
+            <button class="insp-borrar btn-gestion-borrar" data-id="${g.id}" title="Eliminar">🗑</button>` : ""}
+          </div>`).join("") || `<p class="cal-sin-eventos">Sin gestiones pendientes.</p>`}
+        <form id="form-gestion" class="cal-form">
+          <div class="modal-fila">
+            <label>Proyecto
+              <select name="proyecto">
+                <option value="">— General —</option>
+                ${opciones}
+              </select>
+            </label>
+            <label>Gestión (qué hay que hacer)
+              <input name="descripcion" type="text" required placeholder="Ej: rentar la zanjadora" autocomplete="off">
+            </label>
+          </div>
+          <button type="submit" class="accion secundaria">+ Agregar gestión</button>
+        </form>
+      </div>
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">📷 Recibos de compras</div>
+        <button type="button" class="accion secundaria btn-importar-recibo">📷 Importar recibo</button>
+        <form id="form-recibo" class="cal-form" hidden>
+          <label>Foto del recibo (cámara o galería)
+            <input name="archivo" type="file" accept="image/*" required>
+          </label>
+          <label>Proyecto
+            <select name="proyecto">
+              <option value="">— General —</option>
+              ${opciones}
+            </select>
+          </label>
+          ${usuario.finanzas ? `
+          <div class="modal-fila">
+            <label>Total ($) — o déjalo vacío y la rutina lo lee de la foto
+              <input name="total" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Ej: 342.18">
+            </label>
+            <label>Proveedor (opcional)
+              <input name="proveedor" type="text" placeholder="Ej: Home Depot" autocomplete="off">
+            </label>
+          </div>` : ""}
+          <label>Nota (opcional)
+            <input name="notas" type="text" placeholder="Ej: compra del rough" autocomplete="off">
+          </label>
+          <button type="submit" class="accion">⬆ Subir recibo</button>
+        </form>
+        ${recibosVista.map(filaRecibo).join("") || `<p class="cal-sin-eventos">Sin recibos todavía.</p>`}
       </div>
       ${sugeridos.length ? `
       <div class="cal-panel-card">
@@ -1814,6 +2081,120 @@
         } catch (err) { avisar("No se pudo pasar: " + err.message, true); }
       });
     });
+
+    // Filtro por proyecto
+    $("filtro-mat").addEventListener("change", e => {
+      filtroMateriales = e.target.value;
+      pintarMateriales();
+    });
+
+    // Gestiones de arranque
+    $("form-gestion").addEventListener("submit", async e => {
+      e.preventDefault();
+      const d = new FormData(e.target);
+      try {
+        await DB.crearGestion({
+          proyecto_id: d.get("proyecto") || null,
+          descripcion: (d.get("descripcion") || "").toString().trim()
+        });
+        await recargar();
+        avisar("Gestión anotada ✓");
+      } catch (err) { avisar("No se pudo anotar: " + err.message, true); }
+    });
+    $("materiales-panel").querySelectorAll(".btn-gestion-hecha").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        try {
+          await DB.cambiarGestion(btn.dataset.id, { hecha: true });
+          await recargar();
+          avisar("Gestión hecha ✓");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    $("materiales-panel").querySelectorAll(".btn-gestion-borrar").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("¿Eliminar esta gestión?")) return;
+        try {
+          await DB.eliminarGestion(btn.dataset.id);
+          await recargar();
+          avisar("Gestión eliminada ✓");
+        } catch (err) { avisar("No se pudo eliminar: " + err.message, true); }
+      });
+    });
+
+    // Recibos por foto
+    const btnRecibo = $("materiales-panel").querySelector(".btn-importar-recibo");
+    const formRecibo = $("form-recibo");
+    btnRecibo.addEventListener("click", () => { formRecibo.hidden = !formRecibo.hidden; });
+    formRecibo.addEventListener("submit", async e => {
+      e.preventDefault();
+      const archivo = formRecibo.elements.archivo.files[0];
+      if (!archivo) return;
+      const d = new FormData(formRecibo);
+      const $btn = formRecibo.querySelector('button[type="submit"]');
+      $btn.disabled = true;
+      $btn.textContent = "Subiendo…";
+      try {
+        const blob = await reducirImagen(archivo).catch(() => archivo);
+        const pid = d.get("proyecto") || "general";
+        const ruta = await DB.subirFoto(pid, blob, blob.type || archivo.type, "recibos");
+        const fila = {
+          proyecto_id: d.get("proyecto") || null,
+          ruta,
+          notas: (d.get("notas") || "").toString().trim() || null
+        };
+        if (usuario.finanzas) {
+          const totalTxt = (d.get("total") || "").toString().trim();
+          if (totalTxt !== "" && Number.isFinite(Number(totalTxt))) {
+            fila.total = Number(totalTxt);
+            fila.estado = "leido";
+          }
+          const prov = (d.get("proveedor") || "").toString().trim();
+          if (prov) fila.proveedor = prov;
+        }
+        await DB.crearRecibo(fila);
+        await recargar();
+        avisar(fila.total !== undefined
+          ? `Recibo subido ✓ — ${fmt(fila.total)} anotado al proyecto`
+          : "Recibo subido ✓ — la rutina le pondrá el total al leerlo (12pm/6pm)");
+      } catch (err) {
+        avisar("No se pudo subir el recibo: " + err.message, true);
+        $btn.disabled = false;
+        $btn.textContent = "⬆ Subir recibo";
+      }
+    });
+    $("materiales-panel").querySelectorAll(".btn-recibo-total").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const respuesta = prompt("Total del recibo (solo el número, ej: 342.18):");
+        if (respuesta === null) return;
+        const limpio = respuesta.replace(/[$,\s]/g, "");
+        const total = Number(limpio);
+        if (!limpio || !Number.isFinite(total)) { avisar("Ese total no se entendió", true); return; }
+        try {
+          await DB.cambiarRecibo(btn.dataset.id, { total, estado: "leido" });
+          await recargar();
+          avisar(`Total ${fmt(total)} anotado ✓`);
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    $("materiales-panel").querySelectorAll(".btn-recibo-borrar").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("¿Eliminar este recibo?")) return;
+        try {
+          await DB.eliminarRecibo(btn.dataset.id);
+          await recargar();
+          avisar("Recibo eliminado ✓");
+        } catch (err) { avisar("No se pudo eliminar: " + err.message, true); }
+      });
+    });
+    // Enlaces firmados para ver las fotos de los recibos
+    const rutasRecibos = [...$("materiales-panel").querySelectorAll(".recibo-ver")].map(a => a.dataset.ruta);
+    if (rutasRecibos.length) {
+      DB.firmarFotos(rutasRecibos).then(mapa => {
+        $("materiales-panel").querySelectorAll(".recibo-ver").forEach(a => {
+          if (mapa[a.dataset.ruta]) a.href = mapa[a.dataset.ruta];
+        });
+      }).catch(() => {});
+    }
   }
 
   // ============================================================
@@ -1829,11 +2210,9 @@
   function pintarGastos() {
     const activos = proyectos()
       .filter(p => ["ejecucion", "aprobado", "pausa"].includes(p.estado));
-    if (!activos.length) {
-      $("gastos-panel").innerHTML = `<div class="inicio-card"><p class="cal-sin-eventos">No hay proyectos activos.</p></div>`;
-      return;
-    }
-    const tarjetas = activos.map(p => {
+    const tarjetas = activos.length === 0
+      ? `<div class="inicio-card"><p class="cal-sin-eventos">No hay proyectos activos.</p></div>`
+      : activos.map(p => {
       const mo = costoManoDeObra(p);
       const matGasto = gastoMateriales(p.id);
       const matPresu = p.presupuestoMateriales;
@@ -1860,7 +2239,79 @@
           </div>
         </div>`;
     }).join("");
-    $("gastos-panel").innerHTML = tarjetas;
+
+    // 💲 Costos del equipo: gaveta plegada al fondo (se toca 2 veces al año).
+    // Gustavo (license holder) NO aparece: su pago es gasto general, no de obra.
+    const costos = state.costos || {};
+    const equipoCostos = (state.equipo || []).filter(u => u.rol !== "license" && u.activo);
+    const filasCostos = equipoCostos.map(u => `
+      <label>${esc(u.nombre)} — costo por hora ($)
+        <input name="c-${u.id}" type="number" min="0" step="0.5" inputmode="decimal"
+          value="${costos[u.id] != null ? costos[u.id] : ""}" placeholder="Ej: 35">
+      </label>`).join("");
+    // Manejo del equipo: marcar inactivo al que se va (la historia queda)
+    const filasEquipo = (state.equipo || [])
+      .filter(u => u.rol !== "dueno")
+      .map(u => `
+        <div class="equipo-item">
+          <span class="equipo-dot ${u.activo ? "verde" : "gris"}"></span>
+          <span class="alcance-info">
+            <span class="alcance-titulo">${esc(u.nombre)}</span>
+            <span class="alcance-estado">${u.rol === "license" ? "License Holder" : "Campo"}${u.activo ? "" : " · INACTIVO"}</span>
+          </span>
+          <button class="accion secundaria btn-perfil-activo" data-id="${esc(u.id)}" data-activo="${u.activo ? "1" : ""}">
+            ${u.activo ? "Marcar inactivo" : "Reactivar"}
+          </button>
+        </div>`).join("");
+    const gaveta = `
+      <div class="inicio-card">
+        <details class="costos-gaveta">
+          <summary>💲 Costos del equipo <span class="gaveta-nota">(toca para abrir — solo se ajusta cuando cambia un salario)</span></summary>
+          <form id="form-costos" class="cal-form">
+            <p class="modal-nota">El costo completo por hora para la empresa (salario + taxes + seguro).
+            Con esto cada proyecto calcula su rentabilidad solo.</p>
+            ${filasCostos}
+            <button type="submit" class="accion">Guardar costos</button>
+          </form>
+        </details>
+      </div>
+      <div class="inicio-card">
+        <details class="costos-gaveta">
+          <summary>👥 Equipo <span class="gaveta-nota">(marcar inactivo al que se va — su historia queda)</span></summary>
+          ${filasEquipo}
+          <p class="modal-nota" style="margin-top:0.5rem">Para <strong>agregar</strong> un trabajador nuevo con acceso a la app,
+          pídeselo a Claude — te da los 3 pasos del panel de Supabase (2 minutos).
+          Si es alguien puntual sin acceso, usa "Ayuda externa" en el proyecto.</p>
+        </details>
+      </div>`;
+
+    $("gastos-panel").innerHTML = tarjetas + gaveta;
+
+    $("form-costos").addEventListener("submit", async e => {
+      e.preventDefault();
+      const d = new FormData(e.target);
+      try {
+        for (const u of equipoCostos) {
+          const v = (d.get("c-" + u.id) || "").toString().trim();
+          if (v !== "" && Number.isFinite(Number(v))) await DB.guardarCosto(u.id, Number(v));
+        }
+        await recargar();
+        avisar("Costos guardados ✓ — la rentabilidad ya usa los números nuevos");
+      } catch (err) {
+        avisar("No se pudo guardar: " + err.message, true);
+      }
+    });
+    $("gastos-panel").querySelectorAll(".btn-perfil-activo").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const activar = !btn.dataset.activo;
+        if (!activar && !confirm("¿Marcar a esta persona como inactiva?\n\nDesaparece de las listas y semáforos, pero sus horas e historia quedan intactas. Se puede reactivar cuando quieras.")) return;
+        try {
+          await DB.cambiarPerfil(btn.dataset.id, { activo: activar });
+          await recargar();
+          avisar(activar ? "Reactivado ✓" : "Marcado como inactivo ✓ (su historia queda)");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
 
     $("gastos-panel").querySelectorAll(".gasto-nombre").forEach(btn => {
       btn.addEventListener("click", () => irDetalle(btn.dataset.id));
@@ -1881,46 +2332,333 @@
   }
 
   // ============================================================
-  // COSTOS DEL EQUIPO — solo el dueño
+  // 🧮 EL ESTIMADOR — solo el dueño (la receta secreta de Edgar)
+  // Réplica exacta de la fórmula del Excel: catálogo maestro,
+  // escenarios A/B/C, benefits, tax, overhead por hora-hombre y profit.
   // ============================================================
-  function irCostos() {
-    if (!usuario.finanzas) return;
-    mostrar("costos", { kicker: "Solo dueño", titulo: "Costos del equipo", volver: true, nuevo: false });
-    pintarCostos();
-  }
-  $("btn-costos").addEventListener("click", irCostos);
+  let estData = null;        // { catalogo, escenarios, estimados, items }
+  let estimadoActivo = null; // id del estimado abierto
 
-  function pintarCostos() {
-    const costos = state.costos || {};
-    const filas = Object.entries(state.nombrePorId).map(([id, nombre]) => `
-      <label>${esc(nombre)} — costo por hora ($)
-        <input name="c-${id}" type="number" min="0" step="0.5" inputmode="decimal"
-          value="${costos[id] != null ? costos[id] : ""}" placeholder="Ej: 35">
-      </label>`).join("");
-    $("costos-panel").innerHTML = `
+  function irEstimador(abrirId) {
+    if (!usuario.finanzas) return;
+    mostrar("estimador", { kicker: "Solo dueño", titulo: "Estimador", volver: true, nuevo: false });
+    estimadoActivo = abrirId || null;
+    $("estimador-panel").innerHTML = `<div class="inicio-card"><p class="cal-sin-eventos">Cargando el estimador…</p></div>`;
+    recargarEstimador();
+  }
+  $("btn-estimador").addEventListener("click", () => irEstimador());
+
+  async function recargarEstimador() {
+    try {
+      estData = await DB.cargarEstimador();
+    } catch (err) {
+      avisar("No se pudo cargar el estimador: " + err.message, true);
+      return;
+    }
+    pintarEstimador();
+  }
+
+  // La fórmula del Excel, línea por línea
+  function calcularEstimado(est) {
+    const items = (estData.items || []).filter(i => i.estimado_id === est.id);
+    const esc = (estData.escenarios || []).find(e => e.id === est.escenario)
+      || { foreman: 43, journeyman: 34, helper: 22, pct_foreman: .2, pct_journeyman: .5,
+           pct_helper: .3, benefits: .25, tax_material: .07, overhead_hh: 30.19, profit: .12 };
+    const n = v => Number(v) || 0;
+    const matSubtotal = items.reduce((s, i) => s + n(i.cantidad) * n(i.precio), 0);
+    const tax = matSubtotal * n(esc.tax_material);
+    const totalMaterial = matSubtotal + tax;
+    const horasBase = items.reduce((s, i) => s + n(i.cantidad) * n(i.horas), 0);
+    const horas = horasBase * (n(est.factor) || 1);
+    const laborBase = horas * (n(esc.pct_foreman) * n(esc.foreman)
+      + n(esc.pct_journeyman) * n(esc.journeyman) + n(esc.pct_helper) * n(esc.helper));
+    const benefits = laborBase * n(esc.benefits);
+    const totalLabor = laborBase + benefits;
+    const prime = totalLabor + totalMaterial;
+    const overhead = horas * n(esc.overhead_hh);
+    const profit = (prime + overhead) * n(esc.profit);
+    const bid = prime + overhead + profit;
+    return { items, esc, matSubtotal, tax, totalMaterial, horasBase, horas,
+             laborBase, benefits, totalLabor, prime, overhead, profit, bid };
+  }
+
+  function pintarEstimador() {
+    if (!estData) return;
+    if (!estimadoActivo) { pintarEstimadorLista(); return; }
+    pintarEstimadorEditor();
+  }
+
+  function pintarEstimadorLista() {
+    const filas = (estData.estimados || []).map(e => {
+      const c = calcularEstimado(e);
+      const chip = e.estado === "convertido" ? "insp-paso" : e.estado === "congelado" ? "leido" : "por_leer";
+      const etiqueta = e.estado === "convertido" ? "CONVERTIDO ✓" : e.estado === "congelado" ? "CONGELADO" : "BORRADOR";
+      return `
+        <div class="mat-item">
+          <span class="recibo-chip ${chip}">${etiqueta}</span>
+          <span class="alcance-info est-abrir" data-id="${e.id}" style="cursor:pointer">
+            <span class="alcance-titulo">${esc(e.nombre)}</span>
+            <span class="alcance-estado">${esc(e.cliente || "")}${e.sqft ? ` · ${esc(e.sqft)} sqft` : ""} · escenario ${esc(e.escenario)}</span>
+          </span>
+          <span class="mat-precio">${fmt(Math.round(c.bid * 100) / 100)}</span>
+          ${e.estado !== "convertido" ? `<button class="insp-borrar btn-est-borrar" data-id="${e.id}" title="Eliminar">🗑</button>` : ""}
+        </div>`;
+    }).join("");
+
+    $("estimador-panel").innerHTML = `
       <div class="cal-panel-card">
-        <form id="form-costos" class="cal-form">
-          <div class="cal-form-titulo">Costo por hora de cada trabajador</div>
-          <p class="modal-nota">El costo completo para la empresa (salario + taxes + seguro).
-          Solo tú ves esto — la base de datos lo protege igual que las finanzas.
-          Con esto, cada proyecto te muestra su <strong>rentabilidad real</strong>.</p>
-          ${filas}
-          <button type="submit" class="accion">Guardar costos</button>
+        <form id="form-nuevo-est" class="cal-form">
+          <div class="cal-form-titulo">➕ Nuevo estimado</div>
+          <label>Nombre del trabajo
+            <input name="nombre" type="text" required placeholder="Ej: Casa García — Rewire" autocomplete="off">
+          </label>
+          <div class="modal-fila">
+            <label>Cliente
+              <input name="cliente" type="text" placeholder="Ej: Juan García" autocomplete="off">
+            </label>
+            <label>Tipo
+              <select name="tipo">
+                <option value="Residential">Residencial</option>
+                <option value="Commercial">Comercial</option>
+              </select>
+            </label>
+          </div>
+          <div class="modal-fila">
+            <label>Sq Ft (opcional)
+              <input name="sqft" type="number" min="0" placeholder="Ej: 2200">
+            </label>
+            <label>Escenario
+              <select name="escenario">
+                ${(estData.escenarios || []).map(x =>
+                  `<option value="${esc(x.id)}"${x.id === "B" ? " selected" : ""}>${esc(x.id)} — ${esc(x.nombre || "")}</option>`).join("")}
+              </select>
+            </label>
+          </div>
+          <button type="submit" class="accion">Crear estimado</button>
         </form>
+      </div>
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">Mis estimados (${(estData.estimados || []).length})</div>
+        ${filas || `<p class="cal-sin-eventos">Todavía no hay estimados. Crea el primero arriba.</p>`}
       </div>`;
-    $("form-costos").addEventListener("submit", async e => {
-      e.preventDefault();
-      const d = new FormData(e.target);
+
+    $("form-nuevo-est").addEventListener("submit", async ev => {
+      ev.preventDefault();
+      const d = new FormData(ev.target);
       try {
-        for (const [id] of Object.entries(state.nombrePorId)) {
-          const v = (d.get("c-" + id) || "").toString().trim();
-          if (v !== "" && Number.isFinite(Number(v))) await DB.guardarCosto(id, Number(v));
-        }
+        const filasNueva = await DB.crearEstimado({
+          nombre: (d.get("nombre") || "").toString().trim(),
+          cliente: (d.get("cliente") || "").toString().trim() || null,
+          tipo: d.get("tipo") || "Residential",
+          sqft: d.get("sqft") ? Number(d.get("sqft")) : null,
+          escenario: d.get("escenario") || "B",
+          factor: 1,
+          estado: "borrador"
+        });
+        estimadoActivo = filasNueva[0].id;
+        await recargarEstimador();
+        avisar("Estimado creado ✓ — busca ítems del catálogo y ponles cantidad");
+      } catch (err) { avisar("No se pudo crear: " + err.message, true); }
+    });
+    $("estimador-panel").querySelectorAll(".est-abrir").forEach(el => {
+      el.addEventListener("click", () => { estimadoActivo = Number(el.dataset.id); pintarEstimador(); });
+    });
+    $("estimador-panel").querySelectorAll(".btn-est-borrar").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("¿Eliminar este estimado con todos sus ítems?")) return;
+        try {
+          await DB.eliminarEstimado(btn.dataset.id);
+          await recargarEstimador();
+          avisar("Estimado eliminado ✓");
+        } catch (err) { avisar("No se pudo eliminar: " + err.message, true); }
+      });
+    });
+  }
+
+  function pintarEstimadorEditor() {
+    const est = (estData.estimados || []).find(x => x.id === estimadoActivo);
+    if (!est) { estimadoActivo = null; pintarEstimadorLista(); return; }
+    if (!est.estado) est.estado = "borrador";
+    const c = calcularEstimado(est);
+    const soloLectura = est.estado !== "borrador";
+    const r2 = v => Math.round(v * 100) / 100;
+
+    const filasItems = c.items.map(i => `
+      <div class="mat-item">
+        <span class="alcance-info">
+          <span class="alcance-titulo">${esc(i.item)}</span>
+          <span class="alcance-estado">${esc(i.cantidad)} ${esc(i.unidad || "")} × ${fmt(i.precio)} · ${r2(Number(i.cantidad) * Number(i.horas))} h</span>
+        </span>
+        <span class="mat-precio">${fmt(r2(Number(i.cantidad) * Number(i.precio)))}</span>
+        ${!soloLectura ? `<button class="insp-borrar btn-item-qty" data-id="${i.id}" data-qty="${esc(i.cantidad)}" title="Cambiar cantidad">✎</button>
+        <button class="insp-borrar btn-item-borrar" data-id="${i.id}" title="Quitar">🗑</button>` : ""}
+      </div>`).join("");
+
+    $("estimador-panel").innerHTML = `
+      <div class="cal-panel-card">
+        <div class="est-cabecera">
+          <div>
+            <div class="cal-form-titulo">${esc(est.nombre)}</div>
+            <div class="alcance-estado">${esc(est.cliente || "")}${est.sqft ? ` · ${esc(est.sqft)} sqft` : ""} ·
+              <span class="recibo-chip ${est.estado === "convertido" ? "insp-paso" : est.estado === "congelado" ? "leido" : "por_leer"}">${est.estado.toUpperCase()}</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-fila" style="margin-top:.6rem">
+          <label class="mat-filtro-label">Escenario
+            <select id="est-escenario" ${soloLectura ? "disabled" : ""}>
+              ${(estData.escenarios || []).map(x =>
+                `<option value="${esc(x.id)}"${x.id === est.escenario ? " selected" : ""}>${esc(x.id)} — ${esc(x.nombre || "")}</option>`).join("")}
+            </select>
+          </label>
+          <label class="mat-filtro-label">Factor de productividad
+            <input id="est-factor" type="number" min="0.5" max="2" step="0.05" value="${esc(est.factor || 1)}" ${soloLectura ? "disabled" : ""}>
+          </label>
+        </div>
+      </div>
+      ${!soloLectura ? `
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">🔎 Buscar en el catálogo (${(estData.catalogo || []).length} ítems)</div>
+        <input id="est-buscar" type="text" placeholder="Ej: recessed, panel, 12/2, trenching…" autocomplete="off"
+          style="width:100%;font:inherit;padding:.55rem .7rem;border:1px solid var(--mp-line);border-radius:10px">
+        <div id="est-resultados"></div>
+      </div>` : ""}
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">Ítems del estimado (${c.items.length})</div>
+        ${filasItems || `<p class="cal-sin-eventos">Busca arriba y toca un ítem para agregarlo con su cantidad.</p>`}
+      </div>
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">💵 Resumen — fórmula Max Power</div>
+        <div class="rent-fila"><span>Material</span><span>${fmt(r2(c.matSubtotal))}</span></div>
+        <div class="rent-fila"><span>+ Sales tax (${Math.round(c.esc.tax_material * 100)}%)</span><span>${fmt(r2(c.tax))}</span></div>
+        <div class="rent-fila"><span>Horas (${r2(c.horasBase)} × factor ${est.factor || 1})</span><span>${r2(c.horas)} h</span></div>
+        <div class="rent-fila"><span>Labor (F ${Math.round(c.esc.pct_foreman*100)}% · J ${Math.round(c.esc.pct_journeyman*100)}% · H ${Math.round(c.esc.pct_helper*100)}%)</span><span>${fmt(r2(c.laborBase))}</span></div>
+        <div class="rent-fila"><span>+ Benefits (${Math.round(c.esc.benefits * 100)}%)</span><span>${fmt(r2(c.benefits))}</span></div>
+        <div class="rent-fila"><span>Prime cost</span><span>${fmt(r2(c.prime))}</span></div>
+        <div class="rent-fila"><span>+ Overhead (${r2(c.horas)} h × ${fmt(c.esc.overhead_hh)})</span><span>${fmt(r2(c.overhead))}</span></div>
+        <div class="rent-fila"><span>+ Profit (${Math.round(c.esc.profit * 100)}%)</span><span>${fmt(r2(c.profit))}</span></div>
+        <div class="rent-fila rent-total ok"><span>🎯 PRECIO DE LA PROPUESTA</span><span>${fmt(r2(c.bid))}</span></div>
+        ${est.sqft ? `<p class="rent-nota">${fmt(r2(c.bid / est.sqft))} por sq ft</p>` : ""}
+      </div>
+      <div class="cal-panel-card acciones">
+        ${est.estado === "borrador" ? `<button class="accion secundaria" id="btn-est-congelar">🔒 Congelar</button>` : ""}
+        ${est.estado === "congelado" ? `<button class="accion secundaria" id="btn-est-descongelar">🔓 Volver a borrador</button>` : ""}
+        ${est.estado !== "convertido" ? `<button class="accion" id="btn-est-convertir">🚀 Convertir en proyecto</button>` : ""}
+      </div>`;
+
+    // Cabecera editable
+    const selEsc = $("est-escenario"), inpFactor = $("est-factor");
+    if (selEsc && !soloLectura) selEsc.addEventListener("change", async () => {
+      await DB.cambiarEstimado(est.id, { escenario: selEsc.value }).catch(() => {});
+      await recargarEstimador();
+    });
+    if (inpFactor && !soloLectura) inpFactor.addEventListener("change", async () => {
+      const v = Number(inpFactor.value);
+      if (!Number.isFinite(v) || v <= 0) return;
+      await DB.cambiarEstimado(est.id, { factor: v }).catch(() => {});
+      await recargarEstimador();
+    });
+
+    // Búsqueda en el catálogo
+    const inpBuscar = $("est-buscar");
+    if (inpBuscar) inpBuscar.addEventListener("input", () => {
+      const q = inpBuscar.value.trim().toLowerCase();
+      const res = q.length < 2 ? [] : (estData.catalogo || [])
+        .filter(i => (i.item + " " + (i.seccion || "")).toLowerCase().includes(q)).slice(0, 12);
+      $("est-resultados").innerHTML = res.map(i => `
+        <div class="mat-item est-res" data-id="${i.id}" style="cursor:pointer">
+          <span class="alcance-info">
+            <span class="alcance-titulo">${esc(i.item)}</span>
+            <span class="alcance-estado">${esc(i.seccion || "")} · ${esc(i.unidad || "")} · ${fmt(i.precio)} · ${esc(i.horas_unidad)} h/u</span>
+          </span>
+          <span class="cat-flecha">＋</span>
+        </div>`).join("");
+      $("est-resultados").querySelectorAll(".est-res").forEach(el => {
+        el.addEventListener("click", async () => {
+          const item = (estData.catalogo || []).find(x => String(x.id) === el.dataset.id);
+          if (!item) return;
+          const qty = prompt(`Cantidad de "${item.item}" (${item.unidad || "unidades"}):`);
+          if (qty === null) return;
+          const cantidad = Number(qty.replace(/[,\s]/g, ""));
+          if (!Number.isFinite(cantidad) || cantidad <= 0) { avisar("Cantidad no válida", true); return; }
+          try {
+            await DB.crearItemEstimado({
+              estimado_id: est.id, item: item.item, unidad: item.unidad,
+              precio: item.precio, horas: item.horas_unidad, cantidad,
+              orden: c.items.length + 1
+            });
+            await recargarEstimador();
+            avisar("Ítem agregado ✓");
+          } catch (err) { avisar("No se pudo agregar: " + err.message, true); }
+        });
+      });
+    });
+
+    // Ítems: cambiar cantidad / quitar
+    $("estimador-panel").querySelectorAll(".btn-item-qty").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const qty = prompt("Nueva cantidad:", btn.dataset.qty);
+        if (qty === null) return;
+        const cantidad = Number(qty.replace(/[,\s]/g, ""));
+        if (!Number.isFinite(cantidad) || cantidad <= 0) { avisar("Cantidad no válida", true); return; }
+        try {
+          await DB.cambiarItemEstimado(btn.dataset.id, { cantidad });
+          await recargarEstimador();
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    $("estimador-panel").querySelectorAll(".btn-item-borrar").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        try {
+          await DB.eliminarItemEstimado(btn.dataset.id);
+          await recargarEstimador();
+        } catch (err) { avisar("No se pudo quitar: " + err.message, true); }
+      });
+    });
+
+    // Congelar / descongelar
+    const btnCong = $("btn-est-congelar"), btnDesc = $("btn-est-descongelar");
+    if (btnCong) btnCong.addEventListener("click", async () => {
+      await DB.cambiarEstimado(est.id, { estado: "congelado" }).catch(() => {});
+      await recargarEstimador();
+      avisar("Estimado congelado 🔒 — los precios quedan fijos");
+    });
+    if (btnDesc) btnDesc.addEventListener("click", async () => {
+      await DB.cambiarEstimado(est.id, { estado: "borrador" }).catch(() => {});
+      await recargarEstimador();
+    });
+
+    // 🚀 Convertir en proyecto: nace con contrato, presupuestos e hitos
+    const btnConv = $("btn-est-convertir");
+    if (btnConv) btnConv.addEventListener("click", async () => {
+      if (!confirm(`¿Convertir "${est.nombre}" en proyecto?\n\nSe crea el proyecto con contrato ${fmt(r2(c.bid))}, sus horas estimadas, presupuesto de materiales y 3 hitos de pago (35/40/25).`)) return;
+      const idNuevo = est.nombre.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+        .slice(0, 30) + "-" + Math.random().toString(36).slice(2, 6);
+      const bid = r2(c.bid);
+      try {
+        await DB.crearProyecto({
+          id: idNuevo,
+          tipo: est.tipo === "Commercial" ? "comercial" : "residencial",
+          nombre: est.nombre,
+          direccion: est.direccion || "Por confirmar",
+          cliente: est.cliente || "Por confirmar",
+          via: "Directo",
+          estado: "enviado",
+          estado_detalle: "Creado desde el Estimador — propuesta por enviar.",
+          proxima_accion: "Enviar la propuesta al cliente.",
+          ref: `EST-${est.id}`,
+          horas_estimadas: r2(c.horas)
+        });
+        await DB.crearFinanzas({ proyecto_id: idNuevo, contrato: bid, cobrado: 0, presupuesto_materiales: r2(c.totalMaterial) });
+        const m1 = r2(bid * 0.35), m2 = r2(bid * 0.40);
+        await DB.crearHito({ proyecto_id: idNuevo, titulo: "Milestone 1 — 35% movilización", condicion: "Al aceptar / movilización", monto: m1, estado: "pendiente", orden: 1 });
+        await DB.crearHito({ proyecto_id: idNuevo, titulo: "Milestone 2 — 40% avance", condicion: "Rough / avance principal completo", monto: m2, estado: "pendiente", orden: 2 });
+        await DB.crearHito({ proyecto_id: idNuevo, titulo: "Milestone 3 — 25% final", condicion: "Al pasar inspección final", monto: r2(bid - m1 - m2), estado: "pendiente", orden: 3 });
+        await DB.cambiarEstimado(est.id, { estado: "convertido" });
         await recargar();
-        avisar("Costos guardados ✓ — ya puedes ver la rentabilidad en cada proyecto");
-      } catch (err) {
-        avisar("No se pudo guardar: " + err.message, true);
-      }
+        avisar(`Proyecto creado ✓ — contrato ${fmt(bid)} con hitos y presupuestos puestos`);
+        irDetalle(idNuevo);
+      } catch (err) { avisar("No se pudo convertir: " + err.message, true); }
     });
   }
 
