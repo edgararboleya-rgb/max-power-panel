@@ -604,7 +604,26 @@ body::after {
   padding: 0.25rem 1rem 0.75rem 1.15rem;
 }
 
-/* ============ Detalle expandible ============ */
+/* Pie de la tarjeta resumida: invita a abrir la ficha */
+.abrir-ficha {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  padding: 0.5rem 1rem 0.6rem 1.15rem;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mp-navy);
+}
+.abrir-ficha .cat-flecha { font-size: 1rem; line-height: 1; }
+
+/* ============ FICHA: pantalla de un solo proyecto ============ */
+#detalle { max-width: 780px; margin: 0 auto; }
+.proyecto.ficha { cursor: default; }
+.proyecto.ficha:hover { transform: none; box-shadow: var(--mp-shadow); }
+
 .proyecto-detalle {
   display: none;
   border-top: 1px solid var(--mp-line);

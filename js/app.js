@@ -54,6 +54,7 @@
   let usuario = null;  // { nombre, rol, finanzas, editar }
   let tipoActivo = null;
   let etapaActiva = null;
+  let proyectoActivo = null;  // id del proyecto abierto en su propia pantalla
   let textoBusqueda = "";
   let calAno, calMes, calDiaSel;
 
@@ -62,6 +63,7 @@
   const $app = $("vista-app");
   const $home = $("vista-home"), $vEtapas = $("vista-etapas"), $vLista = $("vista-lista");
   const $vHoras = $("vista-horas"), $vCal = $("vista-calendario");
+  const $vDetalle = $("vista-detalle"), $detalle = $("detalle");
   const $categorias = $("categorias"), $resumen = $("resumen");
   const $etapas = $("etapas"), $lista = $("lista"), $buscador = $("buscador");
   const $kicker = $("kicker"), $titulo = $("titulo-vista");
@@ -183,7 +185,8 @@
       return;
     }
     // Re-pinta la vista activa
-    if (!$vLista.hidden) pintarLista(abrirId);
+    if (!$vDetalle.hidden) pintarDetalle();
+    else if (!$vLista.hidden) pintarLista(abrirId);
     else if (!$vEtapas.hidden) pintarEtapas();
     else if (!$vCal.hidden) pintarCalendario();
     else if (!$vHoras.hidden) prepararHoras();
@@ -197,6 +200,7 @@
     $vLista.hidden = vista !== "lista";
     $vHoras.hidden = vista !== "horas";
     $vCal.hidden = vista !== "calendario";
+    $vDetalle.hidden = vista !== "detalle";
     $kicker.textContent = kicker;
     $titulo.textContent = titulo;
     $btnVolver.hidden = !volver;
@@ -316,6 +320,12 @@
   }
 
   $btnVolver.addEventListener("click", () => {
+    if (!$vDetalle.hidden) {
+      proyectoActivo = null;
+      if (tipoActivo && etapaActiva) { irLista(etapaActiva); return; }
+      irHome();
+      return;
+    }
     if (!$vLista.hidden) { irEtapas(tipoActivo); return; }
     irHome();
   });
@@ -332,21 +342,12 @@
     });
 
     $lista.innerHTML = visibles.length
-      ? visibles.map(tarjetaHTML).join("")
+      ? visibles.map(tarjetaResumenHTML).join("")
       : `<div class="sin-resultados">No hay proyectos aquí.</div>`;
 
+    // Tocar la tarjeta abre la ficha del proyecto (su propia pantalla)
     $lista.querySelectorAll(".proyecto").forEach(card => {
-      if (abrirId && card.dataset.id === abrirId) card.classList.add("abierto");
-      card.addEventListener("click", e => {
-        const btn = e.target.closest(".accion");
-        if (btn) { ejecutarAccion(btn.dataset.accion, btn.dataset.id); return; }
-        if (e.target.closest("a") || e.target.closest(".chip-select")) return;
-        card.classList.toggle("abierto");
-      });
-    });
-    $lista.querySelectorAll(".chip-select").forEach(sel => {
-      sel.addEventListener("click", e => e.stopPropagation());
-      sel.addEventListener("change", () => cambiarEstadoDirecto(sel.dataset.id, sel.value, sel));
+      card.addEventListener("click", () => irDetalle(card.dataset.id));
     });
   }
 
@@ -543,7 +544,7 @@
       try {
         await DB.eliminarProyecto(id);
         state.proyectos = state.proyectos.filter(x => x.id !== id);
-        pintarLista();
+        refrescarVistaProyecto();
         avisar(`"${p.nombre}" eliminado.`);
       } catch (err) {
         avisar("No se pudo eliminar: " + err.message, true);
@@ -556,7 +557,7 @@
       await DB.cambiarProyecto(id, cambios);
       p.estado = valor;
       if (cambios.fase) p.fase = cambios.fase;
-      pintarLista(id);
+      refrescarVistaProyecto(id);
       avisar(`Estado: ${ESTADOS[valor].etiqueta} ✓`);
     } catch (err) {
       selectEl.value = p.estado;
@@ -590,36 +591,74 @@
       : "";
   }
 
-  function tarjetaHTML(p) {
+  // Piezas que comparten la tarjeta resumida y la ficha completa
+  function cabeceraHTML(p, conSelector) {
+    const fase = p.estado === "ejecucion" ? FASES.find(f => f.clave === p.fase) : null;
+    const miniFase = fase ? `<span class="mini-fase">${fase.etiqueta}</span>` : "";
+    return `
+      <div class="proyecto-head">
+        <div class="proyecto-titulo">
+          <div>
+            <h2>${esc(p.nombre)}</h2>
+            <div class="proyecto-dir">📍 ${esc(p.direccion)}</div>
+            <div class="proyecto-cliente">Cliente: <strong>${esc(p.cliente)}</strong> · vía ${esc(p.via)}</div>
+          </div>
+          <div class="chips-col">
+            ${conSelector && usuario.editar ? selectorEstadoHTML(p) : chipHTML(p.estado)}
+            ${miniFase}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function avisoObraHTML(p) {
+    const pensObra = pendientesAbiertos(p.id);
+    return pensObra.length
+      ? `<div class="aviso-obra">🔴 ${pensObra.map(x => `${esc(sinMontos(x.descripcion))} <span class="aviso-obra-autor">(${esc(x.autor || "")}, ${esc(x.fecha)})</span>`).join(" · ")}</div>`
+      : "";
+  }
+
+  function avisoFacturasHTML(p) {
+    if (!usuario.finanzas) return "";
+    const pend = facturasPendientes(p);
+    return pend.length
+      ? `<div class="aviso-pendiente">⚠ Factura sin pagar: ${pend.map(f => `#${esc(f.num)} ${fmt(f.monto)}`).join(", ")}</div>`
+      : "";
+  }
+
+  function franjaDineroHTML(p) {
+    if (!usuario.finanzas) return "";
     const falta = (typeof p.contrato === "number" && typeof p.cobrado === "number")
       ? p.contrato - p.cobrado : null;
     const pct = (typeof p.contrato === "number" && typeof p.cobrado === "number" && p.contrato > 0)
       ? Math.round((p.cobrado / p.contrato) * 100) : null;
-    const fase = p.estado === "ejecucion" ? FASES.find(f => f.clave === p.fase) : null;
-    const miniFase = fase ? `<span class="mini-fase">${fase.etiqueta}</span>` : "";
+    const barra = pct === null ? "" :
+      `<div class="barra"><div class="barra-relleno" style="width:${Math.min(pct, 100)}%"></div></div>
+       <div class="barra-texto">${pct}% cobrado</div>`;
+    return `
+      <div class="proyecto-money">
+        <div class="money-item"><div class="money-label">Contrato</div><div class="money-num contrato">${fmt(p.contrato)}</div></div>
+        <div class="money-item"><div class="money-label">Cobrado</div><div class="money-num cobrado">${fmt(p.cobrado)}</div></div>
+        <div class="money-item"><div class="money-label">Falta</div><div class="money-num falta">${fmt(falta)}</div></div>
+      </div>
+      ${barra}`;
+  }
 
-    const pensObra = pendientesAbiertos(p.id);
-    const avisoObra = pensObra.length
-      ? `<div class="aviso-obra">🔴 ${pensObra.map(x => `${esc(sinMontos(x.descripcion))} <span class="aviso-obra-autor">(${esc(x.autor || "")}, ${esc(x.fecha)})</span>`).join(" · ")}</div>`
-      : "";
+  // Tarjeta RESUMIDA de la lista: al tocarla se abre la ficha
+  function tarjetaResumenHTML(p) {
+    return `
+      <article class="proyecto" data-id="${esc(p.id)}">
+        ${cabeceraHTML(p, false)}
+        ${avisoObraHTML(p)}
+        ${avisoFacturasHTML(p)}
+        ${franjaDineroHTML(p)}
+        ${proximoCobroHTML(p)}
+        <div class="abrir-ficha">Ver proyecto completo <span class="cat-flecha">›</span></div>
+      </article>`;
+  }
 
-    let aviso = "", moneyStrip = "", barra = "";
-    if (usuario.finanzas) {
-      const pend = facturasPendientes(p);
-      aviso = pend.length
-        ? `<div class="aviso-pendiente">⚠ Factura sin pagar: ${pend.map(f => `#${esc(f.num)} ${fmt(f.monto)}`).join(", ")}</div>`
-        : "";
-      moneyStrip = `
-        <div class="proyecto-money">
-          <div class="money-item"><div class="money-label">Contrato</div><div class="money-num contrato">${fmt(p.contrato)}</div></div>
-          <div class="money-item"><div class="money-label">Cobrado</div><div class="money-num cobrado">${fmt(p.cobrado)}</div></div>
-          <div class="money-item"><div class="money-label">Falta</div><div class="money-num falta">${fmt(falta)}</div></div>
-        </div>`;
-      barra = pct === null ? "" :
-        `<div class="barra"><div class="barra-relleno" style="width:${Math.min(pct, 100)}%"></div></div>
-         <div class="barra-texto">${pct}% cobrado</div>`;
-    }
-
+  // FICHA completa: la pantalla dedicada a un solo proyecto
+  function fichaProyectoHTML(p) {
     const docs = usuario.finanzas && p.docs && p.docs.length
       ? `<div class="detalle-seccion">
            <h3>Documentos en Drive</h3>
@@ -630,24 +669,11 @@
       : "";
 
     return `
-      <article class="proyecto" data-id="${esc(p.id)}">
-        <div class="proyecto-head">
-          <div class="proyecto-titulo">
-            <div>
-              <h2>${esc(p.nombre)}</h2>
-              <div class="proyecto-dir">📍 ${esc(p.direccion)}</div>
-              <div class="proyecto-cliente">Cliente: <strong>${esc(p.cliente)}</strong> · vía ${esc(p.via)}</div>
-            </div>
-            <div class="chips-col">
-              ${usuario.editar ? selectorEstadoHTML(p) : chipHTML(p.estado)}
-              ${miniFase}
-            </div>
-          </div>
-        </div>
-        ${avisoObra}
-        ${aviso}
-        ${moneyStrip}
-        ${barra}
+      <article class="proyecto ficha abierto" data-id="${esc(p.id)}">
+        ${cabeceraHTML(p, true)}
+        ${avisoObraHTML(p)}
+        ${avisoFacturasHTML(p)}
+        ${franjaDineroHTML(p)}
         ${proximoCobroHTML(p)}
         <div class="proyecto-detalle">
           <div class="detalle-seccion"><h3>Situación</h3><p>${esc(sinMontos(p.estadoDetalle))}</p></div>
@@ -663,6 +689,47 @@
           <div class="detalle-ref">Ref: ${esc(sinMontos(p.ref))}</div>
         </div>
       </article>`;
+  }
+
+  // ============================================================
+  // NIVEL 4 · FICHA DEL PROYECTO (una pantalla para él solo)
+  // ============================================================
+  function irDetalle(id) {
+    const p = proyectos().find(x => x.id === id);
+    if (!p) return;
+    proyectoActivo = id;
+    pintarDetalle();
+  }
+
+  function pintarDetalle() {
+    const p = proyectos().find(x => x.id === proyectoActivo);
+    if (!p) {
+      // El proyecto ya no existe (p. ej. se eliminó): volver a la lista
+      proyectoActivo = null;
+      if (tipoActivo && etapaActiva) irLista(etapaActiva); else irHome();
+      return;
+    }
+    mostrar("detalle", {
+      kicker: `${TIPOS[p.tipo] ? TIPOS[p.tipo].etiqueta : ""} · ${ESTADOS[p.estado] ? ESTADOS[p.estado].etiqueta : p.estado}`,
+      titulo: p.nombre,
+      volver: true,
+      nuevo: false
+    });
+    $detalle.innerHTML = fichaProyectoHTML(p);
+
+    $detalle.querySelectorAll(".accion").forEach(btn => {
+      if (btn.dataset.accion)
+        btn.addEventListener("click", () => ejecutarAccion(btn.dataset.accion, btn.dataset.id));
+    });
+    $detalle.querySelectorAll(".chip-select").forEach(sel => {
+      sel.addEventListener("change", () => cambiarEstadoDirecto(sel.dataset.id, sel.value, sel));
+    });
+  }
+
+  // Re-pinta la pantalla correcta después de guardar un cambio
+  function refrescarVistaProyecto(id) {
+    if (!$vDetalle.hidden) pintarDetalle();
+    else pintarLista(id);
   }
 
   // ---------- Acciones del pipeline (escriben en la nube) ----------
@@ -685,7 +752,7 @@
     try {
       await DB.cambiarProyecto(id, cambios);
       Object.assign(p, { estado: cambios.estado || p.estado, fase: cambios.fase || p.fase });
-      pintarLista(id);
+      refrescarVistaProyecto(id);
     } catch (err) {
       avisar("No se pudo guardar: " + err.message, true);
     }
