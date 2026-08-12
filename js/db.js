@@ -142,7 +142,7 @@
   async function cargarTodo() {
     const [perfiles, proyectos, finanzas, alcances, alcancesEquipo,
            hitos, facturas, horas, eventos, pendientes, documentos, fotos,
-           inspecciones, materiales, costos] =
+           inspecciones, materiales, materialesEquipo, costos] =
       await Promise.all([
         leer("perfiles?select=id,nombre,rol"),
         leer("proyectos?select=*&order=nombre"),
@@ -159,6 +159,7 @@
         leer("fotos?select=*&order=creado").catch(() => []),
         leer("inspecciones?select=*&order=fecha").catch(() => []),
         leer("materiales?select=*&order=creado").catch(() => []),
+        leer("materiales_equipo?select=*&order=creado").catch(() => []),
         leer("costos_equipo?select=*").catch(() => [])
       ]);
 
@@ -207,6 +208,8 @@
         actualizado: p.actualizado ? String(p.actualizado).slice(0, 10) : "",
         contrato: fin.contrato !== undefined && fin.contrato !== null ? Number(fin.contrato) : null,
         cobrado: fin.cobrado !== undefined && fin.cobrado !== null ? Number(fin.cobrado) : null,
+        presupuestoMateriales: fin.presupuesto_materiales !== undefined && fin.presupuesto_materiales !== null
+          ? Number(fin.presupuesto_materiales) : null,
         alcances: (alcPor[p.id] || []).map(a => ({
           tipo: a.tipo, titulo: a.titulo, ref: a.ref,
           monto: a.monto !== undefined && a.monto !== null ? Number(a.monto) : undefined,
@@ -260,10 +263,13 @@
         fecha: i.fecha || "", resultado: i.resultado || "programada",
         notas: i.notas || ""
       })),
-      materiales: materiales.map(m => ({
+      // El dueño lee la tabla completa (con precios); al equipo la
+      // base de datos le devuelve vacío y usa la versión sin precios
+      materiales: (materiales.length ? materiales : materialesEquipo).map(m => ({
         id: m.id, proyecto: m.proyecto_id, descripcion: m.descripcion,
         cantidad: m.cantidad || "", estado: m.estado || "falta",
         origenPendiente: m.origen_pendiente || null,
+        precio: m.precio !== undefined && m.precio !== null ? Number(m.precio) : null,
         autor: nombrePorId[m.autor_id] || "",
         fecha: m.creado ? String(m.creado).slice(0, 10) : ""
       })),
@@ -295,6 +301,12 @@
     crearMaterial: fila => insertar("materiales", { ...fila, autor_id: uid() }),
     cambiarMaterial: (id, cambios) => actualizar(`materiales?id=eq.${id}`, cambios),
     eliminarMaterial: id => api(`materiales?id=eq.${id}`, { metodo: "DELETE" }),
+    // Guarda (o actualiza) el presupuesto de materiales de un proyecto
+    guardarPresupuesto: (proyectoId, monto) => api("finanzas_proyecto", {
+      metodo: "POST",
+      cuerpo: { proyecto_id: proyectoId, presupuesto_materiales: monto },
+      headers: { Prefer: "resolution=merge-duplicates,return=representation" }
+    }),
     // Guarda (o actualiza) el costo por hora de un trabajador
     guardarCosto: (usuarioId, costoHora) => api("costos_equipo", {
       metodo: "POST",

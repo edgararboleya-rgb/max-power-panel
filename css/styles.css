@@ -1323,6 +1323,62 @@ table.desglose .neg { color: var(--mp-teal-text); font-weight: 800; }
 .equipo-dot.amarillo { background: #E8C51D; box-shadow: 0 0 0 3px rgba(232,197,29,.18); }
 .equipo-dot.rojo     { background: #D64545; box-shadow: 0 0 0 3px rgba(214,69,69,.18); }
 .equipo-dot.gris     { background: var(--mp-ink-3); }
+
+/* Control de gastos */
+.mat-precio {
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: var(--mp-ink);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.gasto-card .rent-fila { padding: 0.24rem 0; }
+.gasto-nombre {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0 0 0.4rem;
+  font: inherit;
+  font-weight: 800;
+  font-size: 0.95rem;
+  letter-spacing: -0.01em;
+  color: var(--mp-ink);
+  cursor: pointer;
+  text-align: left;
+}
+.gasto-sub { font-size: 0.7rem; color: var(--mp-ink-3); margin: 0.1rem 0 0.15rem; }
+.gasto-sub.warn { color: var(--mp-warn-tx); font-weight: 700; }
+.gasto-sub.bad  { color: #B23232; font-weight: 700; }
+.gasto-presu-fila {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.55rem;
+  padding-top: 0.55rem;
+  border-top: 1px dashed var(--mp-line);
+}
+.gasto-presu-fila label {
+  flex: 1;
+  display: grid;
+  gap: 0.28rem;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--mp-ink-2);
+}
+.gasto-presu-fila input {
+  font: inherit;
+  font-size: 0.92rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--mp-line);
+  border-radius: 10px;
+  color: var(--mp-ink);
+}
+.gasto-presu-fila input:focus { outline: 2px solid var(--mp-blue); }
 .doc-link {
   display: inline-block;
   background: var(--mp-card);

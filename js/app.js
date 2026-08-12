@@ -203,6 +203,7 @@
     else if (!$vHoras.hidden) prepararHoras();
     else if (!$vMat.hidden) pintarMateriales();
     else if (!$vCostos.hidden) pintarCostos();
+    else if (!$("vista-gastos").hidden) pintarGastos();
     else { pintarInicio(); pintarCategorias(); pintarResumen(); }
   }
 
@@ -216,6 +217,7 @@
     $vDetalle.hidden = vista !== "detalle";
     $vMat.hidden = vista !== "materiales";
     $vCostos.hidden = vista !== "costos";
+    $("vista-gastos").hidden = vista !== "gastos";
     $kicker.textContent = kicker;
     $titulo.textContent = titulo;
     $btnVolver.hidden = !volver;
@@ -231,6 +233,7 @@
     etapaActiva = null;
     mostrar("home", { kicker: "Panel de proyectos", titulo: "Categorías", volver: false, nuevo: true });
     $("btn-costos").hidden = !usuario.finanzas;
+    $("btn-gastos").hidden = !usuario.finanzas;
     pintarInicio();
     pintarCategorias();
     pintarResumen();
@@ -304,6 +307,10 @@
   function pintarInicioAvisos() {
     if (!usuario.finanzas) { $("inicio-avisos").innerHTML = ""; return; }
     const avisos = [];
+    // Materiales que el equipo pidió y siguen sin comprarse
+    const porComprar = (state.materiales || []).filter(m => m.estado === "falta").length;
+    if (porComprar)
+      avisos.push({ accion: "materiales", icono: "🛒", texto: `${porComprar} material${porComprar > 1 ? "es" : ""} por comprar — toca para ver la lista` });
     for (const p of proyectos()) {
       for (const f of facturasPendientes(p)) {
         const dias = diasDesde(f.fechaISO);
@@ -315,8 +322,21 @@
         if (dias !== null && dias >= 21)
           avisos.push({ id: p.id, icono: "⏳", texto: `${p.nombre}: propuesta sin movimiento hace ${dias} días — revívela o márcala perdida` });
       }
-      if (p.estado === "ejecucion" && p.horas && p.horas.estimadas > 0 && p.horas.reales > p.horas.estimadas) {
-        avisos.push({ id: p.id, icono: "⏱", texto: `${p.nombre}: ${p.horas.reales}h trabajadas de ${p.horas.estimadas}h estimadas — se está comiendo el margen` });
+      if (p.estado === "ejecucion" && p.horas && p.horas.estimadas > 0) {
+        const razon = p.horas.reales / p.horas.estimadas;
+        if (razon > 1)
+          avisos.push({ id: p.id, icono: "⏱", texto: `${p.nombre}: ${p.horas.reales}h trabajadas de ${p.horas.estimadas}h estimadas — se está comiendo el margen` });
+        else if (razon >= 0.8)
+          avisos.push({ id: p.id, icono: "⏱", texto: `${p.nombre}: el labor va al ${Math.round(razon * 100)}% de lo estimado (${p.horas.reales}h de ${p.horas.estimadas}h) — vigílalo` });
+      }
+      if (["ejecucion", "aprobado", "pausa"].includes(p.estado)
+          && p.presupuestoMateriales > 0) {
+        const gasto = gastoMateriales(p.id);
+        const razon = gasto / p.presupuestoMateriales;
+        if (razon > 1)
+          avisos.push({ id: p.id, icono: "🛒", texto: `${p.nombre}: materiales PASADOS del presupuesto — ${fmt(gasto)} de ${fmt(p.presupuestoMateriales)}` });
+        else if (razon >= 0.8)
+          avisos.push({ id: p.id, icono: "🛒", texto: `${p.nombre}: materiales al ${Math.round(razon * 100)}% del presupuesto (${fmt(gasto)} de ${fmt(p.presupuestoMateriales)})` });
       }
     }
     if (!avisos.length) { $("inicio-avisos").innerHTML = ""; return; }
@@ -324,14 +344,15 @@
       <div class="inicio-card avisos">
         <div class="inicio-card-titulo">⚠ Avisos</div>
         ${avisos.map(a => `
-          <button class="aviso-linea" data-id="${esc(a.id)}">
+          <button class="aviso-linea" data-id="${esc(a.id || "")}" data-accion="${esc(a.accion || "")}">
             <span>${a.icono}</span>
             <span class="aviso-texto">${esc(a.texto)}</span>
             <span class="cat-flecha">›</span>
           </button>`).join("")}
       </div>`;
     $("inicio-avisos").querySelectorAll(".aviso-linea").forEach(btn => {
-      btn.addEventListener("click", () => irDetalle(btn.dataset.id));
+      btn.addEventListener("click", () =>
+        btn.dataset.accion === "materiales" ? irMateriales() : irDetalle(btn.dataset.id));
     });
   }
 
@@ -629,40 +650,70 @@
       </div>`;
   }
 
-  // Rentabilidad real: contrato − mano de obra (SOLO el dueño)
-  function rentabilidadHTML(p) {
-    if (!usuario.finanzas || typeof p.contrato !== "number" || p.contrato <= 0) return "";
+  // ---------- Ayudantes de gastos (los usan la ficha, el inicio y 📊 Gastos) ----------
+  // Mano de obra real de un proyecto: horas reportadas × costo de cada
+  // trabajador (las horas de antes de la app van al costo promedio)
+  function costoManoDeObra(p) {
     const costos = state.costos || {};
     const tasas = Object.values(costos);
-    if (!tasas.length) {
-      return `<div class="detalle-seccion"><h3>Rentabilidad real</h3>
-        <p>Define el costo por hora del equipo en <strong>💲 Costos del equipo</strong>
-        (botón del inicio) y aquí verás la ganancia real de este proyecto.</p></div>`;
-    }
+    if (!tasas.length) return null;
     const promedio = tasas.reduce((s, x) => s + x, 0) / tasas.length;
     const reg = (state.registroHoras || []).filter(r => r.proyecto === p.id);
     const horasReg = reg.reduce((s, r) => s + r.horas, 0);
     const costoReg = reg.reduce((s, r) =>
       s + r.horas * (costos[r.usuarioId] != null ? costos[r.usuarioId] : promedio), 0);
-    // Horas anteriores a la app (sin trabajador asignado): al costo promedio
     const horasBase = p.horas ? Math.max(0, p.horas.reales - horasReg) : 0;
-    const totalHoras = horasReg + horasBase;
-    if (totalHoras <= 0) {
-      return `<div class="detalle-seccion"><h3>Rentabilidad real</h3>
-        <p>Todavía no hay horas registradas en este proyecto.</p></div>`;
+    return {
+      promedio,
+      horas: Math.round((horasReg + horasBase) * 10) / 10,
+      costo: costoReg + horasBase * promedio,
+      presupuesto: p.horas && p.horas.estimadas > 0 ? p.horas.estimadas * promedio : null
+    };
+  }
+  // Materiales comprados con precio anotado
+  const gastoMateriales = pid => (state.materiales || [])
+    .filter(m => m.proyecto === pid && m.estado === "comprado" && typeof m.precio === "number")
+    .reduce((s, m) => s + m.precio, 0);
+
+  // Barrita de "cuánto llevo del presupuesto" (verde <80% / amarillo / rojo)
+  function barraGasto(gastado, presupuesto) {
+    if (!presupuesto || presupuesto <= 0) return "";
+    const pct = Math.round((gastado / presupuesto) * 100);
+    const clase = pct < 80 ? "ok" : pct <= 100 ? "warn" : "bad";
+    return `<div class="gasto-sub ${clase}">${pct}% del presupuesto (${fmt(presupuesto)})</div>
+      <div class="barra horas-barra"><div class="barra-relleno ${clase}" style="width:${Math.min(100, pct)}%"></div></div>`;
+  }
+
+  // Rentabilidad y gastos: contrato − labor − materiales (SOLO el dueño)
+  function rentabilidadHTML(p) {
+    if (!usuario.finanzas || typeof p.contrato !== "number" || p.contrato <= 0) return "";
+    const mo = costoManoDeObra(p);
+    if (!mo) {
+      return `<div class="detalle-seccion"><h3>Rentabilidad y gastos</h3>
+        <p>Define el costo por hora del equipo en <strong>💲 Costos del equipo</strong>
+        (botón del inicio) y aquí verás la ganancia real de este proyecto.</p></div>`;
     }
-    const costoMO = costoReg + horasBase * promedio;
-    const margen = p.contrato - costoMO;
+    const matGasto = gastoMateriales(p.id);
+    const matPresu = p.presupuestoMateriales;
+    if (mo.horas <= 0 && matGasto <= 0) {
+      return `<div class="detalle-seccion"><h3>Rentabilidad y gastos</h3>
+        <p>Todavía no hay horas ni compras registradas en este proyecto.</p></div>`;
+    }
+    const margen = p.contrato - mo.costo - matGasto;
     const pct = Math.round((margen / p.contrato) * 100);
     const clase = pct >= 50 ? "ok" : pct >= 30 ? "warn" : "bad";
     return `
       <div class="detalle-seccion">
-        <h3>Rentabilidad real</h3>
+        <h3>Rentabilidad y gastos</h3>
         <div class="rent-fila"><span>Contrato</span><span>${fmt(p.contrato)}</span></div>
-        <div class="rent-fila"><span>Mano de obra (${Math.round(totalHoras * 10) / 10} h)</span><span>−${fmt(costoMO)}</span></div>
-        <div class="rent-fila rent-total ${clase}"><span>Margen bruto</span><span>${fmt(margen)} (${pct}%)</span></div>
+        <div class="rent-fila"><span>Mano de obra (${mo.horas} h)</span><span>−${fmt(mo.costo)}</span></div>
+        ${barraGasto(mo.costo, mo.presupuesto)}
+        <div class="rent-fila"><span>Materiales comprados</span><span>−${fmt(matGasto)}</span></div>
+        ${barraGasto(matGasto, matPresu)}
+        <div class="rent-fila rent-total ${clase}"><span>Margen real</span><span>${fmt(margen)} (${pct}%)</span></div>
         <div class="barra horas-barra"><div class="barra-relleno ${clase}" style="width:${Math.max(0, Math.min(100, pct))}%"></div></div>
-        <p class="rent-nota">Antes de materiales y gastos. Sale de las horas reportadas × el costo de cada trabajador.</p>
+        <p class="rent-nota">Sale de las horas reportadas × el costo de cada trabajador, más los
+        materiales comprados con precio. El presupuesto de materiales se define en 📊 Gastos.</p>
       </div>`;
   }
 
@@ -801,6 +852,15 @@
       : "";
   }
 
+  // Aviso rojo si el proyecto tiene materiales por comprar
+  function avisoMaterialesHTML(p) {
+    const n = (state.materiales || [])
+      .filter(m => m.proyecto === p.id && m.estado === "falta").length;
+    return n
+      ? `<div class="aviso-obra">🛒 Verificar lista de materiales — ${n} por comprar</div>`
+      : "";
+  }
+
   function avisoFacturasHTML(p) {
     if (!usuario.finanzas) return "";
     const pend = facturasPendientes(p);
@@ -833,6 +893,7 @@
       <article class="proyecto" data-id="${esc(p.id)}">
         ${cabeceraHTML(p, false)}
         ${avisoObraHTML(p)}
+        ${avisoMaterialesHTML(p)}
         ${avisoFacturasHTML(p)}
         ${franjaDineroHTML(p)}
         ${proximoCobroHTML(p)}
@@ -875,6 +936,7 @@
       <article class="proyecto ficha abierto" data-id="${esc(p.id)}">
         ${cabeceraHTML(p, true)}
         ${avisoObraHTML(p)}
+        ${avisoMaterialesHTML(p)}
         ${avisoFacturasHTML(p)}
         ${franjaDineroHTML(p)}
         ${proximoCobroHTML(p)}
@@ -1358,6 +1420,7 @@
           <span class="alcance-titulo">${esc(sinMontos(m.descripcion))}${m.cantidad ? ` <span class="mat-cant">— ${esc(m.cantidad)}</span>` : ""}</span>
           <span class="alcance-estado">${esc(nombreProy(m.proyecto))} · ${esc(m.autor)} ${esc(m.fecha)}</span>
         </span>
+        ${usuario.finanzas && m.estado === "comprado" && typeof m.precio === "number" ? `<span class="mat-precio">${fmt(m.precio)}</span>` : ""}
         ${usuario.editar && m.estado === "falta" ? `<button class="accion btn-mat-comprado" data-id="${m.id}">✓ Comprado</button>` : ""}
         ${usuario.editar ? `<button class="insp-borrar btn-mat-editar" data-id="${m.id}" title="Modificar o eliminar">✎</button>` : ""}
       </div>
@@ -1374,6 +1437,11 @@
             <select name="proyecto">${opcionesEditar(m)}</select>
           </label>
         </div>
+        ${usuario.finanzas ? `
+        <label>Precio pagado ($) — para el control de gastos
+          <input name="precio" type="number" min="0" step="0.01" inputmode="decimal"
+            value="${typeof m.precio === "number" ? m.precio : ""}" placeholder="Ej: 45.99">
+        </label>` : ""}
         <div class="modal-botones">
           <button type="button" class="accion secundaria btn-mat-eliminar" data-id="${m.id}">🗑 Eliminar</button>
           <button type="submit" class="accion">Guardar cambios</button>
@@ -1451,10 +1519,16 @@
     });
     $("materiales-panel").querySelectorAll(".btn-mat-comprado").forEach(btn => {
       btn.addEventListener("click", async () => {
+        // Al comprar, se anota el precio para el control de gastos
+        const respuesta = prompt("¿Cuánto costó? (solo el número, ej: 45.99)\n\nDéjalo vacío si no quieres anotar el precio ahora — lo puedes poner después con el ✎.");
+        if (respuesta === null) return; // canceló
+        const limpio = respuesta.replace(/[$,\s]/g, "");
+        const precio = limpio ? Number(limpio) : null;
+        if (limpio && !Number.isFinite(precio)) { avisar("Ese precio no se entendió — solo el número, ej: 45.99", true); return; }
         try {
-          await DB.cambiarMaterial(btn.dataset.id, { estado: "comprado" });
+          await DB.cambiarMaterial(btn.dataset.id, { estado: "comprado", precio });
           await recargar();
-          avisar("Marcado como comprado ✓");
+          avisar(precio !== null ? `Comprado ✓ — ${fmt(precio)} anotado al proyecto` : "Marcado como comprado ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
@@ -1470,12 +1544,17 @@
       form.addEventListener("submit", async e => {
         e.preventDefault();
         const d = new FormData(form);
+        const cambios = {
+          descripcion: (d.get("descripcion") || "").toString().trim(),
+          cantidad: (d.get("cantidad") || "").toString().trim() || null,
+          proyecto_id: d.get("proyecto") || null
+        };
+        if (usuario.finanzas) {
+          const precioTxt = (d.get("precio") || "").toString().trim();
+          cambios.precio = precioTxt !== "" && Number.isFinite(Number(precioTxt)) ? Number(precioTxt) : null;
+        }
         try {
-          await DB.cambiarMaterial(form.dataset.id, {
-            descripcion: (d.get("descripcion") || "").toString().trim(),
-            cantidad: (d.get("cantidad") || "").toString().trim() || null,
-            proyecto_id: d.get("proyecto") || null
-          });
+          await DB.cambiarMaterial(form.dataset.id, cambios);
           await recargar();
           avisar("Material corregido ✓");
         } catch (err) { avisar("No se pudo corregir: " + err.message, true); }
@@ -1504,6 +1583,68 @@
           await recargar();
           avisar("Pasado a la lista de compras ✓ (el pendiente sigue rojo hasta resolverse en obra)");
         } catch (err) { avisar("No se pudo pasar: " + err.message, true); }
+      });
+    });
+  }
+
+  // ============================================================
+  // 📊 CONTROL DE GASTOS — solo el dueño
+  // ============================================================
+  function irGastos() {
+    if (!usuario.finanzas) return;
+    mostrar("gastos", { kicker: "Solo dueño", titulo: "Control de gastos", volver: true, nuevo: false });
+    pintarGastos();
+  }
+  $("btn-gastos").addEventListener("click", irGastos);
+
+  function pintarGastos() {
+    const activos = proyectos()
+      .filter(p => ["ejecucion", "aprobado", "pausa"].includes(p.estado));
+    if (!activos.length) {
+      $("gastos-panel").innerHTML = `<div class="inicio-card"><p class="cal-sin-eventos">No hay proyectos activos.</p></div>`;
+      return;
+    }
+    const tarjetas = activos.map(p => {
+      const mo = costoManoDeObra(p);
+      const matGasto = gastoMateriales(p.id);
+      const matPresu = p.presupuestoMateriales;
+      const lineaMO = mo && mo.horas > 0
+        ? `<div class="rent-fila"><span>Mano de obra (${mo.horas} h)</span><span>${fmt(mo.costo)}</span></div>
+           ${barraGasto(mo.costo, mo.presupuesto) || `<div class="gasto-sub">sin horas estimadas para comparar</div>`}`
+        : `<div class="gasto-sub">sin horas registradas${mo ? "" : " · define 💲 Costos del equipo"}</div>`;
+      const lineaMat = `
+        <div class="rent-fila"><span>Materiales comprados</span><span>${fmt(matGasto)}</span></div>
+        ${barraGasto(matGasto, matPresu) || `<div class="gasto-sub">sin presupuesto de materiales — ponlo aquí abajo</div>`}`;
+      return `
+        <div class="inicio-card gasto-card">
+          <button class="gasto-nombre" data-id="${esc(p.id)}">${esc(p.nombre)} <span class="cat-flecha">›</span></button>
+          ${lineaMO}
+          ${lineaMat}
+          <div class="gasto-presu-fila">
+            <label>Presupuesto de materiales ($)
+              <input class="inp-presu" data-id="${esc(p.id)}" type="number" min="0" step="1"
+                inputmode="decimal" value="${matPresu != null ? matPresu : ""}" placeholder="Ej: 2500">
+            </label>
+            <button class="accion secundaria btn-presu" data-id="${esc(p.id)}">💾 Guardar</button>
+          </div>
+        </div>`;
+    }).join("");
+    $("gastos-panel").innerHTML = tarjetas;
+
+    $("gastos-panel").querySelectorAll(".gasto-nombre").forEach(btn => {
+      btn.addEventListener("click", () => irDetalle(btn.dataset.id));
+    });
+    $("gastos-panel").querySelectorAll(".btn-presu").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const inp = $("gastos-panel").querySelector(`.inp-presu[data-id="${btn.dataset.id}"]`);
+        const v = (inp.value || "").trim();
+        const monto = v === "" ? null : Number(v);
+        if (v !== "" && !Number.isFinite(monto)) { avisar("Ese monto no se entendió", true); return; }
+        try {
+          await DB.guardarPresupuesto(btn.dataset.id, monto);
+          await recargar();
+          avisar("Presupuesto guardado ✓");
+        } catch (err) { avisar("No se pudo guardar: " + err.message, true); }
       });
     });
   }
