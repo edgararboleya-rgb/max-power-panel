@@ -279,6 +279,7 @@
     crearFoto: fila => insertar("fotos", { ...fila, autor_id: uid() }),
     crearInspeccion: fila => insertar("inspecciones", fila),
     cambiarInspeccion: (id, cambios) => actualizar(`inspecciones?id=eq.${id}`, cambios),
+    eliminarInspeccion: id => api(`inspecciones?id=eq.${id}`, { metodo: "DELETE" }),
     crearEvento: fila => insertar("eventos", { ...fila, autor_id: uid() }),
     crearPendiente: fila => insertar("pendientes", { ...fila, autor_id: uid() }),
     resolverPendiente: id => actualizar(`pendientes?id=eq.${id}`,

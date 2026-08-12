@@ -750,7 +750,8 @@
         ? `<select class="insp-resultado" data-id="${i.id}" title="Cambiar resultado">
              ${Object.entries(RES_INSP).map(([clave, x]) =>
                `<option value="${clave}"${clave === i.resultado ? " selected" : ""}>${x.etiqueta}</option>`).join("")}
-           </select>`
+           </select>
+           <button type="button" class="insp-borrar" data-id="${i.id}" data-tipo="${esc(i.tipo)}" title="Eliminar inspección">🗑</button>`
         : `<span class="insp-chip ${r.clase}">${r.etiqueta}</span>`;
       return `<div class="insp-item ${r.clase}">
           <span class="insp-icono">${r.icono}</span>
@@ -943,6 +944,20 @@
           }
         } catch (err) {
           avisar("No se pudo cambiar: " + err.message, true);
+        }
+      });
+    });
+
+    // 🗑 Eliminar inspección (solo dueño, con confirmación)
+    $detalle.querySelectorAll(".insp-borrar").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        if (!confirm(`¿Eliminar la inspección ${btn.dataset.tipo}?\n\nÚsalo solo si se anotó por error. Esto no se puede deshacer.`)) return;
+        try {
+          await DB.eliminarInspeccion(btn.dataset.id);
+          await recargar();
+          avisar("Inspección eliminada ✓");
+        } catch (err) {
+          avisar("No se pudo eliminar: " + err.message, true);
         }
       });
     });
