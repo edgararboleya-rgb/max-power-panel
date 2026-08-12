@@ -291,6 +291,8 @@
     crearProyecto: fila => insertar("proyectos", fila),
     crearFinanzas: fila => insertar("finanzas_proyecto", fila),
     reportarHoras: fila => insertar("horas", { ...fila, usuario_id: uid() }),
+    cambiarHoras: (id, cambios) => actualizar(`horas?id=eq.${id}`, cambios),
+    eliminarHoras: id => api(`horas?id=eq.${id}`, { metodo: "DELETE" }),
     crearDocumento: fila => insertar("documentos", fila),
     subirFoto,
     firmarFotos,

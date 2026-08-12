@@ -1339,19 +1339,99 @@
 
   function pintarHistorialHoras() {
     const mios = (state.registroHoras || []).filter(r => r.usuarioId === usuario.id);
-    $("horas-historial").innerHTML = mios.length
-      ? `<h3 class="historial-titulo">Mis reportes</h3>` + mios.slice(-10).reverse()
-          .map(r => {
-            const p = proyectos().find(x => x.id === r.proyecto);
-            return `<div class="alcance-item">
-              <span class="alcance-tipo">${esc(r.horas)}h</span>
-              <span class="alcance-info">
-                <span class="alcance-titulo">${esc(p ? p.nombre : r.proyecto)}</span>
-                <span class="alcance-estado">${esc(r.fecha)}${r.fase ? " · " + esc(r.fase) : ""}${r.notas ? " · " + esc(r.notas) : ""}</span>
-              </span>
-            </div>`;
-          }).join("")
-      : "";
+    if (!mios.length) { $("horas-historial").innerHTML = ""; return; }
+
+    const opcionesFase = $formHoras.elements.fase.innerHTML;
+    const opcionesProyecto = r => proyectos()
+      .filter(p => ["ejecucion", "aprobado", "pausa"].includes(p.estado) || p.id === r.proyecto)
+      .map(p => `<option value="${esc(p.id)}"${p.id === r.proyecto ? " selected" : ""}>${esc(p.nombre)}</option>`)
+      .join("");
+
+    $("horas-historial").innerHTML =
+      `<h3 class="historial-titulo">Mis reportes (toca ✎ para corregir)</h3>` +
+      mios.slice(-10).reverse().map(r => {
+        const p = proyectos().find(x => x.id === r.proyecto);
+        return `<div class="alcance-item">
+            <span class="alcance-tipo">${esc(r.horas)}h</span>
+            <span class="alcance-info">
+              <span class="alcance-titulo">${esc(p ? p.nombre : r.proyecto)}</span>
+              <span class="alcance-estado">${esc(r.fecha)}${r.fase ? " · " + esc(r.fase) : ""}${r.notas ? " · " + esc(r.notas) : ""}</span>
+            </span>
+            <button type="button" class="insp-borrar btn-horas-editar" data-id="${r.id}" title="Corregir o eliminar">✎</button>
+          </div>
+          <form class="cal-form form-horas-editar" data-id="${r.id}" data-fase="${esc(r.fase)}" hidden>
+            <div class="modal-fila">
+              <label>Fecha
+                <input name="fecha" type="date" value="${esc(r.fecha)}" required>
+              </label>
+              <label>Horas
+                <input name="horas" type="number" min="0.5" max="16" step="0.5" value="${esc(r.horas)}" required>
+              </label>
+            </div>
+            <label>Proyecto
+              <select name="proyecto">${opcionesProyecto(r)}</select>
+            </label>
+            <label>Fase / tipo de trabajo
+              <select name="fase">${opcionesFase}</select>
+            </label>
+            <label>Notas (aquí puedes agregar lo que te faltó)
+              <input name="notas" type="text" value="${esc(r.notas || "")}" autocomplete="off">
+            </label>
+            <div class="modal-botones">
+              <button type="button" class="accion secundaria btn-horas-borrar" data-id="${r.id}">🗑 Eliminar</button>
+              <button type="submit" class="accion">Guardar cambios</button>
+            </div>
+          </form>`;
+      }).join("");
+
+    // Dejar cada selector de fase en la fase que tenía el reporte
+    $("horas-historial").querySelectorAll(".form-horas-editar").forEach(form => {
+      const sel = form.elements.fase;
+      const faseActual = form.dataset.fase;
+      if (faseActual) {
+        sel.value = faseActual;
+        if (sel.value !== faseActual) {
+          sel.insertAdjacentHTML("afterbegin",
+            `<option value="${esc(faseActual)}" selected>${esc(faseActual)}</option>`);
+          sel.value = faseActual;
+        }
+      }
+    });
+
+    $("horas-historial").querySelectorAll(".btn-horas-editar").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const form = $("horas-historial")
+          .querySelector(`.form-horas-editar[data-id="${btn.dataset.id}"]`);
+        if (form) form.hidden = !form.hidden;
+      });
+    });
+    $("horas-historial").querySelectorAll(".form-horas-editar").forEach(form => {
+      form.addEventListener("submit", async e => {
+        e.preventDefault();
+        const d = new FormData(form);
+        try {
+          await DB.cambiarHoras(form.dataset.id, {
+            fecha: d.get("fecha"),
+            horas: Number(d.get("horas")),
+            proyecto_id: d.get("proyecto"),
+            fase: d.get("fase"),
+            notas: (d.get("notas") || "").toString().trim() || null
+          });
+          await recargar();
+          avisar("Reporte corregido ✓");
+        } catch (err) { avisar("No se pudo corregir: " + err.message, true); }
+      });
+    });
+    $("horas-historial").querySelectorAll(".btn-horas-borrar").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("¿Eliminar este reporte de horas?\n\nÚsalo solo si se reportó por error.")) return;
+        try {
+          await DB.eliminarHoras(btn.dataset.id);
+          await recargar();
+          avisar("Reporte eliminado ✓");
+        } catch (err) { avisar("No se pudo eliminar: " + err.message, true); }
+      });
+    });
   }
 
   $formHoras.addEventListener("submit", async e => {
