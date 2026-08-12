@@ -237,6 +237,22 @@
     pintarInicio();
     pintarCategorias();
     pintarResumen();
+    refrescarInicio();
+  }
+
+  // Refresco silencioso: al volver al inicio, trae los datos frescos
+  // de la nube y repinta (así nunca se queda un aviso viejo)
+  let refrescandoInicio = false;
+  function refrescarInicio() {
+    if (refrescandoInicio) return;
+    refrescandoInicio = true;
+    DB.cargarTodo()
+      .then(s => {
+        state = s;
+        if (!$home.hidden) { pintarInicio(); pintarCategorias(); pintarResumen(); }
+      })
+      .catch(() => {})
+      .finally(() => { refrescandoInicio = false; });
   }
 
   // ---------- El inicio inteligente ----------
@@ -674,6 +690,10 @@
   const gastoMateriales = pid => (state.materiales || [])
     .filter(m => m.proyecto === pid && m.estado === "comprado" && typeof m.precio === "number")
     .reduce((s, m) => s + m.precio, 0);
+  // Ayuda externa (contratados por día o por ajuste)
+  const gastoExternos = pid => (state.externos || [])
+    .filter(x => x.proyecto === pid)
+    .reduce((s, x) => s + x.costo, 0);
 
   // Barrita de "cuánto llevo del presupuesto" (verde <80% / amarillo / rojo)
   function barraGasto(gastado, presupuesto) {
@@ -695,11 +715,12 @@
     }
     const matGasto = gastoMateriales(p.id);
     const matPresu = p.presupuestoMateriales;
-    if (mo.horas <= 0 && matGasto <= 0) {
+    const extGasto = gastoExternos(p.id);
+    if (mo.horas <= 0 && matGasto <= 0 && extGasto <= 0) {
       return `<div class="detalle-seccion"><h3>Rentabilidad y gastos</h3>
         <p>Todavía no hay horas ni compras registradas en este proyecto.</p></div>`;
     }
-    const margen = p.contrato - mo.costo - matGasto;
+    const margen = p.contrato - mo.costo - matGasto - extGasto;
     const pct = Math.round((margen / p.contrato) * 100);
     const clase = pct >= 50 ? "ok" : pct >= 30 ? "warn" : "bad";
     return `
@@ -710,10 +731,60 @@
         ${barraGasto(mo.costo, mo.presupuesto)}
         <div class="rent-fila"><span>Materiales comprados</span><span>−${fmt(matGasto)}</span></div>
         ${barraGasto(matGasto, matPresu)}
+        ${extGasto > 0 ? `<div class="rent-fila"><span>Ayuda externa</span><span>−${fmt(extGasto)}</span></div>` : ""}
         <div class="rent-fila rent-total ${clase}"><span>Margen real</span><span>${fmt(margen)} (${pct}%)</span></div>
         <div class="barra horas-barra"><div class="barra-relleno ${clase}" style="width:${Math.max(0, Math.min(100, pct))}%"></div></div>
         <p class="rent-nota">Sale de las horas reportadas × el costo de cada trabajador, más los
         materiales comprados con precio. El presupuesto de materiales se define en 📊 Gastos.</p>
+      </div>`;
+  }
+
+  // Ayuda externa: contratados puntuales sin cuenta en la app (SOLO dueño)
+  function externosHTML(p) {
+    if (!usuario.finanzas) return "";
+    const lista = (state.externos || []).filter(x => x.proyecto === p.id);
+    const filas = lista.map(x => `
+      <div class="alcance-item">
+        <span class="alcance-tipo">${x.tipo === "horas" && x.horas ? esc(x.horas) + "h" : "AJUSTE"}</span>
+        <span class="alcance-info">
+          <span class="alcance-titulo">${esc(x.descripcion)}</span>
+          <span class="alcance-estado">${x.fecha ? fechaBonita(x.fecha) : ""}</span>
+        </span>
+        <span class="mat-precio">${fmt(x.costo)}</span>
+        <button type="button" class="insp-borrar btn-ext-borrar" data-id="${x.id}" title="Eliminar">🗑</button>
+      </div>`).join("");
+    return `
+      <div class="detalle-seccion">
+        <h3>Ayuda externa (por día o por ajuste)</h3>
+        ${filas || `<span class="sin-docs">Sin trabajos externos anotados.</span>`}
+        <button type="button" class="accion secundaria btn-agregar-ext">+ Anotar trabajo externo</button>
+        <form class="cal-form form-ext" hidden>
+          <label>Quién / qué hizo
+            <input name="descripcion" type="text" required placeholder="Ej: Pedro — ayudante, demolición 2 días" autocomplete="off">
+          </label>
+          <div class="modal-fila">
+            <label>Tipo
+              <select name="tipo">
+                <option value="ajuste">Por ajuste (precio cerrado)</option>
+                <option value="horas">Por horas / por día</option>
+              </select>
+            </label>
+            <label>Fecha
+              <input name="fecha" type="date">
+            </label>
+          </div>
+          <div class="modal-fila">
+            <label>Horas (si fue por horas)
+              <input name="horas" type="number" min="0" step="0.5" placeholder="Ej: 16">
+            </label>
+            <label>Costo total ($)
+              <input name="costo" type="number" min="0" step="0.01" inputmode="decimal" required placeholder="Ej: 300">
+            </label>
+          </div>
+          <p class="modal-nota">Esto entra como gasto del proyecto y se resta del margen.
+          El trabajador NO necesita cuenta en la app.</p>
+          <button type="submit" class="accion">Guardar</button>
+        </form>
       </div>`;
   }
 
@@ -948,6 +1019,7 @@
           ${desgloseHTML(p)}
           ${hitosHTML(p)}
           ${rentabilidadHTML(p)}
+          ${externosHTML(p)}
           ${rfisHTML(p)}
           ${inspeccionesHTML(p)}
           ${fotosHTML(p)}
@@ -987,7 +1059,7 @@
              ${Object.entries(RES_INSP).map(([clave, x]) =>
                `<option value="${clave}"${clave === i.resultado ? " selected" : ""}>${x.etiqueta}</option>`).join("")}
            </select>
-           <button type="button" class="insp-borrar" data-id="${i.id}" data-tipo="${esc(i.tipo)}" title="Eliminar inspección">🗑</button>`
+           <button type="button" class="insp-borrar btn-insp-borrar" data-id="${i.id}" data-tipo="${esc(i.tipo)}" title="Eliminar inspección">🗑</button>`
         : `<span class="insp-chip ${r.clase}">${r.etiqueta}</span>`;
       return `<div class="insp-item ${r.clase}">
           <span class="insp-icono">${r.icono}</span>
@@ -1185,7 +1257,7 @@
     });
 
     // 🗑 Eliminar inspección (solo dueño, con confirmación)
-    $detalle.querySelectorAll(".insp-borrar").forEach(btn => {
+    $detalle.querySelectorAll(".btn-insp-borrar").forEach(btn => {
       btn.addEventListener("click", async () => {
         if (!confirm(`¿Eliminar la inspección ${btn.dataset.tipo}?\n\nÚsalo solo si se anotó por error. Esto no se puede deshacer.`)) return;
         try {
@@ -1195,6 +1267,44 @@
         } catch (err) {
           avisar("No se pudo eliminar: " + err.message, true);
         }
+      });
+    });
+
+    // "+ Anotar trabajo externo" (solo dueño)
+    const btnExt = $detalle.querySelector(".btn-agregar-ext");
+    if (btnExt) {
+      const formExt = $detalle.querySelector(".form-ext");
+      btnExt.addEventListener("click", () => {
+        formExt.hidden = !formExt.hidden;
+        if (!formExt.hidden && !formExt.elements.fecha.value)
+          formExt.elements.fecha.value = hoyISO();
+      });
+      formExt.addEventListener("submit", async e => {
+        e.preventDefault();
+        const d = new FormData(formExt);
+        const horasTxt = (d.get("horas") || "").toString().trim();
+        try {
+          await DB.crearExterno({
+            proyecto_id: p.id,
+            descripcion: (d.get("descripcion") || "").toString().trim(),
+            fecha: d.get("fecha") || null,
+            tipo: d.get("tipo") === "horas" ? "horas" : "ajuste",
+            horas: horasTxt !== "" && Number.isFinite(Number(horasTxt)) ? Number(horasTxt) : null,
+            costo: Number(d.get("costo"))
+          });
+          await recargar();
+          avisar("Trabajo externo anotado ✓ — ya cuenta como gasto del proyecto");
+        } catch (err) { avisar("No se pudo anotar: " + err.message, true); }
+      });
+    }
+    $detalle.querySelectorAll(".btn-ext-borrar").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("¿Eliminar este trabajo externo?")) return;
+        try {
+          await DB.eliminarExterno(btn.dataset.id);
+          await recargar();
+          avisar("Trabajo externo eliminado ✓");
+        } catch (err) { avisar("No se pudo eliminar: " + err.message, true); }
       });
     });
 
@@ -1692,9 +1802,11 @@
         ? `<div class="rent-fila"><span>Mano de obra (${mo.horas} h)</span><span>${fmt(mo.costo)}</span></div>
            ${barraGasto(mo.costo, mo.presupuesto) || `<div class="gasto-sub">sin horas estimadas para comparar</div>`}`
         : `<div class="gasto-sub">sin horas registradas${mo ? "" : " · define 💲 Costos del equipo"}</div>`;
+      const extGasto = gastoExternos(p.id);
       const lineaMat = `
         <div class="rent-fila"><span>Materiales comprados</span><span>${fmt(matGasto)}</span></div>
-        ${barraGasto(matGasto, matPresu) || `<div class="gasto-sub">sin presupuesto de materiales — ponlo aquí abajo</div>`}`;
+        ${barraGasto(matGasto, matPresu) || `<div class="gasto-sub">sin presupuesto de materiales — ponlo aquí abajo</div>`}
+        ${extGasto > 0 ? `<div class="rent-fila"><span>Ayuda externa</span><span>${fmt(extGasto)}</span></div>` : ""}`;
       return `
         <div class="inicio-card gasto-card">
           <button class="gasto-nombre" data-id="${esc(p.id)}">${esc(p.nombre)} <span class="cat-flecha">›</span></button>

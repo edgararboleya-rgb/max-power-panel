@@ -142,7 +142,7 @@
   async function cargarTodo() {
     const [perfiles, proyectos, finanzas, alcances, alcancesEquipo,
            hitos, facturas, horas, eventos, pendientes, documentos, fotos,
-           inspecciones, materiales, materialesEquipo, costos] =
+           inspecciones, materiales, materialesEquipo, costos, externos] =
       await Promise.all([
         leer("perfiles?select=id,nombre,rol"),
         leer("proyectos?select=*&order=nombre"),
@@ -160,7 +160,8 @@
         leer("inspecciones?select=*&order=fecha").catch(() => []),
         leer("materiales?select=*&order=creado").catch(() => []),
         leer("materiales_equipo?select=*&order=creado").catch(() => []),
-        leer("costos_equipo?select=*").catch(() => [])
+        leer("costos_equipo?select=*").catch(() => []),
+        leer("trabajos_externos?select=*&order=fecha").catch(() => [])
       ]);
 
     const nombrePorId = Object.fromEntries(perfiles.map(p => [p.id, p.nombre]));
@@ -273,7 +274,13 @@
         autor: nombrePorId[m.autor_id] || "",
         fecha: m.creado ? String(m.creado).slice(0, 10) : ""
       })),
-      costos: Object.fromEntries(costos.map(c => [c.usuario_id, Number(c.costo_hora)]))
+      costos: Object.fromEntries(costos.map(c => [c.usuario_id, Number(c.costo_hora)])),
+      externos: externos.map(x => ({
+        id: x.id, proyecto: x.proyecto_id, descripcion: x.descripcion,
+        fecha: x.fecha || "", tipo: x.tipo || "ajuste",
+        horas: x.horas !== undefined && x.horas !== null ? Number(x.horas) : null,
+        costo: Number(x.costo)
+      }))
     };
   }
 
@@ -293,6 +300,8 @@
     reportarHoras: fila => insertar("horas", { ...fila, usuario_id: uid() }),
     cambiarHoras: (id, cambios) => actualizar(`horas?id=eq.${id}`, cambios),
     eliminarHoras: id => api(`horas?id=eq.${id}`, { metodo: "DELETE" }),
+    crearExterno: fila => insertar("trabajos_externos", fila),
+    eliminarExterno: id => api(`trabajos_externos?id=eq.${id}`, { metodo: "DELETE" }),
     crearDocumento: fila => insertar("documentos", fila),
     subirFoto,
     firmarFotos,
