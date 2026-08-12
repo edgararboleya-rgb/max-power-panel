@@ -2338,6 +2338,7 @@
   // ============================================================
   let estData = null;        // { catalogo, escenarios, estimados, items }
   let estimadoActivo = null; // id del estimado abierto
+  let colaEnsambles = Promise.resolve(); // fila india de los clics +/- de ensambles
 
   function irEstimador(abrirId) {
     if (!usuario.finanzas) return;
@@ -2935,47 +2936,53 @@ Power done right the first time. ⚡`;
     });
 
     // --- ensambles +/- ---
+    // Los clics van en fila india (cada uno espera al anterior) para que un
+    // doble clic rápido nunca cree contadores duplicados; y si un duplicado
+    // viejo existiera, se une solo (auto-cura) antes de sumar o restar.
+    async function ajustarEnsamble(ensId, delta) {
+      const filas = (estData.estEnsambles || [])
+        .filter(e => e.estimado_id === est.id && e.ensamble_id === ensId);
+      let fila = filas[0];
+      if (filas.length > 1) {
+        const total = filas.reduce((s, f) => s + Number(f.cantidad), 0);
+        await DB.cambiarEnsambleQty(fila.id, total);
+        for (const f of filas.slice(1)) await DB.quitarEnsamble(f.id);
+        fila = { ...fila, cantidad: total };
+      }
+      const nueva = (fila ? Number(fila.cantidad) : 0) + delta;
+      if (!fila) {
+        if (nueva <= 0) return;
+        const cuerpo = { estimado_id: est.id, ensamble_id: ensId, cantidad: nueva };
+        const ens = ensDisponibles.find(e => e.id === ensId);
+        if (ens && ens.pies_editable) {
+          const prom = piesPromedioEnsamble(ens.id);
+          const resp = prompt(`¿Cuántos pies de cable hasta el panel?\n(Deja vacío para usar el promedio de ${prom || "?"} ft)`);
+          const pies = Number((resp || "").replace(/[^\d.]/g, ""));
+          if (pies > 0) cuerpo.pies = pies;
+        }
+        await DB.ponerEnsamble(cuerpo);
+      } else if (nueva <= 0) await DB.quitarEnsamble(fila.id);
+      else await DB.cambiarEnsambleQty(fila.id, nueva);
+    }
+    const enFilaEnsamble = op => {
+      colaEnsambles = colaEnsambles
+        .then(async () => { await op(); await recargarEstimador(); })
+        .catch(err => avisar("No se pudo: " + err.message, true));
+    };
     $("estimador-panel").querySelectorAll(".btn-ens-mas").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const enEst = ensDelEst.find(e => e.ensamble_id === Number(btn.dataset.ens));
-        try {
-          if (enEst) await DB.cambiarEnsambleQty(enEst.id, Number(enEst.cantidad) + 1);
-          else {
-            const fila = { estimado_id: est.id, ensamble_id: Number(btn.dataset.ens), cantidad: 1 };
-            const ens = ensDisponibles.find(e => e.id === fila.ensamble_id);
-            if (ens && ens.pies_editable) {
-              const prom = piesPromedioEnsamble(ens.id);
-              const resp = prompt(`¿Cuántos pies de cable hasta el panel?\n(Deja vacío para usar el promedio de ${prom || "?"} ft)`);
-              const pies = Number((resp || "").replace(/[^\d.]/g, ""));
-              if (pies > 0) fila.pies = pies;
-            }
-            await DB.ponerEnsamble(fila);
-          }
-          await recargarEstimador();
-        } catch (err) { avisar("No se pudo: " + err.message, true); }
-      });
+      btn.addEventListener("click", () =>
+        enFilaEnsamble(() => ajustarEnsamble(Number(btn.dataset.ens), +1)));
+    });
+    $("estimador-panel").querySelectorAll(".btn-ens-menos").forEach(btn => {
+      btn.addEventListener("click", () =>
+        enFilaEnsamble(() => ajustarEnsamble(Number(btn.dataset.ens), -1)));
     });
     $("estimador-panel").querySelectorAll(".btn-ens-pies").forEach(btn => {
-      btn.addEventListener("click", async () => {
+      btn.addEventListener("click", () => {
         const resp = prompt(`Pies de cable medidos hasta el panel:\n(Deja vacío para volver al promedio de ${btn.dataset.prom || "?"} ft)`);
         if (resp === null) return;
         const pies = Number(resp.replace(/[^\d.]/g, ""));
-        try {
-          await DB.cambiarEnsamblePies(Number(btn.dataset.eid), pies > 0 ? pies : null);
-          await recargarEstimador();
-        } catch (err) { avisar("No se pudo: " + err.message, true); }
-      });
-    });
-    $("estimador-panel").querySelectorAll(".btn-ens-menos").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const enEst = ensDelEst.find(e => e.ensamble_id === Number(btn.dataset.ens));
-        if (!enEst) return;
-        try {
-          const nueva = Number(enEst.cantidad) - 1;
-          if (nueva <= 0) await DB.quitarEnsamble(enEst.id);
-          else await DB.cambiarEnsambleQty(enEst.id, nueva);
-          await recargarEstimador();
-        } catch (err) { avisar("No se pudo: " + err.message, true); }
+        enFilaEnsamble(() => DB.cambiarEnsamblePies(Number(btn.dataset.eid), pies > 0 ? pies : null));
       });
     });
 
