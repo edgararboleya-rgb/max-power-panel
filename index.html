@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Max Power — Proyectos</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- ============ PORTADA: usuario y contraseña ============ -->
+  <section id="vista-login" class="login" hidden>
+    <div class="login-caja">
+      <img id="logo-login" class="login-logo" alt="Logo Max Power" src="">
+      <div class="wordmark grande">max power</div>
+      <div class="wordmark-sub grande">Electrical Solutions Inc.</div>
+      <div class="login-tagline">Power done right the first time.</div>
+      <form id="form-login" class="login-form">
+        <label>Usuario
+          <input name="usuario" type="text" autocomplete="username" autocapitalize="none" required>
+        </label>
+        <label>Contraseña
+          <input name="clave" type="password" autocomplete="current-password" required>
+        </label>
+        <div id="login-error" class="login-error" hidden>Usuario o contraseña incorrectos.</div>
+        <button type="submit" class="btn-entrar">Entrar</button>
+      </form>
+      <p class="login-nota">FL Electrical Contractor License EC13016045 · mxpes.com</p>
+    </div>
+  </section>
+
+  <!-- ============ APLICACIÓN ============ -->
+  <div id="vista-app" hidden>
+
+    <!-- Marco oscuro superior (como el nav de mxpes.com) -->
+    <header class="membrete">
+      <div class="membrete-inner">
+        <img id="logo" class="membrete-logo" alt="Logo Max Power" src="">
+        <div>
+          <div class="wordmark">max power</div>
+          <div class="wordmark-sub">Electrical Solutions Inc.</div>
+        </div>
+        <div class="membrete-der">
+          <span id="usuario-chip" class="usuario-chip"></span>
+          <button id="btn-salir" class="btn-salir" title="Cambiar de usuario">Salir</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Migas y acciones de la vista actual -->
+    <div class="toolbar">
+      <button id="btn-volver" class="btn-volver" hidden title="Volver">←</button>
+      <div class="toolbar-titulos">
+        <div id="kicker" class="kicker">Panel de proyectos</div>
+        <h1 id="titulo-vista">Categorías</h1>
+      </div>
+      <button id="btn-nuevo" class="btn-nuevo" title="Crear un proyecto nuevo" hidden>+ Nuevo proyecto</button>
+    </div>
+
+    <main class="container">
+
+      <!-- NIVEL 1 · HOME: solo las tres categorías (+ resumen del dueño) -->
+      <section id="vista-home">
+        <div class="botones-rapidos">
+          <button id="btn-horas" class="btn-horas">⏱ Reportar mis horas</button>
+          <button id="btn-calendario" class="btn-horas">📅 Calendario</button>
+        </div>
+        <section id="categorias" class="categorias"></section>
+        <section id="resumen" class="resumen"></section>
+      </section>
+
+      <!-- CALENDARIO: mes completo con eventos y pendientes -->
+      <section id="vista-calendario" hidden>
+        <div class="cal-card">
+          <div class="cal-nav">
+            <button id="cal-prev" class="btn-volver" title="Mes anterior">‹</button>
+            <div id="cal-mes" class="cal-mes"></div>
+            <button id="cal-next" class="btn-volver" title="Mes siguiente">›</button>
+          </div>
+          <div class="cal-semana-nombres">
+            <span>Lun</span><span>Mar</span><span>Mié</span><span>Jue</span><span>Vie</span><span>Sáb</span><span>Dom</span>
+          </div>
+          <div id="cal-grid" class="cal-grid"></div>
+          <div class="cal-leyenda">
+            <span><span class="cal-dot hoy"></span> Hoy</span>
+            <span><span class="cal-dot trabajo"></span> Con trabajo</span>
+            <span><span class="cal-dot vacio"></span> Sin programar</span>
+            <span><span class="cal-dot pendiente"></span> Pendiente sin resolver</span>
+          </div>
+        </div>
+        <div id="cal-dia-panel"></div>
+      </section>
+
+      <!-- MIS HORAS: reporte diario del trabajador -->
+      <section id="vista-horas" hidden>
+        <div class="horas-form-card">
+          <form id="form-horas">
+            <div class="modal-fila">
+              <label>Fecha
+                <input name="fecha" type="date" required>
+              </label>
+              <label>Horas trabajadas
+                <input name="horas" type="number" min="0.5" max="16" step="0.5" placeholder="8" required>
+              </label>
+            </div>
+            <label>Proyecto
+              <select name="proyecto" required></select>
+            </label>
+            <label>Fase / tipo de trabajo
+              <select name="fase">
+                <option value="Movilización">Inicio / Movilización</option>
+                <option value="Rough-in" selected>Rough-in</option>
+                <option value="Underground">Underground</option>
+                <option value="Panel / Servicio">Panel / Servicio</option>
+                <option value="Trim-out">Trim / Terminación</option>
+                <option value="Low Voltage">Low Voltage / Audio</option>
+                <option value="Troubleshooting">Troubleshooting</option>
+                <option value="Inspección / Correcciones">Inspección / Correcciones</option>
+                <option value="Service Call">Service Call</option>
+              </select>
+            </label>
+            <label>Notas (qué se hizo)
+              <input name="notas" type="text" placeholder="Ej: terminé los recessed del living" autocomplete="off">
+            </label>
+            <label>⚠ ¿Quedó algún pendiente? (faltó material, circuito sin tirar…)
+              <input name="pendiente" type="text" placeholder="Ej: faltó cable 14/2 — circuito del pasillo sin tirar" autocomplete="off">
+            </label>
+            <p class="modal-nota">Tu reporte se guarda directo en el sistema y Edgar lo ve al instante.</p>
+            <button type="submit" class="btn-entrar">✓ Guardar mi reporte</button>
+          </form>
+          <div id="horas-historial"></div>
+        </div>
+      </section>
+
+      <!-- NIVEL 2 · SUBMENÚ: etapas de la categoría elegida -->
+      <section id="vista-etapas" hidden>
+        <div id="etapas" class="etapas"></div>
+      </section>
+
+      <!-- NIVEL 3 · LISTA: proyectos de esa categoría y etapa -->
+      <section id="vista-lista" hidden>
+        <input id="buscador" type="search" placeholder="Buscar proyecto, cliente o dirección…" autocomplete="off">
+        <div id="lista" class="lista"></div>
+      </section>
+
+    </main>
+
+    <footer class="pie">
+      <p><strong>Datos en vivo</strong> — base de datos en la nube · finanzas conciliadas con QuickBooks</p>
+      <p>Max Power Electrical Solutions, Inc. · mxpes.com</p>
+      <div class="licencia">FL EC LICENSE #EC13016045</div>
+    </footer>
+  </div>
+
+  <!-- Ventana para crear un proyecto nuevo -->
+  <dialog id="modal-nuevo" class="modal">
+    <form id="form-nuevo" method="dialog">
+      <div class="modal-titulo">Nuevo Proyecto</div>
+      <label>Nombre del proyecto *
+        <input name="nombre" type="text" required placeholder="Ej: Casa García — Remodelación" autocomplete="off">
+      </label>
+      <div class="modal-fila">
+        <label>Categoría
+          <select name="tipo">
+            <option value="residencial">Residencial</option>
+            <option value="comercial">Comercial</option>
+            <option value="servicio">Servicio</option>
+          </select>
+        </label>
+        <label>Etapa inicial
+          <select name="estado">
+            <option value="enviado">Enviado</option>
+            <option value="aprobado">Aprobado</option>
+            <option value="ejecucion">En ejecución</option>
+          </select>
+        </label>
+      </div>
+      <label>Cliente
+        <input name="cliente" type="text" placeholder="Ej: Juan García" autocomplete="off">
+      </label>
+      <label>Dirección
+        <input name="direccion" type="text" placeholder="Ej: 123 Main St, Tampa, FL" autocomplete="off">
+      </label>
+      <div class="modal-fila">
+        <label>Vía / GC
+          <input name="via" type="text" placeholder="Wisdom, CCB, directo…" autocomplete="off">
+        </label>
+        <label>Valor del contrato ($)
+          <input name="contrato" type="text" inputmode="decimal" placeholder="Ej: 15000" autocomplete="off">
+        </label>
+      </div>
+      <label>Nº de propuesta / SOW
+        <input name="ref" type="text" placeholder="Ej: MXP-2026-0811-GARCIA" autocomplete="off">
+      </label>
+      <label>Notas
+        <input name="notas" type="text" placeholder="Situación actual del proyecto" autocomplete="off">
+      </label>
+      <p class="modal-nota">El proyecto se guarda en la nube y lo ve todo el equipo al instante.</p>
+      <div class="modal-botones">
+        <button type="button" id="btn-cancelar" class="accion secundaria">Cancelar</button>
+        <button type="submit" class="accion">Crear proyecto</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="assets/logo.js"></script>
+  <script src="assets/config.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
