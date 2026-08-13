@@ -299,6 +299,8 @@
     pintarInicioEquipo();
   }
 
+  let hoyExpandido = false; // franja HOY: mostrar todos los pendientes o solo 3
+
   // Franja "HOY": lo de hoy y mañana + los pendientes rojos (todos la ven)
   function pintarInicioHoy() {
     const hoy = hoyISO();
@@ -322,7 +324,7 @@
         </span>
       </div>`).join("");
 
-    const maxPens = pens.slice(0, 3);
+    const maxPens = hoyExpandido ? pens : pens.slice(0, 3);
     const filasPen = maxPens.map(x => `
       <div class="hoy-item rojo">
         <span class="hoy-chip es-rojo">🔴</span>
@@ -333,7 +335,7 @@
         ${usuario.editar ? `<button class="insp-borrar btn-pen-editar" data-id="${x.id}" title="Corregir el texto">✎</button>
         <button class="accion secundaria btn-hoy-resolver" data-id="${x.id}">✓ Resuelto</button>` : ""}
       </div>`).join("") +
-      (pens.length > 3 ? `<div class="hoy-mas">+ ${pens.length - 3} pendientes más en el calendario</div>` : "");
+      (pens.length > 3 ? `<div class="hoy-mas"><button type="button" class="accion secundaria" id="btn-hoy-todos">${hoyExpandido ? "▴ Ver menos" : `▾ Ver TODOS los pendientes (${pens.length})`}</button></div>` : "");
 
     $("inicio-hoy").innerHTML = `
       <div class="inicio-card">
@@ -343,6 +345,12 @@
         ${!evs.length ? `<div class="hoy-mas">Nada programado para hoy ni mañana.</div>` : ""}
       </div>`;
 
+    // Extender / encoger la lista completa de pendientes ahí mismo
+    const btnTodos = $("btn-hoy-todos");
+    if (btnTodos) btnTodos.addEventListener("click", () => {
+      hoyExpandido = !hoyExpandido;
+      pintarInicioHoy();
+    });
     // "✓ Resuelto" directo desde el inicio (solo dueño)
     $("inicio-hoy").querySelectorAll(".btn-hoy-resolver").forEach(btn => {
       btn.addEventListener("click", async () => {
