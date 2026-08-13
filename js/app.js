@@ -2121,17 +2121,78 @@
       lector.readAsText(archivo);
     });
 
-    // Exportar la lista "Por comprar" para mandarla al supply
+    // Glosario español → inglés de supply (se aplica solo al exportar;
+    // dentro de la app todo se queda como Edgar lo escribió)
+    const GLOSARIO_SUPPLY = [
+      [/\bcinta negra\b/gi, "black electrical tape"],
+      [/\bcinta\b/gi, "tape"],
+      [/\btoma doble\b/gi, "duplex receptacle"],
+      [/\btomacorrientes?\b/gi, "receptacle"],
+      [/\btomas?\b/gi, "receptacle"],
+      [/\binterruptor sencillo\b/gi, "single-pole switch"],
+      [/\binterruptor(es)?\b/gi, "switch"],
+      [/\bapagador(es)?\b/gi, "switch"],
+      [/\bvarillas? de tierra\b/gi, "ground rod"],
+      [/\btierra\b/gi, "ground"],
+      [/\bcemento pvc\b/gi, "PVC cement"],
+      [/\blimpiador\b/gi, "PVC primer"],
+      [/\bcuerda de jalar\b/gi, "pull string"],
+      [/\bgu[ií]a de pescar\b/gi, "fish tape"],
+      [/\bradio largo\b/gi, "long-radius"],
+      [/\bnoventas?\b/gi, "90° sweep elbow"],
+      [/\bcodos?\b/gi, "elbow"],
+      [/\bconector \/ adaptador macho\b/gi, "male adapter (MA)"],
+      [/\badaptador(es)? macho\b/gi, "male adapter (MA)"],
+      [/\bconector(es)?\b/gi, "connector"],
+      [/\babrazaderas?\b/gi, "clamp"],
+      [/\bgrapas?\b/gi, "staples"],
+      [/\banclas?\b/gi, "anchors"],
+      [/\btornillos?\b/gi, "screws"],
+      [/\btuercas de resorte\b/gi, "spring nuts"],
+      [/\bluminarias?\b/gi, "light fixture"],
+      [/\bluces\b/gi, "lights"],
+      [/\bbombillos?\b/gi, "bulb"],
+      [/\babanicos?\b/gi, "ceiling fan"],
+      [/\btableros?\b/gi, "panel"],
+      [/\btapas?\b/gi, "cover"],
+      [/\bplacas?\b/gi, "plate"],
+      [/\bcable (\d+\/\d+)\s*mc\b/gi, "$1 MC cable"],
+      [/\bcable (\d+\/\d+)/gi, "$1 Romex (NM-B)"],
+      [/\bcables?\b/gi, "wire"],
+      [/\balambres?\b/gi, "wire"],
+      [/\btubos? el[eé]ctricos?\b/gi, "conduit"],
+      [/\btubo\b/gi, "conduit"],
+      [/\btuber[ií]a\b/gi, "conduit"],
+      [/\btramos de\b/gi, "lengths of"],
+      [/\brollos?\b/gi, m => (/s$/i.test(m) ? "rolls" : "roll")],
+      [/\bcajas\b/gi, "boxes"],
+      [/\bcaja\b/gi, "box"],
+      [/\bpiezas?\b/gi, "pcs"],
+      [/\bunidades\b/gi, "units"],
+      [/\bpies\b/gi, "ft"],
+      [/\bgalones?\b/gi, "gal"],
+      [/\bpaquetes?\b/gi, "pack"],
+      [/\bbolsas?\b/gi, "bag"],
+      [/\bd[ií]as?\b/gi, "day"],
+      [/\brenta:\s*/gi, "RENTAL: "],
+      [/\brevisar si falta\b/gi, "if missing (check our stock first)"],
+      [/\bojo\b/gi, "NOTE"],
+      [/\bno sirve\b/gi, "does NOT work"],
+    ];
+    const alSupply = s => GLOSARIO_SUPPLY.reduce(
+      (t, [re, rep]) => t.replace(re, rep), String(s || ""));
+
+    // Exportar la lista "Por comprar" para mandarla al supply (sale en inglés)
     const btnSupply = $("btn-mat-supply");
     if (btnSupply) btnSupply.addEventListener("click", async () => {
       const porProy = {};
       faltan.forEach(m => { (porProy[m.proyecto || ""] = porProy[m.proyecto || ""] || []).push(m); });
       const hoy = new Date();
-      let texto = `LISTA DE MATERIALES — Max Power Electrical Solutions\n`
-        + `${String(hoy.getMonth() + 1).padStart(2, "0")}/${String(hoy.getDate()).padStart(2, "0")}/${hoy.getFullYear()}\n`;
+      let texto = `MATERIAL LIST — Max Power Electrical Solutions Inc.\n`
+        + `${String(hoy.getMonth() + 1).padStart(2, "0")}/${String(hoy.getDate()).padStart(2, "0")}/${hoy.getFullYear()} · FL EC #EC13016045\n`;
       for (const [pid, items] of Object.entries(porProy)) {
-        texto += `\n${pid ? nombreProy(pid).toUpperCase() : "GENERAL"}\n`;
-        for (const m of items) texto += `• ${m.descripcion}${m.cantidad ? ` — ${m.cantidad}` : ""}\n`;
+        texto += `\n${pid ? "JOB: " + nombreProy(pid).toUpperCase() : "GENERAL / SHOP"}\n`;
+        for (const m of items) texto += `• ${alSupply(m.descripcion)}${m.cantidad ? ` — ${alSupply(m.cantidad)}` : ""}\n`;
       }
       if (navigator.share) {
         try { await navigator.share({ title: "Lista de materiales", text: texto }); return; }
