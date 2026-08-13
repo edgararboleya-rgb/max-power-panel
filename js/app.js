@@ -71,7 +71,10 @@
   const ORDEN_ETAPAS = ["ejecucion", "aprobado", "enviado", "pausa", "completado"];
   const ROL_ETIQUETA = { dueno: "Dueño", campo: "Campo", license: "License Holder" };
   // usuario corto → email de la cuenta
-  const EMAILS = { edgar: "edgararboleya@mxpes.com" };
+  const EMAILS = {
+    edgar: "edgararboleya@mxpes.com",
+    flavia: "flavia.mestre28@gmail.com"
+  };
 
   // ---------- Estado en memoria ----------
   let state = null;    // lo que devuelve DB.cargarTodo()
