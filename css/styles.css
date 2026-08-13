@@ -46,6 +46,11 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* Nada puede empujar la página más ancha que la pantalla (teléfonos):
+   los selects se estiraban al ancho de su opción más larga */
+select, input, textarea { max-width: 100%; min-width: 0; }
+body { overflow-x: hidden; }
+
 body {
   font-family: system-ui, -apple-system, "Segoe UI Variable", "Segoe UI", sans-serif;
   /* Fondo tech: textura de circuito casi invisible sobre el cielo */
@@ -235,6 +240,14 @@ body::after {
   font-size: 0.74rem;
   font-weight: 700;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* En el teléfono el nombre no cabe junto al logo: se oculta y quedan EN + Salir */
+@media (max-width: 480px) {
+  .usuario-chip { display: none; }
+  .membrete-inner { padding: 0.6rem 14px; }
+  .cal-semana-nombres span, .cal-grid { font-size: 0.72rem; }
 }
 .btn-salir {
   background: rgba(255,255,255,.08);
@@ -896,7 +909,7 @@ table.facturas tr.total td {
   color: var(--mp-ink-3);
   margin-bottom: 0.3rem;
 }
-.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
 .cal-dia {
   position: relative;
   aspect-ratio: 1 / 0.9;
