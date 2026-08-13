@@ -2012,10 +2012,14 @@
           </label>
           <label>Un material por línea — la cantidad va al final, después de una coma
             <textarea name="lista" rows="7" required
-              placeholder="cable 14/2, 2 rollos&#10;breaker 20A, 5&#10;caja 1 gang, 20&#10;cinta negra"
+              placeholder="cable 14/2, 2 rollos&#10;breaker 20A x5&#10;2 cajas de wirenuts&#10;cinta negra"
               style="width:100%;font:inherit;font-size:.85rem;padding:.55rem .7rem;border:1px solid var(--mp-line);border-radius:10px"></textarea>
           </label>
-          <button type="submit" class="accion">✓ Agregar toda la lista</button>
+          <div class="modal-fila">
+            <button type="button" class="accion secundaria" id="btn-mat-importar">📄 Importar nota (.txt)</button>
+            <button type="submit" class="accion">✓ Agregar toda la lista</button>
+          </div>
+          <input id="mat-archivo" type="file" accept=".txt,text/plain" hidden>
         </form>
       </div>
       ${comprados.length ? `
@@ -2048,26 +2052,60 @@
       $("btn-mat-modo").textContent = aLista ? "✏ Mejor de uno en uno" : "📝 Lista rápida — varios de un golpe";
     });
 
-    // Lista rápida: una línea por material, "descripción, cantidad"
+    // Desglosa una línea de texto libre en { material, cantidad }.
+    // Entiende: "cable 14/2, 2 rollos" · "breaker 20A x5" · "toma doble (10)"
+    // · "2 rollos de cable 14/2" · guiones, viñetas y numeración de notas.
+    const desglosarLinea = l => {
+      l = l.trim()
+        .replace(/^[-•*·]\s*/, "")        // viñetas: - • *
+        .replace(/^\d+[.)]\s+/, "");      // numeración: "1. " o "2) "
+      if (!l) return null;
+      let m = l.match(/^(.+),\s*([^,]+)$/);                 // "material, cantidad"
+      if (m) return { descripcion: m[1].trim(), cantidad: m[2].trim() };
+      m = l.match(/^(.+?)\s*[xX]\s*(\d+(?:\.\d+)?)$/);      // "material x5"
+      if (m) return { descripcion: m[1].trim(), cantidad: m[2] };
+      m = l.match(/^(.+?)\s*\((\d+(?:\.\d+)?)\)$/);         // "material (10)"
+      if (m) return { descripcion: m[1].trim(), cantidad: m[2] };
+      m = l.match(/^(\d+\s*(?:rollos?|cajas?|piezas?|pcs|uds?|unidades|pies|ft|galones?|tubos?|sticks?|paquetes?|bolsas?))\s+(?:de\s+)?(.+)$/i);
+      if (m) return { descripcion: m[2].trim(), cantidad: m[1].trim() }; // "2 rollos de cable"
+      return { descripcion: l, cantidad: null };
+    };
+
+    // Lista rápida: una línea por material (escrita o importada de una nota)
     $("form-mat-lista").addEventListener("submit", async e => {
       e.preventDefault();
       const d = new FormData(e.target);
       const proyecto = d.get("proyecto") || null;
-      const lineas = (d.get("lista") || "").toString()
-        .split("\n").map(l => l.trim().replace(/^[-•*]\s*/, "")).filter(Boolean);
-      if (!lineas.length) return;
+      const filas = (d.get("lista") || "").toString()
+        .split("\n").map(desglosarLinea).filter(Boolean);
+      if (!filas.length) return;
       try {
-        for (const l of lineas) {
-          const m = l.match(/^(.+),\s*([^,]+)$/); // la cantidad va tras la ÚLTIMA coma
+        for (const f of filas) {
           await DB.crearMaterial({
             proyecto_id: proyecto,
-            descripcion: (m ? m[1] : l).trim(),
-            cantidad: m ? m[2].trim() : null
+            descripcion: f.descripcion,
+            cantidad: f.cantidad
           });
         }
         await recargar();
-        avisar(`${lineas.length} materiales agregados ✓`);
+        avisar(`${filas.length} materiales agregados ✓`);
       } catch (err) { avisar("No se pudo: " + err.message, true); }
+    });
+
+    // Importar una nota .txt: la vuelca en la caja para revisar antes de agregar
+    $("btn-mat-importar").addEventListener("click", () => $("mat-archivo").click());
+    $("mat-archivo").addEventListener("change", () => {
+      const archivo = $("mat-archivo").files[0];
+      if (!archivo) return;
+      const lector = new FileReader();
+      lector.onload = () => {
+        const caja = $("form-mat-lista").querySelector("[name=lista]");
+        const texto = String(lector.result || "").trim();
+        caja.value = caja.value.trim() ? caja.value.trim() + "\n" + texto : texto;
+        $("mat-archivo").value = "";
+        avisar("Nota importada ✓ — revísala, elige el proyecto y dale a Agregar");
+      };
+      lector.readAsText(archivo);
     });
 
     // Exportar la lista "Por comprar" para mandarla al supply
