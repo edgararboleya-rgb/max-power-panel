@@ -1900,7 +1900,9 @@
         </label>
       </div>
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">Por comprar (${faltan.length})</div>
+        <div class="cal-form-titulo">Por comprar (${faltan.length})
+          ${faltan.length ? `<button type="button" class="accion secundaria" id="btn-mat-supply" style="margin-left:.4rem">📤 Enviar al supply</button>` : ""}
+        </div>
         ${faltan.map(filaMat).join("") || `<p class="cal-sin-eventos">Nada pendiente de comprar. 👌</p>`}
       </div>
       <div class="cal-panel-card">
@@ -1973,8 +1975,10 @@
           </div>`).join("")}
       </div>` : ""}
       <div class="cal-panel-card">
+        <div class="cal-form-titulo">Agregar material
+          <button type="button" class="accion secundaria" id="btn-mat-modo" style="margin-left:.4rem">📝 Lista rápida — varios de un golpe</button>
+        </div>
         <form id="form-material" class="cal-form">
-          <div class="cal-form-titulo">Agregar material</div>
           <label>Proyecto
             <select name="proyecto">
               <option value="">— General (no es de un proyecto) —</option>
@@ -1990,6 +1994,20 @@
             </label>
           </div>
           <button type="submit" class="accion">Agregar a la lista</button>
+        </form>
+        <form id="form-mat-lista" class="cal-form" hidden>
+          <label>Proyecto (para toda la lista)
+            <select name="proyecto">
+              <option value="">— General (no es de un proyecto) —</option>
+              ${opciones}
+            </select>
+          </label>
+          <label>Un material por línea — la cantidad va al final, después de una coma
+            <textarea name="lista" rows="7" required
+              placeholder="cable 14/2, 2 rollos&#10;breaker 20A, 5&#10;caja 1 gang, 20&#10;cinta negra"
+              style="width:100%;font:inherit;font-size:.85rem;padding:.55rem .7rem;border:1px solid var(--mp-line);border-radius:10px"></textarea>
+          </label>
+          <button type="submit" class="accion">✓ Agregar toda la lista</button>
         </form>
       </div>
       ${comprados.length ? `
@@ -2011,6 +2029,63 @@
         avisar("Material agregado ✓");
       } catch (err) {
         avisar("No se pudo agregar: " + err.message, true);
+      }
+    });
+
+    // Cambiar entre "de uno en uno" y "lista rápida"
+    $("btn-mat-modo").addEventListener("click", () => {
+      const aLista = $("form-mat-lista").hidden;
+      $("form-mat-lista").hidden = !aLista;
+      $("form-material").hidden = aLista;
+      $("btn-mat-modo").textContent = aLista ? "✏ Mejor de uno en uno" : "📝 Lista rápida — varios de un golpe";
+    });
+
+    // Lista rápida: una línea por material, "descripción, cantidad"
+    $("form-mat-lista").addEventListener("submit", async e => {
+      e.preventDefault();
+      const d = new FormData(e.target);
+      const proyecto = d.get("proyecto") || null;
+      const lineas = (d.get("lista") || "").toString()
+        .split("\n").map(l => l.trim().replace(/^[-•*]\s*/, "")).filter(Boolean);
+      if (!lineas.length) return;
+      try {
+        for (const l of lineas) {
+          const m = l.match(/^(.+),\s*([^,]+)$/); // la cantidad va tras la ÚLTIMA coma
+          await DB.crearMaterial({
+            proyecto_id: proyecto,
+            descripcion: (m ? m[1] : l).trim(),
+            cantidad: m ? m[2].trim() : null
+          });
+        }
+        await recargar();
+        avisar(`${lineas.length} materiales agregados ✓`);
+      } catch (err) { avisar("No se pudo: " + err.message, true); }
+    });
+
+    // Exportar la lista "Por comprar" para mandarla al supply
+    const btnSupply = $("btn-mat-supply");
+    if (btnSupply) btnSupply.addEventListener("click", async () => {
+      const porProy = {};
+      faltan.forEach(m => { (porProy[m.proyecto || ""] = porProy[m.proyecto || ""] || []).push(m); });
+      const hoy = new Date();
+      let texto = `LISTA DE MATERIALES — Max Power Electrical Solutions\n`
+        + `${String(hoy.getMonth() + 1).padStart(2, "0")}/${String(hoy.getDate()).padStart(2, "0")}/${hoy.getFullYear()}\n`;
+      for (const [pid, items] of Object.entries(porProy)) {
+        texto += `\n${pid ? nombreProy(pid).toUpperCase() : "GENERAL"}\n`;
+        for (const m of items) texto += `• ${m.descripcion}${m.cantidad ? ` — ${m.cantidad}` : ""}\n`;
+      }
+      if (navigator.share) {
+        try { await navigator.share({ title: "Lista de materiales", text: texto }); return; }
+        catch (err) { if (err && err.name === "AbortError") return; }
+      }
+      try {
+        await navigator.clipboard.writeText(texto);
+        avisar("Lista copiada ✓ — pégala en el texto o correo al supply");
+      } catch (err) {
+        const ta = document.createElement("textarea");
+        ta.value = texto; document.body.appendChild(ta);
+        ta.select(); document.execCommand("copy"); ta.remove();
+        avisar("Lista copiada ✓ — pégala en el texto o correo al supply");
       }
     });
     $("materiales-panel").querySelectorAll(".btn-mat-comprado").forEach(btn => {
