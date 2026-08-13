@@ -1627,6 +1627,25 @@ table.desglose .neg { color: var(--mp-teal-text); font-weight: 800; }
 }
 
 /* ============ Pantallas grandes ============ */
+/* Filas de listas (materiales, gestiones, ensambles) en el teléfono:
+   el texto usa todo el ancho y los botones bajan a su propia línea */
+@media (max-width: 560px) {
+  .mat-item { flex-wrap: wrap; row-gap: 0.45rem; }
+  .mat-item > .alcance-info { flex: 1 1 calc(100% - 1.9rem); min-width: calc(100% - 1.9rem); }
+  .mat-item > .accion,
+  .mat-item > .ens-contador,
+  .mat-item > .alcance-info + .insp-borrar { margin-left: auto; }
+  .mat-item > .accion { padding: 0.34rem 0.75rem; font-size: 0.78rem; }
+  .mat-item > .mat-precio { margin-left: auto; }
+
+  .hoy-item, .pendiente-item { flex-wrap: wrap; row-gap: 0.45rem; }
+  .hoy-item > .alcance-info { flex: 1 1 calc(100% - 4rem); min-width: calc(100% - 4rem); }
+  .pendiente-item > .alcance-info { flex: 1 1 calc(100% - 2rem); min-width: calc(100% - 2rem); }
+  .hoy-item > .accion, .pendiente-item > .accion,
+  .hoy-item > .alcance-info + .insp-borrar { margin-left: auto; }
+  .hoy-item > .accion, .pendiente-item > .accion { padding: 0.34rem 0.75rem; font-size: 0.78rem; }
+}
+
 @media (min-width: 760px) {
   .categorias { grid-template-columns: repeat(3, 1fr); }
   .categoria-card { flex-direction: column; align-items: flex-start; gap: 0.6rem; padding: 1.3rem 1.25rem 1.2rem 1.45rem; }
