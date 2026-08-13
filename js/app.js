@@ -1668,11 +1668,21 @@
   }
   $btnHoras.addEventListener("click", irHoras);
 
+  // Proyectos donde se puede reportar o asociar trabajo: los activos MÁS los
+  // que aún tengan pendientes rojos abiertos (trabajos atípicos como Danzig,
+  // que están cobrados pero les queda trabajo vivo).
+  function proyectosConTrabajo(extraEstados) {
+    const conPendiente = new Set(pendientesAbiertos().map(p => p.proyecto).filter(Boolean));
+    return proyectos().filter(p =>
+      ["ejecucion", "aprobado", "pausa"].includes(p.estado)
+      || conPendiente.has(p.id)
+      || (extraEstados && extraEstados.includes(p.estado)));
+  }
+
   function prepararHoras() {
     const f = $formHoras.elements.fecha;
     if (!f.value) f.value = new Date().toISOString().slice(0, 10);
-    const activos = proyectos().filter(p => ["ejecucion", "aprobado", "pausa"].includes(p.estado));
-    $formHoras.elements.proyecto.innerHTML = activos
+    $formHoras.elements.proyecto.innerHTML = proyectosConTrabajo()
       .map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join("");
     pintarHistorialHoras();
   }
@@ -1682,10 +1692,14 @@
     if (!mios.length) { $("horas-historial").innerHTML = ""; return; }
 
     const opcionesFase = $formHoras.elements.fase.innerHTML;
-    const opcionesProyecto = r => proyectos()
-      .filter(p => ["ejecucion", "aprobado", "pausa"].includes(p.estado) || p.id === r.proyecto)
-      .map(p => `<option value="${esc(p.id)}"${p.id === r.proyecto ? " selected" : ""}>${esc(p.nombre)}</option>`)
-      .join("");
+    const opcionesProyecto = r => {
+      const base = proyectosConTrabajo();
+      const lista = base.some(p => p.id === r.proyecto) ? base
+        : base.concat(proyectos().filter(p => p.id === r.proyecto));
+      return lista
+        .map(p => `<option value="${esc(p.id)}"${p.id === r.proyecto ? " selected" : ""}>${esc(p.nombre)}</option>`)
+        .join("");
+    };
 
     $("horas-historial").innerHTML =
       `<h3 class="historial-titulo">Mis reportes (toca ✎ para corregir)</h3>` +
@@ -1879,8 +1893,7 @@
     const sugeridos = pendientesAbiertos()
       .filter(x => REG_MATERIAL.test(x.descripcion) && !yaPasados.has(x.id) && pasaFiltro(x));
 
-    const activosLista = proyectos()
-      .filter(x => ["ejecucion", "aprobado", "pausa"].includes(x.estado));
+    const activosLista = proyectosConTrabajo();
     const opciones = activosLista
       .map(x => `<option value="${esc(x.id)}">${esc(x.nombre)}</option>`).join("");
     const opcionesFiltro = `<option value=""${!filtroMateriales ? " selected" : ""}>Todos los proyectos</option>` +
@@ -3419,8 +3432,7 @@ Power done right the first time. ⚡`;
         </div>`;
     }).join("");
 
-    const opciones = proyectos()
-      .filter(p => ["ejecucion", "aprobado", "pausa", "enviado"].includes(p.estado))
+    const opciones = proyectosConTrabajo(["enviado"])
       .map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join("");
 
     $("cal-dia-panel").innerHTML = `
