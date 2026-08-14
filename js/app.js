@@ -982,7 +982,11 @@
   }
 
   function pintarChecklist() {
-    const activos = proyectosConTrabajo(["enviado"]);
+    // Obras activas siempre (aunque estén vacías, para poder sembrarlas);
+    // propuestas enviadas solo si ya tienen tareas — que no hagan ruido.
+    const fichas = proyectosConTrabajo(["enviado"])
+      .map(p => ({ p, tareas: tareasDe(p.id) }))
+      .filter(x => x.tareas.length || ["ejecucion", "aprobado", "pausa"].includes(x.p.estado));
 
     // El panelito para agregar: escondido hasta tocar "+ Agregar una nueva"
     const formNueva = pid => `
@@ -1034,7 +1038,7 @@
 
     $("checklist-panel").innerHTML = `
       ${tarjeta("📌 Generales (sin proyecto)", "", generales)}
-      ${activos.map(p => tarjeta(p.nombre, p.id, tareasDe(p.id))).join("")
+      ${fichas.map(x => tarjeta(x.p.nombre, x.p.id, x.tareas)).join("")
         || `<p class="cal-sin-eventos">Nada pendiente por aquí. 👌</p>`}`;
 
     // Recordar qué fichas quedaron abiertas entre repintadas
