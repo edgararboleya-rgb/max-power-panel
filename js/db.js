@@ -153,7 +153,7 @@
     const [perfiles, proyectos, finanzas, alcances, alcancesEquipo,
            hitos, facturas, horas, eventos, pendientes, documentos, fotos,
            inspecciones, materiales, materialesEquipo, costos, externos,
-           gestiones, recibos, recibosEquipo, alcancePuntos] =
+           gestiones, recibos, recibosEquipo, alcancePuntos, ayudantes] =
       await Promise.all([
         leer("perfiles?select=*"),
         leer("proyectos?select=*&order=nombre"),
@@ -176,7 +176,8 @@
         leer("gestiones?select=*&order=creado").catch(() => []),
         leer("recibos?select=*&order=creado").catch(() => []),
         leer("recibos_equipo?select=*&order=creado").catch(() => []),
-        leer("alcance_puntos?select=*&order=orden").catch(() => [])
+        leer("alcance_puntos?select=*&order=orden").catch(() => []),
+        leer("externos_equipo?select=*&order=nombre").catch(() => [])
       ]);
 
     const nombrePorId = Object.fromEntries(perfiles.map(p => [p.id, p.nombre]));
@@ -297,7 +298,12 @@
         id: x.id, proyecto: x.proyecto_id, descripcion: x.descripcion,
         fecha: x.fecha || "", tipo: x.tipo || "ajuste",
         horas: x.horas !== undefined && x.horas !== null ? Number(x.horas) : null,
-        costo: Number(x.costo)
+        costo: Number(x.costo),
+        ayudante: x.externo_id || null
+      })),
+      // Nómina de ayudantes externos (solo dueño): nombre + tarifa, sin cuenta en la app
+      ayudantes: ayudantes.map(a => ({
+        id: a.id, nombre: a.nombre, costoHora: Number(a.costo_hora), activo: a.activo !== false
       })),
       gestiones: gestiones.map(g => ({
         id: g.id, proyecto: g.proyecto_id, descripcion: g.descripcion,
@@ -337,6 +343,8 @@
     eliminarHoras: id => api(`horas?id=eq.${id}`, { metodo: "DELETE" }),
     crearExterno: fila => insertar("trabajos_externos", fila),
     eliminarExterno: id => api(`trabajos_externos?id=eq.${id}`, { metodo: "DELETE" }),
+    crearAyudante: fila => insertar("externos_equipo", fila),
+    cambiarAyudante: (id, cambios) => actualizar(`externos_equipo?id=eq.${id}`, cambios),
     crearGestion: fila => insertar("gestiones", { ...fila, autor_id: uid() }),
     cambiarGestion: (id, cambios) => actualizar(`gestiones?id=eq.${id}`, cambios),
     eliminarGestion: id => api(`gestiones?id=eq.${id}`, { metodo: "DELETE" }),

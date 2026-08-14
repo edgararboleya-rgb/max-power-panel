@@ -40,6 +40,8 @@
     // Estados y etapas
     "Enviado": "Sent", "Aprobado": "Approved", "En ejecución": "In progress",
     "En pausa": "On hold", "Completado": "Completed",
+    "No aprobado": "Not approved",
+    "No salieron — fuera de las estadísticas": "Didn't land — excluded from the stats",
     "Obras activas con fases en curso": "Active jobs with phases underway",
     "Aceptados, pendientes de arrancar": "Accepted, waiting to start",
     "Propuestas esperando respuesta": "Proposals awaiting response",

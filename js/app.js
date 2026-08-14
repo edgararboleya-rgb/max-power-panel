@@ -47,13 +47,14 @@
     servicio:    { etiqueta: "Servicios",               icono: ICONO_SVG.servicio }
   };
   const ESTADOS = {
-    enviado:    { etiqueta: "Enviado" },
-    aprobado:   { etiqueta: "Aprobado" },
-    ejecucion:  { etiqueta: "En ejecución" },
-    pausa:      { etiqueta: "En pausa" },
-    completado: { etiqueta: "Completado" }
+    enviado:     { etiqueta: "Enviado" },
+    aprobado:    { etiqueta: "Aprobado" },
+    ejecucion:   { etiqueta: "En ejecución" },
+    pausa:       { etiqueta: "En pausa" },
+    completado:  { etiqueta: "Completado" },
+    no_aprobado: { etiqueta: "No aprobado" }
   };
-  const DOT = { enviado: "navy", aprobado: "azul", ejecucion: "cyan", pausa: "amarillo", completado: "lima" };
+  const DOT = { enviado: "navy", aprobado: "azul", ejecucion: "cyan", pausa: "amarillo", completado: "lima", no_aprobado: "rojo" };
   const FASES = [
     { clave: "mobilizacion", etiqueta: "Inicio / Movilización" },
     { clave: "rough",        etiqueta: "Rough-in" },
@@ -66,9 +67,10 @@
     aprobado: "Aceptados, pendientes de arrancar",
     enviado: "Propuestas esperando respuesta",
     pausa: "Detenidos temporalmente",
-    completado: "Terminados y cerrados"
+    completado: "Terminados y cerrados",
+    no_aprobado: "No salieron — fuera de las estadísticas"
   };
-  const ORDEN_ETAPAS = ["ejecucion", "aprobado", "enviado", "pausa", "completado"];
+  const ORDEN_ETAPAS = ["ejecucion", "aprobado", "enviado", "pausa", "completado", "no_aprobado"];
   const ROL_ETIQUETA = { dueno: "Dueño", campo: "Campo", license: "License Holder" };
   // usuario corto → email de la cuenta
   const EMAILS = {
@@ -517,9 +519,10 @@
   function pintarResumen() {
     if (!usuario.finanzas) { $resumen.innerHTML = ""; return; }
     const lista = proyectos();
-    const activos = lista.filter(p => p.estado !== "completado");
+    // Los "no aprobados" no cuentan: ni como activos ni en el dinero contratado
+    const activos = lista.filter(p => p.estado !== "completado" && p.estado !== "no_aprobado");
     const contratado = lista
-      .filter(p => p.estado !== "completado" && typeof p.contrato === "number")
+      .filter(p => !["completado", "no_aprobado"].includes(p.estado) && typeof p.contrato === "number")
       .reduce((s, p) => s + p.contrato, 0);
     const cobrado = lista
       .filter(p => typeof p.cobrado === "number")
@@ -556,7 +559,7 @@
     const del = proyectos().filter(p => (p.tipo || "residencial") === tipoActivo);
     $etapas.innerHTML = ORDEN_ETAPAS.map(clave => {
       const n = del.filter(p => p.estado === clave).length;
-      if (n === 0 && (clave === "pausa" || clave === "completado")) return "";
+      if (n === 0 && (clave === "pausa" || clave === "completado" || clave === "no_aprobado")) return "";
       const e = ESTADOS[clave];
       return `
         <button class="etapa-card" data-etapa="${clave}">
@@ -935,6 +938,14 @@
         ${filas || `<span class="sin-docs">Sin trabajos externos anotados.</span>`}
         <button type="button" class="accion secundaria btn-agregar-ext">+ Anotar trabajo externo</button>
         <form class="cal-form form-ext" hidden>
+          ${(state.ayudantes || []).filter(a => a.activo).length ? `
+          <label>Ayudante de tu nómina (opcional — usa su tarifa sola)
+            <select name="ayudante">
+              <option value="">— Escribir libre —</option>
+              ${(state.ayudantes || []).filter(a => a.activo).map(a =>
+                `<option value="${a.id}" data-nombre="${esc(a.nombre)}" data-tarifa="${a.costoHora}">${esc(a.nombre)} — ${fmt(a.costoHora)}/h</option>`).join("")}
+            </select>
+          </label>` : ""}
           <label>Quién / qué hizo
             <input name="descripcion" type="text" required placeholder="Ej: Pedro — ayudante, demolición 2 días" autocomplete="off">
           </label>
@@ -1512,6 +1523,21 @@
         if (!formExt.hidden && !formExt.elements.fecha.value)
           formExt.elements.fecha.value = hoyISO();
       });
+      // Al elegir un ayudante de la nómina: nombre y costo se llenan solos
+      const selAyud = formExt.elements.ayudante;
+      const calcularAyudante = () => {
+        if (!selAyud || !selAyud.value) return;
+        const op = selAyud.selectedOptions[0];
+        formExt.elements.descripcion.value = op.dataset.nombre;
+        formExt.elements.tipo.value = "horas";
+        const h = Number(formExt.elements.horas.value);
+        if (h > 0) formExt.elements.costo.value =
+          Math.round(h * Number(op.dataset.tarifa) * 100) / 100;
+      };
+      if (selAyud) {
+        selAyud.addEventListener("change", calcularAyudante);
+        formExt.elements.horas.addEventListener("input", calcularAyudante);
+      }
       formExt.addEventListener("submit", async e => {
         e.preventDefault();
         const d = new FormData(formExt);
@@ -1523,7 +1549,8 @@
             fecha: d.get("fecha") || null,
             tipo: d.get("tipo") === "horas" ? "horas" : "ajuste",
             horas: horasTxt !== "" && Number.isFinite(Number(horasTxt)) ? Number(horasTxt) : null,
-            costo: Number(d.get("costo"))
+            costo: Number(d.get("costo")),
+            ...(d.get("ayudante") ? { externo_id: Number(d.get("ayudante")) } : {})
           });
           await recargar();
           avisar("Trabajo externo anotado ✓ — ya cuenta como gasto del proyecto");
@@ -1904,9 +1931,12 @@
         `<option value="${esc(x.id)}"${x.id === filtroMateriales ? " selected" : ""}>${esc(x.nombre)}</option>`).join("");
 
     const RES_RECIBO = { por_leer: "POR LEER", leido: "LEÍDO", conciliado: "CONCILIADO ✓" };
+    const esDevolucionRecibo = r =>
+      (typeof r.total === "number" && r.total < 0) || /DEVOLUCI/i.test(r.notas || "");
     const filaRecibo = r => `
       <div class="mat-item recibo-${esc(r.estado)}">
         <span class="recibo-chip ${esc(r.estado)}">${RES_RECIBO[r.estado] || r.estado}</span>
+        ${esDevolucionRecibo(r) ? `<span class="recibo-chip devolucion">↩ DEVOLUCIÓN</span>` : ""}
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(r.proveedor || "Recibo")}${r.notas ? ` <span class="mat-cant">— ${esc(sinMontos(r.notas))}</span>` : ""}</span>
           <span class="alcance-estado">${esc(nombreProy(r.proyecto))} · ${esc(r.autor)} ${esc(r.fecha)}</span>
@@ -1963,12 +1993,20 @@
           <label>Foto del recibo (cámara o galería)
             <input name="archivo" type="file" accept="image/*" required>
           </label>
-          <label>Proyecto
-            <select name="proyecto">
-              <option value="">— General —</option>
-              ${opciones}
-            </select>
-          </label>
+          <div class="modal-fila">
+            <label>Proyecto
+              <select name="proyecto">
+                <option value="">— General —</option>
+                ${opciones}
+              </select>
+            </label>
+            <label>Tipo de ticket
+              <select name="tipo">
+                <option value="compra">🛒 Compra</option>
+                <option value="devolucion">↩ Devolución (resta del gasto)</option>
+              </select>
+            </label>
+          </div>
           ${usuario.finanzas ? `
           <div class="modal-fila">
             <label>Total ($) — o déjalo vacío y la rutina lo lee de la foto
@@ -2371,15 +2409,20 @@
         const blob = await reducirImagen(archivo).catch(() => archivo);
         const pid = d.get("proyecto") || "general";
         const ruta = await DB.subirFoto(pid, blob, blob.type || archivo.type, "recibos");
+        const esDevolucion = d.get("tipo") === "devolucion";
+        let notasRecibo = (d.get("notas") || "").toString().trim();
+        // La marca DEVOLUCIÓN viaja en las notas: la ve la rutina y la ve la lista
+        if (esDevolucion) notasRecibo = "DEVOLUCIÓN" + (notasRecibo ? " — " + notasRecibo : "");
         const fila = {
           proyecto_id: d.get("proyecto") || null,
           ruta,
-          notas: (d.get("notas") || "").toString().trim() || null
+          notas: notasRecibo || null
         };
         if (usuario.finanzas) {
           const totalTxt = (d.get("total") || "").toString().trim();
           if (totalTxt !== "" && Number.isFinite(Number(totalTxt))) {
-            fila.total = Number(totalTxt);
+            // Una devolución siempre entra en negativo: resta sola en Rentabilidad
+            fila.total = esDevolucion ? -Math.abs(Number(totalTxt)) : Number(totalTxt);
             fila.estado = "leido";
           }
           const prov = (d.get("proveedor") || "").toString().trim();
@@ -2398,7 +2441,7 @@
     });
     $("materiales-panel").querySelectorAll(".btn-recibo-total").forEach(btn => {
       btn.addEventListener("click", async () => {
-        const respuesta = prompt("Total del recibo (solo el número, ej: 342.18):");
+        const respuesta = prompt("Total del recibo (solo el número, ej: 342.18).\nSi es una DEVOLUCIÓN, ponlo con signo menos (ej: -45.99):");
         if (respuesta === null) return;
         const limpio = respuesta.replace(/[$,\s]/g, "");
         const total = Number(limpio);
@@ -2511,11 +2554,47 @@
       </div>
       <div class="inicio-card">
         <details class="costos-gaveta">
+          <summary>🧰 Ayudantes externos <span class="gaveta-nota">(gente puntual con tarifa — sin cuenta en la app, solo tú los ves)</span></summary>
+          ${(state.ayudantes || []).map(a => {
+            const gastado = (state.externos || [])
+              .filter(x => x.ayudante === a.id)
+              .reduce((s, x) => s + (Number(x.costo) || 0), 0);
+            return `
+            <div class="equipo-item">
+              <span class="equipo-dot ${a.activo ? "verde" : "gris"}"></span>
+              <span class="alcance-info">
+                <span class="alcance-titulo">${esc(a.nombre)} — ${fmt(a.costoHora)}/h</span>
+                <span class="alcance-estado">${gastado ? `lleva ${fmt(gastado)} pagado en proyectos` : "sin trabajos anotados todavía"}${a.activo ? "" : " · INACTIVO"}</span>
+              </span>
+              <button class="insp-borrar btn-ayud-tarifa" data-id="${a.id}" data-nombre="${esc(a.nombre)}" data-tarifa="${a.costoHora}" title="Cambiar tarifa">✎</button>
+              <button class="accion secundaria btn-ayud-activo" data-id="${a.id}" data-activo="${a.activo ? "1" : ""}">
+                ${a.activo ? "Inactivo" : "Reactivar"}
+              </button>
+            </div>`;
+          }).join("") || `<p class="cal-sin-eventos">Sin ayudantes todavía — agrega el primero aquí abajo.</p>`}
+          <form id="form-ayudante" class="cal-form">
+            <div class="modal-fila">
+              <label>Nombre del ayudante
+                <input name="nombre" type="text" required placeholder="Ej: Pedro" autocomplete="off">
+              </label>
+              <label>Tarifa por hora ($)
+                <input name="tarifa" type="number" min="1" step="0.5" inputmode="decimal" required placeholder="Ej: 50">
+              </label>
+            </div>
+            <p class="modal-nota">Luego le anotas sus horas en cada proyecto (ficha → Ayuda externa):
+            eliges su nombre, pones las horas y el costo se calcula solo con esta tarifa.</p>
+            <button type="submit" class="accion secundaria">+ Agregar ayudante</button>
+          </form>
+        </details>
+      </div>
+      <div class="inicio-card">
+        <details class="costos-gaveta">
           <summary>👥 Equipo <span class="gaveta-nota">(marcar inactivo al que se va — su historia queda)</span></summary>
           ${filasEquipo}
           <p class="modal-nota" style="margin-top:0.5rem">Para <strong>agregar</strong> un trabajador nuevo con acceso a la app,
           pídeselo a Claude — te da los 3 pasos del panel de Supabase (2 minutos).
-          Si es alguien puntual sin acceso, usa "Ayuda externa" en el proyecto.</p>
+          Si es alguien puntual sin acceso, usa "Ayuda externa" en el proyecto o la
+          nómina de <strong>🧰 Ayudantes externos</strong> aquí arriba.</p>
         </details>
       </div>`;
 
@@ -2543,6 +2622,43 @@
           await DB.cambiarPerfil(btn.dataset.id, { activo: activar });
           await recargar();
           avisar(activar ? "Reactivado ✓" : "Marcado como inactivo ✓ (su historia queda)");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+
+    // 🧰 Nómina de ayudantes externos (solo etiqueta + tarifa, sin cuenta)
+    const formAyud = $("form-ayudante");
+    if (formAyud) formAyud.addEventListener("submit", async e => {
+      e.preventDefault();
+      const d = new FormData(formAyud);
+      try {
+        await DB.crearAyudante({
+          nombre: (d.get("nombre") || "").toString().trim(),
+          costo_hora: Number(d.get("tarifa"))
+        });
+        await recargar();
+        avisar("Ayudante agregado ✓ — ya puedes anotarle horas en cualquier proyecto");
+      } catch (err) { avisar("No se pudo agregar: " + err.message, true); }
+    });
+    $("gastos-panel").querySelectorAll(".btn-ayud-tarifa").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const resp = prompt(`Tarifa por hora de ${btn.dataset.nombre} ($):`, btn.dataset.tarifa);
+        if (resp === null) return;
+        const tarifa = Number(resp.replace(/[$,\s]/g, ""));
+        if (!Number.isFinite(tarifa) || tarifa <= 0) { avisar("Esa tarifa no se entendió", true); return; }
+        try {
+          await DB.cambiarAyudante(btn.dataset.id, { costo_hora: tarifa });
+          await recargar();
+          avisar("Tarifa actualizada ✓ (los trabajos ya anotados no cambian)");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    $("gastos-panel").querySelectorAll(".btn-ayud-activo").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        try {
+          await DB.cambiarAyudante(btn.dataset.id, { activo: !btn.dataset.activo });
+          await recargar();
+          avisar(btn.dataset.activo ? "Ayudante inactivo ✓ (su historia queda)" : "Ayudante reactivado ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
@@ -3043,7 +3159,8 @@ Power done right the first time. ⚡`;
           ${!soloLectura ? `
           <div class="ens-contador">
             <button class="accion secundaria btn-ens-menos" data-ens="${ens.id}" ${qty <= 0 ? "disabled" : ""}>−</button>
-            <span class="ens-qty">${qty}</span>
+            <input class="ens-qty-input" type="number" min="0" step="1" inputmode="numeric"
+              value="${qty}" data-ens="${ens.id}" title="Escribe la cantidad directa">
             <button class="accion btn-ens-mas" data-ens="${ens.id}">+</button>
           </div>` : `<span class="ens-qty">${qty}</span>`}
         </div>`;
@@ -3173,7 +3290,8 @@ Power done right the first time. ⚡`;
     // Los clics van en fila india (cada uno espera al anterior) para que un
     // doble clic rápido nunca cree contadores duplicados; y si un duplicado
     // viejo existiera, se une solo (auto-cura) antes de sumar o restar.
-    async function ajustarEnsamble(ensId, delta) {
+    // delta = sumar/restar; objetivo = poner ESTA cantidad exacta (numerito editable)
+    async function ajustarEnsamble(ensId, delta, objetivo) {
       const filas = (estData.estEnsambles || [])
         .filter(e => e.estimado_id === est.id && e.ensamble_id === ensId);
       let fila = filas[0];
@@ -3183,7 +3301,9 @@ Power done right the first time. ⚡`;
         for (const f of filas.slice(1)) await DB.quitarEnsamble(f.id);
         fila = { ...fila, cantidad: total };
       }
-      const nueva = (fila ? Number(fila.cantidad) : 0) + delta;
+      const actual = fila ? Number(fila.cantidad) : 0;
+      const nueva = objetivo !== undefined ? objetivo : actual + delta;
+      if (nueva === actual) return;
       if (!fila) {
         if (nueva <= 0) return;
         const cuerpo = { estimado_id: est.id, ensamble_id: ensId, cantidad: nueva };
@@ -3210,6 +3330,13 @@ Power done right the first time. ⚡`;
     $("estimador-panel").querySelectorAll(".btn-ens-menos").forEach(btn => {
       btn.addEventListener("click", () =>
         enFilaEnsamble(() => ajustarEnsamble(Number(btn.dataset.ens), -1)));
+    });
+    // El numerito del medio: escribe la cantidad y listo (Enter o salir del campo)
+    $("estimador-panel").querySelectorAll(".ens-qty-input").forEach(inp => {
+      inp.addEventListener("change", () => {
+        const v = Math.max(0, Math.round(Number(inp.value) || 0));
+        enFilaEnsamble(() => ajustarEnsamble(Number(inp.dataset.ens), 0, v));
+      });
     });
     $("estimador-panel").querySelectorAll(".btn-ens-pies").forEach(btn => {
       btn.addEventListener("click", () => {
