@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-title" content="Max Power">
   <link rel="apple-touch-icon" href="assets/icon-180.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=41">
+  <link rel="stylesheet" href="css/styles.css?v=46">
 </head>
 <body>
 
@@ -48,6 +48,7 @@
           <div class="wordmark-sub">Electrical Solutions Inc.</div>
         </div>
         <div class="membrete-der">
+          <button id="btn-chat" class="btn-chat" title="Mensajes del equipo" hidden>💬<span id="chat-badge" class="chat-badge" hidden></span></button>
           <button id="btn-idioma" class="btn-idioma" title="English / Español">EN</button>
           <span id="usuario-chip" class="usuario-chip"></span>
           <button id="btn-salir" class="btn-salir" title="Cambiar de usuario">Salir</button>
@@ -163,6 +164,11 @@
         <div id="materiales-panel"></div>
       </section>
 
+      <!-- 💬 CHAT: mensajes del equipo (grupo y privados) -->
+      <section id="vista-chat" hidden>
+        <div id="chat-panel"></div>
+      </section>
+
       <!-- ESTIMADOR: solo el dueño (su receta secreta) -->
       <section id="vista-estimador" hidden>
         <div id="estimador-panel"></div>
@@ -249,10 +255,10 @@
     </form>
   </dialog>
 
-  <script src="assets/logo.js?v=41"></script>
-  <script src="assets/config.js?v=41"></script>
-  <script src="js/db.js?v=41"></script>
-  <script src="js/app.js?v=41"></script>
-  <script src="js/i18n.js?v=41"></script>
+  <script src="assets/logo.js?v=46"></script>
+  <script src="assets/config.js?v=46"></script>
+  <script src="js/db.js?v=46"></script>
+  <script src="js/app.js?v=46"></script>
+  <script src="js/i18n.js?v=46"></script>
 </body>
 </html>

@@ -355,6 +355,17 @@
       metodo: "POST", cuerpo: { ...fila, usuario_id: uid() },
       headers: { Prefer: "resolution=merge-duplicates,return=minimal" }
     }),
+    // 💬 Chat del equipo
+    miUid: () => uid(),
+    leerMensajes: () => leer("mensajes?select=*&order=creado"),
+    enviarMensaje: (texto, destinatarioId) =>
+      insertar("mensajes", { texto, destinatario_id: destinatarioId || null, autor_id: uid() }),
+    leerLecturas: () => leer(`chat_lecturas?select=*&usuario_id=eq.${uid()}`),
+    marcarLeido: conv => api("chat_lecturas?on_conflict=usuario_id,conv", {
+      metodo: "POST",
+      cuerpo: { usuario_id: uid(), conv, visto: new Date().toISOString() },
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" }
+    }),
     crearGestion: fila => insertar("gestiones", { ...fila, autor_id: uid() }),
     cambiarGestion: (id, cambios) => actualizar(`gestiones?id=eq.${id}`, cambios),
     eliminarGestion: id => api(`gestiones?id=eq.${id}`, { metodo: "DELETE" }),

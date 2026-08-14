@@ -210,6 +210,8 @@
       editar: perfil.rol === "dueno"
     };
     $usuarioChip.textContent = usuario.nombre;
+    $("btn-chat").hidden = false;
+    arrancarChat();
     irHome();
   }
 
@@ -217,6 +219,8 @@
     DB.salir();
     state = null;
     usuario = null;
+    $("btn-chat").hidden = true;
+    if (chatTimer) { clearInterval(chatTimer); chatTimer = null; }
     $app.hidden = true;
     $login.hidden = false;
   }
@@ -238,6 +242,7 @@
     else if (!$vMat.hidden) pintarMateriales();
     else if (!$("vista-checklist").hidden) pintarChecklist();
     else if (!$("vista-gastos").hidden) pintarGastos();
+    else if (!$("vista-chat").hidden) refrescarChat(false);
     else { pintarInicio(); pintarCategorias(); pintarResumen(); }
   }
 
@@ -253,6 +258,7 @@
     $("vista-checklist").hidden = vista !== "checklist";
     $("vista-gastos").hidden = vista !== "gastos";
     $("vista-estimador").hidden = vista !== "estimador";
+    $("vista-chat").hidden = vista !== "chat";
     $kicker.textContent = kicker;
     $titulo.textContent = titulo;
     $btnVolver.hidden = !volver;
@@ -637,6 +643,11 @@
   }
 
   $btnVolver.addEventListener("click", () => {
+    if (!$("vista-chat").hidden) {
+      if (chatConv) { irChat(null); return; }
+      irHome();
+      return;
+    }
     if (!$("vista-estimador").hidden) {
       if (estimadoActivo) { estimadoActivo = null; pintarEstimador(); return; }
       irHome();
@@ -1138,6 +1149,174 @@
       });
     });
   }
+
+  // ============================================================
+  // 💬 CHAT DEL EQUIPO — grupo y mensajes privados, dentro de la app.
+  // Grupo: lo ven todos. Privado: solo tú y esa persona (lo garantiza
+  // la base de datos, no la pantalla). Cada mensaje avisa al teléfono.
+  // ============================================================
+  let chatConv = null;       // null = lista de conversaciones · "grupo" · uid de la otra persona
+  let chatMensajes = [];
+  let chatLecturas = {};
+  let chatTimer = null;
+  let chatBadgeTimer = null;
+
+  // ¿A qué conversación pertenece un mensaje, visto desde mi cuenta?
+  function convDe(m) {
+    if (!m.destinatario_id) return "grupo";
+    return m.autor_id === usuario.id ? m.destinatario_id : m.autor_id;
+  }
+
+  async function cargarChat() {
+    const [ms, lect] = await Promise.all([DB.leerMensajes(), DB.leerLecturas()]);
+    chatMensajes = (ms || []).slice().sort((a, b) =>
+      String(a.creado || "").localeCompare(String(b.creado || "")) || (a.id - b.id));
+    chatLecturas = Object.fromEntries((lect || []).map(l => [l.conv, l.visto]));
+  }
+
+  const noLeidos = conv => {
+    const visto = chatLecturas[conv] || "";
+    return chatMensajes.filter(m =>
+      convDe(m) === conv && m.autor_id !== usuario.id && String(m.creado || "") > visto).length;
+  };
+
+  function pintarChatBadge() {
+    const badge = $("chat-badge");
+    if (!badge || !usuario) return;
+    const convs = new Set(["grupo", ...chatMensajes.filter(m => m.destinatario_id).map(convDe)]);
+    let total = 0;
+    convs.forEach(c => { total += noLeidos(c); });
+    badge.hidden = !total;
+    badge.textContent = total > 9 ? "9+" : String(total);
+  }
+
+  // Al entrar: contar lo no leído para el numerito, y revisarlo cada minuto
+  function arrancarChat() {
+    cargarChat().then(pintarChatBadge).catch(() => {});
+    if (chatBadgeTimer) clearInterval(chatBadgeTimer);
+    chatBadgeTimer = setInterval(() => {
+      if (!usuario || document.hidden) return;
+      cargarChat().then(pintarChatBadge).catch(() => {});
+    }, 60000);
+  }
+
+  async function irChat(conv) {
+    chatConv = conv || null;
+    mostrar("chat", { kicker: "Equipo Max Power", titulo: "💬 Mensajes", volver: true, nuevo: false });
+    $("chat-panel").innerHTML = '<p class="cal-sin-eventos">Cargando…</p>';
+    await refrescarChat(true);
+    if (chatTimer) clearInterval(chatTimer);
+    // Mientras el chat esté abierto, se refresca solo cada 6 segundos
+    chatTimer = setInterval(() => {
+      if ($("vista-chat").hidden) { clearInterval(chatTimer); chatTimer = null; return; }
+      refrescarChat(false).catch(() => {});
+    }, 6000);
+  }
+
+  async function refrescarChat(completo) {
+    await cargarChat();
+    if (chatConv && noLeidos(chatConv)) {
+      DB.marcarLeido(chatConv).catch(() => {});
+      chatLecturas[chatConv] = new Date().toISOString();
+    }
+    if (completo || !$("chat-hilo")) pintarChat();
+    else if (chatConv) {
+      // Solo se actualizan las burbujas: lo que estés escribiendo no se toca
+      const hilo = $("chat-hilo");
+      const abajo = hilo.scrollHeight - hilo.scrollTop - hilo.clientHeight < 80;
+      hilo.innerHTML = burbujasHTML();
+      if (abajo) hilo.scrollTop = hilo.scrollHeight;
+    } else pintarChat();
+    pintarChatBadge();
+  }
+
+  const horaCorta = iso => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return d.toLocaleTimeString("es-US", { hour: "numeric", minute: "2-digit" });
+  };
+  const diaCorto = iso => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return d.toLocaleDateString("es-US", { weekday: "short", day: "numeric", month: "short" });
+  };
+
+  function burbujasHTML() {
+    const del = chatMensajes.filter(m => convDe(m) === chatConv);
+    if (!del.length) return '<p class="cal-sin-eventos">Todavía no hay mensajes — escribe el primero.</p>';
+    let ultimoDia = "";
+    return del.map(m => {
+      const mio = m.autor_id === usuario.id;
+      const dia = String(m.creado || "").slice(0, 10);
+      const sep = dia && dia !== ultimoDia
+        ? '<div class="chat-dia">' + esc(diaCorto(m.creado)) + '</div>' : "";
+      ultimoDia = dia || ultimoDia;
+      const quien = !mio && chatConv === "grupo"
+        ? '<span class="burbuja-quien">' + esc(state.nombrePorId[m.autor_id] || "") + '</span>' : "";
+      return sep + '<div class="burbuja' + (mio ? " mia" : "") + '">' + quien
+        + '<span class="burbuja-texto">' + esc(m.texto) + '</span>'
+        + '<span class="burbuja-hora">' + horaCorta(m.creado) + '</span></div>';
+    }).join("");
+  }
+
+  function pintarChat() {
+    const panel = $("chat-panel");
+    const equipo = (state.equipo || []).filter(u => u.activo && u.id !== usuario.id);
+
+    // ---- Lista de conversaciones ----
+    if (!chatConv) {
+      const fila = (clave, icono, nombre, sub) => {
+        const n = noLeidos(clave);
+        const ult = chatMensajes.filter(m => convDe(m) === clave).slice(-1)[0];
+        const prev = ult ? (ult.autor_id === usuario.id ? "Tú: " : "") + ult.texto : sub;
+        return '<button class="chat-conv" data-conv="' + esc(clave) + '">'
+          + '<span class="chat-conv-icono">' + icono + '</span>'
+          + '<span class="chat-conv-info"><span class="chat-conv-nombre">' + esc(nombre) + '</span>'
+          + '<span class="chat-conv-prev">' + esc(String(prev).slice(0, 60)) + '</span></span>'
+          + (n ? '<span class="chat-no-leidos">' + (n > 9 ? "9+" : n) + '</span>' : "")
+          + '</button>';
+      };
+      panel.innerHTML = '<div class="cal-panel-card chat-lista">'
+        + fila("grupo", "👥", "Grupo Max Power", "Mensajes para todo el equipo")
+        + equipo.map(u => fila(u.id, "👤", u.nombre, "Mensaje privado — solo lo ven ustedes dos")).join("")
+        + '</div>';
+      panel.querySelectorAll(".chat-conv").forEach(b =>
+        b.addEventListener("click", () => irChat(b.dataset.conv)));
+      return;
+    }
+
+    // ---- Una conversación abierta ----
+    const nombre = chatConv === "grupo" ? "👥 Grupo Max Power"
+      : "👤 " + (state.nombrePorId[chatConv] || "Privado");
+    panel.innerHTML = '<div class="cal-panel-card chat-caja">'
+      + '<div class="chat-cabeza"><button id="chat-atras" class="btn-volver" title="Conversaciones">‹</button>'
+      + '<span class="chat-titulo">' + esc(nombre) + '</span>'
+      + (chatConv !== "grupo" ? '<span class="chat-priv">🔒 privado</span>' : "")
+      + '</div>'
+      + '<div id="chat-hilo" class="chat-hilo">' + burbujasHTML() + '</div>'
+      + '<form id="chat-form" class="chat-form">'
+      + '<input name="texto" type="text" placeholder="Escribe un mensaje…" autocomplete="off" maxlength="500">'
+      + '<button type="submit" class="chat-enviar" title="Enviar">➤</button>'
+      + '</form></div>';
+
+    const hilo = $("chat-hilo");
+    hilo.scrollTop = hilo.scrollHeight;
+    $("chat-atras").addEventListener("click", () => irChat(null));
+    $("chat-form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const caja = e.target.elements.texto;
+      const texto = caja.value.trim();
+      if (!texto) return;
+      caja.value = "";
+      try {
+        await DB.enviarMensaje(texto, chatConv === "grupo" ? null : chatConv);
+        await refrescarChat(false);
+        hilo.scrollTop = hilo.scrollHeight;
+      } catch (err) { avisar("No se pudo enviar: " + err.message, true); caja.value = texto; }
+    });
+  }
+
+  $("btn-chat").addEventListener("click", () => irChat(chatConv));
 
   // 🚀 Arranque: lo que falta para empezar (mismos registros que 🛒)
   function arranqueHTML(p) {
@@ -2906,6 +3085,7 @@
   let estData = null;        // { catalogo, escenarios, estimados, items }
   let estimadoActivo = null; // id del estimado abierto
   let colaEnsambles = Promise.resolve(); // fila india de los clics +/- de ensambles
+  let frecuentesExpandido = false;       // "Ver más" de ⭐ Lo que más usas
 
   function irEstimador(abrirId) {
     if (!usuario.finanzas) return;
@@ -3047,12 +3227,23 @@
       }
     }
 
+    // Ajustes del propio estimado: si el dueño editó un % en el resumen,
+    // ese manda; si está vacío, se usa el del escenario/configuración.
+    const nn = v => (v === null || v === undefined || v === "" ? null : Number(v));
+    const miscPct = nn(est.misc_pct) ?? (cfg.misc_pct ?? 0.03);
+    const taxPct = nn(est.tax_pct) ?? n(esc.tax_material);
+    const ohHH = nn(est.overhead_hh) ?? n(esc.overhead_hh);
+    const profitPct = nn(est.profit_pct) ?? n(esc.profit);
+    const markupPct = nn(est.markup_pct) ?? 0;
+
     const matItems = base.reduce((s, i) => s + n(i.cantidad) * n(i.precio), 0)
       + autos.reduce((s, i) => s + n(i.cantidad) * n(i.precio), 0) + mermaMat;
-    const misc = matItems * (cfg.misc_pct ?? 0.03);
+    const misc = matItems * miscPct;
     const matSubtotal = matItems + misc;
-    const tax = matSubtotal * n(esc.tax_material);
-    const totalMaterial = matSubtotal + tax;
+    const tax = matSubtotal * taxPct;
+    // Markup: es de MATERIALES — va después del sales tax
+    const markup = (matSubtotal + tax) * markupPct;
+    const totalMaterial = matSubtotal + tax + markup;
 
     const horasBase = base.reduce((s, i) => s + n(i.cantidad) * n(i.horas), 0)
       + autos.reduce((s, i) => s + n(i.cantidad) * n(i.horas), 0) + mermaHoras;
@@ -3062,12 +3253,13 @@
     const benefits = laborBase * n(esc.benefits);
     const totalLabor = laborBase + benefits;
     const prime = totalLabor + totalMaterial;
-    const overhead = horas * n(esc.overhead_hh);
-    const profit = (prime + overhead) * n(esc.profit);
+    const overhead = horas * ohHH;
+    const profit = (prime + overhead) * profitPct;
     const bid = prime + overhead + profit;
     return { items: base, autos, mermaMat, mermaHoras, misc, esc, matSubtotal, tax,
              totalMaterial, horasBase, horas, laborBase, benefits, totalLabor,
-             prime, overhead, profit, bid };
+             prime, overhead, profit, markup, bid,
+             miscPct, taxPct, ohHH, profitPct, markupPct };
   }
 
   // Overhead real: gastos generales ÷ horas-hombre reales (últimos 90 días)
@@ -3383,6 +3575,45 @@ Power done right the first time. ⚡`;
         </div>`;
     }).join("");
 
+    // ⭐ Lo que más usas: historial real de todos tus estimados.
+    // Cada vez que agregas un ítem (buscado, takeoff o creado), cuenta aquí.
+    const usoPorItem = {};
+    (estData.items || []).forEach(it => {
+      const k = (it.item || "").trim();
+      if (!k) return;
+      if (!usoPorItem[k]) usoPorItem[k] = { item: it.item, unidad: it.unidad, precio: it.precio, horas: it.horas, veces: 0 };
+      usoPorItem[k].veces++;
+    });
+    const frecuentes = Object.values(usoPorItem)
+      .sort((a, b) => b.veces - a.veces || a.item.localeCompare(b.item));
+    const filaFrecuente = f => {
+      const cat = (estData.catalogo || []).find(x => x.item === f.item);
+      return `
+        <div class="mat-item est-frec" data-item="${esc(f.item)}" style="cursor:pointer">
+          <span class="alcance-info">
+            <span class="alcance-titulo">${esc(f.item)}</span>
+            <span class="alcance-estado">usado ${f.veces} ${f.veces === 1 ? "vez" : "veces"} · ${esc((cat || f).unidad || "")} · ${fmt(Number((cat || f).precio) || 0)}</span>
+          </span>
+          <span class="cat-flecha">＋</span>
+        </div>`;
+    };
+    const topFrec = frecuentes.slice(0, frecuentesExpandido ? 40 : 6);
+    const cardFrecuentes = !soloLectura && frecuentes.length ? `
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">⭐ Lo que más usas <span class="chk-avance">se llena solo con tu historial</span></div>
+        ${topFrec.map(filaFrecuente).join("")}
+        ${frecuentes.length > 6 ? `
+          <button type="button" class="accion secundaria" id="btn-frec-mas" style="margin-top:.45rem">
+            ${frecuentesExpandido ? "Ver menos" : `Ver más (${frecuentes.length - 6} más)`}
+          </button>` : ""}
+      </div>` : "";
+
+    // Ayudantes del resumen editable
+    const pctTxt = v => (Math.round(v * 1000) / 10) + "%";
+    const nnDist = v => !(v === null || v === undefined || v === "");
+    const lapiz = (campo, tipo, actual, nombre) => soloLectura ? "" :
+      `<button type="button" class="btn-formula insp-borrar" title="Editar" data-campo="${campo}" data-tipo="${tipo}" data-actual="${actual}" data-nombre="${esc(nombre)}">✎</button>`;
+
     const oReal = overheadReal();
     const bannerOverhead = usuario.finanzas && oReal
       && Math.abs(oReal - Number(c.esc.overhead_hh)) / Number(c.esc.overhead_hh) > 0.05
@@ -3434,6 +3665,7 @@ Power done right the first time. ⚡`;
         <div class="cal-form-titulo">🧩 Ensambles — cuenta como piensas</div>
         ${filasEnsambles || `<p class="cal-sin-eventos">Los ensambles se siembran al correr el SQL v2.</p>`}
       </div>` : ""}
+      ${cardFrecuentes}
       ${!soloLectura ? `
       <div class="cal-panel-card">
         <div class="cal-form-titulo">🔎 Buscar en el catálogo (${(estData.catalogo || []).length})</div>
@@ -3448,15 +3680,30 @@ Power done right the first time. ⚡`;
         ${filasAutos}
       </div>
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">💵 Resumen — fórmula Max Power</div>
+        <div class="cal-form-titulo">💵 Resumen — fórmula Max Power
+          ${!soloLectura ? `<span class="chk-avance">toca ✎ para jugar con los números</span>` : ""}</div>
+        ${!soloLectura ? `
+        <div class="modal-fila" style="margin-bottom:.4rem">
+          <label class="mat-filtro-label">Escenario
+            <select id="res-escenario">
+              ${(estData.escenarios || []).map(x =>
+                `<option value="${esc(x.id)}"${x.id === est.escenario ? " selected" : ""}>${esc(x.id)} — ${esc(x.nombre || "")}</option>`).join("")}
+            </select>
+          </label>
+          <label class="mat-filtro-label">Factor de productividad
+            <input id="res-factor" type="number" min="0.5" max="2" step="0.05" value="${esc(est.factor || 1)}">
+          </label>
+        </div>` : ""}
         <div class="rent-fila"><span>Material (ítems${c.autos.length ? " + automáticos" : ""})</span><span>${fmt(r2(c.matSubtotal - c.misc - c.mermaMat))}</span></div>
         ${c.mermaMat > 0 ? `<div class="rent-fila"><span>+ Merma (cables ${Math.round((estData.config.merma_cable ?? .1) * 100)}% · tubería ${Math.round((estData.config.merma_tuberia ?? .05) * 100)}%)</span><span>${fmt(r2(c.mermaMat))}</span></div>` : ""}
-        <div class="rent-fila"><span>+ Misceláneas (${Math.round((estData.config.misc_pct ?? .03) * 100)}% — tape, wirenuts, fijación)</span><span>${fmt(r2(c.misc))}</span></div>
-        <div class="rent-fila"><span>+ Sales tax (${Math.round(c.esc.tax_material * 100)}%)</span><span>${fmt(r2(c.tax))}</span></div>
+        <div class="rent-fila"><span>+ Misceláneas (${pctTxt(c.miscPct)}${nnDist(est.misc_pct) ? " ✏" : " — tape, wirenuts, fijación"})${lapiz("misc_pct", "pct", c.miscPct, "Misceláneas — % del material")}</span><span>${fmt(r2(c.misc))}</span></div>
+        <div class="rent-fila"><span>+ Sales tax (${pctTxt(c.taxPct)}${nnDist(est.tax_pct) ? " ✏" : ""})${lapiz("tax_pct", "pct", c.taxPct, "Sales tax — % del material")}</span><span>${fmt(r2(c.tax))}</span></div>
+        ${c.markupPct > 0 ? `<div class="rent-fila"><span>+ Markup de materiales (${pctTxt(c.markupPct)}) ✏${lapiz("markup_pct", "pct", c.markupPct, "Markup de materiales — % sobre el material con tax")}</span><span>${fmt(r2(c.markup))}</span></div>`
+          : !soloLectura ? `<div class="rent-fila"><span><button type="button" class="btn-formula insp-borrar" data-campo="markup_pct" data-tipo="pct" data-actual="0" data-nombre="Markup de materiales — % sobre el material con tax">+ Agregar markup de materiales</button></span><span></span></div>` : ""}
         <div class="rent-fila"><span>Horas de TODO el trabajo (${r2(c.horasBase)} × factor ${est.factor || 1})</span><span>${r2(c.horas)} h</span></div>
         <div class="rent-fila"><span>Labor + benefits (${Math.round(c.esc.benefits * 100)}%)</span><span>${fmt(r2(c.totalLabor))}</span></div>
-        <div class="rent-fila"><span>+ Overhead (${r2(c.horas)} h × ${fmt(c.esc.overhead_hh)})</span><span>${fmt(r2(c.overhead))}</span></div>
-        <div class="rent-fila"><span>+ Profit (${Math.round(c.esc.profit * 100)}%)</span><span>${fmt(r2(c.profit))}</span></div>
+        <div class="rent-fila"><span>+ Overhead (${r2(c.horas)} h × ${fmt(c.ohHH)}${nnDist(est.overhead_hh) ? " ✏" : ""})${lapiz("overhead_hh", "monto", c.ohHH, "Overhead — $ por hora-hombre")}</span><span>${fmt(r2(c.overhead))}</span></div>
+        <div class="rent-fila"><span>+ Profit (${pctTxt(c.profitPct)}${nnDist(est.profit_pct) ? " ✏" : ""})${lapiz("profit_pct", "pct", c.profitPct, "Profit — % sobre costo + overhead")}</span><span>${fmt(r2(c.profit))}</span></div>
         <div class="rent-fila rent-total ok"><span>🎯 PRECIO DE LA PROPUESTA</span><span>${fmt(r2(c.bid))}</span></div>
         ${est.sqft ? `<p class="rent-nota">${fmt(r2(c.bid / est.sqft))} por sq ft</p>` : ""}
       </div>
@@ -3469,6 +3716,43 @@ Power done right the first time. ⚡`;
       <div id="propuesta-caja"></div>`;
 
     // --- cabecera ---
+    // Resumen editable: escenario y factor también se cambian desde abajo
+    const selEscRes = $("res-escenario"), inpFactorRes = $("res-factor");
+    if (selEscRes) selEscRes.addEventListener("change", async () => {
+      await DB.cambiarEstimado(est.id, { escenario: selEscRes.value }).catch(() => {});
+      await recargarEstimador();
+    });
+    if (inpFactorRes) inpFactorRes.addEventListener("change", async () => {
+      const v = Number(inpFactorRes.value) || 1;
+      await DB.cambiarEstimado(est.id, { factor: v }).catch(() => {});
+      await recargarEstimador();
+    });
+    // Los lápices de la fórmula: editar, poner en 0, o vaciar para volver al escenario
+    document.querySelectorAll(".btn-formula").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const { campo, tipo, actual, nombre } = btn.dataset;
+        const esPct = tipo === "pct";
+        const mostrado = esPct ? String(Math.round(Number(actual) * 1000) / 10) : String(actual);
+        const resp = prompt(
+          `${nombre}\n\nEscribe ${esPct ? "el %" : "el monto en $"} (0 = quitarlo · vacío = volver al valor del escenario):`,
+          mostrado);
+        if (resp === null) return;
+        const limpio = resp.replace(/[%$,\s]/g, "");
+        let valor;
+        if (limpio === "") valor = null;
+        else {
+          const num = Number(limpio);
+          if (!Number.isFinite(num) || num < 0) { avisar("Valor no válido", true); return; }
+          valor = esPct ? num / 100 : num;
+        }
+        try {
+          await DB.cambiarEstimado(est.id, { [campo]: valor });
+          await recargarEstimador();
+          avisar(valor === null ? "De vuelta al valor del escenario ✓" : "Fórmula ajustada ✓");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+
     const selEsc = $("est-escenario"), inpFactor = $("est-factor"), selCable = $("est-cable");
     if (selEsc && !soloLectura) selEsc.addEventListener("change", async () => {
       await DB.cambiarEstimado(est.id, { escenario: selEsc.value }).catch(() => {});
@@ -3564,13 +3848,61 @@ Power done right the first time. ⚡`;
       });
     });
 
+    // Cajita de cantidad EN LA MISMA FILA (nada de ventanitas del navegador,
+    // que en el teléfono a veces se tragan el primer intento)
+    const abrirCantidad = (fila, alConfirmar) => {
+      const ya = fila.querySelector(".est-qty-mini");
+      if (ya) { ya.querySelector("input").focus(); return; }
+      const flecha = fila.querySelector(".cat-flecha");
+      if (flecha) flecha.hidden = true;
+      const caja = document.createElement("span");
+      caja.className = "est-qty-mini";
+      caja.innerHTML = `<input type="number" min="0.01" step="any" inputmode="decimal" placeholder="cant.">
+        <button type="button" class="accion" title="Agregar">✓</button>`;
+      fila.appendChild(caja);
+      const inp = caja.querySelector("input");
+      const ok = async () => {
+        const cantidad = Number(inp.value.replace(/[,\s]/g, ""));
+        if (!Number.isFinite(cantidad) || cantidad <= 0) { avisar("Ponle la cantidad", true); inp.focus(); return; }
+        await alConfirmar(cantidad);
+      };
+      caja.querySelector("button").addEventListener("click", e => { e.stopPropagation(); ok(); });
+      inp.addEventListener("click", e => e.stopPropagation());
+      inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); ok(); } });
+      inp.focus();
+    };
+    const agregarDelCatalogo = async (nombre, unidad, precio, horas, cantidad) => {
+      try {
+        await DB.crearItemEstimado({
+          estimado_id: est.id, item: nombre, unidad, precio, horas, cantidad,
+          orden: c.items.length + 1
+        });
+        await recargarEstimador();
+        avisar(`${cantidad} × ${nombre} agregado ✓`);
+      } catch (err) { avisar("No se pudo agregar: " + err.message, true); }
+    };
+
     // --- búsqueda del catálogo + crear ítem ---
     const inpBuscar = $("est-buscar");
     if (inpBuscar) inpBuscar.addEventListener("input", () => {
       const q = inpBuscar.value.trim().toLowerCase();
+      // Busca por palabras sueltas ("outlet gfci" encuentra "GFCI OUTLET WR")
+      // y muestra TODOS los que coincidan — la lista tiene su propio scroll.
+      const palabras = q.split(/\s+/).filter(Boolean);
       const res = q.length < 2 ? [] : (estData.catalogo || [])
-        .filter(i => (i.item + " " + (i.seccion || "")).toLowerCase().includes(q)).slice(0, 12);
-      $("est-resultados").innerHTML = res.map(i => `
+        .filter(i => {
+          const texto = (i.item + " " + (i.seccion || "")).toLowerCase();
+          return palabras.every(p => texto.includes(p));
+        })
+        .sort((a, b) => {
+          const ta = a.item.toLowerCase(), tb = b.item.toLowerCase();
+          return (ta.indexOf(palabras[0]) - tb.indexOf(palabras[0])) || ta.localeCompare(tb);
+        });
+      $("est-resultados").innerHTML = (q.length >= 2
+        ? `<p class="modal-nota" style="margin:.4rem 0 .3rem">${res.length
+            ? `${res.length} resultado${res.length === 1 ? "" : "s"}`
+            : "Nada con ese nombre — prueba otra palabra o crea el ítem nuevo aquí abajo."}</p>` : "")
+        + res.map(i => `
         <div class="mat-item est-res" data-id="${i.id}" style="cursor:pointer">
           <span class="alcance-info">
             <span class="alcance-titulo">${esc(i.item)}</span>
@@ -3579,25 +3911,33 @@ Power done right the first time. ⚡`;
           <span class="cat-flecha">＋</span>
         </div>`).join("");
       $("est-resultados").querySelectorAll(".est-res").forEach(el => {
-        el.addEventListener("click", async () => {
+        el.addEventListener("click", () => {
           const item = (estData.catalogo || []).find(x => String(x.id) === el.dataset.id);
           if (!item) return;
-          const qty = prompt(`Cantidad de "${item.item}" (${item.unidad || "unidades"}):`);
-          if (qty === null) return;
-          const cantidad = Number(qty.replace(/[,\s]/g, ""));
-          if (!Number.isFinite(cantidad) || cantidad <= 0) { avisar("Cantidad no válida", true); return; }
-          try {
-            await DB.crearItemEstimado({
-              estimado_id: est.id, item: item.item, unidad: item.unidad,
-              precio: item.precio, horas: item.horas_unidad, cantidad,
-              orden: c.items.length + 1
-            });
-            await recargarEstimador();
-            avisar("Ítem agregado ✓");
-          } catch (err) { avisar("No se pudo agregar: " + err.message, true); }
+          abrirCantidad(el, cantidad =>
+            agregarDelCatalogo(item.item, item.unidad, item.precio, item.horas_unidad, cantidad));
         });
       });
     });
+    // --- ⭐ frecuentes: agregar con un toque + "Ver más" ---
+    document.querySelectorAll(".est-frec").forEach(el => {
+      el.addEventListener("click", () => {
+        const nombre = el.dataset.item;
+        const cat = (estData.catalogo || []).find(x => x.item === nombre);
+        const hist = (estData.items || []).find(x => x.item === nombre);
+        const base = cat || hist;
+        if (!base) return;
+        abrirCantidad(el, cantidad => agregarDelCatalogo(
+          nombre, base.unidad, Number(base.precio) || 0,
+          Number(cat ? cat.horas_unidad : hist.horas) || 0, cantidad));
+      });
+    });
+    const btnFrecMas = $("btn-frec-mas");
+    if (btnFrecMas) btnFrecMas.addEventListener("click", () => {
+      frecuentesExpandido = !frecuentesExpandido;
+      pintarEstimador();
+    });
+
     const btnCatNuevo = $("btn-cat-nuevo");
     if (btnCatNuevo) btnCatNuevo.addEventListener("click", async () => {
       const nombre = prompt("Nombre del ítem nuevo (como quieres verlo en el catálogo):");

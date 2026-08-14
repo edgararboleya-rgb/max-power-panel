@@ -496,6 +496,175 @@ body::after {
 .dot.azul { background: var(--mp-blue); }
 .dot.rojo { background: #C84B4B; box-shadow: 0 0 0 3px rgba(200,75,75,.22); }
 
+/* Estimador: resultados del catálogo con su propio scroll */
+#est-resultados { max-height: 340px; overflow-y: auto; }
+/* Cajita de cantidad en línea (búsqueda y frecuentes) */
+.est-qty-mini { display: flex; align-items: center; gap: 0.3rem; flex-shrink: 0; }
+.est-qty-mini input {
+  width: 4.6rem;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--mp-blue);
+  border-radius: 8px;
+  background: var(--mp-card);
+  color: var(--mp-ink);
+}
+.est-qty-mini .accion { padding: 0.35rem 0.6rem; }
+/* Lápices de la fórmula en el resumen */
+.btn-formula {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  color: var(--mp-teal-text);
+  padding: 0 0.25rem;
+}
+.btn-formula:hover { text-decoration: underline; }
+
+/* ---------- 💬 Chat del equipo ---------- */
+.btn-chat {
+  position: relative;
+  background: none;
+  border: 1px dashed rgba(34, 232, 224, 0.5);
+  border-radius: 10px;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+  line-height: 1;
+}
+.chat-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: #E5484D;
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+.chat-lista { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.4rem; }
+.chat-conv {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  text-align: left;
+  background: var(--mp-card);
+  border: 1px solid var(--mp-line);
+  border-radius: 12px;
+  padding: 0.65rem 0.75rem;
+  cursor: pointer;
+  font: inherit;
+}
+.chat-conv:hover { border-color: var(--mp-blue); }
+.chat-conv-icono { font-size: 1.3rem; }
+.chat-conv-info { flex: 1; min-width: 0; }
+.chat-conv-nombre { display: block; font-weight: 800; font-size: 0.9rem; color: var(--mp-ink); }
+.chat-conv-prev {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--mp-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-no-leidos {
+  background: #E5484D;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  flex-shrink: 0;
+}
+.chat-caja { display: flex; flex-direction: column; }
+.chat-cabeza {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--mp-line);
+  margin-bottom: 0.5rem;
+}
+.chat-titulo { font-weight: 800; font-size: 0.92rem; color: var(--mp-ink); flex: 1; }
+.chat-priv { font-size: 0.68rem; font-weight: 700; color: var(--mp-ink-3); }
+.chat-hilo {
+  height: 55vh;
+  min-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.25rem 0.1rem;
+}
+.chat-dia {
+  text-align: center;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--mp-ink-3);
+  margin: 0.5rem 0 0.2rem;
+}
+.burbuja {
+  max-width: 82%;
+  align-self: flex-start;
+  background: var(--mp-card);
+  border: 1px solid var(--mp-line);
+  border-radius: 14px 14px 14px 4px;
+  padding: 0.45rem 0.65rem;
+  display: inline-block;
+}
+.burbuja.mia {
+  align-self: flex-end;
+  background: #E8F6F5;
+  border-color: #BDE8E4;
+  border-radius: 14px 14px 4px 14px;
+}
+.burbuja-quien { display: block; font-size: 0.66rem; font-weight: 800; color: var(--mp-teal-text); }
+.burbuja-texto { display: block; font-size: 0.86rem; color: var(--mp-ink); word-wrap: break-word; white-space: pre-wrap; }
+.burbuja-hora { display: block; font-size: 0.6rem; color: var(--mp-ink-3); text-align: right; margin-top: 2px; }
+.chat-form { display: flex; gap: 0.4rem; margin-top: 0.55rem; }
+.chat-form input {
+  flex: 1;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--mp-line);
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.88rem;
+  background: var(--mp-card);
+  color: var(--mp-ink);
+}
+.chat-form input:focus { outline: 2px solid var(--mp-blue); border-color: var(--mp-blue); }
+.chat-enviar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 0;
+  background: linear-gradient(135deg, var(--mp-blue), var(--mp-cyan));
+  color: #04222B;
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+@media (max-width: 560px) {
+  .chat-hilo { height: 52vh; }
+  .burbuja { max-width: 88%; }
+}
+
 /* ---------- Checklist: fichas por proyecto con categorías ---------- */
 .chk-det {
   background: var(--mp-card);
@@ -557,7 +726,6 @@ body::after {
   background: var(--mp-card);
 }
 .tarea.prio-urgente { border-color: #F3B9B9; background: #FDF4F4; }
-.tarea.prio-normal { border-color: #EDDFAE; background: #FFFDF3; }
 .tarea.prio-espera { border-style: dashed; }
 .tarea.prio-espera .tarea-texto { color: var(--mp-ink-2); }
 .tarea.hecha { opacity: 0.62; border-style: solid; background: var(--mp-card); border-color: var(--mp-line); }
@@ -589,7 +757,7 @@ body::after {
   cursor: pointer;
 }
 .tarea-prio.urgente { border-color: #E8A0A0; color: #B44; background: #FDF4F4; }
-.tarea-prio.normal { border-color: #D9C271; color: #7A6200; background: #FFFDF3; }
+.tarea-prio.normal { color: #7A6200; }
 .tarea-prio.espera { color: var(--mp-ink-3); }
 
 /* Botón "+ Agregar una nueva" al final de cada lista */
