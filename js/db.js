@@ -345,6 +345,11 @@
     eliminarExterno: id => api(`trabajos_externos?id=eq.${id}`, { metodo: "DELETE" }),
     crearAyudante: fila => insertar("externos_equipo", fila),
     cambiarAyudante: (id, cambios) => actualizar(`externos_equipo?id=eq.${id}`, cambios),
+    // Registrar este teléfono para notificaciones (upsert por endpoint)
+    guardarSuscripcion: fila => api("push_suscripciones?on_conflict=endpoint", {
+      metodo: "POST", cuerpo: { ...fila, usuario_id: uid() },
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" }
+    }),
     crearGestion: fila => insertar("gestiones", { ...fila, autor_id: uid() }),
     cambiarGestion: (id, cambios) => actualizar(`gestiones?id=eq.${id}`, cambios),
     eliminarGestion: id => api(`gestiones?id=eq.${id}`, { metodo: "DELETE" }),

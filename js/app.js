@@ -78,6 +78,11 @@
     flavia: "flavia.mestre28@gmail.com"
   };
 
+  // El service worker recibe las notificaciones aunque la app esté cerrada
+  if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
+
   // ---------- Estado en memoria ----------
   let state = null;    // lo que devuelve DB.cargarTodo()
   let usuario = null;  // { nombre, rol, finanzas, editar }
@@ -302,6 +307,52 @@
     pintarInicioHoy();
     pintarInicioAvisos();
     pintarInicioEquipo();
+    pintarInicioNotif();
+  }
+
+  // ---------- Notificaciones al teléfono (dueño y Flavia) ----------
+  const VAPID_PUBLICA = "BFz8YFTrRLK43nXpdA1bRjOks94y4Z2kNGWHiLn3Y9D1FYM12sJt6Zn1DODXLJaLpiGzxZRgn-1mzBJr43pWlD8";
+  const b64aBytes = s => {
+    const raw = atob((s + "=".repeat((4 - s.length % 4) % 4)).replace(/-/g, "+").replace(/_/g, "/"));
+    return Uint8Array.from(raw, c => c.charCodeAt(0));
+  };
+
+  function pintarInicioNotif() {
+    const caja = $("inicio-notif");
+    if (!caja) return;
+    const soporta = "serviceWorker" in navigator && "PushManager" in window && location.protocol.startsWith("http");
+    if (!usuario.finanzas || !soporta || (window.Notification && Notification.permission === "granted")) {
+      caja.innerHTML = ""; return;
+    }
+    caja.innerHTML = `
+      <div class="inicio-card">
+        <div class="aviso-texto" style="padding:.2rem 0">🔔 Este teléfono todavía no recibe avisos de la app.
+          <button class="accion secundaria" id="btn-notif-activar">Activar notificaciones</button>
+        </div>
+      </div>`;
+    $("btn-notif-activar").addEventListener("click", activarNotificaciones);
+  }
+
+  async function activarNotificaciones() {
+    try {
+      const esIphone = /iPhone|iPad/.test(navigator.userAgent);
+      const instalada = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+      if (esIphone && !instalada) {
+        avisar("En iPhone: primero agrega la app a la pantalla de inicio y ábrela desde el icono del rayo", true);
+        return;
+      }
+      const reg = await navigator.serviceWorker.ready;
+      const permiso = await Notification.requestPermission();
+      if (permiso !== "granted") { avisar("Sin permiso — se puede activar después desde Ajustes del teléfono", true); return; }
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: b64aBytes(VAPID_PUBLICA)
+      });
+      const j = sub.toJSON();
+      await DB.guardarSuscripcion({ endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth });
+      avisar("🔔 Notificaciones activadas en este teléfono ✓");
+      pintarInicioNotif();
+    } catch (err) { avisar("No se pudo activar: " + err.message, true); }
   }
 
   let hoyExpandido = false; // franja HOY: mostrar todos los pendientes o solo 3
