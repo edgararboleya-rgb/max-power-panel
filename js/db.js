@@ -90,7 +90,9 @@
       throw new Error(data.message || data.hint || `Error ${r.status} en ${ruta}`);
     }
     if (r.status === 204) return null;
-    return r.json();
+    // Safari se atraganta con respuestas vacías (201 sin cuerpo): parsear con cuidado
+    const texto = await r.text();
+    return texto ? JSON.parse(texto) : null;
   }
 
   // La base entrega máximo 1,000 filas por petición: leer() pagina hasta traerlo todo
