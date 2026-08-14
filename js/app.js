@@ -236,6 +236,7 @@
     else if (!$vCal.hidden) pintarCalendario();
     else if (!$vHoras.hidden) prepararHoras();
     else if (!$vMat.hidden) pintarMateriales();
+    else if (!$("vista-checklist").hidden) pintarChecklist();
     else if (!$("vista-gastos").hidden) pintarGastos();
     else { pintarInicio(); pintarCategorias(); pintarResumen(); }
   }
@@ -249,6 +250,7 @@
     $vCal.hidden = vista !== "calendario";
     $vDetalle.hidden = vista !== "detalle";
     $vMat.hidden = vista !== "materiales";
+    $("vista-checklist").hidden = vista !== "checklist";
     $("vista-gastos").hidden = vista !== "gastos";
     $("vista-estimador").hidden = vista !== "estimador";
     $kicker.textContent = kicker;
@@ -305,6 +307,7 @@
 
   function pintarInicio() {
     pintarInicioHoy();
+    pintarInicioUrgentes();
     pintarInicioAvisos();
     pintarInicioEquipo();
     pintarInicioNotif();
@@ -355,9 +358,7 @@
     } catch (err) { avisar("No se pudo activar: " + err.message, true); }
   }
 
-  let hoyExpandido = false; // franja HOY: mostrar todos los pendientes o solo 3
-
-  // Franja "HOY": lo de hoy y mañana + los pendientes rojos (todos la ven)
+  // Franja "HOY": lo de hoy y mañana (los pendientes viven en 🔥 Urgentes)
   function pintarInicioHoy() {
     const hoy = hoyISO();
     const man = (() => {
@@ -380,18 +381,8 @@
         </span>
       </div>`).join("");
 
-    const maxPens = hoyExpandido ? pens : pens.slice(0, 3);
-    const filasPen = maxPens.map(x => `
-      <div class="hoy-item rojo">
-        <span class="hoy-chip es-rojo">🔴</span>
-        <span class="alcance-info">
-          <span class="alcance-titulo">${esc(sinMontos(x.descripcion))}</span>
-          <span class="alcance-estado">${esc(nombreProyecto(x.proyecto))}${x.autor ? " · " + esc(x.autor) : ""}</span>
-        </span>
-        ${usuario.editar ? `<button class="insp-borrar btn-pen-editar" data-id="${x.id}" title="Corregir el texto">✎</button>
-        <button class="accion secundaria btn-hoy-resolver" data-id="${x.id}">✓ Resuelto</button>` : ""}
-      </div>`).join("") +
-      (pens.length > 3 ? `<div class="hoy-mas"><button type="button" class="accion secundaria" id="btn-hoy-todos">${hoyExpandido ? "▴ Ver menos" : `▾ Ver TODOS los pendientes (${pens.length})`}</button></div>` : "");
+    // Los pendientes ya no van aquí: tienen su tarjeta 🔥 Urgentes y el Checklist
+    const filasPen = "";
 
     $("inicio-hoy").innerHTML = `
       <div class="inicio-card">
@@ -401,30 +392,41 @@
         ${!evs.length ? `<div class="hoy-mas">Nada programado para hoy ni mañana.</div>` : ""}
       </div>`;
 
-    // Extender / encoger la lista completa de pendientes ahí mismo
-    const btnTodos = $("btn-hoy-todos");
-    if (btnTodos) btnTodos.addEventListener("click", () => {
-      hoyExpandido = !hoyExpandido;
-      pintarInicioHoy();
-    });
-    // "✓ Resuelto" directo desde el inicio (solo dueño)
-    $("inicio-hoy").querySelectorAll(".btn-hoy-resolver").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        try {
-          await DB.resolverPendiente(btn.dataset.id);
-          const pen = pendientesTodos().find(x => String(x.id) === String(btn.dataset.id));
-          if (pen) pen.resuelto = true;
-          pintarInicio();
-          avisar("Pendiente resuelto ✓");
-        } catch (err) {
-          avisar("No se pudo resolver: " + err.message, true);
-        }
-      });
-    });
-    // ✎ corrige el texto del pendiente rojo (solo dueño)
-    $("inicio-hoy").querySelectorAll(".btn-pen-editar").forEach(btn => {
-      btn.addEventListener("click", () => editarPendiente(btn.dataset.id, pintarInicio));
-    });
+  }
+
+  // 🔥 URGENTES: lo que marcaste con el fuego en cualquier checklist.
+  //    Lo ve TODO el equipo, y se palomea desde aquí mismo.
+  function pintarInicioUrgentes() {
+    const caja = $("inicio-urgentes");
+    if (!caja) return;
+    const urgentes = urgentesTodos();
+    const pendientesTotal = pendientesAbiertos().length;
+    if (!urgentes.length && !pendientesTotal) { caja.innerHTML = ""; return; }
+
+    caja.innerHTML = `
+      <div class="inicio-card${urgentes.length ? " avisos" : ""}">
+        <div class="inicio-card-titulo">${urgentes.length
+          ? `🔥 Lo urgente ahora (${urgentes.length})`
+          : "✅ Nada urgente ahora mismo"}</div>
+        ${urgentes.map(t => `
+          <div class="tarea urgente" data-tipo="${t.tipo}" data-id="${t.id}">
+            <button class="tarea-check" title="Marcar hecha">⬜</button>
+            <span class="tarea-info">
+              <span class="tarea-texto">${esc(sinMontos(t.texto))}</span>
+              <span class="tarea-meta">🔧 ${esc(t.proyectoNombre || "General")}${t.autor ? " · " + esc(t.autor) : ""}</span>
+            </span>
+            <button class="tarea-fuego on" title="Quitar urgente">🔥</button>
+            <button class="tarea-editar insp-borrar" title="Corregir el texto">✎</button>
+          </div>`).join("")}
+        <div class="hoy-mas">
+          <button type="button" class="accion secundaria" id="btn-ir-checklist-inicio">
+            ✅ Abrir el checklist completo
+          </button>
+        </div>
+      </div>`;
+
+    $("btn-ir-checklist-inicio").addEventListener("click", () => irChecklist());
+    engancharTareas(caja, pintarInicio);
   }
 
   // Corregir el texto de un pendiente rojo (lo usan el inicio y el calendario)
@@ -896,46 +898,216 @@
 
   // Avance de obra: % de cumplimiento según los puntos del alcance
   function avanceObra(pid) {
-    const puntos = (state.puntos || []).filter(x => x.proyecto === pid);
-    if (!puntos.length) return null;
-    const hechos = puntos.filter(x => x.hecho).length;
-    return { hechos, total: puntos.length, pct: Math.round((hechos / puntos.length) * 100) };
+    const tareas = tareasDe(pid);
+    if (!tareas.length) return null;
+    const hechos = tareas.filter(t => t.hecha).length;
+    return { hechos, total: tareas.length, pct: Math.round((hechos / tareas.length) * 100) };
   }
 
-  // Alcance por puntos: el scope con palomitas (todos lo ven; dueño palomea)
-  function puntosHTML(p) {
-    const puntos = (state.puntos || []).filter(x => x.proyecto === p.id);
-    const av = avanceObra(p.id);
-    const filas = puntos.map(x => `
-      <div class="punto-item${x.hecho ? " hecho" : ""}">
-        ${usuario.editar
-          ? `<button class="punto-check" data-id="${x.id}" data-hecho="${x.hecho ? "1" : ""}" title="Marcar ${x.hecho ? "pendiente" : "terminado"}">${x.hecho ? "✅" : "⬜"}</button>`
-          : `<span class="punto-check-solo">${x.hecho ? "✅" : "⬜"}</span>`}
-        <span class="punto-texto">${esc(sinMontos(x.texto))}</span>
-        ${usuario.editar ? `<button class="insp-borrar btn-punto-borrar" data-id="${x.id}" title="Eliminar punto">🗑</button>` : ""}
-      </div>`).join("");
-    const formAgregar = usuario.editar ? `
-      <form class="cal-form form-punto">
-        <div class="modal-fila punto-fila-form">
-          <label>Agregar punto al alcance
-            <input name="texto" type="text" required placeholder="Ej: instalar los 25 recessed del living" autocomplete="off">
-          </label>
-          <button type="submit" class="accion secundaria">+ Agregar</button>
-        </div>
-      </form>` : "";
-    if (!puntos.length && !usuario.editar) return "";
+  // ============================================================
+  // CHECKLIST — UNA lista de tareas por proyecto, la ve todo el equipo.
+  // Nace del alcance del trabajo y crece con lo que sale en la obra.
+  // Le pones 🔥 a una tarea y esa sale destacada en el inicio de todos.
+  // ============================================================
+  let filtroChecklist = "";
+
+  function irChecklist(proyectoId) {
+    filtroChecklist = proyectoId || "";
+    mostrar("checklist", { kicker: "Trabajo por hacer", titulo: "Checklist", volver: true, nuevo: false });
+    pintarChecklist();
+  }
+
+  // UNA SOLA lista por proyecto. Por dentro son dos orígenes (el alcance
+  // sembrado y lo que sale en la obra); por fuera es una lista de tareas
+  // igualitas: se palomean, se marcan urgentes y cualquiera agrega.
+  function tareasDe(pid) {
+    const haceQuince = (() => {
+      const d = new Date(); d.setDate(d.getDate() - 15);
+      return fechaISO(d.getFullYear(), d.getMonth(), d.getDate());
+    })();
+    const delAlcance = (state.puntos || [])
+      .filter(x => x.proyecto === pid)
+      .map(x => ({
+        tipo: "punto", id: x.id, texto: x.texto, hecha: x.hecho,
+        urgente: x.prioridad === "urgente", origen: "alcance",
+        autor: "", fecha: "", orden: x.orden || 0
+      }));
+    const delCampo = (state.pendientes || [])
+      .filter(x => x.proyecto === pid && (!x.resuelto || (x.fecha || "") >= haceQuince))
+      .map(x => ({
+        tipo: "pend", id: x.id, texto: x.descripcion, hecha: x.resuelto,
+        urgente: x.prioridad === "urgente", origen: "obra",
+        autor: x.autor, fecha: x.fecha, orden: 900
+      }));
+    // Lo urgente primero, después lo que falta, y lo hecho al fondo
+    return delAlcance.concat(delCampo).sort((a, b) =>
+      (a.hecha - b.hecha) || (b.urgente - a.urgente) || (a.orden - b.orden));
+  }
+
+  // Todas las tareas urgentes sin hacer (de todos los proyectos + generales)
+  function urgentesTodos() {
+    const dePro = proyectosConTrabajo(["enviado"])
+      .flatMap(p => tareasDe(p.id).filter(t => t.urgente && !t.hecha)
+        .map(t => ({ ...t, proyecto: p.id, proyectoNombre: p.nombre })));
+    const generales = (state.pendientes || [])
+      .filter(x => !x.proyecto && !x.resuelto && x.prioridad === "urgente")
+      .map(x => ({ tipo: "pend", id: x.id, texto: x.descripcion, hecha: false,
+                   urgente: true, autor: x.autor, proyecto: null, proyectoNombre: "General" }));
+    return dePro.concat(generales);
+  }
+
+  // Una fila del checklist: palomita · texto · 🔥 · ✎ · 🗑
+  function filaTarea(t) {
     return `
-      <div class="detalle-seccion">
-        <h3>Alcance del trabajo — ¿qué se dijo que se iba a hacer?</h3>
-        ${av ? `
-        <div class="avance-linea">
-          <span class="avance-num">${av.pct}%</span>
-          <span class="avance-detalle">completado · ${av.hechos} de ${av.total} puntos</span>
-        </div>
-        <div class="barra horas-barra"><div class="barra-relleno ${av.pct >= 100 ? "ok" : ""}" style="width:${av.pct}%"></div></div>` : ""}
-        ${filas || `<p class="sin-docs">Sin puntos todavía — agrégalos aquí abajo.</p>`}
-        ${formAgregar}
+      <div class="tarea${t.hecha ? " hecha" : ""}${t.urgente && !t.hecha ? " urgente" : ""}"
+           data-tipo="${t.tipo}" data-id="${t.id}">
+        <button class="tarea-check" title="${t.hecha ? "Devolver a pendiente" : "Marcar hecha"}">${t.hecha ? "✅" : "⬜"}</button>
+        <span class="tarea-info">
+          <span class="tarea-texto">${esc(sinMontos(t.texto))}</span>
+          ${t.autor || t.fecha ? `<span class="tarea-meta">${esc(t.autor)}${t.fecha ? " · " + esc(t.fecha) : ""}</span>` : ""}
+        </span>
+        <button class="tarea-fuego${t.urgente ? " on" : ""}" title="${t.urgente ? "Quitar urgente" : "Marcar urgente"}">🔥</button>
+        <button class="tarea-editar insp-borrar" title="Corregir el texto">✎</button>
+        ${usuario.editar ? `<button class="tarea-borrar insp-borrar" title="Eliminar">🗑</button>` : ""}
       </div>`;
+  }
+
+  function pintarChecklist() {
+    const activos = proyectosConTrabajo(["enviado"]);
+    const lista = filtroChecklist ? activos.filter(p => p.id === filtroChecklist) : activos;
+    const opciones = `<option value=""${!filtroChecklist ? " selected" : ""}>Todos los proyectos</option>` +
+      activos.map(p => `<option value="${esc(p.id)}"${p.id === filtroChecklist ? " selected" : ""}>${esc(p.nombre)}</option>`).join("");
+
+    const tarjeta = (titulo, pid, tareas) => {
+      const faltan = tareas.filter(t => !t.hecha);
+      const urg = faltan.filter(t => t.urgente).length;
+      const pct = tareas.length ? Math.round(((tareas.length - faltan.length) / tareas.length) * 100) : 0;
+      return `
+        <div class="cal-panel-card chk-proyecto">
+          <div class="cal-form-titulo${pid ? " chk-titulo" : ""}"${pid ? ` data-id="${esc(pid)}"` : ""}>${esc(titulo)}
+            <span class="chk-avance">${faltan.length} por hacer${urg ? ` · ${urg} 🔥` : ""}</span>
+          </div>
+          ${tareas.length ? `<div class="barra horas-barra"><div class="barra-relleno ${pct >= 100 ? "ok" : ""}" style="width:${pct}%"></div></div>` : ""}
+          ${tareas.map(filaTarea).join("") || `<p class="cal-sin-eventos">Sin tareas todavía — agrega la primera aquí abajo.</p>`}
+          <form class="cal-form form-tarea" data-id="${esc(pid || "")}">
+            <div class="modal-fila punto-fila-form">
+              <label>Agregar tarea
+                <input name="texto" type="text" required placeholder="Ej: arreglar el layout de las luces" autocomplete="off">
+              </label>
+              <label class="chk-urg-label">
+                <input name="urgente" type="checkbox"> 🔥 Urgente
+              </label>
+              <button type="submit" class="accion secundaria">+ Agregar</button>
+            </div>
+          </form>
+        </div>`;
+    };
+
+    const generales = (state.pendientes || [])
+      .filter(x => !x.proyecto && !x.resuelto)
+      .map(x => ({ tipo: "pend", id: x.id, texto: x.descripcion, hecha: false,
+                   urgente: x.prioridad === "urgente", autor: x.autor, fecha: x.fecha, orden: 0 }))
+      .sort((a, b) => b.urgente - a.urgente);
+
+    const tarjetas = lista.map(p => {
+      const tareas = tareasDe(p.id);
+      if (!tareas.length && filtroChecklist !== p.id) return "";
+      return tarjeta(p.nombre, p.id, tareas);
+    }).join("");
+
+    $("checklist-panel").innerHTML = `
+      <div class="cal-panel-card mat-filtro">
+        <label>Ver
+          <select id="filtro-chk">${opciones}</select>
+        </label>
+      </div>
+      ${!filtroChecklist ? tarjeta("📌 Generales (sin proyecto)", "", generales) : ""}
+      ${tarjetas || `<p class="cal-sin-eventos">Nada pendiente por aquí. 👌</p>`}`;
+
+    $("filtro-chk").addEventListener("change", e => { filtroChecklist = e.target.value; pintarChecklist(); });
+    $("checklist-panel").querySelectorAll(".chk-titulo").forEach(t => {
+      t.style.cursor = "pointer";
+      t.addEventListener("click", () => irDetalle(t.dataset.id));
+    });
+    engancharTareas($("checklist-panel"), pintarChecklist);
+
+    $("checklist-panel").querySelectorAll(".form-tarea").forEach(f => {
+      f.addEventListener("submit", async e => {
+        e.preventDefault();
+        const d = new FormData(f);
+        const texto = (d.get("texto") || "").toString().trim();
+        if (!texto) return;
+        try {
+          await DB.crearPendiente({
+            fecha: hoyISO(), proyecto_id: f.dataset.id || null,
+            descripcion: texto, prioridad: d.get("urgente") ? "urgente" : "normal"
+          });
+          await recargar();
+          avisar("Tarea agregada ✓");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+  }
+
+  // Los tres botones de cada tarea, sirven en el checklist y en el inicio
+  function engancharTareas(raiz, repintar) {
+    const dato = btn => {
+      const fila = btn.closest(".tarea");
+      return { tipo: fila.dataset.tipo, id: fila.dataset.id, fila };
+    };
+    raiz.querySelectorAll(".tarea-check").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const { tipo, id, fila } = dato(btn);
+        const estaHecha = fila.classList.contains("hecha");
+        try {
+          if (tipo === "punto") await DB.cambiarPunto(id, { hecho: !estaHecha });
+          else if (estaHecha) await DB.reabrirPendiente(id);
+          else await DB.resolverPendiente(id);
+          await recargar();
+          avisar(estaHecha ? "Tarea devuelta a pendiente" : "Tarea hecha ✓");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    raiz.querySelectorAll(".tarea-fuego").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const { tipo, id, fila } = dato(btn);
+        const nueva = fila.classList.contains("urgente") ? "normal" : "urgente";
+        try {
+          if (tipo === "punto") await DB.cambiarPunto(id, { prioridad: nueva });
+          else await DB.cambiarPendiente(id, { prioridad: nueva });
+          await recargar();
+          avisar(nueva === "urgente" ? "🔥 Marcada urgente — sale en el inicio" : "Ya no es urgente");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    raiz.querySelectorAll(".tarea-editar").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const { tipo, id, fila } = dato(btn);
+        const actual = fila.querySelector(".tarea-texto").textContent;
+        const nuevo = prompt("Corrige el texto de la tarea:", actual);
+        if (nuevo === null) return;
+        const limpio = nuevo.trim();
+        if (!limpio || limpio === actual) return;
+        try {
+          if (tipo === "punto") await DB.cambiarPunto(id, { texto: limpio });
+          else await DB.cambiarPendiente(id, { descripcion: limpio });
+          await recargar();
+          avisar("Tarea corregida ✓");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    raiz.querySelectorAll(".tarea-borrar").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const { tipo, id } = dato(btn);
+        if (!confirm("¿Eliminar esta tarea?")) return;
+        try {
+          if (tipo === "punto") await DB.eliminarPunto(id);
+          else await DB.eliminarPendiente(id);
+          await recargar();
+          avisar("Tarea eliminada ✓");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
   }
 
   // 🚀 Arranque: lo que falta para empezar (mismos registros que 🛒)
@@ -1258,7 +1430,6 @@
         <div class="proyecto-detalle">
           <div class="detalle-seccion"><h3>Situación</h3><p>${esc(sinMontos(p.estadoDetalle))}</p></div>
           <div class="detalle-seccion"><h3>Próxima acción</h3><p>${esc(sinMontos(p.proximaAccion))}</p></div>
-          ${puntosHTML(p)}
           ${arranqueHTML(p)}
           ${stepperHTML(p)}
           ${horasHTML(p)}
@@ -1513,42 +1684,6 @@
         } catch (err) {
           avisar("No se pudo eliminar: " + err.message, true);
         }
-      });
-    });
-
-    // Alcance por puntos: palomear, agregar y eliminar (solo dueño)
-    $detalle.querySelectorAll(".punto-check").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        try {
-          await DB.cambiarPunto(btn.dataset.id, { hecho: !btn.dataset.hecho });
-          await recargar();
-          avisar(btn.dataset.hecho ? "Punto devuelto a pendiente" : "Punto completado ✓");
-        } catch (err) { avisar("No se pudo: " + err.message, true); }
-      });
-    });
-    const formPunto = $detalle.querySelector(".form-punto");
-    if (formPunto) {
-      formPunto.addEventListener("submit", async e => {
-        e.preventDefault();
-        const texto = (new FormData(formPunto).get("texto") || "").toString().trim();
-        if (!texto) return;
-        const maxOrden = Math.max(0, ...(state.puntos || [])
-          .filter(x => x.proyecto === p.id).map(x => x.orden));
-        try {
-          await DB.crearPunto({ proyecto_id: p.id, texto, orden: maxOrden + 1 });
-          await recargar();
-          avisar("Punto agregado ✓");
-        } catch (err) { avisar("No se pudo agregar: " + err.message, true); }
-      });
-    }
-    $detalle.querySelectorAll(".btn-punto-borrar").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        if (!confirm("¿Eliminar este punto del alcance?")) return;
-        try {
-          await DB.eliminarPunto(btn.dataset.id);
-          await recargar();
-          avisar("Punto eliminado ✓");
-        } catch (err) { avisar("No se pudo eliminar: " + err.message, true); }
       });
     });
 
@@ -1885,7 +2020,8 @@
       await DB.reportarHoras(fila);
       if (pendiente) {
         await DB.crearPendiente({
-          fecha: fila.fecha, proyecto_id: proyectoId, descripcion: pendiente
+          fecha: fila.fecha, proyecto_id: proyectoId, descripcion: pendiente,
+          prioridad: d.get("urgente") ? "urgente" : "normal"
         });
       }
       $formHoras.elements.horas.value = "";
@@ -1911,6 +2047,7 @@
     pintarMateriales();
   }
   $("btn-materiales").addEventListener("click", () => irMateriales());
+  $("btn-checklist").addEventListener("click", () => irChecklist());
 
   function pintarMateriales() {
     const pasaFiltro = x => !filtroMateriales || x.proyecto === filtroMateriales;

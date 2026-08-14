@@ -266,6 +266,8 @@
       pendientes: pendientes.map(p => ({
         id: p.id, fecha: p.fecha, proyecto: p.proyecto_id,
         descripcion: p.descripcion, autor: nombrePorId[p.autor_id] || "",
+        autorId: p.autor_id || null,
+        prioridad: p.prioridad || "normal",
         resuelto: !!p.resuelto
       })),
       registroHoras: horas.map(h => ({
@@ -322,7 +324,8 @@
       })),
       puntos: alcancePuntos.map(a => ({
         id: a.id, proyecto: a.proyecto_id, texto: a.texto,
-        hecho: !!a.hecho, orden: a.orden || 0
+        hecho: !!a.hecho, orden: a.orden || 0,
+        prioridad: a.prioridad || "normal"
       }))
     };
   }
@@ -427,6 +430,9 @@
     crearPendiente: fila => insertar("pendientes", { ...fila, autor_id: uid() }),
     cambiarPendiente: (id, cambios) => actualizar(`pendientes?id=eq.${id}`, cambios),
     resolverPendiente: id => actualizar(`pendientes?id=eq.${id}`,
-      { resuelto: true, resuelto_por: uid(), resuelto_el: new Date().toISOString() })
+      { resuelto: true, resuelto_por: uid(), resuelto_el: new Date().toISOString() }),
+    reabrirPendiente: id => actualizar(`pendientes?id=eq.${id}`,
+      { resuelto: false, resuelto_por: null, resuelto_el: null }),
+    eliminarPendiente: id => api(`pendientes?id=eq.${id}`, { metodo: "DELETE" })
   };
 })();
