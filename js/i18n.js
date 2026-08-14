@@ -46,18 +46,28 @@
     "✅ Abrir el checklist": "✅ Open the checklist",
     "✅ Abrir el checklist completo": "✅ Open the full checklist",
     "✅ Nada urgente ahora mismo": "✅ Nothing urgent right now",
-    "🔥 Urgente": "🔥 Urgent",
-    "🔥 Es urgente — frena el trabajo": "🔥 It's urgent — blocks the work",
-    "Agregar tarea": "Add a task",
-    "Marcar urgente": "Mark urgent",
-    "Quitar urgente": "Remove urgent",
-    "Marcar hecha": "Mark done",
+    "🔴 Es urgente — frena el trabajo": "🔴 It's urgent — blocks the work",
+    "Urgente": "Urgent",
+    "Intermedio": "In between",
+    "Puede esperar": "Can wait",
+    "🟡 Intermedio": "🟡 In between",
+    "🔴 Urgente": "🔴 Urgent",
+    "⚪ Puede esperar": "⚪ Can wait",
+    "Categoría": "Category",
+    "Categoría de la tarea": "Task category",
+    "Descripción": "Description",
+    "+ Agregar una nueva": "+ Add a new one",
+    "Agregar ✓": "Add ✓",
+    "por hacer": "to do",
+    "✅ al día": "✅ all caught up",
+    "sin tareas": "no tasks",
+    "📂 Ver la ficha del proyecto": "📂 Open the project file",
+    "Marcar completada": "Mark completed",
     "Devolver a pendiente": "Reopen",
     "Corregir el texto": "Fix the text",
     "📌 Generales (sin proyecto)": "📌 General (no project)",
-    "Todos los proyectos": "All projects",
     "Nada pendiente por aquí. 👌": "Nothing pending here. 👌",
-    "Sin tareas todavía — agrega la primera aquí abajo.": "No tasks yet — add the first one below.",
+    "Sin tareas todavía — agrega la primera.": "No tasks yet — add the first one.",
     "No salieron — fuera de las estadísticas": "Didn't land — excluded from the stats",
     "Obras activas con fases en curso": "Active jobs with phases underway",
     "Aceptados, pendientes de arrancar": "Accepted, waiting to start",
@@ -156,7 +166,9 @@
       .replace("materiales", "materials").replace("material", "material")
       .replace("gestiones", "tasks").replace("gestión", "task")
       .replace(" y ", " and ").replace("para arrancar", "to start")],
-    [/^➡ Próximo cobro:$/, "➡ Next collection:"]
+    [/^➡ Próximo cobro:$/, "➡ Next collection:"],
+    [/^(\d+) por hacer/, "$1 to do"],
+    [/^🔴 Lo urgente ahora \((\d+)\)$/, "🔴 Urgent right now ($1)"]
   ];
 
   function traducirTexto(t) {

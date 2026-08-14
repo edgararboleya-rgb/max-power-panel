@@ -394,7 +394,7 @@
 
   }
 
-  // 🔥 URGENTES: lo que marcaste con el fuego en cualquier checklist.
+  // 🔴 URGENTES: lo que se categorizó urgente en cualquier checklist.
   //    Lo ve TODO el equipo, y se palomea desde aquí mismo.
   function pintarInicioUrgentes() {
     const caja = $("inicio-urgentes");
@@ -406,18 +406,9 @@
     caja.innerHTML = `
       <div class="inicio-card${urgentes.length ? " avisos" : ""}">
         <div class="inicio-card-titulo">${urgentes.length
-          ? `🔥 Lo urgente ahora (${urgentes.length})`
+          ? `🔴 Lo urgente ahora (${urgentes.length})`
           : "✅ Nada urgente ahora mismo"}</div>
-        ${urgentes.map(t => `
-          <div class="tarea urgente" data-tipo="${t.tipo}" data-id="${t.id}">
-            <button class="tarea-check" title="Marcar hecha">⬜</button>
-            <span class="tarea-info">
-              <span class="tarea-texto">${esc(sinMontos(t.texto))}</span>
-              <span class="tarea-meta">🔧 ${esc(t.proyectoNombre || "General")}${t.autor ? " · " + esc(t.autor) : ""}</span>
-            </span>
-            <button class="tarea-fuego on" title="Quitar urgente">🔥</button>
-            <button class="tarea-editar insp-borrar" title="Corregir el texto">✎</button>
-          </div>`).join("")}
+        ${urgentes.map(filaTarea).join("")}
         <div class="hoy-mas">
           <button type="button" class="accion secundaria" id="btn-ir-checklist-inicio">
             ✅ Abrir el checklist completo
@@ -907,19 +898,29 @@
   // ============================================================
   // CHECKLIST — UNA lista de tareas por proyecto, la ve todo el equipo.
   // Nace del alcance del trabajo y crece con lo que sale en la obra.
-  // Le pones 🔥 a una tarea y esa sale destacada en el inicio de todos.
+  // Cada tarea lleva su categoría: 🔴 Urgente · 🟡 Intermedio · ⚪ Puede esperar.
+  // Lo urgente sale en el inicio de todos y avisa al teléfono.
   // ============================================================
+  const PRIO = {
+    urgente: { etiqueta: "Urgente",       icono: "🔴", orden: 0 },
+    normal:  { etiqueta: "Intermedio",    icono: "🟡", orden: 1 },
+    espera:  { etiqueta: "Puede esperar", icono: "⚪", orden: 2 }
+  };
+  const prioDe = v => (PRIO[v] ? v : "normal");
+
   let filtroChecklist = "";
+  const chkAbiertos = new Set();
 
   function irChecklist(proyectoId) {
     filtroChecklist = proyectoId || "";
+    if (proyectoId) chkAbiertos.add(proyectoId);
     mostrar("checklist", { kicker: "Trabajo por hacer", titulo: "Checklist", volver: true, nuevo: false });
     pintarChecklist();
   }
 
   // UNA SOLA lista por proyecto. Por dentro son dos orígenes (el alcance
   // sembrado y lo que sale en la obra); por fuera es una lista de tareas
-  // igualitas: se palomean, se marcan urgentes y cualquiera agrega.
+  // igualitas: se palomean, se categorizan y cualquiera agrega.
   function tareasDe(pid) {
     const haceQuince = (() => {
       const d = new Date(); d.setDate(d.getDate() - 15);
@@ -929,44 +930,52 @@
       .filter(x => x.proyecto === pid)
       .map(x => ({
         tipo: "punto", id: x.id, texto: x.texto, hecha: x.hecho,
-        urgente: x.prioridad === "urgente", origen: "alcance",
+        prioridad: prioDe(x.prioridad), origen: "alcance",
         autor: "", fecha: "", orden: x.orden || 0
       }));
     const delCampo = (state.pendientes || [])
       .filter(x => x.proyecto === pid && (!x.resuelto || (x.fecha || "") >= haceQuince))
       .map(x => ({
         tipo: "pend", id: x.id, texto: x.descripcion, hecha: x.resuelto,
-        urgente: x.prioridad === "urgente", origen: "obra",
+        prioridad: prioDe(x.prioridad), origen: "obra",
         autor: x.autor, fecha: x.fecha, orden: 900
       }));
-    // Lo urgente primero, después lo que falta, y lo hecho al fondo
+    // Lo urgente primero, después lo intermedio, lo que puede esperar,
+    // y lo completado al fondo
     return delAlcance.concat(delCampo).sort((a, b) =>
-      (a.hecha - b.hecha) || (b.urgente - a.urgente) || (a.orden - b.orden));
+      (a.hecha - b.hecha) || (PRIO[a.prioridad].orden - PRIO[b.prioridad].orden) || (a.orden - b.orden));
   }
 
   // Todas las tareas urgentes sin hacer (de todos los proyectos + generales)
   function urgentesTodos() {
     const dePro = proyectosConTrabajo(["enviado"])
-      .flatMap(p => tareasDe(p.id).filter(t => t.urgente && !t.hecha)
+      .flatMap(p => tareasDe(p.id).filter(t => t.prioridad === "urgente" && !t.hecha)
         .map(t => ({ ...t, proyecto: p.id, proyectoNombre: p.nombre })));
     const generales = (state.pendientes || [])
       .filter(x => !x.proyecto && !x.resuelto && x.prioridad === "urgente")
       .map(x => ({ tipo: "pend", id: x.id, texto: x.descripcion, hecha: false,
-                   urgente: true, autor: x.autor, proyecto: null, proyectoNombre: "General" }));
+                   prioridad: "urgente", autor: x.autor, proyecto: null, proyectoNombre: "General" }));
     return dePro.concat(generales);
   }
 
-  // Una fila del checklist: palomita · texto · 🔥 · ✎ · 🗑
+  // Una fila del checklist: palomita · texto · categoría · ✎ · 🗑
   function filaTarea(t) {
+    const p = prioDe(t.prioridad);
+    const meta = [t.proyectoNombre ? "🔧 " + t.proyectoNombre : "", t.autor || "", t.fecha || ""]
+      .filter(Boolean).join(" · ");
+    const selector = `
+      <select class="tarea-prio ${p}" title="Categoría de la tarea">
+        ${Object.entries(PRIO).map(([v, c]) =>
+          `<option value="${v}"${v === p ? " selected" : ""}>${c.icono} ${c.etiqueta}</option>`).join("")}
+      </select>`;
     return `
-      <div class="tarea${t.hecha ? " hecha" : ""}${t.urgente && !t.hecha ? " urgente" : ""}"
-           data-tipo="${t.tipo}" data-id="${t.id}">
-        <button class="tarea-check" title="${t.hecha ? "Devolver a pendiente" : "Marcar hecha"}">${t.hecha ? "✅" : "⬜"}</button>
+      <div class="tarea prio-${p}${t.hecha ? " hecha" : ""}" data-tipo="${t.tipo}" data-id="${t.id}">
+        <button class="tarea-check" title="${t.hecha ? "Devolver a pendiente" : "Marcar completada"}">${t.hecha ? "✅" : "⬜"}</button>
         <span class="tarea-info">
           <span class="tarea-texto">${esc(sinMontos(t.texto))}</span>
-          ${t.autor || t.fecha ? `<span class="tarea-meta">${esc(t.autor)}${t.fecha ? " · " + esc(t.fecha) : ""}</span>` : ""}
+          ${meta ? `<span class="tarea-meta">${esc(meta)}</span>` : ""}
         </span>
-        <button class="tarea-fuego${t.urgente ? " on" : ""}" title="${t.urgente ? "Quitar urgente" : "Marcar urgente"}">🔥</button>
+        ${t.hecha ? "" : selector}
         <button class="tarea-editar insp-borrar" title="Corregir el texto">✎</button>
         ${usuario.editar ? `<button class="tarea-borrar insp-borrar" title="Eliminar">🗑</button>` : ""}
       </div>`;
@@ -974,61 +983,75 @@
 
   function pintarChecklist() {
     const activos = proyectosConTrabajo(["enviado"]);
-    const lista = filtroChecklist ? activos.filter(p => p.id === filtroChecklist) : activos;
-    const opciones = `<option value=""${!filtroChecklist ? " selected" : ""}>Todos los proyectos</option>` +
-      activos.map(p => `<option value="${esc(p.id)}"${p.id === filtroChecklist ? " selected" : ""}>${esc(p.nombre)}</option>`).join("");
 
+    // El panelito para agregar: escondido hasta tocar "+ Agregar una nueva"
+    const formNueva = pid => `
+      <button type="button" class="btn-nueva-tarea">+ Agregar una nueva</button>
+      <form class="cal-form form-tarea" data-id="${esc(pid || "")}" hidden>
+        <label>Descripción
+          <input name="texto" type="text" required placeholder="Ej: arreglar el layout de las luces" autocomplete="off">
+        </label>
+        <label>Categoría
+          <select name="prioridad">
+            <option value="normal">🟡 Intermedio</option>
+            <option value="urgente">🔴 Urgente</option>
+            <option value="espera">⚪ Puede esperar</option>
+          </select>
+        </label>
+        <button type="submit" class="accion">Agregar ✓</button>
+      </form>`;
+
+    // Cada proyecto es una ficha cerrada: solo el nombre y su resumen.
+    // La tocas y se abre con toda su lista.
     const tarjeta = (titulo, pid, tareas) => {
+      const clave = pid || "generales";
       const faltan = tareas.filter(t => !t.hecha);
-      const urg = faltan.filter(t => t.urgente).length;
+      const urg = faltan.filter(t => t.prioridad === "urgente").length;
       const pct = tareas.length ? Math.round(((tareas.length - faltan.length) / tareas.length) * 100) : 0;
+      const chip = !tareas.length ? "sin tareas"
+        : !faltan.length ? "✅ al día"
+        : `${faltan.length} por hacer${urg ? ` · ${urg} 🔴` : ""}`;
       return `
-        <div class="cal-panel-card chk-proyecto">
-          <div class="cal-form-titulo${pid ? " chk-titulo" : ""}"${pid ? ` data-id="${esc(pid)}"` : ""}>${esc(titulo)}
-            <span class="chk-avance">${faltan.length} por hacer${urg ? ` · ${urg} 🔥` : ""}</span>
+        <details class="chk-det${urg ? " con-urgentes" : ""}" data-id="${esc(clave)}"${chkAbiertos.has(clave) ? " open" : ""}>
+          <summary>
+            <span class="chk-nombre">${esc(titulo)}</span>
+            <span class="chk-avance">${chip}</span>
+          </summary>
+          <div class="chk-cuerpo">
+            ${tareas.length ? `<div class="barra horas-barra"><div class="barra-relleno ${pct >= 100 ? "ok" : ""}" style="width:${pct}%"></div></div>` : ""}
+            ${tareas.map(filaTarea).join("") || `<p class="cal-sin-eventos">Sin tareas todavía — agrega la primera.</p>`}
+            ${formNueva(pid)}
+            ${pid ? `<button type="button" class="chk-ficha" data-id="${esc(pid)}">📂 Ver la ficha del proyecto</button>` : ""}
           </div>
-          ${tareas.length ? `<div class="barra horas-barra"><div class="barra-relleno ${pct >= 100 ? "ok" : ""}" style="width:${pct}%"></div></div>` : ""}
-          ${tareas.map(filaTarea).join("") || `<p class="cal-sin-eventos">Sin tareas todavía — agrega la primera aquí abajo.</p>`}
-          <form class="cal-form form-tarea" data-id="${esc(pid || "")}">
-            <div class="modal-fila punto-fila-form">
-              <label>Agregar tarea
-                <input name="texto" type="text" required placeholder="Ej: arreglar el layout de las luces" autocomplete="off">
-              </label>
-              <label class="chk-urg-label">
-                <input name="urgente" type="checkbox"> 🔥 Urgente
-              </label>
-              <button type="submit" class="accion secundaria">+ Agregar</button>
-            </div>
-          </form>
-        </div>`;
+        </details>`;
     };
 
     const generales = (state.pendientes || [])
       .filter(x => !x.proyecto && !x.resuelto)
       .map(x => ({ tipo: "pend", id: x.id, texto: x.descripcion, hecha: false,
-                   urgente: x.prioridad === "urgente", autor: x.autor, fecha: x.fecha, orden: 0 }))
-      .sort((a, b) => b.urgente - a.urgente);
-
-    const tarjetas = lista.map(p => {
-      const tareas = tareasDe(p.id);
-      if (!tareas.length && filtroChecklist !== p.id) return "";
-      return tarjeta(p.nombre, p.id, tareas);
-    }).join("");
+                   prioridad: prioDe(x.prioridad), autor: x.autor, fecha: x.fecha, orden: 0 }))
+      .sort((a, b) => PRIO[a.prioridad].orden - PRIO[b.prioridad].orden);
 
     $("checklist-panel").innerHTML = `
-      <div class="cal-panel-card mat-filtro">
-        <label>Ver
-          <select id="filtro-chk">${opciones}</select>
-        </label>
-      </div>
-      ${!filtroChecklist ? tarjeta("📌 Generales (sin proyecto)", "", generales) : ""}
-      ${tarjetas || `<p class="cal-sin-eventos">Nada pendiente por aquí. 👌</p>`}`;
+      ${tarjeta("📌 Generales (sin proyecto)", "", generales)}
+      ${activos.map(p => tarjeta(p.nombre, p.id, tareasDe(p.id))).join("")
+        || `<p class="cal-sin-eventos">Nada pendiente por aquí. 👌</p>`}`;
 
-    $("filtro-chk").addEventListener("change", e => { filtroChecklist = e.target.value; pintarChecklist(); });
-    $("checklist-panel").querySelectorAll(".chk-titulo").forEach(t => {
-      t.style.cursor = "pointer";
-      t.addEventListener("click", () => irDetalle(t.dataset.id));
+    // Recordar qué fichas quedaron abiertas entre repintadas
+    $("checklist-panel").querySelectorAll(".chk-det").forEach(det => {
+      det.addEventListener("toggle", () => {
+        if (det.open) chkAbiertos.add(det.dataset.id);
+        else chkAbiertos.delete(det.dataset.id);
+      });
     });
+    $("checklist-panel").querySelectorAll(".chk-ficha").forEach(b =>
+      b.addEventListener("click", () => irDetalle(b.dataset.id)));
+    $("checklist-panel").querySelectorAll(".btn-nueva-tarea").forEach(b =>
+      b.addEventListener("click", () => {
+        const f = b.nextElementSibling;
+        f.hidden = !f.hidden;
+        if (!f.hidden) f.querySelector("input[name=texto]").focus();
+      }));
     engancharTareas($("checklist-panel"), pintarChecklist);
 
     $("checklist-panel").querySelectorAll(".form-tarea").forEach(f => {
@@ -1040,7 +1063,7 @@
         try {
           await DB.crearPendiente({
             fecha: hoyISO(), proyecto_id: f.dataset.id || null,
-            descripcion: texto, prioridad: d.get("urgente") ? "urgente" : "normal"
+            descripcion: texto, prioridad: prioDe(d.get("prioridad"))
           });
           await recargar();
           avisar("Tarea agregada ✓");
@@ -1049,10 +1072,10 @@
     });
   }
 
-  // Los tres botones de cada tarea, sirven en el checklist y en el inicio
+  // Los botones de cada tarea, sirven en el checklist y en el inicio
   function engancharTareas(raiz, repintar) {
-    const dato = btn => {
-      const fila = btn.closest(".tarea");
+    const dato = el => {
+      const fila = el.closest(".tarea");
       return { tipo: fila.dataset.tipo, id: fila.dataset.id, fila };
     };
     raiz.querySelectorAll(".tarea-check").forEach(btn => {
@@ -1064,19 +1087,21 @@
           else if (estaHecha) await DB.reabrirPendiente(id);
           else await DB.resolverPendiente(id);
           await recargar();
-          avisar(estaHecha ? "Tarea devuelta a pendiente" : "Tarea hecha ✓");
+          avisar(estaHecha ? "Tarea devuelta a pendiente" : "Tarea completada ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
-    raiz.querySelectorAll(".tarea-fuego").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const { tipo, id, fila } = dato(btn);
-        const nueva = fila.classList.contains("urgente") ? "normal" : "urgente";
+    raiz.querySelectorAll(".tarea-prio").forEach(sel => {
+      sel.addEventListener("change", async () => {
+        const { tipo, id } = dato(sel);
+        const nueva = prioDe(sel.value);
         try {
           if (tipo === "punto") await DB.cambiarPunto(id, { prioridad: nueva });
           else await DB.cambiarPendiente(id, { prioridad: nueva });
           await recargar();
-          avisar(nueva === "urgente" ? "🔥 Marcada urgente — sale en el inicio" : "Ya no es urgente");
+          avisar(nueva === "urgente"
+            ? "🔴 Urgente — sale en el inicio y avisa al equipo"
+            : `Categoría: ${PRIO[nueva].icono} ${PRIO[nueva].etiqueta}`);
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });

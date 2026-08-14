@@ -496,15 +496,56 @@ body::after {
 .dot.azul { background: var(--mp-blue); }
 .dot.rojo { background: #C84B4B; box-shadow: 0 0 0 3px rgba(200,75,75,.22); }
 
-/* ---------- Checklist: una sola lista de tareas ---------- */
-.chk-proyecto { margin-bottom: 0.7rem; }
+/* ---------- Checklist: fichas por proyecto con categorías ---------- */
+.chk-det {
+  background: var(--mp-card);
+  border: 1px solid var(--mp-line);
+  border-radius: 14px;
+  margin-bottom: 0.6rem;
+  overflow: hidden;
+}
+.chk-det.con-urgentes { border-color: #F3B9B9; }
+.chk-det > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.8rem 0.95rem;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.chk-det > summary::-webkit-details-marker { display: none; }
+.chk-det > summary::after {
+  content: "▾";
+  color: var(--mp-ink-3);
+  font-size: 0.85rem;
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+.chk-det[open] > summary::after { transform: rotate(180deg); }
+.chk-det[open] > summary { border-bottom: 1px solid var(--mp-line); }
+.chk-nombre {
+  font-weight: 800;
+  font-size: 0.92rem;
+  color: var(--mp-ink);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .chk-avance {
   font-size: 0.72rem;
   font-weight: 800;
   color: var(--mp-teal-text);
-  margin-left: 0.4rem;
   white-space: nowrap;
 }
+.chk-det.con-urgentes .chk-avance { color: #B44; }
+.chk-cuerpo { padding: 0.7rem 0.8rem 0.85rem; }
+.chk-cuerpo .horas-barra { margin-bottom: 0.55rem; }
+
 .tarea {
   display: flex;
   align-items: center;
@@ -515,8 +556,11 @@ body::after {
   margin-bottom: 0.35rem;
   background: var(--mp-card);
 }
-.tarea.urgente { border-color: #F3B9B9; background: #FDF4F4; }
-.tarea.hecha { opacity: 0.62; }
+.tarea.prio-urgente { border-color: #F3B9B9; background: #FDF4F4; }
+.tarea.prio-normal { border-color: #EDDFAE; background: #FFFDF3; }
+.tarea.prio-espera { border-style: dashed; }
+.tarea.prio-espera .tarea-texto { color: var(--mp-ink-2); }
+.tarea.hecha { opacity: 0.62; border-style: solid; background: var(--mp-card); border-color: var(--mp-line); }
 .tarea.hecha .tarea-texto { text-decoration: line-through; color: var(--mp-ink-3); }
 .tarea-info { flex: 1; min-width: 0; }
 .tarea-texto { display: block; font-size: 0.83rem; font-weight: 600; color: var(--mp-ink); }
@@ -530,21 +574,55 @@ body::after {
   padding: 0.1rem;
   flex-shrink: 0;
 }
-.tarea-fuego {
+/* El selector de categoría al lado de cada tarea */
+.tarea-prio {
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.28rem 0.3rem;
+  border-radius: 8px;
+  border: 1px solid var(--mp-line);
+  background: var(--mp-card);
+  color: var(--mp-ink-2);
+  max-width: 7.6rem;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.tarea-prio.urgente { border-color: #E8A0A0; color: #B44; background: #FDF4F4; }
+.tarea-prio.normal { border-color: #D9C271; color: #7A6200; background: #FFFDF3; }
+.tarea-prio.espera { color: var(--mp-ink-3); }
+
+/* Botón "+ Agregar una nueva" al final de cada lista */
+.btn-nueva-tarea {
+  display: block;
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.55rem;
+  border: 1px dashed var(--mp-line);
+  border-radius: 10px;
+  background: none;
+  color: var(--mp-teal-text);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.btn-nueva-tarea:hover { background: rgba(34, 232, 224, 0.07); }
+.form-tarea { margin-top: 0.55rem; }
+.chk-ficha {
+  display: block;
+  margin-top: 0.6rem;
   background: none;
   border: 0;
-  font-size: 1rem;
-  line-height: 1;
+  padding: 0;
+  color: var(--mp-ink-3);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
   cursor: pointer;
-  padding: 0.15rem 0.25rem;
-  border-radius: 8px;
-  filter: grayscale(1);
-  opacity: 0.35;
-  flex-shrink: 0;
-  transition: opacity 0.15s ease, filter 0.15s ease;
 }
-.tarea-fuego:hover { opacity: 0.7; }
-.tarea-fuego.on { filter: none; opacity: 1; }
+.chk-ficha:hover { color: var(--mp-teal-text); }
+
 .chk-urg-label {
   display: flex !important;
   align-items: center;
@@ -555,14 +633,13 @@ body::after {
   white-space: nowrap;
 }
 .chk-urg-label input { width: auto; margin: 0; }
-/* Formulario de agregar tarea: en el teléfono se apila solo */
-.form-tarea .punto-fila-form { flex-wrap: wrap; row-gap: 0.45rem; align-items: end; }
-.form-tarea .punto-fila-form > label:first-child { flex: 1 1 100%; }
 @media (max-width: 560px) {
   .tarea { flex-wrap: nowrap; gap: 0.3rem; padding: 0.45rem 0.45rem; }
   .tarea-texto { font-size: 0.8rem; }
   .tarea-check { font-size: 1.05rem; }
+  .tarea-prio { font-size: 0.62rem; max-width: 6.3rem; padding: 0.24rem 0.15rem; }
   .tarea-editar, .tarea-borrar { padding: 0.1rem 0.25rem; font-size: 0.75rem; }
+  .chk-nombre { font-size: 0.88rem; }
 }
 
 /* Contador de ensambles: − [cantidad editable] + */
