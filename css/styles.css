@@ -1204,8 +1204,15 @@ table.facturas tr.total td {
   border-radius: 99px;
   opacity: .95;
 }
-.tile-ico { font-size: 1.5rem; line-height: 1; filter: drop-shadow(0 0 8px rgba(34,232,224,.55)); }
-.tile-txt { font-size: 0.8rem; letter-spacing: 0.01em; }
+.tile-ico { line-height: 0; filter: drop-shadow(0 0 8px rgba(34,232,224,.55)); }
+.tile-ico svg { width: 32px; height: 32px; }
+.tile-txt {
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: 0.015em;
+  color: #EAFBFA;
+  text-shadow: 0 1px 2px rgba(0,0,0,.35);
+}
 .btn-horas:hover, .btn-horas:focus-visible {
   transform: translateY(-2px);
   box-shadow:
