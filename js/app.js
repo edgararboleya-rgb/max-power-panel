@@ -2470,8 +2470,39 @@
         </form>
       </div>
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">📷 Recibos de compras</div>
-        <button type="button" class="accion secundaria btn-importar-recibo">📷 Importar recibo</button>
+        <div class="cal-form-titulo">🧾 Compras y recibos</div>
+        <button type="button" class="accion secundaria btn-importar-recibo">🛒 Registrar compra</button>
+        <div id="compra-modos" class="modal-fila" hidden style="margin-top:.45rem">
+          <button type="button" class="accion secundaria btn-compra-foto">📷 Con foto del recibo</button>
+          <button type="button" class="accion secundaria btn-compra-mano">✍️ Sin recibo — anotar a mano</button>
+        </div>
+        <form id="form-compra-mano" class="cal-form" hidden>
+          <div class="modal-fila">
+            <label>Proyecto
+              <select name="proyecto">
+                <option value="">— General —</option>
+                ${opciones}
+              </select>
+            </label>
+            <label>Tipo
+              <select name="tipo">
+                <option value="compra">🛒 Compra</option>
+                <option value="devolucion">↩ Devolución (resta del gasto)</option>
+              </select>
+            </label>
+          </div>
+          <label>¿Dónde se compró?
+            <input name="proveedor" type="text" placeholder="Ej: Home Depot, CES, Ferguson…" autocomplete="off">
+          </label>
+          <label>¿Qué se compró? (los materiales)
+            <input name="notas" type="text" required placeholder="Ej: 3 rollos 12/2, caja de breakers, 10 straps" autocomplete="off">
+          </label>
+          ${usuario.finanzas ? `
+          <label>Total ($)
+            <input name="total" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Ej: 128.40">
+          </label>` : `<p class="modal-nota">Edgar le pone el total después con el ✎.</p>`}
+          <button type="submit" class="accion">✓ Registrar la compra</button>
+        </form>
         <form id="form-recibo" class="cal-form" hidden>
           <label>Foto del recibo (cámara o galería)
             <input name="archivo" type="file" accept="image/*" required>
@@ -2876,10 +2907,46 @@
       });
     });
 
-    // Recibos por foto
+    // Registrar compra: con foto o a mano
     const btnRecibo = $("materiales-panel").querySelector(".btn-importar-recibo");
     const formRecibo = $("form-recibo");
-    btnRecibo.addEventListener("click", () => { formRecibo.hidden = !formRecibo.hidden; });
+    const formMano = $("form-compra-mano");
+    const modos = $("compra-modos");
+    btnRecibo.addEventListener("click", () => {
+      modos.hidden = !modos.hidden;
+      if (modos.hidden) { formRecibo.hidden = true; formMano.hidden = true; }
+    });
+    $("materiales-panel").querySelector(".btn-compra-foto").addEventListener("click", () => {
+      formRecibo.hidden = false; formMano.hidden = true;
+    });
+    $("materiales-panel").querySelector(".btn-compra-mano").addEventListener("click", () => {
+      formMano.hidden = false; formRecibo.hidden = true;
+    });
+    formMano.addEventListener("submit", async e => {
+      e.preventDefault();
+      const d = new FormData(formMano);
+      const esDevolucion = d.get("tipo") === "devolucion";
+      let notas = (d.get("notas") || "").toString().trim();
+      if (esDevolucion) notas = "DEVOLUCIÓN" + (notas ? " — " + notas : "");
+      const fila = {
+        proyecto_id: d.get("proyecto") || null,
+        ruta: null,
+        notas: notas || null,
+        proveedor: (d.get("proveedor") || "").toString().trim() || null
+      };
+      const totalTxt = (d.get("total") || "").toString().trim();
+      if (usuario.finanzas && totalTxt !== "" && Number.isFinite(Number(totalTxt))) {
+        fila.total = esDevolucion ? -Math.abs(Number(totalTxt)) : Number(totalTxt);
+        fila.estado = "leido";
+      }
+      try {
+        await DB.crearRecibo(fila);
+        await recargar();
+        avisar(fila.total !== undefined
+          ? `Compra registrada ✓ — ${fmt(fila.total)} anotado al proyecto`
+          : "Compra registrada ✓ — Edgar le pone el total con el ✎");
+      } catch (err) { avisar("No se pudo registrar: " + err.message, true); }
+    });
     formRecibo.addEventListener("submit", async e => {
       e.preventDefault();
       const archivo = formRecibo.elements.archivo.files[0];
