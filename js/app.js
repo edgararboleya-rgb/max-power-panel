@@ -1669,7 +1669,12 @@
   // FICHA completa: la pantalla dedicada a un solo proyecto
   function fichaProyectoHTML(p) {
     const linksDocs = (p.docs || [])
-      .map(d => `<a class="doc-link" href="${esc(d.url)}" target="_blank" rel="noopener">📄 ${esc(d.titulo)}</a>`)
+      .map(d => `<span class="doc-fila"><a class="doc-link" href="${esc(d.url)}" target="_blank" rel="noopener">📄 ${esc(d.titulo)}</a>${d.id ? `
+        <button type="button" class="doc-cliente${d.portal ? " on" : ""}" data-id="${d.id}" data-portal="${d.portal ? 1 : 0}"
+          title="${d.portal ? "El cliente SÍ ve este documento — toca para ocultarlo" : "El cliente NO lo ve — toca para mostrárselo"}">${d.portal ? "👁 cliente" : "🚫 cliente"}</button>${d.portal ? `
+        ${d.aprobadoEl ? `<span class="cl-chip-aprobado">✔ aprobó ${esc(d.aprobadoEl)}</span>` : `
+        <button type="button" class="doc-cliente${d.pideAprobacion ? " on" : ""} doc-aprobacion" data-id="${d.id}" data-pide="${d.pideAprobacion ? 1 : 0}"
+          title="${d.pideAprobacion ? "Le está pidiendo aprobación al cliente — toca para quitarla" : "Pedirle al cliente que lo apruebe con un toque"}">✍️ aprobación</button>`}` : ""}` : ""}</span>`)
       .join("");
     // El dueño siempre ve la sección, con el botón para agregar más
     const docs = usuario.finanzas
@@ -1693,6 +1698,37 @@
                <input name="url" type="url" required placeholder="https://drive.google.com/…" autocomplete="off">
              </label>
              <button type="submit" class="accion">Guardar documento</button>
+           </form>
+         </div>
+         <div class="detalle-seccion">
+           <h3>🌐 Portal del cliente</h3>
+           <p class="modal-nota">El cliente ve: etapa, checklist con su %, inspecciones, próximos días de trabajo y los documentos con 👁.
+           Los RFI salen siempre; los CONTRATOS nunca salen (tienen precios) a menos que tú los marques. De dinero: nada.</p>
+           ${p.portalToken ? `
+           <div class="modal-botones">
+             <button type="button" class="accion secundaria" id="btn-portal-copiar" data-token="${esc(p.portalToken)}">🔗 Copiar el link del cliente</button>
+             <button type="button" class="accion secundaria" id="btn-portal-regenerar">♻ Regenerar la llave</button>
+           </div>` : `<p class="cal-sin-eventos">Corre el SQL del portal para crearle la llave a este proyecto.</p>`}
+           <h4 class="portal-sub">🛋 Decisiones del cliente ("te toca a ti")</h4>
+           ${(state.decisiones || []).filter(d => d.proyecto === p.id).map(d => `
+             <div class="eq-reporte${d.hecha ? "" : " eq-pide"}" data-id="${d.id}">
+               <span class="alcance-info">
+                 <span class="alcance-titulo">${d.hecha ? "✅ " : "🛋 "}${esc(d.texto)}</span>
+                 ${d.fechaLimite && !d.hecha ? `<span class="alcance-estado">⏰ la necesitamos antes del ${esc(d.fechaLimite)}</span>` : ""}
+               </span>
+               ${!d.hecha ? `<button type="button" class="insp-borrar btn-dec-hecha" data-id="${d.id}" title="Marcar decidida">✓</button>` : ""}
+               <button type="button" class="insp-borrar btn-dec-borrar" data-id="${d.id}" title="Eliminar">🗑</button>
+             </div>`).join("") || `<p class="cal-sin-eventos">Sin decisiones pendientes del cliente.</p>`}
+           <form class="cal-form" id="form-decision">
+             <div class="modal-fila">
+               <label>Qué necesita decidir el cliente
+                 <input name="texto" type="text" required placeholder="Ej: elegir el fixture del comedor" autocomplete="off">
+               </label>
+               <label>Para cuándo (opcional)
+                 <input name="fecha" type="date">
+               </label>
+             </div>
+             <button type="submit" class="accion secundaria">+ Agregar decisión</button>
            </form>
          </div>`
       : "";
@@ -1815,7 +1851,9 @@
         <a class="foto-enlace" data-ruta="${esc(f.ruta)}" target="_blank" rel="noopener">
           <img class="foto-mini" data-ruta="${esc(f.ruta)}" alt="${esc(f.nota || "Foto de obra")}" loading="lazy">
         </a>
-        <figcaption class="foto-pie">${f.nota ? esc(sinMontos(f.nota)) + " · " : ""}${esc(f.autor)} ${esc(f.fecha)}</figcaption>
+        <figcaption class="foto-pie">${f.nota ? esc(sinMontos(f.nota)) + " · " : ""}${esc(f.autor)} ${esc(f.fecha)}${usuario.finanzas ? `
+          <button type="button" class="doc-cliente foto-cliente${f.portal ? " on" : ""}" data-id="${f.id}" data-portal="${f.portal ? 1 : 0}"
+            title="${f.portal ? "El cliente SÍ ve esta foto" : "El cliente NO la ve"}">${f.portal ? "👁" : "🚫"}</button>` : ""}</figcaption>
       </figure>`).join("");
     return `
       <div class="detalle-seccion">
@@ -1881,6 +1919,88 @@
     });
 
     // "+ Agregar documento" (solo aparece para el dueño)
+    // Portal del cliente: copiar link, regenerar llave, y el 👁 por documento
+    const btnPortalCopiar = $detalle.querySelector("#btn-portal-copiar");
+    if (btnPortalCopiar) btnPortalCopiar.addEventListener("click", async () => {
+      const base = location.origin + location.pathname.replace(/index\.html?$/, "");
+      const link = base + "cliente.html?t=" + btnPortalCopiar.dataset.token;
+      try {
+        await navigator.clipboard.writeText(link);
+        avisar("Link del cliente copiado ✓ — pégalo en WhatsApp");
+      } catch {
+        prompt("Copia el link del cliente:", link);
+      }
+    });
+    const btnPortalRegen = $detalle.querySelector("#btn-portal-regenerar");
+    if (btnPortalRegen) btnPortalRegen.addEventListener("click", async () => {
+      if (!confirm("¿Regenerar la llave? El link viejo dejará de funcionar y tendrás que mandarle el nuevo al cliente.")) return;
+      const nueva = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2)).replace(/-/g, "");
+      try {
+        await DB.cambiarProyecto(proyectoActivo, { portal_token: nueva });
+        await recargar();
+        avisar("Llave nueva ✓ — copia el link otra vez");
+      } catch (err) { avisar("No se pudo: " + err.message, true); }
+    });
+    $detalle.querySelectorAll(".doc-cliente:not(.foto-cliente):not(.doc-aprobacion)").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const visible = btn.dataset.portal === "1";
+        try {
+          await DB.cambiarDocumento(btn.dataset.id, { portal: !visible });
+          await recargar();
+          avisar(!visible ? "👁 El cliente ahora VE este documento" : "🚫 Documento oculto para el cliente");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    $detalle.querySelectorAll(".doc-aprobacion").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const pide = btn.dataset.pide === "1";
+        try {
+          await DB.cambiarDocumento(btn.dataset.id, { pide_aprobacion: !pide });
+          await recargar();
+          avisar(!pide ? "✍️ El cliente verá el botón de aprobar" : "Aprobación quitada");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    $detalle.querySelectorAll(".foto-cliente").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const visible = btn.dataset.portal === "1";
+        try {
+          await DB.cambiarFoto(btn.dataset.id, { portal: !visible });
+          await recargar();
+          avisar(!visible ? "👁 El cliente ahora VE esta foto" : "🚫 Foto oculta para el cliente");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    const formDec = $detalle.querySelector("#form-decision");
+    if (formDec) formDec.addEventListener("submit", async e => {
+      e.preventDefault();
+      const d = new FormData(formDec);
+      const texto = (d.get("texto") || "").toString().trim();
+      if (!texto) return;
+      try {
+        await DB.crearDecision({ proyecto_id: proyectoActivo, texto, fecha_limite: d.get("fecha") || null });
+        await recargar();
+        avisar("Decisión agregada ✓ — el cliente la verá en su portal");
+      } catch (err) { avisar("No se pudo: " + err.message, true); }
+    });
+    $detalle.querySelectorAll(".btn-dec-hecha").forEach(btn =>
+      btn.addEventListener("click", async () => {
+        try {
+          await DB.cambiarDecision(btn.dataset.id, { hecha: true, hecha_el: new Date().toISOString() });
+          await recargar();
+          avisar("Decisión marcada ✓");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      }));
+    $detalle.querySelectorAll(".btn-dec-borrar").forEach(btn =>
+      btn.addEventListener("click", async () => {
+        if (!confirm("¿Eliminar esta decisión?")) return;
+        try {
+          await DB.eliminarDecision(btn.dataset.id);
+          await recargar();
+          avisar("Decisión eliminada ✓");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      }));
+
     const btnDoc = $detalle.querySelector(".btn-agregar-doc");
     if (btnDoc) {
       const formDoc = $detalle.querySelector(".form-doc");

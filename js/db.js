@@ -155,7 +155,7 @@
     const [perfiles, proyectos, finanzas, alcances, alcancesEquipo,
            hitos, facturas, horas, eventos, pendientes, documentos, fotos,
            inspecciones, materiales, materialesEquipo, costos, externos,
-           gestiones, recibos, recibosEquipo, alcancePuntos, ayudantes] =
+           gestiones, recibos, recibosEquipo, alcancePuntos, ayudantes, decisiones] =
       await Promise.all([
         leer("perfiles?select=*"),
         leer("proyectos?select=*&order=nombre"),
@@ -179,7 +179,8 @@
         leer("recibos?select=*&order=creado").catch(() => []),
         leer("recibos_equipo?select=*&order=creado").catch(() => []),
         leer("alcance_puntos?select=*&order=orden").catch(() => []),
-        leer("externos_equipo?select=*&order=nombre").catch(() => [])
+        leer("externos_equipo?select=*&order=nombre").catch(() => []),
+        leer("decisiones_cliente?select=*&order=creado").catch(() => [])
       ]);
 
     const nombrePorId = Object.fromEntries(perfiles.map(p => [p.id, p.nombre]));
@@ -217,6 +218,7 @@
         tipo: p.tipo,
         nombre: p.nombre,
         direccion: p.direccion || "Por confirmar",
+        portalToken: p.portal_token || null,
         cliente: p.cliente || "Por confirmar",
         via: p.via || "—",
         estado: p.estado,
@@ -243,8 +245,9 @@
           num: f.num, fecha: fechaCorta(f.fecha), fechaISO: f.fecha || "",
           monto: Number(f.monto), pagada: !!f.pagada
         })),
-        docs: docs.filter(d => d.clase === "doc").map(d => ({ titulo: d.titulo, url: d.url })),
-        rfis: docs.filter(d => d.clase === "rfi").map(d => ({ titulo: d.titulo, estado: d.estado, url: d.url })),
+        docs: docs.filter(d => d.clase === "doc").map(d => ({ id: d.id, titulo: d.titulo, url: d.url, portal: !!d.portal,
+          pideAprobacion: !!d.pide_aprobacion, aprobadoEl: d.aprobado_el ? String(d.aprobado_el).slice(0, 10) : "" })),
+        rfis: docs.filter(d => d.clase === "rfi").map(d => ({ id: d.id, titulo: d.titulo, estado: d.estado, url: d.url })),
         horas: (Number(p.horas_estimadas) > 0 || reales > 0)
           ? { estimadas: Number(p.horas_estimadas) || 0, reales: Math.round(reales * 10) / 10 }
           : null
@@ -280,7 +283,12 @@
       fotos: fotos.map(f => ({
         id: f.id, proyecto: f.proyecto_id, ruta: f.ruta,
         nota: f.nota || "", autor: nombrePorId[f.autor_id] || "",
-        fecha: f.creado ? String(f.creado).slice(0, 10) : ""
+        fecha: f.creado ? String(f.creado).slice(0, 10) : "",
+        portal: !!f.portal
+      })),
+      decisiones: (decisiones || []).map(d => ({
+        id: d.id, proyecto: d.proyecto_id, texto: d.texto,
+        fechaLimite: d.fecha_limite || "", hecha: !!d.hecha
       })),
       inspecciones: inspecciones.map(i => ({
         id: i.id, proyecto: i.proyecto_id, permiso: i.permiso || "",
@@ -341,6 +349,11 @@
     cargarTodo,
     // Escrituras
     cambiarProyecto: (id, cambios) => actualizar(`proyectos?id=eq.${encodeURIComponent(id)}`, cambios),
+    cambiarDocumento: (id, cambios) => actualizar(`documentos?id=eq.${id}`, cambios),
+    cambiarFoto: (id, cambios) => actualizar(`fotos?id=eq.${id}`, cambios),
+    crearDecision: fila => insertar("decisiones_cliente", fila),
+    cambiarDecision: (id, cambios) => actualizar(`decisiones_cliente?id=eq.${id}`, cambios),
+    eliminarDecision: id => api(`decisiones_cliente?id=eq.${id}`, { metodo: "DELETE" }),
     eliminarProyecto: id => api(`proyectos?id=eq.${encodeURIComponent(id)}`, { metodo: "DELETE" }),
     crearProyecto: fila => insertar("proyectos", fila),
     crearFinanzas: fila => insertar("finanzas_proyecto", fila),

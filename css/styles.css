@@ -496,6 +496,25 @@ body::after {
 .dot.azul { background: var(--mp-blue); }
 .dot.rojo { background: #C84B4B; box-shadow: 0 0 0 3px rgba(200,75,75,.22); }
 
+/* Portal del cliente: interruptor por documento */
+.portal-sub { font-size: 0.8rem; font-weight: 800; color: var(--mp-ink-2); margin: 0.8rem 0 0.35rem; }
+.cl-chip-aprobado { font-size: 0.64rem; font-weight: 800; color: #4a8c28; white-space: nowrap; }
+.foto-pie .doc-cliente { margin-left: 0.3rem; }
+.doc-fila { display: flex; align-items: center; gap: 0.4rem; }
+.doc-cliente {
+  background: none;
+  border: 1px dashed var(--mp-line);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.64rem;
+  font-weight: 800;
+  color: var(--mp-ink-3);
+  padding: 0.15rem 0.4rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.doc-cliente.on { border-style: solid; border-color: #6FBF3C; color: #4a8c28; background: #F3FAEE; }
+
 /* Semáforo del equipo: cada fila se abre con sus reportes */
 .equipo-det > summary { list-style: none; cursor: pointer; }
 .equipo-det > summary::-webkit-details-marker { display: none; }
