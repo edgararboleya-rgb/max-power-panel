@@ -3,10 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
   <title>Max Power — Your Project</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=53">
+  <link rel="stylesheet" href="css/styles.css?v=54">
   <style>
     .cl-hero { text-align: center; padding: 1rem 0 0.4rem; }
     .cl-nombre { font-size: 1.3rem; font-weight: 800; color: var(--mp-ink); margin: 0.2rem 0 0.1rem; }
@@ -68,7 +69,7 @@
     </footer>
   </div>
 
-  <script src="assets/logo.js?v=53"></script>
+  <script src="assets/logo.js?v=54"></script>
   <script>
   (function () {
     "use strict";
@@ -143,6 +144,8 @@
         return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
       });
     }
+    // Solo enlaces reales (https) — nada de esquemas raros
+    function urlSegura(u) { return /^https?:\/\//i.test(String(u || "").trim()) ? String(u).trim() : ""; }
     if (!t) { caja.innerHTML = '<p class="cl-cargando">' + esc(TXT.errLink) + '</p>'; return; }
 
     function mandar(cuerpo, boton) {
@@ -154,15 +157,19 @@
         .catch(function () { boton.disabled = false; boton.textContent = TXT.reintentar; });
     }
 
+    // La llave viaja en el cuerpo del POST — no queda en los registros del
+    // servidor. Si el guardián todavía es el viejo (solo GET), reintenta así.
     function cargar() {
-      return fetch(PORTAL + "?t=" + encodeURIComponent(t))
+      return fetch(PORTAL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ t: t }) })
         .then(function (r) { if (!r.ok) throw new Error("bad"); return r.json(); })
+        .catch(function () {
+          return fetch(PORTAL + "?t=" + encodeURIComponent(t))
+            .then(function (r) { if (!r.ok) throw new Error("bad"); return r.json(); });
+        })
         .then(pintar);
     }
 
-    fetch(PORTAL + "?t=" + encodeURIComponent(t))
-      .then(function (r) { if (!r.ok) throw new Error("bad"); return r.json(); })
-      .then(pintar)
+    cargar()
       .catch(function () {
         caja.innerHTML = '<p class="cl-cargando">' + esc(TXT.errAbrir) + '</p>';
       });
@@ -192,9 +199,9 @@
           '</div>';
       }).join("");
 
-      var fotos = (p.fotos || []).map(function (f) {
-        return '<figure class="cl-foto"><a href="' + esc(f.url) + '" target="_blank" rel="noopener">' +
-          '<img src="' + esc(f.url) + '" alt="' + esc(f.nota || "Job photo") + '" loading="lazy"></a>' +
+      var fotos = (p.fotos || []).filter(function (f) { return urlSegura(f.url); }).map(function (f) {
+        return '<figure class="cl-foto"><a href="' + esc(urlSegura(f.url)) + '" target="_blank" rel="noopener">' +
+          '<img src="' + esc(urlSegura(f.url)) + '" alt="' + esc(f.nota || "Job photo") + '" loading="lazy"></a>' +
           (f.nota || f.fecha ? '<figcaption>' + esc(f.nota || "") + (f.fecha ? " · " + esc(f.fecha) : "") + '</figcaption>' : '') +
           '</figure>';
       }).join("");
@@ -229,7 +236,8 @@
             ? ' <span class="cl-aprobado">' + esc(TXT.aprobado) + esc(String(d.aprobado_el).slice(0, 10)) + '</span>'
             : ' <button class="cl-boton" data-aprobar="' + d.id + '">' + esc(TXT.aprobar) + '</button>';
         }
-        return '<span class="cl-item"><a class="doc-link cl-doc" target="_blank" rel="noopener" href="' + esc(d.url) + '">📄 ' + esc(d.titulo) + '</a>' + aprob + '</span>';
+        if (!urlSegura(d.url)) return '';
+        return '<span class="cl-item"><a class="doc-link cl-doc" target="_blank" rel="noopener" href="' + esc(urlSegura(d.url)) + '">📄 ' + esc(d.titulo) + '</a>' + aprob + '</span>';
       }).join("");
 
       caja.innerHTML =

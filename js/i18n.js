@@ -206,7 +206,11 @@
   }
 
   function traducirNodo(raiz) {
-    const walker = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT);
+    // Lo marcado data-no-i18n es CONTENIDO del usuario (chat) — no se traduce
+    const walker = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT, {
+      acceptNode: n => (n.parentElement && n.parentElement.closest("[data-no-i18n]"))
+        ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+    });
     let n;
     while ((n = walker.nextNode())) {
       const nuevo = traducirTexto(n.nodeValue);

@@ -51,9 +51,15 @@
     return autenticar({ email, password: clave }, "password");
   }
 
-  async function refrescar() {
-    if (!sesion || !sesion.refresh_token) throw new Error("Sin sesión");
-    return autenticar({ refresh_token: sesion.refresh_token }, "refresh_token");
+  let refrescoEnVuelo = null; // 20 lecturas a la vez = UN solo refresco
+  function refrescar() {
+    if (!refrescoEnVuelo) {
+      refrescoEnVuelo = (async () => {
+        if (!sesion || !sesion.refresh_token) throw new Error("Sin sesión");
+        return autenticar({ refresh_token: sesion.refresh_token }, "refresh_token");
+      })().finally(() => { refrescoEnVuelo = null; });
+    }
+    return refrescoEnVuelo;
   }
 
   function salir() {
@@ -110,7 +116,7 @@
 
   // ---------- Fotos (Supabase Storage, almacén privado) ----------
   // carpeta opcional: "recibos" guarda la foto en recibos/<proyecto>/...
-  async function subirFoto(proyectoId, blob, tipo, carpeta) {
+  async function subirFoto(proyectoId, blob, tipo, carpeta, reintento = true) {
     const ruta = `${carpeta ? carpeta + "/" : ""}${proyectoId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
     const r = await fetch(`${SB.url}/storage/v1/object/fotos/${ruta}`, {
       method: "POST",
@@ -121,6 +127,11 @@
       },
       body: blob
     });
+    if (r.status === 401 && reintento && sesion) {
+      // Token caducado a media subida: refrescar y volver a intentar
+      await refrescar();
+      return subirFoto(proyectoId, blob, tipo, carpeta, false);
+    }
     if (!r.ok) {
       const data = await r.json().catch(() => ({}));
       throw new Error(data.message || `No se pudo subir la foto (${r.status})`);
@@ -129,7 +140,7 @@
   }
 
   // Convierte las rutas guardadas en enlaces temporales (1 hora)
-  async function firmarFotos(rutas) {
+  async function firmarFotos(rutas, reintento = true) {
     if (!rutas || !rutas.length) return {};
     const r = await fetch(`${SB.url}/storage/v1/object/sign/fotos`, {
       method: "POST",
@@ -140,6 +151,10 @@
       },
       body: JSON.stringify({ expiresIn: 3600, paths: rutas })
     });
+    if (r.status === 401 && reintento && sesion) {
+      await refrescar();
+      return firmarFotos(rutas, false);
+    }
     if (!r.ok) return {};
     const lista = await r.json().catch(() => []);
     const mapa = {};
@@ -155,7 +170,8 @@
     const [perfiles, proyectos, finanzas, alcances, alcancesEquipo,
            hitos, facturas, horas, eventos, pendientes, documentos, fotos,
            inspecciones, materiales, materialesEquipo, costos, externos,
-           gestiones, recibos, recibosEquipo, alcancePuntos, ayudantes, decisiones] =
+           gestiones, recibos, recibosEquipo, alcancePuntos, ayudantes, decisiones,
+           llavesPortal] =
       await Promise.all([
         leer("perfiles?select=*"),
         leer("proyectos?select=*&order=nombre"),
@@ -180,9 +196,13 @@
         leer("recibos_equipo?select=*&order=creado").catch(() => []),
         leer("alcance_puntos?select=*&order=orden").catch(() => []),
         leer("externos_equipo?select=*&order=nombre").catch(() => []),
-        leer("decisiones_cliente?select=*&order=creado").catch(() => [])
+        leer("decisiones_cliente?select=*&order=creado").catch(() => []),
+        // Llaves del portal: solo el dueño recibe filas (RLS); si la tabla
+        // no existe todavía, la app sigue andando
+        leer("portal_llaves?select=*").catch(() => [])
       ]);
 
+    const llavePorProyecto = Object.fromEntries((llavesPortal || []).map(l => [l.proyecto_id, l.token]));
     const nombrePorId = Object.fromEntries(perfiles.map(p => [p.id, p.nombre]));
     const miPerfil = perfiles.find(p => p.id === uid()) || null;
     const esDueno = miPerfil && miPerfil.rol === "dueno";
@@ -218,7 +238,7 @@
         tipo: p.tipo,
         nombre: p.nombre,
         direccion: p.direccion || "Por confirmar",
-        portalToken: p.portal_token || null,
+        portalToken: llavePorProyecto[p.id] || p.portal_token || null,
         cliente: p.cliente || "Por confirmar",
         via: p.via || "—",
         estado: p.estado,
@@ -349,6 +369,11 @@
     cargarTodo,
     // Escrituras
     cambiarProyecto: (id, cambios) => actualizar(`proyectos?id=eq.${encodeURIComponent(id)}`, cambios),
+    cambiarLlavePortal: (proyectoId, token) => api("portal_llaves?on_conflict=proyecto_id", {
+      metodo: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+      cuerpo: { proyecto_id: proyectoId, token }
+    }),
     cambiarDocumento: (id, cambios) => actualizar(`documentos?id=eq.${id}`, cambios),
     cambiarFoto: (id, cambios) => actualizar(`fotos?id=eq.${id}`, cambios),
     crearDecision: fila => insertar("decisiones_cliente", fila),

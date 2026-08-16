@@ -124,8 +124,10 @@
   const facturasPendientes = p => (p.facturas || []).filter(f => !f.pagada);
   const chipHTML = clave => {
     const e = ESTADOS[clave] || { etiqueta: clave };
-    return `<span class="chip"><span class="dot ${DOT[clave] || "navy"}"></span>${e.etiqueta}</span>`;
+    return `<span class="chip"><span class="dot ${DOT[clave] || "navy"}"></span>${esc(e.etiqueta)}</span>`;
   };
+  // Solo enlaces reales: nada de esquemas raros (javascript:, data:) en los href
+  const urlSegura = u => (/^https?:\/\//i.test(String(u || "").trim()) ? String(u).trim() : "");
   const proyectos = () => (state ? state.proyectos : []);
   const eventos = () => (state ? state.eventos : []);
   // El calendario junta los eventos con las inspecciones programadas
@@ -226,9 +228,13 @@
   }
   $btnSalir.addEventListener("click", salirApp);
 
+  let recargaTurno = 0; // si hay dos recargas en vuelo, solo manda la última
   async function recargar(abrirId) {
+    const turno = ++recargaTurno;
     try {
-      state = await DB.cargarTodo();
+      const nuevo = await DB.cargarTodo();
+      if (turno !== recargaTurno) return;
+      state = nuevo;
     } catch (err) {
       avisar("Error actualizando: " + err.message, true);
       return;
@@ -586,10 +592,15 @@
         if (!rep) return;
         const h = prompt("Horas trabajadas:", rep.horas);
         if (h === null) return;
+        const horasNum = Number(String(h).replace(",", "."));
+        if (!Number.isFinite(horasNum) || horasNum < 0 || horasNum > 24) {
+          avisar("Ese número de horas no es válido — no se cambió nada.", true);
+          return;
+        }
         const notas = prompt("Notas (qué se hizo):", rep.notas || "");
         if (notas === null) return;
         try {
-          await DB.cambiarHoras(id, { horas: Number(h) || rep.horas, notas: notas.trim() });
+          await DB.cambiarHoras(id, { horas: horasNum, notas: notas.trim() });
           await recargar();
           avisar("Reporte corregido ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
@@ -1234,17 +1245,23 @@
     return m.autor_id === usuario.id ? m.destinatario_id : m.autor_id;
   }
 
-  async function cargarChat() {
-    const [ms, lect] = await Promise.all([DB.leerMensajes(), DB.leerLecturas()]);
-    chatMensajes = (ms || []).slice().sort((a, b) =>
-      String(a.creado || "").localeCompare(String(b.creado || "")) || (a.id - b.id));
-    chatLecturas = Object.fromEntries((lect || []).map(l => [l.conv, l.visto]));
+  let chatCargaEnVuelo = null; // dos timers no piden lo mismo dos veces a la vez
+  function cargarChat() {
+    if (!chatCargaEnVuelo) {
+      chatCargaEnVuelo = (async () => {
+        const [ms, lect] = await Promise.all([DB.leerMensajes(), DB.leerLecturas()]);
+        chatMensajes = (ms || []).slice().sort((a, b) =>
+          String(a.creado || "").localeCompare(String(b.creado || "")) || (a.id - b.id));
+        chatLecturas = Object.fromEntries((lect || []).map(l => [l.conv, l.visto]));
+      })().finally(() => { chatCargaEnVuelo = null; });
+    }
+    return chatCargaEnVuelo;
   }
 
   const noLeidos = conv => {
-    const visto = chatLecturas[conv] || "";
+    const visto = Date.parse(chatLecturas[conv] || "") || 0;
     return chatMensajes.filter(m =>
-      convDe(m) === conv && m.autor_id !== usuario.id && String(m.creado || "") > visto).length;
+      convDe(m) === conv && m.autor_id !== usuario.id && (Date.parse(m.creado || "") || 0) > visto).length;
   };
 
   function pintarChatBadge() {
@@ -1272,7 +1289,14 @@
     chatConv = conv || null;
     mostrar("chat", { kicker: "Equipo Max Power", titulo: "💬 Mensajes", volver: true, nuevo: false });
     $("chat-panel").innerHTML = '<p class="cal-sin-eventos">Cargando…</p>';
-    await refrescarChat(true);
+    try {
+      await refrescarChat(true);
+    } catch {
+      $("chat-panel").innerHTML = '<p class="cal-sin-eventos">No se pudo cargar el chat — revisa la señal. ' +
+        '<button type="button" class="accion secundaria" id="chat-reintentar">Reintentar</button></p>';
+      $("chat-reintentar").addEventListener("click", () => irChat(chatConv));
+      return;
+    }
     if (chatTimer) clearInterval(chatTimer);
     // Mientras el chat esté abierto, se refresca solo cada 6 segundos
     chatTimer = setInterval(() => {
@@ -1363,7 +1387,7 @@
       + '<span class="chat-titulo">' + esc(nombre) + '</span>'
       + (chatConv !== "grupo" ? '<span class="chat-priv">🔒 privado</span>' : "")
       + '</div>'
-      + '<div id="chat-hilo" class="chat-hilo">' + burbujasHTML() + '</div>'
+      + '<div id="chat-hilo" class="chat-hilo" data-no-i18n>' + burbujasHTML() + '</div>'
       + '<form id="chat-form" class="chat-form">'
       + '<input name="texto" type="text" placeholder="Escribe un mensaje…" autocomplete="off" maxlength="500">'
       + '<button type="submit" class="chat-enviar" title="Enviar">➤</button>'
@@ -1485,7 +1509,7 @@
           <span class="alcance-titulo">${esc(sinMontos(r.titulo))}</span>
           <span class="alcance-estado">${esc(r.estado || "")}</span>
         </span>
-        ${r.url ? `<a class="doc-link" href="${esc(r.url)}" target="_blank" rel="noopener">📄 Ver</a>` : ""}
+        ${urlSegura(r.url) ? `<a class="doc-link" href="${esc(urlSegura(r.url))}" target="_blank" rel="noopener">📄 Ver</a>` : ""}
       </div>`).join("");
     return `<div class="detalle-seccion"><h3>RFIs</h3>${items}</div>`;
   }
@@ -1669,7 +1693,7 @@
   // FICHA completa: la pantalla dedicada a un solo proyecto
   function fichaProyectoHTML(p) {
     const linksDocs = (p.docs || [])
-      .map(d => `<span class="doc-fila"><a class="doc-link" href="${esc(d.url)}" target="_blank" rel="noopener">📄 ${esc(d.titulo)}</a>${d.id ? `
+      .map(d => `<span class="doc-fila"><a class="doc-link" href="${esc(urlSegura(d.url) || "#")}" target="_blank" rel="noopener">📄 ${esc(d.titulo)}</a>${d.id ? `
         <button type="button" class="doc-cliente${d.portal ? " on" : ""}" data-id="${d.id}" data-portal="${d.portal ? 1 : 0}"
           title="${d.portal ? "El cliente SÍ ve este documento — toca para ocultarlo" : "El cliente NO lo ve — toca para mostrárselo"}">${d.portal ? "👁 cliente" : "🚫 cliente"}</button>${d.portal ? `
         ${d.aprobadoEl ? `<span class="cl-chip-aprobado">✔ aprobó ${esc(d.aprobadoEl)}</span>` : `
@@ -1936,7 +1960,7 @@
       if (!confirm("¿Regenerar la llave? El link viejo dejará de funcionar y tendrás que mandarle el nuevo al cliente.")) return;
       const nueva = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2)).replace(/-/g, "");
       try {
-        await DB.cambiarProyecto(proyectoActivo, { portal_token: nueva });
+        await DB.cambiarLlavePortal(proyectoActivo, nueva);
         await recargar();
         avisar("Llave nueva ✓ — copia el link otra vez");
       } catch (err) { avisar("No se pudo: " + err.message, true); }
@@ -2243,6 +2267,10 @@
     if (!nombre) return;
     const contratoTxt = (d.get("contrato") || "").toString().replace(/[$,\s]/g, "");
     const contrato = contratoTxt ? Number(contratoTxt) : null;
+    if (contratoTxt && !Number.isFinite(contrato)) {
+      avisar("El monto del contrato no es un número válido — revísalo.", true);
+      return;
+    }
     const estado = d.get("estado") || "enviado";
     const tipo = d.get("tipo") || "residencial";
     const id = nombre.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
@@ -2295,7 +2323,7 @@
 
   function prepararHoras() {
     const f = $formHoras.elements.fecha;
-    if (!f.value) f.value = new Date().toISOString().slice(0, 10);
+    if (!f.value) f.value = hoyISO(); // fecha LOCAL: por la noche no salta a mañana
     $formHoras.elements.proyecto.innerHTML = proyectosConTrabajo()
       .map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join("");
     pintarHistorialHoras();
@@ -2538,7 +2566,7 @@
       (typeof r.total === "number" && r.total < 0) || /DEVOLUCI/i.test(r.notas || "");
     const filaRecibo = r => `
       <div class="mat-item recibo-${esc(r.estado)}">
-        <span class="recibo-chip ${esc(r.estado)}">${RES_RECIBO[r.estado] || r.estado}</span>
+        <span class="recibo-chip ${esc(r.estado)}">${esc(RES_RECIBO[r.estado] || r.estado)}</span>
         ${esDevolucionRecibo(r) ? `<span class="recibo-chip devolucion">↩ DEVOLUCIÓN</span>` : ""}
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(r.proveedor || "Recibo")}${r.notas ? ` <span class="mat-cant">— ${esc(sinMontos(r.notas))}</span>` : ""}</span>
@@ -3374,6 +3402,10 @@
     try {
       estData = await DB.cargarEstimador();
     } catch (err) {
+      $("estimador-panel").innerHTML = `<div class="inicio-card"><p class="cal-sin-eventos">` +
+        `No se pudo cargar el estimador — revisa la señal. ` +
+        `<button type="button" class="accion secundaria" id="est-reintentar">Reintentar</button></p></div>`;
+      $("est-reintentar").addEventListener("click", recargarEstimador);
       avisar("No se pudo cargar el estimador: " + err.message, true);
       return;
     }
@@ -3541,7 +3573,7 @@
     const horas = estData.horasTodas || [];
     if (!horas.length) return null;
     const desde = new Date(); desde.setDate(desde.getDate() - 90);
-    const iso = desde.toISOString().slice(0, 10);
+    const iso = fechaISO(desde.getFullYear(), desde.getMonth(), desde.getDate());
     const total = horas.filter(h => h.fecha >= iso).reduce((s, h) => s + Number(h.horas || 0), 0);
     const hMes = total / 3;
     if (hMes < 40) return null; // muy poca historia todavía
@@ -3900,7 +3932,7 @@ Power done right the first time. ⚡`;
     $("estimador-panel").innerHTML = `
       <div class="cal-panel-card">
         <div class="cal-form-titulo">${esc(est.nombre)}
-          <span class="recibo-chip ${est.estado === "convertido" ? "insp-paso" : est.estado === "congelado" ? "leido" : "por_leer"}">${est.estado.toUpperCase()}</span>
+          <span class="recibo-chip ${est.estado === "convertido" ? "insp-paso" : est.estado === "congelado" ? "leido" : "por_leer"}">${esc(est.estado.toUpperCase())}</span>
           <span class="recibo-chip leido">${MODO_ETIQ[est.modo]}</span>
         </div>
         <div class="alcance-estado">${esc(est.cliente || "")}${est.sqft ? ` · ${esc(est.sqft)} sqft` : ""}</div>
