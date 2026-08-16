@@ -27,7 +27,7 @@
   /* Texto sobre claro */
   --mp-ink:   #0B2036;
   --mp-ink-2: #4D6A83;
-  --mp-ink-3: #7E97AD;
+  --mp-ink-3: #5B7690;
 
   /* Acento claro-seguro (el cyan no se usa como texto en claro) */
   --mp-teal-text: #0D7D92;
@@ -200,7 +200,7 @@ body::after {
 .btn-entrar:hover, .btn-entrar:focus-visible { transform: translateY(-2px); outline: none; }
 .login-nota {
   color: rgba(255,255,255,.45);
-  font-size: 0.68rem;
+  font-size: 0.74rem;
   margin-top: 1.7rem;
   letter-spacing: 0.02em;
 }
@@ -498,7 +498,7 @@ body::after {
 
 /* Portal del cliente: interruptor por documento */
 .portal-sub { font-size: 0.8rem; font-weight: 800; color: var(--mp-ink-2); margin: 0.8rem 0 0.35rem; }
-.cl-chip-aprobado { font-size: 0.64rem; font-weight: 800; color: #4a8c28; white-space: nowrap; }
+.cl-chip-aprobado { font-size: 0.72rem; font-weight: 800; color: #4a8c28; white-space: nowrap; }
 .foto-pie .doc-cliente { margin-left: 0.3rem; }
 .doc-fila { display: flex; align-items: center; gap: 0.4rem; }
 .doc-cliente {
@@ -506,7 +506,7 @@ body::after {
   border: 1px dashed var(--mp-line);
   border-radius: 8px;
   font: inherit;
-  font-size: 0.64rem;
+  font-size: 0.72rem;
   font-weight: 800;
   color: var(--mp-ink-3);
   padding: 0.15rem 0.4rem;
@@ -578,10 +578,10 @@ body::after {
   right: -6px;
   background: #E5484D;
   color: #fff;
-  font-size: 0.62rem;
+  font-size: 0.7rem;
   font-weight: 800;
-  min-width: 16px;
-  height: 16px;
+  min-width: 18px;
+  height: 18px;
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
@@ -618,7 +618,7 @@ body::after {
 .chat-no-leidos {
   background: #E5484D;
   color: #fff;
-  font-size: 0.68rem;
+  font-size: 0.74rem;
   font-weight: 800;
   min-width: 20px;
   height: 20px;
@@ -639,7 +639,7 @@ body::after {
   margin-bottom: 0.5rem;
 }
 .chat-titulo { font-weight: 800; font-size: 0.92rem; color: var(--mp-ink); flex: 1; }
-.chat-priv { font-size: 0.68rem; font-weight: 700; color: var(--mp-ink-3); }
+.chat-priv { font-size: 0.74rem; font-weight: 700; color: var(--mp-ink-3); }
 .chat-hilo {
   height: 55vh;
   min-height: 260px;
@@ -651,7 +651,7 @@ body::after {
 }
 .chat-dia {
   text-align: center;
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   font-weight: 700;
   color: var(--mp-ink-3);
   margin: 0.5rem 0 0.2rem;
@@ -671,9 +671,9 @@ body::after {
   border-color: #BDE8E4;
   border-radius: 14px 14px 4px 14px;
 }
-.burbuja-quien { display: block; font-size: 0.66rem; font-weight: 800; color: var(--mp-teal-text); }
+.burbuja-quien { display: block; font-size: 0.72rem; font-weight: 800; color: var(--mp-teal-text); }
 .burbuja-texto { display: block; font-size: 0.86rem; color: var(--mp-ink); word-wrap: break-word; white-space: pre-wrap; }
-.burbuja-hora { display: block; font-size: 0.6rem; color: var(--mp-ink-3); text-align: right; margin-top: 2px; }
+.burbuja-hora { display: block; font-size: 0.7rem; color: var(--mp-ink-3); text-align: right; margin-top: 2px; }
 .chat-form { display: flex; gap: 0.4rem; margin-top: 0.55rem; }
 .chat-form input {
   flex: 1;
@@ -770,7 +770,7 @@ body::after {
 .tarea.hecha .tarea-texto { text-decoration: line-through; color: var(--mp-ink-3); }
 .tarea-info { flex: 1; min-width: 0; }
 .tarea-texto { display: block; font-size: 0.83rem; font-weight: 600; color: var(--mp-ink); }
-.tarea-meta { display: block; font-size: 0.68rem; color: var(--mp-ink-3); margin-top: 1px; }
+.tarea-meta { display: block; font-size: 0.74rem; color: var(--mp-ink-3); margin-top: 1px; }
 .tarea-check {
   background: none;
   border: 0;
@@ -783,7 +783,7 @@ body::after {
 /* El selector de categoría al lado de cada tarea */
 .tarea-prio {
   font: inherit;
-  font-size: 0.68rem;
+  font-size: 0.74rem;
   font-weight: 700;
   padding: 0.28rem 0.3rem;
   border-radius: 8px;
@@ -843,7 +843,7 @@ body::after {
   .tarea { flex-wrap: nowrap; gap: 0.3rem; padding: 0.45rem 0.45rem; }
   .tarea-texto { font-size: 0.8rem; }
   .tarea-check { font-size: 1.05rem; }
-  .tarea-prio { font-size: 0.62rem; max-width: 6.3rem; padding: 0.24rem 0.15rem; }
+  .tarea-prio { font-size: 0.7rem; max-width: 6.9rem; padding: 0.24rem 0.15rem; }
   .tarea-editar, .tarea-borrar { padding: 0.1rem 0.25rem; font-size: 0.75rem; }
   .chk-nombre { font-size: 0.88rem; }
 }
@@ -1327,7 +1327,7 @@ table.facturas tr.total td {
   flex-wrap: wrap;
   gap: 0.4rem 0.9rem;
   margin-top: 0.7rem;
-  font-size: 0.68rem;
+  font-size: 0.74rem;
   color: var(--mp-ink-2);
 }
 .cal-leyenda > span { display: inline-flex; align-items: center; gap: 0.3rem; }
@@ -1532,7 +1532,7 @@ table.facturas tr.total td {
 .hito-info { flex: 1; min-width: 0; }
 .hito-titulo { display: block; font-size: 0.8rem; font-weight: 700; color: var(--mp-ink); }
 .hito-cobrado .hito-titulo { color: var(--mp-ink-3); font-weight: 600; }
-.hito-cond { display: block; font-size: 0.68rem; color: var(--mp-ink-3); }
+.hito-cond { display: block; font-size: 0.74rem; color: var(--mp-ink-3); }
 .hito-monto { font-weight: 800; font-size: 0.85rem; color: var(--mp-ink); white-space: nowrap; }
 .hito-cobrado .hito-monto { color: var(--mp-ok); font-weight: 700; }
 .hito-siguiente .hito-monto { color: var(--mp-navy); }
@@ -1556,7 +1556,7 @@ table.facturas tr.total td {
 
 /* Desglose del contrato y alcances */
 table.desglose td strong { font-weight: 800; color: var(--mp-ink); }
-.alcance-ref { font-size: 0.68rem; color: var(--mp-ink-3); }
+.alcance-ref { font-size: 0.74rem; color: var(--mp-ink-3); }
 table.desglose .pct { color: var(--mp-teal-text); font-weight: 700; font-size: 0.72rem; }
 table.desglose .neg { color: var(--mp-teal-text); font-weight: 800; }
 
@@ -1609,7 +1609,7 @@ table.desglose .neg { color: var(--mp-teal-text); font-weight: 800; }
   border: 1px solid var(--mp-line);
   background: var(--mp-sky-2);
 }
-.foto-pie { font-size: 0.65rem; color: var(--mp-ink-3); margin-top: 0.2rem; line-height: 1.3; }
+.foto-pie { font-size: 0.72rem; color: var(--mp-ink-3); margin-top: 0.2rem; line-height: 1.3; }
 .btn-agregar-foto { margin-top: 0.55rem; }
 .form-foto { margin-top: 0.4rem; }
 
@@ -1925,13 +1925,15 @@ table.desglose .neg { color: var(--mp-teal-text); font-weight: 800; }
 .gasto-presu-fila input:focus { outline: 2px solid var(--mp-blue); }
 .doc-link {
   display: inline-block;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
   background: var(--mp-card);
   color: var(--mp-navy);
   border: 1.5px solid #BCDCEA;
   text-decoration: none;
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   font-weight: 700;
-  padding: 0.42rem 0.7rem;
+  padding: 0.45rem 0.7rem;
   border-radius: 10px;
 }
 .doc-link:hover, .doc-link:focus-visible { box-shadow: var(--mp-shadow); outline: none; }
