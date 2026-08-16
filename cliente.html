@@ -41,6 +41,8 @@
     .cl-boton { background: linear-gradient(135deg, var(--mp-blue), var(--mp-cyan)); color: #04222B; border: 0; border-radius: 999px; font: inherit; font-size: 0.82rem; font-weight: 800; padding: 0.5rem 0.85rem; cursor: pointer; flex-shrink: 0; }
     .cl-aprobado { font-size: 0.8rem; font-weight: 800; color: #3E7A20; }
     .cl-diario-fecha { font-size: 0.74rem; font-weight: 800; color: var(--mp-ink-2); flex-shrink: 0; }
+    .cl-tico { display: inline-block; vertical-align: -4px; margin-right: 7px; color: var(--mp-teal-text); }
+    .cl-tico svg { width: 19px; height: 19px; display: block; }
   </style>
 </head>
 <body>
@@ -88,10 +90,10 @@
     var TXT = lang === "en" ? {
       kicker: "YOUR PROJECT WITH MAX POWER", pasos: ["Approved", "In progress", "Inspections", "Completed"],
       complete: "complete", de: "of", items: "items done",
-      todos: "🛋 Your to-dos — we need your input", necesita: "⏰ We need it by ", decidi: "I've decided ✓", done: "✓ Done",
-      fotosT: "📷 Progress photos", alcance: "📋 Scope of work", inspT: "🏛 Inspections",
-      proxT: "📅 Upcoming work days", actividad: "📰 Recent activity", docsT: "📁 Documents",
-      aprobar: "Approve ✓", aprobado: "✓ Approved ", garantiaT: "🛡 Your warranty",
+      todos: "Your to-dos — we need your input", necesita: "⏰ We need it by ", decidi: "I've decided ✓", done: "✓ Done",
+      fotosT: "Progress photos", alcance: "Scope of work", inspT: "Inspections",
+      proxT: "Upcoming work days", actividad: "Recent activity", docsT: "Documents",
+      aprobar: "Approve ✓", aprobado: "✓ Approved ", garantiaT: "Your warranty",
       garantia: "All our workmanship is covered by a 1-year warranty from completion. Keep this link — it's your home's electrical file.",
       resena: "⭐ Happy with our work? Leave us a Google review!",
       wa: "💬 Questions? Message us on WhatsApp",
@@ -103,10 +105,10 @@
     } : {
       kicker: "TU PROYECTO CON MAX POWER", pasos: ["Aprobado", "En obra", "Inspecciones", "Terminado"],
       complete: "completado", de: "de", items: "puntos hechos",
-      todos: "🛋 Te toca a ti — necesitamos tu decisión", necesita: "⏰ La necesitamos antes del ", decidi: "Ya decidí ✓", done: "✓ Hecha",
-      fotosT: "📷 Fotos del avance", alcance: "📋 Alcance del trabajo", inspT: "🏛 Inspecciones",
-      proxT: "📅 Próximos días de trabajo", actividad: "📰 Actividad reciente", docsT: "📁 Documentos",
-      aprobar: "Aprobar ✓", aprobado: "✓ Aprobado ", garantiaT: "🛡 Tu garantía",
+      todos: "Te toca a ti — necesitamos tu decisión", necesita: "⏰ La necesitamos antes del ", decidi: "Ya decidí ✓", done: "✓ Hecha",
+      fotosT: "Fotos del avance", alcance: "Alcance del trabajo", inspT: "Inspecciones",
+      proxT: "Próximos días de trabajo", actividad: "Actividad reciente", docsT: "Documentos",
+      aprobar: "Aprobar ✓", aprobado: "✓ Aprobado ", garantiaT: "Tu garantía",
       garantia: "Toda nuestra mano de obra tiene garantía de 1 año desde la entrega. Guarda este link — es el expediente eléctrico de tu casa.",
       resena: "⭐ ¿Quedaste contento? ¡Déjanos tu reseña en Google!",
       wa: "💬 ¿Preguntas? Escríbenos por WhatsApp",
@@ -116,6 +118,22 @@
       reintentar: "Intentar otra vez",
       res: { paso: "✅ Pasada", fallo: "❌ Necesita corrección", programada: "🗓 Programada" }
     };
+
+    // Iconos de línea (mismo estilo moderno que los botones de la app)
+    var ICO = {
+      todos: '<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/>',
+      fotos: '<rect x="3" y="7" width="18" height="13" rx="3"/><path d="M9 7l1.5-2.5h3L15 7"/><circle cx="12" cy="13" r="3.5"/>',
+      alcance: '<rect x="3" y="4" width="18" height="17" rx="3"/><path d="m8 12 2.5 2.5L16 9"/>',
+      insp: '<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="m9 12 2 2 4-4"/>',
+      prox: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/>',
+      actividad: '<path d="M4 6h16M4 12h16M4 18h10"/>',
+      docs: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+      garantia: '<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/>'
+    };
+    function tit(icono, texto) {
+      return '<span class="cl-tico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+        ICO[icono] + '</svg></span>' + esc(texto);
+    }
 
     var t = new URLSearchParams(location.search).get("t") || "";
     var caja = document.getElementById("cl-panel");
@@ -208,7 +226,7 @@
         var aprob = "";
         if (d.pide_aprobacion) {
           aprob = d.aprobado_el
-            ? ' <span class="cl-aprobado">✓ Approved ' + esc(String(d.aprobado_el).slice(0, 10)) + '</span>'
+            ? ' <span class="cl-aprobado">' + esc(TXT.aprobado) + esc(String(d.aprobado_el).slice(0, 10)) + '</span>'
             : ' <button class="cl-boton" data-aprobar="' + d.id + '">' + esc(TXT.aprobar) + '</button>';
         }
         return '<span class="cl-item"><a class="doc-link cl-doc" target="_blank" rel="noopener" href="' + esc(d.url) + '">📄 ' + esc(d.titulo) + '</a>' + aprob + '</span>';
@@ -222,20 +240,19 @@
         '</div>' +
         '<div class="cal-panel-card"><div class="cl-pasos">' + stepper + '</div>' +
           (total ? '<div class="barra horas-barra"><div class="barra-relleno ' + (pct >= 100 ? "ok" : "") + '" style="width:' + pct + '%"></div></div>' +
-          '<div class="alcance-estado" style="text-align:center;margin-top:.3rem"><strong>' + pct + '%</strong> complete · ' + hechas + ' of ' + total + ' items done</div>' : '') +
+          '<div class="alcance-estado" style="text-align:center;margin-top:.3rem"><strong>' + pct + '%</strong> ' + esc(TXT.complete) + ' · ' + hechas + ' ' + esc(TXT.de) + ' ' + total + ' ' + esc(TXT.items) + '</div>' : '') +
         '</div>' +
-        (pendientesDec.length ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + esc(TXT.todos) + '</div>' + todos + '</div>' : '') +
-        (fotos ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + esc(TXT.fotosT) + '</div><div class="cl-fotos">' + fotos + '</div></div>' : '') +
-        (total ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + esc(TXT.alcance) + '</div>' + lista + '</div>' : '') +
-        (insp ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + esc(TXT.inspT) + '</div>' + insp + '</div>' : '') +
-        (prox ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + esc(TXT.proxT) + '</div>' + prox + '</div>' : '') +
-        (diario ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + esc(TXT.actividad) + '</div>' + diario + '</div>' : '') +
-        (docs ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + esc(TXT.docsT) + '</div>' + docs + '</div>' : '') +
-        (!pendientesDec.length && todos && (p.decisiones || []).length ? '' : '') +
+        (pendientesDec.length ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("todos", TXT.todos) + '</div>' + todos + '</div>' : '') +
+        (fotos ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("fotos", TXT.fotosT) + '</div><div class="cl-fotos">' + fotos + '</div></div>' : '') +
+        (total ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("alcance", TXT.alcance) + '</div>' + lista + '</div>' : '') +
+        (insp ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("insp", TXT.inspT) + '</div>' + insp + '</div>' : '') +
+        (prox ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("prox", TXT.proxT) + '</div>' + prox + '</div>' : '') +
+        (diario ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("actividad", TXT.actividad) + '</div>' + diario + '</div>' : '') +
+        (docs ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("docs", TXT.docsT) + '</div>' + docs + '</div>' : '') +
         (p.estado === "completado" ? '<div class="cal-panel-card" style="text-align:center">' +
-          '<div class="cal-form-titulo">' + esc(TXT.garantiaT) + '</div>' +
+          '<div class="cal-form-titulo">' + tit("garantia", TXT.garantiaT) + '</div>' +
           '<p class="alcance-estado" style="font-size:0.9rem">' + esc(TXT.garantia) + '</p>' +
-          (RESENA ? '<a class="doc-link" target="_blank" rel="noopener" href="' + esc(RESENA) + '">⭐ Happy with our work? Leave us a Google review!</a>' : '') +
+          (RESENA ? '<a class="doc-link" target="_blank" rel="noopener" href="' + esc(RESENA) + '">' + esc(TXT.resena) + '</a>' : '') +
           '</div>' : '') +
         '<a class="cl-wa" target="_blank" rel="noopener" href="' + WHATSAPP + '">' + esc(TXT.wa) + '</a>';
 
