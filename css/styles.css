@@ -496,6 +496,25 @@ body::after {
 .dot.azul { background: var(--mp-blue); }
 .dot.rojo { background: #C84B4B; box-shadow: 0 0 0 3px rgba(200,75,75,.22); }
 
+/* Semáforo del equipo: cada fila se abre con sus reportes */
+.equipo-det > summary { list-style: none; cursor: pointer; }
+.equipo-det > summary::-webkit-details-marker { display: none; }
+.equipo-reportes { padding: 0.3rem 0 0.5rem 1.4rem; }
+.eq-reporte {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--mp-line);
+  border-radius: 10px;
+  margin-bottom: 0.3rem;
+  background: var(--mp-card);
+}
+.eq-reporte.eq-pide { border-color: #E8C51D; background: #FFFBEB; }
+.eq-rep-permiso { padding: 0.3rem 0.55rem; font-size: 0.72rem; flex-shrink: 0; }
+.eq-pend-titulo { font-size: 0.7rem; font-weight: 800; color: var(--mp-ink-3); margin: 0.45rem 0 0.2rem; }
+.eq-pend { font-size: 0.76rem; color: var(--mp-ink-2); margin-bottom: 0.15rem; }
+
 /* Estimador: resultados del catálogo con su propio scroll */
 #est-resultados { max-height: 340px; overflow-y: auto; }
 /* Cajita de cantidad en línea (búsqueda y frecuentes) */

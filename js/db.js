@@ -274,7 +274,8 @@
         id: h.id, fecha: h.fecha, usuarioId: h.usuario_id,
         trabajador: nombrePorId[h.usuario_id] || "",
         proyecto: h.proyecto_id, fase: h.fase || "",
-        horas: Number(h.horas), notas: h.notas || ""
+        horas: Number(h.horas), notas: h.notas || "",
+        correccion: h.correccion_estado || null
       })),
       fotos: fotos.map(f => ({
         id: f.id, proyecto: f.proyecto_id, ruta: f.ruta,

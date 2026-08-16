@@ -526,19 +526,86 @@
         else if (dias <= 3) { clase = "amarillo"; texto = `hace ${dias} días`; }
         else { clase = "rojo"; texto = `hace ${dias} días sin reportar`; }
       }
-      return `<div class="equipo-item">
-          <span class="equipo-dot ${clase}"></span>
+      // Los últimos 14 días de esta persona, para revisar sin ir proyecto por proyecto
+      const desde = (() => { const d = new Date(); d.setDate(d.getDate() - 14);
+        return fechaISO(d.getFullYear(), d.getMonth(), d.getDate()); })();
+      const recientes = mios.filter(r => r.fecha >= desde).slice().reverse();
+      const reportes = recientes.map(r => `
+        <div class="eq-reporte${r.correccion === "pedida" ? " eq-pide" : ""}" data-id="${r.id}">
           <span class="alcance-info">
-            <span class="alcance-titulo">${esc(u.nombre)}</span>
-            <span class="alcance-estado">${texto}</span>
+            <span class="alcance-titulo">${esc(r.fecha)} · ${esc(nombreProyecto(r.proyecto) || "—")} · <strong>${esc(r.horas)} h</strong></span>
+            <span class="alcance-estado">${esc(r.fase || "")}${r.notas ? " — " + esc(r.notas) : ""}</span>
+            ${r.correccion === "pedida" ? `<span class="alcance-estado">✏️ <strong>Pide permiso para corregir este reporte</strong></span>` : ""}
+            ${r.correccion === "aprobada" ? `<span class="alcance-estado">✅ Permiso dado — esperando su corrección</span>` : ""}
           </span>
-        </div>`;
+          ${r.correccion === "pedida" ? `<button class="accion eq-rep-permiso" title="Darle permiso">✓ Dar permiso</button>` : ""}
+          <button class="eq-rep-editar insp-borrar" title="Corregir horas o notas">✎</button>
+          <button class="eq-rep-borrar insp-borrar" title="Eliminar reporte">🗑</button>
+        </div>`).join("");
+      const pendDe = (state.pendientes || [])
+        .filter(x => x.autorId === u.id && !x.resuelto).slice(-5).reverse();
+      const pendHTML = pendDe.length ? `
+        <div class="eq-pend-titulo">Pendientes que reportó (se manejan en el ✅ Checklist):</div>
+        ${pendDe.map(x => `<div class="eq-pend">• ${esc(x.descripcion)} <span class="tarea-meta">${esc(nombreProyecto(x.proyecto) || "General")} · ${esc(x.fecha)}</span></div>`).join("")}` : "";
+      return `<details class="equipo-det" data-uid="${esc(u.id)}">
+          <summary class="equipo-item">
+            <span class="equipo-dot ${clase}"></span>
+            <span class="alcance-info">
+              <span class="alcance-titulo">${esc(u.nombre)}</span>
+              <span class="alcance-estado">${texto} · toca para ver sus reportes</span>
+            </span>
+          </summary>
+          <div class="equipo-reportes">
+            ${reportes || `<p class="cal-sin-eventos">Sin reportes en los últimos 14 días.</p>`}
+            ${pendHTML}
+          </div>
+        </details>`;
     }).join("");
     $("inicio-equipo").innerHTML = `
       <div class="inicio-card">
         <div class="inicio-card-titulo">⏱ Reporte de horas del equipo</div>
         ${filas}
       </div>`;
+
+    $("inicio-equipo").querySelectorAll(".eq-rep-permiso").forEach(btn => {
+      btn.addEventListener("click", async e => {
+        e.preventDefault();
+        try {
+          await DB.cambiarHoras(btn.closest(".eq-reporte").dataset.id, { correccion_estado: "aprobada" });
+          await recargar();
+          avisar("Permiso dado ✓ — le llegó el aviso al teléfono");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    // Corregir o eliminar un reporte desde aquí mismo (permiso real del dueño)
+    $("inicio-equipo").querySelectorAll(".eq-rep-editar").forEach(btn => {
+      btn.addEventListener("click", async e => {
+        e.preventDefault();
+        const id = btn.closest(".eq-reporte").dataset.id;
+        const rep = (state.registroHoras || []).find(r => String(r.id) === String(id));
+        if (!rep) return;
+        const h = prompt("Horas trabajadas:", rep.horas);
+        if (h === null) return;
+        const notas = prompt("Notas (qué se hizo):", rep.notas || "");
+        if (notas === null) return;
+        try {
+          await DB.cambiarHoras(id, { horas: Number(h) || rep.horas, notas: notas.trim() });
+          await recargar();
+          avisar("Reporte corregido ✓");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    $("inicio-equipo").querySelectorAll(".eq-rep-borrar").forEach(btn => {
+      btn.addEventListener("click", async e => {
+        e.preventDefault();
+        if (!confirm("¿Eliminar este reporte de horas?")) return;
+        try {
+          await DB.eliminarHoras(btn.closest(".eq-reporte").dataset.id);
+          await recargar();
+          avisar("Reporte eliminado ✓");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
   }
 
   function pintarCategorias() {
@@ -1183,7 +1250,8 @@
   function pintarChatBadge() {
     const badge = $("chat-badge");
     if (!badge || !usuario) return;
-    const convs = new Set(["grupo", ...chatMensajes.filter(m => m.destinatario_id).map(convDe)]);
+    const enGrupoB = !state || !state.perfil || state.perfil.en_grupo !== false;
+    const convs = new Set([...(enGrupoB ? ["grupo"] : []), ...chatMensajes.filter(m => m.destinatario_id).map(convDe)]);
     let total = 0;
     convs.forEach(c => { total += noLeidos(c); });
     badge.hidden = !total;
@@ -1263,6 +1331,8 @@
     const panel = $("chat-panel");
     const equipo = (state.equipo || []).filter(u => u.activo && u.id !== usuario.id);
 
+    const enGrupo = !state.perfil || state.perfil.en_grupo !== false;
+
     // ---- Lista de conversaciones ----
     if (!chatConv) {
       const fila = (clave, icono, nombre, sub) => {
@@ -1277,7 +1347,7 @@
           + '</button>';
       };
       panel.innerHTML = '<div class="cal-panel-card chat-lista">'
-        + fila("grupo", "👥", "Grupo Max Power", "Mensajes para todo el equipo")
+        + (enGrupo ? fila("grupo", "👥", "Grupo Max Power", "Mensajes para el equipo de obra") : "")
         + equipo.map(u => fila(u.id, "👤", u.nombre, "Mensaje privado — solo lo ven ustedes dos")).join("")
         + '</div>';
       panel.querySelectorAll(".chat-conv").forEach(b =>
@@ -2177,7 +2247,24 @@
     });
 
     $("horas-historial").querySelectorAll(".btn-horas-editar").forEach(btn => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
+        const rep = (state.registroHoras || []).find(r => String(r.id) === String(btn.dataset.id));
+        // El equipo necesita el permiso de Edgar antes de corregir
+        if (!usuario.editar && rep) {
+          if (rep.correccion === "pedida") {
+            avisar("⏳ Ya le pediste permiso a Edgar — te avisamos al teléfono cuando apruebe");
+            return;
+          }
+          if (rep.correccion !== "aprobada") {
+            if (!confirm("Para corregir este reporte necesitas el permiso de Edgar. ¿Se lo pedimos ahora?")) return;
+            try {
+              await DB.cambiarHoras(rep.id, { correccion_estado: "pedida" });
+              await recargar();
+              avisar("Permiso pedido ✓ — a Edgar le llegó el aviso al teléfono");
+            } catch (err) { avisar("No se pudo: " + err.message, true); }
+            return;
+          }
+        }
         const form = $("horas-historial")
           .querySelector(`.form-horas-editar[data-id="${btn.dataset.id}"]`);
         if (form) form.hidden = !form.hidden;

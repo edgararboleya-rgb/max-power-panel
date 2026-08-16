@@ -67,6 +67,13 @@
     "Corregir el texto": "Fix the text",
     "📌 Generales (sin proyecto)": "📌 General (no project)",
     "💬 Mensajes": "💬 Messages",
+    "Mensajes para el equipo de obra": "Messages for the field crew",
+    "Corregir horas o notas": "Fix hours or notes",
+    "Eliminar reporte": "Delete report",
+    "✓ Dar permiso": "✓ Grant permission",
+    "Darle permiso": "Grant permission",
+    "Sin reportes en los últimos 14 días.": "No reports in the last 14 days.",
+    "Pendientes que reportó (se manejan en el ✅ Checklist):": "Issues they reported (managed in the ✅ Checklist):",
     "Mensajes del equipo": "Team messages",
     "Equipo Max Power": "Max Power team",
     "Mensajes para todo el equipo": "Messages for the whole team",
@@ -178,7 +185,8 @@
       .replace(" y ", " and ").replace("para arrancar", "to start")],
     [/^➡ Próximo cobro:$/, "➡ Next collection:"],
     [/^(\d+) por hacer/, "$1 to do"],
-    [/^🔴 Lo urgente ahora \((\d+)\)$/, "🔴 Urgent right now ($1)"]
+    [/^🔴 Lo urgente ahora \((\d+)\)$/, "🔴 Urgent right now ($1)"],
+    [/ · toca para ver sus reportes$/, " · tap to see their reports"]
   ];
 
   function traducirTexto(t) {
