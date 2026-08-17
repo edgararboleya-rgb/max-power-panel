@@ -7,7 +7,7 @@
   <title>Max Power — Your Project</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=59">
+  <link rel="stylesheet" href="css/styles.css?v=60">
   <style>
     .cl-hero { text-align: center; padding: 1rem 0 0.4rem; }
     .cl-nombre { font-size: 1.3rem; font-weight: 800; color: var(--mp-ink); margin: 0.2rem 0 0.1rem; }
@@ -45,6 +45,16 @@
     .cl-diario-fecha { font-size: 0.74rem; font-weight: 800; color: var(--mp-ink-2); flex-shrink: 0; }
     .cl-tico { display: inline-block; vertical-align: -4px; margin-right: 7px; color: var(--mp-teal-text); }
     .cl-tico svg { width: 19px; height: 19px; display: block; }
+    .cl-firma-fondo { position: fixed; inset: 0; background: rgba(4, 20, 35, 0.55); display: flex; align-items: center; justify-content: center; padding: 1rem; z-index: 50; }
+    .cl-firma-caja { background: var(--mp-card, #fff); border-radius: 14px; padding: 1rem; max-width: 420px; width: 100%; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+    .cl-firma-caja h3 { margin: 0 0 0.3rem; font-size: 1.05rem; color: var(--mp-ink); }
+    .cl-firma-doc { font-size: 0.85rem; color: var(--mp-ink-2); margin-bottom: 0.6rem; overflow-wrap: anywhere; }
+    .cl-firma-caja input { width: 100%; font: inherit; padding: 0.55rem 0.6rem; border: 1px solid var(--mp-line); border-radius: 10px; margin-bottom: 0.6rem; }
+    .cl-firma-lienzo { width: 100%; height: 140px; border: 1.5px dashed var(--mp-line); border-radius: 10px; touch-action: none; background: #fff; display: block; }
+    .cl-firma-nota { font-size: 0.74rem; line-height: 1.4; color: var(--mp-ink-3); margin: 0.5rem 0; }
+    .cl-firma-botones { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .cl-firma-sub { font-size: 0.8rem; font-weight: 800; color: var(--mp-ink-2); margin: 0.2rem 0; }
+    .cl-boton.secundario { background: none; border: 1.5px solid var(--mp-line); color: var(--mp-ink-2); }
   </style>
 </head>
 <body>
@@ -70,7 +80,7 @@
     </footer>
   </div>
 
-  <script src="assets/logo.js?v=59"></script>
+  <script src="assets/logo.js?v=60"></script>
   <script>
   (function () {
     "use strict";
@@ -98,6 +108,11 @@
       aprobar: "Approve ✓", aprobado: "✓ Approved ", garantiaT: "Your warranty",
       pagosT: "Payments", contratoT: "Contract total", cobradoT: "Paid to date", saldoT: "Balance",
       pagadaF: "Paid ✓", pendienteF: "Pending",
+      firmar: "Review & sign 🖊", firmadoPor: "🖊 Signed by ", firmaTitulo: "Sign this document",
+      firmaNombre: "Your full legal name", firmaDibuja: "Draw your signature below (finger or mouse)",
+      firmaLimpiar: "Clear", firmaEnviar: "Sign ✓", firmaCancelar: "Cancel",
+      firmaLegal: "By signing you confirm that you reviewed this document and agree to its terms. Your name, signature, date and time will be recorded.",
+      firmaFalta: "Please write your name and draw your signature.",
       garantia: "All our workmanship is covered by a 1-year warranty from completion. Keep this link — it's your home's electrical file.",
       resena: "⭐ Happy with our work? Leave us a Google review!",
       wa: "💬 Questions? Message us on WhatsApp",
@@ -115,6 +130,11 @@
       aprobar: "Aprobar ✓", aprobado: "✓ Aprobado ", garantiaT: "Tu garantía",
       pagosT: "Pagos", contratoT: "Contrato total", cobradoT: "Pagado a la fecha", saldoT: "Saldo",
       pagadaF: "Pagada ✓", pendienteF: "Pendiente",
+      firmar: "Revisar y firmar 🖊", firmadoPor: "🖊 Firmado por ", firmaTitulo: "Firmar este documento",
+      firmaNombre: "Tu nombre legal completo", firmaDibuja: "Dibuja tu firma abajo (dedo o mouse)",
+      firmaLimpiar: "Borrar", firmaEnviar: "Firmar ✓", firmaCancelar: "Cancelar",
+      firmaLegal: "Al firmar confirmas que revisaste este documento y aceptas sus términos. Se guardará tu nombre, tu firma y la fecha y hora.",
+      firmaFalta: "Escribe tu nombre y dibuja tu firma, por favor.",
       garantia: "Toda nuestra mano de obra tiene garantía de 1 año desde la entrega. Guarda este link — es el expediente eléctrico de tu casa.",
       resena: "⭐ ¿Quedaste contento? ¡Déjanos tu reseña en Google!",
       wa: "💬 ¿Preguntas? Escríbenos por WhatsApp",
@@ -257,7 +277,11 @@
 
       var docs = (p.documentos || []).map(function (d) {
         var aprob = "";
-        if (d.pide_aprobacion) {
+        if (d.pide_firma) {
+          aprob = d.firmado_el
+            ? ' <span class="cl-aprobado">' + esc(TXT.firmadoPor) + esc(d.firma_nombre || "") + ' · ' + esc(String(d.firmado_el).slice(0, 10)) + '</span>'
+            : ' <button class="cl-boton" data-firmar="' + d.id + '" data-titulo="' + esc(d.titulo) + '">' + esc(TXT.firmar) + '</button>';
+        } else if (d.pide_aprobacion) {
           aprob = d.aprobado_el
             ? ' <span class="cl-aprobado">' + esc(TXT.aprobado) + esc(String(d.aprobado_el).slice(0, 10)) + '</span>'
             : ' <button class="cl-boton" data-aprobar="' + d.id + '">' + esc(TXT.aprobar) + '</button>';
@@ -297,7 +321,68 @@
       caja.querySelectorAll("[data-decision]").forEach(function (b) {
         b.addEventListener("click", function () { mandar({ accion: "decision_lista", id: Number(b.dataset.decision) }, b); });
       });
+      caja.querySelectorAll("[data-firmar]").forEach(function (b) {
+        b.addEventListener("click", function () { abrirFirma(Number(b.dataset.firmar), b.dataset.titulo || ""); });
+      });
       document.title = "Max Power — " + p.nombre;
+    }
+
+    // ---- 🖊 Panel de firma: nombre + firma dibujada ----
+    function abrirFirma(docId, titulo) {
+      var fondo = document.createElement("div");
+      fondo.className = "cl-firma-fondo";
+      fondo.innerHTML =
+        '<div class="cl-firma-caja">' +
+          '<h3>' + esc(TXT.firmaTitulo) + '</h3>' +
+          '<div class="cl-firma-doc">📄 ' + esc(titulo) + '</div>' +
+          '<input type="text" id="cl-firma-nombre" placeholder="' + esc(TXT.firmaNombre) + '" autocomplete="name">' +
+          '<div class="cl-firma-sub">' + esc(TXT.firmaDibuja) + '</div>' +
+          '<canvas class="cl-firma-lienzo" width="640" height="220"></canvas>' +
+          '<p class="cl-firma-nota">' + esc(TXT.firmaLegal) + '</p>' +
+          '<div class="cl-firma-botones">' +
+            '<button type="button" class="cl-boton" id="cl-firma-ok">' + esc(TXT.firmaEnviar) + '</button>' +
+            '<button type="button" class="cl-boton secundario" id="cl-firma-borrar">' + esc(TXT.firmaLimpiar) + '</button>' +
+            '<button type="button" class="cl-boton secundario" id="cl-firma-no">' + esc(TXT.firmaCancelar) + '</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(fondo);
+
+      var lienzo = fondo.querySelector(".cl-firma-lienzo");
+      var ctx = lienzo.getContext("2d");
+      ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.strokeStyle = "#0A2540";
+      var trazos = 0, dibujando = false;
+      function xy(e) {
+        var r = lienzo.getBoundingClientRect();
+        return [(e.clientX - r.left) * (lienzo.width / r.width), (e.clientY - r.top) * (lienzo.height / r.height)];
+      }
+      lienzo.addEventListener("pointerdown", function (e) {
+        e.preventDefault(); dibujando = true; trazos++;
+        lienzo.setPointerCapture(e.pointerId);
+        var p0 = xy(e); ctx.beginPath(); ctx.moveTo(p0[0], p0[1]);
+      });
+      lienzo.addEventListener("pointermove", function (e) {
+        if (!dibujando) return;
+        var p1 = xy(e); ctx.lineTo(p1[0], p1[1]); ctx.stroke();
+      });
+      lienzo.addEventListener("pointerup", function () { dibujando = false; });
+      fondo.querySelector("#cl-firma-borrar").addEventListener("click", function () {
+        ctx.clearRect(0, 0, lienzo.width, lienzo.height); trazos = 0;
+      });
+      fondo.querySelector("#cl-firma-no").addEventListener("click", function () { fondo.remove(); });
+      fondo.querySelector("#cl-firma-ok").addEventListener("click", function () {
+        var nombre = fondo.querySelector("#cl-firma-nombre").value.trim();
+        if (!nombre || trazos === 0) { alert(TXT.firmaFalta); return; }
+        var b = fondo.querySelector("#cl-firma-ok");
+        b.disabled = true; b.textContent = "…";
+        fetch(PORTAL, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ t: t, accion: "firmar_doc", id: docId, nombre: nombre, firma: lienzo.toDataURL("image/png") })
+        }).then(function (r) {
+          if (!r.ok) throw new Error("bad");
+          fondo.remove();
+          return cargar();
+        }).catch(function () { b.disabled = false; b.textContent = TXT.reintentar; });
+      });
     }
   })();
   </script>

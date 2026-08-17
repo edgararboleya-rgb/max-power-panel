@@ -1698,8 +1698,11 @@
     const linksDocs = (p.docs || [])
       .map(d => `<span class="doc-fila"><a class="doc-link" href="${esc(urlSegura(d.url) || "#")}" target="_blank" rel="noopener">📄 ${esc(d.titulo)}</a>${d.id ? `
         <button type="button" class="doc-cliente${d.portal ? " on" : ""}" data-id="${d.id}" data-portal="${d.portal ? 1 : 0}"
-          title="${d.portal ? "El cliente SÍ ve este documento — toca para ocultarlo" : "El cliente NO lo ve — toca para mostrárselo"}">${d.portal ? "👁 cliente" : "🚫 cliente"}</button>${d.portal ? `
-        ${d.aprobadoEl ? `<span class="cl-chip-aprobado">✔ aprobó ${esc(d.aprobadoEl)}</span>` : `
+          title="${d.portal ? "El cliente SÍ ve este documento — toca para ocultarlo" : "El cliente NO lo ve — toca para mostrárselo"}">${d.portal ? "👁 cliente" : "🚫 cliente"}</button>${(d.portal || p.portalCompleto) ? `
+        ${d.firmadoEl ? `<span class="cl-chip-aprobado">🖊 firmó ${esc(d.firmaNombre || "")} · ${esc(d.firmadoEl)}</span>` : `
+        <button type="button" class="doc-cliente${d.pideFirma ? " on" : ""} doc-firma" data-id="${d.id}" data-pide="${d.pideFirma ? 1 : 0}"
+          title="${d.pideFirma ? "Le está pidiendo FIRMA al cliente (nombre + firma con el dedo) — toca para quitarla" : "Pedirle al cliente que lo FIRME (nombre + firma con el dedo, queda de respaldo)"}">🖊 firma</button>`}
+        ${d.aprobadoEl ? `<span class="cl-chip-aprobado">✔ aprobó ${esc(d.aprobadoEl)}</span>` : (d.firmadoEl || d.pideFirma) ? "" : `
         <button type="button" class="doc-cliente${d.pideAprobacion ? " on" : ""} doc-aprobacion" data-id="${d.id}" data-pide="${d.pideAprobacion ? 1 : 0}"
           title="${d.pideAprobacion ? "Le está pidiendo aprobación al cliente — toca para quitarla" : "Pedirle al cliente que lo apruebe con un toque"}">✍️ aprobación</button>`}` : ""}` : ""}</span>`)
       .join("");
@@ -2015,6 +2018,16 @@
           await DB.cambiarDocumento(btn.dataset.id, { portal: !visible });
           await recargar();
           avisar(!visible ? "👁 El cliente ahora VE este documento" : "🚫 Documento oculto para el cliente");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    $detalle.querySelectorAll(".doc-firma").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const pide = btn.dataset.pide === "1";
+        try {
+          await DB.cambiarDocumento(btn.dataset.id, { pide_firma: !pide });
+          await recargar();
+          avisar(!pide ? "🖊 El cliente verá 'Revisar y firmar' en su portal" : "Petición de firma quitada");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });

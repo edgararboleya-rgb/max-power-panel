@@ -270,7 +270,8 @@
           monto: Number(f.monto), pagada: !!f.pagada
         })),
         docs: docs.filter(d => d.clase === "doc").map(d => ({ id: d.id, titulo: d.titulo, url: d.url, portal: !!d.portal,
-          pideAprobacion: !!d.pide_aprobacion, aprobadoEl: d.aprobado_el ? String(d.aprobado_el).slice(0, 10) : "" })),
+          pideAprobacion: !!d.pide_aprobacion, aprobadoEl: d.aprobado_el ? String(d.aprobado_el).slice(0, 10) : "",
+          pideFirma: !!d.pide_firma, firmadoEl: d.firmado_el ? String(d.firmado_el).slice(0, 10) : "", firmaNombre: d.firma_nombre || "" })),
         rfis: docs.filter(d => d.clase === "rfi").map(d => ({ id: d.id, titulo: d.titulo, estado: d.estado, url: d.url })),
         horas: (Number(p.horas_estimadas) > 0 || reales > 0)
           ? { estimadas: Number(p.horas_estimadas) || 0, reales: Math.round(reales * 10) / 10 }
