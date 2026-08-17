@@ -1878,9 +1878,11 @@
     const fotos = (state.fotos || []).filter(f => f.proyecto === p.id);
     const items = fotos.map(f => `
       <figure class="foto-item">
+        ${esVideo(f.ruta) ? `
+        <video class="foto-mini foto-video" data-ruta="${esc(f.ruta)}" controls preload="metadata" playsinline></video>` : `
         <a class="foto-enlace" data-ruta="${esc(f.ruta)}" target="_blank" rel="noopener">
           <img class="foto-mini" data-ruta="${esc(f.ruta)}" alt="${esc(f.nota || "Foto de obra")}" loading="lazy">
-        </a>
+        </a>`}
         <figcaption class="foto-pie">${f.nota ? esc(sinMontos(f.nota)) + " · " : ""}${esc(f.autor)} ${esc(f.fecha)}${usuario.finanzas ? `
           <button type="button" class="doc-cliente foto-cliente${f.portal ? " on" : ""}" data-id="${f.id}" data-portal="${f.portal ? 1 : 0}"
             title="${f.portal ? "El cliente SÍ ve esta foto" : "El cliente NO la ve"}">${f.portal ? "👁" : "🚫"}</button>` : ""}</figcaption>
@@ -1889,10 +1891,10 @@
       <div class="detalle-seccion">
         <h3>Fotos de obra</h3>
         ${items ? `<div class="fotos-grid">${items}</div>` : `<span class="sin-docs">Sin fotos todavía.</span>`}
-        <button type="button" class="accion secundaria btn-agregar-foto">📸 Agregar foto</button>
+        <button type="button" class="accion secundaria btn-agregar-foto">📸 Agregar foto o video</button>
         <form class="cal-form form-foto" hidden>
-          <label>Foto (cámara o galería)
-            <input name="archivo" type="file" accept="image/*" required>
+          <label>Foto o video corto (cámara o galería)
+            <input name="archivo" type="file" accept="image/*,video/mp4,video/quicktime,video/webm" required>
           </label>
           <label>Nota (opcional)
             <input name="nota" type="text" placeholder="Ej: rough del segundo piso terminado" autocomplete="off">
@@ -1901,6 +1903,9 @@
         </form>
       </div>`;
   }
+
+  // ¿La ruta es de un video corto (inspección virtual)?
+  const esVideo = ruta => /\.(mp4|mov|webm)$/i.test(String(ruta || ""));
 
   // Achica la foto antes de subirla (los teléfonos sacan fotos enormes)
   async function reducirImagen(archivo) {
@@ -2210,14 +2215,21 @@
         $btn.disabled = true;
         $btn.textContent = "Subiendo…";
         try {
-          // Si el navegador no puede achicarla, se sube tal cual
-          const blob = await reducirImagen(archivo).catch(() => archivo);
+          const esVid = (archivo.type || "").startsWith("video/");
+          if (esVid && archivo.size > 50 * 1024 * 1024) {
+            avisar("Ese video es muy grande. Grábalo CORTO, como una inspección virtual (30-45 segundos, máx. 50 MB).", true);
+            $btn.disabled = false;
+            $btn.textContent = "⬆ Subir foto";
+            return;
+          }
+          // Foto: se achica antes de subir. Video: sube tal cual.
+          const blob = esVid ? archivo : await reducirImagen(archivo).catch(() => archivo);
           const ruta = await DB.subirFoto(p.id, blob, blob.type || archivo.type);
           await DB.crearFoto({ proyecto_id: p.id, ruta, nota });
           await recargar();
-          avisar("Foto subida ✓");
+          avisar(esVid ? "Video subido ✓" : "Foto subida ✓");
         } catch (err) {
-          avisar("No se pudo subir la foto: " + err.message, true);
+          avisar("No se pudo subir: " + err.message, true);
           $btn.disabled = false;
           $btn.textContent = "⬆ Subir foto";
         }

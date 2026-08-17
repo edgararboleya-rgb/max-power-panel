@@ -7,7 +7,7 @@
   <title>Max Power — Your Project</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=56">
+  <link rel="stylesheet" href="css/styles.css?v=57">
   <style>
     .cl-hero { text-align: center; padding: 1rem 0 0.4rem; }
     .cl-nombre { font-size: 1.3rem; font-weight: 800; color: var(--mp-ink); margin: 0.2rem 0 0.1rem; }
@@ -33,7 +33,8 @@
     .cl-cargando { text-align: center; padding: 3rem 1rem; color: var(--mp-ink-3); }
     .cl-fotos { display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.3rem; }
     .cl-foto { flex: 0 0 auto; width: 150px; }
-    .cl-foto img { width: 150px; height: 110px; object-fit: cover; border-radius: 10px; border: 1px solid var(--mp-line); }
+    .cl-foto img, .cl-foto video { width: 150px; height: 110px; object-fit: cover; border-radius: 10px; border: 1px solid var(--mp-line); }
+    .cl-foto video { background: #000; }
     .cl-foto figcaption { font-size: 0.75rem; color: var(--mp-ink-2); margin-top: 2px; }
     .cl-todo { border: 1px solid #EDDFAE; background: #FFFDF3; border-radius: 10px; padding: 0.5rem 0.6rem; margin-bottom: 0.4rem; display: flex; gap: 0.5rem; align-items: center; }
     .cl-todo.hecha { border-color: var(--mp-line); background: var(--mp-card); opacity: 0.7; }
@@ -69,7 +70,7 @@
     </footer>
   </div>
 
-  <script src="assets/logo.js?v=56"></script>
+  <script src="assets/logo.js?v=57"></script>
   <script>
   (function () {
     "use strict";
@@ -205,8 +206,12 @@
       }).join("");
 
       var fotos = (p.fotos || []).filter(function (f) { return urlSegura(f.url); }).map(function (f) {
-        return '<figure class="cl-foto"><a href="' + esc(urlSegura(f.url)) + '" target="_blank" rel="noopener">' +
-          '<img src="' + esc(urlSegura(f.url)) + '" alt="' + esc(f.nota || "Job photo") + '" loading="lazy"></a>' +
+        var esVideo = /\.(mp4|mov|webm)(\?|$)/i.test(urlSegura(f.url));
+        return '<figure class="cl-foto">' +
+          (esVideo
+            ? '<video src="' + esc(urlSegura(f.url)) + '" controls preload="metadata" playsinline></video>'
+            : '<a href="' + esc(urlSegura(f.url)) + '" target="_blank" rel="noopener">' +
+              '<img src="' + esc(urlSegura(f.url)) + '" alt="' + esc(f.nota || "Job photo") + '" loading="lazy"></a>') +
           (f.nota || f.fecha ? '<figcaption>' + esc(f.nota || "") + (f.fecha ? " · " + esc(f.fecha) : "") + '</figcaption>' : '') +
           '</figure>';
       }).join("");

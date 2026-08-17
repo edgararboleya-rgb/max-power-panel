@@ -117,7 +117,9 @@
   // ---------- Fotos (Supabase Storage, almacén privado) ----------
   // carpeta opcional: "recibos" guarda la foto en recibos/<proyecto>/...
   async function subirFoto(proyectoId, blob, tipo, carpeta, reintento = true) {
-    const ruta = `${carpeta ? carpeta + "/" : ""}${proyectoId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+    // La extensión sigue al tipo: los videos cortos suben como .mp4/.mov/.webm
+    const ext = /mp4/i.test(tipo || "") ? "mp4" : /quicktime|\bmov\b/i.test(tipo || "") ? "mov" : /webm/i.test(tipo || "") ? "webm" : "jpg";
+    const ruta = `${carpeta ? carpeta + "/" : ""}${proyectoId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const r = await fetch(`${SB.url}/storage/v1/object/fotos/${ruta}`, {
       method: "POST",
       headers: {
