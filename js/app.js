@@ -1738,6 +1738,8 @@
              <button type="button" class="accion secundaria" id="btn-portal-regenerar">♻ Regenerar la llave</button>
              <button type="button" class="doc-cliente${p.portalDinero ? " on" : ""}" id="btn-portal-dinero"
                title="${p.portalDinero ? "El cliente SÍ ve su contrato, pagos y facturas — toca para ocultarlos" : "El cliente NO ve dinero — toca para mostrarle su contrato, pagos y facturas"}">${p.portalDinero ? "💵 dinero: SÍ lo ve" : "💵 dinero: NO lo ve"}</button>
+             <button type="button" class="doc-cliente${p.portalCompleto ? " on" : ""}" id="btn-portal-completo"
+               title="${p.portalCompleto ? "Luz verde: el cliente ve TODOS los documentos, fotos y videos — toca para volver al modo uno-a-uno" : "Toca para darle luz verde: verá TODOS los documentos (contratos y CO), fotos y videos sin marcarlos uno a uno"}">${p.portalCompleto ? "🟢 acceso completo: SÍ" : "⚪ acceso completo: NO"}</button>
            </div>` : `<p class="cal-sin-eventos">Corre el SQL del portal para crearle la llave a este proyecto.</p>`}
            <h4 class="portal-sub">🛋 Decisiones del cliente ("te toca a ti")</h4>
            ${(state.decisiones || []).filter(d => d.proyecto === p.id).map(d => `
@@ -1965,6 +1967,22 @@
       } catch {
         prompt("Copia el link del cliente:", link);
       }
+    });
+    const btnPortalCompleto = $detalle.querySelector("#btn-portal-completo");
+    if (btnPortalCompleto) btnPortalCompleto.addEventListener("click", async () => {
+      const p = proyectos().find(x => x.id === proyectoActivo);
+      if (!p) return;
+      if (!p.portalCompleto && !confirm(
+        "🟢 ¿Darle a este cliente ACCESO COMPLETO a su proyecto?\n\n" +
+        "Verá TODOS los documentos (contratos y change orders incluidos, con sus precios) " +
+        "y TODAS las fotos y videos — sin tener que marcarlos uno a uno.\n\n" +
+        "Las horas del equipo y las compras de materiales NUNCA salen en el portal.\n" +
+        "Solo para clientes directos.")) return;
+      try {
+        await DB.cambiarProyecto(proyectoActivo, { portal_completo: !p.portalCompleto });
+        await recargar();
+        avisar(!p.portalCompleto ? "🟢 Luz verde — el cliente ve todo su proyecto" : "De vuelta al modo uno-a-uno (solo lo marcado con 👁)");
+      } catch (err) { avisar("No se pudo: " + err.message, true); }
     });
     const btnPortalDinero = $detalle.querySelector("#btn-portal-dinero");
     if (btnPortalDinero) btnPortalDinero.addEventListener("click", async () => {
