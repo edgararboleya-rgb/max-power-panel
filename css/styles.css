@@ -500,7 +500,30 @@ body::after {
 .portal-sub { font-size: 0.8rem; font-weight: 800; color: var(--mp-ink-2); margin: 0.8rem 0 0.35rem; }
 .cl-chip-aprobado { font-size: 0.72rem; font-weight: 800; color: #4a8c28; white-space: nowrap; }
 .foto-pie .doc-cliente { margin-left: 0.3rem; }
-.doc-fila { display: flex; align-items: center; gap: 0.4rem; }
+/* Documentos: uno debajo del otro, con sus opciones alineadas al lado */
+.doc-fila {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  width: 100%;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--mp-sky-2);
+}
+.doc-fila:last-of-type { border-bottom: none; }
+.doc-fila .doc-link { flex: 1 1 12rem; min-width: 10rem; }
+
+/* La lista de proyectos plegada como el checklist */
+.proy-det .proyecto {
+  border: none;
+  box-shadow: none;
+  margin: 0;
+  padding: 0.3rem 0 0.2rem;
+  background: transparent;
+  cursor: default;
+}
+.proy-det > summary .chk-avance { font-size: 0.78rem; }
+.proy-det .abrir-ficha { cursor: pointer; }
 .doc-cliente {
   background: none;
   border: 1px dashed var(--mp-line);

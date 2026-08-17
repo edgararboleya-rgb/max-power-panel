@@ -744,7 +744,9 @@
     irHome();
   });
 
+  const listaAbiertos = new Set(); // qué proyectos dejó abiertos (acordeón)
   function pintarLista(abrirId) {
+    if (abrirId) listaAbiertos.add(abrirId);
     const texto = textoBusqueda.trim().toLowerCase();
     const visibles = proyectos().filter(p => {
       const pasaTipo = (p.tipo || "residencial") === tipoActivo;
@@ -759,9 +761,16 @@
       ? visibles.map(tarjetaResumenHTML).join("")
       : `<div class="sin-resultados">No hay proyectos aquí.</div>`;
 
-    // Tocar la tarjeta abre la ficha del proyecto (su propia pantalla)
-    $lista.querySelectorAll(".proyecto").forEach(card => {
-      card.addEventListener("click", () => irDetalle(card.dataset.id));
+    // Acordeón como el checklist: tocar el nombre abre/cierra la tarjeta
+    $lista.querySelectorAll(".proy-det").forEach(det => {
+      det.addEventListener("toggle", () => {
+        if (det.open) listaAbiertos.add(det.dataset.id);
+        else listaAbiertos.delete(det.dataset.id);
+      });
+    });
+    // "Ver proyecto completo" abre la ficha
+    $lista.querySelectorAll(".abrir-ficha").forEach(btn => {
+      btn.addEventListener("click", () => irDetalle(btn.closest(".proy-det").dataset.id));
     });
   }
 
@@ -1675,22 +1684,31 @@
 
   // Tarjeta RESUMIDA de la lista: al tocarla se abre la ficha
   function tarjetaResumenHTML(p) {
+    const av = avanceObra(p.id);
+    const urg = (state.pendientes || []).some(x =>
+      x.proyecto === p.id && !x.resuelto && x.prioridad === "urgente");
+    const resumen = av && p.estado !== "completado" ? `${av.pct}%` : "";
     return `
-      <article class="proyecto" data-id="${esc(p.id)}">
-        ${cabeceraHTML(p, false)}
-        ${avisoObraHTML(p)}
-        ${avisoMaterialesHTML(p)}
-        ${avisoFacturasHTML(p)}
-        ${franjaDineroHTML(p)}
-        ${proximoCobroHTML(p)}
-        ${(() => {
-          const av = avanceObra(p.id);
-          return av && p.estado !== "completado"
-            ? `<div class="avance-mini">🔧 Avance de obra: <strong>${av.pct}%</strong> (${av.hechos} de ${av.total} puntos)</div>`
-            : "";
-        })()}
-        <div class="abrir-ficha">Ver proyecto completo <span class="cat-flecha">›</span></div>
-      </article>`;
+      <details class="chk-det proy-det${urg ? " con-urgentes" : ""}" data-id="${esc(p.id)}"${listaAbiertos.has(p.id) ? " open" : ""}>
+        <summary>
+          <span class="chk-nombre">${esc(p.nombre)}</span>
+          <span class="chk-avance">${urg ? "🔴 " : ""}${resumen}</span>
+        </summary>
+        <div class="chk-cuerpo">
+          <article class="proyecto" data-id="${esc(p.id)}">
+            ${cabeceraHTML(p, false)}
+            ${avisoObraHTML(p)}
+            ${avisoMaterialesHTML(p)}
+            ${avisoFacturasHTML(p)}
+            ${franjaDineroHTML(p)}
+            ${proximoCobroHTML(p)}
+            ${av && p.estado !== "completado"
+              ? `<div class="avance-mini">🔧 Avance de obra: <strong>${av.pct}%</strong> (${av.hechos} de ${av.total} puntos)</div>`
+              : ""}
+            <div class="abrir-ficha">Ver proyecto completo <span class="cat-flecha">›</span></div>
+          </article>
+        </div>
+      </details>`;
   }
 
   // FICHA completa: la pantalla dedicada a un solo proyecto
