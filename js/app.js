@@ -1912,7 +1912,9 @@
         </a>`}
         <figcaption class="foto-pie">${f.nota ? esc(sinMontos(f.nota)) + " · " : ""}${esc(f.autor)} ${esc(f.fecha)}${usuario.finanzas ? `
           <button type="button" class="doc-cliente foto-cliente${f.portal ? " on" : ""}" data-id="${f.id}" data-portal="${f.portal ? 1 : 0}"
-            title="${f.portal ? "El cliente SÍ ve esta foto" : "El cliente NO la ve"}">${f.portal ? "👁" : "🚫"}</button>` : ""}</figcaption>
+            title="${f.portal ? "El cliente SÍ ve esta foto" : "El cliente NO la ve"}">${f.portal ? "👁" : "🚫"}</button>
+          <button type="button" class="doc-cliente foto-nota" data-id="${f.id}" data-nota="${esc(f.nota || "")}"
+            title="Corregir la descripción de la foto">✎</button>` : ""}</figcaption>
       </figure>`).join("");
     return `
       <div class="detalle-seccion">
@@ -2066,6 +2068,17 @@
           await DB.cambiarDocumento(btn.dataset.id, { pide_aprobacion: !pide });
           await recargar();
           avisar(!pide ? "✍️ El cliente verá el botón de aprobar" : "Aprobación quitada");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    $detalle.querySelectorAll(".foto-nota").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const nota = prompt("Descripción de la foto (o video):", btn.dataset.nota || "");
+        if (nota === null) return;
+        try {
+          await DB.cambiarFoto(btn.dataset.id, { nota: nota.trim() || null });
+          await recargar();
+          avisar("Descripción corregida ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
@@ -2707,7 +2720,9 @@
         </span>
         ${usuario.finanzas && typeof r.total === "number" ? `<span class="mat-precio">${fmt(r.total)}</span>` : ""}
         ${r.ruta ? `<a class="doc-link recibo-ver" data-ruta="${esc(r.ruta)}" target="_blank" rel="noopener">📄 Ver</a>` : ""}
-        ${usuario.finanzas ? `<button class="insp-borrar btn-recibo-total" data-id="${r.id}" title="Poner o corregir el total">✎</button>` : ""}
+        ${usuario.finanzas ? `<button class="insp-borrar btn-recibo-total" data-id="${r.id}"
+          data-total="${typeof r.total === "number" ? r.total : ""}" data-proveedor="${esc(r.proveedor || "")}" data-notas="${esc(r.notas || "")}"
+          title="Corregir total, proveedor o descripción">✎</button>` : ""}
         ${usuario.editar ? `<button class="insp-borrar btn-recibo-borrar" data-id="${r.id}" title="Eliminar">🗑</button>` : ""}
       </div>`;
 
@@ -3272,15 +3287,25 @@
     });
     $("materiales-panel").querySelectorAll(".btn-recibo-total").forEach(btn => {
       btn.addEventListener("click", async () => {
-        const respuesta = prompt("Total del recibo (solo el número, ej: 342.18).\nSi es una DEVOLUCIÓN, ponlo con signo menos (ej: -45.99):");
+        // Se corrigen las tres cosas, una por una (cancelar en cualquiera = no cambia nada)
+        const respuesta = prompt("Total del recibo (solo el número, ej: 342.18).\nDEVOLUCIÓN va con signo menos (ej: -45.99).\nDéjalo igual para no cambiarlo:", btn.dataset.total || "");
         if (respuesta === null) return;
+        const proveedor = prompt("¿Dónde se compró? (proveedor):", btn.dataset.proveedor || "");
+        if (proveedor === null) return;
+        const notas = prompt("Descripción (qué se compró / nota):", btn.dataset.notas || "");
+        if (notas === null) return;
+        const cambios = { proveedor: proveedor.trim() || null, notas: notas.trim() || null };
         const limpio = respuesta.replace(/[$,\s]/g, "");
-        const total = Number(limpio);
-        if (!limpio || !Number.isFinite(total)) { avisar("Ese total no se entendió", true); return; }
+        if (limpio) {
+          const total = Number(limpio);
+          if (!Number.isFinite(total)) { avisar("Ese total no se entendió — no se cambió nada", true); return; }
+          cambios.total = total;
+          cambios.estado = "leido";
+        }
         try {
-          await DB.cambiarRecibo(btn.dataset.id, { total, estado: "leido" });
+          await DB.cambiarRecibo(btn.dataset.id, cambios);
           await recargar();
-          avisar(`Total ${fmt(total)} anotado ✓`);
+          avisar("Recibo corregido ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
