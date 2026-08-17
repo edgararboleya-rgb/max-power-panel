@@ -239,6 +239,7 @@
         nombre: p.nombre,
         direccion: p.direccion || "Por confirmar",
         portalToken: llavePorProyecto[p.id] || p.portal_token || null,
+        portalDinero: p.portal_dinero === true,
         cliente: p.cliente || "Por confirmar",
         via: p.via || "—",
         estado: p.estado,

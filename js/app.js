@@ -128,6 +128,9 @@
   };
   // Solo enlaces reales: nada de esquemas raros (javascript:, data:) en los href
   const urlSegura = u => (/^https?:\/\//i.test(String(u || "").trim()) ? String(u).trim() : "");
+  // Idioma de la interfaz: las fechas se pintan en el idioma elegido
+  const EN_APP = localStorage.getItem("mxp_idioma") === "en";
+  const LOCALE = EN_APP ? "en-US" : "es-US";
   const proyectos = () => (state ? state.proyectos : []);
   const eventos = () => (state ? state.eventos : []);
   // El calendario junta los eventos con las inspecciones programadas
@@ -1325,12 +1328,12 @@
   const horaCorta = iso => {
     if (!iso) return "";
     const d = new Date(iso);
-    return d.toLocaleTimeString("es-US", { hour: "numeric", minute: "2-digit" });
+    return d.toLocaleTimeString(LOCALE, { hour: "numeric", minute: "2-digit" });
   };
   const diaCorto = iso => {
     if (!iso) return "";
     const d = new Date(iso);
-    return d.toLocaleDateString("es-US", { weekday: "short", day: "numeric", month: "short" });
+    return d.toLocaleDateString(LOCALE, { weekday: "short", day: "numeric", month: "short" });
   };
 
   function burbujasHTML() {
@@ -1727,11 +1730,14 @@
          <div class="detalle-seccion">
            <h3>🌐 Portal del cliente</h3>
            <p class="modal-nota">El cliente ve: etapa, checklist con su %, inspecciones, próximos días de trabajo y los documentos con 👁.
-           Los RFI salen siempre; los CONTRATOS nunca salen (tienen precios) a menos que tú los marques. De dinero: nada.</p>
+           Los RFI salen siempre; los CONTRATOS nunca salen (tienen precios) a menos que tú los marques.
+           El dinero solo sale si tú prendes el botón 💵 — pensado para clientes directos, no para trabajos vía contratista.</p>
            ${p.portalToken ? `
            <div class="modal-botones">
              <button type="button" class="accion secundaria" id="btn-portal-copiar" data-token="${esc(p.portalToken)}">🔗 Copiar el link del cliente</button>
              <button type="button" class="accion secundaria" id="btn-portal-regenerar">♻ Regenerar la llave</button>
+             <button type="button" class="doc-cliente${p.portalDinero ? " on" : ""}" id="btn-portal-dinero"
+               title="${p.portalDinero ? "El cliente SÍ ve su contrato, pagos y facturas — toca para ocultarlos" : "El cliente NO ve dinero — toca para mostrarle su contrato, pagos y facturas"}">${p.portalDinero ? "💵 dinero: SÍ lo ve" : "💵 dinero: NO lo ve"}</button>
            </div>` : `<p class="cal-sin-eventos">Corre el SQL del portal para crearle la llave a este proyecto.</p>`}
            <h4 class="portal-sub">🛋 Decisiones del cliente ("te toca a ti")</h4>
            ${(state.decisiones || []).filter(d => d.proyecto === p.id).map(d => `
@@ -1954,6 +1960,20 @@
       } catch {
         prompt("Copia el link del cliente:", link);
       }
+    });
+    const btnPortalDinero = $detalle.querySelector("#btn-portal-dinero");
+    if (btnPortalDinero) btnPortalDinero.addEventListener("click", async () => {
+      const p = proyectos().find(x => x.id === proyectoActivo);
+      if (!p) return;
+      if (!p.portalDinero && !confirm(
+        "¿Mostrarle a este cliente su contrato, pagos y facturas en el portal?\n\n" +
+        "Solo para proyectos donde tratas DIRECTO con el cliente. " +
+        "Si el trabajo va a través de un contratista (Wisdom u otro), déjalo apagado.")) return;
+      try {
+        await DB.cambiarProyecto(proyectoActivo, { portal_dinero: !p.portalDinero });
+        await recargar();
+        avisar(!p.portalDinero ? "💵 El cliente ahora VE su contrato y pagos" : "El dinero quedó oculto para el cliente");
+      } catch (err) { avisar("No se pudo: " + err.message, true); }
     });
     const btnPortalRegen = $detalle.querySelector("#btn-portal-regenerar");
     if (btnPortalRegen) btnPortalRegen.addEventListener("click", async () => {
@@ -3771,7 +3791,7 @@
   function textoPropuesta(est, c) {
     const r2 = v => Math.round(v * 100) / 100;
     const bid = r2(c.bid);
-    const hoyTxt = new Date().toLocaleDateString("es-US", { day: "numeric", month: "long", year: "numeric" });
+    const hoyTxt = new Date().toLocaleDateString(LOCALE, { day: "numeric", month: "long", year: "numeric" });
     const lineas = [];
     const ensDelEst = (estData.estEnsambles || []).filter(e => e.estimado_id === est.id && Number(e.cantidad) > 0);
     if (ensDelEst.length) {
@@ -4444,7 +4464,9 @@ Power done right the first time. ⚡`;
   $("cal-prev").addEventListener("click", () => { calMes--; if (calMes < 0) { calMes = 11; calAno--; } pintarCalendario(); });
   $("cal-next").addEventListener("click", () => { calMes++; if (calMes > 11) { calMes = 0; calAno++; } pintarCalendario(); });
 
-  const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  const MESES = EN_APP
+    ? ["January","February","March","April","May","June","July","August","September","October","November","December"]
+    : ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
   function pintarCalendario() {
     $("cal-mes").textContent = `${MESES[calMes]} ${calAno}`;
@@ -4491,7 +4513,7 @@ Power done right the first time. ⚡`;
   function pintarDiaPanel() {
     if (!calDiaSel) { $("cal-dia-panel").innerHTML = ""; return; }
     const [a, m, d] = calDiaSel.split("-").map(Number);
-    const nombreDia = new Date(a, m - 1, d).toLocaleDateString("es-US", { weekday: "long", day: "numeric", month: "long" });
+    const nombreDia = new Date(a, m - 1, d).toLocaleDateString(LOCALE, { weekday: "long", day: "numeric", month: "long" });
 
     const evsDia = eventosCal().filter(e => e.fecha === calDiaSel);
     const listaEvs = evsDia.length

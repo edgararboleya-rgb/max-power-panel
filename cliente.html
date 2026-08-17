@@ -7,7 +7,7 @@
   <title>Max Power — Your Project</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=54">
+  <link rel="stylesheet" href="css/styles.css?v=56">
   <style>
     .cl-hero { text-align: center; padding: 1rem 0 0.4rem; }
     .cl-nombre { font-size: 1.3rem; font-weight: 800; color: var(--mp-ink); margin: 0.2rem 0 0.1rem; }
@@ -69,7 +69,7 @@
     </footer>
   </div>
 
-  <script src="assets/logo.js?v=54"></script>
+  <script src="assets/logo.js?v=56"></script>
   <script>
   (function () {
     "use strict";
@@ -95,6 +95,8 @@
       fotosT: "Progress photos", alcance: "Scope of work", inspT: "Inspections",
       proxT: "Upcoming work days", actividad: "Recent activity", docsT: "Documents",
       aprobar: "Approve ✓", aprobado: "✓ Approved ", garantiaT: "Your warranty",
+      pagosT: "Payments", contratoT: "Contract total", cobradoT: "Paid to date", saldoT: "Balance",
+      pagadaF: "Paid ✓", pendienteF: "Pending",
       garantia: "All our workmanship is covered by a 1-year warranty from completion. Keep this link — it's your home's electrical file.",
       resena: "⭐ Happy with our work? Leave us a Google review!",
       wa: "💬 Questions? Message us on WhatsApp",
@@ -110,6 +112,8 @@
       fotosT: "Fotos del avance", alcance: "Alcance del trabajo", inspT: "Inspecciones",
       proxT: "Próximos días de trabajo", actividad: "Actividad reciente", docsT: "Documentos",
       aprobar: "Aprobar ✓", aprobado: "✓ Aprobado ", garantiaT: "Tu garantía",
+      pagosT: "Pagos", contratoT: "Contrato total", cobradoT: "Pagado a la fecha", saldoT: "Saldo",
+      pagadaF: "Pagada ✓", pendienteF: "Pendiente",
       garantia: "Toda nuestra mano de obra tiene garantía de 1 año desde la entrega. Guarda este link — es el expediente eléctrico de tu casa.",
       resena: "⭐ ¿Quedaste contento? ¡Déjanos tu reseña en Google!",
       wa: "💬 ¿Preguntas? Escríbenos por WhatsApp",
@@ -129,6 +133,7 @@
       prox: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/>',
       actividad: '<path d="M4 6h16M4 12h16M4 18h10"/>',
       docs: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+      pagos: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5h.01M18 14.5h.01"/>',
       garantia: '<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/>'
     };
     function tit(icono, texto) {
@@ -220,14 +225,30 @@
       }).join("");
 
       var prox = (p.proximos || []).map(function (e) {
+        var tituloEv = lang === "en" ? (e.titulo_en || e.titulo) : e.titulo;
         return '<div class="cl-item"><span class="cl-check">📅</span><span class="cl-txt">' +
-          esc(e.fecha) + (e.hora ? " · " + esc(e.hora) : "") + " — " + esc(e.titulo) + '</span></div>';
+          esc(e.fecha) + (e.hora ? " · " + esc(e.hora) : "") + " — " + esc(tituloEv) + '</span></div>';
       }).join("");
 
       var diario = (p.diario || []).map(function (d) {
         return '<div class="cl-item"><span class="cl-diario-fecha">' + esc(d.fecha) + '</span>' +
           '<span class="cl-txt">' + esc(d.texto) + '</span></div>';
       }).join("");
+
+      // 💵 Pagos — solo llega si Edgar autorizó el dinero de este proyecto
+      var pagos = "";
+      if (p.dinero) {
+        var usd = function (n) { return (Number(n) || 0).toLocaleString("en-US", { style: "currency", currency: "USD" }); };
+        var filasF = (p.dinero.facturas || []).map(function (f) {
+          return '<div class="cl-item"><span class="cl-check">' + (f.pagada ? "✅" : "🕓") + '</span>' +
+            '<span class="cl-txt">' + esc(f.fecha || "") + (f.num ? " · " + esc(f.num) : "") +
+            ' — <strong>' + esc(usd(f.monto)) + '</strong> · ' + esc(f.pagada ? TXT.pagadaF : TXT.pendienteF) + '</span></div>';
+        }).join("");
+        pagos = '<div class="cl-item"><span class="cl-txt">' + esc(TXT.contratoT) + '</span><strong>' + esc(usd(p.dinero.contrato)) + '</strong></div>' +
+          '<div class="cl-item"><span class="cl-txt">' + esc(TXT.cobradoT) + '</span><strong style="color:#3E7A20">' + esc(usd(p.dinero.cobrado)) + '</strong></div>' +
+          '<div class="cl-item"><span class="cl-txt">' + esc(TXT.saldoT) + '</span><strong>' + esc(usd(p.dinero.falta)) + '</strong></div>' +
+          filasF;
+      }
 
       var docs = (p.documentos || []).map(function (d) {
         var aprob = "";
@@ -256,6 +277,7 @@
         (insp ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("insp", TXT.inspT) + '</div>' + insp + '</div>' : '') +
         (prox ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("prox", TXT.proxT) + '</div>' + prox + '</div>' : '') +
         (diario ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("actividad", TXT.actividad) + '</div>' + diario + '</div>' : '') +
+        (pagos ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("pagos", TXT.pagosT) + '</div>' + pagos + '</div>' : '') +
         (docs ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("docs", TXT.docsT) + '</div>' + docs + '</div>' : '') +
         (p.estado === "completado" ? '<div class="cal-panel-card" style="text-align:center">' +
           '<div class="cal-form-titulo">' + tit("garantia", TXT.garantiaT) + '</div>' +

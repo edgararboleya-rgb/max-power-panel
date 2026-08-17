@@ -152,6 +152,7 @@
     "Mis reportes (toca ✎ para corregir)": "My reports (tap ✎ to fix)",
     "Notas (aquí puedes agregar lo que te faltó)": "Notes (add what you missed here)",
     // Calendario
+    "Lun": "Mon", "Mar": "Tue", "Mié": "Wed", "Jue": "Thu", "Vie": "Fri", "Sáb": "Sat", "Dom": "Sun",
     "Agregar a este día": "Add to this day", "Hora (opcional)": "Time (optional)",
     "Tipo": "Type", "Descripción": "Description", "Evento / visita": "Event / visit",
     "⚠ Pendiente / bloqueo": "⚠ Issue / blocker",
