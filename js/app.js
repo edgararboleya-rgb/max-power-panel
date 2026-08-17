@@ -2030,7 +2030,9 @@
     const btnPortalRegen = $detalle.querySelector("#btn-portal-regenerar");
     if (btnPortalRegen) btnPortalRegen.addEventListener("click", async () => {
       if (!confirm("¿Regenerar la llave? El link viejo dejará de funcionar y tendrás que mandarle el nuevo al cliente.")) return;
-      const nueva = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2)).replace(/-/g, "");
+      const nueva = crypto.randomUUID
+        ? crypto.randomUUID().replace(/-/g, "")
+        : [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, "0")).join("");
       try {
         await DB.cambiarLlavePortal(proyectoActivo, nueva);
         await recargar();
@@ -2302,7 +2304,8 @@
         $btn.disabled = true;
         $btn.textContent = "Subiendo…";
         try {
-          const esVid = (archivo.type || "").startsWith("video/");
+          // Algunos teléfonos mandan el video sin tipo: también se mira la extensión
+          const esVid = (archivo.type || "").startsWith("video/") || /\.(mp4|mov|webm)$/i.test(archivo.name || "");
           if (esVid && archivo.size > 50 * 1024 * 1024) {
             avisar("Ese video es muy grande. Grábalo CORTO, como una inspección virtual (30-45 segundos, máx. 50 MB).", true);
             $btn.disabled = false;
@@ -2311,7 +2314,8 @@
           }
           // Foto: se achica antes de subir. Video: sube tal cual.
           const blob = esVid ? archivo : await reducirImagen(archivo).catch(() => archivo);
-          const ruta = await DB.subirFoto(p.id, blob, blob.type || archivo.type);
+          const tipoSubida = blob.type || archivo.type || (esVid ? "video/mp4" : "image/jpeg");
+          const ruta = await DB.subirFoto(p.id, blob, tipoSubida);
           await DB.crearFoto({ proyecto_id: p.id, ruta, nota });
           await recargar();
           avisar(esVid ? "Video subido ✓" : "Foto subida ✓");

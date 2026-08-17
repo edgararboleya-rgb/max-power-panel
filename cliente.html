@@ -7,7 +7,7 @@
   <title>Max Power — Your Project</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=63">
+  <link rel="stylesheet" href="css/styles.css?v=65">
   <style>
     .cl-hero { text-align: center; padding: 1rem 0 0.4rem; }
     .cl-nombre { font-size: 1.3rem; font-weight: 800; color: var(--mp-ink); margin: 0.2rem 0 0.1rem; }
@@ -80,7 +80,7 @@
     </footer>
   </div>
 
-  <script src="assets/logo.js?v=63"></script>
+  <script src="assets/logo.js?v=65"></script>
   <script>
   (function () {
     "use strict";
@@ -184,13 +184,17 @@
     }
 
     // La llave viaja en el cuerpo del POST — no queda en los registros del
-    // servidor. Si el guardián todavía es el viejo (solo GET), reintenta así.
+    // servidor. Solo si el guardián es el viejo (contesta 4xx al POST) se
+    // reintenta por GET; un fallo de red NO manda la llave por la query.
     function cargar() {
       return fetch(PORTAL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ t: t }) })
-        .then(function (r) { if (!r.ok) throw new Error("bad"); return r.json(); })
-        .catch(function () {
-          return fetch(PORTAL + "?t=" + encodeURIComponent(t))
-            .then(function (r) { if (!r.ok) throw new Error("bad"); return r.json(); });
+        .then(function (r) {
+          if (r.ok) return r.json();
+          if (r.status >= 400 && r.status < 500 && r.status !== 401) {
+            return fetch(PORTAL + "?t=" + encodeURIComponent(t))
+              .then(function (r2) { if (!r2.ok) throw new Error("bad"); return r2.json(); });
+          }
+          throw new Error("bad");
         })
         .then(pintar);
     }
@@ -329,6 +333,7 @@
 
     // ---- 🖊 Panel de firma: nombre + firma dibujada ----
     function abrirFirma(docId, titulo) {
+      if (document.querySelector(".cl-firma-fondo")) return; // ya hay uno abierto
       var fondo = document.createElement("div");
       fondo.className = "cl-firma-fondo";
       fondo.innerHTML =
@@ -356,15 +361,17 @@
         return [(e.clientX - r.left) * (lienzo.width / r.width), (e.clientY - r.top) * (lienzo.height / r.height)];
       }
       lienzo.addEventListener("pointerdown", function (e) {
-        e.preventDefault(); dibujando = true; trazos++;
+        e.preventDefault(); dibujando = true;
         lienzo.setPointerCapture(e.pointerId);
         var p0 = xy(e); ctx.beginPath(); ctx.moveTo(p0[0], p0[1]);
       });
       lienzo.addEventListener("pointermove", function (e) {
         if (!dibujando) return;
         var p1 = xy(e); ctx.lineTo(p1[0], p1[1]); ctx.stroke();
+        trazos++; // solo cuenta tinta de verdad, no toques sueltos
       });
       lienzo.addEventListener("pointerup", function () { dibujando = false; });
+      lienzo.addEventListener("pointercancel", function () { dibujando = false; });
       fondo.querySelector("#cl-firma-borrar").addEventListener("click", function () {
         ctx.clearRect(0, 0, lienzo.width, lienzo.height); trazos = 0;
       });
@@ -381,7 +388,10 @@
           if (!r.ok) throw new Error("bad");
           fondo.remove();
           return cargar();
-        }).catch(function () { b.disabled = false; b.textContent = TXT.reintentar; });
+        }).catch(function () {
+          b.disabled = false; b.textContent = TXT.reintentar;
+          cargar().catch(function () {}); // refresca por si ya se firmó en otra pestaña
+        });
       });
     }
   })();

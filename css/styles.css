@@ -2029,7 +2029,9 @@ video.foto-mini { background: #000; }
 .modal input:focus, .modal select:focus { outline: 2px solid var(--mp-blue); }
 .modal-fila { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; }
 .modal-nota { font-size: 0.7rem; color: var(--mp-ink-3); line-height: 1.5; }
-.modal-botones { display: flex; justify-content: flex-end; gap: 0.5rem; }
+/* flex-wrap: en pantallas chicas los botones se doblan a otra línea
+   en vez de salirse por el borde (no se podían alcanzar) */
+.modal-botones { display: flex; justify-content: flex-end; gap: 0.5rem; flex-wrap: wrap; }
 
 /* ============ Pie oscuro con caja de licencia ============ */
 .pie {
