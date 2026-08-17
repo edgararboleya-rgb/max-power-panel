@@ -144,7 +144,7 @@
     "Gestión (qué hay que hacer)": "Task (what needs doing)",
     "Foto del recibo (cámara o galería)": "Receipt photo (camera or gallery)",
     "📸 Agregar foto o video": "📸 Add photo or video", "Foto o video corto (cámara o galería)": "Photo or short video (camera or gallery)",
-    "⬆ Subir foto": "⬆ Upload",
+    "⬆ Subir foto": "⬆ Upload photo", "⬆ Subir video": "⬆ Upload video",
     "Nota (opcional)": "Note (optional)", "Proveedor (opcional)": "Vendor (optional)",
     "Guardar cambios": "Save changes", "🗑 Eliminar": "🗑 Delete", "Guardar": "Save",
     // Horas

@@ -2206,6 +2206,13 @@
     if (btnFoto) {
       const formFoto = $detalle.querySelector(".form-foto");
       btnFoto.addEventListener("click", () => { formFoto.hidden = !formFoto.hidden; });
+      // El botón dice "foto" o "video" según lo que se escoja
+      const botonSubir = formFoto.querySelector('button[type="submit"]');
+      const textoSubir = () => {
+        const a = formFoto.elements.archivo.files[0];
+        return a && (a.type || "").startsWith("video/") ? "⬆ Subir video" : "⬆ Subir foto";
+      };
+      formFoto.elements.archivo.addEventListener("change", () => { botonSubir.textContent = textoSubir(); });
       formFoto.addEventListener("submit", async e => {
         e.preventDefault();
         const archivo = formFoto.elements.archivo.files[0];
@@ -2219,7 +2226,7 @@
           if (esVid && archivo.size > 50 * 1024 * 1024) {
             avisar("Ese video es muy grande. Grábalo CORTO, como una inspección virtual (30-45 segundos, máx. 50 MB).", true);
             $btn.disabled = false;
-            $btn.textContent = "⬆ Subir foto";
+            $btn.textContent = textoSubir();
             return;
           }
           // Foto: se achica antes de subir. Video: sube tal cual.
@@ -2231,7 +2238,7 @@
         } catch (err) {
           avisar("No se pudo subir: " + err.message, true);
           $btn.disabled = false;
-          $btn.textContent = "⬆ Subir foto";
+          $btn.textContent = textoSubir();
         }
       });
     }
