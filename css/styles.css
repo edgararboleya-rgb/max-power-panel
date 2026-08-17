@@ -511,6 +511,16 @@ body::after {
   border-bottom: 1px solid var(--mp-sky-2);
 }
 .doc-fila:last-of-type { border-bottom: none; }
+.doc-drive-tag {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--mp-ink-3);
+  border: 1px dashed var(--mp-line);
+  border-radius: 6px;
+  padding: 0 0.3rem;
+  vertical-align: 1px;
+}
 .doc-fila .doc-link { flex: 1 1 12rem; min-width: 10rem; }
 
 /* La lista de proyectos plegada como el checklist */

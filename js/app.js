@@ -1521,7 +1521,8 @@
           <span class="alcance-titulo">${esc(sinMontos(r.titulo))}</span>
           <span class="alcance-estado">${esc(r.estado || "")}</span>
         </span>
-        ${urlSegura(r.url) ? `<a class="doc-link" href="${esc(urlSegura(r.url))}" target="_blank" rel="noopener">📄 Ver</a>` : ""}
+        ${r.ruta ? `<a class="doc-link" href="#" data-docruta="${esc(r.ruta)}" target="_blank" rel="noopener">📄 Ver</a>`
+          : urlSegura(r.url) ? `<a class="doc-link" href="${esc(urlSegura(r.url))}" target="_blank" rel="noopener">📄 Ver</a>` : ""}
       </div>`).join("");
     return `<div class="detalle-seccion"><h3>RFIs</h3>${items}</div>`;
   }
@@ -1714,7 +1715,7 @@
   // FICHA completa: la pantalla dedicada a un solo proyecto
   function fichaProyectoHTML(p) {
     const linksDocs = (p.docs || [])
-      .map(d => `<span class="doc-fila"><a class="doc-link" href="${esc(urlSegura(d.url) || "#")}" target="_blank" rel="noopener">📄 ${esc(d.titulo)}</a>${d.id ? `
+      .map(d => `<span class="doc-fila"><a class="doc-link" ${d.ruta ? `href="#" data-docruta="${esc(d.ruta)}"` : `href="${esc(urlSegura(d.url) || "#")}"`} target="_blank" rel="noopener">📄 ${esc(d.titulo)}${d.ruta ? "" : ` <span class="doc-drive-tag">Drive</span>`}</a>${d.id ? `
         <button type="button" class="doc-cliente${d.portal ? " on" : ""}" data-id="${d.id}" data-portal="${d.portal ? 1 : 0}"
           title="${d.portal ? "El cliente SÍ ve este documento — toca para ocultarlo" : "El cliente NO lo ve — toca para mostrárselo"}">${d.portal ? "👁 cliente" : "🚫 cliente"}</button>${(d.portal || p.portalCompleto) && docFirmable(d) ? `
         ${d.firmadoEl ? `<span class="cl-chip-aprobado">🖊 firmó ${esc(d.firmaNombre || "")} · ${esc(d.firmadoEl)}</span>` : `
@@ -1727,7 +1728,7 @@
     // El dueño siempre ve la sección, con el botón para agregar más
     const docs = usuario.finanzas
       ? `<div class="detalle-seccion">
-           <h3>Documentos en Drive</h3>
+           <h3>Documentos</h3>
            <div class="detalle-docs">${linksDocs || `<span class="sin-docs">Este proyecto no tiene documentos todavía.</span>`}</div>
            <button type="button" class="accion secundaria btn-agregar-doc">+ Agregar documento</button>
            <form class="cal-form form-doc" hidden>
@@ -1742,8 +1743,11 @@
                  <input name="titulo" type="text" required placeholder="Ej: SOW firmado" autocomplete="off">
                </label>
              </div>
-             <label>Enlace (pega aquí el link de Drive)
-               <input name="url" type="url" required placeholder="https://drive.google.com/…" autocomplete="off">
+             <label>Archivo PDF (recomendado — vive en la app, sin permisos de Drive)
+               <input name="archivo" type="file" accept="application/pdf">
+             </label>
+             <label>… o pega un enlace de Drive
+               <input name="url" type="url" placeholder="https://drive.google.com/…" autocomplete="off">
              </label>
              <button type="submit" class="accion">Guardar documento</button>
            </form>
@@ -2111,18 +2115,41 @@
         e.preventDefault();
         const d = new FormData(formDoc);
         const clase = d.get("clase") === "rfi" ? "rfi" : "doc";
+        const titulo = (d.get("titulo") || "").toString().trim();
+        const archivo = formDoc.elements.archivo.files[0] || null;
+        const url = (d.get("url") || "").toString().trim();
+        if (!archivo && !url) {
+          avisar("Ponle el archivo PDF o pega el enlace de Drive.", true);
+          return;
+        }
+        if (archivo && archivo.size > 20 * 1024 * 1024) {
+          avisar("Ese PDF pasa de 20 MB — comprímelo o usa el enlace de Drive.", true);
+          return;
+        }
+        const $btnDoc = formDoc.querySelector('button[type="submit"]');
+        $btnDoc.disabled = true;
         try {
+          let ruta = null;
+          if (archivo) {
+            // Contratos/SOW/CO → cajón solo-dueño; planos y RFIs → cajón del equipo
+            const prefijo = (clase === "rfi" || !docFirmable({ titulo })) ? "docs-equipo" : "docs";
+            $btnDoc.textContent = "Subiendo…";
+            ruta = await DB.subirDocumento(p.id, archivo, prefijo);
+          }
           await DB.crearDocumento({
             proyecto_id: p.id,
             clase,
-            titulo: (d.get("titulo") || "").toString().trim(),
-            url: (d.get("url") || "").toString().trim(),
+            titulo,
+            url: url || null,
+            ruta,
             estado: clase === "rfi" ? "Abierto" : null
           });
           await recargar();
           avisar(clase === "rfi" ? "RFI guardado ✓" : "Documento guardado ✓");
         } catch (err) {
           avisar("No se pudo guardar: " + err.message, true);
+          $btnDoc.disabled = false;
+          $btnDoc.textContent = "Guardar documento";
         }
       });
     }
@@ -2294,6 +2321,16 @@
           $btn.textContent = textoSubir();
         }
       });
+    }
+
+    // Documentos que viven en la app: pedir sus enlaces firmados
+    const rutasDocs = [...$detalle.querySelectorAll("[data-docruta]")].map(a => a.dataset.docruta);
+    if (rutasDocs.length) {
+      DB.firmarFotos(rutasDocs).then(mapa => {
+        $detalle.querySelectorAll("[data-docruta]").forEach(a => {
+          if (mapa[a.dataset.docruta]) a.href = mapa[a.dataset.docruta];
+        });
+      }).catch(() => {});
     }
 
     // Pedir los enlaces temporales de las fotos y pintarlas

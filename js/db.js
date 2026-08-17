@@ -141,6 +141,30 @@
     return ruta;
   }
 
+  // Sube un PDF al almacén de la app (documentos del portal, sin Drive)
+  // prefijo: "docs" = contratos/SOW/CO (solo dueño) · "docs-equipo" = planos/RFIs
+  async function subirDocumento(proyectoId, blob, prefijo, reintento = true) {
+    const ruta = `${prefijo}/${proyectoId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.pdf`;
+    const r = await fetch(`${SB.url}/storage/v1/object/fotos/${ruta}`, {
+      method: "POST",
+      headers: {
+        apikey: SB.key,
+        Authorization: `Bearer ${sesion ? sesion.access_token : SB.key}`,
+        "Content-Type": "application/pdf"
+      },
+      body: blob
+    });
+    if (r.status === 401 && reintento && sesion) {
+      await refrescar();
+      return subirDocumento(proyectoId, blob, prefijo, false);
+    }
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      throw new Error(data.message || `No se pudo subir el documento (${r.status})`);
+    }
+    return ruta;
+  }
+
   // Convierte las rutas guardadas en enlaces temporales (1 hora)
   async function firmarFotos(rutas, reintento = true) {
     if (!rutas || !rutas.length) return {};
@@ -269,10 +293,10 @@
           num: f.num, fecha: fechaCorta(f.fecha), fechaISO: f.fecha || "",
           monto: Number(f.monto), pagada: !!f.pagada
         })),
-        docs: docs.filter(d => d.clase === "doc").map(d => ({ id: d.id, titulo: d.titulo, url: d.url, portal: !!d.portal,
+        docs: docs.filter(d => d.clase === "doc").map(d => ({ id: d.id, titulo: d.titulo, url: d.url, ruta: d.ruta || "", portal: !!d.portal,
           pideAprobacion: !!d.pide_aprobacion, aprobadoEl: d.aprobado_el ? String(d.aprobado_el).slice(0, 10) : "",
           pideFirma: !!d.pide_firma, firmadoEl: d.firmado_el ? String(d.firmado_el).slice(0, 10) : "", firmaNombre: d.firma_nombre || "" })),
-        rfis: docs.filter(d => d.clase === "rfi").map(d => ({ id: d.id, titulo: d.titulo, estado: d.estado, url: d.url })),
+        rfis: docs.filter(d => d.clase === "rfi").map(d => ({ id: d.id, titulo: d.titulo, estado: d.estado, url: d.url, ruta: d.ruta || "" })),
         horas: (Number(p.horas_estimadas) > 0 || reales > 0)
           ? { estimadas: Number(p.horas_estimadas) || 0, reales: Math.round(reales * 10) / 10 }
           : null
@@ -460,6 +484,7 @@
     cambiarRecibo: (id, cambios) => actualizar(`recibos?id=eq.${id}`, cambios),
     eliminarRecibo: id => api(`recibos?id=eq.${id}`, { metodo: "DELETE" }),
     crearDocumento: fila => insertar("documentos", fila),
+    subirDocumento,
     subirFoto,
     firmarFotos,
     crearFoto: fila => insertar("fotos", { ...fila, autor_id: uid() }),
