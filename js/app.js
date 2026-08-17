@@ -1698,7 +1698,7 @@
     const linksDocs = (p.docs || [])
       .map(d => `<span class="doc-fila"><a class="doc-link" href="${esc(urlSegura(d.url) || "#")}" target="_blank" rel="noopener">📄 ${esc(d.titulo)}</a>${d.id ? `
         <button type="button" class="doc-cliente${d.portal ? " on" : ""}" data-id="${d.id}" data-portal="${d.portal ? 1 : 0}"
-          title="${d.portal ? "El cliente SÍ ve este documento — toca para ocultarlo" : "El cliente NO lo ve — toca para mostrárselo"}">${d.portal ? "👁 cliente" : "🚫 cliente"}</button>${(d.portal || p.portalCompleto) ? `
+          title="${d.portal ? "El cliente SÍ ve este documento — toca para ocultarlo" : "El cliente NO lo ve — toca para mostrárselo"}">${d.portal ? "👁 cliente" : "🚫 cliente"}</button>${(d.portal || p.portalCompleto) && docFirmable(d) ? `
         ${d.firmadoEl ? `<span class="cl-chip-aprobado">🖊 firmó ${esc(d.firmaNombre || "")} · ${esc(d.firmadoEl)}</span>` : `
         <button type="button" class="doc-cliente${d.pideFirma ? " on" : ""} doc-firma" data-id="${d.id}" data-pide="${d.pideFirma ? 1 : 0}"
           title="${d.pideFirma ? "Le está pidiendo FIRMA al cliente (nombre + firma con el dedo) — toca para quitarla" : "Pedirle al cliente que lo FIRME (nombre + firma con el dedo, queda de respaldo)"}">🖊 firma</button>`}
@@ -1912,6 +1912,10 @@
   // ¿La ruta es de un video corto (inspección virtual)?
   const esVideo = ruta => /\.(mp4|mov|webm)$/i.test(String(ruta || ""));
 
+  // Solo los SOW y los Change Orders se firman o aprueban;
+  // el resto (planos, RFIs...) es consultivo — solo se lee
+  const docFirmable = d => /\bsow\b|scope\s*of\s*work|change\s*order|\bco\b|propuesta|contrato|acknowledgment/i.test(String(d.titulo || ""));
+
   // Achica la foto antes de subirla (los teléfonos sacan fotos enormes)
   async function reducirImagen(archivo) {
     const imagen = await createImageBitmap(archivo);
@@ -2017,7 +2021,7 @@
         try {
           await DB.cambiarDocumento(btn.dataset.id, { portal: !visible });
           await recargar();
-          avisar(!visible ? "👁 El cliente ahora VE este documento" : "🚫 Documento oculto para el cliente");
+          avisar(!visible ? "👁 El cliente ahora VE este documento — OJO: en Drive debe estar compartido como 'cualquiera con el enlace' para que pueda abrirlo" : "🚫 Documento oculto para el cliente");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
