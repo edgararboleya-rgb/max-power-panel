@@ -7,7 +7,7 @@
   <title>Max Power — Your Project</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=68">
+  <link rel="stylesheet" href="css/styles.css?v=69">
   <style>
     .cl-hero { text-align: center; padding: 1rem 0 0.4rem; }
     .cl-nombre { font-size: 1.3rem; font-weight: 800; color: var(--mp-ink); margin: 0.2rem 0 0.1rem; }
@@ -31,7 +31,9 @@
     }
     .cl-doc { display: inline-block; padding: 0.5rem 0.75rem; font-size: 0.9rem; max-width: 100%; }
     .cl-cargando { text-align: center; padding: 3rem 1rem; color: var(--mp-ink-3); }
-    .cl-fotos { display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.3rem; }
+    /* width:0 + min-width:100% = el carrusel NUNCA empuja el ancho de la
+       página (con muchas fotos el teléfono abría en "modo computadora") */
+    .cl-fotos { display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.3rem; width: 0; min-width: 100%; }
     .cl-foto { flex: 0 0 auto; width: 150px; }
     .cl-foto img, .cl-foto video { width: 150px; height: 110px; object-fit: cover; border-radius: 10px; border: 1px solid var(--mp-line); }
     .cl-foto video { background: #000; }
@@ -89,7 +91,7 @@
     </footer>
   </div>
 
-  <script src="assets/logo.js?v=68"></script>
+  <script src="assets/logo.js?v=69"></script>
   <script>
   (function () {
     "use strict";
