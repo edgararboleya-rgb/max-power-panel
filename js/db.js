@@ -507,6 +507,7 @@
       headers: { Prefer: "resolution=merge-duplicates,return=representation" }
     }),
     crearEvento: fila => insertar("eventos", { ...fila, autor_id: uid() }),
+    eliminarEvento: id => api(`eventos?id=eq.${id}`, { metodo: "DELETE" }),
     crearPendiente: fila => insertar("pendientes", { ...fila, autor_id: uid() }),
     cambiarPendiente: (id, cambios) => actualizar(`pendientes?id=eq.${id}`, cambios),
     resolverPendiente: id => actualizar(`pendientes?id=eq.${id}`,

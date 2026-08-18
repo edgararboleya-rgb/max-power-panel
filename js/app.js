@@ -4664,6 +4664,7 @@ Power done right the first time. ⚡`;
                 ${p ? `<span class="agenda-lugar">🔧 ${esc(p.nombre)}</span>` : ""}
                 ${e.nota ? `<span class="agenda-nota">${esc(sinMontos(e.nota))}</span>` : ""}
               </span>
+              ${usuario.finanzas ? `<button type="button" class="insp-borrar ev-borrar" data-id="${e.id}" title="Eliminar este evento">🗑</button>` : ""}
             </div>`;
         }).join("")
       : `<p class="cal-sin-eventos">Nada programado este día.</p>`;
@@ -4716,6 +4717,16 @@ Power done right the first time. ⚡`;
         </form>
       </div>`;
 
+    $("cal-dia-panel").querySelectorAll(".ev-borrar").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("¿Eliminar este evento del calendario?")) return;
+        try {
+          await DB.eliminarEvento(btn.dataset.id);
+          await recargar();
+          avisar("Evento eliminado ✓");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
     $("cal-dia-panel").querySelectorAll(".btn-pen-editar").forEach(btn => {
       btn.addEventListener("click", () => editarPendiente(btn.dataset.id, pintarCalendario));
     });
