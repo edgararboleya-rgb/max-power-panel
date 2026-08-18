@@ -7,7 +7,7 @@
   <title>Max Power — Your Project</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=67">
+  <link rel="stylesheet" href="css/styles.css?v=68">
   <style>
     .cl-hero { text-align: center; padding: 1rem 0 0.4rem; }
     .cl-nombre { font-size: 1.3rem; font-weight: 800; color: var(--mp-ink); margin: 0.2rem 0 0.1rem; }
@@ -55,6 +55,15 @@
     .cl-firma-botones { display: flex; gap: 0.5rem; flex-wrap: wrap; }
     .cl-firma-sub { font-size: 0.8rem; font-weight: 800; color: var(--mp-ink-2); margin: 0.2rem 0; }
     .cl-boton.secundario { background: none; border: 1.5px solid var(--mp-line); color: var(--mp-ink-2); }
+    /* Blindaje: si el navegador abre en "modo escritorio" (o en una
+       computadora de verdad), la página se acomoda como una columna
+       centrada tipo teléfono con letra grande — nunca texto regado
+       de lado a lado */
+    @media (min-width: 700px) {
+      html { font-size: 19px; }
+      .container, .membrete-inner { max-width: 640px; margin-left: auto; margin-right: auto; }
+      .pie { text-align: center; }
+    }
   </style>
 </head>
 <body>
@@ -80,7 +89,7 @@
     </footer>
   </div>
 
-  <script src="assets/logo.js?v=67"></script>
+  <script src="assets/logo.js?v=68"></script>
   <script>
   (function () {
     "use strict";
