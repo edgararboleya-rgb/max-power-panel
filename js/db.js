@@ -197,7 +197,7 @@
            hitos, facturas, horas, eventos, pendientes, documentos, fotos,
            inspecciones, materiales, materialesEquipo, costos, externos,
            gestiones, recibos, recibosEquipo, alcancePuntos, ayudantes, decisiones,
-           llavesPortal] =
+           llavesPortal, visitasPortal] =
       await Promise.all([
         leer("perfiles?select=*"),
         leer("proyectos?select=*&order=nombre"),
@@ -225,10 +225,17 @@
         leer("decisiones_cliente?select=*&order=creado").catch(() => []),
         // Llaves del portal: solo el dueño recibe filas (RLS); si la tabla
         // no existe todavía, la app sigue andando
-        leer("portal_llaves?select=*").catch(() => [])
+        leer("portal_llaves?select=*").catch(() => []),
+        // Visitas del portal (solo el dueño recibe filas)
+        leer("portal_visitas?select=proyecto_id,cuando&order=cuando.desc&limit=300").catch(() => [])
       ]);
 
     const llavePorProyecto = Object.fromEntries((llavesPortal || []).map(l => [l.proyecto_id, l.token]));
+    // Última visita del cliente por proyecto (vienen ordenadas de la más nueva)
+    const visitaPorProyecto = {};
+    (visitasPortal || []).forEach(v => {
+      if (!visitaPorProyecto[v.proyecto_id]) visitaPorProyecto[v.proyecto_id] = v.cuando;
+    });
     const nombrePorId = Object.fromEntries(perfiles.map(p => [p.id, p.nombre]));
     const miPerfil = perfiles.find(p => p.id === uid()) || null;
     const esDueno = miPerfil && miPerfil.rol === "dueno";
@@ -295,7 +302,8 @@
         })),
         docs: docs.filter(d => d.clase === "doc").map(d => ({ id: d.id, titulo: d.titulo, url: d.url, ruta: d.ruta || "", portal: !!d.portal,
           pideAprobacion: !!d.pide_aprobacion, aprobadoEl: d.aprobado_el ? String(d.aprobado_el).slice(0, 10) : "",
-          pideFirma: !!d.pide_firma, firmadoEl: d.firmado_el ? String(d.firmado_el).slice(0, 10) : "", firmaNombre: d.firma_nombre || "" })),
+          pideFirma: !!d.pide_firma, firmadoEl: d.firmado_el ? String(d.firmado_el).slice(0, 10) : "", firmaNombre: d.firma_nombre || "",
+          vistoEl: d.visto_el ? String(d.visto_el).slice(0, 10) : "" })),
         rfis: docs.filter(d => d.clase === "rfi").map(d => ({ id: d.id, titulo: d.titulo, estado: d.estado, url: d.url, ruta: d.ruta || "" })),
         horas: (Number(p.horas_estimadas) > 0 || reales > 0)
           ? { estimadas: Number(p.horas_estimadas) || 0, reales: Math.round(reales * 10) / 10 }
@@ -327,11 +335,14 @@
         trabajador: nombrePorId[h.usuario_id] || "",
         proyecto: h.proyecto_id, fase: h.fase || "",
         horas: Number(h.horas), notas: h.notas || "",
+        co: h.co || null,
         correccion: h.correccion_estado || null
       })),
+      visitasPortal: visitaPorProyecto,
       fotos: fotos.map(f => ({
         id: f.id, proyecto: f.proyecto_id, ruta: f.ruta,
         nota: f.nota || "", autor: nombrePorId[f.autor_id] || "",
+        autorId: f.autor_id,
         fecha: f.creado ? String(f.creado).slice(0, 10) : "",
         portal: !!f.portal
       })),
@@ -377,6 +388,7 @@
         id: r.id, proyecto: r.proyecto_id, ruta: r.ruta || "",
         total: r.total !== undefined && r.total !== null ? Number(r.total) : null,
         proveedor: r.proveedor || "", notas: r.notas || "",
+        co: r.co || null,
         estado: r.estado || "por_leer", autor: nombrePorId[r.autor_id] || "",
         fecha: r.creado ? String(r.creado).slice(0, 10) : ""
       })),

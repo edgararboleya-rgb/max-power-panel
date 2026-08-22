@@ -7,7 +7,7 @@
   <title>Max Power — Your Project</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=69">
+  <link rel="stylesheet" href="css/styles.css?v=71">
   <style>
     .cl-hero { text-align: center; padding: 1rem 0 0.4rem; }
     .cl-nombre { font-size: 1.3rem; font-weight: 800; color: var(--mp-ink); margin: 0.2rem 0 0.1rem; }
@@ -91,7 +91,7 @@
     </footer>
   </div>
 
-  <script src="assets/logo.js?v=69"></script>
+  <script src="assets/logo.js?v=71"></script>
   <script>
   (function () {
     "use strict";
@@ -122,7 +122,9 @@
       firmar: "Review & sign 🖊", firmadoPor: "🖊 Signed by ", firmaTitulo: "Sign this document",
       firmaNombre: "Your full legal name", firmaDibuja: "Draw your signature below (finger or mouse)",
       firmaLimpiar: "Clear", firmaEnviar: "Sign ✓", firmaCancelar: "Cancel",
-      firmaLegal: "By signing you confirm that you reviewed this document and agree to its terms. Your name, signature, date and time will be recorded.",
+      firmaLegal: "I have reviewed this document and agree to its terms. My name, signature, date, time and device will be recorded.",
+      modoEscribir: "Type your signature", modoDibujar: "Draw it instead",
+      firmaConsent: "Please check the consent box to sign.",
       firmaFalta: "Please write your name and draw your signature.",
       garantia: "All our workmanship is covered by a 1-year warranty from completion. Keep this link — it's your home's electrical file.",
       resena: "⭐ Happy with our work? Leave us a Google review!",
@@ -144,7 +146,9 @@
       firmar: "Revisar y firmar 🖊", firmadoPor: "🖊 Firmado por ", firmaTitulo: "Firmar este documento",
       firmaNombre: "Tu nombre legal completo", firmaDibuja: "Dibuja tu firma abajo (dedo o mouse)",
       firmaLimpiar: "Borrar", firmaEnviar: "Firmar ✓", firmaCancelar: "Cancelar",
-      firmaLegal: "Al firmar confirmas que revisaste este documento y aceptas sus términos. Se guardará tu nombre, tu firma y la fecha y hora.",
+      firmaLegal: "Revisé este documento y acepto sus términos. Se guardará mi nombre, mi firma, la fecha, la hora y el dispositivo.",
+      modoEscribir: "Escribe tu firma", modoDibujar: "Prefiero dibujarla",
+      firmaConsent: "Marca la casilla de consentimiento para firmar.",
       firmaFalta: "Escribe tu nombre y dibuja tu firma, por favor.",
       garantia: "Toda nuestra mano de obra tiene garantía de 1 año desde la entrega. Guarda este link — es el expediente eléctrico de tu casa.",
       resena: "⭐ ¿Quedaste contento? ¡Déjanos tu reseña en Google!",
@@ -302,7 +306,7 @@
             : ' <button class="cl-boton" data-aprobar="' + d.id + '">' + esc(TXT.aprobar) + '</button>';
         }
         if (!urlSegura(d.url)) return '';
-        return '<span class="cl-item"><a class="doc-link cl-doc" target="_blank" rel="noopener" href="' + esc(urlSegura(d.url)) + '">📄 ' + esc(d.titulo) + '</a>' + aprob + '</span>';
+        return '<span class="cl-item"><a class="doc-link cl-doc" data-doc="' + d.id + '" target="_blank" rel="noopener" href="' + esc(urlSegura(d.url)) + '">📄 ' + esc(d.titulo) + '</a>' + aprob + '</span>';
       }).join("");
 
       caja.innerHTML =
@@ -336,6 +340,13 @@
       caja.querySelectorAll("[data-decision]").forEach(function (b) {
         b.addEventListener("click", function () { mandar({ accion: "decision_lista", id: Number(b.dataset.decision) }, b); });
       });
+      // Cuando el cliente abre un documento queda constancia (mejor esfuerzo)
+      caja.querySelectorAll(".cl-doc[data-doc]").forEach(function (a) {
+        a.addEventListener("click", function () {
+          fetch(PORTAL, { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
+            body: JSON.stringify({ t: t, accion: "visto_doc", id: Number(a.dataset.doc) }) }).catch(function () {});
+        });
+      });
       caja.querySelectorAll("[data-firmar]").forEach(function (b) {
         b.addEventListener("click", function () { abrirFirma(Number(b.dataset.firmar), b.dataset.titulo || ""); });
       });
@@ -352,9 +363,15 @@
           '<h3>' + esc(TXT.firmaTitulo) + '</h3>' +
           '<div class="cl-firma-doc">📄 ' + esc(titulo) + '</div>' +
           '<input type="text" id="cl-firma-nombre" placeholder="' + esc(TXT.firmaNombre) + '" autocomplete="name">' +
-          '<div class="cl-firma-sub">' + esc(TXT.firmaDibuja) + '</div>' +
-          '<canvas class="cl-firma-lienzo" width="640" height="220"></canvas>' +
-          '<p class="cl-firma-nota">' + esc(TXT.firmaLegal) + '</p>' +
+          '<div class="cl-firma-tabs" style="display:flex;gap:.5rem;margin:.5rem 0">' +
+            '<button type="button" class="cl-boton cl-tab on" id="cl-tab-escribir">✒️ ' + esc(TXT.modoEscribir) + '</button>' +
+            '<button type="button" class="cl-boton secundario cl-tab" id="cl-tab-dibujar">🖊 ' + esc(TXT.modoDibujar) + '</button>' +
+          '</div>' +
+          '<div class="cl-firma-sub" id="cl-firma-sub">' + esc(TXT.firmaDibuja) + '</div>' +
+          '<canvas class="cl-firma-lienzo" width="640" height="260" style="width:100%;height:auto;touch-action:none"></canvas>' +
+          '<label class="cl-firma-nota" style="display:flex;gap:.5rem;align-items:flex-start;cursor:pointer">' +
+            '<input type="checkbox" id="cl-firma-acepto" style="margin-top:.2rem;width:1.1rem;height:1.1rem"> ' +
+            '<span>' + esc(TXT.firmaLegal) + '</span></label>' +
           '<div class="cl-firma-botones">' +
             '<button type="button" class="cl-boton" id="cl-firma-ok">' + esc(TXT.firmaEnviar) + '</button>' +
             '<button type="button" class="cl-boton secundario" id="cl-firma-borrar">' + esc(TXT.firmaLimpiar) + '</button>' +
@@ -367,11 +384,45 @@
       var ctx = lienzo.getContext("2d");
       ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.strokeStyle = "#0A2540";
       var trazos = 0, dibujando = false;
+      // Dos modos: ESCRIBIR (el nombre sale en letra manuscrita, siempre legible)
+      // o DIBUJAR con el dedo. Escribir es el modo inicial.
+      var modo = "escribir";
+      var nombreInput = fondo.querySelector("#cl-firma-nombre");
+      function pintarNombre() {
+        ctx.clearRect(0, 0, lienzo.width, lienzo.height);
+        var texto = nombreInput.value.trim();
+        if (!texto) return;
+        var tam = 72;
+        ctx.save();
+        do {
+          ctx.font = "italic " + tam + 'px "Snell Roundhand","Segoe Script","Brush Script MT","Dancing Script",cursive';
+          tam -= 4;
+        } while (ctx.measureText(texto).width > lienzo.width - 60 && tam > 22);
+        ctx.fillStyle = "#0A2540";
+        ctx.textBaseline = "middle";
+        ctx.fillText(texto, 30, lienzo.height / 2);
+        ctx.restore();
+      }
+      var tabEscribir = fondo.querySelector("#cl-tab-escribir");
+      var tabDibujar = fondo.querySelector("#cl-tab-dibujar");
+      var subTexto = fondo.querySelector("#cl-firma-sub");
+      function ponerModo(m) {
+        modo = m;
+        tabEscribir.className = "cl-boton cl-tab" + (m === "escribir" ? " on" : " secundario");
+        tabDibujar.className = "cl-boton cl-tab" + (m === "dibujar" ? " on" : " secundario");
+        ctx.clearRect(0, 0, lienzo.width, lienzo.height); trazos = 0;
+        if (m === "escribir") { subTexto.textContent = ""; pintarNombre(); }
+        else subTexto.textContent = TXT.firmaDibuja;
+      }
+      tabEscribir.addEventListener("click", function () { ponerModo("escribir"); });
+      tabDibujar.addEventListener("click", function () { ponerModo("dibujar"); });
+      nombreInput.addEventListener("input", function () { if (modo === "escribir") pintarNombre(); });
       function xy(e) {
         var r = lienzo.getBoundingClientRect();
         return [(e.clientX - r.left) * (lienzo.width / r.width), (e.clientY - r.top) * (lienzo.height / r.height)];
       }
       lienzo.addEventListener("pointerdown", function (e) {
+        if (modo !== "dibujar") return;
         e.preventDefault(); dibujando = true;
         lienzo.setPointerCapture(e.pointerId);
         var p0 = xy(e); ctx.beginPath(); ctx.moveTo(p0[0], p0[1]);
@@ -385,11 +436,16 @@
       lienzo.addEventListener("pointercancel", function () { dibujando = false; });
       fondo.querySelector("#cl-firma-borrar").addEventListener("click", function () {
         ctx.clearRect(0, 0, lienzo.width, lienzo.height); trazos = 0;
+        if (modo === "escribir") pintarNombre();
       });
       fondo.querySelector("#cl-firma-no").addEventListener("click", function () { fondo.remove(); });
       fondo.querySelector("#cl-firma-ok").addEventListener("click", function () {
         var nombre = fondo.querySelector("#cl-firma-nombre").value.trim();
-        if (!nombre || trazos === 0) { alert(TXT.firmaFalta); return; }
+        if (!fondo.querySelector("#cl-firma-acepto").checked) { alert(TXT.firmaConsent); return; }
+        if (modo === "escribir") {
+          if (!nombre) { alert(TXT.firmaFalta); return; }
+          pintarNombre(); // asegura que el lienzo tenga la firma final
+        } else if (!nombre || trazos === 0) { alert(TXT.firmaFalta); return; }
         var b = fondo.querySelector("#cl-firma-ok");
         b.disabled = true; b.textContent = "…";
         fetch(PORTAL, {

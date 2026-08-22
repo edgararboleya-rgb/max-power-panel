@@ -542,7 +542,7 @@
       const reportes = recientes.map(r => `
         <div class="eq-reporte${r.correccion === "pedida" ? " eq-pide" : ""}" data-id="${r.id}">
           <span class="alcance-info">
-            <span class="alcance-titulo">${esc(r.fecha)} · ${esc(nombreProyecto(r.proyecto) || "—")} · <strong>${esc(r.horas)} h</strong></span>
+            <span class="alcance-titulo">${esc(r.fecha)} · ${esc(nombreProyecto(r.proyecto) || "—")} · <strong>${esc(r.horas)} h</strong>${r.co ? " · 🧾 " + esc(r.co) : ""}</span>
             <span class="alcance-estado">${esc(r.fase || "")}${r.notas ? " — " + esc(r.notas) : ""}</span>
             ${r.correccion === "pedida" ? `<span class="alcance-estado">✏️ <strong>Pide permiso para corregir este reporte</strong></span>` : ""}
             ${r.correccion === "aprobada" ? `<span class="alcance-estado">✅ Permiso dado — esperando su corrección</span>` : ""}
@@ -602,10 +602,26 @@
         }
         const notas = prompt("Notas (qué se hizo):", rep.notas || "");
         if (notas === null) return;
+        const cambios = { horas: horasNum, notas: notas.trim() };
+        // Si el trabajador se equivocó de proyecto, aquí se mueve (queda constancia)
+        if (confirm("¿Quieres MOVER este reporte a OTRO proyecto?\n\nAceptar = elegir el proyecto correcto.\nCancelar = dejarlo donde está.")) {
+          const lista = proyectosConTrabajo();
+          const menu = lista.map((x, i) => `${i + 1}. ${x.nombre}`).join("\n");
+          const n = prompt("Escribe el NÚMERO del proyecto correcto:\n\n" + menu);
+          if (n !== null) {
+            const elegido = lista[Number(String(n).trim()) - 1];
+            if (!elegido) { avisar("Ese número no está en la lista — no se movió nada.", true); return; }
+            if (elegido.id !== rep.proyecto) {
+              cambios.proyecto_id = elegido.id;
+              cambios.notas = (cambios.notas ? cambios.notas + "\n\n" : "") +
+                `[Corregido por Edgar el ${hoyISO()}: se movió de ${nombreProyecto(rep.proyecto) || rep.proyecto} a ${elegido.nombre}.]`;
+            }
+          }
+        }
         try {
-          await DB.cambiarHoras(id, { horas: horasNum, notas: notas.trim() });
+          await DB.cambiarHoras(id, cambios);
           await recargar();
-          avisar("Reporte corregido ✓");
+          avisar(cambios.proyecto_id ? "Reporte corregido y movido de proyecto ✓" : "Reporte corregido ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
@@ -1718,6 +1734,7 @@
       .map(d => `<span class="doc-fila"><a class="doc-link" ${d.ruta ? `href="#" data-docruta="${esc(d.ruta)}"` : `href="${esc(urlSegura(d.url) || "#")}"`} target="_blank" rel="noopener">📄 ${esc(d.titulo)}${d.ruta ? "" : ` <span class="doc-drive-tag">Drive</span>`}</a>${d.id ? `
         <button type="button" class="doc-cliente${d.portal ? " on" : ""}" data-id="${d.id}" data-portal="${d.portal ? 1 : 0}"
           title="${d.portal ? "El cliente SÍ ve este documento — toca para ocultarlo" : "El cliente NO lo ve — toca para mostrárselo"}">${d.portal ? "👁 cliente" : "🚫 cliente"}</button>${(d.portal || p.portalCompleto) && docFirmable(d) ? `
+        ${!d.firmadoEl && d.vistoEl ? `<span class="cl-chip-aprobado">👁 visto ${esc(d.vistoEl)}</span>` : ""}
         ${d.firmadoEl ? `<span class="cl-chip-aprobado">🖊 firmó ${esc(d.firmaNombre || "")} · ${esc(d.firmadoEl)}</span>` : `
         <button type="button" class="doc-cliente${d.pideFirma ? " on" : ""} doc-firma" data-id="${d.id}" data-pide="${d.pideFirma ? 1 : 0}"
           title="${d.pideFirma ? "Le está pidiendo FIRMA al cliente (nombre + firma con el dedo) — toca para quitarla" : "Pedirle al cliente que lo FIRME (nombre + firma con el dedo, queda de respaldo)"}">🖊 firma</button>`}
@@ -1757,6 +1774,9 @@
            <p class="modal-nota">El cliente ve: etapa, checklist con su %, inspecciones, próximos días de trabajo y los documentos con 👁.
            Los RFI salen siempre; los CONTRATOS nunca salen (tienen precios) a menos que tú los marques.
            El dinero solo sale si tú prendes el botón 💵 — pensado para clientes directos, no para trabajos vía contratista.</p>
+           ${(state.visitasPortal || {})[p.id] ? `
+           <p class="modal-nota">👀 Última visita del cliente: <strong>${esc(String(state.visitasPortal[p.id]).slice(0, 16).replace("T", " "))}</strong> (hora universal)</p>` : `
+           <p class="modal-nota">👀 El cliente todavía no ha abierto su portal.</p>`}
            ${p.portalToken ? `
            <div class="modal-botones">
              <button type="button" class="accion secundaria" id="btn-portal-copiar" data-token="${esc(p.portalToken)}">🔗 Copiar el link del cliente</button>
@@ -1914,7 +1934,9 @@
           <button type="button" class="doc-cliente foto-cliente${f.portal ? " on" : ""}" data-id="${f.id}" data-portal="${f.portal ? 1 : 0}"
             title="${f.portal ? "El cliente SÍ ve esta foto" : "El cliente NO la ve"}">${f.portal ? "👁" : "🚫"}</button>
           <button type="button" class="doc-cliente foto-nota" data-id="${f.id}" data-nota="${esc(f.nota || "")}"
-            title="Corregir la descripción de la foto">✎</button>` : ""}</figcaption>
+            title="Corregir la descripción de la foto">✎</button>` : (f.autorId === usuario.id ? `
+          <button type="button" class="doc-cliente foto-nota" data-id="${f.id}" data-nota="${esc(f.nota || "")}"
+            title="Corregir la descripción de tu foto">✎</button>` : "")}</figcaption>
       </figure>`).join("");
     return `
       <div class="detalle-seccion">
@@ -2497,7 +2519,7 @@
             <span class="alcance-tipo">${esc(r.horas)}h</span>
             <span class="alcance-info">
               <span class="alcance-titulo">${esc(p ? p.nombre : r.proyecto)}</span>
-              <span class="alcance-estado">${esc(r.fecha)}${r.fase ? " · " + esc(r.fase) : ""}${r.notas ? " · " + esc(r.notas) : ""}</span>
+              <span class="alcance-estado">${esc(r.fecha)}${r.fase ? " · " + esc(r.fase) : ""}${r.co ? " · 🧾 " + esc(r.co) : ""}${r.notas ? " · " + esc(r.notas) : ""}</span>
             </span>
             <button type="button" class="insp-borrar btn-horas-editar" data-id="${r.id}" title="Corregir o eliminar">✎</button>
           </div>
@@ -2515,6 +2537,9 @@
             </label>
             <label>Fase / tipo de trabajo
               <select name="fase">${opcionesFase}</select>
+            </label>
+            <label>Change Order (opcional — vacío = contrato normal)
+              <input name="co" type="text" value="${esc(r.co || "")}" placeholder="Ej: CO #1" autocomplete="off">
             </label>
             <label>Notas (aquí puedes agregar lo que te faltó)
               <input name="notas" type="text" value="${esc(r.notas || "")}" autocomplete="off">
@@ -2574,6 +2599,7 @@
             horas: Number(d.get("horas")),
             proyecto_id: d.get("proyecto"),
             fase: d.get("fase"),
+            co: (d.get("co") || "").toString().trim() || null,
             notas: (d.get("notas") || "").toString().trim() || null
           });
           await recargar();
@@ -2603,7 +2629,8 @@
       proyecto_id: proyectoId,
       fase: d.get("fase"),
       horas: Number(d.get("horas")),
-      notas: (d.get("notas") || "").toString().trim() || null
+      notas: (d.get("notas") || "").toString().trim() || null,
+      co: (d.get("co") || "").toString().trim() || null
     };
     try {
       await DB.reportarHoras(fila);
@@ -2615,6 +2642,7 @@
       }
       $formHoras.elements.horas.value = "";
       $formHoras.elements.notas.value = "";
+      $formHoras.elements.co.value = "";
       $formHoras.elements.pendiente.value = "";
       await recargar();
       avisar(pendiente ? "Horas y pendiente guardados ✓ (el pendiente queda en rojo)" : "Horas guardadas ✓");
@@ -2714,6 +2742,7 @@
       <div class="mat-item recibo-${esc(r.estado)}">
         <span class="recibo-chip ${esc(r.estado)}">${esc(RES_RECIBO[r.estado] || r.estado)}</span>
         ${esDevolucionRecibo(r) ? `<span class="recibo-chip devolucion">↩ DEVOLUCIÓN</span>` : ""}
+        ${r.co ? `<span class="recibo-chip leido">🧾 ${esc(r.co)}</span>` : ""}
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(r.proveedor || "Recibo")}${r.notas ? ` <span class="mat-cant">— ${esc(sinMontos(r.notas))}</span>` : ""}</span>
           <span class="alcance-estado">${esc(nombreProy(r.proyecto))} · ${esc(r.autor)} ${esc(r.fecha)}</span>
@@ -2723,6 +2752,8 @@
         ${usuario.finanzas ? `<button class="insp-borrar btn-recibo-total" data-id="${r.id}"
           data-total="${typeof r.total === "number" ? r.total : ""}" data-proveedor="${esc(r.proveedor || "")}" data-notas="${esc(r.notas || "")}"
           title="Corregir total, proveedor o descripción">✎</button>` : ""}
+        ${usuario.editar ? `<button class="insp-borrar btn-recibo-foto" data-id="${r.id}" data-proyecto="${esc(r.proyecto || "general")}"
+          title="${r.ruta ? "Cambiar la foto del recibo" : "Ponerle la foto del recibo"}">📷</button>` : ""}
         ${usuario.editar ? `<button class="insp-borrar btn-recibo-borrar" data-id="${r.id}" title="Eliminar">🗑</button>` : ""}
       </div>`;
 
@@ -2797,6 +2828,9 @@
           <label>Total ($)
             <input name="total" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Ej: 128.40">
           </label>` : `<p class="modal-nota">Edgar le pone el total después con el ✎.</p>`}
+          <label>¿Es de un Change Order? (opcional)
+            <input name="co" type="text" placeholder="Ej: CO #1" autocomplete="off">
+          </label>
           <button type="submit" class="accion">✓ Registrar la compra</button>
         </form>
         <form id="form-recibo" class="cal-form" hidden>
@@ -2828,6 +2862,9 @@
           </div>` : ""}
           <label>Nota (opcional)
             <input name="notas" type="text" placeholder="Ej: compra del rough" autocomplete="off">
+          </label>
+          <label>¿Es de un Change Order? (opcional)
+            <input name="co" type="text" placeholder="Ej: CO #1" autocomplete="off">
           </label>
           <button type="submit" class="accion">⬆ Subir recibo</button>
         </form>
@@ -3228,7 +3265,8 @@
         proyecto_id: d.get("proyecto") || null,
         ruta: null,
         notas: notas || null,
-        proveedor: (d.get("proveedor") || "").toString().trim() || null
+        proveedor: (d.get("proveedor") || "").toString().trim() || null,
+        co: (d.get("co") || "").toString().trim() || null
       };
       const totalTxt = (d.get("total") || "").toString().trim();
       if (usuario.finanzas && totalTxt !== "" && Number.isFinite(Number(totalTxt))) {
@@ -3262,7 +3300,8 @@
         const fila = {
           proyecto_id: d.get("proyecto") || null,
           ruta,
-          notas: notasRecibo || null
+          notas: notasRecibo || null,
+          co: (d.get("co") || "").toString().trim() || null
         };
         if (usuario.finanzas) {
           const totalTxt = (d.get("total") || "").toString().trim();
@@ -3307,6 +3346,32 @@
           await recargar();
           avisar("Recibo corregido ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    // 📷 Ponerle (o cambiarle) la foto a un recibo ya anotado — el respaldo
+    $("materiales-panel").querySelectorAll(".btn-recibo-foto").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/*";
+        input.addEventListener("change", async () => {
+          const archivo = input.files[0];
+          if (!archivo) return;
+          btn.disabled = true;
+          btn.textContent = "⏳";
+          try {
+            const blob = await reducirImagen(archivo).catch(() => archivo);
+            const ruta = await DB.subirFoto(btn.dataset.proyecto || "general", blob, blob.type || archivo.type, "recibos");
+            await DB.cambiarRecibo(btn.dataset.id, { ruta });
+            await recargar();
+            avisar("Foto del recibo guardada ✓");
+          } catch (err) {
+            avisar("No se pudo subir la foto: " + err.message, true);
+            btn.disabled = false;
+            btn.textContent = "📷";
+          }
+        });
+        input.click();
       });
     });
     $("materiales-panel").querySelectorAll(".btn-recibo-borrar").forEach(btn => {
