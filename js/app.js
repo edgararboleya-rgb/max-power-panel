@@ -1039,6 +1039,15 @@
   function hitosHTML(p) {
     if (!usuario.finanzas || !p.hitos || !p.hitos.length) return "";
     const siguiente = proximoHito(p);
+    // El texto de la factura sale armado con las reglas de la casa:
+    // Due on receipt, referencia del proyecto y condición del hito.
+    const textoFactura = h => [
+      `${h.titulo} — ${p.nombre}`,
+      p.direccion ? `Job address: ${p.direccion}` : "",
+      [p.ref ? `Per Proposal ${p.ref}.` : "", h.condicion || ""].filter(Boolean).join(" "),
+      `Amount: ${fmt(h.monto)}`,
+      "Terms: Due on receipt"
+    ].filter(Boolean).join("\n");
     const filas = p.hitos.map(h => {
       const esSiguiente = h === siguiente;
       const icono = h.estado === "cobrado" ? "✓" : h.estado === "facturado" ? "⚠" : "○";
@@ -1050,6 +1059,9 @@
             <span class="hito-cond">${esc(h.condicion || "")}${h.estado === "facturado" ? " · facturado, sin pagar" : ""}</span>
           </span>
           <span class="hito-monto">${fmt(h.monto)}</span>
+          ${h.estado !== "cobrado" && usuario.editar ? `<button type="button" class="insp-borrar hito-facturar"
+            data-texto="${esc(textoFactura(h))}" data-hito="${esc(h.id)}" data-proyecto="${esc(p.id)}"
+            title="Crea la factura en QuickBooks con las reglas de la casa">🧾</button>` : ""}
         </div>`;
     }).join("");
     const porCobrarTotal = p.hitos.filter(h => h.estado !== "cobrado").reduce((s, h) => s + h.monto, 0);
@@ -1061,6 +1073,10 @@
           <span class="hito-icono"></span>
           <span class="hito-info"><span class="hito-titulo">Total por cobrar</span></span>
           <span class="hito-monto">${fmt(porCobrarTotal)}</span>
+        </div>
+        <div class="modal-botones">
+          <a class="accion secundaria" target="_blank" rel="noopener" href="https://qbo.intuit.com/app/invoice">🧾 Nueva factura en QuickBooks</a>
+          <a class="accion secundaria" target="_blank" rel="noopener" href="https://qbo.intuit.com/app/estimate">📄 Nuevo estimado en QuickBooks</a>
         </div>
       </div>`;
   }
@@ -2234,6 +2250,39 @@
           await recargar();
           avisar(!pide ? "✍️ El cliente verá el botón de aprobar" : "Aprobación quitada");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    // 🧾 Facturar un hito: crea la factura DIRECTO en QuickBooks.
+    // Si la conexión API aún no está montada, plan B: copia el texto y abre QB.
+    $detalle.querySelectorAll(".hito-facturar").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const planB = async () => {
+          const texto = btn.dataset.texto;
+          try {
+            await navigator.clipboard.writeText(texto);
+            avisar("QB directo aún no conectado — texto copiado ✓, pégalo en la factura");
+          } catch { prompt("Cópialo y pégalo en QuickBooks:", texto); }
+          window.open("https://qbo.intuit.com/app/invoice", "_blank", "noopener");
+        };
+        if (!confirm("¿Crear esta factura en QuickBooks?")) return;
+        btn.disabled = true; btn.textContent = "⏳";
+        try {
+          const r = await fetch("https://zeogjvwcmstmkwxjvykz.supabase.co/functions/v1/qb", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${DB.tokenSesion()}` },
+            body: JSON.stringify({ accion: "factura", proyecto_id: btn.dataset.proyecto, hito_id: Number(btn.dataset.hito) })
+          });
+          const d = await r.json().catch(() => ({}));
+          if (r.ok && d.ok) {
+            avisar(`Factura ${d.doc ? "#" + d.doc + " " : ""}creada en QuickBooks ✓`);
+            if (d.link) window.open(d.link, "_blank", "noopener");
+            await recargar();
+            return;
+          }
+          if (d.error === "sin_conexion" || r.status === 404) { await planB(); }
+          else avisar("QuickBooks dijo: " + (d.detalle || d.error || "error"), true);
+        } catch { await planB(); }
+        btn.disabled = false; btn.textContent = "🧾";
       });
     });
     $detalle.querySelectorAll(".foto-nota").forEach(btn => {

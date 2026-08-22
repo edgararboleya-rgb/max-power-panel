@@ -295,7 +295,7 @@
           estado: a.estado
         })),
         hitos: (hitPor[p.id] || []).map(h => ({
-          titulo: h.titulo, condicion: h.condicion,
+          id: h.id, titulo: h.titulo, condicion: h.condicion,
           monto: Number(h.monto), estado: h.estado
         })),
         facturas: (facPor[p.id] || []).map(f => ({
@@ -502,6 +502,7 @@
     eliminarRecibo: id => api(`recibos?id=eq.${id}`, { metodo: "DELETE" }),
     crearDocumento: fila => insertar("documentos", fila),
     subirDocumento,
+    tokenSesion: () => (sesion ? sesion.access_token : null),
     crearDocEmpresa: fila => insertar("documentos_empresa", fila),
     cambiarDocEmpresa: (id, cambios) => actualizar(`documentos_empresa?id=eq.${id}`, cambios),
     eliminarDocEmpresa: id => api(`documentos_empresa?id=eq.${id}`, { metodo: "DELETE" }),
