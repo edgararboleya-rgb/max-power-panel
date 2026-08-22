@@ -7,7 +7,7 @@
   <title>Max Power — Your Project</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=71">
+  <link rel="stylesheet" href="css/styles.css?v=73">
   <style>
     .cl-hero { text-align: center; padding: 1rem 0 0.4rem; }
     .cl-nombre { font-size: 1.3rem; font-weight: 800; color: var(--mp-ink); margin: 0.2rem 0 0.1rem; }
@@ -91,7 +91,7 @@
     </footer>
   </div>
 
-  <script src="assets/logo.js?v=71"></script>
+  <script src="assets/logo.js?v=73"></script>
   <script>
   (function () {
     "use strict";
@@ -120,6 +120,7 @@
       pagosT: "Payments", contratoT: "Contract total", cobradoT: "Paid to date", saldoT: "Balance",
       pagadaF: "Paid ✓", pendienteF: "Pending",
       firmar: "Review & sign 🖊", firmadoPor: "🖊 Signed by ", firmaTitulo: "Sign this document",
+      licT: "License & Insurance",
       firmaNombre: "Your full legal name", firmaDibuja: "Draw your signature below (finger or mouse)",
       firmaLimpiar: "Clear", firmaEnviar: "Sign ✓", firmaCancelar: "Cancel",
       firmaLegal: "I have reviewed this document and agree to its terms. My name, signature, date, time and device will be recorded.",
@@ -309,6 +310,12 @@
         return '<span class="cl-item"><a class="doc-link cl-doc" data-doc="' + d.id + '" target="_blank" rel="noopener" href="' + esc(urlSegura(d.url)) + '">📄 ' + esc(d.titulo) + '</a>' + aprob + '</span>';
       }).join("");
 
+      var emp = (p.empresa || []).map(function (d) {
+        var tt = lang === "en" ? (d.titulo_en || d.titulo) : d.titulo;
+        if (!urlSegura(d.url)) return '';
+        return '<span class="cl-item"><a class="doc-link" target="_blank" rel="noopener" href="' + esc(urlSegura(d.url)) + '">🛡️ ' + esc(tt) + '</a></span>';
+      }).join("");
+
       caja.innerHTML =
         '<div class="cl-hero">' +
           '<div class="kicker">' + esc(TXT.kicker) + '</div>' +
@@ -327,6 +334,7 @@
         (diario ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("actividad", TXT.actividad) + '</div>' + diario + '</div>' : '') +
         (pagos ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("pagos", TXT.pagosT) + '</div>' + pagos + '</div>' : '') +
         (docs ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("docs", TXT.docsT) + '</div>' + docs + '</div>' : '') +
+        (emp ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("docs", TXT.licT) + '</div>' + emp + '</div>' : '') +
         (p.estado === "completado" ? '<div class="cal-panel-card" style="text-align:center">' +
           '<div class="cal-form-titulo">' + tit("garantia", TXT.garantiaT) + '</div>' +
           '<p class="alcance-estado" style="font-size:0.9rem">' + esc(TXT.garantia) + '</p>' +

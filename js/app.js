@@ -325,7 +325,150 @@
     pintarInicioUrgentes();
     pintarInicioAvisos();
     pintarInicioEquipo();
+    pintarInicioEmpresa();
     pintarInicioNotif();
+  }
+
+
+  // ---------- 📋 Licencia y seguros + 📖 guía rápida del código ----------
+  // Guía de CAMPO: los números que se usan en la obra, con su artículo.
+  // Base: NEC 2023 (FBC 8ª ed). Para casos raros, confirmar en NFPA LiNK.
+  const NEC_SECCIONES = [
+    { t: "🔌 Cable Romex (NM) — amperaje máximo", art: "310.16 (col. 60°C)", filas: [
+      ["#14", "15 A"], ["#12", "20 A"], ["#10", "30 A"], ["#8", "40 A"], ["#6", "55 A"]] },
+    { t: "🧵 THHN en tubería — amperaje (75°C)", art: "310.16", filas: [
+      ["#12", "25 A"], ["#10", "35 A"], ["#8", "50 A"], ["#6", "65 A"], ["#4", "85 A"],
+      ["#2", "115 A"], ["#1/0", "150 A"], ["#2/0", "175 A"], ["#4/0", "230 A"]] },
+    { t: "🏠 Servicio o feeder de vivienda — calibre", art: "310.12", filas: [
+      ["100 A", "#4 cobre · #2 aluminio"], ["125 A", "#2 cobre · #1/0 aluminio"],
+      ["150 A", "#1 cobre · #2/0 aluminio"], ["200 A", "#2/0 cobre · #4/0 aluminio"]] },
+    { t: "⛏ Zanjas — profundidad mínima", art: "300.5 (tabla)", filas: [
+      ["PVC", '18"'], ["Cable directo (UF)", '24"'], ["Tubería metálica rígida", '6"'],
+      ["Bajo driveway de vivienda", '18"'], ["Circuito 120V 20A con GFCI", '12"']] },
+    { t: "🌍 Tierra — varillas y calibres", art: "250.53 · 250.66 · 250.122", filas: [
+      ["Varillas", "2 de 8 ft (salvo que UNA mida <25Ω) · sepáralas 6 ft o más"],
+      ["Cable a las varillas (GEC)", "nunca se exige más grueso que #6 cobre"],
+      ["Tierra del equipo (EGC)", "breaker 15A→#14 · 20A→#12 · 30-60A→#10 · 100A→#8 · 200A→#6"]] },
+    { t: "🚗 Cargadores EV — breaker y cable", art: "Art. 625 (carga continua ×125%)", filas: [
+      ["Cargador de 32 A", "breaker 40 A · #8"],
+      ["Cargador de 40 A", "breaker 50 A · #6"],
+      ["Cargador de 48 A", "breaker 60 A · #6 THHN en tubería (Romex #6 NO llega)"],
+      ["Receptáculo 14-50R", "lleva GFCI (NEC 2023)"]] },
+    { t: "⚡ GFCI en vivienda (NEC 2023)", art: "210.8(A)", filas: [
+      ["Va en", "baños · TODA la cocina · garaje · exterior · sótano · laundry · a 6 ft de cualquier fregadero"]] },
+    { t: "🔥 AFCI", art: "210.12", filas: [
+      ["Va en", "casi todos los circuitos 120V 15/20A de vivienda (cuartos, salas, cocina, laundry)"]] },
+    { t: "🔲 Tomacorrientes — distancias", art: "210.52", filas: [
+      ["Paredes", "ninguna a más de 6 ft de una toma (cada 12 ft)"],
+      ["Countertop", 'todo tramo de 12" o más lleva toma · ninguna a más de 24" '],
+      ["Baño", "a máximo 3 ft del lavamanos · circuito de 20 A dedicado"]] },
+    { t: "🗄 Frente al panel — espacio libre", art: "110.26 · 240.24", filas: [
+      ["Fondo", '36"'], ["Ancho", '30"'], ["Alto libre", "6.5 ft"],
+      ["Breaker más alto", "máx 6 ft 7 in del piso"]] },
+    { t: "📦 Box fill — pulgadas cúbicas por cable", art: "314.16", filas: [
+      ["#14", "2.0 in³"], ["#12", "2.25 in³"], ["#10", "2.5 in³"],
+      ["Dispositivo (toma/switch)", "cuenta DOBLE"], ["Tierras", "todas juntas = 1 (la mayor)"],
+      ['Caja 4" sq × 2-1/8"', "30.3 in³"]] },
+  ];
+  function pintarInicioEmpresa() {
+    const docs = state.docsEmpresa || [];
+    const hoy = hoyISO();
+    const filaDoc = d => {
+      let chip = "";
+      if (d.vence) {
+        const dias = Math.round((Date.parse(d.vence) - Date.parse(hoy)) / 86400000);
+        chip = dias < 0 ? `<span class="recibo-chip devolucion">VENCIDO ${esc(d.vence)}</span>`
+          : dias <= 30 ? `<span class="recibo-chip devolucion">vence en ${dias} días</span>`
+          : `<span class="recibo-chip leido">vence ${esc(d.vence)}</span>`;
+      }
+      const enlace = d.ruta
+        ? `<a class="doc-link emp-ver" data-ruta="${esc(d.ruta)}" target="_blank" rel="noopener">📄 Ver</a>`
+        : d.url ? `<a class="doc-link" href="${esc(d.url)}" target="_blank" rel="noopener">📄 Ver</a>`
+        : `<span class="alcance-estado">sin archivo todavía</span>`;
+      return `<div class="mat-item">
+        <span class="alcance-info">
+          <span class="alcance-titulo">${esc(EN_APP ? (d.tituloEn || d.titulo) : d.titulo)}</span>
+        </span>
+        ${chip} ${enlace}
+        ${usuario.editar ? `<button class="insp-borrar emp-borrar" data-id="${d.id}" title="Eliminar">🗑</button>` : ""}
+      </div>`;
+    };
+    const formDueno = usuario.editar ? `
+      <form class="cal-form" id="form-doc-empresa">
+        <div class="modal-fila">
+          <label>Documento
+            <input name="titulo" type="text" required placeholder="Ej: COI actualizado 2027" autocomplete="off">
+          </label>
+          <label>Vence (opcional)
+            <input name="vence" type="date">
+          </label>
+        </div>
+        <label>Archivo PDF
+          <input name="archivo" type="file" accept="application/pdf" required>
+        </label>
+        <button type="submit" class="accion secundaria">⬆ Subir documento de la empresa</button>
+      </form>` : "";
+    $("inicio-empresa").innerHTML = `
+      <div class="inicio-card">
+        <div class="inicio-card-titulo">📋 Licencia y seguros</div>
+        ${docs.map(filaDoc).join("") || `<p class="cal-sin-eventos">Sin documentos todavía.</p>`}
+        ${formDueno}
+      </div>
+      <div class="inicio-card">
+        <details class="chk-det">
+          <summary class="inicio-card-titulo" style="cursor:pointer">📖 Código eléctrico — guía de campo (NEC 2023)</summary>
+          <p class="modal-nota">Los números que se usan en la obra, con su artículo al lado.
+          El texto oficial se confirma en <a class="doc-link" href="https://link.nfpa.org" target="_blank" rel="noopener">NFPA LiNK</a>
+          (Florida: FBC 8ª edición, base NEC 2023). Detectores de humo: FBC-R R314 / NFPA 72, no NEC.
+          Para un caso raro o una discusión con un inspector: pregúntale a Claude y te da el artículo exacto con la frase textual.</p>
+          ${NEC_SECCIONES.map(sec => `
+          <details class="chk-det" style="margin:.3rem 0">
+            <summary style="cursor:pointer"><strong>${esc(sec.t)}</strong> <span class="recibo-chip leido">NEC ${esc(sec.art)}</span></summary>
+            ${sec.filas.map(f => `<div class="mat-item">
+              <span class="alcance-info"><span class="alcance-titulo">${esc(f[0])}</span></span>
+              <span class="alcance-estado" style="text-align:right"><strong>${esc(f[1])}</strong></span>
+            </div>`).join("")}
+          </details>`).join("")}
+        </details>
+      </div>`;
+    // enlaces firmados para los PDFs de la empresa
+    const rutas = [...$("inicio-empresa").querySelectorAll(".emp-ver")].map(a => a.dataset.ruta);
+    if (rutas.length) {
+      DB.firmarFotos(rutas).then(firmas => {
+        $("inicio-empresa").querySelectorAll(".emp-ver").forEach(a => {
+          if (firmas[a.dataset.ruta]) a.href = firmas[a.dataset.ruta];
+        });
+      }).catch(() => {});
+    }
+    $("inicio-empresa").querySelectorAll(".emp-borrar").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("¿Eliminar este documento de la empresa?")) return;
+        try { await DB.eliminarDocEmpresa(btn.dataset.id); await recargar(); avisar("Documento eliminado ✓"); }
+        catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    const formE = $("form-doc-empresa");
+    if (formE) formE.addEventListener("submit", async e => {
+      e.preventDefault();
+      const d = new FormData(formE);
+      const archivo = formE.elements.archivo.files[0];
+      if (!archivo) return;
+      const $btn = formE.querySelector('button[type="submit"]');
+      $btn.disabled = true; $btn.textContent = "Subiendo…";
+      try {
+        const ruta = await DB.subirDocumento("empresa", archivo, "docs-equipo");
+        await DB.crearDocEmpresa({
+          titulo: (d.get("titulo") || "").toString().trim(),
+          titulo_en: (d.get("titulo") || "").toString().trim(),
+          ruta, vence: d.get("vence") || null, orden: 99
+        });
+        await recargar();
+        avisar("Documento de la empresa guardado ✓ — el equipo y los portales ya lo ven");
+      } catch (err) {
+        avisar("No se pudo subir: " + err.message, true);
+        $btn.disabled = false; $btn.textContent = "⬆ Subir documento de la empresa";
+      }
+    });
   }
 
   // ---------- Notificaciones al teléfono (dueño y Flavia) ----------
