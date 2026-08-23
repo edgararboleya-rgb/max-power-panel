@@ -2681,13 +2681,36 @@
       || (extraEstados && extraEstados.includes(p.estado)));
   }
 
+  // Nombre corto de un documento firmable: "CO #1", "SOW"…
+  function coCorto(titulo) {
+    const m = /change\s*order\s*#?\s*(\d+)|\bco\s*#?\s*(\d+)/i.exec(titulo || "");
+    if (m) return "CO #" + (m[1] || m[2]);
+    if (/\bsow\b|scope\s*of\s*work|propuesta|contrato/i.test(titulo || "")) return null; // el SOW ES el contrato normal
+    return null;
+  }
+  // La flechita de Change Orders: se llena con los documentos DEL proyecto elegido
+  function llenarCOHoras() {
+    const sel = $formHoras.elements.co;
+    if (!sel || sel.tagName !== "SELECT") return;
+    const pid = $formHoras.elements.proyecto.value;
+    const vistos = new Set();
+    const opciones = (state.titulosDocs || [])
+      .filter(t => t.proyecto === pid)
+      .map(t => coCorto(t.titulo))
+      .filter(x => x && !vistos.has(x) && vistos.add(x));
+    sel.innerHTML = `<option value="">No — contrato normal</option>` +
+      opciones.map(x => `<option value="${esc(x)}">🧾 ${esc(x)}</option>`).join("") +
+      `<option value="__otro__">✍️ Otro (escribirlo)</option>`;
+  }
   function prepararHoras() {
     const f = $formHoras.elements.fecha;
     if (!f.value) f.value = hoyISO(); // fecha LOCAL: por la noche no salta a mañana
     $formHoras.elements.proyecto.innerHTML = proyectosConTrabajo()
       .map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join("");
+    llenarCOHoras();
     pintarHistorialHoras();
   }
+  $formHoras.elements.proyecto.addEventListener("change", llenarCOHoras);
 
   function pintarHistorialHoras() {
     const mios = (state.registroHoras || []).filter(r => r.usuarioId === usuario.id);
@@ -2824,6 +2847,11 @@
       notas: (d.get("notas") || "").toString().trim() || null,
       co: (d.get("co") || "").toString().trim() || null
     };
+    if (fila.co === "__otro__") {
+      const escrito = prompt("¿De cuál Change Order fue el trabajo? (Ej: CO #2)");
+      if (escrito === null) return;
+      fila.co = escrito.trim() || null;
+    }
     try {
       await DB.reportarHoras(fila);
       if (pendiente) {

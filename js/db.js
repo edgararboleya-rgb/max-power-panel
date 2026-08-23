@@ -197,7 +197,7 @@
            hitos, facturas, horas, eventos, pendientes, documentos, fotos,
            inspecciones, materiales, materialesEquipo, costos, externos,
            gestiones, recibos, recibosEquipo, alcancePuntos, ayudantes, decisiones,
-           llavesPortal, visitasPortal, docsEmpresa] =
+           llavesPortal, visitasPortal, docsEmpresa, titulosDocs] =
       await Promise.all([
         leer("perfiles?select=*"),
         leer("proyectos?select=*&order=nombre"),
@@ -229,7 +229,9 @@
         // Visitas del portal (solo el dueño recibe filas)
         leer("portal_visitas?select=proyecto_id,cuando&order=cuando.desc&limit=300").catch(() => []),
         // Documentos de la empresa (licencia y seguros) — todos los ven
-        leer("documentos_empresa?select=*&order=orden,id").catch(() => [])
+        leer("documentos_empresa?select=*&order=orden,id").catch(() => []),
+        // Solo títulos de documentos (para elegir el CO en el reporte de horas)
+        leer("documentos_equipo?select=proyecto_id,titulo").catch(() => [])
       ]);
 
     const llavePorProyecto = Object.fromEntries((llavesPortal || []).map(l => [l.proyecto_id, l.token]));
@@ -341,6 +343,7 @@
         correccion: h.correccion_estado || null
       })),
       visitasPortal: visitaPorProyecto,
+      titulosDocs: (titulosDocs || []).map(t => ({ proyecto: t.proyecto_id, titulo: t.titulo || "" })),
       docsEmpresa: (docsEmpresa || []).map(d => ({
         id: d.id, titulo: d.titulo, tituloEn: d.titulo_en || "",
         ruta: d.ruta || "", url: d.url || "", vence: d.vence || "" })),
