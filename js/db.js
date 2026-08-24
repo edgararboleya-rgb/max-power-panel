@@ -323,10 +323,16 @@
         activo: u.activo !== false
       })),
       proyectos: lista,
-      eventos: eventos.map(e => ({
-        id: e.id, fecha: e.fecha, hora: e.hora || "", titulo: e.titulo,
-        proyecto: e.proyecto_id, nota: e.nota || "", alerta: !!e.alerta
-      })),
+      // Regla de la casa: el equipo ve los eventos generales y LOS SUYOS;
+      // los eventos asignados a otra persona no le aparecen.
+      eventos: eventos
+        .filter(e => esDueno || !e.asignados || !e.asignados.length || e.asignados.includes(uid()))
+        .map(e => ({
+          id: e.id, fecha: e.fecha, hora: e.hora || "", titulo: e.titulo,
+          proyecto: e.proyecto_id, nota: e.nota || "", alerta: !!e.alerta,
+          asignados: (e.asignados || []).map(a => nombrePorId[a] || "").filter(Boolean),
+          ubicacion: e.ubicacion || "", estadoEv: e.estado || "programado"
+        })),
       pendientes: pendientes.map(p => ({
         id: p.id, fecha: p.fecha, proyecto: p.proyecto_id,
         descripcion: p.descripcion, autor: nombrePorId[p.autor_id] || "",

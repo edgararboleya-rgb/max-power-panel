@@ -1980,6 +1980,7 @@
         <div class="proyecto-detalle">
           <div class="detalle-seccion"><h3>Situación</h3><p>${esc(sinMontos(p.estadoDetalle))}</p></div>
           <div class="detalle-seccion"><h3>Próxima acción</h3><p>${esc(sinMontos(p.proximaAccion))}</p></div>
+          ${eventosProyectoHTML(p)}
           ${arranqueHTML(p)}
           ${stepperHTML(p)}
           ${horasHTML(p)}
@@ -4933,6 +4934,27 @@ Power done right the first time. ⚡`;
     pintarDiaPanel();
   }
 
+  // 📅 Los próximos días de trabajo de ESTE proyecto, dentro de su ficha
+  function eventosProyectoHTML(p) {
+    const hoy = hoyISO();
+    const evs = eventosCal()
+      .filter(e => e.proyecto === p.id && e.fecha >= hoy && e.estadoEv !== "cancelado")
+      .sort((a, b) => a.fecha.localeCompare(b.fecha))
+      .slice(0, 6);
+    if (!evs.length) return "";
+    return `
+      <div class="detalle-seccion">
+        <h3>📅 Próximos días de trabajo</h3>
+        ${evs.map(e => `<div class="agenda-item">
+          <span class="agenda-hora">${esc(e.fecha.slice(5))} ${esc(e.hora || "")}</span>
+          <span class="agenda-info">
+            <span class="agenda-titulo">${esc(sinMontos(e.titulo))}</span>
+            ${e.asignados && e.asignados.length ? `<span class="agenda-lugar">👤 ${esc(e.asignados.join(", "))}</span>` : ""}
+            ${e.ubicacion ? `<span class="agenda-lugar">📍 ${esc(e.ubicacion)}</span>` : ""}
+          </span>
+        </div>`).join("")}
+      </div>`;
+  }
   function pintarDiaPanel() {
     if (!calDiaSel) { $("cal-dia-panel").innerHTML = ""; return; }
     const [a, m, d] = calDiaSel.split("-").map(Number);
@@ -4942,11 +4964,13 @@ Power done right the first time. ⚡`;
     const listaEvs = evsDia.length
       ? evsDia.map(e => {
           const p = e.proyecto ? proyectos().find(x => x.id === e.proyecto) : null;
-          return `<div class="agenda-item${e.alerta ? " alerta" : ""}">
+          return `<div class="agenda-item${e.alerta ? " alerta" : ""}${e.estadoEv === "cancelado" ? " ev-cancelado" : ""}">
               <span class="agenda-hora">${esc(e.hora || "")}</span>
               <span class="agenda-info">
-                <span class="agenda-titulo">${esc(sinMontos(e.titulo))}</span>
+                <span class="agenda-titulo"${e.estadoEv === "cancelado" ? ' style="text-decoration:line-through;opacity:.6"' : ""}>${esc(sinMontos(e.titulo))}${e.estadoEv === "hecho" ? " ✓" : ""}${e.estadoEv === "cancelado" ? " (cancelado)" : ""}</span>
                 ${p ? `<span class="agenda-lugar">🔧 ${esc(p.nombre)}</span>` : ""}
+                ${e.asignados && e.asignados.length ? `<span class="agenda-lugar">👤 ${esc(e.asignados.join(", "))}</span>` : ""}
+                ${e.ubicacion ? `<span class="agenda-lugar">📍 ${esc(e.ubicacion)}</span>` : ""}
                 ${e.nota ? `<span class="agenda-nota">${esc(sinMontos(e.nota))}</span>` : ""}
               </span>
               ${usuario.finanzas ? `<button type="button" class="insp-borrar ev-borrar" data-id="${e.id}" title="Eliminar este evento">🗑</button>` : ""}
