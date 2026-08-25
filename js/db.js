@@ -402,9 +402,9 @@
         id: r.id, proyecto: r.proyecto_id, ruta: r.ruta || "",
         total: r.total !== undefined && r.total !== null ? Number(r.total) : null,
         proveedor: r.proveedor || "", notas: r.notas || "",
-        co: r.co || null,
+        co: r.co || null, categoria: r.categoria || "material",
         estado: r.estado || "por_leer", autor: nombrePorId[r.autor_id] || "",
-        fecha: r.creado ? String(r.creado).slice(0, 10) : ""
+        fecha: r.fecha || (r.creado ? String(r.creado).slice(0, 10) : "")
       })),
       puntos: alcancePuntos.map(a => ({
         id: a.id, proyecto: a.proyecto_id, texto: a.texto,

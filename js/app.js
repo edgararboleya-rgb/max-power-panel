@@ -1107,7 +1107,7 @@
       .filter(m => m.proyecto === pid && m.estado === "comprado" && typeof m.precio === "number")
       .reduce((s, m) => s + m.precio, 0) +
     (state.recibos || [])
-      .filter(r => r.proyecto === pid && typeof r.total === "number")
+      .filter(r => r.proyecto === pid && typeof r.total === "number" && r.estado !== "anulado")
       .reduce((s, r) => s + r.total, 0);
   // Lo que falta para arrancar un proyecto (materiales + gestiones)
   const faltaArranque = pid => ({
@@ -2893,7 +2893,12 @@
     const faltan = mats.filter(m => m.estado === "falta");
     const comprados = mats.filter(m => m.estado === "comprado").slice(-10).reverse();
     const gestAbiertas = (state.gestiones || []).filter(g => !g.hecha && pasaFiltro(g));
-    const recibosVista = (state.recibos || []).filter(pasaFiltro).slice(-8).reverse();
+    // Compras dictadas por voz que faltan por completar: sin foto o sin proyecto
+    const recibosPendientes = (state.recibos || [])
+      .filter(r => r.estado !== "anulado" && (r.estado === "sin_foto" || !r.proyecto));
+    const idsPendientes = new Set(recibosPendientes.map(r => r.id));
+    const recibosVista = (state.recibos || [])
+      .filter(r => pasaFiltro(r) && !idsPendientes.has(r.id)).slice(-8).reverse();
     const nombreProy = id => {
       const p = proyectos().find(x => x.id === id);
       return p ? p.nombre : "General";
@@ -2956,7 +2961,7 @@
       activosLista.map(x =>
         `<option value="${esc(x.id)}"${x.id === filtroMateriales ? " selected" : ""}>${esc(x.nombre)}</option>`).join("");
 
-    const RES_RECIBO = { por_leer: "POR LEER", leido: "LEÍDO", conciliado: "CONCILIADO ✓" };
+    const RES_RECIBO = { por_leer: "POR LEER", leido: "LEÍDO", conciliado: "CONCILIADO ✓", sin_foto: "FALTA FOTO 📷", anulado: "ANULADO" };
     const esDevolucionRecibo = r =>
       (typeof r.total === "number" && r.total < 0) || /DEVOLUCI/i.test(r.notas || "");
     const filaRecibo = r => `
@@ -2966,14 +2971,16 @@
         ${r.co ? `<span class="recibo-chip leido">🧾 ${esc(r.co)}</span>` : ""}
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(r.proveedor || "Recibo")}${r.notas ? ` <span class="mat-cant">— ${esc(sinMontos(r.notas))}</span>` : ""}</span>
-          <span class="alcance-estado">${esc(nombreProy(r.proyecto))} · ${esc(r.autor)} ${esc(r.fecha)}</span>
+          <span class="alcance-estado">${r.proyecto ? esc(nombreProy(r.proyecto)) : "⚠ Sin proyecto"} · ${esc(r.autor)} ${esc(r.fecha)}</span>
         </span>
+        ${!r.proyecto && usuario.editar ? `<button class="insp-borrar btn-recibo-asignar" data-id="${r.id}"
+          title="Asignarle proyecto a esta compra">📌</button>` : ""}
         ${usuario.finanzas && typeof r.total === "number" ? `<span class="mat-precio">${fmt(r.total)}</span>` : ""}
         ${r.ruta ? `<a class="doc-link recibo-ver" data-ruta="${esc(r.ruta)}" target="_blank" rel="noopener">📄 Ver</a>` : ""}
         ${usuario.finanzas ? `<button class="insp-borrar btn-recibo-total" data-id="${r.id}"
           data-total="${typeof r.total === "number" ? r.total : ""}" data-proveedor="${esc(r.proveedor || "")}" data-notas="${esc(r.notas || "")}"
           title="Corregir total, proveedor o descripción">✎</button>` : ""}
-        ${usuario.editar ? `<button class="insp-borrar btn-recibo-foto" data-id="${r.id}" data-proyecto="${esc(r.proyecto || "general")}"
+        ${usuario.editar ? `<button class="insp-borrar btn-recibo-foto" data-id="${r.id}" data-proyecto="${esc(r.proyecto || "general")}" data-estado="${esc(r.estado)}"
           title="${r.ruta ? "Cambiar la foto del recibo" : "Ponerle la foto del recibo"}">📷</button>` : ""}
         ${usuario.editar ? `<button class="insp-borrar btn-recibo-borrar" data-id="${r.id}" title="Eliminar">🗑</button>` : ""}
       </div>`;
@@ -3089,6 +3096,11 @@
           </label>
           <button type="submit" class="accion">⬆ Subir recibo</button>
         </form>
+        ${recibosPendientes.length ? `
+        <div class="cal-form-titulo" style="margin-top:10px">📥 Por completar (${recibosPendientes.length}) — compras dictadas por voz</div>
+        <p class="cal-sin-eventos" style="margin:2px 0 6px">Ponles la foto del recibo con 📷 o el proyecto con 📌.</p>
+        ${recibosPendientes.map(filaRecibo).join("")}
+        <div class="cal-form-titulo" style="margin-top:10px">Últimas compras</div>` : ""}
         ${recibosVista.map(filaRecibo).join("") || `<p class="cal-sin-eventos">Sin recibos todavía.</p>`}
       </div>
       ${sugeridos.length ? `
@@ -3583,7 +3595,9 @@
           try {
             const blob = await reducirImagen(archivo).catch(() => archivo);
             const ruta = await DB.subirFoto(btn.dataset.proyecto || "general", blob, blob.type || archivo.type, "recibos");
-            await DB.cambiarRecibo(btn.dataset.id, { ruta });
+            const cambios = { ruta };
+            if (btn.dataset.estado === "sin_foto") cambios.estado = "leido";
+            await DB.cambiarRecibo(btn.dataset.id, cambios);
             await recargar();
             avisar("Foto del recibo guardada ✓");
           } catch (err) {
@@ -3593,6 +3607,23 @@
           }
         });
         input.click();
+      });
+    });
+    // 📌 Asignarle proyecto a una compra dictada por voz que quedó "sin proyecto"
+    $("materiales-panel").querySelectorAll(".btn-recibo-asignar").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const opciones = proyectos().filter(x => ["ejecucion", "aprobado", "pausa"].includes(x.estado));
+        if (!opciones.length) { avisar("No hay proyectos activos para asignar.", true); return; }
+        const menu = opciones.map((x, i) => `${i + 1}. ${x.nombre}`).join("\n");
+        const resp = prompt("¿A qué proyecto va esta compra?\n\n" + menu + "\n\nEscribe el número:");
+        if (!resp) return;
+        const idx = parseInt(resp, 10) - 1;
+        if (isNaN(idx) || !opciones[idx]) { avisar("Número inválido.", true); return; }
+        try {
+          await DB.cambiarRecibo(btn.dataset.id, { proyecto_id: opciones[idx].id });
+          await recargar();
+          avisar(`Compra asignada a ${opciones[idx].nombre} ✓`);
+        } catch (err) { avisar("No se pudo asignar: " + err.message, true); }
       });
     });
     $("materiales-panel").querySelectorAll(".btn-recibo-borrar").forEach(btn => {

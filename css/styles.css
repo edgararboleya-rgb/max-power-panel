@@ -1889,6 +1889,9 @@ video.foto-mini { background: #000; }
 .recibo-chip.leido      { background: var(--mp-sky-2); color: var(--mp-teal-text); }
 .recibo-chip.conciliado { background: #F3FBEC; color: #4C8A1F; border-color: #BFE8A8; }
 .recibo-chip.devolucion { background: #EAF6FF; color: #1D5FA8; border-color: #BBDCF5; }
+.recibo-chip.sin_foto   { background: #FFF1E3; color: #B25E09; border-color: #F5CFA4; }
+.recibo-chip.anulado    { background: #F1F1F1; color: #8A8A8A; border-color: #DDD; text-decoration: line-through; }
+.mat-item.recibo-anulado .alcance-titulo { text-decoration: line-through; opacity: .6; }
 .mat-item.recibo-por_leer { border-color: var(--mp-warn-bd); background: var(--mp-warn-bg); }
 .mat-item.recibo-leido, .mat-item.recibo-conciliado { border-color: var(--mp-line); background: var(--mp-card); }
 .btn-importar-recibo { margin-bottom: 0.55rem; }
