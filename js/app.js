@@ -2682,25 +2682,46 @@
       || (extraEstados && extraEstados.includes(p.estado)));
   }
 
-  // Nombre corto de un documento firmable: "CO #1", "SOW"…
-  function coCorto(titulo) {
-    const m = /change\s*order\s*#?\s*(\d+)|\bco\s*#?\s*(\d+)/i.exec(titulo || "");
-    if (m) return "CO #" + (m[1] || m[2]);
-    if (/\bsow\b|scope\s*of\s*work|propuesta|contrato/i.test(titulo || "")) return null; // el SOW ES el contrato normal
-    return null;
+  // Número de Change Order dentro de un título: "Change Order #1…",
+  // "CO-001 Kitchen Circuits", "MXP-CO-2026-…-01" → 1
+  function numeroCO(titulo) {
+    const m = /change\s*order\s*[#\-]?\s*0*(\d+)|\bco[\s#\-]*0*(\d+)\b/i.exec(titulo || "");
+    return m ? Number(m[1] || m[2]) : null;
   }
-  // La flechita de Change Orders: se llena con los documentos DEL proyecto elegido
+  const esDocContrato = t => /\bsow\b|scope\s*of\s*work|propuesta|contrato/i.test(t || "");
+  const esDocAparte = t => /\bplano\b|\brfi\b|site\s*plan|acknowledgment|licencia|insurance/i.test(t || "");
+  // La flechita del reporte de horas: muestra los documentos REALES del
+  // proyecto elegido, con su nombre y numeración completos — el contrato
+  // base con su título ("SOW firmado", "SOW 410 Sterling v7"…) y cada
+  // Change Order con el suyo ("Change Order #1 — Cat6 data pathway
+  // (MXP-CO-2026-0816-DICKE-01)"). Nada de "contrato normal" a secas.
   function llenarCOHoras() {
     const sel = $formHoras.elements.co;
     if (!sel || sel.tagName !== "SELECT") return;
     const pid = $formHoras.elements.proyecto.value;
-    const vistos = new Set();
-    const opciones = (state.titulosDocs || [])
-      .filter(t => t.proyecto === pid)
-      .map(t => coCorto(t.titulo))
-      .filter(x => x && !vistos.has(x) && vistos.add(x));
-    sel.innerHTML = `<option value="">No — contrato normal</option>` +
-      opciones.map(x => `<option value="${esc(x)}">🧾 ${esc(x)}</option>`).join("") +
+    const docs = (state.titulosDocs || [])
+      .filter(t => t.proyecto === pid && !esDocAparte(t.titulo));
+    // Contratos base: todos los SOW / propuestas del proyecto, con su nombre
+    const contratos = docs.filter(t => esDocContrato(t.titulo) && numeroCO(t.titulo) === null);
+    // Change Orders: agrupados por número; si hay varios documentos del
+    // mismo CO (ej. el original y el firmado) gana el título con la
+    // numeración MXP, o el más descriptivo
+    const porCO = {};
+    for (const t of docs) {
+      const n = numeroCO(t.titulo);
+      if (n === null) continue;
+      const actual = porCO[n];
+      if (!actual || (/MXP-/i.test(t.titulo) && !/MXP-/i.test(actual)) ||
+          (/MXP-/i.test(t.titulo) === /MXP-/i.test(actual) && t.titulo.length > actual.length)) {
+        porCO[n] = t.titulo;
+      }
+    }
+    const opcionesBase = contratos.length
+      ? contratos.map(t => `<option value="">📄 Contrato — ${esc(t.titulo)}</option>`).join("")
+      : `<option value="">📄 Contrato base (sin SOW subido aún)</option>`;
+    const opcionesCO = Object.keys(porCO).map(Number).sort((a, b) => a - b)
+      .map(n => `<option value="${esc("CO #" + n)}">🧾 CO #${n} — ${esc(porCO[n])}</option>`).join("");
+    sel.innerHTML = opcionesBase + opcionesCO +
       `<option value="__otro__">✍️ Otro (escribirlo)</option>`;
   }
   function prepararHoras() {
