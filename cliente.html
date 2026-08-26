@@ -127,6 +127,12 @@
       modoEscribir: "Type your signature", modoDibujar: "Draw it instead",
       firmaConsent: "Please check the consent box to sign.",
       firmaFalta: "Please write your name and draw your signature.",
+      leerPrimero: "📖 Open and read the document first",
+      leerNota: "The sign button unlocks after you open the document.",
+      firmadoTit: "Document signed ✅",
+      firmadoTxt: "Thank you! Your signed copy, with its signature certificate, will appear in your document list in a few seconds.",
+      firmadoOk: "Done",
+      ambos: "✍️ Signed by both parties",
       garantia: "All our workmanship is covered by a 1-year warranty from completion. Keep this link — it's your home's electrical file.",
       resena: "⭐ Happy with our work? Leave us a Google review!",
       wa: "💬 Questions? Message us on WhatsApp",
@@ -151,6 +157,12 @@
       modoEscribir: "Escribe tu firma", modoDibujar: "Prefiero dibujarla",
       firmaConsent: "Marca la casilla de consentimiento para firmar.",
       firmaFalta: "Escribe tu nombre y dibuja tu firma, por favor.",
+      leerPrimero: "📖 Abre y lee el documento primero",
+      leerNota: "El botón de firmar se activa después de que abras el documento.",
+      firmadoTit: "Documento firmado ✅",
+      firmadoTxt: "¡Gracias! Tu copia firmada, con su certificado de firma, aparecerá en tu lista de documentos en unos segundos.",
+      firmadoOk: "Listo",
+      ambos: "✍️ Firmado por las dos partes",
       garantia: "Toda nuestra mano de obra tiene garantía de 1 año desde la entrega. Guarda este link — es el expediente eléctrico de tu casa.",
       resena: "⭐ ¿Quedaste contento? ¡Déjanos tu reseña en Google!",
       wa: "💬 ¿Preguntas? Escríbenos por WhatsApp",
@@ -299,8 +311,10 @@
         var aprob = "";
         if (d.pide_firma) {
           aprob = d.firmado_el
-            ? ' <span class="cl-aprobado">' + esc(TXT.firmadoPor) + esc(d.firma_nombre || "") + ' · ' + esc(String(d.firmado_el).slice(0, 10)) + '</span>'
-            : ' <button class="cl-boton" data-firmar="' + d.id + '" data-titulo="' + esc(d.titulo) + '">' + esc(TXT.firmar) + '</button>';
+            ? ' <span class="cl-aprobado">' + esc(TXT.firmadoPor) + esc(d.firma_nombre || "") + ' · ' + esc(String(d.firmado_el).slice(0, 10)) + '</span>' +
+              (d.contrafirma_el ? ' <span class="cl-aprobado">' + esc(TXT.ambos) + '</span>' : '')
+            : ' <button class="cl-boton" data-firmar="' + d.id + '" data-titulo="' + esc(d.titulo) + '"' +
+              ' data-url="' + esc(urlSegura(d.url)) + '" data-visto="' + (d.visto_el ? 1 : 0) + '">' + esc(TXT.firmar) + '</button>';
         } else if (d.pide_aprobacion) {
           aprob = d.aprobado_el
             ? ' <span class="cl-aprobado">' + esc(TXT.aprobado) + esc(String(d.aprobado_el).slice(0, 10)) + '</span>'
@@ -356,20 +370,30 @@
         });
       });
       caja.querySelectorAll("[data-firmar]").forEach(function (b) {
-        b.addEventListener("click", function () { abrirFirma(Number(b.dataset.firmar), b.dataset.titulo || ""); });
+        b.addEventListener("click", function () {
+          abrirFirma(Number(b.dataset.firmar), b.dataset.titulo || "", b.dataset.url || "", b.dataset.visto === "1");
+        });
       });
       document.title = "Max Power — " + p.nombre;
     }
 
     // ---- 🖊 Panel de firma: nombre + firma dibujada ----
-    function abrirFirma(docId, titulo) {
+    // yaLeyo: el botón de firmar solo se activa cuando el cliente ya abrió
+    // el documento (antes, o desde el enlace de este mismo panel).
+    function abrirFirma(docId, titulo, urlDoc, yaLeyo) {
       if (document.querySelector(".cl-firma-fondo")) return; // ya hay uno abierto
       var fondo = document.createElement("div");
       fondo.className = "cl-firma-fondo";
+      var puerta = !yaLeyo && urlDoc
+        ? '<a class="cl-boton secundario" id="cl-firma-leer" target="_blank" rel="noopener" href="' + esc(urlDoc) + '"' +
+          ' style="display:block;text-align:center;margin-bottom:.5rem">' + esc(TXT.leerPrimero) + '</a>' +
+          '<div class="cl-firma-nota" id="cl-firma-leer-nota">' + esc(TXT.leerNota) + '</div>'
+        : '';
       fondo.innerHTML =
         '<div class="cl-firma-caja">' +
           '<h3>' + esc(TXT.firmaTitulo) + '</h3>' +
           '<div class="cl-firma-doc">📄 ' + esc(titulo) + '</div>' +
+          puerta +
           '<input type="text" id="cl-firma-nombre" placeholder="' + esc(TXT.firmaNombre) + '" autocomplete="name">' +
           '<div class="cl-firma-tabs" style="display:flex;gap:.5rem;margin:.5rem 0">' +
             '<button type="button" class="cl-boton cl-tab on" id="cl-tab-escribir">✒️ ' + esc(TXT.modoEscribir) + '</button>' +
@@ -381,12 +405,26 @@
             '<input type="checkbox" id="cl-firma-acepto" style="margin-top:.2rem;width:1.1rem;height:1.1rem"> ' +
             '<span>' + esc(TXT.firmaLegal) + '</span></label>' +
           '<div class="cl-firma-botones">' +
-            '<button type="button" class="cl-boton" id="cl-firma-ok">' + esc(TXT.firmaEnviar) + '</button>' +
+            '<button type="button" class="cl-boton" id="cl-firma-ok"' + (!yaLeyo && urlDoc ? ' disabled style="opacity:.5"' : '') + '>' + esc(TXT.firmaEnviar) + '</button>' +
             '<button type="button" class="cl-boton secundario" id="cl-firma-borrar">' + esc(TXT.firmaLimpiar) + '</button>' +
             '<button type="button" class="cl-boton secundario" id="cl-firma-no">' + esc(TXT.firmaCancelar) + '</button>' +
           '</div>' +
         '</div>';
       document.body.appendChild(fondo);
+
+      // La puerta: al abrir el documento desde aquí, queda registrado como
+      // visto y el botón de firmar se desbloquea.
+      var linkLeer = fondo.querySelector("#cl-firma-leer");
+      if (linkLeer) {
+        linkLeer.addEventListener("click", function () {
+          fetch(PORTAL, { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
+            body: JSON.stringify({ t: t, accion: "visto_doc", id: docId }) }).catch(function () {});
+          var ok = fondo.querySelector("#cl-firma-ok");
+          ok.disabled = false; ok.style.opacity = "";
+          var nota = fondo.querySelector("#cl-firma-leer-nota");
+          if (nota) nota.textContent = "✓";
+        });
+      }
 
       var lienzo = fondo.querySelector(".cl-firma-lienzo");
       var ctx = lienzo.getContext("2d");
@@ -461,7 +499,14 @@
           body: JSON.stringify({ t: t, accion: "firmar_doc", id: docId, nombre: nombre, firma: lienzo.toDataURL("image/png") })
         }).then(function (r) {
           if (!r.ok) throw new Error("bad");
-          fondo.remove();
+          // Pantalla de confirmación con su copia
+          fondo.innerHTML =
+            '<div class="cl-firma-caja" style="text-align:center">' +
+              '<h3>' + esc(TXT.firmadoTit) + '</h3>' +
+              '<p class="cl-firma-nota" style="font-size:.9rem">' + esc(TXT.firmadoTxt) + '</p>' +
+              '<button type="button" class="cl-boton" id="cl-firma-fin">' + esc(TXT.firmadoOk) + '</button>' +
+            '</div>';
+          fondo.querySelector("#cl-firma-fin").addEventListener("click", function () { fondo.remove(); });
           return cargar();
         }).catch(function () {
           b.disabled = false; b.textContent = TXT.reintentar;

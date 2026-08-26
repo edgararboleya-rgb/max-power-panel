@@ -430,7 +430,22 @@
             </div>`).join("")}
           </details>`).join("")}
         </details>
-      </div>`;
+      </div>
+      ${(state.jurisdicciones || []).length ? `
+      <div class="inicio-card">
+        <details class="chk-det">
+          <summary class="inicio-card-titulo" style="cursor:pointer">🏛 Permisos por jurisdicción</summary>
+          <p class="modal-nota">Cómo se saca el permiso en cada condado donde trabajamos. Dime lo que aprendas en cada uno y lo voy anotando.</p>
+          ${state.jurisdicciones.map(j => `<div class="mat-item">
+            <span class="alcance-info">
+              <span class="alcance-titulo">${esc(j.condado)}</span>
+              ${j.notas ? `<span class="alcance-estado">${esc(j.notas)}</span>` : ""}
+              ${j.contacto ? `<span class="alcance-estado">☎ ${esc(j.contacto)}</span>` : ""}
+            </span>
+            ${j.portalUrl ? `<a class="doc-link" href="${esc(j.portalUrl)}" target="_blank" rel="noopener">🌐 Portal</a>` : ""}
+          </div>`).join("")}
+        </details>
+      </div>` : ""}`;
     // enlaces firmados para los PDFs de la empresa
     const rutas = [...$("inicio-empresa").querySelectorAll(".emp-ver")].map(a => a.dataset.ruta);
     if (rutas.length) {
@@ -668,6 +683,24 @@
     // Solo los de campo ACTIVOS: Gustavo (license) no reporta horas de obra
     const equipo = (state.equipo || []).filter(u => u.rol === "campo" && u.activo);
     if (!equipo.length) { $("inicio-equipo").innerHTML = ""; return; }
+    // 📊 Capacidad: cuántos días de los próximos 7 tiene cada quien agendados
+    const hoy = hoyISO();
+    const tope = new Date(Date.parse(hoy) + 7 * 86400000).toISOString().slice(0, 10);
+    const diasPersona = {};
+    let sinAsignar = 0;
+    for (const e of (state.eventos || [])) {
+      if (e.fecha < hoy || e.fecha > tope || e.estadoEv === "cancelado") continue;
+      if (!e.asignados || !e.asignados.length) { sinAsignar++; continue; }
+      for (const n of e.asignados) {
+        diasPersona[n] = diasPersona[n] || new Set();
+        diasPersona[n].add(e.fecha);
+      }
+    }
+    const capacidad = Object.keys(diasPersona).length || sinAsignar
+      ? `<p class="modal-nota" style="margin:.2rem 0 .5rem">📊 Próximos 7 días: ${
+          Object.entries(diasPersona).map(([n, s]) => `${esc(n)} ${s.size} día${s.size === 1 ? "" : "s"}`).join(" · ") || "nadie agendado"
+        }${sinAsignar ? ` · ${sinAsignar} evento${sinAsignar === 1 ? "" : "s"} sin asignar` : ""}</p>`
+      : "";
     const filas = equipo.map(u => {
       const mios = (state.registroHoras || []).filter(r => r.usuarioId === u.id);
       const ultima = mios.length ? mios[mios.length - 1].fecha : null;
@@ -716,6 +749,7 @@
     $("inicio-equipo").innerHTML = `
       <div class="inicio-card">
         <div class="inicio-card-titulo">⏱ Reporte de horas del equipo</div>
+        ${capacidad}
         ${filas}
       </div>`;
 
@@ -1806,7 +1840,7 @@
           <div>
             <h2>${esc(p.nombre)}</h2>
             <div class="proyecto-dir">📍 ${esc(p.direccion)}</div>
-            <div class="proyecto-cliente">Cliente: <strong>${esc(p.cliente)}</strong> · vía ${esc(p.via)}</div>
+            <div class="proyecto-cliente">Cliente: <strong>${esc(p.cliente)}</strong> · vía ${esc(p.via)}${p.origen ? ` · 🧲 ${esc(p.origen)}` : ""}</div>
           </div>
           <div class="chips-col">
             ${conSelector && usuario.editar ? selectorEstadoHTML(p) : chipHTML(p.estado)}
@@ -1897,6 +1931,10 @@
         ${d.firmadoEl ? `<span class="cl-chip-aprobado">🖊 firmó ${esc(d.firmaNombre || "")} · ${esc(d.firmadoEl)}</span>` : `
         <button type="button" class="doc-cliente${d.pideFirma ? " on" : ""} doc-firma" data-id="${d.id}" data-pide="${d.pideFirma ? 1 : 0}"
           title="${d.pideFirma ? "Le está pidiendo FIRMA al cliente (nombre + firma con el dedo) — toca para quitarla" : "Pedirle al cliente que lo FIRME (nombre + firma con el dedo, queda de respaldo)"}">🖊 firma</button>`}
+        ${d.contrafirmaEl ? `<span class="cl-chip-aprobado">✒️ contrafirmado ${esc(d.contrafirmaEl)}</span>`
+          : (usuario.finanzas && (d.pideFirma || d.firmadoEl)) ? `
+        <button type="button" class="doc-cliente doc-contrafirma" data-id="${d.id}" data-titulo="${esc(d.titulo)}"
+          title="Firmarlo tú también: tu firma sale en el certificado junto a la del cliente">✒️ firmar yo</button>` : ""}
         ${d.aprobadoEl ? `<span class="cl-chip-aprobado">✔ aprobó ${esc(d.aprobadoEl)}</span>` : (d.firmadoEl || d.pideFirma) ? "" : `
         <button type="button" class="doc-cliente${d.pideAprobacion ? " on" : ""} doc-aprobacion" data-id="${d.id}" data-pide="${d.pideAprobacion ? 1 : 0}"
           title="${d.pideAprobacion ? "Le está pidiendo aprobación al cliente — toca para quitarla" : "Pedirle al cliente que lo apruebe con un toque"}">✍️ aprobación</button>`}` : ""}` : ""}</span>`)
@@ -2240,6 +2278,22 @@
           await DB.cambiarDocumento(btn.dataset.id, { pide_firma: !pide });
           await recargar();
           avisar(!pide ? "🖊 El cliente verá 'Revisar y firmar' en su portal" : "Petición de firma quitada");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    // ✒️ La contrafirma de Edgar: queda registrada y el certificado del PDF
+    // sellado muestra las dos firmas (si el cliente firma después, sale ya;
+    // el documento queda "firmado por las dos partes" en el portal)
+    $detalle.querySelectorAll(".doc-contrafirma").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        if (!confirm(`Vas a firmar "${btn.dataset.titulo}" como:\n\nEdgar Arboleya\nMax Power Electrical Solutions Inc. (EC13016045)\n\nTu firma saldrá en el certificado junto a la del cliente. ¿Firmar?`)) return;
+        try {
+          await DB.cambiarDocumento(btn.dataset.id, {
+            contrafirma_nombre: "Edgar Arboleya",
+            contrafirma_el: new Date().toISOString()
+          });
+          await recargar();
+          avisar("✒️ Contrafirmado — tu firma saldrá en el certificado");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });

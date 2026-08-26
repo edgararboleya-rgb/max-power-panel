@@ -197,7 +197,7 @@
            hitos, facturas, horas, eventos, pendientes, documentos, fotos,
            inspecciones, materiales, materialesEquipo, costos, externos,
            gestiones, recibos, recibosEquipo, alcancePuntos, ayudantes, decisiones,
-           llavesPortal, visitasPortal, docsEmpresa, titulosDocs] =
+           llavesPortal, visitasPortal, docsEmpresa, titulosDocs, jurisdicciones] =
       await Promise.all([
         leer("perfiles?select=*"),
         leer("proyectos?select=*&order=nombre"),
@@ -231,7 +231,9 @@
         // Documentos de la empresa (licencia y seguros) — todos los ven
         leer("documentos_empresa?select=*&order=orden,id").catch(() => []),
         // Solo títulos de documentos (para elegir el CO en el reporte de horas)
-        leer("documentos_equipo?select=proyecto_id,titulo").catch(() => [])
+        leer("documentos_equipo?select=proyecto_id,titulo").catch(() => []),
+        // Permisos por jurisdicción (todos leen; el dueño edita)
+        leer("jurisdicciones?select=*&order=condado").catch(() => [])
       ]);
 
     const llavePorProyecto = Object.fromEntries((llavesPortal || []).map(l => [l.proyecto_id, l.token]));
@@ -280,6 +282,7 @@
         portalCompleto: p.portal_completo === true,
         cliente: p.cliente || "Por confirmar",
         via: p.via || "—",
+        origen: p.origen || "",
         estado: p.estado,
         fase: p.fase || undefined,
         estadoDetalle: p.estado_detalle || "",
@@ -307,7 +310,8 @@
         docs: docs.filter(d => d.clase === "doc").map(d => ({ id: d.id, titulo: d.titulo, url: d.url, ruta: d.ruta || "", portal: !!d.portal,
           pideAprobacion: !!d.pide_aprobacion, aprobadoEl: d.aprobado_el ? String(d.aprobado_el).slice(0, 10) : "",
           pideFirma: !!d.pide_firma, firmadoEl: d.firmado_el ? String(d.firmado_el).slice(0, 10) : "", firmaNombre: d.firma_nombre || "",
-          vistoEl: d.visto_el ? String(d.visto_el).slice(0, 10) : "" })),
+          vistoEl: d.visto_el ? String(d.visto_el).slice(0, 10) : "",
+          contrafirmaEl: d.contrafirma_el ? String(d.contrafirma_el).slice(0, 10) : "" })),
         rfis: docs.filter(d => d.clase === "rfi").map(d => ({ id: d.id, titulo: d.titulo, estado: d.estado, url: d.url, ruta: d.ruta || "" })),
         horas: (Number(p.horas_estimadas) > 0 || reales > 0)
           ? { estimadas: Number(p.horas_estimadas) || 0, reales: Math.round(reales * 10) / 10 }
@@ -350,6 +354,8 @@
       })),
       visitasPortal: visitaPorProyecto,
       titulosDocs: (titulosDocs || []).map(t => ({ proyecto: t.proyecto_id, titulo: t.titulo || "" })),
+      jurisdicciones: (jurisdicciones || []).map(j => ({
+        id: j.id, condado: j.condado, notas: j.notas || "", portalUrl: j.portal_url || "", contacto: j.contacto || "" })),
       docsEmpresa: (docsEmpresa || []).map(d => ({
         id: d.id, titulo: d.titulo, tituloEn: d.titulo_en || "",
         ruta: d.ruta || "", url: d.url || "", vence: d.vence || "" })),
