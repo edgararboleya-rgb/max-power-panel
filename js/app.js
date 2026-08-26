@@ -232,8 +232,10 @@
   $btnSalir.addEventListener("click", salirApp);
 
   let recargaTurno = 0; // si hay dos recargas en vuelo, solo manda la última
+  let vistaMarcada = false; // una sola marca de "estuve en la app" por sesión
   async function recargar(abrirId) {
     const turno = ++recargaTurno;
+    if (!vistaMarcada) { vistaMarcada = true; DB.estuve(); }
     try {
       const nuevo = await DB.cargarTodo();
       if (turno !== recargaTurno) return;
@@ -737,7 +739,7 @@
             <span class="equipo-dot ${clase}"></span>
             <span class="alcance-info">
               <span class="alcance-titulo">${esc(u.nombre)}</span>
-              <span class="alcance-estado">${texto} · toca para ver sus reportes</span>
+              <span class="alcance-estado">${texto}${u.ultimaVista ? ` · 📱 en la app: ${esc(String(u.ultimaVista).slice(0, 10))}` : ""} · toca para ver sus reportes</span>
             </span>
           </summary>
           <div class="equipo-reportes">
@@ -1976,6 +1978,9 @@
            <p class="modal-nota">👀 El cliente todavía no ha abierto su portal.</p>`}
            ${p.portalToken ? `
            <div class="modal-botones">
+             <p class="modal-nota">✉️ Email del cliente: <strong>${esc(p.clienteEmail || "sin anotar")}</strong>
+               <button type="button" class="insp-borrar" id="btn-cliente-email" data-id="${esc(p.id)}" data-email="${esc(p.clienteEmail || "")}"
+                 title="Anotar o corregir el email (para mandarle su copia firmada y avisos)">✎</button></p>
              <button type="button" class="accion secundaria" id="btn-portal-copiar" data-token="${esc(p.portalToken)}">🔗 Copiar el link del cliente</button>
              <button type="button" class="accion secundaria" id="btn-portal-regenerar">♻ Regenerar la llave</button>
              <button type="button" class="doc-cliente${p.portalDinero ? " on" : ""}" id="btn-portal-dinero"
@@ -2208,6 +2213,16 @@
 
     // "+ Agregar documento" (solo aparece para el dueño)
     // Portal del cliente: copiar link, regenerar llave, y el 👁 por documento
+    const btnEmailCli = $detalle.querySelector("#btn-cliente-email");
+    if (btnEmailCli) btnEmailCli.addEventListener("click", async () => {
+      const nuevo = prompt("Email del cliente (para mandarle su copia firmada y avisos):", btnEmailCli.dataset.email || "");
+      if (nuevo === null) return;
+      try {
+        await DB.cambiarProyecto(btnEmailCli.dataset.id, { cliente_email: nuevo.trim() || null });
+        await recargar(btnEmailCli.dataset.id);
+        avisar("✉️ Email del cliente guardado");
+      } catch (err) { avisar("No se pudo: " + err.message, true); }
+    });
     const btnPortalCopiar = $detalle.querySelector("#btn-portal-copiar");
     if (btnPortalCopiar) btnPortalCopiar.addEventListener("click", async () => {
       const base = location.origin + location.pathname.replace(/index\.html?$/, "");

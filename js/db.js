@@ -283,6 +283,7 @@
         cliente: p.cliente || "Por confirmar",
         via: p.via || "—",
         origen: p.origen || "",
+        clienteEmail: p.cliente_email || "",
         estado: p.estado,
         fase: p.fase || undefined,
         estadoDetalle: p.estado_detalle || "",
@@ -324,7 +325,8 @@
       nombrePorId,
       equipo: perfiles.map(u => ({
         id: u.id, nombre: u.nombre, rol: u.rol,
-        activo: u.activo !== false
+        activo: u.activo !== false,
+        ultimaVista: u.ultima_vista || ""
       })),
       proyectos: lista,
       // Regla de la casa: el equipo ve los eventos generales y LOS SUYOS;
@@ -430,6 +432,9 @@
     cargarTodo,
     // Escrituras
     cambiarProyecto: (id, cambios) => actualizar(`proyectos?id=eq.${encodeURIComponent(id)}`, cambios),
+    // Marca "estuve en la app" (última vista del que llama; falla en silencio
+    // si la función SQL aún no existe)
+    estuve: () => api("rpc/fn_estuve", { metodo: "POST", cuerpo: {} }).catch(() => {}),
     cambiarLlavePortal: (proyectoId, token) => api("portal_llaves?on_conflict=proyecto_id", {
       metodo: "POST",
       headers: { Prefer: "resolution=merge-duplicates,return=representation" },
