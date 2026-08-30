@@ -523,6 +523,30 @@
     crearDocumento: fila => insertar("documentos", fila),
     subirDocumento,
     tokenSesion: () => (sesion ? sesion.access_token : null),
+    // 🤖 El asistente: manda la conversación al cerebro con el token del
+    // usuario. El cerebro mira ese token para saber quién pregunta y qué
+    // puede ver (el equipo nunca recibe dinero).
+    async preguntarAsistente(mensajes) {
+      if (!sesion) throw new Error("Sin sesión");
+      const r = await fetch(`${SB.url}/functions/v1/cerebro?accion=asistente`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sesion.access_token}` },
+        body: JSON.stringify({ mensajes })
+      });
+      if (r.status === 401) {
+        // el token pudo haber caducado: se refresca y se reintenta una vez
+        await refrescar();
+        const r2 = await fetch(`${SB.url}/functions/v1/cerebro?accion=asistente`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${sesion.access_token}` },
+          body: JSON.stringify({ mensajes })
+        });
+        if (!r2.ok) throw new Error("No se pudo conectar con el asistente");
+        return r2.json();
+      }
+      if (!r.ok) throw new Error("El asistente no respondió (" + r.status + ")");
+      return r.json();
+    },
     crearDocEmpresa: fila => insertar("documentos_empresa", fila),
     cambiarDocEmpresa: (id, cambios) => actualizar(`documentos_empresa?id=eq.${id}`, cambios),
     eliminarDocEmpresa: id => api(`documentos_empresa?id=eq.${id}`, { metodo: "DELETE" }),

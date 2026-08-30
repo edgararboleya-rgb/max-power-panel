@@ -216,6 +216,7 @@
     };
     $usuarioChip.textContent = usuario.nombre;
     $("btn-chat").hidden = false;
+    $("btn-asistente").hidden = false;
     arrancarChat();
     irHome();
   }
@@ -225,6 +226,7 @@
     state = null;
     usuario = null;
     $("btn-chat").hidden = true;
+    $("btn-asistente").hidden = true;
     if (chatTimer) { clearInterval(chatTimer); chatTimer = null; }
     $app.hidden = true;
     $login.hidden = false;
@@ -254,6 +256,7 @@
     else if (!$("vista-checklist").hidden) pintarChecklist();
     else if (!$("vista-gastos").hidden) pintarGastos();
     else if (!$("vista-chat").hidden) refrescarChat(false);
+    else if (!$("vista-asistente").hidden) { /* la conversación no se toca al recargar */ }
     else { pintarInicio(); pintarCategorias(); pintarResumen(); }
   }
 
@@ -270,6 +273,7 @@
     $("vista-gastos").hidden = vista !== "gastos";
     $("vista-estimador").hidden = vista !== "estimador";
     $("vista-chat").hidden = vista !== "chat";
+    $("vista-asistente").hidden = vista !== "asistente";
     $kicker.textContent = kicker;
     $titulo.textContent = titulo;
     $btnVolver.hidden = !volver;
@@ -919,6 +923,7 @@
   }
 
   $btnVolver.addEventListener("click", () => {
+    if (!$("vista-asistente").hidden) { irHome(); return; }
     if (!$("vista-chat").hidden) {
       if (chatConv) { irChat(null); return; }
       irHome();
@@ -1633,6 +1638,114 @@
     });
   }
 
+  // ============================================================
+  // 🤖 EL ASISTENTE — el chat con el cerebro de la compañía
+  // Cada persona tiene su propia conversación. El servidor decide qué
+  // puede ver cada quien según su token: el equipo nunca recibe dinero.
+  // ============================================================
+  let asisMsgs = [];
+  let asisPensando = false;
+
+  function asisLlave() { return "mxp_asistente_" + (DB.uid() || "x"); }
+  function asisCargar() {
+    try { asisMsgs = JSON.parse(localStorage.getItem(asisLlave())) || []; }
+    catch { asisMsgs = []; }
+  }
+  function asisGuardar() {
+    // Se guardan los últimos 40 para que no crezca sin fin
+    try { localStorage.setItem(asisLlave(), JSON.stringify(asisMsgs.slice(-40))); } catch { /* lleno */ }
+  }
+
+  const ASIS_SUGERENCIAS_DUENO = [
+    "¿Cómo va el dinero de Mirabella?",
+    "¿Qué facturas llevan más días sin cobrar?",
+    "¿Qué se me está olvidando esta semana?",
+  ];
+  const ASIS_SUGERENCIAS_EQUIPO = [
+    "¿Cómo reporto mis horas de un Change Order?",
+    "¿Qué tengo agendado esta semana?",
+    "¿Qué calibre lleva un breaker de 50 amperes?",
+  ];
+
+  function irAsistente() {
+    mostrar("asistente", { kicker: "Max Power", titulo: "🤖 Asistente", volver: true, nuevo: false });
+    if (!asisMsgs.length) asisCargar();
+    pintarAsistente();
+  }
+
+  function pintarAsistente() {
+    const sugerencias = usuario.finanzas ? ASIS_SUGERENCIAS_DUENO : ASIS_SUGERENCIAS_EQUIPO;
+    const burbujas = asisMsgs.map(m => `
+      <div class="burbuja${m.rol === "user" ? " mia" : ""}">
+        <span class="burbuja-quien">${m.rol === "user" ? esc(usuario.nombre.split(" ")[0]) : "🤖 Asistente"}</span>
+        <span class="burbuja-texto">${esc(m.texto)}</span>
+      </div>`).join("");
+
+    $("asistente-panel").innerHTML = `
+      <div class="cal-panel-card chat-caja">
+        <div class="chat-cabeza">
+          <span class="chat-titulo">🤖 Asistente de Max Power</span>
+          <span class="chat-priv">${usuario.finanzas ? "ve todo" : "sin dinero"}</span>
+        </div>
+        <p class="modal-nota" style="margin:.1rem 0 .4rem">
+          ${usuario.finanzas
+            ? "Pregúntale por tus proyectos, el dinero, las horas o el calendario. También puedes dictarle para que guarde gastos, horas o materiales."
+            : "Pregúntale cómo hacer algo en la app, o dile tus horas y el material que falta para que él lo anote. De dinero no sabe nada — eso lo lleva Edgar."}
+        </p>
+        <div class="chat-hilo" id="asis-hilo">
+          ${burbujas || `<p class="cal-sin-eventos">Escríbele abajo. Está para ayudarte.</p>`}
+          ${asisPensando ? `<div class="burbuja"><span class="burbuja-texto">✍️ pensando…</span></div>` : ""}
+        </div>
+        ${!asisMsgs.length ? `<div class="chat-sugerencias">
+          ${sugerencias.map(x => `<button type="button" class="asis-sug">${esc(x)}</button>`).join("")}
+        </div>` : ""}
+        <form class="chat-form" id="asis-form" autocomplete="off">
+          <input id="asis-texto" type="text" placeholder="Escribe tu pregunta…" ${asisPensando ? "disabled" : ""}>
+          <button type="submit" class="chat-enviar" title="Enviar" ${asisPensando ? "disabled" : ""}>➤</button>
+        </form>
+        ${asisMsgs.length ? `<button type="button" class="accion secundaria" id="asis-limpiar" style="margin-top:.4rem">🧹 Empezar de nuevo</button>` : ""}
+      </div>`;
+
+    const hilo = $("asis-hilo");
+    if (hilo) hilo.scrollTop = hilo.scrollHeight;
+
+    $("asis-form").addEventListener("submit", e => {
+      e.preventDefault();
+      const t = $("asis-texto").value.trim();
+      if (t) asisEnviar(t);
+    });
+    $("asistente-panel").querySelectorAll(".asis-sug").forEach(b => {
+      b.addEventListener("click", () => asisEnviar(b.textContent));
+    });
+    const limpiar = $("asis-limpiar");
+    if (limpiar) limpiar.addEventListener("click", () => {
+      if (!confirm("¿Borrar esta conversación y empezar de nuevo?")) return;
+      asisMsgs = []; asisGuardar(); pintarAsistente();
+    });
+    const caja = $("asis-texto");
+    if (caja && !asisPensando) caja.focus();
+  }
+
+  async function asisEnviar(texto) {
+    if (asisPensando) return;
+    asisMsgs.push({ rol: "user", texto });
+    asisPensando = true;
+    asisGuardar();
+    pintarAsistente();
+    try {
+      const r = await DB.preguntarAsistente(asisMsgs);
+      if (r && r.respuesta) asisMsgs.push({ rol: "assistant", texto: r.respuesta });
+      else if (r && r.error === "sin_llave") asisMsgs.push({ rol: "assistant", texto: "Todavía no me han conectado la llave del asistente. Edgar tiene que ponerla en Supabase (ANTHROPIC_API_KEY)." });
+      else asisMsgs.push({ rol: "assistant", texto: "No pude contestar eso. Inténtalo otra vez en un momento." });
+    } catch (err) {
+      asisMsgs.push({ rol: "assistant", texto: "No hay conexión con el asistente ahora mismo. " + err.message });
+    }
+    asisPensando = false;
+    asisGuardar();
+    pintarAsistente();
+  }
+
+  $("btn-asistente").addEventListener("click", irAsistente);
   $("btn-chat").addEventListener("click", () => irChat(chatConv));
 
   // 🚀 Arranque: lo que falta para empezar (mismos registros que 🛒)

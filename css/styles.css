@@ -2118,3 +2118,17 @@ video.foto-mini { background: #000; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* 🤖 Asistente: botones de sugerencia para arrancar la conversación */
+.chat-sugerencias { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.4rem 0 0.1rem; }
+.asis-sug {
+  border: 1px dashed var(--mp-line);
+  background: var(--mp-card);
+  color: var(--mp-ink-2);
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.asis-sug:hover { border-color: var(--mp-blue); color: var(--mp-ink); }
