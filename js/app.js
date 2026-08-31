@@ -2216,11 +2216,27 @@ function esFalloDeRed(err) {
     const pagadas = (p.facturas || [])
       .filter(f => f.pagada && String(f.num) !== "1110")
       .reduce((s, f) => s + (Number(f.monto) || 0), 0);
-    const dif = typeof p.cobrado === "number" ? Math.round((p.cobrado - pagadas) * 100) / 100 : 0;
-    const avisoCobrado = (p.facturas && p.facturas.length && Math.abs(dif) >= 0.02)
-      ? `<div class="rent-humo">⚠ "Cobrado" dice ${fmt(p.cobrado)} pero las facturas marcadas pagadas suman ${fmt(pagadas)} —
-         ${dif > 0 ? `sobran ${fmt(dif)} sin factura que los respalde` : `faltan ${fmt(-dif)} por contar`}.</div>`
-      : "";
+    // OJO con los ABONOS: una factura puede estar cobrada a medias (Mirabella
+    // tiene $10,106 abonados sobre una de $17,513). La app no guarda abonos,
+    // así que "cobrado" puede ser mayor que las facturas pagadas sin que eso
+    // sea un error. Solo se avisa cuando de verdad no cuadra:
+    //   · cobrado por DEBAJO de lo que ya está pagado → falta contar dinero
+    //   · cobrado por ENCIMA de TODAS las facturas juntas → ese dinero no
+    //     tiene ninguna factura detrás
+    const todas = (p.facturas || [])
+      .filter(f => String(f.num) !== "1110")
+      .reduce((s, f) => s + (Number(f.monto) || 0), 0);
+    const cob = typeof p.cobrado === "number" ? p.cobrado : null;
+    let avisoCobrado = "";
+    if (cob !== null && p.facturas && p.facturas.length) {
+      if (cob < pagadas - 0.02) {
+        avisoCobrado = `<div class="rent-humo">⚠ "Cobrado" dice ${fmt(cob)} pero las facturas ya marcadas cobradas suman ${fmt(pagadas)} —
+          faltan ${fmt(Math.round((pagadas - cob) * 100) / 100)} por contar.</div>`;
+      } else if (cob > todas + 0.02) {
+        avisoCobrado = `<div class="rent-humo">⚠ "Cobrado" dice ${fmt(cob)} y todas las facturas de este proyecto juntas suman ${fmt(todas)} —
+          sobran ${fmt(Math.round((cob - todas) * 100) / 100)} sin ninguna factura detrás.</div>`;
+      }
+    }
     return `
       <div class="proyecto-money">
         <div class="money-item"><div class="money-label">Contrato</div><div class="money-num contrato">${fmt(p.contrato)}</div></div>
