@@ -39,7 +39,13 @@
     const data = await r.json().catch(() => ({}));
     if (!r.ok) {
       const msg = data.error_description || data.msg || data.message || "Error de autenticación";
-      throw new Error(msg);
+      // Se lleva el código HTTP pegado al error: 400/401 es "la contraseña o
+      // el token no sirven" (hay que volver a entrar); 500, 502 o 503 es
+      // "el servidor está caído" y NO se puede borrar la sesión por eso —
+      // en la obra deja al equipo fuera sin poder reportar.
+      const e = new Error(msg);
+      e.status = r.status;
+      throw e;
     }
     sesion = data;
     guardarSesion(sesion);
@@ -93,7 +99,9 @@
     }
     if (!r.ok) {
       const data = await r.json().catch(() => ({}));
-      throw new Error(data.message || data.hint || `Error ${r.status} en ${ruta}`);
+      const e = new Error(data.message || data.hint || `Error ${r.status} en ${ruta}`);
+      e.status = r.status;
+      throw e;
     }
     if (r.status === 204) return null;
     // Safari se atraganta con respuestas vacías (201 sin cuerpo): parsear con cuidado
@@ -586,6 +594,12 @@
       cuerpo: { proyecto_id: proyectoId, presupuesto_materiales: monto },
       headers: { Prefer: "resolution=merge-duplicates,return=representation" }
     }),
+    // ¿Está puesto el candado que le quita los montos a los avisos del
+    // teléfono? La función es_activo() nace en el mismo SQL que ese
+    // candado, así que si contesta, el candado está. Si no, mejor no
+    // dejar que el equipo encienda los avisos todavía.
+    avisosSinDinero: () => api("rpc/es_activo", { metodo: "POST", cuerpo: {} })
+      .then(() => true).catch(() => false),
     // Cambia una casilla de finanzas del proyecto (por ejemplo "cobrado",
     // que es la que cuadra la app con el banco)
     cambiarFinanzas: (proyectoId, cambios) =>

@@ -1274,7 +1274,7 @@ table.facturas tr.total td {
   letter-spacing: 0.1em;
   color: var(--mp-ink-3);
 }
-.horas-form-card input, .horas-form-card select {
+.horas-form-card input, .horas-form-card select, .horas-form-card textarea {
   font: inherit;
   font-size: 0.95rem;
   padding: 0.55rem 0.65rem;
@@ -1283,7 +1283,18 @@ table.facturas tr.total td {
   color: var(--mp-ink);
   background: var(--mp-card);
 }
-.horas-form-card input:focus, .horas-form-card select:focus { outline: 2px solid var(--mp-blue); }
+.horas-form-card input:focus, .horas-form-card select:focus, .horas-form-card textarea:focus { outline: 2px solid var(--mp-blue); }
+/* Las notas del reporte del día son párrafos: caja alta, que se puede
+   estirar, y con letra normal (la etiqueta de arriba va en mayúsculas,
+   el texto que se escribe NO) */
+.horas-form-card textarea {
+  resize: vertical;
+  min-height: 3.4rem;
+  line-height: 1.45;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+}
 .historial-titulo {
   font-size: 11px;
   text-transform: uppercase;

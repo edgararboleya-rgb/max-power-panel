@@ -208,6 +208,13 @@
         pantallaSinSenal(arrancarApp);
         return;
       }
+      // Mismo criterio: solo se cierra la sesión si el token de verdad no
+      // vale. Si es el servidor el que está mal, se ofrece reintentar.
+      if (!esSesionMuerta(err)) {
+        avisar("El servidor no contestó bien: " + err.message, true);
+        pantallaSinSenal(arrancarApp);
+        return;
+      }
       avisar("Error cargando los datos: " + err.message, true);
       salirApp();
       return;
@@ -275,7 +282,14 @@
   // Importa mucho: si es falta de señal NO se borra la sesión. Antes bastaba
   // abrir la app una vez en un ático para quedar deslogueado y tener que
   // teclear la contraseña en plena obra.
-  function esFalloDeRed(err) {
+  // ¿El servidor dijo de verdad que la sesión no vale? Solo 400 y 401 lo
+// dicen. Cualquier otra cosa (500, 502, 503, o ninguna respuesta) es que
+// el servidor está mal, y por eso NO se puede cerrar la sesión de nadie.
+function esSesionMuerta(err) {
+  return !!err && (err.status === 400 || err.status === 401);
+}
+
+function esFalloDeRed(err) {
     const m = String((err && err.message) || err || "");
     return (err instanceof TypeError)
       || /failed to fetch|load failed|networkerror|network request failed|sin conexi|offline/i.test(m);
@@ -551,15 +565,32 @@
     return Uint8Array.from(raw, c => c.charCodeAt(0));
   };
 
+  // ¿La base ya tiene el candado que le quita los montos a los avisos?
+  // Se pregunta una sola vez por sesión. null = todavía no se sabe.
+  let avisosSeguros = null;
   function pintarInicioNotif() {
     const caja = $("inicio-notif");
     if (!caja) return;
     const soporta = "serviceWorker" in navigator && "PushManager" in window && location.protocol.startsWith("http");
     // Los avisos son para TODOS, no solo para el dueño: Jian y Osbel también
     // tienen que enterarse de un 🔴 urgente o de un mensaje del chat.
-    // (Los montos ya no viajan en el aviso — eso lo tapa la base de datos.)
     if (!soporta || (window.Notification && Notification.permission === "granted")) {
       caja.innerHTML = ""; return;
+    }
+    // CANDADO: al equipo NO se le ofrece encender los avisos hasta que la
+    // base tenga puesto el filtro que le quita los montos al aviso. Si no,
+    // un 🔴 urgente o un mensaje del chat con un precio adentro se les
+    // pinta en la pantalla de bloqueo, saltándose todo el filtro de la app.
+    if (!usuario.finanzas) {
+      if (avisosSeguros === false) { caja.innerHTML = ""; return; }
+      if (avisosSeguros === null) {
+        caja.innerHTML = "";
+        DB.avisosSinDinero().then(ok => {
+          avisosSeguros = ok;
+          if (ok) pintarInicioNotif();
+        }).catch(() => { avisosSeguros = false; });
+        return;
+      }
     }
     caja.innerHTML = `
       <div class="inicio-card">
@@ -1575,7 +1606,14 @@
         try {
           if (tipo === "punto") await DB.cambiarPunto(id, { prioridad: nueva });
           else await DB.cambiarPendiente(id, { prioridad: nueva });
-          await recargar();
+          // Igual que la palomita: se pinta al instante con el estado que ya
+          // está en memoria y la base entera se vuelve a bajar por detrás.
+          // Con "await recargar()" cada cambio de categoría se comía 28
+          // tablas y en la obra se sentía como si la app se hubiera colgado.
+          const lista = tipo === "punto" ? (state.puntos || []) : (state.pendientes || []);
+          const enEstado = lista.find(x => String(x.id) === String(id));
+          if (enEstado) enEstado.prioridad = nueva;
+          recargar();
           avisar(nueva === "urgente"
             ? "🔴 Urgente — sale en el inicio y avisa al equipo"
             : `Categoría: ${PRIO[nueva].icono} ${PRIO[nueva].etiqueta}`);
@@ -2172,13 +2210,25 @@
     const barra = pct === null ? "" :
       `<div class="barra"><div class="barra-relleno" style="width:${Math.min(pct, 100)}%"></div></div>
        <div class="barra-texto">${pct}% cobrado</div>`;
+    // ¿"Cobrado" cuadra con las facturas que están marcadas pagadas?
+    // Son dos casillas distintas que nadie mantenía juntas — de ahí salió
+    // el descuadre que encontró la auditoría.
+    const pagadas = (p.facturas || [])
+      .filter(f => f.pagada && String(f.num) !== "1110")
+      .reduce((s, f) => s + (Number(f.monto) || 0), 0);
+    const dif = typeof p.cobrado === "number" ? Math.round((p.cobrado - pagadas) * 100) / 100 : 0;
+    const avisoCobrado = (p.facturas && p.facturas.length && Math.abs(dif) >= 0.02)
+      ? `<div class="rent-humo">⚠ "Cobrado" dice ${fmt(p.cobrado)} pero las facturas marcadas pagadas suman ${fmt(pagadas)} —
+         ${dif > 0 ? `sobran ${fmt(dif)} sin factura que los respalde` : `faltan ${fmt(-dif)} por contar`}.</div>`
+      : "";
     return `
       <div class="proyecto-money">
         <div class="money-item"><div class="money-label">Contrato</div><div class="money-num contrato">${fmt(p.contrato)}</div></div>
         <div class="money-item"><div class="money-label">Cobrado</div><div class="money-num cobrado">${fmt(p.cobrado)}</div></div>
         <div class="money-item"><div class="money-label">Falta</div><div class="money-num falta">${fmt(falta)}</div></div>
       </div>
-      ${barra}`;
+      ${barra}
+      ${avisoCobrado}`;
   }
 
   // Tarjeta RESUMIDA de la lista: al tocarla se abre la ficha
@@ -2259,8 +2309,11 @@
          </div>
          <div class="detalle-seccion">
            <h3>🌐 Portal del cliente</h3>
-           <p class="modal-nota">El cliente ve: etapa, checklist con su %, inspecciones, próximos días de trabajo y los documentos con 👁.
-           Los RFI salen siempre; los CONTRATOS nunca salen (tienen precios) a menos que tú los marques.
+           <p class="modal-nota">${p.portalCompleto
+             ? `🟢 <strong>Luz verde encendida:</strong> el cliente ve TODOS los documentos —contratos y Change Orders incluidos—,
+                todas las fotos y todos los videos, estén marcados 👁 o no. Lo que subas a este proyecto se le publica solo.`
+             : `El cliente ve: etapa, checklist con su %, inspecciones, próximos días de trabajo y los documentos con 👁.
+                Los RFI salen siempre; los CONTRATOS nunca salen (tienen precios) a menos que tú los marques.`}
            El dinero solo sale si tú prendes el botón 💵 — pensado para clientes directos, no para trabajos vía contratista.</p>
            ${(state.visitasPortal || {})[p.id] ? `
            <p class="modal-nota">👀 Última visita del cliente: <strong>${esc(String(state.visitasPortal[p.id]).slice(0, 16).replace("T", " "))}</strong> (hora universal)</p>` : `
@@ -2972,35 +3025,40 @@
         const nota = (formFoto.elements.nota.value || "").trim() || null;
         const $btn = formFoto.querySelector('button[type="submit"]');
         $btn.disabled = true;
-        // Se pueden escoger VARIAS fotos de una vez: todas van con la misma nota
+        // Se pueden escoger VARIAS fotos de una vez: todas van con la misma nota.
+        // Si una falla se CORTA ahí (break), pero las que ya subieron se
+        // guardan y se pintan: antes se salía con return y las de antes
+        // parecían perdidas, con el botón trabado y el formulario abierto.
         let subidas = 0;
         for (const archivo of archivos) {
-        $btn.textContent = archivos.length > 1 ? `Subiendo ${subidas + 1} de ${archivos.length}…` : "Subiendo…";
-        try {
-          // Algunos teléfonos mandan el video sin tipo: también se mira la extensión
-          const esVid = (archivo.type || "").startsWith("video/") || /\.(mp4|mov|webm)$/i.test(archivo.name || "");
-          if (esVid && archivo.size > 50 * 1024 * 1024) {
-            avisar("Ese video es muy grande. Grábalo CORTO, como una inspección virtual (30-45 segundos, máx. 50 MB).", true);
-            $btn.disabled = false;
-            $btn.textContent = textoSubir();
-            return;
+          $btn.textContent = archivos.length > 1 ? `Subiendo ${subidas + 1} de ${archivos.length}…` : "Subiendo…";
+          try {
+            // Algunos teléfonos mandan el video sin tipo: también se mira la extensión
+            const esVid = (archivo.type || "").startsWith("video/") || /\.(mp4|mov|webm)$/i.test(archivo.name || "");
+            if (esVid && archivo.size > 50 * 1024 * 1024) {
+              avisar("Ese video es muy grande. Grábalo CORTO, como una inspección virtual (30-45 segundos, máx. 50 MB).", true);
+              break;
+            }
+            // Foto: se achica antes de subir. Video: sube tal cual.
+            const blob = esVid ? archivo : await reducirImagen(archivo).catch(() => archivo);
+            const tipoSubida = blob.type || archivo.type || (esVid ? "video/mp4" : "image/jpeg");
+            const ruta = await DB.subirFoto(p.id, blob, tipoSubida);
+            await DB.crearFoto({ proyecto_id: p.id, ruta, nota });
+            subidas++;
+          } catch (err) {
+            avisar("No se pudo subir: " + err.message, true);
+            break;
           }
-          // Foto: se achica antes de subir. Video: sube tal cual.
-          const blob = esVid ? archivo : await reducirImagen(archivo).catch(() => archivo);
-          const tipoSubida = blob.type || archivo.type || (esVid ? "video/mp4" : "image/jpeg");
-          const ruta = await DB.subirFoto(p.id, blob, tipoSubida);
-          await DB.crearFoto({ proyecto_id: p.id, ruta, nota });
-          subidas++;
-        } catch (err) {
-          avisar("No se pudo subir: " + err.message, true);
-          $btn.disabled = false;
-          $btn.textContent = textoSubir();
-          return;
         }
-        }
+        $btn.disabled = false;
+        $btn.textContent = textoSubir();
         // Una sola recarga al final, no una por foto
-        await recargar();
-        avisar(subidas > 1 ? `${subidas} archivos subidos ✓` : "Subido ✓");
+        if (subidas) {
+          await recargar();
+          avisar(subidas === archivos.length
+            ? (subidas > 1 ? `${subidas} archivos subidos ✓` : "Subido ✓")
+            : `${subidas} de ${archivos.length} subidos ✓ — los demás se quedaron, inténtalo otra vez.`);
+        }
       });
     }
 
@@ -3340,13 +3398,19 @@
       if (escrito === null) return;
       fila.co = escrito.trim() || null;
     }
+    // Dos banderas: si las horas SÍ entraron y lo que se cayó fue el
+    // pendiente, no se puede volver a mandar todo — se duplicarían las
+    // horas de ese día. Se guarda solo lo que faltó.
+    let horasOk = false, pendOk = false;
     try {
       await DB.reportarHoras(fila);
+      horasOk = true;
       if (pendiente) {
         await DB.crearPendiente({
           fecha: fila.fecha, proyecto_id: proyectoId, descripcion: pendiente,
           prioridad: d.get("urgente") ? "urgente" : "normal"
         });
+        pendOk = true;
       }
       $formHoras.elements.horas.value = "";
       $formHoras.elements.notas.value = "";
@@ -3358,7 +3422,12 @@
       if (esFalloDeRed(err)) {
         // Sin señal: el reporte NO se pierde. Se guarda en el teléfono y se
         // manda solo cuando vuelva la señal o al abrir la app otra vez.
-        guardarHorasPendientes({ fila, pendiente, urgente: !!d.get("urgente") });
+        guardarHorasPendientes({
+          fila: horasOk ? null : fila,
+          pendiente: (pendiente && !pendOk) ? pendiente : null,
+          proyecto_id: proyectoId, fecha: fila.fecha,
+          urgente: !!d.get("urgente"),
+        });
         $formHoras.elements.horas.value = "";
         $formHoras.elements.notas.value = "";
         $formHoras.elements.co.value = "";
@@ -3376,6 +3445,7 @@
     try { return JSON.parse(localStorage.getItem(LLAVE_COLA)) || []; } catch { return []; }
   }
   function guardarHorasPendientes(item) {
+    if (!item || (!item.fila && !item.pendiente)) return; // ya entró todo
     const cola = colaHoras();
     cola.push(item);
     try { localStorage.setItem(LLAVE_COLA, JSON.stringify(cola)); } catch { /* lleno */ }
@@ -3389,17 +3459,26 @@
     const quedan = [];
     let mandados = 0;
     for (const item of cola) {
+      if (!item || (!item.fila && !item.pendiente)) continue; // ya estaba todo dentro
+      // Mismo cuidado que arriba: si en el reintento entran las horas pero
+      // se cae el pendiente, solo se vuelve a guardar el pendiente.
+      let hOk = !item.fila, pOk = !item.pendiente;
       try {
-        await DB.reportarHoras(item.fila);
+        if (item.fila) { await DB.reportarHoras(item.fila); hOk = true; }
         if (item.pendiente) {
           await DB.crearPendiente({
-            fecha: item.fila.fecha, proyecto_id: item.fila.proyecto_id,
+            fecha: item.fecha || (item.fila && item.fila.fecha),
+            proyecto_id: item.proyecto_id || (item.fila && item.fila.proyecto_id),
             descripcion: item.pendiente, prioridad: item.urgente ? "urgente" : "normal"
           });
+          pOk = true;
         }
         mandados++;
       } catch (err) {
-        if (esFalloDeRed(err)) quedan.push(item); // sigue sin señal: se guarda para después
+        if (esFalloDeRed(err)) {
+          const resto = { ...item, fila: hOk ? null : item.fila, pendiente: pOk ? null : item.pendiente };
+          if (resto.fila || resto.pendiente) quedan.push(resto);
+        }
         // si el servidor lo rechazó, se descarta para no reintentar para siempre
       }
     }
@@ -3890,7 +3969,12 @@
         + `${String(hoy.getMonth() + 1).padStart(2, "0")}/${String(hoy.getDate()).padStart(2, "0")}/${hoy.getFullYear()} · FL EC #EC13016045\n`;
       for (const [pid, items] of Object.entries(porProy)) {
         texto += `\n${pid ? "JOB: " + nombreProy(pid).toUpperCase() : "GENERAL / SHOP"}\n`;
-        for (const m of items) texto += `• ${alSupply(m.descripcion)}${m.cantidad ? ` — ${alSupply(m.cantidad)}` : ""}\n`;
+        // sinMontos también aquí: la pantalla 🛒 Materiales la abre todo el
+        // equipo y este botón arma un texto que se manda por WhatsApp. Era
+        // el último sitio por donde un precio escrito en la cantidad
+        // ("1 día (~$280)") se le podía escapar a Jian o a Osbel.
+        // Para el dueño, sinMontos devuelve el texto tal cual.
+        for (const m of items) texto += `• ${alSupply(sinMontos(m.descripcion))}${m.cantidad ? ` — ${alSupply(sinMontos(m.cantidad))}` : ""}\n`;
       }
       if (navigator.share) {
         try { await navigator.share({ title: "Lista de materiales", text: texto }); return; }
@@ -4215,7 +4299,8 @@
       const lineaMat = `
         <div class="rent-fila"><span>Materiales comprados</span><span>${fmt(matGasto)}</span></div>
         ${barraGasto(matGasto, matPresu) || `<div class="gasto-sub">sin presupuesto de materiales — ponlo aquí abajo</div>`}
-        ${extGasto > 0 ? `<div class="rent-fila"><span>Ayuda externa</span><span>${fmt(extGasto)}</span></div>` : ""}`;
+        ${extGasto > 0 ? `<div class="rent-fila"><span>Ayuda externa</span><span>${fmt(extGasto)}</span></div>` : ""}
+        ${avisoMargenFlojo(p, matGasto, matPresu, mo)}`;
       return `
         <div class="inicio-card gasto-card">
           <button class="gasto-nombre" data-id="${esc(p.id)}">${esc(p.nombre)} <span class="cat-flecha">›</span></button>
@@ -5683,7 +5768,11 @@ Power done right the first time. ⚡`;
           pantallaSinSenal(arrancarConSesion);
           return;
         }
-        DB.salir(); $login.hidden = false;
+        // Solo se borra la sesión si el servidor dijo que el token NO sirve.
+        // Si contestó 500 o no contestó, la sesión se queda y se ofrece
+        // reintentar: un Supabase caído no puede dejar al equipo fuera.
+        if (esSesionMuerta(err)) { DB.salir(); $login.hidden = false; }
+        else pantallaSinSenal(arrancarConSesion);
       });
     arrancarConSesion();
   } else {
