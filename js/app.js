@@ -1277,6 +1277,26 @@
   }
 
   // Rentabilidad y gastos: contrato − labor − materiales (SOLO el dueño)
+  // El margen solo vale lo que valen los números que lo alimentan. Si de un
+  // presupuesto de material de $8,000 solo hay $750 en recibos cargados, ese
+  // "margen del 62%" es humo: falta meter las compras. Esto lo dice claro en
+  // vez de dejar que Edgar tome decisiones con un número inventado.
+  function avisoMargenFlojo(p, matGasto, matPresu, mo) {
+    const faltas = [];
+    if (matPresu > 0) {
+      const cubierto = Math.round((matGasto / matPresu) * 100);
+      if (cubierto < 60) {
+        faltas.push(`solo hay recibos por el ${cubierto}% del material presupuestado (${fmt(matGasto)} de ${fmt(matPresu)})`);
+      }
+    } else if (matGasto <= 0) {
+      faltas.push("no hay ni una compra de material cargada");
+    }
+    if (mo && mo.horas <= 0) faltas.push("no hay horas reportadas");
+    if (!faltas.length) return "";
+    return `<div class="rent-humo">⚠ Este margen todavía no es real: ${faltas.join(" y ")}.
+      Mientras falten compras por cargar, el margen sale más alto de lo que es.</div>`;
+  }
+
   function rentabilidadHTML(p) {
     if (!usuario.finanzas || typeof p.contrato !== "number" || p.contrato <= 0) return "";
     const mo = costoManoDeObra(p);
@@ -1306,6 +1326,7 @@
         ${extGasto > 0 ? `<div class="rent-fila"><span>Ayuda externa</span><span>−${fmt(extGasto)}</span></div>` : ""}
         <div class="rent-fila rent-total ${clase}"><span>Margen real</span><span>${fmt(margen)} (${pct}%)</span></div>
         <div class="barra horas-barra"><div class="barra-relleno ${clase}" style="width:${Math.max(0, Math.min(100, pct))}%"></div></div>
+        ${avisoMargenFlojo(p, matGasto, matPresu, mo)}
         <p class="rent-nota">Sale de las horas reportadas × el costo de cada trabajador, más los
         materiales comprados con precio. El presupuesto de materiales se define en 📊 Gastos.</p>
       </div>`;
@@ -1400,8 +1421,8 @@
           ${meta ? `<span class="tarea-meta">${esc(meta)}</span>` : ""}
         </span>
         ${t.hecha ? "" : selector}
-        <button class="tarea-editar insp-borrar" title="Corregir el texto">✎</button>
-        ${usuario.editar ? `<button class="tarea-borrar insp-borrar" title="Eliminar">🗑</button>` : ""}
+        ${usuario.editar ? `<button class="tarea-editar insp-borrar" title="Corregir el texto">✎</button>
+        <button class="tarea-borrar insp-borrar" title="Eliminar">🗑</button>` : ""}
       </div>`;
   }
 
@@ -2001,39 +2022,21 @@
       .map(([clave, e]) =>
         `<option value="${clave}"${clave === p.estado ? " selected" : ""}>${e.etiqueta}</option>`)
       .join("");
+    // Eliminar YA NO vive aquí: con el dedo, la rueda del selector pasaba
+    // por encima de esa opción. Ahora está abajo del todo en la ficha,
+    // en su propia "zona de peligro".
     return `<select class="chip-select" data-id="${esc(p.id)}" title="Cambiar estado">
         ${opciones}
-        <option disabled>──────</option>
-        <option value="__eliminar">🗑 Eliminar proyecto…</option>
       </select>`;
   }
 
   async function cambiarEstadoDirecto(id, valor, selectEl) {
     const p = proyectos().find(x => x.id === id);
     if (!p) return;
+    // Por si quedara un selector viejo en pantalla con la opción de borrar
     if (valor === "__eliminar") {
-      selectEl.value = p.estado; // regresa el selector mientras confirmamos
-      // Borrar arrastra 13 tablas en cascada y NO hay papelera. En el teléfono
-      // la rueda del selector pasa por encima de esta opción, así que no basta
-      // con un "OK": hay que escribir la palabra a propósito.
-      const escrito = prompt(
-        `⚠️ Vas a ELIMINAR "${p.nombre}" para siempre.\n\n` +
-        `Se borran también sus finanzas, hitos, facturas, horas del equipo, fotos, ` +
-        `documentos y pendientes. Esto NO se puede deshacer.\n\n` +
-        `Si es lo que quieres, escribe ELIMINAR (en mayúsculas):`);
-      if (escrito === null) return;
-      if (escrito.trim().toUpperCase() !== "ELIMINAR") {
-        avisar("No se eliminó nada — no escribiste ELIMINAR.");
-        return;
-      }
-      try {
-        await DB.eliminarProyecto(id);
-        state.proyectos = state.proyectos.filter(x => x.id !== id);
-        refrescarVistaProyecto();
-        avisar(`"${p.nombre}" eliminado.`);
-      } catch (err) {
-        avisar("No se pudo eliminar: " + err.message, true);
-      }
+      selectEl.value = p.estado;
+      await eliminarProyectoConPalabra(id);
       return;
     }
     const cambios = { estado: valor };
@@ -2300,8 +2303,47 @@
           ${facturasHTML(p)}
           ${docs}
           <div class="detalle-ref">Ref: ${esc(sinMontos(p.ref))}</div>
+          ${zonaPeligroHTML(p)}
         </div>
       </article>`;
+  }
+
+  // Zona de peligro: lo único que no se puede deshacer, abajo del todo,
+  // lejos de cualquier cosa que se toque a diario.
+  function zonaPeligroHTML(p) {
+    if (!usuario.finanzas) return "";
+    return `
+      <div class="detalle-seccion zona-peligro">
+        <h3>Zona de peligro</h3>
+        <p class="rent-nota">Eliminar este proyecto borra también sus finanzas, hitos,
+        facturas, horas del equipo, fotos, documentos y pendientes. No hay papelera.</p>
+        <button type="button" class="accion btn-eliminar-proyecto" data-id="${esc(p.id)}">🗑 Eliminar este proyecto</button>
+      </div>`;
+  }
+
+  // Borrar arrastra 13 tablas en cascada y NO hay papelera: hay que escribir
+  // la palabra a propósito, no basta con un "OK".
+  async function eliminarProyectoConPalabra(id) {
+    const p = proyectos().find(x => x.id === id);
+    if (!p) return;
+    const escrito = prompt(
+      `⚠️ Vas a ELIMINAR "${p.nombre}" para siempre.\n\n` +
+      `Se borran también sus finanzas, hitos, facturas, horas del equipo, fotos, ` +
+      `documentos y pendientes. Esto NO se puede deshacer.\n\n` +
+      `Si es lo que quieres, escribe ELIMINAR (en mayúsculas):`);
+    if (escrito === null) return;
+    if (escrito.trim().toUpperCase() !== "ELIMINAR") {
+      avisar("No se eliminó nada — no escribiste ELIMINAR.");
+      return;
+    }
+    try {
+      await DB.eliminarProyecto(id);
+      state.proyectos = state.proyectos.filter(x => x.id !== id);
+      refrescarVistaProyecto();
+      avisar(`"${p.nombre}" eliminado.`);
+    } catch (err) {
+      avisar("No se pudo eliminar: " + err.message, true);
+    }
   }
 
   // Permisos e inspecciones: todos las ven; el dueño las maneja
@@ -2474,6 +2516,9 @@
     });
     $detalle.querySelectorAll(".chip-select").forEach(sel => {
       sel.addEventListener("change", () => cambiarEstadoDirecto(sel.dataset.id, sel.value, sel));
+    });
+    $detalle.querySelectorAll(".btn-eliminar-proyecto").forEach(btn => {
+      btn.addEventListener("click", () => eliminarProyectoConPalabra(btn.dataset.id));
     });
 
     // "+ Agregar documento" (solo aparece para el dueño)

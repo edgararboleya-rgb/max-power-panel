@@ -2183,3 +2183,32 @@ video.foto-mini { background: #000; }
 }
 .chip-cobrar:hover { background: #d6f3e2; }
 .chip-cobrar:disabled { opacity: .5; cursor: default; }
+
+/* Aviso de que el margen todavía no es real (faltan compras por cargar) */
+.rent-humo {
+  background: #fff6e5;
+  border: 1px solid #f0d9a8;
+  border-left: 4px solid #d98b00;
+  border-radius: 8px;
+  padding: .45rem .6rem;
+  margin: .5rem 0 .25rem;
+  font-size: .8rem;
+  color: #7a4d00;
+  line-height: 1.45;
+}
+
+/* Zona de peligro: lo único que no se puede deshacer, abajo del todo */
+.zona-peligro {
+  border: 1px solid #f0c4c4;
+  border-radius: 10px;
+  background: #fff7f7;
+  padding: .7rem .8rem;
+  margin-top: 1.2rem;
+}
+.zona-peligro h3 { color: #a32626; }
+.btn-eliminar-proyecto {
+  background: #fff;
+  color: #a32626;
+  border: 1px solid #e0a0a0;
+}
+.btn-eliminar-proyecto:hover { background: #fdecec; }

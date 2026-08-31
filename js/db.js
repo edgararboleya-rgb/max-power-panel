@@ -195,14 +195,17 @@
 
   // ---------- Carga completa según el rol ----------
   async function cargarTodo() {
-    const [perfiles, proyectos, finanzas, alcances, alcancesEquipo,
+    const [perfiles, proyectos, proyectosEquipo, finanzas, alcances, alcancesEquipo,
            hitos, facturas, horas, eventos, pendientes, documentos, fotos,
            inspecciones, materiales, materialesEquipo, costos, externos,
            gestiones, recibos, recibosEquipo, alcancePuntos, ayudantes, decisiones,
            llavesPortal, visitasPortal, docsEmpresa, titulosDocs, jurisdicciones] =
       await Promise.all([
         leer("perfiles?select=*"),
-        leer("proyectos?select=*&order=nombre"),
+        // El dueño lee la tabla completa; al equipo la base le devuelve vacío
+        // y usa la vista sin montos (misma regla que materiales y alcances)
+        leer("proyectos?select=*&order=nombre").catch(() => []),
+        leer("proyectos_equipo?select=*&order=nombre").catch(() => []),
         leer("finanzas_proyecto?select=*").catch(() => []),
         leer("alcances?select=*&order=orden").catch(() => []),
         leer("alcances_equipo?select=*&order=orden").catch(() => []),
@@ -268,7 +271,11 @@
       return `${d} ${MES[m] || ""}`;
     };
 
-    const lista = proyectos.map(p => {
+    // Si la base no devolvió proyectos (el equipo no puede leer la tabla
+    // completa), se usa la vista sin montos. La app se pinta igual.
+    const proyectosFuente = (proyectos && proyectos.length) ? proyectos : (proyectosEquipo || []);
+
+    const lista = proyectosFuente.map(p => {
       const fin = finPorProyecto[p.id] || {};
       const horasProyecto = (horPor[p.id] || []);
       const reales = (Number(p.horas_reales_base) || 0) +
