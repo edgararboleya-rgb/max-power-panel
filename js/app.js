@@ -2040,7 +2040,7 @@
   function fichaProyectoHTML(p) {
     const linksDocs = (p.docs || [])
       .map(d => `<span class="doc-fila"><a class="doc-link" ${d.ruta ? `href="#" data-docruta="${esc(d.ruta)}"` : `href="${esc(urlSegura(d.url) || "#")}"`} target="_blank" rel="noopener">📄 ${esc(d.titulo)}${d.ruta ? "" : ` <span class="doc-drive-tag">Drive</span>`}</a>${d.id ? `
-        <button type="button" class="doc-cliente${d.portal ? " on" : ""}" data-id="${d.id}" data-portal="${d.portal ? 1 : 0}"
+        <button type="button" class="doc-cliente doc-portal${d.portal ? " on" : ""}" data-id="${d.id}" data-portal="${d.portal ? 1 : 0}"
           title="${d.portal ? "El cliente SÍ ve este documento — toca para ocultarlo" : "El cliente NO lo ve — toca para mostrárselo"}">${d.portal ? "👁 cliente" : "🚫 cliente"}</button>${(d.portal || p.portalCompleto) && docFirmable(d) ? `
         ${!d.firmadoEl && d.vistoEl ? `<span class="cl-chip-aprobado">👁 visto ${esc(d.vistoEl)}</span>` : ""}
         ${d.firmadoEl ? `<span class="cl-chip-aprobado">🖊 firmó ${esc(d.firmaNombre || "")} · ${esc(d.firmadoEl)}</span>` : `
@@ -2389,7 +2389,11 @@
         avisar("Llave nueva ✓ — copia el link otra vez");
       } catch (err) { avisar("No se pudo: " + err.message, true); }
     });
-    $detalle.querySelectorAll(".doc-cliente:not(.foto-cliente):not(.doc-aprobacion)").forEach(btn => {
+    // OJO (arreglado 31-ago): antes este selector era ".doc-cliente:not(...)" y
+    // agarraba TAMBIÉN el ✎ de la nota de las fotos. Como la foto y el documento
+    // pueden compartir el mismo id, corregir la nota de una foto publicaba un
+    // contrato en el portal del cliente. Ahora solo engancha el botón del 👁.
+    $detalle.querySelectorAll(".doc-portal").forEach(btn => {
       btn.addEventListener("click", async () => {
         const visible = btn.dataset.portal === "1";
         try {
