@@ -198,7 +198,14 @@
     $usuarioChip.textContent = "Cargando…";
     try {
       state = await DB.cargarTodo();
+      quitarSinSenal();
+      enviarColaHoras(); // por si quedó algún reporte esperando señal
     } catch (err) {
+      if (esFalloDeRed(err)) {
+        // Sin señal: la sesión NO se toca, solo se ofrece reintentar
+        pantallaSinSenal(arrancarApp);
+        return;
+      }
       avisar("Error cargando los datos: " + err.message, true);
       salirApp();
       return;
@@ -262,6 +269,43 @@
     else { pintarInicio(); pintarCategorias(); pintarResumen(); }
   }
 
+  // ¿El error fue por falta de señal, o porque el servidor de verdad dijo que no?
+  // Importa mucho: si es falta de señal NO se borra la sesión. Antes bastaba
+  // abrir la app una vez en un ático para quedar deslogueado y tener que
+  // teclear la contraseña en plena obra.
+  function esFalloDeRed(err) {
+    const m = String((err && err.message) || err || "");
+    return (err instanceof TypeError)
+      || /failed to fetch|load failed|networkerror|network request failed|sin conexi|offline/i.test(m);
+  }
+
+  // Pantalla de "sin señal" con botón de reintentar, sin perder la sesión
+  function pantallaSinSenal(reintentar) {
+    let caja = document.getElementById("sin-senal");
+    if (!caja) {
+      caja = document.createElement("div");
+      caja.id = "sin-senal";
+      caja.className = "sin-senal";
+      document.body.appendChild(caja);
+    }
+    caja.innerHTML = `
+      <div class="sin-senal-caja">
+        <div class="sin-senal-icono">📶</div>
+        <h3>Sin señal</h3>
+        <p>No se pudo conectar. Tu sesión sigue guardada — no hace falta volver a entrar.</p>
+        <button type="button" class="accion" id="sin-senal-btn">Reintentar</button>
+      </div>`;
+    caja.hidden = false;
+    document.getElementById("sin-senal-btn").addEventListener("click", () => {
+      caja.hidden = true;
+      reintentar();
+    });
+  }
+  function quitarSinSenal() {
+    const c = document.getElementById("sin-senal");
+    if (c) c.hidden = true;
+  }
+
   // ---------- Cambio de vista ----------
   function mostrar(vista, { kicker, titulo, volver, nuevo }) {
     $home.hidden = vista !== "home";
@@ -304,8 +348,12 @@
   function refrescarInicio() {
     if (refrescandoInicio) return;
     refrescandoInicio = true;
+    // Mismo turno que recargar(): si mientras bajaban los datos hubo una
+    // recarga más nueva, esta se descarta en vez de pisar lo fresco con lo viejo
+    const turno = ++recargaTurno;
     DB.cargarTodo()
       .then(s => {
+        if (turno !== recargaTurno) return;
         state = s;
         if (!$home.hidden) { pintarInicio(); pintarCategorias(); pintarResumen(); }
       })
@@ -461,7 +509,7 @@
         $("inicio-empresa").querySelectorAll(".emp-ver").forEach(a => {
           if (firmas[a.dataset.ruta]) a.href = firmas[a.dataset.ruta];
         });
-      }).catch(() => {});
+      }).catch(() => avisar("No se pudieron cargar los documentos de la empresa — revisa la señal.", true));
     }
     $("inicio-empresa").querySelectorAll(".emp-borrar").forEach(btn => {
       btn.addEventListener("click", async () => {
@@ -637,6 +685,21 @@
     const porComprarGral = (state.materiales || []).filter(m => m.estado === "falta" && !m.proyecto).length;
     if (porComprarGral)
       avisos.push({ accion: "materiales", icono: "🛒", texto: `${porComprarGral} material${porComprarGral > 1 ? "es" : ""} general${porComprarGral > 1 ? "es" : ""} por comprar` });
+    // 💵 Trabajo TERMINADO con dinero sin cobrar: si nunca se emitió factura,
+    // ningún otro aviso lo ve. Es el dinero que se olvida para siempre.
+    for (const p of proyectos()) {
+      if (p.estado !== "completado") continue;
+      if (typeof p.contrato !== "number" || typeof p.cobrado !== "number") continue;
+      const falta = p.contrato - p.cobrado;
+      if (falta > 1)
+        avisos.push({ id: p.id, icono: "💵", texto: `${p.nombre} está TERMINADO y quedan ${fmt(falta)} sin cobrar` });
+    }
+    // 📋 Aprobado sin monto de contrato: no se puede facturar ni medir el margen
+    for (const p of proyectos()) {
+      if (p.estado !== "aprobado") continue;
+      if (typeof p.contrato === "number" && p.contrato > 0) continue;
+      avisos.push({ id: p.id, icono: "📋", texto: `${p.nombre} está aprobado SIN monto de contrato — ponle el precio para poder facturar` });
+    }
     for (const p of proyectos()) {
       for (const f of facturasPendientes(p)) {
         const dias = diasDesde(f.fechaISO);
@@ -687,7 +750,26 @@
 
   // ¿Quién reportó horas? (solo dueño)
   function pintarInicioEquipo() {
-    if (!usuario.finanzas) { $("inicio-equipo").innerHTML = ""; return; }
+    if (!usuario.finanzas) {
+      // El equipo no ve el semáforo de todos, pero SÍ tiene que ver el suyo:
+      // si hoy no reportó, se le recuerda con un botón que abre el formulario.
+      const hoy = hoyISO();
+      const yaReporto = (state.registroHoras || [])
+        .some(r => r.usuarioId === usuario.id && r.fecha === hoy);
+      $("inicio-equipo").innerHTML = yaReporto ? `
+        <div class="inicio-card">
+          <div class="inicio-card-titulo">⏱ Tus horas de hoy</div>
+          <p class="modal-nota" style="margin:.2rem 0">✅ Ya reportaste hoy. Gracias.</p>
+        </div>` : `
+        <div class="inicio-card falta-horas">
+          <div class="inicio-card-titulo">⏱ Todavía no reportaste tus horas de hoy</div>
+          <p class="modal-nota" style="margin:.2rem 0 .5rem">Repórtalas antes de irte — después se olvidan.</p>
+          <button type="button" class="accion" id="btn-reportar-ya">Reportar mis horas</button>
+        </div>`;
+      const b = document.getElementById("btn-reportar-ya");
+      if (b) b.addEventListener("click", irHoras);
+      return;
+    }
     // Solo los de campo ACTIVOS: Gustavo (license) no reporta horas de obra
     const equipo = (state.equipo || []).filter(u => u.rol === "campo" && u.activo);
     if (!equipo.length) { $("inicio-equipo").innerHTML = ""; return; }
@@ -735,6 +817,17 @@
           <button class="eq-rep-editar insp-borrar" title="Corregir horas o notas">✎</button>
           <button class="eq-rep-borrar insp-borrar" title="Eliminar reporte">🗑</button>
         </div>`).join("");
+      // Totales de la semana, para pagar sin ir contando reporte por reporte
+      const lunesDe = d => { const x = new Date(d); const dia = (x.getDay() + 6) % 7; x.setDate(x.getDate() - dia); return fechaISO(x.getFullYear(), x.getMonth(), x.getDate()); };
+      const hoyD = new Date();
+      const lunEsta = lunesDe(hoyD);
+      const lunPasada = (() => { const x = new Date(hoyD); x.setDate(x.getDate() - 7); return lunesDe(x); })();
+      const sumar = (desde, hasta) => mios
+        .filter(r => r.fecha >= desde && (!hasta || r.fecha < hasta))
+        .reduce((t, r) => t + Number(r.horas || 0), 0);
+      const hEsta = Math.round(sumar(lunEsta, null) * 10) / 10;
+      const hPasada = Math.round(sumar(lunPasada, lunEsta) * 10) / 10;
+      const semanas = `<div class="eq-semanas">Esta semana: <strong>${hEsta} h</strong> · Semana pasada: <strong>${hPasada} h</strong></div>`;
       const pendDe = (state.pendientes || [])
         .filter(x => x.autorId === u.id && !x.resuelto).slice(-5).reverse();
       const pendHTML = pendDe.length ? `
@@ -746,6 +839,7 @@
             <span class="alcance-info">
               <span class="alcance-titulo">${esc(u.nombre)}</span>
               <span class="alcance-estado">${texto}${u.ultimaVista ? ` · 📱 en la app: ${esc(String(u.ultimaVista).slice(0, 10))}` : ""} · toca para ver sus reportes</span>
+              ${semanas}
             </span>
           </summary>
           <div class="equipo-reportes">
@@ -1413,8 +1507,12 @@
           if (tipo === "punto") await DB.cambiarPunto(id, { hecho: !estaHecha });
           else if (estaHecha) await DB.reabrirPendiente(id);
           else await DB.resolverPendiente(id);
-          await recargar();
+          // Ya quedó guardado en la nube: se marca en pantalla al instante y la
+          // recarga completa va por detrás. Antes cada palomita bajaba las 28
+          // tablas y con mala señal congelaba el teléfono varios segundos.
+          fila.classList.toggle("hecha");
           avisar(estaHecha ? "Tarea devuelta a pendiente" : "Tarea completada ✓");
+          recargar();
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
@@ -1435,7 +1533,15 @@
     raiz.querySelectorAll(".tarea-editar").forEach(btn => {
       btn.addEventListener("click", async () => {
         const { tipo, id, fila } = dato(btn);
-        const actual = fila.querySelector(".tarea-texto").textContent;
+        // El texto de la PANTALLA va con los montos tachados ($•••). Si se usara
+        // ese, al corregir una palabra se perdería el precio real para siempre.
+        // Por eso se busca el texto de verdad en el estado.
+        const enEstado = tipo === "punto"
+          ? (state.puntos || []).find(x => String(x.id) === String(id))
+          : (state.pendientes || []).find(x => String(x.id) === String(id));
+        const actual = enEstado
+          ? (tipo === "punto" ? enEstado.texto : enEstado.descripcion)
+          : fila.querySelector(".tarea-texto").textContent;
         const nuevo = prompt("Corrige el texto de la tarea:", actual);
         if (nuevo === null) return;
         const limpio = nuevo.trim();
@@ -1764,7 +1870,7 @@
       <div class="mat-item falta">
         <span class="mat-icono">🛒</span>
         <span class="alcance-info">
-          <span class="alcance-titulo">${esc(sinMontos(m.descripcion))}${m.cantidad ? ` <span class="mat-cant">— ${esc(m.cantidad)}</span>` : ""}</span>
+          <span class="alcance-titulo">${esc(sinMontos(m.descripcion))}${m.cantidad ? ` <span class="mat-cant">— ${esc(sinMontos(m.cantidad))}</span>` : ""}</span>
           <span class="alcance-estado">material por comprar</span>
         </span>
       </div>`).join("");
@@ -2279,7 +2385,7 @@
         <button type="button" class="accion secundaria btn-agregar-foto">📸 Agregar foto o video</button>
         <form class="cal-form form-foto" hidden>
           <label>Foto o video corto (cámara o galería)
-            <input name="archivo" type="file" accept="image/*,video/mp4,video/quicktime,video/webm" required>
+            <input name="archivo" type="file" accept="image/*,video/mp4,video/quicktime,video/webm" multiple required>
           </label>
           <label>Nota (opcional)
             <input name="nota" type="text" placeholder="Ej: rough del segundo piso terminado" autocomplete="off">
@@ -2729,12 +2835,15 @@
       formFoto.elements.archivo.addEventListener("change", () => { botonSubir.textContent = textoSubir(); });
       formFoto.addEventListener("submit", async e => {
         e.preventDefault();
-        const archivo = formFoto.elements.archivo.files[0];
-        if (!archivo) return;
+        const archivos = [...formFoto.elements.archivo.files];
+        if (!archivos.length) return;
         const nota = (formFoto.elements.nota.value || "").trim() || null;
         const $btn = formFoto.querySelector('button[type="submit"]');
         $btn.disabled = true;
-        $btn.textContent = "Subiendo…";
+        // Se pueden escoger VARIAS fotos de una vez: todas van con la misma nota
+        let subidas = 0;
+        for (const archivo of archivos) {
+        $btn.textContent = archivos.length > 1 ? `Subiendo ${subidas + 1} de ${archivos.length}…` : "Subiendo…";
         try {
           // Algunos teléfonos mandan el video sin tipo: también se mira la extensión
           const esVid = (archivo.type || "").startsWith("video/") || /\.(mp4|mov|webm)$/i.test(archivo.name || "");
@@ -2749,13 +2858,17 @@
           const tipoSubida = blob.type || archivo.type || (esVid ? "video/mp4" : "image/jpeg");
           const ruta = await DB.subirFoto(p.id, blob, tipoSubida);
           await DB.crearFoto({ proyecto_id: p.id, ruta, nota });
-          await recargar();
-          avisar(esVid ? "Video subido ✓" : "Foto subida ✓");
+          subidas++;
         } catch (err) {
           avisar("No se pudo subir: " + err.message, true);
           $btn.disabled = false;
           $btn.textContent = textoSubir();
+          return;
         }
+        }
+        // Una sola recarga al final, no una por foto
+        await recargar();
+        avisar(subidas > 1 ? `${subidas} archivos subidos ✓` : "Subido ✓");
       });
     }
 
@@ -2766,7 +2879,7 @@
         $detalle.querySelectorAll("[data-docruta]").forEach(a => {
           if (mapa[a.dataset.docruta]) a.href = mapa[a.dataset.docruta];
         });
-      }).catch(() => {});
+      }).catch(() => avisar("No se pudieron cargar los documentos — revisa la señal.", true));
     }
 
     // Pedir los enlaces temporales de las fotos y pintarlas
@@ -2779,7 +2892,7 @@
         $detalle.querySelectorAll(".foto-enlace").forEach(a => {
           if (mapa[a.dataset.ruta]) a.href = mapa[a.dataset.ruta];
         });
-      }).catch(() => {});
+      }).catch(() => avisar("No se pudieron cargar las fotos — revisa la señal y vuelve a entrar al proyecto.", true));
     }
   }
 
@@ -2871,6 +2984,9 @@
   // ============================================================
   function irHoras() {
     mostrar("horas", { kicker: "Reporte diario", titulo: "Mis horas", volver: true, nuevo: false });
+    // Al ENTRAR siempre se pone la fecha de hoy. Antes, si la pantalla se
+    // había quedado abierta de ayer, el reporte se guardaba con la fecha vieja.
+    $formHoras.elements.fecha.value = hoyISO();
     prepararHoras();
   }
   $btnHoras.addEventListener("click", irHoras);
@@ -2931,8 +3047,17 @@
   function prepararHoras() {
     const f = $formHoras.elements.fecha;
     if (!f.value) f.value = hoyISO(); // fecha LOCAL: por la noche no salta a mañana
-    $formHoras.elements.proyecto.innerHTML = proyectosConTrabajo()
-      .map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join("");
+    const sel = $formHoras.elements.proyecto;
+    // No perder lo que la persona ya eligió al repintar la lista. Y si no hay
+    // nada elegido, arrancar en el proyecto de su ÚLTIMO reporte, que casi
+    // siempre es donde sigue trabajando (antes salía el primero alfabético).
+    const antes = sel.value;
+    const mios = (state.registroHoras || []).filter(r => r.usuarioId === usuario.id);
+    const ultimo = mios.length ? mios[mios.length - 1].proyecto : "";
+    const lista = proyectosConTrabajo();
+    sel.innerHTML = lista.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join("");
+    const querido = antes || ultimo;
+    if (querido && lista.some(p => p.id === querido)) sel.value = querido;
     llenarCOHoras();
     pintarHistorialHoras();
   }
@@ -3093,9 +3218,63 @@
       await recargar();
       avisar(pendiente ? "Horas y pendiente guardados ✓ (el pendiente queda en rojo)" : "Horas guardadas ✓");
     } catch (err) {
+      if (esFalloDeRed(err)) {
+        // Sin señal: el reporte NO se pierde. Se guarda en el teléfono y se
+        // manda solo cuando vuelva la señal o al abrir la app otra vez.
+        guardarHorasPendientes({ fila, pendiente, urgente: !!d.get("urgente") });
+        $formHoras.elements.horas.value = "";
+        $formHoras.elements.notas.value = "";
+        $formHoras.elements.co.value = "";
+        $formHoras.elements.pendiente.value = "";
+        avisar("📶 Sin señal — tu reporte quedó guardado en el teléfono y se manda solo cuando vuelva la señal.");
+        return;
+      }
       avisar("No se pudo guardar: " + err.message, true);
     }
   });
+
+  // ---------- Reportes de horas que quedaron esperando señal ----------
+  const LLAVE_COLA = "mxp_horas_pendientes";
+  function colaHoras() {
+    try { return JSON.parse(localStorage.getItem(LLAVE_COLA)) || []; } catch { return []; }
+  }
+  function guardarHorasPendientes(item) {
+    const cola = colaHoras();
+    cola.push(item);
+    try { localStorage.setItem(LLAVE_COLA, JSON.stringify(cola)); } catch { /* lleno */ }
+  }
+  let enviandoCola = false;
+  async function enviarColaHoras() {
+    if (enviandoCola || !DB.haySesion()) return;
+    const cola = colaHoras();
+    if (!cola.length) return;
+    enviandoCola = true;
+    const quedan = [];
+    let mandados = 0;
+    for (const item of cola) {
+      try {
+        await DB.reportarHoras(item.fila);
+        if (item.pendiente) {
+          await DB.crearPendiente({
+            fecha: item.fila.fecha, proyecto_id: item.fila.proyecto_id,
+            descripcion: item.pendiente, prioridad: item.urgente ? "urgente" : "normal"
+          });
+        }
+        mandados++;
+      } catch (err) {
+        if (esFalloDeRed(err)) quedan.push(item); // sigue sin señal: se guarda para después
+        // si el servidor lo rechazó, se descarta para no reintentar para siempre
+      }
+    }
+    try { localStorage.setItem(LLAVE_COLA, JSON.stringify(quedan)); } catch { /* lleno */ }
+    enviandoCola = false;
+    if (mandados) {
+      avisar(mandados === 1 ? "Se mandó el reporte que estaba esperando señal ✓"
+        : `Se mandaron ${mandados} reportes que estaban esperando señal ✓`);
+      recargar();
+    }
+  }
+  window.addEventListener("online", enviarColaHoras);
 
   // ============================================================
   // MATERIALES — lista de compras de toda la empresa
@@ -3142,7 +3321,7 @@
       <div class="mat-item ${m.estado}">
         <span class="mat-icono">${m.estado === "falta" ? "🔴" : "✓"}</span>
         <span class="alcance-info">
-          <span class="alcance-titulo">${esc(sinMontos(m.descripcion))}${m.cantidad ? ` <span class="mat-cant">— ${esc(m.cantidad)}</span>` : ""}</span>
+          <span class="alcance-titulo">${esc(sinMontos(m.descripcion))}${m.cantidad ? ` <span class="mat-cant">— ${esc(sinMontos(m.cantidad))}</span>` : ""}</span>
           <span class="alcance-estado">${esc(nombreProy(m.proyecto))} · ${esc(m.autor)} ${esc(m.fecha)}</span>
         </span>
         ${usuario.finanzas && m.estado === "comprado" && typeof m.precio === "number" ? `<span class="mat-precio">${fmt(m.precio)}</span>` : ""}
@@ -3868,7 +4047,7 @@
         $("materiales-panel").querySelectorAll(".recibo-ver").forEach(a => {
           if (mapa[a.dataset.ruta]) a.href = mapa[a.dataset.ruta];
         });
-      }).catch(() => {});
+      }).catch(() => avisar("No se pudieron cargar las fotos de los recibos — revisa la señal.", true));
     }
   }
 
@@ -5229,7 +5408,7 @@ Power done right the first time. ⚡`;
                 ${e.ubicacion ? `<span class="agenda-lugar">📍 ${esc(e.ubicacion)}</span>` : ""}
                 ${e.nota ? `<span class="agenda-nota">${esc(sinMontos(e.nota))}</span>` : ""}
               </span>
-              ${usuario.finanzas ? `<button type="button" class="insp-borrar ev-borrar" data-id="${e.id}" title="Eliminar este evento">🗑</button>` : ""}
+              ${usuario.finanzas && !String(e.id).startsWith("insp-") ? `<button type="button" class="insp-borrar ev-borrar" data-id="${e.id}" title="Eliminar este evento">🗑</button>` : ""}
             </div>`;
         }).join("")
       : `<p class="cal-sin-eventos">Nada programado este día.</p>`;
@@ -5341,10 +5520,24 @@ Power done right the first time. ⚡`;
   // ---------- Arranque ----------
   if (DB.haySesion()) {
     // Sesión guardada: refrescar el token y entrar directo
-    DB.refrescar()
+    const arrancarConSesion = () => DB.refrescar()
       .then(arrancarApp)
-      .catch(() => { DB.salir(); $login.hidden = false; });
+      .catch(err => {
+        if (esFalloDeRed(err)) {
+          // Sin señal al abrir: la sesión se queda guardada
+          pantallaSinSenal(arrancarConSesion);
+          return;
+        }
+        DB.salir(); $login.hidden = false;
+      });
+    arrancarConSesion();
   } else {
     $login.hidden = false;
   }
+
+  // Si el teléfono recupera la señal, se reintenta solo
+  window.addEventListener("online", () => {
+    const c = document.getElementById("sin-senal");
+    if (c && !c.hidden) { c.hidden = true; if (DB.haySesion()) arrancarApp(); }
+  });
 })();

@@ -181,7 +181,9 @@
       await refrescar();
       return firmarFotos(rutas, false);
     }
-    if (!r.ok) return {};
+    // Antes devolvía {} en silencio: las fotos salían en blanco sin explicación.
+    // Ahora lanza, y quien lo llama decide qué avisar.
+    if (!r.ok) throw new Error("No se pudieron cargar las imágenes (" + r.status + ")");
     const lista = await r.json().catch(() => []);
     const mapa = {};
     for (const item of lista) {
