@@ -190,6 +190,11 @@
       const firma = item.signedURL || item.signedUrl;
       if (item.path && firma) mapa[item.path] = `${SB.url}/storage/v1${firma}`;
     }
+    // Fallo PARCIAL: el servidor contestó bien pero no firmó todo. Antes esas
+    // fotos salían como marcos vacíos y nadie sabía si faltaban o si era la
+    // señal. Se deja apuntado cuántas faltaron para poder avisarlo.
+    const faltan = rutas.filter(x => !mapa[x]).length;
+    if (faltan) Object.defineProperty(mapa, "__faltan", { value: faltan, enumerable: false });
     return mapa;
   }
 

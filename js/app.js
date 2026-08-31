@@ -1183,7 +1183,20 @@
   }
 
   function hitosHTML(p) {
-    if (!usuario.finanzas || !p.hitos || !p.hitos.length) return "";
+    if (!usuario.finanzas) return "";
+    // Una obra con contrato y SIN hitos es dinero que no se puede facturar
+    // con el botón 🧾 y que no sale en ningún aviso. Antes esta sección
+    // simplemente no aparecía y el hueco quedaba invisible.
+    if (!p.hitos || !p.hitos.length) {
+      if (typeof p.contrato !== "number" || p.contrato <= 0) return "";
+      return `
+        <div class="detalle-seccion">
+          <h3>Hitos de pago</h3>
+          <div class="rent-humo">⚠ Este proyecto tiene contrato de ${fmt(p.contrato)} pero
+          <strong>ningún hito de pago</strong>. Así no se puede facturar con el botón 🧾 ni
+          avisa cuando toca cobrar. Cópialos del SOW (normalmente 35/45/20 o 50/50).</div>
+        </div>`;
+    }
     const siguiente = proximoHito(p);
     // El texto de la factura sale armado con las reglas de la casa:
     // Due on receipt, referencia del proyecto y condición del hito.
@@ -1213,9 +1226,20 @@
         </div>`;
     }).join("");
     const porCobrarTotal = p.hitos.filter(h => h.estado !== "cobrado").reduce((s, h) => s + h.monto, 0);
+    // ¿Los hitos suman lo mismo que el contrato? Si no, uno de los dos está
+    // mal — y el que manda es el SOW firmado.
+    const sumaHitos = p.hitos.reduce((s, h) => s + h.monto, 0);
+    const desfase = (typeof p.contrato === "number" && p.contrato > 0)
+      ? Math.round((p.contrato - sumaHitos) * 100) / 100 : 0;
+    const avisoDesfase = Math.abs(desfase) >= 0.02
+      ? `<div class="rent-humo">⚠ Los hitos suman ${fmt(sumaHitos)} y el contrato dice ${fmt(p.contrato)} —
+         ${desfase > 0 ? `faltan ${fmt(desfase)} por repartir` : `sobran ${fmt(-desfase)}`}.
+         Compáralo con el SOW firmado: manda el SOW.</div>`
+      : "";
     return `
       <div class="detalle-seccion">
         <h3>Hitos de pago</h3>
+        ${avisoDesfase}
         ${filas}
         <div class="hito hito-total">
           <span class="hito-icono"></span>
@@ -3000,6 +3024,11 @@
         $detalle.querySelectorAll(".foto-enlace").forEach(a => {
           if (mapa[a.dataset.ruta]) a.href = mapa[a.dataset.ruta];
         });
+        // Fallo a medias: unas cargan y otras se quedan en blanco. Antes no
+        // se decía nada y parecía que las fotos se habían perdido.
+        if (mapa.__faltan) {
+          avisar(`${mapa.__faltan} ${mapa.__faltan === 1 ? "foto no cargó" : "fotos no cargaron"} — vuelve a entrar al proyecto en un momento.`, true);
+        }
       }).catch(() => avisar("No se pudieron cargar las fotos — revisa la señal y vuelve a entrar al proyecto.", true));
     }
   }
