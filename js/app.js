@@ -47,6 +47,7 @@
     servicio:    { etiqueta: "Servicios",               icono: ICONO_SVG.servicio }
   };
   const ESTADOS = {
+    estimando:   { etiqueta: "Estimando" },
     enviado:     { etiqueta: "Enviado" },
     aprobado:    { etiqueta: "Aprobado" },
     ejecucion:   { etiqueta: "En ejecución" },
@@ -54,7 +55,7 @@
     completado:  { etiqueta: "Completado" },
     no_aprobado: { etiqueta: "No aprobado" }
   };
-  const DOT = { enviado: "navy", aprobado: "azul", ejecucion: "cyan", pausa: "amarillo", completado: "lima", no_aprobado: "rojo" };
+  const DOT = { estimando: "gris", enviado: "navy", aprobado: "azul", ejecucion: "cyan", pausa: "amarillo", completado: "lima", no_aprobado: "rojo" };
   const FASES = [
     { clave: "mobilizacion", etiqueta: "Inicio / Movilización" },
     { clave: "rough",        etiqueta: "Rough-in" },
@@ -66,11 +67,12 @@
     ejecucion: "Obras activas con fases en curso",
     aprobado: "Aceptados, pendientes de arrancar",
     enviado: "Propuestas esperando respuesta",
+    estimando: "Cotizándose — todavía sin precio enviado",
     pausa: "Detenidos temporalmente",
     completado: "Terminados y cerrados",
     no_aprobado: "No salieron — fuera de las estadísticas"
   };
-  const ORDEN_ETAPAS = ["ejecucion", "aprobado", "enviado", "pausa", "completado", "no_aprobado"];
+  const ORDEN_ETAPAS = ["ejecucion", "aprobado", "enviado", "estimando", "pausa", "completado", "no_aprobado"];
   const ROL_ETIQUETA = { dueno: "Dueño", campo: "Campo", license: "License Holder" };
   // usuario corto → email de la cuenta
   const EMAILS = {
@@ -821,11 +823,15 @@
     });
   }
 
+  // Lo que NO cuenta como dinero contratado: terminado, perdido, o todavía
+  // cotizándose. Mismo criterio en las tarjetas y en el resumen.
+  const SIN_CONTRATO = ["completado", "no_aprobado", "estimando"];
+
   function pintarCategorias() {
     const lista = proyectos();
     $categorias.innerHTML = Object.entries(TIPOS).map(([clave, t]) => {
       const del = lista.filter(p => (p.tipo || "residencial") === clave);
-      const activos = del.filter(p => p.estado !== "completado");
+      const activos = del.filter(p => !SIN_CONTRATO.includes(p.estado));
       const enObra = del.filter(p => p.estado === "ejecucion").length;
       const dineroLinea = usuario.finanzas
         ? `<div class="cat-dinero">${fmt(activos.filter(p => typeof p.contrato === "number").reduce((s, p) => s + p.contrato, 0))} contratado activo</div>`
@@ -850,9 +856,9 @@
     if (!usuario.finanzas) { $resumen.innerHTML = ""; return; }
     const lista = proyectos();
     // Los "no aprobados" no cuentan: ni como activos ni en el dinero contratado
-    const activos = lista.filter(p => p.estado !== "completado" && p.estado !== "no_aprobado");
+    const activos = lista.filter(p => !SIN_CONTRATO.includes(p.estado));
     const contratado = lista
-      .filter(p => !["completado", "no_aprobado"].includes(p.estado) && typeof p.contrato === "number")
+      .filter(p => !SIN_CONTRATO.includes(p.estado) && typeof p.contrato === "number")
       .reduce((s, p) => s + p.contrato, 0);
     const cobrado = lista
       .filter(p => typeof p.cobrado === "number")

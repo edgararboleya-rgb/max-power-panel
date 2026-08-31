@@ -495,6 +495,7 @@ body::after {
 .dot.navy { background: var(--mp-navy); }
 .dot.azul { background: var(--mp-blue); }
 .dot.rojo { background: #C84B4B; box-shadow: 0 0 0 3px rgba(200,75,75,.22); }
+.dot.gris { background: #9AA4AF; box-shadow: 0 0 0 3px rgba(154,164,175,.22); }
 
 /* Portal del cliente: interruptor por documento */
 .portal-sub { font-size: 0.8rem; font-weight: 800; color: var(--mp-ink-2); margin: 0.8rem 0 0.35rem; }
