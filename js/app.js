@@ -1900,7 +1900,19 @@
     if (!p) return;
     if (valor === "__eliminar") {
       selectEl.value = p.estado; // regresa el selector mientras confirmamos
-      if (!confirm(`¿Eliminar "${p.nombre}" para siempre?\n\nSe borra el proyecto con sus finanzas, hitos, horas y pendientes. Esto no se puede deshacer.`)) return;
+      // Borrar arrastra 13 tablas en cascada y NO hay papelera. En el teléfono
+      // la rueda del selector pasa por encima de esta opción, así que no basta
+      // con un "OK": hay que escribir la palabra a propósito.
+      const escrito = prompt(
+        `⚠️ Vas a ELIMINAR "${p.nombre}" para siempre.\n\n` +
+        `Se borran también sus finanzas, hitos, facturas, horas del equipo, fotos, ` +
+        `documentos y pendientes. Esto NO se puede deshacer.\n\n` +
+        `Si es lo que quieres, escribe ELIMINAR (en mayúsculas):`);
+      if (escrito === null) return;
+      if (escrito.trim().toUpperCase() !== "ELIMINAR") {
+        avisar("No se eliminó nada — no escribiste ELIMINAR.");
+        return;
+      }
       try {
         await DB.eliminarProyecto(id);
         state.proyectos = state.proyectos.filter(x => x.id !== id);
