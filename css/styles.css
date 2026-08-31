@@ -2021,7 +2021,7 @@ video.foto-mini { background: #000; }
   letter-spacing: 0.1em;
   color: var(--mp-ink-3);
 }
-.modal input, .modal select {
+.modal input, .modal select, .modal textarea {
   font: inherit;
   font-size: 0.9rem;
   padding: 0.5rem 0.6rem;
@@ -2030,7 +2030,17 @@ video.foto-mini { background: #000; }
   color: var(--mp-ink);
   background: var(--mp-card);
 }
-.modal input:focus, .modal select:focus { outline: 2px solid var(--mp-blue); }
+/* Las notas del reporte del día son párrafos, no una línea: caja alta,
+   que crece, y el Enter hace renglón en vez de mandar el reporte a medias */
+.modal textarea {
+  resize: vertical;
+  min-height: 3.2rem;
+  line-height: 1.4;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+}
+.modal input:focus, .modal select:focus, .modal textarea:focus { outline: 2px solid var(--mp-blue); }
 .modal-fila { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; }
 .modal-nota { font-size: 0.7rem; color: var(--mp-ink-3); line-height: 1.5; }
 /* flex-wrap: en pantallas chicas los botones se doblan a otra línea
@@ -2146,3 +2156,30 @@ video.foto-mini { background: #000; }
 /* ⏱ Recordatorio de horas del propio trabajador y totales de la semana */
 .inicio-card.falta-horas { border-left: 4px solid #C84B4B; }
 .eq-semanas { display: block; font-size: 0.76rem; color: var(--mp-ink-3); margin-top: 2px; }
+
+/* Aviso de luz verde del portal: cuando está encendida, el cliente ve TODO
+   lo de esa sección. Antes el botón 🚫 decía que no y era mentira. */
+.aviso-luzverde {
+  background: #eafaf0;
+  border: 1px solid #b7e4c7;
+  border-left: 4px solid #2d9c5a;
+  border-radius: 8px;
+  padding: .45rem .6rem;
+  margin: .35rem 0 .55rem;
+  font-size: .82rem;
+  color: #1c6b3d;
+}
+
+/* Botón corto de "ya entró el dinero" (hitos y facturas) */
+.chip-cobrar {
+  border: 1px solid #b7e4c7;
+  background: #eafaf0;
+  color: #1c6b3d;
+  border-radius: 999px;
+  padding: .05rem .45rem;
+  margin-left: .3rem;
+  font-size: .75rem;
+  cursor: pointer;
+}
+.chip-cobrar:hover { background: #d6f3e2; }
+.chip-cobrar:disabled { opacity: .5; cursor: default; }

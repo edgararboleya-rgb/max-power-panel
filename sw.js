@@ -6,7 +6,7 @@
 //      ABRA sin señal o si GitHub Pages se cae. Antes, sin internet, tocar
 //      el icono dejaba la pantalla en blanco.
 // ============================================================
-const CACHE = "mxp-casco-v1";
+const CACHE = "mxp-casco-v2";
 const CASCO = [
   "./", "./index.html", "./css/styles.css",
   "./js/app.js", "./js/db.js", "./js/i18n.js",
@@ -47,7 +47,11 @@ self.addEventListener("fetch", e => {
         const copia = r.clone();
         caches.open(CACHE).then(c => c.put(req, copia)).catch(() => {});
         return r;
-      }))
+      }).catch(() =>
+        // Sin señal y con una versión nueva que este teléfono todavía no
+        // bajó: se sirve la copia sin ?v= que se guardó al instalar. Sin
+        // esto la app abría en blanco justo cuando más falta hace.
+        caches.match(req, { ignoreSearch: true })))
     );
     return;
   }

@@ -138,7 +138,9 @@
   // El calendario junta los eventos con las inspecciones programadas
   const eventosCal = () => eventos().concat(
     (state ? state.inspecciones || [] : [])
-      .filter(i => i.fecha && i.resultado === "programada")
+      // Las que salieron de un evento del calendario NO se repiten: ese
+      // evento ya está en la lista con su hora, su gente y su nota
+      .filter(i => i.fecha && i.resultado === "programada" && !i.eventoId)
       .map(i => ({
         id: "insp-" + i.id, fecha: i.fecha, hora: "",
         titulo: `🏛 Inspección ${i.tipo}`, proyecto: i.proyecto,
@@ -553,7 +555,10 @@
     const caja = $("inicio-notif");
     if (!caja) return;
     const soporta = "serviceWorker" in navigator && "PushManager" in window && location.protocol.startsWith("http");
-    if (!usuario.finanzas || !soporta || (window.Notification && Notification.permission === "granted")) {
+    // Los avisos son para TODOS, no solo para el dueño: Jian y Osbel también
+    // tienen que enterarse de un 🔴 urgente o de un mensaje del chat.
+    // (Los montos ya no viajan en el aviso — eso lo tapa la base de datos.)
+    if (!soporta || (window.Notification && Notification.permission === "granted")) {
       caja.innerHTML = ""; return;
     }
     caja.innerHTML = `
@@ -1202,7 +1207,9 @@
           <span class="hito-monto">${fmt(h.monto)}</span>
           ${h.estado !== "cobrado" && usuario.editar ? `<button type="button" class="insp-borrar hito-facturar"
             data-texto="${esc(textoFactura(h))}" data-hito="${esc(h.id)}" data-proyecto="${esc(p.id)}"
-            title="Crea la factura en QuickBooks con las reglas de la casa">🧾</button>` : ""}
+            title="Crea la factura en QuickBooks con las reglas de la casa">🧾</button>
+          <button type="button" class="chip-cobrar hito-cobrado" data-hito="${esc(h.id)}" data-titulo="${esc(h.titulo)}" data-monto="${h.monto}"
+            title="Ya entró el dinero de este hito — marcarlo COBRADO">💵</button>` : ""}
         </div>`;
     }).join("");
     const porCobrarTotal = p.hitos.filter(h => h.estado !== "cobrado").reduce((s, h) => s + h.monto, 0);
@@ -2105,11 +2112,27 @@
       : "";
   }
 
+  // Sube la casilla "cobrado" del proyecto cuando entra dinero. Pregunta
+  // siempre y enseña el antes y el después: esa casilla la lleva Edgar a
+  // mano y ahí está el descuadre que encontró la auditoría.
+  async function sumarACobrado(p, monto, deQue) {
+    if (!p || !monto || typeof p.contrato !== "number") return;
+    const antes = typeof p.cobrado === "number" ? p.cobrado : 0;
+    const despues = Math.round((antes + monto) * 100) / 100;
+    if (!confirm(
+      `¿Le sumo ${fmt(monto)} de ${deQue} a lo cobrado del proyecto?\n\n` +
+      `Cobrado ahora: ${fmt(antes)}\nQuedaría en: ${fmt(despues)}\n\n` +
+      `(Si ese dinero ya estaba contado, dile que NO.)`)) return;
+    await DB.cambiarFinanzas(p.id, { cobrado: despues });
+  }
+
   function avisoFacturasHTML(p) {
     if (!usuario.finanzas) return "";
     const pend = facturasPendientes(p);
     return pend.length
-      ? `<div class="aviso-pendiente">⚠ Factura sin pagar: ${pend.map(f => `#${esc(f.num)} ${fmt(f.monto)}`).join(", ")}</div>`
+      ? `<div class="aviso-pendiente">⚠ Factura sin pagar: ${pend.map(f => `#${esc(f.num)} ${fmt(f.monto)}${f.id && usuario.editar ? `
+          <button type="button" class="chip-cobrar factura-pagada" data-id="${f.id}" data-num="${esc(f.num)}" data-monto="${f.monto}"
+            title="Marcarla como COBRADA — es lo que cuadra el dinero de la app con el banco">✓ cobrada</button>` : ""}`).join(", ")}</div>`
       : "";
   }
 
@@ -2164,8 +2187,9 @@
   function fichaProyectoHTML(p) {
     const linksDocs = (p.docs || [])
       .map(d => `<span class="doc-fila"><a class="doc-link" ${d.ruta ? `href="#" data-docruta="${esc(d.ruta)}"` : `href="${esc(urlSegura(d.url) || "#")}"`} target="_blank" rel="noopener">📄 ${esc(d.titulo)}${d.ruta ? "" : ` <span class="doc-drive-tag">Drive</span>`}</a>${d.id ? `
+        ${p.portalCompleto ? `<span class="cl-chip-aprobado" title="Luz verde encendida: con acceso completo el cliente ve TODOS los documentos, estén marcados o no">🟢 lo ve</span>` : `
         <button type="button" class="doc-cliente doc-portal${d.portal ? " on" : ""}" data-id="${d.id}" data-portal="${d.portal ? 1 : 0}"
-          title="${d.portal ? "El cliente SÍ ve este documento — toca para ocultarlo" : "El cliente NO lo ve — toca para mostrárselo"}">${d.portal ? "👁 cliente" : "🚫 cliente"}</button>${(d.portal || p.portalCompleto) && docFirmable(d) ? `
+          title="${d.portal ? "El cliente SÍ ve este documento — toca para ocultarlo" : "El cliente NO lo ve — toca para mostrárselo"}">${d.portal ? "👁 cliente" : "🚫 cliente"}</button>`}${(d.portal || p.portalCompleto) && docFirmable(d) ? `
         ${!d.firmadoEl && d.vistoEl ? `<span class="cl-chip-aprobado">👁 visto ${esc(d.vistoEl)}</span>` : ""}
         ${d.firmadoEl ? `<span class="cl-chip-aprobado">🖊 firmó ${esc(d.firmaNombre || "")} · ${esc(d.firmadoEl)}</span>` : `
         <button type="button" class="doc-cliente${d.pideFirma ? " on" : ""} doc-firma" data-id="${d.id}" data-pide="${d.pideFirma ? 1 : 0}"
@@ -2182,6 +2206,7 @@
     const docs = usuario.finanzas
       ? `<div class="detalle-seccion">
            <h3>Documentos</h3>
+           ${p.portalCompleto ? `<div class="aviso-luzverde">🟢 Luz verde encendida: el cliente ve <strong>todos</strong> estos documentos, aunque no estén marcados 👁. Lo que subas aquí se le publica solo.</div>` : ""}
            <div class="detalle-docs">${linksDocs || `<span class="sin-docs">Este proyecto no tiene documentos todavía.</span>`}</div>
            <button type="button" class="accion secundaria btn-agregar-doc">+ Agregar documento</button>
            <form class="cal-form form-doc" hidden>
@@ -2371,8 +2396,10 @@
           <img class="foto-mini" data-ruta="${esc(f.ruta)}" alt="${esc(f.nota || "Foto de obra")}" loading="lazy">
         </a>`}
         <figcaption class="foto-pie">${f.nota ? esc(sinMontos(f.nota)) + " · " : ""}${esc(f.autor)} ${esc(f.fecha)}${usuario.finanzas ? `
+          ${p.portalCompleto ? `
+          <span class="cl-chip-aprobado" title="Luz verde encendida: con acceso completo el cliente ve TODAS las fotos, estén marcadas o no">🟢 la ve</span>` : `
           <button type="button" class="doc-cliente foto-cliente${f.portal ? " on" : ""}" data-id="${f.id}" data-portal="${f.portal ? 1 : 0}"
-            title="${f.portal ? "El cliente SÍ ve esta foto" : "El cliente NO la ve"}">${f.portal ? "👁" : "🚫"}</button>
+            title="${f.portal ? "El cliente SÍ ve esta foto" : "El cliente NO la ve"}">${f.portal ? "👁" : "🚫"}</button>`}
           <button type="button" class="doc-cliente foto-nota" data-id="${f.id}" data-nota="${esc(f.nota || "")}"
             title="Corregir la descripción de la foto">✎</button>` : (f.autorId === usuario.id ? `
           <button type="button" class="doc-cliente foto-nota" data-id="${f.id}" data-nota="${esc(f.nota || "")}"
@@ -2381,6 +2408,7 @@
     return `
       <div class="detalle-seccion">
         <h3>Fotos de obra</h3>
+        ${p.portalCompleto ? `<div class="aviso-luzverde">🟢 Luz verde encendida: el cliente ve <strong>todas</strong> estas fotos, aunque no estén marcadas 👁.</div>` : ""}
         ${items ? `<div class="fotos-grid">${items}</div>` : `<span class="sin-docs">Sin fotos todavía.</span>`}
         <button type="button" class="accion secundaria btn-agregar-foto">📸 Agregar foto o video</button>
         <form class="cal-form form-foto" hidden>
@@ -2596,6 +2624,41 @@
         btn.disabled = false; btn.textContent = "🧾";
       });
     });
+    // 💵 Marcar un HITO como cobrado — y ofrecer sumarlo a "cobrado" del
+    // proyecto, que es la casilla que hace cuadrar la app con el banco.
+    // Se pregunta a propósito: la casilla la lleva Edgar a mano y no se
+    // le pisa sin permiso.
+    $detalle.querySelectorAll(".hito-cobrado").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const monto = Number(btn.dataset.monto) || 0;
+        if (!confirm(`¿Ya entró el dinero de "${btn.dataset.titulo}" (${fmt(monto)})?`)) return;
+        const p = proyectoPorId(proyectoActivo);
+        btn.disabled = true;
+        try {
+          await DB.cambiarHito(btn.dataset.hito, { estado: "cobrado" });
+          await sumarACobrado(p, monto, `el hito "${btn.dataset.titulo}"`);
+          await recargar();
+          avisar("💵 Hito marcado cobrado ✓");
+        } catch (err) { avisar("No se pudo: " + err.message, true); btn.disabled = false; }
+      });
+    });
+
+    // ✓ Marcar una FACTURA como cobrada
+    $detalle.querySelectorAll(".factura-pagada").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const monto = Number(btn.dataset.monto) || 0;
+        if (!confirm(`¿Se cobró la factura #${btn.dataset.num} (${fmt(monto)})?`)) return;
+        const p = proyectoPorId(proyectoActivo);
+        btn.disabled = true;
+        try {
+          await DB.cambiarFactura(btn.dataset.id, { pagada: true });
+          await sumarACobrado(p, monto, `la factura #${btn.dataset.num}`);
+          await recargar();
+          avisar("✓ Factura marcada cobrada");
+        } catch (err) { avisar("No se pudo: " + err.message, true); btn.disabled = false; }
+      });
+    });
+
     $detalle.querySelectorAll(".foto-nota").forEach(btn => {
       btn.addEventListener("click", async () => {
         const nota = prompt("Descripción de la foto (o video):", btn.dataset.nota || "");
@@ -5408,6 +5471,11 @@ Power done right the first time. ⚡`;
                 ${e.ubicacion ? `<span class="agenda-lugar">📍 ${esc(e.ubicacion)}</span>` : ""}
                 ${e.nota ? `<span class="agenda-nota">${esc(sinMontos(e.nota))}</span>` : ""}
               </span>
+              ${usuario.editar && e.estadoEv === "programado" && !String(e.id).startsWith("insp-") ? `
+              <button type="button" class="chip-cobrar ev-cerrar" data-id="${e.id}" data-estado="hecho" title="Se hizo — cerrar este día">✓</button>
+              <button type="button" class="insp-borrar ev-cerrar" data-id="${e.id}" data-estado="cancelado" title="No se hizo — cancelarlo">✗</button>` : ""}
+              ${usuario.editar && e.estadoEv !== "programado" && !String(e.id).startsWith("insp-") ? `
+              <button type="button" class="insp-borrar ev-cerrar" data-id="${e.id}" data-estado="programado" title="Volver a dejarlo abierto">↩</button>` : ""}
               ${usuario.finanzas && !String(e.id).startsWith("insp-") ? `<button type="button" class="insp-borrar ev-borrar" data-id="${e.id}" title="Eliminar este evento">🗑</button>` : ""}
             </div>`;
         }).join("")
@@ -5461,6 +5529,19 @@ Power done right the first time. ⚡`;
         </form>
       </div>`;
 
+    // ✓ / ✗ Cerrar el día. El calendario nunca se cerraba: 48 eventos ya
+    // pasados seguían "programados" y nadie sabía qué se hizo de verdad.
+    $("cal-dia-panel").querySelectorAll(".ev-cerrar").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const dice = { hecho: "✓ Día cerrado como HECHO", cancelado: "✗ Día marcado como que NO se hizo", programado: "↩ Vuelve a estar abierto" };
+        try {
+          await DB.cambiarEvento(btn.dataset.id, { estado: btn.dataset.estado });
+          await recargar();
+          pintarCalendario();
+          avisar(dice[btn.dataset.estado] || "Listo ✓");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
     $("cal-dia-panel").querySelectorAll(".ev-borrar").forEach(btn => {
       btn.addEventListener("click", async () => {
         if (!confirm("¿Eliminar este evento del calendario?")) return;

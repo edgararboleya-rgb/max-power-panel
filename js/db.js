@@ -307,7 +307,7 @@
           monto: Number(h.monto), estado: h.estado
         })),
         facturas: (facPor[p.id] || []).map(f => ({
-          num: f.num, fecha: fechaCorta(f.fecha), fechaISO: f.fecha || "",
+          id: f.id, num: f.num, fecha: fechaCorta(f.fecha), fechaISO: f.fecha || "",
           monto: Number(f.monto), pagada: !!f.pagada
         })),
         docs: docs.filter(d => d.clase === "doc").map(d => ({ id: d.id, titulo: d.titulo, url: d.url, ruta: d.ruta || "", portal: !!d.portal,
@@ -378,7 +378,10 @@
         id: i.id, proyecto: i.proyecto_id, permiso: i.permiso || "",
         jurisdiccion: i.jurisdiccion || "", tipo: i.tipo,
         fecha: i.fecha || "", resultado: i.resultado || "programada",
-        notas: i.notas || ""
+        notas: i.notas || "",
+        // Si la inspección nació de un evento del calendario, el evento ya
+        // está en la lista: no hay que pintarla otra vez
+        eventoId: i.evento_id || null
       })),
       // El dueño lee la tabla completa (con precios); al equipo la
       // base de datos le devuelve vacío y usa la versión sin precios
@@ -515,6 +518,10 @@
     cambiarItemEstimado: (id, cambios) => actualizar(`estimado_items?id=eq.${id}`, cambios),
     eliminarItemEstimado: id => api(`estimado_items?id=eq.${id}`, { metodo: "DELETE" }),
     crearHito: fila => insertar("hitos", fila),
+    // Marcar un hito cobrado / facturado / pendiente sin tocar SQL
+    cambiarHito: (id, cambios) => actualizar(`hitos?id=eq.${id}`, cambios),
+    // Marcar una factura pagada (o devolverla a sin pagar) sin tocar SQL
+    cambiarFactura: (id, cambios) => actualizar(`facturas?id=eq.${id}`, cambios),
     cambiarPerfil: (id, cambios) => actualizar(`perfiles?id=eq.${id}`, cambios),
     crearPunto: fila => insertar("alcance_puntos", fila),
     cambiarPunto: (id, cambios) => actualizar(`alcance_puntos?id=eq.${id}`, cambios),
@@ -567,6 +574,10 @@
       cuerpo: { proyecto_id: proyectoId, presupuesto_materiales: monto },
       headers: { Prefer: "resolution=merge-duplicates,return=representation" }
     }),
+    // Cambia una casilla de finanzas del proyecto (por ejemplo "cobrado",
+    // que es la que cuadra la app con el banco)
+    cambiarFinanzas: (proyectoId, cambios) =>
+      actualizar(`finanzas_proyecto?proyecto_id=eq.${encodeURIComponent(proyectoId)}`, cambios),
     // Guarda (o actualiza) el costo por hora de un trabajador
     guardarCosto: (usuarioId, costoHora) => api("costos_equipo", {
       metodo: "POST",
@@ -575,6 +586,8 @@
     }),
     crearEvento: fila => insertar("eventos", { ...fila, autor_id: uid() }),
     eliminarEvento: id => api(`eventos?id=eq.${id}`, { metodo: "DELETE" }),
+    // Cerrar un día del calendario: hecho, cancelado o de vuelta a programado
+    cambiarEvento: (id, cambios) => actualizar(`eventos?id=eq.${id}`, cambios),
     crearPendiente: fila => insertar("pendientes", { ...fila, autor_id: uid() }),
     cambiarPendiente: (id, cambios) => actualizar(`pendientes?id=eq.${id}`, cambios),
     resolverPendiente: id => actualizar(`pendientes?id=eq.${id}`,
