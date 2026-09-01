@@ -531,6 +531,8 @@
     quitarEnsamble: id => api(`estimado_ensambles?id=eq.${id}`, { metodo: "DELETE" }),
     crearItemCatalogo: fila => insertar("catalogo_items", fila),
     actualizarOverhead: valor => actualizar("escenarios?id=in.(A,B,C)", { overhead_hh: valor }),
+    // Editar un escenario (tarifas, cuadrilla, beneficios, profit) — solo el dueño
+    cambiarEscenario: (id, cambios) => actualizar(`escenarios?id=eq.${encodeURIComponent(id)}`, cambios),
     crearEstimado: fila => insertar("estimados", fila),
     cambiarEstimado: (id, cambios) => actualizar(`estimados?id=eq.${id}`, cambios),
     eliminarEstimado: id => api(`estimados?id=eq.${id}`, { metodo: "DELETE" }),

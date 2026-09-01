@@ -2223,3 +2223,32 @@ video.foto-mini { background: #000; }
   border: 1px solid #e0a0a0;
 }
 .btn-eliminar-proyecto:hover { background: #fdecec; }
+
+/* ============ ⚡ Estimado rápido ============ */
+.rap-card .rap-sub { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; color: var(--mp-ink-3); margin: .7rem 0 .35rem; display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+.rap-linea { display: flex; align-items: center; gap: .4rem; padding: .3rem 0; border-bottom: 1px dashed var(--mp-line); }
+.rap-linea .rap-desc { flex: 1; }
+.rap-linea .rap-monto { font-weight: 700; }
+.rap-tabs { display: flex; gap: .4rem; flex-wrap: wrap; margin: .3rem 0 .4rem; }
+.rap-tab { border: 1px solid var(--mp-line); background: var(--mp-card); color: var(--mp-ink); border-radius: 999px; padding: .35rem .8rem; font: inherit; font-size: .82rem; cursor: pointer; }
+.rap-tab.on { background: var(--mp-blue); color: #fff; border-color: var(--mp-blue); }
+.rap-tab:disabled { cursor: default; }
+.rap-rol { display: flex; align-items: center; gap: .3rem; margin: .25rem 0; flex-wrap: wrap; }
+.rap-rol input { font: inherit; font-size: .88rem; padding: .35rem .45rem; border: 1px solid var(--mp-line); border-radius: 8px; background: var(--mp-card); color: var(--mp-ink); }
+.rap-rol .rap-rol-nombre, .rap-rol .esc-rol-nombre { flex: 1 1 7rem; min-width: 6rem; }
+.rap-rol .rap-rol-tarifa, .rap-rol .esc-rol-tarifa { width: 4.6rem; }
+.rap-rol .rap-rol-pct, .rap-rol .esc-rol-pct { width: 3.6rem; }
+.rap-signo { font-size: .8rem; color: var(--mp-ink-3); }
+.rap-suma { display: flex; justify-content: space-between; align-items: center; font-size: .82rem; margin: .3rem 0 .5rem; }
+.rap-suma.ok { color: #1c6b3d; }
+.rap-suma.mal { color: #a32626; font-weight: 700; }
+.rap-comp { display: grid; grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); gap: .5rem; }
+.rap-comp-col { border: 1px solid var(--mp-line); border-radius: 10px; padding: .5rem .55rem; background: var(--mp-card); }
+.rap-comp-col.on { border-color: var(--mp-blue); box-shadow: 0 0 0 2px rgba(0, 84, 166, .15); }
+.rap-comp-nombre { font-weight: 800; font-size: .85rem; line-height: 1.15; }
+.rap-comp-nombre small { font-weight: 400; color: var(--mp-ink-3); }
+.rap-comp-bid { font-size: 1.15rem; font-weight: 800; margin: .3rem 0 .35rem; }
+.rap-comp-det div { display: flex; justify-content: space-between; font-size: .72rem; color: var(--mp-ink-3); padding: .08rem 0; }
+.esc-card { border: 1px solid var(--mp-line); border-radius: 10px; padding: .55rem .65rem; margin: .5rem 0; }
+.esc-titulo { font-weight: 800; margin-bottom: .3rem; display: flex; align-items: center; gap: .4rem; }
+.esc-titulo input { flex: 1; font: inherit; padding: .3rem .45rem; border: 1px solid var(--mp-line); border-radius: 8px; }

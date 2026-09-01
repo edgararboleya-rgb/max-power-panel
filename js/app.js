@@ -4633,6 +4633,7 @@ function esFalloDeRed(err) {
            pct_helper: .3, benefits: .25, tax_material: .07, overhead_hh: 30.19, profit: .12 };
     const n = v => Number(v) || 0;
 
+    const rapido = est.modo === "rapido";
     const autos = (est.modo || "planos") === "planos"
       ? autosPlanos(base, est.cable || "romex", cfg) : [];
 
@@ -4659,8 +4660,13 @@ function esFalloDeRed(err) {
     const profitPct = nn(est.profit_pct) ?? n(esc.profit);
     const markupPct = nn(est.markup_pct) ?? 0;
 
-    const matItems = base.reduce((s, i) => s + n(i.cantidad) * n(i.precio), 0)
-      + autos.reduce((s, i) => s + n(i.cantidad) * n(i.precio), 0) + mermaMat;
+    // Modo ⚡ Rápido: el material son las líneas que Edgar escribió (o un
+    // total), no los ítems del catálogo
+    const lineasMat = rapido && Array.isArray(est.lineas_material) ? est.lineas_material : [];
+    const matItems = rapido
+      ? lineasMat.reduce((s, l) => s + n(l.monto), 0)
+      : base.reduce((s, i) => s + n(i.cantidad) * n(i.precio), 0)
+        + autos.reduce((s, i) => s + n(i.cantidad) * n(i.precio), 0) + mermaMat;
     const misc = matItems * miscPct;
     const matSubtotal = matItems + misc;
     const tax = matSubtotal * taxPct;
@@ -4668,12 +4674,18 @@ function esFalloDeRed(err) {
     const markup = (matSubtotal + tax) * markupPct;
     const totalMaterial = matSubtotal + tax + markup;
 
-    const horasBase = base.reduce((s, i) => s + n(i.cantidad) * n(i.horas), 0)
-      + autos.reduce((s, i) => s + n(i.cantidad) * n(i.horas), 0) + mermaHoras;
+    // Modo ⚡ Rápido: las horas son las que Edgar decidió, punto
+    const horasBase = rapido
+      ? n(est.horas_directas)
+      : base.reduce((s, i) => s + n(i.cantidad) * n(i.horas), 0)
+        + autos.reduce((s, i) => s + n(i.cantidad) * n(i.horas), 0) + mermaHoras;
     const horas = horasBase * (n(est.factor) || 1);
-    const laborBase = horas * (n(esc.pct_foreman) * n(esc.foreman)
-      + n(esc.pct_journeyman) * n(esc.journeyman) + n(esc.pct_helper) * n(esc.helper));
-    const benefits = laborBase * n(esc.benefits);
+    // La cuadrilla: la propia del estimado (Custom) > la del escenario > las 3 de siempre
+    const mezcla = cuadrillaDe(est, esc);
+    const tarifaMezclada = mezcla.reduce((s, m) => s + n(m.pct) * n(m.tarifa), 0);
+    const laborBase = horas * tarifaMezclada;
+    const benefitsPct = nn(est.benefits_pct) ?? n(esc.benefits);
+    const benefits = laborBase * benefitsPct;
     const totalLabor = laborBase + benefits;
     const prime = totalLabor + totalMaterial;
     const overhead = horas * ohHH;
@@ -4682,7 +4694,32 @@ function esFalloDeRed(err) {
     return { items: base, autos, mermaMat, mermaHoras, misc, esc, matSubtotal, tax,
              totalMaterial, horasBase, horas, laborBase, benefits, totalLabor,
              prime, overhead, profit, markup, bid,
-             miscPct, taxPct, ohHH, profitPct, markupPct };
+             miscPct, taxPct, ohHH, profitPct, markupPct,
+             mezcla, tarifaMezclada, benefitsPct, lineasMat,
+             // $ por hora cargado: el precio final entre las horas (todo adentro)
+             tarifaCargada: horas > 0 ? bid / horas : 0 };
+  }
+
+  // La cuadrilla de un estimado, siempre como lista [{rol, tarifa, pct}]
+  // pct va en fracción (0.2 = 20%)
+  function cuadrillaDe(est, esc) {
+    const limpia = arr => (Array.isArray(arr) ? arr : [])
+      .filter(m => m && (Number(m.tarifa) || Number(m.pct)))
+      .map(m => ({ rol: String(m.rol || "").slice(0, 30), tarifa: Number(m.tarifa) || 0, pct: Number(m.pct) || 0 }));
+    if (est && Array.isArray(est.mezcla) && limpia(est.mezcla).length) return limpia(est.mezcla);
+    if (esc && Array.isArray(esc.mezcla) && limpia(esc.mezcla).length) return limpia(esc.mezcla);
+    return [
+      { rol: "Foreman",    tarifa: Number(esc.foreman) || 0,    pct: Number(esc.pct_foreman) || 0 },
+      { rol: "Journeyman", tarifa: Number(esc.journeyman) || 0, pct: Number(esc.pct_journeyman) || 0 },
+      { rol: "Helper",     tarifa: Number(esc.helper) || 0,     pct: Number(esc.pct_helper) || 0 },
+    ];
+  }
+  // ¿Este estimado tiene algo personalizado por encima de su escenario?
+  function esCustom(est) {
+    const hay = v => !(v === null || v === undefined || v === "");
+    return (Array.isArray(est.mezcla) && est.mezcla.length > 0)
+      || hay(est.benefits_pct) || hay(est.profit_pct) || hay(est.markup_pct)
+      || hay(est.misc_pct) || hay(est.overhead_hh);
   }
 
   // Overhead real: gastos generales ÷ horas-hombre reales (últimos 90 días)
@@ -4728,6 +4765,7 @@ function esFalloDeRed(err) {
           <div class="cal-form-titulo">➕ Nuevo estimado</div>
           <label>¿Cómo vas a estimar este trabajo?
             <select name="modo">
+              <option value="rapido">⚡ Rápido — horas y material, como el Excel</option>
               <option value="planos">📐 Por planos (takeoff de Bluebeam)</option>
               <option value="remodelacion">🏠 Remodelación (levantamiento, por ensambles)</option>
               <option value="servicio">🔧 Servicio (rápido, plantillas)</option>
@@ -4764,7 +4802,9 @@ function esFalloDeRed(err) {
       <div class="cal-panel-card">
         <div class="cal-form-titulo">Mis estimados (${(estData.estimados || []).length})</div>
         ${filas || `<p class="cal-sin-eventos">Todavía no hay estimados. Crea el primero arriba.</p>`}
-      </div>`;
+      </div>
+      ${usuario.finanzas ? escenariosHTML() : ""}`;
+    if (usuario.finanzas) engancharEscenarios();
 
     $("form-nuevo-est").addEventListener("submit", async ev => {
       ev.preventDefault();
@@ -4776,8 +4816,9 @@ function esFalloDeRed(err) {
           cliente: (d.get("cliente") || "").toString().trim() || null,
           tipo: d.get("tipo") || "Residential",
           sqft: d.get("sqft") ? Number(d.get("sqft")) : null,
-          // Servicio arranca en C (margen sano), como estima Edgar
-          escenario: modoNuevo === "servicio" ? "C" : (d.get("escenario") || "B"),
+          // Servicio arranca en C (margen sano); Rápido arranca en A, que es
+          // con el que Edgar cerró Cocina Rachel
+          escenario: modoNuevo === "servicio" ? "C" : modoNuevo === "rapido" ? "A" : (d.get("escenario") || "B"),
           factor: 1,
           estado: "borrador",
           modo: modoNuevo,
@@ -4785,7 +4826,7 @@ function esFalloDeRed(err) {
         });
         estimadoActivo = filasNueva[0].id;
         await recargarEstimador();
-        avisar("Estimado creado ✓ — busca ítems del catálogo y ponles cantidad");
+        avisar(modoNuevo === "rapido" ? "Estimado creado ✓ — pon las horas y el material" : "Estimado creado ✓ — busca ítems del catálogo y ponles cantidad");
       } catch (err) { avisar("No se pudo crear: " + err.message, true); }
     });
     $("estimador-panel").querySelectorAll(".est-abrir").forEach(el => {
@@ -4930,6 +4971,290 @@ Propuesta válida por 15 días. Gracias por la oportunidad.
 Power done right the first time. ⚡`;
   }
 
+  // ============================================================
+  // ⚡ ESTIMADO RÁPIDO — horas + material, como la hoja de Excel de Edgar
+  // Tres casillas y un resultado. Escenario A/B/C o uno propio (Custom):
+  // cuadrilla, beneficios, profit y markup se pueden tocar aquí mismo.
+  // ============================================================
+  function panelRapidoHTML(est, c, soloLectura) {
+    const r2 = v => Math.round(v * 100) / 100;
+    const pct = v => Math.round((Number(v) || 0) * 1000) / 10;   // 0.2 → 20
+    const lineas = Array.isArray(est.lineas_material) ? est.lineas_material : [];
+    const custom = esCustom(est);
+    const escs = estData.escenarios || [];
+
+    // Los cuatro precios lado a lado: A, B, C puros y el Custom de este estimado
+    const puro = id => calcularEstimado({ ...est, escenario: id, mezcla: null, benefits_pct: null,
+      profit_pct: null, markup_pct: null, misc_pct: null, overhead_hh: null });
+    const comparacion = escs.map(e => ({ id: e.id, nombre: e.nombre, c: puro(e.id), activo: !custom && est.escenario === e.id }));
+    if (custom) comparacion.push({ id: "custom", nombre: "Custom", c, activo: true });
+
+    const filasMat = lineas.map((l, i) => `
+      <div class="rap-linea">
+        <span class="rap-desc">${esc(l.desc || "Material")}</span>
+        <span class="rap-monto">${fmt(r2(Number(l.monto) || 0))}</span>
+        ${!soloLectura ? `<button type="button" class="insp-borrar rap-mat-editar" data-i="${i}" title="Editar">✎</button>
+        <button type="button" class="insp-borrar rap-mat-borrar" data-i="${i}" title="Quitar">🗑</button>` : ""}
+      </div>`).join("");
+
+    const filasCuadrilla = c.mezcla.map((m, i) => `
+      <div class="rap-rol">
+        <input class="rap-rol-nombre" data-i="${i}" type="text" value="${esc(m.rol)}" placeholder="Rol" ${soloLectura ? "disabled" : ""}>
+        <span class="rap-signo">$</span>
+        <input class="rap-rol-tarifa" data-i="${i}" type="number" min="0" step="0.5" inputmode="decimal" value="${esc(m.tarifa)}" ${soloLectura ? "disabled" : ""}>
+        <span class="rap-signo">/h ·</span>
+        <input class="rap-rol-pct" data-i="${i}" type="number" min="0" max="100" step="1" inputmode="numeric" value="${esc(pct(m.pct))}" ${soloLectura ? "disabled" : ""}>
+        <span class="rap-signo">%</span>
+        ${!soloLectura && c.mezcla.length > 1 ? `<button type="button" class="insp-borrar rap-rol-quitar" data-i="${i}" title="Quitar rol">🗑</button>` : ""}
+      </div>`).join("");
+    const sumaPct = Math.round(c.mezcla.reduce((t, m) => t + (Number(m.pct) || 0), 0) * 1000) / 10;
+
+    return `
+      <div class="cal-panel-card rap-card">
+        <div class="cal-form-titulo">⚡ Horas y material</div>
+        <div class="modal-fila">
+          <label class="mat-filtro-label">Horas de todo el trabajo
+            <input id="rap-horas" type="number" min="0" step="0.5" inputmode="decimal" value="${esc(est.horas_directas ?? "")}" placeholder="Ej: 90" ${soloLectura ? "disabled" : ""}>
+          </label>
+          <label class="mat-filtro-label">Factor de productividad
+            <input id="rap-factor" type="number" min="0.5" max="2" step="0.05" value="${esc(est.factor || 1)}" ${soloLectura ? "disabled" : ""}>
+          </label>
+        </div>
+        <div class="rap-sub">Material — ${fmt(r2(c.lineasMat.reduce((t, l) => t + (Number(l.monto) || 0), 0)))}
+          ${!soloLectura ? `<button type="button" class="accion secundaria rap-mat-agregar">+ Agregar línea</button>` : ""}</div>
+        ${filasMat || `<p class="cal-sin-eventos">Pon el material: un total, o varias líneas (breakers, cable, luminarias…).</p>`}
+        <p class="rent-nota">Al material se le suma el ${pctTxtR(c.miscPct)} de misceláneas y el ${pctTxtR(c.taxPct)} de tax. El markup es opcional, abajo.</p>
+      </div>
+
+      <div class="cal-panel-card rap-card">
+        <div class="cal-form-titulo">Escenario
+          ${custom ? `<span class="recibo-chip por_leer">CUSTOM ✏</span>` : `<span class="recibo-chip leido">${esc(est.escenario)} — ${esc((escs.find(e => e.id === est.escenario) || {}).nombre || "")}</span>`}
+        </div>
+        <div class="rap-tabs">
+          ${escs.map(e => `<button type="button" class="rap-tab${!custom && est.escenario === e.id ? " on" : ""}" data-esc="${esc(e.id)}" ${soloLectura ? "disabled" : ""}>${esc(e.id)} · ${esc(e.nombre || "")}</button>`).join("")}
+          ${custom ? `<button type="button" class="rap-tab on" disabled>Custom</button>` : ""}
+        </div>
+        <p class="rent-nota">Toca A, B o C para usar ese escenario tal cual. Si cambias cualquier número de abajo, este estimado pasa a <strong>Custom</strong> (los escenarios no se tocan; para eso está ⚙ Escenarios en la lista).</p>
+
+        <div class="rap-sub">Cuadrilla — quién trabaja y qué parte de las horas</div>
+        ${filasCuadrilla}
+        <div class="rap-suma ${Math.abs(sumaPct - 100) < 0.6 ? "ok" : "mal"}">Suma: ${sumaPct}% ${Math.abs(sumaPct - 100) < 0.6 ? "✓" : "— tiene que dar 100%"}
+          ${!soloLectura ? `<button type="button" class="accion secundaria rap-rol-agregar">+ Agregar rol</button>` : ""}</div>
+        <div class="rent-fila"><span>Tarifa mezclada</span><span>${fmt(r2(c.tarifaMezclada))} / h</span></div>
+
+        <div class="modal-fila" style="margin-top:.5rem">
+          <label class="mat-filtro-label">Beneficios sobre el labor (%)
+            <input id="rap-benefits" type="number" min="0" max="100" step="0.5" inputmode="decimal" value="${esc(pct(c.benefitsPct))}" ${soloLectura ? "disabled" : ""}>
+          </label>
+          <label class="mat-filtro-label">Profit (%)
+            <input id="rap-profit" type="number" min="0" max="100" step="0.5" inputmode="decimal" value="${esc(pct(c.profitPct))}" ${soloLectura ? "disabled" : ""}>
+          </label>
+        </div>
+        <div class="modal-fila">
+          <label class="mat-filtro-label">Markup de materiales (%) — opcional
+            <input id="rap-markup" type="number" min="0" max="100" step="0.5" inputmode="decimal" value="${esc(pct(c.markupPct))}" ${soloLectura ? "disabled" : ""}>
+          </label>
+          <label class="mat-filtro-label">Overhead ($ por hora) — fijo por ahora
+            <input type="number" value="${esc(r2(c.ohHH))}" disabled>
+          </label>
+        </div>
+      </div>
+
+      <div class="cal-panel-card rap-card">
+        <div class="cal-form-titulo">Los escenarios lado a lado</div>
+        <div class="rap-comp">
+          ${comparacion.map(x => `
+          <div class="rap-comp-col${x.activo ? " on" : ""}">
+            <div class="rap-comp-nombre">${esc(x.id === "custom" ? "Custom" : x.id)}<br><small>${esc(x.nombre || "")}</small></div>
+            <div class="rap-comp-bid">${fmt(r2(x.c.bid))}</div>
+            <div class="rap-comp-det">
+              <div><span>Labor</span><span>${fmt(r2(x.c.totalLabor))}</span></div>
+              <div><span>Material</span><span>${fmt(r2(x.c.totalMaterial))}</span></div>
+              <div><span>Overhead</span><span>${fmt(r2(x.c.overhead))}</span></div>
+              <div><span>Profit</span><span>${fmt(r2(x.c.profit))}</span></div>
+              <div><span>$/h cargado</span><span>${x.c.horas > 0 ? fmt(r2(x.c.bid / x.c.horas)) : "—"}</span></div>
+            </div>
+          </div>`).join("")}
+        </div>
+        <p class="rent-nota">El $/h cargado es el precio final dividido entre las horas: lo que cobras por cada hora con todo adentro.</p>
+      </div>`;
+  }
+  const pctTxtR = v => (Math.round((Number(v) || 0) * 1000) / 10) + "%";
+
+  function engancharRapido(est, soloLectura) {
+    if (soloLectura) return;
+    const guardar = async (cambios, aviso) => {
+      try {
+        await DB.cambiarEstimado(est.id, cambios);
+        await recargarEstimador();
+        if (aviso) avisar(aviso);
+      } catch (err) { avisar("No se pudo guardar: " + err.message, true); }
+    };
+    const num = el => { const v = Number(String(el.value).replace(/[,$%\s]/g, "")); return Number.isFinite(v) ? v : null; };
+
+    const h = $("rap-horas");
+    if (h) h.addEventListener("change", () => { const v = num(h); if (v !== null && v >= 0) guardar({ horas_directas: v }); });
+    const f = $("rap-factor");
+    if (f) f.addEventListener("change", () => { const v = num(f); if (v && v > 0) guardar({ factor: v }); });
+
+    // Material: líneas sueltas
+    const lineas = () => (Array.isArray(est.lineas_material) ? est.lineas_material : []).map(l => ({ ...l }));
+    document.querySelectorAll(".rap-mat-agregar").forEach(b => b.addEventListener("click", () => {
+      const desc = prompt("¿Qué material? (o escribe 'Material' para un total)", lineas().length ? "" : "Material");
+      if (desc === null) return;
+      const m = prompt(`¿Cuánto cuesta "${desc || "Material"}"? (sin tax)`);
+      if (m === null) return;
+      const monto = Number(String(m).replace(/[,$\s]/g, ""));
+      if (!Number.isFinite(monto) || monto < 0) { avisar("Monto no válido", true); return; }
+      guardar({ lineas_material: [...lineas(), { desc: (desc || "Material").trim().slice(0, 80), monto }] }, "Material agregado ✓");
+    }));
+    document.querySelectorAll(".rap-mat-editar").forEach(b => b.addEventListener("click", () => {
+      const arr = lineas(); const i = Number(b.dataset.i); const l = arr[i]; if (!l) return;
+      const desc = prompt("Descripción:", l.desc || "Material"); if (desc === null) return;
+      const m = prompt("Monto (sin tax):", l.monto); if (m === null) return;
+      const monto = Number(String(m).replace(/[,$\s]/g, ""));
+      if (!Number.isFinite(monto) || monto < 0) { avisar("Monto no válido", true); return; }
+      arr[i] = { desc: (desc || "Material").trim().slice(0, 80), monto };
+      guardar({ lineas_material: arr }, "Material corregido ✓");
+    }));
+    document.querySelectorAll(".rap-mat-borrar").forEach(b => b.addEventListener("click", () => {
+      const arr = lineas(); arr.splice(Number(b.dataset.i), 1);
+      guardar({ lineas_material: arr }, "Línea quitada ✓");
+    }));
+
+    // Escenario puro: se borran las personalizaciones y se usa A/B/C tal cual
+    document.querySelectorAll(".rap-tab[data-esc]").forEach(b => b.addEventListener("click", () => {
+      guardar({ escenario: b.dataset.esc, mezcla: null, benefits_pct: null, profit_pct: null,
+                markup_pct: null, misc_pct: null, overhead_hh: null }, `Escenario ${b.dataset.esc} ✓`);
+    }));
+
+    // Cuadrilla editable: cualquier cambio la guarda como propia (Custom)
+    const escAct = (estData.escenarios || []).find(e => e.id === est.escenario) || {};
+    const leerCuadrilla = () => {
+      const nombres = [...document.querySelectorAll(".rap-rol-nombre")];
+      return nombres.map((n, i) => ({
+        rol: (n.value || "").trim().slice(0, 30) || `Rol ${i + 1}`,
+        tarifa: Number(document.querySelector(`.rap-rol-tarifa[data-i="${i}"]`).value) || 0,
+        pct: (Number(document.querySelector(`.rap-rol-pct[data-i="${i}"]`).value) || 0) / 100,
+      }));
+    };
+    document.querySelectorAll(".rap-rol-nombre, .rap-rol-tarifa, .rap-rol-pct").forEach(el =>
+      el.addEventListener("change", () => guardar({ mezcla: leerCuadrilla() })));
+    document.querySelectorAll(".rap-rol-agregar").forEach(b => b.addEventListener("click", () => {
+      const rol = prompt("Nombre del rol nuevo (Ej: Apprentice):", "Apprentice"); if (rol === null) return;
+      const t = prompt(`Tarifa por hora de ${rol} ($):`, "20"); if (t === null) return;
+      const arr = cuadrillaDe(est, escAct);
+      arr.push({ rol: rol.trim().slice(0, 30) || "Rol", tarifa: Number(t) || 0, pct: 0 });
+      guardar({ mezcla: arr }, "Rol agregado — ahora reparte los % para que sumen 100");
+    }));
+    document.querySelectorAll(".rap-rol-quitar").forEach(b => b.addEventListener("click", () => {
+      const arr = cuadrillaDe(est, escAct); arr.splice(Number(b.dataset.i), 1);
+      guardar({ mezcla: arr }, "Rol quitado — revisa que los % sumen 100");
+    }));
+
+    const pctCampo = (id, campo) => {
+      const el = $(id); if (!el) return;
+      el.addEventListener("change", () => { const v = num(el); if (v !== null && v >= 0) guardar({ [campo]: v / 100 }); });
+    };
+    pctCampo("rap-benefits", "benefits_pct");
+    pctCampo("rap-profit", "profit_pct");
+    pctCampo("rap-markup", "markup_pct");
+  }
+
+  // ⚙ Escenarios A/B/C: tarifas, cuadrilla, beneficios y profit se editan
+  // aquí y valen para TODOS los estimados nuevos (cuando entra un cuarto
+  // trabajador, por ejemplo). El overhead se toca desde el aviso de overhead
+  // real, no aquí.
+  function escenariosHTML() {
+    const escs = estData.escenarios || [];
+    const pct = v => Math.round((Number(v) || 0) * 1000) / 10;
+    return `
+      <details class="cal-panel-card">
+        <summary class="cal-form-titulo" style="cursor:pointer">⚙ Escenarios A / B / C — tarifas y cuadrilla</summary>
+        <p class="rent-nota">Estos números son los de la casa: cada estimado nuevo arranca con ellos. Cámbialos cuando cambie tu gente o tus costos.</p>
+        ${escs.map(e => {
+          const cu = cuadrillaDe({}, e);
+          return `
+          <div class="esc-card" data-esc="${esc(e.id)}">
+            <div class="esc-titulo">${esc(e.id)} — <input class="esc-nombre" type="text" value="${esc(e.nombre || "")}" placeholder="Nombre"></div>
+            ${cu.map((m, i) => `
+            <div class="rap-rol">
+              <input class="esc-rol-nombre" data-i="${i}" type="text" value="${esc(m.rol)}">
+              <span class="rap-signo">$</span><input class="esc-rol-tarifa" data-i="${i}" type="number" min="0" step="0.5" inputmode="decimal" value="${esc(m.tarifa)}">
+              <span class="rap-signo">/h ·</span><input class="esc-rol-pct" data-i="${i}" type="number" min="0" max="100" step="1" inputmode="numeric" value="${esc(pct(m.pct))}"><span class="rap-signo">%</span>
+              ${cu.length > 1 ? `<button type="button" class="insp-borrar esc-rol-quitar" data-i="${i}" title="Quitar rol">🗑</button>` : ""}
+            </div>`).join("")}
+            <div class="modal-fila">
+              <label class="mat-filtro-label">Beneficios (%)<input class="esc-benefits" type="number" min="0" max="100" step="0.5" value="${esc(pct(e.benefits))}"></label>
+              <label class="mat-filtro-label">Profit (%)<input class="esc-profit" type="number" min="0" max="100" step="0.5" value="${esc(pct(e.profit))}"></label>
+            </div>
+            <div class="modal-botones">
+              <button type="button" class="accion secundaria esc-rol-agregar">+ Agregar rol</button>
+              <button type="button" class="accion esc-guardar">💾 Guardar ${esc(e.id)}</button>
+            </div>
+          </div>`;
+        }).join("")}
+      </details>`;
+  }
+
+  function engancharEscenarios() {
+    document.querySelectorAll(".esc-card").forEach(card => {
+      const id = card.dataset.esc;
+      const leer = () => {
+        const nombres = [...card.querySelectorAll(".esc-rol-nombre")];
+        const mezcla = nombres.map((n, i) => ({
+          rol: (n.value || "").trim().slice(0, 30) || `Rol ${i + 1}`,
+          tarifa: Number(card.querySelector(`.esc-rol-tarifa[data-i="${i}"]`).value) || 0,
+          pct: (Number(card.querySelector(`.esc-rol-pct[data-i="${i}"]`).value) || 0) / 100,
+        }));
+        return {
+          nombre: (card.querySelector(".esc-nombre").value || "").trim().slice(0, 40),
+          mezcla,
+          // Las tres columnas de siempre se mantienen con los tres primeros
+          // roles, para que lo viejo (y la rutina) siga entendiendo el escenario
+          foreman: mezcla[0] ? mezcla[0].tarifa : 0, pct_foreman: mezcla[0] ? mezcla[0].pct : 0,
+          journeyman: mezcla[1] ? mezcla[1].tarifa : 0, pct_journeyman: mezcla[1] ? mezcla[1].pct : 0,
+          helper: mezcla[2] ? mezcla[2].tarifa : 0, pct_helper: mezcla[2] ? mezcla[2].pct : 0,
+          benefits: (Number(card.querySelector(".esc-benefits").value) || 0) / 100,
+          profit: (Number(card.querySelector(".esc-profit").value) || 0) / 100,
+        };
+      };
+      card.querySelector(".esc-guardar").addEventListener("click", async () => {
+        const datos = leer();
+        const suma = Math.round(datos.mezcla.reduce((t, m) => t + m.pct, 0) * 1000) / 10;
+        if (Math.abs(suma - 100) >= 0.6) { avisar(`Los % de la cuadrilla suman ${suma}% — tienen que dar 100%`, true); return; }
+        try {
+          try {
+            await DB.cambiarEscenario(id, datos);
+          } catch (err) {
+            // Si todavía no se pegó el SQL del modo rápido, la columna "mezcla"
+            // no existe: se guardan las tres tarifas de siempre y se avisa.
+            if (!/mezcla/i.test(err.message)) throw err;
+            const { mezcla, ...sinMezcla } = datos;
+            await DB.cambiarEscenario(id, sinMezcla);
+            if (mezcla.length > 3) avisar("Se guardaron los 3 primeros roles. Para más de 3, pega el SQL del modo rápido.", true);
+          }
+          await recargarEstimador();
+          avisar(`Escenario ${id} guardado ✓ — vale para los estimados nuevos`);
+        } catch (err) { avisar("No se pudo guardar: " + err.message, true); }
+      });
+      card.querySelector(".esc-rol-agregar").addEventListener("click", () => {
+        const fila = document.createElement("div");
+        fila.className = "rap-rol";
+        const i = card.querySelectorAll(".esc-rol-nombre").length;
+        fila.innerHTML = `<input class="esc-rol-nombre" data-i="${i}" type="text" value="" placeholder="Rol nuevo">
+          <span class="rap-signo">$</span><input class="esc-rol-tarifa" data-i="${i}" type="number" min="0" step="0.5" value="20">
+          <span class="rap-signo">/h ·</span><input class="esc-rol-pct" data-i="${i}" type="number" min="0" max="100" step="1" value="0"><span class="rap-signo">%</span>`;
+        card.querySelector(".modal-fila").before(fila);
+      });
+      card.querySelectorAll(".esc-rol-quitar").forEach(b => b.addEventListener("click", () => {
+        b.closest(".rap-rol").remove();
+        // reindexar
+        card.querySelectorAll(".rap-rol").forEach((fila, i) => fila.querySelectorAll("input").forEach(inp => inp.dataset.i = i));
+      }));
+    });
+  }
+
   function pintarEstimadorEditor() {
     const est = (estData.estimados || []).find(x => x.id === estimadoActivo);
     if (!est) { estimadoActivo = null; pintarEstimadorLista(); return; }
@@ -4938,7 +5263,8 @@ Power done right the first time. ⚡`;
     const c = calcularEstimado(est);
     const soloLectura = est.estado !== "borrador";
     const r2 = v => Math.round(v * 100) / 100;
-    const MODO_ETIQ = { planos: "📐 Por planos", remodelacion: "🏠 Remodelación", servicio: "🔧 Servicio" };
+    const MODO_ETIQ = { planos: "📐 Por planos", remodelacion: "🏠 Remodelación", servicio: "🔧 Servicio", rapido: "⚡ Rápido" };
+    const esRapido = est.modo === "rapido";
 
     const filasItems = c.items.map(i => `
       <div class="mat-item">
@@ -5074,6 +5400,7 @@ Power done right the first time. ⚡`;
         </label>` : ""}
       </div>
       ${bannerOverhead}
+      ${esRapido ? panelRapidoHTML(est, c, soloLectura) : ""}
       ${est.modo === "planos" && !soloLectura ? `
       <div class="cal-panel-card">
         <div class="cal-form-titulo">📥 Takeoff de Bluebeam</div>
@@ -5083,13 +5410,13 @@ Power done right the first time. ⚡`;
         <button type="button" class="accion secundaria" id="btn-takeoff-analizar" style="margin-top:.45rem">🔎 Analizar</button>
         <div id="takeoff-preview"></div>
       </div>` : ""}
-      ${est.modo !== "planos" && (ensDisponibles.length || !soloLectura) ? `
+      ${!esRapido && est.modo !== "planos" && (ensDisponibles.length || !soloLectura) ? `
       <div class="cal-panel-card">
         <div class="cal-form-titulo">🧩 Ensambles — cuenta como piensas</div>
         ${filasEnsambles || `<p class="cal-sin-eventos">Los ensambles se siembran al correr el SQL v2.</p>`}
       </div>` : ""}
-      ${cardFrecuentes}
-      ${!soloLectura ? `
+      ${esRapido ? "" : cardFrecuentes}
+      ${!soloLectura && !esRapido ? `
       <div class="cal-panel-card">
         <div class="cal-form-titulo">🔎 Buscar en el catálogo (${(estData.catalogo || []).length})</div>
         <input id="est-buscar" type="text" placeholder="Ej: recessed, breaker gfci, 12/2…" autocomplete="off"
@@ -5097,11 +5424,12 @@ Power done right the first time. ⚡`;
         <div id="est-resultados"></div>
         <button type="button" class="accion secundaria" id="btn-cat-nuevo" style="margin-top:.45rem">➕ Crear ítem nuevo en el catálogo</button>
       </div>` : ""}
+      ${esRapido ? "" : `
       <div class="cal-panel-card">
         <div class="cal-form-titulo">Ítems (${c.items.length}${c.autos.length ? ` + ${c.autos.length} automáticos` : ""})</div>
         ${filasItems || `<p class="cal-sin-eventos">Agrega ensambles, pega el takeoff o busca en el catálogo.</p>`}
         ${filasAutos}
-      </div>
+      </div>`}
       <div class="cal-panel-card">
         <div class="cal-form-titulo">💵 Resumen — fórmula Max Power
           ${!soloLectura ? `<span class="chk-avance">toca ✎ para jugar con los números</span>` : ""}</div>
@@ -5117,14 +5445,15 @@ Power done right the first time. ⚡`;
             <input id="res-factor" type="number" min="0.5" max="2" step="0.05" value="${esc(est.factor || 1)}">
           </label>
         </div>` : ""}
-        <div class="rent-fila"><span>Material (ítems${c.autos.length ? " + automáticos" : ""})</span><span>${fmt(r2(c.matSubtotal - c.misc - c.mermaMat))}</span></div>
+        <div class="rent-fila"><span>${esRapido ? `Material (${c.lineasMat.length} línea${c.lineasMat.length === 1 ? "" : "s"})` : `Material (ítems${c.autos.length ? " + automáticos" : ""})`}</span><span>${fmt(r2(c.matSubtotal - c.misc - c.mermaMat))}</span></div>
         ${c.mermaMat > 0 ? `<div class="rent-fila"><span>+ Merma (cables ${Math.round((estData.config.merma_cable ?? .1) * 100)}% · tubería ${Math.round((estData.config.merma_tuberia ?? .05) * 100)}%)</span><span>${fmt(r2(c.mermaMat))}</span></div>` : ""}
         <div class="rent-fila"><span>+ Misceláneas (${pctTxt(c.miscPct)}${nnDist(est.misc_pct) ? " ✏" : " — tape, wirenuts, fijación"})${lapiz("misc_pct", "pct", c.miscPct, "Misceláneas — % del material")}</span><span>${fmt(r2(c.misc))}</span></div>
         <div class="rent-fila"><span>+ Sales tax (${pctTxt(c.taxPct)}${nnDist(est.tax_pct) ? " ✏" : ""})${lapiz("tax_pct", "pct", c.taxPct, "Sales tax — % del material")}</span><span>${fmt(r2(c.tax))}</span></div>
         ${c.markupPct > 0 ? `<div class="rent-fila"><span>+ Markup de materiales (${pctTxt(c.markupPct)}) ✏${lapiz("markup_pct", "pct", c.markupPct, "Markup de materiales — % sobre el material con tax")}</span><span>${fmt(r2(c.markup))}</span></div>`
           : !soloLectura ? `<div class="rent-fila"><span><button type="button" class="btn-formula insp-borrar" data-campo="markup_pct" data-tipo="pct" data-actual="0" data-nombre="Markup de materiales — % sobre el material con tax">+ Agregar markup de materiales</button></span><span></span></div>` : ""}
         <div class="rent-fila"><span>Horas de TODO el trabajo (${r2(c.horasBase)} × factor ${est.factor || 1})</span><span>${r2(c.horas)} h</span></div>
-        <div class="rent-fila"><span>Labor + benefits (${Math.round(c.esc.benefits * 100)}%)</span><span>${fmt(r2(c.totalLabor))}</span></div>
+        <div class="rent-fila"><span>Labor (${r2(c.horas)} h × ${fmt(r2(c.tarifaMezclada))} cuadrilla)</span><span>${fmt(r2(c.laborBase))}</span></div>
+        <div class="rent-fila"><span>+ Beneficios sobre el labor (${pctTxt(c.benefitsPct)}${nnDist(est.benefits_pct) ? " ✏" : ""})${lapiz("benefits_pct", "pct", c.benefitsPct, "Beneficios — % sobre el labor")}</span><span>${fmt(r2(c.benefits))}</span></div>
         <div class="rent-fila"><span>+ Overhead (${r2(c.horas)} h × ${fmt(c.ohHH)}${nnDist(est.overhead_hh) ? " ✏" : ""})${lapiz("overhead_hh", "monto", c.ohHH, "Overhead — $ por hora-hombre")}</span><span>${fmt(r2(c.overhead))}</span></div>
         <div class="rent-fila"><span>+ Profit (${pctTxt(c.profitPct)}${nnDist(est.profit_pct) ? " ✏" : ""})${lapiz("profit_pct", "pct", c.profitPct, "Profit — % sobre costo + overhead")}</span><span>${fmt(r2(c.profit))}</span></div>
         <div class="rent-fila rent-total ok"><span>🎯 PRECIO DE LA PROPUESTA</span><span>${fmt(r2(c.bid))}</span></div>
@@ -5175,6 +5504,8 @@ Power done right the first time. ⚡`;
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
+
+    if (esRapido) engancharRapido(est, soloLectura);
 
     const selEsc = $("est-escenario"), inpFactor = $("est-factor"), selCable = $("est-cable");
     if (selEsc && !soloLectura) selEsc.addEventListener("change", async () => {
