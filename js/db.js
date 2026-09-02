@@ -473,7 +473,18 @@
     eliminarProyecto: id => api(`proyectos?id=eq.${encodeURIComponent(id)}`, { metodo: "DELETE" }),
     crearProyecto: fila => insertar("proyectos", fila),
     crearFinanzas: fila => insertar("finanzas_proyecto", fila),
-    reportarHoras: fila => insertar("horas", { ...fila, usuario_id: uid() }),
+    reportarHoras: async fila => {
+      try { return await insertar("horas", { ...fila, usuario_id: uid() }); }
+      catch (e) {
+        // Si la base todavía no tiene la columna llave_cliente (SQL sin pegar),
+        // se manda sin ella para que las horas nunca dejen de entrar.
+        if (fila && fila.llave_cliente && e && e.status !== 409 && /llave_cliente/i.test(String(e.message || ""))) {
+          const { llave_cliente, ...sin } = fila;
+          return insertar("horas", { ...sin, usuario_id: uid() });
+        }
+        throw e;
+      }
+    },
     cambiarHoras: (id, cambios) => actualizar(`horas?id=eq.${id}`, cambios),
     eliminarHoras: id => api(`horas?id=eq.${id}`, { metodo: "DELETE" }),
     crearExterno: fila => insertar("trabajos_externos", fila),

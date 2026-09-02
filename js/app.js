@@ -3396,8 +3396,18 @@ function esFalloDeRed(err) {
     });
   }
 
+  // Candado contra el doble toque: mientras un reporte está saliendo, el
+  // botón no responde. Y cada reporte lleva una llave única (llave_cliente):
+  // si el mismo reporte llega dos veces (reintento de la cola, doble toque
+  // que se coló), la base rechaza el segundo en vez de duplicar las horas.
+  let guardandoHoras = false;
   $formHoras.addEventListener("submit", async e => {
     e.preventDefault();
+    if (guardandoHoras) return;
+    guardandoHoras = true;
+    const btnHoras = $formHoras.querySelector('button[type="submit"]');
+    if (btnHoras) btnHoras.disabled = true;
+    try {
     const d = new FormData($formHoras);
     const proyectoId = d.get("proyecto");
     const pendiente = (d.get("pendiente") || "").toString().trim();
@@ -3407,7 +3417,8 @@ function esFalloDeRed(err) {
       fase: d.get("fase"),
       horas: Number(d.get("horas")),
       notas: (d.get("notas") || "").toString().trim() || null,
-      co: (d.get("co") || "").toString().trim() || null
+      co: (d.get("co") || "").toString().trim() || null,
+      llave_cliente: llaveUnica()
     };
     if (fila.co === "__otro__") {
       const escrito = prompt("¿De cuál Change Order fue el trabajo? (Ej: CO #2)");
@@ -3451,12 +3462,27 @@ function esFalloDeRed(err) {
         avisar("📶 Sin señal — tu reporte quedó guardado en el teléfono y se manda solo cuando vuelva la señal.");
         return;
       }
+      if (err && err.status === 409) {
+        // La llave única dijo "ese reporte ya está": no se duplicó nada.
+        $formHoras.elements.horas.value = "";
+        avisar("Ese reporte ya estaba guardado ✓");
+        await recargar();
+        return;
+      }
       avisar("No se pudo guardar: " + err.message, true);
+    }
+    } finally {
+      guardandoHoras = false;
+      if (btnHoras) btnHoras.disabled = false;
     }
   });
 
   // ---------- Reportes de horas que quedaron esperando señal ----------
   const LLAVE_COLA = "mxp_horas_pendientes";
+  function llaveUnica() {
+    try { return crypto.randomUUID(); }
+    catch { return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10); }
+  }
   function colaHoras() {
     try { return JSON.parse(localStorage.getItem(LLAVE_COLA)) || []; } catch { return []; }
   }
@@ -3491,11 +3517,15 @@ function esFalloDeRed(err) {
         }
         mandados++;
       } catch (err) {
-        if (esFalloDeRed(err)) {
+        const st = err && err.status;
+        if (st === 409) { mandados++; continue; } // ya estaba dentro: la llave única lo paró
+        if (esFalloDeRed(err) || st === 401 || (st >= 500 && st < 600)) {
+          // Sin señal, sesión vencida o servidor caído: se queda en la cola.
+          // (Antes un 500 de Supabase tiraba el reporte a la basura en silencio.)
           const resto = { ...item, fila: hOk ? null : item.fila, pendiente: pOk ? null : item.pendiente };
           if (resto.fila || resto.pendiente) quedan.push(resto);
         }
-        // si el servidor lo rechazó, se descarta para no reintentar para siempre
+        // 400/403: el servidor lo rechazó de verdad; se descarta para no reintentar para siempre
       }
     }
     try { localStorage.setItem(LLAVE_COLA, JSON.stringify(quedan)); } catch { /* lleno */ }
