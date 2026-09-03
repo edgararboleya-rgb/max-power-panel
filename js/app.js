@@ -5259,7 +5259,7 @@ Power done right the first time. ⚡`;
           } catch (err) {
             // Si todavía no se pegó el SQL del modo rápido, la columna "mezcla"
             // no existe: se guardan las tres tarifas de siempre y se avisa.
-            if (!/mezcla/i.test(err.message)) throw err;
+            if (!/mezcla/i.test(String((err && err.crudo) || (err && err.message) || ""))) throw err;
             const { mezcla, ...sinMezcla } = datos;
             await DB.cambiarEscenario(id, sinMezcla);
             if (mezcla.length > 3) avisar("Se guardaron los 3 primeros roles. Para más de 3, pega el SQL del modo rápido.", true);

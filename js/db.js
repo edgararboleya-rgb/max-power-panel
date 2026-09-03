@@ -78,6 +78,35 @@
     return sesion && sesion.user ? sesion.user.id : null;
   }
 
+  // ---------- Traducir los errores de la base a español de taller ----------
+  // Postgres contesta con códigos y frases en inglés que no le dicen nada a
+  // nadie ("violates check constraint estimados_modo_check"). Aquí se
+  // convierten en una frase que dice QUÉ pasó y QUÉ hay que hacer.
+  function enCristiano(data, crudo) {
+    const cod = String((data && data.code) || "");
+    const txt = String(crudo || "");
+    const falta = "A la base todavía le falta el último SQL. Pégalo en Supabase " +
+                  "(SQL Editor → pegar → Run) y vuelve a intentarlo.";
+
+    // Falta una columna o una tabla que la app ya usa = SQL sin pegar
+    if (cod === "42703" || cod === "42P01" || cod === "PGRST204" || cod === "PGRST205") return falta;
+
+    // Un candado de la base rechazó el valor
+    if (cod === "23514") {
+      if (/modo/i.test(txt)) {
+        return "El modo ⚡ Rápido todavía no está dado de alta en la base. " + falta;
+      }
+      return "La base no aceptó uno de los datos porque se sale de lo permitido. " + falta;
+    }
+    if (cod === "23505") return "Eso ya estaba guardado; no se apuntó dos veces.";
+    if (cod === "23503") return "Eso apunta a algo que ya no existe (un proyecto o un hito borrado).";
+    if (cod === "23502") return "Falta un dato obligatorio para poder guardar.";
+    if (cod === "42501") return "Tu usuario no tiene permiso para hacer eso.";
+    if (cod === "22P02" || cod === "22003") return "Uno de los números no es válido.";
+    if (cod === "PGRST301" || cod === "PGRST303") return "Se venció la sesión. Vuelve a entrar.";
+    return crudo;
+  }
+
   // ---------- Datos (PostgREST) ----------
   async function api(ruta, opciones = {}, reintento = true) {
     const r = await fetch(`${SB.url}/rest/v1/${ruta}`, {
@@ -99,8 +128,15 @@
     }
     if (!r.ok) {
       const data = await r.json().catch(() => ({}));
-      const e = new Error(data.message || data.hint || `Error ${r.status} en ${ruta}`);
+      const crudo = data.message || data.hint || `Error ${r.status} en ${ruta}`;
+      // El error se traduce AQUÍ, en un solo sitio, para que ninguna pantalla
+      // de la app le enseñe jerga de base de datos a nadie. El texto original
+      // queda en e.crudo y en la consola, por si hay que mirarlo.
+      const e = new Error(enCristiano(data, crudo));
       e.status = r.status;
+      e.codigo = data.code || null;
+      e.crudo = crudo;
+      if (typeof console !== "undefined") console.warn("[base]", data.code || r.status, crudo, "·", ruta);
       throw e;
     }
     if (r.status === 204) return null;
@@ -478,7 +514,7 @@
       catch (e) {
         // Si la base todavía no tiene la columna llave_cliente (SQL sin pegar),
         // se manda sin ella para que las horas nunca dejen de entrar.
-        if (fila && fila.llave_cliente && e && e.status !== 409 && /llave_cliente/i.test(String(e.message || ""))) {
+        if (fila && fila.llave_cliente && e && e.status !== 409 && /llave_cliente/i.test(String((e && e.crudo) || (e && e.message) || ""))) {
           const { llave_cliente, ...sin } = fila;
           return insertar("horas", { ...sin, usuario_id: uid() });
         }
