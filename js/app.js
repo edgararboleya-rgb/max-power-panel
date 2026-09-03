@@ -4752,18 +4752,51 @@ function esFalloDeRed(err) {
       || hay(est.misc_pct) || hay(est.overhead_hh);
   }
 
-  // Overhead real: gastos generales ÷ horas-hombre reales (últimos 90 días)
+  // Overhead por hora = gastos generales del mes ÷ horas facturables del mes.
+  //
+  // La versión vieja dividía SIEMPRE entre 3 las horas de los últimos 90 días.
+  // Como el módulo de horas empezó a usarse en agosto, junio y julio estaban
+  // vacíos: repartía tres meses de gastos entre un mes de horas y sacaba
+  // $109.77/hora en vez de los ~$30 de verdad. Pulsar el botón habría casi
+  // doblado el precio de cada oferta.
+  //
+  // Ahora: manda lo que Edgar declare (horas facturables al mes). Si no lo ha
+  // puesto, se mira el historial contando SOLO los meses completos que de
+  // verdad tienen horas apuntadas, y se dice si el dato es de fiar o no.
+  // Devuelve el desglose entero para poder enseñar la división en pantalla.
   function overheadReal() {
-    const horas = estData.horasTodas || [];
-    if (!horas.length) return null;
-    const desde = new Date(); desde.setDate(desde.getDate() - 90);
-    const iso = fechaISO(desde.getFullYear(), desde.getMonth(), desde.getDate());
-    const total = horas.filter(h => h.fecha >= iso).reduce((s, h) => s + Number(h.horas || 0), 0);
-    const hMes = total / 3;
-    if (hMes < 40) return null; // muy poca historia todavía
     const gastos = (estData.generales || []).reduce((s, g) => s + Number(g.monto_mensual || 0), 0);
     if (!gastos) return null;
-    return Math.round((gastos / hMes) * 100) / 100;
+    const redondear = v => Math.round(v * 100) / 100;
+
+    // 1) Lo que dice el dueño, si lo dijo
+    const puestas = Number((estData.config || {}).horas_mes) || 0;
+    if (puestas >= 40) {
+      return { valor: redondear(gastos / puestas), gastos, horasMes: puestas,
+               fuente: "puestas", meses: 0, fiable: true };
+    }
+
+    // 2) Si no, el historial — solo meses COMPLETOS y con horas dentro
+    const horas = estData.horasTodas || [];
+    if (!horas.length) return null;
+    const hoy = new Date();
+    const mesActual = fechaISO(hoy.getFullYear(), hoy.getMonth(), 1).slice(0, 7);
+    const desde = new Date(); desde.setDate(desde.getDate() - 180);
+    const iso = fechaISO(desde.getFullYear(), desde.getMonth(), desde.getDate());
+    const porMes = new Map();
+    for (const h of horas) {
+      if (!h.fecha || h.fecha < iso) continue;
+      const m = h.fecha.slice(0, 7);
+      if (m >= mesActual) continue;          // el mes en curso va a medias: no cuenta
+      porMes.set(m, (porMes.get(m) || 0) + Number(h.horas || 0));
+    }
+    const meses = [...porMes.values()].filter(v => v > 0);
+    if (!meses.length) return null;
+    const horasMes = meses.reduce((a, b) => a + b, 0) / meses.length;
+    // De fiar solo con tres meses cerrados y un volumen creíble para el taller
+    const fiable = meses.length >= 3 && horasMes >= 150;
+    return { valor: redondear(gastos / horasMes), gastos, horasMes: Math.round(horasMes),
+             fuente: "historial", meses: meses.length, fiable };
   }
 
   function pintarEstimador() {
@@ -5393,14 +5426,44 @@ Power done right the first time. ⚡`;
     const lapiz = (campo, tipo, actual, nombre) => soloLectura ? "" :
       `<button type="button" class="btn-formula insp-borrar" title="Editar" data-campo="${campo}" data-tipo="${tipo}" data-actual="${actual}" data-nombre="${esc(nombre)}">✎</button>`;
 
+    // Aviso del overhead: SIEMPRE enseña la división entera (cuánto se gasta al
+    // mes ÷ cuántas horas al mes), nunca solo el resultado. Y el botón de
+    // actualizar los escenarios solo aparece cuando el dato es de fiar.
     const oReal = overheadReal();
-    const bannerOverhead = usuario.finanzas && oReal
-      && Math.abs(oReal - Number(c.esc.overhead_hh)) / Number(c.esc.overhead_hh) > 0.05
-      ? `<div class="inicio-card avisos">
-           <div class="aviso-texto" style="padding:.2rem 0">⚙ Tu overhead REAL (últimos 90 días) es
-           <strong>${fmt(oReal)}/h-h</strong> — los escenarios usan ${fmt(c.esc.overhead_hh)}.
-           <button class="accion secundaria" id="btn-overhead-real">Actualizar escenarios a ${fmt(oReal)}</button></div>
-         </div>` : "";
+    const ohEsc = Number(c.esc.overhead_hh);
+    const difiere = oReal && ohEsc && Math.abs(oReal.valor - ohEsc) / ohEsc > 0.05;
+    const horasAhora = ohEsc ? Math.round(oReal ? oReal.gastos / ohEsc : 0) : 0;
+    const bannerOverhead = !(usuario.finanzas && oReal && difiere) ? "" :
+      `<div class="inicio-card avisos">
+         <div class="aviso-texto" style="padding:.2rem 0">
+           <strong>⚙ El overhead por hora</strong><br>
+           Tus gastos generales son <strong>${fmt(oReal.gastos)} al mes</strong>.
+           ${oReal.fuente === "puestas"
+             ? `Repartidos entre las <strong>${oReal.horasMes} horas al mes</strong> que pusiste,
+                salen <strong>${fmt(oReal.valor)} por hora</strong>.`
+             : `Con las horas apuntadas en la app (<strong>${oReal.horasMes} al mes</strong>,
+                de ${oReal.meses} ${oReal.meses === 1 ? "mes cerrado" : "meses cerrados"}),
+                saldrían <strong>${fmt(oReal.valor)} por hora</strong>.`}
+           Los escenarios usan <strong>${fmt(ohEsc)}</strong>, que supone
+           <strong>${horasAhora} horas facturables al mes</strong>.
+           ${oReal.fiable ? "" : `<br><br>⚠ <strong>Este número todavía no es de fiar.</strong>
+             ${oReal.meses < 3
+               ? `Solo hay ${oReal.meses} ${oReal.meses === 1 ? "mes cerrado" : "meses cerrados"} con horas apuntadas.`
+               : "Se apuntan menos horas de las que se trabajan."}
+             Mientras el equipo no reporte todo, escribe tú abajo las horas facturables
+             que de verdad hacen al mes entre todos.`}
+           <div class="modal-fila" style="margin-top:.6rem;gap:.5rem;align-items:flex-end">
+             <label class="mat-filtro-label" style="flex:0 1 15rem">Horas facturables al mes
+               <input type="number" id="oh-horas-mes" min="40" max="2000" step="10"
+                      value="${(estData.config || {}).horas_mes || horasAhora || ""}"
+                      placeholder="Ej: 280">
+             </label>
+             <button type="button" class="accion secundaria" id="btn-oh-horas">Guardar y recalcular</button>
+           </div>
+           ${oReal.fiable ? `<button type="button" class="accion secundaria" id="btn-overhead-real"
+              style="margin-top:.5rem">Poner ${fmt(oReal.valor)} en los tres escenarios</button>` : ""}
+         </div>
+       </div>`;
 
     $("estimador-panel").innerHTML = `
       <div class="cal-panel-card">
@@ -5553,13 +5616,38 @@ Power done right the first time. ⚡`;
       await recargarEstimador();
     });
 
-    // --- overhead real ---
+    // --- overhead: las horas facturables al mes que declara el dueño ---
+    const btnOhHoras = $("btn-oh-horas");
+    if (btnOhHoras) btnOhHoras.addEventListener("click", async () => {
+      const v = Number($("oh-horas-mes").value);
+      if (!(v >= 40 && v <= 2000)) {
+        avisar("Pon las horas facturables de todo el equipo en un mes (entre 40 y 2000).", true);
+        return;
+      }
+      try {
+        await DB.guardarConfig("horas_mes", v);
+        await recargarEstimador();
+        const g = (estData.generales || []).reduce((s, x) => s + Number(x.monto_mensual || 0), 0);
+        avisar(`Guardado: ${v} horas al mes → ${fmt(Math.round((g / v) * 100) / 100)} por hora de overhead ✓`);
+      } catch (err) { avisar("No se pudo guardar: " + err.message, true); }
+    });
+
+    // --- overhead: llevar el número calculado a los tres escenarios ---
+    // Se avisa ANTES con lo que le pasaría a este mismo estimado, porque
+    // cambiar el overhead mueve el precio de todas las ofertas de golpe.
     const btnOver = $("btn-overhead-real");
     if (btnOver) btnOver.addEventListener("click", async () => {
+      const antes = c.bid;
+      const despues = calcularEstimado({ ...est, overhead_hh: oReal.valor }).bid;
+      const ok = confirm(
+        `Esto cambia el overhead de ${fmt(ohEsc)} a ${fmt(oReal.valor)} por hora en los tres escenarios.\n\n` +
+        `Este estimado pasaría de ${fmt(Math.round(antes * 100) / 100)} a ${fmt(Math.round(despues * 100) / 100)}.\n\n` +
+        `Afecta a TODAS las ofertas nuevas. ¿Seguro?`);
+      if (!ok) return;
       try {
-        await DB.actualizarOverhead(oReal);
+        await DB.actualizarOverhead(oReal.valor);
         await recargarEstimador();
-        avisar(`Overhead actualizado a ${fmt(oReal)}/h-h en los 3 escenarios ✓`);
+        avisar(`Overhead puesto en ${fmt(oReal.valor)} por hora en los tres escenarios ✓`);
       } catch (err) { avisar("No se pudo: " + err.message, true); }
     });
 
