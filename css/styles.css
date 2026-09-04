@@ -2467,3 +2467,66 @@ video.foto-mini { background: #000; }
 .btn-chat { color: var(--mp-cyan); }
 .btn-chat svg { width: 20px; height: 20px; vertical-align: -4px; filter: drop-shadow(0 0 6px rgba(34,232,224,.45)); }
 .lev-roja input.lev-precio { width: 100%; margin-top: 4px; border-radius: 10px; border: 1.5px solid rgba(179,56,59,.45); padding: 0.5rem 0.7rem; }
+
+/* ============================================================
+   📄 ARMAR PROPUESTA — el cierre en la mesa
+   ============================================================ */
+.prop-item {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.45rem 0; border-bottom: 1px solid var(--mp-line);
+}
+.prop-item-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.prop-item-nom { font-size: 0.9rem; font-weight: 550; color: var(--mp-ink); }
+.prop-item-sub { font-size: 0.76rem; color: var(--mp-ink-3); }
+.prop-bloques { display: flex; gap: 4px; flex-shrink: 0; }
+.prop-bq {
+  width: 36px; height: 36px; border-radius: 10px;
+  border: 1px solid rgba(27,60,140,.16);
+  background: linear-gradient(180deg, #FFFFFF 0%, #F3F9FD 100%);
+  color: var(--mp-ink-2); font-size: 0.86rem; font-weight: 600; cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 2px 4px rgba(7,26,46,.06);
+}
+.prop-bq.puesto {
+  background: linear-gradient(180deg, #2E62E0 0%, var(--mp-navy) 100%);
+  border-color: rgba(27,60,140,.55); color: #F4FBFF;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 3px 8px rgba(27,60,140,.28);
+}
+.prop-pcts {
+  display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-end; margin-top: 0.5rem;
+}
+.prop-pcts label { flex: 1 1 96px; font-size: 0.82rem; }
+.prop-pcts .accion { flex: 0 0 auto; }
+.prop-suma { margin-top: 0.5rem; font-size: 0.85rem; font-weight: 600; }
+.prop-suma.ok, .prop-cuadra.ok { color: var(--mp-ok); }
+.prop-suma.mal, .prop-cuadra.mal { color: var(--mp-danger); }
+
+.prop-tarjetas { display: flex; flex-direction: column; gap: 0.6rem; }
+.prop-tarjeta {
+  border: 1px solid var(--mp-line); border-radius: 16px; padding: 0.85rem;
+  background: linear-gradient(180deg, #FFFFFF 0%, #F7FBFE 100%);
+  box-shadow: 0 2px 8px rgba(7,26,46,.06);
+}
+.prop-tarjeta.recomendada {
+  border-color: var(--mp-blue);
+  box-shadow: 0 3px 12px rgba(42,91,215,.18), 0 0 0 1px rgba(42,91,215,.25);
+}
+.prop-tarjeta-cab { display: flex; align-items: center; gap: 0.5rem; }
+.prop-titulo {
+  flex: 1; font-size: 16px; font-weight: 600; color: var(--mp-ink);
+  border: none; background: transparent; padding: 2px 0; min-height: 32px;
+}
+.prop-estrella {
+  width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
+  border: 1px solid var(--mp-line); background: var(--mp-card);
+  color: var(--mp-ink-3); font-size: 1.1rem; cursor: pointer;
+}
+.prop-estrella.puesto { background: var(--mp-blue); border-color: var(--mp-blue); color: #fff; }
+.prop-precio {
+  font-size: 1.5rem; font-weight: 650; color: var(--mp-navy);
+  font-variant-numeric: tabular-nums; letter-spacing: -0.02em; margin-top: 2px;
+}
+.prop-hoy { font-size: 0.88rem; font-weight: 600; color: var(--mp-teal-text); }
+.prop-hitos { display: flex; flex-wrap: wrap; gap: 0.3rem 0.7rem; margin-top: 0.4rem; }
+.prop-hitos span { font-size: 0.78rem; color: var(--mp-ink-2); font-variant-numeric: tabular-nums; }
+.prop-cuadra { font-size: 0.76rem; font-weight: 600; margin-top: 0.3rem; }
+.prop-cuenta { font-size: 0.76rem; color: var(--mp-ink-3); margin-top: 0.2rem; }

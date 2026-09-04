@@ -570,6 +570,37 @@
                generales, ensambles, ensambleItems, estEnsambles, horasTodas, recetas };
     },
 
+    // ---------- Propuestas y cierre en la mesa (solo dueño) ----------
+    // Las tres tablas llevan precios dentro y el candado es_dueno() de la base
+    // ya deja fuera al equipo de campo.
+    cargarPropuestas: async () => {
+      const [propuestas, opciones, textos, pendientes] = await Promise.all([
+        leer("propuestas?select=*&order=creado.desc").catch(() => []),
+        leer("propuesta_opciones?select=*&order=orden").catch(() => []),
+        leer("textos_legales?select=*&vigente=is.true&order=clave").catch(() => []),
+        leer("cobros_pendientes?select=*&resuelto=is.false&order=creado.desc").catch(() => [])
+      ]);
+      return { propuestas, opciones, textos, pendientes };
+    },
+    crearPropuesta: fila => insertar("propuestas", fila),
+    cambiarPropuesta: (id, cambios) => actualizar(`propuestas?id=eq.${id}`, cambios),
+    eliminarPropuesta: id => api(`propuestas?id=eq.${id}`, { metodo: "DELETE" }),
+    // Las opciones van en una sola petición, no una por una
+    crearOpciones: filas => (filas.length ? insertar("propuesta_opciones", filas) : Promise.resolve([])),
+    borrarOpciones: propuestaId => api(`propuesta_opciones?propuesta_id=eq.${propuestaId}`, { metodo: "DELETE" }),
+    // La llave del portal: si el proyecto ya tenía una, se respeta (no se
+    // le cambia el enlace al cliente por debajo).
+    llavePortal: async proyectoId => {
+      const hay = await leer(`portal_llaves?select=*&proyecto_id=eq.${encodeURIComponent(proyectoId)}`).catch(() => []);
+      if (hay && hay.length) return hay[0].token;
+      const token = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())).replace(/-/g, "");
+      await api("portal_llaves?on_conflict=proyecto_id", {
+        metodo: "POST", cuerpo: { proyecto_id: proyectoId, token },
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" }
+      });
+      return token;
+    },
+
     // ---------- Levantamiento en sitio (solo dueño) ----------
     // Las tres tablas llevan precios dentro, así que el candado de la base
     // (es_dueno) ya deja fuera al equipo de campo. Aquí no hace falta filtrar.

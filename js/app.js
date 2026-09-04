@@ -335,6 +335,7 @@ function esFalloDeRed(err) {
     $("vista-gastos").hidden = vista !== "gastos";
     $("vista-estimador").hidden = vista !== "estimador";
     $("vista-levantamiento").hidden = vista !== "levantamiento";
+    $("vista-propuesta").hidden = vista !== "propuesta";
     $("vista-chat").hidden = vista !== "chat";
     $("vista-asistente").hidden = vista !== "asistente";
     $kicker.textContent = kicker;
@@ -1070,6 +1071,12 @@ function esFalloDeRed(err) {
     if (!$("vista-estimador").hidden) {
       if (estimadoActivo) { estimadoActivo = null; pintarEstimador(); return; }
       irHome();
+      return;
+    }
+    if (!$("vista-propuesta").hidden) {
+      const id = propActiva ? propActiva.estimado.id : null;
+      propActiva = null;
+      if (id) irEstimador(id); else irHome();
       return;
     }
     if (!$("vista-levantamiento").hidden) {
@@ -5571,6 +5578,7 @@ Power done right the first time. ⚡`;
         ${est.estado === "borrador" ? `<button class="accion secundaria" id="btn-est-congelar">🔒 Congelar</button>` : ""}
         ${est.estado === "congelado" ? `<button class="accion secundaria" id="btn-est-descongelar">🔓 Volver a borrador</button>` : ""}
         ${est.estado !== "convertido" ? `<button class="accion" id="btn-est-convertir">🚀 Convertir en proyecto</button>` : ""}
+        <button class="accion secundaria" id="btn-est-propuesta">Armar propuesta para el cliente</button>
       </div>
       <div id="propuesta-caja"></div>`;
 
@@ -5883,6 +5891,9 @@ Power done right the first time. ⚡`;
       await DB.cambiarEstimado(est.id, { estado: "borrador" }).catch(() => {});
       await recargarEstimador();
     });
+    const btnProp = $("btn-est-propuesta");
+    if (btnProp) btnProp.addEventListener("click", () => irPropuesta(est.id));
+
     const btnConv = $("btn-est-convertir");
     if (btnConv) btnConv.addEventListener("click", async () => {
       if (!confirm(`¿Convertir "${est.nombre}" en proyecto?\n\nSe crea con contrato ${fmt(r2(c.bid))}, horas estimadas, presupuesto de materiales, 3 hitos de pago y su alcance por puntos.`)) return;
@@ -6236,6 +6247,303 @@ Power done right the first time. ⚡`;
     });
   }
 
+
+
+  // ============================================================
+  // 📄 ARMAR PROPUESTA — el cierre en la mesa de la cocina (solo dueño)
+  //
+  // De un estimado salen hasta tres OPCIONES DE ALCANCE (qué trabajo se
+  // hace), nunca opciones de margen: el precio de las tres se calcula con
+  // el MISMO escenario interno. Las tarifas, las horas, los beneficios y
+  // el profit no salen de aquí ni por asomo.
+  //
+  // Cada opción añade lo anterior: A = lo esencial · B = A + extras 1 ·
+  // C = B + extras 2. Así la diferencia se ve de un vistazo.
+  // ============================================================
+  let propData = null;      // { propuestas, opciones, textos, pendientes }
+  let propActiva = null;    // el borrador que se está armando, en memoria
+
+  const PROP_REPARTOS = [
+    { id: "50/50",    etiqueta: "50 / 50",       pcts: [50, 50] },
+    { id: "40/40/20", etiqueta: "40 / 40 / 20",  pcts: [40, 40, 20] },
+    { id: "35/40/25", etiqueta: "35 / 40 / 25",  pcts: [35, 40, 25] }
+  ];
+  const PROP_BLOQUES = [
+    { id: "base", etiqueta: "Lo esencial",   letra: "A" },
+    { id: "x1",   etiqueta: "Extras 1",      letra: "B" },
+    { id: "x2",   etiqueta: "Extras 2",      letra: "C" },
+    { id: "fuera", etiqueta: "Fuera",        letra: "—" }
+  ];
+
+  // Reparte un total en porcentajes SIN perder ni ganar un centavo:
+  // el último hito absorbe el redondeo. Un contrato cuyos hitos no suman
+  // el total es fuga de dinero y vergüenza legal.
+  function repartirAlCentavo(total, pcts) {
+    const cents = Math.round(Number(total) * 100);
+    const montos = [];
+    let usado = 0;
+    pcts.forEach((p, i) => {
+      if (i === pcts.length - 1) { montos.push((cents - usado) / 100); return; }
+      const c = Math.round(cents * (Number(p) / 100));
+      usado += c;
+      montos.push(c / 100);
+    });
+    return montos;
+  }
+
+  function irPropuesta(estimadoId) {
+    if (!usuario.finanzas) return;
+    const est = (estData.estimados || []).find(e => e.id === estimadoId);
+    if (!est) { avisar("No encuentro ese estimado", true); return; }
+    mostrar("propuesta", { kicker: "Solo dueño", titulo: "Armar propuesta", volver: true, nuevo: false });
+    const items = itemsDelEstimado(est);
+    propActiva = {
+      estimado: est,
+      items: items.map((it, i) => ({ ...it, _i: i, bloque: "base" })),
+      reparto: "40/40/20",
+      pcts: [40, 40, 20],
+      dias: 15,
+      recomendada: "B",
+      titulos: { A: "Lo esencial", B: "La recomendada", C: "Completa" },
+      proyecto_id: null,
+      email: "", tel: ""
+    };
+    // Si el estimado ya se convirtió en proyecto, se hereda lo que se sepa
+    const proy = proyectos().find(p => (p.nombre || "").trim() === (est.nombre || "").trim());
+    if (proy) {
+      propActiva.proyecto_id = proy.id;
+      propActiva.email = proy.cliente_email || "";
+      propActiva.tel = proy.cliente_tel || "";
+    }
+    pintarPropuesta();
+  }
+
+  // Los ítems de cada opción: cada letra ARRASTRA lo anterior
+  function propItemsDe(letra) {
+    const cuales = letra === "A" ? ["base"] : letra === "B" ? ["base", "x1"] : ["base", "x1", "x2"];
+    return propActiva.items.filter(it => cuales.indexOf(it.bloque) >= 0);
+  }
+  // ¿Qué letras tienen sentido? A siempre; B y C solo si su bloque tiene algo.
+  function propLetras() {
+    const hay = b => propActiva.items.some(it => it.bloque === b);
+    const l = ["A"];
+    if (hay("x1")) l.push("B");
+    if (hay("x1") && hay("x2")) l.push("C");
+    return l;
+  }
+  function propPrecio(letra) {
+    const items = propItemsDe(letra);
+    if (!items.length) return 0;
+    return Math.round(calcularEstimado(propActiva.estimado, items).bid * 100) / 100;
+  }
+
+  function pintarPropuesta() {
+    const p = propActiva;
+    if (!p) return;
+    const letras = propLetras();
+    const filas = p.items.map(it => `
+      <div class="prop-item">
+        <span class="prop-item-txt">
+          <span class="prop-item-nom">${esc(it.item)}</span>
+          <span class="prop-item-sub">${esc(it.cantidad)} ${esc(it.unidad || "")}</span>
+        </span>
+        <span class="prop-bloques" data-i="${it._i}">
+          ${PROP_BLOQUES.map(b => `<button type="button" class="prop-bq${it.bloque === b.id ? " puesto" : ""}" data-b="${b.id}" title="${esc(b.etiqueta)}">${b.letra}</button>`).join("")}
+        </span>
+      </div>`).join("");
+
+    const tarjetas = letras.map(l => {
+      const precio = propPrecio(l);
+      const montos = repartirAlCentavo(precio, p.pcts);
+      const suma = Math.round(montos.reduce((s, m) => s + m, 0) * 100) / 100;
+      const cuadra = Math.abs(suma - precio) < 0.005;
+      return `
+        <div class="prop-tarjeta${p.recomendada === l ? " recomendada" : ""}">
+          <div class="prop-tarjeta-cab">
+            <input class="prop-titulo" data-l="${l}" type="text" value="${esc(p.titulos[l] || "")}">
+            <button type="button" class="prop-estrella${p.recomendada === l ? " puesto" : ""}" data-l="${l}" title="La que recomiendas">★</button>
+          </div>
+          <div class="prop-precio">${fmt(precio)}</div>
+          <div class="prop-hoy">hoy aparta ${fmt(montos[0])}</div>
+          <div class="prop-hitos">
+            ${montos.map((m, i) => `<span>${p.pcts[i]}% · ${fmt(m)}${i === 0 ? " (depósito)" : ""}</span>`).join("")}
+          </div>
+          <div class="prop-cuadra ${cuadra ? "ok" : "mal"}">${cuadra ? "cuadra al centavo ✓" : "⚠ no cuadra"}</div>
+          <div class="prop-cuenta">${propItemsDe(l).length} partidas${l !== "A" ? " · además de lo anterior" : ""}</div>
+        </div>`;
+    }).join("");
+
+    const lista = proyectos().filter(x => x.estado !== "completado");
+    $("propuesta-panel").innerHTML = `
+      <div class="cal-panel-card">
+        <div class="lev-titulo">${levIco("resumen")} ${esc(p.estimado.nombre)}</div>
+        <p class="lev-nota">Reparte las partidas en bloques. <b>A</b> es lo esencial; <b>B</b> añade los extras 1; <b>C</b> añade los extras 2. Lo que pongas en <b>—</b> se queda fuera de todas.</p>
+        ${filas || `<p class="cal-sin-eventos">Este estimado no tiene partidas.</p>`}
+      </div>
+
+      <div class="cal-panel-card">
+        <div class="lev-lab">Cómo se paga <i>— editable, no es camisa de fuerza</i></div>
+        <div class="lev-chips" data-campo="reparto">
+          ${PROP_REPARTOS.map(r => `<button type="button" class="lev-chip${p.reparto === r.id ? " puesto" : ""}" data-valor="${r.id}">${r.etiqueta}</button>`).join("")}
+        </div>
+        <div class="prop-pcts">
+          ${p.pcts.map((v, i) => `
+            <label>Pago ${i + 1}${i === 0 ? " (depósito)" : ""}
+              <input class="prop-pct" data-i="${i}" type="number" inputmode="decimal" min="0" max="100" step="0.5" value="${v}">
+            </label>`).join("")}
+          <button type="button" class="accion secundaria" id="prop-menos" ${p.pcts.length <= 2 ? "disabled" : ""}>− pago</button>
+          <button type="button" class="accion secundaria" id="prop-mas" ${p.pcts.length >= 5 ? "disabled" : ""}>＋ pago</button>
+        </div>
+        <div class="prop-suma ${Math.abs(p.pcts.reduce((s, v) => s + Number(v), 0) - 100) < 0.001 ? "ok" : "mal"}">
+          Suman ${p.pcts.reduce((s, v) => s + Number(v), 0)}%${Math.abs(p.pcts.reduce((s, v) => s + Number(v), 0) - 100) < 0.001 ? " ✓" : " — tienen que sumar 100"}
+        </div>
+      </div>
+
+      <div class="cal-panel-card">
+        <div class="lev-lab">Las opciones que verá el cliente</div>
+        <div class="prop-tarjetas">${tarjetas}</div>
+      </div>
+
+      <div class="cal-panel-card">
+        <div class="lev-lab">La obra y el cliente</div>
+        <label>¿A qué proyecto pertenece?
+          <select id="prop-proyecto">
+            <option value="">— elige el proyecto —</option>
+            ${lista.map(x => `<option value="${esc(x.id)}"${p.proyecto_id === x.id ? " selected" : ""}>${esc(x.nombre)}</option>`).join("")}
+          </select>
+        </label>
+        <div class="modal-fila">
+          <label>Correo del cliente
+            <input id="prop-email" type="email" value="${esc(p.email)}" placeholder="para mandarle la copia" autocomplete="off">
+          </label>
+          <label>Teléfono del cliente
+            <input id="prop-tel" type="tel" value="${esc(p.tel)}" placeholder="para mandarle el enlace" autocomplete="off">
+          </label>
+        </div>
+        <label>La propuesta vale
+          <select id="prop-dias">
+            ${[7, 15, 30, 45, 60].map(d => `<option value="${d}"${p.dias === d ? " selected" : ""}>${d} días</option>`).join("")}
+          </select>
+        </label>
+        <button type="button" class="accion" id="prop-guardar" style="margin-top:.8rem">Guardar la propuesta</button>
+        <p class="lev-nota">Se guarda con las opciones congeladas: si después retocas el estimado, esta propuesta no se mueve.</p>
+      </div>`;
+
+    engancharPropuesta();
+  }
+
+  function engancharPropuesta() {
+    const p = propActiva;
+    // Bloques de cada partida
+    $("propuesta-panel").querySelectorAll(".prop-bloques").forEach(caja => {
+      caja.querySelectorAll(".prop-bq").forEach(b => {
+        b.addEventListener("click", () => {
+          const it = p.items.find(x => x._i === Number(caja.dataset.i));
+          if (it) it.bloque = b.dataset.b;
+          pintarPropuesta();
+        });
+      });
+    });
+    // Reparto
+    $("propuesta-panel").querySelectorAll('.lev-chips[data-campo="reparto"] .lev-chip').forEach(b => {
+      b.addEventListener("click", () => {
+        const r = PROP_REPARTOS.find(x => x.id === b.dataset.valor);
+        if (r) { p.reparto = r.id; p.pcts = r.pcts.slice(); }
+        pintarPropuesta();
+      });
+    });
+    $("propuesta-panel").querySelectorAll(".prop-pct").forEach(el => {
+      el.addEventListener("change", () => {
+        p.pcts[Number(el.dataset.i)] = Number(el.value) || 0;
+        p.reparto = "a mano";
+        pintarPropuesta();
+      });
+    });
+    $("prop-mas").addEventListener("click", () => { p.pcts.push(0); p.reparto = "a mano"; pintarPropuesta(); });
+    $("prop-menos").addEventListener("click", () => { p.pcts.pop(); p.reparto = "a mano"; pintarPropuesta(); });
+    // Tarjetas
+    $("propuesta-panel").querySelectorAll(".prop-titulo").forEach(el => {
+      el.addEventListener("change", () => { p.titulos[el.dataset.l] = el.value; });
+    });
+    $("propuesta-panel").querySelectorAll(".prop-estrella").forEach(b => {
+      b.addEventListener("click", () => { p.recomendada = b.dataset.l; pintarPropuesta(); });
+    });
+    // Obra y cliente
+    $("prop-proyecto").addEventListener("change", e => {
+      p.proyecto_id = e.target.value || null;
+      const proy = proyectos().find(x => x.id === p.proyecto_id);
+      if (proy) {
+        if (!p.email) { p.email = proy.cliente_email || ""; }
+        if (!p.tel) { p.tel = proy.cliente_tel || ""; }
+        pintarPropuesta();
+      }
+    });
+    $("prop-email").addEventListener("change", e => { p.email = e.target.value.trim(); });
+    $("prop-tel").addEventListener("change", e => { p.tel = e.target.value.trim(); });
+    $("prop-dias").addEventListener("change", e => { p.dias = Number(e.target.value); });
+    $("prop-guardar").addEventListener("click", guardarPropuesta);
+  }
+
+  async function guardarPropuesta() {
+    const p = propActiva;
+    const letras = propLetras();
+    const sumaPct = p.pcts.reduce((s, v) => s + Number(v), 0);
+    if (Math.abs(sumaPct - 100) > 0.001) { avisar("Los pagos tienen que sumar 100%", true); return; }
+    if (!p.proyecto_id) { avisar("Elige a qué proyecto pertenece", true); return; }
+    if (!propItemsDe("A").length) { avisar("La opción A no puede quedar vacía", true); return; }
+
+    const btn = $("prop-guardar");
+    btn.disabled = true; btn.textContent = "Guardando…";
+    try {
+      const hasta = new Date();
+      hasta.setDate(hasta.getDate() + p.dias);
+      const creada = await DB.crearPropuesta({
+        proyecto_id: p.proyecto_id,
+        estimado_id: p.estimado.id,
+        estado: "borrador",
+        escenario: p.estimado.escenario,
+        valida_hasta: hasta.toISOString().slice(0, 10)
+      });
+      const propuestaId = creada[0].id;
+
+      const filas = letras.map((l, i) => {
+        const items = propItemsDe(l);
+        const precio = propPrecio(l);
+        const montos = repartirAlCentavo(precio, p.pcts);
+        return {
+          propuesta_id: propuestaId,
+          letra: l,
+          titulo: p.titulos[l] || l,
+          // Copia CONGELADA: si mañana se retoca el estimado, esto no se mueve
+          alcance: items.map(it => ({ item: it.item, cantidad: it.cantidad, unidad: it.unidad })),
+          no_incluye: [],
+          precio,
+          hitos_plan: montos.map((m, j) => ({
+            titulo: `Pago ${j + 1}${j === 0 ? " — depósito" : ""}`,
+            monto: m, pct: p.pcts[j], es_deposito: j === 0
+          })),
+          recomendada: p.recomendada === l,
+          orden: i
+        };
+      });
+      await DB.crearOpciones(filas);
+
+      // El correo y el teléfono viven en el proyecto (la tabla de clientes
+      // llega en otra tanda); solo se escriben si Edgar puso algo.
+      const cambios = {};
+      if (p.email) cambios.cliente_email = p.email;
+      if (p.tel) cambios.cliente_tel = p.tel;
+      if (Object.keys(cambios).length) await DB.cambiarProyecto(p.proyecto_id, cambios);
+
+      await recargarEstimador();
+      avisar(`Propuesta guardada con ${filas.length} ${filas.length === 1 ? "opción" : "opciones"} ✓`);
+      propActiva = null;
+      irEstimador(p.estimado.id);
+    } catch (err) {
+      avisar("No se pudo guardar: " + err.message, true);
+      btn.disabled = false; btn.textContent = "Guardar la propuesta";
+    }
+  }
 
   // ============================================================
   // 📋 EL LEVANTAMIENTO EN SITIO — solo el dueño
