@@ -4833,7 +4833,7 @@ function esFalloDeRed(err) {
 
     $("estimador-panel").innerHTML = `
       <div class="cal-panel-card lev-atajo">
-        <button type="button" class="accion" id="est-a-levantamiento">📋 Levantamiento en sitio</button>
+        <button type="button" class="accion" id="est-a-levantamiento">Levantamiento en sitio</button>
         <p class="lev-nota">Estás en la casa: cuenta lo que ves y la app arma el estimado sola.</p>
       </div>
       <div class="cal-panel-card">
@@ -6255,51 +6255,100 @@ Power done right the first time. ⚡`;
 
   const LEV_FICHAS = [
     { etiqueta: "La casa" }, { etiqueta: "Panel" }, { etiqueta: "Cuartos" },
-    { etiqueta: "Condiciones" }, { etiqueta: "Medidas" }, { etiqueta: "Resumen" }
+    { etiqueta: "Se ve" }, { etiqueta: "Medidas" }, { etiqueta: "Resumen" }
   ];
+
+
+  // ---------- Iconos de línea (mismo trazo que las losetas del inicio) ----------
+  const LEV_SVG = {
+    // cuartos
+    cocina:    '<path d="M4 10h16"/><path d="M6 10V6.5A2.5 2.5 0 0 1 8.5 4h7A2.5 2.5 0 0 1 18 6.5V10"/><path d="M5 10v7a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3v-7"/><path d="M10 14v2M14 14v2"/>',
+    bano:      '<path d="M8 4a3 3 0 0 1 6 0v2"/><path d="M14 6h1.5a1 1 0 0 1 0 2H12a1 1 0 0 1 0-2z"/><path d="M13 11v1.5M15.5 10.5l.8 1.3M10.5 10.5l-.8 1.3"/><path d="M4 16h16M6 16l1 4h10l1-4"/>',
+    recamara:  '<path d="M3 18v-8M3 13h18v5"/><path d="M3 13V9a2 2 0 0 1 2-2h5a3 3 0 0 1 3 3v3"/><circle cx="6.5" cy="10" r="1.2"/>',
+    sala:      '<path d="M5 11V8a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v3"/><path d="M3 13a2 2 0 0 1 4 0v1h10v-1a2 2 0 0 1 4 0v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M6 18v2M18 18v2"/>',
+    pasillo:   '<rect x="6" y="3.5" width="12" height="17" rx="1.5"/><path d="M14.5 12h.01"/><path d="M3 20.5h18"/>',
+    exterior:  '<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/>',
+    garaje:    '<path d="M5 13.5 6.6 9a2 2 0 0 1 1.9-1.4h7a2 2 0 0 1 1.9 1.4l1.6 4.5"/><rect x="3.5" y="13.5" width="17" height="4.5" rx="1.6"/><circle cx="7.8" cy="20" r="1.3"/><circle cx="16.2" cy="20" r="1.3"/>',
+    otro:      '<path d="M3.5 8 12 3.5 20.5 8 12 12.5z"/><path d="M3.5 8v8L12 20.5l8.5-4.5V8"/><path d="M12 12.5v8"/>',
+    // lo que se cuenta
+    enchufe:   '<rect x="5.5" y="3.5" width="13" height="17" rx="3.5"/><path d="M9.8 9v2.6M14.2 9v2.6"/><path d="M12 16.2v.01"/>',
+    gfci:      '<rect x="5.5" y="3.5" width="13" height="17" rx="3.5"/><path d="M9.8 8v2M14.2 8v2"/><path d="M9.5 14.5h5v2.5h-5z"/>',
+    estufa:    '<rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.8"/><circle cx="15" cy="9" r="1.8"/><circle cx="9" cy="15" r="1.8"/><circle cx="15" cy="15" r="1.8"/>',
+    secadora:  '<rect x="4.5" y="3.5" width="15" height="17" rx="3"/><circle cx="12" cy="13" r="4.5"/><path d="M7.5 6.5h.01M10 6.5h.01"/>',
+    interruptor:'<rect x="7" y="3.5" width="10" height="17" rx="2.5"/><rect x="10.2" y="8" width="3.6" height="5" rx="1"/>',
+    tresvias:  '<rect x="7" y="3.5" width="10" height="17" rx="2.5"/><path d="M12 8.5v3M12 15.2v.01"/>',
+    dimmer:    '<rect x="7" y="3.5" width="10" height="17" rx="2.5"/><circle cx="12" cy="12" r="2.8"/><path d="M12 12V9.8"/>',
+    empotrada: '<path d="M4 6.5h16"/><path d="M8.2 6.5a3.8 3.8 0 0 0 7.6 0"/><path d="M12 14.5v2M8.5 13l-1.2 1.6M15.5 13l1.2 1.6"/>',
+    colgante:  '<path d="M12 3v6"/><path d="M7.5 13a4.5 4.5 0 0 1 9 0z"/><path d="M12 16v1.2"/><path d="M9 20h6"/>',
+    techoluz:  '<path d="M4 8h16"/><path d="M7 8a5 5 0 0 0 10 0"/><path d="M12 16.5v2M7.8 15l-1.3 1.7M16.2 15l1.3 1.7"/>',
+    ventilador:'<circle cx="12" cy="12" r="2"/><path d="M12 10c0-3.5 1.6-5.5 4-5.5 1.8 0 2.6 1.6 1.4 2.9C16 8.9 14 10 12 10z"/><path d="M10.3 13c-3 1.8-5.6 1.6-6.8-.5-.9-1.6.3-2.9 2-2.6 2 .3 3.6 1.4 4.8 3.1z"/><path d="M13.7 13c3 1.8 3.9 4.2 2.7 6.3-.9 1.6-2.7 1.3-3.3-.4-.7-1.9-.5-3.9.6-5.9z"/>',
+    sconce:    '<path d="M17 3.5v17"/><path d="M12 8.5a4.5 4.5 0 0 0-4.5 4.5h9"/><path d="M9.5 16.5l-1 1.8M12 16.5v2"/>',
+    vanidad:   '<rect x="4" y="9" width="16" height="4.5" rx="2.2"/><circle cx="8" cy="17.5" r="1.1"/><circle cx="12" cy="17.5" r="1.1"/><circle cx="16" cy="17.5" r="1.1"/><path d="M12 9V5"/>',
+    reflector: '<path d="M6 14.5 3.8 18l3.4 2 2-3.6"/><rect x="6.2" y="9.2" width="7" height="6" rx="1.8" transform="rotate(30 9.7 12.2)"/><path d="M14.5 8l4-4.2M16.5 11l4.5-1.6M15.7 9.5l4.3-3"/>',
+    extractor: '<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><circle cx="12" cy="12" r="1.6"/><path d="M12 10.4c0-2.4 1-3.9 2.7-3.9 1.3 0 1.8 1.2.9 2.1-.9.9-2.2 1.6-3.6 1.8z"/><path d="M10.6 13c-2.1 1.2-3.9 1-4.7-.4-.6-1.1.2-2 1.4-1.8 1.4.2 2.4.9 3.3 2.2z"/><path d="M13.2 13.4c2.1 1.2 2.7 2.9 1.9 4.3-.6 1.1-1.9.9-2.3-.3-.5-1.3-.4-2.6.4-4z"/>',
+    tira:      '<path d="M3 12c3-3.5 6 3.5 9 0s6 3.5 9 0"/><path d="M6 16.5h.01M10 16.5h.01M14 16.5h.01M18 16.5h.01"/>',
+    humo:      '<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.2"/><path d="M12 6.8v1.4M15.7 8.3l-1 1M8.3 8.3l1 1"/>',
+    datos:     '<rect x="6" y="4" width="12" height="13" rx="2"/><path d="M9 7.5v2M12 7.5v2M15 7.5v2"/><path d="M9.5 17v3h5v-3"/>',
+    sensor:    '<path d="M7 20a5 5 0 0 1 10 0z"/><circle cx="12" cy="10" r="3"/><path d="M5.5 8.5a7.5 7.5 0 0 1 13 0"/><path d="M3.2 6.5a10.5 10.5 0 0 1 17.6 0"/>',
+    inalambrico:'<path d="M12 18.5v.01"/><path d="M8.8 15.2a4.5 4.5 0 0 1 6.4 0"/><path d="M6 12.4a8.5 8.5 0 0 1 12 0"/><path d="M3.2 9.5a12.5 12.5 0 0 1 17.6 0"/>',
+    // las fichas
+    casa:      '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/><path d="M9.5 20v-5h5v5"/>',
+    panel:     '<path d="M13 2.5 5 13.5h6L11 21.5l8-11h-6z"/>',
+    cuartos:   '<rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M12 3.5v17M3.5 12H12"/>',
+    ojo:       '<path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
+    medidas:   '<path d="m4 17 13-13 3 3-13 13H4z"/><path d="m8.5 12.5 1.5 1.5M11.5 9.5l1.5 1.5M14.5 6.5 16 8"/>',
+    resumen:   '<path d="M7 3.5h7l4 4v13H7z"/><path d="M14 3.5V8h4"/><path d="M9.5 12h5M9.5 15.5h5"/>',
+    papelera:  '<path d="M4.5 6.5h15"/><path d="M8 6.5V5a1.5 1.5 0 0 1 1.5-1.5h5A1.5 1.5 0 0 1 16 5v1.5"/><path d="M6.5 6.5 7.3 19a2 2 0 0 0 2 1.9h5.4a2 2 0 0 0 2-1.9l.8-12.5"/><path d="M10 10.5v6M14 10.5v6"/>',
+    lista:     '<path d="M8.5 5.5H19M8.5 12H19M8.5 18.5H19"/><path d="M4.5 5.5h.01M4.5 12h.01M4.5 18.5h.01"/>'
+  };
+  function levIco(nombre, ancho) {
+    const dibujo = LEV_SVG[nombre] || LEV_SVG.otro;
+    return `<span class="lev-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"` +
+      ` stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"${ancho ? ` style="width:${ancho}px;height:${ancho}px"` : ""}>${dibujo}</svg></span>`;
+  }
 
   // Lo que se puede contar. La 'clave' es la del recetario de la base:
   // clave + "." + acción. Si una acción no tiene receta, no se ofrece.
   const LEV_CONTADORES = {
-    toma:              { etiqueta: "Tomas",                  icono: "🔌" },
-    toma_gfci:         { etiqueta: "Tomas GFCI",             icono: "🔌" },
-    toma_gfci_wr:      { etiqueta: "GFCI de intemperie",     icono: "🌧" },
-    toma_240_estufa:   { etiqueta: "Toma 240V estufa",       icono: "🍳" },
-    toma_240_secadora: { etiqueta: "Toma 240V secadora",     icono: "🧺" },
-    switch:            { etiqueta: "Interruptores",          icono: "🔘" },
-    switch3:           { etiqueta: "De tres vías",           icono: "🔘" },
-    dimmer:            { etiqueta: "Dimmers",                icono: "🎚" },
-    recessed:          { etiqueta: "Empotradas",             icono: "💡" },
-    colgante:          { etiqueta: "Colgantes",              icono: "💡" },
-    techo:             { etiqueta: "Luz de techo",           icono: "💡" },
-    ventilador:        { etiqueta: "Ventilador de techo",    icono: "🌀" },
-    sconce:            { etiqueta: "Sconce de pared",        icono: "🕯" },
-    vanidad:           { etiqueta: "Luz de vanidad",         icono: "🪞" },
-    flood:             { etiqueta: "Reflector exterior",     icono: "🔦" },
-    extractor:         { etiqueta: "Extractor de baño",      icono: "💨" },
-    bajo_gabinete:     { etiqueta: "Bajo gabinete",          icono: "📏", pies: true },
-    tira:              { etiqueta: "Tira LED",               icono: "📏", pies: true },
-    humo:              { etiqueta: "Detector de humo",       icono: "🚨" },
-    humo_co:           { etiqueta: "Detector humo/CO",       icono: "🚨" },
-    datos:             { etiqueta: "Toma de datos",          icono: "🌐" },
-    sensor:            { etiqueta: "Sensor de movimiento",   icono: "👁" },
-    caseta_dimmer:     { etiqueta: "Dimmer Caséta",          icono: "📶" },
-    caseta_switch:     { etiqueta: "Switch Caséta",          icono: "📶" },
-    caseta_pico:       { etiqueta: "Pico Caséta",            icono: "📶" },
-    caseta_hub:        { etiqueta: "Hub Caséta",             icono: "📶" }
+    toma:              { etiqueta: "Tomas",                  icono: "enchufe" },
+    toma_gfci:         { etiqueta: "Tomas GFCI",             icono: "gfci" },
+    toma_gfci_wr:      { etiqueta: "GFCI de intemperie",     icono: "gfci" },
+    toma_240_estufa:   { etiqueta: "Toma 240V estufa",       icono: "estufa" },
+    toma_240_secadora: { etiqueta: "Toma 240V secadora",     icono: "secadora" },
+    switch:            { etiqueta: "Interruptores",          icono: "interruptor" },
+    switch3:           { etiqueta: "De tres vías",           icono: "tresvias" },
+    dimmer:            { etiqueta: "Dimmers",                icono: "dimmer" },
+    recessed:          { etiqueta: "Empotradas",             icono: "empotrada" },
+    colgante:          { etiqueta: "Colgantes",              icono: "colgante" },
+    techo:             { etiqueta: "Luz de techo",           icono: "techoluz" },
+    ventilador:        { etiqueta: "Ventilador de techo",    icono: "ventilador" },
+    sconce:            { etiqueta: "Sconce de pared",        icono: "sconce" },
+    vanidad:           { etiqueta: "Luz de vanidad",         icono: "vanidad" },
+    flood:             { etiqueta: "Reflector exterior",     icono: "reflector" },
+    extractor:         { etiqueta: "Extractor de baño",      icono: "extractor" },
+    bajo_gabinete:     { etiqueta: "Bajo gabinete",          icono: "tira", pies: true },
+    tira:              { etiqueta: "Tira LED",               icono: "tira", pies: true },
+    humo:              { etiqueta: "Detector de humo",       icono: "humo" },
+    humo_co:           { etiqueta: "Detector humo/CO",       icono: "humo" },
+    datos:             { etiqueta: "Toma de datos",          icono: "datos" },
+    sensor:            { etiqueta: "Sensor de movimiento",   icono: "sensor" },
+    caseta_dimmer:     { etiqueta: "Dimmer Caséta",          icono: "inalambrico" },
+    caseta_switch:     { etiqueta: "Switch Caséta",          icono: "inalambrico" },
+    caseta_pico:       { etiqueta: "Pico Caséta",            icono: "inalambrico" },
+    caseta_hub:        { etiqueta: "Hub Caséta",             icono: "inalambrico" }
   };
 
   // Cada clase de cuarto trae puestos los contadores que casi siempre hacen
   // falta. Lo que sobra se quita; lo que falta se añade con "＋ otra cosa".
   const LEV_CLASES = {
-    cocina:   { etiqueta: "Cocina",             icono: "🍳", trae: ["toma", "toma_gfci", "switch", "recessed", "colgante", "bajo_gabinete"] },
-    bano:     { etiqueta: "Baño",               icono: "🚿", trae: ["toma_gfci", "switch", "vanidad", "recessed", "extractor"] },
-    recamara: { etiqueta: "Recámara",           icono: "🛏", trae: ["toma", "switch", "ventilador", "humo"] },
-    sala:     { etiqueta: "Sala / comedor",     icono: "🛋", trae: ["toma", "switch", "recessed", "techo"] },
-    pasillo:  { etiqueta: "Pasillo / lavandería", icono: "🚪", trae: ["toma", "switch", "techo", "humo"] },
-    exterior: { etiqueta: "Exterior",           icono: "🌤", trae: ["toma_gfci_wr", "sconce", "flood"] },
-    garaje:   { etiqueta: "Garaje",             icono: "🚗", trae: ["toma", "toma_gfci", "techo", "toma_240_secadora"] },
-    otro:     { etiqueta: "Otro",               icono: "📦", trae: ["toma", "switch", "techo"] }
+    cocina:   { etiqueta: "Cocina",             icono: "cocina", trae: ["toma", "toma_gfci", "switch", "recessed", "colgante", "bajo_gabinete"] },
+    bano:     { etiqueta: "Baño",               icono: "bano", trae: ["toma_gfci", "switch", "vanidad", "recessed", "extractor"] },
+    recamara: { etiqueta: "Recámara",           icono: "recamara", trae: ["toma", "switch", "ventilador", "humo"] },
+    sala:     { etiqueta: "Sala / comedor",     icono: "sala", trae: ["toma", "switch", "recessed", "techo"] },
+    pasillo:  { etiqueta: "Pasillo / lavandería", icono: "pasillo", trae: ["toma", "switch", "techo", "humo"] },
+    exterior: { etiqueta: "Exterior",           icono: "exterior", trae: ["toma_gfci_wr", "sconce", "flood"] },
+    garaje:   { etiqueta: "Garaje",             icono: "garaje", trae: ["toma", "toma_gfci", "techo", "toma_240_secadora"] },
+    otro:     { etiqueta: "Otro",               icono: "otro", trae: ["toma", "switch", "techo"] }
   };
 
   const LEV_ACCIONES = {
@@ -6654,7 +6703,7 @@ Power done right the first time. ⚡`;
     const cuerpo = [levFicha1, levFicha2, levFicha3, levFicha4, levFicha5, levFicha6][levFicha](l);
 
     $("levantamiento-panel").innerHTML = `
-      <div id="lev-senal" class="lev-senal"${levSinSenal ? "" : " hidden"}>📴 Sin señal — se está guardando en el teléfono</div>
+      <div id="lev-senal" class="lev-senal"${levSinSenal ? "" : " hidden"}>Sin señal — se está guardando en el teléfono</div>
       <div class="pasos lev-pasos">${barra}</div>
       <div class="cal-panel-card lev-cuerpo">${cuerpo}</div>
       <div class="lev-pie">
@@ -6682,7 +6731,7 @@ Power done right the first time. ⚡`;
       const v = typeof o === "string" ? o : o.id;
       const t = typeof o === "string" ? o : o.etiqueta;
       const malo = extra === "marcas" && LEV_MARCAS_MALAS.indexOf(v) >= 0;
-      return `<button type="button" class="lev-chip${String(valor) === String(v) ? " puesto" : ""}${malo ? " malo" : ""}" data-valor="${esc(v)}">${esc(t)}${malo ? " ⚠" : ""}</button>`;
+      return `<button type="button" class="lev-chip${String(valor) === String(v) ? " puesto" : ""}${malo ? " malo" : ""}" data-valor="${esc(v)}">${esc(t)}</button>`;
     }).join("") + `</div>`;
   }
   function engancharChips(campo, guardar) {
@@ -6718,7 +6767,7 @@ Power done right the first time. ⚡`;
   // ---------- Ficha 1 · La casa ----------
   function levFicha1(l) {
     return `
-      <div class="cal-form-titulo">🏠 La casa</div>
+      <div class="lev-titulo">${levIco("casa")} La casa</div>
       <label>Nombre del trabajo
         <input class="lev-in" data-c="nombre" type="text" value="${esc(l.nombre || "")}" placeholder="Ej: Casa García — Rewire">
       </label>
@@ -6753,23 +6802,23 @@ Power done right the first time. ⚡`;
     const p = l.panel || {};
     const alerta = levPanelCondenado(l) ? `
       <div class="lev-roja">
-        <div class="lev-roja-t">⚠ Panel ${esc(p.marca)}</div>
+        <div class="lev-roja-t">Panel ${esc(p.marca)} — condenado</div>
         <p>No se puede reutilizar: no se consiguen breakers para él. La cotización tiene que llevar panel nuevo.</p>
         <p>Te dejé puestas <b>9 horas</b> (demoler el viejo y montar el nuevo) más <b>media hora por cada circuito</b> que haya que reconectar — ahora mismo <b>${levReconectar(l)}</b>.</p>
-        <label>Lo que falta es el precio del panel. Ponlo tú:
+        <label style="display:block">Lo que falta es el precio del panel. Ponlo tú:
           <input class="lev-precio" data-d="panel" type="number" inputmode="decimal" min="0" step="0.01" value="${(l.decisiones || {}).panel || ""}" placeholder="$">
         </label>
       </div>` : "";
     const alertaSub = levNecesitaSubpanel(l) ? `
       <div class="lev-roja">
-        <div class="lev-roja-t">⚠ El panel está lleno</div>
+        <div class="lev-roja-t">El panel está lleno</div>
         <p>Con ${esc(p.libres)} espacios libres no caben los circuitos nuevos: hace falta un sub-panel de 100A.</p>
-        <label>El precio del sub-panel:
+        <label style="display:block">El precio del sub-panel:
           <input class="lev-precio" data-d="subpanel" type="number" inputmode="decimal" min="0" step="0.01" value="${(l.decisiones || {}).subpanel || ""}" placeholder="$">
         </label>
       </div>` : "";
     return `
-      <div class="cal-form-titulo">⚡ El panel</div>
+      <div class="lev-titulo">${levIco("panel")} El panel</div>
       <div class="lev-campo"><span class="lev-lab">Marca</span>${levChips("marca", p.marca, LEV_MARCAS, "marcas")}</div>
       ${alerta}
       <div class="lev-campo"><span class="lev-lab">Amperaje</span>${levChips("amperaje", p.amperaje, ["60", "100", "125", "150", "200", "400", "No se sabe"])}</div>
@@ -6786,7 +6835,7 @@ Power done right the first time. ⚡`;
       <div class="lev-campo"><span class="lev-lab">Dónde está</span>${levChips("donde", p.donde, [
         "Garaje", "Exterior", "Pasillo", "Lavandería", "Closet", "Otro"])}</div>
       <div class="lev-campo"><span class="lev-lab">¿Cabe pararse delante? <i>— 36″ de fondo, artículo 110.26</i></span>${levChips("delante", p.delante, [
-        { id: "si", etiqueta: "Sí" }, { id: "no", etiqueta: "No ⚠" }])}</div>
+        { id: "si", etiqueta: "Sí" }, { id: "no", etiqueta: "No — sin espacio" }])}</div>
       <div class="lev-campo"><span class="lev-lab">¿Hay directorio de circuitos?</span>${levChips("directorio", p.directorio, [
         { id: "si", etiqueta: "Sí" }, { id: "medias", etiqueta: "A medias" }, { id: "no", etiqueta: "No" }])}</div>
       <label>No lo pude abrir — ¿por qué?
@@ -6816,36 +6865,36 @@ Power done right the first time. ⚡`;
       levCuartoAbierto = null;
     }
     const filas = (l.cuartos || []).map(c => {
-      const luz = c.estado === "contado" ? "🟢" : (c.conteos || []).some(t => Number(t.n) > 0) ? "🟡" : "⚪";
+      const luz = c.estado === "contado" ? "verde" : (c.conteos || []).some(t => Number(t.n) > 0) ? "ambar" : "blanca";
       const total = (c.conteos || []).reduce((s, t) => s + Number(t.n || 0), 0);
       return `
         <div class="mat-item">
-          <span class="lev-luz">${luz}</span>
+          <span class="lev-luz ${luz}"></span>
           <span class="alcance-info lev-abrir-cuarto" data-k="${esc(c.llave_cliente)}" style="cursor:pointer">
             <span class="alcance-titulo">${esc(c.nombre)}</span>
             <span class="alcance-estado">${esc((LEV_CLASES[c.clase] || {}).etiqueta || c.clase)}${total ? ` · ${total} cosas contadas` : " · sin contar"}</span>
           </span>
-          <button class="insp-borrar lev-borrar-cuarto" data-k="${esc(c.llave_cliente)}" title="Quitar">🗑</button>
+          <button class="lev-btn-ico lev-borrar-cuarto" data-k="${esc(c.llave_cliente)}" title="Quitar">${levIco("papelera", 19)}</button>
         </div>`;
     }).join("");
     return `
-      <div class="cal-form-titulo">🚪 Los cuartos (${(l.cuartos || []).length})</div>
+      <div class="lev-titulo">${levIco("cuartos")} Los cuartos (${(l.cuartos || []).length})</div>
       ${filas || `<p class="cal-sin-eventos">Todavía no hay cuartos. Añade el primero abajo.</p>`}
       <div class="lev-lab" style="margin-top:.9rem">＋ Añadir cuarto</div>
       <div class="lev-clases">
         ${Object.entries(LEV_CLASES).map(([id, k]) =>
-          `<button type="button" class="lev-clase" data-clase="${id}"><span>${k.icono}</span>${esc(k.etiqueta)}</button>`).join("")}
+          `<button type="button" class="lev-clase" data-clase="${id}">${levIco(k.icono, 24)}${esc(k.etiqueta)}</button>`).join("")}
       </div>
       <p class="lev-nota">Cada clase trae puestos los contadores que casi siempre hacen falta. Lo que sobre se quita.</p>`;
   }
 
   function levCuartoHTML(c) {
     const filas = (c.conteos || []).map(t => {
-      const def = LEV_CONTADORES[t.clave] || { etiqueta: t.clave, icono: "•" };
+      const def = LEV_CONTADORES[t.clave] || { etiqueta: t.clave, icono: "otro" };
       const acciones = def.pies ? [] : levAccionesDe(t.clave);
       return `
         <div class="lev-conteo">
-          ${levContador(t.clave, `${def.icono} ${esc(def.etiqueta)}`, t.n, def.pies ? "pies" : "")}
+          ${levContador(t.clave, levIco(def.icono) + esc(def.etiqueta), t.n, def.pies ? "pies" : "")}
           ${acciones.length ? `
             <div class="lev-acciones" data-clave="${esc(t.clave)}">
               ${acciones.map(a => `<button type="button" class="lev-acc${(t.accion || "nueva") === a ? " puesto" : ""}" data-acc="${a}" title="${esc(LEV_ACCIONES[a].ayuda)}">${LEV_ACCIONES[a].etiqueta}</button>`).join("")}
@@ -6856,21 +6905,21 @@ Power done right the first time. ⚡`;
     const sobran = Object.keys(LEV_CONTADORES).filter(k => !(c.conteos || []).some(t => t.clave === k));
     return `
       <div class="lev-volver-cuarto"><button type="button" class="accion secundaria" id="lev-cerrar-cuarto">← Todos los cuartos</button></div>
-      <label class="cal-form-titulo" style="display:block">${(LEV_CLASES[c.clase] || {}).icono || "📦"}
-        <input class="lev-cuarto-nombre" type="text" value="${esc(c.nombre)}" style="font:inherit;width:70%">
+      <label class="lev-titulo" style="display:flex">${levIco(c.clase in LEV_CLASES ? c.clase : "otro", 22)}
+        <input class="lev-cuarto-nombre" type="text" value="${esc(c.nombre)}" style="font:inherit;width:70%;border:none;background:transparent;color:inherit">
       </label>
       ${filas}
       <details class="lev-mas">
         <summary>＋ otra cosa</summary>
         <div class="lev-clases">
-          ${sobran.map(k => `<button type="button" class="lev-add-conteo" data-clave="${k}"><span>${LEV_CONTADORES[k].icono}</span>${esc(LEV_CONTADORES[k].etiqueta)}</button>`).join("")}
+          ${sobran.map(k => `<button type="button" class="lev-add-conteo" data-clave="${k}">${levIco(LEV_CONTADORES[k].icono, 24)}${esc(LEV_CONTADORES[k].etiqueta)}</button>`).join("")}
         </div>
       </details>
       <label>Nota del cuarto
         <input class="lev-cuarto-nota" type="text" value="${esc(c.nota || "")}" placeholder="Lo que haga falta recordar">
       </label>
       <button type="button" class="accion ${c.estado === "contado" ? "secundaria" : ""}" id="lev-contado">
-        ${c.estado === "contado" ? "🟢 Contado — tocar para reabrir" : "✓ Cuarto contado"}
+        ${c.estado === "contado" ? "Contado ✓ — tocar para reabrir" : "✓ Cuarto contado"}
       </button>`;
   }
 
@@ -6957,21 +7006,21 @@ Power done right the first time. ⚡`;
     if (levNecesitaSubpanel(l)) auto.push("Panel lleno — sub-panel de 100A");
     if ((l.cuartos || []).length) auto.push(`Casa habitada — protección en ${(l.cuartos || []).length} cuartos`);
     return `
-      <div class="cal-form-titulo">🔍 Lo que se ve</div>
+      <div class="lev-titulo">${levIco("ojo")} Lo que se ve</div>
       ${auto.length ? `<div class="lev-auto">✓ Puesto solo: ${auto.map(esc).join(" · ")}</div>` : ""}
 
       <div class="lev-lab">Trabajo que antes no existía</div>
       ${levPanelCondenado(l) ? `<p class="lev-nota">Rastrear circuitos se apagó solo: al reconectar el panel nuevo ya se identifica cada circuito.</p>`
-        : levContador("a1", "🔎 Rastrear circuitos <i>— solo los que toca el trabajo</i>", c.a1)}
+        : levContador("a1", levIco("panel") + "Rastrear circuitos <i>— solo los que toca el trabajo</i>", c.a1)}
       <div class="lev-campo"><span class="lev-lab">Empalmes viejos o cajas sin tapa</span>${levChips("a2", c.a2, [
         { id: "", etiqueta: "Ninguno" }, { id: "pocos", etiqueta: "Pocos (3)" },
         { id: "bastantes", etiqueta: "Bastantes (8)" }, { id: "muchos", etiqueta: "Muchos (15)" }])}</div>
-      ${levContador("a3", "🧱 Aberturas en pared o techo", c.a3)}
+      ${levContador("a3", levIco("cuartos") + "Aberturas en pared o techo", c.a3)}
       <div class="lev-campo"><span class="lev-lab">Sacar cable viejo</span>${levChips("a4", c.a4, [
         { id: "0", etiqueta: "Nada" }, { id: "50", etiqueta: "50 pies" }, { id: "100", etiqueta: "100" },
         { id: "200", etiqueta: "200" }, { id: "400", etiqueta: "400" }])}</div>
       <div class="lev-cont" data-cont="a5" data-salto="10">
-        <span class="lev-cont-txt">🧯 Sacar tubería vieja</span>
+        <span class="lev-cont-txt">Sacar tubería vieja</span>
         <span class="lev-cont-mandos">
           <button type="button" class="lev-cont-btn" data-paso="-1">−</button>
           <span class="lev-cont-n">${c.a5 || 0}<i>pies</i></span>
@@ -6982,11 +7031,11 @@ Power done right the first time. ⚡`;
         { id: "no", etiqueta: "No" }, { id: "si", etiqueta: "Sí" }])}</div>
       ${c.a8 ? `<div class="lev-roja">
         <div class="lev-roja-t">Falta el precio de la base del medidor</div>
-        <label>Ponlo tú:<input class="lev-precio" data-d="meter" type="number" inputmode="decimal" min="0" step="0.01" value="${(l.decisiones || {}).meter || ""}" placeholder="$"></label>
+        <label style="display:block">Ponlo tú:<input class="lev-precio" data-d="meter" type="number" inputmode="decimal" min="0" step="0.01" value="${(l.decisiones || {}).meter || ""}" placeholder="$"></label>
       </div>` : ""}
-      ${levContador("a10", "📋 Viajes a corregir trabajo de otro", c.a10)}
-      ${levContador("a11", "🚛 Viajes de escombro", c.a11)}
-      ${levContador("a13", "💡 Luminarias que se botan y no se reponen", c.a13)}
+      ${levContador("a10", levIco("resumen") + "Viajes a corregir trabajo de otro", c.a10)}
+      ${levContador("a11", levIco("garaje") + "Viajes de escombro", c.a11)}
+      ${levContador("a13", levIco("techoluz") + "Luminarias que se botan y no se reponen", c.a13)}
       <div class="lev-campo"><span class="lev-lab">Permiso</span>${levChips("a12", c.a12 || "si", [
         { id: "si", etiqueta: "Sí, lo sacamos" }, { id: "no", etiqueta: "No hace falta" }, { id: "gc", etiqueta: "Lo saca el GC" }])}</div>
 
@@ -7033,7 +7082,7 @@ Power done right the first time. ⚡`;
     const m = l.medidas || (l.medidas = {});
     const c = l.condiciones || {};
     return `
-      <div class="cal-form-titulo">📐 Las medidas</div>
+      <div class="lev-titulo">${levIco("medidas")} Las medidas</div>
       <label>Pies cuadrados
         <input class="lev-med" data-m="sqft" type="number" inputmode="numeric" min="0" value="${l.sqft || ""}" placeholder="Ej: 1800">
       </label>
@@ -7091,8 +7140,8 @@ Power done right the first time. ⚡`;
     const circuitos = (l.circuitos || []).filter(x => Number(x.n) > 0);
 
     return `
-      <div class="cal-form-titulo">🧾 El resumen</div>
-      ${faltan.length ? `<div class="lev-roja"><div class="lev-roja-t">🔴 Le falta un precio</div>
+      <div class="lev-titulo">${levIco("resumen")} El resumen</div>
+      ${faltan.length ? `<div class="lev-roja"><div class="lev-roja-t">Le falta un precio</div>
         <p>Falta ${faltan.map(esc).join(" y ")}. Puedes convertir igual: el estimado sale marcado.</p></div>` : ""}
       <div class="lev-res-caja">
         <div class="lev-res-n"><b>${t.renglones}</b><span>partidas</span></div>
@@ -7110,9 +7159,9 @@ Power done right the first time. ⚡`;
       ${LEV_CIRCUITOS.map(x => levContador(x.clave, esc(x.etiqueta),
           ((l.circuitos || []).find(y => y.clave === x.clave) || {}).n)).join("")}
 
-      <button type="button" class="accion" id="lev-a-estimado" style="margin-top:1rem">🚀 Pasar al estimado</button>
+      <button type="button" class="accion" id="lev-a-estimado" style="margin-top:1rem">Pasar al estimado →</button>
       <p class="lev-nota" id="lev-a-estimado-nota">Se crea el estimado con todos estos renglones. Lo que añadas a mano después no se toca al reconvertir.</p>
-      <button type="button" class="accion secundaria" id="lev-a-alcance">📋 Pasar al alcance de un proyecto</button>`;
+      <button type="button" class="accion secundaria" id="lev-a-alcance">Añadir al alcance de un proyecto</button>`;
   }
 
   function levEnganchar6(l) {
@@ -7263,12 +7312,12 @@ Power done right the first time. ⚡`;
             <span class="alcance-titulo">${esc(x.nombre)}</span>
             <span class="alcance-estado">${esc(x.cliente || "sin cliente")} · ${cuartos} cuarto${cuartos === 1 ? "" : "s"}</span>
           </span>
-          <button class="insp-borrar lev-borrar" data-k="${esc(x.llave_cliente)}" data-id="${x.id || ""}" title="Eliminar">🗑</button>
+          <button class="lev-btn-ico lev-borrar" data-k="${esc(x.llave_cliente)}" data-id="${x.id || ""}" title="Eliminar">${levIco("papelera", 19)}</button>
         </div>`;
     }).join("");
     $("levantamiento-panel").innerHTML = `
       <div class="cal-panel-card">
-        <button type="button" class="accion" id="lev-crear">📋 Empezar un levantamiento</button>
+        <button type="button" class="accion" id="lev-crear">Empezar un levantamiento</button>
         <p class="lev-nota">Seis fichas: la casa, el panel, los cuartos, lo que se ve, cuatro medidas y el resumen. Se guarda solo, aunque no haya señal.</p>
       </div>
       <div class="cal-panel-card">
