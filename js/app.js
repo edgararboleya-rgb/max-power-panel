@@ -334,6 +334,7 @@ function esFalloDeRed(err) {
     $("vista-checklist").hidden = vista !== "checklist";
     $("vista-gastos").hidden = vista !== "gastos";
     $("vista-estimador").hidden = vista !== "estimador";
+    $("vista-levantamiento").hidden = vista !== "levantamiento";
     $("vista-chat").hidden = vista !== "chat";
     $("vista-asistente").hidden = vista !== "asistente";
     $kicker.textContent = kicker;
@@ -352,6 +353,7 @@ function esFalloDeRed(err) {
     mostrar("home", { kicker: "Panel de proyectos", titulo: "Categorías", volver: false, nuevo: true });
     $("btn-gastos").hidden = !usuario.finanzas;
     $("btn-estimador").hidden = !usuario.finanzas;
+    $("btn-levantamiento").hidden = !usuario.finanzas;
     pintarInicio();
     pintarCategorias();
     pintarResumen();
@@ -1067,6 +1069,12 @@ function esFalloDeRed(err) {
     }
     if (!$("vista-estimador").hidden) {
       if (estimadoActivo) { estimadoActivo = null; pintarEstimador(); return; }
+      irHome();
+      return;
+    }
+    if (!$("vista-levantamiento").hidden) {
+      if (levActivo && levCuartoAbierto) { levCuartoAbierto = null; pintarLevantamiento(); return; }
+      if (levActivo) { levSubir(); levActivo = null; irLevLista(); return; }
       irHome();
       return;
     }
@@ -4544,6 +4552,7 @@ function esFalloDeRed(err) {
     recargarEstimador();
   }
   $("btn-estimador").addEventListener("click", () => irEstimador());
+  $("btn-levantamiento").addEventListener("click", () => irLevLista());
 
   async function recargarEstimador() {
     try {
@@ -4823,6 +4832,10 @@ function esFalloDeRed(err) {
     }).join("");
 
     $("estimador-panel").innerHTML = `
+      <div class="cal-panel-card lev-atajo">
+        <button type="button" class="accion" id="est-a-levantamiento">📋 Levantamiento en sitio</button>
+        <p class="lev-nota">Estás en la casa: cuenta lo que ves y la app arma el estimado sola.</p>
+      </div>
       <div class="cal-panel-card">
         <form id="form-nuevo-est" class="cal-form">
           <div class="cal-form-titulo">➕ Nuevo estimado</div>
@@ -4892,6 +4905,7 @@ function esFalloDeRed(err) {
         avisar(modoNuevo === "rapido" ? "Estimado creado ✓ — pon las horas y el material" : "Estimado creado ✓ — busca ítems del catálogo y ponles cantidad");
       } catch (err) { avisar("No se pudo crear: " + err.message, true); }
     });
+    $("est-a-levantamiento").addEventListener("click", () => irLevLista());
     $("estimador-panel").querySelectorAll(".est-abrir").forEach(el => {
       el.addEventListener("click", () => { estimadoActivo = Number(el.dataset.id); pintarEstimador(); });
     });
@@ -6220,6 +6234,1078 @@ Power done right the first time. ⚡`;
         avisar("No se pudo guardar: " + err.message, true);
       }
     });
+  }
+
+
+  // ============================================================
+  // 📋 EL LEVANTAMIENTO EN SITIO — solo el dueño
+  //
+  // Seis fichas: la casa · el panel · los cuartos · las condiciones ·
+  // las medidas · el resumen. Se puede salir y volver: lo escrito se
+  // guarda solo, primero en el teléfono y después en la nube.
+  //
+  // Nada de esto lo ve el equipo de campo: las tres tablas de la base
+  // llevan el candado es_dueno(), y además la pantalla solo se abre
+  // con usuario.finanzas.
+  // ============================================================
+  let levData = null;   // { levantamientos, cuartos } de la nube
+  let levActivo = null; // el levantamiento abierto, en memoria
+  let levFicha = 0;     // 0..5
+  let levGuardando = false, levSucio = false, levTimer = null, levSinSenal = false;
+
+  const LEV_FICHAS = [
+    { etiqueta: "La casa" }, { etiqueta: "Panel" }, { etiqueta: "Cuartos" },
+    { etiqueta: "Condiciones" }, { etiqueta: "Medidas" }, { etiqueta: "Resumen" }
+  ];
+
+  // Lo que se puede contar. La 'clave' es la del recetario de la base:
+  // clave + "." + acción. Si una acción no tiene receta, no se ofrece.
+  const LEV_CONTADORES = {
+    toma:              { etiqueta: "Tomas",                  icono: "🔌" },
+    toma_gfci:         { etiqueta: "Tomas GFCI",             icono: "🔌" },
+    toma_gfci_wr:      { etiqueta: "GFCI de intemperie",     icono: "🌧" },
+    toma_240_estufa:   { etiqueta: "Toma 240V estufa",       icono: "🍳" },
+    toma_240_secadora: { etiqueta: "Toma 240V secadora",     icono: "🧺" },
+    switch:            { etiqueta: "Interruptores",          icono: "🔘" },
+    switch3:           { etiqueta: "De tres vías",           icono: "🔘" },
+    dimmer:            { etiqueta: "Dimmers",                icono: "🎚" },
+    recessed:          { etiqueta: "Empotradas",             icono: "💡" },
+    colgante:          { etiqueta: "Colgantes",              icono: "💡" },
+    techo:             { etiqueta: "Luz de techo",           icono: "💡" },
+    ventilador:        { etiqueta: "Ventilador de techo",    icono: "🌀" },
+    sconce:            { etiqueta: "Sconce de pared",        icono: "🕯" },
+    vanidad:           { etiqueta: "Luz de vanidad",         icono: "🪞" },
+    flood:             { etiqueta: "Reflector exterior",     icono: "🔦" },
+    extractor:         { etiqueta: "Extractor de baño",      icono: "💨" },
+    bajo_gabinete:     { etiqueta: "Bajo gabinete",          icono: "📏", pies: true },
+    tira:              { etiqueta: "Tira LED",               icono: "📏", pies: true },
+    humo:              { etiqueta: "Detector de humo",       icono: "🚨" },
+    humo_co:           { etiqueta: "Detector humo/CO",       icono: "🚨" },
+    datos:             { etiqueta: "Toma de datos",          icono: "🌐" },
+    sensor:            { etiqueta: "Sensor de movimiento",   icono: "👁" },
+    caseta_dimmer:     { etiqueta: "Dimmer Caséta",          icono: "📶" },
+    caseta_switch:     { etiqueta: "Switch Caséta",          icono: "📶" },
+    caseta_pico:       { etiqueta: "Pico Caséta",            icono: "📶" },
+    caseta_hub:        { etiqueta: "Hub Caséta",             icono: "📶" }
+  };
+
+  // Cada clase de cuarto trae puestos los contadores que casi siempre hacen
+  // falta. Lo que sobra se quita; lo que falta se añade con "＋ otra cosa".
+  const LEV_CLASES = {
+    cocina:   { etiqueta: "Cocina",             icono: "🍳", trae: ["toma", "toma_gfci", "switch", "recessed", "colgante", "bajo_gabinete"] },
+    bano:     { etiqueta: "Baño",               icono: "🚿", trae: ["toma_gfci", "switch", "vanidad", "recessed", "extractor"] },
+    recamara: { etiqueta: "Recámara",           icono: "🛏", trae: ["toma", "switch", "ventilador", "humo"] },
+    sala:     { etiqueta: "Sala / comedor",     icono: "🛋", trae: ["toma", "switch", "recessed", "techo"] },
+    pasillo:  { etiqueta: "Pasillo / lavandería", icono: "🚪", trae: ["toma", "switch", "techo", "humo"] },
+    exterior: { etiqueta: "Exterior",           icono: "🌤", trae: ["toma_gfci_wr", "sconce", "flood"] },
+    garaje:   { etiqueta: "Garaje",             icono: "🚗", trae: ["toma", "toma_gfci", "techo", "toma_240_secadora"] },
+    otro:     { etiqueta: "Otro",               icono: "📦", trae: ["toma", "switch", "techo"] }
+  };
+
+  const LEV_ACCIONES = {
+    nueva:   { etiqueta: "NUEVA",    ayuda: "no existe, se pone desde cero" },
+    cambiar: { etiqueta: "CAMBIAR",  ayuda: "existe y se reemplaza (la demolición va dentro)" },
+    queda:   { etiqueta: "SE QUEDA", ayuda: "existe y no se toca — cero horas, pero queda apuntado" },
+    quitar:  { etiqueta: "QUITAR",   ayuda: "se retira y no se repone" }
+  };
+
+  // Las marcas de panel para las que no se consiguen breakers.
+  const LEV_MARCAS_MALAS = ["Federal Pacific", "Zinsco", "Challenger", "Pushmatic", "Wadsworth"];
+  const LEV_MARCAS = ["Square D QO", "Square D Homeline", "Eaton", "Siemens", "GE", "Murray", "ITE"]
+    .concat(LEV_MARCAS_MALAS).concat(["No se lee"]);
+
+  const LEV_CIRCUITOS = [
+    { clave: "circuito.luz15",        etiqueta: "Iluminación 15A" },
+    { clave: "circuito.tomas20",      etiqueta: "Tomas 20A" },
+    { clave: "circuito.tomas20afci",  etiqueta: "Tomas 20A con AFCI/GFCI" },
+    { clave: "circuito.secadora30",   etiqueta: "Secadora 30A" },
+    { clave: "circuito.estufa50",     etiqueta: "Estufa 50A" },
+    { clave: "circuito.aire30",       etiqueta: "Aire 30A" },
+    { clave: "circuito.calentador30", etiqueta: "Calentador 30A" }
+  ];
+
+  // Cubo B — velocidad. Mueve el factor, no añade renglones.
+  const LEV_VELOCIDAD = [
+    { id: "listones", etiqueta: "Pared de yeso sobre listones", suma: 0.15 },
+    { id: "bloque",   etiqueta: "Pared o techo de bloque",      suma: 0.20 },
+    { id: "atico",    etiqueta: "Ático de gatear o lleno de aislamiento", suma: 0.10 },
+    { id: "crawl",    etiqueta: "Crawl space bajo",             suma: 0.10 },
+    { id: "alto",     etiqueta: "Techo de más de 10 pies",      suma: 0.08 },
+    { id: "operando", etiqueta: "Hay que dejar la casa operando cada noche", suma: 0.08 }
+  ];
+
+  // Cubo C — banderas rojas. Cero horas: van al bloque NO INCLUYE.
+  const LEV_BANDERAS = [
+    "Casa anterior a 1978 (plomo)",
+    "Casa anterior a 1985 (asbesto)",
+    "Hay trabajo de la compañía eléctrica",
+    "Servicio trifásico o de más de 400 A",
+    "Humedad o madera podrida donde va el panel",
+    "El panel no se pudo abrir",
+    "Panel en closet o sin espacio delante",
+    "Reglas de asociación de vecinos",
+    "Sin acceso al ático o al crawl space",
+    "Techo de teja o metal"
+  ];
+
+  const LEV_CALIBRES = [
+    { id: "14_2", etiqueta: "14/2" }, { id: "12_2", etiqueta: "12/2" },
+    { id: "12_3", etiqueta: "12/3" }, { id: "10_2", etiqueta: "10/2" },
+    { id: "10_3", etiqueta: "10/3" }, { id: "6_3",  etiqueta: "6/3" }
+  ];
+
+  // ---------- Guardado: primero el teléfono, después la nube ----------
+  const levLlaveLocal = l => "mxp_lev_" + l.llave_cliente;
+  function levGuardarLocal(l) {
+    try { localStorage.setItem(levLlaveLocal(l), JSON.stringify(l)); } catch { /* teléfono lleno */ }
+  }
+  function levBorrarLocal(l) {
+    try { localStorage.removeItem(levLlaveLocal(l)); } catch { /* nada */ }
+  }
+  function levLeerLocales() {
+    const fuera = [];
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.indexOf("mxp_lev_") === 0) {
+          try { fuera.push(JSON.parse(localStorage.getItem(k))); } catch { /* rota */ }
+        }
+      }
+    } catch { /* nada */ }
+    return fuera.filter(Boolean);
+  }
+
+  // Se toca algo → se guarda en el teléfono al instante y en la nube
+  // un segundo después (para no mandar una petición por cada toque).
+  function levTocado(repintar) {
+    if (!levActivo) return;
+    levActivo.actualizado = new Date().toISOString();
+    levGuardarLocal(levActivo);
+    levSucio = true;
+    clearTimeout(levTimer);
+    levTimer = setTimeout(levSubir, 1200);
+    if (repintar !== false) pintarLevantamiento();
+  }
+
+  async function levSubir() {
+    if (!levActivo || levGuardando || !levSucio) return;
+    levGuardando = true;
+    const copia = JSON.parse(JSON.stringify(levActivo));
+    levSucio = false;
+    try {
+      const filas = await DB.guardarLevantamiento({
+        llave_cliente: copia.llave_cliente,
+        estimado_id: copia.estimado_id || null,
+        proyecto_id: copia.proyecto_id || null,
+        nombre: copia.nombre,
+        cliente: copia.cliente || null,
+        direccion: copia.direccion || null,
+        sqft: copia.sqft || null,
+        tipo: copia.tipo || "residencial",
+        panel: copia.panel || {},
+        condiciones: copia.condiciones || {},
+        medidas: copia.medidas || {},
+        decisiones: copia.decisiones || {},
+        circuitos: copia.circuitos || [],
+        factor: levFactor(copia),
+        estado: copia.estado || "abierto"
+      });
+      const id = filas && filas[0] ? filas[0].id : copia.id;
+      if (id && levActivo && levActivo.llave_cliente === copia.llave_cliente) levActivo.id = id;
+      // Los cuartos van uno a uno, con su propia llave: así dos teléfonos
+      // no se pisan y reenviar lo mismo no duplica.
+      for (const c of (copia.cuartos || [])) {
+        const guardado = await DB.guardarCuarto({
+          levantamiento_id: id,
+          llave_cliente: c.llave_cliente,
+          nombre: c.nombre,
+          clase: c.clase,
+          estado: c.estado || "empezado",
+          conteos: c.conteos || [],
+          nota: c.nota || null,
+          orden: c.orden || 0
+        });
+        if (guardado && guardado[0] && levActivo) {
+          const vivo = (levActivo.cuartos || []).find(x => x.llave_cliente === c.llave_cliente);
+          if (vivo) vivo.id = guardado[0].id;
+        }
+      }
+      levSinSenal = false;
+      levGuardarLocal(levActivo);
+    } catch (err) {
+      // Sin señal o error: lo apuntado NO se pierde, se queda en el teléfono
+      levSucio = true;
+      levSinSenal = true;
+      if (err && err.status && err.status !== 0) console.warn("[levantamiento]", err.crudo || err.message);
+    } finally {
+      levGuardando = false;
+      const barra = document.getElementById("lev-senal");
+      if (barra) barra.hidden = !levSinSenal;
+    }
+  }
+
+  // ---------- Abrir y crear ----------
+  function levNuevo(base) {
+    const hoy = new Date();
+    return {
+      llave_cliente: llaveUnica(),
+      id: null, estimado_id: null, proyecto_id: (base && base.proyecto_id) || null,
+      nombre: (base && base.nombre) || "Levantamiento " + hoy.toLocaleDateString("es-US"),
+      cliente: (base && base.cliente) || "", direccion: (base && base.direccion) || "",
+      sqft: null, tipo: "residencial",
+      panel: {}, condiciones: { velocidad: [], banderas: [] }, medidas: {},
+      decisiones: {}, circuitos: [], cuartos: [], estado: "abierto",
+      creado: hoy.toISOString(), actualizado: hoy.toISOString()
+    };
+  }
+
+  function irLevantamiento(llave) {
+    if (!usuario.finanzas) return;
+    mostrar("levantamiento", { kicker: "Solo dueño", titulo: "Levantamiento", volver: true, nuevo: false });
+    levFicha = 0;
+    if (llave) {
+      const local = levLeerLocales().find(x => x.llave_cliente === llave);
+      // El teléfono manda, la nube copia: si están los dos, gana el del teléfono
+      levActivo = local || levDesdeNube(llave) || levNuevo();
+    } else {
+      levActivo = levNuevo();
+      levGuardarLocal(levActivo);
+    }
+    pintarLevantamiento();
+    if (!llave) levTocado(false);
+  }
+
+  function levDesdeNube(llave) {
+    if (!levData) return null;
+    const l = (levData.levantamientos || []).find(x => x.llave_cliente === llave);
+    if (!l) return null;
+    return {
+      ...l,
+      condiciones: l.condiciones || { velocidad: [], banderas: [] },
+      panel: l.panel || {}, medidas: l.medidas || {}, decisiones: l.decisiones || {},
+      circuitos: l.circuitos || [],
+      cuartos: (levData.cuartos || []).filter(c => c.levantamiento_id === l.id)
+        .map(c => ({ ...c, conteos: c.conteos || [] }))
+        .sort((a, b) => (a.orden || 0) - (b.orden || 0))
+    };
+  }
+
+  // ---------- Las cuentas ----------
+  function levRecetasDe(clave) {
+    return (estData && estData.recetas ? estData.recetas : []).filter(r => r.clave === clave);
+  }
+  function levAccionesDe(base) {
+    const hay = new Set((estData && estData.recetas ? estData.recetas : [])
+      .filter(r => r.clave.indexOf(base + ".") === 0)
+      .map(r => r.clave.slice(base.length + 1)));
+    // SE QUEDA siempre se puede: son cero horas, solo queda apuntado
+    const orden = ["nueva", "cambiar", "queda", "quitar"];
+    return orden.filter(a => a === "queda" || hay.has(a) || (a === "nueva" && hay.has("pies")));
+  }
+  const levItemCat = id => (estData && estData.catalogo ? estData.catalogo : []).find(c => c.id === id);
+
+  // El factor: 1 + el mayor + la mitad de los demás, con tope 1.30
+  function levFactor(l) {
+    const marcados = ((l.condiciones || {}).velocidad || [])
+      .map(id => (LEV_VELOCIDAD.find(v => v.id === id) || {}).suma || 0)
+      .sort((a, b) => b - a);
+    if (!marcados.length) return 1;
+    const suma = marcados[0] + marcados.slice(1).reduce((s, v) => s + v, 0) / 2;
+    return Math.min(1.30, Math.round((1 + suma) * 100) / 100);
+  }
+
+  // ¿Se cambia el panel? Sale solo de la marca.
+  const levPanelCondenado = l => LEV_MARCAS_MALAS.indexOf((l.panel || {}).marca) >= 0;
+  // ¿Panel lleno? Con 2 espacios libres o menos hace falta sub-panel.
+  function levNecesitaSubpanel(l) {
+    const libres = (l.panel || {}).libres;
+    return !levPanelCondenado(l) && libres !== undefined && libres !== null && Number(libres) <= 2;
+  }
+
+  // Cuántos circuitos hay que reconectar al panel nuevo. Sale de la ficha del
+  // panel: los espacios que tiene menos los que están libres. Si no se sabe,
+  // se usa lo que Edgar puso en A1 o el número de circuitos nuevos.
+  function levReconectar(l) {
+    const p = l.panel || {};
+    const total = Number(p.espacios || 0), libres = Number(p.libres || 0);
+    if (total && total > libres) return total - libres;
+    const c = l.condiciones || {};
+    return Number(c.a1 || 0) || (l.circuitos || []).reduce((s, x) => s + Number(x.n || 0), 0) || 1;
+  }
+
+  // Cuántos cuartos y cuántos quedaron sin contar
+  const levCuartosContados = l => (l.cuartos || []).filter(c => c.estado === "contado");
+  const levCuartosAMedias  = l => (l.cuartos || []).filter(c => c.estado !== "contado");
+
+  // Los tres precios que la app NO se inventa
+  function levPreciosQueFaltan(l) {
+    const faltan = [];
+    const d = l.decisiones || {};
+    if (levPanelCondenado(l) && !Number(d.panel)) faltan.push("el panel nuevo de 200A");
+    if (levNecesitaSubpanel(l) && !Number(d.subpanel)) faltan.push("el sub-panel de 100A");
+    if ((l.condiciones || {}).a8 && !Number(d.meter)) faltan.push("la base del medidor");
+    return faltan;
+  }
+
+  // ---------- De levantamiento a renglones del estimado ----------
+  // Devuelve [{ catalogo_item_id, cantidad, de }] ya sumado por partida.
+  function levRenglones(l) {
+    const bolsa = new Map();
+    const meter = (claveReceta, veces, de) => {
+      if (!veces) return;
+      levRecetasDe(claveReceta).forEach(r => {
+        const cant = Number(r.cantidad || 1) * veces;
+        if (!cant) return;
+        const previo = bolsa.get(r.catalogo_item_id) || { catalogo_item_id: r.catalogo_item_id, cantidad: 0, de: [] };
+        previo.cantidad += cant;
+        if (previo.de.indexOf(de) < 0) previo.de.push(de);
+        bolsa.set(r.catalogo_item_id, previo);
+      });
+    };
+
+    // 1) los cuartos
+    (l.cuartos || []).forEach(c => {
+      (c.conteos || []).forEach(t => {
+        const n = Number(t.n || 0);
+        if (!n || t.accion === "queda") return;             // SE QUEDA no cobra
+        const def = LEV_CONTADORES[t.clave] || {};
+        const suf = def.pies ? "pies" : t.accion;
+        meter(t.clave + "." + suf, n, c.nombre);
+      });
+    });
+
+    // 2) los circuitos
+    (l.circuitos || []).forEach(x => meter(x.clave, Number(x.n || 0), "circuitos"));
+
+    // 3) las condiciones del cubo A
+    const c = l.condiciones || {};
+    const cuartos = (l.cuartos || []).length;
+    // A1 se apaga sola si se cambia el panel: al reconectar el panel nuevo
+    // ya se identifica cada circuito.
+    if (!levPanelCondenado(l)) meter("cond.a1", Number(c.a1 || 0), "rastrear circuitos");
+    const bolsasA2 = { pocos: 3, bastantes: 8, muchos: 15 };
+    meter("cond.a2", bolsasA2[c.a2] || 0, "empalmes viejos");
+    meter("cond.a3", Number(c.a3 || 0), "abrir pared o techo");
+    meter("cond.a4", Number(c.a4 || 0), "sacar cable viejo");
+    meter("cond.a5", Number(c.a5 || 0), "sacar tubería vieja");
+    if (levPanelCondenado(l)) meter("cond.a6", 1, "panel condenado");
+    if (levNecesitaSubpanel(l)) meter("cond.a7", 1, "sub-panel");
+    if (c.a8) meter("cond.a8", 1, "medidor");
+    if (cuartos) meter("cond.a9", cuartos, "casa habitada");
+    meter("cond.a10", Number(c.a10 || 0), "correcciones de inspección");
+    meter("cond.a11", Number(c.a11 || 0), "escombro");
+    if ((c.a12 || "si") === "si") meter("cond.a12", 1, "permiso");
+    meter("cond.a13", Number(c.a13 || 0), "botar luminarias");
+
+    // 4) el cable de más, solo cuando una corrida pasa de 100 pies
+    const m = l.medidas || {};
+    if (m.corrida_pies && m.corrida_calibre) meter("cable." + m.corrida_calibre, Number(m.corrida_pies), "corrida larga");
+
+    // Los circuitos que hay que reconectar al panel nuevo van a media hora
+    // cada uno. La receta ya metió UNO; aquí se añaden los que faltan.
+    // El número sale solo: espacios del panel menos espacios libres.
+    if (levPanelCondenado(l) || levNecesitaSubpanel(l)) {
+      const extra = levReconectar(l) - 1;
+      if (extra > 0) {
+        const receta = levRecetasDe(levPanelCondenado(l) ? "cond.a6" : "cond.a7")
+          .find(r => (levItemCat(r.catalogo_item_id) || {}).item === "Panel Termination (per circuit)");
+        if (receta) {
+          const previo = bolsa.get(receta.catalogo_item_id);
+          if (previo) previo.cantidad += extra;
+        }
+      }
+    }
+    return [...bolsa.values()];
+  }
+
+  // Las horas y el precio que se ven en el resumen
+  function levTotales(l) {
+    const renglones = levRenglones(l);
+    let horas = 0, material = 0;
+    renglones.forEach(r => {
+      const cat = levItemCat(r.catalogo_item_id);
+      if (!cat) return;
+      horas    += Number(cat.horas_unidad || 0) * r.cantidad;
+      material += Number(cat.precio || 0) * r.cantidad;
+    });
+    const factor = levFactor(l);
+    const d = l.decisiones || {};
+    const aMano = Number(d.panel || 0) + Number(d.subpanel || 0) + Number(d.meter || 0);
+    return {
+      renglones: renglones.length,
+      horas: Math.round(horas * factor * 10) / 10,
+      material: Math.round((material + aMano) * 100) / 100,
+      factor
+    };
+  }
+
+  // ============================================================
+  // Las pantallas del levantamiento
+  // ============================================================
+  function pintarLevantamiento() {
+    if (!levActivo) { pintarLevLista(); return; }
+    const l = levActivo;
+    const barra = LEV_FICHAS.map((f, i) => `
+      <div class="paso${i < levFicha ? " hecho" : ""}${i === levFicha ? " actual" : ""}" data-ficha="${i}">
+        <div class="paso-punto">${i < levFicha ? "✓" : i + 1}</div>
+        <div class="paso-nombre">${f.etiqueta}</div>
+      </div>`).join(`<div class="paso-linea"></div>`);
+
+    const cuerpo = [levFicha1, levFicha2, levFicha3, levFicha4, levFicha5, levFicha6][levFicha](l);
+
+    $("levantamiento-panel").innerHTML = `
+      <div id="lev-senal" class="lev-senal"${levSinSenal ? "" : " hidden"}>📴 Sin señal — se está guardando en el teléfono</div>
+      <div class="pasos lev-pasos">${barra}</div>
+      <div class="cal-panel-card lev-cuerpo">${cuerpo}</div>
+      <div class="lev-pie">
+        <button type="button" class="accion secundaria" id="lev-atras"${levFicha === 0 ? " disabled" : ""}>← Atrás</button>
+        <button type="button" class="accion" id="lev-siguiente"${levFicha === 5 ? " disabled" : ""}>Siguiente →</button>
+      </div>`;
+
+    $("levantamiento-panel").querySelectorAll(".paso").forEach(el => {
+      el.addEventListener("click", () => { levFicha = Number(el.dataset.ficha); pintarLevantamiento(); });
+    });
+    $("lev-atras").addEventListener("click", () => { if (levFicha > 0) { levFicha--; pintarLevantamiento(); } });
+    $("lev-siguiente").addEventListener("click", () => { if (levFicha < 5) { levFicha++; pintarLevantamiento(); } });
+    [levEnganchar1, levEnganchar2, levEnganchar3, levEnganchar4, levEnganchar5, levEnganchar6][levFicha](l);
+  }
+
+  // Guarda un campo simple sin repintar toda la pantalla (no se pierde el foco)
+  function levCampo(sel, aplicar) {
+    $("levantamiento-panel").querySelectorAll(sel).forEach(el => {
+      el.addEventListener("change", () => { aplicar(el); levTocado(false); });
+    });
+  }
+  // Fichas de escoger una opción (chips)
+  function levChips(nombre, valor, opciones, extra) {
+    return `<div class="lev-chips" data-campo="${nombre}">` + opciones.map(o => {
+      const v = typeof o === "string" ? o : o.id;
+      const t = typeof o === "string" ? o : o.etiqueta;
+      const malo = extra === "marcas" && LEV_MARCAS_MALAS.indexOf(v) >= 0;
+      return `<button type="button" class="lev-chip${String(valor) === String(v) ? " puesto" : ""}${malo ? " malo" : ""}" data-valor="${esc(v)}">${esc(t)}${malo ? " ⚠" : ""}</button>`;
+    }).join("") + `</div>`;
+  }
+  function engancharChips(campo, guardar) {
+    $("levantamiento-panel").querySelectorAll(`.lev-chips[data-campo="${campo}"] .lev-chip`).forEach(b => {
+      b.addEventListener("click", () => { guardar(b.dataset.valor); levTocado(); });
+    });
+  }
+  // Un contador con − y +, separados, y el número grande en medio
+  function levContador(id, etiqueta, n, sufijo) {
+    return `
+      <div class="lev-cont" data-cont="${esc(id)}">
+        <span class="lev-cont-txt">${etiqueta}</span>
+        <span class="lev-cont-mandos">
+          <button type="button" class="lev-cont-btn" data-paso="-1">−</button>
+          <span class="lev-cont-n">${n || 0}${sufijo ? `<i>${sufijo}</i>` : ""}</span>
+          <button type="button" class="lev-cont-btn" data-paso="1">＋</button>
+        </span>
+      </div>`;
+  }
+  function engancharContadores(leer, escribir) {
+    $("levantamiento-panel").querySelectorAll(".lev-cont").forEach(fila => {
+      const id = fila.dataset.cont;
+      fila.querySelectorAll(".lev-cont-btn").forEach(b => {
+        b.addEventListener("click", () => {
+          const paso = Number(b.dataset.paso) * (fila.dataset.salto ? Number(fila.dataset.salto) : 1);
+          escribir(id, Math.max(0, Number(leer(id) || 0) + paso));
+          levTocado();
+        });
+      });
+    });
+  }
+
+  // ---------- Ficha 1 · La casa ----------
+  function levFicha1(l) {
+    return `
+      <div class="cal-form-titulo">🏠 La casa</div>
+      <label>Nombre del trabajo
+        <input class="lev-in" data-c="nombre" type="text" value="${esc(l.nombre || "")}" placeholder="Ej: Casa García — Rewire">
+      </label>
+      <label>Cliente
+        <input class="lev-in" data-c="cliente" type="text" value="${esc(l.cliente || "")}" placeholder="Ej: Juan García">
+      </label>
+      <label>Dirección
+        <input class="lev-in" data-c="direccion" type="text" value="${esc(l.direccion || "")}" placeholder="Calle, ciudad">
+      </label>
+      <div class="modal-fila">
+        <label>Pies cuadrados
+          <input class="lev-in" data-c="sqft" type="number" inputmode="numeric" min="0" value="${l.sqft || ""}" placeholder="Ej: 1800">
+        </label>
+        <label>Tipo
+          <select class="lev-in" data-c="tipo">
+            <option value="residencial"${l.tipo !== "comercial" ? " selected" : ""}>Residencial</option>
+            <option value="comercial"${l.tipo === "comercial" ? " selected" : ""}>Comercial</option>
+          </select>
+        </label>
+      </div>
+      <p class="lev-nota">Se guarda solo. Puedes salir y volver cuando quieras.</p>`;
+  }
+  function levEnganchar1() {
+    levCampo(".lev-in", el => {
+      const c = el.dataset.c;
+      levActivo[c] = c === "sqft" ? (el.value ? Number(el.value) : null) : el.value;
+    });
+  }
+
+  // ---------- Ficha 2 · El panel ----------
+  function levFicha2(l) {
+    const p = l.panel || {};
+    const alerta = levPanelCondenado(l) ? `
+      <div class="lev-roja">
+        <div class="lev-roja-t">⚠ Panel ${esc(p.marca)}</div>
+        <p>No se puede reutilizar: no se consiguen breakers para él. La cotización tiene que llevar panel nuevo.</p>
+        <p>Te dejé puestas <b>9 horas</b> (demoler el viejo y montar el nuevo) más <b>media hora por cada circuito</b> que haya que reconectar — ahora mismo <b>${levReconectar(l)}</b>.</p>
+        <label>Lo que falta es el precio del panel. Ponlo tú:
+          <input class="lev-precio" data-d="panel" type="number" inputmode="decimal" min="0" step="0.01" value="${(l.decisiones || {}).panel || ""}" placeholder="$">
+        </label>
+      </div>` : "";
+    const alertaSub = levNecesitaSubpanel(l) ? `
+      <div class="lev-roja">
+        <div class="lev-roja-t">⚠ El panel está lleno</div>
+        <p>Con ${esc(p.libres)} espacios libres no caben los circuitos nuevos: hace falta un sub-panel de 100A.</p>
+        <label>El precio del sub-panel:
+          <input class="lev-precio" data-d="subpanel" type="number" inputmode="decimal" min="0" step="0.01" value="${(l.decisiones || {}).subpanel || ""}" placeholder="$">
+        </label>
+      </div>` : "";
+    return `
+      <div class="cal-form-titulo">⚡ El panel</div>
+      <div class="lev-campo"><span class="lev-lab">Marca</span>${levChips("marca", p.marca, LEV_MARCAS, "marcas")}</div>
+      ${alerta}
+      <div class="lev-campo"><span class="lev-lab">Amperaje</span>${levChips("amperaje", p.amperaje, ["60", "100", "125", "150", "200", "400", "No se sabe"])}</div>
+      <div class="lev-campo"><span class="lev-lab">Espacios que tiene</span>${levChips("espacios", p.espacios, ["12", "20", "24", "30", "40", "42"])}</div>
+      <div class="lev-campo">
+        <span class="lev-lab">Espacios libres <i>— lo que ves, no lo que hay que calcular</i></span>
+        ${levContador("libres", "Espacios libres", p.libres)}
+      </div>
+      ${alertaSub}
+      <div class="lev-campo"><span class="lev-lab">Tipo</span>${levChips("tipo", p.tipo, [
+        { id: "main", etiqueta: "Main breaker" }, { id: "mlo", etiqueta: "Main lug (sub-panel)" }, { id: "combo", etiqueta: "Combo con medidor" }])}</div>
+      <div class="lev-campo"><span class="lev-lab">Acometida</span>${levChips("acometida", p.acometida, [
+        { id: "aerea", etiqueta: "Aérea" }, { id: "subterranea", etiqueta: "Subterránea" }])}</div>
+      <div class="lev-campo"><span class="lev-lab">Dónde está</span>${levChips("donde", p.donde, [
+        "Garaje", "Exterior", "Pasillo", "Lavandería", "Closet", "Otro"])}</div>
+      <div class="lev-campo"><span class="lev-lab">¿Cabe pararse delante? <i>— 36″ de fondo, artículo 110.26</i></span>${levChips("delante", p.delante, [
+        { id: "si", etiqueta: "Sí" }, { id: "no", etiqueta: "No ⚠" }])}</div>
+      <div class="lev-campo"><span class="lev-lab">¿Hay directorio de circuitos?</span>${levChips("directorio", p.directorio, [
+        { id: "si", etiqueta: "Sí" }, { id: "medias", etiqueta: "A medias" }, { id: "no", etiqueta: "No" }])}</div>
+      <label>No lo pude abrir — ¿por qué?
+        <input class="lev-panel-txt" data-p="no_abri" type="text" value="${esc(p.no_abri || "")}" placeholder="Déjalo vacío si sí lo abriste">
+      </label>
+      <p class="lev-nota">Si escribes algo aquí, sale como bandera roja y como línea de «no incluye».</p>`;
+  }
+  function levEnganchar2(l) {
+    ["marca", "amperaje", "espacios", "tipo", "acometida", "donde", "delante", "directorio"].forEach(campo => {
+      engancharChips(campo, v => {
+        l.panel = l.panel || {};
+        l.panel[campo] = l.panel[campo] === v ? null : v;   // volver a tocar lo quita
+      });
+    });
+    engancharContadores(() => (l.panel || {}).libres, (id, v) => { l.panel = l.panel || {}; l.panel.libres = v; });
+    levCampo(".lev-panel-txt", el => { l.panel = l.panel || {}; l.panel[el.dataset.p] = el.value; });
+    levCampo(".lev-precio", el => { l.decisiones = l.decisiones || {}; l.decisiones[el.dataset.d] = el.value ? Number(el.value) : null; });
+  }
+
+  // ---------- Ficha 3 · Los cuartos ----------
+  let levCuartoAbierto = null;   // llave_cliente del cuarto que se está contando
+
+  function levFicha3(l) {
+    if (levCuartoAbierto) {
+      const c = (l.cuartos || []).find(x => x.llave_cliente === levCuartoAbierto);
+      if (c) return levCuartoHTML(c);
+      levCuartoAbierto = null;
+    }
+    const filas = (l.cuartos || []).map(c => {
+      const luz = c.estado === "contado" ? "🟢" : (c.conteos || []).some(t => Number(t.n) > 0) ? "🟡" : "⚪";
+      const total = (c.conteos || []).reduce((s, t) => s + Number(t.n || 0), 0);
+      return `
+        <div class="mat-item">
+          <span class="lev-luz">${luz}</span>
+          <span class="alcance-info lev-abrir-cuarto" data-k="${esc(c.llave_cliente)}" style="cursor:pointer">
+            <span class="alcance-titulo">${esc(c.nombre)}</span>
+            <span class="alcance-estado">${esc((LEV_CLASES[c.clase] || {}).etiqueta || c.clase)}${total ? ` · ${total} cosas contadas` : " · sin contar"}</span>
+          </span>
+          <button class="insp-borrar lev-borrar-cuarto" data-k="${esc(c.llave_cliente)}" title="Quitar">🗑</button>
+        </div>`;
+    }).join("");
+    return `
+      <div class="cal-form-titulo">🚪 Los cuartos (${(l.cuartos || []).length})</div>
+      ${filas || `<p class="cal-sin-eventos">Todavía no hay cuartos. Añade el primero abajo.</p>`}
+      <div class="lev-lab" style="margin-top:.9rem">＋ Añadir cuarto</div>
+      <div class="lev-clases">
+        ${Object.entries(LEV_CLASES).map(([id, k]) =>
+          `<button type="button" class="lev-clase" data-clase="${id}"><span>${k.icono}</span>${esc(k.etiqueta)}</button>`).join("")}
+      </div>
+      <p class="lev-nota">Cada clase trae puestos los contadores que casi siempre hacen falta. Lo que sobre se quita.</p>`;
+  }
+
+  function levCuartoHTML(c) {
+    const filas = (c.conteos || []).map(t => {
+      const def = LEV_CONTADORES[t.clave] || { etiqueta: t.clave, icono: "•" };
+      const acciones = def.pies ? [] : levAccionesDe(t.clave);
+      return `
+        <div class="lev-conteo">
+          ${levContador(t.clave, `${def.icono} ${esc(def.etiqueta)}`, t.n, def.pies ? "pies" : "")}
+          ${acciones.length ? `
+            <div class="lev-acciones" data-clave="${esc(t.clave)}">
+              ${acciones.map(a => `<button type="button" class="lev-acc${(t.accion || "nueva") === a ? " puesto" : ""}" data-acc="${a}" title="${esc(LEV_ACCIONES[a].ayuda)}">${LEV_ACCIONES[a].etiqueta}</button>`).join("")}
+            </div>` : ""}
+          <button type="button" class="lev-quitar-conteo" data-clave="${esc(t.clave)}" title="Quitar este contador">✕</button>
+        </div>`;
+    }).join("");
+    const sobran = Object.keys(LEV_CONTADORES).filter(k => !(c.conteos || []).some(t => t.clave === k));
+    return `
+      <div class="lev-volver-cuarto"><button type="button" class="accion secundaria" id="lev-cerrar-cuarto">← Todos los cuartos</button></div>
+      <label class="cal-form-titulo" style="display:block">${(LEV_CLASES[c.clase] || {}).icono || "📦"}
+        <input class="lev-cuarto-nombre" type="text" value="${esc(c.nombre)}" style="font:inherit;width:70%">
+      </label>
+      ${filas}
+      <details class="lev-mas">
+        <summary>＋ otra cosa</summary>
+        <div class="lev-clases">
+          ${sobran.map(k => `<button type="button" class="lev-add-conteo" data-clave="${k}"><span>${LEV_CONTADORES[k].icono}</span>${esc(LEV_CONTADORES[k].etiqueta)}</button>`).join("")}
+        </div>
+      </details>
+      <label>Nota del cuarto
+        <input class="lev-cuarto-nota" type="text" value="${esc(c.nota || "")}" placeholder="Lo que haga falta recordar">
+      </label>
+      <button type="button" class="accion ${c.estado === "contado" ? "secundaria" : ""}" id="lev-contado">
+        ${c.estado === "contado" ? "🟢 Contado — tocar para reabrir" : "✓ Cuarto contado"}
+      </button>`;
+  }
+
+  function levEnganchar3(l) {
+    if (levCuartoAbierto) {
+      const c = (l.cuartos || []).find(x => x.llave_cliente === levCuartoAbierto);
+      if (!c) return;
+      $("lev-cerrar-cuarto").addEventListener("click", () => { levCuartoAbierto = null; pintarLevantamiento(); });
+      engancharContadores(
+        clave => (c.conteos.find(t => t.clave === clave) || {}).n,
+        (clave, v) => {
+          const t = c.conteos.find(x => x.clave === clave);
+          if (t) t.n = v;
+          if (c.estado === "contado") c.estado = "empezado";  // si se retoca, vuelve a 🟡
+        });
+      $("levantamiento-panel").querySelectorAll(".lev-acciones").forEach(caja => {
+        caja.querySelectorAll(".lev-acc").forEach(b => {
+          b.addEventListener("click", () => {
+            const t = c.conteos.find(x => x.clave === caja.dataset.clave);
+            if (t) t.accion = b.dataset.acc;
+            levTocado();
+          });
+        });
+      });
+      $("levantamiento-panel").querySelectorAll(".lev-quitar-conteo").forEach(b => {
+        b.addEventListener("click", () => {
+          c.conteos = c.conteos.filter(t => t.clave !== b.dataset.clave);
+          levTocado();
+        });
+      });
+      $("levantamiento-panel").querySelectorAll(".lev-add-conteo").forEach(b => {
+        b.addEventListener("click", () => {
+          if (!c.conteos.some(t => t.clave === b.dataset.clave)) {
+            c.conteos.push({ clave: b.dataset.clave, n: 0, accion: "nueva" });
+          }
+          levTocado();
+        });
+      });
+      const nom = $("levantamiento-panel").querySelector(".lev-cuarto-nombre");
+      if (nom) nom.addEventListener("change", () => { c.nombre = nom.value.trim() || c.nombre; levTocado(false); });
+      const nota = $("levantamiento-panel").querySelector(".lev-cuarto-nota");
+      if (nota) nota.addEventListener("change", () => { c.nota = nota.value; levTocado(false); });
+      $("lev-contado").addEventListener("click", () => {
+        c.estado = c.estado === "contado" ? "empezado" : "contado";
+        if (c.estado === "contado") levCuartoAbierto = null;
+        levTocado();
+      });
+      return;
+    }
+    $("levantamiento-panel").querySelectorAll(".lev-abrir-cuarto").forEach(el => {
+      el.addEventListener("click", () => { levCuartoAbierto = el.dataset.k; pintarLevantamiento(); });
+    });
+    $("levantamiento-panel").querySelectorAll(".lev-borrar-cuarto").forEach(b => {
+      b.addEventListener("click", async () => {
+        const c = (l.cuartos || []).find(x => x.llave_cliente === b.dataset.k);
+        if (!c || !confirm(`¿Quitar «${c.nombre}» con todo lo contado?`)) return;
+        l.cuartos = l.cuartos.filter(x => x.llave_cliente !== b.dataset.k);
+        if (c.id) { try { await DB.eliminarCuarto(c.id); } catch { /* se va con el levantamiento */ } }
+        levTocado();
+      });
+    });
+    $("levantamiento-panel").querySelectorAll(".lev-clase").forEach(b => {
+      b.addEventListener("click", () => {
+        const clase = b.dataset.clase, def = LEV_CLASES[clase];
+        const cuantos = (l.cuartos || []).filter(x => x.clase === clase).length;
+        const cuarto = {
+          llave_cliente: llaveUnica(), id: null, clase,
+          nombre: def.etiqueta + (cuantos ? " " + (cuantos + 1) : ""),
+          estado: "empezado", nota: null, orden: (l.cuartos || []).length,
+          conteos: def.trae.map(k => ({ clave: k, n: 0, accion: "nueva" }))
+        };
+        l.cuartos = (l.cuartos || []).concat([cuarto]);
+        levCuartoAbierto = cuarto.llave_cliente;
+        levTocado();
+      });
+    });
+  }
+
+  // ---------- Ficha 4 · Las condiciones ----------
+  function levFicha4(l) {
+    const c = l.condiciones || (l.condiciones = { velocidad: [], banderas: [] });
+    const auto = [];
+    if (levPanelCondenado(l)) auto.push(`Panel condenado — panel nuevo de 200A y ${levReconectar(l)} reconexiones`);
+    if (levNecesitaSubpanel(l)) auto.push("Panel lleno — sub-panel de 100A");
+    if ((l.cuartos || []).length) auto.push(`Casa habitada — protección en ${(l.cuartos || []).length} cuartos`);
+    return `
+      <div class="cal-form-titulo">🔍 Lo que se ve</div>
+      ${auto.length ? `<div class="lev-auto">✓ Puesto solo: ${auto.map(esc).join(" · ")}</div>` : ""}
+
+      <div class="lev-lab">Trabajo que antes no existía</div>
+      ${levPanelCondenado(l) ? `<p class="lev-nota">Rastrear circuitos se apagó solo: al reconectar el panel nuevo ya se identifica cada circuito.</p>`
+        : levContador("a1", "🔎 Rastrear circuitos <i>— solo los que toca el trabajo</i>", c.a1)}
+      <div class="lev-campo"><span class="lev-lab">Empalmes viejos o cajas sin tapa</span>${levChips("a2", c.a2, [
+        { id: "", etiqueta: "Ninguno" }, { id: "pocos", etiqueta: "Pocos (3)" },
+        { id: "bastantes", etiqueta: "Bastantes (8)" }, { id: "muchos", etiqueta: "Muchos (15)" }])}</div>
+      ${levContador("a3", "🧱 Aberturas en pared o techo", c.a3)}
+      <div class="lev-campo"><span class="lev-lab">Sacar cable viejo</span>${levChips("a4", c.a4, [
+        { id: "0", etiqueta: "Nada" }, { id: "50", etiqueta: "50 pies" }, { id: "100", etiqueta: "100" },
+        { id: "200", etiqueta: "200" }, { id: "400", etiqueta: "400" }])}</div>
+      <div class="lev-cont" data-cont="a5" data-salto="10">
+        <span class="lev-cont-txt">🧯 Sacar tubería vieja</span>
+        <span class="lev-cont-mandos">
+          <button type="button" class="lev-cont-btn" data-paso="-1">−</button>
+          <span class="lev-cont-n">${c.a5 || 0}<i>pies</i></span>
+          <button type="button" class="lev-cont-btn" data-paso="1">＋</button>
+        </span>
+      </div>
+      <div class="lev-campo"><span class="lev-lab">¿Hay que tocar el medidor?</span>${levChips("a8", c.a8 ? "si" : "no", [
+        { id: "no", etiqueta: "No" }, { id: "si", etiqueta: "Sí" }])}</div>
+      ${c.a8 ? `<div class="lev-roja">
+        <div class="lev-roja-t">Falta el precio de la base del medidor</div>
+        <label>Ponlo tú:<input class="lev-precio" data-d="meter" type="number" inputmode="decimal" min="0" step="0.01" value="${(l.decisiones || {}).meter || ""}" placeholder="$"></label>
+      </div>` : ""}
+      ${levContador("a10", "📋 Viajes a corregir trabajo de otro", c.a10)}
+      ${levContador("a11", "🚛 Viajes de escombro", c.a11)}
+      ${levContador("a13", "💡 Luminarias que se botan y no se reponen", c.a13)}
+      <div class="lev-campo"><span class="lev-lab">Permiso</span>${levChips("a12", c.a12 || "si", [
+        { id: "si", etiqueta: "Sí, lo sacamos" }, { id: "no", etiqueta: "No hace falta" }, { id: "gc", etiqueta: "Lo saca el GC" }])}</div>
+
+      <div class="lev-lab" style="margin-top:1rem">Lo que hace que el mismo trabajo tarde más</div>
+      <div class="lev-casillas">
+        ${LEV_VELOCIDAD.map(v => `
+          <label class="lev-casilla"><input type="checkbox" class="lev-vel" data-id="${v.id}"${(c.velocidad || []).indexOf(v.id) >= 0 ? " checked" : ""}> ${esc(v.etiqueta)} <i>+${v.suma}</i></label>`).join("")}
+      </div>
+      <p class="lev-nota">Factor ahora mismo: <b>${levFactor(l)}</b> (el mayor más la mitad de los demás, con tope 1.30).</p>
+
+      <div class="lev-lab" style="margin-top:1rem">Banderas rojas <i>— cero horas: van al bloque «no incluye»</i></div>
+      <div class="lev-casillas">
+        ${LEV_BANDERAS.map((b, i) => `
+          <label class="lev-casilla"><input type="checkbox" class="lev-ban" data-i="${i}"${(c.banderas || []).indexOf(b) >= 0 ? " checked" : ""}> ${esc(b)}</label>`).join("")}
+      </div>`;
+  }
+  function levEnganchar4(l) {
+    const c = l.condiciones;
+    engancharContadores(id => c[id], (id, v) => { c[id] = v; });
+    engancharChips("a2", v => { c.a2 = v || null; });
+    engancharChips("a4", v => { c.a4 = Number(v) || 0; });
+    engancharChips("a8", v => { c.a8 = v === "si"; });
+    engancharChips("a12", v => { c.a12 = v; });
+    levCampo(".lev-precio", el => { l.decisiones = l.decisiones || {}; l.decisiones[el.dataset.d] = el.value ? Number(el.value) : null; });
+    $("levantamiento-panel").querySelectorAll(".lev-vel").forEach(el => {
+      el.addEventListener("change", () => {
+        c.velocidad = (c.velocidad || []).filter(x => x !== el.dataset.id);
+        if (el.checked) c.velocidad.push(el.dataset.id);
+        levTocado();
+      });
+    });
+    $("levantamiento-panel").querySelectorAll(".lev-ban").forEach(el => {
+      el.addEventListener("change", () => {
+        const texto = LEV_BANDERAS[Number(el.dataset.i)];
+        c.banderas = (c.banderas || []).filter(x => x !== texto);
+        if (el.checked) c.banderas.push(texto);
+        levTocado(false);
+      });
+    });
+  }
+
+  // ---------- Ficha 5 · Las medidas ----------
+  function levFicha5(l) {
+    const m = l.medidas || (l.medidas = {});
+    const c = l.condiciones || {};
+    return `
+      <div class="cal-form-titulo">📐 Las medidas</div>
+      <label>Pies cuadrados
+        <input class="lev-med" data-m="sqft" type="number" inputmode="numeric" min="0" value="${l.sqft || ""}" placeholder="Ej: 1800">
+      </label>
+      <div class="lev-campo"><span class="lev-lab">Alto del techo</span>${levChips("alto", m.alto, ["8", "9", "10", "12", "Más"])}</div>
+      <div class="lev-campo"><span class="lev-lab">¿Alguna corrida se pasa de 100 pies?</span>${levChips("corrida", m.corrida_pies ? "si" : "no", [
+        { id: "no", etiqueta: "No" }, { id: "si", etiqueta: "Sí" }])}</div>
+      ${m.corrida_pies !== undefined && m.corrida_pies !== null ? `
+        <div class="lev-cont" data-cont="corrida_pies" data-salto="10">
+          <span class="lev-cont-txt">Pies de más</span>
+          <span class="lev-cont-mandos">
+            <button type="button" class="lev-cont-btn" data-paso="-1">−</button>
+            <span class="lev-cont-n">${m.corrida_pies || 0}<i>pies</i></span>
+            <button type="button" class="lev-cont-btn" data-paso="1">＋</button>
+          </span>
+        </div>
+        <div class="lev-campo"><span class="lev-lab">De qué calibre</span>${levChips("calibre", m.corrida_calibre, LEV_CALIBRES)}</div>
+        <p class="lev-nota">El cable del circuito ya viene dentro de la partida del circuito. Aquí solo va lo que <b>pasa</b> de los 100 pies.</p>` : ""}
+      ${c.a8 ? `<div class="lev-cont" data-cont="panel_medidor" data-salto="5">
+          <span class="lev-cont-txt">Del panel al medidor</span>
+          <span class="lev-cont-mandos">
+            <button type="button" class="lev-cont-btn" data-paso="-1">−</button>
+            <span class="lev-cont-n">${m.panel_medidor || 0}<i>pies</i></span>
+            <button type="button" class="lev-cont-btn" data-paso="1">＋</button>
+          </span>
+        </div>` : ""}`;
+  }
+  function levEnganchar5(l) {
+    const m = l.medidas;
+    levCampo(".lev-med", el => { l.sqft = el.value ? Number(el.value) : null; });
+    engancharChips("alto", v => { m.alto = m.alto === v ? null : v; });
+    engancharChips("corrida", v => {
+      if (v === "si") { if (m.corrida_pies === undefined || m.corrida_pies === null) m.corrida_pies = 0; }
+      else { m.corrida_pies = null; m.corrida_calibre = null; }
+    });
+    engancharChips("calibre", v => { m.corrida_calibre = v; });
+    engancharContadores(id => m[id], (id, v) => { m[id] = v; });
+  }
+
+  // ---------- Ficha 6 · El resumen ----------
+  function levFicha6(l) {
+    const t = levTotales(l);
+    const faltan = levPreciosQueFaltan(l);
+    const aMedias = levCuartosAMedias(l);
+    const banderas = ((l.condiciones || {}).banderas || []).slice();
+    if ((l.panel || {}).no_abri) banderas.push("El panel no se pudo abrir: " + l.panel.no_abri);
+    aMedias.forEach(c => banderas.push("Faltó contar: " + c.nombre));
+
+    const porCuarto = (l.cuartos || []).map(c => {
+      const cosas = (c.conteos || []).filter(x => Number(x.n) > 0);
+      if (!cosas.length) return "";
+      return `<div class="lev-res-fila"><b>${esc(c.nombre)}</b> ${cosas.map(x =>
+        `${x.n} ${esc((LEV_CONTADORES[x.clave] || {}).etiqueta || x.clave).toLowerCase()}${x.accion && x.accion !== "nueva" ? ` (${LEV_ACCIONES[x.accion].etiqueta.toLowerCase()})` : ""}`).join(", ")}</div>`;
+    }).join("");
+
+    const circuitos = (l.circuitos || []).filter(x => Number(x.n) > 0);
+
+    return `
+      <div class="cal-form-titulo">🧾 El resumen</div>
+      ${faltan.length ? `<div class="lev-roja"><div class="lev-roja-t">🔴 Le falta un precio</div>
+        <p>Falta ${faltan.map(esc).join(" y ")}. Puedes convertir igual: el estimado sale marcado.</p></div>` : ""}
+      <div class="lev-res-caja">
+        <div class="lev-res-n"><b>${t.renglones}</b><span>partidas</span></div>
+        <div class="lev-res-n"><b>${t.horas}</b><span>horas</span></div>
+        <div class="lev-res-n"><b>${fmt(t.material)}</b><span>material</span></div>
+        <div class="lev-res-n"><b>${t.factor}</b><span>factor</span></div>
+      </div>
+      ${porCuarto || `<p class="cal-sin-eventos">Todavía no hay nada contado.</p>`}
+      ${circuitos.length ? `<div class="lev-res-fila"><b>Circuitos</b> ${circuitos.map(x =>
+        `${x.n} × ${esc((LEV_CIRCUITOS.find(y => y.clave === x.clave) || {}).etiqueta || x.clave)}`).join(", ")}</div>` : ""}
+      ${banderas.length ? `<div class="lev-lab" style="margin-top:.8rem">No incluye</div>
+        <ul class="lev-noincluye">${banderas.map(b => `<li>${esc(b)}</li>`).join("")}</ul>` : ""}
+
+      <div class="lev-lab" style="margin-top:1rem">Circuitos nuevos</div>
+      ${LEV_CIRCUITOS.map(x => levContador(x.clave, esc(x.etiqueta),
+          ((l.circuitos || []).find(y => y.clave === x.clave) || {}).n)).join("")}
+
+      <button type="button" class="accion" id="lev-a-estimado" style="margin-top:1rem">🚀 Pasar al estimado</button>
+      <p class="lev-nota" id="lev-a-estimado-nota">Se crea el estimado con todos estos renglones. Lo que añadas a mano después no se toca al reconvertir.</p>
+      <button type="button" class="accion secundaria" id="lev-a-alcance">📋 Pasar al alcance de un proyecto</button>`;
+  }
+
+  function levEnganchar6(l) {
+    engancharContadores(
+      clave => ((l.circuitos || []).find(y => y.clave === clave) || {}).n,
+      (clave, v) => {
+        l.circuitos = (l.circuitos || []).filter(y => y.clave !== clave);
+        if (v > 0) l.circuitos.push({ clave, n: v });
+      });
+    const btn = $("lev-a-estimado");
+    if (!estData || !estData.recetas || !estData.recetas.length) {
+      btn.disabled = true;
+      $("lev-a-estimado-nota").textContent = "Necesita señal para poner precio. Lo apuntado no se pierde.";
+    } else {
+      btn.addEventListener("click", () => levAEstimado(l, btn));
+    }
+    $("lev-a-alcance").addEventListener("click", () => levAAlcance(l));
+  }
+
+  // ---------- Pasar al estimado ----------
+  async function levAEstimado(l, btn) {
+    const renglones = levRenglones(l);
+    if (!renglones.length) { avisar("Todavía no hay nada contado", true); return; }
+    btn.disabled = true;
+    const textoViejo = btn.textContent;
+    btn.textContent = "Pasando…";
+    try {
+      let estimadoId = l.estimado_id;
+      const existe = estimadoId && (estData.estimados || []).some(e => e.id === estimadoId);
+      if (!existe) {
+        // Primera vez: se crea el estimado con el factor del levantamiento
+        const creado = await DB.crearEstimado({
+          nombre: l.nombre, cliente: l.cliente || null, direccion: l.direccion || null,
+          tipo: l.tipo === "comercial" ? "Commercial" : "Residential",
+          sqft: l.sqft || null, escenario: "B", factor: levFactor(l),
+          estado: "borrador", modo: "remodelacion", cable: "romex"
+        });
+        estimadoId = creado[0].id;
+      } else {
+        // Al reconvertir NO se toca el factor, ni el cliente, ni los sqft:
+        // si Edgar los movió mirando el precio, mandan ellos.
+        await DB.borrarItemsDeLevantamiento(estimadoId);
+      }
+      const filas = [];
+      let orden = 1000;   // detrás de lo que Edgar puso a mano
+      renglones.forEach(r => {
+        const cat = levItemCat(r.catalogo_item_id);
+        if (!cat) return;
+        const cantidad = Math.round(r.cantidad * 100) / 100;
+        if (!cantidad) return;
+        filas.push({
+          estimado_id: estimadoId, item: cat.item, unidad: cat.unidad || "EA",
+          precio: Number(cat.precio || 0), horas: Number(cat.horas_unidad || 0),
+          cantidad, orden: orden++, origen: "levantamiento"
+        });
+      });
+      // Los tres precios que Edgar tecleó a mano entran como su propio renglón
+      const d = l.decisiones || {};
+      const aMano = [
+        { precio: Number(d.panel || 0),    item: "PANEL 200A MLO — precio puesto a mano" },
+        { precio: Number(d.subpanel || 0), item: "PANEL 100A MLO — precio puesto a mano" },
+        { precio: Number(d.meter || 0),    item: "METER CAN — precio puesto a mano" }
+      ];
+      aMano.forEach(x => {
+        if (!x.precio) return;
+        filas.push({ estimado_id: estimadoId, item: x.item, unidad: "EA", precio: x.precio,
+                     horas: 0, cantidad: 1, orden: orden++, origen: "levantamiento" });
+      });
+      await DB.crearItemsEstimado(filas);            // una sola petición, no treinta y cinco
+      l.estimado_id = estimadoId;
+      l.estado = "convertido";
+      levTocado(false);
+      await levSubir();
+      const faltan = levPreciosQueFaltan(l);
+      avisar(faltan.length
+        ? `Estimado listo con ${filas.length} renglones — le falta ${faltan.join(" y ")}`
+        : `Estimado listo con ${filas.length} renglones ✓`);
+      levActivo = null;
+      irEstimador(estimadoId);
+    } catch (err) {
+      avisar("No se pudo pasar al estimado: " + err.message, true);
+      btn.disabled = false;
+      btn.textContent = textoViejo;
+    }
+  }
+
+  // ---------- Pasar al alcance de trabajo ----------
+  async function levAAlcance(l) {
+    const lista = proyectos().filter(p => p.estado !== "completado");
+    if (!lista.length) { avisar("No hay proyectos abiertos donde ponerlo", true); return; }
+    const nombres = lista.map((p, i) => `${i + 1}. ${p.nombre}`).join("\n");
+    const eleccion = prompt("¿A qué proyecto le pongo el alcance?\n\n" + nombres, "1");
+    if (eleccion === null) return;
+    const p = lista[Number(eleccion) - 1];
+    if (!p) { avisar("Ese número no es de la lista", true); return; }
+
+    const textos = [];
+    levCuartosContados(l).forEach(c => {
+      const cosas = (c.conteos || []).filter(x => Number(x.n) > 0 && x.accion !== "queda");
+      if (!cosas.length) return;
+      textos.push(`${c.nombre}: ` + cosas.map(x =>
+        `${x.n} ${((LEV_CONTADORES[x.clave] || {}).etiqueta || x.clave).toLowerCase()}`).join(", "));
+    });
+    (l.circuitos || []).filter(x => Number(x.n) > 0).forEach(x => {
+      textos.push(`${x.n} circuito${x.n > 1 ? "s" : ""} nuevo${x.n > 1 ? "s" : ""} de ${
+        (LEV_CIRCUITOS.find(y => y.clave === x.clave) || {}).etiqueta || x.clave}`);
+    });
+    if (levPanelCondenado(l)) textos.push(`Reemplazo del panel ${l.panel.marca} por uno nuevo de 200A`);
+    if (levNecesitaSubpanel(l)) textos.push("Instalación de un sub-panel de 100A");
+    const c4 = l.condiciones || {};
+    if (Number(c4.a4)) textos.push(`Retirada de ${c4.a4} pies de cableado en desuso`);
+    if (c4.a8) textos.push("Trabajo en la base del medidor");
+
+    const yaEstan = new Set(((state && state.puntos) ? state.puntos : [])
+      .filter(x => x.proyecto === p.id).map(x => x.texto));
+    const nuevos = textos.filter(t => !yaEstan.has(t));
+    if (!nuevos.length) { avisar("Todo eso ya estaba en el alcance de ese proyecto"); return; }
+    if (!confirm(`Se van a añadir ${nuevos.length} puntos al alcance de ${p.nombre}. ¿Sigo?`)) return;
+
+    try {
+      // TODOS con prioridad 'normal'. La base tiene un disparador que ante
+      // 'urgente' manda un aviso al teléfono de TODO el equipo, y esto es
+      // el alcance de una obra que puede no estar vendida todavía.
+      const base = ((state && state.puntos) ? state.puntos : []).filter(x => x.proyecto === p.id).length;
+      await DB.crearPuntos(nuevos.map((texto, i) => ({
+        proyecto_id: p.id, texto, hecho: false, orden: base + i, prioridad: "normal"
+      })));
+      l.proyecto_id = p.id;
+      levTocado(false);
+      await recargar();
+      avisar(`${nuevos.length} puntos añadidos al alcance de ${p.nombre} ✓`);
+    } catch (err) { avisar("No se pudo guardar el alcance: " + err.message, true); }
+  }
+
+  // ---------- La lista de levantamientos ----------
+  function pintarLevLista() {
+    const locales = levLeerLocales();
+    const deNube = (levData && levData.levantamientos) ? levData.levantamientos : [];
+    const todos = deNube.slice();
+    locales.forEach(x => { if (!todos.some(y => y.llave_cliente === x.llave_cliente)) todos.push(x); });
+    const filas = todos.map(x => {
+      const cuartos = (levData && levData.cuartos ? levData.cuartos : []).filter(c => c.levantamiento_id === x.id).length
+        || (x.cuartos || []).length;
+      return `
+        <div class="mat-item">
+          <span class="recibo-chip ${x.estado === "convertido" ? "insp-paso" : "por_leer"}">${x.estado === "convertido" ? "CONVERTIDO ✓" : "ABIERTO"}</span>
+          <span class="alcance-info lev-abrir" data-k="${esc(x.llave_cliente)}" style="cursor:pointer">
+            <span class="alcance-titulo">${esc(x.nombre)}</span>
+            <span class="alcance-estado">${esc(x.cliente || "sin cliente")} · ${cuartos} cuarto${cuartos === 1 ? "" : "s"}</span>
+          </span>
+          <button class="insp-borrar lev-borrar" data-k="${esc(x.llave_cliente)}" data-id="${x.id || ""}" title="Eliminar">🗑</button>
+        </div>`;
+    }).join("");
+    $("levantamiento-panel").innerHTML = `
+      <div class="cal-panel-card">
+        <button type="button" class="accion" id="lev-crear">📋 Empezar un levantamiento</button>
+        <p class="lev-nota">Seis fichas: la casa, el panel, los cuartos, lo que se ve, cuatro medidas y el resumen. Se guarda solo, aunque no haya señal.</p>
+      </div>
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">Mis levantamientos (${todos.length})</div>
+        ${filas || `<p class="cal-sin-eventos">Todavía no hay ninguno.</p>`}
+      </div>`;
+    $("lev-crear").addEventListener("click", () => irLevantamiento());
+    $("levantamiento-panel").querySelectorAll(".lev-abrir").forEach(el => {
+      el.addEventListener("click", () => irLevantamiento(el.dataset.k));
+    });
+    $("levantamiento-panel").querySelectorAll(".lev-borrar").forEach(b => {
+      b.addEventListener("click", async () => {
+        if (!confirm("¿Eliminar este levantamiento con todos sus cuartos?")) return;
+        try {
+          if (b.dataset.id) await DB.eliminarLevantamiento(Number(b.dataset.id));
+          const x = todos.find(y => y.llave_cliente === b.dataset.k);
+          if (x) levBorrarLocal(x);
+          await recargarLevantamientos();
+          avisar("Levantamiento eliminado ✓");
+        } catch (err) { avisar("No se pudo eliminar: " + err.message, true); }
+      });
+    });
+  }
+
+  function irLevLista() {
+    if (!usuario.finanzas) return;
+    mostrar("levantamiento", { kicker: "Solo dueño", titulo: "Levantamientos", volver: true, nuevo: false });
+    levActivo = null; levCuartoAbierto = null;
+    $("levantamiento-panel").innerHTML = `<div class="inicio-card"><p class="cal-sin-eventos">Cargando…</p></div>`;
+    recargarLevantamientos();
+  }
+
+  async function recargarLevantamientos() {
+    try { levData = await DB.cargarLevantamientos(); }
+    catch { levData = levData || { levantamientos: [], cuartos: [] }; levSinSenal = true; }
+    if (!estData) { try { estData = await DB.cargarEstimador(); } catch { /* sin señal: se apunta igual */ } }
+    if (!levActivo) pintarLevLista();
   }
 
   // ---------- Arranque ----------

@@ -2252,3 +2252,128 @@ video.foto-mini { background: #000; }
 .esc-card { border: 1px solid var(--mp-line); border-radius: 10px; padding: .55rem .65rem; margin: .5rem 0; }
 .esc-titulo { font-weight: 800; margin-bottom: .3rem; display: flex; align-items: center; gap: .4rem; }
 .esc-titulo input { flex: 1; font: inherit; padding: .3rem .45rem; border: 1px solid var(--mp-line); border-radius: 8px; }
+
+/* ============================================================
+   📋 LEVANTAMIENTO EN SITIO
+   Se usa de pie, con guantes: todo lo que se toca mide 44px de
+   alto como mínimo, y donde se escribe la letra es de 16px, que
+   por debajo de eso el iPhone hace zoom solo.
+   ============================================================ */
+.lev-senal {
+  background: var(--mp-warn-bg); border: 1px solid var(--mp-warn-bd);
+  color: var(--mp-warn-tx); border-radius: 12px;
+  padding: 0.6rem 0.8rem; margin-bottom: 0.7rem;
+  font-size: 0.9rem; font-weight: 700; text-align: center;
+}
+.lev-pasos { margin-bottom: 0.8rem; }
+.lev-pasos .paso { cursor: pointer; }
+.lev-cuerpo label { font-size: 0.92rem; }
+.lev-cuerpo input[type="text"],
+.lev-cuerpo input[type="number"],
+.lev-cuerpo select { font-size: 16px; min-height: 44px; }
+.lev-pie { display: flex; gap: 0.6rem; margin-top: 0.9rem; }
+.lev-pie .accion { flex: 1; min-height: 48px; }
+.lev-nota { color: var(--mp-ink-3); font-size: 0.84rem; line-height: 1.45; margin: 0.5rem 0 0; }
+.lev-lab {
+  display: block; font-weight: 800; color: var(--mp-ink);
+  font-size: 0.9rem; margin: 0.7rem 0 0.35rem;
+}
+.lev-lab i { font-weight: 600; font-style: normal; color: var(--mp-ink-3); }
+.lev-campo { margin-bottom: 0.5rem; }
+
+/* Fichas de escoger */
+.lev-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.lev-chip {
+  min-height: 44px; padding: 0.5rem 0.85rem;
+  border: 1.5px solid var(--mp-line); background: var(--mp-card);
+  color: var(--mp-ink); border-radius: 12px;
+  font-size: 0.92rem; font-weight: 700; cursor: pointer;
+}
+.lev-chip.puesto { background: var(--mp-navy); border-color: var(--mp-navy); color: #fff; }
+.lev-chip.malo { border-color: var(--mp-danger); color: var(--mp-danger); }
+.lev-chip.malo.puesto { background: var(--mp-danger); border-color: var(--mp-danger); color: #fff; }
+
+/* Contadores: el − y el ＋ bien separados, para no darle al que no es */
+.lev-cont {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  padding: 0.45rem 0; border-bottom: 1px solid var(--mp-line);
+}
+.lev-cont-txt { font-size: 0.95rem; font-weight: 700; color: var(--mp-ink); flex: 1; min-width: 0; }
+.lev-cont-txt i { font-weight: 600; font-style: normal; color: var(--mp-ink-3); font-size: 0.84rem; }
+.lev-cont-mandos { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.lev-cont-btn {
+  width: 44px; height: 44px; border-radius: 12px;
+  border: 1.5px solid var(--mp-line); background: var(--mp-sky-2);
+  color: var(--mp-navy); font-size: 1.3rem; font-weight: 800;
+  line-height: 1; cursor: pointer;
+}
+.lev-cont-btn:active { background: var(--mp-sky-3); }
+.lev-cont-n {
+  min-width: 2.6rem; text-align: center; font-size: 1.25rem; font-weight: 800;
+  color: var(--mp-ink); font-variant-numeric: tabular-nums;
+}
+.lev-cont-n i { font-style: normal; font-size: 0.7rem; font-weight: 700; color: var(--mp-ink-3); display: block; margin-top: -3px; }
+
+/* Un contador con su acción debajo */
+.lev-conteo { position: relative; padding-right: 30px; }
+.lev-acciones { display: flex; flex-wrap: wrap; gap: 0.3rem; padding: 0 0 0.5rem; }
+.lev-acc {
+  min-height: 34px; padding: 0.3rem 0.6rem; border-radius: 10px;
+  border: 1.5px solid var(--mp-line); background: var(--mp-card);
+  color: var(--mp-ink-2); font-size: 0.74rem; font-weight: 800; cursor: pointer;
+}
+.lev-acc.puesto { background: var(--mp-blue); border-color: var(--mp-blue); color: #fff; }
+.lev-quitar-conteo {
+  position: absolute; top: 8px; right: 0; width: 28px; height: 28px;
+  border: none; background: transparent; color: var(--mp-ink-3);
+  font-size: 0.95rem; cursor: pointer;
+}
+
+/* Las clases de cuarto y el "＋ otra cosa" */
+.lev-clases { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 0.45rem; }
+.lev-clases button {
+  min-height: 60px; border-radius: 14px; border: 1.5px solid var(--mp-line);
+  background: var(--mp-sky-1); color: var(--mp-ink);
+  font-size: 0.8rem; font-weight: 700; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  padding: 0.4rem 0.3rem; text-align: center; line-height: 1.2;
+}
+.lev-clases button span { font-size: 1.2rem; }
+.lev-mas { margin: 0.6rem 0; }
+.lev-mas summary { cursor: pointer; font-weight: 800; color: var(--mp-navy); padding: 0.6rem 0; font-size: 0.92rem; }
+.lev-luz { font-size: 1.05rem; flex-shrink: 0; }
+.lev-volver-cuarto { margin-bottom: 0.6rem; }
+
+/* La tarjeta roja: cuando falta un precio que la app no se inventa */
+.lev-roja {
+  background: var(--mp-warn-bg); border: 2px solid var(--mp-danger);
+  border-radius: 14px; padding: 0.8rem; margin: 0.7rem 0;
+}
+.lev-roja-t { font-weight: 800; color: var(--mp-danger); margin-bottom: 0.4rem; }
+.lev-roja p { margin: 0 0 0.5rem; font-size: 0.9rem; line-height: 1.45; color: var(--mp-ink); }
+.lev-roja input { font-size: 16px; min-height: 44px; }
+.lev-auto {
+  background: var(--mp-sky-2); border: 1px solid var(--mp-line); border-radius: 12px;
+  padding: 0.55rem 0.75rem; font-size: 0.86rem; color: var(--mp-ink-2); margin-bottom: 0.6rem;
+}
+
+/* Casillas de velocidad y banderas */
+.lev-casillas { display: flex; flex-direction: column; gap: 0.15rem; }
+.lev-casilla {
+  display: flex; align-items: center; gap: 0.55rem; min-height: 44px;
+  font-size: 0.92rem; font-weight: 600; color: var(--mp-ink); cursor: pointer;
+}
+.lev-casilla input { width: 22px; height: 22px; flex-shrink: 0; }
+.lev-casilla i { font-style: normal; color: var(--mp-ink-3); font-weight: 700; font-size: 0.82rem; }
+
+/* El resumen */
+.lev-res-caja { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4rem; margin: 0.6rem 0 0.9rem; }
+.lev-res-n {
+  background: var(--mp-sky-2); border-radius: 12px; padding: 0.55rem 0.3rem; text-align: center;
+}
+.lev-res-n b { display: block; font-size: 1.05rem; color: var(--mp-navy); font-variant-numeric: tabular-nums; }
+.lev-res-n span { font-size: 0.7rem; color: var(--mp-ink-3); font-weight: 700; }
+.lev-res-fila { font-size: 0.9rem; line-height: 1.5; padding: 0.3rem 0; border-bottom: 1px solid var(--mp-line); color: var(--mp-ink-2); }
+.lev-res-fila b { color: var(--mp-ink); }
+.lev-noincluye { margin: 0.3rem 0 0; padding-left: 1.1rem; color: var(--mp-ink-2); font-size: 0.88rem; line-height: 1.6; }
+.lev-atajo .accion { min-height: 52px; font-size: 1rem; }

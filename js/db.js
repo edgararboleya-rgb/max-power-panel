@@ -549,7 +549,8 @@
     // ---------- Estimador (solo dueño; se carga aparte, no pesa el arranque) ----------
     cargarEstimador: async () => {
       const [catalogo, escenarios, estimados, items,
-             alias, config, generales, ensambles, ensambleItems, estEnsambles, horasTodas] =
+             alias, config, generales, ensambles, ensambleItems, estEnsambles, horasTodas,
+             recetas] =
         await Promise.all([
           leer("catalogo_items?select=*&order=orden").catch(() => []),
           leer("escenarios?select=*&order=id").catch(() => []),
@@ -561,12 +562,49 @@
           leer("ensambles?select=*&order=orden").catch(() => []),
           leer("ensamble_items?select=*").catch(() => []),
           leer("estimado_ensambles?select=*").catch(() => []),
-          leer("horas?select=fecha,horas").catch(() => [])
+          leer("horas?select=fecha,horas").catch(() => []),
+          leer("lev_recetas?select=*").catch(() => [])
         ]);
       return { catalogo, escenarios, estimados, items, alias,
                config: Object.fromEntries(config.map(c => [c.clave, Number(c.valor)])),
-               generales, ensambles, ensambleItems, estEnsambles, horasTodas };
+               generales, ensambles, ensambleItems, estEnsambles, horasTodas, recetas };
     },
+
+    // ---------- Levantamiento en sitio (solo dueño) ----------
+    // Las tres tablas llevan precios dentro, así que el candado de la base
+    // (es_dueno) ya deja fuera al equipo de campo. Aquí no hace falta filtrar.
+    cargarLevantamientos: async () => {
+      const [levantamientos, cuartos] = await Promise.all([
+        leer("levantamientos?select=*&order=creado.desc").catch(() => []),
+        leer("lev_cuartos?select=*&order=orden").catch(() => [])
+      ]);
+      return { levantamientos, cuartos };
+    },
+    // Sube el levantamiento entero por su llave_cliente: si ya estaba, se
+    // actualiza; nunca se duplica. El teléfono manda, la nube copia.
+    guardarLevantamiento: fila => api("levantamientos?on_conflict=llave_cliente", {
+      metodo: "POST",
+      cuerpo: { ...fila, autor_id: uid() },
+      headers: { Prefer: "resolution=merge-duplicates,return=representation" }
+    }),
+    cambiarLevantamiento: (id, cambios) => actualizar(`levantamientos?id=eq.${id}`, cambios),
+    eliminarLevantamiento: id => api(`levantamientos?id=eq.${id}`, { metodo: "DELETE" }),
+    guardarCuarto: fila => api("lev_cuartos?on_conflict=llave_cliente", {
+      metodo: "POST",
+      cuerpo: fila,
+      headers: { Prefer: "resolution=merge-duplicates,return=representation" }
+    }),
+    eliminarCuarto: id => api(`lev_cuartos?id=eq.${id}`, { metodo: "DELETE" }),
+    // Los renglones del estimado que vinieron del levantamiento se borran
+    // y se rehacen; los que Edgar puso a mano (origen 'manual') no se tocan.
+    borrarItemsDeLevantamiento: estimadoId =>
+      api(`estimado_items?estimado_id=eq.${estimadoId}&origen=eq.levantamiento`, { metodo: "DELETE" }),
+    // Una sola petición con todos los renglones, no treinta y cinco seguidas
+    crearItemsEstimado: filas => (filas.length ? insertar("estimado_items", filas) : Promise.resolve([])),
+    crearPuntos: filas => (filas.length ? insertar("alcance_puntos", filas) : Promise.resolve([])),
+    // No hay borrado de puntos por lote a propósito: 'alcance_puntos' no tiene
+    // columna de origen, así que borrar por texto podría llevarse puntos que
+    // Edgar escribió a mano. Al reconvertir, la app salta los que ya están.
     crearAlias: fila => insertar("alias_takeoff", fila),
     guardarConfig: (clave, valor) => api("config_estimador", {
       metodo: "POST", cuerpo: { clave, valor },
