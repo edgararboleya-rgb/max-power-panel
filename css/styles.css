@@ -2570,3 +2570,59 @@ video.foto-mini { background: #000; }
 .cl-op-no ul { margin: 2px 0 0; padding-left: 1.1rem; }
 .cl-op .cl-boton { width: 100%; margin-top: 0.7rem; }
 #cl-firma2 { border-top: 1px solid var(--mp-line); margin-top: 0.5rem; padding-top: 0.5rem; }
+
+/* ---------------------------------------------------------------------------
+   ESCRIBIR EL ALCANCE — la hoja, la revisión y el contrato
+   --------------------------------------------------------------------------- */
+.alc-texto{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86rem;
+  line-height:1.55;padding:.7rem .8rem;border:1px solid var(--mp-line);border-radius:12px;
+  background:var(--mp-card);color:var(--mp-ink);resize:vertical}
+.alc-texto:focus{outline:none;border-color:var(--mp-blue);box-shadow:0 0 0 3px rgba(42,91,215,.12)}
+.alc-botones{display:flex;gap:.5rem;flex-wrap:wrap;margin:.8rem 0 .2rem}
+.alc-rojo,.alc-ambar,.alc-preguntas{border-radius:12px;padding:.7rem .85rem;margin:.8rem 0;font-size:.9rem}
+.alc-rojo{background:#FDF3F3;border-left:3px solid #B3261E;color:#5B1A15}
+.alc-ambar{background:#FFFDF3;border-left:3px solid #EFE22E;color:#5A4A12}
+.alc-preguntas{background:var(--mp-sky-2);border-left:3px solid var(--mp-blue);color:var(--mp-ink)}
+.alc-rojo ul,.alc-ambar ul{margin:.35rem 0 0;padding-left:1.1rem}
+.alc-rojo li,.alc-ambar li{margin:.2rem 0}
+.alc-linea{display:inline-block;font-size:.76rem;font-weight:650;background:rgba(11,32,54,.08);
+  border-radius:5px;padding:.05rem .35rem;margin-right:.3rem}
+.alc-pregunta{margin:.7rem 0}
+.alc-pregunta p{margin:0 0 .4rem;font-weight:600}
+.alc-op{border:1px solid var(--mp-line);background:var(--mp-card);border-radius:10px;
+  padding:.45rem .8rem;margin:0 .35rem .35rem 0;font-size:.88rem;font-weight:600;
+  color:var(--mp-ink);cursor:pointer;min-height:40px}
+.alc-op:hover{border-color:var(--mp-blue);color:var(--mp-blue)}
+.alc-op.elegida{background:var(--mp-navy);border-color:var(--mp-navy);color:#fff}
+.alc-libre{border:1px solid var(--mp-line);border-radius:10px;padding:.45rem .6rem;
+  font-size:16px;min-height:40px;background:var(--mp-card);color:var(--mp-ink)}
+.alc-entendi{background:var(--mp-card);border:1px solid var(--mp-line);border-radius:14px;
+  padding:.95rem 1rem;margin:.9rem 0;box-shadow:0 1px 2px rgba(11,32,54,.04)}
+.alc-entendi h3{margin:0 0 .7rem;font-size:1rem;font-weight:650;color:var(--mp-ink)}
+.alc-rejilla{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:.6rem .9rem}
+.alc-rejilla div{display:flex;flex-direction:column;min-width:0}
+.alc-rejilla span{font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;color:var(--mp-ink-3)}
+.alc-rejilla b{font-weight:600;font-size:.92rem;color:var(--mp-ink)}
+.alc-sub{margin:.85rem 0 .3rem;font-size:.88rem;color:var(--mp-ink-2)}
+.alc-lista{margin:.2rem 0 0;padding-left:1.25rem;font-size:.9rem;color:var(--mp-ink)}
+.alc-lista li{margin:.18rem 0}
+.alc-gris{color:var(--mp-ink-3);font-size:.83rem}
+.alc-dinero{width:100%;border-collapse:collapse;margin:.6rem 0;font-size:.9rem;color:var(--mp-ink)}
+.alc-dinero th,.alc-dinero td{padding:.4rem .2rem;border-bottom:1px solid var(--mp-line);text-align:left}
+.alc-dinero th{font-weight:650}
+.alc-dinero .r{text-align:right;font-variant-numeric:tabular-nums}
+.alc-dinero .alc-addon td{color:var(--mp-ink-2)}
+.alc-dinero .alc-total td{font-weight:650;border-top:2px solid var(--mp-line);border-bottom:none}
+.alc-chips{display:flex;flex-wrap:wrap;gap:.3rem}
+.alc-chip{background:var(--mp-sky-2);border:1px solid var(--mp-line);border-radius:20px;
+  padding:.22rem .65rem;font-size:.78rem;font-weight:600;color:var(--mp-ink-2)}
+.alc-par{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;padding:.65rem 0;
+  border-bottom:1px solid var(--mp-line)}
+.alc-es{font-size:.85rem;color:var(--mp-ink-2);line-height:1.5}
+.alc-es span{display:block;font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--mp-ink-3);font-weight:650;margin-bottom:.22rem}
+.alc-en textarea{width:100%;border:1px solid var(--mp-line);border-radius:10px;padding:.5rem .6rem;
+  font-size:.88rem;line-height:1.5;font-family:inherit;background:var(--mp-card);
+  color:var(--mp-ink);resize:vertical}
+.alc-en textarea:focus{outline:none;border-color:var(--mp-blue)}
+@media (max-width:720px){.alc-par{grid-template-columns:1fr;gap:.4rem}}

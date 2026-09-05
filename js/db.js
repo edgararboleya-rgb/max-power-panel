@@ -588,6 +588,21 @@
     // Las opciones van en una sola petición, no una por una
     crearOpciones: filas => (filas.length ? insertar("propuesta_opciones", filas) : Promise.resolve([])),
     borrarOpciones: propuestaId => api(`propuesta_opciones?propuesta_id=eq.${propuestaId}`, { metodo: "DELETE" }),
+    // ---------- La hoja de alcance ----------
+    // Todo lo del alcance vive dentro de la propuesta, así que hereda su candado.
+    guardarAlcance: (id, campos) => actualizar(`propuestas?id=eq.${id}`, campos),
+
+    // La plantilla oficial vive en el almacén de la app, no en el teléfono:
+    // así Edgar no tiene que elegir ningún archivo y todos usan la misma.
+    plantillaSOW: async () => {
+      const firma = await firmarFotos(["plantillas/SOW_Template_v3.1.html"]);
+      const url = firma["plantillas/SOW_Template_v3.1.html"];
+      if (!url) throw new Error("No encuentro la plantilla oficial en la app");
+      const r = await fetch(url);
+      if (!r.ok) throw new Error("No se pudo bajar la plantilla (" + r.status + ")");
+      return r.text();
+    },
+
     // La llave del portal: si el proyecto ya tenía una, se respeta (no se
     // le cambia el enlace al cliente por debajo).
     llavePortal: async proyectoId => {
@@ -691,6 +706,22 @@
         if (!r2.ok) throw new Error("No se pudo conectar con el asistente");
         return r2.json();
       }
+      if (!r.ok) throw new Error("El asistente no respondió (" + r.status + ")");
+      return r.json();
+    },
+    // La hoja de alcance: el cerebro la ordena (accion=ordenar) o la redacta
+    // en inglés (accion=alcance). Va con el token del usuario, como el asistente.
+    async pedirAlCerebro(accion, cuerpo) {
+      if (!sesion) throw new Error("Sin sesión");
+      const tirar = async () => fetch(`${SB.url}/functions/v1/cerebro?accion=${accion}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sesion.access_token}` },
+        body: JSON.stringify(cuerpo)
+      });
+      let r = await tirar();
+      if (r.status === 401) { await refrescar(); r = await tirar(); }
+      if (r.status === 404 || r.status === 405)
+        throw new Error("Esta parte del asistente todavía no está subida a la nube");
       if (!r.ok) throw new Error("El asistente no respondió (" + r.status + ")");
       return r.json();
     },

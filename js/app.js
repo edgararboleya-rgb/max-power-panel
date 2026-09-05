@@ -337,6 +337,7 @@ function esFalloDeRed(err) {
     $("vista-levantamiento").hidden = vista !== "levantamiento";
     $("vista-propuesta").hidden = vista !== "propuesta";
     $("vista-cierre").hidden = vista !== "cierre";
+    $("vista-alcance").hidden = vista !== "alcance";
     $("vista-chat").hidden = vista !== "chat";
     $("vista-asistente").hidden = vista !== "asistente";
     $kicker.textContent = kicker;
@@ -1072,6 +1073,14 @@ function esFalloDeRed(err) {
     if (!$("vista-estimador").hidden) {
       if (estimadoActivo) { estimadoActivo = null; pintarEstimador(); return; }
       irHome();
+      return;
+    }
+    if (!$("vista-alcance").hidden) {
+      alcRecoger();
+      if (alcFicha > 0) { alcFicha -= 1; pintarAlcance(); return; }
+      const proy = alcActivo ? alcActivo.proyecto.id : null;
+      alcActivo = null;
+      if (proy) irDetalle(proy); else irHome();
       return;
     }
     if (!$("vista-cierre").hidden) {
@@ -2158,6 +2167,9 @@ function esFalloDeRed(err) {
       b.push(`<button class="accion" data-accion="iniciar" data-id="${esc(p.id)}">▶ Reanudar ejecución</button>`);
     if (p.estado === "completado")
       b.push(`<button class="accion secundaria" data-accion="reabrir" data-id="${esc(p.id)}">↩ Reabrir (a ejecución)</button>`);
+    // Escribir el alcance: solo el dueño, y en las obras que todavía no se hicieron
+    if (usuario.finanzas && ["estimando", "enviado", "aprobado"].includes(p.estado))
+      b.push(`<button class="accion secundaria" data-accion="alcance" data-id="${esc(p.id)}">Escribir el alcance</button>`);
     return b.length
       ? `<div class="detalle-seccion"><h3>Acciones</h3><div class="acciones">${b.join("")}</div></div>`
       : "";
@@ -3140,6 +3152,7 @@ function esFalloDeRed(err) {
     if (!usuario.editar) return;
     const p = proyectos().find(x => x.id === id);
     if (!p) return;
+    if (accion === "alcance") { irAlcance(id); return; }
     const idx = Math.max(0, FASES.findIndex(f => f.clave === p.fase));
     let cambios = null;
     switch (accion) {
@@ -6781,7 +6794,10 @@ Power done right the first time. ⚡`;
       ADDON_A: extras[0] ? extras[0].titulo : "",
       MONTO_A: extras[0] ? dinero(extras[0].precio - base.precio) : "",
       ADDON_B: extras[1] ? extras[1].titulo : "",
-      MONTO_B: extras[1] ? dinero(extras[1].precio - base.precio) : ""
+      MONTO_B: extras[1] ? dinero(extras[1].precio - base.precio) : "",
+      // La línea "Accepted:" del contrato: un solo alcance y un solo precio.
+      OPCION_ACEPTADA: `Option ${base.letra} — ${base.titulo}`,
+      TOTAL_ACEPTADO: dinero(base.precio)
     };
     hitos.forEach((h, n) => { cambios["M" + (n + 1)] = dinero(h.monto); });
     Object.entries(cambios).forEach(([k, v]) => {
@@ -6790,7 +6806,7 @@ Power done right the first time. ⚡`;
     });
 
     // Qué huecos quedan (los de redacción, y los que llena el portal al firmar)
-    const delPortal = ["FECHA_LIMITE_CANCELAR", "FECHA_TRANSACCION", "OPCION_ACEPTADA", "TOTAL_ACEPTADO"];
+    const delPortal = [];   // el portal ya no rellena huecos del cuerpo
     const quedan = [...new Set((t.match(/\{\{[^}]{1,45}\}\}/g) || []))]
       .map(x => x.slice(2, -2))
       .filter(x => delPortal.indexOf(x) < 0);
@@ -6811,8 +6827,505 @@ Power done right the first time. ⚡`;
       ${quedan.length ? `<div class="lev-lab" style="margin-top:.6rem">Te falta escribir ${quedan.length} ${quedan.length === 1 ? "hueco" : "huecos"}</div>
         <ul class="lev-noincluye">${quedan.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`
         : `<p class="lev-nota">No quedó ningún hueco de redacción.</p>`}
-      <p class="lev-nota">Si el cliente firmara hoy, podría cancelar hasta la medianoche del <b>${esc(fechaLarga(limite))}</b> (tres días hábiles, contando el sábado). Los feriados los confirma el abogado.</p>`;
+      <p class="lev-nota">Si el cliente firmara hoy, podría cancelar hasta la medianoche del <b>${esc(fechaLarga(limite))}</b> (tres días hábiles, contando el sábado). El formulario de cancelación con la fecha exacta lo genera el portal al firmar. Los feriados los confirma el abogado.</p>`;
     avisar("Contrato armado ✓ — revísalo y pásalo a PDF");
+  }
+
+
+  // ============================================================
+  // ESCRIBIR EL ALCANCE — de la hoja dictada al contrato armado
+  //
+  // Tres fichas: la hoja · la revisión · el contrato.
+  // El dinero lo calcula siempre la app (js/alcance.js); el asistente solo
+  // redacta prosa en inglés y nunca ve un dólar.
+  // Solo el dueño: la pantalla se abre con usuario.finanzas y todo lo que
+  // guarda vive dentro de 'propuestas', que ya lleva el candado es_dueno().
+  // ============================================================
+  let alcActivo = null;   // { proyecto, propuesta, texto, leido, decision, cuenta, salida, admin }
+  let alcFicha = 0;       // 0 = la hoja · 1 = la revisión · 2 = el contrato
+  let alcPlantilla = null;
+
+  const ALC_FICHAS = [{ etiqueta: "La hoja" }, { etiqueta: "Revisión" }, { etiqueta: "Contrato" }];
+
+  // El formato en blanco, para copiarlo al portapapeles y llevarlo a Notas
+  const ALC_FORMATO = [
+    "Cliente: ", "Dirección: ", "Ciudad: ", "Proyecto: ", "Firma: sí", "Permiso: nosotros", "",
+    "Hoy", "", "Cambia", "", "Falta", "",
+    "Alcance", "1. ", "   - ", "2. ", "   - ", "",
+    "No incluye", "- ", "",
+    "Precio: ", "", "Pagos: 40/40/20", "",
+    "Opciones", "1.  — $", "",
+    "Condiciones",
+    "Fotos del panel: ", "Circuitos existentes: ", "240V: ", "Reubicar: ", "Isla: ", "Abrir: ",
+    "Fixtures del cliente: ", "Fixtures nuestros: ", "Excavación: ",
+    "Listo antes del rough: ", "Acceso: ", "Fases: ", "Áreas: ", "No tocamos: ", "No excluir: ", "",
+    "Código", "", "Notas", ""
+  ].join("\n");
+
+  async function irAlcance(proyectoId, propuestaId) {
+    if (!usuario.finanzas) return;
+    const proy = proyectos().find(p => p.id === proyectoId);
+    if (!proy) { avisar("No encuentro ese proyecto", true); return; }
+    // Las propuestas solo se cargan al abrir el estimador; si se entra directo
+    // desde la ficha del proyecto, se traen aquí.
+    if (!propData || !propData.propuestas) {
+      try { propData = await DB.cargarPropuestas(); } catch { propData = { propuestas: [], opciones: [] }; }
+    }
+    const lista = propData.propuestas || [];
+    const prop = propuestaId
+      ? lista.find(p => p.id === propuestaId)
+      : lista.find(p => p.proyecto_id === proyectoId && p.estado === "borrador");
+    alcActivo = {
+      proyecto: proy, propuesta: prop || null,
+      texto: (prop && prop.alcance_md) || alcGuardadaLocal(proyectoId) || "",
+      leido: null, validado: null, cuenta: null, decision: null,
+      salida: (prop && prop.alcance_en) || null,
+      respuestas: {}, contrato: null
+    };
+    alcFicha = 0;
+    mostrar("alcance", { kicker: proy.nombre, titulo: "Escribir el alcance", volver: true });
+    pintarAlcance();
+  }
+
+  // Lo escrito se guarda solo en el teléfono, para no perderlo sin señal
+  const alcLlaveLocal = id => "mxp_alcance_" + id;
+  function alcGuardarLocal(id, txt) { try { localStorage.setItem(alcLlaveLocal(id), txt); } catch { /* nada */ } }
+  function alcGuardadaLocal(id) { try { return localStorage.getItem(alcLlaveLocal(id)); } catch { return null; } }
+
+  function pintarAlcance() {
+    const A = alcActivo;
+    if (!A) return;
+    const fichas = ALC_FICHAS.map((f, i) => `
+      <div class="paso${i < alcFicha ? " hecho" : ""}${i === alcFicha ? " actual" : ""}" data-alcficha="${i}">
+        <div class="paso-punto">${i < alcFicha ? "✓" : i + 1}</div>
+        <div class="paso-nombre">${esc(f.etiqueta)}</div>
+      </div>`).join(`<div class="paso-linea"></div>`);
+    let cuerpo = "";
+    if (alcFicha === 0) cuerpo = alcFichaHoja();
+    else if (alcFicha === 1) cuerpo = alcFichaRevision();
+    else cuerpo = alcFichaContrato();
+    $("alcance-panel").innerHTML = `<div class="pasos lev-pasos">${fichas}</div><div class="lev-cuerpo">${cuerpo}</div>`;
+    alcEnganchar();
+  }
+
+  // ---------------------------------------------------------- FICHA 1: la hoja
+  function alcFichaHoja() {
+    const A = alcActivo;
+    const L = A.leido;
+    let salida = `
+      <p class="lev-nota">Pega aquí el alcance como te salga: dictado, un SOW viejo, o la hoja
+      con sus títulos. Si viene suelto, toca <b>Ordenar</b> y el asistente lo acomoda delante de ti.
+      Después <b>Leer</b>: la app saca el dinero con sus propias cuentas y te lo enseña.</p>
+      <textarea id="alc-texto" class="alc-texto" rows="16" placeholder="Cliente: …&#10;Dirección: …&#10;&#10;Alcance&#10;1. …">${esc(A.texto)}</textarea>
+      <div class="alc-botones">
+        <button class="accion secundaria" id="alc-copiar-formato">Copiar el formato en blanco</button>
+        <button class="accion secundaria" id="alc-ordenar">Ordenar</button>
+        <button class="accion" id="alc-leer">Leer</button>
+      </div>`;
+
+    if (!L) return salida;
+
+    const V = A.validado;
+    if (V.errores.length) {
+      salida += `<div class="alc-rojo"><b>Hay que arreglar esto antes de seguir:</b><ul>` +
+        V.errores.map(e => `<li>${e.linea ? `<span class="alc-linea">línea ${e.linea}</span> ` : ""}${esc(e.texto)}</li>`).join("") +
+        `</ul></div>`;
+    }
+    if (L.avisos.length) {
+      salida += `<div class="alc-ambar"><b>Esto no lo supe colocar:</b><ul>` +
+        L.avisos.map(a => `<li><span class="alc-linea">línea ${a.linea}</span> ${esc(a.texto)}</li>`).join("") +
+        `</ul></div>`;
+    }
+    if (V.preguntas.length) {
+      salida += `<div class="alc-preguntas"><b>Contéstame esto:</b>` + V.preguntas.map((p, i) => {
+        const ya = A.respuestas[p.clave];
+        const botones = (p.opciones || []).map((o, k) =>
+          `<button class="alc-op${ya === (o.valor !== undefined ? JSON.stringify(o.valor) : o.etiqueta) ? " elegida" : ""}"
+            data-preg="${p.clave}" data-val="${esc(o.valor !== undefined ? JSON.stringify(o.valor) : o.etiqueta)}">${esc(o.etiqueta)}</button>`).join("");
+        return `<div class="alc-pregunta"><p>${p.linea ? `<span class="alc-linea">línea ${p.linea}</span> ` : ""}${esc(p.texto)}</p>
+          <div>${botones}${p.libre || (p.opciones || []).some(o => o.libre) ? `<input class="alc-libre" data-preg="${p.clave}" value="${esc(ya && ya[0] !== "[" && ya[0] !== '"' ? ya : "")}" placeholder="escríbelo">` : ""}</div></div>`;
+      }).join("") + `</div>`;
+    }
+
+    // La tarjeta "Lo que entendí": aquí Edgar ve el dinero cuadrado
+    const cta = A.cuenta, dec = A.decision;
+    const d = L.datos;
+    const usd = c => "$" + Alcance.dinero(c);
+    const encendidas = Alcance.ORDEN_9.filter(k => dec.clausulas[k]);
+    salida += `
+      <div class="alc-entendi">
+        <h3>Lo que entendí</h3>
+        <div class="alc-rejilla">
+          <div><span>Cliente</span><b>${esc(d.cliente || "—")}</b></div>
+          <div><span>Tipo</span><b>${dec.esGC ? "por contratista general" : "directo con el dueño"}</b></div>
+          <div><span>Documento</span><b>${dec.conFirma ? "propuesta con firma" : "alcance ligero"}</b></div>
+          <div><span>Permiso</span><b>${dec.bloques.PERMISO_MXP ? "lo sacamos nosotros" : dec.bloques.PERMISO_CLIENTE ? "lo saca el cliente" : "no hace falta"}</b></div>
+          <div><span>Ciudad</span><b>${esc(d.ciudad || "—")}</b></div>
+          <div><span>Vale</span><b>${esc(d.vence || "15")} días</b></div>
+        </div>
+        <p class="alc-sub"><b>${L.items.length}</b> ${L.items.length === 1 ? "renglón" : "renglones"} · <b>${L.no_incluye.length}</b> ${L.no_incluye.length === 1 ? "exclusión propia" : "exclusiones propias"}</p>
+        <ol class="alc-lista">${L.items.map(i => `<li>${esc(i.titulo)} <span class="alc-gris">(${i.detalles.length} ${i.detalles.length === 1 ? "detalle" : "detalles"})</span></li>`).join("")}</ol>
+        <table class="alc-dinero">
+          <tr><th>Precio base</th><th class="r">${usd(cta.base)}</th></tr>
+          ${cta.hitos.map(h => `<tr><td>Pago ${h.n} — ${h.pct}%${h.es_deposito ? " (depósito)" : ""}</td><td class="r">${usd(h.centavos)}</td></tr>`).join("")}
+          ${cta.addons.map(a => `<tr class="alc-addon"><td>Añadido ${a.letra} — ${esc(a.titulo)}</td><td class="r">${usd(a.centavos)}</td></tr>`).join("")}
+          ${cta.addons.length ? `<tr class="alc-total"><td>Si el cliente lo toma todo</td><td class="r">${usd(cta.total_con_todo)}</td></tr>` : ""}
+        </table>
+        ${cta.addons.length ? `<p class="lev-nota">El cliente puede tomar los añadidos que quiera, sueltos o juntos. Los pagos se recalculan sobre lo que acepte.</p>` : ""}
+        <p class="alc-sub">Cláusulas que van a salir:</p>
+        <div class="alc-chips">${encendidas.map(k => `<span class="alc-chip" title="${esc(dec.motivos[k] || "va siempre")}">${esc(k.replace(/_/g, " "))}</span>`).join("")}</div>
+        <p class="lev-nota">${esc(alcPorQue(dec))}</p>
+      </div>
+      <div class="alc-botones">
+        <button class="accion" id="alc-redactar"${V.errores.length ? " disabled" : ""}>Redactar en inglés</button>
+      </div>`;
+    return salida;
+  }
+
+  function alcPorQue(dec) {
+    const t = [];
+    Object.entries(dec.motivos).forEach(([k, m]) => { if (dec.clausulas[k]) t.push(k.replace(/_/g, " ") + " " + m); });
+    return t.length ? "Por qué: " + t.join(" · ") + "." : "Solo salen las cláusulas que van siempre.";
+  }
+
+  // ------------------------------------------------------ FICHA 2: la revisión
+  function alcFichaRevision() {
+    const A = alcActivo;
+    if (!A.salida) return `<p class="lev-nota">Todavía no hay nada redactado. Vuelve a la hoja y toca «Redactar en inglés».</p>`;
+    const L = A.leido, S = A.salida;
+    const par = (clave, etiqueta, original, obj) => {
+      if (!obj || !obj.en) return "";
+      return `<div class="alc-par">
+        <div class="alc-es"><span>${esc(etiqueta)}</span>${esc(original || "")}</div>
+        <div class="alc-en"><textarea data-campo="${esc(clave)}" rows="${Math.max(2, Math.ceil(obj.en.length / 90))}">${esc(obj.en)}</textarea></div>
+      </div>`;
+    };
+    let s = `<p class="lev-nota">A la izquierda lo que tú escribiste, a la derecha el inglés que sale al cliente.
+      Cámbialo si hace falta: lo que corrijas se guarda tal cual.</p>`;
+    s += par("proyecto_en", "Nombre del trabajo", L.datos.proyecto, S.proyecto_en);
+    s += par("resumen_del_trabajo", "De qué va", L.datos.proyecto, S.resumen_del_trabajo);
+    s += par("que_hay_hoy", "Hoy", L.hoy, S.que_hay_hoy);
+    s += par("que_cambia", "Cambia", L.cambia, S.que_cambia);
+    s += par("que_faltaba", "Falta", L.falta, S.que_faltaba);
+    (S.items || []).forEach((it, k) => {
+      const o = L.items[k] || {};
+      s += par(`items.${k}.titulo`, `Renglón ${k + 1} — título`, o.titulo, it.titulo);
+      s += par(`items.${k}.descripcion`, `Renglón ${k + 1} — detalles`, (o.detalles || []).join(" · "), it.descripcion);
+    });
+    (S.no_incluye || []).forEach((x, k) => {
+      s += par(`no_incluye.${k}.titulo`, `No incluye ${k + 1}`, (L.no_incluye[k] || {}).texto, x.titulo);
+      s += par(`no_incluye.${k}.texto`, "", (L.no_incluye[k] || {}).texto, x.texto);
+    });
+    (S.opciones || []).forEach((x, k) => {
+      const o = L.opciones[k] || {};
+      s += par(`opciones.${k}.titulo`, `Añadido ${String.fromCharCode(66 + k)} — $${Alcance.dinero(o.centavos || 0)}`, o.titulo, x.titulo);
+    });
+    s += par("resumen_corrido", "Resumen del precio", "", S.resumen_corrido);
+    s += par("areas_incluidas", "Áreas", (L.condiciones.areas || {}).valor, S.areas_incluidas);
+    s += par("lo_que_no_tocas", "No tocamos", (L.condiciones.no_tocamos || {}).valor, S.lo_que_no_tocas);
+    s += par("que_tiene_que_estar_listo", "Listo antes del rough", (L.condiciones.listo_rough || {}).valor, S.que_tiene_que_estar_listo);
+    s += par("lista_de_fases", "Fases", (L.condiciones.fases || {}).valor, S.lista_de_fases);
+    s += par("acceso", "Acceso", (L.condiciones.acceso || {}).valor, S.acceso);
+    s += par("cuales_fixtures", "Fixtures del cliente", (L.condiciones.fixtures_cliente || {}).valor, S.cuales_fixtures);
+    s += par("fixtures_mxp", "Fixtures nuestros", (L.condiciones.fixtures_mxp || {}).valor, S.fixtures_mxp);
+    s += par("aberturas", "Aberturas", (L.condiciones.abrir || {}).valor, S.aberturas);
+
+    if ((S.dudas || []).length)
+      s += `<div class="alc-rojo"><b>El asistente tiene dudas:</b><ul>` +
+        S.dudas.map(d => `<li>${esc(d.pregunta || d.que_dice || "")}</li>`).join("") + `</ul></div>`;
+    if ((S.sugerencias || []).length)
+      s += `<div class="alc-ambar"><b>Te avisa de esto:</b><ul>` +
+        S.sugerencias.map(x => `<li>${esc(x.motivo || "")}</li>`).join("") + `</ul></div>`;
+
+    s += `<div class="alc-botones">
+      <button class="accion secundaria" id="alc-reredactar">Redactar de nuevo</button>
+      <button class="accion" id="alc-a-contrato">Armar el contrato</button></div>`;
+    return s;
+  }
+
+  // ------------------------------------------------------ FICHA 3: el contrato
+  function alcFichaContrato() {
+    const A = alcActivo;
+    if (!A.contrato) return `<p class="lev-nota">Toca «Armar el contrato» en la revisión.</p>`;
+    const C = A.contrato;
+    const nums = Object.entries(C.numeroClausulas || {});
+    return `
+      <div class="alc-entendi">
+        <h3>Contrato armado</h3>
+        <p class="alc-sub">${esc(C.archivo)}</p>
+        ${C.problemas.length
+          ? `<div class="alc-rojo"><b>No lo bajé: hay algo que revisar.</b><ul>${C.problemas.map(p => `<li>${esc(p.texto)}</li>`).join("")}</ul></div>`
+          : `<p class="lev-nota">Pasó el repaso: no quedó ningún hueco y cada monto del papel es uno de los que calculé yo.</p>`}
+        <p class="alc-sub">La sección 9 quedó así:</p>
+        <div class="alc-chips">${nums.map(([k, n]) => `<span class="alc-chip">9.${n} ${esc(k.replace(/_/g, " "))}</span>`).join("")}</div>
+        <p class="lev-nota">Si el cliente firmara hoy, podría cancelar hasta la medianoche del
+          <b>${esc(fechaLarga(tresDiasHabiles(hoyFlorida())))}</b> (tres días hábiles, contando el sábado).
+          El formulario con la fecha exacta lo genera el portal al firmar.</p>
+      </div>
+      <div class="alc-botones">
+        ${C.problemas.length ? "" : `<button class="accion" id="alc-bajar">Bajar el contrato</button>`}
+        <button class="accion secundaria" id="alc-guardar">Guardar en la propuesta</button>
+      </div>`;
+  }
+
+  // ------------------------------------------------------------- los engancHES
+  function alcEnganchar() {
+    document.querySelectorAll("[data-alcficha]").forEach(b =>
+      b.addEventListener("click", () => { alcRecoger(); alcFicha = Number(b.dataset.alcficha); pintarAlcance(); }));
+
+    const caja = $("alc-texto");
+    if (caja) caja.addEventListener("input", () => {
+      alcActivo.texto = caja.value;
+      alcGuardarLocal(alcActivo.proyecto.id, caja.value);
+    });
+
+    const bCopiar = $("alc-copiar-formato");
+    if (bCopiar) bCopiar.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(ALC_FORMATO); avisar("Formato copiado ✓ — pégalo en Notas"); }
+      catch { if (caja && !caja.value.trim()) { caja.value = ALC_FORMATO; alcActivo.texto = ALC_FORMATO; }
+              avisar("Te lo puse en el cuadro"); }
+    });
+
+    const bOrdenar = $("alc-ordenar");
+    if (bOrdenar) bOrdenar.addEventListener("click", alcOrdenar);
+    const bLeer = $("alc-leer");
+    if (bLeer) bLeer.addEventListener("click", alcLeer);
+
+    document.querySelectorAll("[data-preg]").forEach(el => {
+      const guardar = valor => {
+        alcActivo.respuestas[el.dataset.preg] = valor;
+        alcAplicarRespuestas();
+        pintarAlcance();
+      };
+      if (el.tagName === "INPUT") el.addEventListener("change", () => guardar(el.value));
+      else el.addEventListener("click", () => guardar(el.dataset.val));
+    });
+
+    const bRed = $("alc-redactar");
+    if (bRed) bRed.addEventListener("click", alcRedactar);
+    const bRe = $("alc-reredactar");
+    if (bRe) bRe.addEventListener("click", () => { if (confirm("Se pierden las correcciones que hiciste a mano. ¿Sigo?")) alcRedactar(); });
+    const bArmar = $("alc-a-contrato");
+    if (bArmar) bArmar.addEventListener("click", alcArmar);
+    const bBajar = $("alc-bajar");
+    if (bBajar) bBajar.addEventListener("click", alcBajar);
+    const bGuardar = $("alc-guardar");
+    if (bGuardar) bGuardar.addEventListener("click", alcGuardarNube);
+  }
+
+  // Recoge las correcciones en inglés antes de cambiar de ficha
+  function alcRecoger() {
+    if (alcFicha !== 1 || !alcActivo || !alcActivo.salida) return;
+    document.querySelectorAll("[data-campo]").forEach(t => {
+      const partes = t.dataset.campo.split(".");
+      let obj = alcActivo.salida;
+      for (let i = 0; i < partes.length - 1; i++) obj = obj[partes[i]];
+      const ultimo = partes[partes.length - 1];
+      if (obj && obj[ultimo]) obj[ultimo].en = t.value;
+    });
+  }
+
+  // Las respuestas de los botones se escriben EN LA HOJA, a la vista de Edgar
+  function alcAplicarRespuestas() {
+    const A = alcActivo, R = A.respuestas;
+    let txt = A.texto;
+    const ponDato = (clave, valor) => {
+      const re = new RegExp("^\\s*" + clave + "\\s*:.*$", "im");
+      if (re.test(txt)) txt = txt.replace(re, clave + ": " + valor);
+      else txt = clave + ": " + valor + "\n" + txt;
+    };
+    const ponCond = (clave, valor) => {
+      const re = new RegExp("^\\s*" + clave + "\\s*:.*$", "im");
+      if (re.test(txt)) txt = txt.replace(re, clave + ": " + valor);
+      else if (/^\s*Condiciones\s*$/im.test(txt)) txt = txt.replace(/^(\s*Condiciones\s*)$/im, "$1\n" + clave + ": " + valor);
+      else txt += "\n\nCondiciones\n" + clave + ": " + valor;
+    };
+    if (R.fotos_panel) ponCond("Fotos del panel", R.fotos_panel);
+    if (R.circuitos_exist) ponCond("Circuitos existentes", R.circuitos_exist);
+    if (R.ciudad && R.ciudad !== "Otra") ponDato("Ciudad", R.ciudad);
+    if (R.pagos) { try { ponDato("Pagos", JSON.parse(R.pagos).join("/")); } catch { ponDato("Pagos", R.pagos); } }
+    if (R.cliente) ponDato("Cliente", R.cliente);
+    if (R.direccion) ponDato("Dirección", R.direccion);
+    if (R.dos_firmas === "Sí, firman las dos") {
+      const m = txt.match(/^\s*Cliente\s*:\s*(.+)$/im);
+      if (m) {
+        const partes = m[1].split(/\s+(?:y|&|and)\s+/i);
+        if (partes.length === 2) { ponDato("Cliente", partes[0].trim()); ponDato("Segundo firmante", partes[1].trim()); }
+      }
+    }
+    if (R.no_excluir_panel === "panel" || R.no_excluir_afci === "afci") {
+      const quiere = [R.no_excluir_panel, R.no_excluir_afci].filter(x => x && x !== "null");
+      const m = txt.match(/^\s*No excluir\s*:\s*(.*)$/im);
+      const ya = m ? m[1].split(",").map(s => s.trim()).filter(Boolean) : [];
+      ponCond("No excluir", [...new Set([...ya, ...quiere])].join(", "));
+    }
+    if (txt !== A.texto) { A.texto = txt; alcGuardarLocal(A.proyecto.id, txt); }
+    alcCalcular();
+  }
+
+  function alcCalcular() {
+    const A = alcActivo;
+    A.leido = Alcance.leerAlcance(A.texto);
+    A.validado = Alcance.validarAlcance(A.leido);
+    A.cuenta = Alcance.cuentas(A.leido);
+    A.decision = Alcance.decidirInterruptores(A.leido, A.cuenta);
+  }
+
+  function alcLeer() {
+    const A = alcActivo;
+    A.texto = $("alc-texto").value;
+    alcGuardarLocal(A.proyecto.id, A.texto);
+    if (!A.texto.trim()) { avisar("Pega primero la hoja", true); return; }
+    A.respuestas = {};
+    alcCalcular();
+    pintarAlcance();
+    if (!A.validado.errores.length && !A.validado.preguntas.length) avisar("Leído ✓ — revisa el dinero y redacta");
+  }
+
+  async function alcOrdenar() {
+    const A = alcActivo;
+    A.texto = $("alc-texto").value;
+    if (!A.texto.trim()) { avisar("Pega primero el texto", true); return; }
+    const btn = $("alc-ordenar");
+    btn.disabled = true; btn.textContent = "Ordenando…";
+    try {
+      const r = await DB.pedirAlCerebro("ordenar", { texto: A.texto });
+      if (!r || !r.hoja) throw new Error("El asistente no devolvió la hoja");
+      A.texto = r.hoja;
+      alcGuardarLocal(A.proyecto.id, A.texto);
+      alcCalcular();
+      pintarAlcance();
+      avisar("Ordenado ✓ — míralo antes de seguir" + ((r.perdidas || []).length ? `; ${r.perdidas.length} cosas no supo colocarlas` : ""));
+    } catch (e) {
+      avisar(e.message, true);
+      btn.disabled = false; btn.textContent = "Ordenar";
+    }
+  }
+
+  async function alcRedactar() {
+    const A = alcActivo;
+    alcCalcular();
+    if (A.validado.errores.length) { avisar("Arregla primero lo que está en rojo", true); return; }
+    const enc = Alcance.prepararEncargo(A.leido, A.decision);
+    if (!enc.limpio) { avisar("Hay dinero en el texto que va al asistente. No lo mando.", true); return; }
+    const btn = $("alc-redactar");
+    if (btn) { btn.disabled = true; btn.textContent = "Redactando… no cierres"; }
+    try {
+      const r = await DB.pedirAlCerebro("alcance", { encargo: enc.texto });
+      const S = r && (r.salida || r);
+      const rev = Alcance.validarSalida(A.leido, S);
+      if (!rev.sirve) { avisar("El asistente devolvió algo que no puedo usar: " + rev.rojos[0].texto, true);
+                        if (btn) { btn.disabled = false; btn.textContent = "Redactar en inglés"; } return; }
+      A.salida = S; A.uso = r.uso || null;
+      A.huella = await alcHuella(A.texto);
+      alcFicha = 1;
+      pintarAlcance();
+      avisar("Redactado ✓ — revísalo trozo a trozo");
+    } catch (e) {
+      avisar(e.message, true);
+      if (btn) { btn.disabled = false; btn.textContent = "Redactar en inglés"; }
+    }
+  }
+
+  async function alcHuella(txt) {
+    try {
+      const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(txt));
+      return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+    } catch { return null; }
+  }
+
+  async function alcArmar() {
+    const A = alcActivo;
+    alcRecoger();
+    alcCalcular();
+    try {
+      if (!alcPlantilla) { avisar("Bajando la plantilla…"); alcPlantilla = await DB.plantillaSOW(); }
+      if (!Alcance.marcasEmparejadas(alcPlantilla)) throw new Error("La plantilla de la app tiene una marca coja");
+      const T = Alcance.armarTodo(A.leido, A.salida, {
+        fecha: hoyFlorida(), proyecto_id: A.proyecto.id,
+        direccion: A.proyecto.direccion, nec: A.leido.codigo });
+      const out = Alcance.rellenarPlantilla(alcPlantilla, {
+        bloques: T.decision.bloques, clausulas: T.decision.clausulas, huecos: T.huecos,
+        items: T.items, no_incluye: T.no_incluye, addons: T.addons, hitos: T.hitos });
+      const B = Alcance.barridoFinal(out.html, T.montosPermitidos);
+      A.contrato = { html: out.html, numeroClausulas: out.numeroClausulas,
+                     archivo: T.archivo, problemas: B.problemas, cuenta: T.cuenta };
+      alcFicha = 2;
+      pintarAlcance();
+      if (B.problemas.length) avisar("Armado, pero hay algo que revisar", true);
+      else avisar("Contrato armado ✓");
+    } catch (e) { avisar(e.message, true); }
+  }
+
+  function alcBajar() {
+    const C = alcActivo.contrato;
+    const blob = new Blob([C.html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = C.archivo;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    avisar("Bajado ✓ — pásalo a PDF y súbelo al portal");
+  }
+
+  async function alcGuardarNube() {
+    const A = alcActivo;
+    const btn = $("alc-guardar");
+    btn.disabled = true; btn.textContent = "Guardando…";
+    try {
+      alcRecoger();
+      alcCalcular();
+      const cta = A.cuenta, dec = A.decision, L = A.leido, d = L.datos;
+      const campos = {
+        alcance_md: A.texto,
+        alcance_huella: A.huella || null,
+        alcance_leido: { datos: d, items: L.items, no_incluye: L.no_incluye,
+                         condiciones: L.condiciones, codigo: L.codigo,
+                         precio: cta.base, pcts: cta.pcts },
+        alcance_en: A.salida || null,
+        alcance_decisiones: { bloques: dec.bloques, clausulas: dec.clausulas, nec: L.codigo },
+        alcance_estado: A.contrato ? "armado" : (A.salida ? "redactado" : "leido"),
+        reparto_pct: cta.pcts,
+        uso_modelo: A.uso || null
+      };
+      if (A.contrato) { campos.armado_el = new Date().toISOString(); campos.archivo = A.contrato.archivo; }
+
+      if (A.propuesta) {
+        await DB.guardarAlcance(A.propuesta.id, campos);
+      } else {
+        const hasta = new Date(hoyFlorida().getTime());
+        hasta.setDate(hasta.getDate() + (Number(d.vence) || 15));
+        const creada = await DB.crearPropuesta({
+          proyecto_id: A.proyecto.id, estado: "borrador",
+          valida_hasta: hasta.toISOString().slice(0, 10), ...campos });
+        A.propuesta = creada[0];
+        const filas = [{
+          propuesta_id: A.propuesta.id, letra: "A", es_addon: false,
+          titulo: (A.salida && A.salida.proyecto_en && A.salida.proyecto_en.en) || d.proyecto || "Base",
+          alcance: L.items.map(i => ({ titulo: i.titulo, detalles: i.detalles })),
+          no_incluye: L.no_incluye.map(x => x.texto),
+          precio: cta.base / 100, orden: 0,
+          hitos_plan: cta.hitos.map(h => ({ titulo: `Pago ${h.n}`, monto: h.centavos / 100,
+                                            pct: h.pct, es_deposito: h.es_deposito }))
+        }].concat(cta.addons.map((a, k) => ({
+          propuesta_id: A.propuesta.id, letra: a.letra, es_addon: true,
+          titulo: ((A.salida && A.salida.opciones && A.salida.opciones[k] && A.salida.opciones[k].titulo &&
+                    A.salida.opciones[k].titulo.en) || a.titulo),
+          alcance: (L.opciones[k] || {}).detalles || [], no_incluye: [],
+          precio: a.centavos / 100, hitos_plan: [], orden: k + 1
+        })));
+        await DB.crearOpciones(filas);
+        const cambios = {};
+        if (d.cliente && !A.proyecto.cliente) cambios.cliente = d.cliente;
+        if (Object.keys(cambios).length) await DB.cambiarProyecto(A.proyecto.id, cambios);
+      }
+      await recargarEstimador();
+      avisar("Guardado en la propuesta ✓");
+      btn.disabled = false; btn.textContent = "Guardar en la propuesta";
+    } catch (err) {
+      avisar("No se pudo guardar: " + err.message, true);
+      btn.disabled = false; btn.textContent = "Guardar en la propuesta";
+    }
   }
 
   // ============================================================
