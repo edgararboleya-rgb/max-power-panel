@@ -2618,6 +2618,12 @@ video.foto-mini { background: #000; }
 .alc-rojo li,.alc-ambar li{margin:.2rem 0}
 .alc-linea{display:inline-block;font-size:.76rem;font-weight:650;background:rgba(11,32,54,.08);
   border-radius:5px;padding:.05rem .35rem;margin-right:.3rem}
+button.alc-linea{border:1px solid rgba(11,32,54,.18);color:var(--mp-navy);cursor:pointer;font-family:inherit;line-height:1.5}
+button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);color:#fff}
+.alc-cita{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.8rem;
+  background:rgba(255,255,255,.7);border:1px dashed rgba(11,32,54,.22);border-radius:8px;
+  padding:.3rem .5rem;margin:.3rem 0 .15rem;color:var(--mp-ink);cursor:pointer;word-break:break-word}
+.alc-cita:hover{border-style:solid;border-color:var(--mp-blue)}
 .alc-pregunta{margin:.7rem 0}
 .alc-pregunta p{margin:0 0 .4rem;font-weight:600}
 .alc-op{border:1px solid var(--mp-line);background:var(--mp-card);border-radius:10px;

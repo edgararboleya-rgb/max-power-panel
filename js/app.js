@@ -6931,7 +6931,6 @@ Power done right the first time. ⚡`;
     "Alcance", "1. ", "   - ", "2. ", "   - ", "",
     "No incluye", "- ", "",
     "Precio: ", "", "Pagos: 40/40/20", "",
-    "Opciones", "1.  — $", "",
     "Condiciones",
     "Fotos del panel: ", "Circuitos existentes: ", "240V: ", "Reubicar: ", "Isla: ", "Abrir: ",
     "Fixtures del cliente: ", "Fixtures nuestros: ", "Excavación: ",
@@ -7089,6 +7088,12 @@ Power done right the first time. ⚡`;
     if (!L) return salida + `<p class="lev-nota">Cuando toques «Leer», aquí sale lo que la app entendió.</p></div></div>`;
 
     const V = A.validado;
+    // "línea 17" es un botón: te lleva a ese renglón en el cuadro y lo deja
+    // marcado. Debajo va el renglón tal cual, para ver qué le molestó a la app.
+    const txtLineas = String(A.texto || "").replace(/\r/g, "").split("\n");
+    const chip = n => n ? `<button class="alc-linea" data-ira="${n}" title="Llévame a ese renglón">línea ${n}</button> ` : "";
+    const cita = n => { const t = n ? (txtLineas[n - 1] || "").trim() : "";
+      return t ? `<div class="alc-cita" data-ira="${n}">${esc(t.length > 120 ? t.slice(0, 120) + "…" : t)}</div>` : ""; };
     // Los botones de arreglar: uno por cada arreglo que trae el error
     const botonesDe = (arreglos, sufijo) => (arreglos || []).map((a, k) => {
       const id = `${sufijo}-${k}`;
@@ -7110,12 +7115,12 @@ Power done right the first time. ⚡`;
     if (V.errores.length) {
       salida += `<div class="alc-rojo"><b>Hay que arreglar esto antes de seguir:</b>
         ${hayAuto ? `<button class="accion" id="alc-arreglar-todo" style="margin:.4rem 0 .2rem">Arreglar todo lo que pueda solo</button>` : ""}<ul>` +
-        V.errores.map((e, i) => `<li>${e.linea ? `<span class="alc-linea">línea ${e.linea}</span> ` : ""}${esc(e.texto)}<div class="alc-fixes">${botonesDe(e.arreglos, "e" + i)}</div></li>`).join("") +
+        V.errores.map((e, i) => `<li>${chip(e.linea)}${esc(e.texto)}${cita(e.linea)}<div class="alc-fixes">${botonesDe(e.arreglos, "e" + i)}</div></li>`).join("") +
         `</ul></div>`;
     }
     if (L.avisos.length) {
-      salida += `<div class="alc-ambar"><b>Esto no lo supe colocar:</b><ul>` +
-        L.avisos.map((a, i) => `<li><span class="alc-linea">línea ${a.linea}</span> ${esc(a.texto)}<div class="alc-fixes">${botonesDe(a.arreglos, "a" + i)}</div></li>`).join("") +
+      salida += `<div class="alc-ambar"><b>Esto no me cuadra del todo (no te frena):</b><ul>` +
+        L.avisos.map((a, i) => `<li>${chip(a.linea)}${esc(a.texto)}${cita(a.linea)}<div class="alc-fixes">${botonesDe(a.arreglos, "a" + i)}</div></li>`).join("") +
         `</ul></div>`;
     }
     if (V.preguntas.length) {
@@ -7128,11 +7133,11 @@ Power done right the first time. ⚡`;
           const id = "p" + i; alcArreglos[id] = p.arreglo;
           const alts = (p.alternativas || []).map((al, k) => { const aid = `p${i}x${k}`; alcArreglos[aid] = al.arreglo;
             return `<button class="alc-op" data-fix="${aid}">${esc(al.etiqueta)}</button>`; }).join("");
-          return `<div class="alc-pregunta"><p>${p.linea ? `<span class="alc-linea">línea ${p.linea}</span> ` : ""}${esc(p.texto)}</p>
+          return `<div class="alc-pregunta"><p>${chip(p.linea)}${esc(p.texto)}</p>${cita(p.linea)}
             <div class="alc-fix"><input class="alc-libre alc-fix-in" data-fix-in="${id}" placeholder="tu respuesta">
             <button class="alc-op" data-fix="${id}">Poner la respuesta</button>${alts}</div></div>`;
         }
-        return `<div class="alc-pregunta"><p>${p.linea ? `<span class="alc-linea">línea ${p.linea}</span> ` : ""}${esc(p.texto)}</p>
+        return `<div class="alc-pregunta"><p>${chip(p.linea)}${esc(p.texto)}</p>${cita(p.linea)}
           <div>${botones}${p.libre || (p.opciones || []).some(o => o.libre) ? `<input class="alc-libre" data-preg="${p.clave}" value="${esc(ya && ya[0] !== "[" && ya[0] !== '"' ? ya : "")}" placeholder="escríbelo">` : ""}</div></div>`;
       }).join("") + `</div>`;
     }
@@ -7334,6 +7339,7 @@ Power done right the first time. ⚡`;
       else el.addEventListener("click", () => guardar(el.dataset.val));
     });
 
+    document.querySelectorAll("[data-ira]").forEach(b => b.addEventListener("click", () => alcIrALinea(b.dataset.ira)));
     document.querySelectorAll("[data-fix]").forEach(b => b.addEventListener("click", () => {
       const a = alcArreglos[b.dataset.fix]; if (!a) return;
       const inp = document.querySelector(`[data-fix-in="${b.dataset.fix}"]`);
@@ -7342,7 +7348,7 @@ Power done right the first time. ⚡`;
     const bTodo = $("alc-arreglar-todo");
     if (bTodo) bTodo.addEventListener("click", () => {
       const A = alcActivo;
-      const r = Alcance.arreglarTodo(A.texto);
+      const r = Alcance.arreglarTodo(A.texto, { perdonadas: A.perdonadas || [] });
       if (!r.hechos.length) { avisar("No había nada que pudiera arreglar solo", true); return; }
       A.texto = r.texto; alcGuardarLocal(A.proyecto.id, A.texto);
       A.arreglados = [...(A.arreglados || []), ...r.hechos];
@@ -7363,6 +7369,32 @@ Power done right the first time. ⚡`;
     if (bPortal) bPortal.addEventListener("click", () => $("alc-pdf").click());
     const inPdf = $("alc-pdf");
     if (inPdf) inPdf.addEventListener("change", () => { if (inPdf.files[0]) alcSubirAlPortal(inPdf.files[0]); });
+  }
+
+  // Lleva el cuadro al renglón N y lo deja seleccionado, para que Edgar vea
+  // exactamente de qué línea le estamos hablando.
+  let alcEspejo = null;
+  function alcIrALinea(n) {
+    const caja = $("alc-texto"); if (!caja) return;
+    const lineas = caja.value.replace(/\r/g, "").split("\n");
+    const i = Math.max(0, Math.min(lineas.length - 1, Number(n) - 1));
+    let ini = 0; for (let k = 0; k < i; k++) ini += lineas[k].length + 1;
+    const fin = ini + lineas[i].length;
+    // Un espejo invisible con la misma letra y el mismo ancho mide a qué altura
+    // cae el renglón aunque las líneas largas se partan en dos.
+    if (!alcEspejo) { alcEspejo = document.createElement("div"); alcEspejo.setAttribute("aria-hidden", "true"); document.body.appendChild(alcEspejo); }
+    const cs = getComputedStyle(caja);
+    Object.assign(alcEspejo.style, { position: "absolute", visibility: "hidden", left: "-9999px", top: "0",
+      whiteSpace: "pre-wrap", wordWrap: "break-word", overflowWrap: "break-word", boxSizing: cs.boxSizing,
+      width: caja.clientWidth + "px", padding: cs.padding, border: "0", font: cs.font, lineHeight: cs.lineHeight, letterSpacing: cs.letterSpacing });
+    alcEspejo.textContent = lineas.slice(0, i).join("\n") + (i ? "\n" : "") + "x";
+    const arriba = alcEspejo.offsetHeight - parseFloat(cs.lineHeight || "20");
+    caja.scrollTop = Math.max(0, arriba - caja.clientHeight / 3);
+    caja.focus({ preventScroll: true });
+    caja.setSelectionRange(ini, fin);
+    // en el teléfono el cuadro puede haber quedado arriba: traerlo a la vista
+    const r = caja.getBoundingClientRect();
+    if (r.top < 0 || r.bottom > innerHeight) caja.scrollIntoView({ block: "center", behavior: "smooth" });
   }
 
   // Lee el archivo que Edgar escogió y lo pone en el cuadro. Solo texto: si es
@@ -7447,6 +7479,7 @@ Power done right the first time. ⚡`;
     const A = alcActivo;
     const r = Alcance.aplicarArreglo(A.texto, a, valor);
     if (r.error) { avisar(r.error, true); return; }
+    if (r.perdona) A.perdonadas = [...(A.perdonadas || []), r.perdona];
     A.texto = r.texto; alcGuardarLocal(A.proyecto.id, A.texto);
     A.arreglados = [...(A.arreglados || []), r.explicacion];
     alcCalcular(); pintarAlcance();
@@ -7454,7 +7487,7 @@ Power done right the first time. ⚡`;
 
   function alcCalcular() {
     const A = alcActivo;
-    A.leido = Alcance.leerAlcance(A.texto);
+    A.leido = Alcance.leerAlcance(A.texto, { perdonadas: A.perdonadas || [] });
     A.validado = Alcance.validarAlcance(A.leido);
     A.cuenta = Alcance.cuentas(A.leido);
     A.decision = Alcance.decidirInterruptores(A.leido, A.cuenta);
@@ -7466,6 +7499,7 @@ Power done right the first time. ⚡`;
     alcGuardarLocal(A.proyecto.id, A.texto);
     if (!A.texto.trim()) { avisar("Pega primero la hoja", true); return; }
     A.respuestas = {}; A.arreglados = [];
+    A.perdonadas = A.perdonadas || [];
     alcCalcular();
     pintarAlcance();
     if (!A.validado.errores.length && !A.validado.preguntas.length) avisar("Leído ✓ — revisa el dinero y redacta");

@@ -124,15 +124,39 @@
     if (!isFinite(n)) return null;
     return { centavos: centavos(n) };
   }
-  // ¿esta línea lleva dinero? (12/2, 20A, #6, 50 ft NO son dinero)
-  function pareceDinero(linea) {
+  // Lo que va pegado detrás de un número y lo convierte en MEDIDA, no en dinero:
+  // "1,300 sq ft", "2,000 watts", "1,500 lbs". Con esto el año 1926 y los pies
+  // cuadrados dejan de parecer precios.
+  const UNIDAD_TRAS = new RegExp("^\\s*(?:sq\\.?\\s*(?:ft|feet|foot|m)|sqft|sf|ft|feet|foot|pies|pie|in\\.?|inch(?:es)?|yd|yards?|mm|cm|km|mi|miles?|millas?" +
+    "|amp(?:s|erios?|eres?)?|volt(?:s|ios?)?|watt?s?|kw|kva|hp|lbs?|libras?|kg|gal(?:s|ones|lons)?|awg|mcm|kcmil|btu|seer|ton(?:s|eladas?)?|psi|rpm" +
+    "|circuitos?|circuits?|luces|lights?|lamparas?|fixtures?|outlets?|tomas?|receptaculos?|switch(?:es)?|apagadores?|breakers?|espacios?|spaces?|polos?|poles?" +
+    "|unidades?|units?|piezas?|pcs?|hrs?|horas?|hours?|dias?|days?|anos?|years?|sq|cu|%|\u00b0)\\b", "i");
+  // Palabras que confirman que sí se está hablando de dinero
+  const PALABRA_DINERO = /\b(precio|price|total|costo|coste|cost|cuesta|charge|fee|dep[o\u00f3]sito|deposit|d[o\u00f3]lares|dollars|usd|cada uno|c\/u|each|extra|adicional)\b/i;
+
+  // ¿esta línea lleva dinero?  Devuelve null, o { trozo, seguro }
+  //   seguro = true  → lleva $ o la palabra dólares: es dinero sin discusión
+  //   seguro = false → tiene forma de dinero pero podría ser una medida o un año
+  // (12/2, 20A, #6, 50 ft, 1,300 sq ft y el año 1926 NO son dinero)
+  function hayDinero(linea) {
     const s = String(linea);
-    if (/\$\s*\d/.test(s)) return true;
-    if (/\b\d{1,3}(,\d{3})+(\.\d{2})?\b/.test(s)) return true;
-    if (/\b\d+\.\d{2}\b/.test(s) && !/\b\d+\/\d+\b/.test(s)) return true;
-    if (/\b(dolares|dollars|usd)\b/i.test(sinAcentos(s))) return true;
-    return false;
+    const conSigno = s.match(/\$\s*\d[\d,]*(?:\.\d{1,2})?/);
+    if (conSigno) return { trozo: conSigno[0].replace(/\s+/g, ""), seguro: true };
+    const conPalabra = /\b(dolares|dollars|usd)\b/i.test(sinAcentos(s));
+    const rx = /\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\d+\.\d{2}(?!\d)/g;
+    let m;
+    while ((m = rx.exec(s))) {
+      const antes = s.slice(0, m.index), despues = s.slice(m.index + m[0].length);
+      if (/[#\/\-\d.]$/.test(antes)) continue;              // #2/0, 12/2, 210.8
+      if (UNIDAD_TRAS.test(despues)) continue;             // 1,300 sq ft
+      if (/^\s*[\/\-]\s*\d/.test(despues)) continue;        // 1,000-2,000 de rango raro
+      return { trozo: m[0], seguro: conPalabra || PALABRA_DINERO.test(s) };
+    }
+    if (conPalabra) { const n = s.match(/\d[\d,]*(?:\.\d+)?/); if (n) return { trozo: n[0], seguro: true }; }
+    return null;
   }
+  // Sí/no, para donde solo hace falta saber si hay dinero de verdad
+  function pareceDinero(linea) { const d = hayDinero(linea); return !!(d && d.seguro); }
 
   // Reparte un total entre porcentajes, al centavo. El último absorbe el resto.
   function repartir(totalCentavos, pcts) {
@@ -143,8 +167,11 @@
   }
 
   // ================================================================ EL LECTOR
-  function leerAlcance(texto) {
+  function leerAlcance(texto, opciones) {
     const lineas = String(texto || "").replace(/\r/g, "").split("\n");
+    // Líneas donde Edgar ya dijo "eso no es dinero" (se guardan por su texto,
+    // no por el número de línea, para que aguanten si el texto se mueve)
+    const perdonadas = new Set(((opciones || {}).perdonadas || []).map(norma));
     const R = {
       datos: {}, hoy: "", cambia: "", falta: "", items: [], no_incluye: [],
       precio: null, pagos: null, opciones: [], condiciones: {}, codigo: [],
@@ -154,6 +181,24 @@
     const parrafo = { hoy: [], cambia: [], falta: [], notas: [] };
 
     const err = (i, texto, extra) => R.errores.push(Object.assign({ linea: i + 1, texto }, extra || {}));
+
+    // Un número donde no van números. Si lleva $ es un error rojo; si solo lo
+    // parece (podría ser una medida o un año) es un aviso ámbar que no bloquea
+    // y trae el botón "eso no es dinero".
+    const avisaDinero = (i, linea, donde) => {
+      const d = hayDinero(linea);
+      if (!d || perdonadas.has(norma(linea))) return false;
+      const arreglos = [{ tipo: "quitar_dinero", etiqueta: `Quitar ${d.trozo} y dejar el texto`, linea: i + 1, valor: d.trozo, auto: d.seguro },
+                        { tipo: "quitar_linea", etiqueta: "Quitar la línea entera", linea: i + 1 }];
+      if (d.seguro) {
+        err(i, `Hay un precio (${d.trozo}) en ${donde}. El dinero solo va en Precio, Pagos y Opciones.`, { trozo: d.trozo, arreglos });
+        return true;
+      }
+      arreglos.push({ tipo: "no_es_dinero", etiqueta: "Eso no es dinero, déjalo", linea: i + 1, valor: linea });
+      R.avisos.push({ linea: i + 1, trozo: d.trozo, arreglos,
+                      texto: `Vi «${d.trozo}» en ${donde} y me pareció un precio. Si es una medida, una cantidad o un año, dímelo y lo dejo como está.` });
+      return false;
+    };
     // Las preguntas que el chat deja dentro de la hoja: {{FALTA: ¿…?}}
     R.faltas = [];
     lineas.forEach((cruda, i) => {
@@ -217,20 +262,12 @@
           break;
         }
         case "hoy": case "cambia": case "falta": case "notas":
-          if (sec !== "notas" && pareceDinero(linea))
-            err(i, `Hay un precio en esta línea y aquí no van precios. El dinero solo va en Precio, Pagos y Opciones.`,
-                { arreglos: [{ tipo: "quitar_dinero", etiqueta: "Quitar el precio y dejar el texto", linea: i + 1, auto: true },
-                             { tipo: "quitar_linea", etiqueta: "Quitar la línea entera", linea: i + 1 }] });
+          if (sec !== "notas") avisaDinero(i, linea, "esta línea");
           parrafo[sec].push(linea.replace(/^[-*•]\s*/, ""));
           break;
 
         case "alcance": {
-          if (pareceDinero(linea)) {
-            err(i, "Hay un precio dentro del Alcance. El dinero solo va en Precio, Pagos y Opciones.",
-                { arreglos: [{ tipo: "quitar_dinero", etiqueta: "Quitar el precio y dejar el texto", linea: i + 1, auto: true },
-                             { tipo: "quitar_linea", etiqueta: "Quitar la línea entera", linea: i + 1 }] });
-            return;
-          }
+          if (avisaDinero(i, linea, "el Alcance")) return;
           const esDetalle = /^[-*•]/.test(linea);
           if (esDetalle) {
             if (!itemActual) { err(i, "Este detalle no tiene renglón encima. Ponle un título al renglón.",
@@ -246,9 +283,7 @@
           break;
         }
         case "no_incluye": {
-          if (pareceDinero(linea)) { err(i, "Hay un precio en No incluye. El dinero solo va en Precio, Pagos y Opciones.",
-              { arreglos: [{ tipo: "quitar_dinero", etiqueta: "Quitar el precio y dejar el texto", linea: i + 1, auto: true },
-                           { tipo: "quitar_linea", etiqueta: "Quitar la línea entera", linea: i + 1 }] }); return; }
+          if (avisaDinero(i, linea, "No incluye")) return;
           R.no_incluye.push({ texto: linea.replace(/^[-*•]\s*/, ""), linea: i + 1 });
           break;
         }
@@ -465,12 +500,22 @@
     switch (a.tipo) {
       case "quitar_dinero": {
         if (!hay) return { error: "esa línea ya no existe" };
-        const sin = antes.replace(/\(?\s*(?:aprox\.?|approx\.?|precio|price|total|cost[oe]?)?\s*:?\s*\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?\s*(?:d[oó]lares|dollars|usd)?\s*\)?/i, " ")
+        // Si el error dijo qué trozo le molestó, se quita ESE y no otro número
+        const trozo = String(a.valor || "").trim();
+        const escapa = t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const rxTrozo = trozo ? new RegExp("\\(?\\s*(?:aprox\\.?|approx\\.?|precio|price|total|cost[oe]?)?\\s*:?\\s*\\$?\\s*" + escapa(trozo.replace(/^\$/, "")) + "\\s*(?:d[oó]lares|dollars|usd)?\\s*\\)?", "i")
+                             : /\(?\s*(?:aprox\.?|approx\.?|precio|price|total|cost[oe]?)?\s*:?\s*\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?\s*(?:d[oó]lares|dollars|usd)?\s*\)?/i;
+        const sin = antes.replace(rxTrozo, " ")
                           .replace(/\s{2,}/g, " ").replace(/\s+([,.;:])/g, "$1").replace(/[—–-]\s*$/, "").trim();
-        const quitado = (antes.match(/\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?/) || [""])[0].trim();
+        const quitado = trozo || (antes.match(/\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?/) || [""])[0].trim();
         if (!sin || /^[-*•]\s*$/.test(sin)) { quitarLinea(i); explicacion = `línea ${a.linea}: solo tenía el precio (${quitado}); la quité`; }
         else { lineas[i] = sin; explicacion = `línea ${a.linea}: quité ${quitado} y dejé «${sin.replace(/^[-*•]\s*/, "").slice(0, 60)}»`; }
         break;
+      }
+      case "no_es_dinero": {
+        if (!hay) return { error: "esa línea ya no existe" };
+        return { texto: lineas.join("\n"), perdona: antes.trim(),
+                 explicacion: `línea ${a.linea}: apuntado, «${antes.trim().slice(0, 60)}» no es dinero` };
       }
       case "quitar_linea": {
         if (!hay) return { error: "esa línea ya no existe" };
@@ -589,11 +634,11 @@
 
   // Aplica, uno por uno y releyendo cada vez, todos los arreglos que no
   // necesitan a Edgar. Devuelve el texto final y la lista de lo hecho.
-  function arreglarTodo(texto) {
+  function arreglarTodo(texto, opciones) {
     const hechos = [];
     let t = String(texto || "");
     for (let vuelta = 0; vuelta < 80; vuelta++) {
-      const L = leerAlcance(t), V = validarAlcance(L);
+      const L = leerAlcance(t, opciones), V = validarAlcance(L);
       const cand = [...V.errores, ...L.avisos].map(e => (e.arreglos || []).find(a => a.auto)).filter(Boolean);
       if (!cand.length) break;
       // de abajo hacia arriba, para que los números de línea no se muevan
@@ -1034,7 +1079,7 @@
   }
 
   // ------------------------------------------------------------------ export
-  const API = { leerAlcance, validarAlcance, cuentas, repartir, leerMonto, pareceDinero,
+  const API = { leerAlcance, validarAlcance, cuentas, repartir, leerMonto, pareceDinero, hayDinero,
                 decidirInterruptores, prepararEncargo, validarSalida,
                 rellenarPlantilla, aplicarSi, repetirFila, aplicarClausulas,
                 barridoFinal, marcasEmparejadas, armarTodo, aplicarArreglo, arreglarTodo, leerPermiso, leerFirma, leerVence, DISPARADORES, ORDEN_9, dinero, centavos, norma };
