@@ -2168,8 +2168,12 @@ function esFalloDeRed(err) {
     if (p.estado === "completado")
       b.push(`<button class="accion secundaria" data-accion="reabrir" data-id="${esc(p.id)}">↩ Reabrir (a ejecución)</button>`);
     // Escribir el alcance: solo el dueño, y en las obras que todavía no se hicieron
-    if (usuario.finanzas && ["estimando", "enviado", "aprobado"].includes(p.estado))
-      b.push(`<button class="accion secundaria" data-accion="alcance" data-id="${esc(p.id)}">Escribir el alcance</button>`);
+    if (usuario.finanzas && ["estimando", "enviado", "aprobado"].includes(p.estado)) {
+      // En Estimando es EL siguiente paso: va primero y en azul
+      const sinSow = !p.ref || /por definir/i.test(p.ref);
+      const btn = `<button class="accion${p.estado === "estimando" || sinSow ? "" : " secundaria"}" data-accion="alcance" data-id="${esc(p.id)}">Escribir el alcance</button>`;
+      if (p.estado === "estimando") b.unshift(btn); else b.push(btn);
+    }
     return b.length
       ? `<div class="detalle-seccion"><h3>Acciones</h3><div class="acciones">${b.join("")}</div></div>`
       : "";
@@ -3195,7 +3199,7 @@ function esFalloDeRed(err) {
       avisar("El monto del contrato no es un número válido — revísalo.", true);
       return;
     }
-    const estado = d.get("estado") || "enviado";
+    const estado = d.get("estado") || "estimando";
     const tipo = d.get("tipo") || "residencial";
     const id = nombre.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
       .slice(0, 30) + "-" + Math.random().toString(36).slice(2, 6);
@@ -3218,8 +3222,9 @@ function esFalloDeRed(err) {
       $modal.close();
       tipoActivo = tipo;
       await recargar();
-      irLista(estado);
-      avisar("Proyecto creado ✓");
+      // Directo a la ficha: desde ahí sigue el flujo (escribir el alcance)
+      irDetalle(id);
+      avisar(estado === "estimando" ? "Proyecto creado ✓ — ahora toca «Escribir el alcance»" : "Proyecto creado ✓");
     } catch (err) {
       avisar("No se pudo crear: " + err.message, true);
     }
@@ -6844,6 +6849,7 @@ Power done right the first time. ⚡`;
   let alcActivo = null;   // { proyecto, propuesta, texto, leido, decision, cuenta, salida, admin }
   let alcFicha = 0;       // 0 = la hoja · 1 = la revisión · 2 = el contrato
   let alcPlantilla = null;
+  let alcArreglos = {};   // id del botón → el arreglo que aplica
 
   const ALC_FICHAS = [{ etiqueta: "La hoja" }, { etiqueta: "Revisión" }, { etiqueta: "Contrato" }];
 
@@ -7010,14 +7016,33 @@ Power done right the first time. ⚡`;
     if (!L) return salida;
 
     const V = A.validado;
+    // Los botones de arreglar: uno por cada arreglo que trae el error
+    const botonesDe = (arreglos, sufijo) => (arreglos || []).map((a, k) => {
+      const id = `${sufijo}-${k}`;
+      alcArreglos[id] = a;
+      if (a.pide === "monto" || a.pide === "texto")
+        return `<span class="alc-fix"><input class="alc-libre alc-fix-in" data-fix-in="${id}" placeholder="${a.pide === "monto" ? "1,850.00" : "escríbelo"}" inputmode="${a.pide === "monto" ? "decimal" : "text"}">
+                <button class="alc-op" data-fix="${id}">${esc(a.etiqueta)}</button></span>`;
+      if (a.pide === "renglon")
+        return `<span class="alc-fix"><select class="alc-libre alc-fix-in" data-fix-in="${id}">${L.items.map(it => `<option value="${it.n}">${it.n}. ${esc(it.titulo.slice(0, 40))}</option>`).join("")}</select>
+                <button class="alc-op" data-fix="${id}">${esc(a.etiqueta)}</button></span>`;
+      return `<button class="alc-op${a.auto ? " alc-auto" : ""}" data-fix="${id}">${esc(a.etiqueta)}</button>`;
+    }).join("");
+    alcArreglos = {};
+    if ((A.arreglados || []).length) {
+      salida += `<div class="alc-verde"><b>Arreglado:</b><ul>` +
+        A.arreglados.map(x => `<li>${esc(x)}</li>`).join("") + `</ul></div>`;
+    }
+    const hayAuto = [...V.errores, ...L.avisos].some(e => (e.arreglos || []).some(a => a.auto));
     if (V.errores.length) {
-      salida += `<div class="alc-rojo"><b>Hay que arreglar esto antes de seguir:</b><ul>` +
-        V.errores.map(e => `<li>${e.linea ? `<span class="alc-linea">línea ${e.linea}</span> ` : ""}${esc(e.texto)}</li>`).join("") +
+      salida += `<div class="alc-rojo"><b>Hay que arreglar esto antes de seguir:</b>
+        ${hayAuto ? `<button class="accion" id="alc-arreglar-todo" style="margin:.4rem 0 .2rem">Arreglar todo lo que pueda solo</button>` : ""}<ul>` +
+        V.errores.map((e, i) => `<li>${e.linea ? `<span class="alc-linea">línea ${e.linea}</span> ` : ""}${esc(e.texto)}<div class="alc-fixes">${botonesDe(e.arreglos, "e" + i)}</div></li>`).join("") +
         `</ul></div>`;
     }
     if (L.avisos.length) {
       salida += `<div class="alc-ambar"><b>Esto no lo supe colocar:</b><ul>` +
-        L.avisos.map(a => `<li><span class="alc-linea">línea ${a.linea}</span> ${esc(a.texto)}</li>`).join("") +
+        L.avisos.map((a, i) => `<li><span class="alc-linea">línea ${a.linea}</span> ${esc(a.texto)}<div class="alc-fixes">${botonesDe(a.arreglos, "a" + i)}</div></li>`).join("") +
         `</ul></div>`;
     }
     if (V.preguntas.length) {
@@ -7026,6 +7051,14 @@ Power done right the first time. ⚡`;
         const botones = (p.opciones || []).map((o, k) =>
           `<button class="alc-op${ya === (o.valor !== undefined ? JSON.stringify(o.valor) : o.etiqueta) ? " elegida" : ""}"
             data-preg="${p.clave}" data-val="${esc(o.valor !== undefined ? JSON.stringify(o.valor) : o.etiqueta)}">${esc(o.etiqueta)}</button>`).join("");
+        if (p.arreglo) {
+          const id = "p" + i; alcArreglos[id] = p.arreglo;
+          const alts = (p.alternativas || []).map((al, k) => { const aid = `p${i}x${k}`; alcArreglos[aid] = al.arreglo;
+            return `<button class="alc-op" data-fix="${aid}">${esc(al.etiqueta)}</button>`; }).join("");
+          return `<div class="alc-pregunta"><p>${p.linea ? `<span class="alc-linea">línea ${p.linea}</span> ` : ""}${esc(p.texto)}</p>
+            <div class="alc-fix"><input class="alc-libre alc-fix-in" data-fix-in="${id}" placeholder="tu respuesta">
+            <button class="alc-op" data-fix="${id}">Poner la respuesta</button>${alts}</div></div>`;
+        }
         return `<div class="alc-pregunta"><p>${p.linea ? `<span class="alc-linea">línea ${p.linea}</span> ` : ""}${esc(p.texto)}</p>
           <div>${botones}${p.libre || (p.opciones || []).some(o => o.libre) ? `<input class="alc-libre" data-preg="${p.clave}" value="${esc(ya && ya[0] !== "[" && ya[0] !== '"' ? ya : "")}" placeholder="escríbelo">` : ""}</div></div>`;
       }).join("") + `</div>`;
@@ -7216,6 +7249,21 @@ Power done right the first time. ⚡`;
       else el.addEventListener("click", () => guardar(el.dataset.val));
     });
 
+    document.querySelectorAll("[data-fix]").forEach(b => b.addEventListener("click", () => {
+      const a = alcArreglos[b.dataset.fix]; if (!a) return;
+      const inp = document.querySelector(`[data-fix-in="${b.dataset.fix}"]`);
+      alcArreglar(a, inp ? inp.value : undefined);
+    }));
+    const bTodo = $("alc-arreglar-todo");
+    if (bTodo) bTodo.addEventListener("click", () => {
+      const A = alcActivo;
+      const r = Alcance.arreglarTodo(A.texto);
+      if (!r.hechos.length) { avisar("No había nada que pudiera arreglar solo", true); return; }
+      A.texto = r.texto; alcGuardarLocal(A.proyecto.id, A.texto);
+      A.arreglados = [...(A.arreglados || []), ...r.hechos];
+      alcCalcular(); pintarAlcance();
+      avisar(`Arreglé ${r.hechos.length} ${r.hechos.length === 1 ? "cosa" : "cosas"} ✓`);
+    });
     const bRed = $("alc-redactar");
     if (bRed) bRed.addEventListener("click", alcRedactar);
     const bRe = $("alc-reredactar");
@@ -7305,6 +7353,16 @@ Power done right the first time. ⚡`;
     alcCalcular();
   }
 
+  // Un arreglo concreto, con el valor que Edgar haya escrito si hacía falta
+  function alcArreglar(a, valor) {
+    const A = alcActivo;
+    const r = Alcance.aplicarArreglo(A.texto, a, valor);
+    if (r.error) { avisar(r.error, true); return; }
+    A.texto = r.texto; alcGuardarLocal(A.proyecto.id, A.texto);
+    A.arreglados = [...(A.arreglados || []), r.explicacion];
+    alcCalcular(); pintarAlcance();
+  }
+
   function alcCalcular() {
     const A = alcActivo;
     A.leido = Alcance.leerAlcance(A.texto);
@@ -7318,7 +7376,7 @@ Power done right the first time. ⚡`;
     A.texto = $("alc-texto").value;
     alcGuardarLocal(A.proyecto.id, A.texto);
     if (!A.texto.trim()) { avisar("Pega primero la hoja", true); return; }
-    A.respuestas = {};
+    A.respuestas = {}; A.arreglados = [];
     alcCalcular();
     pintarAlcance();
     if (!A.validado.errores.length && !A.validado.preguntas.length) avisar("Leído ✓ — revisa el dinero y redacta");
@@ -7478,6 +7536,15 @@ Power done right the first time. ⚡`;
         if (d.cliente && !A.proyecto.cliente) cambios.cliente = d.cliente;
         if (Object.keys(cambios).length) await DB.cambiarProyecto(A.proyecto.id, cambios);
       }
+      // El número de propuesta y el valor del contrato los pone el alcance en la
+      // ficha del proyecto, para que Edgar no los teclee dos veces.
+      try {
+        if (A.contrato && (!A.proyecto.ref || /por definir/i.test(A.proyecto.ref))) {
+          const ref = A.contrato.archivo.replace(/\.html$/i, "");
+          await DB.cambiarProyecto(A.proyecto.id, { ref }); A.proyecto.ref = ref;
+        }
+        if (!(Number(A.proyecto.contrato) > 0)) { await DB.ponerContrato(A.proyecto.id, cta.base / 100); A.proyecto.contrato = cta.base / 100; }
+      } catch { /* la propuesta ya quedó guardada; la ficha se cuadra en la próxima recarga */ }
       // Las propuestas se recargan para que la barra de arriba enseñe la
       // variante nueva (o el precio nuevo de la que se acaba de guardar)
       try { propData = await DB.cargarPropuestas(); } catch { /* se queda la de antes */ }

@@ -154,6 +154,13 @@
     const parrafo = { hoy: [], cambia: [], falta: [], notas: [] };
 
     const err = (i, texto, extra) => R.errores.push(Object.assign({ linea: i + 1, texto }, extra || {}));
+    // Las preguntas que el chat deja dentro de la hoja: {{FALTA: ¿…?}}
+    R.faltas = [];
+    lineas.forEach((cruda, i) => {
+      const m = cruda.match(/\{\{FALTA:?\s*([^}]*)\}\}/i);
+      if (m) R.faltas.push({ linea: i + 1, pregunta: (m[1] || "").trim() || "Aquí el chat dejó algo por contestar",
+                             soloMarca: cruda.replace(m[0], "").replace(/^[\s\-*•\d.)]+/, "").trim() === "" });
+    });
 
     lineas.forEach((cruda, i) => {
       const linea = cruda.trim();
@@ -171,11 +178,13 @@
       // --- Precio y Pagos, estén donde estén (son títulos con valor en la misma línea)
       if (mNV && buscaClave(CLAVES_DINERO, nombre) === "precio") {
         const m = leerMonto(valor);
-        if (!m) err(i, "No entiendo el precio. Escríbelo así: 16,498.24");
+        if (!m) err(i, "No entiendo el precio. Escríbelo así: 16,498.24",
+                    { arreglos: [{ tipo: "poner_precio_base", etiqueta: "Escribir el precio", pide: "monto" }] });
         else if (m.pregunta) R.preguntas.push({ clave: "precio", linea: i + 1,
           texto: `¿El precio es $${m.opciones[0].toLocaleString("en-US")} o $${m.opciones[1].toFixed(2)}?`,
           opciones: m.opciones.map(v => ({ etiqueta: "$" + v.toLocaleString("en-US", {minimumFractionDigits:2}), valor: centavos(v) })) });
-        else if (R.precio) err(i, "Hay dos precios. Solo va uno: el precio base sin opciones.");
+        else if (R.precio) err(i, "Hay dos precios. Solo va uno: el precio base sin opciones.",
+                    { arreglos: [{ tipo: "quitar_linea", etiqueta: "Quitar este segundo precio", linea: i + 1, auto: true }] });
         else R.precio = { centavos: m.centavos, linea: i + 1 };
         return;
       }
@@ -189,31 +198,44 @@
         case "datos": {
           if (!mNV) { const s = sugerir(SECCIONES, linea);
             R.avisos.push({ linea: i + 1, texto: s ? `"${linea}" no es un título que conozca. ¿Querías decir "${s}"?`
-                                                   : `No sé dónde poner "${linea}".`, sugerencia: s });
+                                                   : `No sé dónde poner "${linea.slice(0, 60)}". Parece un comentario del chat.`,
+                            sugerencia: s,
+                            arreglos: s ? [{ tipo: "corregir_titulo", etiqueta: `Cambiar a "${s}"`, linea: i + 1, valor: s, auto: true }]
+                                        : [{ tipo: "quitar_linea", etiqueta: "Quitar esta línea", linea: i + 1, auto: true }] });
             return; }
           const k = buscaClave(CLAVES_DATOS, nombre);
           if (k) { R.datos[k] = valor; }
           else { const s = sugerir(CLAVES_DATOS, mNV[1]);
                  R.avisos.push({ linea: i + 1, texto: s ? `No conozco "${mNV[1].trim()}". ¿Querías decir "${s}"?`
-                                                        : `No conozco el dato "${mNV[1].trim()}".`, sugerencia: s }); }
+                                                        : `No conozco el dato "${mNV[1].trim()}".`, sugerencia: s,
+                                 arreglos: s ? [{ tipo: "corregir_clave", etiqueta: `Cambiar a "${s}"`, linea: i + 1, valor: s, auto: true }]
+                                             // una frase entera, una viñeta o un {{FALTA}} delante de "Cliente:" es
+                                             // un comentario del chat: se quita solo. Un dato corto y raro
+                                             // ("Telefono: …") se deja y se pregunta.
+                                             : [{ tipo: "quitar_linea", etiqueta: "Quitar esta línea", linea: i + 1,
+                                                  auto: /^[-*•]/.test(linea) || /\{\{FALTA/i.test(linea) || mNV[1].trim().split(/\s+/).length > 3 }] }); }
           break;
         }
         case "hoy": case "cambia": case "falta": case "notas":
           if (sec !== "notas" && pareceDinero(linea))
             err(i, `Hay un precio en esta línea y aquí no van precios. El dinero solo va en Precio, Pagos y Opciones.`,
-                { botones: ["Quitarlo", "Es una opción", "Volver al texto"] });
+                { arreglos: [{ tipo: "quitar_dinero", etiqueta: "Quitar el precio y dejar el texto", linea: i + 1, auto: true },
+                             { tipo: "quitar_linea", etiqueta: "Quitar la línea entera", linea: i + 1 }] });
           parrafo[sec].push(linea.replace(/^[-*•]\s*/, ""));
           break;
 
         case "alcance": {
           if (pareceDinero(linea)) {
             err(i, "Hay un precio dentro del Alcance. El dinero solo va en Precio, Pagos y Opciones.",
-                { botones: ["Quitarlo", "Es una opción", "Volver al texto"] });
+                { arreglos: [{ tipo: "quitar_dinero", etiqueta: "Quitar el precio y dejar el texto", linea: i + 1, auto: true },
+                             { tipo: "quitar_linea", etiqueta: "Quitar la línea entera", linea: i + 1 }] });
             return;
           }
           const esDetalle = /^[-*•]/.test(linea);
           if (esDetalle) {
-            if (!itemActual) { err(i, "Este detalle no tiene renglón encima. Ponle un título al renglón."); return; }
+            if (!itemActual) { err(i, "Este detalle no tiene renglón encima. Ponle un título al renglón.",
+                { arreglos: [{ tipo: "hacer_titulo", etiqueta: "Convertirlo en renglón", linea: i + 1, auto: true },
+                             { tipo: "quitar_linea", etiqueta: "Quitar la línea", linea: i + 1 }] }); return; }
             itemActual.detalles.push(linea.replace(/^[-*•]\s*/, "")); itemActual.lineas.push(i + 1);
           } else {
             const mn = linea.match(/^(\d+)[.)\-]\s*(.+)$/);
@@ -225,7 +247,8 @@
         }
         case "no_incluye": {
           if (pareceDinero(linea)) { err(i, "Hay un precio en No incluye. El dinero solo va en Precio, Pagos y Opciones.",
-              { botones: ["Quitarlo", "Es una opción", "Volver al texto"] }); return; }
+              { arreglos: [{ tipo: "quitar_dinero", etiqueta: "Quitar el precio y dejar el texto", linea: i + 1, auto: true },
+                           { tipo: "quitar_linea", etiqueta: "Quitar la línea entera", linea: i + 1 }] }); return; }
           R.no_incluye.push({ texto: linea.replace(/^[-*•]\s*/, ""), linea: i + 1 });
           break;
         }
@@ -233,7 +256,8 @@
           const esDetalle = /^[-*•]/.test(linea);
           if (esDetalle) {
             if (opcionActual) opcionActual.detalles.push(linea.replace(/^[-*•]\s*/, ""));
-            else err(i, "Este detalle no tiene opción encima.");
+            else err(i, "Este detalle no tiene opción encima.",
+                { arreglos: [{ tipo: "quitar_linea", etiqueta: "Quitar la línea", linea: i + 1, auto: true }] });
             break;
           }
           const mn = linea.match(/^(?:(\d+)[.)\-]\s*)?(.+)$/);
@@ -243,8 +267,12 @@
           let precio = null, titulo = resto;
           if (mp) { titulo = mp[1].trim(); precio = leerMonto(mp[2]); }
           if (!precio) {
-            err(i, `La opción "${titulo.slice(0, 40)}" no tiene precio. Los añadidos van con monto, o no van.`);
-            opcionActual = null; break;
+            err(i, `La opción "${titulo.slice(0, 40)}" no tiene precio. Los añadidos van con monto, o no van.`,
+                { arreglos: [{ tipo: "poner_precio", etiqueta: "Ponerle precio", linea: i + 1, pide: "monto" },
+                             { tipo: "quitar_linea", etiqueta: "Quitar esta opción", linea: i + 1, conDetalles: true }] });
+            // sus detalles se quedan pegados a ella (no se sueltan ni se borran)
+            opcionActual = { n: R.opciones.length + 1, titulo, centavos: 0, sinPrecio: true, detalles: [], linea: i + 1 };
+            break;
           }
           if (precio.pregunta) {
             R.preguntas.push({ clave: "opcion_" + (R.opciones.length + 1), linea: i + 1,
@@ -272,19 +300,23 @@
           /* falls through */
         }
         case "condiciones": {
-          if (!mNV) { R.avisos.push({ linea: i + 1, texto: `No sé dónde poner "${linea.slice(0,45)}" dentro de Condiciones.` }); break; }
+          if (!mNV) { R.avisos.push({ linea: i + 1, texto: `No sé dónde poner "${linea.slice(0,45)}" dentro de Condiciones.`,
+                                       arreglos: [{ tipo: "quitar_linea", etiqueta: "Quitar esta línea", linea: i + 1 }] }); break; }
           const k = buscaClave(CLAVES_COND, nombre);
           if (k) R.condiciones[k] = { valor, linea: i + 1 };
           else { const s = sugerir(CLAVES_COND, mNV[1]);
                  R.avisos.push({ linea: i + 1, texto: s ? `No conozco "${mNV[1].trim()}". ¿Querías decir "${s}"?`
-                                                        : `No conozco la condición "${mNV[1].trim()}".`, sugerencia: s }); }
+                                                        : `No conozco la condición "${mNV[1].trim()}".`, sugerencia: s,
+                                 arreglos: s ? [{ tipo: "corregir_clave", etiqueta: `Cambiar a "${s}"`, linea: i + 1, valor: s, auto: true }]
+                                             : [{ tipo: "quitar_linea", etiqueta: "Quitar esta línea", linea: i + 1 }] }); }
           break;
         }
         case "codigo": {
           linea.split(/[,;]/).forEach(a => { const v = a.trim();
             if (!v) return;
             if (/^\d{3}(\.\d+([A-Za-z()0-9]*)?)?$/.test(v)) R.codigo.push(v);
-            else err(i, `"${v}" no tiene forma de artículo. Escribe 210, 210.8 o 406.4(D).`); });
+            else err(i, `"${v}" no tiene forma de artículo. Escribe 210, 210.8 o 406.4(D).`,
+                     { arreglos: [{ tipo: "quitar_trozo", etiqueta: `Quitar "${v}"`, linea: i + 1, valor: v, auto: true }] }); });
           break;
         }
       }
@@ -317,13 +349,22 @@
 
     if (!D.cliente) preguntas.push({ clave: "cliente", texto: "¿Quién es el cliente (quien paga y firma)?", libre: true });
     if (!D.direccion) preguntas.push({ clave: "direccion", texto: "¿Cuál es la dirección de la obra?", libre: true });
+    // Cada {{FALTA: pregunta}} que dejó el chat es una pregunta para Edgar
+    (L.faltas || []).forEach(f => preguntas.push({
+      clave: "falta_" + f.linea, linea: f.linea, texto: f.pregunta, libre: true,
+      arreglo: { tipo: "responder_marca", linea: f.linea },
+      alternativas: [{ etiqueta: f.soloMarca ? "Quitar esa línea" : "Quitar la pregunta",
+                       arreglo: { tipo: f.soloMarca ? "quitar_linea" : "quitar_marca", linea: f.linea } }]
+    }));
     if (!L.items.length) errores.push({ texto: "La sección Alcance está vacía. Sin ella no hay contrato." });
-    if (!L.precio) errores.push({ texto: "Falta el precio base en Precio." });
+    if (!L.precio) errores.push({ texto: "Falta el precio base en Precio.",
+      arreglos: [{ tipo: "poner_precio_base", etiqueta: "Escribir el precio", pide: "monto" }] });
 
     // los renglones, numerados seguidos si Edgar los numeró
     const escritos = L.items.filter(i => i.escrito !== null).map(i => i.escrito);
     if (escritos.length && escritos.some((v, k) => v !== k + 1))
-      errores.push({ texto: `Los renglones del Alcance tienen que ir 1, 2, 3 seguidos. Escribiste: ${escritos.join(", ")}.` });
+      errores.push({ texto: `Los renglones del Alcance tienen que ir 1, 2, 3 seguidos. Escribiste: ${escritos.join(", ")}.`,
+        arreglos: [{ tipo: "renumerar", etiqueta: "Numerarlos seguidos", auto: true }] });
 
     // dos firmantes
     if (D.cliente && !D.segundo_firmante && /\s(y|&|and)\s/i.test(D.cliente))
@@ -345,9 +386,12 @@
                      { etiqueta: "35/40/25", valor: [35,40,25] }] });
       else {
         const suma = L.pagos.pcts.reduce((a, b) => a + b, 0);
-        if (suma !== 100) errores.push({ texto: `Los pagos suman ${suma}%. Tienen que sumar 100 exacto.`, linea: L.pagos.lineas[0] });
-        if (L.pagos.pcts[0] === 0) errores.push({ texto: "El primer pago es el depósito y no puede ser 0%." });
-        if (L.pagos.pcts.some(p => !Number.isInteger(p))) errores.push({ texto: "Los pagos van en porcentajes enteros." });
+        const arreglosPagos = [{ tipo: "poner_pagos", etiqueta: "40/40/20", valor: "40/40/20" },
+                               { tipo: "poner_pagos", etiqueta: "50/50", valor: "50/50" },
+                               { tipo: "poner_pagos", etiqueta: "35/40/25", valor: "35/40/25" }];
+        if (suma !== 100) errores.push({ texto: `Los pagos suman ${suma}%. Tienen que sumar 100 exacto.`, linea: L.pagos.lineas[0], arreglos: arreglosPagos });
+        if (L.pagos.pcts[0] === 0) errores.push({ texto: "El primer pago es el depósito y no puede ser 0%.", arreglos: arreglosPagos });
+        if (L.pagos.pcts.some(p => !Number.isInteger(p))) errores.push({ texto: "Los pagos van en porcentajes enteros.", arreglos: arreglosPagos });
       }
     }
 
@@ -362,7 +406,9 @@
         opciones: [{ etiqueta: "Sí", valor: "si" }, { etiqueta: "No", valor: "no" }] });
 
     if (si_no(C.fotos_panel) === false && !L.falta)
-      errores.push({ texto: "Dijiste que no tienes fotos del panel: escribe en «Falta» qué te faltó al cotizar." });
+      errores.push({ texto: "Dijiste que no tienes fotos del panel: escribe en «Falta» qué te faltó al cotizar.",
+        arreglos: [{ tipo: "poner_falta", etiqueta: "Escribirlo", pide: "texto" },
+                   { tipo: "poner_falta", etiqueta: "Poner «sin fotos ni documentación del panel»", valor: "Sin fotos ni documentación del panel al cotizar", auto: true }] });
 
     // opciones
     if (L.opciones.length > 4) errores.push({ texto: "Caben hasta cuatro opciones." });
@@ -375,11 +421,13 @@
       m[1].split(/[,\sy]+/).filter(Boolean).forEach(x => {
         const n = Number(x);
         if (n && n > L.items.length) errores.push({ linea: v.linea,
-          texto: `${etiqueta} dice renglón ${n} pero solo hay ${L.items.length} renglones en el Alcance.` });
+          texto: `${etiqueta} dice renglón ${n} pero solo hay ${L.items.length} renglones en el Alcance.`,
+          arreglos: [{ tipo: "cambiar_renglon", etiqueta: "Elegir el renglón", linea: v.linea, pide: "renglon", valor: n }] });
       });
     });
     if (C.v240 && C.v240.valor && !/#\s*\d+|awg/i.test(C.v240.valor))
-      errores.push({ linea: C.v240.linea, texto: "240V necesita tres datos: equipo, renglón y calibre. Ejemplo: «estufa, renglón 2, hasta #8»." });
+      errores.push({ linea: C.v240.linea, texto: "240V necesita tres datos: equipo, renglón y calibre. Ejemplo: «estufa, renglón 2, hasta #8».",
+        arreglos: [{ tipo: "poner_calibre", etiqueta: "Calibre máximo (#8, #6…)", linea: C.v240.linea, pide: "texto" }] });
 
     // el Alcance habla de panel y la exclusión sigue puesta
     const noExcluir = norma((C.no_excluir || {}).valor || "");
@@ -392,6 +440,165 @@
     });
 
     return { errores, preguntas, puedeSeguir: errores.length === 0 };
+  }
+
+  // ============================================================ LOS ARREGLOS
+  // Cada error trae uno o más arreglos. Aquí se aplican SOBRE EL TEXTO de la
+  // hoja, a la vista de Edgar, y se cuenta en llano qué se cambió.
+  function aplicarArreglo(texto, a, valor) {
+    const lineas = String(texto || "").replace(/\r/g, "").split("\n");
+    const i = (a.linea || 0) - 1;
+    const hay = i >= 0 && i < lineas.length;
+    const antes = hay ? lineas[i] : "";
+    const v = valor !== undefined && valor !== null ? String(valor).trim() : (a.valor !== undefined ? String(a.valor) : "");
+    let explicacion = "";
+    const quitarLinea = (idx, conDetalles) => {
+      let n = 1;
+      if (conDetalles) while (idx + n < lineas.length && /^\s*[-*•]/.test(lineas[idx + n])) n++;
+      lineas.splice(idx, n);
+      return n;
+    };
+    switch (a.tipo) {
+      case "quitar_dinero": {
+        if (!hay) return { error: "esa línea ya no existe" };
+        const sin = antes.replace(/\(?\s*(?:aprox\.?|approx\.?|precio|price|total|cost[oe]?)?\s*:?\s*\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?\s*(?:d[oó]lares|dollars|usd)?\s*\)?/i, " ")
+                          .replace(/\s{2,}/g, " ").replace(/\s+([,.;:])/g, "$1").replace(/[—–-]\s*$/, "").trim();
+        const quitado = (antes.match(/\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?/) || [""])[0].trim();
+        if (!sin || /^[-*•]\s*$/.test(sin)) { quitarLinea(i); explicacion = `línea ${a.linea}: solo tenía el precio (${quitado}); la quité`; }
+        else { lineas[i] = sin; explicacion = `línea ${a.linea}: quité ${quitado} y dejé «${sin.replace(/^[-*•]\s*/, "").slice(0, 60)}»`; }
+        break;
+      }
+      case "quitar_linea": {
+        if (!hay) return { error: "esa línea ya no existe" };
+        const n = quitarLinea(i, !!a.conDetalles);
+        explicacion = `línea ${a.linea}: quité «${antes.trim().slice(0, 60)}»` + (n > 1 ? ` y sus ${n - 1} detalles` : "");
+        break;
+      }
+      case "quitar_marca": {
+        if (!hay) return { error: "esa línea ya no existe" };
+        const sin = antes.replace(/\s*\{\{FALTA:?[^}]*\}\}\s*/i, " ").replace(/\s{2,}/g, " ").trim();
+        if (!sin.replace(/^[-*•\d.)\s]+/, "")) { quitarLinea(i); explicacion = `línea ${a.linea}: quité la pregunta del chat (la línea quedaba vacía)`; }
+        else { lineas[i] = sin; explicacion = `línea ${a.linea}: quité la pregunta del chat y dejé «${sin.slice(0, 60)}»`; }
+        break;
+      }
+      case "responder_marca": {
+        if (!hay) return { error: "esa línea ya no existe" };
+        if (!v) return { error: "escribe la respuesta" };
+        lineas[i] = antes.replace(/\{\{FALTA:?[^}]*\}\}/i, v);
+        explicacion = `línea ${a.linea}: puse tu respuesta «${v.slice(0, 60)}»`;
+        break;
+      }
+      case "quitar_trozo": {
+        if (!hay) return { error: "esa línea ya no existe" };
+        lineas[i] = antes.split(",").map(s => s.trim()).filter(s => s && s !== v).join(", ");
+        explicacion = `línea ${a.linea}: quité «${v}»`;
+        break;
+      }
+      case "hacer_titulo": {
+        if (!hay) return { error: "esa línea ya no existe" };
+        lineas[i] = antes.replace(/^\s*[-*•]\s*/, "");
+        explicacion = `línea ${a.linea}: lo convertí en renglón con título`;
+        break;
+      }
+      case "poner_precio": {
+        if (!hay) return { error: "esa línea ya no existe" };
+        const m = leerMonto(v);
+        if (!m || m.pregunta) return { error: "escribe el precio así: 1,850.00" };
+        lineas[i] = antes.replace(/\s*[—–:-]\s*\$?\s*$/, "") + " — $" + dinero(m.centavos);
+        explicacion = `línea ${a.linea}: le puse $${dinero(m.centavos)}`;
+        break;
+      }
+      case "poner_precio_base": {
+        const m = leerMonto(v);
+        if (!m || m.pregunta) return { error: "escribe el precio así: 16,498.24" };
+        const k = lineas.findIndex(l => /^\s*(precio|total|precio base|price)\s*:/i.test(l));
+        if (k >= 0) lineas[k] = "Precio: " + dinero(m.centavos);
+        else { const j = lineas.findIndex(l => /^\s*(pagos|opciones|condiciones)\s*:?\s*$/i.test(l));
+               lineas.splice(j >= 0 ? j : lineas.length, 0, "Precio: " + dinero(m.centavos), ""); }
+        explicacion = `Precio: $${dinero(m.centavos)}`;
+        break;
+      }
+      case "poner_pagos": {
+        const k = lineas.findIndex(l => /^\s*(pagos|hitos|milestones|cobros)\s*:/i.test(l));
+        if (k >= 0) {
+          lineas[k] = "Pagos: " + v;
+          // las líneas sueltas de "40% …" que había debajo se van
+          while (k + 1 < lineas.length && /^\s*\d{1,3}\s*%/.test(lineas[k + 1])) lineas.splice(k + 1, 1);
+        } else {
+          const j = lineas.findIndex(l => /^\s*(opciones|condiciones)\s*:?\s*$/i.test(l));
+          lineas.splice(j >= 0 ? j : lineas.length, 0, "Pagos: " + v, "");
+        }
+        explicacion = `Pagos: ${v}`;
+        break;
+      }
+      case "poner_calibre": {
+        if (!hay) return { error: "esa línea ya no existe" };
+        const c = v.match(/\d+/);
+        if (!c) return { error: "escribe el calibre: #8, #6…" };
+        lineas[i] = antes.replace(/\s*$/, "") + ", hasta #" + c[0];
+        explicacion = `línea ${a.linea}: añadí «hasta #${c[0]}»`;
+        break;
+      }
+      case "cambiar_renglon": {
+        if (!hay) return { error: "esa línea ya no existe" };
+        const n = Number(v);
+        if (!n) return { error: "elige el renglón" };
+        lineas[i] = /rengl[oó]n(?:es)?\s+[\d,\sy]+/i.test(antes)
+          ? antes.replace(/rengl[oó]n(?:es)?\s+[\d,\sy]+/i, "renglón " + n)
+          : antes.replace(/\s*$/, "") + ", renglón " + n;
+        explicacion = `línea ${a.linea}: ahora apunta al renglón ${n}`;
+        break;
+      }
+      case "poner_falta": {
+        if (!v) return { error: "escribe qué te faltó" };
+        const k = lineas.findIndex(l => /^\s*#*\s*(falta|lo que falta|sin datos|falta informacion|falta información)\s*:?\s*$/i.test(l));
+        if (k >= 0) lineas.splice(k + 1, 0, v);
+        else { const j = lineas.findIndex(l => /^\s*#*\s*(alcance|incluye|scope)\s*:?\s*$/i.test(l));
+               lineas.splice(j >= 0 ? j : lineas.length, 0, "Falta", v, ""); }
+        explicacion = `Falta: «${v.slice(0, 60)}»`;
+        break;
+      }
+      case "corregir_titulo": {
+        if (!hay) return { error: "esa línea ya no existe" };
+        lineas[i] = v.charAt(0).toUpperCase() + v.slice(1);
+        explicacion = `línea ${a.linea}: «${antes.trim().slice(0, 30)}» → «${lineas[i]}»`;
+        break;
+      }
+      case "corregir_clave": {
+        if (!hay) return { error: "esa línea ya no existe" };
+        const resto = antes.slice(antes.indexOf(":") + 1);
+        lineas[i] = v.charAt(0).toUpperCase() + v.slice(1) + ":" + resto;
+        explicacion = `línea ${a.linea}: «${antes.split(":")[0].trim()}» → «${v}»`;
+        break;
+      }
+      case "renumerar": {
+        const L = leerAlcance(lineas.join("\n"));
+        L.items.forEach((it, k) => { const j = it.lineas[0] - 1;
+          lineas[j] = lineas[j].replace(/^(\s*)(?:\d+[.)\-]\s*)?/, "$1" + (k + 1) + ". "); });
+        explicacion = `numeré los ${L.items.length} renglones seguidos`;
+        break;
+      }
+      default: return { error: "no sé hacer ese arreglo" };
+    }
+    return { texto: lineas.join("\n"), explicacion };
+  }
+
+  // Aplica, uno por uno y releyendo cada vez, todos los arreglos que no
+  // necesitan a Edgar. Devuelve el texto final y la lista de lo hecho.
+  function arreglarTodo(texto) {
+    const hechos = [];
+    let t = String(texto || "");
+    for (let vuelta = 0; vuelta < 80; vuelta++) {
+      const L = leerAlcance(t), V = validarAlcance(L);
+      const cand = [...V.errores, ...L.avisos].map(e => (e.arreglos || []).find(a => a.auto)).filter(Boolean);
+      if (!cand.length) break;
+      // de abajo hacia arriba, para que los números de línea no se muevan
+      cand.sort((x, y) => (y.linea || 0) - (x.linea || 0));
+      const r = aplicarArreglo(t, cand[0]);
+      if (r.error) break;
+      t = r.texto; hechos.push(r.explicacion);
+    }
+    return { texto: t, hechos };
   }
 
   // ================================================================ EL DINERO
@@ -797,7 +1004,7 @@
   const API = { leerAlcance, validarAlcance, cuentas, repartir, leerMonto, pareceDinero,
                 decidirInterruptores, prepararEncargo, validarSalida,
                 rellenarPlantilla, aplicarSi, repetirFila, aplicarClausulas,
-                barridoFinal, marcasEmparejadas, armarTodo, DISPARADORES, ORDEN_9, dinero, centavos, norma };
+                barridoFinal, marcasEmparejadas, armarTodo, aplicarArreglo, arreglarTodo, DISPARADORES, ORDEN_9, dinero, centavos, norma };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   raiz.Alcance = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -509,6 +509,12 @@
     eliminarProyecto: id => api(`proyectos?id=eq.${encodeURIComponent(id)}`, { metodo: "DELETE" }),
     crearProyecto: fila => insertar("proyectos", fila),
     crearFinanzas: fila => insertar("finanzas_proyecto", fila),
+    // El valor del contrato lo pone el alcance: si la fila no existe se crea,
+    // si existe se actualiza (una sola petición, sin duplicar).
+    ponerContrato: (proyectoId, contrato) => api("finanzas_proyecto?on_conflict=proyecto_id", {
+      metodo: "POST", cuerpo: { proyecto_id: proyectoId, contrato },
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" }
+    }),
     reportarHoras: async fila => {
       try { return await insertar("horas", { ...fila, usuario_id: uid() }); }
       catch (e) {
