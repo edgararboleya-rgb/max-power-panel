@@ -6916,8 +6916,11 @@ Power done right the first time. ⚡`;
       <p class="lev-nota">Pega aquí el alcance como te salga: dictado, un SOW viejo, o la hoja
       con sus títulos. Si viene suelto, toca <b>Ordenar</b> y el asistente lo acomoda delante de ti.
       Después <b>Leer</b>: la app saca el dinero con sus propias cuentas y te lo enseña.</p>
-      <textarea id="alc-texto" class="alc-texto" rows="16" placeholder="Cliente: …&#10;Dirección: …&#10;&#10;Alcance&#10;1. …">${esc(A.texto)}</textarea>
+      <textarea id="alc-texto" class="alc-texto" rows="16" placeholder="Pega aquí, o toca «Importar un archivo»">${esc(A.texto)}</textarea>
+      <p class="lev-nota" id="alc-arrastra">También puedes arrastrar el archivo encima del cuadro.</p>
+      <input type="file" id="alc-archivo" accept=".md,.txt,.markdown,.text,text/plain,text/markdown" hidden>
       <div class="alc-botones">
+        <button class="accion" id="alc-importar">Importar un archivo</button>
         <button class="accion secundaria" id="alc-copiar-formato">Copiar el formato en blanco</button>
         <button class="accion secundaria" id="alc-ordenar">Ordenar</button>
         <button class="accion" id="alc-leer">Leer</button>
@@ -7086,6 +7089,30 @@ Power done right the first time. ⚡`;
               avisar("Te lo puse en el cuadro"); }
     });
 
+    // Importar un archivo: abre los archivos del teléfono y lo mete en el cuadro
+    const bImp = $("alc-importar"), fArch = $("alc-archivo");
+    if (bImp && fArch) {
+      bImp.addEventListener("click", () => fArch.click());
+      fArch.addEventListener("change", () => {
+        const f = fArch.files && fArch.files[0];
+        if (f) alcCargarArchivo(f);
+        fArch.value = "";
+      });
+    }
+    // …o se suelta encima del cuadro
+    if (caja) {
+      ["dragenter", "dragover"].forEach(ev => caja.addEventListener(ev, e => {
+        e.preventDefault(); caja.classList.add("alc-soltar");
+      }));
+      ["dragleave", "drop"].forEach(ev => caja.addEventListener(ev, e => {
+        e.preventDefault(); caja.classList.remove("alc-soltar");
+      }));
+      caja.addEventListener("drop", e => {
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) alcCargarArchivo(f);
+      });
+    }
+
     const bOrdenar = $("alc-ordenar");
     if (bOrdenar) bOrdenar.addEventListener("click", alcOrdenar);
     const bLeer = $("alc-leer");
@@ -7111,6 +7138,33 @@ Power done right the first time. ⚡`;
     if (bBajar) bBajar.addEventListener("click", alcBajar);
     const bGuardar = $("alc-guardar");
     if (bGuardar) bGuardar.addEventListener("click", alcGuardarNube);
+  }
+
+  // Lee el archivo que Edgar escogió y lo pone en el cuadro. Solo texto: si es
+  // un PDF o un Word, se lo decimos en llano en vez de meter caracteres raros.
+  function alcCargarArchivo(f) {
+    const nombre = String(f.name || "");
+    if (/\.(pdf|docx?|pages|rtf|odt)$/i.test(nombre)) {
+      avisar("Ese archivo no es de texto. Guárdalo como .txt o .md y vuelve a intentarlo.", true);
+      return;
+    }
+    if (f.size > 400000) { avisar("Ese archivo es muy grande para una hoja de alcance", true); return; }
+    const lector = new FileReader();
+    lector.onload = () => {
+      const txt = String(lector.result || "").replace(/\r/g, "");
+      if (!txt.trim()) { avisar("El archivo está vacío", true); return; }
+      const caja = $("alc-texto");
+      const habia = caja && caja.value.trim();
+      if (habia && !confirm("Ya hay algo escrito en el cuadro. ¿Lo reemplazo con el archivo?")) return;
+      alcActivo.texto = txt;
+      if (caja) caja.value = txt;
+      alcGuardarLocal(alcActivo.proyecto.id, txt);
+      alcActivo.leido = null; alcActivo.respuestas = {};
+      pintarAlcance();
+      avisar(`Cargado «${nombre}» ✓ — ahora toca Leer`);
+    };
+    lector.onerror = () => avisar("No pude abrir ese archivo", true);
+    lector.readAsText(f, "utf-8");
   }
 
   // Recoge las correcciones en inglés antes de cambiar de ficha

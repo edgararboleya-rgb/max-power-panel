@@ -2626,3 +2626,6 @@ video.foto-mini { background: #000; }
   color:var(--mp-ink);resize:vertical}
 .alc-en textarea:focus{outline:none;border-color:var(--mp-blue)}
 @media (max-width:720px){.alc-par{grid-template-columns:1fr;gap:.4rem}}
+.alc-texto.alc-soltar{border-color:var(--mp-blue);background:var(--mp-sky-1);
+  box-shadow:0 0 0 3px rgba(42,91,215,.14)}
+#alc-arrastra{margin:.35rem 0 0;font-size:.82rem}
