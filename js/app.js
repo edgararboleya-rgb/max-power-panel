@@ -322,8 +322,46 @@ function esFalloDeRed(err) {
     if (c) c.hidden = true;
   }
 
+  // ---------- Menú lateral (pantalla grande) ----------
+  // Copia las losetas del inicio a una columna fija a la izquierda. Tocar una
+  // entrada dispara la loseta original, así no hay dos caminos de código.
+  const LATERAL_HOME_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>';
+  const LATERAL_PROY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="8" height="7" rx="2"/><rect x="13" y="4" width="8" height="7" rx="2"/><rect x="3" y="13" width="8" height="7" rx="2"/><rect x="13" y="13" width="8" height="7" rx="2"/></svg>';
+  let lateralVista = "home";
+  function armarLateral() {
+    const nav = $("lateral");
+    if (!nav) return;
+    const losetas = [...document.querySelectorAll(".botones-rapidos .btn-horas")];
+    nav.innerHTML = `
+      <button class="lat-item" data-lat="home">${LATERAL_HOME_SVG}<span>Inicio</span></button>
+      <button class="lat-item" data-lat="proyectos">${LATERAL_PROY_SVG}<span>Proyectos</span></button>
+      <div class="lat-sep"></div>` +
+      losetas.map(b => `<button class="lat-item" data-lat="${b.id}"${b.hidden ? " hidden" : ""}>${b.querySelector(".tile-ico").innerHTML}<span>${esc(b.querySelector(".tile-txt").textContent)}</span></button>`).join("");
+    nav.querySelectorAll(".lat-item").forEach(it => it.addEventListener("click", () => {
+      const k = it.dataset.lat;
+      if (k === "home") { irHome(); return; }
+      if (k === "proyectos") { irHome(); const c = document.querySelector("#categorias [data-tipo]"); if (c) c.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+      const orig = $(k); if (orig) orig.click();
+    }));
+    pintarLateral();
+  }
+  function pintarLateral() {
+    const nav = $("lateral"); if (!nav) return;
+    const activo = { home: "home", etapas: "proyectos", lista: "proyectos", detalle: "proyectos",
+      horas: "btn-horas", calendario: "btn-calendario", checklist: "btn-checklist", materiales: "btn-materiales",
+      gastos: "btn-gastos", estimador: "btn-estimador", levantamiento: "btn-levantamiento",
+      propuesta: "btn-estimador", cierre: "btn-estimador", alcance: "proyectos" }[lateralVista] || "";
+    nav.querySelectorAll(".lat-item").forEach(it => {
+      it.classList.toggle("activo", it.dataset.lat === activo);
+      const orig = it.dataset.lat.startsWith("btn-") ? $(it.dataset.lat) : null;
+      if (orig) it.hidden = orig.hidden;   // el equipo no ve las losetas del dueño
+    });
+  }
+
   // ---------- Cambio de vista ----------
   function mostrar(vista, { kicker, titulo, volver, nuevo }) {
+    lateralVista = vista;
+    pintarLateral();
     $home.hidden = vista !== "home";
     $vEtapas.hidden = vista !== "etapas";
     $vLista.hidden = vista !== "lista";
@@ -356,6 +394,7 @@ function esFalloDeRed(err) {
     mostrar("home", { kicker: "Panel de proyectos", titulo: "Categorías", volver: false, nuevo: true });
     $("btn-gastos").hidden = !usuario.finanzas;
     $("btn-estimador").hidden = !usuario.finanzas;
+    armarLateral();
     $("btn-levantamiento").hidden = !usuario.finanzas;
     pintarInicio();
     pintarCategorias();
@@ -6999,7 +7038,7 @@ Power done right the first time. ⚡`;
   function alcFichaHoja() {
     const A = alcActivo;
     const L = A.leido;
-    let salida = `
+    let salida = `<div class="alc-dos"><div class="alc-izq">
       <p class="lev-nota">Pega aquí el alcance como te salga: dictado, un SOW viejo, o la hoja
       con sus títulos. Si viene suelto, toca <b>Ordenar</b> y el asistente lo acomoda delante de ti.
       Después <b>Leer</b>: la app saca el dinero con sus propias cuentas y te lo enseña.</p>
@@ -7011,9 +7050,9 @@ Power done right the first time. ⚡`;
         <button class="accion secundaria" id="alc-copiar-formato">Copiar el formato en blanco</button>
         <button class="accion secundaria" id="alc-ordenar">Ordenar</button>
         <button class="accion" id="alc-leer">Leer</button>
-      </div>`;
+      </div></div><div class="alc-der">`;
 
-    if (!L) return salida;
+    if (!L) return salida + `<p class="lev-nota">Cuando toques «Leer», aquí sale lo que la app entendió.</p></div></div>`;
 
     const V = A.validado;
     // Los botones de arreglar: uno por cada arreglo que trae el error
@@ -7093,10 +7132,10 @@ Power done right the first time. ⚡`;
         <div class="alc-chips">${encendidas.map(k => `<span class="alc-chip" title="${esc(dec.motivos[k] || "va siempre")}">${esc(k.replace(/_/g, " "))}</span>`).join("")}</div>
         <p class="lev-nota">${esc(alcPorQue(dec))}</p>
       </div>
-      <div class="alc-botones">
+      <div class="alc-botones alc-cierra-dos">
         <button class="accion" id="alc-redactar"${V.errores.length ? " disabled" : ""}>Redactar en inglés</button>
         <button class="accion secundaria" id="alc-guardar">${A.propuesta ? "Guardar los cambios" : "Guardar este alcance"}</button>
-      </div>`;
+      </div></div></div>`;
     return salida;
   }
 

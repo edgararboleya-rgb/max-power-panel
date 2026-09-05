@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-title" content="Max Power">
   <link rel="apple-touch-icon" href="assets/icon-180.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=105">
+  <link rel="stylesheet" href="css/styles.css?v=106">
 </head>
 <body>
 
@@ -57,6 +57,9 @@
       </div>
     </header>
 
+    <!-- Menú lateral: solo en pantallas grandes. Son las mismas losetas del inicio. -->
+    <nav id="lateral" class="lateral" aria-label="Menú"></nav>
+
     <!-- Migas y acciones de la vista actual -->
     <div class="toolbar">
       <button id="btn-volver" class="btn-volver" hidden title="Volver">←</button>
@@ -80,14 +83,18 @@
           <button id="btn-estimador" class="btn-horas" hidden><span class="tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2.5" width="14" height="19" rx="3"/><path d="M9 7h6"/><path d="M9 12h.01M12 12h.01M15 12h.01M9 15.5h.01M12 15.5h.01M15 15.5h.01M9 19h.01M12 19h.01M15 19h.01"/></svg></span><span class="tile-txt">Estimador</span></button>
           <button id="btn-levantamiento" class="btn-horas" hidden><span class="tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/><path d="M9.5 20v-5h5v5"/><circle cx="12" cy="11.5" r="1.1"/></svg></span><span class="tile-txt">Levantamiento</span></button>
         </div>
-        <section id="inicio-hoy"></section>
-        <section id="inicio-urgentes"></section>
-        <section id="inicio-avisos"></section>
-        <section id="categorias" class="categorias"></section>
-        <section id="resumen" class="resumen"></section>
-        <section id="inicio-equipo"></section>
-        <section id="inicio-empresa"></section>
-        <section id="inicio-notif"></section>
+        <div class="home-col home-izq">
+          <section id="inicio-hoy"></section>
+          <section id="inicio-urgentes"></section>
+          <section id="inicio-avisos"></section>
+        </div>
+        <div class="home-col home-der">
+          <section id="categorias" class="categorias"></section>
+          <section id="resumen" class="resumen"></section>
+          <section id="inicio-equipo"></section>
+          <section id="inicio-empresa"></section>
+          <section id="inicio-notif"></section>
+        </div>
       </section>
 
       <!-- CALENDARIO: mes completo con eventos y pendientes -->
@@ -289,11 +296,12 @@
     </form>
   </dialog>
 
-  <script src="assets/logo.js?v=105"></script>
-  <script src="assets/config.js?v=105"></script>
-  <script src="js/db.js?v=105"></script>
-  <script src="js/alcance.js?v=105"></script>
-  <script src="js/app.js?v=105"></script>
-  <script src="js/i18n.js?v=105"></script>
+  <script src="assets/logo.js?v=106"></script>
+  <script src="assets/config.js?v=106"></script>
+  <script src="js/db.js?v=106"></script>
+  <script src="js/alcance.js?v=106"></script>
+  <script src="js/app.js?v=106"></script>
+  <script src="js/i18n.js?v=106"></script>
+  <script src="js/iconos.js?v=106"></script>
 </body>
 </html>

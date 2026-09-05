@@ -2653,3 +2653,77 @@ video.foto-mini { background: #000; }
 .alc-fix{display:inline-flex;gap:.35rem;align-items:center;flex-wrap:wrap}
 .alc-fix-in{max-width:220px}
 .alc-op.alc-auto{border-color:var(--mp-blue);color:var(--mp-blue)}
+
+/* ===========================================================================
+   ESCRITORIO (pantallas anchas): menú fijo a la izquierda, el contenido ancho
+   y a dos columnas donde ayuda. En el teléfono nada de esto aplica.
+   =========================================================================== */
+.lateral { display: none; }
+.alc-dos { display: block; }
+@media (min-width: 1024px) {
+  html { font-size: 15.5px; }
+  #vista-app {
+    display: grid;
+    grid-template-columns: 236px minmax(0, 1fr);
+    grid-template-rows: auto auto 1fr auto;
+  }
+  #vista-app > .membrete { grid-column: 1 / -1; }
+  #vista-app > .lateral { grid-column: 1; grid-row: 2 / 5; }
+  #vista-app > .toolbar, #vista-app > main, #vista-app > .pie { grid-column: 2; }
+
+  /* el menú: las mismas losetas, en columna, con el mismo azul profundo */
+  .lateral {
+    display: flex; flex-direction: column; gap: .25rem;
+    position: sticky; top: 0; align-self: start; height: 100vh; height: 100dvh;
+    padding: 1.1rem .8rem; box-sizing: border-box;
+    background: linear-gradient(180deg, #0B2036 0%, #071A2E 100%);
+    border-right: 1px solid rgba(34,232,224,.14);
+  }
+  .lat-item {
+    display: flex; align-items: center; gap: .75rem;
+    background: transparent; border: 1px solid transparent; border-radius: 12px;
+    color: #C9DDEA; font: inherit; font-weight: 600; font-size: .93rem;
+    padding: .62rem .8rem; text-align: left; cursor: pointer; width: 100%;
+    transition: background .15s, color .15s, border-color .15s;
+  }
+  .lat-item svg { width: 22px; height: 22px; flex: none; color: var(--mp-cyan); filter: drop-shadow(0 0 6px rgba(34,232,224,.45)); }
+  .lat-item:hover { background: rgba(255,255,255,.06); color: #fff; }
+  .lat-item.activo { background: rgba(34,232,224,.12); border-color: rgba(34,232,224,.35); color: #fff; }
+  .lat-sep { height: 1px; background: rgba(255,255,255,.08); margin: .5rem .3rem .6rem; }
+  .botones-rapidos { display: none; }
+
+  /* el contenido: pegado al menú, ancho de verdad */
+  .toolbar { max-width: none; margin: 0; padding: 1.3rem 36px 0; }
+  .toolbar h1 { font-size: 1.7rem; }
+  .container { max-width: none; margin: 0; padding: 1rem 36px 2.5rem; }
+  .container > section { max-width: 1240px; }
+
+  /* inicio a dos columnas: lo del día a la izquierda, las obras a la derecha */
+  #vista-home { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: 0 1.4rem; align-items: start; }
+  .home-col { min-width: 0; }
+  #vista-home .categorias { grid-template-columns: 1fr; }
+  #vista-home .resumen { grid-template-columns: repeat(2, 1fr); }
+
+  /* las fichas y los paneles del dueño ya no van en una columna de teléfono */
+  #detalle { max-width: 1080px; margin: 0; }
+  .etapas { max-width: 820px; }
+  .lista { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #estimador-panel, #propuesta-panel, #cierre-panel, #levantamiento-panel, #gastos-panel { max-width: 1100px; }
+  #estimador-panel .est-form, .est-nuevo { max-width: none; }
+
+  /* escribir el alcance: la hoja a la izquierda, lo que entendí a la derecha */
+  .alc-dos { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.2rem; align-items: start; }
+  .alc-izq { position: sticky; top: 1rem; }
+  .alc-texto { min-height: 62vh; }
+  .alc-cierra-dos { grid-column: 1 / -1; }
+  .alc-par { grid-template-columns: 1fr 1.25fr; }
+}
+
+/* Los iconos de línea que sustituyen a los emojis (js/iconos.js) */
+.ico { display: inline-block; width: 1.05em; height: 1.05em; vertical-align: -0.18em; line-height: 0; margin-right: .3em; color: currentColor; }
+.ico svg { width: 100%; height: 100%; }
+.ico:last-child { margin-right: 0; }
+button > .ico:only-child, .lev-btn-ico > .ico { margin-right: 0; width: 1.15em; height: 1.15em; }
+.inicio-card-titulo .ico, .cal-form-titulo .ico, h3 .ico, h4 .ico, summary .ico { color: var(--mp-blue); width: 1.15em; height: 1.15em; vertical-align: -0.22em; }
+.ico-rojo, .ico-ambar, .ico-verde, .ico-gris { width: .8em; height: .8em; vertical-align: -0.05em; margin-right: .35em; }
+.recibo-chip .ico, .chk-avance .ico, .alcance-estado .ico, .cl-chip-aprobado .ico { width: .95em; height: .95em; }
