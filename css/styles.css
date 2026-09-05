@@ -2655,8 +2655,9 @@ video.foto-mini { background: #000; }
 .alc-op.alc-auto{border-color:var(--mp-blue);color:var(--mp-blue)}
 
 /* ===========================================================================
-   ESCRITORIO (pantallas anchas): menú fijo a la izquierda, el contenido ancho
-   y a dos columnas donde ayuda. En el teléfono nada de esto aplica.
+   ESCRITORIO (pantallas anchas): marco de borde a borde, menú fijo a la
+   izquierda, el contenido ancho y a dos columnas donde ayuda. En el teléfono
+   nada de esto aplica. Referencia: paneles tipo Linear / Stripe / QuickBooks.
    =========================================================================== */
 .lateral { display: none; }
 .alc-dos { display: block; }
@@ -2664,26 +2665,38 @@ video.foto-mini { background: #000; }
   html { font-size: 15.5px; }
   #vista-app {
     display: grid;
-    grid-template-columns: 236px minmax(0, 1fr);
+    grid-template-columns: 256px minmax(0, 1fr);
     grid-template-rows: auto auto 1fr auto;
   }
   #vista-app > .membrete { grid-column: 1 / -1; }
   #vista-app > .lateral { grid-column: 1; grid-row: 2 / 5; }
   #vista-app > .toolbar, #vista-app > main, #vista-app > .pie { grid-column: 2; }
 
-  /* el menú: las mismas losetas, en columna, con el mismo azul profundo */
+  /* ---- el marco de arriba: marca a la izquierda del todo, acciones a la derecha del todo */
+  .membrete { border-bottom: 1px solid rgba(34,232,224,.16); }
+  .membrete-inner { max-width: none; margin: 0; padding: .55rem 24px .55rem 20px; gap: .9rem; min-height: 64px; }
+  .membrete-logo { width: 42px; height: 42px; border-radius: 11px; filter: none;
+                   box-shadow: 0 0 0 1px rgba(34,232,224,.35), 0 0 14px rgba(34,232,224,.18); }
+  .wordmark { font-size: 1.22rem; letter-spacing: .01em; }
+  .wordmark-sub { font-size: .66rem; letter-spacing: .16em; }
+  .membrete-der { margin-left: auto; gap: .55rem; }
+  .btn-chat, .btn-idioma { width: 40px; height: 40px; }
+  .usuario-chip { font-size: .9rem; padding: .35rem .75rem; border: 1px solid rgba(255,255,255,.14); border-radius: 999px; }
+  .btn-salir { height: 38px; padding: 0 1rem; }
+
+  /* ---- el menú: las mismas losetas, en columna */
   .lateral {
-    display: flex; flex-direction: column; gap: .25rem;
+    display: flex; flex-direction: column; gap: .2rem;
     position: sticky; top: 0; align-self: start; height: 100vh; height: 100dvh;
-    padding: 1.1rem .8rem; box-sizing: border-box;
+    padding: 1rem .75rem 1.2rem; box-sizing: border-box;
     background: linear-gradient(180deg, #0B2036 0%, #071A2E 100%);
     border-right: 1px solid rgba(34,232,224,.14);
   }
   .lat-item {
-    display: flex; align-items: center; gap: .75rem;
+    display: flex; align-items: center; gap: .8rem;
     background: transparent; border: 1px solid transparent; border-radius: 12px;
-    color: #C9DDEA; font: inherit; font-weight: 600; font-size: .93rem;
-    padding: .62rem .8rem; text-align: left; cursor: pointer; width: 100%;
+    color: #C9DDEA; font: inherit; font-weight: 600; font-size: .95rem; line-height: 1.15;
+    padding: .66rem .85rem; text-align: left; cursor: pointer; width: 100%;
     transition: background .15s, color .15s, border-color .15s;
   }
   .lat-item svg { width: 22px; height: 22px; flex: none; color: var(--mp-cyan); filter: drop-shadow(0 0 6px rgba(34,232,224,.45)); }
@@ -2692,31 +2705,48 @@ video.foto-mini { background: #000; }
   .lat-sep { height: 1px; background: rgba(255,255,255,.08); margin: .5rem .3rem .6rem; }
   .botones-rapidos { display: none; }
 
-  /* el contenido: pegado al menú, ancho de verdad */
-  .toolbar { max-width: none; margin: 0; padding: 1.3rem 36px 0; }
-  .toolbar h1 { font-size: 1.7rem; }
-  .container { max-width: none; margin: 0; padding: 1rem 36px 2.5rem; }
-  .container > section { max-width: 1240px; }
+  /* ---- la cabecera de cada pantalla: título a la izquierda, acciones a la derecha, de borde a borde */
+  .toolbar { max-width: none; margin: 0; padding: 1.35rem 40px 1rem; border-bottom: 1px solid rgba(11,32,54,.07); }
+  .toolbar h1 { font-size: 1.75rem; }
+  .btn-nuevo { margin-left: auto; }
 
-  /* inicio a dos columnas: lo del día a la izquierda, las obras a la derecha */
-  #vista-home { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: 0 1.4rem; align-items: start; }
+  /* ---- el contenido: todo el ancho, con aire a los lados */
+  .container { max-width: none; margin: 0; padding: 1.4rem 40px 3rem; }
+  .container > section { max-width: none; }
+
+  /* inicio: lo del día a la izquierda, las obras a la derecha */
+  #vista-home { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 0 1.6rem; align-items: start; }
   .home-col { min-width: 0; }
   #vista-home .categorias { grid-template-columns: 1fr; }
   #vista-home .resumen { grid-template-columns: repeat(2, 1fr); }
 
-  /* las fichas y los paneles del dueño ya no van en una columna de teléfono */
-  #detalle { max-width: 1080px; margin: 0; }
-  .etapas { max-width: 820px; }
-  .lista { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  #estimador-panel, #propuesta-panel, #cierre-panel, #levantamiento-panel, #gastos-panel { max-width: 1100px; }
+  /* las listas llenan el ancho con tarjetas de tamaño fijo */
+  .etapas { max-width: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: .8rem; }
+  .lista { grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); }
+
+  /* la ficha del proyecto: cabecera y dinero arriba, y las secciones en dos columnas */
+  #detalle { max-width: none; margin: 0; }
+  .proyecto-detalle { columns: 2; column-gap: 2.4rem; }
+  .proyecto-detalle > .detalle-seccion { break-inside: avoid; page-break-inside: avoid; }
+  .proyecto-detalle > .detalle-seccion:first-child { margin-top: 0; }
+
+  /* paneles del dueño */
+  #estimador-panel, #propuesta-panel, #cierre-panel, #levantamiento-panel, #gastos-panel { max-width: none; }
   #estimador-panel .est-form, .est-nuevo { max-width: none; }
 
   /* escribir el alcance: la hoja a la izquierda, lo que entendí a la derecha */
-  .alc-dos { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.2rem; align-items: start; }
+  .alc-dos { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); gap: 1.4rem; align-items: start; }
   .alc-izq { position: sticky; top: 1rem; }
-  .alc-texto { min-height: 62vh; }
+  .alc-texto { min-height: 64vh; }
   .alc-cierra-dos { grid-column: 1 / -1; }
   .alc-par { grid-template-columns: 1fr 1.25fr; }
+}
+@media (min-width: 1500px) {
+  html { font-size: 16px; }
+  #vista-app { grid-template-columns: 272px minmax(0, 1fr); }
+  .toolbar, .container { padding-left: 48px; padding-right: 48px; }
+  #vista-home { grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: 0 2rem; }
+  .lista { grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); }
 }
 
 /* Los iconos de línea que sustituyen a los emojis (js/iconos.js) */
