@@ -7816,6 +7816,14 @@ Power done right the first time. ⚡`;
       };
       if (A.contrato) { campos.armado_el = new Date().toISOString(); campos.archivo = A.contrato.archivo; }
 
+      // El email y el teléfono del cliente, si vienen en la hoja, se guardan en el
+      // proyecto desde el principio (sirven para mandarle el portal y su copia firmada)
+      try {
+        const cambiosProy = {};
+        if (d.email && /@/.test(d.email) && !A.proyecto.cliente_email) cambiosProy.cliente_email = d.email.trim();
+        if (d.telefono && /\d{7}/.test(d.telefono.replace(/\D/g, "")) && !A.proyecto.cliente_tel) cambiosProy.cliente_tel = d.telefono.trim();
+        if (Object.keys(cambiosProy).length) { await DB.cambiarProyecto(A.proyecto.id, cambiosProy); Object.assign(A.proyecto, cambiosProy); }
+      } catch { /* no frena el guardado del alcance */ }
       if (A.propuesta) {
         await DB.guardarAlcance(A.propuesta.id, campos);
       } else {

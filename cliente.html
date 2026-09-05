@@ -66,6 +66,27 @@
       .container, .membrete-inner { max-width: 640px; margin-left: auto; margin-right: auto; }
       .pie { text-align: center; }
     }
+    /* Escritorio de verdad: dos columnas. A la izquierda lo que hay que leer y
+       firmar; a la derecha la agenda, las licencias y el WhatsApp. */
+    @media (min-width: 1024px) {
+      html { font-size: 16px; }
+      /* El portal no tiene el menú lateral de la app: una sola columna de página */
+      #vista-app { display: flex; flex-direction: column; }
+      #vista-app > .membrete, #vista-app > main, #vista-app > .pie { grid-column: auto; width: 100%; align-self: stretch; }
+      .membrete-inner { max-width: 1200px; padding-left: 1.5rem; padding-right: 1.5rem; }
+      .container { max-width: 1200px; padding-left: 1.5rem; padding-right: 1.5rem; }
+      #cl-panel { display: grid; grid-template-columns: minmax(0, 1fr) 360px; column-gap: 1.4rem; align-items: start; }
+      .cl-hero, #cl-panel > .cal-panel-card, .cl-cargando { grid-column: 1 / -1; }
+      .cl-col-main { grid-column: 1; }
+      .cl-col-side { grid-column: 2; }
+      .cl-col-side { position: sticky; top: 1rem; }
+      .cl-col-side .cl-wa { margin-top: .4rem; }
+      .cl-firma-caja { max-width: 560px; }
+    }
+    @media (min-width: 1400px) {
+      .membrete-inner, .container { max-width: 1320px; }
+      #cl-panel { grid-template-columns: minmax(0, 1fr) 400px; column-gap: 1.8rem; }
+    }
   </style>
 </head>
 <body>
@@ -460,22 +481,27 @@
           (total ? '<div class="barra horas-barra"><div class="barra-relleno ' + (pct >= 100 ? "ok" : "") + '" style="width:' + pct + '%"></div></div>' +
           '<div class="alcance-estado" style="text-align:center;margin-top:.3rem"><strong>' + pct + '%</strong> ' + esc(TXT.complete) + ' · ' + hechas + ' ' + esc(TXT.de) + ' ' + total + ' ' + esc(TXT.items) + '</div>' : '') +
         '</div>' +
+        '<div class="cl-col cl-col-main">' +
         opciones +
         (pendientesDec.length ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("todos", TXT.todos) + '</div>' + todos + '</div>' : '') +
         (fotos ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("fotos", TXT.fotosT) + '</div><div class="cl-fotos">' + fotos + '</div></div>' : '') +
         (total ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("alcance", TXT.alcance) + '</div>' + lista + '</div>' : '') +
-        (insp ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("insp", TXT.inspT) + '</div>' + insp + '</div>' : '') +
-        (prox ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("prox", TXT.proxT) + '</div>' + prox + '</div>' : '') +
-        (diario ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("actividad", TXT.actividad) + '</div>' + diario + '</div>' : '') +
-        (pagos ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("pagos", TXT.pagosT) + '</div>' + pagos + '</div>' : '') +
         (docs ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("docs", TXT.docsT) + '</div>' + docs + '</div>' : '') +
-        (emp ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("docs", TXT.licT) + '</div>' + emp + '</div>' : '') +
+        (pagos ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("pagos", TXT.pagosT) + '</div>' + pagos + '</div>' : '') +
         (p.estado === "completado" ? '<div class="cal-panel-card" style="text-align:center">' +
           '<div class="cal-form-titulo">' + tit("garantia", TXT.garantiaT) + '</div>' +
           '<p class="alcance-estado" style="font-size:0.9rem">' + esc(TXT.garantia) + '</p>' +
           (RESENA ? '<a class="doc-link" target="_blank" rel="noopener" href="' + esc(RESENA) + '">' + esc(TXT.resena) + '</a>' : '') +
           '</div>' : '') +
-        '<a class="cl-wa" target="_blank" rel="noopener" href="' + WHATSAPP + '">' + esc(TXT.wa) + '</a>';
+        '</div>' +
+        // En el escritorio esto va en la columna de la derecha; en el teléfono, debajo
+        '<div class="cl-col cl-col-side">' +
+        (prox ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("prox", TXT.proxT) + '</div>' + prox + '</div>' : '') +
+        (insp ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("insp", TXT.inspT) + '</div>' + insp + '</div>' : '') +
+        (diario ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("actividad", TXT.actividad) + '</div>' + diario + '</div>' : '') +
+        (emp ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("docs", TXT.licT) + '</div>' + emp + '</div>' : '') +
+        '<a class="cl-wa" target="_blank" rel="noopener" href="' + WHATSAPP + '">' + esc(TXT.wa) + '</a>' +
+        '</div>';
 
       caja.querySelectorAll("[data-aprobar]").forEach(function (b) {
         b.addEventListener("click", function () { mandar({ accion: "aprobar_doc", id: Number(b.dataset.aprobar) }, b); });

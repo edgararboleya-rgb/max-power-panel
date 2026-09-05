@@ -76,6 +76,8 @@
     cliente:            ["cliente", "client", "customer", "owner", "property owner", "prepared for", "client name"],
     segundo_firmante:   ["segundo firmante", "segunda firma", "firman", "second signer"],
     atencion:           ["atencion", "attention", "contacto", "attn", "contact"],
+    email:              ["email", "e-mail", "correo", "client email", "customer email", "mail"],
+    telefono:           ["telefono", "tel", "phone", "cell", "celular", "mobile", "client phone", "customer phone"],
     dueno:              ["dueno de la casa", "dueno", "homeowner", "propietario"],
     direccion:          ["direccion", "address", "job address", "site address", "property address", "project address", "job site", "site"],
     ciudad:             ["ciudad", "jurisdiccion", "city", "jurisdiction", "ahj", "permit jurisdiction", "authority having jurisdiction"],
@@ -90,7 +92,7 @@
   };
   // Datos de la cabecera del chat que no hacen falta (la plantilla los pone sola)
   const CLAVES_IGNORAR = ["prepared by", "preparado por", "proposal", "proposal no", "proposal number", "proposal #", "date", "proposal date",
-                          "phone", "telefono", "email", "e-mail", "license", "licencia", "contractor", "company", "field", "value", "item",
+                          "license", "licencia", "contractor", "company", "field", "value", "item",
                           "description", "milestone", "amount", "trigger", "no", "#", "rev", "revision", "version", "page"];
   // Líneas del membrete del chat: se saltan sin decir nada
   const MEMBRETE = /max power electrical|EC13016045|967-9311|mxpes\.com|licensed\s*[•·|]\s*insured|^scope of work\s*(&|and)\s*proposal$|^proposal$|^electrical proposal$/i;
