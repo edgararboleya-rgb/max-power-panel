@@ -7305,7 +7305,14 @@ Power done right the first time. ⚡`;
         <h3>Ya está en el portal del cliente ✓</h3>
         <p class="lev-nota">${esc((enPortal.titulo || "El contrato"))} está subido y esperando la firma. Mándale el enlace al cliente:
           desde la ficha del proyecto, o con el botón de abajo.</p>
-        <div class="alc-botones"><button class="accion" id="alc-copiar-enlace">Copiar el enlace del cliente</button></div>
+        <div class="alc-botones">
+          <button class="accion" id="alc-enviar-email">Mandar por email</button>
+          <button class="accion secundaria" id="alc-enviar-texto">Mandar por texto</button>
+          <button class="accion secundaria" id="alc-copiar-enlace">Copiar el enlace</button>
+        </div>
+        <p class="lev-nota">${A.proyecto.cliente_email ? `Email del cliente: <b>${esc(A.proyecto.cliente_email)}</b>.` : "El proyecto no tiene email del cliente: al tocar «Mandar por email» te lo pido y lo guardo."}
+          Se abre tu correo (o tus mensajes) con el texto y el enlace ya escritos; solo tienes que darle a enviar.</p>
+        <div class="alc-botones alc-cierra-dos"><button class="accion" id="alc-terminado">Terminado — ir al proyecto</button></div>
         <p class="lev-nota">Si cambiaste algo y quieres subir otra versión, dímelo: hay que retirar la anterior primero para que el cliente no vea dos.</p>
       </div>`;
         return `
@@ -7413,6 +7420,50 @@ Power done right the first time. ⚡`;
     if (bBajar) bBajar.addEventListener("click", alcBajar);
     const bImpr = $("alc-imprimir");
     if (bImpr) bImpr.addEventListener("click", alcImprimir);
+    // Mandarle el portal al cliente: se abre el correo o los mensajes con todo escrito
+    const alcMensaje = async () => {
+      const llave = await DB.llavePortal(alcActivo.proyecto.id);
+      const url = `https://edgararboleya-rgb.github.io/max-power-panel/cliente.html?t=${llave}`;
+      const nombre = String(alcActivo.leido && alcActivo.leido.datos.cliente || alcActivo.proyecto.cliente || "").split(/\s+/)[0] || "";
+      const cuantos = (alcActivo.variantes || []).filter(v => v.alcance_estado === "armado" || v.estado === "enviada").length;
+      const cuerpo = `Hi ${nombre},\n\nYour proposal from Max Power Electrical Solutions is ready in your client portal:\n${url}\n\n` +
+        (cuantos > 1 ? `There are ${cuantos} scope options; pick the one you want, review it and sign at the bottom.` : `Open the link, review the Scope of Work and sign at the bottom.`) +
+        `\nAfter signing you have three business days to cancel at no cost.\n\nIf you have any questions, call or text me at (305) 967-9311.\n\nEdgar Arboleya\nMax Power Electrical Solutions, Inc.\nFL EC13016045`;
+      return { url, asunto: `Your proposal — ${alcActivo.proyecto.nombre}`, cuerpo };
+    };
+    const bMail = $("alc-enviar-email");
+    if (bMail) bMail.addEventListener("click", async () => {
+      try {
+        let email = alcActivo.proyecto.cliente_email || "";
+        if (!email) {
+          const nuevo = prompt("Email del cliente:", "");
+          if (nuevo === null) return;
+          email = nuevo.trim();
+          if (email) { try { await DB.cambiarProyecto(alcActivo.proyecto.id, { cliente_email: email }); alcActivo.proyecto.cliente_email = email; } catch { /* se manda igual */ } }
+        }
+        const m = await alcMensaje();
+        location.href = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(m.asunto)}&body=${encodeURIComponent(m.cuerpo)}`;
+        avisar("Se abre tu correo con el mensaje listo: dale a enviar");
+      } catch (e) { avisar("No pude preparar el email: " + e.message, true); }
+    });
+    const bSms = $("alc-enviar-texto");
+    if (bSms) bSms.addEventListener("click", async () => {
+      try {
+        const tel = String(alcActivo.proyecto.cliente_tel || (String(alcActivo.proyecto.cliente || "").match(/\d{3}[-.\s]?\d{3}[-.\s]?\d{4}/) || [""])[0]).replace(/[^\d+]/g, "");
+        const m = await alcMensaje();
+        const corto = `Hi ${m.cuerpo.split(",")[0].replace(/^Hi\s*/, "")}, your proposal from Max Power is ready in your client portal: ${m.url} — open it, review the scope and sign at the bottom. Edgar, (305) 967-9311`;
+        location.href = `sms:${tel}${/iPhone|iPad/.test(navigator.userAgent) ? "&" : "?"}body=${encodeURIComponent(corto)}`;
+        avisar(tel ? "Se abren tus mensajes con el texto listo" : "Se abren tus mensajes: pon el número del cliente");
+      } catch (e) { avisar("No pude preparar el texto: " + e.message, true); }
+    });
+    const bFin = $("alc-terminado");
+    if (bFin) bFin.addEventListener("click", async () => {
+      const id = alcActivo.proyecto.id;
+      try { await recargar(id); } catch { /* con lo que hay */ }
+      alcActivo = null;
+      irDetalle(id);
+      avisar("Listo ✓ — el contrato está en el portal del cliente");
+    });
     const bEnlace = $("alc-copiar-enlace");
     if (bEnlace) bEnlace.addEventListener("click", async () => {
       try { const llave = await DB.llavePortal(alcActivo.proyecto.id);
