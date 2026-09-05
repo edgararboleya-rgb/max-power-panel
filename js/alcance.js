@@ -1279,8 +1279,11 @@
       // Un PDF no se puede editar por dentro: el portal NO puede escribir en el
       // contrato qué eligió el cliente. Así que el cuerpo remite al certificado
       // que el portal añade al firmar, y ahí va el precio de verdad.
-      OPCION_ACEPTADA: "as selected by the Client in the signing portal",
-      TOTAL_ACEPTADO: "the amount stated on the Acceptance Certificate attached to this document"
+      // Sin añadidos no hay nada que elegir: el precio aceptado es el de la propuesta.
+      OPCION_ACEPTADA: cta.addons.length ? "as selected by the Client in the signing portal"
+                                         : "Base scope as described in Sections 1\u20134 (no optional add-ons)",
+      TOTAL_ACEPTADO: cta.addons.length ? "the amount stated on the Acceptance Certificate attached to this document"
+                                        : "$" + dinero(cta.base)
     };
 
     const items = (S.items || []).map((it, k) => ({
