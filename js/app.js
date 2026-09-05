@@ -7297,7 +7297,18 @@ Power done right the first time. ⚡`;
         <button class="accion secundaria" id="alc-bajar">Bajar el contrato (.html)</button>`}
         <button class="accion secundaria" id="alc-guardar">Guardar en la propuesta</button>
       </div>
-      ${C.problemas.length ? "" : `
+      ${C.problemas.length ? "" : (() => {
+        // ¿este alcance ya tiene su contrato en el portal esperando firma?
+        const enPortal = A.subido || ((A.proyecto.docs || []).find(d => A.propuesta && d.propuestaId === A.propuesta.id && d.pideFirma && !d.firmadoEl) || null);
+        if (enPortal) return `
+      <div class="alc-entendi alc-listo" style="margin-top:.9rem">
+        <h3>Ya está en el portal del cliente ✓</h3>
+        <p class="lev-nota">${esc((enPortal.titulo || "El contrato"))} está subido y esperando la firma. Mándale el enlace al cliente:
+          desde la ficha del proyecto, o con el botón de abajo.</p>
+        <div class="alc-botones"><button class="accion" id="alc-copiar-enlace">Copiar el enlace del cliente</button></div>
+        <p class="lev-nota">Si cambiaste algo y quieres subir otra versión, dímelo: hay que retirar la anterior primero para que el cliente no vea dos.</p>
+      </div>`;
+        return `
       <div class="alc-entendi" style="margin-top:.9rem">
         <h3>Mandárselo al cliente</h3>
         <p class="lev-nota">1) Toca <b>Imprimir a PDF</b>: se abre el contrato con la ventana de imprimir.
@@ -7309,7 +7320,7 @@ Power done right the first time. ⚡`;
           <button class="accion" id="alc-al-portal"${A.propuesta ? "" : " disabled"}>Subir el PDF al portal</button>
         </div>
         ${A.propuesta ? "" : `<p class="lev-nota">Guarda primero el alcance.</p>`}
-      </div>`}`;
+      </div>`; })()}`;
   }
 
   // ------------------------------------------------------------- los engancHES
@@ -7402,6 +7413,14 @@ Power done right the first time. ⚡`;
     if (bBajar) bBajar.addEventListener("click", alcBajar);
     const bImpr = $("alc-imprimir");
     if (bImpr) bImpr.addEventListener("click", alcImprimir);
+    const bEnlace = $("alc-copiar-enlace");
+    if (bEnlace) bEnlace.addEventListener("click", async () => {
+      try { const llave = await DB.llavePortal(alcActivo.proyecto.id);
+            const url = `https://edgararboleya-rgb.github.io/max-power-panel/cliente.html?t=${llave}`;
+            try { await navigator.clipboard.writeText(url); avisar("Enlace copiado ✓ — pégaselo al cliente"); }
+            catch { avisar("El enlace del cliente: " + url); } }
+      catch (e) { avisar("No pude sacar el enlace: " + e.message, true); }
+    });
     const bGuardar = $("alc-guardar");
     if (bGuardar) bGuardar.addEventListener("click", alcGuardarNube);
     const bPortal = $("alc-al-portal");
@@ -7709,11 +7728,16 @@ Power done right the first time. ⚡`;
       A.variantes = alcVariantesDe(A.proyecto.id);
       const fresca = A.variantes.find(v => v.id === A.propuesta.id);
       if (fresca) A.propuesta = fresca;
+      A.subido = { titulo };
       pintarAlcance();
       const url = `https://edgararboleya-rgb.github.io/max-power-panel/cliente.html?t=${llave}`;
       try { await navigator.clipboard.writeText(url); avisar("Subido ✓ — el enlace del cliente quedó copiado"); }
       catch { avisar("Subido ✓ — el enlace del cliente: " + url); }
     } catch (e) {
+      if (e.crudo && /23505|ux_un_contrato_vivo/.test(String(e.crudo)) || /ya estaba guardado/.test(e.message)) {
+        A.subido = { titulo: "El contrato" }; pintarAlcance();
+        avisar("Este alcance ya tiene su contrato en el portal esperando firma. No hace falta subirlo otra vez.", true); return;
+      }
       avisar("No se pudo subir: " + e.message, true);
       btn.disabled = false; btn.textContent = "Subir el PDF al portal";
     }

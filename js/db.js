@@ -366,7 +366,7 @@
           id: f.id, num: f.num, fecha: fechaCorta(f.fecha), fechaISO: f.fecha || "",
           monto: Number(f.monto), pagada: !!f.pagada
         })),
-        docs: docs.filter(d => d.clase === "doc").map(d => ({ id: d.id, titulo: d.titulo, url: d.url, ruta: d.ruta || "", portal: !!d.portal,
+        docs: docs.filter(d => d.clase === "doc").map(d => ({ id: d.id, titulo: d.titulo, url: d.url, ruta: d.ruta || "", portal: !!d.portal, propuestaId: d.propuesta_id || null,
           pideAprobacion: !!d.pide_aprobacion, aprobadoEl: d.aprobado_el ? String(d.aprobado_el).slice(0, 10) : "",
           pideFirma: !!d.pide_firma, firmadoEl: d.firmado_el ? String(d.firmado_el).slice(0, 10) : "", firmaNombre: d.firma_nombre || "",
           vistoEl: d.visto_el ? String(d.visto_el).slice(0, 10) : "",
