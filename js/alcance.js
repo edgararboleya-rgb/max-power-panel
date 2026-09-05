@@ -29,36 +29,71 @@
   // ---------------------------------------------------------- títulos y alias
   const SECCIONES = {
     datos:      ["datos", "trabajo"],
-    hoy:        ["hoy", "lo que hay", "existente", "existing", "existing conditions", "today", "what exists"],
-    cambia:     ["cambia", "que cambia", "nuevo", "new layout", "changes", "what changes", "new"],
+    hoy:        ["hoy", "lo que hay", "existente", "existing", "existing conditions", "today", "what exists",
+                 "project objective and background", "project objective", "objective and background", "background",
+                 "project background", "site conditions", "existing site conditions", "overview", "project overview", "general"],
+    cambia:     ["cambia", "que cambia", "nuevo", "new layout", "changes", "what changes", "new", "proposed layout", "proposed work", "new work"],
     falta:      ["falta", "lo que falta", "sin datos", "falta informacion", "basis", "basis of information", "missing", "unknowns", "not verified"],
-    alcance:    ["alcance", "incluye", "scope", "included", "scope of work", "work included"],
-    no_incluye: ["no incluye", "excluye", "exclusiones", "not included", "fuera", "exclusions", "excluded", "not in scope"],
-    opciones:   ["opciones", "opcionales", "extras", "add-ons", "addons", "options", "optional add-ons", "optional"],
-    condiciones:["condiciones", "clausulas", "interruptores", "conditions"],
-    codigo:     ["codigo", "nec", "code"],
-    notas:      ["notas", "nota", "para mi", "notes", "note"]
+    alcance:    ["alcance", "incluye", "scope", "included", "scope of work", "work included", "scope of work included", "work to be performed", "description of work"],
+    no_incluye: ["no incluye", "excluye", "exclusiones", "not included", "fuera", "exclusions", "excluded", "not in scope",
+                 "scope of work not included", "work not included", "not included in this proposal", "exclusions and clarifications"],
+    opciones:   ["opciones", "opcionales", "extras", "add-ons", "addons", "options", "optional add-ons", "optional", "optional add ons", "alternates"],
+    precio_detalle: ["price", "pricing", "contract price", "lump sum price", "proposal price", "investment", "price and optional add-ons", "price and payment", "cost"],
+    pagos_detalle:  ["payment schedule", "payments", "payment terms", "payment milestones", "schedule of payments", "milestones", "payment"],
+    // Lo que el chat escribe y la plantilla ya trae: se salta sin ruido
+    ignorar:    ["warranty", "terms", "terms and conditions", "general terms", "general conditions", "acceptance", "signature", "signatures",
+                 "authorization", "schedule", "timeline", "permits and inspections", "permit and inspections", "permitting", "inspections",
+                 "general provisions", "contractor", "prepared by", "contact", "legal", "insurance", "change orders", "limitations", "disclaimer"],
+    condiciones:["condiciones", "clausulas", "interruptores", "conditions", "assumptions", "assumptions and conditions", "clarifications", "assumptions and clarifications"],
+    codigo:     ["codigo", "nec", "code", "applicable code", "applicable codes", "code compliance", "codes", "code references"],
+    notas:      ["notas", "nota", "para mi", "notes", "note", "internal notes"]
   };
   const TITULO_DE = {};
-  Object.entries(SECCIONES).forEach(([k, alias]) => alias.forEach(a => { TITULO_DE[a] = k; }));
+  Object.entries(SECCIONES).forEach(([k, alias]) => alias.forEach(a => { TITULO_DE[normaTitulo(a)] = k; }));
+  // "## 3. Scope of Work — NOT Included:" → "scope of work not included"
+  function normaTitulo(t) {
+    return norma(String(t || "")
+      .replace(/^#+\s*/, "").replace(/^(?:section\s+)?(?:\d+(?:\.\d+)*|[A-Z])[.)]?\s+/, "")
+      .replace(/&/g, " and ").replace(/[—–\-:/()]+/g, " ").replace(/\s+/g, " ").trim());
+  }
+  function seccionDe(linea) {
+    const n = normaTitulo(linea);
+    if (!n || n.length > 60 || /\bproposal\b/.test(n)) return null;
+    if (TITULO_DE[n]) return TITULO_DE[n];
+    // sin coincidencia exacta: por las palabras que mandan
+    if (/\b(not included|excluded|exclusions?)\b/.test(n)) return "no_incluye";
+    if (/\b(optional add ons?|add ons?|options)\b/.test(n)) return "opciones";
+    if (/\bpayment/.test(n)) return "pagos_detalle";
+    if (/\b(pric(e|ing)|lump sum|investment)\b/.test(n)) return "precio_detalle";
+    if (/\bscope of work\b/.test(n)) return "alcance";
+    if (/\b(background|objective|existing conditions?)\b/.test(n)) return "hoy";
+    if (/\b(warranty|terms|acceptance|signature|schedule|timeline|permit|inspection|insurance|change order|layout approval|legal|lien|cancel|consent|notice|coordination)/.test(n)) return "ignorar";
+    return null;
+  }
 
   // Claves "Nombre: valor" de la cabecera
   const CLAVES_DATOS = {
-    cliente:            ["cliente", "client"],
+    cliente:            ["cliente", "client", "customer", "owner", "property owner", "prepared for", "client name"],
     segundo_firmante:   ["segundo firmante", "segunda firma", "firman", "second signer"],
-    atencion:           ["atencion", "attention", "contacto"],
+    atencion:           ["atencion", "attention", "contacto", "attn", "contact"],
     dueno:              ["dueno de la casa", "dueno", "homeowner", "propietario"],
-    direccion:          ["direccion", "address"],
-    ciudad:             ["ciudad", "jurisdiccion", "city"],
-    proyecto:           ["proyecto", "nombre del trabajo", "project"],
+    direccion:          ["direccion", "address", "job address", "site address", "property address", "project address", "job site", "site"],
+    ciudad:             ["ciudad", "jurisdiccion", "city", "jurisdiction", "ahj", "permit jurisdiction", "authority having jurisdiction"],
+    proyecto:           ["proyecto", "nombre del trabajo", "project", "project name", "job", "job name", "work", "scope title"],
     firma:              ["firma", "con firma", "signature", "signed"],
     permiso:            ["permiso", "permit"],
     planos:             ["planos", "drawings"],
     ingenieria:         ["ingenieria", "engineering", "load calc"],
     utility:            ["utility", "compania electrica"],
     layout:             ["layout", "aprobacion de layout"],
-    vence:              ["vence", "vigencia", "vale", "valid", "expires", "valid for"]
+    vence:              ["vence", "vigencia", "vale", "valid", "expires", "valid for", "valid through", "valid until", "proposal valid", "expiration", "expiration date", "offer valid"]
   };
+  // Datos de la cabecera del chat que no hacen falta (la plantilla los pone sola)
+  const CLAVES_IGNORAR = ["prepared by", "preparado por", "proposal", "proposal no", "proposal number", "proposal #", "date", "proposal date",
+                          "phone", "telefono", "email", "e-mail", "license", "licencia", "contractor", "company", "field", "value", "item",
+                          "description", "milestone", "amount", "trigger", "no", "#", "rev", "revision", "version", "page"];
+  // Líneas del membrete del chat: se saltan sin decir nada
+  const MEMBRETE = /max power electrical|EC13016045|967-9311|mxpes\.com|licensed\s*[•·|]\s*insured|^scope of work\s*(&|and)\s*proposal$|^proposal$|^electrical proposal$/i;
   // Claves de dinero, que van en su propia sección
   const CLAVES_DINERO = { precio: ["precio", "total", "precio base", "price", "contract price", "base price", "lump sum"],
                           pagos:  ["pagos", "hitos", "milestones", "cobros", "payments", "payment schedule", "payment"] };
@@ -82,7 +117,7 @@
     no_excluir:         ["no excluir", "si hacemos", "quitar exclusion", "do not exclude", "remove exclusion"]
   };
   const buscaClave = (tabla, nombre) => {
-    const n = norma(nombre);
+    const n = norma(String(nombre || "").replace(/^#+\s*/, "").replace(/^\d+(?:\.\d+)*[.)]?\s+/, "").replace(/\s*[#:]\s*$/, ""));
     for (const [k, alias] of Object.entries(tabla)) if (alias.includes(n)) return k;
     return null;
   };
@@ -127,7 +162,7 @@
   // Lo que va pegado detrás de un número y lo convierte en MEDIDA, no en dinero:
   // "1,300 sq ft", "2,000 watts", "1,500 lbs". Con esto el año 1926 y los pies
   // cuadrados dejan de parecer precios.
-  const UNIDAD_TRAS = new RegExp("^\\s*(?:sq\\.?\\s*(?:ft|feet|foot|m)|sqft|sf|ft|feet|foot|pies|pie|in\\.?|inch(?:es)?|yd|yards?|mm|cm|km|mi|miles?|millas?" +
+  const UNIDAD_TRAS = new RegExp("^\\s*(?:sq\\.?\\s*(?:ft|feet|foot|m)|square\\s*(?:feet|foot|ft|meters?)|sqft|sf|ft|feet|foot|linear\\s*(?:feet|ft)|pies|pie|in\\.?|inch(?:es)?|yd|yards?|mm|cm|km|mi|miles?|millas?" +
     "|amp(?:s|erios?|eres?)?|volt(?:s|ios?)?|watt?s?|kw|kva|hp|lbs?|libras?|kg|gal(?:s|ones|lons)?|awg|mcm|kcmil|btu|seer|ton(?:s|eladas?)?|psi|rpm" +
     "|circuitos?|circuits?|luces|lights?|lamparas?|fixtures?|outlets?|tomas?|receptaculos?|switch(?:es)?|apagadores?|breakers?|espacios?|spaces?|polos?|poles?" +
     "|unidades?|units?|piezas?|pcs?|hrs?|horas?|hours?|dias?|days?|anos?|years?|sq|cu|%|\u00b0)\\b", "i");
@@ -182,6 +217,22 @@
 
     const err = (i, texto, extra) => R.errores.push(Object.assign({ linea: i + 1, texto }, extra || {}));
     const estaPerdonada = linea => perdonadas.has(norma(linea));
+    R.ignoradas = [];
+    // Pone una condición si Edgar no la escribió a mano (lo escrito a mano manda)
+    const C_set = (k, valor, i) => { if (R.condiciones[k] || !valor) return false; R.condiciones[k] = { valor: String(valor).trim().replace(/[.,;]$/, ""), linea: i + 1, pescada: true }; return true; };
+    // De las secciones que ya trae la plantilla (7, 9) se rescatan los datos que sí son de este trabajo
+    const pescar = (linea, i) => {
+      let m;
+      if ((m = linea.match(/pricing assumes\s+(.+?)\s+when max power mobilizes/i))) C_set("listo_rough", m[1], i);
+      else if ((m = linea.match(/performed in\s+\S+\s*(?:\(\d+\))?\s*phases?, and one \(1\) mobilization is included for each:\s*(.+?)\.\s/i))) C_set("fases", m[1].replace(/,\s*(?:and\s+)?/g, " / "), i);
+      else if ((m = linea.match(/pricing assumes\s+(.+?)\s+(?:are|is) accessible/i))) C_set("acceso", m[1], i);
+      else if ((m = linea.match(/(?:section 2\.(\d+)[^.]*?)?leaves openings in the existing\s+(.+?)\./i))) C_set("abrir", m[2] + (m[1] ? ", renglón " + m[1] : ""), i);
+      // "Owner Signature — Lee G. Borders Jr." → el segundo firmante
+      (linea.match(/signature\s*[—–-]\s*([^|]+?)(?=\s*\||$)/gi) || []).forEach(x => {
+        const nombre = x.replace(/^.*?signature\s*[—–-]\s*/i, "").trim();
+        if (nombre && !/arboleya|max power/i.test(nombre) && nombre !== R.datos.cliente && !R.datos.segundo_firmante && R.datos.cliente) R.datos.segundo_firmante = nombre;
+      });
+    };
 
     // Un número donde no van números. Si lleva $ es un error rojo; si solo lo
     // parece (podría ser una medida o un año) es un aviso ámbar que no bloquea
@@ -208,19 +259,45 @@
                              soloMarca: cruda.replace(m[0], "").replace(/^[\s\-*•\d.)]+/, "").trim() === "" });
     });
 
-    lineas.forEach((cruda, i) => {
-      // un .md del chat puede traer **negritas** o `código`: se leen como texto llano
-      const linea = cruda.replace(/\*\*|__|`/g, "").trim();
-      if (!linea || linea.startsWith("//") || linea.startsWith(">") || linea.startsWith("<!--")) return;
+    // Una sección que el chat escribe y la plantilla ya trae (Warranty, Terms…):
+    // se salta entera y se avisa UNA vez, no línea por línea.
+    const ignoradas = [];
+    // Una fila de tabla "| Milestone | Trigger | % | Amount |" con solo cabeceras
+    const esCabeceraTabla = celdas => celdas.every(c => CLAVES_IGNORAR.includes(norma(c)) || /^[-:\s]*$/.test(c));
 
-      // ¿es un título de sección?
-      const posible = TITULO_DE[norma(linea)];
-      if (posible) { sec = posible; itemActual = null; opcionActual = null; return; }
+    lineas.forEach((cruda, i) => {
+      // un .md del chat puede traer **negritas**, `código`, tablas y rayas: se lee como texto llano
+      let linea = cruda.replace(/\*\*|__|`/g, "").trim();
+      if (!linea || linea.startsWith("//") || linea.startsWith(">") || linea.startsWith("<!--")) return;
+      if (/^[-*_=]{3,}$/.test(linea)) return;                       // ---
+      if (/^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$/.test(linea)) return;   // |---|---|
+      let esTitulo = /^#{1,6}\s/.test(linea);
+      if (/^\|.*\|$/.test(linea) || (linea.split("|").length >= 3)) {   // fila de tabla
+        const celdas = linea.replace(/^\||\|$/g, "").split("|").map(c => c.trim()).filter(Boolean);
+        if (!celdas.length || esCabeceraTabla(celdas)) return;
+        if (celdas.length === 1) linea = celdas[0];
+        else if (celdas.length === 2) linea = celdas[0].replace(/:$/, "") + ": " + celdas[1];
+        else linea = celdas.join(" | ");
+      }
+      if (esTitulo) linea = linea.replace(/^#+\s*/, "");
+
+      // ¿es un título de sección? ("## 2. Scope of Work", "Hoy", "3) Not included:")
+      const posible = seccionDe(linea);
+      const pareceTitulo = esTitulo || /^(?:\d+[.)]\s+)?[^.:,]{2,45}:?$/.test(linea);
+      if (posible && (pareceTitulo || esTitulo)) {
+        if (posible === "ignorar") ignoradas.push({ linea: i + 1, titulo: linea.replace(/:$/, "") });
+        sec = posible; itemActual = null; opcionActual = null; return;
+      }
+      if (sec === "ignorar") { pescar(linea, i); return; }
+      if (MEMBRETE.test(linea)) return;                              // el membrete del chat
+      if (esTitulo && sec !== "alcance" && sec !== "opciones") linea = linea.replace(/^\d+(?:\.\d+)*[.)]?\s+/, "");
 
       // ¿es "Nombre: valor"?
       const mNV = linea.match(/^([^:]{2,42}):\s*(.*)$/);
       const nombre = mNV ? norma(mNV[1]) : null;
       const valor  = mNV ? mNV[2].trim() : null;
+      // datos del membrete que no hacen falta (Prepared By, Proposal #, Date…)
+      if (mNV && (sec === "datos" || sec === "ignorar") && CLAVES_IGNORAR.includes(norma(mNV[1].replace(/\s*#\s*$/, "")))) return;
 
       // --- Precio y Pagos, estén donde estén (son títulos con valor en la misma línea)
       if (mNV && buscaClave(CLAVES_DINERO, nombre) === "precio") {
@@ -230,6 +307,7 @@
         else if (m.pregunta) R.preguntas.push({ clave: "precio", linea: i + 1,
           texto: `¿El precio es $${m.opciones[0].toLocaleString("en-US")} o $${m.opciones[1].toFixed(2)}?`,
           opciones: m.opciones.map(v => ({ etiqueta: "$" + v.toLocaleString("en-US", {minimumFractionDigits:2}), valor: centavos(v) })) });
+        else if (R.precio && R.precio.centavos === m.centavos) return;   // el total repetido en la tabla
         else if (R.precio) err(i, "Hay dos precios. Solo va uno: el precio base sin opciones.",
                     { arreglos: [{ tipo: "quitar_linea", etiqueta: "Quitar este segundo precio", linea: i + 1, auto: true }] });
         else R.precio = { centavos: m.centavos, linea: i + 1 };
@@ -239,6 +317,18 @@
         R.pagos = leerPagos(valor, i + 1, err);
         sec = "pagos_detalle";
         return;
+      }
+      if (sec === "precio_detalle") {
+        // dentro de "Price": la línea con total/lump sum/price y un monto es el precio
+        const d = hayDinero(linea);
+        if (d && !R.precio && /\b(total|lump sum|price|contract|amount|investment|cost)\b/i.test(linea)) {
+          const m = leerMonto(d.trozo);
+          if (m && !m.pregunta) { R.precio = { centavos: m.centavos, linea: i + 1 }; return; }
+        }
+        if (d && R.precio && leerMonto(d.trozo) && leerMonto(d.trozo).centavos !== R.precio.centavos)
+          R.avisos.push({ linea: i + 1, perdonable: true, texto: `En Price hay otro monto (${d.trozo}) además del precio. Lo dejo fuera del contrato.`,
+                                            arreglos: [{ tipo: "quitar_linea", etiqueta: "Quitar esta línea", linea: i + 1 }] });
+        return;   // el resto de Price ("includes labor, materials…") ya lo dice la plantilla
       }
 
       switch (sec) {
@@ -252,7 +342,7 @@
                                         : [{ tipo: "quitar_linea", etiqueta: "Quitar esta línea", linea: i + 1, auto: true }] });
             return; }
           const k = buscaClave(CLAVES_DATOS, nombre);
-          if (k) { R.datos[k] = valor; }
+          if (k) { R.datos[k] = k === "ciudad" ? valor.replace(/,?\s*(FL|Florida)\.?$/i, "").trim() : valor; }
           else { const s = sugerir(CLAVES_DATOS, mNV[1]);
                  if (estaPerdonada(linea)) break;
                  R.avisos.push({ linea: i + 1, perdonable: true, texto: s ? `No conozco "${mNV[1].trim()}". ¿Querías decir "${s}"?`
@@ -265,30 +355,84 @@
                                                   auto: /^[-*•]/.test(linea) || /\{\{FALTA/i.test(linea) || mNV[1].trim().split(/\s+/).length > 3 }] }); }
           break;
         }
-        case "hoy": case "cambia": case "falta": case "notas":
-          if (sec !== "notas") avisaDinero(i, linea, "esta línea");
-          parrafo[sec].push(linea.replace(/^[-*•]\s*/, ""));
+        case "hoy": case "cambia": case "falta": case "notas": {
+          let destino = sec, texto = linea.replace(/^[-*•]\s*/, "").replace(/^\d+\.\d+[.)]?\s+/, "");
+          // "This Scope of Work covers X at <dirección>." → es el resumen, no una condición
+          const mRes = sec === "hoy" && texto.match(/^this scope of work covers\s+(.+?)(?:\s+at\s+[^.]*\d[^.]*)?\.?$/i);
+          if (mRes) { R.datos.resumen = mRes[1].trim().replace(/\s+at\s+\d{2,}[^]*$/i, "").replace(/[.,]$/, ""); break; }
+          // "Existing conditions. …" / "Basis of information. …" / "New layout. …" delante del párrafo
+          const mEt = texto.match(/^(existing conditions?|site conditions?|basis of information|information basis|new layout|proposed layout|changes)[.:]\s+(.+)$/i);
+          if (mEt) { const e = norma(mEt[1]); destino = /basis|information/.test(e) ? "falta" : /layout|change/.test(e) ? "cambia" : "hoy"; texto = mEt[2]; }
+          if (destino === "falta") texto = texto.replace(/^this proposal is prepared from the on-site walkthrough and the direction provided by the client\.\s*/i, "");
+          if (destino !== "notas") avisaDinero(i, linea, "esta línea");
+          parrafo[destino].push(texto);
           break;
+        }
 
         case "alcance": {
           if (avisaDinero(i, linea, "el Alcance")) return;
           const esDetalle = /^[-*•]/.test(linea);
+          // "2.3 Shed circuit. Furnish and install…"  ·  "### 2.1 Whole-house rewire"  ·  "1. Título"
+          const mSub = linea.match(/^(?:\d+\.)?(\d+)(?:\.\d+)?[.)]?\s+(.+)$/);
+          const mn = !esDetalle && (mSub || null);
+          const nuevoRenglon = (titulo, resto, escrito) => {
+            // "Testing and closeout" ya lo trae la plantilla como último punto: no se duplica
+            if (/^testing\s*(and|&)\s*close\s*-?out|^closeout|^testing and commissioning/i.test(titulo)) {
+              R.avisos.push({ linea: i + 1, texto: `«${titulo.slice(0, 40)}» ya lo trae la plantilla como último punto del alcance; no lo repito.` });
+              itemActual = { fantasma: true, detalles: [], lineas: [] }; return;
+            }
+            itemActual = { n: R.items.length + 1, escrito, titulo: titulo.replace(/[.:]$/, "").trim(), detalles: [], lineas: [i + 1] };
+            if (resto) itemActual.detalles.push(resto);
+            R.items.push(itemActual);
+          };
           if (esDetalle) {
             if (!itemActual) { err(i, "Este detalle no tiene renglón encima. Ponle un título al renglón.",
                 { arreglos: [{ tipo: "hacer_titulo", etiqueta: "Convertirlo en renglón", linea: i + 1, auto: true },
                              { tipo: "quitar_linea", etiqueta: "Quitar la línea", linea: i + 1 }] }); return; }
+            if (itemActual.fantasma) return;
             itemActual.detalles.push(linea.replace(/^[-*•]\s*/, "")); itemActual.lineas.push(i + 1);
+          } else if (mn || esTitulo) {
+            const texto = mn ? mn[2].trim() : linea.trim();
+            // título corto y descripción en la misma línea: "Shed circuit. Furnish and install…"
+            const corte = texto.match(/^(.{3,70}?)(?:\.\s+|\s+[—–]\s+|:\s+)(.{15,})$/);
+            const titulo = corte ? corte[1] : texto, resto = corte ? corte[2].trim() : "";
+            nuevoRenglon(titulo, resto, mn ? Number(mn[1]) : null);
+          } else if (itemActual && !itemActual.fantasma && linea.length > 60) {
+            // un párrafo debajo del título: es la descripción del renglón
+            itemActual.detalles.push(linea); itemActual.lineas.push(i + 1);
+          } else if (itemActual && itemActual.fantasma) {
+            return;
+          } else if (!itemActual && linea.length > 80) {
+            // un párrafo suelto antes del primer renglón: es texto de la plantilla ("All materials… furnished by Max Power")
+            if (!/furnished by max power|unless expressly noted|furnished by others|furnished by the owner/i.test(linea) && !estaPerdonada(linea))
+              R.avisos.push({ linea: i + 1, perdonable: true, texto: `Esto está en el Alcance pero no es un renglón: «${linea.slice(0, 60)}…». Lo dejo fuera.`,
+                              arreglos: [{ tipo: "quitar_linea", etiqueta: "Quitar esta línea", linea: i + 1 }] });
+            return;
           } else {
-            const mn = linea.match(/^(\d+)[.)\-]\s*(.+)$/);
-            itemActual = { n: R.items.length + 1, escrito: mn ? Number(mn[1]) : null,
-                           titulo: mn ? mn[2].trim() : linea, detalles: [], lineas: [i + 1] };
-            R.items.push(itemActual);
+            nuevoRenglon(linea, "", null);
           }
           break;
         }
         case "no_incluye": {
           if (avisaDinero(i, linea, "No incluye")) return;
-          R.no_incluye.push({ texto: linea.replace(/^[-*•]\s*/, ""), linea: i + 1 });
+          const tx = linea.replace(/^[-*•]\s*/, "").replace(/^\d+(?:\.\d+)*[.)]?\s+/, "");
+          // Las exclusiones que la plantilla ya trae (permiso, fixtures, drywall, low-voltage, aparatos,
+          // fuera de áreas, correcciones del inspector) no se repiten; de algunas se pesca un dato.
+          const mFuera = tx.match(/^any work outside\s+(.+?)\s+expressly described in section 2(?:\s*[—–-]+\s*including\s+(.+?)\s*[—–-]+)?/i);
+          if (mFuera) {
+            if (!C_set("areas", mFuera[1], i)) {} if (mFuera[2]) C_set("no_tocamos", mFuera[2], i);
+            R.fijasQuitadas = (R.fijasQuitadas || 0) + 1; return;
+          }
+          const mFix = tx.match(/^decorative light fixtures?[.:]\s+(.+?)\s+(?:are|is) furnished by the owner/i);
+          if (mFix) { C_set("fixtures_cliente", mFix[1].charAt(0).toUpperCase() + mFix[1].slice(1), i); R.fijasQuitadas = (R.fijasQuitadas || 0) + 1; return; }
+          const fija = tx.match(/^(permit(?:s| and permit fees)?[.:]|electrical panel work|arc-fault|cabinet and under-cabinet|drywall, ceiling patching|low-voltage, data|appliances, gas piping|any correction, upgrade)/i);
+          if (fija) {
+            R.fijasQuitadas = (R.fijasQuitadas || 0) + 1;
+            R.fijasVistas = R.fijasVistas || new Set(); R.fijasVistas.add(norma(fija[1]).split(/[ ,.:]/)[0]);
+            return;
+          }
+          const mNeg = cruda.match(/^\s*[-*•]?\s*\*\*(.+?)\*\*[.:]?\s*(.*)$/);
+          R.no_incluye.push({ texto: tx, linea: i + 1, titulo: mNeg ? mNeg[1].replace(/[.:]$/, "").trim() : null, cuerpo: mNeg ? mNeg[2].trim() : null });
           break;
         }
         case "opciones": {
@@ -328,16 +472,22 @@
           break;
         }
         case "pagos_detalle": {
-          // líneas sueltas debajo de "Pagos:" — una por pago
-          const mp = linea.replace(/^[-*•]\s*/, "").match(/^(\d{1,3})\s*%\s*(.*)$/);
-          if (mp && R.pagos && R.pagos.corto) break;   // "Pagos: 50/50" ya lo dijo; esto es explicación
-          if (mp) { R.pagos = R.pagos || { pcts: [], disparadores: [], lineas: [] };
-                    R.pagos.pcts.push(Number(mp[1]));
-                    // el texto de al lado es el disparador, salvo que traiga dinero (eso no va al asistente)
-                    R.pagos.disparadores.push(pareceDinero(mp[2]) ? null : (mp[2].trim() || null));
-                    R.pagos.lineas.push(i + 1); }
-          else { sec = "condiciones"; /* se cayó a Condiciones sin título */ }
-          if (mp) break;
+          // líneas sueltas debajo de "Pagos:" — una por pago, con el % donde esté:
+          // "40% al firmar" · "1 | Deposit upon acceptance | 40% | $6,599.30" · "Milestone 1 (40%): Deposit…"
+          const sinVineta = linea.replace(/^[-*•]\s*/, "");
+          const esHito = /^(?:milestone|pago|payment|hito|\d)/i.test(sinVineta) || /\$\s?\d/.test(sinVineta);
+          const mpct = esHito ? sinVineta.match(/(?<![\d.])(\d{1,3})\s*%/) : null;
+          if (mpct && R.pagos && R.pagos.corto) break;   // "Pagos: 50/50" ya lo dijo; esto es explicación
+          if (mpct) {
+            R.pagos = R.pagos || { pcts: [], disparadores: [], lineas: [] };
+            R.pagos.pcts.push(Number(mpct[1]));
+            const disp = sinVineta.replace(/\$\s?\d[\d,]*(?:\.\d{2})?/g, "").replace(/\(?\d{1,3}\s*%\)?/, "")
+              .replace(/^(?:milestone|pago|payment|hito)?\s*\d+\s*[.):|—–-]?\s*/i, "").replace(/\s*\|\s*/g, " ").replace(/[—–:|-]\s*$/, "").replace(/^\s*[—–:|-]\s*/, "").replace(/\s{2,}/g, " ").trim();
+            R.pagos.disparadores.push(disp || null);
+            R.pagos.lineas.push(i + 1);
+          }
+          else if (!hayDinero(sinVineta) && !/\bpayment|\binvoice|\bdue\b/i.test(sinVineta)) { sec = "condiciones"; /* se cayó a Condiciones sin título */ }
+          if (mpct || sec === "pagos_detalle") break;
           /* falls through */
         }
         case "condiciones": {
@@ -353,6 +503,11 @@
           break;
         }
         case "codigo": {
+          const rxArt = /articles?\s+((?:\d{3}(?:\.\d+(?:\([A-Za-z0-9]\))*)?(?:\s*,\s*|\s+and\s+|\s*&\s*)?)+)/gi;
+          let mArt, hayArt = false;
+          while ((mArt = rxArt.exec(linea))) { hayArt = true; (mArt[1].match(/\d{3}(?:\.\d+(?:\([A-Za-z0-9]\))*)?/g) || []).forEach(a => { if (!R.codigo.includes(a)) R.codigo.push(a); }); }
+          if (hayArt) break;
+          if (/\b(nec|nfpa|florida building code|statutes?|chapter)\b/i.test(linea) && !/^\d{3}/.test(linea)) break;   // prosa del código: la plantilla ya la trae
           linea.split(/[,;]/).forEach(a => { const v = a.trim();
             if (!v) return;
             const suelto = v.match(/^(?:art(?:[ií]culo|icle|\.)?\s*)?(\d{3}(?:\.\d+(?:\([A-Za-z0-9]\))*)?)\s*(?:\(.*\))?$/i);
@@ -365,6 +520,20 @@
       }
     });
 
+    R.ignoradas = ignoradas;
+    // El chat entregó el §3 entero (se vieron ≥3 exclusiones fijas): las fijas que NO puso
+    // (panel, AFCI, gabinetes) es porque el trabajo las incluye → se apagan solas.
+    if (R.fijasVistas && R.fijasVistas.size >= 3 && !R.condiciones.no_excluir) {
+      const faltan = [];
+      if (!R.fijasVistas.has("electrical")) faltan.push("panel");
+      if (!R.fijasVistas.has("arc")) faltan.push("afci");
+      if (!R.fijasVistas.has("cabinet")) faltan.push("gabinetes");
+      if (faltan.length) R.condiciones.no_excluir = { valor: faltan.join(", "), linea: 0, pescada: true };
+    }
+    if (R.fijasQuitadas)
+      R.avisos.push({ linea: 0, texto: `En No incluye venían ${R.fijasQuitadas} exclusiones que la plantilla ya trae (permiso, fixtures, drywall…); las quité para no repetirlas.` });
+    if (ignoradas.length)
+      R.avisos.push({ linea: ignoradas[0].linea, texto: `Me salté ${ignoradas.length === 1 ? "la sección" : "las secciones"} ${ignoradas.map(x => "«" + x.titulo + "»").join(", ")}: eso ya lo trae la plantilla del contrato.` });
     R.hoy = parrafo.hoy.join(" ");
     R.cambia = parrafo.cambia.join(" ");
     R.falta = parrafo.falta.join(" ");
@@ -826,7 +995,8 @@
   }
   function redactarDirecto(L) {
     const d = L.datos, C = L.condiciones;
-    const frase = t => { t = String(t || "").trim(); return t && !/[.!?:]$/.test(t) ? t + "." : t; };
+    const limpia = t => String(t || "").replace(/\s*[—–-]?\s*\(?see sections?\s+\d+(?:\.\d+)?(?:\s*(?:and|,)\s*\d+(?:\.\d+)?)*\)?\.?/gi, "").replace(/\s{2,}/g, " ").trim();
+    const frase = t => { t = limpia(t); return t && !/[.!?:]$/.test(t) ? t + "." : t; };
     const parrafo = t => String(t || "").split("\n").map(x => x.trim()).filter(Boolean).map(frase).join(" ");
     const de = n => ({ de: n ? [n] : [] });
     const con = (texto, linea) => { const t = String(texto || "").trim(); return t ? Object.assign({ en: t }, de(linea)) : null; };
@@ -836,14 +1006,15 @@
     const S = {
       directo: true,
       proyecto_en: con(d.proyecto, L.lineas.findIndex(x => /^\s*(proyecto|project)\s*:/i.test(x)) + 1),
-      resumen_del_trabajo: con(titulos.length ? "the electrical work described in Section 2: " + lista(titulos.map(minus)) : d.proyecto, 0),
+      resumen_del_trabajo: con(d.resumen || (titulos.length ? "the electrical work described in Section 2: " + lista(titulos.map(minus)) : d.proyecto), 0),
       que_hay_hoy: con(parrafo(L.hoy), 0), que_cambia: con(parrafo(L.cambia), 0), que_faltaba: con(parrafo(L.falta), 0),
       load_calc_y_planos: con(frase(d.ingenieria), 0), planos: con(d.planos, 0),
-      items: L.items.map(it => ({ titulo: con(it.titulo.replace(/[.:]$/, ""), it.lineas[0]),
+      items: L.items.map(it => ({ titulo: con(limpia(it.titulo).replace(/[.:]$/, ""), it.lineas[0]),
                                   descripcion: con(it.detalles.map(frase).join(" ") || frase(it.titulo), it.lineas[0]) })),
       no_incluye: L.no_incluye.map(x => {
+        if (x.titulo) return { titulo: con(limpia(x.titulo), x.linea), texto: con(x.cuerpo ? frase(x.cuerpo.charAt(0).toUpperCase() + x.cuerpo.slice(1)) : "", x.linea) || { en: "", de: [x.linea] } };
         const m = x.texto.match(/^([^:.]{3,60})[:.]\s+(.+)$/);
-        return { titulo: con(m ? m[1] : x.texto.split(/\s+/).slice(0, 6).join(" ").replace(/[,;]$/, ""), x.linea),
+        return { titulo: con(limpia(m ? m[1] : x.texto.split(/\s+/).slice(0, 6).join(" ").replace(/[,;]$/, "")), x.linea),
                  texto: con(m ? frase(m[2].charAt(0).toUpperCase() + m[2].slice(1)) : frase(x.texto), x.linea) };
       }),
       opciones: L.opciones.map(o => ({ titulo: con(o.titulo, o.linea), descripcion: con(o.detalles.map(frase).join(" "), o.linea) })),
@@ -868,7 +1039,7 @@
   // código, números de cláusula y marcas de plantilla. (Palabras como "warranty" sí
   // puede escribirlas: salen de las exclusiones que escribe Edgar.)
   const PROHIBIDAS = /\$|\b\d{1,3}(,\d{3})+\b|\bpercent\b|%|\bArticle\s+\d|\bNEC\b|\bNFPA\b|\bSection\s+9\b|\bStatute\b|\{\{/i;
-  const PROHIBIDAS_DIRECTO = /\$|\{\{|\bSection\s+9\.\d/i;
+  const PROHIBIDAS_DIRECTO = /\$|\{\{/;
   function validarSalida(L, S) {
     const rojos = [], amarillos = [];
     const rx = S && S.directo ? PROHIBIDAS_DIRECTO : PROHIBIDAS;
@@ -974,6 +1145,7 @@
       let fin = v.fin;
       if (!texto && html[fin] === ".") fin++;                  // se lleva el punto
       let antes = html.slice(0, v.ini);
+      if (texto && /\bsee\s+$/i.test(antes)) texto = texto.replace(/^See /, "");   // "— see Section 3", no "see See"
       if (!texto) antes = antes.replace(/\s+$/, "");
       html = antes + texto + html.slice(fin);
     }
