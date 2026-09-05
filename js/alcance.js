@@ -290,10 +290,12 @@
         }
         case "pagos_detalle": {
           // líneas sueltas debajo de "Pagos:" — una por pago
-          const mp = linea.match(/^(\d{1,3})\s*%\s*(.*)$/);
+          const mp = linea.replace(/^[-*•]\s*/, "").match(/^(\d{1,3})\s*%\s*(.*)$/);
+          if (mp && R.pagos && R.pagos.corto) break;   // "Pagos: 50/50" ya lo dijo; esto es explicación
           if (mp) { R.pagos = R.pagos || { pcts: [], disparadores: [], lineas: [] };
                     R.pagos.pcts.push(Number(mp[1]));
-                    R.pagos.disparadores.push(mp[2].trim() || null);
+                    // el texto de al lado es el disparador, salvo que traiga dinero (eso no va al asistente)
+                    R.pagos.disparadores.push(pareceDinero(mp[2]) ? null : (mp[2].trim() || null));
                     R.pagos.lineas.push(i + 1); }
           else { sec = "condiciones"; /* se cayó a Condiciones sin título */ }
           if (mp) break;
@@ -314,7 +316,9 @@
         case "codigo": {
           linea.split(/[,;]/).forEach(a => { const v = a.trim();
             if (!v) return;
-            if (/^\d{3}(\.\d+([A-Za-z()0-9]*)?)?$/.test(v)) R.codigo.push(v);
+            const suelto = v.match(/^(?:art(?:[ií]culo|icle|\.)?\s*)?(\d{3}(?:\.\d+(?:\([A-Za-z0-9]\))*)?)\s*(?:\(.*\))?$/i);
+            if (suelto) R.codigo.push(suelto[1]);
+            else if (/^\d{3}(\.\d+([A-Za-z()0-9]*)?)?$/.test(v)) R.codigo.push(v);
             else err(i, `"${v}" no tiene forma de artículo. Escribe 210, 210.8 o 406.4(D).`,
                      { arreglos: [{ tipo: "quitar_trozo", etiqueta: `Quitar "${v}"`, linea: i + 1, valor: v, auto: true }] }); });
           break;
@@ -334,7 +338,7 @@
   function leerPagos(valor, linea, err) {
     const P = { pcts: [], disparadores: [], lineas: [linea] };
     const corto = String(valor || "").match(/^\s*(\d{1,3})\s*[\/\-\s]\s*(\d{1,3})(?:\s*[\/\-\s]\s*(\d{1,3}))?(?:\s*[\/\-\s]\s*(\d{1,3}))?\s*$/);
-    if (corto) { for (let k = 1; k < corto.length; k++) if (corto[k] !== undefined) { P.pcts.push(Number(corto[k])); P.disparadores.push(null); } return P; }
+    if (corto) { for (let k = 1; k < corto.length; k++) if (corto[k] !== undefined) { P.pcts.push(Number(corto[k])); P.disparadores.push(null); } P.corto = true; return P; }
     String(valor || "").split(/[,;]| y /).forEach(t => {
       const m = t.match(/(\d{1,3})\s*%\s*(.*)/);
       if (m) { P.pcts.push(Number(m[1])); P.disparadores.push((m[2] || "").trim() || null); }
@@ -345,7 +349,7 @@
   // ============================================================ LA VALIDACIÓN
   function validarAlcance(L) {
     const errores = L.errores.slice(), preguntas = L.preguntas.slice();
-    const D = L.datos, conFirma = norma(D.firma || "si") !== "no";
+    const D = L.datos, conFirma = leerFirma(D.firma);
 
     if (!D.cliente) preguntas.push({ clave: "cliente", texto: "¿Quién es el cliente (quien paga y firma)?", libre: true });
     if (!D.direccion) preguntas.push({ clave: "direccion", texto: "¿Cuál es la dirección de la obra?", libre: true });
@@ -630,13 +634,37 @@
   }
 
   // ================================================== QUÉ VA Y QUÉ NO (la tabla)
+  // "Permiso: nosotros" · "Permiso: cliente" · "Permiso: no hace falta" — y también lo
+  // que escriba Ordenar o Edgar a su manera ("lo saca Max Power", "by the Client"…)
+  function leerPermiso(v) {
+    const n = norma(v || "");
+    if (!n) return "nosotros";
+    if (/no hace falta|no permit|not required|ninguno|sin permiso|no aplica/.test(n)) return "ninguno";
+    if (/\b(cliente|client|gc|owner|dueno|contratista)\b/.test(n) && !/max power|nosotros/.test(n)) return "cliente";
+    return "nosotros";
+  }
+  const leerFirma = v => !/^(no|sin firma|alcance|ligero|scope of work)$/.test(norma(v || "si")) && !/^no\b/.test(norma(v || "si"));
+  function leerVence(v, hoy) {
+    const s = String(v || "").trim();
+    if (!s) return 15;
+    const n = s.match(/^\s*(\d{1,3})\s*(d[ií]as?|days?)?\s*$/i);
+    if (n) return Math.max(1, Number(n[1]));
+    const f = new Date(s);
+    if (!isNaN(f.getTime())) {
+      const base = hoy || new Date();
+      const dias = Math.round((f.getTime() - base.getTime()) / 864e5);
+      if (dias >= 1 && dias <= 365) return dias;
+    }
+    return 15;
+  }
+
   function decidirInterruptores(L, D) {
     const d = L.datos, C = L.condiciones, cuenta = D || cuentas(L);
     const hay = v => !!(v && String(v).trim() && norma(v) !== "no");
     const si_no = v => { const n = norma(v && v.valor); return n === "si" || n === "yes" ? true : (n === "no" ? false : null); };
-    const conFirma = norma(d.firma || "si") !== "no";
+    const conFirma = leerFirma(d.firma);
     const esGC = hay(d.dueno);
-    const permiso = norma(d.permiso || "") || "nosotros";   // regla de la casa
+    const permiso = leerPermiso(d.permiso);   // regla de la casa: vacío = nosotros
     const layout = norma(d.layout || "si") !== "no";
     const noExcluir = norma((C.no_excluir || {}).valor || "");
 
@@ -649,7 +677,7 @@
       FIXTURES_CLIENTE: hay((C.fixtures_cliente || {}).valor),
       PERMISO_CLIENTE: permiso === "cliente",
       PERMISO_MXP: permiso === "nosotros",
-      PERMISO_NINGUNO: permiso.indexOf("no hace falta") === 0 || permiso === "ninguno",
+      PERMISO_NINGUNO: permiso === "ninguno",
       ADDONS: L.opciones.length > 0,
       UTILITY: hay(d.utility),
       LAYOUT: layout, NO_LAYOUT: !layout,
@@ -900,7 +928,7 @@
     const dosDig = n => String(n).padStart(2, "0");
     const fechaLarga = f => f.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
     const vence = new Date(hoy.getTime());
-    vence.setDate(vence.getDate() + (Number(d.vence) || 15));
+    vence.setDate(vence.getDate() + leerVence(d.vence, hoy));
     const nombreCorto = String(admin.proyecto_id || d.cliente || "SOW")
       .toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
 
@@ -1004,7 +1032,7 @@
   const API = { leerAlcance, validarAlcance, cuentas, repartir, leerMonto, pareceDinero,
                 decidirInterruptores, prepararEncargo, validarSalida,
                 rellenarPlantilla, aplicarSi, repetirFila, aplicarClausulas,
-                barridoFinal, marcasEmparejadas, armarTodo, aplicarArreglo, arreglarTodo, DISPARADORES, ORDEN_9, dinero, centavos, norma };
+                barridoFinal, marcasEmparejadas, armarTodo, aplicarArreglo, arreglarTodo, leerPermiso, leerFirma, leerVence, DISPARADORES, ORDEN_9, dinero, centavos, norma };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   raiz.Alcance = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);

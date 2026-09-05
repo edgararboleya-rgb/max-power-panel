@@ -7511,7 +7511,7 @@ Power done right the first time. ⚡`;
         await DB.guardarAlcance(A.propuesta.id, campos);
       } else {
         const hasta = new Date(hoyFlorida().getTime());
-        hasta.setDate(hasta.getDate() + (Number(d.vence) || 15));
+        hasta.setDate(hasta.getDate() + Alcance.leerVence(d.vence, hoyFlorida()));
         const creada = await DB.crearPropuesta({
           proyecto_id: A.proyecto.id, estado: "borrador",
           valida_hasta: hasta.toISOString().slice(0, 10), ...campos });
