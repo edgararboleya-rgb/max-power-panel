@@ -378,7 +378,7 @@
           const nuevoRenglon = (titulo, resto, escrito) => {
             // "Testing and closeout" ya lo trae la plantilla como último punto: no se duplica
             if (/^testing\s*(and|&)\s*close\s*-?out|^closeout|^testing and commissioning/i.test(titulo)) {
-              R.avisos.push({ linea: i + 1, texto: `«${titulo.slice(0, 40)}» ya lo trae la plantilla como último punto del alcance; no lo repito.` });
+              R.avisos.push({ linea: i + 1, informativo: true, texto: `«${titulo.slice(0, 40)}» ya lo trae la plantilla como último punto del alcance; no lo repito.` });
               itemActual = { fantasma: true, detalles: [], lineas: [] }; return;
             }
             itemActual = { n: R.items.length + 1, escrito, titulo: titulo.replace(/[.:]$/, "").trim(), detalles: [], lineas: [i + 1] };
@@ -531,9 +531,9 @@
       if (faltan.length) R.condiciones.no_excluir = { valor: faltan.join(", "), linea: 0, pescada: true };
     }
     if (R.fijasQuitadas)
-      R.avisos.push({ linea: 0, texto: `En No incluye venían ${R.fijasQuitadas} exclusiones que la plantilla ya trae (permiso, fixtures, drywall…); las quité para no repetirlas.` });
+      R.avisos.push({ linea: 0, informativo: true, texto: `En No incluye venían ${R.fijasQuitadas} exclusiones que la plantilla ya trae (permiso, fixtures, drywall…); las quité para no repetirlas.` });
     if (ignoradas.length)
-      R.avisos.push({ linea: ignoradas[0].linea, texto: `Me salté ${ignoradas.length === 1 ? "la sección" : "las secciones"} ${ignoradas.map(x => "«" + x.titulo + "»").join(", ")}: eso ya lo trae la plantilla del contrato.` });
+      R.avisos.push({ linea: 0, informativo: true, texto: `Del archivo solo se usan las secciones 1 a 6. Me salté ${ignoradas.map(x => "«" + x.titulo + "»").join(", ")}: eso lo pone la plantilla del contrato con su texto legal.` });
     R.hoy = parrafo.hoy.join(" ");
     R.cambia = parrafo.cambia.join(" ");
     R.falta = parrafo.falta.join(" ");

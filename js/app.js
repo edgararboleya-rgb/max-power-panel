@@ -7138,10 +7138,15 @@ Power done right the first time. ⚡`;
         V.errores.map((e, i) => `<li>${chip(e.linea)}${esc(e.texto)}${cita(e.linea)}<div class="alc-fixes">${botonesDe(e.arreglos, "e" + i)}</div>${explicame(e, "e" + i)}</li>`).join("") +
         `</ul></div>`;
     }
-    if (L.avisos.length) {
+    const dudas = L.avisos.filter(a => !a.informativo), hechos = L.avisos.filter(a => a.informativo);
+    if (dudas.length) {
       salida += `<div class="alc-ambar"><b>Esto no me cuadra del todo (no te frena):</b><ul>` +
-        L.avisos.map((a, i) => `<li>${chip(a.linea)}${esc(a.texto)}${cita(a.linea)}<div class="alc-fixes">${botonesDe(a.arreglos, "a" + i).replace(/<button[^>]*>Eso no es dinero, déjalo<\/button>/, "")}</div>${explicame(a, "a" + i)}</li>`).join("") +
+        dudas.map((a, i) => `<li>${chip(a.linea)}${esc(a.texto)}${cita(a.linea)}<div class="alc-fixes">${botonesDe(a.arreglos, "a" + i).replace(/<button[^>]*>Eso no es dinero, déjalo<\/button>/, "")}</div>${explicame(a, "a" + i)}</li>`).join("") +
         `</ul></div>`;
+    }
+    if (hechos.length) {
+      salida += `<div class="alc-gris"><b>Lo que quité porque la plantilla ya lo trae — no tienes que hacer nada:</b><ul>` +
+        hechos.map(a => `<li>${esc(a.texto)}</li>`).join("") + `</ul></div>`;
     }
     if (V.preguntas.length) {
       salida += `<div class="alc-preguntas"><b>Contéstame esto:</b>` + V.preguntas.map((p, i) => {

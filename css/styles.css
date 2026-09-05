@@ -2688,6 +2688,8 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .alc-var-pie{font-size:.75rem;color:var(--mp-ink-3);font-variant-numeric:tabular-nums}
 .alc-var.nueva{border-style:dashed;min-width:120px}
 .alc-var.nueva .alc-var-letra{font-size:1.05rem;line-height:1}
+.alc-gris{background:#F4F6F9;border-left:3px solid #9AA6B8;color:#3E4A5C;border-radius:12px;padding:.7rem .85rem;margin:.8rem 0;font-size:.88rem}
+.alc-gris ul{margin:.35rem 0 0;padding-left:1.1rem}.alc-gris li{margin:.2rem 0}
 .alc-verde{background:#F1FBF4;border-left:3px solid #2E8B57;color:#17482C;border-radius:12px;padding:.7rem .85rem;margin:.8rem 0;font-size:.9rem}
 .alc-verde ul{margin:.35rem 0 0;padding-left:1.1rem}.alc-verde li{margin:.2rem 0}
 .alc-fixes{display:flex;flex-wrap:wrap;gap:.3rem;margin:.35rem 0 .2rem}
