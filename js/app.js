@@ -7245,6 +7245,7 @@ Power done right the first time. ⚡`;
     btn.disabled = true; btn.textContent = "Ordenando…";
     try {
       const r = await DB.pedirAlCerebro("ordenar", { texto: A.texto });
+      if (r && r.error) throw new Error(alcErrorEnLlano(r));
       if (!r || !r.hoja) throw new Error("El asistente no devolvió la hoja");
       A.texto = r.hoja;
       alcGuardarLocal(A.proyecto.id, A.texto);
@@ -7267,7 +7268,11 @@ Power done right the first time. ⚡`;
     if (btn) { btn.disabled = true; btn.textContent = "Redactando… no cierres"; }
     try {
       const r = await DB.pedirAlCerebro("alcance", { encargo: enc.texto });
-      const S = r && (r.salida || r);
+      if (r && r.error) throw new Error(alcErrorEnLlano(r));
+      const S = r && r.salida;
+      if (!S) throw new Error("El asistente no devolvió la redacción");
+      if ((r.rechazados || []).length)
+        avisar(`El asistente escribió algo prohibido en ${r.rechazados.length} ${r.rechazados.length === 1 ? "trozo" : "trozos"}; míralos en rojo`, true);
       const rev = Alcance.validarSalida(A.leido, S);
       if (!rev.sirve) { avisar("El asistente devolvió algo que no puedo usar: " + rev.rojos[0].texto, true);
                         if (btn) { btn.disabled = false; btn.textContent = "Redactar en inglés"; } return; }
@@ -7280,6 +7285,18 @@ Power done right the first time. ⚡`;
       avisar(e.message, true);
       if (btn) { btn.disabled = false; btn.textContent = "Redactar en inglés"; }
     }
+  }
+
+  // Lo que devuelve el cerebro cuando algo no va, dicho en llano
+  function alcErrorEnLlano(r) {
+    const e = String(r.error || "");
+    if (e === "no_autorizado") return "Esto solo lo puede usar el dueño";
+    if (e === "sin_llave") return "Al asistente le falta su llave en la nube";
+    if (e === "dinero_en_el_encargo") return "Hay dinero en el texto que iba al asistente; no se mandó";
+    if (e === "monto_inventado") return "El asistente metió un monto que no estaba en tu texto. No lo acepto: " + (r.detalle || "");
+    if (e === "sin_hoja" || e === "sin_salida") return "El asistente no devolvió nada útil. Vuelve a intentarlo";
+    if (e === "sin_texto" || e === "sin_encargo") return "No hay texto que mandar";
+    return "El asistente falló: " + (r.detalle || e);
   }
 
   async function alcHuella(txt) {
