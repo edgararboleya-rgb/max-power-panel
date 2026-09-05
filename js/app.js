@@ -1023,6 +1023,14 @@ function esFalloDeRed(err) {
       const dineroLinea = usuario.finanzas
         ? `<div class="cat-dinero">${fmt(activos.filter(p => typeof p.contrato === "number").reduce((s, p) => s + p.contrato, 0))} contratado activo</div>`
         : "";
+      // El desglose por etapa: llena el hueco de la derecha con lo que de
+      // verdad quieres saber de un vistazo, sin abrir la categoría.
+      const desglose = ORDEN_ETAPAS.map(et => {
+        const n = del.filter(p => p.estado === et).length;
+        if (!n) return "";
+        return `<span class="cat-etapa"><span class="dot ${DOT[et]}"></span>
+          <b>${n}</b> ${esc(ESTADOS[et].etiqueta)}</span>`;
+      }).filter(Boolean).join("");
       return `
         <button class="categoria-card" data-tipo="${clave}">
           <div class="cat-icono">${t.icono}</div>
@@ -1031,6 +1039,7 @@ function esFalloDeRed(err) {
             <div class="cat-conteo">${activos.length} activos · ${enObra} en ejecución</div>
             ${dineroLinea}
           </div>
+          <div class="cat-etapas">${desglose || `<span class="cat-etapa vacia">Todavía no hay proyectos</span>`}</div>
           <div class="cat-flecha">›</div>
         </button>`;
     }).join("");
@@ -6170,10 +6179,20 @@ Power done right the first time. ⚡`;
       if (pensDia.length) clases += " con-pendiente";
       if (iso === calDiaSel) clases += " seleccionado";
 
+      // En pantalla grande la celda enseña QUÉ hay ese día, no solo cuántos.
+      const titulos = evsDia.slice(0, 3).map(e => {
+        const quien = (e.asignados || []).map(x => String(x).split(" ")[0]).join(", ");
+        const corto = String(e.titulo || "").replace(/^[^—-]*[—-]\s*/, "").trim() || String(e.titulo || "");
+        return `<span class="cal-ev" title="${esc(e.titulo || "")}${quien ? " · " + esc(quien) : ""}">${esc(corto)}</span>`;
+      }).join("");
+      const masEv = evsDia.length > 3 ? `<span class="cal-ev mas">+${evsDia.length - 3} más</span>` : "";
+      const pensTxt = pensDia.length
+        ? `<span class="cal-ev pend">${pensDia.length} pendiente${pensDia.length > 1 ? "s" : ""}</span>` : "";
       celdas += `<button class="${clases}" data-fecha="${iso}">
           <span class="cal-num">${d}</span>
           ${evsDia.length ? `<span class="cal-marca">${evsDia.length}</span>` : ""}
           ${pensDia.length ? `<span class="cal-marca-roja">⚠</span>` : ""}
+          <span class="cal-dia-lista">${titulos}${masEv}${pensTxt}</span>
         </button>`;
     }
     $("cal-grid").innerHTML = celdas;

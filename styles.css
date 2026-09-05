@@ -2779,9 +2779,6 @@ video.foto-mini { background: #000; }
   .cal-ev.mas { background: none; border-left-color: transparent; color: var(--mp-ink-3); font-style: italic; }
   .cal-ev.pend { background: #FDF2F2; border-left-color: #B3261E; color: #7A2620; }
   .cal-dia.domingo .cal-ev { opacity: .8; }
-  /* con los títulos a la vista, la barra del conteo y el aviso ya sobran */
-  .cal-dia .cal-marca { display: none; }
-  .cal-dia .cal-marca-roja { position: absolute; top: 4px; right: 5px; }
 
   /* inicio: lo del día a la izquierda, las obras a la derecha */
   #vista-home { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 0 1.6rem; align-items: start; }
