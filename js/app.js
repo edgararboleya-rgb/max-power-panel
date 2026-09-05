@@ -7176,7 +7176,8 @@ Power done right the first time. ⚡`;
           <div><span>Documento</span><b>${dec.conFirma ? "propuesta con firma" : "alcance ligero"}</b></div>
           <div><span>Permiso</span><b>${dec.bloques.PERMISO_MXP ? "lo sacamos nosotros" : dec.bloques.PERMISO_CLIENTE ? "lo saca el cliente" : "no hace falta"}</b></div>
           <div><span>Ciudad</span><b>${esc(d.ciudad || "—")}</b></div>
-          <div><span>Vale</span><b>${esc(d.vence || "15")} días</b></div>
+          <div><span>Vale</span><b>${(() => { const n = Alcance.leerVence(d.vence, hoyFlorida()); const f = new Date(hoyFlorida().getTime()); f.setDate(f.getDate() + n);
+            return `${n} días (hasta ${esc(f.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }))})`; })()}</b></div>
         </div>
         <p class="alc-sub"><b>${L.items.length}</b> ${L.items.length === 1 ? "renglón" : "renglones"} · <b>${L.no_incluye.length}</b> ${L.no_incluye.length === 1 ? "exclusión propia" : "exclusiones propias"}</p>
         <ol class="alc-lista">${L.items.map(i => `<li>${esc(i.titulo)} <span class="alc-gris">(${i.detalles.length} ${i.detalles.length === 1 ? "detalle" : "detalles"})</span></li>`).join("")}</ol>
