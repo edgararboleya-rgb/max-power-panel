@@ -899,9 +899,9 @@
     const problemas = [];
     // los comentarios HTML no se imprimen: lo que haya ahí dentro no cuenta
     const visible = html.replace(/<!--[\s\S]*?-->/g, " ");
-    const huecos = [...new Set((visible.match(/\{\{[^}]{1,45}\}\}/g) || []))];
-    const delPortal = ["{{OPCION_ACEPTADA}}", "{{TOTAL_ACEPTADO}}", "{{FECHA_TRANSACCION}}", "{{FECHA_LIMITE_CANCELAR}}"];
-    const quedan = huecos.filter(x => delPortal.indexOf(x) < 0);
+    // Ningún hueco puede quedar: el portal no edita el PDF. Los dos del
+    // formulario de cancelación viven en la página que genera el portal aparte.
+    const quedan = [...new Set((visible.match(/\{\{[^}]{1,45}\}\}/g) || []))];
     if (quedan.length) problemas.push({ tipo: "hueco", texto: "Quedaron huecos sin llenar: " + quedan.join(", ") });
     if (/<!--@/.test(html)) problemas.push({ tipo: "marca", texto: "Quedó una marca de la plantilla sin resolver." });
     if (/FALTA:/.test(visible)) problemas.push({ tipo: "falta", texto: "Quedó algo marcado como FALTA." });
@@ -995,7 +995,12 @@
       ABERTURAS: (S.aberturas && S.aberturas.en) || "",
       FIXTURES: (S.fixtures_mxp && S.fixtures_mxp.en) || "",
       M_DEPOSITO: cta.montos.length ? dinero(cta.montos[0]) : "",
-      PCT_DEPOSITO: cta.pct_deposito === null ? "" : String(cta.pct_deposito)
+      PCT_DEPOSITO: cta.pct_deposito === null ? "" : String(cta.pct_deposito),
+      // Un PDF no se puede editar por dentro: el portal NO puede escribir en el
+      // contrato qué eligió el cliente. Así que el cuerpo remite al certificado
+      // que el portal añade al firmar, y ahí va el precio de verdad.
+      OPCION_ACEPTADA: "as selected by the Client in the signing portal",
+      TOTAL_ACEPTADO: "the amount stated on the Acceptance Certificate attached to this document"
     };
 
     const items = (S.items || []).map((it, k) => ({

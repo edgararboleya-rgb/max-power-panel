@@ -6970,7 +6970,8 @@ Power done right the first time. ⚡`;
     return "Sin nombre todavía";
   }
   const ALC_ESTADOS = { borrador: "borrador", enviada: "enviada", firmada: "FIRMADA",
-                        vencida: "vencida", cambio_pedido: "cambio pedido" };
+                        vencida: "vencida", cambio_pedido: "cambio pedido",
+                        no_elegida: "no elegida" };
 
   // Cambiar de variante sin perder lo escrito en la que estaba abierta
   function alcCambiarVariante(id) {
@@ -7029,7 +7030,8 @@ Power done right the first time. ⚡`;
       return L && L.precio ? usd(L.precio) : "";
     };
     const tarjetas = porEdad.map(p => {
-      const est = ALC_ESTADOS[p.estado] || p.estado || "";
+      let est = ALC_ESTADOS[p.estado] || p.estado || "";
+      if (p.opcion_elegida_id && p.estado !== "firmada") est = "ELEGIDA por el cliente";
       const firmada = p.estado === "firmada";
       return `<button class="alc-var${String(p.id) === abierta ? " abierta" : ""}${firmada ? " firmada" : ""}" data-variante="${p.id}">
         <span class="alc-var-letra">SOW ${letraDe(p.id)}</span>
@@ -7236,7 +7238,19 @@ Power done right the first time. ⚡`;
       <div class="alc-botones">
         ${C.problemas.length ? "" : `<button class="accion" id="alc-bajar">Bajar el contrato</button>`}
         <button class="accion secundaria" id="alc-guardar">Guardar en la propuesta</button>
-      </div>`;
+      </div>
+      ${C.problemas.length ? "" : `
+      <div class="alc-entendi" style="margin-top:.9rem">
+        <h3>Mandárselo al cliente</h3>
+        <p class="lev-nota">Baja el contrato, ábrelo y pásalo a PDF (Imprimir → Guardar como PDF).
+          Después súbelo aquí: queda enlazado a este alcance y le sale al cliente en su portal
+          para elegirlo y firmarlo.</p>
+        <div class="alc-botones">
+          <input type="file" id="alc-pdf" accept="application/pdf" style="display:none">
+          <button class="accion" id="alc-al-portal"${A.propuesta ? "" : " disabled"}>Subir el PDF al portal</button>
+        </div>
+        ${A.propuesta ? "" : `<p class="lev-nota">Guarda primero el alcance.</p>`}
+      </div>`}`;
   }
 
   // ------------------------------------------------------------- los engancHES
@@ -7326,6 +7340,10 @@ Power done right the first time. ⚡`;
     if (bBajar) bBajar.addEventListener("click", alcBajar);
     const bGuardar = $("alc-guardar");
     if (bGuardar) bGuardar.addEventListener("click", alcGuardarNube);
+    const bPortal = $("alc-al-portal");
+    if (bPortal) bPortal.addEventListener("click", () => $("alc-pdf").click());
+    const inPdf = $("alc-pdf");
+    if (inPdf) inPdf.addEventListener("change", () => { if (inPdf.files[0]) alcSubirAlPortal(inPdf.files[0]); });
   }
 
   // Lee el archivo que Edgar escogió y lo pone en el cuadro. Solo texto: si es
@@ -7535,6 +7553,41 @@ Power done right the first time. ⚡`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
     avisar("Bajado ✓ — pásalo a PDF y súbelo al portal");
+  }
+
+  // El contrato en PDF al portal del cliente: se guarda en el almacén, se
+  // anota como documento que pide firma y se enlaza a ESTE alcance, para que
+  // el portal sepa qué SOW es y no deje firmar el que no eligió.
+  async function alcSubirAlPortal(archivo) {
+    const A = alcActivo;
+    if (!A.propuesta) { avisar("Guarda primero el alcance", true); return; }
+    const btn = $("alc-al-portal");
+    btn.disabled = true; btn.textContent = "Subiendo…";
+    try {
+      const ruta = await DB.subirDocumento(A.proyecto.id, archivo, "docs");
+      const letra = String.fromCharCode(65 + Math.max(0, (A.variantes || []).findIndex(v => v.id === A.propuesta.id)));
+      const titulo = `SOW ${letra} — ${(A.leido && A.leido.datos.proyecto) || A.proyecto.nombre}`.slice(0, 90);
+      await DB.crearDocumento({
+        proyecto_id: A.proyecto.id, clase: "doc", titulo, ruta,
+        portal: true, pide_firma: true, pide_aprobacion: false,
+        propuesta_id: A.propuesta.id,
+        valida_hasta: A.propuesta.valida_hasta || null
+      });
+      if (A.propuesta.estado === "borrador")
+        await DB.cambiarPropuesta(A.propuesta.id, { estado: "enviada" });
+      const llave = await DB.llavePortal(A.proyecto.id);
+      try { propData = await DB.cargarPropuestas(); } catch { /* se queda la de antes */ }
+      A.variantes = alcVariantesDe(A.proyecto.id);
+      const fresca = A.variantes.find(v => v.id === A.propuesta.id);
+      if (fresca) A.propuesta = fresca;
+      pintarAlcance();
+      const url = `https://edgararboleya-rgb.github.io/max-power-panel/cliente.html?t=${llave}`;
+      try { await navigator.clipboard.writeText(url); avisar("Subido ✓ — el enlace del cliente quedó copiado"); }
+      catch { avisar("Subido ✓ — el enlace del cliente: " + url); }
+    } catch (e) {
+      avisar("No se pudo subir: " + e.message, true);
+      btn.disabled = false; btn.textContent = "Subir el PDF al portal";
+    }
   }
 
   async function alcGuardarNube() {

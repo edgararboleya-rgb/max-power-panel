@@ -7,7 +7,7 @@
   <title>Max Power — Your Project</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=98">
+  <link rel="stylesheet" href="css/styles.css?v=109">
   <style>
     .cl-hero { text-align: center; padding: 1rem 0 0.4rem; }
     .cl-nombre { font-size: 1.3rem; font-weight: 800; color: var(--mp-ink); margin: 0.2rem 0 0.1rem; }
@@ -141,7 +141,11 @@
       errAbrir: "We couldn't open this link. It may have been renewed — please ask Max Power for a fresh one.",
       reintentar: "Try again",
       res: { paso: "✅ Passed", fallo: "❌ Needs correction", programada: "🗓 Scheduled" },
-      opcT: "Choose your option", opcSub: "Tap the one you want. You can change it until you sign.",
+      opcT: "Your proposal", opcT2: "Your proposals", opcSub: "Tap the one you want. You can change it until you sign.",
+      opcSub2: "Two ways to do the work. Choose one; you can change it until you sign.",
+      opcAddT: "Optional add-ons", opcTotal: "Total", opcHoy2: "Due today (deposit)",
+      opcNoElegida: "Not selected — you can change your mind until you sign",
+      opcElegidaSow: "This is the one you chose", opcFirmaAqui: "Sign this one below",
       opcElegida: "Your choice ✓", opcElegir: "Choose this one",
       opcRecom: "Recommended", opcHoy: "you put down today", opcAdemas: "plus everything above",
       opcNoInc: "Not included:", opcVence: "This proposal is valid through ",
@@ -193,7 +197,11 @@
       errAbrir: "No pudimos abrir este link. Puede que se haya renovado — pídele a Max Power uno nuevo.",
       reintentar: "Intentar otra vez",
       res: { paso: "✅ Pasada", fallo: "❌ Necesita corrección", programada: "🗓 Programada" },
-      opcT: "Elige tu opción", opcSub: "Toca la que quieras. Puedes cambiarla hasta que firmes.",
+      opcT: "Tu propuesta", opcT2: "Tus propuestas", opcSub: "Toca la que quieras. Puedes cambiarla hasta que firmes.",
+      opcSub2: "Dos formas de hacer el trabajo. Elige una; puedes cambiarla hasta que firmes.",
+      opcAddT: "Extras opcionales", opcTotal: "Total", opcHoy2: "A pagar hoy (depósito)",
+      opcNoElegida: "No elegida — puedes cambiar de idea hasta que firmes",
+      opcElegidaSow: "Esta es la que elegiste", opcFirmaAqui: "Firma esta abajo",
       opcElegida: "Tu elección ✓", opcElegir: "Elegir esta",
       opcRecom: "Recomendada", opcHoy: "apartas hoy", opcAdemas: "además de todo lo anterior",
       opcNoInc: "No incluye:", opcVence: "Esta propuesta vale hasta el ",
@@ -293,38 +301,62 @@
 
       var usd = function (n) { return (Number(n) || 0).toLocaleString("en-US", { style: "currency", currency: "USD" }); };
 
-      // ---- Las opciones de alcance (v18) ----
-      // Precio y depósito sí se enseñan: es el dinero del cliente. Las
-      // tarifas, las horas y el margen NO llegan aquí — el portal no los manda.
-      var prop = p.propuesta || null;
+      // ---- Los contratos del proyecto (v19) ----
+      // Un proyecto puede tener varios SOW alternativos (A, B…). Cada uno con
+      // su precio base y sus añadidos sueltos. El cliente elige UNO y marca
+      // los extras que quiera; el total se ve al momento. El precio de verdad
+      // lo vuelve a calcular el servidor: aquí solo se enseña.
+      var paq = p.propuesta || null;
+      var sows = paq && paq.propuestas ? paq.propuestas : [];
+      var firmadaYa = sows.some(function (s) { return s.estado === "firmada"; });
+      var sowElegido = null;
       var opciones = "";
-      if (prop && prop.opciones && prop.opciones.length && prop.estado !== "firmada") {
-        opciones = prop.opciones.map(function (o, i) {
-          var elegida = prop.elegida === o.id;
-          var incluye = (o.incluye || []).slice(0, 14).map(function (x) {
-            return '<li>' + esc(typeof x === "string" ? x : (x.item || "")) +
+      if (sows.length && !firmadaYa) {
+        var varios = sows.length > 1;
+        for (var k = 0; k < sows.length; k++) if (sows[k].elegida) { sowElegido = sows[k]; break; }
+        opciones = sows.map(function (s) {
+          var incluye = (s.incluye || []).slice(0, 14).map(function (x) {
+            return '<li>' + esc(typeof x === "string" ? x : (x.item || x.titulo || "")) +
               (x && x.cantidad ? ' <span class="cl-op-cant">×' + esc(x.cantidad) + '</span>' : '') + '</li>';
           }).join("");
-          var noinc = (o.no_incluye || []).slice(0, 6).map(function (x) {
+          var noinc = (s.no_incluye || []).slice(0, 6).map(function (x) {
             return '<li>' + esc(typeof x === "string" ? x : (x.texto || "")) + '</li>'; }).join("");
-          return '<div class="cl-op' + (elegida ? ' elegida' : '') + (o.recomendada ? ' recom' : '') + '">' +
-            (o.recomendada ? '<div class="cl-op-recom">★ ' + esc(TXT.opcRecom) + '</div>' : '') +
-            '<div class="cl-op-tit">' + esc(o.titulo || o.letra) + '</div>' +
-            '<div class="cl-op-precio">' + usd(o.precio) + '</div>' +
-            (o.deposito ? '<div class="cl-op-hoy">' + usd(o.deposito) + ' ' + esc(TXT.opcHoy) + '</div>' : '') +
-            (i > 0 ? '<div class="cl-op-ademas">' + esc(TXT.opcAdemas) + '</div>' : '') +
+          var adds = (s.addons || []).map(function (a) {
+            var marcado = (s.addons_elegidos || []).indexOf(a.id) >= 0;
+            return '<label class="cl-add' + (marcado ? ' marcado' : '') + '">' +
+              '<input type="checkbox" data-add="' + a.id + '" data-sow="' + s.id + '"' + (marcado ? ' checked' : '') +
+                (s.vencida ? ' disabled' : '') + '>' +
+              '<span class="cl-add-tit">' + esc(a.titulo) + '</span>' +
+              '<span class="cl-add-precio">+ ' + usd(a.precio) + '</span></label>';
+          }).join("");
+          return '<div class="cl-sow' + (s.elegida ? ' elegida' : (varios && sowElegido && sowElegido !== s ? ' apagada' : '')) +
+              '" data-sowcard="' + s.id + '" data-base="' + s.precio_base + '" data-pct="' +
+              esc(JSON.stringify(s.reparto_pct || [])) + '">' +
+            (varios ? '<div class="cl-sow-letra">SOW ' + esc(s.letra_sow) + '</div>' : '') +
+            '<div class="cl-op-tit">' + esc(s.titulo || ("SOW " + s.letra_sow)) + '</div>' +
+            '<div class="cl-op-precio">' + usd(s.precio_base) + '</div>' +
             (incluye ? '<ul class="cl-op-lista">' + incluye + '</ul>' : '') +
             (noinc ? '<div class="cl-op-no">' + esc(TXT.opcNoInc) + '<ul>' + noinc + '</ul></div>' : '') +
-            '<button type="button" class="cl-boton' + (elegida ? ' secundario' : '') + '" data-opcion="' + o.id + '"' +
-              (prop.vencida ? ' disabled style="opacity:.5"' : '') + '>' +
-              esc(elegida ? TXT.opcElegida : TXT.opcElegir) + '</button>' +
+            (adds ? '<div class="cl-adds"><div class="cl-adds-tit">' + esc(TXT.opcAddT) + '</div>' + adds + '</div>' : '') +
+            '<div class="cl-sow-cuentas">' +
+              '<div class="cl-sow-fila"><span>' + esc(TXT.opcTotal) + '</span><strong data-total="' + s.id + '">' + usd(s.precio_base) + '</strong></div>' +
+              '<div class="cl-sow-fila chico"><span>' + esc(TXT.opcHoy2) + '</span><strong data-dep="' + s.id + '">—</strong></div>' +
+            '</div>' +
+            '<button type="button" class="cl-boton' + (s.elegida ? ' secundario' : '') + '" data-elegir="' + s.id + '"' +
+              (s.vencida ? ' disabled style="opacity:.5"' : '') + '>' +
+              esc(s.elegida ? TXT.opcElegida : TXT.opcElegir) + '</button>' +
+            (s.elegida ? '<div class="cl-sow-nota ok">' + esc(TXT.opcFirmaAqui) + '</div>'
+                       : (varios ? '<div class="cl-sow-nota">' + esc(TXT.opcNoElegida) + '</div>' : '')) +
           '</div>';
         }).join("");
-        opciones = '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("opciones", TXT.opcT) + '</div>' +
+        var algunaVencida = sows.some(function (s) { return s.vencida; });
+        var vence1 = sows.length && sows[0].vence ? sows[0].vence : null;
+        opciones = '<div class="cal-panel-card"><div class="cal-form-titulo">' +
+          tit("opciones", sows.length > 1 ? TXT.opcT2 : TXT.opcT) + '</div>' +
           '<p class="alcance-estado" style="margin-bottom:.6rem">' +
-            esc(prop.vencida ? TXT.opcVencida : TXT.opcSub) +
-            (!prop.vencida && prop.vence ? ' ' + esc(TXT.opcVence) + esc(prop.vence) + '.' : '') + '</p>' +
-          '<div class="cl-ops">' + opciones + '</div></div>';
+            esc(algunaVencida ? TXT.opcVencida : (sows.length > 1 ? TXT.opcSub2 : TXT.opcSub)) +
+            (!algunaVencida && vence1 ? ' ' + esc(TXT.opcVence) + esc(vence1) + '.' : '') + '</p>' +
+          '<div class="cl-sows' + (sows.length > 1 ? ' dos' : '') + '">' + opciones + '</div></div>';
       }
 
       var pendientesDec = (p.decisiones || []).filter(function (d) { return !d.hecha; });
@@ -390,12 +422,18 @@
       var docs = (p.documentos || []).map(function (d) {
         var aprob = "";
         if (d.pide_firma) {
+          // v19: solo se firma el contrato del SOW que el cliente eligió
+          var suSow = null;
+          for (var si = 0; si < sows.length; si++) if (sows[si].id === d.propuesta_id) suSow = sows[si];
+          var bloqueado = !!(d.propuesta_id && suSow && !suSow.elegida && sows.length > 1);
           aprob = d.firmado_el
             ? ' <span class="cl-aprobado">' + esc(TXT.firmadoPor) + esc(d.firma_nombre || "") + ' · ' + esc(String(d.firmado_el).slice(0, 10)) + '</span>' +
               (d.contrafirma_el ? ' <span class="cl-aprobado">' + esc(TXT.ambos) + '</span>' : '')
-            : ' <button class="cl-boton" data-firmar="' + d.id + '" data-titulo="' + esc(d.titulo) + '"' +
-              ' data-url="' + esc(urlSegura(d.url)) + '" data-visto="' + (d.visto_el ? 1 : 0) + '"' +
-              ' data-consentido="' + (d.consentido ? 1 : 0) + '">' + esc(TXT.firmar) + '</button>' +
+            : (bloqueado
+              ? ' <span class="cl-nota-gris">' + esc(TXT.opcNoElegida) + '</span>'
+              : ' <button class="cl-boton" data-firmar="' + d.id + '" data-titulo="' + esc(d.titulo) + '"' +
+                ' data-url="' + esc(urlSegura(d.url)) + '" data-visto="' + (d.visto_el ? 1 : 0) + '"' +
+                ' data-consentido="' + (d.consentido ? 1 : 0) + '">' + esc(TXT.firmar) + '</button>') +
               ' <button class="cl-boton secundario" data-cambio="' + d.id + '">' + esc(TXT.cambioBtn) + '</button>';
         } else if (d.pide_aprobacion) {
           aprob = d.aprobado_el
@@ -445,9 +483,43 @@
       caja.querySelectorAll("[data-decision]").forEach(function (b) {
         b.addEventListener("click", function () { mandar({ accion: "decision_lista", id: Number(b.dataset.decision) }, b); });
       });
-      // El cliente elige SU opción, en SU teléfono
-      caja.querySelectorAll("[data-opcion]").forEach(function (b) {
-        b.addEventListener("click", function () { mandar({ accion: "elegir_opcion", opcion_id: Number(b.dataset.opcion) }, b); });
+      // v19: las casillas de los añadidos recalculan el total al momento
+      function cuentasSow(idSow) {
+        var card = caja.querySelector('[data-sowcard="' + idSow + '"]');
+        if (!card) return { total: 0, marcados: [] };
+        var base = Number(card.dataset.base) || 0;
+        var pcts = [];
+        try { pcts = JSON.parse(card.dataset.pct || "[]"); } catch (e) { pcts = []; }
+        var marcados = [], suma = 0;
+        card.querySelectorAll("[data-add]").forEach(function (c) {
+          var fila = c.closest(".cl-add");
+          if (fila) fila.classList.toggle("marcado", c.checked);
+          if (c.checked) {
+            marcados.push(Number(c.dataset.add));
+            var txt = (fila && fila.querySelector(".cl-add-precio") || {}).textContent || "";
+            suma += Number(String(txt).replace(/[^0-9.]/g, "")) || 0;
+          }
+        });
+        var total = base + suma;
+        var elT = caja.querySelector('[data-total="' + idSow + '"]');
+        if (elT) elT.textContent = usd(total);
+        var elD = caja.querySelector('[data-dep="' + idSow + '"]');
+        if (elD) elD.textContent = pcts.length ? usd(Math.round(total * pcts[0]) / 100) : "—";
+        return { total: total, marcados: marcados };
+      }
+      caja.querySelectorAll("[data-sowcard]").forEach(function (card) {
+        cuentasSow(Number(card.dataset.sowcard));
+      });
+      caja.querySelectorAll("[data-add]").forEach(function (c) {
+        c.addEventListener("change", function () { cuentasSow(Number(c.dataset.sow)); });
+      });
+      // El cliente elige SU contrato y sus extras, en SU teléfono
+      caja.querySelectorAll("[data-elegir]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          var idSow = Number(b.dataset.elegir);
+          var c = cuentasSow(idSow);
+          mandar({ accion: "elegir_propuesta", propuesta_id: idSow, addons: c.marcados }, b);
+        });
       });
       // Pedir un cambio en vez de firmar: mismo tamaño que firmar, siempre visible
       caja.querySelectorAll("[data-cambio]").forEach(function (b) {
