@@ -324,6 +324,17 @@ function esFalloDeRed(err) {
     if (c) c.hidden = true;
   }
 
+  // ---------- Versión nueva publicada → recargar solo ----------
+  // El casco (sw.js) toma el control en cuanto se instala; aquí la página se
+  // recarga una sola vez para no seguir con los archivos viejos en pantalla.
+  if ("serviceWorker" in navigator) {
+    let habiaCasco = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (habiaCasco) { habiaCasco = false; location.reload(); }
+      else habiaCasco = true;
+    });
+  }
+
   // ---------- Menú lateral (pantalla grande) ----------
   // Copia las losetas del inicio a una columna fija a la izquierda. Tocar una
   // entrada dispara la loseta original, así no hay dos caminos de código.
@@ -396,8 +407,8 @@ function esFalloDeRed(err) {
     mostrar("home", { kicker: "Panel de proyectos", titulo: "Categorías", volver: false, nuevo: true });
     $("btn-gastos").hidden = !usuario.finanzas;
     $("btn-estimador").hidden = !usuario.finanzas;
-    armarLateral();
     $("btn-levantamiento").hidden = !usuario.finanzas;
+    armarLateral();   // después de decidir qué losetas ve este usuario
     pintarInicio();
     pintarCategorias();
     pintarResumen();
