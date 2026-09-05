@@ -543,7 +543,7 @@
      "aberturas"].forEach(k => mira(k, S[k]));
     (S.items || []).forEach((it, k) => { mira(`items.${k}.titulo`, it.titulo); mira(`items.${k}.descripcion`, it.descripcion); });
     (S.no_incluye || []).forEach((x, k) => { mira(`no_incluye.${k}.titulo`, x.titulo); mira(`no_incluye.${k}.texto`, x.texto); });
-    (S.opciones || []).forEach((x, k) => mira(`opciones.${k}.titulo`, x.titulo));
+    (S.opciones || []).forEach((x, k) => { mira(`opciones.${k}.titulo`, x.titulo); mira(`opciones.${k}.descripcion`, x.descripcion); });
 
     if ((S.items || []).length !== L.items.length)
       rojos.push({ clave: "items", texto: `El asistente devolvió ${(S.items||[]).length} renglones y tú escribiste ${L.items.length}. Se descarta.` });
@@ -739,7 +739,8 @@
       QUE_CAMBIA: (S.que_cambia && S.que_cambia.en) || "",
       QUE_FALTABA: (S.que_faltaba && S.que_faltaba.en) || "",
       LOAD_CALC_Y_PLANOS: (S.load_calc_y_planos && S.load_calc_y_planos.en) || "",
-      N_CIERRE: String(L.items.length + 1),
+      N_CIERRE: String(L.items.length + 1 + cta.addons.filter((a, k) =>
+        (S.opciones || [])[k] && S.opciones[k].descripcion && S.opciones[k].descripcion.en).length),
       CUALES: (S.cuales_fixtures && S.cuales_fixtures.en) || "",
       AREAS_INCLUIDAS: (S.areas_incluidas && S.areas_incluidas.en) || "",
       LO_QUE_NO_TOCAS: (S.lo_que_no_tocas && S.lo_que_no_tocas.en) || "",
@@ -764,6 +765,18 @@
 
     const items = (S.items || []).map((it, k) => ({
       N_ITEM: k + 1, TITULO: (it.titulo && it.titulo.en) || "", DESCRIPCION: (it.descripcion && it.descripcion.en) || "" }));
+    // Un añadido con detalles (un rewire, un subpanel) merece su propio párrafo en la
+    // sección 2, marcado como opcional, y no solo una línea en la tabla de precios.
+    cta.addons.forEach((a, k) => {
+      const o = (S.opciones || [])[k] || {};
+      const desc = (o.descripcion && o.descripcion.en) || "";
+      if (!desc) return;
+      items.push({
+        N_ITEM: items.length + 1,
+        TITULO: `Optional Add-On ${a.letra} \u2014 ${(o.titulo && o.titulo.en) || a.titulo}`,
+        DESCRIPCION: desc + ` Not included in the lump sum; priced separately in Section 5 and performed only if the Owner authorizes Option ${a.letra}.`
+      });
+    });
     const no_incluye = (S.no_incluye || []).map(x => ({
       TITULO_EXCL: (x.titulo && x.titulo.en) || "", TEXTO_EXCL: (x.texto && x.texto.en) || "" }));
     const addons = cta.addons.map((a, k) => ({

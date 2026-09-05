@@ -7022,6 +7022,7 @@ Power done right the first time. ⚡`;
     (S.opciones || []).forEach((x, k) => {
       const o = L.opciones[k] || {};
       s += par(`opciones.${k}.titulo`, `Añadido ${String.fromCharCode(66 + k)} — $${Alcance.dinero(o.centavos || 0)}`, o.titulo, x.titulo);
+      s += par(`opciones.${k}.descripcion`, `Añadido ${String.fromCharCode(66 + k)} — detalles`, (o.detalles || []).join(" · "), x.descripcion);
     });
     s += par("resumen_corrido", "Resumen del precio", "", S.resumen_corrido);
     s += par("areas_incluidas", "Áreas", (L.condiciones.areas || {}).valor, S.areas_incluidas);
