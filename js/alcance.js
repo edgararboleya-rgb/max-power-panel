@@ -29,15 +29,15 @@
   // ---------------------------------------------------------- títulos y alias
   const SECCIONES = {
     datos:      ["datos", "trabajo"],
-    hoy:        ["hoy", "lo que hay", "existente", "existing"],
-    cambia:     ["cambia", "que cambia", "nuevo", "new layout"],
-    falta:      ["falta", "lo que falta", "sin datos", "falta informacion", "basis"],
-    alcance:    ["alcance", "incluye", "scope", "included"],
-    no_incluye: ["no incluye", "excluye", "exclusiones", "not included", "fuera"],
-    opciones:   ["opciones", "opcionales", "extras", "add-ons", "addons"],
-    condiciones:["condiciones", "clausulas", "interruptores"],
+    hoy:        ["hoy", "lo que hay", "existente", "existing", "existing conditions", "today", "what exists"],
+    cambia:     ["cambia", "que cambia", "nuevo", "new layout", "changes", "what changes", "new"],
+    falta:      ["falta", "lo que falta", "sin datos", "falta informacion", "basis", "basis of information", "missing", "unknowns", "not verified"],
+    alcance:    ["alcance", "incluye", "scope", "included", "scope of work", "work included"],
+    no_incluye: ["no incluye", "excluye", "exclusiones", "not included", "fuera", "exclusions", "excluded", "not in scope"],
+    opciones:   ["opciones", "opcionales", "extras", "add-ons", "addons", "options", "optional add-ons", "optional"],
+    condiciones:["condiciones", "clausulas", "interruptores", "conditions"],
     codigo:     ["codigo", "nec", "code"],
-    notas:      ["notas", "nota", "para mi"]
+    notas:      ["notas", "nota", "para mi", "notes", "note"]
   };
   const TITULO_DE = {};
   Object.entries(SECCIONES).forEach(([k, alias]) => alias.forEach(a => { TITULO_DE[a] = k; }));
@@ -51,17 +51,17 @@
     direccion:          ["direccion", "address"],
     ciudad:             ["ciudad", "jurisdiccion", "city"],
     proyecto:           ["proyecto", "nombre del trabajo", "project"],
-    firma:              ["firma", "con firma"],
+    firma:              ["firma", "con firma", "signature", "signed"],
     permiso:            ["permiso", "permit"],
     planos:             ["planos", "drawings"],
     ingenieria:         ["ingenieria", "engineering", "load calc"],
     utility:            ["utility", "compania electrica"],
     layout:             ["layout", "aprobacion de layout"],
-    vence:              ["vence", "vigencia", "vale", "valid"]
+    vence:              ["vence", "vigencia", "vale", "valid", "expires", "valid for"]
   };
   // Claves de dinero, que van en su propia sección
-  const CLAVES_DINERO = { precio: ["precio", "total", "precio base", "price"],
-                          pagos:  ["pagos", "hitos", "milestones", "cobros"] };
+  const CLAVES_DINERO = { precio: ["precio", "total", "precio base", "price", "contract price", "base price", "lump sum"],
+                          pagos:  ["pagos", "hitos", "milestones", "cobros", "payments", "payment schedule", "payment"] };
 
   // Claves de Condiciones
   const CLAVES_COND = {
@@ -70,16 +70,16 @@
     v240:               ["240v", "240", "circuito de 240", "reuso 240"],
     reubicar:           ["reubicar", "mover equipo", "relocate"],
     isla:               ["isla", "peninsula", "island"],
-    abrir:              ["abrir", "aberturas", "abrir paredes", "abrir techo"],
-    fixtures_cliente:   ["fixtures del cliente", "lamparas del cliente", "owner fixtures"],
-    fixtures_mxp:       ["fixtures nuestros", "fixtures nuestras", "lamparas nuestras", "nuestros fixtures"],
-    excavacion:         ["excavacion", "zanja", "bajo losa", "subsuelo"],
-    listo_rough:        ["listo antes del rough", "listo para rough", "listo rough"],
+    abrir:              ["abrir", "aberturas", "abrir paredes", "abrir techo", "openings", "open walls", "open ceiling"],
+    fixtures_cliente:   ["fixtures del cliente", "lamparas del cliente", "owner fixtures", "client fixtures", "fixtures by owner"],
+    fixtures_mxp:       ["fixtures nuestros", "fixtures nuestras", "lamparas nuestras", "nuestros fixtures", "our fixtures", "fixtures by max power", "contractor fixtures"],
+    excavacion:         ["excavacion", "zanja", "bajo losa", "subsuelo", "excavation", "trench"],
+    listo_rough:        ["listo antes del rough", "listo para rough", "listo rough", "ready before rough", "ready for rough"],
     acceso:             ["acceso", "access"],
     fases:              ["fases", "phases"],
-    areas:              ["areas", "areas incluidas", "donde trabajo"],
-    no_tocamos:         ["no tocamos", "no tocas", "fuera de area"],
-    no_excluir:         ["no excluir", "si hacemos", "quitar exclusion"]
+    areas:              ["areas", "areas incluidas", "donde trabajo", "work areas", "areas included"],
+    no_tocamos:         ["no tocamos", "no tocas", "fuera de area", "not touched", "off limits"],
+    no_excluir:         ["no excluir", "si hacemos", "quitar exclusion", "do not exclude", "remove exclusion"]
   };
   const buscaClave = (tabla, nombre) => {
     const n = norma(nombre);
@@ -171,7 +171,7 @@
     const lineas = String(texto || "").replace(/\r/g, "").split("\n");
     // Líneas donde Edgar ya dijo "eso no es dinero" (se guardan por su texto,
     // no por el número de línea, para que aguanten si el texto se mueve)
-    const perdonadas = new Set(((opciones || {}).perdonadas || []).map(norma));
+    const perdonadas = new Set(((opciones || {}).perdonadas || []).map(x => norma(typeof x === "string" ? x : (x && x.texto) || "")));
     const R = {
       datos: {}, hoy: "", cambia: "", falta: "", items: [], no_incluye: [],
       precio: null, pagos: null, opciones: [], condiciones: {}, codigo: [],
@@ -181,6 +181,7 @@
     const parrafo = { hoy: [], cambia: [], falta: [], notas: [] };
 
     const err = (i, texto, extra) => R.errores.push(Object.assign({ linea: i + 1, texto }, extra || {}));
+    const estaPerdonada = linea => perdonadas.has(norma(linea));
 
     // Un número donde no van números. Si lleva $ es un error rojo; si solo lo
     // parece (podría ser una medida o un año) es un aviso ámbar que no bloquea
@@ -191,11 +192,11 @@
       const arreglos = [{ tipo: "quitar_dinero", etiqueta: `Quitar ${d.trozo} y dejar el texto`, linea: i + 1, valor: d.trozo, auto: d.seguro },
                         { tipo: "quitar_linea", etiqueta: "Quitar la línea entera", linea: i + 1 }];
       if (d.seguro) {
-        err(i, `Hay un precio (${d.trozo}) en ${donde}. El dinero solo va en Precio, Pagos y Opciones.`, { trozo: d.trozo, arreglos });
+        err(i, `Hay un precio (${d.trozo}) en ${donde}. El dinero solo va en Precio, Pagos y Opciones.`, { trozo: d.trozo, arreglos, perdonable: true });
         return true;
       }
       arreglos.push({ tipo: "no_es_dinero", etiqueta: "Eso no es dinero, déjalo", linea: i + 1, valor: linea });
-      R.avisos.push({ linea: i + 1, trozo: d.trozo, arreglos,
+      R.avisos.push({ linea: i + 1, trozo: d.trozo, arreglos, perdonable: true,
                       texto: `Vi «${d.trozo}» en ${donde} y me pareció un precio. Si es una medida, una cantidad o un año, dímelo y lo dejo como está.` });
       return false;
     };
@@ -208,7 +209,8 @@
     });
 
     lineas.forEach((cruda, i) => {
-      const linea = cruda.trim();
+      // un .md del chat puede traer **negritas** o `código`: se leen como texto llano
+      const linea = cruda.replace(/\*\*|__|`/g, "").trim();
       if (!linea || linea.startsWith("//") || linea.startsWith(">") || linea.startsWith("<!--")) return;
 
       // ¿es un título de sección?
@@ -242,7 +244,8 @@
       switch (sec) {
         case "datos": {
           if (!mNV) { const s = sugerir(SECCIONES, linea);
-            R.avisos.push({ linea: i + 1, texto: s ? `"${linea}" no es un título que conozca. ¿Querías decir "${s}"?`
+            if (estaPerdonada(linea)) break;
+            R.avisos.push({ linea: i + 1, perdonable: true, texto: s ? `"${linea}" no es un título que conozca. ¿Querías decir "${s}"?`
                                                    : `No sé dónde poner "${linea.slice(0, 60)}". Parece un comentario del chat.`,
                             sugerencia: s,
                             arreglos: s ? [{ tipo: "corregir_titulo", etiqueta: `Cambiar a "${s}"`, linea: i + 1, valor: s, auto: true }]
@@ -251,7 +254,8 @@
           const k = buscaClave(CLAVES_DATOS, nombre);
           if (k) { R.datos[k] = valor; }
           else { const s = sugerir(CLAVES_DATOS, mNV[1]);
-                 R.avisos.push({ linea: i + 1, texto: s ? `No conozco "${mNV[1].trim()}". ¿Querías decir "${s}"?`
+                 if (estaPerdonada(linea)) break;
+                 R.avisos.push({ linea: i + 1, perdonable: true, texto: s ? `No conozco "${mNV[1].trim()}". ¿Querías decir "${s}"?`
                                                         : `No conozco el dato "${mNV[1].trim()}".`, sugerencia: s,
                                  arreglos: s ? [{ tipo: "corregir_clave", etiqueta: `Cambiar a "${s}"`, linea: i + 1, valor: s, auto: true }]
                                              // una frase entera, una viñeta o un {{FALTA}} delante de "Cliente:" es
@@ -512,10 +516,12 @@
         else { lineas[i] = sin; explicacion = `línea ${a.linea}: quité ${quitado} y dejé «${sin.replace(/^[-*•]\s*/, "").slice(0, 60)}»`; }
         break;
       }
-      case "no_es_dinero": {
+      case "no_es_dinero": case "dejar_asi": {
         if (!hay) return { error: "esa línea ya no existe" };
-        return { texto: lineas.join("\n"), perdona: antes.trim(),
-                 explicacion: `línea ${a.linea}: apuntado, «${antes.trim().slice(0, 60)}» no es dinero` };
+        const nota = String(valor || "").trim();
+        return { texto: lineas.join("\n"), perdona: { texto: antes.trim(), nota },
+                 explicacion: nota ? `línea ${a.linea}: tú dices «${nota.slice(0, 80)}» — de acuerdo, la dejo como está`
+                                   : `línea ${a.linea}: apuntado, «${antes.trim().slice(0, 60)}» se queda como está` };
       }
       case "quitar_linea": {
         if (!hay) return { error: "esa línea ya no existe" };
@@ -805,16 +811,71 @@
     return { texto, limpio: sucias.length === 0, sucias };
   }
 
+  // ================================================ EL INGLÉS TAL CUAL (directo)
+  // Si la hoja ya viene en inglés (el chat la escribió así), no hace falta el
+  // asistente: el texto de Edgar pasa al contrato tal cual, línea por línea.
+  // Devuelve la misma forma que devolvería el cerebro, para que el resto no cambie.
+  const EN_PALABRAS = /\b(the|and|with|from|for|new|existing|install|replace|panel|circuit|will|not|is|are|to|of|in|at|on|by|be|all)\b/gi;
+  const ES_PALABRAS = /\b(el|la|los|las|de|del|con|para|por|un|una|que|se|es|son|nuevo|nueva|existente|cambiar|poner|instalar|panel|circuito|no|y|en|al)\b/gi;
+  function pareceIngles(L) {
+    const t = [L.hoy, L.cambia, L.falta, ...L.items.flatMap(i => [i.titulo, ...i.detalles]),
+               ...L.no_incluye.map(x => x.texto)].join(" ");
+    if (t.trim().length < 20) return null;   // no hay texto para saberlo
+    const en = (t.match(EN_PALABRAS) || []).length, es = (t.match(ES_PALABRAS) || []).length;
+    return en >= es * 1.5;
+  }
+  function redactarDirecto(L) {
+    const d = L.datos, C = L.condiciones;
+    const frase = t => { t = String(t || "").trim(); return t && !/[.!?:]$/.test(t) ? t + "." : t; };
+    const parrafo = t => String(t || "").split("\n").map(x => x.trim()).filter(Boolean).map(frase).join(" ");
+    const de = n => ({ de: n ? [n] : [] });
+    const con = (texto, linea) => { const t = String(texto || "").trim(); return t ? Object.assign({ en: t }, de(linea)) : null; };
+    const lista = arr => arr.length <= 1 ? arr.join("") : arr.slice(0, -1).join(", ") + " and " + arr[arr.length - 1];
+    const titulos = L.items.map(i => i.titulo.trim().replace(/[.:]$/, ""));
+    const minus = t => t.charAt(0).toLowerCase() + t.slice(1);
+    const S = {
+      directo: true,
+      proyecto_en: con(d.proyecto, L.lineas.findIndex(x => /^\s*(proyecto|project)\s*:/i.test(x)) + 1),
+      resumen_del_trabajo: con(titulos.length ? "the electrical work described in Section 2: " + lista(titulos.map(minus)) : d.proyecto, 0),
+      que_hay_hoy: con(parrafo(L.hoy), 0), que_cambia: con(parrafo(L.cambia), 0), que_faltaba: con(parrafo(L.falta), 0),
+      load_calc_y_planos: con(frase(d.ingenieria), 0), planos: con(d.planos, 0),
+      items: L.items.map(it => ({ titulo: con(it.titulo.replace(/[.:]$/, ""), it.lineas[0]),
+                                  descripcion: con(it.detalles.map(frase).join(" ") || frase(it.titulo), it.lineas[0]) })),
+      no_incluye: L.no_incluye.map(x => {
+        const m = x.texto.match(/^([^:.]{3,60})[:.]\s+(.+)$/);
+        return { titulo: con(m ? m[1] : x.texto.split(/\s+/).slice(0, 6).join(" ").replace(/[,;]$/, ""), x.linea),
+                 texto: con(m ? frase(m[2].charAt(0).toUpperCase() + m[2].slice(1)) : frase(x.texto), x.linea) };
+      }),
+      opciones: L.opciones.map(o => ({ titulo: con(o.titulo, o.linea), descripcion: con(o.detalles.map(frase).join(" "), o.linea) })),
+      resumen_corrido: con(lista(titulos.map(minus)), 0),
+      areas_incluidas: con((C.areas || {}).valor, (C.areas || {}).linea),
+      lo_que_no_tocas: con((C.no_tocamos || {}).valor, (C.no_tocamos || {}).linea),
+      que_tiene_que_estar_listo: con((C.listo_rough || {}).valor, (C.listo_rough || {}).linea),
+      lista_de_fases: con((C.fases || {}).valor, (C.fases || {}).linea),
+      acceso: con((C.acceso || {}).valor, (C.acceso || {}).linea),
+      cuales_fixtures: con((C.fixtures_cliente || {}).valor, (C.fixtures_cliente || {}).linea),
+      fixtures_mxp: con((C.fixtures_mxp || {}).valor, (C.fixtures_mxp || {}).linea),
+      aberturas: con(String((C.abrir || {}).valor || "").replace(/,?\s*rengl[oó]n(?:es)?\s+[\d,\sy]+/i, "").trim(), (C.abrir || {}).linea),
+      utility: d.utility ? { quien: con(d.utility.split(/\s+(?:to|para|:)\s+/)[0], 0), que_hace: con(d.utility.split(/\s+(?:to|para|:)\s+/).slice(1).join(" "), 0) } : null,
+      dudas: [], sugerencias: []
+    };
+    Object.keys(S).forEach(k => { if (S[k] === null) delete S[k]; });
+    return S;
+  }
+
   // ==================================================== REVISAR LO QUE DEVOLVIÓ
   // Lo que el asistente NO puede escribir nunca: dinero, porcentajes, artículos del
   // código, números de cláusula y marcas de plantilla. (Palabras como "warranty" sí
   // puede escribirlas: salen de las exclusiones que escribe Edgar.)
   const PROHIBIDAS = /\$|\b\d{1,3}(,\d{3})+\b|\bpercent\b|%|\bArticle\s+\d|\bNEC\b|\bNFPA\b|\bSection\s+9\b|\bStatute\b|\{\{/i;
+  const PROHIBIDAS_DIRECTO = /\$|\{\{|\bSection\s+9\.\d/i;
   function validarSalida(L, S) {
     const rojos = [], amarillos = [];
+    const rx = S && S.directo ? PROHIBIDAS_DIRECTO : PROHIBIDAS;
     const mira = (clave, obj) => {
       if (!obj || !obj.en) return;
-      if (PROHIBIDAS.test(obj.en)) rojos.push({ clave, texto: "El asistente escribió algo que no puede escribir. Se descarta y se vuelve a redactar solo esto." });
+      if (rx.test(obj.en)) rojos.push({ clave, texto: S && S.directo ? `En «${obj.en.slice(0, 50)}» hay un $ o una marca que no puede ir en el contrato.`
+                                                                  : "El asistente escribió algo que no puede escribir. Se descarta y se vuelve a redactar solo esto." });
       if (!obj.de || !obj.de.length) amarillos.push({ clave, texto: "Este texto no dice de qué línea sale." });
     };
     ["proyecto_en","resumen_del_trabajo","que_hay_hoy","que_cambia","que_faltaba",
@@ -1022,18 +1083,20 @@
       N_CIERRE: String(L.items.length + 1 + cta.addons.filter((a, k) =>
         (S.opciones || [])[k] && S.opciones[k].descripcion && S.opciones[k].descripcion.en).length),
       CUALES: (S.cuales_fixtures && S.cuales_fixtures.en) || "",
-      AREAS_INCLUIDAS: (S.areas_incluidas && S.areas_incluidas.en) || "",
-      LO_QUE_NO_TOCAS: (S.lo_que_no_tocas && S.lo_que_no_tocas.en) || "",
+      // Si Edgar no marcó Áreas / No tocamos / Listo / Fases / Acceso, van los textos
+      // de siempre: la plantilla no puede quedar con huecos.
+      AREAS_INCLUIDAS: (S.areas_incluidas && S.areas_incluidas.en) || "the areas",
+      LO_QUE_NO_TOCAS: (S.lo_que_no_tocas && S.lo_que_no_tocas.en) || "any room, structure or equipment not listed there",
       ARTICULOS_NEC_QUE_APLICAN: (admin.nec || L.codigo).map(a => "Article " + a).join(", "),
       RESUMEN_CORRIDO_DE_TODO_EL_ALCANCE: (S.resumen_corrido && S.resumen_corrido.en) || "",
       TOTAL: dinero(cta.base),
       N_ULTIMO: String(nHitos), FIN_OBRA: finObra,
-      QUE_TIENE_QUE_ESTAR_LISTO: (S.que_tiene_que_estar_listo && S.que_tiene_que_estar_listo.en) || "",
-      N_FASES: String(String((C.fases || {}).valor || "").split("/").filter(x => x.trim()).length || 1),
-      LISTA_DE_FASES: (S.lista_de_fases && S.lista_de_fases.en) || "",
+      QUE_TIENE_QUE_ESTAR_LISTO: (S.que_tiene_que_estar_listo && S.que_tiene_que_estar_listo.en) || "the work areas are accessible and ready for electrical rough-in",
+      N_FASES: String(String((C.fases || {}).valor || "").split("/").filter(x => x.trim()).length || 2),
+      LISTA_DE_FASES: (S.lista_de_fases && S.lista_de_fases.en) || "rough-in and trim-out",
       UTILITY: (S.utility && S.utility.quien && S.utility.quien.en) || "",
       QUE_HACE: (S.utility && S.utility.que_hace && S.utility.que_hace.en) || "",
-      ACCESO: (S.acceso && S.acceso.en) || "",
+      ACCESO: (S.acceso && S.acceso.en) || "access to the attic, crawl space and wall cavities from the accessible side",
       EQUIPO_240: equipoEn("v240"), ITEM_240: renglon("v240"), CALIBRE: calibre(),
       EQUIPO_REUBICAR: equipoEn("reubicar"), ITEM_REUBICAR: renglon("reubicar"),
       ITEM_ISLA: renglon("isla"), ITEMS_ABRIR: renglon("abrir"),
@@ -1079,7 +1142,7 @@
   }
 
   // ------------------------------------------------------------------ export
-  const API = { leerAlcance, validarAlcance, cuentas, repartir, leerMonto, pareceDinero, hayDinero,
+  const API = { leerAlcance, validarAlcance, cuentas, repartir, leerMonto, pareceDinero, hayDinero, pareceIngles, redactarDirecto,
                 decidirInterruptores, prepararEncargo, validarSalida,
                 rellenarPlantilla, aplicarSi, repetirFila, aplicarClausulas,
                 barridoFinal, marcasEmparejadas, armarTodo, aplicarArreglo, arreglarTodo, leerPermiso, leerFirma, leerVence, DISPARADORES, ORDEN_9, dinero, centavos, norma };

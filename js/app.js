@@ -6972,6 +6972,8 @@ Power done right the first time. ⚡`;
       leido: null, validado: null, cuenta: null, decision: null,
       salida: (prop && prop.alcance_en) || null,
       huella: (prop && prop.alcance_huella) || null,
+      // lo que Edgar ya explicó ("eso no es un precio, es el año"): se respeta
+      perdonadas: (prop && prop.alcance_decisiones && prop.alcance_decisiones.perdonadas) || (prop ? [] : alcPerdonLocal(proy.id)),
       respuestas: {}, contrato: null
     };
     alcFicha = 0;
@@ -7013,6 +7015,12 @@ Power done right the first time. ⚡`;
   const alcLlaveLocal = id => "mxp_alcance_" + id;
   function alcGuardarLocal(id, txt) { try { localStorage.setItem(alcLlaveLocal(id), txt); } catch { /* nada */ } }
   function alcGuardadaLocal(id) { try { return localStorage.getItem(alcLlaveLocal(id)); } catch { return null; } }
+  function alcPerdonLocal(id, lista) {
+    try {
+      if (lista) { localStorage.setItem(alcLlaveLocal(id) + "_perdon", JSON.stringify(lista)); return lista; }
+      return JSON.parse(localStorage.getItem(alcLlaveLocal(id) + "_perdon") || "[]");
+    } catch { return lista || []; }
+  }
 
   function pintarAlcance() {
     const A = alcActivo;
@@ -7106,21 +7114,33 @@ Power done right the first time. ⚡`;
                 <button class="alc-op" data-fix="${id}">${esc(a.etiqueta)}</button></span>`;
       return `<button class="alc-op${a.auto ? " alc-auto" : ""}" data-fix="${id}">${esc(a.etiqueta)}</button>`;
     }).join("");
+    // Debajo de lo que se puede dejar como está: Edgar explica en una línea por qué
+    // está bien así, la app lo apunta y no lo vuelve a marcar.
+    const explicame = (e, sufijo) => {
+      if (!e.perdonable || !e.linea) return "";
+      const id = `${sufijo}-x`;
+      alcArreglos[id] = { tipo: "dejar_asi", linea: e.linea };
+      return `<div class="alc-explica"><input class="alc-libre alc-fix-in" data-fix-in="${id}" placeholder="o explícame por qué está bien así (ej.: es el año de la casa)">
+              <button class="alc-op" data-fix="${id}">Déjalo así</button></div>`;
+    };
     alcArreglos = {};
     if ((A.arreglados || []).length) {
       salida += `<div class="alc-verde"><b>Arreglado:</b><ul>` +
         A.arreglados.map(x => `<li>${esc(x)}</li>`).join("") + `</ul></div>`;
+    } else if ((A.perdonadas || []).some(x => x && x.nota)) {
+      salida += `<div class="alc-verde"><b>Lo que ya me explicaste (lo respeto):</b><ul>` +
+        A.perdonadas.filter(x => x && x.nota).map(x => `<li>«${esc(String(x.texto).slice(0, 50))}» — ${esc(x.nota)}</li>`).join("") + `</ul></div>`;
     }
     const hayAuto = [...V.errores, ...L.avisos].some(e => (e.arreglos || []).some(a => a.auto));
     if (V.errores.length) {
       salida += `<div class="alc-rojo"><b>Hay que arreglar esto antes de seguir:</b>
         ${hayAuto ? `<button class="accion" id="alc-arreglar-todo" style="margin:.4rem 0 .2rem">Arreglar todo lo que pueda solo</button>` : ""}<ul>` +
-        V.errores.map((e, i) => `<li>${chip(e.linea)}${esc(e.texto)}${cita(e.linea)}<div class="alc-fixes">${botonesDe(e.arreglos, "e" + i)}</div></li>`).join("") +
+        V.errores.map((e, i) => `<li>${chip(e.linea)}${esc(e.texto)}${cita(e.linea)}<div class="alc-fixes">${botonesDe(e.arreglos, "e" + i)}</div>${explicame(e, "e" + i)}</li>`).join("") +
         `</ul></div>`;
     }
     if (L.avisos.length) {
       salida += `<div class="alc-ambar"><b>Esto no me cuadra del todo (no te frena):</b><ul>` +
-        L.avisos.map((a, i) => `<li>${chip(a.linea)}${esc(a.texto)}${cita(a.linea)}<div class="alc-fixes">${botonesDe(a.arreglos, "a" + i)}</div></li>`).join("") +
+        L.avisos.map((a, i) => `<li>${chip(a.linea)}${esc(a.texto)}${cita(a.linea)}<div class="alc-fixes">${botonesDe(a.arreglos, "a" + i).replace(/<button[^>]*>Eso no es dinero, déjalo<\/button>/, "")}</div>${explicame(a, "a" + i)}</li>`).join("") +
         `</ul></div>`;
     }
     if (V.preguntas.length) {
@@ -7172,9 +7192,14 @@ Power done right the first time. ⚡`;
         <p class="lev-nota">${esc(alcPorQue(dec))}</p>
       </div>
       <div class="alc-botones alc-cierra-dos">
-        <button class="accion" id="alc-redactar"${V.errores.length ? " disabled" : ""}>Redactar en inglés</button>
+        ${Alcance.pareceIngles(L) === false
+          ? `<button class="accion" id="alc-redactar"${V.errores.length ? " disabled" : ""}>Pasarlo a inglés con el asistente</button>
+             <button class="accion secundaria" id="alc-directo"${V.errores.length ? " disabled" : ""}>Usarlo tal cual</button>`
+          : `<button class="accion" id="alc-directo"${V.errores.length ? " disabled" : ""}>Revisar y armar</button>`}
         <button class="accion secundaria" id="alc-guardar">${A.propuesta ? "Guardar los cambios" : "Guardar este alcance"}</button>
-      </div></div></div>`;
+      </div>
+      ${Alcance.pareceIngles(L) === false ? `<p class="lev-nota">Esto parece español y el contrato sale en inglés. Lo normal es pedirle al chat el alcance ya en inglés e importarlo; si no, el asistente lo pasa.</p>` : ""}
+      </div></div>`;
     return salida;
   }
 
@@ -7187,16 +7212,18 @@ Power done right the first time. ⚡`;
   // ------------------------------------------------------ FICHA 2: la revisión
   function alcFichaRevision() {
     const A = alcActivo;
-    if (!A.salida) return `<p class="lev-nota">Todavía no hay nada redactado. Vuelve a la hoja y toca «Redactar en inglés».</p>`;
-    const L = A.leido, S = A.salida;
+    if (!A.salida) return `<p class="lev-nota">Todavía no hay nada que revisar. Vuelve a la hoja y toca «Revisar y armar».</p>`;
+    const L = A.leido, S = A.salida, directo = !!S.directo;
     const par = (clave, etiqueta, original, obj) => {
       if (!obj || !obj.en) return "";
-      return `<div class="alc-par">
-        <div class="alc-es"><span>${esc(etiqueta)}</span>${esc(original || "")}</div>
+      return `<div class="alc-par${directo ? " alc-par-solo" : ""}">
+        <div class="alc-es"><span>${esc(etiqueta)}</span>${directo ? "" : esc(original || "")}</div>
         <div class="alc-en"><textarea data-campo="${esc(clave)}" rows="${Math.max(2, Math.ceil(obj.en.length / 90))}">${esc(obj.en)}</textarea></div>
       </div>`;
     };
-    let s = `<p class="lev-nota">A la izquierda lo que tú escribiste, a la derecha el inglés que sale al cliente.
+    let s = directo
+      ? `<p class="lev-nota">Esto es lo que va al contrato, trozo a trozo, tal como lo escribiste. Si cambias algo aquí, se guarda tal cual; si prefieres, vuelve a la hoja y corrígelo allí.</p>`
+      : `<p class="lev-nota">A la izquierda lo que tú escribiste, a la derecha el inglés que sale al cliente.
       Cámbialo si hace falta: lo que corrijas se guarda tal cual.</p>`;
     s += par("proyecto_en", "Nombre del trabajo", L.datos.proyecto, S.proyecto_en);
     s += par("resumen_del_trabajo", "De qué va", L.datos.proyecto, S.resumen_del_trabajo);
@@ -7235,7 +7262,7 @@ Power done right the first time. ⚡`;
         S.sugerencias.map(x => `<li>${esc(x.motivo || "")}</li>`).join("") + `</ul></div>`;
 
     s += `<div class="alc-botones">
-      <button class="accion secundaria" id="alc-reredactar">Redactar de nuevo</button>
+      ${directo ? `<button class="accion secundaria" data-alcficha="0">Volver a la hoja</button>` : `<button class="accion secundaria" id="alc-reredactar">Redactar de nuevo</button>`}
       <button class="accion" id="alc-a-contrato">Armar el contrato</button></div>`;
     return s;
   }
@@ -7357,6 +7384,8 @@ Power done right the first time. ⚡`;
     });
     const bRed = $("alc-redactar");
     if (bRed) bRed.addEventListener("click", alcRedactar);
+    const bDir = $("alc-directo");
+    if (bDir) bDir.addEventListener("click", alcDirecto);
     const bRe = $("alc-reredactar");
     if (bRe) bRe.addEventListener("click", () => { if (confirm("Se pierden las correcciones que hiciste a mano. ¿Sigo?")) alcRedactar(); });
     const bArmar = $("alc-a-contrato");
@@ -7479,7 +7508,7 @@ Power done right the first time. ⚡`;
     const A = alcActivo;
     const r = Alcance.aplicarArreglo(A.texto, a, valor);
     if (r.error) { avisar(r.error, true); return; }
-    if (r.perdona) A.perdonadas = [...(A.perdonadas || []), r.perdona];
+    if (r.perdona) { A.perdonadas = [...(A.perdonadas || []), r.perdona]; alcPerdonLocal(A.proyecto.id, A.perdonadas); }
     A.texto = r.texto; alcGuardarLocal(A.proyecto.id, A.texto);
     A.arreglados = [...(A.arreglados || []), r.explicacion];
     alcCalcular(); pintarAlcance();
@@ -7555,6 +7584,23 @@ Power done right the first time. ⚡`;
     }
   }
 
+  // El camino corto: la hoja ya viene en inglés y pasa al contrato tal cual,
+  // sin asistente y sin esperar. Lo que Edgar corrija en la revisión se queda.
+  async function alcDirecto() {
+    const A = alcActivo;
+    A.texto = $("alc-texto") ? $("alc-texto").value : A.texto;
+    alcCalcular();
+    if (A.validado.errores.length) { avisar("Arregla primero lo que está en rojo", true); return; }
+    const S = Alcance.redactarDirecto(A.leido);
+    const rev = Alcance.validarSalida(A.leido, S);
+    if (!rev.sirve) { avisar(rev.rojos[0].texto, true); return; }
+    A.salida = S; A.uso = null;
+    A.huella = await alcHuella(A.texto);
+    alcFicha = 1;
+    pintarAlcance();
+    avisar("Listo ✓ — revísalo y arma el contrato");
+  }
+
   // Lo que devuelve el cerebro cuando algo no va, dicho en llano
   function alcErrorEnLlano(r) {
     const e = String(r.error || "");
@@ -7587,7 +7633,9 @@ Power done right the first time. ⚡`;
       const out = Alcance.rellenarPlantilla(alcPlantilla, {
         bloques: T.decision.bloques, clausulas: T.decision.clausulas, huecos: T.huecos,
         items: T.items, no_incluye: T.no_incluye, addons: T.addons, hitos: T.hitos });
-      const B = Alcance.barridoFinal(out.html, T.montosPermitidos);
+      // un $ que Edgar explicó y dejó adrede no es un monto inventado
+      const perdonados = (A.perdonadas || []).flatMap(x => (String((x && x.texto) || x || "").match(/\$\s?\d[\d,]*(?:\.\d{2})?/g) || []).map(m => m.replace(/[$\s]/g, "")));
+      const B = Alcance.barridoFinal(out.html, [...T.montosPermitidos, ...perdonados]);
       A.contrato = { html: out.html, numeroClausulas: out.numeroClausulas,
                      archivo: T.archivo, problemas: B.problemas, cuenta: T.cuenta };
       alcFicha = 2;
@@ -7658,7 +7706,7 @@ Power done right the first time. ⚡`;
                          condiciones: L.condiciones, codigo: L.codigo,
                          precio: cta.base, pcts: cta.pcts },
         alcance_en: A.salida || null,
-        alcance_decisiones: { bloques: dec.bloques, clausulas: dec.clausulas, nec: L.codigo },
+        alcance_decisiones: { bloques: dec.bloques, clausulas: dec.clausulas, nec: L.codigo, perdonadas: A.perdonadas || [] },
         alcance_estado: A.contrato ? "armado" : (A.salida ? "redactado" : "leido"),
         reparto_pct: cta.pcts,
         uso_modelo: A.uso || null
