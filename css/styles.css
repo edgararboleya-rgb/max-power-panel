@@ -2542,3 +2542,31 @@ video.foto-mini { background: #000; }
 .cierre-props { margin-top: 0.7rem; }
 .cierre-props .accion { flex-shrink: 0; font-size: 0.72rem; padding: 0.4rem 0.6rem; }
 .lev-roja input[type="file"] { font-size: 0.85rem; width: 100%; }
+
+/* Portal del cliente — las opciones de alcance (v18) */
+.cl-ops { display: flex; flex-direction: column; gap: 0.7rem; }
+.cl-op {
+  border: 1px solid var(--mp-line); border-radius: 16px; padding: 0.9rem;
+  background: linear-gradient(180deg, #FFFFFF 0%, #F7FBFE 100%);
+  box-shadow: 0 2px 8px rgba(7,26,46,.06); position: relative;
+}
+.cl-op.recom { border-color: var(--mp-blue); box-shadow: 0 3px 12px rgba(42,91,215,.16); }
+.cl-op.elegida { border-color: var(--mp-ok); box-shadow: 0 0 0 2px rgba(59,142,30,.25); }
+.cl-op-recom {
+  position: absolute; top: -9px; right: 12px;
+  background: var(--mp-blue); color: #fff; font-size: 0.68rem; font-weight: 650;
+  padding: 2px 9px; border-radius: 999px; letter-spacing: 0.02em;
+}
+.cl-op-tit { font-size: 1.02rem; font-weight: 600; color: var(--mp-ink); }
+.cl-op-precio {
+  font-size: 1.7rem; font-weight: 650; color: var(--mp-navy);
+  font-variant-numeric: tabular-nums; letter-spacing: -0.02em; margin: 2px 0 0;
+}
+.cl-op-hoy { font-size: 0.9rem; font-weight: 600; color: var(--mp-teal-text); }
+.cl-op-ademas { font-size: 0.8rem; color: var(--mp-ink-3); font-style: italic; margin-top: 4px; }
+.cl-op-lista { margin: 0.5rem 0 0; padding-left: 1.1rem; font-size: 0.87rem; color: var(--mp-ink-2); line-height: 1.55; }
+.cl-op-cant { color: var(--mp-ink-3); font-variant-numeric: tabular-nums; }
+.cl-op-no { margin-top: 0.5rem; font-size: 0.83rem; color: var(--mp-ink-3); }
+.cl-op-no ul { margin: 2px 0 0; padding-left: 1.1rem; }
+.cl-op .cl-boton { width: 100%; margin-top: 0.7rem; }
+#cl-firma2 { border-top: 1px solid var(--mp-line); margin-top: 0.5rem; padding-top: 0.5rem; }

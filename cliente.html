@@ -7,7 +7,7 @@
   <title>Max Power — Your Project</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=77">
+  <link rel="stylesheet" href="css/styles.css?v=98">
   <style>
     .cl-hero { text-align: center; padding: 1rem 0 0.4rem; }
     .cl-nombre { font-size: 1.3rem; font-weight: 800; color: var(--mp-ink); margin: 0.2rem 0 0.1rem; }
@@ -140,7 +140,29 @@
       errLink: "This link is incomplete — please ask Max Power for your project link.",
       errAbrir: "We couldn't open this link. It may have been renewed — please ask Max Power for a fresh one.",
       reintentar: "Try again",
-      res: { paso: "✅ Passed", fallo: "❌ Needs correction", programada: "🗓 Scheduled" }
+      res: { paso: "✅ Passed", fallo: "❌ Needs correction", programada: "🗓 Scheduled" },
+      opcT: "Choose your option", opcSub: "Tap the one you want. You can change it until you sign.",
+      opcElegida: "Your choice ✓", opcElegir: "Choose this one",
+      opcRecom: "Recommended", opcHoy: "you put down today", opcAdemas: "plus everything above",
+      opcNoInc: "Not included:", opcVence: "This proposal is valid through ",
+      opcVencida: "This proposal has expired. Message us and we'll send you an updated price.",
+      cambioBtn: "Request a change instead",
+      cambioTit: "What would you like to change?",
+      cambioSub: "Tell us in your own words. Nothing is signed and nothing is charged. Edgar gets this right away.",
+      cambioEnviar: "Send", cambioOk: "Sent ✓ — Edgar will get back to you.",
+      consentTit: "Before you sign",
+      consentSub: "Florida law asks us to give you these notices in writing, and to have your consent to sign electronically. Please read and check the box.",
+      consentPuntos: [
+        "Construction Lien Law notice — anyone who works on your home or supplies material and is not paid can file a claim against the house. It is in your contract in full.",
+        "You have three business days to cancel, for any reason, at no cost. The exact deadline and the cancellation form come with your signed copy.",
+        "Signing electronically has the same legal effect as signing in ink. You can ask for paper at any time, free of charge."
+      ],
+      consentCaja: "I have read these notices and I agree to sign and receive documents electronically.",
+      consentSeguir: "I agree — continue", consentNo: "Not now",
+      dosFirmas: "Someone else also signs (both owners)",
+      firma2Nombre: "Second signer's full legal name",
+      firma2Dibuja: "Second signer: draw your signature",
+      firma2Falta: "The second signer needs their name and their signature."
     } : {
       kicker: "TU PROYECTO CON MAX POWER", pasos: ["Aprobado", "En obra", "Inspecciones", "Terminado"],
       complete: "completado", de: "de", items: "puntos hechos",
@@ -170,7 +192,29 @@
       errLink: "Este link está incompleto — pídele a Max Power el link de tu proyecto.",
       errAbrir: "No pudimos abrir este link. Puede que se haya renovado — pídele a Max Power uno nuevo.",
       reintentar: "Intentar otra vez",
-      res: { paso: "✅ Pasada", fallo: "❌ Necesita corrección", programada: "🗓 Programada" }
+      res: { paso: "✅ Pasada", fallo: "❌ Necesita corrección", programada: "🗓 Programada" },
+      opcT: "Elige tu opción", opcSub: "Toca la que quieras. Puedes cambiarla hasta que firmes.",
+      opcElegida: "Tu elección ✓", opcElegir: "Elegir esta",
+      opcRecom: "Recomendada", opcHoy: "apartas hoy", opcAdemas: "además de todo lo anterior",
+      opcNoInc: "No incluye:", opcVence: "Esta propuesta vale hasta el ",
+      opcVencida: "Esta propuesta venció. Escríbenos y te mandamos el precio al día.",
+      cambioBtn: "Pedir un cambio",
+      cambioTit: "¿Qué te gustaría cambiar?",
+      cambioSub: "Dínoslo con tus palabras. No se firma nada ni se cobra nada. A Edgar le llega al momento.",
+      cambioEnviar: "Enviar", cambioOk: "Enviado ✓ — Edgar te contesta enseguida.",
+      consentTit: "Antes de firmar",
+      consentSub: "La ley de Florida nos pide darte estos avisos por escrito y tener tu permiso para firmar electrónicamente. Léelos y marca la casilla.",
+      consentPuntos: [
+        "Aviso de la Ley de Gravámenes — quien trabaje en tu casa o ponga material y no cobre puede reclamar contra la propiedad. Está completo en tu contrato.",
+        "Tienes tres días hábiles para cancelar, por el motivo que sea y sin costo. La fecha exacta y el formulario van con tu copia firmada.",
+        "Firmar electrónicamente vale igual que firmar con pluma. Puedes pedir papel cuando quieras, gratis."
+      ],
+      consentCaja: "He leído estos avisos y acepto firmar y recibir documentos electrónicamente.",
+      consentSeguir: "Acepto — seguir", consentNo: "Ahora no",
+      dosFirmas: "Firma otra persona también (los dos dueños)",
+      firma2Nombre: "Nombre legal completo del segundo firmante",
+      firma2Dibuja: "Segundo firmante: dibuja tu firma",
+      firma2Falta: "Al segundo firmante le falta su nombre o su firma."
     };
 
     // Iconos de línea (mismo estilo moderno que los botones de la app)
@@ -183,7 +227,8 @@
       actividad: '<path d="M4 6h16M4 12h16M4 18h10"/>',
       docs: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
       pagos: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5h.01M18 14.5h.01"/>',
-      garantia: '<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/>'
+      garantia: '<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/>',
+      opciones: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6l1 1 1.5-2M4.5 12l1 1 1.5-2M4.5 18l1 1 1.5-2"/>'
     };
     function tit(icono, texto) {
       return '<span class="cl-tico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
@@ -246,6 +291,42 @@
         return '<div class="cl-paso ' + clase + '"><div class="cl-barra"></div>' + nombre + '</div>';
       }).join("");
 
+      var usd = function (n) { return (Number(n) || 0).toLocaleString("en-US", { style: "currency", currency: "USD" }); };
+
+      // ---- Las opciones de alcance (v18) ----
+      // Precio y depósito sí se enseñan: es el dinero del cliente. Las
+      // tarifas, las horas y el margen NO llegan aquí — el portal no los manda.
+      var prop = p.propuesta || null;
+      var opciones = "";
+      if (prop && prop.opciones && prop.opciones.length && prop.estado !== "firmada") {
+        opciones = prop.opciones.map(function (o, i) {
+          var elegida = prop.elegida === o.id;
+          var incluye = (o.incluye || []).slice(0, 14).map(function (x) {
+            return '<li>' + esc(typeof x === "string" ? x : (x.item || "")) +
+              (x && x.cantidad ? ' <span class="cl-op-cant">×' + esc(x.cantidad) + '</span>' : '') + '</li>';
+          }).join("");
+          var noinc = (o.no_incluye || []).slice(0, 6).map(function (x) {
+            return '<li>' + esc(typeof x === "string" ? x : (x.texto || "")) + '</li>'; }).join("");
+          return '<div class="cl-op' + (elegida ? ' elegida' : '') + (o.recomendada ? ' recom' : '') + '">' +
+            (o.recomendada ? '<div class="cl-op-recom">★ ' + esc(TXT.opcRecom) + '</div>' : '') +
+            '<div class="cl-op-tit">' + esc(o.titulo || o.letra) + '</div>' +
+            '<div class="cl-op-precio">' + usd(o.precio) + '</div>' +
+            (o.deposito ? '<div class="cl-op-hoy">' + usd(o.deposito) + ' ' + esc(TXT.opcHoy) + '</div>' : '') +
+            (i > 0 ? '<div class="cl-op-ademas">' + esc(TXT.opcAdemas) + '</div>' : '') +
+            (incluye ? '<ul class="cl-op-lista">' + incluye + '</ul>' : '') +
+            (noinc ? '<div class="cl-op-no">' + esc(TXT.opcNoInc) + '<ul>' + noinc + '</ul></div>' : '') +
+            '<button type="button" class="cl-boton' + (elegida ? ' secundario' : '') + '" data-opcion="' + o.id + '"' +
+              (prop.vencida ? ' disabled style="opacity:.5"' : '') + '>' +
+              esc(elegida ? TXT.opcElegida : TXT.opcElegir) + '</button>' +
+          '</div>';
+        }).join("");
+        opciones = '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("opciones", TXT.opcT) + '</div>' +
+          '<p class="alcance-estado" style="margin-bottom:.6rem">' +
+            esc(prop.vencida ? TXT.opcVencida : TXT.opcSub) +
+            (!prop.vencida && prop.vence ? ' ' + esc(TXT.opcVence) + esc(prop.vence) + '.' : '') + '</p>' +
+          '<div class="cl-ops">' + opciones + '</div></div>';
+      }
+
       var pendientesDec = (p.decisiones || []).filter(function (d) { return !d.hecha; });
       var todos = (p.decisiones || []).map(function (d) {
         return '<div class="cl-todo' + (d.hecha ? " hecha" : "") + '">' +
@@ -295,7 +376,6 @@
       // 💵 Pagos — solo llega si Edgar autorizó el dinero de este proyecto
       var pagos = "";
       if (p.dinero) {
-        var usd = function (n) { return (Number(n) || 0).toLocaleString("en-US", { style: "currency", currency: "USD" }); };
         var filasF = (p.dinero.facturas || []).map(function (f) {
           return '<div class="cl-item"><span class="cl-check">' + (f.pagada ? "✅" : "🕓") + '</span>' +
             '<span class="cl-txt">' + esc(f.fecha || "") + (f.num ? " · " + esc(f.num) : "") +
@@ -314,7 +394,9 @@
             ? ' <span class="cl-aprobado">' + esc(TXT.firmadoPor) + esc(d.firma_nombre || "") + ' · ' + esc(String(d.firmado_el).slice(0, 10)) + '</span>' +
               (d.contrafirma_el ? ' <span class="cl-aprobado">' + esc(TXT.ambos) + '</span>' : '')
             : ' <button class="cl-boton" data-firmar="' + d.id + '" data-titulo="' + esc(d.titulo) + '"' +
-              ' data-url="' + esc(urlSegura(d.url)) + '" data-visto="' + (d.visto_el ? 1 : 0) + '">' + esc(TXT.firmar) + '</button>';
+              ' data-url="' + esc(urlSegura(d.url)) + '" data-visto="' + (d.visto_el ? 1 : 0) + '"' +
+              ' data-consentido="' + (d.consentido ? 1 : 0) + '">' + esc(TXT.firmar) + '</button>' +
+              ' <button class="cl-boton secundario" data-cambio="' + d.id + '">' + esc(TXT.cambioBtn) + '</button>';
         } else if (d.pide_aprobacion) {
           aprob = d.aprobado_el
             ? ' <span class="cl-aprobado">' + esc(TXT.aprobado) + esc(String(d.aprobado_el).slice(0, 10)) + '</span>'
@@ -340,6 +422,7 @@
           (total ? '<div class="barra horas-barra"><div class="barra-relleno ' + (pct >= 100 ? "ok" : "") + '" style="width:' + pct + '%"></div></div>' +
           '<div class="alcance-estado" style="text-align:center;margin-top:.3rem"><strong>' + pct + '%</strong> ' + esc(TXT.complete) + ' · ' + hechas + ' ' + esc(TXT.de) + ' ' + total + ' ' + esc(TXT.items) + '</div>' : '') +
         '</div>' +
+        opciones +
         (pendientesDec.length ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("todos", TXT.todos) + '</div>' + todos + '</div>' : '') +
         (fotos ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("fotos", TXT.fotosT) + '</div><div class="cl-fotos">' + fotos + '</div></div>' : '') +
         (total ? '<div class="cal-panel-card"><div class="cal-form-titulo">' + tit("alcance", TXT.alcance) + '</div>' + lista + '</div>' : '') +
@@ -362,6 +445,14 @@
       caja.querySelectorAll("[data-decision]").forEach(function (b) {
         b.addEventListener("click", function () { mandar({ accion: "decision_lista", id: Number(b.dataset.decision) }, b); });
       });
+      // El cliente elige SU opción, en SU teléfono
+      caja.querySelectorAll("[data-opcion]").forEach(function (b) {
+        b.addEventListener("click", function () { mandar({ accion: "elegir_opcion", opcion_id: Number(b.dataset.opcion) }, b); });
+      });
+      // Pedir un cambio en vez de firmar: mismo tamaño que firmar, siempre visible
+      caja.querySelectorAll("[data-cambio]").forEach(function (b) {
+        b.addEventListener("click", function () { abrirCambio(Number(b.dataset.cambio) || null); });
+      });
       // Cuando el cliente abre un documento queda constancia (mejor esfuerzo)
       caja.querySelectorAll(".cl-doc[data-doc]").forEach(function (a) {
         a.addEventListener("click", function () {
@@ -371,10 +462,92 @@
       });
       caja.querySelectorAll("[data-firmar]").forEach(function (b) {
         b.addEventListener("click", function () {
-          abrirFirma(Number(b.dataset.firmar), b.dataset.titulo || "", b.dataset.url || "", b.dataset.visto === "1");
+          var id = Number(b.dataset.firmar);
+          var abrir = function () {
+            abrirFirma(id, b.dataset.titulo || "", b.dataset.url || "", b.dataset.visto === "1");
+          };
+          // Los avisos y el permiso van ANTES de abrir el contrato
+          if (b.dataset.consentido === "1") abrir();
+          else pedirConsentimiento(id, abrir);
         });
       });
       document.title = "Max Power — " + p.nombre;
+    }
+
+    // ---- ✏️ Pedir un cambio en vez de firmar ----
+    // Que nadie firme por no tener salida: está a un toque y del mismo
+    // tamaño que el botón de firmar.
+    function abrirCambio(docId) {
+      if (document.querySelector(".cl-firma-fondo")) return;
+      var fondo = document.createElement("div");
+      fondo.className = "cl-firma-fondo";
+      fondo.innerHTML =
+        '<div class="cl-firma-caja">' +
+          '<h3>' + esc(TXT.cambioTit) + '</h3>' +
+          '<p class="cl-firma-nota" style="font-size:.9rem">' + esc(TXT.cambioSub) + '</p>' +
+          '<textarea id="cl-cambio-txt" rows="5" style="width:100%;font:inherit;font-size:16px;' +
+            'border:1px solid var(--mp-line);border-radius:10px;padding:.6rem"></textarea>' +
+          '<div class="cl-firma-botones">' +
+            '<button type="button" class="cl-boton" id="cl-cambio-ok">' + esc(TXT.cambioEnviar) + '</button>' +
+            '<button type="button" class="cl-boton secundario" id="cl-cambio-no">' + esc(TXT.firmaCancelar) + '</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(fondo);
+      fondo.querySelector("#cl-cambio-no").addEventListener("click", function () { fondo.remove(); });
+      fondo.querySelector("#cl-cambio-ok").addEventListener("click", function () {
+        var txt = fondo.querySelector("#cl-cambio-txt").value.trim();
+        if (!txt) return;
+        var b = fondo.querySelector("#cl-cambio-ok");
+        b.disabled = true; b.textContent = "…";
+        fetch(PORTAL, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ t: t, accion: "pedir_cambio", id: docId, texto: txt })
+        }).then(function (r) {
+          if (!r.ok) throw new Error("bad");
+          fondo.innerHTML = '<div class="cl-firma-caja" style="text-align:center">' +
+            '<h3>' + esc(TXT.cambioOk) + '</h3>' +
+            '<button type="button" class="cl-boton" id="cl-cambio-fin">' + esc(TXT.firmadoOk) + '</button></div>';
+          fondo.querySelector("#cl-cambio-fin").addEventListener("click", function () { fondo.remove(); });
+          return cargar();
+        }).catch(function () { b.disabled = false; b.textContent = TXT.reintentar; });
+      });
+    }
+
+    // ---- ✅ El consentimiento: va ANTES de abrir el contrato ----
+    // El aviso de gravámenes y el de cancelar se exigen "por escrito", y en
+    // electrónico solo valen si el cliente consintió primero.
+    function pedirConsentimiento(docId, seguir) {
+      var fondo = document.createElement("div");
+      fondo.className = "cl-firma-fondo";
+      fondo.innerHTML =
+        '<div class="cl-firma-caja">' +
+          '<h3>' + esc(TXT.consentTit) + '</h3>' +
+          '<p class="cl-firma-nota" style="font-size:.9rem">' + esc(TXT.consentSub) + '</p>' +
+          '<ul class="cl-op-lista" style="font-size:.88rem">' +
+            TXT.consentPuntos.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join("") +
+          '</ul>' +
+          '<label class="cl-firma-nota" style="display:flex;gap:.5rem;align-items:flex-start;cursor:pointer">' +
+            '<input type="checkbox" id="cl-cons-ok" style="margin-top:.2rem;width:1.1rem;height:1.1rem"> ' +
+            '<span>' + esc(TXT.consentCaja) + '</span></label>' +
+          '<div class="cl-firma-botones">' +
+            '<button type="button" class="cl-boton" id="cl-cons-seguir">' + esc(TXT.consentSeguir) + '</button>' +
+            '<button type="button" class="cl-boton secundario" id="cl-cons-no">' + esc(TXT.consentNo) + '</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(fondo);
+      fondo.querySelector("#cl-cons-no").addEventListener("click", function () { fondo.remove(); });
+      fondo.querySelector("#cl-cons-seguir").addEventListener("click", function () {
+        if (!fondo.querySelector("#cl-cons-ok").checked) { alert(TXT.firmaConsent); return; }
+        var b = fondo.querySelector("#cl-cons-seguir");
+        b.disabled = true; b.textContent = "…";
+        fetch(PORTAL, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ t: t, accion: "consentir", id: docId })
+        }).then(function (r) {
+          if (!r.ok) throw new Error("bad");
+          fondo.remove(); seguir();
+        }).catch(function () { b.disabled = false; b.textContent = TXT.reintentar; });
+      });
     }
 
     // ---- 🖊 Panel de firma: nombre + firma dibujada ----
@@ -402,11 +575,20 @@
           '<div class="cl-firma-sub" id="cl-firma-sub">' + esc(TXT.firmaDibuja) + '</div>' +
           '<canvas class="cl-firma-lienzo" width="640" height="260" style="width:100%;height:auto;touch-action:none"></canvas>' +
           '<label class="cl-firma-nota" style="display:flex;gap:.5rem;align-items:flex-start;cursor:pointer">' +
+            '<input type="checkbox" id="cl-firma-dos" style="margin-top:.2rem;width:1.1rem;height:1.1rem"> ' +
+            '<span>' + esc(TXT.dosFirmas) + '</span></label>' +
+          '<div id="cl-firma2" hidden>' +
+            '<input type="text" id="cl-firma2-nombre" placeholder="' + esc(TXT.firma2Nombre) + '" autocomplete="name">' +
+            '<div class="cl-firma-sub">' + esc(TXT.firma2Dibuja) + '</div>' +
+            '<canvas class="cl-firma-lienzo" id="cl-firma2-lienzo" width="640" height="200" style="width:100%;height:auto;touch-action:none"></canvas>' +
+          '</div>' +
+          '<label class="cl-firma-nota" style="display:flex;gap:.5rem;align-items:flex-start;cursor:pointer">' +
             '<input type="checkbox" id="cl-firma-acepto" style="margin-top:.2rem;width:1.1rem;height:1.1rem"> ' +
             '<span>' + esc(TXT.firmaLegal) + '</span></label>' +
           '<div class="cl-firma-botones">' +
             '<button type="button" class="cl-boton" id="cl-firma-ok"' + (!yaLeyo && urlDoc ? ' disabled style="opacity:.5"' : '') + '>' + esc(TXT.firmaEnviar) + '</button>' +
             '<button type="button" class="cl-boton secundario" id="cl-firma-borrar">' + esc(TXT.firmaLimpiar) + '</button>' +
+            '<button type="button" class="cl-boton secundario" id="cl-firma-cambio">' + esc(TXT.cambioBtn) + '</button>' +
             '<button type="button" class="cl-boton secundario" id="cl-firma-no">' + esc(TXT.firmaCancelar) + '</button>' +
           '</div>' +
         '</div>';
@@ -484,7 +666,36 @@
         ctx.clearRect(0, 0, lienzo.width, lienzo.height); trazos = 0;
         if (modo === "escribir") pintarNombre();
       });
+      // ---- El segundo firmante (casa a nombre de dos) ----
+      // Las dos firmas viajan en la MISMA llamada: se sella una sola vez y
+      // el plazo de cancelación cuenta desde la última firma.
+      var lienzo2 = fondo.querySelector("#cl-firma2-lienzo");
+      var ctx2 = lienzo2.getContext("2d");
+      ctx2.lineWidth = 3; ctx2.lineCap = "round"; ctx2.lineJoin = "round"; ctx2.strokeStyle = "#0B2036";
+      var trazos2 = 0, dibujando2 = false;
+      function xy2(e) {
+        var r = lienzo2.getBoundingClientRect();
+        return [(e.clientX - r.left) * (lienzo2.width / r.width), (e.clientY - r.top) * (lienzo2.height / r.height)];
+      }
+      lienzo2.addEventListener("pointerdown", function (e) {
+        e.preventDefault(); dibujando2 = true; lienzo2.setPointerCapture(e.pointerId);
+        var q = xy2(e); ctx2.beginPath(); ctx2.moveTo(q[0], q[1]);
+      });
+      lienzo2.addEventListener("pointermove", function (e) {
+        if (!dibujando2) return;
+        var q = xy2(e); ctx2.lineTo(q[0], q[1]); ctx2.stroke(); trazos2++;
+      });
+      lienzo2.addEventListener("pointerup", function () { dibujando2 = false; });
+      lienzo2.addEventListener("pointercancel", function () { dibujando2 = false; });
+      var casillaDos = fondo.querySelector("#cl-firma-dos");
+      casillaDos.addEventListener("change", function () {
+        fondo.querySelector("#cl-firma2").hidden = !casillaDos.checked;
+      });
+
       fondo.querySelector("#cl-firma-no").addEventListener("click", function () { fondo.remove(); });
+      fondo.querySelector("#cl-firma-cambio").addEventListener("click", function () {
+        fondo.remove(); abrirCambio(docId);
+      });
       fondo.querySelector("#cl-firma-ok").addEventListener("click", function () {
         var nombre = fondo.querySelector("#cl-firma-nombre").value.trim();
         if (!fondo.querySelector("#cl-firma-acepto").checked) { alert(TXT.firmaConsent); return; }
@@ -492,11 +703,19 @@
           if (!nombre) { alert(TXT.firmaFalta); return; }
           pintarNombre(); // asegura que el lienzo tenga la firma final
         } else if (!nombre || trazos === 0) { alert(TXT.firmaFalta); return; }
+        var cuerpoFirma = { t: t, accion: "firmar_doc", id: docId, nombre: nombre,
+                            firma: lienzo.toDataURL("image/png") };
+        if (casillaDos.checked) {
+          var n2 = fondo.querySelector("#cl-firma2-nombre").value.trim();
+          if (!n2 || trazos2 === 0) { alert(TXT.firma2Falta); return; }
+          cuerpoFirma.nombre2 = n2;
+          cuerpoFirma.firma2 = lienzo2.toDataURL("image/png");
+        }
         var b = fondo.querySelector("#cl-firma-ok");
         b.disabled = true; b.textContent = "…";
         fetch(PORTAL, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ t: t, accion: "firmar_doc", id: docId, nombre: nombre, firma: lienzo.toDataURL("image/png") })
+          body: JSON.stringify(cuerpoFirma)
         }).then(function (r) {
           if (!r.ok) throw new Error("bad");
           // Pantalla de confirmación con su copia
