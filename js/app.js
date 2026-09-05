@@ -7293,15 +7293,17 @@ Power done right the first time. ⚡`;
           El formulario con la fecha exacta lo genera el portal al firmar.</p>
       </div>
       <div class="alc-botones">
-        ${C.problemas.length ? "" : `<button class="accion" id="alc-bajar">Bajar el contrato</button>`}
+        ${C.problemas.length ? "" : `<button class="accion" id="alc-imprimir">Imprimir a PDF</button>
+        <button class="accion secundaria" id="alc-bajar">Bajar el contrato (.html)</button>`}
         <button class="accion secundaria" id="alc-guardar">Guardar en la propuesta</button>
       </div>
       ${C.problemas.length ? "" : `
       <div class="alc-entendi" style="margin-top:.9rem">
         <h3>Mandárselo al cliente</h3>
-        <p class="lev-nota">Baja el contrato, ábrelo y pásalo a PDF (Imprimir → Guardar como PDF).
-          Después súbelo aquí: queda enlazado a este alcance y le sale al cliente en su portal
-          para elegirlo y firmarlo.</p>
+        <p class="lev-nota">1) Toca <b>Imprimir a PDF</b>: se abre el contrato con la ventana de imprimir.
+          Elige <b>Guardar como PDF</b> (marca «Background graphics» si te lo ofrece) y guárdalo.
+          2) Toca <b>Subir el PDF al portal</b> y elige ese archivo: queda enlazado a este alcance
+          y le sale al cliente en su portal para elegirlo y firmarlo.</p>
         <div class="alc-botones">
           <input type="file" id="alc-pdf" accept="application/pdf" style="display:none">
           <button class="accion" id="alc-al-portal"${A.propuesta ? "" : " disabled"}>Subir el PDF al portal</button>
@@ -7398,6 +7400,8 @@ Power done right the first time. ⚡`;
     if (bArmar) bArmar.addEventListener("click", alcArmar);
     const bBajar = $("alc-bajar");
     if (bBajar) bBajar.addEventListener("click", alcBajar);
+    const bImpr = $("alc-imprimir");
+    if (bImpr) bImpr.addEventListener("click", alcImprimir);
     const bGuardar = $("alc-guardar");
     if (bGuardar) bGuardar.addEventListener("click", alcGuardarNube);
     const bPortal = $("alc-al-portal");
@@ -7649,6 +7653,24 @@ Power done right the first time. ⚡`;
       if (B.problemas.length) avisar("Armado, pero hay algo que revisar", true);
       else avisar("Contrato armado ✓");
     } catch (e) { avisar(e.message, true); }
+  }
+
+  // Abre el contrato en una pestaña y lanza la ventana de imprimir: con «Guardar
+  // como PDF» sale el archivo listo para el portal, sin bajar ni abrir nada.
+  function alcImprimir() {
+    const C = alcActivo.contrato;
+    const nombre = String(C.archivo || "contrato").replace(/\.html?$/i, "");
+    // el título manda el nombre que el navegador propone al guardar el PDF
+    const html = /<title>[^<]*<\/title>/i.test(C.html)
+      ? C.html.replace(/<title>[^<]*<\/title>/i, `<title>${esc(nombre)}</title>`)
+      : C.html.replace(/<head[^>]*>/i, m => `${m}<title>${esc(nombre)}</title>`);
+    const w = window.open("", "_blank");
+    if (!w) { avisar("El navegador bloqueó la ventana. Permite ventanas emergentes para la app y vuelve a tocar.", true); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+    const imprimir = () => { try { w.focus(); w.print(); } catch { /* nada */ } };
+    if (w.document.readyState === "complete") setTimeout(imprimir, 400);
+    else w.addEventListener("load", () => setTimeout(imprimir, 400));
+    avisar("Elige «Guardar como PDF» y guárdalo; después súbelo al portal");
   }
 
   function alcBajar() {
