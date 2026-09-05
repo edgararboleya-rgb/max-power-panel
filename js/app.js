@@ -336,6 +336,7 @@ function esFalloDeRed(err) {
     $("vista-estimador").hidden = vista !== "estimador";
     $("vista-levantamiento").hidden = vista !== "levantamiento";
     $("vista-propuesta").hidden = vista !== "propuesta";
+    $("vista-cierre").hidden = vista !== "cierre";
     $("vista-chat").hidden = vista !== "chat";
     $("vista-asistente").hidden = vista !== "asistente";
     $kicker.textContent = kicker;
@@ -1071,6 +1072,12 @@ function esFalloDeRed(err) {
     if (!$("vista-estimador").hidden) {
       if (estimadoActivo) { estimadoActivo = null; pintarEstimador(); return; }
       irHome();
+      return;
+    }
+    if (!$("vista-cierre").hidden) {
+      const est = cierrePropuesta ? cierrePropuesta.propuesta.estimado_id : null;
+      cierrePropuesta = null;
+      if (est) irEstimador(est); else irHome();
       return;
     }
     if (!$("vista-propuesta").hidden) {
@@ -4564,6 +4571,7 @@ function esFalloDeRed(err) {
   async function recargarEstimador() {
     try {
       estData = await DB.cargarEstimador();
+      DB.cargarPropuestas().then(d => { propData = d; }).catch(() => { propData = propData || { propuestas: [], opciones: [] }; });
     } catch (err) {
       $("estimador-panel").innerHTML = `<div class="inicio-card"><p class="cal-sin-eventos">` +
         `No se pudo cargar el estimador — revisa la señal. ` +
@@ -5339,6 +5347,26 @@ Power done right the first time. ⚡`;
     });
   }
 
+  // Las propuestas ya guardadas de un estimado, con su atajo a Preparar cierre
+  function propuestasDelEstimado(estimadoId) {
+    const lista = ((propData && propData.propuestas) || []).filter(p => p.estimado_id === estimadoId);
+    if (!lista.length) return "";
+    return `<div class="cierre-props">` + lista.map(p => {
+      const ops = ((propData && propData.opciones) || []).filter(o => o.propuesta_id === p.id);
+      const vence = p.valida_hasta || "";
+      const vencida = vence && vence < new Date().toISOString().slice(0, 10);
+      return `
+        <div class="mat-item">
+          <span class="recibo-chip ${p.estado === "firmada" ? "insp-paso" : vencida ? "por_leer" : "leido"}">${p.estado === "firmada" ? "FIRMADA ✓" : vencida ? "VENCIDA" : "PROPUESTA"}</span>
+          <span class="alcance-info">
+            <span class="alcance-titulo">${ops.length} ${ops.length === 1 ? "opción" : "opciones"}${ops.length ? " · " + ops.map(o => o.letra).join("/") : ""}</span>
+            <span class="alcance-estado">${vence ? "vale hasta " + esc(vence) : "sin fecha de validez"}</span>
+          </span>
+          <button class="accion secundaria btn-cierre" data-id="${p.id}">Preparar cierre</button>
+        </div>`;
+    }).join("") + `</div>`;
+  }
+
   function pintarEstimadorEditor() {
     const est = (estData.estimados || []).find(x => x.id === estimadoActivo);
     if (!est) { estimadoActivo = null; pintarEstimadorLista(); return; }
@@ -5579,6 +5607,7 @@ Power done right the first time. ⚡`;
         ${est.estado === "congelado" ? `<button class="accion secundaria" id="btn-est-descongelar">🔓 Volver a borrador</button>` : ""}
         ${est.estado !== "convertido" ? `<button class="accion" id="btn-est-convertir">🚀 Convertir en proyecto</button>` : ""}
         <button class="accion secundaria" id="btn-est-propuesta">Armar propuesta para el cliente</button>
+        ${propuestasDelEstimado(est.id)}
       </div>
       <div id="propuesta-caja"></div>`;
 
@@ -5893,6 +5922,9 @@ Power done right the first time. ⚡`;
     });
     const btnProp = $("btn-est-propuesta");
     if (btnProp) btnProp.addEventListener("click", () => irPropuesta(est.id));
+    $("estimador-panel").querySelectorAll(".btn-cierre").forEach(b => {
+      b.addEventListener("click", () => irCierre(Number(b.dataset.id)));
+    });
 
     const btnConv = $("btn-est-convertir");
     if (btnConv) btnConv.addEventListener("click", async () => {
@@ -6543,6 +6575,244 @@ Power done right the first time. ⚡`;
       avisar("No se pudo guardar: " + err.message, true);
       btn.disabled = false; btn.textContent = "Guardar la propuesta";
     }
+  }
+
+
+  // ============================================================
+  // 📑 PREPARAR CIERRE — llenar la plantilla del SOW (solo dueño)
+  //
+  // La plantilla de Edgar manda. Aquí NO se escribe el contrato: se
+  // rellenan los huecos numéricos que hoy saca a mano (cliente, fechas,
+  // totales, opciones y la tabla de pagos), y se le devuelve el HTML
+  // listo para que él lo termine de redactar y lo convierta a PDF con
+  // WeasyPrint, igual que siempre.
+  //
+  // La plantilla vive en el teléfono de Edgar (la elige una vez y se
+  // guarda en el navegador), no en el repositorio público: lleva sus
+  // condiciones comerciales dentro.
+  // ============================================================
+  const LLAVE_PLANTILLA = "mxp_plantilla_sow";
+  let cierrePropuesta = null;   // { propuesta, opciones, proyecto }
+  let cierreDatos = null;       // lo que Edgar teclea en esta pantalla
+
+  function plantillaGuardada() {
+    try { return localStorage.getItem(LLAVE_PLANTILLA) || null; } catch { return null; }
+  }
+  function guardarPlantilla(txt) {
+    try { localStorage.setItem(LLAVE_PLANTILLA, txt); return true; } catch { return false; }
+  }
+
+  // Fecha de Florida, sin depender del reloj del teléfono si viaja
+  function hoyFlorida() {
+    const f = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+    return f;
+  }
+  const dosDig = n => String(n).padStart(2, "0");
+  const fechaLarga = f => f.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+
+  // Los tres días hábiles para cancelar: de lunes a SÁBADO (el sábado
+  // cuenta), saltando domingos. Los feriados los confirma el abogado;
+  // hasta entonces se cuentan como hábiles y la app lo dice.
+  function tresDiasHabiles(desde) {
+    const f = new Date(desde.getTime());
+    let contados = 0;
+    while (contados < 3) {
+      f.setDate(f.getDate() + 1);
+      if (f.getDay() !== 0) contados++;   // 0 = domingo
+    }
+    return f;
+  }
+
+  function irCierre(propuestaId) {
+    if (!usuario.finanzas) return;
+    const p = (propData.propuestas || []).find(x => x.id === propuestaId);
+    if (!p) { avisar("No encuentro esa propuesta", true); return; }
+    const ops = (propData.opciones || []).filter(o => o.propuesta_id === p.id)
+      .sort((a, b) => (a.orden || 0) - (b.orden || 0));
+    const proy = proyectos().find(x => x.id === p.proyecto_id) || {};
+    cierrePropuesta = { propuesta: p, opciones: ops, proyecto: proy };
+    // La ciudad sale de la dirección si se puede; si no, la escribe él
+    const ciudad = (proy.direccion || "").split(",")[1];
+    cierreDatos = {
+      client: proy.cliente || "", client2: "", contactos: proy.cliente || "",
+      homeowner: "", proyecto_en: proy.nombre || "",
+      ciudad: (ciudad || "").trim(), base: ops.length ? ops[0].letra : "A"
+    };
+    mostrar("cierre", { kicker: "Solo dueño", titulo: "Preparar cierre", volver: true, nuevo: false });
+    pintarCierre();
+  }
+
+  function pintarCierre() {
+    const c = cierrePropuesta, d = cierreDatos;
+    if (!c) return;
+    const hay = !!plantillaGuardada();
+    const ops = c.opciones;
+    const base = ops.find(o => o.letra === d.base) || ops[0] || {};
+    const hitos = (base.hitos_plan || []);
+    const extras = ops.filter(o => o.letra !== d.base);
+
+    $("cierre-panel").innerHTML = `
+      <div class="cal-panel-card">
+        <div class="lev-titulo">${levIco("resumen")} ${esc(c.proyecto.nombre || c.propuesta.proyecto_id)}</div>
+        <p class="lev-nota">Esto llena los huecos de tu plantilla. El texto del alcance y las condiciones los escribes tú como siempre.</p>
+        ${hay ? `<div class="lev-auto">✓ Plantilla guardada en este teléfono. <button type="button" class="lev-btn-ico" id="cierre-otra" title="Cambiar">${levIco("papelera", 17)}</button></div>`
+              : `<div class="lev-roja">
+                   <div class="lev-roja-t">Falta la plantilla</div>
+                   <p>Elige una vez el archivo <b>SOW_Template_v3.html</b>. Se guarda en este teléfono y no hace falta volver a buscarlo.</p>
+                   <input type="file" id="cierre-archivo" accept=".html,text/html">
+                 </div>`}
+      </div>
+
+      <div class="cal-panel-card">
+        <div class="lev-lab">Quién firma</div>
+        <label>Cliente (quien paga y firma)
+          <input class="cierre-in" data-c="client" type="text" value="${esc(d.client)}" placeholder="Ej: Heather &amp; Lee">
+        </label>
+        <label>Segundo firmante <i>— déjalo vacío si solo firma uno</i>
+          <input class="cierre-in" data-c="client2" type="text" value="${esc(d.client2)}" placeholder="El otro dueño de la casa">
+        </label>
+        <div class="modal-fila">
+          <label>Atención / contacto
+            <input class="cierre-in" data-c="contactos" type="text" value="${esc(d.contactos)}">
+          </label>
+          <label>Dueño de la casa <i>— solo si NO es el cliente</i>
+            <input class="cierre-in" data-c="homeowner" type="text" value="${esc(d.homeowner)}">
+          </label>
+        </div>
+        <div class="modal-fila">
+          <label>Nombre del proyecto (en inglés)
+            <input class="cierre-in" data-c="proyecto_en" type="text" value="${esc(d.proyecto_en)}">
+          </label>
+          <label>Jurisdicción (ciudad)
+            <input class="cierre-in" data-c="ciudad" type="text" value="${esc(d.ciudad)}" placeholder="Ej: St. Petersburg">
+          </label>
+        </div>
+      </div>
+
+      <div class="cal-panel-card">
+        <div class="lev-lab">Qué va como contrato base</div>
+        <div class="lev-chips" data-campo="base">
+          ${ops.map(o => `<button type="button" class="lev-chip${d.base === o.letra ? " puesto" : ""}" data-valor="${o.letra}">${esc(o.letra)} · ${esc(o.titulo)} · ${fmt(o.precio)}</button>`).join("")}
+        </div>
+        <p class="lev-nota">Lo que elijas es el <b>total</b> del contrato. Las demás salen como opciones que el cliente puede añadir.</p>
+        <div class="cierre-cuadro">
+          <div><span>Total del contrato</span><b>${fmt(base.precio || 0)}</b></div>
+          ${extras.map(o => `<div><span>Opción ${esc(o.letra)} — ${esc(o.titulo)}</span><b>${fmt(o.precio - (base.precio || 0))}</b></div>`).join("")}
+          ${hitos.map((h, i) => `<div><span>Pago ${i + 1}${h.es_deposito ? " (depósito)" : ""} — ${h.pct}%</span><b>${fmt(h.monto)}</b></div>`).join("")}
+        </div>
+        ${hitos.length && hitos[0].pct > 10 ? `<p class="lev-nota">El depósito es el ${hitos[0].pct}% (más del 10%): el contrato lleva la cláusula 9.16 con los plazos de permiso y arranque que exige la ley.</p>` : ""}
+      </div>
+
+      <div class="cal-panel-card">
+        <button type="button" class="accion" id="cierre-armar"${hay ? "" : " disabled"}>Armar el contrato</button>
+        <p class="lev-nota">Te baja el HTML con los huecos llenos. Lo terminas de escribir, lo pasas a PDF con WeasyPrint y lo subes al proyecto.</p>
+        <div id="cierre-faltan"></div>
+      </div>`;
+    engancharCierre();
+  }
+
+  function engancharCierre() {
+    const d = cierreDatos;
+    $("cierre-panel").querySelectorAll(".cierre-in").forEach(el => {
+      el.addEventListener("change", () => { d[el.dataset.c] = el.value.trim(); });
+    });
+    $("cierre-panel").querySelectorAll('.lev-chips[data-campo="base"] .lev-chip').forEach(b => {
+      b.addEventListener("click", () => { d.base = b.dataset.valor; pintarCierre(); });
+    });
+    const arch = $("cierre-archivo");
+    if (arch) arch.addEventListener("change", async () => {
+      const f = arch.files && arch.files[0];
+      if (!f) return;
+      const txt = await f.text();
+      if (txt.indexOf("{{CLIENT}}") < 0) { avisar("Ese archivo no parece la plantilla del SOW", true); return; }
+      if (!guardarPlantilla(txt)) { avisar("No cupo en el teléfono. Borra fotos o usa otro navegador.", true); return; }
+      avisar("Plantilla guardada ✓ — no hace falta volver a buscarla");
+      pintarCierre();
+    });
+    const otra = $("cierre-otra");
+    if (otra) otra.addEventListener("click", () => {
+      if (!confirm("¿Quitar la plantilla guardada y elegir otra?")) return;
+      try { localStorage.removeItem(LLAVE_PLANTILLA); } catch { /* nada */ }
+      pintarCierre();
+    });
+    const btn = $("cierre-armar");
+    if (btn) btn.addEventListener("click", armarContrato);
+  }
+
+  // Llena la plantilla. Los huecos de REDACCIÓN se quedan tal cual, a la
+  // vista, para que Edgar sepa qué le falta escribir.
+  function armarContrato() {
+    const plantilla = plantillaGuardada();
+    if (!plantilla) { avisar("Falta la plantilla", true); return; }
+    const c = cierrePropuesta, d = cierreDatos;
+    const ops = c.opciones;
+    const base = ops.find(o => o.letra === d.base) || ops[0];
+    if (!base) { avisar("Esa propuesta no tiene opciones", true); return; }
+    const extras = ops.filter(o => o.letra !== d.base);
+    const hitos = base.hitos_plan || [];
+    const hoy = hoyFlorida();
+    const vence = c.propuesta.valida_hasta
+      ? new Date(c.propuesta.valida_hasta + "T12:00:00")
+      : new Date(hoy.getTime() + 15 * 864e5);
+    const dinero = v => Number(v || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const nombreCorto = (c.propuesta.proyecto_id || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
+
+    let t = plantilla;
+    // Los porcentajes de {{%}} van en orden: uno por cada pago
+    let i = 0;
+    t = t.replace(/\{\{%\}\}/g, () => {
+      const h = hitos[i++];
+      return h ? String(h.pct) + "%" : "{{%}}";
+    });
+    const cambios = {
+      CLIENT: d.client, CLIENT_2: d.client2 || d.client,
+      CONTACTOS: d.contactos || d.client,
+      HOMEOWNER: d.homeowner || d.client,
+      PROYECTO_EN_INGLES: d.proyecto_en,
+      DIRECCION: c.proyecto.direccion || "",
+      FECHA: fechaLarga(hoy),
+      AAAA: String(hoy.getFullYear()),
+      MMDD: dosDig(hoy.getMonth() + 1) + dosDig(hoy.getDate()),
+      NOMBRE: nombreCorto,
+      VENCE_30_DIAS: fechaLarga(vence),
+      CIUDAD: d.ciudad,
+      TOTAL: dinero(base.precio),
+      PCT_DEPOSITO: hitos.length ? String(hitos[0].pct) : "",
+      ADDON_A: extras[0] ? extras[0].titulo : "",
+      MONTO_A: extras[0] ? dinero(extras[0].precio - base.precio) : "",
+      ADDON_B: extras[1] ? extras[1].titulo : "",
+      MONTO_B: extras[1] ? dinero(extras[1].precio - base.precio) : ""
+    };
+    hitos.forEach((h, n) => { cambios["M" + (n + 1)] = dinero(h.monto); });
+    Object.entries(cambios).forEach(([k, v]) => {
+      if (v === "" || v === undefined || v === null) return;
+      t = t.split("{{" + k + "}}").join(String(v));
+    });
+
+    // Qué huecos quedan (los de redacción, y los que llena el portal al firmar)
+    const delPortal = ["FECHA_LIMITE_CANCELAR", "FECHA_TRANSACCION", "OPCION_ACEPTADA", "TOTAL_ACEPTADO"];
+    const quedan = [...new Set((t.match(/\{\{[^}]{1,45}\}\}/g) || []))]
+      .map(x => x.slice(2, -2))
+      .filter(x => delPortal.indexOf(x) < 0);
+
+    const nombreArchivo = `MXP-${cambios.AAAA}-${cambios.MMDD}-${nombreCorto || "SOW"}.html`;
+    const blob = new Blob([t], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = nombreArchivo;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+
+    const limite = tresDiasHabiles(hoy);
+    $("cierre-faltan").innerHTML = `
+      <div class="lev-auto" style="margin-top:.7rem">
+        ✓ Bajado <b>${esc(nombreArchivo)}</b> · propuesta ${esc("MXP-" + cambios.AAAA + "-" + cambios.MMDD + "-" + nombreCorto)} · vale hasta ${esc(cambios.VENCE_30_DIAS)}
+      </div>
+      ${quedan.length ? `<div class="lev-lab" style="margin-top:.6rem">Te falta escribir ${quedan.length} ${quedan.length === 1 ? "hueco" : "huecos"}</div>
+        <ul class="lev-noincluye">${quedan.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`
+        : `<p class="lev-nota">No quedó ningún hueco de redacción.</p>`}
+      <p class="lev-nota">Si el cliente firmara hoy, podría cancelar hasta la medianoche del <b>${esc(fechaLarga(limite))}</b> (tres días hábiles, contando el sábado). Los feriados los confirma el abogado.</p>`;
+    avisar("Contrato armado ✓ — revísalo y pásalo a PDF");
   }
 
   // ============================================================

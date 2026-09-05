@@ -2530,3 +2530,15 @@ video.foto-mini { background: #000; }
 .prop-hitos span { font-size: 0.78rem; color: var(--mp-ink-2); font-variant-numeric: tabular-nums; }
 .prop-cuadra { font-size: 0.76rem; font-weight: 600; margin-top: 0.3rem; }
 .prop-cuenta { font-size: 0.76rem; color: var(--mp-ink-3); margin-top: 0.2rem; }
+
+/* Preparar cierre */
+.cierre-cuadro { margin-top: 0.6rem; }
+.cierre-cuadro > div {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem;
+  padding: 0.35rem 0; border-bottom: 1px solid var(--mp-line); font-size: 0.88rem;
+}
+.cierre-cuadro span { color: var(--mp-ink-2); }
+.cierre-cuadro b { color: var(--mp-navy); font-variant-numeric: tabular-nums; }
+.cierre-props { margin-top: 0.7rem; }
+.cierre-props .accion { flex-shrink: 0; font-size: 0.72rem; padding: 0.4rem 0.6rem; }
+.lev-roja input[type="file"] { font-size: 0.85rem; width: 100%; }
