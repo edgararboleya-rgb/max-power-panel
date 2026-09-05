@@ -6871,20 +6871,65 @@ Power done right the first time. ⚡`;
     if (!propData || !propData.propuestas) {
       try { propData = await DB.cargarPropuestas(); } catch { propData = { propuestas: [], opciones: [] }; }
     }
-    const lista = propData.propuestas || [];
-    const prop = propuestaId
-      ? lista.find(p => p.id === propuestaId)
-      : lista.find(p => p.proyecto_id === proyectoId && p.estado === "borrador");
+    // Un mismo cliente puede tener DOS trabajos en la misma casa (el panel y el
+    // rewire completo). Son dos alcances del MISMO proyecto, no dos proyectos.
+    const variantes = alcVariantesDe(proyectoId);
+    const prop = propuestaId ? variantes.find(p => p.id === propuestaId) : (variantes[0] || null);
+    alcAbrir(proy, prop, variantes);
+    mostrar("alcance", { kicker: proy.nombre, titulo: "Escribir el alcance", volver: true });
+    pintarAlcance();
+  }
+
+  // Las variantes de un proyecto, la más nueva primero
+  function alcVariantesDe(proyectoId) {
+    return ((propData && propData.propuestas) || [])
+      .filter(p => p.proyecto_id === proyectoId)
+      .sort((a, b) => String(b.creado || "").localeCompare(String(a.creado || "")));
+  }
+
+  // Deja lista una variante en memoria (sin repintar)
+  function alcAbrir(proy, prop, variantes) {
     alcActivo = {
       proyecto: proy, propuesta: prop || null,
-      texto: (prop && prop.alcance_md) || alcGuardadaLocal(proyectoId) || "",
+      variantes: variantes || alcVariantesDe(proy.id),
+      texto: (prop && prop.alcance_md) || (prop ? "" : alcGuardadaLocal(proy.id)) || "",
       leido: null, validado: null, cuenta: null, decision: null,
       salida: (prop && prop.alcance_en) || null,
+      huella: (prop && prop.alcance_huella) || null,
       respuestas: {}, contrato: null
     };
     alcFicha = 0;
-    mostrar("alcance", { kicker: proy.nombre, titulo: "Escribir el alcance", volver: true });
+    if (alcActivo.texto.trim()) { try { alcCalcular(); } catch { /* la hoja vieja puede estar a medias */ } }
+  }
+
+  // Cómo se llama cada variante en las fichas de arriba
+  function alcTituloDe(prop) {
+    const L = prop && prop.alcance_leido;
+    if (L && L.datos && L.datos.proyecto) return String(L.datos.proyecto);
+    const ops = ((propData && propData.opciones) || []).filter(o => o.propuesta_id === (prop || {}).id);
+    const base = ops.find(o => o.letra === "A") || ops[0];
+    if (base && base.titulo) return String(base.titulo);
+    return "Sin nombre todavía";
+  }
+  const ALC_ESTADOS = { borrador: "borrador", enviada: "enviada", firmada: "FIRMADA",
+                        vencida: "vencida", cambio_pedido: "cambio pedido" };
+
+  // Cambiar de variante sin perder lo escrito en la que estaba abierta
+  function alcCambiarVariante(id) {
+    alcRecoger();
+    const prop = alcActivo.variantes.find(p => String(p.id) === String(id));
+    if (!prop) return;
+    alcAbrir(alcActivo.proyecto, prop, alcActivo.variantes);
     pintarAlcance();
+  }
+
+  // Un alcance nuevo del MISMO proyecto (el segundo trabajo de la misma casa)
+  function alcNuevaVariante() {
+    alcRecoger();
+    alcAbrir(alcActivo.proyecto, null, alcActivo.variantes);
+    alcActivo.texto = "";
+    pintarAlcance();
+    avisar("Alcance nuevo. Pega la hoja y guárdalo: quedará como otra variante de este proyecto.");
   }
 
   // Lo escrito se guarda solo en el teléfono, para no perderlo sin señal
@@ -6904,8 +6949,44 @@ Power done right the first time. ⚡`;
     if (alcFicha === 0) cuerpo = alcFichaHoja();
     else if (alcFicha === 1) cuerpo = alcFichaRevision();
     else cuerpo = alcFichaContrato();
-    $("alcance-panel").innerHTML = `<div class="pasos lev-pasos">${fichas}</div><div class="lev-cuerpo">${cuerpo}</div>`;
+    $("alcance-panel").innerHTML = alcBarraVariantes() +
+      `<div class="pasos lev-pasos">${fichas}</div><div class="lev-cuerpo">${cuerpo}</div>`;
     alcEnganchar();
+  }
+
+  // Las variantes del proyecto: SOW A, SOW B… Cada una con su hoja y su estado.
+  function alcBarraVariantes() {
+    const A = alcActivo;
+    const V = A.variantes || [];
+    const abierta = A.propuesta ? String(A.propuesta.id) : "nueva";
+    const letras = "ABCDEFGH";
+    // el orden de las letras es el de creación: la primera que se hizo es la A
+    const porEdad = V.slice().sort((a, b) => String(a.creado || "").localeCompare(String(b.creado || "")));
+    const letraDe = id => letras[porEdad.findIndex(p => p.id === id)] || "?";
+    const usd = c => "$" + Alcance.dinero(c);
+    const precioDe = prop => {
+      const ops = ((propData && propData.opciones) || []).filter(o => o.propuesta_id === prop.id && !o.es_addon);
+      if (ops.length) return usd(Math.round(Number(ops[0].precio || 0) * 100));
+      const L = prop.alcance_leido;
+      return L && L.precio ? usd(L.precio) : "";
+    };
+    const tarjetas = porEdad.map(p => {
+      const est = ALC_ESTADOS[p.estado] || p.estado || "";
+      const firmada = p.estado === "firmada";
+      return `<button class="alc-var${String(p.id) === abierta ? " abierta" : ""}${firmada ? " firmada" : ""}" data-variante="${p.id}">
+        <span class="alc-var-letra">SOW ${letraDe(p.id)}</span>
+        <span class="alc-var-nombre">${esc(alcTituloDe(p))}</span>
+        <span class="alc-var-pie">${esc(est)}${precioDe(p) ? " · " + precioDe(p) : ""}</span>
+      </button>`;
+    }).join("");
+    const nueva = `<button class="alc-var nueva${abierta === "nueva" ? " abierta" : ""}" data-variante="nueva">
+        <span class="alc-var-letra">+</span>
+        <span class="alc-var-nombre">Otro alcance</span>
+        <span class="alc-var-pie">del mismo proyecto</span>
+      </button>`;
+    if (!V.length && abierta === "nueva") return "";   // proyecto nuevo: sin barra, no estorba
+    return `<div class="alc-variantes">${tarjetas}${nueva}</div>` +
+      (V.length > 1 ? `<p class="lev-nota" style="margin:.1rem 0 .6rem">Este proyecto tiene ${V.length} alcances. Estás en el que está marcado; toca otro para verlo entero.</p>` : "");
   }
 
   // ---------------------------------------------------------- FICHA 1: la hoja
@@ -6981,6 +7062,7 @@ Power done right the first time. ⚡`;
       </div>
       <div class="alc-botones">
         <button class="accion" id="alc-redactar"${V.errores.length ? " disabled" : ""}>Redactar en inglés</button>
+        <button class="accion secundaria" id="alc-guardar">${A.propuesta ? "Guardar los cambios" : "Guardar este alcance"}</button>
       </div>`;
     return salida;
   }
@@ -7074,6 +7156,11 @@ Power done right the first time. ⚡`;
 
   // ------------------------------------------------------------- los engancHES
   function alcEnganchar() {
+    document.querySelectorAll("[data-variante]").forEach(b =>
+      b.addEventListener("click", () => {
+        if (b.dataset.variante === "nueva") alcNuevaVariante();
+        else alcCambiarVariante(b.dataset.variante);
+      }));
     document.querySelectorAll("[data-alcficha]").forEach(b =>
       b.addEventListener("click", () => { alcRecoger(); alcFicha = Number(b.dataset.alcficha); pintarAlcance(); }));
 
@@ -7391,9 +7478,18 @@ Power done right the first time. ⚡`;
         if (d.cliente && !A.proyecto.cliente) cambios.cliente = d.cliente;
         if (Object.keys(cambios).length) await DB.cambiarProyecto(A.proyecto.id, cambios);
       }
-      await recargarEstimador();
-      avisar("Guardado en la propuesta ✓");
-      btn.disabled = false; btn.textContent = "Guardar en la propuesta";
+      // Las propuestas se recargan para que la barra de arriba enseñe la
+      // variante nueva (o el precio nuevo de la que se acaba de guardar)
+      try { propData = await DB.cargarPropuestas(); } catch { /* se queda la de antes */ }
+      A.variantes = alcVariantesDe(A.proyecto.id);
+      if (A.propuesta) {
+        const fresca = A.variantes.find(p => p.id === A.propuesta.id);
+        if (fresca) A.propuesta = fresca;
+      }
+      pintarAlcance();
+      avisar(A.variantes.length > 1
+        ? `Guardado ✓ — este proyecto tiene ${A.variantes.length} alcances`
+        : "Guardado en la propuesta ✓");
     } catch (err) {
       avisar("No se pudo guardar: " + err.message, true);
       btn.disabled = false; btn.textContent = "Guardar en la propuesta";
