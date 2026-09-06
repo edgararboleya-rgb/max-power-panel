@@ -731,6 +731,29 @@
       if (!r.ok) throw new Error("El asistente no respondió (" + r.status + ")");
       return r.json();
     },
+    // El cartero de email (función «correo»): solo el dueño
+    async pedirCorreo(accion, cuerpo) {
+      if (!sesion) throw new Error("Sin sesión");
+      const tirar = async () => fetch(`${SB.url}/functions/v1/correo?accion=${accion}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sesion.access_token}` },
+        body: JSON.stringify(cuerpo || {})
+      });
+      let r = await tirar();
+      if (r.status === 401) { await refrescar(); r = await tirar(); }
+      if (r.status === 404 || r.status === 405) throw new Error("El cartero de email todavía no está subido a la nube");
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.error) {
+        const e = String(j.error || r.status);
+        if (e === "sin_llave") throw new Error("Al cartero le falta su llave (RESEND_API_KEY) en la nube");
+        if (e === "sin_email") throw new Error("El proyecto no tiene email del cliente");
+        if (e === "sin_portal") throw new Error("Este proyecto no tiene portal del cliente todavía");
+        if (e === "no_autorizado") throw new Error("Esto solo lo puede usar el dueño");
+        if (e === "resend") throw new Error("El servicio de correo lo rechazó: " + (j.detalle || ""));
+        throw new Error("No se pudo mandar el correo: " + (j.detalle || e));
+      }
+      return j;
+    },
     crearDocEmpresa: fila => insertar("documentos_empresa", fila),
     cambiarDocEmpresa: (id, cambios) => actualizar(`documentos_empresa?id=eq.${id}`, cambios),
     eliminarDocEmpresa: id => api(`documentos_empresa?id=eq.${id}`, { metodo: "DELETE" }),

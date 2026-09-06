@@ -7312,7 +7312,10 @@ Power done right the first time. ⚡`;
         </div>
         <p class="lev-nota">${A.proyecto.cliente_email ? `Email del cliente: <b>${esc(A.proyecto.cliente_email)}</b>.` : "El proyecto no tiene email del cliente: al tocar «Mandar por email» te lo pido y lo guardo."}
           Se abre tu correo (o tus mensajes) con el texto y el enlace ya escritos; solo tienes que darle a enviar.</p>
-        <div class="alc-botones alc-cierra-dos"><button class="accion" id="alc-terminado">Terminado — ir al proyecto</button></div>
+        <div class="alc-botones alc-cierra-dos"><button class="accion" id="alc-terminado">Terminado — mandar la invitación e ir al proyecto</button></div>
+        <p class="lev-nota">Al tocar «Terminado», la app le manda sola al cliente el email de invitación a su portal
+          (con el enlace y las opciones que haya) desde info@mxpes.com, y lo apunta en el proyecto.
+          ${A.proyecto.portal_invitado_el ? `Ya se le mandó una el ${esc(String(A.proyecto.portal_invitado_el).slice(0, 10))}; si tocas otra vez, se le manda de nuevo.` : ""}</p>
         <p class="lev-nota">Si cambiaste algo y quieres subir otra versión, dímelo: hay que retirar la anterior primero para que el cliente no vea dos.</p>
       </div>`;
         return `
@@ -7459,10 +7462,30 @@ Power done right the first time. ⚡`;
     const bFin = $("alc-terminado");
     if (bFin) bFin.addEventListener("click", async () => {
       const id = alcActivo.proyecto.id;
+      let email = alcActivo.proyecto.cliente_email || "";
+      if (!email) {
+        const nuevo = prompt("Email del cliente para mandarle la invitación al portal:", "");
+        if (nuevo === null) return;
+        email = nuevo.trim();
+        if (email) { try { await DB.cambiarProyecto(id, { cliente_email: email }); alcActivo.proyecto.cliente_email = email; } catch { /* se manda igual */ } }
+      }
+      bFin.disabled = true; bFin.textContent = "Mandando la invitación…";
+      let mensaje = "Listo ✓ — el contrato está en el portal del cliente";
+      if (email) {
+        try {
+          const r = await DB.pedirCorreo("invitar_portal", { proyecto_id: id, para: email });
+          mensaje = `Invitación enviada a ${r.para} ✓`;
+        } catch (e) {
+          // el correo no salió: se dice claro, pero el contrato sigue en el portal
+          alert("El contrato está en el portal, pero el email no salió:\n" + e.message + "\n\nPuedes mandarle el enlace con «Mandar por email» o «Copiar el enlace».");
+          bFin.disabled = false; bFin.textContent = "Terminado — mandar la invitación e ir al proyecto";
+          return;
+        }
+      }
       try { await recargar(id); } catch { /* con lo que hay */ }
       alcActivo = null;
       irDetalle(id);
-      avisar("Listo ✓ — el contrato está en el portal del cliente");
+      avisar(mensaje);
     });
     const bEnlace = $("alc-copiar-enlace");
     if (bEnlace) bEnlace.addEventListener("click", async () => {
