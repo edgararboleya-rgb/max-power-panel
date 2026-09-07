@@ -7,7 +7,7 @@
   <title>Max Power — Your Project</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=137">
+  <link rel="stylesheet" href="css/styles.css?v=138">
   <style>
     #vista-app > main.container { min-width: 0; width: 100%; }
     .cl-volver { padding: .3rem 0 0; font-size: .82rem; }
@@ -336,7 +336,9 @@
         caja.innerHTML = '<p class="cl-cargando">' + esc(TXT.errAbrir) + '</p>';
       });
 
+    var paqueteActual = null;   // el paquete de la obra, para saber si aplican los tres días
     function pintar(p) {
+      paqueteActual = p;
       var hechas = p.checklist.filter(function (x) { return x.hecho; }).length;
       var total = p.checklist.length;
       var pct = total ? Math.round(hechas / total * 100) : 0;
@@ -678,7 +680,10 @@
           '<h3>' + esc(TXT.consentTit) + '</h3>' +
           '<p class="cl-firma-nota" style="font-size:.9rem">' + esc(TXT.consentSub) + '</p>' +
           '<ul class="cl-op-lista" style="font-size:.88rem">' +
-            TXT.consentPuntos.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join("") +
+            // A una empresa o en propiedad comercial no se le promete el aviso de gravámenes
+            // ni los tres días: solo queda el punto de la firma electrónica.
+            ((paqueteActual && (paqueteActual.gc || paqueteActual.sin_tres_dias)) ? TXT.consentPuntos.slice(-1) : TXT.consentPuntos)
+              .map(function (x) { return '<li>' + esc(x) + '</li>'; }).join("") +
           '</ul>' +
           '<label class="cl-firma-nota" style="display:flex;gap:.5rem;align-items:flex-start;cursor:pointer">' +
             '<input type="checkbox" id="cl-cons-ok" style="margin-top:.2rem;width:1.1rem;height:1.1rem"> ' +

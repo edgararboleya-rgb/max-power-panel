@@ -916,7 +916,13 @@
     // Propiedad comercial: la 9.16 del depósito (F.S. 489.126) mira la propiedad,
     // no quién paga. Si la hoja no dice nada, se trata como residencial: dejar la
     // cláusula de más nunca hace daño; quitarla cuando tocaba, sí.
+    // v3.3 (7-sep, Wimauma): la propiedad comercial tampoco es «consumidor»:
+    //   · 713.015 (aviso de gravámenes) solo lo exige la ley en viviendas de hasta 4 unidades;
+    //   · 501.021 / 16 CFR 429 (tres días para cancelar) son de una venta a un CONSUMIDOR
+    //     (uso personal, familiar o del hogar), no de un campo de pelota ni de una tienda;
+    //   · 489.126 (9.16 del depósito) habla de propiedad RESIDENCIAL.
     const esComercial = /comercial|commercial/.test(norma(d.propiedad || d.property || ""));
+    const esConsumidor = !esGC && !esComercial;
     const permiso = leerPermiso(d.permiso);   // regla de la casa: vacío = nosotros
     const layout = norma(d.layout || "si") !== "no";
     const noExcluir = norma((C.no_excluir || {}).valor || "");
@@ -926,7 +932,7 @@
       ATTENTION: hay(d.atencion), HOMEOWNER: esGC, GC: esGC,
       // v3.2: CONSUMIDOR enciende todo lo que solo vale en un contrato directo con el
       // dueño de una casa: el aviso de gravámenes (713.015) y los tres días para cancelar.
-      CONSUMIDOR: !esGC,
+      CONSUMIDOR: esConsumidor,
       PLANOS: hay(d.planos),
       QUE_HAY_HOY: !!L.hoy, QUE_CAMBIA: !!L.cambia, FALTA: !!L.falta,
       INGENIERIA: hay(d.ingenieria),
@@ -951,8 +957,8 @@
     const clausulas = {
       garantia: true, existentes: true, sitio: true, edicion: true,
       cambios: true, limite: true, seguro: true,
-      cancelacion_tardia: !esGC,   // habla de los tres días del consumidor
-      cancelacion_gc: esGC,        // la misma política, sin los tres días
+      cancelacion_tardia: esConsumidor,   // habla de los tres días del consumidor
+      cancelacion_gc: !esConsumidor,      // la misma política, sin los tres días (GC o propiedad comercial)
       retainage: esGC,
       nto_releases: esGC,
       panel_sin_fotos: si_no(C.fotos_panel) === false,
@@ -967,7 +973,7 @@
       planos_permiso: bloques.PLANOS,
       // 9.16 (F.S. 489.126): la ley mira la PROPIEDAD, no quién paga. Va siempre en
       // residencial; en un subcontrato sobre propiedad comercial, no.
-      deposito: conFirma && cuenta.deposito_mayor_10 && !(esGC && esComercial)
+      deposito: conFirma && cuenta.deposito_mayor_10 && !esComercial
     };
     // con SOW ligero no hay sección 9
     if (!conFirma) Object.keys(clausulas).forEach(k => { clausulas[k] = false; });
@@ -984,9 +990,11 @@
       deposito: "porque el depósito pasa del 10% del precio",
       retainage: "porque el contrato es con un contratista (GC)",
       nto_releases: "porque el contrato es con un contratista (GC): el Notice to Owner y los releases",
-      cancelacion_gc: "porque el contrato es con un contratista: no corren los tres días del consumidor"
+      cancelacion_gc: esGC
+        ? "porque el contrato es con un contratista: no corren los tres días del consumidor"
+        : "porque la propiedad es comercial: no es una venta a un consumidor (F.S. 501.021), no corren los tres días"
     };
-    return { bloques, clausulas, motivos, permiso, esGC, conFirma };
+    return { bloques, clausulas, motivos, permiso, esGC, esComercial, esConsumidor, conFirma };
   }
 
   // =============================================== EL ENCARGO PARA EL ASISTENTE

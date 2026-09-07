@@ -7517,6 +7517,8 @@ Power done right the first time. ⚡`;
         : `<p class="lev-nota">No quedó ningún hueco de redacción.</p>`}
       ${alcActivo && alcActivo.decision && alcActivo.decision.esGC
         ? `<p class="lev-nota">Este contrato es con una empresa: <b>no</b> lleva los tres días para cancelar ni el formulario de cancelación.</p>`
+        : alcActivo && alcActivo.decision && alcActivo.decision.esComercial
+        ? `<p class="lev-nota">Propiedad comercial: <b>no</b> lleva el aviso de gravámenes ni los tres días para cancelar (son solo de un dueño de casa).</p>`
         : `<p class="lev-nota">Si el cliente firmara hoy, podría cancelar hasta la medianoche del <b>${esc(fechaLarga(limite))}</b> (tres días hábiles, contando el sábado). El formulario de cancelación con la fecha exacta lo genera el portal al firmar. Los feriados los confirma el abogado.</p>`}`;
     avisar("Contrato armado ✓ — revísalo y pásalo a PDF");
   }
@@ -7844,6 +7846,11 @@ Power done right the first time. ⚡`;
           ${cta.addons.length ? `<tr class="alc-total"><td>Si el cliente lo toma todo</td><td class="r">${usd(cta.total_con_todo)}</td></tr>` : ""}
         </table>
         ${cta.addons.length ? `<p class="lev-nota">El cliente puede tomar los añadidos que quiera, sueltos o juntos. Los pagos se recalculan sobre lo que acepte.</p>` : ""}
+        ${!dec.esGC && dec.esComercial ? `<div class="alc-gris"><b>Ojo — propiedad comercial:</b> sale
+          <b>SIN</b> el aviso de la ley de gravámenes (713.015 es solo para viviendas de hasta 4 unidades),
+          <b>SIN</b> los tres días para cancelar (501.021 es solo para consumidores) y <b>SIN</b> la 9.16 del
+          depósito (489.126 es solo residencial). El cliente puede cancelar por escrito pagando lo hecho.
+          Si en realidad es una casa, pon «Property: residential» en la hoja.</div>` : ""}
         ${dec.esGC ? `<div class="alc-gris"><b>Ojo — este contrato es entre dos empresas:</b> sale
           <b>SIN</b> el aviso de la ley de gravámenes y <b>SIN</b> los tres días para cancelar (esos dos
           son solo de un dueño de casa), y con la retención, el Notice to Owner y las liberaciones de
@@ -7947,6 +7954,9 @@ Power done right the first time. ⚡`;
         ${A.decision && A.decision.esGC
           ? `<p class="lev-nota">Contrato con una empresa: <b>no</b> lleva los tres días para cancelar
              ni el formulario de cancelación, y el certificado de la firma dirá a nombre de qué empresa se firmó.</p>`
+          : A.decision && A.decision.esComercial
+          ? `<p class="lev-nota">Propiedad comercial: <b>no</b> lleva el aviso de gravámenes ni los tres días
+             para cancelar ni el formulario de cancelación. Puedes pedir material y el permiso en cuanto firme.</p>`
           : `<p class="lev-nota">Si el cliente firmara hoy, podría cancelar hasta la medianoche del
              <b>${esc(fechaLarga(tresDiasHabiles(hoyFlorida())))}</b> (tres días hábiles, contando el sábado).
              El formulario con la fecha exacta lo genera el portal al firmar.</p>`}
@@ -8110,7 +8120,7 @@ Power done right the first time. ⚡`;
       const cuantos = (alcActivo.variantes || []).filter(v => v.alcance_estado === "armado" || v.estado === "enviada").length;
       const cuerpo = `Hi ${nombre},\n\nYour proposal from Max Power Electrical Solutions is ready in your client portal:\n${url}\n\n` +
         (cuantos > 1 ? `There are ${cuantos} scope options; pick the one you want, review it and sign at the bottom.` : `Open the link, review the Scope of Work and sign at the bottom.`) +
-        (quien.gc ? "" : "\nAfter signing you have three business days to cancel at no cost.") +
+        ((quien.gc || (alcActivo.decision && alcActivo.decision.esComercial)) ? "" : "\nAfter signing you have three business days to cancel at no cost.") +
         `\n\nIf you have any questions, call or text me at (305) 967-9311.\n\nEdgar Arboleya\nMax Power Electrical Solutions, Inc.\nFL EC13016045`;
       return { url, asunto: `Your proposal — ${alcActivo.proyecto.nombre}`, cuerpo };
     };
@@ -8392,6 +8402,11 @@ Power done right the first time. ⚡`;
     const pAct = proyectos().find(x => x.id === A.proyecto.id);
     if (pAct && pAct.contratistaModo === "contrato" && A.leido && A.leido.datos) {
       A.leido.datos.contrato_con = "GC";
+    }
+    // Y si el proyecto es comercial, el contrato lo sabe aunque la hoja no lo diga:
+    // sin el aviso 713.015 (solo viviendas) ni los tres días (solo consumidores).
+    if (pAct && pAct.tipo === "comercial" && A.leido && A.leido.datos && !A.leido.datos.propiedad) {
+      A.leido.datos.propiedad = "commercial";
     }
     A.validado = Alcance.validarAlcance(A.leido);
     A.cuenta = Alcance.cuentas(A.leido);
