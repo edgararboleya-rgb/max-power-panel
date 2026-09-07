@@ -5913,6 +5913,17 @@ Power done right the first time. ⚡`;
         <button class="accion secundaria" id="btn-est-propuesta">Armar propuesta para el cliente</button>
         ${propuestasDelEstimado(est.id)}
       </div>
+      ${est.estado === "convertido" ? (() => {
+        // Ya está en un proyecto: se cierra y se vuelve al inicio (o se abre el proyecto)
+        const proy = (est.proyecto_id && proyectos().find(x => x.id === est.proyecto_id))
+          || proyectos().find(p => (p.nombre || "").trim() === (est.nombre || "").trim()) || null;
+        return `<div class="cal-panel-card est-listo">
+          <div class="cal-form-titulo">✓ Este estimado ya está ${est.proyecto_id ? "incluido en su proyecto" : "convertido en proyecto"}</div>
+          <div class="alc-botones">
+            <button class="accion" id="btn-est-terminado">Terminado — ir al inicio</button>
+            ${proy ? `<button class="accion secundaria" id="btn-est-ver-proyecto" data-id="${esc(proy.id)}">Ver el proyecto</button>` : ""}
+          </div>
+        </div>`; })() : ""}
       <div id="propuesta-caja"></div>`;
 
     // --- cabecera ---
@@ -6224,6 +6235,10 @@ Power done right the first time. ⚡`;
       await DB.cambiarEstimado(est.id, { estado: "borrador" }).catch(() => {});
       await recargarEstimador();
     });
+    const btnFin = $("btn-est-terminado");
+    if (btnFin) btnFin.addEventListener("click", () => { estimadoActivo = null; irHome(); avisar("Listo ✓"); });
+    const btnVerP = $("btn-est-ver-proyecto");
+    if (btnVerP) btnVerP.addEventListener("click", () => { estimadoActivo = null; irDetalle(btnVerP.dataset.id); });
     const btnProp = $("btn-est-propuesta");
     if (btnProp) btnProp.addEventListener("click", () => irPropuesta(est.id));
     $("estimador-panel").querySelectorAll(".btn-cierre").forEach(b => {
