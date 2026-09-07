@@ -2132,6 +2132,16 @@ video.foto-mini { background: #000; }
   .hoy-item > .accion, .pendiente-item > .accion { padding: 0.34rem 0.75rem; font-size: 0.78rem; }
 }
 
+/* En el teléfono, el desglose por etapa va DEBAJO del nombre, en chips pequeños que
+   se acomodan en varias líneas; la ficha nunca se aprieta. En escritorio va a la derecha. */
+.cat-info { min-width: 0; flex: 1 1 auto; }
+.cat-etapas { flex: 1 1 100%; width: 100%; display: flex; flex-wrap: wrap; gap: .25rem .6rem; margin-top: .2rem; }
+.cat-etapa { display: inline-flex; align-items: center; gap: .3rem; font-size: .8rem; color: var(--mp-ink-2); white-space: nowrap; }
+.cat-etapa b { color: var(--mp-ink); font-weight: 700; }
+.cat-etapa.vacia { color: var(--mp-ink-3); font-style: italic; }
+.categoria-card { flex-wrap: wrap; position: relative; padding-right: 2.4rem; }
+.cat-flecha { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); margin: 0; }
+
 @media (min-width: 760px) {
   .categorias { grid-template-columns: repeat(3, 1fr); }
   .categoria-card { flex-direction: column; align-items: flex-start; gap: 0.6rem; padding: 1.3rem 1.25rem 1.2rem 1.45rem; }
@@ -2759,10 +2769,10 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
   .container > section { max-width: none; }
 
   /* las tres categorías: nombre a la izquierda, el desglose por etapa a la derecha */
-  .categoria-card { flex-direction: row; align-items: center; gap: 1rem; padding: 1.15rem 1.35rem; }
+  .categoria-card { flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 1rem; padding: 1.15rem 2.6rem 1.15rem 1.35rem; }
   .cat-info { flex: 0 0 auto; min-width: 210px; }
   .cat-etapas {
-    flex: 1 1 auto; display: grid; gap: .3rem .9rem;
+    flex: 1 1 auto; width: auto; margin-top: 0; display: grid; gap: .3rem .9rem;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     padding-left: 1.1rem; border-left: 1px solid var(--mp-line);
   }
