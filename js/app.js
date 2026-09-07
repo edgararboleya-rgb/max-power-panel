@@ -3321,24 +3321,35 @@ function esFalloDeRed(err) {
           } catch { prompt("Cópialo y pégalo en QuickBooks:", texto); }
           window.open("https://qbo.intuit.com/app/invoice", "_blank", "noopener");
         };
-        if (!confirm("¿Crear esta factura en QuickBooks?")) return;
+        // A quién se manda: al contratista si la obra es contrato con él; si no, al cliente.
+        // Es lo mismo que decide la función qb; aquí solo se le enseña a Edgar antes de tocar.
+        const pF = proyectos().find(x => x.id === btn.dataset.proyecto);
+        const gcF = pF && pF.contratistaModo === "contrato" ? gcDeProyecto(pF) : null;
+        const destino = (gcF && gcF.email) || (pF && pF.cliente_email) || "";
+        const quien = gcF && gcF.email ? `${gcF.nombre} (${gcF.email})` : destino;
+        const pregunta = destino
+          ? `¿Crear esta factura en QuickBooks y MANDARLA ahora a ${quien}?`
+          : "Este proyecto no tiene email de cobro. ¿Crear la factura en QuickBooks SIN mandarla? (después la mandas desde QuickBooks)";
+        if (!confirm(pregunta)) return;
         btn.disabled = true; btn.textContent = "⏳";
         try {
           const r = await fetch("https://zeogjvwcmstmkwxjvykz.supabase.co/functions/v1/qb", {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${DB.tokenSesion()}` },
-            body: JSON.stringify({ accion: "factura", proyecto_id: btn.dataset.proyecto, hito_id: Number(btn.dataset.hito) })
+            body: JSON.stringify({ accion: "factura", proyecto_id: btn.dataset.proyecto, hito_id: Number(btn.dataset.hito), enviar: !!destino })
           });
           const d = await r.json().catch(() => ({}));
           if (r.ok && d.ok) {
             // En el teléfono o la tableta NO se abre el editor de QuickBooks: su página
             // web sale rota en pantalla chica (cliente vacío, $0.00, "Required") y da la
-            // impresión de que la factura no se creó. Se manda desde la app de QuickBooks.
+            // impresión de que la factura no se creó.
             const enTelefono = window.matchMedia("(max-width: 1023px), (pointer: coarse)").matches;
             const num = d.doc ? "#" + d.doc + " " : "";
-            avisar(enTelefono
-              ? `Factura ${num}creada en QuickBooks ✓ — mándala desde la app de QuickBooks o la computadora`
-              : `Factura ${num}creada en QuickBooks ✓`);
+            avisar(d.enviada
+              ? `Factura ${num}creada y mandada a ${d.enviada_a} ✓`
+              : (enTelefono
+                ? `Factura ${num}creada en QuickBooks ✓ — sin mandar: mándala desde la app de QuickBooks o la computadora`
+                : `Factura ${num}creada en QuickBooks ✓ (sin mandar)`));
             if (Array.isArray(d.avisos) && d.avisos.length) setTimeout(() => avisar(d.avisos.join(" · "), true), 2500);
             if (d.link && !enTelefono) window.open(d.link, "_blank", "noopener");
             await recargar();
