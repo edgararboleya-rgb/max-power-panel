@@ -453,7 +453,6 @@ function esFalloDeRed(err) {
     pintarInicioHoy();
     pintarInicioUrgentes();
     pintarInicioAvisos();
-    pintarInicioPropuestas();
     pintarInicioEquipo();
     pintarInicioSemana();
     pintarInicioEmpresa();
@@ -737,7 +736,8 @@ function esFalloDeRed(err) {
     const vc = $("agenda-ver-cal"); if (vc) vc.addEventListener("click", ev => { ev.preventDefault(); $("btn-calendario") && $("btn-calendario").click(); });
   }
 
-  // 📨 PROPUESTAS ESPERANDO RESPUESTA (solo dueño): las enviadas, con los días que llevan.
+  // 📨 PROPUESTAS ESPERANDO RESPUESTA — Edgar prefirió no repetirlas: ya salen en Avisos.
+  //    Se deja la función por si algún día la quiere de vuelta (no se llama).
   function pintarInicioPropuestas() {
     const caja = $("inicio-propuestas"); if (!caja) return;
     if (!usuario.finanzas) { caja.innerHTML = ""; return; }
