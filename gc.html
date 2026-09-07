@@ -7,117 +7,143 @@
   <title>Max Power — Contractor Portal</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=131">
+  <link rel="stylesheet" href="css/styles.css?v=132">
   <style>
-    .gc-hero { text-align: center; padding: 1rem 0 0.6rem; }
-    .gc-nombre { font-size: 1.35rem; font-weight: 800; color: var(--mp-ink); margin: 0.2rem 0 0.15rem; }
-    .gc-sub { font-size: 0.88rem; color: var(--mp-ink-2); }
-    .gc-lista { display: grid; gap: 0.75rem; align-items: stretch; }
-    .gc-obra { display: flex; flex-direction: column; }
-    .gc-obra .gc-ok, .gc-obra .gc-aviso { margin-top: auto; }
-    .gc-obra {
-      position: relative; display: block; text-decoration: none; color: inherit;
-      background: var(--mp-card); border: 1px solid var(--mp-line); border-radius: 16px;
-      box-shadow: var(--mp-shadow); padding: 0.85rem 1rem 0.9rem 1.15rem; overflow: hidden;
-      transition: transform .24s var(--mp-ease), box-shadow .24s var(--mp-ease);
-    }
-    .gc-obra::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--mp-grad); }
-    .gc-obra:hover { transform: translateY(-2px); box-shadow: var(--mp-shadow-lg); }
-    .gc-obra-tit { font-size: 1rem; font-weight: 750; color: var(--mp-ink); }
-    .gc-obra-dir { font-size: 0.8rem; color: var(--mp-ink-2); margin-top: 0.1rem; }
-    .gc-obra-pie { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.55rem; align-items: center; }
-    .gc-eti {
-      display: inline-flex; align-items: center; gap: 0.35rem; border-radius: 999px;
-      background: var(--mp-sky-2); border: 1px solid var(--mp-line);
-      font-size: 10.5px; font-weight: 650; padding: 0.28rem 0.65rem;
-      text-transform: uppercase; letter-spacing: 0.06em; color: var(--mp-ink-2);
-    }
-    .gc-aviso {
-      display: block; margin-top: 0.55rem; border-radius: 12px; padding: 0.45rem 0.7rem;
-      background: var(--mp-warn-bg); border: 1px solid var(--mp-warn-bd); color: var(--mp-warn-tx);
-      font-size: 0.8rem; font-weight: 650;
-    }
-    .gc-ok { color: var(--mp-ok); font-size: 0.78rem; font-weight: 650; margin-top: 0.5rem; display: block; }
-    .gc-card {
-      background: var(--mp-card); border: 1px solid var(--mp-line); border-radius: 16px;
-      box-shadow: var(--mp-shadow); padding: 0.85rem 1rem; margin-top: 1rem;
-    }
-    .gc-card-tit { font-size: 11px; text-transform: uppercase; letter-spacing: 0.16em;
-                   color: var(--mp-teal-text); font-weight: 700; margin-bottom: 0.5rem; }
-    .gc-item { display: block; padding: 0.3rem 0; font-size: 0.86rem; }
-    .gc-item a { color: var(--mp-navy); font-weight: 650; text-decoration: none; }
-    .gc-item a:hover { text-decoration: underline; }
-    .gc-wa {
-      display: inline-flex; align-items: center; gap: 0.45rem; margin-top: 0.4rem;
-      background: linear-gradient(135deg, var(--mp-blue), var(--mp-cyan)); color: #04222B;
-      border-radius: 999px; padding: 0.5rem 0.95rem; font-size: 0.82rem; font-weight: 800; text-decoration: none;
-    }
+    /* ── El portal del contratista: un estado de cuenta, no una galería ── */
+    :root { --gc-num: "tnum" 1; }
+    #gc-panel { font-variant-numeric: tabular-nums; }
     .gc-cargando { text-align: center; color: var(--mp-ink-2); padding: 2.5rem 1rem; font-size: 0.92rem; }
 
-    /* Resumen de dinero de todas sus obras de contrato */
-    .gc-resumen {
-      display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px;
-      background: var(--mp-line); border: 1px solid var(--mp-line);
-      border-radius: 16px; overflow: hidden; box-shadow: var(--mp-shadow); margin-bottom: 1rem;
-    }
-    .gc-num { background: var(--mp-card); padding: 0.8rem 1rem; }
-    .gc-num span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.13em;
-                   color: var(--mp-ink-3); font-weight: 650; margin-bottom: 0.15rem; }
-    .gc-num b { font-size: 1.12rem; color: var(--mp-ink); font-weight: 750; }
-    .gc-num.ok b { color: var(--mp-ok); }
-    .gc-num.falta b { color: var(--mp-navy); }
+    /* Cabecera del estado de cuenta */
+    .gc-cab { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end;
+              gap: 0.6rem 1.5rem; padding: 1.1rem 0 0.9rem; border-bottom: 2px solid var(--mp-navy); margin-bottom: 1rem; }
+    .gc-cab .kicker { margin-bottom: 0.15rem; }
+    .gc-nombre { font-size: 1.55rem; font-weight: 800; color: var(--mp-ink); line-height: 1.15; margin: 0; }
+    .gc-sub { font-size: 0.86rem; color: var(--mp-ink-2); margin-top: 0.25rem; }
+    .gc-cab-der { text-align: right; font-size: 0.78rem; color: var(--mp-ink-2); line-height: 1.5; }
+    .gc-cab-der b { color: var(--mp-ink); font-size: 0.86rem; }
 
-    /* Lo que le toca a él */
-    .gc-toca { background: var(--mp-warn-bg); border: 1px solid var(--mp-warn-bd);
-               border-radius: 16px; padding: 0.8rem 1rem; margin-bottom: 1rem; }
-    .gc-toca .gc-card-tit { color: var(--mp-warn-tx); }
-    .gc-toca a { display: block; padding: 0.3rem 0; color: var(--mp-warn-tx);
-                 font-size: 0.86rem; font-weight: 650; text-decoration: none; }
+    /* Los cinco números */
+    .gc-resumen { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--mp-line);
+                  border: 1px solid var(--mp-line); border-radius: 14px; overflow: hidden; box-shadow: var(--mp-shadow); margin-bottom: 1.2rem; }
+    .gc-num { background: var(--mp-card); padding: 0.85rem 1rem 0.8rem; }
+    .gc-num span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.13em; color: var(--mp-ink-3); font-weight: 650; margin-bottom: 0.2rem; }
+    .gc-num b { font-size: 1.28rem; color: var(--mp-ink); font-weight: 750; letter-spacing: -0.01em; }
+    .gc-num small { display: block; font-size: 0.72rem; color: var(--mp-ink-3); margin-top: 0.15rem; }
+    .gc-num.ok b { color: var(--mp-ok); }
+    .gc-num.debe { background: #FFF8E6; }
+    .gc-num.debe b { color: #9A5B00; }
+    .gc-num.debe span { color: #9A5B00; }
+
+    /* Secciones */
+    .gc-sec { margin-bottom: 1.5rem; }
+    .gc-sec-tit { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem;
+                  font-size: 11px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--mp-teal-text);
+                  font-weight: 700; margin: 0 0.15rem 0.55rem; }
+    .gc-sec-tit small { font-size: 10px; letter-spacing: 0.06em; color: var(--mp-ink-3); text-transform: none; font-weight: 600; }
+
+    /* Las tablas del estado de cuenta */
+    .gc-tabla-caja { background: var(--mp-card); border: 1px solid var(--mp-line); border-radius: 14px;
+                     box-shadow: var(--mp-shadow); overflow: hidden; }
+    table.gc-tabla { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    .gc-tabla th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--mp-ink-3);
+                   font-weight: 650; padding: 0.6rem 0.8rem; background: var(--mp-sky-1); border-bottom: 1px solid var(--mp-line); white-space: nowrap; }
+    .gc-tabla td { padding: 0.62rem 0.8rem; border-bottom: 1px solid var(--mp-line); vertical-align: middle; color: var(--mp-ink); }
+    .gc-tabla tr:last-child td { border-bottom: 0; }
+    .gc-tabla tr.fila:hover td { background: var(--mp-sky-1); }
+    .gc-tabla th.r, .gc-tabla td.r { text-align: right; white-space: nowrap; }
+    .gc-tabla td.r b { font-weight: 700; }
+    .gc-tabla td.ok { color: var(--mp-ok); }
+    .gc-tabla td.debe { color: #9A5B00; font-weight: 700; }
+    .gc-tabla td.suave { color: var(--mp-ink-3); }
+    .gc-tabla tr.total td { background: var(--mp-sky-2); font-weight: 750; border-top: 2px solid var(--mp-navy); }
+    .gc-tabla a.obra { color: var(--mp-navy); font-weight: 700; text-decoration: none; }
+    .gc-tabla a.obra:hover { text-decoration: underline; }
+    .gc-tabla .sub { display: block; font-size: 0.74rem; color: var(--mp-ink-3); font-weight: 400; margin-top: 0.1rem; }
+    .gc-tabla .prox { font-size: 0.78rem; color: var(--mp-ink-2); max-width: 260px; }
+    .gc-tabla .prox b { color: var(--mp-ink); }
+    .gc-vacio { padding: 0.9rem 1rem; font-size: 0.86rem; color: var(--mp-ink-3); }
+
+    /* Etiquetas */
+    .gc-eti { display: inline-flex; align-items: center; border-radius: 999px; background: var(--mp-sky-2); border: 1px solid var(--mp-line);
+              font-size: 10px; font-weight: 650; padding: 0.22rem 0.55rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--mp-ink-2); white-space: nowrap; }
+    .gc-eti.act { background: #E6F5FF; border-color: #BFE3FA; color: #0B5C8A; }
+    .gc-eti.ok { background: #EAF7E4; border-color: #C7E9B8; color: var(--mp-ok); }
+    .gc-eti.gris { background: var(--mp-sky-1); }
+    .gc-dias { font-size: 0.74rem; color: var(--mp-ink-3); }
+    .gc-dias.tarde { color: #9A5B00; font-weight: 700; }
+
+    /* Lo que le toca */
+    .gc-toca { background: #FFF8E6; border: 1px solid #F1D48A; border-radius: 14px; padding: 0.8rem 1rem; margin-bottom: 1.2rem; }
+    .gc-toca .gc-sec-tit { color: #9A5B00; margin-bottom: 0.35rem; }
+    .gc-toca a { display: block; padding: 0.28rem 0; color: #7A4A00; font-size: 0.86rem; font-weight: 650; text-decoration: none; }
     .gc-toca a:hover { text-decoration: underline; }
 
-    /* Los grupos por etapa */
-    .gc-grupo { margin-bottom: 1.4rem; }
-    .gc-grupo-tit { font-size: 11px; text-transform: uppercase; letter-spacing: 0.16em;
-                    color: var(--mp-teal-text); font-weight: 700; margin: 0 0 0.6rem 0.15rem; }
-    .gc-grupo-tit b { color: var(--mp-ink-3); font-weight: 650; }
-
-    /* Avance y dinero dentro de la tarjeta */
-    .gc-barra { height: 5px; border-radius: 999px; background: var(--mp-sky-3); overflow: hidden; margin: 0.5rem 0 0.3rem; }
+    /* Las obras: tarjetas compactas */
+    .gc-lista { display: grid; gap: 0.7rem; align-items: stretch; }
+    .gc-obra { position: relative; display: flex; flex-direction: column; text-decoration: none; color: inherit;
+               background: var(--mp-card); border: 1px solid var(--mp-line); border-radius: 14px; box-shadow: var(--mp-shadow);
+               padding: 0.75rem 0.9rem 0.8rem 1.05rem; overflow: hidden; transition: transform .2s var(--mp-ease), box-shadow .2s var(--mp-ease); }
+    .gc-obra::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--mp-grad); }
+    .gc-obra:hover { transform: translateY(-2px); box-shadow: var(--mp-shadow-lg); }
+    .gc-obra-tit { font-size: 0.95rem; font-weight: 750; color: var(--mp-ink); line-height: 1.25; }
+    .gc-obra-dir { font-size: 0.76rem; color: var(--mp-ink-2); margin-top: 0.12rem; }
+    .gc-obra-pie { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.5rem; }
+    .gc-barra { height: 4px; border-radius: 999px; background: var(--mp-sky-3); overflow: hidden; margin: 0.5rem 0 0.25rem; }
     .gc-barra i { display: block; height: 100%; background: var(--mp-grad); }
-    .gc-avance { font-size: 0.76rem; color: var(--mp-ink-3); }
-    .gc-plata { display: flex; flex-wrap: wrap; gap: 0.1rem 0.9rem; margin-top: 0.45rem;
-                padding-top: 0.45rem; border-top: 1px dashed var(--mp-line); font-size: 0.78rem; color: var(--mp-ink-2); }
-    .gc-plata b { color: var(--mp-ink); }
-    .gc-plata .ok b { color: var(--mp-ok); }
+    .gc-avance { font-size: 0.74rem; color: var(--mp-ink-3); }
+    .gc-ok, .gc-aviso { margin-top: auto; padding-top: 0.45rem; font-size: 0.78rem; font-weight: 650; }
+    .gc-ok { color: var(--mp-ok); }
+    .gc-aviso { color: #9A5B00; }
+
+    /* Lateral */
+    .gc-card { background: var(--mp-card); border: 1px solid var(--mp-line); border-radius: 14px; box-shadow: var(--mp-shadow); padding: 0.85rem 1rem; margin-top: 0.9rem; }
+    .gc-card-tit { font-size: 11px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--mp-teal-text); font-weight: 700; margin-bottom: 0.5rem; }
+    .gc-item { display: block; padding: 0.28rem 0; font-size: 0.86rem; }
+    .gc-item a { color: var(--mp-navy); font-weight: 650; text-decoration: none; }
+    .gc-item a:hover { text-decoration: underline; }
+    .gc-wa { display: inline-flex; align-items: center; gap: 0.45rem; margin-top: 0.4rem; background: linear-gradient(135deg, var(--mp-blue), var(--mp-cyan));
+             color: #04222B; border-radius: 999px; padding: 0.5rem 0.95rem; font-size: 0.82rem; font-weight: 800; text-decoration: none; }
+    .gc-nota { font-size: 0.74rem; color: var(--mp-ink-3); line-height: 1.5; margin-top: 0.6rem; }
+
+    /* Teléfono: las tablas se apilan */
+    @media (max-width: 699px) {
+      table.gc-tabla, .gc-tabla tbody, .gc-tabla tr, .gc-tabla td { display: block; width: 100%; }
+      .gc-tabla thead { display: none; }
+      .gc-tabla tr { padding: 0.55rem 0.85rem; border-bottom: 1px solid var(--mp-line); }
+      .gc-tabla td { display: flex; justify-content: space-between; gap: 1rem; padding: 0.15rem 0; border: 0; }
+      .gc-tabla td::before { content: attr(data-l); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--mp-ink-3); font-weight: 650; align-self: center; }
+      .gc-tabla td.nombre { display: block; padding-bottom: 0.25rem; }
+      .gc-tabla td.nombre::before { display: none; }
+      .gc-tabla td.prox { display: block; max-width: none; padding-top: 0.3rem; }
+      .gc-tabla td.prox::before { display: block; margin-bottom: 0.1rem; }
+      .gc-tabla tr.total { background: var(--mp-sky-2); }
+      .gc-cab-der { text-align: left; }
+    }
     @media (min-width: 700px) {
-      html { font-size: 18px; }
-      .container, .membrete-inner { max-width: 720px; margin-left: auto; margin-right: auto; }
+      html { font-size: 17px; }
+      .container, .membrete-inner { max-width: 760px; margin-left: auto; margin-right: auto; }
       .pie { text-align: center; }
+      .gc-resumen { grid-template-columns: repeat(5, 1fr); }
     }
     @media (min-width: 1024px) {
       html { font-size: 16px; }
-      /* Sin menú lateral: se anula el grid y la franja oscura de la app */
       #vista-app { display: flex; flex-direction: column; background: none; }
       #vista-app > .membrete, #vista-app > main, #vista-app > .pie { grid-column: auto; width: 100%; align-self: stretch; }
       .membrete-inner, .container { max-width: 1240px; padding-left: 1.6rem; padding-right: 1.6rem; }
-      .gc-lista { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); align-items: start; }
-      #gc-panel { display: grid; grid-template-columns: minmax(0, 1fr) 340px; column-gap: 1.5rem; align-items: start; }
-      .gc-hero, .gc-cargando { grid-column: 1 / -1; }
+      #gc-panel { display: grid; grid-template-columns: minmax(0, 1fr) 320px; column-gap: 1.5rem; align-items: start; }
+      .gc-cab, .gc-cargando { grid-column: 1 / -1; }
       .gc-col-main { grid-column: 1; }
       .gc-col-side { grid-column: 2; position: sticky; top: 1rem; }
       .gc-col-side .gc-card:first-child { margin-top: 0; }
-      .gc-resumen { grid-template-columns: repeat(4, 1fr); }
+      .gc-lista { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
     }
-    /* Pantallas anchas de verdad: se aprovecha el sitio en vez de dejar media
-       pantalla en blanco, que es lo que pasaba en la v1. */
     @media (min-width: 1500px) {
-      .membrete-inner, .container { max-width: 1520px; }
-      #gc-panel { grid-template-columns: minmax(0, 1fr) 380px; column-gap: 2rem; }
-      .gc-lista { grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); }
+      .membrete-inner, .container { max-width: 1560px; }
+      #gc-panel { grid-template-columns: minmax(0, 1fr) 340px; column-gap: 2rem; }
+      .gc-lista { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
     }
-    @media (min-width: 1900px) {
-      .membrete-inner, .container { max-width: 1780px; }
-    }
+    @media (min-width: 1900px) { .membrete-inner, .container { max-width: 1800px; } }
   </style>
 </head>
 <body>
@@ -135,7 +161,7 @@
       </div>
     </header>
     <main class="container">
-      <div id="gc-panel"><p class="gc-cargando">Loading your jobs…</p></div>
+      <div id="gc-panel"><p class="gc-cargando">Loading your account…</p></div>
     </main>
     <footer class="pie">
       <p>Max Power Electrical Solutions, Inc. · mxpes.com · (305) 967-9311</p>
@@ -143,7 +169,7 @@
     </footer>
   </div>
 
-  <script src="assets/logo.js?v=131"></script>
+  <script src="assets/logo.js?v=132"></script>
   <script>
   (function () {
     "use strict";
@@ -153,7 +179,6 @@
     var logo = document.getElementById("logo");
     if (logo && window.MAXPOWER_LOGO) logo.src = window.MAXPOWER_LOGO;
 
-    // Idioma: inglés por defecto (los GC trabajan en inglés); ES con el botoncito
     var lang = localStorage.getItem("mxp_cl_idioma") || "en";
     var btnIdioma = document.getElementById("gc-idioma");
     btnIdioma.textContent = lang === "en" ? "ES" : "EN";
@@ -163,50 +188,58 @@
     });
 
     var TXT = lang === "en" ? {
-      kicker: "CONTRACTOR PORTAL",
-      jobs: "jobs with Max Power", job: "job with Max Power",
-      abrir: "Open job →",
-      proximo: "Next work day", sinProximo: "No work day scheduled",
-      insp: "Last inspection", inspProx: "Next inspection", todoBien: "All good",
-      avisoFirmar: "Action needed: sign ", avisoSinPagar: function (n, d) {
-        return "Invoice " + n + " has been unpaid for " + d + " day" + (d === 1 ? "" : "s"); },
-      nuestro: "Our contract", coordina: "Owner pays direct",
-      licT: "License & insurance", ayudaT: "Questions about a job?",
+      kicker: "CONTRACTOR PORTAL · STATEMENT OF ACCOUNT",
+      jobs: "jobs with Max Power", job: "job with Max Power", nObras: "on contract with you",
+      alDia: "As of", preparado: "Prepared by", lic: "FL EC13016045",
+      rContrato: "Contract value", rFacturado: "Invoiced to date", rCobrado: "Paid to date",
+      rDebe: "Balance due now", rPorFacturar: "Not yet invoiced",
+      rContratoS: "including signed change orders", rDebeS: function (n) { return n === 1 ? "1 open invoice" : n + " open invoices"; },
+      rPorFacturarS: "future milestones",
+      cuentaT: "Statement by job", cuentaS: "only the jobs on contract with you",
+      cObra: "Job", cEstado: "Status", cContrato: "Contract", cFacturado: "Invoiced", cCobrado: "Paid", cDebe: "Balance due", cProximo: "Next milestone",
+      total: "Total", sinHito: "—", pagadoEntero: "Paid in full",
+      abiertasT: "Open invoices", abiertasS: "what is due today",
+      fNum: "Invoice", fObra: "Job", fFecha: "Issued", fMonto: "Amount", fCobrado: "Paid", fSaldo: "Balance", fDias: "Age",
+      dias: function (n) { return n + (n === 1 ? " day" : " days"); }, sinAbiertas: "No open invoices. Thank you.",
       tocaT: "Needs your attention", tocaFirmar: "Sign", tocaPagar: "unpaid",
-      resumenT: "Your jobs with us", rContrato: "Contract value", rFacturado: "Invoiced",
-      rCobrado: "Paid", rFalta: "Remaining", nObras: "jobs on contract",
-      gEjecucion: "In progress", gPropuesta: "Proposals & estimates", gCompletado: "Completed",
-      avance: "of the scope done", verObra: "Open",
-      ayuda: "Reply to any email from info@mxpes.com or call (305) 967-9311.",
-      wa: "WhatsApp us", cargando: "Loading your jobs…",
-      vacio: "No open jobs right now.",
+      obrasT: "All jobs", gEjecucion: "In progress", gPropuesta: "Proposals & estimates", gCompletado: "Completed",
+      proximo: "Next work day", insp: "Last inspection", inspProx: "Next inspection", todoBien: "All good",
+      avisoFirmar: "Action needed: sign ", avisoSinPagar: function (n, d) { return "Invoice " + n + " unpaid for " + d + " days"; },
+      nuestro: "Our contract", coordina: "Owner pays direct", avance: "of the scope done",
+      licT: "License & insurance", ayudaT: "Questions about this statement?",
+      ayuda: "Reply to any email from info@mxpes.com or call (305) 967-9311.", wa: "WhatsApp us",
+      nota: "Amounts are taken from our invoicing records and are current as of the date shown. If anything does not match your records, tell us and we will correct it right away.",
+      cargando: "Loading your account…", vacio: "No open jobs right now.",
       errLink: "This link is incomplete — please ask Max Power for your contractor link.",
       errAbrir: "We couldn't open this link. It may have been renewed — please ask Max Power for a fresh one.",
-      estados: { estimando: "Estimating", enviado: "Proposal sent", aprobado: "Approved",
-                 ejecucion: "In progress", pausa: "On hold", completado: "Completed" },
+      estados: { estimando: "Estimating", enviado: "Proposal sent", aprobado: "Approved", ejecucion: "In progress", pausa: "On hold", completado: "Completed" },
       insps: { paso: "Passed", fallo: "Failed", programada: "Scheduled", parcial: "Partial" }
     } : {
-      kicker: "PORTAL DEL CONTRATISTA",
-      jobs: "obras con Max Power", job: "obra con Max Power",
-      abrir: "Abrir la obra →",
-      proximo: "Próximo día de trabajo", sinProximo: "Sin día de trabajo programado",
-      insp: "Última inspección", inspProx: "Próxima inspección", todoBien: "Todo al día",
-      avisoFirmar: "Te toca firmar: ", avisoSinPagar: function (n, d) {
-        return "La factura " + n + " lleva " + d + " día" + (d === 1 ? "" : "s") + " sin pagar"; },
-      nuestro: "Contrato con ustedes", coordina: "La paga el dueño",
-      licT: "Licencia y seguros", ayudaT: "¿Alguna pregunta de una obra?",
+      kicker: "PORTAL DEL CONTRATISTA · ESTADO DE CUENTA",
+      jobs: "obras con Max Power", job: "obra con Max Power", nObras: "con contrato con ustedes",
+      alDia: "Al día", preparado: "Preparado por", lic: "FL EC13016045",
+      rContrato: "Valor del contrato", rFacturado: "Facturado a la fecha", rCobrado: "Cobrado a la fecha",
+      rDebe: "Saldo pendiente hoy", rPorFacturar: "Por facturar",
+      rContratoS: "con los change orders firmados", rDebeS: function (n) { return n === 1 ? "1 factura abierta" : n + " facturas abiertas"; },
+      rPorFacturarS: "hitos futuros",
+      cuentaT: "Estado de cuenta por obra", cuentaS: "solo las obras con contrato con ustedes",
+      cObra: "Obra", cEstado: "Etapa", cContrato: "Contrato", cFacturado: "Facturado", cCobrado: "Cobrado", cDebe: "Saldo", cProximo: "Próximo hito",
+      total: "Total", sinHito: "—", pagadoEntero: "Pagado entero",
+      abiertasT: "Facturas abiertas", abiertasS: "lo que se debe hoy",
+      fNum: "Factura", fObra: "Obra", fFecha: "Emitida", fMonto: "Monto", fCobrado: "Cobrado", fSaldo: "Saldo", fDias: "Días",
+      dias: function (n) { return n + (n === 1 ? " día" : " días"); }, sinAbiertas: "Sin facturas abiertas. Gracias.",
       tocaT: "Te toca a ti", tocaFirmar: "Firmar", tocaPagar: "sin pagar",
-      resumenT: "Tus obras con nosotros", rContrato: "Valor del contrato", rFacturado: "Facturado",
-      rCobrado: "Cobrado", rFalta: "Falta", nObras: "obras con contrato",
-      gEjecucion: "En ejecución", gPropuesta: "Propuestas y estimados", gCompletado: "Terminadas",
-      avance: "del alcance hecho", verObra: "Abrir",
-      ayuda: "Responde a cualquier correo de info@mxpes.com o llama al (305) 967-9311.",
-      wa: "Escríbenos por WhatsApp", cargando: "Cargando tus obras…",
-      vacio: "Ahora mismo no hay obras abiertas.",
+      obrasT: "Todas las obras", gEjecucion: "En ejecución", gPropuesta: "Propuestas y estimados", gCompletado: "Terminadas",
+      proximo: "Próximo día de trabajo", insp: "Última inspección", inspProx: "Próxima inspección", todoBien: "Todo al día",
+      avisoFirmar: "Te toca firmar: ", avisoSinPagar: function (n, d) { return "La factura " + n + " lleva " + d + " días sin pagar"; },
+      nuestro: "Contrato con ustedes", coordina: "La paga el dueño", avance: "del alcance hecho",
+      licT: "Licencia y seguros", ayudaT: "¿Alguna pregunta del estado de cuenta?",
+      ayuda: "Responde a cualquier correo de info@mxpes.com o llama al (305) 967-9311.", wa: "Escríbenos por WhatsApp",
+      nota: "Los montos salen de nuestros registros de facturación y están al día a la fecha indicada. Si algo no cuadra con tus registros, dínoslo y lo corregimos enseguida.",
+      cargando: "Cargando tu cuenta…", vacio: "Ahora mismo no hay obras abiertas.",
       errLink: "Este enlace está incompleto — pídele a Max Power el enlace de tu empresa.",
       errAbrir: "No pudimos abrir este enlace. Puede que se haya renovado — pídele a Max Power uno nuevo.",
-      estados: { estimando: "Estimando", enviado: "Propuesta enviada", aprobado: "Aprobado",
-                 ejecucion: "En ejecución", pausa: "En pausa", completado: "Completado" },
+      estados: { estimando: "Estimando", enviado: "Propuesta enviada", aprobado: "Aprobada", ejecucion: "En ejecución", pausa: "En pausa", completado: "Terminada" },
       insps: { paso: "Pasó", fallo: "No pasó", programada: "Programada", parcial: "Parcial" }
     };
 
@@ -220,113 +253,190 @@
       });
     }
     function urlSegura(u) { return /^https?:\/\//i.test(String(u || "").trim()) ? String(u).trim() : ""; }
+    var LOC = lang === "en" ? "en-US" : "es-ES";
+    function usd(n) { return (Number(n) || 0).toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
     function fechaCorta(f) {
       if (!f) return "";
       var d = new Date(String(f) + "T12:00:00");
       if (isNaN(d.getTime())) return String(f);
-      return d.toLocaleDateString(lang === "en" ? "en-US" : "es-ES",
-        { weekday: "short", month: "short", day: "numeric" });
+      return d.toLocaleDateString(LOC, { month: "short", day: "numeric" });
+    }
+    function fechaLarga(f) {
+      if (!f) return "";
+      var d = new Date(String(f) + "T12:00:00");
+      if (isNaN(d.getTime())) return String(f);
+      return d.toLocaleDateString(LOC, { month: "long", day: "numeric", year: "numeric" });
+    }
+    function enlaceObra(id) { return "cliente.html?g=" + encodeURIComponent(g) + "&p=" + encodeURIComponent(id); }
+    // Los hitos se escriben en español en la app. Al contratista se le enseñan en
+    // inglés con las frases de la casa; lo que no se reconoce se deja tal cual.
+    var FRASES = [
+      [/^Añadido — .*$/i, "Add-on work"],
+      [/Milestone (\d+) — (\d+)% movilización/i, "Milestone $1 — $2% mobilization"],
+      [/Milestone (\d+) — (\d+)% avance/i, "Milestone $1 — $2% progress"],
+      [/Milestone (\d+) — (\d+)% final/i, "Milestone $1 — $2% final"],
+      [/Milestone (\d+) — (\d+)% depósito/i, "Milestone $1 — $2% deposit"],
+      [/Milestone (\d+) — (\d+)% rough y trim/i, "Milestone $1 — $2% rough and trim"],
+      [/Milestone (\d+) — (\d+)% servicio y rough/i, "Milestone $1 — $2% service and rough"],
+      [/^Depósito (\d+)%$/i, "Deposit $1%"],
+      [/^(\d+)% final$/i, "$1% final"],
+      [/^(\d+)% al completar$/i, "$1% on completion"],
+      [/^Saldo del alcance base$/i, "Balance of the base scope"],
+      [/^Al pasar (la )?inspección final$/i, "On passing the final inspection"],
+      [/^Al pasar la inspección de rough$/i, "On passing the rough inspection"],
+      [/^Al aceptar( la propuesta)?.*$/i, "On acceptance of the proposal"],
+      [/^Al firmar y movilizar$/i, "On signing and mobilization"],
+      [/^Al completar (el trabajo añadido|la obra)$/i, "On completion of the work"],
+      [/^Al terminar el trabajo.*$/i, "On completion of the work"],
+      [/^Rough \/ avance principal completo$/i, "Rough-in / main progress complete"],
+      [/^Rough y trim completos$/i, "Rough-in and trim complete"],
+      [/^Movilización$/i, "Mobilization"],
+      [/^Trabajo terminado y probado$/i, "Work completed and tested"]
+    ];
+    function hitoEn(t) {
+      t = String(t || "").trim();
+      if (lang !== "en" || !t) return t;
+      for (var i = 0; i < FRASES.length; i++) if (FRASES[i][0].test(t)) return t.replace(FRASES[i][0], FRASES[i][1]);
+      return t;
     }
 
     if (!g) { caja.innerHTML = '<p class="gc-cargando">' + esc(TXT.errLink) + '</p>'; return; }
 
-    // La llave viaja en el cuerpo del POST — no queda en los registros del
-    // servidor. Solo si el guardián contesta 4xx (y no 401) se reintenta por GET.
-    fetch(PORTAL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ g: g })
-    })
+    fetch(PORTAL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ g: g }) })
       .then(function (r) {
         if (r.ok) return r.json();
         if (r.status >= 400 && r.status < 500 && r.status !== 401) {
-          return fetch(PORTAL + "?g=" + encodeURIComponent(g))
-            .then(function (r2) { if (!r2.ok) throw new Error("bad"); return r2.json(); });
+          return fetch(PORTAL + "?g=" + encodeURIComponent(g)).then(function (r2) { if (!r2.ok) throw new Error("bad"); return r2.json(); });
         }
         throw new Error("bad");
       })
       .then(pintar)
-      .catch(function () {
-        caja.innerHTML = '<p class="gc-cargando">' + esc(TXT.errAbrir) + '</p>';
-      });
+      .catch(function () { caja.innerHTML = '<p class="gc-cargando">' + esc(TXT.errAbrir) + '</p>'; });
 
     function pintar(p) {
       var obras = p.obras || [];
-      var usd = function (n) { return (Number(n) || 0).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }); };
+      var R = p.resumen || null;
+      var hoy = (R && R.al_dia) || new Date().toISOString().slice(0, 10);
+      var n = obras.length;
+
+      // ── Cabecera del estado de cuenta ──
+      var cab =
+        '<div class="gc-cab">' +
+          '<div><div class="kicker">' + esc(TXT.kicker) + '</div>' +
+            '<h1 class="gc-nombre">' + esc(p.empresa ? p.empresa.nombre : "") + '</h1>' +
+            '<div class="gc-sub">' + n + " " + esc(n === 1 ? TXT.job : TXT.jobs) +
+              (R ? " · " + R.obras_con_contrato + " " + esc(TXT.nObras) : "") + '</div></div>' +
+          '<div class="gc-cab-der">' + esc(TXT.alDia) + ' <b>' + esc(fechaLarga(hoy)) + '</b><br>' +
+            esc(TXT.preparado) + ' <b>Max Power Electrical Solutions, Inc.</b> · ' + esc(TXT.lic) + '</div>' +
+        '</div>';
+
+      // ── Los cinco números ──
+      var resumen = R
+        ? '<div class="gc-resumen">' +
+          '<div class="gc-num"><span>' + esc(TXT.rContrato) + '</span><b>' + esc(usd(R.contrato)) + '</b><small>' + esc(TXT.rContratoS) + '</small></div>' +
+          '<div class="gc-num"><span>' + esc(TXT.rFacturado) + '</span><b>' + esc(usd(R.facturado)) + '</b></div>' +
+          '<div class="gc-num ok"><span>' + esc(TXT.rCobrado) + '</span><b>' + esc(usd(R.cobrado)) + '</b></div>' +
+          '<div class="gc-num debe"><span>' + esc(TXT.rDebe) + '</span><b>' + esc(usd(R.por_cobrar)) + '</b><small>' + esc(TXT.rDebeS(R.facturas_abiertas || 0)) + '</small></div>' +
+          '<div class="gc-num"><span>' + esc(TXT.rPorFacturar) + '</span><b>' + esc(usd(R.por_facturar)) + '</b><small>' + esc(TXT.rPorFacturarS) + '</small></div>' +
+          '</div>'
+        : "";
+
+      // ── Lo que le toca ──
+      var toca = (p.te_toca || []).map(function (x) {
+        var linea = x.tipo === "firmar"
+          ? "🖊 " + TXT.tocaFirmar + ": " + x.que + " — " + x.obra_nombre
+          : "💵 " + (lang === "en" ? "Invoice " : "Factura ") + x.num + " · " + usd(x.monto) + " · " + TXT.dias(x.dias) + " " + TXT.tocaPagar + " — " + x.obra_nombre;
+        return '<a href="' + enlaceObra(x.obra) + '">' + esc(linea) + '</a>';
+      }).join("");
+
+      // ── El estado de cuenta por obra ──
+      var conContrato = obras.filter(function (o) { return o.es_nuestro_contrato && o.dinero; });
+      var filas = conContrato.map(function (o) {
+        var d = o.dinero;
+        var prox = d.proximo_hito
+          ? '<b>' + esc(usd(d.proximo_hito.monto)) + '</b> · ' + esc(hitoEn(d.proximo_hito.titulo).slice(0, 60)) +
+            (d.proximo_hito.condicion ? '<span class="sub">' + esc(hitoEn(d.proximo_hito.condicion).slice(0, 80)) + '</span>' : "")
+          : (d.falta <= 0 ? '<span class="gc-eti ok">' + esc(TXT.pagadoEntero) + '</span>' : esc(TXT.sinHito));
+        return '<tr class="fila">' +
+          '<td class="nombre"><a class="obra" href="' + enlaceObra(o.id) + '">' + esc(o.nombre) + '</a>' +
+            (o.direccion ? '<span class="sub">' + esc(o.direccion) + '</span>' : "") + '</td>' +
+          '<td data-l="' + esc(TXT.cEstado) + '"><span class="gc-eti ' + (o.estado === "ejecucion" ? "act" : o.estado === "completado" ? "ok" : "gris") + '">' + esc(TXT.estados[o.estado] || o.estado) + '</span></td>' +
+          '<td class="r" data-l="' + esc(TXT.cContrato) + '">' + esc(usd(d.contrato)) + '</td>' +
+          '<td class="r" data-l="' + esc(TXT.cFacturado) + '">' + esc(usd(d.facturado)) + '</td>' +
+          '<td class="r ok" data-l="' + esc(TXT.cCobrado) + '">' + esc(usd(d.cobrado)) + '</td>' +
+          '<td class="r ' + (d.por_cobrar > 0 ? "debe" : "suave") + '" data-l="' + esc(TXT.cDebe) + '">' + esc(usd(d.por_cobrar)) + '</td>' +
+          '<td class="prox" data-l="' + esc(TXT.cProximo) + '">' + prox + '</td>' +
+          '</tr>';
+      }).join("");
+      var cuenta = R && conContrato.length
+        ? '<div class="gc-sec"><div class="gc-sec-tit"><span>' + esc(TXT.cuentaT) + '</span><small>' + esc(TXT.cuentaS) + '</small></div>' +
+          '<div class="gc-tabla-caja"><table class="gc-tabla"><thead><tr>' +
+            '<th>' + esc(TXT.cObra) + '</th><th>' + esc(TXT.cEstado) + '</th><th class="r">' + esc(TXT.cContrato) + '</th>' +
+            '<th class="r">' + esc(TXT.cFacturado) + '</th><th class="r">' + esc(TXT.cCobrado) + '</th><th class="r">' + esc(TXT.cDebe) + '</th><th>' + esc(TXT.cProximo) + '</th>' +
+          '</tr></thead><tbody>' + filas +
+          '<tr class="total"><td class="nombre">' + esc(TXT.total) + '</td><td data-l=""></td>' +
+            '<td class="r" data-l="' + esc(TXT.cContrato) + '">' + esc(usd(R.contrato)) + '</td>' +
+            '<td class="r" data-l="' + esc(TXT.cFacturado) + '">' + esc(usd(R.facturado)) + '</td>' +
+            '<td class="r ok" data-l="' + esc(TXT.cCobrado) + '">' + esc(usd(R.cobrado)) + '</td>' +
+            '<td class="r ' + (R.por_cobrar > 0 ? "debe" : "suave") + '" data-l="' + esc(TXT.cDebe) + '">' + esc(usd(R.por_cobrar)) + '</td>' +
+            '<td data-l=""></td></tr>' +
+          '</tbody></table></div></div>'
+        : "";
+
+      // ── Las facturas abiertas ──
+      var abiertas = (p.facturas_abiertas || []);
+      var filasF = abiertas.map(function (f) {
+        return '<tr class="fila">' +
+          '<td class="nombre"><b>' + esc(f.num) + '</b><span class="sub"><a class="obra" href="' + enlaceObra(f.obra) + '">' + esc(f.obra_nombre) + '</a></span></td>' +
+          '<td data-l="' + esc(TXT.fFecha) + '">' + esc(fechaCorta(f.fecha)) + '</td>' +
+          '<td class="r" data-l="' + esc(TXT.fMonto) + '">' + esc(usd(f.monto)) + '</td>' +
+          '<td class="r ok" data-l="' + esc(TXT.fCobrado) + '">' + esc(usd(f.cobrado)) + '</td>' +
+          '<td class="r debe" data-l="' + esc(TXT.fSaldo) + '">' + esc(usd(f.saldo)) + '</td>' +
+          '<td data-l="' + esc(TXT.fDias) + '"><span class="gc-dias' + (f.dias >= 30 ? " tarde" : "") + '">' + esc(TXT.dias(f.dias)) + '</span></td>' +
+          '</tr>';
+      }).join("");
+      var facturas = R
+        ? '<div class="gc-sec"><div class="gc-sec-tit"><span>' + esc(TXT.abiertasT) + '</span><small>' + esc(TXT.abiertasS) + '</small></div>' +
+          '<div class="gc-tabla-caja">' +
+          (abiertas.length
+            ? '<table class="gc-tabla"><thead><tr><th>' + esc(TXT.fNum) + '</th><th>' + esc(TXT.fFecha) + '</th><th class="r">' + esc(TXT.fMonto) + '</th>' +
+              '<th class="r">' + esc(TXT.fCobrado) + '</th><th class="r">' + esc(TXT.fSaldo) + '</th><th>' + esc(TXT.fDias) + '</th></tr></thead><tbody>' + filasF +
+              '<tr class="total"><td class="nombre">' + esc(TXT.total) + '</td><td data-l=""></td><td data-l=""></td><td data-l=""></td>' +
+              '<td class="r debe" data-l="' + esc(TXT.fSaldo) + '">' + esc(usd(R.por_cobrar)) + '</td><td data-l=""></td></tr></tbody></table>'
+            : '<p class="gc-vacio">✓ ' + esc(TXT.sinAbiertas) + '</p>') +
+          '</div></div>'
+        : "";
+
+      // ── Las obras, agrupadas ──
       var tarjeta = function (o) {
         var etiquetas =
-          '<span class="gc-eti">' + esc(TXT.estados[o.estado] || o.estado || "") + '</span>' +
+          '<span class="gc-eti ' + (o.estado === "ejecucion" ? "act" : o.estado === "completado" ? "ok" : "gris") + '">' + esc(TXT.estados[o.estado] || o.estado || "") + '</span>' +
           '<span class="gc-eti">' + esc(o.es_nuestro_contrato ? TXT.nuestro : TXT.coordina) + '</span>' +
-          (o.ultima_inspeccion
-            ? '<span class="gc-eti">' +
-              esc(o.ultima_inspeccion.resultado === "programada" ? TXT.inspProx : TXT.insp) + ": " +
-              esc(TXT.insps[o.ultima_inspeccion.resultado] || o.ultima_inspeccion.resultado || "") + '</span>'
-            : "");
+          (o.proxima_inspeccion
+            ? '<span class="gc-eti">' + esc(TXT.inspProx) + ": " + esc(fechaCorta(o.proxima_inspeccion.fecha)) + '</span>'
+            : (o.ultima_inspeccion
+              ? '<span class="gc-eti">' + esc(o.ultima_inspeccion.resultado === "programada" ? TXT.inspProx : TXT.insp) + ": " +
+                esc(TXT.insps[o.ultima_inspeccion.resultado] || o.ultima_inspeccion.resultado || "") + '</span>'
+              : ""));
         var prox = o.proximo
           ? '<div class="gc-obra-dir">📅 ' + esc(TXT.proximo) + ": " + esc(fechaCorta(o.proximo.fecha)) +
             (o.proximo.hora ? " · " + esc(String(o.proximo.hora).slice(0, 5)) : "") + '</div>'
           : "";
-        // El aviso llega en piezas para poder escribirlo en el idioma que tenga puesto
+        var avance = o.avance && o.avance.total
+          ? '<div class="gc-barra"><i style="width:' + o.avance.pct + '%"></i></div>' +
+            '<div class="gc-avance"><b>' + o.avance.pct + '%</b> ' + esc(TXT.avance) + ' · ' + o.avance.hechos + '/' + o.avance.total + '</div>'
+          : "";
         var aviso = "";
         if (o.aviso && o.aviso.tipo === "firmar") aviso = TXT.avisoFirmar + (o.aviso.que || "");
         else if (o.aviso && o.aviso.tipo === "sin_pagar") aviso = TXT.avisoSinPagar(o.aviso.num, o.aviso.dias);
-        else if (typeof o.aviso === "string") aviso = o.aviso;   // por si queda un guardián viejo
-        var semaforo = aviso
-          ? '<span class="gc-aviso">⚠️ ' + esc(aviso) + '</span>'
-          : '<span class="gc-ok">✓ ' + esc(TXT.todoBien) + '</span>';
-        // El avance del alcance, con su barrita
-        var avance = o.avance && o.avance.total
-          ? '<div class="gc-barra"><i style="width:' + o.avance.pct + '%"></i></div>' +
-            '<div class="gc-avance"><b>' + o.avance.pct + '%</b> ' + esc(TXT.avance) +
-            ' · ' + o.avance.hechos + '/' + o.avance.total + '</div>'
-          : "";
-        // El dinero de ESTA obra: solo llega cuando el contrato es con ellos
-        var plata = (o.dinero && (o.dinero.contrato > 0 || o.dinero.facturado > 0))
-          ? '<div class="gc-plata">' +
-            '<span>' + esc(TXT.rContrato) + ' <b>' + esc(usd(o.dinero.contrato)) + '</b></span>' +
-            '<span class="ok">' + esc(TXT.rCobrado) + ' <b>' + esc(usd(o.dinero.cobrado)) + '</b></span>' +
-            (o.dinero.falta > 0 ? '<span>' + esc(TXT.rFalta) + ' <b>' + esc(usd(o.dinero.falta)) + '</b></span>' : "") +
-            '</div>'
-          : "";
-        return '<a class="gc-obra" href="cliente.html?g=' + encodeURIComponent(g) +
-          '&p=' + encodeURIComponent(o.id) + '">' +
+        else if (typeof o.aviso === "string") aviso = o.aviso;
+        return '<a class="gc-obra" href="' + enlaceObra(o.id) + '">' +
           '<div class="gc-obra-tit">' + esc(o.nombre) + '</div>' +
-          (o.direccion ? '<div class="gc-obra-dir">📍 ' + esc(o.direccion) + '</div>' : "") +
-          prox +
-          '<div class="gc-obra-pie">' + etiquetas + '</div>' +
-          avance + plata + semaforo +
+          (o.direccion ? '<div class="gc-obra-dir">📍 ' + esc(o.direccion) + '</div>' : "") + prox +
+          '<div class="gc-obra-pie">' + etiquetas + '</div>' + avance +
+          (aviso ? '<span class="gc-aviso">⚠️ ' + esc(aviso) + '</span>' : '<span class="gc-ok">✓ ' + esc(TXT.todoBien) + '</span>') +
           '</a>';
       };
-
-      var lic = (p.licencias || []).map(function (d) {
-        var tt = lang === "en" ? (d.titulo_en || d.titulo) : d.titulo;
-        if (!urlSegura(d.url)) return "";
-        return '<span class="gc-item"><a target="_blank" rel="noopener" href="' +
-          esc(urlSegura(d.url)) + '">🛡️ ' + esc(tt) + '</a></span>';
-      }).join("");
-
-      // ---- El resumen de dinero de todas sus obras de contrato ----
-      var R = p.resumen;
-      var resumen = R
-        ? '<div class="gc-resumen">' +
-          '<div class="gc-num"><span>' + esc(TXT.rContrato) + '</span><b>' + esc(usd(R.contrato)) + '</b></div>' +
-          '<div class="gc-num"><span>' + esc(TXT.rFacturado) + '</span><b>' + esc(usd(R.facturado)) + '</b></div>' +
-          '<div class="gc-num ok"><span>' + esc(TXT.rCobrado) + '</span><b>' + esc(usd(R.cobrado)) + '</b></div>' +
-          '<div class="gc-num falta"><span>' + esc(TXT.rFalta) + '</span><b>' + esc(usd(R.falta)) + '</b></div>' +
-          '</div>'
-        : "";
-
-      // ---- Lo que le toca a él, de todas sus obras juntas ----
-      var toca = (p.te_toca || []).map(function (x) {
-        var linea = x.tipo === "firmar"
-          ? "🖊 " + TXT.tocaFirmar + ": " + x.que + " — " + x.obra_nombre
-          : "💵 " + (lang === "en" ? "Invoice " : "Factura ") + x.num + " · " +
-            x.dias + (lang === "en" ? " days " : " días ") + TXT.tocaPagar + " — " + x.obra_nombre;
-        return '<a href="cliente.html?g=' + encodeURIComponent(g) + '&p=' + encodeURIComponent(x.obra) + '">' +
-          esc(linea) + '</a>';
-      }).join("");
-
-      // ---- Las obras, agrupadas por etapa ----
       var GRUPOS = [
         { t: TXT.gEjecucion,  e: ["ejecucion", "pausa"] },
         { t: TXT.gPropuesta,  e: ["enviado", "aprobado", "estimando"] },
@@ -337,37 +447,31 @@
         var suyas = obras.filter(function (o) { return gr.e.indexOf(o.estado) >= 0; });
         suyas.forEach(function (o) { vistas[o.id] = true; });
         if (!suyas.length) return "";
-        return '<div class="gc-grupo"><div class="gc-grupo-tit">' + esc(gr.t) +
-          ' <b>· ' + suyas.length + '</b></div><div class="gc-lista">' +
-          suyas.map(tarjeta).join("") + '</div></div>';
+        return '<div class="gc-sec"><div class="gc-sec-tit"><span>' + esc(gr.t) + ' · ' + suyas.length + '</span></div>' +
+          '<div class="gc-lista">' + suyas.map(tarjeta).join("") + '</div></div>';
       }).join("");
-      // Cualquier etapa que no esté en la lista de arriba, al final: nada se pierde
       var sueltas = obras.filter(function (o) { return !vistas[o.id]; });
-      if (sueltas.length) {
-        grupos += '<div class="gc-grupo"><div class="gc-grupo-tit">' + esc(TXT.jobs) +
-          ' <b>· ' + sueltas.length + '</b></div><div class="gc-lista">' +
-          sueltas.map(tarjeta).join("") + '</div></div>';
-      }
+      if (sueltas.length) grupos += '<div class="gc-sec"><div class="gc-sec-tit"><span>' + esc(TXT.obrasT) + ' · ' + sueltas.length + '</span></div><div class="gc-lista">' + sueltas.map(tarjeta).join("") + '</div></div>';
 
-      var n = obras.length;
-      caja.innerHTML =
-        '<div class="gc-hero">' +
-          '<div class="kicker">' + esc(TXT.kicker) + '</div>' +
-          '<div class="gc-nombre">' + esc(p.empresa ? p.empresa.nombre : "") + '</div>' +
-          '<div class="gc-sub">' + n + " " + esc(n === 1 ? TXT.job : TXT.jobs) +
-            (R ? " · " + R.obras_con_contrato + " " + esc(TXT.nObras) : "") + '</div>' +
-        '</div>' +
+      var lic = (p.licencias || []).map(function (d) {
+        var tt = lang === "en" ? (d.titulo_en || d.titulo) : d.titulo;
+        if (!urlSegura(d.url)) return "";
+        return '<span class="gc-item"><a target="_blank" rel="noopener" href="' + esc(urlSegura(d.url)) + '">🛡️ ' + esc(tt) + '</a></span>';
+      }).join("");
+
+      caja.innerHTML = cab +
         '<div class="gc-col gc-col-main">' +
           resumen +
-          (toca ? '<div class="gc-toca"><div class="gc-card-tit">⚠️ ' + esc(TXT.tocaT) + '</div>' + toca + '</div>' : "") +
-          (n ? grupos
-             : '<div class="gc-card"><p class="gc-item">' + esc(TXT.vacio) + '</p></div>') +
+          (toca ? '<div class="gc-toca"><div class="gc-sec-tit"><span>⚠️ ' + esc(TXT.tocaT) + '</span></div>' + toca + '</div>' : "") +
+          cuenta + facturas +
+          (n ? grupos : '<div class="gc-card"><p class="gc-item">' + esc(TXT.vacio) + '</p></div>') +
         '</div>' +
         '<div class="gc-col gc-col-side">' +
           (lic ? '<div class="gc-card"><div class="gc-card-tit">' + esc(TXT.licT) + '</div>' + lic + '</div>' : "") +
           '<div class="gc-card"><div class="gc-card-tit">' + esc(TXT.ayudaT) + '</div>' +
             '<p class="gc-item">' + esc(TXT.ayuda) + '</p>' +
             '<a class="gc-wa" target="_blank" rel="noopener" href="' + WHATSAPP + '">💬 ' + esc(TXT.wa) + '</a>' +
+            (R ? '<p class="gc-nota">' + esc(TXT.nota) + '</p>' : "") +
           '</div>' +
         '</div>';
     }

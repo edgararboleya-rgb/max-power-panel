@@ -7,7 +7,7 @@
   <title>Max Power — Your Project</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=131">
+  <link rel="stylesheet" href="css/styles.css?v=132">
   <style>
     .cl-volver { padding: .6rem 0 0; font-size: .82rem; }
     .cl-volver a { color: var(--mp-teal-text); font-weight: 700; text-decoration: none; }
@@ -459,14 +459,20 @@
       var pagos = "";
       if (p.dinero) {
         var filasF = (p.dinero.facturas || []).map(function (f) {
-          return '<div class="cl-item"><span class="cl-check">' + (f.pagada ? "✅" : "🕓") + '</span>' +
+          // v22: con pago parcial se dice lo cobrado y lo que queda
+          var parcial = (typeof f.saldo === "number" && f.saldo > 0 && f.cobrado > 0);
+          var estadoF = f.pagada ? TXT.pagadaF
+            : parcial ? (TXT.cobradoT + " " + usd(f.cobrado) + " · " + TXT.saldoT + " " + usd(f.saldo))
+            : TXT.pendienteF;
+          return '<div class="cl-item"><span class="cl-check">' + (f.pagada ? "✅" : parcial ? "◐" : "🕓") + '</span>' +
             '<span class="cl-txt">' + esc(f.fecha || "") + (f.num ? " · " + esc(f.num) : "") +
-            ' — <strong>' + esc(usd(f.monto)) + '</strong> · ' + esc(f.pagada ? TXT.pagadaF : TXT.pendienteF) + '</span></div>';
+            ' — <strong>' + esc(usd(f.monto)) + '</strong> · ' + esc(estadoF) + '</span></div>';
         }).join("");
         // v20: la tabla de hitos con su estado — lo primero que mira un contratista
         var filasH = (p.dinero.hitos || []).map(function (h) {
           var et = h.estado === "cobrado" ? TXT.hPagado : h.estado === "facturado" ? TXT.hFacturado : TXT.hPorFacturar;
           var pin = h.estado === "cobrado" ? "✅" : h.estado === "facturado" ? "📨" : "•";
+          if (h.estado === "facturado" && typeof h.saldo === "number" && h.saldo > 0 && h.saldo < h.monto) et = et + " · " + TXT.saldoT + " " + usd(h.saldo);
           return '<div class="cl-item"><span class="cl-check">' + pin + '</span>' +
             '<span class="cl-txt">' + esc(h.titulo || "") +
             ' — <strong>' + esc(usd(h.monto)) + '</strong> · ' + esc(et) +
