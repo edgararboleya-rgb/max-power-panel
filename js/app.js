@@ -2478,6 +2478,9 @@ function esFalloDeRed(err) {
         ${franjaDineroHTML(p)}
         ${proximoCobroHTML(p)}
         <div class="proyecto-detalle">
+          <!-- En escritorio: a la izquierda el trabajo y el dinero; a la derecha lo operativo.
+               En el teléfono las dos columnas se apilan en este mismo orden. -->
+          <div class="det-col det-izq">
           <div class="detalle-seccion"><h3>Situación</h3><p>${esc(sinMontos(p.estadoDetalle))}</p></div>
           <div class="detalle-seccion"><h3>Próxima acción</h3><p>${esc(sinMontos(p.proximaAccion))}</p></div>
           ${eventosProyectoHTML(p)}
@@ -2488,14 +2491,17 @@ function esFalloDeRed(err) {
           ${hitosHTML(p)}
           ${rentabilidadHTML(p)}
           ${externosHTML(p)}
-          ${rfisHTML(p)}
+          </div>
+          <div class="det-col det-der">
+          ${accionesHTML(p)}
           ${inspeccionesHTML(p)}
           ${fotosHTML(p)}
-          ${accionesHTML(p)}
+          ${rfisHTML(p)}
           ${facturasHTML(p)}
           ${docs}
           <div class="detalle-ref">Ref: ${esc(sinMontos(p.ref))}</div>
           ${zonaPeligroHTML(p)}
+          </div>
         </div>
       </article>`;
   }
@@ -4918,7 +4924,7 @@ function esFalloDeRed(err) {
           <span class="recibo-chip ${chip}">${etiqueta}</span>
           <span class="alcance-info est-abrir" data-id="${e.id}" style="cursor:pointer">
             <span class="alcance-titulo">${esc(e.nombre)}</span>
-            <span class="alcance-estado">${esc(e.cliente || "")}${e.sqft ? ` · ${esc(e.sqft)} sqft` : ""} · escenario ${esc(e.escenario)}</span>
+            <span class="alcance-estado">${esc(e.cliente || "")}${e.sqft ? ` · ${esc(e.sqft)} sqft` : ""} · escenario ${esc(e.escenario)}${e.proyecto_id ? ` · <b>añadido a ${esc((proyectos().find(x => x.id === e.proyecto_id) || {}).nombre || e.proyecto_id)}</b>` : ""}</span>
           </span>
           <span class="mat-precio">${fmt(Math.round(c.bid * 100) / 100)}</span>
           ${e.estado !== "convertido" ? `<button class="insp-borrar btn-est-borrar" data-id="${e.id}" title="Eliminar">🗑</button>` : ""}
@@ -4940,6 +4946,17 @@ function esFalloDeRed(err) {
               <option value="remodelacion">🏠 Remodelación (levantamiento, por ensambles)</option>
               <option value="servicio">🔧 Servicio (rápido, plantillas)</option>
             </select>
+          </label>
+          <label>¿Para qué proyecto es?
+            <select name="proyecto_id" id="est-proy-existente">
+              <option value="">— Proyecto nuevo —</option>
+              ${[["servicio", "Servicios"], ["residencial", "Residenciales"], ["comercial", "Comerciales"]].map(([t, et]) => {
+                const lista = proyectos().filter(x => x.tipo === t && !["no_aprobado"].includes(x.estado))
+                  .sort((a, b) => (a.estado === "completado") - (b.estado === "completado") || String(a.nombre).localeCompare(String(b.nombre)));
+                return lista.length ? `<optgroup label="${et}">${lista.map(x => `<option value="${esc(x.id)}" data-tipo="${esc(x.tipo)}" data-cliente="${esc(x.cliente || "")}" data-nombre="${esc(x.nombre)}">${esc(x.nombre)}${x.estado === "completado" ? " (completado)" : ""}</option>`).join("")}</optgroup>` : "";
+              }).join("")}
+            </select>
+            <i>Elige uno si es un trabajo añadido a un proyecto que ya tienes (un extra, un service que crece). Si no, es un proyecto nuevo.</i>
           </label>
           <label>Nombre del trabajo
             <input name="nombre" type="text" required placeholder="Ej: Casa García — Rewire" autocomplete="off">
@@ -4992,7 +5009,18 @@ function esFalloDeRed(err) {
           factor: 1,
           estado: "borrador",
           modo: modoNuevo,
-          cable: "romex"
+          cable: "romex",
+          proyecto_id: d.get("proyecto_id") || null
+        }).catch(async err => {
+          // Si la base todavía no tiene la casilla proyecto_id (falta pegar el SQL), se crea sin ella
+          if (/proyecto_id/.test(String(err.crudo || err.message || ""))) {
+            avisar("Ojo: falta pegar el SQL de «proyecto_id» en la base; el estimado se creó suelto", true);
+            const sin = Object.fromEntries([...d.entries()]);
+            return DB.crearEstimado({ nombre: sin.nombre.trim(), cliente: (sin.cliente || "").trim() || null, tipo: sin.tipo || "Residential",
+              sqft: sin.sqft ? Number(sin.sqft) : null, escenario: modoNuevo === "servicio" ? "C" : modoNuevo === "rapido" ? "A" : (sin.escenario || "B"),
+              factor: 1, estado: "borrador", modo: modoNuevo, cable: "romex" });
+          }
+          throw err;
         });
         estimadoActivo = filasNueva[0].id;
         await recargarEstimador();
@@ -5000,6 +5028,18 @@ function esFalloDeRed(err) {
       } catch (err) { avisar("No se pudo crear: " + err.message, true); }
     });
     $("est-a-levantamiento").addEventListener("click", () => irLevLista());
+    const selProy = $("est-proy-existente");
+    if (selProy) selProy.addEventListener("change", () => {
+      const form = selProy.closest("form"); if (!form) return;
+      const op = selProy.selectedOptions[0];
+      const nombre = form.querySelector("[name=nombre]"), cliente = form.querySelector("[name=cliente]"), tipo = form.querySelector("[name=tipo]"), modo = form.querySelector("[name=modo]");
+      if (!op || !op.value) { if (nombre.dataset.auto === "1") { nombre.value = ""; nombre.dataset.auto = ""; } return; }
+      nombre.value = `${op.dataset.nombre} — trabajo añadido`; nombre.dataset.auto = "1";
+      if (cliente && !cliente.value) cliente.value = String(op.dataset.cliente || "").split(/\s*[·(]/)[0].trim();
+      if (tipo) tipo.value = op.dataset.tipo === "comercial" ? "Commercial" : "Residential";
+      if (modo && op.dataset.tipo === "servicio") modo.value = "servicio";
+      nombre.focus(); nombre.select();
+    });
     $("estimador-panel").querySelectorAll(".est-abrir").forEach(el => {
       el.addEventListener("click", () => { estimadoActivo = Number(el.dataset.id); pintarEstimador(); });
     });
@@ -6006,7 +6046,35 @@ Power done right the first time. ⚡`;
     });
 
     const btnConv = $("btn-est-convertir");
-    if (btnConv) btnConv.addEventListener("click", async () => {
+    if (btnConv && est.proyecto_id && proyectos().find(x => x.id === est.proyecto_id)) btnConv.addEventListener("click", async () => {
+      // Un trabajo añadido: se suma al proyecto que ya existe (contrato, horas, material,
+      // un hito de pago único y sus puntos de alcance). No se crea otro proyecto.
+      const proy = proyectos().find(x => x.id === est.proyecto_id);
+      const bid = r2(c.bid);
+      if (!confirm(`¿Añadir "${est.nombre}" al proyecto "${proy.nombre}"?\n\nSube el contrato en ${fmt(bid)}, suma ${r2(c.horas)} h y el material, y crea un hito de pago único por el añadido.`)) return;
+      try {
+        // el proyecto ya trae su dinero mapeado (contrato / presupuestoMateriales); null = sin fila de finanzas
+        const hayFin = proy.contrato !== null && proy.contrato !== undefined;
+        const cambiosFin = { contrato: r2((Number(proy.contrato) || 0) + bid),
+          presupuesto_materiales: r2((Number(proy.presupuestoMateriales) || 0) + r2(c.totalMaterial)) };
+        if (hayFin) await DB.cambiarFinanzas(proy.id, cambiosFin);
+        else await DB.crearFinanzas({ proyecto_id: proy.id, cobrado: 0, ...cambiosFin });
+        await DB.cambiarProyecto(proy.id, { horas_estimadas: r2((Number(proy.horas_estimadas) || 0) + r2(c.horas)) });
+        await DB.crearHito({ proyecto_id: proy.id, titulo: `Añadido — ${est.nombre}`, condicion: "Al completar el trabajo añadido", monto: bid, estado: "pendiente", orden: 90 });
+        const puntosYa = (state.alcancePuntos || state.puntos || []).filter(x => x.proyecto_id === proy.id).length;
+        let ordenA = puntosYa + 1;
+        const ensDelEstA = (estData.estEnsambles || []).filter(e => e.estimado_id === est.id && Number(e.cantidad) > 0);
+        for (const ee of ensDelEstA) {
+          const ens = (estData.ensambles || []).find(x => x.id === ee.ensamble_id);
+          if (ens) await DB.crearPunto({ proyecto_id: proy.id, texto: `${ens.nombre} (${ee.cantidad}) — añadido`, orden: ordenA++ });
+        }
+        await DB.cambiarEstimado(est.id, { estado: "convertido" }).catch(() => {});
+        await recargar(proy.id);
+        await recargarEstimador();
+        avisar(`Añadido al proyecto ✓ — contrato ahora ${fmt(cambiosFin.contrato)}`);
+      } catch (err) { avisar("No se pudo añadir: " + err.message, true); }
+    });
+    else if (btnConv) btnConv.addEventListener("click", async () => {
       if (!confirm(`¿Convertir "${est.nombre}" en proyecto?\n\nSe crea con contrato ${fmt(r2(c.bid))}, horas estimadas, presupuesto de materiales, 3 hitos de pago y su alcance por puntos.`)) return;
       const idNuevo = est.nombre.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
         .slice(0, 30) + "-" + Math.random().toString(36).slice(2, 6);
@@ -6429,8 +6497,9 @@ Power done right the first time. ⚡`;
       proyecto_id: null,
       email: "", tel: ""
     };
-    // Si el estimado ya se convirtió en proyecto, se hereda lo que se sepa
-    const proy = proyectos().find(p => (p.nombre || "").trim() === (est.nombre || "").trim());
+    // Si el estimado es para un proyecto que ya existe (o ya se convirtió), se hereda lo que se sepa
+    const proy = (est.proyecto_id && proyectos().find(p => p.id === est.proyecto_id))
+      || proyectos().find(p => (p.nombre || "").trim() === (est.nombre || "").trim());
     if (proy) {
       propActiva.proyecto_id = proy.id;
       propActiva.email = proy.cliente_email || "";

@@ -2703,6 +2703,7 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
    nada de esto aplica. Referencia: paneles tipo Linear / Stripe / QuickBooks.
    =========================================================================== */
 .lateral { display: none; }
+.det-col { display: contents; }
 .alc-dos { display: block; }
 @media (min-width: 1024px) {
   html { font-size: 15.5px; }
@@ -2807,9 +2808,13 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 
   /* la ficha del proyecto: cabecera y dinero arriba, y las secciones en dos columnas */
   #detalle { max-width: none; margin: 0; }
-  .proyecto-detalle { columns: 2; column-gap: 2.4rem; }
-  .proyecto-detalle > .detalle-seccion { break-inside: avoid; page-break-inside: avoid; }
-  .proyecto-detalle > .detalle-seccion:first-child { margin-top: 0; }
+  /* La ficha del proyecto: dos columnas puestas a mano (izquierda el trabajo y el
+     dinero, derecha lo operativo), no columnas automáticas que parten el texto. */
+  .proyecto.ficha.abierto .proyecto-detalle, .proyecto-detalle { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); column-gap: 2.4rem; align-items: start; }
+  .proyecto-detalle > .det-col { display: block; min-width: 0; }
+  .proyecto-detalle > .det-col > .detalle-seccion:first-child { margin-top: 0; }
+  /* el fondo oscuro del menú lateral llega hasta abajo, aunque la página sea más larga */
+  #vista-app { background: linear-gradient(90deg, #071A2E 0, #071A2E 256px, transparent 256px); }
 
   /* paneles del dueño */
   #estimador-panel, #propuesta-panel, #cierre-panel, #levantamiento-panel, #gastos-panel { max-width: none; }
