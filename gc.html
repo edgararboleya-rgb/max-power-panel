@@ -7,10 +7,11 @@
   <title>Max Power — Contractor Portal</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=132">
+  <link rel="stylesheet" href="css/styles.css?v=133">
   <style>
     /* ── El portal del contratista: un estado de cuenta, no una galería ── */
     :root { --gc-num: "tnum" 1; }
+    #vista-app > main.container { min-width: 0; width: 100%; }
     #gc-panel { font-variant-numeric: tabular-nums; }
     .gc-cargando { text-align: center; color: var(--mp-ink-2); padding: 2.5rem 1rem; font-size: 0.92rem; }
 
@@ -24,11 +25,11 @@
     .gc-cab-der b { color: var(--mp-ink); font-size: 0.86rem; }
 
     /* Los cinco números */
-    .gc-resumen { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--mp-line);
+    .gc-resumen { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--mp-line);
                   border: 1px solid var(--mp-line); border-radius: 14px; overflow: hidden; box-shadow: var(--mp-shadow); margin-bottom: 1.2rem; }
-    .gc-num { background: var(--mp-card); padding: 0.85rem 1rem 0.8rem; }
+    .gc-num { background: var(--mp-card); padding: 0.85rem 1rem 0.8rem; min-width: 0; }
     .gc-num span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.13em; color: var(--mp-ink-3); font-weight: 650; margin-bottom: 0.2rem; }
-    .gc-num b { font-size: 1.28rem; color: var(--mp-ink); font-weight: 750; letter-spacing: -0.01em; }
+    .gc-num b { font-size: 1.28rem; color: var(--mp-ink); font-weight: 750; letter-spacing: -0.01em; overflow-wrap: anywhere; }
     .gc-num small { display: block; font-size: 0.72rem; color: var(--mp-ink-3); margin-top: 0.15rem; }
     .gc-num.ok b { color: var(--mp-ok); }
     .gc-num.debe { background: #FFF8E6; }
@@ -44,7 +45,7 @@
 
     /* Las tablas del estado de cuenta */
     .gc-tabla-caja { background: var(--mp-card); border: 1px solid var(--mp-line); border-radius: 14px;
-                     box-shadow: var(--mp-shadow); overflow: hidden; }
+                     box-shadow: var(--mp-shadow); overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
     table.gc-tabla { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
     .gc-tabla th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--mp-ink-3);
                    font-weight: 650; padding: 0.6rem 0.8rem; background: var(--mp-sky-1); border-bottom: 1px solid var(--mp-line); white-space: nowrap; }
@@ -57,7 +58,7 @@
     .gc-tabla td.debe { color: #9A5B00; font-weight: 700; }
     .gc-tabla td.suave { color: var(--mp-ink-3); }
     .gc-tabla tr.total td { background: var(--mp-sky-2); font-weight: 750; border-top: 2px solid var(--mp-navy); }
-    .gc-tabla a.obra { color: var(--mp-navy); font-weight: 700; text-decoration: none; }
+    .gc-tabla a.obra { color: var(--mp-navy); font-weight: 700; text-decoration: none; display: inline-block; padding: 0.35rem 0; }
     .gc-tabla a.obra:hover { text-decoration: underline; }
     .gc-tabla .sub { display: block; font-size: 0.74rem; color: var(--mp-ink-3); font-weight: 400; margin-top: 0.1rem; }
     .gc-tabla .prox { font-size: 0.78rem; color: var(--mp-ink-2); max-width: 260px; }
@@ -102,12 +103,13 @@
     .gc-item { display: block; padding: 0.28rem 0; font-size: 0.86rem; }
     .gc-item a { color: var(--mp-navy); font-weight: 650; text-decoration: none; }
     .gc-item a:hover { text-decoration: underline; }
+    .gc-card .gc-item a { display: inline-block; padding: 0.4rem 0; }
     .gc-wa { display: inline-flex; align-items: center; gap: 0.45rem; margin-top: 0.4rem; background: linear-gradient(135deg, var(--mp-blue), var(--mp-cyan));
              color: #04222B; border-radius: 999px; padding: 0.5rem 0.95rem; font-size: 0.82rem; font-weight: 800; text-decoration: none; }
     .gc-nota { font-size: 0.74rem; color: var(--mp-ink-3); line-height: 1.5; margin-top: 0.6rem; }
 
-    /* Teléfono: las tablas se apilan */
-    @media (max-width: 699px) {
+    /* Teléfono y tableta vertical: las tablas se apilan (las 7 columnas solo caben en computadora) */
+    @media (max-width: 1023px) {
       table.gc-tabla, .gc-tabla tbody, .gc-tabla tr, .gc-tabla td { display: block; width: 100%; }
       .gc-tabla thead { display: none; }
       .gc-tabla tr { padding: 0.55rem 0.85rem; border-bottom: 1px solid var(--mp-line); }
@@ -118,13 +120,15 @@
       .gc-tabla td.prox { display: block; max-width: none; padding-top: 0.3rem; }
       .gc-tabla td.prox::before { display: block; margin-bottom: 0.1rem; }
       .gc-tabla tr.total { background: var(--mp-sky-2); }
-      .gc-cab-der { text-align: left; }
     }
+    @media (max-width: 699px) { .gc-cab-der { text-align: left; } }
     @media (min-width: 700px) {
       html { font-size: 17px; }
       .container, .membrete-inner { max-width: 760px; margin-left: auto; margin-right: auto; }
       .pie { text-align: center; }
-      .gc-resumen { grid-template-columns: repeat(5, 1fr); }
+      .gc-resumen { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+      .gc-num { padding: 0.75rem 0.7rem 0.7rem; }
+      .gc-num b { font-size: 1.05rem; }
     }
     @media (min-width: 1024px) {
       html { font-size: 16px; }
@@ -136,6 +140,8 @@
       .gc-col-main { grid-column: 1; }
       .gc-col-side { grid-column: 2; position: sticky; top: 1rem; }
       .gc-col-side .gc-card:first-child { margin-top: 0; }
+      .gc-num { padding: 0.85rem 1rem 0.8rem; }
+      .gc-num b { font-size: 1.28rem; }
       .gc-lista { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
     }
     @media (min-width: 1500px) {
@@ -169,7 +175,7 @@
     </footer>
   </div>
 
-  <script src="assets/logo.js?v=132"></script>
+  <script src="assets/logo.js?v=133"></script>
   <script>
   (function () {
     "use strict";

@@ -344,7 +344,7 @@ body::after {
 }
 
 /* ============ HOME: categorías ============ */
-.categorias { display: grid; gap: 0.75rem; }
+.categorias { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
 .categoria-card {
   position: relative;
   display: flex;
@@ -409,10 +409,10 @@ body::after {
   border-radius: 16px;
   overflow: hidden;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1px;
 }
-.resumen-card { background: var(--mp-card); padding: 0.85rem 1rem; }
+.resumen-card { background: var(--mp-card); padding: 0.85rem 1rem; min-width: 0; }
 .resumen-card .valor {
   font-size: 1.35rem;
   font-weight: 650;
@@ -423,6 +423,8 @@ body::after {
   color: transparent;
   font-variant-numeric: tabular-nums;
   width: fit-content;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .resumen-card.alerta .valor {
   background: none;
@@ -789,6 +791,7 @@ body::after {
 
 .tarea {
   display: flex;
+  flex-wrap: wrap;            /* si el texto no tiene 13rem de sitio, la categoría y los botones bajan */
   align-items: center;
   gap: 0.5rem;
   padding: 0.45rem 0.6rem;
@@ -802,7 +805,7 @@ body::after {
 .tarea.prio-espera .tarea-texto { color: var(--mp-ink-2); }
 .tarea.hecha { opacity: 0.62; border-style: solid; background: var(--mp-card); border-color: var(--mp-line); }
 .tarea.hecha .tarea-texto { text-decoration: line-through; color: var(--mp-ink-3); }
-.tarea-info { flex: 1; min-width: 0; }
+.tarea-info { flex: 1 1 13rem; min-width: 0; }
 .tarea-texto { display: block; font-size: 0.83rem; font-weight: 600; color: var(--mp-ink); }
 .tarea-meta { display: block; font-size: 0.74rem; color: var(--mp-ink-3); margin-top: 1px; }
 .tarea-check {
@@ -874,7 +877,7 @@ body::after {
 }
 .chk-urg-label input { width: auto; margin: 0; }
 @media (max-width: 560px) {
-  .tarea { flex-wrap: nowrap; gap: 0.3rem; padding: 0.45rem 0.45rem; }
+  .tarea { gap: 0.3rem; padding: 0.45rem 0.45rem; }
   .tarea-texto { font-size: 0.8rem; }
   .tarea-check { font-size: 1.05rem; }
   .tarea-prio { font-size: 0.7rem; max-width: 6.9rem; padding: 0.24rem 0.15rem; }
@@ -1927,6 +1930,11 @@ video.foto-mini { background: #000; }
   border-radius: 999px;
   padding: 0.24rem 0.5rem;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  vertical-align: middle;
   border: 1px solid var(--mp-line);
 }
 .recibo-chip.por_leer   { background: var(--mp-warn-bg); color: var(--mp-warn-tx); border-color: var(--mp-warn-bd); }
@@ -2144,14 +2152,19 @@ video.foto-mini { background: #000; }
 
 @media (min-width: 760px) {
   .categorias { grid-template-columns: repeat(3, 1fr); }
-  .categoria-card { flex-direction: column; align-items: flex-start; gap: 0.6rem; padding: 1.3rem 1.25rem 1.2rem 1.45rem; }
+  /* en columna, el "flex-basis 100%" de los chips era 100% de la ALTURA y los mandaba a una segunda columna fuera de la tarjeta */
+  .categoria-card { flex-direction: column; flex-wrap: nowrap; align-items: flex-start; gap: 0.6rem; padding: 1.3rem 1.25rem 1.2rem 1.45rem; }
+  .cat-etapas { flex: 0 0 auto; }
   .cat-flecha { display: none; }
-  .resumen { grid-template-columns: repeat(5, 1fr); }
+  .resumen { grid-template-columns: repeat(3, minmax(0, 1fr)); }   /* 5 números: 3 + 2, sin partir cifras */
   .lista { grid-template-columns: repeat(2, 1fr); align-items: start; }
   .etapas { max-width: 640px; }
 }
 @media (min-width: 1024px) {
   .lista { grid-template-columns: repeat(3, 1fr); }
+}
+@media (min-width: 1280px) {
+  .resumen { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 
 /* El pie siempre pegado abajo */
@@ -2807,10 +2820,10 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
   .cal-dia .cal-marca-roja { position: absolute; top: 4px; right: 5px; }
 
   /* inicio: lo del día a la izquierda, las obras a la derecha */
-  #vista-home { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 0 1.6rem; align-items: start; }
+  #vista-home { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 1.6rem; align-items: start; }
   .home-col { min-width: 0; }
-  #vista-home .categorias { grid-template-columns: 1fr; }
-  #vista-home .resumen { grid-template-columns: repeat(2, 1fr); }
+  #vista-home .categorias { grid-template-columns: minmax(0, 1fr); }
+  #vista-home .resumen { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   /* las listas llenan el ancho con tarjetas de tamaño fijo */
   .etapas { max-width: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: .8rem; }
@@ -2836,6 +2849,10 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
   .alc-texto { min-height: 64vh; }
   .alc-cierra-dos { grid-column: 1 / -1; }
   .alc-par { grid-template-columns: 1fr 1.25fr; }
+}
+/* inicio a dos columnas solo cuando caben de verdad (con el menú lateral, desde 1280px) */
+@media (min-width: 1280px) {
+  #vista-home { grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); }
 }
 @media (min-width: 1500px) {
   html { font-size: 16px; }
@@ -2891,3 +2908,62 @@ button > .ico:only-child, .lev-btn-ico > .ico { margin-right: 0; width: 1.15em; 
 .mes-tabla td { padding: .3rem .2rem; text-align: right; font-weight: 800; color: var(--mp-teal-text); white-space: nowrap; }
 .mes-tabla td.pasado, .mes-tabla th.pasado { color: var(--mp-ink-3); font-weight: 600; }
 .agenda-que .recibo-chip, .agenda-que .hoy-chip { margin-left: .3rem; vertical-align: middle; }
+
+/* ============ Teléfono, tableta y dedo: que nada empuje el ancho de la página ============ */
+/* El marco, la barra de arriba y el cuerpo son hijos de una columna flex: sin esto,
+   cualquier cosa ancha adentro (una tabla, un nombre largo, tres números grandes)
+   ensancha la página entera y el teléfono se pone a deslizar de lado. */
+/* OJO: .container y .toolbar llevan "margin: 0 auto" para centrarse en la computadora, y en una
+   columna flex ese margen automático hace que el hijo tome el ancho de SU CONTENIDO en vez del
+   de la pantalla. Con width:100% (y el relleno contado adentro) vuelven a medir lo que mide el teléfono. */
+#vista-app > .membrete, #vista-app > .toolbar, #vista-app > main.container { min-width: 0; width: 100%; }
+.membrete-inner, .toolbar, .container { box-sizing: border-box; }
+.membrete-inner > div:not(.membrete-der) { min-width: 0; }
+.cal-semana-nombres { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+
+@media (max-width: 480px) {
+  /* el marco de arriba: cuatro botones en 360px */
+  .membrete-inner { gap: 0.5rem; padding: 0.55rem 12px; }
+  .membrete-logo { width: 40px; height: 40px; }
+  .membrete-der { gap: 0.3rem; flex-shrink: 0; }
+  .btn-idioma::before { content: ""; }
+  .btn-idioma { padding: 0.35rem 0.45rem; }
+  .btn-salir { padding: 0.35rem 0.5rem; }
+  .wordmark { font-size: 1rem; }
+  .wordmark-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* la barra de título: "+ Nuevo proyecto" baja a su propia línea si no cabe */
+  .toolbar { flex-wrap: wrap; row-gap: 0.5rem; }
+  /* la ficha: el título y las píldoras de estado se acomodan en dos líneas */
+  .proyecto-titulo { flex-wrap: wrap; }
+  .chips-col { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; width: 100%; }
+  .chip-select { max-width: 100%; }
+  /* los tres números (contrato · cobrado · falta) se reparten y bajan si hace falta */
+  .proyecto-money { flex-wrap: wrap; gap: 0.5rem 1rem; }
+  .money-item { min-width: 0; flex: 1 1 auto; }
+  .money-item .money-num { font-size: 0.9rem; overflow-wrap: anywhere; }
+  .tarea { row-gap: 0.35rem; }
+  .tarea-prio { max-width: none; }
+  .chk-nombre { white-space: normal; }
+  .chk-det > summary { flex-wrap: wrap; }
+  /* los números del resumen y la tabla del mes, a la medida del teléfono */
+  .resumen-card { padding: 0.75rem 0.7rem; }
+  .resumen-card .valor { font-size: 1.15rem; }
+  .mes-tabla { table-layout: fixed; }
+  .mes-tabla td { white-space: normal; overflow-wrap: anywhere; }
+  .mes-tabla th:first-child { width: 34%; }
+  /* las tablas de hitos y facturas: menos relleno para que quepan sin deslizar */
+  table.facturas th, table.facturas td { padding: 5px 6px; }
+  table.facturas { font-size: 0.76rem; }
+}
+
+/* Pantalla que se toca con el dedo (o pantalla chica): ningún botón más bajo que 36px */
+@media (pointer: coarse), (max-width: 1023px) {
+  .tarea-check, .tarea-editar, .tarea-borrar, .insp-borrar, .chip-cobrar, .doc-cliente,
+  .chip-select, .tarea-prio, .gasto-nombre, .asis-sug, .btn-salir, .btn-idioma, .btn-chat,
+  .chk-ficha, .cl-volver a, .insp-resultado { min-height: 36px; }
+  .chip-cobrar { min-height: 32px; vertical-align: middle; }   /* va dentro de un renglón de texto: un poco menos alto */
+  .chip-cobrar, .doc-cliente { padding-top: 0.3rem; padding-bottom: 0.3rem; }
+  .accion.secundaria, .accion.chica, button.accion { min-height: 38px; }
+  a#agenda-ver-cal { display: inline-block; padding: 0.4rem 0; }
+}
+@media (max-width: 379px) { .wordmark-sub { display: none; } }

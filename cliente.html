@@ -7,10 +7,11 @@
   <title>Max Power — Your Project</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=132">
+  <link rel="stylesheet" href="css/styles.css?v=133">
   <style>
-    .cl-volver { padding: .6rem 0 0; font-size: .82rem; }
-    .cl-volver a { color: var(--mp-teal-text); font-weight: 700; text-decoration: none; }
+    #vista-app > main.container { min-width: 0; width: 100%; }
+    .cl-volver { padding: .3rem 0 0; font-size: .82rem; }
+    .cl-volver a { color: var(--mp-teal-text); font-weight: 700; text-decoration: none; display: inline-block; padding: 0.45rem 0; }
     .cl-volver a:hover { text-decoration: underline; }
     .cl-subt { font-size: 10.5px; text-transform: uppercase; letter-spacing: .14em;
                color: var(--mp-teal-text); font-weight: 700; margin: .7rem 0 .2rem; }
@@ -18,7 +19,7 @@
     .cl-nombre { font-size: 1.3rem; font-weight: 800; color: var(--mp-ink); margin: 0.2rem 0 0.1rem; }
     .cl-dir { font-size: 0.9rem; color: var(--mp-ink-2); }
     .cl-pasos { display: flex; gap: 0.3rem; margin: 0.9rem 0; }
-    .cl-paso { flex: 1; text-align: center; font-size: 0.78rem; font-weight: 800; color: var(--mp-ink-2); letter-spacing: 0.01em; }
+    .cl-paso { flex: 1; min-width: 0; overflow-wrap: anywhere; text-align: center; font-size: 0.78rem; font-weight: 800; color: var(--mp-ink-2); letter-spacing: 0.01em; }
     .cl-paso .cl-barra { height: 6px; border-radius: 999px; background: var(--mp-line); margin-bottom: 0.3rem; }
     .cl-paso.hecho .cl-barra { background: #6FBF3C; }
     .cl-paso.hecho { color: #4a8c28; }
