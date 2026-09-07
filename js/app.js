@@ -453,7 +453,9 @@ function esFalloDeRed(err) {
     pintarInicioHoy();
     pintarInicioUrgentes();
     pintarInicioAvisos();
+    pintarInicioPropuestas();
     pintarInicioEquipo();
+    pintarInicioSemana();
     pintarInicioEmpresa();
     pintarInicioNotif();
   }
@@ -688,39 +690,108 @@ function esFalloDeRed(err) {
   }
 
   // Franja "HOY": lo de hoy y mañana (los pendientes viven en 🔥 Urgentes)
+  // 📅 LOS PRÓXIMOS DÍAS: hoy, mañana y los cinco siguientes, a modo de título.
+  //    Cada renglón: hora · qué · quién va · proyecto. Se toca y abre el proyecto.
+  const DIA_CORTO = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+  const EDGAR_ID = "7a8e1ac4-dd9e-4e27-a8e9-e94b313a74fb";
   function pintarInicioHoy() {
     const hoy = hoyISO();
-    const man = (() => {
-      const t = new Date();
-      t.setDate(t.getDate() + 1);
-      return fechaISO(t.getFullYear(), t.getMonth(), t.getDate());
-    })();
-    const evs = eventosCal()
-      .filter(e => e.fecha === hoy || e.fecha === man)
-      .sort((a, b) => a.fecha.localeCompare(b.fecha));
-    const pens = pendientesAbiertos();
-    if (!evs.length && !pens.length) { $("inicio-hoy").innerHTML = ""; return; }
-
-    const filasEv = evs.map(e => `
-      <div class="hoy-item${e.alerta ? " alerta" : ""}">
-        <span class="hoy-chip ${e.fecha === hoy ? "es-hoy" : "es-man"}">${e.fecha === hoy ? "HOY" : "MAÑANA"}</span>
-        <span class="alcance-info">
-          <span class="alcance-titulo">${esc(sinMontos(e.titulo))}${e.hora ? ` · ${esc(e.hora)}` : ""}</span>
-          ${e.proyecto ? `<span class="alcance-estado">🔧 ${esc(nombreProyecto(e.proyecto))}</span>` : ""}
-        </span>
-      </div>`).join("");
-
-    // Los pendientes ya no van aquí: tienen su tarjeta 🔥 Urgentes y el Checklist
-    const filasPen = "";
-
-    $("inicio-hoy").innerHTML = `
-      <div class="inicio-card">
-        <div class="inicio-card-titulo">📅 Hoy en Max Power</div>
-        ${filasEv || ""}
-        ${filasPen || ""}
-        ${!evs.length ? `<div class="hoy-mas">Nada programado para hoy ni mañana.</div>` : ""}
+    const dias = [];
+    for (let k = 0; k < 7; k++) {
+      const t = new Date(Date.parse(hoy + "T12:00:00"));
+      t.setDate(t.getDate() + k);
+      dias.push(fechaISO(t.getFullYear(), t.getMonth(), t.getDate()));
+    }
+    const evs = eventosCal().filter(e => dias.includes(e.fecha) && e.estadoEv !== "cancelado");
+    const porDia = Object.fromEntries(dias.map(d => [d, []]));
+    evs.forEach(e => porDia[e.fecha].push(e));
+    const ordenHora = h => { const m = String(h || "").match(/(\d{1,2})(?::(\d{2}))?\s*([AP]M)?/i); if (!m) return 99;
+      let hh = Number(m[1]) % 12; if ((m[3] || "").toUpperCase() === "PM") hh += 12; return hh + Number(m[2] || 0) / 60; };
+    const etiqueta = (d, k) => {
+      if (k === 0) return "HOY"; if (k === 1) return "MAÑANA";
+      const t = new Date(Date.parse(d + "T12:00:00"));
+      return `${DIA_CORTO[t.getDay()].toUpperCase()} ${t.getDate()}`;
+    };
+    const filas = dias.map((d, k) => {
+      const lista = porDia[d].sort((a, b) => ordenHora(a.hora) - ordenHora(b.hora));
+      if (!lista.length && k > 1) return "";
+      const cuerpo = lista.length ? lista.map(e => `
+        <div class="agenda-ev${e.alerta ? " alerta" : ""}${e.proyecto ? " abre" : ""}" ${e.proyecto ? `data-proy="${esc(e.proyecto)}"` : ""}>
+          <span class="agenda-hora">${esc(e.hora || "—")}</span>
+          <span class="agenda-que">${esc(sinMontos(e.titulo))}</span>
+          <span class="agenda-quien">${(e.asignados || []).length ? esc(e.asignados.map(n => n.split(" ")[0]).join(" + ")) : ""}${e.proyecto ? `${(e.asignados || []).length ? " · " : ""}${esc(nombreProyecto(e.proyecto))}` : ""}</span>
+        </div>`).join("") : `<div class="agenda-nada">Nada programado.</div>`;
+      return `<div class="agenda-dia${k === 0 ? " es-hoy" : ""}">
+        <span class="hoy-chip ${k === 0 ? "es-hoy" : k === 1 ? "es-man" : "es-otro"}">${etiqueta(d, k)}</span>
+        <div class="agenda-lista">${cuerpo}</div>
       </div>`;
+    }).join("");
+    const masAlla = eventosCal().filter(e => e.fecha > dias[6] && e.estadoEv !== "cancelado").length;
+    $("inicio-hoy").innerHTML = `
+      <div class="inicio-card agenda">
+        <div class="inicio-card-titulo">📅 Los próximos días</div>
+        ${filas}
+        <div class="hoy-mas">${masAlla ? `${masAlla} más después del ${etiqueta(dias[6], 6).toLowerCase()} · ` : ""}<a href="#" id="agenda-ver-cal">ver el calendario</a></div>
+      </div>`;
+    $("inicio-hoy").querySelectorAll(".agenda-ev.abre").forEach(el => el.addEventListener("click", () => irDetalle(el.dataset.proy)));
+    const vc = $("agenda-ver-cal"); if (vc) vc.addEventListener("click", ev => { ev.preventDefault(); $("btn-calendario") && $("btn-calendario").click(); });
+  }
 
+  // 📨 PROPUESTAS ESPERANDO RESPUESTA (solo dueño): las enviadas, con los días que llevan.
+  function pintarInicioPropuestas() {
+    const caja = $("inicio-propuestas"); if (!caja) return;
+    if (!usuario.finanzas) { caja.innerHTML = ""; return; }
+    const hoy = hoyISO();
+    const lista = proyectos().filter(p => p.estado === "enviado")
+      .map(p => ({ p, dias: p.actualizado ? Math.max(0, Math.round((Date.parse(hoy) - Date.parse(p.actualizado)) / 86400000)) : null }))
+      .sort((a, b) => (b.dias || 0) - (a.dias || 0));
+    if (!lista.length) { caja.innerHTML = ""; return; }
+    caja.innerHTML = `
+      <div class="inicio-card">
+        <div class="inicio-card-titulo">📨 Propuestas esperando respuesta (${lista.length})</div>
+        ${lista.slice(0, 8).map(({ p, dias }) => `
+          <div class="agenda-ev abre" data-proy="${esc(p.id)}">
+            <span class="agenda-hora ${dias !== null && dias >= 14 ? "rojo" : dias !== null && dias >= 7 ? "ambar" : ""}">${dias === null ? "—" : dias + " d"}</span>
+            <span class="agenda-que">${esc(p.nombre)}</span>
+            <span class="agenda-quien">${esc(String(p.cliente || "").split(/\s*[·(]/)[0])}${typeof p.contrato === "number" && p.contrato ? ` · ${fmt(p.contrato)}` : ""}</span>
+          </div>`).join("")}
+        ${lista.length > 8 ? `<div class="hoy-mas">y ${lista.length - 8} más en Proyectos → Enviado</div>` : ""}
+      </div>`;
+    caja.querySelectorAll(".agenda-ev.abre").forEach(el => el.addEventListener("click", () => irDetalle(el.dataset.proy)));
+  }
+
+  // ⏱ HORAS DE LA SEMANA (solo dueño): por persona, lunes a domingo, con los días
+  //    de semana sin reporte marcados. Así lo del jueves de Jian salta a la vista.
+  function pintarInicioSemana() {
+    const caja = $("inicio-semana"); if (!caja) return;
+    if (!usuario.finanzas) { caja.innerHTML = ""; return; }
+    const hoy = hoyISO();
+    const t0 = new Date(Date.parse(hoy + "T12:00:00"));
+    const lunes = new Date(t0); lunes.setDate(t0.getDate() - ((t0.getDay() + 6) % 7));
+    const dias = [];
+    for (let k = 0; k < 7; k++) { const t = new Date(lunes); t.setDate(lunes.getDate() + k); dias.push(fechaISO(t.getFullYear(), t.getMonth(), t.getDate())); }
+    // los de campo y Edgar (Flavia no reporta horas de obra)
+    const equipo = (state.equipo || []).filter(u => u.activo && (u.rol === "campo" || u.id === EDGAR_ID));
+    if (!equipo.length) { caja.innerHTML = ""; return; }
+    const filas = equipo.map(u => {
+      const mias = (state.registroHoras || []).filter(r => r.usuarioId === u.id && dias.includes(r.fecha));
+      let total = 0;
+      const celdas = dias.map((d, k) => {
+        const h = mias.filter(r => r.fecha === d).reduce((a, r) => a + Number(r.horas || 0), 0);
+        total += h;
+        const laborable = k < 5, pasado = d < hoy;
+        const falta = laborable && pasado && !h && u.rol === "campo";
+        return `<td class="${h ? "con" : falta ? "falta" : "sin"}${d === hoy ? " hoy" : ""}">${h ? (Number.isInteger(h) ? h : h.toFixed(1)) : falta ? "·" : ""}</td>`;
+      }).join("");
+      return `<tr><th>${esc(u.nombre.split(" ")[0])}</th>${celdas}<td class="tot">${Number.isInteger(total) ? total : total.toFixed(1)} h</td></tr>`;
+    }).join("");
+    caja.innerHTML = `
+      <div class="inicio-card">
+        <div class="inicio-card-titulo">⏱ Horas de esta semana</div>
+        <table class="semana-tabla"><thead><tr><th></th>${dias.map((d, k) => `<th class="${d === hoy ? "hoy" : ""}">${DIA_CORTO[(k + 1) % 7]}<br><small>${Number(d.slice(8))}</small></th>`).join("")}<th></th></tr></thead>
+        <tbody>${filas}</tbody></table>
+        <p class="modal-nota" style="margin:.35rem 0 0">Un punto (·) es un día de semana ya pasado sin horas reportadas.</p>
+      </div>`;
   }
 
   // 🔴 URGENTES: lo que se categorizó urgente en cualquier checklist.
