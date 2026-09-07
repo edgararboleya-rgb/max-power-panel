@@ -7,8 +7,13 @@
   <title>Max Power — Your Project</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=109">
+  <link rel="stylesheet" href="css/styles.css?v=131">
   <style>
+    .cl-volver { padding: .6rem 0 0; font-size: .82rem; }
+    .cl-volver a { color: var(--mp-teal-text); font-weight: 700; text-decoration: none; }
+    .cl-volver a:hover { text-decoration: underline; }
+    .cl-subt { font-size: 10.5px; text-transform: uppercase; letter-spacing: .14em;
+               color: var(--mp-teal-text); font-weight: 700; margin: .7rem 0 .2rem; }
     .cl-hero { text-align: center; padding: 1rem 0 0.4rem; }
     .cl-nombre { font-size: 1.3rem; font-weight: 800; color: var(--mp-ink); margin: 0.2rem 0 0.1rem; }
     .cl-dir { font-size: 0.9rem; color: var(--mp-ink-2); }
@@ -71,7 +76,7 @@
     @media (min-width: 1024px) {
       html { font-size: 16px; }
       /* El portal no tiene el menú lateral de la app: una sola columna de página */
-      #vista-app { display: flex; flex-direction: column; }
+      #vista-app { display: flex; flex-direction: column; background: none; }
       #vista-app > .membrete, #vista-app > main, #vista-app > .pie { grid-column: auto; width: 100%; align-self: stretch; }
       .membrete-inner { max-width: 1200px; padding-left: 1.5rem; padding-right: 1.5rem; }
       .container { max-width: 1200px; padding-left: 1.5rem; padding-right: 1.5rem; }
@@ -158,6 +163,9 @@
       resena: "⭐ Happy with our work? Leave us a Google review!",
       wa: "💬 Questions? Message us on WhatsApp",
       cargando: "Loading your project…",
+      gcVolver: "All my jobs", gcSoloMirar: "The property owner signs this job.",
+      hTitulo: "Milestones", fTitulo: "Invoices", hFactura: "Invoice",
+      hPorFacturar: "Not yet invoiced", hFacturado: "Invoiced", hPagado: "Paid",
       errLink: "This link is incomplete — please ask Max Power for your project link.",
       errAbrir: "We couldn't open this link. It may have been renewed — please ask Max Power for a fresh one.",
       reintentar: "Try again",
@@ -214,6 +222,9 @@
       resena: "⭐ ¿Quedaste contento? ¡Déjanos tu reseña en Google!",
       wa: "💬 ¿Preguntas? Escríbenos por WhatsApp",
       cargando: "Cargando tu proyecto…",
+      gcVolver: "Todas mis obras", gcSoloMirar: "Esta obra la firma el dueño de la propiedad.",
+      hTitulo: "Hitos", fTitulo: "Facturas", hFactura: "Factura",
+      hPorFacturar: "Por facturar", hFacturado: "Facturado", hPagado: "Cobrado",
       errLink: "Este link está incompleto — pídele a Max Power el link de tu proyecto.",
       errAbrir: "No pudimos abrir este link. Puede que se haya renovado — pídele a Max Power uno nuevo.",
       reintentar: "Intentar otra vez",
@@ -264,7 +275,12 @@
         ICO[icono] + '</svg></span>' + esc(texto);
     }
 
-    var t = new URLSearchParams(location.search).get("t") || "";
+    var qs = new URLSearchParams(location.search);
+    var t = qs.get("t") || "";
+    // v20: un contratista entra con la llave de su empresa (g) y la obra (p)
+    var g = qs.get("g") || "";
+    var pObra = qs.get("p") || "";
+    var llaveGC = !!(g && pObra);
     var caja = document.getElementById("cl-panel");
     caja.querySelector(".cl-cargando").textContent = TXT.cargando;
     function esc(s) {
@@ -274,12 +290,22 @@
     }
     // Solo enlaces reales (https) — nada de esquemas raros
     function urlSegura(u) { return /^https?:\/\//i.test(String(u || "").trim()) ? String(u).trim() : ""; }
-    if (!t) { caja.innerHTML = '<p class="cl-cargando">' + esc(TXT.errLink) + '</p>'; return; }
+    if (!t && !llaveGC) { caja.innerHTML = '<p class="cl-cargando">' + esc(TXT.errLink) + '</p>'; return; }
+    // Lo que identifica a quien pide: la llave del cliente, o empresa + obra
+    function credencial() { return llaveGC ? { g: g, p: pObra } : { t: t }; }
+    // Cualquier cosa que se le mande al guardián lleva la llave que toque: la del
+    // cliente o la de la empresa. Nunca se escribe «t» a mano.
+    function conAccion(cuerpo) {
+      var c = credencial();
+      for (var k in cuerpo) c[k] = cuerpo[k];
+      return c;
+    }
 
     function mandar(cuerpo, boton) {
       boton.disabled = true;
       boton.textContent = "…";
-      cuerpo.t = t;
+      var cred = credencial();
+      for (var k in cred) cuerpo[k] = cred[k];
       fetch(PORTAL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) })
         .then(function (r) { if (!r.ok) throw new Error("bad"); return cargar(); })
         .catch(function () { boton.disabled = false; boton.textContent = TXT.reintentar; });
@@ -289,11 +315,14 @@
     // servidor. Solo si el guardián es el viejo (contesta 4xx al POST) se
     // reintenta por GET; un fallo de red NO manda la llave por la query.
     function cargar() {
-      return fetch(PORTAL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ t: t }) })
+      return fetch(PORTAL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(credencial()) })
         .then(function (r) {
           if (r.ok) return r.json();
           if (r.status >= 400 && r.status < 500 && r.status !== 401) {
-            return fetch(PORTAL + "?t=" + encodeURIComponent(t))
+            var q = llaveGC
+              ? "?g=" + encodeURIComponent(g) + "&p=" + encodeURIComponent(pObra)
+              : "?t=" + encodeURIComponent(t);
+            return fetch(PORTAL + q)
               .then(function (r2) { if (!r2.ok) throw new Error("bad"); return r2.json(); });
           }
           throw new Error("bad");
@@ -434,15 +463,33 @@
             '<span class="cl-txt">' + esc(f.fecha || "") + (f.num ? " · " + esc(f.num) : "") +
             ' — <strong>' + esc(usd(f.monto)) + '</strong> · ' + esc(f.pagada ? TXT.pagadaF : TXT.pendienteF) + '</span></div>';
         }).join("");
+        // v20: la tabla de hitos con su estado — lo primero que mira un contratista
+        var filasH = (p.dinero.hitos || []).map(function (h) {
+          var et = h.estado === "cobrado" ? TXT.hPagado : h.estado === "facturado" ? TXT.hFacturado : TXT.hPorFacturar;
+          var pin = h.estado === "cobrado" ? "✅" : h.estado === "facturado" ? "📨" : "•";
+          return '<div class="cl-item"><span class="cl-check">' + pin + '</span>' +
+            '<span class="cl-txt">' + esc(h.titulo || "") +
+            ' — <strong>' + esc(usd(h.monto)) + '</strong> · ' + esc(et) +
+            (h.factura ? ' · ' + esc(TXT.hFactura) + " " + esc(h.factura) : "") +
+            (h.fecha ? ' · ' + esc(h.fecha) : "") + '</span></div>';
+        }).join("");
         pagos = '<div class="cl-item"><span class="cl-txt">' + esc(TXT.contratoT) + '</span><strong>' + esc(usd(p.dinero.contrato)) + '</strong></div>' +
           '<div class="cl-item"><span class="cl-txt">' + esc(TXT.cobradoT) + '</span><strong style="color:#3E7A20">' + esc(usd(p.dinero.cobrado)) + '</strong></div>' +
           '<div class="cl-item"><span class="cl-txt">' + esc(TXT.saldoT) + '</span><strong>' + esc(usd(p.dinero.falta)) + '</strong></div>' +
+          (filasH ? '<div class="cl-subt">' + esc(TXT.hTitulo) + '</div>' + filasH : "") +
+          (filasF ? '<div class="cl-subt">' + esc(TXT.fTitulo) + '</div>' : "") +
           filasF;
       }
 
+      // Quien solo coordina la obra mira, pero no firma ni aprueba: quien contrata
+      // es el dueño de la propiedad. En vez de un botón que el guardián va a negar,
+      // se le dice con todas las letras.
+      var puedeFirmarYo = !p.gc || p.gc.puede_firmar;
       var docs = (p.documentos || []).map(function (d) {
         var aprob = "";
-        if (d.pide_firma) {
+        if (!puedeFirmarYo && (d.pide_firma || d.pide_aprobacion)) {
+          aprob = ' <span class="cl-nota-gris">' + esc(TXT.gcSoloMirar) + '</span>';
+        } else if (d.pide_firma) {
           // v19: solo se firma el contrato del SOW que el cliente eligió
           var suSow = null;
           for (var si = 0; si < sows.length; si++) if (sows[si].id === d.propuesta_id) suSow = sows[si];
@@ -472,8 +519,10 @@
       }).join("");
 
       caja.innerHTML =
+        (p.gc ? '<div class="cl-volver"><a href="gc.html?g=' + encodeURIComponent(g) + '">&larr; ' + esc(TXT.gcVolver) + '</a>' +
+                (p.gc.puede_firmar ? '' : ' <span class="cl-nota-gris">' + esc(TXT.gcSoloMirar) + '</span>') + '</div>' : '') +
         '<div class="cl-hero">' +
-          '<div class="kicker">' + esc(TXT.kicker) + '</div>' +
+          '<div class="kicker">' + esc(p.gc ? p.gc.empresa : TXT.kicker) + '</div>' +
           '<div class="cl-nombre">' + esc(p.nombre) + '</div>' +
           (p.direccion ? '<div class="cl-dir">📍 ' + esc(p.direccion) + '</div>' : '') +
         '</div>' +
@@ -555,7 +604,7 @@
       caja.querySelectorAll(".cl-doc[data-doc]").forEach(function (a) {
         a.addEventListener("click", function () {
           fetch(PORTAL, { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
-            body: JSON.stringify({ t: t, accion: "visto_doc", id: Number(a.dataset.doc) }) }).catch(function () {});
+            body: JSON.stringify(conAccion({ accion: "visto_doc", id: Number(a.dataset.doc) })) }).catch(function () {});
         });
       });
       caja.querySelectorAll("[data-firmar]").forEach(function (b) {
@@ -599,7 +648,7 @@
         b.disabled = true; b.textContent = "…";
         fetch(PORTAL, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ t: t, accion: "pedir_cambio", id: docId, texto: txt })
+          body: JSON.stringify(conAccion({ accion: "pedir_cambio", id: docId, texto: txt }))
         }).then(function (r) {
           if (!r.ok) throw new Error("bad");
           fondo.innerHTML = '<div class="cl-firma-caja" style="text-align:center">' +
@@ -640,7 +689,7 @@
         b.disabled = true; b.textContent = "…";
         fetch(PORTAL, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ t: t, accion: "consentir", id: docId })
+          body: JSON.stringify(conAccion({ accion: "consentir", id: docId }))
         }).then(function (r) {
           if (!r.ok) throw new Error("bad");
           fondo.remove(); seguir();
@@ -698,7 +747,7 @@
       if (linkLeer) {
         linkLeer.addEventListener("click", function () {
           fetch(PORTAL, { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
-            body: JSON.stringify({ t: t, accion: "visto_doc", id: docId }) }).catch(function () {});
+            body: JSON.stringify(conAccion({ accion: "visto_doc", id: docId })) }).catch(function () {});
           var ok = fondo.querySelector("#cl-firma-ok");
           ok.disabled = false; ok.style.opacity = "";
           var nota = fondo.querySelector("#cl-firma-leer-nota");
@@ -801,8 +850,8 @@
           if (!nombre) { alert(TXT.firmaFalta); return; }
           pintarNombre(); // asegura que el lienzo tenga la firma final
         } else if (!nombre || trazos === 0) { alert(TXT.firmaFalta); return; }
-        var cuerpoFirma = { t: t, accion: "firmar_doc", id: docId, nombre: nombre,
-                            firma: lienzo.toDataURL("image/png") };
+        var cuerpoFirma = conAccion({ accion: "firmar_doc", id: docId, nombre: nombre,
+                            firma: lienzo.toDataURL("image/png") });
         if (casillaDos.checked) {
           var n2 = fondo.querySelector("#cl-firma2-nombre").value.trim();
           if (!n2 || trazos2 === 0) { alert(TXT.firma2Falta); return; }

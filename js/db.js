@@ -248,7 +248,8 @@
            hitos, facturas, horas, eventos, pendientes, documentos, fotos,
            inspecciones, materiales, materialesEquipo, costos, externos,
            gestiones, recibos, recibosEquipo, alcancePuntos, ayudantes, decisiones,
-           llavesPortal, visitasPortal, docsEmpresa, titulosDocs, jurisdicciones] =
+           llavesPortal, visitasPortal, docsEmpresa, titulosDocs, jurisdicciones,
+           contratistas, llavesGC] =
       await Promise.all([
         leer("perfiles?select=*"),
         // El dueño lee la tabla completa; al equipo la base le devuelve vacío
@@ -287,10 +288,16 @@
         // Solo títulos de documentos (para elegir el CO en el reporte de horas)
         leer("documentos_equipo?select=proyecto_id,titulo").catch(() => []),
         // Permisos por jurisdicción (todos leen; el dueño edita)
-        leer("jurisdicciones?select=*&order=condado").catch(() => [])
+        leer("jurisdicciones?select=*&order=condado").catch(() => []),
+        // Contratistas (GC): llevan las llaves de su portal — solo el dueño
+        // recibe filas (RLS). Si el SQL no está pegado, la app sigue andando.
+        leer("contratistas?select=*&order=nombre").catch(() => []),
+        // Las llaves de los contratistas viven aparte (nunca van al respaldo)
+        leer("contratista_llaves?select=*").catch(() => [])
       ]);
 
     const llavePorProyecto = Object.fromEntries((llavesPortal || []).map(l => [l.proyecto_id, l.token]));
+    const llavePorContratista = Object.fromEntries((llavesGC || []).map(l => [l.contratista_id, l.token]));
     // Última visita del cliente por proyecto (vienen ordenadas de la más nueva)
     const visitaPorProyecto = {};
     (visitasPortal || []).forEach(v => {
@@ -340,6 +347,9 @@
         portalCompleto: p.portal_completo === true,
         cliente: p.cliente || "Por confirmar",
         via: p.via || "—",
+        contratistaId: p.contratista_id || null,
+        contratistaModo: p.contratista_modo || "",
+        ntoEnviadoEl: p.nto_enviado_el ? String(p.nto_enviado_el).slice(0, 10) : "",
         origen: p.origen || "",
         clienteEmail: p.cliente_email || "",
         estado: p.estado,
@@ -419,6 +429,14 @@
       docsEmpresa: (docsEmpresa || []).map(d => ({
         id: d.id, titulo: d.titulo, tituloEn: d.titulo_en || "",
         ruta: d.ruta || "", url: d.url || "", vence: d.vence || "" })),
+      contratistas: (contratistas || []).map(c => ({
+        id: c.id, nombre: c.nombre, contacto: c.contacto || "",
+        email: c.email || "", telefono: c.telefono || "",
+        token: llavePorContratista[c.id] || "", activo: c.activo !== false,
+        veDinero: c.ve_dinero !== false, avisos: c.avisos !== false,
+        notas: c.notas || "",
+        invitadoEl: c.invitado_el ? String(c.invitado_el).slice(0, 10) : "",
+        vistoEl: c.visto_el ? String(c.visto_el).slice(0, 16).replace("T", " ") : "" })),
       fotos: fotos.map(f => ({
         id: f.id, proyecto: f.proyecto_id, ruta: f.ruta,
         nota: f.nota || "", autor: nombrePorId[f.autor_id] || "",
@@ -493,6 +511,11 @@
     cargarTodo,
     // Escrituras
     cambiarProyecto: (id, cambios) => actualizar(`proyectos?id=eq.${encodeURIComponent(id)}`, cambios),
+  // Contratistas (GC): la libreta con una llave de portal por empresa
+  crearContratista: fila => insertar("contratistas", fila),
+  cambiarContratista: (id, cambios) => actualizar(`contratistas?id=eq.${encodeURIComponent(id)}`, cambios),
+  cambiarLlaveContratista: (id, token) =>
+    actualizar(`contratista_llaves?contratista_id=eq.${encodeURIComponent(id)}`, { token }),
     // Marca "estuve en la app" (última vista del que llama; falla en silencio
     // si la función SQL aún no existe)
     estuve: () => api("rpc/fn_estuve", { metodo: "POST", cuerpo: {} }).catch(() => {}),
@@ -601,8 +624,8 @@
     // La plantilla oficial vive en el almacén de la app, no en el teléfono:
     // así Edgar no tiene que elegir ningún archivo y todos usan la misma.
     plantillaSOW: async () => {
-      const firma = await firmarFotos(["plantillas/SOW_Template_v3.1.html"]);
-      const url = firma["plantillas/SOW_Template_v3.1.html"];
+      const firma = await firmarFotos(["plantillas/SOW_Template_v3.2.html"]);
+      const url = firma["plantillas/SOW_Template_v3.2.html"];
       if (!url) throw new Error("No encuentro la plantilla oficial en la app");
       const r = await fetch(url);
       if (!r.ok) throw new Error("No se pudo bajar la plantilla (" + r.status + ")");
@@ -748,6 +771,12 @@
         if (e === "sin_llave") throw new Error("Al cartero le falta su llave (RESEND_API_KEY) en la nube");
         if (e === "sin_email") throw new Error("El proyecto no tiene email del cliente");
         if (e === "sin_portal") throw new Error("Este proyecto no tiene portal del cliente todavía");
+    if (e === "sin_contratista") throw new Error("Ese contratista no está en la libreta");
+    if (e === "contratista_apagado") throw new Error("Ese contratista está apagado; enciéndelo antes de invitarlo");
+    if (e === "avisos_apagados") throw new Error("A ese contratista le tienes los avisos apagados");
+    if (e === "obra_de_otro") throw new Error("Esa obra no es de ese contratista");
+    if (e === "sin_dinero") throw new Error("Esa obra la paga el dueño: al contratista no se le manda nada de dinero");
+    if (e === "sin_obra") throw new Error("Falta decir de qué obra es el aviso");
         if (e === "no_autorizado") throw new Error("Esto solo lo puede usar el dueño");
         if (e === "resend") throw new Error("El servicio de correo lo rechazó: " + (j.detalle || ""));
         throw new Error("No se pudo mandar el correo: " + (j.detalle || e));

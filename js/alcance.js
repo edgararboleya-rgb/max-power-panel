@@ -79,6 +79,10 @@
     email:              ["email", "e-mail", "correo", "client email", "customer email", "mail"],
     telefono:           ["telefono", "tel", "phone", "cell", "celular", "mobile", "client phone", "customer phone"],
     dueno:              ["dueno de la casa", "dueno", "homeowner", "propietario"],
+    // v3.2: quién contrata y qué clase de propiedad es. Deciden si el contrato lleva
+    // las páginas de consumidor (aviso de gravámenes y derecho a cancelar en 3 días).
+    contrato_con:       ["contrato con", "contract with", "contracting party"],
+    propiedad:          ["propiedad", "property", "property type", "tipo de propiedad"],
     direccion:          ["direccion", "address", "job address", "site address", "property address", "project address", "job site", "site"],
     ciudad:             ["ciudad", "jurisdiccion", "city", "jurisdiction", "ahj", "permit jurisdiction", "authority having jurisdiction"],
     proyecto:           ["proyecto", "nombre del trabajo", "project", "project name", "job", "job name", "work", "scope title"],
@@ -885,7 +889,14 @@
     const hay = v => !!(v && String(v).trim() && norma(v) !== "no");
     const si_no = v => { const n = norma(v && v.valor); return n === "si" || n === "yes" ? true : (n === "no" ? false : null); };
     const conFirma = leerFirma(d.firma);
-    const esGC = hay(d.dueno);
+    // Es un subcontrato con un contratista cuando la hoja trae un dueño de la
+    // propiedad distinto del cliente, o cuando la app dice que el contrato es
+    // con la empresa (proyectos.contratista_modo = 'contrato').
+    const esGC = hay(d.dueno) || norma(d.contrato_con || "") === "gc";
+    // Propiedad comercial: la 9.16 del depósito (F.S. 489.126) mira la propiedad,
+    // no quién paga. Si la hoja no dice nada, se trata como residencial: dejar la
+    // cláusula de más nunca hace daño; quitarla cuando tocaba, sí.
+    const esComercial = /comercial|commercial/.test(norma(d.propiedad || d.property || ""));
     const permiso = leerPermiso(d.permiso);   // regla de la casa: vacío = nosotros
     const layout = norma(d.layout || "si") !== "no";
     const noExcluir = norma((C.no_excluir || {}).valor || "");
@@ -893,6 +904,9 @@
     const bloques = {
       VARIANTE_B: conFirma, VARIANTE_A: !conFirma,
       ATTENTION: hay(d.atencion), HOMEOWNER: esGC, GC: esGC,
+      // v3.2: CONSUMIDOR enciende todo lo que solo vale en un contrato directo con el
+      // dueño de una casa: el aviso de gravámenes (713.015) y los tres días para cancelar.
+      CONSUMIDOR: !esGC,
       PLANOS: hay(d.planos),
       QUE_HAY_HOY: !!L.hoy, QUE_CAMBIA: !!L.cambia, FALTA: !!L.falta,
       INGENIERIA: hay(d.ingenieria),
@@ -916,7 +930,11 @@
 
     const clausulas = {
       garantia: true, existentes: true, sitio: true, edicion: true,
-      cambios: true, limite: true, seguro: true, cancelacion_tardia: true,
+      cambios: true, limite: true, seguro: true,
+      cancelacion_tardia: !esGC,   // habla de los tres días del consumidor
+      cancelacion_gc: esGC,        // la misma política, sin los tres días
+      retainage: esGC,
+      nto_releases: esGC,
       panel_sin_fotos: si_no(C.fotos_panel) === false,
       afci: si_no(C.circuitos_exist) === true,
       reuso_240: hay((C.v240 || {}).valor),
@@ -927,7 +945,9 @@
       fixtures_mxp: hay((C.fixtures_mxp || {}).valor),
       subsuelo: hay((C.excavacion || {}).valor),
       planos_permiso: bloques.PLANOS,
-      deposito: conFirma && cuenta.deposito_mayor_10
+      // 9.16 (F.S. 489.126): la ley mira la PROPIEDAD, no quién paga. Va siempre en
+      // residencial; en un subcontrato sobre propiedad comercial, no.
+      deposito: conFirma && cuenta.deposito_mayor_10 && !(esGC && esComercial)
     };
     // con SOW ligero no hay sección 9
     if (!conFirma) Object.keys(clausulas).forEach(k => { clausulas[k] = false; });
@@ -941,7 +961,10 @@
       fixtures_mxp: "porque las lámparas las pones tú",
       subsuelo: "porque hay excavación o trabajo bajo losa",
       planos_permiso: "porque entregas planos",
-      deposito: "porque el depósito pasa del 10% del precio"
+      deposito: "porque el depósito pasa del 10% del precio",
+      retainage: "porque el contrato es con un contratista (GC)",
+      nto_releases: "porque el contrato es con un contratista (GC): el Notice to Owner y los releases",
+      cancelacion_gc: "porque el contrato es con un contratista: no corren los tres días del consumidor"
     };
     return { bloques, clausulas, motivos, permiso, esGC, conFirma };
   }
@@ -1120,7 +1143,8 @@
 
   const ORDEN_9 = ["garantia","existentes","panel_sin_fotos","afci","sitio","reuso_240","reubicar",
                    "isla","edicion","aberturas","fixtures_cliente","fixtures_mxp","subsuelo",
-                   "planos_permiso","cambios","limite","seguro","deposito","cancelacion_tardia"];
+                   "planos_permiso","cambios","retainage","nto_releases","limite","seguro",
+                   "deposito","cancelacion_tardia","cancelacion_gc"];
 
   function aplicarClausulas(html, clausulas) {
     const numero = {};

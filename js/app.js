@@ -567,6 +567,28 @@ function esFalloDeRed(err) {
           </details>`).join("")}
         </details>
       </div>
+      ${usuario.finanzas && (state.contratistas || []).length ? `
+      <div class="inicio-card">
+        <div class="inicio-card-titulo">🏗 Contratistas (GC) y su portal</div>
+        <p class="modal-nota">Cada empresa tiene <strong>una sola llave</strong> para todas sus obras contigo.
+        Con el enlace ven calendario, inspecciones, fotos, documentos, y la licencia y los seguros de Max Power.
+        La facturación solo la ven en las obras donde el contrato es con ellos.</p>
+        ${state.contratistas.map(c => {
+          const suyas = proyectos().filter(x => x.contratistaId === c.id);
+          const conContrato = suyas.filter(x => x.contratistaModo === "contrato").length;
+          return `<div class="mat-item">
+            <span class="alcance-info">
+              <span class="alcance-titulo">${esc(c.nombre)}${c.activo ? "" : " · (apagado)"}</span>
+              <span class="alcance-estado">${suyas.length} obra${suyas.length === 1 ? "" : "s"}${conContrato ? ` · ${conContrato} con contrato` : ""}${c.contacto ? ` · ${esc(c.contacto)}` : ""}</span>
+              <span class="alcance-estado">${c.email ? `✉️ ${esc(c.email)}` : "✉️ sin email — ponlo antes de invitar"}${c.invitadoEl ? ` · invitado el ${esc(c.invitadoEl)}` : ""}${c.vistoEl ? ` · 👀 entró el ${esc(c.vistoEl)}` : ""}</span>
+            </span>
+            <button type="button" class="insp-borrar gc-copiar" data-llave="${esc(c.token)}" title="Copiar el enlace de su portal">🔗</button>
+            <button type="button" class="insp-borrar gc-email" data-id="${esc(c.id)}" data-email="${esc(c.email)}" title="Anotar o corregir el email">✎</button>
+            <button type="button" class="insp-borrar gc-invitar" data-id="${esc(c.id)}" title="Mandarle la invitación a su portal">✉️</button>
+            <button type="button" class="insp-borrar gc-llave" data-id="${esc(c.id)}" title="Regenerar la llave (el enlace viejo deja de servir)">♻</button>
+          </div>`;
+        }).join("")}
+      </div>` : ""}
       ${(state.jurisdicciones || []).length ? `
       <div class="inicio-card">
         <details class="chk-det">
@@ -591,6 +613,52 @@ function esFalloDeRed(err) {
         });
       }).catch(() => avisar("No se pudieron cargar los documentos de la empresa — revisa la señal.", true));
     }
+    // ── 🏗 Contratistas: enlace, email, invitación y llave nueva ──────
+    $("inicio-empresa").querySelectorAll(".gc-copiar").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const url = enlaceGC(btn.dataset.llave);
+        try { await navigator.clipboard.writeText(url); avisar("Enlace del contratista copiado ✓"); }
+        catch { prompt("Copia el enlace del contratista:", url); }
+      });
+    });
+    $("inicio-empresa").querySelectorAll(".gc-email").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const nuevo = prompt("Email del contratista (ahí le llega la invitación a su portal):", btn.dataset.email || "");
+        if (nuevo === null) return;
+        try {
+          await DB.cambiarContratista(btn.dataset.id, { email: nuevo.trim() || null });
+          await recargar(); avisar("Email guardado ✓");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    $("inicio-empresa").querySelectorAll(".gc-invitar").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const c = (state.contratistas || []).find(x => x.id === btn.dataset.id);
+        if (!c) return;
+        if (!c.email) { avisar("Primero ponle el email con el lapicito ✎", true); return; }
+        if (!confirm(`¿Mandarle a ${c.nombre} (${c.email}) la invitación a su portal?`)) return;
+        btn.disabled = true;
+        try {
+          const r = await DB.pedirCorreo("invitar_gc", { contratista_id: c.id });
+          await recargar();
+          avisar(`Invitación enviada a ${r.para || c.email} ✓`);
+        } catch (err) { avisar("No salió el correo: " + err.message, true); }
+        btn.disabled = false;
+      });
+    });
+    $("inicio-empresa").querySelectorAll(".gc-llave").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("¿Regenerar la llave? El enlace viejo deja de funcionar y hay que mandarle el nuevo.")) return;
+        const nueva = crypto.randomUUID
+          ? crypto.randomUUID().replace(/-/g, "")
+          : [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, "0")).join("");
+        try {
+          await DB.cambiarLlaveContratista(btn.dataset.id, nueva);
+          await recargar(); avisar("Llave nueva ✓ — copia el enlace otra vez");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+
     $("inicio-empresa").querySelectorAll(".emp-borrar").forEach(btn => {
       btn.addEventListener("click", async () => {
         if (!confirm("¿Eliminar este documento de la empresa?")) return;
@@ -1493,6 +1561,8 @@ function esFalloDeRed(err) {
             <span class="hito-cond">${esc(h.condicion || "")}${h.estado === "facturado" ? " · facturado, sin pagar" : ""}</span>
           </span>
           <span class="hito-monto">${fmt(h.monto)}</span>
+          ${h.estado === "cobrado" && usuario.editar ? `<button type="button" class="insp-borrar hito-release"
+            data-hito="${esc(h.id)}" title="Waiver and Release of Lien de este pago (F.S. 713.20)">📄</button>` : ""}
           ${h.estado !== "cobrado" && usuario.editar ? `<button type="button" class="insp-borrar hito-facturar"
             data-texto="${esc(textoFactura(h))}" data-hito="${esc(h.id)}" data-proyecto="${esc(p.id)}"
             title="Crea la factura en QuickBooks con las reglas de la casa">🧾</button>
@@ -1526,6 +1596,92 @@ function esFalloDeRed(err) {
           <a class="accion secundaria" target="_blank" rel="noopener" href="https://qbo.intuit.com/app/estimate">📄 Nuevo estimado en QuickBooks</a>
         </div>
       </div>`;
+  }
+
+  // ── 📄 Waiver and Release of Lien (F.S. 713.20) ────────────────────
+  // Dos formularios: por pago parcial (713.20(4)) y por pago final (713.20(5)).
+  // La app los rellena y los imprime; el release se hace SIEMPRE después de que
+  // el pago esté cobrado, nunca antes.
+  // La misma dirección que usa el portal en el Notice of Cancellation
+  const DIRECCION_MXP_LEGAL = "6472 SW 132nd St, Ocala, FL 34473";
+
+  function releaseHTML(p, hito, esFinal, duenoPropiedad) {
+    const gc = gcDeProyecto(p);
+    // Quién pagó: el contratista si el contrato es con él; si no, el cliente.
+    const paga = (gc && p.contratistaModo === "contrato") ? gc.nombre : String(p.cliente || "").split(/\s*[·(]/)[0].trim();
+    // Dueño de la propiedad: en un subcontrato NO es quien paga, y la ley pide su
+    // nombre. La app no lo tiene guardado, así que se pide y no se imprime sin él.
+    const dueno = duenoPropiedad || paga;
+    const hoy = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "long", day: "numeric", year: "numeric" }).format(new Date());
+    const titulo = esFinal ? "WAIVER AND RELEASE OF LIEN UPON FINAL PAYMENT"
+                           : "WAIVER AND RELEASE OF LIEN UPON PROGRESS PAYMENT";
+    const cuerpo = esFinal
+      ? `The undersigned lienor, in consideration of the final payment in the amount of <strong>${fmt(hito.monto)}</strong>,
+         hereby waives and releases its lien and right to claim a lien for labor, services, or materials furnished to
+         <strong>${esc(paga)}</strong> on the job of <strong>${esc(dueno)}</strong> to the following described property:`
+      : `The undersigned lienor, in consideration of the sum of <strong>${fmt(hito.monto)}</strong>, hereby waives and
+         releases its lien and right to claim a lien for labor, services, or materials furnished through
+         <strong>${esc(hoy)}</strong> to <strong>${esc(paga)}</strong> on the job of <strong>${esc(dueno)}</strong>
+         to the following property:`;
+    const nota = esFinal ? ""
+      : `<p class="rel-p">This waiver and release does not cover any retention or labor, services, or materials furnished after the date specified.</p>`;
+    return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<title>Release of Lien — ${esc(p.nombre)}</title>
+<style>
+  @page { size: letter; margin: 0.9in; }
+  body { font-family: Georgia, "Times New Roman", serif; color: #14181f; font-size: 11.5pt; line-height: 1.55; }
+  .mem { border-bottom: 2px solid #1B3C8C; padding-bottom: 8px; margin-bottom: 26px; }
+  .mem h1 { font-family: Arial, Helvetica, sans-serif; font-size: 13pt; color: #1B3C8C; margin: 0; letter-spacing: .4px; }
+  .mem p { font-family: Arial, Helvetica, sans-serif; font-size: 8.5pt; color: #5B7690; margin: 3px 0 0; }
+  h2 { font-family: Arial, Helvetica, sans-serif; font-size: 12.5pt; text-align: center; letter-spacing: .6px; margin: 0 0 22px; }
+  .rel-p { margin: 0 0 14px; }
+  .prop { margin: 14px 0 18px; padding: 10px 14px; border-left: 3px solid #1B3C8C; background: #F6FCFF; }
+  .firma { margin-top: 42px; }
+  .linea { border-bottom: 1px solid #14181f; height: 34px; width: 320px; }
+  .pie { font-family: Arial, Helvetica, sans-serif; font-size: 8pt; color: #5B7690; margin-top: 34px; border-top: 1px solid #D6E7F1; padding-top: 8px; }
+</style></head><body>
+  <div class="mem">
+    <h1>MAX POWER ELECTRICAL SOLUTIONS, INC.</h1>
+    <p>Licensed Electrical Contractor &middot; FL EC13016045 &middot; ${esc(DIRECCION_MXP_LEGAL)} &middot; (305) 967-9311</p>
+  </div>
+  <h2>${titulo}</h2>
+  <p class="rel-p">${cuerpo}</p>
+  <div class="prop"><strong>${esc(p.direccion || "")}</strong><br>
+    <span style="font-size:9.5pt;color:#4D6A83">Job: ${esc(p.nombre)}${p.ref && p.ref !== "—" ? " &middot; " + esc(String(p.ref).slice(0, 60)) : ""} &middot; ${esc(hito.titulo)}</span></div>
+  ${nota}
+  <p class="rel-p">DATED on ${esc(hoy)}.</p>
+  <div class="firma">
+    <p class="rel-p"><strong>Max Power Electrical Solutions, Inc.</strong> (Lienor)</p>
+    <div class="linea"></div>
+    <p class="rel-p" style="margin-top:6px">By: Edgar Arboleya &middot; Title: President<br>
+    Address: ${esc(DIRECCION_MXP_LEGAL)}</p>
+  </div>
+  <p class="pie">Form per Section 713.20(${esFinal ? "5" : "4"}), Florida Statutes. Delivered in exchange for payment; if payment is by check or electronic transfer, this release takes effect when the funds clear.</p>
+</body></html>`;
+  }
+
+  function releaseImprimir(p, hito) {
+    // Es el final cuando ya no queda ningún hito por cobrar
+    const quedan = (p.hitos || []).filter(h => h.estado !== "cobrado").length;
+    const esFinal = quedan === 0 && (p.hitos || []).length > 0 &&
+      confirm("¿Es el ÚLTIMO pago de la obra?\n\nAceptar = release FINAL (713.20(5)).\nCancelar = release de pago parcial (713.20(4)).");
+    // El formulario de la ley pide el nombre del dueño de la propiedad. Si el
+    // contrato es con una empresa, ese nombre no está en ningún sitio de la app.
+    const gc0 = gcDeProyecto(p);
+    let dueno = "";
+    if (gc0 && p.contratistaModo === "contrato") {
+      const r = prompt("¿A nombre de quién está la propiedad?\n\nEl formulario de la ley (713.20) pide el nombre del dueño, y no es la empresa que te paga.", "");
+      if (r === null) return;
+      dueno = r.trim();
+      if (!dueno) { avisar("Sin el nombre del dueño no se puede armar el release", true); return; }
+    }
+    const w = window.open("", "_blank");
+    if (!w) { avisar("El navegador bloqueó la ventana. Permite ventanas emergentes y vuelve a tocar.", true); return; }
+    w.document.open(); w.document.write(releaseHTML(p, hito, esFinal, dueno)); w.document.close();
+    const imprimir = () => { try { w.focus(); w.print(); } catch { /* nada */ } };
+    if (w.document.readyState === "complete") setTimeout(imprimir, 400);
+    else w.addEventListener("load", () => setTimeout(imprimir, 400));
+    avisar("Elige «Guardar como PDF»; después súbelo a los documentos de la obra");
   }
 
   // ---------- Ayudantes de gastos (los usan la ficha, el inicio y 📊 Gastos) ----------
@@ -2393,6 +2549,76 @@ function esFalloDeRed(err) {
   }
 
   // Piezas que comparten la tarjeta resumida y la ficha completa
+  // El contratista (GC) de una obra, si lo tiene y el SQL ya está pegado
+  function gcDeProyecto(p) {
+    if (!p || !p.contratistaId) return null;
+    return (state.contratistas || []).find(c => c.id === p.contratistaId) || null;
+  }
+  // La dirección del portal, según sea del cliente o de un contratista
+  const PANEL_WEB = "https://edgararboleya-rgb.github.io/max-power-panel/";
+  const enlaceGC = (llave, proyectoId) =>
+    PANEL_WEB + (proyectoId
+      ? `cliente.html?g=${encodeURIComponent(llave)}&p=${encodeURIComponent(proyectoId)}`
+      : `gc.html?g=${encodeURIComponent(llave)}`);
+
+  // ── 🏗 Portal del contratista (GC) ────────────────────────────────
+  // Una obra puede ser de un contratista. Si el contrato es CON él, ve la
+  // facturación de SU obra; si la paga el dueño de la casa, no ve un centavo.
+  function portalGCHTML(p) {
+    const libreta = state.contratistas || [];
+    const gc = gcDeProyecto(p);
+    if (!libreta.length && !gc) {
+      return `
+        <div class="detalle-seccion">
+          <h3>🏗 Portal del contratista</h3>
+          <p class="cal-sin-eventos">Pega el SQL de contratistas y aquí podrás decir de qué empresa es esta obra.</p>
+        </div>`;
+    }
+    const opciones = libreta.filter(c => c.activo)
+      .map(c => `<option value="${esc(c.id)}"${gc && gc.id === c.id ? " selected" : ""}>${esc(c.nombre)}</option>`).join("");
+    const nto = gc && p.contratistaModo === "contrato"
+      ? (p.ntoEnviadoEl
+          ? `<p class="modal-nota">📬 Notice to Owner mandado el <strong>${esc(p.ntoEnviadoEl)}</strong>.</p>`
+          : `<p class="modal-nota">📬 <strong>Notice to Owner:</strong> todavía no está mandado. Hay 45 días desde el
+             primer día de trabajo; sin eso se pierde el derecho a gravamen.
+             <button type="button" class="accion secundaria" id="btn-nto-hecho">Ya lo mandé</button></p>`)
+      : "";
+    return `
+      <div class="detalle-seccion">
+        <h3>🏗 Portal del contratista</h3>
+        ${gc ? `
+        <p class="modal-nota">Esta obra es de <strong>${esc(gc.nombre)}</strong>${gc.contacto ? ` (${esc(gc.contacto)})` : ""}.
+          ${p.contratistaModo === "contrato"
+            ? "El contrato es con ellos: en su portal ven los hitos, lo facturado y lo cobrado <strong>de esta obra</strong>."
+            : "La obra la paga el dueño de la casa: ellos ven calendario, inspecciones, fotos y documentos, pero <strong>ningún monto</strong>, y no firman."}</p>
+        <div class="modal-botones">
+          <button type="button" class="accion secundaria" id="btn-gc-copiar" data-llave="${esc(gc.token)}" data-obra="${esc(p.id)}">🔗 Copiar el enlace (les abre esta obra)</button>
+          <button type="button" class="accion secundaria" id="btn-gc-portada" data-llave="${esc(gc.token)}">🏗 Copiar el enlace de todas sus obras</button>
+          <button type="button" class="accion secundaria" id="btn-gc-avisar">✉️ Avisarle algo</button>
+          <button type="button" class="doc-cliente${p.contratistaModo === "contrato" ? " on" : ""}" id="btn-gc-modo"
+            title="${p.contratistaModo === "contrato" ? "El contrato es con el contratista: SÍ ve la facturación de esta obra. Toca para cambiarlo." : "La obra la paga el dueño: el contratista NO ve dinero. Toca para cambiarlo."}">${p.contratistaModo === "contrato" ? "💵 le facturamos a ellos" : "👀 solo coordinan (sin dinero)"}</button>
+        </div>
+        ${nto}` : `<p class="modal-nota">Esta obra no es de ningún contratista todavía.</p>`}
+        <form class="cal-form" id="form-gc">
+          <div class="modal-fila">
+            <label>¿De qué contratista es esta obra?
+              <select name="contratista">
+                <option value="">— ninguno (trabajo directo) —</option>
+                ${opciones}
+              </select>
+            </label>
+            <label>¿Cómo participan?
+              <select name="modo">
+                <option value="referido"${p.contratistaModo === "contrato" ? "" : " selected"}>Solo coordinan — la paga el dueño (NO ven dinero)</option>
+                <option value="contrato"${p.contratistaModo === "contrato" ? " selected" : ""}>Es el cliente — le facturamos a ellos (SÍ ven el dinero)</option>
+              </select>
+            </label>
+          </div>
+          <button type="submit" class="accion secundaria">Guardar</button>
+        </form>
+      </div>`;
+  }
+
   function cabeceraHTML(p, conSelector) {
     const fase = p.estado === "ejecucion" ? FASES.find(f => f.clave === p.fase) : null;
     const miniFase = fase ? `<span class="mini-fase">${fase.etiqueta}</span>` : "";
@@ -2403,6 +2629,7 @@ function esFalloDeRed(err) {
             <h2>${esc(p.nombre)}</h2>
             <div class="proyecto-dir">📍 ${esc(p.direccion)}</div>
             <div class="proyecto-cliente">Cliente: <strong>${esc(p.cliente)}</strong> · vía ${esc(p.via)}${p.origen ? ` · 🧲 ${esc(p.origen)}` : ""}</div>
+            ${gcDeProyecto(p) ? `<div class="proyecto-cliente">🏗 Contratista: <strong>${esc(gcDeProyecto(p).nombre)}</strong> · ${p.contratistaModo === "contrato" ? "el contrato es con ellos" : "la paga el dueño; ellos solo coordinan"}</div>` : ""}
           </div>
           <div class="chips-col">
             ${conSelector && usuario.editar ? selectorEstadoHTML(p) : chipHTML(p.estado)}
@@ -2618,7 +2845,8 @@ function esFalloDeRed(err) {
              </div>
              <button type="submit" class="accion secundaria">+ Agregar decisión</button>
            </form>
-         </div>`
+         </div>
+         ${portalGCHTML(p)}`
       : "";
 
     return `
@@ -2924,6 +3152,94 @@ function esFalloDeRed(err) {
         avisar(!p.portalDinero ? "💵 El cliente ahora VE su contrato y pagos" : "El dinero quedó oculto para el cliente");
       } catch (err) { avisar("No se pudo: " + err.message, true); }
     });
+    // ── 🏗 Portal del contratista ──────────────────────────────────
+    const copiar = async (url, bien) => {
+      try { await navigator.clipboard.writeText(url); avisar(bien); }
+      catch { prompt("Copia el enlace:", url); }
+    };
+    const btnGCObra = $detalle.querySelector("#btn-gc-copiar");
+    if (btnGCObra) btnGCObra.addEventListener("click", () => {
+      const emp0 = gcDeProyecto(proyectos().find(x => x.id === proyectoActivo));
+      copiar(enlaceGC(btnGCObra.dataset.llave, btnGCObra.dataset.obra),
+             `Copiado ✓ — ojo: es la llave de ${emp0 ? emp0.nombre : "la empresa"}. Quien la tenga entra también a sus otras obras, así que mándasela solo a ellos.`);
+    });
+    const btnGCPortada = $detalle.querySelector("#btn-gc-portada");
+    if (btnGCPortada) btnGCPortada.addEventListener("click", () =>
+      copiar(enlaceGC(btnGCPortada.dataset.llave),
+             "Enlace del contratista copiado ✓ — ve todas sus obras"));
+    const btnGCAvisar = $detalle.querySelector("#btn-gc-avisar");
+    if (btnGCAvisar) btnGCAvisar.addEventListener("click", async () => {
+      const p0 = proyectos().find(x => x.id === proyectoActivo);
+      const gc0 = gcDeProyecto(p0);
+      if (!gc0) return;
+      if (!gc0.email) { avisar("El contratista no tiene email. Ponlo en Licencia y seguros ✎", true); return; }
+      const conDinero = p0.contratistaModo === "contrato";
+      const que = prompt(
+        `¿Qué le aviso a ${gc0.nombre}?\n\n` +
+        "1 = pasó la inspección\n" +
+        (conDinero ? "2 = se emitió una factura\n" : "") +
+        "3 = licencia y seguros al día\n\nEscribe el número:", "1");
+      if (que === null) return;
+      const tipo = { "1": "inspeccion", "2": "factura", "3": "coi" }[String(que).trim()];
+      if (!tipo) { avisar("No entendí el número", true); return; }
+      if (tipo === "factura" && !conDinero) { avisar("Esta obra la paga el dueño: al contratista no se le manda dinero", true); return; }
+      btnGCAvisar.disabled = true;
+      try {
+        const r = await DB.pedirCorreo("avisar_gc", { contratista_id: gc0.id, proyecto_id: p0.id, tipo });
+        avisar(`Aviso enviado a ${r.para} ✓`);
+      } catch (e) { avisar("No salió el aviso: " + e.message, true); }
+      btnGCAvisar.disabled = false;
+    });
+    const btnGCModo = $detalle.querySelector("#btn-gc-modo");
+    if (btnGCModo) btnGCModo.addEventListener("click", async () => {
+      const p0 = proyectos().find(x => x.id === proyectoActivo);
+      const nuevo = p0 && p0.contratistaModo === "contrato" ? "referido" : "contrato";
+      if (nuevo === "contrato" &&
+          !confirm("¿El contrato de esta obra es con el contratista?\n\nSi dices que sí, en su portal verá los hitos, lo facturado y lo cobrado de esta obra.")) return;
+      try {
+        await DB.cambiarProyecto(proyectoActivo, { contratista_modo: nuevo });
+        await recargar(proyectoActivo);
+        avisar(nuevo === "contrato" ? "Le facturamos a ellos ✓" : "Solo coordinan — sin dinero ✓");
+      } catch (err) { avisar("No se pudo: " + err.message, true); }
+    });
+    const btnNTO = $detalle.querySelector("#btn-nto-hecho");
+    if (btnNTO) btnNTO.addEventListener("click", async () => {
+      const como = prompt("¿Cómo mandaste el Notice to Owner? (certificado, servicio, en mano…)", "correo certificado");
+      if (como === null) return;
+      try {
+        await DB.cambiarProyecto(proyectoActivo, {
+          nto_enviado_el: new Date().toISOString(),
+          nto_nota: como.trim() || null
+        });
+        await recargar(proyectoActivo);
+        avisar("Notice to Owner anotado ✓");
+      } catch (err) { avisar("No se pudo: " + err.message, true); }
+    });
+    const formGC = $detalle.querySelector("#form-gc");
+    if (formGC) formGC.addEventListener("submit", async ev => {
+      ev.preventDefault();
+      const d = new FormData(formGC);
+      const cual = String(d.get("contratista") || "");
+      const modo = cual ? String(d.get("modo") || "referido") : null;
+      if (modo === "contrato") {
+        const emp = (state.contratistas || []).find(c => c.id === cual);
+        if (!confirm(`Vas a decir que el contrato de esta obra es con ${emp ? emp.nombre : "esa empresa"}.\n\n` +
+                     "Dos cosas cambian:\n" +
+                     "· En su portal verán los hitos, lo facturado y lo cobrado de esta obra.\n" +
+                     "· El contrato saldrá SIN el aviso de la ley de gravámenes y SIN los tres días para cancelar " +
+                     "(esos dos son solo para un dueño de casa).\n\n" +
+                     "Si quien firma es el dueño de la casa, elige «Solo coordinan».")) return;
+      }
+      try {
+        await DB.cambiarProyecto(proyectoActivo, {
+          contratista_id: cual || null,
+          contratista_modo: modo
+        });
+        await recargar(proyectoActivo);
+        avisar(cual ? "Contratista guardado ✓" : "Obra directa ✓");
+      } catch (err) { avisar("No se pudo: " + err.message, true); }
+    });
+
     const btnPortalRegen = $detalle.querySelector("#btn-portal-regenerar");
     if (btnPortalRegen) btnPortalRegen.addEventListener("click", async () => {
       if (!confirm("¿Regenerar la llave? El link viejo dejará de funcionar y tendrás que mandarle el nuevo al cliente.")) return;
@@ -2988,6 +3304,13 @@ function esFalloDeRed(err) {
     });
     // 🧾 Facturar un hito: crea la factura DIRECTO en QuickBooks.
     // Si la conexión API aún no está montada, plan B: copia el texto y abre QB.
+    $detalle.querySelectorAll(".hito-release").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const p0 = proyectos().find(x => x.id === proyectoActivo);
+        const h0 = p0 && (p0.hitos || []).find(h => String(h.id) === String(btn.dataset.hito));
+        if (p0 && h0) releaseImprimir(p0, h0);
+      });
+    });
     $detalle.querySelectorAll(".hito-facturar").forEach(btn => {
       btn.addEventListener("click", async () => {
         const planB = async () => {
@@ -7172,7 +7495,9 @@ Power done right the first time. ⚡`;
       ${quedan.length ? `<div class="lev-lab" style="margin-top:.6rem">Te falta escribir ${quedan.length} ${quedan.length === 1 ? "hueco" : "huecos"}</div>
         <ul class="lev-noincluye">${quedan.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`
         : `<p class="lev-nota">No quedó ningún hueco de redacción.</p>`}
-      <p class="lev-nota">Si el cliente firmara hoy, podría cancelar hasta la medianoche del <b>${esc(fechaLarga(limite))}</b> (tres días hábiles, contando el sábado). El formulario de cancelación con la fecha exacta lo genera el portal al firmar. Los feriados los confirma el abogado.</p>`;
+      ${alcActivo && alcActivo.decision && alcActivo.decision.esGC
+        ? `<p class="lev-nota">Este contrato es con una empresa: <b>no</b> lleva los tres días para cancelar ni el formulario de cancelación.</p>`
+        : `<p class="lev-nota">Si el cliente firmara hoy, podría cancelar hasta la medianoche del <b>${esc(fechaLarga(limite))}</b> (tres días hábiles, contando el sábado). El formulario de cancelación con la fecha exacta lo genera el portal al firmar. Los feriados los confirma el abogado.</p>`}`;
     avisar("Contrato armado ✓ — revísalo y pásalo a PDF");
   }
 
@@ -7446,7 +7771,7 @@ Power done right the first time. ⚡`;
         <h3>Lo que entendí</h3>
         <div class="alc-rejilla">
           <div><span>Cliente</span><b>${esc(d.cliente || "—")}</b></div>
-          <div><span>Tipo</span><b>${dec.esGC ? "por contratista general" : "directo con el dueño"}</b></div>
+          <div><span>Tipo</span><b>${dec.esGC ? "contrato con una empresa (GC)" : "directo con el dueño"}</b></div>
           <div><span>Documento</span><b>${dec.conFirma ? "propuesta con firma" : "alcance ligero"}</b></div>
           <div><span>Permiso</span><b>${dec.bloques.PERMISO_MXP ? "lo sacamos nosotros" : dec.bloques.PERMISO_CLIENTE ? "lo saca el cliente" : "no hace falta"}</b></div>
           <div><span>Ciudad</span><b>${esc(d.ciudad || "—")}</b></div>
@@ -7462,8 +7787,13 @@ Power done right the first time. ⚡`;
           ${cta.addons.length ? `<tr class="alc-total"><td>Si el cliente lo toma todo</td><td class="r">${usd(cta.total_con_todo)}</td></tr>` : ""}
         </table>
         ${cta.addons.length ? `<p class="lev-nota">El cliente puede tomar los añadidos que quiera, sueltos o juntos. Los pagos se recalculan sobre lo que acepte.</p>` : ""}
+        ${dec.esGC ? `<div class="alc-gris"><b>Ojo — este contrato es entre dos empresas:</b> sale
+          <b>SIN</b> el aviso de la ley de gravámenes y <b>SIN</b> los tres días para cancelar (esos dos
+          son solo de un dueño de casa), y con la retención, el Notice to Owner y las liberaciones de
+          gravamen. Si quien va a firmar es el dueño de la casa, cambia la obra a «Solo coordinan»
+          en la ficha del proyecto antes de armar el contrato.</div>` : ""}
         <p class="alc-sub">Cláusulas que van a salir:</p>
-        <div class="alc-chips">${encendidas.map(k => `<span class="alc-chip" title="${esc(dec.motivos[k] || "va siempre")}">${esc(k.replace(/_/g, " "))}</span>`).join("")}</div>
+        <div class="alc-chips">${encendidas.map(k => `<span class="alc-chip" title="${esc(dec.motivos[k] || "va siempre")}">${esc(NOMBRE_CLAUSULA[k] || k.replace(/_/g, " "))}</span>`).join("")}</div>
         <p class="lev-nota">${esc(alcPorQue(dec))}</p>
       </div>
       <div class="alc-botones alc-cierra-dos">
@@ -7556,10 +7886,13 @@ Power done right the first time. ⚡`;
           ? `<div class="alc-rojo"><b>No lo bajé: hay algo que revisar.</b><ul>${C.problemas.map(p => `<li>${esc(p.texto)}</li>`).join("")}</ul></div>`
           : `<p class="lev-nota">Pasó el repaso: no quedó ningún hueco y cada monto del papel es uno de los que calculé yo.</p>`}
         <p class="alc-sub">La sección 9 quedó así:</p>
-        <div class="alc-chips">${nums.map(([k, n]) => `<span class="alc-chip">9.${n} ${esc(k.replace(/_/g, " "))}</span>`).join("")}</div>
-        <p class="lev-nota">Si el cliente firmara hoy, podría cancelar hasta la medianoche del
-          <b>${esc(fechaLarga(tresDiasHabiles(hoyFlorida())))}</b> (tres días hábiles, contando el sábado).
-          El formulario con la fecha exacta lo genera el portal al firmar.</p>
+        <div class="alc-chips">${nums.map(([k, n]) => `<span class="alc-chip">9.${n} ${esc(NOMBRE_CLAUSULA[k] || k.replace(/_/g, " "))}</span>`).join("")}</div>
+        ${A.decision && A.decision.esGC
+          ? `<p class="lev-nota">Contrato con una empresa: <b>no</b> lleva los tres días para cancelar
+             ni el formulario de cancelación, y el certificado de la firma dirá a nombre de qué empresa se firmó.</p>`
+          : `<p class="lev-nota">Si el cliente firmara hoy, podría cancelar hasta la medianoche del
+             <b>${esc(fechaLarga(tresDiasHabiles(hoyFlorida())))}</b> (tres días hábiles, contando el sábado).
+             El formulario con la fecha exacta lo genera el portal al firmar.</p>`}
       </div>
       <div class="alc-botones">
         ${C.problemas.length ? "" : `<button class="accion" id="alc-imprimir">Imprimir a PDF</button>
@@ -7579,8 +7912,15 @@ Power done right the first time. ⚡`;
           <button class="accion secundaria" id="alc-enviar-texto">Mandar por texto</button>
           <button class="accion secundaria" id="alc-copiar-enlace">Copiar el enlace</button>
         </div>
-        <p class="lev-nota">${A.proyecto.cliente_email ? `Email del cliente: <b>${esc(A.proyecto.cliente_email)}</b>.` : "El proyecto no tiene email del cliente: al tocar «Mandar por email» te lo pido y lo guardo."}
-          Se abre tu correo (o tus mensajes) con el texto y el enlace ya escritos; solo tienes que darle a enviar.</p>
+        ${(() => {
+          const pAct = proyectos().find(x => x.id === A.proyecto.id);
+          const gcF = pAct && pAct.contratistaModo === "contrato" ? gcDeProyecto(pAct) : null;
+          if (gcF) return `<p class="lev-nota">🏗 Esta obra la firma <b>${esc(gcF.nombre)}</b>, no un dueño de casa:
+            el enlace y la invitación van a su portal de contratista.
+            ${gcF.email ? `Email: <b>${esc(gcF.email)}</b>.` : "No tiene email anotado: al tocar «Mandar por email» te lo pido y lo guardo."}</p>`;
+          return `<p class="lev-nota">${A.proyecto.cliente_email ? `Email del cliente: <b>${esc(A.proyecto.cliente_email)}</b>.` : "El proyecto no tiene email del cliente: al tocar «Mandar por email» te lo pido y lo guardo."}
+            Se abre tu correo (o tus mensajes) con el texto y el enlace ya escritos; solo tienes que darle a enviar.</p>`;
+        })()}
         <div class="alc-botones alc-cierra-dos"><button class="accion" id="alc-terminado">Terminado — mandar la invitación e ir al proyecto</button></div>
         <p class="lev-nota">Al tocar «Terminado», la app le manda sola al cliente el email de invitación a su portal
           (con el enlace y las opciones que haya) desde info@mxpes.com, y lo apunta en el proyecto.
@@ -7693,14 +8033,28 @@ Power done right the first time. ⚡`;
     const bImpr = $("alc-imprimir");
     if (bImpr) bImpr.addEventListener("click", alcImprimir);
     // Mandarle el portal al cliente: se abre el correo o los mensajes con todo escrito
+    // ¿Quién firma esta obra? Si el contrato es con un contratista, el enlace
+    // y la invitación van a la empresa, no al dueño de la casa.
+    const alcQuienFirma = () => {
+      const p0 = proyectos().find(x => x.id === alcActivo.proyecto.id) || alcActivo.proyecto;
+      const gc = gcDeProyecto(p0);
+      return (gc && p0.contratistaModo === "contrato")
+        ? { gc, email: gc.email || "", nombre: gc.contacto || gc.nombre }
+        : { gc: null, email: alcActivo.proyecto.cliente_email || "", nombre: "" };
+    };
     const alcMensaje = async () => {
-      const llave = await DB.llavePortal(alcActivo.proyecto.id);
-      const url = `https://edgararboleya-rgb.github.io/max-power-panel/cliente.html?t=${llave}`;
-      const nombre = String(alcActivo.leido && alcActivo.leido.datos.cliente || alcActivo.proyecto.cliente || "").split(/\s+/)[0] || "";
+      const quien = alcQuienFirma();
+      const url = quien.gc
+        ? enlaceGC(quien.gc.token, alcActivo.proyecto.id)
+        : `https://edgararboleya-rgb.github.io/max-power-panel/cliente.html?t=${await DB.llavePortal(alcActivo.proyecto.id)}`;
+      const nombre = quien.gc
+        ? String(quien.nombre || "").split(/\s+/)[0]
+        : String(alcActivo.leido && alcActivo.leido.datos.cliente || alcActivo.proyecto.cliente || "").split(/\s+/)[0] || "";
       const cuantos = (alcActivo.variantes || []).filter(v => v.alcance_estado === "armado" || v.estado === "enviada").length;
       const cuerpo = `Hi ${nombre},\n\nYour proposal from Max Power Electrical Solutions is ready in your client portal:\n${url}\n\n` +
         (cuantos > 1 ? `There are ${cuantos} scope options; pick the one you want, review it and sign at the bottom.` : `Open the link, review the Scope of Work and sign at the bottom.`) +
-        `\nAfter signing you have three business days to cancel at no cost.\n\nIf you have any questions, call or text me at (305) 967-9311.\n\nEdgar Arboleya\nMax Power Electrical Solutions, Inc.\nFL EC13016045`;
+        (quien.gc ? "" : "\nAfter signing you have three business days to cancel at no cost.") +
+        `\n\nIf you have any questions, call or text me at (305) 967-9311.\n\nEdgar Arboleya\nMax Power Electrical Solutions, Inc.\nFL EC13016045`;
       return { url, asunto: `Your proposal — ${alcActivo.proyecto.nombre}`, cuerpo };
     };
     const bMail = $("alc-enviar-email");
@@ -7731,18 +8085,30 @@ Power done right the first time. ⚡`;
     const bFin = $("alc-terminado");
     if (bFin) bFin.addEventListener("click", async () => {
       const id = alcActivo.proyecto.id;
-      let email = alcActivo.proyecto.cliente_email || "";
+      const quien = alcQuienFirma();
+      let email = quien.email;
       if (!email) {
-        const nuevo = prompt("Email del cliente para mandarle la invitación al portal:", "");
+        const nuevo = prompt(quien.gc
+          ? `Email de ${quien.gc.nombre} para mandarle la invitación a su portal:`
+          : "Email del cliente para mandarle la invitación al portal:", "");
         if (nuevo === null) return;
         email = nuevo.trim();
-        if (email) { try { await DB.cambiarProyecto(id, { cliente_email: email }); alcActivo.proyecto.cliente_email = email; } catch { /* se manda igual */ } }
+        if (email) {
+          try {
+            if (quien.gc) { await DB.cambiarContratista(quien.gc.id, { email }); quien.gc.email = email; }
+            else { await DB.cambiarProyecto(id, { cliente_email: email }); alcActivo.proyecto.cliente_email = email; }
+          } catch { /* se manda igual */ }
+        }
       }
       bFin.disabled = true; bFin.textContent = "Mandando la invitación…";
-      let mensaje = "Listo ✓ — el contrato está en el portal del cliente";
+      let mensaje = quien.gc
+        ? "Listo ✓ — el contrato está en el portal del contratista"
+        : "Listo ✓ — el contrato está en el portal del cliente";
       if (email) {
         try {
-          const r = await DB.pedirCorreo("invitar_portal", { proyecto_id: id, para: email });
+          const r = quien.gc
+            ? await DB.pedirCorreo("invitar_gc", { contratista_id: quien.gc.id, proyecto_id: id, para: email })
+            : await DB.pedirCorreo("invitar_portal", { proyecto_id: id, para: email });
           mensaje = `Invitación enviada a ${r.para} ✓`;
         } catch (e) {
           // el correo no salió: se dice claro, pero el contrato sigue en el portal
@@ -7758,8 +8124,10 @@ Power done right the first time. ⚡`;
     });
     const bEnlace = $("alc-copiar-enlace");
     if (bEnlace) bEnlace.addEventListener("click", async () => {
-      try { const llave = await DB.llavePortal(alcActivo.proyecto.id);
-            const url = `https://edgararboleya-rgb.github.io/max-power-panel/cliente.html?t=${llave}`;
+      try { const quien0 = alcQuienFirma();
+            const url = quien0.gc
+              ? enlaceGC(quien0.gc.token, alcActivo.proyecto.id)
+              : `https://edgararboleya-rgb.github.io/max-power-panel/cliente.html?t=${await DB.llavePortal(alcActivo.proyecto.id)}`;
             try { await navigator.clipboard.writeText(url); avisar("Enlace copiado ✓ — pégaselo al cliente"); }
             catch { avisar("El enlace del cliente: " + url); } }
       catch (e) { avisar("No pude sacar el enlace: " + e.message, true); }
@@ -7886,9 +8254,28 @@ Power done right the first time. ⚡`;
     alcCalcular(); pintarAlcance();
   }
 
+  // Los nombres de las cláusulas, como los diría una persona
+  const NOMBRE_CLAUSULA = {
+    garantia: "garantía", existentes: "cosas existentes", panel_sin_fotos: "panel sin fotos",
+    afci: "breakers AFCI", sitio: "estado del sitio", reuso_240: "reúso del 240V",
+    reubicar: "reubicar", isla: "isla", edicion: "ediciones del alcance",
+    aberturas: "aberturas", fixtures_cliente: "lámparas del cliente", fixtures_mxp: "lámparas nuestras",
+    subsuelo: "excavación", planos_permiso: "planos del permiso", cambios: "órdenes de cambio",
+    retainage: "retención", nto_releases: "Notice to Owner y liberaciones de gravamen",
+    limite: "límite de responsabilidad", seguro: "seguro", deposito: "depósito y arranque",
+    cancelacion_tardia: "cancelación después de los 3 días", cancelacion_gc: "cancelación (sin los 3 días)"
+  };
+
   function alcCalcular() {
     const A = alcActivo;
     A.leido = Alcance.leerAlcance(A.texto, { perdonadas: A.perdonadas || [] });
+    // Si en la app dijiste que el contrato de esta obra es con un contratista, el
+    // contrato sale en modo GC aunque la hoja no lo diga: sin el aviso de gravámenes
+    // ni los tres días para cancelar, y con las cláusulas del subcontrato.
+    const pAct = proyectos().find(x => x.id === A.proyecto.id);
+    if (pAct && pAct.contratistaModo === "contrato" && A.leido && A.leido.datos) {
+      A.leido.datos.contrato_con = "GC";
+    }
     A.validado = Alcance.validarAlcance(A.leido);
     A.cuenta = Alcance.cuentas(A.leido);
     A.decision = Alcance.decidirInterruptores(A.leido, A.cuenta);
