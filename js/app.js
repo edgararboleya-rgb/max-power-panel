@@ -7856,6 +7856,19 @@ Power done right the first time. ⚡`;
           son solo de un dueño de casa), y con la retención, el Notice to Owner y las liberaciones de
           gravamen. Si quien va a firmar es el dueño de la casa, cambia la obra a «Solo coordinan»
           en la ficha del proyecto antes de armar el contrato.</div>` : ""}
+        ${(() => {
+          const pr = dec.propio || {}; const pf = dec.perfil || {};
+          const fuera = ["EXCL_PANEL","EXCL_AFCI","EXCL_GABINETES","EXCL_DRYWALL","EXCL_LOWVOLT","EXCL_APARATOS","EXCL_AHJ","EXCL_FUERA_AREAS"].filter(k => !dec.bloques[k]);
+          const NOM = { EXCL_PANEL: "trabajo de panel", EXCL_AFCI: "arc-fault", EXCL_GABINETES: "luces de gabinete", EXCL_DRYWALL: "drywall y parches",
+                        EXCL_LOWVOLT: "low-voltage", EXCL_APARATOS: "aparatos y gas", EXCL_AHJ: "correcciones del inspector", EXCL_FUERA_AREAS: "fuera de las áreas" };
+          const partes = [];
+          if (fuera.length) partes.push(`No van estas exclusiones genéricas porque no cuadran con este alcance: ${fuera.map(k => NOM[k]).join(", ")}.`);
+          if ((pr.propias || []).length) partes.push(`De la hoja entran a la sección 9 sus condiciones propias: ${pr.propias.map(x => esc(x.titulo)).join(" · ")}.`);
+          if ((pr.programa || []).length) partes.push(`Al cronograma (sección 7) entran: ${pr.programa.map(x => esc(x.titulo)).join(" · ")}.`);
+          if ((pr.pre || []).length) partes.push(`La sección 8 es la de la hoja (${pr.pre.length} puntos), no la de aprobación de layout.`);
+          if ((A.leido.pagos_propios || []).length) partes.push(`A los pagos (sección 6) entran: ${A.leido.pagos_propios.map(x => esc(x.titulo)).join(" · ")}.`);
+          return partes.length ? `<div class="alc-gris"><b>Ajustado a este trabajo:</b> ${partes.join(" ")}</div>` : "";
+        })()}
         <p class="alc-sub">Cláusulas que van a salir:</p>
         <div class="alc-chips">${encendidas.map(k => `<span class="alc-chip" title="${esc(dec.motivos[k] || "va siempre")}">${esc(NOMBRE_CLAUSULA[k] || k.replace(/_/g, " "))}</span>`).join("")}</div>
         <p class="lev-nota">${esc(alcPorQue(dec))}</p>
@@ -8330,7 +8343,7 @@ Power done right the first time. ⚡`;
     subsuelo: "excavación", planos_permiso: "planos del permiso", cambios: "órdenes de cambio",
     retainage: "retención", nto_releases: "Notice to Owner y liberaciones de gravamen",
     limite: "límite de responsabilidad", seguro: "seguro", deposito: "depósito y arranque",
-    cancelacion_tardia: "cancelación después de los 3 días", cancelacion_gc: "cancelación (sin los 3 días)"
+    cancelacion_tardia: "cancelación después de los 3 días", cancelacion_gc: "cancelación (sin los 3 días)", propias: "condiciones propias de este trabajo"
   };
 
   // ── La hoja se nutre de lo que la app ya sabe, y el proyecto de lo que diga la hoja ──
@@ -8530,7 +8543,9 @@ Power done right the first time. ⚡`;
         direccion: A.proyecto.direccion, nec: A.leido.codigo });
       const out = Alcance.rellenarPlantilla(alcPlantilla, {
         bloques: T.decision.bloques, clausulas: T.decision.clausulas, huecos: T.huecos,
-        items: T.items, no_incluye: T.no_incluye, addons: T.addons, hitos: T.hitos });
+        items: T.items, no_incluye: T.no_incluye, addons: T.addons, hitos: T.hitos,
+        // v3.4: lo propio de la hoja (cláusulas, cronograma, sección 8, condiciones de pago)
+        propias: T.propias, programa: T.programa, pre: T.pre, pagos: T.pagos });
       // un $ que Edgar explicó y dejó adrede no es un monto inventado
       const perdonados = (A.perdonadas || []).flatMap(x => (String((x && x.texto) || x || "").match(/\$\s?\d[\d,]*(?:\.\d{2})?/g) || []).map(m => m.replace(/[$\s]/g, "")));
       const B = Alcance.barridoFinal(out.html, [...T.montosPermitidos, ...perdonados]);

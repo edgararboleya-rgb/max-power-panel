@@ -41,9 +41,14 @@
     precio_detalle: ["price", "pricing", "contract price", "lump sum price", "proposal price", "investment", "price and optional add-ons", "price and payment", "cost"],
     pagos_detalle:  ["payment schedule", "payments", "payment terms", "payment milestones", "schedule of payments", "milestones", "payment"],
     // Lo que el chat escribe y la plantilla ya trae: se salta sin ruido
-    ignorar:    ["warranty", "terms", "terms and conditions", "general terms", "general conditions", "acceptance", "signature", "signatures",
-                 "authorization", "schedule", "timeline", "permits and inspections", "permit and inspections", "permitting", "inspections",
-                 "general provisions", "contractor", "prepared by", "contact", "legal", "insurance", "change orders", "limitations", "disclaimer"],
+    // v3.4: lo que la hoja trae de cronograma (7), sección 8 propia y cláusulas (9) YA NO se bota:
+    // se lee, se quita lo que la plantilla ya trae y el resto va al contrato tal cual.
+    programa:   ["schedule", "timeline", "schedule and coordination", "schedule coordination", "scheduling", "project schedule"],
+    pre:        ["pre construction", "pre construction verification", "layout approval", "device layout approval", "circuit identification"],
+    terminos:   ["warranty", "terms", "terms and conditions", "general terms", "general conditions", "warranty terms and legal protections",
+                 "warranty and terms", "terms and legal protections", "legal protections", "general provisions"],
+    ignorar:    ["acceptance", "signature", "signatures", "authorization", "permits and inspections", "permit and inspections", "permitting",
+                 "inspections", "contractor", "prepared by", "contact", "legal", "insurance", "change orders", "limitations", "disclaimer"],
     condiciones:["condiciones", "clausulas", "interruptores", "conditions", "assumptions", "assumptions and conditions", "clarifications", "assumptions and clarifications"],
     codigo:     ["codigo", "nec", "code", "applicable code", "applicable codes", "code compliance", "codes", "code references"],
     notas:      ["notas", "nota", "para mi", "notes", "note", "internal notes"]
@@ -58,7 +63,7 @@
   }
   function seccionDe(linea) {
     const n = normaTitulo(linea);
-    if (!n || n.length > 60 || /\bproposal\b/.test(n)) return null;
+    if (!n || n.length > 90 || /\bproposal\b/.test(n)) return null;
     if (TITULO_DE[n]) return TITULO_DE[n];
     // sin coincidencia exacta: por las palabras que mandan
     if (/\b(not included|excluded|exclusions?)\b/.test(n)) return "no_incluye";
@@ -67,7 +72,10 @@
     if (/\b(pric(e|ing)|lump sum|investment)\b/.test(n)) return "precio_detalle";
     if (/\bscope of work\b/.test(n)) return "alcance";
     if (/\b(background|objective|existing conditions?)\b/.test(n)) return "hoy";
-    if (/\b(warranty|terms|acceptance|signature|schedule|timeline|permit|inspection|insurance|change order|layout approval|legal|lien|cancel|consent|notice|coordination)/.test(n)) return "ignorar";
+    if (/\b(pre construction|layout approval|circuit identification|verification before)/.test(n)) return "pre";
+    if (/\b(schedule|timeline|coordination)\b/.test(n)) return "programa";
+    if (/\b(warranty|terms|legal protections|general conditions)\b/.test(n) && !/\b(acceptance|signature)\b/.test(n)) return "terminos";
+    if (/\b(acceptance|signature|permit|inspection|insurance|change order|legal|lien|cancel|consent|notice)/.test(n)) return "ignorar";
     return null;
   }
 
@@ -215,6 +223,7 @@
     const perdonadas = new Set(((opciones || {}).perdonadas || []).map(x => norma(typeof x === "string" ? x : (x && x.texto) || "")));
     const R = {
       datos: {}, hoy: "", cambia: "", falta: "", items: [], no_incluye: [],
+      programa: [], pre: [], pre_intro: "", pre_titulo: "", terminos: [], pagos_propios: [],
       precio: null, pagos: null, opciones: [], condiciones: {}, codigo: [],
       notas: "", errores: [], avisos: [], preguntas: [], lineas
     };
@@ -230,7 +239,7 @@
     const pescar = (linea, i) => {
       let m;
       if ((m = linea.match(/pricing assumes\s+(.+?)\s+when max power mobilizes/i))) C_set("listo_rough", m[1], i);
-      else if ((m = linea.match(/performed in\s+\S+\s*(?:\(\d+\))?\s*phases?, and one \(1\) mobilization is included for each:\s*(.+?)\.\s/i))) C_set("fases", m[1].replace(/,\s*(?:and\s+)?/g, " / "), i);
+      else if ((m = linea.match(/performed in\s+\S+\s*(?:\(\d+\))?\s*phases?, and one \(1\) mobilization is included for each:\s*(.+?)\.\s/i))) C_set("fases", partirFases(m[1]).join(" / "), i);
       else if ((m = linea.match(/pricing assumes\s+(.+?)\s+(?:are|is) accessible/i))) C_set("acceso", m[1], i);
       else if ((m = linea.match(/(?:section 2\.(\d+)[^.]*?)?leaves openings in the existing\s+(.+?)\./i))) C_set("abrir", m[2] + (m[1] ? ", renglón " + m[1] : ""), i);
       // "Owner Signature — Lee G. Borders Jr." → el segundo firmante
@@ -292,6 +301,11 @@
       const pareceTitulo = esTitulo || /^(?:\d+[.)]\s+)?[^.:,]{2,45}:?$/.test(linea);
       if (posible && (pareceTitulo || esTitulo)) {
         if (posible === "ignorar") ignoradas.push({ linea: i + 1, titulo: linea.replace(/:$/, "") });
+        if (posible === "pre" && !R.pre_titulo) {
+          // "8 PRE-CONSTRUCTION CIRCUIT IDENTIFICATION — MANDATORY BEFORE DEMOLITION" → en Title Case
+          const tt = linea.replace(/^(?:section\s+)?\d+[.)]?\s+/i, "").replace(/:$/, "").trim();
+          R.pre_titulo = tt === tt.toUpperCase() ? tt.toLowerCase().replace(/(^|[\s—–-])([a-z])/g, (m, a, b) => a + b.toUpperCase()) : tt;
+        }
         sec = posible; itemActual = null; opcionActual = null; return;
       }
       if (sec === "ignorar") { pescar(linea, i); return; }
@@ -431,7 +445,9 @@
           }
           const mFix = tx.match(/^decorative light fixtures?[.:]\s+(.+?)\s+(?:are|is) furnished by the owner/i);
           if (mFix) { C_set("fixtures_cliente", mFix[1].charAt(0).toUpperCase() + mFix[1].slice(1), i); R.fijasQuitadas = (R.fijasQuitadas || 0) + 1; return; }
-          const fija = tx.match(/^(permit(?:s| and permit fees)?[.:]|electrical panel work|arc-fault|cabinet and under-cabinet|drywall, ceiling patching|low-voltage, data|appliances, gas piping|any correction, upgrade)/i);
+          // v3.4: low-voltage y correcciones del inspector NO se quitan: si la hoja trae su versión
+          // (más específica: telemetría, flotadores…), manda la de la hoja y la genérica se apaga sola.
+          const fija = tx.match(/^(permit(?:s| and permit fees)?[.:]|electrical panel work|arc-fault|cabinet and under-cabinet|drywall, ceiling patching|appliances, gas piping)/i);
           if (fija) {
             R.fijasQuitadas = (R.fijasQuitadas || 0) + 1;
             R.fijasVistas = R.fijasVistas || new Set(); R.fijasVistas.add(norma(fija[1]).split(/[ ,.:]/)[0]);
@@ -484,6 +500,15 @@
           const esHito = /^(?:milestone|pago|payment|hito|\d)/i.test(sinVineta) || /\$\s?\d/.test(sinVineta);
           const mpct = esHito ? sinVineta.match(/(?<![\d.])(\d{1,3})\s*%/) : null;
           if (mpct && R.pagos && R.pagos.corto) break;   // "Pagos: 50/50" ya lo dijo; esto es explicación
+          // Un párrafo con título en negrita debajo de la tabla ("**Basis of the deposit.** …") es una
+          // condición de pago propia de este trabajo: va al contrato. Las que la plantilla ya trae, no.
+          const mNegP = !mpct && cruda.match(/^\s*\*\*(.+?)\*\*[.:]?\s*(.{20,})$/);
+          if (mNegP) {
+            if (!/inspection delay|late payment|invoices are due|basis of information/i.test(mNegP[1]) && !hayDinero(mNegP[2]))
+              R.pagos_propios.push({ titulo: mNegP[1].replace(/[.:]$/, "").trim(), texto: mNegP[2].trim(), linea: i + 1 });
+            break;
+          }
+          if (!mpct && /^(invoices are due|invoicing and payment|late payment)/i.test(sinVineta)) break;   // la plantilla ya lo trae
           if (mpct) {
             R.pagos = R.pagos || { pcts: [], disparadores: [], lineas: [] };
             R.pagos.pcts.push(Number(mpct[1]));
@@ -495,6 +520,23 @@
           else if (!hayDinero(sinVineta) && !/\bpayment|\binvoice|\bdue\b/i.test(sinVineta)) { sec = "condiciones"; /* se cayó a Condiciones sin título */ }
           if (mpct || sec === "pagos_detalle") break;
           /* falls through */
+        }
+        case "programa": case "pre": case "terminos": {
+          // "7.2 Equipment lead time. The equipment…" → { n: "7.2", titulo, texto }
+          pescar(linea, i);
+          const dest = R[sec];
+          const mp = linea.match(/^(\d+(?:\.\d+)?)[.)]?\s+(.+)$/);
+          if (mp && (/\./.test(mp[1]) || esTitulo)) {
+            const cuerpo = mp[2].trim();
+            const corte = cuerpo.match(/^(.{3,90}?)(?:\.\s+|:\s+)(.+)$/);
+            dest.push({ n: mp[1], titulo: (corte ? corte[1] : cuerpo).replace(/[.:]$/, "").trim(),
+                        texto: corte ? corte[2].trim() : "", linea: i + 1 });
+          } else if (dest.length) {
+            dest[dest.length - 1].texto = (dest[dest.length - 1].texto + " " + linea.replace(/^[-*•]\s*/, "")).trim();
+          } else if (sec === "pre") {
+            R.pre_intro = (R.pre_intro + " " + linea).trim();
+          }
+          break;
         }
         case "condiciones": {
           if (!mNV) { R.avisos.push({ linea: i + 1, texto: `No sé dónde poner "${linea.slice(0,45)}" dentro de Condiciones.`,
@@ -547,6 +589,75 @@
     R.items.forEach((it, k) => { it.n = k + 1; });
     return R;
   }
+
+  // "(1) demolition, equipment set and rough-in; and (2) startup, testing" → ["demolition, …", "startup, …"]
+  function partirFases(txt) {
+    const t = String(txt || "").trim().replace(/\.$/, "");
+    if (!t) return [];
+    if (/\(\d+\)/.test(t)) return t.split(/\s*;?\s*(?:and\s+)?\(\d+\)\s*/).map(x => x.trim().replace(/[;,]$/, "")).filter(Boolean);
+    if (t.includes(";")) return t.split(/\s*;\s*(?:and\s+)?/).map(x => x.trim()).filter(Boolean);
+    if (t.includes(" / ")) return t.split(" / ").map(x => x.trim()).filter(Boolean);
+    return t.split(/,\s*(?:and\s+)?|\s+and\s+/).map(x => x.trim()).filter(Boolean);
+  }
+
+  // ---------------------------------------------------------------- v3.4: lo propio de la hoja
+  // De las cláusulas (9.x) y el cronograma (7.x) que trae la hoja, cuáles ya las pone la
+  // plantilla (se quitan, manda la versión revisada por el abogado) y cuáles son de ESTE
+  // trabajo (van al contrato tal cual, renumeradas).
+  const PLANTILLA_9 = [
+    [/workmanship|warrant/i, "garantia"], [/existing and concealed|concealed condition/i, "existentes"],
+    [/existing circuits|site condition/i, "sitio"], [/code edition/i, "edicion"],
+    [/change orders?|entire agreement/i, "cambios"], [/limitation of liability/i, "limite"],
+    [/insurance/i, "seguro"], [/deposit|start of work/i, "deposito"], [/cancellation/i, "cancelacion"],
+    [/retainage/i, "retainage"], [/notice to owner|releases? of lien/i, "nto_releases"],
+    [/arc.?fault|afci/i, "afci"], [/openings|patching/i, "aberturas"]
+  ];
+  const PLANTILLA_7 = [
+    [/^permit\b/i, "7.1"], [/layout approval|verification before|pre-construction/i, "7.2"],
+    [/site condition|pricing assumes/i, "7.3"], [/mobilization/i, "7.4"],
+    [/material handling/i, "7.5"], [/utility coordination/i, "7.6"]
+  ];
+  function clasificarPropias(L) {
+    const propias = [], programa = [], mapa = {};
+    (L.terminos || []).forEach(t => {
+      const fija = PLANTILLA_9.find(([re]) => re.test(t.titulo));
+      if (fija) mapa[t.n] = { clave: fija[1] };
+      else { mapa[t.n] = { propia: propias.length }; propias.push(t); }
+    });
+    (L.programa || []).forEach(t => {
+      const fija = PLANTILLA_7.find(([re]) => re.test(t.titulo));
+      if (fija) mapa[t.n] = { fija7: fija[1] };
+      else { mapa[t.n] = { extra7: programa.length }; programa.push(t); }
+    });
+    const pre = (L.pre || []).slice();
+    return { propias, programa, pre, mapa };
+  }
+  // Cambia "See Sections 8 and 9.3" por los números que tienen en el contrato armado; lo
+  // que no existe en el contrato se quita con su frase entera, no se deja colgando.
+  function renumerarRefs(texto, traducir) {
+    let t = String(texto || "");
+    const NUMS = "(\\d+(?:\\.\\d+)?(?:\\s*(?:,|and|&)\\s*\\d+(?:\\.\\d+)?)*)";
+    const resolver = (grupo) => {
+      const nums = grupo.match(/\d+(?:\.\d+)?/g) || [];
+      const nuevos = nums.map(n => traducir(n));
+      return nuevos.some(x => x === null) ? null : nuevos;
+    };
+    // Los números ya traducidos se marcan (\u0001) para que la pasada siguiente no los vuelva a traducir
+    const marca = r => r.map(x => "\u0001" + x + "\u0001");
+    const frase = r => `See Section${r.length > 1 ? "s" : ""} ${unir(marca(r))}`;
+    // 1) frases enteras que remiten: "(see Section 9.5)" · "— see Sections 8 and 9.3" · "See Section 9.9 regarding sealed plans."
+    t = t.replace(new RegExp("\\s*\\(\\s*see\\s+sections?\\s+" + NUMS + "\\s*\\)", "gi"),
+      (m, g) => { const r = resolver(g); return r ? " (" + frase(r).replace(/^See/, "see") + ")" : ""; });
+    t = t.replace(new RegExp("\\s*[\u2014\u2013-]\\s*see\\s+sections?\\s+" + NUMS, "gi"),
+      (m, g) => { const r = resolver(g); return r ? " \u2014 " + frase(r).replace(/^See/, "see") : ""; });
+    t = t.replace(new RegExp("(^|[.;]\\s+)see\\s+sections?\\s+" + NUMS + "([^.;]*[.;]?)", "gi"),
+      (m, pre, g, resto) => { const r = resolver(g); return r ? pre + frase(r) + resto : pre; });
+    // 2) menciones sueltas ("described in Section 7.4"): se renumeran; si no existe, se deja como está
+    t = t.replace(new RegExp("\\b(sections?)\\s+" + NUMS, "gi"),
+      (m, pal, g) => { const r = resolver(g); return r ? pal + " " + unir(marca(r)) : m; });
+    return t.replace(/\u0001/g, "").replace(/\s{2,}/g, " ").replace(/\s+([.;,])/g, "$1").replace(/\.\s*\./g, ".").trim();
+  }
+  const unir = arr => arr.length <= 1 ? arr.join("") : arr.slice(0, -1).join(", ") + " and " + arr[arr.length - 1];
 
   // "40/40/20" o "40% al firmar, 40% rough, 20% final"
   function leerPagos(valor, linea, err) {
@@ -924,8 +1035,23 @@
     const esComercial = /comercial|commercial/.test(norma(d.propiedad || d.property || ""));
     const esConsumidor = !esGC && !esComercial;
     const permiso = leerPermiso(d.permiso);   // regla de la casa: vacío = nosotros
-    const layout = norma(d.layout || "si") !== "no";
     const noExcluir = norma((C.no_excluir || {}).valor || "");
+    // v3.4: el contrato se ajusta a lo que DICE el alcance, no a una cocina genérica.
+    const textoAlcance = norma([d.proyecto || "", ...L.items.map(it => it.titulo + " " + it.detalles.join(" "))].join(" "));
+    const textoExcl = norma((L.no_incluye || []).map(x => x.texto).join(" "));
+    const hayPanel = /\b(panel|panelboard|load center|service entrance|service equipment|main breaker|main disconnect|meter)\b/.test(textoAlcance);
+    // Interior de una casa (cocina, cuartos, ático…) contra servicio exterior (poste, pozo, bomba…).
+    // "control cabinet" no es "cabinet lighting": las palabras se miran con cuidado.
+    const interior = /\b(kitchen|bath|bathroom|bedrooms?|living room|family room|dining|closet|garage|laundry|hallway|recessed|drywall|attic|crawl space|under-cabinet|cabinet lighting|kitchen cabinets?|island)\b/.test(textoAlcance);
+    const exterior = /\b(pole|service entrance|well|pump|irrigation|parking lot|site lighting|transformer|feeder|wellhead)\b/.test(textoAlcance);
+    const exteriorServicio = exterior && !interior;
+    const residencialInterior = !esComercial && interior;
+    const yaExcluye = re => re.test(textoExcl);
+    const hayItemPermiso = /\bpermit/.test(textoAlcance);
+    const hayCierre = L.items.some(it => /^(testing|startup|closeout|commissioning)\b|\b(closeout|close-out|commissioning)\b/i.test(it.titulo));
+    const propio = clasificarPropias(L);
+    const preProprio = propio.pre.length > 0;
+    const layout = !preProprio && norma(d.layout || "si") !== "no";
 
     const bloques = {
       VARIANTE_B: conFirma, VARIANTE_A: !conFirma,
@@ -942,16 +1068,23 @@
       PERMISO_NINGUNO: permiso === "ninguno",
       ADDONS: L.opciones.length > 0,
       UTILITY: hay(d.utility),
-      LAYOUT: layout, NO_LAYOUT: !layout,
+      LAYOUT: layout, NO_LAYOUT: !layout && !preProprio,
+      // v3.4: la hoja trae su propia sección 8, su cronograma, sus cláusulas o sus condiciones de pago
+      PRE_PROPIO: preProprio,
+      PROGRAMA_PROPIO: propio.programa.length > 0,
+      PAGOS_PROPIOS: (L.pagos_propios || []).length > 0,
+      CIERRE_GENERICO: !hayCierre,          // el "Testing and closeout" de la plantilla solo si la hoja no trae el suyo
+      SIN_ITEM_PERMISO: !hayItemPermiso,    // el bullet del permiso en §3 sobra si el permiso ya es un renglón del §2
       CLIENT_2: hay(d.segundo_firmante) || esGC,
-      EXCL_PANEL: !noExcluir.includes("panel"),
-      EXCL_AFCI: !noExcluir.includes("afci"),
-      EXCL_GABINETES: !noExcluir.includes("gabinete"),
-      EXCL_DRYWALL: !noExcluir.includes("drywall"),
-      EXCL_LOWVOLT: !noExcluir.includes("low-voltage") && !noExcluir.includes("low voltage"),
-      EXCL_APARATOS: !noExcluir.includes("aparato"),
-      EXCL_FUERA_AREAS: !noExcluir.includes("fuera-de-area") && !noExcluir.includes("fuera de area"),
-      EXCL_AHJ: !noExcluir.includes("inspector") && !noExcluir.includes("ahj")
+      // Exclusiones: solo las que tienen sentido en ESTE trabajo
+      EXCL_PANEL: !noExcluir.includes("panel") && !hayPanel,
+      EXCL_AFCI: !noExcluir.includes("afci") && !esComercial,
+      EXCL_GABINETES: !noExcluir.includes("gabinete") && residencialInterior,
+      EXCL_DRYWALL: !noExcluir.includes("drywall") && interior,
+      EXCL_LOWVOLT: !noExcluir.includes("low-voltage") && !noExcluir.includes("low voltage") && !yaExcluye(/low.?voltage|data|telemetry/),
+      EXCL_APARATOS: !noExcluir.includes("aparato") && residencialInterior,
+      EXCL_FUERA_AREAS: !noExcluir.includes("fuera-de-area") && !noExcluir.includes("fuera de area") && !yaExcluye(/outside the areas|any work outside/),
+      EXCL_AHJ: !noExcluir.includes("inspector") && !noExcluir.includes("ahj") && !yaExcluye(/authority having jurisdiction|\bahj\b/)
     };
 
     const clausulas = {
@@ -962,7 +1095,7 @@
       retainage: esGC,
       nto_releases: esGC,
       panel_sin_fotos: si_no(C.fotos_panel) === false,
-      afci: si_no(C.circuitos_exist) === true,
+      afci: si_no(C.circuitos_exist) === true && !esComercial,   // AFCI es de vivienda (NEC 210.12)
       reuso_240: hay((C.v240 || {}).valor),
       reubicar: hay((C.reubicar || {}).valor),
       isla: hay((C.isla || {}).valor),
@@ -971,6 +1104,8 @@
       fixtures_mxp: hay((C.fixtures_mxp || {}).valor),
       subsuelo: hay((C.excavacion || {}).valor),
       planos_permiso: bloques.PLANOS,
+      // v3.4: las cláusulas propias de la hoja (las que la plantilla no trae)
+      propias: propio.propias.length > 0,
       // 9.16 (F.S. 489.126): la ley mira la PROPIEDAD, no quién paga. Va siempre en
       // residencial; en un subcontrato sobre propiedad comercial, no.
       deposito: conFirma && cuenta.deposito_mayor_10 && !esComercial
@@ -994,7 +1129,9 @@
         ? "porque el contrato es con un contratista: no corren los tres días del consumidor"
         : "porque la propiedad es comercial: no es una venta a un consumidor (F.S. 501.021), no corren los tres días"
     };
-    return { bloques, clausulas, motivos, permiso, esGC, esComercial, esConsumidor, conFirma };
+    motivos.propias = "porque la hoja trae condiciones propias de este trabajo: " + propio.propias.map(p => p.titulo).join(" · ");
+    return { bloques, clausulas, motivos, permiso, esGC, esComercial, esConsumidor, conFirma,
+             perfil: { hayPanel, interior, exteriorServicio, residencialInterior }, propio };
   }
 
   // =============================================== EL ENCARGO PARA EL ASISTENTE
@@ -1048,7 +1185,7 @@
   }
   function redactarDirecto(L) {
     const d = L.datos, C = L.condiciones;
-    const limpia = t => String(t || "").replace(/\s*[—–-]?\s*\(?see sections?\s+\d+(?:\.\d+)?(?:\s*(?:and|,)\s*\d+(?:\.\d+)?)*\)?\.?/gi, "").replace(/\s{2,}/g, " ").trim();
+    const limpia = t => String(t || "").replace(/\s{2,}/g, " ").trim();   // las referencias las renumera armarTodo
     const frase = t => { t = limpia(t); return t && !/[.!?:]$/.test(t) ? t + "." : t; };
     const parrafo = t => String(t || "").split("\n").map(x => x.trim()).filter(Boolean).map(frase).join(" ");
     const de = n => ({ de: n ? [n] : [] });
@@ -1171,13 +1308,24 @@
 
   const ORDEN_9 = ["garantia","existentes","panel_sin_fotos","afci","sitio","reuso_240","reubicar",
                    "isla","edicion","aberturas","fixtures_cliente","fixtures_mxp","subsuelo",
-                   "planos_permiso","cambios","retainage","nto_releases","limite","seguro",
+                   "planos_permiso","propias","cambios","retainage","nto_releases","limite","seguro",
                    "deposito","cancelacion_tardia","cancelacion_gc"];
 
-  function aplicarClausulas(html, clausulas) {
+  // El número que le toca a cada cláusula de la sección 9. Las propias de la hoja ocupan
+  // tantos números seguidos como sean, después de las técnicas y antes de las legales.
+  function numerarClausulas(clausulas, nPropias) {
     const numero = {};
     let n = 0;
-    ORDEN_9.forEach(k => { if (clausulas[k]) numero[k] = ++n; });
+    ORDEN_9.forEach(k => {
+      if (!clausulas[k]) return;
+      if (k === "propias") { numero.propias = n + 1; n += Math.max(1, nPropias || 0); }
+      else numero[k] = ++n;
+    });
+    return numero;
+  }
+
+  function aplicarClausulas(html, clausulas, nPropias) {
+    const numero = numerarClausulas(clausulas, nPropias);
     let b, guarda = 0;
     while ((b = bloque(html, "clausula")) && guarda++ < 200) {
       const vive = !!clausulas[b.nombre];
@@ -1214,7 +1362,12 @@
     h = repetirFila(h, "NO_INCLUYE", datos.no_incluye || []);
     h = repetirFila(h, "ADDON", datos.addons || []);
     h = repetirFila(h, "HITO", datos.hitos || []);
-    const r = aplicarClausulas(h, datos.clausulas);
+    // v3.4: lo propio de la hoja
+    h = repetirFila(h, "CLAUSULA_PROPIA", datos.propias || []);
+    h = repetirFila(h, "PARRAFO_7", datos.programa || []);
+    h = repetirFila(h, "PARRAFO_8", datos.pre || []);
+    h = repetirFila(h, "PARRAFO_6", datos.pagos || []);
+    const r = aplicarClausulas(h, datos.clausulas, (datos.propias || []).length);
     h = r.html;
     Object.entries(datos.huecos || {}).forEach(([k, v]) => {
       if (v === null || v === undefined || v === "") return;
@@ -1289,6 +1442,8 @@
     };
 
     const nHitos = cta.hitos.length;
+    // v3.4: las fases tal como las diga la hoja ("(1) …; and (2) …") o Edgar ("rough / trim")
+    const fases = partirFases((S.lista_de_fases && S.lista_de_fases.en) || (C.fases || {}).valor || "");
     const finObra = /trim/i.test(String((C.fases || {}).valor || "")) ? "completion of the trim-out"
                                                                      : "completion of the work";
     const huecos = {
@@ -1318,11 +1473,15 @@
       TOTAL: dinero(cta.base),
       N_ULTIMO: String(nHitos), FIN_OBRA: finObra,
       QUE_TIENE_QUE_ESTAR_LISTO: (S.que_tiene_que_estar_listo && S.que_tiene_que_estar_listo.en) || "the work areas are accessible and ready for electrical rough-in",
-      N_FASES: String(String((C.fases || {}).valor || "").split("/").filter(x => x.trim()).length || 2),
-      LISTA_DE_FASES: (S.lista_de_fases && S.lista_de_fases.en) || "rough-in and trim-out",
+      N_FASES: String(fases.length || 2),
+      LISTA_DE_FASES: fases.length ? (fases.length > 2 || fases.some(f => f.includes(","))
+        ? fases.map((f, k) => `(${k + 1}) ${f}`).join("; ").replace(/; (\(\d+\) [^;]+)$/, "; and $1")
+        : fases.join(" and ")) : "rough-in and trim-out",
       UTILITY: (S.utility && S.utility.quien && S.utility.quien.en) || "",
       QUE_HACE: (S.utility && S.utility.que_hace && S.utility.que_hace.en) || "",
-      ACCESO: (S.acceso && S.acceso.en) || "access to the attic, crawl space and wall cavities from the accessible side",
+      ACCESO: (S.acceso && S.acceso.en) || (dec.perfil && dec.perfil.exteriorServicio
+        ? "access to the pole, the equipment locations and the existing raceways"
+        : "access to the attic, crawl space and wall cavities from the accessible side"),
       EQUIPO_240: equipoEn("v240"), ITEM_240: renglon("v240"), CALIBRE: calibre(),
       EQUIPO_REUBICAR: equipoEn("reubicar"), ITEM_REUBICAR: renglon("reubicar"),
       ITEM_ISLA: renglon("isla"), ITEMS_ABRIR: renglon("abrir"),
@@ -1364,9 +1523,47 @@
       DISPARADOR: String(h.disparador || "").replace("{{, permit submittal}}",
         dec.bloques.PERMISO_MXP ? ", permit submittal" : "") }));
 
+    // ── v3.4: lo propio de la hoja, numerado como queda en el contrato ──
+    const propio = dec.propio || clasificarPropias(L);
+    const numero = numerarClausulas(dec.clausulas, propio.propias.length);
+    const base7 = dec.bloques.UTILITY ? 6 : 5;
+    const traducir = n => {
+      const s = String(n);
+      if (/^[1-6]$/.test(s) || /^[2-6]\.\d+$/.test(s)) return s;            // secciones que no cambian
+      const m = propio.mapa[s];
+      if (s === "8") return dec.bloques.PRE_PROPIO || dec.bloques.LAYOUT ? "8" : null;
+      if (s === "7") return "7";
+      if (!m) return null;
+      if (m.clave) { const k = m.clave === "cancelacion" ? (dec.clausulas.cancelacion_gc ? "cancelacion_gc" : "cancelacion_tardia") : m.clave;
+                     return numero[k] ? "9." + numero[k] : null; }
+      if (m.propia !== undefined) return "9." + (numero.propias + m.propia);
+      if (m.fija7) return m.fija7 === "7.6" && !dec.bloques.UTILITY ? null : m.fija7;
+      if (m.extra7 !== undefined) return "7." + (base7 + 1 + m.extra7);
+      return null;
+    };
+    const refs = t => renumerarRefs(t, traducir);
+    items.forEach(it => { it.TITULO = refs(it.TITULO); it.DESCRIPCION = refs(it.DESCRIPCION); });
+    no_incluye.forEach(x => { x.TITULO_EXCL = refs(x.TITULO_EXCL); x.TEXTO_EXCL = refs(x.TEXTO_EXCL); });
+    ["QUE_HAY_HOY", "QUE_CAMBIA", "QUE_FALTABA", "RESUMEN_DEL_TRABAJO", "LO_QUE_NO_TOCAS", "QUE_TIENE_QUE_ESTAR_LISTO"]
+      .forEach(k => { huecos[k] = refs(huecos[k]); });
+    // "Basis of information": la frase de entrada solo si la hoja no la trae, y la remisión a 9.x con número
+    if (huecos.QUE_FALTABA) {
+      if (!/^this proposal is prepared/i.test(huecos.QUE_FALTABA))
+        huecos.QUE_FALTABA = "This proposal is prepared from the on-site walkthrough and the direction provided by the Client. " + huecos.QUE_FALTABA;
+      if (!/see section/i.test(huecos.QUE_FALTABA) && numero.existentes)
+        huecos.QUE_FALTABA = huecos.QUE_FALTABA.replace(/\.?$/, "") + " \u2014 see Section 9." + numero.existentes + ".";
+    }
+    const propias = propio.propias.map((p, k) => ({ NUM: "9." + (numero.propias + k), TITULO: refs(p.titulo), TEXTO: refs(p.texto) }));
+    const programa = propio.programa.map((p, k) => ({ NUM: "7." + (base7 + 1 + k), TITULO: refs(p.titulo), TEXTO: refs(p.texto) }));
+    const pre = propio.pre.map((p, k) => ({ NUM: "8." + (k + 1), TITULO: refs(p.titulo), TEXTO: refs(p.texto) }));
+    const pagos = (L.pagos_propios || []).map(p => ({ TITULO: refs(p.titulo), TEXTO: refs(p.texto) }));
+    huecos.TITULO_8 = dec.bloques.PRE_PROPIO ? (L.pre_titulo || "Pre-Construction Verification \u2014 Mandatory Before Work Begins") : "";
+    huecos.INTRO_8 = dec.bloques.PRE_PROPIO ? refs(L.pre_intro || "This requirement is mandatory and non-negotiable.") : "";
+
     const montosPermitidos = [dinero(cta.base), ...cta.addons.map(a => dinero(a.centavos)),
                               ...cta.hitos.map(h => dinero(h.centavos))];
     return { cuenta: cta, decision: dec, huecos, items, no_incluye, addons, hitos, montosPermitidos,
+             propias, programa, pre, pagos, numero,
              archivo: `MXP-${huecos.AAAA}-${huecos.MMDD}-${nombreCorto}.html` };
   }
 
@@ -1374,7 +1571,8 @@
   const API = { leerAlcance, validarAlcance, cuentas, repartir, leerMonto, pareceDinero, hayDinero, pareceIngles, redactarDirecto,
                 decidirInterruptores, prepararEncargo, validarSalida,
                 rellenarPlantilla, aplicarSi, repetirFila, aplicarClausulas,
-                barridoFinal, marcasEmparejadas, armarTodo, aplicarArreglo, arreglarTodo, leerPermiso, leerFirma, leerVence, DISPARADORES, ORDEN_9, dinero, centavos, norma };
+                barridoFinal, marcasEmparejadas, armarTodo, aplicarArreglo, arreglarTodo, leerPermiso, leerFirma, leerVence, DISPARADORES, ORDEN_9, dinero, centavos, norma,
+                numerarClausulas, clasificarPropias, renumerarRefs, partirFases };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   raiz.Alcance = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);
