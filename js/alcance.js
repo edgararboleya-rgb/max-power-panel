@@ -348,7 +348,7 @@
                                         : [{ tipo: "quitar_linea", etiqueta: "Quitar esta línea", linea: i + 1, auto: true }] });
             return; }
           const k = buscaClave(CLAVES_DATOS, nombre);
-          if (k) { R.datos[k] = k === "ciudad" ? valor.replace(/,?\s*(FL|Florida)\.?$/i, "").trim() : valor; }
+          if (k) { R.datos[k] = k === "ciudad" ? valor.replace(/,?\s*(?:FL|Florida)\.?(\s*\([^)]*\))?\s*$/i, "$1").replace(/\s{2,}/g, " ").trim() : valor; }
           else { const s = sugerir(CLAVES_DATOS, mNV[1]);
                  if (estaPerdonada(linea)) break;
                  R.avisos.push({ linea: i + 1, perdonable: true, texto: s ? `No conozco "${mNV[1].trim()}". ¿Querías decir "${s}"?`

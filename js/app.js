@@ -8323,6 +8323,66 @@ Power done right the first time. ⚡`;
     cancelacion_tardia: "cancelación después de los 3 días", cancelacion_gc: "cancelación (sin los 3 días)"
   };
 
+  // ── La hoja se nutre de lo que la app ya sabe, y el proyecto de lo que diga la hoja ──
+  // "Por confirmar", "TBD", "pendiente" no son datos: cuentan como vacío.
+  const alcVacio = v => !String(v || "").trim() || /^(por confirmar|por definir|tbd|pendiente|n\/a|-+|\?+)$/i.test(String(v).trim());
+  // Lo que la app ya sabe de esta obra: proyecto → estimado → contratista
+  function alcDatosConocidos(proyectoId) {
+    const p = proyectos().find(x => x.id === proyectoId) || {};
+    const ests = (estData && Array.isArray(estData.estimados) ? estData.estimados : [])
+      .filter(e => e.proyecto_id === proyectoId)
+      .sort((a, b) => String(b.creado || "").localeCompare(String(a.creado || "")));
+    const est = ests[0] || {};
+    const gc = p.contratistaModo === "contrato" ? gcDeProyecto(p) : null;
+    const primero = (...vs) => vs.find(v => !alcVacio(v)) || "";
+    return {
+      cliente:   primero(gc && gc.nombre, p.cliente, est.cliente),
+      atencion:  primero(gc && gc.contacto),
+      email:     primero(gc && gc.email, p.cliente_email),
+      telefono:  primero(gc && gc.telefono, p.cliente_tel),
+      direccion: primero(p.direccion, est.direccion),
+    };
+  }
+  // Rellena en la hoja los datos que falten (o digan "Por confirmar") con los conocidos.
+  // Devuelve la hoja nueva y la lista de lo que tomó, para decírselo a Edgar.
+  const ALC_DATOS = [["cliente", "Cliente"], ["atencion", "Atención"], ["email", "Email"], ["telefono", "Teléfono"], ["direccion", "Dirección"]];
+  const ALC_RE = { cliente: "cliente|client|customer|owner", atencion: "atenci[oó]n|attention|attn|contacto|contact",
+                   email: "e-?mail|correo", telefono: "tel[eé]fono|tel|phone|cell|celular|mobile", direccion: "direcci[oó]n|address|job address|site address|property address|project address|job site" };
+  function alcNutrir(texto, conocidos) {
+    let txt = String(texto || "");
+    const tomados = [];
+    ALC_DATOS.forEach(([clave, etiqueta]) => {
+      const re = new RegExp("^[ \\t#*]*(?:" + ALC_RE[clave] + ")\\s*:[ \\t]*(.*)$", "im");
+      const m = txt.match(re);
+      const enHoja = m ? m[1].replace(/^\*+|\*+$/g, "").trim() : "";
+      if (!alcVacio(enHoja)) return;                       // la hoja ya lo trae
+      const sabido = conocidos[clave];
+      if (alcVacio(sabido)) { if (m) txt = txt.replace(re, ""); return; }   // ni la hoja ni la app: que pregunte
+      if (m) txt = txt.replace(re, etiqueta + ": " + sabido);
+      else txt = etiqueta + ": " + sabido + "\n" + txt;
+      tomados.push(etiqueta.toLowerCase() + " (" + sabido + ")");
+    });
+    return { texto: txt, tomados };
+  }
+  // Lo contrario: lo que la hoja dice y al proyecto le falta, se guarda en el proyecto
+  async function alcDevolver() {
+    const A = alcActivo, D = A.leido && A.leido.datos;
+    if (!D) return;
+    const p = proyectos().find(x => x.id === A.proyecto.id);
+    if (!p) return;
+    const cambios = {}, dichos = [];
+    if (!alcVacio(D.direccion) && alcVacio(p.direccion)) { cambios.direccion = String(D.direccion).trim(); dichos.push("dirección"); }
+    if (!alcVacio(D.email) && alcVacio(p.cliente_email) && /@/.test(D.email)) { cambios.cliente_email = String(D.email).trim(); dichos.push("email"); }
+    if (!alcVacio(D.telefono) && alcVacio(p.cliente_tel)) { cambios.cliente_tel = String(D.telefono).trim(); dichos.push("teléfono"); }
+    if (!alcVacio(D.cliente) && alcVacio(p.cliente) && p.contratistaModo !== "contrato") { cambios.cliente = String(D.cliente).trim(); dichos.push("cliente"); }
+    if (!dichos.length) return;
+    try {
+      await DB.cambiarProyecto(p.id, cambios);
+      Object.assign(p, cambios); Object.assign(A.proyecto, cambios);
+      avisar("Guardé en el proyecto: " + dichos.join(", ") + " ✓");
+    } catch (err) { avisar("No pude guardar en el proyecto: " + err.message, true); }
+  }
+
   function alcCalcular() {
     const A = alcActivo;
     A.leido = Alcance.leerAlcance(A.texto, { perdonadas: A.perdonadas || [] });
@@ -8345,9 +8405,16 @@ Power done right the first time. ⚡`;
     if (!A.texto.trim()) { avisar("Pega primero la hoja", true); return; }
     A.respuestas = {}; A.arreglados = [];
     A.perdonadas = A.perdonadas || [];
+    // Lo que la app ya sabe (dirección, email, teléfono, cliente) entra solo en la hoja
+    const nut = alcNutrir(A.texto, alcDatosConocidos(A.proyecto.id));
+    if (nut.tomados.length) {
+      A.texto = nut.texto; $("alc-texto").value = A.texto; alcGuardarLocal(A.proyecto.id, A.texto);
+      A.arreglados = ["Tomé del proyecto: " + nut.tomados.join(" · ")];
+    }
     alcCalcular();
     pintarAlcance();
     if (!A.validado.errores.length && !A.validado.preguntas.length) avisar("Leído ✓ — revisa el dinero y redacta");
+    alcDevolver();
   }
 
   async function alcOrdenar() {
