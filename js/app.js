@@ -3331,8 +3331,16 @@ function esFalloDeRed(err) {
           });
           const d = await r.json().catch(() => ({}));
           if (r.ok && d.ok) {
-            avisar(`Factura ${d.doc ? "#" + d.doc + " " : ""}creada en QuickBooks ✓`);
-            if (d.link) window.open(d.link, "_blank", "noopener");
+            // En el teléfono o la tableta NO se abre el editor de QuickBooks: su página
+            // web sale rota en pantalla chica (cliente vacío, $0.00, "Required") y da la
+            // impresión de que la factura no se creó. Se manda desde la app de QuickBooks.
+            const enTelefono = window.matchMedia("(max-width: 1023px), (pointer: coarse)").matches;
+            const num = d.doc ? "#" + d.doc + " " : "";
+            avisar(enTelefono
+              ? `Factura ${num}creada en QuickBooks ✓ — mándala desde la app de QuickBooks o la computadora`
+              : `Factura ${num}creada en QuickBooks ✓`);
+            if (Array.isArray(d.avisos) && d.avisos.length) setTimeout(() => avisar(d.avisos.join(" · "), true), 2500);
+            if (d.link && !enTelefono) window.open(d.link, "_blank", "noopener");
             await recargar();
             return;
           }
