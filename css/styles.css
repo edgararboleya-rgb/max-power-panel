@@ -2859,6 +2859,8 @@ button > .ico:only-child, .lev-btn-ico > .ico { margin-right: 0; width: 1.15em; 
 
 /* ===== Inicio: la agenda de 7 días, las propuestas en el aire y las horas de la semana ===== */
 .agenda-dia { display: flex; gap: .6rem; align-items: flex-start; padding: .45rem 0; border-top: 1px solid var(--mp-line); }
+/* en el teléfono, el día va como cabecera y debajo sus renglones a todo lo ancho */
+@media (max-width: 759px) { .agenda-dia { flex-direction: column; gap: .25rem; } .agenda-dia .hoy-chip { margin-top: 0; } .agenda-lista { width: 100%; } }
 .agenda-dia:first-of-type { border-top: none; }
 .agenda-dia .hoy-chip { flex: none; min-width: 3.9rem; text-align: center; margin-top: .15rem; }
 .hoy-chip.es-otro { background: rgba(11,32,54,.07); color: var(--mp-ink-2); }
