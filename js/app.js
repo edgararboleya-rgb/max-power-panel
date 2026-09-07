@@ -4953,11 +4953,13 @@ function esFalloDeRed(err) {
 
     // Modo ⚡ Rápido: el material son las líneas que Edgar escribió (o un
     // total), no los ítems del catálogo
-    const lineasMat = rapido && Array.isArray(est.lineas_material) ? est.lineas_material : [];
+    // En los demás modos (servicio, remodelación, planos) las líneas a mano se SUMAN a los ítems
+    const lineasMat = Array.isArray(est.lineas_material) ? est.lineas_material : [];
+    const matMano = lineasMat.reduce((s, l) => s + n(l.monto), 0);
     const matItems = rapido
-      ? lineasMat.reduce((s, l) => s + n(l.monto), 0)
+      ? matMano
       : base.reduce((s, i) => s + n(i.cantidad) * n(i.precio), 0)
-        + autos.reduce((s, i) => s + n(i.cantidad) * n(i.precio), 0) + mermaMat;
+        + autos.reduce((s, i) => s + n(i.cantidad) * n(i.precio), 0) + mermaMat + matMano;
     const misc = matItems * miscPct;
     const matSubtotal = matItems + misc;
     const tax = matSubtotal * taxPct;
@@ -4969,7 +4971,7 @@ function esFalloDeRed(err) {
     const horasBase = rapido
       ? n(est.horas_directas)
       : base.reduce((s, i) => s + n(i.cantidad) * n(i.horas), 0)
-        + autos.reduce((s, i) => s + n(i.cantidad) * n(i.horas), 0) + mermaHoras;
+        + autos.reduce((s, i) => s + n(i.cantidad) * n(i.horas), 0) + mermaHoras + n(est.horas_directas);
     const horas = horasBase * (n(est.factor) || 1);
     // La cuadrilla: la propia del estimado (Custom) > la del escenario > las 3 de siempre
     const mezcla = cuadrillaDe(est, esc);
@@ -5339,6 +5341,37 @@ Power done right the first time. ⚡`;
   // Tres casillas y un resultado. Escenario A/B/C o uno propio (Custom):
   // cuadrilla, beneficios, profit y markup se pueden tocar aquí mismo.
   // ============================================================
+  // ✍️ Horas y material a mano, para los modos que cuentan por ítems: lo que se
+  //    ponga aquí SE SUMA a los ensambles e ítems (no los sustituye).
+  function panelManoHTML(est, c, soloLectura) {
+    const r2 = v => Math.round(v * 100) / 100;
+    const lineas = Array.isArray(est.lineas_material) ? est.lineas_material : [];
+    const filasMat = lineas.map((l, i) => `
+      <div class="rap-linea">
+        <span class="rap-desc">${esc(l.desc || "Material")}</span>
+        <span class="rap-monto">${fmt(r2(Number(l.monto) || 0))}</span>
+        ${!soloLectura ? `<button type="button" class="insp-borrar rap-mat-editar" data-i="${i}" title="Editar">✎</button>
+        <button type="button" class="insp-borrar rap-mat-borrar" data-i="${i}" title="Quitar">🗑</button>` : ""}
+      </div>`).join("");
+    const totalMano = r2(lineas.reduce((t, l) => t + (Number(l.monto) || 0), 0));
+    return `
+      <div class="cal-panel-card rap-card">
+        <div class="cal-form-titulo">✍️ Horas y material a mano</div>
+        <p class="rent-nota" style="margin-top:0">Lo que pongas aquí <b>se suma</b> a los ensambles e ítems de arriba. Sirve para un service: las horas que calculas tú y el material como lo compras.</p>
+        <div class="modal-fila">
+          <label class="mat-filtro-label">Horas a mano
+            <input id="rap-horas" type="number" min="0" step="0.5" inputmode="decimal" value="${esc(est.horas_directas ?? "")}" placeholder="Ej: 4" ${soloLectura ? "disabled" : ""}>
+          </label>
+          <label class="mat-filtro-label">Factor de productividad
+            <input id="rap-factor" type="number" min="0.5" max="2" step="0.05" value="${esc(est.factor || 1)}" ${soloLectura ? "disabled" : ""}>
+          </label>
+        </div>
+        <div class="rap-sub">Material a mano — ${fmt(totalMano)}
+          ${!soloLectura ? `<button type="button" class="accion secundaria rap-mat-agregar">+ Agregar línea</button>` : ""}</div>
+        ${filasMat || `<p class="cal-sin-eventos">Sin líneas todavía: un total, o varias (breaker, caja, cable…).</p>`}
+      </div>`;
+  }
+
   function panelRapidoHTML(est, c, soloLectura) {
     const r2 = v => Math.round(v * 100) / 100;
     const pct = v => Math.round((Number(v) || 0) * 1000) / 10;   // 0.2 → 20
@@ -5813,7 +5846,7 @@ Power done right the first time. ⚡`;
         </label>` : ""}
       </div>
       ${bannerOverhead}
-      ${esRapido ? panelRapidoHTML(est, c, soloLectura) : ""}
+      ${esRapido ? panelRapidoHTML(est, c, soloLectura) : panelManoHTML(est, c, soloLectura)}
       ${est.modo === "planos" && !soloLectura ? `
       <div class="cal-panel-card">
         <div class="cal-form-titulo">📥 Takeoff de Bluebeam</div>
@@ -5876,7 +5909,7 @@ Power done right the first time. ⚡`;
         <button class="accion secundaria" id="btn-est-propuesta">📄 Generar propuesta</button>
         ${est.estado === "borrador" ? `<button class="accion secundaria" id="btn-est-congelar">🔒 Congelar</button>` : ""}
         ${est.estado === "congelado" ? `<button class="accion secundaria" id="btn-est-descongelar">🔓 Volver a borrador</button>` : ""}
-        ${est.estado !== "convertido" ? `<button class="accion" id="btn-est-convertir">🚀 Convertir en proyecto</button>` : ""}
+        ${est.estado !== "convertido" ? `<button class="accion" id="btn-est-convertir">${est.proyecto_id && proyectos().find(x => x.id === est.proyecto_id) ? `➕ Incluir al proyecto` : `🚀 Convertir en proyecto`}</button>` : ""}
         <button class="accion secundaria" id="btn-est-propuesta">Armar propuesta para el cliente</button>
         ${propuestasDelEstimado(est.id)}
       </div>
@@ -5920,7 +5953,7 @@ Power done right the first time. ⚡`;
       });
     });
 
-    if (esRapido) engancharRapido(est, soloLectura);
+    engancharRapido(est, soloLectura);   // en los demás modos solo engancha horas, factor y material a mano
 
     const selEsc = $("est-escenario"), inpFactor = $("est-factor"), selCable = $("est-cable");
     if (selEsc && !soloLectura) selEsc.addEventListener("change", async () => {
