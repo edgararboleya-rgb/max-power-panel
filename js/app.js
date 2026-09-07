@@ -519,24 +519,28 @@ function esFalloDeRed(err) {
           <span class="alcance-titulo">${esc(EN_APP ? (d.tituloEn || d.titulo) : d.titulo)}</span>
         </span>
         ${chip} ${enlace}
-        ${usuario.editar ? `<button class="insp-borrar emp-borrar" data-id="${d.id}" title="Eliminar">🗑</button>` : ""}
-      </div>`;
-    };
-    const formDueno = usuario.editar ? `
-      <form class="cal-form" id="form-doc-empresa">
+        ${usuario.editar ? `<button class="insp-borrar emp-editar" data-id="${d.id}" title="Cambiar el PDF o la fecha">✎</button>
+        <button class="insp-borrar emp-borrar" data-id="${d.id}" title="Eliminar">🗑</button>` : ""}
+      </div>
+      ${usuario.editar ? `<form class="cal-form emp-form" id="emp-form-${d.id}" hidden>
         <div class="modal-fila">
-          <label>Documento
-            <input name="titulo" type="text" required placeholder="Ej: COI actualizado 2027" autocomplete="off">
+          <label>Vence
+            <input name="vence" type="date" value="${esc(d.vence || "")}">
           </label>
-          <label>Vence (opcional)
-            <input name="vence" type="date">
+          <label>PDF nuevo <i>— déjalo vacío si solo cambias la fecha</i>
+            <input name="archivo" type="file" accept="application/pdf">
           </label>
         </div>
-        <label>Archivo PDF
-          <input name="archivo" type="file" accept="application/pdf" required>
-        </label>
-        <button type="submit" class="accion secundaria">⬆ Subir documento de la empresa</button>
-      </form>` : "";
+        <div class="alc-botones">
+          <button type="submit" class="accion">Guardar</button>
+          <button type="button" class="accion secundaria emp-cancelar" data-id="${d.id}">Cancelar</button>
+        </div>
+      </form>` : ""}`;
+    };
+    // Son siempre los mismos tres papeles (licencia, Workers' Comp, Liability): no hay
+    // formulario para subir otros; cada uno se cambia con su lapicito.
+    const formDueno = usuario.editar && docs.length < 3
+      ? `<p class="modal-nota">Falta alguno de los tres papeles de la empresa (licencia, Workers' Comp, Liability). Dímelo y lo vuelvo a poner.</p>` : "";
     $("inicio-empresa").innerHTML = `
       <div class="inicio-card">
         <div class="inicio-card-titulo">📋 Licencia y seguros</div>
@@ -591,28 +595,31 @@ function esFalloDeRed(err) {
         catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
-    const formE = $("form-doc-empresa");
-    if (formE) formE.addEventListener("submit", async e => {
-      e.preventDefault();
-      const d = new FormData(formE);
-      const archivo = formE.elements.archivo.files[0];
-      if (!archivo) return;
-      const $btn = formE.querySelector('button[type="submit"]');
-      $btn.disabled = true; $btn.textContent = "Subiendo…";
-      try {
-        const ruta = await DB.subirDocumento("empresa", archivo, "docs-equipo");
-        await DB.crearDocEmpresa({
-          titulo: (d.get("titulo") || "").toString().trim(),
-          titulo_en: (d.get("titulo") || "").toString().trim(),
-          ruta, vence: d.get("vence") || null, orden: 99
-        });
-        await recargar();
-        avisar("Documento de la empresa guardado ✓ — el equipo y los portales ya lo ven");
-      } catch (err) {
-        avisar("No se pudo subir: " + err.message, true);
-        $btn.disabled = false; $btn.textContent = "⬆ Subir documento de la empresa";
-      }
+    // El lapicito: cambiar el PDF (el nuevo certificado) o la fecha de vencimiento
+    $("inicio-empresa").querySelectorAll(".emp-editar").forEach(btn => {
+      btn.addEventListener("click", () => { const f = $("emp-form-" + btn.dataset.id); if (f) { f.hidden = !f.hidden; if (!f.hidden) f.querySelector("[name=vence]").focus(); } });
     });
+    $("inicio-empresa").querySelectorAll(".emp-cancelar").forEach(btn => {
+      btn.addEventListener("click", () => { const f = $("emp-form-" + btn.dataset.id); if (f) f.hidden = true; });
+    });
+    $("inicio-empresa").querySelectorAll(".emp-form").forEach(formE => formE.addEventListener("submit", async e => {
+      e.preventDefault();
+      const id = formE.id.replace("emp-form-", "");
+      const archivo = formE.elements.archivo.files[0];
+      const vence = formE.elements.vence.value || null;
+      const $btn = formE.querySelector('button[type="submit"]');
+      $btn.disabled = true; $btn.textContent = archivo ? "Subiendo…" : "Guardando…";
+      try {
+        const cambios = { vence };
+        if (archivo) cambios.ruta = await DB.subirDocumento("empresa", archivo, "docs-equipo");
+        await DB.cambiarDocEmpresa(id, cambios);
+        await recargar();
+        avisar(archivo ? "Papel actualizado ✓ — el equipo y los portales ya ven el nuevo" : "Fecha guardada ✓");
+      } catch (err) {
+        avisar("No se pudo: " + err.message, true);
+        $btn.disabled = false; $btn.textContent = "Guardar";
+      }
+    }));
   }
 
   // ---------- Notificaciones al teléfono (dueño y Flavia) ----------
