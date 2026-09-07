@@ -746,6 +746,26 @@
         else { const j = lineas.findIndex(l => /^\s*(pagos|opciones|condiciones)\s*:?\s*$/i.test(l));
                lineas.splice(j >= 0 ? j : lineas.length, 0, "Precio: " + dinero(m.centavos), ""); }
         explicacion = `Precio: $${dinero(m.centavos)}`;
+        // Las filas de pagos que venían en blanco ("$ _[TBD]_") se rellenan con
+        // el reparto por porcentaje, y la fila TOTAL con el precio.
+        const TBD = /\$?\s*_*\[?\s*TBD\s*\]?_*/i;
+        const conPct = [], total = [];
+        lineas.forEach((l, idx) => {
+          if (!TBD.test(l)) return;
+          if (/(?<![\d.])\d{1,3}\s*%/.test(l)) conPct.push(idx);
+          else if (/\btotal\b/i.test(l)) total.push(idx);
+        });
+        if (conPct.length) {
+          const pcts = conPct.map(idx => Number(lineas[idx].match(/(?<![\d.])(\d{1,3})\s*%/)[1]));
+          if (pcts.reduce((a, b) => a + b, 0) === 100) {
+            const montos = repartir(m.centavos, pcts);
+            conPct.forEach((idx, q) => { lineas[idx] = lineas[idx].replace(TBD, "$" + dinero(montos[q])); });
+            total.forEach(idx => { lineas[idx] = lineas[idx].replace(TBD, "$" + dinero(m.centavos)); });
+            explicacion += ` · rellené ${conPct.length} pagos en blanco (${pcts.join("/")})`;
+          }
+        } else if (total.length) {
+          total.forEach(idx => { lineas[idx] = lineas[idx].replace(TBD, "$" + dinero(m.centavos)); });
+        }
         break;
       }
       case "poner_pagos": {

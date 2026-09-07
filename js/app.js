@@ -6654,7 +6654,8 @@ Power done right the first time. ⚡`;
             await DB.crearPunto({ proyecto_id: idNuevo, texto: `Completar ${s.toLowerCase()}`, orden: ordenP++ });
         }
         await DB.crearPunto({ proyecto_id: idNuevo, texto: "Inspección final aprobada", orden: ordenP });
-        await DB.cambiarEstimado(est.id, { estado: "convertido" });
+        // El estimado queda enlazado a su proyecto: así «Escribir el alcance» sabe qué precio ofrecer
+        await DB.cambiarEstimado(est.id, { estado: "convertido", proyecto_id: idNuevo });
         await recargar();
         avisar(`Proyecto creado ✓ — contrato ${fmt(bid)} con hitos, presupuestos y alcance`);
         irDetalle(idNuevo);
@@ -7560,6 +7561,9 @@ Power done right the first time. ⚡`;
     if (!propData || !propData.propuestas) {
       try { propData = await DB.cargarPropuestas(); } catch { propData = { propuestas: [], opciones: [] }; }
     }
+    // El estimado del proyecto (si lo hay) es el precio que se le ofrece a Edgar
+    // cuando la hoja viene sin precio.
+    if (!estData) { try { estData = await DB.cargarEstimador(); } catch { /* sin estimados no pasa nada */ } }
     // Un mismo cliente puede tener DOS trabajos en la misma casa (el panel y el
     // rewire completo). Son dos alcances del MISMO proyecto, no dos proyectos.
     const variantes = alcVariantesDe(proyectoId);
@@ -7567,6 +7571,25 @@ Power done right the first time. ⚡`;
     alcAbrir(proy, prop, variantes);
     mostrar("alcance", { kicker: proy.nombre, titulo: "Escribir el alcance", volver: true });
     pintarAlcance();
+  }
+
+  // El precio que dice el estimado del proyecto: el convertido o congelado si lo
+  // hay, si no el más nuevo. null si el proyecto no tiene estimado.
+  function alcPrecioEstimado(proyectoId) {
+    if (!estData || !Array.isArray(estData.estimados)) return null;
+    // Por enlace (proyecto_id) o, si el estimado viejo no lo trae, por el mismo nombre
+    const proy = proyectos().find(x => x.id === proyectoId);
+    const nom = t => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const lista = estData.estimados.filter(e => e.proyecto_id === proyectoId
+        || (!e.proyecto_id && proy && nom(e.nombre) && nom(e.nombre) === nom(proy.nombre)))
+      .sort((a, b) => String(b.creado || "").localeCompare(String(a.creado || "")));
+    if (!lista.length) return null;
+    const est = lista.find(e => e.estado === "convertido") || lista.find(e => e.estado === "congelado") || lista[0];
+    try {
+      const bid = Math.round(calcularEstimado(est).bid * 100) / 100;
+      if (!(bid > 0)) return null;
+      return { monto: bid, texto: bid.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }), ref: `EST-${est.id}`, nombre: est.nombre || "" };
+    } catch { return null; }
   }
 
   // Las variantes de un proyecto, la más nueva primero
@@ -7716,12 +7739,22 @@ Power done right the first time. ⚡`;
     const cita = n => { const t = n ? (txtLineas[n - 1] || "").trim() : "";
       return t ? `<div class="alc-cita" data-ira="${n}">${esc(t.length > 120 ? t.slice(0, 120) + "…" : t)}</div>` : ""; };
     // Los botones de arreglar: uno por cada arreglo que trae el error
+    const precioEst = alcPrecioEstimado(A.proyecto.id);
     const botonesDe = (arreglos, sufijo) => (arreglos || []).map((a, k) => {
       const id = `${sufijo}-${k}`;
       alcArreglos[id] = a;
-      if (a.pide === "monto" || a.pide === "texto")
-        return `<span class="alc-fix"><input class="alc-libre alc-fix-in" data-fix-in="${id}" placeholder="${a.pide === "monto" ? "1,850.00" : "escríbelo"}" inputmode="${a.pide === "monto" ? "decimal" : "text"}">
-                <button class="alc-op" data-fix="${id}">${esc(a.etiqueta)}</button></span>`;
+      if (a.pide === "monto" || a.pide === "texto") {
+        // Si falta el precio y el proyecto tiene estimado, se le ofrece ese precio:
+        // Edgar lo aprueba con un toque, o escribe otro en la casilla.
+        let ofrecido = "";
+        if (a.tipo === "poner_precio_base" && precioEst) {
+          const oid = `${id}-est`;
+          alcArreglos[oid] = { tipo: "poner_precio_base", valor: precioEst.texto };
+          ofrecido = `<button class="alc-op alc-auto" data-fix="${oid}" title="${esc(precioEst.nombre)}">✓ Sí, usar el del estimado ${esc(precioEst.ref)}: $${precioEst.texto}</button>`;
+        }
+        return `<span class="alc-fix">${ofrecido}<input class="alc-libre alc-fix-in" data-fix-in="${id}" placeholder="${a.pide === "monto" ? "1,850.00" : "escríbelo"}" inputmode="${a.pide === "monto" ? "decimal" : "text"}">
+                <button class="alc-op" data-fix="${id}">${esc(ofrecido ? "No, escribir otro precio" : a.etiqueta)}</button></span>`;
+      }
       if (a.pide === "renglon")
         return `<span class="alc-fix"><select class="alc-libre alc-fix-in" data-fix-in="${id}">${L.items.map(it => `<option value="${it.n}">${it.n}. ${esc(it.titulo.slice(0, 40))}</option>`).join("")}</select>
                 <button class="alc-op" data-fix="${id}">${esc(a.etiqueta)}</button></span>`;
@@ -7748,7 +7781,12 @@ Power done right the first time. ⚡`;
     if (V.errores.length) {
       salida += `<div class="alc-rojo"><b>Hay que arreglar esto antes de seguir:</b>
         ${hayAuto ? `<button class="accion" id="alc-arreglar-todo" style="margin:.4rem 0 .2rem">Arreglar todo lo que pueda solo</button>` : ""}<ul>` +
-        V.errores.map((e, i) => `<li>${chip(e.linea)}${esc(e.texto)}${cita(e.linea)}<div class="alc-fixes">${botonesDe(e.arreglos, "e" + i)}</div>${explicame(e, "e" + i)}</li>`).join("") +
+        V.errores.map((e, i) => {
+          let txt = e.texto;
+          if (precioEst && (e.arreglos || []).some(a => a.tipo === "poner_precio_base"))
+            txt += ` El estimado ${precioEst.ref} de este proyecto da $${precioEst.texto}. ¿Apruebas ese precio?`;
+          return `<li>${chip(e.linea)}${esc(txt)}${cita(e.linea)}<div class="alc-fixes">${botonesDe(e.arreglos, "e" + i)}</div>${explicame(e, "e" + i)}</li>`;
+        }).join("") +
         `</ul></div>`;
     }
     const dudas = L.avisos.filter(a => !a.informativo), hechos = L.avisos.filter(a => a.informativo);
