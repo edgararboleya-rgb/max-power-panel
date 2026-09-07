@@ -364,7 +364,7 @@
         })),
         facturas: (facPor[p.id] || []).map(f => ({
           id: f.id, num: f.num, fecha: fechaCorta(f.fecha), fechaISO: f.fecha || "",
-          monto: Number(f.monto), pagada: !!f.pagada
+          monto: Number(f.monto), pagada: !!f.pagada, cobradaEl: f.cobrada_el ? String(f.cobrada_el).slice(0, 10) : ""
         })),
         docs: docs.filter(d => d.clase === "doc").map(d => ({ id: d.id, titulo: d.titulo, url: d.url, ruta: d.ruta || "", portal: !!d.portal, propuestaId: d.propuesta_id || null,
           pideAprobacion: !!d.pide_aprobacion, aprobadoEl: d.aprobado_el ? String(d.aprobado_el).slice(0, 10) : "",

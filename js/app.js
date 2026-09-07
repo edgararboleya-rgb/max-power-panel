@@ -453,8 +453,10 @@ function esFalloDeRed(err) {
     pintarInicioHoy();
     pintarInicioUrgentes();
     pintarInicioAvisos();
+    pintarInicioInspecciones();
     pintarInicioEquipo();
     pintarInicioSemana();
+    pintarInicioMes();
     pintarInicioEmpresa();
     pintarInicioNotif();
   }
@@ -734,6 +736,78 @@ function esFalloDeRed(err) {
       </div>`;
     $("inicio-hoy").querySelectorAll(".agenda-ev.abre").forEach(el => el.addEventListener("click", () => irDetalle(el.dataset.proy)));
     const vc = $("agenda-ver-cal"); if (vc) vc.addEventListener("click", ev => { ev.preventDefault(); $("btn-calendario") && $("btn-calendario").click(); });
+  }
+
+  // 🏛 INSPECCIONES DE LA SEMANA (todos): las de esta semana y la que viene, con su
+  //    resultado; y las de la semana pasada que ya pasaron o fallaron.
+  function pintarInicioInspecciones() {
+    const caja = $("inicio-inspecciones"); if (!caja) return;
+    const hoy = hoyISO();
+    const t0 = new Date(Date.parse(hoy + "T12:00:00"));
+    const lunes = new Date(t0); lunes.setDate(t0.getDate() - ((t0.getDay() + 6) % 7));
+    const desde = new Date(lunes); desde.setDate(lunes.getDate() - 7);
+    const hasta = new Date(lunes); hasta.setDate(lunes.getDate() + 13);
+    const iso = d => fechaISO(d.getFullYear(), d.getMonth(), d.getDate());
+    const dDesde = iso(desde), dHasta = iso(hasta);
+    const lista = (state.inspecciones || [])
+      .filter(i => i.fecha && i.fecha >= dDesde && i.fecha <= dHasta)
+      .filter(i => i.fecha >= hoy || i.resultado !== "programada")
+      .sort((a, b) => a.fecha.localeCompare(b.fecha));
+    if (!lista.length) { caja.innerHTML = ""; return; }
+    const chip = i => i.resultado === "paso" ? `<span class="recibo-chip leido">✓ pasó</span>`
+      : i.resultado === "fallo" ? `<span class="recibo-chip devolucion">✗ falló</span>`
+      : i.fecha === hoy ? `<span class="hoy-chip es-hoy">HOY</span>`
+      : i.fecha < hoy ? `<span class="recibo-chip">sin resultado</span>`
+      : `<span class="recibo-chip">programada</span>`;
+    const fecha = i => { const t = new Date(Date.parse(i.fecha + "T12:00:00")); return `${DIA_CORTO[t.getDay()]} ${t.getDate()}`; };
+    caja.innerHTML = `
+      <div class="inicio-card">
+        <div class="inicio-card-titulo">🏛 Inspecciones de la semana</div>
+        ${lista.map(i => `
+          <div class="agenda-ev${i.proyecto ? " abre" : ""}" ${i.proyecto ? `data-proy="${esc(i.proyecto)}"` : ""}>
+            <span class="agenda-hora">${esc(fecha(i))}</span>
+            <span class="agenda-que">${esc(i.tipo || "Inspección")}${i.proyecto ? ` — ${esc(nombreProyecto(i.proyecto))}` : ""} ${chip(i)}</span>
+            <span class="agenda-quien">${esc([i.jurisdiccion, i.permiso ? "permiso " + i.permiso : "", i.notas].filter(Boolean).join(" · ").slice(0, 120))}</span>
+          </div>`).join("")}
+      </div>`;
+    caja.querySelectorAll(".agenda-ev.abre").forEach(el => el.addEventListener("click", () => irDetalle(el.dataset.proy)));
+  }
+
+  // 📈 RESUMEN DEL MES (solo dueño): este mes contra el pasado.
+  function pintarInicioMes() {
+    const caja = $("inicio-mes"); if (!caja) return;
+    if (!usuario.finanzas) { caja.innerHTML = ""; return; }
+    const hoy = hoyISO();
+    const esteMes = hoy.slice(0, 7);
+    const t = new Date(Date.parse(hoy + "T12:00:00")); t.setDate(1); t.setMonth(t.getMonth() - 1);
+    const mesPasado = fechaISO(t.getFullYear(), t.getMonth(), 1).slice(0, 7);
+    const MESES = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+    const nombreMes = m => MESES[Number(m.slice(5, 7))];
+    const facts = proyectos().flatMap(p => (p.facturas || []).map(f => ({ ...f, proyecto: p.id })));
+    const cuenta = mes => {
+      const cobradas = facts.filter(f => (f.cobradaEl || (f.pagada ? f.fechaISO : "")).slice(0, 7) === mes);
+      const emitidas = facts.filter(f => (f.fechaISO || "").slice(0, 7) === mes);
+      const horas = (state.registroHoras || []).filter(r => (r.fecha || "").slice(0, 7) === mes).reduce((a, r) => a + Number(r.horas || 0), 0);
+      const cerrados = proyectos().filter(p => p.estado === "completado" && (p.actualizado || "").slice(0, 7) === mes).length;
+      const insp = (state.inspecciones || []).filter(i => (i.fecha || "").slice(0, 7) === mes && i.resultado === "paso").length;
+      return { cobrado: cobradas.reduce((a, f) => a + f.monto, 0), nCobradas: cobradas.length,
+               facturado: emitidas.reduce((a, f) => a + f.monto, 0), nEmitidas: emitidas.length, horas, cerrados, insp };
+    };
+    const A = cuenta(esteMes), B = cuenta(mesPasado);
+    const fila = (et, a, b, esDinero) => `<tr><th>${et}</th><td>${esDinero ? fmt(a) : a}</td><td class="pasado">${esDinero ? fmt(b) : b}</td></tr>`;
+    caja.innerHTML = `
+      <div class="inicio-card">
+        <div class="inicio-card-titulo">📈 Resumen del mes</div>
+        <table class="mes-tabla"><thead><tr><th></th><th>${esc(nombreMes(esteMes))}</th><th class="pasado">${esc(nombreMes(mesPasado))}</th></tr></thead><tbody>
+          ${fila("Cobrado", A.cobrado, B.cobrado, true)}
+          ${fila("Facturado", A.facturado, B.facturado, true)}
+          ${fila("Facturas cobradas", A.nCobradas, B.nCobradas, false)}
+          ${fila("Horas del equipo", Number.isInteger(A.horas) ? A.horas : A.horas.toFixed(1), Number.isInteger(B.horas) ? B.horas : B.horas.toFixed(1), false)}
+          ${fila("Inspecciones pasadas", A.insp, B.insp, false)}
+          ${fila("Trabajos completados", A.cerrados, B.cerrados, false)}
+        </tbody></table>
+        <p class="modal-nota" style="margin:.35rem 0 0">Cobrado = facturas con fecha de cobro en el mes (según QuickBooks). Facturado = facturas emitidas en el mes.</p>
+      </div>`;
   }
 
   // 📨 PROPUESTAS ESPERANDO RESPUESTA — Edgar prefirió no repetirlas: ya salen en Avisos.
