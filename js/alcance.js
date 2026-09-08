@@ -1448,7 +1448,7 @@
                                                                      : "completion of the work";
     const huecos = {
       CLIENT: d.cliente || "", CLIENT_2: d.segundo_firmante || (dec.esGC ? d.dueno : ""),
-      CONTACTOS: d.atencion || "", HOMEOWNER: dec.esGC ? d.dueno : (d.cliente || ""),
+      CONTACTOS: d.atencion || "", HOMEOWNER: dec.esGC ? (d.dueno || "the property owner") : (d.cliente || ""),
       PROYECTO_EN_INGLES: (S.proyecto_en && S.proyecto_en.en) || d.proyecto || "",
       DIRECCION: admin.direccion || d.direccion || "",
       CIUDAD: d.ciudad || admin.ciudad || "",
