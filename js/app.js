@@ -287,6 +287,13 @@
   // ¿El servidor dijo de verdad que la sesión no vale? Solo 400 y 401 lo
 // dicen. Cualquier otra cosa (500, 502, 503, o ninguna respuesta) es que
 // el servidor está mal, y por eso NO se puede cerrar la sesión de nadie.
+// Recorta un título largo en palabra entera y le pone «…»; nunca a media palabra.
+function recortarTitulo(t, max) {
+  t = String(t || "").replace(/\s+/g, " ").trim();
+  if (t.length <= max) return t;
+  const corte = t.slice(0, max - 1).replace(/[\s,;:—–-]+\S*$/, "");
+  return corte + "…";
+}
 function esSesionMuerta(err) {
   return !!err && (err.status === 400 || err.status === 401);
 }
@@ -8668,7 +8675,8 @@ Power done right the first time. ⚡`;
     try {
       const ruta = await DB.subirDocumento(A.proyecto.id, archivo, "docs");
       const letra = String.fromCharCode(65 + Math.max(0, (A.variantes || []).findIndex(v => v.id === A.propuesta.id)));
-      const titulo = `SOW ${letra} — ${(A.leido && A.leido.datos.proyecto) || A.proyecto.nombre}`.slice(0, 90);
+      // El título se corta en palabra entera (antes salía «…service equi»): lo ve el cliente en el portal y en el correo.
+      const titulo = recortarTitulo(`SOW ${letra} — ${(A.leido && A.leido.datos.proyecto) || A.proyecto.nombre}`, 90);
       await DB.crearDocumento({
         proyecto_id: A.proyecto.id, clase: "doc", titulo, ruta,
         portal: true, pide_firma: true, pide_aprobacion: false,
