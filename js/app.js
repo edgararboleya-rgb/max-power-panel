@@ -8561,6 +8561,26 @@ Power done right the first time. ⚡`;
     return true;
   }
 
+  // El checklist de la obra (alcance por puntos) es la sección 2 del contrato: los
+  // renglones del papel, en el mismo orden. Los puntos ya marcados como hechos se
+  // respetan; los pendientes que no estén en el contrato se quitan.
+  async function alcSincronizarPuntos(proyectoId, items) {
+    const titulos = (items || []).map(it => String(it.titulo || "").trim()).filter(Boolean);
+    if (!titulos.length) return false;
+    const actuales = ((state && state.puntos) ? state.puntos : []).filter(x => x.proyecto === proyectoId);
+    const hechos = actuales.filter(x => x.hecho);
+    const pendientes = actuales.filter(x => !x.hecho);
+    const yaHechos = new Set(hechos.map(x => String(x.texto || "").trim()));
+    const quedan = titulos.filter(t => !yaHechos.has(t));
+    const iguales = pendientes.length === quedan.length && pendientes.every((x, k) => String(x.texto || "").trim() === quedan[k]);
+    if (iguales) return true;
+    for (const x of pendientes) await DB.eliminarPunto(x.id);
+    await DB.crearPuntos(quedan.map((texto, i) => ({
+      proyecto_id: proyectoId, texto, texto_en: texto, hecho: false, orden: hechos.length + i, prioridad: "normal"
+    })));
+    return true;
+  }
+
   async function alcArmar() {
     const A = alcActivo;
     alcRecoger();
@@ -8724,6 +8744,8 @@ Power done right the first time. ⚡`;
           const ref = A.contrato.archivo.replace(/\.html$/i, "");
           if (A.proyecto.ref !== ref) { await DB.cambiarProyecto(A.proyecto.id, { ref }); A.proyecto.ref = ref; }
           await alcSincronizarHitos(A.proyecto.id, cta);
+          await alcSincronizarPuntos(A.proyecto.id, L.items);
+          try { await recargar(A.proyecto.id); } catch { /* se cuadra en la próxima recarga */ }
         } else if (!(Number(A.proyecto.contrato) > 0)) {
           await DB.ponerContrato(A.proyecto.id, cta.base / 100); A.proyecto.contrato = cta.base / 100;
         }
