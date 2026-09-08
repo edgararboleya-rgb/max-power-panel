@@ -2755,6 +2755,22 @@ function esFalloDeRed(err) {
   }
 
   // FICHA completa: la pantalla dedicada a un solo proyecto
+  // El alcance del trabajo en la ficha: los renglones de la sección 2 del contrato
+  // (o lo que Edgar haya puesto a mano), con la palomita y el % de avance. Son las
+  // mismas filas de la pantalla Checklist, así que marcar aquí es marcar allá.
+  function alcanceFichaHTML(p) {
+    const puntos = tareasDe(p.id).filter(t => t.tipo === "punto");
+    const hechos = puntos.filter(t => t.hecha).length;
+    const pct = puntos.length ? Math.round(hechos / puntos.length * 100) : 0;
+    return `<div class="detalle-seccion" id="ficha-alcance">
+      <h3>Alcance del trabajo${puntos.length ? ` <span class="recibo-chip leido">${hechos} de ${puntos.length} · ${pct}%</span>` : ""}</h3>
+      ${puntos.length
+        ? `<div class="barra horas-barra"><div class="barra-relleno ${pct >= 100 ? "ok" : ""}" style="width:${pct}%"></div></div>
+           ${puntos.map(filaTarea).join("")}`
+        : `<p class="cal-sin-eventos">Todavía no hay renglones. Nacen solos al armar el contrato en «Escribir el alcance», o agrégalos en la pantalla Checklist.</p>`}
+    </div>`;
+  }
+
   function fichaProyectoHTML(p) {
     const linksDocs = (p.docs || [])
       .map(d => `<span class="doc-fila"><a class="doc-link" ${d.ruta ? `href="#" data-docruta="${esc(d.ruta)}"` : `href="${esc(urlSegura(d.url) || "#")}"`} target="_blank" rel="noopener">📄 ${esc(d.titulo)}${d.ruta ? "" : ` <span class="doc-drive-tag">Drive</span>`}</a>${d.id ? `
@@ -2869,6 +2885,7 @@ function esFalloDeRed(err) {
           ${horasHTML(p)}
           ${desgloseHTML(p)}
           ${hitosHTML(p)}
+          ${alcanceFichaHTML(p)}
           ${rentabilidadHTML(p)}
           ${externosHTML(p)}
           </div>
@@ -3087,6 +3104,9 @@ function esFalloDeRed(err) {
       nuevo: false
     });
     $detalle.innerHTML = fichaProyectoHTML(p);
+    // las palomitas del alcance en la ficha: mismos botones que en Checklist
+    const cajaAlc = $detalle.querySelector("#ficha-alcance");
+    if (cajaAlc) engancharTareas(cajaAlc, pintarDetalle);
 
     $detalle.querySelectorAll(".accion").forEach(btn => {
       if (btn.dataset.accion)
