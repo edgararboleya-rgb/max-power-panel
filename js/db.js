@@ -702,6 +702,7 @@
     crearHito: fila => insertar("hitos", fila),
     // Marcar un hito cobrado / facturado / pendiente sin tocar SQL
     cambiarHito: (id, cambios) => actualizar(`hitos?id=eq.${id}`, cambios),
+    eliminarHito: id => api(`hitos?id=eq.${id}`, { metodo: "DELETE" }),
     // Marcar una factura pagada (o devolverla a sin pagar) sin tocar SQL
     cambiarFactura: (id, cambios) => actualizar(`facturas?id=eq.${id}`, cambios),
     cambiarPerfil: (id, cambios) => actualizar(`perfiles?id=eq.${id}`, cambios),

@@ -8531,6 +8531,36 @@ Power done right the first time. ⚡`;
     } catch { return null; }
   }
 
+  // Cuadra los hitos y el valor del contrato de la ficha con lo que dice el contrato
+  // armado. Si ya hay un hito facturado o cobrado, no se toca nada y se avisa.
+  async function alcSincronizarHitos(proyectoId, cta) {
+    const p = proyectos().find(x => x.id === proyectoId);
+    const actuales = (p && p.hitos) || [];
+    const tocados = actuales.filter(h => h.estado === "facturado" || h.estado === "cobrado");
+    if (tocados.length) {
+      avisar(`Ojo: la ficha tiene ${tocados.length} hito${tocados.length > 1 ? "s" : ""} ya facturado o cobrado; no los toqué. Revisa que cuadren con el contrato.`, true);
+      return false;
+    }
+    const nuevos = cta.hitos.map((h, k) => ({
+      proyecto_id: proyectoId,
+      titulo: `Milestone ${h.n} — ${h.pct}%${k === 0 ? " deposit" : (k === cta.hitos.length - 1 ? " final" : "")}`,
+      condicion: String(h.disparador || (k === 0 ? "Deposit upon acceptance" : (k === cta.hitos.length - 1 ? "Final inspection passed" : "Rough-in complete and inspection passed"))).slice(0, 200),
+      monto: Math.round(h.centavos) / 100, estado: "pendiente", orden: k + 1, es_deposito: k === 0
+    }));
+    // ¿ya está igual? entonces no hay nada que escribir
+    const igual = actuales.length === nuevos.length && actuales.every((h, k) =>
+      Math.abs(Number(h.monto) - nuevos[k].monto) < 0.005 && String(h.condicion || "") === nuevos[k].condicion && String(h.titulo || "") === nuevos[k].titulo);
+    const contratoNuevo = Math.round(cta.base) / 100;
+    const contratoIgual = Math.abs(Number(p && p.contrato || 0) - contratoNuevo) < 0.005;
+    if (igual && contratoIgual) return true;
+    for (const h of actuales) await DB.eliminarHito(h.id);
+    for (const h of nuevos) await DB.crearHito(h);
+    if (!contratoIgual) await DB.ponerContrato(proyectoId, contratoNuevo);
+    try { await recargar(proyectoId); } catch { /* la ficha se cuadra en la próxima recarga */ }
+    avisar(`Ficha cuadrada con el contrato ✓ — ${nuevos.length} pagos (${cta.pcts.join("/")}) y contrato $${Alcance.dinero(cta.base)}`);
+    return true;
+  }
+
   async function alcArmar() {
     const A = alcActivo;
     alcRecoger();
@@ -8672,8 +8702,8 @@ Power done right the first time. ⚡`;
           alcance: L.items.map(i => ({ titulo: i.titulo, detalles: i.detalles })),
           no_incluye: L.no_incluye.map(x => x.texto),
           precio: cta.base / 100, orden: 0,
-          hitos_plan: cta.hitos.map(h => ({ titulo: `Pago ${h.n}`, monto: h.centavos / 100,
-                                            pct: h.pct, es_deposito: h.es_deposito }))
+          hitos_plan: cta.hitos.map(h => ({ titulo: `Milestone ${h.n} — ${h.pct}%`, monto: h.centavos / 100,
+                                            pct: h.pct, es_deposito: h.es_deposito, disparador: h.disparador || "" }))
         }].concat(cta.addons.map((a, k) => ({
           propuesta_id: A.propuesta.id, letra: a.letra, es_addon: true,
           titulo: ((A.salida && A.salida.opciones && A.salida.opciones[k] && A.salida.opciones[k].titulo &&
@@ -8686,15 +8716,18 @@ Power done right the first time. ⚡`;
         if (d.cliente && !A.proyecto.cliente) cambios.cliente = d.cliente;
         if (Object.keys(cambios).length) await DB.cambiarProyecto(A.proyecto.id, cambios);
       }
-      // El número de propuesta y el valor del contrato los pone el alcance en la
-      // ficha del proyecto, para que Edgar no los teclee dos veces.
+      // El contrato armado MANDA sobre la ficha del proyecto: número de propuesta,
+      // valor del contrato e hitos de pago (porcentajes, montos y disparadores).
+      // Así la ficha, el portal y las facturas hablan el mismo idioma que el papel.
       try {
-        if (A.contrato && (!A.proyecto.ref || /por definir/i.test(A.proyecto.ref))) {
+        if (A.contrato) {
           const ref = A.contrato.archivo.replace(/\.html$/i, "");
-          await DB.cambiarProyecto(A.proyecto.id, { ref }); A.proyecto.ref = ref;
+          if (A.proyecto.ref !== ref) { await DB.cambiarProyecto(A.proyecto.id, { ref }); A.proyecto.ref = ref; }
+          await alcSincronizarHitos(A.proyecto.id, cta);
+        } else if (!(Number(A.proyecto.contrato) > 0)) {
+          await DB.ponerContrato(A.proyecto.id, cta.base / 100); A.proyecto.contrato = cta.base / 100;
         }
-        if (!(Number(A.proyecto.contrato) > 0)) { await DB.ponerContrato(A.proyecto.id, cta.base / 100); A.proyecto.contrato = cta.base / 100; }
-      } catch { /* la propuesta ya quedó guardada; la ficha se cuadra en la próxima recarga */ }
+      } catch (err) { avisar("El contrato quedó guardado, pero la ficha no se cuadró: " + err.message, true); }
       // Las propuestas se recargan para que la barra de arriba enseñe la
       // variante nueva (o el precio nuevo de la que se acaba de guardar)
       try { propData = await DB.cargarPropuestas(); } catch { /* se queda la de antes */ }
