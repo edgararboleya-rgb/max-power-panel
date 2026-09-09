@@ -751,6 +751,9 @@
 
 
 
+    // contrato con el contratista sin el nombre del dueño: no frena; firma solo el contratista
+    if (norma(D.contrato_con || "") === "gc" && !D.dueno && !L.avisos.some(a => /Homeowner/.test(a.texto)))
+      L.avisos.push({ informativo: true, texto: "Contrato con el contratista y sin el nombre del dueño de la propiedad: firma solo el contratista. Si quieres también la firma del dueño, escribe «Homeowner: nombre» en la hoja." });
     // dos firmantes
     if (D.cliente && !D.segundo_firmante && /\s(y|&|and)\s/i.test(D.cliente))
       preguntas.push({ clave: "dos_firmas", texto: `"${D.cliente}" ¿son dos personas que firman las dos?`,
@@ -1131,7 +1134,9 @@
       PAGOS_PROPIOS: (L.pagos_propios || []).length > 0,
       CIERRE_GENERICO: !hayCierre,          // el "Testing and closeout" de la plantilla solo si la hoja no trae el suyo
       SIN_ITEM_PERMISO: !hayItemPermiso,    // el bullet del permiso en §3 sobra si el permiso ya es un renglón del §2
-      CLIENT_2: hay(d.segundo_firmante) || esGC,
+      // Segunda firma: dos dueños en la escritura, o el dueño debajo del contratista (solo si se sabe su nombre;
+      // sin nombre no se deja una línea con hueco: firma solo el contratista)
+      CLIENT_2: hay(d.segundo_firmante) || (esGC && hay(d.dueno)),
       // Exclusiones: solo las que tienen sentido en ESTE trabajo
       EXCL_PANEL: !noExcluir.includes("panel") && !hayPanel,
       EXCL_AFCI: !noExcluir.includes("afci") && !esComercial,

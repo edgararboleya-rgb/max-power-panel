@@ -8494,8 +8494,13 @@ Power done right the first time. ⚡`;
     const est = ests[0] || {};
     const gc = p.contratistaModo === "contrato" ? gcDeProyecto(p) : null;
     const primero = (...vs) => vs.find(v => !alcVacio(v)) || "";
+    // Con contrato con el contratista, el «cliente» de la ficha es el dueño de la propiedad
+    // (salvo en obras viejas donde ahí se escribió el propio contratista)
+    const pareceGC = v => !!gc && !alcVacio(v) && new RegExp(String(gc.nombre).split(/\s+/)[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(String(v));
+    const dueno = gc ? primero(...[p.cliente, est.cliente].filter(v => !pareceGC(v))) : "";
     return {
       cliente:   primero(gc && gc.nombre, p.cliente, est.cliente),
+      dueno,
       atencion:  primero(gc && gc.contacto),
       email:     primero(gc && gc.email, p.cliente_email),
       telefono:  primero(gc && gc.telefono, p.cliente_tel),
@@ -8504,8 +8509,8 @@ Power done right the first time. ⚡`;
   }
   // Rellena en la hoja los datos que falten (o digan "Por confirmar") con los conocidos.
   // Devuelve la hoja nueva y la lista de lo que tomó, para decírselo a Edgar.
-  const ALC_DATOS = [["cliente", "Cliente"], ["atencion", "Atención"], ["email", "Email"], ["telefono", "Teléfono"], ["direccion", "Dirección"]];
-  const ALC_RE = { cliente: "cliente|client|customer|owner", atencion: "atenci[oó]n|attention|attn|contacto|contact",
+  const ALC_DATOS = [["cliente", "Cliente"], ["dueno", "Homeowner"], ["atencion", "Atención"], ["email", "Email"], ["telefono", "Teléfono"], ["direccion", "Dirección"]];
+  const ALC_RE = { cliente: "cliente|client|customer|owner", dueno: "homeowner|due[nñ]o(?: de la casa)?|propietario|property owner", atencion: "atenci[oó]n|attention|attn|contacto|contact",
                    email: "e-?mail|correo", telefono: "tel[eé]fono|tel|phone|cell|celular|mobile", direccion: "direcci[oó]n|address|job address|site address|property address|project address|job site" };
   function alcNutrir(texto, conocidos) {
     let txt = String(texto || "");
