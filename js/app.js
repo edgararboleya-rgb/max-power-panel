@@ -2561,6 +2561,61 @@ function esFalloDeRed(err) {
     if (!p || !p.contratistaId) return null;
     return (state.contratistas || []).find(c => c.id === p.contratistaId) || null;
   }
+  // ---- «¿Con quién es el trato?» — el mismo bloque en Nuevo estimado y en Proyecto nuevo ----
+  // Directo (el cliente firma y paga) o un contratista: referido (el dueño firma) o
+  // contrato (le facturamos a él). Lo que se elige aquí viaja al proyecto y a la propuesta.
+  function opcionesTrato(contratistaId) {
+    const lista = (state.contratistas || []).filter(c => c.activo !== false)
+      .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+    return `<option value=""${!contratistaId ? " selected" : ""}>Directo — con el cliente</option>` +
+      lista.map(c => `<option value="${esc(c.id)}"${c.id === contratistaId ? " selected" : ""}>${esc(c.nombre)}</option>`).join("");
+  }
+  const MODOS_TRATO = `<option value="referido">Solo referido — el dueño firma y paga</option>` +
+    `<option value="contrato">Contrato con el contratista — le facturamos a él</option>`;
+  function bloqueTratoHTML(contratistaId, modo) {
+    return `<div class="modal-fila">
+        <label>¿Con quién es el trato?
+          <select name="contratista_id">${opcionesTrato(contratistaId || "")}</select>
+        </label>
+        <label${contratistaId ? "" : " hidden"}>Cómo es el trato
+          <select name="contratista_modo">${MODOS_TRATO.replace(`value="${modo || "referido"}"`, `value="${modo || "referido"}" selected`)}</select>
+        </label>
+      </div>`;
+  }
+  // Enciende el modo solo si hay contratista, y la etiqueta del cliente cambia a «cliente final»
+  function engancharTrato(form) {
+    const sel = form.querySelector("[name=contratista_id]"), modo = form.querySelector("[name=contratista_modo]");
+    const lab = form.querySelector("[data-lab-cliente] > span");
+    if (!sel) return;
+    const pinta = () => {
+      const con = !!sel.value;
+      if (modo) modo.closest("label").hidden = !con;
+      if (lab) lab.textContent = con ? "Cliente final (dueño de la propiedad)" : "Cliente";
+    };
+    sel.addEventListener("change", pinta); pinta();
+  }
+  function ponerTrato(form, contratistaId, modo) {
+    const sel = form.querySelector("[name=contratista_id]"), sm = form.querySelector("[name=contratista_modo]");
+    if (!sel) return;
+    sel.value = contratistaId || "";
+    if (sm) sm.value = modo || "referido";
+    sel.dispatchEvent(new Event("change"));
+  }
+  // Lo que se guarda del trato (mismas casillas en estimados y en proyectos)
+  function datosTrato(d) {
+    const cid = String(d.get("contratista_id") || "");
+    const emp = cid ? (state.contratistas || []).find(c => c.id === cid) : null;
+    return {
+      via: emp ? emp.nombre : "Directo",
+      contratista_id: emp ? emp.id : null,
+      contratista_modo: emp ? String(d.get("contratista_modo") || "referido") : null
+    };
+  }
+  function tratoTexto(contratistaId, modo) {
+    const emp = contratistaId ? (state.contratistas || []).find(c => c.id === contratistaId) : null;
+    if (!emp) return "";
+    return `vía ${emp.nombre} (${modo === "contrato" ? "contrato con ellos" : "referido"})`;
+  }
   // La dirección del portal, según sea del cliente o de un contratista
   const PANEL_WEB = "https://edgararboleya-rgb.github.io/max-power-panel/";
   const enlaceGC = (llave, proyectoId) =>
@@ -3769,6 +3824,9 @@ function esFalloDeRed(err) {
   // ---------- Crear proyecto nuevo ----------
   $btnNuevo.addEventListener("click", () => {
     if (!usuario.editar) return;
+    // El trato (directo / contratista) con la misma lista que en el estimador
+    const caja = $("nuevo-trato");
+    if (caja) { caja.innerHTML = bloqueTratoHTML("", ""); engancharTrato($formNuevo); }
     if (tipoActivo) $formNuevo.elements.tipo.value = tipoActivo;
     if (etapaActiva && ["enviado", "aprobado", "ejecucion"].includes(etapaActiva))
       $formNuevo.elements.estado.value = etapaActiva;
@@ -3795,7 +3853,9 @@ function esFalloDeRed(err) {
       id, tipo, nombre,
       direccion: (d.get("direccion") || "Por confirmar").toString().trim() || "Por confirmar",
       cliente: (d.get("cliente") || "Por confirmar").toString().trim() || "Por confirmar",
-      via: (d.get("via") || "Directo").toString().trim() || "Directo",
+      ...datosTrato(d),
+      cliente_email: (d.get("cliente_email") || "").toString().trim() || null,
+      cliente_tel: (d.get("cliente_tel") || "").toString().trim() || null,
       estado,
       fase: estado === "ejecucion" ? "mobilizacion" : null,
       estado_detalle: (d.get("notas") || "Proyecto creado desde el panel").toString().trim() || "Proyecto creado desde el panel",
@@ -5447,7 +5507,7 @@ function esFalloDeRed(err) {
           <span class="recibo-chip ${chip}">${etiqueta}</span>
           <span class="alcance-info est-abrir" data-id="${e.id}" style="cursor:pointer">
             <span class="alcance-titulo">${esc(e.nombre)}</span>
-            <span class="alcance-estado">${esc(e.cliente || "")}${e.sqft ? ` · ${esc(e.sqft)} sqft` : ""} · escenario ${esc(e.escenario)}${e.proyecto_id ? ` · <b>añadido a ${esc((proyectos().find(x => x.id === e.proyecto_id) || {}).nombre || e.proyecto_id)}</b>` : ""}</span>
+            <span class="alcance-estado">${esc(e.cliente || "")}${e.contratista_id ? ` · ${esc(tratoTexto(e.contratista_id, e.contratista_modo))}` : ""}${e.sqft ? ` · ${esc(e.sqft)} sqft` : ""} · escenario ${esc(e.escenario)}${e.proyecto_id ? ` · <b>añadido a ${esc((proyectos().find(x => x.id === e.proyecto_id) || {}).nombre || e.proyecto_id)}</b>` : ""}</span>
           </span>
           <span class="mat-precio">${fmt(Math.round(c.bid * 100) / 100)}</span>
           ${e.estado !== "convertido" ? `<button class="insp-borrar btn-est-borrar" data-id="${e.id}" title="Eliminar">🗑</button>` : ""}
@@ -5476,7 +5536,7 @@ function esFalloDeRed(err) {
               ${[["servicio", "Servicios"], ["residencial", "Residenciales"], ["comercial", "Comerciales"]].map(([t, et]) => {
                 const lista = proyectos().filter(x => x.tipo === t && !["no_aprobado"].includes(x.estado))
                   .sort((a, b) => (a.estado === "completado") - (b.estado === "completado") || String(a.nombre).localeCompare(String(b.nombre)));
-                return lista.length ? `<optgroup label="${et}">${lista.map(x => `<option value="${esc(x.id)}" data-tipo="${esc(x.tipo)}" data-cliente="${esc(x.cliente || "")}" data-nombre="${esc(x.nombre)}">${esc(x.nombre)}${x.estado === "completado" ? " (completado)" : ""}</option>`).join("")}</optgroup>` : "";
+                return lista.length ? `<optgroup label="${et}">${lista.map(x => `<option value="${esc(x.id)}" data-tipo="${esc(x.tipo)}" data-cliente="${esc(x.cliente || "")}" data-nombre="${esc(x.nombre)}" data-contratista="${esc(x.contratistaId || "")}" data-modo="${esc(x.contratistaModo || "")}" data-email="${esc(x.clienteEmail || "")}" data-tel="${esc(x.clienteTel || "")}">${esc(x.nombre)}${x.estado === "completado" ? " (completado)" : ""}</option>`).join("")}</optgroup>` : "";
               }).join("")}
             </select>
             <i>Elige uno si es un trabajo añadido a un proyecto que ya tienes (un extra, un service que crece). Si no, es un proyecto nuevo.</i>
@@ -5484,8 +5544,9 @@ function esFalloDeRed(err) {
           <label>Nombre del trabajo
             <input name="nombre" type="text" required placeholder="Ej: Casa García — Rewire" autocomplete="off">
           </label>
+          ${bloqueTratoHTML("", "")}
           <div class="modal-fila">
-            <label>Cliente
+            <label data-lab-cliente><span>Cliente</span>
               <input name="cliente" type="text" placeholder="Ej: Juan García" autocomplete="off">
             </label>
             <label>Tipo
@@ -5493,6 +5554,14 @@ function esFalloDeRed(err) {
                 <option value="Residential">Residencial</option>
                 <option value="Commercial">Comercial</option>
               </select>
+            </label>
+          </div>
+          <div class="modal-fila">
+            <label>Correo del cliente (opcional)
+              <input name="cliente_email" type="email" placeholder="para la propuesta y el portal" autocomplete="off">
+            </label>
+            <label>Teléfono del cliente (opcional)
+              <input name="cliente_tel" type="tel" placeholder="Ej: (813) 555-0100" autocomplete="off">
             </label>
           </div>
           <div class="modal-fila">
@@ -5521,7 +5590,7 @@ function esFalloDeRed(err) {
       const d = new FormData(ev.target);
       try {
         const modoNuevo = d.get("modo") || "planos";
-        const filasNueva = await DB.crearEstimado({
+        const fila = {
           nombre: (d.get("nombre") || "").toString().trim(),
           cliente: (d.get("cliente") || "").toString().trim() || null,
           tipo: d.get("tipo") || "Residential",
@@ -5533,15 +5602,27 @@ function esFalloDeRed(err) {
           estado: "borrador",
           modo: modoNuevo,
           cable: "romex",
-          proyecto_id: d.get("proyecto_id") || null
-        }).catch(async err => {
+          proyecto_id: d.get("proyecto_id") || null,
+          // El trato (directo / contratista) y el contacto del cliente nacen aquí y
+          // viajan al proyecto y a la propuesta: se escriben una sola vez
+          ...datosTrato(d),
+          cliente_email: (d.get("cliente_email") || "").toString().trim() || null,
+          cliente_tel: (d.get("cliente_tel") || "").toString().trim() || null
+        };
+        const CASILLAS_TRATO = ["via", "contratista_id", "contratista_modo", "cliente_email", "cliente_tel"];
+        const filasNueva = await DB.crearEstimado(fila).catch(async err => {
+          const txt = String(err.crudo || err.message || "");
+          // Si la base todavía no tiene las casillas del trato (falta pegar ESTIMADOR-GC.sql), se crea sin ellas
+          if (CASILLAS_TRATO.some(c => txt.includes(c))) {
+            avisar("Ojo: falta pegar el SQL «ESTIMADOR-GC» en la base; el estimado se creó sin el trato ni el contacto", true);
+            const sin = { ...fila }; CASILLAS_TRATO.forEach(c => delete sin[c]);
+            return DB.crearEstimado(sin);
+          }
           // Si la base todavía no tiene la casilla proyecto_id (falta pegar el SQL), se crea sin ella
-          if (/proyecto_id/.test(String(err.crudo || err.message || ""))) {
+          if (/proyecto_id/.test(txt)) {
             avisar("Ojo: falta pegar el SQL de «proyecto_id» en la base; el estimado se creó suelto", true);
-            const sin = Object.fromEntries([...d.entries()]);
-            return DB.crearEstimado({ nombre: sin.nombre.trim(), cliente: (sin.cliente || "").trim() || null, tipo: sin.tipo || "Residential",
-              sqft: sin.sqft ? Number(sin.sqft) : null, escenario: modoNuevo === "servicio" ? "C" : modoNuevo === "rapido" ? "A" : (sin.escenario || "B"),
-              factor: 1, estado: "borrador", modo: modoNuevo, cable: "romex" });
+            const sin = { ...fila }; delete sin.proyecto_id; CASILLAS_TRATO.forEach(c => delete sin[c]);
+            return DB.crearEstimado(sin);
           }
           throw err;
         });
@@ -5561,8 +5642,14 @@ function esFalloDeRed(err) {
       if (cliente && !cliente.value) cliente.value = String(op.dataset.cliente || "").split(/\s*[·(]/)[0].trim();
       if (tipo) tipo.value = op.dataset.tipo === "comercial" ? "Commercial" : "Residential";
       if (modo && op.dataset.tipo === "servicio") modo.value = "servicio";
+      // El trato y el contacto se heredan del proyecto: no se vuelven a escribir
+      ponerTrato(form, op.dataset.contratista || "", op.dataset.modo || "");
+      const em = form.querySelector("[name=cliente_email]"), tl = form.querySelector("[name=cliente_tel]");
+      if (em && !em.value) em.value = op.dataset.email || "";
+      if (tl && !tl.value) tl.value = op.dataset.tel || "";
       nombre.focus(); nombre.select();
     });
+    engancharTrato($("form-nuevo-est"));
     $("estimador-panel").querySelectorAll(".est-abrir").forEach(el => {
       el.addEventListener("click", () => { estimadoActivo = Number(el.dataset.id); pintarEstimador(); });
     });
@@ -6193,7 +6280,7 @@ Power done right the first time. ⚡`;
           <span class="recibo-chip ${est.estado === "convertido" ? "insp-paso" : est.estado === "congelado" ? "leido" : "por_leer"}">${esc(est.estado.toUpperCase())}</span>
           <span class="recibo-chip leido">${MODO_ETIQ[est.modo]}</span>
         </div>
-        <div class="alcance-estado">${esc(est.cliente || "")}${est.sqft ? ` · ${esc(est.sqft)} sqft` : ""}</div>
+        <div class="alcance-estado">${esc(est.cliente || "")}${est.contratista_id ? ` · ${esc(tratoTexto(est.contratista_id, est.contratista_modo))}` : ""}${est.sqft ? ` · ${esc(est.sqft)} sqft` : ""}</div>
         <div class="modal-fila" style="margin-top:.6rem">
           <label class="mat-filtro-label">Escenario
             <select id="est-escenario" ${soloLectura ? "disabled" : ""}>
@@ -6655,7 +6742,12 @@ Power done right the first time. ⚡`;
           nombre: est.nombre,
           direccion: est.direccion || "Por confirmar",
           cliente: est.cliente || "Por confirmar",
-          via: "Directo",
+          // El trato y el contacto vienen del estimado (se escribieron una sola vez)
+          via: est.via || "Directo",
+          contratista_id: est.contratista_id || null,
+          contratista_modo: est.contratista_id ? (est.contratista_modo || "referido") : null,
+          cliente_email: est.cliente_email || null,
+          cliente_tel: est.cliente_tel || null,
           estado: "enviado",
           estado_detalle: "Creado desde el Estimador — propuesta por enviar.",
           proxima_accion: "Enviar la propuesta al cliente.",
@@ -7072,9 +7164,12 @@ Power done right the first time. ⚡`;
       || proyectos().find(p => (p.nombre || "").trim() === (est.nombre || "").trim());
     if (proy) {
       propActiva.proyecto_id = proy.id;
-      propActiva.email = proy.cliente_email || "";
-      propActiva.tel = proy.cliente_tel || "";
+      propActiva.email = proy.clienteEmail || proy.cliente_email || "";
+      propActiva.tel = proy.clienteTel || proy.cliente_tel || "";
     }
+    // Lo que el estimado ya sabe del cliente rellena lo que falte
+    if (!propActiva.email && est.cliente_email) propActiva.email = est.cliente_email;
+    if (!propActiva.tel && est.cliente_tel) propActiva.tel = est.cliente_tel;
     pintarPropuesta();
   }
 
@@ -7166,6 +7261,13 @@ Power done right the first time. ⚡`;
 
       <div class="cal-panel-card">
         <div class="lev-lab">La obra y el cliente</div>
+        ${(() => {
+          const proy0 = proyectos().find(x => x.id === p.proyecto_id);
+          const cid = (proy0 && proy0.contratistaId) || p.estimado.contratista_id || "";
+          const modo0 = (proy0 && proy0.contratistaId) ? proy0.contratistaModo : p.estimado.contratista_modo;
+          const t = cid ? tratoTexto(cid, modo0) : "";
+          return `<p class="lev-nota">Trato: <b>${t ? esc(t) : "directo con el cliente"}</b>${p.estimado.cliente ? ` · cliente ${esc(p.estimado.cliente)}` : ""}. ${cid && modo0 === "contrato" ? "El contrato saldrá a nombre del contratista, sin las páginas de dueño de casa." : cid ? "El contratista coordina; el dueño firma y paga." : ""}</p>`;
+        })()}
         <label>¿A qué proyecto pertenece?
           <select id="prop-proyecto">
             <option value="">— elige el proyecto —</option>
@@ -7233,8 +7335,8 @@ Power done right the first time. ⚡`;
       p.proyecto_id = e.target.value || null;
       const proy = proyectos().find(x => x.id === p.proyecto_id);
       if (proy) {
-        if (!p.email) { p.email = proy.cliente_email || ""; }
-        if (!p.tel) { p.tel = proy.cliente_tel || ""; }
+        if (!p.email) { p.email = proy.clienteEmail || proy.cliente_email || ""; }
+        if (!p.tel) { p.tel = proy.clienteTel || proy.cliente_tel || ""; }
         pintarPropuesta();
       }
     });
@@ -7293,6 +7395,13 @@ Power done right the first time. ⚡`;
       const cambios = {};
       if (p.email) cambios.cliente_email = p.email;
       if (p.tel) cambios.cliente_tel = p.tel;
+      // El trato del estimado pasa al proyecto si el proyecto todavía no lo tiene
+      const proyP = proyectos().find(x => x.id === p.proyecto_id);
+      if (proyP && !proyP.contratistaId && p.estimado.contratista_id) {
+        cambios.contratista_id = p.estimado.contratista_id;
+        cambios.contratista_modo = p.estimado.contratista_modo || "referido";
+        cambios.via = p.estimado.via || cambios.via;
+      }
       if (Object.keys(cambios).length) await DB.cambiarProyecto(p.proyecto_id, cambios);
 
       await recargarEstimador();

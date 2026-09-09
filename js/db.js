@@ -352,6 +352,7 @@
         ntoEnviadoEl: p.nto_enviado_el ? String(p.nto_enviado_el).slice(0, 10) : "",
         origen: p.origen || "",
         clienteEmail: p.cliente_email || "",
+        clienteTel: p.cliente_tel || "",
         estado: p.estado,
         fase: p.fase || undefined,
         estadoDetalle: p.estado_detalle || "",

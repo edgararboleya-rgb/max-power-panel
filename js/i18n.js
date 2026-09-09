@@ -195,6 +195,15 @@
     [/ · toca para ver sus reportes$/, " · tap to see their reports"]
   ];
 
+  Object.assign(D, {
+    "¿Con quién es el trato?": "Who is the deal with?", "Cómo es el trato": "Type of deal",
+    "Directo — con el cliente": "Direct — with the client",
+    "Solo referido — el dueño firma y paga": "Referral only — the owner signs and pays",
+    "Contrato con el contratista — le facturamos a él": "Contract with the contractor — we bill them",
+    "Cliente final (dueño de la propiedad)": "End client (property owner)",
+    "Correo del cliente (opcional)": "Client email (optional)", "Teléfono del cliente (opcional)": "Client phone (optional)",
+    "Correo del cliente": "Client email", "Teléfono del cliente": "Client phone"
+  });
   function traducirTexto(t) {
     const limpio = t.trim();
     if (!limpio) return t;

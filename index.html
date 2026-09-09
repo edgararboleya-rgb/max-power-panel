@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-title" content="Max Power">
   <link rel="apple-touch-icon" href="assets/icon-180.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=144">
+  <link rel="stylesheet" href="css/styles.css?v=145">
 </head>
 <body>
 
@@ -271,20 +271,24 @@
           </select>
         </label>
       </div>
-      <label>Cliente
+      <div id="nuevo-trato"></div>
+      <label data-lab-cliente><span>Cliente</span>
         <input name="cliente" type="text" placeholder="Ej: Juan García" autocomplete="off">
       </label>
+      <div class="modal-fila">
+        <label>Correo del cliente
+          <input name="cliente_email" type="email" placeholder="para la propuesta y el portal" autocomplete="off">
+        </label>
+        <label>Teléfono del cliente
+          <input name="cliente_tel" type="tel" placeholder="Ej: (813) 555-0100" autocomplete="off">
+        </label>
+      </div>
       <label>Dirección
         <input name="direccion" type="text" placeholder="Ej: 123 Main St, Tampa, FL" autocomplete="off">
       </label>
-      <div class="modal-fila">
-        <label>Vía / GC
-          <input name="via" type="text" placeholder="Wisdom, CCB, directo…" autocomplete="off">
-        </label>
-        <label>Valor del contrato ($)
-          <input name="contrato" type="text" inputmode="decimal" placeholder="lo pone el alcance" autocomplete="off">
-        </label>
-      </div>
+      <label>Valor del contrato ($)
+        <input name="contrato" type="text" inputmode="decimal" placeholder="lo pone el alcance" autocomplete="off">
+      </label>
       <label>Nº de propuesta / SOW
         <input name="ref" type="text" placeholder="lo pone el alcance" autocomplete="off">
       </label>
@@ -301,12 +305,12 @@
     </form>
   </dialog>
 
-  <script src="assets/logo.js?v=144"></script>
-  <script src="assets/config.js?v=144"></script>
-  <script src="js/db.js?v=144"></script>
-  <script src="js/alcance.js?v=144"></script>
-  <script src="js/app.js?v=144"></script>
-  <script src="js/i18n.js?v=144"></script>
-  <script src="js/iconos.js?v=144"></script>
+  <script src="assets/logo.js?v=145"></script>
+  <script src="assets/config.js?v=145"></script>
+  <script src="js/db.js?v=145"></script>
+  <script src="js/alcance.js?v=145"></script>
+  <script src="js/app.js?v=145"></script>
+  <script src="js/i18n.js?v=145"></script>
+  <script src="js/iconos.js?v=145"></script>
 </body>
 </html>
