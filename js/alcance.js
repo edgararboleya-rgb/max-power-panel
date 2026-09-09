@@ -393,7 +393,13 @@
           if (avisaDinero(i, linea, "el Alcance")) return;
           const esDetalle = /^[-*•]/.test(linea);
           // "2.3 Shed circuit. Furnish and install…"  ·  "### 2.1 Whole-house rewire"  ·  "1. Título"
-          const mSub = linea.match(/^(?:\d+\.)?(\d+)(?:\.\d+)?[.)]?\s+(.+)$/);
+          let mSub = linea.match(/^(?:\d+\.)?(\d+)(?:\.\d+)?[.)]?\s+(.+)$/);
+          // "3 GFCI receptacles at the island" es una cantidad, no el número del renglón. Un número
+          // SIN punto ni paréntesis detrás solo cuenta como numeración si la lista va así desde el
+          // primer renglón (1 Kitchen / 2 Island…); si los demás llevan punto, se queda como texto.
+          const conPunto = /^(?:\d+\.)?\d+(?:\.\d+)?[.)]\s/.test(linea);
+          if (mSub && !conPunto && !(R.items.length === 0 ? Number(mSub[1]) === 1 : R._sinPunto === true)) mSub = null;
+          if (mSub && !esDetalle) R._sinPunto = !conPunto;
           const mn = !esDetalle && (mSub || null);
           const nuevoRenglon = (titulo, resto, escrito) => {
             // "Testing and closeout" ya lo trae la plantilla como último punto: no se duplica
