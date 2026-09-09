@@ -50,7 +50,8 @@
     ignorar:    ["acceptance", "signature", "signatures", "authorization", "permits and inspections", "permit and inspections", "permitting",
                  "inspections", "contractor", "prepared by", "contact", "legal", "insurance", "change orders", "limitations", "disclaimer"],
     condiciones:["condiciones", "clausulas", "interruptores", "conditions", "assumptions", "assumptions and conditions", "clarifications", "assumptions and clarifications"],
-    codigo:     ["codigo", "nec", "code", "applicable code", "applicable codes", "code compliance", "codes", "code references"],
+    codigo:     ["codigo", "nec", "code", "applicable code", "applicable codes", "code compliance", "codes", "code references",
+                 "applicable codes and standards", "codes and standards", "code and standards", "applicable code and standards", "code requirements"],
     notas:      ["notas", "nota", "para mi", "notes", "note", "internal notes"]
   };
   const TITULO_DE = {};
@@ -224,7 +225,7 @@
     const R = {
       datos: {}, hoy: "", cambia: "", falta: "", items: [], no_incluye: [],
       programa: [], pre: [], pre_intro: "", pre_titulo: "", terminos: [], pagos_propios: [],
-      precio: null, pagos: null, opciones: [], condiciones: {}, codigo: [],
+      precio: null, pagos: null, opciones: [], condiciones: {}, codigo: [], codigo_grupos: [], codigo_otros: [],
       notas: "", errores: [], avisos: [], preguntas: [], lineas
     };
     let sec = "datos", itemActual = null, opcionActual = null;
@@ -578,18 +579,40 @@
           break;
         }
         case "codigo": {
-          const rxArt = /articles?\s+((?:\d{3}(?:\.\d+(?:\([A-Za-z0-9]\))*)?(?:\s*,\s*|\s+and\s+|\s*&\s*)?)+)/gi;
+          // La sección Código puede venir de tres maneras y las tres se leen sin frenar:
+          //   una lista        210.8, 210.12, 406.4(D)
+          //   con su código    "NEC 210.8(A)(3), 210.52(C)" · "Articles 110 (…), 210 and 250" · "NFPA 70 Article 100"
+          //   agrupada por tema  "General and distribution" / "Floodplain" (título corto) y debajo los artículos
+          // Otros códigos (Florida Building Code, Statutes, ASCE, IRC…) son prosa: se guardan aparte y la
+          // plantilla ya trae la frase general. Nada de esto es un error rojo: como mucho, un aviso perdonable.
+          const ART = "\\d{3}(?:\\.\\d+)?(?:\\([A-Za-z0-9]+\\))*";
+          const agregar = a => { if (a && !R.codigo.includes(a)) R.codigo.push(a); };
+          const articulosDe = txt => (txt.match(/\d+(?:\.\d+)?(?:\([A-Za-z0-9]+\))*/g) || [])
+            .filter(t => /^\d{3}(?:\D|$)/.test(t));               // tres cifras enteras: 210, 250.24(C); no 2023 ni 70
+          const rxArt = new RegExp("articles?\\s+((?:" + ART + "(?:\\s*\\([^)]*\\))?(?:\\s*,\\s*|\\s+and\\s+|\\s*&\\s*)?)+)", "gi");
           let mArt, hayArt = false;
-          while ((mArt = rxArt.exec(linea))) { hayArt = true; (mArt[1].match(/\d{3}(?:\.\d+(?:\([A-Za-z0-9]\))*)?/g) || []).forEach(a => { if (!R.codigo.includes(a)) R.codigo.push(a); }); }
+          while ((mArt = rxArt.exec(linea))) { hayArt = true; (mArt[1].match(new RegExp(ART, "g")) || []).forEach(agregar); }
+          // "NEC 210.8(A)(3), 210.52(C)(1) and 406.4(D)" — con el nombre del código delante
+          if (/\b(nec|nfpa\s*70)\b/i.test(linea)) { const arts = articulosDe(linea.replace(/\b(nfpa\s*70|20\d\d)\b/gi, " ")); if (arts.length) { hayArt = true; arts.forEach(agregar); } else break; }
           if (hayArt) break;
-          if (/\b(nec|nfpa|florida building code|statutes?|chapter)\b/i.test(linea) && !/^\d{3}/.test(linea)) break;   // prosa del código: la plantilla ya la trae
-          linea.split(/[,;]/).forEach(a => { const v = a.trim();
-            if (!v) return;
-            const suelto = v.match(/^(?:art(?:[ií]culo|icle|\.)?\s*)?(\d{3}(?:\.\d+(?:\([A-Za-z0-9]\))*)?)\s*(?:\(.*\))?$/i);
-            if (suelto) R.codigo.push(suelto[1]);
-            else if (/^\d{3}(\.\d+([A-Za-z()0-9]*)?)?$/.test(v)) R.codigo.push(v);
-            else err(i, `"${v}" no tiene forma de artículo. Escribe 210, 210.8 o 406.4(D).`,
-                     { arreglos: [{ tipo: "quitar_trozo", etiqueta: `Quitar "${v}"`, linea: i + 1, valor: v, auto: true }] }); });
+          // otros códigos y la prosa general: se guardan aparte, no son artículos del NEC
+          if (/\b(florida building code|fbc|building code|statutes?|chapter|asce|irc|iecc|osha|ieee|ul\s*\d|edition|as adopted|jurisdiction|ahj)\b/i.test(linea) || /\bnfpa\s*(?!70\b)\d+/i.test(linea)) {
+            R.codigo_otros.push(linea.replace(/^[-*•]\s*/, "")); break;
+          }
+          // una lista suelta: 210.8, 210.12, art 250, 406.4(D)
+          const trozos = linea.replace(/^[-*•]\s*/, "").split(/[,;]/).map(t => t.trim()).filter(Boolean);
+          const sueltos = trozos.map(v => v.match(/^(?:art(?:[ií]culo|icle|\.)?\s*)?(\d{3}(?:\.\d+)?(?:\([A-Za-z0-9]+\))*)\s*(?:\(.*\))?$/i));
+          if (sueltos.some(Boolean)) {
+            sueltos.forEach((m, k) => { if (m) agregar(m[1]);
+              else if (!estaPerdonada(trozos[k])) R.avisos.push({ linea: i + 1, perdonable: true, texto: `En Código no entendí «${trozos[k].slice(0, 45)}» como artículo; lo dejo fuera.`,
+                                       arreglos: [{ tipo: "quitar_trozo", etiqueta: `Quitar "${trozos[k].slice(0, 30)}"`, linea: i + 1, valor: trozos[k] }] }); });
+            break;
+          }
+          // un título corto sin números agrupa los artículos de abajo ("General and distribution", "Floodplain")
+          const limpio = linea.replace(/^[-*•]\s*/, "").replace(/^#+\s*/, "").replace(/[:.]$/, "").trim();
+          if (!/\d/.test(limpio)) { if (limpio.length <= 60) R.codigo_grupos.push(limpio); else R.codigo_otros.push(limpio); break; }
+          if (!estaPerdonada(linea)) R.avisos.push({ linea: i + 1, perdonable: true, texto: `En Código no entendí «${limpio.slice(0, 45)}» como artículo; lo dejo fuera.`,
+                                                    arreglos: [{ tipo: "quitar_linea", etiqueta: "Quitar esta línea", linea: i + 1 }] });
           break;
         }
       }
