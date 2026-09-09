@@ -88,6 +88,11 @@
     email:              ["email", "e-mail", "correo", "client email", "customer email", "mail"],
     telefono:           ["telefono", "tel", "phone", "cell", "celular", "mobile", "client phone", "customer phone"],
     dueno:              ["dueno de la casa", "dueno", "homeowner", "propietario"],
+    // v3.5: el contratista general con el que se contrata (el «Contractor» de la plantilla es Max Power: se ignora)
+    contratista:        ["general contractor", "gc", "contractor", "contratista", "contratista general", "subcontract to", "contractor name"],
+    // v3.5: el número que trae la hoja manda (antes se ignoraba y la app inventaba otro)
+    numero_propuesta:   ["proposal #", "proposal no", "proposal number", "proposal no.", "document no", "document no.", "document number",
+                         "numero de propuesta", "propuesta no", "propuesta #", "sow no", "sow #", "reference no", "ref no"],
     // v3.2: quién contrata y qué clase de propiedad es. Deciden si el contrato lleva
     // las páginas de consumidor (aviso de gravámenes y derecho a cancelar en 3 días).
     contrato_con:       ["contrato con", "contract with", "contracting party"],
@@ -104,7 +109,7 @@
     vence:              ["vence", "vigencia", "vale", "valid", "expires", "valid for", "valid through", "valid until", "proposal valid", "expiration", "expiration date", "offer valid"]
   };
   // Datos de la cabecera del chat que no hacen falta (la plantilla los pone sola)
-  const CLAVES_IGNORAR = ["prepared by", "preparado por", "proposal", "proposal no", "proposal number", "proposal #", "date", "proposal date",
+  const CLAVES_IGNORAR = ["prepared by", "preparado por", "proposal", "date", "proposal date",
                           "license", "licencia", "contractor", "company", "field", "value", "item",
                           "description", "milestone", "amount", "trigger", "no", "#", "rev", "revision", "version", "page"];
   // Líneas del membrete del chat: se saltan sin decir nada
@@ -225,7 +230,7 @@
     const R = {
       datos: {}, hoy: "", cambia: "", falta: "", items: [], no_incluye: [],
       programa: [], pre: [], pre_intro: "", pre_titulo: "", terminos: [], pagos_propios: [],
-      precio: null, pagos: null, opciones: [], condiciones: {}, codigo: [], codigo_grupos: [], codigo_otros: [],
+      precio: null, pagos: null, opciones: [], condiciones: {}, codigo: [], codigo_grupos: [], codigo_otros: [], codigo_detalle: [],
       notas: "", errores: [], avisos: [], preguntas: [], lineas
     };
     let sec = "datos", itemActual = null, opcionActual = null;
@@ -241,6 +246,8 @@
       let m;
       if ((m = linea.match(/pricing assumes\s+(.+?)\s+when max power mobilizes/i))) C_set("listo_rough", m[1], i);
       else if ((m = linea.match(/performed in\s+\S+\s*(?:\(\d+\))?\s*phases?, and one \(1\) mobilization is included for each:\s*(.+?)\.\s/i))) C_set("fases", partirFases(m[1]).join(" / "), i);
+      // cualquier otra forma de decir las movilizaciones: "…three (3) phases/mobilizations: (1) …; (2) …; and (3) …"
+      else if ((m = linea.match(/\b(?:phases?|mobilizations?)\b[^:]{0,80}:\s*(.+?)\.?\s*$/i)) && /\(\d\)|;|\band\b/.test(m[1]) && partirFases(m[1]).length >= 2) C_set("fases", partirFases(m[1]).join(" / "), i);
       else if ((m = linea.match(/pricing assumes\s+(.+?)\s+(?:are|is) accessible/i))) C_set("acceso", m[1], i);
       else if ((m = linea.match(/(?:section 2\.(\d+)[^.]*?)?leaves openings in the existing\s+(.+?)\./i))) C_set("abrir", m[2] + (m[1] ? ", renglón " + m[1] : ""), i);
       // "Owner Signature — Lee G. Borders Jr." → el segundo firmante
@@ -363,7 +370,17 @@
                                         : [{ tipo: "quitar_linea", etiqueta: "Quitar esta línea", linea: i + 1, auto: true }] });
             return; }
           const k = buscaClave(CLAVES_DATOS, nombre);
-          if (k) { R.datos[k] = k === "ciudad" ? valor.replace(/,?\s*(?:FL|Florida)\.?(\s*\([^)]*\))?\s*$/i, "$1").replace(/\s{2,}/g, " ").trim() : valor; }
+          if (k) {
+            let v = valor;
+            if (k === "ciudad") {
+              // "Pinellas County, Florida — permit held by General Contractor" → la ciudad limpia y el permiso lo saca el GC
+              const mPerm = v.match(/\s*[—–\-(,;]*\s*(?:the\s+)?(?:electrical\s+|building\s+)?permit\b[^)]*?(?:held|pulled|obtained|secured|issued|applied)\s+(?:by|to|under)\s+[^)]*$/i);
+              if (mPerm) { const nota = v.slice(mPerm.index); v = v.slice(0, mPerm.index); if (!R.datos.permiso) R.datos.permiso = /max power|us\b|contractor max/i.test(nota) && !/general contractor|\bgc\b/i.test(nota) ? "nosotros" : "GC"; }
+              v = v.replace(/,?\s*(?:FL|Florida)\.?(\s*\([^)]*\))?\s*$/i, "$1").replace(/[\s,;—–-]+$/, "").replace(/\s{2,}/g, " ").trim();
+            }
+            if (k === "contratista" && /max power|arboleya|EC13016045/i.test(v)) v = "";
+            if (v) R.datos[k] = v;
+          }
           else { const s = sugerir(CLAVES_DATOS, mNV[1]);
                  if (estaPerdonada(linea)) break;
                  R.avisos.push({ linea: i + 1, perdonable: true, texto: s ? `No conozco "${mNV[1].trim()}". ¿Querías decir "${s}"?`
@@ -554,11 +571,16 @@
           pescar(linea, i);
           const dest = R[sec];
           const mp = linea.match(/^(\d+(?:\.\d+)?)[.)]?\s+(.+)$/);
+          let mt;
           if (mp && (/\./.test(mp[1]) || esTitulo)) {
             const cuerpo = mp[2].trim();
             const corte = cuerpo.match(/^(.{3,90}?)(?:\.\s+|:\s+)(.+)$/);
             dest.push({ n: mp[1], titulo: (corte ? corte[1] : cuerpo).replace(/[.:]$/, "").trim(),
                         texto: corte ? corte[2].trim() : "", linea: i + 1 });
+          } else if (!/^[-*•]/.test(linea) && (sec !== "pre" || dest.length)
+                     && (mt = linea.match(/^(?!(?:this|the|all|no|any|a|an|if|should|it|max power|contractor|client|owner|pricing|work)\b)([A-Z][^.:]{2,40}?)[.:]\s+(.{20,})$/i))) {
+            // "Sequence: demo → underground → …" sin número: es un párrafo propio, no se bota
+            dest.push({ n: "", titulo: mt[1].trim(), texto: mt[2].trim(), linea: i + 1 });
           } else if (dest.length) {
             dest[dest.length - 1].texto = (dest[dest.length - 1].texto + " " + linea.replace(/^[-*•]\s*/, "")).trim();
           } else if (sec === "pre") {
@@ -586,18 +608,26 @@
           // Otros códigos (Florida Building Code, Statutes, ASCE, IRC…) son prosa: se guardan aparte y la
           // plantilla ya trae la frase general. Nada de esto es un error rojo: como mucho, un aviso perdonable.
           const ART = "\\d{3}(?:\\.\\d+)?(?:\\([A-Za-z0-9]+\\))*";
-          const agregar = a => { if (a && !R.codigo.includes(a)) R.codigo.push(a); };
+          // el grupo en el que estamos (título corto de arriba); sin título, un grupo sin nombre
+          const grupoActual = () => { if (!R._codGrupo) { R._codGrupo = { grupo: "", articulos: [], otros: [] }; R.codigo_detalle.push(R._codGrupo); } return R._codGrupo; };
+          const agregar = a => { if (!a) return; if (!R.codigo.includes(a)) R.codigo.push(a); const g = grupoActual(); if (!g.articulos.includes(a)) g.articulos.push(a); };
           const articulosDe = txt => (txt.match(/\d+(?:\.\d+)?(?:\([A-Za-z0-9]+\))*/g) || [])
             .filter(t => /^\d{3}(?:\D|$)/.test(t));               // tres cifras enteras: 210, 250.24(C); no 2023 ni 70
           const rxArt = new RegExp("articles?\\s+((?:" + ART + "(?:\\s*\\([^)]*\\))?(?:\\s*,\\s*|\\s+and\\s+|\\s*&\\s*)?)+)", "gi");
           let mArt, hayArt = false;
           while ((mArt = rxArt.exec(linea))) { hayArt = true; (mArt[1].match(new RegExp(ART, "g")) || []).forEach(agregar); }
           // "NEC 210.8(A)(3), 210.52(C)(1) and 406.4(D)" — con el nombre del código delante
-          if (/\b(nec|nfpa\s*70)\b/i.test(linea)) { const arts = articulosDe(linea.replace(/\b(nfpa\s*70|20\d\d)\b/gi, " ")); if (arts.length) { hayArt = true; arts.forEach(agregar); } else break; }
+          if (/\b(nec|nfpa\s*70)\b/i.test(linea)) {
+            const arts = articulosDe(linea.replace(/\b(nfpa\s*70|20\d\d)\b/gi, " "));
+            if (!arts.length && /all work|in accordance with|as adopted|performed under/i.test(linea)) break;   // la frase general: la plantilla ya la trae
+            const esNota = linea.replace(/^[-*•]\s*/, "").length > 90 || /\bnote\b|assum|limits|requires|this proposal/i.test(linea);
+            if (esNota) { const otro = linea.replace(/^[-*•]\s*/, ""); R.codigo_otros.push(otro); grupoActual().otros.push(otro); arts.forEach(a => { if (!R.codigo.includes(a)) R.codigo.push(a); }); break; }
+            if (arts.length) { hayArt = true; arts.forEach(agregar); } else break;
+          }
           if (hayArt) break;
           // otros códigos y la prosa general: se guardan aparte, no son artículos del NEC
           if (/\b(florida building code|fbc|building code|statutes?|chapter|asce|irc|iecc|osha|ieee|ul\s*\d|edition|as adopted|jurisdiction|ahj)\b/i.test(linea) || /\bnfpa\s*(?!70\b)\d+/i.test(linea)) {
-            R.codigo_otros.push(linea.replace(/^[-*•]\s*/, "")); break;
+            const otro = linea.replace(/^[-*•]\s*/, ""); R.codigo_otros.push(otro); grupoActual().otros.push(otro); break;
           }
           // una lista suelta: 210.8, 210.12, art 250, 406.4(D)
           const trozos = linea.replace(/^[-*•]\s*/, "").split(/[,;]/).map(t => t.trim()).filter(Boolean);
@@ -610,7 +640,12 @@
           }
           // un título corto sin números agrupa los artículos de abajo ("General and distribution", "Floodplain")
           const limpio = linea.replace(/^[-*•]\s*/, "").replace(/^#+\s*/, "").replace(/[:.]$/, "").trim();
-          if (!/\d/.test(limpio)) { if (limpio.length <= 60) R.codigo_grupos.push(limpio); else R.codigo_otros.push(limpio); break; }
+          if (!/\d/.test(limpio)) {
+            if (limpio.length <= 60) { R.codigo_grupos.push(limpio); R._codGrupo = { grupo: limpio, articulos: [], otros: [] }; R.codigo_detalle.push(R._codGrupo); }
+            else { R.codigo_otros.push(limpio); grupoActual().otros.push(limpio); }
+            break;
+          }
+          if (limpio.length > 60) { R.codigo_otros.push(limpio); grupoActual().otros.push(limpio); break; }   // una nota larga: es prosa del código, va tal cual
           if (!estaPerdonada(linea)) R.avisos.push({ linea: i + 1, perdonable: true, texto: `En Código no entendí «${limpio.slice(0, 45)}» como artículo; lo dejo fuera.`,
                                                     arreglos: [{ tipo: "quitar_linea", etiqueta: "Quitar esta línea", linea: i + 1 }] });
           break;
@@ -666,6 +701,7 @@
   // trabajo (van al contrato tal cual, renumeradas).
   const PLANTILLA_9 = [
     [/workmanship|warrant/i, "garantia"], [/existing and concealed|concealed condition/i, "existentes"],
+    [/code upgrades?|ahj requirement/i, "ahj_upgrades"],
     [/existing circuits|site condition/i, "sitio"], [/code edition/i, "edicion"],
     [/change orders?|entire agreement/i, "cambios"], [/limitation of liability/i, "limite"],
     [/insurance/i, "seguro"], [/deposit|start of work/i, "deposito"], [/cancellation/i, "cancelacion"],
@@ -705,6 +741,8 @@
     // Los números ya traducidos se marcan (\u0001) para que la pasada siguiente no los vuelva a traducir
     const marca = r => r.map(x => "\u0001" + x + "\u0001");
     const frase = r => `See Section${r.length > 1 ? "s" : ""} ${unir(marca(r))}`;
+    // 0) "(see 3.2)" a secas: la numeración propia de la hoja → la del contrato
+    t = t.replace(/\s*\(\s*see\s+(\d+\.\d+)\s*\)/gi, (m, g) => { const r = resolver(g); return r ? " (see Section " + unir(marca(r)) + ")" : ""; });
     // 1) frases enteras que remiten: "(see Section 9.5)" · "— see Sections 8 and 9.3" · "See Section 9.9 regarding sealed plans."
     t = t.replace(new RegExp("\\s*\\(\\s*see\\s+sections?\\s+" + NUMS + "\\s*\\)", "gi"),
       (m, g) => { const r = resolver(g); return r ? " (" + frase(r).replace(/^See/, "see") + ")" : ""; });
@@ -751,8 +789,21 @@
 
 
 
+    // v3.5: con contratista, en el papel el cliente es el contratista y la persona pasa a dueño
+    const gcN = String(D.contratista || D.gc_nombre || "").trim();
+    if (gcN && D.cliente && norma(D.cliente) !== norma(gcN) && !norma(D.cliente).includes(norma(gcN).split(" ")[0]))
+      L.avisos.push({ informativo: true, texto: `Contrato con ${gcN}: en el papel el cliente es ${gcN} (paga y firma) y ${D.cliente} queda como dueño de la propiedad (Homeowner).` });
+    // v3.5: una fase bajo tierra semanas antes del rough-in y el segundo pago al terminar el rough-in: es dinero en la calle
+    {
+      const fases = partirFases(((L.condiciones || {}).fases || {}).valor || "");
+      const txtA = norma(L.items.map(it => it.titulo + " " + it.detalles.join(" ")).join(" "));
+      const disp = ((L.pagos || {}).disparadores || []).map(x => norma(x || ""));
+      const temprana = fases.some(f => /underground|bonding|trench|slab/i.test(f)) || /\b(underground|bonding grid|equipotential|trench)\b/.test(txtA);
+      if (temprana && disp.length >= 2 && /rough/.test(disp[1] || "") && !disp.some(x => /bonding|underground|trench|slab/.test(x)))
+        L.avisos.push({ informativo: true, texto: "Ojo con el dinero: hay una fase bajo tierra / bonding semanas antes del rough-in y el pago 2 es «al terminar el rough-in». Considera un hito al aprobar la inspección de bonding (por ejemplo 40 / 30 / 20 / 10). Lo decides tú en Pagos; el papel sale como lo escribas." });
+    }
     // contrato con el contratista sin el nombre del dueño: no frena; firma solo el contratista
-    if (norma(D.contrato_con || "") === "gc" && !D.dueno && !L.avisos.some(a => /Homeowner/.test(a.texto)))
+    if ((norma(D.contrato_con || "") === "gc" || gcN) && !D.dueno && !(gcN && D.cliente && norma(D.cliente) !== norma(gcN)) && !L.avisos.some(a => /Homeowner/.test(a.texto)))
       L.avisos.push({ informativo: true, texto: "Contrato con el contratista y sin el nombre del dueño de la propiedad: firma solo el contratista. Si quieres también la firma del dueño, escribe «Homeowner: nombre» en la hoja." });
     // dos firmantes
     if (D.cliente && !D.segundo_firmante && /\s(y|&|and)\s/i.test(D.cliente))
@@ -820,7 +871,8 @@
     // el Alcance habla de panel y la exclusión sigue puesta
     const noExcluir = norma((C.no_excluir || {}).valor || "");
     const textoAlcance = norma(L.items.map(i => i.titulo + " " + i.detalles.join(" ")).join(" "));
-    [["panel", "panel"], ["afci", "afci"]].forEach(([palabra, clave]) => {
+    // (el panel ya no se pregunta: si el alcance habla de panel, la exclusión se apaga sola desde la v3.4)
+    [["afci", "afci"]].forEach(([palabra, clave]) => {
       if (textoAlcance.includes(palabra) && !noExcluir.includes(clave))
         preguntas.push({ clave: "no_excluir_" + clave,
           texto: `Tu alcance habla de ${palabra} y la sección 3 lo sigue excluyendo. ¿Quito esa exclusión?`,
@@ -1059,6 +1111,15 @@
     if (/\b(cliente|client|gc|owner|dueno|contratista)\b/.test(n) && !/max power|nosotros/.test(n)) return "cliente";
     return "nosotros";
   }
+  // v3.5: si la hoja no dice «Permiso:», se lee de lo que sí dice (jurisdicción, exclusiones, cronograma)
+  function inferirPermiso(L, esGC) {
+    const d = L.datos || {};
+    if (d.permiso) return leerPermiso(d.permiso);
+    const txt = norma([d.ciudad || "", ...(L.no_incluye || []).map(x => x.texto), ...(L.programa || []).map(t => t.titulo + " " + t.texto), L.hoy || ""].join(" "));
+    if (/permit[^.]{0,60}(held|pulled|obtained|secured|issued|applied)\s+(by|to|under)\s+(the\s+)?(general contractor|gc|client|owner|others)|under\s+(the\s+)?(general\s+)?(contractor|gc)\s*.?s\s+(building\s+|master\s+)?permit|(general contractor|gc)\s*.?s\s+(building\s+|master\s+|electrical\s+)?permit|permit[^.]{0,30}by the (general contractor|gc|client|owner)/.test(txt)) return "cliente";
+    if (/no permit (is )?(required|needed)|does not require a permit|permit not required/.test(txt)) return "ninguno";
+    return "nosotros";
+  }
   const leerFirma = v => !/^(no|sin firma|alcance|ligero|scope of work)$/.test(norma(v || "si")) && !/^no\b/.test(norma(v || "si"));
   function leerVence(v, hoy) {
     const s = String(v || "").trim();
@@ -1082,7 +1143,14 @@
     // Es un subcontrato con un contratista cuando la hoja trae un dueño de la
     // propiedad distinto del cliente, o cuando la app dice que el contrato es
     // con la empresa (proyectos.contratista_modo = 'contrato').
-    const esGC = hay(d.dueno) || norma(d.contrato_con || "") === "gc";
+    // v3.5: también cuando la hoja (o la app, gc_nombre) dice con qué contratista se contrata
+    const gcNombre = String(d.contratista || d.gc_nombre || "").trim();
+    const esGC = hay(d.dueno) || norma(d.contrato_con || "") === "gc" || hay(gcNombre);
+    // Con contratista: el cliente del contrato es el contratista; la persona que la hoja llama «Client»
+    // (si no es el contratista) es el dueño de la propiedad.
+    const duenoEfectivo = hay(d.dueno) ? d.dueno
+      : (esGC && hay(gcNombre) && hay(d.cliente) && norma(d.cliente) !== norma(gcNombre) && !norma(d.cliente).includes(norma(gcNombre).split(" ")[0]) ? d.cliente : "");
+    const clienteEfectivo = esGC && hay(gcNombre) ? gcNombre : (d.cliente || "");
     // Propiedad comercial: la 9.16 del depósito (F.S. 489.126) mira la propiedad,
     // no quién paga. Si la hoja no dice nada, se trata como residencial: dejar la
     // cláusula de más nunca hace daño; quitarla cuando tocaba, sí.
@@ -1093,16 +1161,21 @@
     //   · 489.126 (9.16 del depósito) habla de propiedad RESIDENCIAL.
     const esComercial = /comercial|commercial/.test(norma(d.propiedad || d.property || ""));
     const esConsumidor = !esGC && !esComercial;
-    const permiso = leerPermiso(d.permiso);   // regla de la casa: vacío = nosotros
+    const permiso = inferirPermiso(L, esGC);   // regla de la casa: si nadie dice nada, lo sacamos nosotros
     const noExcluir = norma((C.no_excluir || {}).valor || "");
     // v3.4: el contrato se ajusta a lo que DICE el alcance, no a una cocina genérica.
     const textoAlcance = norma([d.proyecto || "", ...L.items.map(it => it.titulo + " " + it.detalles.join(" "))].join(" "));
     const textoExcl = norma((L.no_incluye || []).map(x => x.texto).join(" "));
-    const hayPanel = /\b(panel|panelboard|load center|service entrance|service equipment|main breaker|main disconnect|meter)\b/.test(textoAlcance);
+    const hayPanel = /\b(panel|panelboard|sub-?panel|load center|service entrance|service equipment|main breaker|main disconnect|meter)\b/.test(textoAlcance);
     // Interior de una casa (cocina, cuartos, ático…) contra servicio exterior (poste, pozo, bomba…).
     // "control cabinet" no es "cabinet lighting": las palabras se miran con cuidado.
-    const interior = /\b(kitchen|bath|bathroom|bedrooms?|living room|family room|dining|closet|garage|laundry|hallway|recessed|drywall|attic|crawl space|under-cabinet|cabinet lighting|kitchen cabinets?|island)\b/.test(textoAlcance);
-    const exterior = /\b(pole|service entrance|well|pump|irrigation|parking lot|site lighting|transformer|feeder|wellhead)\b/.test(textoAlcance);
+    // v3.5: una cocina EXTERIOR (outdoor kitchen, pavilion, lanai, pool deck) no es el interior de una casa:
+    // sin gabinetes, sin drywall, sin ático. Solo cuenta como interior si además hay cuartos de verdad.
+    const venueExterior = /\b(outdoor kitchen|summer kitchen|pavilion|lanai|patio|pool deck|pool shell|pool equipment|dock|pergola|gazebo|screen enclosure)\b/.test(textoAlcance);
+    const interiorFuerte = /\b(bath|bathroom|bedrooms?|living room|family room|dining room|closet|garage|laundry|hallway|attic|crawl space)\b/.test(textoAlcance);
+    const interiorSuave = /\b(kitchen|dining|recessed|drywall|under-cabinet|cabinet lighting|kitchen cabinets?|island)\b/.test(textoAlcance);
+    const interior = interiorFuerte || (interiorSuave && !venueExterior);
+    const exterior = venueExterior || /\b(pole|service entrance|well|pump|irrigation|parking lot|site lighting|transformer|feeder|wellhead|underground|trench)\b/.test(textoAlcance);
     const exteriorServicio = exterior && !interior;
     const residencialInterior = !esComercial && interior;
     const yaExcluye = re => re.test(textoExcl);
@@ -1110,6 +1183,14 @@
     const hayCierre = L.items.some(it => /^(testing|startup|closeout|commissioning)\b|\b(closeout|close-out|commissioning)\b/i.test(it.titulo));
     const propio = clasificarPropias(L);
     const preProprio = propio.pre.length > 0;
+    // v3.5: las fases (movilizaciones) — las de la hoja; si no las dice, se deducen del alcance:
+    // trabajo bajo tierra / bonding antes de la losa = una salida aparte antes del rough-in
+    const fasesHoja = partirFases((C.fases || {}).valor || "");
+    const hayBajoTierra = /\b(underground|trench|trenching|bonding grid|equipotential|under the slab|slab|pool)\b/.test(textoAlcance);
+    const fases = fasesHoja.length ? fasesHoja : (hayBajoTierra ? ["underground raceways and bonding", "rough-in", "trim-out"] : []);
+    const fasesDeducidas = !fasesHoja.length && fases.length > 0;
+    // v3.5: la sección 4 por grupos (como la trae la hoja) o la línea genérica
+    const codigoPropio = (L.codigo_detalle || []).some(g => g.grupo || g.otros.length);
     const layout = !preProprio && norma(d.layout || "si") !== "no";
 
     const bloques = {
@@ -1136,7 +1217,8 @@
       SIN_ITEM_PERMISO: !hayItemPermiso,    // el bullet del permiso en §3 sobra si el permiso ya es un renglón del §2
       // Segunda firma: dos dueños en la escritura, o el dueño debajo del contratista (solo si se sabe su nombre;
       // sin nombre no se deja una línea con hueco: firma solo el contratista)
-      CLIENT_2: hay(d.segundo_firmante) || (esGC && hay(d.dueno)),
+      CLIENT_2: hay(d.segundo_firmante) || (esGC && hay(duenoEfectivo)),
+      CODIGO_PROPIO: codigoPropio, CODIGO_GENERICO: !codigoPropio,
       // Exclusiones: solo las que tienen sentido en ESTE trabajo
       EXCL_PANEL: !noExcluir.includes("panel") && !hayPanel,
       EXCL_AFCI: !noExcluir.includes("afci") && !esComercial,
@@ -1151,6 +1233,9 @@
     const clausulas = {
       garantia: true, existentes: true, sitio: true, edicion: true,
       cambios: true, limite: true, seguro: true,
+      // v3.5 (regla de Edgar del 2-sep): las correcciones al sistema EXISTENTE que pida el inspector
+      // no van incluidas, y si el cliente no las autoriza, la aprobación final queda en suspenso
+      ahj_upgrades: true,
       cancelacion_tardia: esConsumidor,   // habla de los tres días del consumidor
       cancelacion_gc: !esConsumidor,      // la misma política, sin los tres días (GC o propiedad comercial)
       retainage: esGC,
@@ -1192,7 +1277,8 @@
     };
     motivos.propias = "porque la hoja trae condiciones propias de este trabajo: " + propio.propias.map(p => p.titulo).join(" · ");
     return { bloques, clausulas, motivos, permiso, esGC, esComercial, esConsumidor, conFirma,
-             perfil: { hayPanel, interior, exteriorServicio, residencialInterior }, propio };
+             perfil: { hayPanel, interior, exteriorServicio, residencialInterior, venueExterior }, propio,
+             gcNombre, clienteEfectivo, duenoEfectivo, permiso, fases, fasesDeducidas };
   }
 
   // =============================================== EL ENCARGO PARA EL ASISTENTE
@@ -1264,9 +1350,14 @@
                                   descripcion: con(it.detalles.map(frase).join(" ") || frase(it.titulo), it.lineas[0]) })),
       no_incluye: L.no_incluye.map(x => {
         if (x.titulo) return { titulo: con(limpia(x.titulo), x.linea), texto: con(x.cuerpo ? frase(x.cuerpo.charAt(0).toUpperCase() + x.cuerpo.slice(1)) : "", x.linea) || { en: "", de: [x.linea] } };
-        const m = x.texto.match(/^([^:.]{3,60})[:.]\s+(.+)$/);
-        return { titulo: con(limpia(m ? m[1] : x.texto.split(/\s+/).slice(0, 6).join(" ").replace(/[,;]$/, "")), x.linea),
-                 texto: con(m ? frase(m[2].charAt(0).toUpperCase() + m[2].slice(1)) : frase(x.texto), x.linea) };
+        // "Título. texto" · "Título: texto" · "Título — texto"; si no hay corte natural, la frase entera es el
+        // título (sin repetirla como texto); solo si es muy larga se parte en las primeras palabras y EL RESTO
+        const m = x.texto.match(/^([^:.]{3,60})[:.]\s+(.+)$/) || x.texto.match(/^(.{3,70}?)\s+[—–]\s+(.+)$/);
+        const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+        if (m) return { titulo: con(limpia(m[1]), x.linea), texto: con(frase(cap(m[2])), x.linea) };
+        if (x.texto.length <= 90) return { titulo: con(limpia(x.texto.replace(/[.;]$/, "")), x.linea), texto: { en: "", de: [x.linea] } };
+        const pal = x.texto.split(/\s+/);
+        return { titulo: con(limpia(pal.slice(0, 6).join(" ").replace(/[,;]$/, "")), x.linea), texto: con(frase(cap(pal.slice(6).join(" "))), x.linea) };
       }),
       opciones: L.opciones.map(o => ({ titulo: con(o.titulo, o.linea), descripcion: con(o.detalles.map(frase).join(" "), o.linea) })),
       resumen_corrido: con(lista(titulos.map(minus)), 0),
@@ -1367,7 +1458,7 @@
     return html;
   }
 
-  const ORDEN_9 = ["garantia","existentes","panel_sin_fotos","afci","sitio","reuso_240","reubicar",
+  const ORDEN_9 = ["garantia","existentes","ahj_upgrades","panel_sin_fotos","afci","sitio","reuso_240","reubicar",
                    "isla","edicion","aberturas","fixtures_cliente","fixtures_mxp","subsuelo",
                    "planos_permiso","propias","cambios","retainage","nto_releases","limite","seguro",
                    "deposito","cancelacion_tardia","cancelacion_gc"];
@@ -1386,7 +1477,10 @@
   }
 
   function aplicarClausulas(html, clausulas, nPropias) {
-    const numero = numerarClausulas(clausulas, nPropias);
+    // solo se numeran las cláusulas que ESTA plantilla trae: una plantilla vieja no deja saltos
+    const enPlantilla = new Set((html.match(/<!--@clausula ([a-z_0-9]+)-->/g) || []).map(m => m.replace(/<!--@clausula |-->/g, "")));
+    const presentes = {}; Object.keys(clausulas || {}).forEach(k => { presentes[k] = clausulas[k] && (enPlantilla.has(k) || k === "propias"); });
+    const numero = numerarClausulas(presentes, nPropias);
     let b, guarda = 0;
     while ((b = bloque(html, "clausula")) && guarda++ < 200) {
       const vive = !!clausulas[b.nombre];
@@ -1428,6 +1522,7 @@
     h = repetirFila(h, "PARRAFO_7", datos.programa || []);
     h = repetirFila(h, "PARRAFO_8", datos.pre || []);
     h = repetirFila(h, "PARRAFO_6", datos.pagos || []);
+    h = repetirFila(h, "CODIGO_GRUPO", datos.codigo_grupos || []);
     const r = aplicarClausulas(h, datos.clausulas, (datos.propias || []).length);
     h = r.html;
     Object.entries(datos.huecos || {}).forEach(([k, v]) => {
@@ -1475,8 +1570,11 @@
     const fechaLarga = f => f.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
     const vence = new Date(hoy.getTime());
     vence.setDate(vence.getDate() + leerVence(d.vence, hoy));
-    const nombreCorto = String(admin.proyecto_id || d.cliente || "SOW")
-      .toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
+    // v3.5: el número de propuesta que trae la hoja manda; si no, el nombre corto sale del proyecto
+    // sin el prefijo MXP-AAAA-MMDD- ni la cola aleatoria (antes salía «MXP20260909W»)
+    const mNum = String(d.numero_propuesta || "").trim().match(/^MXP-(\d{4})-(\d{4})-([A-Z0-9][A-Z0-9-]*)$/i);
+    const baseCorto = String(admin.proyecto_id || "").replace(/^mxp-\d{4}-\d{4}-/i, "").replace(/-[a-z0-9]{4}$/i, "") || d.cliente || "SOW";
+    const nombreCorto = mNum ? mNum[3].toUpperCase() : baseCorto.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
 
     // el renglón al que apunta cada cláusula
     const renglon = clave => {
@@ -1504,17 +1602,20 @@
 
     const nHitos = cta.hitos.length;
     // v3.4: las fases tal como las diga la hoja ("(1) …; and (2) …") o Edgar ("rough / trim")
-    const fases = partirFases((S.lista_de_fases && S.lista_de_fases.en) || (C.fases || {}).valor || "");
+    const fases = partirFases((S.lista_de_fases && S.lista_de_fases.en) || (C.fases || {}).valor || "").length
+      ? partirFases((S.lista_de_fases && S.lista_de_fases.en) || (C.fases || {}).valor || "") : (dec.fases || []);
     const finObra = /trim/i.test(String((C.fases || {}).valor || "")) ? "completion of the trim-out"
                                                                      : "completion of the work";
+    const dueno = dec.duenoEfectivo || "";
     const huecos = {
-      CLIENT: d.cliente || "", CLIENT_2: d.segundo_firmante || (dec.esGC ? d.dueno : ""),
-      CONTACTOS: d.atencion || "", HOMEOWNER: dec.esGC ? (d.dueno || "the property owner") : (d.cliente || ""),
+      CLIENT: dec.clienteEfectivo || d.cliente || "", CLIENT_2: d.segundo_firmante || (dec.esGC ? dueno : ""),
+      CONTACTOS: d.atencion || d.gc_contacto || "", HOMEOWNER: dec.esGC ? (dueno || "the property owner") : (d.cliente || ""),
+      ETIQUETA_FIRMA_2: dec.esGC && dueno && !d.segundo_firmante ? "Owner Signature" : "Client Signature",
       PROYECTO_EN_INGLES: (S.proyecto_en && S.proyecto_en.en) || d.proyecto || "",
       DIRECCION: admin.direccion || d.direccion || "",
       CIUDAD: d.ciudad || admin.ciudad || "",
-      FECHA: fechaLarga(hoy), AAAA: String(hoy.getFullYear()),
-      MMDD: dosDig(hoy.getMonth() + 1) + dosDig(hoy.getDate()),
+      FECHA: fechaLarga(hoy), AAAA: mNum ? mNum[1] : String(hoy.getFullYear()),
+      MMDD: mNum ? mNum[2] : dosDig(hoy.getMonth() + 1) + dosDig(hoy.getDate()),
       NOMBRE: nombreCorto, VENCE_30_DIAS: fechaLarga(vence),
       PLANOS: (S.planos && S.planos.en) || d.planos || "",
       RESUMEN_DEL_TRABAJO: (S.resumen_del_trabajo && S.resumen_del_trabajo.en) || "",
@@ -1529,7 +1630,8 @@
       // de siempre: la plantilla no puede quedar con huecos.
       AREAS_INCLUIDAS: (S.areas_incluidas && S.areas_incluidas.en) || "the areas",
       LO_QUE_NO_TOCAS: (S.lo_que_no_tocas && S.lo_que_no_tocas.en) || "any room, structure or equipment not listed there",
-      ARTICULOS_NEC_QUE_APLICAN: (admin.nec || L.codigo).map(a => "Article " + a).join(", "),
+      // un número entero es un artículo (Article 210); con punto es una sección (Section 680.22)
+      ARTICULOS_NEC_QUE_APLICAN: (admin.nec || L.codigo).map(a => (/\./.test(a) ? "Section " : "Article ") + a).join(", "),
       RESUMEN_CORRIDO_DE_TODO_EL_ALCANCE: (S.resumen_corrido && S.resumen_corrido.en) || "",
       TOTAL: dinero(cta.base),
       N_ULTIMO: String(nHitos), FIN_OBRA: finObra,
@@ -1540,9 +1642,11 @@
         : fases.join(" and ")) : "rough-in and trim-out",
       UTILITY: (S.utility && S.utility.quien && S.utility.quien.en) || "",
       QUE_HACE: (S.utility && S.utility.que_hace && S.utility.que_hace.en) || "",
-      ACCESO: (S.acceso && S.acceso.en) || (dec.perfil && dec.perfil.exteriorServicio
+      ACCESO: (S.acceso && S.acceso.en) || (dec.perfil && dec.perfil.exteriorServicio && !dec.perfil.venueExterior
         ? "access to the pole, the equipment locations and the existing raceways"
-        : "access to the attic, crawl space and wall cavities from the accessible side"),
+        : dec.perfil && !dec.perfil.interior
+          ? "access to the work areas, the trench routes and the equipment locations"
+          : "access to the attic, crawl space and wall cavities from the accessible side"),
       EQUIPO_240: equipoEn("v240"), ITEM_240: renglon("v240"), CALIBRE: calibre(),
       EQUIPO_REUBICAR: equipoEn("reubicar"), ITEM_REUBICAR: renglon("reubicar"),
       ITEM_ISLA: renglon("isla"), ITEMS_ABRIR: renglon("abrir"),
@@ -1588,8 +1692,14 @@
     const propio = dec.propio || clasificarPropias(L);
     const numero = numerarClausulas(dec.clausulas, propio.propias.length);
     const base7 = dec.bloques.UTILITY ? 6 : 5;
+    // v3.5: los renglones de la hoja con su numeración propia (2.3 / 3.2) → su número en el contrato (2.n)
+    const mapaItems = {};
+    L.items.forEach(it => { if (it.escrito !== null && it.escrito !== undefined) {
+      mapaItems[(it.serie ? it.serie + "." : "") + it.escrito] = "2." + it.n;
+      if (!it.serie) mapaItems["2." + it.escrito] = "2." + it.n; } });
     const traducir = n => {
       const s = String(n);
+      if (mapaItems[s]) return mapaItems[s];
       if (/^[1-6]$/.test(s) || /^[2-6]\.\d+$/.test(s)) return s;            // secciones que no cambian
       const m = propio.mapa[s];
       if (s === "8") return dec.bloques.PRE_PROPIO || dec.bloques.LAYOUT ? "8" : null;
@@ -1618,13 +1728,19 @@
     const programa = propio.programa.map((p, k) => ({ NUM: "7." + (base7 + 1 + k), TITULO: refs(p.titulo), TEXTO: refs(p.texto) }));
     const pre = propio.pre.map((p, k) => ({ NUM: "8." + (k + 1), TITULO: refs(p.titulo), TEXTO: refs(p.texto) }));
     const pagos = (L.pagos_propios || []).map(p => ({ TITULO: refs(p.titulo), TEXTO: refs(p.texto) }));
+    // v3.5: la sección 4 como la trae la hoja: por grupos, con sus artículos y sus notas
+    const codigo_grupos = (L.codigo_detalle || []).map(g => {
+      const arts = g.articulos.length ? "NEC " + unir(g.articulos) : "";
+      const notas = g.otros.map(o => o.replace(/\s+$/, "").replace(/([^.!?])$/, "$1.")).join(" ");
+      return { GRUPO: g.grupo || "Applicable articles", ARTICULOS: [arts ? arts + "." : "", notas].filter(Boolean).join(" ") };
+    }).filter(g => g.ARTICULOS);
     huecos.TITULO_8 = dec.bloques.PRE_PROPIO ? (L.pre_titulo || "Pre-Construction Verification \u2014 Mandatory Before Work Begins") : "";
     huecos.INTRO_8 = dec.bloques.PRE_PROPIO ? refs(L.pre_intro || "This requirement is mandatory and non-negotiable.") : "";
 
     const montosPermitidos = [dinero(cta.base), ...cta.addons.map(a => dinero(a.centavos)),
                               ...cta.hitos.map(h => dinero(h.centavos))];
     return { cuenta: cta, decision: dec, huecos, items, no_incluye, addons, hitos, montosPermitidos,
-             propias, programa, pre, pagos, numero,
+             propias, programa, pre, pagos, numero, codigo_grupos,
              archivo: `MXP-${huecos.AAAA}-${huecos.MMDD}-${nombreCorto}.html` };
   }
 

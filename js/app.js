@@ -8476,7 +8476,7 @@ Power done right the first time. ⚡`;
     afci: "breakers AFCI", sitio: "estado del sitio", reuso_240: "reúso del 240V",
     reubicar: "reubicar", isla: "isla", edicion: "ediciones del alcance",
     aberturas: "aberturas", fixtures_cliente: "lámparas del cliente", fixtures_mxp: "lámparas nuestras",
-    subsuelo: "excavación", planos_permiso: "planos del permiso", cambios: "órdenes de cambio",
+    subsuelo: "excavación", planos_permiso: "planos del permiso", ahj_upgrades: "correcciones del inspector al sistema existente", cambios: "órdenes de cambio",
     retainage: "retención", nto_releases: "Notice to Owner y liberaciones de gravamen",
     limite: "límite de responsabilidad", seguro: "seguro", deposito: "depósito y arranque",
     cancelacion_tardia: "cancelación después de los 3 días", cancelacion_gc: "cancelación (sin los 3 días)", propias: "condiciones propias de este trabajo"
@@ -8556,6 +8556,10 @@ Power done right the first time. ⚡`;
     const pAct = proyectos().find(x => x.id === A.proyecto.id);
     if (pAct && pAct.contratistaModo === "contrato" && A.leido && A.leido.datos) {
       A.leido.datos.contrato_con = "GC";
+      // v3.5: y CON QUIÉN: en el papel el cliente es el contratista (paga y firma); la persona de la
+      // hoja pasa a dueño de la propiedad. Lo decide el motor con gc_nombre.
+      const gcAct = gcDeProyecto(pAct);
+      if (gcAct) { A.leido.datos.gc_nombre = gcAct.nombre; A.leido.datos.gc_contacto = gcAct.contacto || ""; }
     }
     // Y si el proyecto es comercial, el contrato lo sabe aunque la hoja no lo diga:
     // sin el aviso 713.015 (solo viviendas) ni los tres días (solo consumidores).
@@ -8736,7 +8740,9 @@ Power done right the first time. ⚡`;
         bloques: T.decision.bloques, clausulas: T.decision.clausulas, huecos: T.huecos,
         items: T.items, no_incluye: T.no_incluye, addons: T.addons, hitos: T.hitos,
         // v3.4: lo propio de la hoja (cláusulas, cronograma, sección 8, condiciones de pago)
-        propias: T.propias, programa: T.programa, pre: T.pre, pagos: T.pagos });
+        propias: T.propias, programa: T.programa, pre: T.pre, pagos: T.pagos,
+        codigo_grupos: T.codigo_grupos
+      });
       // un $ que Edgar explicó y dejó adrede no es un monto inventado
       const perdonados = (A.perdonadas || []).flatMap(x => (String((x && x.texto) || x || "").match(/\$\s?\d[\d,]*(?:\.\d{2})?/g) || []).map(m => m.replace(/[$\s]/g, "")));
       const B = Alcance.barridoFinal(out.html, [...T.montosPermitidos, ...perdonados]);
