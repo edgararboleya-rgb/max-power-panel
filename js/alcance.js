@@ -393,13 +393,34 @@
           if (avisaDinero(i, linea, "el Alcance")) return;
           const esDetalle = /^[-*•]/.test(linea);
           // "2.3 Shed circuit. Furnish and install…"  ·  "### 2.1 Whole-house rewire"  ·  "1. Título"
-          let mSub = linea.match(/^(?:\d+\.)?(\d+)(?:\.\d+)?[.)]?\s+(.+)$/);
+          // La numeración de la hoja puede venir de tres maneras y las tres se leen:
+          //   plana        1. / 2. / 3.
+          //   por sección  2.1 / 2.2 … 3.1 / 3.2   (o 2.3.1)   → el ÚLTIMO número es el del renglón
+          //   por grupos   "Kitchen:" y debajo 1., 2., 3.; "Pool:" y otra vez 1., 2.
+          // El número del renglón en el contrato lo pone el orden en que están; lo escrito solo
+          // sirve para leer bien. Un encabezado corto seguido de renglones numerados es un grupo.
+          const siguienteLinea = () => { for (let k = i + 1; k < lineas.length; k++) { const t = lineas[k].replace(/\*\*|__|`/g, "").trim(); if (t) return t; } return ""; };
+          const mJer = linea.match(/^(\d+(?:\.\d+)+)[.)]?\s+(.+)$/);           // 2.3 · 2.3.1
+          const mCrudo = linea.match(/^(\d+)[.)]?\s+(.+)$/);                     // 3 Pool · 3. Pool
+          let mSub = mJer ? [linea, mJer[1].split(".").pop(), mJer[2]] : mCrudo;
+          const conPunto = /^\d+(?:\.\d+)*[.)]\s/.test(linea) || !!mJer;
           // "3 GFCI receptacles at the island" es una cantidad, no el número del renglón. Un número
           // SIN punto ni paréntesis detrás solo cuenta como numeración si la lista va así desde el
           // primer renglón (1 Kitchen / 2 Island…); si los demás llevan punto, se queda como texto.
-          const conPunto = /^(?:\d+\.)?\d+(?:\.\d+)?[.)]\s/.test(linea);
-          if (mSub && !conPunto && !(R.items.length === 0 ? Number(mSub[1]) === 1 : R._sinPunto === true)) mSub = null;
+          if (mSub && !mJer && !conPunto && !(R.items.length === 0 ? Number(mSub[1]) === 1 : R._sinPunto === true)) mSub = null;
           if (mSub && !esDetalle) R._sinPunto = !conPunto;
+          // Encabezado de grupo: "3 Pool" / "3. Pool" / "Pool:" / "POOL" corto y sin descripción,
+          // con un renglón numerado debajo. No es un renglón del contrato: se recuerda como grupo.
+          if (!esDetalle) {
+            const sig = siguienteLinea();
+            const sigNumerado = /^\d+(?:\.\d+)*[.)]?\s+\S/.test(sig);
+            const corto = linea.replace(/^\d+(?:\.\d+)*[.)]?\s+/, "").replace(/:$/, "").trim();
+            const pareceGrupo = corto.length <= 40 && !/[.;]\s|\s(and|with|per|for|at)\s/i.test(corto) &&
+              (/:$/.test(linea) || (corto === corto.toUpperCase() && /[A-Z]{3}/.test(corto)) || (mCrudo && !mJer && sigNumerado && /^\d+\.\d+/.test(sig)));
+            if (pareceGrupo && sigNumerado && !mJer) { R._grupo = corto; R._sinPunto = undefined; return; }
+          }
+          // la serie: para validar que dentro de cada sección/grupo la numeración va seguida
+          const serie = mJer ? mJer[1].split(".").slice(0, -1).join(".") : (R._grupo || null);
           const mn = !esDetalle && (mSub || null);
           const nuevoRenglon = (titulo, resto, escrito) => {
             // "Testing and closeout" ya lo trae la plantilla como último punto: no se duplica
@@ -407,7 +428,7 @@
               R.avisos.push({ linea: i + 1, informativo: true, texto: `«${titulo.slice(0, 40)}» ya lo trae la plantilla como último punto del alcance; no lo repito.` });
               itemActual = { fantasma: true, detalles: [], lineas: [] }; return;
             }
-            itemActual = { n: R.items.length + 1, escrito, titulo: titulo.replace(/[.:]$/, "").trim(), detalles: [], lineas: [i + 1] };
+            itemActual = { n: R.items.length + 1, escrito, grupo: R._grupo || null, serie, titulo: titulo.replace(/[.:]$/, "").trim(), detalles: [], lineas: [i + 1] };
             if (resto) itemActual.detalles.push(resto);
             R.items.push(itemActual);
           };
@@ -593,6 +614,16 @@
     R.falta = parrafo.falta.join(" ");
     R.notas = parrafo.notas.join("\n");
     R.items.forEach((it, k) => { it.n = k + 1; });
+    // La numeración escrita no manda: el orden de los renglones es el que vale. Si va seguida
+    // (plana, o 1, 2, 3 dentro de cada grupo/sección) no se dice nada; si no, se avisa sin frenar.
+    const conNum = R.items.filter(i => i.escrito !== null);
+    if (conNum.length) {
+      let esperado = 1, serieAnt = conNum[0].serie, ok = true;
+      conNum.forEach(it => { if (it.serie !== serieAnt) { serieAnt = it.serie; esperado = 1; } if (it.escrito !== esperado) ok = false; esperado = it.escrito + 1; });
+      if (!ok) R.avisos.push({ informativo: true,
+        texto: `Los renglones del Alcance venían numerados ${conNum.map(i => i.escrito).join(", ")}; los tomo en el orden en que están (1 a ${R.items.length}) y el contrato los numera solo. Tu hoja no cambia.`,
+        arreglos: [{ tipo: "renumerar", etiqueta: "Numerarlos seguidos en la hoja", auto: false }] });
+    }
     return R;
   }
 
@@ -695,11 +726,7 @@
     if (!L.precio) errores.push({ texto: "Falta el precio base en Precio.",
       arreglos: [{ tipo: "poner_precio_base", etiqueta: "Escribir el precio", pide: "monto" }] });
 
-    // los renglones, numerados seguidos si Edgar los numeró
-    const escritos = L.items.filter(i => i.escrito !== null).map(i => i.escrito);
-    if (escritos.length && escritos.some((v, k) => v !== k + 1))
-      errores.push({ texto: `Los renglones del Alcance tienen que ir 1, 2, 3 seguidos. Escribiste: ${escritos.join(", ")}.`,
-        arreglos: [{ tipo: "renumerar", etiqueta: "Numerarlos seguidos", auto: true }] });
+
 
     // dos firmantes
     if (D.cliente && !D.segundo_firmante && /\s(y|&|and)\s/i.test(D.cliente))
@@ -941,7 +968,7 @@
       case "renumerar": {
         const L = leerAlcance(lineas.join("\n"));
         L.items.forEach((it, k) => { const j = it.lineas[0] - 1;
-          lineas[j] = lineas[j].replace(/^(\s*)(?:\d+[.)\-]\s*)?/, "$1" + (k + 1) + ". "); });
+          lineas[j] = lineas[j].replace(/^(\s*)(?:\d+(?:\.\d+)*[.)\-]?\s+)?/, "$1" + (k + 1) + ". "); });
         explicacion = `numeré los ${L.items.length} renglones seguidos`;
         break;
       }
