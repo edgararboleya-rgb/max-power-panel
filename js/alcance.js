@@ -208,6 +208,9 @@
     while ((m = rx.exec(s))) {
       const antes = s.slice(0, m.index), despues = s.slice(m.index + m[0].length);
       if (/[#\/\-\d.]$/.test(antes)) continue;              // #2/0, 12/2, 210.8
+      if (/^\(/.test(despues)) continue;                    // 680.26(B)(2): artículo del código
+      if (/^\d{3}\.\d{1,3}$/.test(m[0]) && (/\b(nec|nfpa|section|sections|sec|art|article|articles|and|or|to|through|§)\.?\s*$/i.test(antes)
+          || /^\s*(,|and|or|through|to)\s+\d{3}\.\d/.test(despues))) continue;   // NEC 680.26, 250.24 and 408.36
       if (UNIDAD_TRAS.test(despues)) continue;             // 1,300 sq ft
       if (/^\s*[\/\-]\s*\d/.test(despues)) continue;        // 1,000-2,000 de rango raro
       return { trozo: m[0], seguro: conPalabra || PALABRA_DINERO.test(s) };
@@ -324,7 +327,8 @@
         sec = posible; itemActual = null; opcionActual = null; return;
       }
       if (sec === "ignorar") { pescar(linea, i); return; }
-      if (MEMBRETE.test(linea)) return;                              // el membrete del chat
+      // v3.7: el membrete son líneas cortas; un párrafo largo con verbo («Max Power Electrical Solutions, Inc. will furnish…») es texto de la hoja
+      if (MEMBRETE.test(linea) && (linea.length < 80 || !/\s(will|shall|is|are|includes?|provides?|covers?|furnish(es)?)\s/i.test(linea))) return;   // el membrete del chat
       if (esTitulo && sec !== "alcance" && sec !== "opciones") linea = linea.replace(/^\d+(?:\.\d+)*[.)]?\s+/, "");
 
       // ¿es "Nombre: valor"?
@@ -410,6 +414,13 @@
             (/^this scope of work covers\b/i.test(texto) ||
              (R._objetivo && !parrafo.hoy.length && texto.length > 60 && !/^(existing|site|basis|information|new layout|proposed|changes|service|parties)\b/i.test(texto)));
           if (esOverview) {
+            // v3.7: si el párrafo define «Contractor» como otra empresa choca con el texto legal (ahí Contractor es Max Power):
+            // se guarda como referencia (sirve para leer el flood, la fecha del certificado…) y la sección 1 la arma la app
+            if (/\(\s*["\u201c]contractor["\u201d]\s*\)/i.test(texto) && !/max power[^()]{0,120}\(\s*["\u201c]contractor["\u201d]\s*\)/i.test(texto)) {
+              R.datos.overview_hoja = texto.trim();
+              R.avisos.push({ linea: i + 1, informativo: true, texto: "El párrafo de la sección 1 llama «Contractor» a otra empresa; en el contrato «Contractor» es Max Power. La sección 1 la armo yo con lo que sé, y ese párrafo queda de referencia." });
+              break;
+            }
             // v3.6: el párrafo entero es el «overview» y va al contrato tal cual (no se rearma con los títulos)
             R.datos.overview = texto.trim();
             if (mRes) R.datos.resumen = mRes[1].trim().replace(/\s+at\s+\d{2,}[^]*$/i, "").replace(/[.,]$/, "");
@@ -589,15 +600,30 @@
           const dest = R[sec];
           const mp = linea.match(/^(\d+(?:\.\d+)?)[.)]?\s+(.+)$/);
           let mt;
+          const esBullet = /^[-*•]/.test(linea), ultimo = dest[dest.length - 1];
+          // una viñeta debajo de una cláusula numerada («7.4 Mobilizations.» y debajo «- (1) underground…») sigue a esa cláusula
+          const sigueAlNumerado = esBullet && !!ultimo && !!ultimo.n && !ultimo.sinTitulo;
+          const esFirma = /_{4,}|\bdate:\s*_/i.test(linea);
           if (mp && (/\./.test(mp[1]) || esTitulo)) {
             const cuerpo = mp[2].trim();
             const corte = cuerpo.match(/^(.{3,90}?)(?:\.\s+|:\s+)(.+)$/);
             dest.push({ n: mp[1], titulo: (corte ? corte[1] : cuerpo).replace(/[.:]$/, "").trim(),
                         texto: corte ? corte[2].trim() : "", linea: i + 1 });
-          } else if (!/^[-*•]/.test(linea) && (sec !== "pre" || dest.length)
-                     && (mt = linea.match(/^(?!(?:this|the|all|no|any|a|an|if|should|it|max power|contractor|client|owner|pricing|work)\b)([A-Z][^.:]{2,40}?)[.:]\s+(.{20,})$/i))) {
-            // "Sequence: demo → underground → …" sin número: es un párrafo propio, no se bota
+          } else if (!sigueAlNumerado && !esFirma && (sec !== "pre" || dest.length)
+                     && (mt = linea.replace(/^[-*•]\s*/, "").match(/^(?!(?:this|the|all|no|any|a|an|if|should|it|max power|contractor|client|owner|pricing|work)\b)([A-Z][^.:]{2,40}?)[.:]\s+(.{20,})$/i))) {
+            // "Sequence: demo → underground → …" sin número (con o sin viñeta): es un párrafo propio, no se bota
             dest.push({ n: "", titulo: mt[1].trim(), texto: mt[2].trim(), linea: i + 1 });
+          } else if (esBullet && !sigueAlNumerado && !esFirma && sec !== "pre") {
+            // v3.7: un punto suelto sin título en la 7 o la 9 es una condición propia de este trabajo. El título sale del
+            // texto (regla B1: lo que hay antes de « — » o de «(», o la primera frase; nunca cortado por conteo de palabras).
+            // Lo que la plantilla ya trae (movilizaciones, flood, garantía…) lo quita clasificarPropias.
+            const cuerpo = linea.replace(/^[-*•]\s*/, "").trim();
+            const mRaya = cuerpo.match(/^(.{3,60}?)\s+[—–]\s+(.+)$/);
+            const mPar = cuerpo.match(/^([A-Z][^.(:]{2,40}?)\s+\((.+)$/);
+            const mFrase = cuerpo.match(/^(.{3,}?[^.\d])\.\s+(.+)$/);
+            const t = mRaya ? { titulo: mRaya[1], texto: mRaya[2] } : mPar ? { titulo: mPar[1], texto: cuerpo }
+                    : mFrase ? { titulo: mFrase[1], texto: mFrase[2] } : { titulo: cuerpo.replace(/\.$/, ""), texto: "" };
+            dest.push({ n: "", titulo: t.titulo.trim(), texto: t.texto.trim(), linea: i + 1, sinTitulo: true });
           } else if (dest.length) {
             dest[dest.length - 1].texto = (dest[dest.length - 1].texto + " " + linea.replace(/^[-*•]\s*/, "")).trim();
           } else if (sec === "pre") {
@@ -689,10 +715,37 @@
     R.falta = parrafo.falta.join(" ");
     R.notas = parrafo.notas.join("\n");
     R.items.forEach((it, k) => { it.n = k + 1; });
+    // v3.7: el disparador del hito 2. Si es el genérico «upon completion of rough-in» y el trabajo tiene fase bajo tierra /
+    // bonding antes, la app lo pone sola (los montos no cambian) y lo dice; si Edgar escribió otra cosa, solo se le propone.
+    if (R.pagos && (R.pagos.disparadores || []).length >= 2) {
+      const d1 = norma(R.pagos.disparadores[1] || "");
+      const generico = /^(upon |on |at )?(the )?(completion of )?rough-?in( complete(d)?)?( and rough(-in)? inspection passed)?$/.test(d1);
+      const txtA = norma(R.items.map(it => it.titulo + " " + (it.detalles || []).join(" ")).join(" "));
+      const fases = partirFases(((R.condiciones || {}).fases || {}).valor || "");
+      const temprana = fases.some(f => /underground|bonding|trench|slab/i.test(f)) || /\b(underground|bonding grid|equipotential|trench)\b/.test(txtA);
+      if (generico && temprana) {
+        const f0 = (fases[0] && /underground|bonding|trench|slab/i.test(fases[0]) ? fases[0]
+                   : (/\b(pool|equipotential|spa)\b/.test(txtA) ? "underground raceways and pool equipotential bonding" : "underground raceways and bonding")).replace(/\s+and\s+/g, ", ");
+        const propuesto = `upon completion of ${f0} and rough-in`;
+        const lineaH2 = (R.pagos.lineas || [])[1];
+        R.pagos.auto2 = { antes: R.pagos.disparadores[1], despues: propuesto };
+        R.pagos.disparadores[1] = propuesto;
+        R.avisos.push({ linea: lineaH2 || 0, informativo: true,
+          texto: `Hito 2: esto no es un rough-in de interior (hay trabajo bajo tierra / bonding antes), así que lo puse «${propuesto}». Los montos no cambian. Si lo quieres de otra manera, escríbelo en Pagos y así se queda.`,
+          arreglos: lineaH2 ? [{ tipo: "cambiar_disparador", etiqueta: "Dejarlo escrito así en la hoja", linea: lineaH2, valor: propuesto, automatico: true }] : [] });
+      }
+    }
     // v3.6: el flood se lee de toda la hoja (menos las Notas, que son de Edgar)
     R.flood = extraerFlood([R.hoy, R.cambia, R.falta, ...(R.codigo_otros || []), ...(R.terminos || []).map(t => t.titulo + ". " + t.texto),
+      ...R.items.map(it => it.titulo + " " + (it.detalles || []).join(" ")),
       ...(R.programa || []).map(t => t.titulo + ". " + t.texto), ...(R.pre || []).map(t => t.titulo + ". " + t.texto),
       ...(R.no_incluye || []).map(x => x.texto), Object.values(R.datos).filter(v => typeof v === "string").join(" ")].join(" "));
+    // v3.7: lo que la hoja trae en 7 / 9 y la plantilla ya pone (movilizaciones, flood, garantía, validez…) se quita sin ruido, una vez
+    {
+      const q = clasificarPropias(R).quitadas || [];
+      if (q.length) R.avisos.push({ linea: 0, informativo: true,
+        texto: `De las secciones 7 y 9 de la hoja quité ${q.length} ${q.length === 1 ? "punto que la plantilla ya trae" : "puntos que la plantilla ya trae"} (${q.map(x => "«" + x.slice(0, 40) + "»").join(", ")}); lo demás va al contrato tal cual.` });
+    }
     // La numeración escrita no manda: el orden de los renglones es el que vale. Si va seguida
     // (plana, o 1, 2, 3 dentro de cada grupo/sección) no se dice nada; si no, se avisa sin frenar.
     const conNum = R.items.filter(i => i.escrito !== null);
@@ -726,28 +779,36 @@
     [/existing circuits|site condition/i, "sitio"], [/code edition/i, "edicion"],
     [/change orders?|entire agreement/i, "cambios"], [/limitation of liability/i, "limite"],
     [/insurance/i, "seguro"], [/deposit|start of work/i, "deposito"], [/cancellation/i, "cancelacion"],
-    [/retainage/i, "retainage"], [/notice to owner|releases? of lien/i, "nto_releases"],
-    [/arc.?fault|afci/i, "afci"], [/openings|patching/i, "aberturas"]
+    [/retainage/i, "retainage"], [/notice to owner|releases? of lien|lien rights?/i, "nto_releases"],
+    [/arc.?fault|afci/i, "afci"], [/openings|patching/i, "aberturas"],
+    // v3.7: lo que la plantilla trae fuera de la 9 (la 7.x Flood, la fecha de validez, la licencia del membrete)
+    [/\bflood\b|base flood elevation|\bbfe\b/i, "flood"], [/proposal is valid|valid for \d+ days|valid through/i, "validez"],
+    [/florida license|license ec\d+/i, "validez"]
   ];
   const PLANTILLA_7 = [
     [/^permit\b/i, "7.1"], [/layout approval|verification before|pre-construction/i, "7.2"],
     [/site condition|pricing assumes/i, "7.3"], [/mobilization/i, "7.4"],
-    [/material handling/i, "7.5"], [/utility coordination/i, "7.6"]
+    [/material handling|materials? (that must be|furnished by others)[^.]{0,80}(handl|salvag|stor|reinstall)/i, "7.5"], [/utility coordination/i, "7.6"],
+    [/\bflood\b|base flood elevation|\bbfe\b/i, "flood"]
   ];
   function clasificarPropias(L) {
-    const propias = [], programa = [], mapa = {};
+    const propias = [], programa = [], pre = (L.pre || []).slice(), mapa = {}, quitadas = [];
+    // un punto sin título propio se reconoce por su primera frase; uno con título, por el título
+    const cara = t => t.titulo + (t.sinTitulo ? " " + String(t.texto || "").slice(0, 160) : "");
+    const busca = (lista, t) => lista.find(([re]) => re.test(cara(t)));
     (L.terminos || []).forEach(t => {
-      const fija = PLANTILLA_9.find(([re]) => re.test(t.titulo));
-      if (fija) mapa[t.n] = { clave: fija[1] };
+      // en la 9 solo se compara con la 9 («Permit type and sealed plans» no es la 7.1 Permit)
+      const f9 = busca(PLANTILLA_9, t);
+      if (f9) { mapa[t.n] = { clave: f9[1] }; quitadas.push(t.titulo); }
       else { mapa[t.n] = { propia: propias.length }; propias.push(t); }
     });
     (L.programa || []).forEach(t => {
-      const fija = PLANTILLA_7.find(([re]) => re.test(t.titulo));
-      if (fija) mapa[t.n] = { fija7: fija[1] };
+      const f7 = busca(PLANTILLA_7, t), f9 = f7 ? null : busca(PLANTILLA_9, t);
+      if (f7) { mapa[t.n] = { fija7: f7[1] }; quitadas.push(t.titulo); }
+      else if (f9) { mapa[t.n] = { clave: f9[1] }; quitadas.push(t.titulo); }
       else { mapa[t.n] = { extra7: programa.length }; programa.push(t); }
     });
-    const pre = (L.pre || []).slice();
-    return { propias, programa, pre, mapa };
+    return { propias, programa, pre, mapa, quitadas };
   }
   // Cambia "See Sections 8 and 9.3" por los números que tienen en el contrato armado; lo
   // que no existe en el contrato se quita con su frase entera, no se deja colgando.
@@ -799,10 +860,16 @@
     if (!D.direccion) preguntas.push({ clave: "direccion", texto: "¿Cuál es la dirección de la obra?", libre: true });
     // v3.6 r2: la obra está en zona de inundación pero la hoja no dice la zona ni el BFE → se pregunta (va a la 7.x Flood elevation)
     {
-      const F = L.flood || {}; const hojaFlood = [...(L.terminos || []), ...(L.programa || [])].some(t => /flood|bfe|base flood/i.test(t.titulo + " " + t.texto));
-      if (F.senales && !F.zona && !D.flood_zona && !hojaFlood)
+      // v3.7: la 7.x Flood sale con los datos del certificado; si falta la zona o el BFE se pregunta UNA vez y la
+      // respuesta queda escrita en la hoja («Flood zone: …»). Es dato de contrato: sin él la cláusula sale coja.
+      const F = L.flood || {};
+      const zonaD = norma(D.flood_zona || "").match(/\b(ae|ve|ao|ah|a|v)\b/);
+      const zona = F.zona || (zonaD ? zonaD[1].toUpperCase() : "");
+      const bfe = D.flood_bfe || F.bfe;
+      if ((F.senales || zona) && !(zona && bfe))
         preguntas.push({ clave: "flood_zona", libre: true,
-          texto: "La obra está en zona de inundación (la hoja habla del certificado de elevación / FBC 1612). ¿Qué zona FEMA y qué BFE dice el certificado? Escríbelo así: AE, BFE 11.0 / 12.0 ft NAVD 88, EC 12/23/2014, LAG 6.7 ft" });
+          texto: zona ? `La obra está en zona ${zona} pero no encuentro el BFE del certificado de elevación. Escríbelo así: ${zona}, BFE 11.0 / 12.0 ft NAVD 88, EC 12/23/2014, LAG 6.7 ft`
+                      : "La obra está en zona de inundación (la hoja habla del certificado de elevación / FBC 1612). ¿Qué zona FEMA y qué BFE dice el certificado? Escríbelo así: AE, BFE 11.0 / 12.0 ft NAVD 88, EC 12/23/2014, LAG 6.7 ft" });
     }
     // Cada {{FALTA: pregunta}} que dejó el chat es una pregunta para Edgar
     (L.faltas || []).forEach(f => preguntas.push({
@@ -979,7 +1046,8 @@
         // en una fila de tabla "| Milestone 2 — 40% | Upon completion of rough-in | $7,380.00 |" cambia la celda del disparador;
         // en una línea suelta, el texto después del porcentaje
         if (!hay) return { error: "no encuentro la línea del hito" };
-        const nuevo = v.charAt(0).toUpperCase() + v.slice(1);
+        const actual = (antes.split("|").length >= 4 ? antes.split("|")[2] : (antes.match(/\d{1,3}\s*%\)?\s*[:—–-]?\s*(.+?)(\s*\$\s?[\d,.]+)?\s*$/) || [])[1] || "").trim();
+        const nuevo = /^[a-z]/.test(actual) ? v.charAt(0).toLowerCase() + v.slice(1) : v.charAt(0).toUpperCase() + v.slice(1);
         const celdas = antes.split("|");
         if (celdas.length >= 4) { celdas[2] = " " + nuevo + " "; lineas[i] = celdas.join("|"); }
         else lineas[i] = antes.replace(/(\d{1,3}\s*%\)?\s*[:—–-]?\s*)(.+?)(\s*\$\s?[\d,.]+)?\s*$/, (m, a, b, c) => a + nuevo + (c || ""));
@@ -1165,8 +1233,19 @@
     const F = {};
     const z = t.match(/\b(?:flood\s+|fema\s+)?zone\s*[:\-]?\s*(AE|VE|AO|AH|A|V)\b(?![a-z])/i) || t.match(/\bzona\s*[:\-]?\s*(AE|VE|AO|AH)\b/i);
     if (z) F.zona = z[1].toUpperCase();
-    const b = t.match(/\b(?:BFE|base flood elevation)\b[^\d]{0,20}(\d+(?:\.\d+)?(?:\s*\/\s*\d+(?:\.\d+)?)?)\s*(?:ft|feet|')?\s*(NAVD\s*88|NGVD\s*29)?/i);
-    if (b) F.bfe = b[1].replace(/\s*\/\s*/, " / ") + " ft" + (b[2] ? " " + b[2].toUpperCase().replace(/\s+/, " ") : "");
+    // v3.7: «Base Flood Elevation + 1 ft» / «freeboard BFE + 1 ft» es el margen, no la cota. La cota de verdad trae
+    // decimales (11.0), un par (11.0 / 12.0), NAVD 88 o al menos dos pies; entre varias se queda la más completa.
+    const rxB = /\b(?:BFE|base flood elevation)\b([^\d]{0,20})(\d+(?:\.\d+)?(?:\s*\/\s*\d+(?:\.\d+)?)?)\s*(?:ft|feet|')?\s*(NAVD\s*88|NGVD\s*29)?/gi;
+    let mb, mejor = null;
+    while ((mb = rxB.exec(t))) {
+      if (/\+|\bplus\b|\bfreeboard\b|\babove\b|\bthan\b|\bhigher\b|\blower\b|\bcertificate\b|\bfirm\b/i.test(mb[1])) continue;   // «BFE is higher than the 2014 certificate»
+      const val = mb[2], navd = mb[3];
+      if (!navd && /^(19|20)\d{2}$/.test(val)) continue;                                   // un año, no una cota
+      if (!(navd || /[.\/]/.test(val) || Number(val) >= 2)) continue;
+      const peso = (navd ? 2 : 0) + (/[.\/]/.test(val) ? 1 : 0);
+      if (!mejor || peso > mejor.peso) mejor = { val, navd, peso };
+    }
+    if (mejor) F.bfe = mejor.val.replace(/\s*\/\s*/, " / ") + " ft" + (mejor.navd ? " " + mejor.navd.toUpperCase().replace(/\s+/, " ") : "");
     const e = t.match(/elevation certificate\b[^.;]{0,60}?\b(\d{1,2}\/\d{1,2}\/\d{2,4})/i) || t.match(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b[^.;]{0,40}elevation certificate/i)
            || t.match(/\bEC\s*[:=]?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/) || t.match(/\b((?:19|20)\d{2})\s+elevation certificate/i) || t.match(/elevation certificate\b[^.;]{0,40}?\b((?:19|20)\d{2})\b/i);
     if (e) F.ec = e[1];
@@ -1266,9 +1345,10 @@
     // v3.6: 7.x Flood elevation cuando la propiedad está en zona AE / VE / AO / AH y la hoja no trae su propia cláusula
     const zonaTxt = norma(d.flood_zona || (L.flood || {}).zona || "").match(/\b(ae|ve|ao|ah|a|v)\b/);
     const mZona = zonaTxt ? [zonaTxt[0], zonaTxt[1]] : null;
-    const hojaFlood = [...(L.terminos || []), ...(L.programa || [])].some(t => /flood|bfe|base flood/i.test(t.titulo + " " + t.texto));
-    // con zona conocida, o con señales claras de zona de inundación (floodplain, FBC 1612, ASCE 24, certificado de elevación)
-    const flood = (!!mZona || !!(L.flood || {}).senales) && !hojaFlood;
+    // v3.7: con zona conocida, o con señales claras de zona de inundación (floodplain, FBC 1612, ASCE 24, certificado de
+    // elevación) sale la 7.x Flood de la plantilla, que lleva los datos del certificado (regla B9 del revisor). Si la hoja
+    // trae su propia frase de flood, clasificarPropias la quita para no repetir y sus números se leen igual.
+    const flood = !!mZona || !!(L.flood || {}).senales;
     const layout = !preProprio && norma(d.layout || "si") !== "no";
 
     const bloques = {
@@ -1730,7 +1810,9 @@
         const trabajo = L.items.filter(it => !esResp(it.titulo)).map(it => { const t = it.titulo.replace(/[.:]$/, "").trim(); return /^[A-Z][a-z]/.test(t) && !/^[A-Z][a-z]*[A-Z]/.test(t) ? t.charAt(0).toLowerCase() + t.slice(1) : t; });
         const resp = L.items.filter(it => esResp(it.titulo));
         const lista = trabajo.length <= 1 ? trabajo.join("") : trabajo.slice(0, -1).join(", ") + " and " + trabajo[trabajo.length - 1];
-        const nota = resp.length ? ` Items ${resp.map(it => it.titulo.replace(/[.:]$/, "").trim().replace(/^[A-Z]/, c => c.toLowerCase())).join(" and ")} are stated in Section 2.${resp[0].n}.` : "";
+        const nums = resp.map(it => "2." + it.n);
+        const secs = nums.length <= 1 ? nums.join("") : nums.slice(0, -1).join(", ") + " and " + nums[nums.length - 1];
+        const nota = resp.length ? ` Items ${resp.map(it => it.titulo.replace(/[.:]$/, "").trim().replace(/^[A-Z]/, c => c.toLowerCase())).join(" and ")} are stated in ${nums.length > 1 ? "Sections" : "Section"} ${secs}.` : "";
         return `This Scope of Work covers the electrical work for ${que} at ${donde}${conQuien}${lista ? ": " + lista : ", as described in Section 2"}.${nota}`;
       })(),
       QUE_HAY_HOY: (S.que_hay_hoy && S.que_hay_hoy.en) || "",
@@ -1829,6 +1911,8 @@
       if (s === "8") return dec.bloques.PRE_PROPIO || dec.bloques.LAYOUT ? "8" : null;
       if (s === "7") return "7";
       if (!m) return null;
+      if (m.clave === "flood" || m.fija7 === "flood") return dec.bloques.FLOOD ? "7." + huecos.N_FLOOD : null;
+      if (m.clave === "validez") return null;
       if (m.clave) { const k = m.clave === "cancelacion" ? (dec.clausulas.cancelacion_gc ? "cancelacion_gc" : "cancelacion_tardia") : m.clave;
                      return numero[k] ? "9." + numero[k] : null; }
       if (m.propia !== undefined) return "9." + (numero.propias + m.propia);
@@ -1848,10 +1932,12 @@
       if (!/see section/i.test(huecos.QUE_FALTABA) && numero.existentes)
         huecos.QUE_FALTABA = huecos.QUE_FALTABA.replace(/\.?$/, "") + " \u2014 see Section 9." + numero.existentes + ".";
     }
-    const propias = propio.propias.map((p, k) => ({ NUM: "9." + (numero.propias + k), TITULO: refs(p.titulo), TEXTO: refs(p.texto) }));
-    const programa = propio.programa.map((p, k) => ({ NUM: "7." + (base7 + 1 + k), TITULO: refs(p.titulo), TEXTO: refs(p.texto) }));
-    const pre = propio.pre.map((p, k) => ({ NUM: "8." + (k + 1), TITULO: refs(p.titulo), TEXTO: refs(p.texto) }));
-    const pagos = (L.pagos_propios || []).map(p => ({ TITULO: refs(p.titulo), TEXTO: refs(p.texto) }));
+    // v3.7: el texto de una cláusula empieza con mayúscula («Sequence: hardscape demolition…» → «Hardscape demolition…»)
+    const mayus = t => String(t || "").replace(/^([a-z])/, c => c.toUpperCase());
+    const propias = propio.propias.map((p, k) => ({ NUM: "9." + (numero.propias + k), TITULO: refs(p.titulo), TEXTO: mayus(refs(p.texto)) }));
+    const programa = propio.programa.map((p, k) => ({ NUM: "7." + (base7 + 1 + k), TITULO: refs(p.titulo), TEXTO: mayus(refs(p.texto)) }));
+    const pre = propio.pre.map((p, k) => ({ NUM: "8." + (k + 1), TITULO: refs(p.titulo), TEXTO: mayus(refs(p.texto)) }));
+    const pagos = (L.pagos_propios || []).map(p => ({ TITULO: refs(p.titulo), TEXTO: mayus(refs(p.texto)) }));
     // v3.5: la sección 4 como la trae la hoja: por grupos, con sus artículos y sus notas
     const codigo_grupos = (L.codigo_detalle || []).map(g => {
       const arts = g.articulos.length ? "NEC " + unir(g.articulos) : "";
@@ -1869,11 +1955,362 @@
   }
 
   // ------------------------------------------------------------------ export
+
+  // ============================================================ v3.7 · EL JUEZ Y LAS PISTAS (tanda 1 del pliego del lector con IA)
+  // Todo lo de aquí es puro: sin red, sin llaves, probado en Node. La IA (cuando llegue, tanda 2) devuelve una
+  // «lectura» (qué es cada línea, con número y cita literal); la app la COMPRUEBA (verificarLectura), la convierte
+  // en pistas (pistasDe) y leerAlcance las consume. Sin pistas, leerAlcance es idéntico al de siempre.
+
+  // ---- El dinero se tapa con UNA regla (esta cadena se copia letra por letra en el cerebro) ----
+  const RX_DINERO_TAPAR = "\\$\\s?\\d[\\d,]*(?:\\.\\d{1,2})?|\\b(?:dollars|usd|d[oó]lares)\\b\\s*\\d[\\d,]*(?:\\.\\d+)?|\\d[\\d,]*(?:\\.\\d+)?\\s*\\b(?:dollars|usd|d[oó]lares)\\b|\\d{1,3}(?:,\\d{3})+(?:\\.\\d{2})?|\\d+\\.\\d{2}";
+  // Un candidato es dinero salvo por su contexto: 250.24(C), #2/0, 12/2, 1.5 %, 210.8 y 2.10 se quedan
+  function contextoDinero(s, ini, fin) {
+    const t = s.slice(ini, fin), antes = s.slice(0, ini), despues = s.slice(fin);
+    if (/^\$/.test(t) || /dollars|usd|d[oó]lares/i.test(t)) return true;
+    if (/[\d.#\/\-]$/.test(antes)) return false;
+    if (/^[)%\d(]/.test(despues) || /^\.\d/.test(despues) || /^\s*%/.test(despues)) return false;
+    return true;
+  }
+  function tramosDinero(s) {
+    const rx = new RegExp(RX_DINERO_TAPAR, "gi"), out = []; let m;
+    while ((m = rx.exec(s))) { if (contextoDinero(s, m.index, m.index + m[0].length)) out.push([m.index, m.index + m[0].length]); }
+    return out;
+  }
+  const esMontoTapable = s => tramosDinero(String(s || "")).length > 0;
+  const taparTramo = t => t.replace(/\d/g, "#");
+  // Tapa el dinero de la hoja entera, conservando $ y comas y el largo. lineasDinero: números de línea que las reglas
+  // ya saben que son Precio / Pagos / Opciones: ahí se tapa además todo número de tres cifras o con decimales (no los %).
+  function taparDinero(texto, lineasDinero) {
+    const set = new Set(lineasDinero || []);
+    let tapados = 0;
+    const lineas = String(texto || "").replace(/\r/g, "").split("\n").map((l, i) => {
+      let s = l;
+      const tramos = tramosDinero(s);
+      for (let k = tramos.length - 1; k >= 0; k--) { const [a, b] = tramos[k]; s = s.slice(0, a) + taparTramo(s.slice(a, b)) + s.slice(b); tapados++; }
+      if (set.has(i + 1)) s = s.replace(/\d[\d,]*(?:\.\d+)?/g, (n, off) => {
+        if (/^\s*%/.test(s.slice(off + n.length)) || /[#$]$/.test(s.slice(0, off))) return n;
+        if (n.replace(/\D/g, "").length >= 3 || /\./.test(n)) { tapados++; return taparTramo(n); }
+        return n;
+      });
+      return s;
+    });
+    return { texto: lineas.join("\n"), tapados };
+  }
+  // Lo que el modelo escribe (motivos) pasa la MISMA regla estricta; si hay dinero, la lectura entera se tira
+  const traeDineroEstricto = s => tramosDinero(String(s || "")).some(([a, b]) => /^\$|\d{1,3}(?:,\d{3})+|dollars|usd|d[oó]lares/i.test(String(s).slice(a, b)));
+
+  // ---- Una sola limpieza, con tabla de posiciones (lo que ve el modelo ↔ la línea original) ----
+  function limpiarLinea(cruda) {
+    const src = String(cruda || ""), out = [], mapa = [];
+    for (let i = 0; i < src.length; i++) {
+      const c = src[i], d = src[i + 1];
+      if ((c === "*" && d === "*") || (c === "_" && d === "_")) { i++; continue; }
+      if (c === "`") continue;
+      let r = c;
+      if (c === "“" || c === "”" || c === "„") r = "\"";
+      else if (c === "‘" || c === "’") r = "'";
+      else if (c === "—" || c === "–") r = "-";
+      else if (/\s/.test(c)) r = " ";
+      if (r === " " && (out.length === 0 || out[out.length - 1] === " ")) continue;
+      out.push(r); mapa.push(i);
+    }
+    while (out.length && out[out.length - 1] === " ") { out.pop(); mapa.pop(); }
+    return { limpia: out.join(""), mapa };
+  }
+  // La hoja como la ve el modelo: cada línea limpia y tapada, numerada desde 1
+  function hojaParaElLector(texto, L) {
+    const dineroEn = new Set();
+    if (L) {
+      if (L.precio && L.precio.linea) dineroEn.add(L.precio.linea);
+      ((L.pagos || {}).lineas || []).forEach(n => dineroEn.add(n));
+      (L.opciones || []).forEach(o => { if (o.linea) dineroEn.add(o.linea); });
+    }
+    const tapada = taparDinero(texto, [...dineroEn]);
+    const lineas = tapada.texto.split("\n").map((l, i) => { const c = limpiarLinea(l); return { n: i + 1, t: c.limpia, mapa: c.mapa, original: l }; });
+    return { lineas, tapados: tapada.tapados };
+  }
+
+  // ---- La cita tiene que ser literal (o casi: la subcadena común más larga cubre ≥ 80 %) ----
+  function subcadenaComun(a, b) {
+    let mejor = 0; const prev = new Array(b.length + 1).fill(0);
+    for (let i = 1; i <= a.length; i++) { let diag = 0; for (let j = 1; j <= b.length; j++) { const tmp = prev[j]; prev[j] = a[i - 1] === b[j - 1] ? diag + 1 : 0; if (prev[j] > mejor) mejor = prev[j]; diag = tmp; } }
+    return mejor;
+  }
+  function citaEnLinea(linea, cita) {
+    if (cita === null || cita === undefined || cita === "") return { ok: true, exacta: true };
+    const c = String(cita).trim(), l = String(linea || "");
+    if (!c) return { ok: true, exacta: true };
+    if (l.includes(c)) return { ok: true, exacta: true };
+    const ci = l.toLowerCase().indexOf(c.toLowerCase());
+    if (ci >= 0) return { ok: true, exacta: false, cita: l.slice(ci, ci + c.length) };
+    const comun = subcadenaComun(l, c);
+    return comun >= Math.ceil(c.length * 0.8) ? { ok: true, exacta: false } : { ok: false };
+  }
+
+  const MATRIZ_LEGAL = ["cliente", "dueno", "contratista", "contrato_con", "propiedad", "firma", "permiso"];
+  const SECCIONES_VALIDAS = Object.keys(SECCIONES);
+  const TIPOS_AVISO = ["seccion_repetida", "parrafo_repetido", "renglon_repetido", "cierre_duplicado", "remision_inexistente", "conteo_incoherente",
+    "texto_de_otro_trabajo", "exclusion_contradice_alcance", "propiedad_comercial", "contrato_con_contratista", "firmante_es_empresa", "dato_pendiente",
+    "condicion_en_prosa", "renglon_para_condicion", "titulo_leido_como", "linea_dudosa", "cantidad_no_numeracion", "numeracion_no_seguida",
+    "dinero_fuera_de_sitio", "dos_precios", "codigo_no_nec", "clausula_ya_en_plantilla", "lengua_mezclada", "detalle_sin_renglon"];
+  // ¿La app reconoce esta línea como «Clave: valor» con esa clave? (la única puerta para los datos de la matriz legal)
+  function claveDeLinea(lineaLimpia) {
+    const mNV = String(lineaLimpia || "").match(/^([^:]{2,42}):\s*(.*)$/);
+    if (!mNV) return null;
+    const celdas = String(lineaLimpia).replace(/^\||\|$/g, "").split("|").map(c => c.trim()).filter(Boolean);
+    const k = buscaClave(CLAVES_DATOS, norma(mNV[1])) || buscaClave(CLAVES_COND, norma(mNV[1]));
+    return k ? { clave: k, valor: mNV[2].trim(), celdas } : null;
+  }
+  function esSobranteConfirmada(linea) {
+    const l = String(linea || "").trim();
+    if (!l || l.startsWith("//") || l.startsWith(">") || l.startsWith("<!--")) return true;
+    if (/^[-*_=]{3,}$/.test(l)) return true;
+    if (/^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$/.test(l)) return true;
+    if (MEMBRETE.test(l)) return true;
+    if (/^\|.*\|$/.test(l)) { const celdas = l.replace(/^\||\|$/g, "").split("|").map(c => c.trim()).filter(Boolean); if (!celdas.length || celdas.every(c => CLAVES_IGNORAR.includes(norma(c)) || /^[-:\s]*$/.test(c))) return true; }
+    return false;
+  }
+
+  // ---- El juez: la lectura del modelo se comprueba pieza a pieza; lo que no cuadra se tira, nunca todo o nada (salvo dos casos) ----
+  function verificarLectura(lineas, lectura, L_reglas) {
+    const tiradas = [], degradados = [], avisos_app = [];
+    const N = lineas.length, txt = n => (lineas[n - 1] || {}).t || "";
+    const lineaOk = n => Number.isInteger(n) && n >= 1 && n <= N;
+    if (!lectura || typeof lectura !== "object") return { error: "lectura_invalida", motivo: "no es un molde" };
+    if (Number.isInteger(lectura.lineas_total) && lectura.lineas_total !== N) return { error: "lectura_invalida", motivo: `dice ${lectura.lineas_total} líneas y la hoja tiene ${N}` };
+    // 7) dinero en el texto libre del modelo: la lectura entera se rechaza
+    const motivos = [...(lectura.avisos || []).map(a => a.motivo), ...(lectura.sobrantes || []).map(s => s.porque)].filter(x => typeof x === "string");
+    if (motivos.some(traeDineroEstricto)) return { error: "dinero_en_la_lectura", motivo: "el lector escribió un monto" };
+    const L = JSON.parse(JSON.stringify(lectura));
+    const lista = k => Array.isArray(L[k]) ? L[k] : (L[k] = []);
+    const tirar = (pieza, l, causa) => { tiradas.push({ pieza, l, causa }); return false; };
+    const validaLineas = (o, pieza) => {
+      if (!lineaOk(o.l)) return tirar(pieza, o.l, "línea fuera de la hoja");
+      if (o.l_hasta !== undefined && o.l_hasta !== null && (!lineaOk(o.l_hasta) || o.l_hasta < o.l)) { o.l_hasta = null; }
+      return true;
+    };
+    const validaCita = (o, campo, pieza) => {
+      const v = o[campo]; if (v === null || v === undefined || v === "") { o[campo] = null; return true; }
+      const r = citaEnLinea(txt(o.l), v);
+      if (!r.ok) return tirar(pieza, o.l, `cita que no está en la línea: «${String(v).slice(0, 40)}»`);
+      if (r.cita) o[campo] = r.cita;
+      return true;
+    };
+    // 3) una sola casa por línea, en este orden
+    const casa = new Map();
+    const reclama = (l, pieza, hasta) => { for (let n = l; n <= (hasta || l); n++) { if (casa.has(n)) return false; } for (let n = l; n <= (hasta || l); n++) casa.set(n, pieza); return true; };
+    L.secciones = lista("secciones").filter(s => validaLineas(s, "seccion") && SECCIONES_VALIDAS.includes(s.seccion) && validaCita(s, "titulo_cita", "seccion") && (reclama(s.l, "seccion") || tirar("seccion", s.l, "dos casas")));
+    // precio: la línea tiene que tener forma de precio (un monto seguro y una palabra de precio), y no ser fila de pagos
+    if (L.precio && typeof L.precio === "object") {
+      const orig = (lineas[L.precio.l - 1] || {}).original || "";
+      const d = hayDinero(orig);
+      const formaPrecio = lineaOk(L.precio.l) && d && d.seguro && !/\d{1,3}\s*%/.test(orig) && (PALABRA_DINERO.test(orig) || !!claveDeLinea(txt(L.precio.l)));
+      if (!formaPrecio || !reclama(L.precio.l, "precio")) { tirar("precio", L.precio.l, "la línea no tiene forma de precio"); L.precio = null; }
+    } else L.precio = null;
+    if (L.pagos && typeof L.pagos === "object") {
+      L.pagos.filas = (L.pagos.filas || []).filter(f => validaLineas(f, "pago_fila") && /\d{1,3}\s*%/.test((lineas[f.l - 1] || {}).original || "") && (reclama(f.l, "pago_fila") || tirar("pago_fila", f.l, "dos casas")));
+      L.pagos.propias = (L.pagos.propias || []).filter(p => validaLineas(p, "pago_propia") && validaCita(p, "cita_titulo", "pago_propia") && (reclama(p.l, "pago_propia") || tirar("pago_propia", p.l, "dos casas")));
+      L.pagos.notas = (L.pagos.notas || []).filter(p => validaLineas(p, "pago_nota") && (reclama(p.l, "pago_nota") || tirar("pago_nota", p.l, "dos casas")));
+      if (!L.pagos.filas.length && !L.pagos.propias.length && !L.pagos.notas.length) L.pagos = null;
+    } else L.pagos = null;
+    // 4) datos: los de la matriz legal solo si la app reconoce «Clave: valor»; si no, se degradan a hecho
+    L.hechos = L.hechos && typeof L.hechos === "object" ? L.hechos : {};
+    L.datos = lista("datos").filter(d => {
+      if (!validaLineas(d, "dato") || !validaCita(d, "cita", "dato")) return false;
+      if (!Object.keys(CLAVES_DATOS).includes(d.clave)) return tirar("dato", d.l, `clave desconocida ${d.clave}`);
+      const rec = claveDeLinea(txt(d.l));
+      if (MATRIZ_LEGAL.includes(d.clave) && !(rec && rec.clave === d.clave)) {
+        degradados.push({ clave: d.clave, l: d.l, cita: d.cita });
+        if (d.clave === "contratista" && !(L.hechos.contrato_con && L.hechos.contrato_con.l)) L.hechos.contrato_con = { valor: "gc", l: d.l, cita: d.cita };
+        if (d.clave === "dueno" && !(L.hechos.dueno && L.hechos.dueno.l)) L.hechos.dueno = { l: d.l, cita: d.cita };
+        if (d.clave === "propiedad") L.hechos.propiedad = { valor: /comercial|commercial/i.test(String(d.cita || txt(d.l))) ? "comercial" : "no_se", l: d.l, cita: d.cita };
+        if (d.clave === "firma") L.hechos.firma = { valor: "no_se", l: d.l, cita: d.cita };
+        if (d.clave === "permiso") L.hechos.permiso = { valor: "no_se", l: d.l, cita: d.cita };
+        return false;
+      }
+      d.pendiente = !!d.pendiente;
+      return reclama(d.l, "dato") || tirar("dato", d.l, "dos casas");
+    });
+    L.renglones = lista("renglones").filter(r => {
+      if (!validaLineas(r, "renglon") || !validaCita(r, "cita_titulo", "renglon")) return false;
+      if (!reclama(r.l, "renglon", r.l_hasta)) return tirar("renglon", r.l, "dos casas");
+      r.detalles = (r.detalles || []).filter(d => validaLineas(d, "detalle") && validaCita(d, "cita", "detalle") && (reclama(d.l, "detalle", d.l_hasta) || tirar("detalle", d.l, "dos casas")));
+      r.grupo_l = lineaOk(r.grupo_l) ? r.grupo_l : null;
+      r.cierre = !!r.cierre;
+      return true;
+    });
+    L.exclusiones = lista("exclusiones").filter(x => validaLineas(x, "exclusion") && validaCita(x, "cita_titulo", "exclusion") && (reclama(x.l, "exclusion", x.l_hasta) || tirar("exclusion", x.l, "dos casas")));
+    L.opciones = lista("opciones").filter((o, k) => {
+      if (k >= 4) return tirar("opcion", o.l, "más de cuatro opciones");
+      if (!validaLineas(o, "opcion")) return false;
+      const orig = (lineas[o.l - 1] || {}).original || "";
+      const d = hayDinero(orig);
+      if (!(d && d.seguro)) return tirar("opcion", o.l, "la opción no trae un precio al final");
+      if (!reclama(o.l, "opcion")) return tirar("opcion", o.l, "dos casas");
+      o.detalles = (o.detalles || []).filter(x => validaLineas(x, "opcion_detalle") && validaCita(x, "cita", "opcion_detalle") && (reclama(x.l, "opcion_detalle") || tirar("opcion_detalle", x.l, "dos casas")));
+      return true;
+    });
+    // condiciones: la explícita la calcula la app; la de prosa es referencia (pregunta), no casa
+    L.condiciones = lista("condiciones").filter(c => {
+      if (!validaLineas(c, "condicion") || !validaCita(c, "cita", "condicion")) return false;
+      if (!Object.keys(CLAVES_COND).includes(c.clave) && c.clave !== "tipo_trabajo") return tirar("condicion", c.l, `condición desconocida ${c.clave}`);
+      const rec = claveDeLinea(txt(c.l));
+      c.explicita = !!(rec && rec.clave === c.clave);
+      if (c.explicita && !reclama(c.l, "condicion")) return tirar("condicion", c.l, "dos casas");
+      return true;
+    });
+    L.codigo = lista("codigo").filter(c => validaLineas(c, "codigo") && (reclama(c.l, "codigo") || tirar("codigo", c.l, "dos casas")));
+    L.propias = L.propias && typeof L.propias === "object" ? L.propias : {};
+    ["programa", "pre", "terminos"].forEach(k => {
+      L.propias[k] = (Array.isArray(L.propias[k]) ? L.propias[k] : []).filter(p => validaLineas(p, "propia") && validaCita(p, "cita_titulo", "propia") && (reclama(p.l, "propia", p.l_hasta) || tirar("propia", p.l, "dos casas")));
+    });
+    L.parrafos = lista("parrafos").filter(p => validaLineas(p, "parrafo") && ["hoy", "cambia", "falta", "notas", "resumen", "pre_intro"].includes(p.destino) && validaCita(p, "cita", "parrafo") && (reclama(p.l, "parrafo", p.l_hasta) || tirar("parrafo", p.l, "dos casas")));
+    L.grupos = lista("grupos").filter(g => validaLineas(g, "grupo") && validaCita(g, "cita", "grupo") && (reclama(g.l, "grupo") || tirar("grupo", g.l, "dos casas")));
+    // 6) sobrantes: solo se callan las que la app confirma; las demás, ámbar y se conservan
+    L.sobrantes = lista("sobrantes").filter(s => {
+      if (!validaLineas(s, "sobrante")) return false;
+      const hasta = s.l_hasta || s.l;
+      for (let n = s.l; n <= hasta; n++) {
+        if (casa.has(n)) continue;
+        if (esSobranteConfirmada((lineas[n - 1] || {}).original)) { casa.set(n, "sobrante"); continue; }
+        avisos_app.push({ tipo: "sobrante_no_confirmada", l: n, texto: txt(n), porque: s.porque || "no_se" });
+      }
+      return true;
+    });
+    // cobertura: toda línea con contenido tiene casa; las que no, sin_casa (las lee la regla y se pregunta)
+    const sin_casa = [];
+    for (let n = 1; n <= N; n++) { if (!casa.has(n) && !esSobranteConfirmada((lineas[n - 1] || {}).original)) sin_casa.push(n); }
+    // 8) conteos
+    L.renglones.sort((a, b) => a.l - b.l).forEach((r, k) => { r.orden = k + 1; });
+    L.exclusiones.sort((a, b) => a.l - b.l).forEach((x, k) => { x.orden = k + 1; });
+    // 10) hechos: sin línea y cita verificadas, no_se
+    const HECHOS = ["contrato_con", "propiedad", "tipo_trabajo", "firma", "permiso"];
+    HECHOS.forEach(k => {
+      const h = L.hechos[k];
+      if (!h || typeof h !== "object") { L.hechos[k] = { valor: "no_se", l: null, cita: null }; return; }
+      if (h.valor && h.valor !== "no_se") { if (!lineaOk(h.l) || !citaEnLinea(txt(h.l), h.cita).ok) { h.valor = "no_se"; h.l = null; h.cita = null; } }
+    });
+    ["dueno", "segundo_firmante"].forEach(k => { const h = L.hechos[k]; if (!h || !lineaOk(h.l) || !citaEnLinea(txt(h.l), h.cita).ok) L.hechos[k] = { l: null, cita: null }; });
+    L.hechos.incluye = (Array.isArray(L.hechos.incluye) ? L.hechos.incluye : []).filter(x => lineaOk(x.l) && citaEnLinea(txt(x.l), x.cita).ok);
+    // 11) avisos: tipos de la lista, líneas reales, valor_cita verificada, motivo corto; como mucho 12
+    L.avisos = lista("avisos").filter(a => {
+      if (!TIPOS_AVISO.includes(a.tipo)) return tirar("aviso", null, `tipo desconocido ${a.tipo}`);
+      a.lineas = (Array.isArray(a.lineas) ? a.lineas : []).filter(lineaOk);
+      if (!a.lineas.length) return tirar("aviso", null, `${a.tipo} sin líneas`);
+      a.motivo = String(a.motivo || "").slice(0, 200);
+      a.certeza = a.certeza === "segura" ? "segura" : "probable";
+      if (a.cita && !a.lineas.some(l => citaEnLinea(txt(l), a.cita).ok)) return tirar("aviso", a.lineas[0], "cita del aviso que no está");
+      if (a.propuesta && typeof a.propuesta === "object") {
+        if (a.propuesta.valor_cita && !(lineaOk(a.propuesta.valor_l) && citaEnLinea(txt(a.propuesta.valor_l), a.propuesta.valor_cita).ok)) a.propuesta = null;
+      } else a.propuesta = null;
+      return true;
+    }).slice(0, 12);
+    L.remisiones = lista("remisiones").filter(r => validaLineas(r, "remision") && citaEnLinea(txt(r.l), r.cita).ok);
+    return { lectura_limpia: L, tiradas, sin_casa, degradados, avisos_app };
+  }
+
+  // ---- De la lectura comprobada a una pista por línea ----
+  const SEC_DE_ROL = { dato: "datos", grupo: "alcance", renglon_titulo: "alcance", renglon_detalle: "alcance", exclusion: "no_incluye",
+    precio: "precio_detalle", pago_fila: "pagos_detalle", pago_propia: "pagos_detalle", pago_nota: "pagos_detalle",
+    opcion: "opciones", opcion_detalle: "opciones", condicion: "condiciones", codigo: "codigo" };
+  function pistasDe(L) {
+    const P = {};
+    const pon = (l, p) => { if (l && !P[l]) P[l] = p; };
+    const continua = (o, rol) => { if (o.l_hasta && o.l_hasta > o.l) for (let n = o.l + 1; n <= o.l_hasta; n++) pon(n, { rol: "continua", de: o.l }); };
+    (L.secciones || []).forEach(s => pon(s.l, { rol: "seccion", seccion: s.seccion }));
+    if (L.precio) pon(L.precio.l, { rol: "precio" });
+    if (L.pagos) { (L.pagos.filas || []).forEach(f => pon(f.l, { rol: "pago_fila", orden: f.orden })); (L.pagos.propias || []).forEach(p => pon(p.l, { rol: "pago_propia", cita_titulo: p.cita_titulo })); (L.pagos.notas || []).forEach(p => pon(p.l, { rol: "pago_nota" })); }
+    (L.datos || []).forEach(d => pon(d.l, { rol: "dato", clave: d.clave, cita: d.cita, pendiente: !!d.pendiente }));
+    (L.renglones || []).forEach(r => { pon(r.l, { rol: "renglon_titulo", orden: r.orden, cita_titulo: r.cita_titulo, grupo_l: r.grupo_l, cierre: !!r.cierre, hasta: r.l_hasta || r.l }); continua(r); (r.detalles || []).forEach(d => { pon(d.l, { rol: "renglon_detalle", orden: r.orden, cita: d.cita }); continua(d); }); });
+    (L.exclusiones || []).forEach(x => { pon(x.l, { rol: "exclusion", orden: x.orden, cita_titulo: x.cita_titulo }); continua(x); });
+    (L.opciones || []).forEach(o => { pon(o.l, { rol: "opcion", orden: o.orden }); (o.detalles || []).forEach(d => pon(d.l, { rol: "opcion_detalle", orden: o.orden })); });
+    (L.condiciones || []).forEach(c => { if (c.explicita) pon(c.l, { rol: "condicion", clave: c.clave }); });
+    (L.codigo || []).forEach(c => pon(c.l, { rol: "codigo" }));
+    const pr = L.propias || {};
+    ["programa", "pre", "terminos"].forEach(k => (pr[k] || []).forEach(p => { pon(p.l, { rol: "propia", seccion: k, cita_titulo: p.cita_titulo }); continua(p); }));
+    (L.parrafos || []).forEach(p => { pon(p.l, { rol: "parrafo", destino: p.destino, cita: p.cita }); continua(p); });
+    (L.grupos || []).forEach(g => pon(g.l, { rol: "grupo", cita: g.cita }));
+    (L.sobrantes || []).forEach(s => { const hasta = s.l_hasta || s.l; for (let n = s.l; n <= hasta; n++) pon(n, { rol: "sobrante", porque: s.porque }); });
+    return P;
+  }
+  // Las pistas viven pegadas al TEXTO de la línea, no a su número: al tocar un botón que escribe en la hoja se realinean
+  function guardarPistas(texto, pistas) {
+    return String(texto || "").replace(/\r/g, "").split("\n").map((l, i) => ({ texto: limpiarLinea(l).limpia, pista: pistas[i + 1] || null }));
+  }
+  function alinearLectura(textoNuevo, guardadas) {
+    const usadas = new Set(), pistas = {}, huerfanas = [];
+    const lineas = String(textoNuevo || "").replace(/\r/g, "").split("\n");
+    let perdidas = 0, con = 0;
+    lineas.forEach((l, i) => {
+      const t = limpiarLinea(l).limpia; if (!t) return;
+      let k = guardadas.findIndex((g, j) => !usadas.has(j) && g.texto === t);
+      if (k < 0) k = guardadas.findIndex((g, j) => !usadas.has(j) && g.texto && norma(g.texto) === norma(t));
+      if (k >= 0) { usadas.add(k); if (guardadas[k].pista) { pistas[i + 1] = guardadas[k].pista; con++; } }
+      else if (!claveDeLinea(t) && !esSobranteConfirmada(l)) huerfanas.push(i + 1);
+    });
+    guardadas.forEach((g, j) => { if (g.pista && !usadas.has(j)) perdidas++; });
+    const total = guardadas.filter(g => g.pista).length || 1;
+    return { pistas, huerfanas, perdidas, proporcionPerdida: perdidas / total };
+  }
+
+  // ---- Cuánto de rara viene una hoja (para decidir si vale la pena pedir la lectura inteligente) ----
+  function rareza(L, V) {
+    let puntos = 0; const porque = [];
+    const errores = (V || validarAlcance(L)).errores || [];
+    if (errores.length) { puntos += 2; porque.push(`${errores.length} rojo(s)`); }
+    if ((L.ignoradas || []).length >= 2) { puntos += 1; porque.push("secciones que no reconozco"); }
+    const lineasTabla = (L.lineas || []).filter(l => /^\|.*\|$/.test(String(l).trim())).length;
+    if (lineasTabla >= 3 && L.items.length < 3) { puntos += 1; porque.push("tablas donde esperaba renglones"); }
+    if (!L.precio && (L.lineas || []).some(l => /\$\s?\d/.test(l))) { puntos += 1; porque.push("hay $ pero no leí el precio"); }
+    if (!L.pagos && (L.lineas || []).some(l => /\bdeposit\b/i.test(l))) { puntos += 1; porque.push("habla de depósito y no leí los pagos"); }
+    if ((L.lineas || []).length >= 120 && L.items.length < 3) { puntos += 2; porque.push("hoja larga con pocos renglones"); }
+    return { puntos, rara: puntos >= 2, porque };
+  }
+
+  // ---- Una lectura hecha con las reglas de siempre (para probar el juez sin nube, y para enseñar «Cómo leí tu hoja») ----
+  function lecturaDeReglas(texto, L) {
+    L = L || leerAlcance(texto);
+    const lineas = String(texto || "").replace(/\r/g, "").split("\n");
+    const limpia = n => limpiarLinea(lineas[n - 1] || "").limpia;
+    const lect = { formato: "hoja_casa", idioma: pareceIngles(texto) ? "en" : "es", lineas_total: lineas.length, secciones: [], datos: [], parrafos: [], grupos: [],
+      renglones: [], exclusiones: [], precio: null, pagos: null, opciones: [], condiciones: [], codigo: [], jurisdiccion_l: null,
+      propias: { programa: [], pre: [], terminos: [], pre_titulo_l: null }, remisiones: [], hechos: {}, avisos: [], sobrantes: [] };
+    lineas.forEach((cruda, i) => {
+      const l = cruda.replace(/\*\*|__|`/g, "").trim();
+      if (!l) return;
+      const esTitulo = /^#{1,6}\s/.test(l);
+      const posible = seccionDe(esTitulo ? l.replace(/^#+\s*/, "") : l);
+      const pareceTitulo = esTitulo || /^(?:\d+[.)]\s+)?[^.:,]{2,45}:?$/.test(l);
+      if (posible && (pareceTitulo || esTitulo)) lect.secciones.push({ l: i + 1, seccion: posible, titulo_cita: null });
+    });
+    L.items.forEach(it => {
+      const titulo = limpia(it.lineas[0]).includes(it.titulo) ? it.titulo : null;
+      lect.renglones.push({ orden: it.n, l: it.lineas[0], l_hasta: null, cita_titulo: titulo, grupo_l: null,
+        detalles: it.lineas.slice(1).map(l => ({ l, l_hasta: null, cita: null })), cierre: false });
+    });
+    L.no_incluye.forEach((x, k) => lect.exclusiones.push({ orden: k + 1, l: x.linea, l_hasta: null, cita_titulo: x.titulo && limpia(x.linea).includes(x.titulo) ? x.titulo : null, ya_en_plantilla: "ninguna" }));
+    if (L.precio && L.precio.linea) lect.precio = { l: L.precio.linea };
+    if (L.pagos && L.pagos.lineas && L.pagos.lineas.length) lect.pagos = { forma: L.pagos.corto ? "corta" : "filas", filas: L.pagos.corto ? [] : L.pagos.lineas.map((l, k) => ({ orden: k + 1, l })), propias: (L.pagos_propios || []).map(p => ({ l: p.linea, cita_titulo: p.titulo })), notas: [] };
+    if (L.pagos && L.pagos.corto && L.pagos.lineas && L.pagos.lineas[0]) lect.datos.push({ clave: "vence", l: 0, cita: null, pendiente: false }), lect.datos.pop();
+    L.opciones.forEach(o => lect.opciones.push({ orden: o.n, l: o.linea, detalles: [] }));
+    Object.entries(L.condiciones || {}).forEach(([k, v]) => { if (v && v.linea && !v.pescada) lect.condiciones.push({ clave: k, l: v.linea, cita: null }); });
+    ["programa", "pre", "terminos"].forEach(k => (L[k] || []).forEach(p => { if (p.linea) lect.propias[k].push({ l: p.linea, l_hasta: null, numero: p.n || null, cita_titulo: limpia(p.linea).includes(p.titulo) ? p.titulo : null, parece_de_plantilla: null }); }));
+    // datos de cabecera: las líneas «Clave: valor» que la app reconoce
+    lineas.forEach((cruda, i) => {
+      const t = limpiarLinea(cruda).limpia; const rec = claveDeLinea(t);
+      if (rec && Object.keys(CLAVES_DATOS).includes(rec.clave) && !lect.secciones.some(s => s.l === i + 1)) lect.datos.push({ clave: rec.clave, l: i + 1, cita: rec.valor || null, pendiente: false });
+    });
+    return lect;
+  }
+
   const API = { leerAlcance, validarAlcance, cuentas, repartir, leerMonto, pareceDinero, hayDinero, pareceIngles, redactarDirecto,
                 decidirInterruptores, prepararEncargo, validarSalida,
                 rellenarPlantilla, aplicarSi, repetirFila, aplicarClausulas,
                 barridoFinal, marcasEmparejadas, armarTodo, aplicarArreglo, arreglarTodo, leerPermiso, leerFirma, leerVence, DISPARADORES, ORDEN_9, dinero, centavos, norma,
-                numerarClausulas, clasificarPropias, renumerarRefs, partirFases, juntarNombres };
+                numerarClausulas, clasificarPropias, renumerarRefs, partirFases, juntarNombres,
+                // v3.7: el juez y las pistas
+                RX_DINERO_TAPAR, esMontoTapable, taparDinero, traeDineroEstricto, limpiarLinea, hojaParaElLector, citaEnLinea,
+                verificarLectura, pistasDe, guardarPistas, alinearLectura, rareza, lecturaDeReglas, claveDeLinea, TIPOS_AVISO };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   raiz.Alcance = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);

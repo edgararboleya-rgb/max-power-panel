@@ -8621,6 +8621,20 @@ Power done right the first time. ⚡`;
       A.arreglados = ["Tomé del proyecto: " + nut.tomados.join(" · ")];
     }
     alcCalcular();
+    // v3.7: lo que el motor decide solo y no toca dinero (el disparador del hito 2 cuando hay trabajo bajo tierra)
+    // se escribe en la hoja a la vista de Edgar, para que la hoja y el contrato digan lo mismo
+    for (let vuelta = 0; vuelta < 3; vuelta++) {
+      const autos = ((A.leido && A.leido.avisos) || []).flatMap(av => (av.arreglos || []).filter(x => x.automatico));
+      if (!autos.length) break;
+      let cambio = false;
+      autos.forEach(x => {
+        const r = Alcance.aplicarArreglo(A.texto, x);
+        if (!r.error && r.texto !== A.texto) { A.texto = r.texto; cambio = true; A.arreglados.push(r.explicacion + " (los montos no cambian)"); }
+      });
+      if (!cambio) break;
+      $("alc-texto").value = A.texto; alcGuardarLocal(A.proyecto.id, A.texto);
+      alcCalcular();
+    }
     pintarAlcance();
     if (!A.validado.errores.length && !A.validado.preguntas.length) avisar("Leído ✓ — revisa el dinero y redacta");
     alcDevolver();

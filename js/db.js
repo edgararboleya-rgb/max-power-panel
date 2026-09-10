@@ -626,8 +626,8 @@
     // La plantilla oficial vive en el almacén de la app, no en el teléfono:
     // así Edgar no tiene que elegir ningún archivo y todos usan la misma.
     plantillaSOW: async () => {
-      const firma = await firmarFotos(["plantillas/SOW_Template_v3.6.html"]);
-      const url = firma["plantillas/SOW_Template_v3.6.html"];
+      const firma = await firmarFotos(["plantillas/SOW_Template_v3.7.html"]);
+      const url = firma["plantillas/SOW_Template_v3.7.html"];
       if (!url) throw new Error("No encuentro la plantilla oficial en la app");
       const r = await fetch(url);
       if (!r.ok) throw new Error("No se pudo bajar la plantilla (" + r.status + ")");
