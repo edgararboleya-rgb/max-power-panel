@@ -249,7 +249,7 @@
            inspecciones, materiales, materialesEquipo, costos, externos,
            gestiones, recibos, recibosEquipo, alcancePuntos, ayudantes, decisiones,
            llavesPortal, visitasPortal, docsEmpresa, titulosDocs, jurisdicciones,
-           contratistas, llavesGC] =
+           contratistas, llavesGC, visitasDocs] =
       await Promise.all([
         leer("perfiles?select=*"),
         // El dueño lee la tabla completa; al equipo la base le devuelve vacío
@@ -293,8 +293,18 @@
         // recibe filas (RLS). Si el SQL no está pegado, la app sigue andando.
         leer("contratistas?select=*&order=nombre").catch(() => []),
         // Las llaves de los contratistas viven aparte (nunca van al respaldo)
-        leer("contratista_llaves?select=*").catch(() => [])
+        leer("contratista_llaves?select=*").catch(() => []),
+        // v159: cada vez que alguien abre un documento desde el portal (solo el dueño recibe filas;
+        // si el SQL VISITAS-CONTRATO no está pegado, la app sigue andando)
+        leer("documento_visitas?select=documento_id,quien,cuando&order=cuando.desc&limit=1000").catch(() => [])
       ]);
+    // Visitas por documento: cuántas y la última (vienen de la más nueva a la más vieja)
+    const visitasPorDoc = {};
+    (visitasDocs || []).forEach(v => {
+      const x = visitasPorDoc[v.documento_id] || (visitasPorDoc[v.documento_id] = { n: 0, ultima: "", quien: "" });
+      x.n += 1;
+      if (!x.ultima) { x.ultima = String(v.cuando || ""); x.quien = v.quien || ""; }
+    });
 
     const llavePorProyecto = Object.fromEntries((llavesPortal || []).map(l => [l.proyecto_id, l.token]));
     const llavePorContratista = Object.fromEntries((llavesGC || []).map(l => [l.contratista_id, l.token]));
@@ -382,6 +392,7 @@
           pideAprobacion: !!d.pide_aprobacion, aprobadoEl: d.aprobado_el ? String(d.aprobado_el).slice(0, 10) : "",
           pideFirma: !!d.pide_firma, firmadoEl: d.firmado_el ? String(d.firmado_el).slice(0, 10) : "", firmaNombre: d.firma_nombre || "",
           vistoEl: d.visto_el ? String(d.visto_el).slice(0, 10) : "",
+          visitas: visitasPorDoc[d.id] || null,
           contrafirmaEl: d.contrafirma_el ? String(d.contrafirma_el).slice(0, 10) : "" })),
         rfis: docs.filter(d => d.clase === "rfi").map(d => ({ id: d.id, titulo: d.titulo, estado: d.estado, url: d.url, ruta: d.ruta || "" })),
         horas: (Number(p.horas_estimadas) > 0 || reales > 0)

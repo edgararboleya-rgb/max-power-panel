@@ -2849,13 +2849,17 @@ function esFalloDeRed(err) {
     </div>`;
   }
 
+  // Fecha y hora cortas en hora de Florida, para las visitas del portal («9/9, 9:33 p. m.»)
+  const fechaHoraCorta = iso => { const d = new Date(iso || ""); return isNaN(d.getTime()) ? "" :
+    d.toLocaleString("es-US", { timeZone: "America/New_York", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }); };
   function fichaProyectoHTML(p) {
     const linksDocs = (p.docs || [])
       .map(d => `<span class="doc-fila"><a class="doc-link" ${d.ruta ? `href="#" data-docruta="${esc(d.ruta)}"` : `href="${esc(urlSegura(d.url) || "#")}"`} target="_blank" rel="noopener">📄 ${esc(d.titulo)}${d.ruta ? "" : ` <span class="doc-drive-tag">Drive</span>`}</a>${d.id ? `
         ${p.portalCompleto ? `<span class="cl-chip-aprobado" title="Luz verde encendida: con acceso completo el cliente ve TODOS los documentos, estén marcados o no">🟢 lo ve</span>` : `
         <button type="button" class="doc-cliente doc-portal${d.portal ? " on" : ""}" data-id="${d.id}" data-portal="${d.portal ? 1 : 0}"
           title="${d.portal ? "El cliente SÍ ve este documento — toca para ocultarlo" : "El cliente NO lo ve — toca para mostrárselo"}">${d.portal ? "👁 cliente" : "🚫 cliente"}</button>`}${(d.portal || p.portalCompleto) && docFirmable(d) ? `
-        ${!d.firmadoEl && d.vistoEl ? `<span class="cl-chip-aprobado">👁 visto ${esc(d.vistoEl)}</span>` : ""}
+        ${d.visitas ? `<span class="cl-chip-aprobado" title="Cada vez que lo abrieron desde el portal, con fecha y hora (hora de la base, UTC)">👁 ${d.visitas.quien === "contratista" ? "el contratista" : "el cliente"} lo abrió ${d.visitas.n === 1 ? "1 vez" : d.visitas.n + " veces"} · última ${esc(fechaHoraCorta(d.visitas.ultima))}</span>`
+          : (!d.firmadoEl && d.vistoEl ? `<span class="cl-chip-aprobado">👁 visto ${esc(d.vistoEl)}</span>` : "")}
         ${d.firmadoEl ? `<span class="cl-chip-aprobado">🖊 firmó ${esc(d.firmaNombre || "")} · ${esc(d.firmadoEl)}</span>` : `
         <button type="button" class="doc-cliente${d.pideFirma ? " on" : ""} doc-firma" data-id="${d.id}" data-pide="${d.pideFirma ? 1 : 0}"
           title="${d.pideFirma ? "Le está pidiendo FIRMA al cliente (nombre + firma con el dedo) — toca para quitarla" : "Pedirle al cliente que lo FIRME (nombre + firma con el dedo, queda de respaldo)"}">🖊 firma</button>`}
