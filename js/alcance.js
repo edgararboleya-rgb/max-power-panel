@@ -1176,6 +1176,13 @@
     F.senales = /\b(floodplain|flood zone|flood-zone|elevation certificate|fbc 1612|asce 24|base flood elevation|design flood elevation|\bbfe\b|firm panel|nfip)\b/i.test(t);
     return F;
   }
+  // Junta nombres de contacto sin repetir: «Roberto Prata / Kevin Haseney» + «Roberto Prata» → los dos, una vez
+  function juntarNombres(...vs) {
+    const vistos = new Set(), salida = [];
+    vs.forEach(v => String(v || "").split(/\s*[\/,;|]\s*|\s+(?:y|and|&)\s+/i).map(x => x.trim()).filter(Boolean).forEach(n => {
+      const k = norma(n); if (!vistos.has(k)) { vistos.add(k); salida.push(n); } }));
+    return salida.join(" / ");
+  }
   // v3.5: si la hoja no dice «Permiso:», se lee de lo que sí dice (jurisdicción, exclusiones, cronograma)
   function inferirPermiso(L, esGC) {
     const d = L.datos || {};
@@ -1691,7 +1698,7 @@
     const huecos = {
       CLIENT: dec.clienteEfectivo || d.cliente || "", CLIENT_2: d.segundo_firmante || (dec.esGC ? dueno : ""),
       // con contratista: su contacto de siempre y el coordinador de esta obra, los dos ("Roberto Prata / Kevin Haseney")
-      CONTACTOS: [...new Set([d.gc_contacto, d.atencion].map(x => String(x || "").trim()).filter(Boolean))].join(" / "),
+      CONTACTOS: juntarNombres(d.gc_contacto, d.atencion),
       HOMEOWNER: dec.esGC ? (dueno || "the property owner") : (d.cliente || ""),
       ETIQUETA_FIRMA_2: "Client Signature",
       FIRMA_REP: dec.esGC ? " (Authorized Representative)" : "",
@@ -1714,12 +1721,17 @@
       // contrata y los renglones del §2 (Edgar, 10-sep: «la sección uno se refiere a todo menos a los objetivos»)
       OVERVIEW: d.overview || (() => {
         const proy = String(d.proyecto || "").split(/\s+[—–]\s+/)[0].trim();
-        const que = proy ? `the ${proy.charAt(0).toLowerCase() + proy.slice(1)}` : "this project";
+        const que = proy ? `the ${proy}` : "this project";
         const donde = admin.direccion || d.direccion || "the Property";
         const conQuien = dec.esGC && dec.gcNombre ? `, performed by Max Power as electrical subcontractor to ${dec.gcNombre}`
                        : (dec.clienteEfectivo || d.cliente) ? ` for ${dec.clienteEfectivo || d.cliente}` : "";
-        const lista = (S.resumen_corrido && S.resumen_corrido.en) || "";
-        return `This Scope of Work covers the electrical work for ${que} at ${donde}${conQuien}${lista ? ": " + lista : ", as described in Section 2"}.`;
+        // los renglones de trabajo; los de responsabilidad («Furnished by Owner / Contractor») van en una frase aparte
+        const esResp = t => /^(furnished|provided|supplied|materials?|equipment) (by|furnished|provided)/i.test(t) || /\bfurnished by\b/i.test(t);
+        const trabajo = L.items.filter(it => !esResp(it.titulo)).map(it => { const t = it.titulo.replace(/[.:]$/, "").trim(); return /^[A-Z][a-z]/.test(t) && !/^[A-Z][a-z]*[A-Z]/.test(t) ? t.charAt(0).toLowerCase() + t.slice(1) : t; });
+        const resp = L.items.filter(it => esResp(it.titulo));
+        const lista = trabajo.length <= 1 ? trabajo.join("") : trabajo.slice(0, -1).join(", ") + " and " + trabajo[trabajo.length - 1];
+        const nota = resp.length ? ` Items ${resp.map(it => it.titulo.replace(/[.:]$/, "").trim().replace(/^[A-Z]/, c => c.toLowerCase())).join(" and ")} are stated in Section 2.${resp[0].n}.` : "";
+        return `This Scope of Work covers the electrical work for ${que} at ${donde}${conQuien}${lista ? ": " + lista : ", as described in Section 2"}.${nota}`;
       })(),
       QUE_HAY_HOY: (S.que_hay_hoy && S.que_hay_hoy.en) || "",
       QUE_CAMBIA: (S.que_cambia && S.que_cambia.en) || "",
@@ -1861,7 +1873,7 @@
                 decidirInterruptores, prepararEncargo, validarSalida,
                 rellenarPlantilla, aplicarSi, repetirFila, aplicarClausulas,
                 barridoFinal, marcasEmparejadas, armarTodo, aplicarArreglo, arreglarTodo, leerPermiso, leerFirma, leerVence, DISPARADORES, ORDEN_9, dinero, centavos, norma,
-                numerarClausulas, clasificarPropias, renumerarRefs, partirFases };
+                numerarClausulas, clasificarPropias, renumerarRefs, partirFases, juntarNombres };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   raiz.Alcance = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);

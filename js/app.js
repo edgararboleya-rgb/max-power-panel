@@ -8531,7 +8531,7 @@ Power done right the first time. ⚡`;
       cliente:   primero(gc && gc.nombre, p.cliente, est.cliente),
       dueno,
       // el contacto de la empresa y quien coordina ESTA obra, los dos («Roberto Prata / Kevin Haseney»)
-      atencion:  [...new Set([gc && gc.contacto, p.contratistaContacto, est.contratista_contacto].map(x => String(x || "").trim()).filter(x => !alcVacio(x)))].join(" / "),
+      atencion:  Alcance.juntarNombres(...[gc && gc.contacto, p.contratistaContacto, est.contratista_contacto].filter(x => !alcVacio(x))),
       email:     primero(gc && gc.email, p.cliente_email),
       telefono:  primero(gc && gc.telefono, p.cliente_tel),
       direccion: primero(p.direccion, est.direccion),
@@ -8549,6 +8549,12 @@ Power done right the first time. ⚡`;
       const re = new RegExp("^[ \\t#*]*(?:" + ALC_RE[clave] + ")\\s*:[ \\t]*(.*)$", "im");
       const m = txt.match(re);
       const enHoja = m ? m[1].replace(/^\*+|\*+$/g, "").trim() : "";
+      if (clave === "atencion" && !alcVacio(enHoja) && !alcVacio(conocidos.atencion)) {
+        // la hoja trae «Roberto Prata» y la app sabe «Roberto Prata / Kevin Haseney»: se completa, no se pisa
+        const juntos = Alcance.juntarNombres(enHoja, conocidos.atencion);
+        if (juntos !== enHoja) { txt = txt.replace(re, etiqueta + ": " + juntos); tomados.push("atención (" + juntos + ")"); }
+        return;
+      }
       if (!alcVacio(enHoja)) return;                       // la hoja ya lo trae
       const sabido = conocidos[clave];
       if (alcVacio(sabido)) { if (m) txt = txt.replace(re, ""); return; }   // ni la hoja ni la app: que pregunte
