@@ -84,7 +84,7 @@
   const CLAVES_DATOS = {
     cliente:            ["cliente", "client", "customer", "owner", "property owner", "prepared for", "client name"],
     segundo_firmante:   ["segundo firmante", "segunda firma", "firman", "second signer"],
-    atencion:           ["atencion", "attention", "contacto", "attn", "contact"],
+    atencion:           ["atencion", "attention", "contacto", "attn", "contact", "project coordinator", "coordinator", "project manager", "site contact", "gc contact", "attention to"],
     email:              ["email", "e-mail", "correo", "client email", "customer email", "mail"],
     telefono:           ["telefono", "tel", "phone", "cell", "celular", "mobile", "client phone", "customer phone"],
     dueno:              ["dueno de la casa", "dueno", "homeowner", "propietario"],
@@ -319,6 +319,8 @@
           const tt = linea.replace(/^(?:section\s+)?\d+[.)]?\s+/i, "").replace(/:$/, "").trim();
           R.pre_titulo = tt === tt.toUpperCase() ? tt.toLowerCase().replace(/(^|[\s—–-])([a-z])/g, (m, a, b) => a + b.toUpperCase()) : tt;
         }
+        // v3.6 r2: en «1 PROJECT OBJECTIVE & BACKGROUND» el primer párrafo suelto es el overview (regla B4)
+        if (posible === "hoy") R._objetivo = /\b(objective|background|overview|summary|purpose)\b/.test(normaTitulo(linea));
         sec = posible; itemActual = null; opcionActual = null; return;
       }
       if (sec === "ignorar") { pescar(linea, i); return; }
@@ -404,7 +406,10 @@
           let destino = sec, texto = linea.replace(/^[-*•]\s*/, "").replace(/^\d+\.\d+[.)]?\s+/, "");
           // "This Scope of Work covers X at <dirección>." → es el resumen, no una condición
           const mRes = sec === "hoy" && texto.match(/^this scope of work covers\s+(.+?)(?:\s+at\s+[^.]*\d[^.]*)?\.?$/i);
-          if (sec === "hoy" && /^this scope of work covers\b/i.test(texto)) {
+          const esOverview = sec === "hoy" && !R.datos.overview && !/^[-*•]/.test(linea) &&
+            (/^this scope of work covers\b/i.test(texto) ||
+             (R._objetivo && !parrafo.hoy.length && texto.length > 60 && !/^(existing|site|basis|information|new layout|proposed|changes|service|parties)\b/i.test(texto)));
+          if (esOverview) {
             // v3.6: el párrafo entero es el «overview» y va al contrato tal cual (no se rearma con los títulos)
             R.datos.overview = texto.trim();
             if (mRes) R.datos.resumen = mRes[1].trim().replace(/\s+at\s+\d{2,}[^]*$/i, "").replace(/[.,]$/, "");
@@ -792,6 +797,13 @@
 
     if (!D.cliente) preguntas.push({ clave: "cliente", texto: "¿Quién es el cliente (quien paga y firma)?", libre: true });
     if (!D.direccion) preguntas.push({ clave: "direccion", texto: "¿Cuál es la dirección de la obra?", libre: true });
+    // v3.6 r2: la obra está en zona de inundación pero la hoja no dice la zona ni el BFE → se pregunta (va a la 7.x Flood elevation)
+    {
+      const F = L.flood || {}; const hojaFlood = [...(L.terminos || []), ...(L.programa || [])].some(t => /flood|bfe|base flood/i.test(t.titulo + " " + t.texto));
+      if (F.senales && !F.zona && !D.flood_zona && !hojaFlood)
+        preguntas.push({ clave: "flood_zona", libre: true,
+          texto: "La obra está en zona de inundación (la hoja habla del certificado de elevación / FBC 1612). ¿Qué zona FEMA y qué BFE dice el certificado? Escríbelo así: AE, BFE 11.0 / 12.0 ft NAVD 88, EC 12/23/2014, LAG 6.7 ft" });
+    }
     // Cada {{FALTA: pregunta}} que dejó el chat es una pregunta para Edgar
     (L.faltas || []).forEach(f => preguntas.push({
       clave: "falta_" + f.linea, linea: f.linea, texto: f.pregunta, libre: true,
@@ -1156,10 +1168,12 @@
     const b = t.match(/\b(?:BFE|base flood elevation)\b[^\d]{0,20}(\d+(?:\.\d+)?(?:\s*\/\s*\d+(?:\.\d+)?)?)\s*(?:ft|feet|')?\s*(NAVD\s*88|NGVD\s*29)?/i);
     if (b) F.bfe = b[1].replace(/\s*\/\s*/, " / ") + " ft" + (b[2] ? " " + b[2].toUpperCase().replace(/\s+/, " ") : "");
     const e = t.match(/elevation certificate\b[^.;]{0,60}?\b(\d{1,2}\/\d{1,2}\/\d{2,4})/i) || t.match(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b[^.;]{0,40}elevation certificate/i)
-           || t.match(/\b((?:19|20)\d{2})\s+elevation certificate/i) || t.match(/elevation certificate\b[^.;]{0,40}?\b((?:19|20)\d{2})\b/i);
+           || t.match(/\bEC\s*[:=]?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/) || t.match(/\b((?:19|20)\d{2})\s+elevation certificate/i) || t.match(/elevation certificate\b[^.;]{0,40}?\b((?:19|20)\d{2})\b/i);
     if (e) F.ec = e[1];
-    const g = t.match(/lowest adjacent grade\b\s*(?:\(LAG\))?[^\d]{0,12}(\d+(?:\.\d+)?)\s*(?:ft|feet|')?/i);
+    const g = t.match(/lowest adjacent grade\b\s*(?:\(LAG\))?[^\d]{0,12}(\d+(?:\.\d+)?)\s*(?:ft|feet|')?/i) || t.match(/\bLAG\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|')?/);
     if (g) F.lag = g[1] + " ft";
+    // señales de que la propiedad está en zona de inundación aunque nadie diga la zona
+    F.senales = /\b(floodplain|flood zone|flood-zone|elevation certificate|fbc 1612|asce 24|base flood elevation|design flood elevation|\bbfe\b|firm panel|nfip)\b/i.test(t);
     return F;
   }
   // v3.5: si la hoja no dice «Permiso:», se lee de lo que sí dice (jurisdicción, exclusiones, cronograma)
@@ -1246,7 +1260,8 @@
     const zonaTxt = norma(d.flood_zona || (L.flood || {}).zona || "").match(/\b(ae|ve|ao|ah|a|v)\b/);
     const mZona = zonaTxt ? [zonaTxt[0], zonaTxt[1]] : null;
     const hojaFlood = [...(L.terminos || []), ...(L.programa || [])].some(t => /flood|bfe|base flood/i.test(t.titulo + " " + t.texto));
-    const flood = !!mZona && !hojaFlood;
+    // con zona conocida, o con señales claras de zona de inundación (floodplain, FBC 1612, ASCE 24, certificado de elevación)
+    const flood = (!!mZona || !!(L.flood || {}).senales) && !hojaFlood;
     const layout = !preProprio && norma(d.layout || "si") !== "no";
 
     const bloques = {
@@ -1675,7 +1690,9 @@
     const dueno = dec.duenoEfectivo || "";
     const huecos = {
       CLIENT: dec.clienteEfectivo || d.cliente || "", CLIENT_2: d.segundo_firmante || (dec.esGC ? dueno : ""),
-      CONTACTOS: d.atencion || d.gc_contacto || "", HOMEOWNER: dec.esGC ? (dueno || "the property owner") : (d.cliente || ""),
+      // con contratista: su contacto de siempre y el coordinador de esta obra, los dos ("Roberto Prata / Kevin Haseney")
+      CONTACTOS: [...new Set([d.gc_contacto, d.atencion].map(x => String(x || "").trim()).filter(Boolean))].join(" / "),
+      HOMEOWNER: dec.esGC ? (dueno || "the property owner") : (d.cliente || ""),
       ETIQUETA_FIRMA_2: "Client Signature",
       FIRMA_REP: dec.esGC ? " (Authorized Representative)" : "",
       // v3.6: la jurisdicción tal cual en la cabecera; la forma corta en la prosa
@@ -1775,7 +1792,7 @@
       const ec = ecV ? ` dated ${ecV}` : "";
       const detalles = [dec.zona ? `Zone ${dec.zona}` : "", bfeV ? `BFE ${bfeV}` : ""].filter(Boolean).join(", ")
         + (lagV ? `; lowest adjacent grade ${lagV}` : "");
-      huecos.FLOOD_BASE = `Pricing is based on the Base Flood Elevation shown on the FEMA Elevation Certificate for the Property${ec}${detalles ? " (" + detalles + ")" : ""}.`;
+      huecos.FLOOD_BASE = `Pricing is based on the Base Flood Elevation shown on the FEMA Elevation Certificate for the Property${ec}${detalles ? " (" + detalles + ")" : " furnished by the Client"}.`;
     }
     // v3.5: los renglones de la hoja con su numeración propia (2.3 / 3.2) → su número en el contrato (2.n)
     const mapaItems = {};

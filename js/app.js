@@ -8443,6 +8443,7 @@ Power done right the first time. ⚡`;
     if (R.pagos) { try { ponDato("Pagos", JSON.parse(R.pagos).join("/")); } catch { ponDato("Pagos", R.pagos); } }
     if (R.cliente) ponDato("Cliente", R.cliente);
     if (R.direccion) ponDato("Dirección", R.direccion);
+    if (R.flood_zona) ponDato("Flood zone", R.flood_zona);
     if (R.dos_firmas === "Sí, firman las dos") {
       const m = txt.match(/^\s*Cliente\s*:\s*(.+)$/im);
       if (m) {
