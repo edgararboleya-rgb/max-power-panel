@@ -109,7 +109,7 @@
     "No hay proyectos aquí.": "No projects here.",
     "Ver proyecto completo": "View full project",
     "Situación": "Status", "Próxima acción": "Next action",
-    "Fase de obra": "Job phase", "Horas — plan vs. real": "Hours — plan vs. actual",
+    "Fase de obra": "Job phase", "Servicio": "Service", "Horas — plan vs. real": "Hours — plan vs. actual",
     "Desglose del contrato": "Contract breakdown", "Hitos de pago": "Payment milestones",
     "Rentabilidad y gastos": "Profit & expenses", "Ayuda externa (por día o por ajuste)": "Outside help (daily or lump sum)",
     "Permisos e inspecciones": "Permits & inspections", "Fotos de obra": "Job photos",

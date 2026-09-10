@@ -63,6 +63,15 @@
     { clave: "trim",         etiqueta: "Trim / Terminación" },
     { clave: "insp-final",   etiqueta: "Inspección final" }
   ];
+  // Las fases de una obra no valen para un SERVICIO: un service es un trabajo de un
+  // día o dos, sin rough-in, sin trim y sin inspecciones. Por eso un servicio lleva
+  // una sola fase. La clave se queda en "mobilizacion" porque la base solo admite las
+  // claves de arriba; lo único que cambia es lo que se lee en pantalla.
+  function fasesDe(p) {
+    return p && p.tipo === "servicio"
+      ? [{ clave: "mobilizacion", etiqueta: "Servicio" }]
+      : FASES;
+  }
   const DESC_ETAPA = {
     ejecucion: "Obras activas con fases en curso",
     aprobado: "Aceptados, pendientes de arrancar",
@@ -1444,13 +1453,16 @@ function esFalloDeRed(err) {
   // ---------- Piezas de la tarjeta ----------
   function stepperHTML(p) {
     if (p.estado !== "ejecucion") return "";
-    const idx = Math.max(0, FASES.findIndex(f => f.clave === p.fase));
-    const pasos = FASES.map((f, i) => `
+    const fases = fasesDe(p);
+    const idx = Math.max(0, fases.findIndex(f => f.clave === p.fase));
+    const pasos = fases.map((f, i) => `
       <div class="paso${i < idx ? " hecho" : ""}${i === idx ? " actual" : ""}">
         <div class="paso-punto">${i < idx ? "✓" : i + 1}</div>
         <div class="paso-nombre">${f.etiqueta}</div>
       </div>`).join(`<div class="paso-linea"></div>`);
-    return `<div class="detalle-seccion"><h3>Fase de obra</h3><div class="stepper">${pasos}</div></div>`;
+    // Un servicio no tiene fases de obra: el título lo dice así
+    const titulo = fases.length === 1 ? "Servicio" : "Fase de obra";
+    return `<div class="detalle-seccion"><h3>${titulo}</h3><div class="stepper">${pasos}</div></div>`;
   }
 
   function horasHTML(p) {
@@ -2537,10 +2549,12 @@ function esFalloDeRed(err) {
     if (p.estado === "aprobado")
       b.push(`<button class="accion" data-accion="iniciar" data-id="${esc(p.id)}">▶ Iniciar ejecución</button>`);
     if (p.estado === "ejecucion") {
-      const idx = Math.max(0, FASES.findIndex(f => f.clave === p.fase));
+      // Con una sola fase (los servicios) no hay a dónde adelantar ni atrasar
+      const fases = fasesDe(p);
+      const idx = Math.max(0, fases.findIndex(f => f.clave === p.fase));
       if (idx > 0)
         b.push(`<button class="accion secundaria" data-accion="fase-atras" data-id="${esc(p.id)}">◀ Fase anterior</button>`);
-      if (idx < FASES.length - 1)
+      if (idx < fases.length - 1)
         b.push(`<button class="accion" data-accion="fase-adelante" data-id="${esc(p.id)}">Fase siguiente ▶</button>`);
       else
         b.push(`<button class="accion" data-accion="completar" data-id="${esc(p.id)}">✓ Marcar completado</button>`);
@@ -2698,7 +2712,11 @@ function esFalloDeRed(err) {
   }
 
   function cabeceraHTML(p, conSelector) {
-    const fase = p.estado === "ejecucion" ? FASES.find(f => f.clave === p.fase) : null;
+    const fases = fasesDe(p);
+    // En un servicio, cualquier fase guardada se enseña como la única que hay
+    const fase = p.estado !== "ejecucion" ? null
+      : fases.length === 1 ? fases[0]
+      : fases.find(f => f.clave === p.fase) || null;
     const miniFase = fase ? `<span class="mini-fase">${fase.etiqueta}</span>` : "";
     return `
       <div class="proyecto-head">
@@ -3825,16 +3843,18 @@ function esFalloDeRed(err) {
     const p = proyectos().find(x => x.id === id);
     if (!p) return;
     if (accion === "alcance") { irAlcance(id); return; }
-    const idx = Math.max(0, FASES.findIndex(f => f.clave === p.fase));
+    const fases = fasesDe(p);
+    const idx = Math.max(0, fases.findIndex(f => f.clave === p.fase));
     let cambios = null;
     switch (accion) {
       case "aprobar":       cambios = { estado: "aprobado" }; break;
       case "iniciar":       cambios = { estado: "ejecucion", fase: p.fase || "mobilizacion" }; break;
       case "pausar":        cambios = { estado: "pausa" }; break;
       case "completar":     cambios = { estado: "completado" }; break;
-      case "reabrir":       cambios = { estado: "ejecucion", fase: p.fase || "insp-final" }; break;
-      case "fase-adelante": cambios = { fase: FASES[Math.min(idx + 1, FASES.length - 1)].clave }; break;
-      case "fase-atras":    cambios = { fase: FASES[Math.max(idx - 1, 0)].clave }; break;
+      case "reabrir":       cambios = { estado: "ejecucion", fase: p.fase || (fases.length === 1 ? "mobilizacion" : "insp-final") }; break;
+      // En un servicio no se adelanta ni se atrasa nada: hay una sola fase
+      case "fase-adelante": cambios = fases.length > 1 ? { fase: fases[Math.min(idx + 1, fases.length - 1)].clave } : null; break;
+      case "fase-atras":    cambios = fases.length > 1 ? { fase: fases[Math.max(idx - 1, 0)].clave } : null; break;
     }
     if (!cambios) return;
     try {
@@ -6769,7 +6789,9 @@ Power done right the first time. ⚡`;
       try {
         await DB.crearProyecto({
           id: idNuevo,
-          tipo: est.tipo === "Commercial" ? "comercial" : "residencial",
+          // un estimado de modo «servicio» nace como proyecto de servicio (una sola fase, sin inspección final);
+          // el modo «rápido» NO es servicio (con él se hacen remodelaciones, p. ej. Cocina Christine)
+          tipo: est.modo === "servicio" ? "servicio" : (est.tipo === "Commercial" ? "comercial" : "residencial"),
           nombre: est.nombre,
           direccion: est.direccion || "Por confirmar",
           cliente: est.cliente || "Por confirmar",
@@ -6793,18 +6815,21 @@ Power done right the first time. ⚡`;
         await DB.crearHito({ proyecto_id: idNuevo, titulo: "Milestone 3 — 25% final", condicion: "Al pasar inspección final", monto: r2(bid - m1 - m2), estado: "pendiente", orden: 3 });
         // El alcance por puntos nace de los ensambles (o secciones)
         const ensDelEst2 = (estData.estEnsambles || []).filter(e => e.estimado_id === est.id && Number(e.cantidad) > 0);
+        // Un servicio es un trabajo de un día o dos: no lleva fases de obra ni
+        // inspección final, así que tampoco esos puntos en el alcance
+        const esServicio = est.modo === "servicio";
         let ordenP = 1;
         if (ensDelEst2.length) {
           for (const ee of ensDelEst2) {
             const ens = (estData.ensambles || []).find(x => x.id === ee.ensamble_id);
             if (ens) await DB.crearPunto({ proyecto_id: idNuevo, texto: `${ens.nombre} (${ee.cantidad})`, orden: ordenP++ });
           }
-        } else {
+        } else if (!esServicio) {
           const secciones = [...new Set(c.items.map(i => (catalogoExacto(i.item) || {}).seccion).filter(Boolean))];
           for (const s of secciones.slice(0, 8))
             await DB.crearPunto({ proyecto_id: idNuevo, texto: `Completar ${s.toLowerCase()}`, orden: ordenP++ });
         }
-        await DB.crearPunto({ proyecto_id: idNuevo, texto: "Inspección final aprobada", orden: ordenP });
+        await DB.crearPunto({ proyecto_id: idNuevo, texto: esServicio ? "Servicio realizado" : "Inspección final aprobada", orden: ordenP });
         // El estimado queda enlazado a su proyecto: así «Escribir el alcance» sabe qué precio ofrecer
         await DB.cambiarEstimado(est.id, { estado: "convertido", proyecto_id: idNuevo });
         await recargar();
