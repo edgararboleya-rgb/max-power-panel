@@ -684,6 +684,10 @@
     R.falta = parrafo.falta.join(" ");
     R.notas = parrafo.notas.join("\n");
     R.items.forEach((it, k) => { it.n = k + 1; });
+    // v3.6: el flood se lee de toda la hoja (menos las Notas, que son de Edgar)
+    R.flood = extraerFlood([R.hoy, R.cambia, R.falta, ...(R.codigo_otros || []), ...(R.terminos || []).map(t => t.titulo + ". " + t.texto),
+      ...(R.programa || []).map(t => t.titulo + ". " + t.texto), ...(R.pre || []).map(t => t.titulo + ". " + t.texto),
+      ...(R.no_incluye || []).map(x => x.texto), Object.values(R.datos).filter(v => typeof v === "string").join(" ")].join(" "));
     // La numeración escrita no manda: el orden de los renglones es el que vale. Si va seguida
     // (plana, o 1, 2, 3 dentro de cada grupo/sección) no se dice nada; si no, se avisa sin frenar.
     const conNum = R.items.filter(i => i.escrito !== null);
@@ -811,8 +815,15 @@
       const txtA = norma(L.items.map(it => it.titulo + " " + it.detalles.join(" ")).join(" "));
       const disp = ((L.pagos || {}).disparadores || []).map(x => norma(x || ""));
       const temprana = fases.some(f => /underground|bonding|trench|slab/i.test(f)) || /\b(underground|bonding grid|equipotential|trench)\b/.test(txtA);
-      if (temprana && disp.length >= 2 && /rough/.test(disp[1] || "") && !disp.some(x => /bonding|underground|trench|slab/.test(x)))
-        L.avisos.push({ informativo: true, texto: "Ojo con el dinero: hay una fase bajo tierra / bonding semanas antes del rough-in y el pago 2 es «al terminar el rough-in». Considera un hito al aprobar la inspección de bonding (por ejemplo 40 / 30 / 20 / 10). Lo decides tú en Pagos; el papel sale como lo escribas." });
+      if (temprana && disp.length >= 2 && /rough/.test(disp[1] || "") && !disp.some(x => /bonding|underground|trench|slab/.test(x))) {
+        // no es un rough-in de interior: el trabajo bajo tierra y el bonding van antes. La app propone el disparador;
+        // Edgar lo pone con un toque (el dinero no cambia solo).
+        const f0 = (fases[0] && /underground|bonding|trench|slab/i.test(fases[0]) ? fases[0] : "underground raceways and pool equipotential bonding").replace(/\s+and\s+/g, ", ");
+        const propuesto = `upon completion of ${f0} and rough-in`;
+        const lineaH2 = ((L.pagos || {}).lineas || [])[1];
+        L.avisos.push({ texto: `Esto no es un rough-in de interior: hay trabajo bajo tierra / bonding antes. El pago 2 dice «${(L.pagos.disparadores[1] || "").slice(0, 50)}»; lo natural es «${propuesto}» (los montos no cambian). Si prefieres un hito aparte al aprobar el bonding (40/30/20/10), escríbelo en Pagos.`,
+          arreglos: lineaH2 ? [{ tipo: "cambiar_disparador", etiqueta: "Poner ese disparador en el hito 2", linea: lineaH2, valor: propuesto }] : [] });
+      }
     }
     // contrato con el contratista sin el nombre del dueño: no frena; firma solo el contratista
     if ((norma(D.contrato_con || "") === "gc" || gcN) && !L.avisos.some(a => /firma solo el contratista/.test(a.texto)))
@@ -950,6 +961,17 @@
         if (!v) return { error: "escribe la respuesta" };
         lineas[i] = antes.replace(/\{\{FALTA:?[^}]*\}\}/i, v);
         explicacion = `línea ${a.linea}: puse tu respuesta «${v.slice(0, 60)}»`;
+        break;
+      }
+      case "cambiar_disparador": {
+        // en una fila de tabla "| Milestone 2 — 40% | Upon completion of rough-in | $7,380.00 |" cambia la celda del disparador;
+        // en una línea suelta, el texto después del porcentaje
+        if (!hay) return { error: "no encuentro la línea del hito" };
+        const nuevo = v.charAt(0).toUpperCase() + v.slice(1);
+        const celdas = antes.split("|");
+        if (celdas.length >= 4) { celdas[2] = " " + nuevo + " "; lineas[i] = celdas.join("|"); }
+        else lineas[i] = antes.replace(/(\d{1,3}\s*%\)?\s*[:—–-]?\s*)(.+?)(\s*\$\s?[\d,.]+)?\s*$/, (m, a, b, c) => a + nuevo + (c || ""));
+        explicacion = `puse el disparador del hito 2: ${nuevo}`;
         break;
       }
       case "quitar_trozo": {
@@ -1123,6 +1145,23 @@
     if (/\b(cliente|client|gc|owner|dueno|contratista)\b/.test(n) && !/max power|nosotros/.test(n)) return "cliente";
     return "nosotros";
   }
+  // v3.6: la zona de inundación y sus números se leen de cualquier parte de la hoja (sección 1, 4, 7 o 9),
+  // no solo de la cabecera: "Zone AE", "BFE 11.0 / 12.0 ft NAVD 88", "Elevation Certificate dated 12/23/2014",
+  // "lowest adjacent grade 6.7 ft"
+  function extraerFlood(txt) {
+    const t = String(txt || "").replace(/\s+/g, " ");
+    const F = {};
+    const z = t.match(/\b(?:flood\s+|fema\s+)?zone\s*[:\-]?\s*(AE|VE|AO|AH|A|V)\b(?![a-z])/i) || t.match(/\bzona\s*[:\-]?\s*(AE|VE|AO|AH)\b/i);
+    if (z) F.zona = z[1].toUpperCase();
+    const b = t.match(/\b(?:BFE|base flood elevation)\b[^\d]{0,20}(\d+(?:\.\d+)?(?:\s*\/\s*\d+(?:\.\d+)?)?)\s*(?:ft|feet|')?\s*(NAVD\s*88|NGVD\s*29)?/i);
+    if (b) F.bfe = b[1].replace(/\s*\/\s*/, " / ") + " ft" + (b[2] ? " " + b[2].toUpperCase().replace(/\s+/, " ") : "");
+    const e = t.match(/elevation certificate\b[^.;]{0,60}?\b(\d{1,2}\/\d{1,2}\/\d{2,4})/i) || t.match(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b[^.;]{0,40}elevation certificate/i)
+           || t.match(/\b((?:19|20)\d{2})\s+elevation certificate/i) || t.match(/elevation certificate\b[^.;]{0,40}?\b((?:19|20)\d{2})\b/i);
+    if (e) F.ec = e[1];
+    const g = t.match(/lowest adjacent grade\b\s*(?:\(LAG\))?[^\d]{0,12}(\d+(?:\.\d+)?)\s*(?:ft|feet|')?/i);
+    if (g) F.lag = g[1] + " ft";
+    return F;
+  }
   // v3.5: si la hoja no dice «Permiso:», se lee de lo que sí dice (jurisdicción, exclusiones, cronograma)
   function inferirPermiso(L, esGC) {
     const d = L.datos || {};
@@ -1204,8 +1243,8 @@
     // v3.5: la sección 4 por grupos (como la trae la hoja) o la línea genérica
     const codigoPropio = (L.codigo_detalle || []).some(g => g.grupo || g.otros.length);
     // v3.6: 7.x Flood elevation cuando la propiedad está en zona AE / VE / AO / AH y la hoja no trae su propia cláusula
-    const textoFlood = norma([d.flood_zona || "", L.hoy || "", L.falta || "", ...(L.codigo_otros || [])].join(" "));
-    const mZona = textoFlood.match(/\b(?:zone|zona)\s*(ae|ve|ao|ah|a\d*|v\d*)\b/) || (norma(d.flood_zona || "").match(/^(ae|ve|ao|ah|a\d*|v\d*)\b/));
+    const zonaTxt = norma(d.flood_zona || (L.flood || {}).zona || "").match(/\b(ae|ve|ao|ah|a|v)\b/);
+    const mZona = zonaTxt ? [zonaTxt[0], zonaTxt[1]] : null;
     const hojaFlood = [...(L.terminos || []), ...(L.programa || [])].some(t => /flood|bfe|base flood/i.test(t.titulo + " " + t.texto));
     const flood = !!mZona && !hojaFlood;
     const layout = !preProprio && norma(d.layout || "si") !== "no";
@@ -1731,9 +1770,11 @@
     const base7 = (dec.bloques.UTILITY ? 6 : 5) + (dec.bloques.FLOOD ? 1 : 0);
     huecos.N_FLOOD = String(dec.bloques.UTILITY ? 7 : 6);
     {
-      const ec = d.flood_ec ? ` dated ${d.flood_ec}` : "";
-      const detalles = [dec.zona ? `Zone ${dec.zona}` : "", d.flood_bfe ? `BFE ${d.flood_bfe}` : ""].filter(Boolean).join(", ")
-        + (d.flood_lag ? `; lowest adjacent grade ${d.flood_lag}` : "");
+      const F = L.flood || {};
+      const ecV = d.flood_ec || F.ec, bfeV = d.flood_bfe || F.bfe, lagV = d.flood_lag || F.lag;
+      const ec = ecV ? ` dated ${ecV}` : "";
+      const detalles = [dec.zona ? `Zone ${dec.zona}` : "", bfeV ? `BFE ${bfeV}` : ""].filter(Boolean).join(", ")
+        + (lagV ? `; lowest adjacent grade ${lagV}` : "");
       huecos.FLOOD_BASE = `Pricing is based on the Base Flood Elevation shown on the FEMA Elevation Certificate for the Property${ec}${detalles ? " (" + detalles + ")" : ""}.`;
     }
     // v3.5: los renglones de la hoja con su numeración propia (2.3 / 3.2) → su número en el contrato (2.n)
