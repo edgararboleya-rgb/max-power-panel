@@ -3432,7 +3432,7 @@ function esFalloDeRed(err) {
         // Es lo mismo que decide la función qb; aquí solo se le enseña a Edgar antes de tocar.
         const pF = proyectos().find(x => x.id === btn.dataset.proyecto);
         const gcF = pF && pF.contratistaModo === "contrato" ? gcDeProyecto(pF) : null;
-        const destino = (gcF && gcF.email) || (pF && pF.cliente_email) || "";
+        const destino = (gcF && gcF.email) || (pF && (pF.clienteEmail || pF.cliente_email)) || "";
         const quien = gcF && gcF.email ? `${gcF.nombre} (${gcF.email})` : destino;
         const pregunta = destino
           ? `¿Crear esta factura en QuickBooks y MANDARLA ahora a ${quien}?`
@@ -8517,7 +8517,9 @@ Power done right the first time. ⚡`;
 
   // ── La hoja se nutre de lo que la app ya sabe, y el proyecto de lo que diga la hoja ──
   // "Por confirmar", "TBD", "pendiente" no son datos: cuentan como vacío.
-  const alcVacio = v => !String(v || "").trim() || /^(por confirmar|por definir|tbd|pendiente|n\/a|-+|\?+)$/i.test(String(v).trim());
+  // Lo que parece un dato pero es un hueco (lista cerrada, pliego tanda 1): «to be confirmed», «tbc», «pending», «[address]», «[tbd]»…
+  const alcVacio = v => { const t = String(v || "").trim();
+    return !t || /^(por confirmar|por definir|por decidir|tbd|tbc|tba|pendiente|pending|to be (confirmed|determined|decided|announced)|n\/a|na|none|unknown|-+|\?+|\[[^\]]*\]|<[^>]*>|_{3,}|\.{3,}|x{3,})$/i.test(t); };
   // Lo que la app ya sabe de esta obra: proyecto → estimado → contratista
   function alcDatosConocidos(proyectoId) {
     const p = proyectos().find(x => x.id === proyectoId) || {};
@@ -8784,6 +8786,12 @@ Power done right the first time. ⚡`;
     const A = alcActivo;
     alcRecoger();
     alcCalcular();
+    // Si la hoja cambió después de redactar (o de ir por Directo), el inglés que hay es de otra hoja:
+    // se compara la huella y no se arma con texto viejo (pliego tanda 1).
+    if (A.salida && A.huella) {
+      const h = await alcHuella(A.texto);
+      if (h && h !== A.huella) { avisar("La hoja cambió después de redactar. Toca Leer y después Directo (o Redactar) antes de armar.", true); return; }
+    }
     try {
       if (!alcPlantilla) { avisar("Bajando la plantilla…"); alcPlantilla = await DB.plantillaSOW(); }
       if (!Alcance.marcasEmparejadas(alcPlantilla)) throw new Error("La plantilla de la app tiene una marca coja");

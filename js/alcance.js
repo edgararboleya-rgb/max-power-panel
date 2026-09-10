@@ -139,8 +139,24 @@
     fases:              ["fases", "phases"],
     areas:              ["areas", "areas incluidas", "donde trabajo", "work areas", "areas included"],
     no_tocamos:         ["no tocamos", "no tocas", "fuera de area", "not touched", "off limits"],
-    no_excluir:         ["no excluir", "si hacemos", "quitar exclusion", "do not exclude", "remove exclusion"]
+    no_excluir:         ["no excluir", "si hacemos", "quitar exclusion", "do not exclude", "remove exclusion"],
+    // v3.7 (tanda 1): qué clase de trabajo es, escrito a mano; manda sobre las listas de palabras del alcance
+    tipo_trabajo:       ["tipo de trabajo", "tipo trabajo", "work type", "job type", "type of work", "clase de trabajo"]
   };
+  // «Tipo de trabajo: …» se guarda con un valor de la lista: service (exterior: poste, bomba, pozo…), remodel (dentro
+  // de una vivienda), new (obra nueva), planos, rapido, mezcla (las dos cosas: no se apaga ninguna exclusión). Lo que
+  // no se entiende se queda tal cual, en minúsculas, y no apaga nada.
+  function normalizarTipoTrabajo(v) {
+    const n = norma(v);
+    if (!n) return "";
+    if (/\b(mezcla|mixed|both|las dos|ambos|ambas)\b/.test(n)) return "mezcla";
+    if (/\b(service|servicio|exterior|outdoor|outside|poste|pole|bomba|pump|pozo|well|riego|irrigation|site)\b/.test(n)) return "service";
+    if (/\b(remodel|remodelacion|remodelling|remodeling|interior|vivienda|casa|house|home|residential interior|indoor|inside)\b/.test(n)) return "remodel";
+    if (/\b(new|nuevo|nueva|new construction|obra nueva|ground up)\b/.test(n)) return "new";
+    if (/\b(planos|plans|drawings|blueprints?)\b/.test(n)) return "planos";
+    if (/\b(rapido|quick|fast|small|pequeno|menor)\b/.test(n)) return "rapido";
+    return n;
+  }
   const buscaClave = (tabla, nombre) => {
     const n = norma(String(nombre || "").replace(/^#+\s*/, "").replace(/^\d+(?:\.\d+)*[.)]?\s+/, "").replace(/\s*[#:]\s*$/, ""));
     for (const [k, alias] of Object.entries(tabla)) if (alias.includes(n)) return k;
@@ -235,11 +251,34 @@
     // Líneas donde Edgar ya dijo "eso no es dinero" (se guardan por su texto,
     // no por el número de línea, para que aguanten si el texto se mueve)
     const perdonadas = new Set(((opciones || {}).perdonadas || []).map(x => norma(typeof x === "string" ? x : (x && x.texto) || "")));
+    // v3.7 (tanda 1): las PISTAS de la lectura inteligente, una por número de línea ({ 44: { rol: "renglon_titulo", … } }).
+    // Con pistas (lectura activa) el lector NO adivina: donde hay pista manda la pista; donde no la hay, la línea hereda
+    // la sección vigente y se lee con las reglas de siempre. Los títulos ya no se reconocen por su forma (seccionDe /
+    // pareceTitulo se apagan): la sección solo cambia por una pista «seccion» o por una línea «Clave: valor» que la app
+    // misma reconoce (Precio:, Pagos:). Sin pistas, todo esto no existe y el lector es idéntico al de siempre.
+    const pistas = (opciones || {}).pistas || {};
+    // solo los papeles de la lista; una pista con un papel inventado no vale y la línea la leen las reglas.
+    // La lectura está activa si hay al menos una pista válida (una lectura sin nada útil = leer con las reglas)
+    const activa = Object.keys(pistas).some(n => Number(n) >= 1 && Number(n) <= lineas.length && pistas[n] && typeof pistas[n] === "object" && ROLES_PISTA.has(pistas[n].rol));
+    const pistaDe = n => (activa && pistas[n] && typeof pistas[n] === "object" && ROLES_PISTA.has(pistas[n].rol)) ? pistas[n] : null;
+    // una línea física que sigue a otra (texto de PDF partido) se pega con un espacio a la de arriba antes de leer
+    let lineasLeer = lineas;
+    if (activa) {
+      lineasLeer = lineas.slice();
+      Object.keys(pistas).map(Number).filter(n => n >= 1 && n <= lineas.length).sort((a, b) => a - b).forEach(n => {
+        const p = pistaDe(n);
+        if (!p || p.rol !== "continua" || !Number.isInteger(p.de) || p.de < 1 || p.de >= n) return;
+        lineasLeer[p.de - 1] = (lineasLeer[p.de - 1] + " " + lineasLeer[n - 1].replace(/\*\*|__|`/g, "").trim()).trim();
+        lineasLeer[n - 1] = "";
+      });
+    }
     const R = {
       datos: {}, hoy: "", cambia: "", falta: "", items: [], no_incluye: [],
       programa: [], pre: [], pre_intro: "", pre_titulo: "", terminos: [], pagos_propios: [],
       precio: null, pagos: null, opciones: [], condiciones: {}, codigo: [], codigo_grupos: [], codigo_otros: [], codigo_detalle: [],
-      notas: "", errores: [], avisos: [], preguntas: [], lineas
+      notas: "", errores: [], avisos: [], preguntas: [], lineas,
+      // en qué línea se reconoció cada título de sección y cada dato de cabecera (lo usa lecturaDeReglas)
+      titulos: [], datos_linea: {}, con_pistas: activa
     };
     let sec = "datos", itemActual = null, opcionActual = null;
     const parrafo = { hoy: [], cambia: [], falta: [], notas: [] };
@@ -247,6 +286,20 @@
     const err = (i, texto, extra) => R.errores.push(Object.assign({ linea: i + 1, texto }, extra || {}));
     const estaPerdonada = linea => perdonadas.has(norma(linea));
     R.ignoradas = [];
+    // Un dato de la cabecera («Clave: valor» que la app reconoce), con sus limpiezas de siempre
+    const ponDato = (k, valor, i) => {
+      let v = valor;
+      if (k === "ciudad") {
+        // "Pinellas County, Florida — permit held by General Contractor" → la ciudad limpia y el permiso lo saca el GC
+        const mPerm = v.match(/\s*[—–\-(,;]*\s*(?:the\s+)?(?:electrical\s+|building\s+)?permit\b[^)]*?(?:held|pulled|obtained|secured|issued|applied)\s+(?:by|to|under)\s+[^)]*$/i);
+        if (mPerm) { const nota = v.slice(mPerm.index); v = v.slice(0, mPerm.index); if (!R.datos.permiso) R.datos.permiso = /max power|us\b|contractor max/i.test(nota) && !/general contractor|\bgc\b/i.test(nota) ? "nosotros" : "GC"; }
+        // v3.6: el campo es texto libre y sale tal cual en la cabecera; para la prosa se usa la forma corta
+        v = v.replace(/[\s,;—–-]+$/, "").replace(/\s{2,}/g, " ").trim();
+        R.datos.ciudad_corta = v.split(/\s+[—–-]\s+|\s*\(/)[0].replace(/,?\s*(?:FL|Florida)\.?\s*$/i, "").replace(/,\s*$/, "").trim();
+      }
+      if (k === "contratista" && /max power|arboleya|EC13016045/i.test(v)) v = "";
+      if (v) { R.datos[k] = v; R.datos_linea[k] = i + 1; }
+    };
     // Pone una condición si Edgar no la escribió a mano (lo escrito a mano manda)
     const C_set = (k, valor, i) => { if (R.condiciones[k] || !valor) return false; R.condiciones[k] = { valor: String(valor).trim().replace(/[.,;]$/, ""), linea: i + 1, pescada: true }; return true; };
     // De las secciones que ya trae la plantilla (7, 9) se rescatan los datos que sí son de este trabajo
@@ -271,7 +324,8 @@
     const avisaDinero = (i, linea, donde) => {
       const d = hayDinero(linea);
       if (!d || perdonadas.has(norma(linea))) return false;
-      const arreglos = [{ tipo: "quitar_dinero", etiqueta: `Quitar ${d.trozo} y dejar el texto`, linea: i + 1, valor: d.trozo, auto: d.seguro },
+      // v3.7 (tanda 1): quitar un monto NUNCA es automático, ni con $ («$500 allowance» lo decide Edgar con un toque)
+      const arreglos = [{ tipo: "quitar_dinero", etiqueta: `Quitar ${d.trozo} y dejar el texto`, linea: i + 1, valor: d.trozo, auto: false },
                         { tipo: "quitar_linea", etiqueta: "Quitar la línea entera", linea: i + 1 }];
       if (d.seguro) {
         err(i, `Hay un precio (${d.trozo}) en ${donde}. El dinero solo va en Precio, Pagos y Opciones.`, { trozo: d.trozo, arreglos, perdonable: true });
@@ -296,7 +350,30 @@
     // Una fila de tabla "| Milestone | Trigger | % | Amount |" con solo cabeceras
     const esCabeceraTabla = celdas => celdas.every(c => CLAVES_IGNORAR.includes(norma(c)) || /^[-:\s]*$/.test(c));
 
-    lineas.forEach((cruda, i) => {
+    // Entrar en una sección: por el título reconocido (sin pistas) o por la pista «seccion» (con pistas)
+    const entrarSeccion = (posible, linea, i) => {
+      if (posible === "ignorar") ignoradas.push({ linea: i + 1, titulo: linea.replace(/:$/, "") });
+      if (posible === "pre" && !R.pre_titulo) {
+        // "8 PRE-CONSTRUCTION CIRCUIT IDENTIFICATION — MANDATORY BEFORE DEMOLITION" → en Title Case
+        const tt = linea.replace(/^(?:section\s+)?\d+[.)]?\s+/i, "").replace(/:$/, "").trim();
+        R.pre_titulo = tt === tt.toUpperCase() ? tt.toLowerCase().replace(/(^|[\s—–-])([a-z])/g, (m, a, b) => a + b.toUpperCase()) : tt;
+      }
+      // v3.6 r2: en «1 PROJECT OBJECTIVE & BACKGROUND» el primer párrafo suelto es el overview (regla B4)
+      if (posible === "hoy") R._objetivo = /\b(objective|background|overview|summary|purpose)\b/.test(normaTitulo(linea));
+      R.titulos.push({ linea: i + 1, seccion: posible });
+      sec = posible; itemActual = null; opcionActual = null;
+    };
+    // A qué sección manda cada papel de pista (una línea con pista de renglón está en el Alcance, aunque el modelo
+    // no haya señalado el título). «dato» y «precio» no cambian la sección: se leen donde estén.
+    const seccionDePista = p => {
+      if (!p) return null;
+      if (p.rol === "propia") return ["programa", "pre", "terminos"].includes(p.seccion) ? p.seccion : null;
+      if (p.rol === "parrafo") return ({ hoy: "hoy", cambia: "cambia", falta: "falta", notas: "notas", resumen: "hoy", pre_intro: "pre" })[p.destino] || null;
+      if (p.rol === "dato" || p.rol === "precio") return null;
+      return SEC_DE_ROL[p.rol] || null;
+    };
+
+    lineasLeer.forEach((cruda, i) => {
       // un .md del chat puede traer **negritas**, `código`, tablas y rayas: se lee como texto llano
       let linea = cruda.replace(/\*\*|__|`/g, "").trim();
       if (!linea || linea.startsWith("//") || linea.startsWith(">") || linea.startsWith("<!--")) return;
@@ -312,19 +389,27 @@
       }
       if (esTitulo) linea = linea.replace(/^#+\s*/, "");
 
-      // ¿es un título de sección? ("## 2. Scope of Work", "Hoy", "3) Not included:")
-      const posible = seccionDe(linea);
-      const pareceTitulo = esTitulo || /^(?:\d+[.)]\s+)?[^.:,]{2,45}:?$/.test(linea);
-      if (posible && (pareceTitulo || esTitulo)) {
-        if (posible === "ignorar") ignoradas.push({ linea: i + 1, titulo: linea.replace(/:$/, "") });
-        if (posible === "pre" && !R.pre_titulo) {
-          // "8 PRE-CONSTRUCTION CIRCUIT IDENTIFICATION — MANDATORY BEFORE DEMOLITION" → en Title Case
-          const tt = linea.replace(/^(?:section\s+)?\d+[.)]?\s+/i, "").replace(/:$/, "").trim();
-          R.pre_titulo = tt === tt.toUpperCase() ? tt.toLowerCase().replace(/(^|[\s—–-])([a-z])/g, (m, a, b) => a + b.toUpperCase()) : tt;
-        }
-        // v3.6 r2: en «1 PROJECT OBJECTIVE & BACKGROUND» el primer párrafo suelto es el overview (regla B4)
-        if (posible === "hoy") R._objetivo = /\b(objective|background|overview|summary|purpose)\b/.test(normaTitulo(linea));
-        sec = posible; itemActual = null; opcionActual = null; return;
+      // la pista de esta línea, si la lectura inteligente está activa
+      let pista = pistaDe(i + 1);
+      // una «sobrante» solo se calla si la app la confirma con sus propias reglas; si no, se lee como si no tuviera pista
+      if (pista && pista.rol === "sobrante") { if (esSobranteConfirmada(cruda)) return; pista = null; }
+      if (pista && pista.rol === "continua") return;   // ya se pegó a la línea de arriba
+      if (pista && pista.rol === "seccion") {
+        if (Object.prototype.hasOwnProperty.call(SECCIONES, String(pista.seccion))) { entrarSeccion(pista.seccion, linea, i); return; }
+        // el lector dice «aquí empieza una sección» pero con un nombre que no existe: cuál es, lo deciden las reglas
+        const posible = seccionDe(linea);
+        if (posible) { entrarSeccion(posible, linea, i); return; }
+        pista = null;
+      }
+      if (!activa) {
+        // ¿es un título de sección? ("## 2. Scope of Work", "Hoy", "3) Not included:")
+        const posible = seccionDe(linea);
+        const pareceTitulo = esTitulo || /^(?:\d+[.)]\s+)?[^.:,]{2,45}:?$/.test(linea);
+        if (posible && (pareceTitulo || esTitulo)) { entrarSeccion(posible, linea, i); return; }
+      } else if (pista) {
+        // el papel de la línea lo pone la pista: si su sección no es la vigente, se entra en ella sin adivinar
+        const sp = seccionDePista(pista);
+        if (sp && sp !== sec) { sec = sp; itemActual = null; opcionActual = null; }
       }
       if (sec === "ignorar") { pescar(linea, i); return; }
       // v3.7: el membrete son líneas cortas; un párrafo largo con verbo («Max Power Electrical Solutions, Inc. will furnish…») es texto de la hoja
@@ -338,8 +423,46 @@
       // datos del membrete que no hacen falta (Prepared By, Proposal #, Date…)
       if (mNV && (sec === "datos" || sec === "ignorar") && CLAVES_IGNORAR.includes(norma(mNV[1].replace(/\s*#\s*$/, "")))) return;
 
+      // --- Con pista «precio» sobre una línea que no es «Precio: valor» (la fila «TOTAL — LUMP SUM | $…» de la
+      // tabla de Price): la línea ya pasó el juez (un monto seguro y palabra de precio); el número lo lee la app
+      if (pista && pista.rol === "precio" && !(mNV && buscaClave(CLAVES_DINERO, nombre) === "precio")) {
+        const d = hayDinero(linea); const m = d ? leerMonto(d.trozo) : null;
+        if (m && !m.pregunta) {
+          if (!R.precio) R.precio = { centavos: m.centavos, linea: i + 1 };
+          else if (R.precio.centavos !== m.centavos) err(i, "Hay dos precios. Solo va uno: el precio base sin opciones.",
+                      { arreglos: [{ tipo: "quitar_linea", etiqueta: "Quitar este segundo precio", linea: i + 1, auto: false }] });
+        }
+        return;
+      }
+      // --- Con pista «dato»: si la línea es «Clave: valor» que la app reconoce, se lee como dato esté donde esté.
+      // Si no lo es, la pista solo vale para los datos que NO deciden la matriz legal (email, teléfono, dirección…);
+      // cliente, dueño, contratista, contrato con, propiedad, firma y permiso entran ÚNICAMENTE escritos «Clave: valor».
+      if (pista && pista.rol === "dato") {
+        const k = mNV ? buscaClave(CLAVES_DATOS, nombre) : null;
+        if (k) { ponDato(k, valor, i); return; }
+        if (Object.prototype.hasOwnProperty.call(CLAVES_DATOS, String(pista.clave)) && !MATRIZ_LEGAL.includes(pista.clave) && !Object.prototype.hasOwnProperty.call(R.datos, pista.clave)) {
+          const v = String(pista.cita || linea).trim();
+          if (v) { R.datos[pista.clave] = v; R.datos_linea[pista.clave] = i + 1; }
+          return;
+        }
+        // la app no reconoce la línea como dato: se lee con las reglas de la sección vigente
+      }
+
+      // --- Con lectura activa, una línea «Clave: valor» SIN pista cuya clave es una condición que la app reconoce
+      // (la acaba de escribir la app con un botón, o el lector no la señaló) se lee como condición esté donde esté.
+      // Solo líneas sueltas, no viñetas ni renglones numerados («- Access: …» dentro del Alcance sigue siendo detalle).
+      if (activa && !pista && mNV && !/^[-*•]|^\d+[.)]/.test(linea)) {
+        const kc = buscaClave(CLAVES_COND, nombre);
+        if (kc) {
+          avisaDinero(i, linea, "Condiciones");
+          if (kc === "tipo_trabajo") R.condiciones.tipo_trabajo = { valor: normalizarTipoTrabajo(valor), crudo: valor, linea: i + 1 };
+          else R.condiciones[kc] = { valor, linea: i + 1 };
+          return;
+        }
+      }
       // --- Precio y Pagos, estén donde estén (son títulos con valor en la misma línea)
-      if (mNV && buscaClave(CLAVES_DINERO, nombre) === "precio") {
+      // con lectura activa, una línea «Total: 12 fixtures» que el lector marcó como exclusión NO es el precio: manda la pista
+      if (mNV && buscaClave(CLAVES_DINERO, nombre) === "precio" && !(pista && pista.rol !== "precio")) {
         const m = leerMonto(valor);
         if (!m) err(i, "No entiendo el precio. Escríbelo así: 16,498.24",
                     { arreglos: [{ tipo: "poner_precio_base", etiqueta: "Escribir el precio", pide: "monto" }] });
@@ -348,11 +471,11 @@
           opciones: m.opciones.map(v => ({ etiqueta: "$" + v.toLocaleString("en-US", {minimumFractionDigits:2}), valor: centavos(v) })) });
         else if (R.precio && R.precio.centavos === m.centavos) return;   // el total repetido en la tabla
         else if (R.precio) err(i, "Hay dos precios. Solo va uno: el precio base sin opciones.",
-                    { arreglos: [{ tipo: "quitar_linea", etiqueta: "Quitar este segundo precio", linea: i + 1, auto: true }] });
+                    { arreglos: [{ tipo: "quitar_linea", etiqueta: "Quitar este segundo precio", linea: i + 1, auto: false }] });
         else R.precio = { centavos: m.centavos, linea: i + 1 };
         return;
       }
-      if (mNV && buscaClave(CLAVES_DINERO, nombre) === "pagos") {
+      if (mNV && buscaClave(CLAVES_DINERO, nombre) === "pagos" && !(pista && !/^pago_/.test(pista.rol))) {
         R.pagos = leerPagos(valor, i + 1, err);
         sec = "pagos_detalle";
         return;
@@ -381,19 +504,7 @@
                                         : [{ tipo: "quitar_linea", etiqueta: "Quitar esta línea", linea: i + 1, auto: true }] });
             return; }
           const k = buscaClave(CLAVES_DATOS, nombre);
-          if (k) {
-            let v = valor;
-            if (k === "ciudad") {
-              // "Pinellas County, Florida — permit held by General Contractor" → la ciudad limpia y el permiso lo saca el GC
-              const mPerm = v.match(/\s*[—–\-(,;]*\s*(?:the\s+)?(?:electrical\s+|building\s+)?permit\b[^)]*?(?:held|pulled|obtained|secured|issued|applied)\s+(?:by|to|under)\s+[^)]*$/i);
-              if (mPerm) { const nota = v.slice(mPerm.index); v = v.slice(0, mPerm.index); if (!R.datos.permiso) R.datos.permiso = /max power|us\b|contractor max/i.test(nota) && !/general contractor|\bgc\b/i.test(nota) ? "nosotros" : "GC"; }
-              // v3.6: el campo es texto libre y sale tal cual en la cabecera; para la prosa se usa la forma corta
-              v = v.replace(/[\s,;—–-]+$/, "").replace(/\s{2,}/g, " ").trim();
-              R.datos.ciudad_corta = v.split(/\s+[—–-]\s+|\s*\(/)[0].replace(/,?\s*(?:FL|Florida)\.?\s*$/i, "").replace(/,\s*$/, "").trim();
-            }
-            if (k === "contratista" && /max power|arboleya|EC13016045/i.test(v)) v = "";
-            if (v) R.datos[k] = v;
-          }
+          if (k) ponDato(k, valor, i);
           else { const s = sugerir(CLAVES_DATOS, mNV[1]);
                  if (estaPerdonada(linea)) break;
                  R.avisos.push({ linea: i + 1, perdonable: true, texto: s ? `No conozco "${mNV[1].trim()}". ¿Querías decir "${s}"?`
@@ -437,7 +548,8 @@
 
         case "alcance": {
           if (avisaDinero(i, linea, "el Alcance")) return;
-          const esDetalle = /^[-*•]/.test(linea);
+          // con pista, el papel de la línea lo pone la pista (renglón, detalle o grupo), no la viñeta ni el largo
+          const esDetalle = pista ? pista.rol === "renglon_detalle" : /^[-*•]/.test(linea);
           // "2.3 Shed circuit. Furnish and install…"  ·  "### 2.1 Whole-house rewire"  ·  "1. Título"
           // La numeración de la hoja puede venir de tres maneras y las tres se leen:
           //   plana        1. / 2. / 3.
@@ -445,7 +557,7 @@
           //   por grupos   "Kitchen:" y debajo 1., 2., 3.; "Pool:" y otra vez 1., 2.
           // El número del renglón en el contrato lo pone el orden en que están; lo escrito solo
           // sirve para leer bien. Un encabezado corto seguido de renglones numerados es un grupo.
-          const siguienteLinea = () => { for (let k = i + 1; k < lineas.length; k++) { const t = lineas[k].replace(/\*\*|__|`/g, "").trim(); if (t) return t; } return ""; };
+          const siguienteLinea = () => { for (let k = i + 1; k < lineasLeer.length; k++) { const t = lineasLeer[k].replace(/\*\*|__|`/g, "").trim(); if (t) return t; } return ""; };
           const mJer = linea.match(/^(\d+(?:\.\d+)+)[.)]?\s+(.+)$/);           // 2.3 · 2.3.1
           const mCrudo = linea.match(/^(\d+)[.)]?\s+(.+)$/);                     // 3 Pool · 3. Pool
           let mSub = mJer ? [linea, mJer[1].split(".").pop(), mJer[2]] : mCrudo;
@@ -455,9 +567,11 @@
           // primer renglón (1 Kitchen / 2 Island…); si los demás llevan punto, se queda como texto.
           if (mSub && !mJer && !conPunto && !(R.items.length === 0 ? Number(mSub[1]) === 1 : R._sinPunto === true)) mSub = null;
           if (mSub && !esDetalle) R._sinPunto = !conPunto;
+          // con pista «grupo»: es un encabezado («3 Pool», «Kitchen:»), no un renglón
+          if (pista && pista.rol === "grupo") { R._grupo = linea.replace(/^\d+(?:\.\d+)*[.)]?\s+/, "").replace(/:$/, "").trim(); R._sinPunto = undefined; return; }
           // Encabezado de grupo: "3 Pool" / "3. Pool" / "Pool:" / "POOL" corto y sin descripción,
           // con un renglón numerado debajo. No es un renglón del contrato: se recuerda como grupo.
-          if (!esDetalle) {
+          if (!esDetalle && !pista) {
             const sig = siguienteLinea();
             const sigNumerado = /^\d+(?:\.\d+)*[.)]?\s+\S/.test(sig);
             const corto = linea.replace(/^\d+(?:\.\d+)*[.)]?\s+/, "").replace(/:$/, "").trim();
@@ -469,8 +583,15 @@
           const serie = mJer ? mJer[1].split(".").slice(0, -1).join(".") : (R._grupo || null);
           const mn = !esDetalle && (mSub || null);
           const nuevoRenglon = (titulo, resto, escrito) => {
+            // el lector dice que este renglón es el cierre (pruebas, etiquetado, limpieza) que la plantilla ya trae:
+            // se deja como renglón y sale en ámbar con botón; sin toque, se queda (nada desaparece en silencio)
+            if (pista && pista.rol === "renglon_titulo" && pista.cierre && !/^testing\s*(and|&)\s*close\s*-?out|^closeout|^testing and commissioning/i.test(titulo)) {
+              R.avisos.push({ linea: i + 1, perdonable: true, origen: "ia", texto: `El lector dice que «${titulo.slice(0, 40)}» es el cierre del trabajo (pruebas y entrega), que la plantilla ya trae como último punto. Lo dejo como renglón; si sobra, quítalo.`,
+                arreglos: [{ tipo: "quitar_linea", etiqueta: "Quitarlo, ya lo trae la plantilla", linea: i + 1, auto: false, origen: "ia" },
+                           { tipo: "dejar_asi", etiqueta: "Es un renglón, déjalo", linea: i + 1, auto: false, origen: "ia" }] });
+            }
             // "Testing and closeout" ya lo trae la plantilla como último punto: no se duplica
-            if (/^testing\s*(and|&)\s*close\s*-?out|^closeout|^testing and commissioning/i.test(titulo)) {
+            else if (/^testing\s*(and|&)\s*close\s*-?out|^closeout|^testing and commissioning/i.test(titulo)) {
               R.avisos.push({ linea: i + 1, informativo: true, texto: `«${titulo.slice(0, 40)}» ya lo trae la plantilla como último punto del alcance; no lo repito.` });
               itemActual = { fantasma: true, detalles: [], lineas: [] }; return;
             }
@@ -479,11 +600,35 @@
             R.items.push(itemActual);
           };
           if (esDetalle) {
-            if (!itemActual) { err(i, "Este detalle no tiene renglón encima. Ponle un título al renglón.",
+            // con pista, el detalle va al renglón cuyo título está en la línea «de» (el orden de la lectura puede no
+            // coincidir con el del lector si el juez tiró un renglón); sin pista, al de arriba
+            let it = itemActual;
+            if (pista && pista.de && !(itemActual && itemActual.lineas && itemActual.lineas[0] === pista.de)) it = R.items.find(x => x.lineas[0] === pista.de) || itemActual;
+            if (!it) { err(i, "Este detalle no tiene renglón encima. Ponle un título al renglón.",
                 { arreglos: [{ tipo: "hacer_titulo", etiqueta: "Convertirlo en renglón", linea: i + 1, auto: true },
                              { tipo: "quitar_linea", etiqueta: "Quitar la línea", linea: i + 1 }] }); return; }
-            if (itemActual.fantasma) return;
-            itemActual.detalles.push(linea.replace(/^[-*•]\s*/, "")); itemActual.lineas.push(i + 1);
+            if (it.fantasma) return;
+            it.detalles.push(linea.replace(/^[-*•]\s*/, "")); it.lineas.push(i + 1);
+          } else if (pista && pista.rol === "renglon_titulo") {
+            // el título sale de la cita del lector (comprobada por el juez) y el resto es la línea menos el título;
+            // sin cita, el corte de siempre («Título. Descripción…»). El número escrito lo saca la app con su regla.
+            const entera = linea.replace(/^[-*•]\s*/, "").trim();
+            const cl = limpiarLinea(pista.cita_titulo || "").limpia;
+            // si la cita empieza por la cantidad («1 GFCI receptacle at the island»), ese «1» es cantidad, no numeración
+            const conCantidad = !!(mn && cl && limpiarLinea(entera).limpia.startsWith(cl) && !limpiarLinea(mn[2].trim()).limpia.startsWith(cl));
+            const texto = mn && !conCantidad ? mn[2].trim() : entera;
+            const lim = limpiarLinea(texto);
+            const pos = cl ? lim.limpia.indexOf(cl) : -1;
+            let titulo, resto;
+            if (pos >= 0 && cl.length >= 3) {
+              const a = lim.mapa[pos], b = lim.mapa[pos + cl.length - 1] + 1;
+              titulo = texto.slice(a, b);
+              resto = (texto.slice(0, a) + " " + texto.slice(b)).replace(/^[\s.:;—–-]+/, "").replace(/\s{2,}/g, " ").trim();
+            } else {
+              const corte = (mn || esTitulo) ? texto.match(/^(.{3,70}?)(?:\.\s+|\s+[—–]\s+|:\s+)(.{15,})$/) : null;
+              titulo = corte ? corte[1] : texto; resto = corte ? corte[2].trim() : "";
+            }
+            nuevoRenglon(titulo, resto, mn && !conCantidad ? Number(mn[1]) : null);
           } else if (mn || esTitulo) {
             const texto = mn ? mn[2].trim() : linea.trim();
             // título corto y descripción en la misma línea: "Shed circuit. Furnish and install…"
@@ -581,6 +726,16 @@
               R.pagos_propios.push({ titulo: mNegP[1].replace(/[.:]$/, "").trim(), texto: mNegP[2].trim(), linea: i + 1 });
             break;
           }
+          // con pista «pago_propia» sin negritas: el título es la cita del lector y el texto, el resto de la línea
+          if (pista && pista.rol === "pago_propia" && !mpct) {
+            const cl = String(pista.cita_titulo || "").trim(), pos = cl ? sinVineta.indexOf(cl) : -1;
+            const titulo = pos >= 0 ? cl : sinVineta.split(/[.:]\s+/)[0];
+            const cuerpo = pos >= 0 ? sinVineta.slice(pos + cl.length) : sinVineta.slice(titulo.length);
+            const txt = cuerpo.replace(/^[\s.:—–-]+/, "").trim();
+            if (titulo && txt && !hayDinero(txt)) R.pagos_propios.push({ titulo: titulo.replace(/[.:]$/, "").trim(), texto: txt, linea: i + 1 });
+            break;
+          }
+          if (pista && pista.rol === "pago_nota") break;   // retención, recargo…: no es un hito y la plantilla ya lo trae
           if (!mpct && /^(invoices are due|invoicing and payment|late payment)/i.test(sinVineta)) break;   // la plantilla ya lo trae
           if (mpct) {
             R.pagos = R.pagos || { pcts: [], disparadores: [], lineas: [] };
@@ -589,10 +744,14 @@
               .replace(/^(?:milestone|pago|payment|hito)?\s*\d+\s*[.):|—–-]?\s*/i, "").replace(/\s*\|\s*/g, " ").replace(/[—–:|-]\s*$/, "").replace(/^\s*[—–:|-]\s*/, "").replace(/\s{2,}/g, " ").trim();
             R.pagos.disparadores.push(disp || null);
             R.pagos.lineas.push(i + 1);
+            break;
           }
-          else if (!hayDinero(sinVineta) && !/\bpayment|\binvoice|\bdue\b/i.test(sinVineta)) { sec = "condiciones"; /* se cayó a Condiciones sin título */ }
-          if (mpct || sec === "pagos_detalle") break;
-          /* falls through */
+          // Una línea sin porcentaje ni dinero debajo de Pagos («6.2 Retainage. None.»): las reglas entienden que se
+          // acabaron los pagos y lo que sigue son Condiciones sin título. Se sale con break (H13: antes caía al caso de
+          // abajo, donde R.condiciones no es una lista, y el lector reventaba). Con lectura activa la sección no salta
+          // sola: solo cambia por pista.
+          if (!activa && !hayDinero(sinVineta) && !/\bpayment|\binvoice|\bdue\b/i.test(sinVineta)) { sec = "condiciones"; break; }
+          break;
         }
         case "programa": case "pre": case "terminos": {
           // "7.2 Equipment lead time. The equipment…" → { n: "7.2", titulo, texto }
@@ -624,6 +783,14 @@
             const t = mRaya ? { titulo: mRaya[1], texto: mRaya[2] } : mPar ? { titulo: mPar[1], texto: cuerpo }
                     : mFrase ? { titulo: mFrase[1], texto: mFrase[2] } : { titulo: cuerpo.replace(/\.$/, ""), texto: "" };
             dest.push({ n: "", titulo: t.titulo.trim(), texto: t.texto.trim(), linea: i + 1, sinTitulo: true });
+          } else if (pista && pista.rol === "propia" && pista.cita_titulo && !esFirma && linea.replace(/^[-*•]\s*/, "").includes(String(pista.cita_titulo).trim())) {
+            // con pista «propia» y cita de título en una línea que las reglas habrían pegado a la cláusula de arriba:
+            // es una cláusula propia; el título es la cita y el texto, el resto de la línea
+            const cuerpo = linea.replace(/^[-*•]\s*/, "").trim(), cl = String(pista.cita_titulo).trim(), pos = cuerpo.indexOf(cl);
+            const mNum = cuerpo.match(/^(\d+(?:\.\d+)?)[.)]?\s+/);
+            dest.push({ n: mNum ? mNum[1] : "", titulo: cl.replace(/[.:]$/, "").trim(),
+                        texto: (cuerpo.slice(0, pos).replace(/^(\d+(?:\.\d+)?)[.)]?\s+/, "") + " " + cuerpo.slice(pos + cl.length)).replace(/^[\s.:—–-]+/, "").replace(/\s{2,}/g, " ").trim(),
+                        linea: i + 1, sinTitulo: !mNum });
           } else if (dest.length) {
             dest[dest.length - 1].texto = (dest[dest.length - 1].texto + " " + linea.replace(/^[-*•]\s*/, "")).trim();
           } else if (sec === "pre") {
@@ -634,8 +801,14 @@
         case "condiciones": {
           if (!mNV) { R.avisos.push({ linea: i + 1, texto: `No sé dónde poner "${linea.slice(0,45)}" dentro de Condiciones.`,
                                        arreglos: [{ tipo: "quitar_linea", etiqueta: "Quitar esta línea", linea: i + 1 }] }); break; }
+          // el dinero tampoco va en Condiciones (perdonable, como en el resto de la hoja); la condición se lee igual
+          avisaDinero(i, linea, "Condiciones");
           const k = buscaClave(CLAVES_COND, nombre);
-          if (k) R.condiciones[k] = { valor, linea: i + 1 };
+          if (k === "tipo_trabajo") {
+            // «Tipo de trabajo: exterior» escrito a mano manda sobre las listas de palabras de decidirInterruptores
+            R.condiciones.tipo_trabajo = { valor: normalizarTipoTrabajo(valor), crudo: valor, linea: i + 1 };
+          }
+          else if (k) R.condiciones[k] = { valor, linea: i + 1 };
           else { const s = sugerir(CLAVES_COND, mNV[1]);
                  R.avisos.push({ linea: i + 1, texto: s ? `No conozco "${mNV[1].trim()}". ¿Querías decir "${s}"?`
                                                         : `No conozco la condición "${mNV[1].trim()}".`, sugerencia: s,
@@ -851,6 +1024,18 @@
     return P;
   }
 
+  // «Fotos del panel: sí» · "si" con comillas · «yes, 12 photos» · «no photos» → true / false; lo demás, null (se pregunta)
+  function siNo(v) {
+    const n = norma(String((v && v.valor) || "").replace(/["'«»“”‘’]/g, ""));
+    if (/^(si|yes)\b/.test(n)) return true;
+    if (/^no\b/.test(n)) return false;
+    return null;
+  }
+  // Baja la primera letra para meter un título dentro de una frase, sin tocar las siglas: GFCI, AFCI, NEC, LED, HVAC,
+  // EV, AC, DC, kW, kVA, A (amperios), V (voltios) y cualquier palabra en mayúsculas o con mayúscula por dentro
+  const SIGLAS = /^(?:GFCI|AFCI|NEC|LED|HVAC|EV|AC|DC|kW|kVA)\b|^[AV](?=\/|\d|$)|^[A-Z][A-Z0-9]|^[A-Z][a-z]*[A-Z]/;
+  const minus = t => { t = String(t || ""); return SIGLAS.test(t) ? t : t.charAt(0).toLowerCase() + t.slice(1); };
+
   // ============================================================ LA VALIDACIÓN
   function validarAlcance(L) {
     const errores = L.errores.slice(), preguntas = L.preguntas.slice();
@@ -938,7 +1123,7 @@
 
     // las dos condiciones que más protegen
     const C = L.condiciones;
-    const si_no = v => { const n = norma(v && v.valor); return n === "si" || n === "yes" ? true : (n === "no" ? false : null); };
+    const si_no = siNo;
     if (si_no(C.fotos_panel) === null)
       preguntas.push({ clave: "fotos_panel", texto: "¿Tienes fotos o documentación del panel?",
         opciones: [{ etiqueta: "Sí las tengo", valor: "si" }, { etiqueta: "No las tengo", valor: "no" }] });
@@ -1164,6 +1349,77 @@
         explicacion = `numeré los ${L.items.length} renglones seguidos`;
         break;
       }
+      // v3.7 (tanda 1): los botones de «¿qué es esta línea?» (una línea sin sitio, o una que el lector quiso dejar fuera)
+      case "es_renglon": {
+        // una línea suelta pasa a ser renglón del Alcance: sin viñeta ni numeración vieja; si no está dentro del
+        // Alcance, se lleva al final de esa sección (y si no hay Alcance, se crea)
+        if (!hay) return { error: "esa línea ya no existe" };
+        const L = leerAlcance(lineas.join("\n"));
+        const secDe = n => { let s = "datos"; (L.titulos || []).forEach(t => { if (t.linea <= n) s = t.seccion; }); return s; };
+        let nueva = antes.replace(/^\s*[-*•]\s*/, "").replace(/^\s*\d+(?:\.\d+)*[.)]\s+/, "").trim();
+        // una línea larga sin número la leerían las reglas como descripción del renglón de arriba: se numera
+        if (nueva.length > 60) nueva = (L.items.length + 1) + ". " + nueva;
+        if (secDe(a.linea) === "alcance") { lineas[i] = nueva; explicacion = `línea ${a.linea}: ahora es un renglón del Alcance`; break; }
+        lineas.splice(i, 1);
+        const k = (L.titulos || []).findIndex(t => t.seccion === "alcance");
+        if (k >= 0) {
+          const sig = L.titulos[k + 1];
+          let idx = sig ? sig.linea - 1 : lineas.length;
+          if (sig && i < sig.linea - 1) idx--;
+          while (idx > L.titulos[k].linea && !String(lineas[idx - 1] || "").trim()) idx--;   // antes de las líneas en blanco del final
+          lineas.splice(idx, 0, nueva);
+        } else {
+          const j = lineas.findIndex(l => /^\s*#*\s*(precio|pagos|opciones|condiciones|price|payments?|options)\s*:?/i.test(l));
+          lineas.splice(j >= 0 ? j : lineas.length, 0, "Alcance", nueva, "");
+        }
+        explicacion = `línea ${a.linea}: la llevé al Alcance como renglón («${nueva.slice(0, 50)}»)`;
+        break;
+      }
+      case "es_detalle_de": {
+        // una línea pasa a ser detalle («- ») del renglón que se diga (valor = número del renglón); sin número, del de arriba
+        if (!hay) return { error: "esa línea ya no existe" };
+        const nueva = "- " + antes.replace(/^\s*[-*•]\s*/, "").replace(/^\s*\d+(?:\.\d+)*[.)]\s+/, "").trim();
+        const n = Number(v || a.renglon || 0);
+        if (!n) { lineas[i] = nueva; explicacion = `línea ${a.linea}: ahora es detalle del renglón de arriba`; break; }
+        const L = leerAlcance(lineas.join("\n"));
+        const it = L.items[n - 1];
+        if (!it) return { error: `no hay renglón ${n} en el Alcance` };
+        const ultima = Math.max(...it.lineas);
+        if (i === ultima - 1) return { error: "esa línea es el propio renglón" };
+        lineas.splice(i, 1);
+        lineas.splice(i < ultima - 1 ? ultima - 1 : ultima, 0, nueva);
+        explicacion = `línea ${a.linea}: ahora es detalle del renglón ${n} («${it.titulo.slice(0, 40)}»)`;
+        break;
+      }
+      case "cambiar_condicion": {
+        // cambia el valor de una condición «Clave: valor» (por línea, o por clave si la línea no se sabe; si no existe, se escribe)
+        if (!v) return { error: "escribe el valor" };
+        if (hay && /^\s*[^:]{2,42}:/.test(antes)) {
+          const mAnt = antes.match(/^(\s*[^:]{2,42}:\s*)(.*)$/);
+          const nuevo = a.anadir && mAnt[2].trim() ? mAnt[2].trim().replace(/[.;]$/, "") + ", " + v : v;
+          lineas[i] = mAnt[1] + nuevo;
+          explicacion = `línea ${a.linea}: «${antes.split(":")[0].trim()}» ahora dice «${nuevo.slice(0, 60)}»`;
+          break;
+        }
+        const clave = a.clave;
+        if (!(typeof clave === "string" && Object.prototype.hasOwnProperty.call(CLAVES_COND, clave))) return { error: "no sé qué condición cambiar" };
+        const L = leerAlcance(lineas.join("\n"));
+        const c = L.condiciones[clave];
+        const etiqueta = CLAVES_COND[clave][0].charAt(0).toUpperCase() + CLAVES_COND[clave][0].slice(1);
+        if (c && c.linea) {
+          const j = c.linea - 1, mAnt = lineas[j].match(/^(\s*[^:]{2,42}:\s*)(.*)$/);
+          const nuevo = a.anadir && mAnt && mAnt[2].trim() ? mAnt[2].trim().replace(/[.;]$/, "") + ", " + v : v;
+          lineas[j] = (mAnt ? mAnt[1] : etiqueta + ": ") + nuevo;
+          explicacion = `línea ${c.linea}: «${etiqueta}» ahora dice «${nuevo.slice(0, 60)}»`;
+        } else {
+          const k = lineas.findIndex(l => /^\s*#*\s*(?:\d+[.)]?\s+)?(condiciones|clausulas|cláusulas|conditions|assumptions)\s*:?\s*$/i.test(l));
+          if (k >= 0) lineas.splice(k + 1, 0, etiqueta + ": " + v);
+          else { const j = lineas.findIndex(l => /^\s*#*\s*(codigo|código|code|notas|notes)\s*:?\s*$/i.test(l));
+                 lineas.splice(j >= 0 ? j : lineas.length, 0, "Condiciones", etiqueta + ": " + v, ""); }
+          explicacion = `escribí «${etiqueta}: ${v.slice(0, 60)}» en Condiciones`;
+        }
+        break;
+      }
       default: return { error: "no sé hacer ese arreglo" };
     }
     return { texto: lineas.join("\n"), explicacion };
@@ -1176,7 +1432,8 @@
     let t = String(texto || "");
     for (let vuelta = 0; vuelta < 80; vuelta++) {
       const L = leerAlcance(t, opciones), V = validarAlcance(L);
-      const cand = [...V.errores, ...L.avisos].map(e => (e.arreglos || []).find(a => a.auto)).filter(Boolean);
+      // los arreglos que vienen del lector inteligente (origen: "ia") nunca se aplican solos: siempre con un toque de Edgar
+      const cand = [...V.errores, ...L.avisos].map(e => (e.arreglos || []).find(a => a.auto && a.origen !== "ia")).filter(Boolean);
       if (!cand.length) break;
       // de abajo hacia arriba, para que los números de línea no se muevan
       cand.sort((x, y) => (y.linea || 0) - (x.linea || 0));
@@ -1289,7 +1546,7 @@
   function decidirInterruptores(L, D) {
     const d = L.datos, C = L.condiciones, cuenta = D || cuentas(L);
     const hay = v => !!(v && String(v).trim() && norma(v) !== "no");
-    const si_no = v => { const n = norma(v && v.valor); return n === "si" || n === "yes" ? true : (n === "no" ? false : null); };
+    const si_no = siNo;
     const conFirma = leerFirma(d.firma);
     // Es un subcontrato con un contratista cuando la hoja trae un dueño de la
     // propiedad distinto del cliente, o cuando la app dice que el contrato es
@@ -1325,10 +1582,18 @@
     const venueExterior = /\b(outdoor kitchen|summer kitchen|pavilion|lanai|patio|pool deck|pool shell|pool equipment|dock|pergola|gazebo|screen enclosure)\b/.test(textoAlcance);
     const interiorFuerte = /\b(bath|bathroom|bedrooms?|living room|family room|dining room|closet|garage|laundry|hallway|attic|crawl space)\b/.test(textoAlcance);
     const interiorSuave = /\b(kitchen|dining|recessed|drywall|under-cabinet|cabinet lighting|kitchen cabinets?|island)\b/.test(textoAlcance);
-    const interior = interiorFuerte || (interiorSuave && !venueExterior);
-    const exterior = venueExterior || /\b(pole|service entrance|well|pump|irrigation|parking lot|site lighting|transformer|feeder|wellhead|underground|trench)\b/.test(textoAlcance);
+    let interior = interiorFuerte || (interiorSuave && !venueExterior);
+    let exterior = venueExterior || /\b(pole|service entrance|well|pump|irrigation|parking lot|site lighting|transformer|feeder|wellhead|underground|trench)\b/.test(textoAlcance);
+    // v3.7 (tanda 1): «Tipo de trabajo: …» escrito a mano en Condiciones manda sobre las listas de palabras:
+    //   service → servicio exterior aunque el alcance diga «garage»: sin gabinetes, drywall, aparatos ni AFCI
+    //   remodel → dentro de una vivienda: las exclusiones de casa se quedan
+    //   mezcla  → las dos cosas: no se apaga ninguna exclusión
+    const tipoTrabajo = String((C.tipo_trabajo || {}).valor || "");
+    if (tipoTrabajo === "service") { interior = false; exterior = true; }
+    else if (tipoTrabajo === "remodel" || tipoTrabajo === "mezcla") { interior = true; }
     const exteriorServicio = exterior && !interior;
     const residencialInterior = !esComercial && interior;
+    const sinAfci = esComercial || tipoTrabajo === "service";
     const yaExcluye = re => re.test(textoExcl);
     const hayItemPermiso = /\bpermit/.test(textoAlcance);
     const hayCierre = L.items.some(it => /^(testing|startup|closeout|commissioning)\b|\b(closeout|close-out|commissioning)\b/i.test(it.titulo));
@@ -1382,7 +1647,7 @@
       FLOOD: flood,
       // Exclusiones: solo las que tienen sentido en ESTE trabajo
       EXCL_PANEL: !noExcluir.includes("panel") && !hayPanel,
-      EXCL_AFCI: !noExcluir.includes("afci") && !esComercial,
+      EXCL_AFCI: !noExcluir.includes("afci") && !sinAfci,
       EXCL_GABINETES: !noExcluir.includes("gabinete") && residencialInterior,
       EXCL_DRYWALL: !noExcluir.includes("drywall") && interior,
       EXCL_LOWVOLT: !noExcluir.includes("low-voltage") && !noExcluir.includes("low voltage") && !yaExcluye(/low.?voltage|data|telemetry/),
@@ -1402,7 +1667,7 @@
       retainage: esGC,
       nto_releases: esGC,
       panel_sin_fotos: si_no(C.fotos_panel) === false,
-      afci: si_no(C.circuitos_exist) === true && !esComercial,   // AFCI es de vivienda (NEC 210.12)
+      afci: si_no(C.circuitos_exist) === true && !sinAfci,   // AFCI es de vivienda (NEC 210.12); no en comercial ni en servicio exterior
       reuso_240: hay((C.v240 || {}).valor),
       reubicar: hay((C.reubicar || {}).valor),
       isla: hay((C.isla || {}).valor),
@@ -1438,7 +1703,7 @@
     };
     motivos.propias = "porque la hoja trae condiciones propias de este trabajo: " + propio.propias.map(p => p.titulo).join(" · ");
     return { bloques, clausulas, motivos, permiso, esGC, esComercial, esConsumidor, conFirma,
-             perfil: { hayPanel, interior, exteriorServicio, residencialInterior, venueExterior }, propio,
+             perfil: { hayPanel, interior, exteriorServicio, residencialInterior, venueExterior, tipo_trabajo: tipoTrabajo || null }, propio,
              gcNombre, clienteEfectivo, duenoEfectivo, permiso, fases, fasesDeducidas, flood, zona: mZona ? mZona[1].toUpperCase() : "" };
   }
 
@@ -1500,7 +1765,6 @@
     const con = (texto, linea) => { const t = String(texto || "").trim(); return t ? Object.assign({ en: t }, de(linea)) : null; };
     const lista = arr => arr.length <= 1 ? arr.join("") : arr.slice(0, -1).join(", ") + " and " + arr[arr.length - 1];
     const titulos = L.items.map(i => i.titulo.trim().replace(/[.:]$/, ""));
-    const minus = t => t.charAt(0).toLowerCase() + t.slice(1);
     const S = {
       directo: true,
       proyecto_en: con(d.proyecto, L.lineas.findIndex(x => /^\s*(proyecto|project)\s*:/i.test(x)) + 1),
@@ -1565,6 +1829,9 @@
       rojos.push({ clave: "items", texto: `El asistente devolvió ${(S.items||[]).length} renglones y tú escribiste ${L.items.length}. Se descarta.` });
     if ((S.opciones || []).length !== L.opciones.length)
       rojos.push({ clave: "opciones", texto: `Devolvió ${(S.opciones||[]).length} opciones y hay ${L.opciones.length}.` });
+    // v3.7 (tanda 1): las exclusiones también se cuentan (una que sobre o falte cambia el contrato)
+    if ((S.no_incluye || []).length !== (L.no_incluye || []).length)
+      rojos.push({ clave: "no_incluye", texto: `Devolvió ${(S.no_incluye||[]).length} exclusiones y en tu hoja hay ${(L.no_incluye || []).length}. Se descarta.` });
     return { rojos, amarillos, sirve: rojos.length === 0 };
   }
 
@@ -1807,7 +2074,7 @@
                        : (dec.clienteEfectivo || d.cliente) ? ` for ${dec.clienteEfectivo || d.cliente}` : "";
         // los renglones de trabajo; los de responsabilidad («Furnished by Owner / Contractor») van en una frase aparte
         const esResp = t => /^(furnished|provided|supplied|materials?|equipment) (by|furnished|provided)/i.test(t) || /\bfurnished by\b/i.test(t);
-        const trabajo = L.items.filter(it => !esResp(it.titulo)).map(it => { const t = it.titulo.replace(/[.:]$/, "").trim(); return /^[A-Z][a-z]/.test(t) && !/^[A-Z][a-z]*[A-Z]/.test(t) ? t.charAt(0).toLowerCase() + t.slice(1) : t; });
+        const trabajo = L.items.filter(it => !esResp(it.titulo)).map(it => minus(it.titulo.replace(/[.:]$/, "").trim()));
         const resp = L.items.filter(it => esResp(it.titulo));
         const lista = trabajo.length <= 1 ? trabajo.join("") : trabajo.slice(0, -1).join(", ") + " and " + trabajo[trabajo.length - 1];
         const nums = resp.map(it => "2." + it.n);
@@ -2026,8 +2293,16 @@
       (L.opciones || []).forEach(o => { if (o.linea) dineroEn.add(o.linea); });
     }
     const tapada = taparDinero(texto, [...dineroEn]);
-    const lineas = tapada.texto.split("\n").map((l, i) => { const c = limpiarLinea(l); return { n: i + 1, t: c.limpia, mapa: c.mapa, original: l }; });
+    const originales = String(texto || "").replace(/\r/g, "").split("\n");
+    // t = lo que ve el modelo (limpia y tapada); tapada = la línea tapada sin limpiar; original = la línea de Edgar tal cual
+    // (el juez mira el dinero de verdad en la original: la tapada no tiene cifras)
+    const lineas = tapada.texto.split("\n").map((l, i) => { const c = limpiarLinea(l); return { n: i + 1, t: c.limpia, mapa: c.mapa, tapada: l, original: originales[i] !== undefined ? originales[i] : l }; });
     return { lineas, tapados: tapada.tapados };
+  }
+
+  // Lo ÚNICO que puede viajar a la nube: número y texto limpio y tapado de cada línea. Ni original ni tapada ni mapa.
+  function paraLaNube(hoja) {
+    return ((hoja && Array.isArray(hoja.lineas)) ? hoja.lineas : []).map(l => ({ n: l.n, t: String(l.t || "") }));
   }
 
   // ---- La cita tiene que ser literal (o casi: la subcadena común más larga cubre ≥ 80 %) ----
@@ -2072,16 +2347,34 @@
   }
 
   // ---- El juez: la lectura del modelo se comprueba pieza a pieza; lo que no cuadra se tira, nunca todo o nada (salvo dos casos) ----
+  // El juez nunca revienta: una lectura rota se rechaza entera («lectura_invalida») y la hoja se lee con las reglas
   function verificarLectura(lineas, lectura, L_reglas) {
+    try { return verificarLecturaCruda(lineas, lectura, L_reglas); }
+    catch (e) { return { error: "lectura_invalida", motivo: "no se pudo leer la lectura: " + String((e && e.message) || e).slice(0, 80) }; }
+  }
+  function verificarLecturaCruda(lineas, lectura, L_reglas) {
     const tiradas = [], degradados = [], avisos_app = [];
+    lineas = Array.isArray(lineas) ? lineas : [];
     const N = lineas.length, txt = n => (lineas[n - 1] || {}).t || "";
     const lineaOk = n => Number.isInteger(n) && n >= 1 && n <= N;
-    if (!lectura || typeof lectura !== "object") return { error: "lectura_invalida", motivo: "no es un molde" };
+    if (!lectura || typeof lectura !== "object" || Array.isArray(lectura)) return { error: "lectura_invalida", motivo: "no es un molde" };
     if (Number.isInteger(lectura.lineas_total) && lectura.lineas_total !== N) return { error: "lectura_invalida", motivo: `dice ${lectura.lineas_total} líneas y la hoja tiene ${N}` };
-    // 7) dinero en el texto libre del modelo: la lectura entera se rechaza
-    const motivos = [...(lectura.avisos || []).map(a => a.motivo), ...(lectura.sobrantes || []).map(s => s.porque)].filter(x => typeof x === "string");
-    if (motivos.some(traeDineroEstricto)) return { error: "dinero_en_la_lectura", motivo: "el lector escribió un monto" };
     const L = JSON.parse(JSON.stringify(lectura));
+    // Lo que venga torcido (null dentro de una lista, un texto donde iba una lista, un número donde iba un objeto)
+    // se sanea ANTES de mirar nada: cada pieza rara se tira, la lectura no se cae entera por una pieza.
+    const objs = x => Array.isArray(x) ? x.filter(o => o && typeof o === "object" && !Array.isArray(o)) : [];
+    const obj = x => (x && typeof x === "object" && !Array.isArray(x)) ? x : null;
+    ["secciones", "datos", "renglones", "exclusiones", "opciones", "condiciones", "codigo", "parrafos", "grupos", "sobrantes", "avisos", "remisiones"].forEach(k => { L[k] = objs(L[k]); });
+    L.renglones.forEach(r => { r.detalles = objs(r.detalles); });
+    L.opciones.forEach(o => { o.detalles = objs(o.detalles); });
+    L.precio = obj(L.precio);
+    L.pagos = obj(L.pagos); if (L.pagos) { L.pagos.filas = objs(L.pagos.filas); L.pagos.propias = objs(L.pagos.propias); L.pagos.notas = objs(L.pagos.notas); }
+    L.propias = obj(L.propias) || {}; ["programa", "pre", "terminos"].forEach(k => { L.propias[k] = objs(L.propias[k]); });
+    L.hechos = obj(L.hechos) || {}; L.hechos.incluye = objs(L.hechos.incluye);
+    L.avisos.forEach(a => { a.lineas = (Array.isArray(a.lineas) ? a.lineas : []).filter(Number.isInteger); a.propuesta = obj(a.propuesta); });
+    // 7) dinero en el texto libre del modelo: la lectura entera se rechaza
+    const motivos = [...L.avisos.map(a => a.motivo), ...L.sobrantes.map(s => s.porque)].filter(x => typeof x === "string");
+    if (motivos.some(traeDineroEstricto)) return { error: "dinero_en_la_lectura", motivo: "el lector escribió un monto" };
     const lista = k => Array.isArray(L[k]) ? L[k] : (L[k] = []);
     const tirar = (pieza, l, causa) => { tiradas.push({ pieza, l, causa }); return false; };
     const validaLineas = (o, pieza) => {
@@ -2091,6 +2384,7 @@
     };
     const validaCita = (o, campo, pieza) => {
       const v = o[campo]; if (v === null || v === undefined || v === "") { o[campo] = null; return true; }
+      if (typeof v !== "string" || v.length > 300) return tirar(pieza, o.l, "cita que no es texto corto");
       const r = citaEnLinea(txt(o.l), v);
       if (!r.ok) return tirar(pieza, o.l, `cita que no está en la línea: «${String(v).slice(0, 40)}»`);
       if (r.cita) o[campo] = r.cita;
@@ -2104,7 +2398,8 @@
     if (L.precio && typeof L.precio === "object") {
       const orig = (lineas[L.precio.l - 1] || {}).original || "";
       const d = hayDinero(orig);
-      const formaPrecio = lineaOk(L.precio.l) && d && d.seguro && !/\d{1,3}\s*%/.test(orig) && (PALABRA_DINERO.test(orig) || !!claveDeLinea(txt(L.precio.l)));
+      const formaPrecio = lineaOk(L.precio.l) && d && d.seguro && !/\d{1,3}\s*%/.test(orig)
+        && (PALABRA_DINERO.test(orig) || /\b(lump sum|contract price|base price|investment)\b/i.test(orig) || !!claveDeLinea(txt(L.precio.l)));
       if (!formaPrecio || !reclama(L.precio.l, "precio")) { tirar("precio", L.precio.l, "la línea no tiene forma de precio"); L.precio = null; }
     } else L.precio = null;
     if (L.pagos && typeof L.pagos === "object") {
@@ -2177,6 +2472,45 @@
       }
       return true;
     });
+    // 6 bis) candado 14 «nada desaparece en silencio»: lo que las reglas leen como renglón, detalle, exclusión u opción
+    // tiene que seguir siéndolo en la lectura. Si el lector lo puso en otro sitio (un párrafo de notas, una cláusula,
+    // un dato…) o en ninguno, mandan las reglas: la pieza ajena se quita, la línea vuelve a su papel y sale en ámbar.
+    if (L_reglas && typeof L_reglas === "object" && !Array.isArray(L_reglas)) {
+      const esperado = [];
+      objs(L_reglas.items).forEach(it => { const ls = Array.isArray(it.lineas) ? it.lineas : []; if (lineaOk(ls[0])) { esperado.push([ls[0], "renglon", ls[0]]); ls.slice(1).forEach(l => { if (lineaOk(l)) esperado.push([l, "detalle", ls[0]]); }); } });
+      objs(L_reglas.no_incluye).forEach(x => { if (lineaOk(x.linea)) esperado.push([x.linea, "exclusion", null]); });
+      objs(L_reglas.opciones).forEach(o => { if (lineaOk(o.linea)) esperado.push([o.linea, "opcion", null]); });
+      const ACEPTA = { renglon: ["renglon", "detalle", "grupo", "exclusion", "opcion", "opcion_detalle"], detalle: ["detalle", "renglon", "grupo", "exclusion", "opcion", "opcion_detalle"],
+                       exclusion: ["exclusion", "renglon", "detalle", "opcion", "opcion_detalle"], opcion: ["opcion", "opcion_detalle", "renglon", "exclusion"] };
+      const fuera = n => o => !(o && (o.l === n || (Number.isInteger(o.l_hasta) && o.l <= n && n <= o.l_hasta)));
+      const desalojar = n => {
+        ["datos", "condiciones", "codigo", "parrafos", "grupos", "sobrantes"].forEach(k => { L[k] = L[k].filter(fuera(n)); });
+        ["programa", "pre", "terminos"].forEach(k => { L.propias[k] = L.propias[k].filter(fuera(n)); });
+        if (L.pagos) { L.pagos.notas = L.pagos.notas.filter(fuera(n)); L.pagos.propias = L.pagos.propias.filter(fuera(n)); }
+        L.renglones.forEach(r => { r.detalles = r.detalles.filter(fuera(n)); });
+        L.opciones.forEach(o => { o.detalles = o.detalles.filter(fuera(n)); });
+        casa.delete(n);
+      };
+      esperado.forEach(([n, papel, titulo]) => {
+        const tiene = casa.get(n);
+        if (tiene && ACEPTA[papel].includes(tiene)) return;
+        if (avisos_app.some(a => a.tipo === "sobrante_no_confirmada" && a.l === n)) return;   // ya está en ámbar por sobrante
+        // un detalle cuyo título quedó sin casa (sobrante en ámbar, o sin pista) se queda sin casa también: las reglas
+        // leen título y detalles juntos, y el aviso del título ya lo cubre
+        if (papel === "detalle" && !casa.has(titulo)) return;
+        desalojar(n);
+        if (papel === "detalle") {
+          const r = L.renglones.find(x => x.l === titulo);
+          if (r) r.detalles.push({ l: n, cita: null, de_reglas: true });
+          else L.renglones.push({ l: n, cita_titulo: null, detalles: [], grupo_l: null, cierre: false, de_reglas: true });
+        }
+        else if (papel === "renglon") L.renglones.push({ l: n, cita_titulo: null, detalles: [], grupo_l: null, cierre: false, de_reglas: true });
+        else if (papel === "exclusion") L.exclusiones.push({ l: n, cita_titulo: null, de_reglas: true });
+        else L.opciones.push({ l: n, detalles: [], de_reglas: true });
+        casa.set(n, papel);
+        avisos_app.push({ tipo: "renglon_movido", l: n, texto: txt(n), papel, puesto: tiene || "ninguna" });
+      });
+    }
     // cobertura: toda línea con contenido tiene casa; las que no, sin_casa (las lee la regla y se pregunta)
     const sin_casa = [];
     for (let n = 1; n <= N; n++) { if (!casa.has(n) && !esSobranteConfirmada((lineas[n - 1] || {}).original)) sin_casa.push(n); }
@@ -2193,15 +2527,23 @@
     ["dueno", "segundo_firmante"].forEach(k => { const h = L.hechos[k]; if (!h || !lineaOk(h.l) || !citaEnLinea(txt(h.l), h.cita).ok) L.hechos[k] = { l: null, cita: null }; });
     L.hechos.incluye = (Array.isArray(L.hechos.incluye) ? L.hechos.incluye : []).filter(x => lineaOk(x.l) && citaEnLinea(txt(x.l), x.cita).ok);
     // 11) avisos: tipos de la lista, líneas reales, valor_cita verificada, motivo corto; como mucho 12
-    L.avisos = lista("avisos").filter(a => {
+    // el tope va ANTES de cotejar citas (una lectura con cien avisos no puede costar segundos en el teléfono)
+    L.avisos = lista("avisos").slice(0, 24).filter(a => {
       if (!TIPOS_AVISO.includes(a.tipo)) return tirar("aviso", null, `tipo desconocido ${a.tipo}`);
-      a.lineas = (Array.isArray(a.lineas) ? a.lineas : []).filter(lineaOk);
+      a.lineas = (Array.isArray(a.lineas) ? a.lineas : []).filter(lineaOk).slice(0, 20);
       if (!a.lineas.length) return tirar("aviso", null, `${a.tipo} sin líneas`);
       a.motivo = String(a.motivo || "").slice(0, 200);
       a.certeza = a.certeza === "segura" ? "segura" : "probable";
+      if (a.cita !== undefined && a.cita !== null && (typeof a.cita !== "string" || a.cita.length > 300)) return tirar("aviso", a.lineas[0], "cita del aviso que no es texto corto");
       if (a.cita && !a.lineas.some(l => citaEnLinea(txt(l), a.cita).ok)) return tirar("aviso", a.lineas[0], "cita del aviso que no está");
       if (a.propuesta && typeof a.propuesta === "object") {
-        if (a.propuesta.valor_cita && !(lineaOk(a.propuesta.valor_l) && citaEnLinea(txt(a.propuesta.valor_l), a.propuesta.valor_cita).ok)) a.propuesta = null;
+        const pr = a.propuesta;
+        // la clave de una propuesta tiene que ser una clave de verdad (no «constructor» ni cosas raras)
+        if (pr.clave !== undefined && pr.clave !== null && !(typeof pr.clave === "string" && /^[a-z_0-9]{1,40}$/.test(pr.clave))) a.propuesta = null;
+        else if (pr.accion === "poner_condicion" && !(pr.clave && Object.prototype.hasOwnProperty.call(CLAVES_COND, pr.clave))) a.propuesta = null;
+        else if (pr.accion === "poner_dato" && !(pr.clave && Object.prototype.hasOwnProperty.call(CLAVES_DATOS, pr.clave))) a.propuesta = null;
+        else if (pr.valor_cita !== undefined && pr.valor_cita !== null && (typeof pr.valor_cita !== "string" || pr.valor_cita.length > 300)) a.propuesta = null;
+        else if (pr.valor_cita && !(lineaOk(pr.valor_l) && citaEnLinea(txt(pr.valor_l), pr.valor_cita).ok)) a.propuesta = null;
       } else a.propuesta = null;
       return true;
     }).slice(0, 12);
@@ -2213,15 +2555,27 @@
   const SEC_DE_ROL = { dato: "datos", grupo: "alcance", renglon_titulo: "alcance", renglon_detalle: "alcance", exclusion: "no_incluye",
     precio: "precio_detalle", pago_fila: "pagos_detalle", pago_propia: "pagos_detalle", pago_nota: "pagos_detalle",
     opcion: "opciones", opcion_detalle: "opciones", condicion: "condiciones", codigo: "codigo" };
+  const ROLES_PISTA = new Set([...Object.keys(SEC_DE_ROL), "seccion", "continua", "sobrante", "propia", "parrafo"]);
   function pistasDe(L) {
     const P = {};
-    const pon = (l, p) => { if (l && !P[l]) P[l] = p; };
-    const continua = (o, rol) => { if (o.l_hasta && o.l_hasta > o.l) for (let n = o.l + 1; n <= o.l_hasta; n++) pon(n, { rol: "continua", de: o.l }); };
+    L = (L && typeof L === "object" && !Array.isArray(L)) ? L : {};
+    const A = x => Array.isArray(x) ? x.filter(o => o && typeof o === "object" && !Array.isArray(o)) : [];
+    const pon = (l, p) => { if (Number.isInteger(l) && l >= 1 && !P[l]) P[l] = p; };
+    // un tramo (l … l_hasta) nunca pasa de 2,000 líneas: una hoja no tiene más, y un número loco no cuelga el teléfono
+    const hasta = o => (Number.isInteger(o.l_hasta) && o.l_hasta > o.l) ? Math.min(o.l_hasta, o.l + 2000) : o.l;
+    const continua = (o, rol) => { if (Number.isInteger(o.l)) for (let n = o.l + 1; n <= hasta(o); n++) pon(n, { rol: "continua", de: o.l }); };
+    const pr0 = (L.propias && typeof L.propias === "object") ? L.propias : {};
+    L = Object.assign({}, L, { secciones: A(L.secciones), datos: A(L.datos), renglones: A(L.renglones).map(r => Object.assign({}, r, { detalles: A(r.detalles) })),
+      exclusiones: A(L.exclusiones), opciones: A(L.opciones).map(o => Object.assign({}, o, { detalles: A(o.detalles) })), condiciones: A(L.condiciones), codigo: A(L.codigo),
+      parrafos: A(L.parrafos), grupos: A(L.grupos), sobrantes: A(L.sobrantes),
+      precio: (L.precio && typeof L.precio === "object" && Number.isInteger(L.precio.l)) ? L.precio : null,
+      pagos: (L.pagos && typeof L.pagos === "object") ? { filas: A(L.pagos.filas), propias: A(L.pagos.propias), notas: A(L.pagos.notas) } : null,
+      propias: { programa: A(pr0.programa), pre: A(pr0.pre), terminos: A(pr0.terminos) } });
     (L.secciones || []).forEach(s => pon(s.l, { rol: "seccion", seccion: s.seccion }));
     if (L.precio) pon(L.precio.l, { rol: "precio" });
     if (L.pagos) { (L.pagos.filas || []).forEach(f => pon(f.l, { rol: "pago_fila", orden: f.orden })); (L.pagos.propias || []).forEach(p => pon(p.l, { rol: "pago_propia", cita_titulo: p.cita_titulo })); (L.pagos.notas || []).forEach(p => pon(p.l, { rol: "pago_nota" })); }
     (L.datos || []).forEach(d => pon(d.l, { rol: "dato", clave: d.clave, cita: d.cita, pendiente: !!d.pendiente }));
-    (L.renglones || []).forEach(r => { pon(r.l, { rol: "renglon_titulo", orden: r.orden, cita_titulo: r.cita_titulo, grupo_l: r.grupo_l, cierre: !!r.cierre, hasta: r.l_hasta || r.l }); continua(r); (r.detalles || []).forEach(d => { pon(d.l, { rol: "renglon_detalle", orden: r.orden, cita: d.cita }); continua(d); }); });
+    (L.renglones || []).forEach(r => { pon(r.l, { rol: "renglon_titulo", orden: r.orden, cita_titulo: r.cita_titulo, grupo_l: r.grupo_l, cierre: !!r.cierre, hasta: r.l_hasta || r.l }); continua(r); (r.detalles || []).forEach(d => { pon(d.l, { rol: "renglon_detalle", orden: r.orden, de: r.l, cita: d.cita }); continua(d); }); });
     (L.exclusiones || []).forEach(x => { pon(x.l, { rol: "exclusion", orden: x.orden, cita_titulo: x.cita_titulo }); continua(x); });
     (L.opciones || []).forEach(o => { pon(o.l, { rol: "opcion", orden: o.orden }); (o.detalles || []).forEach(d => pon(d.l, { rol: "opcion_detalle", orden: o.orden })); });
     (L.condiciones || []).forEach(c => { if (c.explicita) pon(c.l, { rol: "condicion", clave: c.clave }); });
@@ -2230,7 +2584,7 @@
     ["programa", "pre", "terminos"].forEach(k => (pr[k] || []).forEach(p => { pon(p.l, { rol: "propia", seccion: k, cita_titulo: p.cita_titulo }); continua(p); }));
     (L.parrafos || []).forEach(p => { pon(p.l, { rol: "parrafo", destino: p.destino, cita: p.cita }); continua(p); });
     (L.grupos || []).forEach(g => pon(g.l, { rol: "grupo", cita: g.cita }));
-    (L.sobrantes || []).forEach(s => { const hasta = s.l_hasta || s.l; for (let n = s.l; n <= hasta; n++) pon(n, { rol: "sobrante", porque: s.porque }); });
+    (L.sobrantes || []).forEach(s => { if (!Number.isInteger(s.l)) return; for (let n = s.l; n <= hasta(s); n++) pon(n, { rol: "sobrante", porque: s.porque }); });
     return P;
   }
   // Las pistas viven pegadas al TEXTO de la línea, no a su número: al tocar un botón que escribe en la hoja se realinean
@@ -2238,6 +2592,7 @@
     return String(texto || "").replace(/\r/g, "").split("\n").map((l, i) => ({ texto: limpiarLinea(l).limpia, pista: pistas[i + 1] || null }));
   }
   function alinearLectura(textoNuevo, guardadas) {
+    guardadas = Array.isArray(guardadas) ? guardadas.filter(g => g && typeof g === "object") : [];
     const usadas = new Set(), pistas = {}, huerfanas = [];
     const lineas = String(textoNuevo || "").replace(/\r/g, "").split("\n");
     let perdidas = 0, con = 0;
@@ -2272,17 +2627,11 @@
     L = L || leerAlcance(texto);
     const lineas = String(texto || "").replace(/\r/g, "").split("\n");
     const limpia = n => limpiarLinea(lineas[n - 1] || "").limpia;
-    const lect = { formato: "hoja_casa", idioma: pareceIngles(texto) ? "en" : "es", lineas_total: lineas.length, secciones: [], datos: [], parrafos: [], grupos: [],
+    const lect = { formato: "hoja_casa", idioma: pareceIngles(L) ? "en" : (pareceIngles(L) === null ? "mezcla" : "es"), lineas_total: lineas.length, secciones: [], datos: [], parrafos: [], grupos: [],
       renglones: [], exclusiones: [], precio: null, pagos: null, opciones: [], condiciones: [], codigo: [], jurisdiccion_l: null,
       propias: { programa: [], pre: [], terminos: [], pre_titulo_l: null }, remisiones: [], hechos: {}, avisos: [], sobrantes: [] };
-    lineas.forEach((cruda, i) => {
-      const l = cruda.replace(/\*\*|__|`/g, "").trim();
-      if (!l) return;
-      const esTitulo = /^#{1,6}\s/.test(l);
-      const posible = seccionDe(esTitulo ? l.replace(/^#+\s*/, "") : l);
-      const pareceTitulo = esTitulo || /^(?:\d+[.)]\s+)?[^.:,]{2,45}:?$/.test(l);
-      if (posible && (pareceTitulo || esTitulo)) lect.secciones.push({ l: i + 1, seccion: posible, titulo_cita: null });
-    });
+    // los títulos de sección: los que el lector reconoció de verdad (con su línea), no una segunda adivinanza
+    (L.titulos || []).forEach(t => lect.secciones.push({ l: t.linea, seccion: t.seccion, titulo_cita: null }));
     L.items.forEach(it => {
       const titulo = limpia(it.lineas[0]).includes(it.titulo) ? it.titulo : null;
       lect.renglones.push({ orden: it.n, l: it.lineas[0], l_hasta: null, cita_titulo: titulo, grupo_l: null,
@@ -2291,16 +2640,99 @@
     L.no_incluye.forEach((x, k) => lect.exclusiones.push({ orden: k + 1, l: x.linea, l_hasta: null, cita_titulo: x.titulo && limpia(x.linea).includes(x.titulo) ? x.titulo : null, ya_en_plantilla: "ninguna" }));
     if (L.precio && L.precio.linea) lect.precio = { l: L.precio.linea };
     if (L.pagos && L.pagos.lineas && L.pagos.lineas.length) lect.pagos = { forma: L.pagos.corto ? "corta" : "filas", filas: L.pagos.corto ? [] : L.pagos.lineas.map((l, k) => ({ orden: k + 1, l })), propias: (L.pagos_propios || []).map(p => ({ l: p.linea, cita_titulo: p.titulo })), notas: [] };
-    if (L.pagos && L.pagos.corto && L.pagos.lineas && L.pagos.lineas[0]) lect.datos.push({ clave: "vence", l: 0, cita: null, pendiente: false }), lect.datos.pop();
     L.opciones.forEach(o => lect.opciones.push({ orden: o.n, l: o.linea, detalles: [] }));
     Object.entries(L.condiciones || {}).forEach(([k, v]) => { if (v && v.linea && !v.pescada) lect.condiciones.push({ clave: k, l: v.linea, cita: null }); });
     ["programa", "pre", "terminos"].forEach(k => (L[k] || []).forEach(p => { if (p.linea) lect.propias[k].push({ l: p.linea, l_hasta: null, numero: p.n || null, cita_titulo: limpia(p.linea).includes(p.titulo) ? p.titulo : null, parece_de_plantilla: null }); }));
-    // datos de cabecera: las líneas «Clave: valor» que la app reconoce
-    lineas.forEach((cruda, i) => {
-      const t = limpiarLinea(cruda).limpia; const rec = claveDeLinea(t);
-      if (rec && Object.keys(CLAVES_DATOS).includes(rec.clave) && !lect.secciones.some(s => s.l === i + 1)) lect.datos.push({ clave: rec.clave, l: i + 1, cita: rec.valor || null, pendiente: false });
+    // datos de cabecera: los que el lector leyó de una línea «Clave: valor» (la cita es solo el valor, si está literal)
+    Object.entries(L.datos_linea || {}).forEach(([k, l]) => {
+      if (!CLAVES_DATOS[k] || !l) return;
+      const rec = claveDeLinea(limpia(l));
+      lect.datos.push({ clave: k, l, cita: rec && rec.valor && limpia(l).includes(rec.valor) ? rec.valor : null, pendiente: false });
     });
+    lect.datos.sort((a, b) => a.l - b.l);
     return lect;
+  }
+
+  // ---- De los avisos del lector (ya pasados por el juez) a lo que ve Edgar en pantalla: ámbar o gris, con la línea y la
+  // cita literal como prueba, y botones que NUNCA se aplican solos (auto: false, origen: "ia"). Aguanta una lectura
+  // envenenada: lo que no cuadra (tipo raro, línea fuera de la hoja, cita que no está, dinero en el texto) se tira.
+  const TEXTOS_AVISO = {
+    seccion_repetida: "La hoja trae dos veces la misma sección", parrafo_repetido: "Este párrafo está repetido",
+    renglon_repetido: "Este renglón parece repetido", cierre_duplicado: "Este cierre (pruebas, inspección, limpieza) ya lo trae la plantilla",
+    remision_inexistente: "Esta línea remite a una cláusula que no está en la hoja", conteo_incoherente: "El número que dice no cuadra con lo que lista",
+    texto_de_otro_trabajo: "Esta línea parece de otro tipo de trabajo", exclusion_contradice_alcance: "Esta exclusión choca con algo que el Alcance sí incluye",
+    propiedad_comercial: "Parece una propiedad comercial", contrato_con_contratista: "Parece un contrato con un contratista",
+    firmante_es_empresa: "El cliente es una empresa: hace falta saber quién firma", dato_pendiente: "Este dato parece pendiente de confirmar",
+    condicion_en_prosa: "La hoja dice en prosa algo que va en Condiciones", renglon_para_condicion: "Esta condición apunta a un renglón",
+    titulo_leido_como: "Este título lo leí por su sentido", linea_dudosa: "No estoy seguro de qué es esta línea",
+    cantidad_no_numeracion: "Este número es una cantidad, no la numeración", numeracion_no_seguida: "La numeración no va seguida",
+    dinero_fuera_de_sitio: "Hay un monto donde no van montos", dos_precios: "Hay dos precios distintos",
+    codigo_no_nec: "Este código no es del NEC: va tal cual", clausula_ya_en_plantilla: "Esta cláusula parece de las que la plantilla ya trae",
+    lengua_mezclada: "Esta línea está en otro idioma que el resto", detalle_sin_renglon: "Este detalle no tiene renglón encima"
+  };
+  function avisosDeLectura(lectura, L, avisos_app) {
+    const out = [];
+    if (!lectura || typeof lectura !== "object") return out;
+    const hasOwn = (o, k) => typeof k === "string" && Object.prototype.hasOwnProperty.call(o, k);
+    const lineas = (L && Array.isArray(L.lineas)) ? L.lineas : null;
+    const N = lineas ? lineas.length : 0;
+    const lineaOk = n => Number.isInteger(n) && n >= 1 && (!lineas || n <= N);
+    const limpia = n => lineas ? limpiarLinea(lineas[n - 1] || "").limpia : "";
+    const ia = o => Object.assign({ auto: false, origen: "ia" }, o);
+    const dejar = l => ia({ tipo: "dejar_asi", etiqueta: "Déjalo así", linea: l });
+    (Array.isArray(lectura.avisos) ? lectura.avisos : []).forEach(a => {
+      if (!a || typeof a !== "object" || !TIPOS_AVISO.includes(a.tipo)) return;
+      const ls = (Array.isArray(a.lineas) ? a.lineas : []).filter(lineaOk);
+      if (!ls.length) return;
+      const cita = a.cita ? String(a.cita).trim() : "";
+      if (cita && lineas && !ls.some(n => citaEnLinea(limpia(n), cita).ok)) return;   // cita que no está en la línea: se tira
+      const motivo = String(a.motivo || "").slice(0, 200);
+      if (traeDineroEstricto(motivo) || traeDineroEstricto(cita)) return;              // el lector no escribe montos
+      const l = ls[0], arreglos = [];
+      const p = a.propuesta && typeof a.propuesta === "object" ? a.propuesta : null;
+      if (p) {
+        const vl = lineaOk(p.valor_l) ? p.valor_l : l;
+        const vc = p.valor_cita ? String(p.valor_cita).trim() : "";
+        const vcOk = !vc || !lineas || citaEnLinea(limpia(vl), vc).ok;
+        if (p.accion === "quitar_linea") arreglos.push(ia({ tipo: "quitar_linea", etiqueta: "Quitar la línea", linea: vl }));
+        else if (p.accion === "quitar_trozo" && vc && vcOk) arreglos.push(ia({ tipo: "quitar_trozo", etiqueta: `Quitar «${vc.slice(0, 30)}»`, linea: vl, valor: vc }));
+        else if (p.accion === "cambiar_renglon" && Number.isInteger(p.renglon) && p.renglon >= 1) arreglos.push(ia({ tipo: "cambiar_renglon", etiqueta: `Apuntar al renglón ${p.renglon}`, linea: vl, valor: p.renglon }));
+        else if (p.accion === "poner_condicion" && hasOwn(CLAVES_COND, p.clave) && vc && vcOk) arreglos.push(ia({ tipo: "cambiar_condicion", etiqueta: `Ponerlo en Condiciones (${CLAVES_COND[p.clave][0]})`, clave: p.clave, valor: vc }));
+        else if (p.accion === "no_excluir" && p.clave) arreglos.push(ia({ tipo: "cambiar_condicion", etiqueta: "Quitar esa exclusión", clave: "no_excluir", valor: String(p.clave), anadir: true }));
+        // «preguntar», «poner_dato» e «informar» no llevan botón de la app: la pantalla pregunta con la cita y Edgar contesta
+      }
+      arreglos.push(dejar(l));
+      out.push({ tipo: a.tipo, nivel: a.certeza === "segura" ? "ambar" : "gris", certeza: a.certeza === "segura" ? "segura" : "probable",
+                 linea: l, lineas: ls, cita: cita || null, origen: "ia", perdonable: true, motivo,
+                 texto: `${TEXTOS_AVISO[a.tipo]} (línea ${l}${cita ? `: «${cita.slice(0, 80)}»` : ""}).${motivo ? " " + motivo : ""}`,
+                 pregunta: p && p.accion === "preguntar" ? { clave: p.clave || null } : null, arreglos });
+    });
+    // lo que el lector quiso dejar fuera y la app no pudo confirmar sola: ámbar con botones, y mientras tanto se conserva
+    (Array.isArray(lectura.sobrantes) ? lectura.sobrantes : []).forEach(s => {
+      if (!s || !lineaOk(s.l) || !lineas) return;
+      const hasta = lineaOk(s.l_hasta) && s.l_hasta >= s.l ? s.l_hasta : s.l;
+      for (let n = s.l; n <= hasta; n++) {
+        if (esSobranteConfirmada(lineas[n - 1])) continue;
+        const t = limpia(n);
+        out.push({ tipo: "sobrante_no_confirmada", nivel: "ambar", certeza: "probable", linea: n, lineas: [n], cita: t.slice(0, 80) || null, origen: "ia", perdonable: true,
+                   motivo: String(s.porque || "no_se").slice(0, 40),
+                   texto: `El lector quiso dejar fuera la línea ${n} «${t.slice(0, 60)}». La conservo donde las reglas la pusieron hasta que me digas qué es.`,
+                   arreglos: [ia({ tipo: "es_renglon", etiqueta: "Es un renglón", linea: n }), ia({ tipo: "es_detalle_de", etiqueta: "Es detalle del renglón de arriba", linea: n }),
+                              ia({ tipo: "quitar_linea", etiqueta: "Déjala fuera", linea: n }), dejar(n)] });
+      }
+    });
+    // lo que el juez devolvió a su sitio porque el lector lo había puesto en otro (renglón, detalle, exclusión u opción)
+    (Array.isArray(avisos_app) ? avisos_app : []).forEach(a => {
+      if (!a || a.tipo !== "renglon_movido" || !lineaOk(a.l)) return;
+      const t = lineas ? limpia(a.l) : String(a.texto || "");
+      const que = ({ renglon: "un renglón del Alcance", detalle: "un detalle de un renglón", exclusion: "una exclusión", opcion: "una opción" })[a.papel] || "un renglón";
+      out.push({ tipo: "renglon_movido", nivel: "ambar", certeza: "probable", linea: a.l, lineas: [a.l], cita: t.slice(0, 80) || null, origen: "ia", perdonable: true,
+                 motivo: String(a.puesto || "").slice(0, 40),
+                 texto: `El lector puso la línea ${a.l} «${t.slice(0, 60)}» en otro sitio (${a.puesto === "ninguna" ? "en ninguno" : a.puesto}); la dejo como ${que}, que es como la leen las reglas. Si de verdad no lo es, dímelo.`,
+                 arreglos: [ia({ tipo: "quitar_linea", etiqueta: "Déjala fuera del contrato", linea: a.l }), ia({ tipo: "es_detalle_de", etiqueta: "Es detalle del renglón de arriba", linea: a.l }), dejar(a.l)] });
+    });
+    // primero lo ámbar, después lo gris; como mucho doce
+    return out.sort((a, b) => (a.nivel === b.nivel ? 0 : a.nivel === "ambar" ? -1 : 1)).slice(0, 12);
   }
 
   const API = { leerAlcance, validarAlcance, cuentas, repartir, leerMonto, pareceDinero, hayDinero, pareceIngles, redactarDirecto,
@@ -2310,7 +2742,9 @@
                 numerarClausulas, clasificarPropias, renumerarRefs, partirFases, juntarNombres,
                 // v3.7: el juez y las pistas
                 RX_DINERO_TAPAR, esMontoTapable, taparDinero, traeDineroEstricto, limpiarLinea, hojaParaElLector, citaEnLinea,
-                verificarLectura, pistasDe, guardarPistas, alinearLectura, rareza, lecturaDeReglas, claveDeLinea, TIPOS_AVISO };
+                verificarLectura, pistasDe, guardarPistas, alinearLectura, rareza, lecturaDeReglas, claveDeLinea, TIPOS_AVISO, paraLaNube,
+                // tanda 1: los avisos del lector para la pantalla y las reglas nuevas
+                avisosDeLectura, esSobranteConfirmada, siNo, minus, normalizarTipoTrabajo, CLAVES_COND, CLAVES_DATOS, MATRIZ_LEGAL, SEC_DE_ROL };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   raiz.Alcance = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);
