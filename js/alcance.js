@@ -271,6 +271,7 @@
         if (!p || p.rol !== "continua" || !Number.isInteger(p.de) || p.de < 1 || p.de >= n) return;
         // una línea de dinero («Precio: $…», «Pagos: 40/60», una fila con % y monto) nunca se pega a otra: la leen las reglas
         const crudaN = lineasLeer[n - 1].replace(/\*\*|__|`/g, "").trim();
+        if (/^[-*_=]{3,}$/.test(crudaN) || /^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$/.test(crudaN)) { lineasLeer[n - 1] = ""; return; }   // una raya no es texto
         const mNVn = crudaN.match(/^([^:]{2,42}):\s*(.*)$/);
         if ((mNVn && buscaClave(CLAVES_DINERO, norma(mNVn[1])) && (hayDinero(mNVn[2]) || /\d{1,3}\s*%/.test(mNVn[2])))
             || (/\d{1,3}\s*%/.test(crudaN) && hayDinero(crudaN))) { noPegadas.add(n); return; }
@@ -284,7 +285,10 @@
       precio: null, pagos: null, opciones: [], condiciones: {}, codigo: [], codigo_grupos: [], codigo_otros: [], codigo_detalle: [],
       notas: "", errores: [], avisos: [], preguntas: [], lineas,
       // en qué línea se reconoció cada título de sección y cada dato de cabecera (lo usa lecturaDeReglas)
-      titulos: [], datos_linea: {}, con_pistas: activa
+      titulos: [], datos_linea: {}, con_pistas: activa,
+      // las líneas de prosa (Hoy / Cambia / Falta / Notas) y los encabezados de grupo, con su número: son la base
+      // contra la que el juez compara la lectura del cerebro (nada se convierte en otra cosa sin aviso)
+      prosa_lineas: { hoy: [], cambia: [], falta: [], notas: [] }, grupos_lineas: []
     };
     let sec = "datos", itemActual = null, opcionActual = null;
     const parrafo = { hoy: [], cambia: [], falta: [], notas: [] };
@@ -543,12 +547,12 @@
             // v3.7: si el párrafo define «Contractor» como otra empresa choca con el texto legal (ahí Contractor es Max Power):
             // se guarda como referencia (sirve para leer el flood, la fecha del certificado…) y la sección 1 la arma la app
             if (/\(\s*["\u201c]contractor["\u201d]\s*\)/i.test(texto) && !/max power[^()]{0,120}\(\s*["\u201c]contractor["\u201d]\s*\)/i.test(texto)) {
-              R.datos.overview_hoja = texto.trim();
+              R.datos.overview_hoja = texto.trim(); R.prosa_lineas.hoy.push(i + 1);
               R.avisos.push({ linea: i + 1, informativo: true, texto: "El párrafo de la sección 1 llama «Contractor» a otra empresa; en el contrato «Contractor» es Max Power. La sección 1 la armo yo con lo que sé, y ese párrafo queda de referencia." });
               break;
             }
             // v3.6: el párrafo entero es el «overview» y va al contrato tal cual (no se rearma con los títulos)
-            R.datos.overview = texto.trim();
+            R.datos.overview = texto.trim(); R.prosa_lineas.hoy.push(i + 1);
             if (mRes) R.datos.resumen = mRes[1].trim().replace(/\s+at\s+\d{2,}[^]*$/i, "").replace(/[.,]$/, "");
             break;
           }
@@ -557,7 +561,7 @@
           if (mEt) { const e = norma(mEt[1]); destino = /basis|information/.test(e) ? "falta" : /layout|change/.test(e) ? "cambia" : "hoy"; texto = mEt[2]; }
           if (destino === "falta") texto = texto.replace(/^this proposal is prepared from the on-site walkthrough and the direction provided by the client\.\s*/i, "");
           if (destino !== "notas") avisaDinero(i, linea, "esta línea");
-          parrafo[destino].push(texto);
+          parrafo[destino].push(texto); R.prosa_lineas[destino].push(i + 1);
           break;
         }
 
@@ -592,7 +596,7 @@
             const corto = linea.replace(/^\d+(?:\.\d+)*[.)]?\s+/, "").replace(/:$/, "").trim();
             const pareceGrupo = corto.length <= 40 && !/[.;]\s|\s(and|with|per|for|at)\s/i.test(corto) &&
               (/:$/.test(linea) || (corto === corto.toUpperCase() && /[A-Z]{3}/.test(corto)) || (mCrudo && !mJer && sigNumerado && /^\d+\.\d+/.test(sig)));
-            if (pareceGrupo && sigNumerado && !mJer) { R._grupo = corto; R._sinPunto = undefined; return; }
+            if (pareceGrupo && sigNumerado && !mJer) { R._grupo = corto; R._sinPunto = undefined; R.grupos_lineas.push(i + 1); return; }
           }
           // la serie: para validar que dentro de cada sección/grupo la numeración va seguida
           const serie = mJer ? mJer[1].split(".").slice(0, -1).join(".") : (R._grupo || null);
@@ -2346,9 +2350,11 @@
     "dinero_fuera_de_sitio", "dos_precios", "codigo_no_nec", "clausula_ya_en_plantilla", "lengua_mezclada", "detalle_sin_renglon"];
   // ¿La app reconoce esta línea como «Clave: valor» con esa clave? (la única puerta para los datos de la matriz legal)
   function claveDeLinea(lineaLimpia) {
-    const mNV = String(lineaLimpia || "").match(/^([^:]{2,42}):\s*(.*)$/);
+    let mNV = String(lineaLimpia || "").match(/^([^:]{2,42}):\s*(.*)$/);
+    const celdas = String(lineaLimpia || "").replace(/^\||\|$/g, "").split("|").map(c => c.trim()).filter(Boolean);
+    // la fila de tabla de dos celdas «| CLIENT | Billy Bullock |» es «CLIENT: Billy Bullock» (así la lee el lector)
+    if (!mNV && /\|/.test(String(lineaLimpia || "")) && celdas.length === 2) mNV = [lineaLimpia, celdas[0].replace(/:$/, ""), celdas[1]];
     if (!mNV) return null;
-    const celdas = String(lineaLimpia).replace(/^\||\|$/g, "").split("|").map(c => c.trim()).filter(Boolean);
     const k = buscaClave(CLAVES_DATOS, norma(mNV[1])) || buscaClave(CLAVES_COND, norma(mNV[1]));
     return k ? { clave: k, valor: mNV[2].trim(), celdas } : null;
   }
@@ -2415,13 +2421,17 @@
       const orig = (lineas[L.precio.l - 1] || {}).original || "";
       const d = hayDinero(orig);
       const formaPrecio = lineaOk(L.precio.l) && d && d.seguro && !/\d{1,3}\s*%/.test(orig)
+        // «9.15 Limitation of liability… total contract price» no es un precio: hace falta «$» o la clave «Precio:» delante
+        && (/\$\s?\d/.test(orig) || !!claveDeLinea(txt(L.precio.l)) || (() => { const kv = orig.match(/^\s*([^:]{2,42}):\s*(.*)$/); return !!(kv && buscaClave(CLAVES_DINERO, norma(kv[1])) === "precio"); })())
         && (PALABRA_DINERO.test(orig) || /\b(lump sum|contract price|base price|investment)\b/i.test(orig) || !!claveDeLinea(txt(L.precio.l)))
         // «$350.00 each», «per hour», el depósito, un hito o una cláusula de change order no son el precio del contrato
         && !/\b(each|per\s+(hour|hr|day|unit|trip|visit|fixture|device)|change order|mobilizations?|deposit|milestone|payment|retainage|allowance)\b|\/\s*(hr|hour|day)\b/i.test(orig);
       if (!formaPrecio || !reclama(L.precio.l, "precio")) { tirar("precio", L.precio.l, "la línea no tiene forma de precio"); L.precio = null; }
     } else L.precio = null;
     if (L.pagos && typeof L.pagos === "object") {
-      L.pagos.filas = (L.pagos.filas || []).filter(f => validaLineas(f, "pago_fila") && /\d{1,3}\s*%/.test((lineas[f.l - 1] || {}).original || "") && (reclama(f.l, "pago_fila") || tirar("pago_fila", f.l, "dos casas")));
+      // una fila de pago lleva porcentajes («40%», o la forma corta «Pagos: 40/40/20» con la clave delante)
+      const formaPago = f => { const o = (lineas[f.l - 1] || {}).original || ""; if (/\d{1,3}\s*%/.test(o)) return true; const kv = o.match(/^\s*\|?\s*([^:|]{2,42})\s*[:|]\s*(.*)$/); return !!(kv && buscaClave(CLAVES_DINERO, norma(kv[1])) === "pagos" && /\d/.test(kv[2])); };
+      L.pagos.filas = (L.pagos.filas || []).filter(f => validaLineas(f, "pago_fila") && (formaPago(f) || tirar("pago_fila", f.l, "la línea no tiene forma de fila de pago")) && (reclama(f.l, "pago_fila") || tirar("pago_fila", f.l, "dos casas")));
       L.pagos.propias = (L.pagos.propias || []).filter(p => validaLineas(p, "pago_propia") && validaCita(p, "cita_titulo", "pago_propia") && (reclama(p.l, "pago_propia") || tirar("pago_propia", p.l, "dos casas")));
       L.pagos.notas = (L.pagos.notas || []).filter(p => validaLineas(p, "pago_nota") && (reclama(p.l, "pago_nota") || tirar("pago_nota", p.l, "dos casas")));
       if (!L.pagos.filas.length && !L.pagos.propias.length && !L.pagos.notas.length) L.pagos = null;
@@ -2490,63 +2500,121 @@
       }
       return true;
     });
-    // 6 bis) candado 14 «nada desaparece en silencio»: lo que las reglas leen como renglón, detalle, exclusión u opción
-    // tiene que seguir siéndolo en la lectura. Si el lector lo puso en otro sitio (un párrafo de notas, una cláusula,
-    // un dato…) o en ninguno, mandan las reglas: la pieza ajena se quita, la línea vuelve a su papel y sale en ámbar.
+    // 6 bis) candado 14 «nada desaparece en silencio, nada se inventa en silencio». Las REGLAS son la base: la lectura
+    // de reglas (lecturaDeReglas) da a cada línea su papel; el lector solo puede cambiar las líneas que las reglas no
+    // supieron leer. Si cambia de papel una línea que las reglas ya leyeron (renglón, detalle, exclusión, opción,
+    // precio, pago, dato, condición, cláusula propia, título de sección, párrafo de prosa, grupo), mandan las reglas: la
+    // pieza del lector se quita, la de las reglas vuelve, y sale en ámbar. Si el lector le da papel a una línea que las
+    // reglas dejaban en nada, se acepta con ámbar (linea_nueva)… salvo el DINERO: precio, opciones y filas de pago nunca
+    // los pone el lector; se tiran y se pregunta.
     if (L_reglas && typeof L_reglas === "object" && !Array.isArray(L_reglas)) {
-      const esperado = [];
-      // el dinero primero: el precio y las filas de pago que leyeron las reglas tienen candado (el lector no los mueve)
-      if (L_reglas.precio && lineaOk(L_reglas.precio.linea)) esperado.push([L_reglas.precio.linea, "precio", null]);
-      (((L_reglas.pagos || {}).lineas) || []).forEach(l => { if (lineaOk(l)) esperado.push([l, "pago", null]); });
-      objs(L_reglas.items).forEach(it => { const ls = Array.isArray(it.lineas) ? it.lineas : []; if (lineaOk(ls[0])) { esperado.push([ls[0], "renglon", ls[0]]); ls.slice(1).forEach(l => { if (lineaOk(l)) esperado.push([l, "detalle", ls[0]]); }); } });
-      objs(L_reglas.no_incluye).forEach(x => { if (lineaOk(x.linea)) esperado.push([x.linea, "exclusion", null]); });
-      objs(L_reglas.opciones).forEach(o => { if (lineaOk(o.linea)) esperado.push([o.linea, "opcion", null]); });
-      // un papel solo se acepta si es el mismo (un renglón no pasa a exclusión ni a grupo en silencio; un detalle sí puede
-      // ser renglón propio, que no cambia lo prometido); y la pieza tiene que EMPEZAR en esa línea (un renglón con
-      // l_hasta que se traga al siguiente no vale)
-      const ACEPTA = { renglon: ["renglon"], detalle: ["detalle", "renglon"], exclusion: ["exclusion"], opcion: ["opcion"],
-                       precio: ["precio"], pago: ["pago_fila", "pago_propia", "pago_nota"] };
-      // quita de una lista la pieza que vive en n: si empieza en n se va entera; si es un tramo que pasa por n, se corta antes
-      const quita = n => o => {
-        if (!o) return false;
-        if (o.l === n) return false;
-        if (Number.isInteger(o.l_hasta) && o.l < n && n <= o.l_hasta) { for (let k = n; k <= o.l_hasta; k++) { casa.delete(k); origen.delete(k); } o.l_hasta = n - 1 > o.l ? n - 1 : null; }
-        return true;
-      };
-      const desalojar = n => {
-        // los detalles de un renglón o una opción que se va quedan sin casa (los vuelve a reclamar quien toque)
-        ["renglones", "opciones"].forEach(k => L[k].forEach(o => { if (o.l === n) (o.detalles || []).forEach(d => { casa.delete(d.l); origen.delete(d.l); }); }));
-        ["secciones", "datos", "condiciones", "codigo", "parrafos", "grupos", "sobrantes", "exclusiones", "renglones", "opciones", "remisiones"].forEach(k => { L[k] = L[k].filter(quita(n)); });
-        ["programa", "pre", "terminos"].forEach(k => { L.propias[k] = L.propias[k].filter(quita(n)); });
-        if (L.pagos) { L.pagos.filas = L.pagos.filas.filter(quita(n)); L.pagos.notas = L.pagos.notas.filter(quita(n)); L.pagos.propias = L.pagos.propias.filter(quita(n)); }
-        if (L.precio && L.precio.l === n) L.precio = null;
-        L.renglones.forEach(r => { r.detalles = r.detalles.filter(quita(n)); });
-        L.opciones.forEach(o => { o.detalles = o.detalles.filter(quita(n)); });
-        casa.delete(n); origen.delete(n);
-      };
-      esperado.forEach(([n, papel, titulo]) => {
-        const tiene = casa.get(n);
-        if (tiene && ACEPTA[papel].includes(tiene) && origen.get(n) === n) return;
-        const esDinero = papel === "precio" || papel === "pago";
-        if (!esDinero && avisos_app.some(a => a.tipo === "sobrante_no_confirmada" && a.l === n)) return;   // ya está en ámbar por sobrante
-        // un detalle cuyo título quedó sin casa (sobrante en ámbar, o sin pista) se queda sin casa también: las reglas
-        // leen título y detalles juntos, y el aviso del título ya lo cubre
-        if (papel === "detalle" && !casa.has(titulo)) return;
-        desalojar(n);
-        if (papel === "detalle") {
-          const r = L.renglones.find(x => x.l === titulo);
-          if (r) r.detalles.push({ l: n, cita: null, de_reglas: true });
-          else L.renglones.push({ l: n, cita_titulo: null, detalles: [], grupo_l: null, cierre: false, de_reglas: true });
+      let base = null;
+      try { base = lecturaDeReglas(lineas.map(l => (l && typeof l.original === "string") ? l.original : "").join("\n"), L_reglas); } catch (_) { base = null; }
+      if (base) {
+        const pb = pistasDe(base);
+        const CLASE_PISTA = { seccion: "seccion", precio: "precio", pago_fila: "pago", pago_propia: "pago_propia", pago_nota: "pago_nota", dato: "dato",
+          renglon_titulo: "renglon", renglon_detalle: "detalle", exclusion: "exclusion", opcion: "opcion", opcion_detalle: "opcion_detalle",
+          condicion: "condicion", codigo: "codigo", propia: "propia", parrafo: "parrafo", grupo: "grupo", continua: "continua", sobrante: "sobrante" };
+        const CLASE_CASA = { seccion: "seccion", precio: "precio", pago_fila: "pago", pago_propia: "pago_propia", pago_nota: "pago_nota", dato: "dato",
+          renglon: "renglon", detalle: "detalle", exclusion: "exclusion", opcion: "opcion", opcion_detalle: "opcion_detalle",
+          condicion: "condicion", codigo: "codigo", propia: "propia", parrafo: "parrafo", grupo: "grupo", sobrante: "sobrante" };
+        const PROTEGIDO = ["precio", "pago", "pago_propia", "renglon", "detalle", "exclusion", "opcion", "dato", "condicion", "propia", "seccion", "parrafo", "grupo"];
+        const ACEPTA = { renglon: ["renglon"], detalle: ["detalle", "renglon"], exclusion: ["exclusion"], opcion: ["opcion"], precio: ["precio"], pago: ["pago"],
+                         pago_propia: ["pago_propia"], dato: ["dato"], condicion: ["condicion"], propia: ["propia"], seccion: ["seccion"], parrafo: ["parrafo", "sobrante"], grupo: ["grupo", "seccion"] };
+        const DINERO = ["precio", "opcion", "pago", "pago_propia"];
+        // quita de una lista la pieza que vive en n: si empieza en n se va entera; si es un tramo que pasa por n, se corta antes
+        const quita = n => o => {
+          if (!o) return false;
+          if (o.l === n) return false;
+          if (Number.isInteger(o.l_hasta) && o.l < n && n <= o.l_hasta) { for (let k = n; k <= o.l_hasta; k++) { casa.delete(k); origen.delete(k); } o.l_hasta = n - 1 > o.l ? n - 1 : null; }
+          return true;
+        };
+        const desalojar = n => {
+          ["renglones", "opciones"].forEach(k => L[k].forEach(o => { if (o.l === n) (o.detalles || []).forEach(d => { casa.delete(d.l); origen.delete(d.l); }); }));
+          ["secciones", "datos", "condiciones", "codigo", "parrafos", "grupos", "sobrantes", "exclusiones", "renglones", "opciones", "remisiones"].forEach(k => { L[k] = L[k].filter(quita(n)); });
+          ["programa", "pre", "terminos"].forEach(k => { L.propias[k] = L.propias[k].filter(quita(n)); });
+          if (L.pagos) { L.pagos.filas = L.pagos.filas.filter(quita(n)); L.pagos.notas = L.pagos.notas.filter(quita(n)); L.pagos.propias = L.pagos.propias.filter(quita(n)); }
+          if (L.precio && L.precio.l === n) L.precio = null;
+          L.renglones.forEach(r => { r.detalles = r.detalles.filter(quita(n)); });
+          L.opciones.forEach(o => { o.detalles = o.detalles.filter(quita(n)); });
+          casa.delete(n); origen.delete(n);
+        };
+        const clon = o => JSON.parse(JSON.stringify(o));
+        // vuelve a poner en la lectura la pieza que las reglas tenían en la línea n
+        const reponer = (n, clase) => {
+          const enBase = (lista, f) => (lista || []).find(f || (o => o.l === n));
+          if (clase === "precio") { if (L.precio && L.precio.l !== n) { tirar("precio", L.precio.l, "el precio es el de la línea que leen las reglas"); desalojar(L.precio.l); } L.precio = { l: n, de_reglas: true }; casa.set(n, "precio"); }
+          else if (clase === "pago") { L.pagos = L.pagos || { filas: [], propias: [], notas: [] }; L.pagos.filas.push({ l: n, orden: null, de_reglas: true }); casa.set(n, "pago_fila"); }
+          else if (clase === "pago_propia") { L.pagos = L.pagos || { filas: [], propias: [], notas: [] }; L.pagos.propias.push(Object.assign(clon(enBase(base.pagos && base.pagos.propias) || { l: n, cita_titulo: null }), { de_reglas: true })); casa.set(n, "pago_propia"); }
+          else if (clase === "renglon") { const r = enBase(base.renglones); L.renglones.push(Object.assign(clon(r || { l: n, cita_titulo: null }), { detalles: [], l_hasta: null, de_reglas: true })); casa.set(n, "renglon"); }
+          else if (clase === "detalle") {
+            const padre = (base.renglones || []).find(r => (r.detalles || []).some(d => d.l === n));
+            const r = padre ? L.renglones.find(x => x.l === padre.l) : null;
+            if (r) { r.detalles.push({ l: n, cita: null, de_reglas: true }); casa.set(n, "detalle"); }
+            else { L.renglones.push({ l: n, cita_titulo: null, detalles: [], grupo_l: null, cierre: false, de_reglas: true }); casa.set(n, "renglon"); }
+          }
+          else if (clase === "exclusion") { L.exclusiones.push(Object.assign(clon(enBase(base.exclusiones) || { l: n, cita_titulo: null }), { l_hasta: null, de_reglas: true })); casa.set(n, "exclusion"); }
+          else if (clase === "opcion") { L.opciones.push(Object.assign(clon(enBase(base.opciones) || { l: n }), { detalles: [], de_reglas: true })); casa.set(n, "opcion"); }
+          else if (clase === "dato") { const d = enBase(base.datos); if (d) { L.datos.push(Object.assign(clon(d), { de_reglas: true })); casa.set(n, "dato"); } }
+          else if (clase === "condicion") { const c = enBase(base.condiciones); if (c) { L.condiciones.push(Object.assign(clon(c), { explicita: true, de_reglas: true })); casa.set(n, "condicion"); } }
+          else if (clase === "propia") { ["programa", "pre", "terminos"].forEach(k => { const q = enBase(base.propias && base.propias[k]); if (q) { L.propias[k].push(Object.assign(clon(q), { l_hasta: null, de_reglas: true })); casa.set(n, "propia"); } }); }
+          else if (clase === "seccion") { const q = enBase(base.secciones); if (q) { L.secciones.push(Object.assign(clon(q), { de_reglas: true })); casa.set(n, "seccion"); } }
+          else if (clase === "parrafo") { const q = enBase(base.parrafos); if (q) { L.parrafos.push(Object.assign(clon(q), { l_hasta: null, de_reglas: true })); casa.set(n, "parrafo"); } }
+          else if (clase === "grupo") { L.grupos.push({ l: n, cita: null, de_reglas: true }); casa.set(n, "grupo"); }
+          origen.set(n, n);
+        };
+        // 1) lo que las reglas leyeron con papel: el lector no lo cambia de papel ni lo esconde en un tramo
+        Object.keys(pb).map(Number).sort((a, b) => a - b).forEach(n => {
+          const claseBase = CLASE_PISTA[pb[n].rol];
+          if (!claseBase || !PROTEGIDO.includes(claseBase) || !lineaOk(n)) return;
+          const tiene = casa.get(n), claseTiene = tiene ? CLASE_CASA[tiene] : null;
+          if (claseTiene && ACEPTA[claseBase].includes(claseTiene) && origen.get(n) === n) return;
+          const esDinero = DINERO.includes(claseBase);
+          // un párrafo de prosa que el lector marcó como sobrante ya va en ámbar por el sobrante (y la línea se queda)
+          if (!esDinero && avisos_app.some(a => a.tipo === "sobrante_no_confirmada" && a.l === n)) return;
+          // dinero (precio, opción, fila o condición de pago) sobre una línea que las reglas no leían como ese dinero:
+          // nunca lo pone el lector; se tira, se pregunta, y la línea vuelve a lo que era
+          if (claseTiene && DINERO.includes(claseTiene) && !esDinero) {
+            const tipo = claseTiene === "precio" ? "precio_propuesto" : claseTiene === "opcion" ? "opcion_propuesta" : "pago_propuesto";
+            tirar(tiene, n, "el dinero no lo pone el lector: se pregunta");
+            desalojar(n); reponer(n, claseBase);
+            avisos_app.push({ tipo, l: n, texto: txt(n) });
+            return;
+          }
+          // un párrafo de prosa (no dinero) que el lector convirtió en renglón, exclusión, condición, cláusula o dato:
+          // se acepta, pero sale en ámbar como línea nueva (las reglas no sabían leerla como eso)
+          if (claseBase === "parrafo" && claseTiene && !DINERO.includes(claseTiene) && claseTiene !== "seccion") {
+            avisos_app.push({ tipo: "linea_nueva", l: n, texto: txt(n), papel: claseTiene, antes: "prosa" });
+            return;
+          }
+          // un detalle cuyo título quedó sin casa (sobrante en ámbar, o sin pista) se queda sin casa también
+          if (claseBase === "detalle") { const padre = (base.renglones || []).find(r => (r.detalles || []).some(d => d.l === n)); if (padre && !casa.has(padre.l)) return; }
+          desalojar(n);
+          reponer(n, claseBase);
+          avisos_app.push({ tipo: "renglon_movido", l: n, texto: txt(n), papel: claseBase, puesto: tiene || "ninguna" });
+        });
+        // 2) el dinero nunca lo pone el lector: precio, opciones o filas de pago sobre líneas que las reglas no leyeron así
+        //    se tiran y se pregunta; lo demás que el lector añada donde las reglas no leían nada sale en ámbar (linea_nueva)
+        const claseBaseDe = n => pb[n] ? CLASE_PISTA[pb[n].rol] : null;
+        if (L.precio && claseBaseDe(L.precio.l) !== "precio") {
+          const n = L.precio.l; tirar("precio", n, "el precio no lo pone el lector: se pregunta"); desalojar(n);
+          avisos_app.push({ tipo: "precio_propuesto", l: n, texto: txt(n) });
+          L.precio = null;
         }
-        else if (papel === "renglon") L.renglones.push({ l: n, cita_titulo: null, detalles: [], grupo_l: null, cierre: false, de_reglas: true });
-        else if (papel === "exclusion") L.exclusiones.push({ l: n, cita_titulo: null, de_reglas: true });
-        else if (papel === "opcion") L.opciones.push({ l: n, detalles: [], de_reglas: true });
-        else if (papel === "precio") { if (L.precio && L.precio.l !== n) { tirar("precio", L.precio.l, "el precio es el de la línea que leen las reglas"); desalojar(L.precio.l); } L.precio = { l: n, de_reglas: true }; }
-        else if (papel === "pago") { L.pagos = L.pagos || { filas: [], propias: [], notas: [] }; L.pagos.filas.push({ l: n, orden: null, de_reglas: true }); }
-        casa.set(n, papel === "pago" ? "pago_fila" : papel); origen.set(n, n);
-        avisos_app.push({ tipo: "renglon_movido", l: n, texto: txt(n), papel, puesto: tiene || "ninguna" });
-      });
-      if (L.pagos) L.pagos.filas.sort((a, b) => a.l - b.l).forEach((f, k) => { if (f.de_reglas) f.orden = k + 1; });
+        L.opciones.slice().forEach(o => { if (claseBaseDe(o.l) !== "opcion") { tirar("opcion", o.l, "una opción con precio no la pone el lector"); desalojar(o.l); avisos_app.push({ tipo: "opcion_propuesta", l: o.l, texto: txt(o.l) }); } });
+        if (L.pagos) {
+          L.pagos.filas.slice().forEach(f => { if (claseBaseDe(f.l) !== "pago") { tirar("pago_fila", f.l, "una fila de pago no la pone el lector"); desalojar(f.l); avisos_app.push({ tipo: "pago_propuesto", l: f.l, texto: txt(f.l) }); } });
+          L.pagos.propias.slice().forEach(q => { if (claseBaseDe(q.l) !== "pago_propia") { tirar("pago_propia", q.l, "una condición de pago no la pone el lector"); desalojar(q.l); avisos_app.push({ tipo: "pago_propuesto", l: q.l, texto: txt(q.l) }); } });
+          if (!L.pagos.filas.length && !L.pagos.propias.length && !L.pagos.notas.length) L.pagos = null;
+        }
+        [["renglones", "renglon"], ["exclusiones", "exclusion"], ["condiciones", "condicion"], ["datos", "dato"]].forEach(([k, clase]) => {
+          L[k].forEach(o => { if (k === "condiciones" && !o.explicita) return; if (!lineaOk(o.l) || pb[o.l] || o.de_reglas) return;
+            if (!avisos_app.some(a => a.l === o.l)) avisos_app.push({ tipo: "linea_nueva", l: o.l, texto: txt(o.l), papel: clase, antes: "nada" }); });
+        });
+        ["programa", "pre", "terminos"].forEach(k => L.propias[k].forEach(q => { if (!lineaOk(q.l) || pb[q.l] || q.de_reglas) return;
+          if (!avisos_app.some(a => a.l === q.l)) avisos_app.push({ tipo: "linea_nueva", l: q.l, texto: txt(q.l), papel: "propia", antes: "nada" }); }));
+        if (L.pagos) L.pagos.filas.sort((a, b) => a.l - b.l).forEach((f, k) => { if (f.de_reglas) f.orden = k + 1; });
+      }
     }
     // cobertura: toda línea con contenido tiene casa; las que no, sin_casa (las lee la regla y se pregunta)
     const sin_casa = [];
@@ -2696,9 +2764,13 @@
     });
     L.no_incluye.forEach((x, k) => lect.exclusiones.push({ orden: k + 1, l: x.linea, l_hasta: null, cita_titulo: x.titulo && limpia(x.linea).includes(x.titulo) ? x.titulo : null, ya_en_plantilla: "ninguna" }));
     if (L.precio && L.precio.linea) lect.precio = { l: L.precio.linea };
-    if (L.pagos && L.pagos.lineas && L.pagos.lineas.length) lect.pagos = { forma: L.pagos.corto ? "corta" : "filas", filas: L.pagos.corto ? [] : L.pagos.lineas.map((l, k) => ({ orden: k + 1, l })), propias: (L.pagos_propios || []).map(p => ({ l: p.linea, cita_titulo: p.titulo })), notas: [] };
+    // en la forma corta («Pagos: 50/50») la única línea es la fila 1: así el juez sabe que esa línea es dinero
+    if (L.pagos && L.pagos.lineas && L.pagos.lineas.length) lect.pagos = { forma: L.pagos.corto ? "corta" : "filas", filas: L.pagos.lineas.map((l, k) => ({ orden: k + 1, l })), propias: (L.pagos_propios || []).filter(p => p.linea).map(p => ({ l: p.linea, cita_titulo: p.titulo })), notas: [] };
+    // la prosa de la hoja (Hoy / Cambia / Falta / Notas) con su línea, y los encabezados de grupo
+    Object.entries(L.prosa_lineas || {}).forEach(([destino, ls]) => (ls || []).forEach(l => lect.parrafos.push({ l, l_hasta: null, destino, cita: null })));
+    (L.grupos_lineas || []).forEach(l => lect.grupos.push({ l, cita: null }));
     L.opciones.forEach(o => lect.opciones.push({ orden: o.n, l: o.linea, detalles: [] }));
-    Object.entries(L.condiciones || {}).forEach(([k, v]) => { if (v && v.linea && !v.pescada) lect.condiciones.push({ clave: k, l: v.linea, cita: null }); });
+    Object.entries(L.condiciones || {}).forEach(([k, v]) => { if (v && v.linea && !v.pescada) lect.condiciones.push({ clave: k, l: v.linea, cita: null, explicita: true }); });
     ["programa", "pre", "terminos"].forEach(k => (L[k] || []).forEach(p => { if (p.linea) lect.propias[k].push({ l: p.linea, l_hasta: null, numero: p.n || null, cita_titulo: limpia(p.linea).includes(p.titulo) ? p.titulo : null, parece_de_plantilla: null }); }));
     // datos de cabecera: los que el lector leyó de una línea «Clave: valor» (la cita es solo el valor, si está literal)
     Object.entries(L.datos_linea || {}).forEach(([k, l]) => {
@@ -2789,10 +2861,29 @@
                  texto: `El lector puso la línea ${a.l} «${t.slice(0, 60)}» en otro sitio (${a.puesto === "ninguna" ? "en ninguno" : a.puesto}); la dejo como ${que}, que es como la leen las reglas.${esDinero ? " El dinero no lo mueve el lector." : " Si de verdad no lo es, dímelo."}`,
                  arreglos: esDinero ? [dejar(a.l)] : [ia({ tipo: "quitar_linea", etiqueta: "Déjala fuera del contrato", linea: a.l }), ia({ tipo: "es_detalle_de", etiqueta: "Es detalle del renglón de arriba", linea: a.l }), dejar(a.l)] });
     });
-    // primero lo ámbar, después lo gris; dentro de cada color, primero lo del candado 14 (lo que el lector quiso mover
-    // o quitar) y después lo que el lector avisa por su cuenta; como mucho veinte
-    const candado = a => (a.tipo === "renglon_movido" || a.tipo === "sobrante_no_confirmada") ? 0 : 1;
-    return out.sort((a, b) => (a.nivel !== b.nivel ? (a.nivel === "ambar" ? -1 : 1) : candado(a) - candado(b))).slice(0, 20);
+    // lo que el lector añadió donde las reglas no leían nada (ámbar, con botón para quitarlo) y el dinero que quiso poner (se pregunta)
+    const PAPEL = { renglon: "un renglón del Alcance", detalle: "un detalle", exclusion: "una exclusión", condicion: "una condición", propia: "una cláusula propia", dato: "un dato de cabecera", grupo: "un grupo", codigo: "código" };
+    (Array.isArray(avisos_app) ? avisos_app : []).forEach(a => {
+      if (!a || !lineaOk(a.l)) return;
+      const t = lineas ? limpia(a.l) : String(a.texto || "");
+      if (a.tipo === "linea_nueva") out.push({ tipo: "linea_nueva", nivel: "ambar", certeza: "probable", linea: a.l, lineas: [a.l], cita: t.slice(0, 80) || null, origen: "ia", perdonable: true, motivo: String(a.papel || "").slice(0, 40),
+        texto: `El lector leyó la línea ${a.l} «${t.slice(0, 60)}» como ${PAPEL[a.papel] || "un renglón"}; las reglas la tenían como ${a.antes === "prosa" ? "texto de la hoja" : "nada"}. Si no lo es, quítala.`,
+        arreglos: [ia({ tipo: "quitar_linea", etiqueta: "No es eso: déjala fuera", linea: a.l }), dejar(a.l)] });
+      else if (a.tipo === "precio_propuesto") out.push({ tipo: "precio_propuesto", nivel: "ambar", certeza: "probable", linea: a.l, lineas: [a.l], cita: t.slice(0, 80) || null, origen: "ia", perdonable: true, motivo: "precio",
+        texto: `El lector cree que el precio del contrato está en la línea ${a.l} «${t.slice(0, 60)}». El precio no lo pone el lector: escríbelo tú en «Precio:».`, pregunta: { clave: "precio" }, arreglos: [dejar(a.l)] });
+      else if (a.tipo === "opcion_propuesta") out.push({ tipo: "opcion_propuesta", nivel: "ambar", certeza: "probable", linea: a.l, lineas: [a.l], cita: t.slice(0, 80) || null, origen: "ia", perdonable: true, motivo: "opcion",
+        texto: `El lector quiso añadir como opción con precio la línea ${a.l} «${t.slice(0, 60)}». Las opciones con precio las escribes tú en Opciones.`, arreglos: [dejar(a.l)] });
+      else if (a.tipo === "pago_propuesto") out.push({ tipo: "pago_propuesto", nivel: "ambar", certeza: "probable", linea: a.l, lineas: [a.l], cita: t.slice(0, 80) || null, origen: "ia", perdonable: true, motivo: "pago",
+        texto: `El lector quiso tomar la línea ${a.l} «${t.slice(0, 60)}» como fila de pagos. Los pagos los escribes tú en Pagos.`, pregunta: { clave: "pagos" }, arreglos: [dejar(a.l)] });
+    });
+    // primero lo ámbar, después lo gris; dentro de cada color, primero lo del candado 14 (lo que el lector quiso mover,
+    // quitar, inventar o cobrar) y después lo que el lector avisa por su cuenta; como mucho veinte, y se dice cuántos quedan
+    const candado = a => ["renglon_movido", "sobrante_no_confirmada", "precio_propuesto", "opcion_propuesta", "pago_propuesto", "linea_nueva"].includes(a.tipo) ? 0 : 1;
+    const orden = out.sort((a, b) => (a.nivel !== b.nivel ? (a.nivel === "ambar" ? -1 : 1) : candado(a) - candado(b)));
+    if (orden.length <= 20) return orden;
+    const resto = orden.length - 19;
+    return orden.slice(0, 19).concat([{ tipo: "mas", nivel: "gris", certeza: "segura", linea: 0, lineas: [], cita: null, origen: "ia", perdonable: false, motivo: String(resto),
+      texto: `… y ${resto} avisos más del lector que no caben aquí. Las líneas están todas en la hoja, tal como las leen las reglas.`, arreglos: [] }]);
   }
 
   const API = { leerAlcance, validarAlcance, cuentas, repartir, leerMonto, pareceDinero, hayDinero, pareceIngles, redactarDirecto,
