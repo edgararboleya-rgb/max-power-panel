@@ -202,7 +202,8 @@
     "Contrato con el contratista — le facturamos a él": "Contract with the contractor — we bill them",
     "Cliente final (dueño de la propiedad)": "End client (property owner)",
     "Correo del cliente (opcional)": "Client email (optional)", "Teléfono del cliente (opcional)": "Client phone (optional)",
-    "Correo del cliente": "Client email", "Teléfono del cliente": "Client phone"
+    "Correo del cliente": "Client email", "Teléfono del cliente": "Client phone",
+    "Quién coordina esta obra por parte del contratista (opcional)": "Contractor's coordinator for this job (optional)"
   });
   function traducirTexto(t) {
     const limpio = t.trim();

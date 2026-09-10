@@ -349,6 +349,7 @@
         via: p.via || "—",
         contratistaId: p.contratista_id || null,
         contratistaModo: p.contratista_modo || "",
+        contratistaContacto: p.contratista_contacto || "",
         ntoEnviadoEl: p.nto_enviado_el ? String(p.nto_enviado_el).slice(0, 10) : "",
         origen: p.origen || "",
         clienteEmail: p.cliente_email || "",

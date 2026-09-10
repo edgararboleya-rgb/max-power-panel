@@ -2580,16 +2580,21 @@ function esFalloDeRed(err) {
         <label${contratistaId ? "" : " hidden"}>Cómo es el trato
           <select name="contratista_modo">${MODOS_TRATO.replace(`value="${modo || "referido"}"`, `value="${modo || "referido"}" selected`)}</select>
         </label>
-      </div>`;
+      </div>
+      <label${contratistaId ? "" : " hidden"} data-lab-coord>Quién coordina esta obra por parte del contratista (opcional)
+        <input name="contratista_contacto" type="text" placeholder="Ej: Kevin Haseney — sale en el contrato junto al contacto de la empresa" autocomplete="off">
+      </label>`;
   }
   // Enciende el modo solo si hay contratista, y la etiqueta del cliente cambia a «cliente final»
   function engancharTrato(form) {
     const sel = form.querySelector("[name=contratista_id]"), modo = form.querySelector("[name=contratista_modo]");
     const lab = form.querySelector("[data-lab-cliente] > span");
     if (!sel) return;
+    const coord = form.querySelector("[data-lab-coord]");
     const pinta = () => {
       const con = !!sel.value;
       if (modo) modo.closest("label").hidden = !con;
+      if (coord) coord.hidden = !con;
       if (lab) lab.textContent = con ? "Cliente final (dueño de la propiedad)" : "Cliente";
     };
     sel.addEventListener("change", pinta); pinta();
@@ -2608,7 +2613,8 @@ function esFalloDeRed(err) {
     return {
       via: emp ? emp.nombre : "Directo",
       contratista_id: emp ? emp.id : null,
-      contratista_modo: emp ? String(d.get("contratista_modo") || "referido") : null
+      contratista_modo: emp ? String(d.get("contratista_modo") || "referido") : null,
+      contratista_contacto: emp ? (String(d.get("contratista_contacto") || "").trim() || null) : null
     };
   }
   function tratoTexto(contratistaId, modo) {
@@ -2676,6 +2682,9 @@ function esFalloDeRed(err) {
               </select>
             </label>
           </div>
+          <label>Quién coordina esta obra por parte del contratista (opcional)
+            <input name="contratista_contacto" type="text" value="${esc(p.contratistaContacto || "")}" placeholder="Ej: Kevin Haseney — sale en el contrato junto al contacto de la empresa" autocomplete="off">
+          </label>
           <button type="submit" class="accion secundaria">Guardar</button>
         </form>
       </div>`;
@@ -3314,10 +3323,14 @@ function esFalloDeRed(err) {
                      "Si quien firma es el dueño de la casa, elige «Solo coordinan».")) return;
       }
       try {
-        await DB.cambiarProyecto(proyectoActivo, {
-          contratista_id: cual || null,
-          contratista_modo: modo
-        });
+        const cambiosGC = { contratista_id: cual || null, contratista_modo: modo,
+                            contratista_contacto: cual ? (String(d.get("contratista_contacto") || "").trim() || null) : null };
+        try { await DB.cambiarProyecto(proyectoActivo, cambiosGC); }
+        catch (e) {
+          if (!/contratista_contacto/.test(String(e.crudo || e.message || ""))) throw e;
+          delete cambiosGC.contratista_contacto; await DB.cambiarProyecto(proyectoActivo, cambiosGC);
+          avisar("Ojo: falta pegar el SQL «COORDINADOR-OBRA» para guardar al coordinador", true);
+        }
         await recargar(proyectoActivo);
         avisar(cual ? "Contratista guardado ✓" : "Obra directa ✓");
       } catch (err) { avisar("No se pudo: " + err.message, true); }
@@ -3864,7 +3877,12 @@ function esFalloDeRed(err) {
       ref: (d.get("ref") || "Por definir").toString().trim() || "Por definir"
     };
     try {
-      await DB.crearProyecto(fila);
+      try { await DB.crearProyecto(fila); }
+      catch (e) {
+        if (!/contratista_contacto/.test(String(e.crudo || e.message || ""))) throw e;
+        delete fila.contratista_contacto; await DB.crearProyecto(fila);   // falta pegar COORDINADOR-OBRA.sql
+        avisar("Ojo: falta pegar el SQL «COORDINADOR-OBRA»; el proyecto se creó sin el coordinador", true);
+      }
       if (Number.isFinite(contrato) && contrato !== null)
         await DB.crearFinanzas({ proyecto_id: id, contrato, cobrado: 0 });
       $formNuevo.reset();
@@ -5537,7 +5555,7 @@ function esFalloDeRed(err) {
               ${[["servicio", "Servicios"], ["residencial", "Residenciales"], ["comercial", "Comerciales"]].map(([t, et]) => {
                 const lista = proyectos().filter(x => x.tipo === t && !["no_aprobado"].includes(x.estado))
                   .sort((a, b) => (a.estado === "completado") - (b.estado === "completado") || String(a.nombre).localeCompare(String(b.nombre)));
-                return lista.length ? `<optgroup label="${et}">${lista.map(x => `<option value="${esc(x.id)}" data-tipo="${esc(x.tipo)}" data-cliente="${esc(x.cliente || "")}" data-nombre="${esc(x.nombre)}" data-contratista="${esc(x.contratistaId || "")}" data-modo="${esc(x.contratistaModo || "")}" data-email="${esc(x.clienteEmail || "")}" data-tel="${esc(x.clienteTel || "")}">${esc(x.nombre)}${x.estado === "completado" ? " (completado)" : ""}</option>`).join("")}</optgroup>` : "";
+                return lista.length ? `<optgroup label="${et}">${lista.map(x => `<option value="${esc(x.id)}" data-tipo="${esc(x.tipo)}" data-cliente="${esc(x.cliente || "")}" data-nombre="${esc(x.nombre)}" data-contratista="${esc(x.contratistaId || "")}" data-modo="${esc(x.contratistaModo || "")}" data-email="${esc(x.clienteEmail || "")}" data-tel="${esc(x.clienteTel || "")}" data-coord="${esc(x.contratistaContacto || "")}">${esc(x.nombre)}${x.estado === "completado" ? " (completado)" : ""}</option>`).join("")}</optgroup>` : "";
               }).join("")}
             </select>
             <i>Elige uno si es un trabajo añadido a un proyecto que ya tienes (un extra, un service que crece). Si no, es un proyecto nuevo.</i>
@@ -5610,7 +5628,7 @@ function esFalloDeRed(err) {
           cliente_email: (d.get("cliente_email") || "").toString().trim() || null,
           cliente_tel: (d.get("cliente_tel") || "").toString().trim() || null
         };
-        const CASILLAS_TRATO = ["via", "contratista_id", "contratista_modo", "cliente_email", "cliente_tel"];
+        const CASILLAS_TRATO = ["via", "contratista_id", "contratista_modo", "contratista_contacto", "cliente_email", "cliente_tel"];
         const filasNueva = await DB.crearEstimado(fila).catch(async err => {
           const txt = String(err.crudo || err.message || "");
           // Si la base todavía no tiene las casillas del trato (falta pegar ESTIMADOR-GC.sql), se crea sin ellas
@@ -5645,6 +5663,7 @@ function esFalloDeRed(err) {
       if (modo && op.dataset.tipo === "servicio") modo.value = "servicio";
       // El trato y el contacto se heredan del proyecto: no se vuelven a escribir
       ponerTrato(form, op.dataset.contratista || "", op.dataset.modo || "");
+      const co = form.querySelector("[name=contratista_contacto]"); if (co && !co.value) co.value = op.dataset.coord || "";
       const em = form.querySelector("[name=cliente_email]"), tl = form.querySelector("[name=cliente_tel]");
       if (em && !em.value) em.value = op.dataset.email || "";
       if (tl && !tl.value) tl.value = op.dataset.tel || "";
@@ -6747,6 +6766,7 @@ Power done right the first time. ⚡`;
           via: est.via || "Directo",
           contratista_id: est.contratista_id || null,
           contratista_modo: est.contratista_id ? (est.contratista_modo || "referido") : null,
+          contratista_contacto: est.contratista_contacto || null,
           cliente_email: est.cliente_email || null,
           cliente_tel: est.cliente_tel || null,
           estado: "enviado",
@@ -8503,7 +8523,8 @@ Power done right the first time. ⚡`;
     return {
       cliente:   primero(gc && gc.nombre, p.cliente, est.cliente),
       dueno,
-      atencion:  primero(gc && gc.contacto),
+      // el contacto de la empresa y quien coordina ESTA obra, los dos («Roberto Prata / Kevin Haseney»)
+      atencion:  [...new Set([gc && gc.contacto, p.contratistaContacto, est.contratista_contacto].map(x => String(x || "").trim()).filter(x => !alcVacio(x)))].join(" / "),
       email:     primero(gc && gc.email, p.cliente_email),
       telefono:  primero(gc && gc.telefono, p.cliente_tel),
       direccion: primero(p.direccion, est.direccion),

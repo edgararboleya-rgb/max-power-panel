@@ -1710,7 +1710,17 @@
       PLANOS: (S.planos && S.planos.en) || d.planos || "",
       RESUMEN_DEL_TRABAJO: (S.resumen_del_trabajo && S.resumen_del_trabajo.en) || "",
       // v3.6 (regla B4): el primer párrafo de la sección 1 es el de la hoja tal cual; si no hay, una frase simple
-      OVERVIEW: d.overview || `This Scope of Work covers the electrical work at ${admin.direccion || d.direccion || "the Property"} for ${dec.clienteEfectivo || d.cliente || "the Client"}, as described in Section 2.`,
+      // Sin párrafo de objetivo en la hoja, la app lo arma con lo que sabe: el proyecto, la dirección, con quién se
+      // contrata y los renglones del §2 (Edgar, 10-sep: «la sección uno se refiere a todo menos a los objetivos»)
+      OVERVIEW: d.overview || (() => {
+        const proy = String(d.proyecto || "").split(/\s+[—–]\s+/)[0].trim();
+        const que = proy ? `the ${proy.charAt(0).toLowerCase() + proy.slice(1)}` : "this project";
+        const donde = admin.direccion || d.direccion || "the Property";
+        const conQuien = dec.esGC && dec.gcNombre ? `, performed by Max Power as electrical subcontractor to ${dec.gcNombre}`
+                       : (dec.clienteEfectivo || d.cliente) ? ` for ${dec.clienteEfectivo || d.cliente}` : "";
+        const lista = (S.resumen_corrido && S.resumen_corrido.en) || "";
+        return `This Scope of Work covers the electrical work for ${que} at ${donde}${conQuien}${lista ? ": " + lista : ", as described in Section 2"}.`;
+      })(),
       QUE_HAY_HOY: (S.que_hay_hoy && S.que_hay_hoy.en) || "",
       QUE_CAMBIA: (S.que_cambia && S.que_cambia.en) || "",
       QUE_FALTABA: (S.que_faltaba && S.que_faltaba.en) || "",
