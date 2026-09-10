@@ -106,7 +106,12 @@
     ingenieria:         ["ingenieria", "engineering", "load calc"],
     utility:            ["utility", "compania electrica"],
     layout:             ["layout", "aprobacion de layout"],
-    vence:              ["vence", "vigencia", "vale", "valid", "expires", "valid for", "valid through", "valid until", "proposal valid", "expiration", "expiration date", "offer valid"]
+    vence:              ["vence", "vigencia", "vale", "valid", "expires", "valid for", "valid through", "valid until", "proposal valid", "expiration", "expiration date", "offer valid"],
+    // v3.6: la zona de inundación (7.x Flood elevation cuando es AE / VE / AO / AH)
+    flood_zona:         ["flood zone", "fema zone", "fema flood zone", "zona de inundacion", "zona fema", "flood"],
+    flood_bfe:          ["bfe", "base flood elevation", "design flood elevation"],
+    flood_ec:           ["elevation certificate", "ec date", "elevation certificate date", "certificado de elevacion"],
+    flood_lag:          ["lag", "lowest adjacent grade"]
   };
   // Datos de la cabecera del chat que no hacen falta (la plantilla los pone sola)
   const CLAVES_IGNORAR = ["prepared by", "preparado por", "proposal", "date", "proposal date",
@@ -376,7 +381,9 @@
               // "Pinellas County, Florida — permit held by General Contractor" → la ciudad limpia y el permiso lo saca el GC
               const mPerm = v.match(/\s*[—–\-(,;]*\s*(?:the\s+)?(?:electrical\s+|building\s+)?permit\b[^)]*?(?:held|pulled|obtained|secured|issued|applied)\s+(?:by|to|under)\s+[^)]*$/i);
               if (mPerm) { const nota = v.slice(mPerm.index); v = v.slice(0, mPerm.index); if (!R.datos.permiso) R.datos.permiso = /max power|us\b|contractor max/i.test(nota) && !/general contractor|\bgc\b/i.test(nota) ? "nosotros" : "GC"; }
-              v = v.replace(/,?\s*(?:FL|Florida)\.?(\s*\([^)]*\))?\s*$/i, "$1").replace(/[\s,;—–-]+$/, "").replace(/\s{2,}/g, " ").trim();
+              // v3.6: el campo es texto libre y sale tal cual en la cabecera; para la prosa se usa la forma corta
+              v = v.replace(/[\s,;—–-]+$/, "").replace(/\s{2,}/g, " ").trim();
+              R.datos.ciudad_corta = v.split(/\s+[—–-]\s+|\s*\(/)[0].replace(/,?\s*(?:FL|Florida)\.?\s*$/i, "").replace(/,\s*$/, "").trim();
             }
             if (k === "contratista" && /max power|arboleya|EC13016045/i.test(v)) v = "";
             if (v) R.datos[k] = v;
@@ -397,7 +404,12 @@
           let destino = sec, texto = linea.replace(/^[-*•]\s*/, "").replace(/^\d+\.\d+[.)]?\s+/, "");
           // "This Scope of Work covers X at <dirección>." → es el resumen, no una condición
           const mRes = sec === "hoy" && texto.match(/^this scope of work covers\s+(.+?)(?:\s+at\s+[^.]*\d[^.]*)?\.?$/i);
-          if (mRes) { R.datos.resumen = mRes[1].trim().replace(/\s+at\s+\d{2,}[^]*$/i, "").replace(/[.,]$/, ""); break; }
+          if (sec === "hoy" && /^this scope of work covers\b/i.test(texto)) {
+            // v3.6: el párrafo entero es el «overview» y va al contrato tal cual (no se rearma con los títulos)
+            R.datos.overview = texto.trim();
+            if (mRes) R.datos.resumen = mRes[1].trim().replace(/\s+at\s+\d{2,}[^]*$/i, "").replace(/[.,]$/, "");
+            break;
+          }
           // "Existing conditions. …" / "Basis of information. …" / "New layout. …" delante del párrafo
           const mEt = texto.match(/^(existing conditions?|site conditions?|basis of information|information basis|new layout|proposed layout|changes)[.:]\s+(.+)$/i);
           if (mEt) { const e = norma(mEt[1]); destino = /basis|information/.test(e) ? "falta" : /layout|change/.test(e) ? "cambia" : "hoy"; texto = mEt[2]; }
@@ -492,7 +504,7 @@
           if (mFix) { C_set("fixtures_cliente", mFix[1].charAt(0).toUpperCase() + mFix[1].slice(1), i); R.fijasQuitadas = (R.fijasQuitadas || 0) + 1; return; }
           // v3.4: low-voltage y correcciones del inspector NO se quitan: si la hoja trae su versión
           // (más específica: telemetría, flotadores…), manda la de la hoja y la genérica se apaga sola.
-          const fija = tx.match(/^(permit(?:s| and permit fees)?[.:]|electrical panel work|arc-fault|cabinet and under-cabinet|drywall, ceiling patching|appliances, gas piping)/i);
+          const fija = tx.match(/^(permit(?:s|ting)?\b[^.:]{0,80}[.:]|permit application|electrical panel work|arc-fault|cabinet and under-cabinet|drywall, ceiling patching|appliances, gas piping)/i);
           if (fija) {
             R.fijasQuitadas = (R.fijasQuitadas || 0) + 1;
             R.fijasVistas = R.fijasVistas || new Set(); R.fijasVistas.add(norma(fija[1]).split(/[ ,.:]/)[0]);
@@ -803,8 +815,8 @@
         L.avisos.push({ informativo: true, texto: "Ojo con el dinero: hay una fase bajo tierra / bonding semanas antes del rough-in y el pago 2 es «al terminar el rough-in». Considera un hito al aprobar la inspección de bonding (por ejemplo 40 / 30 / 20 / 10). Lo decides tú en Pagos; el papel sale como lo escribas." });
     }
     // contrato con el contratista sin el nombre del dueño: no frena; firma solo el contratista
-    if ((norma(D.contrato_con || "") === "gc" || gcN) && !D.dueno && !(gcN && D.cliente && norma(D.cliente) !== norma(gcN)) && !L.avisos.some(a => /Homeowner/.test(a.texto)))
-      L.avisos.push({ informativo: true, texto: "Contrato con el contratista y sin el nombre del dueño de la propiedad: firma solo el contratista. Si quieres también la firma del dueño, escribe «Homeowner: nombre» en la hoja." });
+    if ((norma(D.contrato_con || "") === "gc" || gcN) && !L.avisos.some(a => /firma solo el contratista/.test(a.texto)))
+      L.avisos.push({ informativo: true, texto: "Contrato con el contratista: firma solo el contratista (representante autorizado). El dueño de la propiedad queda como referencia (Homeowner) y firma el Layout Approval de la sección 8, no el SOW." });
     // dos firmantes
     if (D.cliente && !D.segundo_firmante && /\s(y|&|and)\s/i.test(D.cliente))
       preguntas.push({ clave: "dos_firmas", texto: `"${D.cliente}" ¿son dos personas que firman las dos?`,
@@ -1191,6 +1203,11 @@
     const fasesDeducidas = !fasesHoja.length && fases.length > 0;
     // v3.5: la sección 4 por grupos (como la trae la hoja) o la línea genérica
     const codigoPropio = (L.codigo_detalle || []).some(g => g.grupo || g.otros.length);
+    // v3.6: 7.x Flood elevation cuando la propiedad está en zona AE / VE / AO / AH y la hoja no trae su propia cláusula
+    const textoFlood = norma([d.flood_zona || "", L.hoy || "", L.falta || "", ...(L.codigo_otros || [])].join(" "));
+    const mZona = textoFlood.match(/\b(?:zone|zona)\s*(ae|ve|ao|ah|a\d*|v\d*)\b/) || (norma(d.flood_zona || "").match(/^(ae|ve|ao|ah|a\d*|v\d*)\b/));
+    const hojaFlood = [...(L.terminos || []), ...(L.programa || [])].some(t => /flood|bfe|base flood/i.test(t.titulo + " " + t.texto));
+    const flood = !!mZona && !hojaFlood;
     const layout = !preProprio && norma(d.layout || "si") !== "no";
 
     const bloques = {
@@ -1217,8 +1234,11 @@
       SIN_ITEM_PERMISO: !hayItemPermiso,    // el bullet del permiso en §3 sobra si el permiso ya es un renglón del §2
       // Segunda firma: dos dueños en la escritura, o el dueño debajo del contratista (solo si se sabe su nombre;
       // sin nombre no se deja una línea con hueco: firma solo el contratista)
-      CLIENT_2: hay(d.segundo_firmante) || (esGC && hay(duenoEfectivo)),
+      // v3.6 (regla de la casa): con contratista, el dueño NO firma el SOW (es referencia; firma el Layout Approval
+      // de la sección 8). La segunda firma solo existe con dos dueños en la escritura.
+      CLIENT_2: hay(d.segundo_firmante),
       CODIGO_PROPIO: codigoPropio, CODIGO_GENERICO: !codigoPropio,
+      FLOOD: flood,
       // Exclusiones: solo las que tienen sentido en ESTE trabajo
       EXCL_PANEL: !noExcluir.includes("panel") && !hayPanel,
       EXCL_AFCI: !noExcluir.includes("afci") && !esComercial,
@@ -1278,7 +1298,7 @@
     motivos.propias = "porque la hoja trae condiciones propias de este trabajo: " + propio.propias.map(p => p.titulo).join(" · ");
     return { bloques, clausulas, motivos, permiso, esGC, esComercial, esConsumidor, conFirma,
              perfil: { hayPanel, interior, exteriorServicio, residencialInterior, venueExterior }, propio,
-             gcNombre, clienteEfectivo, duenoEfectivo, permiso, fases, fasesDeducidas };
+             gcNombre, clienteEfectivo, duenoEfectivo, permiso, fases, fasesDeducidas, flood, zona: mZona ? mZona[1].toUpperCase() : "" };
   }
 
   // =============================================== EL ENCARGO PARA EL ASISTENTE
@@ -1352,12 +1372,13 @@
         if (x.titulo) return { titulo: con(limpia(x.titulo), x.linea), texto: con(x.cuerpo ? frase(x.cuerpo.charAt(0).toUpperCase() + x.cuerpo.slice(1)) : "", x.linea) || { en: "", de: [x.linea] } };
         // "Título. texto" · "Título: texto" · "Título — texto"; si no hay corte natural, la frase entera es el
         // título (sin repetirla como texto); solo si es muy larga se parte en las primeras palabras y EL RESTO
-        const m = x.texto.match(/^([^:.]{3,60})[:.]\s+(.+)$/) || x.texto.match(/^(.{3,70}?)\s+[—–]\s+(.+)$/);
+        // v3.6 (regla B1 del revisor): el título es hasta el primer « — » o «:»; si no hay, la primera frase
+        // entera hasta el punto; si tampoco, la frase completa. NUNCA se corta por conteo de palabras.
         const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
-        if (m) return { titulo: con(limpia(m[1]), x.linea), texto: con(frase(cap(m[2])), x.linea) };
-        if (x.texto.length <= 90) return { titulo: con(limpia(x.texto.replace(/[.;]$/, "")), x.linea), texto: { en: "", de: [x.linea] } };
-        const pal = x.texto.split(/\s+/);
-        return { titulo: con(limpia(pal.slice(0, 6).join(" ").replace(/[,;]$/, "")), x.linea), texto: con(frase(cap(pal.slice(6).join(" "))), x.linea) };
+        const m = x.texto.match(/^(.{3,140}?)\s+[—–]\s+(.+)$/) || x.texto.match(/^([^:]{3,140}?):\s+(.+)$/)
+               || x.texto.match(/^(.{3,220}?[^.\s]\.)\s+([A-Z(].*)$/);
+        if (m) return { titulo: con(limpia(m[1].replace(/\.$/, "")), x.linea), texto: con(frase(cap(m[2])), x.linea) };
+        return { titulo: con(limpia(x.texto.replace(/[.;]$/, "")), x.linea), texto: { en: "", de: [x.linea] } };
       }),
       opciones: L.opciones.map(o => ({ titulo: con(o.titulo, o.linea), descripcion: con(o.detalles.map(frase).join(" "), o.linea) })),
       resumen_corrido: con(lista(titulos.map(minus)), 0),
@@ -1525,8 +1546,10 @@
     h = repetirFila(h, "CODIGO_GRUPO", datos.codigo_grupos || []);
     const r = aplicarClausulas(h, datos.clausulas, (datos.propias || []).length);
     h = r.html;
+    // Un hueco vacío se queda para que el barrido lo cante; salvo los sufijos opcionales, que vacíos se borran
+    const OPCIONALES = new Set(["FIRMA_REP", "TITULO_DEPOSITO"]);
     Object.entries(datos.huecos || {}).forEach(([k, v]) => {
-      if (v === null || v === undefined || v === "") return;
+      if (v === null || v === undefined || (v === "" && !OPCIONALES.has(k))) return;
       h = h.split("{{" + k + "}}").join(String(v));
     });
     // si no hay segunda firma, la tabla pasa a dos columnas
@@ -1573,8 +1596,12 @@
     // v3.5: el número de propuesta que trae la hoja manda; si no, el nombre corto sale del proyecto
     // sin el prefijo MXP-AAAA-MMDD- ni la cola aleatoria (antes salía «MXP20260909W»)
     const mNum = String(d.numero_propuesta || "").trim().match(/^MXP-(\d{4})-(\d{4})-([A-Z0-9][A-Z0-9-]*)$/i);
-    const baseCorto = String(admin.proyecto_id || "").replace(/^mxp-\d{4}-\d{4}-/i, "").replace(/-[a-z0-9]{4}$/i, "") || d.cliente || "SOW";
-    const nombreCorto = mNum ? mNum[3].toUpperCase() : baseCorto.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
+    // regla B5 del revisor: MXP-AAAA-MMDD-CLIENTE, con el apellido (persona) o la primera palabra (empresa); nunca el id interno
+    const esEmpresa = t => /\b(llc|inc|corp|co\.|company|construction|renovation|renovations|services|builders?|group|contracting|design|homes)\b/i.test(t);
+    const corto = t => { const pal = String(t || "").replace(/[(),.]/g, " ").trim().split(/\s+/).filter(Boolean); if (!pal.length) return "";
+      return (esEmpresa(t) ? pal[0] : pal[pal.length - 1]).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12); };
+    const baseNombre = (dec.esGC && dec.duenoEfectivo) || d.cliente || d.proyecto || "SOW";
+    const nombreCorto = mNum ? mNum[3].toUpperCase() : (corto(baseNombre) || "SOW");
 
     // el renglón al que apunta cada cláusula
     const renglon = clave => {
@@ -1610,15 +1637,24 @@
     const huecos = {
       CLIENT: dec.clienteEfectivo || d.cliente || "", CLIENT_2: d.segundo_firmante || (dec.esGC ? dueno : ""),
       CONTACTOS: d.atencion || d.gc_contacto || "", HOMEOWNER: dec.esGC ? (dueno || "the property owner") : (d.cliente || ""),
-      ETIQUETA_FIRMA_2: dec.esGC && dueno && !d.segundo_firmante ? "Owner Signature" : "Client Signature",
+      ETIQUETA_FIRMA_2: "Client Signature",
+      FIRMA_REP: dec.esGC ? " (Authorized Representative)" : "",
+      // v3.6: la jurisdicción tal cual en la cabecera; la forma corta en la prosa
+      JURISDICCION: d.ciudad || admin.ciudad || "",
+      // v3.6: las letras de la cláusula del depósito van seguidas (la (c) del consumidor solo si es consumidor)
+      L_D: dec.bloques.CONSUMIDOR ? "d" : "c", L_E: dec.bloques.CONSUMIDOR ? "e" : "d",
+      L_F: dec.bloques.CONSUMIDOR ? "f" : "e", L_G: dec.bloques.CONSUMIDOR ? "g" : "f",
+      TITULO_DEPOSITO: dec.bloques.PERMISO_MXP ? ", permits" : "",
       PROYECTO_EN_INGLES: (S.proyecto_en && S.proyecto_en.en) || d.proyecto || "",
       DIRECCION: admin.direccion || d.direccion || "",
-      CIUDAD: d.ciudad || admin.ciudad || "",
+      CIUDAD: d.ciudad_corta || d.ciudad || admin.ciudad || "",
       FECHA: fechaLarga(hoy), AAAA: mNum ? mNum[1] : String(hoy.getFullYear()),
       MMDD: mNum ? mNum[2] : dosDig(hoy.getMonth() + 1) + dosDig(hoy.getDate()),
       NOMBRE: nombreCorto, VENCE_30_DIAS: fechaLarga(vence),
       PLANOS: (S.planos && S.planos.en) || d.planos || "",
       RESUMEN_DEL_TRABAJO: (S.resumen_del_trabajo && S.resumen_del_trabajo.en) || "",
+      // v3.6 (regla B4): el primer párrafo de la sección 1 es el de la hoja tal cual; si no hay, una frase simple
+      OVERVIEW: d.overview || `This Scope of Work covers the electrical work at ${admin.direccion || d.direccion || "the Property"} for ${dec.clienteEfectivo || d.cliente || "the Client"}, as described in Section 2.`,
       QUE_HAY_HOY: (S.que_hay_hoy && S.que_hay_hoy.en) || "",
       QUE_CAMBIA: (S.que_cambia && S.que_cambia.en) || "",
       QUE_FALTABA: (S.que_faltaba && S.que_faltaba.en) || "",
@@ -1637,6 +1673,7 @@
       N_ULTIMO: String(nHitos), FIN_OBRA: finObra,
       QUE_TIENE_QUE_ESTAR_LISTO: (S.que_tiene_que_estar_listo && S.que_tiene_que_estar_listo.en) || "the work areas are accessible and ready for electrical rough-in",
       N_FASES: String(fases.length || 2),
+      LISTA_INSPECCIONES: fases.some(f => /underground|bonding|trench|slab/i.test(f)) ? "underground, bonding, rough-in and final" : "rough-in and final",
       LISTA_DE_FASES: fases.length ? (fases.length > 2 || fases.some(f => f.includes(","))
         ? fases.map((f, k) => `(${k + 1}) ${f}`).join("; ").replace(/; (\(\d+\) [^;]+)$/, "; and $1")
         : fases.join(" and ")) : "rough-in and trim-out",
@@ -1691,7 +1728,14 @@
     // ── v3.4: lo propio de la hoja, numerado como queda en el contrato ──
     const propio = dec.propio || clasificarPropias(L);
     const numero = numerarClausulas(dec.clausulas, propio.propias.length);
-    const base7 = dec.bloques.UTILITY ? 6 : 5;
+    const base7 = (dec.bloques.UTILITY ? 6 : 5) + (dec.bloques.FLOOD ? 1 : 0);
+    huecos.N_FLOOD = String(dec.bloques.UTILITY ? 7 : 6);
+    {
+      const ec = d.flood_ec ? ` dated ${d.flood_ec}` : "";
+      const detalles = [dec.zona ? `Zone ${dec.zona}` : "", d.flood_bfe ? `BFE ${d.flood_bfe}` : ""].filter(Boolean).join(", ")
+        + (d.flood_lag ? `; lowest adjacent grade ${d.flood_lag}` : "");
+      huecos.FLOOD_BASE = `Pricing is based on the Base Flood Elevation shown on the FEMA Elevation Certificate for the Property${ec}${detalles ? " (" + detalles + ")" : ""}.`;
+    }
     // v3.5: los renglones de la hoja con su numeración propia (2.3 / 3.2) → su número en el contrato (2.n)
     const mapaItems = {};
     L.items.forEach(it => { if (it.escrito !== null && it.escrito !== undefined) {
@@ -1715,7 +1759,7 @@
     const refs = t => renumerarRefs(t, traducir);
     items.forEach(it => { it.TITULO = refs(it.TITULO); it.DESCRIPCION = refs(it.DESCRIPCION); });
     no_incluye.forEach(x => { x.TITULO_EXCL = refs(x.TITULO_EXCL); x.TEXTO_EXCL = refs(x.TEXTO_EXCL); });
-    ["QUE_HAY_HOY", "QUE_CAMBIA", "QUE_FALTABA", "RESUMEN_DEL_TRABAJO", "LO_QUE_NO_TOCAS", "QUE_TIENE_QUE_ESTAR_LISTO"]
+    ["QUE_HAY_HOY", "QUE_CAMBIA", "QUE_FALTABA", "RESUMEN_DEL_TRABAJO", "LO_QUE_NO_TOCAS", "QUE_TIENE_QUE_ESTAR_LISTO", "OVERVIEW"]
       .forEach(k => { huecos[k] = refs(huecos[k]); });
     // "Basis of information": la frase de entrada solo si la hoja no la trae, y la remisión a 9.x con número
     if (huecos.QUE_FALTABA) {
