@@ -107,6 +107,13 @@
   const $btnVolver = $("btn-volver"), $btnNuevo = $("btn-nuevo"), $btnSalir = $("btn-salir");
   const $usuarioChip = $("usuario-chip");
   const $modal = $("modal-nuevo"), $formNuevo = $("form-nuevo");
+  // La versión de la app, sacada del ?v= con el que se cargó este archivo: así nunca miente.
+  // Sale en la portada (abajo) y en el marco de arriba; al tocarla dice cómo actualizar.
+  const APP_VERSION = (() => { const s = [...document.scripts].map(x => x.src).find(x => /js\/app\.js/.test(x)) || ""; const m = s.match(/[?&]v=(\d+)/); return m ? m[1] : ""; })();
+  document.querySelectorAll("[data-version]").forEach(el => {
+    el.textContent = APP_VERSION ? "v" + APP_VERSION : "";
+    el.addEventListener("click", () => avisar(`Esta app es la versión ${APP_VERSION || "?"}. Si te dije un número mayor, cierra la app del todo y vuelve a abrirla: se actualiza sola.`));
+  });
   const $formLogin = $("form-login"), $loginError = $("login-error");
   const $formHoras = $("form-horas"), $btnHoras = $("btn-horas"), $btnCal = $("btn-calendario");
 
