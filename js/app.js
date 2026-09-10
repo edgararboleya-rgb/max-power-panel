@@ -3260,11 +3260,12 @@ function esFalloDeRed(err) {
         `¿Qué le aviso a ${gc0.nombre}?\n\n` +
         "1 = pasó la inspección\n" +
         (conDinero ? "2 = se emitió una factura\n" : "") +
-        "3 = licencia y seguros al día\n\nEscribe el número:", "1");
+        "3 = licencia y seguros al día\n" +
+        (conDinero ? "4 = hay un contrato nuevo esperando su firma\n" : "") + "\nEscribe el número:", "1");
       if (que === null) return;
-      const tipo = { "1": "inspeccion", "2": "factura", "3": "coi" }[String(que).trim()];
+      const tipo = { "1": "inspeccion", "2": "factura", "3": "coi", "4": "contrato" }[String(que).trim()];
       if (!tipo) { avisar("No entendí el número", true); return; }
-      if (tipo === "factura" && !conDinero) { avisar("Esta obra la paga el dueño: al contratista no se le manda dinero", true); return; }
+      if ((tipo === "factura" || tipo === "contrato") && !conDinero) { avisar("Esta obra la paga el dueño: el contratista no factura ni firma aquí", true); return; }
       btnGCAvisar.disabled = true;
       try {
         const r = await DB.pedirCorreo("avisar_gc", { contratista_id: gc0.id, proyecto_id: p0.id, tipo });
@@ -8815,6 +8816,19 @@ Power done right the first time. ⚡`;
       const url = `https://edgararboleya-rgb.github.io/max-power-panel/cliente.html?t=${llave}`;
       try { await navigator.clipboard.writeText(url); avisar("Subido ✓ — el enlace del cliente quedó copiado"); }
       catch { avisar("Subido ✓ — el enlace del cliente: " + url); }
+      // Obra por contrato con un contratista: en su portal el contrato nuevo sale primero, marcado NUEVO,
+      // y aquí se le puede avisar por correo con el enlace directo a la obra.
+      const pSub = proyectos().find(x => x.id === A.proyecto.id);
+      const gcSub = pSub && pSub.contratistaModo === "contrato" ? gcDeProyecto(pSub) : null;
+      if (gcSub && gcSub.email && confirm(`¿Le aviso a ${gcSub.nombre} por correo (${gcSub.email}) que hay un contrato nuevo esperando su firma?\n\nEn su portal ya sale primero, marcado NUEVO.`)) {
+        try {
+          const r = await DB.pedirCorreo("avisar_gc", { contratista_id: gcSub.id, proyecto_id: pSub.id, tipo: "contrato" });
+          avisar(`Aviso enviado a ${r.para} ✓`);
+        } catch (e) {
+          if (/tipo_desconocido/.test(String(e.message))) avisar("Falta subir el correo v6 en la nube para este aviso; el contrato ya está en su portal, marcado NUEVO", true);
+          else avisar("No salió el aviso: " + e.message, true);
+        }
+      }
     } catch (e) {
       if (e.crudo && /23505|ux_un_contrato_vivo/.test(String(e.crudo)) || /ya estaba guardado/.test(e.message)) {
         A.subido = { titulo: "El contrato" }; pintarAlcance();

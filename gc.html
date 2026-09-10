@@ -80,6 +80,22 @@
     .gc-toca a { display: block; padding: 0.28rem 0; color: #7A4A00; font-size: 0.86rem; font-weight: 650; text-decoration: none; }
     .gc-toca a:hover { text-decoration: underline; }
 
+    /* Lo nuevo: un contrato esperando firma va PRIMERO y se ve de lejos */
+    .gc-nuevo { background: linear-gradient(135deg, #E8F4FF 0%, #F3FBF4 100%); border: 2px solid #1E88E5; border-radius: 16px;
+                padding: 0.95rem 1.1rem 1rem; margin-bottom: 1.2rem; box-shadow: 0 6px 18px rgba(30,136,229,.14); }
+    .gc-nuevo .gc-sec-tit { color: #0B5C8A; margin-bottom: 0.2rem; }
+    .gc-nuevo .gc-nuevo-sub { font-size: 0.82rem; color: var(--mp-ink-2); margin: 0 0 0.7rem; }
+    .gc-nuevo-card { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; background: #fff; border: 1px solid #BFE3FA;
+                     border-radius: 12px; padding: 0.7rem 0.9rem; margin-top: 0.5rem; text-decoration: none; color: inherit; }
+    .gc-nuevo-card:hover { box-shadow: var(--mp-shadow-lg); }
+    .gc-nuevo-card .que { flex: 1 1 16rem; min-width: 0; }
+    .gc-nuevo-card .que b { display: block; font-size: 0.98rem; color: var(--mp-ink); }
+    .gc-nuevo-card .que span { display: block; font-size: 0.8rem; color: var(--mp-ink-2); margin-top: 0.15rem; }
+    .gc-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 0.45rem 1rem; border-radius: 999px;
+              background: #1E88E5; color: #fff; font-weight: 750; font-size: 0.88rem; white-space: nowrap; }
+    .gc-eti.nuevo { background: #1E88E5; border-color: #1E88E5; color: #fff; }
+    .gc-obra.es-nueva { border-color: #1E88E5; box-shadow: 0 0 0 3px rgba(30,136,229,.12); }
+
     /* Las obras: tarjetas compactas */
     .gc-lista { display: grid; gap: 0.7rem; align-items: stretch; }
     .gc-obra { position: relative; display: flex; flex-direction: column; text-decoration: none; color: inherit;
@@ -208,6 +224,9 @@
       fNum: "Invoice", fObra: "Job", fFecha: "Issued", fMonto: "Amount", fCobrado: "Paid", fSaldo: "Balance", fDias: "Age",
       dias: function (n) { return n + (n === 1 ? " day" : " days"); }, sinAbiertas: "No open invoices. Thank you.",
       tocaT: "Needs your attention", tocaFirmar: "Sign", tocaPagar: "unpaid",
+      nuevoT: "New for you — waiting for your signature", nuevoS: "Open it, review the scope and the payment milestones, and sign electronically. You will get the signed copy by email.",
+      nuevoBtn: "Review and sign →", nuevoDesde: "posted", nuevoEti: "NEW", gFirmar: "Waiting for your signature",
+      subFirmar: function (n) { return n === 1 ? "1 proposal waiting for your signature" : n + " proposals waiting for your signature"; },
       obrasT: "All jobs", gEjecucion: "In progress", gPropuesta: "Proposals & estimates", gCompletado: "Completed",
       proximo: "Next work day", insp: "Last inspection", inspProx: "Next inspection", todoBien: "All good",
       avisoFirmar: "Action needed: sign ", avisoSinPagar: function (n, d) { return "Invoice " + n + " unpaid for " + d + " days"; },
@@ -235,6 +254,9 @@
       fNum: "Factura", fObra: "Obra", fFecha: "Emitida", fMonto: "Monto", fCobrado: "Cobrado", fSaldo: "Saldo", fDias: "Días",
       dias: function (n) { return n + (n === 1 ? " día" : " días"); }, sinAbiertas: "Sin facturas abiertas. Gracias.",
       tocaT: "Te toca a ti", tocaFirmar: "Firmar", tocaPagar: "sin pagar",
+      nuevoT: "Nuevo para ti — esperando tu firma", nuevoS: "Ábrelo, revisa el alcance y los hitos de pago, y firma electrónicamente. La copia firmada te llega por correo.",
+      nuevoBtn: "Revisar y firmar →", nuevoDesde: "publicado", nuevoEti: "NUEVO", gFirmar: "Esperando tu firma",
+      subFirmar: function (n) { return n === 1 ? "1 propuesta esperando tu firma" : n + " propuestas esperando tu firma"; },
       obrasT: "Todas las obras", gEjecucion: "En ejecución", gPropuesta: "Propuestas y estimados", gCompletado: "Terminadas",
       proximo: "Próximo día de trabajo", insp: "Última inspección", inspProx: "Próxima inspección", todoBien: "Todo al día",
       avisoFirmar: "Te toca firmar: ", avisoSinPagar: function (n, d) { return "La factura " + n + " lleva " + d + " días sin pagar"; },
@@ -324,6 +346,22 @@
       var R = p.resumen || null;
       var hoy = (R && R.al_dia) || new Date().toISOString().slice(0, 10);
       var n = obras.length;
+      // Lo que espera firma: va primero y se ve de lejos (un contrato nuevo no se confunde con los viejos)
+      var porObra = {}; obras.forEach(function (o) { porObra[o.id] = o; });
+      var paraFirmar = (p.te_toca || []).filter(function (x) { return x.tipo === "firmar"; });
+      var porFirmarN = paraFirmar.length;
+      var nuevo = porFirmarN
+        ? '<div class="gc-nuevo"><div class="gc-sec-tit"><span>🆕 ' + esc(TXT.nuevoT) + '</span></div>' +
+          '<p class="gc-nuevo-sub">' + esc(TXT.nuevoS) + '</p>' +
+          paraFirmar.map(function (x) {
+            var o = porObra[x.obra] || {};
+            return '<a class="gc-nuevo-card" href="' + enlaceObra(x.obra) + '">' +
+              '<span class="que"><b>' + esc(x.obra_nombre || o.nombre || "") + '</b>' +
+                '<span>🖊 ' + esc(x.que || "") + (o.direccion ? ' · 📍 ' + esc(o.direccion) : "") +
+                (x.desde ? ' · ' + esc(TXT.nuevoDesde) + ' ' + esc(fechaCorta(x.desde)) : "") + '</span></span>' +
+              '<span class="gc-btn">' + esc(TXT.nuevoBtn) + '</span></a>';
+          }).join("") + '</div>'
+        : "";
 
       // ── Cabecera del estado de cuenta ──
       var cab =
@@ -331,7 +369,8 @@
           '<div><div class="kicker">' + esc(TXT.kicker) + '</div>' +
             '<h1 class="gc-nombre">' + esc(p.empresa ? p.empresa.nombre : "") + '</h1>' +
             '<div class="gc-sub">' + n + " " + esc(n === 1 ? TXT.job : TXT.jobs) +
-              (R ? " · " + R.obras_con_contrato + " " + esc(TXT.nObras) : "") + '</div></div>' +
+              (R ? " · " + R.obras_con_contrato + " " + esc(TXT.nObras) : "") +
+              (porFirmarN ? ' · <b style="color:#0B5C8A">' + esc(TXT.subFirmar(porFirmarN)) + '</b>' : "") + '</div></div>' +
           '<div class="gc-cab-der">' + esc(TXT.alDia) + ' <b>' + esc(fechaLarga(hoy)) + '</b><br>' +
             esc(TXT.preparado) + ' <b>Max Power Electrical Solutions, Inc.</b> · ' + esc(TXT.lic) + '</div>' +
         '</div>';
@@ -348,7 +387,7 @@
         : "";
 
       // ── Lo que le toca ──
-      var toca = (p.te_toca || []).map(function (x) {
+      var toca = (p.te_toca || []).filter(function (x) { return x.tipo !== "firmar"; }).map(function (x) {
         var linea = x.tipo === "firmar"
           ? "🖊 " + TXT.tocaFirmar + ": " + x.que + " — " + x.obra_nombre
           : "💵 " + (lang === "en" ? "Invoice " : "Factura ") + x.num + " · " + usd(x.monto) + " · " + TXT.dias(x.dias) + " " + TXT.tocaPagar + " — " + x.obra_nombre;
@@ -415,7 +454,9 @@
 
       // ── Las obras, agrupadas ──
       var tarjeta = function (o) {
+        var esNueva = (o.por_firmar || 0) > 0;
         var etiquetas =
+          (esNueva ? '<span class="gc-eti nuevo">' + esc(TXT.nuevoEti) + '</span>' : "") +
           '<span class="gc-eti ' + (o.estado === "ejecucion" ? "act" : o.estado === "completado" ? "ok" : "gris") + '">' + esc(TXT.estados[o.estado] || o.estado || "") + '</span>' +
           '<span class="gc-eti">' + esc(o.es_nuestro_contrato ? TXT.nuestro : TXT.coordina) + '</span>' +
           (o.proxima_inspeccion
@@ -436,7 +477,7 @@
         if (o.aviso && o.aviso.tipo === "firmar") aviso = TXT.avisoFirmar + (o.aviso.que || "");
         else if (o.aviso && o.aviso.tipo === "sin_pagar") aviso = TXT.avisoSinPagar(o.aviso.num, o.aviso.dias);
         else if (typeof o.aviso === "string") aviso = o.aviso;
-        return '<a class="gc-obra" href="' + enlaceObra(o.id) + '">' +
+        return '<a class="gc-obra' + (esNueva ? " es-nueva" : "") + '" href="' + enlaceObra(o.id) + '">' +
           '<div class="gc-obra-tit">' + esc(o.nombre) + '</div>' +
           (o.direccion ? '<div class="gc-obra-dir">📍 ' + esc(o.direccion) + '</div>' : "") + prox +
           '<div class="gc-obra-pie">' + etiquetas + '</div>' + avance +
@@ -444,13 +485,15 @@
           '</a>';
       };
       var GRUPOS = [
+        { t: TXT.gFirmar,     e: ["enviado", "aprobado", "estimando", "ejecucion", "pausa"], firma: true },
         { t: TXT.gEjecucion,  e: ["ejecucion", "pausa"] },
         { t: TXT.gPropuesta,  e: ["enviado", "aprobado", "estimando"] },
         { t: TXT.gCompletado, e: ["completado"] }
       ];
       var vistas = {};
       var grupos = GRUPOS.map(function (gr) {
-        var suyas = obras.filter(function (o) { return gr.e.indexOf(o.estado) >= 0; });
+        var suyas = obras.filter(function (o) { return !vistas[o.id] && gr.e.indexOf(o.estado) >= 0 && (gr.firma ? (o.por_firmar || 0) > 0 : true); })
+          .sort(function (a, b) { return ((b.por_firmar || 0) - (a.por_firmar || 0)) || String(a.nombre).localeCompare(String(b.nombre)); });
         suyas.forEach(function (o) { vistas[o.id] = true; });
         if (!suyas.length) return "";
         return '<div class="gc-sec"><div class="gc-sec-tit"><span>' + esc(gr.t) + ' · ' + suyas.length + '</span></div>' +
@@ -467,7 +510,7 @@
 
       caja.innerHTML = cab +
         '<div class="gc-col gc-col-main">' +
-          resumen +
+          nuevo + resumen +
           (toca ? '<div class="gc-toca"><div class="gc-sec-tit"><span>⚠️ ' + esc(TXT.tocaT) + '</span></div>' + toca + '</div>' : "") +
           cuenta + facturas +
           (n ? grupos : '<div class="gc-card"><p class="gc-item">' + esc(TXT.vacio) + '</p></div>') +
