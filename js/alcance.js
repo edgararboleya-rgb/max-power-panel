@@ -289,7 +289,7 @@
       // las líneas de prosa (Hoy / Cambia / Falta / Notas) y los encabezados de grupo, con su número: son la base
       // contra la que el juez compara la lectura del cerebro (nada se convierte en otra cosa sin aviso)
       prosa_lineas: { hoy: [], cambia: [], falta: [], notas: [] }, grupos_lineas: [],
-      codigo_lineas: [], ignoradas_lineas: [], fijas_lineas: [], pre_intro_lineas: []
+      codigo_lineas: [], ignoradas_lineas: [], fijas_lineas: [], pre_intro_lineas: [], cierre_fantasmas: [], extra_lineas: {}
     };
     let sec = "datos", itemActual = null, opcionActual = null;
     const parrafo = { hoy: [], cambia: [], falta: [], notas: [] };
@@ -466,18 +466,9 @@
         // la app no reconoce la línea como dato: se lee con las reglas de la sección vigente
       }
 
-      // --- Con lectura activa, una línea «Clave: valor» SIN pista cuya clave es una condición que la app reconoce
-      // (la acaba de escribir la app con un botón, o el lector no la señaló) se lee como condición esté donde esté.
-      // Solo líneas sueltas, no viñetas ni renglones numerados («- Access: …» dentro del Alcance sigue siendo detalle).
-      if (activa && !pista && mNV && !/^[-*•]|^\d+[.)]/.test(linea)) {
-        const kc = buscaClave(CLAVES_COND, nombre);
-        if (kc) {
-          avisaDinero(i, linea, "Condiciones");
-          if (kc === "tipo_trabajo") R.condiciones.tipo_trabajo = { valor: normalizarTipoTrabajo(valor), crudo: valor, linea: i + 1 };
-          else R.condiciones[kc] = { valor, linea: i + 1 };
-          return;
-        }
-      }
+      // v165: una línea «Clave: valor» SIN pista se lee con las reglas de su sección, exactamente igual que sin lectura.
+      // (Hasta la v164, con lectura activa se volvía condición estuviera donde estuviera: «Circuitos existentes: si» en
+      // Datos encendía la cláusula AFCI y «No excluir: panel» debajo del precio apagaba exclusiones, todo sin aviso.)
       // --- Precio y Pagos, estén donde estén (son títulos con valor en la misma línea)
       // con lectura activa, una línea «Total: 12 fixtures» que el lector marcó como exclusión NO es el precio: manda la pista
       // …pero «Precio: $3,030.16» (la clave de precio con un monto de verdad) es el precio diga lo que diga la pista
@@ -615,7 +606,7 @@
             // "Testing and closeout" ya lo trae la plantilla como último punto: no se duplica
             else if (/^testing\s*(and|&)\s*close\s*-?out|^closeout|^testing and commissioning/i.test(titulo)) {
               R.avisos.push({ linea: i + 1, informativo: true, texto: `«${titulo.slice(0, 40)}» ya lo trae la plantilla como último punto del alcance; no lo repito.` });
-              itemActual = { fantasma: true, detalles: [], lineas: [] }; return;
+              itemActual = { fantasma: true, detalles: [], lineas: [i + 1] }; R.cierre_fantasmas.push(itemActual); return;
             }
             itemActual = { n: R.items.length + 1, escrito, grupo: R._grupo || null, serie, titulo: titulo.replace(/[.:]$/, "").trim(), detalles: [], lineas: [i + 1] };
             if (resto) itemActual.detalles.push(resto);
@@ -629,7 +620,7 @@
             if (!it) { err(i, "Este detalle no tiene renglón encima. Ponle un título al renglón.",
                 { arreglos: [{ tipo: "hacer_titulo", etiqueta: "Convertirlo en renglón", linea: i + 1, auto: true },
                              { tipo: "quitar_linea", etiqueta: "Quitar la línea", linea: i + 1 }] }); return; }
-            if (it.fantasma) return;
+            if (it.fantasma) { it.lineas.push(i + 1); return; }
             it.detalles.push(linea.replace(/^[-*•]\s*/, "")); it.lineas.push(i + 1);
           } else if (pista && pista.rol === "renglon_titulo") {
             // el título sale de la cita del lector (comprobada por el juez) y el resto es la línea menos el título;
@@ -770,9 +761,9 @@
           }
           // Una línea sin porcentaje ni dinero debajo de Pagos («6.2 Retainage. None.»): las reglas entienden que se
           // acabaron los pagos y lo que sigue son Condiciones sin título. Se sale con break (H13: antes caía al caso de
-          // abajo, donde R.condiciones no es una lista, y el lector reventaba). Con lectura activa la sección no salta
-          // sola: solo cambia por pista.
-          if (!activa && !hayDinero(sinVineta) && !/\bpayment|\binvoice|\bdue\b/i.test(sinVineta)) { sec = "condiciones"; break; }
+          // abajo, donde R.condiciones no es una lista, y el lector reventaba). v165: también con lectura activa (las
+          // filas con pista de pago se leen por su pista, no por la sección; una fila SIN pista se lee como sin lectura).
+          if (!hayDinero(sinVineta) && !/\bpayment|\binvoice|\bdue\b/i.test(sinVineta)) { sec = "condiciones"; break; }
           break;
         }
         case "programa": case "pre": case "terminos": {
@@ -815,6 +806,7 @@
                         linea: i + 1, sinTitulo: !mNum });
           } else if (dest.length) {
             dest[dest.length - 1].texto = (dest[dest.length - 1].texto + " " + linea.replace(/^[-*•]\s*/, "")).trim();
+            { const lp = dest[dest.length - 1].linea; (R.extra_lineas[lp] = R.extra_lineas[lp] || []).push(i + 1); }   // v165: la línea queda apuntada
           } else if (sec === "pre") {
             R.pre_intro = (R.pre_intro + " " + linea).trim(); R.pre_intro_lineas.push(i + 1);
           }
@@ -987,6 +979,12 @@
     [/material handling|materials? (that must be|furnished by others)[^.]{0,80}(handl|salvag|stor|reinstall)/i, "7.5"], [/utility coordination/i, "7.6"],
     [/\bflood\b|base flood elevation|\bbfe\b/i, "flood"]
   ];
+  // Los nombres de lo que la plantilla ya trae, sin repetir y en orden. El molde
+  // del cerebro (tanda 2) usa esta misma lista: una prueba compara las dos.
+  const NOMBRES_PLANTILLA = {
+    terminos: [...new Set(PLANTILLA_9.map(p => p[1]))],
+    programa: [...new Set(PLANTILLA_7.map(p => p[1]))]
+  };
   function clasificarPropias(L) {
     const propias = [], programa = [], pre = (L.pre || []).slice(), mapa = {}, quitadas = [];
     // un punto sin título propio se reconoce por su primera frase; uno con título, por el título
@@ -2523,7 +2521,7 @@
           renglon: "renglon", detalle: "detalle", exclusion: "exclusion", opcion: "opcion", opcion_detalle: "opcion_detalle",
           condicion: "condicion", codigo: "codigo", propia: "propia", parrafo: "parrafo", grupo: "grupo", sobrante: "sobrante" };
         const PROTEGIDO = ["precio", "pago", "pago_propia", "renglon", "detalle", "exclusion", "opcion", "opcion_detalle", "dato", "condicion", "propia", "seccion", "parrafo", "grupo", "codigo"];
-        const ACEPTA = { renglon: ["renglon"], detalle: ["detalle", "renglon"], exclusion: ["exclusion"], opcion: ["opcion"], opcion_detalle: ["opcion_detalle"], precio: ["precio"], pago: ["pago"],
+        const ACEPTA = { renglon: ["renglon"], detalle: ["detalle"], exclusion: ["exclusion"], opcion: ["opcion"], opcion_detalle: ["opcion_detalle"], precio: ["precio"], pago: ["pago"],
                          pago_propia: ["pago_propia"], dato: ["dato"], condicion: ["condicion"], propia: ["propia"], seccion: ["seccion"], parrafo: ["parrafo", "sobrante"], grupo: ["grupo", "seccion"], codigo: ["codigo"] };
         const DINERO = ["precio", "opcion", "pago", "pago_propia"];
         // quita de una lista la pieza que vive en n: si empieza en n se va entera; si es un tramo que pasa por n, se corta antes
@@ -2585,7 +2583,12 @@
           if (claseBase === "detalle") return m.rol !== "renglon_detalle" || !b.de || !m.de || m.de === b.de;
           if (claseBase === "dato") return m.rol !== "dato" || m.clave === b.clave;
           if (claseBase === "condicion") return m.rol !== "condicion" || m.clave === b.clave;
-          if (claseBase === "renglon" || claseBase === "exclusion") { const cb = b.cita_titulo, cm = m.cita_titulo; return !cb || !cm || norma(cb) === norma(cm); }
+          if (claseBase === "renglon" || claseBase === "exclusion") {
+            // v165: si el lector trae un título, tiene que ser el mismo que leyeron las reglas; sin título en la base, cualquier
+            // título del lector es un cambio (antes «!cb ||» dejaba retitular en silencio los renglones con «—» o negritas)
+            const cb = b.cita_titulo, cm = m.cita_titulo, sinPunto = t => norma(t).replace(/[.:;,]+$/, "");
+            return !cm || (!!cb && sinPunto(cb) === sinPunto(cm));
+          }
           return true;
         };
         // 1) lo que las reglas leyeron con papel: el lector no lo cambia de papel ni de valor, ni lo esconde en un tramo
@@ -2618,6 +2621,21 @@
           reponer(n, claseBase);
           avisos_app.push({ tipo: "renglon_movido", l: n, texto: txt(n), papel: claseBase, puesto: tiene || "ninguna" });
         });
+        // 1 bis) v165: un tramo del lector tampoco se traga las líneas que las reglas tocan SIN darles papel (las que botan
+        // con un aviso o un rojo, las que pegan a una cláusula 7/8/9): ahí el tramo se corta y esa línea la leen las
+        // reglas como siempre, con su propio aviso a la vista (antes desaparecía dentro de la descripción sin decir nada)
+        {
+          const avisadas = new Set(), pegadas = new Set();
+          [].concat((L_reglas && L_reglas.avisos) || [], (L_reglas && L_reglas.errores) || []).forEach(a => { if (a && lineaOk(a.linea)) avisadas.add(a.linea); });
+          Object.values((L_reglas && L_reglas.extra_lineas) || {}).forEach(ls => (Array.isArray(ls) ? ls : []).forEach(n => { if (lineaOk(n)) pegadas.add(n); }));
+          [...new Set([...avisadas, ...pegadas])].sort((a, b) => a - b).forEach(n => {
+            if (pb[n] || !casa.has(n)) return;
+            if (origen.get(n) !== n) { desalojar(n); return; }   // dentro de un tramo: se corta ahí
+            // una pieza del lector que EMPIEZA en una línea que las reglas pegaron a una cláusula: cambia el papel de la
+            // línea (deja de ser parte de la cláusula) → vuelve a las reglas y sale en ámbar, como cualquier renglon_movido
+            if (pegadas.has(n)) { const puesto = casa.get(n); tirar(puesto, n, "la línea es parte de una cláusula de la sección 7, 8 o 9"); desalojar(n); avisos_app.push({ tipo: "renglon_movido", l: n, texto: txt(n), papel: "propia", puesto }); }
+          });
+        }
         // 2) el dinero nunca lo pone el lector: precio, opciones o filas de pago sobre líneas que las reglas no leyeron así
         //    se tiran y se pregunta; lo demás que el lector añada donde las reglas no leían nada sale en ámbar (linea_nueva)
         const claseBaseDe = n => pb[n] ? CLASE_PISTA[pb[n].rol] : null;
@@ -2784,21 +2802,29 @@
   function lecturaDeReglas(texto, L) {
     L = L || leerAlcance(texto);
     const lineas = String(texto || "").replace(/\r/g, "").split("\n");
-    const limpia = n => limpiarLinea(lineas[n - 1] || "").limpia;
+    // v165: la misma línea que ve el lector (limpia y con el dinero tapado): las citas se cotejan contra ella, y un
+    // título con «—», comillas rizadas o negritas se cita limpio (antes salía sin cita y el lector podía retitularlo)
+    const hojaL = hojaParaElLector(texto, L).lineas;
+    const limpia = n => (hojaL[n - 1] || {}).t || "";
+    const citaDe = (n, t) => { const c = limpiarLinea(t || "").limpia; return c && limpia(n).includes(c) ? c : null; };
     const lect = { formato: "hoja_casa", idioma: pareceIngles(L) ? "en" : (pareceIngles(L) === null ? "mezcla" : "es"), lineas_total: lineas.length, secciones: [], datos: [], parrafos: [], grupos: [],
       renglones: [], exclusiones: [], precio: null, pagos: null, opciones: [], condiciones: [], codigo: [], jurisdiccion_l: null,
       propias: { programa: [], pre: [], terminos: [], pre_titulo_l: null }, remisiones: [], hechos: {}, avisos: [], sobrantes: [] };
     // los títulos de sección: los que el lector reconoció de verdad (con su línea), no una segunda adivinanza
     (L.titulos || []).forEach(t => lect.secciones.push({ l: t.linea, seccion: t.seccion, titulo_cita: null }));
     L.items.forEach(it => {
-      const titulo = limpia(it.lineas[0]).includes(it.titulo) ? it.titulo : null;
+      const titulo = citaDe(it.lineas[0], it.titulo);
       lect.renglones.push({ orden: it.n, l: it.lineas[0], l_hasta: null, cita_titulo: titulo, grupo_l: null,
         detalles: it.lineas.slice(1).map(l => ({ l, l_hasta: null, cita: null })), cierre: false });
     });
-    L.no_incluye.forEach((x, k) => lect.exclusiones.push({ orden: k + 1, l: x.linea, l_hasta: null, cita_titulo: x.titulo && limpia(x.linea).includes(x.titulo) ? x.titulo : null, ya_en_plantilla: "ninguna" }));
+    // v165: el cierre que la plantilla ya trae («Testing and closeout», con sus detalles) también tiene papel: es un
+    // renglón con cierre, y así ni desaparece dentro de un tramo del lector ni se vuelve otra cosa sin aviso
+    (L.cierre_fantasmas || []).forEach(f => { if (f.lineas && f.lineas.length) lect.renglones.push({ orden: lect.renglones.length + 1, l: f.lineas[0], l_hasta: null, cita_titulo: null, grupo_l: null,
+        detalles: f.lineas.slice(1).map(l => ({ l, l_hasta: null, cita: null })), cierre: true }); });
+    L.no_incluye.forEach((x, k) => lect.exclusiones.push({ orden: k + 1, l: x.linea, l_hasta: null, cita_titulo: citaDe(x.linea, x.titulo), ya_en_plantilla: "ninguna" }));
     if (L.precio && L.precio.linea) lect.precio = { l: L.precio.linea };
     // en la forma corta («Pagos: 50/50») la única línea es la fila 1: así el juez sabe que esa línea es dinero
-    if (L.pagos && L.pagos.lineas && L.pagos.lineas.length) lect.pagos = { forma: L.pagos.corto ? "corta" : "filas", filas: L.pagos.lineas.map((l, k) => ({ orden: k + 1, l })), propias: (L.pagos_propios || []).filter(p => p.linea).map(p => ({ l: p.linea, cita_titulo: p.titulo })), notas: [] };
+    if (L.pagos && L.pagos.lineas && L.pagos.lineas.length) lect.pagos = { forma: L.pagos.corto ? "corta" : "filas", filas: L.pagos.lineas.map((l, k) => ({ orden: k + 1, l })), propias: (L.pagos_propios || []).filter(p => p.linea).map(p => ({ l: p.linea, cita_titulo: citaDe(p.linea, p.titulo) })), notas: [] };
     // la prosa de la hoja (Hoy / Cambia / Falta / Notas) con su línea, y los encabezados de grupo
     Object.entries(L.prosa_lineas || {}).forEach(([destino, ls]) => (ls || []).forEach(l => lect.parrafos.push({ l, l_hasta: null, destino, cita: null })));
     (L.grupos_lineas || []).forEach(l => lect.grupos.push({ l, cita: null }));
@@ -2810,7 +2836,7 @@
     (L.pre_intro_lineas || []).forEach(l => lect.parrafos.push({ l, l_hasta: null, destino: "pre_intro", cita: null }));
     (L.ignoradas_lineas || []).forEach(l => lect.parrafos.push({ l, l_hasta: null, destino: "ignorada", cita: null }));
     Object.entries(L.condiciones || {}).forEach(([k, v]) => { if (v && v.linea && !v.pescada) lect.condiciones.push({ clave: k, l: v.linea, cita: null, explicita: true }); });
-    ["programa", "pre", "terminos"].forEach(k => (L[k] || []).forEach(p => { if (p.linea) lect.propias[k].push({ l: p.linea, l_hasta: null, numero: p.n || null, cita_titulo: limpia(p.linea).includes(p.titulo) ? p.titulo : null, parece_de_plantilla: null }); }));
+    ["programa", "pre", "terminos"].forEach(k => (L[k] || []).forEach(p => { if (p.linea) lect.propias[k].push({ l: p.linea, l_hasta: null, numero: p.n || null, cita_titulo: citaDe(p.linea, p.titulo), parece_de_plantilla: null }); }));
     // datos de cabecera: los que el lector leyó de una línea «Clave: valor» (la cita es solo el valor, si está literal)
     Object.entries(L.datos_linea || {}).forEach(([k, l]) => {
       if (!CLAVES_DATOS[k] || !l) return;
@@ -2936,7 +2962,9 @@
                 RX_DINERO_TAPAR, esMontoTapable, taparDinero, traeDineroEstricto, limpiarLinea, hojaParaElLector, citaEnLinea,
                 verificarLectura, pistasDe, guardarPistas, alinearLectura, rareza, lecturaDeReglas, claveDeLinea, TIPOS_AVISO, paraLaNube,
                 // tanda 1: los avisos del lector para la pantalla y las reglas nuevas
-                avisosDeLectura, esSobranteConfirmada, siNo, minus, normalizarTipoTrabajo, CLAVES_COND, CLAVES_DATOS, MATRIZ_LEGAL, SEC_DE_ROL };
+                avisosDeLectura, esSobranteConfirmada, siNo, minus, normalizarTipoTrabajo, CLAVES_COND, CLAVES_DATOS, MATRIZ_LEGAL, SEC_DE_ROL,
+                // tanda 2: lo que la prueba del molde del cerebro necesita mirar
+                SECCIONES_VALIDAS, NOMBRES_PLANTILLA };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   raiz.Alcance = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);
