@@ -5,7 +5,7 @@
 -- Se pega POR BLOQUES, en orden, mirando el bloque 3 entre medias.
 --
 -- Todos los conteos de aquí abajo están COMPROBADOS contra el catálogo
--- real (1072 items exportados el 14/09): 186 a $0, de ellos 176 con horas.
+-- real: 192 items a $0 (1072 del porte + los 12 de E2g), 182 de ellos con horas.
 -- =====================================================================
 
 
@@ -181,9 +181,13 @@ update catalogo_items
  where cero_motivo is null
    and coalesce(precio,0) = 0 and coalesce(horas_unidad,0) > 0
    and seccion in ('SWITCHGEAR','FIRE ALARM','SECURITY & ACCESS CONTROL',
-                   'CLOCK + INTERCOM + SOUND','CATV');
--- Esperado: 124 (SWITCHGEAR 78, CLOCK+INTERCOM 17, FIRE ALARM 13,
---                SECURITY 9, CATV 7)
+                   'CLOCK + INTERCOM + SOUND','CATV','GENERATOR + ATS + UPS');
+-- Esperado: 130 (SWITCHGEAR 82, CLOCK+INTERCOM 17, FIRE ALARM 13,
+--                SECURITY 9, CATV 7, GENERATOR+ATS+UPS 2)
+-- OJO: SWITCHGEAR son 82 y no 78 porque E2g creó 4 ítems más a $0 esa misma
+-- tarde (DISTRIBUTION PANEL 225A, STARTER SIZE 0, MOTOR CONNECTION 15-30 HP,
+-- 150A METER STACK), y GENERATOR + ATS + UPS pasó de 0 a 2 (ATS 400A, UPS
+-- 10KVA). Total del catálogo a $0: 192.
 
 -- (f) Coletilla opcional para la línea del contrato. Vacía por defecto:
 --     una frase torpe dentro de un documento firmado es peor que ninguna.
@@ -195,7 +199,7 @@ update catalogo_items
 -- LIGHTNING & GROUNDING 7, DEMOLITION 8, PROJECT GENERAL 3. Salen en ámbar
 -- con «¿QUIÉN LO PONE?» y los contesta Edgar, una vez cada uno, cuando le
 -- toquen de verdad en un trabajo.
--- Suma de control: 3 + 2 + 10 + 25 + 124 + 22 = 186. ✓
+-- Suma de control: 3 + 2 + 10 + 25 + 130 + 22 = 192. ✓
 
 
 -- =====================================================================
