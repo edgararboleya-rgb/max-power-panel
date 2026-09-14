@@ -5522,6 +5522,14 @@ function esFalloDeRed(err) {
     const markupCotPct = nn(est.markup_cot_pct) ?? nn(cfg.markup_cot_pct) ?? null;
     const taxPct = nn(est.tax_pct) ?? n(esc.tax_material);
     const ohHH = nn(est.overhead_hh) ?? n(esc.overhead_hh);
+    // Dos maneras de cargar el overhead, y la diferencia importa:
+    //   · POR HORA ($/hora-hombre) — el de Max Power. Sale de repartir TUS
+    //     gastos generales entre TUS horas: oficina, camiones, seguros.
+    //   · POR PORCENTAJE (% del costo directo) — el de las obras con Roger y
+    //     el que usa el Excel de Miami. Tus gastos generales no aplican a una
+    //     obra del MEP, así que ahí se carga el porcentaje de la industria.
+    // Si el escenario trae overhead_pct, manda ese. Si no, todo sigue igual.
+    const ohPct = nn(est.overhead_pct) ?? nn(esc.overhead_pct);
     const profitPct = nn(est.profit_pct) ?? n(esc.profit);
     const markupPct = nn(est.markup_pct) ?? 0;
 
@@ -5568,13 +5576,13 @@ function esFalloDeRed(err) {
     const benefits = laborBase * benefitsPct;
     const totalLabor = laborBase + benefits;
     const prime = totalLabor + totalMaterial;
-    const overhead = horas * ohHH;
+    const overhead = (ohPct !== null && ohPct !== undefined) ? prime * ohPct : horas * ohHH;
     const profit = (prime + overhead) * profitPct;
     const bid = prime + overhead + profit;
     return { items: base, autos, mermaMat, mermaHoras, misc, esc, matSubtotal, tax,
              totalMaterial, horasBase, horas, laborBase, benefits, totalLabor,
              prime, overhead, profit, markup, bid,
-             miscPct, taxPct, ohHH, profitPct, markupPct,
+             miscPct, taxPct, ohHH, ohPct: (ohPct ?? null), profitPct, markupPct,
              matPropio, matCot, markupCotPct: mkCot,
              mezcla, tarifaMezclada, benefitsPct, lineasMat,
              // $ por hora cargado: el precio final entre las horas (todo adentro)
@@ -6340,9 +6348,13 @@ Power done right the first time. ⚡`;
               <label class="mat-filtro-label">Profit (%)<input class="esc-profit" type="number" min="0" max="100" step="0.5" value="${esc(pct(e.profit))}"></label>
             </div>
             <div class="modal-fila">
-              <label class="mat-filtro-label">Overhead ($/hora)<input class="esc-ohhh" type="number" min="0" step="0.25" value="${esc(e.overhead_hh ?? "")}"></label>
+              <label class="mat-filtro-label">Overhead ($/hora)<input class="esc-ohhh" type="number" min="0" step="0.25" value="${esc(e.overhead_hh ?? "")}" ${e.overhead_pct ? "disabled" : ""}></label>
+              <label class="mat-filtro-label">…o % del costo<input class="esc-ohpct" type="number" min="0" max="40" step="0.5" value="${esc(e.overhead_pct ? pct(e.overhead_pct) : "")}" placeholder="vacío"></label>
               <label class="mat-filtro-label">Sales tax (%)<input class="esc-tax" type="number" min="0" max="15" step="0.1" value="${esc(pct(e.tax_material))}"></label>
             </div>
+            <p class="rent-nota" style="margin:.2rem 0 .4rem">${e.overhead_pct
+              ? `Overhead por <b>porcentaje del costo directo</b>: ${pct(e.overhead_pct)} % sobre mano de obra + material. Es el método del Excel de Miami y el que sirve cuando la oficina y los camiones no los pones tú. NECA sitúa el 14–16 % en operaciones bien llevadas; el Excel usaba 10 %.`
+              : `Overhead por <b>hora-hombre</b>: tus gastos generales repartidos entre tus horas. Si quieres el otro método, escribe un % aquí al lado y este se apaga.`}</p>
             <div class="modal-botones">
               <button type="button" class="accion secundaria esc-rol-agregar">+ Agregar rol</button>
               <button type="button" class="accion esc-guardar">💾 Guardar ${esc(e.id)}</button>
@@ -6375,6 +6387,9 @@ Power done right the first time. ⚡`;
           // El overhead por hora y el sales tax también son del escenario: es lo
           // que permite que MXP MEP tenga los suyos (Orange 6.5 %, no 7.5 %).
           overhead_hh: Number(card.querySelector(".esc-ohhh").value) || 0,
+          // Vacío = por hora (lo de siempre). Con un número = por porcentaje.
+          overhead_pct: String(card.querySelector(".esc-ohpct").value).trim() === ""
+            ? null : (Number(card.querySelector(".esc-ohpct").value) || 0) / 100,
           tax_material: (Number(card.querySelector(".esc-tax").value) || 0) / 100,
         };
       };
@@ -6732,7 +6747,9 @@ Power done right the first time. ⚡`;
         <div class="rent-fila"><span>Horas de TODO el trabajo (${r2(c.horasBase)} × factor ${est.factor || 1})</span><span>${r2(c.horas)} h</span></div>
         <div class="rent-fila"><span>Labor (${r2(c.horas)} h × ${fmt(r2(c.tarifaMezclada))} cuadrilla)</span><span>${fmt(r2(c.laborBase))}</span></div>
         <div class="rent-fila"><span>+ Beneficios sobre el labor (${pctTxt(c.benefitsPct)}${nnDist(est.benefits_pct) ? " ✏" : ""})${lapiz("benefits_pct", "pct", c.benefitsPct, "Beneficios — % sobre el labor")}</span><span>${fmt(r2(c.benefits))}</span></div>
-        <div class="rent-fila"><span>+ Overhead (${r2(c.horas)} h × ${fmt(c.ohHH)}${nnDist(est.overhead_hh) ? " ✏" : ""})${lapiz("overhead_hh", "monto", c.ohHH, "Overhead — $ por hora-hombre")}</span><span>${fmt(r2(c.overhead))}</span></div>
+        <div class="rent-fila"><span>+ Overhead ${c.ohPct !== null && c.ohPct !== undefined
+          ? `(${pctTxt(c.ohPct)} del costo directo${nnDist(est.overhead_pct) ? " ✏" : ""})${lapiz("overhead_pct", "pct", c.ohPct, "Overhead — % sobre mano de obra + material")}`
+          : `(${r2(c.horas)} h × ${fmt(c.ohHH)}${nnDist(est.overhead_hh) ? " ✏" : ""})${lapiz("overhead_hh", "monto", c.ohHH, "Overhead — $ por hora-hombre")}`}</span><span>${fmt(r2(c.overhead))}</span></div>
         <div class="rent-fila"><span>+ Profit (${pctTxt(c.profitPct)}${nnDist(est.profit_pct) ? " ✏" : ""})${lapiz("profit_pct", "pct", c.profitPct, "Profit — % sobre costo + overhead")}</span><span>${fmt(r2(c.profit))}</span></div>
         <div class="rent-fila rent-total ok"><span>🎯 PRECIO DE LA PROPUESTA</span><span>${fmt(r2(c.bid))}</span></div>
         ${est.sqft ? `<p class="rent-nota">${fmt(r2(c.bid / est.sqft))} por sq ft</p>` : ""}

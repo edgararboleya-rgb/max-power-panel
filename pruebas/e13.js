@@ -102,6 +102,34 @@ const r2 = v => Math.round(v * 100) / 100;
     (bidMep.taxPct * 100) + '% vs ' + (bidMio.taxPct * 100) + '%');
   ok('tus escenarios no se tocan', bidMio.ohHH === 30.19 && bidMep.ohHH === 38, bidMio.ohHH + ' / ' + bidMep.ohHH);
 
+  /* === 8. el overhead por porcentaje, que es el del Excel de Miami === */
+  const ESC3 = ESC.concat([{ id: 'MEP', nombre: 'MXP MEP', foreman: 45, journeyman: 35, helper: 20,
+    mezcla: [{ rol: 'Superintendent', tarifa: 60, pct: .10 }, { rol: 'Foreman', tarifa: 45, pct: .15 },
+             { rol: 'Journeyman', tarifa: 35, pct: .40 }, { rol: 'Helper', tarifa: 20, pct: .35 }],
+    benefits: .25, tax_material: .065, overhead_hh: 30.19, overhead_pct: .15, profit: .10 }]);
+  await p.evaluate(([c, e, cf, it]) => window.MXP_PRUEBA.e0.datos({ catalogo: c, escenarios: e, config: cf, items: it, estimados: [], ensambles: [], estEnsambles: [] }), [CAT, ESC3, CFG, ITEMS]);
+  const porPct = await calc({ ...BASE, escenario: 'MEP', empresa: 'mep' });
+  ok('con overhead por %, se cobra sobre el costo directo y no sobre las horas',
+    r2(porPct.overhead) === r2(porPct.prime * 0.15), r2(porPct.overhead) + ' = 15% de ' + r2(porPct.prime));
+  ok('el profit sigue yendo encima del costo + overhead, como en el Excel',
+    r2(porPct.profit) === r2((porPct.prime + porPct.overhead) * 0.10), r2(porPct.profit));
+  ok('y el bid es costo + overhead + profit, sin nada escondido',
+    r2(porPct.bid) === r2(porPct.prime + porPct.overhead + porPct.profit), r2(porPct.bid));
+  const porHora = await calc({ ...BASE, escenario: 'B' });
+  ok('los tuyos siguen con overhead por hora-hombre, intacto',
+    r2(porHora.overhead) === r2(porHora.horas * 30.19) && porHora.ohPct === null, r2(porHora.overhead));
+
+  /* el superintendent entra como un rol más de la cuadrilla, igual que en el Excel */
+  ok('la cuadrilla de MXP MEP incluye al superintendent y los % suman 100',
+    porPct.mezcla.length === 4 && r2(porPct.mezcla.reduce((t, m) => t + m.pct, 0)) === 1, porPct.mezcla.map(m => m.rol + ' ' + Math.round(m.pct * 100) + '%').join(' · '));
+  ok('la tarifa mezclada sale del reparto de horas, no de un promedio simple',
+    r2(porPct.tarifaMezclada) === r2(60 * .10 + 45 * .15 + 35 * .40 + 20 * .35), '$' + r2(porPct.tarifaMezclada) + '/h');
+
+  /* se puede forzar en UN estimado suelto sin tocar el escenario */
+  const suelto = await calc({ ...BASE, escenario: 'B', overhead_pct: 0.12 });
+  ok('un estimado suelto puede llevar overhead por % sin tocar el escenario',
+    r2(suelto.overhead) === r2(suelto.prime * 0.12), r2(suelto.overhead));
+
   ok('sin errores de consola', errs.length === 0, errs.join(' // ').slice(0, 200));
   console.log(R.join('\n'));
   const fails = R.filter(l => l.indexOf('✗') >= 0).length;
