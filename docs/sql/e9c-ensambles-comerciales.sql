@@ -16,6 +16,18 @@
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
+-- 0) Dejar entrar el modo «comercial»
+-- ---------------------------------------------------------------------
+-- La tabla tiene una regla que solo admite ciertos modos, y «comercial»
+-- no estaba en la lista. Esto la amplía conservando los que ya usas.
+-- (Si quieres ver cómo está antes de tocarla:
+--    select pg_get_constraintdef(oid) from pg_constraint
+--     where conname = 'ensambles_modo_check';)
+alter table ensambles drop constraint if exists ensambles_modo_check;
+alter table ensambles add  constraint ensambles_modo_check
+  check (modo in ('remodelacion','servicio','comercial','planos','rapido'));
+
+-- ---------------------------------------------------------------------
 -- 1) Las recetas
 -- ---------------------------------------------------------------------
 insert into ensambles (nombre, modo, pies_editable, orden)
@@ -158,3 +170,6 @@ select e.nombre,
 -- =====================================================================
 --   delete from ensamble_items where ensamble_id in (select id from ensambles where modo = 'comercial');
 --   delete from ensambles where modo = 'comercial';
+--   alter table ensambles drop constraint if exists ensambles_modo_check;
+--   alter table ensambles add  constraint ensambles_modo_check
+--     check (modo in ('remodelacion','servicio'));
