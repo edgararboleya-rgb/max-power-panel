@@ -7854,6 +7854,8 @@ Power done right the first time. ⚡`;
     alcAbrir(alcActivo.proyecto, null, alcActivo.variantes);
     alcActivo.texto = "";
     alcActivo.lectura = null; alcActivo.lectura_pendiente = null;   // hoja nueva, lectura nueva
+    // y el cuadro vacío se guarda YA: si no, al volver a entrar reaparecía el texto viejo
+    alcGuardarLocal(alcActivo.proyecto.id, "");
     pintarAlcance();
     avisar("Alcance nuevo. Pega la hoja y guárdalo: quedará como otra variante de este proyecto.");
   }
@@ -7881,7 +7883,16 @@ Power done right the first time. ⚡`;
         return { texto: String(crudo), lectura: null };
       }
       const viejo = localStorage.getItem(alcLlaveLocal(proyId));
-      if (viejo) return { texto: String(viejo), lectura: null };
+      if (viejo) {
+        // La mudanza se ESCRIBE: lo viejo pasa a la llave nueva y se borra de la
+        // vieja. Si no, cada «Otro alcance» de este proyecto volvía a arrancar
+        // con el texto de antes. (El perdón sigue en la llave vieja: no se toca.)
+        try {
+          localStorage.setItem(alcLlaveHoja(proyId, propId), JSON.stringify({ texto: String(viejo), lectura: null }));
+          localStorage.removeItem(alcLlaveLocal(proyId));
+        } catch { /* el teléfono sin sitio no frena nada */ }
+        return { texto: String(viejo), lectura: null };
+      }
       return { texto: "", lectura: null };
     } catch { return { texto: "", lectura: null }; }
   }
@@ -7984,7 +7995,9 @@ Power done right the first time. ⚡`;
   function alcLineaDelAsistente() {
     const A = alcActivo;
     let s = "";
-    if (A.lectura_en_marcha)
+    if (A.lectura_en_marcha && A.lectura_en_marcha.prueba)
+      s += `<div class="alc-gris">Modo de prueba: no llamo al asistente</div>`;
+    else if (A.lectura_en_marcha)
       s += `<div class="alc-gris alc-espera">El asistente está mirando tu hoja… (suele tardar de 30 s a 2 min; puedes seguir)</div>`;
     if (A.lectura_aviso) s += `<div class="alc-gris">${esc(A.lectura_aviso)}</div>`;
     if (A.leido && !A.lectura_en_marcha && alcAjusteLector() !== "nunca") {
@@ -8003,7 +8016,15 @@ Power done right the first time. ⚡`;
     const L = A.leido;
     const chip = n => Number.isInteger(n) && n >= 1
       ? `<button class="alc-linea" data-ira="${n}" title="Llévame a ese renglón">línea ${n}</button>` : "";
-    const chips = ns => (ns || []).filter(n => Number.isInteger(n)).slice(0, 6).map(chip).join(" ");
+    // Una lista de líneas se dice como la diría una persona: «las líneas 112, 113 y 114»
+    // (el chip lleva solo el número; el «línea/líneas» va fuera, una sola vez).
+    const chipN = n => Number.isInteger(n) && n >= 1
+      ? `<button class="alc-linea" data-ira="${n}" title="Llévame a ese renglón">${n}</button>` : "";
+    const chips = ns => {
+      const l = (ns || []).filter(n => Number.isInteger(n)).slice(0, 6).map(chipN);
+      if (l.length <= 1) return l.join("");
+      return l.slice(0, -1).join(", ") + " y " + l[l.length - 1];
+    };
     const filas = [];
     filas.push(`<li>${esc(ALC_FORMATO_EN_LLANO[LC.formato] || "hoja")} ${esc(ALC_IDIOMA_EN_LLANO[LC.idioma] || "")}.</li>`);
     const nDatos = Object.keys((L && L.datos) || {}).length;
@@ -8025,7 +8046,7 @@ Power done right the first time. ⚡`;
     const lPagos = (LC.pagos && Array.isArray(LC.pagos.filas) ? LC.pagos.filas : []).map(f => f.l).filter(Number.isInteger);
     if (lPrecio || lPagos.length)
       filas.push(`<li>Precio y pagos: leídos de ${lPrecio ? "la " + chip(lPrecio) : "ninguna línea"}` +
-        (lPagos.length ? ` y ${lPagos.length === 1 ? "la" : "las"} ${chips(lPagos)}` : "") + ".</li>");
+        (lPagos.length ? (lPagos.length === 1 ? ` y la línea ${chips(lPagos)}` : ` y las líneas ${chips(lPagos)}`) : "") + ".</li>");
     const pr = (LC.propias && typeof LC.propias === "object") ? LC.propias : {};
     const nPropias = ["programa", "pre", "terminos"].reduce((s, k) => s + ((pr[k] || []).length), 0);
     if (nPropias) filas.push(`<li>Cronograma, antes de empezar y condiciones propias de tu hoja: ${nPropias}.</li>`);
@@ -8039,7 +8060,7 @@ Power done right the first time. ⚡`;
     const cuandoTxt = cuando && !isNaN(cuando.getTime())
       ? cuando.toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
     const centavos = R.costo_centavos;
-    const coste = R.de_cache ? "de la caché (0 ¢)"
+    const coste = R.de_cache ? "ya la tenía leída de antes (0 ¢)"
       : (Number.isFinite(centavos) ? `${centavos} ¢` : "sin apuntar el costo");
     filas.push(`<li>Leído con: reglas · asistente (${esc(coste)}${cuandoTxt ? " · " + esc(cuandoTxt) : ""}).</li>`);
     if ((R.tiradas || []).length)
@@ -8052,6 +8073,9 @@ Power done right the first time. ⚡`;
   // la hoja lo dicen ya, y se contesta con un botón que dice qué cambia en el
   // contrato. Sin respuesta manda lo más protector (consumidor, con firma).
   let alcHechos = {};                     // id del botón → lo que hace
+  // Cuántos avisos ámbar se ven sin desplegar, y si Edgar dejó abierto el resto
+  const ALC_AMBAR_A_LA_VISTA = 5;
+  let alcAmbarAbierto = false;
   function alcPreguntasDeHechos() {
     const A = alcActivo, LC = A.lectura && A.lectura.limpia;
     const out = [];
@@ -8121,10 +8145,13 @@ Power done right the first time. ⚡`;
         texto: dicen === "exterior_servicio"
           ? "¿Este trabajo es de servicio exterior (poste, bomba, pozo) o dentro de una vivienda? Si es exterior, el contrato deja de excluir gabinetes, drywall y aparatos, y no lleva la cláusula de los breakers AFCI."
           : "¿Este trabajo es dentro de una vivienda o servicio exterior? Si es dentro de una vivienda, se quedan las exclusiones de gabinetes, drywall y aparatos, y la cláusula de los breakers AFCI.",
+        // «Tipo de trabajo» NO es un dato de cabecera: es una condición. Si se
+        // escribe arriba del todo, el motor no la reconoce y le devuelve a Edgar
+        // dos avisos nuevos sobre su propia respuesta. Va por Condiciones.
         botones: [
-          { etiqueta: "Exterior (servicio)", dato: { etiqueta: "Tipo de trabajo", valor: "service" } },
-          { etiqueta: "Vivienda interior", dato: { etiqueta: "Tipo de trabajo", valor: "remodel" } },
-          { etiqueta: "Las dos cosas", dato: { etiqueta: "Tipo de trabajo", valor: "mezcla" } }
+          { etiqueta: "Exterior (servicio)", arreglo: { tipo: "cambiar_condicion", clave: "tipo_trabajo", valor: "service", auto: false, origen: "ia" } },
+          { etiqueta: "Vivienda interior", arreglo: { tipo: "cambiar_condicion", clave: "tipo_trabajo", valor: "remodel", auto: false, origen: "ia" } },
+          { etiqueta: "Las dos cosas", arreglo: { tipo: "cambiar_condicion", clave: "tipo_trabajo", valor: "mezcla", auto: false, origen: "ia" } }
         ]
       });
     }
@@ -8166,11 +8193,44 @@ Power done right the first time. ⚡`;
       else lineas.unshift(etiqueta + ": " + valor);
     }
     A.texto = lineas.join("\n");
+    alcApuntarPropia(etiqueta + ": " + valor);
     alcRealinear();
     alcGuardarLocal(A.proyecto.id, A.texto);
     A.arreglados = [...(A.arreglados || []), `escribí «${etiqueta}: ${valor}» en la hoja`];
-    alcCalcular();
+    alcCalcularSeguro();
     pintarAlcance();
+  }
+
+  // Las líneas que escribe la APP por un toque de Edgar («Propiedad: comercial»,
+  // «Dirección: …») no son líneas nuevas de la hoja: se apuntan aquí para no
+  // devolvérselas después como avisos del lector («esta línea es nueva», «esta
+  // línea está en otro idioma»). Contestar no puede generar trabajo nuevo.
+  function alcApuntarPropia(texto) {
+    const A = alcActivo;
+    if (!A || !A.lectura) return;
+    let t = "";
+    try { t = Alcance.limpiarLinea(String(texto || "")).limpia; } catch { t = String(texto || "").trim(); }
+    if (!t) return;
+    A.lectura.propias = [...new Set([...(A.lectura.propias || []), t])];
+  }
+  // La línea N de la hoja, tal cual; y una línea limpia como la limpia el motor
+  function alcLineaCruda(n) {
+    const A = alcActivo;
+    if (!A || !(n >= 1)) return "";
+    const l = String(A.texto || "").replace(/\r/g, "").split("\n")[n - 1];
+    return l === undefined ? "" : l;
+  }
+  function alcLimpia(texto) {
+    try { return Alcance.limpiarLinea(String(texto || "")).limpia; }
+    catch { return String(texto || "").trim(); }
+  }
+  // ¿Esta línea la escribió la app?
+  function alcEsPropia(n) {
+    const A = alcActivo;
+    const propias = (A && A.lectura && A.lectura.propias) || null;
+    if (!propias || !propias.length || !(n >= 1)) return false;
+    const t = alcLimpia(alcLineaCruda(n));
+    return !!t && propias.includes(t);
   }
 
   // Lo que la hoja ya dice y la ficha del proyecto todavía no: se ofrece guardarlo
@@ -8193,7 +8253,7 @@ Power done right the first time. ⚡`;
       const p = proyectos().find(x => x.id === A.proyecto.id);
       if (p) { if (id === "comercial") p.tipo = "comercial"; else p.contratistaModo = "contrato"; }
       avisar("Guardado en la ficha del proyecto ✓");
-      alcCalcular(); pintarAlcance();
+      alcCalcularSeguro(); pintarAlcance();
     } catch (e) { avisar("No pude guardarlo en el proyecto: " + e.message, true); }
   }
 
@@ -8207,7 +8267,7 @@ Power done right the first time. ⚡`;
     DB.gastoDelAsistente(mes).then(g => {
       if (!g) return;
       alcGastoMes = g;
-      if (alcActivo && alcFicha === 0) pintarAlcance();
+      alcRepintarTrasLaNube();
     }).catch(() => { /* si las tablas no responden, la fila no sale */ });
   }
 
@@ -8333,13 +8393,27 @@ Power done right the first time. ⚡`;
         `</ul></div>`;
     }
     const dudas = L.avisos.filter(a => !a.informativo), hechos = L.avisos.filter(a => a.informativo);
-    // Primero lo que ven las reglas; después lo del asistente, cada uno con su chip «IA»
-    if (dudas.length || iaAmbar.length || huerfanas.length) {
-      salida += `<div class="alc-ambar"><b>Esto no me cuadra del todo (no te frena):</b><ul>` +
-        dudas.map((a, i) => `<li>${chip(a.linea)}${esc(a.texto)}${cita(a.linea)}<div class="alc-fixes">${botonesDe(a.arreglos, "a" + i).replace(/<button[^>]*>Eso no es dinero, déjalo<\/button>/, "")}</div>${explicame(a, "a" + i)}</li>`).join("") +
-        huerfanas.map((a, i) => liIA(a, "hu" + i)).join("") +
-        iaAmbar.map((a, i) => liIA(a, "ia" + i)).join("") +
-        `</ul></div>`;
+    // Primero lo que ven las reglas; después lo del asistente, cada uno con su chip «IA».
+    // A la vista van los CINCO primeros y el resto se pliega: con la hoja de Wimauma
+    // eran 25 avisos y 104 botones, y en el teléfono había que deslizar 18 pantallas
+    // para llegar al dinero. Lo rojo (los candados) nunca se pliega.
+    // Arriba las líneas que Edgar acaba de escribir (es de lo que se acuerda),
+    // después las dudas de las reglas y al final las del asistente.
+    const ambarLis = [
+      ...huerfanas.map((a, i) => liIA(a, "hu" + i)),
+      ...dudas.map((a, i) => `<li>${chip(a.linea)}${esc(a.texto)}${cita(a.linea)}<div class="alc-fixes">${botonesDe(a.arreglos, "a" + i).replace(/<button[^>]*>Eso no es dinero, déjalo<\/button>/, "")}</div>${explicame(a, "a" + i)}</li>`),
+      ...iaAmbar.map((a, i) => liIA(a, "ia" + i))
+    ];
+    if (ambarLis.length) {
+      const resto = ambarLis.length - ALC_AMBAR_A_LA_VISTA;
+      salida += `<div class="alc-ambar"><b>Esto no me cuadra del todo (no te frena):</b>` +
+        `<ul>${ambarLis.slice(0, ALC_AMBAR_A_LA_VISTA).join("")}</ul>` +
+        (resto > 0
+          ? `<details class="alc-mas-avisos" id="alc-mas-avisos"${alcAmbarAbierto ? " open" : ""}>
+               <summary>…ver ${resto === 1 ? "el que queda" : "los " + resto + " restantes"}</summary>
+               <ul>${ambarLis.slice(ALC_AMBAR_A_LA_VISTA).join("")}</ul></details>`
+          : "") +
+        `</div>`;
     }
     if (hechos.length || iaGris.length) {
       salida += `<div class="alc-gris"><b>Lo que dejé fuera o ya trae la plantilla — no tienes que hacer nada:</b><ul>` +
@@ -8387,9 +8461,14 @@ Power done right the first time. ⚡`;
 
     // ¿Hay que pasarlo a inglés? Con lectura del asistente manda el idioma que
     // leyó (en / es / mezcla); sin ella, el conteo de palabras de siempre.
+    // «mezcla» NO manda solo: casi todas las hojas de la casa son un SOW en inglés
+    // con las claves en español (Cliente:, Precio:, Pagos:) y el asistente las llama
+    // mezcla. Si las reglas la ven en inglés, el camino corto y gratis sigue siendo
+    // el principal; solo se ofrece pagar la traducción cuando las dos coinciden.
     const idiomaLeido = A.lectura && A.lectura.limpia ? A.lectura.limpia.idioma : null;
-    const hayQuePasarlo = (idiomaLeido === "en" || idiomaLeido === "es" || idiomaLeido === "mezcla")
-      ? idiomaLeido !== "en" : Alcance.pareceIngles(L) === false;
+    const hayQuePasarlo = idiomaLeido === "en" ? false
+                        : idiomaLeido === "es" ? true
+                        : Alcance.pareceIngles(L) === false;
     // La tarjeta "Lo que entendí": aquí Edgar ve el dinero cuadrado
     const cta = A.cuenta, dec = A.decision;
     const d = L.datos;
@@ -8420,7 +8499,7 @@ Power done right the first time. ⚡`;
           if (!A.lectura && !alcGastoMes) return "";
           const c = A.lectura ? A.lectura.costo_centavos : null;
           const partes = [];
-          if (A.lectura) partes.push(A.lectura.de_cache ? "esta lectura salió de la caché (0 ¢)"
+          if (A.lectura) partes.push(A.lectura.de_cache ? "esta hoja ya la tenía leída de antes (0 ¢)"
             : `${Number.isFinite(c) ? c : "?"} ¢ esta lectura`);
           let pasado = false;
           if (alcGastoMes && alcGastoMes.tope > 0) {
@@ -8644,14 +8723,20 @@ Power done right the first time. ⚡`;
         }, 400);
       }
     });
-    // Al salir del cuadro, las cajas de la derecha se ponen al día con lo escrito
+    // Al salir del cuadro, las cajas de la derecha se ponen al día con lo escrito.
+    // NO se repinta en el acto: al tocar un botón de la derecha el cuadro pierde
+    // el foco primero, y si el panel se reemplazara ahí mismo el botón que Edgar
+    // vio ya no existiría cuando llega el toque (tenía que tocar dos veces). Se
+    // espera un momento y solo se repinta si el toque no repintó ya.
     if (caja) caja.addEventListener("change", () => {
       if (!alcActivo || !alcActivo.lectura) return;
       alcActivo.texto = caja.value;
       clearTimeout(alcRetardoRealinear);
       alcRealinear();
       try { alcCalcular(); } catch { return; }
-      pintarAlcance();
+      setTimeout(() => {
+        if (alcActivo && alcFicha === 0 && $("alc-texto") === caja && document.activeElement !== caja) pintarAlcance();
+      }, 350);
     });
 
     const bCopiar = $("alc-copiar-formato");
@@ -8684,6 +8769,11 @@ Power done right the first time. ⚡`;
         if (f) alcCargarArchivo(f);
       });
     }
+
+    // El plegado de los avisos que sobran se queda como Edgar lo dejó, aunque
+    // la pantalla se repinte (contestar una pregunta repinta el panel entero)
+    const dMas = $("alc-mas-avisos");
+    if (dMas) dMas.addEventListener("toggle", () => { alcAmbarAbierto = dMas.open; });
 
     const bOrdenar = $("alc-ordenar");
     if (bOrdenar) bOrdenar.addEventListener("click", alcOrdenar);
@@ -8737,7 +8827,7 @@ Power done right the first time. ⚡`;
       if (!r.hechos.length) { avisar("No había nada que pudiera arreglar solo", true); return; }
       A.texto = r.texto; alcRealinear(); alcGuardarLocal(A.proyecto.id, A.texto);
       A.arreglados = [...(A.arreglados || []), ...r.hechos];
-      alcCalcular(); pintarAlcance();
+      alcCalcularSeguro(); pintarAlcance();
       avisar(`Arreglé ${r.hechos.length} ${r.hechos.length === 1 ? "cosa" : "cosas"} ✓`);
     });
     const bRed = $("alc-redactar");
@@ -8936,12 +9026,14 @@ Power done right the first time. ⚡`;
       const re = new RegExp("^\\s*" + clave + "\\s*:.*$", "im");
       if (re.test(txt)) txt = txt.replace(re, clave + ": " + valor);
       else txt = clave + ": " + valor + "\n" + txt;
+      alcApuntarPropia(clave + ": " + valor);    // la escribió la app: no es línea nueva de la hoja
     };
     const ponCond = (clave, valor) => {
       const re = new RegExp("^\\s*" + clave + "\\s*:.*$", "im");
       if (re.test(txt)) txt = txt.replace(re, clave + ": " + valor);
       else if (/^\s*Condiciones\s*$/im.test(txt)) txt = txt.replace(/^(\s*Condiciones\s*)$/im, "$1\n" + clave + ": " + valor);
       else txt += "\n\nCondiciones\n" + clave + ": " + valor;
+      alcApuntarPropia(clave + ": " + valor);
     };
     if (R.fotos_panel) ponCond("Fotos del panel", R.fotos_panel);
     if (R.circuitos_exist) ponCond("Circuitos existentes", R.circuitos_exist);
@@ -8964,7 +9056,7 @@ Power done right the first time. ⚡`;
       ponCond("No excluir", [...new Set([...ya, ...quiere])].join(", "));
     }
     if (txt !== A.texto) { A.texto = txt; alcRealinear(); alcGuardarLocal(A.proyecto.id, txt); }
-    alcCalcular();
+    alcCalcularSeguro();
   }
 
   // Un arreglo concreto, con el valor que Edgar haya escrito si hacía falta
@@ -8974,11 +9066,38 @@ Power done right the first time. ⚡`;
     if (r.error) { avisar(r.error, true); return; }
     if (r.perdona) { A.perdonadas = [...(A.perdonadas || []), r.perdona]; alcPerdonLocal(A.proyecto.id, A.perdonadas); }
     A.texto = r.texto;
+    // si el arreglo escribió una línea («escribí «Tipo de trabajo: service» en
+    // Condiciones»), la app la apunta como suya: no es una línea nueva de la hoja
+    const puesta = /^escrib[íi]\s+«([^»]+)»/.exec(String(r.explicacion || ""));
+    if (puesta) alcApuntarPropia(puesta[1]);
+    alcCerrarHuerfana(a);
     // las pistas se vuelven a casar con el texto nuevo; al asistente no se le pide nada
     alcRealinear();
     alcGuardarLocal(A.proyecto.id, A.texto);
     A.arreglados = [...(A.arreglados || []), r.explicacion];
-    alcCalcular(); pintarAlcance();
+    alcCalcularSeguro(); pintarAlcance();
+  }
+
+  // Cuando Edgar contesta a una línea huérfana («Déjala», «Es un renglón», «Es
+  // detalle del renglón de arriba»), el ámbar TIENE que irse. Antes no se iba:
+  // la línea seguía sin estar en lo que guardó el asistente y el realineado la
+  // volvía a marcar en cada repintado. Aquí se apunta con el papel que Edgar le
+  // dio (sin pista: la leen las reglas, que es lo que él acaba de decir) y deja
+  // de salir como nueva.
+  function alcCerrarHuerfana(a) {
+    const A = alcActivo;
+    if (!a || a.origen !== "ia") return;
+    if (!["dejar_asi", "es_renglon", "es_detalle_de"].includes(a.tipo)) return;
+    if (!A || !A.lectura || !Array.isArray(A.lectura.guardadas)) return;
+    const n = Number(a.linea);
+    if (!(n >= 1)) return;
+    const cruda = String(A.texto || "").replace(/\r/g, "").split("\n")[n - 1];
+    if (cruda === undefined) return;
+    let t = "";
+    try { t = Alcance.limpiarLinea(cruda).limpia; } catch { return; }
+    if (!t) return;
+    if (A.lectura.guardadas.some(g => g && g.texto === t)) return;
+    A.lectura.guardadas = [...A.lectura.guardadas, { texto: t, pista: null }];
   }
 
   // Los nombres de las cláusulas, como los diría una persona
@@ -9028,7 +9147,7 @@ Power done right the first time. ⚡`;
                    email: "e-?mail|correo", telefono: "tel[eé]fono|tel|phone|cell|celular|mobile", direccion: "direcci[oó]n|address|job address|site address|property address|project address|job site" };
   function alcNutrir(texto, conocidos) {
     let txt = String(texto || "");
-    const tomados = [];
+    const tomados = [], escritas = [];   // «escritas» = las líneas que puso la app, tal cual
     ALC_DATOS.forEach(([clave, etiqueta]) => {
       const re = new RegExp("^[ \\t#*]*(?:" + ALC_RE[clave] + ")\\s*:[ \\t]*(.*)$", "im");
       const m = txt.match(re);
@@ -9036,7 +9155,7 @@ Power done right the first time. ⚡`;
       if (clave === "atencion" && !alcVacio(enHoja) && !alcVacio(conocidos.atencion)) {
         // la hoja trae «Roberto Prata» y la app sabe «Roberto Prata / Kevin Haseney»: se completa, no se pisa
         const juntos = Alcance.juntarNombres(enHoja, conocidos.atencion);
-        if (juntos !== enHoja) { txt = txt.replace(re, etiqueta + ": " + juntos); tomados.push("atención (" + juntos + ")"); }
+        if (juntos !== enHoja) { txt = txt.replace(re, etiqueta + ": " + juntos); tomados.push("atención (" + juntos + ")"); escritas.push(etiqueta + ": " + juntos); }
         return;
       }
       if (!alcVacio(enHoja)) return;                       // la hoja ya lo trae
@@ -9045,8 +9164,9 @@ Power done right the first time. ⚡`;
       if (m) txt = txt.replace(re, etiqueta + ": " + sabido);
       else txt = etiqueta + ": " + sabido + "\n" + txt;
       tomados.push(etiqueta.toLowerCase() + " (" + sabido + ")");
+      escritas.push(etiqueta + ": " + sabido);
     });
-    return { texto: txt, tomados };
+    return { texto: txt, tomados, escritas };
   }
   // Lo contrario: lo que la hoja dice y al proyecto le falta, se guarda en el proyecto
   async function alcDevolver() {
@@ -9097,9 +9217,61 @@ Power done right the first time. ⚡`;
     // Los avisos del asistente se recalculan contra la lectura de reglas de ahora
     // mismo: ninguno frena, ninguno se aplica solo.
     if (A.lectura) {
-      try { A.lectura.avisos = Alcance.avisosDeLectura(A.lectura.limpia, A.leido, A.lectura.avisos_app); }
-      catch { A.lectura.avisos = []; }
+      try {
+        A.lectura.avisos = alcAvisosSinLoNuestro(
+          Alcance.avisosDeLectura(A.lectura.limpia, A.leido, alcAvisosAppAlDia(A.lectura.avisos_app)));
+      } catch { A.lectura.avisos = []; }
     }
+  }
+
+  // alcCalcular con red. Con las pistas del asistente una hoja rara podría hacer
+  // reventar al motor; si pasa, se tira la lectura, se lee con las reglas de
+  // siempre y se dice en llano. Nunca sale jerga de JavaScript a la pantalla, y
+  // nunca queda una lectura que reviente en cada toque siguiente.
+  function alcCalcularSeguro() {
+    const A = alcActivo;
+    try { alcCalcular(); return true; }
+    catch {
+      if (A && A.lectura) {
+        A.lectura = null; A.lectura_pendiente = null;
+        alcAvisoLector("La lectura del asistente no casa con esta hoja; me quedo con las reglas");
+        try { alcCalcular(); return true; } catch { /* ni con las reglas: se queda lo de antes */ }
+      }
+      return false;
+    }
+  }
+
+  // Los avisos que el juez apuntó (`avisos_app`) llevan el número de línea de
+  // CUANDO se leyó la hoja. Si después se escribió una línea arriba, todos
+  // apuntan una línea más abajo de lo que deben y Edgar recibe avisos sobre
+  // líneas que no son. Aquí cada uno se vuelve a casar por su texto, igual que
+  // las pistas; el que ya no está en la hoja se cae.
+  function alcAvisosAppAlDia(lista) {
+    const A = alcActivo;
+    if (!Array.isArray(lista) || !lista.length) return lista || [];
+    let limpias;
+    try { limpias = String(A.texto || "").replace(/\r/g, "").split("\n").map(l => Alcance.limpiarLinea(l).limpia); }
+    catch { return lista; }
+    const usadas = new Set();
+    return lista.map(a => {
+      if (!a || typeof a !== "object") return null;
+      const t = String(a.texto || "").trim();
+      if (!t) return a;
+      let i = limpias.findIndex((x, k) => !usadas.has(k) && x === t);
+      if (i < 0) return null;                     // esa línea ya no está en la hoja
+      usadas.add(i);
+      return (i + 1 === a.l) ? a : Object.assign({}, a, { l: i + 1 });
+    }).filter(Boolean);
+  }
+
+  // Y lo que escribió la APP por un toque de Edgar no vuelve como aviso del
+  // lector: contestar una pregunta no puede generarle trabajo nuevo.
+  const ALC_AVISOS_DE_LINEA_NUEVA = ["linea_nueva", "lengua_mezclada", "sobrante_no_confirmada", "renglon_movido", "linea_dudosa", "dato_pendiente"];
+  function alcAvisosSinLoNuestro(avisos) {
+    const A = alcActivo;
+    if (!Array.isArray(avisos)) return [];
+    if (!A || !A.lectura || !(A.lectura.propias || []).length) return avisos;
+    return avisos.filter(a => !(a && ALC_AVISOS_DE_LINEA_NUEVA.includes(a.tipo) && alcEsPropia(a.linea)));
   }
 
   function alcLeer() {
@@ -9107,16 +9279,29 @@ Power done right the first time. ⚡`;
     A.texto = $("alc-texto").value;
     alcGuardarLocal(A.proyecto.id, A.texto);
     if (!A.texto.trim()) { avisar("Pega primero la hoja", true); return; }
+    // Si el gris decía «Sin señal: … cuando vuelva, toca Leer otra vez» y ya hay
+    // señal, la frase se va: Edgar hizo lo que le pedía
+    if (navigator.onLine !== false && /^Sin señal/.test(A.lectura_aviso || "")) alcAvisoLector("");
     A.respuestas = {}; A.arreglados = [];
     A.perdonadas = A.perdonadas || [];
-    // Lo que la app ya sabe (dirección, email, teléfono, cliente) entra solo en la hoja
-    const nut = alcNutrir(A.texto, alcDatosConocidos(A.proyecto.id));
+    // Lo que la app ya sabe (dirección, email, teléfono, cliente) entra solo en la hoja.
+    // OJO: antes se mira lo que el MOTOR ya lee de la hoja. Hay hojas que traen la
+    // dirección en una fila de tabla («| **ADDRESS** | 15308 …|»): el motor la lee y
+    // la regla de aquí no, así que la app la escribía otra vez arriba, la hoja cambiaba
+    // sola al segundo Leer y se pagaba una lectura nueva por nada.
+    const conocidos = alcDatosConocidos(A.proyecto.id);
+    try {
+      const L0 = Alcance.leerAlcance(A.texto, { perdonadas: A.perdonadas });
+      ALC_DATOS.forEach(([clave]) => { if (L0 && L0.datos && !alcVacio(L0.datos[clave])) delete conocidos[clave]; });
+    } catch { /* si el motor no puede leerla, se nutre como siempre */ }
+    const nut = alcNutrir(A.texto, conocidos);
     if (nut.tomados.length) {
       A.texto = nut.texto; $("alc-texto").value = A.texto;
+      (nut.escritas || []).forEach(alcApuntarPropia);   // las escribió la app: no son líneas nuevas de la hoja
       alcRealinear(); alcGuardarLocal(A.proyecto.id, A.texto);
       A.arreglados = ["Tomé del proyecto: " + nut.tomados.join(" · ")];
     }
-    alcCalcular();
+    if (!alcCalcularSeguro()) { avisar("No pude leer esta hoja; revísala y vuelve a tocar Leer", true); return; }
     // v3.7: lo que el motor decide solo y no toca dinero (el disparador del hito 2 cuando hay trabajo bajo tierra)
     // se escribe en la hoja a la vista de Edgar, para que la hoja y el contrato digan lo mismo
     for (let vuelta = 0; vuelta < 3; vuelta++) {
@@ -9129,7 +9314,7 @@ Power done right the first time. ⚡`;
       });
       if (!cambio) break;
       $("alc-texto").value = A.texto; alcRealinear(); alcGuardarLocal(A.proyecto.id, A.texto);
-      alcCalcular();
+      if (!alcCalcularSeguro()) break;
     }
     pintarAlcance();
     if (!A.validado.errores.length && !A.validado.preguntas.length) avisar("Leído ✓ — revisa el dinero y redacta");
@@ -9226,6 +9411,9 @@ Power done right the first time. ⚡`;
     if (!L) return null;
     return {
       huella: L.huella, limpia: L.limpia, pistas: L.pistas, guardadas: L.guardadas,
+      // las líneas que escribió la app por un toque de Edgar: así, al volver a
+      // abrir el alcance, tampoco se le devuelven como avisos del lector
+      propias: L.propias || [],
       avisos_app: L.avisos_app, tiradas: L.tiradas, sin_casa: L.sin_casa,
       uso: L.uso || null, costo_centavos: L.costo_centavos ?? null, costo_original: L.costo_original ?? null,
       de_cache: !!L.de_cache, ms: L.ms ?? null, cuando: L.cuando || null, resultado: L.resultado || null
@@ -9241,16 +9429,31 @@ Power done right the first time. ⚡`;
     const ajuste = alcAjusteLector();
     if (!forzar && ajuste === "nunca") return;
     if (A.lectura_en_marcha) { if (forzar) avisar("El asistente ya está mirando esta hoja"); return; }
+    // El candado se marca AQUÍ, antes del primer «await» (sacar la huella tarda
+    // unos milisegundos): dos toques seguidos en Leer ya no abrían dos recogidas
+    // sobre la misma hoja. Mientras no tenga huella, es solo el candado.
+    A.lectura_en_marcha = { huella: null, desde: Date.now() };
+    // El gris de «Sin señal» se va solo en cuanto hay señal otra vez: si no,
+    // Edgar hacía lo que le pedía la frase y la frase seguía ahí para siempre.
+    let limpiado = false;
+    if (navigator.onLine !== false && /^Sin señal/.test(A.lectura_aviso || "")) { alcAvisoLector(""); limpiado = true; }
+    const soltar = () => {
+      if (A.lectura_en_marcha && !A.lectura_en_marcha.huella) A.lectura_en_marcha = null;
+      if (limpiado) { limpiado = false; alcRepintarTrasLaNube(); }
+    };
     if (navigator.onLine === false) {
+      soltar();
       alcAvisoLector("Sin señal: leí con las reglas de siempre; cuando vuelva, toca Leer otra vez");
       pintarAlcance(); return;
     }
     let hoja, lineas, huella, L0;
     try { ({ hoja, lineas, huella, L0 } = await alcHojaParaElAsistente()); }
-    catch { return; }
-    if (!huella) return;                                  // sin huella no se puede pedir nada
+    catch { soltar(); return; }
+    if (alcActivo !== A) { soltar(); return; }
+    if (!huella) { soltar(); return; }                    // sin huella no se puede pedir nada
     // ¿Ya llegó la lectura de esta misma hoja y quedó esperando? Se aplica y no se gasta
     if (A.lectura_pendiente && A.lectura_pendiente.huella === huella) {
+      soltar();
       alcAplicarLectura(A.lectura_pendiente, hoja, L0, huella);
       return;
     }
@@ -9259,24 +9462,26 @@ Power done right the first time. ⚡`;
     // pide otra cuando la lectura se quedó coja (más de 5 líneas huérfanas o más
     // del 10 %) o cuando Edgar lo pide a mano.
     if (!forzar && A.lectura) {
-      if (A.lectura.huella === huella) return;                         // la misma hoja: ni se mira
+      if (A.lectura.huella === huella) { soltar(); return; }            // la misma hoja: ni se mira
       const conLetra = String(A.texto || "").replace(/\r/g, "").split("\n").filter(l => l.trim()).length || 1;
       const sueltas = (A.lectura.huerfanas || []).length;
-      if (!(sueltas > 5 || sueltas / conLetra > 0.1)) return;
+      if (!(sueltas > 5 || sueltas / conLetra > 0.1)) { soltar(); return; }
     }
     if (!forzar && ajuste === "raras") {
       let rara = false;
       try { rara = Alcance.rareza(A.leido, A.validado).rara; } catch { rara = false; }
-      if (!rara) return;
+      if (!rara) { soltar(); return; }
     }
     const conContenido = lineas.filter(l => String(l.t || "").trim()).length;
     if (conContenido > 350) {
+      soltar();
       alcAvisoLector(`La hoja es muy larga para el asistente (${conContenido} líneas): leí con las reglas de siempre`);
       pintarAlcance(); return;
     }
-    // Modo de prueba: la pantalla se comporta igual, pero no se llama a nadie
+    // Modo de prueba: la pantalla se comporta igual, pero no se llama a nadie.
+    // Y la línea gris lo DICE, en vez de dejar girando una espera que no existe.
     if (alcModoPrueba()) {
-      A.lectura_en_marcha = { huella, desde: Date.now(), hoja, L0 };
+      A.lectura_en_marcha = { huella, desde: Date.now(), hoja, L0, prueba: true };
       pintarAlcance(); return;
     }
     const cuerpo = {
@@ -9321,29 +9526,51 @@ Power done right the first time. ⚡`;
         const paquete = { huella, lectura: r.lectura, uso: r.uso || null, costo_centavos: r.costo_centavos ?? null,
                           costo_original: r.costo_original ?? null, de_cache: !!r.de_cache, ms: r.ms ?? null,
                           resultado: r.resultado || null };
-        // Lectura tardía (§3.6): si Edgar ya redactó, ya armó, o la hoja cambió
-        // mientras el asistente miraba, NO se aplica sola
-        if (A.salida || A.contrato || (ahora && ahora !== huella)) {
+        const textoLeido = hoja.lineas.map(l => l.original).join("\n");
+        if (A.salida || A.contrato) {
+          // Lectura tardía (§3.6): Edgar ya redactó o ya armó. No se aplica sola;
+          // espera a que él vuelva a la hoja y toque Leer.
           A.lectura_pendiente = paquete;
           alcAvisoLector("Llegó la lectura inteligente; para usarla vuelve a la hoja y toca Leer");
+          if (alcFicha !== 0) avisar("Llegó la lectura inteligente; para usarla vuelve a la hoja y toca Leer");
+        } else if (ahora && ahora !== huella) {
+          // La hoja cambió mientras el asistente miraba y no hay nada redactado:
+          // la lectura se casa con la hoja CON LA QUE SE PIDIÓ y se realinea con la
+          // de ahora. Antes se guardaba como pendiente y, al tocar Leer, la huella
+          // ya no cuadraba: se pedía (y se pagaba) otra lectura sin decirlo.
+          if (alcAplicarLectura(paquete, hoja, L0, huella, textoLeido)) avisar("El asistente terminó de leer tu hoja ✓");
         } else {
-          alcAplicarLectura(paquete, hoja, L0, huella);
+          alcAplicarLectura(paquete, hoja, L0, huella, textoLeido);
           avisar("El asistente terminó de leer tu hoja ✓");
         }
       } else if (r && (r.error || r.estado)) {
         alcAvisoLector(alcErrorEnLlano(Object.assign({}, r, { error: r.error || r.estado })));
       }
     } catch (e) {
-      alcAvisoLector(String((e && e.message) || "No pude hablar con el asistente"));
+      // Nunca el mensaje crudo de JavaScript: solo las frases que ya vienen en llano
+      const m = String((e && e.message) || "");
+      alcAvisoLector(/^(Sin señal|El asistente|Esta parte)/.test(m) ? m : "No pude hablar con el asistente");
     } finally {
-      if (alcActivo === A) { A.lectura_en_marcha = null; pintarAlcance(); }
+      if (alcActivo === A) { A.lectura_en_marcha = null; alcRepintarTrasLaNube(); }
     }
+  }
+
+  // Repintar por algo que llega de la nube (la lectura, el gasto del mes) borra
+  // lo que Edgar esté corrigiendo a mano en la revisión, y le devuelve un botón
+  // «Redactar» nuevo mientras el de verdad sigue trabajando. Así que solo se
+  // repinta la ficha de la hoja, y nunca con un botón esperando al asistente.
+  function alcRepintarTrasLaNube() {
+    if (!alcActivo || alcFicha !== 0) return false;
+    const bRed = $("alc-redactar"), bOrd = $("alc-ordenar");
+    if ((bRed && bRed.disabled) || (bOrd && bOrd.disabled)) return false;
+    pintarAlcance();
+    return true;
   }
 
   // La lectura llegó: el juez la comprueba pieza a pieza, se convierte en pistas
   // y la hoja se vuelve a leer con ellas. Si el juez la rechaza, nos quedamos
   // con las reglas y se dice por qué.
-  function alcAplicarLectura(paquete, hoja, L0, huella) {
+  function alcAplicarLectura(paquete, hoja, L0, huella, textoLeido) {
     const A = alcActivo;
     let V;
     try { V = Alcance.verificarLectura(hoja.lineas, paquete.lectura, L0); }
@@ -9356,17 +9583,45 @@ Power done right the first time. ⚡`;
       pintarAlcance();
       return false;
     }
+    // La hoja con la que se pidió la lectura (puede no ser la de ahora: Edgar
+    // sigue escribiendo mientras el asistente mira)
+    const hojaLeida = textoLeido !== undefined && textoLeido !== null ? String(textoLeido) : A.texto;
     const pistas = Alcance.pistasDe(V.lectura_limpia);
+    // Guarda de pantalla: una línea que lleva dinero, o que es una fila de tabla,
+    // NO puede entrar al contrato como texto corrido. Si el asistente la marcó
+    // como párrafo, esa pista se cae y la línea la leen las reglas. (Con Wimauma
+    // era la fila del precio: el contrato salía con «lump sum: $ _[TBD]_» y
+    // «Usarlo tal cual» dejaba de funcionar en cuanto llegaba la lectura.)
+    const lineasLeidas = hojaLeida.replace(/\r/g, "").split("\n");
+    const tiradas = Array.isArray(V.tiradas) ? V.tiradas.slice() : [];
+    let quitadasPorDinero = 0;
+    Object.keys(pistas).forEach(n => {
+      const p = pistas[n], t = lineasLeidas[Number(n) - 1] || "";
+      if (p && p.rol === "parrafo" && (/\$/.test(t) || /^\s*\|.*\|\s*$/.test(t))) { delete pistas[n]; quitadasPorDinero++; }
+    });
+    if (quitadasPorDinero) tiradas.push({ que: "parrafo", porque: "la línea lleva dinero o es una fila de tabla: no va como texto del contrato" });
+    const salidaVieja = !!(A.salida || A.contrato);
     A.lectura = {
-      huella, limpia: V.lectura_limpia, pistas, guardadas: Alcance.guardarPistas(A.texto, pistas),
-      avisos_app: V.avisos_app, tiradas: V.tiradas, sin_casa: V.sin_casa, huerfanas: [], avisos: [],
+      huella, limpia: V.lectura_limpia, pistas, guardadas: Alcance.guardarPistas(hojaLeida, pistas),
+      avisos_app: V.avisos_app, tiradas, sin_casa: V.sin_casa, huerfanas: [], avisos: [], propias: [],
       uso: paquete.uso || null, costo_centavos: paquete.costo_centavos ?? null,
       costo_original: paquete.costo_original ?? null, de_cache: !!paquete.de_cache,
       ms: paquete.ms ?? null, cuando: new Date().toISOString(), resultado: paquete.resultado || null
     };
     A.lectura_pendiente = null;
     alcAvisoLector("");
-    alcCalcular();
+    // Si la hoja de ahora no es la que leyó el asistente, las pistas se vuelven a
+    // casar por texto (si se pierde más de la quinta parte, alcRealinear tira la
+    // lectura y lo dice)
+    if (hojaLeida !== A.texto) alcRealinear();
+    if (!alcCalcularSeguro() || !A.lectura) { alcGuardarLocal(A.proyecto.id, A.texto); pintarAlcance(); return false; }
+    // La revisión que hubiera está hecha con la lectura de ANTES: con la del
+    // asistente la hoja se lee distinto (otros renglones, otros grupos), así que
+    // no puede armarse el contrato con el inglés viejo (pliego §3.6).
+    if (salidaVieja) {
+      A.salida = null; A.contrato = null; A.huella = null; alcFicha = 0;
+      avisar("Con la lectura del asistente la hoja se lee distinto: vuelve a tocar «Usarlo tal cual» (o «Pasarlo a inglés») antes de armar", true);
+    }
     alcGuardarLocal(A.proyecto.id, A.texto);
     pintarAlcance();
     return true;
@@ -9386,7 +9641,13 @@ Power done right the first time. ⚡`;
       return;
     }
     A.lectura.pistas = r.pistas;
-    A.lectura.huerfanas = r.huerfanas || [];
+    // Una línea que Edgar ya explicó («déjala así») o que escribió la app por un
+    // toque suyo no vuelve a salir como huérfana: contestar no crea trabajo nuevo.
+    const yaDichas = new Set([
+      ...(A.perdonadas || []).map(x => alcLimpia(String((x && x.texto) || x || ""))),
+      ...((A.lectura.propias) || [])
+    ].filter(Boolean));
+    A.lectura.huerfanas = (r.huerfanas || []).filter(n => !yaDichas.has(alcLimpia(alcLineaCruda(n))));
     const conContenido = String(A.texto || "").replace(/\r/g, "").split("\n").filter(l => l.trim()).length || 1;
     if (A.lectura.huerfanas.length > 5 || A.lectura.huerfanas.length / conContenido > 0.1)
       alcAvisoLector(`Hay ${A.lectura.huerfanas.length} líneas nuevas que el asistente no vio: toca Leer`);
@@ -9404,38 +9665,78 @@ Power done right the first time. ⚡`;
       if (enMarcha && enMarcha.hoja) { hoja = enMarcha.hoja; L0 = enMarcha.L0; huella = enMarcha.huella; }
       else ({ hoja, L0, huella } = await alcHojaParaElAsistente());
       A.lectura_en_marcha = null;
+      const textoLeido = hoja && Array.isArray(hoja.lineas) ? hoja.lineas.map(l => l.original).join("\n") : A.texto;
       return alcAplicarLectura({ huella, lectura, uso: null, costo_centavos: 0, costo_original: null,
-                                 de_cache: false, ms: null, resultado: "prueba" }, hoja, L0, huella);
+                                 de_cache: false, ms: null, resultado: "prueba" }, hoja, L0, huella, textoLeido);
     }
   };
+
+  // ── Reacomodar el texto: el dinero NO viaja ──
+  // Esto manda la hoja entera al asistente. Antes iba con el precio, los hitos y
+  // los $350.00 dentro. Ahora cada monto se cambia por una marca ([MONTO 1],
+  // [MONTO 2]…) antes de salir del teléfono y se vuelve a poner al llegar la hoja
+  // ordenada. Si el asistente perdió o repitió una marca, la hoja NO se cambia.
+  // Aquí se tapan los MONTOS, no todo número con dos decimales: reacomodar
+  // necesita que la numeración de los renglones (2.10, 2.11) y los artículos del
+  // NEC (250.30, 430.52) lleguen enteros, o el asistente no sabe ordenar nada.
+  // El candado de verdad viene después: la regla estricta de la casa
+  // (Alcance.traeDineroEstricto) sobre la hoja ya tapada; si queda un solo monto,
+  // la hoja no sale del teléfono.
+  const ALC_MONTO_RX = "\\$\\s?\\d[\\d,]*(?:\\.\\d{1,2})?|\\b\\d{1,3}(?:,\\d{3})+(?:\\.\\d{2})?\\b|\\b(?:dollars|usd|d[oó]lares)\\s*\\d[\\d,]*(?:\\.\\d+)?|\\b\\d[\\d,]*(?:\\.\\d+)?\\s*(?:dollars|usd|d[oó]lares)\\b";
+  function alcTaparMontos(texto) {
+    const originales = [];
+    const tapado = String(texto || "").replace(new RegExp(ALC_MONTO_RX, "gi"), m => {
+      originales.push(m);
+      return "[MONTO " + originales.length + "]";
+    });
+    const quedan = tapado.replace(/\r/g, "").split("\n").filter(l => Alcance.traeDineroEstricto(l)).length;
+    return { texto: tapado, originales, quedan };
+  }
+  function alcDestaparMontos(hoja, originales) {
+    const vistas = new Set();
+    let mal = false;
+    const texto = String(hoja || "").replace(/\[MONTO (\d+)\]/g, (m, n) => {
+      const k = Number(n) - 1;
+      if (!(k >= 0 && k < originales.length) || vistas.has(k)) { mal = true; return m; }
+      vistas.add(k);
+      return originales[k];
+    });
+    if (vistas.size !== originales.length || /\[MONTO/.test(texto)) mal = true;
+    return { texto, mal };
+  }
 
   async function alcOrdenar() {
     const A = alcActivo;
     A.texto = $("alc-texto").value;
     if (!A.texto.trim()) { avisar("Pega primero el texto", true); return; }
     const btn = $("alc-ordenar");
+    const etiqueta = btn.textContent;
     btn.disabled = true; btn.textContent = "Ordenando…";
     try {
-      const r = await DB.pedirAlCerebro("ordenar", { texto: A.texto });
+      const tapado = alcTaparMontos(A.texto);
+      if (tapado.quedan) throw new Error("Hay dinero en la hoja que no supe tapar; no la mando al asistente. Quítalo y vuelve a intentarlo");
+      const r = await DB.pedirAlCerebro("ordenar", { texto: tapado.texto });
       if (r && r.error) throw new Error(alcErrorEnLlano(r));
       if (!r || !r.hoja) throw new Error("El asistente no devolvió la hoja");
-      A.texto = r.hoja;
+      const vuelta = alcDestaparMontos(r.hoja, tapado.originales);
+      if (vuelta.mal) throw new Error("El asistente me devolvió la hoja con los montos cambiados de sitio; no la toco. Ordénala a mano o quítale el precio y vuelve a intentarlo");
+      A.texto = vuelta.texto;
       // reacomodar reescribe la hoja entera: la lectura vieja casi nunca sobrevive
       alcRealinear();
       alcGuardarLocal(A.proyecto.id, A.texto);
-      alcCalcular();
+      alcCalcularSeguro();
       pintarAlcance();
       avisar("Ordenado ✓ — míralo antes de seguir" + ((r.perdidas || []).length ? `; ${r.perdidas.length} cosas no supo colocarlas` : ""));
     } catch (e) {
       avisar(e.message, true);
-      btn.disabled = false; btn.textContent = "Ordenar";
+      btn.disabled = false; btn.textContent = etiqueta;
     }
   }
 
   async function alcRedactar() {
     const A = alcActivo;
     if (alcEsperarAlAsistente()) return;
-    alcCalcular();
+    alcCalcularSeguro();
     if (A.validado.errores.length) { avisar("Arregla primero lo que está en rojo", true); return; }
     const enc = Alcance.prepararEncargo(A.leido, A.decision);
     if (!enc.limpio) { avisar("Hay dinero en el texto que va al asistente. No lo mando.", true); return; }
@@ -9448,8 +9749,14 @@ Power done right the first time. ⚡`;
       if (!S) throw new Error("El asistente no devolvió la redacción");
       if ((r.rechazados || []).length)
         avisar(`El asistente escribió algo prohibido en ${r.rechazados.length} ${r.rechazados.length === 1 ? "trozo" : "trozos"}; míralos en rojo`, true);
-      const rev = Alcance.validarSalida(A.leido, S);
-      if (!rev.sirve) { avisar("El asistente devolvió algo que no puedo usar: " + rev.rojos[0].texto, true);
+      let rev = Alcance.validarSalida(A.leido, S);
+      if (!rev.sirve) {
+        // Red de seguridad: se repite la comprobación leyendo la hoja solo con las
+        // reglas, por si lo que no cuadra lo arrastraba una pista del asistente
+        const otra = alcReintentarSinPistas(S);
+        if (otra.sirve) rev = otra;
+      }
+      if (!rev.sirve) { avisar("El asistente devolvió algo que no puedo usar: " + ((rev.rojos[0] || {}).texto || "no cuadra con tu hoja"), true);
                         if (btn) { btn.disabled = false; btn.textContent = "Redactar en inglés"; } return; }
       A.salida = S; A.uso = r.uso || null;
       A.huella = await alcHuella(A.texto);
@@ -9479,16 +9786,56 @@ Power done right the first time. ⚡`;
     const A = alcActivo;
     if (alcEsperarAlAsistente()) return;
     A.texto = $("alc-texto") ? $("alc-texto").value : A.texto;
-    alcCalcular();
+    alcCalcularSeguro();
     if (A.validado.errores.length) { avisar("Arregla primero lo que está en rojo", true); return; }
-    const S = Alcance.redactarDirecto(A.leido);
-    const rev = Alcance.validarSalida(A.leido, S);
-    if (!rev.sirve) { avisar(rev.rojos[0].texto, true); return; }
+    let S = Alcance.redactarDirecto(A.leido);
+    let rev = Alcance.validarSalida(A.leido, S);
+    if (!rev.sirve) {
+      // Red de seguridad: si con las pistas del asistente esto no pasa, se repite
+      // leyendo SOLO con las reglas. Edgar no puede quedarse sin el camino corto
+      // (el gratis) por una línea que el lector leyó de otra manera.
+      const otra = alcReintentarSinPistas(null);
+      if (otra.sirve && otra.salida) { S = otra.salida; rev = otra; }
+      else { avisar(rev.rojos[0].texto, true); return; }
+    }
     A.salida = S; A.uso = null;
     A.huella = await alcHuella(A.texto);
     alcFicha = 1;
     pintarAlcance();
     avisar("Listo ✓ — revísalo y arma el contrato");
+  }
+
+  // Red de seguridad de los dos caminos a la revisión (Directo y Redactar): si la
+  // revisión no pasa y hay lectura del asistente, se vuelve a leer la hoja SOLO con
+  // las reglas y se repite el paso. Si así pasa, se sigue con eso y se dice en gris.
+  // Devuelve { sirve, rojos, salida }.
+  function alcReintentarSinPistas(salidaDelAsistente) {
+    const A = alcActivo;
+    const no = { sirve: false, rojos: [{ texto: "" }], salida: null };
+    if (!A || !A.lectura) return no;
+    let L;
+    try { L = Alcance.leerAlcance(A.texto, { perdonadas: A.perdonadas || [] }); } catch { return no; }
+    // los mismos pisados de ficha que hace alcCalcular (contratista y comercial)
+    const pAct = proyectos().find(x => x.id === A.proyecto.id);
+    if (pAct && pAct.contratistaModo === "contrato" && L && L.datos) {
+      L.datos.contrato_con = "GC";
+      const gcAct = gcDeProyecto(pAct);
+      if (gcAct) { L.datos.gc_nombre = gcAct.nombre; L.datos.gc_contacto = gcAct.contacto || ""; }
+    }
+    if (pAct && pAct.tipo === "comercial" && L && L.datos && !L.datos.propiedad) L.datos.propiedad = "commercial";
+    let S, rev;
+    try {
+      S = salidaDelAsistente || Alcance.redactarDirecto(L);
+      rev = Alcance.validarSalida(L, S);
+    } catch { return no; }
+    if (!rev || !rev.sirve) return no;
+    // la hoja pasa a leerse con las reglas, para que el contrato se arme con lo mismo
+    A.leido = L;
+    A.validado = Alcance.validarAlcance(L);
+    A.cuenta = Alcance.cuentas(L);
+    A.decision = Alcance.decidirInterruptores(L, A.cuenta);
+    alcAvisoLector("La lectura del asistente arrastraba una línea que no va en el contrato; para este paso usé las reglas");
+    return { sirve: true, rojos: [], salida: S };
   }
 
   // Lo que devuelve el cerebro cuando algo no va, dicho en llano
@@ -9519,7 +9866,10 @@ Power done right the first time. ⚡`;
     if (e === "no_quiso") return "El asistente no quiso leer esta hoja; sigo con las reglas";
     if (e === "salida_cortada") return "La hoja es muy larga para leerla de una vez; leí con las reglas de siempre";
     if (e === "no_existe") return "No encuentro esa lectura; toca Leer otra vez";
-    return "El asistente falló: " + (r.detalle || e);
+    // Cualquier otro código (o un fallo de la nube) NUNCA sale tal cual: el código
+    // y el detalle quedan en la consola, y a la pantalla va una frase de persona.
+    try { console.warn("cerebro:", e || "(sin código)", r && r.detalle ? String(r.detalle).slice(0, 200) : ""); } catch { /* nada */ }
+    return "El asistente falló; vuelve a intentarlo en un minuto";
   }
 
   async function alcHuella(txt) {
@@ -9582,12 +9932,23 @@ Power done right the first time. ⚡`;
   async function alcArmar() {
     const A = alcActivo;
     alcRecoger();
-    alcCalcular();
+    alcCalcularSeguro();
     // Si la hoja cambió después de redactar (o de ir por Directo), el inglés que hay es de otra hoja:
     // se compara la huella y no se arma con texto viejo (pliego tanda 1).
     if (A.salida && A.huella) {
       const h = await alcHuella(A.texto);
       if (h && h !== A.huella) { avisar("La hoja cambió después de redactar. Toca Leer y después Directo (o Redactar) antes de armar.", true); return; }
+    }
+    // La huella dice que el TEXTO no cambió, pero la hoja se puede leer distinto
+    // (por ejemplo si entre medias llegó la lectura del asistente): último cotejo
+    // del inglés contra lo que hoy dice la hoja, para no armar un contrato mezclado.
+    if (A.salida) {
+      let rev = null;
+      try { rev = Alcance.validarSalida(A.leido, A.salida); } catch { rev = null; }
+      if (rev && !rev.sirve) {
+        avisar("El inglés que hay no cuadra con lo que ahora dice la hoja: " + ((rev.rojos[0] || {}).texto || "vuelve a tocar Directo o Redactar antes de armar"), true);
+        return;
+      }
     }
     try {
       if (!alcPlantilla) { avisar("Bajando la plantilla…"); alcPlantilla = await DB.plantillaSOW(); }
@@ -9703,7 +10064,7 @@ Power done right the first time. ⚡`;
     btn.disabled = true; btn.textContent = "Guardando…";
     try {
       alcRecoger();
-      alcCalcular();
+      alcCalcularSeguro();
       const cta = A.cuenta, dec = A.decision, L = A.leido, d = L.datos;
       const campos = {
         alcance_md: A.texto,

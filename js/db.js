@@ -520,17 +520,19 @@
   // (accion=lectura). Va con el token del usuario, como el asistente.
   //
   // Tres cosas que aquí se cuidan, porque la pantalla no puede enseñar jerga:
-  //   · el reloj: si la nube no contesta en `ms` (30 segundos por defecto), se
-  //     corta sola. La llamada del lector solo PIDE y recoge, no espera al modelo.
+  //   · el reloj: SOLO si quien llama lo pide (`opciones.ms`). El lector pide y
+  //     recoge, así que ahí sí hay reloj; Ordenar y Redactar esperan al modelo
+  //     (medidos en 37 s y 34 s con una hoja de 65 líneas) y van SIN reloj, como
+  //     iban antes: cortarlos a los 30 s deja a Edgar sin la hoja y cobrando.
   //   · sin señal: «Failed to fetch» y compañía salen como «Sin señal: …».
   //   · el 400 no es un fallo de red: el cuerpo trae el código del motivo
   //     (dinero_en_la_hoja, hoja_larga, huella_no_cuadra…) y se devuelve para
   //     que la pantalla lo diga en llano.
   async function pedirAlCerebro(accion, cuerpo, opciones) {
     if (!sesion) throw new Error("Sin sesión");
-    const ms = Number((opciones || {}).ms) > 0 ? Number(opciones.ms) : 30000;
+    const ms = Number((opciones || {}).ms) > 0 ? Number(opciones.ms) : 0;
     const tirar = async () => {
-      const control = typeof AbortController !== "undefined" ? new AbortController() : null;
+      const control = (ms > 0 && typeof AbortController !== "undefined") ? new AbortController() : null;
       const reloj = control ? setTimeout(() => { try { control.abort(); } catch { /* nada */ } }, ms) : null;
       try {
         return await fetch(`${SB.url}/functions/v1/cerebro?accion=${accion}`, {
@@ -557,9 +559,12 @@
     let j = null;
     try { j = await r.json(); } catch { j = null; }
     if (r.ok) return j || {};
-    // 400/403: el cuerpo dice el motivo con su código; lo traduce la pantalla
-    if (j && j.error) return j;
-    if (r.status >= 500 || r.status === 546) throw new Error("El asistente tardó demasiado");
+    // 400/403: el cuerpo dice el motivo con su código; lo traduce la pantalla.
+    // Un 5xx NO es eso: ahí el cuerpo trae jerga del servidor (un TypeError) y
+    // nunca debe llegar a la pantalla, así que se corta aquí en llano.
+    if (j && j.error && r.status < 500) return j;
+    if (r.status === 408 || r.status === 504 || r.status === 546) throw new Error("El asistente tardó demasiado");
+    if (r.status >= 500) throw new Error("El asistente falló en la nube; vuelve a intentarlo en un minuto");
     throw new Error("El asistente no respondió (" + r.status + ")");
   }
 

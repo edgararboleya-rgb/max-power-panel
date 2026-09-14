@@ -2731,6 +2731,11 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .alc-mas{margin:.5rem 0 0;font-size:.88rem;color:var(--mp-ink-2)}
 .alc-mas>summary{cursor:pointer;padding:.35rem 0;font-weight:600;color:var(--mp-ink-2)}
 .alc-mas .alc-libre{margin-left:.35rem}
+/* Los avisos ámbar que no caben a la vista: se pliegan y Edgar los abre si quiere */
+.alc-mas-avisos{margin:.4rem 0 0}
+.alc-mas-avisos>summary{cursor:pointer;font-weight:600;padding:.35rem 0}
+.alc-mas-avisos>ul{margin:.35rem 0 0;padding-left:1.1rem}
+.alc-mas-avisos>ul>li{margin:.2rem 0}
 
 /* ===========================================================================
    ESCRITORIO (pantallas anchas): marco de borde a borde, menú fijo a la
@@ -2977,6 +2982,10 @@ button > .ico:only-child, .lev-btn-ico > .ico { margin-right: 0; width: 1.15em; 
   .chip-cobrar, .doc-cliente { padding-top: 0.3rem; padding-bottom: 0.3rem; }
   .accion.secundaria, .accion.chica, button.accion { min-height: 38px; }
   a#agenda-ver-cal { display: inline-block; padding: 0.4rem 0; }
+  /* El chip «línea N» es el camino al renglón desde todos los avisos: al dedo
+     medía 22 px. Y los desplegables «Más…» / «…ver los N restantes», 27 px. */
+  button.alc-linea { min-height: 36px; padding: 0.4rem 0.55rem; margin: 0.1rem 0.3rem 0.1rem 0; }
+  .alc-mas > summary, .alc-mas-avisos > summary { min-height: 36px; display: flex; align-items: center; }
 }
 @media (max-width: 379px) { .wordmark-sub { display: none; } }
 
