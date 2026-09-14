@@ -7796,10 +7796,25 @@ Power done right the first time. ⚡`;
 
   // Deja lista una variante en memoria (sin repintar)
   function alcAbrir(proy, prop, variantes) {
+    const local = alcGuardadaLocal(proy.id, prop ? prop.id : null);
+    const texto = (prop && prop.alcance_md) || local.texto || "";
+    // La lectura del asistente vuelve del teléfono o de la propuesta guardada,
+    // y se vuelve a casar con el texto que hay ahora (las pistas van pegadas al
+    // texto de cada línea, no a su número).
+    let lectura = (local.lectura && local.lectura.huella) ? local.lectura : null;
+    if (!lectura && prop && prop.alcance_lectura && prop.alcance_lectura.huella) lectura = prop.alcance_lectura;
+    if (lectura) {
+      try {
+        const r = Alcance.alinearLectura(texto, lectura.guardadas || []);
+        if (r.proporcionPerdida > 0.2) lectura = null;
+        else { lectura.pistas = r.pistas; lectura.huerfanas = r.huerfanas; }
+      } catch { lectura = null; }
+    }
     alcActivo = {
       proyecto: proy, propuesta: prop || null,
       variantes: variantes || alcVariantesDe(proy.id),
-      texto: (prop && prop.alcance_md) || (prop ? "" : alcGuardadaLocal(proy.id)) || "",
+      texto,
+      lectura, lectura_en_marcha: null, lectura_pendiente: null, lectura_aviso: "",
       leido: null, validado: null, cuenta: null, decision: null,
       salida: (prop && prop.alcance_en) || null,
       huella: (prop && prop.alcance_huella) || null,
@@ -7838,14 +7853,48 @@ Power done right the first time. ⚡`;
     alcRecoger();
     alcAbrir(alcActivo.proyecto, null, alcActivo.variantes);
     alcActivo.texto = "";
+    alcActivo.lectura = null; alcActivo.lectura_pendiente = null;   // hoja nueva, lectura nueva
     pintarAlcance();
     avisar("Alcance nuevo. Pega la hoja y guárdalo: quedará como otra variante de este proyecto.");
   }
 
-  // Lo escrito se guarda solo en el teléfono, para no perderlo sin señal
-  const alcLlaveLocal = id => "mxp_alcance_" + id;
-  function alcGuardarLocal(id, txt) { try { localStorage.setItem(alcLlaveLocal(id), txt); } catch { /* nada */ } }
-  function alcGuardadaLocal(id) { try { return localStorage.getItem(alcLlaveLocal(id)); } catch { return null; } }
+  // Lo escrito se guarda solo en el teléfono, para no perderlo sin señal.
+  // Una llave por HOJA (proyecto + variante), no por proyecto: dos alcances del
+  // mismo proyecto ya no se pisan. Dentro va el texto y la lectura del asistente.
+  const alcLlaveLocal = id => "mxp_alcance_" + id;                       // la vieja (solo el texto); se migra al abrir
+  const alcLlaveHoja = (proyId, propId) => "mxp_alcance_" + proyId + "_" + (propId || "nueva");
+  function alcGuardarLocal(id, txt) {
+    const A = alcActivo;
+    const propId = A && A.propuesta ? A.propuesta.id : null;
+    const guardar = A && A.lectura ? alcLecturaParaGuardar(A.lectura) : null;
+    try { localStorage.setItem(alcLlaveHoja(id, propId), JSON.stringify({ texto: String(txt || ""), lectura: guardar })); }
+    catch { /* el teléfono sin sitio no frena nada */ }
+  }
+  // Devuelve { texto, lectura } de esta hoja. La primera vez migra lo viejo
+  // (una sola cadena guardada por proyecto) a la llave nueva.
+  function alcGuardadaLocal(proyId, propId) {
+    try {
+      const crudo = localStorage.getItem(alcLlaveHoja(proyId, propId));
+      if (crudo) {
+        const j = JSON.parse(crudo);
+        if (j && typeof j === "object") return { texto: String(j.texto || ""), lectura: j.lectura || null };
+        return { texto: String(crudo), lectura: null };
+      }
+      const viejo = localStorage.getItem(alcLlaveLocal(proyId));
+      if (viejo) return { texto: String(viejo), lectura: null };
+      return { texto: "", lectura: null };
+    } catch { return { texto: "", lectura: null }; }
+  }
+  // Cuando nace el id de la propuesta, lo guardado como «nueva» pasa a su id
+  function alcMudarLlaveLocal(proyId, propId) {
+    if (!propId) return;
+    try {
+      const crudo = localStorage.getItem(alcLlaveHoja(proyId, null));
+      if (crudo === null) return;
+      localStorage.setItem(alcLlaveHoja(proyId, propId), crudo);
+      localStorage.removeItem(alcLlaveHoja(proyId, null));
+    } catch { /* nada */ }
+  }
   function alcPerdonLocal(id, lista) {
     try {
       if (lista) { localStorage.setItem(alcLlaveLocal(id) + "_perdon", JSON.stringify(lista)); return lista; }
@@ -7865,9 +7914,23 @@ Power done right the first time. ⚡`;
     if (alcFicha === 0) cuerpo = alcFichaHoja();
     else if (alcFicha === 1) cuerpo = alcFichaRevision();
     else cuerpo = alcFichaContrato();
+    // Si Edgar está escribiendo en el cuadro cuando algo repinta (por ejemplo,
+    // la lectura del asistente que llega a los dos minutos), el cursor y el
+    // desplazamiento vuelven a donde estaban: no se le mueve el sitio.
+    const antes = $("alc-texto");
+    const escribiendo = antes && document.activeElement === antes
+      ? { ini: antes.selectionStart, fin: antes.selectionEnd, scroll: antes.scrollTop } : null;
     $("alcance-panel").innerHTML = alcBarraVariantes() +
       `<div class="pasos lev-pasos">${fichas}</div><div class="lev-cuerpo">${cuerpo}</div>`;
     alcEnganchar();
+    if (escribiendo) {
+      const caja = $("alc-texto");
+      if (caja) {
+        caja.focus({ preventScroll: true });
+        try { caja.setSelectionRange(escribiendo.ini, escribiendo.fin); } catch { /* nada */ }
+        caja.scrollTop = escribiendo.scroll;
+      }
+    }
   }
 
   // Las variantes del proyecto: SOW A, SOW B… Cada una con su hoja y su estado.
@@ -7906,23 +7969,279 @@ Power done right the first time. ⚡`;
       (V.length > 1 ? `<p class="lev-nota" style="margin:.1rem 0 .6rem">Este proyecto tiene ${V.length} alcances. Estás en el que está marcado; toca otro para verlo entero.</p>` : "");
   }
 
+  // ---------- Lo que el asistente entendió, contado en llano ----------
+  // Todo lo que escribe el asistente con sus palabras pasa por esc(): una hoja
+  // envenenada podría traer etiquetas dentro del texto y el modelo las copia
+  // como cita fiel.
+  const ALC_FORMATO_EN_LLANO = {
+    hoja_casa: "hoja de la casa", sow_max_power: "SOW de los nuestros",
+    sow_de_otro: "SOW hecho para un contratista", texto_suelto: "texto suelto", mezcla: "hoja mezclada"
+  };
+  const ALC_IDIOMA_EN_LLANO = { en: "en inglés", es: "en español", mezcla: "con partes en inglés y en español" };
+
+  // La línea gris de arriba: si el asistente está mirando, lo que pasó la última
+  // vez, y el botón de pedir otra lectura. Nada de esto frena nada.
+  function alcLineaDelAsistente() {
+    const A = alcActivo;
+    let s = "";
+    if (A.lectura_en_marcha)
+      s += `<div class="alc-gris alc-espera">El asistente está mirando tu hoja… (suele tardar de 30 s a 2 min; puedes seguir)</div>`;
+    if (A.lectura_aviso) s += `<div class="alc-gris">${esc(A.lectura_aviso)}</div>`;
+    if (A.leido && !A.lectura_en_marcha && alcAjusteLector() !== "nunca") {
+      const c = A.lectura ? (A.lectura.costo_original || A.lectura.costo_centavos) : null;
+      // lo que costó la última, y si no ha habido ninguna, lo que suele costar una hoja así
+      const largo = String(A.texto || "").replace(/\r/g, "").split("\n").filter(l => l.trim()).length;
+      const cuanto = Number.isFinite(c) && c > 0 ? `≈ ${c} ¢` : alcCostoEstimado(largo);
+      s += `<p class="lev-nota"><button class="alc-op" id="alc-releer-ia">Volver a leer con inteligencia (${esc(cuanto)})</button></p>`;
+    }
+    return s;
+  }
+
+  function alcCajaComoLei() {
+    const A = alcActivo, R = A.lectura, LC = R && R.limpia;
+    if (!LC) return "";
+    const L = A.leido;
+    const chip = n => Number.isInteger(n) && n >= 1
+      ? `<button class="alc-linea" data-ira="${n}" title="Llévame a ese renglón">línea ${n}</button>` : "";
+    const chips = ns => (ns || []).filter(n => Number.isInteger(n)).slice(0, 6).map(chip).join(" ");
+    const filas = [];
+    filas.push(`<li>${esc(ALC_FORMATO_EN_LLANO[LC.formato] || "hoja")} ${esc(ALC_IDIOMA_EN_LLANO[LC.idioma] || "")}.</li>`);
+    const nDatos = Object.keys((L && L.datos) || {}).length;
+    if (nDatos) filas.push(`<li>Cabecera: ${nDatos} ${nDatos === 1 ? "dato" : "datos"}.</li>`);
+    // Los renglones, y los grupos si la hoja los trae
+    const grupos = (Array.isArray(LC.grupos) ? LC.grupos : []).map(g => {
+      const dentro = (Array.isArray(LC.renglones) ? LC.renglones : []).filter(r => r.grupo_l === g.l).length;
+      return { cita: String(g.cita || "").slice(0, 40), n: dentro, l: g.l };
+    }).filter(g => g.cita);
+    const nItems = (L && L.items ? L.items.length : 0);
+    filas.push(`<li>Alcance: ${nItems} ${nItems === 1 ? "renglón" : "renglones"}` +
+      (grupos.length ? ` en ${grupos.length} ${grupos.length === 1 ? "grupo" : "grupos"} — ` +
+        grupos.map(g => `${esc(g.cita)} (${g.n}) ${chip(g.l)}`).join(" · ") : "") + ".</li>");
+    const nExcl = (L && L.no_incluye ? L.no_incluye.length : 0), nFijas = (L && L.fijasQuitadas) || 0;
+    if (nExcl || nFijas)
+      filas.push(`<li>No incluye: ${nExcl} ${nExcl === 1 ? "propia" : "propias"}` +
+        (nFijas ? ` · ${nFijas} que la plantilla ya trae` : "") + ".</li>");
+    const lPrecio = LC.precio && Number.isInteger(LC.precio.l) ? LC.precio.l : null;
+    const lPagos = (LC.pagos && Array.isArray(LC.pagos.filas) ? LC.pagos.filas : []).map(f => f.l).filter(Number.isInteger);
+    if (lPrecio || lPagos.length)
+      filas.push(`<li>Precio y pagos: leídos de ${lPrecio ? "la " + chip(lPrecio) : "ninguna línea"}` +
+        (lPagos.length ? ` y ${lPagos.length === 1 ? "la" : "las"} ${chips(lPagos)}` : "") + ".</li>");
+    const pr = (LC.propias && typeof LC.propias === "object") ? LC.propias : {};
+    const nPropias = ["programa", "pre", "terminos"].reduce((s, k) => s + ((pr[k] || []).length), 0);
+    if (nPropias) filas.push(`<li>Cronograma, antes de empezar y condiciones propias de tu hoja: ${nPropias}.</li>`);
+    const nFuera = (Array.isArray(LC.sobrantes) ? LC.sobrantes : []).reduce((s, x) => {
+      const hasta = Number.isInteger(x.l_hasta) && x.l_hasta >= x.l ? x.l_hasta : x.l;
+      return s + (Number.isInteger(x.l) ? (hasta - x.l + 1) : 0);
+    }, 0);
+    if (nFuera) filas.push(`<li>Lo que dejé fuera: ${nFuera} ${nFuera === 1 ? "línea" : "líneas"} (membrete, rayas, firmas).</li>`);
+    // Con qué se leyó, y qué costó
+    const cuando = R.cuando ? new Date(R.cuando) : null;
+    const cuandoTxt = cuando && !isNaN(cuando.getTime())
+      ? cuando.toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+    const centavos = R.costo_centavos;
+    const coste = R.de_cache ? "de la caché (0 ¢)"
+      : (Number.isFinite(centavos) ? `${centavos} ¢` : "sin apuntar el costo");
+    filas.push(`<li>Leído con: reglas · asistente (${esc(coste)}${cuandoTxt ? " · " + esc(cuandoTxt) : ""}).</li>`);
+    if ((R.tiradas || []).length)
+      filas.push(`<li>Tiré ${R.tiradas.length} ${R.tiradas.length === 1 ? "pieza que no cuadraba" : "piezas que no cuadraban"} con tu hoja; esas líneas las leí con las reglas.</li>`);
+    return `<div class="alc-verde"><b>Cómo leí tu hoja:</b><ul>${filas.join("")}</ul></div>`;
+  }
+
+  // ---------- Las preguntas de hechos (§1.4: las tres reglas de oro) ----------
+  // Se pregunta solo si el hecho cambia el dinero o una cláusula, ni la ficha ni
+  // la hoja lo dicen ya, y se contesta con un botón que dice qué cambia en el
+  // contrato. Sin respuesta manda lo más protector (consumidor, con firma).
+  let alcHechos = {};                     // id del botón → lo que hace
+  function alcPreguntasDeHechos() {
+    const A = alcActivo, LC = A.lectura && A.lectura.limpia;
+    const out = [];
+    if (!LC || !LC.hechos || !A.leido) return out;
+    const H = LC.hechos, L = A.leido, dl = L.datos_linea || {};
+    const pAct = proyectos().find(x => x.id === A.proyecto.id) || {};
+    const lineas = String(A.texto || "").replace(/\r/g, "").split("\n");
+    const citaDe = h => String((h && h.cita) || (h && h.l ? (lineas[h.l - 1] || "").trim() : "")).slice(0, 160);
+    const hay = h => h && h.valor && h.valor !== "no_se" && Number.isInteger(h.l);
+
+    // 1) ¿Propiedad comercial? Cambia tres cláusulas de consumidor
+    if (hay(H.propiedad) && H.propiedad.valor === "comercial" && !dl.propiedad && pAct.tipo !== "comercial") {
+      out.push({
+        clave: "propiedad", linea: H.propiedad.l, cita: citaDe(H.propiedad),
+        texto: "¿Es propiedad comercial? Si lo es, el contrato sale SIN el aviso de la ley de gravámenes (713.015), SIN los tres días para cancelar y SIN la 9.16 del depósito. Si no contestas, se queda como vivienda, que protege más.",
+        botones: [
+          { etiqueta: "Sí, comercial", dato: { etiqueta: "Propiedad", valor: "comercial", clave: "propiedad" } },
+          { etiqueta: "No, es una vivienda", dato: { etiqueta: "Propiedad", valor: "residencial", clave: "propiedad" } }
+        ]
+      });
+    }
+    // 2) ¿El trato es con un contratista? Cambia el contrato entero
+    if (hay(H.contrato_con) && H.contrato_con.valor === "gc" && !dl.contrato_con && pAct.contratistaModo !== "contrato") {
+      const nombre = String((L.datos && L.datos.contratista) || "").trim();
+      out.push({
+        clave: "contrato_con", linea: H.contrato_con.l, cita: citaDe(H.contrato_con),
+        texto: `Parece un contrato con un contratista${nombre ? " (" + nombre + ")" : ""}. Si lo es, el contrato entra con retención, Notice to Owner y liberaciones de gravamen, firma solo el contratista, y sale sin el aviso de gravámenes ni los tres días del consumidor.`,
+        botones: [
+          { etiqueta: nombre ? `Sí, con ${nombre}` : "Sí, con un contratista", dato: { etiqueta: "Contrato con", valor: "GC", clave: "contrato_con" } },
+          { etiqueta: "No, directo con el dueño", dato: { etiqueta: "Contrato con", valor: "directo", clave: "contrato_con" } }
+        ]
+      });
+    }
+    // 3) ¿Va con firma? Sin decir nada, SIEMPRE con firma (lo más protector)
+    if (hay(H.firma) && H.firma.valor === "no" && !dl.firma) {
+      out.push({
+        clave: "firma", linea: H.firma.l, cita: citaDe(H.firma),
+        texto: "¿Este documento va con firma o es solo un alcance ligero? Sin firma el contrato sale sin garantía, sin límite de responsabilidad, sin cancelación y sin ninguna cláusula de la sección 9.",
+        botones: [
+          { etiqueta: "Con firma", dato: { etiqueta: "Firma", valor: "sí", clave: "firma" } },
+          { etiqueta: "Solo alcance", dato: { etiqueta: "Firma", valor: "no", clave: "firma" } }
+        ]
+      });
+    }
+    // 4) ¿Quién saca el permiso?
+    if (hay(H.permiso) && !dl.permiso && (H.permiso.valor === "cliente" || H.permiso.valor === "ninguno")) {
+      out.push({
+        clave: "permiso", linea: H.permiso.l, cita: citaDe(H.permiso),
+        texto: H.permiso.valor === "cliente"
+          ? "Leo que el permiso lo saca el cliente (o su contratista). Si es así, el contrato no cobra el permiso y lo dice claro."
+          : "Leo que este trabajo no lleva permiso. Si es así, el contrato lo dice y no lo cobra.",
+        botones: [
+          { etiqueta: H.permiso.valor === "cliente" ? "Sí, lo saca el cliente" : "Sí, sin permiso",
+            dato: { etiqueta: "Permiso", valor: H.permiso.valor === "cliente" ? "cliente" : "ninguno", clave: "permiso" } },
+          { etiqueta: "No, lo sacamos nosotros", dato: { etiqueta: "Permiso", valor: "nosotros", clave: "permiso" } }
+        ]
+      });
+    }
+    // 5) Tipo de trabajo: solo si NO cuadra con lo que decidieron las reglas y eso apaga exclusiones
+    if (hay(H.tipo_trabajo) && !(L.condiciones && L.condiciones.tipo_trabajo)) {
+      const perfil = (A.decision && A.decision.perfil) || {};
+      const dicen = H.tipo_trabajo.valor;
+      const chocan = (dicen === "exterior_servicio" && !perfil.exteriorServicio)
+                  || (dicen === "interior_vivienda" && perfil.exteriorServicio);
+      if (chocan) out.push({
+        clave: "tipo_trabajo", linea: H.tipo_trabajo.l, cita: citaDe(H.tipo_trabajo),
+        texto: dicen === "exterior_servicio"
+          ? "¿Este trabajo es de servicio exterior (poste, bomba, pozo) o dentro de una vivienda? Si es exterior, el contrato deja de excluir gabinetes, drywall y aparatos, y no lleva la cláusula de los breakers AFCI."
+          : "¿Este trabajo es dentro de una vivienda o servicio exterior? Si es dentro de una vivienda, se quedan las exclusiones de gabinetes, drywall y aparatos, y la cláusula de los breakers AFCI.",
+        botones: [
+          { etiqueta: "Exterior (servicio)", dato: { etiqueta: "Tipo de trabajo", valor: "service" } },
+          { etiqueta: "Vivienda interior", dato: { etiqueta: "Tipo de trabajo", valor: "remodel" } },
+          { etiqueta: "Las dos cosas", dato: { etiqueta: "Tipo de trabajo", valor: "mezcla" } }
+        ]
+      });
+    }
+    // 6) El dueño de la propiedad (hace falta para el Notice to Owner)
+    if (H.dueno && Number.isInteger(H.dueno.l) && !dl.dueno && (A.decision && A.decision.esGC)) {
+      const quien = citaDe(H.dueno);
+      if (quien) out.push({
+        clave: "dueno", linea: H.dueno.l, cita: quien,
+        texto: "¿El dueño de la propiedad es este? Hace falta para el Notice to Owner y para la fila Homeowner del contrato.",
+        botones: [{ etiqueta: "Sí, ese es el dueño", dato: { etiqueta: "Homeowner", valor: quien.slice(0, 80), clave: "dueno" } }]
+      });
+    }
+    // 7) Segundo firmante (dos dueños en la misma casa)
+    if (H.segundo_firmante && Number.isInteger(H.segundo_firmante.l) && !dl.segundo_firmante && !(A.decision && A.decision.esGC)) {
+      const quien = citaDe(H.segundo_firmante);
+      if (quien) out.push({
+        clave: "segundo_firmante", linea: H.segundo_firmante.l, cita: quien,
+        texto: "¿Firma también esta segunda persona? Si firma, sale en el contrato y en el portal como segundo firmante.",
+        botones: [{ etiqueta: "Sí, firman las dos", dato: { etiqueta: "Segundo firmante", valor: quien.slice(0, 80), clave: "segundo_firmante" } }]
+      });
+    }
+    return out;
+  }
+
+  // Lo que Edgar contesta se escribe EN LA HOJA, a la vista, y desde ahí lo leen
+  // las reglas de siempre (el asistente nunca escribe en la hoja).
+  function alcPonerDatoEnHoja(etiqueta, valor, clave) {
+    const A = alcActivo;
+    const lineas = String(A.texto || "").replace(/\r/g, "").split("\n");
+    const n = clave && A.leido && A.leido.datos_linea ? A.leido.datos_linea[clave] : 0;
+    if (n && lineas[n - 1] !== undefined) {
+      const m = lineas[n - 1].match(/^(\s*[^:]{2,42}:\s*)/);
+      lineas[n - 1] = (m ? m[1] : etiqueta + ": ") + valor;
+    } else {
+      const escapa = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp("^\\s*" + escapa(etiqueta) + "\\s*:.*$", "i");
+      const idx = lineas.findIndex(l => re.test(l));
+      if (idx >= 0) lineas[idx] = etiqueta + ": " + valor;
+      else lineas.unshift(etiqueta + ": " + valor);
+    }
+    A.texto = lineas.join("\n");
+    alcRealinear();
+    alcGuardarLocal(A.proyecto.id, A.texto);
+    A.arreglados = [...(A.arreglados || []), `escribí «${etiqueta}: ${valor}» en la hoja`];
+    alcCalcular();
+    pintarAlcance();
+  }
+
+  // Lo que la hoja ya dice y la ficha del proyecto todavía no: se ofrece guardarlo
+  function alcOfertasFicha() {
+    const A = alcActivo, L = A.leido;
+    if (!L || !A.lectura) return [];
+    const pAct = proyectos().find(x => x.id === A.proyecto.id) || {};
+    const out = [];
+    if (/comercial|commercial/i.test(String(L.datos.propiedad || "")) && pAct.tipo !== "comercial")
+      out.push({ id: "comercial", etiqueta: "Guardarlo también en la ficha del proyecto (propiedad comercial)" });
+    if (String(L.datos.contrato_con || "").toUpperCase() === "GC" && pAct.contratistaModo !== "contrato" && gcDeProyecto(pAct))
+      out.push({ id: "gc", etiqueta: "Guardarlo también en la ficha del proyecto (el contrato es con el contratista)" });
+    return out;
+  }
+  async function alcGuardarEnFicha(id) {
+    const A = alcActivo;
+    try {
+      if (id === "comercial") await DB.cambiarProyecto(A.proyecto.id, { tipo: "comercial" });
+      else if (id === "gc") await DB.cambiarProyecto(A.proyecto.id, { contratista_modo: "contrato" });
+      const p = proyectos().find(x => x.id === A.proyecto.id);
+      if (p) { if (id === "comercial") p.tipo = "comercial"; else p.contratistaModo = "contrato"; }
+      avisar("Guardado en la ficha del proyecto ✓");
+      alcCalcular(); pintarAlcance();
+    } catch (e) { avisar("No pude guardarlo en el proyecto: " + e.message, true); }
+  }
+
+  // ---------- Lo que lleva gastado el asistente este mes ----------
+  let alcGastoMes = null, alcGastoPedido = false;
+  function alcPedirGasto() {
+    if (alcGastoPedido || !(usuario && usuario.finanzas)) return;
+    alcGastoPedido = true;
+    const hoy = hoyFlorida();
+    const mes = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`;
+    DB.gastoDelAsistente(mes).then(g => {
+      if (!g) return;
+      alcGastoMes = g;
+      if (alcActivo && alcFicha === 0) pintarAlcance();
+    }).catch(() => { /* si las tablas no responden, la fila no sale */ });
+  }
+
   // ---------------------------------------------------------- FICHA 1: la hoja
   function alcFichaHoja() {
     const A = alcActivo;
     const L = A.leido;
     let salida = `<div class="alc-dos"><div class="alc-izq">
       <p class="lev-nota">Pega aquí el alcance como te salga: dictado, un SOW viejo, o la hoja
-      con sus títulos. Si viene suelto, toca <b>Ordenar</b> y el asistente lo acomoda delante de ti.
-      Después <b>Leer</b>: la app saca el dinero con sus propias cuentas y te lo enseña.</p>
+      con sus títulos. Toca <b>Leer</b>: la app la lee al instante con sus reglas y saca el dinero con sus
+      propias cuentas; después el asistente la mira por su cuenta y te dice lo que vio. Puedes seguir
+      trabajando mientras tanto.</p>
       <textarea id="alc-texto" class="alc-texto" rows="16" placeholder="Pega aquí, o toca «Importar un archivo»">${esc(A.texto)}</textarea>
       <p class="lev-nota" id="alc-arrastra">También puedes arrastrar el archivo encima del cuadro.</p>
       <input type="file" id="alc-archivo" accept=".md,.txt,.markdown,.text,text/plain,text/markdown" hidden>
       <div class="alc-botones">
         <button class="accion" id="alc-importar">Importar un archivo</button>
         <button class="accion secundaria" id="alc-copiar-formato">Copiar el formato en blanco</button>
-        <button class="accion secundaria" id="alc-ordenar">Ordenar</button>
         <button class="accion" id="alc-leer">Leer</button>
-      </div></div><div class="alc-der">`;
+      </div>
+      <details class="alc-mas"><summary>Más…</summary>
+        <div class="alc-botones">
+          <button class="accion secundaria" id="alc-ordenar">Reacomodar el texto (lo reescribe)</button>
+        </div>
+        <p class="lev-nota">Ojo: reacomodar reescribe tu hoja entera. Léela después.</p>
+        <p class="lev-nota"><label for="alc-ia-ajuste">Leer con el asistente:</label>
+          <select class="alc-libre" id="alc-ia-ajuste">
+            ${[["siempre", "siempre"], ["raras", "solo cuando la hoja viene rara"], ["nunca", "nunca"]]
+              .map(([v, t]) => `<option value="${v}"${alcAjusteLector() === v ? " selected" : ""}>${esc(t)}</option>`).join("")}
+          </select></p>
+      </details></div><div class="alc-der">`;
+
+    // La espera y lo que haya pasado con el asistente van arriba del todo, en gris: nunca frenan
+    salida += alcLineaDelAsistente();
 
     if (!L) return salida + `<p class="lev-nota">Cuando toques «Leer», aquí sale lo que la app entendió.</p></div></div>`;
 
@@ -7964,7 +8283,35 @@ Power done right the first time. ⚡`;
       return `<div class="alc-explica"><input class="alc-libre alc-fix-in" data-fix-in="${id}" placeholder="o explícame por qué está bien así (ej.: es el año de la casa)">
               <button class="alc-op" data-fix="${id}">Déjalo así</button></div>`;
     };
-    alcArreglos = {};
+    alcArreglos = {}; alcHechos = {};
+    // ── Lo que trae la lectura del asistente, repartido por color ──
+    // Con pregunta (o con un botón de condición) va a «Contéstame esto»; lo
+    // seguro va en ámbar con su chip «IA»; lo probable, en gris.
+    const avisosIA = (A.lectura && Array.isArray(A.lectura.avisos)) ? A.lectura.avisos : [];
+    const esPreguntaIA = a => !!a.pregunta || (a.arreglos || []).some(x => x.tipo === "cambiar_condicion");
+    // Un hecho que ya se está preguntando abajo no se repite arriba como aviso
+    const preguntasHechos = alcPreguntasDeHechos();
+    const ALC_AVISO_DE_HECHO = { propiedad: "propiedad_comercial", contrato_con: "contrato_con_contratista" };
+    const yaPreguntados = new Set(preguntasHechos.map(h => ALC_AVISO_DE_HECHO[h.clave]).filter(Boolean));
+    const sueltos = avisosIA.filter(a => !yaPreguntados.has(a.tipo));
+    const iaPreg = sueltos.filter(esPreguntaIA);
+    const iaAmbar = sueltos.filter(a => !esPreguntaIA(a) && a.nivel === "ambar");
+    const iaGris = sueltos.filter(a => !esPreguntaIA(a) && a.nivel === "gris");
+    // Las líneas que Edgar escribió después de la lectura: el asistente no las
+    // vio, las leen las reglas, y aquí se le pregunta qué son.
+    const ia = o => Object.assign({ auto: false, origen: "ia" }, o);
+    const huerfanas = ((A.lectura && A.lectura.huerfanas) || []).slice(0, 8).map(n => ({
+      tipo: "huerfana", nivel: "ambar", linea: n, cita: (txtLineas[n - 1] || "").trim().slice(0, 80),
+      texto: `La línea ${n} es nueva desde que el asistente leyó la hoja; mientras tanto la leo con las reglas. ¿Qué es?`,
+      arreglos: [ia({ tipo: "es_renglon", etiqueta: "Es un renglón", linea: n }),
+                 ia({ tipo: "es_detalle_de", etiqueta: "Es detalle del renglón de arriba", linea: n }),
+                 ia({ tipo: "dejar_asi", etiqueta: "Déjala", linea: n })]
+    }));
+    const liIA = (a, sufijo) => a.tipo === "mas"
+      ? `<li>${esc(a.texto)}</li>`
+      : `<li><span class="alc-chip alc-ia">IA</span> ${chip(a.linea)}${esc(a.texto)}` +
+        (a.cita ? `<div class="alc-cita" data-ira="${a.linea}">${esc(String(a.cita).slice(0, 120))}</div>` : "") +
+        `<div class="alc-fixes">${botonesDe(a.arreglos, sufijo)}</div></li>`;
     if ((A.arreglados || []).length) {
       salida += `<div class="alc-verde"><b>Arreglado:</b><ul>` +
         A.arreglados.map(x => `<li>${esc(x)}</li>`).join("") + `</ul></div>`;
@@ -7972,6 +8319,7 @@ Power done right the first time. ⚡`;
       salida += `<div class="alc-verde"><b>Lo que ya me explicaste (lo respeto):</b><ul>` +
         A.perdonadas.filter(x => x && x.nota).map(x => `<li>«${esc(String(x.texto).slice(0, 50))}» — ${esc(x.nota)}</li>`).join("") + `</ul></div>`;
     }
+    salida += alcCajaComoLei();
     const hayAuto = [...V.errores, ...L.avisos].some(e => (e.arreglos || []).some(a => a.auto));
     if (V.errores.length) {
       salida += `<div class="alc-rojo"><b>Hay que arreglar esto antes de seguir:</b>
@@ -7985,16 +8333,21 @@ Power done right the first time. ⚡`;
         `</ul></div>`;
     }
     const dudas = L.avisos.filter(a => !a.informativo), hechos = L.avisos.filter(a => a.informativo);
-    if (dudas.length) {
+    // Primero lo que ven las reglas; después lo del asistente, cada uno con su chip «IA»
+    if (dudas.length || iaAmbar.length || huerfanas.length) {
       salida += `<div class="alc-ambar"><b>Esto no me cuadra del todo (no te frena):</b><ul>` +
         dudas.map((a, i) => `<li>${chip(a.linea)}${esc(a.texto)}${cita(a.linea)}<div class="alc-fixes">${botonesDe(a.arreglos, "a" + i).replace(/<button[^>]*>Eso no es dinero, déjalo<\/button>/, "")}</div>${explicame(a, "a" + i)}</li>`).join("") +
+        huerfanas.map((a, i) => liIA(a, "hu" + i)).join("") +
+        iaAmbar.map((a, i) => liIA(a, "ia" + i)).join("") +
         `</ul></div>`;
     }
-    if (hechos.length) {
-      salida += `<div class="alc-gris"><b>Lo que quité porque la plantilla ya lo trae — no tienes que hacer nada:</b><ul>` +
-        hechos.map(a => `<li>${esc(a.texto)}</li>`).join("") + `</ul></div>`;
+    if (hechos.length || iaGris.length) {
+      salida += `<div class="alc-gris"><b>Lo que dejé fuera o ya trae la plantilla — no tienes que hacer nada:</b><ul>` +
+        hechos.map(a => `<li>${esc(a.texto)}</li>`).join("") +
+        iaGris.map((a, i) => liIA(a, "ig" + i)).join("") + `</ul></div>`;
     }
-    if (V.preguntas.length) {
+    const ofertasFicha = alcOfertasFicha();
+    if (V.preguntas.length || preguntasHechos.length || iaPreg.length || ofertasFicha.length) {
       salida += `<div class="alc-preguntas"><b>Contéstame esto:</b>` + V.preguntas.map((p, i) => {
         const ya = A.respuestas[p.clave];
         const botones = (p.opciones || []).map((o, k) =>
@@ -8010,9 +8363,33 @@ Power done right the first time. ⚡`;
         }
         return `<div class="alc-pregunta"><p>${chip(p.linea)}${esc(p.texto)}</p>${cita(p.linea)}
           <div>${botones}${p.libre || (p.opciones || []).some(o => o.libre) ? `<input class="alc-libre" data-preg="${p.clave}" value="${esc(ya && ya[0] !== "[" && ya[0] !== '"' ? ya : "")}" placeholder="escríbelo">` : ""}</div></div>`;
-      }).join("") + `</div>`;
+      }).join("")
+      // Las preguntas de hechos del asistente: cada una con su cita y con lo que
+      // cambia en el contrato. Un botón escribe la respuesta EN LA HOJA.
+      + preguntasHechos.map((h, i) => {
+        const botones = h.botones.map((b, k) => {
+          const id = `h${i}-${k}`; alcHechos[id] = b;
+          return `<button class="alc-op" data-hecho="${id}">${esc(b.etiqueta)}</button>`;
+        }).join("");
+        return `<div class="alc-pregunta"><p><span class="alc-chip alc-ia">IA</span> ${chip(h.linea)}${esc(h.texto)}</p>` +
+          (h.cita ? `<div class="alc-cita" data-ira="${h.linea}">${esc(h.cita)}</div>` : "") +
+          `<div class="alc-fixes">${botones}</div></div>`;
+      }).join("")
+      // Lo que el asistente vio escrito en la prosa y propone poner en Condiciones
+      + iaPreg.map((a, i) => `<div class="alc-pregunta"><p><span class="alc-chip alc-ia">IA</span> ${chip(a.linea)}${esc(a.texto)}</p>` +
+          (a.cita ? `<div class="alc-cita" data-ira="${a.linea}">${esc(String(a.cita).slice(0, 120))}</div>` : "") +
+          `<div class="alc-fixes">${botonesDe(a.arreglos, "ip" + i)}</div></div>`).join("")
+      // Y, si la hoja ya lo dice y la ficha del proyecto todavía no, se ofrece guardarlo allí
+      + ofertasFicha.map(o => `<div class="alc-pregunta"><div class="alc-fixes">
+          <button class="alc-op" data-ficha="${o.id}">${esc(o.etiqueta)}</button></div></div>`).join("")
+      + `</div>`;
     }
 
+    // ¿Hay que pasarlo a inglés? Con lectura del asistente manda el idioma que
+    // leyó (en / es / mezcla); sin ella, el conteo de palabras de siempre.
+    const idiomaLeido = A.lectura && A.lectura.limpia ? A.lectura.limpia.idioma : null;
+    const hayQuePasarlo = (idiomaLeido === "en" || idiomaLeido === "es" || idiomaLeido === "mezcla")
+      ? idiomaLeido !== "en" : Alcance.pareceIngles(L) === false;
     // La tarjeta "Lo que entendí": aquí Edgar ve el dinero cuadrado
     const cta = A.cuenta, dec = A.decision;
     const d = L.datos;
@@ -8030,6 +8407,30 @@ Power done right the first time. ⚡`;
           <div><span>Vale</span><b>${(() => { const n = Alcance.leerVence(d.vence, hoyFlorida()); const f = new Date(hoyFlorida().getTime()); f.setDate(f.getDate() + n);
             return `${n} días (hasta ${esc(f.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }))})`; })()}</b></div>
         </div>
+        ${(() => {
+          // Qué clase de trabajo es, cuando lo dice una condición escrita en la hoja
+          const tt = L.condiciones && L.condiciones.tipo_trabajo;
+          if (!tt || !tt.valor) return "";
+          const NOM = { service: "servicio exterior", remodel: "dentro de una vivienda", new: "obra nueva",
+                        planos: "por planos", rapido: "trabajo corto", mezcla: "las dos cosas" };
+          return `<p class="alc-sub">Tipo de trabajo: <b>${esc(NOM[tt.valor] || tt.valor)}</b>${tt.linea ? " · lo dice la " + chip(tt.linea) : ""}</p>`;
+        })()}
+        ${(() => {
+          // Lo que costó esta lectura y lo que lleva gastado el asistente este mes
+          if (!A.lectura && !alcGastoMes) return "";
+          const c = A.lectura ? A.lectura.costo_centavos : null;
+          const partes = [];
+          if (A.lectura) partes.push(A.lectura.de_cache ? "esta lectura salió de la caché (0 ¢)"
+            : `${Number.isFinite(c) ? c : "?"} ¢ esta lectura`);
+          let pasado = false;
+          if (alcGastoMes && alcGastoMes.tope > 0) {
+            pasado = alcGastoMes.centavos >= alcGastoMes.tope * (alcGastoMes.aviso_pct / 100);
+            partes.push(`este mes $${Alcance.dinero(alcGastoMes.centavos)} de $${Alcance.dinero(alcGastoMes.tope)}`);
+          }
+          if (!partes.length) return "";
+          return `<p class="alc-sub">Asistente: ${esc(partes.join(" · "))}` +
+            (pasado ? ` <span class="alc-chip">ojo, ya vas por el ${alcGastoMes.aviso_pct} % del mes</span>` : "") + `</p>`;
+        })()}
         <p class="alc-sub"><b>${L.items.length}</b> ${L.items.length === 1 ? "renglón" : "renglones"} · <b>${L.no_incluye.length}</b> ${L.no_incluye.length === 1 ? "exclusión propia" : "exclusiones propias"}</p>
         <ol class="alc-lista">${L.items.map(i => `<li>${esc(i.titulo)} <span class="alc-gris">(${i.detalles.length} ${i.detalles.length === 1 ? "detalle" : "detalles"})</span></li>`).join("")}</ol>
         <table class="alc-dinero">
@@ -8067,13 +8468,13 @@ Power done right the first time. ⚡`;
         <p class="lev-nota">${esc(alcPorQue(dec))}</p>
       </div>
       <div class="alc-botones alc-cierra-dos">
-        ${Alcance.pareceIngles(L) === false
+        ${hayQuePasarlo
           ? `<button class="accion" id="alc-redactar"${V.errores.length ? " disabled" : ""}>Pasarlo a inglés con el asistente</button>
              <button class="accion secundaria" id="alc-directo"${V.errores.length ? " disabled" : ""}>Usarlo tal cual</button>`
           : `<button class="accion" id="alc-directo"${V.errores.length ? " disabled" : ""}>Revisar y armar</button>`}
         <button class="accion secundaria" id="alc-guardar">${A.propuesta ? "Guardar los cambios" : "Guardar este alcance"}</button>
       </div>
-      ${Alcance.pareceIngles(L) === false ? `<p class="lev-nota">Esto parece español y el contrato sale en inglés. Lo normal es pedirle al chat el alcance ya en inglés e importarlo; si no, el asistente lo pasa.</p>` : ""}
+      ${hayQuePasarlo ? `<p class="lev-nota">Esto no está todo en inglés y el contrato sale en inglés. Lo normal es pedirle al chat el alcance ya en inglés e importarlo; si no, el asistente lo pasa.</p>` : ""}
       </div></div>`;
     return salida;
   }
@@ -8229,6 +8630,28 @@ Power done right the first time. ⚡`;
     if (caja) caja.addEventListener("input", () => {
       alcActivo.texto = caja.value;
       alcGuardarLocal(alcActivo.proyecto.id, caja.value);
+      // Escribiendo, las pistas del asistente se vuelven a casar con el texto,
+      // pero sin correr detrás de cada tecla: se espera a que pare de escribir.
+      // Y NO se repinta mientras el cuadro tiene el cursor dentro (repintar
+      // borraría lo que está escribiendo): las cajas se ponen al día al salir.
+      if (alcActivo.lectura) {
+        clearTimeout(alcRetardoRealinear);
+        alcRetardoRealinear = setTimeout(() => {
+          if (!alcActivo || !alcActivo.lectura || $("alc-texto") !== caja) return;
+          alcRealinear();
+          try { alcCalcular(); } catch { /* a medio escribir la hoja puede no cuadrar */ }
+          if (document.activeElement !== caja) pintarAlcance();
+        }, 400);
+      }
+    });
+    // Al salir del cuadro, las cajas de la derecha se ponen al día con lo escrito
+    if (caja) caja.addEventListener("change", () => {
+      if (!alcActivo || !alcActivo.lectura) return;
+      alcActivo.texto = caja.value;
+      clearTimeout(alcRetardoRealinear);
+      alcRealinear();
+      try { alcCalcular(); } catch { return; }
+      pintarAlcance();
     });
 
     const bCopiar = $("alc-copiar-formato");
@@ -8283,12 +8706,36 @@ Power done right the first time. ⚡`;
       const inp = document.querySelector(`[data-fix-in="${b.dataset.fix}"]`);
       alcArreglar(a, inp ? inp.value : undefined);
     }));
+    // Las respuestas a las preguntas de hechos del asistente: un toque escribe
+    // la respuesta en la hoja, a la vista, y desde ahí mandan las reglas
+    document.querySelectorAll("[data-hecho]").forEach(b => b.addEventListener("click", () => {
+      const h = alcHechos[b.dataset.hecho];
+      if (!h) return;
+      if (h.arreglo) alcArreglar(h.arreglo);
+      else if (h.dato) alcPonerDatoEnHoja(h.dato.etiqueta, h.dato.valor, h.dato.clave);
+    }));
+    document.querySelectorAll("[data-ficha]").forEach(b =>
+      b.addEventListener("click", () => alcGuardarEnFicha(b.dataset.ficha)));
+    const bReleer = $("alc-releer-ia");
+    if (bReleer) bReleer.addEventListener("click", () => {
+      bReleer.disabled = true;
+      alcLeerInteligente(true)
+        .catch(() => { /* la nube nunca frena */ })
+        .then(() => { if (alcActivo && !alcActivo.lectura_en_marcha && $("alc-releer-ia")) $("alc-releer-ia").disabled = false; });
+    });
+    const selIA = $("alc-ia-ajuste");
+    if (selIA) selIA.addEventListener("change", () => {
+      alcPonerAjusteLector(selIA.value);
+      avisar(selIA.value === "nunca" ? "Apagado: leeré solo con las reglas"
+           : selIA.value === "raras" ? "Solo llamaré al asistente cuando la hoja venga rara"
+           : "Llamaré al asistente cada vez que leas una hoja nueva");
+    });
     const bTodo = $("alc-arreglar-todo");
     if (bTodo) bTodo.addEventListener("click", () => {
       const A = alcActivo;
       const r = Alcance.arreglarTodo(A.texto, { perdonadas: A.perdonadas || [] });
       if (!r.hechos.length) { avisar("No había nada que pudiera arreglar solo", true); return; }
-      A.texto = r.texto; alcGuardarLocal(A.proyecto.id, A.texto);
+      A.texto = r.texto; alcRealinear(); alcGuardarLocal(A.proyecto.id, A.texto);
       A.arreglados = [...(A.arreglados || []), ...r.hechos];
       alcCalcular(); pintarAlcance();
       avisar(`Arreglé ${r.hechos.length} ${r.hechos.length === 1 ? "cosa" : "cosas"} ✓`);
@@ -8416,6 +8863,7 @@ Power done right the first time. ⚡`;
   // Lleva el cuadro al renglón N y lo deja seleccionado, para que Edgar vea
   // exactamente de qué línea le estamos hablando.
   let alcEspejo = null;
+  let alcRetardoRealinear = null;   // el reloj de los 400 ms al escribir en el cuadro
   function alcIrALinea(n) {
     const caja = $("alc-texto"); if (!caja) return;
     const lineas = caja.value.replace(/\r/g, "").split("\n");
@@ -8457,6 +8905,8 @@ Power done right the first time. ⚡`;
       if (habia && !confirm("Ya hay algo escrito en el cuadro. ¿Lo reemplazo con el archivo?")) return;
       alcActivo.texto = txt;
       if (caja) caja.value = txt;
+      // otra hoja es otra lectura: la vieja se borra (no se arrastra a un texto que no vio)
+      alcActivo.lectura = null; alcActivo.lectura_pendiente = null; alcAvisoLector("");
       alcGuardarLocal(alcActivo.proyecto.id, txt);
       alcActivo.leido = null; alcActivo.respuestas = {};
       pintarAlcance();
@@ -8513,7 +8963,7 @@ Power done right the first time. ⚡`;
       const ya = m ? m[1].split(",").map(s => s.trim()).filter(Boolean) : [];
       ponCond("No excluir", [...new Set([...ya, ...quiere])].join(", "));
     }
-    if (txt !== A.texto) { A.texto = txt; alcGuardarLocal(A.proyecto.id, txt); }
+    if (txt !== A.texto) { A.texto = txt; alcRealinear(); alcGuardarLocal(A.proyecto.id, txt); }
     alcCalcular();
   }
 
@@ -8523,7 +8973,10 @@ Power done right the first time. ⚡`;
     const r = Alcance.aplicarArreglo(A.texto, a, valor);
     if (r.error) { avisar(r.error, true); return; }
     if (r.perdona) { A.perdonadas = [...(A.perdonadas || []), r.perdona]; alcPerdonLocal(A.proyecto.id, A.perdonadas); }
-    A.texto = r.texto; alcGuardarLocal(A.proyecto.id, A.texto);
+    A.texto = r.texto;
+    // las pistas se vuelven a casar con el texto nuevo; al asistente no se le pide nada
+    alcRealinear();
+    alcGuardarLocal(A.proyecto.id, A.texto);
     A.arreglados = [...(A.arreglados || []), r.explicacion];
     alcCalcular(); pintarAlcance();
   }
@@ -8616,7 +9069,12 @@ Power done right the first time. ⚡`;
 
   function alcCalcular() {
     const A = alcActivo;
-    A.leido = Alcance.leerAlcance(A.texto, { perdonadas: A.perdonadas || [] });
+    // Con lectura del asistente viva y alineada, el lector de siempre NO adivina:
+    // donde hay pista manda la pista. Sin lectura, todo es exactamente como antes.
+    const opciones = { perdonadas: A.perdonadas || [] };
+    const pistas = A.lectura && A.lectura.pistas;
+    if (pistas && Object.keys(pistas).length) opciones.pistas = pistas;
+    A.leido = Alcance.leerAlcance(A.texto, opciones);
     // Si en la app dijiste que el contrato de esta obra es con un contratista, el
     // contrato sale en modo GC aunque la hoja no lo diga: sin el aviso de gravámenes
     // ni los tres días para cancelar, y con las cláusulas del subcontrato.
@@ -8636,6 +9094,12 @@ Power done right the first time. ⚡`;
     A.validado = Alcance.validarAlcance(A.leido);
     A.cuenta = Alcance.cuentas(A.leido);
     A.decision = Alcance.decidirInterruptores(A.leido, A.cuenta);
+    // Los avisos del asistente se recalculan contra la lectura de reglas de ahora
+    // mismo: ninguno frena, ninguno se aplica solo.
+    if (A.lectura) {
+      try { A.lectura.avisos = Alcance.avisosDeLectura(A.lectura.limpia, A.leido, A.lectura.avisos_app); }
+      catch { A.lectura.avisos = []; }
+    }
   }
 
   function alcLeer() {
@@ -8648,7 +9112,8 @@ Power done right the first time. ⚡`;
     // Lo que la app ya sabe (dirección, email, teléfono, cliente) entra solo en la hoja
     const nut = alcNutrir(A.texto, alcDatosConocidos(A.proyecto.id));
     if (nut.tomados.length) {
-      A.texto = nut.texto; $("alc-texto").value = A.texto; alcGuardarLocal(A.proyecto.id, A.texto);
+      A.texto = nut.texto; $("alc-texto").value = A.texto;
+      alcRealinear(); alcGuardarLocal(A.proyecto.id, A.texto);
       A.arreglados = ["Tomé del proyecto: " + nut.tomados.join(" · ")];
     }
     alcCalcular();
@@ -8663,13 +9128,286 @@ Power done right the first time. ⚡`;
         if (!r.error && r.texto !== A.texto) { A.texto = r.texto; cambio = true; A.arreglados.push(r.explicacion + " (los montos no cambian)"); }
       });
       if (!cambio) break;
-      $("alc-texto").value = A.texto; alcGuardarLocal(A.proyecto.id, A.texto);
+      $("alc-texto").value = A.texto; alcRealinear(); alcGuardarLocal(A.proyecto.id, A.texto);
       alcCalcular();
     }
     pintarAlcance();
     if (!A.validado.errores.length && !A.validado.preguntas.length) avisar("Leído ✓ — revisa el dinero y redacta");
     alcDevolver();
+    alcPedirGasto();
+    // Segundo tiempo: el asistente mira la hoja por su cuenta. No frena nada:
+    // lo de arriba ya está pintado y Edgar puede seguir trabajando.
+    alcLeerInteligente(false).catch(() => { /* la nube nunca frena */ });
   }
+
+  // ============================================================
+  // 🤖 EL LECTOR CON INTELIGENCIA — el segundo tiempo de «Leer»
+  //
+  // Regla de la casa: la nube nunca frena. La lectura de reglas ya corrió y
+  // está pintada; esto llega después y solo AÑADE. Nada de lo que diga el
+  // asistente se aplica solo: todo arreglo suyo lleva auto:false y origen "ia",
+  // y «Arreglar todo lo que pueda solo» los salta.
+  //
+  // A la nube viaja ÚNICAMENTE Alcance.paraLaNube(hoja): el número y el texto
+  // limpio y tapado de cada línea. Ni el precio del estimado, ni la cuenta, ni
+  // un solo monto de la hoja.
+  // ============================================================
+
+  // El ajuste de Edgar: siempre (por defecto) · solo cuando la hoja viene rara · nunca
+  const ALC_IA_LLAVE = "mxp_lector_ia";
+  function alcAjusteLector() {
+    try { const v = localStorage.getItem(ALC_IA_LLAVE); return (v === "raras" || v === "nunca") ? v : "siempre"; }
+    catch { return "siempre"; }
+  }
+  function alcPonerAjusteLector(v) {
+    try { localStorage.setItem(ALC_IA_LLAVE, v === "raras" || v === "nunca" ? v : "siempre"); } catch { /* nada */ }
+  }
+  // Modo de prueba (?prueba=1): la pantalla se pinta igual, pero NO se llama a
+  // la nube. La prueba del navegador inyecta la lectura con
+  // window.MXP_PRUEBA.aplicarLectura(lectura) — lo que devolvió el asistente en
+  // vivo, guardado en pruebas/alcance/*.lectura.json.
+  function alcModoPrueba() {
+    try { return new URLSearchParams(location.search).get("prueba") === "1" && !!(usuario && usuario.finanzas); }
+    catch { return false; }
+  }
+
+  // La línea gris de arriba de las cajas: lo que pasó con el asistente, en llano
+  function alcAvisoLector(texto) {
+    if (alcActivo) alcActivo.lectura_aviso = String(texto || "");
+  }
+
+  // La hoja como la ve el asistente: sin dinero, sin adornos y con su huella.
+  // L0 es la lectura de reglas SIN pistas: es contra ella contra la que el juez
+  // compara lo que vuelve.
+  async function alcHojaParaElAsistente() {
+    const A = alcActivo;
+    const L0 = Alcance.leerAlcance(A.texto, { perdonadas: A.perdonadas || [] });
+    const hoja = Alcance.hojaParaElLector(A.texto, L0);
+    const lineas = Alcance.paraLaNube(hoja);
+    const huella = await alcHuella(lineas.map(l => l.t).join("\n"));
+    return { L0, hoja, lineas, huella };
+  }
+
+  // Lo que la app ya sabe de esta obra y le ahorra adivinar al asistente.
+  // NUNCA el precio del estimado, nunca la cuenta, nunca la libreta entera de
+  // contratistas: solo el de ESTE proyecto. Y cada valor pasa el detector de
+  // montos: si algo trae dinero, ese dato no viaja.
+  function alcConocidosParaElAsistente() {
+    const A = alcActivo;
+    const c = alcDatosConocidos(A.proyecto.id);
+    const pAct = proyectos().find(x => x.id === A.proyecto.id) || {};
+    const gc = gcDeProyecto(pAct);
+    const fuera = {
+      cliente: c.cliente, dueno: c.dueno, atencion: c.atencion, direccion: c.direccion,
+      ciudad: (A.leido && A.leido.datos && A.leido.datos.ciudad) || "",
+      contratista: gc ? { nombre: gc.nombre || "", modo: pAct.contratistaModo || "" } : null,
+      tipo_proyecto: pAct.tipo || ""
+    };
+    const limpio = {};
+    Object.entries(fuera).forEach(([k, v]) => {
+      if (v === null || v === undefined || v === "") return;
+      const texto = typeof v === "object" ? JSON.stringify(v) : String(v);
+      if (Alcance.esMontoTapable(texto)) return;   // con dinero dentro, ese dato no sale del teléfono
+      limpio[k] = v;
+    });
+    return limpio;
+  }
+
+  // Lo que cuesta más o menos una lectura, para decírselo antes de gastar
+  function alcCostoEstimado(lineasConContenido) {
+    if (lineasConContenido < 80) return "≈ 10 ¢";
+    if (lineasConContenido < 200) return "≈ 15 ¢";
+    return "≈ 25 ¢";
+  }
+
+  // Lo que se guarda de la lectura (en el teléfono y en la propuesta). Los
+  // avisos se recalculan solos en cada alcCalcular: no hace falta guardarlos.
+  function alcLecturaParaGuardar(L) {
+    if (!L) return null;
+    return {
+      huella: L.huella, limpia: L.limpia, pistas: L.pistas, guardadas: L.guardadas,
+      avisos_app: L.avisos_app, tiradas: L.tiradas, sin_casa: L.sin_casa,
+      uso: L.uso || null, costo_centavos: L.costo_centavos ?? null, costo_original: L.costo_original ?? null,
+      de_cache: !!L.de_cache, ms: L.ms ?? null, cuando: L.cuando || null, resultado: L.resultado || null
+    };
+  }
+
+  // El segundo tiempo. `forzar` es «Volver a leer con inteligencia»: pide otra
+  // vez aunque la hoja no haya cambiado, y con el esfuerzo medio (segunda
+  // opinión, más cara).
+  async function alcLeerInteligente(forzar) {
+    const A = alcActivo;
+    if (!A || !(usuario && usuario.finanzas) || !String(A.texto || "").trim()) return;
+    const ajuste = alcAjusteLector();
+    if (!forzar && ajuste === "nunca") return;
+    if (A.lectura_en_marcha) { if (forzar) avisar("El asistente ya está mirando esta hoja"); return; }
+    if (navigator.onLine === false) {
+      alcAvisoLector("Sin señal: leí con las reglas de siempre; cuando vuelva, toca Leer otra vez");
+      pintarAlcance(); return;
+    }
+    let hoja, lineas, huella, L0;
+    try { ({ hoja, lineas, huella, L0 } = await alcHojaParaElAsistente()); }
+    catch { return; }
+    if (!huella) return;                                  // sin huella no se puede pedir nada
+    // ¿Ya llegó la lectura de esta misma hoja y quedó esperando? Se aplica y no se gasta
+    if (A.lectura_pendiente && A.lectura_pendiente.huella === huella) {
+      alcAplicarLectura(A.lectura_pendiente, hoja, L0, huella);
+      return;
+    }
+    // Con una lectura viva NO se vuelve a pagar por unos cuantos toques: las
+    // pistas se realinean solas y las líneas nuevas las leen las reglas. Solo se
+    // pide otra cuando la lectura se quedó coja (más de 5 líneas huérfanas o más
+    // del 10 %) o cuando Edgar lo pide a mano.
+    if (!forzar && A.lectura) {
+      if (A.lectura.huella === huella) return;                         // la misma hoja: ni se mira
+      const conLetra = String(A.texto || "").replace(/\r/g, "").split("\n").filter(l => l.trim()).length || 1;
+      const sueltas = (A.lectura.huerfanas || []).length;
+      if (!(sueltas > 5 || sueltas / conLetra > 0.1)) return;
+    }
+    if (!forzar && ajuste === "raras") {
+      let rara = false;
+      try { rara = Alcance.rareza(A.leido, A.validado).rara; } catch { rara = false; }
+      if (!rara) return;
+    }
+    const conContenido = lineas.filter(l => String(l.t || "").trim()).length;
+    if (conContenido > 350) {
+      alcAvisoLector(`La hoja es muy larga para el asistente (${conContenido} líneas): leí con las reglas de siempre`);
+      pintarAlcance(); return;
+    }
+    // Modo de prueba: la pantalla se comporta igual, pero no se llama a nadie
+    if (alcModoPrueba()) {
+      A.lectura_en_marcha = { huella, desde: Date.now(), hoja, L0 };
+      pintarAlcance(); return;
+    }
+    const cuerpo = {
+      lineas, conocidos: alcConocidosParaElAsistente(), pistas_de_edgar: [], huella, v: 1,
+      // esfuerzo bajo por defecto (medido en vivo: mismo resultado, la mitad de tiempo y de costo);
+      // «Volver a leer con inteligencia» pide una segunda opinión con más esfuerzo
+      esfuerzo: forzar ? "medium" : "low"
+    };
+    if (A.proyecto && A.proyecto.id) cuerpo.proyecto_id = String(A.proyecto.id);
+    if (A.propuesta && Number.isInteger(A.propuesta.id)) cuerpo.propuesta_id = A.propuesta.id;
+
+    A.lectura_en_marcha = { huella, desde: Date.now(), hoja, L0 };
+    alcAvisoLector("");
+    pintarAlcance();
+    try {
+      let r = await DB.pedirAlCerebro("leer", cuerpo, { ms: 30000 });
+      // La huella con la que se recoge es la que devuelve el cerebro (lleva
+      // dentro el esfuerzo con el que se pidió), no la de la hoja pelada
+      const huellaCerebro = (r && r.huella) || huella;
+      let tropiezos = 0;
+      const hasta = Date.now() + 4 * 60 * 1000;
+      while (r && r.estado === "en_curso" && Date.now() < hasta) {
+        await new Promise(z => setTimeout(z, 5000));
+        if (alcActivo !== A) return;                      // cambió de proyecto o de variante: se descarta
+        let v = null;
+        try { v = await DB.leerLectura(huellaCerebro); } catch { v = null; }
+        // un 401, un 5xx sueltos, o un «todavía no existe» justo después de
+        // pedirla, no tiran la vuelta: se insiste hasta tres veces seguidas
+        if (!v || !v.estado || v.estado === "no_existe") {
+          if (++tropiezos <= 3) continue;
+          r = { estado: "error", error: (v && (v.error || v.estado)) || "falla" };
+          break;
+        }
+        tropiezos = 0; r = v;
+      }
+      if (alcActivo !== A) return;
+      // se acabaron los cuatro minutos y sigue sin llegar: se dice en llano
+      if (r && r.estado === "en_curso") r = { estado: "tiempo", error: "tiempo" };
+      if (r && r.estado === "ok" && r.lectura) {
+        const ahora = await alcHuella(Alcance.paraLaNube(Alcance.hojaParaElLector(A.texto,
+          Alcance.leerAlcance(A.texto, { perdonadas: A.perdonadas || [] }))).map(l => l.t).join("\n"));
+        const paquete = { huella, lectura: r.lectura, uso: r.uso || null, costo_centavos: r.costo_centavos ?? null,
+                          costo_original: r.costo_original ?? null, de_cache: !!r.de_cache, ms: r.ms ?? null,
+                          resultado: r.resultado || null };
+        // Lectura tardía (§3.6): si Edgar ya redactó, ya armó, o la hoja cambió
+        // mientras el asistente miraba, NO se aplica sola
+        if (A.salida || A.contrato || (ahora && ahora !== huella)) {
+          A.lectura_pendiente = paquete;
+          alcAvisoLector("Llegó la lectura inteligente; para usarla vuelve a la hoja y toca Leer");
+        } else {
+          alcAplicarLectura(paquete, hoja, L0, huella);
+          avisar("El asistente terminó de leer tu hoja ✓");
+        }
+      } else if (r && (r.error || r.estado)) {
+        alcAvisoLector(alcErrorEnLlano(Object.assign({}, r, { error: r.error || r.estado })));
+      }
+    } catch (e) {
+      alcAvisoLector(String((e && e.message) || "No pude hablar con el asistente"));
+    } finally {
+      if (alcActivo === A) { A.lectura_en_marcha = null; pintarAlcance(); }
+    }
+  }
+
+  // La lectura llegó: el juez la comprueba pieza a pieza, se convierte en pistas
+  // y la hoja se vuelve a leer con ellas. Si el juez la rechaza, nos quedamos
+  // con las reglas y se dice por qué.
+  function alcAplicarLectura(paquete, hoja, L0, huella) {
+    const A = alcActivo;
+    let V;
+    try { V = Alcance.verificarLectura(hoja.lineas, paquete.lectura, L0); }
+    catch { V = { error: "lectura_invalida", motivo: "no se pudo leer" }; }
+    if (!V || V.error) {
+      A.lectura_pendiente = null;
+      alcAvisoLector(V && V.error === "dinero_en_la_lectura"
+        ? "El asistente escribió un monto donde no van montos; no acepto esa lectura: me quedo con las reglas"
+        : "El asistente devolvió algo que no cuadra con tu hoja; me quedo con las reglas");
+      pintarAlcance();
+      return false;
+    }
+    const pistas = Alcance.pistasDe(V.lectura_limpia);
+    A.lectura = {
+      huella, limpia: V.lectura_limpia, pistas, guardadas: Alcance.guardarPistas(A.texto, pistas),
+      avisos_app: V.avisos_app, tiradas: V.tiradas, sin_casa: V.sin_casa, huerfanas: [], avisos: [],
+      uso: paquete.uso || null, costo_centavos: paquete.costo_centavos ?? null,
+      costo_original: paquete.costo_original ?? null, de_cache: !!paquete.de_cache,
+      ms: paquete.ms ?? null, cuando: new Date().toISOString(), resultado: paquete.resultado || null
+    };
+    A.lectura_pendiente = null;
+    alcAvisoLector("");
+    alcCalcular();
+    alcGuardarLocal(A.proyecto.id, A.texto);
+    pintarAlcance();
+    return true;
+  }
+
+  // Cada toque que escribe en la hoja mueve las líneas: las pistas se vuelven a
+  // casar por texto, NO se vuelve a pedir nada a la nube.
+  function alcRealinear() {
+    const A = alcActivo;
+    if (!A || !A.lectura || !Array.isArray(A.lectura.guardadas)) return;
+    let r;
+    try { r = Alcance.alinearLectura(A.texto, A.lectura.guardadas); }
+    catch { return; }
+    if (r.proporcionPerdida > 0.2) {
+      A.lectura = null;
+      alcAvisoLector("La hoja cambió mucho: toca Leer para volver a leerla");
+      return;
+    }
+    A.lectura.pistas = r.pistas;
+    A.lectura.huerfanas = r.huerfanas || [];
+    const conContenido = String(A.texto || "").replace(/\r/g, "").split("\n").filter(l => l.trim()).length || 1;
+    if (A.lectura.huerfanas.length > 5 || A.lectura.huerfanas.length / conContenido > 0.1)
+      alcAvisoLector(`Hay ${A.lectura.huerfanas.length} líneas nuevas que el asistente no vio: toca Leer`);
+    else if (/líneas nuevas que el asistente no vio/.test(A.lectura_aviso || "")) alcAvisoLector("");
+  }
+
+  // La puerta de la prueba del navegador: inyecta una lectura de verdad (la que
+  // devolvió el asistente en vivo) sin llamar a la nube ni gastar un centavo.
+  window.MXP_PRUEBA = {
+    async aplicarLectura(lectura) {
+      const A = alcActivo;
+      if (!A || !alcModoPrueba()) return false;
+      const enMarcha = A.lectura_en_marcha;
+      let hoja, L0, huella;
+      if (enMarcha && enMarcha.hoja) { hoja = enMarcha.hoja; L0 = enMarcha.L0; huella = enMarcha.huella; }
+      else ({ hoja, L0, huella } = await alcHojaParaElAsistente());
+      A.lectura_en_marcha = null;
+      return alcAplicarLectura({ huella, lectura, uso: null, costo_centavos: 0, costo_original: null,
+                                 de_cache: false, ms: null, resultado: "prueba" }, hoja, L0, huella);
+    }
+  };
 
   async function alcOrdenar() {
     const A = alcActivo;
@@ -8682,6 +9420,8 @@ Power done right the first time. ⚡`;
       if (r && r.error) throw new Error(alcErrorEnLlano(r));
       if (!r || !r.hoja) throw new Error("El asistente no devolvió la hoja");
       A.texto = r.hoja;
+      // reacomodar reescribe la hoja entera: la lectura vieja casi nunca sobrevive
+      alcRealinear();
       alcGuardarLocal(A.proyecto.id, A.texto);
       alcCalcular();
       pintarAlcance();
@@ -8694,6 +9434,7 @@ Power done right the first time. ⚡`;
 
   async function alcRedactar() {
     const A = alcActivo;
+    if (alcEsperarAlAsistente()) return;
     alcCalcular();
     if (A.validado.errores.length) { avisar("Arregla primero lo que está en rojo", true); return; }
     const enc = Alcance.prepararEncargo(A.leido, A.decision);
@@ -8723,8 +9464,20 @@ Power done right the first time. ⚡`;
 
   // El camino corto: la hoja ya viene en inglés y pasa al contrato tal cual,
   // sin asistente y sin esperar. Lo que Edgar corrija en la revisión se queda.
+  // Si el asistente está mirando la hoja justo ahora, se le pregunta a Edgar:
+  // esperarlo (menos de 2 min) o seguir sin él. Si sigue, la lectura que llegue
+  // después NO se aplica sola (regla de la lectura tardía).
+  function alcEsperarAlAsistente() {
+    const A = alcActivo;
+    if (!A || !A.lectura_en_marcha) return false;
+    const esperar = confirm("El asistente todavía está mirando tu hoja (suele tardar menos de 2 minutos).\n\nAceptar: lo espero.\nCancelar: sigo sin él.");
+    if (esperar) { avisar("Espero al asistente; en cuanto llegue, vuelve a tocar"); return true; }
+    return false;
+  }
+
   async function alcDirecto() {
     const A = alcActivo;
+    if (alcEsperarAlAsistente()) return;
     A.texto = $("alc-texto") ? $("alc-texto").value : A.texto;
     alcCalcular();
     if (A.validado.errores.length) { avisar("Arregla primero lo que está en rojo", true); return; }
@@ -8747,6 +9500,25 @@ Power done right the first time. ⚡`;
     if (e === "monto_inventado") return "El asistente metió un monto que no estaba en tu texto. No lo acepto: " + (r.detalle || "");
     if (e === "sin_hoja" || e === "sin_salida") return "El asistente no devolvió nada útil. Vuelve a intentarlo";
     if (e === "sin_texto" || e === "sin_encargo") return "No hay texto que mandar";
+    // ── El lector con inteligencia (todos estos van en gris: no frenan nada) ──
+    if (e === "dinero_en_la_hoja")
+      return r.linea ? `Se me escapó un monto en la línea ${r.linea} sin tapar; no lo mandé. Leí con las reglas de siempre`
+                     : "Se me escapó un monto sin tapar; no mandé la hoja. Leí con las reglas de siempre";
+    if (e === "sin_lineas") return "La hoja llegó vacía al asistente; leí con las reglas de siempre";
+    if (e === "hoja_larga")
+      return `La hoja es muy larga para el asistente${r.lineas_con_contenido ? ` (${r.lineas_con_contenido} líneas)` : ""}: leí con las reglas de siempre`;
+    if (e === "huella_no_cuadra") return "La hoja cambió mientras la mandaba; toca Leer otra vez";
+    if (e === "tope_mes")
+      return `El asistente ya gastó lo del mes ($${Alcance.dinero(r.gastado || 0)} de $${Alcance.dinero(r.tope || 0)}); sigo con las reglas`;
+    if (e === "sin_tabla") return "Falta pegar el SQL del lector en la base; sigo con las reglas";
+    if (e === "molde_rechazado" || e === "lectura_invalida")
+      return "El asistente devolvió algo que no cuadra con tu hoja; me quedo con las reglas";
+    if (e === "dinero_en_la_lectura") return "El asistente escribió un monto donde no van montos; me quedo con las reglas";
+    if (e === "ocupado") return "El asistente está ocupado; leí con las reglas. Prueba en un minuto";
+    if (e === "tiempo") return "El asistente tardó demasiado; me quedo con la lectura de siempre";
+    if (e === "no_quiso") return "El asistente no quiso leer esta hoja; sigo con las reglas";
+    if (e === "salida_cortada") return "La hoja es muy larga para leerla de una vez; leí con las reglas de siempre";
+    if (e === "no_existe") return "No encuentro esa lectura; toca Leer otra vez";
     return "El asistente falló: " + (r.detalle || e);
   }
 
@@ -8943,7 +9715,13 @@ Power done right the first time. ⚡`;
         alcance_decisiones: { bloques: dec.bloques, clausulas: dec.clausulas, nec: L.codigo, perdonadas: A.perdonadas || [] },
         alcance_estado: A.contrato ? "armado" : (A.salida ? "redactado" : "leido"),
         reparto_pct: cta.pcts,
-        uso_modelo: A.uso || null
+        // La lectura del asistente viaja entera (es pequeña: pistas + lo leído):
+        // así vuelve alineada al abrir la propuesta en otro teléfono.
+        alcance_lectura: alcLecturaParaGuardar(A.lectura),
+        uso_modelo: {
+          redactar: A.uso || null,
+          leer: A.lectura ? { uso: A.lectura.uso || null, costo_centavos: A.lectura.costo_centavos ?? null, cuando: A.lectura.cuando || null } : null
+        }
       };
       if (A.contrato) { campos.armado_el = new Date().toISOString(); campos.archivo = A.contrato.archivo; }
 
@@ -8964,6 +9742,8 @@ Power done right the first time. ⚡`;
           proyecto_id: A.proyecto.id, estado: "borrador",
           valida_hasta: hasta.toISOString().slice(0, 10), ...campos });
         A.propuesta = creada[0];
+        // lo guardado en el teléfono como «nueva» pasa a ser de esta variante
+        alcMudarLlaveLocal(A.proyecto.id, A.propuesta.id);
         const filas = [{
           propuesta_id: A.propuesta.id, letra: "A", es_addon: false,
           titulo: (A.salida && A.salida.proyecto_en && A.salida.proyecto_en.en) || d.proyecto || "Base",

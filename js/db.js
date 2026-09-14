@@ -514,6 +514,55 @@
     };
   }
 
+  // ---------- La puerta única al cerebro ----------
+  // La hoja de alcance: el cerebro la ordena (accion=ordenar), la redacta en
+  // inglés (accion=alcance), la lee (accion=leer) o devuelve la lectura hecha
+  // (accion=lectura). Va con el token del usuario, como el asistente.
+  //
+  // Tres cosas que aquí se cuidan, porque la pantalla no puede enseñar jerga:
+  //   · el reloj: si la nube no contesta en `ms` (30 segundos por defecto), se
+  //     corta sola. La llamada del lector solo PIDE y recoge, no espera al modelo.
+  //   · sin señal: «Failed to fetch» y compañía salen como «Sin señal: …».
+  //   · el 400 no es un fallo de red: el cuerpo trae el código del motivo
+  //     (dinero_en_la_hoja, hoja_larga, huella_no_cuadra…) y se devuelve para
+  //     que la pantalla lo diga en llano.
+  async function pedirAlCerebro(accion, cuerpo, opciones) {
+    if (!sesion) throw new Error("Sin sesión");
+    const ms = Number((opciones || {}).ms) > 0 ? Number(opciones.ms) : 30000;
+    const tirar = async () => {
+      const control = typeof AbortController !== "undefined" ? new AbortController() : null;
+      const reloj = control ? setTimeout(() => { try { control.abort(); } catch { /* nada */ } }, ms) : null;
+      try {
+        return await fetch(`${SB.url}/functions/v1/cerebro?accion=${accion}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${sesion.access_token}` },
+          body: JSON.stringify(cuerpo),
+          ...(control ? { signal: control.signal } : {})
+        });
+      } finally { if (reloj) clearTimeout(reloj); }
+    };
+    let r;
+    try {
+      r = await tirar();
+      if (r.status === 401) { await refrescar(); r = await tirar(); }
+    } catch (e) {
+      const nombre = String((e && e.name) || ""), texto = String((e && e.message) || "");
+      if (nombre === "AbortError") throw new Error("Sin señal: el asistente no contestó a tiempo");
+      if (nombre === "TypeError" || /failed to fetch|networkerror|load failed|network request failed/i.test(texto))
+        throw new Error("Sin señal: no pude hablar con el asistente");
+      throw new Error("Sin señal: " + texto);
+    }
+    if (r.status === 404 || r.status === 405)
+      throw new Error("Esta parte del asistente todavía no está subida a la nube");
+    let j = null;
+    try { j = await r.json(); } catch { j = null; }
+    if (r.ok) return j || {};
+    // 400/403: el cuerpo dice el motivo con su código; lo traduce la pantalla
+    if (j && j.error) return j;
+    if (r.status >= 500 || r.status === 546) throw new Error("El asistente tardó demasiado");
+    throw new Error("El asistente no respondió (" + r.status + ")");
+  }
+
   // API pública para app.js
   window.MXP_DB = {
     haySesion: () => !!sesion,
@@ -752,21 +801,28 @@
       if (!r.ok) throw new Error("El asistente no respondió (" + r.status + ")");
       return r.json();
     },
-    // La hoja de alcance: el cerebro la ordena (accion=ordenar) o la redacta
-    // en inglés (accion=alcance). Va con el token del usuario, como el asistente.
-    async pedirAlCerebro(accion, cuerpo) {
-      if (!sesion) throw new Error("Sin sesión");
-      const tirar = async () => fetch(`${SB.url}/functions/v1/cerebro?accion=${accion}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sesion.access_token}` },
-        body: JSON.stringify(cuerpo)
-      });
-      let r = await tirar();
-      if (r.status === 401) { await refrescar(); r = await tirar(); }
-      if (r.status === 404 || r.status === 405)
-        throw new Error("Esta parte del asistente todavía no está subida a la nube");
-      if (!r.ok) throw new Error("El asistente no respondió (" + r.status + ")");
-      return r.json();
+    pedirAlCerebro,
+    // El lector: «pide y recoge». Se pidió con accion=leer y aquí se recoge por
+    // la huella, cada pocos segundos, hasta que la lectura esté hecha.
+    leerLectura: huella => pedirAlCerebro("lectura", { huella }, { ms: 20000 }),
+    // Lo que lleva gastado el asistente este mes (mes de Florida) y el tope.
+    // Si las tablas del lector todavía no están pegadas, devuelve null y la
+    // pantalla simplemente no enseña la fila: nunca frena nada.
+    gastoDelAsistente: async mes => {
+      try {
+        const [filas, ajustes] = await Promise.all([
+          leer(`asistente_costo_mes?select=accion,llamadas,centavos&mes=eq.${encodeURIComponent(mes)}`),
+          leer("asistente_ajustes?select=clave,valor")
+        ]);
+        if (!Array.isArray(filas) || !Array.isArray(ajustes)) return null;
+        const A = Object.fromEntries(ajustes.map(a => [a.clave, Number(a.valor)]));
+        return {
+          centavos: filas.reduce((s, f) => s + (Number(f.centavos) || 0), 0),
+          llamadas: filas.reduce((s, f) => s + (Number(f.llamadas) || 0), 0),
+          tope: Number(A.tope_mes_centavos) || 0,
+          aviso_pct: Number(A.aviso_pct) || 80
+        };
+      } catch { return null; }
     },
     // El cartero de email (función «correo»): solo el dueño
     async pedirCorreo(accion, cuerpo) {

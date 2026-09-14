@@ -2719,6 +2719,18 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .alc-fix{display:inline-flex;gap:.35rem;align-items:center;flex-wrap:wrap}
 .alc-fix-in{max-width:220px}
 .alc-op.alc-auto{border-color:var(--mp-blue);color:var(--mp-blue)}
+/* El lector con inteligencia: el chip «IA» de cada aviso suyo, la línea de
+   espera mientras mira la hoja, y el cajón de «Más…» */
+.alc-chip.alc-ia{background:var(--mp-sky-1);border-color:var(--mp-blue);color:var(--mp-blue);
+  font-size:.68rem;font-weight:700;letter-spacing:.04em;padding:.02rem .38rem;vertical-align:middle}
+.alc-espera{display:flex;align-items:center;gap:.5rem}
+.alc-espera::before{content:"";width:.8rem;height:.8rem;flex:0 0 auto;border-radius:50%;
+  border:2px solid rgba(11,32,54,.18);border-top-color:var(--mp-blue);animation:alc-gira 1s linear infinite}
+@keyframes alc-gira{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.alc-espera::before{animation:none}}
+.alc-mas{margin:.5rem 0 0;font-size:.88rem;color:var(--mp-ink-2)}
+.alc-mas>summary{cursor:pointer;padding:.35rem 0;font-weight:600;color:var(--mp-ink-2)}
+.alc-mas .alc-libre{margin-left:.35rem}
 
 /* ===========================================================================
    ESCRITORIO (pantallas anchas): marco de borde a borde, menú fijo a la
