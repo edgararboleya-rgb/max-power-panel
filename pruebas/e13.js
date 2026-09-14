@@ -130,6 +130,17 @@ const r2 = v => Math.round(v * 100) / 100;
   ok('un estimado suelto puede llevar overhead por % sin tocar el escenario',
     r2(suelto.overhead) === r2(suelto.prime * 0.12), r2(suelto.overhead));
 
+  /* === 9. un 0 en el % de overhead no puede dejarte sin overhead === */
+  const ESC4 = [{ ...ESC[0], overhead_pct: 0 }];
+  await p.evaluate(([c, e, cf, it]) => window.MXP_PRUEBA.e0.datos({ catalogo: c, escenarios: e, config: cf, items: it, estimados: [], ensambles: [], estEnsambles: [] }), [CAT, ESC4, CFG, ITEMS]);
+  const cero = await calc({ ...BASE, escenario: 'B' });
+  ok('con el % de overhead en 0, se usa el de por hora y NO se queda sin overhead',
+    r2(cero.overhead) === r2(50 * 30.19) && cero.overhead > 0, '$' + r2(cero.overhead));
+  const ESC5 = [{ ...ESC[0], overhead_pct: null }];
+  await p.evaluate(([c, e, cf, it]) => window.MXP_PRUEBA.e0.datos({ catalogo: c, escenarios: e, config: cf, items: it, estimados: [], ensambles: [], estEnsambles: [] }), [CAT, ESC5, CFG, ITEMS]);
+  const nulo = await calc({ ...BASE, escenario: 'B' });
+  ok('y con la casilla vacía, exactamente lo mismo', r2(nulo.overhead) === r2(cero.overhead), '$' + r2(nulo.overhead));
+
   ok('sin errores de consola', errs.length === 0, errs.join(' // ').slice(0, 200));
   console.log(R.join('\n'));
   const fails = R.filter(l => l.indexOf('✗') >= 0).length;

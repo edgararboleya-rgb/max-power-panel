@@ -5529,7 +5529,13 @@ function esFalloDeRed(err) {
     //     el que usa el Excel de Miami. Tus gastos generales no aplican a una
     //     obra del MEP, así que ahí se carga el porcentaje de la industria.
     // Si el escenario trae overhead_pct, manda ese. Si no, todo sigue igual.
-    const ohPct = nn(est.overhead_pct) ?? nn(esc.overhead_pct);
+    // Un 0 aquí NO significa «overhead cero»: significa que no se está usando
+    // el método por porcentaje. Nadie estima con 0 % de overhead, y si la
+    // columna llegara en 0 en vez de vacía, tratarlo como porcentaje dejaría
+    // el overhead entero fuera del bid sin que se note. Falla hacia el método
+    // por hora, que es el que siempre ha estado.
+    const ohPctCrudo = nn(est.overhead_pct) ?? nn(esc.overhead_pct);
+    const ohPct = (ohPctCrudo === null || !(ohPctCrudo > 0)) ? null : ohPctCrudo;
     const profitPct = nn(est.profit_pct) ?? n(esc.profit);
     const markupPct = nn(est.markup_pct) ?? 0;
 
@@ -5576,7 +5582,7 @@ function esFalloDeRed(err) {
     const benefits = laborBase * benefitsPct;
     const totalLabor = laborBase + benefits;
     const prime = totalLabor + totalMaterial;
-    const overhead = (ohPct !== null && ohPct !== undefined) ? prime * ohPct : horas * ohHH;
+    const overhead = ohPct !== null ? prime * ohPct : horas * ohHH;
     const profit = (prime + overhead) * profitPct;
     const bid = prime + overhead + profit;
     return { items: base, autos, mermaMat, mermaHoras, misc, esc, matSubtotal, tax,
