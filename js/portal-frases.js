@@ -1,0 +1,55 @@
+/* ============================================================================
+   Las frases de la casa, en inglés — compartidas por el portal del cliente
+   (cliente.html) y la portada del contratista (gc.html).
+   Los hitos se escriben en español en la ficha; al cliente que lee en inglés
+   se le traducen por frase, no palabra por palabra. Si una frase no está en
+   esta lista, sale tal cual: nunca se inventa una traducción.
+   ============================================================================ */
+window.MXP_FRASES = [
+  [/^Añadido — .*$/i, "Add-on work"],
+  [/Milestone (\d+) — (\d+)% movilización/i, "Milestone $1 — $2% mobilization"],
+  [/Milestone (\d+) — (\d+)% avance/i, "Milestone $1 — $2% progress"],
+  [/Milestone (\d+) — (\d+)% final/i, "Milestone $1 — $2% final"],
+  [/Milestone (\d+) — (\d+)% depósito/i, "Milestone $1 — $2% deposit"],
+  [/Milestone (\d+) — (\d+)% rough y trim/i, "Milestone $1 — $2% rough and trim"],
+  [/Milestone (\d+) — (\d+)% servicio y rough/i, "Milestone $1 — $2% service and rough"],
+  [/^Milestone (\d+) — base \((\d+)%\)$/i, "Milestone $1 — base contract ($2%)"],
+  [/^Milestone (\d+) — base, Fase (\d+) pre-stucco$/i, "Milestone $1 — base contract, Phase $2 pre-stucco"],
+  [/^Depósito (\d+)%$/i, "Deposit $1%"],
+  [/^(\d+)% final$/i, "$1% final"],
+  [/^(\d+)% al completar$/i, "$1% on completion"],
+  [/^Saldo del alcance base$/i, "Balance of the base scope"],
+  [/^Adicional directo — (\d+)% final$/i, "Additional work — final $1%"],
+  [/^Adicional directo — (\d+)%$/i, "Additional work — $1%"],
+  [/^Generador — depósito (\d+)%$/i, "Generator — $1% deposit"],
+  [/^Generador — (\d+)% instalación completa$/i, "Generator — $1%, installation complete"],
+  [/^Generador — (\d+)% final$/i, "Generator — final $1%"],
+  [/^Change Order (\S+) — depósito (\d+)%$/i, "Change Order $1 — $2% deposit"],
+  [/^Change Order (\S+) — (\d+)% final$/i, "Change Order $1 — final $2%"],
+  [/^Al pasar (la )?inspección final$/i, "On passing the final inspection"],
+  [/^Al pasar la inspección de rough$/i, "On passing the rough inspection"],
+  [/^Al aceptar( la propuesta)?.*$/i, "On acceptance of the proposal"],
+  [/^Al firmar y movilizar$/i, "On signing and mobilization"],
+  [/^Al completar (el trabajo añadido|la obra)$/i, "On completion of the work"],
+  [/^Al completar el alcance base$/i, "On completion of the base scope"],
+  [/^Al completar el adicional$/i, "On completion of the additional work"],
+  [/^Al terminar el trabajo.*$/i, "On completion of the work"],
+  [/^Al terminar el Change Order$/i, "On completion of the Change Order"],
+  [/^Al terminar el Change Order \(incluye material al costo y descuento\)$/i,
+   "On completion of the Change Order (includes materials at cost and the discount)"],
+  [/^Rough \/ avance principal completo$/i, "Rough-in / main progress complete"],
+  [/^Rough y trim completos$/i, "Rough-in and trim complete"],
+  [/^Movilización$/i, "Mobilization"],
+  [/^Fase (\d+) completa$/i, "Phase $1 complete"],
+  [/^Avance del adicional$/i, "Progress on the additional work"],
+  [/^Equipo montado, cableado y conectado \(Sección (\d+) del SOW\)$/i, "Equipment set, wired and connected (Section $1 of the SOW)"],
+  [/^Inspección final aprobada y el sistema funcionando$/i, "Final inspection passed and the system running"],
+  [/^Pagado con la factura (\S+)$/i, "Paid with invoice $1"],
+  [/^Cobrado el (\d+)-ene$/i, "Paid Jan $1"], [/^Cobrado el (\d+)-feb$/i, "Paid Feb $1"],
+  [/^Cobrado el (\d+)-mar$/i, "Paid Mar $1"], [/^Cobrado el (\d+)-abr$/i, "Paid Apr $1"],
+  [/^Cobrado el (\d+)-may$/i, "Paid May $1"], [/^Cobrado el (\d+)-jun$/i, "Paid Jun $1"],
+  [/^Cobrado el (\d+)-jul$/i, "Paid Jul $1"], [/^Cobrado el (\d+)-ago$/i, "Paid Aug $1"],
+  [/^Cobrado el (\d+)-sep$/i, "Paid Sep $1"], [/^Cobrado el (\d+)-oct$/i, "Paid Oct $1"],
+  [/^Cobrado el (\d+)-nov$/i, "Paid Nov $1"], [/^Cobrado el (\d+)-dic$/i, "Paid Dec $1"],
+  [/^Trabajo terminado y probado$/i, "Work completed and tested"]
+];

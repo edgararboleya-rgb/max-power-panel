@@ -7,8 +7,8 @@
   <title>Max Power — Contractor Portal</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=177">
-  <link rel="stylesheet" href="css/portal.css?v=177">
+  <link rel="stylesheet" href="css/styles.css?v=178">
+  <link rel="stylesheet" href="css/portal.css?v=178">
   <style>
     /* ── El portal del contratista: un estado de cuenta, no una galería ── */
     :root { --gc-num: "tnum" 1; }
@@ -191,7 +191,8 @@
     </footer>
   </div>
 
-  <script src="assets/logo.js?v=142"></script>
+  <script src="js/portal-frases.js?v=178"></script>
+  <script src="assets/logo.js?v=178"></script>
   <script>
   (function () {
     "use strict";
@@ -302,29 +303,8 @@
     function enlaceObra(id) { return "cliente.html?g=" + encodeURIComponent(g) + "&p=" + encodeURIComponent(id); }
     // Los hitos se escriben en español en la app. Al contratista se le enseñan en
     // inglés con las frases de la casa; lo que no se reconoce se deja tal cual.
-    var FRASES = [
-      [/^Añadido — .*$/i, "Add-on work"],
-      [/Milestone (\d+) — (\d+)% movilización/i, "Milestone $1 — $2% mobilization"],
-      [/Milestone (\d+) — (\d+)% avance/i, "Milestone $1 — $2% progress"],
-      [/Milestone (\d+) — (\d+)% final/i, "Milestone $1 — $2% final"],
-      [/Milestone (\d+) — (\d+)% depósito/i, "Milestone $1 — $2% deposit"],
-      [/Milestone (\d+) — (\d+)% rough y trim/i, "Milestone $1 — $2% rough and trim"],
-      [/Milestone (\d+) — (\d+)% servicio y rough/i, "Milestone $1 — $2% service and rough"],
-      [/^Depósito (\d+)%$/i, "Deposit $1%"],
-      [/^(\d+)% final$/i, "$1% final"],
-      [/^(\d+)% al completar$/i, "$1% on completion"],
-      [/^Saldo del alcance base$/i, "Balance of the base scope"],
-      [/^Al pasar (la )?inspección final$/i, "On passing the final inspection"],
-      [/^Al pasar la inspección de rough$/i, "On passing the rough inspection"],
-      [/^Al aceptar( la propuesta)?.*$/i, "On acceptance of the proposal"],
-      [/^Al firmar y movilizar$/i, "On signing and mobilization"],
-      [/^Al completar (el trabajo añadido|la obra)$/i, "On completion of the work"],
-      [/^Al terminar el trabajo.*$/i, "On completion of the work"],
-      [/^Rough \/ avance principal completo$/i, "Rough-in / main progress complete"],
-      [/^Rough y trim completos$/i, "Rough-in and trim complete"],
-      [/^Movilización$/i, "Mobilization"],
-      [/^Trabajo terminado y probado$/i, "Work completed and tested"]
-    ];
+    // Las frases de la casa viven en js/portal-frases.js (las comparten los dos portales)
+    var FRASES = window.MXP_FRASES || [];
     function hitoEn(t) {
       t = String(t || "").trim();
       if (lang !== "en" || !t) return t;

@@ -7,8 +7,8 @@
   <title>Max Power — Your Project</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=177">
-  <link rel="stylesheet" href="css/portal.css?v=177">
+  <link rel="stylesheet" href="css/styles.css?v=178">
+  <link rel="stylesheet" href="css/portal.css?v=178">
   <style>
     #vista-app > main.container { min-width: 0; width: 100%; }
     .cl-volver { padding: .3rem 0 0; font-size: .82rem; }
@@ -83,7 +83,8 @@
     </footer>
   </div>
 
-  <script src="assets/logo.js?v=77"></script>
+  <script src="js/portal-frases.js?v=178"></script>
+  <script src="assets/logo.js?v=178"></script>
   <script>
   (function () {
     "use strict";
@@ -258,6 +259,16 @@
       contacto: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
       donde: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>'
     };
+    // Los hitos se escriben en español en la ficha; al cliente que lee en
+    // inglés se le traducen por frase (js/portal-frases.js). Si no está en la
+    // lista, sale tal cual: no se inventa nada.
+    var FRASES = window.MXP_FRASES || [];
+    function hitoEn(t) {
+      t = String(t || "").trim();
+      if (lang !== "en" || !t) return t;
+      for (var i = 0; i < FRASES.length; i++) if (FRASES[i][0].test(t)) return t.replace(FRASES[i][0], FRASES[i][1]);
+      return t;
+    }
     function tit(icono, texto) {
       return '<span class="cl-tico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
         ICO[icono] + '</svg></span>' + esc(texto);
@@ -539,8 +550,8 @@
             pastilla = esc(TXT.hPorFacturar);
           }
           return '<div class="pt-row ' + esc(h.estado || "pendiente") + '">' +
-            '<div class="pt-row-t">' + esc(h.titulo || "") +
-              (h.condicion ? '<div class="pt-row-c">' + esc(h.condicion) + '</div>' : '') + '</div>' +
+            '<div class="pt-row-t">' + esc(hitoEn(h.titulo || "")) +
+              (h.condicion ? '<div class="pt-row-c">' + esc(hitoEn(h.condicion)) + '</div>' : '') + '</div>' +
             '<div class="pt-row-m">' + esc(usd(h.monto)) + '</div>' +
             '<div class="pt-row-e">' + etiqueta + '<span class="pt-meta">' + pastilla + '</span></div></div>';
         }).join("");
