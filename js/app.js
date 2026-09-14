@@ -5310,6 +5310,18 @@ function esFalloDeRed(err) {
   const EMPRESA_MEP = "mep";
   const esMEP = e => (e && e.empresa) === EMPRESA_MEP;
   const EMPRESAS = [["", "Max Power (mío)"], [EMPRESA_MEP, "MXP MEP — con Roger"]];
+  // MXP MEP tiene su propio escenario: otra cuadrilla, otro overhead, otro
+  // profit y otro sales tax (Orange no es Hillsborough). Sin esto, los
+  // trabajos de Roger se calculaban con los números de Tampa.
+  const ESC_MEP = "MEP";
+  const escenariosDe = empresa => (estData.escenarios || [])
+    .filter(e => (empresa === EMPRESA_MEP) === (e.id === ESC_MEP));
+  // El que le toca a un estimado según de quién sea
+  function escenarioQueToca(empresa, actual) {
+    const lista = escenariosDe(empresa);
+    if (lista.some(e => e.id === actual)) return actual;
+    return (lista[0] || {}).id || actual || "B";
+  }
 
   // ---------- Motor v2: ítems + ensambles + automáticos ----------
   const normTxt = s => String(s || "").replace(/\s+/g, " ").trim().toUpperCase();
@@ -5760,7 +5772,9 @@ function esFalloDeRed(err) {
           sqft: d.get("sqft") ? Number(d.get("sqft")) : null,
           // Servicio arranca en C (margen sano); Rápido arranca en A, que es
           // con el que Edgar cerró Cocina Rachel
-          escenario: modoNuevo === "servicio" ? "C" : modoNuevo === "rapido" ? "A" : (d.get("escenario") || "B"),
+          escenario: (d.get("empresa") === EMPRESA_MEP && (estData.escenarios || []).some(e => e.id === ESC_MEP))
+            ? ESC_MEP
+            : (modoNuevo === "servicio" ? "C" : modoNuevo === "rapido" ? "A" : (d.get("escenario") || "B")),
           factor: 1,
           estado: "borrador",
           modo: modoNuevo,
@@ -6110,7 +6124,7 @@ Power done right the first time. ⚡`;
     // Los cuatro precios lado a lado: A, B, C puros y el Custom de este estimado
     const puro = id => calcularEstimado({ ...est, escenario: id, mezcla: null, benefits_pct: null,
       profit_pct: null, markup_pct: null, misc_pct: null, overhead_hh: null });
-    const comparacion = escs.map(e => ({ id: e.id, nombre: e.nombre, c: puro(e.id), activo: !custom && est.escenario === e.id }));
+    const comparacion = escenariosDe(est.empresa).map(e => ({ id: e.id, nombre: e.nombre, c: puro(e.id), activo: !custom && est.escenario === e.id }));
     if (custom) comparacion.push({ id: "custom", nombre: "Custom", c, activo: true });
 
     const filasMat = lineas.map((l, i) => `
@@ -6157,10 +6171,10 @@ Power done right the first time. ⚡`;
           ${custom ? `<span class="recibo-chip por_leer">CUSTOM ✏</span>` : `<span class="recibo-chip leido">${esc(est.escenario)} — ${esc((escs.find(e => e.id === est.escenario) || {}).nombre || "")}</span>`}
         </div>
         <div class="rap-tabs">
-          ${escs.map(e => `<button type="button" class="rap-tab${!custom && est.escenario === e.id ? " on" : ""}" data-esc="${esc(e.id)}" ${soloLectura ? "disabled" : ""}>${esc(e.id)} · ${esc(e.nombre || "")}</button>`).join("")}
+          ${escenariosDe(est.empresa).map(e => `<button type="button" class="rap-tab${!custom && est.escenario === e.id ? " on" : ""}" data-esc="${esc(e.id)}" ${soloLectura ? "disabled" : ""}>${esc(e.id)} · ${esc(e.nombre || "")}</button>`).join("")}
           ${custom ? `<button type="button" class="rap-tab on" disabled>Custom</button>` : ""}
         </div>
-        <p class="rent-nota">Toca A, B o C para usar ese escenario tal cual. Si cambias cualquier número de abajo, este estimado pasa a <strong>Custom</strong> (los escenarios no se tocan; para eso está ⚙ Escenarios en la lista).</p>
+        <p class="rent-nota">${esMEP(est) ? "Este trabajo usa las tarifas de MXP MEP, no las tuyas. Se cambian en ⚙ Escenarios, en la lista de estimados." : "Toca A, B o C para usar ese escenario tal cual."} Si cambias cualquier número de abajo, este estimado pasa a <strong>Custom</strong> (los escenarios no se tocan; para eso está ⚙ Escenarios en la lista).</p>
 
         <div class="rap-sub">Cuadrilla — quién trabaja y qué parte de las horas</div>
         ${filasCuadrilla}
@@ -6305,13 +6319,15 @@ Power done right the first time. ⚡`;
     const pct = v => Math.round((Number(v) || 0) * 1000) / 10;
     return `
       <details class="cal-panel-card">
-        <summary class="cal-form-titulo" style="cursor:pointer">⚙ Escenarios A / B / C — tarifas y cuadrilla</summary>
+        <summary class="cal-form-titulo" style="cursor:pointer">⚙ Escenarios — tarifas y cuadrilla</summary>
         <p class="rent-nota">Estos números son los de la casa: cada estimado nuevo arranca con ellos. Cámbialos cuando cambie tu gente o tus costos.</p>
         ${escs.map(e => {
+          const mep = e.id === ESC_MEP;
           const cu = cuadrillaDe({}, e);
           return `
           <div class="esc-card" data-esc="${esc(e.id)}">
-            <div class="esc-titulo">${esc(e.id)} — <input class="esc-nombre" type="text" value="${esc(e.nombre || "")}" placeholder="Nombre"></div>
+            <div class="esc-titulo">${mep ? `<span class="recibo-chip devolucion">MXP MEP</span> ` : ""}${esc(e.id)} — <input class="esc-nombre" type="text" value="${esc(e.nombre || "")}" placeholder="Nombre"></div>
+            ${mep ? `<p class="rent-nota" style="margin-top:0">Los trabajos con Roger. Cuadrilla más grande, otro overhead y el sales tax de su condado: Orange es 6.5 %, Hillsborough 7.5 %.</p>` : ""}
             ${cu.map((m, i) => `
             <div class="rap-rol">
               <input class="esc-rol-nombre" data-i="${i}" type="text" value="${esc(m.rol)}">
@@ -6322,6 +6338,10 @@ Power done right the first time. ⚡`;
             <div class="modal-fila">
               <label class="mat-filtro-label">Beneficios (%)<input class="esc-benefits" type="number" min="0" max="100" step="0.5" value="${esc(pct(e.benefits))}"></label>
               <label class="mat-filtro-label">Profit (%)<input class="esc-profit" type="number" min="0" max="100" step="0.5" value="${esc(pct(e.profit))}"></label>
+            </div>
+            <div class="modal-fila">
+              <label class="mat-filtro-label">Overhead ($/hora)<input class="esc-ohhh" type="number" min="0" step="0.25" value="${esc(e.overhead_hh ?? "")}"></label>
+              <label class="mat-filtro-label">Sales tax (%)<input class="esc-tax" type="number" min="0" max="15" step="0.1" value="${esc(pct(e.tax_material))}"></label>
             </div>
             <div class="modal-botones">
               <button type="button" class="accion secundaria esc-rol-agregar">+ Agregar rol</button>
@@ -6352,6 +6372,10 @@ Power done right the first time. ⚡`;
           helper: mezcla[2] ? mezcla[2].tarifa : 0, pct_helper: mezcla[2] ? mezcla[2].pct : 0,
           benefits: (Number(card.querySelector(".esc-benefits").value) || 0) / 100,
           profit: (Number(card.querySelector(".esc-profit").value) || 0) / 100,
+          // El overhead por hora y el sales tax también son del escenario: es lo
+          // que permite que MXP MEP tenga los suyos (Orange 6.5 %, no 7.5 %).
+          overhead_hh: Number(card.querySelector(".esc-ohhh").value) || 0,
+          tax_material: (Number(card.querySelector(".esc-tax").value) || 0) / 100,
         };
       };
       card.querySelector(".esc-guardar").addEventListener("click", async () => {
@@ -7087,11 +7111,19 @@ Power done right the first time. ⚡`;
     const btnMep = $("btn-est-mep"), btnMio = $("btn-est-mio");
     if (btnMep) btnMep.addEventListener("click", async () => {
       if (!confirm(`¿Pasar "${est.nombre}" a MXP MEP?\n\nDeja de ser tuyo: sale de tu lista, y la app solo te dará el número. No se borra nada.`)) return;
-      try { await DB.cambiarEstimado(est.id, { empresa: "mep" }); await recargarEstimador(); avisar("Pasado a MXP MEP ✓"); }
+      try {
+        const escNuevo = escenarioQueToca(EMPRESA_MEP, est.escenario);
+        await DB.cambiarEstimado(est.id, { empresa: "mep", escenario: escNuevo });
+        await recargarEstimador();
+        avisar(escNuevo === ESC_MEP ? "Pasado a MXP MEP ✓ — con sus tarifas" : "Pasado a MXP MEP ✓");
+      }
       catch (err) { avisar("No se pudo: " + err.message + " — ¿falta pegar el SQL e0c-mxp-mep?", true); }
     });
     if (btnMio) btnMio.addEventListener("click", async () => {
-      try { await DB.cambiarEstimado(est.id, { empresa: null }); await recargarEstimador(); avisar("Vuelve a ser tuyo ✓"); }
+      try {
+        await DB.cambiarEstimado(est.id, { empresa: null, escenario: escenarioQueToca("", est.escenario) });
+        await recargarEstimador(); avisar("Vuelve a ser tuyo ✓ — con tus tarifas");
+      }
       catch (err) { avisar("No se pudo: " + err.message, true); }
     });
 
@@ -10065,6 +10097,8 @@ Power done right the first time. ⚡`;
       propuesta(est, c) { return textoPropuesta(est, c); },
       mep(est, c) { return textoResumenMEP(est, c); },
       calcula(est) { return calcularEstimado(est); },
+      escenarios(empresa) { return escenariosDe(empresa).map(e => e.id); },
+      escToca(empresa, actual) { return escenarioQueToca(empresa, actual); },
       esMep(est) { return esMEP(est); }
     },
     async aplicarLectura(lectura) {

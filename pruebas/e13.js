@@ -84,6 +84,24 @@ const r2 = v => Math.round(v * 100) / 100;
   ok('las horas son las mismas marque lo que marque', conNormal.horas === conCot.horas && conCot.horas === 50, conCot.horas);
   ok('la mano de obra es la misma', r2(conNormal.totalLabor) === r2(conCot.totalLabor), r2(conCot.totalLabor));
 
+  /* === 7. MXP MEP calcula con SUS números, no con los de Tampa === */
+  const ESC2 = ESC.concat([{ id: 'MEP', nombre: 'MXP MEP — con Roger', foreman: 52, journeyman: 42, helper: 28,
+    pct_foreman: .15, pct_journeyman: .55, pct_helper: .30, benefits: .32, tax_material: .065, overhead_hh: 38, profit: .10 }]);
+  await p.evaluate(([c, e, cf, it]) => window.MXP_PRUEBA.e0.datos({ catalogo: c, escenarios: e, config: cf, items: it, estimados: [], ensambles: [], estEnsambles: [] }), [CAT, ESC2, CFG, ITEMS]);
+  const mios = await p.evaluate(() => window.MXP_PRUEBA.e0.escenarios(''));
+  const suyos = await p.evaluate(() => window.MXP_PRUEBA.e0.escenarios('mep'));
+  ok('en un estimado tuyo solo se ofrecen tus escenarios', mios.join(',') === 'B', mios.join(','));
+  ok('en uno de MXP MEP solo el suyo: no puedes darle tus tarifas sin querer', suyos.join(',') === 'MEP', suyos.join(','));
+  ok('al pasar un estimado a MXP MEP, el escenario va con él', (await p.evaluate(() => window.MXP_PRUEBA.e0.escToca('mep', 'B'))) === 'MEP');
+  ok('y al traerlo de vuelta, recupera el tuyo', (await p.evaluate(() => window.MXP_PRUEBA.e0.escToca('', 'MEP'))) === 'B');
+  const bidMio = await calc({ ...BASE, escenario: 'B' });
+  const bidMep = await calc({ ...BASE, escenario: 'MEP', empresa: 'mep' });
+  ok('el mismo trabajo da un número distinto en MXP MEP (otra cuadrilla, otro overhead, otro tax)',
+    r2(bidMio.bid) !== r2(bidMep.bid), '$' + r2(bidMio.bid) + ' vs $' + r2(bidMep.bid));
+  ok('y usa el sales tax de su condado, no el tuyo', bidMep.taxPct === 0.065 && bidMio.taxPct === 0.075,
+    (bidMep.taxPct * 100) + '% vs ' + (bidMio.taxPct * 100) + '%');
+  ok('tus escenarios no se tocan', bidMio.ohHH === 30.19 && bidMep.ohHH === 38, bidMio.ohHH + ' / ' + bidMep.ohHH);
+
   ok('sin errores de consola', errs.length === 0, errs.join(' // ').slice(0, 200));
   console.log(R.join('\n'));
   const fails = R.filter(l => l.indexOf('✗') >= 0).length;
