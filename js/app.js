@@ -5299,6 +5299,18 @@ function esFalloDeRed(err) {
     pintarEstimador();
   }
 
+  // ---------- Estimados de la otra empresa (MXP MEP) ----------
+  // Edgar estima también para la división eléctrica del MEP de Roger. Esos
+  // trabajos NO son de Max Power: no llevan proyecto, ni propuesta al cliente,
+  // ni contrato. Lo único que hacen es dar un número. Por eso el estimado sabe
+  // de quién es desde que nace y, si es de la otra empresa, la app se pone en
+  // modo lectura: calcula y calla.
+  // De momento usa la MISMA fórmula. Cuando haga falta darle sus propios
+  // salarios y su overhead, eso es E8 y solo cambia los valores, no el método.
+  const EMPRESA_MEP = "mep";
+  const esMEP = e => (e && e.empresa) === EMPRESA_MEP;
+  const EMPRESAS = [["", "Max Power (mío)"], [EMPRESA_MEP, "MXP MEP — con Roger"]];
+
   // ---------- Motor v2: ítems + ensambles + automáticos ----------
   const normTxt = s => String(s || "").replace(/\s+/g, " ").trim().toUpperCase();
   const buscaCatalogo = frag => (estData.catalogo || [])
@@ -5616,13 +5628,14 @@ function esFalloDeRed(err) {
   }
 
   function pintarEstimadorLista() {
-    const filas = (estData.estimados || []).map(e => {
+    const fila1 = e => {
       const c = calcularEstimado(e);
       const chip = e.estado === "convertido" ? "insp-paso" : e.estado === "congelado" ? "leido" : "por_leer";
       const etiqueta = e.estado === "convertido" ? "CONVERTIDO ✓" : e.estado === "congelado" ? "CONGELADO" : "BORRADOR";
       return `
         <div class="mat-item">
           <span class="recibo-chip ${chip}">${etiqueta}</span>
+          ${esMEP(e) ? `<span class="recibo-chip devolucion">MXP MEP</span>` : ""}
           <span class="alcance-info est-abrir" data-id="${e.id}" style="cursor:pointer">
             <span class="alcance-titulo">${esc(e.nombre)}</span>
             <span class="alcance-estado">${esc(e.cliente || "")}${e.contratista_id ? ` · ${esc(tratoTexto(e.contratista_id, e.contratista_modo))}` : ""}${e.sqft ? ` · ${esc(e.sqft)} sqft` : ""} · escenario ${esc(e.escenario)}${e.proyecto_id ? ` · <b>añadido a ${esc((proyectos().find(x => x.id === e.proyecto_id) || {}).nombre || e.proyecto_id)}</b>` : ""}</span>
@@ -5630,7 +5643,11 @@ function esFalloDeRed(err) {
           <span class="mat-precio">${fmt(Math.round(c.bid * 100) / 100)}</span>
           ${e.estado !== "convertido" ? `<button class="insp-borrar btn-est-borrar" data-id="${e.id}" title="Eliminar">🗑</button>` : ""}
         </div>`;
-    }).join("");
+    };
+    // Los de la otra empresa van en su propia tarjeta, no mezclados con los tuyos
+    const todos = estData.estimados || [];
+    const filas = todos.filter(e => !esMEP(e)).map(fila1).join("");
+    const filasMep = todos.filter(esMEP).map(fila1).join("");
 
     $("estimador-panel").innerHTML = `
       <div class="cal-panel-card lev-atajo">
@@ -5647,6 +5664,12 @@ function esFalloDeRed(err) {
               <option value="remodelacion">🏠 Remodelación (levantamiento, por ensambles)</option>
               <option value="servicio">🔧 Servicio (rápido, plantillas)</option>
             </select>
+          </label>
+          <label>¿De quién es este trabajo?
+            <select name="empresa" id="est-empresa">
+              ${EMPRESAS.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join("")}
+            </select>
+            <i>Los de MXP MEP salen aparte y solo dan el número: no crean proyecto ni propuesta.</i>
           </label>
           <label>¿Para qué proyecto es?
             <select name="proyecto_id" id="est-proy-existente">
@@ -5697,9 +5720,14 @@ function esFalloDeRed(err) {
         </form>
       </div>
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">Mis estimados (${(estData.estimados || []).length})</div>
+        <div class="cal-form-titulo">Mis estimados (${todos.filter(e => !esMEP(e)).length})</div>
         ${filas || `<p class="cal-sin-eventos">Todavía no hay estimados. Crea el primero arriba.</p>`}
       </div>
+      ${filasMep ? `<div class="cal-panel-card">
+        <div class="cal-form-titulo">MXP MEP — con Roger (${todos.filter(esMEP).length})</div>
+        <p class="lev-nota">Estos no son tuyos: solo dan el número. No crean proyecto ni propuesta.</p>
+        ${filasMep}
+      </div>` : ""}
       ${usuario.finanzas ? escenariosHTML() : ""}`;
     if (usuario.finanzas) engancharEscenarios();
 
@@ -5721,6 +5749,7 @@ function esFalloDeRed(err) {
           modo: modoNuevo,
           cable: "romex",
           proyecto_id: d.get("proyecto_id") || null,
+          empresa: d.get("empresa") || null,
           // El trato (directo / contratista) y el contacto del cliente nacen aquí y
           // viajan al proyecto y a la propuesta: se escriben una sola vez
           ...datosTrato(d),
@@ -5740,6 +5769,12 @@ function esFalloDeRed(err) {
           if (/proyecto_id/.test(txt)) {
             avisar("Ojo: falta pegar el SQL de «proyecto_id» en la base; el estimado se creó suelto", true);
             const sin = { ...fila }; delete sin.proyecto_id; CASILLAS_TRATO.forEach(c => delete sin[c]);
+            return DB.crearEstimado(sin);
+          }
+          // Si la base todavía no tiene la casilla empresa (falta pegar e0c-mxp-mep.sql)
+          if (/empresa/.test(txt)) {
+            avisar("Ojo: falta pegar el SQL «e0c-mxp-mep» en la base; el estimado se creó como tuyo", true);
+            const sin = { ...fila }; delete sin.empresa;
             return DB.crearEstimado(sin);
           }
           throw err;
@@ -5929,6 +5964,32 @@ function esFalloDeRed(err) {
         "\n\nEl cliente va a leer que incluye materiales y estos renglones no lo llevan.\n\n" +
         "Aceptar = seguir así.\nCancelar = volver y revisarlos.";
     } catch { return ""; }
+  }
+
+  // El resumen de un trabajo de MXP MEP. NO lleva membrete ni licencia ni
+  // condiciones de pago: no es una propuesta de Max Power a un cliente, es el
+  // número que Edgar le pasa a su socio. Mismo motor, otra hoja de papel.
+  function textoResumenMEP(est, c) {
+    const r2 = v => Math.round(v * 100) / 100;
+    const hoyTxt = new Date().toLocaleDateString(LOCALE, { day: "numeric", month: "long", year: "numeric" });
+    const l = [];
+    l.push(`MXP MEP — ${est.nombre}`);
+    if (est.cliente) l.push(`Obra: ${est.cliente}`);
+    l.push(`Fecha: ${hoyTxt}${est.sqft ? ` · ${est.sqft} sq ft` : ""}`);
+    l.push("");
+    l.push(`Mano de obra:      ${r2(c.horas)} h   ${fmt(r2(c.totalLabor))}`);
+    l.push(`Material + tax:                  ${fmt(r2(c.totalMaterial))}`);
+    if (c.misc) l.push(`Misceláneas:                     ${fmt(r2(c.misc))}`);
+    l.push(`Overhead:                        ${fmt(r2(c.overhead))}`);
+    l.push(`Profit:                          ${fmt(r2(c.profit))}`);
+    l.push("");
+    l.push(`TOTAL: ${fmt(r2(c.bid))}${est.sqft ? `   (${fmt(r2(c.bid / est.sqft))}/sq ft)` : ""}`);
+    l.push(`Hora cargada: ${fmt(r2(c.tarifaCargada))}   ·   Escenario ${est.escenario}`);
+    const ex = lineasNoIncluye(est, c.items);
+    if (ex.length) { l.push(""); l.push("NO INCLUYE:"); ex.forEach(x => l.push("• " + x)); }
+    l.push("");
+    l.push("Número interno para MXP MEP. No es una propuesta ni un contrato.");
+    return l.join("\n");
   }
 
   function textoPropuesta(est, c) {
@@ -6622,12 +6683,19 @@ Power done right the first time. ⚡`;
         ${est.sqft ? `<p class="rent-nota">${fmt(r2(c.bid / est.sqft))} por sq ft</p>` : ""}
       </div>
       <div class="cal-panel-card acciones">
+        ${esMEP(est) ? `
+        <p class="lev-nota" style="margin:0 0 .5rem">Este trabajo es de <strong>MXP MEP</strong>, no tuyo: la app solo te da el número.
+          No crea proyecto, ni propuesta, ni contrato. Si al final lo haces tú, cámbialo a Max Power y vuelven los botones.</p>
+        <button class="accion secundaria" id="btn-est-propuesta">📄 Ver el resumen para copiar</button>
+        <button class="accion secundaria" id="btn-est-mio">Pasarlo a Max Power</button>
+        ` : `
         <button class="accion secundaria" id="btn-est-propuesta">📄 Generar propuesta</button>
         ${est.estado === "borrador" ? `<button class="accion secundaria" id="btn-est-congelar">🔒 Congelar</button>` : ""}
         ${est.estado === "congelado" ? `<button class="accion secundaria" id="btn-est-descongelar">🔓 Volver a borrador</button>` : ""}
         ${est.estado !== "convertido" ? `<button class="accion" id="btn-est-convertir">${est.proyecto_id && proyectos().find(x => x.id === est.proyecto_id) ? `➕ Incluir al proyecto` : `🚀 Convertir en proyecto`}</button>` : ""}
         <button class="accion secundaria" id="btn-est-armar">🧾 Armar propuesta para el cliente</button>
-        ${propuestasDelEstimado(est.id)}
+        <button class="accion secundaria" id="btn-est-mep">Pasarlo a MXP MEP</button>
+        ${propuestasDelEstimado(est.id)}`}
       </div>
       ${est.estado === "convertido" ? (() => {
         // Ya está en un proyecto: se cierra y se vuelve al inicio (o se abre el proyecto)
@@ -6984,13 +7052,25 @@ Power done right the first time. ⚡`;
     // abortar de siempre en el que manda el bid a coste cero.
     const ceroDejaPasar = () => { const t = ceroTextoSalida(est, c); return !t || confirm(t); };
 
+    // Cambiar de empresa: un toque, y la pantalla se reordena sola.
+    const btnMep = $("btn-est-mep"), btnMio = $("btn-est-mio");
+    if (btnMep) btnMep.addEventListener("click", async () => {
+      if (!confirm(`¿Pasar "${est.nombre}" a MXP MEP?\n\nDeja de ser tuyo: sale de tu lista, y la app solo te dará el número. No se borra nada.`)) return;
+      try { await DB.cambiarEstimado(est.id, { empresa: "mep" }); await recargarEstimador(); avisar("Pasado a MXP MEP ✓"); }
+      catch (err) { avisar("No se pudo: " + err.message + " — ¿falta pegar el SQL e0c-mxp-mep?", true); }
+    });
+    if (btnMio) btnMio.addEventListener("click", async () => {
+      try { await DB.cambiarEstimado(est.id, { empresa: null }); await recargarEstimador(); avisar("Vuelve a ser tuyo ✓"); }
+      catch (err) { avisar("No se pudo: " + err.message, true); }
+    });
+
     $("btn-est-propuesta").addEventListener("click", () => {
       if (!ceroDejaPasar()) return;
       $("propuesta-caja").innerHTML = `
         <div class="cal-panel-card">
-          <div class="cal-form-titulo">📄 Propuesta lista para copiar</div>
+          <div class="cal-form-titulo">${esMEP(est) ? "📄 Resumen para MXP MEP" : "📄 Propuesta lista para copiar"}</div>
           <textarea id="propuesta-texto" rows="16" readonly
-            style="width:100%;font-family:ui-monospace,monospace;font-size:.78rem;padding:.6rem;border:1px solid var(--mp-line);border-radius:10px">${esc(textoPropuesta(est, c))}</textarea>
+            style="width:100%;font-family:ui-monospace,monospace;font-size:.78rem;padding:.6rem;border:1px solid var(--mp-line);border-radius:10px">${esc(esMEP(est) ? textoResumenMEP(est, c) : textoPropuesta(est, c))}</textarea>
           <button class="accion" id="btn-copiar-propuesta" style="margin-top:.45rem">📋 Copiar</button>
         </div>`;
       $("btn-copiar-propuesta").addEventListener("click", async () => {
@@ -9951,7 +10031,9 @@ Power done right the first time. ⚡`;
       cero(linea, est) { return ceroDe(linea, est || {}); },
       excluye(est, items) { return lineasNoIncluye(est || {}, items || []); },
       salida(est, c) { return ceroTextoSalida(est || {}, c || { items: [], autos: [] }); },
-      propuesta(est, c) { return textoPropuesta(est, c); }
+      propuesta(est, c) { return textoPropuesta(est, c); },
+      mep(est, c) { return textoResumenMEP(est, c); },
+      esMep(est) { return esMEP(est); }
     },
     async aplicarLectura(lectura) {
       const A = alcActivo;

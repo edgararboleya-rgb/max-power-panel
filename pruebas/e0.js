@@ -112,6 +112,17 @@ const L = (item, cantidad, precio, horas) => ({ item, cantidad, precio, horas })
   const suma = await p.evaluate(i => i.reduce((s, x) => s + x.cantidad * x.precio, 0), items);
   ok('el material del estimado sigue siendo el mismo número que antes de E0', suma === 68, suma);
 
+  /* === 8. los estimados de MXP MEP: identificados y en modo lectura === */
+  ok('un estimado sin empresa es tuyo', (await p.evaluate(() => window.MXP_PRUEBA.e0.esMep({ id: 1 }))) === false);
+  ok('uno marcado mep se reconoce', (await p.evaluate(() => window.MXP_PRUEBA.e0.esMep({ id: 1, empresa: 'mep' }))) === true);
+  const rMep = await p.evaluate(c => window.MXP_PRUEBA.e0.mep({ id: 9, nombre: 'Epic — sala eléctrica', cliente: 'Obra 4', escenario: 'B', empresa: 'mep', sqft: 2000 }, c),
+    { bid: 48000, items, autos: [], horas: 320, totalLabor: 28000, totalMaterial: 12000, misc: 900, overhead: 5000, profit: 2100, tarifaCargada: 150 });
+  ok('el resumen de MXP MEP NO lleva el membrete ni la licencia de Max Power',
+    !/MAX POWER ELECTRICAL SOLUTIONS/.test(rMep) && !/EC13016045/.test(rMep), rMep.split('\n')[0]);
+  ok('pero sí lleva el número, las horas y el $/sq ft', /TOTAL: \$48,000\.00/.test(rMep) && /320 h/.test(rMep) && /\/sq ft/.test(rMep));
+  ok('y dice claramente que no es una propuesta ni un contrato', /No es una propuesta ni un contrato/.test(rMep));
+  ok('arrastra las exclusiones igual que un estimado tuyo', /NO INCLUYE/.test(rMep));
+
   ok('sin errores de consola', errs.length === 0, errs.join(' // ').slice(0, 200));
   console.log(R.join('\n'));
   const fails = R.filter(l => l.indexOf('✗') >= 0).length;
