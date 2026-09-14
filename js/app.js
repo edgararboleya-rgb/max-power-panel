@@ -5505,6 +5505,9 @@ function esFalloDeRed(err) {
     // ese manda; si está vacío, se usa el del escenario/configuración.
     const nn = v => (v === null || v === undefined || v === "" ? null : Number(v));
     const miscPct = nn(est.misc_pct) ?? (cfg.misc_pct ?? 0.03);
+    // Markup de las COTIZACIONES del proveedor, aparte del de material. Si no
+    // se dice nada, es el mismo de siempre: así el bid de ayer no se mueve.
+    const markupCotPct = nn(est.markup_cot_pct) ?? nn(cfg.markup_cot_pct) ?? null;
     const taxPct = nn(est.tax_pct) ?? n(esc.tax_material);
     const ohHH = nn(est.overhead_hh) ?? n(esc.overhead_hh);
     const profitPct = nn(est.profit_pct) ?? n(esc.profit);
@@ -5514,16 +5517,29 @@ function esFalloDeRed(err) {
     // total), no los ítems del catálogo
     // En los demás modos (servicio, remodelación, planos) las líneas a mano se SUMAN a los ítems
     const lineasMat = Array.isArray(est.lineas_material) ? est.lineas_material : [];
-    const matMano = lineasMat.reduce((s, l) => s + n(l.monto), 0);
-    const matItems = rapido
+    // Una línea marcada como COTIZACIÓN del proveedor (el switchgear, las
+    // luminarias, el fire alarm) no lleva misceláneas: el 3% son tape,
+    // wirenuts y fijación, y un switchgear que llega en camión no consume
+    // wirenuts. Cobrárselo encarecía el bid sin motivo — en una obra con
+    // $600.000 de switchgear son más de $21.000 de más.
+    // Una línea SIN marcar se comporta igual que siempre, así que ningún
+    // estimado que ya existe se mueve ni un centavo.
+    const esCot = l => l && l.tipo === "cot";
+    const matCot = lineasMat.reduce((s, l) => s + (esCot(l) ? n(l.monto) : 0), 0);
+    const matMano = lineasMat.reduce((s, l) => s + (esCot(l) ? 0 : n(l.monto)), 0);
+    const matPropio = rapido
       ? matMano
       : base.reduce((s, i) => s + n(i.cantidad) * n(i.precio), 0)
         + autos.reduce((s, i) => s + n(i.cantidad) * n(i.precio), 0) + mermaMat + matMano;
-    const misc = matItems * miscPct;
+    const matItems = matPropio + matCot;
+    const misc = matPropio * miscPct;               // las cotizaciones no pagan misceláneas
     const matSubtotal = matItems + misc;
-    const tax = matSubtotal * taxPct;
-    // Markup: es de MATERIALES — va después del sales tax
-    const markup = (matSubtotal + tax) * markupPct;
+    const tax = matSubtotal * taxPct;               // el tax sí: es material que se compra
+    // Markup: es de MATERIALES — va después del sales tax. Las cotizaciones
+    // pueden llevar el suyo propio; si no se dice nada, el mismo de siempre.
+    const baseProp = matPropio + misc;
+    const mkCot = markupCotPct === null ? markupPct : markupCotPct;
+    const markup = (baseProp * (1 + taxPct)) * markupPct + (matCot * (1 + taxPct)) * mkCot;
     const totalMaterial = matSubtotal + tax + markup;
 
     // Modo ⚡ Rápido: las horas son las que Edgar decidió, punto
@@ -5547,6 +5563,7 @@ function esFalloDeRed(err) {
              totalMaterial, horasBase, horas, laborBase, benefits, totalLabor,
              prime, overhead, profit, markup, bid,
              miscPct, taxPct, ohHH, profitPct, markupPct,
+             matPropio, matCot, markupCotPct: mkCot,
              mezcla, tarifaMezclada, benefitsPct, lineasMat,
              // $ por hora cargado: el precio final entre las horas (todo adentro)
              tarifaCargada: horas > 0 ? bid / horas : 0 };
@@ -6056,11 +6073,13 @@ Power done right the first time. ⚡`;
     const lineas = Array.isArray(est.lineas_material) ? est.lineas_material : [];
     const filasMat = lineas.map((l, i) => `
       <div class="rap-linea">
-        <span class="rap-desc">${esc(l.desc || "Material")}</span>
+        <span class="rap-desc">${esc(l.desc || "Material")}${l.tipo === "cot" ? ` <span class="recibo-chip devolucion">COTIZACIÓN</span>` : ""}</span>
         <span class="rap-monto">${fmt(r2(Number(l.monto) || 0))}</span>
-        ${!soloLectura ? `<button type="button" class="insp-borrar rap-mat-editar" data-i="${i}" title="Editar">✎</button>
+        ${!soloLectura ? `<button type="button" class="insp-borrar rap-mat-cot" data-i="${i}" title="${l.tipo === "cot" ? "Volver a tratarlo como material tuyo" : "Es una cotización del proveedor: no paga misceláneas"}">${l.tipo === "cot" ? "◉" : "○"}</button>
+        <button type="button" class="insp-borrar rap-mat-editar" data-i="${i}" title="Editar">✎</button>
         <button type="button" class="insp-borrar rap-mat-borrar" data-i="${i}" title="Quitar">🗑</button>` : ""}
       </div>`).join("");
+    const totalCot = r2(lineas.reduce((t, l) => t + (l.tipo === "cot" ? (Number(l.monto) || 0) : 0), 0));
     const totalMano = r2(lineas.reduce((t, l) => t + (Number(l.monto) || 0), 0));
     return `
       <div class="cal-panel-card rap-card">
@@ -6074,9 +6093,10 @@ Power done right the first time. ⚡`;
             <input id="rap-factor" type="number" min="0.5" max="2" step="0.05" value="${esc(est.factor || 1)}" ${soloLectura ? "disabled" : ""}>
           </label>
         </div>
-        <div class="rap-sub">Material a mano — ${fmt(totalMano)}
+        <div class="rap-sub">Material a mano — ${fmt(totalMano)}${totalCot ? ` · ${fmt(totalCot)} en cotizaciones` : ""}
           ${!soloLectura ? `<button type="button" class="accion secundaria rap-mat-agregar">+ Agregar línea</button>` : ""}</div>
         ${filasMat || `<p class="cal-sin-eventos">Sin líneas todavía: un total, o varias (breaker, caja, cable…).</p>`}
+        ${totalCot ? `<p class="rent-nota">Lo marcado con ◉ es cotización del proveedor y no paga el ${Math.round((c.miscPct || 0.03) * 100)} % de misceláneas: ese porcentaje es tape, wirenuts y fijación, y un switchgear que llega en camión no los consume.</p>` : ""}
       </div>`;
   }
 
@@ -6095,11 +6115,13 @@ Power done right the first time. ⚡`;
 
     const filasMat = lineas.map((l, i) => `
       <div class="rap-linea">
-        <span class="rap-desc">${esc(l.desc || "Material")}</span>
+        <span class="rap-desc">${esc(l.desc || "Material")}${l.tipo === "cot" ? ` <span class="recibo-chip devolucion">COTIZACIÓN</span>` : ""}</span>
         <span class="rap-monto">${fmt(r2(Number(l.monto) || 0))}</span>
-        ${!soloLectura ? `<button type="button" class="insp-borrar rap-mat-editar" data-i="${i}" title="Editar">✎</button>
+        ${!soloLectura ? `<button type="button" class="insp-borrar rap-mat-cot" data-i="${i}" title="${l.tipo === "cot" ? "Volver a tratarlo como material tuyo" : "Es una cotización del proveedor: no paga misceláneas"}">${l.tipo === "cot" ? "◉" : "○"}</button>
+        <button type="button" class="insp-borrar rap-mat-editar" data-i="${i}" title="Editar">✎</button>
         <button type="button" class="insp-borrar rap-mat-borrar" data-i="${i}" title="Quitar">🗑</button>` : ""}
       </div>`).join("");
+    const totalCot = r2(lineas.reduce((t, l) => t + (l.tipo === "cot" ? (Number(l.monto) || 0) : 0), 0));
 
     const filasCuadrilla = c.mezcla.map((m, i) => `
       <div class="rap-rol">
@@ -6218,12 +6240,21 @@ Power done right the first time. ⚡`;
       const m = prompt("Monto (sin tax):", l.monto); if (m === null) return;
       const monto = Number(String(m).replace(/[,$\s]/g, ""));
       if (!Number.isFinite(monto) || monto < 0) { avisar("Monto no válido", true); return; }
-      arr[i] = { desc: (desc || "Material").trim().slice(0, 80), monto };
+      arr[i] = { ...l, desc: (desc || "Material").trim().slice(0, 80), monto };
       guardar({ lineas_material: arr }, "Material corregido ✓");
     }));
     document.querySelectorAll(".rap-mat-borrar").forEach(b => b.addEventListener("click", () => {
       const arr = lineas(); arr.splice(Number(b.dataset.i), 1);
       guardar({ lineas_material: arr }, "Línea quitada ✓");
+    }));
+    // ◉ / ○ — cotización del proveedor: la misma línea, sin misceláneas encima
+    document.querySelectorAll(".rap-mat-cot").forEach(b => b.addEventListener("click", () => {
+      const arr = lineas(); const i = Number(b.dataset.i); const l = arr[i]; if (!l) return;
+      if (l.tipo === "cot") { const { tipo, ...resto } = l; arr[i] = resto; }
+      else arr[i] = { ...l, tipo: "cot" };
+      guardar({ lineas_material: arr }, arr[i].tipo === "cot"
+        ? "Marcado como cotización ✓ — ya no paga misceláneas"
+        : "Vuelve a ser material tuyo ✓");
     }));
 
     // Escenario puro: se borran las personalizaciones y se usa A/B/C tal cual
@@ -10033,6 +10064,7 @@ Power done right the first time. ⚡`;
       salida(est, c) { return ceroTextoSalida(est || {}, c || { items: [], autos: [] }); },
       propuesta(est, c) { return textoPropuesta(est, c); },
       mep(est, c) { return textoResumenMEP(est, c); },
+      calcula(est) { return calcularEstimado(est); },
       esMep(est) { return esMEP(est); }
     },
     async aplicarLectura(lectura) {
