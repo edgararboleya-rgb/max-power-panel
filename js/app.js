@@ -5305,6 +5305,74 @@ function esFalloDeRed(err) {
     .find(c => normTxt(c.item).includes(normTxt(frag)));
   const catalogoExacto = nombre => (estData.catalogo || [])
     .find(c => normTxt(c.item) === normTxt(nombre));
+  // Índice del catálogo por nombre normalizado. catalogoExacto es un .find
+  // lineal sobre 1072 filas que normaliza LOS DOS lados en cada comparación;
+  // el editor lo llamaría 3-4 veces por renglón en cada repintado. El índice
+  // lo deja en O(1) y se reconstruye solo cuando cambia el catálogo.
+  let _catIdx = null, _catRef = null;
+  function catPorNombre(nombre) {
+    const arr = (estData && estData.catalogo) || [];
+    if (_catRef !== arr) { _catRef = arr; _catIdx = new Map(arr.map(c => [normTxt(c.item), c])); }
+    return _catIdx.get(normTxt(nombre)) || null;
+  }
+
+  // ---------- E0 · Por qué este renglón vale $0 ----------
+  // Un $0 no es un número: es una razón que alguien tiene que haber dicho.
+  // Hasta hoy un renglón a $0 se dibujaba igual que cualquier otro y sumaba
+  // $0.00 en silencio, así que un switchgear sin material se veía normal.
+  // ceroDe es PURA: sin red, sin await, no toca calcularEstimado, y nunca
+  // lanza. Si fallara, la pantalla se pinta exactamente como antes.
+  const CERO_NEUTRO = { est: "normal", chip: "", clase: "", fila: "", motivo: "", alerta: false, cat: null, conf: true };
+  const CERO_CHIP = {
+    //             chip               clase del chip   clase de la fila     motivo en palabras
+    suministro:   ["POR COTIZAR",     "por_leer",   "recibo-por_leer", "material por cotizar"],
+    cotizado:     ["COTIZADO",        "conciliado", "",                "la cotización ya está en el precio"],
+    by_owner:     ["BY OWNER",        "devolucion", "",                "material del cliente"],
+    solo_labor:   ["SOLO LABOR",      "leido",      "",                "no lleva material"],
+    tarifa:       ["TARIFA",          "leido",      "",                "la tecleas por trabajo"],
+    falta_precio: ["FALTA PRECIO",    "sin_foto",   "falta",           "sin precio en el catálogo"],
+    revisar:      ["¿QUIÉN LO PONE?", "por_leer",   "recibo-por_leer", "nadie ha dicho por qué va en cero"],
+    huerfano:     ["SIN CATÁLOGO",    "sin_foto",   "falta",           "este nombre no está en el catálogo"]
+  };
+  // Los que ALERTAN (banner y aviso de salida). El resto se ve y se calla.
+  const CERO_ALERTA = ["suministro", "falta_precio", "revisar", "huerfano"];
+  function ceroDe(linea, est) {
+    try {
+      if ((Number(linea.precio) || 0) > 0) return CERO_NEUTRO;
+      const cat = catPorNombre(linea.item);
+      const notas = (est && est.cero_notas) || {};
+      let e;
+      if (!cat) e = "huerfano";
+      else {
+        e = cat.cero_motivo || "revisar";
+        // La cotización del supply llega por SECCIÓN entera, que es como la
+        // manda el proveedor: un gesto apaga los 78 renglones de switchgear.
+        if (e === "suministro") {
+          const k = "S:" + normTxt(cat.seccion || "");
+          if (notas[k] && notas[k].d === "cotizado") e = "cotizado";
+        }
+      }
+      const c = CERO_CHIP[e] || CERO_CHIP.revisar;
+      // Sin confirmar = lo supuso la regla de la siembra, no Edgar. Sale con «?»
+      // y, si es by_owner, NO llega al papel que firma el cliente.
+      const conf = !cat ? false : !!cat.cero_revisado;
+      return { est: e, chip: c[0] + (conf ? "" : " ?"), clase: c[1], fila: c[2],
+               motivo: c[3], alerta: CERO_ALERTA.indexOf(e) >= 0, cat, conf };
+    } catch {
+      return { est: "revisar", chip: "¿$0?", clase: "por_leer", fila: "recibo-por_leer",
+               motivo: "revísalo", alerta: true, cat: null, conf: false };
+    }
+  }
+  // Las opciones del selector, en el orden en que Edgar piensa.
+  const CERO_OPC = [
+    ["",             "¿por qué $0?"],
+    ["suministro",   "Lo cotiza el supply house"],
+    ["by_owner",     "Lo pone el cliente"],
+    ["solo_labor",   "Solo mano de obra"],
+    ["falta_precio", "Falta el precio — lo pongo ahora"],
+    ["tarifa",       "Es una tarifa que tecleo por trabajo"],
+    ["__cot",        "Ya lo cotizé: toda esta sección está en el precio"]
+  ];
   const ES_LINEAL_CABLE = n => /ROMEX|MC\b|THHN|THW|MCM|SPEAKER WIRE|CAT ?[56]/.test(n) && !/CONNECTOR|STAPLE|SNAP/.test(n);
   const ES_TUBERIA = n => /CONDUIT/.test(n);
 
@@ -5798,8 +5866,75 @@ function esFalloDeRed(err) {
   }
 
   // El texto de la propuesta (SOW) que sale del estimado
+  // ---------- E0 · Lo que se le dice al cliente ----------
+  // REGLA DURA: al papel solo llega by_owner CONFIRMADO. «suministro» no es
+  // una exclusión, es el bolsillo de Edgar: el material lo compra él aunque
+  // llegue por cotización. Y «revisar», «huérfano» y «falta precio» son
+  // estados internos de "no lo sé": imprimirlos convertiría un fallo de datos
+  // en una renuncia de alcance firmada.
+  const FRASE_EXCL_SEC = {
+    "SWITCHGEAR": "Switchgear and distribution equipment — furnished by Owner. Max Power provides receiving, setting, terminating and connection labor only; no material cost for this equipment is included in the Contract Price.",
+    "LIGHTING FIXTURES": "Lighting fixtures — furnished by Owner. Max Power provides installation labor only; no fixture, lamp or trim material is included in the Contract Price.",
+    "FIRE ALARM": "Fire alarm devices and control equipment — furnished by Owner. Max Power provides installation and connection labor only; no material cost for this equipment is included in the Contract Price."
+  };
+  const FRASE_EXCL_CIERRE = "Materials furnished by others are not warranted by Max Power. Delivery delays or defects in Owner-furnished material that affect the schedule are handled by written Change Order.";
+  // «furnished by Owner / furnished by others» es literal a propósito: es el
+  // vocabulario que alcance.js ya reconoce (CLAVES_COND.fixtures_cliente y
+  // esResp), así que al pegar estas líneas en la hoja se clasifican solas.
+  function lineasNoIncluye(est, items) {
+    try {
+      const porSec = {};
+      for (const it of (items || [])) {
+        const z = ceroDe(it, est);
+        if (z.est !== "by_owner" || !z.conf) continue;
+        const sec = (z.cat && z.cat.seccion) || "OTHER";
+        const g = porSec[sec] || (porSec[sec] = { n: 0, nota: (z.cat && z.cat.cero_nota) || "" });
+        g.n += Number(it.cantidad) || 0;
+      }
+      const out = Object.entries(porSec).slice(0, 12).map(([sec, g]) =>
+        (FRASE_EXCL_SEC[sec] || sec + " — furnished by Owner. Max Power provides installation labor only; no material cost for these items is included in the Contract Price.")
+        + (g.n ? " (" + Math.round(g.n) + ")" : "") + (g.nota ? " — " + g.nota : ""));
+      // En modo rápido no hay ítems que analizar: el único camino es a mano.
+      const extra = String((est && est.no_incluye_extra) || "").split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+      const todas = out.concat(extra);
+      return todas.length ? todas.concat([FRASE_EXCL_CIERRE]) : [];
+    } catch { return []; }
+  }
+
+  // Lo que hay que decir antes de mandar el bid. Devuelve "" si no hay nada.
+  function ceroTextoSalida(est, c) {
+    try {
+      if (Number((estData.config && estData.config.cero_aviso) ?? 2) < 2) return "";
+      if (est.modo === "rapido") return "";
+      const porSec = {};
+      let sinConfirmar = 0;
+      const anota = (linea) => {
+        const z = ceroDe(linea, est);
+        if (z.est === "by_owner" && !z.conf) sinConfirmar++;
+        if (!z.alerta) return;
+        const sec = (z.cat && z.cat.seccion) || (z.est === "huerfano" ? "SIN CATÁLOGO" : "SIN SECCIÓN");
+        const g = porSec[sec] || (porSec[sec] = { n: 0, h: 0 });
+        g.n++; g.h += (Number(linea.cantidad) || 0) * (Number(linea.horas) || 0);
+      };
+      (c.items || []).forEach(anota);
+      (c.autos || []).forEach(anota);
+      const secs = Object.entries(porSec).sort((a, b) => b[1].h - a[1].h).slice(0, 8);
+      if (!secs.length) return "";
+      const tot = secs.reduce((t, [, g]) => t + g.n, 0);
+      const r2b = v => Math.round(v * 100) / 100;
+      return "Este estimado lleva " + tot + (tot === 1 ? " renglón" : " renglones") + " sin material.\n" +
+        "El precio NO los incluye:\n\n" +
+        secs.map(([sec, g]) => " • " + sec + " — " + g.n + (g.n === 1 ? " renglón, " : " renglones, ") + r2b(g.h) + " h").join("\n") +
+        (sinConfirmar ? "\n\nY " + sinConfirmar + ' dice(n) "by owner" porque lo supuso la app: mientras no lo confirmes, NO sale en la propuesta.' : "") +
+        "\n\nEl cliente va a leer que incluye materiales y estos renglones no lo llevan.\n\n" +
+        "Aceptar = seguir así.\nCancelar = volver y revisarlos.";
+    } catch { return ""; }
+  }
+
   function textoPropuesta(est, c) {
     const r2 = v => Math.round(v * 100) / 100;
+    // E0 · Sin exclusiones, la propuesta sale letra por letra igual que ayer.
+    const exclE0 = lineasNoIncluye(est, c.items);
     const bid = r2(c.bid);
     const hoyTxt = new Date().toLocaleDateString(LOCALE, { day: "numeric", month: "long", year: "numeric" });
     const lineas = [];
@@ -5829,7 +5964,12 @@ Cliente: ${est.cliente || ""} · Fecha: ${hoyTxt}
 ALCANCE DEL TRABAJO:
 ${lineas.join("\n")}
 
-Incluye mano de obra, materiales, misceláneas y supervisión según el alcance.
+${exclE0.length
+  ? `Incluye mano de obra, instalación, misceláneas y supervisión, y los materiales del alcance EXCEPTO lo listado abajo como suministrado por otros.
+
+NO INCLUYE / NOT INCLUDED (furnished by others):
+${exclE0.map(x => "• " + x).join("\n")}`
+  : `Incluye mano de obra, materiales, misceláneas y supervisión según el alcance.`}
 No incluye trabajos no listados; cambios se manejan por Change Order.
 
 PRECIO TOTAL (LUMP SUM): ${fmt(bid)}${est.sqft ? `  (${fmt(r2(bid / est.sqft))}/sqft)` : ""}
@@ -6189,26 +6329,63 @@ Power done right the first time. ⚡`;
     const MODO_ETIQ = { planos: "📐 Por planos", remodelacion: "🏠 Remodelación", servicio: "🔧 Servicio", rapido: "⚡ Rápido" };
     const esRapido = est.modo === "rapido";
 
-    const filasItems = c.items.map(i => `
-      <div class="mat-item">
+    // E0 · una sola pasada por repintado. Si algo fallara, zs queda vacío y la
+    // pantalla se pinta exactamente como antes del cambio.
+    // cero_aviso: 2 = chips + avisos · 1 = solo chips · 0 = como ayer.
+    const ceroAviso = Number((estData.config && estData.config.cero_aviso) ?? 2);
+    let zs = [], zsAuto = [], zAlerta = [];
+    if (ceroAviso > 0 && !esRapido) {
+      try {
+        zs = c.items.map(i => ceroDe(i, est));
+        zsAuto = c.autos.map(a => ceroDe(a, est));
+        zAlerta = zs.concat(zsAuto).filter(z => z.alerta);
+      } catch { zs = []; zsAuto = []; zAlerta = []; }
+    }
+    const zAt = n => zs[n] || CERO_NEUTRO;
+    // Anotar un estimado CONGELADO no mueve un centavo, y es justo cuando
+    // llega la cotización del supply house. Solo se cierra al convertirlo.
+    const editableCero = est.estado !== "convertido" && ceroAviso > 0 && !esRapido;
+    const selCero = (z, item) => (!editableCero || !z.chip) ? "" : `
+        <select class="chip-select sel-cero" data-item="${esc(item)}"
+                data-cat="${esc(z.cat ? z.cat.id : "")}" data-sec="${esc(z.cat ? (z.cat.seccion || "") : "")}"
+                title="¿Por qué va en $0?">
+          ${CERO_OPC.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join("")}
+        </select>`;
+
+    const filasItems = c.items.map((i, n) => {
+      const z = zAt(n), cero = (Number(i.precio) || 0) === 0;
+      return `
+      <div class="mat-item${z.fila ? " " + z.fila : ""}">
+        ${z.chip ? `<span class="recibo-chip ${z.clase}">${esc(z.chip)}</span>` : ""}
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(i.item)}${i.deEnsamble ? ` <span class="mat-cant">— de: ${esc(i.deEnsamble)}</span>` : ""}</span>
-          <span class="alcance-estado">${esc(r2(Number(i.cantidad)))} ${esc(i.unidad || "")} × ${fmt(i.precio)} · ${r2(Number(i.cantidad) * Number(i.horas))} h</span>
+          <span class="alcance-estado">${esc(r2(Number(i.cantidad)))} ${esc(i.unidad || "")} ${
+            cero && z.motivo ? esc(z.motivo) : `× ${fmt(i.precio)}`} · ${r2(Number(i.cantidad) * Number(i.horas))} h</span>
         </span>
-        <span class="mat-precio">${fmt(r2(Number(i.cantidad) * Number(i.precio)))}</span>
+        <span class="mat-precio">${cero ? "—" : fmt(r2(Number(i.cantidad) * Number(i.precio)))}</span>
+        ${selCero(z, i.item)}
         ${!soloLectura && i.id ? `<button class="insp-borrar btn-item-qty" data-id="${i.id}" data-qty="${esc(i.cantidad)}" title="Cambiar cantidad">✎</button>
         <button class="insp-borrar btn-item-borrar" data-id="${i.id}" title="Quitar">🗑</button>` : ""}
-      </div>`).join("");
+      </div>`;
+    }).join("");
 
-    const filasAutos = c.autos.map(a => `
-      <div class="mat-item auto-item">
+    // Los automáticos dejan de ser mudos: autosPlanos lee el precio vivo del
+    // catálogo con un .includes difuso, así que puede caer en un connector sin
+    // precio y colarse a $0.00 con su chip AUTO y aire de normalidad.
+    const filasAutos = c.autos.map((a, n) => {
+      const z = zsAuto[n] || CERO_NEUTRO, cero = (Number(a.precio) || 0) === 0;
+      return `
+      <div class="mat-item auto-item${z.fila ? " " + z.fila : ""}">
         <span class="recibo-chip leido">AUTO</span>
+        ${z.chip ? `<span class="recibo-chip ${z.clase}">${esc(z.chip)}</span>` : ""}
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(a.item)}</span>
-          <span class="alcance-estado">${esc(r2(a.cantidad))} ${esc(a.unidad || "")} · ${esc(a.auto)}</span>
+          <span class="alcance-estado">${esc(r2(a.cantidad))} ${esc(a.unidad || "")} · ${esc(a.auto)}${cero && z.motivo ? ` · ${esc(z.motivo)}` : ""}</span>
         </span>
-        <span class="mat-precio">${fmt(r2(a.cantidad * a.precio))}</span>
-      </div>`).join("");
+        <span class="mat-precio">${cero ? "—" : fmt(r2(a.cantidad * a.precio))}</span>
+        ${selCero(z, a.item)}
+      </div>`;
+    }).join("");
 
     // Ensambles del estimado (modos remodelación / servicio)
     const modoEns = est.modo === "servicio" ? "servicio" : "remodelacion";
@@ -6293,6 +6470,37 @@ Power done right the first time. ⚡`;
     const ohEsc = Number(c.esc.overhead_hh);
     const difiere = oReal && ohEsc && Math.abs(oReal.valor - ohEsc) / ohEsc > 0.05;
     const horasAhora = ohEsc ? Math.round(oReal ? oReal.gastos / ohEsc : 0) : 0;
+    // E0 · El aviso de arriba. Agrupa por SECCIÓN y cuenta HORAS: 78 piezas de
+    // switchgear con 214 h y cero material es ilegible como normal, mientras
+    // que "78 renglones a $0.00" no dice nada. Nunca lista 78 líneas.
+    const ceroBanner = (() => {
+      try {
+        if (ceroAviso < 2 || !zAlerta.length) return "";
+        const porSec = {};
+        const anota = (linea, z, auto) => {
+          if (!z.alerta) return;
+          const sec = (z.cat && z.cat.seccion) || (z.est === "huerfano" ? "SIN CATÁLOGO" : auto ? "AUTOMÁTICOS" : "SIN SECCIÓN");
+          const g = porSec[sec] || (porSec[sec] = { n: 0, h: 0, rojo: 0 });
+          g.n++;
+          g.h += (Number(linea.cantidad) || 0) * (Number(linea.horas) || 0);
+          if (z.est === "falta_precio" || z.est === "huerfano") g.rojo++;
+        };
+        c.items.forEach((i, n) => anota(i, zAt(n), false));
+        c.autos.forEach((a, n) => anota(a, zsAuto[n] || CERO_NEUTRO, true));
+        const secs = Object.entries(porSec).sort((a, b) => b[1].h - a[1].h);
+        const totH = r2(secs.reduce((t, [, g]) => t + g.h, 0));
+        return `<div class="inicio-card avisos">
+         <div class="aviso-texto" style="padding:.2rem 0">
+           <strong>📦 ${zAlerta.length} ${zAlerta.length === 1 ? "renglón entra" : "renglones entran"} sin material</strong>
+           — ${totH} h SÍ están en el precio<br>
+           ${secs.map(([sec, g]) => `· ${esc(sec)} — ${g.n} ${g.n === 1 ? "renglón" : "renglones"}, ${r2(g.h)} h${
+             g.rojo ? ` · <strong>${g.rojo} sin precio de verdad</strong>` : ""}`).join("<br>")}<br>
+           <span class="chk-avance">El labor cuenta; el material no. Dilo en el selector de cada renglón.</span>
+         </div>
+       </div>`;
+      } catch { return ""; }
+    })();
+
     const bannerOverhead = !(usuario.finanzas && oReal && difiere) ? "" :
       `<div class="inicio-card avisos">
          <div class="aviso-texto" style="padding:.2rem 0">
@@ -6352,6 +6560,7 @@ Power done right the first time. ⚡`;
           </select>
         </label>` : ""}
       </div>
+      ${ceroBanner}
       ${bannerOverhead}
       ${esRapido ? panelRapidoHTML(est, c, soloLectura) : panelManoHTML(est, c, soloLectura)}
       ${est.modo === "planos" && !soloLectura ? `
@@ -6717,8 +6926,66 @@ Power done right the first time. ⚡`;
       });
     });
 
+    // E0 · El selector de «¿por qué va en $0?». Un toque y la rueda nativa.
+    // Escribe en el CATÁLOGO (permanente: no vuelve a preguntar, ni en este
+    // trabajo ni en el siguiente), salvo «ya lo cotizé», que es de ESTE
+    // estimado y va por sección. En su propio try/catch y ANTES de los
+    // botones de salida, para que un fallo aquí no arrastre a congelar.
+    $("estimador-panel").querySelectorAll(".sel-cero").forEach(sel => {
+      sel.addEventListener("change", async () => {
+        const v = sel.value; sel.value = "";
+        if (!v) return;
+        const hoy = new Date().toISOString().slice(0, 10);
+        try {
+          if (v === "__cot") {
+            const sec = normTxt(sel.dataset.sec || "");
+            if (!sec) { avisar("Ese renglón no tiene sección: dímelo renglón por renglón", true); return; }
+            // Se relee del estado vivo, no de una copia: dos toques seguidos no se pisan.
+            const vivo = (estData.estimados || []).find(x => x.id === est.id) || est;
+            const notas = Object.assign({}, vivo.cero_notas || {});
+            notas["S:" + sec] = { d: "cotizado", f: hoy };
+            await DB.cambiarEstimado(est.id, { cero_notas: notas });
+            await recargarEstimador();
+            avisar(sel.dataset.sec + " cotizado ✓ — esos renglones ya no avisan en este trabajo");
+            return;
+          }
+          const id = sel.dataset.cat;
+          if (!id) { avisar("Ese nombre no está en el catálogo: corrígelo primero", true); return; }
+          const cambios = { cero_motivo: v, cero_revisado: hoy };
+          if (v === "falta_precio") {
+            const m = prompt("Precio por unidad de " + sel.dataset.item + " ($).\n\nDéjalo vacío si todavía no lo sabes:", "");
+            if (m === null) return;
+            const n = Number(String(m).replace(/[,$\s]/g, ""));
+            if (String(m).trim() !== "") {
+              if (!Number.isFinite(n) || n < 0) { avisar("Precio no válido", true); return; }
+              // Los renglones de ensamble leen el precio VIVO del catálogo en
+              // cada recálculo, también en estimados congelados y convertidos:
+              // poner un precio aquí puede mover un bid ya emitido.
+              const enEns = (estData.ensambleItems || []).some(ei => normTxt(ei.item) === normTxt(sel.dataset.item));
+              if (enEns && !confirm("Vas a poner " + fmt(n) + ' a "' + sel.dataset.item + '" en el catálogo.\n\n' +
+                  "Este ítem vive dentro de un ENSAMBLE, y los ensambles leen el precio vivo: los estimados congelados o convertidos que lo usen SE VAN A MOVER.\n\n" +
+                  "Aceptar = ponerlo igual.")) return;
+              cambios.precio = n;
+            }
+          }
+          await DB.cambiarItemCatalogo(id, cambios);
+          await recargarEstimador();
+          avisar(v === "by_owner"
+            ? "BY OWNER ✓ — va escrito en el «no incluye» de la propuesta"
+            : "Anotado en el catálogo ✓ — no te vuelve a preguntar");
+        } catch (err) { avisar("No se pudo guardar: " + err.message, true); }
+      });
+    });
+
     // --- propuesta / congelar / convertir ---
+    // E0 · El aviso antes de que el precio salga de aquí. NO invierte los
+    // botones: Aceptar = seguir, Cancelar = volver, igual que los demás
+    // confirm() de la app. Invertir la inercia convertiría el botón de
+    // abortar de siempre en el que manda el bid a coste cero.
+    const ceroDejaPasar = () => { const t = ceroTextoSalida(est, c); return !t || confirm(t); };
+
     $("btn-est-propuesta").addEventListener("click", () => {
+      if (!ceroDejaPasar()) return;
       $("propuesta-caja").innerHTML = `
         <div class="cal-panel-card">
           <div class="cal-form-titulo">📄 Propuesta lista para copiar</div>
@@ -6734,6 +7001,7 @@ Power done right the first time. ⚡`;
     });
     const btnCong = $("btn-est-congelar"), btnDesc = $("btn-est-descongelar");
     if (btnCong) btnCong.addEventListener("click", async () => {
+      if (!ceroDejaPasar()) return;
       await DB.cambiarEstimado(est.id, { estado: "congelado" }).catch(() => {});
       await recargarEstimador();
       // No se dice "los precios quedan fijos" porque no es verdad: calcularEstimado
@@ -6755,13 +7023,14 @@ Power done right the first time. ⚡`;
     // seguido irPropuesta() cambiaba de pantalla, o sea que el texto se pintaba
     // y se abandonaba, y este botón no hacía nada. Ahora cada uno el suyo.
     const btnProp = $("btn-est-armar");
-    if (btnProp) btnProp.addEventListener("click", () => irPropuesta(est.id));
+    if (btnProp) btnProp.addEventListener("click", () => { if (ceroDejaPasar()) irPropuesta(est.id); });
     $("estimador-panel").querySelectorAll(".btn-cierre").forEach(b => {
       b.addEventListener("click", () => irCierre(Number(b.dataset.id)));
     });
 
     const btnConv = $("btn-est-convertir");
     if (btnConv && est.proyecto_id && proyectos().find(x => x.id === est.proyecto_id)) btnConv.addEventListener("click", async () => {
+      if (!ceroDejaPasar()) return;
       // Un trabajo añadido: se suma al proyecto que ya existe (contrato, horas, material,
       // un hito de pago único y sus puntos de alcance). No se crea otro proyecto.
       const proy = proyectos().find(x => x.id === est.proyecto_id);
@@ -6790,6 +7059,7 @@ Power done right the first time. ⚡`;
       } catch (err) { avisar("No se pudo añadir: " + err.message, true); }
     });
     else if (btnConv) btnConv.addEventListener("click", async () => {
+      if (!ceroDejaPasar()) return;
       if (!confirm(`¿Convertir "${est.nombre}" en proyecto?\n\nSe crea con contrato ${fmt(r2(c.bid))}, horas estimadas, presupuesto de materiales, 3 hitos de pago y su alcance por puntos.`)) return;
       const idNuevo = est.nombre.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
         .slice(0, 30) + "-" + Math.random().toString(36).slice(2, 6);
@@ -7442,8 +7712,17 @@ Power done right the first time. ⚡`;
           letra: l,
           titulo: p.titulos[l] || l,
           // Copia CONGELADA: si mañana se retoca el estimado, esto no se mueve
-          alcance: items.map(it => ({ item: it.item, cantidad: it.cantidad, unidad: it.unidad })),
-          no_incluye: [],
+          // E0 · Cada letra tiene sus propios ítems, así que las exclusiones se
+          // calculan sobre ESTA opción: si no, la A imprimiría exclusiones de
+          // renglones que solo están en la B. El renglón by_owner se marca
+          // también en el alcance para que el documento no se contradiga.
+          alcance: items.map(it => {
+            const z = ceroDe(it, p.estimado);
+            const o = { item: it.item, cantidad: it.cantidad, unidad: it.unidad };
+            if (z.est === "by_owner" && z.conf) o.by_owner = true;
+            return o;
+          }),
+          no_incluye: lineasNoIncluye(p.estimado, items),
           precio,
           hitos_plan: montos.map((m, j) => ({
             titulo: `Pago ${j + 1}${j === 0 ? " — depósito" : ""}`,
@@ -9665,6 +9944,15 @@ Power done right the first time. ⚡`;
   // La puerta de la prueba del navegador: inyecta una lectura de verdad (la que
   // devolvió el asistente en vivo) sin llamar a la nube ni gastar un centavo.
   window.MXP_PRUEBA = {
+    // E0 · La lógica del $0 es pura, así que se prueba sin nube y sin sesión:
+    // se le pone un catálogo de mentira y se le pregunta. Ver pruebas/e0.js.
+    e0: {
+      datos(d) { estData = Object.assign({ catalogo: [], config: {}, ensambleItems: [], estimados: [] }, d || {}); },
+      cero(linea, est) { return ceroDe(linea, est || {}); },
+      excluye(est, items) { return lineasNoIncluye(est || {}, items || []); },
+      salida(est, c) { return ceroTextoSalida(est || {}, c || { items: [], autos: [] }); },
+      propuesta(est, c) { return textoPropuesta(est, c); }
+    },
     async aplicarLectura(lectura) {
       const A = alcActivo;
       if (!A || !alcModoPrueba()) return false;

@@ -757,6 +757,17 @@
     cambiarEnsamblePies: (id, pies) => actualizar(`estimado_ensambles?id=eq.${id}`, { pies }),
     quitarEnsamble: id => api(`estimado_ensambles?id=eq.${id}`, { metodo: "DELETE" }),
     crearItemCatalogo: fila => insertar("catalogo_items", fila),
+    // E0 · Anotar en el catálogo por qué un ítem vale $0 (y, si hace falta, su
+    // precio). OJO: hasta ahora la app solo INSERTABA aquí. Si la base no tiene
+    // permiso de UPDATE para este usuario, PostgREST no da error: devuelve 200
+    // con una lista vacía, y la pantalla diría "guardado ✓" sobre una escritura
+    // que nunca ocurrió. Por eso se mira lo que vuelve.
+    cambiarItemCatalogo: async (id, cambios) => {
+      const r = await actualizar(`catalogo_items?id=eq.${encodeURIComponent(id)}`, cambios);
+      if (!Array.isArray(r) || !r.length)
+        throw new Error("No se pudo guardar en el catálogo: falta el permiso de edición en la base.");
+      return r;
+    },
     actualizarOverhead: valor => actualizar("escenarios?id=in.(A,B,C)", { overhead_hh: valor }),
     // Editar un escenario (tarifas, cuadrilla, beneficios, profit) — solo el dueño
     cambiarEscenario: (id, cambios) => actualizar(`escenarios?id=eq.${encodeURIComponent(id)}`, cambios),

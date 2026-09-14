@@ -370,9 +370,13 @@
         opciones = sows.map(function (s) {
           var incluye = (s.incluye || []).slice(0, 14).map(function (x) {
             return '<li>' + esc(typeof x === "string" ? x : (x.item || x.titulo || "")) +
-              (x && x.cantidad ? ' <span class="cl-op-cant">×' + esc(x.cantidad) + '</span>' : '') + '</li>';
+              (x && x.cantidad ? ' <span class="cl-op-cant">×' + esc(x.cantidad) + '</span>' : '') +
+              (x && x.by_owner ? ' <span class="cl-op-cant">material by owner</span>' : '') + '</li>';
           }).join("");
-          var noinc = (s.no_incluye || []).slice(0, 6).map(function (x) {
+          // 12, no 6: quedarse callado a partir de la séptima exclusión en un
+          // documento que el cliente firma es la misma enfermedad que el $0 mudo.
+          // Coincide con el corte de lineasNoIncluye, así que no se pierde ninguna.
+          var noinc = (s.no_incluye || []).slice(0, 12).map(function (x) {
             return '<li>' + esc(typeof x === "string" ? x : (x.texto || "")) + '</li>'; }).join("");
           var adds = (s.addons || []).map(function (a) {
             var marcado = (s.addons_elegidos || []).indexOf(a.id) >= 0;
