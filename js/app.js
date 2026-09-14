@@ -6417,7 +6417,7 @@ Power done right the first time. ⚡`;
         ${est.estado === "borrador" ? `<button class="accion secundaria" id="btn-est-congelar">🔒 Congelar</button>` : ""}
         ${est.estado === "congelado" ? `<button class="accion secundaria" id="btn-est-descongelar">🔓 Volver a borrador</button>` : ""}
         ${est.estado !== "convertido" ? `<button class="accion" id="btn-est-convertir">${est.proyecto_id && proyectos().find(x => x.id === est.proyecto_id) ? `➕ Incluir al proyecto` : `🚀 Convertir en proyecto`}</button>` : ""}
-        <button class="accion secundaria" id="btn-est-propuesta">Armar propuesta para el cliente</button>
+        <button class="accion secundaria" id="btn-est-armar">🧾 Armar propuesta para el cliente</button>
         ${propuestasDelEstimado(est.id)}
       </div>
       ${est.estado === "convertido" ? (() => {
@@ -6736,7 +6736,10 @@ Power done right the first time. ⚡`;
     if (btnCong) btnCong.addEventListener("click", async () => {
       await DB.cambiarEstimado(est.id, { estado: "congelado" }).catch(() => {});
       await recargarEstimador();
-      avisar("Estimado congelado 🔒 — los precios quedan fijos");
+      // No se dice "los precios quedan fijos" porque no es verdad: calcularEstimado
+      // recalcula siempre desde el catálogo vivo, también para los congelados.
+      // Lo que congelar hace de verdad es cerrarlo a cambios de renglones.
+      avisar("Estimado congelado 🔒 — ya no se le tocan renglones");
     });
     if (btnDesc) btnDesc.addEventListener("click", async () => {
       await DB.cambiarEstimado(est.id, { estado: "borrador" }).catch(() => {});
@@ -6746,7 +6749,12 @@ Power done right the first time. ⚡`;
     if (btnFin) btnFin.addEventListener("click", () => { estimadoActivo = null; irHome(); avisar("Listo ✓"); });
     const btnVerP = $("btn-est-ver-proyecto");
     if (btnVerP) btnVerP.addEventListener("click", () => { estimadoActivo = null; irDetalle(btnVerP.dataset.id); });
-    const btnProp = $("btn-est-propuesta");
+    // OJO: este es el SEGUNDO botón. Hasta v167 los dos llevaban el mismo id
+    // ("btn-est-propuesta"), así que $() devolvía siempre el primero y se le
+    // apilaban los dos listeners: tocarlo pintaba el texto para copiar y acto
+    // seguido irPropuesta() cambiaba de pantalla, o sea que el texto se pintaba
+    // y se abandonaba, y este botón no hacía nada. Ahora cada uno el suyo.
+    const btnProp = $("btn-est-armar");
     if (btnProp) btnProp.addEventListener("click", () => irPropuesta(est.id));
     $("estimador-panel").querySelectorAll(".btn-cierre").forEach(b => {
       b.addEventListener("click", () => irCierre(Number(b.dataset.id)));
