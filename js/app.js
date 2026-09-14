@@ -5616,14 +5616,21 @@ function esFalloDeRed(err) {
     // La escalación es un costo, así que entra antes del overhead y del profit
     const escalacion = (totalLabor + totalMaterial) * (escFactor - 1);
     const prime = totalLabor + totalMaterial + escalacion;
-    const overhead = ohPct !== null ? prime * ohPct : horas * ohHH;
+    // El overhead por PORCENTAJE no se cobra sobre lo que llega cotizado.
+    // Mismo argumento que las misceláneas, pero con mucho más dinero detrás:
+    // un switchgear de $600.000 que solo hay que recibir generaría $90.000 de
+    // overhead y te saca del mercado en más de $100.000. Para cobrar por
+    // gestionar ese equipo está el markup de cotizaciones, que es lo suyo.
+    // El overhead por hora no tiene este problema: no mira el material.
+    const cotEnPrime = matCot * (1 + taxPct) * (1 + mkCot);
+    const overhead = ohPct !== null ? Math.max(0, prime - cotEnPrime) * ohPct : horas * ohHH;
     const profit = (prime + overhead) * profitPct;
     const bid = prime + overhead + profit;
     return { items: base, autos, mermaMat, mermaHoras, misc, esc, matSubtotal, tax,
              totalMaterial, horasBase, horas, laborBase, benefits, totalLabor,
              prime, overhead, profit, markup, bid,
              miscPct, taxPct, ohHH, ohPct: (ohPct ?? null), profitPct, markupPct,
-             escalacion, escFactor, mesesObra, escAnual,
+             escalacion, escFactor, mesesObra, escAnual, cotEnPrime,
              matPropio, matCot, markupCotPct: mkCot,
              mezcla, tarifaMezclada, benefitsPct, lineasMat,
              // $ por hora cargado: el precio final entre las horas (todo adentro)
@@ -6823,7 +6830,7 @@ Power done right the first time. ⚡`;
         <div class="rent-fila"><span>+ Beneficios sobre el labor (${pctTxt(c.benefitsPct)}${nnDist(est.benefits_pct) ? " ✏" : ""})${lapiz("benefits_pct", "pct", c.benefitsPct, "Beneficios — % sobre el labor")}</span><span>${fmt(r2(c.benefits))}</span></div>
         ${c.escalacion > 0.5 ? `<div class="rent-fila"><span>+ Escalación (${r2(c.mesesObra)} meses de obra · ${pctTxt(c.escAnual)} al año)${lapiz("escalacion_pct", "pct", c.escAnual, "Escalación — subida anual de salarios y material")}</span><span>${fmt(r2(c.escalacion))}</span></div>` : ""}
         <div class="rent-fila"><span>+ Overhead ${c.ohPct !== null && c.ohPct !== undefined
-          ? `(${pctTxt(c.ohPct)} del costo directo${nnDist(est.overhead_pct) ? " ✏" : ""})${lapiz("overhead_pct", "pct", c.ohPct, "Overhead — % sobre mano de obra + material")}`
+          ? `(${pctTxt(c.ohPct)} del costo directo${c.cotEnPrime > 0.5 ? ", sin las cotizaciones" : ""}${nnDist(est.overhead_pct) ? " ✏" : ""})${lapiz("overhead_pct", "pct", c.ohPct, "Overhead — % sobre mano de obra + material, sin lo que llega cotizado")}`
           : `(${r2(c.horas)} h × ${fmt(c.ohHH)}${nnDist(est.overhead_hh) ? " ✏" : ""})${lapiz("overhead_hh", "monto", c.ohHH, "Overhead — $ por hora-hombre")}`}</span><span>${fmt(r2(c.overhead))}</span></div>
         <div class="rent-fila"><span>+ Profit (${pctTxt(c.profitPct)}${nnDist(est.profit_pct) ? " ✏" : ""})${lapiz("profit_pct", "pct", c.profitPct, "Profit — % sobre costo + overhead")}</span><span>${fmt(r2(c.profit))}</span></div>
         <div class="rent-fila rent-total ok"><span>🎯 PRECIO DE LA PROPUESTA</span><span>${fmt(r2(c.bid))}</span></div>

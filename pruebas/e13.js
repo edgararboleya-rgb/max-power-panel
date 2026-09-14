@@ -161,6 +161,21 @@ const r2 = v => Math.round(v * 100) / 100;
   ok('un estimado por planos ve las recetas COMERCIALES, no las de romex',
     /planos→comercial/.test(m) && /remodelacion→remodelacion/.test(m) && /servicio→servicio/.test(m), m);
 
+  /* === 12. el overhead por % no se cobra sobre lo que llega cotizado === */
+  const ESC6 = [{ ...ESC[0], overhead_pct: 0.15, tax_material: 0.065 }];
+  await p.evaluate(([c, e, cf, it]) => window.MXP_PRUEBA.e0.datos({ catalogo: c, escenarios: e, config: cf, items: it, estimados: [], ensambles: [], estEnsambles: [] }), [CAT, ESC6, CFG, ITEMS]);
+  const sinMarcar = await calc({ ...BASE, lineas_material: [{ desc: 'Switchgear', monto: 600000 }] });
+  const marcado   = await calc({ ...BASE, lineas_material: [{ desc: 'Switchgear', monto: 600000, tipo: 'cot' }] });
+  ok('sin marcar, el switchgear paga overhead: es el caso de hoy', sinMarcar.overhead > 90000, '$' + Math.round(sinMarcar.overhead));
+  ok('marcado como cotización, el overhead cae a lo que de verdad gestionas',
+    marcado.overhead < 1000 && marcado.overhead > 0, '$' + Math.round(marcado.overhead));
+  ok('y el bid baja más de $100.000 en ese caso', (sinMarcar.bid - marcado.bid) > 100000,
+    '$' + Math.round(sinMarcar.bid - marcado.bid) + ' menos');
+  ok('el switchgear sigue entero dentro del precio, no ha desaparecido', marcado.matCot === 600000 && marcado.bid > 600000, '$' + Math.round(marcado.bid));
+  await p.evaluate(([c, e, cf, it]) => window.MXP_PRUEBA.e0.datos({ catalogo: c, escenarios: e, config: cf, items: it, estimados: [], ensambles: [], estEnsambles: [] }), [CAT, ESC, CFG, ITEMS]);
+  const porHora2 = await calc({ ...BASE, escenario: 'B', lineas_material: [{ desc: 'SG', monto: 600000, tipo: 'cot' }] });
+  ok('con overhead por hora esto no aplica: nunca miró el material', r2(porHora2.overhead) === r2(50 * 30.19), '$' + r2(porHora2.overhead));
+
   ok('sin errores de consola', errs.length === 0, errs.join(' // ').slice(0, 200));
   console.log(R.join('\n'));
   const fails = R.filter(l => l.indexOf('✗') >= 0).length;
