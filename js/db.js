@@ -511,7 +511,9 @@
       puntos: alcancePuntos.map(a => ({
         id: a.id, proyecto: a.proyecto_id, texto: a.texto,
         hecho: !!a.hecho, orden: a.orden || 0,
-        prioridad: a.prioridad || "normal"
+        prioridad: a.prioridad || "normal",
+        // v179: el bloque en que sale el punto en el portal del cliente
+        grupo: a.grupo || ""
       }))
     };
   }

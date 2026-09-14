@@ -1857,7 +1857,7 @@ function esFalloDeRed(err) {
       .map(x => ({
         tipo: "punto", id: x.id, texto: x.texto, hecha: x.hecho,
         prioridad: prioDe(x.prioridad), origen: "alcance",
-        autor: "", fecha: "", orden: x.orden || 0
+        autor: "", fecha: "", orden: x.orden || 0, grupo: x.grupo || ""
       }));
     const delCampo = (state.pendientes || [])
       .filter(x => x.proyecto === pid && (!x.resuelto || (x.fecha || "") >= haceQuince))
@@ -1887,7 +1887,8 @@ function esFalloDeRed(err) {
   // Una fila del checklist: palomita · texto · categoría · ✎ · 🗑
   function filaTarea(t) {
     const p = prioDe(t.prioridad);
-    const meta = [t.proyectoNombre ? "🔧 " + t.proyectoNombre : "", t.autor || "", t.fecha || ""]
+    const meta = [t.proyectoNombre ? "🔧 " + t.proyectoNombre : "", t.autor || "", t.fecha || "",
+                  t.grupo ? "🏷 " + t.grupo : ""]
       .filter(Boolean).join(" · ");
     const selector = `
       <select class="tarea-prio ${p}" title="Categoría de la tarea">
@@ -1903,6 +1904,7 @@ function esFalloDeRed(err) {
         </span>
         ${t.hecha ? "" : selector}
         ${usuario.editar ? `<button class="tarea-editar insp-borrar" title="Corregir el texto">✎</button>
+        ${t.tipo === "punto" ? `<button class="tarea-grupo insp-borrar" title="Bloque en que sale en el portal del cliente">🏷</button>` : ""}
         <button class="tarea-borrar insp-borrar" title="Eliminar">🗑</button>` : ""}
       </div>`;
   }
@@ -2067,6 +2069,33 @@ function esFalloDeRed(err) {
           else await DB.cambiarPendiente(id, { descripcion: limpio });
           await recargar();
           avisar("Tarea corregida ✓");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    // 🏷 El bloque del portal: los puntos de una obra se agrupan en el portal
+    // del cliente (Fase 1, Generador…), cada bloque con su propia barra. Se
+    // sugieren los bloques que ya usa esa obra para no escribirlos dos veces.
+    raiz.querySelectorAll(".tarea-grupo").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const { id } = dato(btn);
+        const punto = (state.puntos || []).find(x => String(x.id) === String(id));
+        if (!punto) return;
+        const yaUsados = [...new Set((state.puntos || [])
+          .filter(x => x.proyecto === punto.proyecto && x.grupo).map(x => x.grupo))];
+        const nuevo = prompt(
+          "¿En qué bloque sale este punto en el portal del cliente?\n" +
+          (yaUsados.length ? "Bloques de esta obra: " + yaUsados.join(" · ") + "\n" : "") +
+          "(Déjalo vacío para que salga en la lista de siempre.)",
+          punto.grupo || "");
+        if (nuevo === null) return;
+        const limpio = nuevo.trim();
+        if (limpio === (punto.grupo || "")) return;
+        try {
+          // El inglés se borra para que la rutina del idioma lo vuelva a traducir
+          await DB.cambiarPunto(id, { grupo: limpio || null, grupo_en: null });
+          punto.grupo = limpio;
+          await recargar();
+          avisar(limpio ? "🏷 Bloque: " + limpio : "El punto vuelve a la lista de siempre");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
