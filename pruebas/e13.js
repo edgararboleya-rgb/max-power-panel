@@ -141,6 +141,21 @@ const r2 = v => Math.round(v * 100) / 100;
   const nulo = await calc({ ...BASE, escenario: 'B' });
   ok('y con la casilla vacía, exactamente lo mismo', r2(nulo.overhead) === r2(cero.overhead), '$' + r2(nulo.overhead));
 
+  /* === 10. la escalación de una obra larga === */
+  await p.evaluate(([c, e, cf, it]) => window.MXP_PRUEBA.e0.datos({ catalogo: c, escenarios: e, config: Object.assign({}, cf, { escalacion_anual: 0.04 }), items: it, estimados: [], ensambles: [], estEnsambles: [] }), [CAT, ESC, CFG, ITEMS]);
+  const corta = await calc({ ...BASE });
+  ok('sin meses de obra apuntados no se aplica escalación ninguna', corta.escalacion === 0 && corta.escFactor === 1, corta.escalacion);
+  const larga = await calc({ ...BASE, meses_obra: 18 });
+  ok('18 meses al 4 % anual → 3 % sobre el costo, que es la mitad de año y medio',
+    r2(larga.escFactor) === 1.03, 'factor ' + r2(larga.escFactor));
+  ok('la escalación se suma al costo, antes del overhead y del profit',
+    r2(larga.escalacion) === r2((larga.totalLabor + larga.totalMaterial) * 0.03) && larga.bid > corta.bid,
+    '$' + r2(larga.escalacion));
+  const seis = await calc({ ...BASE, meses_obra: 6 });
+  ok('una obra de 6 meses escala mucho menos que una de 18', seis.escalacion < larga.escalacion / 2, '$' + r2(seis.escalacion));
+  const propia = await calc({ ...BASE, meses_obra: 18, escalacion_pct: 0.08 });
+  ok('se puede poner otra subida anual en un estimado suelto', r2(propia.escFactor) === 1.06, 'factor ' + r2(propia.escFactor));
+
   ok('sin errores de consola', errs.length === 0, errs.join(' // ').slice(0, 200));
   console.log(R.join('\n'));
   const fails = R.filter(l => l.indexOf('✗') >= 0).length;

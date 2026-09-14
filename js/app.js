@@ -5323,6 +5323,31 @@ function esFalloDeRed(err) {
     return (lista[0] || {}).id || actual || "B";
   }
 
+  // ---------- E13c · De qué se compone el "benefits" ----------
+  // El % de beneficios es lo que te cuesta un empleado POR ENCIMA de su
+  // salario. Tenerlo como un número suelto no se puede auditar: no sabes si
+  // el 25 % cubre o te estás comiendo la diferencia en cada hora trabajada.
+  // Desglosado, el total sale de sumar lo que de verdad pagas.
+  // Los tres primeros son ley y no se discuten; los demás dependen de ti.
+  const BENEF_BASE = [
+    { k: "fica",   n: "FICA (Social Security 6,2 % + Medicare 1,45 %)", pct: 7.65, fijo: true },
+    { k: "futa",   n: "FUTA federal (sobre los primeros $7.000)",       pct: 0.1 },
+    { k: "suta",   n: "Paro de Florida (sobre los primeros $7.000)",    pct: 0.3 },
+    { k: "wc",     n: "Workers comp — eléctrico, código 5190",          pct: 2.97 },
+    { k: "gl",     n: "Responsabilidad civil (GL)",                     pct: 1.0 },
+    { k: "pto",    n: "Vacaciones y feriados",                          pct: 4.2 },
+    { k: "salud",  n: "Seguro médico",                                  pct: 0 },
+    { k: "otros",  n: "Herramienta, uniformes, formación",              pct: 0 }
+  ];
+  const benefDetalle = e => {
+    const g = Array.isArray(e && e.benefits_detalle) ? e.benefits_detalle : null;
+    return BENEF_BASE.map(b => {
+      const guardado = g && g.find(x => x.k === b.k);
+      return { ...b, pct: guardado ? Number(guardado.pct) || 0 : b.pct };
+    });
+  };
+  const benefSuma = lista => Math.round(lista.reduce((t, b) => t + (Number(b.pct) || 0), 0) * 100) / 100;
+
   // ---------- Motor v2: ítems + ensambles + automáticos ----------
   const normTxt = s => String(s || "").replace(/\s+/g, " ").trim().toUpperCase();
   const buscaCatalogo = frag => (estData.catalogo || [])
@@ -5534,6 +5559,13 @@ function esFalloDeRed(err) {
     // columna llegara en 0 en vez de vacía, tratarlo como porcentaje dejaría
     // el overhead entero fuera del bid sin que se note. Falla hacia el método
     // por hora, que es el que siempre ha estado.
+    // E13d · Escalación: una obra de año y medio no se paga a precios de hoy.
+    // El gasto se reparte a lo largo de la obra, así que el punto medio está
+    // a la mitad: subida anual × años ÷ 2. Con 4 % al año y 18 meses son 3 %.
+    // Sin meses de obra apuntados no se aplica nada, que es como está hoy.
+    const mesesObra = n(est.meses_obra);
+    const escAnual = nn(est.escalacion_pct) ?? nn(cfg.escalacion_anual) ?? 0;
+    const escFactor = (mesesObra > 0 && escAnual > 0) ? 1 + escAnual * (mesesObra / 12) / 2 : 1;
     const ohPctCrudo = nn(est.overhead_pct) ?? nn(esc.overhead_pct);
     const ohPct = (ohPctCrudo === null || !(ohPctCrudo > 0)) ? null : ohPctCrudo;
     const profitPct = nn(est.profit_pct) ?? n(esc.profit);
@@ -5581,7 +5613,9 @@ function esFalloDeRed(err) {
     const benefitsPct = nn(est.benefits_pct) ?? n(esc.benefits);
     const benefits = laborBase * benefitsPct;
     const totalLabor = laborBase + benefits;
-    const prime = totalLabor + totalMaterial;
+    // La escalación es un costo, así que entra antes del overhead y del profit
+    const escalacion = (totalLabor + totalMaterial) * (escFactor - 1);
+    const prime = totalLabor + totalMaterial + escalacion;
     const overhead = ohPct !== null ? prime * ohPct : horas * ohHH;
     const profit = (prime + overhead) * profitPct;
     const bid = prime + overhead + profit;
@@ -5589,6 +5623,7 @@ function esFalloDeRed(err) {
              totalMaterial, horasBase, horas, laborBase, benefits, totalLabor,
              prime, overhead, profit, markup, bid,
              miscPct, taxPct, ohHH, ohPct: (ohPct ?? null), profitPct, markupPct,
+             escalacion, escFactor, mesesObra, escAnual,
              matPropio, matCot, markupCotPct: mkCot,
              mezcla, tarifaMezclada, benefitsPct, lineasMat,
              // $ por hora cargado: el precio final entre las horas (todo adentro)
@@ -6120,6 +6155,9 @@ Power done right the first time. ⚡`;
           <label class="mat-filtro-label">Factor de productividad
             <input id="rap-factor" type="number" min="0.5" max="2" step="0.05" value="${esc(est.factor || 1)}" ${soloLectura ? "disabled" : ""}>
           </label>
+          <label class="mat-filtro-label">Meses de obra
+            <input id="rap-meses" type="number" min="0" max="60" step="1" value="${esc(est.meses_obra ?? "")}" placeholder="—" ${soloLectura ? "disabled" : ""} title="Solo para obras largas: a partir de aquí se calcula la escalación de salarios y material. Vacío = no se aplica.">
+          </label>
         </div>
         <div class="rap-sub">Material a mano — ${fmt(totalMano)}${totalCot ? ` · ${fmt(totalCot)} en cotizaciones` : ""}
           ${!soloLectura ? `<button type="button" class="accion secundaria rap-mat-agregar">+ Agregar línea</button>` : ""}</div>
@@ -6172,6 +6210,9 @@ Power done right the first time. ⚡`;
           </label>
           <label class="mat-filtro-label">Factor de productividad
             <input id="rap-factor" type="number" min="0.5" max="2" step="0.05" value="${esc(est.factor || 1)}" ${soloLectura ? "disabled" : ""}>
+          </label>
+          <label class="mat-filtro-label">Meses de obra
+            <input id="rap-meses" type="number" min="0" max="60" step="1" value="${esc(est.meses_obra ?? "")}" placeholder="—" ${soloLectura ? "disabled" : ""} title="Solo para obras largas: a partir de aquí se calcula la escalación de salarios y material. Vacío = no se aplica.">
           </label>
         </div>
         <div class="rap-sub">Material — ${fmt(r2(c.lineasMat.reduce((t, l) => t + (Number(l.monto) || 0), 0)))}
@@ -6250,6 +6291,12 @@ Power done right the first time. ⚡`;
     if (h) h.addEventListener("change", () => { const v = num(h); if (v !== null && v >= 0) guardar({ horas_directas: v }); });
     const f = $("rap-factor");
     if (f) f.addEventListener("change", () => { const v = num(f); if (v && v > 0) guardar({ factor: v }); });
+    const ms = $("rap-meses");
+    if (ms) ms.addEventListener("change", () => {
+      const v = String(ms.value).trim() === "" ? null : num(ms);
+      if (v === null || (v >= 0 && v <= 60)) guardar({ meses_obra: v },
+        v ? "Obra de " + v + " meses ✓ — se calcula la escalación" : "Sin escalación ✓");
+    });
 
     // Material: líneas sueltas
     const lineas = () => (Array.isArray(est.lineas_material) ? est.lineas_material : []).map(l => ({ ...l }));
@@ -6350,7 +6397,7 @@ Power done right the first time. ⚡`;
               ${cu.length > 1 ? `<button type="button" class="insp-borrar esc-rol-quitar" data-i="${i}" title="Quitar rol">🗑</button>` : ""}
             </div>`).join("")}
             <div class="modal-fila">
-              <label class="mat-filtro-label">Beneficios (%)<input class="esc-benefits" type="number" min="0" max="100" step="0.5" value="${esc(pct(e.benefits))}"></label>
+              <label class="mat-filtro-label">Beneficios (%)<input class="esc-benefits" type="number" min="0" max="100" step="0.5" value="${esc(pct(e.benefits))}" readonly title="Sale de sumar el desglose de abajo"></label>
               <label class="mat-filtro-label">Profit (%)<input class="esc-profit" type="number" min="0" max="100" step="0.5" value="${esc(pct(e.profit))}"></label>
             </div>
             <div class="modal-fila">
@@ -6361,6 +6408,16 @@ Power done right the first time. ⚡`;
             <p class="rent-nota" style="margin:.2rem 0 .4rem">${e.overhead_pct
               ? `Overhead por <b>porcentaje del costo directo</b>: ${pct(e.overhead_pct)} % sobre mano de obra + material. Es el método del Excel de Miami y el que sirve cuando la oficina y los camiones no los pones tú. NECA sitúa el 14–16 % en operaciones bien llevadas; el Excel usaba 10 %.`
               : `Overhead por <b>hora-hombre</b>: tus gastos generales repartidos entre tus horas. Si quieres el otro método, escribe un % aquí al lado y este se apaga.`}</p>
+            <details class="esc-benef">
+              <summary class="chk-avance" style="cursor:pointer">¿De qué se compone ese ${pct(e.benefits)} % de beneficios?</summary>
+              <p class="rent-nota" style="margin:.3rem 0">Lo que te cuesta un empleado POR ENCIMA de su salario. El total de arriba sale de sumar esto, así que se puede auditar: o cubre, o te lo estás comiendo en cada hora.</p>
+              ${benefDetalle(e).map(b => `
+              <div class="rap-rol">
+                <span class="rap-desc" style="flex:1">${esc(b.n)}${b.fijo ? " <b>· ley</b>" : ""}</span>
+                <input class="esc-benef-pct" data-k="${esc(b.k)}" type="number" min="0" max="60" step="0.05" value="${esc(b.pct)}" ${b.fijo ? "readonly" : ""}><span class="rap-signo">%</span>
+              </div>`).join("")}
+              <p class="rent-nota">FICA es ley federal. El workers comp de electricista en Florida (código 5190) está en 2,97 % en 2026; si tu póliza dice otra cosa, pon la tuya. El seguro médico viene en 0: si lo das, es el que más pesa.</p>
+            </details>
             <div class="modal-botones">
               <button type="button" class="accion secundaria esc-rol-agregar">+ Agregar rol</button>
               <button type="button" class="accion esc-guardar">💾 Guardar ${esc(e.id)}</button>
@@ -6388,7 +6445,14 @@ Power done right the first time. ⚡`;
           foreman: mezcla[0] ? mezcla[0].tarifa : 0, pct_foreman: mezcla[0] ? mezcla[0].pct : 0,
           journeyman: mezcla[1] ? mezcla[1].tarifa : 0, pct_journeyman: mezcla[1] ? mezcla[1].pct : 0,
           helper: mezcla[2] ? mezcla[2].tarifa : 0, pct_helper: mezcla[2] ? mezcla[2].pct : 0,
-          benefits: (Number(card.querySelector(".esc-benefits").value) || 0) / 100,
+          // El total de beneficios SALE del desglose: no es un número suelto
+          benefits: (() => {
+            const det = [...card.querySelectorAll(".esc-benef-pct")];
+            if (!det.length) return (Number(card.querySelector(".esc-benefits").value) || 0) / 100;
+            return det.reduce((t, i) => t + (Number(i.value) || 0), 0) / 100;
+          })(),
+          benefits_detalle: [...card.querySelectorAll(".esc-benef-pct")]
+            .map(i => ({ k: i.dataset.k, pct: Number(i.value) || 0 })),
           profit: (Number(card.querySelector(".esc-profit").value) || 0) / 100,
           // El overhead por hora y el sales tax también son del escenario: es lo
           // que permite que MXP MEP tenga los suyos (Orange 6.5 %, no 7.5 %).
@@ -6753,6 +6817,7 @@ Power done right the first time. ⚡`;
         <div class="rent-fila"><span>Horas de TODO el trabajo (${r2(c.horasBase)} × factor ${est.factor || 1})</span><span>${r2(c.horas)} h</span></div>
         <div class="rent-fila"><span>Labor (${r2(c.horas)} h × ${fmt(r2(c.tarifaMezclada))} cuadrilla)</span><span>${fmt(r2(c.laborBase))}</span></div>
         <div class="rent-fila"><span>+ Beneficios sobre el labor (${pctTxt(c.benefitsPct)}${nnDist(est.benefits_pct) ? " ✏" : ""})${lapiz("benefits_pct", "pct", c.benefitsPct, "Beneficios — % sobre el labor")}</span><span>${fmt(r2(c.benefits))}</span></div>
+        ${c.escalacion > 0.5 ? `<div class="rent-fila"><span>+ Escalación (${r2(c.mesesObra)} meses de obra · ${pctTxt(c.escAnual)} al año)${lapiz("escalacion_pct", "pct", c.escAnual, "Escalación — subida anual de salarios y material")}</span><span>${fmt(r2(c.escalacion))}</span></div>` : ""}
         <div class="rent-fila"><span>+ Overhead ${c.ohPct !== null && c.ohPct !== undefined
           ? `(${pctTxt(c.ohPct)} del costo directo${nnDist(est.overhead_pct) ? " ✏" : ""})${lapiz("overhead_pct", "pct", c.ohPct, "Overhead — % sobre mano de obra + material")}`
           : `(${r2(c.horas)} h × ${fmt(c.ohHH)}${nnDist(est.overhead_hh) ? " ✏" : ""})${lapiz("overhead_hh", "monto", c.ohHH, "Overhead — $ por hora-hombre")}`}</span><span>${fmt(r2(c.overhead))}</span></div>

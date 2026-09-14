@@ -2993,3 +2993,10 @@ button > .ico:only-child, .lev-btn-ico > .ico { margin-right: 0; width: 1.15em; 
 .app-version { font-size: 0.7rem; color: var(--mp-ink-3, #6b7c8f); opacity: 0.85; white-space: nowrap; cursor: pointer; margin-left: 0.35rem; }
 .login-nota .app-version { margin-left: 0; }
 @media (max-width: 480px) { .membrete-der .app-version { display: none; } }
+
+/* E13c · El desglose de los beneficios dentro de un escenario */
+.esc-benef { margin: .35rem 0 .2rem; padding: .35rem .5rem; border: 1px solid var(--mp-line); border-radius: 10px; background: var(--mp-sky-2); }
+.esc-benef summary { font-size: .82rem; color: var(--mp-teal-text); }
+.esc-benef .rap-rol { gap: .4rem; }
+.esc-benef .rap-desc { font-size: .8rem; }
+.esc-benef input { width: 5rem; text-align: right; }
