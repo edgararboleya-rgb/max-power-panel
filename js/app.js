@@ -6589,7 +6589,11 @@ Power done right the first time. ⚡`;
     }).join("");
 
     // Ensambles del estimado (modos remodelación / servicio)
-    const modoEns = est.modo === "servicio" ? "servicio" : "remodelacion";
+    // Qué recetas se ofrecen según cómo se estima el trabajo. Antes, un
+    // estimado por planos veía las recetas residenciales (romex, cajas de
+    // plástico, staples), que no son las de un comercial en EMT o MC.
+    const modoEns = est.modo === "servicio" ? "servicio"
+      : est.modo === "planos" ? "comercial" : "remodelacion";
     const ensDisponibles = (estData.ensambles || []).filter(e => e.modo === modoEns);
     const ensDelEst = (estData.estEnsambles || []).filter(e => e.estimado_id === est.id);
     const filasEnsambles = ensDisponibles.map(ens => {
@@ -10187,6 +10191,7 @@ Power done right the first time. ⚡`;
       calcula(est) { return calcularEstimado(est); },
       escenarios(empresa) { return escenariosDe(empresa).map(e => e.id); },
       escToca(empresa, actual) { return escenarioQueToca(empresa, actual); },
+      modoEns(modo) { return modo === "servicio" ? "servicio" : modo === "planos" ? "comercial" : "remodelacion"; },
       esMep(est) { return esMEP(est); }
     },
     async aplicarLectura(lectura) {

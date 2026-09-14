@@ -156,6 +156,11 @@ const r2 = v => Math.round(v * 100) / 100;
   const propia = await calc({ ...BASE, meses_obra: 18, escalacion_pct: 0.08 });
   ok('se puede poner otra subida anual en un estimado suelto', r2(propia.escFactor) === 1.06, 'factor ' + r2(propia.escFactor));
 
+  /* === 11. E9 · cada modo de estimar ve sus propias recetas === */
+  const m = await p.evaluate(() => ['planos', 'remodelacion', 'servicio', 'rapido'].map(x => x + '→' + window.MXP_PRUEBA.e0.modoEns(x)).join(' '));
+  ok('un estimado por planos ve las recetas COMERCIALES, no las de romex',
+    /planos→comercial/.test(m) && /remodelacion→remodelacion/.test(m) && /servicio→servicio/.test(m), m);
+
   ok('sin errores de consola', errs.length === 0, errs.join(' // ').slice(0, 200));
   console.log(R.join('\n'));
   const fails = R.filter(l => l.indexOf('✗') >= 0).length;
