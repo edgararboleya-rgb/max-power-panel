@@ -1,0 +1,166 @@
+/* ============================================================================
+   PORTAL v31 — la cara común del portal del CLIENTE (cliente.html) y de la
+   portada del CONTRATISTA (gc.html). Lo que pidió Edgar el 14-sep: que se vea
+   lleno, que algo resalte, y que la computadora use el ancho de verdad.
+   En el teléfono todo va en una columna; desde 1024 px, dos columnas.
+   ============================================================================ */
+
+/* ── La cabecera oscura con los números que importan ─────────────────── */
+.pt-hero {
+  background: linear-gradient(135deg, #071A2E 0%, #1B3C8C 55%, #2A5BD7 100%);
+  color: #fff; border-radius: 18px; padding: 1.25rem 1.25rem 1rem; margin: 1rem 0;
+  box-shadow: var(--mp-shadow-lg); position: relative; overflow: hidden;
+}
+.pt-hero::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(600px 220px at 100% 0%, rgba(34,232,224,.28), transparent 70%);
+}
+.pt-hero > * { position: relative; }
+.pt-kicker { font-size: .68rem; letter-spacing: .16em; text-transform: uppercase; font-weight: 800; color: #22E8E0; }
+.pt-nombre { font-size: 1.7rem; font-weight: 900; margin: .15rem 0 .1rem; letter-spacing: -.01em; line-height: 1.12; }
+.pt-dir { font-size: .92rem; opacity: .85; }
+.pt-estado {
+  display: inline-flex; align-items: center; gap: .4rem; margin-top: .6rem;
+  background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22);
+  border-radius: 999px; padding: .3rem .75rem; font-size: .8rem; font-weight: 800;
+}
+.pt-estado i { width: 8px; height: 8px; border-radius: 50%; background: #8CF06A; box-shadow: 0 0 0 4px rgba(140,240,106,.25); flex-shrink: 0; }
+
+/* ── Las casillas de números ─────────────────────────────────────────── */
+.pt-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; margin-top: 1rem; }
+.pt-tile { background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.18); border-radius: 14px; padding: .7rem .8rem; min-width: 0; }
+.pt-tile-k { font-size: .66rem; letter-spacing: .12em; text-transform: uppercase; font-weight: 800; opacity: .8; }
+.pt-tile-v { font-size: 1.25rem; font-weight: 900; margin-top: .15rem; line-height: 1.15; overflow-wrap: anywhere; }
+.pt-tile-v small { font-size: .8rem; font-weight: 700; opacity: .8; }
+.pt-tile-s { font-size: .78rem; opacity: .85; margin-top: .2rem; line-height: 1.35; overflow-wrap: anywhere; }
+.pt-hero .pt-tile.due { background: rgba(239,226,46,.16); border-color: rgba(239,226,46,.5); }
+.pt-hero .pt-tile.due .pt-tile-v { color: #EFE22E; }
+@media (max-width: 480px) { .pt-tile-v { font-size: 1.1rem; } .pt-nombre { font-size: 1.45rem; } }
+
+/* ── Barras ──────────────────────────────────────────────────────────── */
+.pt-bar { height: 7px; border-radius: 999px; background: rgba(11,32,54,.10); overflow: hidden; margin-top: .45rem; }
+.pt-hero .pt-bar { background: rgba(255,255,255,.18); }
+.pt-bar-in { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #2A5BD7, #22E8E0 60%, #8CF06A); }
+.pt-bar-in.ok { background: #6FBF3C; }
+
+/* ── Los cuatro pasos ────────────────────────────────────────────────── */
+.pt-pasos { display: flex; gap: .4rem; margin-top: 1rem; }
+.pt-paso { flex: 1; min-width: 0; text-align: center; font-size: .72rem; font-weight: 800; opacity: .6; overflow-wrap: anywhere; }
+.pt-paso b { display: block; height: 5px; border-radius: 999px; background: rgba(255,255,255,.25); margin-bottom: .3rem; }
+.pt-paso.h { opacity: 1; color: #8CF06A; } .pt-paso.h b { background: #8CF06A; }
+.pt-paso.a { opacity: 1; color: #22E8E0; } .pt-paso.a b { background: linear-gradient(90deg,#2A5BD7,#22E8E0); }
+
+/* ── Tarjetas ────────────────────────────────────────────────────────── */
+.pt-card { background: var(--mp-card); border: 1px solid var(--mp-line); border-radius: 16px; padding: 1rem 1.1rem; margin-bottom: .9rem; box-shadow: var(--mp-shadow); min-width: 0; }
+.pt-h { display: flex; align-items: center; gap: .5rem; font-size: .7rem; letter-spacing: .14em; text-transform: uppercase; font-weight: 800; color: var(--mp-teal-text); margin-bottom: .6rem; }
+.pt-h .pt-hr { margin-left: auto; font-size: .72rem; letter-spacing: 0; text-transform: none; color: var(--mp-ink-2); font-weight: 700; }
+.pt-lead { font-size: .95rem; line-height: 1.5; color: var(--mp-ink); margin: 0 0 .3rem; }
+.pt-lead.chico { font-size: .85rem; color: var(--mp-ink-2); }
+.pt-vacio { font-size: .85rem; color: var(--mp-ink-3); line-height: 1.45; }
+
+/* ── El alcance por bloques ──────────────────────────────────────────── */
+.pt-grp { border-top: 1px solid var(--mp-sky-2); padding: .55rem 0; }
+.pt-grp:first-of-type { border-top: 0; }
+.pt-grp > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; column-gap: .6rem; }
+.pt-grp > summary::-webkit-details-marker { display: none; }
+.pt-grp-n { font-weight: 800; color: var(--mp-ink); font-size: .95rem; min-width: 0; overflow-wrap: anywhere; }
+.pt-grp-n::before { content: "▸ "; color: var(--mp-ink-3); }
+.pt-grp[open] > summary .pt-grp-n::before { content: "▾ "; }
+.pt-grp-c { font-size: .78rem; font-weight: 800; color: var(--mp-ink-2); white-space: nowrap; }
+.pt-grp-c.ok { color: var(--mp-ok); }
+.pt-grp > summary .pt-bar { grid-column: 1 / -1; }
+.pt-grp-items { margin-top: .5rem; }
+.pt-it { display: flex; gap: .55rem; padding: .35rem 0; font-size: .9rem; line-height: 1.4; color: var(--mp-ink); border-top: 1px dashed var(--mp-sky-2); break-inside: avoid; }
+.pt-it-c { flex: 0 0 20px; height: 20px; border-radius: 6px; border: 1.5px solid var(--mp-line); font-size: .8rem; font-weight: 900; display: inline-flex; align-items: center; justify-content: center; color: #fff; }
+.pt-it.h .pt-it-c { background: #6FBF3C; border-color: #6FBF3C; }
+.pt-it.h { color: var(--mp-ink-3); text-decoration: line-through; text-decoration-color: rgba(91,118,144,.5); }
+
+/* ── Los números de la tarjeta de pagos (sobre fondo claro) ──────────── */
+.pt-sum { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; margin-bottom: .8rem; }
+.pt-sum .pt-tile { background: var(--mp-sky-1); border-color: var(--mp-line); color: var(--mp-ink); }
+.pt-sum .pt-tile-k, .pt-sum .pt-tile-s { color: var(--mp-ink-2); opacity: 1; }
+.pt-sum .pt-tile.due { background: #FFFBE6; border-color: #E7D839; }
+.pt-sum .pt-tile.due .pt-tile-v { color: #7A6200; }
+.pt-sum .pt-tile.ok .pt-tile-v { color: var(--mp-ok); }
+
+/* ── La tabla de hitos ───────────────────────────────────────────────── */
+.pt-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .2rem .8rem; padding: .55rem 0; border-top: 1px solid var(--mp-sky-2); align-items: center; }
+.pt-row-t { font-weight: 700; color: var(--mp-ink); font-size: .92rem; overflow-wrap: anywhere; }
+.pt-row-c { font-weight: 500; font-size: .8rem; color: var(--mp-ink-2); margin-top: .1rem; }
+.pt-row-m { font-weight: 900; font-size: 1rem; color: var(--mp-ink); text-align: right; white-space: nowrap; }
+.pt-row-e { grid-column: 1 / -1; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.pt-row.facturado { background: #FFFBE6; margin: 0 -.6rem; padding: .55rem .6rem; border-radius: 10px; border-top: 0; }
+.pt-row.cobrado .pt-row-t { color: var(--mp-ink-3); }
+.pt-pill { font-size: .7rem; font-weight: 800; letter-spacing: .04em; border-radius: 999px; padding: .15rem .55rem; background: var(--mp-sky-2); color: var(--mp-ink-2); }
+.pt-pill.ok { background: #E6F6DE; color: var(--mp-ok); }
+.pt-pill.due { background: #EFE22E; color: #3d3400; }
+.pt-pill.tarde { background: #FBE3E3; color: var(--mp-danger); }
+.pt-meta { font-size: .76rem; color: var(--mp-ink-2); overflow-wrap: anywhere; }
+
+/* ── Documentos como filas ───────────────────────────────────────────── */
+.pt-doc { display: flex; gap: .8rem; align-items: center; flex-wrap: wrap; padding: .6rem 0; border-top: 1px solid var(--mp-sky-2); }
+.pt-doc:first-of-type { border-top: 0; }
+.pt-doc-i { flex: 0 0 42px; height: 50px; border-radius: 8px; background: linear-gradient(160deg,#E8F3FA,#DCEEF7); border: 1px solid var(--mp-line); display: flex; align-items: center; justify-content: center; font-size: .62rem; font-weight: 900; color: var(--mp-navy); }
+.pt-doc-c { flex: 1 1 12rem; min-width: 0; }
+.pt-doc-t { font-weight: 800; color: var(--mp-ink); font-size: .92rem; overflow-wrap: anywhere; text-decoration: none; display: block; }
+a.pt-doc-t:hover { text-decoration: underline; }
+.pt-doc-s { font-size: .78rem; color: var(--mp-ink-2); margin-top: .1rem; }
+.pt-doc-acc { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; margin-left: auto; }
+
+/* ── El bloque de calendario ─────────────────────────────────────────── */
+.pt-ev { display: flex; gap: .8rem; align-items: center; padding: .5rem 0; border-top: 1px solid var(--mp-sky-2); }
+.pt-ev:first-of-type { border-top: 0; }
+.pt-fecha { flex: 0 0 58px; text-align: center; border-radius: 12px; background: var(--mp-navy); color: #fff; padding: .35rem 0; line-height: 1.05; }
+.pt-fecha b { display: block; font-size: 1.4rem; font-weight: 900; }
+.pt-fecha span { display: block; font-size: .62rem; letter-spacing: .1em; font-weight: 800; opacity: .85; }
+.pt-ev-c { min-width: 0; }
+.pt-ev-t { font-weight: 800; color: var(--mp-ink); font-size: .92rem; overflow-wrap: anywhere; }
+.pt-ev-s { font-size: .8rem; color: var(--mp-ink-2); }
+
+/* ── Contacto y licencias ────────────────────────────────────────────── */
+.pt-contacto { display: flex; gap: .8rem; align-items: center; }
+.pt-avatar { width: 48px; height: 48px; border-radius: 50%; background: var(--mp-grad); color: #04222B; font-weight: 900; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.pt-contacto b { display: block; color: var(--mp-ink); }
+.pt-contacto span { font-size: .82rem; color: var(--mp-ink-2); display: block; overflow-wrap: anywhere; }
+.pt-lic { display: flex; align-items: center; gap: .6rem; padding: .45rem 0; border-top: 1px solid var(--mp-sky-2); font-size: .88rem; font-weight: 700; color: var(--mp-ink); }
+.pt-lic:first-of-type { border-top: 0; }
+.pt-lic i { width: 26px; height: 26px; border-radius: 8px; background: #E6F6DE; color: var(--mp-ok); display: inline-flex; align-items: center; justify-content: center; font-style: normal; font-size: .85rem; flex-shrink: 0; }
+.pt-lic a { color: inherit; text-decoration: none; min-width: 0; overflow-wrap: anywhere; }
+.pt-lic a:hover { text-decoration: underline; }
+
+/* ── El botón de WhatsApp dentro de la tarjeta de contacto ───────────── */
+.pt-wa { display: block; text-align: center; margin: .7rem 0 0; background: linear-gradient(135deg, #25D366, #128C7E); color: #fff; font-weight: 800; padding: .8rem; border-radius: 12px; text-decoration: none; }
+
+/* ── Anchos ──────────────────────────────────────────────────────────── */
+@media (min-width: 700px) {
+  html { font-size: 17px; }
+  .container, .membrete-inner { max-width: 720px; margin-left: auto; margin-right: auto; }
+  .pie { text-align: center; }
+}
+@media (min-width: 1024px) {
+  html { font-size: 16px; }
+  #vista-app { display: flex; flex-direction: column; background: none; }
+  #vista-app > .membrete, #vista-app > main, #vista-app > .pie { grid-column: auto; width: 100%; align-self: stretch; }
+  .membrete-inner, .container { max-width: 1440px; padding-left: 2rem; padding-right: 2rem; }
+  .pt-panel { display: grid; grid-template-columns: minmax(0, 1fr) 380px; column-gap: 1.6rem; align-items: start; }
+  .pt-panel > .pt-hero, .pt-panel > .cl-cargando, .pt-panel > .gc-cargando { grid-column: 1 / -1; }
+  .pt-col-main { grid-column: 1; min-width: 0; }
+  .pt-col-side { grid-column: 2; min-width: 0; position: sticky; top: 1rem; }
+  .pt-hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr); column-gap: 2rem; align-items: center; padding: 1.6rem 1.8rem 1.3rem; }
+  .pt-hero > .pt-pasos { grid-column: 1 / -1; }
+  .pt-tiles { grid-template-columns: repeat(4, 1fr); margin-top: 0; }
+  .pt-tiles.dos { grid-template-columns: repeat(2, 1fr); }
+  .pt-nombre { font-size: 2.1rem; }
+  .pt-grp-items { column-count: 2; column-gap: 2rem; }
+  .pt-sum { grid-template-columns: repeat(4, 1fr); }
+  .pt-row { grid-template-columns: minmax(0, 1.6fr) auto minmax(0, 1fr); }
+  .pt-row-e { grid-column: auto; justify-content: flex-start; padding-left: .5rem; }
+  .pt-row-m { padding-left: 1rem; }
+}
+@media (min-width: 1400px) {
+  .membrete-inner, .container { max-width: 1520px; }
+  .pt-panel { grid-template-columns: minmax(0, 1fr) 420px; column-gap: 2rem; }
+}
+
+/* Nada al dedo por debajo de 36 px (teléfono) */
+.cl-boton, a.cl-boton, .gc-boton { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; }

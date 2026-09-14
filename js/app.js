@@ -2940,6 +2940,12 @@ function esFalloDeRed(err) {
              <button type="button" class="doc-cliente${p.portalCompleto ? " on" : ""}" id="btn-portal-completo"
                title="${p.portalCompleto ? "Luz verde: el cliente ve TODOS los documentos, fotos y videos — toca para volver al modo uno-a-uno" : "Toca para darle luz verde: verá TODOS los documentos (contratos y CO), fotos y videos sin marcarlos uno a uno"}">${p.portalCompleto ? "🟢 acceso completo: SÍ" : "⚪ acceso completo: NO"}</button>
            </div>` : `<p class="cal-sin-eventos">Corre el SQL del portal para crearle la llave a este proyecto.</p>`}
+           ${p.portalToken ? `
+           <h4 class="portal-sub">📣 Dónde vamos — el párrafo que el cliente lee arriba</h4>
+           <p class="cal-sin-eventos" style="margin:.2rem 0 .4rem">${p.portalResumen ? esc(p.portalResumen) : "Sin escribir. El cliente no ve esta tarjeta hasta que digas en qué va la obra."}</p>
+           <div class="modal-botones">
+             <button type="button" class="accion secundaria" id="btn-portal-resumen">✎ ${p.portalResumen ? "Cambiar" : "Escribir"} el resumen del portal</button>
+           </div>` : ""}
            <h4 class="portal-sub">🛋 Decisiones del cliente ("te toca a ti")</h4>
            ${(state.decisiones || []).filter(d => d.proyecto === p.id).map(d => `
              <div class="eq-reporte${d.hecha ? "" : " eq-pide"}" data-id="${d.id}">
@@ -3231,6 +3237,25 @@ function esFalloDeRed(err) {
         avisar("✉️ Email del cliente guardado");
       } catch (err) { avisar("No se pudo: " + err.message, true); }
     });
+    // 📣 El párrafo «dónde vamos» del portal. Se escribe en español; la rutina
+    // del inglés lo traduce sola para los clientes que leen en inglés.
+    const btnPortalResumen = $detalle.querySelector("#btn-portal-resumen");
+    if (btnPortalResumen) btnPortalResumen.addEventListener("click", async () => {
+      const p = state.proyectos.find(x => x.id === proyectoActivo);
+      if (!p) return;
+      const nuevo = prompt(
+        "En dos o tres frases, ¿en qué va la obra y qué falta del lado del cliente?\n" +
+        "(Sin montos: esto lo lee el cliente arriba de todo. Déjalo vacío para quitar la tarjeta.)",
+        p.portalResumen || "");
+      if (nuevo === null) return;
+      const limpio = nuevo.trim();
+      try {
+        await DB.cambiarProyecto(proyectoActivo, { portal_resumen: limpio || null, portal_resumen_en: null });
+        await recargar();
+        avisar(limpio ? "📣 El cliente ya ve en qué va la obra" : "Se quitó el resumen del portal");
+      } catch (e) { avisar("No se pudo guardar: " + (e.message || e), true); }
+    });
+
     const btnPortalCopiar = $detalle.querySelector("#btn-portal-copiar");
     if (btnPortalCopiar) btnPortalCopiar.addEventListener("click", async () => {
       const base = location.origin + location.pathname.replace(/index\.html?$/, "");

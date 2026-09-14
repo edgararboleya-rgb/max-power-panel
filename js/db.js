@@ -355,6 +355,8 @@
         portalToken: llavePorProyecto[p.id] || p.portal_token || null,
         portalDinero: p.portal_dinero === true,
         portalCompleto: p.portal_completo === true,
+        // v168: el párrafo «dónde vamos» que sale en el portal del cliente
+        portalResumen: p.portal_resumen || "",
         cliente: p.cliente || "Por confirmar",
         via: p.via || "—",
         contratistaId: p.contratista_id || null,

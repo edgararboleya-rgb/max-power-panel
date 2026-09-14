@@ -7,7 +7,8 @@
   <title>Max Power — Contractor Portal</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=142">
+  <link rel="stylesheet" href="css/styles.css?v=177">
+  <link rel="stylesheet" href="css/portal.css?v=177">
   <style>
     /* ── El portal del contratista: un estado de cuenta, no una galería ── */
     :root { --gc-num: "tnum" 1; }
@@ -150,9 +151,9 @@
       html { font-size: 16px; }
       #vista-app { display: flex; flex-direction: column; background: none; }
       #vista-app > .membrete, #vista-app > main, #vista-app > .pie { grid-column: auto; width: 100%; align-self: stretch; }
-      .membrete-inner, .container { max-width: 1240px; padding-left: 1.6rem; padding-right: 1.6rem; }
+      .membrete-inner, .container { max-width: 1440px; padding-left: 2rem; padding-right: 2rem; }
       #gc-panel { display: grid; grid-template-columns: minmax(0, 1fr) 320px; column-gap: 1.5rem; align-items: start; }
-      .gc-cab, .gc-cargando { grid-column: 1 / -1; }
+      .gc-cab, .gc-cargando, .pt-hero { grid-column: 1 / -1; }
       .gc-col-main { grid-column: 1; }
       .gc-col-side { grid-column: 2; position: sticky; top: 1rem; }
       .gc-col-side .gc-card:first-child { margin-top: 0; }
@@ -160,12 +161,11 @@
       .gc-num b { font-size: 1.28rem; }
       .gc-lista { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
     }
-    @media (min-width: 1500px) {
-      .membrete-inner, .container { max-width: 1560px; }
-      #gc-panel { grid-template-columns: minmax(0, 1fr) 340px; column-gap: 2rem; }
+    @media (min-width: 1400px) {
+      .membrete-inner, .container { max-width: 1520px; }
+      #gc-panel { grid-template-columns: minmax(0, 1fr) 420px; column-gap: 2rem; }
       .gc-lista { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
     }
-    @media (min-width: 1900px) { .membrete-inner, .container { max-width: 1800px; } }
   </style>
 </head>
 <body>
@@ -183,7 +183,7 @@
       </div>
     </header>
     <main class="container">
-      <div id="gc-panel"><p class="gc-cargando">Loading your account…</p></div>
+      <div id="gc-panel" class="pt-panel"><p class="gc-cargando">Loading your account…</p></div>
     </main>
     <footer class="pie">
       <p>Max Power Electrical Solutions, Inc. · mxpes.com · (305) 967-9311</p>
@@ -215,6 +215,8 @@
       alDia: "As of", preparado: "Prepared by", lic: "FL EC13016045",
       rContrato: "Contract value", rFacturado: "Invoiced to date", rCobrado: "Paid to date",
       rDebe: "Balance due now", rPorFacturar: "Not yet invoiced",
+      rEnObra: "Jobs in progress", rTeToca: "Needs your attention", rTodoAlDia: "All up to date",
+      rPctPagado: "paid", contactoT: "Your contact", contactoRol: "Owner · Max Power Electrical Solutions",
       rContratoS: "including signed change orders", rDebeS: function (n) { return n === 1 ? "1 open invoice" : n + " open invoices"; },
       rPorFacturarS: "future milestones",
       cuentaT: "Statement by job", cuentaS: "only the jobs on contract with you",
@@ -245,6 +247,8 @@
       alDia: "Al día", preparado: "Preparado por", lic: "FL EC13016045",
       rContrato: "Valor del contrato", rFacturado: "Facturado a la fecha", rCobrado: "Cobrado a la fecha",
       rDebe: "Saldo pendiente hoy", rPorFacturar: "Por facturar",
+      rEnObra: "Obras en ejecución", rTeToca: "Te toca a ti", rTodoAlDia: "Todo al día",
+      rPctPagado: "pagado", contactoT: "Tu contacto", contactoRol: "Dueño · Max Power Electrical Solutions",
       rContratoS: "con los change orders firmados", rDebeS: function (n) { return n === 1 ? "1 factura abierta" : n + " facturas abiertas"; },
       rPorFacturarS: "hitos futuros",
       cuentaT: "Estado de cuenta por obra", cuentaS: "solo las obras con contrato con ustedes",
@@ -363,28 +367,52 @@
           }).join("") + '</div>'
         : "";
 
-      // ── Cabecera del estado de cuenta ──
-      var cab =
-        '<div class="gc-cab">' +
-          '<div><div class="kicker">' + esc(TXT.kicker) + '</div>' +
-            '<h1 class="gc-nombre">' + esc(p.empresa ? p.empresa.nombre : "") + '</h1>' +
-            '<div class="gc-sub">' + n + " " + esc(n === 1 ? TXT.job : TXT.jobs) +
-              (R ? " · " + R.obras_con_contrato + " " + esc(TXT.nObras) : "") +
-              (porFirmarN ? ' · <b style="color:#0B5C8A">' + esc(TXT.subFirmar(porFirmarN)) + '</b>' : "") + '</div></div>' +
-          '<div class="gc-cab-der">' + esc(TXT.alDia) + ' <b>' + esc(fechaLarga(hoy)) + '</b><br>' +
-            esc(TXT.preparado) + ' <b>Max Power Electrical Solutions, Inc.</b> · ' + esc(TXT.lic) + '</div>' +
-        '</div>';
+      // ── Cabecera del estado de cuenta (v4: la misma cara del portal del cliente) ──
+      function barraHTML(pc, cls) {
+        return '<div class="pt-bar"><div class="pt-bar-in ' + (cls || "") + '" style="width:' + pc + '%"></div></div>';
+      }
+      var enObra = obras.filter(function (o) { return o.estado === "ejecucion"; }).length;
+      var facAbiertas = R ? (R.facturas_abiertas || 0) : 0;
+      var debeHoy = R ? (Number(R.por_cobrar) || 0) : 0;
+      var pctPagadoGC = R && (Number(R.contrato) || 0) > 0
+        ? Math.round((Number(R.cobrado) || 0) / (Number(R.contrato) || 1) * 1000) / 10 : 0;
+      var teTocaN = (p.te_toca || []).length;
 
-      // ── Los cinco números ──
-      var resumen = R
-        ? '<div class="gc-resumen">' +
-          '<div class="gc-num"><span>' + esc(TXT.rContrato) + '</span><b>' + esc(usd(R.contrato)) + '</b><small>' + esc(TXT.rContratoS) + '</small></div>' +
-          '<div class="gc-num"><span>' + esc(TXT.rFacturado) + '</span><b>' + esc(usd(R.facturado)) + '</b></div>' +
-          '<div class="gc-num ok"><span>' + esc(TXT.rCobrado) + '</span><b>' + esc(usd(R.cobrado)) + '</b></div>' +
-          '<div class="gc-num debe"><span>' + esc(TXT.rDebe) + '</span><b>' + esc(usd(R.por_cobrar)) + '</b><small>' + esc(TXT.rDebeS(R.facturas_abiertas || 0)) + '</small></div>' +
-          '<div class="gc-num"><span>' + esc(TXT.rPorFacturar) + '</span><b>' + esc(usd(R.por_facturar)) + '</b><small>' + esc(TXT.rPorFacturarS) + '</small></div>' +
-          '</div>'
-        : "";
+      var casillas = R
+        ? '<div class="pt-tile"><div class="pt-tile-k">' + esc(TXT.rContrato) + '</div>' +
+            '<div class="pt-tile-v">' + esc(usd(R.contrato)) + '</div>' +
+            '<div class="pt-tile-s">' + R.obras_con_contrato + ' ' + esc(TXT.nObras) + '</div></div>' +
+          '<div class="pt-tile"><div class="pt-tile-k">' + esc(TXT.rCobrado) + '</div>' +
+            '<div class="pt-tile-v">' + esc(usd(R.cobrado)) + '</div>' +
+            '<div class="pt-tile-s">' + pctPagadoGC + '% ' + esc(TXT.rPctPagado) + '</div>' + barraHTML(pctPagadoGC, "ok") + '</div>' +
+          '<div class="pt-tile' + (debeHoy > 0 ? ' due' : '') + '"><div class="pt-tile-k">' + esc(TXT.rDebe) + '</div>' +
+            '<div class="pt-tile-v">' + esc(usd(debeHoy)) + '</div>' +
+            '<div class="pt-tile-s">' + esc(TXT.rDebeS(facAbiertas)) + '</div></div>' +
+          '<div class="pt-tile"><div class="pt-tile-k">' + esc(TXT.rTeToca) + '</div>' +
+            '<div class="pt-tile-v">' + (teTocaN || esc(TXT.rTodoAlDia)) + '</div>' +
+            (porFirmarN ? '<div class="pt-tile-s">' + esc(TXT.subFirmar(porFirmarN)) + '</div>' : '') + '</div>'
+        : '<div class="pt-tile"><div class="pt-tile-k">' + esc(TXT.rEnObra) + '</div>' +
+            '<div class="pt-tile-v">' + enObra + '</div></div>' +
+          '<div class="pt-tile"><div class="pt-tile-k">' + esc(TXT.rTeToca) + '</div>' +
+            '<div class="pt-tile-v">' + (teTocaN || esc(TXT.rTodoAlDia)) + '</div>' +
+            (porFirmarN ? '<div class="pt-tile-s">' + esc(TXT.subFirmar(porFirmarN)) + '</div>' : '') + '</div>';
+
+      var cab =
+        '<section class="pt-hero">' +
+          '<div>' +
+            '<div class="pt-kicker">' + esc(TXT.kicker) + '</div>' +
+            '<h1 class="pt-nombre">' + esc(p.empresa ? p.empresa.nombre : "") + '</h1>' +
+            '<div class="pt-dir">' + n + " " + esc(n === 1 ? TXT.job : TXT.jobs) + '</div>' +
+            '<div class="pt-estado"><i></i>' + enObra + ' ' + esc(TXT.rEnObra) + '</div>' +
+            '<div class="pt-tile-s" style="margin-top:.5rem">' + esc(TXT.alDia) + ' ' + esc(fechaLarga(hoy)) + ' · ' +
+              esc(TXT.preparado) + ' Max Power Electrical Solutions, Inc. · ' + esc(TXT.lic) + '</div>' +
+          '</div>' +
+          '<div class="pt-tiles' + (R ? '' : ' dos') + '">' + casillas + '</div>' +
+        '</section>';
+
+      // Los cinco números viejos se fueron a la cabecera; la tabla por obra
+      // sigue trayendo facturado y por facturar con su fila de totales.
+      var resumen = "";
 
       // ── Lo que le toca ──
       var toca = (p.te_toca || []).filter(function (x) { return x.tipo !== "firmar"; }).map(function (x) {
@@ -505,7 +533,7 @@
       var lic = (p.licencias || []).map(function (d) {
         var tt = lang === "en" ? (d.titulo_en || d.titulo) : d.titulo;
         if (!urlSegura(d.url)) return "";
-        return '<span class="gc-item"><a target="_blank" rel="noopener" href="' + esc(urlSegura(d.url)) + '">🛡️ ' + esc(tt) + '</a></span>';
+        return '<div class="pt-lic"><i>✓</i><a target="_blank" rel="noopener" href="' + esc(urlSegura(d.url)) + '">' + esc(tt) + '</a></div>';
       }).join("");
 
       caja.innerHTML = cab +
@@ -516,12 +544,15 @@
           (n ? grupos : '<div class="gc-card"><p class="gc-item">' + esc(TXT.vacio) + '</p></div>') +
         '</div>' +
         '<div class="gc-col gc-col-side">' +
-          (lic ? '<div class="gc-card"><div class="gc-card-tit">' + esc(TXT.licT) + '</div>' + lic + '</div>' : "") +
-          '<div class="gc-card"><div class="gc-card-tit">' + esc(TXT.ayudaT) + '</div>' +
-            '<p class="gc-item">' + esc(TXT.ayuda) + '</p>' +
-            '<a class="gc-wa" target="_blank" rel="noopener" href="' + WHATSAPP + '">💬 ' + esc(TXT.wa) + '</a>' +
-            (R ? '<p class="gc-nota">' + esc(TXT.nota) + '</p>' : "") +
+          '<div class="pt-card"><div class="pt-h">' + esc(TXT.contactoT) + '</div>' +
+            '<div class="pt-contacto"><div class="pt-avatar">EA</div>' +
+              '<div><b>Edgar Arboleya</b><span>' + esc(TXT.contactoRol) + '</span>' +
+              '<span>(305) 967-9311 · info@mxpes.com</span></div></div>' +
+            '<p class="pt-lead chico" style="margin-top:.6rem">' + esc(TXT.ayuda) + '</p>' +
+            '<a class="pt-wa" target="_blank" rel="noopener" href="' + WHATSAPP + '">💬 ' + esc(TXT.wa) + '</a>' +
           '</div>' +
+          (lic ? '<div class="pt-card"><div class="pt-h">' + esc(TXT.licT) + '</div>' + lic + '</div>' : "") +
+          (R ? '<div class="pt-card"><p class="pt-lead chico" style="margin:0">' + esc(TXT.nota) + '</p></div>' : "") +
         '</div>';
     }
   })();
