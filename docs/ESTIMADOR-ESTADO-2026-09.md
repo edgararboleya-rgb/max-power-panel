@@ -137,6 +137,15 @@ Informativo — la app operativa no tiene que hacer nada con esto, pero le va a
   con zona/piso, drop y unidades — `(largo + drop) × unidades`, la cuenta de
   su Excel. Llega al estimador en **FT** con `06-FEED` (feeders), `08-ROUGH`
   (branch), `13-LV` (low voltage), `05-PANEL` (bus duct).
+- **E5b · Homerun y feeders con el NEC delante** (15/09). Antes de trazar se
+  elige tubo (EMT · PVC 40/80 · GRS · IMC), calibre, cuántos circuitos o fases
+  van dentro, neutro y tierra; la app ofrece **solo los tamaños en que caben**
+  (Cap. 9 Tabla 1 al 40 %) y no deja pasar de **6 portadores** (310.15(C)(1),
+  el «80 %» de Edgar; la tierra no cuenta). Al estimador llegan el tubo con
+  su **nombre exacto de `catalogo_items`** (`1/2" EMT CONDUIT`, `3/4" PVC
+  CONDUIT. SCH 40`…) y el hilo como `#12 THHN CU` × hilos, en FT. **Faltan
+  alias en Supabase para** IMC, PVC 80 de 6" y THHN #14, #4, #2, 1/0–4/0:
+  hasta entonces esas filas llegan por nombre y caen en 20-MISC.
 - **E3 · Búsqueda visual** con lista de revisión: cuenta símbolos iguales del
   plano del ingeniero y deja descartar los falsos antes de que entren al
   Count. Medido contra un plano real (Epic ED-1.3): 80 % de umbral encuentra
