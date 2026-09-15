@@ -6582,7 +6582,9 @@ function esFalloDeRed(err) {
     const parsear = l => {
       const celdas = []; let cur = "", dentro = false;
       for (const ch of l) {
-        if (ch === '"') dentro = !dentro;
+        // la comilla solo abre campo al PRINCIPIO del campo: un 2-1/2" EMT sin
+        // entrecomillar es una pulgada, no una comilla que se traga la fila (15/09)
+        if (ch === '"' && (dentro || cur === "")) dentro = !dentro;
         else if (ch === sep && !dentro) { celdas.push(cur); cur = ""; }
         else cur += ch;
       }
@@ -6598,7 +6600,8 @@ function esFalloDeRed(err) {
       iComments = idx("comments"), iCount = cols.findIndex(c => /^(count|#? ?of units)$/.test(c)),
       iLen = cols.findIndex(c => /^(length|measurement)$/.test(c)),
       iWire = cols.findIndex(c => c.includes("total wire")),
-      iSize = idx("size"), iCableCu = idx("cable cu"), iCableAl = idx("cable al");
+      iSize = idx("size"), iCableCu = idx("cable cu"), iCableAl = idx("cable al"),
+      iUnit = cols.findIndex(c => /^(unit|units|unidad)$/.test(c));
     const num = v => {
       const n = Number(String(v || "").replace(/[^\d.\-]/g, ""));
       return Number.isFinite(n) ? n : 0;
@@ -6608,28 +6611,40 @@ function esFalloDeRed(err) {
       const f = filas[r];
       const subject = (iSubj >= 0 ? f[iSubj] : f[0] || "").trim();
       if (!subject) continue;
-      let qty = 0;
+      let qty = 0, lineal = false;
       if (iComments >= 0 && num(f[iComments]) > 0) qty = num(f[iComments]);
       else if (iCount >= 0 && num(f[iCount]) > 0) qty = num(f[iCount]);
-      else if (iLen >= 0 && num(f[iLen]) > 0) qty = num(f[iLen]);
+      else if (iLen >= 0 && num(f[iLen]) > 0) { qty = num(f[iLen]); lineal = true; }   // vino de Length: son PIES
       else qty = 1;
+      const unidad = iUnit >= 0 ? String(f[iUnit] || "").trim().toUpperCase() : "";
+      if (/^(FT|LF|PIES)$/.test(unidad)) lineal = true;
       const clave = subject + "|" + (iSize >= 0 ? f[iSize] || "" : "");
-      (agrupadas[clave] = agrupadas[clave] || {
+      const g = (agrupadas[clave] = agrupadas[clave] || {
         subject, size: iSize >= 0 ? (f[iSize] || "").trim() : "",
-        code: iCode >= 0 ? (f[iCode] || "").trim() : "", qty: 0, wireLF: 0,
+        code: iCode >= 0 ? (f[iCode] || "").trim() : "", qty: 0, wireLF: 0, lineal: false, unidad,
         cable: ((iCableCu >= 0 && f[iCableCu]) || (iCableAl >= 0 && f[iCableAl]) || "").trim()
-      }).qty += qty;
+      });
+      g.qty += qty; if (lineal) g.lineal = true;
       if (iWire >= 0) agrupadas[clave].wireLF += num(f[iWire]);
     }
     return Object.values(agrupadas);
   }
 
+  // Pies medidos contra un ítem que se vende por mil pies (MLF): ÷1000. Sin
+  // esto, 500 ft de 4/0 casados por nombre entraban como 500 MLF (15/09).
+  // El alias trae su propio factor y manda; esto es para código y nombre.
+  function factorTakeoff(fila, item) {
+    const uc = normTxt(item && item.unidad);
+    const pies = !!fila.lineal || /^(FT|LF|PIES)$/.test(normTxt(fila.unidad));
+    if (uc === "MLF" && pies) return 0.001;
+    return 1;
+  }
   // Empareja una fila del takeoff con el catálogo (código → alias → nombre)
   function emparejarTakeoff(fila) {
     const cat = estData.catalogo || [];
     if (fila.code) {
       const porCodigo = cat.find(c => String(c.orden) === String(fila.code).replace(/\D/g, ""));
-      if (porCodigo) return { item: porCodigo, factor: 1, via: "código" };
+      if (porCodigo) return { item: porCodigo, factor: factorTakeoff(fila, porCodigo), via: "código" };
     }
     const nombreCompleto = fila.size ? `${fila.size} ${fila.subject}` : fila.subject;
     const al = (estData.alias || []).find(a =>
@@ -6639,7 +6654,7 @@ function esFalloDeRed(err) {
       if (item) return { item, factor: Number(al.factor) || 1, via: "alias" };
     }
     const exacto = catalogoExacto(nombreCompleto) || catalogoExacto(fila.subject);
-    if (exacto) return { item: exacto, factor: 1, via: "nombre" };
+    if (exacto) return { item: exacto, factor: factorTakeoff(fila, exacto), via: "nombre" };
     return null;
   }
 
@@ -8087,9 +8102,10 @@ Power done right the first time. ⚡`;
           if (!cat) { omitidos++; continue; }
           // La app aprende tu decisión: la próxima vez este tool sale OK solo
           if (!f.match) {
+            factor = factorTakeoff(f, cat);   // lo que Edgar eligió a mano: pies contra MLF también se divide
             try {
               await DB.crearAlias({ alias: f.size ? `${f.size} ${f.subject}` : f.subject,
-                item: cat.item, factor: 1, nota: "aprendido al aplicar takeoff" });
+                item: cat.item, factor, nota: "aprendido al aplicar takeoff" + (factor !== 1 ? " — FT a MLF" : "") });
               aprendidos++;
             } catch (e) { /* si no se pudo guardar el alias, el ítem entra igual */ }
           }
@@ -10888,6 +10904,13 @@ Power done right the first time. ⚡`;
     },
     // E12 · Importar precios. El CSV entra como texto y sale una propuesta;
     // nada se escribe aquí. Ver pruebas/e12.js.
+    // E14 · El takeoff pegado: pies contra MLF. Puro: catálogo de mentira y a preguntar. Ver pruebas/e14.js.
+    e14: {
+      datos(d) { estData = Object.assign({ catalogo: [], alias: [], config: {}, ensambleItems: [], estimados: [] }, d || {}); },
+      analiza(texto) { return analizarTakeoff(texto); },
+      empareja(fila) { return emparejarTakeoff(fila); },
+      factor(fila, item) { return factorTakeoff(fila, item); }
+    },
     e12: {
       datos(d) { estData = Object.assign({ catalogo: [], config: {}, ensambleItems: [], estimados: [], alias: [] }, d || {}); },
       csv(t) { return leeCsv(t); },

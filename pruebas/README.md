@@ -18,5 +18,7 @@ NODE_PATH=/opt/node22/lib/node_modules node pruebas/e0.js
 
 | `e12.js` | E12 · Importar precios: que NADA se escriba sin aprobarlo fila a fila, que lo que no casa seguro salga aparte en vez de colarse, que un `1/2" EMT` sin entrecomillar no se trague el archivo, que `$1,234.00` se lea bien y que «vacío» no sea cero, que una base comprada acabe en `precio_ref` y jamás en `precio`, y que un $0 puesto a propósito (E0) avise antes de pisarse. |
 
+| `e14.js` | E14 · El takeoff pegado, pies contra MLF: el catálogo vende el THHN por MIL pies y una fila casada por nombre entraba con factor 1 (500 ft de 4/0 → 500 MLF, medio millón de pies). Comprueba que lo que vino de Length o con Unit FT se divide por 1000 solo si el ítem es MLF, que piezas y LF no se tocan, que el alias sigue mandando con su factor, y que un `2-1/2" EMT` sin entrecomillar no se trague la fila. |
+
 Regla: una prueba nueva por cada función que toque dinero o que escriba algo
 que el cliente vaya a firmar.

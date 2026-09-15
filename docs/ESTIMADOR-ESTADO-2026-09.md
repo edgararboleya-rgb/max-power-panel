@@ -143,9 +143,17 @@ Informativo — la app operativa no tiene que hacer nada con esto, pero le va a
   (Cap. 9 Tabla 1 al 40 %) y no deja pasar de **6 portadores** (310.15(C)(1),
   el «80 %» de Edgar; la tierra no cuenta). Al estimador llegan el tubo con
   su **nombre exacto de `catalogo_items`** (`1/2" EMT CONDUIT`, `3/4" PVC
-  CONDUIT. SCH 40`…) y el hilo como `#12 THHN CU` × hilos, en FT. **Faltan
-  alias en Supabase para** IMC, PVC 80 de 6" y THHN #14, #4, #2, 1/0–4/0:
-  hasta entonces esas filas llegan por nombre y caen en 20-MISC.
+  CONDUIT. SCH 40`…) y el hilo con **su nombre exacto** (`# 12 THHN STRANDED
+  CU.`, `# 4/0 THHN STRANDED CU.`, `# 250 MCM THW CU.`, `# 1/0 XHHW STRANDED
+  ALUMINUM COMPACT`), en FT. Tubos y cables son los de su catálogo (15/09):
+  EMT, PVC 40/80, GRS, ENT, flex metálico e IMC; cobre THHN/THW y aluminio
+  compacto XHHW para feeders. Ya no hace falta alias para ninguno.
+- **E14 · Pies contra MLF** (15/09, panel v182). El catálogo vende el cable
+  por MIL pies (MLF) y una fila del takeoff casada **por nombre** entraba con
+  factor 1: 500 ft de 4/0 → 500 MLF → $3,8 millones. Corregido en los dos
+  caminos (Planos al mandar, panel al pegar CSV): lo medido en pies se divide
+  por 1000 solo si el ítem es MLF; el alias sigue mandando con su factor; el
+  alias que se aprende al aplicar guarda el factor bueno. `pruebas/e14.js`.
 - **E3 · Búsqueda visual** con lista de revisión: cuenta símbolos iguales del
   plano del ingeniero y deja descartar los falsos antes de que entren al
   Count. Medido contra un plano real (Epic ED-1.3): 80 % de umbral encuentra
