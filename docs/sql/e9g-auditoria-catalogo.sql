@@ -64,11 +64,9 @@ update alias_takeoff set item = 'DOWN LIGHT - INSTALL ONLY' where btrim(item) = 
 --     update alias_takeoff set item = 'DOWN LIGHT' where btrim(item) = 'DOWN LIGHT';
 --     (Las dos recetas DOWN LIGHT — MC / EMT usan la de $55; si va a $0, dímelo y las cambio.)
 
--- (c) Higiene de la tabla de alias: la unidad que dice el alias tiene que ser la
---     del catálogo. No mueve dinero (la ruta lee alias, item y factor), pero es
---     lo que se exporta después y confunde.
-update alias_takeoff set unidad = 'MLF' where item = '14/4 FPL WET LOC. AQ-246' and unidad = 'EA';
-update alias_takeoff set unidad = 'E'   where item = '2" CABLE TO STRUT SUPPORT' and unidad = 'FT';
+-- (c) La unidad de los alias del 14/4 FPL y del CABLE TO STRUT solo vive en el
+--     CSV del repo (la tabla alias_takeoff no tiene esa columna): ya está
+--     corregida allí. Aquí no hay nada que correr.
 
 -- Comprobar duplicados: tiene que salir 0 filas.
 -- select upper(btrim(regexp_replace(item,'\\s+',' ','g'))) n, count(*) from catalogo_items group by 1 having count(*) > 1;
