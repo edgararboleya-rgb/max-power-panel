@@ -6126,6 +6126,12 @@ function esFalloDeRed(err) {
         <div class="cal-form-titulo">📊 ¿Cómo acabó?</div>
         ${avisoRango}
         <div class="cal-form">
+          <label>Pies cuadrados del trabajo
+            <input id="est-sqft" type="number" min="0" step="1" value="${est.sqft == null ? "" : esc(String(est.sqft))}" placeholder="Ej: 2200">
+            <span class="chk-avance">${est.sqft
+              ? `Sale a <strong>${fmt((foto ? foto.bid : c.bid) / Number(est.sqft))}/sqft</strong>${foto ? " (con el número que ofertaste)" : ""}.`
+              : "Sin esto no hay $/sqft, y sin $/sqft el historial no compara nada. Se puede poner ahora aunque el trabajo sea viejo."}</span>
+          </label>
           <label>Resultado
             <select id="est-res">
               <option value=""${r ? "" : " selected"}>— todavía sin contestar —</option>
@@ -6152,6 +6158,20 @@ function esFalloDeRed(err) {
       </div>`;
   }
   function enganchaResultado(est) {
+    /* Los pies cuadrados se podían poner SOLO al crear el estimado. Eso dejaba
+       sin $/sqft a todo lo de antes —y sin $/sqft el historial no compara
+       nada— sin forma de arreglarlo salvo rehacer el estimado. Ahora se
+       rellena aquí, que es donde se está cuando se mira el historial. */
+    const sq = $("est-sqft");
+    if (sq) sq.addEventListener("change", async () => {
+      const n = Number(sq.value);
+      const v = (isFinite(n) && n > 0) ? Math.round(n) : null;
+      try {
+        await DB.cambiarEstimado(est.id, { sqft: v });
+        await recargarEstimador();
+        avisar(v ? `${v} sqft — ${fmt(calcularEstimado(est).bid / v)}/sqft` : "Sin pies cuadrados");
+      } catch (e) { avisar("No se pudo guardar: " + e.message, true); }
+    });
     const sel = $("est-res");
     if (sel) sel.addEventListener("change", async () => {
       const v = sel.value || null;
@@ -6209,6 +6229,7 @@ function esFalloDeRed(err) {
           b.todo.decididos ? ` · ganas ${pct(b.todo.tasa)} de los ${b.todo.decididos} que se decidieron` : ""}</summary>
         <div style="padding:.4rem 0">
           ${b.todo.recalculados ? `<p class="lev-nota" style="margin:0 0 .5rem">⚠ <strong>${b.todo.recalculados} de ${b.total}</strong> no tienen guardado el número con que se ofertaron, así que salen <strong>recalculados con los precios de hoy</strong>. Márcalos como ganado o perdido y se les guarda el suyo.</p>` : ""}
+          ${(b.todo.psfN === 0 && b.total) ? `<p class="lev-nota" style="margin:0 0 .5rem">⚠ <strong>Ninguno tiene pies cuadrados</strong>, así que todavía no hay $/sqft que comparar — que es para lo que sirve esto. Ábrelos y ponlos en «¿Cómo acabó?»: vale aunque el trabajo sea de hace meses.</p>` : ""}
           <p style="margin:.2rem 0">
             <strong>Ganados:</strong> ${g ? `${g.n} · ${psf(g)}` : "todavía ninguno"}<br>
             <strong>Perdidos:</strong> ${pr ? `${pr.n} · ${psf(pr)}` : "todavía ninguno"}<br>

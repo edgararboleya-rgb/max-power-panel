@@ -134,6 +134,31 @@ const EST = [
   ok('y una tasa de acierto sacada de UNA oferta no se enseña: sale «—»',
     !/sqft ?2 ?— ?— ?0 %/.test(pant.replace(/\s+/g, ' ')), pant.slice(-230));
 
+  /* === 11. lo que le pasó a Edgar de verdad (15/09): sus 3 convertidos
+         quedaron con foto pero SIN pies cuadrados, así que no hay $/sqft.
+         Eso tiene que verse y tiene que poder arreglarse. === */
+  const SIN_SQFT = [
+    { id: 'x1', nombre: 'Uno',  escenario: 'B', modo: 'remodelacion', estado: 'convertido', resultado: 'ganado', bid_final: 12000, horas_final: 140 },
+    { id: 'x2', nombre: 'Dos',  escenario: 'B', modo: 'remodelacion', estado: 'convertido', resultado: 'ganado', bid_final: 18000, horas_final: 200 },
+    { id: 'x3', nombre: 'Tres', escenario: 'B', modo: 'remodelacion', estado: 'convertido', resultado: 'ganado', bid_final: 9000,  horas_final: 100 }
+  ];
+  const bSin = await p.evaluate(e => window.MXP_PRUEBA.e11.bench(e), SIN_SQFT);
+  ok('con fotos pero sin sqft, el $/sqft sale vacío en vez de inventado', bSin.todo.psfN === 0 && bSin.todo.psfMedio === null, JSON.stringify({ n: bSin.todo.n, psfN: bSin.todo.psfN }));
+  ok('y aun así se cuentan bien los ganados', bSin.porResultado.ganado.n === 3, String(bSin.porResultado.ganado.n));
+  await p.evaluate(d => window.MXP_PRUEBA.e11.datos(d), { catalogo: CAT, escenarios: ESC, estimados: SIN_SQFT, items: [], config: {} });
+  const avisoSin = await p.evaluate(() => { const d = document.createElement('div'); d.innerHTML = window.MXP_PRUEBA.e11.tarjeta(); return d.textContent.replace(/\s+/g, ' '); });
+  ok('el historial avisa de que sin pies cuadrados no compara nada, y dice dónde ponerlos',
+    /Ninguno tiene pies cuadrados/.test(avisoSin) && /¿Cómo acabó\?/.test(avisoSin), avisoSin.slice(0, 180));
+
+  /* los pies cuadrados se pueden poner DESPUÉS: antes solo se podían al crear
+     el estimado, así que todo lo viejo se quedaba sin $/sqft para siempre */
+  const bloqueSin = await p.evaluate(() => { const d = document.createElement('div'); d.innerHTML = window.MXP_PRUEBA.e11.bloque({ id: 'x1', nombre: 'Uno', escenario: 'B', modo: 'remodelacion', resultado: 'ganado', bid_final: 12000 }); return { html: d.innerHTML, txt: d.textContent.replace(/\s+/g, ' ') }; });
+  ok('el bloque «¿Cómo acabó?» deja escribir los pies cuadrados de un trabajo viejo',
+    /id="est-sqft"/.test(bloqueSin.html) && /aunque el trabajo sea viejo/.test(bloqueSin.txt), bloqueSin.txt.slice(0, 150));
+  const bloqueCon = await p.evaluate(() => { const d = document.createElement('div'); d.innerHTML = window.MXP_PRUEBA.e11.bloque({ id: 'x1', sqft: 2000, escenario: 'B', modo: 'remodelacion', resultado: 'ganado', bid_final: 18000 }); return d.textContent.replace(/\s+/g, ' '); });
+  ok('y con ellos puestos, enseña a cuánto sale el pie CON EL NÚMERO QUE OFERTÓ, no con el de hoy',
+    /\$9\.00\/sqft/.test(bloqueCon) && /con el número que ofertaste/.test(bloqueCon), bloqueCon.slice(0, 160));
+
   ok('cero errores de página', errs.length === 0, errs.join(' | ').slice(0, 200));
   console.log('\n' + R.join('\n'));
   const mal = R.filter(x => x.slice(0, 4).indexOf('✗') >= 0).length;
