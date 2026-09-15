@@ -1,9 +1,11 @@
 -- =====================================================================
--- E2e · El alias «Thermostat» apuntaba a SINGLE POLE SWITCH (visto el 14/09
--- en el export). Un termostato no es un switch: se le quita ese destino.
--- Si tienes un ítem de termostato en el catálogo, ponlo en la segunda
--- sentencia; si no, se borra el alias y la fila llegará «sin mapear»
--- (mejor que cotizar un switch de $2.97 por un termostato).
+-- E2e · El alias «Thermostat» apunta a SINGLE POLE SWITCH. Su nota dice que
+-- fue A PROPÓSITO: «solo la caja y el cable, el termostato lo pone HVAC» —
+-- o sea, cobra la caja, el cable y la mano de obra de un punto, no el
+-- aparato. Si eso es lo que quieres, NO corras nada. Si prefieres que
+-- llegue «sin mapear» para decidirlo cada vez, opción A; si tienes un ítem
+-- propio (p. ej. una salida de termostato con «5 #18 THERMOSTAT WIRE»),
+-- opción B con su nombre EXACTO.
 -- =====================================================================
 -- ver antes
 select * from alias_takeoff where alias ilike '%thermostat%' or item ilike '%thermostat%';
