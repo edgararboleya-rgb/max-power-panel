@@ -7311,7 +7311,7 @@ Power done right the first time. ⚡`;
       const piesLinea = ens.pies_editable && qty > 0
         ? `<span class="alcance-estado">📏 ${enEst && Number(enEst.pies) > 0
             ? `<strong>${Number(enEst.pies)} ft medidos</strong>`
-            : `${prom || "?"} ft (promedio)`} por circuito${!soloLectura
+            : `${prom || "?"} ft (de la receta)`} por circuito${!soloLectura
             ? ` <button class="accion secundaria btn-ens-pies" data-eid="${enEst.id}" data-prom="${prom || ""}" style="padding:.05rem .45rem">✎ pies</button>` : ""}</span>`
         : "";
       return `
@@ -7684,7 +7684,9 @@ Power done right the first time. ⚡`;
         const ens = ensDisponibles.find(e => e.id === ensId);
         if (ens && ens.pies_editable) {
           const prom = piesPromedioEnsamble(ens.id);
-          const resp = prompt(`¿Cuántos pies de cable hasta el panel?\n(Deja vacío para usar el promedio de ${prom || "?"} ft)`);
+          // (16/09) «pies de cable» confundía: en una receta en tubo lo que se
+          // mide es la CORRIDA (el tubo), y el conductor sale de ahí con sus hilos
+          const resp = prompt(`¿Cuántos pies de corrida hasta el panel?\n(el tubo y el cable salen de ahí; deja vacío para usar los ${prom || "?"} ft de la receta)`);
           const pies = Number((resp || "").replace(/[^\d.]/g, ""));
           if (pies > 0) cuerpo.pies = pies;
         }
