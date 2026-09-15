@@ -149,6 +149,17 @@ Informativo — la app operativa no tiene que hacer nada con esto, pero le va a
   EMT, PVC 40/80, GRS, ENT, flex metálico e IMC; cobre THHN/THW y aluminio
   compacto XHHW para feeders. Ya no hace falta alias para ninguno. La
   **tierra va aparte** con su calibre (250.122) y llega como su propio renglón.
+- **E10 · Estimado desde el scope** (15/09, Planos v32.L, en azul). En Planos,
+  Materiales → **Scope**: se pega el scope of work, el cerebro propone
+  recetas (`ensambles`) e ítems del catálogo **con nombres exactos** y
+  cantidades, más preguntas y lo que queda fuera; lo contado en la hoja viaja
+  con el scope y manda. Edgar aprueba fila a fila y sale un **estimado
+  borrador** con `estimado_ensambles` + `estimado_items` (código, origen
+  `scope`) y el `modo` que pidan las recetas. La IA no toca un precio. Vive
+  en Planos porque el panel habla con la edge function `cerebro` cuyo código
+  no está en el repo. Calibrado con los 3 proyectos reales de Drive (Stuart
+  $53.928 · UM $371.425 · DTCC): `docs/e10/GUIA-3-PROYECTOS.md` en
+  max-power-app. **Falta `wrangler deploy` del worker.**
 - **E14 · Pies contra MLF** (15/09, panel v182). El catálogo vende el cable
   por MIL pies (MLF) y una fila del takeoff casada **por nombre** entraba con
   factor 1: 500 ft de 4/0 → 500 MLF → $3,8 millones. Corregido en los dos
