@@ -7552,14 +7552,41 @@ Power done right the first time. ⚡`;
         // Ya está en un proyecto: se cierra y se vuelve al inicio (o se abre el proyecto)
         const proy = (est.proyecto_id && proyectos().find(x => x.id === est.proyecto_id))
           || proyectos().find(p => (p.nombre || "").trim() === (est.nombre || "").trim()) || null;
+        /* SIN FOTO (E11, 16/09): los estimados convertidos ANTES de que la
+           foto existiera no tienen bid_final, asi que se recalculan con los
+           precios de hoy — y el dia que se corrige un precio del catalogo,
+           el numero de un trabajo YA VENDIDO cambia solo. Aqui se puede
+           congelar el numero de hoy, que es con el que se vendio. */
+        const sinFoto = !(Number(est.bid_final) > 0);
         return `<div class="cal-panel-card est-listo">
           <div class="cal-form-titulo">✓ Este estimado ya está ${est.proyecto_id ? "incluido en su proyecto" : "convertido en proyecto"}</div>
+          ${sinFoto ? `<div class="aviso-texto" style="padding:.2rem 0">
+            <strong>⚠ Este número no está congelado.</strong> Se convirtió antes de que se guardara la foto, así que
+            hoy se vuelve a calcular con los precios vivos: si mañana cambia un precio o unas horas del catálogo,
+            el número de este trabajo — que ya vendiste — cambia solo, y el historial compara peras con manzanas.<br>
+            <span class="chk-avance">Congélalo con el número de hoy: ${fmt(Math.round(c.bid * 100) / 100)} · ${Math.round(c.horas)} h · ${fmt(Math.round(c.totalMaterial * 100) / 100)} de material.</span>
+          </div>
+          <div class="alc-botones"><button class="accion" id="btn-est-foto">📸 Congelar este número</button></div>` : `
+          <div class="chk-avance">Número congelado el ${esc(String(est.cerrado_en || "").slice(0, 10))}: <strong>${fmt(Number(est.bid_final))}</strong> · ${Math.round(Number(est.horas_final) || 0)} h</div>`}
           <div class="alc-botones">
             <button class="accion" id="btn-est-terminado">Terminado — ir al inicio</button>
             ${proy ? `<button class="accion secundaria" id="btn-est-ver-proyecto" data-id="${esc(proy.id)}">Ver el proyecto</button>` : ""}
           </div>
         </div>`; })() : ""}
       <div id="propuesta-caja"></div>`;
+
+    // --- congelar el número de un convertido sin foto (E11) ---
+    const btnFoto = $("btn-est-foto");
+    if (btnFoto) btnFoto.addEventListener("click", async () => {
+      const f = fotoParaGuardar(est);
+      if (!confirm(`Se guarda ${fmt(f.bid_final)} como el número de este trabajo.\n\n` +
+                   `A partir de ahí no vuelve a moverse aunque cambien los precios del catálogo, y el historial lo usa tal cual.\n\n¿Lo congelo?`)) return;
+      try {
+        await DB.cambiarEstimado(est.id, f);
+        await recargarEstimador();
+        avisar(`Número congelado: ${fmt(f.bid_final)} ✓`);
+      } catch (err) { avisar("No se pudo congelar: " + err.message, true); }
+    });
 
     // --- cabecera ---
     // Resumen editable: escenario y factor también se cambian desde abajo

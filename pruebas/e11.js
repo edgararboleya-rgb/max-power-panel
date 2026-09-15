@@ -19,9 +19,13 @@ const R = []; const ok = (n, c, d) => R.push((c ? '  ✓ ' : '  ✗ ') + n + (d 
 
 /* Catálogo mínimo y un escenario, para que calcularEstimado dé un número. */
 const CAT = [{ id: 1, item: '20A DUPLEX RECEPTACLE', seccion: 'WIRING DEVICES', precio: 4, horas_unidad: 0.5, unidad: 'E' }];
+/* OJO con la escala: en Supabase los porcentajes van en FRACCIÓN (0.16 = 16 %),
+   igual que los defaults del motor. Este fixture los tenía como enteros y el
+   bid salía por las nubes (profit 12 = 1.200 %) — se veía al meterle ítems de
+   verdad. El motor no tiene la culpa; el fixture sí la tenía. */
 const ESC = [{ id: 'B', nombre: 'Mercado', foreman: 45, journeyman: 35, helper: 20,
-               pct_foreman: 20, pct_journeyman: 50, pct_helper: 30,
-               benefits: 16, tax_material: 7.5, overhead_hh: 12, profit: 12 }];
+               pct_foreman: 0.2, pct_journeyman: 0.5, pct_helper: 0.3,
+               benefits: 0.16, tax_material: 0.075, overhead_hh: 12, profit: 0.12 }];
 /* Seis estimados con historia. Los tres primeros llevan FOTO (bid_final):
    son los que cuentan de verdad. */
 const EST = [
@@ -158,6 +162,33 @@ const EST = [
   const bloqueCon = await p.evaluate(() => { const d = document.createElement('div'); d.innerHTML = window.MXP_PRUEBA.e11.bloque({ id: 'x1', sqft: 2000, escenario: 'B', modo: 'remodelacion', resultado: 'ganado', bid_final: 18000 }); return d.textContent.replace(/\s+/g, ' '); });
   ok('y con ellos puestos, enseña a cuánto sale el pie CON EL NÚMERO QUE OFERTÓ, no con el de hoy',
     /\$9\.00\/sqft/.test(bloqueCon) && /con el número que ofertaste/.test(bloqueCon), bloqueCon.slice(0, 160));
+
+  /* --- CONVERTIDO SIN FOTO (16/09): el numero se recalcula y hay que poder congelarlo --- */
+  /* un convertido de los viejos: con ítems de verdad, para que el bid no sea 0 */
+  await p.evaluate(([cat, esc]) => window.MXP_PRUEBA.e11.datos({
+    catalogo: cat, escenarios: esc, config: {},
+    estimados: [{ id: 99, nombre: 'Ya vendido', estado: 'convertido', escenario: 'B', factor: 1 }],
+    items: [{ id: 1, estimado_id: 99, item: '20A DUPLEX RECEPTACLE', unidad: 'E', precio: 4, horas: 0.5, cantidad: 40 }]
+  }), [CAT, ESC]);
+  const vendidoSinFoto = await p.evaluate(() => {
+    const est = { id: 99, nombre: 'Ya vendido', estado: 'convertido', escenario: 'B', factor: 1 };
+    const f1 = window.MXP_PRUEBA.e11.foto(est);
+    return { recalculado: f1.recalculado, antes: f1.bid };
+  });
+  ok('el convertido de prueba tiene número: 40 receptáculos (160 + 20 h) dan un bid con los pies en la tierra',
+    vendidoSinFoto.antes > 500 && vendidoSinFoto.antes < 5000, '$' + Math.round(vendidoSinFoto.antes));
+  ok('un convertido SIN foto se recalcula (por eso el número de un trabajo vendido puede moverse)', vendidoSinFoto.recalculado === true, JSON.stringify(vendidoSinFoto));
+  const conFoto = await p.evaluate(() => {
+    const est = { id: 99, nombre: 'Ya vendido', estado: 'convertido', escenario: 'B', factor: 1 };
+    const guardar = window.MXP_PRUEBA.e11.guardar(est);
+    const congelado = Object.assign({}, est, guardar);
+    const f2 = window.MXP_PRUEBA.e11.foto(congelado);
+    return { guardar, recalculado: f2.recalculado, bid: f2.bid, tieneFecha: !!guardar.cerrado_en };
+  });
+  ok('congelarlo guarda bid, horas, material y la fecha, y a partir de ahí ya no se recalcula',
+    conFoto.recalculado === false && conFoto.guardar.bid_final > 0 && conFoto.guardar.horas_final > 0 && conFoto.tieneFecha,
+    JSON.stringify(conFoto.guardar));
+  ok('y el número congelado es exactamente el que se enseñaba antes de congelar', conFoto.bid === conFoto.guardar.bid_final, conFoto.bid + ' = ' + conFoto.guardar.bid_final);
 
   ok('cero errores de página', errs.length === 0, errs.join(' | ').slice(0, 200));
   console.log('\n' + R.join('\n'));
