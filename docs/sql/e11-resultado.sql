@@ -62,15 +62,21 @@ update estimados e
    and f.contrato is not null
    and f.contrato > 0;
 
--- BLOQUE 4 — Qué quedó
-select resultado,
-       count(*)                                as estimados,
-       count(bid_final)                        as con_foto,
-       round(avg(bid_final)::numeric, 0)       as bid_medio,
-       count(*) filter (where sqft > 0)        as con_sqft
-  from estimados
- group by resultado
- order by resultado nulls first;
+-- BLOQUE 4 — Qué quedó.
+-- ⚠ ESTE BLOQUE VA APARTE, EN UN SEGUNDO RUN.
+-- Supabase analiza TODO el pegado antes de ejecutar nada, así que una consulta
+-- que nombre `resultado` o `bid_final` —creadas en el bloque 1— falla al
+-- analizarse aunque los alter estén bien. Se corre primero lo de arriba y
+-- DESPUÉS, en otro run, esto:
+--
+--   select resultado,
+--          count(*)                          as estimados,
+--          count(bid_final)                  as con_foto,
+--          round(avg(bid_final)::numeric, 0) as bid_medio,
+--          count(*) filter (where sqft > 0)  as con_sqft
+--     from estimados
+--    group by resultado
+--    order by resultado nulls first;
 
 -- Para deshacerlo:
 --   alter table estimados drop constraint if exists estimados_resultado_chk;

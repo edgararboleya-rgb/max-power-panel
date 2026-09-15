@@ -25,12 +25,17 @@ alter table catalogo_items add column if not exists ref_fecha   date;
 alter table catalogo_items add column if not exists precio_fecha date;
 alter table catalogo_items add column if not exists precio_fuente text;
 
--- Qué hay hoy
-select count(*)                                as items,
-       count(precio_ref)                       as con_referencia,
-       count(precio_fecha)                     as con_fecha_de_precio,
-       count(*) filter (where precio = 0)      as a_cero
-  from catalogo_items;
+-- ⚠ LA COMPROBACIÓN VA APARTE, EN UN SEGUNDO RUN.
+-- Supabase analiza TODO el bloque antes de ejecutar nada, así que una consulta
+-- que nombre una columna creada dos líneas más arriba falla al analizarse
+-- («column "precio_ref" does not exist») aunque el alter esté bien. Por eso se
+-- corre primero lo de arriba y DESPUÉS, en otro run, esto:
+--
+--   select count(*)                           as items,
+--          count(precio_ref)                  as con_referencia,
+--          count(precio_fecha)                as con_fecha_de_precio,
+--          count(*) filter (where precio = 0) as a_cero
+--     from catalogo_items;
 
 -- Para deshacerlo:
 --   alter table catalogo_items drop column if exists precio_ref, drop column if exists horas_ref,
