@@ -147,7 +147,8 @@ Informativo — la app operativa no tiene que hacer nada con esto, pero le va a
   CU.`, `# 4/0 THHN STRANDED CU.`, `# 250 MCM THW CU.`, `# 1/0 XHHW STRANDED
   ALUMINUM COMPACT`), en FT. Tubos y cables son los de su catálogo (15/09):
   EMT, PVC 40/80, GRS, ENT, flex metálico e IMC; cobre THHN/THW y aluminio
-  compacto XHHW para feeders. Ya no hace falta alias para ninguno.
+  compacto XHHW para feeders. Ya no hace falta alias para ninguno. La
+  **tierra va aparte** con su calibre (250.122) y llega como su propio renglón.
 - **E14 · Pies contra MLF** (15/09, panel v182). El catálogo vende el cable
   por MIL pies (MLF) y una fila del takeoff casada **por nombre** entraba con
   factor 1: 500 ft de 4/0 → 500 MLF → $3,8 millones. Corregido en los dos
