@@ -2826,3 +2826,7 @@ button > .ico:only-child, .lev-btn-ico > .ico { margin-right: 0; width: 1.15em; 
 
 /* En el teléfono la celda del día se queda como estaba: número y marcas */
 @media (max-width: 1023px) { .cal-dia-lista { display: none; } }
+
+/* E12 · fila de un precio que estaba a $0 a propósito: se ve antes de tocarla */
+table.facturas tr.fila-alerta td { background: #FFF6E5; }
+table.facturas tr.fila-alerta td:first-child { box-shadow: inset 3px 0 0 #E8A33D; }

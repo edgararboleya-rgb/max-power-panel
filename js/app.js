@@ -5760,10 +5760,597 @@ function esFalloDeRed(err) {
              fuente: "historial", meses: meses.length, fiable };
   }
 
+
+  /* ==================================================================
+     E11 · HISTORIAL Y BENCHMARKS — ganado, perdido, y cuánto por pie
+
+     Para qué: calibrar. Si los últimos seis comerciales ganados salieron a
+     8,40 $/SF y el que estás armando va a 13,10, o este trabajo tiene algo
+     distinto o hay un error. Y si se pierden nueve de cada diez por precio,
+     el problema no es el mercado.
+
+     LA TRAMPA, y por qué esto no es solo una consulta:
+     `calcularEstimado` recalcula SIEMPRE desde el catálogo vivo. Un trabajo
+     ofertado en marzo, mirado hoy, daría el número de hoy. Por eso al cerrar
+     un estimado (marcar ganado/perdido, o convertirlo en proyecto) se guarda
+     la FOTO — bid_final, horas_final, material_final — y los benchmarks
+     salen de ahí. Lo que no tiene foto entra igual, pero marcado como
+     RECALCULADO, y se dice cuántos son.
+     ================================================================== */
+  const RESULTADOS = {
+    ganado:        { nom: "Ganado",          chip: "insp-paso",   orden: 1 },
+    perdido:       { nom: "Perdido",         chip: "insp-falla",  orden: 2 },
+    sin_respuesta: { nom: "Sin respuesta",   chip: "por_leer",    orden: 3 },
+    descartado:    { nom: "Descartado",      chip: "por_leer",    orden: 4 }
+  };
+  const MOTIVOS = {
+    precio:      "Precio — había otro más barato",
+    plazo:       "Plazo — no llegábamos a la fecha",
+    alcance:     "Alcance — pedían algo que no hacemos",
+    relacion:    "Relación — ya tenían electricista",
+    no_califico: "No calificamos — fianza, seguro, tamaño",
+    otro:        "Otro"
+  };
+  /* Los tramos por tamaño. No son redondos por gusto: separan los cuatro
+     negocios distintos que hace Edgar, que no se comparan entre sí. */
+  const TRAMOS = [
+    { id: "chico",    nom: "Hasta 1.500 sqft",     min: 0,     max: 1500 },
+    { id: "casa",     nom: "1.500 – 5.000 sqft",   min: 1500,  max: 5000 },
+    { id: "mediano",  nom: "5.000 – 20.000 sqft",  min: 5000,  max: 20000 },
+    { id: "grande",   nom: "Más de 20.000 sqft",   min: 20000, max: Infinity }
+  ];
+  function tramoDe(sqft) {
+    const s = Number(sqft) || 0;
+    if (!(s > 0)) return null;
+    return TRAMOS.find(t => s >= t.min && s < t.max) || TRAMOS[TRAMOS.length - 1];
+  }
+  /* La foto de un estimado: lo guardado si lo hay, y si no lo de hoy —
+     diciéndolo. `recalculado` es la diferencia entre un dato y una suposición. */
+  function fotoDe(est, calc) {
+    const bid = Number(est && est.bid_final);
+    if (isFinite(bid) && bid > 0) {
+      return { bid, horas: Number(est.horas_final) || 0, material: Number(est.material_final) || 0, recalculado: false };
+    }
+    const c = calc || calcularEstimado(est);
+    return { bid: c.bid, horas: c.horas, material: c.totalMaterial, recalculado: true };
+  }
+  /* Lo que se guarda al cerrar. Se llama al marcar el resultado y al
+     convertir: son los dos momentos en que el número deja de moverse. */
+  function fotoParaGuardar(est) {
+    const c = calcularEstimado(est);
+    const r2 = v => Math.round(v * 100) / 100;
+    return { bid_final: r2(c.bid), horas_final: r2(c.horas), material_final: r2(c.totalMaterial),
+             cerrado_en: new Date().toISOString() };
+  }
+
+  /* El resumen de un grupo de estimados. Devuelve null si no hay ninguno.
+     `n` va SIEMPRE fuera: una media de dos no es una media, y quien la lee
+     tiene derecho a saberlo sin preguntar. */
+  function resumeGrupo(lista) {
+    if (!lista.length) return null;
+    const con = lista.map(x => x.foto);
+    const bids = con.map(f => f.bid).filter(v => v > 0);
+    const conSqft = lista.filter(x => Number(x.est.sqft) > 0);
+    const psf = conSqft.map(x => x.foto.bid / Number(x.est.sqft)).filter(v => isFinite(v) && v > 0);
+    const hsf = conSqft.map(x => x.foto.horas / Number(x.est.sqft)).filter(v => isFinite(v) && v > 0);
+    const media = a => a.length ? a.reduce((s, v) => s + v, 0) / a.length : null;
+    const mediana = a => {
+      if (!a.length) return null;
+      const b = [...a].sort((x, y) => x - y), m = b.length >> 1;
+      return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2;
+    };
+    const ganados = lista.filter(x => x.est.resultado === "ganado").length;
+    const perdidos = lista.filter(x => x.est.resultado === "perdido").length;
+    const decididos = ganados + perdidos;
+    return {
+      n: lista.length,
+      recalculados: con.filter(f => f.recalculado).length,
+      bidTotal: bids.reduce((s, v) => s + v, 0),
+      psfMedio: media(psf), psfMediana: mediana(psf), psfN: psf.length,
+      hsfMedio: media(hsf), hsfMediana: mediana(hsf), hsfN: hsf.length,
+      ganados, perdidos,
+      tasa: decididos ? ganados / decididos : null, decididos
+    };
+  }
+  /* El historial entero, partido como Edgar lo mira: por empresa, por
+     resultado, por tramo de tamaño y por modo de trabajo. */
+  function benchmarks(estimados, opciones) {
+    const o = opciones || {};
+    const lista = (estimados || [])
+      .filter(e => e && (!o.empresa || (o.empresa === "mep" ? esMEP(e) : !esMEP(e))))
+      .filter(e => !o.soloCerrados || (e.resultado && e.resultado !== "descartado"))
+      .map(e => ({ est: e, foto: fotoDe(e) }));
+    const porResultado = {};
+    Object.keys(RESULTADOS).forEach(k => {
+      const g = lista.filter(x => x.est.resultado === k);
+      if (g.length) porResultado[k] = resumeGrupo(g);
+    });
+    const sinDecidir = lista.filter(x => !x.est.resultado);
+    const porTramo = TRAMOS.map(t => {
+      const g = lista.filter(x => (tramoDe(x.est.sqft) || {}).id === t.id);
+      return g.length ? Object.assign({ tramo: t.id, nom: t.nom }, resumeGrupo(g)) : null;
+    }).filter(Boolean);
+    const modos = [...new Set(lista.map(x => x.est.modo || "remodelacion"))];
+    const porModo = modos.map(m => {
+      const g = lista.filter(x => (x.est.modo || "remodelacion") === m);
+      return Object.assign({ modo: m }, resumeGrupo(g));
+    }).sort((a, b) => b.n - a.n);
+    /* Lo que de verdad calibra: cuánto se falló contra el que ganó. Solo de
+       los perdidos en que se llegó a saber el número del otro. */
+    const conComp = lista.filter(x => x.est.resultado === "perdido" && Number(x.est.competencia) > 0 && x.foto.bid > 0);
+    const desvios = conComp.map(x => x.foto.bid / Number(x.est.competencia) - 1);
+    const brecha = desvios.length
+      ? { n: desvios.length, medio: desvios.reduce((s, v) => s + v, 0) / desvios.length,
+          peor: Math.max(...desvios) }
+      : null;
+    const motivos = {};
+    lista.filter(x => x.est.resultado === "perdido").forEach(x => {
+      const m = x.est.resultado_motivo || "otro";
+      motivos[m] = (motivos[m] || 0) + 1;
+    });
+    return {
+      total: lista.length, sinDecidir: sinDecidir.length,
+      todo: resumeGrupo(lista),
+      porResultado, porTramo, porModo, brecha, motivos
+    };
+  }
+  /* ¿Este estimado se sale de lo que sueles cobrar? Compara contra los
+     GANADOS de su mismo tramo. Señala, no obliga: hay trabajos que valen el
+     doble por buenas razones, y Edgar las sabe. */
+  function fueraDeRango(est, estimados) {
+    const s = Number(est && est.sqft) || 0;
+    if (!(s > 0)) return null;
+    const t = tramoDe(s); if (!t) return null;
+    const pares = (estimados || []).filter(e =>
+      e && e.id !== est.id && e.resultado === "ganado" &&
+      Number(e.sqft) > 0 && (tramoDe(e.sqft) || {}).id === t.id &&
+      (esMEP(e) === esMEP(est)));
+    if (pares.length < 3) return { n: pares.length, pocos: true, tramo: t.nom };
+    const psf = pares.map(e => fotoDe(e).bid / Number(e.sqft)).filter(v => isFinite(v) && v > 0).sort((a, b) => a - b);
+    if (psf.length < 3) return { n: psf.length, pocos: true, tramo: t.nom };
+    const m = psf.length >> 1;
+    const mediana = psf.length % 2 ? psf[m] : (psf[m - 1] + psf[m]) / 2;
+    const mio = calcularEstimado(est).bid / s;
+    const dif = mediana > 0 ? mio / mediana - 1 : 0;
+    return { n: psf.length, pocos: false, tramo: t.nom, mediana, mio, dif,
+             alto: dif > 0.35, bajo: dif < -0.30,
+             min: psf[0], max: psf[psf.length - 1] };
+  }
+
+
+  /* ==================================================================
+     E12 · IMPORTAR PRECIOS — la cotización del supply, sin tocar nada a ciegas
+
+     Llega un CSV del proveedor (o una base de referencia) con nombre y
+     precio. Aquí se lee, se casa contra el catálogo y se PROPONE fila a
+     fila. Nada se escribe hasta que Edgar lo aprueba, y lo que no casa
+     seguro sale en su propia lista en vez de colarse.
+
+     Dos destinos, y se elige al importar:
+      · TUYO       → `precio` / `horas_unidad`. Es lo que cotiza.
+      · REFERENCIA → `precio_ref` / `horas_ref` + fuente. Solo para comparar.
+     Las bases compradas (RSMeans, NECA) van SIEMPRE a referencia: su
+     licencia es de uso interno y no pueden acabar dentro de una propuesta.
+
+     Nunca se casa por parecido a ciegas: exacto, por alias, o a mano.
+     Un precio equivocado en el catálogo no se ve — se ve tres meses después,
+     en el margen.
+     ================================================================== */
+  /* CSV de verdad: comillas, comas dentro de comillas, CRLF y BOM. Un lector
+     hecho con split(",") parte "1,234.00" por la mitad.
+
+     Y una cosa que un lector de libro NO aguanta y aquí pasa siempre: las
+     PULGADAS. Un CSV de supply trae 1/2" EMT CONDUIT sin entrecomillar la
+     celda. Tratar esa comilla como apertura se traga el resto del archivo —
+     medido: de siete filas quedaban dos. Por eso la comilla solo abre cuando
+     está al PRINCIPIO del campo; en medio es una pulgada y se copia tal cual. */
+  function leeCsv(txt) {
+    const s = String(txt || "").replace(/^﻿/, "");
+    const filas = []; let f = [], c = "", q = false, inicio = true;
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (q) {
+        if (ch === '"') { if (s[i + 1] === '"') { c += '"'; i++; } else q = false; }
+        else c += ch;
+      } else if (ch === '"' && inicio) { q = true; inicio = false; }
+      else if (ch === ",") { f.push(c); c = ""; inicio = true; }
+      else if (ch === "\r") { /* nada */ }
+      else if (ch === "\n") { f.push(c); filas.push(f); f = []; c = ""; inicio = true; }
+      else { c += ch; inicio = false; }
+    }
+    if (c !== "" || f.length) { f.push(c); filas.push(f); }
+    return filas.filter(r => r.some(v => String(v).trim() !== ""));
+  }
+  /* Qué columna es cuál. Se acepta el CSV como venga del proveedor: los
+     nombres de columna cambian de uno a otro y no se le va a pedir a Edgar
+     que edite un CSV antes de subirlo. */
+  const COLS = {
+    item:   ["item", "descripcion", "description", "producto", "product", "nombre", "name", "material", "articulo", "artículo"],
+    precio: ["precio", "price", "cost", "costo", "unit price", "precio unitario", "net price", "neto", "unit cost"],
+    horas:  ["horas", "hours", "labor", "mano de obra", "horas_unidad", "labor hours", "mh", "manhours"],
+    unidad: ["unidad", "unit", "uom", "u/m"],
+    codigo: ["codigo", "código", "code", "sku", "part", "part number", "catalog"]
+  };
+  function mapaColumnas(cab) {
+    const n = cab.map(x => String(x || "").replace(/\s+/g, " ").trim().toLowerCase());
+    const busca = claves => {
+      for (const k of claves) { const i = n.indexOf(k); if (i >= 0) return i; }
+      for (const k of claves) { const i = n.findIndex(x => x.includes(k)); if (i >= 0) return i; }
+      return -1;
+    };
+    return { item: busca(COLS.item), precio: busca(COLS.precio), horas: busca(COLS.horas),
+             unidad: busca(COLS.unidad), codigo: busca(COLS.codigo) };
+  }
+  /* "$1,234.00" · "1.234,00 €" · "(12.50)" → número. Devuelve null si no es
+     un número, que NO es lo mismo que cero. */
+  function numeroPrecio(v) {
+    let t = String(v == null ? "" : v).trim();
+    if (!t) return null;
+    const neg = /^\(.*\)$/.test(t);
+    t = t.replace(/[()]/g, "").replace(/[^\d.,-]/g, "");
+    if (!t) return null;
+    // si hay coma Y punto, el último que aparezca manda como decimal
+    const iC = t.lastIndexOf(","), iP = t.lastIndexOf(".");
+    if (iC >= 0 && iP >= 0) t = iC > iP ? t.replace(/\./g, "").replace(",", ".") : t.replace(/,/g, "");
+    else if (iC >= 0) t = (t.length - iC - 1) === 3 ? t.replace(/,/g, "") : t.replace(",", ".");
+    const n = Number(t);
+    if (!isFinite(n)) return null;
+    return neg ? -n : n;
+  }
+  /* Casa una fila del CSV con el catálogo. Exacto o por alias; nunca por
+     parecido. Lo que no casa vuelve con sus tres mejores sugerencias para
+     que Edgar elija a mano, y hasta entonces no se toca nada. */
+  function casaFilaPrecio(nombre, codigo) {
+    const ex = catPorNombre(nombre);
+    if (ex) return { item: ex, via: "nombre", factor: 1 };
+    const al = (estData.alias || []).find(a => normTxt(a.alias) === normTxt(nombre));
+    if (al) {
+      const it = catPorNombre(al.item);
+      if (it) return { item: it, via: "alias", factor: Number(al.factor) || 1 };
+    }
+    if (codigo) {
+      const cod = String(codigo).replace(/\D/g, "");
+      if (cod) {
+        const porCod = (estData.catalogo || []).find(c => String(c.orden) === cod);
+        if (porCod) return { item: porCod, via: "código", factor: 1 };
+      }
+    }
+    return { item: null, via: null, sugerencias: sugerenciasCatalogo(nombre, 3) };
+  }
+  /* Lee el CSV entero y devuelve la propuesta. NO escribe nada.
+     destino: "tuyo" | "referencia". */
+  function proponePrecios(texto, destino, fuente) {
+    const filas = leeCsv(texto);
+    if (filas.length < 2) return { err: "Ese archivo no trae filas: hace falta una cabecera y al menos una línea." };
+    const cab = filas[0], col = mapaColumnas(cab);
+    if (col.item < 0) return { err: "No encuentro la columna del artículo. Debería llamarse Item, Descripción, Producto o parecido.\n\nCabecera que llegó: " + cab.join(" · ") };
+    if (col.precio < 0 && col.horas < 0) return { err: "No encuentro ni precio ni horas. Debería haber una columna Precio, Price, Cost… o Horas.\n\nCabecera que llegó: " + cab.join(" · ") };
+    const ref = destino === "referencia";
+    const cambios = [], sinPareja = [], sinNumero = [];
+    const vistos = new Set();
+    filas.slice(1).forEach((f, i) => {
+      const nombre = String(f[col.item] == null ? "" : f[col.item]).replace(/\s+/g, " ").trim();
+      if (!nombre) return;
+      const precio = col.precio >= 0 ? numeroPrecio(f[col.precio]) : null;
+      const horas = col.horas >= 0 ? numeroPrecio(f[col.horas]) : null;
+      const codigo = col.codigo >= 0 ? f[col.codigo] : null;
+      if (precio === null && horas === null) { sinNumero.push({ fila: i + 2, nombre }); return; }
+      if (precio !== null && precio < 0) { sinNumero.push({ fila: i + 2, nombre, nota: "precio negativo" }); return; }
+      const m = casaFilaPrecio(nombre, codigo);
+      if (!m.item) { sinPareja.push({ fila: i + 2, nombre, precio, horas, sugerencias: m.sugerencias }); return; }
+      // el mismo item dos veces en el CSV: manda la última, y se dice
+      const clave = m.item.id != null ? String(m.item.id) : normTxt(m.item.item);
+      const rep = vistos.has(clave); vistos.add(clave);
+      const antesP = ref ? Number(m.item.precio_ref) : Number(m.item.precio);
+      const antesH = ref ? Number(m.item.horas_ref) : Number(m.item.horas_unidad);
+      const nuevoP = precio === null ? null : precio * (m.factor || 1);
+      const dif = (isFinite(antesP) && antesP > 0 && nuevoP !== null) ? nuevoP / antesP - 1 : null;
+      /* Un item a $0 CON motivo es un $0 a propósito (E0: lo cotiza el
+         supply, lo pone el dueño, es solo mano de obra…). Ponerle un precio
+         fijo no es actualizarlo: es cambiar cómo se cotiza, y en una
+         propuesta eso se ve tres meses después. Se marca para que Edgar lo
+         decida a ojo abierto; no se bloquea. */
+      const eraCero = !ref && Number(m.item.precio) === 0 && !!m.item.cero_motivo && nuevoP !== null && nuevoP > 0;
+      cambios.push({
+        fila: i + 2, nombre, item: m.item, via: m.via, factor: m.factor || 1, repetido: rep,
+        eraCero, ceroMotivo: eraCero ? m.item.cero_motivo : null,
+        antesP: isFinite(antesP) ? antesP : null, nuevoP,
+        antesH: isFinite(antesH) ? antesH : null, nuevoH: horas,
+        dif, subeMucho: dif !== null && dif > 0.25, bajaMucho: dif !== null && dif < -0.25,
+        igual: nuevoP !== null && isFinite(antesP) && Math.abs(nuevoP - antesP) < 0.005
+      });
+    });
+    return { destino, ref, fuente: String(fuente || "").trim().slice(0, 60),
+             cab, col, cambios, sinPareja, sinNumero,
+             nuevos: cambios.filter(c => !c.antesP).length,
+             ceros: cambios.filter(c => c.eraCero).length,
+             mueven: cambios.filter(c => !c.igual).length };
+  }
+  /* De la propuesta aprobada a lo que hay que escribir en cada item. */
+  function cambiosDePrecio(prop, marcadas) {
+    const hoy = new Date().toISOString().slice(0, 10);
+    const out = [];
+    prop.cambios.forEach((c, i) => {
+      if (marcadas && !marcadas[i]) return;
+      if (c.igual && c.nuevoH === null) return;
+      const campos = {};
+      if (prop.ref) {
+        if (c.nuevoP !== null) campos.precio_ref = c.nuevoP;
+        if (c.nuevoH !== null) campos.horas_ref = c.nuevoH;
+        campos.fuente_ref = prop.fuente || "referencia";
+        campos.ref_fecha = hoy;
+      } else {
+        if (c.nuevoP !== null) campos.precio = c.nuevoP;
+        if (c.nuevoH !== null) campos.horas_unidad = c.nuevoH;
+        campos.precio_fecha = hoy;
+        if (prop.fuente) campos.precio_fuente = prop.fuente;
+      }
+      out.push({ id: c.item.id, item: c.item.item, campos });
+    });
+    return out;
+  }
+  /* «Tuyo vs referencia»: dónde te sales de lo que dice la base. Solo items
+     que tengan las dos cosas; ordenados por lo lejos que estén. */
+  function tuyoVsReferencia(catalogo, minPct) {
+    const lim = minPct == null ? 0.15 : minPct;
+    return (catalogo || [])
+      .filter(c => Number(c.precio) > 0 && Number(c.precio_ref) > 0)
+      .map(c => ({ item: c.item, seccion: c.seccion, fuente: c.fuente_ref,
+                   mio: Number(c.precio), ref: Number(c.precio_ref),
+                   dif: Number(c.precio) / Number(c.precio_ref) - 1 }))
+      .filter(x => Math.abs(x.dif) >= lim)
+      .sort((a, b) => Math.abs(b.dif) - Math.abs(a.dif));
+  }
+
+  /* ¿Cómo acabó este trabajo? (E11)
+     Va al final del editor, después de la propuesta: es lo que se toca cuando
+     el cliente contesta, semanas después. Marcar el resultado guarda además
+     la FOTO del número —si no, el historial mentiría con los precios de hoy—
+     y en los perdidos pide el porqué y, si se sabe, cuánto ofertó el que ganó:
+     ese dato es el único que dice de CUÁNTO se estaba lejos. */
+  function bloqueResultado(est, c) {
+    if (esMEP(est)) return "";
+    const r = est.resultado || "";
+    const foto = est.bid_final ? fotoDe(est) : null;
+    const rango = fueraDeRango(est, (estData.estimados || []));
+    const avisoRango = (!rango || rango.pocos || (!rango.alto && !rango.bajo)) ? "" : `
+      <div class="aviso-texto" style="padding:.2rem 0">
+        <strong>${rango.alto ? "⚠ Vas por encima de lo que sueles cobrar" : "⚠ Vas por debajo de lo que sueles cobrar"}</strong><br>
+        Este sale a <strong>${fmt(rango.mio)}/sqft</strong>; tus ${rango.n} ganados de ${esc(rango.tramo)}
+        van a <strong>${fmt(rango.mediana)}/sqft</strong> de mediana (de ${fmt(rango.min)} a ${fmt(rango.max)}).
+        Eso es un <strong>${(rango.dif * 100).toFixed(0)} %</strong> de diferencia.<br>
+        <span class="chk-avance">No tiene por qué estar mal: hay trabajos que valen el doble por buenas razones. Solo que lo veas antes de mandarlo.</span>
+      </div>`;
+    return `
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">📊 ¿Cómo acabó?</div>
+        ${avisoRango}
+        <div class="cal-form">
+          <label>Resultado
+            <select id="est-res">
+              <option value=""${r ? "" : " selected"}>— todavía sin contestar —</option>
+              ${Object.entries(RESULTADOS).map(([k, v]) => `<option value="${k}"${r === k ? " selected" : ""}>${v.nom}</option>`).join("")}
+            </select>
+          </label>
+          ${r === "perdido" ? `
+          <label>¿Por qué se perdió?
+            <select id="est-res-motivo">
+              <option value="">— sin decir —</option>
+              ${Object.entries(MOTIVOS).map(([k, v]) => `<option value="${k}"${est.resultado_motivo === k ? " selected" : ""}>${esc(v)}</option>`).join("")}
+            </select>
+          </label>
+          <label>¿Cuánto ofertó el que ganó? <span class="chk-avance">Si se llega a saber. Es el dato que más calibra: dice de cuánto estabas lejos, no solo que perdiste.</span>
+            <input id="est-res-comp" type="number" step="1" min="0" value="${est.competencia == null ? "" : esc(String(est.competencia))}" placeholder="p. ej. 20000">
+          </label>` : ""}
+          ${r ? `<label>Nota <input id="est-res-nota" value="${esc(est.resultado_nota || "")}" placeholder="lo que quieras recordar de este"></label>` : ""}
+        </div>
+        ${foto ? `<p class="lev-nota" style="margin:.4rem 0 0">Guardado con <strong>${fmt(foto.bid)}</strong>${
+          est.sqft ? ` · ${fmt(foto.bid / Number(est.sqft))}/sqft` : ""}${
+          est.cerrado_en ? ` · ${new Date(est.cerrado_en).toLocaleDateString(LOCALE)}` : ""}.
+          Ese es el número que va al historial, no el de hoy.</p>`
+        : r ? `<p class="lev-nota" style="margin:.4rem 0 0">Al marcarlo se guarda el número de hoy (${fmt(c.bid)}) como el que ofertaste. Después ya no se mueve.</p>` : ""}
+      </div>`;
+  }
+  function enganchaResultado(est) {
+    const sel = $("est-res");
+    if (sel) sel.addEventListener("change", async () => {
+      const v = sel.value || null;
+      const campos = { resultado: v, resultado_fecha: v ? new Date().toISOString().slice(0, 10) : null };
+      // La foto se guarda UNA vez, la primera que se cierra: si se cambia de
+      // opinión después, el número con que se ofertó sigue siendo el de entonces.
+      if (v && !est.bid_final) Object.assign(campos, fotoParaGuardar(est));
+      if (!v) { campos.resultado_motivo = null; campos.competencia = null; }
+      try {
+        await DB.cambiarEstimado(est.id, campos);
+        await recargarEstimador();
+        avisar(v ? `Marcado como ${RESULTADOS[v].nom.toLowerCase()} ✓` : "Vuelve a estar sin contestar");
+      } catch (e) { avisar("No se pudo guardar: " + e.message, true); }
+    });
+    const guarda = async (campos, txt) => {
+      try { await DB.cambiarEstimado(est.id, campos); await recargarEstimador(); if (txt) avisar(txt); }
+      catch (e) { avisar("No se pudo guardar: " + e.message, true); }
+    };
+    const mot = $("est-res-motivo");
+    if (mot) mot.addEventListener("change", () => guarda({ resultado_motivo: mot.value || null }));
+    const comp = $("est-res-comp");
+    if (comp) comp.addEventListener("change", () => {
+      const n = Number(comp.value);
+      guarda({ competencia: (isFinite(n) && n > 0) ? n : null },
+        (isFinite(n) && n > 0 && est.bid_final) ? `Ibas un ${((est.bid_final / n - 1) * 100).toFixed(0)} % por encima del que ganó` : "");
+    });
+    const nota = $("est-res-nota");
+    if (nota) nota.addEventListener("change", () => guarda({ resultado_nota: nota.value.trim().slice(0, 300) || null }));
+  }
+
   function pintarEstimador() {
     if (!estData) return;
     if (!estimadoActivo) { pintarEstimadorLista(); return; }
     pintarEstimadorEditor();
+  }
+
+  /* EL HISTORIAL (E11). Se pinta arriba de la lista, plegado: es para mirar
+     de vez en cuando, no todos los días. Todo número lleva de cuántos sale;
+     una media de dos no es una media. */
+  function tarjetaHistorial() {
+    const b = benchmarks(estData.estimados || [], { empresa: "mxp" });
+    if (!b.total) return "";
+    const pct = v => (v * 100).toFixed(0) + " %";
+    const psf = g => (g && g.psfN >= 3) ? `${fmt(g.psfMediana)}/sqft <span class="chk-avance">(mediana de ${g.psfN})</span>`
+              : (g && g.psfN) ? `<span class="chk-avance">solo ${g.psfN} con sqft — todavía no es una referencia</span>`
+              : `<span class="chk-avance">ninguno con sqft</span>`;
+    const g = b.porResultado.ganado, pr = b.porResultado.perdido;
+    const filaTramo = t => `<tr><td>${esc(t.nom)}</td><td class="r">${t.n}</td>
+        <td class="r">${t.psfN >= 3 ? fmt(t.psfMediana) : "—"}</td>
+        <td class="r">${t.hsfN >= 3 ? t.hsfMediana.toFixed(3) : "—"}</td>
+        <td class="r">${t.decididos >= 3 ? pct(t.tasa) : "—"}</td></tr>`;
+    return `
+      <details class="cal-panel-card" id="est-historial">
+        <summary class="cal-form-titulo" style="cursor:pointer">📈 Historial — ${b.total} ${b.total === 1 ? "estimado" : "estimados"}${
+          b.todo.decididos ? ` · ganas ${pct(b.todo.tasa)} de los ${b.todo.decididos} que se decidieron` : ""}</summary>
+        <div style="padding:.4rem 0">
+          ${b.todo.recalculados ? `<p class="lev-nota" style="margin:0 0 .5rem">⚠ <strong>${b.todo.recalculados} de ${b.total}</strong> no tienen guardado el número con que se ofertaron, así que salen <strong>recalculados con los precios de hoy</strong>. Márcalos como ganado o perdido y se les guarda el suyo.</p>` : ""}
+          <p style="margin:.2rem 0">
+            <strong>Ganados:</strong> ${g ? `${g.n} · ${psf(g)}` : "todavía ninguno"}<br>
+            <strong>Perdidos:</strong> ${pr ? `${pr.n} · ${psf(pr)}` : "todavía ninguno"}<br>
+            ${b.sinDecidir ? `<strong>Sin contestar:</strong> ${b.sinDecidir}<br>` : ""}
+          </p>
+          ${b.brecha ? `<p class="lev-nota" style="margin:.2rem 0">De los perdidos en que supiste el número del otro (${b.brecha.n}), ibas de media un <strong>${pct(b.brecha.medio)}</strong> por encima; el peor, ${pct(b.brecha.peor)}.</p>` : ""}
+          ${Object.keys(b.motivos).length ? `<p class="lev-nota" style="margin:.2rem 0">Por qué se perdieron: ${Object.entries(b.motivos).sort((x, y) => y[1] - x[1]).map(([k, n]) => `${esc((MOTIVOS[k] || k).split(" —")[0])} (${n})`).join(" · ")}</p>` : ""}
+          ${b.porTramo.length ? `
+          <table class="facturas" style="margin-top:.5rem">
+            <tr><th>Tamaño</th><th class="r">n</th><th class="r">$/sqft</th><th class="r">h/sqft</th><th class="r">ganas</th></tr>
+            ${b.porTramo.map(filaTramo).join("")}
+          </table>
+          <p class="lev-nota" style="margin:.4rem 0 0">Mediana, no media: un trabajo raro no debe mover la referencia. Donde pone «—» es que <strong>no hay tres con los que comparar</strong> — un porcentaje sacado de una oferta no dice nada.</p>` : ""}
+        </div>
+      </details>`;
+  }
+
+  /* PRECIOS DEL CATÁLOGO (E12). Plegado, con la lista de importación
+     debajo: nada se escribe hasta que Edgar marca y aprueba. */
+  let precioProp = null;          // la propuesta en curso (no escrita)
+  let precioMarcadas = null;      // qué filas quedan aprobadas
+  function tarjetaPrecios() {
+    const cat = estData.catalogo || [];
+    const conRef = cat.filter(c => Number(c.precio_ref) > 0).length;
+    const viejos = cat.filter(c => Number(c.precio) > 0 && !c.precio_fecha).length;
+    const vs = tuyoVsReferencia(cat, 0.15);
+    return `
+      <details class="cal-panel-card" id="est-precios">
+        <summary class="cal-form-titulo" style="cursor:pointer">🏷️ Precios del catálogo — ${cat.length} ítems${conRef ? ` · ${conRef} con referencia` : ""}</summary>
+        <div style="padding:.4rem 0">
+          <p class="modal-nota">Pega aquí el CSV del proveedor (Descripción y Precio; también vale Horas). Se casa contra tu catálogo y te enseño qué cambiaría: <strong>no se escribe nada hasta que lo apruebes</strong>.</p>
+          <textarea id="precio-csv" rows="4" placeholder="Item,Unit,Price&#10;20A DUPLEX RECEPTACLE,E,4.10&#10;…"
+            style="width:100%;font:inherit;font-size:.8rem;padding:.55rem .7rem;border:1px solid var(--mp-line);border-radius:10px"></textarea>
+          <div class="cal-form">
+            <label>¿Adónde van estos precios?
+              <select id="precio-destino">
+                <option value="tuyo">A MIS precios — es lo que yo pago (cotiza con ellos)</option>
+                <option value="referencia">Solo de referencia — RSMeans, NECA, una lista ajena</option>
+              </select>
+            </label>
+            <label>¿De dónde salen? <input id="precio-fuente" placeholder="City Electric 15/09 · RSMeans 2026…"></label>
+          </div>
+          <button type="button" class="accion secundaria" id="btn-precio-ver" style="margin-top:.45rem">🔎 Ver qué cambiaría</button>
+          <div id="precio-preview"></div>
+          ${viejos ? `<p class="lev-nota" style="margin:.6rem 0 0">${viejos} ${viejos === 1 ? "ítem no tiene" : "ítems no tienen"} fecha de precio: no hay forma de saber si son de este año o de hace tres. Al importar se les pone.</p>` : ""}
+          ${vs.length ? `
+          <div class="cal-form-titulo" style="margin-top:.8rem">Tuyo vs referencia — ${vs.length} se separan más del 15 %</div>
+          <table class="facturas" style="margin-top:.4rem">
+            <tr><th>Ítem</th><th class="r">Tuyo</th><th class="r">Referencia</th><th class="r">Dif.</th></tr>
+            ${vs.slice(0, 15).map(x => `<tr><td>${esc(x.item)}${x.fuente ? ` <span class="chk-avance">${esc(x.fuente)}</span>` : ""}</td>
+              <td class="r">${fmt(x.mio)}</td><td class="r">${fmt(x.ref)}</td>
+              <td class="r">${x.dif > 0 ? "+" : ""}${(x.dif * 100).toFixed(0)} %</td></tr>`).join("")}
+          </table>
+          ${vs.length > 15 ? `<p class="lev-nota" style="margin:.3rem 0 0">…y ${vs.length - 15} más.</p>` : ""}
+          <p class="lev-nota" style="margin:.4rem 0 0">La referencia es para comparar, nunca para cotizar: las bases compradas (RSMeans, NECA) son de uso interno y no salen en ninguna propuesta.</p>` : ""}
+        </div>
+      </details>`;
+  }
+  function pintarPreviewPrecios() {
+    const cont = $("precio-preview"); if (!cont) return;
+    const P = precioProp;
+    if (!P) { cont.innerHTML = ""; return; }
+    if (P.err) { cont.innerHTML = `<p class="lev-nota" style="color:var(--mp-rojo,#a33)">${esc(P.err).replace(/\n/g, "<br>")}</p>`; return; }
+    const mueven = P.cambios.filter(c => !c.igual || c.nuevoH !== null);
+    const marcadas = precioMarcadas || {};
+    const nSel = P.cambios.filter((c, i) => marcadas[i]).length;
+    const fila = (c, i) => `
+      <tr class="${c.eraCero ? "fila-alerta" : ""}">
+        <td><label style="display:flex;gap:.4rem;align-items:center;cursor:pointer">
+          <input type="checkbox" class="precio-chk" data-i="${i}"${marcadas[i] ? " checked" : ""}>
+          <span>${esc(c.item.item)}${c.via !== "nombre" ? ` <span class="chk-avance">por ${esc(c.via)}</span>` : ""}${
+            c.repetido ? ` <span class="chk-avance">repetido en el CSV</span>` : ""}${
+            c.eraCero ? `<br><span class="chk-avance">⚠ estaba a $0 <strong>a propósito</strong> (${esc(c.ceroMotivo)}): ponerle precio fijo cambia cómo se cotiza</span>` : ""}</span>
+        </label></td>
+        <td class="r">${c.antesP === null ? "—" : fmt(c.antesP)}</td>
+        <td class="r">${c.nuevoP === null ? "—" : fmt(c.nuevoP)}</td>
+        <td class="r">${c.dif === null ? "" : `${c.dif > 0 ? "+" : ""}${(c.dif * 100).toFixed(0)} %`}</td>
+      </tr>`;
+    cont.innerHTML = `
+      <p style="margin:.6rem 0 .3rem"><strong>${P.cambios.length}</strong> ${P.cambios.length === 1 ? "casó" : "casaron"} con tu catálogo · <strong>${mueven.length}</strong> ${mueven.length === 1 ? "cambia" : "cambian"}${
+        P.sinPareja.length ? ` · <strong>${P.sinPareja.length}</strong> sin pareja` : ""}${
+        P.sinNumero.length ? ` · ${P.sinNumero.length} sin número` : ""}${
+        P.ceros ? ` · <strong>${P.ceros}</strong> ${P.ceros === 1 ? "estaba" : "estaban"} a $0 a propósito` : ""}</p>
+      ${mueven.length ? `
+      <table class="facturas">
+        <tr><th>Ítem</th><th class="r">Ahora</th><th class="r">${P.ref ? "Referencia" : "Nuevo"}</th><th class="r">Dif.</th></tr>
+        ${P.cambios.map((c, i) => (!c.igual || c.nuevoH !== null) ? fila(c, i) : "").join("")}
+      </table>
+      <div style="display:flex;gap:.4rem;margin-top:.45rem;flex-wrap:wrap">
+        <button type="button" class="accion secundaria" id="btn-precio-todos">Marcar todos</button>
+        <button type="button" class="accion secundaria" id="btn-precio-ninguno">Desmarcar todos</button>
+        <button type="button" class="accion" id="btn-precio-aplicar"${nSel ? "" : " disabled"}>Aplicar ${nSel} ${nSel === 1 ? "cambio" : "cambios"}${P.ref ? " a la referencia" : ""}</button>
+      </div>` : `<p class="lev-nota">Nada que cambiar: lo que llegó ya estaba igual.</p>`}
+      ${P.sinPareja.length ? `
+      <div class="cal-form-titulo" style="margin-top:.7rem">Sin pareja en tu catálogo (${P.sinPareja.length})</div>
+      <p class="lev-nota" style="margin:.2rem 0">Estos NO se tocan. Si alguno es tuyo con otro nombre, créale un alias o el ítem y vuelve a importar.</p>
+      <p class="modal-nota">${P.sinPareja.slice(0, 20).map(x => `<span>· ${esc(x.nombre)}${x.precio !== null ? ` — ${fmt(x.precio)}` : ""}${
+        x.sugerencias && x.sugerencias.length ? ` <span class="chk-avance">¿${esc(x.sugerencias[0].item || x.sugerencias[0])}?</span>` : ""}</span>`).join("<br>")}${
+        P.sinPareja.length > 20 ? `<br>…y ${P.sinPareja.length - 20} más.` : ""}</p>` : ""}`;
+    cont.querySelectorAll(".precio-chk").forEach(ch => ch.addEventListener("change", () => {
+      precioMarcadas[ch.dataset.i] = ch.checked;
+      pintarPreviewPrecios();
+    }));
+    const todos = $("btn-precio-todos"), ninguno = $("btn-precio-ninguno"), aplicar = $("btn-precio-aplicar");
+    if (todos) todos.addEventListener("click", () => { P.cambios.forEach((c, i) => { if (!c.igual || c.nuevoH !== null) precioMarcadas[i] = true; }); pintarPreviewPrecios(); });
+    if (ninguno) ninguno.addEventListener("click", () => { precioMarcadas = {}; pintarPreviewPrecios(); });
+    if (aplicar) aplicar.addEventListener("click", aplicaPrecios);
+  }
+  async function aplicaPrecios() {
+    const P = precioProp; if (!P || P.err) return;
+    const lista = cambiosDePrecio(P, precioMarcadas);
+    if (!lista.length) return;
+    const ceros = P.cambios.filter((c, i) => precioMarcadas[i] && c.eraCero);
+    let aviso = `¿Aplicar ${lista.length} ${lista.length === 1 ? "cambio" : "cambios"} ${P.ref ? "a los precios de REFERENCIA" : "a TUS precios"}?`;
+    if (ceros.length) aviso += `\n\nOJO: ${ceros.length} ${ceros.length === 1 ? "estaba" : "estaban"} a $0 a propósito (${[...new Set(ceros.map(c => c.ceroMotivo))].join(", ")}). Ponerles precio fijo cambia cómo se cotizan.`;
+    if (!confirm(aviso)) return;
+    const btn = $("btn-precio-aplicar"); if (btn) { btn.disabled = true; btn.textContent = "Aplicando…"; }
+    let hechos = 0; const fallos = [];
+    for (const x of lista) {
+      try { await DB.cambiarItemCatalogo(x.id, x.campos); hechos++; }
+      catch (e) { fallos.push(`${x.item}: ${e.message}`); }
+    }
+    await recargarEstimador();
+    precioProp = null; precioMarcadas = null;
+    if (fallos.length) avisar(`${hechos} aplicados · ${fallos.length} fallaron — ${fallos[0]}`, true);
+    else avisar(`${hechos} ${hechos === 1 ? "precio actualizado" : "precios actualizados"} ✓`);
+  }
+  function enganchaPrecios() {
+    const ver = $("btn-precio-ver");
+    if (!ver) return;
+    ver.addEventListener("click", () => {
+      const txt = ($("precio-csv") || {}).value || "";
+      const destino = ($("precio-destino") || {}).value || "tuyo";
+      const fuente = ($("precio-fuente") || {}).value || "";
+      if (!txt.trim()) { avisar("Pega antes el CSV del proveedor", true); return; }
+      precioProp = proponePrecios(txt, destino, fuente);
+      // por defecto se marcan los que cambian, MENOS los $0 puestos a
+      // propósito: esos se marcan a mano, uno por uno, mirándolos
+      precioMarcadas = {};
+      if (!precioProp.err) precioProp.cambios.forEach((c, i) => { if ((!c.igual || c.nuevoH !== null) && !c.eraCero) precioMarcadas[i] = true; });
+      pintarPreviewPrecios();
+    });
   }
 
   function pintarEstimadorLista() {
@@ -5774,6 +6361,7 @@ function esFalloDeRed(err) {
       return `
         <div class="mat-item">
           <span class="recibo-chip ${chip}">${etiqueta}</span>
+          ${e.resultado && RESULTADOS[e.resultado] ? `<span class="recibo-chip ${RESULTADOS[e.resultado].chip}">${RESULTADOS[e.resultado].nom.toUpperCase()}</span>` : ""}
           ${esMEP(e) ? `<span class="recibo-chip devolucion">MXP MEP</span>` : ""}
           <span class="alcance-info est-abrir" data-id="${e.id}" style="cursor:pointer">
             <span class="alcance-titulo">${esc(e.nombre)}</span>
@@ -5789,6 +6377,8 @@ function esFalloDeRed(err) {
     const filasMep = todos.filter(esMEP).map(fila1).join("");
 
     $("estimador-panel").innerHTML = `
+      ${tarjetaHistorial()}
+      ${tarjetaPrecios()}
       <div class="cal-panel-card lev-atajo">
         <button type="button" class="accion" id="est-a-levantamiento">Levantamiento en sitio</button>
         <p class="lev-nota">Estás en la casa: cuenta lo que ves y la app arma el estimado sola.</p>
@@ -5926,6 +6516,7 @@ function esFalloDeRed(err) {
       } catch (err) { avisar("No se pudo crear: " + err.message, true); }
     });
     $("est-a-levantamiento").addEventListener("click", () => irLevLista());
+    enganchaPrecios();
     const selProy = $("est-proy-existente");
     if (selProy) selProy.addEventListener("change", () => {
       const form = selProy.closest("form"); if (!form) return;
@@ -6905,6 +7496,7 @@ Power done right the first time. ⚡`;
         <button class="accion secundaria" id="btn-est-mep">Pasarlo a MXP MEP</button>
         ${propuestasDelEstimado(est.id)}`}
       </div>
+      ${bloqueResultado(est, c)}
       ${est.estado === "convertido" ? (() => {
         // Ya está en un proyecto: se cierra y se vuelve al inicio (o se abre el proyecto)
         const proy = (est.proyecto_id && proyectos().find(x => x.id === est.proyecto_id))
@@ -7320,6 +7912,7 @@ Power done right the first time. ⚡`;
     // y se abandonaba, y este botón no hacía nada. Ahora cada uno el suyo.
     const btnProp = $("btn-est-armar");
     if (btnProp) btnProp.addEventListener("click", () => { if (ceroDejaPasar()) irPropuesta(est.id); });
+    enganchaResultado(est);
     $("estimador-panel").querySelectorAll(".btn-cierre").forEach(b => {
       b.addEventListener("click", () => irCierre(Number(b.dataset.id)));
     });
@@ -7348,7 +7941,9 @@ Power done right the first time. ⚡`;
           const ens = (estData.ensambles || []).find(x => x.id === ee.ensamble_id);
           if (ens) await DB.crearPunto({ proyecto_id: proy.id, texto: `${ens.nombre} (${ee.cantidad}) — añadido`, orden: ordenA++ });
         }
-        await DB.cambiarEstimado(est.id, { estado: "convertido" }).catch(() => {});
+        await DB.cambiarEstimado(est.id, Object.assign({ estado: "convertido",
+          resultado: est.resultado || "ganado", resultado_fecha: est.resultado_fecha || new Date().toISOString().slice(0, 10) },
+          est.bid_final ? {} : fotoParaGuardar(est))).catch(() => {});
         await recargar(proy.id);
         await recargarEstimador();
         avisar(`Añadido al proyecto ✓ — contrato ahora ${fmt(cambiosFin.contrato)}`);
@@ -7405,7 +8000,10 @@ Power done right the first time. ⚡`;
         }
         await DB.crearPunto({ proyecto_id: idNuevo, texto: esServicio ? "Servicio realizado" : "Inspección final aprobada", orden: ordenP });
         // El estimado queda enlazado a su proyecto: así «Escribir el alcance» sabe qué precio ofrecer
-        await DB.cambiarEstimado(est.id, { estado: "convertido", proyecto_id: idNuevo });
+        // la FOTO del número: al convertir es cuando deja de moverse (E11)
+        await DB.cambiarEstimado(est.id, Object.assign({ estado: "convertido", proyecto_id: idNuevo,
+          resultado: est.resultado || "ganado", resultado_fecha: est.resultado_fecha || new Date().toISOString().slice(0, 10) },
+          est.bid_final ? {} : fotoParaGuardar(est)));
         await recargar();
         avisar(`Proyecto creado ✓ — contrato ${fmt(bid)} con hitos, presupuestos y alcance`);
         irDetalle(idNuevo);
@@ -10254,6 +10852,28 @@ Power done right the first time. ⚡`;
       escToca(empresa, actual) { return escenarioQueToca(empresa, actual); },
       modoEns(modo) { return modo === "servicio" ? "servicio" : modo === "planos" ? "comercial" : "remodelacion"; },
       esMep(est) { return esMEP(est); }
+    },
+    // E11 · Historial y benchmarks. Todo puro: entra una lista de estimados,
+    // sale un resumen. Ver pruebas/e11.js.
+    e11: {
+      datos(d) { estData = Object.assign({ catalogo: [], config: {}, ensambleItems: [], estimados: [], escenarios: [] }, d || {}); },
+      bench(estimados, o) { return benchmarks(estimados, o); },
+      foto(est) { return fotoDe(est); },
+      guardar(est) { return fotoParaGuardar(est); },
+      tramo(sqft) { const t = tramoDe(sqft); return t ? t.id : null; },
+      rango(est, estimados) { return fueraDeRango(est, estimados); },
+      tarjeta() { return tarjetaHistorial(); },
+      bloque(est) { return bloqueResultado(est, calcularEstimado(est)); }
+    },
+    // E12 · Importar precios. El CSV entra como texto y sale una propuesta;
+    // nada se escribe aquí. Ver pruebas/e12.js.
+    e12: {
+      datos(d) { estData = Object.assign({ catalogo: [], config: {}, ensambleItems: [], estimados: [], alias: [] }, d || {}); },
+      csv(t) { return leeCsv(t); },
+      num(v) { return numeroPrecio(v); },
+      propone(txt, destino, fuente) { return proponePrecios(txt, destino, fuente); },
+      cambios(prop, marcadas) { return cambiosDePrecio(prop, marcadas); },
+      vs(catalogo, min) { return tuyoVsReferencia(catalogo, min); }
     },
     async aplicarLectura(lectura) {
       const A = alcActivo;

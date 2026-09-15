@@ -221,8 +221,8 @@ con `wrangler secret put`, y **no van en ningún `.md`**.
 |---|---|---|
 | **E4** 🔵 | Lector de leyenda con visión: de la hoja de símbolos del ingeniero salen las categorías de Count ya nombradas. Añade una tercera herramienta forzada al cerebro (`leyenda_leida`) → requiere `wrangler deploy` de Edgar. | Cerebro + Planos. **En curso.** |
 | **E10** 🔵 | Estimado desde scope: el cerebro **propone** ensambles × cantidad + código; **el código calcula**; Edgar aprueba fila a fila. Mismo patrón que `alcance.js`: la IA escribe la propuesta, el dinero lo decide el código. | Cerebro + estimador. Necesita 3 scopes reales de Edgar. |
-| **E11** | Historial y benchmarks ($/SF, h/SF, ganado/perdido) por empresa y tamaño. | Estimador. Necesita marcar ganado/perdido en los viejos. |
-| **E12** | Importar precios del supply (CSV) y columnas de referencia para bases compradas. Las bases con licencia (RSMeans/NECA) son de uso interno: **no viajan entre empresas.** | Estimador. Decisión de compra de Edgar. |
+| **E11 ✔** | **Hecho 15/09.** Ganado/perdido con motivo y, si se sabe, lo que ofertó el que ganó. Benchmarks $/SF y h/SF por tramo de tamaño y por modo, con tasa de acierto. Clave: al cerrar un estimado se guarda la **foto** del número (`bid_final`, `horas_final`, `material_final`) — sin ella el historial mentiría, porque `calcularEstimado` recalcula siempre con los precios de hoy. `pruebas/e11.js` 33/33. **SQL: `docs/sql/e11-resultado.sql`.** | Estimador. |
+| **E12 ✔** | **Hecho 15/09.** Importar el CSV del supply: se casa contra el catálogo (exacto, alias o código — nunca por parecido), se propone fila a fila y **nada se escribe sin aprobarlo**. Dos destinos: tus precios, o `precio_ref` para bases compradas (uso interno, no salen en propuestas). Pantalla «tuyo vs referencia». Avisa antes de pisar un $0 puesto a propósito (E0). `pruebas/e12.js` 29/29. **SQL: `docs/sql/e12-referencia.sql`.** | Estimador. |
 | **E7** | Planos: páginas rotadas, aviso «texto en curvas». | Planos. |
 | **E8** | Empresas completas con RLS y perfiles. | **Aplazado por Edgar.** |
 

@@ -14,5 +14,9 @@ NODE_PATH=/opt/node22/lib/node_modules node pruebas/e0.js
 
 | `e13.js` | E13a · las cotizaciones del proveedor no pagan misceláneas, E13e · MXP MEP con sus propias tarifas, overhead y sales tax, y E13d · la escalación de las obras largas. Lo primero que comprueba siempre es que ningún estimado existente se mueva. Lo primero que comprueba es que **ningún estimado que ya existe se mueva ni un centavo**: una línea sin marcar da el bid idéntico al de la fórmula vieja. |
 
+| `e11.js` | E11 · Historial y benchmarks: que la FOTO del número (bid_final) mande sobre el recálculo de hoy —si no, el historial miente con los precios de hoy—, que ninguna media salga sin decir de cuántos, que la tasa de acierto no cuente los que siguen sin contestar, que MXP MEP no se mezcle, y que mirar el historial no mueva un centavo de ningún estimado. |
+
+| `e12.js` | E12 · Importar precios: que NADA se escriba sin aprobarlo fila a fila, que lo que no casa seguro salga aparte en vez de colarse, que un `1/2" EMT` sin entrecomillar no se trague el archivo, que `$1,234.00` se lea bien y que «vacío» no sea cero, que una base comprada acabe en `precio_ref` y jamás en `precio`, y que un $0 puesto a propósito (E0) avise antes de pisarse. |
+
 Regla: una prueba nueva por cada función que toque dinero o que escriba algo
 que el cliente vaya a firmar.
