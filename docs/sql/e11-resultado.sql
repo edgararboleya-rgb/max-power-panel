@@ -41,14 +41,22 @@ alter table estimados add column if not exists cerrado_en     timestamptz;
 
 -- BLOQUE 3 — Los convertidos de antes ya tienen su número: el contrato del
 -- proyecto. Se copia como foto, que es el dato verdadero del día que se firmó.
+--
+-- OJO al nombre de la tabla: es `finanzas_proyecto`, NO `finanzas`. (La
+-- primera versión de este archivo decía `finanzas` porque lo escribí a partir
+-- del nombre de la función de JS, `DB.cambiarFinanzas`, en vez de mirar la
+-- tabla. Edgar se comió el error 42P01 el 15/09.)
+--
+-- Y no se toca `creado`: no todas las bases lo tienen en `proyectos`. La fecha
+-- de cierre se deja en hoy si no había ninguna, que es lo honesto: no sabemos
+-- el día exacto, pero sí que ya está cerrado.
 update estimados e
    set bid_final  = f.contrato,
-       cerrado_en = coalesce(e.cerrado_en, p.creado, now()),
+       cerrado_en = coalesce(e.cerrado_en, now()),
        resultado  = coalesce(e.resultado, 'ganado'),
-       resultado_fecha = coalesce(e.resultado_fecha, p.creado::date, current_date)
-  from proyectos p
-  join finanzas f on f.proyecto_id = p.id
- where e.proyecto_id = p.id
+       resultado_fecha = coalesce(e.resultado_fecha, current_date)
+  from finanzas_proyecto f
+ where f.proyecto_id = e.proyecto_id
    and e.estado = 'convertido'
    and e.bid_final is null
    and f.contrato is not null
