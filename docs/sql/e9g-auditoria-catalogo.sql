@@ -74,7 +74,7 @@ update alias_takeoff set unidad = 'E'   where item = '2" CABLE TO STRUT SUPPORT'
 -- select upper(btrim(regexp_replace(item,'\\s+',' ','g'))) n, count(*) from catalogo_items group by 1 having count(*) > 1;
 
 -- ---------------------------------------------------------------------
--- BLOQUE A · CORRER ANTES DE USAR LAS RECETAS NUEVAS  (31)
+-- BLOQUE A · CORRER ANTES DE USAR LAS RECETAS NUEVAS (primera tanda)  (31)
 -- ---------------------------------------------------------------------
 
 -- 6" GRS CONDUIT   [hoy: LF · $0 · 0.09 h]
@@ -327,7 +327,29 @@ update catalogo_items set horas_unidad = 0.02
    where item = 'DEMO - Conduit Run (per LF)' and coalesce(horas_unidad,0) = 0.05;
 
 -- ---------------------------------------------------------------------
--- BLOQUE B · CUANDO LO MIRES — descomenta lo que aceptes  (60)
+-- BLOQUE A2 · DOS MÁS, DE LA SEGUNDA TANDA (si ya corriste el A, corre solo esto)
+-- ---------------------------------------------------------------------
+-- Salieron de los 179 hallazgos de los críticos de completitud, después de que
+-- sus escépticos tumbaran 110. Las dos restauran TUS números del Excel.
+
+-- MAIN CONDUCTOR   [hoy: LF · $8.5 · 0.1 h]
+--   Tu Excel lo tiene en MLF a 20 h por mil pies, o sea 0,02 h/ft.
+--   Al pasar la fila a LF se puso el precio por pie pero las horas se quedaron en 0,1: cinco veces tu número.
+--   Se restaura tu hora en la unidad actual (LF); el precio $8,50/LF no se toca.
+--   Ojo: la primera tanda usó ese 0,1 como ancla para SECONDARY CONDUCTOR, que se corrige en esta misma lista.
+--   AFECTA: alias-supabase 'MAIN CONDUCTOR' (factor 1, auto-match toolchest)
+update catalogo_items set horas_unidad = 0.02
+   where item = 'MAIN CONDUCTOR' and coalesce(horas_unidad,0) = 0.1;
+
+-- JB 1900 DEEP BOX   [hoy: E · $4.5 · 0.3 h]
+--   Es tu número: en Stuart cotizaste 100 cajas '4"X 4" X 2 1/8" DEEP COMBO BOX' (la misma pieza) a $1,04 y 0,25 h, y a mano cobras 0,25 h por la caja 4x4 deep.
+--   El $4,50 es un arrastre (solo lo comparte con '2" CABLE TO STRUT SUPPORT') y las 0,3 h no tienen motivo: se instala igual que la 1900 normal.
+--   AFECTA: recetas (1): PENDANT — EMT | alias-supabase 'JB 1900 DEEP BOX' (factor 1) | biblioteca de takeoff (herramienta de conteo, apunta por nombre)
+update catalogo_items set precio = 1.04, horas_unidad = 0.25
+   where item = 'JB 1900 DEEP BOX' and coalesce(precio,0) = 4.5 and coalesce(horas_unidad,0) = 0.3;
+
+-- ---------------------------------------------------------------------
+-- BLOQUE B · CUANDO LO MIRES — descomenta lo que aceptes (las dos tandas; lo marcado «sustituye» corrige la primera)  (80)
 -- ---------------------------------------------------------------------
 
 -- 5"           LB  ALUMINUM  FITTING   [hoy: E · $194.46 · 2 h]
@@ -624,15 +646,6 @@ update catalogo_items set horas_unidad = 0.02
 -- update catalogo_items set horas_unidad = 4
 --    where item = 'Plant Shutdown Coordination' and coalesce(horas_unidad,0) = 0;
 
--- SECONDARY CONDUCTOR   [hoy: MLF · $0 · 15 h]
---   Única fila MLF de las 26 de pararrayos; su hermana MAIN CONDUCTOR está en LF a $8,50 / 0,1 h.
---   Las 15 h/MLF (0,015 h/ft) son plantilla de tirar THHN, no de fijar bajante en cubierta.
---   Pasa a LF con 0,08 h/ft (por debajo del principal).
---   El precio $5/ft es PROVISIONAL: manda el albarán de Edgar.
---   Sin alias en el CSV ni receta.
--- update catalogo_items set unidad = 'LF', precio = 5, horas_unidad = 0.08
---    where item = 'SECONDARY CONDUCTOR' and unidad = 'MLF' and coalesce(precio,0) = 0 and coalesce(horas_unidad,0) = 15;
-
 -- CABLE HOLDER   [hoy: E · $0 · 0.3 h]
 --   Pieza física a $0 y 0,3 h por grapa (18 minutos).
 --   Horas ancladas en el propio catálogo: '2" CABLE TO ROD SUPPORT' 0,12 h (un soporte de cubierta lleva taladro, anclaje y sellado; no es el clip de 0,05).
@@ -729,6 +742,181 @@ update catalogo_items set horas_unidad = 0.02
 -- update catalogo_items set horas_unidad = 8
 --    where item = '18- 2 TWISTED WET LOC. WP. AQC 293' and coalesce(horas_unidad,0) = 9;
 
+-- Extra LF Romex 6/3 NM   [hoy: LF · $5.15 · 0.025 h]
+--   Las seis 'Extra LF Romex' llevan 0,025 h/ft planas del 14/2 al 6/3.
+--   En obra nueva tu WIRING ya cobra el 6/3 a 31 h/MLF (0,031/ft) y el pie extra en remodel no puede costar menos: 0,04 h/ft (31 h/MLF con ~30% de remodel), coherente con tus REWIRE 50A RANGE (3 h) frente a 30A DRYER (2,5 h).
+--   El 14/2 y el 12/2 no se tocan.
+--   Fila importada, no está en tu Excel.
+--   AFECTA: nadie (ni recetas ni alias)
+-- update catalogo_items set horas_unidad = 0.04
+--    where item = 'Extra LF Romex 6/3 NM' and coalesce(horas_unidad,0) = 0.025;
+
+-- Panel Termination (per circuit)   [hoy: EA · $25 · 0.5 h]
+--   Los $25 de material no tienen pieza detrás: el breaker va aparte (BREAKER 1P 20A, $8) y las dos recetas HOMERUN que la usan ya lo llevan como componente, así que dentro de la receta es material fantasma.
+--   Terminar un circuito (fase, neutro, tierra, etiqueta) son 0,25 h, no 0,5.
+--   Al ponerla a $0 marcar cero_motivo='solo_labor' para que no salte falta_precio.
+--   AFECTA: recetas (2): HOMERUN 20A AL PANEL — EMT; HOMERUN 20A AL PANEL — MC
+-- update catalogo_items set precio = 0, horas_unidad = 0.25
+--    where item = 'Panel Termination (per circuit)' and coalesce(precio,0) = 25 and coalesce(horas_unidad,0) = 0.5;
+
+-- FIRE ALARM ANNUNCIATOR PANEL   [hoy: E · $0 · 8 h]
+--   Pide 8 h, las mismas del FIRE ALARM CONTROL PANEL, y tu propio Excel tasa el SECURITY ANNUNCIATOR PANEL en 2 h.
+--   Un anunciador LCD de F/A (caja empotrada en lobby, SLC más 24V, direccionamiento) va en 3 h; el TERMINAL CABINET de 2 h es solo una caja con regletas.
+--   Es una hora tuya que se baja por coherencia.
+--   El $0 se queda (suministro).
+--   AFECTA: alias_takeoff.csv línea 208 'FIRE ALARM ANNUNCIATOR PANEL' (factor 1, unidad E) | alias-supabase 'FIRE ALARM ANNUNCIATOR PANEL' (factor 1, auto-match toolchest)
+-- update catalogo_items set horas_unidad = 3
+--    where item = 'FIRE ALARM ANNUNCIATOR PANEL' and coalesce(horas_unidad,0) = 8;
+
+-- VOICE EVAC SPEAKER   [hoy: EA · $145 · 0.75 h]
+--   Los $145 son los de FIRE ALARM MODULE, pegados en la misma pasada de relleno (en tu Excel el MODULE era $0 y esta fila no existía).
+--   La receta la usa como bocina sola, el estrobo va aparte: bocina de techo de evac (SPCWL/E70) a precio de casa de suministro ~$75, PROVISIONAL.
+--   Horas 0,5 como FIRE ALARM SPEAKER, mismo montaje y mismo 18/2.
+--   AFECTA: recetas (1): SPEAKER/STROBE F/A (EVAC DE VOZ) | alias-supabase 'VOICE EVAC SPEAKER' (factor 1, auto-match toolchest)
+-- update catalogo_items set precio = 75, horas_unidad = 0.5
+--    where item = 'VOICE EVAC SPEAKER' and coalesce(precio,0) = 145 and coalesce(horas_unidad,0) = 0.75;
+
+-- 14/4 FPL FIRE ALARM CABLE   [hoy: MLF · $184 · 8 h]
+--   Tu Excel dice $184/MLF, pero en el bid Stuart (ene-2026) tú mismo cotizaste 500 ft de 14/4 FPL a $0,28/ft = $280/MLF.
+--   Se pone tu número más reciente (escalando por cobre desde el 12/2 ROMEX saldría ~$335, así que va en la dirección correcta).
+--   La unidad MLF NO se toca: 5 recetas le pasan 0,025-0,05 MLF.
+--   Las 8 h se quedan.
+--   AFECTA: recetas (5): STROBE F/A; HORN/STROBE F/A; HORN/STROBE F/A INTEMPERIE (WP); SPEAKER/STROBE F/A (EVAC DE VOZ); PANEL BOOSTER 24VDC — EMT | alias_takeoff.csv línea 240 '14/4 FPL FIRE ALARM CABLE' (factor 1, unidad MLF) | alias-supabase '14/4 FPL FIRE ALARM CABLE' (factor 1, auto-match toolchest)
+-- update catalogo_items set precio = 280
+--    where item = '14/4 FPL FIRE ALARM CABLE' and coalesce(precio,0) = 184;
+
+-- AUTOMATIC TRANSFER SWITCH 400A   [hoy: E · $0 · 8 h]
+--   Esta fila entró el 14/09 con las 8 h de tu Excel, donde la escalera era 200A 7 / 400A 8 / 600A 10; pero en Supabase la familia ya está reescalada y con precio (200A 8 h, 600A 16 h), así que el 400A quedó igual que el 200A.
+--   Interpolando tu escalera viva salen 12 h.
+--   El $0 NO se toca: ATS va por cotización (falta_precio).
+--   Si prefieres la escalera del Excel, lo alto son las hermanas, no esta.
+--   AFECTA: alias_takeoff.csv línea 200 'AUTO. TRANS. SW. 400A' (factor 1, unidad E) | alias-supabase 'AUTO. TRANS. SW. 400A' (factor 1, MXP Planos E2g — item creado 14/09)
+-- update catalogo_items set horas_unidad = 12
+--    where item = 'AUTOMATIC TRANSFER SWITCH 400A' and coalesce(horas_unidad,0) = 8;
+
+-- LED HIGH-BAY   [hoy: EA · $145 · 1 h]
+--   Un high-bay se cuelga a 25-30 ft desde tijera y tiene las mismas 1 h que un troffer 2x4 en rejilla.
+--   El propio lote da 1,5 h al vapor-tight y al track de 8', y el script que dio de alta esta fila (venía de Bluebeam, no de tu Excel) la estimó en 1,5 h antes de que alguien la bajara a 1.
+--   Las 2 h del auditor no salen de ningún sitio.
+--   AFECTA: alias-supabase 'LED High-Bay' (factor 1, MXP Planos v3 — Bluebeam LGT-039) | alias-supabase 'LED HIGH-BAY' (factor 1, auto-match toolchest) | lista de genera-takeoff-lib.js (apunta por nombre, no se toca)
+-- update catalogo_items set horas_unidad = 1.5
+--    where item = 'LED HIGH-BAY' and coalesce(horas_unidad,0) = 1;
+
+-- LED PENDANT   [hoy: EA · $145 · 1 h]
+--   Es la misma luminaria que PENDANT (E, $185, 1,25 h) cargada otra vez en el bloque EA de Bluebeam con $40 y 0,25 h menos, y todos los alias de plano (Pendant Light, Island Pendants, Linear Pendant, Mini Pendant) caen en esta.
+--   Se igualan los números para que el mismo pendant no salga a dos precios.
+--   Ojo: los $185 de PENDANT tampoco vienen de tu Excel (ahí estaba a $0 / 1 h): confirma que ese precio es tuyo.
+--   AFECTA: alias-supabase 'LED PENDANT' (factor 1) | alias-supabase 'Pendant Light' (factor 1, MXP Planos v4) | alias-supabase 'Island Pendants (3)' (factor 3, MXP Planos v3 — el símbolo trae 3) | alias-supabase 'Linear Pendant 48"' (factor 1, MXP Planos v3) | alias-supabase 'Mini Pendant' (factor 1, MXP Planos v3 — Bluebeam LGT-044) | lista de genera-takeoff-lib.js (por nombre)
+-- update catalogo_items set precio = 185, horas_unidad = 1.25
+--    where item = 'LED PENDANT' and coalesce(precio,0) = 145 and coalesce(horas_unidad,0) = 1;
+
+-- Lutron Pico Remote (wall mount)   [hoy: EA · $48 · 0.4 h]
+--   Es el mismo mando a pilas que 'Caseta Pico Remote (4-button)' (0,25 h) más un soporte de pared: no lleva cable ni caja.
+--   0,4 h es el doble de lo que cobras por un interruptor cableado (0,2 h).
+--   El precio $48 se queda (placa Satin, criterio del bloque RA3); el $34 del auditor se descartó.
+--   AFECTA: alias-supabase 'Lutron Pico Remote (wall mount' (factor 1, auto-match toolchest)
+-- update catalogo_items set horas_unidad = 0.25
+--    where item = 'Lutron Pico Remote (wall mount)' and coalesce(horas_unidad,0) = 0.4;
+
+-- FIRE -STOPPING  SEAL CAULKING   [hoy: E · $16 · 0 h]
+--   En tu Excel las horas de esta fila son NULL y el porte lo convirtió en 0: nunca decidiste que sellar una penetración fuese gratis.
+--   Contando un tubo por penetración, limpiar, empacar, sellar y dejarla visible al inspector son 0,25 h, tu escala de caja 4x4 deep.
+--   Mismo defecto en DUCT SEAL, CORE DRILLING y FIRE-STOPPING PAINT (fuera de este lote).
+--   AFECTA: nadie (ni recetas ni alias)
+-- update catalogo_items set horas_unidad = 0.25
+--    where item = 'FIRE -STOPPING  SEAL CAULKING' and coalesce(horas_unidad,0) = 0;
+
+-- PUTTY PAD SEAL   [hoy: E · $2.8 · 0 h]
+--   Misma raíz: horas NULL en tu Excel, 0 en el porte.
+--   Un pad ($2,80) es una caja forrada por detrás: 0,1 h por caja, la escala que usas para tapa (0,08) y demoler caja (0,10).
+--   AFECTA: nadie (ni recetas ni alias)
+-- update catalogo_items set horas_unidad = 0.1
+--    where item = 'PUTTY PAD SEAL' and coalesce(horas_unidad,0) = 0;
+
+-- 1"           EMT D/C COMPR. COUPLING   [hoy: E · $0.58 · 0.2 h]
+--   0,2 h por un acople de compresión de 1" cuando el de tornillo de la misma medida ('1" EMT S.S.D/C COUPLING') pide 0,05 h y tu escalera de tornillo coincide con NECA.
+--   La escalera de compresión (.10/.15/.20/.25...) es una rampa redonda copiada en D/C y STEEL, no una medición; compresión = tornillo x1,2 = 0,06 h.
+--   Hora tuya que se baja por coherencia.
+--   AFECTA: nadie (ni recetas ni alias)
+-- update catalogo_items set horas_unidad = 0.06
+--    where item = '1"           EMT D/C COMPR. COUPLING' and coalesce(horas_unidad,0) = 0.2;
+
+-- 1"           EMT STEEL COMPR. COUPLING   [hoy: E · $0.75 · 0.2 h]
+--   Gemelo en acero del anterior: 0,2 h contra 0,05 h de '1" EMT S.S.
+--   STEEL COUPLING'.
+--   Las dos escaleras de compresión son la misma lista copiada fila por fila.
+--   0,06 h.
+--   AFECTA: nadie (ni recetas ni alias)
+-- update catalogo_items set horas_unidad = 0.06
+--    where item = '1"           EMT STEEL COMPR. COUPLING' and coalesce(horas_unidad,0) = 0.2;
+
+-- 2"           EMT D/CCOMPR. CONNECT.   [hoy: E · $1.75 · 0.3 h]
+--   0,3 h contra 0,10 h de '2" EMT S.S.
+--   D/C CONNECTOR': tres veces el de tornillo cuando NECA da +20%.
+--   0,12 h.
+--   El nombre roto (D/CCOMPR sin espacio) se deja: nadie lo referencia y renombrar no arregla cantidades.
+--   AFECTA: nadie (ni recetas ni alias)
+-- update catalogo_items set horas_unidad = 0.12
+--    where item = '2"           EMT D/CCOMPR. CONNECT.' and coalesce(horas_unidad,0) = 0.3;
+
+-- 2"           EMT STEEL COMPR. CONNECT.   [hoy: E · $2.6 · 0.3 h]
+--   Gemelo en acero: 0,3 h contra 0,10 h de '2" EMT S.S.
+--   STEEL CONNECTOR'.
+--   0,12 h (tornillo x1,2).
+--   AFECTA: nadie (ni recetas ni alias)
+-- update catalogo_items set horas_unidad = 0.12
+--    where item = '2"           EMT STEEL COMPR. CONNECT.' and coalesce(horas_unidad,0) = 0.3;
+
+-- 2"           EMT  STEEL COMP. COUPLING   [hoy: E · $2.48 · 0.35 h]
+--   0,35 h contra 0,08 h de '2" EMT S.S.
+--   STEEL COUPLING': más de cuatro veces, y más de la mitad de tu punto completo de receptáculo (0,63 h).
+--   Compresión +20% = 0,096, redondeado 0,10 h.
+--   El nombre 'COMP.' se deja (nadie lo referencia).
+--   AFECTA: nadie (ni recetas ni alias)
+-- update catalogo_items set horas_unidad = 0.1
+--    where item = '2"           EMT  STEEL COMP. COUPLING' and coalesce(horas_unidad,0) = 0.35;
+
+-- 2"           EMT D/C  COMPR. COUPLING   [hoy: E · $1.94 · 0.35 h]
+--   Gemelo die-cast del anterior, no venía como hallazgo propio pero el escéptico lo pidió: también está en 0,35 h contra 0,08 del tornillo.
+--   Mismo arreglo, 0,10 h, para no dejar la pareja desparejada.
+--   AFECTA: nadie (ni recetas ni alias)
+-- update catalogo_items set horas_unidad = 0.1
+--    where item = '2"           EMT D/C  COMPR. COUPLING' and coalesce(horas_unidad,0) = 0.35;
+
+-- 4"           EMT D/C COMPR. CONNECT.   [hoy: E · $7 · 0.7 h]
+--   0,7 h (42 minutos) por un conector: más que tu punto completo de receptáculo (0,63 h).
+--   El de tornillo de 4" está en 0,30 h; un 4" de compresión pide dos llaves grandes pero NECA lo pone 20-30% arriba, no x2,3.
+--   0,35 h.
+--   AFECTA: nadie (ni recetas ni alias)
+-- update catalogo_items set horas_unidad = 0.35
+--    where item = '4"           EMT D/C COMPR. CONNECT.' and coalesce(horas_unidad,0) = 0.7;
+
+-- 4"           EMT STEEL COMPR. CONNECT.   [hoy: E · $14.92 · 0.7 h]
+--   Gemelo en acero: 0,7 h contra 0,30 h de '4" EMT S.S.
+--   STEEL CONNECTOR'.
+--   Misma rampa copiada.
+--   0,35 h.
+--   Conviene aplicar el mismo criterio (tornillo x1,2) a las 10 medidas de las cuatro familias de compresión, que no vienen en este lote.
+--   AFECTA: nadie (ni recetas ni alias)
+-- update catalogo_items set horas_unidad = 0.35
+--    where item = '4"           EMT STEEL COMPR. CONNECT.' and coalesce(horas_unidad,0) = 0.7;
+
+-- EV CHARGER OUTLET (NEMA 14-50)   [hoy: EA · $48 · 1.5 h]
+--   Es el mismo receptáculo NEMA 14-50 que '240V RANGE OUTLET (NEMA 14-50)' (1 h) y tu DRYER 14-30 también va a 1 h: 1 h es el valor de la casa para receptáculo de 240V, 1,5 h es el único fuera de línea.
+--   Ninguna de las dos viene de tu Excel (son EA, del toolchest).
+--   El precio $48 se queda (grado industrial).
+--   AFECTA: alias-supabase 'EV CHARGER OUTLET (NEMA 14-50' (factor 1, auto-match toolchest)
+-- update catalogo_items set horas_unidad = 1
+--    where item = 'EV CHARGER OUTLET (NEMA 14-50)' and coalesce(horas_unidad,0) = 1.5;
+
+-- SECONDARY CONDUCTOR   [hoy: MLF · $0 · 15 h]
+--   La primera tanda la pasó a LF con 0,08 h/ft tomando como ancla el 0,1 h/ft de MAIN CONDUCTOR, y ese 0,1 resultó ser un error del porte (tu Excel: 20 h/MLF).
+--   Tu número para el secundario ('SECUNDARY CONDUCTOR' en el Excel) es 15 h/MLF = 0,015 h/ft, por debajo del principal (0,02) como siempre estuvo.
+--   LF y el $5/ft provisional se mantienen de la primera tanda.
+--   AFECTA: alias-supabase 'SECONDARY CONDUCTOR' (factor 1, auto-match toolchest)
+-- update catalogo_items set unidad = 'LF', precio = 5, horas_unidad = 0.015
+--    where item = 'SECONDARY CONDUCTOR' and unidad = 'MLF' and coalesce(precio,0) = 0 and coalesce(horas_unidad,0) = 15;
+
 -- 20A , 12 POLES LIGHTING CONTACTOR   [hoy: E · $450 · 3 h]
 --   Solo existe con coma y en el bloque sin sección: si se purga ese bloque, Edgar pierde el contactor de 12 polos ($450 / 3 h), que no tiene gemela.
 --   Se rescata renombrándolo sin coma y poniéndolo en LIGHTING FIXTURES junto a su hermano de 4 polos (orden 737).
@@ -770,7 +958,7 @@ update catalogo_items set horas_unidad = 0.02
 -- delete from catalogo_items where item = 'Patch panel 24-port Cat6' and coalesce(precio,0) = 85;
 
 -- ---------------------------------------------------------------------
--- BLOQUE C · SOLO MIRAR — hace falta un dato tuyo  (22)
+-- BLOQUE C · SOLO MIRAR — hace falta un dato tuyo (las dos tandas)  (42)
 -- ---------------------------------------------------------------------
 
 -- 2"x 4"    BELL BOX-BOX   [hoy: E · $7.088 · 0.35 h]
@@ -812,30 +1000,6 @@ update catalogo_items set horas_unidad = 0.02
 --   La heredada sí tiene alias (línea 48).
 --   (solo mirar: sin sentencia)
 
--- 1 1/4"  PVC COUPLING   [hoy: E · $1.28 · 0.03 h]
---   El escéptico lo señala junto al codo: $1,28 contra $0,37 del coupling de 1-1/2", más grande.
---   Cuatro filas de 1-1/4" infladas a la vez (error de columna).
---   Sin número propuesto; que Edgar mire la columna entera de 1-1/4".
---   (solo mirar: sin sentencia)
-
--- 1 1/4"  PVC CONNECTOR   [hoy: E · $1.45 · 0.03 h]
---   Igual: $1,45 contra $0,48 del conector de 1-1/2".
---   Misma columna inflada de 1-1/4".
---   Sin número propuesto.
---   (solo mirar: sin sentencia)
-
--- 6"         PVC CONNECTOR   [hoy: E · $3.15 · 0.055 h]
---   El escéptico verificó que también copia al de 5" ($3,15 = $3,15) desde la hoja origen.
---   Misma familia que el coupling de 6": la familia se arregla entera.
---   Sin número propuesto.
---   (solo mirar: sin sentencia)
-
--- 6"         PVC FEMALE ADAPTER   [hoy: E · $2.468 · 0.055 h]
---   Copia exacta del de 5" a tres decimales ($2,468 = $2,468).
---   Va con el coupling y el conector de 6".
---   Sin número propuesto.
---   (solo mirar: sin sentencia)
-
 -- FIRE PUMP ATS   [hoy: E · $0 · 4 h]
 --   Pide 4 h, lo mismo que el ATS de 30A, cuando la escalera de ATS dice 8 h para 200-400A y un ATS vale el doble que el disconnect de su calibre.
 --   Pero el 4 está literal en el Excel de Edgar: que él confirme el amperaje típico y ponga 8 si procede.
@@ -868,14 +1032,6 @@ update catalogo_items set horas_unidad = 0.02
 --   AFECTA: alias línea 74 'ULTRASONIC O.S WT-1105' (factor 1, unidad EA)
 --   (solo mirar: sin sentencia)
 
--- AUTOMATIC TRANSFER SWITCH 400A   [hoy: E · $0 · 8 h]
---   Único hueco de una escalera de nueve ATS con precio (200A $2.850, 600A $9.500): no es la convención de "equipo por cotización", es fila huérfana del porte (creada 14/09).
---   Es el tamaño más común (dos en UM) y entra gratis.
---   Regla de la casa: alta pendiente de cotización, no rellenar con $5.800 de internet.
---   Las 8 h son de la hoja de Edgar y no se tocan.
---   AFECTA: alias línea 200 'AUTO. TRANS. SW. 400A' (factor 1, unidad E)
---   (solo mirar: sin sentencia)
-
 -- UPS SYSTEM 10KVA   [hoy: E · $0 · 10 h]
 --   Mismo hueco que el ATS 400A: sus dos hermanas (50KVA $18.500, 100KVA $42.000) tienen precio y esta $0.
 --   Pendiente de cotización: el catálogo extrapola $2.800-3.700 y el mercado $5.000-5.500, así que cualquier número sería inventado.
@@ -890,13 +1046,6 @@ update catalogo_items set horas_unidad = 0.02
 --   La propuesta tal cual (solo precio) es la única que puede cobrar la base dos veces.
 --   Pregunta para Edgar.
 --   AFECTA: alias línea 278 'AIR TERMINAL BASE' (factor 1, unidad E)
---   (solo mirar: sin sentencia)
-
--- 1/2" X 10' COPPER GROUND ROD   [hoy: EA · $8.5 · 1 h]
---   Familia de varillas a precio de lista vieja.
---   El escéptico propone $22 pero eso la dejaría por encima de la de 5/8" ($19), invirtiendo el orden que hoy es sano.
---   Las cuatro varillas se reprecian juntas con el albarán de Edgar; sin él, cualquier número debe quedar por debajo del de 5/8".
---   AFECTA: alias línea 286 '1/2" X 10' COPPER GROUND ROD' (factor 1, unidad EA)
 --   (solo mirar: sin sentencia)
 
 -- 5/8" X 10' COPPER GROUND ROD   [hoy: E · $9.5 · 1 h]
@@ -928,9 +1077,357 @@ update catalogo_items set horas_unidad = 0.02
 --   AFECTA: alias línea 268 '24 PORT PATCH PANEL' (factor 1, unidad E)
 --   (solo mirar: sin sentencia)
 
+-- WP STROBE LIGHT W/BACKBOX   [hoy: E · $74 · 0.5 h]
+--   Tu Excel trae $74 (base $59 + $15 de caja WP).
+--   Pero la base ya se corrigió en la primera tanda a $99,99 (tu factura de Stuart) y la WP no puede quedar por debajo de la interior.
+--   Base real + prima outdoor ($30-40 a coste de suministro) = ~$135, número derivado sobre un precio tuyo, por eso pregunta.
+--   Misma pregunta para WP HORN/STROBE LIGHT W/BACKBOX ($102 frente a los $137,99 reales del HORN/STROBE).
+--   AFECTA: alias_takeoff.csv línea 217 'WP STROBE LIGHT W/BACKBOX' (factor 1, unidad E) | alias-supabase 'WP STROBE LIGHT W/BACKBOX' (factor 1, auto-match toolchest)
+--   (solo mirar: sin sentencia)
+
+-- 2" SHUT-OFF GAS VALVE   [hoy: E · $285 · 1.3 h]
+--   Tu Excel: 3/4" $165 / 1" $225 / 2" $285, +$60 por escalón.
+--   El 3/4" cuadra con un solenoide de gas 120V, pero un cuerpo de 2" de esa clase (ASCO 8214, Ansul MGV) no baja de $650-900.
+--   $750 es orden de magnitud con confianza baja: pide cotización; si no la cotizas, mejor $0 (salta falta_precio) que $285.
+--   Las 1,3 h se quedan (la tubería la rosca el plomero).
+--   AFECTA: alias_takeoff.csv línea 238 '2" SHUT-OFF GAS VALVE' (factor 1, unidad E) | alias-supabase '2" SHUT-OFF GAS VALVE' (factor 1, auto-match toolchest)
+--   (solo mirar: sin sentencia)
+
+-- CONCRETE PULL BOX .BROOK #36   [hoy: E · $65 · 2 h]
+--   La misma pieza está dos veces con dos precios tuyos: 'BROOK # 36 PULL BOX' (UNDERGROUND) a $85 y esta a $65, ambos en tu Excel.
+--   El alias del toolchest apunta a esta.
+--   PREGUNTA: ¿cuál vale? Si es $85, igualar; si quieres precio 2026, es cotización de prefabricado con flete, no un número de internet (Ferguson/Jensen dan 'call for price').
+--   AFECTA: alias_takeoff.csv línea 101 'CONCRETE PULL BOX .BROOK #36' (factor 1, unidad E) | alias-supabase 'CONCRETE PULL BOX .BROOK #36' (factor 1, auto-match toolchest)
+--   (solo mirar: sin sentencia)
+
+-- 1/2" X 10' COPPER GROUND ROD   [hoy: EA · $8.5 · 1 h]
+--   Estaba en 'mirar' sin número.
+--   $17 (coste de contratista; Erico $27,49 al público) encaja en la escalera ya propuesta para la familia: galvanizada 8' $12 < 1/2" 10' $17 < 5/8" 10' $19 < 3/4" 10' $38; el $22 que se sugirió de pasada NO sirve (invertiría la escala).
+--   El $8,50 / 1 h de hoy ya no es el de tu Excel ($8 / 0,5 h).
+--   Las cuatro varillas se reprecian juntas con tu albarán.
+--   AFECTA: alias_takeoff.csv línea 286 '1/2" X 10' COPPER GROUND ROD' (factor 1, unidad EA) | alias-supabase '1/2" X 10' COPPER GROUND ROD' (factor 1, auto-match toolchest)
+--   (solo mirar: sin sentencia)
+
+-- 5/8" GROUND ROD CLAMP   [hoy: E · $0.75 · 0.3 h]
+--   Tu Excel trae la escala invertida (1/2" $0,85 / 5/8" $0,75 / 3/4" $1,25) como plantilla sin usar (cantidad 0 en los tres presupuestos).
+--   Una acorn de bronce de 5/8" vale $2,25-3,50 en suministro, y 0,3 h por apretarla es más que tu single pole switch (0,2).
+--   PREGUNTA: ¿$2,75 y 0,15 h? Si sí, corregir la familia a la vez: 1/2" ~$2,40 y 3/4" ~$3,40, las tres a 0,15 h.
+--   AFECTA: alias_takeoff.csv línea 291 '5/8" GROUND ROD CLAMP' (factor 1, unidad E) | alias-supabase '5/8" GROUND ROD CLAMP' (factor 1, auto-match toolchest)
+--   (solo mirar: sin sentencia)
+
+-- 1/2"       EMT S.S.  STEEL CONNECTOR   [hoy: E · $0.15 · 0.06 h]
+--   Tu Excel trae el de acero a $0,15, más barato que su gemelo die-cast ($0,266), y el acero siempre es el caro (tu propio bloque de compresión lo respeta: D/C $0,174 vs STEEL $0,28).
+--   Los STEEL de tornillo son lista vieja redonda.
+--   $0,43 = D/C x1,6 es derivado, por eso pregunta.
+--   Ninguna receta usa la familia STEEL (las 28 de 1/2" usan D/C): solo afecta a lo que se elige a mano.
+--   AFECTA: nadie (ni recetas ni alias)
+--   (solo mirar: sin sentencia)
+
+-- 1/2"       EMT S.S.  STEEL  COUPLING   [hoy: E · $0.16 · 0.04 h]
+--   Mismo vuelco: acero $0,16 vs die-cast $0,306 en tu Excel, y se repite en 3/4" y 1".
+--   $0,39 = D/C x1,26 (la razón que ya guarda tu bloque de compresión).
+--   Derivado, sin cotización: pregunta.
+--   Sin recetas encima.
+--   AFECTA: nadie (ni recetas ni alias)
+--   (solo mirar: sin sentencia)
+
+-- 3/4"       EMT ELBOW   [hoy: E · $1.27 · 0.09 h]
+--   El codo de 3/4" ($1,27, redondo, lista vieja) cuesta menos que el de 1/2" ($1,313): único escalón invertido de la familia por abajo.
+--   $1,55 es conservador (suministro $1,50-2,00).
+--   Es tu número del Excel y el nuevo es derivado, por eso pregunta; lo usan 2 recetas (1 y 2 unidades), poco dinero.
+--   AFECTA: recetas (2): CONDUIT VACÍO 3/4" PARA BAJO VOLTAJE — EMT; HOMERUN 20A AL PANEL — EMT
+--   (solo mirar: sin sentencia)
+
+-- 3-1/2"    EMT POWER STRAP   [hoy: E · $1.2 · 0.07 h]
+--   En una serie de 10 filas a cuatro decimales, $1,20 y $1,50 (3-1/2" y 4") son los únicos redondos y quedan por debajo del 3" ($2,1378).
+--   UM cotizó 50 unidades a $1,20.
+--   $2,60 (3" x1,2, el paso medio de la serie) es provisional: como mínimo no puede quedar por debajo del 3".
+--   Confirmar con proveedor.
+--   AFECTA: nadie (ni recetas ni alias)
+--   (solo mirar: sin sentencia)
+
+-- 4"           EMT POWER STRAP   [hoy: E · $1.5 · 0.08 h]
+--   Mismo caso: $1,50 redondo por debajo del 3" ($2,1378).
+--   UM cotizó 6 unidades.
+--   $3,20 (un paso x1,23 sobre el 3-1/2" corregido), provisional; confirmar con proveedor.
+--   AFECTA: nadie (ni recetas ni alias)
+--   (solo mirar: sin sentencia)
+
+-- 24"x24"x24" PULL BOX NEMA-3R   [hoy: E · $80.787 · 3 h]
+--   $80,79 es 1/5 de la '18"x18"x18" PULL BOX NEMA-3R' ($385) y 1/8 de la misma caja en 4R ($674): el número de tu Excel casi seguro es de una caja 24x24 de fondo bajo, no un cubo.
+--   Entra desde el plano (alias + toolchest Pull Boxes).
+--   Piso $385, techo $674: $400 provisional; el $210 del auditor la dejaría por debajo de la 18".
+--   AFECTA: alias_takeoff.csv línea 27 '24"x24"x24" PULL BOX NEMA-3R' (factor 1, unidad E) | alias-supabase '24"x24"x24" PULL BOX NEMA-3R' (factor 1, auto-match toolchest) | toolchest grupo Pull Boxes
+--   (solo mirar: sin sentencia)
+
+-- 36"x36"x36" PULL BOX NEMA-3R   [hoy: E · $102.9 · 4 h]
+--   La caja más grande de la familia a $102,90, por debajo de la 18" 3R ($385) y a 1/8 de la 36" 4R ($834).
+--   Con la 24" en $400 y el paso 24→36 de tu propia serie 4R (x1,24) salen ~$500, provisional; confirmar con proveedor.
+--   Las 4 h se quedan.
+--   AFECTA: alias_takeoff.csv línea 28 '36"x36"x36" PULL BOX NEMA-3R' (factor 1, unidad E) | alias-supabase '36"x36"x36" PULL BOX NEMA-3R' (factor 1, auto-match toolchest) | toolchest grupo Pull Boxes
+--   (solo mirar: sin sentencia)
+
+-- 4" X 3½"D    CONCRETE RING   [hoy: E · $0.683 · 0.03 h]
+--   Tu Excel le da 0,03 h (1,8 min) a alinear y atornillar la extensión de 3½" sobre el CONCRETE BOX ASSEMBLIE, menos que un plaster ring de pared (0,05) y que una tapa (0,08); sus primas de hormigón llevan 0,08 h.
+--   Es subir una hora tuya, por eso pregunta.
+--   No es duplicado del '4" ADAPTER RING CONCRETE BOX': son piezas distintas.
+--   AFECTA: nadie (ni recetas ni alias)
+--   (solo mirar: sin sentencia)
+
+-- 6"         PVC FEMALE ADAPTER   [hoy: E · $2.468 · 0.055 h]
+--   Copia exacta del 5" ($2,468 a tres decimales), también en tu Excel.
+--   El 6" COUPLING ya quedó en la primera tanda a $8,50 (1,8x su 5"); el mismo 1,8x da $4,45 y deja los tres 6" con un solo criterio (adaptador PVC 5" ~$14-16 vs 6" ~$25-28 al detalle, relación 1,7-1,8).
+--   Estaba en 'mirar' sin número; horas 0,055 se quedan.
+--   AFECTA: nadie (ni recetas ni alias)
+--   (solo mirar: sin sentencia)
+
+-- 6"         PVC CONNECTOR   [hoy: E · $3.15 · 0.055 h]
+--   Tercer par 5"/6" idéntico ($3,15 = $3,15) de tu Excel; la escalera sube sin parar hasta el 5" y se aplana solo en el 6".
+--   3,15 x 1,8 = $5,65, el mismo factor del COUPLING ya sellado.
+--   Estaba en 'mirar' sin número.
+--   AFECTA: nadie (ni recetas ni alias)
+--   (solo mirar: sin sentencia)
+
+-- # 6 RE-BAR   [hoy: LF · $0.37 · 0.03 h]
+--   $0,37/ft es precio de barra #3; la #6 pesa 2,04 lb/ft y a $0,37 saldría a $0,18/lb, por debajo del acero en acería de cualquier año.
+--   Tienda 2026 ~$1,14/ft y tu bloque civil va un 10-15% por debajo del detalle: ~$1,00.
+--   Provisional hasta que mires tu última factura de varilla.
+--   AFECTA: nadie (ni recetas ni alias)
+--   (solo mirar: sin sentencia)
+
+-- 1 1/4"  PVC COUPLING   [hoy: E · $1.28 · 0.03 h]
+--   Las columnas de 3/4" y 1-1/4" de tu Excel entraron a precio de TIENDA (coupling 1-1/4" ~$1,10-1,30 al detalle) mientras el resto de la familia está al 0,25-0,30 del detalle.
+--   Con ese factor sale $0,28-0,35; la media geométrica entre 1" ($0,17) y 1-1/2" ($0,37) da $0,25.
+--   Estaba en 'mirar' sin número.
+--   AFECTA: nadie (ni recetas ni alias)
+--   (solo mirar: sin sentencia)
+
+-- 1 1/4"  PVC CONNECTOR   [hoy: E · $1.45 · 0.03 h]
+--   Misma columna de 1-1/4" a detalle: $1,45 entre el 1" ($0,32) y el 1-1/2" ($0,48).
+--   Detalle ~$1,40 x 0,3 = $0,42; media geométrica $0,40.
+--   Estaba en 'mirar' sin número.
+--   AFECTA: nadie (ni recetas ni alias)
+--   (solo mirar: sin sentencia)
+
+-- 3/4"     PVC ELBOW   [hoy: E · $1.47 · 0.18 h]
+--   El codo de 3/4" ($1,47, precio de detalle) cuesta más que el de 1" ($0,92) y casi lo mismo que el de 2" ($1,70).
+--   La familia sana está al ~0,40 del detalle: 1,45 x 0,42 = $0,61; la media geométrica 1/2"-1" da $0,60.
+--   Es tu número del Excel, por eso pregunta.
+--   El 5" ELBOW a $10 NO es hallazgo (el paso 4"→5" de 1,08 se repite en toda la familia).
+--   AFECTA: nadie (ni recetas ni alias)
+--   (solo mirar: sin sentencia)
+
+-- 3/4"     PVC COUPLING   [hoy: E · $0.46 · 0.02 h]
+--   $0,46 con el 1/2" a $0,08 y el 1" a $0,17: precio de tienda del coupling de 3/4".
+--   Al factor 0,25-0,30 de la familia salen $0,11-0,14.
+--   De paso mira el '3/4" PVC CONNECTOR' ($0,61): misma cura, le tocaría ~$0,20.
+--   AFECTA: nadie (ni recetas ni alias)
+--   (solo mirar: sin sentencia)
+
+-- CUT, REMOVE & PATCHING CONCRETE   [hoy: LF · $4 · 0.02 h]
+--   0,02 h/LF (72 segundos) para dos cortes de sierra, romper, sacar escombro, encofrar, vaciar y acabar un pie de losa: solo el vaciado ya se lleva 0,004 h con tu CONCRETE # 3000.
+--   Es tu número del Excel y la hermana ASPHALT va igual (0,02), por eso pregunta.
+--   0,15 h/LF con tu base magra (7-8 min por pie); el 0,25 del auditor es RSMeans con cuadrilla completa.
+--   AFECTA: nadie (ni recetas ni alias)
+--   (solo mirar: sin sentencia)
+
+-- # 4/0   XHHW STRANDED ALUMINUM COMPACT   [hoy: MLF · $646.09 · 26 h]
+--   La familia XHHW de aluminio entera está a mitad de mercado: 3,05 $/kcmil-ft frente a 36 del cobre (que sí está verificado con lo que pagaste en UM), ratio 12x cuando lo real es ~6x.
+--   4/0 AL publicado sep-2026 $2,18/ft; tu $0,646 es el 30%.
+--   $1.100/MLF (~50% del publicado) es piso provisional: no hay factura tuya de aluminio (UM/Stuart/DTCC solo compraron cobre).
+--   Es el alimentador de 200A: pide cotización.
+--   AFECTA: nadie (ni recetas ni alias)
+--   (solo mirar: sin sentencia)
+
+-- # 500    MCM XHHW STRANDED ALUMINUM COMPACT   [hoy: MLF · $1428.35 · 36 h]
+--   Misma familia: $1,43/ft es el 37% del publicado ($3,85/ft).
+--   $2.500/MLF es ~65% del publicado, coherente con neto de distribuidor.
+--   PROVISIONAL hasta cotización; unidad MLF y 36 h no cambian.
+--   Es el que más dinero mueve de la tanda (alimentador de 400-600A, 4 hilos).
+--   AFECTA: nadie (ni recetas ni alias)
+--   (solo mirar: sin sentencia)
+
+-- # 1/0    XHHW STRANDED ALUMINUM COMPACT   [hoy: MLF · $396.16 · 20 h]
+--   Publicado sep-2026 $1,36/ft; tu $0,396 es el 29%.
+--   Contra tu '# 1/0 THHN STRANDED CU.' (pagado tal cual en UM) el ratio Cu:Al es 9,7x.
+--   $600/MLF (44%) es piso conservador.
+--   Provisional; misma cotización que el 4/0.
+--   AFECTA: nadie (ni recetas ni alias)
+--   (solo mirar: sin sentencia)
+
+-- # 2/0   XHHW STRANDED ALUMINUM COMPACT   [hoy: MLF · $468.19 · 22 h]
+--   Publicado $1,38-1,73/ft; tu $0,468 es el 29-34%.
+--   $730/MLF (45-53%).
+--   Provisional.
+--   El resto de la familia XHHW AL tiene el mismo defecto y va en la misma cotización.
+--   AFECTA: nadie (ni recetas ni alias)
+--   (solo mirar: sin sentencia)
+
+-- 18/2 SHIELDED FIRE ALARM CABLE   [hoy: MLF · $60 · 8 h]
+--   PREGUNTA.
+--   El catálogo lo tiene a $60 el millar; en el bid de Stuart lo pusiste a $0,26 el pie, que son $260 el millar.
+--   Cuatro veces.
+--   Lo llevan 8 recetas de fire alarm (0,025 MLF cada una: $1,50 contra $6,50 por punto).
+--   ¿Cuál es el bueno?.
+--   AFECTA: recetas (8): las de fire alarm
+--   (solo mirar: sin sentencia)
+
+-- ---------------------------------------------------------------------
+-- ALTAS · 22 FILAS QUE FALTAN EN EL CATÁLOGO (comentadas: dalas tú con tu precio)
+-- ---------------------------------------------------------------------
+-- Ninguna existe hoy (se buscaron en las 1.084 filas, con espacios y mayúsculas
+-- colapsados). Sin ellas hay puntos que se cotizan incompletos. El origen del
+-- precio va en cada una: «edgar» sale de tu Excel o de Stuart; «mercado» es
+-- referencia de proveedor, no factura; «cotizacion($0)» sigue tu regla de la
+-- casa para equipo grande; «derivado» es la escalera de la familia.
+
+-- DEMO - Boxes  · origen del precio: edgar
+--   Tu Excel (fila 1024) trae 'REMOVE BOXES' | DEMOLITION | E | 0,1 h junto a REMOVE DEVICES 0,15 (que sí pasó como DEMO - Receptacles / DEMO - Switches); el porte perdió la fila.
+--   No hay demolición de cajas en ninguna sección ('Demo Old Wiring/Splice' es otra cosa).
+--   Alta con el patrón de sus 8 hermanas DEMO, $0 de mano de obra pura.
+--   Tu Excel también perdió 'REMOVE LIGHTING FIXTURE POLE' (2 h): ver nota en resumen.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo, cero_motivo) values ('DEMO - Boxes', 'DEMOLITION', 'EA', 0, 0.1, '01-DEMO', 'solo_labor');
+
+-- G 3000 WIREMOLD INSTALATION 3 STATION  · origen del precio: edgar
+--   Tu Excel (fila 538) trae 'G 3000 WIREMOLD INSTALATION 3 STATION' | U | $159,60 | 6,4 h y docs/takeoff/catalogo_codigos.csv sigue listándola (09-COND); el porte a Supabase la perdió y hoy solo queda la de 6 STATION.
+--   Se recupera con tus números.
+--   Lo que NO se hace es crear base/tapa/codo G 3000 sueltos: tu Excel tampoco los tuvo y sería una familia de precio inventado.
+--   (Tu Excel también tenía 'G 4000 WIREMOLD INSTALATION 3 STATION', ver nota en resumen.).
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo) values ('G 3000 WIREMOLD INSTALATION 3 STATION', 'RACEWAY', 'U', 159.6, 6.4, '09-COND');
+
+-- POWER SUPPLY (ACCESS CONTROL)  · origen del precio: edgar
+--   Tu Excel (fila 913) trae 'POWER SUPPLY' | SECURITY & ACCESS CONTROL | E | $0 | 2 h.
+--   El porte guardó las otras tres POWER SUPPLY con paréntesis (FIRE ALARM $385, INTERCOM $145, CCTV $95) y perdió esta por nombre duplicado.
+--   Una puerta de acceso no se cotiza entera sin su fuente con batería.
+--   $0 con horas en esta sección es tu regla de 'suministro' (chip con ?); los $320 / 1,5 h del auditor eran de internet y apagarían ese aviso.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo, cero_motivo) values ('POWER SUPPLY (ACCESS CONTROL)', 'SECURITY & ACCESS CONTROL', 'E', 0, 2, '13-LV', 'suministro');
+
+-- 2"           PVC  SLEEVE  · origen del precio: edgar
+--   Tu Excel (fila 133) trae '2" PVC SLEEVE' | E | $1,943 | 0,095 h entre el 1" y el 3", y el porte a Supabase la perdió (hoy hay 1", 3" y 4").
+--   Alta con tus números tal cual.
+--   El nombre lleva el mismo relleno de espacios que sus hermanas ('1" PVC SLEEVE') para que agrupe con ellas; la app normaliza espacios.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo) values ('2"           PVC  SLEEVE', 'UNDERGROUND', 'E', 1.943, 0.095, '03-UG');
+
+-- 2G PLASTIC COVER SWITCH  · origen del precio: edgar
+--   No hay ninguna tapa de 2 posiciones en Supabase (hay caja y anillo hasta 5 gang, tapa solo 1G), pero la fila SÍ existe en tu Excel (fila 803: E, $0,63, 0,1 h) y se perdió al importar.
+--   Alta con tus números, no con los $0,45 escalados del auditor.
+--   No hace falta inventar 3G/4G: no las tienes y ninguna receta ni alias las pide.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo) values ('2G PLASTIC COVER SWITCH', 'WIRING DEVICES', 'E', 0.63, 0.1, '10-DEV');
+
+-- 2G STEEL COVER  · origen del precio: edgar
+--   Tu Excel (fila 807) trae '2G STEEL COVER' | E | $1,50 | 0,15 h y también se perdió en el porte (hoy solo hay '1G STEEL COVER').
+--   Se recupera en el mismo movimiento que la tapa de plástico 2G.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo) values ('2G STEEL COVER', 'WIRING DEVICES', 'E', 1.5, 0.15, '10-DEV');
+
+-- CABLE TESTING / CERTIFICATION (per point)  · origen del precio: solo_labor($0)
+--   Solo hay FIRE ALARM TESTING (8 h), F/A INSPECTION & CERTIFICATION (4 h), SOUND SETUP & TESTING (8 h) y GROUND TESTING (2 h); nada para certificar cableado estructurado ni coaxial, aunque el lote tiene toda la cadena (RJ45, patch panel, PoE, racks).
+--   Mano de obra pura: $0 con horas es tu convención solo_labor (como FIRE ALARM TESTING).
+--   0,1 h por punto (autotest, etiqueta, guardar), coherente con RJ45 termination 0,15 h.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo, cero_motivo) values ('CABLE TESTING / CERTIFICATION (per point)', 'CATV', 'E', 0, 0.1, '13-LV', 'solo_labor');
+
+-- AUTOMATIC TRANSFER SWITCH 1200A  · origen del precio: cotizacion($0)
+--   El ATS más grande es 1000A y el generador de 800KW (1.000 kVA a 480V = 1.203 A) necesita 1200A: no hay ATS por encima de 1000A en ninguna sección.
+--   Los $25.000 del auditor eran proyección: ATS va por cotización (el 400A del 14/09 entró igual a $0).
+--   28 h siguen tu escalera viva (600A 16, 800A 20, 1000A 24).
+--   Confianza baja: un 800KW suele alimentar varios ATS y hoy el alias 'AUTO.
+--   TRANS.
+--   SW.
+--   1200A' caería en sin-pareja, que la app ya avisa.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo, cero_motivo) values ('AUTOMATIC TRANSFER SWITCH 1200A', 'GENERATOR + ATS + UPS', 'E', 0, 28, '15-GEN', 'falta_precio');
+
+-- GENERATOR STARTUP & LOAD BANK TEST  · origen del precio: cotizacion($0)
+--   Ocho generadores y ocho ATS y ninguna línea de puesta en marcha ni prueba de banco de carga (NFPA 110 exige prueba presenciada).
+--   El patrón de labor puro a $0 ya existe (FIRE ALARM TESTING, GROUND TESTING).
+--   16 h = atención de tu cuadrilla (cableado temporal del banco, dos hombres el día); el $0 dispara falta_precio para el alquiler del banco, que va a cotización.
+--   El startup del fabricante va dentro de la cotización del generador.
+--   En el 22KW residencial la cantidad sería 0.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo, cero_motivo) values ('GENERATOR STARTUP & LOAD BANK TEST', 'GENERATOR + ATS + UPS', 'E', 0, 16, '15-GEN', 'falta_precio');
+
+-- RA3 Sunnata Keypad  · origen del precio: cotizacion($0)
+--   No hay ningún keypad de ninguna marca en el catálogo (el 'KEY PAD' de security del Excel tampoco pasó el porte) y symbols.js define lut_kp2/kp4/kp5/kp6 para dibujarlos.
+--   El auditor no separó su precio del del dimmer y no hay número verificado: $0 con falta_precio hasta que pongas tu tarifa; 0,5 h como el dimmer.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo, cero_motivo) values ('RA3 Sunnata Keypad', 'LUTRON', 'EA', 0, 0.5, '11-LIGHT', 'falta_precio');
+
+-- Bond & Insurance (per job)  · origen del precio: cotizacion($0)
+--   El bloque JOB EXPENSES de tu Excel de bids (Stuart fila 1040) lleva 'BOND & INSURANCE' junto a PERMIT & FEES, TRAVEL, DUMPSTERS y TEMPORARY POWER, y el porte trajo todas como filas de PROJECT GENERAL menos esta.
+--   Un % del contrato no cabe en el catálogo (cantidad x precio necesita el total, que no existe hasta el final: eso va en escenarios, como tax y overhead).
+--   Lo que cabe es lo que hacía tu Excel: un placeholder que se teclea por obra.
+--   Confianza baja.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo, cero_motivo) values ('Bond & Insurance (per job)', 'PROJECT GENERAL', 'EA', 0, 0, '20-MISC', 'falta_precio');
+
+-- BREAKER 3P 20A  · origen del precio: cotizacion($0)
+--   No hay ni un breaker de 3 polos de ramal en las 1.084 filas (solo 1P, 2P, tandem, GFCI/AFCI y los 3P MAIN CB), aunque el catálogo cotiza PANELBOARD 277/480V 3-PHASE.
+--   Los $95 del auditor eran de internet: en obra trifásica los breakers de ramal vienen dentro de la cotización del tablero, por eso va a $0 junto a los 3P MAIN CB (regla de la casa).
+--   Si lo quieres, conviene la escalerita 3P 20/30/50/100A.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo, cero_motivo) values ('BREAKER 3P 20A', 'SWITCHGEAR', 'E', 0, 0.4, '05-PANEL', 'suministro');
+
+-- F CONNECTOR RG6  · origen del precio: mercado
+--   El único conector coaxial del catálogo es 'BNC CONNECTORS' (cámara analógica); no hay F para TV/satélite en ninguna sección.
+--   Mercado 2026: IDEAL OmniConn compresión RG6 $1,04-1,16 la pieza.
+--   0,05 h en la escala de 'RJ45 termination' (0,15 h).
+--   La receta 'SALIDA DE TV / COAX — EMT' ya dice que le falta y mete 2 BNC como parche.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo) values ('F CONNECTOR RG6', 'CATV', 'E', 1.1, 0.05, '13-LV');
+
+-- Cat6 patch cord 3 ft  · origen del precio: mercado
+--   PATCH|CORD|JUMPER en todo el catálogo solo devuelve los patch panels: no hay latiguillo en ninguna sección, y la receta 'RACK DE COMUNICACIONES (IDF) 24 PUERTOS' monta patch panel + switch sin nada que los una.
+--   $2,50 es precio de contratista y la escala de 'RJ45 termination' ($2,50).
+--   Si IT lo suministra, se pone a $0 en ese bid como ya hace la receta con el switch.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo) values ('Cat6 patch cord 3 ft', 'CATV', 'EA', 2.5, 0.02, '13-LV');
+
+-- GENERATOR INLET BOX + INTERLOCK KIT 50A  · origen del precio: mercado
+--   No hay INLET, INTERLOCK ni MANUAL TRANSFER en ninguna sección; lo más cercano son receptáculos hembra (NEMA 14-50R, 50A RECEPTACLE).
+--   Es el trabajo residencial post-huracán más corriente de Tampa.
+--   Inlet 50A tipo Reliance/Generac ~$130 + kit de enclavamiento de marca $60-90 = $250 (los $320 del auditor iban altos).
+--   3 h como el cargador EV enchufable del mismo lote.
+--   El BREAKER 2P 50A ($26 / 0,3 h) ya existe y se cuenta aparte.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo) values ('GENERATOR INLET BOX + INTERLOCK KIT 50A', 'GENERATOR + ATS + UPS', 'EA', 250, 3, '15-GEN');
+
+-- 5/8" X 8' COPPER GROUND ROD  · origen del precio: mercado
+--   Buscado 'ROD' en las 1.084 filas: NO existe ninguna varilla cobreada de 8', el electrodo estándar de toda acometida en Florida (solo 1/2", 5/8" y 3/4" en 10' y la 8' galvanizada).
+--   Y el alias de plano 'Ground Rods (2)' (factor 2) apunta HOY a la galvanizada de $4,95: cada par de varillas de acometida entra como galvanizada barata.
+--   ~$18 a coste de contratista, 1 h como sus hermanas; queda entre la 1/2" 10' ($17) y la 5/8" 10' ($19) propuestas.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo) values ('5/8" X 8'' COPPER GROUND ROD', 'LIGHTNING PROTECTION & GROUNDING', 'E', 18, 1, '07-GND');
+
+-- GROUND ENHANCEMENT MATERIAL (BAG)  · origen del precio: mercado
+--   GEM|BENTON|ENHANCE|BACKFILL no devuelve nada útil en las 1.084 filas: no hay relleno conductivo, y el CHEM-ROD GROUND ROD ($485) no se clava, va en barreno de 6" x 10' que hay que rellenar (~110 lb ≈ 5 sacos de 25 lb; contar 4-8 por varilla).
+--   nVent ERICO GEM25A desde $48,24 en casa de suministro: ~$55.
+--   Sin esta fila el relleno sale de tu bolsillo.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo) values ('GROUND ENHANCEMENT MATERIAL (BAG)', 'LIGHTNING PROTECTION & GROUNDING', 'EA', 55, 0.2, '07-GND');
+
+-- RA3 Sunnata RF Dimmer  · origen del precio: mercado
+--   La sección tiene el encabezado RadioRA 3 y el procesador ($850) pero ni un dimmer ni keypad RA3: hoy un plano RA3 solo puede cotizarse con Caseta ($58), que no funciona en RA3, y js/symbols.js ya define lut_dim sin fila a la que llegar.
+--   RRST-PRO-N-WH $150-201 en web (sept 2026): $195 es placeholder honesto hasta que pongas tu tarifa de Blue Star.
+--   0,5 h como el Caseta dimmer.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo) values ('RA3 Sunnata RF Dimmer', 'LUTRON', 'EA', 195, 0.5, '11-LIGHT');
+
+-- WP IN-USE COVER 1G  · origen del precio: mercado
+--   No existe en ninguna sección ni en tu Excel: las únicas 'WP .
+--   COVERS' son de FIRE ALARM (tapas de dispositivo de alarma).
+--   El código (NEC 406.9(B)) la obliga en toda toma exterior en Florida y el proyecto ya lo sabe: la receta 'RECEPTÁCULO GFCI 20A WP EXTERIOR — ROMEX' avisa 'no es la tapa in-use de burbuja' y los alias 'Weatherproof Receptacle' y 'Weatherproof Switch SWP' llevan la nota 'agregar WP cover'.
+--   Tapa in-use 1G $10-18 retail ($14 en medio); 0,15 h como las tapas de bell box (0,15-0,2).
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo) values ('WP IN-USE COVER 1G', 'WIRING DEVICES', 'EA', 14, 0.15, '10-DEV');
+
+-- 6"         PVC ELBOW  · origen del precio: derivado
+--   De 6" existen tubo SCH 40, COUPLING, CONNECTOR y FEMALE ADAPTER pero no hay codo, end bell ni spacer en ninguna sección: un banco de ductos de 6" no se cotiza entero.
+--   El escéptico confirmó el hueco pero no dio números; estos son derivados: 5" ELBOW $10 x 1,8 (el factor 5"→6" con que se selló el 6" COUPLING) = $18, horas +0,1 sobre el 5" (0,6) como el paso 4"→5".
+--   PROVISIONAL: confirmar con proveedor.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo) values ('6"         PVC ELBOW', 'UNDERGROUND', 'E', 18, 0.7, '03-UG');
+
+-- 6"         PVC END BELL  · origen del precio: derivado
+--   Mismo hueco: la familia END BELL para en 5" ($4,725 / 0,4 h).
+--   4,725 x 1,8 = $8,50; horas 0,5 (la escalera de horas de la familia va 4" 0,5 / 5" 0,4, irregular; se toma el mayor).
+--   PROVISIONAL: confirmar con proveedor.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo) values ('6"         PVC END BELL', 'UNDERGROUND', 'E', 8.5, 0.5, '03-UG');
+
+-- 6"         PVC SPACER  · origen del precio: derivado
+--   La familia SPACER para en 5" ($1,323 / 0,18 h) y sube x1,25 por escalón (4" $1,061 → 5" $1,323): 6" ~$1,65 y 0,22 h.
+--   PROVISIONAL, derivado de la escalera; confirmar con proveedor.
+-- insert into catalogo_items (item, seccion, unidad, precio, horas_unidad, codigo) values ('6"         PVC SPACER', 'UNDERGROUND', 'E', 1.65, 0.22, '03-UG');
+
 -- ---------------------------------------------------------------------
 -- COMPROBAR (después del bloque A)
 -- ---------------------------------------------------------------------
 -- select item, unidad, precio, horas_unidad from catalogo_items
---  where item in ('6" GRS CONDUIT', '1/2"       LOCKNUT', '1 1/2"  LIQUIDTIGHT CONDUIT', '2"        LIQUIDTIGHT CONDUIT', '2 1/2"  LIQUIDTIGHT CONDUIT', '3"        LIQUIDTIGHT CONDUIT', '3 1/2"  LIQUIDTIGHT CONDUIT', '4"x 4"    BELL BOX-BOX AND DEVICE COVER', '2"x 4"    BELL BOX-BOX AND DEVICE COVER', '6"x6"x10'' WIREWAY NEMA-3R', 'G 4000  WIREMOLD COVER', 'G 4000  WIREMOLD DIVIDER', 'START/STOP PUSH BUTTON', '# 500   MCM THW CU.', '# 600   MCM THW CU.', '14/4 FPL WET LOC. AQ-246', 'STROBE LIGHT W/BACKBOX', 'HORN/STROBE LIGHT W/BACKBOX', 'WP DEVICES COVERS', 'DEVICES COVERS', 'THREE POLE SWITCH', 'FOUR WAY SWITCH', '15A DUPLEX TAMPER RESISTANT', '20A SINGLE RECEPTACLE USB', '3" CONDUIT GROUNDING CLAMP', 'RG6 TV CABLE', 'CAT6 CABLE', 'CAT6A CABLE', '2" CABLE TO STRUT SUPPORT', 'DEMO - Wire Removal (per LF)', 'DEMO - Conduit Run (per LF)')
+--  where item in ('6" GRS CONDUIT', '1/2"       LOCKNUT', '1 1/2"  LIQUIDTIGHT CONDUIT', '2"        LIQUIDTIGHT CONDUIT', '2 1/2"  LIQUIDTIGHT CONDUIT', '3"        LIQUIDTIGHT CONDUIT', '3 1/2"  LIQUIDTIGHT CONDUIT', '4"x 4"    BELL BOX-BOX AND DEVICE COVER', '2"x 4"    BELL BOX-BOX AND DEVICE COVER', '6"x6"x10'' WIREWAY NEMA-3R', 'G 4000  WIREMOLD COVER', 'G 4000  WIREMOLD DIVIDER', 'START/STOP PUSH BUTTON', '# 500   MCM THW CU.', '# 600   MCM THW CU.', '14/4 FPL WET LOC. AQ-246', 'STROBE LIGHT W/BACKBOX', 'HORN/STROBE LIGHT W/BACKBOX', 'WP DEVICES COVERS', 'DEVICES COVERS', 'THREE POLE SWITCH', 'FOUR WAY SWITCH', '15A DUPLEX TAMPER RESISTANT', '20A SINGLE RECEPTACLE USB', '3" CONDUIT GROUNDING CLAMP', 'RG6 TV CABLE', 'CAT6 CABLE', 'CAT6A CABLE', '2" CABLE TO STRUT SUPPORT', 'DEMO - Wire Removal (per LF)', 'DEMO - Conduit Run (per LF)', 'MAIN CONDUCTOR', 'JB 1900 DEEP BOX')
+--  (incluye el A y el A2)
 --  order by item;

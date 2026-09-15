@@ -18,10 +18,21 @@ for c in CAT: POR_NORM[norm(c['item'])].append(c)
 def q(s): return "'" + str(s).replace("'", "''") + "'"
 def n(x): return ('%.6f' % float(x)).rstrip('0').rstrip('.') if x is not None else None
 
-acciones = []
-for f in sys.argv[1:]:
+acciones, altas, tanda2 = [], [], []
+for i, f in enumerate(sys.argv[1:]):
     d = json.load(open(f))
-    acciones += d['acciones'] if isinstance(d, dict) else d
+    lst = d['acciones'] if isinstance(d, dict) else d
+    for a in lst: a['tanda'] = i + 1
+    if i == 0: acciones += lst
+    else:
+        tanda2 += lst
+        if isinstance(d, dict): altas += d.get('altas', [])
+# la tanda 2 puede SUSTITUIR una accion de la tanda 1 sobre la misma fila
+sustituidas = {a['item'] for a in tanda2 if a.get('sustituye')}
+acciones = [a for a in acciones if a['item'] not in sustituidas] + tanda2
+# preguntas de paso que salieron de la verificacion y no venian como hallazgo
+acciones.append({'item': '18/2 SHIELDED FIRE ALARM CABLE', 'accion': 'mirar', 'bloque': 'C', 'tanda': 2,
+  'razon': 'PREGUNTA. El catálogo lo tiene a $60 el millar; en el bid de Stuart lo pusiste a $0,26 el pie, que son $260 el millar. Cuatro veces. Lo llevan 8 recetas de fire alarm (0,025 MLF cada una: $1,50 contra $6,50 por punto). ¿Cuál es el bueno?', 'afecta': 'recetas (8): las de fire alarm', 'fuente': 'stuart'})
 
 fuera, vistos, limpias = [], set(), []
 for a in acciones:
@@ -158,16 +169,64 @@ def bloque(letra, titulo, comentar):
         for l in s.split('\n'): A(('-- ' if comentar else '') + l)
     A('')
 
-bloque('A', 'CORRER ANTES DE USAR LAS RECETAS NUEVAS', comentar=False)
-bloque('B', 'CUANDO LO MIRES — descomenta lo que aceptes', comentar=True)
-bloque('C', 'SOLO MIRAR — hace falta un dato tuyo', comentar=True)
+def bloque_filtrado(letra, titulo, comentar, filtro):
+    global por_bloque
+    guarda = por_bloque
+    por_bloque = {letra: [a for a in guarda.get(letra, []) if filtro(a)]}
+    bloque(letra, titulo, comentar)
+    por_bloque = guarda
+
+bloque_filtrado('A', 'CORRER ANTES DE USAR LAS RECETAS NUEVAS (primera tanda)', False, lambda a: a.get('tanda') == 1)
+A('-- ' + '-' * 69)
+A('-- BLOQUE A2 · DOS MÁS, DE LA SEGUNDA TANDA (si ya corriste el A, corre solo esto)')
+A('-- ' + '-' * 69)
+A('-- Salieron de los 179 hallazgos de los críticos de completitud, después de que')
+A('-- sus escépticos tumbaran 110. Las dos restauran TUS números del Excel.')
+por_bloque_guarda = por_bloque
+por_bloque = {'A': [a for a in por_bloque_guarda.get('A', []) if a.get('tanda') == 2]}
+for a in por_bloque['A']:
+    A('')
+    A('-- %s   [hoy: %s]' % (a['item'], actual(a)))
+    for linea in re.sub(r'\s+', ' ', a.get('razon', '')).strip().split('. '):
+        if linea.strip(): A('--   ' + linea.strip().rstrip('.') + '.')
+    if a.get('afecta'): A('--   AFECTA: ' + re.sub(r'\s+', ' ', a['afecta']).strip())
+    st = sentencia(a)
+    if st:
+        for l in st.split('\n'): A(l)
+por_bloque = por_bloque_guarda
+A('')
+bloque('B', 'CUANDO LO MIRES — descomenta lo que aceptes (las dos tandas; lo marcado «sustituye» corrige la primera)', comentar=True)
+bloque('C', 'SOLO MIRAR — hace falta un dato tuyo (las dos tandas)', comentar=True)
+
+# ---- ALTAS: filas que faltan en el catalogo ----
+if altas:
+    A('-- ' + '-' * 69)
+    A('-- ALTAS · %d FILAS QUE FALTAN EN EL CATÁLOGO (comentadas: dalas tú con tu precio)' % len(altas))
+    A('-- ' + '-' * 69)
+    A('-- Ninguna existe hoy (se buscaron en las 1.084 filas, con espacios y mayúsculas')
+    A('-- colapsados). Sin ellas hay puntos que se cotizan incompletos. El origen del')
+    A('-- precio va en cada una: «edgar» sale de tu Excel o de Stuart; «mercado» es')
+    A('-- referencia de proveedor, no factura; «cotizacion($0)» sigue tu regla de la')
+    A('-- casa para equipo grande; «derivado» es la escalera de la familia.')
+    orden_or = {'edgar': 0, 'solo_labor($0)': 1, 'cotizacion($0)': 2, 'mercado': 3, 'derivado': 4}
+    for t in sorted(altas, key=lambda x: (orden_or.get(str(x.get('origen_precio', '')).split()[0] if x.get('origen_precio') else '', 9), x.get('seccion', ''))):
+        A('')
+        A('-- %s  · origen del precio: %s' % (t['item'], t.get('origen_precio', '?')))
+        for linea in re.sub(r'\s+', ' ', t.get('razon', '')).strip().split('. '):
+            if linea.strip(): A('--   ' + linea.strip().rstrip('.') + '.')
+        cm = t.get('cero_motivo')
+        cols = 'item, seccion, unidad, precio, horas_unidad, codigo' + (', cero_motivo' if cm else '')
+        vals = '%s, %s, %s, %s, %s, %s' % (q(t['item']), q(t.get('seccion', 'MISCELLANEOUS')), q(t.get('unidad', 'E')), n(t.get('precio') or 0), n(t.get('horas') or 0), q(t.get('codigo', '20-MISC'))) + (', ' + q(cm) if cm else '')
+        A('-- insert into catalogo_items (%s) values (%s);' % (cols, vals))
+    A('')
 
 A('-- ' + '-' * 69)
 A('-- COMPROBAR (después del bloque A)')
 A('-- ' + '-' * 69)
 A("-- select item, unidad, precio, horas_unidad from catalogo_items")
 A("--  where item in (" + ', '.join(q(a['item']) for a in por_bloque.get('A', []) if a.get('accion') == 'update') + ")")
+A("--  (incluye el A y el A2)")
 A("--  order by item;")
 sys.stdout.write('\n'.join(O) + '\n')
-sys.stderr.write('%d acciones → A %d · B %d · C %d · fuera %d\n' % (len(limpias), len(por_bloque.get('A', [])), len(por_bloque.get('B', [])), len(por_bloque.get('C', [])), len(fuera)))
+sys.stderr.write('%d acciones → A %d (A2 %d) · B %d · C %d · altas %d · fuera %d\n' % (len(limpias), len([a for a in por_bloque.get('A', []) if a.get('tanda') == 1]), len([a for a in por_bloque.get('A', []) if a.get('tanda') == 2]), len(por_bloque.get('B', [])), len(por_bloque.get('C', [])), len(altas), len(fuera)))
 for it, sug in fuera: sys.stderr.write('  FUERA (no existe exacto): %r  ¿será? %s\n' % (it, sug))
