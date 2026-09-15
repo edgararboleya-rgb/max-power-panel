@@ -6654,6 +6654,11 @@ function esFalloDeRed(err) {
     if (uc === "MLF" && pies) return 0.001;
     return 1;
   }
+  function factorAlias(factorAl, fila, item) {
+    const f = Number(factorAl);
+    if (isFinite(f) && f > 0 && f !== 1) return f;
+    return factorTakeoff(fila, item);
+  }
   // Empareja una fila del takeoff con el catálogo (código → alias → nombre)
   function emparejarTakeoff(fila) {
     const cat = estData.catalogo || [];
@@ -6666,7 +6671,11 @@ function esFalloDeRed(err) {
       normTxt(a.alias) === normTxt(nombreCompleto) || normTxt(a.alias) === normTxt(fila.subject));
     if (al) {
       const item = catalogoExacto(al.item) || buscaCatalogo(al.item);
-      if (item) return { item, factor: Number(al.factor) || 1, via: "alias" };
+      // Esta ruta no dividia pies entre mil (auditoria 16/09): 500 ft de 14/4 FPL por
+      // alias entraban como 500 MLF. Regla: si el alias trae su propio factor (≠ 1) ese
+      // manda tal cual (los aprendidos al aplicar takeoff ya traen 0,001); si trae 1,
+      // que es «no dice nada», se aplica la unidad como en la ruta por nombre.
+      if (item) return { item, factor: factorAlias(al.factor, fila, item), via: "alias" };
     }
     const exacto = catalogoExacto(nombreCompleto) || catalogoExacto(fila.subject);
     if (exacto) return { item: exacto, factor: factorTakeoff(fila, exacto), via: "nombre" };

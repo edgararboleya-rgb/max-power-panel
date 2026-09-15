@@ -22,9 +22,14 @@ const CAT = [
   { id: 2, item: '# 12      THHN STRANDED CU.', unidad: 'MLF', precio: 220.94, orden: 102 },
   { id: 3, item: '2-1/2"  EMT CONDUIT', unidad: 'LF', precio: 4.2, orden: 103 },
   { id: 4, item: 'JB 1900 BOX', unidad: 'E', precio: 1.5, orden: 104 },
-  { id: 5, item: '12/2   ROMEX', unidad: 'MLF', precio: 180, orden: 105 }
+  { id: 5, item: '12/2   ROMEX', unidad: 'MLF', precio: 180, orden: 105 },
+  { id: 6, item: '14/4 FPL FIRE ALARM CABLE', unidad: 'MLF', precio: 184, orden: 106 }
 ];
-const ALIAS = [{ alias: '#12 THHN CU', item: '# 12      THHN STRANDED CU.', factor: 0.001 }];
+const ALIAS = [
+  { alias: '#12 THHN CU', item: '# 12      THHN STRANDED CU.', factor: 0.001 },
+  // como los 311 alias de verdad: factor 1, apuntando a una fila MLF (auditoría 16/09)
+  { alias: '14/4 FPL WIRE WET LOC. WP-AQ 246', item: '14/4 FPL FIRE ALARM CABLE', factor: 1 }
+];
 
 (async () => {
   await new Promise(r => srv.listen(8867, r));
@@ -54,6 +59,20 @@ const ALIAS = [{ alias: '#12 THHN CU', item: '# 12      THHN STRANDED CU.', fact
   ok('3 cajas (E) entran como 3', cant(de('JB 1900 BOX')) === 3, 'cantidad=' + cant(de('JB 1900 BOX')));
   ok('el alias sigue mandando con SU factor: 275 ft de #12 → 0,275 MLF por alias', de('#12 THHN CU').m && de('#12 THHN CU').m.via === 'alias' && cant(de('#12 THHN CU')) === 0.275, JSON.stringify(de('#12 THHN CU').m));
   ok('Romex medido en Length sin columna Unit: también son pies → 0,055 MLF', cant(de('12/2 ROMEX')) === 0.055, 'cantidad=' + cant(de('12/2 ROMEX')));
+
+  /* --- ALIAS con factor 1 (los 311 de verdad) contra MLF medido en pies: TAMBIÉN divide (auditoría 16/09) --- */
+  const porAlias1 = await p.evaluate(() => {
+    const f = window.MXP_PRUEBA.e14.analiza('Subject,Length\n14/4 FPL WIRE WET LOC. WP-AQ 246,500')[0];
+    const m = window.MXP_PRUEBA.e14.empareja(f);
+    return { via: m && m.via, factor: m && m.factor, cant: f.qty * (m ? m.factor : 1), lineal: f.lineal };
+  });
+  ok('500 ft de 14/4 FPL por ALIAS con factor 1 entran como 0,5 MLF ($92), no 500 MLF ($92.000)', porAlias1.via === 'alias' && porAlias1.cant === 0.5, JSON.stringify(porAlias1));
+  const porAliasCount = await p.evaluate(() => {
+    const f = window.MXP_PRUEBA.e14.analiza('Subject,Count\n14/4 FPL WIRE WET LOC. WP-AQ 246,2')[0];
+    const m = window.MXP_PRUEBA.e14.empareja(f);
+    return { via: m && m.via, factor: m && m.factor };
+  });
+  ok('y por Count (piezas) el mismo alias no divide: factor 1', porAliasCount.via === 'alias' && porAliasCount.factor === 1, JSON.stringify(porAliasCount));
 
   /* --- la misma fila por Count (piezas) contra un MLF NO se divide: no vino en pies --- */
   const porCount = await p.evaluate(() => { const f = window.MXP_PRUEBA.e14.analiza('Subject,Count\n# 4/0 THHN STRANDED CU.,2')[0]; return { lineal: f.lineal, factor: window.MXP_PRUEBA.e14.empareja(f).factor }; });

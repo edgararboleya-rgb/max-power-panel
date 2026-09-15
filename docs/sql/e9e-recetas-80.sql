@@ -790,10 +790,10 @@ select e.id, v.item, v.cantidad
     ('CONDUIT VACÍO 1" PARA BAJO VOLTAJE — EMT', '1" ISOLATING BUSHING', 1),
     ('CONDUIT VACÍO 1" PARA BAJO VOLTAJE — EMT', 'PULL STRING', 0.03),
 
-    -- RACK DE COMUNICACIONES (IDF) 24 PUERTOS · 9.73 h · $921.75 de material · Es el otro extremo de todos los drops: sin él los CAT6 no rematan en ninguna parte y se te queda fuera del bid. Va UNO por piso o por edificio, no por punto; por eso pies_editable = false. Si el switch lo pone el dueño, déjalo en la receta pero con el precio en $0.
+    -- RACK DE COMUNICACIONES (IDF) 24 PUERTOS · 12.73 h · $986.75 de material · Es el otro extremo de todos los drops: sin él los CAT6 no rematan en ninguna parte y se te queda fuera del bid. Va UNO por piso o por edificio, no por punto; por eso pies_editable = false. Si el switch lo pone el dueño, déjalo en la receta pero con el precio en $0.
     ('RACK DE COMUNICACIONES (IDF) 24 PUERTOS', '4''x8'' PLYWOOD PH BACKBOARD', 1),
     ('RACK DE COMUNICACIONES (IDF) 24 PUERTOS', 'Network rack 12U wall-mount', 1),
-    ('RACK DE COMUNICACIONES (IDF) 24 PUERTOS', 'Patch panel 24-port Cat6', 1),
+    ('RACK DE COMUNICACIONES (IDF) 24 PUERTOS', '24-PORT PATCH PANEL', 1),
     ('RACK DE COMUNICACIONES (IDF) 24 PUERTOS', 'PoE+ SWITCH 24-port (rack)', 1),
     ('RACK DE COMUNICACIONES (IDF) 24 PUERTOS', 'CABLE STRAP (Telecom)', 25),
     ('RACK DE COMUNICACIONES (IDF) 24 PUERTOS', '20A DUPLEX RECEPTACLE', 1),
@@ -938,4 +938,3 @@ select e.id, v.item, v.cantidad
 --          on upper(btrim(regexp_replace(c.item ,'\s+',' ','g')))
 --           = upper(btrim(regexp_replace(ei.item,'\s+',' ','g')))
 --  group by e.nombre, e.modo, e.orden order by e.modo, e.orden;
-80 recetas al SQL, 0 fuera
