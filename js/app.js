@@ -5521,15 +5521,29 @@ function esFalloDeRed(err) {
     return Object.values(autos);
   }
 
-  // Pies de cable promedio que trae un ensamble (su componente lineal)
-  function piesPromedioEnsamble(ensambleId) {
-    const cable = (estData.ensambleItems || [])
-      .filter(x => x.ensamble_id === ensambleId)
-      .find(x => ES_LINEAL_CABLE(normTxt(x.item)));
-    if (!cable) return null;
-    const cat = catalogoExacto(cable.item) || {};
-    return normTxt(cat.unidad) === "MLF" ? Number(cable.cantidad) * 1000 : Number(cable.cantidad);
+  // Pies de CORRIDA que trae un ensamble: los pies de tubo si los lleva, y si
+  // no, los del cable. No es lo mismo que los pies de cable: una receta en EMT
+  // con 3 hilos lleva 25 ft de tubo y 75 ft de conductor (0.075 MLF).
+  // (E9, 16/09) Antes esto devolvía los pies de CABLE y el escalado por pies
+  // medidos ponía `piesMedidos/1000` en el conductor: en una receta de 3 hilos
+  // eso dejaba un TERCIO del cable, y el tubo ni se tocaba. Dos fugas de
+  // dinero calladas. Ahora hay un solo factor y multiplica, no sustituye.
+  function piesCorridaEnsamble(ensambleId) {
+    const comps = (estData.ensambleItems || []).filter(x => x.ensamble_id === ensambleId);
+    const pies = cmp => {
+      const cat = catalogoExacto(cmp.item) || {};
+      return normTxt(cat.unidad) === "MLF" ? Number(cmp.cantidad) * 1000 : Number(cmp.cantidad);
+    };
+    const tubo = comps.find(x => ES_TUBERIA(normTxt(x.item)));
+    if (tubo) return pies(tubo);
+    const cable = comps.find(x => ES_LINEAL_CABLE(normTxt(x.item)));
+    return cable ? pies(cable) : null;
   }
+  // Los pies de cable que trae la receta (lo que se enseña como «promedio»)
+  function piesPromedioEnsamble(ensambleId) { return piesCorridaEnsamble(ensambleId); }
+  // Lo que crece con la corrida: el cable, el tubo, y lo que se pone cada
+  // tantos pies (grapas, straps, acoples). Los conectores NO: son por salida.
+  const ES_POR_LARGO = n => /STAPLE|STRAP|COUPLING|UNISTRUT|ALLTHREAD|HANGER/.test(n) && !/CONNECTOR/.test(n);
 
   // Explosión de UN ensamble en sus componentes (cantidad = cuántas unidades)
   function itemsDeEnsamble(ensambleId, cantidad, pies) {
@@ -5537,17 +5551,18 @@ function esFalloDeRed(err) {
     // Circuitos específicos: si Edgar midió los pies, mandan los suyos
     const piesMedidos = ens && ens.pies_editable && Number(pies) > 0 ? Number(pies) : null;
     const piesProm = piesMedidos ? piesPromedioEnsamble(ensambleId) : null;
+    const factor = (piesMedidos && piesProm > 0) ? (piesMedidos / piesProm) : null;
     return (estData.ensambleItems || [])
       .filter(x => x.ensamble_id === ensambleId)
       .map(cmp => {
         const cat = catalogoExacto(cmp.item) || {};
         let porUnidad = Number(cmp.cantidad);
-        if (piesMedidos && piesProm) {
+        if (factor) {
           const nom = normTxt(cmp.item);
-          if (ES_LINEAL_CABLE(nom))
-            porUnidad = normTxt(cat.unidad) === "MLF" ? piesMedidos / 1000 : piesMedidos;
-          else if (/STAPLE/.test(nom))
-            porUnidad = Math.ceil(porUnidad * (piesMedidos / piesProm));
+          // el cable y el tubo crecen con la corrida, con sus hilos y todo
+          if (ES_LINEAL_CABLE(nom) || ES_TUBERIA(nom)) porUnidad = porUnidad * factor;
+          // lo que se pone cada tantos pies crece también, redondeando arriba
+          else if (ES_POR_LARGO(nom)) porUnidad = Math.ceil(porUnidad * factor);
         }
         return { item: cmp.item, unidad: cat.unidad, precio: cat.precio || 0,
                  horas: cat.horas_unidad || 0,
@@ -10904,6 +10919,15 @@ Power done right the first time. ⚡`;
     },
     // E12 · Importar precios. El CSV entra como texto y sale una propuesta;
     // nada se escribe aquí. Ver pruebas/e12.js.
+    // E9 · Las recetas por dentro: explotar un ensamble y ver qué sale, con
+    // catálogo de mentira. Sirve para probar el escalado por pies medidos.
+    e9: {
+      datos(d) { estData = Object.assign({ catalogo: [], alias: [], config: {}, ensambles: [], ensambleItems: [], estEnsambles: [], estimados: [] }, d || {}); },
+      explota(id, cantidad, pies) { return itemsDeEnsamble(id, cantidad, pies); },
+      piesCorrida(id) { return piesCorridaEnsamble(id); },
+      items(est) { return itemsDelEstimado(est); },
+      calcula(est) { return calcularEstimado(est); }
+    },
     // E14 · El takeoff pegado: pies contra MLF. Puro: catálogo de mentira y a preguntar. Ver pruebas/e14.js.
     e14: {
       datos(d) { estData = Object.assign({ catalogo: [], alias: [], config: {}, ensambleItems: [], estimados: [] }, d || {}); },

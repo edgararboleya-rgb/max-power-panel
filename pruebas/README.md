@@ -20,5 +20,7 @@ NODE_PATH=/opt/node22/lib/node_modules node pruebas/e0.js
 
 | `e14.js` | E14 · El takeoff pegado, pies contra MLF: el catálogo vende el THHN por MIL pies y una fila casada por nombre entraba con factor 1 (500 ft de 4/0 → 500 MLF, medio millón de pies). Comprueba que lo que vino de Length o con Unit FT se divide por 1000 solo si el ítem es MLF, que piezas y LF no se tocan, que el alias sigue mandando con su factor, y que un `2-1/2" EMT` sin entrecomillar no se trague la fila. |
 
+| `e9.js` | E9 · Las recetas por dentro y el escalado por pies medidos. Dos fugas encontradas el 16/09: el conductor se **sustituía** por `pies/1000`, así que una receta de 3 hilos (0,075 MLF para 25 ft de corrida) con 25 ft medidos dejaba 0,025 — un tercio del cable; y el **tubo no se tocaba**, 50 ft medidos seguían comprando 25 LF de EMT. Ahora hay un solo factor (pies medidos ÷ pies de corrida) que multiplica cable, tubo y lo que va cada tantos pies (grapas, straps, acoples), y no toca lo que es por salida (conectores, caja, dispositivo). Comprueba además que las recetas Romex de hoy dan **exactamente lo mismo que antes**. |
+
 Regla: una prueba nueva por cada función que toque dinero o que escriba algo
 que el cliente vaya a firmar.
