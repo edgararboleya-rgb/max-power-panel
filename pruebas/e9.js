@@ -149,6 +149,53 @@ const r3 = v => Math.round(v * 1000) / 1000;
   ok('en cambio el nombre con UN espacio en vez de dos SÍ casa (la app normaliza espacios)',
     (malo.find(c => c.item === '20A DUPLEX RECEPTACLE') || {}).precio === 1.44, JSON.stringify((malo.find(c => c.item === '20A DUPLEX RECEPTACLE') || {})));
 
+  /* --- PUNTO COMPLETO: la receta SIN su tubo ni su cable (16/09) ---
+     Edgar mide el conduit y el wire sobre el plano, uno por uno, y esa medida
+     ya entra como renglon propio en el takeoff. Si la receta trajera ademas
+     sus 25 ft de tubo y sus 0,075 MLF de hilo, el material se pagaria DOS
+     VECES. Lo que si tiene que venir: la caja, el anillo, el receptaculo, los
+     conectores, los acoples, las grapas y los wirenuts — que es justo lo que
+     el pidio que saliera automatico y hoy tiene que poner a mano.            */
+  await p.evaluate(([cat, ens, ei]) => window.MXP_PRUEBA.e9.datos({ catalogo: cat, ensambles: ens, ensambleItems: ei }), [CAT, ENS, EI]);
+  const pc = await p.evaluate(() => window.MXP_PRUEBA.e9.explota(100, 1, null, true));
+  ok('punto completo: NO viene el tubo ni el conductor (los mide Edgar en el plano)',
+    !pc.some(c => /CONDUIT/.test(c.item)) && !pc.some(c => /THHN/.test(c.item)),
+    pc.map(c => c.item).join(' | '));
+  ok('punto completo: SI vienen caja, anillo, receptaculo y wirenuts (lo que hoy pone a mano)',
+    ['4-11/16 BOX', '1  GANG PLASTER RING 1/2"', '20A DUPLEX  RECEPTACLE', 'YELLOW WIRENUTS']
+      .every(n => pc.some(c => c.item === n)), pc.length + ' componentes de 9');
+  ok('punto completo: SI vienen los fittings (conector, acople, grapa) — son del punto, no del tubo que el mide',
+    ['1/2"       EMT S.S. D/C CONNECTOR', '1/2"       EMT S.S. D/C COUPLING', '1/2"      EMT STRAP 1 HOLE STRAP']
+      .every(n => pc.some(c => c.item === n)), pc.filter(c => /CONNECTOR|COUPLING|STRAP/.test(c.item)).length + ' fittings');
+  const pcN = await p.evaluate(() => {
+    const con = window.MXP_PRUEBA.e9.explota(100, 100);
+    const sin = window.MXP_PRUEBA.e9.explota(100, 100, null, true);
+    const $ = a => a.reduce((s, c) => s + c.precio * c.cantidad, 0);
+    const h = a => a.reduce((s, c) => s + c.horas * c.cantidad, 0);
+    return { con: Math.round($(con)), sin: Math.round($(sin)), hCon: Math.round(h(con)), hSin: Math.round(h(sin)),
+      nCon: con.length, nSin: sin.length, qty: sin.every(c => c.cantidad > 0) };
+  });
+  ok('100 puntos completos: la lista baja de 9 a 7 renglones y cada uno sigue con su cantidad × 100',
+    pcN.nCon === 9 && pcN.nSin === 7 && pcN.qty, JSON.stringify({ con: pcN.nCon, sin: pcN.nSin }));
+  ok('100 puntos completos cuestan MENOS material y MENOS horas que con el tubo y el cable dentro',
+    pcN.sin < pcN.con && pcN.hSin < pcN.hCon, JSON.stringify(pcN));
+  /* el doble cobro que esto evita, en dinero: el cable y el tubo de 100 puntos */
+  ok('lo que se evita cobrar dos veces en 100 puntos son cientos de dolares, no centavos',
+    pcN.con - pcN.sin > 200, '$' + (pcN.con - pcN.sin) + ' y ' + (pcN.hCon - pcN.hSin) + ' h');
+  /* sin la bandera, todo sigue EXACTAMENTE igual que antes (no rompe estimados viejos) */
+  const igual = await p.evaluate(() => {
+    const a = JSON.stringify(window.MXP_PRUEBA.e9.explota(100, 7, 40));
+    const b = JSON.stringify(window.MXP_PRUEBA.e9.explota(100, 7, 40, false));
+    const c = JSON.stringify(window.MXP_PRUEBA.e9.explota(100, 7, 40, undefined));
+    return a === b && a === c;
+  });
+  ok('sin la bandera (estimados de antes) la receta explota igual que siempre', igual);
+  /* una receta que NO tiene tubo ni cable (Romex la tiene; una de solo punto no) */
+  const rxSin = await p.evaluate(() => window.MXP_PRUEBA.e9.explota(200, 1, null, true));
+  ok('en la receta de Romex el punto completo quita el cable pero deja caja, receptaculo y grapas',
+    !rxSin.some(c => /ROMEX/.test(c.item)) && rxSin.some(c => c.item === 'NM STAPLE') && rxSin.length === 4,
+    rxSin.map(c => c.item).join(' | '));
+
   ok('cero errores de página', errs.length === 0, errs.join(' | ').slice(0, 200));
   console.log('\n' + R.join('\n'));
   const mal = R.filter(x => x.slice(0, 4).indexOf('✗') >= 0).length;

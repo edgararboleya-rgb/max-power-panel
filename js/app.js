@@ -5546,7 +5546,14 @@ function esFalloDeRed(err) {
   const ES_POR_LARGO = n => /STAPLE|STRAP|COUPLING|UNISTRUT|ALLTHREAD|HANGER/.test(n) && !/CONNECTOR/.test(n);
 
   // Explosión de UN ensamble en sus componentes (cantidad = cuántas unidades)
-  function itemsDeEnsamble(ensambleId, cantidad, pies) {
+  /* `sinLineales`: el punto SIN su tubo ni su cable. Es para cuando el
+     takeoff de Planos manda una receta: Edgar MIDE el conduit y el wire sobre
+     el plano, uno por uno, y esa medida ya entra como renglon propio. Si la
+     receta trajera ademas sus 25 ft, el cable se pagaria dos veces. Lo demas
+     del punto —caja, anillo, tapa, conectores, acoples, grapas, wirenuts,
+     pigtail, putty pad— si viene, que es justo lo que el pidio que saliera
+     solo (16/09). */
+  function itemsDeEnsamble(ensambleId, cantidad, pies, sinLineales) {
     const ens = (estData.ensambles || []).find(x => x.id === ensambleId);
     // Circuitos específicos: si Edgar midió los pies, mandan los suyos
     const piesMedidos = ens && ens.pies_editable && Number(pies) > 0 ? Number(pies) : null;
@@ -5554,6 +5561,9 @@ function esFalloDeRed(err) {
     const factor = (piesMedidos && piesProm > 0) ? (piesMedidos / piesProm) : null;
     return (estData.ensambleItems || [])
       .filter(x => x.ensamble_id === ensambleId)
+      .filter(cmp => { if (!sinLineales) return true;
+        const nom = normTxt(cmp.item);
+        return !(ES_LINEAL_CABLE(nom) || ES_TUBERIA(nom)); })
       .map(cmp => {
         const cat = catalogoExacto(cmp.item) || {};
         let porUnidad = Number(cmp.cantidad);
@@ -5576,7 +5586,7 @@ function esFalloDeRed(err) {
     const manual = (estData.items || []).filter(i => i.estimado_id === est.id);
     const porEnsamble = (estData.estEnsambles || [])
       .filter(ee => ee.estimado_id === est.id && Number(ee.cantidad) > 0)
-      .flatMap(ee => itemsDeEnsamble(ee.ensamble_id, Number(ee.cantidad), ee.pies));
+      .flatMap(ee => itemsDeEnsamble(ee.ensamble_id, Number(ee.cantidad), ee.pies, !!ee.sin_lineales));
     return manual.concat(porEnsamble);
   }
 
@@ -7312,11 +7322,16 @@ Power done right the first time. ⚡`;
       const enEst = ensDelEst.find(e => e.ensamble_id === ens.id);
       const qty = enEst ? Number(enEst.cantidad) : 0;
       const prom = ens.pies_editable ? piesPromedioEnsamble(ens.id) : null;
-      // Precio de venta por unidad de este ensamble (misma fórmula completa)
-      const compsUnit = itemsDeEnsamble(ens.id, 1, enEst ? enEst.pies : null);
+      // Si la fila vino del takeoff de Planos como punto completo, el tubo y el
+      // cable NO se cobran aquí (Edgar los midió aparte). El precio por unidad
+      // tiene que decir lo mismo que cobra el total, o el numerito miente.
+      const sinLin = !!(enEst && enEst.sin_lineales);
+      const compsUnit = itemsDeEnsamble(ens.id, 1, enEst ? enEst.pies : null, sinLin);
       const precioUnit = compsUnit.length ? calcularEstimado(est, compsUnit).bid : 0;
       const lineaPrecio = precioUnit
         ? `<span class="alcance-estado">≈ <strong>${fmt(Math.round(precioUnit * 100) / 100)}</strong> por unidad (escenario ${esc(est.escenario)})</span>` : "";
+      const lineaSinLin = sinLin && qty > 0
+        ? `<span class="alcance-estado">🔌 punto completo <strong>sin tubo ni cable</strong> — esos los mediste tú en el plano y entran por su lado</span>` : "";
       const piesLinea = ens.pies_editable && qty > 0
         ? `<span class="alcance-estado">📏 ${enEst && Number(enEst.pies) > 0
             ? `<strong>${Number(enEst.pies)} ft medidos</strong>`
@@ -7329,6 +7344,7 @@ Power done right the first time. ⚡`;
             <span class="alcance-titulo">${esc(ens.nombre)}</span>
             ${ens.descripcion ? `<span class="alcance-estado">${esc(ens.descripcion)}</span>` : ""}
             ${lineaPrecio}
+            ${lineaSinLin}
             ${piesLinea}
           </span>
           ${!soloLectura ? `
@@ -10961,7 +10977,7 @@ Power done right the first time. ⚡`;
     // catálogo de mentira. Sirve para probar el escalado por pies medidos.
     e9: {
       datos(d) { estData = Object.assign({ catalogo: [], alias: [], config: {}, ensambles: [], ensambleItems: [], estEnsambles: [], estimados: [] }, d || {}); },
-      explota(id, cantidad, pies) { return itemsDeEnsamble(id, cantidad, pies); },
+      explota(id, cantidad, pies, sinLin) { return itemsDeEnsamble(id, cantidad, pies, sinLin); },
       piesCorrida(id) { return piesCorridaEnsamble(id); },
       items(est) { return itemsDelEstimado(est); },
       calcula(est) { return calcularEstimado(est); }
