@@ -26,7 +26,7 @@ with e as (
     'Nicklaus Children''s Health System',
     '3100 SW 62nd Ave, Miami FL 33155',
     'borrador',
-    'takeoff-completo',   -- NO 'planos': en modo planos el estimador le sumaria SUS acoples, conectores, grapas y tapcons a los que ya vienen aqui (dos veces)
+    'remodelacion',   -- NO 'planos': en modo planos el estimador le sumaria SUS acoples, conectores, grapas y tapcons a los que ya vienen aqui (dos veces)
     'Takeoff completo 17/09: conteos del documento de dispositivos x recetas + tubo y cable medidos en Bluebeam. Precios: el mas caro CED/CES. Pendientes: producto del rele UL 924 (21 x $832,86), luminarias sin cotizar (STAK 2x2, SCR 22, Day-Brite), combo dimmer/sensor $120 ref.'
   )
   returning id
@@ -100,7 +100,7 @@ where origen = 'takeoff-nch-2026-09-17';
 -- delete from estimados where nombre = 'NCH Radiology Expansion Ultrasound — bid 17/09/2026';
 
 -- ── Si YA lo habias corrido antes de este cambio (sin modo y sin merma): ──
--- update estimados set modo = 'takeoff-completo' where nombre = 'NCH Radiology Expansion Ultrasound — bid 17/09/2026';
+-- update estimados set modo = 'remodelacion' where nombre = 'NCH Radiology Expansion Ultrasound — bid 17/09/2026';
 -- insert into estimado_items (estimado_id, item, unidad, precio, horas, cantidad, origen, codigo, orden)
 -- select id, v.* from estimados, (values
 --   ('1/2"     EMT CONDUIT', 'LF', 0.6124, 0, 172, 'takeoff-nch-2026-09-17', '09-COND', 500),
