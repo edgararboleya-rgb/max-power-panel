@@ -20,12 +20,13 @@
 -- ============================================================================
 
 with e as (
-  insert into estimados (nombre, cliente, direccion, estado, notas)
+  insert into estimados (nombre, cliente, direccion, estado, modo, notas)
   values (
     'NCH Radiology Expansion Ultrasound — bid 17/09/2026',
     'Nicklaus Children''s Health System',
     '3100 SW 62nd Ave, Miami FL 33155',
     'borrador',
+    'takeoff-completo',   -- NO 'planos': en modo planos el estimador le sumaria SUS acoples, conectores, grapas y tapcons a los que ya vienen aqui (dos veces)
     'Takeoff completo 17/09: conteos del documento de dispositivos x recetas + tubo y cable medidos en Bluebeam. Precios: el mas caro CED/CES. Pendientes: producto del rele UL 924 (21 x $832,86), luminarias sin cotizar (STAK 2x2, SCR 22, Day-Brite), combo dimmer/sensor $120 ref.'
   )
   returning id
@@ -81,10 +82,13 @@ from e, (values
   ('18/2 CMP 0-10V DIMMING CABLE (PURPLE/GRAY)', 'MLF', 330.0, 8.0, 1.0, '20-MISC', 460),
   ('YELLOW WIRENUTS', 'E', 0.26, 0.0, 798.0, '20-MISC', 470),
   ('RED FIRE CAULK 10.3 OZ TUBE', 'E', 14.63, 0.1, 12.0, '20-MISC', 480),
-  ('2G DUPLEX WALLPLATE STAINLESS STEEL', 'E', 8.0, 0.1, 8.0, '20-MISC', 490)
+  ('2G DUPLEX WALLPLATE STAINLESS STEEL', 'E', 8.0, 0.1, 8.0, '20-MISC', 490),
+  ('1/2"     EMT CONDUIT', 'LF', 0.6124, 0, 172, '09-COND', 500),          -- merma 5 % del tubo medido (3.433 ft)
+  ('1"         EMT CONDUIT', 'LF', 1.8776, 0, 22, '09-COND', 510),          -- merma 5 % de los stubs (440 ft)
+  ('# 12      THHN STRANDED CU.', 'MLF', 272.6, 0, 1.743, '08-ROUGH', 520)  -- merma 10 % del cable (17.430 ft), puntas y rollos
 ) as v(item, unidad, precio, horas, cantidad, codigo, orden);
 
--- ── Comprobar: debe dar 49 renglones, 44,003.97 de material y 633.8 horas ──
+-- ── Comprobar: debe dar 52 renglones (49 + 3 de merma), 44,625.44 de material y 633.8 horas ──
 select count(*) as renglones,
        round(sum(cantidad * precio)::numeric, 2) as material,
        round(sum(cantidad * horas)::numeric, 2) as horas
@@ -94,3 +98,13 @@ where origen = 'takeoff-nch-2026-09-17';
 -- ── Si hay que deshacerlo (se corrio dos veces, etc.) ──
 -- delete from estimado_items where origen = 'takeoff-nch-2026-09-17';
 -- delete from estimados where nombre = 'NCH Radiology Expansion Ultrasound — bid 17/09/2026';
+
+-- ── Si YA lo habias corrido antes de este cambio (sin modo y sin merma): ──
+-- update estimados set modo = 'takeoff-completo' where nombre = 'NCH Radiology Expansion Ultrasound — bid 17/09/2026';
+-- insert into estimado_items (estimado_id, item, unidad, precio, horas, cantidad, origen, codigo, orden)
+-- select id, v.* from estimados, (values
+--   ('1/2"     EMT CONDUIT', 'LF', 0.6124, 0, 172, 'takeoff-nch-2026-09-17', '09-COND', 500),
+--   ('1"         EMT CONDUIT', 'LF', 1.8776, 0, 22, 'takeoff-nch-2026-09-17', '09-COND', 510),
+--   ('# 12      THHN STRANDED CU.', 'MLF', 272.6, 0, 1.743, 'takeoff-nch-2026-09-17', '08-ROUGH', 520)
+-- ) as v(item, unidad, precio, horas, cantidad, origen, codigo, orden)
+-- where nombre = 'NCH Radiology Expansion Ultrasound — bid 17/09/2026';
