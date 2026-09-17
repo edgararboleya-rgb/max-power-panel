@@ -5445,7 +5445,9 @@ function esFalloDeRed(err) {
       const cat = catPorNombre(linea.item);
       const notas = (est && est.cero_notas) || {};
       let e;
-      if (!cat) e = "huerfano";
+      // Un renglón que Planos mandó como cotización pendiente (la luz que pone otro, a la
+      // espera de la cuota) no es un huérfano del catálogo: es material POR COTIZAR.
+      if (!cat) e = (linea.origen === "cotizacion" || /^COTIZACI[OÓ]N PENDIENTE/i.test(linea.item || "")) ? "suministro" : "huerfano";
       else {
         e = cat.cero_motivo || "revisar";
         // La cotización del supply llega por SECCIÓN entera, que es como la
@@ -5514,7 +5516,9 @@ function esFalloDeRed(err) {
       return (cat && cat.seccion === "LIGHTING FIXTURES")
         || /RECESSED|FIXTURE|PENDANT|SCONCE|CHANDELIER|CEILING FAN/.test(normTxt(i.item));
     }).reduce((s, i) => s + (Number(i.cantidad) || 0), 0);
-    if (luminarias > 0) {
+    // En EMT/tubería el whip de la luminaria ya trae sus conectores de flex dentro de la
+    // receta: no hay conectores de cable que inventar (Nicklaus 17/09: salían 278 NM).
+    if (luminarias > 0 && cable !== "emt") {
       if (cable !== "mc") add(buscaCatalogo("NM CABLE CONNECTOR"), Math.round(luminarias * (cable === "mixto" ? 0.5 : 1)), "conectores");
       if (cable !== "romex") add(buscaCatalogo("MC SNAP-IN CONNECTOR"), Math.round(luminarias * (cable === "mixto" ? 0.5 : 1)), "conectores");
     }
@@ -7490,6 +7494,7 @@ Power done right the first time. ⚡`;
             <option value="romex"${est.cable === "romex" ? " selected" : ""}>Romex (NM)</option>
             <option value="mc"${est.cable === "mc" ? " selected" : ""}>MC</option>
             <option value="mixto"${est.cable === "mixto" ? " selected" : ""}>Mixto</option>
+            <option value="emt"${est.cable === "emt" ? " selected" : ""}>EMT / tubería (THHN) — sin conectores de cable</option>
           </select>
         </label>` : ""}
       </div>
