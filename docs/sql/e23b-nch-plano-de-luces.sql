@@ -34,7 +34,7 @@ select e.id, v.item, v.unidad, v.precio, v.horas, v.cantidad, 'takeoff-nch-2026-
    and not exists (select 1 from estimado_items x where x.estimado_id = e.id and x.origen = 'takeoff-nch-2026-09-17-luces');
 
 -- Comprobar: el estimado entero. Antes: 52 renglones, 44.625,75 y 633,8 h.
--- Ahora debe dar 60 renglones, ~50.460 de material y ~776 h.
+-- Ahora debe dar 60 renglones, ~50.460 de material y ~822 h.
 select count(*) as renglones,
        round(sum(cantidad * precio)::numeric, 2) as material,
        round(sum(cantidad * horas)::numeric, 1) as horas
