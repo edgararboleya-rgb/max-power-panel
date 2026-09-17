@@ -123,6 +123,13 @@ const L = (item, cantidad, precio, horas) => ({ item, cantidad, precio, horas })
   ok('y dice claramente que no es una propuesta ni un contrato', /No es una propuesta ni un contrato/.test(rMep));
   ok('arrastra las exclusiones igual que un estimado tuyo', /NO INCLUYE/.test(rMep));
 
+  /* === 8b. el takeoff entero para copiar (17/09): un renglón por ítem y por automático, con TAB, y los totales === */
+  const tk = await p.evaluate(c => window.MXP_PRUEBA.e0.takeoff({ id: 9, nombre: 'Epic — sala eléctrica', cliente: 'Obra 4', escenario: 'B', factor: 1.5 }, c),
+    { bid: 48000, items: items.concat([{ item: 'JB 1900 BOX', unidad: 'E', precio: 1.04, horas: 0.25, cantidad: 3, deEnsamble: 'SWITCH SENCILLO 20A — EMT' }]), autos: [{ item: 'TAPCON 1/4" x 1-1/4"', unidad: 'E', precio: 0.35, horas: 0.01, cantidad: 40, auto: 'fijación' }], horas: 320, totalLabor: 28000, totalMaterial: 12000, misc: 900, tax: 700, mermaMat: 300, overhead: 5000, profit: 2100, tarifaCargada: 150 });
+  const tkL = tk.split('\n');
+  ok('el takeoff trae cabecera con TAB y un renglón por cada ítem y automático', tkL[1].split('\t').length === 9 && tkL.filter(x => /\tJB 1900 BOX\treceta: SWITCH SENCILLO/.test(x)).length === 1 && tkL.some(x => /TAPCON.*\tautomático: fijación\t40\t/.test(x)), tkL.slice(1, 4).join(' | '));
+  ok('la fila del ítem multiplica bien (3 × 1,04 = 3,12 · 0,75 h) y abajo van los totales del cálculo', tkL.some(x => /JB 1900 BOX\t.*\t3\tE\t1\.04\t0\.25\t3\.12\t0\.75$/.test(x)) && /= MATERIAL\t.*12000\.00/.test(tk) && /TOTAL\t.*48000\.00/.test(tk) && /factor 1\.5/.test(tk), tk.split('\n').slice(-8).join(' | '));
+
   ok('sin errores de consola', errs.length === 0, errs.join(' // ').slice(0, 200));
   console.log(R.join('\n'));
   const fails = R.filter(l => l.indexOf('✗') >= 0).length;

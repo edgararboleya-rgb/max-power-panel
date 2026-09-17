@@ -6798,6 +6798,46 @@ function esFalloDeRed(err) {
     return l.join("\n");
   }
 
+  // El TAKEOFF entero para copiar (Edgar, 17/09: «otro botón que diga ver
+  // takeoff para copiar»). Columnas separadas por TAB: pegado en Excel cae
+  // cada cosa en su columna. Renglón por renglón: la partida, el ítem, de qué
+  // receta o regla salió, cantidad, unidad, $ unitario, h unitarias, material
+  // y horas. Abajo, los totales del mismo cálculo que ve en pantalla.
+  function textoTakeoff(est, c) {
+    const r2 = v => Math.round((Number(v) || 0) * 100) / 100;
+    const n2 = v => r2(v).toFixed(2), n1 = v => (Math.round((Number(v) || 0) * 100) / 100).toString();
+    const codDe = i => i.codigo || (catalogoExacto(i.item) || {}).codigo || "";
+    const filas = [];
+    (c.items || []).forEach(i => filas.push({ cod: codDe(i), item: i.item, de: i.deEnsamble ? "receta: " + i.deEnsamble : (i.origen === "cotizacion" ? "cotización pendiente" : ""), q: i.cantidad, u: i.unidad || "", p: i.precio, h: i.horas }));
+    (c.autos || []).forEach(i => filas.push({ cod: codDe(i), item: i.item, de: "automático: " + (i.auto || ""), q: i.cantidad, u: i.unidad || "", p: i.precio, h: i.horas }));
+    filas.sort((a, b) => (a.cod || "zz").localeCompare(b.cod || "zz") || a.item.localeCompare(b.item));
+    const hoyTxt = new Date().toLocaleDateString(LOCALE, { day: "numeric", month: "long", year: "numeric" });
+    const l = [];
+    l.push(`TAKEOFF — ${est.nombre}${est.cliente ? ` — ${est.cliente}` : ""} — ${hoyTxt}${est.escenario ? ` — escenario ${est.escenario}` : ""}${est.factor ? ` — factor ${est.factor}` : ""}`);
+    l.push(["Partida", "Ítem", "De dónde sale", "Cantidad", "Unidad", "$ unitario", "h unitarias", "$ Material", "Horas"].join("\t"));
+    let mat = 0, hrs = 0;
+    for (const f of filas) {
+      const m = r2(Number(f.q) * Number(f.p)), h = r2(Number(f.q) * Number(f.h));
+      mat += m; hrs += h;
+      l.push([f.cod, f.item, f.de, n1(f.q), f.u, n2(f.p), n1(f.h), n2(m), n1(h)].join("\t"));
+    }
+    l.push("");
+    const T = (nom, v, hh) => l.push(["", nom, "", "", "", "", "", v == null ? "" : n2(v), hh == null ? "" : n1(hh)].join("\t"));
+    T("Material de los renglones", mat, hrs);
+    if (c.mermaMat) T("+ Merma (cable / tubería)", c.mermaMat, c.mermaHoras || 0);
+    if (c.misc) T("+ Misceláneas", c.misc);
+    if (c.tax) T("+ Sales tax", c.tax);
+    T("= MATERIAL", c.totalMaterial);
+    T(`Horas × factor${est.factor ? " " + est.factor : ""}`, null, c.horas);
+    T(`Mano de obra (${n2(c.tarifaCargada)}/h cargada)`, c.totalLabor);
+    T("Overhead", c.overhead);
+    T("Profit", c.profit);
+    T("TOTAL", c.bid);
+    l.push("");
+    l.push("Copiado del estimador de Max Power. Los $0 son ítems de solo mano, material del cliente o cotizaciones pendientes: la columna «De dónde sale» lo dice.");
+    return l.join("\n");
+  }
+
   function textoPropuesta(est, c) {
     const r2 = v => Math.round(v * 100) / 100;
     // E0 · Sin exclusiones, la propuesta sale letra por letra igual que ayer.
@@ -7567,9 +7607,11 @@ Power done right the first time. ⚡`;
         <p class="lev-nota" style="margin:0 0 .5rem">Este trabajo es de <strong>MXP MEP</strong>, no tuyo: la app solo te da el número.
           No crea proyecto, ni propuesta, ni contrato. Si al final lo haces tú, cámbialo a Max Power y vuelven los botones.</p>
         <button class="accion secundaria" id="btn-est-propuesta">📄 Ver el resumen para copiar</button>
+        <button class="accion secundaria" id="btn-est-takeoff">📋 Ver el takeoff para copiar</button>
         <button class="accion secundaria" id="btn-est-mio">Pasarlo a Max Power</button>
         ` : `
         <button class="accion secundaria" id="btn-est-propuesta">📄 Generar propuesta</button>
+        <button class="accion secundaria" id="btn-est-takeoff">📋 Ver el takeoff para copiar</button>
         ${est.estado === "borrador" ? `<button class="accion secundaria" id="btn-est-congelar">🔒 Congelar</button>` : ""}
         ${est.estado === "congelado" ? `<button class="accion secundaria" id="btn-est-descongelar">🔓 Volver a borrador</button>` : ""}
         ${est.estado !== "convertido" ? `<button class="accion" id="btn-est-convertir">${est.proyecto_id && proyectos().find(x => x.id === est.proyecto_id) ? `➕ Incluir al proyecto` : `🚀 Convertir en proyecto`}</button>` : ""}
@@ -7994,6 +8036,21 @@ Power done right the first time. ⚡`;
       $("btn-copiar-propuesta").addEventListener("click", async () => {
         try { await navigator.clipboard.writeText($("propuesta-texto").value); avisar("Propuesta copiada ✓"); }
         catch { $("propuesta-texto").select(); document.execCommand("copy"); avisar("Propuesta copiada ✓"); }
+      });
+      $("propuesta-caja").scrollIntoView({ behavior: "smooth" });
+    });
+    const btnTk = $("btn-est-takeoff");
+    if (btnTk) btnTk.addEventListener("click", () => {
+      $("propuesta-caja").innerHTML = `
+        <div class="cal-panel-card">
+          <div class="cal-form-titulo">📋 Takeoff para copiar — ${c.items.length + (c.autos || []).length} renglones (pégalo en Excel: cada columna cae en su celda)</div>
+          <textarea id="takeoff-texto" rows="18" readonly wrap="off"
+            style="width:100%;font-family:ui-monospace,monospace;font-size:.74rem;padding:.6rem;border:1px solid var(--mp-line);border-radius:10px;white-space:pre">${esc(textoTakeoff(est, c))}</textarea>
+          <button class="accion" id="btn-copiar-takeoff" style="margin-top:.45rem">📋 Copiar</button>
+        </div>`;
+      $("btn-copiar-takeoff").addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText($("takeoff-texto").value); avisar("Takeoff copiado ✓ — pégalo en Excel"); }
+        catch { $("takeoff-texto").select(); document.execCommand("copy"); avisar("Takeoff copiado ✓ — pégalo en Excel"); }
       });
       $("propuesta-caja").scrollIntoView({ behavior: "smooth" });
     });
@@ -10958,6 +11015,7 @@ Power done right the first time. ⚡`;
       salida(est, c) { return ceroTextoSalida(est || {}, c || { items: [], autos: [] }); },
       propuesta(est, c) { return textoPropuesta(est, c); },
       mep(est, c) { return textoResumenMEP(est, c); },
+      takeoff(est, c) { return textoTakeoff(est, c); },
       calcula(est) { return calcularEstimado(est); },
       escenarios(empresa) { return escenariosDe(empresa).map(e => e.id); },
       escToca(empresa, actual) { return escenarioQueToca(empresa, actual); },
