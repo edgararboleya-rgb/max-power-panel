@@ -70,11 +70,12 @@ select e.id, v.item, v.cantidad
  where not exists (select 1 from ensamble_items x where x.ensamble_id = e.id and x.item = v.item);
 
 -- ── 3. Los alias → receta ───────────────────────────────────────────────────
--- Una tabla temporal con lo que queremos, y de ahí UPDATE a los que existen e
--- INSERT a los que no. `item` queda como respaldo por si la receta no existe.
-drop table if exists _al;
-create temp table _al (alias text, item text, receta text, con_tubo boolean);   -- «full» es palabra reservada
-insert into _al values
+-- Sin tabla temporal: el editor de Supabase no la conserva entre sentencias.
+-- La misma lista va dentro de las dos sentencias (UPDATE a los que existen,
+-- INSERT a los que no). `item` queda como respaldo por si la receta no existe.
+
+-- 3a. los que ya existen: se les pone la receta (el item se respeta)
+with al(alias, item, receta, con_tubo) as (values
   -- A · las herramientas de Bluebeam de Edgar → la receta genérica comercial en EMT
   ('20A DUPLEX RECEPTACLE',          '20A DUPLEX RECEPTACLE',              'RECEPTÁCULO 20A DUPLEX — EMT',                    false),
   ('20A GFCI DUPLEX RECEPTACLE',     '20A GFCI DUPLEX RECEPTACLE',         'RECEPTÁCULO GFCI 20A — EMT',                      false),
@@ -126,21 +127,72 @@ insert into _al values
   ('Troffer 2x2',                    '24"X24" LED TROFFER (RECESSED)',     'LUMINARIA 2X2 — EMT',                             false),
   ('Downlight 4"',                   '4" RECESSED CAN LIGHT',              'RECESSED CAN 4" — EMT',                           false),
   ('Exit sign',                      'EXIT SIGN BACK/TOP MTD',             'EXIT SIGN — EMT',                                 false),
-  ('J-box HVAC',                     '4-11/16 BOX',                        'CAJA DE DERIVACION 4-11/16 EN PARED — EMT',       false);
+  ('J-box HVAC',                     '4-11/16 BOX',                        'CAJA DE DERIVACION 4-11/16 EN PARED — EMT',       false)
+)
+update alias_takeoff a set receta = al.receta, receta_full = al.con_tubo
+  from al
+ where upper(btrim(regexp_replace(a.alias,'\s+',' ','g'))) = upper(btrim(regexp_replace(al.alias,'\s+',' ','g')));
 
--- los que ya existen: se les pone la receta (el item se respeta)
-update alias_takeoff a set receta = t.receta, receta_full = t.con_tubo
-  from _al t
- where upper(btrim(regexp_replace(a.alias,'\s+',' ','g'))) = upper(btrim(regexp_replace(t.alias,'\s+',' ','g')));
-
--- los que no existen: se crean
+-- 3b. los que no existen: se crean
+with al(alias, item, receta, con_tubo) as (values
+  -- A · las herramientas de Bluebeam de Edgar → la receta genérica comercial en EMT
+  ('20A DUPLEX RECEPTACLE',          '20A DUPLEX RECEPTACLE',              'RECEPTÁCULO 20A DUPLEX — EMT',                    false),
+  ('20A GFCI DUPLEX RECEPTACLE',     '20A GFCI DUPLEX RECEPTACLE',         'RECEPTÁCULO GFCI 20A — EMT',                      false),
+  ('20A SINGLE RECEPTACLE USB',      '20A SINGLE RECEPTACLE USB',          'RECEPTÁCULO USB 20A — EMT',                       false),
+  ('SINGLE POLE SWITCH',             'SINGLE POLE SWITCH',                 'SWITCH SENCILLO 20A — EMT',                       false),
+  ('THREE WAY SWITCH',               'THREE WAY SWITCH',                   'SWITCH TRES VÍAS — EMT',                          false),
+  ('FOUR WAY SWITCH',                'FOUR WAY SWITCH',                    'SWITCH CUATRO VÍAS — EMT',                        false),
+  ('DIMMER SW. 600 WATTS',           'DIMMER SW. 600 WATTS',               'DIMMER DE PARED 600W — EMT',                      false),
+  ('PASSIVE INFRA. OCUP. SENSOR',    'PASSIVE INFRA. OCUP. SENSOR',        'SENSOR DE OCUPACIÓN DE PARED — EMT',              false),
+  ('CEILING OCCUPANCY SENSOR',       'CEILING OCCUPANCY SENSOR',           'SENSOR DE OCUPACIÓN DE TECHO — EMT',              false),
+  ('2''X2'' RECE. FLUORESCENT',      '2''X2'' RECE. FLUORESCENT',          'LUMINARIA 2X2 — EMT',                             false),
+  ('24"X24" LED TROFFER (RECESSED)', '24"X24" LED TROFFER (RECESSED)',     'LUMINARIA 2X2 — EMT',                             false),
+  ('DOWN LIGHT',                     'DOWN LIGHT',                         'DOWN LIGHT — EMT',                                false),
+  ('4" RECESSED CAN LIGHT',          '4" RECESSED CAN LIGHT',              'RECESSED CAN 4" — EMT',                           false),
+  ('LED CAN LIGHT (RECESSED)',       'LED CAN LIGHT (RECESSED)',           'RECESSED CAN 4" — EMT',                           false),
+  ('EXIT SIGN BACK/TOP MTD',         'EXIT SIGN BACK/TOP MTD',             'EXIT SIGN — EMT',                                 false),
+  ('BATTERY LIGHT SURFACE',          'BATTERY LIGHT SURFACE',              'LUZ DE EMERGENCIA BATERÍA — EMT',                 false),
+  ('COMBO PH/DATA',                  'COMBO PH/DATA',                      'SALIDA DE DATOS CAT6 2 PUERTOS — EMT',            false),
+  ('COMPUTER OUTLET (4 JACKS)',      'COMPUTER OUTLET (4 JACKS)',          'SALIDA DE DATOS CAT6 2 PUERTOS — EMT',            false),
+  ('TELEPHONE OUTLET (2 JACKS)',     'TELEPHONE OUTLET (2 JACKS)',         'SALIDA DE TELÉFONO — EMT',                        false),
+  ('TV OUTLET',                      'TV OUTLET',                          'SALIDA DE TV / COAX — EMT',                       false),
+  ('CCTV CAMERA',                    'CCTV CAMERA',                        'CÁMARA IP (PoE) EN TECHO — EMT',                  false),
+  ('MANUAL PULL STATION',            'MANUAL PULL STATION',                'ESTACIÓN MANUAL (PULL STATION)',                  false),
+  ('SMOKE DETECTOR W/BASE',          'SMOKE DETECTOR W/BASE',              'DETECTOR DE HUMO CON BASE',                       false),
+  ('HEAT DETECTOR W/BASE',           'HEAT DETECTOR W/BASE',               'DETECTOR DE CALOR CON BASE',                      false),
+  ('DUCT SMOKE DETECTOR',            'DUCT SMOKE DETECTOR',                'DETECTOR DE HUMO DE DUCTO',                       false),
+  ('STROBE LIGHT W/BACKBOX',         'STROBE LIGHT W/BACKBOX',             'STROBE F/A',                                      false),
+  ('HORN / STROBE LIGHT W/BACKBOX',  'HORN / STROBE LIGHT W/BACKBOX',      'HORN/STROBE F/A',                                 false),
+  ('WP HORN / STROBE LIGHT W/BACKBOX','WP HORN / STROBE LIGHT W/BACKBOX',  'HORN/STROBE F/A INTEMPERIE (WP)',                 false),
+  ('FIRE ALARM SPEAKER',             'FIRE ALARM SPEAKER',                 'BOCINA F/A (SPEAKER)',                            false),
+  ('FIRE ALARM MODULE',              'FIRE ALARM MODULE',                  'MÓDULO DE MONITOREO F/A',                         false),
+  -- B · los nombres de categoría del hospital (docs/nch/RECETAS-QUE-FALTAN.md) → receta HG
+  ('HG duplex ivory',                '20A HOSPITAL GRADE TR RECEPTACLE',   'RECEPTÁCULO 20A HOSPITAL GRADE TR — EMT',         false),
+  ('HG duplex ivory DOBLE (2 gang)', '20A HOSPITAL GRADE TR RECEPTACLE',   'RECEPTÁCULO 20A HG TR DOBLE (2 GANG) — EMT',      false),
+  ('HG GFCI ivory',                  '20A GFCI HOSPITAL GRADE TR/WR',      'RECEPTÁCULO GFCI 20A HOSPITAL GRADE TR — EMT',    false),
+  ('HG duplex ROJO',                 '20A HOSPITAL GRADE TR RECEPTACLE RED','RECEPTÁCULO 20A HG TR ROJO (RAMA CRÍTICA) — EMT', false),
+  ('HG GFCI ROJO',                   '20A GFCI HOSPITAL GRADE RED',        'RECEPTÁCULO GFCI 20A HG ROJO (RAMA CRÍTICA) — EMT', false),
+  ('Caja TV multigang',              'NEMA 1 ENCLOSURE 12x12x4',           'SALIDA DE TV MULTIGANG CON DIVISOR — EMT',        false),
+  ('Dimmer 0-10V + sensor',          '0-10V DIMMER / OCCUPANCY SENSOR WALL SWITCH', 'DIMMER 0-10V CON SENSOR DE OCUPACIÓN DE PARED — EMT', false),
+  ('Sensor de ocupación pared',      'PIR OCCUPANCY SENSOR',               'SENSOR DE OCUPACIÓN DE PARED — EMT',              false),
+  ('Switch sencillo',                '20A SINGLE POLE SWITCH COMMERCIAL SPEC GRADE', 'SWITCH SENCILLO 20A — EMT',             false),
+  ('Relé UL 924',                    'UL 924 EMERGENCY LIGHTING CONTROL RELAY', 'RELÉ DE EMERGENCIA UL 924 — EMT',            false),
+  ('Data + data/tel',                '1" ISOLATING BUSHING',               'SALIDA DE DATOS — SOLO ROUGH (STUB 1" EMT)',      true),
+  ('Card reader',                    '1" ISOLATING BUSHING',               'LECTOR DE TARJETA — SOLO ROUGH (STUB 1" EMT)',    true),
+  ('WAP',                            'JB 1900 BOX',                        'WAP EN TECHO — SOLO ROUGH',                       false),
+  ('Cámara',                         'JB 1900 BOX',                        'CÁMARA EN TECHO — SOLO ROUGH',                    false),
+  ('Speaker voceo',                  'JB 1900 BOX',                        'SPEAKER DE VOCEO EN TECHO — SOLO ROUGH',          false),
+  ('Botón puerta',                   '1/2" ISOLATING BUSHING',             'BOTÓN DE APERTURA DE PUERTA — SOLO ROUGH (STUB 1/2" EMT)', true),
+  ('Troffer 2x2',                    '24"X24" LED TROFFER (RECESSED)',     'LUMINARIA 2X2 — EMT',                             false),
+  ('Downlight 4"',                   '4" RECESSED CAN LIGHT',              'RECESSED CAN 4" — EMT',                           false),
+  ('Exit sign',                      'EXIT SIGN BACK/TOP MTD',             'EXIT SIGN — EMT',                                 false),
+  ('J-box HVAC',                     '4-11/16 BOX',                        'CAJA DE DERIVACION 4-11/16 EN PARED — EMT',       false)
+)
 insert into alias_takeoff (alias, item, factor, receta, receta_full)
-select t.alias, t.item, 1, t.receta, t.con_tubo
-  from _al t
+select al.alias, al.item, 1, al.receta, al.con_tubo
+  from al
  where not exists (select 1 from alias_takeoff a
-        where upper(btrim(regexp_replace(a.alias,'\s+',' ','g'))) = upper(btrim(regexp_replace(t.alias,'\s+',' ','g'))));
-
-drop table if exists _al;
+        where upper(btrim(regexp_replace(a.alias,'\s+',' ','g'))) = upper(btrim(regexp_replace(al.alias,'\s+',' ','g'))));
 
 -- ── 4. Comprobar ────────────────────────────────────────────────────────────
 -- 4a. Cuántos alias apuntan ya a receta (deben ser 50) y cuántos a una receta que NO existe (debe ser 0)
