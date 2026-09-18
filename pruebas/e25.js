@@ -75,7 +75,7 @@ const NICKLAUS = [
   await p.evaluate(c => window.MXP_PRUEBA.e0.datos({ catalogo: c }), CAT);
   const corre = (est, cfg) => p.evaluate(([base, est, cfg]) => {
     const r = window.MXP_PRUEBA.e0.consumibles(base, est, cfg);
-    return { avisos: r.avisos, autos: r.autos.map(a => ({ item: a.item.replace(/\s+/g, ' ').trim(), q: a.cantidad, motivo: a.auto, ids: a.reglaIds || [] })) };
+    return { avisos: r.avisos, cubiertos: r.cubiertos, autos: r.autos.map(a => ({ item: a.item.replace(/\s+/g, ' ').trim(), q: a.cantidad, motivo: a.auto, ids: a.reglaIds || [] })) };
   }, [NICKLAUS, est, cfg || {}]);
   const q = (r, frag) => { const a = r.autos.find(x => x.item.includes(frag)); return a ? a.q : null; };
 
@@ -96,6 +96,11 @@ const NICKLAUS = [
   ok('la tapa ciega coge la tapa, no el anillo de concreto',
     !!conId.autos.find(a => /4"X4" BLANK COVER/.test(a.item)) && !conId.autos.find(a => /CONCRETE RING/.test(a.item)),
     JSON.stringify(conId.autos.filter(a => /BLANK|RING/.test(a.item)).map(a => a.item)));
+
+  /* === 0c. (v196) una regla que acaba en 0 porque las recetas ya lo traían no
+         puede verse igual que una que no corrió === */
+  ok('lo que las recetas ya traen queda apuntado, aunque el renglón acabe en 0',
+    conId.cubiertos && Object.keys(conId.cubiertos).length > 0, JSON.stringify(conId.cubiertos));
 
   /* === 1. pared o losa: lo normal === */
   const pared = await corre({ soporte: 'pared' });

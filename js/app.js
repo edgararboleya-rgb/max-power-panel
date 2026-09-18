@@ -5649,7 +5649,7 @@ function esFalloDeRed(err) {
     };
     // Lo ya presente se reparte entre las reglas que lo descuentan: se apunta
     // lo consumido para que dos reglas no descuenten el mismo renglón dos veces.
-    const gastado = {};
+    const gastado = {}, cubiertos = {};
     const pon = (r, cat, pide, motivo) => {
       if (!cat) return 0;
       let q = pide;
@@ -5660,6 +5660,11 @@ function esFalloDeRed(err) {
         gastado[k] = (gastado[k] || 0) + usa;
         q = q - usa;
         if (usa > 0) motivo += ` · ya venían ${Math.round(usa * 100) / 100} en las recetas`;
+        /* Y si lo tapan ENTERO, el renglón no existe y la regla desaparece de
+           la pantalla: igualita a una que no corrió. Se apunta aparte para
+           poder decir «no puso nada porque las recetas ya traían 651» — que es
+           lo contrario de un fallo, pero se ve igual (18/09). */
+        if (usa > 0) cubiertos[r.id] = (cubiertos[r.id] || 0) + usa;
       }
       add(cat, Math.ceil(q), motivo, r.id);
       return pide;
@@ -5719,7 +5724,7 @@ function esFalloDeRed(err) {
           + (cerca ? `. Lo más parecido es «${String(cerca.item).replace(/\s+/g, " ").trim()}», que NO es lo que pide esta regla: o das de alta la pieza buena, o cambia arriba cómo va sujeto el tubo` : ""));
       }
     }
-    return { autos: Object.values(autos).filter(a => a.cantidad > 0), avisos };
+    return { autos: Object.values(autos).filter(a => a.cantidad > 0), avisos, cubiertos };
   }
 
 
@@ -6069,8 +6074,8 @@ function esFalloDeRed(err) {
     const rapido = est.modo === "rapido";
     // (v189) los consumibles por reglas corren en TODOS los modos menos el
     // rápido, que ignora los ítems por completo
-    const cons = rapido ? { autos: [], avisos: [] } : autosConsumibles(base, est, cfg);
-    const autos = cons.autos, consAvisos = cons.avisos;
+    const cons = rapido ? { autos: [], avisos: [], cubiertos: {} } : autosConsumibles(base, est, cfg);
+    const autos = cons.autos, consAvisos = cons.avisos, consCubiertos = cons.cubiertos || {};
     /* (v190) Las luminarias que espera cuota, a PRECIO DE REFERENCIA. Entra
        por el mismo sitio que una cotización del proveedor —sin misceláneas,
        con el markup de cotización y fuera del overhead por porcentaje— porque
@@ -6181,7 +6186,7 @@ function esFalloDeRed(err) {
     const overhead = ohPct !== null ? Math.max(0, prime - cotEnPrime) * ohPct : horas * ohHH;
     const profit = (prime + overhead) * profitPct;
     const bid = prime + overhead + profit;
-    return { items: base, autos, consAvisos, refLuz, mermaMat, mermaHoras, misc, esc, matSubtotal, tax,
+    return { items: base, autos, consAvisos, consCubiertos, refLuz, mermaMat, mermaHoras, misc, esc, matSubtotal, tax,
              totalMaterial, horasBase, horas, laborBase, benefits, totalLabor,
              prime, overhead, profit, markup, bid,
              miscPct, taxPct, ohHH, ohPct: (ohPct ?? null), profitPct, markupPct,
@@ -7803,7 +7808,7 @@ Power done right the first time. ⚡`;
     const sopNom = (SOPORTES.find(s => s[0] === soporte) || ["", soporte])[1];
     const filas = reglas.map(r => {
       const fuera = (r.soporte && r.soporte !== soporte) || (r.rack && !(Number(est.pct_rack) > 0));
-      const h = hecho[r.id];
+      const h = hecho[r.id], cub = Number((c.consCubiertos || {})[r.id]) || 0;
       const cond = r.soporte ? `solo con «${(SOPORTES.find(s => s[0] === r.soporte) || ["", r.soporte])[1]}»`
         : r.rack ? "solo la parte del tubo en trapecio" : "siempre";
       const base = CONS_REGLAS.find(x => x.id === r.id) || r;
@@ -7813,7 +7818,10 @@ Power done right the first time. ⚡`;
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(r.nom)}${tocada ? ` <span class="recibo-chip leido">TUYO</span>` : ""}</span>
           <span class="alcance-estado">${esc(CONS_CUENTA_TXT[r.cuenta] || r.cuenta)}${r.talla ? ", por talla de tubo" : ""} · ${esc(cond)}${
-            fuera ? " — no entra en este trabajo" : h ? ` · aquí puso <strong>${r2(h.cant)}</strong> = ${fmt(r2(h.monto))}` : " · aquí no puso nada"}</span>
+            fuera ? " — no entra en este trabajo"
+            : h ? ` · aquí puso <strong>${r2(h.cant)}</strong> = ${fmt(r2(h.monto))}`
+            : cub > 0 ? ` · aquí no hizo falta comprar ninguno: las recetas ya traían <strong>${r2(cub)}</strong>`
+            : " · aquí no puso nada"}</span>
         </span>
         <input type="number" class="cons-por" data-id="${esc(r.id)}" min="0" step="0.01" value="${esc(r.por)}"
           ${soloLectura ? "disabled" : ""} title="Cuántos por cada unidad de la cuenta"
