@@ -47,6 +47,14 @@ const ITEMS = [
   { id: 'i5', estimado_id: EST_ID, item: '4"X4" BLANK COVER',                 unidad: 'E', precio: 0.80,  horas: 0.07, cantidad: 30 },
   { id: 'i6', estimado_id: EST_ID, item: 'LUMINARIA 2X2 — SOLO INSTALACIÓN',  unidad: 'E', precio: 0,     horas: 0.75, cantidad: 55 },
   { id: 'i7', estimado_id: EST_ID, item: '1/2"  EMT CONDUIT',                 unidad: 'LF', precio: 0.61, horas: 0.03, cantidad: 6039 },
+  /* LAS TRAMPAS DEL ESTIMADO REAL (18/09, el que se le mandó al cliente): un
+     accesorio con la palabra FIXTURE y 264 unidades, un cable de dimming por
+     MLF, y los propios renglones de mano que esta tarjeta propone — que se
+     contaban a sí mismos y hacían crecer la demolición cada vez. */
+  { id: 'x1', estimado_id: EST_ID, item: 'FIXTURES HOLDER CLIPS',              unidad: 'E',   precio: 0.45, horas: 0.10, cantidad: 264 },
+  { id: 'x2', estimado_id: EST_ID, item: '18/2 CMP 0-10V DIMMING CABLE (PURPLE/GRAY)', unidad: 'MLF', precio: 330, horas: 8, cantidad: 1 },
+  { id: 'x3', estimado_id: EST_ID, item: 'PUESTA EN MARCHA DIMMER 0-10V / SENSOR (por unidad)', unidad: 'E', precio: 0, horas: 0.25, cantidad: 31 },
+  { id: 'x4', estimado_id: EST_ID, item: 'DEMOLICIÓN DE DISPOSITIVO O LUMINARIA EXISTENTE (por unidad)', unidad: 'E', precio: 0, horas: 0.35, cantidad: 80 },
   // las cinco que esperan la cuota del supply, con los nombres tal cual los mandó Planos
   { id: 'c1', estimado_id: EST_ID, origen: 'cotizacion', unidad: 'E', precio: 0, horas: 0, cantidad: 25,
     item: 'COTIZACIÓN PENDIENTE — LITHONIA STAK 2X2 5000LM 80CRI 35K COL MINI ZT MVOLT (ref. $150, pedir a Jose)' },
@@ -76,8 +84,9 @@ const EST = { id: EST_ID, nombre: 'NCH', modo: 'remodelacion', escenario: 'A', f
   const cu = await p.evaluate(i => window.MXP_PRUEBA.e0.cuentas(i), ITEMS);
   ok('cuenta 47 circuitos por los breakers', cu.ckt === 47, JSON.stringify(cu));
   ok('cuenta 126 dispositivos (95 tomas + 22 combos + 9 sensores) y NO las tapas ni las cajas', cu.dispositivo === 126, cu.dispositivo);
-  ok('cuenta 31 dimmers/sensores para la puesta en marcha', cu.dimmer === 31, cu.dimmer);
-  ok('cuenta 55 luminarias y no confunde con ellas la cotización pendiente', cu.luminaria === 55, cu.luminaria);
+  ok('cuenta 31 dimmers: NO se cuenta a sí misma la línea de puesta en marcha, ni el cable de dimming por MLF', cu.dimmer === 31, cu.dimmer);
+  ok('cuenta 55 luminarias: los 264 FIXTURES HOLDER CLIPS son clips, no luminarias', cu.luminaria === 55, cu.luminaria);
+  ok('y la línea de DEMOLICIÓN no entra en el número del que sale la demolición (se mordía la cola)', cu.demo === 181, cu.demo);
 
   /* ===== 2 · la propuesta de horas ===== */
   const h = await p.evaluate(([i, e]) => window.MXP_PRUEBA.e0.horas(i, e, {}), [ITEMS, EST]);
@@ -138,8 +147,9 @@ const EST = { id: EST_ID, nombre: 'NCH', modo: 'remodelacion', escenario: 'A', f
   ok('el bid sube lo que tiene que subir y las horas no cambian', on.bid > off.bid + 19630 && Math.abs(on.horas - off.horas) < 0.01, JSON.stringify([Math.round(off.bid), Math.round(on.bid), on.horas]));
 
   /* ===== 7 · lo que se ve en el renglón ===== */
-  const chipOff = await p.evaluate(([l, e]) => window.MXP_PRUEBA.e0.cero(l, e), [ITEMS[7], EST]);
-  const chipOn = await p.evaluate(([l, e]) => window.MXP_PRUEBA.e0.cero(l, Object.assign({}, e, { usa_luz_ref: true })), [ITEMS[7], EST]);
+  const LC1 = ITEMS.find(x => x.id === 'c1');   // la STAK 2x2 de 5000 lm, por índice no: el fixture creció
+  const chipOff = await p.evaluate(([l, e]) => window.MXP_PRUEBA.e0.cero(l, e), [LC1, EST]);
+  const chipOn = await p.evaluate(([l, e]) => window.MXP_PRUEBA.e0.cero(l, Object.assign({}, e, { usa_luz_ref: true })), [LC1, EST]);
   ok('sin referencia el renglón sigue diciendo POR COTIZAR', chipOff.est === 'suministro' && /POR COTIZAR/.test(chipOff.chip), chipOff.chip);
   ok('con referencia dice REFERENCIA y ENSEÑA el precio que se usó', chipOn.est === 'referencia' && /REFERENCIA/.test(chipOn.chip) && /150/.test(chipOn.chip), chipOn.chip);
   ok('y sigue alertando: la cuota de verdad no ha llegado', chipOn.alerta === true && /cuota/.test(chipOn.motivo), chipOn.motivo);

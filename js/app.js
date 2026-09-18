@@ -5758,17 +5758,31 @@ function esFalloDeRed(err) {
   /* Lo que el estimado ya dice de sí mismo. Se cuenta por el NOMBRE, no por el
      código: el código de partida lo pone quien crea el ítem y no siempre está,
      pero «1P 20A BREAKER» se llama igual en todos los catálogos de Edgar. */
-  const ES_BREAKER  = n => /\bBREAKER\b|\bC\.?B\.?\b/.test(n) && !/PANEL|LOAD CENTER|LUG|COVER/.test(n);
+  const ES_BREAKER  = n => /\bBREAKER\b|\bC\.?\/?B\.?\b/.test(n) && !/PANELBOARD|LOAD CENTER|\bLUG|COVER|DIRECTORY/.test(n);
+  /* Lo que va CON la pieza pero no ES la pieza. «FIXTURES HOLDER CLIPS» son
+     264 clips de sujetar luminarias, no 264 luminarias (18/09, catálogo real:
+     inflaban la demolición propuesta de 78 a 430). */
+  const ES_ACCESORIO = n => /\bCLIP|HOLDER|HANGER|WHIP|BRACKET|CHAIN|YOKE|\bROD\b|SUPPORT|CANOPY|PIGTAIL/.test(n);
+  /* Y los renglones de MANO que propone esta misma tarjeta: contarlos sería
+     morderse la cola — la demolición salía de un número que ya incluía la
+     propia línea de demolición. Se reconocen por su nombre o por la forma
+     «(por ckt)», «(por unidad)», «(por proyecto)» que llevan todos. */
+  const ES_ITEM_DE_MANO = n => /\((POR|PER) (CKT|UNIDAD|PROYECTO|BARRERA|D[IÍ]A|VIAJE|UNIT|PROJECT)\)$/.test(n)
+    || HORAS_REGLAS.some(r => normTxt(r.item) === n);
+  // Solo lo que se cuenta por PIEZAS: 1 MLF de cable de dimming no es un dimmer
+  const ES_PIEZA = u => /^(E|EA|EACH|UNIT|U|PZ|PZA|C\/U)$/.test(normTxt(u || "E"));
   const ES_DISPOSITIVO = n => /RECEPTACLE|RECEPT\b|SWITCH|DIMMER|SENSOR|OUTLET/.test(n)
-    && !/BOX|PLATE|COVER|RING|CONNECTOR|STRAP|WIRE|PLUG MOLD|DISCONNECT|SAFETY/.test(n);
-  const ES_DIMMER   = n => /DIMMER|OCCUPANCY|VACANCY|0-10V/.test(n) && !/BOX|PLATE|COVER|RING/.test(n);
+    && !/BOX|PLATE|COVER|RING|CONNECTOR|STRAP|WIRE|CABLE|PLUG MOLD|DISCONNECT|SAFETY/.test(n) && !ES_ACCESORIO(n);
+  const ES_DIMMER   = n => /DIMMER|OCCUPANCY|VACANCY|0-10V/.test(n)
+    && !/BOX|PLATE|COVER|RING|WIRE|CABLE/.test(n) && !ES_ACCESORIO(n);
   const ES_LUMINARIA = n => /LUMINARIA|FIXTURE|TROFFER|DOWN ?LIGHT|EXIT SIGN|CLEANROOM|HIGH ?BAY|INSTALACI[OÓ]N (DOWNLIGHT|EXIT|LUMINARIA)/.test(n)
-    && !/COTIZACI[OÓ]N/.test(n);
+    && !/COTIZACI[OÓ]N/.test(n) && !ES_ACCESORIO(n);
   function cuentasDelEstimado(base) {
     const n = v => Number(v) || 0;
     const c = { ckt: 0, dispositivo: 0, dimmer: 0, luminaria: 0 };
     for (const it of (base || [])) {
       const nom = normTxt(it.item), q = n(it.cantidad);
+      if (!ES_PIEZA(it.unidad) || ES_ITEM_DE_MANO(nom)) continue;
       if (ES_BREAKER(nom)) c.ckt += q;
       if (ES_DISPOSITIVO(nom)) c.dispositivo += q;
       if (ES_DIMMER(nom)) c.dimmer += q;
@@ -5798,7 +5812,7 @@ function esFalloDeRed(err) {
       const cant = Math.round((cuentas[r.cuenta] || 0) * (Number(r.por) || 0));
       const cat = catPorNombre(r.item);
       if (!cat) { avisos.push(`«${r.item}» no está en el catálogo — corre docs/sql/e27.sql`); continue; }
-      const de = r.cuenta === "ckt" ? `${cuentas.ckt} breaker(s) en el estimado`
+      const de = r.cuenta === "ckt" ? `${cuentas.ckt} breaker(s) LISTADOS en el estimado — si el trabajo tiene más circuitos que breakers comprados, cámbialo`
         : r.cuenta === "demo" ? `SUPUESTO: ${cuentas.dispositivo} dispositivo(s) + ${cuentas.luminaria} luminaria(s) nuevas`
         : r.cuenta === "dimmer" ? `${cuentas.dimmer} dimmer(s) y sensor(es)`
         : "por proyecto — ponlo tú";
