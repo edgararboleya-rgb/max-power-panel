@@ -14,6 +14,19 @@
 -- Idempotente: se puede correr dos veces sin duplicar nada.
 -- ============================================================================
 
+-- 0) LA COLUMNA `valor` DE config_estimador, A TEXTO
+--
+-- Encontrado corriendo esto mismo (18/09): la columna es NUMERIC. Toda la
+-- configuracion de siempre son numeros (misc_pct, escalacion_anual...), asi
+-- que nadie lo habia notado — pero las tablas que Edgar edita en pantalla son
+-- JSON: los consumibles (v189), los precios de referencia y los
+-- multiplicadores de horas. Con la columna numerica, guardar cualquiera de las
+-- tres da «invalid input syntax for type numeric» y no se puede.
+--
+-- A texto no se pierde nada: la app ya convierte a numero al leer lo que lo
+-- sea, asi que misc_pct = '0.03' sigue valiendo 0,03.
+alter table config_estimador alter column valor type text using valor::text;
+
 -- 1) LOS ITEMS QUE FALTABAN (los otros cinco ya los creo el e23d)
 --
 -- OJO: LAS HORAS SON NUMEROS DE ARRANQUE, NO MEDICIONES. Las escribi yo para

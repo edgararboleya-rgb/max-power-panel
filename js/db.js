@@ -756,8 +756,11 @@
     // columna de origen, así que borrar por texto podría llevarse puntos que
     // Edgar escribió a mano. Al reconvertir, la app salta los que ya están.
     crearAlias: fila => insertar("alias_takeoff", fila),
+    // valor va SIEMPRE como texto: la columna es text desde el e27 (antes era
+    // numeric y por eso no se podía guardar la tabla de consumibles ni los
+    // precios de referencia, que son JSON). Al leer se vuelve a número si lo es.
     guardarConfig: (clave, valor) => api("config_estimador", {
-      metodo: "POST", cuerpo: { clave, valor },
+      metodo: "POST", cuerpo: { clave, valor: String(valor) },
       headers: { Prefer: "resolution=merge-duplicates,return=representation" }
     }),
     ponerEnsamble: fila => insertar("estimado_ensambles", fila),
