@@ -5522,13 +5522,31 @@ function esFalloDeRed(err) {
      ítem en el catálogo se AVISAN en pantalla en vez de callarse. */
 
   // Busca en el catálogo por palabras: todas presentes, en cualquier orden.
-  const buscaCat = (...palabras) => {
+  /* (v193) Devuelve el que MEJOR casa, no el primero que casa. Encontrado con
+     el catálogo real de Edgar el 18/09: la regla del one-hole strap pedía
+     («1/2"», «EMT», «STRAP») y se quedaba con «1/2" EMT POWER STRAP (2 HOLE)»
+     —que es otra pieza, más cara, y encima la que pone la regla de al lado—
+     solo porque estaba antes en la lista. Igual la tapa ciega, que caía en un
+     «4" BLANK COVER CONCRETE RING».
+     Manda el nombre con MENOS palabras de sobra: entre «4"X4" BLANK COVER» y
+     «4" BLANK COVER CONCRETE RING» gana el primero. Y `evita` descarta a los
+     que dicen lo contrario de lo que se pide, que es el caso del POWER frente
+     al ONE HOLE: los dos son cortos, pero uno no es. */
+  const buscaCatEvita = (evita, ...palabras) => {
     const ps = palabras.filter(Boolean).map(normTxt);
-    return (estData.catalogo || []).find(c => {
+    const no = (evita || []).map(normTxt);
+    let mejor = null, mejorSobra = Infinity;
+    for (const c of (estData.catalogo || [])) {
       const n = normTxt(c.item);
-      return ps.every(p => n.includes(p));
-    }) || null;
+      if (!ps.every(p => n.includes(p))) continue;
+      if (no.length && no.some(x => n.includes(x))) continue;
+      // lo que sobra: las letras del nombre que no pedía la regla
+      const sobra = n.length - ps.reduce((s2, p) => s2 + p.length, 0);
+      if (sobra < mejorSobra) { mejor = c; mejorSobra = sobra; }
+    }
+    return mejor;
   };
+  const buscaCat = (...palabras) => buscaCatEvita(null, ...palabras);
 
   // Las tallas de tubo que se miden en el plano, como las escribe el catálogo.
   const TALLAS = ['1/2"', '3/4"', '1"', '1-1/4"', '1-1/2"', '2"', '2-1/2"', '3"', '4"'];
@@ -5561,11 +5579,14 @@ function esFalloDeRed(err) {
     { id: "coupling",  nom: "Acoples",              cuenta: "ft100",  por: 10, talla: true,  busca: ["EMT", "COUPLING"],        descontar: true },
     { id: "conector",  nom: "Conectores",           cuenta: "caja",   por: 2,  talla: true,  busca: ["EMT", "CONNECTOR"],       descontar: true },
     { id: "cajapaso",  nom: "Cajas de paso",        cuenta: "ft100",  por: 1,  talla: false, busca: ["JB 1900 BOX"],            descontar: true },
-    { id: "tapaciega", nom: "Tapas ciegas",         cuenta: "ft100",  por: 1,  talla: false, busca: ["BLANK COVER"],            descontar: true },
-    { id: "strap1h",   nom: "One-hole strap",       cuenta: "ft100",  por: 10, talla: true,  busca: ["EMT", "STRAP"],           soporte: "pared", descontar: true },
+    { id: "tapaciega", nom: "Tapas ciegas",         cuenta: "ft100",  por: 1,  talla: false, busca: ["BLANK COVER"],            evita: ["RING", "CONCRETE", "WEATHERPROOF", "WP"], descontar: true },
+    { id: "strap1h",   nom: "One-hole strap",       cuenta: "ft100",  por: 10, talla: true,  busca: ["EMT", "STRAP"],           evita: ["POWER", "2 HOLE", "UNISTRUT", "MINERALLAC", "CLAMP"], soporte: "pared", descontar: true },
     { id: "power",     nom: "Power strap",          cuenta: "ft100",  por: 10, talla: true,  busca: ["POWER STRAP"],            soporte: "power", descontar: true },
     { id: "tornillo",  nom: "Tornillo a metal",     cuenta: "ft100",  por: 10, talla: false, busca: ["SELF-DRILLING SCREW"],    soporte: "metal", descontar: false },
     { id: "ustrap",    nom: "Unistrut strap",       cuenta: "ft100",  por: 12, talla: true,  busca: ["UNISTRUT STRAP"],         soporte: "unistrut", rack: true, descontar: false },
+    // (los EMT connector/coupling no llevan `evita`: en el catálogo de Edgar el
+    //  nombre más corto ya es el bueno, y una palabra de más aquí dejaría la
+    //  regla sin ítem, que se ve peor que un céntimo de diferencia)
     { id: "tbar",      nom: "Colgador de T-bar",    cuenta: "ft100",  por: 10, talla: false, busca: ["T-BAR BOX HANGER"],       soporte: "tile", descontar: true },
     { id: "tapcon",    nom: "Tapcons",              cuenta: "strap",  por: 2,  talla: false, busca: ["TAPCON"],                 soporte: "pared", descontar: false },
     { id: "strut",     nom: "Unistrut (pies)",      cuenta: "trapecio", por: 2, cada: 8, talla: false, busca: ["UNISTRUT 1-5/8"], soporte: "unistrut", rack: true, descontar: false },
@@ -5655,7 +5676,7 @@ function esFalloDeRed(err) {
         for (const t of tallas) {
           const ft = (r.talla ? ftTalla[t] : ftTotal) * (r.rack ? pctRack : 1);
           if (!(ft > 0)) continue;
-          const cat = r.talla ? buscaCat(t, ...r.busca) : buscaCat(...r.busca);
+          const cat = r.talla ? buscaCatEvita(r.evita, t, ...r.busca) : buscaCatEvita(r.evita, ...r.busca);
           if (!cat) { faltaItem = true; continue; }
           const pide = ft / 100 * r.por;
           pon(r, cat, pide, `regla: ${r.nom} — ${r.por} por 100 ft${r.talla ? " de " + t : ""}`);
@@ -5667,24 +5688,24 @@ function esFalloDeRed(err) {
         const tallas = r.talla ? Object.keys(ftTalla) : ["__todas"];
         for (const t of tallas) {
           const parte = r.talla ? (ftTotal > 0 ? ftTalla[t] / ftTotal : 0) : 1;
-          const cat = r.talla ? buscaCat(t, ...r.busca) : buscaCat(...r.busca);
+          const cat = r.talla ? buscaCatEvita(r.evita, t, ...r.busca) : buscaCatEvita(r.evita, ...r.busca);
           if (!cat) { faltaItem = true; continue; }
           pon(r, cat, cajas * r.por * parte, `regla: ${r.nom} — ${r.por} por caja${r.talla ? " (" + t + ")" : ""}`);
         }
       } else if (r.cuenta === "trapecio") {
         const cada = r.cada || 8, trapecios = ftTotal * pctRack / cada;
         if (!(trapecios > 0)) continue;
-        const cat = buscaCat(...r.busca);
+        const cat = buscaCatEvita(r.evita, ...r.busca);
         if (!cat) { faltaItem = true; }
         else pon(r, cat, trapecios * r.por, `regla: ${r.nom} — ${r.por} por trapecio, uno cada ${cada} ft`);
       } else if (r.cuenta === "strap") {
         if (!(strapsPuestos > 0)) continue;
-        const cat = buscaCat(...r.busca);
+        const cat = buscaCatEvita(r.evita, ...r.busca);
         if (!cat) { faltaItem = true; }
         else pon(r, cat, strapsPuestos * r.por, `regla: ${r.nom} — ${r.por} por grapa`);
       } else if (r.cuenta === "cable100") {
         if (!(cableFt > 0)) continue;
-        const cat = buscaCat(...r.busca);
+        const cat = buscaCatEvita(r.evita, ...r.busca);
         if (!cat) { faltaItem = true; }
         else pon(r, cat, cableFt / 100 * r.por, `regla: ${r.nom} — ${r.por} por 100 ft de conductor`);
       }

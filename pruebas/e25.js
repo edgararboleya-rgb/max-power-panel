@@ -28,6 +28,10 @@ const CAT = [
   { item: '1"           EMT S.S.D/C  COUPLING',unidad: 'E',  precio: 0.8007, horas_unidad: 0.05,  codigo: '09-COND' },
   { item: '1/2"       EMT S.S. D/C CONNECTOR', unidad: 'E',  precio: 1.1679, horas_unidad: 0.06,  codigo: '09-COND' },
   { item: '1"           EMT S.S.D/C CONNECTOR',unidad: 'E',  precio: 0.5452, horas_unidad: 0.08,  codigo: '09-COND' },
+  // (18/09) TAL CUAL su catálogo: el POWER STRAP y el anillo de concreto están
+  // ANTES que la pieza buena, y con la búsqueda vieja ganaban ellos.
+  { item: '1/2"  EMT POWER STRAP (2 HOLE)',    unidad: 'E',  precio: 0.30,   horas_unidad: 0.03,  codigo: '09-COND' },
+  { item: '4" BLANK COVER CONCRETE RING',      unidad: 'E',  precio: 0.70,   horas_unidad: 0.06,  codigo: '09-COND' },
   { item: '1/2"      EMT STRAP 1 HOLE STRAP',  unidad: 'E',  precio: 0.1459, horas_unidad: 0.02,  codigo: '09-COND' },
   { item: '1"          EMT STRAP 1 HOLE STARP',unidad: 'E',  precio: 0.2087, horas_unidad: 0.025, codigo: '09-COND' },
   { item: 'TAPCON 1/4" x 1-1/4"',              unidad: 'E',  precio: 0.35,   horas_unidad: 0.01,  codigo: '09-COND' },
@@ -84,6 +88,14 @@ const NICKLAUS = [
     (conId.autos.find(a => /COUPLING/.test(a.item)) || {}).ids.join() === 'coupling' &&
     (conId.autos.find(a => /TAPCON/.test(a.item)) || {}).ids.join() === 'tapcon',
     JSON.stringify(conId.autos.filter(a => /COUPLING|TAPCON/.test(a.item)).map(a => a.ids)));
+
+  /* === 0b. (v193) el que MEJOR casa, no el primero que casa === */
+  ok('la regla del one-hole coge el ONE HOLE, no el POWER STRAP que está antes en la lista',
+    !!conId.autos.find(a => /STRAP 1 HOLE/.test(a.item)) && !conId.autos.find(a => /POWER STRAP/.test(a.item)),
+    JSON.stringify(conId.autos.filter(a => /STRAP/.test(a.item)).map(a => a.item)));
+  ok('la tapa ciega coge la tapa, no el anillo de concreto',
+    !!conId.autos.find(a => /4"X4" BLANK COVER/.test(a.item)) && !conId.autos.find(a => /CONCRETE RING/.test(a.item)),
+    JSON.stringify(conId.autos.filter(a => /BLANK|RING/.test(a.item)).map(a => a.item)));
 
   /* === 1. pared o losa: lo normal === */
   const pared = await corre({ soporte: 'pared' });
