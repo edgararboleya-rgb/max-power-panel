@@ -72,7 +72,8 @@ select e.id, v.item, v.cantidad
 -- ── 3. Los alias → receta ───────────────────────────────────────────────────
 -- Una tabla temporal con lo que queremos, y de ahí UPDATE a los que existen e
 -- INSERT a los que no. `item` queda como respaldo por si la receta no existe.
-create temp table _al (alias text, item text, receta text, full boolean) on commit drop;
+drop table if exists _al;
+create temp table _al (alias text, item text, receta text, con_tubo boolean);   -- «full» es palabra reservada
 insert into _al values
   -- A · las herramientas de Bluebeam de Edgar → la receta genérica comercial en EMT
   ('20A DUPLEX RECEPTACLE',          '20A DUPLEX RECEPTACLE',              'RECEPTÁCULO 20A DUPLEX — EMT',                    false),
@@ -128,16 +129,18 @@ insert into _al values
   ('J-box HVAC',                     '4-11/16 BOX',                        'CAJA DE DERIVACION 4-11/16 EN PARED — EMT',       false);
 
 -- los que ya existen: se les pone la receta (el item se respeta)
-update alias_takeoff a set receta = t.receta, receta_full = t.full
+update alias_takeoff a set receta = t.receta, receta_full = t.con_tubo
   from _al t
  where upper(btrim(regexp_replace(a.alias,'\s+',' ','g'))) = upper(btrim(regexp_replace(t.alias,'\s+',' ','g')));
 
 -- los que no existen: se crean
 insert into alias_takeoff (alias, item, factor, receta, receta_full)
-select t.alias, t.item, 1, t.receta, t.full
+select t.alias, t.item, 1, t.receta, t.con_tubo
   from _al t
  where not exists (select 1 from alias_takeoff a
         where upper(btrim(regexp_replace(a.alias,'\s+',' ','g'))) = upper(btrim(regexp_replace(t.alias,'\s+',' ','g'))));
+
+drop table if exists _al;
 
 -- ── 4. Comprobar ────────────────────────────────────────────────────────────
 -- 4a. Cuántos alias apuntan ya a receta (deben ser 50) y cuántos a una receta que NO existe (debe ser 0)
