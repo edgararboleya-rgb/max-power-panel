@@ -5481,48 +5481,200 @@ function esFalloDeRed(err) {
   const ES_LINEAL_CABLE = n => /ROMEX|MC\b|THHN|THW|MCM|SPEAKER WIRE|CAT ?[56]/.test(n) && !/CONNECTOR|STAPLE|SNAP/.test(n);
   const ES_TUBERIA = n => /CONDUIT/.test(n);
 
-  // Lo que la app carga sola en modo PLANOS (lo que NO se mide en el plano)
-  function autosPlanos(base, cable, cfg) {
-    const autos = {};
+  /* ══════════ CONSUMIBLES AUTOMÁTICOS (v189, 18/09) ══════════
+     Edgar: «cuando yo te dé 12.000 pies de cable y 30 cajas, esas cajas tienen
+     que llevar sus fittings automáticos; en 100 pies de tubería tú necesitas
+     10 couplings, tantos conectores, tantas cajas… eso es un conteo que yo no
+     tengo que hacer. Y ahora mismo automático nada más me salían como tres
+     renglones».
+
+     Tres cosas cambian respecto a `autosPlanos`, que es lo que había:
+
+     1. LAS REGLAS QUE NO ENCONTRABAN SU ÍTEM. Se buscaba el texto literal
+        «1/2" EMT COUPLING» y el catálogo dice «1/2" EMT S.S. D/C COUPLING»:
+        la búsqueda por substring fallaba y las reglas de acoples y conectores
+        no hacían NADA, en silencio. Por eso solo salían grapas y tapcons.
+        Ahora se busca por PALABRAS: todas tienen que estar, en cualquier
+        orden — así entra también el «1" EMT STRAP 1 HOLE STARP» con su errata.
+
+     2. CORREN EN TODOS LOS MODOS, no solo en «planos».
+
+     3. DESCUENTAN lo que ya viene dentro de las recetas. Un punto de
+        receptáculo ya trae sus 2 conectores y su acople; si la regla los
+        volviera a poner, el material se pagaría dos veces — que es
+        exactamente el fallo que costó dinero en Nicklaus. La regla dice
+        cuántos hacen falta EN TOTAL; se resta lo que ya está y solo se añade
+        la diferencia.
+
+     Cada renglón dice de qué regla salió, y las reglas que no encuentran su
+     ítem en el catálogo se AVISAN en pantalla en vez de callarse. */
+
+  // Busca en el catálogo por palabras: todas presentes, en cualquier orden.
+  const buscaCat = (...palabras) => {
+    const ps = palabras.filter(Boolean).map(normTxt);
+    return (estData.catalogo || []).find(c => {
+      const n = normTxt(c.item);
+      return ps.every(p => n.includes(p));
+    }) || null;
+  };
+
+  // Las tallas de tubo que se miden en el plano, como las escribe el catálogo.
+  const TALLAS = ['1/2"', '3/4"', '1"', '1-1/4"', '1-1/2"', '2"', '2-1/2"', '3"', '4"'];
+
+  /* El soporte del trabajo: se elige UNA vez por estimado y decide qué
+     fijación entra. Lo que Edgar enumeró: one-hole a pared o losa, power
+     strap (dos tornillos), unistrut, y el techo de ceiling tile. */
+  const SOPORTES = [
+    ["pared",    "Pared o losa — one-hole strap + tapcon"],
+    ["power",    "Power strap (dos tornillos)"],
+    ["metal",    "Metal deck / estructura — tornillo autorroscante"],
+    ["unistrut", "Unistrut / trapecio colgado"],
+    ["tile",     "Ceiling tile — colgador de T-bar"]
+  ];
+
+  /* LA TABLA DE REGLAS. Los números son de arranque y Edgar los corrige una
+     vez: lo que guarde en config_estimador (clave `consumibles`, un JSON con
+     {id: cantidad}) manda sobre estos.
+
+       cuenta: de qué sale la cantidad
+         'ft100'  → por cada 100 ft de tubo (por talla)
+         'caja'   → por cada caja del estimado
+         'trapecio' → por cada trapecio (uno cada `cada` pies del tubo en rack)
+         'strap'  → por cada grapa que la propia tabla acaba de calcular
+         'cable100'→ por cada 100 ft de conductor
+       soporte: si está, la regla solo entra con ese soporte
+       rack: si es true, solo cuenta la parte del tubo que va en trapecio
+       descontar: resta lo que ya traen las recetas y los renglones a mano */
+  const CONS_REGLAS = [
+    { id: "coupling",  nom: "Acoples",              cuenta: "ft100",  por: 10, talla: true,  busca: ["EMT", "COUPLING"],        descontar: true },
+    { id: "conector",  nom: "Conectores",           cuenta: "caja",   por: 2,  talla: true,  busca: ["EMT", "CONNECTOR"],       descontar: true },
+    { id: "cajapaso",  nom: "Cajas de paso",        cuenta: "ft100",  por: 1,  talla: false, busca: ["JB 1900 BOX"],            descontar: true },
+    { id: "tapaciega", nom: "Tapas ciegas",         cuenta: "ft100",  por: 1,  talla: false, busca: ["BLANK COVER"],            descontar: true },
+    { id: "strap1h",   nom: "One-hole strap",       cuenta: "ft100",  por: 10, talla: true,  busca: ["EMT", "STRAP"],           soporte: "pared", descontar: true },
+    { id: "power",     nom: "Power strap",          cuenta: "ft100",  por: 10, talla: true,  busca: ["POWER STRAP"],            soporte: "power", descontar: true },
+    { id: "tornillo",  nom: "Tornillo a metal",     cuenta: "ft100",  por: 10, talla: false, busca: ["SELF-DRILLING SCREW"],    soporte: "metal", descontar: false },
+    { id: "ustrap",    nom: "Unistrut strap",       cuenta: "ft100",  por: 12, talla: true,  busca: ["UNISTRUT STRAP"],         soporte: "unistrut", rack: true, descontar: false },
+    { id: "tbar",      nom: "Colgador de T-bar",    cuenta: "ft100",  por: 10, talla: false, busca: ["T-BAR BOX HANGER"],       soporte: "tile", descontar: true },
+    { id: "tapcon",    nom: "Tapcons",              cuenta: "strap",  por: 2,  talla: false, busca: ["TAPCON"],                 soporte: "pared", descontar: false },
+    { id: "strut",     nom: "Unistrut (pies)",      cuenta: "trapecio", por: 2, cada: 8, talla: false, busca: ["UNISTRUT 1-5/8"], soporte: "unistrut", rack: true, descontar: false },
+    { id: "varilla",   nom: "All-thread 1/4 (pies)", cuenta: "trapecio", por: 6, cada: 8, talla: false, busca: ["ALL-THREAD"],   soporte: "unistrut", rack: true, descontar: false },
+    { id: "tuerca",    nom: "Tuercas 1/4",          cuenta: "trapecio", por: 4, cada: 8, talla: false, busca: ["HEX NUT"],      soporte: "unistrut", rack: true, descontar: false },
+    { id: "arandela",  nom: "Arandelas 1/4",        cuenta: "trapecio", por: 4, cada: 8, talla: false, busca: ["FLAT WASHER"],  soporte: "unistrut", rack: true, descontar: false },
+    { id: "ancla",     nom: "Anclas 1/4",           cuenta: "trapecio", por: 2, cada: 8, talla: false, busca: ["CONCRETE ANCHOR"], soporte: "unistrut", rack: true, descontar: false },
+    { id: "tape",      nom: "Tape",                 cuenta: "cable100", por: 0.2, talla: false, busca: ["ELECTRICAL TAPE"],     descontar: false },
+    { id: "grasa",     nom: "Grasa de alambrar",    cuenta: "cable100", por: 0.1, talla: false, busca: ["PULLING LUBRICANT"],   descontar: false },
+    { id: "libreta",   nom: "Libreta de números",   cuenta: "cable100", por: 0.02, talla: false, busca: ["WIRE MARKER BOOK"],   descontar: false }
+  ];
+
+  // Lo que Edgar haya corregido, encima de la tabla de arranque.
+  function consReglas(cfg) {
+    let ov = {};
+    try {
+      const raw = (cfg || {}).consumibles;
+      ov = typeof raw === "string" ? JSON.parse(raw) : (raw && typeof raw === "object" ? raw : {});
+    } catch { ov = {}; }
+    return CONS_REGLAS.map(r => {
+      const o = ov[r.id];
+      if (o === undefined || o === null) return r;
+      return Object.assign({}, r, typeof o === "object" ? o : { por: Number(o) });
+    });
+  }
+
+  /* El motor. Devuelve {autos, avisos}: los renglones automáticos y las reglas
+     que no pudieron correr porque su ítem no está en el catálogo. */
+  function autosConsumibles(base, est, cfg) {
+    const n = v => Number(v) || 0;
+    const soporte = est.soporte || "pared";
+    const pctRack = Math.max(0, Math.min(1, n(est.pct_rack)));
+    const reglas = consReglas(cfg);
+    const autos = {}, avisos = [];
+
+    // ── lo que hay medido y contado ──────────────────────────────────────
+    const ftTalla = {}, yaHay = {};
+    let cableFt = 0, cajas = 0;
+    for (const it of base) {
+      const nom = normTxt(it.item), q = n(it.cantidad);
+      yaHay[nom] = (yaHay[nom] || 0) + q;
+      if (ES_TUBERIA(nom) && /EMT/.test(nom)) {
+        const t = TALLAS.find(x => nom.startsWith(normTxt(x)));
+        if (t) ftTalla[t] = (ftTalla[t] || 0) + q;
+      }
+      if (ES_LINEAL_CABLE(nom)) cableFt += normTxt(it.unidad) === "MLF" ? q * 1000 : q;
+      if (/\bBOX\b/.test(nom) && !/BLANK|COVER|HANGER/.test(nom)) cajas += q;
+    }
+    const ftTotal = Object.values(ftTalla).reduce((s, v) => s + v, 0);
+
     const add = (cat, qty, motivo) => {
-      if (!cat || qty <= 0) return;
+      if (!cat || !(qty > 0)) return;
       const k = cat.item;
       (autos[k] = autos[k] || { item: cat.item, unidad: cat.unidad, precio: cat.precio,
-        horas: cat.horas_unidad, cantidad: 0, auto: motivo }).cantidad += qty;
+        horas: cat.horas_unidad, cantidad: 0, auto: motivo, codigo: cat.codigo }).cantidad += qty;
     };
-    for (const it of base) {
-      const nom = normTxt(it.item);
-      const qty = Number(it.cantidad) || 0;
-      const mTub = nom.match(/^([\d/ -]+")\s*(EMT|PVC)/);
-      if (mTub && ES_TUBERIA(nom)) {
-        const talla = mTub[1].trim(), tipo = mTub[2];
-        const corridas = Math.max(1, Math.ceil(qty / (cfg.corrida_ft || 25)));
-        add(buscaCatalogo(`${talla} ${tipo} COUPLING`), Math.max(0, Math.ceil(qty / 10) - corridas), "fittings");
-        add(buscaCatalogo(`${talla} ${tipo} CONNECTOR`), corridas * 2, "fittings");
-        if (tipo === "EMT") {
-          const straps = Math.ceil(qty / (cfg.strap_ft || 8)) + corridas;
-          add(buscaCatalogo(`${talla} EMT STRAP`), straps, "fijación");
-          add(buscaCatalogo("TAPCON"), straps * (cfg.tapcon_por_strap || 2), "fijación");
+    // Lo ya presente se reparte entre las reglas que lo descuentan: se apunta
+    // lo consumido para que dos reglas no descuenten el mismo renglón dos veces.
+    const gastado = {};
+    const pon = (r, cat, pide, motivo) => {
+      if (!cat) return 0;
+      let q = pide;
+      if (r.descontar) {
+        const k = normTxt(cat.item);
+        const libre = Math.max(0, (yaHay[k] || 0) - (gastado[k] || 0));
+        const usa = Math.min(libre, q);
+        gastado[k] = (gastado[k] || 0) + usa;
+        q = q - usa;
+        if (usa > 0) motivo += ` · ya venían ${Math.round(usa * 100) / 100} en las recetas`;
+      }
+      add(cat, Math.ceil(q), motivo);
+      return pide;
+    };
+
+    let strapsPuestos = 0;
+    for (const r of reglas) {
+      if (r.soporte && r.soporte !== soporte) continue;
+      if (r.rack && pctRack <= 0) continue;
+      let faltaItem = false;
+
+      if (r.cuenta === "ft100") {
+        const tallas = r.talla ? Object.keys(ftTalla) : ["__todas"];
+        for (const t of tallas) {
+          const ft = (r.talla ? ftTalla[t] : ftTotal) * (r.rack ? pctRack : 1);
+          if (!(ft > 0)) continue;
+          const cat = r.talla ? buscaCat(t, ...r.busca) : buscaCat(...r.busca);
+          if (!cat) { faltaItem = true; continue; }
+          const pide = ft / 100 * r.por;
+          pon(r, cat, pide, `regla: ${r.nom} — ${r.por} por 100 ft${r.talla ? " de " + t : ""}`);
+          if (/strap|tornillo/i.test(r.id)) strapsPuestos += pide;
         }
+      } else if (r.cuenta === "caja") {
+        if (!(cajas > 0)) continue;
+        // los conectores van por caja, y por talla se reparten como el tubo
+        const tallas = r.talla ? Object.keys(ftTalla) : ["__todas"];
+        for (const t of tallas) {
+          const parte = r.talla ? (ftTotal > 0 ? ftTalla[t] / ftTotal : 0) : 1;
+          const cat = r.talla ? buscaCat(t, ...r.busca) : buscaCat(...r.busca);
+          if (!cat) { faltaItem = true; continue; }
+          pon(r, cat, cajas * r.por * parte, `regla: ${r.nom} — ${r.por} por caja${r.talla ? " (" + t + ")" : ""}`);
+        }
+      } else if (r.cuenta === "trapecio") {
+        const cada = r.cada || 8, trapecios = ftTotal * pctRack / cada;
+        if (!(trapecios > 0)) continue;
+        const cat = buscaCat(...r.busca);
+        if (!cat) { faltaItem = true; }
+        else pon(r, cat, trapecios * r.por, `regla: ${r.nom} — ${r.por} por trapecio, uno cada ${cada} ft`);
+      } else if (r.cuenta === "strap") {
+        if (!(strapsPuestos > 0)) continue;
+        const cat = buscaCat(...r.busca);
+        if (!cat) { faltaItem = true; }
+        else pon(r, cat, strapsPuestos * r.por, `regla: ${r.nom} — ${r.por} por grapa`);
+      } else if (r.cuenta === "cable100") {
+        if (!(cableFt > 0)) continue;
+        const cat = buscaCat(...r.busca);
+        if (!cat) { faltaItem = true; }
+        else pon(r, cat, cableFt / 100 * r.por, `regla: ${r.nom} — ${r.por} por 100 ft de conductor`);
       }
-      if (/ROMEX/.test(nom) && ES_LINEAL_CABLE(nom)) {
-        const pies = normTxt(it.unidad) === "MLF" ? qty * 1000 : qty;
-        add(buscaCatalogo("ROMEX STAPLES"), Math.ceil(pies / 4), "fijación");
-      }
+      if (faltaItem) avisos.push(`${r.nom}: no encuentro «${r.busca.join(" ")}» en el catálogo — esa regla no corrió`);
     }
-    // Conectores por cada luminaria/dispositivo, según el cable del trabajo
-    const luminarias = base.filter(i => {
-      const cat = catalogoExacto(i.item);
-      return (cat && cat.seccion === "LIGHTING FIXTURES")
-        || /RECESSED|FIXTURE|PENDANT|SCONCE|CHANDELIER|CEILING FAN/.test(normTxt(i.item));
-    }).reduce((s, i) => s + (Number(i.cantidad) || 0), 0);
-    // En EMT/tubería el whip de la luminaria ya trae sus conectores de flex dentro de la
-    // receta: no hay conectores de cable que inventar (Nicklaus 17/09: salían 278 NM).
-    if (luminarias > 0 && cable !== "emt") {
-      if (cable !== "mc") add(buscaCatalogo("NM CABLE CONNECTOR"), Math.round(luminarias * (cable === "mixto" ? 0.5 : 1)), "conectores");
-      if (cable !== "romex") add(buscaCatalogo("MC SNAP-IN CONNECTOR"), Math.round(luminarias * (cable === "mixto" ? 0.5 : 1)), "conectores");
-    }
-    return Object.values(autos);
+    return { autos: Object.values(autos).filter(a => a.cantidad > 0), avisos };
   }
 
   // Pies de CORRIDA que trae un ensamble: los pies de tubo si los lleva, y si
@@ -5604,12 +5756,14 @@ function esFalloDeRed(err) {
     const n = v => Number(v) || 0;
 
     const rapido = est.modo === "rapido";
-    const autos = (est.modo || "planos") === "planos"
-      ? autosPlanos(base, est.cable || "romex", cfg) : [];
+    // (v189) los consumibles por reglas corren en TODOS los modos menos el
+    // rápido, que ignora los ítems por completo
+    const cons = rapido ? { autos: [], avisos: [] } : autosConsumibles(base, est, cfg);
+    const autos = cons.autos, consAvisos = cons.avisos;
 
     // Merma sobre lo lineal (solo en modo planos: los pies que TÚ mediste)
     let mermaMat = 0, mermaHoras = 0;
-    if ((est.modo || "planos") === "planos") {
+    if (!rapido) {
       for (const it of base) {
         const nom = normTxt(it.item);
         const pct = ES_LINEAL_CABLE(nom) ? (cfg.merma_cable ?? 0.10)
@@ -5709,7 +5863,7 @@ function esFalloDeRed(err) {
     const overhead = ohPct !== null ? Math.max(0, prime - cotEnPrime) * ohPct : horas * ohHH;
     const profit = (prime + overhead) * profitPct;
     const bid = prime + overhead + profit;
-    return { items: base, autos, mermaMat, mermaHoras, misc, esc, matSubtotal, tax,
+    return { items: base, autos, consAvisos, mermaMat, mermaHoras, misc, esc, matSubtotal, tax,
              totalMaterial, horasBase, horas, laborBase, benefits, totalLabor,
              prime, overhead, profit, markup, bid,
              miscPct, taxPct, ohHH, ohPct: (ohPct ?? null), profitPct, markupPct,
@@ -7537,6 +7691,16 @@ Power done right the first time. ⚡`;
             <option value="emt"${est.cable === "emt" ? " selected" : ""}>EMT / tubería (THHN) — sin conectores de cable</option>
           </select>
         </label>` : ""}
+        ${est.modo === "rapido" ? "" : `
+        <label class="mat-filtro-label" style="margin-top:.5rem;display:block">Cómo va sujeto el tubo (decide la fijación automática)
+          <select id="est-soporte" ${soloLectura ? "disabled" : ""}>
+            ${SOPORTES.map(([k, txt]) => `<option value="${k}"${(est.soporte || "pared") === k ? " selected" : ""}>${txt}</option>`).join("")}
+          </select>
+        </label>
+        <label class="mat-filtro-label" style="margin-top:.35rem;display:block">Parte del tubo que va en trapecio (%)
+          <input id="est-pct-rack" type="number" min="0" max="100" step="5" ${soloLectura ? "disabled" : ""}
+            value="${est.pct_rack ? Math.round(Number(est.pct_rack) * 100) : 0}" style="width:5rem">
+        </label>`}
       </div>
       ${ceroBanner}
       ${bannerOverhead}
@@ -7567,6 +7731,7 @@ Power done right the first time. ⚡`;
       ${esRapido ? "" : `
       <div class="cal-panel-card">
         <div class="cal-form-titulo">Ítems (${c.items.length}${c.autos.length ? ` + ${c.autos.length} automáticos` : ""})</div>
+        ${(c.consAvisos || []).length ? `<div class="lev-nota" style="margin:.2rem 0 .5rem">⚠ Reglas de consumibles que no corrieron:<br>${c.consAvisos.map(a => "• " + esc(a)).join("<br>")}<br><span class="muted">Da de alta esos ítems en el catálogo (docs/sql/e25) y saldrán solos.</span></div>` : ""}
         ${filasItems || `<p class="cal-sin-eventos">Agrega ensambles, pega el takeoff o busca en el catálogo.</p>`}
         ${filasAutos}
       </div>`}
@@ -7701,6 +7866,9 @@ Power done right the first time. ⚡`;
     engancharRapido(est, soloLectura);   // en los demás modos solo engancha horas, factor y material a mano
 
     const selEsc = $("est-escenario"), inpFactor = $("est-factor"), selCable = $("est-cable");
+    const selSop = $("est-soporte"), inpRack = $("est-pct-rack");
+    if (selSop) selSop.addEventListener("change", async () => { await DB.cambiarEstimado(est.id, { soporte: selSop.value }).catch(() => {}); await recargarEstimador(); });
+    if (inpRack) inpRack.addEventListener("change", async () => { const v = Math.max(0, Math.min(100, Number(inpRack.value) || 0)) / 100; await DB.cambiarEstimado(est.id, { pct_rack: v }).catch(() => {}); await recargarEstimador(); });
     if (selEsc && !soloLectura) selEsc.addEventListener("change", async () => {
       await DB.cambiarEstimado(est.id, { escenario: selEsc.value }).catch(() => {});
       await recargarEstimador();
@@ -11016,6 +11184,8 @@ Power done right the first time. ⚡`;
       propuesta(est, c) { return textoPropuesta(est, c); },
       mep(est, c) { return textoResumenMEP(est, c); },
       takeoff(est, c) { return textoTakeoff(est, c); },
+      consumibles(base, est, cfg) { return autosConsumibles(base || [], est || {}, cfg || {}); },
+      reglas(cfg) { return consReglas(cfg || {}); },
       calcula(est) { return calcularEstimado(est); },
       escenarios(empresa) { return escenariosDe(empresa).map(e => e.id); },
       escToca(empresa, actual) { return escenarioQueToca(empresa, actual); },

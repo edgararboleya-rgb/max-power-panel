@@ -666,7 +666,11 @@
           leer("lev_recetas?select=*").catch(() => [])
         ]);
       return { catalogo, escenarios, estimados, items, alias,
-               config: Object.fromEntries(config.map(c => [c.clave, Number(c.valor)])),
+               // (v189) casi toda la config son números, pero la tabla de
+               // consumibles es un JSON: un Number() a ciegas la convertía en
+               // NaN y se perdía. Número si lo es; si no, el texto tal cual.
+               config: Object.fromEntries(config.map(c => [c.clave,
+                 (c.valor !== null && c.valor !== "" && Number.isFinite(Number(c.valor))) ? Number(c.valor) : c.valor])),
                generales, ensambles, ensambleItems, estEnsambles, horasTodas, recetas };
     },
 
