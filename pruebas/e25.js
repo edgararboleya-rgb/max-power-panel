@@ -71,9 +71,19 @@ const NICKLAUS = [
   await p.evaluate(c => window.MXP_PRUEBA.e0.datos({ catalogo: c }), CAT);
   const corre = (est, cfg) => p.evaluate(([base, est, cfg]) => {
     const r = window.MXP_PRUEBA.e0.consumibles(base, est, cfg);
-    return { avisos: r.avisos, autos: r.autos.map(a => ({ item: a.item.replace(/\s+/g, ' ').trim(), q: a.cantidad, motivo: a.auto })) };
+    return { avisos: r.avisos, autos: r.autos.map(a => ({ item: a.item.replace(/\s+/g, ' ').trim(), q: a.cantidad, motivo: a.auto, ids: a.reglaIds || [] })) };
   }, [NICKLAUS, est, cfg || {}]);
   const q = (r, frag) => { const a = r.autos.find(x => x.item.includes(frag)); return a ? a.q : null; };
+
+  /* === 0. (v191) cada renglón automático dice de QUÉ regla salió: es lo que
+         deja enseñar, en la tabla editable, qué produjo cada número === */
+  const conId = await corre({ soporte: 'pared' });
+  ok('cada renglón automático lleva el id de su regla (para la tabla editable)',
+    conId.autos.length > 0 && conId.autos.every(a => a.ids.length > 0), JSON.stringify(conId.autos.slice(0, 3).map(a => [a.item.slice(0, 18), a.ids])));
+  ok('el acople lo firma la regla «coupling» y el tapcon la regla «tapcon»',
+    (conId.autos.find(a => /COUPLING/.test(a.item)) || {}).ids.join() === 'coupling' &&
+    (conId.autos.find(a => /TAPCON/.test(a.item)) || {}).ids.join() === 'tapcon',
+    JSON.stringify(conId.autos.filter(a => /COUPLING|TAPCON/.test(a.item)).map(a => a.ids)));
 
   /* === 1. pared o losa: lo normal === */
   const pared = await corre({ soporte: 'pared' });

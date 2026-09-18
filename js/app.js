@@ -5616,11 +5616,15 @@ function esFalloDeRed(err) {
     }
     const ftTotal = Object.values(ftTalla).reduce((s, v) => s + v, 0);
 
-    const add = (cat, qty, motivo) => {
+    const add = (cat, qty, motivo, reglaId) => {
       if (!cat || !(qty > 0)) return;
       const k = cat.item;
-      (autos[k] = autos[k] || { item: cat.item, unidad: cat.unidad, precio: cat.precio,
-        horas: cat.horas_unidad, cantidad: 0, auto: motivo, codigo: cat.codigo }).cantidad += qty;
+      const a = (autos[k] = autos[k] || { item: cat.item, unidad: cat.unidad, precio: cat.precio,
+        horas: cat.horas_unidad, cantidad: 0, auto: motivo, codigo: cat.codigo, reglaIds: [] });
+      a.cantidad += qty;
+      // de qué regla salió: lo usa la tabla editable para enseñar, al lado de
+      // cada número, lo que ese número produjo en ESTE estimado
+      if (reglaId && a.reglaIds.indexOf(reglaId) === -1) a.reglaIds.push(reglaId);
     };
     // Lo ya presente se reparte entre las reglas que lo descuentan: se apunta
     // lo consumido para que dos reglas no descuenten el mismo renglón dos veces.
@@ -5636,7 +5640,7 @@ function esFalloDeRed(err) {
         q = q - usa;
         if (usa > 0) motivo += ` · ya venían ${Math.round(usa * 100) / 100} en las recetas`;
       }
-      add(cat, Math.ceil(q), motivo);
+      add(cat, Math.ceil(q), motivo, r.id);
       return pide;
     };
 
@@ -7711,11 +7715,138 @@ Power done right the first time. ⚡`;
   }
 
 
+
+  const r2e27 = v => Math.round(v * 100) / 100;
+  /* Las tres tarjetas nuevas (consumibles, horas, luminarias) se pintan dentro
+     de la misma plantilla que el estimado entero: si una lanzara, se llevaría
+     por delante la pantalla completa y Edgar se quedaría sin estimador por un
+     renglón raro. Aquí se cae solo la tarjeta, y dice por qué. */
+  const tarjetaSegura = (fn, ...args) => {
+    try { return fn(...args) || ""; }
+    catch (e) {
+      return `<div class="cal-panel-card"><div class="cal-form-titulo">⚠ Una tarjeta nueva falló</div>
+        <p class="modal-nota">${esc((e && e.message) || e)} — el resto del estimado sigue bien. Dímelo y lo arreglo.</p></div>`;
+    }
+  };
+  /* ---------- E27b · La tabla de CONSUMIBLES, editable en pantalla ----------
+     Hasta hoy los 18 números vivían en un JSON de la base: para cambiar «10
+     acoples por 100 ft» a 12 había que abrir Supabase y escribir SQL. Edgar:
+     «eso es un conteo que yo no tengo que hacer» — y tampoco tiene que pedirlo.
+     Aquí están los 18, con lo que cada regla produjo EN ESTE estimado al lado,
+     que es la única manera de saber si el número está bien puesto. */
+  const CONS_CUENTA_TXT = {
+    ft100: "por cada 100 ft de tubo",
+    caja: "por cada caja del estimado",
+    trapecio: "por cada trapecio",
+    strap: "por cada grapa que puso la tabla",
+    cable100: "por cada 100 ft de conductor"
+  };
+  function cardConsumiblesHTML(est, c, soloLectura) {
+    const r2 = r2e27;
+    if (est.modo === "rapido") return "";
+    const cfg = estData.config || {};
+    const soporte = est.soporte || "pared";
+    let reglas;
+    try { reglas = consReglas(cfg); } catch { return ""; }
+    // lo que cada regla produjo aquí: el renglón automático lleva su id
+    const hecho = {};
+    (c.autos || []).forEach(a => {
+      (a.reglaIds || []).forEach(id => {
+        const h = hecho[id] = hecho[id] || { cant: 0, monto: 0, unidad: a.unidad || "" };
+        h.cant += Number(a.cantidad) || 0;
+        h.monto += (Number(a.cantidad) || 0) * (Number(a.precio) || 0);
+      });
+    });
+    const sopNom = (SOPORTES.find(s => s[0] === soporte) || ["", soporte])[1];
+    const filas = reglas.map(r => {
+      const fuera = (r.soporte && r.soporte !== soporte) || (r.rack && !(Number(est.pct_rack) > 0));
+      const h = hecho[r.id];
+      const cond = r.soporte ? `solo con «${(SOPORTES.find(s => s[0] === r.soporte) || ["", r.soporte])[1]}»`
+        : r.rack ? "solo la parte del tubo en trapecio" : "siempre";
+      const base = CONS_REGLAS.find(x => x.id === r.id) || r;
+      const tocada = Number(r.por) !== Number(base.por) || Number(r.cada || 0) !== Number(base.cada || 0);
+      return `
+      <div class="mat-item${fuera ? "" : ""}" style="${fuera ? "opacity:.5" : ""}">
+        <span class="alcance-info">
+          <span class="alcance-titulo">${esc(r.nom)}${tocada ? ` <span class="recibo-chip leido">TUYO</span>` : ""}</span>
+          <span class="alcance-estado">${esc(CONS_CUENTA_TXT[r.cuenta] || r.cuenta)}${r.talla ? ", por talla de tubo" : ""} · ${esc(cond)}${
+            fuera ? " — no entra en este trabajo" : h ? ` · aquí puso <strong>${r2(h.cant)}</strong> = ${fmt(r2(h.monto))}` : " · aquí no puso nada"}</span>
+        </span>
+        <input type="number" class="cons-por" data-id="${esc(r.id)}" min="0" step="0.01" value="${esc(r.por)}"
+          ${soloLectura ? "disabled" : ""} title="Cuántos por cada unidad de la cuenta"
+          style="width:5rem;font:inherit;padding:.25rem .4rem;border:1px solid var(--mp-line);border-radius:8px;text-align:right">
+        ${r.cuenta === "trapecio" ? `<input type="number" class="cons-cada" data-id="${esc(r.id)}" min="1" step="1" value="${esc(r.cada || 8)}"
+          ${soloLectura ? "disabled" : ""} title="Un trapecio cada cuántos pies de tubo"
+          style="width:4rem;font:inherit;padding:.25rem .4rem;border:1px solid var(--mp-line);border-radius:8px;text-align:right">` : ""}
+      </div>`;
+    }).join("");
+    const mermaT = Math.round(((cfg.merma_tuberia ?? 0.05)) * 1000) / 10;
+    const mermaC = Math.round(((cfg.merma_cable ?? 0.10)) * 1000) / 10;
+    const totalAuto = (c.autos || []).reduce((s, a) => s + (Number(a.cantidad) || 0) * (Number(a.precio) || 0), 0);
+    return `
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">🔩 Consumibles automáticos — la tabla que manda</div>
+        <p class="modal-nota">Los ${reglas.length} números que convierten lo que mediste en fittings.
+          Este trabajo va <strong>${esc(sopNom)}</strong>${Number(est.pct_rack) > 0 ? ` con el <strong>${Math.round(Number(est.pct_rack) * 100)} %</strong> del tubo en trapecio` : ""}
+          (se cambia arriba). Las reglas que no entran con ese soporte salen en gris.
+          ${totalAuto > 0 ? `Ahora mismo generan <strong>${fmt(r2(totalAuto))}</strong> en ${c.autos.length} renglón(es) AUTO.` : ""}</p>
+        <details${soloLectura ? "" : ""}>
+          <summary class="mat-filtro-label" style="cursor:pointer">Ver y cambiar los ${reglas.length} números</summary>
+          ${filas}
+          <div class="modal-fila" style="margin-top:.5rem">
+            <label class="mat-filtro-label">Merma de tubería (%)
+              <input id="cons-merma-tubo" type="number" min="0" max="50" step="0.5" value="${esc(mermaT)}" ${soloLectura ? "disabled" : ""} style="width:5rem">
+            </label>
+            <label class="mat-filtro-label">Merma de cable (%)
+              <input id="cons-merma-cable" type="number" min="0" max="50" step="0.5" value="${esc(mermaC)}" ${soloLectura ? "disabled" : ""} style="width:5rem">
+            </label>
+          </div>
+          ${soloLectura ? "" : `
+          <button type="button" class="accion secundaria" id="btn-cons-guardar" style="margin-top:.45rem">Guardar la tabla</button>
+          <button type="button" class="accion secundaria" id="btn-cons-reset" style="margin-top:.45rem">Volver a los números de arranque</button>
+          <p class="modal-nota">Valen para todos los estimados y se guardan una sola vez. Solo se guarda lo que cambies:
+            si mañana corrijo un número de arranque, el tuyo sigue mandando y el resto se actualiza solo.</p>`}
+        </details>
+      </div>`;
+  }
+  async function guardaConsumibles() {
+    const ov = {};
+    document.querySelectorAll(".cons-por").forEach(el => {
+      const id = el.dataset.id, base = CONS_REGLAS.find(x => x.id === id);
+      if (!base) return;
+      const v = Number(el.value);
+      if (!isFinite(v) || v < 0) return;
+      const cadaEl = document.querySelector(`.cons-cada[data-id="${id}"]`);
+      const cada = cadaEl ? Math.max(1, Math.round(Number(cadaEl.value) || base.cada || 8)) : null;
+      const cambiaPor = v !== Number(base.por);
+      const cambiaCada = cada !== null && cada !== Number(base.cada || 8);
+      if (cambiaPor && !cambiaCada) ov[id] = v;
+      else if (cambiaCada) ov[id] = { por: v, cada };
+    });
+    const pct = el => { const v = Number((document.getElementById(el) || {}).value); return isFinite(v) && v >= 0 && v <= 50 ? v / 100 : null; };
+    try {
+      await DB.guardarConfig("consumibles", JSON.stringify(ov));
+      const mt = pct("cons-merma-tubo"), mc = pct("cons-merma-cable");
+      if (mt !== null) await DB.guardarConfig("merma_tuberia", String(mt));
+      if (mc !== null) await DB.guardarConfig("merma_cable", String(mc));
+      await recargarEstimador();
+      const n = Object.keys(ov).length;
+      avisar(n ? `✓ Tabla guardada — ${n} número(s) tuyos mandan sobre los de arranque` : "✓ Tabla guardada — todo vuelve a los números de arranque");
+    } catch (err) { avisar("No se pudo guardar: " + (err.message || err), true); }
+  }
+  async function resetConsumibles() {
+    if (!confirm("¿Volver a los números de arranque? Se pierden los tuyos.")) return;
+    try {
+      await DB.guardarConfig("consumibles", "{}");
+      await recargarEstimador();
+      avisar("✓ Tabla de consumibles a los números de arranque");
+    } catch (err) { avisar("No se pudo guardar: " + (err.message || err), true); }
+  }
+
   /* ---------- E27 · La tarjeta de las HORAS DEL PROYECTO ---------- */
   /* Se propone, no se mete sola: una hora son ~$100 puestos en el bid. Lo que
      sale de una cuenta del propio estimado (breakers, dimmers) viene marcado;
      lo que es un SUPUESTO viene sin marcar, para que se decida y no se cuele. */
-  const r2e27 = v => Math.round(v * 100) / 100;
   function cardHorasHTML(est, c, soloLectura) {
     const r2 = r2e27;
     if (soloLectura || est.modo === "rapido") return "";
@@ -8200,8 +8331,9 @@ Power done right the first time. ⚡`;
         ${filasItems || `<p class="cal-sin-eventos">Agrega ensambles, pega el takeoff o busca en el catálogo.</p>`}
         ${filasAutos}
       </div>`}
-      ${cardHorasHTML(est, c, soloLectura)}
-      ${cardLuzHTML(est, c, soloLectura)}
+      ${tarjetaSegura(cardConsumiblesHTML, est, c, soloLectura)}
+      ${tarjetaSegura(cardHorasHTML, est, c, soloLectura)}
+      ${tarjetaSegura(cardLuzHTML, est, c, soloLectura)}
       <div class="cal-panel-card">
         <div class="cal-form-titulo">💵 Resumen — fórmula Max Power
           ${!soloLectura ? `<span class="chk-avance">toca ✎ para jugar con los números</span>` : ""}</div>
@@ -8349,6 +8481,10 @@ Power done right the first time. ⚡`;
     if (bLuzG) bLuzG.addEventListener("click", guardaPreciosLuz);
     const bLuzL = $("btn-luz-leer");
     if (bLuzL) bLuzL.addEventListener("click", () => pintaCuotaPreview(est));
+    const bConsG = $("btn-cons-guardar");
+    if (bConsG) bConsG.addEventListener("click", guardaConsumibles);
+    const bConsR = $("btn-cons-reset");
+    if (bConsR) bConsR.addEventListener("click", resetConsumibles);
     if (selEsc && !soloLectura) selEsc.addEventListener("change", async () => {
       await DB.cambiarEstimado(est.id, { escenario: selEsc.value }).catch(() => {});
       await recargarEstimador();
@@ -11674,6 +11810,13 @@ Power done right the first time. ⚡`;
       familia(nom) { const f = familiaLuz(nom); return f ? f.id : null; },
       preciosLuz(cfg) { return luzRefPrecios(cfg || {}); },
       leeCuota(txt) { return leeCuota(txt || ""); },
+      // las tres tarjetas nuevas, pintadas: el motor se prueba aparte, pero el
+      // HTML también tiene que salir sin lanzar (v191)
+      tarjetas(est, c) {
+        return tarjetaSegura(cardConsumiblesHTML, est, c, false)
+             + tarjetaSegura(cardHorasHTML, est, c, false)
+             + tarjetaSegura(cardLuzHTML, est, c, false);
+      },
       casaCuota(txt, pendientes) { return casaCuota(leeCuota(txt || ""), pendientes || []); },
       calcula(est) { return calcularEstimado(est); },
       escenarios(empresa) { return escenariosDe(empresa).map(e => e.id); },

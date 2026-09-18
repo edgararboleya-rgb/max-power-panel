@@ -179,6 +179,26 @@ CES MIAMI — QUOTE 55120
     ['10  SQUARE D QO120 BREAKER 1P 20A   $8.40   $84.00\n5  IDEAL WIRENUTS RED   $0.12', ITEMS]);
   ok('una cuota de otro material no se casa con ninguna luminaria', raro.casadas.length === 0 && raro.sinPareja.length >= 1, JSON.stringify([raro.casadas.length, raro.sinPareja.length]));
 
+  /* ===== 11 · las tarjetas se PINTAN sin lanzar (el HTML, no solo el motor) ===== */
+  await datos();
+  const pint = await p.evaluate(e => {
+    const c = window.MXP_PRUEBA.e0.calcula(Object.assign({}, e, { soporte: 'unistrut', pct_rack: 0.3, usa_luz_ref: true }));
+    const h = window.MXP_PRUEBA.e0.tarjetas(Object.assign({}, e, { soporte: 'unistrut', pct_rack: 0.3, usa_luz_ref: true }), c);
+    const d = document.createElement('div'); d.innerHTML = h;
+    return { largo: h.length, fallo: /Una tarjeta nueva falló/.test(h),
+             consumibles: d.querySelectorAll('.cons-por').length,
+             horas: d.querySelectorAll('.horas-chk').length,
+             luz: d.querySelectorAll('.luz-ref-precio').length,
+             titulos: [...d.querySelectorAll('.cal-form-titulo')].map(x => x.textContent.trim().slice(0, 22)) };
+  }, EST);
+  ok('las tres tarjetas se pintan sin lanzar', !pint.fallo && pint.largo > 3000, JSON.stringify([pint.fallo, pint.largo, pint.titulos]));
+  ok('la tabla de consumibles trae sus 18 números editables', pint.consumibles === 18, pint.consumibles);
+  ok('la de horas trae una casilla por regla y la de luz sus 9 familias', pint.horas === 9 && pint.luz === 9, JSON.stringify([pint.horas, pint.luz]));
+  const flojo = await p.evaluate(e => window.MXP_PRUEBA.e0.tarjetas(e, { items: null, autos: null }), EST);
+  ok('un cálculo a medias (sin ítems ni automáticos) no rompe ninguna tarjeta', !/Una tarjeta nueva falló/.test(flojo), flojo.slice(0, 60));
+  const rota = await p.evaluate(e => window.MXP_PRUEBA.e0.tarjetas(e, null), EST);
+  ok('y si aun así una lanzara, se cae ELLA sola: el estimador sigue en pie', /Una tarjeta nueva falló/.test(rota) && rota.split("Una tarjeta nueva falló").length - 1 >= 1, rota.replace(/\s+/g, ' ').slice(0, 110));
+
   ok('cero errores de página', errs.length === 0, errs.join(' | ').slice(0, 250));
   console.log('\n' + R.join('\n'));
   const mal = R.filter(r => r.slice(0, 4).indexOf('✗') >= 0).length;
