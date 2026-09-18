@@ -158,6 +158,15 @@ const NICKLAUS = [
   /* === 4. lo que el motor NO puede hacer se dice, no se calla === */
   await p.evaluate(c => window.MXP_PRUEBA.e0.datos({ catalogo: c }), CAT.filter(x => !/UNISTRUT|ALL-THREAD|HEX NUT|WASHER|ANCHOR/.test(x.item)));
   const sinCat = await corre({ soporte: 'unistrut', pct_rack: 0.3 });
+  /* (v195) y si la pieza buena no está pero sí una parecida que la regla
+     descarta, el aviso la nombra: callarlo deja el trabajo sin grapas */
+  await p.evaluate(c => window.MXP_PRUEBA.e0.datos({ catalogo: c }), CAT.filter(x => !/STRAP 1 HOLE/.test(x.item)));
+  const sinOneHole = await corre({ soporte: 'pared' });
+  ok('sin one-hole en el catálogo, el aviso NOMBRA la pieza parecida que descartó y dice qué hacer',
+    /One-hole strap/.test(sinOneHole.avisos.join(' ')) && /Lo más parecido es «[^»]*STRAP[^»]*»/.test(sinOneHole.avisos.join(' ')) && /cómo va sujeto/.test(sinOneHole.avisos.join(' ')),
+    (sinOneHole.avisos.find(a => /One-hole/.test(a)) || '').slice(0, 170));
+  await p.evaluate(c => window.MXP_PRUEBA.e0.datos({ catalogo: c }), CAT);
+
   ok('sin los ítems del trapecio en el catálogo, la regla no corre pero AVISA (antes se callaba)',
     sinCat.avisos.length >= 4 && /no encuentro/.test(sinCat.avisos[0]), sinCat.avisos.slice(0, 2).join(' | '));
 

@@ -5709,7 +5709,15 @@ function esFalloDeRed(err) {
         if (!cat) { faltaItem = true; }
         else pon(r, cat, cableFt / 100 * r.por, `regla: ${r.nom} — ${r.por} por 100 ft de conductor`);
       }
-      if (faltaItem) avisos.push(`${r.nom}: no encuentro «${r.busca.join(" ")}» en el catálogo — esa regla no corrió`);
+      if (faltaItem) {
+        /* (v195) Si la pieza buena no está pero SÍ está una parecida que la
+           regla descarta a propósito (el power strap cuando se pide one-hole),
+           hay que decirlo con nombre: callarlo deja la regla sin correr y el
+           trabajo sin grapas, y eso no se nota en un total. */
+        const cerca = r.evita ? buscaCat(...r.busca) : null;
+        avisos.push(`${r.nom}: no encuentro «${r.busca.join(" ")}» en el catálogo — esa regla no corrió`
+          + (cerca ? `. Lo más parecido es «${String(cerca.item).replace(/\s+/g, " ").trim()}», que NO es lo que pide esta regla: o das de alta la pieza buena, o cambia arriba cómo va sujeto el tubo` : ""));
+      }
     }
     return { autos: Object.values(autos).filter(a => a.cantidad > 0), avisos };
   }
@@ -7821,6 +7829,7 @@ Power done right the first time. ⚡`;
     return `
       <div class="cal-panel-card">
         <div class="cal-form-titulo">🔩 Consumibles automáticos — la tabla que manda</div>
+        ${(c.consAvisos || []).length ? `<div class="lev-nota" style="margin:.2rem 0 .5rem">⚠ ${c.consAvisos.map(a => esc(a)).join("<br>⚠ ")}</div>` : ""}
         <p class="modal-nota">Los ${reglas.length} números que convierten lo que mediste en fittings.
           Este trabajo va <strong>${esc(sopNom)}</strong>${Number(est.pct_rack) > 0 ? ` con el <strong>${Math.round(Number(est.pct_rack) * 100)} %</strong> del tubo en trapecio` : ""}
           (se cambia arriba). Las reglas que no entran con ese soporte salen en gris.
