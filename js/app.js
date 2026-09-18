@@ -5435,10 +5435,13 @@ function esFalloDeRed(err) {
     tarifa:       ["TARIFA",          "leido",      "",                "la tecleas por trabajo"],
     falta_precio: ["FALTA PRECIO",    "sin_foto",   "falta",           "sin precio en el catálogo"],
     revisar:      ["¿QUIÉN LO PONE?", "por_leer",   "recibo-por_leer", "nadie ha dicho por qué va en cero"],
-    huerfano:     ["SIN CATÁLOGO",    "sin_foto",   "falta",           "este nombre no está en el catálogo"]
+    huerfano:     ["SIN CATÁLOGO",    "sin_foto",   "falta",           "este nombre no está en el catálogo"],
+    referencia:   ["REFERENCIA",      "leido",      "",                "precio de referencia TUYO: la cuota del supply sigue pendiente"]
   };
   // Los que ALERTAN (banner y aviso de salida). El resto se ve y se calla.
-  const CERO_ALERTA = ["suministro", "falta_precio", "revisar", "huerfano"];
+  // «referencia» alerta a propósito: el bid ya trae una cifra, pero la cuota
+  // de verdad sigue sin llegar y eso no se puede olvidar antes de mandar.
+  const CERO_ALERTA = ["suministro", "falta_precio", "revisar", "huerfano", "referencia"];
   function ceroDe(linea, est) {
     try {
       if ((Number(linea.precio) || 0) > 0) return CERO_NEUTRO;
@@ -5457,12 +5460,21 @@ function esFalloDeRed(err) {
           if (notas[k] && notas[k].d === "cotizado") e = "cotizado";
         }
       }
+      // (v190) La luminaria a la espera de cuota, con el precio de referencia
+      // encendido en este estimado: se ve el número en el propio renglón, para
+      // que nadie confunda una referencia tuya con una cotización de verdad.
+      let refTxt = "";
+      if (e === "suministro" && est && est.usa_luz_ref && ES_COT_PENDIENTE(linea)) {
+        const f = familiaLuz(linea.item);
+        const pRef = f ? luzRefPrecios((estData && estData.config) || {})[f.id] : 0;
+        if (pRef > 0) { e = "referencia"; refTxt = " " + fmt(pRef); }
+      }
       const c = CERO_CHIP[e] || CERO_CHIP.revisar;
       // Sin confirmar = lo supuso la regla de la siembra, no Edgar. Sale con «?»
       // y, si es by_owner, NO llega al papel que firma el cliente.
       const conf = !cat ? false : !!cat.cero_revisado;
-      return { est: e, chip: c[0] + (conf ? "" : " ?"), clase: c[1], fila: c[2],
-               motivo: c[3], alerta: CERO_ALERTA.indexOf(e) >= 0, cat, conf };
+      return { est: e, chip: c[0] + (e === "referencia" ? refTxt : (conf ? "" : " ?")), clase: c[1], fila: c[2],
+               motivo: c[3], alerta: CERO_ALERTA.indexOf(e) >= 0, cat, conf: e === "referencia" ? true : conf };
     } catch {
       return { est: "revisar", chip: "¿$0?", clase: "por_leer", fila: "recibo-por_leer",
                motivo: "revísalo", alerta: true, cat: null, conf: false };
@@ -5677,6 +5689,258 @@ function esFalloDeRed(err) {
     return { autos: Object.values(autos).filter(a => a.cantidad > 0), avisos };
   }
 
+
+  /* ══════════ HORAS DE PROYECTO PROPUESTAS (v190, 18/09) ══════════
+     Edgar, 17/09: «lo que yo quería que arreglaras era lo de las horas». El
+     borrador de Nicklaus traía la mano de INSTALAR cada pieza y nada más: no
+     estaba terminar los circuitos en el panel, ni demoler lo existente, ni
+     rotular, ni poner en marcha los 0-10V, ni cerrar el trabajo. Eran 70 horas
+     —$7.000 largos— que se descubrieron a mano y a última hora.
+
+     Esto las PROPONE solas a partir de lo que ya hay en el estimado (breakers,
+     dispositivos, dimmers) y Edgar confirma. No se añade nada solo: los
+     consumibles sí se calculan en cada recálculo porque son céntimos, pero una
+     hora vale $100 puestos en el bid, así que aquí manda él y queda escrito.
+
+     Lo que no se puede deducir del estimado —cuántas piezas se demuelen,
+     cuántas barreras ICRA, cuántos días de lift— sale marcado como SUPUESTO,
+     con su número de arranque, para que se cambie y no para que se crea. */
+  const HORAS_REGLAS = [
+    { id: "terminacion",  item: "TERMINACIÓN DE CIRCUITO EN PANEL (por ckt)",                cuenta: "ckt",      por: 1 },
+    { id: "rotulado",     item: "ROTULADO DE CIRCUITO Y DIRECTORIO DE PANEL (por ckt)",      cuenta: "ckt",      por: 1 },
+    { id: "demo",         item: "DEMOLICIÓN DE DISPOSITIVO O LUMINARIA EXISTENTE (por unidad)", cuenta: "demo",  por: 1, modos: ["remodelacion"], supuesto: true },
+    { id: "arranque",     item: "PUESTA EN MARCHA DIMMER 0-10V / SENSOR (por unidad)",        cuenta: "dimmer",   por: 1 },
+    { id: "icra",         item: "BARRERA ICRA / CONTENCIÓN DE POLVO (por barrera)",           cuenta: "fijo",     por: 1, modos: ["remodelacion"], supuesto: true },
+    { id: "lift",         item: "LIFT O ANDAMIO — MONTAJE Y MOVIMIENTO (por día)",            cuenta: "fijo",     por: 1, supuesto: true },
+    { id: "permiso",      item: "PERMISO E INSPECCIONES (por proyecto)",                      cuenta: "fijo",     por: 1 },
+    { id: "movilizacion", item: "MOVILIZACIÓN Y ACARREO (por viaje)",                         cuenta: "fijo",     por: 1, supuesto: true },
+    { id: "cierre",       item: "AS-BUILT, PRUEBAS Y CIERRE (por proyecto)",                  cuenta: "fijo",     por: 1 }
+  ];
+  // Lo que Edgar corrija manda: config_estimador → clave `horas_proyecto`,
+  // un JSON {id: por} o {id: {por, item}}. Mismo camino que los consumibles.
+  function horasReglas(cfg) {
+    let ov = {};
+    try {
+      const raw = (cfg || {}).horas_proyecto;
+      ov = typeof raw === "string" ? JSON.parse(raw) : (raw && typeof raw === "object" ? raw : {});
+    } catch { ov = {}; }
+    return HORAS_REGLAS.map(r => {
+      const o = ov[r.id];
+      if (o === undefined || o === null) return r;
+      return Object.assign({}, r, typeof o === "object" ? o : { por: Number(o) });
+    });
+  }
+  /* Lo que el estimado ya dice de sí mismo. Se cuenta por el NOMBRE, no por el
+     código: el código de partida lo pone quien crea el ítem y no siempre está,
+     pero «1P 20A BREAKER» se llama igual en todos los catálogos de Edgar. */
+  const ES_BREAKER  = n => /\bBREAKER\b|\bC\.?B\.?\b/.test(n) && !/PANEL|LOAD CENTER|LUG|COVER/.test(n);
+  const ES_DISPOSITIVO = n => /RECEPTACLE|RECEPT\b|SWITCH|DIMMER|SENSOR|OUTLET/.test(n)
+    && !/BOX|PLATE|COVER|RING|CONNECTOR|STRAP|WIRE|PLUG MOLD|DISCONNECT|SAFETY/.test(n);
+  const ES_DIMMER   = n => /DIMMER|OCCUPANCY|VACANCY|0-10V/.test(n) && !/BOX|PLATE|COVER|RING/.test(n);
+  const ES_LUMINARIA = n => /LUMINARIA|FIXTURE|TROFFER|DOWN ?LIGHT|EXIT SIGN|CLEANROOM|HIGH ?BAY|INSTALACI[OÓ]N (DOWNLIGHT|EXIT|LUMINARIA)/.test(n)
+    && !/COTIZACI[OÓ]N/.test(n);
+  function cuentasDelEstimado(base) {
+    const n = v => Number(v) || 0;
+    const c = { ckt: 0, dispositivo: 0, dimmer: 0, luminaria: 0 };
+    for (const it of (base || [])) {
+      const nom = normTxt(it.item), q = n(it.cantidad);
+      if (ES_BREAKER(nom)) c.ckt += q;
+      if (ES_DISPOSITIVO(nom)) c.dispositivo += q;
+      if (ES_DIMMER(nom)) c.dimmer += q;
+      if (ES_LUMINARIA(nom)) c.luminaria += q;
+    }
+    Object.keys(c).forEach(k => { c[k] = Math.round(c[k]); });
+    // Lo que se demuele en una remodelación: SUPUESTO — una pieza vieja por
+    // cada pieza nueva en el mismo sitio. Es lo que Edgar puso a mano en
+    // Nicklaus (80) y lo que hay que cambiar en cuanto se cuenten de verdad.
+    c.demo = c.dispositivo + c.luminaria;
+    c.fijo = 1;
+    return c;
+  }
+  /* La propuesta. PURA: no escribe nada. Devuelve una fila por regla con su
+     cantidad, de dónde sale, y si ya está en el estimado (y con cuánto). */
+  function horasPropuestas(base, est, cfg) {
+    const cuentas = cuentasDelEstimado(base);
+    const modo = (est || {}).modo || "remodelacion";
+    const yaHay = {};
+    for (const it of (base || [])) {
+      const k = normTxt(it.item);
+      yaHay[k] = (yaHay[k] || 0) + (Number(it.cantidad) || 0);
+    }
+    const filas = [], avisos = [];
+    for (const r of horasReglas(cfg)) {
+      if (r.modos && r.modos.indexOf(modo) === -1) continue;
+      const cant = Math.round((cuentas[r.cuenta] || 0) * (Number(r.por) || 0));
+      const cat = catPorNombre(r.item);
+      if (!cat) { avisos.push(`«${r.item}» no está en el catálogo — corre docs/sql/e27.sql`); continue; }
+      const de = r.cuenta === "ckt" ? `${cuentas.ckt} breaker(s) en el estimado`
+        : r.cuenta === "demo" ? `SUPUESTO: ${cuentas.dispositivo} dispositivo(s) + ${cuentas.luminaria} luminaria(s) nuevas`
+        : r.cuenta === "dimmer" ? `${cuentas.dimmer} dimmer(s) y sensor(es)`
+        : "por proyecto — ponlo tú";
+      filas.push({ id: r.id, item: cat.item, nom: r.item, cantidad: cant,
+                   horas: Number(cat.horas_unidad) || 0, precio: Number(cat.precio) || 0,
+                   codigo: cat.codigo || "", unidad: cat.unidad || "E",
+                   de, supuesto: !!r.supuesto, ya: yaHay[normTxt(cat.item)] || 0 });
+    }
+    if (cuentas.ckt === 0 && filas.some(f => f.id === "terminacion"))
+      avisos.push("No encuentro breakers en el estimado: las horas de terminar y rotular circuitos salen en 0 — pon tú el número de circuitos.");
+    return { filas, avisos, cuentas };
+  }
+
+  /* ══════════ LUMINARIAS: PRECIO DE REFERENCIA Y CUOTA DEL SUPPLY (v190) ══════════
+     Edgar no pone las luminarias por material: solo la mano. La luz la cotiza
+     el supply house y hasta que llegue la cuota el renglón vale $0 — que es
+     honesto, pero deja el bid corto en decenas de miles y no se puede enseñar.
+
+     Dos cosas distintas, y no se mezclan nunca:
+       · PRECIO DE REFERENCIA: un número TUYO por familia (troffer 2x2,
+         cleanroom, downlight, exit…), para que el bid tenga una cifra mientras
+         llega la cuota. Se enciende por estimado, se ve marcado REFERENCIA en
+         cada renglón, y entra al dinero por donde entran las cotizaciones (sin
+         misceláneas, con el markup de cotización), porque eso es lo que está
+         supliendo. Nunca sale de internet: los de arranque son los que Edgar
+         escribió en el bid de Nicklaus.
+       · CUOTA DE VERDAD: se pega el texto del proveedor y el precio entra en
+         el renglón. Si llegan dos (CED y CES), manda la MÁS CARA — regla de
+         Edgar desde el primer día: prefiere que sobre a que falte. */
+  const LUZ_FAMILIAS = [
+    { id: "cleanroom", nom: "Cleanroom / sellada",        ref: 550, pal: [/CLEAN ?ROOM/, /\bSCR\b/, /SEALED|GASKET/] },
+    { id: "exit",      nom: "Exit sign",                  ref: 110, pal: [/\bEXIT\b/, /\bLQM\b/, /\bLHQM\b/] },
+    { id: "emergencia",nom: "Unidad de emergencia",       ref: 130, pal: [/EMERGENCY (UNIT|LIGHT|BATTERY)/, /BUG ?EYE/, /\bELM\b/] },
+    { id: "downlight", nom: 'Downlight / recessed redondo', ref: 220, pal: [/DOWN ?LIGHT/, /RECESSED/, /\bLDN\d/, /\d" ?ROUND/] },
+    { id: "highbay",   nom: "High bay",                   ref: 280, pal: [/HIGH ?BAY/] },
+    { id: "strip",     nom: "Strip / wrap / lineal",      ref: 120, pal: [/\bSTRIP\b/, /\bWRAP\b/, /LINEAR/] },
+    { id: "undercab",  nom: "Under-cabinet / cove",       ref: 90,  pal: [/UNDER ?CAB/, /\bCOVE\b/, /TAPE ?LIGHT/] },
+    { id: "troffer24", nom: "Troffer / panel 2x4",        ref: 180, pal: [/2 ?X ?4/, /\b24HC\b/] },
+    { id: "troffer22", nom: "Troffer / panel 2x2",        ref: 150, pal: [/2 ?X ?2/, /\bSTAK\b/, /\b22 ?HC\b/] }
+  ];
+  // El precio de cada familia: el de arranque, o el que Edgar haya guardado
+  // (config_estimador → clave `luz_ref`, un JSON {familia: precio}).
+  function luzRefPrecios(cfg) {
+    let ov = {};
+    try {
+      const raw = (cfg || {}).luz_ref;
+      ov = typeof raw === "string" ? JSON.parse(raw) : (raw && typeof raw === "object" ? raw : {});
+    } catch { ov = {}; }
+    const out = {};
+    LUZ_FAMILIAS.forEach(f => {
+      const v = Number(ov[f.id]);
+      out[f.id] = (isFinite(v) && v >= 0) ? v : f.ref;
+    });
+    return out;
+  }
+  // El texto del modelo, sin el «COTIZACIÓN PENDIENTE —» ni los paréntesis de
+  // recordatorio («ref. $150, pedir a Jose»), que no son parte del modelo.
+  function luzModelo(nombre) {
+    return normTxt(String(nombre || "")
+      .replace(/^\s*COTIZACI[OÓ]N PENDIENTE\s*[—-]\s*/i, "")
+      .replace(/\([^)]*\)/g, " "));
+  }
+  function familiaLuz(nombre) {
+    const t = luzModelo(nombre);
+    if (!t) return null;
+    return LUZ_FAMILIAS.find(f => f.pal.some(p => p.test(t))) || null;
+  }
+  // ¿Es un renglón de luminaria a la espera de la cuota?
+  const ES_COT_PENDIENTE = l => (Number(l.precio) || 0) === 0 &&
+    (l.origen === "cotizacion" || /^COTIZACI[OÓ]N PENDIENTE/i.test(String(l.item || "")));
+  /* Lo que pondría el precio de referencia. PURA. */
+  function refLuminarias(base, cfg) {
+    const precios = luzRefPrecios(cfg), filas = [], sinFamilia = [];
+    let total = 0;
+    for (const it of (base || [])) {
+      if (!ES_COT_PENDIENTE(it)) continue;
+      const f = familiaLuz(it.item);
+      const p = f ? precios[f.id] : 0;
+      const q = Number(it.cantidad) || 0;
+      if (!f || !(p > 0)) { sinFamilia.push({ item: it.item, cantidad: q }); continue; }
+      filas.push({ item: it.item, modelo: luzModelo(it.item), cantidad: q,
+                   familia: f.id, nom: f.nom, precio: p, total: q * p });
+      total += q * p;
+    }
+    return { filas, total, sinFamilia, precios };
+  }
+
+  /* LA CUOTA DEL PROVEEDOR, PEGADA TAL CUAL. Sale de un PDF o de un correo de
+     CED/CES, así que llega sucia: cabeceras, totales, columnas pegadas. Lo que
+     se busca en cada renglón es un texto y un precio UNITARIO. Si hay dos
+     números de dinero, el unitario es el menor (el otro es el extendido).
+     PURA: no escribe nada, devuelve lo que entendió y lo que no. */
+  function leeCuota(txt) {
+    const filas = [], sin = [];
+    const SALTA = /^(qty|cant|item|descrip|part|total|sub ?total|tax|freight|ship|sold|bill|thank|quote|page|line|u\/?m|unit|price|ext|amount|net|terms|valid|www\.|tel|fax)\b/i;
+    // Lo que NO es un renglón de material aunque lleve dinero: los pies de la
+    // cuota. Se mira el TEXTO ya sin números, que es donde se ven de verdad.
+    const TOTALES = /^(sales ?tax|tax|sub ?total|total|freight|shipping|handling|delivery|deposit|balance|discount|core charge|misc)\b/i;
+    String(txt || "").split(/\r?\n/).forEach(ln => {
+      const raw = ln.replace(/\t/g, "  ").trim();
+      if (!raw || raw.length < 4) return;
+      if (SALTA.test(raw)) return;
+      // dinero: con $ o con dos decimales
+      const money = [...raw.matchAll(/\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)|([0-9][0-9,]*\.[0-9]{2})\b/g)]
+        .map(m => Number(String(m[1] || m[2]).replace(/,/g, ""))).filter(v => v > 0);
+      // Sin dinero marcado, los enteros SUELTOS: hacen falta DOS (la cantidad y
+      // el precio). Con uno solo no se puede saber si es un precio o el número
+      // de la cuota — «QUOTE 884213» entraba como un precio de $884.213.
+      const sueltos = [...raw.matchAll(/(?:^|\s)([0-9]{1,7})(?=\s|$)/g)].map(m => Number(m[1]));
+      let precio = null, cant = null;
+      if (money.length) precio = Math.min(...money);
+      else if (sueltos.length >= 2) { cant = sueltos[0]; precio = sueltos[sueltos.length - 1]; }
+      if (sueltos.length && cant === null && sueltos[0] !== precio && sueltos[0] <= 999) cant = sueltos[0];
+      // el texto: lo que queda al quitar el dinero
+      const desc = raw.replace(/\$\s*[0-9][0-9,]*(?:\.[0-9]+)?/g, " ").replace(/\b[0-9][0-9,]*\.[0-9]{2}\b/g, " ")
+        .replace(/\s{2,}/g, " ").trim();
+      const letras = (desc.match(/[A-Za-z]/g) || []).length;
+      if (TOTALES.test(desc)) return;
+      if (!(precio > 0) || letras < 4) { if (letras >= 4) sin.push(raw.slice(0, 90)); return; }
+      filas.push({ desc: normTxt(desc), cantidad: cant, precio });
+    });
+    return { filas, sin };
+  }
+  /* Casar lo leído con los renglones que esperan cuota. Por palabras: cuántas
+     de las del MODELO aparecen en la línea del proveedor. Los números del
+     modelo (5000LM, 35K, 2X2) pesan doble: son los que distinguen una luz de
+     su hermana, que es justo donde un error cuesta dinero. */
+  function tokensLuz(s) {
+    return normTxt(s).replace(/[^A-Z0-9" ]+/g, " ").split(/\s+/)
+      .filter(t => t.length >= 2 && !/^(THE|AND|WITH|FOR|LED|EA|PC|PCS|NEW)$/.test(t));
+  }
+  function casaCuota(cuota, pendientes) {
+    const pend = (pendientes || []).map(p => ({ ref: p, toks: tokensLuz(luzModelo(p.item)) }))
+      .filter(p => p.toks.length);
+    const porItem = new Map(), sinPareja = [];
+    for (const f of (cuota.filas || [])) {
+      const ft = tokensLuz(f.desc);
+      let mejor = null, sc2 = 0;
+      for (const p of pend) {
+        let peso = 0, tot = 0;
+        for (const t of p.toks) {
+          const w = /\d/.test(t) ? 2 : 1;
+          tot += w;
+          if (ft.indexOf(t) >= 0) peso += w;
+        }
+        const sc = tot ? peso / tot : 0;
+        if (sc > (mejor ? mejor.sc : 0)) { sc2 = mejor ? mejor.sc : 0; mejor = { p, sc }; }
+        else if (sc > sc2) sc2 = sc;
+      }
+      if (!mejor || mejor.sc < 0.5) { sinPareja.push(f); continue; }
+      const k = mejor.p.ref.item;
+      const antes = porItem.get(k);
+      // DOS CUOTAS PARA LO MISMO (CED y CES): manda la más cara. Regla de
+      // Edgar: si una viene corta, el que pone la diferencia es él.
+      if (!antes || f.precio > antes.precio) {
+        porItem.set(k, { item: k, id: mejor.p.ref.id, modelo: luzModelo(k), desc: f.desc,
+                         precio: f.precio, cantidad: Number(mejor.p.ref.cantidad) || 0,
+                         pc: Math.round(mejor.sc * 100), dudoso: mejor.sc - sc2 < 0.15,
+                         antes: antes ? antes.precio : null });
+      } else if (antes) {
+        antes.antes = Math.min(antes.antes === null || antes.antes === undefined ? f.precio : antes.antes, f.precio);
+      }
+    }
+    return { casadas: [...porItem.values()], sinPareja,
+             sinCuota: pend.filter(p => !porItem.has(p.ref.item)).map(p => p.ref) };
+  }
+
   // Pies de CORRIDA que trae un ensamble: los pies de tubo si los lleva, y si
   // no, los del cable. No es lo mismo que los pies de cable: una receta en EMT
   // con 3 hilos lleva 25 ft de tubo y 75 ft de conductor (0.075 MLF).
@@ -5760,6 +6024,13 @@ function esFalloDeRed(err) {
     // rápido, que ignora los ítems por completo
     const cons = rapido ? { autos: [], avisos: [] } : autosConsumibles(base, est, cfg);
     const autos = cons.autos, consAvisos = cons.avisos;
+    /* (v190) Las luminarias que espera cuota, a PRECIO DE REFERENCIA. Entra
+       por el mismo sitio que una cotización del proveedor —sin misceláneas,
+       con el markup de cotización y fuera del overhead por porcentaje— porque
+       es exactamente lo que está supliendo mientras la cuota no llega. Apagado
+       por defecto: ningún estimado de ayer se mueve un centavo. */
+    const refLuz = (!rapido && est.usa_luz_ref) ? refLuminarias(base, cfg)
+      : { filas: [], total: 0, sinFamilia: [], precios: luzRefPrecios(cfg) };
 
     // Merma sobre lo lineal (solo en modo planos: los pies que TÚ mediste)
     let mermaMat = 0, mermaHoras = 0;
@@ -5820,7 +6091,7 @@ function esFalloDeRed(err) {
     // Una línea SIN marcar se comporta igual que siempre, así que ningún
     // estimado que ya existe se mueve ni un centavo.
     const esCot = l => l && l.tipo === "cot";
-    const matCot = lineasMat.reduce((s, l) => s + (esCot(l) ? n(l.monto) : 0), 0);
+    const matCot = lineasMat.reduce((s, l) => s + (esCot(l) ? n(l.monto) : 0), 0) + refLuz.total;
     const matMano = lineasMat.reduce((s, l) => s + (esCot(l) ? 0 : n(l.monto)), 0);
     const matPropio = rapido
       ? matMano
@@ -5863,7 +6134,7 @@ function esFalloDeRed(err) {
     const overhead = ohPct !== null ? Math.max(0, prime - cotEnPrime) * ohPct : horas * ohHH;
     const profit = (prime + overhead) * profitPct;
     const bid = prime + overhead + profit;
-    return { items: base, autos, consAvisos, mermaMat, mermaHoras, misc, esc, matSubtotal, tax,
+    return { items: base, autos, consAvisos, refLuz, mermaMat, mermaHoras, misc, esc, matSubtotal, tax,
              totalMaterial, horasBase, horas, laborBase, benefits, totalLabor,
              prime, overhead, profit, markup, bid,
              miscPct, taxPct, ohHH, ohPct: (ohPct ?? null), profitPct, markupPct,
@@ -7439,6 +7710,200 @@ Power done right the first time. ⚡`;
     }).join("") + `</div>`;
   }
 
+
+  /* ---------- E27 · La tarjeta de las HORAS DEL PROYECTO ---------- */
+  /* Se propone, no se mete sola: una hora son ~$100 puestos en el bid. Lo que
+     sale de una cuenta del propio estimado (breakers, dimmers) viene marcado;
+     lo que es un SUPUESTO viene sin marcar, para que se decida y no se cuele. */
+  const r2e27 = v => Math.round(v * 100) / 100;
+  function cardHorasHTML(est, c, soloLectura) {
+    const r2 = r2e27;
+    if (soloLectura || est.modo === "rapido") return "";
+    let h;
+    try { h = horasPropuestas(c.items, est, estData.config || {}); }
+    catch { return ""; }
+    if (!h.filas.length && !h.avisos.length) return "";
+    const filas = h.filas.map(f => {
+      const marca = !f.supuesto && f.cantidad > 0 && f.ya === 0;
+      const est2 = f.ya > 0
+        ? (f.ya === f.cantidad ? `<span class="recibo-chip conciliado">YA ESTÁ · ${r2(f.ya)}</span>`
+                               : `<span class="recibo-chip por_leer">YA ESTÁ CON ${r2(f.ya)}</span>`)
+        : "";
+      return `
+      <div class="mat-item">
+        <input type="checkbox" class="horas-chk" data-id="${esc(f.id)}"${marca ? " checked" : ""}
+          title="Marca lo que quieras añadir al estimado">
+        ${f.supuesto ? `<span class="recibo-chip por_leer">SUPUESTO</span>` : ""}${est2}
+        <span class="alcance-info">
+          <span class="alcance-titulo">${esc(f.nom)}</span>
+          <span class="alcance-estado">${esc(f.de)} · ${r2(f.horas)} h cada uno</span>
+        </span>
+        <input type="number" class="horas-qty" data-id="${esc(f.id)}" min="0" step="1" value="${esc(f.cantidad)}"
+          style="width:4.5rem;font:inherit;padding:.25rem .4rem;border:1px solid var(--mp-line);border-radius:8px;text-align:right">
+        <span class="mat-precio">${r2(f.cantidad * f.horas)} h</span>
+      </div>`;
+    }).join("");
+    const totalH = h.filas.reduce((s, f) => s + (!f.supuesto && f.cantidad > 0 && f.ya === 0 ? f.cantidad * f.horas : 0), 0);
+    return `
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">⏱ Horas del proyecto — lo que no es instalar una pieza</div>
+        <p class="modal-nota">Terminar circuitos en el panel, demoler, rotular, poner en marcha los 0-10V, cerrar.
+          En Nicklaus esto eran <strong>70 horas</strong> que no estaban en el borrador. Los números salen de lo que ya tiene
+          el estimado; los <strong>SUPUESTOS</strong> son de arranque — cámbialos y entonces márcalos.</p>
+        ${h.avisos.length ? `<div class="lev-nota" style="margin:.2rem 0 .5rem">⚠ ${h.avisos.map(a => esc(a)).join("<br>⚠ ")}</div>` : ""}
+        <div id="horas-lista">${filas}</div>
+        ${h.filas.length ? `
+        <button type="button" class="accion secundaria" id="btn-horas-aplicar" style="margin-top:.45rem">
+          ➕ Añadir al estimado lo marcado${totalH > 0 ? ` (${r2(totalH)} h)` : ""}</button>
+        <p class="modal-nota">Se añaden como renglones normales: después se cambian o se borran como cualquier otro.</p>` : ""}
+      </div>`;
+  }
+  async function aplicaHoras(est) {
+    const cont = $("horas-lista"); if (!cont) return;
+    const marcadas = [...cont.querySelectorAll(".horas-chk")].filter(x => x.checked).map(x => x.dataset.id);
+    if (!marcadas.length) { avisar("No marcaste ninguna", true); return; }
+    const c = calcularEstimado(est);
+    const h = horasPropuestas(c.items, est, estData.config || {});
+    const qty = id => {
+      const el = cont.querySelector(`.horas-qty[data-id="${id}"]`);
+      return Math.max(0, Math.round(Number(el && el.value) || 0));
+    };
+    let puestas = 0, cambiadas = 0;
+    for (const id of marcadas) {
+      const f = h.filas.find(x => x.id === id); if (!f) continue;
+      const q = qty(id); if (!(q > 0)) continue;
+      const fila = (estData.items || []).find(i => i.estimado_id === est.id && normTxt(i.item) === normTxt(f.item));
+      try {
+        if (fila) { await DB.cambiarItemEstimado(fila.id, { cantidad: q }); cambiadas++; }
+        else {
+          await DB.crearItemEstimado({ estimado_id: est.id, item: f.item, unidad: f.unidad,
+            precio: f.precio, horas: f.horas, cantidad: q, origen: "horas-proyecto",
+            codigo: f.codigo, orden: 800 + HORAS_REGLAS.findIndex(r => r.id === id) });
+          puestas++;
+        }
+      } catch (err) { avisar("No se pudo guardar: " + (err.message || err), true); return; }
+    }
+    await recargarEstimador();
+    avisar(`✓ ${puestas} renglón(es) de horas añadido(s)${cambiadas ? ` y ${cambiadas} actualizado(s)` : ""}`);
+  }
+
+  /* ---------- E27 · La tarjeta de las LUMINARIAS por cotizar ---------- */
+  function cardLuzHTML(est, c, soloLectura) {
+    const r2 = r2e27;
+    if (est.modo === "rapido") return "";
+    const cfg = estData.config || {};
+    const pend = (c.items || []).filter(ES_COT_PENDIENTE);
+    if (!pend.length) return "";
+    const ref = refLuminarias(c.items, cfg), precios = ref.precios;
+    const usando = !!est.usa_luz_ref;
+    const filasPend = pend.map(p => {
+      const f = familiaLuz(p.item), pr = f ? precios[f.id] : 0, q = Number(p.cantidad) || 0;
+      return `
+      <div class="mat-item">
+        ${f ? `<span class="recibo-chip leido">${esc(f.nom)}</span>` : `<span class="recibo-chip sin_foto">SIN FAMILIA</span>`}
+        <span class="alcance-info">
+          <span class="alcance-titulo">${esc(luzModelo(p.item))}</span>
+          <span class="alcance-estado">${r2(q)} ${esc(p.unidad || "E")}${f && pr > 0 ? ` × ${fmt(pr)} de referencia` : " · ponle precio a mano o pega la cuota"}</span>
+        </span>
+        <span class="mat-precio">${f && pr > 0 ? fmt(r2(q * pr)) : "—"}</span>
+      </div>`;
+    }).join("");
+    const tablaFam = LUZ_FAMILIAS.map(f => `
+      <label class="mat-filtro-label" style="display:flex;align-items:center;gap:.5rem;margin:.15rem 0">
+        <span style="flex:1">${esc(f.nom)}</span>
+        <input type="number" class="luz-ref-precio" data-fam="${esc(f.id)}" min="0" step="5" value="${esc(precios[f.id])}"
+          ${soloLectura ? "disabled" : ""} style="width:6rem;font:inherit;padding:.25rem .4rem;border:1px solid var(--mp-line);border-radius:8px;text-align:right">
+      </label>`).join("");
+    return `
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">🔦 Luminarias que cotiza el supply (${pend.length})</div>
+        <p class="modal-nota">Tú no pones la luz: pones la mano. Mientras llega la cuota estos renglones valen <strong>$0</strong> y
+          el bid sale corto. Aquí eliges: usar un <strong>precio de referencia tuyo</strong> para tener una cifra, o pegar la
+          <strong>cuota de verdad</strong> cuando llegue. Nunca salen precios de internet.</p>
+        ${filasPend}
+        ${ref.sinFamilia.length ? `<div class="lev-nota" style="margin:.4rem 0">⚠ ${ref.sinFamilia.length} renglón(es) sin familia reconocida: no llevan referencia. Pégales la cuota o ponles el precio a mano.</div>` : ""}
+        ${soloLectura ? "" : `
+        <label class="mat-filtro-label" style="display:flex;align-items:center;gap:.5rem;margin:.6rem 0 .2rem">
+          <input type="checkbox" id="luz-ref-on"${usando ? " checked" : ""}>
+          <span>Usar precios de <strong>referencia</strong> en este estimado mientras llega la cuota
+            ${ref.total > 0 ? `— <strong>${fmt(r2(ref.total))}</strong>` : ""}</span>
+        </label>
+        <p class="modal-nota">${usando
+          ? `Está <strong>encendido</strong>: esos ${fmt(r2(ref.total))} entran al bid por donde entran las cotizaciones (con su markup, sin misceláneas) y cada renglón se ve marcado <strong>REFERENCIA</strong>. La cuota sigue pendiente y el aviso de salida lo va a decir.`
+          : `Está <strong>apagado</strong>: los renglones valen $0 y el bid no incluye la luminaria.`}</p>
+        <details style="margin-top:.5rem">
+          <summary class="mat-filtro-label" style="cursor:pointer">Precios de referencia por familia (los tuyos)</summary>
+          ${tablaFam}
+          <button type="button" class="accion secundaria" id="btn-luz-guardar" style="margin-top:.4rem">Guardar los precios</button>
+          <p class="modal-nota">Valen para todos los estimados. Los de arranque son los que pusiste en el bid de Nicklaus.</p>
+        </details>
+        <details style="margin-top:.5rem">
+          <summary class="mat-filtro-label" style="cursor:pointer">Pegar la cuota del supply (CED, CES…)</summary>
+          <p class="modal-nota">Copia las líneas de la cuota y pégalas tal cual. Busco cada modelo y su precio unitario.
+            Si pegas las dos cuotas, <strong>me quedo con la más cara</strong>.</p>
+          <textarea id="luz-cuota" rows="4" placeholder="12  LITHONIA STAK 2X2 5000LM 80CRI 35K   $168.40   $2,020.80"
+            style="width:100%;font:inherit;font-size:.8rem;padding:.55rem .7rem;border:1px solid var(--mp-line);border-radius:10px"></textarea>
+          <button type="button" class="accion secundaria" id="btn-luz-leer" style="margin-top:.4rem">🔎 Leer la cuota</button>
+          <div id="luz-cuota-preview"></div>
+        </details>`}
+      </div>`;
+  }
+  let luzCasadas = null;   // lo último que se leyó de una cuota, a la espera de aplicarse
+  function pintaCuotaPreview(est) {
+    const r2 = r2e27;
+    const caja = $("luz-cuota-preview"), txt = ($("luz-cuota") || {}).value || "";
+    if (!caja) return;
+    const c = calcularEstimado(est);
+    const pend = (c.items || []).filter(ES_COT_PENDIENTE);
+    const r = casaCuota(leeCuota(txt), pend);
+    luzCasadas = r.casadas.filter(x => x.id);
+    if (!r.casadas.length) {
+      caja.innerHTML = `<div class="lev-nota" style="margin-top:.5rem">No reconocí ningún modelo de los que esperan cuota.
+        ${r.sinPareja.length ? `Leí ${r.sinPareja.length} línea(s) con precio pero ninguna se parece a los modelos del estimado.` : "No encontré líneas con precio: revisa que se copiaran los números."}</div>`;
+      return;
+    }
+    caja.innerHTML = `
+      ${r.casadas.map(x => `
+      <div class="mat-item${x.dudoso ? " recibo-por_leer" : ""}">
+        <span class="recibo-chip ${x.dudoso ? "por_leer" : "conciliado"}">${x.pc}%${x.dudoso ? " ?" : ""}</span>
+        <span class="alcance-info">
+          <span class="alcance-titulo">${esc(x.modelo)}</span>
+          <span class="alcance-estado">cuota: ${esc(x.desc.slice(0, 70))}${x.antes ? ` · había otra a ${fmt(x.antes)}: me quedo con la más cara` : ""}${x.id ? "" : " · ⚠ este renglón no se puede editar (viene de una receta)"}</span>
+        </span>
+        <span class="mat-precio">${fmt(x.precio)} × ${r2(x.cantidad)} = ${fmt(r2(x.precio * x.cantidad))}</span>
+      </div>`).join("")}
+      ${r.sinCuota.length ? `<div class="lev-nota" style="margin:.4rem 0">Sin cuota todavía: ${r.sinCuota.map(p => esc(luzModelo(p.item))).join(" · ")}</div>` : ""}
+      ${r.sinPareja.length ? `<div class="lev-nota" style="margin:.4rem 0">${r.sinPareja.length} línea(s) de la cuota no casan con nada del estimado (otro material, o el modelo está escrito distinto).</div>` : ""}
+      ${luzCasadas.length ? `<button type="button" class="accion" id="btn-luz-aplicar" style="margin-top:.45rem">✓ Poner esos ${luzCasadas.length} precio(s) en el estimado</button>` : ""}`;
+    const bA = $("btn-luz-aplicar");
+    if (bA) bA.addEventListener("click", () => aplicaCuota(est));
+  }
+  async function aplicaCuota(est) {
+    if (!luzCasadas || !luzCasadas.length) return;
+    const hoy = new Date().toISOString().slice(0, 10);
+    let n = 0;
+    for (const x of luzCasadas) {
+      try {
+        await DB.cambiarItemEstimado(x.id, { precio: x.precio, item: `${x.modelo} (cuota ${hoy})`, origen: "cotizacion-cuota" });
+        n++;
+      } catch (err) { avisar("No se pudo guardar: " + (err.message || err), true); return; }
+    }
+    luzCasadas = null;
+    await recargarEstimador();
+    avisar(`✓ ${n} precio(s) de la cuota puestos en el estimado`);
+  }
+  async function guardaPreciosLuz() {
+    const els = [...document.querySelectorAll(".luz-ref-precio")];
+    if (!els.length) return;
+    const obj = {};
+    els.forEach(el => { const v = Number(el.value); if (isFinite(v) && v >= 0) obj[el.dataset.fam] = v; });
+    try {
+      await DB.guardarConfig("luz_ref", JSON.stringify(obj));
+      await recargarEstimador();
+      avisar("✓ Precios de referencia guardados");
+    } catch (err) { avisar("No se pudo guardar: " + (err.message || err), true); }
+  }
+
   function pintarEstimadorEditor() {
     const est = (estData.estimados || []).find(x => x.id === estimadoActivo);
     if (!est) { estimadoActivo = null; pintarEstimadorLista(); return; }
@@ -7735,6 +8200,8 @@ Power done right the first time. ⚡`;
         ${filasItems || `<p class="cal-sin-eventos">Agrega ensambles, pega el takeoff o busca en el catálogo.</p>`}
         ${filasAutos}
       </div>`}
+      ${cardHorasHTML(est, c, soloLectura)}
+      ${cardLuzHTML(est, c, soloLectura)}
       <div class="cal-panel-card">
         <div class="cal-form-titulo">💵 Resumen — fórmula Max Power
           ${!soloLectura ? `<span class="chk-avance">toca ✎ para jugar con los números</span>` : ""}</div>
@@ -7869,6 +8336,19 @@ Power done right the first time. ⚡`;
     const selSop = $("est-soporte"), inpRack = $("est-pct-rack");
     if (selSop) selSop.addEventListener("change", async () => { await DB.cambiarEstimado(est.id, { soporte: selSop.value }).catch(() => {}); await recargarEstimador(); });
     if (inpRack) inpRack.addEventListener("change", async () => { const v = Math.max(0, Math.min(100, Number(inpRack.value) || 0)) / 100; await DB.cambiarEstimado(est.id, { pct_rack: v }).catch(() => {}); await recargarEstimador(); });
+    // E27 · horas del proyecto y luminarias por cotizar
+    const bHoras = $("btn-horas-aplicar");
+    if (bHoras) bHoras.addEventListener("click", () => aplicaHoras(est));
+    const chkLuz = $("luz-ref-on");
+    if (chkLuz) chkLuz.addEventListener("change", async () => {
+      try { await DB.cambiarEstimado(est.id, { usa_luz_ref: chkLuz.checked }); }
+      catch (err) { avisar("No se pudo guardar: corre docs/sql/e27.sql (falta la columna usa_luz_ref)", true); return; }
+      await recargarEstimador();
+    });
+    const bLuzG = $("btn-luz-guardar");
+    if (bLuzG) bLuzG.addEventListener("click", guardaPreciosLuz);
+    const bLuzL = $("btn-luz-leer");
+    if (bLuzL) bLuzL.addEventListener("click", () => pintaCuotaPreview(est));
     if (selEsc && !soloLectura) selEsc.addEventListener("change", async () => {
       await DB.cambiarEstimado(est.id, { escenario: selEsc.value }).catch(() => {});
       await recargarEstimador();
@@ -11186,6 +11666,15 @@ Power done right the first time. ⚡`;
       takeoff(est, c) { return textoTakeoff(est, c); },
       consumibles(base, est, cfg) { return autosConsumibles(base || [], est || {}, cfg || {}); },
       reglas(cfg) { return consReglas(cfg || {}); },
+      // E27 · horas de proyecto, precio de referencia y cuota del supply
+      horas(base, est, cfg) { return horasPropuestas(base || [], est || {}, cfg || {}); },
+      horasReglas(cfg) { return horasReglas(cfg || {}); },
+      cuentas(base) { return cuentasDelEstimado(base || []); },
+      refLuz(base, cfg) { return refLuminarias(base || [], cfg || {}); },
+      familia(nom) { const f = familiaLuz(nom); return f ? f.id : null; },
+      preciosLuz(cfg) { return luzRefPrecios(cfg || {}); },
+      leeCuota(txt) { return leeCuota(txt || ""); },
+      casaCuota(txt, pendientes) { return casaCuota(leeCuota(txt || ""), pendientes || []); },
       calcula(est) { return calcularEstimado(est); },
       escenarios(empresa) { return escenariosDe(empresa).map(e => e.id); },
       escToca(empresa, actual) { return escenarioQueToca(empresa, actual); },
