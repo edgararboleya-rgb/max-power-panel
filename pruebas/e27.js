@@ -406,6 +406,31 @@ CES MIAMI — QUOTE 55120
   ok('la tarjeta sale en el estimador y marca las que están en ESTE bid', tarj.sale && tarj.enBid && /GRS CONDUIT/.test(tarj.sql), JSON.stringify([tarj.sale, tarj.enBid]));
   await datos();
 
+  /* ===== 13 · el conector que no le cabe al cable (defecto conocido desde el 16/09) ===== */
+  const ENS = [{ id: 'ev', nombre: 'EV CHARGER OUTLET (NEMA 14-50)' }, { id: 'gfci', nombre: 'RECEPTÁCULO GFCI 20A WP EXTERIOR — ROMEX' }, { id: 'sec', nombre: 'RECEPTÁCULO 30A SECADORA — ROMEX' }];
+  const ENSI = [
+    { ensamble_id: 'ev', item: '6/3     ROMEX', cantidad: 0.025 },
+    { ensamble_id: 'ev', item: 'NM CABLE CONNECTOR 1/2"', cantidad: 1 },
+    { ensamble_id: 'gfci', item: '12/2   ROMEX', cantidad: 0.02 },
+    { ensamble_id: 'gfci', item: 'NM CABLE CONNECTOR 1/2"', cantidad: 1 },
+    { ensamble_id: 'sec', item: '10/3   ROMEX', cantidad: 0.025 },
+    { ensamble_id: 'sec', item: 'NM CABLE CONNECTOR 3/4"', cantidad: 1 }
+  ];
+  const cort = await p.evaluate(([e, i]) => window.MXP_PRUEBA.e0.conectorCorto(e, i), [ENS, ENSI]);
+  ok('encuentra la receta del cargador: 6/3 con un conector NM de ½", por ahí no pasa ese cable', cort.length === 1 && /EV CHARGER/.test(cort[0].receta) && cort[0].cable === 6, JSON.stringify(cort));
+  ok('y dice cuál hace falta de verdad para un #6: el de 1", no el de ¾"', /NM CABLE CONNECTOR 1"/.test(cort[0].hace_falta), cort[0].hace_falta);
+  ok('…y avisa de que esa pieza NO está en su catálogo, que es justo por lo que llevaba el chico', cort[0].enCatalogo === false, JSON.stringify(cort[0].enCatalogo));
+  const cortHay = await p.evaluate(([e, i]) => { window.MXP_PRUEBA.e0.datos({ catalogo: [{ item: 'NM CABLE CONNECTOR 1"', precio: 2.4 }], items: [], config: {}, estimados: [], ensambles: e, ensambleItems: i }); return window.MXP_PRUEBA.e0.conectorCorto(e, i); }, [ENS, ENSI]);
+  ok('si la pieza buena SÍ está en el catálogo, lo dice y solo hay que cambiar la receta', cortHay[0].enCatalogo === true, JSON.stringify(cortHay[0].enCatalogo));
+  ok('un 12/2 con conector de ½" está bien y no se señala; un 10/3 con el de ¾" tampoco', !cort.some(x => /GFCI|SECADORA/.test(x.receta)), JSON.stringify(cort.map(x => x.receta)));
+  const tarjC = await p.evaluate(([e, i, es]) => {
+    window.MXP_PRUEBA.e0.datos({ catalogo: [], items: [], config: {}, estimados: [], ensambles: e, ensambleItems: i });
+    const h = window.MXP_PRUEBA.e0.tarjetas(es, { items: [], autos: [] });
+    return { sale: /no le cabe al cable/.test(h), ev: /EV CHARGER/.test(h) };
+  }, [ENS, ENSI, EST]);
+  ok('sale en el estimador, nombrando la receta y lo que le falta', tarjC.sale && tarjC.ev, JSON.stringify(tarjC));
+  await datos();
+
   ok('cero errores de página', errs.length === 0, errs.join(' | ').slice(0, 250));
   console.log('\n' + R.join('\n'));
   const mal = R.filter(r => r.slice(0, 4).indexOf('✗') >= 0).length;

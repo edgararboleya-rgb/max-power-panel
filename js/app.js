@@ -7368,6 +7368,50 @@ function esFalloDeRed(err) {
     { item: "MAIN CONDUCTOR", viejo: {"horas_unidad": 0.1}, nuevo: {"horas_unidad": 0.02}, nota: "Tu Excel lo tiene en MLF a 20 h por mil pies, o sea 0,02 h/ft." },
     { item: "JB 1900 DEEP BOX", viejo: {"precio": 4.5, "horas_unidad": 0.3}, nuevo: {"precio": 1.04, "horas_unidad": 0.25}, nota: "Es tu número: en Stuart cotizaste 100 cajas '4\"X 4\" X 2 1/8\" DEEP COMBO BOX' (la misma pieza) a $1,04 y 0,25 h, y a mano cobras 0,25 h por la caja 4x4" }
   ];
+  /* ================= EL CONECTOR QUE NO LE CABE AL CABLE (20/09) =================
+     Defecto conocido desde el 16/09 y hasta hoy sin arreglar, avisado a Edgar
+     y anotado en docs/ESTIMADOR-ESTADO: su receta «EV CHARGER OUTLET» lleva
+     Romex 6/3 con un NM CABLE CONNECTOR de 1/2", que es de 14/2 y 12/2. Por
+     ese conector no pasa un 6/3: en la obra hay que ir a buscar el bueno, y
+     en el bid está el barato. No es solo esa receta: la comprobación vale para
+     TODAS, y se hace sobre la base que Edgar tenga delante, no sobre una
+     lista mía. NM 1/2" aguanta hasta 12/3; de 10 para arriba pide 3/4". */
+  const NM_CALIBRE_MAX = { '1/2': 12, '3/4': 8, '1': 6, '1-1/4': 4, '1-1/2': 2, '2': 1 };
+  function nmTamano(item) {
+    const m = normTxt(item).match(/NM\s*CABLE\s*CONNECTOR\s*([0-9\-\/ ]+)"/);
+    return m ? m[1].replace(/\s+/g, "") : null;
+  }
+  function romexCalibre(item) {
+    const m = normTxt(item).match(/^\s*(\d{1,2})\s*\/\s*\d\s+ROMEX/);
+    return m ? Number(m[1]) : null;
+  }
+  /* Recetas donde el conector NM se queda corto para el cable que llevan. PURA. */
+  function recetasConectorCorto(ensambles, items) {
+    const porEns = new Map();
+    (items || []).forEach(x => { if (!x || !x.ensamble_id) return; const a = porEns.get(x.ensamble_id) || []; a.push(x); porEns.set(x.ensamble_id, a); });
+    const out = [];
+    (ensambles || []).forEach(e => {
+      const comps = porEns.get(e.id) || [];
+      let peor = null, con = null;
+      comps.forEach(c => {
+        const g = romexCalibre(c.item);
+        if (g !== null && (peor === null || g < peor)) peor = g;   // el calibre MÁS GRUESO es el número más chico
+        const t = nmTamano(c.item);
+        if (t && NM_CALIBRE_MAX[t] !== undefined && (!con || NM_CALIBRE_MAX[t] > NM_CALIBRE_MAX[con.t])) con = { t: t, item: c.item };
+      });
+      if (peor === null || !con) return;
+      const aguanta = NM_CALIBRE_MAX[con.t];
+      if (peor >= aguanta) return;   // cabe
+      const bueno = Object.keys(NM_CALIBRE_MAX).find(k => NM_CALIBRE_MAX[k] <= peor);
+      const nom = bueno ? 'NM CABLE CONNECTOR ' + bueno + '"' : null;
+      // ¿existe esa pieza en SU catálogo? Si no, se dice: de nada sirve pedirle
+      // que cambie la receta por algo que no puede elegir (es el caso del 6/3)
+      const hay = nom ? ((estData && estData.catalogo) || []).some(x => x && normTxt(x.item) === normTxt(nom)) : false;
+      out.push({ receta: e.nombre, cable: peor, conector: con.item, tam: con.t,
+                 hace_falta: nom || 'un conector mayor', enCatalogo: hay });
+    });
+    return out;
+  }
   /* Compara el catálogo de verdad con lo que la auditoría pidió. PURA. */
   function auditoriaCatalogo(catalogo) {
     const porNom = new Map();
@@ -8213,13 +8257,28 @@ Power done right the first time. ⚡`;
      ya trae las 33, desaparece sola y no vuelve a estorbar. */
   function cardAuditoriaHTML(est, c, soloLectura) {
     const a = auditoriaCatalogo((estData && estData.catalogo) || []);
-    if (!a.pendientes.length) return "";
+    const cortos = recetasConectorCorto((estData && estData.ensambles) || [], (estData && estData.ensambleItems) || []);
+    if (!a.pendientes.length && !cortos.length) return "";
     const enUso = new Set();
     (c && c.items || []).forEach(l => enUso.add(normTxt(l.item)));
     const tocan = a.pendientes.filter(r => enUso.has(normTxt(r.item)));
     return `
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">🧾 La auditoría del catálogo: faltan ${a.pendientes.length} de ${a.total}</div>
+        ${cortos.length ? `
+        <div class="cal-form-titulo">🔌 ${cortos.length} receta(s) con un conector que no le cabe al cable</div>
+        <p class="modal-nota">El conector NM de ½" es de 14/2 y 12/2: por ahí no pasa un cable más grueso.
+          En la obra hay que ir a buscar el bueno y en el bid está el barato.</p>
+        ${cortos.slice(0, 10).map(x => `
+          <div class="mat-item recibo-por_leer">
+            <span class="recibo-chip por_leer">#${esc(String(x.cable))}</span>
+            <span class="alcance-info">
+              <span class="alcance-titulo">${esc(x.receta)}</span>
+              <span class="alcance-estado">lleva ${esc(x.conector)} con cable #${esc(String(x.cable))} · hace falta <b>${esc(x.hace_falta)}</b>${x.enCatalogo ? " (está en tu catálogo: cámbialo en la receta)" : " — <b>esa pieza no está en tu catálogo</b>: hay que darla de alta con su precio"}</span>
+            </span>
+          </div>`).join("")}
+        ${a.pendientes.length ? "<hr style='border:0;border-top:1px solid var(--mp-line);margin:.7rem 0'>" : ""}` : ""}
+        ${a.pendientes.length ? `<div class="cal-form-titulo">🧾 La auditoría del catálogo: faltan ${a.pendientes.length} de ${a.total}</div>` : ""}
+        ${a.pendientes.length ? `
         <p class="modal-nota">La auditoría del 16/09 encontró horas copiadas de otra familia, unidades rotas y precios
           de tus propias facturas. <strong>${a.hechos.length}</strong> ya están en tu catálogo${a.cambiados.length ? `, y <strong>${a.cambiados.length}</strong> los cambiaste tú a otro número (esos no se tocan)` : ""}.
           Estas <strong>${a.pendientes.length}</strong> siguen con el valor viejo${tocan.length ? ` — y <strong>${tocan.length}</strong> ${tocan.length === 1 ? "está" : "están"} en ESTE estimado` : ""}.</p>
@@ -8241,7 +8300,7 @@ Power done right the first time. ⚡`;
         <details style="margin-top:.5rem">
           <summary class="mat-filtro-label" style="cursor:pointer">Ver el SQL</summary>
           <textarea id="aud-sql" rows="8" readonly style="width:100%;font-family:ui-monospace,monospace;font-size:.72rem;padding:.55rem;border:1px solid var(--mp-line);border-radius:10px">${esc(auditoriaSql(a.pendientes))}</textarea>
-        </details>
+        </details>` : ""}
       </div>`;
   }
   function cardLuzHTML(est, c, soloLectura) {
@@ -12259,6 +12318,7 @@ Power done right the first time. ⚡`;
       nombreCliente(item) { return nombreParaCliente(item); },
       auditoria(cat) { return auditoriaCatalogo(cat || (estData && estData.catalogo) || []); },
       auditoriaSql(p) { return auditoriaSql(p || []); },
+      conectorCorto(ens, items) { return recetasConectorCorto(ens || [], items || []); },
       mep(est, c) { return textoResumenMEP(est, c); },
       takeoff(est, c) { return textoTakeoff(est, c); },
       consumibles(base, est, cfg) { return autosConsumibles(base || [], est || {}, cfg || {}); },

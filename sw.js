@@ -6,7 +6,7 @@
 //      ABRA sin señal o si GitHub Pages se cae. Antes, sin internet, tocar
 //      el icono dejaba la pantalla en blanco.
 // ============================================================
-const CACHE = "mxp-casco-v108";
+const CACHE = "mxp-casco-v109";
 const CASCO = [
   "./", "./index.html", "./css/styles.css",
   "./js/app.js", "./js/db.js", "./js/i18n.js",

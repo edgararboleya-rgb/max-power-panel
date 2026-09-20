@@ -255,9 +255,13 @@ con `wrangler secret put`, y **no van en ningún `.md`**.
 | **E7** | Planos: páginas rotadas, aviso «texto en curvas». | Planos. |
 | **E8** | Empresas completas con RLS y perfiles. | **Aplazado por Edgar.** |
 
-Un defecto conocido y **no** arreglado, avisado a Edgar: su receta
-`EV CHARGER OUTLET` usa Romex 6/3 con un `NM CABLE CONNECTOR 1/2"` (chico) y
-sin caja; el conector correcto no existe en su catálogo.
+~~Un defecto conocido y **no** arreglado~~ → **v202 (20/09):** ya no hace falta
+acordarse. El estimador comprueba TODAS las recetas y señala aquellas cuyo
+conector NM se queda corto para el cable que llevan (½" aguanta hasta 12/3; de
+10 para arriba pide ¾", y un 6/3 pide 1"). Dice cuál hace falta y, si esa pieza
+no está en el catálogo —que es justo el caso del `EV CHARGER OUTLET`— lo avisa,
+porque de nada sirve pedir que se cambie la receta por algo que no se puede
+elegir. `pruebas/e27.js` cubre los tres casos.
 
 ---
 
