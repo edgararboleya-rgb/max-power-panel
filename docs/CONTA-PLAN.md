@@ -21,6 +21,18 @@ pagarlo en el diseño rinde y pagarlo en el relleno no.
 La sesión avisa **«esta parte va en azul»** o **«ahora cámbiate a verde»**
 antes de cada bloque, y espera a que Edgar cambie el modelo.
 
+**Las órdenes de trabajo están en `docs/conta/fases/`**, una por fase. La
+sesión que va a trabajar la Fase N lee **este archivo y `fNN-*.md`**, nada
+más. Ahí está qué trae Edgar, qué crea el azul, qué trabaja el verde, cuál
+es el entregable y cómo se sabe que terminó.
+
+| | | | |
+|---|---|---|---|
+| [f01 Plan de cuentas](conta/fases/f01-plan-de-cuentas.md) | [f02 El libro](conta/fases/f02-el-libro.md) | [f03 Puentes](conta/fases/f03-puentes.md) | [f04 Estados](conta/fases/f04-estados.md) |
+| [f05 Pantalla](conta/fases/f05-pantalla.md) | [f06 Banco](conta/fases/f06-banco.md) | [f07 Categorización](conta/fases/f07-categorizacion.md) | [f08 Cierre](conta/fases/f08-cierre.md) |
+| [f09 Costo por obra](conta/fases/f09-costo-por-obra.md) | [f10 Facturación y WIP](conta/fases/f10-facturacion-wip.md) | [f11 Nómina](conta/fases/f11-nomina.md) | [f12 Apertura y 1099](conta/fases/f12-apertura-1099.md) |
+| [f13–14 Paralelo](conta/fases/f13-14-paralelo.md) | [f15 Amarre](conta/fases/f15-amarre.md) | [f16 Contador de guardia](conta/fases/f16-contador-de-guardia.md) | [f17 Paquete fiscal](conta/fases/f17-paquete-fiscal.md) |
+
 **Regla número uno de este plan:** si vas a empezar una sesión, di
 *«hagamos la Fase N»*. No digas *«sigue con la contabilidad»*. La diferencia
 en crédito entre una cosa y la otra es de tres a cinco veces.
