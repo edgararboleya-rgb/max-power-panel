@@ -5935,7 +5935,12 @@ function esFalloDeRed(err) {
     const precios = preciosOpc || luzRefPrecios(cfg);
     const el = luzEleccion(luzFamMapa(cfg)[luzClave(nombre)]);
     if (el && el.tipo === "precio") return { precio: el.precio, fam: null, id: "propio", nom: "Precio tuyo", fuente: "precio" };
-    if (el && el.tipo === "fam") return { precio: Number(precios[el.fam.id]) || 0, fam: el.fam, id: el.fam.id, nom: el.fam.nom, fuente: "tuya" };
+    if (el && el.tipo === "fam") {
+      const p = Number(precios[el.fam.id]) || 0;
+      // una familia cuyo precio está en $0 NO pone precio: se dice así, y no
+      // se pinta como resuelta (revisión 20/09)
+      return { precio: p, fam: el.fam, id: el.fam.id, nom: el.fam.nom, fuente: p > 0 ? "tuya" : "tuya_sin_precio" };
+    }
     const f = familiaLuzAuto(nombre);
     if (f) return { precio: Number(precios[f.id]) || 0, fam: f, id: f.id, nom: f.nom, fuente: "auto" };
     return { precio: 0, fam: null, id: null, nom: "", fuente: "sin" };
@@ -5946,6 +5951,16 @@ function esFalloDeRed(err) {
   /* El mapa DESPUÉS de enseñarle (o de olvidar) un modelo. PURA: devuelve el
      objeto a guardar, no escribe. `valor`: un id de familia, un número > 0
      (precio propio), o vacío/0 para volver a lo automático. */
+  /* Olvidar por la clave EXACTA que está guardada. El botón «olvidar» de la
+     lista pasa la clave tal cual, y volver a normalizarla podía dejarla
+     distinta (una clave recortada a 120 que acaba en espacio) — entonces no
+     borraba nada y encima decía que sí. (Revisión 20/09.) */
+  function luzFamOlvida(cfg, clave) {
+    const m = Object.assign({}, luzFamMapa(cfg));
+    delete m[clave];
+    if (m[luzClave(clave)] !== undefined) delete m[luzClave(clave)];
+    return m;
+  }
   function luzFamNuevo(cfg, nombre, valor) {
     const m = Object.assign({}, luzFamMapa(cfg)), k = luzClave(nombre);
     if (!k) return m;
@@ -5961,6 +5976,12 @@ function esFalloDeRed(err) {
   // ¿Es un renglón de luminaria a la espera de la cuota?
   const ES_COT_PENDIENTE = l => (Number(l.precio) || 0) === 0 &&
     (l.origen === "cotizacion" || /^COTIZACI[OÓ]N PENDIENTE/i.test(String(l.item || "")));
+  /* Y el que YA tiene una cuota puesta. Hace falta porque las dos cuotas no
+     llegan el mismo día: si CED llega el lunes y CES el miércoles, el renglón
+     del lunes ya no está «pendiente» y la del miércoles no casaba con nada —
+     la más cara se perdía en silencio, justo al revés de la regla de Edgar.
+     (Revisión 20/09.) */
+  const ES_CON_CUOTA = l => (Number(l.precio) || 0) > 0 && /^cotizacion-cuota/.test(String(l.origen || ""));
   /* Lo que pondría el precio de referencia. PURA. */
   function refLuminarias(base, cfg) {
     const precios = luzRefPrecios(cfg), filas = [], sinFamilia = [];
@@ -6022,7 +6043,7 @@ function esFalloDeRed(err) {
       .filter(t => t.length >= 2 && !/^(THE|AND|WITH|FOR|LED|EA|PC|PCS|NEW)$/.test(t));
   }
   function casaCuota(cuota, pendientes) {
-    const pend = (pendientes || []).map(p => ({ ref: p, toks: tokensLuz(luzModelo(p.item)) }))
+    const pend = (pendientes || []).map(p => ({ ref: p, toks: tokensLuz(luzModelo(p.item)), ya: Number(p.precio) || 0 }))
       .filter(p => p.toks.length);
     const porItem = new Map(), sinPareja = [];
     for (const f of (cuota.filas || [])) {
@@ -6045,10 +6066,13 @@ function esFalloDeRed(err) {
       // DOS CUOTAS PARA LO MISMO (CED y CES): manda la más cara. Regla de
       // Edgar: si una viene corta, el que pone la diferencia es él.
       if (!antes || f.precio > antes.precio) {
+        const ya = mejor.p.ya;
         porItem.set(k, { item: k, id: mejor.p.ref.id, modelo: luzModelo(k), desc: f.desc,
                          precio: f.precio, cantidad: Number(mejor.p.ref.cantidad) || 0,
                          pc: Math.round(mejor.sc * 100), dudoso: mejor.sc - sc2 < 0.15,
-                         antes: antes ? antes.precio : null });
+                         antes: antes ? antes.precio : null,
+                         // el renglón ya traía una cuota de otro día: manda la MÁS CARA
+                         yaTenia: ya || null, gana: !ya || f.precio > ya });
       } else if (antes) {
         antes.antes = Math.min(antes.antes === null || antes.antes === undefined ? f.precio : antes.antes, f.precio);
       }
@@ -7289,10 +7313,20 @@ function esFalloDeRed(err) {
       if (Number((estData.config && estData.config.cero_aviso) ?? 2) < 2) return "";
       if (est.modo === "rapido") return "";
       const porSec = {};
-      let sinConfirmar = 0;
+      let sinConfirmar = 0, nRef = 0, totRef = 0;
       const anota = (linea) => {
         const z = ceroDe(linea, est);
         if (z.est === "by_owner" && !z.conf) sinConfirmar++;
+        /* (Revisión 20/09) UN RENGLÓN A PRECIO DE REFERENCIA SÍ ESTÁ EN EL
+           PRECIO: entra por la puerta de las cotizaciones. Decir «el precio NO
+           los incluye» era mentira, y de las que cuestan dinero: Edgar podía
+           sumarlos otra vez a mano. Avisa igual —la cuota sigue pendiente—
+           pero por lo que es. */
+        if (z.est === "referencia") {
+          nRef++;
+          totRef += (Number(linea.cantidad) || 0) * luzRefDe(linea.item, (estData && estData.config) || {}).precio;
+          return;
+        }
         if (!z.alerta) return;
         const sec = (z.cat && z.cat.seccion) || (z.est === "huerfano" ? "SIN CATÁLOGO" : "SIN SECCIÓN");
         const g = porSec[sec] || (porSec[sec] = { n: 0, h: 0 });
@@ -7301,10 +7335,19 @@ function esFalloDeRed(err) {
       (c.items || []).forEach(anota);
       (c.autos || []).forEach(anota);
       const secs = Object.entries(porSec).sort((a, b) => b[1].h - a[1].h).slice(0, 8);
-      if (!secs.length) return "";
-      const tot = secs.reduce((t, [, g]) => t + g.n, 0);
       const r2b = v => Math.round(v * 100) / 100;
-      return "Este estimado lleva " + tot + (tot === 1 ? " renglón" : " renglones") + " sin material.\n" +
+      const avisoRef = nRef
+        ? nRef + (nRef === 1 ? " luminaria va" : " luminarias van") + " a TU PRECIO DE REFERENCIA (" + fmt(r2b(totRef)) +
+          "), no a cuota del supply: ese dinero SÍ está en el precio, pero la cuota de verdad todavía no ha llegado.\n" +
+          "Si el supply viene más caro, la diferencia la pones tú.\n\n"
+        : "";
+      if (!secs.length) {
+        if (!avisoRef) return "";
+        return avisoRef + "Aceptar = seguir así.\nCancelar = volver y revisarlas.";
+      }
+      const tot = secs.reduce((t, [, g]) => t + g.n, 0);
+      return avisoRef +
+        "Este estimado lleva " + tot + (tot === 1 ? " renglón" : " renglones") + " sin material.\n" +
         "El precio NO los incluye:\n\n" +
         secs.map(([sec, g]) => " • " + sec + " — " + g.n + (g.n === 1 ? " renglón, " : " renglones, ") + r2b(g.h) + " h").join("\n") +
         (sinConfirmar ? "\n\nY " + sinConfirmar + ' dice(n) "by owner" porque lo supuso la app: mientras no lo confirmes, NO sale en la propuesta.' : "") +
@@ -8043,11 +8086,11 @@ Power done right the first time. ⚡`;
     if (!pend.length) return "";
     const ref = refLuminarias(c.items, cfg), precios = ref.precios;
     const usando = !!est.usa_luz_ref;
-    const CHIP_FUENTE = { tuya: "conciliado", precio: "conciliado", auto: "leido", sin: "sin_foto" };
+    const CHIP_FUENTE = { tuya: "conciliado", precio: "conciliado", auto: "leido", sin: "sin_foto", tuya_sin_precio: "por_leer" };
     const filasPend = pend.map(p => {
       const rf = luzRefDe(p.item, cfg, precios), q = Number(p.cantidad) || 0;
       const auto = familiaLuzAuto(p.item), mod = luzModelo(p.item);
-      const tuya = rf.fuente === "tuya" || rf.fuente === "precio";
+      const tuya = rf.fuente === "tuya" || rf.fuente === "precio" || rf.fuente === "tuya_sin_precio";
       const sel = rf.fuente === "precio" ? "__propio" : tuya ? rf.id : "";
       // el selector: lo automático primero (es lo que pasa si no tocas nada),
       // las nueve familias con su precio, y un precio tuyo para este modelo
@@ -8061,12 +8104,14 @@ Power done right the first time. ⚡`;
           placeholder="$ por unidad" style="width:7rem;font:inherit;font-size:.78rem;padding:.2rem .3rem;border:1px solid var(--mp-line);border-radius:8px;text-align:right;${rf.fuente === "precio" ? "" : "display:none"}">`;
       return `
       <div class="mat-item" style="flex-wrap:wrap">
-        <span class="recibo-chip ${CHIP_FUENTE[rf.fuente]}">${rf.fuente === "sin" ? "SIN FAMILIA" : esc(rf.nom) + (tuya ? " ✎" : "")}</span>
+        <span class="recibo-chip ${CHIP_FUENTE[rf.fuente]}">${rf.fuente === "sin" ? "SIN FAMILIA" : esc(rf.nom) + (tuya ? " ✎" : "") + (rf.fuente === "tuya_sin_precio" ? " · $0" : "")}</span>
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(mod)}</span>
           <span class="alcance-estado">${r2(q)} ${esc(p.unidad || "E")}${rf.precio > 0
             ? ` × ${fmt(rf.precio)} ${rf.fuente === "precio" ? "tuyos" : rf.fuente === "tuya" ? "de la familia que elegiste" : "de referencia"}`
-            : " · elige su familia aquí abajo, o pega la cuota"}</span>
+            : rf.fuente === "tuya_sin_precio"
+              ? ` · esa familia está a $0 aquí abajo: ponle precio o dale uno propio a este modelo`
+              : " · elige su familia aquí abajo, o pega la cuota"}</span>
         </span>
         <span class="mat-precio">${rf.precio > 0 ? fmt(r2(q * rf.precio)) : "—"}</span>
         ${selector ? `<span style="flex-basis:100%;display:flex;gap:.4rem;align-items:center;margin:.3rem 0 0 .2rem">${selector}</span>` : ""}
@@ -8133,9 +8178,10 @@ Power done right the first time. ⚡`;
     const caja = $("luz-cuota-preview"), txt = ($("luz-cuota") || {}).value || "";
     if (!caja) return;
     const c = calcularEstimado(est);
-    const pend = (c.items || []).filter(ES_COT_PENDIENTE);
+    // los que esperan cuota Y los que ya tienen una de otro día: si esta es más cara, gana
+    const pend = (c.items || []).filter(l => ES_COT_PENDIENTE(l) || ES_CON_CUOTA(l));
     const r = casaCuota(leeCuota(txt), pend);
-    luzCasadas = r.casadas.filter(x => x.id);
+    luzCasadas = r.casadas.filter(x => x.id && x.gana !== false);
     if (!r.casadas.length) {
       caja.innerHTML = `<div class="lev-nota" style="margin-top:.5rem">No reconocí ningún modelo de los que esperan cuota.
         ${r.sinPareja.length ? `Leí ${r.sinPareja.length} línea(s) con precio pero ninguna se parece a los modelos del estimado.` : "No encontré líneas con precio: revisa que se copiaran los números."}</div>`;
@@ -8143,17 +8189,21 @@ Power done right the first time. ⚡`;
     }
     caja.innerHTML = `
       ${r.casadas.map(x => `
-      <div class="mat-item${x.dudoso ? " recibo-por_leer" : ""}">
-        <span class="recibo-chip ${x.dudoso ? "por_leer" : "conciliado"}">${x.pc}%${x.dudoso ? " ?" : ""}</span>
+      <div class="mat-item${x.dudoso || x.gana === false ? " recibo-por_leer" : ""}">
+        <span class="recibo-chip ${x.gana === false ? "por_leer" : x.dudoso ? "por_leer" : "conciliado"}">${x.pc}%${x.dudoso ? " ?" : ""}</span>
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(x.modelo)}</span>
-          <span class="alcance-estado">cuota: ${esc(x.desc.slice(0, 70))}${x.antes ? ` · había otra a ${fmt(x.antes)}: me quedo con la más cara` : ""}${x.id ? "" : " · ⚠ este renglón no se puede editar (viene de una receta)"}</span>
+          <span class="alcance-estado">cuota: ${esc(x.desc.slice(0, 70))}${x.antes ? ` · había otra a ${fmt(x.antes)}: me quedo con la más cara` : ""}${
+            x.yaTenia ? (x.gana
+              ? ` · <b>sube</b> desde la cuota que ya tenías (${fmt(x.yaTenia)}): la más cara manda`
+              : ` · ya tenías una a ${fmt(x.yaTenia)}, MÁS CARA: esta no se pone`) : ""}${x.id ? "" : " · ⚠ este renglón no se puede editar (viene de una receta)"}</span>
         </span>
         <span class="mat-precio">${fmt(x.precio)} × ${r2(x.cantidad)} = ${fmt(r2(x.precio * x.cantidad))}</span>
       </div>`).join("")}
-      ${r.sinCuota.length ? `<div class="lev-nota" style="margin:.4rem 0">Sin cuota todavía: ${r.sinCuota.map(p => esc(luzModelo(p.item))).join(" · ")}</div>` : ""}
+      ${r.sinCuota.filter(ES_COT_PENDIENTE).length ? `<div class="lev-nota" style="margin:.4rem 0">Sin cuota todavía: ${r.sinCuota.filter(ES_COT_PENDIENTE).map(p => esc(luzModelo(p.item))).join(" · ")}</div>` : ""}
       ${r.sinPareja.length ? `<div class="lev-nota" style="margin:.4rem 0">${r.sinPareja.length} línea(s) de la cuota no casan con nada del estimado (otro material, o el modelo está escrito distinto).</div>` : ""}
-      ${luzCasadas.length ? `<button type="button" class="accion" id="btn-luz-aplicar" style="margin-top:.45rem">✓ Poner esos ${luzCasadas.length} precio(s) en el estimado</button>` : ""}`;
+      ${luzCasadas.length ? `<button type="button" class="accion" id="btn-luz-aplicar" style="margin-top:.45rem">✓ Poner esos ${luzCasadas.length} precio(s) en el estimado</button>`
+        : `<div class="lev-nota" style="margin-top:.45rem">Nada que cambiar: lo que ya tenías es igual o más caro que esta cuota.</div>`}`;
     const bA = $("btn-luz-aplicar");
     if (bA) bA.addEventListener("click", () => aplicaCuota(est));
   }
@@ -8173,20 +8223,35 @@ Power done right the first time. ⚡`;
   }
   /* Enseñarle (o hacerle olvidar) la familia de un modelo. Se guarda en la
      configuración, así que vale para todos los estimados desde ya. */
-  async function aprendeFamLuz(modelo, valor) {
-    const cfg = estData.config || {};
-    const antes = JSON.stringify(luzFamMapa(cfg));
-    const nuevo = luzFamNuevo(cfg, modelo, valor);
-    if (JSON.stringify(nuevo) === antes) return;
-    try {
-      await DB.guardarConfig("luz_fam", JSON.stringify(nuevo));
-      await recargarEstimador();
-      const el = luzEleccion(valor);
-      avisar(el ? (el.tipo === "precio"
-          ? `✓ «${luzClave(modelo)}» vale ${fmt(el.precio)} de referencia — me lo aprendo`
-          : `✓ «${luzClave(modelo)}» es ${el.fam.nom} — me lo aprendo para todos los estimados`)
-        : `✓ «${luzClave(modelo)}» vuelve a lo automático`);
-    } catch (err) { avisar("No se pudo guardar: " + (err.message || err), true); }
+  /* (Revisión 20/09) DOS RENGLONES SEGUIDOS NO SE PISAN. Antes cada cambio
+     leía el mapa de `estData.config`, que solo se refresca al terminar el
+     guardado anterior: marcar dos luminarias seguidas borraba la primera, y
+     el aviso decía ✓ igual. Ahora el mapa vivo se lleva en memoria y las
+     escrituras van EN FILA, una detrás de otra. */
+  let luzFamMem = null, luzFamCola = Promise.resolve();
+  function luzFamActual() { return luzFamMem || luzFamMapa(estData.config || {}); }
+  function aprendeFamLuz(modelo, valor, esClave) {
+    const base = { luz_fam: JSON.stringify(luzFamActual()) };
+    const nuevo = esClave ? luzFamOlvida(base, modelo) : luzFamNuevo(base, modelo, valor);
+    if (JSON.stringify(nuevo) === JSON.stringify(luzFamActual())) {
+      if (esClave) avisar("Ese modelo ya no estaba guardado", true);
+      return luzFamCola;
+    }
+    luzFamMem = nuevo;   // lo que venga después parte de AQUÍ, no del config viejo
+    const el = esClave ? null : luzEleccion(valor);
+    const nom = esClave ? modelo : luzClave(modelo);
+    luzFamCola = luzFamCola.then(async () => {
+      try {
+        await DB.guardarConfig("luz_fam", JSON.stringify(luzFamMem));
+        await recargarEstimador();
+        luzFamMem = null;   // ya está en estData.config
+        avisar(el ? (el.tipo === "precio"
+            ? `✓ «${nom}» vale ${fmt(el.precio)} de referencia — me lo aprendo`
+            : `✓ «${nom}» es ${el.fam.nom} — me lo aprendo para todos los estimados`)
+          : `✓ «${nom}» vuelve a lo automático`);
+      } catch (err) { luzFamMem = null; avisar("No se pudo guardar: " + (err.message || err), true); }
+    });
+    return luzFamCola;
   }
   async function guardaPreciosLuz() {
     const els = [...document.querySelectorAll(".luz-ref-precio")];
@@ -8668,7 +8733,8 @@ Power done right the first time. ⚡`;
       });
     });
     document.querySelectorAll(".luz-fam-olvida").forEach(bF => {
-      bF.addEventListener("click", () => aprendeFamLuz(bF.dataset.modelo, ""));
+      // la clave EXACTA de la lista, sin volver a normalizarla
+      bF.addEventListener("click", () => aprendeFamLuz(bF.dataset.modelo, "", true));
     });
     const bConsG = $("btn-cons-guardar");
     if (bConsG) bConsG.addEventListener("click", guardaConsumibles);
@@ -12002,6 +12068,9 @@ Power done right the first time. ⚡`;
       luzMapa(cfg) { return luzFamMapa(cfg || {}); },
       luzClave(nom) { return luzClave(nom); },
       luzAprende(cfg, nom, valor) { return luzFamNuevo(cfg || {}, nom, valor); },
+      luzOlvida(cfg, clave) { return luzFamOlvida(cfg || {}, clave); },
+      luzMem(v) { if (v !== undefined) luzFamMem = v; return luzFamMem; },
+      luzActual() { return luzFamActual(); },
       preciosLuz(cfg) { return luzRefPrecios(cfg || {}); },
       leeCuota(txt) { return leeCuota(txt || ""); },
       // las tres tarjetas nuevas, pintadas: el motor se prueba aparte, pero el

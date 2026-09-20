@@ -179,6 +179,7 @@ const EST = { id: EST_ID, nombre: 'NCH', modo: 'remodelacion', escenario: 'A', f
   ok('lo aprendido no crece sin fin: tope de 300 modelos, cae el más viejo y se queda el último', tope.n === 300 && tope.primera === 'MODELO 5' && tope.ultima === 'MODELO 304', JSON.stringify(tope));
   // y el dinero: lo aprendido entra al total como cualquier referencia
   const ITEMS_RARO = ITEMS.map(x => x.id === 'c3' ? Object.assign({}, x, { item: RARO }) : x);
+  const ITEMS_RARO0 = [ITEMS_RARO.find(x => x.id === 'c3')];
   const refSin = await p.evaluate(i => window.MXP_PRUEBA.e0.refLuz(i, {}), ITEMS_RARO);
   const refCon = await p.evaluate(([i, c]) => window.MXP_PRUEBA.e0.refLuz(i, c), [ITEMS_RARO, cfg2]);
   ok('con el modelo raro sin enseñar, sus 20 unidades no suman nada y el renglón sale señalado', refSin.sinFamilia.length === 1 && refSin.total === 19630 - 11000, JSON.stringify([refSin.sinFamilia.length, refSin.total]));
@@ -189,6 +190,49 @@ const EST = { id: EST_ID, nombre: 'NCH', modo: 'remodelacion', escenario: 'A', f
     [ITEMS_RARO.find(x => x.id === 'c3'), EST, cfg2]);
   ok('el renglón de la luminaria enseñada dice REFERENCIA con el precio de Edgar, y sigue avisando que falta la cuota', chipRaro.est === 'referencia' && /320/.test(chipRaro.chip) && chipRaro.alerta === true, chipRaro.chip);
   await datos();
+
+  /* ===== 4c · lo que sacó la revisión adversaria del 20/09 ===== */
+  // «olvidar» borra por la clave EXACTA de la lista, sin volver a normalizarla
+  const conEspacio = { luz_fam: JSON.stringify({ 'MODELO RARO QUE SE CORTO ': 'exit', 'OTRO': 'highbay' }) };
+  const olv = await p.evaluate(c => window.MXP_PRUEBA.e0.luzOlvida(c, 'MODELO RARO QUE SE CORTO '), conEspacio);
+  ok('«olvidar» borra la entrada aunque su clave acabe en espacio (antes la re-normalizaba y no borraba nada)', Object.keys(olv).join() === 'OTRO', JSON.stringify(Object.keys(olv)));
+  // dos renglones seguidos no se pisan: el segundo parte del mapa VIVO, no del config viejo
+  const carrera = await p.evaluate(() => {
+    window.MXP_PRUEBA.e0.luzMem(null);
+    const cfgVacia = {};
+    const uno = window.MXP_PRUEBA.e0.luzAprende(cfgVacia, 'LUMINARIA A', 'exit');
+    window.MXP_PRUEBA.e0.luzMem(uno);                       // como lo deja aprendeFamLuz antes de guardar
+    const base = { luz_fam: JSON.stringify(window.MXP_PRUEBA.e0.luzActual()) };
+    const dos = window.MXP_PRUEBA.e0.luzAprende(base, 'LUMINARIA B', 'highbay');
+    window.MXP_PRUEBA.e0.luzMem(null);
+    return Object.keys(dos);
+  });
+  ok('enseñar dos luminarias seguidas conserva las DOS: la segunda parte del mapa vivo, no del guardado', carrera.join() === 'LUMINARIA A,LUMINARIA B', JSON.stringify(carrera));
+  // una familia cuyo precio de referencia está en $0 no se pinta como resuelta
+  const cfg0 = { luz_fam: JSON.stringify({ [RARO.replace(/^COTIZACIÓN PENDIENTE — /, '').replace(/\s*\([^)]*\)/g, '').trim()]: 'exit' }), luz_ref: '{"exit":0}' };
+  const rf0b = await p.evaluate(([m, c]) => window.MXP_PRUEBA.e0.luzRef(m, c), [RARO, cfg0]);
+  ok('una familia elegida cuyo precio está en $0 se dice a medias («tuya_sin_precio»), no como resuelta', rf0b.fuente === 'tuya_sin_precio' && rf0b.precio === 0, JSON.stringify(rf0b));
+  const ref0 = await p.evaluate(([i, c]) => window.MXP_PRUEBA.e0.refLuz(i, c), [ITEMS_RARO0, cfg0]);
+  ok('…y sigue contando como renglón sin precio, para que el bid no salga corto sin avisar', ref0.sinFamilia.length === 1, JSON.stringify(ref0.sinFamilia.map(x => x.modelo)));
+  // el aviso de salida no puede decir que el precio NO incluye lo que SÍ incluye
+  await datos(cfg2);
+  const salOn = await p.evaluate(([e, c]) => window.MXP_PRUEBA.e0.salida(Object.assign({}, e, { usa_luz_ref: true }), c), [EST, { items: ITEMS_RARO, autos: [] }]);
+  const salOff = await p.evaluate(([e, c]) => window.MXP_PRUEBA.e0.salida(e, c), [EST, { items: ITEMS_RARO, autos: [] }]);
+  ok('al salir, las luminarias a precio de referencia se dicen APARTE: ese dinero SÍ está en el precio', /TU PRECIO DE REFERENCIA/.test(salOn) && /S[IÍ] est[aá] en el precio/.test(salOn), salOn.slice(0, 130));
+  ok('y avisa de lo que importa: si el supply viene más caro, la diferencia la pone Edgar', /la diferencia la pones t[uú]/i.test(salOn), '');
+  ok('sin la referencia encendida, el aviso sigue siendo el de siempre («el precio NO los incluye»)', !/PRECIO DE REFERENCIA/.test(salOff) && /NO los incluye/.test(salOff), salOff.slice(0, 90));
+  await datos();
+  // la segunda cuota, la más cara, gana aunque llegue otro día
+  const yaCotizado = ITEMS.map(x => x.id === 'c1' ? Object.assign({}, x, { precio: 168.40, origen: 'cotizacion-cuota' }) : x);
+  const CUOTA2 = '25  LITHONIA STAK 2X2 5000LM 80CRI 35K COL MINI ZT MVOLT   $181.00   $4,525.00';
+  const mas = await p.evaluate(([t, i]) => window.MXP_PRUEBA.e0.casaCuota(t, i.filter(x => x.origen === 'cotizacion' || x.origen === 'cotizacion-cuota')), [CUOTA2, yaCotizado]);
+  const c1 = mas.casadas.find(x => /5000LM/.test(x.modelo));
+  ok('una segunda cuota MÁS CARA que llega otro día vuelve a casar con el renglón ya cotizado', !!c1 && c1.yaTenia === 168.40, JSON.stringify(c1 && [c1.precio, c1.yaTenia]));
+  ok('…y gana, que es la regla de Edgar: prefiere que sobre a que falte', c1.gana === true && c1.precio === 181, JSON.stringify([c1.gana, c1.precio]));
+  const CUOTA3 = '25  LITHONIA STAK 2X2 5000LM 80CRI 35K COL MINI ZT MVOLT   $140.00   $3,500.00';
+  const menos = await p.evaluate(([t, i]) => window.MXP_PRUEBA.e0.casaCuota(t, i.filter(x => x.origen === 'cotizacion' || x.origen === 'cotizacion-cuota')), [CUOTA3, yaCotizado]);
+  const c2 = menos.casadas.find(x => /5000LM/.test(x.modelo));
+  ok('si la segunda viene más BARATA se ve, pero no gana: no se toca el precio que ya estaba', !!c2 && c2.gana === false && c2.yaTenia === 168.40, JSON.stringify(c2 && [c2.precio, c2.gana]));
 
   /* ===== 5 · el precio de referencia ===== */
   const ref = await p.evaluate(i => window.MXP_PRUEBA.e0.refLuz(i, {}), ITEMS);
