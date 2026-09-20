@@ -7322,6 +7322,82 @@ function esFalloDeRed(err) {
     } catch { return []; }
   }
 
+  /* ================= ¿SE CORRIÓ LA AUDITORÍA DEL CATÁLOGO? (20/09) =================
+     La auditoría del 16/09 (1.084 filas, 17 auditores) dejó 33 correcciones de
+     confianza alta en `docs/sql/e9g-auditoria-catalogo.sql`, bloque A. Son
+     horas por pie copiadas de otra familia, unidades rotas (un cable por
+     unidad en vez de por mil pies) y precios de las propias facturas de
+     Edgar. Si nadie corrió ese fichero, el bid sale con ellas dentro y nadie
+     se entera: un SQL en un repositorio no avisa de nada.
+     Así que lo comprueba la app: mira el catálogo que tiene delante y dice
+     cuáles faltan, con el SQL de ESAS y solo esas. Cuando estén todas, la
+     tarjeta desaparece sola. Lo que Edgar ya cambió a mano a otro valor NO se
+     toca ni se cuenta: su número manda. */
+  var AUDITORIA_E9G = [
+    { item: "6\" GRS CONDUIT", viejo: {"horas_unidad": 0.09}, nuevo: {"horas_unidad": 0.25}, nota: "Las horas están arrastradas del PVC de 6\" (0,09): la escalera GRS va 4\"=0,15 y 5\"=0,20, así que el 6\" sigue con +0,05." },
+    { item: "1/2\" LOCKNUT", viejo: {"horas_unidad": 0.05}, nuevo: {"horas_unidad": 0.02}, nota: "Único peldaño al revés de la escalera de locknuts (el de 3/4\" pide 0,02 y este 0,05)." },
+    { item: "1 1/2\" LIQUIDTIGHT CONDUIT", viejo: {"horas_unidad": 0.1}, nuevo: {"horas_unidad": 0.065}, nota: "Horas por pie rotas: restaura el 1,3× sobre el flex metálico que la familia respeta hasta 1-1/4\" (flex 1-1/2\" = 0,05)." },
+    { item: "2\" LIQUIDTIGHT CONDUIT", viejo: {"horas_unidad": 0.25}, nuevo: {"horas_unidad": 0.08}, nota: "Horas por pie rotas: el 0,25 es exactamente la hora del CONECTOR de flex de 2\" (por pieza) pegada en la fila del tubo (por pie); flex 2\" = 0,06/ft." },
+    { item: "2 1/2\" LIQUIDTIGHT CONDUIT", viejo: {"horas_unidad": 0.3}, nuevo: {"horas_unidad": 0.1}, nota: "Horas por pie rotas: el 0,30 es la hora del CONECTOR de flex de 2-1/2\" copiada en el tubo; flex 2-1/2\" = 0,08/ft." },
+    { item: "3\" LIQUIDTIGHT CONDUIT", viejo: {"horas_unidad": 0.35}, nuevo: {"horas_unidad": 0.13}, nota: "Horas por pie rotas: el 0,35 es la hora del CONECTOR de flex de 3\" copiada en el tubo; flex 3\" = 0,10/ft." },
+    { item: "3 1/2\" LIQUIDTIGHT CONDUIT", viejo: {"horas_unidad": 0.5}, nuevo: {"horas_unidad": 0.16}, nota: "Horas por pie rotas: 0,5 h por pie es más que instalar un pie de cualquier cosa del catálogo; 0,16 continúa la curva 0,065 / 0,08 / 0,10 / 0,13." },
+    { item: "4\"x 4\" BELL BOX-BOX AND DEVICE COVER", viejo: {"precio": 0.0}, nuevo: {"precio": 27.45}, nota: "Fila combo (caja + tapa de dispositivo, dos piezas de fundición) a $0." },
+    { item: "2\"x 4\" BELL BOX-BOX AND DEVICE COVER", viejo: {"precio": 0.0}, nuevo: {"precio": 13.598}, nota: "Combo a $0 cuando sus piezas suman $7,088 + $6,51 = $13,598, y ese precio exacto está en la obra de Stuart (GUIA-3-PROYECTOS línea 125)." },
+    { item: "6\"x6\"x10' WIREWAY NEMA-3R", viejo: {"horas_unidad": 1.0}, nuevo: {"horas_unidad": 1.4}, nota: "Typo de una celda: NEMA-1 y NEMA-3R llevan horas idénticas en las cinco medidas (1,2 / 1,4 / 1,8 / 2,0 / 2,5) salvo esta, que perdió el 4." },
+    { item: "G 4000 WIREMOLD COVER", viejo: {"unidad": "E"}, nuevo: {"unidad": "LF"}, nota: "La tapa del G4000 es lineal como su base (que está en LF): el precio $1,932 y las 0,03 h ya están por pie (58% de la base, proporción normal)." },
+    { item: "G 4000 WIREMOLD DIVIDER", viejo: {"unidad": "E"}, nuevo: {"unidad": "LF"}, nota: "Mismo caso que la tapa: el separador va la misma longitud que la base y su precio ($0,84) es por pie." },
+    { item: "START/STOP PUSH BUTTON", viejo: {"horas_unidad": 0.5}, nuevo: {"horas_unidad": 2.0}, nota: "El Excel original de Edgar traía 'PUSH BUTTON Start/Stop' a 2 h; al recargar se renombró y quedó a 0,5 h (solo colgar la caja)." },
+    { item: "# 500 MCM THW CU.", viejo: {"precio": 9222.05}, nuevo: {"precio": 15804.7}, nota: "TU COTIZACIÓN UM (oct-2025)." },
+    { item: "# 600 MCM THW CU.", viejo: {"precio": 11839.44}, nuevo: {"precio": 19957.7}, nota: "TU COTIZACIÓN UM (oct-2025)." },
+    { item: "14/4 FPL WET LOC. AQ-246", viejo: {"unidad": "EA"}, nuevo: {"unidad": "MLF"}, nota: "TU EXCEL: MLF." },
+    { item: "STROBE LIGHT W/BACKBOX", viejo: {"precio": 59.0}, nuevo: {"precio": 99.99}, nota: "Edgar pagó $99,99 la unidad en Stuart (8 unidades, GUIA-3-PROYECTOS línea 167) y el catálogo dice $59: precio de hace años." },
+    { item: "HORN/STROBE LIGHT W/BACKBOX", viejo: {"precio": 88.0}, nuevo: {"precio": 137.99}, nota: "Edgar pagó $137,99 en Stuart y el catálogo dice $88." },
+    { item: "WP DEVICES COVERS", viejo: {"horas_unidad": 0.008}, nuevo: {"horas_unidad": 0.08}, nota: "0,008 h son 29 segundos por tapa: decimal corrido." },
+    { item: "DEVICES COVERS", viejo: {"horas_unidad": 0.008}, nuevo: {"horas_unidad": 0.08}, nota: "Misma tapa sin WP, mismo 0,008 arrastrado." },
+    { item: "THREE POLE SWITCH", viejo: {"horas_unidad": 1.3}, nuevo: {"horas_unidad": 0.3}, nota: "1,3 h por un switch es el doble del punto completo de receptáculo." },
+    { item: "FOUR WAY SWITCH", viejo: {"horas_unidad": 1.25}, nuevo: {"horas_unidad": 0.25}, nota: "Va con el THREE POLE: mismo +1,00 h de contaminación (1,25 = 0,25 + 1,00)." },
+    { item: "15A DUPLEX TAMPER RESISTANT", viejo: {"horas_unidad": 0.5}, nuevo: {"horas_unidad": 0.3}, nota: "Un TR se instala igual que el dúplex normal (0,3 h): mismos tornillos, mismos hilos, el obturador va dentro." },
+    { item: "20A SINGLE RECEPTACLE USB", viejo: {"horas_unidad": 0.3}, nuevo: {"horas_unidad": 0.5}, nota: "Horas: 0,5 como el resto de USB." },
+    { item: "3\" CONDUIT GROUNDING CLAMP", viejo: {"precio": 24.0, "horas_unidad": 0.4}, nuevo: {"precio": 32.06, "horas_unidad": 0.6}, nota: "TU EXCEL: E · $32,06 · 0,6 h; al cargar quedó EA · $24 · 0,4." },
+    { item: "RG6 TV CABLE", viejo: {"precio": 0.15, "horas_unidad": 0.15}, nuevo: {"precio": 150.0, "horas_unidad": 8.0}, nota: "Etiqueta MLF con precio y horas por pie ($0,15 / 0,15 h): las únicas dos MLF sub-dólar del catálogo son esta y CAT6." },
+    { item: "CAT6 CABLE", viejo: {"precio": 0.18, "horas_unidad": 0.02}, nuevo: {"precio": 450.0, "horas_unidad": 25.0}, nota: "TU EXCEL: CAT6 CABLE · FT · $0,45 · 0,025 h/ft = $450 y 25 h por MLF." },
+    { item: "CAT6A CABLE", viejo: {"horas_unidad": 0.05}, nuevo: {"horas_unidad": 0.02}, nota: "0,05 h/ft son 50 h por mil pies, casi el doble del MC armado." },
+    { item: "2\" CABLE TO STRUT SUPPORT", viejo: {"unidad": "FT", "horas_unidad": 0.25}, nuevo: {"unidad": "E", "horas_unidad": 0.2}, nota: "TU EXCEL: E · 0,2 h." },
+    { item: "DEMO - Wire Removal (per LF)", viejo: {"horas_unidad": 0.03}, nuevo: {"horas_unidad": 0.004}, nota: "Arrancar cable a 0,03 h/ft son 30 h/MLF, cinco veces lo que cuesta instalarlo." },
+    { item: "DEMO - Conduit Run (per LF)", viejo: {"horas_unidad": 0.05}, nuevo: {"horas_unidad": 0.02}, nota: "Demoler tubo a 0,05 h/ft cuesta más que instalar EMT de 1-1/4\" nuevo." },
+    { item: "MAIN CONDUCTOR", viejo: {"horas_unidad": 0.1}, nuevo: {"horas_unidad": 0.02}, nota: "Tu Excel lo tiene en MLF a 20 h por mil pies, o sea 0,02 h/ft." },
+    { item: "JB 1900 DEEP BOX", viejo: {"precio": 4.5, "horas_unidad": 0.3}, nuevo: {"precio": 1.04, "horas_unidad": 0.25}, nota: "Es tu número: en Stuart cotizaste 100 cajas '4\"X 4\" X 2 1/8\" DEEP COMBO BOX' (la misma pieza) a $1,04 y 0,25 h, y a mano cobras 0,25 h por la caja 4x4" }
+  ];
+  /* Compara el catálogo de verdad con lo que la auditoría pidió. PURA. */
+  function auditoriaCatalogo(catalogo) {
+    const porNom = new Map();
+    (catalogo || []).forEach(c => { if (c && c.item) porNom.set(normTxt(c.item), c); });
+    const num = v => (v === null || v === undefined || v === "") ? null : (isFinite(Number(v)) ? Number(v) : String(v).trim().toUpperCase());
+    const casa = (fila, campos) => Object.keys(campos).every(k => {
+      const a = num(fila[k]), b = num(campos[k]);
+      if (typeof a === "number" && typeof b === "number") return Math.abs(a - b) < 1e-9;
+      return String(a === null ? 0 : a) === String(b);
+    });
+    const pendientes = [], hechos = [], cambiados = [], sinItem = [];
+    AUDITORIA_E9G.forEach(r => {
+      const fila = porNom.get(normTxt(r.item));
+      if (!fila) { sinItem.push(r); return; }
+      if (casa(fila, r.nuevo)) { hechos.push(r); return; }
+      if (casa(fila, r.viejo)) { pendientes.push(Object.assign({}, r, { fila: fila })); return; }
+      cambiados.push(Object.assign({}, r, { fila: fila }));   // Edgar puso otra cosa: manda lo suyo
+    });
+    return { pendientes, hechos, cambiados, sinItem, total: AUDITORIA_E9G.length };
+  }
+  /* El SQL de lo que falta, y solo de lo que falta. */
+  function auditoriaSql(pendientes) {
+    const q = v => (typeof v === "number") ? String(v) : "'" + String(v).replace(/'/g, "''") + "'";
+    const cond = (k, v) => (typeof v === "number") ? "coalesce(" + k + ",0) = " + v : k + " = " + q(v);
+    return (pendientes || []).map(r =>
+      "-- " + r.item + (r.nota ? "  ·  " + r.nota : "") + "\n" +
+      "update catalogo_items set " + Object.keys(r.nuevo).map(k => k + " = " + q(r.nuevo[k])).join(", ") +
+      "\n   where item = " + q(r.item) + " and " + Object.keys(r.viejo).map(k => cond(k, r.viejo[k])).join(" and ") + ";"
+    ).join("\n\n");
+  }
   /* (20/09, lo pidió Edgar) LO QUE VA SUJETO A COTIZACIÓN, EN EL PAPEL.
      Cuando las luminarias entran al precio con el precio de REFERENCIA de
      Edgar —porque la cuota del supply no ha llegado— ese dinero SÍ está en el
@@ -8133,6 +8209,41 @@ Power done right the first time. ⚡`;
   }
 
   /* ---------- E27 · La tarjeta de las LUMINARIAS por cotizar ---------- */
+  /* La tarjeta solo existe mientras haya algo que correr: cuando el catálogo
+     ya trae las 33, desaparece sola y no vuelve a estorbar. */
+  function cardAuditoriaHTML(est, c, soloLectura) {
+    const a = auditoriaCatalogo((estData && estData.catalogo) || []);
+    if (!a.pendientes.length) return "";
+    const enUso = new Set();
+    (c && c.items || []).forEach(l => enUso.add(normTxt(l.item)));
+    const tocan = a.pendientes.filter(r => enUso.has(normTxt(r.item)));
+    return `
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">🧾 La auditoría del catálogo: faltan ${a.pendientes.length} de ${a.total}</div>
+        <p class="modal-nota">La auditoría del 16/09 encontró horas copiadas de otra familia, unidades rotas y precios
+          de tus propias facturas. <strong>${a.hechos.length}</strong> ya están en tu catálogo${a.cambiados.length ? `, y <strong>${a.cambiados.length}</strong> los cambiaste tú a otro número (esos no se tocan)` : ""}.
+          Estas <strong>${a.pendientes.length}</strong> siguen con el valor viejo${tocan.length ? ` — y <strong>${tocan.length}</strong> ${tocan.length === 1 ? "está" : "están"} en ESTE estimado` : ""}.</p>
+        ${a.pendientes.slice(0, 40).map(r => {
+          const usa = enUso.has(normTxt(r.item));
+          return `
+          <div class="mat-item${usa ? " recibo-por_leer" : ""}">
+            <span class="recibo-chip ${usa ? "por_leer" : "leido"}">${usa ? "EN ESTE BID" : "catálogo"}</span>
+            <span class="alcance-info">
+              <span class="alcance-titulo">${esc(r.item)}</span>
+              <span class="alcance-estado">${Object.keys(r.nuevo).map(k => `${esc(k.replace("horas_unidad", "horas").replace("_", " "))}: ${esc(String(r.viejo[k]))} → <b>${esc(String(r.nuevo[k]))}</b>`).join(" · ")}${r.nota ? ` <span class="muted">· ${esc(r.nota)}</span>` : ""}</span>
+            </span>
+          </div>`;
+        }).join("")}
+        ${a.pendientes.length > 40 ? `<div class="lev-nota">…y ${a.pendientes.length - 40} más.</div>` : ""}
+        <p class="modal-nota">Esto se arregla en la base, no aquí: copia el SQL y pégalo en Supabase.
+          Cada sentencia lleva el valor de hoy como condición, así que si ya lo cambiaste no hace nada.</p>
+        <button type="button" class="accion secundaria" id="btn-aud-copia">📋 Copiar el SQL de las ${a.pendientes.length} que faltan</button>
+        <details style="margin-top:.5rem">
+          <summary class="mat-filtro-label" style="cursor:pointer">Ver el SQL</summary>
+          <textarea id="aud-sql" rows="8" readonly style="width:100%;font-family:ui-monospace,monospace;font-size:.72rem;padding:.55rem;border:1px solid var(--mp-line);border-radius:10px">${esc(auditoriaSql(a.pendientes))}</textarea>
+        </details>
+      </div>`;
+  }
   function cardLuzHTML(est, c, soloLectura) {
     const r2 = r2e27;
     if (est.modo === "rapido") return "";
@@ -8638,6 +8749,7 @@ Power done right the first time. ⚡`;
       </div>`}
       ${tarjetaSegura(cardConsumiblesHTML, est, c, soloLectura)}
       ${tarjetaSegura(cardHorasHTML, est, c, soloLectura)}
+      ${tarjetaSegura(cardAuditoriaHTML, est, c, soloLectura)}
       ${tarjetaSegura(cardLuzHTML, est, c, soloLectura)}
       <div class="cal-panel-card">
         <div class="cal-form-titulo">💵 Resumen — fórmula Max Power
@@ -8781,6 +8893,12 @@ Power done right the first time. ⚡`;
       try { await DB.cambiarEstimado(est.id, { usa_luz_ref: chkLuz.checked }); }
       catch (err) { avisar("No se pudo guardar: corre docs/sql/e27.sql (falta la columna usa_luz_ref)", true); return; }
       await recargarEstimador();
+    });
+    const bAud = $("btn-aud-copia");
+    if (bAud) bAud.addEventListener("click", async () => {
+      const t = ($("aud-sql") || {}).value || "";
+      try { await navigator.clipboard.writeText(t); avisar("✓ SQL copiado — pégalo en Supabase"); }
+      catch (e) { const ta = $("aud-sql"); if (ta) { const d = ta.closest("details"); if (d) d.open = true; ta.focus(); ta.select(); } avisar("Copia el texto del cuadro de abajo", true); }
     });
     const bLuzG = $("btn-luz-guardar");
     if (bLuzG) bLuzG.addEventListener("click", guardaPreciosLuz);
@@ -12139,6 +12257,8 @@ Power done right the first time. ⚡`;
       propuesta(est, c) { return textoPropuesta(est, c); },
       sujetas(est, c) { return lineasSujetasACuota(est, c || { items: [] }); },
       nombreCliente(item) { return nombreParaCliente(item); },
+      auditoria(cat) { return auditoriaCatalogo(cat || (estData && estData.catalogo) || []); },
+      auditoriaSql(p) { return auditoriaSql(p || []); },
       mep(est, c) { return textoResumenMEP(est, c); },
       takeoff(est, c) { return textoTakeoff(est, c); },
       consumibles(base, est, cfg) { return autosConsumibles(base || [], est || {}, cfg || {}); },
@@ -12164,7 +12284,8 @@ Power done right the first time. ⚡`;
       tarjetas(est, c) {
         return tarjetaSegura(cardConsumiblesHTML, est, c, false)
              + tarjetaSegura(cardHorasHTML, est, c, false)
-             + tarjetaSegura(cardLuzHTML, est, c, false);
+             + tarjetaSegura(cardLuzHTML, est, c, false)
+             + tarjetaSegura(cardAuditoriaHTML, est, c, false);
       },
       casaCuota(txt, pendientes) { return casaCuota(leeCuota(txt || ""), pendientes || []); },
       calcula(est) { return calcularEstimado(est); },

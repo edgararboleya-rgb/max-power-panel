@@ -379,6 +379,33 @@ CES MIAMI — QUOTE 55120
   const rota = await p.evaluate(e => window.MXP_PRUEBA.e0.tarjetas(e, null), EST);
   ok('y si aun así una lanzara, se cae ELLA sola: el estimador sigue en pie', /Una tarjeta nueva falló/.test(rota) && rota.split("Una tarjeta nueva falló").length - 1 >= 1, rota.replace(/\s+/g, ' ').slice(0, 110));
 
+  /* ===== 12 · ¿se corrió la auditoría del catálogo? (20/09) ===== */
+  const CAT_VIEJO = [
+    { item: '6" GRS CONDUIT', unidad: 'LF', precio: 0, horas_unidad: 0.09 },         // pendiente
+    { item: '1/2"   LOCKNUT', unidad: 'E', precio: 0.053, horas_unidad: 0.02 },      // ya hecho (y con espacios distintos)
+    { item: 'CAT6 CABLE', unidad: 'MLF', precio: 450, horas_unidad: 25 },            // ya hecho
+    { item: 'RG6 TV CABLE', unidad: 'MLF', precio: 0.15, horas_unidad: 0.15 },       // pendiente (dos campos)
+    { item: 'JB 1900 DEEP BOX', unidad: 'E', precio: 9.99, horas_unidad: 0.9 }       // Edgar lo cambió a otra cosa
+  ];
+  const aud = await p.evaluate(c => window.MXP_PRUEBA.e0.auditoria(c), CAT_VIEJO);
+  ok('la app mira TU catálogo y dice qué correcciones de la auditoría faltan (no un SQL que nadie sabe si corrió)', aud.total === 33 && aud.pendientes.length === 2, JSON.stringify({ total: aud.total, pend: aud.pendientes.map(x => x.item) }));
+  ok('las que ya están hechas no se repiten, aunque el nombre lleve otros espacios', aud.hechos.length === 2 && aud.hechos.some(x => /LOCKNUT/.test(x.item)), JSON.stringify(aud.hechos.map(x => x.item)));
+  ok('y lo que Edgar cambió a mano a otro número NO se toca ni se cuenta como pendiente: su número manda', aud.cambiados.length === 1 && /JB 1900/.test(aud.cambiados[0].item), JSON.stringify(aud.cambiados.map(x => x.item)));
+  ok('lo que ni siquiera está en el catálogo se aparta, no se inventa', aud.sinItem.length === 33 - 5, aud.sinItem.length);
+  const sql = await p.evaluate(ps => window.MXP_PRUEBA.e0.auditoriaSql(ps), aud.pendientes);
+  ok('el SQL sale SOLO de las que faltan, con el valor de hoy como condición (si ya lo cambiaste, no hace nada)', /update catalogo_items set horas_unidad = 0.25/.test(sql) && /coalesce\(horas_unidad,0\) = 0.09/.test(sql) && !/LOCKNUT/.test(sql), sql.split("\n")[1]);
+  ok('y el de dos campos los lleva los dos', /set precio = 150, horas_unidad = 8/.test(sql) && /coalesce\(precio,0\) = 0.15 and coalesce\(horas_unidad,0\) = 0.15/.test(sql), (sql.match(/set precio = 150[^\n]*/) || [""])[0]);
+  const audOk = await p.evaluate(() => window.MXP_PRUEBA.e0.auditoria([{ item: 'NADA QUE VER', precio: 1 }]));
+  ok('con un catálogo donde no está ninguna, no hay pendientes que enseñar (la tarjeta no sale)', audOk.pendientes.length === 0, JSON.stringify([audOk.pendientes.length, audOk.sinItem.length]));
+  const tarj = await p.evaluate(([cv, e]) => {
+    window.MXP_PRUEBA.e0.datos({ catalogo: cv, items: [{ id: 'z', item: '6" GRS CONDUIT', cantidad: 100, precio: 0, horas: 0.09, unidad: 'LF' }], config: {}, estimados: [] });
+    const h = window.MXP_PRUEBA.e0.tarjetas(e, { items: [{ id: 'z', item: '6" GRS CONDUIT', cantidad: 100, precio: 0, horas: 0.09, unidad: 'LF' }], autos: [] });
+    const d = document.createElement('div'); d.innerHTML = h;
+    return { sale: /La auditor[ií]a del cat[aá]logo/.test(h), enBid: /EN ESTE BID/.test(h), sql: (d.querySelector('#aud-sql') || {}).value || '' };
+  }, [CAT_VIEJO, EST]);
+  ok('la tarjeta sale en el estimador y marca las que están en ESTE bid', tarj.sale && tarj.enBid && /GRS CONDUIT/.test(tarj.sql), JSON.stringify([tarj.sale, tarj.enBid]));
+  await datos();
+
   ok('cero errores de página', errs.length === 0, errs.join(' | ').slice(0, 250));
   console.log('\n' + R.join('\n'));
   const mal = R.filter(r => r.slice(0, 4).indexOf('✗') >= 0).length;
