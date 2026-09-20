@@ -128,6 +128,68 @@ const EST = { id: EST_ID, nombre: 'NCH', modo: 'remodelacion', escenario: 'A', f
   ok('STAK 2x2 → troffer 2x2 · LDN4 → downlight · LQM → exit · BLT 2x4 → troffer 2x4', fam.stak === 'troffer22' && fam.ldn === 'downlight' && fam.exit === 'exit' && fam.dosx4 === 'troffer24', JSON.stringify(fam));
   ok('lo que no reconoce se queda sin familia (no se inventa un precio)', fam.nada === null, fam.nada);
 
+  /* ===== 4b · B2 (20/09) · LA FAMILIA QUE EDGAR ENSEÑA =====
+     Las palabras reconocen nueve familias; el mundo tiene más. Lo que Edgar
+     elija en el renglón manda sobre lo automático, se guarda POR MODELO para
+     todos los estimados, y se puede olvidar. */
+  const RARO = 'COTIZACIÓN PENDIENTE — ACUITY OR-7 QUIRÓFANO LED 24V (pedir a Jose)';
+  const rf0 = await p.evaluate(m => window.MXP_PRUEBA.e0.luzRef(m, {}), RARO);
+  ok('una luminaria que no casa ninguna familia sale sin precio y se dice de dónde viene (fuente «sin»)', rf0.fuente === 'sin' && rf0.precio === 0 && rf0.fam === null, JSON.stringify(rf0));
+  ok('la clave con que se aprende es el MODELO: sin «COTIZACIÓN PENDIENTE» y sin los paréntesis del recordatorio',
+    (await p.evaluate(m => window.MXP_PRUEBA.e0.luzClave(m), RARO)) === 'ACUITY OR-7 QUIRÓFANO LED 24V', await p.evaluate(m => window.MXP_PRUEBA.e0.luzClave(m), RARO));
+  // Edgar le dice que es un troffer 2x4
+  const mapa1 = await p.evaluate(m => window.MXP_PRUEBA.e0.luzAprende({}, m, 'troffer24'), RARO);
+  const cfg1 = { luz_fam: JSON.stringify(mapa1) };
+  const rf1 = await p.evaluate(([m, c]) => window.MXP_PRUEBA.e0.luzRef(m, c), [RARO, cfg1]);
+  ok('en cuanto Edgar elige la familia, el renglón vale lo de esa familia y se ve que la elegiste tú', rf1.fuente === 'tuya' && rf1.precio === 180 && rf1.id === 'troffer24', JSON.stringify(rf1));
+  ok('y lo aprendido se guarda por modelo, no por estimado: el mismo modelo en otro bid ya lo sabe',
+    (await p.evaluate(([m, c]) => window.MXP_PRUEBA.e0.luzRef(m + ' — OTRO BID', c), ['ACUITY OR-7 QUIRÓFANO LED 24V', cfg1])).fuente === 'sin'
+    && (await p.evaluate(([m, c]) => window.MXP_PRUEBA.e0.luzRef(m, c), ['ACUITY OR-7 QUIRÓFANO LED 24V (cuota 2026-09-20)', cfg1])).fuente === 'tuya', 'la clave es el modelo pelado');
+  // …o un precio suyo, cuando ninguna familia sirve
+  const cfg2 = { luz_fam: JSON.stringify(await p.evaluate(m => window.MXP_PRUEBA.e0.luzAprende({}, m, 320), RARO)) };
+  const rf2 = await p.evaluate(([m, c]) => window.MXP_PRUEBA.e0.luzRef(m, c), [RARO, cfg2]);
+  ok('si ninguna familia sirve, un precio suyo para ese modelo: $320, y no finge ser una familia', rf2.fuente === 'precio' && rf2.precio === 320 && rf2.fam === null, JSON.stringify(rf2));
+  // corregir lo que la app reconoció MAL
+  const CLEAN = 'LITHONIA SCR 22 HC IC L6 35 90C IC E UN — CLEANROOM 2X2 TR';
+  const cfg3 = { luz_fam: JSON.stringify(await p.evaluate(m => window.MXP_PRUEBA.e0.luzAprende({}, m, 'troffer22'), CLEAN)) };
+  const rf3 = await p.evaluate(([m, c]) => window.MXP_PRUEBA.e0.luzRef(m, c), [CLEAN, cfg3]);
+  ok('lo de Edgar manda también para CORREGIR: la cleanroom que él marca 2x2 vale 150, no 550', rf3.fuente === 'tuya' && rf3.precio === 150, JSON.stringify(rf3));
+  // olvidar → vuelve a lo automático
+  const cfg4 = { luz_fam: JSON.stringify(await p.evaluate(([c, m]) => window.MXP_PRUEBA.e0.luzAprende(c, m, ''), [cfg3, CLEAN])) };
+  const rf4 = await p.evaluate(([m, c]) => window.MXP_PRUEBA.e0.luzRef(m, c), [CLEAN, cfg4]);
+  ok('al olvidarlo vuelve a lo automático (cleanroom, 550) y el mapa queda vacío', rf4.fuente === 'auto' && rf4.precio === 550 && Object.keys(JSON.parse(cfg4.luz_fam)).length === 0, JSON.stringify([rf4, cfg4.luz_fam]));
+  ok('un precio de 0 o negativo no se guarda: es olvidar, no regalar la luminaria',
+    Object.keys(await p.evaluate(([c, m]) => window.MXP_PRUEBA.e0.luzAprende(c, m, 0), [cfg3, CLEAN])).length === 0
+    && Object.keys(await p.evaluate(([c, m]) => window.MXP_PRUEBA.e0.luzAprende(c, m, -5), [cfg3, CLEAN])).length === 0, '');
+  // lo guardado que no se entiende no puede tumbar el bid
+  const malos = await p.evaluate(m => [
+    window.MXP_PRUEBA.e0.luzRef(m, { luz_fam: 'esto no es json' }),
+    window.MXP_PRUEBA.e0.luzRef(m, { luz_fam: '[1,2,3]' }),
+    window.MXP_PRUEBA.e0.luzRef(m, { luz_fam: '{"ACUITY OR-7 QUIRÓFANO LED 24V":"familia_que_no_existe"}' }),
+    window.MXP_PRUEBA.e0.luzRef(m, { luz_fam: '{"ACUITY OR-7 QUIRÓFANO LED 24V":{"a":1}}' })
+  ], RARO);
+  ok('un luz_fam roto, una lista, una familia que ya no existe o un valor raro: se ignoran y manda lo automático', malos.every(x => x.fuente === 'sin' && x.precio === 0), JSON.stringify(malos.map(x => x.fuente)));
+  // el tope: lo viejo cae, lo recién enseñado nunca
+  const tope = await p.evaluate(() => {
+    let m = {};
+    for (let i = 0; i < 305; i++) m = window.MXP_PRUEBA.e0.luzAprende({ luz_fam: JSON.stringify(m) }, 'MODELO ' + i, 'exit');
+    const k = Object.keys(m);
+    return { n: k.length, primera: k[0], ultima: k[k.length - 1] };
+  });
+  ok('lo aprendido no crece sin fin: tope de 300 modelos, cae el más viejo y se queda el último', tope.n === 300 && tope.primera === 'MODELO 5' && tope.ultima === 'MODELO 304', JSON.stringify(tope));
+  // y el dinero: lo aprendido entra al total como cualquier referencia
+  const ITEMS_RARO = ITEMS.map(x => x.id === 'c3' ? Object.assign({}, x, { item: RARO }) : x);
+  const refSin = await p.evaluate(i => window.MXP_PRUEBA.e0.refLuz(i, {}), ITEMS_RARO);
+  const refCon = await p.evaluate(([i, c]) => window.MXP_PRUEBA.e0.refLuz(i, c), [ITEMS_RARO, cfg2]);
+  ok('con el modelo raro sin enseñar, sus 20 unidades no suman nada y el renglón sale señalado', refSin.sinFamilia.length === 1 && refSin.total === 19630 - 11000, JSON.stringify([refSin.sinFamilia.length, refSin.total]));
+  ok('enseñándole el precio ($320 × 20) el bid deja de salir corto: entra al total y ya nadie queda sin familia', refCon.sinFamilia.length === 0 && refCon.total === 19630 - 11000 + 6400, JSON.stringify([refCon.sinFamilia.length, refCon.total]));
+  ok('y la fila dice de dónde salió el precio, para que no se confunda con una cotización', (refCon.filas.find(x => x.familia === 'propio') || {}).fuente === 'precio', JSON.stringify(refCon.filas.map(x => [x.familia, x.fuente])));
+  // el chip del renglón
+  const chipRaro = await p.evaluate(([l, e, c]) => { window.MXP_PRUEBA.e0.datos({ catalogo: [], config: c, ensambleItems: [], estimados: [] }); return window.MXP_PRUEBA.e0.cero(l, Object.assign({}, e, { usa_luz_ref: true })); },
+    [ITEMS_RARO.find(x => x.id === 'c3'), EST, cfg2]);
+  ok('el renglón de la luminaria enseñada dice REFERENCIA con el precio de Edgar, y sigue avisando que falta la cuota', chipRaro.est === 'referencia' && /320/.test(chipRaro.chip) && chipRaro.alerta === true, chipRaro.chip);
+  await datos();
+
   /* ===== 5 · el precio de referencia ===== */
   const ref = await p.evaluate(i => window.MXP_PRUEBA.e0.refLuz(i, {}), ITEMS);
   ok('las cinco líneas pendientes llevan referencia, ninguna se queda fuera', ref.filas.length === 5 && ref.sinFamilia.length === 0, JSON.stringify(ref.filas.map(x => [x.familia, x.precio])));
@@ -199,11 +261,31 @@ CES MIAMI — QUOTE 55120
              consumibles: d.querySelectorAll('.cons-por').length,
              horas: d.querySelectorAll('.horas-chk').length,
              luz: d.querySelectorAll('.luz-ref-precio').length,
+             selFam: d.querySelectorAll('select.luz-fam').length,
+             opcFam: (d.querySelector('select.luz-fam') || { options: [] }).options.length,
+             autoDice: ((d.querySelector('select.luz-fam') || { options: [] }).options[0] || {}).textContent || '',
+             elegida: [...d.querySelectorAll('select.luz-fam')].map(x => x.value),
+             propios: d.querySelectorAll('.luz-fam-precio').length,
              titulos: [...d.querySelectorAll('.cal-form-titulo')].map(x => x.textContent.trim().slice(0, 22)) };
   }, EST);
   ok('las tres tarjetas se pintan sin lanzar', !pint.fallo && pint.largo > 3000, JSON.stringify([pint.fallo, pint.largo, pint.titulos]));
   ok('la tabla de consumibles trae sus 18 números editables', pint.consumibles === 18, pint.consumibles);
   ok('la de horas trae una casilla por regla y la de luz sus 9 familias', pint.horas === 9 && pint.luz === 9, JSON.stringify([pint.horas, pint.luz]));
+  ok('(B2) cada una de las 5 luminarias pendientes trae su selector de familia y su hueco de precio propio', pint.selFam === 5 && pint.propios === 5, JSON.stringify([pint.selFam, pint.propios]));
+  ok('el selector ofrece automático + las 9 familias + un precio tuyo, y dice QUÉ reconoció solo', pint.opcFam === 11 && /Autom[áa]tico/.test(pint.autoDice) && /2x2/.test(pint.autoDice), JSON.stringify([pint.opcFam, pint.autoDice]));
+  ok('y sin nada enseñado todos salen en «automático» (no se preselecciona una familia que Edgar no eligió)', pint.elegida.every(v => v === ''), JSON.stringify(pint.elegida));
+  const CLAVE_LDN = await p.evaluate(i => window.MXP_PRUEBA.e0.luzClave(i), ITEMS.find(x => x.id === 'c4').item);
+  await datos({ luz_fam: JSON.stringify({ [CLAVE_LDN]: 'highbay' }) });
+  const pintEns = await p.evaluate(e => {
+    const est = Object.assign({}, e, { usa_luz_ref: true });
+    const c = window.MXP_PRUEBA.e0.calcula(est);
+    const d = document.createElement('div'); d.innerHTML = window.MXP_PRUEBA.e0.tarjetas(est, c);
+    return { sel: [...d.querySelectorAll('select.luz-fam')].map(x => x.value).filter(Boolean),
+             olvidar: d.querySelectorAll('.luz-fam-olvida').length,
+             texto: d.textContent.replace(/\s+/g, ' ') };
+  }, EST);
+  ok('lo enseñado sale ya elegido en su fila, con su ✎, y se puede olvidar desde la lista', pintEns.sel.join() === 'highbay' && pintEns.olvidar === 1 && /✎/.test(pintEns.texto) && /Lo que me enseñaste \(1/.test(pintEns.texto), JSON.stringify([pintEns.sel, pintEns.olvidar]));
+  await datos();
   const flojo = await p.evaluate(e => window.MXP_PRUEBA.e0.tarjetas(e, { items: null, autos: null }), EST);
   ok('un cálculo a medias (sin ítems ni automáticos) no rompe ninguna tarjeta', !/Una tarjeta nueva falló/.test(flojo), flojo.slice(0, 60));
   const rota = await p.evaluate(e => window.MXP_PRUEBA.e0.tarjetas(e, null), EST);

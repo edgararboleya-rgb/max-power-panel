@@ -5465,8 +5465,7 @@ function esFalloDeRed(err) {
       // que nadie confunda una referencia tuya con una cotización de verdad.
       let refTxt = "";
       if (e === "suministro" && est && est.usa_luz_ref && ES_COT_PENDIENTE(linea)) {
-        const f = familiaLuz(linea.item);
-        const pRef = f ? luzRefPrecios((estData && estData.config) || {})[f.id] : 0;
+        const pRef = luzRefDe(linea.item, (estData && estData.config) || {}).precio;
         if (pRef > 0) { e = "referencia"; refTxt = " " + fmt(pRef); }
       }
       const c = CERO_CHIP[e] || CERO_CHIP.revisar;
@@ -5888,10 +5887,76 @@ function esFalloDeRed(err) {
       .replace(/^\s*COTIZACI[OÓ]N PENDIENTE\s*[—-]\s*/i, "")
       .replace(/\([^)]*\)/g, " "));
   }
-  function familiaLuz(nombre) {
+  /* La familia que se reconoce SOLA, por las palabras del modelo. */
+  function familiaLuzAuto(nombre) {
     const t = luzModelo(nombre);
     if (!t) return null;
     return LUZ_FAMILIAS.find(f => f.pal.some(p => p.test(t))) || null;
+  }
+  /* (B2, 20/09) LO QUE EDGAR LE ENSEÑA A LA APP. Las palabras reconocen nueve
+     familias; el mundo tiene más. Una luminaria de quirófano, un sconce, un
+     artefacto que el ingeniero nombró raro: hoy se quedaban SIN FAMILIA, sin
+     precio de referencia, y el bid salía corto sin que Edgar pudiera hacer
+     nada desde aquí. Ahora elige la familia —o un precio suyo— en el propio
+     renglón, y eso queda GUARDADO POR MODELO para TODOS los estimados: la
+     app no se lo vuelve a preguntar. Vive en config_estimador → `luz_fam`,
+     un JSON {modelo: "troffer24"} o {modelo: 320}; la columna ya es text
+     desde el e27, así que no hace falta correr nada.
+     Lo de Edgar manda SIEMPRE, también para corregir un reconocimiento
+     equivocado — y se puede olvidar, que por eso la lista se ve entera. */
+  const LUZ_FAM_MAX = 300;        // lo aprendido no crece sin fin
+  const LUZ_CLAVE_MAX = 120;
+  function luzClave(nombre) { return luzModelo(nombre).slice(0, LUZ_CLAVE_MAX); }
+  function luzFamMapa(cfg) {
+    let m = {};
+    try {
+      const raw = (cfg || {}).luz_fam;
+      m = typeof raw === "string" ? JSON.parse(raw) : raw;
+    } catch { m = {}; }
+    return (m && typeof m === "object" && !Array.isArray(m)) ? m : {};
+  }
+  /* Una elección guardada, entendida: familia, precio propio, o nada.
+     Un id de familia que ya no existe (se renombró) NO se adivina: se ignora
+     y el renglón vuelve a lo automático, que es lo honesto. */
+  function luzEleccion(valor) {
+    if (valor === null || valor === undefined || valor === "" || typeof valor === "object") return null;
+    if (typeof valor === "string") {
+      const f = LUZ_FAMILIAS.find(x => x.id === valor);
+      if (f) return { tipo: "fam", fam: f };
+    }
+    const p = Number(valor);
+    if (isFinite(p) && p > 0) return { tipo: "precio", precio: p };
+    return null;
+  }
+  /* DE DÓNDE SALE el precio de referencia de UN renglón, y de quién es.
+     `fuente`: "tuya" (la familia que elegiste) · "precio" (tu precio para ese
+     modelo) · "auto" (lo reconocieron las palabras) · "sin" (nada). PURA. */
+  function luzRefDe(nombre, cfg, preciosOpc) {
+    const precios = preciosOpc || luzRefPrecios(cfg);
+    const el = luzEleccion(luzFamMapa(cfg)[luzClave(nombre)]);
+    if (el && el.tipo === "precio") return { precio: el.precio, fam: null, id: "propio", nom: "Precio tuyo", fuente: "precio" };
+    if (el && el.tipo === "fam") return { precio: Number(precios[el.fam.id]) || 0, fam: el.fam, id: el.fam.id, nom: el.fam.nom, fuente: "tuya" };
+    const f = familiaLuzAuto(nombre);
+    if (f) return { precio: Number(precios[f.id]) || 0, fam: f, id: f.id, nom: f.nom, fuente: "auto" };
+    return { precio: 0, fam: null, id: null, nom: "", fuente: "sin" };
+  }
+  // La familia de un renglón (la elegida si la hay). Un precio propio no es
+  // una familia: ahí devuelve null, y quien quiera el dinero usa luzRefDe.
+  function familiaLuz(nombre, cfg) { return luzRefDe(nombre, cfg).fam; }
+  /* El mapa DESPUÉS de enseñarle (o de olvidar) un modelo. PURA: devuelve el
+     objeto a guardar, no escribe. `valor`: un id de familia, un número > 0
+     (precio propio), o vacío/0 para volver a lo automático. */
+  function luzFamNuevo(cfg, nombre, valor) {
+    const m = Object.assign({}, luzFamMapa(cfg)), k = luzClave(nombre);
+    if (!k) return m;
+    const el = luzEleccion(valor);
+    if (!el) { delete m[k]; return m; }
+    delete m[k];   // se reinserta al final: lo recién enseñado es lo último en caducar
+    m[k] = el.tipo === "precio" ? el.precio : el.fam.id;
+    const ks = Object.keys(m);
+    // el tope se respeta quitando lo más viejo, nunca lo que se acaba de enseñar
+    for (let i = 0; i < ks.length - LUZ_FAM_MAX; i++) delete m[ks[i]];
+    return m;
   }
   // ¿Es un renglón de luminaria a la espera de la cuota?
   const ES_COT_PENDIENTE = l => (Number(l.precio) || 0) === 0 &&
@@ -5902,13 +5967,12 @@ function esFalloDeRed(err) {
     let total = 0;
     for (const it of (base || [])) {
       if (!ES_COT_PENDIENTE(it)) continue;
-      const f = familiaLuz(it.item);
-      const p = f ? precios[f.id] : 0;
+      const r = luzRefDe(it.item, cfg, precios);
       const q = Number(it.cantidad) || 0;
-      if (!f || !(p > 0)) { sinFamilia.push({ item: it.item, cantidad: q }); continue; }
+      if (!(r.precio > 0)) { sinFamilia.push({ item: it.item, modelo: luzModelo(it.item), cantidad: q }); continue; }
       filas.push({ item: it.item, modelo: luzModelo(it.item), cantidad: q,
-                   familia: f.id, nom: f.nom, precio: p, total: q * p });
-      total += q * p;
+                   familia: r.id, nom: r.nom, fuente: r.fuente, precio: r.precio, total: q * r.precio });
+      total += q * r.precio;
     }
     return { filas, total, sinFamilia, precios };
   }
@@ -7979,18 +8043,39 @@ Power done right the first time. ⚡`;
     if (!pend.length) return "";
     const ref = refLuminarias(c.items, cfg), precios = ref.precios;
     const usando = !!est.usa_luz_ref;
+    const CHIP_FUENTE = { tuya: "conciliado", precio: "conciliado", auto: "leido", sin: "sin_foto" };
     const filasPend = pend.map(p => {
-      const f = familiaLuz(p.item), pr = f ? precios[f.id] : 0, q = Number(p.cantidad) || 0;
+      const rf = luzRefDe(p.item, cfg, precios), q = Number(p.cantidad) || 0;
+      const auto = familiaLuzAuto(p.item), mod = luzModelo(p.item);
+      const tuya = rf.fuente === "tuya" || rf.fuente === "precio";
+      const sel = rf.fuente === "precio" ? "__propio" : tuya ? rf.id : "";
+      // el selector: lo automático primero (es lo que pasa si no tocas nada),
+      // las nueve familias con su precio, y un precio tuyo para este modelo
+      const selector = soloLectura ? "" : `
+        <select class="luz-fam" data-modelo="${esc(mod)}" style="font:inherit;font-size:.78rem;padding:.2rem .3rem;border:1px solid var(--mp-line);border-radius:8px;max-width:15rem">
+          <option value=""${sel ? "" : " selected"}>Automático — ${auto ? esc(auto.nom) : "no la reconozco"}</option>
+          ${LUZ_FAMILIAS.map(f => `<option value="${esc(f.id)}"${sel === f.id ? " selected" : ""}>${esc(f.nom)} · ${fmt(precios[f.id])}</option>`).join("")}
+          <option value="__propio"${sel === "__propio" ? " selected" : ""}>Un precio mío para este modelo…</option>
+        </select>
+        <input type="number" class="luz-fam-precio" data-modelo="${esc(mod)}" min="0" step="5" value="${rf.fuente === "precio" ? esc(rf.precio) : ""}"
+          placeholder="$ por unidad" style="width:7rem;font:inherit;font-size:.78rem;padding:.2rem .3rem;border:1px solid var(--mp-line);border-radius:8px;text-align:right;${rf.fuente === "precio" ? "" : "display:none"}">`;
       return `
-      <div class="mat-item">
-        ${f ? `<span class="recibo-chip leido">${esc(f.nom)}</span>` : `<span class="recibo-chip sin_foto">SIN FAMILIA</span>`}
+      <div class="mat-item" style="flex-wrap:wrap">
+        <span class="recibo-chip ${CHIP_FUENTE[rf.fuente]}">${rf.fuente === "sin" ? "SIN FAMILIA" : esc(rf.nom) + (tuya ? " ✎" : "")}</span>
         <span class="alcance-info">
-          <span class="alcance-titulo">${esc(luzModelo(p.item))}</span>
-          <span class="alcance-estado">${r2(q)} ${esc(p.unidad || "E")}${f && pr > 0 ? ` × ${fmt(pr)} de referencia` : " · ponle precio a mano o pega la cuota"}</span>
+          <span class="alcance-titulo">${esc(mod)}</span>
+          <span class="alcance-estado">${r2(q)} ${esc(p.unidad || "E")}${rf.precio > 0
+            ? ` × ${fmt(rf.precio)} ${rf.fuente === "precio" ? "tuyos" : rf.fuente === "tuya" ? "de la familia que elegiste" : "de referencia"}`
+            : " · elige su familia aquí abajo, o pega la cuota"}</span>
         </span>
-        <span class="mat-precio">${f && pr > 0 ? fmt(r2(q * pr)) : "—"}</span>
+        <span class="mat-precio">${rf.precio > 0 ? fmt(r2(q * rf.precio)) : "—"}</span>
+        ${selector ? `<span style="flex-basis:100%;display:flex;gap:.4rem;align-items:center;margin:.3rem 0 0 .2rem">${selector}</span>` : ""}
       </div>`;
     }).join("");
+    // lo que Edgar ya le enseñó: visible y olvidable, porque una corrección
+    // equivocada valdría para todos los estimados hasta que se quite
+    const mapa = luzFamMapa(cfg), aprendidas = Object.keys(mapa)
+      .map(k => ({ k, el: luzEleccion(mapa[k]) })).filter(x => x.el);
     const tablaFam = LUZ_FAMILIAS.map(f => `
       <label class="mat-filtro-label" style="display:flex;align-items:center;gap:.5rem;margin:.15rem 0">
         <span style="flex:1">${esc(f.nom)}</span>
@@ -8004,7 +8089,7 @@ Power done right the first time. ⚡`;
           el bid sale corto. Aquí eliges: usar un <strong>precio de referencia tuyo</strong> para tener una cifra, o pegar la
           <strong>cuota de verdad</strong> cuando llegue. Nunca salen precios de internet.</p>
         ${filasPend}
-        ${ref.sinFamilia.length ? `<div class="lev-nota" style="margin:.4rem 0">⚠ ${ref.sinFamilia.length} renglón(es) sin familia reconocida: no llevan referencia. Pégales la cuota o ponles el precio a mano.</div>` : ""}
+        ${ref.sinFamilia.length ? `<div class="lev-nota" style="margin:.4rem 0">⚠ ${ref.sinFamilia.length} renglón(es) sin precio de referencia: <strong>elige su familia</strong> en el desplegable de su fila (o dale un precio tuyo). Lo que elijas me lo aprendo para todos tus estimados.</div>` : ""}
         ${soloLectura ? "" : `
         <label class="mat-filtro-label" style="display:flex;align-items:center;gap:.5rem;margin:.6rem 0 .2rem">
           <input type="checkbox" id="luz-ref-on"${usando ? " checked" : ""}>
@@ -8014,6 +8099,17 @@ Power done right the first time. ⚡`;
         <p class="modal-nota">${usando
           ? `Está <strong>encendido</strong>: esos ${fmt(r2(ref.total))} entran al bid por donde entran las cotizaciones (con su markup, sin misceláneas) y cada renglón se ve marcado <strong>REFERENCIA</strong>. La cuota sigue pendiente y el aviso de salida lo va a decir.`
           : `Está <strong>apagado</strong>: los renglones valen $0 y el bid no incluye la luminaria.`}</p>
+        ${aprendidas.length ? `
+        <details style="margin-top:.5rem">
+          <summary class="mat-filtro-label" style="cursor:pointer">Lo que me enseñaste (${aprendidas.length} modelo(s))</summary>
+          <p class="modal-nota">Valen para <strong>todos</strong> tus estimados. Si uno quedó mal, olvídalo y vuelve a lo automático.</p>
+          ${aprendidas.map(x => `
+          <div class="mat-item">
+            <span class="recibo-chip conciliado">${x.el.tipo === "precio" ? esc(fmt(x.el.precio)) : esc(x.el.fam.nom)}</span>
+            <span class="alcance-info"><span class="alcance-titulo">${esc(x.k)}</span></span>
+            <button type="button" class="accion secundaria luz-fam-olvida" data-modelo="${esc(x.k)}" style="padding:.15rem .5rem">olvidar</button>
+          </div>`).join("")}
+        </details>` : ""}
         <details style="margin-top:.5rem">
           <summary class="mat-filtro-label" style="cursor:pointer">Precios de referencia por familia (los tuyos)</summary>
           ${tablaFam}
@@ -8074,6 +8170,23 @@ Power done right the first time. ⚡`;
     luzCasadas = null;
     await recargarEstimador();
     avisar(`✓ ${n} precio(s) de la cuota puestos en el estimado`);
+  }
+  /* Enseñarle (o hacerle olvidar) la familia de un modelo. Se guarda en la
+     configuración, así que vale para todos los estimados desde ya. */
+  async function aprendeFamLuz(modelo, valor) {
+    const cfg = estData.config || {};
+    const antes = JSON.stringify(luzFamMapa(cfg));
+    const nuevo = luzFamNuevo(cfg, modelo, valor);
+    if (JSON.stringify(nuevo) === antes) return;
+    try {
+      await DB.guardarConfig("luz_fam", JSON.stringify(nuevo));
+      await recargarEstimador();
+      const el = luzEleccion(valor);
+      avisar(el ? (el.tipo === "precio"
+          ? `✓ «${luzClave(modelo)}» vale ${fmt(el.precio)} de referencia — me lo aprendo`
+          : `✓ «${luzClave(modelo)}» es ${el.fam.nom} — me lo aprendo para todos los estimados`)
+        : `✓ «${luzClave(modelo)}» vuelve a lo automático`);
+    } catch (err) { avisar("No se pudo guardar: " + (err.message || err), true); }
   }
   async function guardaPreciosLuz() {
     const els = [...document.querySelectorAll(".luz-ref-precio")];
@@ -8533,6 +8646,30 @@ Power done right the first time. ⚡`;
     if (bLuzG) bLuzG.addEventListener("click", guardaPreciosLuz);
     const bLuzL = $("btn-luz-leer");
     if (bLuzL) bLuzL.addEventListener("click", () => pintaCuotaPreview(est));
+    // B2 · la familia de cada renglón: se elige en su fila y se aprende
+    document.querySelectorAll("select.luz-fam").forEach(selF => {
+      selF.addEventListener("change", () => {
+        const fila = selF.closest(".mat-item");
+        const inp = fila ? fila.querySelector(".luz-fam-precio") : null;
+        if (selF.value === "__propio") {
+          // el precio se pide aquí mismo; no se guarda nada hasta que lo escriba
+          if (inp) { inp.style.display = ""; inp.focus(); inp.select(); }
+          return;
+        }
+        if (inp) { inp.style.display = "none"; inp.value = ""; }
+        aprendeFamLuz(selF.dataset.modelo, selF.value);
+      });
+    });
+    document.querySelectorAll(".luz-fam-precio").forEach(inpF => {
+      inpF.addEventListener("change", () => {
+        const v = Number(inpF.value);
+        if (!(v > 0)) { avisar("Pon el precio por unidad de esa luminaria (mayor que 0).", true); inpF.focus(); return; }
+        aprendeFamLuz(inpF.dataset.modelo, v);
+      });
+    });
+    document.querySelectorAll(".luz-fam-olvida").forEach(bF => {
+      bF.addEventListener("click", () => aprendeFamLuz(bF.dataset.modelo, ""));
+    });
     const bConsG = $("btn-cons-guardar");
     if (bConsG) bConsG.addEventListener("click", guardaConsumibles);
     const bConsR = $("btn-cons-reset");
@@ -11859,7 +11996,12 @@ Power done right the first time. ⚡`;
       horasReglas(cfg) { return horasReglas(cfg || {}); },
       cuentas(base) { return cuentasDelEstimado(base || []); },
       refLuz(base, cfg) { return refLuminarias(base || [], cfg || {}); },
-      familia(nom) { const f = familiaLuz(nom); return f ? f.id : null; },
+      familia(nom, cfg) { const f = familiaLuz(nom, cfg || {}); return f ? f.id : null; },
+      // B2 · de dónde sale el precio de un renglón y qué le enseñó Edgar
+      luzRef(nom, cfg) { return luzRefDe(nom, cfg || {}); },
+      luzMapa(cfg) { return luzFamMapa(cfg || {}); },
+      luzClave(nom) { return luzClave(nom); },
+      luzAprende(cfg, nom, valor) { return luzFamNuevo(cfg || {}, nom, valor); },
       preciosLuz(cfg) { return luzRefPrecios(cfg || {}); },
       leeCuota(txt) { return leeCuota(txt || ""); },
       // las tres tarjetas nuevas, pintadas: el motor se prueba aparte, pero el
