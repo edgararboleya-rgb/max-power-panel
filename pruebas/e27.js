@@ -265,6 +265,28 @@ const EST = { id: EST_ID, nombre: 'NCH', modo: 'remodelacion', escenario: 'A', f
   const refMal = await p.evaluate(i => window.MXP_PRUEBA.e0.refLuz(i.map(x => x.id === 'c3' ? Object.assign({}, x, { item: 'COTIZACIÓN PENDIENTE — ARTEFACTO RARO XYZ' }) : x), {}), ITEMS);
   ok('una luminaria de familia desconocida no suma nada y se señala', refMal.sinFamilia.length === 1 && refMal.total === 19630 - 11000, JSON.stringify([refMal.sinFamilia.length, refMal.total]));
 
+  /* ===== 5b · SUJETO A COTIZACIÓN en el papel que firma el cliente (20/09) ===== */
+  await datos();
+  const cRef = await p.evaluate(e => window.MXP_PRUEBA.e0.calcula(Object.assign({}, e, { usa_luz_ref: true })), EST);
+  const cOff = await p.evaluate(e => window.MXP_PRUEBA.e0.calcula(e), EST);
+  const propOn = await p.evaluate(([e, c]) => window.MXP_PRUEBA.e0.propuesta(Object.assign({}, e, { usa_luz_ref: true }), c), [EST, cRef]);
+  const propOff = await p.evaluate(([e, c]) => window.MXP_PRUEBA.e0.propuesta(e, c), [EST, cOff]);
+  ok('con la referencia encendida, la propuesta dice SUJETO A COTIZACIÓN y lista las luminarias', /SUJETO A COTIZACI[OÓ]N DEL SUMINISTRO/.test(propOn) && /SUBJECT TO SUPPLIER QUOTE/.test(propOn), (propOn.match(/SUJETO[^\n]*/) || [""])[0]);
+  ok('dice que SÍ están incluidas en el precio (no es una exclusión) y que el ajuste va por Change Order', /INCLUIDAS en el precio total a valor de referencia/.test(propOn) && /Change Order antes de ordenar el material/.test(propOn), '');
+  ok('lista las cinco luminarias con su cantidad y su modelo', /• 25 × LITHONIA STAK 2X2 5000LM/.test(propOn) && (propOn.match(/• \d+ × LITHONIA/g) || []).length === 5, JSON.stringify((propOn.match(/• \d+ × LITHONIA[^\n]{0,24}/g) || []).slice(0, 2)));
+  ok('y NO enseña ningún precio unitario de las luminarias: el cliente no ve lo que Edgar paga', !/150|550|220|110\.00/.test((propOn.split("SUJETO A COTIZACIÓN")[1] || "").split("PRECIO TOTAL")[0]), '');
+  ok('el precio total sigue siendo el mismo número de siempre', new RegExp("PRECIO TOTAL \\(LUMP SUM\\): " + (await p.evaluate(c => window.MXP_PRUEBA.e0 && (Math.round(c.bid * 100) / 100).toLocaleString("en-US", { style: "currency", currency: "USD" }), cRef)).replace(/[$,.]/g, x => "\\" + x)).test(propOn), '');
+  ok('con la referencia APAGADA la propuesta sale letra por letra como siempre: ni una palabra de cotización', !/SUJETO A COTIZACI/.test(propOff), propOff.slice(0, 60));
+  ok('el ALCANCE ya no le enseña al cliente «COTIZACIÓN PENDIENTE» ni el recordatorio con TU precio y a quién se lo pides', !/COTIZACI[OÓ]N PENDIENTE/.test(propOn) && !/ref\. \$150|pedir a Jose/.test(propOn) && !/COTIZACI[OÓ]N PENDIENTE/.test(propOff), (propOn.match(/• GENERAL[^\n]{0,70}/) || [""])[0]);
+  ok('…pero sí el modelo de la luminaria, que es lo que el cliente necesita leer', /LITHONIA STAK 2X2 5000LM/.test(propOn), '');
+  const nom = await p.evaluate(() => [
+    window.MXP_PRUEBA.e0.nombreCliente('COTIZACIÓN PENDIENTE — LITHONIA STAK 2X2 (5000LM) ZT (ref. $150, pedir a Jose)'),
+    window.MXP_PRUEBA.e0.nombreCliente('DUPLEX RECEPTACLE 20A (HOSPITAL GRADE)')
+  ]);
+  ok('se quita el recordatorio pero NO lo que describe la pieza, y un renglón normal no se toca', nom[0] === 'LITHONIA STAK 2X2 (5000LM) ZT' && nom[1] === 'DUPLEX RECEPTACLE 20A (HOSPITAL GRADE)', JSON.stringify(nom));
+  const sujNada = await p.evaluate(([e, c]) => window.MXP_PRUEBA.e0.sujetas(Object.assign({}, e, { usa_luz_ref: true, modo: 'rapido' }), c), [EST, cRef]);
+  ok('en modo rápido no hay renglones que mirar: no sale el bloque', sujNada.length === 0, JSON.stringify(sujNada));
+
   /* ===== 6 · el dinero: apagado no mueve nada, encendido entra como cotización ===== */
   const off = await p.evaluate(e => window.MXP_PRUEBA.e0.calcula(e), EST);
   const on = await p.evaluate(e => window.MXP_PRUEBA.e0.calcula(Object.assign({}, e, { usa_luz_ref: true })), EST);

@@ -7322,6 +7322,37 @@ function esFalloDeRed(err) {
     } catch { return []; }
   }
 
+  /* (20/09, lo pidió Edgar) LO QUE VA SUJETO A COTIZACIÓN, EN EL PAPEL.
+     Cuando las luminarias entran al precio con el precio de REFERENCIA de
+     Edgar —porque la cuota del supply no ha llegado— ese dinero SÍ está en el
+     total, pero no es un número cerrado. Hasta ahora el cliente no podía
+     distinguirlo de una cotización de verdad (lo sacó la revisión del 20/09),
+     y el que ponía la diferencia era Edgar. Ahora se dice en la propuesta, con
+     los modelos y sin enseñar ningún precio unitario.
+     Sale solo si la referencia está encendida y hay renglones con ella; y como
+     la propuesta se edita antes de mandarla, se puede quitar de un borrado. */
+  /* EL NOMBRE QUE PUEDE LEER EL CLIENTE. Los renglones que Planos manda como
+     luminaria por cotizar llegan con el prefijo «COTIZACIÓN PENDIENTE —» y con
+     los recordatorios de Edgar dentro de un paréntesis: «(ref. $150, pedir a
+     Jose)». Eso estaba saliendo TAL CUAL en el ALCANCE de la propuesta — el
+     cliente leía el precio de referencia y a quién se lo pide. Aquí se quita
+     eso y solo eso: lo que describe la luminaria se queda. */
+  function nombreParaCliente(item) {
+    const t = String(item || "");
+    if (!/^\s*COTIZACI[OÓ]N PENDIENTE/i.test(t)) return t;
+    return t.replace(/^\s*COTIZACI[OÓ]N PENDIENTE\s*[—-]\s*/i, "")
+            .replace(LUZ_PAR_FUERA, " ").replace(/\s{2,}/g, " ").trim() || t;
+  }
+  function lineasSujetasACuota(est, c) {
+    try {
+      if (!est || !est.usa_luz_ref || est.modo === "rapido") return [];
+      let ref = c && c.refLuz;
+      if (!ref || !Array.isArray(ref.filas)) ref = refLuminarias((c && c.items) || [], (estData && estData.config) || {});
+      return (ref.filas || []).filter(f => (Number(f.cantidad) || 0) > 0)
+        .map(f => Math.round(Number(f.cantidad) || 0) + " × " + nombreParaCliente(f.item).slice(0, 70))
+        .slice(0, 14);
+    } catch { return []; }
+  }
   // Lo que hay que decir antes de mandar el bid. Devuelve "" si no hay nada.
   function ceroTextoSalida(est, c) {
     try {
@@ -7458,10 +7489,19 @@ function esFalloDeRed(err) {
         (porSeccion[s] = porSeccion[s] || []).push(it);
       }
       for (const [s, its] of Object.entries(porSeccion)) {
-        lineas.push(`• ${s}: ${its.slice(0, 4).map(i => `${i.cantidad} ${i.item}`).join(", ")}${its.length > 4 ? "…" : ""}`);
+        lineas.push(`• ${s}: ${its.slice(0, 4).map(i => `${i.cantidad} ${nombreParaCliente(i.item)}`).join(", ")}${its.length > 4 ? "…" : ""}`);
       }
     }
     const m1 = r2(bid * 0.35), m2 = r2(bid * 0.4), m3 = r2(bid - m1 - m2);
+    const sujetas = lineasSujetasACuota(est, c);
+    const bloqueCuota = sujetas.length ? `
+
+SUJETO A COTIZACIÓN DEL SUMINISTRO / SUBJECT TO SUPPLIER QUOTE:
+Las siguientes luminarias están INCLUIDAS en el precio total a valor de referencia,
+mientras el suministro entrega su cotización en firme:
+${sujetas.map(x => "• " + x).join("\n")}
+Al recibir la cotización en firme, cualquier diferencia de costo se maneja por
+Change Order antes de ordenar el material.` : "";
     return `MAX POWER ELECTRICAL SOLUTIONS, INC.
 FL EC License #EC13016045 · mxpes.com
 PROPUESTA — ${est.nombre}
@@ -7476,7 +7516,7 @@ ${exclE0.length
 NO INCLUYE / NOT INCLUDED (furnished by others):
 ${exclE0.map(x => "• " + x).join("\n")}`
   : `Incluye mano de obra, materiales, misceláneas y supervisión según el alcance.`}
-No incluye trabajos no listados; cambios se manejan por Change Order.
+No incluye trabajos no listados; cambios se manejan por Change Order.${bloqueCuota}
 
 PRECIO TOTAL (LUMP SUM): ${fmt(bid)}${est.sqft ? `  (${fmt(r2(bid / est.sqft))}/sqft)` : ""}
 
@@ -12097,6 +12137,8 @@ Power done right the first time. ⚡`;
       excluye(est, items) { return lineasNoIncluye(est || {}, items || []); },
       salida(est, c) { return ceroTextoSalida(est || {}, c || { items: [], autos: [] }); },
       propuesta(est, c) { return textoPropuesta(est, c); },
+      sujetas(est, c) { return lineasSujetasACuota(est, c || { items: [] }); },
+      nombreCliente(item) { return nombreParaCliente(item); },
       mep(est, c) { return textoResumenMEP(est, c); },
       takeoff(est, c) { return textoTakeoff(est, c); },
       consumibles(base, est, cfg) { return autosConsumibles(base || [], est || {}, cfg || {}); },
