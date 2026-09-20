@@ -234,6 +234,28 @@ const EST = { id: EST_ID, nombre: 'NCH', modo: 'remodelacion', escenario: 'A', f
   const c2 = menos.casadas.find(x => /5000LM/.test(x.modelo));
   ok('si la segunda viene más BARATA se ve, pero no gana: no se toca el precio que ya estaba', !!c2 && c2.gana === false && c2.yaTenia === 168.40, JSON.stringify(c2 && [c2.precio, c2.gana]));
 
+  // la clave conserva lo que describe la luminaria y tira solo los recordatorios
+  const claves = await p.evaluate(() => [
+    window.MXP_PRUEBA.e0.luzClave('COTIZACIÓN PENDIENTE — LITHONIA STAK 2X2 (5000LM) ZT MVOLT (ref. $150, pedir a Jose)'),
+    window.MXP_PRUEBA.e0.luzClave('COTIZACIÓN PENDIENTE — LITHONIA STAK 2X2 (2000LM) ZT MVOLT'),
+    window.MXP_PRUEBA.e0.luzClave('LITHONIA STAK 2X2 (5000LM) ZT MVOLT (cuota 2026-09-20)')
+  ]);
+  ok('la clave NO junta dos luminarias que solo se diferencian en el paréntesis: 5000LM y 2000LM son distintas', claves[0] !== claves[1] && /5000LM/.test(claves[0]) && /2000LM/.test(claves[1]), JSON.stringify(claves.slice(0, 2)));
+  ok('…pero el recordatorio («ref. $150, pedir a Jose») y la marca de la cuota sí se tiran: el mismo modelo sigue siendo el mismo', claves[0] === claves[2], JSON.stringify([claves[0], claves[2]]));
+  // el tope nunca se lleva lo que se acaba de enseñar, ni con una clave que es solo números
+  const topeNum = await p.evaluate(() => {
+    let m = {};
+    for (let i = 0; i < 300; i++) m = window.MXP_PRUEBA.e0.luzAprende({ luz_fam: JSON.stringify(m) }, 'MODELO ' + i, 'exit');
+    m = window.MXP_PRUEBA.e0.luzAprende({ luz_fam: JSON.stringify(m) }, '4096', 'highbay');   // una clave de solo dígitos
+    return { n: Object.keys(m).length, guardado: m['4096'] };
+  });
+  ok('con el mapa lleno, enseñar un modelo que es solo números NO se borra a sí mismo (JS pone las claves numéricas primero)', topeNum.guardado === 'highbay' && topeNum.n === 300, JSON.stringify(topeNum));
+  // un precio ridículo no tapa el aviso de que el renglón va sin dinero
+  const cfgFlojo = { luz_fam: JSON.stringify({ [await p.evaluate(m => window.MXP_PRUEBA.e0.luzClave(m), RARO)]: 0.5 }) };
+  const rfFlojo = await p.evaluate(([m, c]) => window.MXP_PRUEBA.e0.luzRef(m, c), [RARO, cfgFlojo]);
+  const refFlojo = await p.evaluate(([i, c]) => window.MXP_PRUEBA.e0.refLuz(i, c), [ITEMS_RARO0, cfgFlojo]);
+  ok('un precio de 50 centavos se marca como flojo y sigue contando como renglón sin precio: un dedazo no tapa el aviso', rfFlojo.flojo === true && refFlojo.sinFamilia.length === 1, JSON.stringify([rfFlojo.precio, rfFlojo.flojo, refFlojo.sinFamilia.length]));
+
   /* ===== 5 · el precio de referencia ===== */
   const ref = await p.evaluate(i => window.MXP_PRUEBA.e0.refLuz(i, {}), ITEMS);
   ok('las cinco líneas pendientes llevan referencia, ninguna se queda fuera', ref.filas.length === 5 && ref.sinFamilia.length === 0, JSON.stringify(ref.filas.map(x => [x.familia, x.precio])));

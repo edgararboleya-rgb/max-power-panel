@@ -5905,8 +5905,20 @@ function esFalloDeRed(err) {
      Lo de Edgar manda SIEMPRE, también para corregir un reconocimiento
      equivocado — y se puede olvidar, que por eso la lista se ve entera. */
   const LUZ_FAM_MAX = 300;        // lo aprendido no crece sin fin
+  const LUZ_PRECIO_MIN = 1;       // por debajo de un dólar no es el precio de una luminaria: es un dedazo
   const LUZ_CLAVE_MAX = 120;
-  function luzClave(nombre) { return luzModelo(nombre).slice(0, LUZ_CLAVE_MAX); }
+  /* La clave de lo aprendido. Ojo con los paréntesis: luzModelo los tira
+     TODOS, y así «STAK 2X2 (5000LM)» y «STAK 2X2 (2000LM)» acababan con la
+     misma clave y compartiendo precio — $400 de diferencia en el bid de
+     Nicklaus. Aquí solo se quitan los que son RECORDATORIOS de Edgar o la
+     marca de la cuota; lo que describe la luminaria se queda. (Revisión 20/09.) */
+  const LUZ_PAR_FUERA = /\((?=[^)]*(?:\bref\b|\bref\.|pedir|cuota|precio|\$|\d{4}-\d{2}-\d{2}))[^)]*\)/gi;
+  function luzClave(nombre) {
+    const t = String(nombre || '')
+      .replace(/^\s*COTIZACI[OÓ]N PENDIENTE\s*[—-]\s*/i, '')
+      .replace(LUZ_PAR_FUERA, ' ');
+    return normTxt(t).slice(0, LUZ_CLAVE_MAX);
+  }
   function luzFamMapa(cfg) {
     let m = {};
     try {
@@ -5925,7 +5937,7 @@ function esFalloDeRed(err) {
       if (f) return { tipo: "fam", fam: f };
     }
     const p = Number(valor);
-    if (isFinite(p) && p > 0) return { tipo: "precio", precio: p };
+    if (isFinite(p) && p > 0) return { tipo: "precio", precio: p, flojo: p < LUZ_PRECIO_MIN };
     return null;
   }
   /* DE DÓNDE SALE el precio de referencia de UN renglón, y de quién es.
@@ -5934,7 +5946,7 @@ function esFalloDeRed(err) {
   function luzRefDe(nombre, cfg, preciosOpc) {
     const precios = preciosOpc || luzRefPrecios(cfg);
     const el = luzEleccion(luzFamMapa(cfg)[luzClave(nombre)]);
-    if (el && el.tipo === "precio") return { precio: el.precio, fam: null, id: "propio", nom: "Precio tuyo", fuente: "precio" };
+    if (el && el.tipo === "precio") return { precio: el.precio, fam: null, id: "propio", nom: "Precio tuyo", fuente: "precio", flojo: !!el.flojo };
     if (el && el.tipo === "fam") {
       const p = Number(precios[el.fam.id]) || 0;
       // una familia cuyo precio está en $0 NO pone precio: se dice así, y no
@@ -5968,9 +5980,11 @@ function esFalloDeRed(err) {
     if (!el) { delete m[k]; return m; }
     delete m[k];   // se reinserta al final: lo recién enseñado es lo último en caducar
     m[k] = el.tipo === "precio" ? el.precio : el.fam.id;
-    const ks = Object.keys(m);
-    // el tope se respeta quitando lo más viejo, nunca lo que se acaba de enseñar
-    for (let i = 0; i < ks.length - LUZ_FAM_MAX; i++) delete m[ks[i]];
+    // el tope quita lo más viejo, y NUNCA lo que se acaba de enseñar: un modelo
+    // que sea solo números se coloca el primero en un objeto de JavaScript, así
+    // que sin esta guarda el recorte se llevaba justo lo nuevo (revisión 20/09)
+    const ks = Object.keys(m).filter(x => x !== k);
+    for (let i = 0; i < ks.length - (LUZ_FAM_MAX - 1); i++) delete m[ks[i]];
     return m;
   }
   // ¿Es un renglón de luminaria a la espera de la cuota?
@@ -5990,7 +6004,8 @@ function esFalloDeRed(err) {
       if (!ES_COT_PENDIENTE(it)) continue;
       const r = luzRefDe(it.item, cfg, precios);
       const q = Number(it.cantidad) || 0;
-      if (!(r.precio > 0)) { sinFamilia.push({ item: it.item, modelo: luzModelo(it.item), cantidad: q }); continue; }
+      // un precio por debajo de un dólar no tapa el aviso: el bid saldría corto y nadie lo diría
+      if (!(r.precio > 0) || r.flojo) { sinFamilia.push({ item: it.item, modelo: luzModelo(it.item), cantidad: q, flojo: !!r.flojo }); continue; }
       filas.push({ item: it.item, modelo: luzModelo(it.item), cantidad: q,
                    familia: r.id, nom: r.nom, fuente: r.fuente, precio: r.precio, total: q * r.precio });
       total += q * r.precio;
@@ -8130,6 +8145,7 @@ Power done right the first time. ⚡`;
     return `
       <div class="cal-panel-card">
         <div class="cal-form-titulo">🔦 Luminarias que cotiza el supply (${pend.length})</div>
+        ${soloLectura ? `<p class="modal-nota" style="color:#a33">Este estimado ya no es un borrador, pero lo que ves aquí se vuelve a calcular con los precios de <strong>hoy</strong>: si cambias un precio de referencia o le enseñas una familia a un modelo, esta pantalla se mueve. El número que se mandó quedó guardado aparte al cerrarlo.</p>` : ""}
         <p class="modal-nota">Tú no pones la luz: pones la mano. Mientras llega la cuota estos renglones valen <strong>$0</strong> y
           el bid sale corto. Aquí eliges: usar un <strong>precio de referencia tuyo</strong> para tener una cifra, o pegar la
           <strong>cuota de verdad</strong> cuando llegue. Nunca salen precios de internet.</p>
@@ -8166,13 +8182,14 @@ Power done right the first time. ⚡`;
           <p class="modal-nota">Copia las líneas de la cuota y pégalas tal cual. Busco cada modelo y su precio unitario.
             Si pegas las dos cuotas, <strong>me quedo con la más cara</strong>.</p>
           <textarea id="luz-cuota" rows="4" placeholder="12  LITHONIA STAK 2X2 5000LM 80CRI 35K   $168.40   $2,020.80"
-            style="width:100%;font:inherit;font-size:.8rem;padding:.55rem .7rem;border:1px solid var(--mp-line);border-radius:10px"></textarea>
+            style="width:100%;font:inherit;font-size:.8rem;padding:.55rem .7rem;border:1px solid var(--mp-line);border-radius:10px">${esc(luzCuotaTxt)}</textarea>
           <button type="button" class="accion secundaria" id="btn-luz-leer" style="margin-top:.4rem">🔎 Leer la cuota</button>
           <div id="luz-cuota-preview"></div>
         </details>`}
       </div>`;
   }
   let luzCasadas = null;   // lo último que se leyó de una cuota, a la espera de aplicarse
+  let luzCuotaTxt = "";    // (20/09) lo pegado sobrevive al repintado: elegir una familia recarga la tarjeta y borraba la cuota
   function pintaCuotaPreview(est) {
     const r2 = r2e27;
     const caja = $("luz-cuota-preview"), txt = ($("luz-cuota") || {}).value || "";
@@ -8228,7 +8245,7 @@ Power done right the first time. ⚡`;
      guardado anterior: marcar dos luminarias seguidas borraba la primera, y
      el aviso decía ✓ igual. Ahora el mapa vivo se lleva en memoria y las
      escrituras van EN FILA, una detrás de otra. */
-  let luzFamMem = null, luzFamCola = Promise.resolve();
+  let luzFamMem = null, luzFamCola = Promise.resolve(), luzFamEnVuelo = 0;
   function luzFamActual() { return luzFamMem || luzFamMapa(estData.config || {}); }
   function aprendeFamLuz(modelo, valor, esClave) {
     const base = { luz_fam: JSON.stringify(luzFamActual()) };
@@ -8240,28 +8257,46 @@ Power done right the first time. ⚡`;
     luzFamMem = nuevo;   // lo que venga después parte de AQUÍ, no del config viejo
     const el = esClave ? null : luzEleccion(valor);
     const nom = esClave ? modelo : luzClave(modelo);
+    luzFamEnVuelo++;
     luzFamCola = luzFamCola.then(async () => {
       try {
         await DB.guardarConfig("luz_fam", JSON.stringify(luzFamMem));
-        await recargarEstimador();
-        luzFamMem = null;   // ya está en estData.config
         avisar(el ? (el.tipo === "precio"
             ? `✓ «${nom}» vale ${fmt(el.precio)} de referencia — me lo aprendo`
             : `✓ «${nom}» es ${el.fam.nom} — me lo aprendo para todos los estimados`)
           : `✓ «${nom}» vuelve a lo automático`);
-      } catch (err) { luzFamMem = null; avisar("No se pudo guardar: " + (err.message || err), true); }
+      } catch (err) { avisar("No se pudo guardar: " + (err.message || err), true); }
+      /* Se repinta UNA sola vez, cuando ya no queda nada por guardar: cada
+         recargarEstimador destruye los controles de la tarjeta, y hacerlo en
+         medio le borraba a Edgar el precio que estaba tecleando en otra fila.
+         (Revisión 20/09.) */
+      luzFamEnVuelo--;
+      if (!luzFamEnVuelo) {
+        try { await recargarEstimador(); } catch (e) {}
+        luzFamMem = null;   // ya está en estData.config
+      }
     });
     return luzFamCola;
   }
   async function guardaPreciosLuz() {
     const els = [...document.querySelectorAll(".luz-ref-precio")];
     if (!els.length) return;
-    const obj = {};
-    els.forEach(el => { const v = Number(el.value); if (isFinite(v) && v >= 0) obj[el.dataset.fam] = v; });
+    const obj = {}; let vacias = 0;
+    /* (Revisión 20/09) Una casilla VACÍA no es «$0»: Number("") da 0 y así una
+       familia se quedaba a cero para TODOS los estimados mientras la pantalla
+       decía «✓ guardados». Vacía = no se toca, y se dice cuántas. */
+    els.forEach(el => {
+      const txt = String(el.value == null ? "" : el.value).trim();
+      if (txt === "") { vacias++; return; }
+      const v = Number(txt);
+      if (isFinite(v) && v >= 0) obj[el.dataset.fam] = v;
+    });
     try {
       await DB.guardarConfig("luz_ref", JSON.stringify(obj));
       await recargarEstimador();
-      avisar("✓ Precios de referencia guardados");
+      avisar(vacias
+        ? `✓ Precios de referencia guardados · ${vacias} en blanco: esas familias se quedan con el precio de arranque`
+        : "✓ Precios de referencia guardados");
     } catch (err) { avisar("No se pudo guardar: " + (err.message || err), true); }
   }
 
@@ -8711,6 +8746,11 @@ Power done right the first time. ⚡`;
     if (bLuzG) bLuzG.addEventListener("click", guardaPreciosLuz);
     const bLuzL = $("btn-luz-leer");
     if (bLuzL) bLuzL.addEventListener("click", () => pintaCuotaPreview(est));
+    const taLuz = $("luz-cuota");
+    if (taLuz) {
+      taLuz.addEventListener("input", () => { luzCuotaTxt = taLuz.value; });
+      if (luzCuotaTxt) { const d = taLuz.closest("details"); if (d) d.open = true; }
+    }
     // B2 · la familia de cada renglón: se elige en su fila y se aprende
     document.querySelectorAll("select.luz-fam").forEach(selF => {
       selF.addEventListener("change", () => {
@@ -8727,8 +8767,12 @@ Power done right the first time. ⚡`;
     });
     document.querySelectorAll(".luz-fam-precio").forEach(inpF => {
       inpF.addEventListener("change", () => {
-        const v = Number(inpF.value);
-        if (!(v > 0)) { avisar("Pon el precio por unidad de esa luminaria (mayor que 0).", true); inpF.focus(); return; }
+        const txt = String(inpF.value == null ? "" : inpF.value).trim();
+        // vaciar la casilla es QUITAR el precio propio: vuelve a lo automático,
+        // no un error rojo con la casilla en blanco mintiendo (revisión 20/09)
+        if (txt === "") { aprendeFamLuz(inpF.dataset.modelo, ""); return; }
+        const v = Number(txt);
+        if (!(v > 0)) { avisar("Pon el precio por unidad de esa luminaria (mayor que 0), o déjalo en blanco para volver a lo automático.", true); inpF.focus(); return; }
         aprendeFamLuz(inpF.dataset.modelo, v);
       });
     });
