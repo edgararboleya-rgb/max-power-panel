@@ -5,21 +5,21 @@ contabilidad lea **este archivo solo** y ya sepa todo: qué se decidió, en qué
 fase vamos, qué archivos toca y qué archivos no. Sin volver a explorar el
 repositorio entero. Eso es lo que hace que esto salga barato en crédito.
 
-**El verde y el azul — qué modelo trabaja cada fase:**
+**El verde y el azul — qué modelo trabaja cada paso:**
 
-| | Modelo | Precio por millón de tokens |
+| | Modelo | Para qué |
 |---|---|---|
-| 🟢 **VERDE** | Claude Opus 5 (`claude-opus-5`) | $5 entrada / $25 salida |
-| 🔵 **AZUL** | Claude Fable 5.1 (`claude-fable-5-1`) | $10 entrada / $50 salida |
+| 🔵 **AZUL** | Claude Fable 5.1 (`claude-fable-5-1`) | **Crea lo delicado.** El diseño, la estructura, el criterio, lo que si sale torcido contamina todo lo que venga después. |
+| 🟢 **VERDE** | Claude Opus 5 (`claude-opus-5`) | **Trabaja encima de lo que el azul ya dejó hecho.** Repetir el patrón, extender, pulir, probar, pegar. |
 
-**El azul cuesta el doble que el verde.** El ahorro está en no vivir en azul:
-verde por defecto, azul solo donde un error se paga caro y no se ve de
-inmediato (los invariantes del libro, el estimado contra real, la facturación
-de avance, el diseño de la IA). Salen **4 fases azules de 17** — un cuarto
-del proyecto en el modelo caro, tres cuartos en el barato.
+Casi toda fase lleva los dos: **el azul crea el primero, el verde hace los
+otros nueve**. Ahí está el ahorro de verdad — no en escatimar azul donde hace
+falta, sino en que lo que el azul diseña una vez, el verde lo multiplica
+barato. Fable cuesta el doble ($10/$50 contra $5/$25 por millón), así que
+pagarlo en el diseño rinde y pagarlo en el relleno no.
 
-Al empezar cada fase la sesión dice **«esta va en verde»** o **«esta va en
-azul»**, y Edgar cambia el modelo antes de arrancar.
+La sesión avisa **«esta parte va en azul»** o **«ahora cámbiate a verde»**
+antes de cada bloque, y espera a que Edgar cambie el modelo.
 
 **Regla número uno de este plan:** si vas a empezar una sesión, di
 *«hagamos la Fase N»*. No digas *«sigue con la contabilidad»*. La diferencia
@@ -214,28 +214,27 @@ del miedo de «ser tu propio proveedor».
 
 ## 6. El calendario
 
-🟢 **verde = Opus 5** · 🔵 **azul = Fable 5.1, el doble de caro**.
-La sesión avisa el color al empezar la fase. Dentro de cada fase, lo que
-**necesita a Edgar** va marcado con ▶.
+🔵 **azul = Fable 5.1, crea** · 🟢 **verde = Opus 5, trabaja encima**
+· ▶ **necesita a Edgar**
 
 Arranque: semana del lunes 21 de septiembre de 2026. Dos sesiones por semana.
 
-| # | Semana | Fase | Color |
+| # | Semana | 🔵 Lo que crea Fable | 🟢 Lo que trabaja Opus |
 |---|---|---|---|
-| 1 | 21–27 sep | **Plan de cuentas.** ▶ Edgar dicta las cuentas y decide si los cost codes (`01-DEMO…20-MISC`) son subcuentas o dimensión — **eso amarra la Fase 9**. ▶ Pegar el SQL. | 🟢 |
-| 2 | 28 sep–4 oct | **El libro.** `cuentas`, `asientos`, `asiento_lineas`, `periodos`. Posteo por función, cuadre obligatorio, bloqueo, y el candado de que no se edita ni se borra (punto 3). ▶ Pegar. | 🔵 |
-| 3 | 5–11 oct | **Puentes automáticos.** `facturas`→CxC, `recibos`/`gastos_generales`→gasto, `horas`→mano de obra. ▶ Edgar define el mapeo y el criterio de reconocimiento. | 🟢 |
-| 4 | 12–18 oct | **Estados financieros** como vistas. ▶ **Edgar audita contra QuickBooks.** Si no amarra, no se sigue. | 🟢 |
-| 5 | 19–25 oct | **Primera pantalla** (`js/conta.js`): balanza y P&L con clic hasta el asiento y del asiento al recibo con foto. | 🟢 |
-| 6 | 26 oct–1 nov | **Banco y tarjetas.** Importador CSV/OFX, idempotencia, conciliación. ▶ Edgar manda un archivo de cada cuenta. | 🟢 |
-| 7 | 2–8 nov | **Categorización.** Reglas + la IA que aprende (Haiku para el volumen). ▶ Edgar dicta sus reglas y categoriza un mes. | 🟢 |
-| 8 | 9–15 nov | **Cierre mensual y las alarmas.** Bloqueo, amarre, export a Drive, **la ronda nocturna de controles y la IA que la narra**. ▶ Cerrar octubre de prueba. | 🟢 |
-| 9 | 16–22 nov | **Costo por obra + estimado contra real.** La fase que justifica el proyecto. ▶ Edgar valida contra una obra que se sepa de memoria. | 🔵 |
-| 10 | 23–29 nov | **Facturación, WIP y retención.** Catálogo de servicios desde `catalogo_items`, facturación por hito y por avance, schedule of values estilo AIA, retención, y el paquete que pide el GC (seguros y licencia desde `documentos_empresa`, lien waivers). ▶ Edgar define el método de avance. | 🔵 |
-| 11 | 30 nov–6 dic | **Puente de nómina.** ▶ **Gusto o Check ya contratado.** Burden real por obra desde `benefits_detalle`. | 🟢 |
-| 12 | 7–13 dic | **Apertura y 1099.** ▶ Saldos de QuickBooks y los W-9 de los subs. | 🟢 |
-| 13–14 | 14–27 dic | **Marcha en paralelo.** ▶ Casi todo de Edgar: diciembre en los dos sistemas. La sesión arregla cada diferencia. | 🟢 |
-| 15 | 28 dic–3 ene | **Amarre.** ▶ Saldos al 31-dic y visto bueno. → **1 de enero de 2027: en vivo.** | 🟢 |
+| 1 | 21–27 sep | **Plan de cuentas entero.** Es el cimiento: la estructura y la decisión de si los cost codes (`01-DEMO…20-MISC`) son subcuentas o dimensión — **eso amarra la Fase 9**. ▶ Edgar dicta. | El SQL numerado y comentado para pegar. ▶ Pegar. |
+| 2 | 28 sep–4 oct | **El libro.** `cuentas`, `asientos`, `asiento_lineas`, `periodos`; la función de posteo, el cuadre obligatorio, la inmutabilidad y el bloqueo de período. Todo lo demás se apoya aquí. | Las pruebas que lo atacan: asiento descuadrado, escritura en mes cerrado, intento de borrado. ▶ Pegar. |
+| 3 | 5–11 oct | **El primer puente** (`facturas`→CxC) y el contrato que siguen todos. ▶ Edgar define el mapeo y el reconocimiento de ingreso. | Los otros tres con el mismo molde: `recibos`, `gastos_generales`, `horas`. |
+| 4 | 12–18 oct | **El mapeo del mayor a los estados.** Dónde cae cada cuenta en balance y en resultados, con sus signos. | Balanza, comparativos, y el clic hasta el asiento. ▶ **Edgar audita contra QuickBooks.** |
+| 5 | 19–25 oct | **El esqueleto de `js/conta.js`** y el patrón de falla ruidosa (punto 5.1) que obedece toda pantalla. | Las pantallas sobre ese esqueleto, y el clic del asiento al recibo con foto. |
+| 6 | 26 oct–1 nov | **Idempotencia y conciliación.** El pendiente que se vuelve confirmado cambiando de ID es donde se corrompen los libros callados. | Los lectores de CSV/OFX, uno por banco. ▶ Edgar manda un archivo de cada cuenta. |
+| 7 | 2–8 nov | **El motor de reglas y el contrato de la IA** — qué se le pregunta, qué puede contestar, cómo se sella lo que propone. | La pantalla, el editor de reglas, el modelo Haiku para el volumen. ▶ Edgar dicta sus reglas. |
+| 8 | 9–15 nov | **El cierre y la ronda nocturna de controles.** Qué se vigila, en qué orden, qué detiene el cierre. | Export a Drive, avisos, historial. ▶ Cerrar octubre de prueba. |
+| 9 | 16–22 nov | **Costo por obra y estimado contra real, entero.** La fase más difícil y la que justifica el proyecto: casar gasto real con receta y cost code, y devolverle la corrección al estimador. | Las pantallas y los reportes. ▶ Edgar valida contra una obra que se sepa de memoria. |
+| 10 | 23–29 nov | **WIP, avance y retención.** Porcentaje de avance, sobre y sub-facturación, schedule of values. ▶ Edgar define el método. | Catálogo de servicios desde `catalogo_items`, plantillas de factura, y el paquete del GC (seguros y licencia desde `documentos_empresa`). |
+| 11 | 30 nov–6 dic | **El reparto del burden a la obra.** Cómo aterriza cada parte de `benefits_detalle` sobre las horas de un proyecto. | La plomería contra la API de Gusto o Check. ▶ **Contratado ya.** |
+| 12 | 7–13 dic | — | Carga de apertura y preparación de los 1099-NEC. ▶ Saldos de QuickBooks y W-9 de los subs. |
+| 13–14 | 14–27 dic | Solo la diferencia que se resista: una que no cede es fallo de diseño, y el diseño es suyo. | Las diferencias de rutina, una por una. ▶ Casi todo de Edgar: diciembre en los dos sistemas. |
+| 15 | 28 dic–3 ene | — | Saldos al 31-dic y verificación. ▶ Visto bueno → **1 de enero de 2027: en vivo.** |
 
 ### Después del corte — lo que no cabe antes, y está bien que no quepa
 
@@ -245,8 +244,8 @@ para tener algo que auditar.
 
 | # | Cuándo | Fase | Color |
 |---|---|---|---|
-| 16 | enero 2027 | **El contador de guardia.** La IA completa: conversación sobre los libros, conciliación propuesta, detección de lo raro, nota del cierre. Sobre la bandeja de aprobación del punto 4. | 🔵 |
-| 17 | febrero 2027 | **Paquete fiscal** para el CPA y pulido de lo que salga del primer cierre real. | 🟢 |
+| 16 | enero 2027 | **El contador de guardia.** 🔵 Fable diseña la IA entera: qué vigila, cómo explica el descuadre, cómo propone el reverso, cómo huele lo raro. 🟢 Opus arma la bandeja de aprobación y la conversación. |
+| 17 | febrero 2027 | 🟢 **Paquete fiscal** para el CPA y pulido del primer cierre real. |
 
 - 🔵 **Ene–mar 2027:** QuickBooks vivo en solo lectura; el CPA cierra 2026 desde ahí. ~$300 de seguro barato.
 - **~Abril 2027:** se cancela QuickBooks.
@@ -275,8 +274,10 @@ para tener algo que auditar.
    orientarse. Cinco sesiones chicas pagan ese costo cinco veces por el mismo
    trabajo. Dos sesiones largas rinden lo mismo por menos de la mitad.
 6. **No pidas «revisa todo».** Pide el paso que sigue.
-7. **El color es plata.** Fable cuesta el doble que Opus. 13 de las 17 fases
-   van en verde. La sesión avisa el color al empezar; si no avisa, es verde.
+7. **El azul se paga en el diseño, no en el relleno.** Fable crea el primer
+   puente; Opus hace los otros tres con el mismo molde. Fable escribe el
+   esqueleto de la pantalla; Opus cuelga las demás. Lo caro se compra una vez
+   y se multiplica barato.
 8. **Dentro de la app, el modelo se elige por tarea** (punto 4): Haiku para el
    volumen, Opus solo para razonar sobre los libros. Con prefijo cacheado y
    Batches a mitad de precio donde no corre prisa.
@@ -318,21 +319,21 @@ grieta, y tus datos ya están del lado bueno.
 
 ## 9. Dónde vamos
 
-🟢 verde = Opus 5 · 🔵 azul = Fable 5.1 · ▶ necesita a Edgar antes de arrancar
+🔵 azul = Fable crea · 🟢 verde = Opus trabaja encima · ▶ necesita a Edgar
 
-- [ ] 🟢 Fase 1 · Plan de cuentas — ▶ lo dictas tú
-- [ ] 🔵 Fase 2 · El libro
-- [ ] 🟢 Fase 3 · Puentes automáticos — ▶ el mapeo es tuyo
-- [ ] 🟢 Fase 4 · Estados financieros — ▶ auditas contra QuickBooks
-- [ ] 🟢 Fase 5 · Primera pantalla
-- [ ] 🟢 Fase 6 · Banco y tarjetas — ▶ mandas los archivos
-- [ ] 🟢 Fase 7 · Categorización — ▶ dictas las reglas
-- [ ] 🟢 Fase 8 · Cierre mensual y alarmas
-- [ ] 🔵 Fase 9 · Costo por obra + estimado vs. real — ▶ validas
-- [ ] 🔵 Fase 10 · Facturación, WIP y retención — ▶ método de avance
-- [ ] 🟢 Fase 11 · Puente de nómina — ▶ **Gusto/Check: tramitar en noviembre temprano**
-- [ ] 🟢 Fase 12 · Apertura y 1099 — ▶ saldos y W-9
-- [ ] 🟢 Fases 13–14 · Marcha en paralelo — ▶ casi todo tuyo
-- [ ] 🟢 Fase 15 · Amarre → **1 de enero en vivo**
-- [ ] 🔵 Fase 16 · El contador de guardia (enero)
-- [ ] 🟢 Fase 17 · Paquete fiscal (febrero)
+- [ ] Fase 1 · Plan de cuentas — 🔵 ▶ lo dictas tú
+- [ ] Fase 2 · El libro — 🔵🟢
+- [ ] Fase 3 · Puentes automáticos — 🔵🟢 ▶ el mapeo es tuyo
+- [ ] Fase 4 · Estados financieros — 🔵🟢 ▶ auditas contra QuickBooks
+- [ ] Fase 5 · Primera pantalla — 🔵🟢
+- [ ] Fase 6 · Banco y tarjetas — 🔵🟢 ▶ mandas los archivos
+- [ ] Fase 7 · Categorización — 🔵🟢 ▶ dictas las reglas
+- [ ] Fase 8 · Cierre y alarmas — 🔵🟢
+- [ ] Fase 9 · Costo por obra + estimado vs. real — 🔵 ▶ validas
+- [ ] Fase 10 · Facturación, WIP y retención — 🔵🟢 ▶ método de avance
+- [ ] Fase 11 · Puente de nómina — 🔵🟢 ▶ **Gusto/Check: tramitar en noviembre temprano**
+- [ ] Fase 12 · Apertura y 1099 — 🟢 ▶ saldos y W-9
+- [ ] Fases 13–14 · Marcha en paralelo — 🟢 ▶ casi todo tuyo
+- [ ] Fase 15 · Amarre — 🟢 ▶ → **1 de enero en vivo**
+- [ ] Fase 16 · El contador de guardia — 🔵🟢 (enero)
+- [ ] Fase 17 · Paquete fiscal — 🟢 (febrero)
