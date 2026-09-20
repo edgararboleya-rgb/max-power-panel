@@ -137,19 +137,38 @@ Lo que un contador con experiencia hace y una resta no puede:
 
 ### Qué modelo usa la app por dentro
 
-Aquí no manda el azul y el verde — eso es para la sesión. Dentro de la app se
-elige por tarea, y es donde de verdad se ahorra:
+**Solo Opus y Fable. Ni Haiku ni Sonnet, en ninguna parte.** Decisión de
+Edgar: prefiere pagar más y que sea de verdad inteligente. No se vuelve a
+proponer un modelo chico «para lo mecánico» — lo mecánico mal hecho es
+justamente lo que ensucia un libro.
 
-| Tarea | Modelo | Por qué |
+| Tarea | Modelo | Esfuerzo |
 |---|---|---|
-| Categorizar movimientos, casar recibos | `claude-haiku-4-5` ($1/$5) | Volumen alto, trabajo mecánico |
-| Leer un recibo, resumir un mes | `claude-sonnet-5` ($2/$10) | Punto medio |
-| El auditor nocturno, explicar el descuadre, conversar | `claude-opus-5` ($5/$25) | Es el que razona sobre los libros |
+| Categorizar movimientos, casar recibo con gasto | `claude-opus-5` | `low` |
+| Leer un recibo, resumir el mes, redactar la nota del cierre | `claude-opus-5` | `high` |
+| **El auditor nocturno**, explicar un descuadre, proponer el reverso, oler lo raro, conversar sobre los libros | `claude-fable-5-1` | `high` / `xhigh` |
 
-El plan de cuentas y las reglas se mandan como prefijo fijo con
-`cache_control`, que es lo que hace barata la llamada repetida. Toda
-categorización del mes entra por **Batches** (mitad de precio) cuando no corre
-apurada.
+### Cómo se paga eso sin que se dispare
+
+El esfuerzo es el lever, **no el modelo**. Bajar a `low` no es cambiar de
+cerebro: es el mismo Opus pensando menos en algo que no lo necesita. Para
+clasificar un movimiento de banco es lo correcto; para entender por qué no
+cuadra el mes, no.
+
+1. **`output_config: {effort: "low"}`** en lo repetitivo. Mismo modelo, mucho
+   menos gasto. El `effort` va **dentro** de `output_config`, no arriba.
+2. **Prefijo cacheado.** El plan de cuentas y las reglas van primero y fijos,
+   con `cache_control`; lo que cambia (el movimiento que se está mirando) va
+   al final. La lectura cacheada cuesta una fracción de la entrada nueva. Si
+   `usage.cache_read_input_tokens` sale en cero, algo lo está invalidando y
+   hay que buscarlo.
+3. **Batches a mitad de precio** para la categorización del mes, que no corre
+   prisa. Solo lo que Edgar mira en el momento va en vivo.
+4. **La frontera del punto 4 es el ahorro más grande de todos.** Cada pregunta
+   que contesta Postgres es una llamada que no se paga. La ronda nocturna
+   corre en SQL; el modelo entra solo cuando hay algo que explicar.
+5. **Tope duro** en `asistente_costo_mes` / `tope_mes_centavos`, que la app ya
+   tiene montados, con fila propia por acción. Se ve lo que gastó y se corta.
 
 ---
 
@@ -227,7 +246,7 @@ Arranque: semana del lunes 21 de septiembre de 2026. Dos sesiones por semana.
 | 4 | 12–18 oct | **El mapeo del mayor a los estados.** Dónde cae cada cuenta en balance y en resultados, con sus signos. | Balanza, comparativos, y el clic hasta el asiento. ▶ **Edgar audita contra QuickBooks.** |
 | 5 | 19–25 oct | **El esqueleto de `js/conta.js`** y el patrón de falla ruidosa (punto 5.1) que obedece toda pantalla. | Las pantallas sobre ese esqueleto, y el clic del asiento al recibo con foto. |
 | 6 | 26 oct–1 nov | **Idempotencia y conciliación.** El pendiente que se vuelve confirmado cambiando de ID es donde se corrompen los libros callados. | Los lectores de CSV/OFX, uno por banco. ▶ Edgar manda un archivo de cada cuenta. |
-| 7 | 2–8 nov | **El motor de reglas y el contrato de la IA** — qué se le pregunta, qué puede contestar, cómo se sella lo que propone. | La pantalla, el editor de reglas, el modelo Haiku para el volumen. ▶ Edgar dicta sus reglas. |
+| 7 | 2–8 nov | **El motor de reglas y el contrato de la IA** — qué se le pregunta, qué puede contestar, cómo se sella lo que propone. | La pantalla, el editor de reglas, y el Opus a `effort: low` para el volumen. ▶ Edgar dicta sus reglas. |
 | 8 | 9–15 nov | **El cierre y la ronda nocturna de controles.** Qué se vigila, en qué orden, qué detiene el cierre. | Export a Drive, avisos, historial. ▶ Cerrar octubre de prueba. |
 | 9 | 16–22 nov | **Costo por obra y estimado contra real, entero.** La fase más difícil y la que justifica el proyecto: casar gasto real con receta y cost code, y devolverle la corrección al estimador. | Las pantallas y los reportes. ▶ Edgar valida contra una obra que se sepa de memoria. |
 | 10 | 23–29 nov | **WIP, avance y retención.** Porcentaje de avance, sobre y sub-facturación, schedule of values. ▶ Edgar define el método. | Catálogo de servicios desde `catalogo_items`, plantillas de factura, y el paquete del GC (seguros y licencia desde `documentos_empresa`). |
@@ -278,9 +297,9 @@ para tener algo que auditar.
    puente; Opus hace los otros tres con el mismo molde. Fable escribe el
    esqueleto de la pantalla; Opus cuelga las demás. Lo caro se compra una vez
    y se multiplica barato.
-8. **Dentro de la app, el modelo se elige por tarea** (punto 4): Haiku para el
-   volumen, Opus solo para razonar sobre los libros. Con prefijo cacheado y
-   Batches a mitad de precio donde no corre prisa.
+8. **Dentro de la app también: solo Opus y Fable** (punto 4). Lo que se
+   regula es el **esfuerzo**, no el modelo — `effort: low` en lo repetitivo,
+   prefijo cacheado y Batches a mitad de precio.
 
 ---
 
