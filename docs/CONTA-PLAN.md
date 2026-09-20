@@ -5,6 +5,10 @@ contabilidad lea **este archivo solo** y ya sepa todo: qué se decidió, en qué
 fase vamos, qué archivos toca y qué archivos no. Sin volver a explorar el
 repositorio entero. Eso es lo que hace que esto salga barato en crédito.
 
+**El verde y el azul:** cada paso del plan va etiquetado. 🟢 **verde** lo
+hace la sesión sola; 🔵 **azul** necesita a Edgar. Un azul pendiente
+**detiene la fase** — no se adivina. La tabla completa está en el punto 4.
+
 **Regla número uno de este plan:** si vas a empezar una sesión, di
 *«hagamos la Fase N»*. No digas *«sigue con la contabilidad»*. La diferencia
 en crédito entre una cosa y la otra es de tres a cinco veces.
@@ -105,36 +109,117 @@ del miedo de «ser tu propio proveedor».
 
 ---
 
-## 4. El calendario
+## 4. El calendario — cada paso en verde o en azul
+
+**La convención, para que no se pierda:**
+
+| | Qué quiere decir |
+|---|---|
+| 🟢 **VERDE** | Lo hace la sesión sola. Código, SQL, vistas, pruebas. Edgar no tiene que estar. |
+| 🔵 **AZUL** | Necesita a Edgar. Pegar el SQL en Supabase, decidir criterio contable, contratar algo, auditar contra QuickBooks, dar el visto bueno. |
+
+Ningún paso va sin etiqueta. Si un paso es azul, **no arranca la fase** hasta
+que Edgar lo hizo: la sesión que llega y encuentra un azul pendiente lo dice y
+se detiene, no lo adivina.
 
 Arranque: semana del lunes 21 de septiembre de 2026.
-Ritmo: **dos sesiones por semana** (sugerido: martes y viernes), una fase por
-semana. Diario no — se explica en el punto 5.
+Ritmo: **dos sesiones por semana** (sugerido martes y viernes), una fase por
+semana.
 
-| # | Semana | Fase | Entrega |
-|---|---|---|---|
-| 1 | 21–27 sep | **Plan de cuentas y decisiones** | `docs/conta/c1-plan-de-cuentas.sql`. Edgar dicta las cuentas; la sesión las estructura. |
-| 2 | 28 sep – 4 oct | **El libro** | `c2-libro.sql`: `cuentas`, `asientos`, `asiento_lineas`, `periodos`. Posteo por función, con cuadre obligatorio y bloqueo de período. |
-| 3 | 5–11 oct | **Puentes automáticos** | `c3-puentes.sql`: `facturas` → CxC, `recibos`/`gastos_generales` → gasto, `horas` → mano de obra. Lo que ya capturas se vuelve asiento. |
-| 4 | 12–18 oct | **Estados financieros** | `c4-estados.sql`: balanza, estado de resultados, balance general, como vistas. Postgres hace la matemática. |
-| 5 | 19–25 oct | **Primera pantalla** | `js/conta.js`: balanza y P&L con clic hasta el asiento y del asiento al recibo con foto. |
-| 6 | 26 oct – 1 nov | **Banco y tarjetas** | Importador CSV/OFX, tabla de movimientos, conciliación. Sin Plaid todavía. |
-| 7 | 2–8 nov | **Categorización** | Reglas que aprenden del proveedor y del monto. Es el «Banking» de QuickBooks, hecho a tu medida. |
-| 8 | 9–15 nov | **Cierre mensual** | Bloqueo de período, reporte de amarre, export automático a Drive. |
-| 9 | 16–22 nov | **Costo por obra + estimado vs. real** | **La fase que justifica todo esto.** Ver punto 6. |
-| 10 | 23–29 nov | **WIP y retainage** | Sobre y sub-facturación, retención. Semana corta por Thanksgiving. |
-| 11 | 30 nov – 6 dic | **Puente de nómina** | Gusto o Check. Burden real por obra desde `benefits_detalle`. |
-| 12 | 7–13 dic | **Apertura y 1099** | Saldos iniciales y preparación de los 1099-NEC de subcontratistas. |
-| 13–14 | 14–27 dic | **Marcha en paralelo** | Diciembre real se lleva en los dos sistemas. Se comparan. Se corrigen diferencias. |
-| 15 | 28 dic – 3 ene | **Amarre y arranque** | Saldos al 31-dic. **1 de enero de 2027: en vivo.** |
+### Fase 1 · Plan de cuentas — 21 al 27 de septiembre
+- 🔵 Edgar dicta las cuentas: gastos, ingresos, cómo quiere agrupar.
+- 🔵 Edgar decide si los cost codes (`01-DEMO … 20-MISC`, que ya viajan en el takeoff) son subcuentas o son dimensión aparte. **Esta decisión amarra la Fase 9**, así que se piensa aquí.
+- 🟢 Estructurarlo y numerarlo en `docs/conta/c1-plan-de-cuentas.sql`.
+- 🔵 Pegarlo en Supabase.
 
-Después del arranque:
+### Fase 2 · El libro — 28 de septiembre al 4 de octubre
+- 🟢 `c2-libro.sql`: `cuentas`, `asientos`, `asiento_lineas`, `periodos`; posteo por función de Postgres, restricción de cuadre, bloqueo de período.
+- 🟢 Pruebas: que rechace un asiento descuadrado y que rechace escribir en período cerrado.
+- 🔵 Pegarlo en Supabase y confirmar que corrió.
 
-- **Ene–mar 2027:** QuickBooks se deja vivo y en solo lectura. El CPA cierra
-  2026 desde QuickBooks, como siempre. Son unos $300 de seguro barato.
-- **~Abril 2027:** se cancela QuickBooks.
-- **Principios de 2028:** el CPA recibe el paquete fiscal desde la app por
-  primera vez — con un año completo ya probado detrás.
+### Fase 3 · Puentes automáticos — 5 al 11 de octubre
+- 🔵 Edgar define el mapeo: qué cuenta recibe cada tipo de gasto, y cuándo se reconoce el ingreso (a la factura, al hito, por avance).
+- 🟢 `c3-puentes.sql`: `facturas` → CxC, `recibos`/`gastos_generales` → gasto, `horas` → mano de obra.
+- 🔵 Revisar una muestra de asientos generados contra lo que él habría hecho a mano.
+
+### Fase 4 · Estados financieros — 12 al 18 de octubre
+- 🟢 `c4-estados.sql`: balanza, estado de resultados, balance general, como vistas.
+- 🔵 Pegarlo.
+- 🔵 **Edgar audita contra QuickBooks del mismo período.** Primera prueba de verdad. Si esto no amarra, no se sigue a la Fase 5.
+
+### Fase 5 · Primera pantalla — 19 al 25 de octubre
+- 🟢 `js/conta.js`: balanza y P&L con clic hasta el asiento, y del asiento al recibo con su foto.
+- 🟢 Parche chico a `index.html` y `sw.js` (versión) y una línea en `app.js`.
+- 🔵 Edgar la abre y dice qué falta.
+
+### Fase 6 · Banco y tarjetas — 26 de octubre al 1 de noviembre
+- 🔵 Edgar baja un CSV/OFX de cada cuenta y cada tarjeta y los manda. **Sin eso no se puede escribir el importador.**
+- 🟢 Importador, tabla de movimientos, llave de idempotencia, conciliación.
+- 🔵 Primera importación real.
+
+### Fase 7 · Categorización — 2 al 8 de noviembre
+- 🔵 Edgar dicta las reglas que ya tiene en la cabeza (este proveedor siempre va a esta cuenta).
+- 🟢 Motor de reglas que aprende, y la pantalla.
+- 🔵 Categorizar un mes real a mano para que agarre patrón.
+
+### Fase 8 · Cierre mensual — 9 al 15 de noviembre
+- 🟢 Bloqueo de período, reporte de amarre, export automático a Drive.
+- 🔵 Dar el permiso de Drive.
+- 🔵 Cerrar octubre de prueba, de principio a fin.
+
+### Fase 9 · Costo por obra + estimado vs. real — 16 al 22 de noviembre
+- 🔵 Edgar decide cómo se compara: por cost code, por receta, o por los dos.
+- 🟢 Todo el cálculo y la pantalla.
+- 🔵 **Validar contra una obra cerrada que él se sepa de memoria.** Si el número no coincide con lo que él sabe que pasó, el cálculo está mal.
+
+### Fase 10 · WIP y retainage — 23 al 29 de noviembre
+- 🔵 Edgar define el método de avance (costo incurrido sobre costo total estimado, o por hitos).
+- 🟢 Implementar, con retención bien modelada.
+- Semana corta por Thanksgiving.
+
+### Fase 11 · Puente de nómina — 30 de noviembre al 6 de diciembre
+- 🔵 **Edgar contrata Gusto o Check y saca las llaves.** Esto es de él, no de la sesión.
+- 🔵 Edgar decide si la nómina entra como resumen o empleado por empleado.
+- 🟢 El puente: `horas` → proveedor, y nómina → repartida por obra con el burden real de `benefits_detalle`.
+
+> ⚠️ **Este azul tiene plazo y hay que empezarlo antes.** Dar de alta una
+> nómina con el estado toma semanas, no días. Y cambiar de proveedor a mitad
+> de trimestre parte los 941 en dos. **Arranca el trámite a principios de
+> noviembre** para que la primera nómina en Gusto caiga el **1 de enero**,
+> junto con el corte de los libros. Trimestre limpio, año limpio.
+
+### Fase 12 · Apertura y 1099 — 7 al 13 de diciembre
+- 🔵 Edgar saca de QuickBooks los saldos al 30 de noviembre.
+- 🔵 Edgar junta los W-9 de los subcontratistas (TIN y dirección). Casi siempre falta alguno; por eso se pide en diciembre y no en enero.
+- 🟢 Carga de apertura y preparación de los 1099-NEC.
+
+### Fases 13 y 14 · Marcha en paralelo — 14 al 27 de diciembre
+- 🔵 **Casi todo azul.** Edgar lleva diciembre en los dos sistemas y los compara.
+- 🟢 La sesión arregla cada diferencia que aparezca.
+- Es la fase que quita el miedo. No se acorta.
+
+### Fase 15 · Amarre y arranque — 28 de diciembre al 3 de enero
+- 🔵 Saldos finales al 31 de diciembre, cuadrados.
+- 🟢 Carga y verificación.
+- 🔵 **Edgar da el visto bueno.** → **1 de enero de 2027: en vivo.**
+
+### Después del arranque
+- 🔵 **Ene–mar 2027:** QuickBooks se deja vivo en solo lectura. El CPA cierra 2026 desde ahí, como siempre. Unos $300 de seguro barato.
+- 🔵 **~Abril 2027:** se cancela QuickBooks.
+- 🔵 **Principios de 2028:** el CPA recibe el paquete fiscal desde la app por primera vez, con un año completo ya probado detrás.
+
+### Las cinco semanas donde de verdad te necesito
+
+El resto de los azules son pegar un SQL y mirar una pantalla. Estas cinco
+llevan trabajo tuyo y criterio tuyo, y si llegan sin preparar, la fase se cae:
+
+| Semana | Qué tienes que traer |
+|---|---|
+| **1** (21–27 sep) | El plan de cuentas dictado por ti |
+| **3** (5–11 oct) | El mapeo de gasto a cuenta y el criterio de reconocimiento de ingreso |
+| **11** (30 nov–6 dic) | Gusto o Check ya contratado — **el trámite empieza a principios de noviembre** |
+| **12** (7–13 dic) | Saldos de QuickBooks y los W-9 de los subs |
+| **13–14** (14–27 dic) | Diciembre llevado en los dos sistemas |
 
 ---
 
@@ -181,17 +266,19 @@ grieta, y tus datos ya están del lado bueno.
 
 ## 7. Dónde vamos
 
-- [ ] Fase 1 — Plan de cuentas
-- [ ] Fase 2 — El libro
-- [ ] Fase 3 — Puentes automáticos
-- [ ] Fase 4 — Estados financieros
-- [ ] Fase 5 — Primera pantalla
-- [ ] Fase 6 — Banco y tarjetas
-- [ ] Fase 7 — Categorización
-- [ ] Fase 8 — Cierre mensual
-- [ ] Fase 9 — Costo por obra + estimado vs. real
-- [ ] Fase 10 — WIP y retainage
-- [ ] Fase 11 — Puente de nómina
-- [ ] Fase 12 — Apertura y 1099
-- [ ] Fases 13–14 — Marcha en paralelo
-- [ ] Fase 15 — Amarre y arranque
+`🔵` = esa fase necesita algo tuyo antes de arrancar.
+
+- [ ] Fase 1 · Plan de cuentas — 🔵 lo dictas tú
+- [ ] Fase 2 · El libro — 🟢 (solo pegar el SQL al final)
+- [ ] Fase 3 · Puentes automáticos — 🔵 el mapeo es tuyo
+- [ ] Fase 4 · Estados financieros — 🔵 tú auditas contra QuickBooks
+- [ ] Fase 5 · Primera pantalla — 🟢
+- [ ] Fase 6 · Banco y tarjetas — 🔵 mandas los CSV primero
+- [ ] Fase 7 · Categorización — 🔵 dictas las reglas
+- [ ] Fase 8 · Cierre mensual — 🟢 (cierras octubre de prueba)
+- [ ] Fase 9 · Costo por obra + estimado vs. real — 🔵 validas contra una obra que te sepas
+- [ ] Fase 10 · WIP y retainage — 🔵 defines el método de avance
+- [ ] Fase 11 · Puente de nómina — 🔵 **trámite de Gusto/Check: empezarlo en noviembre temprano**
+- [ ] Fase 12 · Apertura y 1099 — 🔵 saldos y W-9
+- [ ] Fases 13–14 · Marcha en paralelo — 🔵 casi todo tuyo
+- [ ] Fase 15 · Amarre y arranque — 🔵 das el visto bueno
