@@ -169,14 +169,15 @@ const EST = { id: EST_ID, nombre: 'NCH', modo: 'remodelacion', escenario: 'A', f
     window.MXP_PRUEBA.e0.luzRef(m, { luz_fam: '{"ACUITY OR-7 QUIRÓFANO LED 24V":{"a":1}}' })
   ], RARO);
   ok('un luz_fam roto, una lista, una familia que ya no existe o un valor raro: se ignoran y manda lo automático', malos.every(x => x.fuente === 'sin' && x.precio === 0), JSON.stringify(malos.map(x => x.fuente)));
-  // el tope: lo viejo cae, lo recién enseñado nunca
+  // el tope: lo viejo cae, lo recién enseñado nunca (21/09: el tope duro es 600)
   const tope = await p.evaluate(() => {
     let m = {};
-    for (let i = 0; i < 305; i++) m = window.MXP_PRUEBA.e0.luzAprende({ luz_fam: JSON.stringify(m) }, 'MODELO ' + i, 'exit');
+    for (let i = 0; i < 605; i++) m = window.MXP_PRUEBA.e0.luzAprende({ luz_fam: JSON.stringify(m) }, 'MODELO ' + i, 'exit');
     const k = Object.keys(m);
     return { n: k.length, primera: k[0], ultima: k[k.length - 1] };
   });
-  ok('lo aprendido no crece sin fin: tope de 300 modelos, cae el más viejo y se queda el último', tope.n === 300 && tope.primera === 'MODELO 5' && tope.ultima === 'MODELO 304', JSON.stringify(tope));
+  ok('lo aprendido no crece sin fin: tope de 600 modelos, cae el más viejo y se queda el último', tope.n === 600 && tope.primera === 'MODELO 5' && tope.ultima === 'MODELO 604', JSON.stringify(tope));
+  ok('por debajo del tope no se olvida nada: 300 modelos siguen siendo 300', (await p.evaluate(() => { let m = {}; for (let i = 0; i < 300; i++) m = window.MXP_PRUEBA.e0.luzAprende({ luz_fam: JSON.stringify(m) }, 'M ' + i, 'exit'); return Object.keys(m).length; })) === 300);
   // y el dinero: lo aprendido entra al total como cualquier referencia
   const ITEMS_RARO = ITEMS.map(x => x.id === 'c3' ? Object.assign({}, x, { item: RARO }) : x);
   const ITEMS_RARO0 = [ITEMS_RARO.find(x => x.id === 'c3')];
@@ -245,11 +246,21 @@ const EST = { id: EST_ID, nombre: 'NCH', modo: 'remodelacion', escenario: 'A', f
   // el tope nunca se lleva lo que se acaba de enseñar, ni con una clave que es solo números
   const topeNum = await p.evaluate(() => {
     let m = {};
-    for (let i = 0; i < 300; i++) m = window.MXP_PRUEBA.e0.luzAprende({ luz_fam: JSON.stringify(m) }, 'MODELO ' + i, 'exit');
+    for (let i = 0; i < 600; i++) m = window.MXP_PRUEBA.e0.luzAprende({ luz_fam: JSON.stringify(m) }, 'MODELO ' + i, 'exit');
     m = window.MXP_PRUEBA.e0.luzAprende({ luz_fam: JSON.stringify(m) }, '4096', 'highbay');   // una clave de solo dígitos
     return { n: Object.keys(m).length, guardado: m['4096'] };
   });
-  ok('con el mapa lleno, enseñar un modelo que es solo números NO se borra a sí mismo (JS pone las claves numéricas primero)', topeNum.guardado === 'highbay' && topeNum.n === 300, JSON.stringify(topeNum));
+  ok('con el mapa lleno, enseñar un modelo que es solo números NO se borra a sí mismo (JS pone las claves numéricas primero)', topeNum.guardado === 'highbay' && topeNum.n === 600, JSON.stringify(topeNum));
+  /* (21/09, verificación) Y EL ORDEN DE CADUCAR. JS coloca las claves enteras
+     ANTES que las de texto, así que un modelo llamado «10642» salía primero de
+     la lista y caía antes que familias muchísimo más viejas. Ahora las de texto
+     —que sí guardan el orden en que se aprendieron— caducan primero. */
+  const ordenTope = await p.evaluate(() => {
+    let m = { '10642': 'highbay' };   // la numérica, la PRIMERA que se aprendió
+    for (let i = 0; i < 600; i++) m = window.MXP_PRUEBA.e0.luzAprende({ luz_fam: JSON.stringify(m) }, 'TXT ' + i, 'exit');
+    return { n: Object.keys(m).length, numSigue: m['10642'], txt0: m['TXT 0'], ultimo: m['TXT 599'] };
+  });
+  ok('al caducar, cae la de TEXTO más vieja y la numérica no se lleva el golpe por ser numérica', ordenTope.numSigue === 'highbay' && ordenTope.txt0 === undefined && ordenTope.ultimo === 'exit' && ordenTope.n === 600, JSON.stringify(ordenTope));
   // un precio ridículo no tapa el aviso de que el renglón va sin dinero
   const cfgFlojo = { luz_fam: JSON.stringify({ [await p.evaluate(m => window.MXP_PRUEBA.e0.luzClave(m), RARO)]: 0.5 }) };
   const rfFlojo = await p.evaluate(([m, c]) => window.MXP_PRUEBA.e0.luzRef(m, c), [RARO, cfgFlojo]);
@@ -295,6 +306,29 @@ const EST = { id: EST_ID, nombre: 'NCH', modo: 'remodelacion', escenario: 'A', f
     Math.abs(on.matCot - 19630) < 0.01 && Math.abs(on.matPropio - off.matPropio) < 0.01, JSON.stringify([on.matCot, Math.round(on.matPropio), Math.round(off.matPropio)]));
   ok('y por eso no pagan misceláneas: el misc no se mueve', Math.abs(on.misc - off.misc) < 0.01, JSON.stringify([on.misc, off.misc]));
   ok('el bid sube lo que tiene que subir y las horas no cambian', on.bid > off.bid + 19630 && Math.abs(on.horas - off.horas) < 0.01, JSON.stringify([Math.round(off.bid), Math.round(on.bid), on.horas]));
+
+  /* ===== 6b · CONGELAR CONGELA DE VERDAD (21/09, verificación) =====
+     Antes, congelar solo escribía estado:'congelado' y calcularEstimado seguía
+     leyendo el catálogo y la configuración VIVOS: enseñarle una familia de
+     luminarias por la noche movía el bid de un estimado ya cerrado. Ahora se
+     guarda la foto —bid_final— y queda un número contra el que comparar. */
+  const congelado = await p.evaluate(e => window.MXP_PRUEBA.e0.foto(Object.assign({}, e, { usa_luz_ref: true, estado: 'congelado' })), EST);
+  ok('congelar guarda el número de hoy: bid_final, horas_final y material_final, con fecha',
+    Math.abs(congelado.bid_final - on.bid) < 0.02 && Math.abs(congelado.horas_final - on.horas) < 0.02 && congelado.material_final > 0 && /^\d{4}-\d{2}-\d{2}/.test(String(congelado.cerrado_en || '')),
+    JSON.stringify([congelado.bid_final, congelado.horas_final, String(congelado.cerrado_en).slice(0, 10)]));
+  // y si después se le enseña una familia, el número de hoy YA NO es el congelado: eso es lo que hay que poder ver
+  const trasEnsenar = await p.evaluate(([e, c, i]) => {
+    const d = window.MXP_PRUEBA.e0;
+    const luz = i.find(x => x.id === 'c1');
+    const m = d.luzAprende({ luz_fam: '{}' }, luz.item, 900);   // $900 de referencia a esa luminaria
+    d.datos({ catalogo: c, items: i, config: { luz_fam: JSON.stringify(m) }, estimados: [], escenarios: [], ensambleItems: [] });
+    const bid = d.calcula(Object.assign({}, e, { usa_luz_ref: true, estado: 'congelado' })).bid;
+    d.datos({ catalogo: c, items: i, config: {}, estimados: [], escenarios: [], ensambleItems: [] });   // se deja como estaba
+    return bid;
+  }, [EST, CAT, ITEMS]);
+  ok('enseñar una familia DESPUÉS mueve el número vivo de un congelado — por eso hace falta la foto y el aviso de cuánto se movió',
+    trasEnsenar > 0 && Math.abs(trasEnsenar - congelado.bid_final) > congelado.bid_final * 0.005,
+    JSON.stringify([Math.round(congelado.bid_final), Math.round(trasEnsenar)]));
 
   /* ===== 7 · lo que se ve en el renglón ===== */
   const LC1 = ITEMS.find(x => x.id === 'c1');   // la STAK 2x2 de 5000 lm, por índice no: el fixture creció

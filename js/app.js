@@ -5904,7 +5904,8 @@ function esFalloDeRed(err) {
      desde el e27, así que no hace falta correr nada.
      Lo de Edgar manda SIEMPRE, también para corregir un reconocimiento
      equivocado — y se puede olvidar, que por eso la lista se ve entera. */
-  const LUZ_FAM_MAX = 300;        // lo aprendido no crece sin fin
+  const LUZ_FAM_MAX = 300;        // desde aquí se avisa de cuánto llevas aprendido
+  const LUZ_FAM_TOPE = 600;       // y de aquí no pasa: el tope duro
   const LUZ_PRECIO_MIN = 1;       // por debajo de un dólar no es el precio de una luminaria: es un dedazo
   const LUZ_CLAVE_MAX = 120;
   /* La clave de lo aprendido. Ojo con los paréntesis: luzModelo los tira
@@ -5983,8 +5984,18 @@ function esFalloDeRed(err) {
     // el tope quita lo más viejo, y NUNCA lo que se acaba de enseñar: un modelo
     // que sea solo números se coloca el primero en un objeto de JavaScript, así
     // que sin esta guarda el recorte se llevaba justo lo nuevo (revisión 20/09)
+    /* (21/09, verificación) EL ORDEN DE CADUCAR NO ERA DE FIAR, Y CADUCAR EN
+       SILENCIO TAMPOCO. JavaScript coloca las claves que son enteros ANTES
+       que las de texto, así que un modelo llamado «10642» salía primero de la
+       lista y se caía antes que familias mucho más viejas. Las de texto sí
+       guardan el orden en que se aprendieron: esas van primero a la cola de
+       caducar (la más vieja de verdad) y las numéricas al final, que de esas
+       no se sabe la edad. Y el tope se sube a 600 con aviso: olvidar una
+       familia sin decirlo devuelve un renglón a lo automático a escondidas. */
     const ks = Object.keys(m).filter(x => x !== k);
-    for (let i = 0; i < ks.length - (LUZ_FAM_MAX - 1); i++) delete m[ks[i]];
+    const esEntero = x => /^(0|[1-9]\d*)$/.test(x);
+    const orden = ks.filter(x => !esEntero(x)).concat(ks.filter(esEntero));
+    for (let i = 0; i < orden.length - (LUZ_FAM_TOPE - 1); i++) delete m[orden[i]];
     return m;
   }
   // ¿Es un renglón de luminaria a la espera de la cuota?
@@ -8766,6 +8777,28 @@ Power done right the first time. ⚡`;
           <span class="recibo-chip leido">${MODO_ETIQ[est.modo]}</span>
         </div>
         <div class="alcance-estado">${esc(est.cliente || "")}${est.contratista_id ? ` · ${esc(tratoTexto(est.contratista_id, est.contratista_modo))}` : ""}${est.sqft ? ` · ${esc(est.sqft)} sqft` : ""}</div>
+        ${(() => {
+          /* (21/09, verificación) SI EL NÚMERO CONGELADO SE HA MOVIDO, SE DICE.
+             calcularEstimado recalcula siempre desde el catálogo y la
+             configuración vivos, también en los congelados: enseñarle una
+             familia de luminarias mueve el bid de un estimado ya cerrado. La
+             foto se toma al congelar; aquí se compara con lo de hoy, para que
+             una comparación número a número no falle por algo que cambió en
+             medio. El 0,5 % de holgura es el redondeo, no un cambio. */
+          const bf = Number(est.bid_final) || 0;
+          // solo en los cerrados: un borrador al que se le quitó el candado no tiene número que defender
+          if (!bf || !(c.bid > 0) || (est.estado !== "congelado" && est.estado !== "convertido")) return "";
+          const rr = v => Math.round(v * 100) / 100;
+          const d = c.bid - bf;
+          if (Math.abs(d) < bf * 0.005) return "";
+          return `<div class="aviso-texto" style="padding:.2rem 0">
+            <strong>⚠ Este número se ha movido desde que lo congelaste.</strong>
+            Congelado el ${esc(String(est.cerrado_en || "").slice(0, 10))}: <strong>${fmt(bf)}</strong>.
+            Con los precios y las familias de HOY sale <strong>${fmt(rr(c.bid))}</strong>
+            (${d > 0 ? "+" : "−"}${fmt(Math.abs(rr(d)))}).<br>
+            <span class="chk-avance">El que ofertaste es el congelado: eso es lo que usa el historial y la propuesta guardada. Si vas a comparar número a número, compara contra el congelado.</span>
+          </div>`;
+        })()}
         <div class="modal-fila" style="margin-top:.6rem">
           <label class="mat-filtro-label">Escenario
             <select id="est-escenario" ${soloLectura ? "disabled" : ""}>
@@ -9381,12 +9414,18 @@ Power done right the first time. ⚡`;
     const btnCong = $("btn-est-congelar"), btnDesc = $("btn-est-descongelar");
     if (btnCong) btnCong.addEventListener("click", async () => {
       if (!ceroDejaPasar()) return;
-      await DB.cambiarEstimado(est.id, { estado: "congelado" }).catch(() => {});
+      /* (21/09, verificación) CONGELAR AHORA CONGELA EL NÚMERO. Antes solo
+         escribía estado:'congelado' y calcularEstimado seguía recalculando
+         desde el catálogo y la configuración VIVOS: enseñarle una familia de
+         luminarias por la noche movía el bid de un estimado ya cerrado (medido:
+         $8.988 → $23.368 sin tocar el estimado). La foto —bid_final,
+         horas_final, material_final— ya existía para los convertidos; ahora se
+         toma también al congelar, así que queda un número al que volver y la
+         pantalla puede decir cuánto se ha movido desde entonces. */
+      const foto = fotoParaGuardar(est);
+      await DB.cambiarEstimado(est.id, Object.assign({ estado: "congelado" }, foto)).catch(() => {});
       await recargarEstimador();
-      // No se dice "los precios quedan fijos" porque no es verdad: calcularEstimado
-      // recalcula siempre desde el catálogo vivo, también para los congelados.
-      // Lo que congelar hace de verdad es cerrarlo a cambios de renglones.
-      avisar("Estimado congelado 🔒 — ya no se le tocan renglones");
+      avisar(`Estimado congelado 🔒 — ${fmt(foto.bid_final)} guardado; si los precios cambian, te digo cuánto se movió`);
     });
     if (btnDesc) btnDesc.addEventListener("click", async () => {
       await DB.cambiarEstimado(est.id, { estado: "borrador" }).catch(() => {});
@@ -12374,6 +12413,7 @@ Power done right the first time. ⚡`;
       },
       casaCuota(txt, pendientes) { return casaCuota(leeCuota(txt || ""), pendientes || []); },
       calcula(est) { return calcularEstimado(est); },
+      foto(est) { return fotoParaGuardar(est); },   // lo que congelar guarda (21/09)
       escenarios(empresa) { return escenariosDe(empresa).map(e => e.id); },
       escToca(empresa, actual) { return escenarioQueToca(empresa, actual); },
       modoEns(modo) { return modo === "servicio" ? "servicio" : modo === "planos" ? "comercial" : "remodelacion"; },
