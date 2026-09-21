@@ -1,5 +1,5 @@
 # Fase 1 · El plan de cuentas
-**21–27 sep 2026 · 🔵 AZUL (Fable 5.1) · ▶ la dictas tú**
+**21–27 sep 2026 · 🔵 AZUL la estructura · 🟢 VERDE el SQL · ▶ reaccionas al borrador y decides los cost codes**
 
 > Es el cimiento. Todo lo demás se apoya aquí, y cambiarlo en noviembre
 > significa rehacer las fases 3, 4 y 9. Por eso va en azul y por eso va
@@ -13,6 +13,14 @@ eléctrico de Florida. Léelo y dime tres cosas:
 1. **Qué sobra** (cuentas que no vas a usar nunca).
 2. **Qué falta** (algo que tú miras y aquí no está).
 3. **La decisión de los cost codes** — abajo, es la importante.
+4. **Pedir a la sesión de App Operativa, esta misma semana**, un `cost_code`
+   opcional (null o `'mixto'` cuando el ticket mezcla) en `recibos`, `horas` y
+   `materiales`, su selector en el teléfono y la columna en las vistas
+   `*_equipo` — parche chico según `PUBLICAR.md`. **Sin eso la Fase 9 no tiene
+   datos por código hasta 2027.**
+5. **Confirmar con el CPA** si Max Power contrata como mejora a bien inmueble
+   (decide el sales tax en los libros, §1 del plan), y si Gustavo cobra por
+   W-2 o por 1099.
 
 Reaccionar a un borrador toma veinte minutos. Dictarlo en blanco toma dos
 horas. Por eso está escrito.
@@ -44,12 +52,13 @@ renglones. Con A, la Fase 9 se vuelve impracticable.
 1030  Reserva de impuestos
 1110  Cuentas por cobrar
 1120  Retención por cobrar               ← retainage; en QuickBooks es un parche
+1130  Cuenta por cobrar al accionista    ← nota firmada e interés
 1190  Provisión de incobrables
 1200  Costo y utilidad en exceso de facturación   ← WIP sub-facturado (Fase 10)
 1300  Material en bodega
 1410  Seguros pagados por adelantado
 1420  Fianzas
-1510  Vehículos
+1510  Vehículos                          (por placa como etiqueta, no subcuentas)
 1520  Herramienta y equipo
 1530  Cómputo
 1540  Mejoras al local
@@ -66,7 +75,9 @@ renglones. Con A, la Fase 9 se vuelve impracticable.
 2220  Impuestos de nómina retenidos      (941)
 2230  Reempleo de Florida por pagar      (RT-6)
 2240  Deducciones a empleados
-2300  Sales / use tax por pagar
+2215  Vacaciones devengadas              (si se devenga PTO)
+2300  Use tax por pagar                  ← compras sin impuesto de Florida y ventas al detalle; NUNCA desde un recibo que ya trae impuesto
+2410  Provisión por pérdida en contratos
 2400  Facturación en exceso de costo     ← WIP sobre-facturado (Fase 10)
 2510  Línea de crédito
 2520  Préstamos de vehículo — corriente
@@ -94,7 +105,9 @@ renglones. Con A, la Fase 9 se vuelve impracticable.
 ### 5000 · Costo directo  *(aquí pega la decisión de cost codes)*
 ```
 5000  Mano de obra directa
-5010  Burden de mano de obra             ← sale de tu benefits_detalle
+5010  Burden de mano de obra             ← impuestos patronales del journal + prima de WC amortizada desde 1410
+5011  Burden aplicado a obra             (crédito)
+5019  Variación de burden                (real contra aplicado, se cierra en f08)
 5100  Material
 5200  Subcontratos
 5300  Equipo y renta
@@ -102,6 +115,7 @@ renglones. Con A, la Fase 9 se vuelve impracticable.
 5500  Consumibles
 5600  Flete
 5900  Garantía y retrabajo
+5950  Pérdida en contrato                ← contra 2410, provisión completa el mes que se detecta
 ```
 
 ### 6000 · Gasto general
@@ -110,15 +124,20 @@ renglones. Con A, la Fase 9 se vuelve impracticable.
 6010  Burden administrativo
 6100  Renta
 6110  Servicios
-6200  Seguros — GL, auto, sombrilla
+6120  Teléfono y datos
+6200  Seguros — GL, auto, sombrilla      ← el GL nunca va también en el burden
 6300  Vehículos — combustible y mantenimiento
 6400  Herramienta menor y uniformes
 6500  Oficina y software
 6600  Profesionales — CPA y legal
+6350  Comidas (50 %)
+6360  Viajes y alojamiento
+6610  Qualifier y licencia               ▶ W-2 o 1099
 6700  Publicidad
 6800  Licencias y cuotas
 6900  Formación
-6950  Depreciación
+6950  Depreciación                       ← desde activos_fijos (f08)
+6980  Incobrables                        ← contra 1190
 ```
 
 ### 7000 · Otros
@@ -126,15 +145,38 @@ renglones. Con A, la Fase 9 se vuelve impracticable.
 7100  Intereses
 7200  Cargos bancarios y comisiones de tarjeta
 7900  Otros gastos
-9000  Impuestos
+9000  Impuestos y tasas de la EMPRESA    ← propiedad tangible (DR-405), annual report de Sunbiz.
+      El impuesto sobre la renta de Edgar NO es gasto: va a 3200
 ```
 
 ## Lo que se construye
-- 🔵 **Fable:** la estructura final, la numeración, la jerarquía, y las tres
-  columnas de dimensión en `asiento_lineas` (`proyecto_id`, `cost_code`,
-  `fase`) si eliges B.
-- 🟢 **Opus:** `docs/conta/c1-plan-de-cuentas.sql`, numerado, comentado y
-  idempotente, listo para pegar.
+
+**🔵 Fable:** la estructura final, la numeración y la jerarquía. La **DDL de
+`cuentas`** (código inmutable, tipo, padre, saldo normal, activa, `nombre_en`
+para el CPA, `etiqueta_fiscal` text — p. ej. `'M&E 50%'`, `'1099'`,
+`'vehiculo'`). La tabla `cost_codes` con FK desde `asiento_lineas.cost_code`, y
+las dimensiones (`proyecto_id`, `cost_code`, `co` text, `fase` opcional) si
+eliges B.
+
+Y el **bloque 0 de solo lectura** al principio de `c1`, que hay que correr
+antes de decidir nada:
+
+```sql
+select table_name, column_name, data_type, numeric_precision, numeric_scale
+  from information_schema.columns
+ where table_schema='public'
+   and table_name in ('facturas','recibos','horas','costos_equipo',
+       'trabajos_externos','externos_equipo','hitos','finanzas_proyecto',
+       'materiales','alcances')
+ order by 1,2;
+```
+más `pg_policies` y las vistas que dependen de esas tablas
+(`information_schema.view_column_usage`). **Las tablas fuente NO se alteran a
+`numeric(14,2)`**: el repo guarda precios de 4 decimales; el redondeo a
+centavos vive solo en `asiento_lineas.monto`.
+
+**🟢 Opus:** solo los INSERT del plan y la carga de los 20 códigos desde
+`catalogo_items.codigo`, en el mismo `docs/conta/c1-plan-de-cuentas.sql`.
 
 ## Se sabe que terminó cuando
 - El SQL corrió en Supabase sin error.

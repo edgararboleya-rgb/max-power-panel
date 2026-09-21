@@ -1,5 +1,10 @@
 # Fase 16 · El contador de guardia
-**enero 2027 · 🔵 AZUL el diseño · 🟢 VERDE la bandeja y la conversación**
+**febrero 2027 · 🔵 AZUL el analista · 🟢 VERDE extiende la bandeja y arma la conversación**
+
+> La bandeja, el sello y el contrato de la IA **existen desde la Fase 7**
+> (`ia_propuestas`, la función `contador`): aquí se diseña el analista encima,
+> no de cero. Pasa a febrero porque enero ya trae el arranque en vivo, el
+> cierre de diciembre, el 1099 de 2026 y los W-2 del proveedor viejo.
 
 > Cae **después** del corte a propósito: un auditor necesita libros con datos
 > reales encima para tener algo que auditar. Las alarmas deterministas ya
@@ -20,17 +25,20 @@ Un modelo de lenguaje es un analista excelente y un sumador mediocre.
 - **Redactar** la nota del cierre y el resumen para el CPA.
 
 ## 🟢 Opus construye
-La bandeja de aprobación y la conversación sobre los libros.
+**Extiende** la bandeja de f07 a los tipos nuevos de propuesta (reverso,
+conciliación, alerta) y arma la conversación sobre los libros. Acciones nuevas
+en `contador`, con el mismo esqueleto.
 
 ## Las tres reglas
 1. **Propone, nunca postea.** Todo pasa por tu aprobación, y cada asiento
    nacido de una sugerencia lleva sello: qué modelo, qué propuso, quién
-   aprobó, cuándo. **Eso es lo que hace compatible «IA en todo» con «100 %
-   auditable».**
+   aprobó, cuándo — **y además la versión del prompt, la entrada que vio y la
+   salida literal** (f07). **Eso es lo que hace compatible «IA en todo» con
+   «100 % auditable».**
 2. **Cita o se calla.** Sin asiento, recibo o movimiento que lo sostenga, no
    se muestra.
 3. **Tope duro** en `asistente_costo_mes` / `tope_mes_centavos`.
 
-## Modelos
+## Modelos dentro de la app (no es el color de la sesión)
 Fable 5.1 a `high`/`xhigh` para el auditor y para explicar. Opus 5 a `high`
 para leer y redactar, a `low` para lo repetitivo. **Ni Haiku ni Sonnet.**
