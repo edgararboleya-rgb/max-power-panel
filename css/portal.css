@@ -164,3 +164,9 @@ a.pt-doc-t:hover { text-decoration: underline; }
 
 /* Nada al dedo por debajo de 36 px (teléfono) */
 .cl-boton, a.cl-boton, .gc-boton { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; }
+
+/* Un bloque informativo (opcional, o un alcance que se modificó) no es trabajo
+   pendiente ni trabajo hecho: va con viñeta y sin barra. */
+.pt-grp.info > summary .pt-grp-c { font-weight: 700; color: var(--mp-ink-3); text-transform: none; letter-spacing: 0; }
+.pt-it.info .pt-it-c { border: 0; background: none; color: var(--mp-ink-3); font-size: 1.1rem; }
+.pt-it.info { color: var(--mp-ink-2); }

@@ -78,5 +78,9 @@ window.MXP_FRASES = [
   [/^Al pasar inspección de rough$/i, "On passing the rough inspection"],
   [/^Al pasar power-release$/i, "On power release"],
   [/^Panel\/servicio reemplazado \+ rough completo$/i, "Panel/service replaced + rough-in complete"],
+  /* Heather / Borders — 21-sep */
+  [/^Evaluaci[oó]n, servicio del panel y circuito del shed$/i, "Evaluation, panel service and shed circuit"],
+  [/^Subpanel del garaje \(Alcance C\)$/i, "Garage sub-panel (Scope C)"],
+  [/^Trabajo terminado y facturado$/i, "Work completed and invoiced"],
   [/^Trabajo terminado y probado$/i, "Work completed and tested"]
 ];

@@ -7,8 +7,8 @@
   <title>Max Power — Your Project</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=181">
-  <link rel="stylesheet" href="css/portal.css?v=181">
+  <link rel="stylesheet" href="css/styles.css?v=208">
+  <link rel="stylesheet" href="css/portal.css?v=208">
   <style>
     #vista-app > main.container { min-width: 0; width: 100%; }
     .cl-volver { padding: .3rem 0 0; font-size: .82rem; }
@@ -83,8 +83,8 @@
     </footer>
   </div>
 
-  <script src="js/portal-frases.js?v=181"></script>
-  <script src="assets/logo.js?v=181"></script>
+  <script src="js/portal-frases.js?v=208"></script>
+  <script src="assets/logo.js?v=208"></script>
   <script>
   (function () {
     "use strict";
@@ -114,7 +114,7 @@
       pagadaF: "Paid ✓", pendienteF: "Pending",
       firmar: "Review & sign 🖊", firmadoPor: "🖊 Signed by ", firmaTitulo: "Sign this document",
       licT: "License & Insurance",
-      progresoT: "Progress", itemsCortos: "items", proxVisitaT: "Next visit", sinVisita: "To be scheduled",
+      progresoT: "Progress", itemsCortos: "items", soloInfo: "for your information", proxVisitaT: "Next visit", sinVisita: "To be scheduled",
       debeAhoraT: "Due now", sinFacturarT: "Not yet invoiced", pctPagado: "paid", deTotal: "of",
       dondeT: "Where we are", contactoT: "Your contact", contactoRol: "Owner · Max Power Electrical Solutions",
       abrirBtn: "Open", grupoListo: "✓ done", grupoDe: "done", planPagosT: "Payment schedule",
@@ -182,7 +182,7 @@
       aprobar: "Aprobar ✓", aprobado: "✓ Aprobado ", garantiaT: "Tu garantía",
       pagosT: "Pagos", contratoT: "Contrato total", cobradoT: "Pagado a la fecha", saldoT: "Saldo",
       pagadaF: "Pagada ✓", pendienteF: "Pendiente",
-      progresoT: "Avance", itemsCortos: "puntos", proxVisitaT: "Próxima visita", sinVisita: "Por programar",
+      progresoT: "Avance", itemsCortos: "puntos", soloInfo: "para que lo sepan", proxVisitaT: "Próxima visita", sinVisita: "Por programar",
       debeAhoraT: "Debe ahora", sinFacturarT: "Sin facturar", pctPagado: "pagado", deTotal: "de",
       dondeT: "Dónde vamos", contactoT: "Tu contacto", contactoRol: "Dueño · Max Power Electrical Solutions",
       abrirBtn: "Abrir", grupoListo: "✓ listo", grupoDe: "hechos", planPagosT: "Calendario de pagos",
@@ -337,8 +337,20 @@
     var paqueteActual = null;   // el paquete de la obra, para saber si aplican los tres días
     function pintar(p) {
       paqueteActual = p;
-      var hechas = p.checklist.filter(function (x) { return x.hecho; }).length;
-      var total = p.checklist.length;
+      // Un bloque «Opcional …» o «… (modificado)» es informativo: ni suma ni resta
+      // al avance de la obra. Si no, una obra terminada sale al 75 %.
+      // Un bloque es INFORMATIVO cuando no es trabajo de esta obra: lo que se
+      // aplazó, lo que se modificó, lo opcional y lo de una etapa futura. No
+      // lleva palomita ni cuenta para el avance — si no, una obra terminada
+      // sale al 77 %. Se reconoce por cómo lo escribe Edgar, en los dos idiomas.
+      function esInformativo(x) {
+        var g = String((x.grupo_en || x.grupo || "")).trim();
+        return /^(opcional|optional|etapa futura|future stage|m[aá]s adelante|later)\b/i.test(g) ||
+               /\((modificad[oa]|modified|aplazad[oa]|deferred|pendiente|pending|no se hizo|not performed)[^)]*\)\s*$/i.test(g);
+      }
+      var deObra = p.checklist.filter(function (x) { return !esInformativo(x); });
+      var hechas = deObra.filter(function (x) { return x.hecho; }).length;
+      var total = deObra.length;
       var pct = total ? Math.round(hechas / total * 100) : 0;
 
       var pasos = TXT.pasos;
@@ -451,6 +463,9 @@
       var hayGrupos = bloques.length > 1 || (bloques.length === 1 && bloques[0].n);
       function puntoHTML(x) {
         var texto = lang === "en" ? (x.texto_en || x.texto) : x.texto;
+        if (esInformativo(x)) {
+          return '<div class="pt-it info"><span class="pt-it-c">·</span><span>' + esc(texto) + '</span></div>';
+        }
         return '<div class="pt-it' + (x.hecho ? " h" : "") + '">' +
           '<span class="pt-it-c">' + (x.hecho ? "✓" : "") + '</span>' +
           '<span>' + esc(texto) + '</span></div>';
@@ -461,6 +476,12 @@
       var lista = !hayGrupos
         ? '<div class="pt-grp-items">' + p.checklist.map(puntoHTML).join("") + '</div>'
         : bloques.map(function (B) {
+            if (B.items.length && esInformativo(B.items[0])) {
+              return '<details class="pt-grp info" open><summary>' +
+                '<span class="pt-grp-n">' + esc(B.n) + '</span>' +
+                '<span class="pt-grp-c">' + esc(TXT.soloInfo) + '</span></summary>' +
+                '<div class="pt-grp-items">' + B.items.map(puntoHTML).join("") + '</div></details>';
+            }
             var hechosB = B.items.filter(function (x) { return x.hecho; }).length;
             var todosB = hechosB === B.items.length;
             var pctB = Math.round(hechosB / B.items.length * 100);
@@ -638,9 +659,11 @@
         '<div class="pt-tile"><div class="pt-tile-k">' + esc(TXT.progresoT) + '</div>' +
           '<div class="pt-tile-v">' + pct + '% <small>· ' + hechas + ' ' + esc(TXT.deTotal) + ' ' + total + ' ' + esc(TXT.itemsCortos) + '</small></div>' +
           barraHTML(pct) + '</div>' +
-        '<div class="pt-tile"><div class="pt-tile-k">' + esc(TXT.proxVisitaT) + '</div>' +
-          '<div class="pt-tile-v">' + (ev1 ? fechaCorta(ev1.fecha) + (ev1.hora ? ' · ' + esc(ev1.hora) : '') : esc(TXT.sinVisita)) + '</div>' +
-          (ev1 ? '<div class="pt-tile-s">' + esc(ev1Tit) + '</div>' : '') + '</div>' +
+        (ev1 || p.estado !== "completado"
+          ? '<div class="pt-tile"><div class="pt-tile-k">' + esc(TXT.proxVisitaT) + '</div>' +
+            '<div class="pt-tile-v">' + (ev1 ? fechaCorta(ev1.fecha) + (ev1.hora ? ' · ' + esc(ev1.hora) : '') : esc(TXT.sinVisita)) + '</div>' +
+            (ev1 ? '<div class="pt-tile-s">' + esc(ev1Tit) + '</div>' : '') + '</div>'
+          : '') +
         (p.dinero
           ? '<div class="pt-tile' + (debeAhora > 0 ? ' due' : '') + '"><div class="pt-tile-k">' +
               esc(debeAhora > 0 ? TXT.debeAhoraT : TXT.saldoT) + '</div>' +
@@ -690,8 +713,11 @@
         '</div>' +
         // En el escritorio esto va en la columna de la derecha; en el teléfono, debajo
         '<div class="cl-col pt-col-side">' +
-        '<div class="pt-card"><div class="pt-h">' + tit("prox", TXT.proxT) + '</div>' +
-          (prox || '<div class="pt-vacio">' + esc(TXT.sinProx) + '</div>') + '</div>' +
+        // En una obra terminada no se anuncian días de trabajo que no van a venir
+        (prox || p.estado !== "completado"
+          ? '<div class="pt-card"><div class="pt-h">' + tit("prox", TXT.proxT) + '</div>' +
+            (prox || '<div class="pt-vacio">' + esc(TXT.sinProx) + '</div>') + '</div>'
+          : '') +
         (insp || p.estado === "ejecucion"
           ? '<div class="pt-card"><div class="pt-h">' + tit("insp", TXT.inspT) + '</div>' +
             (insp || '<div class="pt-vacio">' + esc(TXT.sinInsp) + '</div>') + '</div>' : '') +
