@@ -520,6 +520,33 @@ CES MIAMI — QUOTE 55120
   ok('un catálogo sin repetidos no inventa ninguna',
     (await p.evaluate(() => window.MXP_PRUEBA.e0.auditoria([{ id: 1, item: 'A', precio: 1 }, { id: 2, item: 'B', precio: 2 }]).dobles.length)) === 0, '');
 
+  /* (21/09) ALIAS QUE TAPAN UNA FILA DEL CATÁLOGO. emparejarTakeoff busca por
+     código → ALIAS → nombre exacto: el alias va ANTES que el nombre. Salió de
+     «CT CABINET» (E · 2 h), que un alias mandaba a «CT/METER CAN» (EA · 3 h),
+     y en Bluebeam son dos conteos distintos: tu fila no llega a mirarse. */
+  const CATT = [
+    { id: 1, item: 'CT CABINET',   unidad: 'E',  precio: 0, horas_unidad: 2 },
+    { id: 2, item: 'CT/METER CAN', unidad: 'EA', precio: 0, horas_unidad: 3 },
+    { id: 3, item: 'JB 1900 BOX',  unidad: 'E',  precio: 1.04, horas_unidad: 0.25 }
+  ];
+  const tapan = await p.evaluate(c => window.MXP_PRUEBA.e0.tapan([
+    { alias: 'CT CABINET',   item: 'CT/METER CAN', factor: 1 },   // TAPA: se llama como una fila y manda a otra
+    { alias: 'CT CABINET',   item: 'CT CABINET',   factor: 1 },   // apunta a su propia fila: inofensivo
+    { alias: 'WALL OUTLET',  item: 'JB 1900 BOX',  factor: 1 },   // no tapa nada: no hay fila «WALL OUTLET»
+    { alias: 'jb 1900 box',  item: 'INVENTADA',    factor: 1 }    // tapa, y encima manda a algo que no existe
+  ], c), CATT);
+  ok('caza el alias que se llama como una fila del catálogo y manda a otra pieza, y deja en paz al que apunta a la suya',
+    tapan.length === 2 && tapan.some(t => t.alias === 'CT CABINET' && t.item === 'CT/METER CAN'),
+    JSON.stringify(tapan.map(t => t.alias + ' → ' + t.item)));
+  ok('dice qué fila tuya queda tapada, con sus horas, para ver lo que cambia',
+    (tapan.find(t => t.alias === 'CT CABINET') || {}).tapada.horas_unidad === 2 &&
+    (tapan.find(t => t.alias === 'CT CABINET') || {}).destino.horas_unidad === 3,
+    JSON.stringify(tapan.map(t => [t.alias, t.tapada && t.tapada.horas_unidad, t.destino && t.destino.horas_unidad])));
+  ok('y marca el que manda a una pieza que ni siquiera está en el catálogo',
+    (tapan.find(t => t.item === 'INVENTADA') || {}).destino === null, '');
+  ok('sin alias que tapen, no inventa ninguno',
+    (await p.evaluate(c => window.MXP_PRUEBA.e0.tapan([{ alias: 'ALGO', item: 'JB 1900 BOX' }], c).length, CATT)) === 0, '');
+
   ok('la app sabe cuántos OTROS estimados usan referencia, para decirlo al enseñar una familia', otros === 2, otros);
   await datos();
 

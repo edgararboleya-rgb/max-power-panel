@@ -7463,6 +7463,25 @@ function esFalloDeRed(err) {
     dobles.sort((a, b) => (b.difiere - a.difiere) || String(a.item).localeCompare(String(b.item)));
     return { pendientes, hechos, cambiados, sinItem, dobles, total: AUDITORIA_E9G.length };
   }
+  /* (21/09) ALIAS QUE TAPAN UNA FILA DEL CATÁLOGO. emparejarTakeoff busca por
+     código → ALIAS → nombre exacto: el alias va ANTES que el nombre. Si existe
+     un alias que se llama igual que una fila del catálogo y apunta a OTRA
+     pieza, esa otra es la que entra al estimado y el nombre exacto no llega a
+     mirarse. Salió de «CT CABINET» (E · 2 h), que un alias mandaba a
+     «CT/METER CAN» (EA · 3 h) — y en Bluebeam son dos conteos distintos. */
+  function aliasQueTapan(alias, catalogo) {
+    const porNom = new Map();
+    (catalogo || []).forEach(c => { if (c && c.item) porNom.set(normTxt(c.item), c); });
+    const out = [];
+    (alias || []).forEach(a => {
+      if (!a || !a.alias || !a.item) return;
+      const tapada = porNom.get(normTxt(a.alias));
+      if (!tapada) return;                                   // el alias no pisa nada
+      if (normTxt(a.item) === normTxt(a.alias)) return;       // apunta a su propia fila
+      out.push({ alias: a.alias, tapada: tapada, destino: porNom.get(normTxt(a.item)) || null, item: a.item });
+    });
+    return out;
+  }
   /* El SQL de lo que falta, y solo de lo que falta. */
   function auditoriaSql(pendientes) {
     const q = v => (typeof v === "number") ? String(v) : "'" + String(v).replace(/'/g, "''") + "'";
@@ -8297,12 +8316,30 @@ Power done right the first time. ⚡`;
     const a = auditoriaCatalogo((estData && estData.catalogo) || []);
     const cortos = recetasConectorCorto((estData && estData.ensambles) || [], (estData && estData.ensambleItems) || []);
     const dobles = a.dobles || [];
-    if (!a.pendientes.length && !cortos.length && !dobles.length) return "";
+    const r2c = v => Math.round((Number(v) || 0) * 100) / 100;
+    const tapan = aliasQueTapan((estData && estData.alias) || [], (estData && estData.catalogo) || []);
+    if (!a.pendientes.length && !cortos.length && !dobles.length && !tapan.length) return "";
     const enUso = new Set();
     (c && c.items || []).forEach(l => enUso.add(normTxt(l.item)));
     const tocan = a.pendientes.filter(r => enUso.has(normTxt(r.item)));
     return `
       <div class="cal-panel-card">
+        ${tapan.length ? `
+        <div class="cal-form-titulo">↪ ${tapan.length} alias que TAPA(N) una fila de tu catálogo</div>
+        <p class="modal-nota">Al emparejar el takeoff, la app mira <b>código → alias → nombre</b>: el alias va
+          ANTES que el nombre exacto. Estos se llaman igual que una fila tuya pero mandan a otra pieza, así que esa
+          otra es la que entra al estimado y tu fila no llega a mirarse. Si lo pusiste a propósito, déjalo; si no,
+          bórralo en Materiales → Alias.</p>
+        ${tapan.slice(0, 10).map(t => `
+          <div class="mat-item recibo-por_leer">
+            <span class="recibo-chip por_leer">tapa</span>
+            <span class="alcance-info">
+              <span class="alcance-titulo">«${esc(t.alias)}» → ${esc(t.item)}</span>
+              <span class="alcance-estado">cuentas <b>${esc(t.tapada.item)}</b> (${esc(t.tapada.unidad || "E")} · ${r2c(t.tapada.horas_unidad)} h · ${fmt(Number(t.tapada.precio) || 0)})
+                y entra <b>${esc(t.item)}</b>${t.destino ? ` (${esc(t.destino.unidad || "E")} · ${r2c(t.destino.horas_unidad)} h · ${fmt(Number(t.destino.precio) || 0)})` : " — que ni siquiera está en el catálogo"}</span>
+            </span>
+          </div>`).join("")}
+        ${(dobles.length || a.pendientes.length || cortos.length) ? "<hr style='border:0;border-top:1px solid var(--mp-line);margin:.7rem 0'>" : ""}` : ""}
         ${dobles.length ? `
         <div class="cal-form-titulo">⚇ ${dobles.length} fila(s) del catálogo con el MISMO nombre</div>
         <p class="modal-nota">Cuando una receta busca una pieza se queda con <b>la primera</b> que encuentra, y el
@@ -12434,6 +12471,7 @@ Power done right the first time. ⚡`;
       sujetas(est, c) { return lineasSujetasACuota(est, c || { items: [] }); },
       nombreCliente(item) { return nombreParaCliente(item); },
       auditoria(cat) { return auditoriaCatalogo(cat || (estData && estData.catalogo) || []); },
+      tapan(al, cat) { return aliasQueTapan(al || [], cat || []); },   // alias que tapan una fila del catálogo (21/09)
       otrosRef() { return otrosConReferencia(); },
       auditoriaSql(p) { return auditoriaSql(p || []); },
       conectorCorto(ens, items) { return recetasConectorCorto(ens || [], items || []); },
