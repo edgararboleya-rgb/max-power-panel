@@ -9423,9 +9423,25 @@ Power done right the first time. ⚡`;
          toma también al congelar, así que queda un número al que volver y la
          pantalla puede decir cuánto se ha movido desde entonces. */
       const foto = fotoParaGuardar(est);
-      await DB.cambiarEstimado(est.id, Object.assign({ estado: "congelado" }, foto)).catch(() => {});
+      /* (21/09) EL CANDADO NO PUEDE FALLAR EN SILENCIO. Si e11-resultado.sql no
+         está corrido, las columnas bid_final/horas_final/material_final no
+         existen: el guardado se caía, el catch se lo tragaba y la pantalla decía
+         «congelado ✓» con el número sin guardar. Ahora, si la foto no cabe, se
+         congela igual —cerrarlo a cambios de renglón sí funciona— pero se DICE
+         que el número no quedó guardado y qué correr. */
+      let conFoto = true;
+      try {
+        await DB.cambiarEstimado(est.id, Object.assign({ estado: "congelado" }, foto));
+      } catch (err) {
+        conFoto = false;
+        try { await DB.cambiarEstimado(est.id, { estado: "congelado" }); } catch (e2) {
+          avisar("No se pudo congelar: " + (e2.message || e2), true); return;
+        }
+      }
       await recargarEstimador();
-      avisar(`Estimado congelado 🔒 — ${fmt(foto.bid_final)} guardado; si los precios cambian, te digo cuánto se movió`);
+      avisar(conFoto
+        ? `Estimado congelado 🔒 — ${fmt(foto.bid_final)} guardado; si los precios cambian, te digo cuánto se movió`
+        : `⚠ Congelado a cambios de renglón, pero el NÚMERO no quedó guardado: a la base le faltan las columnas de la foto. Corre max-power-panel/docs/sql/e11-resultado.sql y vuelve a congelar.`, !conFoto);
     });
     if (btnDesc) btnDesc.addEventListener("click", async () => {
       await DB.cambiarEstimado(est.id, { estado: "borrador" }).catch(() => {});
