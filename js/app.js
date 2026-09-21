@@ -7441,7 +7441,27 @@ function esFalloDeRed(err) {
       if (casa(fila, r.viejo)) { pendientes.push(Object.assign({}, r, { fila: fila })); return; }
       cambiados.push(Object.assign({}, r, { fila: fila }));   // Edgar puso otra cosa: manda lo suyo
     });
-    return { pendientes, hechos, cambiados, sinItem, total: AUDITORIA_E9G.length };
+    /* (21/09) DOS FILAS CON EL MISMO NOMBRE. catalogoExacto es un .find: coge
+       la PRIMERA que encuentre, en el orden en que Supabase devuelva el
+       catálogo, que no está garantizado. Mientras las gemelas valen lo mismo
+       da igual; el día que se corrija una con el precio de CED, la receta
+       puede seguir cobrando la vieja y nadie lo dice. Se caza aquí. */
+    const vistos = new Map(), dobles = [];
+    (catalogo || []).forEach(c => {
+      if (!c || !c.item) return;
+      const k = normTxt(c.item);
+      if (!vistos.has(k)) { vistos.set(k, [c]); return; }
+      vistos.get(k).push(c);
+    });
+    vistos.forEach((filas, k) => {
+      if (filas.length < 2) return;
+      const precios = [...new Set(filas.map(f => Number(f.precio) || 0))];
+      const horas = [...new Set(filas.map(f => Number(f.horas_unidad) || 0))];
+      dobles.push({ item: filas[0].item, n: filas.length, precios, horas,
+                    difiere: precios.length > 1 || horas.length > 1, ids: filas.map(f => f.id) });
+    });
+    dobles.sort((a, b) => (b.difiere - a.difiere) || String(a.item).localeCompare(String(b.item)));
+    return { pendientes, hechos, cambiados, sinItem, dobles, total: AUDITORIA_E9G.length };
   }
   /* El SQL de lo que falta, y solo de lo que falta. */
   function auditoriaSql(pendientes) {
@@ -8276,12 +8296,30 @@ Power done right the first time. ⚡`;
   function cardAuditoriaHTML(est, c, soloLectura) {
     const a = auditoriaCatalogo((estData && estData.catalogo) || []);
     const cortos = recetasConectorCorto((estData && estData.ensambles) || [], (estData && estData.ensambleItems) || []);
-    if (!a.pendientes.length && !cortos.length) return "";
+    const dobles = a.dobles || [];
+    if (!a.pendientes.length && !cortos.length && !dobles.length) return "";
     const enUso = new Set();
     (c && c.items || []).forEach(l => enUso.add(normTxt(l.item)));
     const tocan = a.pendientes.filter(r => enUso.has(normTxt(r.item)));
     return `
       <div class="cal-panel-card">
+        ${dobles.length ? `
+        <div class="cal-form-titulo">⚇ ${dobles.length} fila(s) del catálogo con el MISMO nombre</div>
+        <p class="modal-nota">Cuando una receta busca una pieza se queda con <b>la primera</b> que encuentra, y el
+          orden en que llegan del servidor no está garantizado. Mientras las gemelas valgan lo mismo da igual.
+          <b>El día que corrijas una con el precio del supply, la receta puede seguir cobrando la otra</b> y no te
+          lo va a decir nadie. Bórrale la de más en Materiales → Catálogo.</p>
+        ${dobles.slice(0, 10).map(d => `
+          <div class="mat-item${d.difiere ? " recibo-por_leer" : ""}">
+            <span class="recibo-chip ${d.difiere ? "por_leer" : "leido"}">${d.n} veces</span>
+            <span class="alcance-info">
+              <span class="alcance-titulo">${esc(d.item)}</span>
+              <span class="alcance-estado">${d.difiere
+                ? `<b>y NO valen lo mismo</b>: ${d.precios.map(v => fmt(v)).join(" / ")}${d.horas.length > 1 ? ` · ${d.horas.join(" / ")} h` : ""} — el número cambia según cuál coja`
+                : `las ${d.n} valen ${fmt(d.precios[0])}${d.horas.length ? ` y ${d.horas[0]} h` : ""}: hoy da igual cuál coja, pero deja una sola`}</span>
+            </span>
+          </div>`).join("")}
+        ${(a.pendientes.length || cortos.length) ? "<hr style='border:0;border-top:1px solid var(--mp-line);margin:.7rem 0'>" : ""}` : ""}
         ${cortos.length ? `
         <div class="cal-form-titulo">🔌 ${cortos.length} receta(s) con un conector que no le cabe al cable</div>
         <p class="modal-nota">El conector NM de ½" es de 14/2 y 12/2: por ahí no pasa un cable más grueso.

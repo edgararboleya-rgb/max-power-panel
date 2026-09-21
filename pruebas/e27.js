@@ -499,6 +499,27 @@ CES MIAMI — QUOTE 55120
   ok('un precio de 50 centavos sale como AVISO en su fila, no como precio bueno, y no enseña un total falso', pintFl.chip === true && /no es el precio de una luminaria/.test(pintFl.txt) && !/\$10\.00/.test(pintFl.txt), pintFl.txt.slice(0, 130));
   // enseñar una familia avisa de cuántos estimados más se mueven
   const otros = await p.evaluate(() => { window.MXP_PRUEBA.e0.datos({ catalogo: [], items: [], config: {}, estimados: [{ id: 'a', usa_luz_ref: true }, { id: 'b', usa_luz_ref: true }, { id: 'c' }] }); return window.MXP_PRUEBA.e0.otrosRef(); });
+  /* (21/09) DOS FILAS DEL CATÁLOGO CON EL MISMO NOMBRE. Salió de la
+     comprobación de Supabase: el «1" EMT S.S. D/C CONNECTOR» estaba dos veces.
+     catalogoExacto es un .find y se queda con la primera que llegue, en un
+     orden que no está garantizado: mientras valgan lo mismo da igual, pero al
+     corregir una con el precio del supply la receta puede seguir cobrando la
+     otra, callada. */
+  const dbl = await p.evaluate(() => window.MXP_PRUEBA.e0.auditoria([
+    { id: 1, item: '1"       EMT S.S. D/C CONNECTOR', precio: 3.2247, horas_unidad: 0.05 },
+    { id: 2, item: '1"  EMT  S.S.  D/C  CONNECTOR',   precio: 3.2247, horas_unidad: 0.05 },   // el mismo, con otros espacios
+    { id: 3, item: 'CAJA 4X4', precio: 2.10, horas_unidad: 0.1 },
+    { id: 4, item: 'caja 4x4', precio: 9.99, horas_unidad: 0.1 },                              // gemela con OTRO precio
+    { id: 5, item: 'UNA SOLA', precio: 1, horas_unidad: 0 }
+  ]));
+  ok('la auditoría caza las filas repetidas del catálogo, aunque solo cambien los espacios',
+    dbl.dobles && dbl.dobles.length === 2 && dbl.dobles.every(d => d.n === 2), JSON.stringify(dbl.dobles && dbl.dobles.map(d => [d.item, d.n])));
+  ok('y pone DELANTE la que no vale lo mismo, que es la que puede mover el número',
+    dbl.dobles[0].difiere === true && dbl.dobles[0].precios.length === 2 && dbl.dobles[1].difiere === false,
+    JSON.stringify(dbl.dobles.map(d => [d.item, d.difiere, d.precios])));
+  ok('un catálogo sin repetidos no inventa ninguna',
+    (await p.evaluate(() => window.MXP_PRUEBA.e0.auditoria([{ id: 1, item: 'A', precio: 1 }, { id: 2, item: 'B', precio: 2 }]).dobles.length)) === 0, '');
+
   ok('la app sabe cuántos OTROS estimados usan referencia, para decirlo al enseñar una familia', otros === 2, otros);
   await datos();
 
