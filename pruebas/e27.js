@@ -431,6 +431,43 @@ CES MIAMI — QUOTE 55120
   ok('sale en el estimador, nombrando la receta y lo que le falta', tarjC.sale && tarjC.ev, JSON.stringify(tarjC));
   await datos();
 
+  /* ===== 14 · lo que sacó la VERIFICACIÓN del 21/09 ===== */
+  await datos();
+  const estRef = Object.assign({}, EST, { usa_luz_ref: true });
+  const cR = await p.evaluate(e => window.MXP_PRUEBA.e0.calcula(e), estRef);
+  const tk = await p.evaluate(([e, c]) => window.MXP_PRUEBA.e0.takeoff(e, c), [estRef, cR]);
+  ok('el TAKEOFF que se pega en Excel lleva la línea de las luminarias a precio de referencia (antes faltaban $19.630 al cuadrar)', /\+ Luminarias a PRECIO DE REFERENCIA \(cuota pendiente\)\t19630/.test(tk.replace(/\t+/g, '\t')) || /Luminarias a PRECIO DE REFERENCIA/.test(tk), (tk.match(/[^\n]*PRECIO DE REFERENCIA[^\n]*/) || [''])[0].slice(0, 90));
+  ok('…y cada luminaria sale como renglón, con su precio y de qué familia salió', (tk.match(/precio de referencia \(/g) || []).length === 5 && /STAK 2X2 5000LM/.test(tk), (tk.match(/[^\n]*precio de referencia \([^\n]*/) || [''])[0].slice(0, 100));
+  const lineasRef = tk.split('\n').filter(x => /precio de referencia \(/.test(x));
+  ok('esos renglones llevan el nombre limpio, sin el recordatorio con tu precio ni el «COTIZACIÓN PENDIENTE»', lineasRef.length === 5 && !lineasRef.some(x => /pedir a Jose|COTIZACI[OÓ]N PENDIENTE/.test(x)), (lineasRef[0] || '').replace(/\t+/g, ' | ').slice(0, 120));
+  const tkOff = await p.evaluate(([e, c]) => window.MXP_PRUEBA.e0.takeoff(e, c), [EST, await p.evaluate(x => window.MXP_PRUEBA.e0.calcula(x), EST)]);
+  ok('con la referencia apagada el takeoff sale como siempre: ni la línea ni los renglones', !/PRECIO DE REFERENCIA/.test(tkOff), '');
+  // la clave del selector es la MISMA con que se aprende
+  const TIPOA = 'COTIZACIÓN PENDIENTE — LITHONIA BLT 2X4 (TIPO A) MVOLT (ref. $180)';
+  const itemsA = ITEMS.map(x => x.id === 'c1' ? Object.assign({}, x, { item: TIPOA }) : x);
+  const selCl = await p.evaluate(([i, e, ta]) => {
+    window.MXP_PRUEBA.e0.datos({ catalogo: [], items: i, config: {}, estimados: [] });
+    const c = window.MXP_PRUEBA.e0.calcula(e);
+    const d = document.createElement('div'); d.innerHTML = window.MXP_PRUEBA.e0.tarjetas(e, c);
+    const sel = [...d.querySelectorAll('select.luz-fam')].map(x => x.dataset.modelo);
+    return { sel, claveA: window.MXP_PRUEBA.e0.luzClave(ta) };
+  }, [itemsA, Object.assign({}, EST, { usa_luz_ref: true }), TIPOA]);
+  ok('el desplegable manda la CLAVE de aprendizaje, no el modelo «bonito»: con un paréntesis descriptivo ya casan', selCl.sel.indexOf(selCl.claveA) >= 0 && /TIPO A/.test(selCl.claveA), JSON.stringify([selCl.claveA, selCl.sel[0]]));
+  // un precio flojo no se pinta como resuelto
+  const cfgFl = { luz_fam: JSON.stringify({ [await p.evaluate(m => window.MXP_PRUEBA.e0.luzClave(m), RARO)]: 0.5 }) };
+  const pintFl = await p.evaluate(([i, e, c]) => {
+    window.MXP_PRUEBA.e0.datos({ catalogo: [], items: i, config: c, estimados: [] });
+    const est = Object.assign({}, e, { usa_luz_ref: true });
+    const d = document.createElement('div'); d.innerHTML = window.MXP_PRUEBA.e0.tarjetas(est, window.MXP_PRUEBA.e0.calcula(est));
+    const fila = [...d.querySelectorAll('.mat-item')].find(x => /OR-7/.test(x.textContent)) || { textContent: '', innerHTML: '' };
+    return { txt: fila.textContent.replace(/\s+/g, ' '), chip: /recibo-chip por_leer/.test(fila.innerHTML) };
+  }, [ITEMS_RARO, EST, cfgFl]);
+  ok('un precio de 50 centavos sale como AVISO en su fila, no como precio bueno, y no enseña un total falso', pintFl.chip === true && /no es el precio de una luminaria/.test(pintFl.txt) && !/\$10\.00/.test(pintFl.txt), pintFl.txt.slice(0, 130));
+  // enseñar una familia avisa de cuántos estimados más se mueven
+  const otros = await p.evaluate(() => { window.MXP_PRUEBA.e0.datos({ catalogo: [], items: [], config: {}, estimados: [{ id: 'a', usa_luz_ref: true }, { id: 'b', usa_luz_ref: true }, { id: 'c' }] }); return window.MXP_PRUEBA.e0.otrosRef(); });
+  ok('la app sabe cuántos OTROS estimados usan referencia, para decirlo al enseñar una familia', otros === 2, otros);
+  await datos();
+
   ok('cero errores de página', errs.length === 0, errs.join(' | ').slice(0, 250));
   console.log('\n' + R.join('\n'));
   const mal = R.filter(r => r.slice(0, 4).indexOf('✗') >= 0).length;

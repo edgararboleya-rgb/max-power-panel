@@ -7560,6 +7560,8 @@ function esFalloDeRed(err) {
     const filas = [];
     (c.items || []).forEach(i => filas.push({ cod: codDe(i), item: i.item, de: i.deEnsamble ? "receta: " + i.deEnsamble : (i.origen === "cotizacion" ? "cotización pendiente" : ""), q: i.cantidad, u: i.unidad || "", p: i.precio, h: i.horas }));
     (c.autos || []).forEach(i => filas.push({ cod: codDe(i), item: i.item, de: "automático: " + (i.auto || ""), q: i.cantidad, u: i.unidad || "", p: i.precio, h: i.horas }));
+    // las luminarias a precio de referencia, con su precio, para poder cuadrarlas
+    ((c.refLuz && c.refLuz.filas) || []).forEach(f => filas.push({ cod: "11-LIGHT", item: nombreParaCliente(f.item), de: "precio de referencia (" + (f.fuente === "precio" ? "tuyo" : f.nom) + ") · cuota pendiente", q: f.cantidad, u: "E", p: f.precio, h: 0 }));
     filas.sort((a, b) => (a.cod || "zz").localeCompare(b.cod || "zz") || a.item.localeCompare(b.item));
     const hoyTxt = new Date().toLocaleDateString(LOCALE, { day: "numeric", month: "long", year: "numeric" });
     const l = [];
@@ -7577,6 +7579,11 @@ function esFalloDeRed(err) {
     if (c.mermaMat) T("+ Merma (cable / tubería)", c.mermaMat, c.mermaHoras || 0);
     if (c.misc) T("+ Misceláneas", c.misc);
     if (c.tax) T("+ Sales tax", c.tax);
+    /* (21/09, verificación) Las luminarias a PRECIO DE REFERENCIA entran al bid
+       por la puerta de las cotizaciones, así que NO estaban en esta columna: al
+       cuadrar el takeoff contra «= MATERIAL» faltaban — en Nicklaus, $19.630 —
+       y no había forma de saber si la referencia había entrado. */
+    if (c.refLuz && c.refLuz.total) T("+ Luminarias a PRECIO DE REFERENCIA (cuota pendiente)", c.refLuz.total);
     T("= MATERIAL", c.totalMaterial);
     T(`Horas × factor${est.factor ? " " + est.factor : ""}`, null, c.horas);
     T(`Mano de obra (${n2(c.tarifaCargada)}/h cargada)`, c.totalLabor);
@@ -8312,33 +8319,41 @@ Power done right the first time. ⚡`;
     const ref = refLuminarias(c.items, cfg), precios = ref.precios;
     const usando = !!est.usa_luz_ref;
     const CHIP_FUENTE = { tuya: "conciliado", precio: "conciliado", auto: "leido", sin: "sin_foto", tuya_sin_precio: "por_leer" };
+    // un precio por debajo de un dólar es un dedazo: se pinta como aviso, no como resuelto
+    const chipDe = rf => (rf.flojo ? "por_leer" : CHIP_FUENTE[rf.fuente]);
     const filasPend = pend.map(p => {
       const rf = luzRefDe(p.item, cfg, precios), q = Number(p.cantidad) || 0;
       const auto = familiaLuzAuto(p.item), mod = luzModelo(p.item);
+      // (21/09, verificación) lo que viaja al guardado es la CLAVE, no el modelo
+      // «bonito»: si no, una luminaria con un paréntesis descriptivo —«(TIPO A)»—
+      // se guardaba con otra clave y el renglón seguía sin precio tras decir ✓
+      const clv = luzClave(p.item);
       const tuya = rf.fuente === "tuya" || rf.fuente === "precio" || rf.fuente === "tuya_sin_precio";
       const sel = rf.fuente === "precio" ? "__propio" : tuya ? rf.id : "";
       // el selector: lo automático primero (es lo que pasa si no tocas nada),
       // las nueve familias con su precio, y un precio tuyo para este modelo
       const selector = soloLectura ? "" : `
-        <select class="luz-fam" data-modelo="${esc(mod)}" style="font:inherit;font-size:.78rem;padding:.2rem .3rem;border:1px solid var(--mp-line);border-radius:8px;max-width:15rem">
+        <select class="luz-fam" data-modelo="${esc(clv)}" style="font:inherit;font-size:.78rem;padding:.2rem .3rem;border:1px solid var(--mp-line);border-radius:8px;max-width:15rem">
           <option value=""${sel ? "" : " selected"}>Automático — ${auto ? esc(auto.nom) : "no la reconozco"}</option>
           ${LUZ_FAMILIAS.map(f => `<option value="${esc(f.id)}"${sel === f.id ? " selected" : ""}>${esc(f.nom)} · ${fmt(precios[f.id])}</option>`).join("")}
           <option value="__propio"${sel === "__propio" ? " selected" : ""}>Un precio mío para este modelo…</option>
         </select>
-        <input type="number" class="luz-fam-precio" data-modelo="${esc(mod)}" min="0" step="5" value="${rf.fuente === "precio" ? esc(rf.precio) : ""}"
+        <input type="number" class="luz-fam-precio" data-modelo="${esc(clv)}" min="0" step="5" value="${rf.fuente === "precio" ? esc(rf.precio) : ""}"
           placeholder="$ por unidad" style="width:7rem;font:inherit;font-size:.78rem;padding:.2rem .3rem;border:1px solid var(--mp-line);border-radius:8px;text-align:right;${rf.fuente === "precio" ? "" : "display:none"}">`;
       return `
       <div class="mat-item" style="flex-wrap:wrap">
-        <span class="recibo-chip ${CHIP_FUENTE[rf.fuente]}">${rf.fuente === "sin" ? "SIN FAMILIA" : esc(rf.nom) + (tuya ? " ✎" : "") + (rf.fuente === "tuya_sin_precio" ? " · $0" : "")}</span>
+        <span class="recibo-chip ${chipDe(rf)}">${rf.fuente === "sin" ? "SIN FAMILIA" : esc(rf.nom) + (tuya ? " ✎" : "") + (rf.fuente === "tuya_sin_precio" ? " · $0" : "") + (rf.flojo ? " · ¿" + fmt(rf.precio) + "?" : "")}</span>
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(mod)}</span>
-          <span class="alcance-estado">${r2(q)} ${esc(p.unidad || "E")}${rf.precio > 0
+          <span class="alcance-estado">${r2(q)} ${esc(p.unidad || "E")}${rf.flojo
+            ? ` · ⚠ ${fmt(rf.precio)} por unidad no es el precio de una luminaria: revísalo, este renglón NO entra al bid`
+            : rf.precio > 0
             ? ` × ${fmt(rf.precio)} ${rf.fuente === "precio" ? "tuyos" : rf.fuente === "tuya" ? "de la familia que elegiste" : "de referencia"}`
             : rf.fuente === "tuya_sin_precio"
               ? ` · esa familia está a $0 aquí abajo: ponle precio o dale uno propio a este modelo`
               : " · elige su familia aquí abajo, o pega la cuota"}</span>
         </span>
-        <span class="mat-precio">${rf.precio > 0 ? fmt(r2(q * rf.precio)) : "—"}</span>
+        <span class="mat-precio">${rf.precio > 0 && !rf.flojo ? fmt(r2(q * rf.precio)) : "—"}</span>
         ${selector ? `<span style="flex-basis:100%;display:flex;gap:.4rem;align-items:center;margin:.3rem 0 0 .2rem">${selector}</span>` : ""}
       </div>`;
     }).join("");
@@ -8457,6 +8472,13 @@ Power done right the first time. ⚡`;
      escrituras van EN FILA, una detrás de otra. */
   let luzFamMem = null, luzFamCola = Promise.resolve(), luzFamEnVuelo = 0;
   function luzFamActual() { return luzFamMem || luzFamMapa(estData.config || {}); }
+  /* Cuántos estimados, aparte del abierto, usan el precio de referencia: lo que
+     se enseña aquí vale para TODOS, y el número de un estimado ya cerrado se
+     recalcula con los precios de hoy. Se dice antes de guardar. (21/09.) */
+  function otrosConReferencia() {
+    const act = estimadoActivo;
+    return (estData.estimados || []).filter(e => e && e.usa_luz_ref && e.id !== act).length;
+  }
   function aprendeFamLuz(modelo, valor, esClave) {
     const base = { luz_fam: JSON.stringify(luzFamActual()) };
     const nuevo = esClave ? luzFamOlvida(base, modelo) : luzFamNuevo(base, modelo, valor);
@@ -8471,10 +8493,12 @@ Power done right the first time. ⚡`;
     luzFamCola = luzFamCola.then(async () => {
       try {
         await DB.guardarConfig("luz_fam", JSON.stringify(luzFamMem));
-        avisar(el ? (el.tipo === "precio"
+        const otros = otrosConReferencia();
+        const cola = otros ? ` · ojo: ${otros} estimado(s) más usan referencia y su número se recalcula` : "";
+        avisar((el ? (el.tipo === "precio"
             ? `✓ «${nom}» vale ${fmt(el.precio)} de referencia — me lo aprendo`
             : `✓ «${nom}» es ${el.fam.nom} — me lo aprendo para todos los estimados`)
-          : `✓ «${nom}» vuelve a lo automático`);
+          : `✓ «${nom}» vuelve a lo automático`) + cola);
       } catch (err) { avisar("No se pudo guardar: " + (err.message || err), true); }
       /* Se repinta UNA sola vez, cuando ya no queda nada por guardar: cada
          recargarEstimador destruye los controles de la tarjeta, y hacerlo en
@@ -12317,6 +12341,7 @@ Power done right the first time. ⚡`;
       sujetas(est, c) { return lineasSujetasACuota(est, c || { items: [] }); },
       nombreCliente(item) { return nombreParaCliente(item); },
       auditoria(cat) { return auditoriaCatalogo(cat || (estData && estData.catalogo) || []); },
+      otrosRef() { return otrosConReferencia(); },
       auditoriaSql(p) { return auditoriaSql(p || []); },
       conectorCorto(ens, items) { return recetasConectorCorto(ens || [], items || []); },
       mep(est, c) { return textoResumenMEP(est, c); },
