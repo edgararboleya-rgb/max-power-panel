@@ -170,3 +170,8 @@ a.pt-doc-t:hover { text-decoration: underline; }
 .pt-grp.info > summary .pt-grp-c { font-weight: 700; color: var(--mp-ink-3); text-transform: none; letter-spacing: 0; }
 .pt-it.info .pt-it-c { border: 0; background: none; color: var(--mp-ink-3); font-size: 1.1rem; }
 .pt-it.info { color: var(--mp-ink-2); }
+
+/* El botón de dejar una reseña — solo sale en la obra terminada */
+.pt-resena { display: inline-block; margin-top: .6rem; background: linear-gradient(135deg, var(--mp-yellow), #F7C948);
+  color: #3d3400; font-weight: 800; padding: .7rem 1.2rem; border-radius: 999px; text-decoration: none; min-height: 36px; }
+.pt-resena:hover { filter: brightness(1.05); }
