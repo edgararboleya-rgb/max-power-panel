@@ -7631,9 +7631,13 @@ function esFalloDeRed(err) {
     if (c.tax) T("+ Sales tax", c.tax);
     /* (21/09, verificación) Las luminarias a PRECIO DE REFERENCIA entran al bid
        por la puerta de las cotizaciones, así que NO estaban en esta columna: al
-       cuadrar el takeoff contra «= MATERIAL» faltaban — en Nicklaus, $19.630 —
-       y no había forma de saber si la referencia había entrado. */
-    if (c.refLuz && c.refLuz.total) T("+ Luminarias a PRECIO DE REFERENCIA (cuota pendiente)", c.refLuz.total);
+       cuadrar el takeoff contra «= MATERIAL» faltaban — en Nicklaus, $19.630.
+       (22/09) PERO SE ARREGLÓ DOS VECES EN EL MISMO COMMIT: arriba entraron sus
+       FILAS, con su cantidad y su precio, y aquí volvía a sumarse el total. Leyendo
+       la columna hacia abajo salvaba $19.630 de más. Se quedan las filas —que es
+       lo que sirve para cuadrar renglón a renglón— y se va la línea repetida.
+       Medido: con 20 luminarias a $250, la columna sumaba $10.674,56 contra un
+       «= MATERIAL» de $5.674,57. */
     T("= MATERIAL", c.totalMaterial);
     T(`Horas × factor${est.factor ? " " + est.factor : ""}`, null, c.horas);
     T(`Mano de obra (${n2(c.tarifaCargada)}/h cargada)`, c.totalLabor);

@@ -470,7 +470,12 @@ CES MIAMI — QUOTE 55120
   const estRef = Object.assign({}, EST, { usa_luz_ref: true });
   const cR = await p.evaluate(e => window.MXP_PRUEBA.e0.calcula(e), estRef);
   const tk = await p.evaluate(([e, c]) => window.MXP_PRUEBA.e0.takeoff(e, c), [estRef, cR]);
-  ok('el TAKEOFF que se pega en Excel lleva la línea de las luminarias a precio de referencia (antes faltaban $19.630 al cuadrar)', /\+ Luminarias a PRECIO DE REFERENCIA \(cuota pendiente\)\t19630/.test(tk.replace(/\t+/g, '\t')) || /Luminarias a PRECIO DE REFERENCIA/.test(tk), (tk.match(/[^\n]*PRECIO DE REFERENCIA[^\n]*/) || [''])[0].slice(0, 90));
+  /* (22/09) La línea suelta con el total se quitó: era el MISMO dinero que ya
+     traen las filas, y sumaba $19.630 de más leyendo la columna hacia abajo. Lo
+     que tiene que estar son las FILAS, con su cantidad y su precio. */
+  ok('el TAKEOFF que se pega en Excel lleva las luminarias de referencia como FILAS, con su precio, para poder cuadrarlas',
+    /precio de referencia/.test(tk) && !/\+ Luminarias a PRECIO DE REFERENCIA/.test(tk),
+    (tk.match(/[^\n]*precio de referencia[^\n]*/) || [''])[0].slice(0, 110));
   ok('…y cada luminaria sale como renglón, con su precio y de qué familia salió', (tk.match(/precio de referencia \(/g) || []).length === 5 && /STAK 2X2 5000LM/.test(tk), (tk.match(/[^\n]*precio de referencia \([^\n]*/) || [''])[0].slice(0, 100));
   const lineasRef = tk.split('\n').filter(x => /precio de referencia \(/.test(x));
   ok('esos renglones llevan el nombre limpio, sin el recordatorio con tu precio ni el «COTIZACIÓN PENDIENTE»', lineasRef.length === 5 && !lineasRef.some(x => /pedir a Jose|COTIZACI[OÓ]N PENDIENTE/.test(x)), (lineasRef[0] || '').replace(/\t+/g, ' | ').slice(0, 120));
@@ -519,6 +524,35 @@ CES MIAMI — QUOTE 55120
     JSON.stringify(dbl.dobles.map(d => [d.item, d.difiere, d.precios])));
   ok('un catálogo sin repetidos no inventa ninguna',
     (await p.evaluate(() => window.MXP_PRUEBA.e0.auditoria([{ id: 1, item: 'A', precio: 1 }, { id: 2, item: 'B', precio: 2 }]).dobles.length)) === 0, '');
+
+  /* (22/09) EL TAKEOFF TIENE QUE CUADRAR HACIA ABAJO. Ayer se arregló el hueco de
+     la referencia DOS VECES en el mismo commit: entraron sus filas a la columna Y
+     se añadió una línea con el total. Leyendo hacia abajo salvaban $19.630 de
+     más en Nicklaus. La prueba de ayer solo miraba que la LÍNEA existiera, no que
+     la columna sumara — por eso pasó con el doble conteo dentro. Esta suma. */
+  const cuadre = await p.evaluate(([e, c, i, clv]) => {
+    const D = window.MXP_PRUEBA.e0;
+    const cfg = { luz_fam: JSON.stringify(D.luzAprende({ luz_fam: '{}' }, clv, 250)) };
+    D.datos({ catalogo: c, items: i, config: cfg, estimados: [], escenarios: [], ensambleItems: [] });
+    const est = Object.assign({}, e, { usa_luz_ref: true });
+    const calc = D.calcula(est);
+    const txt = D.takeoff(est, calc);
+    const lin = txt.split('\n');
+    const val = (nom) => { const f = lin.find(l => l.split('\t')[1] === nom); return f ? Number(String(f.split('\t')[7]).trim()) || 0 : null; };
+    const suma = ['Material de los renglones', '+ Merma (cable / tubería)', '+ Misceláneas', '+ Sales tax',
+                  '+ Luminarias a PRECIO DE REFERENCIA (cuota pendiente)']
+      .reduce((a, k) => a + (val(k) || 0), 0);
+    D.datos({ catalogo: c, items: i, config: {}, estimados: [], escenarios: [], ensambleItems: [] });
+    return { refLuz: calc.refLuz.total, suma: Math.round(suma * 100) / 100, material: val('= MATERIAL'),
+             hayFilasRef: lin.filter(l => /precio de referencia/.test(l)).length,
+             hayLineaRef: val('+ Luminarias a PRECIO DE REFERENCIA (cuota pendiente)') };
+  }, [EST, CAT, ITEMS, ITEMS.find(x => x.id === 'c1').item]);
+  ok('el takeoff CUADRA leyendo la columna hacia abajo: renglones + merma + misceláneas + tax = MATERIAL',
+    Math.abs(cuadre.suma - cuadre.material) <= 0.02, JSON.stringify([cuadre.suma, cuadre.material, cuadre.refLuz]));
+  ok('la referencia sale como FILAS con su cantidad y su precio (que es lo que sirve para cuadrar renglón a renglón), no como un total suelto repetido',
+    cuadre.hayFilasRef > 0 && cuadre.hayLineaRef === null, JSON.stringify([cuadre.hayFilasRef, cuadre.hayLineaRef]));
+  ok('y la referencia SIGUE dentro del número: el bid no perdió los dólares al quitar la línea repetida',
+    cuadre.refLuz > 0 && cuadre.material > cuadre.refLuz, JSON.stringify([cuadre.refLuz, cuadre.material]));
 
   /* (21/09) ALIAS QUE TAPAN UNA FILA DEL CATÁLOGO. emparejarTakeoff busca por
      código → ALIAS → nombre exacto: el alias va ANTES que el nombre. Salió de
