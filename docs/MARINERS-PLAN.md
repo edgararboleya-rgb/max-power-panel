@@ -16,6 +16,8 @@ cayeron a «no».
 | Un deduct «-$12,500» de la hoja de alcance entraba como CARGO | v211 (23/09), prueba `pruebas/e34.js` |
 | El takeoff contaba dos veces las luminarias de referencia | v210 |
 | `on conflict do nothing` duplicaba el catálogo (sin índice único) | e30/e31 |
+| **Tanda 1**: tipos de línea (logística / allowance / sub) sin tax ni escalación y fuera de la hora cargada; takeoff que cuadra; allowances en la propuesta; validez por estimado; lápiz de precio por renglón; flete e importe único de la cuota; permiso sin marcar con contratista o MEP; ICRA en planos para salud | v212, `pruebas/e35.js` |
+| **Tanda 2**: merma automática solo en planos (decisión de Edgar 23/09); MXP MEP se congela y guarda resultado; propuesta lump sum de MXP MEP para el cliente (Integrated Systems) sin margen; la lista enseña el número congelado | v213, `pruebas/e36.js` |
 
 ## Lo que mueve dinero en Mariners HOY (orden de gravedad)
 
@@ -64,7 +66,6 @@ cayeron a «no».
   en campos separados, adjuntos al estimado, calibración contra el estimado de
   Claude.
 
-**Decide Edgar**
-- Merma: ¿automática solo en planos, o también en remodelación y servicio?
-- Quién recibe el papel de Mariners: ¿Roger (socio) o MX MEP / Integrated
-  Systems (quien negocia)?
+**Decidido (23/09)**
+- Merma automática solo en modo planos.
+- El papel de Mariners lo recibe Integrated Systems: va la propuesta lump sum.

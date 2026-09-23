@@ -6239,8 +6239,14 @@ function esFalloDeRed(err) {
       : { filas: [], total: 0, sinFamilia: [], precios: luzRefPrecios(cfg) };
 
     // Merma sobre lo lineal (solo en modo planos: los pies que TÚ mediste)
+    /* (23/09, decisión de Edgar) SOLO EN MODO PLANOS, como decía el comentario.
+       El código decía `if (!rapido)` y la cobraba también en remodelación y
+       servicio: en Nicklaus (remodelación) se sumó a tres renglones de merma
+       puestos a mano, o sea dos veces. Los estimados CONGELADOS no se mueven
+       (mandan su foto); un borrador de remodelación o servicio baja lo que
+       era esa merma. */
     let mermaMat = 0, mermaHoras = 0;
-    if (!rapido) {
+    if (est.modo === "planos") {
       for (const it of base) {
         const nom = normTxt(it.item);
         const pct = ES_LINEAL_CABLE(nom) ? (cfg.merma_cable ?? 0.10)
@@ -6784,7 +6790,9 @@ function esFalloDeRed(err) {
      y en los perdidos pide el porqué y, si se sabe, cuánto ofertó el que ganó:
      ese dato es el único que dice de CUÁNTO se estaba lejos. */
   function bloqueResultado(est, c) {
-    if (esMEP(est)) return "";
+    /* (23/09, Mariners) Un trabajo de MXP MEP también se gana o se pierde, y
+       sin esto su número no quedaba guardado en ningún sitio. El historial
+       sigue sin mezclarlos: tarjetaHistorial pide solo los de Max Power. */
     const r = est.resultado || "";
     const foto = est.bid_final ? fotoDe(est) : null;
     const rango = fueraDeRango(est, (estData.estimados || []));
@@ -7051,7 +7059,11 @@ function esFalloDeRed(err) {
 
   function pintarEstimadorLista() {
     const fila1 = e => {
+      /* (23/09) Un congelado o convertido enseña SU número (la foto), no el
+         que sale hoy con los precios vivos; si se ha movido, lo dice. */
       const c = calcularEstimado(e);
+      const f = fotoDe(e, c);
+      const movido = !f.recalculado && Math.abs(c.bid - f.bid) > 0.5;
       const chip = e.estado === "convertido" ? "insp-paso" : e.estado === "congelado" ? "leido" : "por_leer";
       const etiqueta = e.estado === "convertido" ? "CONVERTIDO ✓" : e.estado === "congelado" ? "CONGELADO" : "BORRADOR";
       return `
@@ -7063,7 +7075,7 @@ function esFalloDeRed(err) {
             <span class="alcance-titulo">${esc(e.nombre)}</span>
             <span class="alcance-estado">${esc(e.cliente || "")}${e.contratista_id ? ` · ${esc(tratoTexto(e.contratista_id, e.contratista_modo))}` : ""}${e.sqft ? ` · ${esc(e.sqft)} sqft` : ""} · escenario ${esc(e.escenario)}${e.proyecto_id ? ` · <b>añadido a ${esc((proyectos().find(x => x.id === e.proyecto_id) || {}).nombre || e.proyecto_id)}</b>` : ""}</span>
           </span>
-          <span class="mat-precio">${fmt(Math.round(c.bid * 100) / 100)}</span>
+          <span class="mat-precio">${fmt(Math.round(f.bid * 100) / 100)}${movido ? `<br><span class="chk-avance" title="Lo que daría hoy con los precios vivos">hoy ${fmt(Math.round(c.bid * 100) / 100)}</span>` : ""}</span>
           ${e.estado !== "convertido" ? `<button class="insp-borrar btn-est-borrar" data-id="${e.id}" title="Eliminar">🗑</button>` : ""}
         </div>`;
     };
@@ -7652,6 +7664,65 @@ function esFalloDeRed(err) {
     if (ex.length) { l.push(""); l.push("NO INCLUYE:"); ex.forEach(x => l.push("• " + x)); }
     l.push("");
     l.push("Número interno para MXP MEP. No es una propuesta ni un contrato.");
+    return l.join("\n");
+  }
+
+  /* (23/09, Mariners) LA PROPUESTA DE MXP MEP PARA EL CLIENTE. El único papel
+     que había para un trabajo de MXP MEP era el resumen interno, que imprime
+     overhead, profit y hora cargada: mandárselo a Integrated Systems, que es
+     quien negocia, era poner el margen sobre la mesa. Este va en inglés, en
+     lump sum, sin desglose de dinero, sin horas, y sin el membrete ni la
+     licencia de Max Power (el trabajo no es de Max Power). */
+  function textoPropuestaMEP(est, c) {
+    const r2 = v => Math.round(v * 100) / 100;
+    const hoy = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    const aMEP = t => String(t).replace(/Max Power( Electrical Solutions)?( LLC| Inc\.?)?/g, "MXP MEP");
+    // el alcance: nombres de lo que se instala, por sección, sin cantidades ni
+    // precios; fuera los renglones que son solo horas de proyecto
+    const soloHoras = new Set(HORAS_REGLAS.map(r => normTxt(r.item)));
+    const porSec = {};
+    for (const it of (c.items || [])) {
+      if (soloHoras.has(normTxt(it.item))) continue;
+      const cat = catalogoExacto(it.item) || {};
+      const s = cat.seccion || "GENERAL";
+      const nom = nombreParaCliente(it.item).replace(/\s*\(ref\..*$/i, "").trim();
+      (porSec[s] = porSec[s] || new Set()).add(nom);
+    }
+    const ens = (estData.estEnsambles || []).filter(e => e.estimado_id === est.id && Number(e.cantidad) > 0)
+      .map(ee => ((estData.ensambles || []).find(x => x.id === ee.ensamble_id) || {}).nombre).filter(Boolean);
+    const alcance = ens.length ? [...new Set(ens)].map(n => "• " + n)
+      : Object.entries(porSec).map(([s, set]) => `• ${s}: ${[...set].join("; ")}`);
+    const allowances = (Array.isArray(est.lineas_material) ? est.lineas_material : []).filter(x => x.tipo === "allow");
+    const excl = lineasNoIncluye(est, c.items).map(aMEP);
+    const sujetas = lineasSujetasACuota(est, c);
+    const l = [];
+    l.push("MXP MEP");
+    l.push(`PROPOSAL — ${est.nombre}`);
+    l.push(`To: ${est.cliente || "________"}   ·   Date: ${hoy}`);
+    l.push("");
+    l.push("SCOPE OF WORK");
+    l.push("Electrical work per the contract documents, including:");
+    alcance.forEach(x => l.push(x));
+    if (allowances.length) {
+      l.push("");
+      l.push("ALLOWANCES INCLUDED IN THE PRICE");
+      allowances.forEach(x => l.push(`• ${x.desc || "Allowance"}: ${fmt(r2(Number(x.monto) || 0))}`));
+      l.push("Allowance amounts are provisional. Once the actual cost is confirmed, the difference (add or deduct) is adjusted by change order.");
+    }
+    if (sujetas.length) {
+      l.push("");
+      l.push("SUBJECT TO SUPPLIER QUOTE (included at reference value)");
+      sujetas.forEach(x => l.push("• " + x));
+      l.push("Any cost difference on the firm supplier quote is handled by change order before the material is ordered.");
+    }
+    l.push("");
+    l.push("NOT INCLUDED");
+    excl.forEach(x => l.push("• " + x));
+    l.push("• Work not listed above. Changes are handled by change order.");
+    l.push("");
+    l.push(`LUMP SUM PRICE: ${fmt(r2(c.bid))}`);
+    l.push("");
+    l.push(`Proposal valid for ${diasValidez(est)} days. Copper wire and feeder pricing is based on supplier quotes as of ${hoy}; if the award comes after the validity period, those items are subject to re-quote.`);
     return l.join("\n");
   }
 
@@ -9101,10 +9172,14 @@ Power done right the first time. ⚡`;
       </div>
       <div class="cal-panel-card acciones">
         ${esMEP(est) ? `
-        <p class="lev-nota" style="margin:0 0 .5rem">Este trabajo es de <strong>MXP MEP</strong>, no tuyo: la app solo te da el número.
-          No crea proyecto, ni propuesta, ni contrato. Si al final lo haces tú, cámbialo a Max Power y vuelven los botones.</p>
-        <button class="accion secundaria" id="btn-est-propuesta">📄 Ver el resumen para copiar</button>
+        <p class="lev-nota" style="margin:0 0 .5rem">Este trabajo es de <strong>MXP MEP</strong>, no tuyo: no crea proyecto ni contrato de Max Power.
+          Al cliente va la <b>propuesta lump sum</b> (sin overhead, profit ni hora cargada). <b>Congélalo</b> antes de mandarla:
+          así el número que ofertaste queda guardado aunque cambien los escenarios.</p>
+        <button class="accion" id="btn-est-prop-mep">📄 Propuesta lump sum para el cliente</button>
+        <button class="accion secundaria" id="btn-est-propuesta">🔒 Resumen interno (con overhead y profit — NO se manda)</button>
         <button class="accion secundaria" id="btn-est-takeoff">📋 Ver el takeoff para copiar</button>
+        ${est.estado === "borrador" ? `<button class="accion secundaria" id="btn-est-congelar">🔒 Congelar</button>` : ""}
+        ${est.estado === "congelado" ? `<button class="accion secundaria" id="btn-est-descongelar">🔓 Volver a borrador</button>` : ""}
         <button class="accion secundaria" id="btn-est-mio">Pasarlo a Max Power</button>
         ` : `
         <button class="accion secundaria" id="btn-est-propuesta">📄 Generar propuesta</button>
@@ -9607,9 +9682,28 @@ Power done right the first time. ⚡`;
       if (!ceroDejaPasar()) return;
       $("propuesta-caja").innerHTML = `
         <div class="cal-panel-card">
-          <div class="cal-form-titulo">${esMEP(est) ? "📄 Resumen para MXP MEP" : "📄 Propuesta lista para copiar"}</div>
+          <div class="cal-form-titulo">${esMEP(est) ? "🔒 Resumen INTERNO de MXP MEP — lleva el margen: no se manda al cliente" : "📄 Propuesta lista para copiar"}</div>
           <textarea id="propuesta-texto" rows="16" readonly
             style="width:100%;font-family:ui-monospace,monospace;font-size:.78rem;padding:.6rem;border:1px solid var(--mp-line);border-radius:10px">${esc(esMEP(est) ? textoResumenMEP(est, c) : textoPropuesta(est, c))}</textarea>
+          <button class="accion" id="btn-copiar-propuesta" style="margin-top:.45rem">📋 Copiar</button>
+        </div>`;
+      $("btn-copiar-propuesta").addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText($("propuesta-texto").value); avisar("Propuesta copiada ✓"); }
+        catch { $("propuesta-texto").select(); document.execCommand("copy"); avisar("Propuesta copiada ✓"); }
+      });
+      $("propuesta-caja").scrollIntoView({ behavior: "smooth" });
+    });
+    // (23/09) El papel de MXP MEP para el cliente (Integrated Systems en Mariners)
+    const btnPM = $("btn-est-prop-mep");
+    if (btnPM) btnPM.addEventListener("click", () => {
+      if (!ceroDejaPasar()) return;
+      $("propuesta-caja").innerHTML = `
+        <div class="cal-panel-card">
+          <div class="cal-form-titulo">📄 Propuesta para el cliente — lump sum, sin desglose${est.estado === "borrador" ? ` <span class="recibo-chip por_leer">SIN CONGELAR</span>` : ""}</div>
+          ${est.estado === "borrador" ? `<p class="lev-nota" style="margin:0 0 .4rem">⚠ Todavía es un borrador: si la mandas, congélalo para que el número quede guardado.</p>` : ""}
+          <textarea id="propuesta-texto" rows="18"
+            style="width:100%;font-family:ui-monospace,monospace;font-size:.78rem;padding:.6rem;border:1px solid var(--mp-line);border-radius:10px">${esc(textoPropuestaMEP(est, c))}</textarea>
+          <p class="modal-nota">Se puede editar aquí antes de copiar (el alcance sobre todo). Lo que cambies aquí no se guarda.</p>
           <button class="accion" id="btn-copiar-propuesta" style="margin-top:.45rem">📋 Copiar</button>
         </div>`;
       $("btn-copiar-propuesta").addEventListener("click", async () => {
@@ -12625,6 +12719,8 @@ Power done right the first time. ⚡`;
       auditoriaSql(p) { return auditoriaSql(p || []); },
       conectorCorto(ens, items) { return recetasConectorCorto(ens || [], items || []); },
       mep(est, c) { return textoResumenMEP(est, c); },
+      propMep(est, c) { return textoPropuestaMEP(est, c); },   // el papel para el cliente de MXP MEP (23/09)
+      resultado(est) { return bloqueResultado(est, calcularEstimado(est)); },
       takeoff(est, c) { return textoTakeoff(est, c); },
       mano(est, c) { return panelManoHTML(est, c, false) + panelRapidoHTML(est, c, false); },   // las filas con su tipo (23/09)
       consumibles(base, est, cfg) { return autosConsumibles(base || [], est || {}, cfg || {}); },
