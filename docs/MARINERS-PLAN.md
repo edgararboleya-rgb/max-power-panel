@@ -70,3 +70,24 @@ cayeron a «no».
 **Decidido (23/09)**
 - Merma automática solo en modo planos.
 - El papel de Mariners lo recibe Integrated Systems: va la propuesta lump sum.
+
+## Siguiente: las cuotas del supply leídas con INTELIGENCIA (Edgar, 23/09)
+
+Edgar: «que la inteligencia lo haga, no que sea algo automático que cree
+conflictos después». La cuota de José o de Mike se sube al estimado y la IA la
+lee renglón por renglón contra el estimado:
+
+- Material que ya está (cable, tubo): el PRECIO UNITARIO de la cuota (por pie,
+  por MLF, por rollo) aplicado a NUESTRA cantidad medida — 1.600 ft cotizados
+  no son los 1.400 que hacen falta.
+- Equipo cotizado entero (desconectivo de $20.000, gear): nuestro renglón se
+  queda SOLO con las horas de montaje ($0, «suministro») y el monto entra como
+  línea de Cotización. Nada se cobra dos veces.
+- Lo que la cuota trae y el estimado no, y al revés: se señala, no se decide.
+- Dos cuotas: la más cara manda, renglón por renglón.
+
+EL PRINCIPIO: la IA PROPONE con su razón en cada renglón y Edgar APRUEBA antes
+de que se toque nada. Las reglas fijas quedan solo como COMPROBACIÓN después
+(que el total cuadre, que nada salga dos veces), nunca como quien decide:
+las reglas rígidas son las que ya crearon conflictos (leeCuota tomando el menor
+importe como unitario, el flete tirado como pie de cuota).
