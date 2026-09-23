@@ -7672,18 +7672,20 @@ function esFalloDeRed(err) {
      overhead, profit y hora cargada: mandárselo a Integrated Systems, que es
      quien negocia, era poner el margen sobre la mesa. Este va en inglés, en
      lump sum, sin desglose de dinero, sin horas, y sin el membrete ni la
-     licencia de Max Power (el trabajo no es de Max Power): sale a nombre de
-     Integrated Systems. */
+     licencia de Max Power cuando sale a nombre de otra compañía. */
   /* (23/09) «MXP MEP» es una etiqueta NUESTRA para separar estos trabajos: no
-     es una compañía. La que sale a la calle es la de Roger, INTEGRATED
-     SYSTEMS, donde Edgar lleva la parte eléctrica. Se puede cambiar sin tocar
-     código con la clave `emisor_mep` de config_estimador. */
-  const emisorMEP = () => String(((estData && estData.config) || {}).emisor_mep || "INTEGRATED SYSTEMS").trim();
+     es una compañía. Mientras la compañía con Roger (Integrated Systems) no sea
+     oficial, el papel sale a nombre de MAX POWER, con su licencia (Edgar,
+     23/09). El día que sea oficial se pone su nombre en la clave `emisor_mep`
+     de config_estimador y sale a su nombre, sin tocar código. */
+  const EMISOR_MAXPOWER = "MAX POWER ELECTRICAL SOLUTIONS, INC.";
+  const emisorMEP = () => String(((estData && estData.config) || {}).emisor_mep || EMISOR_MAXPOWER).trim();
   function textoPropuestaMEP(est, c) {
     const r2 = v => Math.round(v * 100) / 100;
     const hoy = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
     const emisor = emisorMEP();
-    const aMEP = t => String(t).replace(/Max Power( Electrical Solutions)?( LLC| Inc\.?)?/g, emisor);
+    const deMaxPower = emisor === EMISOR_MAXPOWER;
+    const aMEP = t => deMaxPower ? String(t) : String(t).replace(/Max Power( Electrical Solutions)?( LLC| Inc\.?)?/g, emisor);
     // el alcance: nombres de lo que se instala, por sección, sin cantidades ni
     // precios; fuera los renglones que son solo horas de proyecto
     const soloHoras = new Set(HORAS_REGLAS.map(r => normTxt(r.item)));
@@ -7704,6 +7706,7 @@ function esFalloDeRed(err) {
     const sujetas = lineasSujetasACuota(est, c);
     const l = [];
     l.push(emisor);
+    if (deMaxPower) l.push("FL EC License #EC13016045 · mxpes.com");
     l.push(`ELECTRICAL PROPOSAL — ${est.nombre}`);
     l.push(`To: ${est.cliente || "________"}   ·   Date: ${hoy}`);
     l.push("");
@@ -9179,8 +9182,8 @@ Power done right the first time. ⚡`;
       </div>
       <div class="cal-panel-card acciones">
         ${esMEP(est) ? `
-        <p class="lev-nota" style="margin:0 0 .5rem">Este trabajo es de <strong>MXP MEP</strong>, no tuyo: no crea proyecto ni contrato de Max Power.
-          Al cliente va la <b>propuesta lump sum</b> (sin overhead, profit ni hora cargada). <b>Congélalo</b> antes de mandarla:
+        <p class="lev-nota" style="margin:0 0 .5rem">Trabajo <strong>MXP MEP</strong> (con Roger): usa las tarifas de MXP MEP.
+          Al cliente va la <b>propuesta lump sum</b> a nombre de <b>${esc(emisorMEP())}</b> (sin overhead, profit ni hora cargada). <b>Congélalo</b> antes de mandarla:
           así el número que ofertaste queda guardado aunque cambien los escenarios.</p>
         <button class="accion" id="btn-est-prop-mep">📄 Propuesta lump sum para el cliente</button>
         <button class="accion secundaria" id="btn-est-propuesta">🔒 Resumen interno (con overhead y profit — NO se manda)</button>
