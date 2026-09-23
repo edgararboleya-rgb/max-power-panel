@@ -14,7 +14,7 @@
 3. Decidir con el CPA el método libro de depreciación (espejo fiscal o línea
    recta) — ▶ antes de f12.
 
-## 🔵 Fable
+## 🔵 Azul — se crea (`/effort max`)
 
 - **El cierre y la ronda nocturna.** `select cron.schedule('ronda_contable',
   '0 11 * * *', $$select fn_ronda()$$)` — 11:00 UTC = 6 am de Miami en
@@ -47,7 +47,7 @@
   falla; la restauración: respaldo de Postgres primero, CSV solo como camino
   legible de último recurso).
 
-## 🟢 Opus
+## 🟢 Verde — se trabaja encima (`/effort auto`)
 
 - **Export v1:** CSV desde las vistas (mayor con saldo corrido, procedencia y
   sello de IA) y PDF por el camino de imprimir que la app ya usa, guardados en

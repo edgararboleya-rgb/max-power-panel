@@ -12,7 +12,7 @@
 2. Decidir si quieres el export a Google Drive además del correo y el Storage
    (v2 opcional, con OAuth). Si sí, dar el acceso una semana antes.
 
-## 🔵 Fable
+## 🔵 Azul — se crea (`/effort max`)
 
 - **El camino de vuelta al estimador.** Qué aprende `catalogo_items` y qué
   aprenden los `ensambles` de una obra cerrada: el real por cost code (Fase 9)
@@ -28,7 +28,7 @@
   inventada** — se proyectan solo si el hito tiene `fecha_esperada` que Edgar
   puso; si no, no aparecen.
 
-## 🟢 Opus
+## 🟢 Verde — se trabaja encima (`/effort auto`)
 
 - **Catálogo de servicios** desde `catalogo_items` y `ensambles`, no de una
   lista tecleada aparte.

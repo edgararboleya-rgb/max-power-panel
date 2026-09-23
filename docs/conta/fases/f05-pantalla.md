@@ -8,14 +8,14 @@
 ## Tú
 Abrirla y decir qué falta.
 
-## 🔵 Fable *(en la semana 4, con f04)*
+## 🔵 Azul — se crea (`/effort max`) *(en la semana 4, con f04)*
 El esqueleto de `js/conta.js` y **el patrón de falla ruidosa**: toda consulta
 financiera declara cuántas filas esperaba, y cero donde debería haber datos
 **detiene la pantalla** en vez de dibujar un cero. Es lo contrario del
 `.catch(() => [])` que la app usa 48 veces — bien para la obra, veneno para la
 contabilidad.
 
-## 🟢 Opus
+## 🟢 Verde — se trabaja encima (`/effort auto`)
 - Balanza y P&L colgados del esqueleto, con el clic hasta el asiento y del
   asiento al recibo con su foto.
 - **`conta.js` es solo-online**: si `navigator.onLine` es falso o la primera

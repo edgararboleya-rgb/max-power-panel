@@ -21,7 +21,7 @@
    año—, cruzado contra `trabajos_externos`, y se presenta antes del
    **1-feb-2027**. La app produce el de 2027 en enero de 2028.
 
-## 🔵 Fable *(chico)*
+## 🔵 Azul — se crea (`/effort max`) *(chico)*
 
 - **La cédula de corte:** qué auxiliar sostiene cada saldo de balance y de
   dónde sale — CxC por factura con retención por obra; tickets abiertos por
@@ -36,7 +36,7 @@
   excluye lo pagado con tarjeta (lo reporta el procesador) y a corporaciones;
   cuentan los asientos pagados desde 1010/1020.
 
-## 🟢 Opus
+## 🟢 Verde — se trabaja encima (`/effort auto`)
 
 - Campos en `proveedores` / `externos_equipo` —**nunca en `contratistas`, que
   son los GC clientes**—: `tin` (solo dueño por RLS), `direccion`,

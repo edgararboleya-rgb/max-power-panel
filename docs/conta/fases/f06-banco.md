@@ -13,7 +13,7 @@
    empleados dados de alta (W-4, depósito directo) **antes del 11-dic**. Ver f11.
 3. Los statements de préstamo y la póliza de cada seguro pagado por adelantado.
 
-## 🔵 Fable
+## 🔵 Azul — se crea (`/effort max`)
 
 - **Idempotencia** por movimiento **y entre archivos**: la salida del banco y
   el abono en la tarjeta son el mismo dinero.
@@ -37,7 +37,7 @@
   y función SQL que propone la partición capital/interés de cada cuota; el
   statement del prestamista manda sobre la función.
 
-## 🟢 Opus
+## 🟢 Verde — se trabaja encima (`/effort auto`)
 Un lector por banco y por tarjeta. El importador de archivo **se queda para
 siempre**. La pantalla de aplicación de cobros y de pagos, y el botón que
 sustituye a `cambiarFactura({pagada:true})`.

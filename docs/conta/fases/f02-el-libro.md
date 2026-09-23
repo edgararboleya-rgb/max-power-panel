@@ -9,7 +9,7 @@
 Pegar `c2-libro.sql` y luego `c2-pruebas.sql`, y confirmar que corrieron.
 Decidir la regla de fecha del reverso.
 
-## 🔵 Fable crea
+## 🔵 Azul — se crea (`/effort max`)
 
 - `asientos`, `asiento_lineas`, `periodos`, `contadores`. (`cuentas` viene con
   su DDL de f01; aquí: código inmutable, no se borra con movimientos, se
@@ -73,7 +73,7 @@ Decidir la regla de fecha del reverso.
   `_rpc: (fn, cuerpo) => api("rpc/" + fn, { metodo: "POST", cuerpo })` —
   anotadas en `PUBLICAR.md` como parche de la sesión de contabilidad.
 
-## 🟢 Opus prueba
+## 🟢 Verde — se trabaja encima (`/effort auto`)
 
 Las pruebas van en **`docs/conta/c2-pruebas.sql`**, que Edgar pega después de
 `c2-libro.sql`: son invariantes de Postgres con roles reales, y Playwright

@@ -16,7 +16,7 @@
    QuickBooks conservan su número) y subir la acción de factura por email en
    `correo`.
 
-## 🔵 Fable
+## 🔵 Azul — se crea (`/effort max`)
 
 - **Dónde vive el WIP.** `alcances` extendida (tipo `'CO'`, `estado`
   propuesto/aprobado/rechazado, `aprobado_el`, `documento_id`); el precio del
@@ -40,7 +40,7 @@
   hasta el 31-dic** porque diciembre se lleva en los dos sistemas; se apaga en
   f15.
 
-## 🟢 Opus
+## 🟢 Verde — se trabaja encima (`/effort auto`)
 - **Plantilla básica de factura**: por hito (`hitos`), por porcentaje simple y
   T&M — sin línea de impuesto mientras no se venda material suelto. **Es
   requisito del corte: el 2 de enero hay que poder facturar.**

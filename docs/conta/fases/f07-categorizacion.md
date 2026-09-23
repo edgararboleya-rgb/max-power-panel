@@ -13,7 +13,7 @@
    estimador). El `effort`, el caché y el sello viven en esa función, no en el
    navegador.
 
-## 🔵 Fable
+## 🔵 Azul — se crea (`/effort max`)
 
 - **El motor de reglas determinista**, con reglas que **parten un movimiento en
   varias líneas** (la cuota del vehículo: Dr 2520 + Dr 7100 / Cr 1010, con la
@@ -40,10 +40,10 @@
 - **Criterio de use tax:** compra sin impuesto visible → propone Dr 5100 /
   Cr 2300 por el 7,5 %, respetando el tope del surtax que `e13b` ya advierte.
 
-## 🟢 Opus
+## 🟢 Verde — se trabaja encima (`/effort auto`)
 La pantalla, el editor de reglas, y el cliente en `conta.js` (copiando el
 manejo de 401 y «Sin señal» de `pedirAlCerebro`, contra
-`/functions/v1/contador`). Las llamadas a `claude-opus-5` con
+`/functions/v1/contador`). Las llamadas a `claude-opus-5-5` con
 `output_config: {effort: "low"}` **en ráfaga al abrir la bandeja** — esperando
 la primera respuesta antes de disparar el resto, para que el caché exista. El
 prefijo (plan de cuentas + reglas, ordenado y sin fechas) con `cache_control`,

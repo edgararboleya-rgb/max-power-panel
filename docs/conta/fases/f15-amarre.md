@@ -6,7 +6,7 @@ Dar el visto bueno **sobre la tabla de diferencias del paralelo**. Confirmar
 las fechas de pago de la última nómina vieja (≤ 31-dic) y la primera en Gusto
 (≥ 4-ene).
 
-## 🟢 Opus
+## 🟢 Verde — se trabaja encima (`/effort auto`)
 - **Apagar la función `qb`** y activar el camino nuevo de 🧾 desde el 1-ene;
   retirar la casilla manual `pagada`/`cobrado` (desde ahora las mantiene
   `cobros`).

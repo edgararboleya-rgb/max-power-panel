@@ -21,7 +21,7 @@
 5. Revisar una muestra de asientos generados contra lo que tú habrías hecho a
    mano.
 
-## 🔵 Fable
+## 🔵 Azul — se crea (`/effort max`)
 
 - **El contrato** que siguen todos: idempotencia (un origen, un asiento;
   correr dos veces no duplica); **el papel no se toca** — columna
@@ -68,7 +68,7 @@
   (QuickBooks no lo trae por obra: Edgar lo aporta o valida). La carga es 🟢 de
   f04.
 
-## 🟢 Opus
+## 🟢 Verde — se trabaja encima (`/effort auto`)
 
 - `recibos` → Dr 5100 (obra, cost code, **total con impuesto incluido**; nunca
   una línea a 2300 desde un recibo) / Cr 2010-proveedor, 2100-x, 1010 o 2900

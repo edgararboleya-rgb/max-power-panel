@@ -14,7 +14,7 @@
 **Lo que se contesta con una resta, lo contesta Postgres. Nunca el modelo.**
 Un modelo de lenguaje es un analista excelente y un sumador mediocre.
 
-## 🔵 Fable diseña
+## 🔵 Azul — se crea (`/effort max`)
 - **Explicar el descuadre.** El código dice *«faltan $1.240»*. La IA dice
   *«el recibo de CED del 12 entró dos veces, el segundo con otro número de
   transacción»* y **propone** el reverso.
@@ -24,7 +24,7 @@ Un modelo de lenguaje es un analista excelente y un sumador mediocre.
   40 % arriba de tu estimador, y el 80 % entró en tres días.»*
 - **Redactar** la nota del cierre y el resumen para el CPA.
 
-## 🟢 Opus construye
+## 🟢 Verde — se trabaja encima (`/effort auto`)
 **Extiende** la bandeja de f07 a los tipos nuevos de propuesta (reverso,
 conciliación, alerta) y arma la conversación sobre los libros. Acciones nuevas
 en `contador`, con el mismo esqueleto.
@@ -40,5 +40,5 @@ en `contador`, con el mismo esqueleto.
 3. **Tope duro** en `asistente_costo_mes` / `tope_mes_centavos`.
 
 ## Modelos dentro de la app (no es el color de la sesión)
-Fable 5.1 a `high`/`xhigh` para el auditor y para explicar. Opus 5 a `high`
+Opus 5.5 a `xhigh`/`max` para el auditor y para explicar (si en casos reales se queda corto, esa acción sube a Fable 5.1). Opus 5.5 a `medium`
 para leer y redactar, a `low` para lo repetitivo. **Ni Haiku ni Sonnet.**

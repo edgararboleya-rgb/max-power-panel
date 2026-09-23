@@ -18,14 +18,14 @@ code, por obra. El camino de vuelta (que la obra corrija al estimador) se
 3. Fijar `conta_config.burden_estandar_pct` — **una sola tasa**, no por
    escenario — para el costo estándar mientras no exista el journal.
 
-## 🔵 Fable
+## 🔵 Azul — se crea (`/effort max`)
 
 Casar el gasto real con el cost code y la receta.
 
 **El reparto de mano de obra y burden sobre las horas aprobadas de cada obra y
 período — diseñado aquí, una sola vez. f11 solo lo alimenta con el journal
 real.** *(Antes estaba diseñado en f03, f09 y f11, en orden invertido: Opus lo
-construía en octubre lo que Fable diseñaba en noviembre.)*
+construía en octubre lo que el azul diseñaba en noviembre.)*
 
 Mientras no exista f11: **costo estándar** de mano de obra (tarifa de
 `costos_equipo` × `burden_estandar_pct`) etiquetado **«estándar, no real»**, y
@@ -43,7 +43,7 @@ escenarios.benefits)` del escenario con que se cotizó (`estimados.escenario`).
 Base contra base y CO contra su estimado (el CO vive en `alcances`, f10).
 Margen por obra, por fase y por código.
 
-## 🟢 Opus
+## 🟢 Verde — se trabaja encima (`/effort auto`)
 Las pantallas y los reportes. **El alcance de la primera versión, dicho con
 honestidad:** por obra y por cuenta con todo el histórico; **por cost code solo
 desde octubre** (lo capturado con código); la obra cerrada que Edgar valida se

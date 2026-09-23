@@ -14,7 +14,7 @@
    criterio (retención partida a 1120, lo que QuickBooks no modela) quedan
    escritas en la tabla de diferencias.
 
-## 🔵 Fable
+## 🔵 Azul — se crea (`/effort max`)
 
 El mapeo del mayor a los estados (signos, contra-activos, arrastre: 3900 = 3900
 de apertura + resultados de ejercicios cerrados; 3200 de ejercicios cerrados se
@@ -30,7 +30,7 @@ Y **el esqueleto de `js/conta.js`** con el patrón de falla ruidosa:
 `fn_estado(periodo)` como fila de control; si `cuadra = false` o `filas = 0`
 donde el período tiene asientos, la pantalla se niega a pintar y dice cuál.
 
-## 🟢 Opus
+## 🟢 Verde — se trabaja encima (`/effort auto`)
 
 `c4-estados.sql` como vistas; balanza, comparativos mes contra mes, el clic de
 cualquier cifra hasta el asiento.

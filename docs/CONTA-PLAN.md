@@ -19,22 +19,27 @@ sabe que terminó.
 
 ---
 
-## El verde y el azul — qué modelo trabaja cada paso
+## El verde y el azul — cuánto piensa el modelo en cada paso
 
-| | Modelo | Para qué |
-|---|---|---|
-| 🔵 **AZUL** | Claude Fable 5.1 (`claude-fable-5-1`) | **Crea lo delicado.** El diseño, la estructura, el criterio, lo que si sale torcido contamina todo lo que venga después. |
-| 🟢 **VERDE** | Claude Opus 5 (`claude-opus-5`) | **Trabaja encima de lo que el azul ya dejó hecho.** Repetir el patrón, extender, pulir, probar, pegar. |
-| ▶ | — | **Necesita a Edgar.** Decidir, pegar, contratar, auditar, dar el visto bueno. |
+Desde el 23-sep-2026 los dos colores son **el mismo modelo, Claude Opus 5.5**,
+a distinto esfuerzo. Opus 5.5 salió el 22-sep y en los benchmarks públicos
+iguala o supera a Fable 5.1 a un 40 % de su precio.
+
+| | Qué es | Cómo se pone | Para qué |
+|---|---|---|---|
+| 🔵 **AZUL** | Opus 5.5 a esfuerzo **máximo** | `/effort max` | **Crea lo delicado.** El diseño, la estructura, el criterio, lo que si sale torcido contamina todo lo que venga después. |
+| 🟢 **VERDE** | Opus 5.5 al esfuerzo **normal** | `/effort auto` | **Trabaja encima de lo que el azul ya dejó hecho.** Repetir el patrón, extender, pulir, probar, pegar. |
+| ⬆ **ESCALADA** | Claude Fable 5.1 | `/model claude-fable-5-1` | Solo si una fase azul salió y el resultado **no convence**. Se rehace con el mismo contexto. Es lo que recomienda Anthropic: Opus 5.5 primero; Fable cuando `xhigh`/`max` se queda corto. |
+| ▶ | — | — | **Necesita a Edgar.** Decidir, pegar, contratar, auditar, dar el visto bueno. |
+
+Precios por millón de tokens: Opus 5.5 **$4 / $20** (caché $0,20) · Fable 5.1
+$10 / $50. **Ya no hay que cambiar de modelo a media fase**: solo el esfuerzo.
 
 Casi toda fase lleva los dos: **el azul crea el primero, el verde hace los
-otros nueve**. Ahí está el ahorro de verdad — no en escatimar azul donde hace
-falta, sino en que lo que el azul diseña una vez, el verde lo multiplica
-barato. Fable cuesta el doble ($10/$50 contra $5/$25 por millón), así que
-pagarlo en el diseño rinde y pagarlo en el relleno no.
+otros nueve**. Pensar al máximo se paga en el diseño; en el relleno, no.
 
-La sesión avisa **«esta parte va en azul»** o **«ahora cámbiate a verde»**
-antes de cada bloque, y espera a que Edgar cambie el modelo.
+La sesión avisa **«esta parte va en azul»** o **«ahora pásate a verde»** antes
+de cada bloque, y espera a que Edgar cambie el esfuerzo.
 
 > **El color dice qué modelo escribe en la sesión.** Qué modelo corre *dentro
 > de la app* está en el punto 4 y es otra decisión; el aviso «cámbiate a
@@ -43,8 +48,9 @@ antes de cada bloque, y espera a que Edgar cambie el modelo.
 ### Antes de abrir muchos agentes, se avisa
 
 Un abanico de agentes (`Workflow`) **hereda el modelo de la sesión** y lo
-multiplica por el número de agentes. Una auditoría de 200 agentes lanzada
-desde una sesión azul cuesta 200 veces azul.
+multiplica por el número de agentes. El 21-sep una auditoría de 203 agentes
+salió en Fable porque la sesión estaba en Fable. Con Opus 5.5 en los dos
+colores ese riesgo baja mucho, pero la regla se queda.
 
 **Regla: antes de abrir un abanico, la sesión dice cuántos agentes y en qué
 modelo. Edgar decide.** No es «minimizar Fable» — si el trabajo pide azul, va
@@ -185,9 +191,14 @@ hecho es justamente lo que ensucia un libro.
 
 | Tarea | Modelo | Esfuerzo |
 |---|---|---|
-| Categorizar movimientos, casar recibo con gasto | `claude-opus-5` | `low` |
-| Leer un recibo, resumir el mes, redactar la nota del cierre | `claude-opus-5` | `high` |
-| **El auditor**, explicar un descuadre, proponer el reverso, oler lo raro, conversar | `claude-fable-5-1` | `high` / `xhigh` |
+| Categorizar movimientos, casar recibo con gasto | `claude-opus-5-5` | `low` |
+| Leer un recibo, resumir el mes, redactar la nota del cierre | `claude-opus-5-5` | `medium` (su normal) |
+| **El auditor**, explicar un descuadre, proponer el reverso, oler lo raro, conversar | `claude-opus-5-5` | `xhigh` / `max` |
+
+Si en la Fase 16 el auditor a `max` se queda corto en casos reales, esa acción
+concreta sube a `claude-fable-5-1` — la misma regla de escalada que en las
+sesiones. **Ojo:** el esfuerzo por defecto de Opus 5.5 es `medium`, no `high`;
+se fija siempre explícito.
 
 ### Cómo se paga eso sin que se dispare
 
@@ -277,9 +288,9 @@ a la apertura del 30-sep-2026 postea por puente**: eso ya está en QuickBooks.
 
 ## 6. El calendario
 
-🔵 **azul = Fable crea** · 🟢 **verde = Opus trabaja encima** · ▶ **necesita a Edgar**
+🔵 **azul = Opus 5.5 `/effort max`, crea** · 🟢 **verde = Opus 5.5 `/effort auto`, trabaja encima** · ▶ **necesita a Edgar**
 
-| # | Semana | Fase | 🔵 Lo que crea Fable | 🟢 Lo que trabaja Opus |
+| # | Semana | Fase | 🔵 Lo que se crea (azul) | 🟢 Lo que se trabaja encima (verde) |
 |---|---|---|---|---|
 | 1 | 21–27 sep | 1 Plan de cuentas | Estructura, DDL de `cuentas`, dimensiones, cuentas nuevas, bloque 0. ▶ Reaccionas al borrador y decides los cost codes. | Los INSERT y los 20 `cost_codes` en `c1`. ▶ Pegar y devolver el bloque 0. |
 | 2 | 28 sep–4 oct | 2 El libro | Tablas, `fn_postear` (cuadre, número, escala, SQLSTATE, hash), triggers de inmutabilidad y período, RLS de lectura, `fn_reversar`, fecha Miami. | `c2-pruebas.sql`: las nueve pruebas que lo atacan. ▶ Pegar. |
@@ -298,7 +309,7 @@ a la apertura del 30-sep-2026 postea por puente**: eso ya está en QuickBooks.
 
 ### Después del corte
 
-| # | Cuándo | 🔵 Lo que crea Fable | 🟢 Lo que trabaja Opus |
+| # | Cuándo | 🔵 Lo que se crea (azul) | 🟢 Lo que se trabaja encima (verde) |
 |---|---|---|---|
 | — | enero 2027 | — | **En vivo.** Semana del 18-ene: cuadre contra la balanza preliminar de QuickBooks al 31-dic con statements de diciembre, un solo asiento de ajuste por las diferencias de error, cierre de 2026-12 y del período de apertura. ▶ **1099 de 2026 desde QuickBooks** cruzado contra `trabajos_externos`, antes del **1 de febrero** (el 31-ene es domingo). ▶ Los W-2 y el 941 del Q4 los emite quien llevó la nómina en 2026: **no cortar ese acceso hasta tenerlos**. |
 | 16 | febrero 2027 | El analista sobre el contrato de la IA de f07. | Extiende la bandeja de f07 a reverso, conciliación y alerta; la conversación. |
@@ -343,9 +354,9 @@ a la apertura del 30-sep-2026 postea por puente**: eso ya está en QuickBooks.
 5. **Dos sesiones por semana, no cinco.** Cada sesión paga un costo fijo de
    orientarse.
 6. **No pidas «revisa todo».** Pide el paso que sigue.
-7. **El azul se paga en el diseño, no en el relleno.** Fable crea el primer
-   puente; Opus hace los otros tres con el mismo molde.
-8. **Dentro de la app también: solo Opus y Fable** (punto 4). Lo que se regula
+7. **El azul se paga en el diseño, no en el relleno.** `/effort max` crea el
+   primer puente; `/effort auto` hace los otros tres con el mismo molde.
+8. **Dentro de la app también: Opus 5.5, y Fable solo como escalada** (punto 4). Lo que se regula
    es el **esfuerzo**, no el modelo — `effort: low` en lo repetitivo, prefijo
    cacheado en ráfaga. Batches, después del corte si el gasto lo justifica.
 9. **Antes de un abanico de agentes, se avisa.** Ver la cabecera.
@@ -377,7 +388,7 @@ a la apertura del 30-sep-2026 postea por puente**: eso ya está en QuickBooks.
 
 ## 9. Dónde vamos
 
-🔵 azul = Fable crea · 🟢 verde = Opus trabaja encima · ▶ necesita a Edgar
+🔵 azul = `/effort max` · 🟢 verde = `/effort auto` · ⬆ escalada a Fable si no convence · ▶ necesita a Edgar
 
 - [ ] Fase 1 · Plan de cuentas — 🔵🟢 ▶ reaccionas al borrador y decides los cost codes
 - [ ] Fase 2 · El libro — 🔵🟢 ▶ pegas

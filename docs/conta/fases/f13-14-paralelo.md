@@ -9,13 +9,13 @@ de cada quincena. Por obra solo si llevas Customer:Job en QuickBooks. Es
 trabajo doble durante dos semanas, una sola vez en la vida, y es lo que te deja
 arrancar el 1 de enero sin apostar.
 
-## 🟢 Opus
+## 🟢 Verde — se trabaja encima (`/effort auto`)
 Arreglar cada diferencia que aparezca, una por una, **cada una en la tabla de
 diferencias de f04** con su clasificación (puente / mapeo / criterio) y su
 explicación. **Sin tolerancia por monto**: se arregla, o se clasifica como
 criterio con explicación escrita.
 
-## 🔵 Fable
+## 🔵 Azul — se crea (`/effort max`)
 Solo la diferencia que se resista, con **la regla de escalada**: una diferencia
 abierta tras una sesión verde, o que toque cuadre, período, idempotencia o
 mapeo, pasa a azul. *Una diferencia que no cede no es un bug: es un fallo de

@@ -151,7 +151,7 @@ renglones. Con A, la Fase 9 se vuelve impracticable.
 
 ## Lo que se construye
 
-**🔵 Fable:** la estructura final, la numeración y la jerarquía. La **DDL de
+**🔵 Azul (`/effort max`):** la estructura final, la numeración y la jerarquía. La **DDL de
 `cuentas`** (código inmutable, tipo, padre, saldo normal, activa, `nombre_en`
 para el CPA, `etiqueta_fiscal` text — p. ej. `'M&E 50%'`, `'1099'`,
 `'vehiculo'`). La tabla `cost_codes` con FK desde `asiento_lineas.cost_code`, y
@@ -175,7 +175,7 @@ más `pg_policies` y las vistas que dependen de esas tablas
 `numeric(14,2)`**: el repo guarda precios de 4 decimales; el redondeo a
 centavos vive solo en `asiento_lineas.monto`.
 
-**🟢 Opus:** solo los INSERT del plan y la carga de los 20 códigos desde
+**🟢 Verde (`/effort auto`):** solo los INSERT del plan y la carga de los 20 códigos desde
 `catalogo_items.codigo`, en el mismo `docs/conta/c1-plan-de-cuentas.sql`.
 
 ## Se sabe que terminó cuando

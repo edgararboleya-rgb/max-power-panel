@@ -19,7 +19,7 @@ RT-6. Eso lo hace el proveedor. Si retienes y no depositas a tiempo existe la
 Trust Fund Recovery Penalty, que atraviesa la corporación y te la cobran a ti
 personalmente. Ningún ahorro de software vale eso.
 
-## 🔵 Fable
+## 🔵 Azul — se crea (`/effort max`)
 El modelo de la corrida —`nomina_corridas`, `nomina_reparto`— y **el asiento
 real**: Dr 5000 bruto por obra según horas aprobadas del período (el reparto se
 diseñó en f09), Dr 5010 impuestos patronales **reales del journal**
@@ -30,7 +30,7 @@ auditoría anual a 5010. **GL solo en 6200.** Nunca una lectura de `escenarios`.
 **Este journal es la ÚNICA fuente de dólares de 5000/5010**; el devengo de
 horas de f03, si existe, ya se reversó el día 1.
 
-## 🟢 Opus
+## 🟢 Verde — se trabaja encima (`/effort auto`)
 La plomería: lector del export del diario del proveedor, igual que el
 importador de banco (**la API es opcional: el archivo nunca falla**); el
 reparto por horas aprobadas; el cierre de la variación de burden a 5019 en f08;
