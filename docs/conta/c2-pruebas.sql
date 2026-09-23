@@ -724,8 +724,9 @@ end $$;
 --     triggers de las líneas, mueve 10.00 de un lado a otro (el asiento
 --     sigue cuadrado) y los vuelve a encender. Mientras están apagados,
 --     fn_verificar_cadena lo dice (triggers); después, la cadena de
---     hashes delata el cambio (hash). Si el editor NO pudiera apagarlos,
---     la prueba lo apunta como bueno: tampoco hay por dónde entrar.
+--     hashes delata el cambio (hash). Si el editor no tuviera permiso
+--     para apagarlos (42501), la prueba lo apunta como bueno: tampoco hay
+--     por dónde entrar. Cualquier otro error es un fallo.
 do $$
 declare
   v_bueno   jsonb := nullif(current_setting('mx_pruebas.bueno', true), '')::jsonb;
@@ -1210,7 +1211,81 @@ begin
   insert into _pruebas values (36, 'reversible sin su reverso no llega al commit', 'MX007', v_obt, v_obt like 'MX007 %');
 end $$;
 
--- 37. Las pruebas no dejaron rastro: el libro está igual que al empezar.
+-- 37. El asiento de apertura es balance únicamente: una línea a una
+--     cuenta de resultados (5xxx) → MX006. Solo mientras la apertura siga
+--     abierta (después, la base ya no deja escribir ahí: MX002).
+do $$
+declare
+  v_dueno    uuid  := nullif(current_setting('mx_pruebas.dueno', true), '')::uuid;
+  v_bueno    jsonb := nullif(current_setting('mx_pruebas.bueno', true), '')::jsonb;
+  v_apertura date  := nullif(current_setting('mx_pruebas.apertura', true), '')::date;
+  v_abierta  boolean;
+  v_obt      text;
+begin
+  select p.estado = 'abierto' into v_abierta from periodos p where p.tipo = 'apertura' and p.desde = v_apertura;
+  if v_dueno is null or v_bueno is null or not coalesce(v_abierta, false) then
+    insert into _pruebas values (37, 'la apertura es balance únicamente', 'MX006', 'omitida: falta dueño o la apertura ya está cerrada', null);
+    return;
+  end if;
+  begin
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform fn_postear(jsonb_set(v_bueno, '{fecha}', to_jsonb(to_char(v_apertura, 'YYYY-MM-DD')))
+                       || '{"tipo": "apertura"}'::jsonb);
+    v_obt := 'entró';
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
+  end;
+  insert into _pruebas values (37, 'la apertura es balance únicamente', 'MX006', v_obt, v_obt like 'MX006 %');
+end $$;
+
+-- 38. Un documento, un asiento: el mismo papel posteado dos veces por un
+--     puente → el segundo da 23505 en asientos_origen_unico. Es la
+--     idempotencia que usan los puentes de f03 (correr dos veces no
+--     duplica). El puente se simula desde el SQL Editor.
+do $$
+declare
+  v_obra  text := nullif(current_setting('mx_pruebas.obra', true), '');
+  v_cc    text := nullif(current_setting('mx_pruebas.cc', true), '');
+  v_c5    text := nullif(current_setting('mx_pruebas.c5', true), '');
+  v_banco text := nullif(current_setting('mx_pruebas.banco', true), '');
+  v_mes   text := nullif(current_setting('mx_pruebas.mes', true), '');
+  v_desde date := nullif(current_setting('mx_pruebas.desde', true), '')::date;
+  v_id1   uuid := gen_random_uuid();
+  v_id2   uuid := gen_random_uuid();
+  v_anio  int;
+  v_obt   text;
+begin
+  if v_obra is null or v_cc is null or v_c5 is null or v_banco is null or v_mes is null then
+    insert into _pruebas values (38, 'un documento, un asiento (el puente corre dos veces)', '23505', 'omitida: falta obra, cuenta o mes abierto', null);
+    return;
+  end if;
+  v_anio := extract(year from v_desde)::int;
+  begin
+    insert into asiento_lineas (asiento_id, orden, cuenta, monto, proyecto_id, cost_code)
+    values (v_id1, 1, v_c5, 100.00, v_obra, v_cc), (v_id1, 2, v_banco, -100.00, null, null);
+    insert into asientos (id, numero, anio, secuencia, cadena_pos, fecha_contable, periodo, camino, descripcion,
+                          origen_tabla, origen_id, hash_anterior, hash)
+    values (v_id1, v_anio || '-999995', v_anio, 999995, 999999995, v_desde + 4, v_mes, 'puente',
+            'c2-pruebas: recibo por puente', 'recibos', 'c2-pruebas-1', repeat('0', 64), repeat('b', 64));
+    insert into asiento_lineas (asiento_id, orden, cuenta, monto, proyecto_id, cost_code)
+    values (v_id2, 1, v_c5, 100.00, v_obra, v_cc), (v_id2, 2, v_banco, -100.00, null, null);
+    insert into asientos (id, numero, anio, secuencia, cadena_pos, fecha_contable, periodo, camino, descripcion,
+                          origen_tabla, origen_id, hash_anterior, hash)
+    values (v_id2, v_anio || '-999994', v_anio, 999994, 999999994, v_desde + 4, v_mes, 'puente',
+            'c2-pruebas: el mismo recibo otra vez', 'recibos', 'c2-pruebas-1', repeat('1', 64), repeat('a', 64));
+    v_obt := 'entró';
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
+  end;
+  insert into _pruebas values (38, 'un documento, un asiento (el puente corre dos veces)', '23505', v_obt, v_obt like '23505 %');
+end $$;
+
+-- 39. Las pruebas no dejaron rastro: el libro está igual que al empezar.
 do $$
 declare
   v_antes text := current_setting('mx_pruebas.foto', true);
@@ -1222,7 +1297,7 @@ begin
                 (select count(*) from periodos where estado = 'cerrado'),
                 (select count(*) from cuentas where not activa))
     into v_obt;
-  insert into _pruebas values (37, 'las pruebas no dejan rastro', v_antes, v_obt, v_obt = v_antes);
+  insert into _pruebas values (39, 'las pruebas no dejan rastro', v_antes, v_obt, v_obt = v_antes);
 end $$;
 
 select * from _pruebas order by n;

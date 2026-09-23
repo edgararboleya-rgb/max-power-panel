@@ -519,6 +519,32 @@ end $$;
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
+-- B.0 · Quién lee. Lo PRIMERO del bloque B: las tablas del bloque A nacen
+-- abiertas (así es Supabase) y aquí se cierran antes que nada. Es el
+-- bloque fijo de todo docs/conta/c*.sql, tabla por tabla: solo el dueño
+-- lee (policy); nadie de la API escribe (todo entra por las funciones);
+-- anon, nada. service_role conserva la lectura (la función «contador» de
+-- f07 lee para proponer) y ninguna escritura. Los triggers, además,
+-- frenan al propio SQL Editor.
+-- ---------------------------------------------------------------------
+do $$
+declare
+  t text;
+begin
+  foreach t in array array['periodos','contadores','asientos','asiento_lineas'] loop
+    execute format('alter table public.%I enable row level security', t);
+    execute format('revoke all on public.%I from anon', t);
+    execute format('revoke insert, update, delete, truncate, references, trigger on public.%I from authenticated, service_role', t);
+    execute format('grant select on public.%I to authenticated, service_role', t);
+    execute format('drop policy if exists %I on public.%I', t || '_dueno', t);
+    execute format('create policy %I on public.%I for select to authenticated using (es_dueno())', t || '_dueno', t);
+  end loop;
+  -- La secuencia de los id de línea tampoco es de la API.
+  execute format('revoke all on sequence %s from anon, authenticated, service_role',
+                 pg_get_serial_sequence('public.asiento_lineas', 'id'));
+end $$;
+
+-- ---------------------------------------------------------------------
 -- B.1 · La fecha de Miami, de verdad. Miami no tiene zona propia y 'EST'
 -- no cambia con el verano: se usa America/New_York. Un cargo del 31-dic a
 -- las 7 pm de Miami es 1-ene en UTC; aquí sigue siendo 31-dic, sea cual
@@ -528,6 +554,8 @@ create or replace function public.fn_fecha_miami(t timestamptz) returns date
 language sql stable
 set search_path = public, pg_temp
 as $$ select (t at time zone 'America/New_York')::date $$;
+revoke execute on function public.fn_fecha_miami(timestamptz) from public, anon, authenticated, service_role;
+grant  execute on function public.fn_fecha_miami(timestamptz) to authenticated;
 
 -- ---------------------------------------------------------------------
 -- B.2 · Quién llama. Dentro de una función SECURITY DEFINER current_user
@@ -542,6 +570,7 @@ set search_path = public, pg_temp
 as $$
   select coalesce(nullif(current_setting('role', true), 'none'), session_user::text)
 $$;
+revoke execute on function public.fn_rol_llamante() from public, anon, authenticated, service_role;
 
 -- El SQL Editor: sin «set role» y con la sesión del dueño de las tablas
 -- del libro. Por la API la sesión es de «authenticator», que no es el
@@ -555,6 +584,7 @@ as $$
                      (select c.relowner from pg_class c where c.oid = 'public.asientos'::regclass),
                      'member')
 $$;
+revoke execute on function public.fn_desde_editor() from public, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------
 -- B.3 · La forma canónica de un asiento: el texto exacto que se sella con
@@ -610,6 +640,7 @@ as $$
                 where l.asiento_id = a.id)
   ))::text
 $$;
+revoke execute on function public.fn_asiento_canonico(public.asientos) from public, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------
 -- B.4 · Restricciones que SON controles (por eso no están en el bloque A):
@@ -774,6 +805,7 @@ begin
                                    repeat('0', 64));
   return new;
 end $$;
+revoke execute on function public.fn_periodos_guarda() from public, anon, authenticated, service_role;
 
 create or replace trigger trg_periodos_guarda
   before insert or update or delete on public.periodos
@@ -816,6 +848,7 @@ begin
   end if;
   return new;
 end $$;
+revoke execute on function public.fn_contadores_guarda() from public, anon, authenticated, service_role;
 
 create or replace trigger trg_contadores_guarda
   before insert or update or delete on public.contadores
@@ -903,6 +936,7 @@ begin
   end if;
   return new;
 end $$;
+revoke execute on function public.fn_asiento_lineas_al_insertar() from public, anon, authenticated, service_role;
 
 create or replace trigger trg_asiento_lineas_al_insertar
   before insert on public.asiento_lineas
@@ -1077,6 +1111,7 @@ begin
   new.hash          := encode(sha256(convert_to(fn_asiento_canonico(new), 'UTF8')), 'hex');
   return new;
 end $$;
+revoke execute on function public.fn_asientos_al_insertar() from public, anon, authenticated, service_role;
 
 create or replace trigger trg_asientos_al_insertar
   before insert on public.asientos
@@ -1099,6 +1134,7 @@ begin
     message = format('El libro no se edita ni se borra (%s sobre %s). Un asiento se corrige con fn_reversar '
                      'y, si hace falta, un asiento nuevo.', tg_op, tg_table_name);
 end $$;
+revoke execute on function public.fn_libro_inmutable() from public, anon, authenticated, service_role;
 
 create or replace trigger trg_asientos_inmutable
   before update or delete on public.asientos
@@ -1132,6 +1168,7 @@ begin
   end if;
   return null;
 end $$;
+revoke execute on function public.fn_asientos_reversible_con_reverso() from public, anon, authenticated, service_role;
 
 drop trigger if exists trg_asientos_reversible_diferido on public.asientos;
 create constraint trigger trg_asientos_reversible_diferido
@@ -1362,6 +1399,7 @@ begin
   return jsonb_build_object('id', v_a.id, 'numero', v_a.numero, 'fecha_contable', v_a.fecha_contable,
                             'periodo', v_a.periodo, 'hash', v_a.hash, 'reverso', v_rev);
 end $$;
+revoke execute on function public.fn_postear_interno(jsonb) from public, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------
 -- B.12 · fn_postear(asiento jsonb) — lo que llama conta.js (camino 'mano').
@@ -1394,6 +1432,8 @@ begin
   return fn_postear_interno(p_asiento || jsonb_build_object('camino', 'mano',
                                                             'procedencia', jsonb_build_object('funcion', 'fn_postear')));
 end $$;
+revoke execute on function public.fn_postear(jsonb) from public, anon, authenticated, service_role;
+grant  execute on function public.fn_postear(jsonb) to authenticated;
 
 -- ---------------------------------------------------------------------
 -- B.13 · fn_reversar_interno — la única fábrica de reversos. Genera las
@@ -1478,6 +1518,7 @@ begin
   return jsonb_build_object('id', v_a.id, 'numero', v_a.numero, 'fecha_contable', v_a.fecha_contable,
                             'periodo', v_a.periodo, 'hash', v_a.hash, 'reversa', v_o.numero);
 end $$;
+revoke execute on function public.fn_reversar_interno(uuid, text, text, jsonb) from public, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------
 -- B.14 · fn_reversar(asiento uuid, motivo text) — lo que llama conta.js.
@@ -1496,6 +1537,8 @@ begin
   end if;
   return fn_reversar_interno(p_asiento, p_motivo, 'reverso', jsonb_build_object('funcion', 'fn_reversar'));
 end $$;
+revoke execute on function public.fn_reversar(uuid, text) from public, anon, authenticated, service_role;
+grant  execute on function public.fn_reversar(uuid, text) to authenticated;
 
 
 -- ---------------------------------------------------------------------
@@ -1530,6 +1573,8 @@ as $$
          (select coalesce(sum(l.monto), 0) = 0 from l)
     from p
 $$;
+revoke execute on function public.fn_estado(text) from public, anon, authenticated, service_role;
+grant  execute on function public.fn_estado(text) to authenticated;
 
 -- ---------------------------------------------------------------------
 -- B.16 · fn_verificar_cadena() — lo que no se puede impedir, se detecta.
@@ -1748,6 +1793,8 @@ begin
   detalle := jsonb_build_object('fallan', v_malos);
   return next;
 end $$;
+revoke execute on function public.fn_verificar_cadena() from public, anon, authenticated, service_role;
+grant  execute on function public.fn_verificar_cadena() to authenticated;
 
 -- ---------------------------------------------------------------------
 -- B.17 · fn_cerrar_periodo(periodo) — el dueño cierra un período. Las
@@ -1779,6 +1826,8 @@ begin
   returning * into v_p;
   return to_jsonb(v_p);
 end $$;
+revoke execute on function public.fn_cerrar_periodo(text) from public, anon, authenticated, service_role;
+grant  execute on function public.fn_cerrar_periodo(text) to authenticated;
 
 -- ---------------------------------------------------------------------
 -- B.18 · fn_abrir_periodo('AAAA-MM') — el dueño abre un mes (y su año, si
@@ -1817,70 +1866,25 @@ begin
   select * into v_p from periodos where periodo = p_mes;
   return to_jsonb(v_p);
 end $$;
+revoke execute on function public.fn_abrir_periodo(text) from public, anon, authenticated, service_role;
+grant  execute on function public.fn_abrir_periodo(text) to authenticated;
 
 
 -- ---------------------------------------------------------------------
--- B.19 · Quién lee. El bloque fijo de todo docs/conta/c*.sql, tabla por
--- tabla: solo el dueño lee (policy); nadie de la API escribe (todo entra
--- por las funciones); anon, nada. service_role conserva la lectura (la
--- función «contador» de f07 lee para proponer) y ninguna escritura.
--- Los triggers, además, frenan al propio SQL Editor.
+-- B.19 · Quién ejecuta. En Supabase toda función nace ejecutable por anon
+-- y authenticated; por eso cada función de este archivo lleva su revoke
+-- JUSTO DESPUÉS de crearla (arriba). El reparto queda así:
+--   · internas (triggers, auxiliares, las dos puertas internas): nadie de
+--     la API; solo el dueño de la base y las funciones SECURITY DEFINER;
+--   · las que llama conta.js (fn_postear, fn_reversar, fn_estado,
+--     fn_verificar_cadena, fn_abrir_periodo, fn_cerrar_periodo,
+--     fn_fecha_miami): solo authenticated, y por dentro solo pasa el
+--     dueño; ni anon ni service_role.
+-- fn_verificar_cadena comprueba este reparto cada vez (control permisos).
 -- ---------------------------------------------------------------------
-do $$
-declare
-  t text;
-begin
-  foreach t in array array['periodos','contadores','asientos','asiento_lineas'] loop
-    execute format('alter table public.%I enable row level security', t);
-    execute format('revoke all on public.%I from anon', t);
-    execute format('revoke insert, update, delete, truncate, references, trigger on public.%I from authenticated, service_role', t);
-    execute format('grant select on public.%I to authenticated, service_role', t);
-    execute format('drop policy if exists %I on public.%I', t || '_dueno', t);
-    execute format('create policy %I on public.%I for select to authenticated using (es_dueno())', t || '_dueno', t);
-  end loop;
-  -- La secuencia de los id de línea tampoco es de la API.
-  execute format('revoke all on sequence %s from anon, authenticated, service_role',
-                 pg_get_serial_sequence('public.asiento_lineas', 'id'));
-end $$;
 
 -- ---------------------------------------------------------------------
--- B.20 · Quién ejecuta. En Supabase toda función nace ejecutable por anon
--- y authenticated. Aquí:
---   · internas (triggers, auxiliares, las puertas internas): nadie de la
---     API; solo el dueño de la base y las funciones SECURITY DEFINER;
---   · las que llama conta.js: solo authenticated (y por dentro, solo el
---     dueño pasa); ni anon ni service_role.
--- ---------------------------------------------------------------------
-revoke execute on function public.fn_rol_llamante()                               from public, anon, authenticated, service_role;
-revoke execute on function public.fn_desde_editor()                               from public, anon, authenticated, service_role;
-revoke execute on function public.fn_asiento_canonico(public.asientos)            from public, anon, authenticated, service_role;
-revoke execute on function public.fn_periodos_guarda()                            from public, anon, authenticated, service_role;
-revoke execute on function public.fn_contadores_guarda()                          from public, anon, authenticated, service_role;
-revoke execute on function public.fn_asiento_lineas_al_insertar()                 from public, anon, authenticated, service_role;
-revoke execute on function public.fn_asientos_al_insertar()                       from public, anon, authenticated, service_role;
-revoke execute on function public.fn_libro_inmutable()                            from public, anon, authenticated, service_role;
-revoke execute on function public.fn_asientos_reversible_con_reverso()            from public, anon, authenticated, service_role;
-revoke execute on function public.fn_postear_interno(jsonb)                       from public, anon, authenticated, service_role;
-revoke execute on function public.fn_reversar_interno(uuid, text, text, jsonb)    from public, anon, authenticated, service_role;
-
-revoke execute on function public.fn_postear(jsonb)                               from public, anon, authenticated, service_role;
-revoke execute on function public.fn_reversar(uuid, text)                         from public, anon, authenticated, service_role;
-revoke execute on function public.fn_estado(text)                                 from public, anon, authenticated, service_role;
-revoke execute on function public.fn_verificar_cadena()                           from public, anon, authenticated, service_role;
-revoke execute on function public.fn_cerrar_periodo(text)                         from public, anon, authenticated, service_role;
-revoke execute on function public.fn_abrir_periodo(text)                          from public, anon, authenticated, service_role;
-revoke execute on function public.fn_fecha_miami(timestamptz)                     from public, anon, authenticated, service_role;
-
-grant execute on function public.fn_postear(jsonb)                                to authenticated;
-grant execute on function public.fn_reversar(uuid, text)                          to authenticated;
-grant execute on function public.fn_estado(text)                                  to authenticated;
-grant execute on function public.fn_verificar_cadena()                            to authenticated;
-grant execute on function public.fn_cerrar_periodo(text)                          to authenticated;
-grant execute on function public.fn_abrir_periodo(text)                           to authenticated;
-grant execute on function public.fn_fecha_miami(timestamptz)                      to authenticated;
-
--- ---------------------------------------------------------------------
--- B.21 · Lo que un auditor lee en pg_description (de aquí sale
+-- B.20 · Lo que un auditor lee en pg_description (de aquí sale
 -- docs/conta/MAPA-DATOS.md).
 -- ---------------------------------------------------------------------
 comment on table public.periodos is
