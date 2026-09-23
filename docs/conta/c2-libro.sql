@@ -27,7 +27,8 @@
 --   MX004  cuenta: no existe, está inactiva o es de grupo
 --   MX005  monto: más de dos decimales, cero, no numérico o fuera de rango
 --   MX006  dimensión: la obra, el cost code, el co o la fase no son los
---          que pide la cuenta (cuentas.regla_obra / regla_cost_code)
+--          que pide la cuenta (cuentas.regla_obra / regla_cost_code), o
+--          un asiento de apertura con cuentas de resultados
 --   MX007  reverso: ya reversado, reversar un reverso, reverso que no es
 --          el espejo exacto, o un reversible sin su reverso del día 1
 --   42501  permiso: solo el dueño postea; anon y service_role, nada
@@ -914,7 +915,8 @@ create or replace trigger trg_asiento_lineas_al_insertar
 --   1. Período (MX002): lo pone la base según la fecha, nunca quien
 --      inserta. Toma el período «for share»: si alguien lo está cerrando,
 --      uno espera al otro y el asiento no se cuela en un mes cerrado.
---   2. Cuadre (MX001) con las líneas, que ya entraron.
+--   2. Cuadre (MX001) con las líneas, que ya entraron; y la apertura,
+--      solo con cuentas de balance (MX006).
 --   3. Desde aquí, el candado de la cadena: un asiento a la vez en todo
 --      el libro (se suelta al terminar la transacción).
 --   4. Reverso (MX007): existe el original, no es un reverso, no tiene ya
@@ -999,6 +1001,14 @@ begin
   if v_suma <> 0 then
     raise exception using errcode = 'MX001',
       message = format('Descuadrado: debe %s, haber %s, diferencia %s. No entra.', v_debe, v_debe - v_suma, v_suma);
+  end if;
+  -- La apertura es balance únicamente (f04): los resultados de enero a
+  -- septiembre de 2026 son de QuickBooks y llegan ya dentro del capital.
+  if new.tipo = 'apertura' and exists (
+       select 1 from asiento_lineas l join cuentas c on c.codigo = l.cuenta
+        where l.asiento_id = new.id and c.tipo not in ('activo', 'pasivo', 'capital')) then
+    raise exception using errcode = 'MX006',
+      message = 'El asiento de apertura es balance únicamente: solo cuentas de activo, pasivo y capital.';
   end if;
 
   -- 3. El candado de la cadena.
