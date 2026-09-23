@@ -17,6 +17,7 @@ cayeron a «no».
 | El takeoff contaba dos veces las luminarias de referencia | v210 |
 | `on conflict do nothing` duplicaba el catálogo (sin índice único) | e30/e31 |
 | **Tanda 1**: tipos de línea (logística / allowance / sub) sin tax ni escalación y fuera de la hora cargada; takeoff que cuadra; allowances en la propuesta; validez por estimado; lápiz de precio por renglón; flete e importe único de la cuota; permiso sin marcar con contratista o MEP; ICRA en planos para salud | v212, `pruebas/e35.js` |
+| **Tanda 3**: datos del trabajo (contratante, dueño, dirección, retención); retención como hito aparte al cierre; convertir en proyecto con el número CONGELADO y también desde MXP MEP; adjuntos del estimado que pasan al proyecto; las líneas a mano se reparten entre las opciones A/B/C | v216, `pruebas/e37.js`, `docs/sql/e36` |
 | **Tanda 2**: merma automática solo en planos (decisión de Edgar 23/09); MXP MEP se congela y guarda resultado; propuesta lump sum de MXP MEP para el cliente (Integrated Systems) sin margen; la lista enseña el número congelado | v213, `pruebas/e36.js` |
 
 ## Lo que mueve dinero en Mariners HOY (orden de gravedad)

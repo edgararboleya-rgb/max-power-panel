@@ -6840,6 +6840,134 @@ function esFalloDeRed(err) {
         : r ? `<p class="lev-nota" style="margin:.4rem 0 0">Al marcarlo se guarda el número de hoy (${fmt(c.bid)}) como el que ofertaste. Después ya no se mueve.</p>` : ""}
       </div>`;
   }
+  /* (23/09, Mariners) LOS DATOS DEL TRABAJO. Contratante y cliente se
+     escribían UNA vez, al crear el estimado, y no había dónde tocarlos; la
+     dirección de la obra no tenía casilla (se perdía al convertir); y no había
+     dónde decir quién es el DUEÑO final (Baptist Health) aparte de quién nos
+     contrata, ni la RETENCIÓN que guarda el contratante. Con retención, cada
+     pago sale sin ella y la retención es un hito aparte que se cobra al cierre:
+     así la app no ofrece el release final (F.S. 713.20) con dinero retenido. */
+  const retencionDe = est => { const r = Number(est && est.retencion_pct); return r > 0 && r < 0.5 ? r : 0; };
+  // Los hitos del contrato: 35/40/25 como siempre; con retención, cada uno sin
+  // ella y la retención como cuarto hito, al cierre. Suman el contrato al centavo.
+  function hitosDePago(bid, ret) {
+    const r2 = v => Math.round(v * 100) / 100;
+    const neto = r2(bid * (1 - (ret || 0)));
+    const m1 = r2(neto * 0.35), m2 = r2(neto * 0.40), m3 = r2(neto - m1 - m2);
+    const out = [
+      { titulo: "Milestone 1 — 35% movilización", condicion: "Al aceptar / movilización", monto: m1, orden: 1 },
+      { titulo: "Milestone 2 — 40% avance", condicion: "Rough / avance principal completo", monto: m2, orden: 2 },
+      { titulo: "Milestone 3 — 25% final", condicion: "Al pasar inspección final", monto: m3, orden: 3 }];
+    if (ret) out.push({ titulo: `Retainage — ${Math.round(ret * 1000) / 10}% retenido`, condicion: "Lo libera el contratante al cierre (final pay application)", monto: r2(bid - neto), orden: 4 });
+    return out;
+  }
+  function tarjetaDatosTrabajo(est, soloLectura) {
+    const dis = soloLectura ? " disabled" : "";
+    const campo = (id, lab, val, ph, extra) => `<label>${lab}<input id="${id}" value="${esc(val == null ? "" : String(val))}" placeholder="${esc(ph)}"${extra || ""}${dis}></label>`;
+    return `
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">📋 Datos del trabajo</div>
+        <div class="cal-form">
+          ${campo("est-dat-cliente", "Quién nos contrata (cliente / contratante)", est.cliente, "p. ej. Integrated Systems, el GC")}
+          ${campo("est-dat-dueno", "Dueño final de la obra", est.dueno, "p. ej. Baptist Health")}
+          ${campo("est-dat-dir", "Dirección de la obra", est.direccion, "p. ej. 91500 Overseas Hwy, Tavernier FL")}
+          <label>Retención del contratante (%) <span class="chk-avance">Lo que guarda de cada pago hasta el cierre. Vacío = sin retención.</span>
+            <input id="est-dat-ret" type="number" min="0" max="20" step="0.5" value="${retencionDe(est) ? Math.round(retencionDe(est) * 1000) / 10 : ""}" placeholder="p. ej. 10"${dis}></label>
+        </div>
+      </div>`;
+  }
+  function enganchaDatos(est) {
+    const guarda = async (campos, txt) => {
+      try { await DB.cambiarEstimado(est.id, campos); await recargarEstimador(); avisar(txt); }
+      catch (e) {
+        const m = String(e.crudo || e.message || "");
+        if (/dueno|direccion|retencion_pct/.test(m)) avisar("Falta pegar docs/sql/e36-datos-del-trabajo.sql en Supabase: sin él no se guarda", true);
+        else avisar("No se pudo guardar: " + e.message, true);
+      }
+    };
+    const txt = (id, campo, nom) => { const el = $(id); if (el) el.addEventListener("change", () => guarda({ [campo]: el.value.trim().slice(0, 160) || null }, nom + " ✓")); };
+    txt("est-dat-cliente", "cliente", "Contratante guardado");
+    txt("est-dat-dueno", "dueno", "Dueño guardado");
+    txt("est-dat-dir", "direccion", "Dirección guardada");
+    const r = $("est-dat-ret");
+    if (r) r.addEventListener("change", () => {
+      const v = String(r.value).trim() === "" ? null : Number(r.value);
+      if (v !== null && !(v >= 0 && v <= 20)) { avisar("La retención va de 0 a 20 %", true); return; }
+      guarda({ retencion_pct: v ? v / 100 : null }, v ? `Retención ${v} % ✓ — cada pago sale sin ella y se cobra al cierre` : "Sin retención ✓");
+    });
+  }
+  /* (23/09, Mariners) ADJUNTOS DEL ESTIMADO. Los documentos vivían solo en
+     los proyectos, y un estimado de MXP MEP ni siquiera se convertía: el set de
+     planos, las cuotas de CED y CES y el estimado de Claude no tenían dónde
+     quedarse. Van en estimados.adjuntos (no en la tabla documentos, que pide
+     proyecto) y al convertir pasan solos a los documentos del proyecto. */
+  const adjuntosDe = est => (Array.isArray(est && est.adjuntos) ? est.adjuntos : []).filter(a => a && (a.ruta || a.url));
+  function tarjetaAdjuntos(est, soloLectura) {
+    const adj = adjuntosDe(est);
+    return `
+      <div class="cal-panel-card">
+        <div class="cal-form-titulo">📎 Adjuntos del estimado (${adj.length})</div>
+        ${adj.length ? adj.map((a, i) => `
+          <div class="mat-item">
+            <span class="alcance-info">
+              <span class="alcance-titulo">${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.titulo || "Documento")}</a>`
+                : `<a href="#" class="adj-abrir" data-ruta="${esc(a.ruta)}">${esc(a.titulo || "Documento")}</a>`}</span>
+              <span class="alcance-estado">${a.url ? "enlace" : "PDF"}${a.fecha ? " · " + esc(a.fecha) : ""}</span>
+            </span>
+            ${!soloLectura ? `<button class="insp-borrar adj-quitar" data-i="${i}" title="Quitar">🗑</button>` : ""}
+          </div>`).join("") : `<p class="cal-sin-eventos">Sin adjuntos: el set de planos, las cuotas del supply, el estimado de Claude…</p>`}
+        ${!soloLectura ? `
+        <div class="cal-form">
+          <label>Qué es <input id="adj-titulo" placeholder="p. ej. Cuota CED 23/09, Set de planos E-series"></label>
+          <label>PDF <input id="adj-archivo" type="file" accept="application/pdf"></label>
+          <label>o enlace de Drive <input id="adj-url" placeholder="https://drive.google.com/…"></label>
+        </div>
+        <button type="button" class="accion secundaria" id="adj-subir">📎 Adjuntar</button>
+        <p class="modal-nota">Al convertir en proyecto pasan solos a los documentos del proyecto.</p>` : ""}
+      </div>`;
+  }
+  function enganchaAdjuntos(est) {
+    const panel = $("estimador-panel"); if (!panel) return;
+    const guarda = async (arr, txt) => {
+      try { await DB.cambiarEstimado(est.id, { adjuntos: arr }); await recargarEstimador(); avisar(txt); }
+      catch (e) {
+        if (/adjuntos/.test(String(e.crudo || e.message || ""))) avisar("Falta pegar docs/sql/e36-datos-del-trabajo.sql en Supabase: sin él no se guardan los adjuntos", true);
+        else avisar("No se pudo guardar: " + e.message, true);
+      }
+    };
+    panel.querySelectorAll(".adj-abrir").forEach(a => a.addEventListener("click", async ev => {
+      ev.preventDefault();
+      try { const m = await DB.firmarFotos([a.dataset.ruta]); if (m[a.dataset.ruta]) window.open(m[a.dataset.ruta], "_blank"); else avisar("No se pudo abrir", true); }
+      catch (e) { avisar("No se pudo abrir: " + e.message, true); }
+    }));
+    panel.querySelectorAll(".adj-quitar").forEach(b => b.addEventListener("click", () => {
+      const arr = adjuntosDe(est).slice(); arr.splice(Number(b.dataset.i), 1);
+      guarda(arr, "Adjunto quitado ✓");
+    }));
+    const bt = $("adj-subir");
+    if (bt) bt.addEventListener("click", async () => {
+      const titulo = ($("adj-titulo").value || "").trim().slice(0, 120);
+      const archivo = ($("adj-archivo").files || [])[0] || null;
+      const url = ($("adj-url").value || "").trim();
+      if (!archivo && !/^https?:\/\//.test(url)) { avisar("Elige el PDF o pega el enlace", true); return; }
+      if (archivo && archivo.size > 20 * 1024 * 1024) { avisar("Ese PDF pasa de 20 MB — usa el enlace de Drive", true); return; }
+      bt.disabled = true; bt.textContent = archivo ? "Subiendo…" : "Guardando…";
+      try {
+        const ruta = archivo ? await DB.subirDocumento("est-" + est.id, archivo, "docs") : null;
+        const arr = adjuntosDe(est).concat([{ titulo: titulo || (archivo ? archivo.name : "Enlace"), ruta, url: archivo ? null : url, fecha: new Date().toISOString().slice(0, 10) }]);
+        await guarda(arr, "Adjuntado ✓");
+      } catch (e) { avisar("No se pudo subir: " + e.message + " — prueba con el enlace de Drive", true); bt.disabled = false; bt.textContent = "📎 Adjuntar"; }
+    });
+  }
+  // al convertir: los adjuntos pasan a los documentos del proyecto
+  async function adjuntosAlProyecto(est, proyectoId) {
+    let n = 0;
+    for (const a of adjuntosDe(est)) {
+      try { await DB.crearDocumento({ proyecto_id: proyectoId, clase: "doc", titulo: a.titulo || "Documento del estimado", url: a.url || null, ruta: a.ruta || null, estado: null }); n++; }
+      catch (e) { /* uno que no pasa no para la conversión: se avisa abajo */ }
+    }
+    return n;
+  }
   function enganchaResultado(est) {
     /* Los pies cuadrados se podían poner SOLO al crear el estimado. Eso dejaba
        sin $/sqft a todo lo de antes —y sin $/sqft el historial no compara
@@ -7709,6 +7837,8 @@ function esFalloDeRed(err) {
     if (deMaxPower) l.push("FL EC License #EC13016045 · mxpes.com");
     l.push(`ELECTRICAL PROPOSAL — ${est.nombre}`);
     l.push(`To: ${est.cliente || "________"}   ·   Date: ${hoy}`);
+    if (est.direccion) l.push(`Project location: ${est.direccion}`);
+    if (est.dueno) l.push(`Owner: ${est.dueno}`);
     l.push("");
     l.push("SCOPE OF WORK");
     l.push("Electrical work per the contract documents, including:");
@@ -7731,6 +7861,7 @@ function esFalloDeRed(err) {
     l.push("• Work not listed above. Changes are handled by change order.");
     l.push("");
     l.push(`LUMP SUM PRICE: ${fmt(r2(c.bid))}`);
+    if (retencionDe(est)) l.push(`Retainage: ${Math.round(retencionDe(est) * 1000) / 10}% withheld from each payment per the contract, released at project closeout.`);
     l.push("");
     l.push(`Proposal valid for ${diasValidez(est)} days. Copper wire and feeder pricing is based on supplier quotes as of ${hoy}; if the award comes after the validity period, those items are subject to re-quote.`);
     return l.join("\n");
@@ -7833,7 +7964,10 @@ function esFalloDeRed(err) {
         lineas.push(`• ${s}: ${its.slice(0, 4).map(i => `${i.cantidad} ${nombreParaCliente(i.item)}`).join(", ")}${its.length > 4 ? "…" : ""}`);
       }
     }
-    const m1 = r2(bid * 0.35), m2 = r2(bid * 0.4), m3 = r2(bid - m1 - m2);
+    const hitosP = hitosDePago(bid, retencionDe(est));
+    const [m1, m2, m3] = hitosP.map(h => h.monto);
+    const retTxt = hitosP[3] ? `
+• Retención del contratante — ${Math.round(retencionDe(est) * 1000) / 10}% de cada pago, se libera al cierre: ${fmt(hitosP[3].monto)}` : "";
     /* (23/09, Mariners) Un ALLOWANCE es un precio provisional y el cliente
        tiene que saberlo: sale nombrado, con su monto, y la diferencia al
        confirmarlo va por Change Order. La logística y los subs NO se nombran:
@@ -7857,7 +7991,9 @@ Change Order antes de ordenar el material.` : "";
     return `MAX POWER ELECTRICAL SOLUTIONS, INC.
 FL EC License #EC13016045 · mxpes.com
 PROPUESTA — ${est.nombre}
-Cliente: ${est.cliente || ""} · Fecha: ${hoyTxt}
+Cliente: ${est.cliente || ""} · Fecha: ${hoyTxt}${est.direccion ? `
+Obra: ${est.direccion}` : ""}${est.dueno ? `
+Dueño / Owner: ${est.dueno}` : ""}
 
 ALCANCE DEL TRABAJO:
 ${lineas.join("\n")}
@@ -7875,7 +8011,7 @@ PRECIO TOTAL (LUMP SUM): ${fmt(bid)}${est.sqft ? `  (${fmt(r2(bid / est.sqft))}/
 FORMA DE PAGO:
 • Milestone 1 — 35% a la aceptación (movilización): ${fmt(m1)}
 • Milestone 2 — 40% al completar el avance principal: ${fmt(m2)}
-• Milestone 3 — 25% al pasar inspección final: ${fmt(m3)}
+• Milestone 3 — 25% al pasar inspección final: ${fmt(m3)}${retTxt}
 
 Propuesta válida por ${diasValidez(est)} días. Gracias por la oportunidad.
 Power done right the first time. ⚡`;
@@ -9190,6 +9326,7 @@ Power done right the first time. ⚡`;
         <button class="accion secundaria" id="btn-est-takeoff">📋 Ver el takeoff para copiar</button>
         ${est.estado === "borrador" ? `<button class="accion secundaria" id="btn-est-congelar">🔒 Congelar</button>` : ""}
         ${est.estado === "congelado" ? `<button class="accion secundaria" id="btn-est-descongelar">🔓 Volver a borrador</button>` : ""}
+        ${est.estado !== "convertido" ? `<button class="accion" id="btn-est-convertir">🚀 Convertir en proyecto (si se gana)</button>` : ""}
         <button class="accion secundaria" id="btn-est-mio">Pasarlo a Max Power</button>
         ` : `
         <button class="accion secundaria" id="btn-est-propuesta">📄 Generar propuesta</button>
@@ -9201,6 +9338,9 @@ Power done right the first time. ⚡`;
         <button class="accion secundaria" id="btn-est-mep">Pasarlo a MXP MEP</button>
         ${propuestasDelEstimado(est.id)}`}
       </div>
+      ${/* datos y adjuntos no mueven el número: se pueden tocar aunque esté congelado */ ""}
+      ${tarjetaDatosTrabajo(est, est.estado === "convertido")}
+      ${tarjetaAdjuntos(est, est.estado === "convertido")}
       ${bloqueResultado(est, c)}
       ${est.estado === "convertido" ? (() => {
         // Ya está en un proyecto: se cierra y se vuelve al inicio (o se abre el proyecto)
@@ -9785,6 +9925,8 @@ Power done right the first time. ⚡`;
     const btnProp = $("btn-est-armar");
     if (btnProp) btnProp.addEventListener("click", () => { if (ceroDejaPasar()) irPropuesta(est.id); });
     enganchaResultado(est);
+    enganchaDatos(est);
+    enganchaAdjuntos(est);
     $("estimador-panel").querySelectorAll(".btn-cierre").forEach(b => {
       b.addEventListener("click", () => irCierre(Number(b.dataset.id)));
     });
@@ -9795,16 +9937,18 @@ Power done right the first time. ⚡`;
       // Un trabajo añadido: se suma al proyecto que ya existe (contrato, horas, material,
       // un hito de pago único y sus puntos de alcance). No se crea otro proyecto.
       const proy = proyectos().find(x => x.id === est.proyecto_id);
-      const bid = r2(c.bid);
-      if (!confirm(`¿Añadir "${est.nombre}" al proyecto "${proy.nombre}"?\n\nSube el contrato en ${fmt(bid)}, suma ${r2(c.horas)} h y el material, y crea un hito de pago único por el añadido.`)) return;
+      // (23/09) con el número CONGELADO si lo hay: es el que se ofertó
+      const fo = fotoDe(est, c), bid = r2(fo.bid);
+      if (!confirm(`¿Añadir "${est.nombre}" al proyecto "${proy.nombre}"?\n\nSube el contrato en ${fmt(bid)}${fo.recalculado ? "" : " (el número congelado)"}, suma ${r2(fo.horas)} h y el material, y crea un hito de pago único por el añadido.`)) return;
       try {
         // el proyecto ya trae su dinero mapeado (contrato / presupuestoMateriales); null = sin fila de finanzas
         const hayFin = proy.contrato !== null && proy.contrato !== undefined;
         const cambiosFin = { contrato: r2((Number(proy.contrato) || 0) + bid),
-          presupuesto_materiales: r2((Number(proy.presupuestoMateriales) || 0) + r2(c.totalMaterial)) };
+          presupuesto_materiales: r2((Number(proy.presupuestoMateriales) || 0) + r2(fo.material)) };
         if (hayFin) await DB.cambiarFinanzas(proy.id, cambiosFin);
         else await DB.crearFinanzas({ proyecto_id: proy.id, cobrado: 0, ...cambiosFin });
-        await DB.cambiarProyecto(proy.id, { horas_estimadas: r2((Number(proy.horas_estimadas) || 0) + r2(c.horas)) });
+        await DB.cambiarProyecto(proy.id, { horas_estimadas: r2((Number(proy.horas_estimadas) || 0) + r2(fo.horas)) });
+        await adjuntosAlProyecto(est, proy.id);
         await DB.crearHito({ proyecto_id: proy.id, titulo: `Añadido — ${est.nombre}`, condicion: "Al completar el trabajo añadido", monto: bid, estado: "pendiente", orden: 90 });
         const puntosYa = (state.alcancePuntos || state.puntos || []).filter(x => x.proyecto_id === proy.id).length;
         let ordenA = puntosYa + 1;
@@ -9823,10 +9967,11 @@ Power done right the first time. ⚡`;
     });
     else if (btnConv) btnConv.addEventListener("click", async () => {
       if (!ceroDejaPasar()) return;
-      if (!confirm(`¿Convertir "${est.nombre}" en proyecto?\n\nSe crea con contrato ${fmt(r2(c.bid))}, horas estimadas, presupuesto de materiales, 3 hitos de pago y su alcance por puntos.`)) return;
+      // (23/09) con el número CONGELADO si lo hay: es el que se ofertó, no el de hoy
+      const fo = fotoDe(est, c), bid = r2(fo.bid), ret = retencionDe(est);
+      if (!confirm(`¿Convertir "${est.nombre}" en proyecto?\n\nSe crea con contrato ${fmt(bid)}${fo.recalculado ? "" : " (el número congelado)"}, horas estimadas, presupuesto de materiales, ${ret ? "3 hitos de pago + la retención del " + Math.round(ret * 1000) / 10 + " % al cierre" : "3 hitos de pago"} y su alcance por puntos.`)) return;
       const idNuevo = est.nombre.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
         .slice(0, 30) + "-" + Math.random().toString(36).slice(2, 6);
-      const bid = r2(c.bid);
       try {
         await DB.crearProyecto({
           id: idNuevo,
@@ -9844,16 +9989,16 @@ Power done right the first time. ⚡`;
           cliente_email: est.cliente_email || null,
           cliente_tel: est.cliente_tel || null,
           estado: "enviado",
-          estado_detalle: "Creado desde el Estimador — propuesta por enviar.",
+          estado_detalle: "Creado desde el Estimador — propuesta por enviar." +
+            (est.dueno ? ` Dueño final: ${est.dueno}.` : "") + (ret ? ` Retención del contratante: ${Math.round(ret * 1000) / 10} %.` : ""),
           proxima_accion: "Enviar la propuesta al cliente.",
           ref: `EST-${est.id}`,
-          horas_estimadas: r2(c.horas)
+          horas_estimadas: r2(fo.horas)
         });
-        await DB.crearFinanzas({ proyecto_id: idNuevo, contrato: bid, cobrado: 0, presupuesto_materiales: r2(c.totalMaterial) });
-        const m1 = r2(bid * 0.35), m2 = r2(bid * 0.40);
-        await DB.crearHito({ proyecto_id: idNuevo, titulo: "Milestone 1 — 35% movilización", condicion: "Al aceptar / movilización", monto: m1, estado: "pendiente", orden: 1 });
-        await DB.crearHito({ proyecto_id: idNuevo, titulo: "Milestone 2 — 40% avance", condicion: "Rough / avance principal completo", monto: m2, estado: "pendiente", orden: 2 });
-        await DB.crearHito({ proyecto_id: idNuevo, titulo: "Milestone 3 — 25% final", condicion: "Al pasar inspección final", monto: r2(bid - m1 - m2), estado: "pendiente", orden: 3 });
+        await DB.crearFinanzas({ proyecto_id: idNuevo, contrato: bid, cobrado: 0, presupuesto_materiales: r2(fo.material) });
+        const nAdj = await adjuntosAlProyecto(est, idNuevo);
+        if (adjuntosDe(est).length && nAdj < adjuntosDe(est).length) avisar(`⚠ ${adjuntosDe(est).length - nAdj} adjunto(s) no pasaron al proyecto: súbelos allí a mano`, true);
+        for (const h of hitosDePago(bid, ret)) await DB.crearHito(Object.assign({ proyecto_id: idNuevo, estado: "pendiente" }, h));
         // El alcance por puntos nace de los ensambles (o secciones)
         const ensDelEst2 = (estData.estEnsambles || []).filter(e => e.estimado_id === est.id && Number(e.cantidad) > 0);
         // Un servicio es un trabajo de un día o dos: no lleva fases de obra ni
@@ -10250,9 +10395,16 @@ Power done right the first time. ⚡`;
     if (!est) { avisar("No encuentro ese estimado", true); return; }
     mostrar("propuesta", { kicker: "Solo dueño", titulo: "Armar propuesta", volver: true, nuevo: false });
     const items = itemsDelEstimado(est);
+    /* (23/09, Mariners) LAS LÍNEAS A MANO TAMBIÉN SE REPARTEN. Antes entraban
+       iguales en TODAS las opciones: el allowance del fire alarm o un add de
+       tubo nuevo no se podían dejar como extra, y un deduct no existía. Ahora
+       van en la misma lista, con sus mismos botones A/B/C/—. */
+    const lineasProp = (Array.isArray(est.lineas_material) ? est.lineas_material : []).map((l, j) => ({
+      _linea: true, _l: l, item: l.desc || "Material a mano", cantidad: 1, unidad: "LOT",
+      precio: Number(l.monto) || 0, horas: 0, _i: items.length + j, bloque: "base" }));
     propActiva = {
       estimado: est,
-      items: items.map((it, i) => ({ ...it, _i: i, bloque: "base" })),
+      items: items.map((it, i) => ({ ...it, _i: i, bloque: "base" })).concat(lineasProp),
       reparto: "40/40/20",
       pcts: [40, 40, 20],
       dias: 15,
@@ -10289,9 +10441,12 @@ Power done right the first time. ⚡`;
     return l;
   }
   function propPrecio(letra) {
-    const items = propItemsDe(letra);
-    if (!items.length) return 0;
-    return Math.round(calcularEstimado(propActiva.estimado, items).bid * 100) / 100;
+    const todo = propItemsDe(letra);
+    if (!todo.length) return 0;
+    // los renglones del catálogo van como ítems; las líneas a mano, como las
+    // líneas del estimado — solo las que están en los bloques de esta letra
+    const est2 = Object.assign({}, propActiva.estimado, { lineas_material: todo.filter(x => x._linea).map(x => x._l) });
+    return Math.round(calcularEstimado(est2, todo.filter(x => !x._linea)).bid * 100) / 100;
   }
 
   function pintarPropuesta() {
@@ -10302,7 +10457,7 @@ Power done right the first time. ⚡`;
       <div class="prop-item">
         <span class="prop-item-txt">
           <span class="prop-item-nom">${esc(it.item)}</span>
-          <span class="prop-item-sub">${esc(it.cantidad)} ${esc(it.unidad || "")}</span>
+          <span class="prop-item-sub">${it._linea ? `a mano · ${fmt(Math.round((Number(it.precio) || 0) * 100) / 100)}${it._l.tipo === "cot" ? " · cotización" : TIPOS_COSTO[it._l.tipo] ? " · " + TIPOS_COSTO[it._l.tipo].toLowerCase() : ""}` : `${esc(it.cantidad)} ${esc(it.unidad || "")}`}</span>
         </span>
         <span class="prop-bloques" data-i="${it._i}">
           ${PROP_BLOQUES.map(b => `<button type="button" class="prop-bq${it.bloque === b.id ? " puesto" : ""}" data-b="${b.id}" title="${esc(b.etiqueta)}">${b.letra}</button>`).join("")}
@@ -10483,13 +10638,14 @@ Power done right the first time. ⚡`;
           // calculan sobre ESTA opción: si no, la A imprimiría exclusiones de
           // renglones que solo están en la B. El renglón by_owner se marca
           // también en el alcance para que el documento no se contradiga.
-          alcance: items.map(it => {
+          // (23/09) la logística y los subs son costo de Edgar: no se enseñan al cliente
+          alcance: items.filter(it => !(it._linea && (it._l.tipo === "log" || it._l.tipo === "sub"))).map(it => {
             const z = ceroDe(it, p.estimado);
             const o = { item: it.item, cantidad: it.cantidad, unidad: it.unidad };
             if (z.est === "by_owner" && z.conf) o.by_owner = true;
             return o;
           }),
-          no_incluye: lineasNoIncluye(p.estimado, items),
+          no_incluye: lineasNoIncluye(p.estimado, items.filter(it => !it._linea)),
           precio,
           hitos_plan: montos.map((m, j) => ({
             titulo: `Pago ${j + 1}${j === 0 ? " — depósito" : ""}`,
@@ -12730,6 +12886,26 @@ Power done right the first time. ⚡`;
       conectorCorto(ens, items) { return recetasConectorCorto(ens || [], items || []); },
       mep(est, c) { return textoResumenMEP(est, c); },
       propMep(est, c) { return textoPropuestaMEP(est, c); },   // el papel para el cliente de MXP MEP (23/09)
+      hitos(bid, ret) { return hitosDePago(bid, ret); },
+      // (23/09) la propuesta con opciones: el precio de cada letra según los bloques
+      propOpc(estId, bloques) {
+        const est = (estData.estimados || []).find(e => e.id === estId);
+        const items = itemsDelEstimado(est);
+        const lin = (est.lineas_material || []).map((l, j) => ({ _linea: true, _l: l, item: l.desc, cantidad: 1, precio: Number(l.monto) || 0, _i: items.length + j }));
+        propActiva = { estimado: est, items: items.map((it, i) => ({ ...it, _i: i })).concat(lin), pcts: [40, 40, 20], titulos: {} };
+        propActiva.items.forEach(it => { it.bloque = (bloques || {})[it.item] || "base"; });
+        return { letras: propLetras(), precios: propLetras().map(l => propPrecio(l)) };
+      },
+      tarjetaDatos(est) { return tarjetaDatosTrabajo(est, false); },
+      tarjetaAdj(est) { return tarjetaAdjuntos(est, false); },
+      // (23/09) el editor ENTERO pintado de verdad, con sus manejadores: para que
+      // una tarjeta o un botón nuevo no rompa la pantalla sin que nadie lo vea
+      editor(id) {
+        if (!usuario) usuario = { nombre: "Prueba", rol: "dueno", finanzas: true, editar: true };   // solo en la prueba: sin sesión
+        estimadoActivo = id; pintarEstimadorEditor();
+        const panel = document.getElementById("estimador-panel");
+        return { ids: [...panel.querySelectorAll("[id]")].map(x => x.id), txt: panel.innerText.slice(0, 20000) };
+      },
       resultado(est) { return bloqueResultado(est, calcularEstimado(est)); },
       takeoff(est, c) { return textoTakeoff(est, c); },
       mano(est, c) { return panelManoHTML(est, c, false) + panelRapidoHTML(est, c, false); },   // las filas con su tipo (23/09)
