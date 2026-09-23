@@ -1,0 +1,7022 @@
+{
+ "alcance_lecturas": [
+  {
+   "table_name": "alcance_lecturas",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "alcance_lecturas",
+   "column_name": "usuario_id",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcance_lecturas",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcance_lecturas",
+   "column_name": "propuesta_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcance_lecturas",
+   "column_name": "tipo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "'leer'::text"
+  },
+  {
+   "table_name": "alcance_lecturas",
+   "column_name": "huella",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "alcance_lecturas",
+   "column_name": "estado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "'en_curso'::text"
+  },
+  {
+   "table_name": "alcance_lecturas",
+   "column_name": "hoja_tapada",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcance_lecturas",
+   "column_name": "lectura",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcance_lecturas",
+   "column_name": "error",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcance_lecturas",
+   "column_name": "modelo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcance_lecturas",
+   "column_name": "uso",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcance_lecturas",
+   "column_name": "costo_centavos",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcance_lecturas",
+   "column_name": "ms",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcance_lecturas",
+   "column_name": "resultado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcance_lecturas",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "alcance_lecturas",
+   "column_name": "terminado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "alcance_puntos": [
+  {
+   "table_name": "alcance_puntos",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "alcance_puntos",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcance_puntos",
+   "column_name": "texto",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "alcance_puntos",
+   "column_name": "hecho",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "false"
+  },
+  {
+   "table_name": "alcance_puntos",
+   "column_name": "orden",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": "0"
+  },
+  {
+   "table_name": "alcance_puntos",
+   "column_name": "prioridad",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "'normal'::text"
+  },
+  {
+   "table_name": "alcance_puntos",
+   "column_name": "texto_en",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcance_puntos",
+   "column_name": "grupo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcance_puntos",
+   "column_name": "grupo_en",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "alcances": [
+  {
+   "table_name": "alcances",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "alcances",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcances",
+   "column_name": "tipo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcances",
+   "column_name": "titulo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "alcances",
+   "column_name": "ref",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcances",
+   "column_name": "monto",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcances",
+   "column_name": "cobrado",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcances",
+   "column_name": "estado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alcances",
+   "column_name": "orden",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": "0"
+  }
+ ],
+ "alertas_silencio": [
+  {
+   "table_name": "alertas_silencio",
+   "column_name": "clave",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "alertas_silencio",
+   "column_name": "hasta",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "alertas_silencio",
+   "column_name": "motivo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alertas_silencio",
+   "column_name": "quien",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alertas_silencio",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  }
+ ],
+ "alias_takeoff": [
+  {
+   "table_name": "alias_takeoff",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "alias_takeoff",
+   "column_name": "alias",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "alias_takeoff",
+   "column_name": "item",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "alias_takeoff",
+   "column_name": "factor",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "1"
+  },
+  {
+   "table_name": "alias_takeoff",
+   "column_name": "nota",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alias_takeoff",
+   "column_name": "codigo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alias_takeoff",
+   "column_name": "receta",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "alias_takeoff",
+   "column_name": "receta_full",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "false"
+  }
+ ],
+ "asistente_ajustes": [
+  {
+   "table_name": "asistente_ajustes",
+   "column_name": "clave",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "asistente_ajustes",
+   "column_name": "valor",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "asistente_uso": [
+  {
+   "table_name": "asistente_uso",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "asistente_uso",
+   "column_name": "usuario_id",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "asistente_uso",
+   "column_name": "rol",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "asistente_uso",
+   "column_name": "modelo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "asistente_uso",
+   "column_name": "entrada",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": "0"
+  },
+  {
+   "table_name": "asistente_uso",
+   "column_name": "salida",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": "0"
+  },
+  {
+   "table_name": "asistente_uso",
+   "column_name": "vueltas",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": "1"
+  },
+  {
+   "table_name": "asistente_uso",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "asistente_uso",
+   "column_name": "accion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "asistente_uso",
+   "column_name": "cache_lectura",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": "0"
+  },
+  {
+   "table_name": "asistente_uso",
+   "column_name": "cache_escritura",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": "0"
+  },
+  {
+   "table_name": "asistente_uso",
+   "column_name": "ms",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "asistente_uso",
+   "column_name": "resultado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "asistente_uso",
+   "column_name": "costo_centavos",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "asistente_uso",
+   "column_name": "letras",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "asistente_uso",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "cambios_solicitados": [
+  {
+   "table_name": "cambios_solicitados",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "nextval('cambios_solicitados_id_seq'::regclass)"
+  },
+  {
+   "table_name": "cambios_solicitados",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "cambios_solicitados",
+   "column_name": "documento_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "cambios_solicitados",
+   "column_name": "propuesta_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "cambios_solicitados",
+   "column_name": "texto",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "cambios_solicitados",
+   "column_name": "pedido_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "cambios_solicitados",
+   "column_name": "ip",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "cambios_solicitados",
+   "column_name": "resuelto",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "false"
+  },
+  {
+   "table_name": "cambios_solicitados",
+   "column_name": "resuelto_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "catalogo_items": [
+  {
+   "table_name": "catalogo_items",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items",
+   "column_name": "seccion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items",
+   "column_name": "item",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items",
+   "column_name": "unidad",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items",
+   "column_name": "precio",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "0"
+  },
+  {
+   "table_name": "catalogo_items",
+   "column_name": "horas_unidad",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "0"
+  },
+  {
+   "table_name": "catalogo_items",
+   "column_name": "orden",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": "0"
+  },
+  {
+   "table_name": "catalogo_items",
+   "column_name": "codigo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items",
+   "column_name": "cero_motivo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items",
+   "column_name": "cero_revisado",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items",
+   "column_name": "cero_nota",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items",
+   "column_name": "precio_ref",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items",
+   "column_name": "horas_ref",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items",
+   "column_name": "fuente_ref",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items",
+   "column_name": "ref_fecha",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items",
+   "column_name": "precio_fecha",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items",
+   "column_name": "precio_fuente",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "catalogo_items_respaldo_20260916": [
+  {
+   "table_name": "catalogo_items_respaldo_20260916",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_20260916",
+   "column_name": "seccion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_20260916",
+   "column_name": "item",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_20260916",
+   "column_name": "unidad",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_20260916",
+   "column_name": "precio",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_20260916",
+   "column_name": "horas_unidad",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_20260916",
+   "column_name": "orden",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_20260916",
+   "column_name": "codigo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_20260916",
+   "column_name": "cero_motivo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_20260916",
+   "column_name": "cero_revisado",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_20260916",
+   "column_name": "cero_nota",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_20260916",
+   "column_name": "precio_ref",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_20260916",
+   "column_name": "horas_ref",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_20260916",
+   "column_name": "fuente_ref",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_20260916",
+   "column_name": "ref_fecha",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_20260916",
+   "column_name": "precio_fecha",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_20260916",
+   "column_name": "precio_fuente",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "catalogo_items_respaldo_ced_20260916": [
+  {
+   "table_name": "catalogo_items_respaldo_ced_20260916",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_ced_20260916",
+   "column_name": "seccion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_ced_20260916",
+   "column_name": "item",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_ced_20260916",
+   "column_name": "unidad",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_ced_20260916",
+   "column_name": "precio",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_ced_20260916",
+   "column_name": "horas_unidad",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_ced_20260916",
+   "column_name": "orden",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_ced_20260916",
+   "column_name": "codigo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_ced_20260916",
+   "column_name": "cero_motivo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_ced_20260916",
+   "column_name": "cero_revisado",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_ced_20260916",
+   "column_name": "cero_nota",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_ced_20260916",
+   "column_name": "precio_ref",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_ced_20260916",
+   "column_name": "horas_ref",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_ced_20260916",
+   "column_name": "fuente_ref",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_ced_20260916",
+   "column_name": "ref_fecha",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_ced_20260916",
+   "column_name": "precio_fecha",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "catalogo_items_respaldo_ced_20260916",
+   "column_name": "precio_fuente",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "chat_lecturas": [
+  {
+   "table_name": "chat_lecturas",
+   "column_name": "usuario_id",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "chat_lecturas",
+   "column_name": "conv",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "chat_lecturas",
+   "column_name": "visto",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  }
+ ],
+ "cobros_pendientes": [
+  {
+   "table_name": "cobros_pendientes",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "nextval('cobros_pendientes_id_seq'::regclass)"
+  },
+  {
+   "table_name": "cobros_pendientes",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "cobros_pendientes",
+   "column_name": "hito_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "cobros_pendientes",
+   "column_name": "motivo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "cobros_pendientes",
+   "column_name": "detalle",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "cobros_pendientes",
+   "column_name": "resuelto",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "false"
+  },
+  {
+   "table_name": "cobros_pendientes",
+   "column_name": "resuelto_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "cobros_pendientes",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "now()"
+  }
+ ],
+ "codigos_partida": [
+  {
+   "table_name": "codigos_partida",
+   "column_name": "codigo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "codigos_partida",
+   "column_name": "nombre",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "codigos_partida",
+   "column_name": "nombre_en",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "codigos_partida",
+   "column_name": "categoria",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  }
+ ],
+ "config_estimador": [
+  {
+   "table_name": "config_estimador",
+   "column_name": "clave",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "config_estimador",
+   "column_name": "valor",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "config_estimador",
+   "column_name": "descripcion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "contratista_llaves": [
+  {
+   "table_name": "contratista_llaves",
+   "column_name": "contratista_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "contratista_llaves",
+   "column_name": "token",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "replace((gen_random_uuid())::text, '-'::text, ''::text)"
+  }
+ ],
+ "contratistas": [
+  {
+   "table_name": "contratistas",
+   "column_name": "id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "contratistas",
+   "column_name": "nombre",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "contratistas",
+   "column_name": "contacto",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "contratistas",
+   "column_name": "email",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "contratistas",
+   "column_name": "telefono",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "contratistas",
+   "column_name": "ve_dinero",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "true"
+  },
+  {
+   "table_name": "contratistas",
+   "column_name": "avisos",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "true"
+  },
+  {
+   "table_name": "contratistas",
+   "column_name": "activo",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "true"
+  },
+  {
+   "table_name": "contratistas",
+   "column_name": "notas",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "contratistas",
+   "column_name": "invitado_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "contratistas",
+   "column_name": "visto_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "contratistas",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "now()"
+  }
+ ],
+ "correos": [
+  {
+   "table_name": "correos",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "nextval('correos_id_seq'::regclass)"
+  },
+  {
+   "table_name": "correos",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "correos",
+   "column_name": "para",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "correos",
+   "column_name": "asunto",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "correos",
+   "column_name": "tipo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "correos",
+   "column_name": "resend_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "correos",
+   "column_name": "enviado_por",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "correos",
+   "column_name": "enviado_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "correos",
+   "column_name": "contratista_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "costos_equipo": [
+  {
+   "table_name": "costos_equipo",
+   "column_name": "usuario_id",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "costos_equipo",
+   "column_name": "costo_hora",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "costos_equipo",
+   "column_name": "actualizado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  }
+ ],
+ "decisiones_cliente": [
+  {
+   "table_name": "decisiones_cliente",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "decisiones_cliente",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "decisiones_cliente",
+   "column_name": "texto",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "decisiones_cliente",
+   "column_name": "fecha_limite",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "decisiones_cliente",
+   "column_name": "hecha",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "false"
+  },
+  {
+   "table_name": "decisiones_cliente",
+   "column_name": "hecha_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "decisiones_cliente",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  }
+ ],
+ "diario": [
+  {
+   "table_name": "diario",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "diario",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "diario",
+   "column_name": "fecha",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "CURRENT_DATE"
+  },
+  {
+   "table_name": "diario",
+   "column_name": "texto",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "diario",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  }
+ ],
+ "documento_visitas": [
+  {
+   "table_name": "documento_visitas",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "nextval('documento_visitas_id_seq'::regclass)"
+  },
+  {
+   "table_name": "documento_visitas",
+   "column_name": "documento_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documento_visitas",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documento_visitas",
+   "column_name": "contratista_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documento_visitas",
+   "column_name": "quien",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "'cliente'::text"
+  },
+  {
+   "table_name": "documento_visitas",
+   "column_name": "cuando",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "now()"
+  }
+ ],
+ "documentos": [
+  {
+   "table_name": "documentos",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "clase",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "'doc'::text"
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "titulo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "estado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "url",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "portal",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "false"
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "pide_aprobacion",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "false"
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "aprobado_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "pide_firma",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "false"
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "firmado_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "firma_nombre",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "firma_ruta",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "firma_ip",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "ruta",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "visto_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "firma_dispositivo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "contrafirma_nombre",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "contrafirma_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "copia_enviada_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "huella_sha256",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "huella_sellada_sha256",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "codigo_verificacion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "consentimiento_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "consentimiento_ip",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "valida_hasta",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "version",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "1"
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "reemplaza_a",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "propuesta_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "firma_linea_pos",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "firmado_en_de",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "firma2_nombre",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "firma2_ruta",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos",
+   "column_name": "firma2_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "documentos_empresa": [
+  {
+   "table_name": "documentos_empresa",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos_empresa",
+   "column_name": "titulo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos_empresa",
+   "column_name": "titulo_en",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos_empresa",
+   "column_name": "ruta",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos_empresa",
+   "column_name": "url",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos_empresa",
+   "column_name": "vence",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "documentos_empresa",
+   "column_name": "orden",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "0"
+  }
+ ],
+ "ensamble_items": [
+  {
+   "table_name": "ensamble_items",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "ensamble_items",
+   "column_name": "ensamble_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "ensamble_items",
+   "column_name": "item",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "ensamble_items",
+   "column_name": "cantidad",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  }
+ ],
+ "ensambles": [
+  {
+   "table_name": "ensambles",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "ensambles",
+   "column_name": "nombre",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "ensambles",
+   "column_name": "modo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "'remodelacion'::text"
+  },
+  {
+   "table_name": "ensambles",
+   "column_name": "descripcion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "ensambles",
+   "column_name": "pies_editable",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "false"
+  },
+  {
+   "table_name": "ensambles",
+   "column_name": "orden",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": "0"
+  }
+ ],
+ "escenarios": [
+  {
+   "table_name": "escenarios",
+   "column_name": "id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "escenarios",
+   "column_name": "nombre",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "escenarios",
+   "column_name": "foreman",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "escenarios",
+   "column_name": "journeyman",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "escenarios",
+   "column_name": "helper",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "escenarios",
+   "column_name": "pct_foreman",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "escenarios",
+   "column_name": "pct_journeyman",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "escenarios",
+   "column_name": "pct_helper",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "escenarios",
+   "column_name": "benefits",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "escenarios",
+   "column_name": "tax_material",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "escenarios",
+   "column_name": "overhead_hh",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "escenarios",
+   "column_name": "profit",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "escenarios",
+   "column_name": "mezcla",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "escenarios",
+   "column_name": "overhead_pct",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "escenarios",
+   "column_name": "benefits_detalle",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "estimado_ensambles": [
+  {
+   "table_name": "estimado_ensambles",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "estimado_ensambles",
+   "column_name": "estimado_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimado_ensambles",
+   "column_name": "ensamble_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimado_ensambles",
+   "column_name": "cantidad",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "1"
+  },
+  {
+   "table_name": "estimado_ensambles",
+   "column_name": "pies",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimado_ensambles",
+   "column_name": "sin_lineales",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "false"
+  }
+ ],
+ "estimado_items": [
+  {
+   "table_name": "estimado_items",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "estimado_items",
+   "column_name": "estimado_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimado_items",
+   "column_name": "item",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "estimado_items",
+   "column_name": "unidad",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimado_items",
+   "column_name": "precio",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "0"
+  },
+  {
+   "table_name": "estimado_items",
+   "column_name": "horas",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "0"
+  },
+  {
+   "table_name": "estimado_items",
+   "column_name": "cantidad",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "0"
+  },
+  {
+   "table_name": "estimado_items",
+   "column_name": "orden",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": "0"
+  },
+  {
+   "table_name": "estimado_items",
+   "column_name": "origen",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "'manual'::text"
+  },
+  {
+   "table_name": "estimado_items",
+   "column_name": "codigo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "estimado_items_respaldo_20260916": [
+  {
+   "table_name": "estimado_items_respaldo_20260916",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimado_items_respaldo_20260916",
+   "column_name": "estimado_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimado_items_respaldo_20260916",
+   "column_name": "item",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimado_items_respaldo_20260916",
+   "column_name": "unidad",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimado_items_respaldo_20260916",
+   "column_name": "precio",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimado_items_respaldo_20260916",
+   "column_name": "horas",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimado_items_respaldo_20260916",
+   "column_name": "cantidad",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimado_items_respaldo_20260916",
+   "column_name": "orden",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimado_items_respaldo_20260916",
+   "column_name": "origen",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimado_items_respaldo_20260916",
+   "column_name": "codigo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "estimados": [
+  {
+   "table_name": "estimados",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "nombre",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "cliente",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "direccion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "tipo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "'Residential'::text"
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "sqft",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "factor",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "1"
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "escenario",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "'B'::text"
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "estado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "'borrador'::text"
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "modo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "'planos'::text"
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "cable",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "'romex'::text"
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "misc_pct",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "tax_pct",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "overhead_hh",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "profit_pct",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "markup_pct",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "horas_directas",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "lineas_material",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "benefits_pct",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "mezcla",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "via",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "contratista_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "contratista_modo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "cliente_email",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "cliente_tel",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "contratista_contacto",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "cero_notas",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "'{}'::jsonb"
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "no_incluye_extra",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "empresa",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "markup_cot_pct",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "overhead_pct",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "meses_obra",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "escalacion_pct",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "resultado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "resultado_fecha",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "resultado_motivo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "resultado_nota",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "competencia",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "bid_final",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "horas_final",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "material_final",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "cerrado_en",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "notas",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "soporte",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "pct_rack",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "usa_luz_ref",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "false"
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "valida_dias",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "dueno",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "retencion_pct",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados",
+   "column_name": "adjuntos",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "estimados_respaldo_20260916": [
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "nombre",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "cliente",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "direccion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "tipo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "sqft",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "factor",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "escenario",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "estado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "modo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "cable",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "misc_pct",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "tax_pct",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "overhead_hh",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "profit_pct",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "markup_pct",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "horas_directas",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "lineas_material",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "benefits_pct",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "mezcla",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "via",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "contratista_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "contratista_modo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "cliente_email",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "cliente_tel",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "contratista_contacto",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "cero_notas",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "no_incluye_extra",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "empresa",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "markup_cot_pct",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "overhead_pct",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "meses_obra",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "escalacion_pct",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "resultado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "resultado_fecha",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "resultado_motivo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "resultado_nota",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "competencia",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "bid_final",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "horas_final",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "material_final",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "cerrado_en",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "estimados_respaldo_20260916",
+   "column_name": "notas",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "eventos": [
+  {
+   "table_name": "eventos",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "eventos",
+   "column_name": "fecha",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "eventos",
+   "column_name": "hora",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "eventos",
+   "column_name": "titulo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "eventos",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "eventos",
+   "column_name": "nota",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "eventos",
+   "column_name": "alerta",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "false"
+  },
+  {
+   "table_name": "eventos",
+   "column_name": "autor_id",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "eventos",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "eventos",
+   "column_name": "titulo_en",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "eventos",
+   "column_name": "asignados",
+   "data_type": "ARRAY",
+   "udt_name": "_uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "eventos",
+   "column_name": "ubicacion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "eventos",
+   "column_name": "estado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "'programado'::text"
+  }
+ ],
+ "externos_equipo": [
+  {
+   "table_name": "externos_equipo",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "externos_equipo",
+   "column_name": "nombre",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "externos_equipo",
+   "column_name": "costo_hora",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "0"
+  },
+  {
+   "table_name": "externos_equipo",
+   "column_name": "activo",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "true"
+  }
+ ],
+ "facturas": [
+  {
+   "table_name": "facturas",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "facturas",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "facturas",
+   "column_name": "num",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "facturas",
+   "column_name": "fecha",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "facturas",
+   "column_name": "monto",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "facturas",
+   "column_name": "pagada",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "false"
+  },
+  {
+   "table_name": "facturas",
+   "column_name": "hito_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "facturas",
+   "column_name": "qb_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "facturas",
+   "column_name": "link_pago",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "facturas",
+   "column_name": "cobrada_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "facturas",
+   "column_name": "metodo_cobro",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "facturas",
+   "column_name": "cobrado",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": 12,
+   "numeric_scale": 2,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "facturas",
+   "column_name": "a_contratista",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "finanzas_proyecto": [
+  {
+   "table_name": "finanzas_proyecto",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "finanzas_proyecto",
+   "column_name": "contrato",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "finanzas_proyecto",
+   "column_name": "cobrado",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "0"
+  },
+  {
+   "table_name": "finanzas_proyecto",
+   "column_name": "presupuesto_materiales",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "fotos": [
+  {
+   "table_name": "fotos",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "fotos",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "fotos",
+   "column_name": "ruta",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "fotos",
+   "column_name": "nota",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "fotos",
+   "column_name": "autor_id",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "fotos",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "fotos",
+   "column_name": "portal",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "false"
+  }
+ ],
+ "gastos_generales": [
+  {
+   "table_name": "gastos_generales",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "gastos_generales",
+   "column_name": "concepto",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "gastos_generales",
+   "column_name": "monto_mensual",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  }
+ ],
+ "gestiones": [
+  {
+   "table_name": "gestiones",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "gestiones",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "gestiones",
+   "column_name": "descripcion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "gestiones",
+   "column_name": "hecha",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "false"
+  },
+  {
+   "table_name": "gestiones",
+   "column_name": "autor_id",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "gestiones",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  }
+ ],
+ "hitos": [
+  {
+   "table_name": "hitos",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "hitos",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "hitos",
+   "column_name": "titulo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "hitos",
+   "column_name": "condicion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "hitos",
+   "column_name": "monto",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "hitos",
+   "column_name": "estado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "hitos",
+   "column_name": "orden",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": "0"
+  },
+  {
+   "table_name": "hitos",
+   "column_name": "es_deposito",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "false"
+  }
+ ],
+ "horas": [
+  {
+   "table_name": "horas",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "horas",
+   "column_name": "fecha",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "horas",
+   "column_name": "usuario_id",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "horas",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "horas",
+   "column_name": "fase",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "horas",
+   "column_name": "horas",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "horas",
+   "column_name": "notas",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "horas",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "horas",
+   "column_name": "correccion_estado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "horas",
+   "column_name": "co",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "horas",
+   "column_name": "llave_cliente",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "inspecciones": [
+  {
+   "table_name": "inspecciones",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "inspecciones",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "inspecciones",
+   "column_name": "permiso",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "inspecciones",
+   "column_name": "jurisdiccion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "inspecciones",
+   "column_name": "tipo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "inspecciones",
+   "column_name": "fecha",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "inspecciones",
+   "column_name": "resultado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "'programada'::text"
+  },
+  {
+   "table_name": "inspecciones",
+   "column_name": "notas",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "inspecciones",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "inspecciones",
+   "column_name": "evento_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "jurisdicciones": [
+  {
+   "table_name": "jurisdicciones",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "jurisdicciones",
+   "column_name": "condado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "jurisdicciones",
+   "column_name": "notas",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "jurisdicciones",
+   "column_name": "portal_url",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "jurisdicciones",
+   "column_name": "contacto",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "jurisdicciones",
+   "column_name": "actualizado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  }
+ ],
+ "lev_cuartos": [
+  {
+   "table_name": "lev_cuartos",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "nextval('lev_cuartos_id_seq'::regclass)"
+  },
+  {
+   "table_name": "lev_cuartos",
+   "column_name": "levantamiento_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "lev_cuartos",
+   "column_name": "llave_cliente",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "lev_cuartos",
+   "column_name": "nombre",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "lev_cuartos",
+   "column_name": "clase",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "lev_cuartos",
+   "column_name": "estado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "'empezado'::text"
+  },
+  {
+   "table_name": "lev_cuartos",
+   "column_name": "conteos",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "'[]'::jsonb"
+  },
+  {
+   "table_name": "lev_cuartos",
+   "column_name": "nota",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "lev_cuartos",
+   "column_name": "orden",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "0"
+  }
+ ],
+ "lev_recetas": [
+  {
+   "table_name": "lev_recetas",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "nextval('lev_recetas_id_seq'::regclass)"
+  },
+  {
+   "table_name": "lev_recetas",
+   "column_name": "clave",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "lev_recetas",
+   "column_name": "catalogo_item_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "lev_recetas",
+   "column_name": "cantidad",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "1"
+  },
+  {
+   "table_name": "lev_recetas",
+   "column_name": "nota",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "levantamientos": [
+  {
+   "table_name": "levantamientos",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "nextval('levantamientos_id_seq'::regclass)"
+  },
+  {
+   "table_name": "levantamientos",
+   "column_name": "llave_cliente",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "levantamientos",
+   "column_name": "estimado_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "levantamientos",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "levantamientos",
+   "column_name": "nombre",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "levantamientos",
+   "column_name": "cliente",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "levantamientos",
+   "column_name": "direccion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "levantamientos",
+   "column_name": "sqft",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "levantamientos",
+   "column_name": "tipo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "levantamientos",
+   "column_name": "panel",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "'{}'::jsonb"
+  },
+  {
+   "table_name": "levantamientos",
+   "column_name": "condiciones",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "'{}'::jsonb"
+  },
+  {
+   "table_name": "levantamientos",
+   "column_name": "medidas",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "'{}'::jsonb"
+  },
+  {
+   "table_name": "levantamientos",
+   "column_name": "decisiones",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "'{}'::jsonb"
+  },
+  {
+   "table_name": "levantamientos",
+   "column_name": "circuitos",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "'[]'::jsonb"
+  },
+  {
+   "table_name": "levantamientos",
+   "column_name": "factor",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "1"
+  },
+  {
+   "table_name": "levantamientos",
+   "column_name": "estado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "'abierto'::text"
+  },
+  {
+   "table_name": "levantamientos",
+   "column_name": "autor_id",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "levantamientos",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "levantamientos",
+   "column_name": "actualizado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "now()"
+  }
+ ],
+ "materiales": [
+  {
+   "table_name": "materiales",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "materiales",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "materiales",
+   "column_name": "descripcion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "materiales",
+   "column_name": "cantidad",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "materiales",
+   "column_name": "estado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "'falta'::text"
+  },
+  {
+   "table_name": "materiales",
+   "column_name": "origen_pendiente",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "materiales",
+   "column_name": "autor_id",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "materiales",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "materiales",
+   "column_name": "precio",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "materiales",
+   "column_name": "recibo_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "mensajes": [
+  {
+   "table_name": "mensajes",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "mensajes",
+   "column_name": "autor_id",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "mensajes",
+   "column_name": "destinatario_id",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "mensajes",
+   "column_name": "texto",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "mensajes",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  }
+ ],
+ "modelo_precios": [
+  {
+   "table_name": "modelo_precios",
+   "column_name": "papel",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "modelo_precios",
+   "column_name": "entrada",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "modelo_precios",
+   "column_name": "salida",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "modelo_precios",
+   "column_name": "cache_lectura",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "modelo_precios",
+   "column_name": "cache_escritura",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "modelo_precios",
+   "column_name": "vigente_desde",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "CURRENT_DATE"
+  }
+ ],
+ "pendientes": [
+  {
+   "table_name": "pendientes",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "pendientes",
+   "column_name": "fecha",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "pendientes",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "pendientes",
+   "column_name": "descripcion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "pendientes",
+   "column_name": "autor_id",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "pendientes",
+   "column_name": "resuelto",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "false"
+  },
+  {
+   "table_name": "pendientes",
+   "column_name": "resuelto_por",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "pendientes",
+   "column_name": "resuelto_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "pendientes",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "pendientes",
+   "column_name": "prioridad",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "'normal'::text"
+  }
+ ],
+ "perfiles": [
+  {
+   "table_name": "perfiles",
+   "column_name": "id",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "perfiles",
+   "column_name": "nombre",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "perfiles",
+   "column_name": "rol",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "perfiles",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "perfiles",
+   "column_name": "activo",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "true"
+  },
+  {
+   "table_name": "perfiles",
+   "column_name": "en_grupo",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "true"
+  },
+  {
+   "table_name": "perfiles",
+   "column_name": "ultima_vista",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "planos_proyectos": [
+  {
+   "table_name": "planos_proyectos",
+   "column_name": "id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "planos_proyectos",
+   "column_name": "dueno",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "auth.uid()"
+  },
+  {
+   "table_name": "planos_proyectos",
+   "column_name": "nombre",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "''::text"
+  },
+  {
+   "table_name": "planos_proyectos",
+   "column_name": "cliente",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "''::text"
+  },
+  {
+   "table_name": "planos_proyectos",
+   "column_name": "direccion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "''::text"
+  },
+  {
+   "table_name": "planos_proyectos",
+   "column_name": "job",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "''::text"
+  },
+  {
+   "table_name": "planos_proyectos",
+   "column_name": "rev",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "0"
+  },
+  {
+   "table_name": "planos_proyectos",
+   "column_name": "updated_at",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "planos_proyectos",
+   "column_name": "aparato",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "''::text"
+  },
+  {
+   "table_name": "planos_proyectos",
+   "column_name": "path",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "''::text"
+  },
+  {
+   "table_name": "planos_proyectos",
+   "column_name": "tamano",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "0"
+  },
+  {
+   "table_name": "planos_proyectos",
+   "column_name": "pdf_ids",
+   "data_type": "ARRAY",
+   "udt_name": "_text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "'{}'::text[]"
+  },
+  {
+   "table_name": "planos_proyectos",
+   "column_name": "borrado",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "false"
+  }
+ ],
+ "portal_llaves": [
+  {
+   "table_name": "portal_llaves",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "portal_llaves",
+   "column_name": "token",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  }
+ ],
+ "portal_visitas": [
+  {
+   "table_name": "portal_visitas",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "portal_visitas",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "portal_visitas",
+   "column_name": "cuando",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "now()"
+  }
+ ],
+ "precios_observados": [
+  {
+   "table_name": "precios_observados",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "precios_observados",
+   "column_name": "item",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "precios_observados",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "precios_observados",
+   "column_name": "fecha",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "((now() AT TIME ZONE 'America/New_York'::text))::date"
+  },
+  {
+   "table_name": "precios_observados",
+   "column_name": "precio",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "precios_observados",
+   "column_name": "fuente",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "precios_observados",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  }
+ ],
+ "propuesta_opciones": [
+  {
+   "table_name": "propuesta_opciones",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "nextval('propuesta_opciones_id_seq'::regclass)"
+  },
+  {
+   "table_name": "propuesta_opciones",
+   "column_name": "propuesta_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "propuesta_opciones",
+   "column_name": "letra",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "propuesta_opciones",
+   "column_name": "titulo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "propuesta_opciones",
+   "column_name": "alcance",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "'[]'::jsonb"
+  },
+  {
+   "table_name": "propuesta_opciones",
+   "column_name": "no_incluye",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "'[]'::jsonb"
+  },
+  {
+   "table_name": "propuesta_opciones",
+   "column_name": "precio",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": 12,
+   "numeric_scale": 2,
+   "is_nullable": "NO",
+   "column_default": "0"
+  },
+  {
+   "table_name": "propuesta_opciones",
+   "column_name": "hitos_plan",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "'[]'::jsonb"
+  },
+  {
+   "table_name": "propuesta_opciones",
+   "column_name": "recomendada",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "false"
+  },
+  {
+   "table_name": "propuesta_opciones",
+   "column_name": "documento_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuesta_opciones",
+   "column_name": "orden",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "0"
+  },
+  {
+   "table_name": "propuesta_opciones",
+   "column_name": "es_addon",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "false"
+  }
+ ],
+ "propuestas": [
+  {
+   "table_name": "propuestas",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "nextval('propuestas_id_seq'::regclass)"
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "estimado_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "estado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "'borrador'::text"
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "escenario",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "valida_hasta",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "opcion_elegida_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "elegida_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "elegida_ip",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "elegida_aparato",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "actualizado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "alcance_md",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "alcance_huella",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "alcance_leido",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "alcance_en",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "alcance_decisiones",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "alcance_estado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "armado_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "archivo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "uso_modelo",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "reparto_pct",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "addons_elegidos",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "total_aceptado",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": 12,
+   "numeric_scale": 2,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "alcance_lectura",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "propuestas",
+   "column_name": "alcance_revision",
+   "data_type": "jsonb",
+   "udt_name": "jsonb",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "proyectos": [
+  {
+   "table_name": "proyectos",
+   "column_name": "id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "tipo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "nombre",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "direccion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "cliente",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "via",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "estado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "fase",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "estado_detalle",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "proxima_accion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "ref",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "horas_estimadas",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "0"
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "actualizado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "horas_reales_base",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "0"
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "portal_dinero",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "false"
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "portal_completo",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "false"
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "work_subtype",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "estimado_ref",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "qb_customer_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "origen",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "cliente_email",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "cliente_tel",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "puede_cancelar_hasta",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "cierre_directo",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "portal_invitado_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "contratista_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "contratista_modo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "nto_enviado_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "nto_nota",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "contratista_contacto",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "portal_resumen",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "proyectos",
+   "column_name": "portal_resumen_en",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "push_suscripciones": [
+  {
+   "table_name": "push_suscripciones",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "push_suscripciones",
+   "column_name": "usuario_id",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "push_suscripciones",
+   "column_name": "endpoint",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "push_suscripciones",
+   "column_name": "p256dh",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "push_suscripciones",
+   "column_name": "auth",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "push_suscripciones",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  }
+ ],
+ "qb_config": [
+  {
+   "table_name": "qb_config",
+   "column_name": "id",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "1"
+  },
+  {
+   "table_name": "qb_config",
+   "column_name": "realm_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "qb_config",
+   "column_name": "refresh_token",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "qb_config",
+   "column_name": "actualizado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "qb_config",
+   "column_name": "oauth_state",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "qb_config",
+   "column_name": "payments_activo",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "qb_llamadas": [
+  {
+   "table_name": "qb_llamadas",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "nextval('qb_llamadas_id_seq'::regclass)"
+  },
+  {
+   "table_name": "qb_llamadas",
+   "column_name": "origen",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "qb_llamadas",
+   "column_name": "accion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "qb_llamadas",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "qb_llamadas",
+   "column_name": "hito_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "qb_llamadas",
+   "column_name": "documento_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "qb_llamadas",
+   "column_name": "resultado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "qb_llamadas",
+   "column_name": "detalle",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "qb_llamadas",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "now()"
+  }
+ ],
+ "recibos": [
+  {
+   "table_name": "recibos",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "recibos",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "recibos",
+   "column_name": "ruta",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "recibos",
+   "column_name": "total",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "recibos",
+   "column_name": "proveedor",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "recibos",
+   "column_name": "notas",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "recibos",
+   "column_name": "estado",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "'por_leer'::text"
+  },
+  {
+   "table_name": "recibos",
+   "column_name": "autor_id",
+   "data_type": "uuid",
+   "udt_name": "uuid",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "recibos",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "recibos",
+   "column_name": "co",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "recibos",
+   "column_name": "fecha",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "recibos",
+   "column_name": "categoria",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "'material'::text"
+  },
+  {
+   "table_name": "recibos",
+   "column_name": "subtotal",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "recibos",
+   "column_name": "tax",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "recibos",
+   "column_name": "num_recibo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "recibos",
+   "column_name": "metodo_pago",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "recibos",
+   "column_name": "ultimos4",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "recibos",
+   "column_name": "po_job",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "textos_legales": [
+  {
+   "table_name": "textos_legales",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "nextval('textos_legales_id_seq'::regclass)"
+  },
+  {
+   "table_name": "textos_legales",
+   "column_name": "clave",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "textos_legales",
+   "column_name": "version",
+   "data_type": "integer",
+   "udt_name": "int4",
+   "numeric_precision": 32,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "1"
+  },
+  {
+   "table_name": "textos_legales",
+   "column_name": "titulo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "textos_legales",
+   "column_name": "texto",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "textos_legales",
+   "column_name": "revisado_por_abogado",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "false"
+  },
+  {
+   "table_name": "textos_legales",
+   "column_name": "vigente",
+   "data_type": "boolean",
+   "udt_name": "bool",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "true"
+  },
+  {
+   "table_name": "textos_legales",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "now()"
+  }
+ ],
+ "textos_vistos": [
+  {
+   "table_name": "textos_vistos",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": "nextval('textos_vistos_id_seq'::regclass)"
+  },
+  {
+   "table_name": "textos_vistos",
+   "column_name": "documento_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "textos_vistos",
+   "column_name": "texto_legal_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "textos_vistos",
+   "column_name": "visto_el",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "textos_vistos",
+   "column_name": "ip",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ],
+ "trabajos_externos": [
+  {
+   "table_name": "trabajos_externos",
+   "column_name": "id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "trabajos_externos",
+   "column_name": "proyecto_id",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "trabajos_externos",
+   "column_name": "descripcion",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "trabajos_externos",
+   "column_name": "fecha",
+   "data_type": "date",
+   "udt_name": "date",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "trabajos_externos",
+   "column_name": "tipo",
+   "data_type": "text",
+   "udt_name": "text",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "'ajuste'::text"
+  },
+  {
+   "table_name": "trabajos_externos",
+   "column_name": "horas",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": null
+  },
+  {
+   "table_name": "trabajos_externos",
+   "column_name": "costo",
+   "data_type": "numeric",
+   "udt_name": "numeric",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "NO",
+   "column_default": null
+  },
+  {
+   "table_name": "trabajos_externos",
+   "column_name": "creado",
+   "data_type": "timestamp with time zone",
+   "udt_name": "timestamptz",
+   "numeric_precision": null,
+   "numeric_scale": null,
+   "is_nullable": "YES",
+   "column_default": "now()"
+  },
+  {
+   "table_name": "trabajos_externos",
+   "column_name": "externo_id",
+   "data_type": "bigint",
+   "udt_name": "int8",
+   "numeric_precision": 64,
+   "numeric_scale": 0,
+   "is_nullable": "YES",
+   "column_default": null
+  }
+ ]
+}
