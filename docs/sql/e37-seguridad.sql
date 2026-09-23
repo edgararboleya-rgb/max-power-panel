@@ -4,6 +4,12 @@
 -- Supabase → SQL Editor. Se pega ENTERO. Idempotente: se puede pegar las
 -- veces que haga falta, y la segunda no cambia nada.
 --
+-- ✅ APLICADO EN PRODUCCIÓN el 23-sep-2026 a las 20:55 UTC, como migración
+--    e37_seguridad (Supabase → Database → Migrations). Comprobación 9/9 ✓;
+--    el aviso de prueba salió (notificar: 200, enviadas 3, fallos 0). El
+--    asesor de seguridad pasó de 5 a 0 funciones ejecutables sin sesión y de
+--    5 a 0 sin search_path. Volver a pegarlo no cambia nada (idempotente).
+--
 -- NO cambia nada de lo que la cuadrilla, el portal del cliente, el del
 -- contratista o Edgar hacen hoy. Probado antes en el banco local
 -- (pruebas/seguridad/): primero se demostró cada agujero ABIERTO y después
