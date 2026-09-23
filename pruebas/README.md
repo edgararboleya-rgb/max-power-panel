@@ -26,3 +26,5 @@ Regla: una prueba nueva por cada función que toque dinero o que escriba algo
 que el cliente vaya a firmar.
 
 | `e34.js` | E34 · el signo del dinero en la hoja de alcance: que un deduct «-$12,500», «− $12,500» o «($12,500)» se lea como descuento, y que un guion SEPARADOR («ADD - extra - $3,400») no convierta un añadido en descuento. Corre en Node, sin navegador. |
+
+| `e35.js` | E35 · tanda 1 de Mariners: una línea de LOGÍSTICA / ALLOWANCE / SUBCONTRATO no paga tax, misceláneas, markup ni escalación y no infla la hora cargada (sí overhead y profit); que una línea sin marcar dé el bid de siempre; que el takeoff cuadre de arriba abajo; que el allowance salga en la propuesta y la logística no; la validez por estimado; el flete de la cuota; el aviso del importe único; el permiso sin marcar con contratista o MXP MEP; ICRA en modo planos. |

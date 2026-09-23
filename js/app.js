@@ -5747,7 +5747,7 @@ function esFalloDeRed(err) {
     { id: "rotulado",     item: "ROTULADO DE CIRCUITO Y DIRECTORIO DE PANEL (por ckt)",      cuenta: "ckt",      por: 1 },
     { id: "demo",         item: "DEMOLICIÓN DE DISPOSITIVO O LUMINARIA EXISTENTE (por unidad)", cuenta: "demo",  por: 1, modos: ["remodelacion"], supuesto: true },
     { id: "arranque",     item: "PUESTA EN MARCHA DIMMER 0-10V / SENSOR (por unidad)",        cuenta: "dimmer",   por: 1 },
-    { id: "icra",         item: "BARRERA ICRA / CONTENCIÓN DE POLVO (por barrera)",           cuenta: "fijo",     por: 1, modos: ["remodelacion"], supuesto: true },
+    { id: "icra",         item: "BARRERA ICRA / CONTENCIÓN DE POLVO (por barrera)",           cuenta: "fijo",     por: 1, modos: ["remodelacion", "planos"], supuesto: true },
     { id: "lift",         item: "LIFT O ANDAMIO — MONTAJE Y MOVIMIENTO (por día)",            cuenta: "fijo",     por: 1, supuesto: true },
     { id: "permiso",      item: "PERMISO E INSPECCIONES (por proyecto)",                      cuenta: "fijo",     por: 1 },
     { id: "movilizacion", item: "MOVILIZACIÓN Y ACARREO (por viaje)",                         cuenta: "fijo",     por: 1, supuesto: true },
@@ -5819,19 +5819,31 @@ function esFalloDeRed(err) {
       yaHay[k] = (yaHay[k] || 0) + (Number(it.cantidad) || 0);
     }
     const filas = [], avisos = [];
+    /* (23/09, Mariners) En modo planos, la barrera ICRA solo se propone en
+       trabajos de SALUD en operación (hospital, clínica, AHCA): una obra nueva
+       no la lleva, y en Mariners —un hospital de Baptist Health— no salía. */
+    const deSalud = /hospital|clinic|medical|health|ahca|icra|surgery|patient|nursing/i
+      .test([(est || {}).nombre, (est || {}).cliente].filter(Boolean).join(" "));
     for (const r of horasReglas(cfg)) {
       if (r.modos && r.modos.indexOf(modo) === -1) continue;
+      if (r.id === "icra" && modo === "planos" && !deSalud) continue;
       const cant = Math.round((cuentas[r.cuenta] || 0) * (Number(r.por) || 0));
       const cat = catPorNombre(r.item);
       if (!cat) { avisos.push(`«${r.item}» no está en el catálogo — corre docs/sql/e27.sql`); continue; }
-      const de = r.cuenta === "ckt" ? `${cuentas.ckt} breaker(s) LISTADOS en el estimado — si el trabajo tiene más circuitos que breakers comprados, cámbialo`
+      /* (23/09, Mariners) EL PERMISO LO SACA QUIEN LO SACA. Regla de la casa:
+         sin horas de permiso cuando lo saca el GC. Con trato directo lo sacas
+         tú y sale marcado como siempre; con un contratista o en un trabajo de
+         MXP MEP casi siempre lo saca él, así que sale SIN marcar y lo dice. */
+      const permisoDeOtro = r.id === "permiso" && !!((est || {}).contratista_id || esMEP(est || {}));
+      const de = permisoDeOtro ? "el trato es con un contratista: si el permiso lo saca el GC, NO lo marques (regla de la casa)"
+        : r.cuenta === "ckt" ? `${cuentas.ckt} breaker(s) LISTADOS en el estimado — si el trabajo tiene más circuitos que breakers comprados, cámbialo`
         : r.cuenta === "demo" ? `SUPUESTO: ${cuentas.dispositivo} dispositivo(s) + ${cuentas.luminaria} luminaria(s) nuevas`
         : r.cuenta === "dimmer" ? `${cuentas.dimmer} dimmer(s) y sensor(es)`
         : "por proyecto — ponlo tú";
       filas.push({ id: r.id, item: cat.item, nom: r.item, cantidad: cant,
                    horas: Number(cat.horas_unidad) || 0, precio: Number(cat.precio) || 0,
                    codigo: cat.codigo || "", unidad: cat.unidad || "E",
-                   de, supuesto: !!r.supuesto, ya: yaHay[normTxt(cat.item)] || 0 });
+                   de, supuesto: !!r.supuesto || permisoDeOtro, ya: yaHay[normTxt(cat.item)] || 0 });
     }
     if (cuentas.ckt === 0 && filas.some(f => f.id === "terminacion"))
       avisos.push("No encuentro breakers en el estimado: las horas de terminar y rotular circuitos salen en 0 — pon tú el número de circuitos.");
@@ -6030,7 +6042,12 @@ function esFalloDeRed(err) {
      números de dinero, el unitario es el menor (el otro es el extendido).
      PURA: no escribe nada, devuelve lo que entendió y lo que no. */
   function leeCuota(txt) {
-    const filas = [], sin = [];
+    const filas = [], sin = [], flete = [];
+    /* (23/09, Mariners) EL FLETE NO ES UN PIE DE CUOTA QUE SE TIRA. A los Cayos
+       el «FREIGHT / DELIVERY TO KEY LARGO $1,450» es dinero de verdad y se
+       perdía con los totales. Se aparta con su monto (el mayor de la línea)
+       para que Edgar lo añada al estimado con un toque. */
+    const FLETE = /^(freight|shipping|ship(ping)? ?(&|and) ?handling|handling|delivery|flete|envio)\b/i;
     const SALTA = /^(qty|cant|item|descrip|part|total|sub ?total|tax|freight|ship|sold|bill|thank|quote|page|line|u\/?m|unit|price|ext|amount|net|terms|valid|www\.|tel|fax)\b/i;
     // Lo que NO es un renglón de material aunque lleve dinero: los pies de la
     // cuota. Se mira el TEXTO ya sin números, que es donde se ven de verdad.
@@ -6038,6 +6055,12 @@ function esFalloDeRed(err) {
     String(txt || "").split(/\r?\n/).forEach(ln => {
       const raw = ln.replace(/\t/g, "  ").trim();
       if (!raw || raw.length < 4) return;
+      if (FLETE.test(raw)) {
+        const m = [...raw.matchAll(/\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)|([0-9][0-9,]*\.[0-9]{2})\b/g)]
+          .map(x => Number(String(x[1] || x[2]).replace(/,/g, ""))).filter(v => v > 0);
+        if (m.length) flete.push({ desc: raw.replace(/\$?\s*[0-9][0-9,]*\.[0-9]{2}\b/g, " ").replace(/\s{2,}/g, " ").trim().slice(0, 70), monto: Math.max(...m) });
+        return;
+      }
       if (SALTA.test(raw)) return;
       // dinero: con $ o con dos decimales
       const money = [...raw.matchAll(/\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)|([0-9][0-9,]*\.[0-9]{2})\b/g)]
@@ -6056,9 +6079,13 @@ function esFalloDeRed(err) {
       const letras = (desc.match(/[A-Za-z]/g) || []).length;
       if (TOTALES.test(desc)) return;
       if (!(precio > 0) || letras < 4) { if (letras >= 4) sin.push(raw.slice(0, 90)); return; }
-      filas.push({ desc: normTxt(desc), cantidad: cant, precio });
+      /* UN SOLO IMPORTE CON VARIAS UNIDADES: puede ser el unitario o el
+         extendido, y no hay forma de saberlo. «3 600A SWITCHBOARD SECTION
+         $74,550.00» se tomaba como $74.550 CADA UNA. Se marca para que se vea. */
+      const unImporte = money.length === 1 && cant > 1;
+      filas.push({ desc: normTxt(desc), cantidad: cant, precio, unImporte, siTotal: unImporte ? Math.round(precio / cant * 100) / 100 : null });
     });
-    return { filas, sin };
+    return { filas, sin, flete };
   }
   /* Casar lo leído con los renglones que esperan cuota. Por palabras: cuántas
      de las del MODELO aparecen en la línea del proveedor. Los números del
@@ -6095,7 +6122,8 @@ function esFalloDeRed(err) {
         const ya = mejor.p.ya;
         porItem.set(k, { item: k, id: mejor.p.ref.id, modelo: luzModelo(k), desc: f.desc,
                          precio: f.precio, cantidad: Number(mejor.p.ref.cantidad) || 0,
-                         pc: Math.round(mejor.sc * 100), dudoso: mejor.sc - sc2 < 0.15,
+                         pc: Math.round(mejor.sc * 100), dudoso: mejor.sc - sc2 < 0.15 || !!f.unImporte,
+                         unImporte: !!f.unImporte, siTotal: f.siTotal || null,
                          antes: antes ? antes.precio : null,
                          // el renglón ya traía una cuota de otro día: manda la MÁS CARA
                          yaTenia: ya || null, gana: !ya || f.precio > ya });
@@ -6103,7 +6131,7 @@ function esFalloDeRed(err) {
         antes.antes = Math.min(antes.antes === null || antes.antes === undefined ? f.precio : antes.antes, f.precio);
       }
     }
-    return { casadas: [...porItem.values()], sinPareja,
+    return { casadas: [...porItem.values()], sinPareja, flete: cuota.flete || [],
              sinCuota: pend.filter(p => !porItem.has(p.ref.item)).map(p => p.ref) };
   }
 
@@ -6175,6 +6203,18 @@ function esFalloDeRed(err) {
       .flatMap(ee => itemsDeEnsamble(ee.ensamble_id, Number(ee.cantidad), ee.pies, !!ee.sin_lineales));
     return manual.concat(porEnsamble);
   }
+
+  // (23/09) Validez de la propuesta: la del estimado, o los 15 días de siempre
+  const DIAS_VALIDEZ = 15;
+  const diasValidez = est => { const d = Number(est && est.valida_dias); return Number.isInteger(d) && d > 0 ? d : DIAS_VALIDEZ; };
+  // (23/09) Los tipos de una línea a mano. Sin tipo = material tuyo, como siempre.
+  const TIPOS_COSTO = { log: "LOGÍSTICA", allow: "ALLOWANCE", sub: "SUBCONTRATO" };
+  const TIPOS_LINEA = [["", "Material tuyo"], ["cot", "Cotización del proveedor"],
+    ["log", "Logística — viajes, hotel, per diem"], ["allow", "Allowance — precio provisional"], ["sub", "Subcontrato"]];
+  const chipLinea = l => l.tipo === "cot" ? ` <span class="recibo-chip devolucion">COTIZACIÓN</span>`
+    : TIPOS_COSTO[l.tipo] ? ` <span class="recibo-chip por_leer">${TIPOS_COSTO[l.tipo]}</span>` : "";
+  const selTipoLinea = (l, i) => `<select class="chip-select rap-mat-tipo" data-i="${i}" title="¿Qué es esta línea? Cambia cómo paga en la fórmula">
+      ${TIPOS_LINEA.map(([v, t]) => `<option value="${v}"${(l.tipo || "") === v ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
 
   // La fórmula Max Power (motor del Excel) + automáticos del v2
   function calcularEstimado(est, itemsOverride) {
@@ -6257,8 +6297,19 @@ function esFalloDeRed(err) {
     // Una línea SIN marcar se comporta igual que siempre, así que ningún
     // estimado que ya existe se mueve ni un centavo.
     const esCot = l => l && l.tipo === "cot";
+    /* (23/09, Mariners) LO QUE NO ES MATERIAL NO PAGA COMO MATERIAL. Viajes a
+       los Cayos, hotel, per diem, el allowance del vendor de fire alarm o una
+       cuadrilla subcontratada entraban como «material a mano»: pagaban
+       misceláneas, sales tax, markup y escalación, y la hora cargada salía a
+       $412. Una línea marcada LOGÍSTICA / ALLOWANCE / SUBCONTRATO entra como
+       COSTO DIRECTO: sí lleva overhead y profit (es dinero que Edgar adelanta
+       y gestiona), pero no tax, ni misceláneas, ni markup de material, ni
+       escalación, y no cuenta en la hora cargada. Una línea sin marcar sigue
+       igual que siempre: ningún estimado que ya existe se mueve un centavo. */
+    const esCosto = l => !!(l && TIPOS_COSTO[l.tipo]);
+    const costos = lineasMat.reduce((s, l) => s + (esCosto(l) ? n(l.monto) : 0), 0);
     const matCot = lineasMat.reduce((s, l) => s + (esCot(l) ? n(l.monto) : 0), 0) + refLuz.total;
-    const matMano = lineasMat.reduce((s, l) => s + (esCot(l) ? 0 : n(l.monto)), 0);
+    const matMano = lineasMat.reduce((s, l) => s + (esCot(l) || esCosto(l) ? 0 : n(l.monto)), 0);
     const matPropio = rapido
       ? matMano
       : base.reduce((s, i) => s + n(i.cantidad) * n(i.precio), 0)
@@ -6289,7 +6340,7 @@ function esFalloDeRed(err) {
     const totalLabor = laborBase + benefits;
     // La escalación es un costo, así que entra antes del overhead y del profit
     const escalacion = (totalLabor + totalMaterial) * (escFactor - 1);
-    const prime = totalLabor + totalMaterial + escalacion;
+    const prime = totalLabor + totalMaterial + escalacion + costos;
     // El overhead por PORCENTAJE no se cobra sobre lo que llega cotizado.
     // Mismo argumento que las misceláneas, pero con mucho más dinero detrás:
     // un switchgear de $600.000 que solo hay que recibir generaría $90.000 de
@@ -6300,15 +6351,19 @@ function esFalloDeRed(err) {
     const overhead = ohPct !== null ? Math.max(0, prime - cotEnPrime) * ohPct : horas * ohHH;
     const profit = (prime + overhead) * profitPct;
     const bid = prime + overhead + profit;
+    // lo que los costos directos ponen en el bid, con su overhead y su profit:
+    // se descuenta de la hora cargada para que siga siendo una hora de trabajo
+    const costosCargados = costos * (1 + (ohPct !== null ? ohPct : 0)) * (1 + profitPct);
     return { items: base, autos, consAvisos, consCubiertos, refLuz, mermaMat, mermaHoras, misc, esc, matSubtotal, tax,
              totalMaterial, horasBase, horas, laborBase, benefits, totalLabor,
              prime, overhead, profit, markup, bid,
              miscPct, taxPct, ohHH, ohPct: (ohPct ?? null), profitPct, markupPct,
              escalacion, escFactor, mesesObra, escAnual, cotEnPrime,
              matPropio, matCot, markupCotPct: mkCot,
-             mezcla, tarifaMezclada, benefitsPct, lineasMat,
-             // $ por hora cargado: el precio final entre las horas (todo adentro)
-             tarifaCargada: horas > 0 ? bid / horas : 0 };
+             mezcla, tarifaMezclada, benefitsPct, lineasMat, costos, costosCargados,
+             // $ por hora cargado: el precio final entre las horas, sin los
+             // costos directos (viajes, allowances, subs), que no son horas tuyas
+             tarifaCargada: horas > 0 ? (bid - costosCargados) / horas : 0 };
   }
 
   // La cuadrilla de un estimado, siempre como lista [{rol, tarifa, pct}]
@@ -7586,6 +7641,8 @@ function esFalloDeRed(err) {
     l.push(`Mano de obra:      ${r2(c.horas)} h   ${fmt(r2(c.totalLabor))}`);
     l.push(`Material + tax:                  ${fmt(r2(c.totalMaterial))}`);
     if (c.misc) l.push(`Misceláneas:                     ${fmt(r2(c.misc))}`);
+    if (c.escalacion > 0.005) l.push(`Escalación:                      ${fmt(r2(c.escalacion))}`);
+    if (c.costos > 0.005) l.push(`Logística / allowances / subs:   ${fmt(r2(c.costos))}`);
     l.push(`Overhead:                        ${fmt(r2(c.overhead))}`);
     l.push(`Profit:                          ${fmt(r2(c.profit))}`);
     l.push("");
@@ -7612,6 +7669,19 @@ function esFalloDeRed(err) {
     (c.autos || []).forEach(i => filas.push({ cod: codDe(i), item: i.item, de: "automático: " + (i.auto || ""), q: i.cantidad, u: i.unidad || "", p: i.precio, h: i.horas }));
     // las luminarias a precio de referencia, con su precio, para poder cuadrarlas
     ((c.refLuz && c.refLuz.filas) || []).forEach(f => filas.push({ cod: "11-LIGHT", item: nombreParaCliente(f.item), de: "precio de referencia (" + (f.fuente === "precio" ? "tuyo" : f.nom) + ") · cuota pendiente", q: f.cantidad, u: "E", p: f.precio, h: 0 }));
+    /* (23/09, Mariners) Las líneas a mano entraban al «= MATERIAL» sin salir en
+       ninguna fila: la columna no cuadraba. Las de material y cotización van
+       aquí; las de logística, allowance y subcontrato van en su propio bloque
+       abajo, porque no son material. */
+    const lineasMano = Array.isArray(est.lineas_material) ? est.lineas_material : [];
+    lineasMano.filter(x => !TIPOS_COSTO[x.tipo]).forEach(x => filas.push({ cod: "", item: x.desc || "Material", de: x.tipo === "cot" ? "a mano · cotización del proveedor" : "a mano", q: 1, u: "LOT", p: Number(x.monto) || 0, h: 0 }));
+    // un precio del estimado que no es el del catálogo se dice (el lápiz de precio, 23/09)
+    for (const f of filas) {
+      if (f.de) continue;
+      const cat = catalogoExacto(f.item);
+      if (cat && Number(cat.precio) > 0 && Math.abs(Number(cat.precio) - Number(f.p)) > 0.005)
+        f.de = "precio de este estimado (catálogo " + n2(cat.precio) + ")";
+    }
     filas.sort((a, b) => (a.cod || "zz").localeCompare(b.cod || "zz") || a.item.localeCompare(b.item));
     const hoyTxt = new Date().toLocaleDateString(LOCALE, { day: "numeric", month: "long", year: "numeric" });
     const l = [];
@@ -7629,6 +7699,7 @@ function esFalloDeRed(err) {
     if (c.mermaMat) T("+ Merma (cable / tubería)", c.mermaMat, c.mermaHoras || 0);
     if (c.misc) T("+ Misceláneas", c.misc);
     if (c.tax) T("+ Sales tax", c.tax);
+    if (c.markup) T("+ Markup de materiales", c.markup);
     /* (21/09, verificación) Las luminarias a PRECIO DE REFERENCIA entran al bid
        por la puerta de las cotizaciones, así que NO estaban en esta columna: al
        cuadrar el takeoff contra «= MATERIAL» faltaban — en Nicklaus, $19.630.
@@ -7641,6 +7712,14 @@ function esFalloDeRed(err) {
     T("= MATERIAL", c.totalMaterial);
     T(`Horas × factor${est.factor ? " " + est.factor : ""}`, null, c.horas);
     T(`Mano de obra (${n2(c.tarifaCargada)}/h cargada)`, c.totalLabor);
+    if (c.escalacion > 0.005) T(`+ Escalación (${n1(c.mesesObra)} meses de obra)`, c.escalacion);
+    const costosMano = lineasMano.filter(x => TIPOS_COSTO[x.tipo]);
+    if (costosMano.length) {
+      l.push("");
+      l.push(["", "COSTOS DIRECTOS — no son material: sin tax, misceláneas ni escalación"].join("\t"));
+      costosMano.forEach(x => l.push(["", x.desc || "", TIPOS_COSTO[x.tipo].toLowerCase(), "1", "LOT", n2(x.monto), "0", n2(x.monto), "0"].join("\t")));
+      T("= COSTOS DIRECTOS", c.costos);
+    }
     T("Overhead", c.overhead);
     T("Profit", c.profit);
     T("TOTAL", c.bid);
@@ -7674,6 +7753,17 @@ function esFalloDeRed(err) {
       }
     }
     const m1 = r2(bid * 0.35), m2 = r2(bid * 0.4), m3 = r2(bid - m1 - m2);
+    /* (23/09, Mariners) Un ALLOWANCE es un precio provisional y el cliente
+       tiene que saberlo: sale nombrado, con su monto, y la diferencia al
+       confirmarlo va por Change Order. La logística y los subs NO se nombran:
+       en un lump sum son costo de Edgar, no una partida del cliente. */
+    const allowances = (Array.isArray(est.lineas_material) ? est.lineas_material : []).filter(x => x.tipo === "allow");
+    const bloqueAllow = allowances.length ? `
+
+ALLOWANCES INCLUIDOS EN EL PRECIO / ALLOWANCES INCLUDED:
+${allowances.map(x => `• ${x.desc || "Allowance"}: ${fmt(r2(Number(x.monto) || 0))}`).join("\n")}
+Son montos provisionales. Al confirmarse el costo real, la diferencia —a favor
+o en contra— se ajusta por Change Order.` : "";
     const sujetas = lineasSujetasACuota(est, c);
     const bloqueCuota = sujetas.length ? `
 
@@ -7697,7 +7787,7 @@ ${exclE0.length
 NO INCLUYE / NOT INCLUDED (furnished by others):
 ${exclE0.map(x => "• " + x).join("\n")}`
   : `Incluye mano de obra, materiales, misceláneas y supervisión según el alcance.`}
-No incluye trabajos no listados; cambios se manejan por Change Order.${bloqueCuota}
+No incluye trabajos no listados; cambios se manejan por Change Order.${bloqueAllow}${bloqueCuota}
 
 PRECIO TOTAL (LUMP SUM): ${fmt(bid)}${est.sqft ? `  (${fmt(r2(bid / est.sqft))}/sqft)` : ""}
 
@@ -7706,7 +7796,7 @@ FORMA DE PAGO:
 • Milestone 2 — 40% al completar el avance principal: ${fmt(m2)}
 • Milestone 3 — 25% al pasar inspección final: ${fmt(m3)}
 
-Propuesta válida por 15 días. Gracias por la oportunidad.
+Propuesta válida por ${diasValidez(est)} días. Gracias por la oportunidad.
 Power done right the first time. ⚡`;
   }
 
@@ -7722,14 +7812,15 @@ Power done right the first time. ⚡`;
     const lineas = Array.isArray(est.lineas_material) ? est.lineas_material : [];
     const filasMat = lineas.map((l, i) => `
       <div class="rap-linea">
-        <span class="rap-desc">${esc(l.desc || "Material")}${l.tipo === "cot" ? ` <span class="recibo-chip devolucion">COTIZACIÓN</span>` : ""}</span>
+        <span class="rap-desc">${esc(l.desc || "Material")}${chipLinea(l)}</span>
         <span class="rap-monto">${fmt(r2(Number(l.monto) || 0))}</span>
-        ${!soloLectura ? `<button type="button" class="insp-borrar rap-mat-cot" data-i="${i}" title="${l.tipo === "cot" ? "Volver a tratarlo como material tuyo" : "Es una cotización del proveedor: no paga misceláneas"}">${l.tipo === "cot" ? "◉" : "○"}</button>
+        ${!soloLectura ? `${selTipoLinea(l, i)}
         <button type="button" class="insp-borrar rap-mat-editar" data-i="${i}" title="Editar">✎</button>
         <button type="button" class="insp-borrar rap-mat-borrar" data-i="${i}" title="Quitar">🗑</button>` : ""}
       </div>`).join("");
     const totalCot = r2(lineas.reduce((t, l) => t + (l.tipo === "cot" ? (Number(l.monto) || 0) : 0), 0));
-    const totalMano = r2(lineas.reduce((t, l) => t + (Number(l.monto) || 0), 0));
+    const totalCostos = r2(lineas.reduce((t, l) => t + (TIPOS_COSTO[l.tipo] ? (Number(l.monto) || 0) : 0), 0));
+    const totalMano = r2(lineas.reduce((t, l) => t + (TIPOS_COSTO[l.tipo] ? 0 : (Number(l.monto) || 0)), 0));
     return `
       <div class="cal-panel-card rap-card">
         <div class="cal-form-titulo">✍️ Horas y material a mano</div>
@@ -7745,10 +7836,11 @@ Power done right the first time. ⚡`;
             <input id="rap-meses" type="number" min="0" max="60" step="1" value="${esc(est.meses_obra ?? "")}" placeholder="—" ${soloLectura ? "disabled" : ""} title="Solo para obras largas: a partir de aquí se calcula la escalación de salarios y material. Vacío = no se aplica.">
           </label>
         </div>
-        <div class="rap-sub">Material a mano — ${fmt(totalMano)}${totalCot ? ` · ${fmt(totalCot)} en cotizaciones` : ""}
+        <div class="rap-sub">Material a mano — ${fmt(totalMano)}${totalCot ? ` · ${fmt(totalCot)} en cotizaciones` : ""}${totalCostos ? ` · ${fmt(totalCostos)} en logística, allowances y subs` : ""}
           ${!soloLectura ? `<button type="button" class="accion secundaria rap-mat-agregar">+ Agregar línea</button>` : ""}</div>
         ${filasMat || `<p class="cal-sin-eventos">Sin líneas todavía: un total, o varias (breaker, caja, cable…).</p>`}
-        ${totalCot ? `<p class="rent-nota">Lo marcado con ◉ es cotización del proveedor y no paga el ${Math.round((c.miscPct || 0.03) * 100)} % de misceláneas: ese porcentaje es tape, wirenuts y fijación, y un switchgear que llega en camión no los consume.</p>` : ""}
+        ${totalCot ? `<p class="rent-nota">Lo marcado como COTIZACIÓN no paga el ${Math.round((c.miscPct || 0.03) * 100)} % de misceláneas: ese porcentaje es tape, wirenuts y fijación, y un switchgear que llega en camión no los consume.</p>` : ""}
+        ${totalCostos ? `<p class="rent-nota">LOGÍSTICA, ALLOWANCE y SUBCONTRATO no son material: no pagan sales tax, ni misceláneas, ni markup, ni escalación, y no inflan la hora cargada. Sí llevan overhead y profit.</p>` : ""}
       </div>`;
   }
 
@@ -7767,9 +7859,9 @@ Power done right the first time. ⚡`;
 
     const filasMat = lineas.map((l, i) => `
       <div class="rap-linea">
-        <span class="rap-desc">${esc(l.desc || "Material")}${l.tipo === "cot" ? ` <span class="recibo-chip devolucion">COTIZACIÓN</span>` : ""}</span>
+        <span class="rap-desc">${esc(l.desc || "Material")}${chipLinea(l)}</span>
         <span class="rap-monto">${fmt(r2(Number(l.monto) || 0))}</span>
-        ${!soloLectura ? `<button type="button" class="insp-borrar rap-mat-cot" data-i="${i}" title="${l.tipo === "cot" ? "Volver a tratarlo como material tuyo" : "Es una cotización del proveedor: no paga misceláneas"}">${l.tipo === "cot" ? "◉" : "○"}</button>
+        ${!soloLectura ? `${selTipoLinea(l, i)}
         <button type="button" class="insp-borrar rap-mat-editar" data-i="${i}" title="Editar">✎</button>
         <button type="button" class="insp-borrar rap-mat-borrar" data-i="${i}" title="Quitar">🗑</button>` : ""}
       </div>`).join("");
@@ -7908,13 +8000,13 @@ Power done right the first time. ⚡`;
       const arr = lineas(); arr.splice(Number(b.dataset.i), 1);
       guardar({ lineas_material: arr }, "Línea quitada ✓");
     }));
-    // ◉ / ○ — cotización del proveedor: la misma línea, sin misceláneas encima
-    document.querySelectorAll(".rap-mat-cot").forEach(b => b.addEventListener("click", () => {
-      const arr = lineas(); const i = Number(b.dataset.i); const l = arr[i]; if (!l) return;
-      if (l.tipo === "cot") { const { tipo, ...resto } = l; arr[i] = resto; }
-      else arr[i] = { ...l, tipo: "cot" };
-      guardar({ lineas_material: arr }, arr[i].tipo === "cot"
-        ? "Marcado como cotización ✓ — ya no paga misceláneas"
+    // El tipo de la línea: material tuyo, cotización, o un costo que no es material (23/09)
+    document.querySelectorAll(".rap-mat-tipo").forEach(sel => sel.addEventListener("change", () => {
+      const arr = lineas(); const i = Number(sel.dataset.i); const l = arr[i]; if (!l) return;
+      const { tipo, ...resto } = l;
+      arr[i] = sel.value ? { ...resto, tipo: sel.value } : resto;
+      guardar({ lineas_material: arr }, sel.value === "cot" ? "Marcado como cotización ✓ — ya no paga misceláneas"
+        : TIPOS_COSTO[sel.value] ? `Marcado como ${TIPOS_COSTO[sel.value]} ✓ — sin tax, misceláneas ni escalación`
         : "Vuelve a ser material tuyo ✓");
     }));
 
@@ -8514,9 +8606,16 @@ Power done right the first time. ⚡`;
     const pend = (c.items || []).filter(l => ES_COT_PENDIENTE(l) || ES_CON_CUOTA(l));
     const r = casaCuota(leeCuota(txt), pend);
     luzCasadas = r.casadas.filter(x => x.id && x.gana !== false);
+    // el flete: con dos cuotas pegadas, el más caro (misma regla que los precios)
+    luzFlete = r.flete.length ? r.flete.reduce((a, b) => (b.monto > a.monto ? b : a)) : null;
+    const yaFlete = luzFlete && (Array.isArray(est.lineas_material) ? est.lineas_material : [])
+      .some(l => Math.abs((Number(l.monto) || 0) - luzFlete.monto) < 0.005 && /FREIGHT|FLETE|DELIVERY|SHIPPING/i.test(l.desc || ""));
+    const htmlFlete = luzFlete ? `<div class="lev-nota" style="margin:.4rem 0">🚚 La cuota trae flete: <b>${fmt(luzFlete.monto)}</b> (${esc(luzFlete.desc)}).
+      ${yaFlete ? " Ya está en el estimado." : `<button type="button" class="accion secundaria" id="btn-luz-flete">➕ Añadirlo al estimado</button>`}</div>` : "";
     if (!r.casadas.length) {
       caja.innerHTML = `<div class="lev-nota" style="margin-top:.5rem">No reconocí ningún modelo de los que esperan cuota.
-        ${r.sinPareja.length ? `Leí ${r.sinPareja.length} línea(s) con precio pero ninguna se parece a los modelos del estimado.` : "No encontré líneas con precio: revisa que se copiaran los números."}</div>`;
+        ${r.sinPareja.length ? `Leí ${r.sinPareja.length} línea(s) con precio pero ninguna se parece a los modelos del estimado.` : "No encontré líneas con precio: revisa que se copiaran los números."}</div>${htmlFlete}`;
+      engancharFlete(est);
       return;
     }
     caja.innerHTML = `
@@ -8528,16 +8627,35 @@ Power done right the first time. ⚡`;
           <span class="alcance-estado">cuota: ${esc(x.desc.slice(0, 70))}${x.antes ? ` · había otra a ${fmt(x.antes)}: me quedo con la más cara` : ""}${
             x.yaTenia ? (x.gana
               ? ` · <b>sube</b> desde la cuota que ya tenías (${fmt(x.yaTenia)}): la más cara manda`
-              : ` · ya tenías una a ${fmt(x.yaTenia)}, MÁS CARA: esta no se pone`) : ""}${x.id ? "" : " · ⚠ este renglón no se puede editar (viene de una receta)"}</span>
+              : ` · ya tenías una a ${fmt(x.yaTenia)}, MÁS CARA: esta no se pone`) : ""}${
+            x.unImporte ? ` · ⚠ <b>la línea trae UN solo importe</b>: lo tomo como precio de CADA UNA. Si es el total, cada una sale a ${fmt(x.siTotal)} — corrígelo con el lápiz de precio del renglón` : ""}${x.id ? "" : " · ⚠ este renglón no se puede editar (viene de una receta)"}</span>
         </span>
         <span class="mat-precio">${fmt(x.precio)} × ${r2(x.cantidad)} = ${fmt(r2(x.precio * x.cantidad))}</span>
       </div>`).join("")}
       ${r.sinCuota.filter(ES_COT_PENDIENTE).length ? `<div class="lev-nota" style="margin:.4rem 0">Sin cuota todavía: ${r.sinCuota.filter(ES_COT_PENDIENTE).map(p => esc(luzModelo(p.item))).join(" · ")}</div>` : ""}
       ${r.sinPareja.length ? `<div class="lev-nota" style="margin:.4rem 0">${r.sinPareja.length} línea(s) de la cuota no casan con nada del estimado (otro material, o el modelo está escrito distinto).</div>` : ""}
+      ${htmlFlete}
       ${luzCasadas.length ? `<button type="button" class="accion" id="btn-luz-aplicar" style="margin-top:.45rem">✓ Poner esos ${luzCasadas.length} precio(s) en el estimado</button>`
         : `<div class="lev-nota" style="margin-top:.45rem">Nada que cambiar: lo que ya tenías es igual o más caro que esta cuota.</div>`}`;
     const bA = $("btn-luz-aplicar");
     if (bA) bA.addEventListener("click", () => aplicaCuota(est));
+    engancharFlete(est);
+  }
+  let luzFlete = null;
+  // El flete entra como línea a mano marcada COTIZACIÓN: paga tax (en Florida
+  // la entrega de lo que se vende paga tax) pero no misceláneas
+  function engancharFlete(est) {
+    const b = $("btn-luz-flete");
+    if (!b || !luzFlete) return;
+    b.addEventListener("click", async () => {
+      const arr = (Array.isArray(est.lineas_material) ? est.lineas_material : []).map(l => ({ ...l }));
+      arr.push({ desc: ("FREIGHT — " + luzFlete.desc).slice(0, 80), monto: luzFlete.monto, tipo: "cot" });
+      try {
+        await DB.cambiarEstimado(est.id, { lineas_material: arr });
+        await recargarEstimador();
+        avisar(`🚚 Flete de ${fmt(luzFlete.monto)} añadido al estimado ✓`);
+      } catch (err) { avisar("No se pudo: " + (err.message || err), true); }
+    });
   }
   async function aplicaCuota(est) {
     if (!luzCasadas || !luzCasadas.length) return;
@@ -8671,6 +8789,7 @@ Power done right the first time. ⚡`;
         <span class="mat-precio">${cero ? "—" : fmt(r2(Number(i.cantidad) * Number(i.precio)))}</span>
         ${selCero(z, i.item)}
         ${!soloLectura && i.id ? `<button class="insp-borrar btn-item-qty" data-id="${i.id}" data-qty="${esc(i.cantidad)}" title="Cambiar cantidad">✎</button>
+        <button class="insp-borrar btn-item-precio" data-id="${i.id}" data-precio="${esc(i.precio)}" data-item="${esc(i.item)}" title="Cambiar el precio en ESTE estimado (el catálogo no se toca)">$✎</button>
         <button class="insp-borrar btn-item-borrar" data-id="${i.id}" title="Quitar">🗑</button>` : ""}
       </div>`;
     }).join("");
@@ -8971,11 +9090,13 @@ Power done right the first time. ⚡`;
         <div class="rent-fila"><span>Labor (${r2(c.horas)} h × ${fmt(r2(c.tarifaMezclada))} cuadrilla)</span><span>${fmt(r2(c.laborBase))}</span></div>
         <div class="rent-fila"><span>+ Beneficios sobre el labor (${pctTxt(c.benefitsPct)}${nnDist(est.benefits_pct) ? " ✏" : ""})${lapiz("benefits_pct", "pct", c.benefitsPct, "Beneficios — % sobre el labor")}</span><span>${fmt(r2(c.benefits))}</span></div>
         ${c.escalacion > 0.5 ? `<div class="rent-fila"><span>+ Escalación (${r2(c.mesesObra)} meses de obra · ${pctTxt(c.escAnual)} al año)${lapiz("escalacion_pct", "pct", c.escAnual, "Escalación — subida anual de salarios y material")}</span><span>${fmt(r2(c.escalacion))}</span></div>` : ""}
+        ${c.costos > 0.005 ? `<div class="rent-fila"><span>+ Logística, allowances y subcontratos (sin tax ni escalación)</span><span>${fmt(r2(c.costos))}</span></div>` : ""}
         <div class="rent-fila"><span>+ Overhead ${c.ohPct !== null && c.ohPct !== undefined
           ? `(${pctTxt(c.ohPct)} del costo directo${c.cotEnPrime > 0.5 ? ", sin las cotizaciones" : ""}${nnDist(est.overhead_pct) ? " ✏" : ""})${lapiz("overhead_pct", "pct", c.ohPct, "Overhead — % sobre mano de obra + material, sin lo que llega cotizado")}`
           : `(${r2(c.horas)} h × ${fmt(c.ohHH)}${nnDist(est.overhead_hh) ? " ✏" : ""})${lapiz("overhead_hh", "monto", c.ohHH, "Overhead — $ por hora-hombre")}`}</span><span>${fmt(r2(c.overhead))}</span></div>
         <div class="rent-fila"><span>+ Profit (${pctTxt(c.profitPct)}${nnDist(est.profit_pct) ? " ✏" : ""})${lapiz("profit_pct", "pct", c.profitPct, "Profit — % sobre costo + overhead")}</span><span>${fmt(r2(c.profit))}</span></div>
         <div class="rent-fila rent-total ok"><span>🎯 PRECIO DE LA PROPUESTA</span><span>${fmt(r2(c.bid))}</span></div>
+        <div class="rent-fila"><span>Propuesta válida por ${diasValidez(est)} días${nnDist(est.valida_dias) ? " ✏" : ""}${lapiz("valida_dias", "dias", diasValidez(est), "Validez de la propuesta — días (con el cobre moviéndose, que sea corta)")}</span><span></span></div>
         ${est.sqft ? `<p class="rent-nota">${fmt(r2(c.bid / est.sqft))} por sq ft</p>` : ""}
       </div>
       <div class="cal-panel-card acciones">
@@ -9052,10 +9173,11 @@ Power done right the first time. ⚡`;
     document.querySelectorAll(".btn-formula").forEach(btn => {
       btn.addEventListener("click", async () => {
         const { campo, tipo, actual, nombre } = btn.dataset;
-        const esPct = tipo === "pct";
+        const esPct = tipo === "pct", esDias = tipo === "dias";
         const mostrado = esPct ? String(Math.round(Number(actual) * 1000) / 10) : String(actual);
-        const resp = prompt(
-          `${nombre}\n\nEscribe ${esPct ? "el %" : "el monto en $"} (0 = quitarlo · vacío = volver al valor del escenario):`,
+        const resp = prompt(esDias
+          ? `${nombre}\n\nEscribe los días (vacío = volver a ${DIAS_VALIDEZ}):`
+          : `${nombre}\n\nEscribe ${esPct ? "el %" : "el monto en $"} (0 = quitarlo · vacío = volver al valor del escenario):`,
           mostrado);
         if (resp === null) return;
         const limpio = resp.replace(/[%$,\s]/g, "");
@@ -9064,13 +9186,19 @@ Power done right the first time. ⚡`;
         else {
           const num = Number(limpio);
           if (!Number.isFinite(num) || num < 0) { avisar("Valor no válido", true); return; }
+          if (esDias && (!Number.isInteger(num) || num < 1 || num > 365)) { avisar("Los días van de 1 a 365", true); return; }
           valor = esPct ? num / 100 : num;
         }
         try {
           await DB.cambiarEstimado(est.id, { [campo]: valor });
           await recargarEstimador();
-          avisar(valor === null ? "De vuelta al valor del escenario ✓" : "Fórmula ajustada ✓");
-        } catch (err) { avisar("No se pudo: " + err.message, true); }
+          avisar(esDias ? `Propuesta válida por ${valor === null ? DIAS_VALIDEZ : valor} días ✓`
+            : valor === null ? "De vuelta al valor del escenario ✓" : "Fórmula ajustada ✓");
+        } catch (err) {
+          if (esDias && /valida_dias/.test(String(err.crudo || err.message || "")))
+            avisar("Falta pegar el SQL docs/sql/e34-validez.sql en Supabase: sin él no se guardan los días", true);
+          else avisar("No se pudo: " + err.message, true);
+        }
       });
     });
 
@@ -9372,6 +9500,21 @@ Power done right the first time. ⚡`;
         const cantidad = Number(qty.replace(/[,\s]/g, ""));
         if (!Number.isFinite(cantidad) || cantidad <= 0) { avisar("Cantidad no válida", true); return; }
         try { await DB.cambiarItemEstimado(btn.dataset.id, { cantidad }); await recargarEstimador(); }
+        catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    /* (23/09, Mariners) EL PRECIO DE UN RENGLÓN, SOLO PARA ESTE ESTIMADO. La
+       cuota de CED para este trabajo, o una cuota que venía con el extendido:
+       antes solo se podía cambiar el CATÁLOGO, que mueve todos los estimados
+       vivos. Esto escribe estimado_items.precio y nada más; el takeoff dice que
+       el precio es de este estimado y cuál es el del catálogo. */
+    $("estimador-panel").querySelectorAll(".btn-item-precio").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const resp = prompt(`Precio unitario de «${btn.dataset.item}» en ESTE estimado (sin tax).\nEl catálogo no cambia.`, btn.dataset.precio);
+        if (resp === null) return;
+        const precio = Number(String(resp).replace(/[,$\s]/g, ""));
+        if (!Number.isFinite(precio) || precio < 0) { avisar("Precio no válido", true); return; }
+        try { await DB.cambiarItemEstimado(btn.dataset.id, { precio }); await recargarEstimador(); avisar(`Precio ${fmt(precio)} en este estimado ✓ — el catálogo sigue igual`); }
         catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
@@ -12483,6 +12626,7 @@ Power done right the first time. ⚡`;
       conectorCorto(ens, items) { return recetasConectorCorto(ens || [], items || []); },
       mep(est, c) { return textoResumenMEP(est, c); },
       takeoff(est, c) { return textoTakeoff(est, c); },
+      mano(est, c) { return panelManoHTML(est, c, false) + panelRapidoHTML(est, c, false); },   // las filas con su tipo (23/09)
       consumibles(base, est, cfg) { return autosConsumibles(base || [], est || {}, cfg || {}); },
       reglas(cfg) { return consReglas(cfg || {}); },
       // E27 · horas de proyecto, precio de referencia y cuota del supply
