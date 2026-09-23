@@ -10760,7 +10760,8 @@ Power done right the first time. ⚡`;
     // el orden de las letras es el de creación: la primera que se hizo es la A
     const porEdad = V.slice().sort((a, b) => String(a.creado || "").localeCompare(String(b.creado || "")));
     const letraDe = id => letras[porEdad.findIndex(p => p.id === id)] || "?";
-    const usd = c => "$" + Alcance.dinero(c);
+    // (22/09) el signo va DELANTE del dólar: «-$12,500.00», no «$-12,500.00»
+    const usd = c => (Number(c) < 0 ? "-$" : "$") + Alcance.dinero(Math.abs(Number(c) || 0));
     const precioDe = prop => {
       const ops = ((propData && propData.opciones) || []).filter(o => o.propuesta_id === prop.id && !o.es_addon);
       if (ops.length) return usd(Math.round(Number(ops[0].precio || 0) * 100));
@@ -11279,7 +11280,8 @@ Power done right the first time. ⚡`;
     // La tarjeta "Lo que entendí": aquí Edgar ve el dinero cuadrado
     const cta = A.cuenta, dec = A.decision;
     const d = L.datos;
-    const usd = c => "$" + Alcance.dinero(c);
+    // (22/09) el signo va DELANTE del dólar: «-$12,500.00», no «$-12,500.00»
+    const usd = c => (Number(c) < 0 ? "-$" : "$") + Alcance.dinero(Math.abs(Number(c) || 0));
     const encendidas = Alcance.ORDEN_9.filter(k => dec.clausulas[k]);
     salida += `
       <div class="alc-entendi">

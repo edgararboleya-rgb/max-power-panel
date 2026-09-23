@@ -184,19 +184,32 @@
 
   // ------------------------------------------------------------------- dinero
   // Devuelve { centavos } · { pregunta } si la coma es dudosa · null si no hay
+  /* (22/09) EL MENOS SE PERDÍA. El regex empezaba a leer en el primer DÍGITO, así
+     que «-12,500» devolvía +12.500: un DEDUCT escrito en la hoja de alcance salía
+     como CARGO en el documento que firma el cliente, sin un solo aviso. Medido:
+     una hoja con «DEDUCT - reuse existing conduit - -12,500» daba un total de
+     $425.900 cuando lo correcto era $400.900 — $25.000 en la dirección mala.
+     Ahora se lee el signo en sus cuatro formas: el menos de teclado, el menos
+     tipográfico (−), la raya (–) y la contable con paréntesis, ($12,500.00).
+     El signo solo cuenta si va DELANTE del número (con o sin $ en medio): así un
+     «2020-2024» o un «12/2-#12» siguen siendo lo que eran. */
   function leerMonto(texto) {
     const s = String(texto || "").trim();
+    const paren = /^\(\s*\$?\s*\d[\d,]*(?:\.\d+)?\s*\)$/.test(s);
+    const mSig = s.match(/^\s*([-−–—])\s*\$?\s*\d/);
+    const neg = paren || !!mSig;
     const m = s.match(/\$?\s*(\d[\d,]*(?:\.\d+)?)/);
     if (!m) return null;
     const crudo = m[1];
     // coma seguida de 1 o 2 dígitos: no se adivina, se pregunta
     const dudosa = crudo.match(/,(\d{1,2})(?!\d)/);
     if (dudosa) {
-      const comoMiles = Number(crudo.replace(/,/g, "") + "0".repeat(3 - dudosa[1].length));
-      const comoCentavos = Number(crudo.replace(",", "."));
-      return { pregunta: true, crudo, opciones: [comoMiles, comoCentavos] };
+      const sg = neg ? -1 : 1;
+      const comoMiles = Number(crudo.replace(/,/g, "") + "0".repeat(3 - dudosa[1].length)) * sg;
+      const comoCentavos = Number(crudo.replace(",", ".")) * sg;
+      return { pregunta: true, crudo, neg: neg, opciones: [comoMiles, comoCentavos] };
     }
-    const n = Number(crudo.replace(/,/g, ""));
+    const n = Number(crudo.replace(/,/g, "")) * (neg ? -1 : 1);
     if (!isFinite(n)) return null;
     return { centavos: centavos(n) };
   }
@@ -216,7 +229,17 @@
   // (12/2, 20A, #6, 50 ft, 1,300 sq ft y el año 1926 NO son dinero)
   function hayDinero(linea) {
     const s = String(linea);
-    const conSigno = s.match(/\$\s*\d[\d,]*(?:\.\d{1,2})?/);
+    /* (22/09) el trozo se lleva el MENOS si lo tiene: si no, leerMonto nunca lo
+       ve y un «-$12,500» entra como cargo. También la forma contable ($12,500). */
+    const conParen = s.match(/\(\s*\$\s*\d[\d,]*(?:\.\d{1,2})?\s*\)/);
+    if (conParen) return { trozo: conParen[0].replace(/\s+/g, ""), seguro: true };
+    /* el signo tiene que ir PEGADO al $: «-$12,500» es un descuento, pero
+       «ADD - extra receptacles - $3,400» lleva un guion SEPARADOR con espacios
+       a los lados y ese no es un signo. Sin esta distinción, un añadido se
+       convertía en descuento, que es peor que el fallo que vine a arreglar. */
+    /* el MENOS tipográfico (−, U+2212) sí puede llevar espacio: nadie lo usa
+       de separador, y el portal del cliente escribe los deducts así, «− $» */
+    const conSigno = s.match(/(?:−\s*|[-–—])?\$\s*\d[\d,]*(?:\.\d{1,2})?/);
     if (conSigno) return { trozo: conSigno[0].replace(/\s+/g, ""), seguro: true };
     const conPalabra = /\b(dolares|dollars|usd)\b/i.test(sinAcentos(s));
     const rx = /\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\d+\.\d{2}(?!\d)/g;
@@ -699,7 +722,11 @@
           const mn = linea.match(/^(?:(\d+)[.)\-]\s*)?(.+)$/);
           let resto = mn[2].trim();
           // el precio va al final, tras ":" o "—" o "-"
-          const mp = resto.match(/^(.*?)[\s]*[—–:-][\s]*(\$?\s*[\d.,]+)\s*$/);
+          /* (22/09) el separador —«—», «–», «:» o «-»— se tragaba el menos del
+             monto: «… - -12,500» dejaba el guion pegado al título y el precio en
+             positivo. Ahora el monto puede traer su signo, o venir entre
+             paréntesis a la contable. */
+          const mp = resto.match(/^(.*?)[\s]*[—–:-][\s]*([-−–—]?\s*\$?\s*[\d.,]+|\(\s*\$?\s*[\d.,]+\s*\))\s*$/);
           let precio = null, titulo = resto;
           if (mp) { titulo = mp[1].trim(); precio = leerMonto(mp[2]); }
           if (!precio) {

@@ -7,7 +7,7 @@
   <title>Max Power — Your Project</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=210">
+  <link rel="stylesheet" href="css/styles.css?v=211">
   <link rel="stylesheet" href="css/portal.css?v=210">
   <style>
     #vista-app > main.container { min-width: 0; width: 100%; }
@@ -396,7 +396,10 @@
               '<input type="checkbox" data-add="' + a.id + '" data-sow="' + s.id + '"' + (marcado ? ' checked' : '') +
                 (s.vencida ? ' disabled' : '') + '>' +
               '<span class="cl-add-tit">' + esc(a.titulo) + '</span>' +
-              '<span class="cl-add-precio">+ ' + usd(a.precio) + '</span></label>';
+              /* (22/09) un DEDUCT no se anuncia con un «+». Antes salía
+                 «+ $-12,500.00» en el documento que firma el cliente. */
+              '<span class="cl-add-precio' + (Number(a.precio) < 0 ? ' cl-add-deduct' : '') + '">' +
+                (Number(a.precio) < 0 ? '− ' + usd(-a.precio) : '+ ' + usd(a.precio)) + '</span></label>';
           }).join("");
           return '<div class="cl-sow' + (s.elegida ? ' elegida' : (varios && sowElegido && sowElegido !== s ? ' apagada' : '')) +
               '" data-sowcard="' + s.id + '" data-base="' + s.precio_base + '" data-pct="' +
@@ -755,8 +758,13 @@
           if (fila) fila.classList.toggle("marcado", c.checked);
           if (c.checked) {
             marcados.push(Number(c.dataset.add));
+            /* (22/09) el signo se perdía aquí también: replace(/[^0-9.]/g,"")
+               dejaba «− $12,500.00» en 12500 y el total del cliente SUMABA un
+               descuento. Se lee el signo antes de tirar los símbolos. */
             var txt = (fila && fila.querySelector(".cl-add-precio") || {}).textContent || "";
-            suma += Number(String(txt).replace(/[^0-9.]/g, "")) || 0;
+            var neg = /^\s*[-\u2212\u2013\u2014]/.test(String(txt));
+            var val = Number(String(txt).replace(/[^0-9.]/g, "")) || 0;
+            suma += neg ? -val : val;
           }
         });
         var total = base + suma;

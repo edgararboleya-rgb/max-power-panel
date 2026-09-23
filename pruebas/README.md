@@ -24,3 +24,5 @@ NODE_PATH=/opt/node22/lib/node_modules node pruebas/e0.js
 
 Regla: una prueba nueva por cada función que toque dinero o que escriba algo
 que el cliente vaya a firmar.
+
+| `e34.js` | E34 · el signo del dinero en la hoja de alcance: que un deduct «-$12,500», «− $12,500» o «($12,500)» se lea como descuento, y que un guion SEPARADOR («ADD - extra - $3,400») no convierta un añadido en descuento. Corre en Node, sin navegador. |
