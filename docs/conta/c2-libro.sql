@@ -39,19 +39,21 @@
 --
 -- QUIÉN LLAMA QUÉ (la frontera se decide aquí):
 --   · El dueño, por RPC desde conta.js (grant a authenticated; cada
---     función comprueba es_dueno() por dentro):
---       fn_postear(asiento jsonb)         camino 'mano'
---       fn_reversar(asiento uuid, motivo) camino 'reverso'
---       fn_estado(periodo)                la fila de control (lee con RLS)
---       fn_verificar_cadena()             hashes, numeración, triggers, permisos
---       fn_abrir_periodo('AAAA-MM'), fn_cerrar_periodo(periodo)
---       fn_fecha_miami(t)                 «hoy» en Miami, calculado en SQL
+--     función comprueba es_dueno() por dentro). PostgREST casa el cuerpo
+--     por NOMBRE de parámetro: _rpc('fn_postear', { p_asiento: {…} }).
+--       fn_postear(p_asiento jsonb)               camino 'mano'
+--       fn_reversar(p_asiento uuid, p_motivo text) camino 'reverso'
+--       fn_estado(p_periodo text)                 la fila de control (lee con RLS)
+--       fn_verificar_cadena()                     hashes, numeración, triggers, permisos
+--       fn_abrir_periodo(p_mes 'AAAA-MM'), fn_cerrar_periodo(p_periodo text)
+--       fn_fecha_miami(t timestamptz)             «hoy» en Miami, calculado en SQL
 --     Y lee directo (select, con la policy solo-dueño) cuentas, periodos,
 --     contadores, asientos y asiento_lineas.
 --   · Solo por dentro (sin grant a ningún rol de la API):
 --       fn_postear_interno(asiento jsonb)  la usan los puentes de f03
---         (SECURITY DEFINER, camino 'puente', con su documento de origen)
---         y fn_aprobar de f07 (camino 'ia');
+--         (SECURITY DEFINER, camino 'puente', con su documento de origen).
+--         En f07 la usará fn_aprobar con el camino 'ia'; hasta entonces lo
+--         rechaza (f07 añade ia_propuestas y la FK de propuesta_id);
 --       fn_reversar_interno(...)           la usan fn_reversar, el reverso
 --         automático y los puentes (un recibo anulado se reversa).
 --   · El SQL Editor (el dueño de la base) puede llamar a todas. Queda
@@ -798,7 +800,9 @@ begin
       message = format('El período %s no cuadra (diferencia %s): no se cierra.', new.periodo, v_suma);
   end if;
 
-  new.cerrado_el       := now();
+  -- La hora del cierre, del reloj y con el candado puesto (como la de los
+  -- asientos): todo asiento del período tiene una hora anterior.
+  new.cerrado_el       := clock_timestamp();
   new.cerrado_por      := auth.uid();
   new.cerrado_rol      := fn_rol_llamante();
   new.cadena_al_cerrar := coalesce((select a.hash from asientos a order by a.cadena_pos desc limit 1),
@@ -958,7 +962,8 @@ create or replace trigger trg_asiento_lineas_al_insertar
 --   5. Número: contadores, «select … for update», DESPUÉS de validar. Si
 --      algo falla después, el rollback deshace también el contador: no
 --      hay hueco (una secuencia de Postgres sí lo dejaría).
---   6. El sello: quién, con qué rol y cuándo, puestos por la base.
+--   6. El sello: quién, con qué rol y cuándo (la hora del reloj, con el
+--      candado puesto), puestos por la base.
 --   7. El eslabón: posición, hash anterior y hash.
 -- Todas las columnas de sistema se pisan: nadie elige su número, su
 -- período, su sello ni su hash, ni siquiera el SQL Editor.
@@ -1099,8 +1104,11 @@ begin
   new.secuencia := v_sec;
   new.numero    := new.anio::text || '-' || lpad(v_sec::text, 6, '0');
 
-  -- 6. El sello.
-  new.creado_el  := now();
+  -- 6. El sello. La hora es la del reloj en este instante, con el candado
+  --    ya puesto, y no now() (que es la hora en que EMPEZÓ la transacción):
+  --    así las horas siguen el orden de la cadena y se pueden comparar con
+  --    la hora de cierre de un período, tomada igual.
+  new.creado_el  := clock_timestamp();
   new.usuario_id := auth.uid();
   new.rol_bd     := fn_rol_llamante();
 
