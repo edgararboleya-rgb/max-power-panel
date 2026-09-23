@@ -43,7 +43,7 @@ const cerca = (a, b) => Math.abs(a - b) < 0.011;
                  { id: 3, estimado_id: 7, item: 'PERMISO E INSPECCIONES (por proyecto)', cantidad: 1, precio: 0, horas: 6, unidad: 'E', orden: 3 }];
   await p.evaluate(([c, e, cf, it]) => window.MXP_PRUEBA.e0.datos({ catalogo: c, escenarios: e, config: cf, items: it, estimados: [], ensambles: [], estEnsambles: [] }), [CAT2, ESC, CFG, ITEMS]);
   const calc = est => p.evaluate(e => window.MXP_PRUEBA.e0.calcula(e), est);
-  const BASE = { id: 7, nombre: 'Mariners Hospital Chillers Replacement', cliente: 'Integrated Systems', escenario: 'B', estado: 'borrador', factor: 1 };
+  const BASE = { id: 7, nombre: 'Mariners Hospital Chillers Replacement', cliente: 'Baptist Health (via GC)', escenario: 'B', estado: 'borrador', factor: 1 };
 
   /* === 1. merma: solo en planos === */
   const pl = await calc({ ...BASE, modo: 'planos' });
@@ -60,12 +60,15 @@ const cerca = (a, b) => Math.abs(a - b) < 0.011;
     lineas_material: [{ desc: 'Fire alarm vendor', monto: 9500, tipo: 'allow' }, { desc: 'Hotel y per diem', monto: 5531, tipo: 'log' }] };
   const c = await calc(EST);
   const t = await p.evaluate(([e, c]) => window.MXP_PRUEBA.e0.propMep(e, c), [EST, c]);
-  ok('va de MXP MEP para el cliente, con el precio en lump sum', /^MXP MEP\n/.test(t) && /To: Integrated Systems/.test(t) && t.includes('LUMP SUM PRICE: ' + c.bid.toLocaleString('en-US', { style: 'currency', currency: 'USD' })), (t.match(/LUMP SUM.*$/m) || [''])[0]);
+  ok('sale a nombre de INTEGRATED SYSTEMS (MXP MEP es solo nuestra etiqueta), para el cliente, en lump sum', /^INTEGRATED SYSTEMS\nELECTRICAL PROPOSAL — /.test(t) && !/MXP MEP/.test(t) && /To: Baptist Health/.test(t) && t.includes('LUMP SUM PRICE: ' + c.bid.toLocaleString('en-US', { style: 'currency', currency: 'USD' })), (t.match(/LUMP SUM.*$/m) || [''])[0]);
   ok('NO lleva overhead, profit, hora cargada ni horas', !/overhead|profit|hora cargada|\/h\b|\bhoras?\b|\bhours?\b/i.test(t));
   ok('NO lleva el membrete ni la licencia de Max Power', !/Max Power|EC13016045|mxpes/i.test(t));
   ok('el allowance sale con su monto; la logística no', /Fire alarm vendor: \$9,500\.00/.test(t) && !/Hotel/.test(t));
   ok('la validez es la del estimado y avisa del cobre', /valid for 10 days/.test(t) && /Copper/.test(t));
   ok('el alcance nombra lo que se instala y deja fuera las horas de permiso', /RACEWAY: .*EMT CONDUIT/.test(t) && !/PERMISO/.test(t));
+  const otro = await p.evaluate(([e, c]) => { window.MXP_PRUEBA.e0.datos(Object.assign({}, { catalogo: [], escenarios: [], items: [], estimados: [], ensambles: [], estEnsambles: [] }, { config: { emisor_mep: 'ACME ELECTRIC' } })); return window.MXP_PRUEBA.e0.propMep(e, c); }, [EST, c]);
+  ok('el nombre se cambia sin tocar código (config emisor_mep)', /^ACME ELECTRIC\n/.test(otro));
+  await p.evaluate(([c, e, cf, it]) => window.MXP_PRUEBA.e0.datos({ catalogo: c, escenarios: e, config: cf, items: it, estimados: [], ensambles: [], estEnsambles: [] }), [CAT2, ESC, CFG, ITEMS]);
   const interno = await p.evaluate(([e, c]) => window.MXP_PRUEBA.e0.mep(e, c), [EST, c]);
   ok('el resumen INTERNO sigue teniendo el margen (es para Edgar y Roger)', /Overhead/.test(interno) && /Profit/.test(interno));
 

@@ -7672,11 +7672,18 @@ function esFalloDeRed(err) {
      overhead, profit y hora cargada: mandárselo a Integrated Systems, que es
      quien negocia, era poner el margen sobre la mesa. Este va en inglés, en
      lump sum, sin desglose de dinero, sin horas, y sin el membrete ni la
-     licencia de Max Power (el trabajo no es de Max Power). */
+     licencia de Max Power (el trabajo no es de Max Power): sale a nombre de
+     Integrated Systems. */
+  /* (23/09) «MXP MEP» es una etiqueta NUESTRA para separar estos trabajos: no
+     es una compañía. La que sale a la calle es la de Roger, INTEGRATED
+     SYSTEMS, donde Edgar lleva la parte eléctrica. Se puede cambiar sin tocar
+     código con la clave `emisor_mep` de config_estimador. */
+  const emisorMEP = () => String(((estData && estData.config) || {}).emisor_mep || "INTEGRATED SYSTEMS").trim();
   function textoPropuestaMEP(est, c) {
     const r2 = v => Math.round(v * 100) / 100;
     const hoy = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-    const aMEP = t => String(t).replace(/Max Power( Electrical Solutions)?( LLC| Inc\.?)?/g, "MXP MEP");
+    const emisor = emisorMEP();
+    const aMEP = t => String(t).replace(/Max Power( Electrical Solutions)?( LLC| Inc\.?)?/g, emisor);
     // el alcance: nombres de lo que se instala, por sección, sin cantidades ni
     // precios; fuera los renglones que son solo horas de proyecto
     const soloHoras = new Set(HORAS_REGLAS.map(r => normTxt(r.item)));
@@ -7696,8 +7703,8 @@ function esFalloDeRed(err) {
     const excl = lineasNoIncluye(est, c.items).map(aMEP);
     const sujetas = lineasSujetasACuota(est, c);
     const l = [];
-    l.push("MXP MEP");
-    l.push(`PROPOSAL — ${est.nombre}`);
+    l.push(emisor);
+    l.push(`ELECTRICAL PROPOSAL — ${est.nombre}`);
     l.push(`To: ${est.cliente || "________"}   ·   Date: ${hoy}`);
     l.push("");
     l.push("SCOPE OF WORK");
@@ -9699,7 +9706,7 @@ Power done right the first time. ⚡`;
       if (!ceroDejaPasar()) return;
       $("propuesta-caja").innerHTML = `
         <div class="cal-panel-card">
-          <div class="cal-form-titulo">📄 Propuesta para el cliente — lump sum, sin desglose${est.estado === "borrador" ? ` <span class="recibo-chip por_leer">SIN CONGELAR</span>` : ""}</div>
+          <div class="cal-form-titulo">📄 Propuesta de ${esc(emisorMEP())} para el cliente — lump sum, sin desglose${est.estado === "borrador" ? ` <span class="recibo-chip por_leer">SIN CONGELAR</span>` : ""}</div>
           ${est.estado === "borrador" ? `<p class="lev-nota" style="margin:0 0 .4rem">⚠ Todavía es un borrador: si la mandas, congélalo para que el número quede guardado.</p>` : ""}
           <textarea id="propuesta-texto" rows="18"
             style="width:100%;font-family:ui-monospace,monospace;font-size:.78rem;padding:.6rem;border:1px solid var(--mp-line);border-radius:10px">${esc(textoPropuestaMEP(est, c))}</textarea>
