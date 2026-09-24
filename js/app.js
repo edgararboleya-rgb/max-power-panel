@@ -156,6 +156,9 @@
   const EN_APP = localStorage.getItem("mxp_idioma") === "en";
   const LOCALE = EN_APP ? "en-US" : "es-US";
   const proyectos = () => (state ? state.proyectos : []);
+  // La usan el 💵 del hito y el ✓ cobrada: desde el 13-sep se llamaba sin existir
+  // y los dos botones se rompían sin guardar nada (arreglado el 24-sep).
+  const proyectoPorId = id => proyectos().find(x => x.id === id) || null;
   const eventos = () => (state ? state.eventos : []);
   // El calendario junta los eventos con las inspecciones programadas
   const eventosCal = () => eventos().concat(
