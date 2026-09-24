@@ -897,6 +897,27 @@
       if (!r.ok) throw new Error("El asistente no respondió (" + r.status + ")");
       return r.json();
     },
+    // 💵 La IA decide el reparto de los pagos de un estimado (función «reparto»).
+    // Solo viajan porcentajes, horas, tamaño y el trabajo sin precios.
+    async decidirReparto(cuerpo) {
+      if (!sesion) throw new Error("Sin sesión");
+      const llamar = () => fetch(`${SB.url}/functions/v1/reparto`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sesion.access_token}` },
+        body: JSON.stringify(cuerpo)
+      });
+      let r = await llamar();
+      if (r.status === 401) { await refrescar(); r = await llamar(); }
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.error) {
+        const e = new Error(j.error === "reparto_invalido" ? "La IA no dio un reparto que cumpla tus reglas" + (j.detalle ? ": " + j.detalle : "")
+          : j.error === "dinero_en_el_pedido" ? "El pedido llevaba un monto (no se mandó)"
+          : "La IA no contestó (" + (j.error || r.status) + ")");
+        e.codigo = j.error || String(r.status);
+        throw e;
+      }
+      return j;
+    },
     pedirAlCerebro,
     // El lector: «pide y recoge». Se pidió con accion=leer y aquí se recoge por
     // la huella, cada pocos segundos, hasta que la lectura esté hecha.

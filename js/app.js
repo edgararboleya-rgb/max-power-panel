@@ -8115,18 +8115,178 @@ function esFalloDeRed(err) {
      pago sale sin ella y la retención es un hito aparte que se cobra al cierre:
      así la app no ofrece el release final (F.S. 713.20) con dinero retenido. */
   const retencionDe = est => { const r = Number(est && est.retencion_pct); return r > 0 && r < 0.5 ? r : 0; };
-  // Los hitos del contrato: 35/40/25 como siempre; con retención, cada uno sin
-  // ella y la retención como cuarto hito, al cierre. Suman el contrato al centavo.
-  function hitosDePago(bid, ret) {
+  /* EL REPARTO DE LOS PAGOS LO DECIDE LA IA SEGÚN LA OBRA (Edgar, 24-sep, P26).
+     Antes toda obra nacía 35/40/25. Ahora lo decide la IA (función «reparto»)
+     mirando el trabajo, las horas y el tamaño, con los candados de Edgar:
+       · el DEPÓSITO cubre los materiales (su parte del precio, o algo más),
+         y NUNCA pasa del 50 %, aunque los materiales pasen del 50 %.
+     A la IA le llegan porcentajes, horas y el trabajo sin precios: el dinero
+     no pasa por el modelo; los montos los calcula la app. Lo que decide queda
+     en estimados.reparto_ia. La regla de aquí abajo es SOLO el respaldo, para
+     cuando la IA no conteste. */
+  const REPARTO_REGLAS = {
+    depMin: 30, depMax: 50, final: 20,
+    servicioUnico: 1500,              // un servicio por debajo de esto: pago único al terminar
+    chico: { bid: 5000, horas: 40 },  // por debajo de los dos: 2 pagos
+    mediano: { bid: 25000, horas: 160 } // por debajo de los dos: 3 pagos; si no, 4
+  };
+  function repartoSugerido(o) {
+    const R = REPARTO_REGLAS;
+    const bid = Number(o && o.bid) || 0, mat = Math.max(0, Number(o && o.material) || 0);
+    const horas = Number(o && o.horas) || 0, servicio = o && o.modo === "servicio";
+    const dinero = v => "$" + Math.round(v).toLocaleString("en-US");
+    const pctMat = bid > 0 ? mat / bid * 100 : 0;
+    if (servicio && bid < R.servicioUnico) {
+      return { pcts: [100], servicio: true,
+        porque: `Servicio de ${dinero(bid)}: pago único al terminar, sin depósito.` };
+    }
+    const dep = Math.min(R.depMax, Math.max(R.depMin, Math.ceil(pctMat / 5) * 5));
+    let n;
+    if (servicio || (bid < R.chico.bid && horas < R.chico.horas)) n = 2;
+    else if (bid < R.mediano.bid && horas < R.mediano.horas) n = 3;
+    else n = 4;
+    let pcts;
+    if (n === 2) pcts = [dep, 100 - dep];
+    else if (n === 3) pcts = [dep, 100 - dep - R.final, R.final];
+    else {
+      const resto = 100 - dep - R.final, a = Math.ceil(resto / 2 / 5) * 5;
+      pcts = [dep, a, resto - a, R.final];
+    }
+    const tam = servicio ? "servicio" : n === 2 ? "obra chica" : n === 3 ? "obra mediana" : "obra grande";
+    const porqueDep = pctMat > R.depMax
+      ? `los materiales son el ${Math.round(pctMat)} % del precio, pero el depósito no pasa del ${R.depMax} %`
+      : pctMat < R.depMin
+        ? `los materiales son el ${Math.round(pctMat)} % del precio; el depósito mínimo es ${R.depMin} %`
+        : `cubre los materiales (${Math.round(pctMat)} % del precio)`;
+    return { pcts, servicio,
+      porque: `Depósito ${dep} %: ${porqueDep}. ${n} pagos: ${tam} (${dinero(bid)}${horas ? ", " + Math.round(horas) + " h" : ""}).` };
+  }
+  // Los candados de Edgar, los mismos que comprueba la función «reparto»
+  function repartoValido(pcts, materialPct) {
+    if (!Array.isArray(pcts) || pcts.length < 1 || pcts.length > 5) return false;
+    if (pcts.some(v => !Number.isInteger(Number(v)) || Number(v) <= 0)) return false;
+    if (pcts.reduce((a, b) => a + Number(b), 0) !== 100) return false;
+    if (pcts.length === 1) return (Number(materialPct) || 0) < 15;   // pago único: solo con pocos materiales
+    const dep = Number(pcts[0]);
+    return dep <= REPARTO_REGLAS.depMax && dep >= Math.min(REPARTO_REGLAS.depMax, Math.round((Number(materialPct) || 0) / 5) * 5);
+  }
+  // El tamaño en palabras (a la IA no le llega el precio)
+  const tamanoDe = bid => bid < 5000 ? "chico" : bid < 25000 ? "mediano" : bid < 100000 ? "grande" : "muy grande";
+  // Le pide a la IA el reparto de este estimado y lo guarda en el estimado
+  async function pedirRepartoIA(est, foto) {
+    const f = foto || fotoDe(est);
+    const materialPct = f.bid > 0 ? Math.round(f.material / f.bid * 1000) / 10 : 0;
+    const monto = s => /\$\s*\d|\b\d{1,3}(,\d{3})+(\.\d{2})?\b|\b\d+\.\d{2}\b|\b(dolares|dólares|dollars|usd)\b/i.test(s);
+    const renglones = itemsDelEstimado(est).map(it => `${it.cantidad || ""} ${nombreParaCliente(it.item)}`.trim())
+      .concat((Array.isArray(est.lineas_material) ? est.lineas_material : [])
+        .filter(l => l.tipo !== "log" && l.tipo !== "sub").map(l => String(l.desc || "")))
+      .filter(t => t && !monto(t)).slice(0, 60);
+    const j = await DB.decidirReparto({
+      nombre: monto(est.nombre || "") ? "" : (est.nombre || ""), modo: est.modo || "", tipo: est.tipo || "",
+      tamano: tamanoDe(f.bid), horas: Math.round(Number(f.horas) || 0), material_pct: materialPct,
+      retencion_pct: Math.round(retencionDe(est) * 1000) / 10, trabajo: renglones,
+      proyecto_id: est.proyecto_id || null
+    });
+    // La app vuelve a comprobar los candados: no se fía de nadie
+    if (!repartoValido(j.pcts, materialPct)) throw new Error("La IA dio un reparto que no cumple tus reglas");
+    const r = { pcts: j.pcts.map(Number), momentos: j.momentos, porque: j.porque || "", material_pct: materialPct,
+      el: new Date().toISOString(), modelo: j.modelo || "" };
+    await DB.cambiarEstimado(est.id, { reparto_ia: r });
+    est.reparto_ia = r;
+    return r;
+  }
+  // Qué dice cada pago según cuántos son (frases que el portal ya traduce)
+  const MOMENTOS_PAGO = {
+    firma: ["depósito", "Al firmar / movilizar"],
+    rough: ["rough", "Al pasar inspección de rough"],
+    trim: ["trim", "Trim-out terminado (equipos y terminaciones)"],
+    avance: ["", "Según avance de la obra"],
+    inspeccion_final: ["final", "Al pasar inspección final"],
+    completar_inspeccion: ["final", "Al completar y pasar inspección"],
+    terminar: ["final", "Al terminar el trabajo"]
+  };
+  function etapasDePago(pcts, servicio, momentos) {
+    const n = pcts.length, t = (k, p, que) => `Milestone ${k} — ${p}%${que ? " " + que : ""}`;
+    if (n === 1) return [{ titulo: "Pago único al completar", condicion: "Al terminar el trabajo" }];
+    if (Array.isArray(momentos) && momentos.length === n && momentos.every(m => MOMENTOS_PAGO[m])) {
+      return pcts.map((p, i) => ({ titulo: t(i + 1, p, MOMENTOS_PAGO[momentos[i]][0]), condicion: MOMENTOS_PAGO[momentos[i]][1] }));
+    }
+    return pcts.map((p, i) => {
+      const k = i + 1;
+      if (i === 0) return { titulo: t(k, p, "depósito"), condicion: "Al firmar / movilizar" };
+      if (i === n - 1) return { titulo: t(k, p, "final"),
+        condicion: servicio ? "Al terminar el trabajo" : n === 2 ? "Al completar y pasar inspección" : "Al pasar inspección final" };
+      if (i === 1) return { titulo: t(k, p, "rough"), condicion: "Al pasar inspección de rough" };
+      if (i === 2 && n === 4) return { titulo: t(k, p, "trim"), condicion: "Trim-out terminado (equipos y terminaciones)" };
+      return { titulo: t(k, p), condicion: "Según avance de la obra" };
+    });
+  }
+  // El plan de pagos de un estimado: si ya se le armó una propuesta, manda el
+  // reparto que lleva el papel; si no, el que sugiere la app.
+  function planDePagos(est, foto) {
+    const f = foto || fotoDe(est);
+    const servicio = est && est.modo === "servicio";
+    const props = ((propData && propData.propuestas) || []).filter(x => est && x.estimado_id === est.id)
+      .sort((a, b) => b.id - a.id);
+    for (const pr of props) {
+      const op = ((propData && propData.opciones) || []).filter(o => o.propuesta_id === pr.id)
+        .sort((a, b) => (a.orden || 0) - (b.orden || 0)).find(o => Array.isArray(o.hitos_plan) && o.hitos_plan.length);
+      const pcts = Array.isArray(pr.reparto_pct) && pr.reparto_pct.length ? pr.reparto_pct.map(Number)
+        : op ? op.hitos_plan.map(h => Number(h.pct)) : null;
+      if (pcts && pcts.every(v => v > 0) && Math.abs(pcts.reduce((a, b) => a + b, 0) - 100) < 0.01) {
+        return { pcts, servicio, dePropuesta: true, porque: `El de la propuesta que ya se armó (${pcts.join("/")}).` };
+      }
+    }
+    const ia = est && est.reparto_ia;
+    const matPct = f.bid > 0 ? f.material / f.bid * 100 : 0;
+    // Si el estimado cambió y el depósito ya no cubre los materiales de hoy, no vale
+    if (ia && repartoValido(ia.pcts, matPct)) {
+      return { pcts: ia.pcts.map(Number), momentos: ia.momentos, servicio, deIA: true, porque: ia.porque || "Lo decidió la IA." };
+    }
+    const r = repartoSugerido({ bid: f.bid, material: f.material, horas: f.horas, modo: est && est.modo });
+    return { ...r, respaldo: true, porque: "Regla de respaldo (la IA todavía no lo decidió): " + r.porque };
+  }
+  // Los hitos del contrato con ese reparto; con retención, cada uno sin ella y
+  // la retención como un hito más, al cierre. Suman el contrato al centavo.
+  function hitosDePago(bid, ret, plan) {
     const r2 = v => Math.round(v * 100) / 100;
     const neto = r2(bid * (1 - (ret || 0)));
-    const m1 = r2(neto * 0.35), m2 = r2(neto * 0.40), m3 = r2(neto - m1 - m2);
-    const out = [
-      { titulo: "Milestone 1 — 35% movilización", condicion: "Al aceptar / movilización", monto: m1, orden: 1 },
-      { titulo: "Milestone 2 — 40% avance", condicion: "Rough / avance principal completo", monto: m2, orden: 2 },
-      { titulo: "Milestone 3 — 25% final", condicion: "Al pasar inspección final", monto: m3, orden: 3 }];
-    if (ret) out.push({ titulo: `Retainage — ${Math.round(ret * 1000) / 10}% retenido`, condicion: "Lo libera el contratante al cierre (final pay application)", monto: r2(bid - neto), orden: 4 });
+    const pl = plan || repartoSugerido({ bid });
+    const montos = repartirAlCentavo(neto, pl.pcts);
+    // Solo las columnas de la tabla hitos: esto se guarda tal cual
+    const out = etapasDePago(pl.pcts, pl.servicio, pl.momentos).map((e, i) => ({ titulo: e.titulo, condicion: e.condicion, monto: montos[i], orden: i + 1 }));
+    if (ret) out.push({ titulo: `Retainage — ${Math.round(ret * 1000) / 10}% retenido`, condicion: "Lo libera el contratante al cierre (final pay application)", monto: r2(bid - neto), orden: out.length + 1 });
     return out;
+  }
+  // 💵 Cómo se cobra: lo que decidió la IA (o la propuesta, o el respaldo), con montos
+  function tarjetaPagos(est, c) {
+    if (!usuario.finanzas) return "";
+    const f = fotoDe(est, c), pl = planDePagos(est, f);
+    const hitos = hitosDePago(Math.round(f.bid * 100) / 100, retencionDe(est), pl);
+    const quien = pl.dePropuesta ? "el de la propuesta que ya se armó" : pl.deIA ? "lo decidió la IA" : "regla de respaldo: la IA todavía no lo decidió";
+    return `
+      <div class="cal-panel-card" id="est-pagos">
+        <div class="cal-form-titulo">💵 Pagos del contrato · ${esc(pl.pcts.join(" / "))}</div>
+        <p class="lev-nota"><b>${esc(quien)}</b>${pl.porque && !pl.respaldo ? " — " + esc(pl.porque) : ""}</p>
+        <ul class="lev-noincluye">${hitos.map(h => `<li>${esc(h.titulo)} · ${esc(h.condicion)}: <b>${fmt(h.monto)}</b></li>`).join("")}</ul>
+        ${est.estado !== "convertido" && !pl.dePropuesta ? `<button type="button" class="accion secundaria" id="btn-est-reparto-ia">${pl.deIA ? "Que la IA lo vuelva a decidir" : "Que la IA decida el reparto"}</button>` : ""}
+        <p class="lev-nota">Tus reglas: el depósito cubre los materiales y nunca pasa del 50 %. A la IA no le llega ningún monto.</p>
+      </div>`;
+  }
+  function enganchaPagos(est, c) {
+    const b = $("btn-est-reparto-ia");
+    if (!b) return;
+    b.addEventListener("click", async () => {
+      b.disabled = true; b.textContent = "La IA está decidiendo…";
+      try {
+        const r = await pedirRepartoIA(est, fotoDe(est, c));
+        await recargarEstimador();
+        avisar(`Reparto decidido ✓ — ${r.pcts.join(" / ")}`);
+      } catch (e) {
+        b.disabled = false; b.textContent = "Que la IA decida el reparto";
+        avisar(e.message, true);
+      }
+    });
   }
   function tarjetaDatosTrabajo(est, soloLectura) {
     const dis = soloLectura ? " disabled" : "";
@@ -9231,10 +9391,13 @@ function esFalloDeRed(err) {
         lineas.push(`• ${s}: ${its.slice(0, 4).map(i => `${i.cantidad} ${nombreParaCliente(i.item)}`).join(", ")}${its.length > 4 ? "…" : ""}`);
       }
     }
-    const hitosP = hitosDePago(bid, retencionDe(est));
-    const [m1, m2, m3] = hitosP.map(h => h.monto);
-    const retTxt = hitosP[3] ? `
-• Retención del contratante — ${Math.round(retencionDe(est) * 1000) / 10}% de cada pago, se libera al cierre: ${fmt(hitosP[3].monto)}` : "";
+    // El reparto: el de la propuesta, el que decidió la IA o, si no, el de respaldo
+    const retP = retencionDe(est);
+    const hitosP = hitosDePago(bid, retP, planDePagos(est, fotoDe(est, c)));
+    const pagosP = retP ? hitosP.slice(0, -1) : hitosP;
+    const retTxt = retP ? `
+• Retención del contratante — ${Math.round(retP * 1000) / 10}% de cada pago, se libera al cierre: ${fmt(hitosP[hitosP.length - 1].monto)}` : "";
+    const lineasPago = pagosP.map(h => `• ${h.titulo} — ${h.condicion.toLowerCase()}: ${fmt(h.monto)}`).join("\n");
     /* (23/09, Mariners) Un ALLOWANCE es un precio provisional y el cliente
        tiene que saberlo: sale nombrado, con su monto, y la diferencia al
        confirmarlo va por Change Order. La logística y los subs NO se nombran:
@@ -9276,9 +9439,7 @@ No incluye trabajos no listados; cambios se manejan por Change Order.${bloqueAll
 PRECIO TOTAL (LUMP SUM): ${fmt(bid)}${est.sqft ? `  (${fmt(r2(bid / est.sqft))}/sqft)` : ""}
 
 FORMA DE PAGO:
-• Milestone 1 — 35% a la aceptación (movilización): ${fmt(m1)}
-• Milestone 2 — 40% al completar el avance principal: ${fmt(m2)}
-• Milestone 3 — 25% al pasar inspección final: ${fmt(m3)}${retTxt}
+${lineasPago}${retTxt}
 
 Propuesta válida por ${diasValidez(est)} días. Gracias por la oportunidad.
 Power done right the first time. ⚡`;
@@ -10607,6 +10768,7 @@ Power done right the first time. ⚡`;
       </div>
       ${/* datos y adjuntos no mueven el número: se pueden tocar aunque esté congelado */ ""}
       ${tarjetaDatosTrabajo(est, est.estado === "convertido")}
+      ${tarjetaPagos(est, c)}
       ${tarjetaAdjuntos(est, est.estado === "convertido")}
       ${bloqueResultado(est, c)}
       ${est.estado === "convertido" ? (() => {
@@ -11193,6 +11355,7 @@ Power done right the first time. ⚡`;
     if (btnProp) btnProp.addEventListener("click", () => { if (ceroDejaPasar()) irPropuesta(est.id); });
     enganchaResultado(est);
     enganchaDatos(est);
+    enganchaPagos(est, c);
     enganchaAdjuntos(est);
     $("estimador-panel").querySelectorAll(".btn-cierre").forEach(b => {
       b.addEventListener("click", () => irCierre(Number(b.dataset.id)));
@@ -11236,7 +11399,18 @@ Power done right the first time. ⚡`;
       if (!ceroDejaPasar()) return;
       // (23/09) con el número CONGELADO si lo hay: es el que se ofertó, no el de hoy
       const fo = fotoDe(est, c), bid = r2(fo.bid), ret = retencionDe(est);
-      if (!confirm(`¿Convertir "${est.nombre}" en proyecto?\n\nSe crea con contrato ${fmt(bid)}${fo.recalculado ? "" : " (el número congelado)"}, horas estimadas, presupuesto de materiales, ${ret ? "3 hitos de pago + la retención del " + Math.round(ret * 1000) / 10 + " % al cierre" : "3 hitos de pago"} y su alcance por puntos.`)) return;
+      // El reparto de los pagos: el de la propuesta, o el que decida la IA ahora
+      let plan = planDePagos(est, fo);
+      if (!plan.dePropuesta && !plan.deIA) {
+        avisar("La IA está decidiendo el reparto de los pagos…");
+        try { await pedirRepartoIA(est, fo); plan = planDePagos(est, fo); }
+        catch (e) {
+          if (!confirm(`${e.message}.\n\n¿Convierto con la regla de respaldo (${plan.pcts.join(" / ")})?`)) return;
+        }
+      }
+      const hitosN = hitosDePago(bid, ret, plan);
+      const txtPagos = plan.pcts.length === 1 ? "un pago único al terminar" : `${plan.pcts.length} pagos (${plan.pcts.join(" / ")})`;
+      if (!confirm(`¿Convertir "${est.nombre}" en proyecto?\n\nSe crea con contrato ${fmt(bid)}${fo.recalculado ? "" : " (el número congelado)"}, horas estimadas, presupuesto de materiales, ${txtPagos}${ret ? " + la retención del " + Math.round(ret * 1000) / 10 + " % al cierre" : ""} y su alcance por puntos.\n\nPagos: ${plan.dePropuesta ? "los de la propuesta" : plan.deIA ? "los decidió la IA" : "regla de respaldo"}.`)) return;
       const idNuevo = est.nombre.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
         .slice(0, 30) + "-" + Math.random().toString(36).slice(2, 6);
       try {
@@ -11265,7 +11439,7 @@ Power done right the first time. ⚡`;
         await DB.crearFinanzas({ proyecto_id: idNuevo, contrato: bid, cobrado: 0, presupuesto_materiales: r2(fo.material) });
         const nAdj = await adjuntosAlProyecto(est, idNuevo);
         if (adjuntosDe(est).length && nAdj < adjuntosDe(est).length) avisar(`⚠ ${adjuntosDe(est).length - nAdj} adjunto(s) no pasaron al proyecto: súbelos allí a mano`, true);
-        for (const h of hitosDePago(bid, ret)) await DB.crearHito(Object.assign({ proyecto_id: idNuevo, estado: "pendiente" }, h));
+        for (const h of hitosN) await DB.crearHito(Object.assign({ proyecto_id: idNuevo, estado: "pendiente" }, h));
         // El alcance por puntos nace de los ensambles (o secciones)
         const ensDelEst2 = (estData.estEnsambles || []).filter(e => e.estimado_id === est.id && Number(e.cantidad) > 0);
         // Un servicio es un trabajo de un día o dos: no lleva fases de obra ni
@@ -11676,8 +11850,9 @@ Power done right the first time. ⚡`;
     propActiva = {
       estimado: est,
       items: items.map((it, i) => ({ ...it, _i: i, bloque: "base" })).concat(lineasProp),
-      reparto: "40/40/20",
+      reparto: "ia",
       pcts: [40, 40, 20],
+      planIA: null,
       dias: 15,
       recomendada: "B",
       titulos: { A: "Lo esencial", B: "La recomendada", C: "Completa" },
@@ -11695,8 +11870,26 @@ Power done right the first time. ⚡`;
     // Lo que el estimado ya sabe del cliente rellena lo que falte
     if (!propActiva.email && est.cliente_email) propActiva.email = est.cliente_email;
     if (!propActiva.tel && est.cliente_tel) propActiva.tel = est.cliente_tel;
+    // El reparto de los pagos lo decide la IA (o ya lo decidió); mientras
+    // contesta, va el de respaldo. Si Edgar elige otro a mano, manda el suyo.
+    const plan = planDePagos(est);
+    propActiva.pcts = plan.pcts.slice();
+    if (plan.deIA) propActiva.planIA = plan;
+    else if (!plan.dePropuesta) {
+      propActiva.reparto = "respaldo";
+      const pa = propActiva;
+      pedirRepartoIA(est).then(() => {
+        if (propActiva !== pa || pa.reparto !== "respaldo") return;
+        const pl = planDePagos(est);
+        if (!pl.deIA) return;
+        pa.planIA = pl; pa.pcts = pl.pcts.slice(); pa.reparto = "ia";
+        pintarPropuesta();
+      }).catch(e => avisar(e.message + " — va la regla de respaldo", true));
+    }
     pintarPropuesta();
   }
+  // Los repartos que se ofrecen: el de la IA primero, si lo hay
+  const repartosDe = p => (p.planIA ? [{ id: "ia", etiqueta: "IA · " + p.planIA.pcts.join(" / "), pcts: p.planIA.pcts }] : []).concat(PROP_REPARTOS);
 
   // Los ítems de cada opción: cada letra ARRASTRA lo anterior
   function propItemsDe(letra) {
@@ -11767,8 +11960,10 @@ Power done right the first time. ⚡`;
       <div class="cal-panel-card">
         <div class="lev-lab">Cómo se paga <i>— editable, no es camisa de fuerza</i></div>
         <div class="lev-chips" data-campo="reparto">
-          ${PROP_REPARTOS.map(r => `<button type="button" class="lev-chip${p.reparto === r.id ? " puesto" : ""}" data-valor="${r.id}">${r.etiqueta}</button>`).join("")}
+          ${repartosDe(p).map(r => `<button type="button" class="lev-chip${p.reparto === r.id ? " puesto" : ""}" data-valor="${r.id}">${esc(r.etiqueta)}</button>`).join("")}
         </div>
+        ${p.reparto === "ia" && p.planIA ? `<p class="lev-nota">Lo decidió la IA: ${esc(p.planIA.porque || "")}</p>`
+          : p.reparto === "respaldo" ? `<p class="lev-nota">La IA está decidiendo el reparto… mientras, va la regla de respaldo.</p>` : ""}
         <div class="prop-pcts">
           ${p.pcts.map((v, i) => `
             <label>Pago ${i + 1}${i === 0 ? " (depósito)" : ""}
@@ -11837,7 +12032,7 @@ Power done right the first time. ⚡`;
     // Reparto
     $("propuesta-panel").querySelectorAll('.lev-chips[data-campo="reparto"] .lev-chip').forEach(b => {
       b.addEventListener("click", () => {
-        const r = PROP_REPARTOS.find(x => x.id === b.dataset.valor);
+        const r = repartosDe(p).find(x => x.id === b.dataset.valor);
         if (r) { p.reparto = r.id; p.pcts = r.pcts.slice(); }
         pintarPropuesta();
       });

@@ -79,6 +79,9 @@ window.MXP_FRASES = [
   [/^Milestone (\d+) de (\d+) — (\d+)%$/i, "Milestone $1 of $2 — $3%"],
   [/^Milestone (\d+) — (\d+)% depósito$/i, "Milestone $1 — $2% deposit"],
   [/^Milestone (\d+) — (\d+)% trim$/i, "Milestone $1 — $2% trim"],
+  /* Los pagos que decide la IA (24-sep, P26) */
+  [/^Milestone (\d+) — (\d+)% final$/i, "Milestone $1 — final $2%"],
+  [/^Trim-out terminado \(equipos y terminaciones\)$/i, "Trim-out complete (devices and finishes)"],
   [/^Milestone (\d+) — (\d+)% rough$/i, "Milestone $1 — $2% rough-in"],
   [/^Milestone (\d+) — (\d+)%$/i, "Milestone $1 — $2%"],
   [/^CO #(\d+) — depósito (\d+)%$/i, "CO #$1 — $2% deposit"],
