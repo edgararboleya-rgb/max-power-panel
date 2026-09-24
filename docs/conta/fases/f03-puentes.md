@@ -126,4 +126,11 @@ haber nacido de un journal o de un devengo reversible**.
   (las 7 categorías, las 5 formas de pago y los 3 tipos de obra; los demás
   sinónimos no pueden llegar por el CHECK de recibos). Sin eso, lo de octubre
   espera en la bandeja. Las tarjetas ya están (2013 Gold, 2009 Blue y 9420
-  débito de Chase, 24-sep).
+  débito de Chase, 24-sep). **Hecho el 24-sep** (Edgar: «sí, déjalo todo
+  listo»): categorías material 5100, labor_externo 5200, permiso 5400,
+  herramienta 6400, combustible 6300, renta_equipo 5300 (otro: sin regla, la
+  bandeja pregunta); formas de pago credito y debito → su tarjeta,
+  cuenta_proveedor → 2010, zelle → 1010, efectivo → 1050 (caja chica, cuenta
+  nueva); tipos residencial 4010, comercial 4020, servicio 4030. Cada regla
+  lleva la nota de quién la aprobó; `puente_reglas_historial` guarda cada
+  cambio.

@@ -187,9 +187,9 @@ centavos vive solo en `asiento_lineas.monto`.
 Fase 2 (el libro) y, sobre todo, Fase 9 (estimado contra real).
 
 ## Lo construido (24-sep) — versión candidata, sin pegar
-- `docs/conta/c1-plan-de-cuentas.sql`: **87 cuentas** (86 imputables; 2100 es
+- `docs/conta/c1-plan-de-cuentas.sql`: **88 cuentas** (87 imputables; 2100 es
   de grupo y cada tarjeta cuelga como `2100-XXXX`: 2100-2009 la Amex Blue y
-  2100-2013 la Amex Gold, 24-sep). 1020 salió (no hay cuenta de
+  2100-2013 la Amex Gold; 1050 Efectivo (caja chica), 24-sep). 1020 salió (no hay cuenta de
   nómina); 1030 (reserva de impuestos) se queda.
 - Cost codes: **opción B** (columna `cost_code` de la línea, con llave a
   `codigos_partida`). En costo la obra es obligatoria y el código opcional.

@@ -725,6 +725,7 @@ select v.codigo, v.nombre, v.nombre_en, v.tipo,
   -- 1000 · Activo
   ('1010', 'Banco operativo',                           'Operating bank account',                              'activo',  'debe',  true,  'prohibida',   'prohibida',   null,           null),
   ('1030', 'Reserva de impuestos',                      'Tax reserve account',                                 'activo',  'debe',  true,  'prohibida',   'prohibida',   null,           null),
+  ('1050', 'Efectivo (caja chica)',                     'Cash on hand (petty cash)',                           'activo',  'debe',  true,  'prohibida',   'prohibida',   null,           'El efectivo que se saca de Chase para pagar en efectivo (Edgar, 24-sep): el retiro entra aquí (Dr 1050 / Cr 1010) y cada compra en efectivo sale de aquí. El saldo es el efectivo que debe haber en el bolsillo. Un retiro para Edgar NO es de esta cuenta: va a 3200.'),
   ('1110', 'Cuentas por cobrar',                        'Accounts receivable',                                 'activo',  'debe',  true,  'opcional',    'prohibida',   null,           'Por factura (f03). La obra va cuando la factura la tiene.'),
   ('1120', 'Retención por cobrar',                      'Retainage receivable',                                'activo',  'debe',  true,  'obligatoria', 'prohibida',   null,           'Retainage, siempre por obra. En QuickBooks es un parche.'),
   ('1130', 'Cuenta por cobrar al accionista',           'Due from shareholder',                                'activo',  'debe',  true,  'prohibida',   'prohibida',   'accionista',   'Con nota firmada e interés (el interés cobrado va a 4910).'),
@@ -847,8 +848,8 @@ where (c.nombre, c.nombre_en, c.tipo, c.padre, c.saldo_normal, c.imputable,
 
 -- =====================================================================
 -- Lo que enseña el SQL Editor al terminar: el plan, para reconocerlo.
--- Esperado: 87 cuentas (86 imputables; 2100 es de grupo, con las dos
--- Amex: 2100-2009 la Blue y 2100-2013 la Gold).
+-- Esperado: 88 cuentas (87 imputables; 2100 es de grupo, con las dos
+-- Amex: 2100-2009 la Blue y 2100-2013 la Gold; 1050 la caja chica).
 -- =====================================================================
 select codigo, nombre, tipo, saldo_normal as saldo, imputable, activa,
        regla_obra as obra, regla_cost_code as cost_code, etiqueta_fiscal

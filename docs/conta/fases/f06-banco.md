@@ -34,6 +34,12 @@
   QuickBooks la cuenta es «Chase Chk 4392»: 4392 es el número de la cuenta,
   9420 el de la tarjeta, que es el que sale en los tickets).
 - Las tres están dadas de alta en producción (tabla `tarjetas`, 24-sep).
+- **Efectivo → 1050 Efectivo (caja chica)** (Edgar, 24-sep: el efectivo sale
+  de Chase; casi nadie le paga en efectivo). El retiro de Chase entra como
+  Dr 1050 / Cr 1010 (el lector del banco lo propone así, sin gasto); cada
+  compra en efectivo sale de 1050 por su puente. Un retiro para Edgar no es
+  caja chica: va a 3200. Cuando el banco traiga un retiro de cajero, la app
+  pregunta «¿caja chica o para ti?».
   Amex en su web muestra los últimos **5** dígitos; la subcuenta y
   `recibos.ultimos4` usan los últimos 4.
 - Pago de cada Amex desde Chase = `transferencia`: Dr 2100-XXXX / Cr 1010,
