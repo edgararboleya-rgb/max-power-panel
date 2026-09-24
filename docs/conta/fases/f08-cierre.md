@@ -47,6 +47,13 @@
   falla; la restauración: respaldo de Postgres primero, CSV solo como camino
   legible de último recurso).
 
+- **Reserva de impuestos (1030) al cierre.** La app calcula lo que debería
+  haber: utilidad del año a la fecha × % que fija el CPA − pagos estimados ya
+  hechos (3200 marcados como impuesto de Edgar) = saldo objetivo de 1030.
+  Muestra «transfiere $X» o «sobra $Y». La ronda avisa si 1030 queda corta, y
+  15 días antes de cada estimado (15-abr, 15-jun, 15-sep, 15-ene) recuerda el
+  monto. Cada pago estimado queda listado para el paquete del CPA (f17).
+
 ## 🟢 Verde — se trabaja encima (`/effort auto`)
 
 - **Export v1:** CSV desde las vistas (mayor con saldo corrido, procedencia y

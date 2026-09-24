@@ -12,18 +12,35 @@
    demo son inmediatas, las de producción pasan por aprobación. Meta:
    empleados dados de alta (W-4, depósito directo) **antes del 11-dic**. Ver f11.
 3. Los statements de préstamo y la póliza de cada seguro pagado por adelantado.
+4. **Abrir la cuenta de reserva de impuestos** y programar la transferencia
+   semanal (el monto, con el CPA). Pedirle también el % de la utilidad para
+   2027 y cuánto pagar el 15-ene-2027.
 
-## Las cuentas (Edgar, 24-sep) — son tres, no hay más
+## Las cuentas (Edgar, 24-sep)
 - **Chase, una sola cuenta**: la operativa del negocio, donde se mueve todo →
   **1010**. No hay cuenta de nómina ni tarjeta Chase: Gusto también cobra
-  desde 1010. **1020 y 1030 salen de c1** cuando termine el workflow (no
-  existen; se añaden el día que se abran).
+  desde 1010. **1020 sale de c1** cuando termine el workflow (se añade el día
+  que se abra).
+- **Reserva de impuestos → 1030, se queda** (Edgar, 24-sep). Cuenta de ahorro
+  de empresa, por abrir; banco por decidir (ver abajo). Entra por
+  `transferencia` 1010 → 1030 sin tocar resultados; sus intereses van a 4910;
+  lo que sale para el impuesto sobre la renta de Edgar va a **3200** (f07,
+  regla a); se concilia contra su statement como cualquier banco.
 - **American Express Business Gold** → `2100-XXXX` (sus últimos 4).
 - **American Express Business Blue** → `2100-XXXX` (sus últimos 4).
   Amex en su web muestra los últimos **5** dígitos; la subcuenta y
   `recibos.ultimos4` usan los últimos 4.
 - Pago de cada Amex desde Chase = `transferencia`: Dr 2100-XXXX / Cr 1010,
   sin gasto.
+- **Dónde abrir la reserva (recomendación del 24-sep):** ahorro de empresa de
+  alto rendimiento en otro banco (FDIC, sin cuota mensual, con export QFX/CSV
+  y presente en Plaid) — rinde ~3,8–4 % (sep-2026) contra casi 0 % en Chase, y
+  fuera de la vista no se toca. Alternativa simple: Chase Business Total
+  Savings (misma conexión de Plaid, transferencia al instante; $10/mes salvo
+  saldo ≥ $1.000 o vinculada a Business Complete Checking).
+- **Cómo se llena:** transferencia **semanal automática fija** (programada en
+  el banco; el monto lo fija el CPA) + **ajuste mensual al cierre** que
+  calcula la app (f08).
 - Archivo preferido: **QFX/OFX**, porque cada movimiento trae su propio id
   (FITID) y eso ayuda a la idempotencia. CSV solo si no hay otro.
 - **Conector automático: Plaid, plan Trial** (Edgar lo pide, 24-sep). Gratis,

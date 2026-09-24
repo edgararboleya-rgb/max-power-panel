@@ -47,9 +47,9 @@ renglones. Con A, la Fase 9 se vuelve impracticable.
 
 ### 1000 · Activo
 ```
-1010  Banco operativo                    ← Chase, la única cuenta (24-sep)
-      (1020 nómina y 1030 reserva: no existen; salen de c1 y se añaden
-       el día que se abran)
+1010  Banco operativo                    ← Chase, la operativa (24-sep)
+1030  Reserva de impuestos               ← se queda: Edgar la abre (24-sep)
+      (1020 nómina no existe: sale de c1; se añade el día que se abra)
 1110  Cuentas por cobrar
 1120  Retención por cobrar               ← retainage; en QuickBooks es un parche
 1130  Cuenta por cobrar al accionista    ← nota firmada e interés
