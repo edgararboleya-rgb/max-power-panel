@@ -14,6 +14,8 @@ de que Edgar los pegue. **Nunca** se conecta a `*.supabase.co`.
 | `correr.sh` | Crea una base, carga 00-01-02 y los archivos que le pases. |
 | `c2-concurrencia.sh` | Lo que `c2-pruebas.sql` no puede probar en una sola sesión: varias sesiones a la vez contra el libro (cierres con posteos en vuelo, ráfagas, una línea tardía, un cierre en repeatable read). La mitad de los posteos confirma como la app (rol `authenticated`). |
 | `c2-pegado.sh` | Lo que pasa AL PEGAR: el bloque A solo, el B encima de datos sucios, las pruebas antes que el libro, volver a pegar c1 y c2, la 7200. |
+| `03-storage-simulacro.sql` | Un Storage mínimo (`storage.objects` con RLS y las policies de hoy según ESQUEMA-REAL). **Solo del banco**: con él, la prueba 45 de `c3-pruebas.sql` (el papel no se borra) corre de verdad; sin él sale «omitida». Se pasa ANTES de c3. |
+| `c3-concurrencia.sh` | Lo que `c3-pruebas.sql` no puede probar en una sola sesión: el mismo recibo corregido desde dos teléfonos, el backfill mientras alguien guarda, diez recibos a la vez, dos backfills a la vez, dos cobros a la vez a la misma factura, un cobro mientras se anula la factura y dos anticipos a la vez. Cada sesión confirma (los puentes son diferidos). |
 | `generar-tablas.py`, `esquema-columnas-23sep.json` | Para regenerar las tablas de 01 si se vuelve a leer el esquema. |
 
 ## 1. Arrancar el cluster
@@ -52,6 +54,18 @@ cd /home/user/max-power-panel/pruebas/conta
 
 # ¿Idempotente? Pégalo dos veces:
 ./correr.sh c2_dos ../../docs/conta/c2-libro.sql ../../docs/conta/c2-libro.sql
+
+# Los puentes (c3), encima del libro, con el Storage de mentira y las dos
+# suites (c2-pruebas también tiene que seguir en verde con c3 pegado):
+./correr.sh c3_agente 03-storage-simulacro.sql ../../docs/conta/c1-plan-de-cuentas.sql \
+                      ../../docs/conta/c2-libro.sql ../../docs/conta/c3-puentes.sql \
+                      ../../docs/conta/c3-puentes.sql \
+                      ../../docs/conta/c2-pruebas.sql ../../docs/conta/c3-pruebas.sql
+# Rojo de c3: solo su bloque A (tablas, reglas, funciones mínimas):
+./correr.sh c3_rojo 03-storage-simulacro.sql ../../docs/conta/c1-plan-de-cuentas.sql \
+                    ../../docs/conta/c2-libro.sql ../../docs/conta/c3-puentes.sql:A ../../docs/conta/c3-pruebas.sql
+# Varias sesiones a la vez contra los puentes (crea y borra su base):
+./c3-concurrencia.sh c3_conc_mia
 
 # Al terminar, borra TU base:
 ./correr.sh --borrar banco_mio
@@ -157,6 +171,9 @@ tocar `docs/conta/c2-libro.sql`:
   control `triggers` sale en rojo por esa función (por eso esas pruebas miran
   solo el control que prueban). `pg_temp.mx_cerrar_hasta(periodo)` finge el
   día siguiente, pone el asiento de apertura si falta y cierra en orden.
+- **En `c3-pruebas.sql`**: lo mismo, con `pg_temp.c3_fingir_hoy(fecha)` y
+  `pg_temp.c3_cerrar_hasta(periodo)` (la prueba toma antes
+  `lock table public.periodos in exclusive mode`).
 - **En `c2-concurrencia.sh`** (varias sesiones: lo fingido tiene que estar
   confirmado): carga una COPIA de `c2-libro.sql` con `fn_fecha_miami` en
   `greatest(hoy, '2027-01-15')`, y sus huellas se sellan con esa copia. La
@@ -179,7 +196,10 @@ tocar `docs/conta/c2-libro.sql`:
   (aproximada). No están `proyectos_equipo`, `materiales_equipo`,
   `alcances_equipo`, `documentos_equipo`.
 - **Tablas**: solo las 21 que tocan los libros; las otras ~44 de producción no.
-- **Storage** (`storage.objects` y sus policies) no existe.
+- **Storage** (`storage.objects` y sus policies) no existe, salvo que se
+  cargue `03-storage-simulacro.sql`: una tabla y tres policies supuestas
+  (sus nombres reales no se leyeron). No hay archivos ni la API de Storage:
+  borrar es un `delete` en la tabla, con RLS.
 - **PostgREST** no existe: no hay `/rest/v1/rpc`, ni conversión de errores a
   HTTP, ni `Prefer: return=representation`. «anon puede ejecutar la función»
   se prueba con `has_function_privilege` y `set role anon`, no con HTTP.

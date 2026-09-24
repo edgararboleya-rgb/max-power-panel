@@ -52,9 +52,9 @@
 --   · las que prueban c1 (el plan y su guarda: 29, 40, 42, 44, 45, 46, 50,
 --     64, 72 y 74), que no depende del bloque A; la del candado de las
 --     pruebas (75), que prueba a estas mismas pruebas; y la del rastro
---     (76);
+--     (78);
 --   · unas pocas que usan piezas que solo existen en el bloque B
---     (fn_postear_interno en la 41, la 63, la 69 y la 70; la guarda de
+--     (fn_postear_interno en la 41, la 63, la 69, la 70 y la 77; la guarda de
 --     periodos, que la 60, la 65, la 71 y la 73 apagan un momento), que
 --     fallan porque falta la pieza.
 -- Con el bloque B, todas en true.
@@ -525,7 +525,10 @@ begin
                                v_obt = 'lineas=MX003 cabecera=MX003');
 end $$;
 
--- 7. Truncate del libro, desde el SQL Editor → MX003.
+-- 7. Truncate del libro, desde el SQL Editor → no entra: MX003 (la guarda
+--    del libro). Con c3 pegado, las tablas de los puentes (recibos,
+--    facturas, cobros…) apuntan al libro con llave foránea, y Postgres lo
+--    para antes que la guarda: 0A000. Las dos respuestas dicen lo mismo.
 do $$
 declare
   v_obt text;
@@ -538,7 +541,8 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
   end;
-  insert into _pruebas values (7, 'truncate del libro (SQL Editor)', 'MX003', v_obt, v_obt like 'MX003 %');
+  insert into _pruebas values (7, 'truncate del libro (SQL Editor)', 'MX003 (o 0A000 con c3 pegado)', v_obt,
+                               v_obt like 'MX003 %' or v_obt like '0A000 %');
 end $$;
 
 -- 8. La fecha de frontera: 31-dic a las 7 pm de Miami, con la sesión en
@@ -3616,7 +3620,95 @@ begin
 end $$;
 
 
--- 76. Las pruebas no dejaron rastro: el libro, el plan, su historial, las
+-- 77. Un papel de un puente cuya fecha se corrige de diciembre a enero (un
+--     ticket de 2027 mal leído como de 2026): su asiento viejo se reversa
+--     como ajuste de 2026 (prueba 70) y el sustituto es un asiento NORMAL de
+--     enero, porque el papel ya es de 2027: el puente lo dice en
+--     procedencia.fecha_documento. Si el papel sigue siendo de 2026 (la
+--     corrección tardía de un papel viejo), el sustituto normal sigue
+--     siendo MX007: tiene que ser ajuste de ese ejercicio. Antes el papel
+--     corregido a enero se quedaba en error para siempre (MX007), y
+--     reversarlo a mano lo sacaba de los dos años. La cadena, sana (control
+--     reversos). Con el reloj fingido.
+do $$
+declare
+  v_dueno     uuid := nullif(current_setting('mx_pruebas.dueno', true), '')::uuid;
+  v_c5        text := nullif(current_setting('mx_pruebas.c5', true), '');
+  v_banco     text := nullif(current_setting('mx_pruebas.banco', true), '');
+  v_obra      text := nullif(current_setting('mx_pruebas.obra', true), '');
+  v_dic       text;
+  v_dic_desde date;
+  v_ene_desde date;
+  v_doc       jsonb;
+  v_o         uuid;
+  v_s         jsonb;
+  v_a         text;
+  v_b         text;
+  v_f         text;
+  v_esp       text;
+  v_obt       text;
+begin
+  select p.periodo, p.desde into v_dic, v_dic_desde
+    from periodos p
+   where p.tipo = 'mes' and p.estado = 'abierto' and extract(month from p.desde) = 12
+     and exists (select 1 from periodos q
+                  where q.tipo = 'mes' and q.estado = 'abierto' and q.desde = (p.desde + interval '1 month')::date)
+   order by p.desde limit 1;
+  v_ene_desde := (v_dic_desde + interval '1 month')::date;
+  v_esp := format('papel_de_%s=MX007 papel_de_%s=entró/normal/%s reversos=t', extract(year from v_dic_desde),
+                  extract(year from v_ene_desde), extract(year from v_ene_desde));
+  if v_dueno is null or v_c5 is null or v_banco is null or v_obra is null or v_dic is null then
+    insert into _pruebas values (77, 'el sustituto de un papel que pasó al año nuevo es un asiento normal de ese año', v_esp, 'omitida: falta dueño, cuentas, obra o un diciembre abierto con su enero', null);
+    return;
+  end if;
+  v_doc := jsonb_build_object(
+    'camino', 'puente', 'origen_tabla', 'c2_pruebas_doc', 'origen_id', 'c2-pruebas-77',
+    'fecha', to_char(v_dic_desde + 29, 'YYYY-MM-DD'), 'descripcion', 'c2-pruebas: un ticket de diciembre (se deshace)',
+    'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_c5, 'monto', '100.00', 'proyecto_id', v_obra),
+                                jsonb_build_object('cuenta', v_banco, 'monto', '-100.00')),
+    'procedencia', jsonb_build_object('fecha_documento', to_char(v_dic_desde + 29, 'YYYY-MM-DD')));
+  begin
+    lock table public.periodos in exclusive mode;   -- antes que el de la cadena (ver la cabecera)
+    perform pg_temp.mx_fingir_hoy(v_dic_desde + 29);
+    v_o := (fn_postear_interno(v_doc)->>'id')::uuid;
+    perform pg_temp.mx_cerrar_hasta(v_dic);   -- «hoy» es el 1 de enero; diciembre, cerrado
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform fn_reversar(v_o, 'c2-pruebas: la fecha del ticket estaba mal leída');
+    execute 'reset role';
+    -- a) El papel sigue siendo de diciembre: sustituto normal de enero → MX007.
+    begin
+      perform fn_postear_interno(v_doc || jsonb_build_object(
+                'fecha', to_char(v_ene_desde + 1, 'YYYY-MM-DD'), 'sustituye_a', v_o,
+                'procedencia', jsonb_build_object('fecha_documento', to_char(v_dic_desde + 29, 'YYYY-MM-DD'))));
+      v_a := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_a := sqlstate;
+    end;
+    -- b) El papel ya es de enero: el sustituto normal de enero entra (se queda).
+    begin
+      v_s := fn_postear_interno(v_doc || jsonb_build_object(
+               'fecha', to_char(v_ene_desde + 1, 'YYYY-MM-DD'), 'sustituye_a', v_o,
+               'procedencia', jsonb_build_object('fecha_documento', to_char(v_ene_desde + 1, 'YYYY-MM-DD'))));
+      select format('entró/%s/%s', a.tipo, a.anio) into v_b from asientos a where a.id = (v_s->>'id')::uuid;
+    exception
+      when others then v_b := sqlstate;
+    end;
+    select case when v.ok then 't' else 'f' end into v_f from fn_verificar_cadena() v where v.control = 'reversos';
+    v_obt := format('papel_de_%s=%s papel_de_%s=%s reversos=%s', extract(year from v_dic_desde), v_a,
+                    extract(year from v_ene_desde), v_b, coalesce(v_f, '-'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
+  end;
+  insert into _pruebas values (77, 'el sustituto de un papel que pasó al año nuevo es un asiento normal de ese año', v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+
+-- 78. Las pruebas no dejaron rastro: el libro, el plan, su historial, las
 --     secuencias y las huellas (el reloj fingido y los ALTER TABLE de
 --     algunas pruebas se deshicieron) están igual que al empezar. Va la
 --     última.
@@ -3626,7 +3718,7 @@ declare
   v_obt   text;
 begin
   v_obt := pg_temp.mx_foto();
-  insert into _pruebas values (76, 'las pruebas no dejan rastro (libro, plan, historial, secuencias y huellas)', v_antes, v_obt, v_obt = v_antes);
+  insert into _pruebas values (78, 'las pruebas no dejan rastro (libro, plan, historial, secuencias y huellas)', v_antes, v_obt, v_obt = v_antes);
 end $$;
 
 select * from _pruebas order by n;

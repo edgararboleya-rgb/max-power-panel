@@ -56,7 +56,8 @@
 --          reversado de su mismo documento, el asiento de apertura con la
 --          apertura ya cerrada (no se reversa: se ajusta), o el reverso o
 --          el sustituto de un asiento de un ejercicio anterior que no va
---          como ajuste de ese ejercicio
+--          como ajuste de ese ejercicio (salvo el sustituto de un papel
+--          que ya es del año nuevo, B.8 paso 5)
 --   42501  permiso: solo el dueño postea; anon y service_role, nada
 --   22023  entrada mal formada (clave desconocida, camino no válido,
 --          afecta_periodo sin tipo ajuste_cpa, ajuste_cpa sin motivo…)
@@ -155,9 +156,20 @@
 --     marca solo como ajuste de ese ejercicio (tipo ajuste_cpa,
 --     afecta_periodo = el período del original), que f04 pliega a 3900 y
 --     enseña en el año que corrige («con ajustes posteriores»). El
---     sustituto de ese documento, igual. El reverso automático del día 1
+--     sustituto de ese documento, igual, SALVO que el papel mismo haya
+--     cambiado de año: el ticket de diciembre que en verdad era del 4 de
+--     enero ya no es de ese ejercicio, y su sustituto es un asiento normal
+--     de su fecha (lo dice el puente en procedencia.fecha_documento: B.8,
+--     paso 5). Como ajuste del año viejo pondría un gasto de enero en el
+--     año equivocado. El reverso automático del día 1
 --     de un devengo de diciembre NO: ese deshace el devengo en enero a
---     propósito, y es un asiento normal del año nuevo.
+--     propósito, y es un asiento normal del año nuevo. f03 decidió lo
+--     mismo para un documento TARDÍO de un ejercicio anterior: su puente
+--     lo fecha el día 1 del mes abierto, pero como ajuste de su ejercicio
+--     (tipo ajuste_cpa, afecta_periodo = el mes cerrado del documento);
+--     como asiento normal caería en el resultado del año siguiente. Dentro
+--     del mismo año, la regla de §5.7 del plan tal cual: asiento normal el
+--     día 1 del mes abierto, con la nota en la procedencia.
 --
 -- LO QUE ESTE ARCHIVO NO PUEDE HACER (dicho claro, para el auditor):
 --   · Ningún control que vive DENTRO de la base frena ni delata a quien
@@ -424,26 +436,47 @@ create index if not exists asientos_origen_idx  on public.asientos (origen_tabla
 -- fn_postear_interno leyendo el texto; un insert directo desde el SQL
 -- Editor no pasa por ahí y queda marcado en la procedencia de su asiento
 -- como «insert_directo» (B.8).
--- El tercero de cada línea (proveedor, cliente, subcontratista) y la
--- partida abierta que crea o salda los decide f03, que crea la tabla de
--- proveedores, ANTES del primer asiento real: entran como columnas nulas
--- y fn_asiento_canonico las sella solo cuando no son nulas, así que no
--- rompen ningún hash.
+-- El tercero de cada línea y la partida abierta que crea o salda (f03,
+-- decidido ANTES del primer asiento real, porque una línea no se edita):
+--   · tercero_tipo + tercero_id: CON QUIÉN es el saldo. 'proveedor'
+--     (proveedores.id, la tabla de f03: el supply, el subcontratista, el
+--     ayudante) o 'empleado' (perfiles.id: el reembolso que se le debe).
+--     Así sale «qué se le debe a cada supply» (2010 por proveedor).
+--   · partida_tabla + partida_id: QUÉ papel abierto crea o salda la línea.
+--     El recibo a cuenta abre su partida en 2010; el pago de f06 la salda
+--     con otra línea que nombra la misma partida. La factura abre la suya
+--     en 1110 (y 1120, la retención); el cobro la salda. Un anticipo es
+--     una partida del cobro mismo. Lo abierto es la partida cuya suma no
+--     es cero.
+-- Son columnas nulas: fn_asiento_canonico las sella solo cuando no son
+-- nulas, así que no cambian ningún hash de antes. Un reverso las copia
+-- (el espejo exacto incluye tercero y partida).
 -- ---------------------------------------------------------------------
 create table if not exists public.asiento_lineas (
-  asiento_id   uuid          not null references public.asientos (id) deferrable initially deferred,
-  orden        int           not null,
-  cuenta       text          not null references public.cuentas (codigo),
-  monto        numeric(14,2) not null,
-  proyecto_id  text          references public.proyectos (id),
-  cost_code    text          references public.codigos_partida (codigo),
-  co           text,
-  fase         text,
-  memo         text,
+  asiento_id    uuid          not null references public.asientos (id) deferrable initially deferred,
+  orden         int           not null,
+  cuenta        text          not null references public.cuentas (codigo),
+  monto         numeric(14,2) not null,
+  proyecto_id   text          references public.proyectos (id),
+  cost_code     text          references public.codigos_partida (codigo),
+  co            text,
+  fase          text,
+  memo          text,
+  tercero_tipo  text,
+  tercero_id    text,
+  partida_tabla text,
+  partida_id    text,
   constraint asiento_lineas_pk              primary key (asiento_id, orden),
   constraint asiento_lineas_orden_positivo  check (orden >= 1),
   constraint asiento_lineas_monto_no_cero   check (monto <> 0)
 );
+
+-- Por si la tabla ya existía de un pegado anterior sin el tercero y la
+-- partida (columnas nulas: no tocan ninguna fila ni ningún hash).
+alter table public.asiento_lineas add column if not exists tercero_tipo  text;
+alter table public.asiento_lineas add column if not exists tercero_id    text;
+alter table public.asiento_lineas add column if not exists partida_tabla text;
+alter table public.asiento_lineas add column if not exists partida_id    text;
 
 -- Un borrador anterior de este archivo tenía un id con secuencia. Si esa
 -- tabla existe y sigue vacía, se deja como la de arriba; con líneas no se
@@ -461,6 +494,11 @@ end $$;
 
 create index if not exists asiento_lineas_cuenta_idx   on public.asiento_lineas (cuenta);
 create index if not exists asiento_lineas_proyecto_idx on public.asiento_lineas (proyecto_id) where proyecto_id is not null;
+-- Las partidas abiertas y los saldos por tercero (f03): la guarda de un
+-- documento pregunta si alguna línea lo nombra, y la CxP y la CxC agrupan
+-- por aquí.
+create index if not exists asiento_lineas_partida_idx  on public.asiento_lineas (partida_tabla, partida_id) where partida_tabla is not null;
+create index if not exists asiento_lineas_tercero_idx  on public.asiento_lineas (tercero_tipo, tercero_id) where tercero_tipo is not null;
 
 -- ---------------------------------------------------------------------
 -- A.6 · Los períodos con que arranca el libro. Solo se proponen los que
@@ -884,14 +922,20 @@ as $$
     'rol_bd',         a.rol_bd,
     'creado_el',      to_char(a.creado_el at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
     'lineas', (select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
-                        'orden',       l.orden::text,
-                        'cuenta',      l.cuenta,
-                        'monto',       l.monto::text,
-                        'proyecto_id', l.proyecto_id,
-                        'cost_code',   l.cost_code,
-                        'co',          l.co,
-                        'fase',        l.fase,
-                        'memo',        l.memo)) order by l.orden)
+                        'orden',         l.orden::text,
+                        'cuenta',        l.cuenta,
+                        'monto',         l.monto::text,
+                        'proyecto_id',   l.proyecto_id,
+                        'cost_code',     l.cost_code,
+                        'co',            l.co,
+                        'fase',          l.fase,
+                        'memo',          l.memo,
+                        -- f03: el tercero y la partida; solo cuando no son
+                        -- nulos, así que los hashes de antes siguen valiendo.
+                        'tercero_tipo',  l.tercero_tipo,
+                        'tercero_id',    l.tercero_id,
+                        'partida_tabla', l.partida_tabla,
+                        'partida_id',    l.partida_id)) order by l.orden)
                  from public.asiento_lineas l
                 where l.asiento_id = a.id)
   ))::text
@@ -950,6 +994,34 @@ begin
                   where conrelid = 'public.asientos'::regclass and conname = 'asientos_hash_formato') then
     alter table public.asientos add constraint asientos_hash_formato
       check (hash ~ '^[0-9a-f]{64}$' and hash_anterior ~ '^[0-9a-f]{64}$');
+  end if;
+end $$;
+
+-- El tercero y la partida de una línea (f03), en su forma: van los dos
+-- campos o ninguno, de un tipo que el libro conoce, y con el id escrito
+-- como lo escribe Postgres (un uuid en minúsculas, un número sin ceros
+-- delante): la misma partida escrita de dos maneras serían dos partidas, y
+-- lo abierto no cuadraría nunca. Que el tercero y la partida EXISTAN lo
+-- mira el trigger de cada línea (B.7); fn_postear_interno lo dice antes,
+-- en español. Una fase que abra partidas en otra tabla (los préstamos de
+-- f06, la nómina de f11) la añade aquí.
+do $$
+begin
+  if not exists (select 1 from pg_constraint
+                  where conrelid = 'public.asiento_lineas'::regclass and conname = 'asiento_lineas_tercero_forma') then
+    alter table public.asiento_lineas add constraint asiento_lineas_tercero_forma
+      check (    (tercero_tipo is null and tercero_id is null)
+             or (tercero_tipo in ('proveedor', 'empleado')
+                 and tercero_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'));
+  end if;
+  if not exists (select 1 from pg_constraint
+                  where conrelid = 'public.asiento_lineas'::regclass and conname = 'asiento_lineas_partida_forma') then
+    alter table public.asiento_lineas add constraint asiento_lineas_partida_forma
+      check (    (partida_tabla is null and partida_id is null)
+             or (partida_tabla in ('recibos', 'facturas', 'trabajos_externos')
+                 and partida_id ~ '^(0|-?[1-9][0-9]*)$')
+             or (partida_tabla = 'cobros'
+                 and partida_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'));
   end if;
 end $$;
 
@@ -1355,7 +1427,10 @@ language plpgsql
 set search_path = public, pg_temp
 as $$
 declare
-  v_c cuentas;
+  v_c     cuentas;
+  v_tabla text;
+  v_tipo  text;
+  v_hay   boolean;
 begin
   if exists (select 1 from asientos where id = new.asiento_id) then
     raise exception using errcode = 'MX003',
@@ -1411,6 +1486,45 @@ begin
   if new.cost_code is not null and not exists (select 1 from codigos_partida where codigo = new.cost_code) then
     raise exception using errcode = 'MX006',
       message = format('Línea %s: el cost code %s no existe en codigos_partida.', new.orden, new.cost_code);
+  end if;
+  -- El tercero y la partida (f03) tienen que existir: una partida que no
+  -- apunta a ningún papel quedaría abierta para siempre, y un tercero que
+  -- no existe no tiene a quién pagarle. Su FORMA ya la miran las
+  -- restricciones de la tabla (B.4). Las tablas de proveedores y de cobros
+  -- llegan con c3: antes de pegarlo, una línea no los puede nombrar.
+  if new.tercero_tipo is not null then
+    v_tabla := case new.tercero_tipo when 'proveedor' then 'proveedores' when 'empleado' then 'perfiles' end;
+    if v_tabla is null or to_regclass('public.' || v_tabla) is null then
+      raise exception using errcode = 'MX006',
+        message = format('Línea %s: el tercero «%s» no es de un tipo que el libro conozca todavía.', new.orden, new.tercero_tipo);
+    end if;
+    -- El id se compara en su tipo (uuid), para que use la llave primaria.
+    select format_type(a.atttypid, null) into v_tipo
+      from pg_attribute a where a.attrelid = to_regclass('public.' || v_tabla) and a.attname = 'id' and not a.attisdropped;
+    execute format('select exists (select 1 from public.%I where id = $1::%s)', v_tabla, v_tipo) into v_hay using new.tercero_id;
+    if not v_hay then
+      raise exception using errcode = 'MX006',
+        message = format('Línea %s: el %s %s no existe.', new.orden, new.tercero_tipo, new.tercero_id);
+    end if;
+  end if;
+  if new.partida_tabla is not null then
+    if to_regclass('public.' || new.partida_tabla) is null then
+      raise exception using errcode = 'MX006',
+        message = format('Línea %s: la partida es de la tabla %s, que no existe.', new.orden, new.partida_tabla);
+    end if;
+    select format_type(a.atttypid, null) into v_tipo
+      from pg_attribute a where a.attrelid = to_regclass('public.' || new.partida_tabla) and a.attname = 'id' and not a.attisdropped;
+    if v_tipo is null then
+      raise exception using errcode = 'MX006',
+        message = format('Línea %s: la tabla %s no tiene columna id: no puede ser una partida.', new.orden, new.partida_tabla);
+    end if;
+    execute format('select exists (select 1 from public.%I where id = $1::%s)', new.partida_tabla, v_tipo)
+       into v_hay using new.partida_id;
+    if not v_hay then
+      raise exception using errcode = 'MX006',
+        message = format('Línea %s: la partida %s %s no existe: una línea solo abre o salda un papel que está.',
+                         new.orden, new.partida_tabla, new.partida_id);
+    end if;
   end if;
   return new;
 end $$;
@@ -1530,7 +1644,14 @@ create constraint trigger trg_asiento_lineas_sello_diferido
 --      que ser del mismo documento y estar reversado. Si el sustituido es
 --      de un ejercicio anterior, el sustituto también es un ajuste de ese
 --      ejercicio (tipo ajuste_cpa, con afecta_periodo en ese año), como su
---      reverso.
+--      reverso: es la corrección TARDÍA de un papel de ese año. Salvo que
+--      el papel ya no sea de ese año: un puente dice la fecha de su papel
+--      en procedencia.fecha_documento (AAAA-MM-DD), y si esa fecha es del
+--      año del sustituto, el sustituto es un asiento normal de su fecha
+--      (la fecha del ticket se corrigió del 20-dic al 4-ene: el gasto es
+--      de enero, y como ajuste del año viejo caería en el año fiscal
+--      equivocado; y sin esta salida el papel quedaba fuera de los dos
+--      años). Solo el camino puente: un sustituto a mano sigue la regla.
 --   6. Número: contadores, «select … for update», DESPUÉS de validar. Si
 --      algo falla después, el rollback deshace también el contador: no
 --      hay hueco (una secuencia de Postgres sí lo dejaría).
@@ -1571,6 +1692,7 @@ declare
   v_libre  text;
   v_abierto_anio int;
   v_ej     int;
+  v_doc_anio int;
 begin
   -- 0. Quién, y la forma del ajuste del CPA.
   if new.camino in ('mano', 'ia') and not (es_dueno() or fn_desde_editor()) then
@@ -1763,21 +1885,27 @@ begin
                          'Con su mes ya cerrado, ya se deshizo solo el día 1: una diferencia se corrige con un asiento '
                          'en el mes abierto.', v_orig.numero, v_orig.fecha_contable);
     end if;
+    -- El espejo incluye el tercero y la partida (f03): un reverso que
+    -- saldara OTRA partida dejaría abierta la suya y cerraría una ajena.
     if exists (
-         (select l.cuenta, -l.monto, l.proyecto_id, l.cost_code, l.co, l.fase
+         (select l.cuenta, -l.monto, l.proyecto_id, l.cost_code, l.co, l.fase,
+                 l.tercero_tipo, l.tercero_id, l.partida_tabla, l.partida_id
             from asiento_lineas l where l.asiento_id = v_orig.id
           except all
-          select l.cuenta, l.monto, l.proyecto_id, l.cost_code, l.co, l.fase
+          select l.cuenta, l.monto, l.proyecto_id, l.cost_code, l.co, l.fase,
+                 l.tercero_tipo, l.tercero_id, l.partida_tabla, l.partida_id
             from asiento_lineas l where l.asiento_id = new.id)
          union all
-         (select l.cuenta, l.monto, l.proyecto_id, l.cost_code, l.co, l.fase
+         (select l.cuenta, l.monto, l.proyecto_id, l.cost_code, l.co, l.fase,
+                 l.tercero_tipo, l.tercero_id, l.partida_tabla, l.partida_id
             from asiento_lineas l where l.asiento_id = new.id
           except all
-          select l.cuenta, -l.monto, l.proyecto_id, l.cost_code, l.co, l.fase
+          select l.cuenta, -l.monto, l.proyecto_id, l.cost_code, l.co, l.fase,
+                 l.tercero_tipo, l.tercero_id, l.partida_tabla, l.partida_id
             from asiento_lineas l where l.asiento_id = v_orig.id)) then
       raise exception using errcode = 'MX007',
-        message = format('Un reverso es el espejo exacto de su original (%s): las mismas cuentas y dimensiones, '
-                         'con el signo cambiado.', v_orig.numero);
+        message = format('Un reverso es el espejo exacto de su original (%s): las mismas cuentas, dimensiones, '
+                         'terceros y partidas, con el signo cambiado.', v_orig.numero);
     end if;
   end if;
 
@@ -1833,8 +1961,18 @@ begin
       -- De un ejercicio anterior (el de su afecta_periodo, si ya era un
       -- ajuste): el sustituto es un ajuste de ese ejercicio, como su
       -- reverso. v_afecta se leyó en el paso 1 (solo si es ajuste_cpa).
+      -- Salvo que el PAPEL ya sea del año del sustituto (la fecha que el
+      -- puente dejó en procedencia.fecha_documento): entonces no es la
+      -- corrección tardía de un papel viejo, es un papel del año nuevo, y
+      -- va como asiento normal de su fecha. Solo se lee el año (los cuatro
+      -- primeros caracteres): una fecha mal formada no hace fallar al libro,
+      -- deja la regla de siempre.
       v_ej := coalesce((select p.anio from periodos p where p.periodo = v_sust.afecta_periodo), v_sust.anio);
-      if v_ej < new.anio and (new.tipo is distinct from 'ajuste_cpa' or v_afecta.anio is distinct from v_ej) then
+      v_doc_anio := case when new.camino = 'puente'
+                              and coalesce(new.procedencia->>'fecha_documento', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+                         then left(new.procedencia->>'fecha_documento', 4)::int end;
+      if v_ej < new.anio and (new.tipo is distinct from 'ajuste_cpa' or v_afecta.anio is distinct from v_ej)
+         and not (new.tipo = 'normal' and v_doc_anio is not distinct from new.anio) then
         raise exception using errcode = 'MX007',
           message = format('%s, al que este sustituye, es del ejercicio %s, anterior a este (%s): el sustituto es un '
                            'ajuste de ese ejercicio, como su reverso (tipo ajuste_cpa, afecta_periodo = un período '
@@ -1991,7 +2129,9 @@ create constraint trigger trg_asientos_reversible_diferido
 --     "descripcion": "…",               (obligatoria: qué es)
 --     "lineas": [ { "cuenta": "5100", "monto": "245.37",
 --                   "proyecto_id": "…", "cost_code": "08-ROUGH",
---                   "co": "…", "fase": "…", "memo": "…" }, … ],
+--                   "co": "…", "fase": "…", "memo": "…",
+--                   "tercero_tipo": "proveedor", "tercero_id": "uuid",
+--                   "partida_tabla": "recibos", "partida_id": "123" }, … ],
 --     "reversible": false,               (true = devengo que se reversa solo el día 1)
 --     "tipo": "normal" | "apertura" | "ajuste_cpa",
 --     "afecta_periodo": "2026-12",       (solo ajuste_cpa)
@@ -2016,7 +2156,9 @@ declare
   c_claves       constant text[] := array['camino','fecha','descripcion','lineas','reversible','tipo',
                                           'afecta_periodo','motivo','documento_ruta','origen_tabla',
                                           'origen_id','sustituye_a','procedencia','propuesta_id'];
-  c_claves_linea constant text[] := array['cuenta','monto','proyecto_id','cost_code','co','fase','memo'];
+  c_claves_linea constant text[] := array['cuenta','monto','proyecto_id','cost_code','co','fase','memo',
+                                          'tercero_tipo','tercero_id','partida_tabla','partida_id'];
+  c_uuid         constant text   := '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
   v_sobra      text;
   v_camino     text;
   v_txt        text;
@@ -2150,6 +2292,40 @@ begin
     if coalesce(v_l->>'cuenta', '') = '' then
       raise exception using errcode = 'MX004', message = format('Línea %s: falta la cuenta.', v_i);
     end if;
+    -- El tercero y la partida (f03), en su forma, dicho en español antes de
+    -- que lo pare una restricción de la tabla (un 23514 en inglés). Que
+    -- existan lo mira el trigger de la línea.
+    if (coalesce(v_l->>'tercero_tipo', '') = '') <> (coalesce(v_l->>'tercero_id', '') = '') then
+      raise exception using errcode = '22023',
+        message = format('Línea %s: el tercero va con su tipo y su id (tercero_tipo y tercero_id), los dos o ninguno.', v_i);
+    end if;
+    if coalesce(v_l->>'tercero_tipo', '') <> '' then
+      if v_l->>'tercero_tipo' not in ('proveedor', 'empleado') then
+        raise exception using errcode = 'MX006',
+          message = format('Línea %s: tercero «%s» no válido: proveedor o empleado.', v_i, v_l->>'tercero_tipo');
+      end if;
+      if v_l->>'tercero_id' !~ c_uuid then
+        raise exception using errcode = '22023',
+          message = format('Línea %s: el id del tercero es un uuid en minúsculas (llegó «%s»).', v_i, v_l->>'tercero_id');
+      end if;
+    end if;
+    if (coalesce(v_l->>'partida_tabla', '') = '') <> (coalesce(v_l->>'partida_id', '') = '') then
+      raise exception using errcode = '22023',
+        message = format('Línea %s: la partida va con su tabla y su id (partida_tabla y partida_id), las dos o ninguna.', v_i);
+    end if;
+    if coalesce(v_l->>'partida_tabla', '') <> '' then
+      if v_l->>'partida_tabla' not in ('recibos', 'facturas', 'trabajos_externos', 'cobros') then
+        raise exception using errcode = 'MX006',
+          message = format('Línea %s: una partida es un recibo, una factura, un trabajo externo o un cobro (llegó «%s»).',
+                           v_i, v_l->>'partida_tabla');
+      end if;
+      if (v_l->>'partida_tabla' = 'cobros' and v_l->>'partida_id' !~ c_uuid)
+         or (v_l->>'partida_tabla' <> 'cobros' and v_l->>'partida_id' !~ '^(0|-?[1-9][0-9]*)$') then
+        raise exception using errcode = '22023',
+          message = format('Línea %s: el id de la partida %s no tiene la forma de su tabla (llegó «%s»).',
+                           v_i, v_l->>'partida_tabla', v_l->>'partida_id');
+      end if;
+    end if;
 
     -- MX005: el monto se lee como texto y se mira su escala ANTES de
     -- convertirlo.
@@ -2182,14 +2358,18 @@ begin
       v_debe := v_debe + v_monto;
     end if;
     v_lineas := v_lineas || jsonb_build_array(jsonb_build_object(
-      'orden',       v_i,
-      'cuenta',      v_l->>'cuenta',
-      'monto',       v_monto,
-      'proyecto_id', nullif(v_l->>'proyecto_id', ''),
-      'cost_code',   nullif(v_l->>'cost_code', ''),
-      'co',          nullif(v_l->>'co', ''),
-      'fase',        nullif(v_l->>'fase', ''),
-      'memo',        nullif(v_l->>'memo', '')));
+      'orden',         v_i,
+      'cuenta',        v_l->>'cuenta',
+      'monto',         v_monto,
+      'proyecto_id',   nullif(v_l->>'proyecto_id', ''),
+      'cost_code',     nullif(v_l->>'cost_code', ''),
+      'co',            nullif(v_l->>'co', ''),
+      'fase',          nullif(v_l->>'fase', ''),
+      'memo',          nullif(v_l->>'memo', ''),
+      'tercero_tipo',  nullif(v_l->>'tercero_tipo', ''),
+      'tercero_id',    nullif(v_l->>'tercero_id', ''),
+      'partida_tabla', nullif(v_l->>'partida_tabla', ''),
+      'partida_id',    nullif(v_l->>'partida_id', '')));
   end loop;
 
   -- MX001, antes de escribir nada (el trigger de la cabecera lo vuelve a
@@ -2208,10 +2388,13 @@ begin
   perform set_config('mx_libro.puerta', v_id::text, true);
 
   -- Primero las líneas (cada una pasa su trigger: MX004, MX006)…
-  insert into asiento_lineas (asiento_id, orden, cuenta, monto, proyecto_id, cost_code, co, fase, memo)
-  select v_id, x.orden, x.cuenta, x.monto, x.proyecto_id, x.cost_code, x.co, x.fase, x.memo
+  insert into asiento_lineas (asiento_id, orden, cuenta, monto, proyecto_id, cost_code, co, fase, memo,
+                              tercero_tipo, tercero_id, partida_tabla, partida_id)
+  select v_id, x.orden, x.cuenta, x.monto, x.proyecto_id, x.cost_code, x.co, x.fase, x.memo,
+         x.tercero_tipo, x.tercero_id, x.partida_tabla, x.partida_id
     from jsonb_to_recordset(v_lineas)
-         as x(orden int, cuenta text, monto numeric, proyecto_id text, cost_code text, co text, fase text, memo text)
+         as x(orden int, cuenta text, monto numeric, proyecto_id text, cost_code text, co text, fase text, memo text,
+              tercero_tipo text, tercero_id text, partida_tabla text, partida_id text)
    order by x.orden;
 
   -- …y después la cabecera (su trigger: período, cuadre, documento,
@@ -2415,8 +2598,10 @@ begin
   -- Las líneas de este reverso no se juzgan contra el plan de hoy (ver
   -- B.7); el trigger de la cabecera exige que sean el espejo exacto.
   perform set_config('mx_libro.reverso_de', v_id::text, true);
-  insert into asiento_lineas (asiento_id, orden, cuenta, monto, proyecto_id, cost_code, co, fase, memo)
-  select v_id, l.orden, l.cuenta, -l.monto, l.proyecto_id, l.cost_code, l.co, l.fase, l.memo
+  insert into asiento_lineas (asiento_id, orden, cuenta, monto, proyecto_id, cost_code, co, fase, memo,
+                              tercero_tipo, tercero_id, partida_tabla, partida_id)
+  select v_id, l.orden, l.cuenta, -l.monto, l.proyecto_id, l.cost_code, l.co, l.fase, l.memo,
+         l.tercero_tipo, l.tercero_id, l.partida_tabla, l.partida_id
     from asiento_lineas l
    where l.asiento_id = v_o.id
    order by l.orden;
@@ -2612,6 +2797,9 @@ declare
   v_rx_fn      text;
   v_sospechosas oid[];
   v_vistas_fn  oid[];
+  v_app        text[];
+  v_int        text[];
+  v_fases      text[];
   c_tablas constant text[] := array['cuentas', 'cuentas_historial', 'periodos', 'contadores', 'asientos', 'asiento_lineas'];
   -- Las que llama conta.js (grant a authenticated) y las de dentro (sin
   -- grant a nadie de la API). Ver B.20. Una fase que añada una función
@@ -2622,13 +2810,31 @@ declare
                                     'fn_fecha_miami(timestamptz)'];
   c_fn_internas constant text[] := array['fn_postear_interno(jsonb)', 'fn_reversar_interno(uuid,text,text,jsonb)',
                                          'fn_asiento_canonico(asientos)', 'fn_rol_llamante()', 'fn_desde_editor()',
-                                         'fn_libro_huellas_calcular()', 'fn_libro_huellas()',
+                                         'fn_libro_huellas_calcular()', 'fn_libro_huellas()', 'fn_libro_huellas_sellar(text)',
                                          'fn_cuentas_guarda()', 'fn_cuentas_historial()', 'fn_cuentas_historial_inmutable()',
                                          'fn_periodos_guarda()', 'fn_contadores_guarda()', 'fn_contadores_al_confirmar()',
                                          'fn_asiento_lineas_al_insertar()',
                                          'fn_asiento_lineas_sello_al_confirmar()', 'fn_asientos_al_insertar()',
                                          'fn_libro_inmutable()', 'fn_asientos_reversible_con_reverso()',
                                          'fn_proyectos_con_libro()'];
+  -- Las de las fases que vienen detrás, que tocan el libro a propósito. Se
+  -- miran igual que las de arriba, pero SOLO SI YA EXISTEN: este archivo se
+  -- pega antes que ellas. Las que llama conta.js (con es_dueno() por
+  -- dentro), por nombre; las internas, por su prefijo: toda función
+  -- fn_puente_… (singular) es una puerta interna de los puentes de f03 y no
+  -- la ejecuta nadie de la API. Si falta una, lo dice el verificador de su
+  -- fase (fn_puentes_verificar, en c3-puentes.sql), no este.
+  c_fn_app_fases constant text[] := array[
+    -- f03 · c3-puentes.sql
+    'fn_puentes_correr(date)', 'fn_puentes_rehacer(text,text,text)', 'fn_puentes_verificar()',
+    'fn_puentes_cuenta(text,text)', 'fn_factura_anular(bigint,text,date)', 'fn_cobro_registrar(jsonb)',
+    'fn_cobro_anular(uuid,text)', 'fn_anticipo_aplicar(uuid,bigint,text,date)', 'fn_horas_aprobar(uuid,date,date)',
+    'fn_horas_desaprobar(uuid,date,date,text)', 'fn_horas_devengar(text)', 'fn_recibo_anular(bigint,text)',
+    'fn_externo_anular(bigint,text)', 'fn_mapeo_categoria(text,text,text)', 'fn_mapeo_metodo_pago(text,text,text)',
+    'fn_mapeo_tipo_proyecto(text,text)', 'fn_mapeo_confirmar(text,text)', 'fn_tarjeta_alta(text,text,text,uuid)',
+    'fn_proveedor_alta(text,text,text[],bigint)', 'fn_proveedor_alias(uuid,text)',
+    'fn_puentes_antes_del_corte(text,bigint,text)', 'fn_puentes_confirmar(text,bigint,text,text)',
+    'fn_recibo_desanular(bigint,text)'];
 begin
   if not (es_dueno() or fn_desde_editor()) then
     raise exception using errcode = '42501', message = 'Solo el dueño verifica la cadena.';
@@ -2711,16 +2917,20 @@ begin
             from asientos r
             join asientos o on o.id = r.reversa_a
            where exists (
-                   (select l.cuenta, -l.monto, l.proyecto_id, l.cost_code, l.co, l.fase
+                   (select l.cuenta, -l.monto, l.proyecto_id, l.cost_code, l.co, l.fase,
+                           l.tercero_tipo, l.tercero_id, l.partida_tabla, l.partida_id
                       from asiento_lineas l where l.asiento_id = o.id
                     except all
-                    select l.cuenta, l.monto, l.proyecto_id, l.cost_code, l.co, l.fase
+                    select l.cuenta, l.monto, l.proyecto_id, l.cost_code, l.co, l.fase,
+                           l.tercero_tipo, l.tercero_id, l.partida_tabla, l.partida_id
                       from asiento_lineas l where l.asiento_id = r.id)
                    union all
-                   (select l.cuenta, l.monto, l.proyecto_id, l.cost_code, l.co, l.fase
+                   (select l.cuenta, l.monto, l.proyecto_id, l.cost_code, l.co, l.fase,
+                           l.tercero_tipo, l.tercero_id, l.partida_tabla, l.partida_id
                       from asiento_lineas l where l.asiento_id = r.id
                     except all
-                    select l.cuenta, -l.monto, l.proyecto_id, l.cost_code, l.co, l.fase
+                    select l.cuenta, -l.monto, l.proyecto_id, l.cost_code, l.co, l.fase,
+                           l.tercero_tipo, l.tercero_id, l.partida_tabla, l.partida_id
                       from asiento_lineas l where l.asiento_id = o.id))
           union all
           -- un reversible sin su reverso automático
@@ -2779,7 +2989,8 @@ begin
                       else r.tipo is distinct from o.tipo or r.afecta_periodo is distinct from o.afecta_periodo end
           union all
           -- el sustituto de un asiento de un ejercicio anterior que no es un ajuste de ese
-          -- ejercicio (B.8, paso 5)
+          -- ejercicio (B.8, paso 5), salvo el de un papel que ya es del año del sustituto
+          -- (un puente, con procedencia.fecha_documento de ese año: asiento normal)
           select x.numero
             from asientos x
             join asientos o on o.id = x.sustituye_a
@@ -2787,6 +2998,9 @@ begin
             left join periodos px on px.periodo = x.afecta_periodo
            where coalesce(po.anio, o.anio) < x.anio
              and (x.tipo is distinct from 'ajuste_cpa' or px.anio is distinct from coalesce(po.anio, o.anio))
+             and not (x.camino = 'puente' and x.tipo = 'normal'
+                      and coalesce(x.procedencia->>'fecha_documento', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+                      and left(x.procedencia->>'fecha_documento', 4)::int = x.anio)
           union all
           -- un documento con dos asientos vivos (sin su reverso de corrección)
           select min(a.numero)
@@ -3025,8 +3239,20 @@ begin
   select coalesce(array_agg(c.oid), '{}') into v_tablas
     from pg_class c
    where c.relnamespace = 'public'::regnamespace and c.relname = any (c_tablas);
+  -- El reparto entero: el de este archivo y el de las fases que ya están.
+  select coalesce(array_agg(f), '{}') into v_fases
+    from unnest(c_fn_app_fases) f
+   where to_regprocedure('public.' || f) is not null;
+  v_app := c_fn_app || v_fases;
+  select c_fn_internas || coalesce(array_agg(p.oid::regprocedure::text order by p.oid::regprocedure::text), '{}')
+    into v_int
+    from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and p.proname like 'fn\_puente\_%';
+  v_fases := v_fases || (select coalesce(array_agg(p.oid::regprocedure::text), '{}')
+                           from pg_proc p
+                          where p.pronamespace = 'public'::regnamespace and p.proname like 'fn\_puente\_%');
   select coalesce(array_agg(to_regprocedure('public.' || f)::oid), '{}') into v_conocidas
-    from unnest(c_fn_app || c_fn_internas) f
+    from unnest(v_app || v_int) f
    where to_regprocedure('public.' || f) is not null;
   select coalesce(array_agg(to_regprocedure('public.' || f)::oid), '{}') into v_semillas
     from unnest(array['fn_postear_interno(jsonb)', 'fn_reversar_interno(uuid,text,text,jsonb)',
@@ -3192,14 +3418,16 @@ begin
            where to_regprocedure('public.' || f) is null
           union all
           select format('anon ejecuta %s (vuelve a pegar %s)', f,
-                        case when f like 'fn_cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end)
-            from unnest(c_fn_app || c_fn_internas) f
+                        case when f = any (v_fases) then 'c3-puentes.sql'
+                             when f like 'fn_cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end)
+            from unnest(v_app || v_int) f
            where to_regprocedure('public.' || f) is not null
              and has_function_privilege('anon', to_regprocedure('public.' || f)::oid, 'execute')
           union all
           select format('authenticated ejecuta %s (vuelve a pegar %s)', f,
-                        case when f like 'fn_cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end)
-            from unnest(c_fn_internas) f
+                        case when f = any (v_fases) then 'c3-puentes.sql'
+                             when f like 'fn_cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end)
+            from unnest(v_int) f
            where to_regprocedure('public.' || f) is not null
              and has_function_privilege('authenticated', to_regprocedure('public.' || f)::oid, 'execute')
           union all
@@ -3207,8 +3435,9 @@ begin
           -- puede llamar sueltas, y es lo que les da e37-seguridad.sql, que
           -- se puede volver a pegar (ver B.20).
           select format('service_role ejecuta %s (vuelve a pegar %s)', f,
-                        case when f like 'fn_cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end)
-            from unnest(c_fn_app || c_fn_internas) f
+                        case when f = any (v_fases) then 'c3-puentes.sql'
+                             when f like 'fn_cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end)
+            from unnest(v_app || v_int) f
             join pg_proc p on p.oid = to_regprocedure('public.' || f)
            where p.prorettype <> 'trigger'::regtype
              and has_function_privilege('service_role', p.oid, 'execute')
@@ -3217,7 +3446,8 @@ begin
           select format('la función %s es SECURITY DEFINER, lee o escribe el libro y la puede ejecutar %s. No es de c1 '
                         'ni de c2: o es SECURITY INVOKER, o se le quita la API (revoke execute on function … from '
                         'public, anon, authenticated, service_role); si conta.js la llama a propósito, mira es_dueno() '
-                        'por dentro y va en el reparto de B.20 (c_fn_app, en c2-libro.sql)', p.oid::regprocedure,
+                        'por dentro y va en el reparto de B.20 (c_fn_app, o c_fn_app_fases si es de una fase posterior, '
+                        'en c2-libro.sql)', p.oid::regprocedure,
                         (select string_agg(r, ', ' order by r)
                            from unnest(array['anon', 'authenticated', 'service_role']) r
                           where has_schema_privilege(r, p.pronamespace, 'USAGE')
@@ -3410,7 +3640,12 @@ create or replace trigger trg_proyectos_con_libro
 -- manda, y no hace falta nada más), o, si tiene que ser SECURITY DEFINER:
 -- lleva justo después su revoke de public, anon, authenticated y
 -- service_role; si la llama la app a propósito, mira es_dueno() por dentro
--- y se añade a c_fn_app (B.16) y a las huellas (B.22) en el mismo pegado.
+-- y se añade a c_fn_app_fases (B.16) y a las huellas (B.22) de ESTE
+-- archivo, que la conoce de antemano y la mira solo si ya existe. Las
+-- internas de los puentes de f03 se llaman fn_puente_… (singular): el
+-- verificador y las huellas las encuentran por el prefijo, y ninguna la
+-- ejecuta nadie de la API. La fase termina su archivo resellando las
+-- huellas con fn_libro_huellas_sellar() (B.22).
 -- Una vista contable es security_invoker, y no llama a una función SECURITY
 -- DEFINER que lea el libro. El control permisos da en rojo lo que se salga
 -- de esto: una SECURITY DEFINER que nombra una tabla del libro (o una vista
@@ -3447,7 +3682,7 @@ comment on column public.asientos.numero         is 'AAAA-NNNNNN, correlativo po
 comment on column public.asientos.cadena_pos     is 'Posición en la cadena de hashes (orden de posteo, en todo el libro).';
 comment on column public.asientos.fecha_contable is 'La fecha del asiento, en hora de Miami. Decide el período.';
 comment on column public.asientos.periodo        is 'El período que contiene la fecha. Lo pone la base.';
-comment on column public.asientos.tipo           is 'normal, apertura o ajuste_cpa. El reverso o el sustituto de un asiento de un ejercicio anterior es un ajuste_cpa de ese ejercicio.';
+comment on column public.asientos.tipo           is 'normal, apertura o ajuste_cpa. El reverso o el sustituto de un asiento de un ejercicio anterior es un ajuste_cpa de ese ejercicio, salvo el sustituto de un papel que ya es del año nuevo (procedencia.fecha_documento de ese año): ese es normal.';
 comment on column public.asientos.afecta_periodo is 'Solo ajuste_cpa: el período cerrado al que corresponde el ajuste (en el reverso de un asiento de un ejercicio anterior, el período del original).';
 comment on column public.asientos.camino         is 'Por dónde entró: mano (el dueño), puente (automático, desde un documento), ia (propuesta aprobada, f07), reverso o reverso_automatico.';
 comment on column public.asientos.descripcion    is 'Qué es el asiento, en palabras.';
@@ -3459,7 +3694,7 @@ comment on column public.asientos.origen_id      is 'Id del documento origen, co
 comment on column public.asientos.sustituye_a    is 'El asiento REVERSADO del mismo documento al que este sustituye (una corrección del mapeo, un documento des-anulado). Único.';
 comment on column public.asientos.documento_ruta is 'Ruta del papel en Storage cuando no hay fila origen (la balanza de apertura en PDF…).';
 comment on column public.asientos.propuesta_id   is 'Reservado para f07: la propuesta de la IA aprobada (ia_propuestas.id, uuid). OJO: no es la tabla propuestas, que son las de los clientes.';
-comment on column public.asientos.procedencia    is 'El sello del camino: qué función lo posteó y lo que el puente dejó escrito (p. ej. la nota de un documento tardío). '
+comment on column public.asientos.procedencia    is 'El sello del camino: qué función lo posteó y lo que el puente dejó escrito (p. ej. la nota de un documento tardío, y fecha_documento: la fecha de su papel). '
                                                     'Lo pone la base: «conexion» (application_name, cliente, puerto) si entró por una conexión directa del dueño de la base; '
                                                     '«puerta» = insert_directo si sus líneas no pasaron por fn_postear_interno (sin la mirada de la escala: numeric(14,2) redondeó).';
 comment on column public.asientos.usuario_id     is 'auth.uid() de la sesión que lo posteó (en un puente, quien subió el papel); nulo desde el SQL Editor.';
@@ -3478,6 +3713,10 @@ comment on column public.asiento_lineas.cost_code   is 'Dimensión cost code (co
 comment on column public.asiento_lineas.co          is 'Change Order, copiado tal cual del origen (la FK a alcances llega en f10).';
 comment on column public.asiento_lineas.fase        is 'Fase de la obra, opcional.';
 comment on column public.asiento_lineas.memo        is 'Nota de la línea.';
+comment on column public.asiento_lineas.tercero_tipo  is 'Con quién es el saldo (f03): proveedor (proveedores.id) o empleado (perfiles.id). Va con tercero_id, los dos o ninguno.';
+comment on column public.asiento_lineas.tercero_id    is 'El id del tercero (uuid). Así sale lo que se le debe a cada supply (2010 por proveedor) y a cada empleado (2250).';
+comment on column public.asiento_lineas.partida_tabla is 'La partida abierta que la línea crea o salda (f03): recibos, facturas, trabajos_externos o cobros (un anticipo).';
+comment on column public.asiento_lineas.partida_id    is 'El id de esa partida. Lo abierto es la partida cuya suma, en su cuenta, no es cero. Un reverso copia tercero y partida.';
 
 comment on function public.fn_postear(jsonb)          is 'Postea un asiento a mano (solo el dueño). Devuelve id, número, período y hash.';
 comment on function public.fn_reversar(uuid, text)    is 'Reversa un asiento con su motivo (solo el dueño). Una vez; un reverso no se reversa. Un devengo, dentro de su mes, y anulando su reverso del día 1. El de un ejercicio anterior sale como ajuste de ese ejercicio; la apertura cerrada no se reversa (se ajusta).';
@@ -3519,10 +3758,15 @@ comment on function public.fn_proyectos_con_libro()   is 'Una obra con asientos 
 -- rehacer las huellas (basta con volver a pegar el archivo). Si un cambio
 -- legítimo toca una guarda (una versión nueva de c1 o de c2, o Planos
 -- cambia es_dueno), el control sale en rojo hasta que se vuelve a pegar
--- c2-libro.sql: es lo que se quiere, que alguien lo mire. Una fase que
--- añada a propósito un trigger sobre las tablas del libro (c3…), o que
--- les cambie la forma, termina su archivo rehaciendo las huellas con este
--- mismo bloque.
+-- c2-libro.sql: es lo que se quiere, que alguien lo mire.
+-- LAS FASES QUE VIENEN DETRÁS (c3…): sus funciones que tocan el libro y
+-- sus triggers se vigilan desde aquí también, por nombre (las que llama la
+-- app, la misma lista que c_fn_app_fases) o por prefijo (fn_puente_… y
+-- trg_puente_…, en cualquier tabla); lo que todavía no existe no da fila.
+-- Por eso una fase termina su archivo resellando con
+-- fn_libro_huellas_sellar(), y lo EMPIEZA comprobando que el control
+-- triggers está en verde: si resellara encima de una guarda tocada, la
+-- bendeciría.
 -- ---------------------------------------------------------------------
 create or replace function public.fn_libro_huellas_calcular()
 returns table (tipo text, objeto text, md5 text)
@@ -3536,20 +3780,29 @@ as $$
    where c.relnamespace = 'public'::regnamespace
      and not t.tgisinternal
      and (   c.relname in ('cuentas', 'cuentas_historial', 'periodos', 'contadores', 'asientos', 'asiento_lineas')
-          or (c.relname = 'proyectos' and t.tgname = 'trg_proyectos_con_libro'))
+          or (c.relname = 'proyectos' and t.tgname = 'trg_proyectos_con_libro')
+          or t.tgname like 'trg\_puente\_%')
   union all
   select 'funcion'::text, p.oid::regprocedure::text, md5(pg_get_functiondef(p.oid))
     from pg_proc p
    where p.pronamespace = 'public'::regnamespace
-     and p.proname in ('fn_cuentas_guarda', 'fn_cuentas_historial', 'fn_cuentas_historial_inmutable',
-                       'fn_fecha_miami', 'fn_rol_llamante', 'fn_desde_editor', 'fn_asiento_canonico',
-                       'fn_periodos_guarda', 'fn_contadores_guarda', 'fn_contadores_al_confirmar',
-                       'fn_asiento_lineas_al_insertar',
-                       'fn_asiento_lineas_sello_al_confirmar', 'fn_asientos_al_insertar', 'fn_libro_inmutable',
-                       'fn_asientos_reversible_con_reverso', 'fn_postear_interno', 'fn_postear',
-                       'fn_reversar_interno', 'fn_reversar', 'fn_estado', 'fn_verificar_cadena',
-                       'fn_cerrar_periodo', 'fn_abrir_periodo', 'fn_proyectos_con_libro',
-                       'fn_libro_huellas_calcular')
+     and (   p.proname in ('fn_cuentas_guarda', 'fn_cuentas_historial', 'fn_cuentas_historial_inmutable',
+                           'fn_fecha_miami', 'fn_rol_llamante', 'fn_desde_editor', 'fn_asiento_canonico',
+                           'fn_periodos_guarda', 'fn_contadores_guarda', 'fn_contadores_al_confirmar',
+                           'fn_asiento_lineas_al_insertar',
+                           'fn_asiento_lineas_sello_al_confirmar', 'fn_asientos_al_insertar', 'fn_libro_inmutable',
+                           'fn_asientos_reversible_con_reverso', 'fn_postear_interno', 'fn_postear',
+                           'fn_reversar_interno', 'fn_reversar', 'fn_estado', 'fn_verificar_cadena',
+                           'fn_cerrar_periodo', 'fn_abrir_periodo', 'fn_proyectos_con_libro',
+                           'fn_libro_huellas_calcular', 'fn_libro_huellas_sellar',
+                           -- f03 · c3-puentes.sql (las que llama la app)
+                           'fn_puentes_correr', 'fn_puentes_rehacer', 'fn_puentes_verificar', 'fn_puentes_cuenta',
+                           'fn_factura_anular', 'fn_cobro_registrar', 'fn_cobro_anular', 'fn_anticipo_aplicar',
+                           'fn_horas_aprobar', 'fn_horas_desaprobar', 'fn_horas_devengar', 'fn_recibo_anular',
+                           'fn_externo_anular', 'fn_mapeo_categoria', 'fn_mapeo_metodo_pago', 'fn_mapeo_tipo_proyecto',
+                           'fn_mapeo_confirmar', 'fn_tarjeta_alta', 'fn_proveedor_alta', 'fn_proveedor_alias',
+                           'fn_puentes_antes_del_corte', 'fn_puentes_confirmar', 'fn_recibo_desanular')
+          or p.proname like 'fn\_puente\_%')
   union all
   select 'tabla'::text, c.relname,
          md5(concat_ws(' | ',
@@ -3578,12 +3831,22 @@ as $$
 $$;
 revoke execute on function public.fn_libro_huellas_calcular() from public, anon, authenticated, service_role;
 
-do $$
+-- El sello: reescribe fn_libro_huellas() con las huellas de este momento,
+-- como valores literales, y deja escrito en su comentario quién selló y
+-- cuándo (hora de Miami). La llama este archivo al final, y la llaman al
+-- final los archivos de las fases (c3…) que ponen triggers o funciones que
+-- se vigilan desde aquí. Sin grant a nadie de la API: solo el SQL Editor.
+create or replace function public.fn_libro_huellas_sellar(p_quien text default 'c2-libro.sql')
+returns int
+language plpgsql
+set search_path = public, pg_temp
+as $$
 declare
   v_filas text;
+  v_n     int;
 begin
-  select string_agg(format('(%L, %L, %L)', h.tipo, h.objeto, h.md5), E',\n    ' order by h.tipo, h.objeto)
-    into v_filas
+  select string_agg(format('(%L, %L, %L)', h.tipo, h.objeto, h.md5), E',\n    ' order by h.tipo, h.objeto), count(*)
+    into v_filas, v_n
     from public.fn_libro_huellas_calcular() h;
   execute format($f$
     create or replace function public.fn_libro_huellas()
@@ -3599,8 +3862,16 @@ begin
   $f$, v_filas);
   execute 'revoke execute on function public.fn_libro_huellas() from public, anon, authenticated, service_role';
   execute format('comment on function public.fn_libro_huellas() is %L',
-                 'Las huellas (md5) de las guardas, las funciones y las tablas del libro y es_dueno() del último pegado de c2-libro.sql, '
-                 'del ' || to_char(now() at time zone 'America/New_York', 'YYYY-MM-DD HH24:MI') || ' (Miami).');
+                 'Las huellas (md5) de las guardas, las funciones y las tablas del libro y es_dueno(), selladas por el último '
+                 'pegado de ' || coalesce(nullif(btrim(p_quien), ''), '(sin nombre)') || ', el '
+                 || to_char(now() at time zone 'America/New_York', 'YYYY-MM-DD HH24:MI') || ' (Miami).');
+  return v_n;
+end $$;
+revoke execute on function public.fn_libro_huellas_sellar(text) from public, anon, authenticated, service_role;
+
+do $$
+begin
+  perform public.fn_libro_huellas_sellar('c2-libro.sql');
 end $$;
 
 
