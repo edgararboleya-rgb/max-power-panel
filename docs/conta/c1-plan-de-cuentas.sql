@@ -15,10 +15,13 @@
 --      (docs/conta/ESQUEMA-REAL.md).
 --   1. La tabla cuentas. El código no cambia nunca. Una cuenta con
 --      movimientos no se borra: se inactiva; y con saldo vivo tampoco se
---      inactiva (primero se traslada el saldo). Cada cuenta dice qué
+--      inactiva, ni se le endurece una regla de dimensión que dejaría ese
+--      saldo atrapado (primero se traslada el saldo). Cada cuenta dice qué
 --      dimensiones exige a sus líneas (obra y cost code). Todo cambio a
 --      una cuenta queda escrito en cuentas_historial (quién, cuándo, antes
 --      y después): un nombre o una etiqueta fiscal no cambian sin rastro.
+--      El verificador de c2 compara cada cuenta con su último cambio
+--      apuntado: un cambio que no pasó por el historial se ve.
 --   2. El plan de cuentas BORRADOR: el de f01, lo que añadió la auditoría
 --      del 21-sep y lo que añadió la del 23-sep (lo que pide el 1120-S, la
 --      bolsa del burden real y los reembolsos a empleados). ▶ Pendiente
@@ -284,6 +287,17 @@ create index if not exists cuentas_historial_codigo_idx on public.cuentas_histor
 --     capital), la suma de todo su historial; en una de resultados, la de
 --     los años que todavía no se cierran (un ajuste del CPA puede tener
 --     que llegar a ella hasta entonces);
+--   · por lo mismo, con saldo vivo no cambia una REGLA DE DIMENSIÓN
+--     (regla_obra, regla_cost_code) si ese saldo queda en una combinación
+--     que la regla nueva ya no admite: a obligatoria con saldo vivo sin
+--     obra (o sin código), a prohibida con saldo vivo con obra (o con
+--     código). Ninguna línea podría ya llevarse ese saldo, y el auxiliar
+--     por obra no cuadraría nunca contra el mayor (la CxC de apertura
+--     entra sin obra; si después 1110 pasa a exigir obra, el cobro entra
+--     con obra y el auxiliar queda con «sin obra +20000 / la obra −20000»
+--     y el mayor en cero). Primero se traslada ese saldo con un asiento
+--     bajo la regla de hoy; después se cambia la regla. Aflojar una regla
+--     (a opcional) siempre se puede;
 --   · con movimientos no se borra: se inactiva;
 --   · con el libro lleno no se trunca.
 -- «Tiene movimientos» = aparece en asiento_lineas, que llega con c2.
@@ -297,8 +311,9 @@ language plpgsql
 set search_path = public, pg_temp
 as $$
 declare
-  v_con_mov boolean := false;
-  v_saldo   numeric := 0;
+  v_con_mov  boolean := false;
+  v_saldo    numeric := 0;
+  v_atrapado text;
 begin
   if tg_op = 'TRUNCATE' then
     if to_regclass('public.asiento_lineas') is not null then
@@ -364,6 +379,45 @@ begin
                          'a la cuenta que la sustituye. Si no, el saldo se queda atrapado: ya no entraría ni el '
                          'asiento que lo mueve.', old.codigo, old.nombre, v_saldo,
                          case when old.activa and not new.activa then 'inactivarla' else 'volverla cuenta de grupo' end);
+    end if;
+  end if;
+  -- Una regla de dimensión que se endurece con saldo vivo (ver arriba). El
+  -- saldo vivo se mide igual que para inactivar, por obra y por código.
+  if v_con_mov
+     and (new.regla_obra is distinct from old.regla_obra or new.regla_cost_code is distinct from old.regla_cost_code)
+     and to_regclass('public.asientos') is not null and to_regclass('public.periodos') is not null then
+    execute $q$
+      select string_agg(format('%s%s: %s', coalesce(x.obra, '(sin obra)'),
+                               case when x.obra is null then ''
+                                    when x.cc is not null then ' / ' || x.cc
+                                    when $5 then ' / (sin código)'
+                                    else '' end,
+                               x.saldo), '; ' order by x.obra nulls first, x.cc nulls first)
+        from (select l.proyecto_id as obra, l.cost_code as cc, sum(l.monto) as saldo
+                from public.asiento_lineas l
+                join public.asientos a on a.id = l.asiento_id
+               where l.cuenta = $1
+                 and (   $2 in ('activo', 'pasivo', 'capital')
+                      or not exists (select 1 from public.periodos p
+                                      where p.tipo = 'anio' and p.anio = a.anio and p.estado = 'cerrado'))
+               group by l.proyecto_id, l.cost_code
+              having sum(l.monto) <> 0) x
+       where ($3 and x.obra is null)         -- la obra pasa a obligatoria: saldo vivo sin obra
+          or ($4 and x.obra is not null)     -- la obra pasa a prohibida: saldo vivo con obra
+          or ($5 and x.cc is null)           -- el código pasa a obligatorio: saldo vivo sin código
+          or ($6 and x.cc is not null)       -- el código pasa a prohibido: saldo vivo con código
+    $q$ into v_atrapado
+    using old.codigo, old.tipo,
+          new.regla_obra = 'obligatoria' and old.regla_obra <> 'obligatoria',
+          new.regla_obra = 'prohibida' and old.regla_obra <> 'prohibida',
+          new.regla_cost_code = 'obligatoria' and old.regla_cost_code <> 'obligatoria',
+          new.regla_cost_code = 'prohibida' and old.regla_cost_code <> 'prohibida';
+    if v_atrapado is not null then
+      raise exception using errcode = 'MX003',
+        message = format('La cuenta %s (%s) tiene saldo vivo que la regla nueva ya no admitiría (%s): se quedaría atrapado, '
+                         'porque ya ninguna línea podría llevárselo, y el auxiliar por obra no cuadraría nunca contra el '
+                         'mayor. Primero traslada ese saldo con un asiento bajo la regla de hoy; después cambia la regla.',
+                         old.codigo, old.nombre, v_atrapado);
     end if;
   end if;
   return new;
@@ -500,7 +554,7 @@ end $$;
 -- Lo que un auditor lee en pg_description (de aquí sale MAPA-DATOS.md).
 comment on table public.cuentas is
   'Plan de cuentas del libro (c1). El código no cambia nunca; con movimientos la cuenta no se borra, se inactiva, y con saldo vivo '
-  'tampoco se inactiva. Cada cambio queda en cuentas_historial. Cargado el 23-sep-2026 como BORRADOR, pendiente de que Edgar lo '
+  'tampoco se inactiva ni se le endurece una regla de dimensión que lo dejaría atrapado. Cada cambio queda en cuentas_historial. Cargado el 23-sep-2026 como BORRADOR, pendiente de que Edgar lo '
   'corrija. Cost codes: opción B (dimensión de la línea, no subcuentas).';
 comment on column public.cuentas.codigo          is 'Cuatro dígitos, o cuatro y un sufijo para una subcuenta (2100-4417). Inmutable.';
 comment on column public.cuentas.nombre          is 'Nombre en español.';
@@ -510,8 +564,8 @@ comment on column public.cuentas.padre           is 'Cuenta de la que cuelga una
 comment on column public.cuentas.saldo_normal    is 'debe o haber: el lado del que crece. Las contra-cuentas van al revés de su tipo.';
 comment on column public.cuentas.imputable       is 'false = cuenta de grupo: no recibe asientos, solo agrupa subcuentas. Con saldo vivo no pasa a false.';
 comment on column public.cuentas.activa          is 'false = no recibe asientos nuevos; su historia queda. Se inactiva en vez de borrar, y solo sin saldo vivo.';
-comment on column public.cuentas.regla_obra      is 'Qué exige a cada línea sobre proyecto_id: obligatoria, opcional o prohibida (MX006).';
-comment on column public.cuentas.regla_cost_code is 'Qué exige a cada línea sobre cost_code (codigos_partida): obligatoria, opcional o prohibida (MX006).';
+comment on column public.cuentas.regla_obra      is 'Qué exige a cada línea sobre proyecto_id: obligatoria, opcional o prohibida (MX006). Con saldo vivo, no se endurece si lo dejaría atrapado.';
+comment on column public.cuentas.regla_cost_code is 'Qué exige a cada línea sobre cost_code (codigos_partida): obligatoria, opcional o prohibida (MX006). Con saldo vivo, no se endurece si lo dejaría atrapado.';
 comment on column public.cuentas.etiqueta_fiscal is 'Pista para el CPA: M&E 50%, 1099, vehiculo… Vocabulario del CPA.';
 comment on column public.cuentas.notas           is 'Para qué es la cuenta y qué NO va en ella.';
 
@@ -558,10 +612,12 @@ comment on column public.cuentas_historial.despues    is 'La fila como quedó (n
 --   · «activa» NO la toca el upsert: una cuenta inactivada se queda así;
 --   · una cuenta que SOBRA no desaparece por quitarla de la lista: se
 --     borra aquí con un delete explícito mientras no tenga movimientos
---     (como 7200, abajo); con movimientos, se inactiva (el trigger no deja
---     otra cosa), y con saldo vivo, antes se traslada el saldo;
+--     (como 7200, justo antes de la lista); con movimientos, se inactiva
+--     (el trigger no deja otra cosa), y con saldo vivo, antes se traslada
+--     el saldo;
 --   · con movimientos, cambiarle el tipo o el saldo normal hace fallar
---     el pegado entero (MX003). Es a propósito.
+--     el pegado entero (MX003), y también endurecerle una regla de
+--     dimensión que dejaría atrapado su saldo vivo. Es a propósito.
 --
 -- Las reglas de dimensión de este borrador:
 --   · 4010–4040 exigen obra; 4900 la admite; 4910 y 4920 no la llevan.
@@ -571,7 +627,9 @@ comment on column public.cuentas_historial.despues    is 'La fila como quedó (n
 --   · 6xxx, 7xxx y 9000 nunca llevan obra.
 --   · En el balance, solo lo que es de una obra por naturaleza la exige
 --     (1120, 1200, 2020, 2400, 2410); 1110, 1190 y 1420 la admiten; el
---     resto la prohíbe. f03 y f10 pueden afinarlo.
+--     resto la prohíbe. f03 y f10 pueden afinarlo; con el libro ya en
+--     marcha, la guarda no deja endurecer una regla que atraparía saldo
+--     vivo (antes se traslada ese saldo con un asiento).
 --
 -- EL BURDEN, sin que ningún dólar llegue dos veces a la obra:
 --   · 5015 (bolsa, sin obra) recibe el burden REAL: los impuestos
@@ -585,6 +643,31 @@ comment on column public.cuentas_historial.despues    is 'La fila como quedó (n
 --     variación). Sin tasa aplicada, 5011 y 5019 no se usan.
 --   · El cuadre «auxiliar 5xxx por obra = mayor» deja fuera las bolsas
 --     sin obra (5011, 5015, 5019).
+--
+-- Las cuentas que SOBRAN del borrador anterior: 7200 («Cargos bancarios
+-- y comisiones de tarjeta») pasó a 6130. Se borra si no tiene movimientos
+-- (lo normal: el libro aún no arrancó). Si ya los tuviera, se deja como
+-- está: la guarda no deja borrarla, y inactivarla con saldo tampoco; eso
+-- lo decide Edgar a mano, trasladando antes el saldo.
+-- Va ANTES de la lista, y solo borra la fila retirada (por su nombre): si
+-- Edgar vuelve a poner una 7200 en la lista, con otro nombre, la lista la
+-- da de alta y ningún pegado posterior la borra. Puesto después de la
+-- lista, la daba de alta y la borraba en el mismo pegado, sin avisar.
+do $$
+declare
+  v_con_mov boolean := false;
+begin
+  if exists (select 1 from public.cuentas
+              where codigo = '7200' and nombre = 'Cargos bancarios y comisiones de tarjeta') then
+    if to_regclass('public.asiento_lineas') is not null then
+      execute 'select exists (select 1 from public.asiento_lineas where cuenta = ''7200'')' into v_con_mov;
+    end if;
+    if not v_con_mov then
+      delete from public.cuentas where codigo = '7200';
+    end if;
+  end if;
+end $$;
+
 -- 2100 es cuenta de GRUPO (no imputable): una subcuenta por tarjeta,
 -- 2100-XXXX con los últimos 4. ▶ Faltan las tarjetas de Edgar.
 insert into public.cuentas as c
@@ -711,25 +794,6 @@ where (c.nombre, c.nombre_en, c.tipo, c.padre, c.saldo_normal, c.imputable,
       is distinct from
       (excluded.nombre, excluded.nombre_en, excluded.tipo, excluded.padre, excluded.saldo_normal, excluded.imputable,
        excluded.regla_obra, excluded.regla_cost_code, excluded.etiqueta_fiscal, excluded.notas);
-
--- Las cuentas que SOBRAN del borrador anterior: 7200 pasó a 6130. Se
--- borra si no tiene movimientos (lo normal: el libro aún no arrancó). Si
--- ya los tuviera, se deja como está: la guarda no deja borrarla, y
--- inactivarla con saldo tampoco; eso lo decide Edgar a mano, trasladando
--- antes el saldo.
-do $$
-declare
-  v_con_mov boolean := false;
-begin
-  if exists (select 1 from public.cuentas where codigo = '7200') then
-    if to_regclass('public.asiento_lineas') is not null then
-      execute 'select exists (select 1 from public.asiento_lineas where cuenta = ''7200'')' into v_con_mov;
-    end if;
-    if not v_con_mov then
-      delete from public.cuentas where codigo = '7200';
-    end if;
-  end if;
-end $$;
 
 
 -- =====================================================================

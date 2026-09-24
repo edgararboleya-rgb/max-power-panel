@@ -9,29 +9,34 @@
 #      funciones mínimas: un asiento sin sellar, un período cerrado sin la
 #      foto de la cadena), el bloque B se niega con MX000 y no deja nada
 #      puesto. Se borra a mano (con el bloque A solo todavía se puede) y
-#      entonces el bloque B entra, con los nueve controles en true.
+#      entonces el bloque B entra, con todos los controles en true.
 #   3. c2-pruebas.sql pegado antes que c2-libro.sql para con MX000 y un
 #      mensaje en español, no con un error de Postgres en inglés.
 #   4. Volver a pegar c1 y c2 borra las policies ajenas de las tablas del
 #      libro (p. ej. una «Enable read access for all users» del dashboard)
 #      y deja todo en true. Pegar c1 otra vez con el libro ya puesto no
 #      mueve las huellas de c2.
+#   5. La cuenta que sobra (7200, retirada: pasó a 6130) se borra al pegar
+#      c1; pero una 7200 que Edgar vuelva a poner en la lista, con otro
+#      nombre, se queda, pegado tras pegado (antes la daba de alta y la
+#      borraba en el mismo pegado, sin avisar).
 #
 #   ./c2-pegado.sh [prefijo_bd]      (por defecto c2_pegado)
 #
-# Usa tres bases (<prefijo>_a, <prefijo>_p, <prefijo>_r) y las borra al
-# terminar. Salida: 0 todo bien · 1 algo falla · 2 no se pudo cargar.
+# Usa cuatro bases (<prefijo>_a, <prefijo>_p, <prefijo>_r, <prefijo>_c) y
+# las borra al terminar. Salida: 0 todo bien · 1 algo falla · 2 no se pudo
+# cargar.
 # =====================================================================
 set -uo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCS="$DIR/../../docs/conta"
 PRE="${1:-c2_pegado}"
-BA="${PRE}_a"; BP="${PRE}_p"; BR="${PRE}_r"
+BA="${PRE}_a"; BP="${PRE}_p"; BR="${PRE}_r"; BC="${PRE}_c"
 MARCA='-- ==== BLOQUE B ===='
 TMP="$(mktemp -d)"
 chmod 755 "$TMP"
-trap 'for b in "$BA" "$BP" "$BR"; do "$DIR/correr.sh" --borrar "$b" >/dev/null 2>&1; done; rm -rf "$TMP"' EXIT
+trap 'for b in "$BA" "$BP" "$BR" "$BC"; do "$DIR/correr.sh" --borrar "$b" >/dev/null 2>&1; done; rm -rf "$TMP"' EXIT
 
 ed() { PGPASSWORD=editor_sql psql -X -q -At -v VERBOSITY=verbose -h "${PGHOST:-127.0.0.1}" -p "${PGPORT:-5432}" -U editor_sql "$@"; }
 
@@ -77,7 +82,7 @@ ed -d "$BA" -c "delete from asiento_lineas; delete from asientos; delete from co
 r="$(ed -d "$BA" -1 -v ON_ERROR_STOP=1 -f "$TMP/c2-B.sql" 2>&1)"; rc=$?
 if [ $rc -eq 0 ]; then bien "borrado lo sucio, el bloque B entró"; else falla "el bloque B no entró tras limpiar: $(grep -m1 -i error <<< "$r")"; fi
 r="$(ed -d "$BA" -c "select coalesce(string_agg(control, ', '), '') from fn_verificar_cadena() where not ok")"
-if [ -z "$r" ]; then bien "fn_verificar_cadena: los nueve controles en true"; else falla "fn_verificar_cadena en false: $r"; fi
+if [ -z "$r" ]; then bien "fn_verificar_cadena: todos los controles en true"; else falla "fn_verificar_cadena en false: $r"; fi
 
 # ---------------------------------------------------------------------
 echo "== 3. c2-pruebas.sql antes que c2-libro.sql"
@@ -106,7 +111,35 @@ ed -d "$BR" -1 -v ON_ERROR_STOP=1 -f "$DOCS/c2-libro.sql" > "$TMP/c2b.out" 2>&1 
 r="$(ed -d "$BR" -c "select count(*) from pg_policies where schemaname = 'public' and tablename in ('asiento_lineas','cuentas') and policyname = 'Enable read access for all users'")"
 if [ "$r" = "0" ]; then bien "volver a pegar c1 y c2 borró las policies ajenas"; else falla "quedan $r policies ajenas"; fi
 r="$(ed -d "$BR" -c "select coalesce(string_agg(control, ', '), '') from fn_verificar_cadena() where not ok")"
-if [ -z "$r" ]; then bien "fn_verificar_cadena: los nueve controles en true"; else falla "fn_verificar_cadena en false: $r"; fi
+if [ -z "$r" ]; then bien "fn_verificar_cadena: todos los controles en true"; else falla "fn_verificar_cadena en false: $r"; fi
+
+# ---------------------------------------------------------------------
+echo "== 5. La 7200 retirada se borra; una 7200 que vuelve a la lista se queda"
+"$DIR/correr.sh" "$BC" "$DOCS/c1-plan-de-cuentas.sql" "$DOCS/c2-libro.sql" > "$TMP/c.out" 2>&1 \
+  || { cat "$TMP/c.out"; echo "FALLÓ la carga de c1 + c2" >&2; exit 2; }
+# La retirada, como la dejaba el borrador anterior de c1 (sin movimientos).
+ed -d "$BC" -c "insert into cuentas (codigo, nombre, nombre_en, tipo, saldo_normal, imputable, regla_obra, regla_cost_code)
+                values ('7200', 'Cargos bancarios y comisiones de tarjeta', 'Bank charges and card processing fees',
+                        'otro_gasto', 'debe', true, 'prohibida', 'prohibida');" > "$TMP/c7200.out" 2>&1 \
+  || { cat "$TMP/c7200.out"; echo "FALLÓ meter la 7200 retirada" >&2; exit 2; }
+ed -d "$BC" -1 -v ON_ERROR_STOP=1 -f "$DOCS/c1-plan-de-cuentas.sql" > "$TMP/c1c.out" 2>&1 \
+  || { cat "$TMP/c1c.out"; echo "FALLÓ volver a pegar c1" >&2; exit 2; }
+r="$(ed -d "$BC" -c "select count(*) from cuentas where codigo = '7200'")"
+if [ "$r" = "0" ]; then bien "la 7200 retirada se borró al pegar c1"; else falla "la 7200 retirada sigue ahí ($r)"; fi
+# Edgar vuelve a poner una 7200 en la lista, con otro nombre, y pega dos veces.
+awk '/^  \(.7100.,/ && !hecho { print "  (\x277200\x27, \x27Diferencias cambiarias\x27, \x27Foreign exchange differences\x27, \x27otro_gasto\x27, \x27debe\x27, true, \x27prohibida\x27, \x27prohibida\x27, null, \x27Añadida por Edgar.\x27),"; hecho = 1 } { print }' \
+  "$DOCS/c1-plan-de-cuentas.sql" > "$TMP/c1-con-7200.sql"
+grep -q "Diferencias cambiarias" "$TMP/c1-con-7200.sql" || { echo "FALLÓ preparar la copia de c1 con la 7200" >&2; exit 2; }
+for vez in 1 2; do
+  ed -d "$BC" -1 -v ON_ERROR_STOP=1 -f "$TMP/c1-con-7200.sql" > "$TMP/c1-7200-$vez.out" 2>&1 \
+    || { cat "$TMP/c1-7200-$vez.out"; echo "FALLÓ pegar la copia de c1 con la 7200" >&2; exit 2; }
+  r="$(ed -d "$BC" -c "select count(*) from cuentas where codigo = '7200' and nombre = 'Diferencias cambiarias'")"
+  if [ "$r" = "1" ]; then bien "pegado $vez: la 7200 de la lista está"; else falla "pegado $vez: la 7200 de la lista no está ($r)"; fi
+done
+r="$(ed -d "$BC" -c "select count(*) from cuentas_historial where codigo = '7200' and operacion = 'DELETE' and antes->>'nombre' = 'Diferencias cambiarias'")"
+if [ "$r" = "0" ]; then bien "y nunca se borró (ninguna baja suya en cuentas_historial)"; else falla "la 7200 de la lista se borró $r vez/veces"; fi
+r="$(ed -d "$BC" -c "select coalesce(string_agg(control, ', '), '') from fn_verificar_cadena() where not ok")"
+if [ -z "$r" ]; then bien "fn_verificar_cadena: todos los controles en true"; else falla "fn_verificar_cadena en false: $r"; fi
 
 [ $malos -eq 0 ] && echo "PEGADO ok" || echo "PEGADO FALLA"
 exit $malos

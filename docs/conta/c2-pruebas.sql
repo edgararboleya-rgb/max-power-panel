@@ -12,7 +12,22 @@
 -- apunta en _pruebas, que es temporal y muere con la sesión. El libro no
 -- tiene secuencias (una secuencia no se deshace con el rollback): no
 -- avanza nada. La última prueba comprueba que todo quedó igual que al
--- empezar, secuencias incluidas.
+-- empezar, secuencias, funciones y tablas del libro incluidas.
+--
+-- EL RELOJ FINGIDO. Un período se cierra cuando ya terminó (hora de
+-- Miami), y muchas pruebas cierran meses que todavía no terminan. Dentro
+-- de su subtransacción, esas pruebas rehacen fn_fecha_miami para que
+-- «hoy» sea el día siguiente al del período que cierran
+-- (pg_temp.mx_fingir_hoy, abajo); el MXT00 la deshace junto con todo lo
+-- demás, y ninguna otra sesión la ve (lo que no se confirma no lo ve
+-- nadie). Mientras dura, el control triggers sale en rojo por esa
+-- función: por eso esas pruebas miran solo el control que prueban. Y como
+-- la apertura se cierra con su asiento de apertura, si está abierta y sin
+-- él, antes le ponen uno de balance, que se deshace igual. Algunas
+-- pruebas hacen un ALTER TABLE (lo que prueban es justo eso) y toman por
+-- un instante el candado de esa tabla, ANTES que el de la cadena: si la
+-- app postea justo en ese momento, la prueba la espera (y no se esperan
+-- la una a la otra). También se deshace.
 --
 -- Rojo primero, SOLO en el banco de pruebas (pruebas/conta/correr.sh con
 -- «c2-libro.sql:A»; en Supabase c2-libro.sql se pega siempre entero): con
@@ -20,11 +35,13 @@
 -- («entró»), no porque falte una tabla. Salvo:
 --   · las de quién lee y quién postea (9, 10, 11, 23 y 34), que ya pasan:
 --     el bloque A nace cerrado, para que pegarlo solo por error no abra el
---     libro a la API;
---   · las que prueban c1 (el plan y su guarda: 29, 40, 42, 44, 45, 46 y
---     50), que no depende del bloque A, y la del rastro (59);
+--     libro a la API; y la 59 (lo que la app confirma), que con las
+--     funciones mínimas también confirma;
+--   · las que prueban c1 (el plan y su guarda: 29, 40, 42, 44, 45, 46, 50
+--     y 64), que no depende del bloque A, y la del rastro (68);
 --   · unas pocas que usan piezas que solo existen en el bloque B
---     (fn_postear_interno en la 41), que fallan porque falta la pieza.
+--     (fn_postear_interno en la 41 y la 63; la guarda de periodos, que la
+--     60 y la 65 apagan un momento), que fallan porque falta la pieza.
 -- Con el bloque B, todas en true.
 --
 -- Los datos que usan se buscan, no se inventan: el dueño (rol 'dueno',
@@ -64,6 +81,136 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
+-- Los ayudantes de las pruebas. Viven en pg_temp: mueren con la sesión
+-- (no dejan rastro), nadie más los ve, y se llaman siempre con su esquema
+-- delante (pg_temp nunca se busca para funciones).
+--   · mx_foto(): cómo está el libro (filas, contadores, cierres, cuentas
+--     inactivas, historial, secuencias, y las huellas de fn_fecha_miami y
+--     de todas las funciones y tablas del libro). La última prueba la
+--     compara con la del principio.
+--   · mx_fingir_hoy(fecha): el reloj fingido (ver la cabecera). Rehace
+--     fn_fecha_miami para que «hoy» sea esa fecha (o el hoy de verdad, si
+--     es posterior). Solo se llama DENTRO de la subtransacción de una
+--     prueba: su MXT00 la deshace.
+--   · mx_apertura_con_asiento(): si la apertura está abierta y sin su
+--     asiento de apertura, le pone uno de balance (banco contra capital).
+--   · mx_preparar_cierre(periodo): finge que hoy es el día siguiente al
+--     último día de ese período, deja la apertura con su asiento y cierra
+--     en orden, como el SQL Editor, todo lo abierto ANTES de él.
+--   · mx_cerrar_hasta(periodo): lo mismo, y cierra también ese período.
+-- Los cierres llevan «cerrado_el = now()» solo para que el rojo (el bloque
+-- A solo, sin guarda) cumpla el check de la tabla; con el bloque B, la
+-- guarda pone la hora del cierre y su foto.
+-- ---------------------------------------------------------------------
+create or replace function pg_temp.mx_foto() returns text
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_huellas text := '-';
+begin
+  if to_regprocedure('public.fn_libro_huellas_calcular()') is not null then
+    execute 'select left(md5(string_agg(h.tipo || '' '' || h.objeto || '' '' || h.md5, '','' order by h.tipo, h.objeto)), 12)
+               from public.fn_libro_huellas_calcular() h'
+       into v_huellas;
+  end if;
+  return format('asientos=%s lineas=%s contadores=%s periodos=%s cerrados=%s inactivas=%s historial=%s secuencias=%s reloj=%s huellas=%s',
+                (select count(*) from asientos), (select count(*) from asiento_lineas),
+                (select coalesce(sum(ultimo), 0) from contadores), (select count(*) from periodos),
+                (select count(*) from periodos where estado = 'cerrado'),
+                (select count(*) from cuentas where not activa),
+                (select count(*) from cuentas_historial),
+                (select coalesce(sum(coalesce(sq.last_value, 0)), 0)
+                   from pg_class s
+                   join pg_depend d on d.objid = s.oid and d.classid = 'pg_class'::regclass
+                                   and d.refclassid = 'pg_class'::regclass
+                   join pg_namespace n on n.oid = s.relnamespace
+                   join pg_sequences sq on sq.schemaname = n.nspname and sq.sequencename = s.relname
+                  where s.relkind = 'S'
+                    and d.refobjid in (select c.oid from pg_class c
+                                        where c.relnamespace = 'public'::regnamespace
+                                          and c.relname in ('cuentas', 'cuentas_historial', 'periodos', 'contadores',
+                                                            'asientos', 'asiento_lineas'))),
+                left(md5(pg_get_functiondef('public.fn_fecha_miami(timestamptz)'::regprocedure)), 12),
+                v_huellas);
+end $$;
+revoke execute on function pg_temp.mx_foto() from public, anon, authenticated, service_role;
+
+create or replace function pg_temp.mx_fingir_hoy(p_hoy date) returns void
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  execute format($f$
+    create or replace function public.fn_fecha_miami(t timestamptz) returns date
+    language sql stable
+    set search_path = public, pg_temp
+    as $b$ select greatest((t at time zone 'America/New_York')::date, %L::date) $b$
+  $f$, p_hoy);
+end $$;
+revoke execute on function pg_temp.mx_fingir_hoy(date) from public, anon, authenticated, service_role;
+
+create or replace function pg_temp.mx_apertura_con_asiento() returns void
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_ap    periodos;
+  v_banco text := nullif(current_setting('mx_pruebas.banco', true), '');
+  v_cap   text := nullif(current_setting('mx_pruebas.capital', true), '');
+begin
+  select * into v_ap from periodos where tipo = 'apertura' and estado = 'abierto' order by desde limit 1;
+  if v_ap.periodo is null
+     or exists (select 1 from asientos a
+                 where a.periodo = v_ap.periodo and a.tipo = 'apertura' and a.reversa_a is null
+                   and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso')) then
+    return;
+  end if;
+  if v_banco is null or v_cap is null then
+    raise exception using errcode = 'MXT09',
+      message = 'c2-pruebas: no hay una cuenta de banco y una de capital para el asiento de apertura de prueba.';
+  end if;
+  perform fn_postear(jsonb_build_object(
+    'tipo', 'apertura', 'fecha', to_char(v_ap.desde, 'YYYY-MM-DD'),
+    'descripcion', 'c2-pruebas: apertura de prueba (se deshace)',
+    'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_banco, 'monto', '1000.00'),
+                                jsonb_build_object('cuenta', v_cap, 'monto', '-1000.00'))));
+end $$;
+revoke execute on function pg_temp.mx_apertura_con_asiento() from public, anon, authenticated, service_role;
+
+create or replace function pg_temp.mx_preparar_cierre(p_periodo text) returns void
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_p periodos;
+  v_q text;
+begin
+  select * into v_p from periodos where periodo = p_periodo;
+  if v_p.periodo is null then
+    raise exception using errcode = 'MXT09', message = format('c2-pruebas: no existe el período %s.', p_periodo);
+  end if;
+  perform pg_temp.mx_fingir_hoy(v_p.hasta + 1);
+  perform pg_temp.mx_apertura_con_asiento();
+  for v_q in select p.periodo from periodos p
+              where p.tipo in ('mes', 'apertura') and p.estado = 'abierto' and p.desde < v_p.desde
+              order by p.desde loop
+    update periodos set estado = 'cerrado', cerrado_el = now() where periodo = v_q;
+  end loop;
+end $$;
+revoke execute on function pg_temp.mx_preparar_cierre(text) from public, anon, authenticated, service_role;
+
+create or replace function pg_temp.mx_cerrar_hasta(p_periodo text) returns void
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  perform pg_temp.mx_preparar_cierre(p_periodo);
+  update periodos set estado = 'cerrado', cerrado_el = now() where periodo = p_periodo and estado = 'abierto';
+end $$;
+revoke execute on function pg_temp.mx_cerrar_hasta(text) from public, anon, authenticated, service_role;
+
+-- ---------------------------------------------------------------------
 -- Preparación: solo lee. Guarda lo que usan todas las pruebas en ajustes
 -- de la sesión (mx_pruebas.*), que mueren con ella.
 -- ---------------------------------------------------------------------
@@ -76,6 +223,7 @@ declare
   v_c5        text;
   v_banco     text;
   v_gasto     text;
+  v_capital   text;
   v_mes       text;
   v_desde     date;
   v_sig       text;
@@ -102,6 +250,10 @@ begin
   select codigo into v_gasto from cuentas
    where tipo = 'gasto' and regla_obra = 'prohibida' and activa and imputable
    order by (codigo = '6100') desc, codigo limit 1;
+  -- El capital, para el asiento de apertura de prueba (balance únicamente).
+  select codigo into v_capital from cuentas
+   where tipo = 'capital' and regla_obra = 'prohibida' and activa and imputable
+   order by (codigo = '3900') desc, codigo limit 1;
   select periodo, desde into v_mes, v_desde from periodos
    where tipo = 'mes' and estado = 'abierto' order by desde limit 1;
   select periodo, desde into v_sig, v_sig_desde from periodos
@@ -125,6 +277,7 @@ begin
   perform set_config('mx_pruebas.c5',        coalesce(v_c5, ''), false);
   perform set_config('mx_pruebas.banco',     coalesce(v_banco, ''), false);
   perform set_config('mx_pruebas.gasto',     coalesce(v_gasto, ''), false);
+  perform set_config('mx_pruebas.capital',   coalesce(v_capital, ''), false);
   perform set_config('mx_pruebas.mes',       coalesce(v_mes, ''), false);
   perform set_config('mx_pruebas.desde',     coalesce(v_desde::text, ''), false);
   perform set_config('mx_pruebas.sig',       coalesce(v_sig, ''), false);
@@ -136,26 +289,9 @@ begin
   -- Cuenta también las secuencias de las tablas del libro: no debería
   -- haber ninguna (una secuencia no se deshace con el rollback); si
   -- alguien vuelve a poner un id con secuencia, las pruebas dejarían
-  -- rastro y la última prueba lo canta.
-  perform set_config('mx_pruebas.foto',
-    (select format('asientos=%s lineas=%s contadores=%s periodos=%s cerrados=%s inactivas=%s historial=%s secuencias=%s',
-                   (select count(*) from asientos), (select count(*) from asiento_lineas),
-                   (select coalesce(sum(ultimo), 0) from contadores), (select count(*) from periodos),
-                   (select count(*) from periodos where estado = 'cerrado'),
-                   (select count(*) from cuentas where not activa),
-                   (select count(*) from cuentas_historial),
-                   (select coalesce(sum(coalesce(sq.last_value, 0)), 0)
-                      from pg_class s
-                      join pg_depend d on d.objid = s.oid and d.classid = 'pg_class'::regclass
-                                      and d.refclassid = 'pg_class'::regclass
-                      join pg_namespace n on n.oid = s.relnamespace
-                      join pg_sequences sq on sq.schemaname = n.nspname and sq.sequencename = s.relname
-                     where s.relkind = 'S'
-                       and d.refobjid in (select c.oid from pg_class c
-                                           where c.relnamespace = 'public'::regnamespace
-                                             and c.relname in ('cuentas', 'cuentas_historial', 'periodos', 'contadores',
-                                                               'asientos', 'asiento_lineas'))))),
-    false);
+  -- rastro y la última prueba lo canta. Y las huellas: el reloj fingido y
+  -- los ALTER TABLE de algunas pruebas se tienen que haber deshecho.
+  perform set_config('mx_pruebas.foto', pg_temp.mx_foto(), false);
 end $$;
 
 
@@ -188,8 +324,9 @@ begin
 end $$;
 
 -- 2. Mes cerrado, desde fn_postear: el editor cierra el mes abierto más
---    antiguo (y antes la apertura, si sigue abierta: va primero) y el
---    dueño intenta postear en él → MX002.
+--    antiguo (con el reloj fingido: todavía no termina; y antes la
+--    apertura, con su asiento, si sigue abierta: va primero) y el dueño
+--    intenta postear en él → MX002.
 do $$
 declare
   v_dueno uuid  := nullif(current_setting('mx_pruebas.dueno', true), '')::uuid;
@@ -203,9 +340,7 @@ begin
     return;
   end if;
   begin
-    update periodos set estado = 'cerrado', cerrado_el = now()
-     where tipo = 'apertura' and estado = 'abierto' and desde < v_desde;  -- la apertura se cierra antes que el primer mes
-    update periodos set estado = 'cerrado', cerrado_el = now() where periodo = v_mes;
+    perform pg_temp.mx_cerrar_hasta(v_mes);   -- reloj fingido; antes, la apertura con su asiento
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     perform fn_postear(v_bueno);
@@ -239,9 +374,7 @@ begin
   end if;
   v_anio := extract(year from v_desde)::int;
   begin
-    update periodos set estado = 'cerrado', cerrado_el = now()
-     where tipo = 'apertura' and estado = 'abierto' and desde < v_desde;  -- la apertura se cierra antes que el primer mes
-    update periodos set estado = 'cerrado', cerrado_el = now() where periodo = v_mes;
+    perform pg_temp.mx_cerrar_hasta(v_mes);   -- reloj fingido; antes, la apertura con su asiento
     insert into asiento_lineas (asiento_id, orden, cuenta, monto, proyecto_id, cost_code)
     values (v_id, 1, v_c5, 100.00, v_obra, v_cc), (v_id, 2, v_banco, -100.00, null, null);
     insert into asientos (id, numero, anio, secuencia, cadena_pos, fecha_contable, periodo, camino, descripcion,
@@ -299,9 +432,7 @@ begin
     -- el asiento va en el mes siguiente; luego se cierra el mes anterior y
     -- se intenta llevar la fecha allí.
     v_id := (fn_postear(jsonb_set(v_bueno, '{fecha}', to_jsonb(to_char(v_sig_desde + 4, 'YYYY-MM-DD'))))->>'id')::uuid;
-    update periodos set estado = 'cerrado', cerrado_el = now()
-     where tipo = 'apertura' and estado = 'abierto' and desde < v_desde;  -- la apertura se cierra antes que el primer mes
-    update periodos set estado = 'cerrado', cerrado_el = now() where periodo = v_mes;
+    perform pg_temp.mx_cerrar_hasta(v_mes);   -- reloj fingido; antes, la apertura con su asiento
     update asientos set fecha_contable = v_desde + 4, periodo = v_mes where id = v_id;
     v_obt := 'entró';
     raise exception using errcode = 'MXT00';
@@ -563,9 +694,7 @@ begin
   end if;
   begin
     v_id := (fn_postear(v_bueno)->>'id')::uuid;   -- como editor, en el mes abierto más antiguo
-    update periodos set estado = 'cerrado', cerrado_el = now()
-     where tipo = 'apertura' and estado = 'abierto' and desde < v_desde;  -- la apertura se cierra antes que el primer mes
-    update periodos set estado = 'cerrado', cerrado_el = now() where periodo = v_mes;
+    perform pg_temp.mx_cerrar_hasta(v_mes);   -- reloj fingido; antes, la apertura con su asiento
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     v_r := fn_reversar(v_id, 'c2-pruebas: error hallado con el mes ya cerrado');
@@ -763,7 +892,7 @@ begin
 end $$;
 
 -- 21. La cadena, sana: después de postear, reversar y un reversible,
---     fn_verificar_cadena da sus nueve controles en true (el detector no
+--     fn_verificar_cadena da sus diez controles en true (el detector no
 --     grita de más). El reversible solo si el mes siguiente está abierto
 --     (su reverso cae ahí): sin él, la prueba no puede fallar por eso.
 do $$
@@ -775,7 +904,7 @@ declare
   v_obt       text;
 begin
   if v_dueno is null or v_bueno is null then
-    insert into _pruebas values (21, 'cadena íntegra tras posteos normales', 'controles=9 fallan=0', 'omitida: falta dueño, obra, cuenta o mes abierto', null);
+    insert into _pruebas values (21, 'cadena íntegra tras posteos normales', 'controles=10 fallan=0', 'omitida: falta dueño, obra, cuenta o mes abierto', null);
     return;
   end if;
   begin
@@ -794,7 +923,7 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
   end;
-  insert into _pruebas values (21, 'cadena íntegra tras posteos normales', 'controles=9 fallan=0', v_obt, v_obt = 'controles=9 fallan=0');
+  insert into _pruebas values (21, 'cadena íntegra tras posteos normales', 'controles=10 fallan=0', v_obt, v_obt = 'controles=10 fallan=0');
 end $$;
 
 -- 22. LA FRONTERA, dicha con una prueba para que nadie lea en verde una
@@ -805,7 +934,7 @@ end $$;
 --       · después, la cadena delata el cambio (hash): lo tocó SIN
 --         recalcular;
 --       · pero si además recalcula el hash con fn_asiento_canonico, como
---         haría un dueño que sabe lo que hace, los nueve controles vuelven
+--         haría un dueño que sabe lo que hace, todos los controles vuelven
 --         a true. Dentro de la base no se puede delatar al dueño de la
 --         base: eso lo caza el hash exportado fuera en cada cierre (f08).
 --     Lo esperado es exactamente eso: apagados=f ingenuo=f reencadenado=t.
@@ -826,6 +955,7 @@ begin
     return;
   end if;
   begin
+    lock table public.asientos, public.asiento_lineas in access exclusive mode;   -- antes que el de la cadena (ver la 24)
     v_id := (fn_postear(v_bueno)->>'id')::uuid;   -- queda en la punta de la cadena
     -- Un ALTER TABLE no corre con comprobaciones diferidas pendientes sobre
     -- la tabla (la FK diferida de las líneas recién puestas y el sello al
@@ -894,56 +1024,148 @@ begin
   insert into _pruebas values (23, 'service_role no postea (la IA nunca postea)', '42501', v_obt, v_obt like '42501 %');
 end $$;
 
--- 24. Un período cerrado no se reabre, ni desde el SQL Editor → MX002.
+-- 24. Un período cerrado no se reabre, ni desde el SQL Editor:
+--       · con un update → MX002 (la guarda de periodos);
+--       · con «ALTER TABLE … ALTER COLUMN … TYPE … USING (case …)», que
+--         reescribe la tabla SIN disparar ningún trigger: se reabre el
+--         mes, se postea en él y se vuelve a cerrar. Desde dentro no se
+--         puede impedir, pero se delata: el mes quedó cerrado DESPUÉS del
+--         siguiente, con su foto más adelante, y su asiento nuevo detrás
+--         de la foto del siguiente (control periodos, que antes del ataque
+--         estaba en true); y la tabla se reescribió (su huella: control
+--         triggers). Antes, los nueve controles salían en verde.
 do $$
 declare
-  v_mes   text := nullif(current_setting('mx_pruebas.mes', true), '');
-  v_desde date := nullif(current_setting('mx_pruebas.desde', true), '')::date;
-  v_obt   text;
+  v_bueno     jsonb := nullif(current_setting('mx_pruebas.bueno', true), '')::jsonb;
+  v_mes       text  := nullif(current_setting('mx_pruebas.mes', true), '');
+  v_sig       text  := nullif(current_setting('mx_pruebas.sig', true), '');
+  v_sig_desde date  := nullif(current_setting('mx_pruebas.sig_desde', true), '')::date;
+  v_upd       text;
+  v_antes     boolean;
+  v_despues   boolean;
+  v_tabla     boolean;
+  v_obt       text;
+  v_esp       text := 'update=MX002 alter=periodos_antes:t,periodos_despues:f,huella_tabla:t';
 begin
-  if v_mes is null then
-    insert into _pruebas values (24, 'reabrir un período cerrado (SQL Editor)', 'MX002', 'omitida: no hay mes abierto', null);
+  if v_bueno is null or v_sig is null then
+    insert into _pruebas values (24, 'un período cerrado no se reabre: update → MX002; ALTER TABLE … TYPE → se delata', v_esp, 'omitida: faltan dos meses abiertos seguidos o el asiento de prueba', null);
     return;
   end if;
   begin
-    update periodos set estado = 'cerrado', cerrado_el = now()
-     where tipo = 'apertura' and estado = 'abierto' and desde < v_desde;  -- la apertura se cierra antes que el primer mes
+    -- El candado de la tabla, ANTES que el de la cadena (lo toman los
+    -- cierres y los posteos de abajo): si la app está posteando justo
+    -- ahora, esta prueba la espera, y no al revés (sin eso, las dos se
+    -- esperarían la una a la otra).
+    lock table public.periodos in access exclusive mode;
+    begin
+      perform pg_temp.mx_cerrar_hasta(v_mes);
+      update periodos set estado = 'abierto', cerrado_el = null, cerrado_por = null, cerrado_rol = null,
+                          cadena_al_cerrar = null
+       where periodo = v_mes;
+      v_upd := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_upd := sqlstate;
+    end;
+    -- Un asiento en el mes y otro en el siguiente; se cierran los dos, en orden.
+    perform fn_postear(v_bueno);
+    perform fn_postear(jsonb_set(v_bueno, '{fecha}', to_jsonb(to_char(v_sig_desde + 4, 'YYYY-MM-DD'))));
+    perform pg_temp.mx_cerrar_hasta(v_sig);
+    select v.ok into v_antes from fn_verificar_cadena() v where v.control = 'periodos';
+    -- El ataque, sin apagar ningún trigger.
+    execute format($a$
+      alter table public.periodos
+        alter column estado           type text        using (case when periodo = %1$L then 'abierto' else estado end),
+        alter column cerrado_el       type timestamptz using (case when periodo = %1$L then null else cerrado_el end),
+        alter column cerrado_por      type uuid        using (case when periodo = %1$L then null else cerrado_por end),
+        alter column cerrado_rol      type text        using (case when periodo = %1$L then null else cerrado_rol end),
+        alter column cerrado_conexion type jsonb       using (case when periodo = %1$L then null else cerrado_conexion end),
+        alter column cadena_al_cerrar type text        using (case when periodo = %1$L then null else cadena_al_cerrar end)
+    $a$, v_mes);
+    perform fn_postear(jsonb_set(v_bueno, '{descripcion}', '"c2-pruebas: metido en un mes ya cerrado (se deshace)"'));
     update periodos set estado = 'cerrado', cerrado_el = now() where periodo = v_mes;
-    update periodos set estado = 'abierto', cerrado_el = null, cerrado_por = null, cerrado_rol = null,
-                        cadena_al_cerrar = null
-     where periodo = v_mes;
-    v_obt := 'entró';
+    select v.ok into v_despues from fn_verificar_cadena() v where v.control = 'periodos';
+    select exists (select 1 from jsonb_array_elements_text(v.detalle->'huellas') h where h like 'tabla periodos:%')
+      into v_tabla
+      from fn_verificar_cadena() v where v.control = 'triggers';
+    v_obt := format('update=%s alter=periodos_antes:%s,periodos_despues:%s,huella_tabla:%s', v_upd,
+                    case when v_antes then 't' when not v_antes then 'f' else '-' end,
+                    case when v_despues then 't' when not v_despues then 'f' else '-' end,
+                    case when v_tabla then 't' when not v_tabla then 'f' else '-' end);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
   end;
-  insert into _pruebas values (24, 'reabrir un período cerrado (SQL Editor)', 'MX002', v_obt, v_obt like 'MX002 %');
+  insert into _pruebas values (24, 'un período cerrado no se reabre: update → MX002; ALTER TABLE … TYPE → se delata', v_esp, v_obt, v_obt = v_esp);
 end $$;
 
--- 25. El contador no se salta números, ni desde el SQL Editor → MX003.
+-- 25. El contador no se salta números, ni desde el SQL Editor → MX003 por
+--     los tres caminos: un update de +5; un update de +1 (avanza de uno
+--     en uno, pero sin su asiento: antes entraba, y el número que falta
+--     ya no se podía postear nunca); y un «insert … on conflict do
+--     nothing» sobre un asiento que ya existe (el trigger de la cabecera
+--     subía el contador antes de que Postgres viera el choque: «INSERT 0
+--     0», y el número gastado). Los dos últimos se ven también al
+--     confirmar: se adelanta con set constraints.
 do $$
 declare
   v_bueno jsonb := nullif(current_setting('mx_pruebas.bueno', true), '')::jsonb;
   v_desde date  := nullif(current_setting('mx_pruebas.desde', true), '')::date;
-  v_n     int;
+  v_id    uuid;
+  v_serie text;
+  v_a     text;
+  v_b     text;
+  v_c     text;
   v_obt   text;
 begin
   if v_bueno is null then
-    insert into _pruebas values (25, 'saltar números en el contador (SQL Editor)', 'MX003', 'omitida: falta obra, cuenta o mes abierto', null);
+    insert into _pruebas values (25, 'saltar números en el contador (SQL Editor): +5, +1 y on conflict do nothing', '+5=MX003 +1=MX003 on_conflict=MX003', 'omitida: falta obra, cuenta o mes abierto', null);
     return;
   end if;
+  v_serie := 'asientos-' || extract(year from v_desde)::int;
   begin
-    perform fn_postear(v_bueno);
-    update contadores set ultimo = ultimo + 5 where serie = 'asientos-' || extract(year from v_desde)::int;
-    get diagnostics v_n = row_count;
-    v_obt := case when v_n = 0 then 'no había contador que saltar' else 'entró' end;
+    v_id := (fn_postear(v_bueno)->>'id')::uuid;
+    begin
+      update contadores set ultimo = ultimo + 5 where serie = v_serie;
+      set constraints all immediate;
+      v_a := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_a := sqlstate;
+    end;
+    begin
+      update contadores set ultimo = ultimo + 1 where serie = v_serie;
+      set constraints all immediate;
+      v_b := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_b := sqlstate;
+    end;
+    begin
+      insert into asientos (id, numero, anio, secuencia, cadena_pos, fecha_contable, periodo, camino, descripcion,
+                            hash_anterior, hash)
+      select a.id, '-', 0, 0, 0, a.fecha_contable, '-', 'mano', 'c2-pruebas: reintento', repeat('0', 64), repeat('0', 64)
+        from asientos a where a.id = v_id
+      on conflict do nothing;
+      set constraints all immediate;
+      v_c := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_c := sqlstate;
+    end;
+    v_obt := format('+5=%s +1=%s on_conflict=%s', v_a, v_b, v_c);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
   end;
-  insert into _pruebas values (25, 'saltar números en el contador (SQL Editor)', 'MX003', v_obt, v_obt like 'MX003 %');
+  insert into _pruebas values (25, 'saltar números en el contador (SQL Editor): +5, +1 y on conflict do nothing', '+5=MX003 +1=MX003 on_conflict=MX003', v_obt,
+                               v_obt = '+5=MX003 +1=MX003 on_conflict=MX003');
 end $$;
 
 -- 26. Una línea nueva en un asiento ya sellado (SQL Editor) → MX003.
@@ -1248,7 +1470,9 @@ begin
 end $$;
 
 -- 35. Los meses se cierran en orden: el dueño intenta cerrar el mes
---     siguiente con el anterior abierto → MX002.
+--     siguiente con el anterior abierto → MX002 (en orden). Con el reloj
+--     fingido al final de ese mes siguiente, para que lo que salte sea el
+--     orden y no la fecha.
 do $$
 declare
   v_dueno uuid := nullif(current_setting('mx_pruebas.dueno', true), '')::uuid;
@@ -1256,10 +1480,11 @@ declare
   v_obt   text;
 begin
   if v_dueno is null or v_sig is null then
-    insert into _pruebas values (35, 'cerrar un mes con el anterior abierto', 'MX002', 'omitida: faltan dueño o dos meses abiertos seguidos', null);
+    insert into _pruebas values (35, 'cerrar un mes con el anterior abierto', 'MX002 (en orden)', 'omitida: faltan dueño o dos meses abiertos seguidos', null);
     return;
   end if;
   begin
+    perform pg_temp.mx_fingir_hoy((select p.hasta + 1 from periodos p where p.periodo = v_sig));
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     perform fn_cerrar_periodo(v_sig);
@@ -1267,9 +1492,10 @@ begin
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
-    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
+    when others then
+      v_obt := sqlstate || case when sqlerrm like '%en orden%' then ' (en orden)' else ' ' || left(sqlerrm, 60) end;
   end;
-  insert into _pruebas values (35, 'cerrar un mes con el anterior abierto', 'MX002', v_obt, v_obt like 'MX002 %');
+  insert into _pruebas values (35, 'cerrar un mes con el anterior abierto', 'MX002 (en orden)', v_obt, v_obt = 'MX002 (en orden)');
 end $$;
 
 -- 36. Un asiento reversible metido a mano SIN su reverso no llega al
@@ -1406,6 +1632,7 @@ begin
     return;
   end if;
   begin
+    lock table public.asiento_lineas in access exclusive mode;   -- antes que el candado de la cadena (ver la 24)
     v_id := (fn_postear(v_bueno)->>'id')::uuid;
     set constraints all immediate;
     if exists (select 1 from pg_trigger
@@ -1762,7 +1989,8 @@ end $$;
 -- 48. La apertura se cierra ANTES que el primer mes: con la apertura
 --     abierta, el dueño no cierra el mes que le sigue → MX002. Si no, un
 --     asiento fechado el 30-sep (o el reverso de uno de apertura)
---     cambiaría el saldo de balance de los meses ya cerrados.
+--     cambiaría el saldo de balance de los meses ya cerrados. Con el reloj
+--     fingido al final del mes, para que lo que salte sea la apertura.
 do $$
 declare
   v_dueno uuid := nullif(current_setting('mx_pruebas.dueno', true), '')::uuid;
@@ -1777,6 +2005,7 @@ begin
     return;
   end if;
   begin
+    perform pg_temp.mx_fingir_hoy((select p.hasta + 1 from periodos p where p.periodo = v_mes));
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     perform fn_cerrar_periodo(v_mes);
@@ -1892,17 +2121,22 @@ begin
 end $$;
 
 -- 52. Una obra con asientos no se borra, ni el dueño desde la app (lo que
---     hace DB.eliminarProyecto) → MX003 «se archiva». Antes: 23503, que la
---     app traducía como «eso apunta a algo que ya no existe».
+--     hace DB.eliminarProyecto) → MX003, y el mensaje, que la app enseña
+--     tal cual, dice la obra por su nombre y lo que sí se puede hacer hoy
+--     (marcarla Completado). Antes: 23503 («eso apunta a algo que ya no
+--     existe»), y después un «se archiva» que la app no tiene, con el id
+--     interno de la obra.
 do $$
 declare
-  v_dueno uuid  := nullif(current_setting('mx_pruebas.dueno', true), '')::uuid;
-  v_bueno jsonb := nullif(current_setting('mx_pruebas.bueno', true), '')::jsonb;
-  v_obra  text  := nullif(current_setting('mx_pruebas.obra', true), '');
-  v_obt   text;
+  v_dueno  uuid  := nullif(current_setting('mx_pruebas.dueno', true), '')::uuid;
+  v_bueno  jsonb := nullif(current_setting('mx_pruebas.bueno', true), '')::jsonb;
+  v_obra   text  := nullif(current_setting('mx_pruebas.obra', true), '');
+  v_nombre text;
+  v_obt    text;
 begin
+  select coalesce(nullif(btrim(p.nombre), ''), p.id) into v_nombre from proyectos p where p.id = v_obra;
   if v_dueno is null or v_bueno is null or v_obra is null then
-    insert into _pruebas values (52, 'una obra con asientos no se borra (se archiva)', 'MX003', 'omitida: falta dueño, obra, cuenta o mes abierto', null);
+    insert into _pruebas values (52, 'una obra con asientos no se borra (el mensaje dice cuál y qué hacer)', 'MX003 (la obra por su nombre y qué hacer)', 'omitida: falta dueño, obra, cuenta o mes abierto', null);
     return;
   end if;
   begin
@@ -1914,9 +2148,14 @@ begin
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
-    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
+    when others then
+      v_obt := sqlstate || case when sqlerrm like '%«' || v_nombre || '»%' and sqlerrm like '%Completado%'
+                                     and sqlerrm not like '%archiva%'
+                                then ' (la obra por su nombre y qué hacer)'
+                                else ' ' || left(sqlerrm, 60) end;
   end;
-  insert into _pruebas values (52, 'una obra con asientos no se borra (se archiva)', 'MX003', v_obt, v_obt like 'MX003 %');
+  insert into _pruebas values (52, 'una obra con asientos no se borra (el mensaje dice cuál y qué hacer)', 'MX003 (la obra por su nombre y qué hacer)', v_obt,
+                               v_obt = 'MX003 (la obra por su nombre y qué hacer)');
 end $$;
 
 -- 53. Una fecha anterior a la apertura dice que eso vive en QuickBooks (y
@@ -2078,8 +2317,7 @@ begin
     execute 'reset role';                          -- otra vez el SQL Editor
     select a.procedencia ? 'conexion' into v_e from asientos a where a.id = v_id1;
     select a.procedencia ? 'conexion' into v_a from asientos a where a.id = v_id2;
-    update periodos set estado = 'cerrado', cerrado_el = now()
-     where tipo = 'apertura' and estado = 'abierto' and desde < v_desde;
+    perform pg_temp.mx_preparar_cierre(v_mes);    -- reloj fingido; antes, la apertura con su asiento
     perform fn_cerrar_periodo(v_mes);
     select p.cerrado_conexion is not null into v_c from periodos p where p.periodo = v_mes;
     v_obt := format('editor=%s app=%s cierre=%s', case when v_e then 't' else 'f' end,
@@ -2139,32 +2377,613 @@ begin
 end $$;
 
 
--- 59. Las pruebas no dejaron rastro: el libro, el plan, su historial y las
---     secuencias están igual que al empezar. Va la última.
+-- =====================================================================
+-- Las que pidió la auditoría del 24-sep: cada una habría fallado antes
+-- de su arreglo.
+-- =====================================================================
+
+-- 59. Lo que hace la app, CONFIRMADO: el dueño, con el rol de la app
+--     (authenticated), postea, reversa y deja un devengo reversible, y se
+--     adelanta lo que hace el commit (set constraints all immediate) con
+--     ese mismo rol; y aparte, corrige un devengo en su mes y confirma
+--     igual. Las comprobaciones diferidas (el sello, el reversible, el
+--     contador) corren con el rol de la sesión: antes el sello llamaba a
+--     fn_asiento_canonico, que authenticated no puede ejecutar, y TODO
+--     posteo y todo reverso que llegaba desde la app se abortaba al
+--     confirmar con 42501 («tu usuario no tiene permiso»). Las demás
+--     pruebas lo deshacen todo antes del commit, y por eso no lo veían.
+--     Cada parte en su propia subtransacción («set constraints all
+--     immediate» deja las comprobaciones inmediatas hasta que termina). El
+--     devengo, solo si el mes siguiente está abierto (su reverso cae ahí).
+do $$
+declare
+  v_dueno     uuid  := nullif(current_setting('mx_pruebas.dueno', true), '')::uuid;
+  v_bueno     jsonb := nullif(current_setting('mx_pruebas.bueno', true), '')::jsonb;
+  v_sig_desde date  := nullif(current_setting('mx_pruebas.sig_desde', true), '')::date;
+  v_id        uuid;
+  v_a         text;
+  v_b         text := 'confirma';
+  v_obt       text;
+begin
+  if v_dueno is null or v_bueno is null then
+    insert into _pruebas values (59, 'lo que la app postea y reversa confirma (con el rol de la app)', 'posteo_y_reverso=confirma devengo_corregido=confirma', 'omitida: falta dueño, obra, cuenta o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      v_id := (fn_postear(v_bueno)->>'id')::uuid;
+      perform fn_reversar(v_id, 'c2-pruebas: reverso desde la app');
+      if v_sig_desde is not null then
+        perform fn_postear(v_bueno || '{"reversible": true}'::jsonb);
+      end if;
+      set constraints all immediate;   -- lo que hace el commit, con el rol de la app
+      v_a := 'confirma';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_a := sqlstate || ' ' || left(sqlerrm, 60);
+    end;
+    if v_sig_desde is not null then
+      begin
+        v_id := (fn_postear(v_bueno || '{"reversible": true}'::jsonb)->>'id')::uuid;
+        perform fn_reversar(v_id, 'c2-pruebas: el devengo se corrige en su mes');
+        set constraints all immediate;
+        v_b := 'confirma';
+        raise exception using errcode = 'MXT01';
+      exception
+        when sqlstate 'MXT01' then null;
+        when others then v_b := sqlstate || ' ' || left(sqlerrm, 60);
+      end;
+    end if;
+    v_obt := format('posteo_y_reverso=%s devengo_corregido=%s', v_a, v_b);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
+  end;
+  insert into _pruebas values (59, 'lo que la app postea y reversa confirma (con el rol de la app)', 'posteo_y_reverso=confirma devengo_corregido=confirma', v_obt,
+                               v_obt = 'posteo_y_reverso=confirma devengo_corregido=confirma');
+end $$;
+
+-- 60. Un período se cierra cuando YA TERMINÓ (hora de Miami), por
+--     cualquier camino:
+--       · con el reloj de verdad, el dueño intenta cerrar el primer
+--         período abierto que todavía no termina (antes se cierran, como
+--         el SQL Editor, los anteriores, que sí terminaron) → MX002;
+--       · un mes cerrado no se «reabre» con fn_abrir_periodo (antes lo
+--         devolvía como si nada) → MX002;
+--       · si alguien lo cierra antes de tiempo por debajo de su guarda,
+--         fn_verificar_cadena lo ve.
+--     Antes, el 23-sep se cerraban desde la app la apertura, el paralelo
+--     y los doce meses de 2027, para siempre.
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx_pruebas.dueno', true), '')::uuid;
+  v_mes   text := nullif(current_setting('mx_pruebas.mes', true), '');
+  v_hoy   date := fn_fecha_miami(now());
+  v_obj   periodos;
+  v_q     text;
+  v_a     text;
+  v_b     text;
+  v_c     text;
+  v_obt   text;
+begin
+  select * into v_obj from periodos p
+   where p.tipo in ('mes', 'apertura') and p.estado = 'abierto' and p.hasta >= v_hoy
+   order by p.desde limit 1;
+  if v_dueno is null or v_mes is null or v_obj.periodo is null then
+    insert into _pruebas values (60, 'un período no se cierra antes de terminar (ni se reabre con fn_abrir_periodo)', 'adelantado=MX002 reabrir=MX002 verificar=lo_ve', 'omitida: falta dueño o un período abierto que todavía no termine', null);
+    return;
+  end if;
+  begin
+    begin
+      perform pg_temp.mx_apertura_con_asiento();
+      for v_q in select p.periodo from periodos p
+                  where p.tipo in ('mes', 'apertura') and p.estado = 'abierto' and p.desde < v_obj.desde
+                  order by p.desde loop
+        update periodos set estado = 'cerrado', cerrado_el = now() where periodo = v_q;
+      end loop;
+      perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+      execute 'set local role authenticated';
+      perform fn_cerrar_periodo(v_obj.periodo);
+      v_a := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_a := sqlstate || case when sqlerrm like '%termina el%' then '' else ' ' || left(sqlerrm, 50) end;
+    end;
+    begin
+      perform pg_temp.mx_cerrar_hasta(v_mes);
+      perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+      execute 'set local role authenticated';
+      perform fn_abrir_periodo(v_mes);
+      v_b := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_b := sqlstate;
+    end;
+    begin
+      execute 'alter table public.periodos disable trigger trg_periodos_guarda';
+      update periodos set estado = 'cerrado', cerrado_el = clock_timestamp(),
+                          cadena_al_cerrar = coalesce((select a.hash from asientos a order by a.cadena_pos desc limit 1),
+                                                      repeat('0', 64))
+       where periodo = v_obj.periodo;
+      execute 'alter table public.periodos enable trigger trg_periodos_guarda';
+      select case when v.detalle->'cerrados_antes_de_terminar' ? v_obj.periodo then 'lo_ve' else 'no_lo_ve' end
+        into v_c
+        from fn_verificar_cadena() v where v.control = 'periodos';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_c := sqlstate;
+    end;
+    v_obt := format('adelantado=%s reabrir=%s verificar=%s', v_a, v_b, coalesce(v_c, '-'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
+  end;
+  insert into _pruebas values (60, 'un período no se cierra antes de terminar (ni se reabre con fn_abrir_periodo)', 'adelantado=MX002 reabrir=MX002 verificar=lo_ve', v_obt,
+                               v_obt = 'adelantado=MX002 reabrir=MX002 verificar=lo_ve');
+end $$;
+
+-- 61. La apertura se cierra con su asiento de apertura dentro. Sin él →
+--     MX002 (antes se cerraba vacía, como pedía el mensaje de cerrar
+--     octubre, y la balanza de QuickBooks ya no tenía dónde entrar). Con
+--     él, cierra. Con el reloj fingido al día siguiente de la apertura.
+do $$
+declare
+  v_ap  periodos;
+  v_a   text;
+  v_b   text;
+  v_obt text;
+begin
+  select * into v_ap from periodos where tipo = 'apertura' order by desde limit 1;
+  if v_ap.periodo is null or v_ap.estado <> 'abierto'
+     or exists (select 1 from asientos a
+                 where a.periodo = v_ap.periodo and a.tipo = 'apertura' and a.reversa_a is null
+                   and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso')) then
+    insert into _pruebas values (61, 'la apertura no se cierra sin su asiento de apertura', 'sin_asiento=MX002 con_asiento=cerrado', 'omitida: la apertura ya está cerrada o ya tiene su asiento', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.mx_fingir_hoy(v_ap.hasta + 1);
+    begin
+      update periodos set estado = 'cerrado', cerrado_el = now() where periodo = v_ap.periodo;
+      v_a := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_a := sqlstate || case when sqlerrm like '%Falta el asiento de apertura%' then '' else ' ' || left(sqlerrm, 50) end;
+    end;
+    perform pg_temp.mx_apertura_con_asiento();
+    update periodos set estado = 'cerrado', cerrado_el = now() where periodo = v_ap.periodo;
+    select p.estado into v_b from periodos p where p.periodo = v_ap.periodo;
+    v_obt := format('sin_asiento=%s con_asiento=%s', v_a, v_b);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
+  end;
+  insert into _pruebas values (61, 'la apertura no se cierra sin su asiento de apertura', 'sin_asiento=MX002 con_asiento=cerrado', v_obt,
+                               v_obt = 'sin_asiento=MX002 con_asiento=cerrado');
+end $$;
+
+-- 62. Un ajuste del CPA a la apertura es balance únicamente: con un gasto
+--     (la depreciación de enero a septiembre que faltaba en QuickBooks)
+--     → MX006; contra el capital (3900) entra. Antes entraba el gasto y
+--     caía en el resultado del paralelo, el que se compara contra
+--     QuickBooks.
+do $$
+declare
+  v_dueno   uuid := nullif(current_setting('mx_pruebas.dueno', true), '')::uuid;
+  v_gasto   text := nullif(current_setting('mx_pruebas.gasto', true), '');
+  v_banco   text := nullif(current_setting('mx_pruebas.banco', true), '');
+  v_capital text := nullif(current_setting('mx_pruebas.capital', true), '');
+  v_desde   date := nullif(current_setting('mx_pruebas.desde', true), '')::date;
+  v_ap      text;
+  v_a       text;
+  v_b       text;
+  v_obt     text;
+begin
+  select periodo into v_ap from periodos where tipo = 'apertura' order by desde limit 1;
+  if v_dueno is null or v_gasto is null or v_banco is null or v_capital is null or v_desde is null or v_ap is null then
+    insert into _pruebas values (62, 'un ajuste del CPA a la apertura es balance únicamente', 'resultados=MX006 balance=entró', 'omitida: falta dueño, cuenta, mes abierto o la apertura', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.mx_cerrar_hasta(v_ap);   -- la apertura, cerrada (reloj fingido, con su asiento)
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      perform fn_postear(jsonb_build_object(
+        'tipo', 'ajuste_cpa', 'afecta_periodo', v_ap, 'motivo', 'c2-pruebas: AJE del CPA a la apertura',
+        'fecha', to_char(v_desde + 4, 'YYYY-MM-DD'), 'descripcion', 'c2-pruebas: ajuste a la apertura con un gasto',
+        'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_gasto, 'monto', '30.00'),
+                                    jsonb_build_object('cuenta', v_banco, 'monto', '-30.00'))));
+      v_a := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_a := sqlstate;
+    end;
+    begin
+      perform fn_postear(jsonb_build_object(
+        'tipo', 'ajuste_cpa', 'afecta_periodo', v_ap, 'motivo', 'c2-pruebas: AJE del CPA a la apertura',
+        'fecha', to_char(v_desde + 4, 'YYYY-MM-DD'), 'descripcion', 'c2-pruebas: ajuste a la apertura contra el capital',
+        'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_capital, 'monto', '30.00'),
+                                    jsonb_build_object('cuenta', v_banco, 'monto', '-30.00'))));
+      v_b := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_b := sqlstate;
+    end;
+    v_obt := format('resultados=%s balance=%s', v_a, v_b);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
+  end;
+  insert into _pruebas values (62, 'un ajuste del CPA a la apertura es balance únicamente', 'resultados=MX006 balance=entró', v_obt,
+                               v_obt = 'resultados=MX006 balance=entró');
+end $$;
+
+-- 63. Un devengo reversible que sale de un documento (el ajuste de WIP de
+--     f10, el devengo de horas de f03), posteado por su puente (se simula
+--     desde el SQL Editor con fn_postear_interno, como la 41):
+--       · correr el puente otra vez → 23505: su reverso automático del
+--         día 1 es parte del devengo, no una corrección (antes: MX007, y
+--         su mensaje llevaba a meter el devengo dos veces en el mes);
+--       · un sustituto sin haberlo reversado → 23505 (sigue vivo);
+--       · reversar su reverso automático → MX007;
+--       · el dueño lo corrige en su mes con fn_reversar: su reverso va en
+--         su fecha y anula su reverso del día 1; el devengo bueno entra
+--         como sustituto. El mes queda con UN devengo, el bueno, y el
+--         siguiente lo deshace una vez (antes fn_reversar daba MX007 y el
+--         mes quedaba con los dos);
+--       · un reverso de corrección metido a mano sin anular el reverso del
+--         día 1 no llega al commit → MX007.
+--     Y la cadena, sana (control reversos).
+do $$
+declare
+  v_dueno     uuid := nullif(current_setting('mx_pruebas.dueno', true), '')::uuid;
+  v_c5        text := nullif(current_setting('mx_pruebas.c5', true), '');
+  v_banco     text := nullif(current_setting('mx_pruebas.banco', true), '');
+  v_obra      text := nullif(current_setting('mx_pruebas.obra', true), '');
+  v_mes       text := nullif(current_setting('mx_pruebas.mes', true), '');
+  v_sig       text := nullif(current_setting('mx_pruebas.sig', true), '');
+  v_desde     date := nullif(current_setting('mx_pruebas.desde', true), '')::date;
+  v_doc       jsonb;
+  v_a         uuid;
+  v_auto      uuid;
+  v_b         uuid;
+  v_x         uuid := gen_random_uuid();
+  v_otra      text;
+  v_sus0      text;
+  v_rauto     text;
+  v_corr      text;
+  v_sus       text;
+  v_m         numeric;
+  v_s         numeric;
+  v_rev       text;
+  v_sin       text;
+  v_obt       text;
+  v_esp       text := 'otra_vez=23505 sustituto_antes=23505 reversar_auto=MX007 corregir=entró sustituto=entró '
+                      'mes=120.00 siguiente=-120.00 reversos=t sin_anular=MX007';
+begin
+  if v_dueno is null or v_c5 is null or v_banco is null or v_obra is null or v_desde is null or v_sig is null then
+    insert into _pruebas values (63, 'un devengo de un documento: el puente no lo duplica y se corrige en su mes', v_esp, 'omitida: faltan dueño, obra, cuentas o dos meses abiertos seguidos', null);
+    return;
+  end if;
+  v_doc := jsonb_build_object(
+    'camino', 'puente', 'origen_tabla', 'c2_pruebas_wip', 'origen_id', 'c2-pruebas-63',
+    'fecha', to_char(v_desde + 4, 'YYYY-MM-DD'), 'descripcion', 'c2-pruebas: devengo de un documento (se deshace)',
+    'reversible', true,
+    'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_c5, 'monto', '100.00', 'proyecto_id', v_obra),
+                                jsonb_build_object('cuenta', v_banco, 'monto', '-100.00')));
+  begin
+    v_a := (fn_postear_interno(v_doc)->>'id')::uuid;
+    select r.id into v_auto from asientos r where r.reversa_a = v_a and r.camino = 'reverso_automatico';
+    begin
+      perform fn_postear_interno(v_doc);
+      v_otra := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_otra := sqlstate;
+    end;
+    begin
+      perform fn_postear_interno(v_doc || jsonb_build_object('sustituye_a', v_a));
+      v_sus0 := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_sus0 := sqlstate;
+    end;
+    begin
+      perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+      execute 'set local role authenticated';
+      perform fn_reversar(v_auto, 'c2-pruebas: reversar el reverso automático');
+      v_rauto := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_rauto := sqlstate;
+    end;
+    -- La corrección, como la haría el dueño desde la app (se queda).
+    begin
+      perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+      execute 'set local role authenticated';
+      perform fn_reversar(v_a, 'c2-pruebas: el estimado revisado cambió');
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '', true);
+      v_corr := 'entró';
+    exception
+      when others then v_corr := sqlstate;
+    end;
+    -- El devengo bueno, como sustituto.
+    begin
+      perform fn_postear_interno(v_doc || jsonb_build_object(
+        'sustituye_a', v_a,
+        'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_c5, 'monto', '120.00', 'proyecto_id', v_obra),
+                                    jsonb_build_object('cuenta', v_banco, 'monto', '-120.00'))));
+      v_sus := 'entró';
+    exception
+      when others then v_sus := sqlstate;
+    end;
+    select coalesce(sum(l.monto) filter (where a.periodo = v_mes), 0), coalesce(sum(l.monto) filter (where a.periodo = v_sig), 0)
+      into v_m, v_s
+      from asientos a
+      join asiento_lineas l on l.asiento_id = a.id
+     where a.origen_tabla = 'c2_pruebas_wip' and a.origen_id = 'c2-pruebas-63' and l.cuenta = v_c5;
+    -- Lo que hace el commit (la corrección confirma) y la cadena, sana. En
+    -- su propia subtransacción: «set constraints all immediate» deja las
+    -- comprobaciones inmediatas hasta que termine, y lo de abajo mete las
+    -- líneas antes que su cabecera.
+    begin
+      set constraints all immediate;
+      select case when v.ok then 't' else 'f' end into v_rev from fn_verificar_cadena() v where v.control = 'reversos';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_rev := sqlstate;
+    end;
+    -- Un reverso de corrección metido a mano, sin anular el reverso del día 1.
+    begin
+      v_b := (fn_postear_interno(v_doc || '{"origen_id": "c2-pruebas-63b"}'::jsonb)->>'id')::uuid;
+      insert into asiento_lineas (asiento_id, orden, cuenta, monto, proyecto_id)
+      values (v_x, 1, v_c5, -100.00, v_obra), (v_x, 2, v_banco, 100.00, null);
+      insert into asientos (id, numero, anio, secuencia, cadena_pos, fecha_contable, periodo, camino, descripcion, motivo,
+                            reversa_a, origen_tabla, origen_id, hash_anterior, hash)
+      values (v_x, '-', 0, 0, 0, v_desde + 4, '-', 'reverso', 'c2-pruebas: reverso a mano del devengo', 'c2-pruebas',
+              v_b, 'c2_pruebas_wip', 'c2-pruebas-63b', repeat('0', 64), repeat('0', 64));
+      set constraints all immediate;
+      v_sin := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_sin := sqlstate;
+    end;
+    v_obt := format('otra_vez=%s sustituto_antes=%s reversar_auto=%s corregir=%s sustituto=%s mes=%s siguiente=%s reversos=%s sin_anular=%s',
+                    v_otra, v_sus0, v_rauto, v_corr, v_sus, v_m, v_s, coalesce(v_rev, '-'), v_sin);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
+  end;
+  insert into _pruebas values (63, 'un devengo de un documento: el puente no lo duplica y se corrige en su mes', v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 64. Con saldo vivo, una cuenta no endurece su regla de dimensión si lo
+--     deja atrapado (la guarda de c1) → MX003 las dos: a obra obligatoria
+--     con saldo sin obra, y a obra prohibida con saldo con obra. Antes
+--     entraba: la CxC de apertura, sin obra, ya no se podía cobrar sin
+--     obra, y el auxiliar por obra no cuadraba nunca contra el mayor.
+do $$
+declare
+  v_banco text := nullif(current_setting('mx_pruebas.banco', true), '');
+  v_obra  text := nullif(current_setting('mx_pruebas.obra', true), '');
+  v_desde date := nullif(current_setting('mx_pruebas.desde', true), '')::date;
+  v_cta   text;
+  v_mov   jsonb;
+  v_saldo numeric;
+  v_a     text;
+  v_b     text;
+  v_obt   text;
+begin
+  select codigo into v_cta from cuentas
+   where tipo = 'activo' and regla_obra = 'opcional' and regla_cost_code = 'prohibida' and activa and imputable
+   order by (codigo = '1110') desc, codigo limit 1;
+  if v_cta is null or v_banco is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (64, 'con saldo vivo, una regla de dimensión no se endurece si lo atrapa', 'obligatoria=MX003 prohibida=MX003', 'omitida: falta una cuenta con obra opcional, banco, obra o mes abierto', null);
+    return;
+  end if;
+  begin
+    begin
+      v_mov := jsonb_build_object(
+        'fecha', to_char(v_desde + 4, 'YYYY-MM-DD'), 'descripcion', 'c2-pruebas: saldo sin obra',
+        'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_cta, 'monto', '100.00'),
+                                    jsonb_build_object('cuenta', v_banco, 'monto', '-100.00')));
+      perform fn_postear(v_mov);
+      select coalesce(sum(l.monto), 0) into v_saldo from asiento_lineas l where l.cuenta = v_cta and l.proyecto_id is null;
+      if v_saldo = 0 then
+        perform fn_postear(v_mov);   -- por si el saldo anterior era justo −100.00
+      end if;
+      update cuentas set regla_obra = 'obligatoria' where codigo = v_cta;
+      v_a := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_a := sqlstate;
+    end;
+    begin
+      v_mov := jsonb_build_object(
+        'fecha', to_char(v_desde + 4, 'YYYY-MM-DD'), 'descripcion', 'c2-pruebas: saldo con obra',
+        'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_cta, 'monto', '100.00', 'proyecto_id', v_obra),
+                                    jsonb_build_object('cuenta', v_banco, 'monto', '-100.00')));
+      perform fn_postear(v_mov);
+      select coalesce(sum(l.monto), 0) into v_saldo from asiento_lineas l where l.cuenta = v_cta and l.proyecto_id = v_obra;
+      if v_saldo = 0 then
+        perform fn_postear(v_mov);
+      end if;
+      update cuentas set regla_obra = 'prohibida' where codigo = v_cta;
+      v_b := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_b := sqlstate;
+    end;
+    v_obt := format('obligatoria=%s prohibida=%s', v_a, v_b);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
+  end;
+  insert into _pruebas values (64, 'con saldo vivo, una regla de dimensión no se endurece si lo atrapa', 'obligatoria=MX003 prohibida=MX003', v_obt,
+                               v_obt = 'obligatoria=MX003 prohibida=MX003');
+end $$;
+
+-- 65. El libro tiene UNA apertura, ni con su guarda apagada: una segunda,
+--     anterior (con saldos que cambiarían el balance de todos los meses
+--     cerrados), choca con el índice único → 23505. Y si además se quita
+--     el índice, fn_verificar_cadena lo ve (control periodos). Antes, los
+--     nueve controles en verde.
+do $$
+declare
+  v_ap    periodos;
+  v_desde date;
+  v_nueva text;
+  v_a     text;
+  v_b     text;
+  v_obt   text;
+begin
+  select * into v_ap from periodos where tipo = 'apertura' order by desde limit 1;
+  if v_ap.periodo is null then
+    insert into _pruebas values (65, 'una sola apertura, ni con su guarda apagada', 'segunda=23505 sin_indice=periodos:f', 'omitida: no hay apertura', null);
+    return;
+  end if;
+  v_desde := v_ap.desde - 30;
+  v_nueva := to_char(v_desde, 'YYYY-MM') || '-APERTURA';
+  begin
+    begin
+      execute 'alter table public.periodos disable trigger trg_periodos_guarda';
+      insert into periodos (periodo, tipo, anio, desde, hasta, paralelo)
+      values (v_nueva, 'apertura', extract(year from v_desde)::int, v_desde, v_desde, v_ap.paralelo);
+      v_a := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_a := sqlstate;
+    end;
+    begin
+      execute 'drop index public.periodos_una_apertura';
+      execute 'alter table public.periodos disable trigger trg_periodos_guarda';
+      insert into periodos (periodo, tipo, anio, desde, hasta, paralelo)
+      values (v_nueva, 'apertura', extract(year from v_desde)::int, v_desde, v_desde, v_ap.paralelo);
+      execute 'alter table public.periodos enable trigger trg_periodos_guarda';
+      select case when v.ok then 't' else 'f' end into v_b from fn_verificar_cadena() v where v.control = 'periodos';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_b := sqlstate;
+    end;
+    v_obt := format('segunda=%s sin_indice=periodos:%s', v_a, coalesce(v_b, '-'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
+  end;
+  insert into _pruebas values (65, 'una sola apertura, ni con su guarda apagada', 'segunda=23505 sin_indice=periodos:f', v_obt,
+                               v_obt = 'segunda=23505 sin_indice=periodos:f');
+end $$;
+
+-- 66. Una cuenta reescrita por debajo de sus triggers (ALTER TABLE … TYPE
+--     … USING: inactiva una cuenta con saldo y le da la vuelta a su saldo
+--     normal, sin pasar por su guarda ni dejar fila en cuentas_historial)
+--     se delata: la cuenta ya no está como la dejó su último cambio
+--     apuntado (control cuentas) y la tabla se reescribió (su huella,
+--     control triggers). Antes, los nueve controles en verde.
+do $$
+declare
+  v_bueno jsonb := nullif(current_setting('mx_pruebas.bueno', true), '')::jsonb;
+  v_banco text  := nullif(current_setting('mx_pruebas.banco', true), '');
+  v_c     text;
+  v_t     boolean;
+  v_obt   text;
+begin
+  if v_bueno is null or v_banco is null then
+    insert into _pruebas values (66, 'una cuenta reescrita con ALTER TABLE … TYPE se delata', 'cuentas=f huella_tabla=t', 'omitida: falta obra, cuenta o mes abierto', null);
+    return;
+  end if;
+  begin
+    lock table public.cuentas in access exclusive mode;   -- antes que el candado de la cadena (ver la 24)
+    perform fn_postear(v_bueno);   -- el banco se mueve
+    execute format($a$
+      alter table public.cuentas
+        alter column activa       type boolean using (case when codigo = %1$L then false else activa end),
+        alter column saldo_normal type text    using (case when codigo = %1$L
+                                                           then (case saldo_normal when 'debe' then 'haber' else 'debe' end)
+                                                           else saldo_normal end)
+    $a$, v_banco);
+    select case when v.ok then 't' else 'f' end into v_c from fn_verificar_cadena() v where v.control = 'cuentas';
+    select exists (select 1 from jsonb_array_elements_text(v.detalle->'huellas') h where h like 'tabla cuentas:%')
+      into v_t
+      from fn_verificar_cadena() v where v.control = 'triggers';
+    v_obt := format('cuentas=%s huella_tabla=%s', coalesce(v_c, '-'), case when v_t then 't' when not v_t then 'f' else '-' end);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
+  end;
+  insert into _pruebas values (66, 'una cuenta reescrita con ALTER TABLE … TYPE se delata', 'cuentas=f huella_tabla=t', v_obt,
+                               v_obt = 'cuentas=f huella_tabla=t');
+end $$;
+
+-- 67. Cerrar otra vez un período ya cerrado → MX002, con la hora del
+--     cierre en Miami y sin segundos (antes salía en UTC, con
+--     microsegundos: un cierre de fin de mes por la noche decía otro día).
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx_pruebas.dueno', true), '')::uuid;
+  v_mes   text := nullif(current_setting('mx_pruebas.mes', true), '');
+  v_obt   text;
+begin
+  if v_dueno is null or v_mes is null then
+    insert into _pruebas values (67, 'cerrar dos veces: la hora del cierre, en Miami', 'MX002 (hora de Miami)', 'omitida: falta dueño o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.mx_cerrar_hasta(v_mes);
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform fn_cerrar_periodo(v_mes);
+    v_obt := 'entró';
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then
+      v_obt := sqlstate || case when sqlerrm like '%hora de Miami%' and sqlerrm not like '%+00%'
+                                then ' (hora de Miami)' else ' ' || left(sqlerrm, 60) end;
+  end;
+  insert into _pruebas values (67, 'cerrar dos veces: la hora del cierre, en Miami', 'MX002 (hora de Miami)', v_obt, v_obt = 'MX002 (hora de Miami)');
+end $$;
+
+
+-- 68. Las pruebas no dejaron rastro: el libro, el plan, su historial, las
+--     secuencias y las huellas (el reloj fingido y los ALTER TABLE de
+--     algunas pruebas se deshicieron) están igual que al empezar. Va la
+--     última.
 do $$
 declare
   v_antes text := current_setting('mx_pruebas.foto', true);
   v_obt   text;
 begin
-  select format('asientos=%s lineas=%s contadores=%s periodos=%s cerrados=%s inactivas=%s historial=%s secuencias=%s',
-                (select count(*) from asientos), (select count(*) from asiento_lineas),
-                (select coalesce(sum(ultimo), 0) from contadores), (select count(*) from periodos),
-                (select count(*) from periodos where estado = 'cerrado'),
-                (select count(*) from cuentas where not activa),
-                (select count(*) from cuentas_historial),
-                (select coalesce(sum(coalesce(sq.last_value, 0)), 0)
-                   from pg_class s
-                   join pg_depend d on d.objid = s.oid and d.classid = 'pg_class'::regclass
-                                   and d.refclassid = 'pg_class'::regclass
-                   join pg_namespace n on n.oid = s.relnamespace
-                   join pg_sequences sq on sq.schemaname = n.nspname and sq.sequencename = s.relname
-                  where s.relkind = 'S'
-                    and d.refobjid in (select c.oid from pg_class c
-                                        where c.relnamespace = 'public'::regnamespace
-                                          and c.relname in ('cuentas', 'cuentas_historial', 'periodos', 'contadores',
-                                                            'asientos', 'asiento_lineas'))))
-    into v_obt;
-  insert into _pruebas values (59, 'las pruebas no dejan rastro (libro, plan, historial y secuencias)', v_antes, v_obt, v_obt = v_antes);
+  v_obt := pg_temp.mx_foto();
+  insert into _pruebas values (68, 'las pruebas no dejan rastro (libro, plan, historial, secuencias y huellas)', v_antes, v_obt, v_obt = v_antes);
 end $$;
 
 select * from _pruebas order by n;

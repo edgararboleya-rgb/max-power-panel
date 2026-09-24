@@ -30,33 +30,44 @@
 --   MX001  descuadre: debe ≠ haber, o menos de dos líneas
 --   MX002  período: cerrado, inexistente, anterior a la apertura, a más
 --          de lo permitido en el futuro, de apertura, fuera de orden, con
---          un hueco en el calendario, o un intento de reabrir o de borrar
+--          un hueco en el calendario, o un intento de reabrir o de borrar;
+--          un cierre antes de que el período termine (hora de Miami), un
+--          cierre fuera de read committed, o la apertura sin su asiento
 --   MX003  inmutable: update, delete o truncate del libro; una línea
 --          nueva en un asiento ya sellado (también si llega de otra sesión:
---          se mira otra vez al confirmar); un contador que salta; una obra
---          con asientos que se quiere borrar
+--          se mira otra vez al confirmar); un contador que salta o que
+--          avanza sin su asiento (también se mira al confirmar); una obra
+--          con asientos que se quiere borrar; una cuenta a la que se le
+--          quiere cambiar una regla que dejaría su saldo atrapado (c1)
 --   MX004  cuenta: no existe, está inactiva o es de grupo
 --   MX005  monto: más de dos decimales, cero, no numérico o fuera de rango
 --   MX006  dimensión: la obra, el cost code, el co o la fase no son los
---          que pide la cuenta (cuentas.regla_obra / regla_cost_code), o
---          un asiento de apertura con cuentas de resultados
+--          que pide la cuenta (cuentas.regla_obra / regla_cost_code); o un
+--          asiento de apertura, o un ajuste del CPA a la apertura, con
+--          cuentas de resultados
 --   MX007  reverso: ya reversado, reversar un reverso, reverso que no es
---          el espejo exacto, un reversible sin su reverso del día 1, o un
---          sustituto (sustituye_a) que no sustituye a un asiento reversado
---          de su mismo documento
+--          el espejo exacto, un reversible sin su reverso del día 1, un
+--          devengo corregido en su mes cuyo reverso del día 1 sigue vivo, o
+--          un sustituto (sustituye_a) que no sustituye a un asiento
+--          reversado de su mismo documento
 --   42501  permiso: solo el dueño postea; anon y service_role, nada
 --   22023  entrada mal formada (clave desconocida, camino no válido,
 --          afecta_periodo sin tipo ajuste_cpa, ajuste_cpa sin motivo…)
 --   22007  fecha que no viene como texto AAAA-MM-DD
 --   23505  ese documento ya tiene su asiento VIVO (la idempotencia de los
---          puentes de f03: correr un puente dos veces no duplica)
+--          puentes de f03: correr un puente dos veces no duplica). Un
+--          devengo reversible sigue vivo aunque ya tenga su reverso del
+--          día 1: ese reverso es parte del devengo, no una corrección
 --
 -- QUIÉN LLAMA QUÉ (la frontera se decide aquí):
 --   · El dueño, por RPC desde conta.js (grant a authenticated; cada
 --     función comprueba es_dueno() por dentro). PostgREST casa el cuerpo
 --     por NOMBRE de parámetro: _rpc('fn_postear', { p_asiento: {…} }).
 --       fn_postear(p_asiento jsonb)               camino 'mano'
---       fn_reversar(p_asiento uuid, p_motivo text) camino 'reverso'
+--       fn_reversar(p_asiento uuid, p_motivo text) camino 'reverso' (un
+--         devengo reversible se corrige en su mes: su reverso va en su
+--         misma fecha y, en la misma transacción, anula su reverso del
+--         día 1)
 --       fn_estado(p_periodo text)                 la fila de control (lee con RLS)
 --       fn_verificar_cadena()                     hashes, numeración, triggers, permisos
 --       fn_abrir_periodo(p_mes 'AAAA-MM'), fn_cerrar_periodo(p_periodo text)
@@ -96,16 +107,28 @@
 --     período se borra.
 --   · Se cierra con fn_cerrar_periodo(periodo), o con un update del
 --     estado desde el SQL Editor: el trigger de periodos valida igual por
---     los dos caminos. Todo se cierra en orden, y la APERTURA VA PRIMERO:
---     se cierra antes que octubre. Si quedara abierta con octubre ya
---     cerrado, un asiento fechado el 30-sep cambiaría el saldo de balance
---     de todos los meses cerrados. Lo que aparezca después en la apertura
---     se corrige en el mes abierto (un asiento que la cite, o un ajuste
---     con tipo ajuste_cpa y afecta_periodo = '2026-09-APERTURA'). ▶ Esto
---     adelanta el cierre de la apertura que el calendario del plan ponía
---     en la semana del 18-ene. El año se cierra cuando todos sus meses
---     existan y estén cerrados (tras los ajustes del CPA). Al cerrar se
---     guarda el hash de la cadena en ese momento (cadena_al_cerrar).
+--     los dos caminos. Un período se cierra cuando YA TERMINÓ: a partir
+--     del día siguiente a su último día, en hora de Miami (octubre, desde
+--     el 1-nov; el año, desde el 1-ene siguiente). Como un cierre no se
+--     deshace, cerrar antes de tiempo dejaría sin sitio lo que después se
+--     fechara en ese mes. Todo se cierra en orden, y la APERTURA VA
+--     PRIMERO: se cierra antes que octubre, y solo con su asiento de
+--     apertura ya cargado y auditado (la balanza de QuickBooks al 30-sep,
+--     f04): cerrada vacía, ya no habría dónde cargarla. Si quedara abierta
+--     con octubre ya cerrado, un asiento fechado el 30-sep cambiaría el
+--     saldo de balance de todos los meses cerrados. Lo que aparezca
+--     después en la apertura se corrige en el mes abierto (un asiento que
+--     la cite, o un ajuste con tipo ajuste_cpa y afecta_periodo =
+--     '2026-09-APERTURA', con cuentas de balance únicamente: lo de antes
+--     del 30-sep va contra 3900, nunca a un gasto o un ingreso del
+--     paralelo). ▶ Esto adelanta el cierre de la apertura que el
+--     calendario del plan ponía en la semana del 18-ene. El año se cierra
+--     cuando todos sus meses existan y estén cerrados (tras los ajustes
+--     del CPA). Al cerrar se guarda el hash de la cadena en ese momento
+--     (cadena_al_cerrar). Se cierra en una transacción read committed (la
+--     de siempre, la del SQL Editor y la de la app): en repeatable read o
+--     serializable la foto del cierre sería la del principio de la
+--     transacción y dejaría fuera lo que entró después.
 --   · Un período cerrado NO se reabre (regla A de f08): los ajustes van
 --     al período abierto, con tipo 'ajuste_cpa' y afecta_periodo.
 --
@@ -120,8 +143,14 @@
 --     misma base.
 --   · Lo que fn_verificar_cadena SÍ caza: a quien toca el libro sin
 --     recalcular (o recalcula sin arreglar las anclas), las guardas
---     apagadas o cambiadas (sus huellas), los permisos abiertos, los
---     meses fuera de orden.
+--     apagadas o cambiadas (sus huellas), una tabla del libro reescrita
+--     por debajo de sus triggers (un ALTER TABLE … TYPE … USING no dispara
+--     ninguno: se ve en la huella de la tabla), los permisos abiertos, los
+--     meses cerrados fuera de orden o reabiertos y vueltos a cerrar (la
+--     hora y la foto de cada cierre van en el orden del calendario, y nada
+--     fechado dentro de un período cerrado entra detrás de su foto), un
+--     período cerrado antes de terminar, una segunda apertura, y una
+--     cuenta que cambió sin su fila en cuentas_historial.
 --   · Contra el dueño de la base, la detección real es un ANCLA FUERA de
 --     ella: el hash del mayor que sale por correo en cada cierre (f08,
 --     CONTA-PLAN §3.6 y §5.6) y la balanza exportada. f08 guarda ese ancla
@@ -752,12 +781,16 @@ begin
   if v_n > 0 then
     v_sucio := v_sucio || format(' · %s período(s) cerrado(s) sin la foto de la cadena (los cerró la función mínima)', v_n);
   end if;
+  select count(*) into v_n from public.periodos where tipo = 'apertura';
+  if v_n > 1 then
+    v_sucio := v_sucio || format(' · %s aperturas: el libro tiene una sola (la del 30-sep-2026)', v_n);
+  end if;
   if v_sucio <> '' then
     raise exception using
       errcode = 'MX000',
       message = 'c2-libro (bloque B) NO se aplicó, no se tocó nada: hay datos escritos con el bloque A solo, sin controles:' || v_sucio,
       hint    = 'Con el bloque A solo todavía se pueden borrar a mano (delete de asiento_lineas, asientos y contadores; '
-                'update de periodos a abierto). Después se pega el archivo ENTERO.';
+                'update de periodos a abierto; delete de la apertura que sobra). Después se pega el archivo ENTERO.';
   end if;
 end $$;
 
@@ -836,18 +869,32 @@ revoke execute on function public.fn_asiento_canonico(public.asientos) from publ
 
 -- ---------------------------------------------------------------------
 -- B.4 · Restricciones que SON controles (por eso no están en el bloque A):
---   · un asiento se reversa una sola vez;
+--   · un asiento tiene a lo sumo UN reverso de cada camino: el suyo
+--     ('reverso', la corrección) y, si es un devengo reversible, su
+--     reverso automático del día 1 ('reverso_automatico', que es parte
+--     del devengo y no una corrección). Un devengo mal calculado se
+--     corrige en su mes con su reverso de siempre, y por eso puede tener
+--     los dos (B.8, paso 4). Un borrador anterior pedía un solo reverso
+--     por asiento, y así un devengo no se podía corregir: se cambia;
 --   · un asiento reversado se sustituye una sola vez, y el sustituto
 --     lleva el documento de origen y no es un reverso;
 --   · la cadena no se bifurca: cada hash, y cada hash anterior, una vez;
---   · el hash tiene forma de sha256.
+--   · el hash tiene forma de sha256;
+--   · el libro tiene UNA apertura. Es la segunda red de la guarda de
+--     periodos: aguanta aunque alguien la apague para meter otra (una
+--     segunda apertura, anterior, cambiaría el balance de todos los meses
+--     cerrados).
 -- Solo se añaden si faltan: volver a pegar no reconstruye índices.
 -- ---------------------------------------------------------------------
 do $$
 begin
   if not exists (select 1 from pg_constraint
-                  where conrelid = 'public.asientos'::regclass and conname = 'asientos_reversa_a_unica') then
-    alter table public.asientos add constraint asientos_reversa_a_unica unique (reversa_a);
+                  where conrelid = 'public.asientos'::regclass and conname = 'asientos_un_reverso_por_camino') then
+    alter table public.asientos add constraint asientos_un_reverso_por_camino unique (reversa_a, camino);
+  end if;
+  if exists (select 1 from pg_constraint
+              where conrelid = 'public.asientos'::regclass and conname = 'asientos_reversa_a_unica') then
+    alter table public.asientos drop constraint asientos_reversa_a_unica;
   end if;
   if not exists (select 1 from pg_constraint
                   where conrelid = 'public.asientos'::regclass and conname = 'asientos_sustituye_a_unica') then
@@ -875,11 +922,15 @@ begin
   end if;
 end $$;
 
+create unique index if not exists periodos_una_apertura on public.periodos (tipo) where tipo = 'apertura';
+
 -- Un documento, un asiento VIVO (el contrato de los puentes de f03):
 -- correr un puente dos veces no duplica. Lo hace cumplir el trigger de la
 -- cabecera (B.8), con el candado de la cadena puesto: un documento cuyo
--- asiento no está reversado da 23505. Y si su asiento ya se reversó, el
--- nuevo dice a cuál sustituye (sustituye_a).
+-- asiento no está reversado da 23505. «Reversado» es con su reverso de
+-- corrección (camino 'reverso'): el reverso automático del día 1 de un
+-- devengo es parte del devengo, y no lo deja libre. Y si su asiento ya se
+-- reversó, el nuevo dice a cuál sustituye (sustituye_a).
 -- Este índice es la segunda red, para el PRIMER asiento de cada
 -- documento: aguanta aunque alguien apague los triggers. No cuentan ni
 -- los reversos (llevan el origen de su original: así el papel enseña su
@@ -908,17 +959,34 @@ create unique index if not exists asientos_origen_unico
 --     Con un hueco, el mes que falta ya no se podría abrir nunca (hay
 --     meses posteriores cerrados) y lo fechado en él no tendría dónde
 --     entrar.
---   · Lo único que le pasa después es cerrarse, y TODO en orden: un mes se
---     cierra con todos los períodos anteriores ya cerrados, LA APERTURA
---     INCLUIDA. Si la apertura siguiera abierta con octubre cerrado, un
---     asiento fechado el 30-sep (uno nuevo, o el reverso de uno de
---     apertura, que cae el mismo día) cambiaría el saldo de balance de
---     todos los meses ya cerrados sin que nadie escribiera en ellos. Lo
---     que aparezca después en la apertura se corrige en el mes abierto.
+--   · Lo único que le pasa después es cerrarse, y solo cuando YA TERMINÓ:
+--     a partir del día siguiente a su último día, en hora de Miami (la
+--     del reloj, fn_fecha_miami). Como un cierre no se deshace, un toque
+--     de más en la pantalla de cierre (cerrar noviembre el 3-nov) dejaría
+--     sin sitio todo lo que después se fechara en ese mes, y un año
+--     cerrado de golpe dejaría el año sin dónde postear.
+--   · Y TODO en orden: un mes se cierra con todos los períodos anteriores
+--     ya cerrados, LA APERTURA INCLUIDA. Si la apertura siguiera abierta
+--     con octubre cerrado, un asiento fechado el 30-sep (uno nuevo, o el
+--     reverso de uno de apertura, que cae el mismo día) cambiaría el saldo
+--     de balance de todos los meses ya cerrados sin que nadie escribiera
+--     en ellos. Lo que aparezca después en la apertura se corrige en el
+--     mes abierto.
+--   · La apertura se cierra con su asiento de apertura VIVO dentro (la
+--     balanza de QuickBooks al 30-sep, cargada y auditada en f04). Cerrada
+--     vacía, la balanza ya no tendría dónde entrar: el 30-sep estaría
+--     cerrado y un asiento de apertura con otra fecha no entra.
 --   · El año se cierra cuando todos sus meses EXISTEN y están cerrados
 --     (no basta con que estén cerrados los que existen).
 --   · Al cerrarse, la base apunta quién, cuándo y el hash de la cadena en
 --     ese instante (con el candado de la cadena: nadie postea mientras).
+--     El candado sirve solo si la foto se toma DESPUÉS de tomarlo: así
+--     pasa en read committed (cada consulta ve lo confirmado hasta ese
+--     instante). En repeatable read o serializable la foto sería la del
+--     principio de la transacción: un asiento del mes confirmado entre
+--     medias quedaría fuera de cadena_al_cerrar y el período saldría
+--     «tocado» para siempre (y el ancla que se exporta no casaría con el
+--     libro). Por eso un cierre fuera de read committed se rechaza.
 --   · Cerrado no se reabre ni se toca. Y ningún período se borra: ni uno
 --     cerrado, ni uno abierto y vacío (dejaría un hueco en el calendario).
 -- ---------------------------------------------------------------------
@@ -932,6 +1000,7 @@ declare
   v_abiertos text;
   v_faltan   text;
   v_suma     numeric;
+  v_hoy      date;
 begin
   if tg_op = 'TRUNCATE' then
     raise exception using errcode = 'MX003', message = 'Los períodos no se truncan: el libro cuelga de ellos.';
@@ -1008,6 +1077,20 @@ begin
   end if;
 
   -- abierto → cerrado
+  -- La foto del cierre tiene que ser la de este instante (ver arriba).
+  if current_setting('transaction_isolation') <> 'read committed' then
+    raise exception using errcode = 'MX002',
+      message = format('El período %s se cierra en una transacción read committed (la de siempre), y esta es %s: con '
+                       'repeatable read o serializable la foto del cierre sería la del principio de la transacción y '
+                       'dejaría fuera lo que entró después.', new.periodo, current_setting('transaction_isolation'));
+  end if;
+  -- Solo lo que ya terminó, en hora de Miami, con el reloj de este instante.
+  v_hoy := fn_fecha_miami(clock_timestamp());
+  if new.hasta >= v_hoy then
+    raise exception using errcode = 'MX002',
+      message = format('El período %s termina el %s: se cierra a partir del día siguiente (%s), hora de Miami. Hoy es %s. '
+                       'Un cierre no se deshace.', new.periodo, new.hasta, new.hasta + 1, v_hoy);
+  end if;
   if new.tipo in ('mes', 'apertura') then
     select string_agg(p.periodo, ', ' order by p.desde) into v_abiertos
       from periodos p where p.tipo in ('mes', 'apertura') and p.estado = 'abierto' and p.desde < new.desde;
@@ -1016,7 +1099,9 @@ begin
         message = format('Todo se cierra en orden: antes de %s hay que cerrar %s.%s', new.periodo, v_abiertos,
                          case when exists (select 1 from periodos p where p.tipo = 'apertura' and p.estado = 'abierto'
                                                                        and p.desde < new.desde)
-                              then ' La apertura va primero: lo que aparezca después en ella se corrige en el mes abierto.'
+                              then ' La apertura va primero: carga y audita su asiento de apertura (la balanza de '
+                                   'QuickBooks al 30-sep, f04) y después ciérrala. Lo que aparezca más tarde en ella '
+                                   'se corrige en el mes abierto.'
                               else '' end);
     end if;
     if new.tipo = 'mes'
@@ -1024,6 +1109,15 @@ begin
                         where p.tipo in ('mes', 'apertura') and new.desde - 1 between p.desde and p.hasta) then
       raise exception using errcode = 'MX002',
         message = format('No se cierra %s: falta %s en el calendario (hueco).', new.periodo, to_char(new.desde - 1, 'YYYY-MM'));
+    end if;
+    -- La apertura, con su asiento de apertura vivo (sin reversar) dentro.
+    if new.tipo = 'apertura'
+       and not exists (select 1 from asientos a
+                        where a.periodo = new.periodo and a.tipo = 'apertura' and a.reversa_a is null
+                          and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso')) then
+      raise exception using errcode = 'MX002',
+        message = format('Falta el asiento de apertura de %s: se carga desde la balanza de QuickBooks (f04) y se audita '
+                         'antes de cerrarla. Cerrada, ya no entraría.', new.periodo);
     end if;
   elsif new.tipo = 'anio' then
     select string_agg(p.periodo, ', ' order by p.desde) into v_abiertos
@@ -1091,6 +1185,19 @@ create or replace trigger trg_periodos_sin_truncate
 -- B.6 · La guarda de contadores. Un número solo avanza de uno en uno: ni
 -- se salta, ni se repite, ni se borra la serie. La serie de asientos de
 -- un año empieza en cero (su primer asiento es el 1).
+--   · El contador de asientos solo lo mueve el trigger de la cabecera
+--     (B.8, paso 6), al numerar un asiento: un «update contadores» escrito
+--     a mano en el SQL Editor se rechaza, aunque avance de uno en uno. Dos
+--     de esos se saltaban dos números, y el que falta ya no se podría
+--     postear nunca (el trigger siempre numera último + 1, y los asientos
+--     no se borran): un hueco para siempre, que un auditor lee como un
+--     asiento borrado.
+--   · Y al CONFIRMAR (B.6b) el contador de cada año tiene que ser el
+--     número de su último asiento. Caza lo que la guarda de arriba no ve:
+--     un «insert … on conflict do nothing» sobre un asiento que ya existe
+--     pasa por el trigger de la cabecera, que sube el contador ANTES de
+--     que Postgres vea el choque; la fila no entra, el cliente lee
+--     «INSERT 0 0», y el número quedaba gastado.
 -- ---------------------------------------------------------------------
 create or replace function public.fn_contadores_guarda()
 returns trigger
@@ -1118,6 +1225,13 @@ begin
       message = format('El contador %s solo avanza de uno en uno (%s → %s): saltar o repetir un número rompe la numeración sin huecos.',
                        old.serie, old.ultimo, new.ultimo);
   end if;
+  -- Desde dentro del trigger de la cabecera, esta guarda corre anidada (2);
+  -- un update escrito a mano, no (1).
+  if old.serie like 'asientos-%' and pg_trigger_depth() < 2 then
+    raise exception using errcode = 'MX003',
+      message = format('El contador %s solo lo mueve la base al numerar un asiento: un número gastado a mano ya no tendría '
+                       'asiento, y la numeración quedaría con un hueco para siempre.', old.serie);
+  end if;
   return new;
 end $$;
 revoke execute on function public.fn_contadores_guarda() from public, anon, authenticated, service_role;
@@ -1129,6 +1243,49 @@ create or replace trigger trg_contadores_guarda
 create or replace trigger trg_contadores_sin_truncate
   before truncate on public.contadores
   for each statement execute function public.fn_contadores_guarda();
+
+-- ---------------------------------------------------------------------
+-- B.6b · Al confirmar, cada contador de asientos que se movió en la
+-- transacción está en el número de su último asiento (MX003). Diferido: al
+-- final, cuando ya se sabe qué asientos entraron de verdad.
+-- SECURITY DEFINER porque corre al CONFIRMAR, cuando ya no se está dentro
+-- de fn_postear: el trigger corre con el rol de la sesión (authenticated,
+-- por la API), que bajo RLS no vería los asientos que no son suyos (un
+-- puente disparado por un trabajador). Sin grant a nadie: solo lo llama el
+-- trigger. (Un trigger de restricción no admite «or replace»: se borra y
+-- se crea.)
+-- ---------------------------------------------------------------------
+create or replace function public.fn_contadores_al_confirmar()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_ultimo bigint;
+  v_max    bigint;
+begin
+  if new.serie like 'asientos-%' then
+    select c.ultimo into v_ultimo from contadores c where c.serie = new.serie;
+    select coalesce(max(a.secuencia), 0) into v_max
+      from asientos a
+     where a.anio = split_part(new.serie, '-', 2)::int;
+    if v_ultimo is distinct from v_max then
+      raise exception using errcode = 'MX003',
+        message = format('El contador %s va en %s y el último asiento de %s es el %s: un número no avanza sin su asiento '
+                         '(la numeración quedaría con un hueco para siempre). No se confirma.',
+                         new.serie, v_ultimo, split_part(new.serie, '-', 2), v_max);
+    end if;
+  end if;
+  return null;
+end $$;
+revoke execute on function public.fn_contadores_al_confirmar() from public, anon, authenticated, service_role;
+
+drop trigger if exists trg_contadores_al_confirmar on public.contadores;
+create constraint trigger trg_contadores_al_confirmar
+  after insert or update on public.contadores
+  deferrable initially deferred
+  for each row execute function public.fn_contadores_al_confirmar();
 
 
 -- ---------------------------------------------------------------------
@@ -1232,11 +1389,20 @@ create or replace trigger trg_asiento_lineas_al_insertar
 -- hash sale igual y no pasa nada. Con aislamiento repeatable read o
 -- serializable, la cabecera de otra sesión no se ve ni al confirmar, y es
 -- la FK diferida la que para la línea.
+-- SECURITY DEFINER, y no es un detalle: un trigger diferido corre al
+-- CONFIRMAR, cuando fn_postear (SECURITY DEFINER) ya terminó, y lo hace
+-- con el rol que tiene la sesión en ese momento. Por la API ese rol es
+-- authenticated, que no puede ejecutar fn_asiento_canonico (B.3) y que,
+-- bajo RLS, no vería las cabeceras que no son suyas. Sin esto, todo
+-- posteo y todo reverso que llegara desde la app se abortaba al confirmar
+-- (42501), y la app le decía a Edgar «tu usuario no tiene permiso». Sin
+-- grant a nadie: solo lo llama el trigger.
 -- (Un trigger de restricción no admite «or replace»: se borra y se crea.)
 -- ---------------------------------------------------------------------
 create or replace function public.fn_asiento_lineas_sello_al_confirmar()
 returns trigger
 language plpgsql
+security definer
 set search_path = public, pg_temp
 as $$
 declare
@@ -1279,15 +1445,29 @@ create constraint trigger trg_asiento_lineas_sello_diferido
 --        período, el mensaje dice por qué: antes de la apertura, eso vive
 --        en QuickBooks; después del último mes, se abre el mes.
 --   2. Cuadre (MX001) con las líneas, que ya entraron; y la apertura,
---      solo con cuentas de balance (MX006).
+--      solo con cuentas de balance (MX006). Lo mismo un ajuste del CPA que
+--      afecta a la apertura: lo de antes del 30-sep ya está dentro de 3900
+--      (vino de QuickBooks), así que una cuenta de resultados ahí es
+--      siempre un error de clasificación, y caería en el resultado del
+--      paralelo que se compara contra QuickBooks.
 --   3. Desde aquí, el candado de la cadena: un asiento a la vez en todo
 --      el libro (se suelta al terminar la transacción).
---   4. Reverso (MX007): existe el original, no es un reverso, no tiene ya
---      el suyo, no va antes, y las líneas son su espejo exacto.
+--   4. Reverso (MX007): existe el original, no tiene ya un reverso de ese
+--      mismo camino, no va antes, y las líneas son su espejo exacto. Un
+--      reverso no se reversa, con UNA excepción: el reverso automático
+--      del día 1 de un devengo que se acaba de corregir en su mes. Así se
+--      corrige un devengo (el ajuste de WIP de f10, el devengo de horas de
+--      f03) antes de cerrar su mes: su reverso de corrección va en su
+--      misma fecha, y el reverso de su reverso automático, el día 1; si
+--      no, el mes siguiente deshacería dos veces lo mismo. Los dos entran
+--      juntos (fn_reversar_interno); al confirmar se comprueba (B.10).
+--      Con el mes del devengo ya cerrado no hay nada que corregir: ya se
+--      deshizo solo el día 1.
 --   5. Documento (23505 y MX007): un documento de origen tiene UN asiento
---      vivo (no reversado). Si su asiento ya se reversó, el nuevo dice a
---      cuál sustituye (sustituye_a), y ese tiene que ser del mismo
---      documento y estar reversado.
+--      vivo, es decir, sin su reverso de corrección (el automático del
+--      día 1 no cuenta: es parte del devengo). Si su asiento ya se
+--      reversó, el nuevo dice a cuál sustituye (sustituye_a), y ese tiene
+--      que ser del mismo documento y estar reversado.
 --   6. Número: contadores, «select … for update», DESPUÉS de validar. Si
 --      algo falla después, el rollback deshace también el contador: no
 --      hay hueco (una secuencia de Postgres sí lo dejaría).
@@ -1422,6 +1602,14 @@ begin
     raise exception using errcode = 'MX006',
       message = 'El asiento de apertura es balance únicamente: solo cuentas de activo, pasivo y capital.';
   end if;
+  -- Un ajuste del CPA a la apertura, igual (v_afecta se leyó en el paso 1).
+  if new.tipo = 'ajuste_cpa' and v_afecta.tipo = 'apertura' and exists (
+       select 1 from asiento_lineas l join cuentas c on c.codigo = l.cuenta
+        where l.asiento_id = new.id and c.tipo not in ('activo', 'pasivo', 'capital')) then
+    raise exception using errcode = 'MX006',
+      message = format('Un ajuste a la apertura (%s) es balance únicamente: lo de antes del 30-sep va contra 3900 '
+                       '(utilidades retenidas), nunca a un gasto o un ingreso del paralelo.', new.afecta_periodo);
+  end if;
 
   -- 3. El candado de la cadena.
   perform pg_advisory_xact_lock(820260923);
@@ -1433,10 +1621,25 @@ begin
       raise exception using errcode = 'MX007', message = 'El asiento que dice reversar no existe.';
     end if;
     if v_orig.reversa_a is not null then
-      raise exception using errcode = 'MX007',
-        message = format('%s es un reverso: un reverso no se reversa. La re-corrección es un asiento nuevo.', v_orig.numero);
+      -- La única excepción: anular el reverso automático de un devengo
+      -- cuyo reverso de corrección ya entró (en su mismo mes, paso de abajo),
+      -- en la misma fecha que ese reverso automático.
+      if not (v_orig.camino = 'reverso_automatico' and new.camino = 'reverso'
+              and exists (select 1 from asientos r where r.reversa_a = v_orig.reversa_a and r.camino = 'reverso')) then
+        raise exception using errcode = 'MX007',
+          message = format('%s es un reverso: un reverso no se reversa. La re-corrección es un asiento nuevo.%s', v_orig.numero,
+                           case when v_orig.camino = 'reverso_automatico'
+                                then ' Para corregir el devengo se reversa el devengo (fn_reversar): eso anula también '
+                                     'su reverso del día 1.'
+                                else '' end);
+      end if;
+      if new.fecha_contable <> v_orig.fecha_contable then
+        raise exception using errcode = 'MX007',
+          message = format('La anulación del reverso automático %s va en su misma fecha (%s).', v_orig.numero, v_orig.fecha_contable);
+      end if;
     end if;
-    if exists (select 1 from asientos where reversa_a = new.reversa_a) then
+    if exists (select 1 from asientos r where r.reversa_a = new.reversa_a and r.camino = new.camino)
+       or (new.camino = 'reverso_automatico' and exists (select 1 from asientos r where r.reversa_a = new.reversa_a)) then
       raise exception using errcode = 'MX007', message = format('%s ya tiene su reverso.', v_orig.numero);
     end if;
     if new.fecha_contable < v_orig.fecha_contable then
@@ -1450,6 +1653,14 @@ begin
             or new.fecha_contable <> (date_trunc('month', v_orig.fecha_contable::timestamp) + interval '1 month')::date) then
       raise exception using errcode = 'MX007',
         message = 'El reverso automático es el de un asiento reversible y va el día 1 del mes siguiente.';
+    end if;
+    -- Un devengo se corrige DENTRO de su mes: su reverso va en su misma
+    -- fecha. Con su mes cerrado ya se deshizo solo el día 1.
+    if new.camino = 'reverso' and v_orig.reversible and new.fecha_contable <> v_orig.fecha_contable then
+      raise exception using errcode = 'MX007',
+        message = format('%s es un devengo reversible: se corrige dentro de su mes, con su reverso en su misma fecha (%s). '
+                         'Con su mes ya cerrado, ya se deshizo solo el día 1: una diferencia se corrige con un asiento '
+                         'en el mes abierto.', v_orig.numero, v_orig.fecha_contable);
     end if;
     if exists (
          (select l.cuenta, -l.monto, l.proyecto_id, l.cost_code, l.co, l.fase
@@ -1477,11 +1688,12 @@ begin
       from asientos a
      where a.origen_tabla = new.origen_tabla and a.origen_id = new.origen_id
        and a.camino not in ('reverso', 'reverso_automatico')
-       and not exists (select 1 from asientos r where r.reversa_a = a.id);
+       and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso');
     if v_vivos is not null then
       raise exception using errcode = '23505',
         message = format('El documento %s %s ya tiene su asiento vivo (%s): no se postea dos veces. Si está mal, se '
-                         'reversa con fn_reversar y el asiento nuevo dice a cuál sustituye (sustituye_a).',
+                         'reversa con fn_reversar (un devengo, dentro de su mes: eso anula también su reverso del '
+                         'día 1) y el asiento nuevo dice a cuál sustituye (sustituye_a).',
                          new.origen_tabla, new.origen_id, v_vivos);
     end if;
     if new.sustituye_a is null then
@@ -1506,7 +1718,7 @@ begin
           message = format('sustituye_a apunta a un asiento que no es de este documento (%s %s), o a un reverso.',
                            new.origen_tabla, new.origen_id);
       end if;
-      if not exists (select 1 from asientos r where r.reversa_a = v_sust.id) then
+      if not exists (select 1 from asientos r where r.reversa_a = v_sust.id and r.camino = 'reverso') then
         raise exception using errcode = 'MX007',
           message = format('%s todavía no se reversó: primero fn_reversar, después el asiento que lo sustituye.',
                            v_sust.numero);
@@ -1573,7 +1785,7 @@ create or replace trigger trg_asientos_al_insertar
 -- el trigger apagado o cambiado (control triggers, con sus huellas) y el
 -- asiento tocado (control hash). Pero quien además recalcula la cadena con
 -- fn_asiento_canonico y reescribe los contadores y cadena_al_cerrar deja
--- los nueve controles en verde: contra él, la detección es el hash
+-- todos los controles en verde: contra él, la detección es el hash
 -- EXPORTADO fuera de la base (f08). Ver la cabecera, «Lo que este archivo
 -- no puede hacer».
 -- ---------------------------------------------------------------------
@@ -1605,19 +1817,42 @@ create or replace trigger trg_asiento_lineas_sin_truncate
 -- ---------------------------------------------------------------------
 -- B.10 · Un asiento reversible (el devengo de cierre) no llega al commit
 -- sin su reverso automático del día 1: si no, el devengo se quedaría para
--- siempre. Se comprueba al final de la transacción (diferido), porque el
--- reverso entra justo después del original.
+-- siempre. Y un devengo corregido en su mes (su reverso de corrección) no
+-- llega al commit con su reverso automático vivo: el mes siguiente lo
+-- desharía dos veces. Se comprueba al final de la transacción (diferido),
+-- porque cada reverso entra justo después de su original.
+-- SECURITY DEFINER por lo mismo que el sello (B.7b): corre al confirmar,
+-- con el rol de la sesión, y bajo RLS alguien que no es el dueño (un
+-- puente disparado por un trabajador) no vería los reversos y el control
+-- daría un MX007 falso. Sin grant a nadie: solo lo llama el trigger.
 -- (Un trigger de restricción no admite «or replace»: se borra y se crea.)
 -- ---------------------------------------------------------------------
 create or replace function public.fn_asientos_reversible_con_reverso()
 returns trigger
 language plpgsql
+security definer
 set search_path = public, pg_temp
 as $$
+declare
+  v_orig asientos;
+  v_auto asientos;
 begin
-  if not exists (select 1 from asientos r where r.reversa_a = new.id and r.camino = 'reverso_automatico') then
+  if new.reversible
+     and not exists (select 1 from asientos r where r.reversa_a = new.id and r.camino = 'reverso_automatico') then
     raise exception using errcode = 'MX007',
       message = format('El asiento %s es reversible y no trae su reverso automático del día 1.', new.numero);
+  end if;
+  if new.camino = 'reverso' then
+    select * into v_orig from asientos where id = new.reversa_a;
+    if found and v_orig.reversible then
+      select * into v_auto from asientos where reversa_a = v_orig.id and camino = 'reverso_automatico';
+      if found and not exists (select 1 from asientos n where n.reversa_a = v_auto.id and n.camino = 'reverso') then
+        raise exception using errcode = 'MX007',
+          message = format('El devengo %s se corrigió en su mes (%s), pero su reverso automático %s sigue vivo: el mes '
+                           'siguiente lo desharía dos veces. fn_reversar lo anula en la misma transacción.',
+                           v_orig.numero, new.numero, v_auto.numero);
+      end if;
+    end if;
   end if;
   return null;
 end $$;
@@ -1627,7 +1862,7 @@ drop trigger if exists trg_asientos_reversible_diferido on public.asientos;
 create constraint trigger trg_asientos_reversible_diferido
   after insert on public.asientos
   deferrable initially deferred
-  for each row when (new.reversible)
+  for each row when (new.reversible or new.camino = 'reverso')
   execute function public.fn_asientos_reversible_con_reverso();
 
 
@@ -1944,6 +2179,14 @@ grant  execute on function public.fn_postear(jsonb) to authenticated;
 --   · si está cerrado: greatest(fecha original, primer día del mes
 --     abierto más antiguo POSTERIOR al original). El período de apertura
 --     no cuenta como destino: solo admite la apertura.
+-- Un devengo reversible (el ajuste de WIP de f10, el devengo de horas de
+-- f03) se corrige DENTRO de su mes, antes de cerrarlo: su reverso va en su
+-- misma fecha y, en la misma transacción, se anula su reverso automático
+-- del día 1 (con su espejo, en su misma fecha). Así el mes queda sin el
+-- devengo equivocado y el siguiente no deshace dos veces lo mismo; el
+-- devengo bueno entra después como sustituto (sustituye_a), con su propio
+-- reverso del día 1. Con el mes del devengo ya cerrado no hay nada que
+-- corregir: ya se deshizo solo el día 1 (MX007, con qué hacer).
 -- ---------------------------------------------------------------------
 create or replace function public.fn_reversar_interno(p_asiento uuid, p_motivo text,
                                                       p_camino text default 'reverso',
@@ -1957,6 +2200,9 @@ declare
   v_fecha date;
   v_id    uuid := gen_random_uuid();
   v_a     asientos;
+  v_auto  asientos;
+  v_anula jsonb;
+  v_desc  text;
 begin
   if coalesce(btrim(p_motivo), '') = '' then
     raise exception using errcode = '22023', message = 'Todo reverso dice por qué (motivo).';
@@ -1972,18 +2218,38 @@ begin
   if not found then
     raise exception using errcode = 'MX007', message = 'No existe el asiento a reversar.';
   end if;
-  if v_o.reversa_a is not null then
+  -- Un reverso no se reversa, salvo el automático de un devengo cuyo
+  -- reverso de corrección acaba de entrar (lo anula esta misma función,
+  -- más abajo, llamándose a sí misma).
+  if v_o.reversa_a is not null
+     and not (v_o.camino = 'reverso_automatico' and p_camino = 'reverso'
+              and exists (select 1 from asientos r where r.reversa_a = v_o.reversa_a and r.camino = 'reverso')) then
     raise exception using errcode = 'MX007',
-      message = format('%s es un reverso: un reverso no se reversa. La re-corrección es un asiento nuevo.', v_o.numero);
+      message = format('%s es un reverso: un reverso no se reversa. La re-corrección es un asiento nuevo.%s', v_o.numero,
+                       case when v_o.camino = 'reverso_automatico'
+                            then format(' Para corregir el devengo %s se reversa el devengo: eso anula también su '
+                                        'reverso del día 1.', (select o.numero from asientos o where o.id = v_o.reversa_a))
+                            else '' end);
   end if;
-  if exists (select 1 from asientos where reversa_a = v_o.id) then
+  if exists (select 1 from asientos where reversa_a = v_o.id and camino = p_camino)
+     or (p_camino = 'reverso_automatico' and exists (select 1 from asientos where reversa_a = v_o.id)) then
     raise exception using errcode = 'MX007', message = format('%s ya se reversó.', v_o.numero);
   end if;
 
   if p_camino = 'reverso_automatico' then
     v_fecha := (date_trunc('month', v_o.fecha_contable::timestamp) + interval '1 month')::date;
+  elsif v_o.reversa_a is not null then
+    -- La anulación de un reverso automático: en su misma fecha.
+    v_fecha := v_o.fecha_contable;
   elsif exists (select 1 from periodos where periodo = v_o.periodo and estado = 'abierto') then
     v_fecha := v_o.fecha_contable;
+  elsif v_o.reversible then
+    raise exception using errcode = 'MX007',
+      message = format('%s es un devengo reversible de un mes ya cerrado (%s): ya se deshizo solo el día 1 con %s, y no '
+                       'hay nada que reversar. Si su monto estaba mal, la diferencia se corrige con un asiento en el mes '
+                       'abierto.', v_o.numero, v_o.periodo,
+                       coalesce((select r.numero from asientos r where r.reversa_a = v_o.id and r.camino = 'reverso_automatico'),
+                                'su reverso automático'));
   else
     select min(p.desde) into v_fecha
       from periodos p
@@ -1994,6 +2260,11 @@ begin
     end if;
     v_fecha := greatest(v_o.fecha_contable, v_fecha);
   end if;
+
+  v_desc := case when v_o.reversa_a is not null
+                 then format('Anula %s, el reverso automático del devengo %s, que se corrigió en su mes', v_o.numero,
+                             (select o.numero from asientos o where o.id = v_o.reversa_a))
+                 else 'Reverso de ' || v_o.numero || ': ' || v_o.descripcion end;
 
   -- Las líneas de este reverso no se juzgan contra el plan de hoy (ver
   -- B.7); el trigger de la cabecera exige que sean el espejo exacto.
@@ -2006,22 +2277,34 @@ begin
 
   insert into asientos (id, fecha_contable, tipo, afecta_periodo, camino, descripcion, motivo, reversa_a,
                         reversible, origen_tabla, origen_id, documento_ruta, procedencia)
-  values (v_id, v_fecha, v_o.tipo, v_o.afecta_periodo, p_camino,
-          'Reverso de ' || v_o.numero || ': ' || v_o.descripcion, btrim(p_motivo), v_o.id,
+  values (v_id, v_fecha, v_o.tipo, v_o.afecta_periodo, p_camino, v_desc, btrim(p_motivo), v_o.id,
           false, v_o.origen_tabla, v_o.origen_id, v_o.documento_ruta,
           p_procedencia || jsonb_build_object('reversa', v_o.numero))
   returning * into v_a;
   perform set_config('mx_libro.reverso_de', '', true);
 
-  return jsonb_build_object('id', v_a.id, 'numero', v_a.numero, 'fecha_contable', v_a.fecha_contable,
-                            'periodo', v_a.periodo, 'hash', v_a.hash, 'reversa', v_o.numero);
+  -- Un devengo corregido en su mes: su reverso automático del día 1 se
+  -- anula ahora, en la misma transacción (al confirmar lo exige B.10).
+  if p_camino = 'reverso' and v_o.reversible then
+    select * into v_auto from asientos where reversa_a = v_o.id and camino = 'reverso_automatico';
+    if found then
+      v_anula := fn_reversar_interno(v_auto.id, p_motivo, 'reverso',
+                                     p_procedencia || jsonb_build_object('anula_reverso_automatico_de', v_o.numero));
+    end if;
+  end if;
+
+  return jsonb_strip_nulls(jsonb_build_object('id', v_a.id, 'numero', v_a.numero, 'fecha_contable', v_a.fecha_contable,
+                                              'periodo', v_a.periodo, 'hash', v_a.hash, 'reversa', v_o.numero,
+                                              'anula', v_anula));
 end $$;
 revoke execute on function public.fn_reversar_interno(uuid, text, text, jsonb) from public, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------
 -- B.14 · fn_reversar(asiento uuid, motivo text) — lo que llama conta.js.
 -- Solo el dueño (o el SQL Editor). Un reverso no se reversa; un asiento
--- se reversa una sola vez; el motivo es obligatorio.
+-- se reversa una sola vez; el motivo es obligatorio. Un devengo
+-- reversible, dentro de su mes: devuelve también la anulación de su
+-- reverso del día 1 («anula»).
 -- ---------------------------------------------------------------------
 create or replace function public.fn_reversar(p_asiento uuid, p_motivo text)
 returns jsonb
@@ -2088,17 +2371,37 @@ grant  execute on function public.fn_estado(text) to authenticated;
 --   contadores  cada contador de asientos está en el último número
 --   cuadre      cada asiento suma cero y tiene al menos dos líneas
 --   reversos    cada reverso es el espejo de su original; cada
---               reversible tiene su reverso automático; cada sustituto
---               sustituye a un asiento reversado de su mismo documento; y
---               ningún documento tiene dos asientos vivos
+--               reversible tiene su reverso automático, del día 1; un
+--               devengo corregido en su mes lo fue en su misma fecha y con
+--               su reverso automático anulado; ningún otro reverso se
+--               reversó; cada sustituto sustituye a un asiento reversado
+--               (con su reverso de corrección, no solo el automático) de
+--               su mismo documento; y ningún documento tiene dos asientos
+--               vivos
 --   periodos    en cada período cerrado: el hash del cierre sigue en la
---               cadena y nada entró después del cierre; los meses se
---               cerraron en orden (la apertura antes) y el calendario no
---               tiene huecos
+--               cadena, y nada fechado hasta su último día entró después
+--               del cierre ni detrás de su foto (esto también mira los
+--               períodos posteriores: un mes reabierto por debajo de su
+--               guarda, escrito y vuelto a cerrar deja un asiento detrás
+--               de la foto del mes siguiente); se cerró cuando ya había
+--               terminado; los meses se cerraron en orden, también en la
+--               hora del cierre y en la posición de la foto (la apertura
+--               antes, y el año después de todos sus meses); el
+--               calendario no tiene huecos; y hay UNA apertura, con su
+--               asiento, y nada antes de ella
 --   triggers    las guardas existen, están habilitadas y llaman a su
 --               función; su definición y la de las funciones del libro
---               siguen siendo las que dejó este archivo (las huellas de
---               B.22); y no hay triggers ajenos sobre el libro
+--               siguen siendo las que dejó este archivo; las tablas del
+--               libro no se reescribieron ni cambiaron de forma (columnas,
+--               restricciones, índices; un ALTER TABLE … TYPE … USING
+--               reescribe la tabla sin disparar ningún trigger); todo por
+--               las huellas de B.22; y no hay triggers ajenos sobre el
+--               libro
+--   cuentas     cada cuenta está tal como la dejó su último cambio
+--               apuntado en cuentas_historial, y ninguna desapareció sin
+--               su baja: un cambio que no pasó por el trigger del
+--               historial (el mismo ALTER TABLE, o el trigger apagado) no
+--               pasa callado
 --   permisos    RLS; en cada tabla del libro UNA policy, «solo el dueño
 --               lee» tal cual (select, permisiva, authenticated,
 --               es_dueno()); la API sin más privilegio que SELECT, ni por
@@ -2110,9 +2413,10 @@ grant  execute on function public.fn_estado(text) to authenticated;
 --               cambia, alguien tiene que mirarla)
 -- LO QUE NO VE (la frontera, dicha también en la cabecera): el dueño de la
 -- base puede recalcular la cadena con fn_asiento_canonico y reescribir
--- sus anclas (contadores, cadena_al_cerrar), y hasta las huellas o esta
--- misma función. Entonces los nueve controles dan true. Contra él, el
--- control es el hash exportado FUERA de la base en cada cierre (f08).
+-- sus anclas (contadores, cadena_al_cerrar, las horas de cierre), y hasta
+-- las huellas o esta misma función. Entonces los diez controles dan
+-- true. Contra él, el control es el hash exportado FUERA de la base en
+-- cada cierre (f08).
 -- ---------------------------------------------------------------------
 create or replace function public.fn_verificar_cadena()
 returns table (control text, ok boolean, detalle jsonb)
@@ -2125,6 +2429,9 @@ declare
   v_n     bigint;
   v_malos jsonb;
   v_mas   jsonb;
+  v_orden jsonb;
+  v_antes jsonb;
+  v_apert jsonb;
   c_tablas constant text[] := array['cuentas', 'cuentas_historial', 'periodos', 'contadores', 'asientos', 'asiento_lineas'];
   -- Las que llama conta.js (grant a authenticated) y las de dentro (sin
   -- grant a nadie de la API). Ver B.20.
@@ -2135,7 +2442,8 @@ declare
                                          'fn_asiento_canonico(asientos)', 'fn_rol_llamante()', 'fn_desde_editor()',
                                          'fn_libro_huellas_calcular()', 'fn_libro_huellas()',
                                          'fn_cuentas_guarda()', 'fn_cuentas_historial()', 'fn_cuentas_historial_inmutable()',
-                                         'fn_periodos_guarda()', 'fn_contadores_guarda()', 'fn_asiento_lineas_al_insertar()',
+                                         'fn_periodos_guarda()', 'fn_contadores_guarda()', 'fn_contadores_al_confirmar()',
+                                         'fn_asiento_lineas_al_insertar()',
                                          'fn_asiento_lineas_sello_al_confirmar()', 'fn_asientos_al_insertar()',
                                          'fn_libro_inmutable()', 'fn_asientos_reversible_con_reverso()',
                                          'fn_proyectos_con_libro()'];
@@ -2239,7 +2547,36 @@ begin
            where o.reversible
              and not exists (select 1 from asientos r where r.reversa_a = o.id and r.camino = 'reverso_automatico')
           union all
-          -- un sustituto que no sustituye a un asiento reversado (antes) de su documento
+          -- un reverso automático que no es el de un reversible, o que no va el día 1 del mes siguiente
+          select r.numero
+            from asientos r
+            join asientos o on o.id = r.reversa_a
+           where r.camino = 'reverso_automatico'
+             and (not o.reversible
+                  or r.fecha_contable <> (date_trunc('month', o.fecha_contable::timestamp) + interval '1 month')::date)
+          union all
+          -- un reverso de un reverso que no es la anulación del reverso automático de un
+          -- devengo corregido antes (en su misma fecha)
+          select r.numero
+            from asientos r
+            join asientos o on o.id = r.reversa_a
+           where o.reversa_a is not null
+             and not (o.camino = 'reverso_automatico' and r.camino = 'reverso' and r.fecha_contable = o.fecha_contable
+                      and exists (select 1 from asientos x
+                                   where x.reversa_a = o.reversa_a and x.camino = 'reverso' and x.cadena_pos < r.cadena_pos))
+          union all
+          -- un devengo corregido fuera de su fecha, o con su reverso automático sin anular
+          select o.numero
+            from asientos o
+            join asientos x on x.reversa_a = o.id and x.camino = 'reverso'
+           where o.reversible
+             and (x.fecha_contable <> o.fecha_contable
+                  or not exists (select 1 from asientos ra
+                                   join asientos n on n.reversa_a = ra.id and n.camino = 'reverso'
+                                  where ra.reversa_a = o.id and ra.camino = 'reverso_automatico'))
+          union all
+          -- un sustituto que no sustituye a un asiento reversado (antes, con su reverso de
+          -- corrección: el automático del día 1 no cuenta) de su documento
           select x.numero
             from asientos x
             left join asientos o on o.id = x.sustituye_a
@@ -2247,13 +2584,14 @@ begin
              and (   o.id is null
                   or o.origen_tabla is distinct from x.origen_tabla or o.origen_id is distinct from x.origen_id
                   or o.camino in ('reverso', 'reverso_automatico')
-                  or not exists (select 1 from asientos r where r.reversa_a = o.id and r.cadena_pos < x.cadena_pos))
+                  or not exists (select 1 from asientos r
+                                  where r.reversa_a = o.id and r.camino = 'reverso' and r.cadena_pos < x.cadena_pos))
           union all
-          -- un documento con dos asientos vivos
+          -- un documento con dos asientos vivos (sin su reverso de corrección)
           select min(a.numero)
             from asientos a
            where a.origen_tabla is not null and a.camino not in ('reverso', 'reverso_automatico')
-             and not exists (select 1 from asientos r where r.reversa_a = a.id)
+             and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso')
            group by a.origen_tabla, a.origen_id
           having count(*) > 1
           limit 20) s;
@@ -2263,31 +2601,109 @@ begin
   return next;
 
   -- periodos
+  -- · tocados: la foto de cada cierre sigue en la cadena, y NADA fechado
+  --   hasta el último día del período entró después del cierre ni detrás
+  --   de su foto. Por fecha y no por período, a propósito: un mes anterior
+  --   reabierto por debajo de su guarda (un ALTER TABLE no dispara
+  --   triggers), escrito y vuelto a cerrar, deja su asiento nuevo detrás
+  --   de la foto del mes siguiente, que sí se cerró antes. Se calcula una
+  --   vez por día (lo más adelante de la cadena y la hora más tardía de
+  --   todo lo fechado hasta ese día), no una vez por período y asiento.
+  with fotos as (
+         select p.periodo, p.desde, p.hasta, p.cerrado_el, p.cadena_al_cerrar, f.cadena_pos as foto
+           from periodos p
+           left join asientos f on f.hash = p.cadena_al_cerrar
+          where p.estado = 'cerrado'
+       ),
+       por_dia as (
+         select a.fecha_contable, max(a.cadena_pos) as pos, max(a.creado_el) as creado
+           from asientos a
+          group by a.fecha_contable
+       ),
+       hasta_el_dia as (
+         select d.fecha_contable,
+                max(d.pos)    over (order by d.fecha_contable) as pos,
+                max(d.creado) over (order by d.fecha_contable) as creado
+           from por_dia d
+       )
   select coalesce(jsonb_agg(s.periodo order by s.desde), '[]'::jsonb) into v_malos
-    from (select p.periodo, p.desde
-            from periodos p
-           where p.estado = 'cerrado'
-             and (   (p.cadena_al_cerrar is distinct from repeat('0', 64)
-                      and not exists (select 1 from asientos a where a.hash = p.cadena_al_cerrar))
-                  or exists (select 1 from asientos a
-                              where a.periodo = p.periodo and a.creado_el > p.cerrado_el)
-                  or exists (select 1 from asientos a
-                              where a.periodo = p.periodo
-                                and a.cadena_pos > coalesce((select b.cadena_pos from asientos b
-                                                              where b.hash = p.cadena_al_cerrar), 0)))) s;
-  select coalesce(jsonb_agg(s.periodo order by s.desde), '[]'::jsonb) into v_mas
+    from (select f.periodo, f.desde
+            from fotos f
+            left join lateral (select h.pos, h.creado
+                                 from hasta_el_dia h
+                                where h.fecha_contable <= f.hasta
+                                order by h.fecha_contable desc
+                                limit 1) h on true
+           where (f.cadena_al_cerrar is distinct from repeat('0', 64) and f.foto is null)
+              or h.pos > coalesce(f.foto, 0)
+              or h.creado > f.cerrado_el) s;
+  -- · fuera de orden o con hueco: un mes sin el día anterior en el
+  --   calendario; un mes (o la apertura) cerrado con otro anterior abierto,
+  --   o cerrado DESPUÉS que uno posterior, o con su foto más adelante en la
+  --   cadena que la de uno posterior; un año cerrado antes que alguno de
+  --   sus períodos.
+  select coalesce(jsonb_agg(s.periodo order by s.desde), '[]'::jsonb) into v_orden
     from (select p.periodo, p.desde
             from periodos p
            where p.tipo = 'mes'
-             and (   not exists (select 1 from periodos q
-                                  where q.tipo in ('mes', 'apertura') and p.desde - 1 between q.desde and q.hasta)
-                  or (p.estado = 'cerrado'
-                      and exists (select 1 from periodos q
-                                   where q.tipo in ('mes', 'apertura') and q.estado = 'abierto' and q.desde < p.desde)))) s;
+             and not exists (select 1 from periodos q
+                              where q.tipo in ('mes', 'apertura') and p.desde - 1 between q.desde and q.hasta)
+          union
+          select p.periodo, p.desde
+            from periodos p
+           where p.tipo in ('mes', 'apertura') and p.estado = 'cerrado'
+             and exists (select 1 from periodos q
+                          where q.tipo in ('mes', 'apertura') and q.estado = 'abierto' and q.desde < p.desde)
+          union
+          select p.periodo, p.desde
+            from periodos p
+            left join asientos fp on fp.hash = p.cadena_al_cerrar
+           where p.tipo in ('mes', 'apertura') and p.estado = 'cerrado'
+             and exists (select 1
+                           from periodos q
+                           left join asientos fq on fq.hash = q.cadena_al_cerrar
+                          where q.tipo in ('mes', 'apertura') and q.estado = 'cerrado' and q.desde > p.desde
+                            and (q.cerrado_el < p.cerrado_el or coalesce(fq.cadena_pos, 0) < coalesce(fp.cadena_pos, 0)))
+          union
+          select p.periodo, p.desde
+            from periodos p
+            left join asientos fp on fp.hash = p.cadena_al_cerrar
+           where p.tipo = 'anio' and p.estado = 'cerrado'
+             and exists (select 1
+                           from periodos q
+                           left join asientos fq on fq.hash = q.cadena_al_cerrar
+                          where q.tipo <> 'anio' and q.anio = p.anio
+                            and (q.estado <> 'cerrado' or q.cerrado_el > p.cerrado_el
+                                 or coalesce(fq.cadena_pos, 0) > coalesce(fp.cadena_pos, 0)))) s;
+  -- · cerrado antes de terminar: la hora del cierre, en Miami, no es
+  --   posterior a su último día.
+  select coalesce(jsonb_agg(p.periodo order by p.desde), '[]'::jsonb) into v_antes
+    from periodos p
+   where p.estado = 'cerrado' and fn_fecha_miami(p.cerrado_el) <= p.hasta;
+  -- · la apertura: una sola, nada antes de ella, y si está cerrada, con su
+  --   asiento de apertura dentro.
+  select coalesce(jsonb_agg(s.falla), '[]'::jsonb) into v_apert
+    from (select format('hay %s aperturas: el libro tiene una sola', count(*)) as falla
+            from periodos
+           where tipo = 'apertura'
+          having count(*) <> 1
+          union all
+          select format('%s va antes de la apertura', p.periodo)
+            from periodos p
+           where p.tipo in ('mes', 'apertura')
+             and exists (select 1 from periodos a where a.tipo = 'apertura' and p.desde < a.desde)
+          union all
+          select format('la apertura %s se cerró sin su asiento de apertura', p.periodo)
+            from periodos p
+           where p.tipo = 'apertura' and p.estado = 'cerrado'
+             and not exists (select 1 from asientos a
+                              where a.periodo = p.periodo and a.tipo = 'apertura' and a.reversa_a is null)) s;
   control := 'periodos';
-  ok      := jsonb_array_length(v_malos) = 0 and jsonb_array_length(v_mas) = 0;
+  ok      := jsonb_array_length(v_malos) = 0 and jsonb_array_length(v_orden) = 0
+             and jsonb_array_length(v_antes) = 0 and jsonb_array_length(v_apert) = 0;
   detalle := jsonb_build_object('cerrados', (select count(*) from periodos where periodos.estado = 'cerrado'),
-                                'tocados', v_malos, 'fuera_de_orden_o_con_hueco', v_mas);
+                                'tocados', v_malos, 'fuera_de_orden_o_con_hueco', v_orden,
+                                'cerrados_antes_de_terminar', v_antes, 'apertura', v_apert);
   return next;
 
   -- triggers: los esperados, habilitados y con su función…
@@ -2303,6 +2719,7 @@ begin
                  ('periodos',          'trg_periodos_sin_truncate',         'fn_periodos_guarda'),
                  ('contadores',        'trg_contadores_guarda',             'fn_contadores_guarda'),
                  ('contadores',        'trg_contadores_sin_truncate',       'fn_contadores_guarda'),
+                 ('contadores',        'trg_contadores_al_confirmar',       'fn_contadores_al_confirmar'),
                  ('asientos',          'trg_asientos_al_insertar',          'fn_asientos_al_insertar'),
                  ('asientos',          'trg_asientos_inmutable',            'fn_libro_inmutable'),
                  ('asientos',          'trg_asientos_sin_truncate',         'fn_libro_inmutable'),
@@ -2318,26 +2735,58 @@ begin
       or t.tgenabled not in ('O', 'A')
       or t.tgfoid is distinct from to_regprocedure('public.' || e.funcion || '()')::oid;
   -- …y sus huellas: la definición de cada trigger del libro y de cada
-  -- función del libro, contra las que dejó el último pegado (B.22). Una
-  -- guarda vaciada con «create or replace», un trigger cambiado o uno
-  -- nuevo sobre el libro no pasan callados.
+  -- función del libro, y la forma de cada tabla del libro, contra las que
+  -- dejó el último pegado (B.22). Una guarda vaciada con «create or
+  -- replace», un trigger cambiado o uno nuevo sobre el libro, o una tabla
+  -- reescrita por debajo de sus triggers (ALTER TABLE … TYPE … USING, que
+  -- no dispara ninguno), no pasan callados.
   if to_regprocedure('public.fn_libro_huellas()') is null then
     v_mas := '["faltan las huellas (fn_libro_huellas): vuelve a pegar c2-libro.sql"]'::jsonb;
   else
     select coalesce(jsonb_agg(format('%s %s: %s', coalesce(h.tipo, a.tipo), coalesce(h.objeto, a.objeto),
                                      case when h.objeto is null then 'nuevo, no lo puso este archivo'
                                           when a.objeto is null then 'ya no está'
+                                          when coalesce(h.tipo, a.tipo) = 'tabla'
+                                            then 'se reescribió o cambió de forma desde que se pegó (si fue un '
+                                                 'VACUUM FULL o una restauración, vuelve a pegar c2-libro.sql)'
                                           else 'cambió desde que se pegó' end)
                               order by coalesce(h.objeto, a.objeto)), '[]'::jsonb)
       into v_mas
-      from (select * from fn_libro_huellas() x where x.tipo in ('trigger', 'funcion')) h
-      full join (select * from fn_libro_huellas_calcular() y where y.tipo in ('trigger', 'funcion')) a
+      from (select * from fn_libro_huellas() x where x.tipo in ('trigger', 'funcion', 'tabla')) h
+      full join (select * from fn_libro_huellas_calcular() y where y.tipo in ('trigger', 'funcion', 'tabla')) a
              on a.tipo = h.tipo and a.objeto = h.objeto
      where a.md5 is distinct from h.md5;
   end if;
   control := 'triggers';
   ok      := jsonb_array_length(v_malos) = 0 and jsonb_array_length(v_mas) = 0;
   detalle := jsonb_build_object('fallan', v_malos, 'huellas', v_mas);
+  return next;
+
+  -- cuentas: cada cuenta, tal como la dejó su último cambio apuntado en
+  -- cuentas_historial (sin «creado», que se escribe con la zona horaria de
+  -- la sesión y no cambia nunca). Por inclusión (@>) y no por igualdad: una
+  -- columna que añada una versión futura de c1 no está en las filas viejas
+  -- del historial, y eso no es un cambio escondido. Y ninguna cuenta del
+  -- historial desapareció sin su fila de baja.
+  select coalesce(jsonb_agg(s.falla order by s.falla), '[]'::jsonb) into v_malos
+    from (select format('%s no está como la dejó su último cambio en cuentas_historial', c.codigo) as falla
+            from cuentas c
+           where not exists (select 1
+                               from cuentas_historial h
+                              where h.codigo = c.codigo and h.operacion <> 'DELETE'
+                                and h.cambiado_el = (select max(h2.cambiado_el) from cuentas_historial h2
+                                                      where h2.codigo = c.codigo)
+                                and (to_jsonb(c) - 'creado') @> (h.despues - 'creado'))
+          union all
+          select format('%s ya no está y su historial no dice que se borró', h.codigo)
+            from cuentas_historial h
+           where h.operacion <> 'DELETE'
+             and h.cambiado_el = (select max(h2.cambiado_el) from cuentas_historial h2 where h2.codigo = h.codigo)
+             and not exists (select 1 from cuentas c where c.codigo = h.codigo)
+           limit 20) s;
+  control := 'cuentas';
+  ok      := jsonb_array_length(v_malos) = 0;
+  detalle := jsonb_build_object('cuentas', (select count(*) from cuentas), 'sin_rastro', v_malos);
   return next;
 
   -- permisos
@@ -2456,9 +2905,11 @@ grant  execute on function public.fn_verificar_cadena() to authenticated;
 
 -- ---------------------------------------------------------------------
 -- B.17 · fn_cerrar_periodo(periodo) — el dueño cierra un período. Las
--- reglas (orden, cuadre, sello y hash del cierre) viven en el trigger de
--- periodos, así que valen igual si se cierra desde el SQL Editor. f08
--- pondrá delante sus comprobaciones (conciliaciones, auxiliar = mayor…).
+-- reglas (ya terminó, en orden, la apertura con su asiento, cuadre, read
+-- committed, sello y hash del cierre) viven en el trigger de periodos, así
+-- que valen igual si se cierra desde el SQL Editor. f08 pondrá delante sus
+-- comprobaciones (conciliaciones, auxiliar = mayor…) y hará el export
+-- DESPUÉS del cierre, en su propia transacción: el período ya no cambia.
 -- ---------------------------------------------------------------------
 create or replace function public.fn_cerrar_periodo(p_periodo text)
 returns jsonb
@@ -2480,9 +2931,12 @@ begin
       message = format('No existe el período «%s»: revisa el nombre (AAAA-MM para un mes, AAAA para un año, '
                        'AAAA-MM-APERTURA para la apertura) o ábrelo antes con fn_abrir_periodo.', coalesce(p_periodo, ''));
   end if;
+  -- La hora, en Miami y sin segundos: la sesión de la API va en UTC, y un
+  -- cierre de fin de mes por la noche saldría con otro día (u otro mes).
   if v_p.estado = 'cerrado' then
     raise exception using errcode = 'MX002',
-      message = format('El período %s ya estaba cerrado (desde %s).', p_periodo, v_p.cerrado_el);
+      message = format('El período %s ya estaba cerrado (desde el %s, hora de Miami).', p_periodo,
+                       to_char(v_p.cerrado_el at time zone 'America/New_York', 'YYYY-MM-DD HH24:MI'));
   end if;
   update periodos set estado = 'cerrado' where periodo = p_periodo
   returning * into v_p;
@@ -2493,9 +2947,11 @@ grant  execute on function public.fn_cerrar_periodo(text) to authenticated;
 
 -- ---------------------------------------------------------------------
 -- B.18 · fn_abrir_periodo('AAAA-MM') — el dueño abre un mes (y su año, si
--- falta). Si ya existe, lo devuelve tal cual. Las reglas (no antes de la
--- apertura, no antes de un mes cerrado, año abierto, y sin huecos: el mes
--- anterior tiene que existir) viven en el trigger.
+-- falta). Si ya existe y está abierto, lo devuelve tal cual; si está
+-- cerrado, MX002: devolverlo sin más parecería que lo reabrió, y un
+-- período cerrado no se reabre. Las reglas (no antes de la apertura, no
+-- antes de un mes cerrado, año abierto, y sin huecos: el mes anterior
+-- tiene que existir) viven en el trigger.
 -- ---------------------------------------------------------------------
 create or replace function public.fn_abrir_periodo(p_mes text)
 returns jsonb
@@ -2527,6 +2983,12 @@ begin
     values (p_mes, 'mes', v_anio, v_desde, (v_desde + interval '1 month')::date - 1, v_paralelo);
   end if;
   select * into v_p from periodos where periodo = p_mes;
+  if v_p.estado = 'cerrado' then
+    raise exception using errcode = 'MX002',
+      message = format('El mes %s ya existe y está cerrado (desde el %s, hora de Miami): un período cerrado no se '
+                       'reabre. Un ajuste va al período abierto (tipo ajuste_cpa con afecta_periodo).', p_mes,
+                       to_char(v_p.cerrado_el at time zone 'America/New_York', 'YYYY-MM-DD HH24:MI'));
+  end if;
   return to_jsonb(v_p);
 end $$;
 revoke execute on function public.fn_abrir_periodo(text) from public, anon, authenticated, service_role;
@@ -2534,14 +2996,16 @@ grant  execute on function public.fn_abrir_periodo(text) to authenticated;
 
 
 -- ---------------------------------------------------------------------
--- B.19 · Una obra con asientos no se borra (MX003): se archiva. La FK de
--- asiento_lineas.proyecto_id ya lo impedía, pero con un 23503 que la app
--- traduce como «eso apunta a algo que ya no existe»: falso, la obra
+-- B.19 · Una obra con asientos no se borra ni cambia de id (MX003). La FK
+-- de asiento_lineas.proyecto_id ya lo impedía, pero con un 23503 que la
+-- app traduce como «eso apunta a algo que ya no existe»: falso, la obra
 -- existe y lo que la protege es el libro. Este trigger lo dice claro, y
--- enCristiano deja pasar los MX tal cual. Tampoco cambia de id una obra
--- con asientos. SECURITY DEFINER porque tiene que ver TODAS las líneas
--- del libro, sea quien sea quien borra (con RLS, alguien que no es el
--- dueño vería cero y el mensaje se perdería).
+-- enCristiano deja pasar los MX tal cual: por eso el mensaje dice la
+-- obra por su NOMBRE (el que Edgar ve en la app, no el id interno) y lo
+-- que sí se puede hacer HOY en la app, que no tiene «archivar»: marcarla
+-- Completado (o No aprobado). SECURITY DEFINER porque tiene que ver
+-- TODAS las líneas del libro, sea quien sea quien borra (con RLS, alguien
+-- que no es el dueño vería cero y el mensaje se perdería).
 -- ---------------------------------------------------------------------
 create or replace function public.fn_proyectos_con_libro()
 returns trigger
@@ -2549,17 +3013,19 @@ language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
-declare
-  v_n bigint;
 begin
   if tg_op = 'UPDATE' and new.id is not distinct from old.id then
     return new;
   end if;
-  select count(*) into v_n from asiento_lineas where proyecto_id = old.id;
-  if v_n > 0 then
+  if exists (select 1 from asiento_lineas where proyecto_id = old.id) then
+    if tg_op = 'DELETE' then
+      raise exception using errcode = 'MX003',
+        message = format('La obra «%s» ya tiene movimientos en el libro contable: no se puede borrar. Si ya no se trabaja '
+                         'en ella, márcala Completado (o No aprobado).', coalesce(nullif(btrim(old.nombre), ''), old.id));
+    end if;
     raise exception using errcode = 'MX003',
-      message = format('La obra %s ya tiene asientos en el libro (%s líneas): no se %s; se archiva.',
-                       old.id, v_n, case when tg_op = 'DELETE' then 'borra' else 'le cambia el id' end);
+      message = format('La obra «%s» ya tiene movimientos en el libro contable: su id (%s) ya no cambia.',
+                       coalesce(nullif(btrim(old.nombre), ''), old.id), old.id);
   end if;
   return case when tg_op = 'DELETE' then old else new end;
 end $$;
@@ -2588,8 +3054,9 @@ create or replace trigger trg_proyectos_con_libro
 -- docs/conta/MAPA-DATOS.md).
 -- ---------------------------------------------------------------------
 comment on table public.periodos is
-  'Períodos contables (c2): un mes, la apertura (30-sep-2026) o un año. Nacen abiertos, seguidos y sin huecos; se cierran en orden '
-  '(la apertura primero) y no se reabren ni se borran. Nadie escribe en un período cerrado.';
+  'Períodos contables (c2): un mes, la apertura (30-sep-2026, una sola) o un año. Nacen abiertos, seguidos y sin huecos; se cierran '
+  'cuando ya terminaron (hora de Miami), en orden (la apertura primero, con su asiento de apertura) y no se reabren ni se borran. '
+  'Nadie escribe en un período cerrado.';
 comment on column public.periodos.periodo          is 'AAAA-MM (mes), AAAA-MM-APERTURA o AAAA (año).';
 comment on column public.periodos.tipo             is 'mes, apertura o anio.';
 comment on column public.periodos.estado           is 'abierto o cerrado. De cerrado no se vuelve.';
@@ -2601,7 +3068,8 @@ comment on column public.periodos.cerrado_conexion is 'Si lo cerró una conexió
 comment on column public.periodos.cadena_al_cerrar is 'Hash de la cadena del libro en el instante del cierre: la foto que se comprueba después (dentro de la base; el ancla que vale contra el dueño de la base es la exportada en f08).';
 
 comment on table public.contadores is
-  'Numeración sin huecos (c2). Una fila por serie y año (asientos-2027). Solo avanza de uno en uno.';
+  'Numeración sin huecos (c2). Una fila por serie y año (asientos-2027). Solo avanza de uno en uno, y el de asientos solo al numerar '
+  'un asiento: al confirmar, cada contador está en el número de su último asiento.';
 
 comment on table public.asientos is
   'Cabecera de cada asiento del libro (c2). No se edita ni se borra: se corrige con fn_reversar. Número, período, sello y hash los pone la base.';
@@ -2614,8 +3082,8 @@ comment on column public.asientos.afecta_periodo is 'Solo ajuste_cpa: el períod
 comment on column public.asientos.camino         is 'Por dónde entró: mano (el dueño), puente (automático, desde un documento), ia (propuesta aprobada, f07), reverso o reverso_automatico.';
 comment on column public.asientos.descripcion    is 'Qué es el asiento, en palabras.';
 comment on column public.asientos.motivo         is 'Por qué: obligatorio en un reverso y en un ajuste del CPA.';
-comment on column public.asientos.reversa_a      is 'El asiento que este reversa. Único: un asiento se reversa una sola vez; un reverso no se reversa.';
-comment on column public.asientos.reversible     is 'true = devengo de cierre: nace con su reverso automático el día 1 del mes siguiente.';
+comment on column public.asientos.reversa_a      is 'El asiento que este reversa. A lo sumo un reverso por camino: el de corrección (reverso) y, en un devengo, su reverso automático del día 1. Un reverso no se reversa, salvo el automático de un devengo corregido en su mes, que se anula junto con esa corrección.';
+comment on column public.asientos.reversible     is 'true = devengo de cierre: nace con su reverso automático el día 1 del mes siguiente. Sigue vivo para su documento con ese reverso; se corrige dentro de su mes con fn_reversar.';
 comment on column public.asientos.origen_tabla   is 'Tabla del documento origen (recibos, facturas…). Un documento, un asiento vivo (el reversado se sustituye).';
 comment on column public.asientos.origen_id      is 'Id del documento origen, como texto.';
 comment on column public.asientos.sustituye_a    is 'El asiento REVERSADO del mismo documento al que este sustituye (una corrección del mapeo, un documento des-anulado). Único.';
@@ -2642,25 +3110,36 @@ comment on column public.asiento_lineas.fase        is 'Fase de la obra, opciona
 comment on column public.asiento_lineas.memo        is 'Nota de la línea.';
 
 comment on function public.fn_postear(jsonb)          is 'Postea un asiento a mano (solo el dueño). Devuelve id, número, período y hash.';
-comment on function public.fn_reversar(uuid, text)    is 'Reversa un asiento con su motivo (solo el dueño). Una vez; un reverso no se reversa.';
+comment on function public.fn_reversar(uuid, text)    is 'Reversa un asiento con su motivo (solo el dueño). Una vez; un reverso no se reversa. Un devengo, dentro de su mes, y anulando su reverso del día 1.';
 comment on function public.fn_estado(text)           is 'Fila de control de un período: asientos, filas, debe, haber y si cuadra.';
-comment on function public.fn_verificar_cadena()      is 'Verifica hashes, enlaces, numeración, contadores, cuadre, reversos, cierres, triggers y permisos.';
-comment on function public.fn_cerrar_periodo(text)    is 'Cierra un período (solo el dueño). No se reabre.';
-comment on function public.fn_abrir_periodo(text)     is 'Abre un mes AAAA-MM y su año si falta (solo el dueño).';
+comment on function public.fn_verificar_cadena()      is 'Verifica hashes, enlaces, numeración, contadores, cuadre, reversos, cierres, triggers y tablas, cuentas contra su historial, y permisos.';
+comment on function public.fn_cerrar_periodo(text)    is 'Cierra un período ya terminado (solo el dueño), en orden. No se reabre.';
+comment on function public.fn_abrir_periodo(text)     is 'Abre un mes AAAA-MM y su año si falta (solo el dueño). Uno cerrado no se reabre (MX002).';
 comment on function public.fn_fecha_miami(timestamptz) is 'La fecha en hora de Miami (America/New_York), calculada en SQL.';
 comment on function public.fn_postear_interno(jsonb)  is 'La puerta interna de todo posteo (puentes, IA aprobada). Sin grant a la API.';
 comment on function public.fn_reversar_interno(uuid, text, text, jsonb) is 'La única fábrica de reversos: las líneas espejo salen de la base. Sin grant a la API.';
 comment on function public.fn_asiento_canonico(public.asientos) is 'El texto exacto que se sella con sha256: el asiento, sus líneas y el hash anterior.';
-comment on function public.fn_proyectos_con_libro()   is 'Una obra con asientos en el libro no se borra ni cambia de id (MX003): se archiva.';
+comment on function public.fn_proyectos_con_libro()   is 'Una obra con asientos en el libro no se borra ni cambia de id (MX003): se marca Completado o No aprobado.';
 
 
 -- ---------------------------------------------------------------------
 -- B.22 · Las huellas. Lo ÚLTIMO del archivo, con todo ya puesto: el md5
--- de la definición de cada trigger del libro, de cada función del libro y
--- de es_dueno(). fn_verificar_cadena las compara cada vez (controles
--- triggers y permisos): una guarda vaciada con «create or replace», un
--- trigger cambiado o añadido sobre el libro, o un es_dueno() distinto, ya
--- no pasan callados.
+-- de la definición de cada trigger del libro, de cada función del libro,
+-- de la forma de cada tabla del libro y de es_dueno(). fn_verificar_cadena
+-- las compara cada vez (controles triggers y permisos): una guarda vaciada
+-- con «create or replace», un trigger cambiado o añadido sobre el libro,
+-- una tabla reescrita por debajo de sus triggers, o un es_dueno()
+-- distinto, ya no pasan callados.
+--   · La huella de una TABLA es su archivo en disco (relfilenode), su
+--     dueño, sus columnas (nombre, tipo, not null, default), sus
+--     restricciones y sus índices. Un «ALTER TABLE … ALTER COLUMN … TYPE
+--     … USING (case …)» reescribe las filas que quiera SIN disparar ningún
+--     trigger (así se reabría un mes cerrado o se inactivaba una cuenta
+--     con saldo sin dejar rastro): al reescribir la tabla le da un archivo
+--     nuevo, y eso cambia su huella. También la cambia quitar una
+--     restricción o un índice (p. ej. la unicidad de la apertura). Un
+--     VACUUM FULL, un CLUSTER o una restauración con pg_restore también
+--     reescriben: después de uno legítimo, se vuelve a pegar este archivo.
 --   · fn_libro_huellas_calcular() dice QUÉ se vigila y calcula las huellas
 --     de hoy (con su search_path fijo, para que los nombres salgan igual
 --     siempre).
@@ -2671,8 +3150,9 @@ comment on function public.fn_proyectos_con_libro()   is 'Una obra con asientos 
 -- legítimo toca una guarda (una versión nueva de c1 o de c2, o Planos
 -- cambia es_dueno), el control sale en rojo hasta que se vuelve a pegar
 -- c2-libro.sql: es lo que se quiere, que alguien lo mire. Una fase que
--- añada a propósito un trigger sobre las tablas del libro (c3…) termina
--- su archivo rehaciendo las huellas con este mismo bloque.
+-- añada a propósito un trigger sobre las tablas del libro (c3…), o que
+-- les cambie la forma, termina su archivo rehaciendo las huellas con este
+-- mismo bloque.
 -- ---------------------------------------------------------------------
 create or replace function public.fn_libro_huellas_calcular()
 returns table (tipo text, objeto text, md5 text)
@@ -2693,12 +3173,34 @@ as $$
    where p.pronamespace = 'public'::regnamespace
      and p.proname in ('fn_cuentas_guarda', 'fn_cuentas_historial', 'fn_cuentas_historial_inmutable',
                        'fn_fecha_miami', 'fn_rol_llamante', 'fn_desde_editor', 'fn_asiento_canonico',
-                       'fn_periodos_guarda', 'fn_contadores_guarda', 'fn_asiento_lineas_al_insertar',
+                       'fn_periodos_guarda', 'fn_contadores_guarda', 'fn_contadores_al_confirmar',
+                       'fn_asiento_lineas_al_insertar',
                        'fn_asiento_lineas_sello_al_confirmar', 'fn_asientos_al_insertar', 'fn_libro_inmutable',
                        'fn_asientos_reversible_con_reverso', 'fn_postear_interno', 'fn_postear',
                        'fn_reversar_interno', 'fn_reversar', 'fn_estado', 'fn_verificar_cadena',
                        'fn_cerrar_periodo', 'fn_abrir_periodo', 'fn_proyectos_con_libro',
                        'fn_libro_huellas_calcular')
+  union all
+  select 'tabla'::text, c.relname,
+         md5(concat_ws(' | ',
+               c.relfilenode::text,
+               pg_get_userbyid(c.relowner),
+               (select string_agg(format('%s %s %s %s', a.attname, format_type(a.atttypid, a.atttypmod),
+                                         case when a.attnotnull then 'not null' else 'null' end,
+                                         coalesce(pg_get_expr(d.adbin, d.adrelid), '-')), ', ' order by a.attnum)
+                  from pg_attribute a
+                  left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+                 where a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped),
+               (select string_agg(co.conname || ' ' || pg_get_constraintdef(co.oid), ', ' order by co.conname)
+                  from pg_constraint co
+                 where co.conrelid = c.oid),
+               (select string_agg(pg_get_indexdef(i.indexrelid), ', ' order by pg_get_indexdef(i.indexrelid))
+                  from pg_index i
+                 where i.indrelid = c.oid)))
+    from pg_class c
+   where c.relnamespace = 'public'::regnamespace
+     and c.relkind in ('r', 'p')
+     and c.relname in ('cuentas', 'cuentas_historial', 'periodos', 'contadores', 'asientos', 'asiento_lineas')
   union all
   select 'candado'::text, p.oid::regprocedure::text, md5(pg_get_functiondef(p.oid))
     from pg_proc p
@@ -2727,12 +3229,12 @@ begin
   $f$, v_filas);
   execute 'revoke execute on function public.fn_libro_huellas() from public, anon, authenticated, service_role';
   execute format('comment on function public.fn_libro_huellas() is %L',
-                 'Las huellas (md5) de las guardas, las funciones del libro y es_dueno() del último pegado de c2-libro.sql, '
+                 'Las huellas (md5) de las guardas, las funciones y las tablas del libro y es_dueno() del último pegado de c2-libro.sql, '
                  'del ' || to_char(now() at time zone 'America/New_York', 'YYYY-MM-DD HH24:MI') || ' (Miami).');
 end $$;
 
 
 -- =====================================================================
--- Lo que enseña el SQL Editor al terminar: los nueve controles, en true.
+-- Lo que enseña el SQL Editor al terminar: los diez controles, en true.
 -- =====================================================================
 select * from public.fn_verificar_cadena();

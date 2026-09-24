@@ -12,6 +12,8 @@ de que Edgar los pegue. **Nunca** se conecta a `*.supabase.co`.
 | `02-semilla.sql` | Datos de prueba con ids fijos (abajo). |
 | `c0-banco-pruebas.sql` | El banco se prueba a sí mismo: 18 comprobaciones. **También es el molde** para los `c*-pruebas.sql`. |
 | `correr.sh` | Crea una base, carga 00-01-02 y los archivos que le pases. |
+| `c2-concurrencia.sh` | Lo que `c2-pruebas.sql` no puede probar en una sola sesión: varias sesiones a la vez contra el libro (cierres con posteos en vuelo, ráfagas, una línea tardía, un cierre en repeatable read). La mitad de los posteos confirma como la app (rol `authenticated`). |
+| `c2-pegado.sh` | Lo que pasa AL PEGAR: el bloque A solo, el B encima de datos sucios, las pruebas antes que el libro, volver a pegar c1 y c2, la 7200. |
 | `generar-tablas.py`, `esquema-columnas-23sep.json` | Para regenerar las tablas de 01 si se vuelve a leer el esquema. |
 
 ## 1. Arrancar el cluster
@@ -142,6 +144,23 @@ end $$;
 Las variables de plpgsql no se deshacen con la subtransacción: por eso el
 resultado sobrevive al `MXT00`. Al salir del `begin … end` interno ya se es
 otra vez el editor, que puede escribir en `_pruebas`.
+
+## 5b. El reloj fingido
+
+Un período se cierra cuando ya terminó (hora de Miami, `fn_fecha_miami`), y
+las pruebas cierran meses que todavía no terminan. Dos formas, las dos sin
+tocar `docs/conta/c2-libro.sql`:
+
+- **En `c2-pruebas.sql`**: dentro de la subtransacción de la prueba,
+  `pg_temp.mx_fingir_hoy(fecha)` rehace `fn_fecha_miami` con
+  `greatest(hoy de verdad, fecha)`; el `MXT00` la deshace. Mientras dura, el
+  control `triggers` sale en rojo por esa función (por eso esas pruebas miran
+  solo el control que prueban). `pg_temp.mx_cerrar_hasta(periodo)` finge el
+  día siguiente, pone el asiento de apertura si falta y cierra en orden.
+- **En `c2-concurrencia.sh`** (varias sesiones: lo fingido tiene que estar
+  confirmado): carga una COPIA de `c2-libro.sql` con `fn_fecha_miami` en
+  `greatest(hoy, '2027-01-15')`, y sus huellas se sellan con esa copia. La
+  base es de usar y tirar.
 
 ## 6. Lo que el banco NO imita
 
