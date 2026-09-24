@@ -816,7 +816,7 @@ function esFalloDeRed(err) {
           <span class="agenda-hora">${esc(e.hora || "—")}</span>
           <span class="agenda-que">${esc(sinMontos(e.titulo))}</span>
           <span class="agenda-quien">${(e.asignados || []).length ? esc(e.asignados.map(n => n.split(" ")[0]).join(" + ")) : ""}${e.proyecto ? `${(e.asignados || []).length ? " · " : ""}${esc(nombreProyecto(e.proyecto))}` : ""}</span>
-          ${k < 2 ? enlaceMapa(e.ubicacion || ((proyectos().find(x => x.id === e.proyecto) || {}).direccion)) : ""}
+          ${k < 2 ? `<span class="agenda-botones">${enlaceMapa(e.ubicacion || ((proyectos().find(x => x.id === e.proyecto) || {}).direccion))}${k === 0 && e.proyecto ? `<button type="button" class="btn-ir btn-foto-rapida" data-proy="${esc(e.proyecto)}" title="Tomar una foto de esta obra">📸 Foto</button>` : ""}</span>` : ""}
         </div>`).join("") : `<div class="agenda-nada">Nada programado.</div>`;
       return `<div class="agenda-dia${k === 0 ? " es-hoy" : ""}">
         <span class="hoy-chip ${k === 0 ? "es-hoy" : k === 1 ? "es-man" : "es-otro"}">${etiqueta(d, k)}</span>
@@ -831,6 +831,7 @@ function esFalloDeRed(err) {
         <div class="hoy-mas">${masAlla ? `${masAlla} más después del ${etiqueta(dias[6], 6).toLowerCase()} · ` : ""}<a href="#" id="agenda-ver-cal">ver el calendario</a></div>
       </div>`;
     $("inicio-hoy").querySelectorAll(".agenda-ev.abre").forEach(el => el.addEventListener("click", () => irDetalle(el.dataset.proy)));
+    $("inicio-hoy").querySelectorAll(".btn-foto-rapida").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); fotoRapida(b.dataset.proy); }));
     const vc = $("agenda-ver-cal"); if (vc) vc.addEventListener("click", ev => { ev.preventDefault(); $("btn-calendario") && $("btn-calendario").click(); });
   }
 
@@ -4002,6 +4003,31 @@ function esFalloDeRed(err) {
     if (!d) return "";
     return `<a class="btn-ir" target="_blank" rel="noopener" onclick="event.stopPropagation()"
       href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(d)}" title="Abrir en el mapa">🧭 Ir</a>`;
+  }
+
+  // 📸 Foto rápida (P87, 24-sep): desde el día de hoy del inicio, un toque abre
+  // la cámara y la foto sube sola a la obra de ese evento. Antes eran 8 toques.
+  function fotoRapida(pid) {
+    const inp = document.createElement("input");
+    inp.type = "file"; inp.accept = "image/*"; inp.setAttribute("capture", "environment");
+    inp.multiple = true; inp.style.display = "none";
+    document.body.appendChild(inp);
+    inp.addEventListener("change", async () => {
+      const archivos = [...inp.files]; inp.remove();
+      if (!archivos.length) return;
+      let subidas = 0;
+      avisar(archivos.length > 1 ? `Subiendo ${archivos.length} fotos…` : "Subiendo la foto…");
+      for (const archivo of archivos) {
+        try {
+          const blob = await reducirImagen(archivo).catch(() => archivo);
+          const ruta = await DB.subirFoto(pid, blob, blob.type || archivo.type || "image/jpeg");
+          await DB.crearFoto({ proyecto_id: pid, ruta, nota: null });
+          subidas++;
+        } catch (err) { avisar("No se pudo subir: " + err.message, true); break; }
+      }
+      if (subidas) { await recargar(); avisar(`📸 ${subidas > 1 ? subidas + " fotos subidas" : "Foto subida"} a ${nombreProyecto(pid)} ✓`); }
+    }, { once: true });
+    inp.click();
   }
 
   // Una ventanita de la app para escribir un texto de VARIAS líneas (el
