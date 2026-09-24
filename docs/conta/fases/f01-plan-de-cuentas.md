@@ -47,9 +47,9 @@ renglones. Con A, la Fase 9 se vuelve impracticable.
 
 ### 1000 · Activo
 ```
-1010  Banco operativo
-1020  Banco de nómina                    (si quieres separarlo)
-1030  Reserva de impuestos
+1010  Banco operativo                    ← Chase, la única cuenta (24-sep)
+      (1020 nómina y 1030 reserva: no existen; salen de c1 y se añaden
+       el día que se abran)
 1110  Cuentas por cobrar
 1120  Retención por cobrar               ← retainage; en QuickBooks es un parche
 1130  Cuenta por cobrar al accionista    ← nota firmada e interés
@@ -70,7 +70,7 @@ renglones. Con A, la Fase 9 se vuelve impracticable.
 ```
 2010  Cuentas por pagar
 2020  Retención por pagar a subcontratistas
-2100  Tarjetas de crédito                (una subcuenta por tarjeta)
+2100  Tarjetas de crédito                (una subcuenta por tarjeta: Amex Gold y Amex Blue)
 2210  Sueldos acumulados
 2220  Impuestos de nómina retenidos      (941)
 2230  Reempleo de Florida por pagar      (RT-6)

@@ -13,12 +13,17 @@
    empleados dados de alta (W-4, depósito directo) **antes del 11-dic**. Ver f11.
 3. Los statements de préstamo y la póliza de cada seguro pagado por adelantado.
 
-## Las cuentas (Edgar, 24-sep)
-- **Chase**: la operativa es 1010. Falta confirmar si hay más cuentas (nómina
-  1020, reserva 1030) o alguna tarjeta Chase.
-- **American Express Business, 2 cuentas**: una subcuenta `2100-XXXX` por cada
-  una (los últimos 4). Si el equipo tiene tarjetas adicionales, sus últimos 4
-  casan con `recibos.ultimos4` del ticket.
+## Las cuentas (Edgar, 24-sep) — son tres, no hay más
+- **Chase, una sola cuenta**: la operativa del negocio, donde se mueve todo →
+  **1010**. No hay cuenta de nómina ni tarjeta Chase: Gusto también cobra
+  desde 1010. **1020 y 1030 salen de c1** cuando termine el workflow (no
+  existen; se añaden el día que se abran).
+- **American Express Business Gold** → `2100-XXXX` (sus últimos 4).
+- **American Express Business Blue** → `2100-XXXX` (sus últimos 4).
+  Amex en su web muestra los últimos **5** dígitos; la subcuenta y
+  `recibos.ultimos4` usan los últimos 4.
+- Pago de cada Amex desde Chase = `transferencia`: Dr 2100-XXXX / Cr 1010,
+  sin gasto.
 - Archivo preferido: **QFX/OFX**, porque cada movimiento trae su propio id
   (FITID) y eso ayuda a la idempotencia. CSV solo si no hay otro.
 - **Conector automático (decide Edgar):** Plaid. Chase comparte datos con
@@ -39,8 +44,8 @@
   apertura. Tarjetas contra su statement a su fecha de corte.
   *«Saldo en libros = saldo del banco» a secas impedía cerrar cualquier mes.*
 - Tipo de movimiento **`transferencia`**: casa la salida del banco con el abono
-  de la tarjeta, o entre 1010/1020/1030, por monto y fecha ±3 días, y postea
-  un solo asiento Dr 2100-x / Cr 1010 **sin gasto**.
+  de la tarjeta (o entre cuentas de banco, si algún día hay más de una), por
+  monto y fecha ±3 días, y postea un solo asiento Dr 2100-x / Cr 1010 **sin gasto**.
 - **Casado determinista de cobros**: un depósito se casa con facturas abiertas
   y alimenta `cobros` (f03); nunca se categoriza a ingreso.
 - **Casado de pagos a proveedor**: el pago (banco o tarjeta) se aplica a las
