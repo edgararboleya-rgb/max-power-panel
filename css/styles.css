@@ -2156,7 +2156,7 @@ video.foto-mini { background: #000; }
   .categoria-card { flex-direction: column; flex-wrap: nowrap; align-items: flex-start; gap: 0.6rem; padding: 1.3rem 1.25rem 1.2rem 1.45rem; }
   .cat-etapas { flex: 0 0 auto; }
   .cat-flecha { display: none; }
-  .resumen { grid-template-columns: repeat(3, minmax(0, 1fr)); }   /* 5 números: 3 + 2, sin partir cifras */
+  .resumen { grid-template-columns: repeat(3, minmax(0, 1fr)); }   /* 6 números: 3 + 3, sin partir cifras */
   .lista { grid-template-columns: repeat(2, 1fr); align-items: start; }
   .etapas { max-width: 640px; }
 }
@@ -2164,7 +2164,7 @@ video.foto-mini { background: #000; }
   .lista { grid-template-columns: repeat(3, 1fr); }
 }
 @media (min-width: 1280px) {
-  .resumen { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .resumen { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
 
 /* El pie siempre pegado abajo */
@@ -2909,6 +2909,12 @@ button > .ico:only-child, .lev-btn-ico > .ico { margin-right: 0; width: 1.15em; 
 .agenda-hora.ambar { color: #9A7B00; } .agenda-hora.rojo { color: #B3261E; }
 .agenda-que { font-weight: 600; color: var(--mp-ink); line-height: 1.25; }
 .agenda-quien { grid-column: 2; font-size: .8rem; color: var(--mp-ink-3); }
+/* 🧭 Ir: abre el mapa del teléfono (P84, 24-sep) */
+.btn-ir { display: inline-flex; align-items: center; min-height: 36px; padding: 0 .7rem; margin-top: .2rem;
+  border-radius: 999px; background: var(--mp-sky-2); color: var(--mp-blue); font-weight: 700; font-size: .8rem;
+  text-decoration: none; white-space: nowrap; }
+.agenda-ev .btn-ir { grid-column: 2; justify-self: start; }
+.proyecto-dir .btn-ir { margin-left: .4rem; }
 .agenda-nada { font-size: .85rem; color: var(--mp-ink-3); font-style: italic; padding: .15rem .25rem; }
 .hoy-mas a { color: var(--mp-blue); text-decoration: none; font-weight: 600; }
 .semana-tabla { width: 100%; border-collapse: collapse; font-size: .85rem; text-align: center; }

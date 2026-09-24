@@ -25,10 +25,24 @@
   function programarRefresco() {
     if (temporizadorRefresco) clearTimeout(temporizadorRefresco);
     if (!sesion || !sesion.expires_in) return;
-    // Refrescar 2 minutos antes de que caduque el token
-    const ms = Math.max(30, (sesion.expires_in - 120)) * 1000;
+    // Refrescar 2 minutos antes de que caduque el token. Con expires_at (la
+    // hora exacta en que caduca) sirve también para una sesión que llegó de
+    // otra pestaña, que ya lleva un rato corriendo.
+    const ms = sesion.expires_at
+      ? Math.max(30000, sesion.expires_at * 1000 - Date.now() - 120000)
+      : Math.max(30, (sesion.expires_in - 120)) * 1000;
     temporizadorRefresco = setTimeout(() => { refrescar().catch(() => {}); }, ms);
   }
+
+  // DOS PESTAÑAS (P121, 24-sep): cada pestaña refrescaba con su propia copia
+  // del refresh_token; la segunda usaba uno que la primera ya había gastado y
+  // Supabase cerraba la sesión entera. Ahora, cuando una pestaña refresca, las
+  // demás toman la sesión nueva al vuelo en vez de refrescar ellas.
+  window.addEventListener("storage", e => {
+    if (e.key !== "mxp_sesion") return;
+    const g = sesionGuardada();
+    if (g && g.access_token) { sesion = g; programarRefresco(); }
+  });
 
   async function autenticar(cuerpo, tipo) {
     const r = await fetch(`${SB.url}/auth/v1/token?grant_type=${tipo}`, {
@@ -60,10 +74,20 @@
   let refrescoEnVuelo = null; // 20 lecturas a la vez = UN solo refresco
   function refrescar() {
     if (!refrescoEnVuelo) {
-      refrescoEnVuelo = (async () => {
+      const hacer = async () => {
+        // Dentro del candado: si otra pestaña ya refrescó mientras esperábamos,
+        // se usa su sesión y no se gasta un refresh_token viejo.
+        const g = sesionGuardada();
+        if (g && g.access_token && sesion && g.refresh_token !== sesion.refresh_token) {
+          sesion = g; programarRefresco(); return sesion;
+        }
         if (!sesion || !sesion.refresh_token) throw new Error("Sin sesión");
         return autenticar({ refresh_token: sesion.refresh_token }, "refresh_token");
-      })().finally(() => { refrescoEnVuelo = null; });
+      };
+      const conCandado = (navigator.locks && navigator.locks.request)
+        ? navigator.locks.request("mxp-refresco", hacer)
+        : hacer();
+      refrescoEnVuelo = conCandado.finally(() => { refrescoEnVuelo = null; });
     }
     return refrescoEnVuelo;
   }
@@ -76,6 +100,15 @@
 
   function uid() {
     return sesion && sesion.user ? sesion.user.id : null;
+  }
+
+  // El change order de las horas se escribe siempre igual: «co#1», «CO-1»,
+  // «co 1» y «CO # 1» son «CO #1» (P93, 24-sep). Si no, al agrupar por CO
+  // salían dos distintos. Lo que no parece un número de CO se deja tal cual.
+  function conCO(fila) {
+    if (!fila || typeof fila.co !== "string") return fila;
+    const m = /^\s*c\.?\s*o\.?\s*[#\-\s]*\s*(\d+)\s*$/i.exec(fila.co);
+    return m ? { ...fila, co: "CO #" + Number(m[1]) } : fila;
   }
 
   // ---------- Traducir los errores de la base a español de taller ----------
@@ -610,6 +643,7 @@
       headers: { Prefer: "resolution=merge-duplicates,return=minimal" }
     }),
     reportarHoras: async fila => {
+      fila = conCO(fila);
       try { return await insertar("horas", { ...fila, usuario_id: uid() }); }
       catch (e) {
         // Si la base todavía no tiene la columna llave_cliente (SQL sin pegar),
@@ -621,7 +655,7 @@
         throw e;
       }
     },
-    cambiarHoras: (id, cambios) => actualizar(`horas?id=eq.${id}`, cambios),
+    cambiarHoras: (id, cambios) => actualizar(`horas?id=eq.${id}`, conCO(cambios)),
     eliminarHoras: id => api(`horas?id=eq.${id}`, { metodo: "DELETE" }),
     crearExterno: fila => insertar("trabajos_externos", fila),
     eliminarExterno: id => api(`trabajos_externos?id=eq.${id}`, { metodo: "DELETE" }),

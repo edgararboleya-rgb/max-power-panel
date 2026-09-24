@@ -812,6 +812,7 @@ function esFalloDeRed(err) {
           <span class="agenda-hora">${esc(e.hora || "—")}</span>
           <span class="agenda-que">${esc(sinMontos(e.titulo))}</span>
           <span class="agenda-quien">${(e.asignados || []).length ? esc(e.asignados.map(n => n.split(" ")[0]).join(" + ")) : ""}${e.proyecto ? `${(e.asignados || []).length ? " · " : ""}${esc(nombreProyecto(e.proyecto))}` : ""}</span>
+          ${k < 2 ? enlaceMapa(e.ubicacion || ((proyectos().find(x => x.id === e.proyecto) || {}).direccion)) : ""}
         </div>`).join("") : `<div class="agenda-nada">Nada programado.</div>`;
       return `<div class="agenda-dia${k === 0 ? " es-hoy" : ""}">
         <span class="hoy-chip ${k === 0 ? "es-hoy" : k === 1 ? "es-man" : "es-otro"}">${etiqueta(d, k)}</span>
@@ -1215,17 +1216,19 @@ function esFalloDeRed(err) {
           avisar("Ese número de horas no es válido — no se cambió nada.", true);
           return;
         }
-        const notas = prompt("Notas (qué se hizo):", rep.notas || "");
+        // Caja de varias líneas: la ventanita del navegador borraba los saltos
+        // de línea de un reporte hecho en lista (P91, 24-sep).
+        const notas = await pedirTexto("Notas (qué se hizo):", rep.notas || "");
         if (notas === null) return;
         const cambios = { horas: horasNum, notas: notas.trim() };
         // Si el trabajador se equivocó de proyecto, aquí se mueve (queda constancia)
         if (confirm("¿Quieres MOVER este reporte a OTRO proyecto?\n\nAceptar = elegir el proyecto correcto.\nCancelar = dejarlo donde está.")) {
           const lista = proyectosConTrabajo();
-          const menu = lista.map((x, i) => `${i + 1}. ${x.nombre}`).join("\n");
-          const n = prompt("Escribe el NÚMERO del proyecto correcto:\n\n" + menu);
-          if (n !== null) {
-            const elegido = lista[Number(String(n).trim()) - 1];
-            if (!elegido) { avisar("Ese número no está en la lista — no se movió nada.", true); return; }
+          const idElegido = await elegirDeLista("¿A qué proyecto va este reporte?",
+            lista.map(x => ({ valor: x.id, texto: x.nombre })));
+          if (idElegido !== null) {
+            const elegido = lista.find(x => x.id === idElegido);
+            if (!elegido) { avisar("No se movió nada.", true); return; }
             if (elegido.id !== rep.proyecto) {
               cambios.proyecto_id = elegido.id;
               cambios.notas = (cambios.notas ? cambios.notas + "\n\n" : "") +
@@ -1256,6 +1259,13 @@ function esFalloDeRed(err) {
   // Lo que NO cuenta como dinero contratado: terminado, perdido, o todavía
   // cotizándose. Mismo criterio en las tarjetas y en el resumen.
   const SIN_CONTRATO = ["completado", "no_aprobado", "estimando"];
+  // Lo FIRMADO y lo PROPUESTO van separados (P10, 24-sep): antes «Contratado
+  // activo» sumaba también las propuestas enviadas sin firmar, y el 38 % del
+  // número era dinero que nadie había firmado.
+  const FIRMADO = ["aprobado", "ejecucion", "pausa"];
+  const sumaContrato = (arr, estados) => arr
+    .filter(p => estados.includes(p.estado) && typeof p.contrato === "number")
+    .reduce((s, p) => s + p.contrato, 0);
 
   function pintarCategorias() {
     const lista = proyectos();
@@ -1264,7 +1274,7 @@ function esFalloDeRed(err) {
       const activos = del.filter(p => !SIN_CONTRATO.includes(p.estado));
       const enObra = del.filter(p => p.estado === "ejecucion").length;
       const dineroLinea = usuario.finanzas
-        ? `<div class="cat-dinero">${fmt(activos.filter(p => typeof p.contrato === "number").reduce((s, p) => s + p.contrato, 0))} contratado activo</div>`
+        ? `<div class="cat-dinero">${fmt(sumaContrato(del, FIRMADO))} firmado${del.some(p => p.estado === "enviado") ? ` · ${fmt(sumaContrato(del, ["enviado"]))} propuesto` : ""}</div>`
         : "";
       // El desglose por etapa: llena el hueco de la derecha con lo que de
       // verdad quieres saber de un vistazo, sin abrir la categoría.
@@ -1296,9 +1306,9 @@ function esFalloDeRed(err) {
     const lista = proyectos();
     // Los "no aprobados" no cuentan: ni como activos ni en el dinero contratado
     const activos = lista.filter(p => !SIN_CONTRATO.includes(p.estado));
-    const contratado = lista
-      .filter(p => !SIN_CONTRATO.includes(p.estado) && typeof p.contrato === "number")
-      .reduce((s, p) => s + p.contrato, 0);
+    const contratado = sumaContrato(lista, FIRMADO);
+    const propuesto = sumaContrato(lista, ["enviado"]);
+    const nPropuestas = lista.filter(p => p.estado === "enviado").length;
     const cobrado = lista
       .filter(p => typeof p.cobrado === "number")
       .reduce((s, p) => s + p.cobrado, 0);
@@ -1311,7 +1321,8 @@ function esFalloDeRed(err) {
 
     $resumen.innerHTML = `
       <div class="resumen-card"><div class="valor">${activos.length}</div><div class="etiqueta">Proyectos activos</div></div>
-      <div class="resumen-card"><div class="valor">${fmt(contratado)}</div><div class="etiqueta">Contratado activo</div></div>
+      <div class="resumen-card"><div class="valor">${fmt(contratado)}</div><div class="etiqueta">Firmado activo</div></div>
+      <div class="resumen-card"><div class="valor">${fmt(propuesto)}</div><div class="etiqueta">Propuesto sin firmar${nPropuestas ? ` (${nPropuestas})` : ""}</div></div>
       <div class="resumen-card"><div class="valor">${fmt(cobrado)}</div><div class="etiqueta">Cobrado a la fecha</div></div>
       <div class="resumen-card"><div class="valor">${fmt(porCobrar)}</div><div class="etiqueta">Por cobrar</div></div>
       <div class="resumen-card${pendFact.length ? " alerta" : ""}">
@@ -1589,10 +1600,14 @@ function esFalloDeRed(err) {
           <span class="hito-monto">${fmt(h.monto)}</span>
           ${h.estado === "cobrado" && usuario.editar ? `<button type="button" class="insp-borrar hito-release"
             data-hito="${esc(h.id)}" title="Waiver and Release of Lien de este pago (F.S. 713.20)">📄</button>` : ""}
-          ${h.estado !== "cobrado" && usuario.editar ? `<button type="button" class="insp-borrar hito-facturar"
+          ${/* 🧾 solo en un hito PENDIENTE: uno ya facturado tiene su factura en
+               QuickBooks y un segundo toque sacaría otra (P03, 24-sep). */
+            h.estado === "pendiente" && usuario.editar ? `<button type="button" class="insp-borrar hito-facturar"
             data-texto="${esc(textoFactura(h))}" data-hito="${esc(h.id)}" data-proyecto="${esc(p.id)}"
-            title="Crea la factura en QuickBooks con las reglas de la casa">🧾</button>
-          <button type="button" class="chip-cobrar hito-cobrado" data-hito="${esc(h.id)}" data-titulo="${esc(h.titulo)}" data-monto="${h.monto}"
+            title="Crea la factura en QuickBooks con las reglas de la casa">🧾</button>` : ""}
+          ${/* El 💵 lleva su propia clase: antes compartía «hito-cobrado» con la
+               FILA de un hito cobrado, y tocar esa fila preguntaba por "undefined". */
+            h.estado !== "cobrado" && usuario.editar ? `<button type="button" class="chip-cobrar hito-cobrar" data-hito="${esc(h.id)}" data-titulo="${esc(h.titulo)}" data-monto="${h.monto}"
             title="Ya entró el dinero de este hito — marcarlo COBRADO">💵</button>` : ""}
         </div>`;
     }).join("");
@@ -2752,7 +2767,7 @@ function esFalloDeRed(err) {
         <div class="proyecto-titulo">
           <div>
             <h2>${esc(p.nombre)}</h2>
-            <div class="proyecto-dir">📍 ${esc(p.direccion)}</div>
+            <div class="proyecto-dir">📍 ${esc(p.direccion)} ${enlaceMapa(p.direccion)}</div>
             <div class="proyecto-cliente">Cliente: <strong>${esc(p.cliente)}</strong> · vía ${esc(p.via)}${p.origen ? ` · 🧲 ${esc(p.origen)}` : ""}</div>
             ${gcDeProyecto(p) ? `<div class="proyecto-cliente">🏗 Contratista: <strong>${esc(gcDeProyecto(p).nombre)}</strong> · ${p.contratistaModo === "contrato" ? "el contrato es con ellos" : "la paga el dueño; ellos solo coordinan"}</div>` : ""}
           </div>
@@ -3512,12 +3527,29 @@ function esFalloDeRed(err) {
         if (!confirm(pregunta)) return;
         btn.disabled = true; btn.textContent = "⏳";
         try {
-          const r = await fetch("https://zeogjvwcmstmkwxjvykz.supabase.co/functions/v1/qb", {
+          const pedir = extra => fetch("https://zeogjvwcmstmkwxjvykz.supabase.co/functions/v1/qb", {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${DB.tokenSesion()}` },
-            body: JSON.stringify({ accion: "factura", proyecto_id: btn.dataset.proyecto, hito_id: Number(btn.dataset.hito), enviar: !!destino })
+            body: JSON.stringify(Object.assign({ accion: "factura", proyecto_id: btn.dataset.proyecto, hito_id: Number(btn.dataset.hito), enviar: !!destino }, extra || {}))
           });
-          const d = await r.json().catch(() => ({}));
+          let r = await pedir();
+          let d = await r.json().catch(() => ({}));
+          // QuickBooks encontró varios clientes parecidos: se le enseñan a Edgar
+          // para que toque el bueno, y se vuelve a pedir con ese (P05, 24-sep).
+          // La función lo aprende y la próxima vez ya no pregunta.
+          if (d.error === "cliente_ambiguo") {
+            const cands = Array.isArray(d.candidatos) ? d.candidatos : [];
+            if (!cands.length) {
+              avisar("QuickBooks no encontró el cliente de esta obra: créalo primero en QuickBooks y vuelve a tocar 🧾.", true);
+              btn.disabled = false; btn.textContent = "🧾";
+              return;
+            }
+            const elegido = await elegirDeLista("¿Cuál de estos clientes de QuickBooks es el de esta obra?",
+              cands.map(c => ({ valor: String(c.id), texto: c.nombre || ("Cliente " + c.id) })));
+            if (!elegido) { btn.disabled = false; btn.textContent = "🧾"; return; }
+            r = await pedir({ qb_customer_id: elegido });
+            d = await r.json().catch(() => ({}));
+          }
           if (r.ok && d.ok) {
             // En el teléfono o la tableta NO se abre el editor de QuickBooks: su página
             // web sale rota en pantalla chica (cliente vacío, $0.00, "Required") y da la
@@ -3544,7 +3576,7 @@ function esFalloDeRed(err) {
     // proyecto, que es la casilla que hace cuadrar la app con el banco.
     // Se pregunta a propósito: la casilla la lleva Edgar a mano y no se
     // le pisa sin permiso.
-    $detalle.querySelectorAll(".hito-cobrado").forEach(btn => {
+    $detalle.querySelectorAll(".hito-cobrar").forEach(btn => {
       btn.addEventListener("click", async () => {
         const monto = Number(btn.dataset.monto) || 0;
         if (!confirm(`¿Ya entró el dinero de "${btn.dataset.titulo}" (${fmt(monto)})?`)) return;
@@ -3829,8 +3861,8 @@ function esFalloDeRed(err) {
           try {
             // Algunos teléfonos mandan el video sin tipo: también se mira la extensión
             const esVid = (archivo.type || "").startsWith("video/") || /\.(mp4|mov|webm)$/i.test(archivo.name || "");
-            if (esVid && archivo.size > 50 * 1024 * 1024) {
-              avisar("Ese video es muy grande. Grábalo CORTO, como una inspección virtual (30-45 segundos, máx. 50 MB).", true);
+            if (esVid && archivo.size > 25 * 1024 * 1024) {
+              avisar("Ese video es muy grande. Grábalo CORTO, como una inspección virtual (30-45 segundos, máx. 25 MB).", true);
               break;
             }
             // Foto: se achica antes de subir. Video: sube tal cual.
@@ -3918,6 +3950,61 @@ function esFalloDeRed(err) {
     } catch (err) {
       avisar("No se pudo guardar: " + err.message, true);
     }
+  }
+
+  // 🧭 Un enlace que abre el mapa del teléfono en esa dirección (P84, 24-sep).
+  // Google Maps con «search» funciona igual en iPhone y Android.
+  function enlaceMapa(dir) {
+    const d = String(dir || "").trim();
+    if (!d) return "";
+    return `<a class="btn-ir" target="_blank" rel="noopener" onclick="event.stopPropagation()"
+      href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(d)}" title="Abrir en el mapa">🧭 Ir</a>`;
+  }
+
+  // Una ventanita de la app para escribir un texto de VARIAS líneas (el
+  // prompt() del navegador es de una sola y se come los saltos de línea).
+  function pedirTexto(titulo, valor) {
+    return new Promise(resolver => {
+      const dlg = document.createElement("dialog");
+      dlg.className = "modal";
+      dlg.innerHTML = `<form method="dialog" class="modal-form">
+          <label>${esc(titulo)}<textarea rows="5" style="width:100%">${esc(valor || "")}</textarea></label>
+          <div class="modal-botones">
+            <button type="submit" class="accion secundaria" value="no">Cancelar</button>
+            <button type="submit" class="accion" value="si">Guardar</button>
+          </div>
+        </form>`;
+      document.body.appendChild(dlg);
+      dlg.addEventListener("close", () => {
+        const t = dlg.querySelector("textarea").value;
+        const ok = dlg.returnValue === "si";
+        dlg.remove();
+        resolver(ok ? t : null);
+      });
+      dlg.showModal();
+    });
+  }
+
+  // Una ventanita de la app para elegir una opción de una lista (en vez del
+  // cuadro gris del navegador). Devuelve el valor elegido, o null si se cierra.
+  function elegirDeLista(titulo, opciones) {
+    return new Promise(resolver => {
+      const dlg = document.createElement("dialog");
+      dlg.className = "modal";
+      dlg.innerHTML = `<form method="dialog" class="modal-form">
+          <h3>${esc(titulo)}</h3>
+          <div class="elegir-lista">${opciones.map((o, i) =>
+            `<button type="submit" class="accion secundaria elegir-op" value="${i}" style="display:block;width:100%;text-align:left;margin:.35rem 0">${esc(o.texto)}</button>`).join("")}</div>
+          <button type="submit" class="accion secundaria" value="">Cancelar</button>
+        </form>`;
+      document.body.appendChild(dlg);
+      dlg.addEventListener("close", () => {
+        const v = dlg.returnValue;
+        dlg.remove();
+        resolver(v !== "" && opciones[Number(v)] ? opciones[Number(v)].valor : null);
+      });
+      dlg.showModal();
+    });
   }
 
   // ---------- Crear proyecto nuevo ----------
@@ -4059,7 +4146,20 @@ function esFalloDeRed(err) {
     const ultimo = mios.length ? mios[mios.length - 1].proyecto : "";
     const lista = proyectosConTrabajo();
     sel.innerHTML = lista.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join("");
-    const querido = antes || ultimo;
+    // Si el calendario dice dónde trabaja esta persona ese día, esa obra va
+    // primero (P85, 24-sep): antes proponía la del último reporte, que casi
+    // siempre era la de ayer. Cuenta un evento de ese día con obra, asignado a
+    // esta persona o a nadie; si hay dos, el de hora más temprana.
+    const aMin = h => { const m = /^(\d{1,2}):(\d{2})\s*([AP]M)?/i.exec(h || ""); if (!m) return 24 * 60;
+      let hh = Number(m[1]) % 12; if (m[3] && m[3].toUpperCase() === "PM") hh += 12; if (!m[3]) hh = Number(m[1]);
+      return hh * 60 + Number(m[2]); };
+    const delDia = (eventos() || [])
+      .filter(e => e.fecha === f.value && e.proyecto && e.estadoEv !== "cancelado")
+      .filter(e => !e.asignados || !e.asignados.length || e.asignados.includes(usuario.nombre))
+      .filter(e => lista.some(p => p.id === e.proyecto))
+      .sort((x, y) => aMin(x.hora) - aMin(y.hora));
+    const deHoy = delDia.length ? delDia[0].proyecto : "";
+    const querido = antes || deHoy || ultimo;
     if (querido && lista.some(p => p.id === querido)) sel.value = querido;
     llenarCOHoras();
     pintarHistorialHoras();
@@ -4111,7 +4211,7 @@ function esFalloDeRed(err) {
               <input name="co" type="text" value="${esc(r.co || "")}" placeholder="Ej: CO #1" autocomplete="off">
             </label>
             <label>Notas (aquí puedes agregar lo que te faltó)
-              <input name="notas" type="text" value="${esc(r.notas || "")}" autocomplete="off">
+              <textarea name="notas" rows="3" autocomplete="off">${esc(r.notas || "")}</textarea>
             </label>
             <div class="modal-botones">
               <button type="button" class="accion secundaria btn-horas-borrar" data-id="${r.id}">🗑 Eliminar</button>
