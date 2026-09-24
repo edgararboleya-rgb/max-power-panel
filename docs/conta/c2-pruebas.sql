@@ -49,11 +49,14 @@
 --     el bloque A nace cerrado, para que pegarlo solo por error no abra el
 --     libro a la API; y la 59 (lo que la app confirma), que con las
 --     funciones mínimas también confirma;
---   · las que prueban c1 (el plan y su guarda: 29, 40, 42, 44, 45, 46, 50
---     y 64), que no depende del bloque A, y la del rastro (68);
+--   · las que prueban c1 (el plan y su guarda: 29, 40, 42, 44, 45, 46, 50,
+--     64, 72 y 74), que no depende del bloque A; la del candado de las
+--     pruebas (75), que prueba a estas mismas pruebas; y la del rastro
+--     (76);
 --   · unas pocas que usan piezas que solo existen en el bloque B
---     (fn_postear_interno en la 41 y la 63; la guarda de periodos, que la
---     60 y la 65 apagan un momento), que fallan porque falta la pieza.
+--     (fn_postear_interno en la 41, la 63, la 69 y la 70; la guarda de
+--     periodos, que la 60, la 65, la 71 y la 73 apagan un momento), que
+--     fallan porque falta la pieza.
 -- Con el bloque B, todas en true.
 --
 -- Los datos que usan se buscan, no se inventan: el dueño (rol 'dueno',
@@ -3050,8 +3053,8 @@ begin
       as $f$ select l.cuenta, sum(l.monto) from asiento_lineas l group by l.cuenta $f$;
     create view public.c2_pruebas_balanza_v with (security_invoker = true) as select * from public.c2_pruebas_balanza();
     create function public.c2_pruebas_puerta(p jsonb) returns jsonb
-      language sql security definer set search_path = public, pg_temp
-      as $f$ select fn_postear_interno(p) $f$;
+      language plpgsql security definer set search_path = public, pg_temp
+      as $f$ begin return fn_postear_interno(p); end $f$;
     create function public.c2_pruebas_invoker() returns bigint
       language sql stable set search_path = public, pg_temp
       as $f$ select count(*) from asientos $f$;
