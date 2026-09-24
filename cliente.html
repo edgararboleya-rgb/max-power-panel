@@ -715,6 +715,13 @@
         (p.estado === "completado" ? '<div class="pt-card" style="text-align:center">' +
           '<div class="pt-h">' + tit("garantia", TXT.garantiaT) + '</div>' +
           '<p class="pt-lead chico">' + esc(TXT.garantia) + '</p>' +
+          // v32 del portal manda completado_el: se dice hasta cuándo va (P75)
+          (p.completado_el ? (function () {
+            var d = new Date(String(p.completado_el).slice(0, 10) + "T12:00:00");
+            d.setFullYear(d.getFullYear() + 1);
+            var f = d.toLocaleDateString(lang === "en" ? "en-US" : "es-US", { year: "numeric", month: "long", day: "numeric" });
+            return '<p class="pt-lead chico"><b>' + esc(lang === "en" ? "Covered until " + f : "Cubierta hasta el " + f) + '</b></p>';
+          })() : '') +
           (RESENA ? '<a class="pt-resena" target="_blank" rel="noopener" href="' + esc(RESENA) + '">' + esc(TXT.resena) + '</a>' : '') +
           '</div>' : '') +
         '</div>' +

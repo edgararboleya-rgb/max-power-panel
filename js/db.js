@@ -390,6 +390,7 @@
         portalCompleto: p.portal_completo === true,
         // v168: el párrafo «dónde vamos» que sale en el portal del cliente
         portalResumen: p.portal_resumen || "",
+        completadoEl: p.completado_el || "",
         cliente: p.cliente || "Por confirmar",
         via: p.via || "—",
         contratistaId: p.contratista_id || null,
@@ -616,7 +617,16 @@
     salir,
     cargarTodo,
     // Escrituras
-    cambiarProyecto: (id, cambios) => actualizar(`proyectos?id=eq.${encodeURIComponent(id)}`, cambios),
+    cambiarProyecto: (id, cambios) => {
+      // P75 (24-sep): al pasar una obra a TERMINADA se apunta el día (hora de
+      // Florida), para contar el año de garantía. Si vuelve a abrirse, se borra.
+      if (cambios && cambios.estado === "completado" && !("completado_el" in cambios)) {
+        cambios = { ...cambios, completado_el: new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }) };
+      } else if (cambios && cambios.estado && cambios.estado !== "completado" && !("completado_el" in cambios)) {
+        cambios = { ...cambios, completado_el: null };
+      }
+      return actualizar(`proyectos?id=eq.${encodeURIComponent(id)}`, cambios);
+    },
   // Contratistas (GC): la libreta con una llave de portal por empresa
   crearContratista: fila => insertar("contratistas", fila),
   cambiarContratista: (id, cambios) => actualizar(`contratistas?id=eq.${encodeURIComponent(id)}`, cambios),
