@@ -1229,8 +1229,8 @@ function esFalloDeRed(err) {
         const h = prompt("Horas trabajadas:", rep.horas);
         if (h === null) return;
         const horasNum = Number(String(h).replace(",", "."));
-        if (!Number.isFinite(horasNum) || horasNum < 0 || horasNum > 24) {
-          avisar("Ese número de horas no es válido — no se cambió nada.", true);
+        if (!Number.isFinite(horasNum) || horasNum <= 0 || horasNum > 16) {
+          avisar("Un reporte va de más de 0 hasta 16 horas — no se cambió nada.", true);
           return;
         }
         // Caja de varias líneas: la ventanita del navegador borraba los saltos
@@ -2560,7 +2560,7 @@ function esFalloDeRed(err) {
           <span class="alcance-estado">${x.fecha ? fechaBonita(x.fecha) : ""}</span>
         </span>
         <span class="mat-precio">${fmt(x.costo)}</span>
-        <button type="button" class="accion secundaria icono btn-ext-borrar" data-id="${x.id}" aria-label="Eliminar" title="Eliminar">${ico("basura") || "🗑"}</button>
+        <button type="button" class="accion secundaria icono btn-ext-borrar" data-id="${x.id}" aria-label="Anular" title="Anular (dice por qué): el costo pasa a 0 y queda el rastro">${ico("equis") || "✕"}</button>
       </div>`).join("");
     return `
       <div class="detalle-seccion">
@@ -2627,7 +2627,8 @@ function esFalloDeRed(err) {
   // cobradas van plegadas. «Total facturado» no cuenta la #1110 (dinero personal
   // de Edgar), igual que la franja de dinero.
   function facturasHTML(p) {
-    if (!usuario.finanzas || !p.facturas || !p.facturas.length) return "";
+    const anuladas = p.facturasAnuladas || [];
+    if (!usuario.finanzas || ((!p.facturas || !p.facturas.length) && !anuladas.length)) return "";
     const personal = f => String(f.num) === "1110";
     const porCobrar = p.facturas.filter(f => !f.pagada);
     const cobradas = p.facturas.filter(f => f.pagada);
@@ -2637,6 +2638,7 @@ function esFalloDeRed(err) {
           <span class="alcance-titulo"><span>#${esc(f.num)}</span> · <span>${esc(f.fecha || "")}</span> · <strong>${fmt(saldoFactura(f))}</strong></span>
           ${f.cobrado > 0 ? `<span class="alcance-estado">abonó ${fmt(f.cobrado)} de ${fmt(f.monto)}</span>` : ""}
           ${personal(f) ? `<span class="alcance-estado">dinero personal: no cuenta en la obra</span>` : ""}
+          ${f.estado === "borrador" ? `<span class="alcance-estado">borrador: todavía no se emitió</span>` : ""}
         </span>
         ${f.id && usuario.editar ? `<button type="button" class="accion secundaria chica factura-pagada" data-id="${f.id}" data-num="${esc(f.num)}" data-monto="${saldoFactura(f)}" data-proyecto="${esc(p.id)}"${personal(f) ? ' data-personal="1"' : ""}${cobrandoFacturas.has(String(f.id)) ? " disabled" : ""}
           title="${personal(f) ? "Marcarla como COBRADA — es dinero personal: no se suma a lo cobrado de la obra" : "Marcarla como COBRADA — es lo que cuadra el dinero de la app con el banco"}">Marcar cobrada</button>` : ""}
@@ -2663,6 +2665,8 @@ function esFalloDeRed(err) {
           </div>`, false) : ""}
         <div class="rent-fila rent-total"><span>Total facturado</span><span>${fmt(total)}</span></div>
         ${hayPersonal ? `<p class="rent-nota">(sin la #1110, que es personal)</p>` : ""}
+        ${anuladas.length ? `<p class="rent-nota">Anuladas con nota de crédito (no se cobran ni suman): ${anuladas.map(f =>
+          `#${esc(f.num)} · ${esc(f.fecha || "")} · ${fmt(f.monto)}`).join(" — ")}</p>` : ""}
       </div>`;
   }
 
@@ -3997,6 +4001,19 @@ function esFalloDeRed(err) {
       refrescarVistaProyecto();
       avisar(`"${p.nombre}" eliminado.`);
     } catch (err) {
+      // Una obra con papeles en el libro contable no se borra (MX003): la base
+      // lo explica, y aquí se ofrece lo que sí se puede, marcarla Completado.
+      if (/^MX/i.test(err.codigo || "") && p.estado !== "completado") {
+        if (confirm(err.message + "\n\n¿La marco Completado ahora?")) {
+          try {
+            await DB.cambiarProyecto(id, { estado: "completado" });
+            p.estado = "completado";
+            refrescarVistaProyecto(id);
+            avisar(`"${p.nombre}" marcada Completado ✓`);
+          } catch (e2) { avisar("No se pudo cambiar: " + e2.message, true); }
+        }
+        return;
+      }
       avisar("No se pudo eliminar: " + err.message, true);
     }
   }
@@ -4879,12 +4896,17 @@ function esFalloDeRed(err) {
     }
     $detalle.querySelectorAll(".btn-ext-borrar").forEach(btn => {
       btn.addEventListener("click", async () => {
-        if (!confirm("¿Eliminar este trabajo externo?")) return;
+        // No se borra (contabilidad, 24-sep): se anula con su motivo. El costo
+        // pasa a 0 y, si ya estaba en el libro, el libro lo reversa.
+        const motivo = await pedirTexto("¿Por qué se anula este trabajo externo? — no se borra: su costo pasa a 0 y queda el rastro", "");
+        if (motivo === null) return;
+        if (!motivo.trim()) { avisar("Hace falta decir por qué.", true); return; }
+        btn.disabled = true;
         try {
-          await DB.eliminarExterno(btn.dataset.id);
+          await DB.anularExterno(btn.dataset.id, motivo.trim());
           await recargar();
-          avisar("Trabajo externo eliminado ✓");
-        } catch (err) { avisar("No se pudo eliminar: " + err.message, true); }
+          avisar("Trabajo externo anulado ✓ — ya no cuenta como gasto");
+        } catch (err) { btn.disabled = false; avisar("No se pudo anular: " + err.message, true); }
       });
     });
 
@@ -5658,7 +5680,9 @@ function esFalloDeRed(err) {
           title="Corregir total, proveedor o descripción">✎</button>` : ""}
         ${usuario.editar ? `<button class="insp-borrar btn-recibo-foto" data-id="${r.id}" data-proyecto="${esc(r.proyecto || "general")}" data-estado="${esc(r.estado)}"
           title="${r.ruta ? "Cambiar la foto del recibo" : "Ponerle la foto del recibo"}">📷</button>` : ""}
-        ${usuario.editar ? `<button class="insp-borrar btn-recibo-borrar" data-id="${r.id}" title="Eliminar">🗑</button>` : ""}
+        ${!usuario.editar ? "" : r.estado === "anulado"
+          ? `<button class="insp-borrar btn-recibo-desanular" data-id="${r.id}" title="Volver a contarlo (dice por qué)" aria-label="Volver a contar">${ico("deshacer") || "↺"}</button>`
+          : `<button class="insp-borrar btn-recibo-borrar" data-id="${r.id}" title="Anular (dice por qué): no se borra, sale de las cuentas" aria-label="Anular">${ico("equis") || "✕"}</button>`}
       </div>`;
 
     $("materiales-panel").innerHTML = `
@@ -6307,14 +6331,37 @@ function esFalloDeRed(err) {
         } catch (err) { avisar("No se pudo asignar: " + err.message, true); }
       });
     });
+    // Un recibo no se borra (contabilidad, 24-sep): se ANULA con su motivo.
+    // Se queda como rastro con la etiqueta ANULADO, deja de sumar y, si ya
+    // estaba en el libro, el libro lo reversa solo. Y vuelve igual: con motivo.
+    const motivoDe = async (titulo) => {
+      const t = await pedirTexto(titulo, "");
+      if (t === null) return null;
+      if (!t.trim()) { avisar("Hace falta decir por qué.", true); return null; }
+      return t.trim();
+    };
     $("materiales-panel").querySelectorAll(".btn-recibo-borrar").forEach(btn => {
       btn.addEventListener("click", async () => {
-        if (!confirm("¿Eliminar este recibo?")) return;
+        const motivo = await motivoDe("¿Por qué se anula este recibo? (repetido, devuelto, no era de la empresa…) — no se borra: queda como rastro y deja de sumar");
+        if (!motivo) return;
+        btn.disabled = true;
         try {
-          await DB.eliminarRecibo(btn.dataset.id);
+          await DB.anularRecibo(btn.dataset.id, motivo);
           await recargar();
-          avisar("Recibo eliminado ✓");
-        } catch (err) { avisar("No se pudo eliminar: " + err.message, true); }
+          avisar("Recibo anulado ✓ — ya no suma");
+        } catch (err) { btn.disabled = false; avisar("No se pudo anular: " + err.message, true); }
+      });
+    });
+    $("materiales-panel").querySelectorAll(".btn-recibo-desanular").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const motivo = await motivoDe("¿Por qué vuelve a contar este recibo?");
+        if (!motivo) return;
+        btn.disabled = true;
+        try {
+          await DB.desanularRecibo(btn.dataset.id, motivo);
+          await recargar();
+          avisar("Recibo de vuelta ✓ — vuelve a sumar");
+        } catch (err) { btn.disabled = false; avisar("No se pudo: " + err.message, true); }
       });
     });
     // Enlaces firmados para ver las fotos de los recibos

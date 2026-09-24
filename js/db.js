@@ -121,6 +121,14 @@
     const falta = "A la base todavía le falta el último SQL. Pégalo en Supabase " +
                   "(SQL Editor → pegar → Run) y vuelve a intentarlo.";
 
+    // La contabilidad (24-sep) contesta con su propio código (MX001…MX008) y
+    // una frase en español que ya dice qué pasó y cómo se arregla: va tal cual.
+    if (/^MX\d/i.test(cod)) return crudo;
+    // Sus candados también usan 42501 (permiso) y 22023 (dato inválido) con
+    // frase en español. Esa se enseña tal cual; la de Postgres (en inglés) no.
+    const ingles = /\b(permission denied|row-level security|violates|invalid input|does not exist|null value|duplicate key|constraint|function)\b/i;
+    if ((cod === "42501" || cod === "22023" || cod === "P0001") && txt && !ingles.test(txt)) return crudo;
+
     // Falta una columna o una tabla que la app ya usa = SQL sin pegar
     if (cod === "42703" || cod === "42P01" || cod === "PGRST204" || cod === "PGRST205") return falta;
 
@@ -129,6 +137,8 @@
       if (/modo/i.test(txt)) {
         return "El modo ⚡ Rápido todavía no está dado de alta en la base. " + falta;
       }
+      if (/horas_horas_check/i.test(txt)) return "Un reporte de horas va de más de 0 hasta 16 horas.";
+      if (/facturas_retencion/i.test(txt)) return "La retención no puede ser negativa ni llevar más de dos decimales.";
       return "La base no aceptó uno de los datos porque se sale de lo permitido. " + falta;
     }
     if (cod === "23505") return "Eso ya estaba guardado; no se apuntó dos veces.";
@@ -420,11 +430,18 @@
           id: h.id, titulo: h.titulo, condicion: h.condicion,
           monto: Number(h.monto), estado: h.estado
         })),
-        facturas: (facPor[p.id] || []).map(f => ({
+        // Una factura ANULADA (con su nota de crédito) no se cobra ni suma en
+        // ningún total: sale de «facturas» y queda aparte, solo para verla.
+        facturas: (facPor[p.id] || []).filter(f => f.estado !== "anulada").map(f => ({
           id: f.id, num: f.num, fecha: fechaCorta(f.fecha), fechaISO: f.fecha || "",
           monto: Number(f.monto), pagada: !!f.pagada, cobradaEl: f.cobrada_el ? String(f.cobrada_el).slice(0, 10) : "",
           // Lo ya abonado de esta factura (P07): una factura puede estar pagada a medias
-          cobrado: f.cobrado === null || f.cobrado === undefined ? 0 : Number(f.cobrado)
+          cobrado: f.cobrado === null || f.cobrado === undefined ? 0 : Number(f.cobrado),
+          estado: f.estado || "emitida", enLibro: !!f.contabilizado_en,
+          retencion: f.retencion === null || f.retencion === undefined ? null : Number(f.retencion)
+        })),
+        facturasAnuladas: (facPor[p.id] || []).filter(f => f.estado === "anulada").map(f => ({
+          id: f.id, num: f.num, fecha: fechaCorta(f.fecha), monto: Number(f.monto)
         })),
         docs: docs.filter(d => d.clase === "doc").map(d => ({ id: d.id, titulo: d.titulo, url: d.url, ruta: d.ruta || "", portal: !!d.portal, propuestaId: d.propuesta_id || null,
           pideAprobacion: !!d.pide_aprobacion, aprobadoEl: d.aprobado_el ? String(d.aprobado_el).slice(0, 10) : "",
@@ -671,6 +688,9 @@
     eliminarHoras: id => api(`horas?id=eq.${id}`, { metodo: "DELETE" }),
     crearExterno: fila => insertar("trabajos_externos", fila),
     eliminarExterno: id => api(`trabajos_externos?id=eq.${id}`, { metodo: "DELETE" }),
+    // Anular con su motivo (contabilidad, 24-sep): el papel se queda como
+    // rastro y el libro lo reversa. Solo Edgar; la base lo vuelve a comprobar.
+    anularExterno: (id, motivo) => api("rpc/fn_externo_anular", { metodo: "POST", cuerpo: { p_id: Number(id), p_motivo: motivo } }),
     crearAyudante: fila => insertar("externos_equipo", fila),
     cambiarAyudante: (id, cambios) => actualizar(`externos_equipo?id=eq.${id}`, cambios),
     // Registrar este teléfono para notificaciones (upsert por endpoint)
@@ -847,6 +867,9 @@
     crearRecibo: fila => insertar("recibos", { ...fila, autor_id: uid() }),
     cambiarRecibo: (id, cambios) => actualizar(`recibos?id=eq.${id}`, cambios),
     eliminarRecibo: id => api(`recibos?id=eq.${id}`, { metodo: "DELETE" }),
+    // Un recibo no se borra: se anula con su motivo (y vuelve igual, con motivo).
+    anularRecibo: (id, motivo) => api("rpc/fn_recibo_anular", { metodo: "POST", cuerpo: { p_id: Number(id), p_motivo: motivo } }),
+    desanularRecibo: (id, motivo) => api("rpc/fn_recibo_desanular", { metodo: "POST", cuerpo: { p_id: Number(id), p_motivo: motivo } }),
     crearDocumento: fila => insertar("documentos", fila),
     subirDocumento,
     tokenSesion: () => (sesion ? sesion.access_token : null),
