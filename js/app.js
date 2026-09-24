@@ -2095,8 +2095,10 @@ function esFalloDeRed(err) {
         else chkAbiertos.delete(det.dataset.id);
       });
     });
+    // Desde el checklist se va a la pestaña Obra, que es donde vive el checklist
+    // de la ficha (solo esta vez: no cambia la pestaña guardada de esa obra)
     $("checklist-panel").querySelectorAll(".chk-ficha").forEach(b =>
-      b.addEventListener("click", () => irDetalle(b.dataset.id)));
+      b.addEventListener("click", () => { fichaVista.pestana.set(b.dataset.id, "obra"); irDetalle(b.dataset.id); }));
     $("checklist-panel").querySelectorAll(".btn-nueva-tarea").forEach(b =>
       b.addEventListener("click", () => {
         const f = b.nextElementSibling;
