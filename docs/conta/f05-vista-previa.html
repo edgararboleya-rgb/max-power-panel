@@ -1,7 +1,7 @@
 <title>Contabilidad Max Power</title>
 <style>
   :root {
-    --mp-navy: #1B3C8C; --mp-blue: #2A5BD7; --mp-cyan: #22E8E0; --mp-lime: #8CF06A; --mp-yellow: #EFE22E; --mp-deep: #071A2E;
+    --mp-navy: #1B3C8C; --mp-blue: #2A5BD7; --mp-cyan: #22E8E0; --mp-lime: #8CF06A; --mp-deep: #071A2E;
     --mp-grad: linear-gradient(96deg,#1B3C8C 0%,#2A5BD7 24%,#22E8E0 58%,#8CF06A 80%,#EFE22E 100%);
     --sky-1: #F6FCFF; --sky-2: #E8F3FA; --sky-3: #DCEEF7; --card: #FFFFFF; --line: #D6E7F1;
     --ink: #0B2036; --ink-2: #4D6A83; --ink-3: #5B7690; --teal-text: #0D7D92;
@@ -10,7 +10,10 @@
     --danger: #B3383B; --danger-bg: #FBE9E9; --danger-bd: #E9B7B8;
     --shadow: 0 1px 2px rgba(11,32,54,.05), 0 8px 24px -12px rgba(11,32,54,.18);
     --ease: cubic-bezier(.2,.8,.3,1);
-    --membrete: rgba(7,26,46,.96);
+    --membrete: rgba(7,26,46,.97);
+    /* gráficas (validadas: dos series, rampa ordinal, un solo tono) */
+    --s1: #2A5BD7; --s2: #3B8E1E; --grid: #E3EEF6;
+    --o1: #86ABEB; --o2: #5A88E2; --o3: #2A5BD7; --o4: #1B3C8C;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -21,7 +24,9 @@
       --warn-bg: #3A3510; --warn-bd: #8A7E1E; --warn-tx: #F1E77A;
       --danger: #F08A8C; --danger-bg: #3F1B1C; --danger-bd: #7A3436;
       --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
-      --membrete: rgba(4,14,26,.97);
+      --membrete: rgba(4,14,26,.98);
+      --s1: #5B8BF0; --s2: #4FA33C; --grid: #1A3C58;
+      --o1: #2F5A9E; --o2: #4A78CC; --o3: #7FA6EA; --o4: #B8D0F5;
     }
   }
   :root[data-theme="dark"] {
@@ -32,28 +37,23 @@
     --warn-bg: #3A3510; --warn-bd: #8A7E1E; --warn-tx: #F1E77A;
     --danger: #F08A8C; --danger-bg: #3F1B1C; --danger-bd: #7A3436;
     --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
-    --membrete: rgba(4,14,26,.97);
+    --membrete: rgba(4,14,26,.98);
+    --s1: #5B8BF0; --s2: #4FA33C; --grid: #1A3C58;
+    --o1: #2F5A9E; --o2: #4A78CC; --o3: #7FA6EA; --o4: #B8D0F5;
   }
 
   * { box-sizing: border-box; }
-  body {
-    margin: 0; min-height: 100%;
-    font-family: system-ui, -apple-system, "Segoe UI Variable", "Segoe UI", sans-serif;
-    background: var(--sky-2); color: var(--ink);
-    -webkit-font-smoothing: antialiased;
-  }
-  button { font-family: inherit; cursor: pointer; }
-  button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--mp-blue); outline-offset: 2px; }
+  html, body { height: 100%; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI Variable", "Segoe UI", sans-serif; background: var(--sky-2); color: var(--ink); -webkit-font-smoothing: antialiased; }
+  button { font-family: inherit; cursor: pointer; color: inherit; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--mp-blue); outline-offset: 2px; }
   .num { font-variant-numeric: tabular-nums; }
+  h1, h2, h3 { margin: 0; text-wrap: balance; }
 
-  /* ---------- marco de la app ---------- */
-  .app { max-width: 520px; margin: 0 auto; min-height: 100dvh; background: var(--sky-2); position: relative; padding-bottom: 5.5rem; }
-  .membrete {
-    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
-    background: var(--membrete); backdrop-filter: blur(16px) saturate(1.6); -webkit-backdrop-filter: blur(16px) saturate(1.6);
-    border-bottom: 1px solid rgba(34,232,224,.22);
-    display: flex; align-items: center; gap: .7rem; padding: .6rem 1rem;
-  }
+  /* ---------- membrete ---------- */
+  .membrete { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 30; background: var(--membrete); backdrop-filter: blur(16px) saturate(1.6); -webkit-backdrop-filter: blur(16px) saturate(1.6); border-bottom: 1px solid rgba(34,232,224,.22); display: flex; align-items: center; gap: .7rem; padding: .55rem 1rem; }
+  .menu-btn { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: transparent; border: 1px solid rgba(207,230,240,.3); color: #EAFBFA; }
+  .menu-btn svg { width: 20px; height: 20px; }
   .logo { width: 34px; height: 34px; border-radius: 9px; background: var(--mp-deep); border: 1px solid rgba(34,232,224,.45); display: grid; place-items: center; flex-shrink: 0; }
   .logo svg { width: 22px; height: 22px; }
   .wordmark { white-space: nowrap; font-weight: 650; letter-spacing: -.02em; line-height: 1; text-transform: lowercase; background: var(--mp-grad); -webkit-background-clip: text; background-clip: text; color: transparent; width: fit-content; font-size: 1.15rem; }
@@ -62,427 +62,452 @@
   .usuario-chip { font-size: 11px; font-weight: 650; color: var(--mp-cyan); border: 1px solid rgba(34,232,224,.4); border-radius: 999px; padding: .25rem .6rem; }
   .btn-salir { background: transparent; color: #CFE6F0; border: 1px solid rgba(207,230,240,.35); border-radius: 9px; padding: .3rem .6rem; font-size: 11px; }
 
-  .demo-chip { margin: .8rem 1rem 0; display: inline-flex; align-items: center; gap: .4rem; font-size: 10.5px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--warn-tx); background: var(--warn-bg); border: 1px solid var(--warn-bd); border-radius: 999px; padding: .3rem .7rem; }
+  /* ---------- marco: menú izquierdo + contenido ---------- */
+  .marco { display: grid; grid-template-columns: 1fr; min-height: calc(100dvh - 56px); }
+  .lateral { position: fixed; inset: 0; z-index: 40; display: none; }
+  .lateral[data-abierto="true"] { display: block; }
+  .lateral-fondo { position: absolute; inset: 0; background: rgba(7,26,46,.55); }
+  .menu { position: absolute; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); background: var(--mp-deep); color: #DDEFF7; padding: calc(.9rem + env(safe-area-inset-top, 0px)) .8rem 1rem; overflow-y: auto; display: flex; flex-direction: column; gap: .15rem; }
+  .menu .grupo { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: #6F93AD; font-weight: 700; margin: .9rem .6rem .3rem; }
+  .menu .grupo:first-child { margin-top: .2rem; }
+  .menu button { display: flex; align-items: center; gap: .6rem; width: 100%; text-align: left; background: transparent; border: 0; border-radius: 10px; padding: .55rem .65rem; font-size: 14px; font-weight: 600; color: #DDEFF7; }
+  .menu button svg { width: 18px; height: 18px; flex-shrink: 0; color: #7FB5CC; }
+  .menu button[aria-current="page"] { background: rgba(34,232,224,.14); color: #FFFFFF; }
+  .menu button[aria-current="page"] svg { color: var(--mp-cyan); }
+  .menu .n { margin-left: auto; min-width: 20px; height: 20px; border-radius: 999px; background: #EFE22E; color: #3B3300; font-size: 11px; font-weight: 800; display: grid; place-items: center; padding: 0 6px; }
+  .menu .pie { margin-top: auto; padding: .8rem .6rem 0; font-size: 11.5px; color: #6F93AD; line-height: 1.45; }
+  .contenido { padding: .9rem 1rem 2.5rem; min-width: 0; }
+  @media (min-width: 900px) {
+    .menu-btn { display: none; }
+    .marco { grid-template-columns: 250px 1fr; }
+    .lateral { display: block; position: sticky; top: 56px; height: calc(100dvh - 56px); inset: auto; z-index: 1; }
+    .lateral-fondo { display: none; }
+    .menu { position: static; width: auto; height: 100%; padding-top: .9rem; }
+    .contenido { padding: 1.2rem 1.4rem 3rem; max-width: 1180px; }
+  }
 
-  .pantalla { padding: .9rem 1rem 0; }
-  .titulo-fila { display: flex; align-items: center; gap: .6rem; margin-bottom: .8rem; }
-  .btn-volver { background: var(--card); color: var(--mp-navy); border: 1.5px solid #BCDCEA; border-radius: 10px; width: 34px; height: 34px; font-size: 1.05rem; flex-shrink: 0; }
-  :root[data-theme="dark"] .btn-volver { color: var(--teal-text); border-color: var(--line); }
-  h1 { font-size: 1.25rem; font-weight: 800; letter-spacing: -.01em; margin: 0; text-wrap: balance; }
+  /* ---------- cabecera de pantalla ---------- */
+  .cab { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .9rem; }
+  .cab h1 { font-size: 1.3rem; font-weight: 800; letter-spacing: -.01em; }
+  .cab .sub { color: var(--ink-2); font-size: 12.5px; flex-basis: 100%; }
   .mes { margin-left: auto; display: inline-flex; align-items: center; gap: .3rem; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: .35rem .6rem; font-size: 12px; font-weight: 650; color: var(--ink-2); }
+  .estado { display: inline-flex; align-items: center; gap: .45rem; background: var(--ok-bg); border: 1px solid var(--ok-bd); color: var(--ok); border-radius: 999px; padding: .3rem .7rem; font-size: 11.5px; font-weight: 650; }
+  .estado .punto { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-bd); }
+  .demo-chip { display: inline-flex; align-items: center; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--warn-tx); background: var(--warn-bg); border: 1px solid var(--warn-bd); border-radius: 999px; padding: .25rem .6rem; }
 
-  /* ---------- tira de estado ---------- */
-  .estado { display: flex; align-items: center; gap: .55rem; background: var(--ok-bg); border: 1px solid var(--ok-bd); color: var(--ok); border-radius: 12px; padding: .55rem .75rem; font-size: 12.5px; font-weight: 650; margin-bottom: .9rem; }
-  .estado .punto { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-bd); flex-shrink: 0; }
-  .estado small { font-weight: 500; color: var(--ink-2); margin-left: auto; white-space: nowrap; }
+  /* ---------- rejilla de tarjetas ---------- */
+  .kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; margin-bottom: .8rem; }
+  @media (min-width: 700px) { .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  .rejilla { display: grid; grid-template-columns: 1fr; gap: .8rem; }
+  @media (min-width: 900px) { .rejilla { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ancha { grid-column: 1 / -1; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: .85rem .95rem; box-shadow: var(--shadow); min-width: 0; }
+  .card-cab { display: flex; align-items: baseline; gap: .5rem; margin-bottom: .6rem; }
+  .card-cab h2 { font-size: 14px; font-weight: 750; }
+  .card-cab .ver { margin-left: auto; background: transparent; border: 0; color: var(--teal-text); font-weight: 650; font-size: 12px; padding: 0; }
+  .kpi { display: grid; gap: .15rem; align-content: start; }
+  .kpi .lbl { font-size: 11.5px; color: var(--ink-2); font-weight: 600; }
+  .kpi .val { font-size: 1.45rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
+  .kpi .cmp { font-size: 11.5px; color: var(--ink-2); }
+  .kpi .cmp.up { color: var(--ok); } .kpi .cmp.down { color: var(--danger); }
+  .kpi svg.spark { width: 100%; height: 34px; margin-top: .3rem; display: block; }
 
-  /* ---------- pestañas ---------- */
-  .tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: .3rem; background: var(--sky-3); border-radius: 12px; padding: .25rem; margin-bottom: .9rem; }
-  .tab { border: 0; background: transparent; color: var(--ink-2); font-weight: 650; font-size: 12.5px; padding: .5rem .2rem; border-radius: 9px; position: relative; }
-  .tab[aria-selected="true"] { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
-  .tab .n { position: absolute; top: 2px; right: 6px; min-width: 16px; height: 16px; border-radius: 999px; background: var(--warn-bd); color: #3B3300; font-size: 10px; font-weight: 800; display: grid; place-items: center; padding: 0 4px; }
+  /* ---------- gráficas ---------- */
+  .viz { width: 100%; display: block; overflow: visible; }
+  .viz text { font-family: inherit; font-size: 10.5px; fill: var(--ink-3); }
+  .viz .grid line { stroke: var(--grid); stroke-width: 1; }
+  .viz .eje { stroke: var(--line); }
+  .leyenda { display: flex; flex-wrap: wrap; gap: .4rem 1rem; font-size: 11.5px; color: var(--ink-2); margin-top: .4rem; }
+  .leyenda i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: .35rem; vertical-align: -1px; }
+  .barra-h { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .15rem .7rem; align-items: center; padding: .3rem 0; border-top: 1px solid var(--line); }
+  .barra-h:first-child { border-top: 0; }
+  .barra-h .n { font-size: 12.5px; font-weight: 650; display: flex; justify-content: space-between; gap: .5rem; }
+  .barra-h .n small { color: var(--ink-3); font-weight: 500; }
+  .barra-h .v { font-size: 13px; font-weight: 750; min-width: 5.4rem; text-align: right; }
+  .barra-h .pista { grid-column: 1 / -1; height: 8px; background: var(--sky-3); border-radius: 4px; overflow: hidden; }
+  .barra-h .pista i { display: block; height: 100%; background: var(--s1); border-radius: 0 4px 4px 0; }
+  .barra-h .pista i.pago { background: var(--s2); }
+  .apilada { display: flex; height: 14px; border-radius: 4px; overflow: hidden; gap: 2px; background: var(--card); margin: .4rem 0 .35rem; }
+  .apilada span { display: block; height: 100%; }
+  .tramos { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .4rem; font-size: 11.5px; color: var(--ink-2); }
+  .tramos b { display: block; color: var(--ink); font-size: 13px; }
+  .tramos i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: .3rem; }
+  .tip { position: fixed; z-index: 50; background: var(--mp-deep); color: #EAFBFA; font-size: 12px; padding: .4rem .6rem; border-radius: 8px; pointer-events: none; box-shadow: 0 8px 22px rgba(0,0,0,.3); white-space: nowrap; border: 1px solid rgba(34,232,224,.3); }
+  .tip[hidden] { display: none; }
 
-  /* ---------- tarjetas y listas ---------- */
+  /* ---------- tablas ---------- */
+  .tabla-env { overflow-x: auto; margin: 0 -.95rem; padding: 0 .95rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 520px; }
+  th { text-align: left; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; padding: .35rem .5rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: .5rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td.r, th.r { text-align: right; }
+  td b { font-weight: 700; }
+  .pill { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; border-radius: 999px; padding: .15rem .5rem; border: 1px solid var(--line); color: var(--ink-2); white-space: nowrap; }
+  .pill.ok { color: var(--ok); border-color: var(--ok-bd); background: var(--ok-bg); }
+  .pill.warn { color: var(--warn-tx); border-color: var(--warn-bd); background: var(--warn-bg); }
+  .pill.bad { color: var(--danger); border-color: var(--danger-bd); background: var(--danger-bg); }
+  .fila-tot td { font-weight: 800; border-top: 2px solid var(--line); }
+  .margen { display: inline-block; width: 60px; height: 6px; background: var(--sky-3); border-radius: 3px; overflow: hidden; vertical-align: middle; margin-left: .4rem; }
+  .margen i { display: block; height: 100%; background: var(--s1); }
+
+  /* ---------- estados financieros ---------- */
+  .ef { font-size: 13.5px; }
+  .ef .l { display: grid; grid-template-columns: 1fr auto; gap: .8rem; padding: .38rem 0; border-bottom: 1px solid var(--line); }
+  .ef .l.sub { padding-left: 1rem; color: var(--ink-2); font-size: 13px; }
+  .ef .l.tot { font-weight: 800; border-bottom: 2px solid var(--line); }
+  .ef .l.gran { font-weight: 800; font-size: 15px; background: var(--sky-1); margin: .4rem -.95rem 0; padding: .6rem .95rem; border: 0; border-radius: 0 0 12px 12px; }
+  .ef .l button { background: transparent; border: 0; padding: 0; text-align: left; color: inherit; font: inherit; text-decoration: underline dotted var(--ink-3); text-underline-offset: 3px; }
+  .ef h3 { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin: .9rem 0 .2rem; }
+  .ef .cab3 { display: grid; grid-template-columns: 1fr auto auto; gap: .8rem; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; padding: .2rem 0; }
+  .ef .cab3 span:not(:first-child), .ef .l3 span:not(:first-child) { min-width: 5.6rem; text-align: right; }
+  .ef .l3 { grid-template-columns: 1fr auto auto; }
+  .dif { color: var(--warn-tx); font-weight: 700; }
+  .nota { font-size: 12.5px; color: var(--ink-2); line-height: 1.45; margin-top: .6rem; }
+  .nota b { color: var(--ink); }
+  .aviso-box { background: var(--warn-bg); border: 1px solid var(--warn-bd); color: var(--warn-tx); border-radius: 10px; padding: .55rem .75rem; font-size: 12.5px; line-height: 1.4; }
+
+  /* ---------- bandeja / listas ---------- */
   .lista { display: grid; gap: .7rem; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: .8rem .9rem; box-shadow: var(--shadow); }
-  .card.aviso { border-left: 4px solid var(--warn-bd); }
-  .card.pregunta { border-left: 4px solid var(--mp-blue); }
-  .card.hecho { opacity: .55; }
-  .card-cab { display: flex; align-items: baseline; gap: .5rem; }
-  .card-cab .quien { font-weight: 750; font-size: 14px; }
-  .card-cab .monto { margin-left: auto; font-weight: 800; font-size: 15px; }
-  .card-sub { color: var(--ink-2); font-size: 12px; margin-top: .15rem; display: flex; flex-wrap: wrap; gap: .25rem .6rem; }
-  .motivo { margin-top: .55rem; font-size: 13px; line-height: 1.4; }
-  .motivo b { color: var(--mp-navy); }
-  :root[data-theme="dark"] .motivo b { color: var(--teal-text); }
+  .papel { border-left: 4px solid var(--mp-blue); }
+  .papel.aviso { border-left-color: var(--warn-bd); }
+  .papel .cabp { display: flex; align-items: baseline; gap: .5rem; }
+  .papel .quien { font-weight: 750; font-size: 14px; }
+  .papel .monto { margin-left: auto; font-weight: 800; font-size: 15px; }
+  .papel .meta { color: var(--ink-2); font-size: 12px; margin-top: .15rem; display: flex; flex-wrap: wrap; gap: .25rem .6rem; }
+  .papel .motivo { margin-top: .5rem; font-size: 13px; line-height: 1.4; }
+  .papel .motivo b { color: var(--mp-navy); }
+  :root[data-theme="dark"] .papel .motivo b { color: var(--teal-text); }
   .acciones { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .6rem; }
   .accion { background: linear-gradient(180deg, #2E62E0 0%, var(--mp-navy) 100%); color: #F4FBFF; border: 1px solid rgba(27,60,140,.55); border-radius: 12px; padding: .5rem .85rem; font-size: 12.5px; font-weight: 600; box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 4px 10px rgba(27,60,140,.28); }
   .accion.sec { background: var(--card); color: var(--mp-navy); border: 1.5px solid #BCDCEA; box-shadow: none; }
   :root[data-theme="dark"] .accion.sec { color: var(--teal-text); border-color: var(--line); }
-  .chip { display: inline-flex; align-items: center; gap: .4rem; border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-size: 10.5px; font-weight: 650; padding: .25rem .6rem; white-space: nowrap; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
-  .chip.ok { color: var(--ok); border-color: var(--ok-bd); background: var(--ok-bg); }
-  .chip.warn { color: var(--warn-tx); border-color: var(--warn-bd); background: var(--warn-bg); }
-  .chip.azul { color: var(--mp-blue); border-color: #BCD3F5; background: #EEF3FD; }
-  :root[data-theme="dark"] .chip.azul { color: #9CC0FF; border-color: #2B4F8A; background: #12284A; }
-  .vacio { text-align: center; color: var(--ink-2); padding: 1.6rem 1rem; font-size: 14px; }
-  .vacio b { display: block; color: var(--ok); font-size: 1.05rem; margin-bottom: .25rem; }
-
-  /* ---------- filas de cifras ---------- */
-  .seccion { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; margin: .9rem 0 .35rem; display: flex; justify-content: space-between; }
-  .fila { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: .2rem .8rem; align-items: baseline; text-align: left; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: .6rem .8rem; color: var(--ink); }
-  .fila + .fila { margin-top: .4rem; }
-  button.fila:hover { border-color: #BCDCEA; }
-  .fila .cod { font-size: 11px; color: var(--ink-3); font-weight: 700; letter-spacing: .04em; }
-  .fila .nom { font-size: 13.5px; font-weight: 650; }
-  .fila .val { font-size: 14.5px; font-weight: 800; text-align: right; }
-  .fila .val.neg { color: var(--danger); }
-  .fila .sub { grid-column: 1 / -1; font-size: 11.5px; color: var(--ink-2); }
-  .fila .flecha { color: var(--ink-3); font-size: 12px; justify-self: end; }
-  .total { display: grid; grid-template-columns: 1fr auto; padding: .7rem .9rem; background: var(--mp-deep); color: #EAFBFA; border-radius: 12px; margin-top: .6rem; font-weight: 750; font-size: 14px; }
-  .total .val { font-size: 16px; }
-  .total.cuadra { background: linear-gradient(160deg, #0E2A4C, var(--mp-deep) 60%); border: 1px solid rgba(34,232,224,.35); }
-  .total.cuadra .val { color: var(--mp-cyan); }
-  .doble { display: grid; grid-template-columns: 1fr auto auto; gap: .2rem .7rem; }
-  .doble .val { min-width: 5.6rem; }
-  .cab-doble { display: grid; grid-template-columns: 1fr auto auto; gap: .7rem; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; padding: 0 .8rem; margin: .8rem 0 .3rem; }
-  .cab-doble span:not(:first-child) { min-width: 5.6rem; text-align: right; }
-  .barra { height: 6px; background: var(--sky-3); border-radius: 99px; overflow: hidden; margin-top: .45rem; grid-column: 1 / -1; }
-  .barra i { display: block; height: 100%; background: var(--mp-grad); background-size: 220% 100%; border-radius: 99px; }
-  .comparativa { margin-top: 1rem; }
-  .dif { font-size: 12px; color: var(--ink-2); }
-  .dif b { color: var(--warn-tx); }
-
-  /* ---------- asiento ---------- */
-  .asiento-cab { display: grid; grid-template-columns: 1fr auto; gap: .2rem .6rem; align-items: baseline; }
-  .asiento-num { font-size: 12px; color: var(--ink-3); font-weight: 700; letter-spacing: .04em; }
-  .asiento-fecha { font-size: 12px; color: var(--ink-2); text-align: right; }
-  .asiento-desc { grid-column: 1 / -1; font-weight: 700; font-size: 14.5px; margin-top: .1rem; }
-  .lineas { margin-top: .7rem; border-top: 1px dashed var(--line); padding-top: .5rem; display: grid; gap: .35rem; }
-  .linea { display: grid; grid-template-columns: 1fr auto auto; gap: .5rem; font-size: 13px; align-items: baseline; }
-  .linea .cta { font-weight: 650; }
-  .linea .dim { grid-column: 1 / -1; font-size: 11.5px; color: var(--ink-2); margin-top: -.15rem; }
-  .linea .d, .linea .h { min-width: 5.2rem; text-align: right; font-weight: 700; }
-  .linea .h { color: var(--ink-2); }
-  .sello { margin-top: .8rem; background: var(--sky-1); border: 1px solid var(--line); border-radius: 10px; padding: .6rem .7rem; font-size: 11.5px; color: var(--ink-2); display: grid; gap: .25rem; }
+  .vacio { text-align: center; color: var(--ink-2); padding: 1.4rem 1rem; font-size: 13.5px; }
+  .banco-fila { display: grid; grid-template-columns: 1fr auto; gap: .2rem .8rem; padding: .55rem 0; border-top: 1px solid var(--line); align-items: baseline; }
+  .banco-fila:first-of-type { border-top: 0; }
+  .banco-fila .nom { font-weight: 700; font-size: 13.5px; }
+  .banco-fila .det { grid-column: 1 / -1; font-size: 12px; color: var(--ink-2); display: flex; flex-wrap: wrap; gap: .3rem .7rem; }
+  .banco-fila .saldo { font-weight: 800; font-size: 14.5px; }
+  .sello { margin-top: .7rem; background: var(--sky-1); border: 1px solid var(--line); border-radius: 10px; padding: .55rem .7rem; font-size: 11.5px; color: var(--ink-2); display: grid; gap: .2rem; }
   .sello code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; color: var(--ink); word-break: break-all; }
-  .papel { margin-top: .8rem; display: grid; grid-template-columns: 96px 1fr; gap: .7rem; align-items: start; }
-  .foto { aspect-ratio: 3 / 4; max-width: 100%; border-radius: 10px; background: repeating-linear-gradient(0deg, var(--sky-3) 0 2px, var(--sky-1) 2px 12px); border: 1px solid var(--line); display: grid; place-items: center; color: var(--ink-3); font-size: 10.5px; text-align: center; padding: .4rem; }
-  .papel-datos { font-size: 12.5px; color: var(--ink-2); display: grid; gap: .2rem; }
-  .papel-datos b { color: var(--ink); }
-  .nota-regla { margin-top: .8rem; font-size: 12.5px; color: var(--ink-2); background: var(--warn-bg); border: 1px solid var(--warn-bd); border-radius: 10px; padding: .55rem .7rem; line-height: 1.4; }
-  :root[data-theme="dark"] .nota-regla { color: var(--warn-tx); }
-
-  /* ---------- inicio (mosaico) ---------- */
-  .mosaico { display: grid; grid-template-columns: repeat(2, 1fr); gap: .8rem; }
-  .tile { display: flex; flex-direction: column; align-items: center; gap: .35rem; background: linear-gradient(160deg, #0E2A4C, var(--mp-deep) 60%); color: var(--mp-cyan); border: 1px solid rgba(34,232,224,.35); border-radius: 18px; padding: .95rem .6rem .85rem; font-size: .92rem; font-weight: 650; box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 6px 16px rgba(7,26,46,.28); }
-  .tile svg { width: 32px; height: 32px; filter: drop-shadow(0 0 8px rgba(34,232,224,.55)); }
-  .tile span { color: #EAFBFA; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
-  .tile.nuevo { position: relative; }
-  .tile.nuevo::after { content: "nuevo"; position: absolute; top: 8px; right: 10px; font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; background: var(--mp-lime); color: #0B2036; border-radius: 999px; padding: .1rem .45rem; font-weight: 800; }
-  .nota-equipo { margin-top: 1rem; font-size: 13px; color: var(--ink-2); background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: .7rem .85rem; line-height: 1.45; }
-
-  /* ---------- estados ruidosos ---------- */
-  .sin-senal { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 1.6rem 1rem; text-align: center; }
-  .sin-senal h2 { margin: .3rem 0 .4rem; font-size: 1.15rem; }
-  .sin-senal p { margin: 0; color: var(--ink-2); font-size: 13.5px; line-height: 1.45; }
-  .falla { background: var(--danger-bg); border: 1px solid var(--danger-bd); border-left: 5px solid var(--danger); color: var(--ink); border-radius: 14px; padding: .9rem 1rem; }
-  .falla h2 { margin: 0 0 .35rem; font-size: 1.05rem; color: var(--danger); }
-  .falla p { margin: 0; font-size: 13.5px; line-height: 1.45; }
-  .falla code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
-
-  /* ---------- barra de demostración ---------- */
-  .demo-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--membrete); border-top: 1px solid rgba(34,232,224,.22); padding: .55rem 1rem calc(.55rem + env(safe-area-inset-bottom, 0px)); }
-  .demo-inner { max-width: 520px; margin: 0 auto; display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
-  .demo-inner .lbl { color: #9DC5D8; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; margin-right: .2rem; }
-  .demo-btn { background: transparent; color: #EAFBFA; border: 1px solid rgba(207,230,240,.35); border-radius: 999px; padding: .3rem .7rem; font-size: 11.5px; font-weight: 600; }
-  .demo-btn[aria-pressed="true"] { background: var(--mp-cyan); color: #071A2E; border-color: var(--mp-cyan); }
-
-  .toast { position: fixed; left: 50%; bottom: calc(4.4rem + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--mp-deep); color: #EAFBFA; border: 1px solid rgba(34,232,224,.35); border-radius: 12px; padding: .6rem .9rem; font-size: 13px; font-weight: 600; box-shadow: 0 10px 30px rgba(0,0,0,.35); z-index: 40; max-width: calc(100% - 32px); text-align: center; transition: opacity .25s var(--ease); }
+  .contador { display: grid; grid-template-columns: 40px 1fr; gap: .7rem; align-items: start; }
+  .contador .ico { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(160deg, #0E2A4C, var(--mp-deep) 60%); border: 1px solid rgba(34,232,224,.35); display: grid; place-items: center; color: var(--mp-cyan); }
+  .contador .ico svg { width: 22px; height: 22px; }
+  .contador ul { margin: .3rem 0 0; padding-left: 1rem; font-size: 13px; line-height: 1.5; }
+  .toast { position: fixed; left: 50%; bottom: calc(1.2rem + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--mp-deep); color: #EAFBFA; border: 1px solid rgba(34,232,224,.35); border-radius: 12px; padding: .6rem .9rem; font-size: 13px; font-weight: 600; box-shadow: 0 10px 30px rgba(0,0,0,.35); z-index: 60; max-width: calc(100% - 32px); text-align: center; }
   .toast[hidden] { display: none; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 
-<div class="app" id="app">
-  <header class="membrete">
-    <div class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#22E8E0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H13z"/></svg></div>
-    <div><div class="wordmark">max power</div><div class="wordmark-sub">Electrical Solutions Inc.</div></div>
-    <div class="membrete-der"><span class="usuario-chip" id="usuario-chip">Edgar</span><button class="btn-salir" type="button">Salir</button></div>
-  </header>
+<header class="membrete">
+  <button class="menu-btn" id="btn-menu" type="button" aria-label="Menú" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  <div class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#22E8E0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H13z"/></svg></div>
+  <div><div class="wordmark">max power</div><div class="wordmark-sub">Electrical Solutions Inc. · Contabilidad</div></div>
+  <div class="membrete-der"><span class="usuario-chip">Edgar</span><button class="btn-salir" type="button">Salir</button></div>
+</header>
 
-  <div class="demo-chip">Vista previa · datos de ejemplo</div>
-
-  <main id="main" class="pantalla" aria-live="polite"></main>
+<div class="marco">
+  <aside class="lateral" id="lateral" data-abierto="false">
+    <div class="lateral-fondo" id="lateral-fondo"></div>
+    <nav class="menu" id="menu" aria-label="Contabilidad"></nav>
+  </aside>
+  <main class="contenido" id="main"></main>
 </div>
-
-<div class="demo-bar" role="group" aria-label="Modo demostración">
-  <div class="demo-inner">
-    <span class="lbl">Probar</span>
-    <button class="demo-btn" id="d-senal" type="button" aria-pressed="false">Sin señal</button>
-    <button class="demo-btn" id="d-vacia" type="button" aria-pressed="false">Tabla vacía</button>
-    <button class="demo-btn" id="d-equipo" type="button" aria-pressed="false">Como lo ve el equipo</button>
-  </div>
-</div>
+<div class="tip" id="tip" hidden></div>
 <div class="toast" id="toast" hidden></div>
 
 <script>
 (() => {
-  // ------------------------------------------------------------
-  // Datos DE EJEMPLO. Obras y cifras inventadas; las cuentas, las reglas y
-  // los mensajes son los reales de c1, c2 y c3 (24-sep-2026).
-  // ------------------------------------------------------------
-  const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
-  const $ = (s) => fmt.format(s);
-
-  const OBRAS = { 'casa-perez': 'Casa Pérez', 'oficina-nch': 'Oficina NCH', 'taller-ruiz': 'Taller Ruiz' };
-
-  const bandeja = [
-    { id: 318, tipo: 'pregunta', papel: 'Recibo 318', quien: 'Home Depot', monto: 86.21, fecha: '14 oct', pago: 'Amex Gold ···2013', codigo: 'sin_obra',
-      motivo: 'La cuenta <b>5100 Material</b> exige obra y el recibo no trae ninguna.',
-      acciones: [['Casa Pérez', 'obra'], ['Oficina NCH', 'obra'], ['Taller Ruiz', 'obra'], ['Es de la bodega (1300)', 'sec']] },
-    { id: 322, tipo: 'pregunta', papel: 'Recibo 322', quien: 'Sunbelt Rentals', monto: 214.00, fecha: '15 oct', pago: 'Amex Blue ···2009', obra: 'oficina-nch', codigo: 'categoria',
-      motivo: 'Vino con la categoría <b>otro</b>, que no tiene regla. ¿A qué cuenta va?',
-      acciones: [['5300 Equipo y renta', 'cta'], ['6400 Herramienta menor', 'cta'], ['5100 Material', 'cta']] },
-    { id: 325, tipo: 'pregunta', papel: 'Recibo 325', quien: "Lowe's", monto: 19.48, fecha: '16 oct', pago: 'tarjeta ···4417', obra: 'casa-perez', codigo: 'tarjeta',
-      motivo: 'Pagado con una tarjeta que acaba en <b>4417</b> y no está dada de alta. Las tuyas son 2013, 2009 y 9420.',
-      acciones: [['Es la Gold (Apple Pay)', 'tarjeta'], ['Es la Blue (Apple Pay)', 'tarjeta'], ['Es personal de Edgar (2900)', 'sec']] },
-    { id: 327, tipo: 'pregunta', papel: 'Recibo 327', quien: 'CED', monto: 245.37, fecha: '17 oct', pago: 'Amex Gold ···2013', obra: 'casa-perez', codigo: 'duplicado',
-      motivo: 'Parece <b>el mismo ticket</b> que el recibo 312 (CED #88121, $245.37, 5 oct), que ya está en el libro como 2026-000041.',
-      acciones: [['Es el mismo: anular el 327', 'anular'], ['Son dos compras distintas', 'confirmar']] },
-    { id: 1131, tipo: 'pregunta', papel: 'Factura 1131', quien: 'Oficina NCH · GC Brickell Builders', monto: 9600.00, fecha: '15 oct', codigo: 'retencion',
-      motivo: 'Es una factura a un GC. ¿Lleva <b>retención</b>? Va a 1120 y se cobra al final.',
-      acciones: [['10 % ($960.00)', 'ret'], ['5 % ($480.00)', 'ret'], ['Sin retención', 'sec']] },
-    { id: 319, tipo: 'aviso', papel: 'Recibo 319', quien: 'Platt', monto: 1288.10, fecha: '14 oct', pago: 'A cuenta (Net 30)', obra: 'oficina-nch', codigo: 'impuesto', asiento: '2026-000044',
-      motivo: 'Ya está en el libro (2026-000044). Aviso: subtotal $1,203.83 + tax $84.27 = $1,288.10 cuadra, pero la lectura dejó <b>3 decimales</b> en el subtotal. Se redondeó a centavos.',
-      acciones: [['Visto', 'sec']] },
-  ];
-
-  const balanza = [
-    { cod: '1010', nom: 'Banco operativo (Chase)', d: 23418.62, h: 0, mov: 31 },
-    { cod: '1050', nom: 'Efectivo (caja chica)', d: 57.00, h: 0, mov: 2 },
-    { cod: '1110', nom: 'Cuentas por cobrar', d: 12650.00, h: 0, mov: 6 },
-    { cod: '1120', nom: 'Retención por cobrar', d: 960.00, h: 0, mov: 1 },
-    { cod: '2010', nom: 'Cuentas por pagar', d: 0, h: 4308.10, mov: 5 },
-    { cod: '2100-2013', nom: 'Amex Business Gold', d: 0, h: 2941.85, mov: 14 },
-    { cod: '2100-2009', nom: 'Amex Business Blue', d: 0, h: 812.40, mov: 6 },
-    { cod: '2210', nom: 'Sueldos acumulados', d: 0, h: 6840.00, mov: 1 },
-    { cod: '3900', nom: 'Utilidades retenidas', d: 0, h: 19311.06, mov: 1 },
-    { cod: '4010', nom: 'Contrato — residencial', d: 0, h: 18500.00, mov: 3 },
-    { cod: '4020', nom: 'Contrato — comercial', d: 0, h: 9600.00, mov: 1 },
-    { cod: '4030', nom: 'Servicio y T&M', d: 0, h: 2150.00, mov: 2 },
-    { cod: '5000', nom: 'Mano de obra directa', d: 6840.00, h: 0, mov: 1 },
-    { cod: '5100', nom: 'Material', d: 7412.36, h: 0, mov: 19 },
-    { cod: '5200', nom: 'Subcontratos', d: 3200.00, h: 0, mov: 2 },
-    { cod: '5300', nom: 'Equipo y renta', d: 640.00, h: 0, mov: 2 },
-    { cod: '5400', nom: 'Permisos e inspecciones', d: 385.00, h: 0, mov: 1 },
-    { cod: '6130', nom: 'Cargos bancarios', d: 89.00, h: 0, mov: 3 },
-    { cod: '6300', nom: 'Vehículos — combustible', d: 612.40, h: 0, mov: 7 },
-    { cod: '6500', nom: 'Oficina y software', d: 214.99, h: 0, mov: 2 },
-    { cod: '6200', nom: 'Seguros', d: 980.00, h: 0, mov: 1 },
-  ];
-  // La balanza de ejemplo cuadra: se ajusta 3900 para que Debe = Haber.
-  (() => { const d = balanza.reduce((s, c) => s + c.d, 0); const h = balanza.reduce((s, c) => s + c.h, 0);
-           const c3900 = balanza.find(c => c.cod === '3900'); c3900.h = Math.round((c3900.h + (d - h)) * 100) / 100; })();
-
-  const asientos = {
-    '5100': [
-      { num: '2026-000041', fecha: '5 oct', desc: 'CED · THHN #12 500 ft', monto: 245.37, obra: 'casa-perez', cr: '2100-2013', crNom: 'Amex Business Gold', co: 'CO-9', papel: { tipo: 'Recibo', id: 312, prov: 'CED', numero: '88121', sub: 229.32, tax: 16.05, pago: 'Amex Gold ···2013', foto: 'recibos/casa-perez/2026-10-05-ced-88121.jpg' }, hash: '9f3a…c41e' },
-      { num: '2026-000044', fecha: '14 oct', desc: 'Platt · EMT y accesorios', monto: 1288.10, obra: 'oficina-nch', cr: '2010', crNom: 'Cuentas por pagar · Platt', papel: { tipo: 'Recibo', id: 319, prov: 'Platt', numero: 'PL-55190', sub: 1203.83, tax: 84.27, pago: 'A cuenta (Net 30)', foto: 'recibos/oficina-nch/2026-10-14-platt-55190.jpg' }, hash: '2c77…08b9' },
-      { num: '2026-000049', fecha: '16 oct', desc: 'Home Depot · cajas y tapas', monto: 63.90, obra: 'taller-ruiz', cr: '2100-2009', crNom: 'Amex Business Blue', papel: { tipo: 'Recibo', id: 321, prov: 'Home Depot', numero: '0279-00061-11842', sub: 59.72, tax: 4.18, pago: 'Amex Blue ···2009', foto: 'recibos/taller-ruiz/2026-10-16-thd-11842.jpg' }, hash: 'e01d…7a52' },
-    ],
-  };
-
-  const resultados = {
-    ingresos: [['4010', 'Contrato — residencial', 18500.00, 18500.00], ['4020', 'Contrato — comercial', 9600.00, 9600.00], ['4030', 'Servicio y T&M', 2150.00, 2150.00]],
-    costos: [['5000', 'Mano de obra directa', 6840.00, 0], ['5100', 'Material', 7412.36, 7391.20], ['5200', 'Subcontratos', 3200.00, 3200.00], ['5300', 'Equipo y renta', 640.00, 640.00], ['5400', 'Permisos e inspecciones', 385.00, 385.00]],
-    gastos: [['6130', 'Cargos bancarios', 89.00, 89.00], ['6200', 'Seguros', 980.00, 980.00], ['6300', 'Vehículos — combustible', 612.40, 612.40], ['6500', 'Oficina y software', 214.99, 214.99]],
-    notas: { '5000': 'QuickBooks no devenga: el sueldo entra cuando Gusto paga (día 3). El libro lo devenga el 31 y lo reversa el 1.', '5100': 'Diferencia $21.16: el recibo 325 (Lowe’s, $19.48) espera en la bandeja y el 319 se redondeó a centavos.' } };
-
-  const S = { vista: 'conta', tab: 'bandeja', cuenta: null, asiento: null, senal: true, vacia: false, hechos: new Set() };
-  const main = document.getElementById('main');
+  // Datos DE EJEMPLO (obras y cifras inventadas). Las cuentas, las reglas y
+  // los mensajes son los de c1, c2 y c3 (24-sep-2026). Octubre de 2026 es el
+  // primer mes de la marcha en paralelo con QuickBooks.
+  const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+  const money0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+  const $ = (n) => money.format(n), $0 = (n) => money0.format(n);
+  const pct = (n) => `${Math.round(n * 100)} %`;
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const sum = (a, f = (x) => x) => a.reduce((s, x) => s + f(x), 0);
 
-  function toast(msg) {
-    const t = document.getElementById('toast'); t.textContent = msg; t.hidden = false;
-    clearTimeout(toast.h); toast.h = setTimeout(() => { t.hidden = true; }, 2600);
-  }
-
-  // ---------- inicio (mosaico) ----------
-  const ICO = {
-    horas: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/></svg>',
-    cal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>',
-    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="m8 12 2.5 2.5L16 9"/></svg>',
-    mat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.4 11.5A2 2 0 0 0 9.4 17h8.2a2 2 0 0 0 2-1.6L21 8H6"/><circle cx="10" cy="20.5" r="1.3"/><circle cx="17" cy="20.5" r="1.3"/></svg>',
-    gastos: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-9M21 20H3"/></svg>',
-    conta: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H20v14H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 6.5v14"/><path d="M9 9h7M9 12.5h7M9 16h4"/></svg>',
+  // ---- datos ----
+  const bancos = [
+    { cod: '1010', nom: 'Chase · cuenta operativa', libro: 23418.62, banco: 23418.62, al: '24 oct', pend: 0, ult4: '···4392' },
+    { cod: '1050', nom: 'Efectivo (caja chica)', libro: 57.00, banco: null, al: null, pend: 0 },
+    { cod: '2100-2013', nom: 'Amex Business Gold', libro: -2941.85, banco: -3002.06, al: 'corte 18 oct', pend: 2, ult4: '···2013', vence: '12 nov', pago: 3002.06 },
+    { cod: '2100-2009', nom: 'Amex Business Blue', libro: -812.40, banco: -812.40, al: 'corte 20 oct', pend: 0, ult4: '···2009', vence: '14 nov', pago: 812.40 },
+  ];
+  const cxc = [
+    { fac: '1128', cliente: 'Casa Pérez', obra: 'casa-perez', monto: 6500.00, saldo: 6500.00, fecha: '2 oct', dias: 22, tramo: 0 },
+    { fac: '1131', cliente: 'Brickell Builders (GC) · Oficina NCH', obra: 'oficina-nch', monto: 9600.00, saldo: 8640.00, fecha: '15 oct', dias: 9, tramo: 0, ret: 960 },
+    { fac: '1119', cliente: 'Familia Dorta · Servicio', obra: 'servicio', monto: 1250.00, saldo: 1250.00, fecha: '12 sep', dias: 42, tramo: 1 },
+    { fac: '1102', cliente: 'Villa Mar HOA', obra: 'villa-mar', monto: 3200.50, saldo: 3200.50, fecha: '8 ago', dias: 77, tramo: 2 },
+  ];
+  const cxp = [
+    { prov: 'Platt', doc: 'PL-55190', monto: 1288.10, vence: '13 nov' },
+    { prov: 'City Electric Supply', doc: 'CWD/004881', monto: 2620.00, vence: '30 oct' },
+    { prov: 'Ayudante · Yordan (1099)', doc: 'trabajo externo 44', monto: 400.00, vence: 'viernes' },
+  ];
+  const flujo = [ // últimos 6 meses: entradas (cobros) y salidas (pagos), reales de banco
+    { m: 'May', e: 14038, s: 12210 }, { m: 'Jun', e: 20555, s: 15980 }, { m: 'Jul', e: 31597, s: 22410 },
+    { m: 'Ago', e: 18920, s: 19875 }, { m: 'Sep', e: 24310, s: 17650 }, { m: 'Oct', e: 21400, s: 16240, parcial: true },
+  ];
+  const saldoChase = [18110, 19750, 17390, 21660, 20340, 24520, 22980, 23418.62]; // últimas 8 semanas
+  const proyectos = [
+    { id: 'casa-perez', nom: 'Casa Pérez', tipo: 'Residencial', contrato: 18500, facturado: 18500, cobrado: 12000, costo: 9842.36, estimado: 10200, estado: 'Trim' },
+    { id: 'oficina-nch', nom: 'Oficina NCH', tipo: 'Comercial · GC', contrato: 48000, facturado: 9600, cobrado: 0, costo: 6712.00, estimado: 29800, estado: 'Rough' },
+    { id: 'taller-ruiz', nom: 'Taller Ruiz', tipo: 'Servicio', contrato: 2150, facturado: 2150, cobrado: 2150, costo: 863.10, estimado: 900, estado: 'Completado' },
+  ];
+  const pl = {
+    ingresos: [['4010', 'Contrato — residencial', 18500.00, 18500.00], ['4020', 'Contrato — comercial', 9600.00, 9600.00], ['4030', 'Servicio y T&M', 2150.00, 2150.00]],
+    costos: [['5000', 'Mano de obra directa', 6840.00, 0], ['5010', 'Burden de mano de obra', 1094.40, 0], ['5100', 'Material', 7412.36, 7391.20], ['5200', 'Subcontratos', 3200.00, 3200.00], ['5300', 'Equipo y renta', 640.00, 640.00], ['5400', 'Permisos e inspecciones', 385.00, 385.00]],
+    gastos: [['6000', 'Sueldo administrativo (Edgar)', 6900.00, 6900.00], ['6010', 'Burden administrativo', 621.00, 621.00], ['6130', 'Cargos bancarios', 89.00, 89.00], ['6200', 'Seguros', 980.00, 980.00], ['6300', 'Vehículos — combustible', 612.40, 612.40], ['6500', 'Oficina y software', 214.99, 214.99]],
+    notas: { '5000': 'QuickBooks no devenga: el sueldo entra cuando Gusto paga. El libro lo devenga el 31 y lo reversa el 1.', '5010': 'Idem: el burden (FICA, FUTA, RT-6, WC) se devenga con las horas aprobadas.', '5100': 'El recibo 325 (Lowe’s, $19.48) espera en la bandeja; el 319 se redondeó a centavos.' },
   };
-  function vistaInicio(equipo) {
-    const tiles = [['horas', 'Reportar mis horas'], ['cal', 'Calendario'], ['check', 'Checklist'], ['mat', 'Materiales']];
-    if (!equipo) tiles.push(['gastos', 'Gastos'], ['conta', 'Contabilidad', true]);
-    return `
-      <div class="titulo-fila"><h1>${equipo ? 'Hola, Gustavo' : 'Hola, Edgar'}</h1></div>
-      <div class="mosaico">${tiles.map(([k, t, nuevo]) => `<button class="tile ${nuevo ? 'nuevo' : ''}" type="button" data-tile="${k}">${ICO[k]}<span>${t}</span></button>`).join('')}</div>
-      ${equipo ? `<div class="nota-equipo"><b>Así lo ve el equipo:</b> no hay botón de Contabilidad, y aunque alguien adivinara la dirección, la base no le devuelve ni una fila. El candado no es el botón, es la base (probado: un trabajador lee 0 asientos, 0 cuentas, 0 períodos).</div>`
-               : `<div class="nota-equipo">El mosaico de hoy, con el botón nuevo. Lo demás sigue igual para todos.</div>`}`;
+  const bandeja = [
+    { id: 318, tipo: 'pregunta', papel: 'Recibo 318', quien: 'Home Depot', monto: 86.21, fecha: '14 oct', pago: 'Amex Gold ···2013', codigo: 'sin obra', motivo: 'La cuenta <b>5100 Material</b> exige obra y el recibo no trae ninguna.', acciones: ['Casa Pérez', 'Oficina NCH', 'Taller Ruiz', 'Bodega (1300)'] },
+    { id: 322, tipo: 'pregunta', papel: 'Recibo 322', quien: 'Sunbelt Rentals', monto: 214.00, fecha: '15 oct', pago: 'Amex Blue ···2009', obra: 'Oficina NCH', codigo: 'categoría', motivo: 'Vino con la categoría <b>otro</b>, que no tiene regla. ¿A qué cuenta va?', acciones: ['5300 Equipo y renta', '6400 Herramienta menor'] },
+    { id: 325, tipo: 'pregunta', papel: 'Recibo 325', quien: "Lowe's", monto: 19.48, fecha: '16 oct', pago: 'tarjeta ···4417', obra: 'Casa Pérez', codigo: 'tarjeta', motivo: 'Pagado con una tarjeta que acaba en <b>4417</b> y no está dada de alta (las tuyas: 2013, 2009, 9420).', acciones: ['Es la Gold (Apple Pay)', 'Es la Blue (Apple Pay)', 'Personal de Edgar (2900)'] },
+    { id: 327, tipo: 'pregunta', papel: 'Recibo 327', quien: 'CED', monto: 245.37, fecha: '17 oct', pago: 'Amex Gold ···2013', obra: 'Casa Pérez', codigo: 'duplicado', motivo: 'Parece <b>el mismo ticket</b> que el recibo 312 (CED #88121, $245.37, 5 oct), ya en el libro como 2026-000041.', acciones: ['Es el mismo: anular el 327', 'Son dos compras'] },
+    { id: 1131, tipo: 'pregunta', papel: 'Factura 1131', quien: 'Brickell Builders (GC)', monto: 9600.00, fecha: '15 oct', obra: 'Oficina NCH', codigo: 'retención', motivo: 'Factura a un GC. ¿Lleva <b>retención</b>? Va a 1120 y se cobra al final.', acciones: ['10 % ($960.00)', '5 % ($480.00)', 'Sin retención'] },
+    { id: 319, tipo: 'aviso', papel: 'Recibo 319', quien: 'Platt', monto: 1288.10, fecha: '14 oct', pago: 'A cuenta (Net 30)', obra: 'Oficina NCH', codigo: 'impuesto', motivo: 'Ya está en el libro (2026-000044). Aviso: la lectura dejó <b>3 decimales</b> en el subtotal; se redondeó a centavos.', acciones: ['Visto'] },
+  ];
+  const S = { pagina: 'panel', menu: false, hechos: new Set() };
+
+  // ---- gráficas (SVG a escala) ----
+  function sparkline(vals, w = 160, h = 34) {
+    const min = Math.min(...vals), max = Math.max(...vals), pad = 3;
+    const x = (i) => pad + i * (w - 2 * pad) / (vals.length - 1);
+    const y = (v) => h - pad - (v - min) / (max - min || 1) * (h - 2 * pad);
+    const d = vals.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+    const last = vals.length - 1;
+    return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+      <path d="${d} L${x(last).toFixed(1)},${h} L${x(0)},${h} Z" fill="var(--s1)" opacity=".1"/>
+      <path d="${d}" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${x(last).toFixed(1)}" cy="${y(vals[last]).toFixed(1)}" r="4" fill="var(--s1)" stroke="var(--card)" stroke-width="2"/></svg>`;
+  }
+  function barrasFlujo() {
+    const W = 640, H = 220, L = 52, R = 12, T = 14, B = 30;
+    const max = Math.max(...flujo.map(f => Math.max(f.e, f.s))), top = Math.ceil(max / 10000) * 10000;
+    const cw = (W - L - R) / flujo.length, bw = Math.min(22, cw * .3);
+    const y = (v) => T + (H - T - B) * (1 - v / top), y0 = H - B;
+    const ticks = [0, .25, .5, .75, 1].map(k => Math.round(top * k));
+    let g = `<g class="grid">${ticks.map(t => `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text x="${L - 6}" y="${y(t) + 3.5}" text-anchor="end">${t ? '$' + (t / 1000) + 'k' : '0'}</text>`).join('')}</g>`;
+    flujo.forEach((f, i) => {
+      const cx = L + cw * i + cw / 2;
+      const bar = (v, x, cls, tit) => `<rect x="${x.toFixed(1)}" y="${y(v).toFixed(1)}" width="${bw}" height="${(y0 - y(v)).toFixed(1)}" fill="var(${cls})" ${f.parcial ? 'opacity=".6"' : ''} rx="0" data-tip="${tit}"><title>${tit}</title></rect>
+        <rect x="${x.toFixed(1)}" y="${y(v).toFixed(1)}" width="${bw}" height="4" fill="var(${cls})" rx="2" ${f.parcial ? 'opacity=".6"' : ''} pointer-events="none"/>`;
+      g += bar(f.e, cx - bw - 1, '--s1', `${f.m}: entradas ${$0(f.e)}`) + bar(f.s, cx + 1, '--s2', `${f.m}: salidas ${$0(f.s)}`);
+      g += `<text x="${cx}" y="${H - 10}" text-anchor="middle" font-weight="${f.parcial ? 700 : 500}">${f.m}${f.parcial ? '*' : ''}</text>`;
+      const neto = f.e - f.s;
+      if (i === flujo.length - 1 || i === 2) g += `<text x="${cx}" y="${y(Math.max(f.e, f.s)) - 6}" text-anchor="middle" font-weight="700" fill="var(--ink)">${neto >= 0 ? '+' : '−'}${$0(Math.abs(neto))}</text>`;
+    });
+    g += `<line class="eje" x1="${L}" x2="${W - R}" y1="${y0}" y2="${y0}"/>`;
+    return `<svg class="viz" viewBox="0 0 ${W} ${H}" role="img" aria-label="Entradas y salidas de caja por mes">${g}</svg>
+      <div class="leyenda"><span><i style="background:var(--s1)"></i>Entradas (cobros)</span><span><i style="background:var(--s2)"></i>Salidas (pagos)</span><span>* octubre hasta el 24</span></div>`;
+  }
+  function barrasH(items, total, cls = '') {
+    return items.map(([n, v, sub]) => `<div class="barra-h num"><div class="n"><span>${esc(n)}</span>${sub ? `<small>${esc(sub)}</small>` : ''}</div><div class="v">${$(v)}</div><div class="pista"><i class="${cls}" style="width:${(v / total * 100).toFixed(1)}%"></i></div></div>`).join('');
+  }
+  function aging(compacto) {
+    const tramos = [['Al día', 0], ['31–60', 0], ['61–90', 0], ['+90', 0]];
+    cxc.forEach(c => { tramos[c.tramo][1] += c.saldo; });
+    const tot = sum(tramos, t => t[1]);
+    const cols = ['--o1', '--o2', '--o3', '--o4'];
+    const barra = `<div class="apilada" role="img" aria-label="Antigüedad de las cuentas por cobrar">${tramos.map((t, i) => t[1] ? `<span style="width:${(t[1] / tot * 100).toFixed(1)}%;background:var(${cols[i]})" data-tip="${t[0]} días: ${$(t[1])}"></span>` : '').join('')}</div>`;
+    if (compacto) return barra + `<div class="tramos num" style="grid-template-columns:1fr 1fr"><div><i style="background:var(--o1)"></i>Al día<b>${$0(tramos[0][1])}</b></div><div><i style="background:var(--o3)"></i>Vencido<b>${$0(tot - tramos[0][1])}</b></div></div>`;
+    return barra + `<div class="tramos num">${tramos.map((t, i) => `<div><i style="background:var(${cols[i]})"></i>${t[0]}<b>${$0(t[1])}</b></div>`).join('')}</div>`;
   }
 
-  // ---------- contabilidad ----------
-  function cabecera(titulo, volver) {
-    return `<div class="titulo-fila">
-      <button class="btn-volver" type="button" data-volver="${volver}" title="Volver">←</button>
-      <h1>${titulo}</h1>
-      <span class="mes">Octubre 2026 ▾</span>
-    </div>`;
-  }
-  function estado() {
-    return `<div class="estado"><span class="punto"></span><span>Libro en verde · 10/10 · puentes 13/13</span><small>ronda de las 6:00</small></div>`;
-  }
-  function tabs() {
+  // ---- páginas ----
+  const PAG = [
+    ['g', 'Ver'], ['panel', 'Panel', 'grid'], ['bandeja', 'Bandeja', 'inbox'],
+    ['g', 'Estados financieros'], ['resultados', 'Resultados (P&L)', 'chart'], ['balance', 'Balance general', 'scale'], ['flujo', 'Flujo de caja', 'wave'], ['balanza', 'Balanza y libro', 'book'],
+    ['g', 'Dinero'], ['bancos', 'Bancos y tarjetas', 'bank'], ['cobros', 'Por cobrar', 'in'], ['pagos', 'Por pagar', 'out'],
+    ['g', 'Operación'], ['proyectos', 'Proyectos', 'hardhat'], ['gastos', 'Gastos', 'tag'], ['nomina', 'Nómina', 'people'], ['impuestos', 'Impuestos', 'shield'],
+    ['g', 'Control'], ['contador', 'Contador (IA)', 'spark'], ['cierre', 'Cierre del mes', 'lock'],
+  ];
+  const IC = {
+    grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+    inbox: '<path d="M3 13h5l2 3h4l2-3h5"/><path d="M5 5h14l2 8v6H3v-6z"/>', chart: '<path d="M4 20V10M10 20V4M16 20v-9M21 20H3"/>',
+    scale: '<path d="M12 3v18M5 7h14M5 7l-3 7h6zM19 7l-3 7h6z"/>', wave: '<path d="M3 12c3-5 6-5 9 0s6 5 9 0"/>', book: '<path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H20v14H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 6.5v14"/>',
+    bank: '<path d="M3 10 12 4l9 6"/><path d="M5 10v9M10 10v9M14 10v9M19 10v9M3 20h18"/>', in: '<path d="M12 4v12m0 0 5-5m-5 5-5-5"/><path d="M4 20h16"/>', out: '<path d="M12 20V8m0 0 5 5m-5-5-5 5"/><path d="M4 4h16"/>',
+    hardhat: '<path d="M4 15a8 8 0 0 1 16 0"/><path d="M2 15h20v3H2z"/><path d="M10 7v5M14 7v5"/>', tag: '<path d="M20 12 12 20 4 12V4h8z"/><circle cx="8.5" cy="8.5" r="1.5"/>',
+    people: '<circle cx="9" cy="8" r="3.5"/><path d="M2 20a7 7 0 0 1 14 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14a6 6 0 0 1 6 6"/>', shield: '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/>',
+    spark: '<path d="M11 4.5c.5 3.4 2.1 5 5.5 5.5-3.4.5-5 2.1-5.5 5.5-.5-3.4-2.1-5-5.5-5.5 3.4-.5 5-2.1 5.5-5.5z"/><path d="M18 13.5c.3 1.9 1.1 2.7 3 3-1.9.3-2.7 1.1-3 3-.3-1.9-1.1-2.7-3-3 1.9-.3 2.7-1.1 3-3z"/>',
+    lock: '<rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
+  };
+  const ico = (k) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${IC[k]}</svg>`;
+  function menu() {
     const pend = bandeja.filter(b => b.tipo === 'pregunta' && !S.hechos.has(b.id)).length;
-    const T = [['bandeja', 'Bandeja'], ['balanza', 'Balanza'], ['resultados', 'Resultados'], ['libro', 'Libro']];
-    return `<div class="tabs" role="tablist">${T.map(([k, t]) => `<button class="tab" role="tab" type="button" data-tab="${k}" aria-selected="${S.tab === k}">${t}${k === 'bandeja' && pend ? `<span class="n">${pend}</span>` : ''}</button>`).join('')}</div>`;
+    return PAG.map(([k, t, i]) => k === 'g' ? `<div class="grupo">${t}</div>`
+      : `<button type="button" data-pag="${k}" aria-current="${S.pagina === k ? 'page' : 'false'}">${ico(i)}${t}${k === 'bandeja' && pend ? `<span class="n">${pend}</span>` : ''}</button>`).join('')
+      + `<div class="pie">Vista previa con datos de ejemplo. El equipo no ve nada de esto: ni el menú ni una fila.</div>`;
   }
-
-  function vistaBandeja() {
-    const items = bandeja.filter(b => !S.hechos.has(b.id));
-    if (!items.length) return `<div class="vacio"><b>Bandeja vacía</b>Todo lo de octubre está en el libro.</div>`;
-    return `<div class="lista">${items.map(b => `
-      <article class="card ${b.tipo}">
-        <div class="card-cab"><span class="quien">${esc(b.quien)}</span><span class="monto num">${$(b.monto)}</span></div>
-        <div class="card-sub"><span>${b.papel}</span><span>·</span><span>${b.fecha}</span>${b.pago ? `<span>·</span><span>${esc(b.pago)}</span>` : ''}${b.obra ? `<span>·</span><span>${OBRAS[b.obra]}</span>` : ''}</div>
-        <div class="card-sub" style="margin-top:.35rem"><span class="chip ${b.tipo === 'aviso' ? 'warn' : 'azul'}">${b.tipo === 'aviso' ? 'aviso · ya en el libro' : 'espera tu respuesta'}</span><span class="chip">${b.codigo.replace('_', ' ')}</span></div>
-        <p class="motivo">${b.motivo}</p>
-        <div class="acciones">${b.acciones.map(([t, k]) => `<button class="accion ${k === 'sec' ? 'sec' : ''}" type="button" data-resolver="${b.id}" data-k="${k}">${esc(t)}</button>`).join('')}</div>
-      </article>`).join('')}</div>`;
+  function cab(titulo, sub) {
+    return `<div class="cab"><h1>${titulo}</h1><span class="demo-chip">ejemplo</span><span class="mes">Octubre 2026 ▾</span>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
   }
+  const card = (t, cuerpo, ver, extra = '') => `<section class="card ${extra}"><div class="card-cab"><h2>${t}</h2>${ver ? `<button class="ver" type="button" data-pag="${ver}">Ver todo →</button>` : ''}</div>${cuerpo}</section>`;
 
-  function vistaBalanza() {
-    if (S.asiento) return vistaAsiento(S.asiento);
-    if (S.cuenta) return vistaCuenta(S.cuenta);
-    const d = balanza.reduce((s, c) => s + c.d, 0), h = balanza.reduce((s, c) => s + c.h, 0);
-    const grupo = (t, f) => `<div class="seccion"><span>${t}</span></div>` + balanza.filter(f).map(c => `
-      <button class="fila doble num" type="button" data-cuenta="${c.cod}">
-        <span><span class="cod">${c.cod}</span><br><span class="nom">${esc(c.nom)}</span></span>
-        <span class="val">${c.d ? $(c.d) : ''}</span><span class="val">${c.h ? $(c.h) : ''}</span>
-        <span class="sub">${c.mov} asiento${c.mov === 1 ? '' : 's'} · toca para ver cada uno</span>
-      </button>`).join('');
-    return `<div class="cab-doble"><span>Balanza de comprobación</span><span>Debe</span><span>Haber</span></div>
-      ${grupo('Activo', c => c.cod[0] === '1')}${grupo('Pasivo', c => c.cod[0] === '2')}${grupo('Capital', c => c.cod[0] === '3')}
-      ${grupo('Ingresos', c => c.cod[0] === '4')}${grupo('Costo de obra', c => c.cod[0] === '5')}${grupo('Gastos', c => c.cod[0] === '6')}
-      <div class="total cuadra doble num"><span>Cuadra al centavo</span><span class="val">${$(d)}</span><span class="val">${$(h)}</span></div>`;
-  }
-
-  function vistaCuenta(cod) {
-    const c = balanza.find(x => x.cod === cod);
-    const lista = asientos[cod] || [];
-    return `<div class="seccion"><span>${cod} · ${esc(c.nom)}</span><span class="num">${$(c.d || c.h)}</span></div>
-      ${lista.length ? lista.map(a => `
-        <button class="fila num" type="button" data-asiento="${a.num}">
-          <span><span class="cod">${a.num} · ${a.fecha}</span><br><span class="nom">${esc(a.desc)}</span></span>
-          <span class="val">${$(a.monto)}</span>
-          <span class="sub">${OBRAS[a.obra]}${a.co ? ' · ' + a.co : ''} · contra ${a.cr}</span>
-        </button>`).join('')
-        : `<div class="vacio">En la vista previa solo la cuenta 5100 tiene asientos para abrir. En la app, todas.</div>`}`;
-  }
-
-  function vistaAsiento(num) {
-    const a = Object.values(asientos).flat().find(x => x.num === num);
-    const p = a.papel;
-    return `<article class="card">
-      <div class="asiento-cab"><span class="asiento-num">ASIENTO ${a.num}</span><span class="asiento-fecha">${a.fecha} 2026 · período 2026-10</span>
-        <div class="asiento-desc">${esc(a.desc)}</div></div>
-      <div class="card-sub" style="margin-top:.4rem"><span class="chip ok">sellado</span><span class="chip azul">camino: puente</span><span class="chip">por Edgar · app</span></div>
-      <div class="lineas num">
-        <div class="linea"><span class="cta">5100 Material</span><span class="d">${$(a.monto)}</span><span class="h"></span><span class="dim">${OBRAS[a.obra]}${a.co ? ' · cost code ' + a.co : ''}</span></div>
-        <div class="linea"><span class="cta">${a.cr} ${esc(a.crNom)}</span><span class="d"></span><span class="h">${$(a.monto)}</span></div>
+  function panel() {
+    const efectivo = 23418.62 + 57, porCobrar = sum(cxc, c => c.saldo), porPagar = sum(cxp, c => c.monto) + 2941.85 + 812.40;
+    const ing = sum(pl.ingresos, r => r[2]), cos = sum(pl.costos, r => r[2]), gas = sum(pl.gastos, r => r[2]), util = ing - cos - gas;
+    const pend = bandeja.filter(b => b.tipo === 'pregunta' && !S.hechos.has(b.id)).length;
+    const gastosCat = [...pl.costos, ...pl.gastos].map(r => [r[1], r[2]]).sort((a, b) => b[1] - a[1]);
+    const totG = sum(gastosCat, r => r[1]);
+    return cab('Panel', `<span class="estado"><span class="punto"></span>Libro en verde · 10/10 controles · puentes 13/13 · ronda de las 6:00</span>`) + `
+      <div class="kpis">
+        <div class="card kpi num"><span class="lbl">Efectivo (Chase + caja)</span><span class="val">${$(efectivo)}</span><span class="cmp up">▲ $3,078 en 30 días</span>${sparkline(saldoChase)}</div>
+        <div class="card kpi num"><span class="lbl">Por cobrar</span><span class="val">${$(porCobrar)}</span><span class="cmp down">▼ ${$0(4450.5)} vencidos +30 días</span>${aging(true)}</div>
+        <div class="card kpi num"><span class="lbl">Por pagar (tarjetas + proveedores)</span><span class="val">${$(porPagar)}</span><span class="cmp">Amex Gold vence 12 nov · ${$0(3002.06)}</span></div>
+        <div class="card kpi num"><span class="lbl">Utilidad de octubre</span><span class="val">${$(util)}</span><span class="cmp">Margen ${pct(util / ing)} · QuickBooks dice ${$0(util + 7934.40)}</span></div>
       </div>
-      <div class="papel">
-        <div class="foto">foto del ticket<br>(la de verdad, firmada 1 h)</div>
-        <div class="papel-datos">
-          <span><b>${p.tipo} ${p.id}</b> · ${esc(p.prov)} #${esc(p.numero)}</span>
-          <span class="num">Subtotal ${$(p.sub)} + tax ${$(p.tax)} = <b>${$(p.sub + p.tax)}</b></span>
-          <span>Pagado con ${esc(p.pago)}</span>
-          <span>Subido por Edgar · leído por la rutina</span>
-        </div>
-      </div>
-      <div class="sello">
-        <span>Procedencia: <code>${esc(p.foto)}</code></span>
-        <span>Firma del papel: <code>md5 7b1e…</code> · Hash del asiento: <code>${a.hash}</code> · enlaza con el anterior</span>
-      </div>
-      <div class="nota-regla">Este asiento nació de un recibo: no se reversa a mano. Si el ticket está mal, se corrige el recibo (✎) o se anula, y el libro pone el reverso y el asiento nuevo, enlazados.</div>
-    </article>`;
+      <div class="rejilla">
+        ${card('Flujo de caja · 6 meses', barrasFlujo() + `<p class="nota">Lo que de verdad entró y salió de Chase. <b>Próximos 30 días:</b> cobros esperados ${$0(15140)} − Amex ${$0(3814.46)} − nómina ${$0(9700)} − proveedores ${$0(4308.10)} = <b>${$0(-2682.56)}</b>. Alcanza con el efectivo de hoy.</p>`, 'flujo', 'ancha')}
+        ${card('Bandeja', pend ? `<p class="nota" style="margin-top:0"><b>${pend} papeles esperan tu respuesta</b> y 1 aviso. Lo que no contestes no entra al libro; nada se inventa.</p>` + bandejaLista(2) : `<div class="vacio">Todo lo de octubre está en el libro.</div>`, 'bandeja')}
+        ${card('En qué se gasta · octubre', barrasH(gastosCat.slice(0, 6), totG) + `<p class="nota">${gastosCat.length - 6} categorías más · total <b>${$(totG)}</b> · la mano de obra con su burden es el ${pct((6840 + 1094.4) / totG)}.</p>`, 'gastos')}
+        ${card('Bancos y tarjetas', bancos.map(b => `<div class="banco-fila num"><span class="nom">${esc(b.nom)}</span><span class="saldo">${$(Math.abs(b.libro))}</span><span class="det">${b.banco == null ? '<span class="pill">sin statement · se cuenta a mano</span>' : Math.abs(b.banco - b.libro) < .005 ? `<span class="pill ok">conciliado al ${b.al}</span>` : `<span class="pill warn">${b.pend} cargos sin ticket · dif. ${$(Math.abs(b.banco - b.libro))}</span>`}${b.vence ? `<span>pago ${$0(b.pago)} vence ${b.vence}</span>` : ''}</span></div>`).join(''), 'bancos')}
+        ${card('Proyectos · dinero por obra', tablaProyectos(), 'proyectos', 'ancha')}
+        ${card('El contador dice', `<div class="contador"><div class="ico">${ico('spark')}</div><div><b>Revisó los libros a las 6:00. Dos cosas:</b><ul><li>La factura <b>1102 (Villa Mar HOA)</b> lleva 77 días sin cobrar y no tiene nota de seguimiento. Propone recordatorio.</li><li>El cargo de Amex Gold del 21 oct por <b>$61.21</b> (Sunpass) no tiene ticket ni obra. ¿Es de la camioneta (6300)?</li></ul></div></div>`, 'contador')}
+        ${card('Reserva de impuestos (1030)', `<div class="kpi num"><span class="val">${$(4200)}</span><span class="cmp">Objetivo a la fecha ${$0(5926)} · faltan <b>${$0(1726)}</b> · próximo estimado 15 ene</span></div><p class="nota">Utilidad del año × % del CPA − pagado. La transferencia semanal está programada en Chase.</p>`, 'impuestos')}
+      </div>`;
+  }
+  function bandejaLista(n) {
+    const items = bandeja.filter(b => !S.hechos.has(b.id)).slice(0, n || 99);
+    return `<div class="lista">${items.map(b => `<article class="card papel ${b.tipo}">
+      <div class="cabp"><span class="quien">${esc(b.quien)}</span><span class="monto num">${$(b.monto)}</span></div>
+      <div class="meta"><span>${b.papel}</span><span>·</span><span>${b.fecha}</span>${b.pago ? `<span>·</span><span>${esc(b.pago)}</span>` : ''}${b.obra ? `<span>·</span><span>${b.obra}</span>` : ''}<span class="pill ${b.tipo === 'aviso' ? 'warn' : ''}">${b.tipo === 'aviso' ? 'aviso · ya en el libro' : b.codigo}</span></div>
+      <p class="motivo">${b.motivo}</p>
+      <div class="acciones">${b.acciones.map((t, i) => `<button class="accion ${i === b.acciones.length - 1 && b.acciones.length > 1 ? 'sec' : ''}" type="button" data-resolver="${b.id}">${esc(t)}</button>`).join('')}</div></article>`).join('')}</div>`;
+  }
+  function tablaProyectos() {
+    return `<div class="tabla-env"><table class="num"><thead><tr><th>Obra</th><th class="r">Contrato</th><th class="r">Facturado</th><th class="r">Cobrado</th><th class="r">Costo real</th><th class="r">Estimado</th><th class="r">Margen</th></tr></thead><tbody>
+      ${proyectos.map(p => { const m = p.facturado ? (p.facturado - p.costo) / p.facturado : 0; const sobre = p.costo > p.estimado;
+        return `<tr><td><b>${esc(p.nom)}</b><br><small style="color:var(--ink-2)">${p.tipo} · ${p.estado}</small></td><td class="r">${$0(p.contrato)}</td><td class="r">${$0(p.facturado)}</td><td class="r">${$0(p.cobrado)}${p.cobrado < p.facturado ? `<br><span class="pill warn">${$0(p.facturado - p.cobrado)} abierto</span>` : ''}</td><td class="r">${$(p.costo)}</td><td class="r">${$0(p.estimado)}<br><span class="pill ${sobre ? 'bad' : 'ok'}">${sobre ? '+' : ''}${pct((p.costo - p.estimado) / p.estimado)}</span></td><td class="r"><b>${pct(m)}</b><span class="margen"><i style="width:${Math.max(0, Math.min(100, m * 100))}%"></i></span></td></tr>`; }).join('')}
+      <tr class="fila-tot"><td>Total obras activas</td><td class="r">${$0(sum(proyectos, p => p.contrato))}</td><td class="r">${$0(sum(proyectos, p => p.facturado))}</td><td class="r">${$0(sum(proyectos, p => p.cobrado))}</td><td class="r">${$(sum(proyectos, p => p.costo))}</td><td class="r">${$0(sum(proyectos, p => p.estimado))}</td><td class="r">${pct((sum(proyectos, p => p.facturado) - sum(proyectos, p => p.costo)) / sum(proyectos, p => p.facturado))}</td></tr></tbody></table></div>
+      <p class="nota">Costo real = lo que hay en el libro por obra (material, subcontratos, mano de obra devengada, equipo, permisos). Estimado = el de la app. Toca una obra para ver cada recibo y cada hora.</p>`;
+  }
+  function resultados() {
+    const ing = sum(pl.ingresos, r => r[2]), cos = sum(pl.costos, r => r[2]), gas = sum(pl.gastos, r => r[2]);
+    const ingQ = sum(pl.ingresos, r => r[3]), cosQ = sum(pl.costos, r => r[3]), gasQ = sum(pl.gastos, r => r[3]);
+    const bloque = (t, arr) => `<h3>${t}</h3>` + arr.map(([c, n, v, q]) => `<div class="l l3 sub num"><span><button type="button" data-cuenta="${c}">${c} ${esc(n)}</button>${v !== q ? `<br><small class="dif">dif. ${$(v - q)} — ${esc(pl.notas[c] || '')}</small>` : ''}</span><span>${$(v)}</span><span>${$(q)}</span></div>`).join('');
+    return cab('Estado de resultados', 'Octubre 2026 · marcha en paralelo: el libro a la izquierda, QuickBooks a la derecha, la diferencia explicada línea por línea.') + `<section class="card ef">
+      <div class="cab3"><span></span><span>Libro</span><span>QuickBooks</span></div>
+      ${bloque('Ingresos', pl.ingresos)}<div class="l l3 tot num"><span>Total ingresos</span><span>${$(ing)}</span><span>${$(ingQ)}</span></div>
+      ${bloque('Costo de obra', pl.costos)}<div class="l l3 tot num"><span>Total costo</span><span>${$(cos)}</span><span>${$(cosQ)}</span></div>
+      <div class="l l3 tot num"><span>Utilidad bruta · ${pct((ing - cos) / ing)}</span><span>${$(ing - cos)}</span><span>${$(ingQ - cosQ)}</span></div>
+      ${bloque('Gastos', pl.gastos)}<div class="l l3 tot num"><span>Total gastos</span><span>${$(gas)}</span><span>${$(gasQ)}</span></div>
+      <div class="l l3 gran num"><span>Utilidad neta · ${pct((ing - cos - gas) / ing)}</span><span>${$(ing - cos - gas)}</span><span>${$(ingQ - cosQ - gasQ)}</span></div>
+      <p class="nota">Toca una cuenta y bajas a sus asientos; de un asiento, al recibo con su foto. La diferencia con QuickBooks (${$(ing - cos - gas - (ingQ - cosQ - gasQ))}) es toda del devengo de nómina: QuickBooks la registra cuando Gusto paga.</p></section>`;
+  }
+  function balance() {
+    const l = (n, v, cls = 'sub') => `<div class="l ${cls} num"><span>${n}</span><span>${$(v)}</span></div>`;
+    const act = 23418.62 + 57 + 12650 + 960 + 4200 + 18400 - 6120, pas = 4308.10 + 2941.85 + 812.40 + 6840 + 1094.40 + 960 + 14800;
+    return cab('Balance general', 'Al 24 de octubre de 2026 · cuadra al centavo (activo = pasivo + capital).') + `<section class="card ef">
+      <h3>Activo</h3>${l('1010 Chase', 23418.62)}${l('1030 Reserva de impuestos', 4200)}${l('1050 Caja chica', 57)}${l('1110 Cuentas por cobrar', 12650)}${l('1120 Retención por cobrar', 960)}${l('1510 Vehículos', 18400)}${l('1590 Depreciación acumulada', -6120)}${l('Total activo', act, 'tot')}
+      <h3>Pasivo</h3>${l('2010 Cuentas por pagar', 4308.10)}${l('2020 Retención a subcontratistas', 960)}${l('2100-2013 Amex Gold', 2941.85)}${l('2100-2009 Amex Blue', 812.40)}${l('2210 Sueldos acumulados (devengo)', 6840)}${l('2220 Impuestos de nómina', 1094.40)}${l('2520 Préstamo de vehículo', 14800)}${l('Total pasivo', pas, 'tot')}
+      <h3>Capital</h3>${l('3000 Capital social', 1000)}${l('3200 Distribuciones al accionista', -6936.67)}${l('3900 Utilidades retenidas + resultado', act - pas - 1000 + 6936.67)}${l('Total capital', act - pas, 'tot')}
+      <div class="l gran num"><span>Pasivo + capital</span><span>${$(act)}</span></div>
+      <p class="nota">La apertura al 30-sep sale de la balanza de QuickBooks; cada saldo tiene clic hasta sus asientos. El préstamo del vehículo se separa en corriente y largo plazo al cierre del año.</p></section>`;
+  }
+  function flujoPag() {
+    return cab('Flujo de caja', 'Entradas y salidas reales del banco, y lo que viene.') + `<section class="card">${barrasFlujo()}</section>
+      <div class="rejilla" style="margin-top:.8rem">
+      ${card('Próximos 30 días', `<div class="ef num">${[['Cobros esperados (facturas abiertas al día)', 15140], ['Pago Amex Gold (12 nov)', -3002.06], ['Pago Amex Blue (14 nov)', -812.40], ['Nómina (Gusto, 2 corridas)', -9700], ['Proveedores a cuenta (Platt, CES)', -3908.10], ['Reserva de impuestos (semanal)', -1200]].map(([n, v]) => `<div class="l sub"><span>${n}</span><span style="${v < 0 ? 'color:var(--danger)' : ''}">${v < 0 ? '−' : '+'}${$(Math.abs(v))}</span></div>`).join('')}<div class="l gran"><span>Efectivo estimado al 24 nov</span><span>${$(23475.62 + 15140 - 3002.06 - 812.40 - 9700 - 3908.10 - 1200)}</span></div></div>`)}
+      ${card('Octubre, por dónde entró y salió', barrasH([['Cobros de clientes', 21400], ['Pagos a proveedores', 6210, 'salida'], ['Nómina (Gusto)', 7460, 'salida'], ['Pagos de tarjetas', 1980, 'salida'], ['Seguros y préstamo', 590, 'salida']], 21400))}
+      </div>`;
+  }
+  function bancosPag() {
+    return cab('Bancos y tarjetas', 'Saldo del libro contra el statement. Cada movimiento del banco casa con su ticket, factura o transferencia.') + `<div class="rejilla">${bancos.map(b => card(esc(b.nom), `<div class="kpi num"><span class="val">${$(Math.abs(b.libro))}</span><span class="cmp">${b.banco == null ? 'Efectivo que debe haber en el bolsillo; se cuenta al cierre.' : `Statement: ${$(Math.abs(b.banco))} ${b.al}`}</span></div>
+        <div class="nota">${b.banco == null ? '' : Math.abs(b.banco - b.libro) < .005 ? `<span class="pill ok">Conciliado</span> Cada movimiento del banco tiene su papel en el libro.` : `<span class="pill warn">${b.pend} cargos sin ticket</span> Diferencia ${$(Math.abs(b.banco - b.libro))}: Sunpass $61.21 (21 oct) y Shell $... esperan su recibo. La app te los pregunta.`}${b.vence ? `<br>Pago del statement: <b>${$(b.pago)}</b> vence el ${b.vence}. Al pagarlo desde Chase es una transferencia, no un gasto.` : ''}</div>`)).join('')}</div>
+      <p class="nota" style="margin-top:.8rem">Los movimientos llegan solos por Plaid cada mañana; el archivo QFX del banco es el respaldo. Un cargo que no tenga ticket sale en la bandeja al día siguiente.</p>`;
+  }
+  function cobrosPag() {
+    return cab('Por cobrar', `${$(sum(cxc, c => c.saldo))} abiertos en ${cxc.length} facturas · ${$0(960)} en retención por cobrar al final de la obra.`) + `<section class="card">${aging()}<div class="tabla-env" style="margin-top:.8rem"><table class="num"><thead><tr><th>Factura</th><th>Cliente</th><th class="r">Monto</th><th class="r">Abierto</th><th class="r">Días</th><th></th></tr></thead><tbody>
+      ${cxc.map(c => `<tr><td><b>${c.fac}</b><br><small style="color:var(--ink-2)">${c.fecha}</small></td><td>${esc(c.cliente)}</td><td class="r">${$(c.monto)}</td><td class="r"><b>${$(c.saldo)}</b>${c.ret ? `<br><small style="color:var(--ink-2)">+ ${$0(c.ret)} retención</small>` : ''}</td><td class="r">${c.dias}</td><td><span class="pill ${c.dias > 60 ? 'bad' : c.dias > 30 ? 'warn' : 'ok'}">${c.dias > 60 ? 'vencida' : c.dias > 30 ? 'seguir' : 'al día'}</span></td></tr>`).join('')}</tbody></table></div>
+      <p class="nota">Un depósito en Chase se casa solo con su factura. Cobro parcial, anticipo y cheque rebotado tienen su camino; nada se marca «pagada» a mano.</p></section>`;
+  }
+  function pagosPag() {
+    const tot = sum(cxp, c => c.monto);
+    return cab('Por pagar', `${$(tot + 2941.85 + 812.40)} en total: ${$(tot)} a proveedores y ${$(2941.85 + 812.40)} en tarjetas.`) + `<section class="card"><div class="tabla-env"><table class="num"><thead><tr><th>Proveedor</th><th>Documento</th><th class="r">Monto</th><th>Vence</th></tr></thead><tbody>
+      ${cxp.map(c => `<tr><td><b>${esc(c.prov)}</b></td><td>${esc(c.doc)}</td><td class="r">${$(c.monto)}</td><td>${c.vence}</td></tr>`).join('')}
+      <tr class="fila-tot"><td>Total a proveedores</td><td></td><td class="r">${$(tot)}</td><td></td></tr></tbody></table></div>
+      <p class="nota">Lo que entró a cuenta (Net 30) ya es costo de su obra desde el ticket; el pago al supply solo baja la deuda, nunca vuelve a ser gasto. El ayudante 1099 se acumula para el formulario de enero.</p></section>`;
+  }
+  function gastosPag() {
+    const cats = [...pl.costos, ...pl.gastos].map(r => [r[1], r[2], r[0]]).sort((a, b) => b[1] - a[1]);
+    const tot = sum(cats, r => r[1]);
+    const prov = [['City Electric Supply', 3212.40], ['Home Depot', 1846.11], ['Platt', 1288.10], ['Yordan (ayudante 1099)', 3200], ['Sunbelt Rentals', 640], ['Shell / Wawa', 612.40]];
+    return cab('Gastos', `${$(tot)} en octubre entre costo de obra y gastos generales.`) + `<div class="rejilla">
+      ${card('Por categoría', barrasH(cats.map(r => [`${r[2]} ${r[0]}`, r[1]]), tot))}
+      ${card('Por proveedor', barrasH(prov, prov[0][1]) + `<p class="nota">Toca un proveedor y ves cada ticket con su foto.</p>`)}
+      ${card('Lo que cuesta la gente', `<div class="ef num">${[['5000 Mano de obra directa (devengo, horas aprobadas)', 6840], ['5010 Burden de obra (FICA, FUTA, RT-6, WC)', 1094.40], ['6000 Sueldo administrativo (Edgar)', 6900], ['6010 Burden administrativo', 621], ['5200 Subcontratos / ayudantes 1099', 3200]].map(([n, v]) => `<div class="l sub"><span>${n}</span><span>${$(v)}</span></div>`).join('')}<div class="l gran"><span>Total gente · ${pct(18655.4 / 30250)} de la venta</span><span>${$(18655.40)}</span></div></div><p class="nota">El plan de agosto decía mano de obra directa 12.6 % de la venta; octubre va en ${pct((6840 + 1094.4) / 30250)}. La nómina real entra con el journal de Gusto.</p>`, 'nomina', 'ancha')}
+      </div>`;
+  }
+  function proyectosPag() {
+    return cab('Proyectos', 'Lo financiero de cada obra: contrato, facturado, cobrado, costo real contra el estimado y margen.') + `<section class="card">${tablaProyectos()}</section>
+      <div class="rejilla" style="margin-top:.8rem">${proyectos.map(p => card(esc(p.nom), `<div class="ef num">${[['Material', p.id === 'oficina-nch' ? 4312 : p.id === 'casa-perez' ? 5102.36 : 463.10], ['Mano de obra (horas aprobadas × costo)', p.id === 'oficina-nch' ? 2400 : p.id === 'casa-perez' ? 4040 : 400], ['Subcontratos / equipo / permisos', p.id === 'oficina-nch' ? 0 : p.id === 'casa-perez' ? 700 : 0]].map(([n, v]) => `<div class="l sub"><span>${n}</span><span>${$(v)}</span></div>`).join('')}<div class="l tot"><span>Costo real</span><span>${$(p.costo)}</span></div><div class="l tot"><span>Estimado</span><span>${$(p.estimado)}</span></div></div><p class="nota">${p.costo > p.estimado ? `<span class="pill bad">Se pasó del estimado ${pct((p.costo - p.estimado) / p.estimado)}</span>` : `<span class="pill ok">Dentro del estimado</span>`} · ${p.estado}</p>`)).join('')}</div>`;
+  }
+  function nominaPag() {
+    return cab('Nómina', 'Gusto paga; el libro devenga por horas aprobadas y cuadra con el journal.') + `<div class="rejilla">
+      ${card('Octubre', `<div class="ef num">${[['Horas aprobadas del equipo', '228.5 h'], ['Devengo estándar (5000)', $(6840)], ['Burden (5010)', $(1094.40)], ['Sueldo de Edgar (6000, W-2)', $(6900)], ['Journal de Gusto recibido', 'corrida del 17 oct · falta la del 31']].map(([n, v]) => `<div class="l sub"><span>${n}</span><span>${v}</span></div>`).join('')}</div><p class="nota">El costo de mano de obra por obra sale de las horas que aprobaste, al costo por hora de cada quien. Nadie se aprueba solo.</p>`)}
+      ${card('Por persona', `<div class="tabla-env"><table class="num"><thead><tr><th>Quién</th><th class="r">Horas</th><th class="r">Costo</th><th>Obras</th></tr></thead><tbody>${[['Gustavo', 92, 2760, 'Casa Pérez · NCH'], ['Jian', 78.5, 2355, 'NCH'], ['Osbel', 58, 1725, 'Casa Pérez · Taller Ruiz']].map(r => `<tr><td><b>${r[0]}</b></td><td class="r">${r[1]}</td><td class="r">${$(r[2])}</td><td>${r[3]}</td></tr>`).join('')}</tbody></table></div>`)}
+      </div>`;
+  }
+  function impuestosPag() {
+    return cab('Impuestos', 'Lo que la empresa debe y lo que se aparta para el estimado de Edgar.') + `<div class="rejilla">
+      ${card('Reserva de impuestos (1030)', `<div class="kpi num"><span class="val">${$(4200)}</span><span class="cmp">Objetivo a la fecha ${$0(5926)}: utilidad del año × % del CPA − pagado</span></div><div class="ef num"><div class="l sub"><span>Transferencia semanal programada</span><span>$300</span></div><div class="l sub"><span>Próximo estimado (15 ene 2027)</span><span>${$0(5900)}</span></div><div class="l sub"><span>Pagos al IRS del año (van a 3200, no son gasto)</span><span>${$0(12400)}</span></div></div>`)}
+      ${card('De la empresa', `<div class="ef num">${[['2220 Impuestos de nómina (941), los deposita Gusto', $(1094.40)], ['2225 FUTA (940)', $(42)], ['2230 Reempleo de Florida (RT-6)', $(61.20)], ['2300 Use tax por pagar (DR-15)', $(0)], ['1099 acumulado · Yordan', $(3200)]].map(([n, v]) => `<div class="l sub"><span>${n}</span><span>${v}</span></div>`).join('')}</div><p class="nota">En enero el paquete para el CPA sale de aquí: balanza, mayor, 1099, K-1 aparte (intereses, donaciones), M&E 50 %, vehículo.</p>`)}
+      </div>`;
+  }
+  function contadorPag() {
+    return cab('Contador (IA)', 'Revisa los libros cada mañana. Propone; nunca postea. Cada propuesta lleva su costo y su motivo.') + `<div class="lista">
+      ${[['Cobranza', 'La factura 1102 (Villa Mar HOA, $3,200.50) lleva 77 días. No hay nota de seguimiento desde el 2 sep. Propongo un recordatorio en inglés al cliente.', ['Mandar recordatorio', 'Ya hablé con ellos']],
+         ['Cargo sin ticket', 'Amex Gold, 21 oct, Sunpass $61.21. No hay recibo. Por el día y el calendario, la camioneta estuvo en Oficina NCH. Propongo 6300 Vehículos, sin obra.', ['Sí, 6300', 'Es de otra cosa']],
+         ['Duplicado probable', 'El recibo 327 (CED $245.37) tiene el mismo número y total que el 312. Está en la bandeja como duplicado.', ['Ir a la bandeja']],
+         ['Cierre', 'Octubre cierra el 5 nov. Faltan: el journal de Gusto del 31, el statement de Amex Blue y 2 cargos sin ticket. Sin eso el cierre no pasa.', ['Ver la lista']]].map(([t, m, a]) => `<article class="card papel"><div class="cabp"><span class="quien">${t}</span></div><p class="motivo">${m}</p><div class="acciones">${a.map((x, i) => `<button class="accion ${i ? 'sec' : ''}" type="button" data-toast="Anotado">${x}</button>`).join('')}</div></article>`).join('')}
+      </div><p class="nota" style="margin-top:.8rem">Costo de la ronda de hoy: $0.09 (Opus, esfuerzo bajo). Si algo huele mal, sube a esfuerzo máximo y te lo dice.</p>`;
+  }
+  function cierrePag() {
+    return cab('Cierre del mes', 'Octubre se cierra el 5 de noviembre. Un mes cerrado no se reabre: lo que llegue tarde entra al mes siguiente con su nota.') + `<section class="card"><div class="ef">${[['Cuadre del libro', 'ok'], ['Conciliación Chase al 31 oct', 'falta el statement'], ['Amex Gold', '2 cargos sin ticket'], ['Amex Blue', 'ok'], ['Journal de Gusto (31 oct)', 'falta'], ['Bandeja vacía', '5 papeles esperan'], ['Devengo estándar puesto al día', 'ok'], ['Auxiliar por obra = mayor', 'ok'], ['Comparado con QuickBooks', 'diferencia explicada: devengo']].map(([n, v]) => `<div class="l sub"><span>${n}</span><span class="pill ${v === 'ok' ? 'ok' : v.startsWith('diferencia') ? '' : 'warn'}">${v}</span></div>`).join('')}</div><p class="nota">Cuando todo está en verde, un toque cierra el mes: se sella, se exporta el CSV con procedencia y el PDF, y se archivan siete años.</p></section>`;
+  }
+  function balanzaPag() {
+    return cab('Balanza y libro', 'Cada cuenta con su saldo; toca una y bajas a sus asientos, y del asiento al papel.') + `<section class="card ef">
+      <div class="cab3"><span>Cuenta</span><span>Debe</span><span>Haber</span></div>
+      ${[['1010 Chase', 23418.62, 0], ['1050 Caja chica', 57, 0], ['1110 Cuentas por cobrar', 12650, 0], ['1120 Retención por cobrar', 960, 0], ['2010 Cuentas por pagar', 0, 4308.10], ['2100-2013 Amex Gold', 0, 2941.85], ['2100-2009 Amex Blue', 0, 812.40], ['2210 Sueldos acumulados', 0, 6840], ['4010 Contrato — residencial', 0, 18500], ['4020 Contrato — comercial', 0, 9600], ['4030 Servicio y T&M', 0, 2150], ['5000 Mano de obra directa', 6840, 0], ['5100 Material', 7412.36, 0], ['5200 Subcontratos', 3200, 0]].map(([n, d, h]) => `<div class="l l3 sub num"><span><button type="button" data-cuenta="${n.slice(0, 4)}">${n}</button></span><span>${d ? $(d) : ''}</span><span>${h ? $(h) : ''}</span></div>`).join('')}
+      <p class="nota">Se muestran 14 de 88 cuentas. Libro diario: 61 asientos en octubre, numerados sin huecos (2026-000001 … 2026-000061), cada uno con el hash del anterior.</p></section>
+      <section class="card" style="margin-top:.8rem"><div class="card-cab"><h2>Asiento 2026-000041 · 5 oct</h2></div>
+      <div class="ef num"><div class="l l3 sub"><span>5100 Material · Casa Pérez · CO-9</span><span>${$(245.37)}</span><span></span></div><div class="l l3 sub"><span>2100-2013 Amex Business Gold</span><span></span><span>${$(245.37)}</span></div></div>
+      <div class="sello"><span>Papel: <b>Recibo 312</b> · CED #88121 · subtotal $229.32 + tax $16.05 · foto <code>recibos/casa-perez/2026-10-05-ced-88121.jpg</code></span><span>Camino: puente · por Edgar (app) · sellado · hash <code>9f3a…c41e</code> enlaza con 2026-000040</span></div>
+      <p class="nota">Nació de un recibo: no se reversa a mano. Si el ticket está mal, se corrige o se anula el recibo y el libro pone el reverso y el asiento nuevo, enlazados.</p></section>`;
   }
 
-  function vistaResultados() {
-    if (S.vacia) return `<div class="falla"><h2>La pantalla se detuvo</h2>
-      <p>Esperaba <b>88 cuentas</b> en el plan y la base devolvió <b>0 filas</b>. No se pinta ningún número: un cero aquí sería mentira. Revisa la conexión o la vista <code>v_resultados</code>; el libro no ha cambiado.</p></div>`;
-    const sum = (arr, i) => arr.reduce((s, r) => s + r[i], 0);
-    const ing = sum(resultados.ingresos, 2), cos = sum(resultados.costos, 2), gas = sum(resultados.gastos, 2);
-    const ingQ = sum(resultados.ingresos, 3), cosQ = sum(resultados.costos, 3), gasQ = sum(resultados.gastos, 3);
-    const grupo = (t, arr, tot, totQ) => `<div class="seccion"><span>${t}</span></div>` + arr.map(([c, n, v, q]) => `
-      <button class="fila num" type="button" data-cuenta="${c}">
-        <span><span class="cod">${c}</span><br><span class="nom">${esc(n)}</span></span>
-        <span class="val">${$(v)}</span>
-        ${v !== q ? `<span class="sub dif">QuickBooks ${$(q)} · <b>dif. ${$(v - q)}</b> — ${esc(resultados.notas[c] || '')}</span>` : `<span class="sub">= QuickBooks</span>`}
-        ${t === 'Costo de obra' ? `<span class="barra"><i style="width:${Math.round(v / ing * 100)}%"></i></span>` : ''}
-      </button>`).join('') + `<div class="total num"><span>${t}</span><span class="val">${$(tot)}</span></div>`;
-    const util = ing - cos - gas, utilQ = ingQ - cosQ - gasQ;
-    return `
-      <div class="fila num" style="grid-template-columns:1fr auto;border-left:4px solid var(--mp-blue)">
-        <span><span class="cod">MARCHA EN PARALELO</span><br><span class="nom">Utilidad de octubre</span></span>
-        <span class="val">${$(util)}</span>
-        <span class="sub">QuickBooks: ${$(utilQ)} · la diferencia (${$(util - utilQ)}) está explicada línea por línea abajo. Margen ${Math.round(util / ing * 100)} %.</span>
-      </div>
-      ${grupo('Ingresos', resultados.ingresos, ing, ingQ)}
-      ${grupo('Costo de obra', resultados.costos, cos, cosQ)}
-      ${grupo('Gastos', resultados.gastos, gas, gasQ)}
-      <div class="comparativa"><div class="fila num" style="grid-template-columns:1fr auto"><span class="nom">Contribución (ingresos − costo)</span><span class="val">${$(ing - cos)}</span><span class="sub">${Math.round((ing - cos) / ing * 100)} % de la venta · el plan de agosto decía 74 %</span></div></div>`;
-  }
+  const PAGINAS = { panel, bandeja: () => cab('Bandeja', 'Lo que el libro no pudo contabilizar solo, y por qué. Contestas aquí; nada se inventa.') + bandejaLista(), resultados, balance, flujo: flujoPag, balanza: balanzaPag, bancos: bancosPag, cobros: cobrosPag, pagos: pagosPag, proyectos: proyectosPag, gastos: gastosPag, nomina: nominaPag, impuestos: impuestosPag, contador: contadorPag, cierre: cierrePag };
 
-  function vistaLibro() {
-    const todos = Object.values(asientos).flat();
-    return `<div class="seccion"><span>Libro diario · octubre</span><span>${todos.length} de 61 asientos</span></div>
-      ${todos.map(a => `<button class="fila num" type="button" data-asiento="${a.num}">
-        <span><span class="cod">${a.num} · ${a.fecha}</span><br><span class="nom">${esc(a.desc)}</span></span>
-        <span class="val">${$(a.monto)}</span>
-        <span class="sub">Dr 5100 / Cr ${a.cr} · ${OBRAS[a.obra]} · sellado</span>
-      </button>`).join('')}
-      <div class="vacio">Numeración sin huecos: 2026-000001 … 2026-000061. Cada asiento lleva el hash del anterior; nadie lo edita ni lo borra.</div>`;
-  }
-
+  const main = document.getElementById('main'), menuEl = document.getElementById('menu'), lateral = document.getElementById('lateral');
   function render() {
-    document.getElementById('usuario-chip').textContent = S.vista === 'equipo' ? 'Gustavo' : 'Edgar';
-    if (S.vista === 'inicio') { main.innerHTML = vistaInicio(false); return; }
-    if (S.vista === 'equipo') { main.innerHTML = vistaInicio(true); return; }
-    if (!S.senal) {
-      main.innerHTML = cabecera('Contabilidad', 'inicio') + `<div class="sin-senal">
-        <div style="font-size:2rem">📵</div><h2>Sin señal</h2>
-        <p>La contabilidad solo se enseña con conexión. Nada de cifras guardadas en el teléfono que puedan estar viejas: cuando vuelva la señal, se lee la base y se pinta.</p></div>`;
-      return;
-    }
-    const titulo = S.asiento ? 'Asiento' : S.cuenta ? 'Cuenta' : 'Contabilidad';
-    const volver = S.asiento ? 'cuenta' : S.cuenta ? 'tab' : 'inicio';
-    let cuerpo = '';
-    if (S.tab === 'bandeja') cuerpo = vistaBandeja();
-    else if (S.tab === 'balanza') cuerpo = vistaBalanza();
-    else if (S.tab === 'resultados') cuerpo = S.asiento ? vistaAsiento(S.asiento) : S.cuenta ? vistaCuenta(S.cuenta) : vistaResultados();
-    else cuerpo = S.asiento ? vistaAsiento(S.asiento) : vistaLibro();
-    main.innerHTML = cabecera(titulo, volver) + (S.cuenta || S.asiento ? '' : estado() + tabs()) + cuerpo;
+    menuEl.innerHTML = menu();
+    main.innerHTML = PAGINAS[S.pagina]();
+    lateral.dataset.abierto = String(S.menu);
+    document.getElementById('btn-menu').setAttribute('aria-expanded', String(S.menu));
   }
-
-  // ---------- interacción ----------
-  main.addEventListener('click', (e) => {
+  function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { t.hidden = true; }, 2400); }
+  document.addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return;
-    if (b.dataset.tab) { S.tab = b.dataset.tab; S.cuenta = null; S.asiento = null; render(); return; }
-    if (b.dataset.volver) {
-      if (b.dataset.volver === 'inicio') S.vista = 'inicio';
-      else if (b.dataset.volver === 'cuenta') { S.asiento = null; if (S.tab === 'libro') S.cuenta = null; }
-      else { S.cuenta = null; S.asiento = null; }
-      render(); return;
-    }
-    if (b.dataset.cuenta) { S.cuenta = b.dataset.cuenta; S.asiento = null; if (S.tab === 'bandeja') S.tab = 'balanza'; render(); return; }
-    if (b.dataset.asiento) { S.asiento = b.dataset.asiento; render(); return; }
-    if (b.dataset.tile) {
-      if (b.dataset.tile === 'conta') { S.vista = 'conta'; render(); } else toast('En la vista previa solo abre Contabilidad.');
-      return;
-    }
-    if (b.dataset.resolver) {
-      const id = Number(b.dataset.resolver); const k = b.dataset.k; S.hechos.add(id);
-      const msg = { obra: 'Contabilizado · asiento 2026-000058', cta: 'Regla guardada y contabilizado · 2026-000059', tarjeta: 'Tarjeta 4417 dada de alta · contabilizado 2026-000060',
-                    anular: 'Recibo 327 anulado: el ticket cuenta una vez', confirmar: 'Confirmado: dos compras · contabilizado 2026-000061', ret: 'Retención a 1120 · factura contabilizada 2026-000062', sec: 'Listo' }[k] || 'Listo';
-      render(); toast(msg); return;
-    }
+    if (b.id === 'btn-menu') { S.menu = !S.menu; render(); return; }
+    if (b.dataset.pag) { S.pagina = b.dataset.pag; S.menu = false; render(); window.scrollTo({ top: 0 }); return; }
+    if (b.dataset.resolver) { S.hechos.add(Number(b.dataset.resolver)); render(); toast('Contabilizado · asiento 2026-000058'); return; }
+    if (b.dataset.cuenta) { S.pagina = 'balanza'; render(); window.scrollTo({ top: 0 }); toast(`Cuenta ${b.dataset.cuenta}: en la app bajas a cada asiento`); return; }
+    if (b.dataset.toast) { toast(b.dataset.toast); return; }
   });
-
-  const demo = (id, prop, on) => document.getElementById(id).addEventListener('click', (e) => {
-    const p = e.currentTarget.getAttribute('aria-pressed') !== 'true';
-    ['d-senal', 'd-vacia', 'd-equipo'].forEach(x => document.getElementById(x).setAttribute('aria-pressed', 'false'));
-    e.currentTarget.setAttribute('aria-pressed', String(p));
-    on(p); render();
+  document.getElementById('lateral-fondo').addEventListener('click', () => { S.menu = false; render(); });
+  // tooltip de las gráficas
+  const tip = document.getElementById('tip');
+  document.addEventListener('pointermove', (e) => {
+    const el = e.target.closest ? e.target.closest('[data-tip]') : null;
+    if (!el) { tip.hidden = true; return; }
+    tip.textContent = el.dataset.tip; tip.hidden = false;
+    const x = Math.min(e.clientX + 12, window.innerWidth - tip.offsetWidth - 8);
+    tip.style.left = x + 'px'; tip.style.top = (e.clientY - 34) + 'px';
   });
-  demo('d-senal', 'senal', (p) => { S.senal = !p; S.vacia = false; S.vista = 'conta'; });
-  demo('d-vacia', 'vacia', (p) => { S.vacia = p; S.senal = true; S.vista = 'conta'; S.tab = 'resultados'; S.cuenta = null; S.asiento = null; });
-  demo('d-equipo', 'equipo', (p) => { S.senal = true; S.vacia = false; S.vista = p ? 'equipo' : 'conta'; });
-
+  document.addEventListener('pointerleave', () => { tip.hidden = true; });
   render();
 })();
 </script>

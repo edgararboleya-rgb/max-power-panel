@@ -40,12 +40,39 @@ Ves tu P&L en el teléfono; si desconectas una tabla a propósito la pantalla
 **te lo dice** en vez de enseñar ceros; y **un trabajador con su login no ve ni
 el botón ni una fila**.
 
-## Vista previa (24-sep)
-`docs/conta/f05-vista-previa.html`: una sola página con datos de ejemplo que
-imita la app (membrete, mosaico con el botón nuevo, pestañas Bandeja ·
-Balanza · Resultados · Libro, clic de la cifra al asiento y del asiento al
-recibo, la marcha en paralelo contra QuickBooks línea por línea) y los tres
-estados que exige esta fase: «Sin señal», la falla ruidosa (0 filas donde
-debía haber 88 cuentas: no se pinta nada) y la vista del equipo (sin botón).
-Se publicó como artefacto para que Edgar la abriera en el teléfono y dijera
-qué cambiar antes de construir `js/conta.js`.
+## Vista previa (24-sep) y el cambio de rumbo de esta fase
+La primera vista previa (bandeja + balanza + resultados + libro en pestañas)
+le pareció a Edgar demasiado básica: **quiere un tablero al estilo
+QuickBooks**, con el menú a la izquierda. La segunda versión,
+`docs/conta/f05-vista-previa.html`, es la referencia de diseño de esta fase:
+
+- **Panel** (lo primero que se abre): efectivo con su tendencia, por cobrar
+  con antigüedad, por pagar con vencimientos, utilidad del mes contra
+  QuickBooks; flujo de caja de 6 meses y los próximos 30 días; la bandeja; en
+  qué se gasta; bancos y tarjetas con su conciliación; dinero por obra
+  (contrato, facturado, cobrado, costo real contra estimado, margen); el
+  contador (IA); la reserva de impuestos.
+- **Menú izquierdo** (cajón en el teléfono): Panel · Bandeja · Estados
+  financieros (Resultados, Balance general, Flujo de caja, Balanza y libro)
+  · Dinero (Bancos y tarjetas, Por cobrar, Por pagar) · Operación
+  (Proyectos, Gastos, Nómina, Impuestos) · Control (Contador IA, Cierre).
+- Cada cifra baja al asiento y del asiento al papel con su foto.
+
+**Qué cambia en el plan.** El motor (c1, c2, c3) alimenta cada uno de esos
+paneles sin cambios: el tablero lee el mismo libro. Lo que hay que ordenar:
+- **f04** define, además de los estados, las **vistas de lectura del tablero**
+  (saldos de banco y tarjeta, antigüedad de CxC y CxP, gasto por categoría y
+  por proveedor, costo por obra, flujo de caja real por mes) con su
+  «esperaba N filas».
+- **f05** construye el Panel, el menú y las pantallas de lectura que ya tienen
+  datos en su fecha (Bandeja, Resultados, Balance, Balanza y libro, Por
+  cobrar, Por pagar, Gastos, Proyectos). Bancos y Flujo de caja se llenan con
+  f06; Nómina con f11; Impuestos con f08/f12/f17; el Contador con f16. Hasta
+  entonces, cada panel dice de dónde vendrá su dato y no pinta ceros.
+- Las cifras no se publican hasta que la apertura amarre (f04), igual.
+- Estimado: la fase crece de una semana a dos (el esqueleto azul no cambia;
+  crece el verde). Se absorbe con el buffer de la semana 12.
+
+Gráficas con la paleta validada para daltonismo (dos series: azul y verde;
+antigüedad en una rampa azul ordinal), tooltips al pasar, tablas para lo que
+es tabla.
