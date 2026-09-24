@@ -32,7 +32,11 @@
 --          de lo permitido en el futuro, de apertura, fuera de orden, con
 --          un hueco en el calendario, o un intento de reabrir o de borrar;
 --          un cierre antes de que el período termine (hora de Miami), un
---          cierre fuera de read committed, o la apertura sin su asiento
+--          cierre fuera de read committed, la apertura sin su asiento, o
+--          un año con el año anterior todavía abierto. El de un período
+--          cerrado dice qué hacer: si es la apertura, el ajuste a la
+--          apertura; si es de un ejercicio anterior, el ajuste de ese
+--          ejercicio
 --   MX003  inmutable: update, delete o truncate del libro; una línea
 --          nueva en un asiento ya sellado (también si llega de otra sesión:
 --          se mira otra vez al confirmar); un contador que salta o que
@@ -47,9 +51,12 @@
 --          cuentas de resultados
 --   MX007  reverso: ya reversado, reversar un reverso, reverso que no es
 --          el espejo exacto, un reversible sin su reverso del día 1, un
---          devengo corregido en su mes cuyo reverso del día 1 sigue vivo, o
+--          devengo corregido en su mes cuyo reverso del día 1 sigue vivo,
 --          un sustituto (sustituye_a) que no sustituye a un asiento
---          reversado de su mismo documento
+--          reversado de su mismo documento, el asiento de apertura con la
+--          apertura ya cerrada (no se reversa: se ajusta), o el reverso o
+--          el sustituto de un asiento de un ejercicio anterior que no va
+--          como ajuste de ese ejercicio
 --   42501  permiso: solo el dueño postea; anon y service_role, nada
 --   22023  entrada mal formada (clave desconocida, camino no válido,
 --          afecta_periodo sin tipo ajuste_cpa, ajuste_cpa sin motivo…)
@@ -117,20 +124,40 @@
 --     f04): cerrada vacía, ya no habría dónde cargarla. Si quedara abierta
 --     con octubre ya cerrado, un asiento fechado el 30-sep cambiaría el
 --     saldo de balance de todos los meses cerrados. Lo que aparezca
---     después en la apertura se corrige en el mes abierto (un asiento que
---     la cite, o un ajuste con tipo ajuste_cpa y afecta_periodo =
---     '2026-09-APERTURA', con cuentas de balance únicamente: lo de antes
---     del 30-sep va contra 3900, nunca a un gasto o un ingreso del
---     paralelo). ▶ Esto adelanta el cierre de la apertura que el
---     calendario del plan ponía en la semana del 18-ene. El año se cierra
---     cuando todos sus meses existan y estén cerrados (tras los ajustes
---     del CPA). Al cerrar se guarda el hash de la cadena en ese momento
---     (cadena_al_cerrar). Se cierra en una transacción read committed (la
---     de siempre, la del SQL Editor y la de la app): en repeatable read o
---     serializable la foto del cierre sería la del principio de la
---     transacción y dejaría fuera lo que entró después.
+--     después en la apertura se corrige en el mes abierto con un ajuste a
+--     la apertura: tipo ajuste_cpa y afecta_periodo = '2026-09-APERTURA',
+--     con cuentas de balance únicamente (lo de antes del 30-sep va contra
+--     3900, nunca a un gasto o un ingreso del paralelo). Cerrada, la
+--     apertura ya no se reversa entera: el reverso caería en octubre, el
+--     balance de apertura quedaría vacío y la balanza buena ya no entraría
+--     como apertura (MX007, y el mensaje dice lo del ajuste). ▶ Esto
+--     adelanta el cierre de la apertura que el calendario del plan ponía
+--     en la semana del 18-ene. El año se cierra cuando todos sus meses
+--     existan y estén cerrados (tras los ajustes del CPA), y con el año
+--     anterior ya cerrado: el cierre del año decide qué es «ejercicio
+--     cerrado» (el saldo vivo de las cuentas de resultados en c1, el
+--     arrastre a 3900 de f04), y con un año anterior abierto su resultado
+--     quedaría fuera del arrastre. Por eso 2026, aunque sea el paralelo, se
+--     cierra también aquí, antes que 2027. Al cerrar se guarda el hash de
+--     la cadena en ese momento (cadena_al_cerrar). Se cierra en una
+--     transacción read committed (la de siempre, la del SQL Editor y la de
+--     la app): en repeatable read o serializable la foto del cierre sería
+--     la del principio de la transacción y dejaría fuera lo que entró
+--     después.
 --   · Un período cerrado NO se reabre (regla A de f08): los ajustes van
 --     al período abierto, con tipo 'ajuste_cpa' y afecta_periodo.
+--   · Un error de un mes cerrado del MISMO año se corrige con fn_reversar:
+--     el reverso cae en el mes abierto y es un asiento como su original.
+--     Pero si el original es de un ejercicio ANTERIOR (el paralelo de
+--     2026 corregido en 2027, o 2027 corregido en 2028), su reverso no
+--     puede caer en el resultado del año en curso: sería el ingreso o el
+--     costo de otro año (y la base del 1120-S de ese año). fn_reversar lo
+--     marca solo como ajuste de ese ejercicio (tipo ajuste_cpa,
+--     afecta_periodo = el período del original), que f04 pliega a 3900 y
+--     enseña en el año que corrige («con ajustes posteriores»). El
+--     sustituto de ese documento, igual. El reverso automático del día 1
+--     de un devengo de diciembre NO: ese deshace el devengo en enero a
+--     propósito, y es un asiento normal del año nuevo.
 --
 -- LO QUE ESTE ARCHIVO NO PUEDE HACER (dicho claro, para el auditor):
 --   · Ningún control que vive DENTRO de la base frena ni delata a quien
@@ -148,9 +175,13 @@
 --     ninguno: se ve en la huella de la tabla), los permisos abiertos, los
 --     meses cerrados fuera de orden o reabiertos y vueltos a cerrar (la
 --     hora y la foto de cada cierre van en el orden del calendario, y nada
---     fechado dentro de un período cerrado entra detrás de su foto), un
---     período cerrado antes de terminar, una segunda apertura, y una
---     cuenta que cambió sin su fila en cuentas_historial.
+--     fechado dentro de un período cerrado entra detrás de su foto), un año
+--     cerrado con el anterior abierto (o antes que él), un período cerrado
+--     antes de terminar, una segunda apertura, la apertura cerrada sin su
+--     asiento de apertura vivo, una cuenta que cambió sin su fila en
+--     cuentas_historial, y una función SECURITY DEFINER que lee o escribe
+--     el libro y que la API puede ejecutar (y la vista que la llama, aunque
+--     sea security_invoker).
 --   · Contra el dueño de la base, la detección real es un ANCLA FUERA de
 --     ella: el hash del mayor que sale por correo en cada cierre (f08,
 --     CONTA-PLAN §3.6 y §5.6) y la balanza exportada. f08 guarda ese ancla
@@ -977,7 +1008,12 @@ create unique index if not exists asientos_origen_unico
 --     vacía, la balanza ya no tendría dónde entrar: el 30-sep estaría
 --     cerrado y un asiento de apertura con otra fecha no entra.
 --   · El año se cierra cuando todos sus meses EXISTEN y están cerrados
---     (no basta con que estén cerrados los que existen).
+--     (no basta con que estén cerrados los que existen), y con el año
+--     anterior ya cerrado: los años, también en orden. El cierre del año
+--     es lo que dice qué es «ejercicio cerrado» (el saldo vivo de las
+--     cuentas de resultados en c1; el arrastre a 3900 de f04): con 2027
+--     cerrado y 2026 abierto, el resultado de octubre–diciembre de 2026
+--     quedaría fuera del arrastre y el balance de 2028 descuadraría.
 --   · Al cerrarse, la base apunta quién, cuándo y el hash de la cadena en
 --     ese instante (con el candado de la cadena: nadie postea mientras).
 --     El candado sirve solo si la foto se toma DESPUÉS de tomarlo: así
@@ -1138,6 +1174,15 @@ begin
     if v_faltan is not null then
       raise exception using errcode = 'MX002',
         message = format('El año %s no se cierra: le faltan meses en el calendario (%s).', new.periodo, v_faltan);
+    end if;
+    -- Los años, en orden (ver arriba).
+    select string_agg(p.periodo, ', ' order by p.anio) into v_abiertos
+      from periodos p where p.tipo = 'anio' and p.anio < new.anio and p.estado = 'abierto';
+    if v_abiertos is not null then
+      raise exception using errcode = 'MX002',
+        message = format('Los años se cierran en orden: antes de %s hay que cerrar %s. El cierre del año dice qué es '
+                         'ejercicio cerrado (lo que f04 arrastra a 3900): con un año anterior abierto, su resultado '
+                         'quedaría fuera del arrastre y el balance descuadraría.', new.periodo, v_abiertos);
     end if;
   end if;
 
@@ -1443,7 +1488,17 @@ create constraint trigger trg_asiento_lineas_sello_diferido
 --        Se toma «for share»: si alguien lo está cerrando, uno espera al
 --        otro y el asiento no se cuela en un mes cerrado. Si no hay
 --        período, el mensaje dice por qué: antes de la apertura, eso vive
---        en QuickBooks; después del último mes, se abre el mes.
+--        en QuickBooks; después del último mes, se abre el mes;
+--      · un período cerrado dice qué hacer, según cuál sea: la apertura,
+--        el ajuste a la apertura (no se reversa); un mes de un ejercicio
+--        anterior al abierto, el ajuste de ese ejercicio (fn_reversar lo
+--        hace solo para una corrección); un mes del año en curso, lo de
+--        siempre (el documento tardío, al primer día del mes abierto; la
+--        corrección, con fn_reversar). Antes decía lo de siempre en los
+--        tres casos, y en los dos primeros llevaba a un camino equivocado;
+--      · un asiento de apertura va solo en la apertura, sus reversos
+--        también: el reverso de uno de apertura va el mismo día, con la
+--        apertura abierta. Cerrada, MX007: se ajusta, no se reversa.
 --   2. Cuadre (MX001) con las líneas, que ya entraron; y la apertura,
 --      solo con cuentas de balance (MX006). Lo mismo un ajuste del CPA que
 --      afecta a la apertura: lo de antes del 30-sep ya está dentro de 3900
@@ -1453,7 +1508,12 @@ create constraint trigger trg_asiento_lineas_sello_diferido
 --   3. Desde aquí, el candado de la cadena: un asiento a la vez en todo
 --      el libro (se suelta al terminar la transacción).
 --   4. Reverso (MX007): existe el original, no tiene ya un reverso de ese
---      mismo camino, no va antes, y las líneas son su espejo exacto. Un
+--      mismo camino, no va antes, y las líneas son su espejo exacto. Lleva
+--      el tipo de su original, salvo la corrección (camino 'reverso') de
+--      un asiento normal de un ejercicio ANTERIOR al del reverso: esa va
+--      como ajuste de ese ejercicio (tipo ajuste_cpa, afecta_periodo = el
+--      período del original), para que no caiga en el resultado del año
+--      en curso (ver la cabecera, CÓMO SE ABRE Y SE CIERRA). Un
 --      reverso no se reversa, con UNA excepción: el reverso automático
 --      del día 1 de un devengo que se acaba de corregir en su mes. Así se
 --      corrige un devengo (el ajuste de WIP de f10, el devengo de horas de
@@ -1467,7 +1527,10 @@ create constraint trigger trg_asiento_lineas_sello_diferido
 --      vivo, es decir, sin su reverso de corrección (el automático del
 --      día 1 no cuenta: es parte del devengo). Si su asiento ya se
 --      reversó, el nuevo dice a cuál sustituye (sustituye_a), y ese tiene
---      que ser del mismo documento y estar reversado.
+--      que ser del mismo documento y estar reversado. Si el sustituido es
+--      de un ejercicio anterior, el sustituto también es un ajuste de ese
+--      ejercicio (tipo ajuste_cpa, con afecta_periodo en ese año), como su
+--      reverso.
 --   6. Número: contadores, «select … for update», DESPUÉS de validar. Si
 --      algo falla después, el rollback deshace también el contador: no
 --      hay hueco (una secuencia de Postgres sí lo dejaría).
@@ -1506,6 +1569,8 @@ declare
   v_desde  date;
   v_vivos  text;
   v_libre  text;
+  v_abierto_anio int;
+  v_ej     int;
 begin
   -- 0. Quién, y la forma del ajuste del CPA.
   if new.camino in ('mano', 'ia') and not (es_dueno() or fn_desde_editor()) then
@@ -1557,6 +1622,23 @@ begin
                        'fn_abrir_periodo(''AAAA-MM''), en orden.', coalesce(new.fecha_contable::text, '(sin fecha)'));
   end if;
   if v_per.estado <> 'abierto' then
+    -- Cerrado. Qué hacer depende de cuál es (ver arriba).
+    if v_per.tipo = 'apertura' then
+      raise exception using errcode = 'MX002',
+        message = format('La apertura (%s) ya está cerrada: nadie escribe ahí, y su asiento ya no se reversa. Lo que '
+                         'faltó o sobró en ella se corrige en el mes abierto con un ajuste a la apertura: tipo '
+                         'ajuste_cpa, afecta_periodo = ''%s'', con su motivo, solo con cuentas de balance y contra 3900 '
+                         '(utilidades retenidas), nunca a un gasto o un ingreso del paralelo.', v_per.periodo, v_per.periodo);
+    end if;
+    select min(p.anio) into v_abierto_anio from periodos p where p.tipo = 'mes' and p.estado = 'abierto';
+    if v_per.anio < v_abierto_anio then
+      raise exception using errcode = 'MX002',
+        message = format('El período %s está cerrado y es de %s, un ejercicio anterior al abierto (%s): nadie escribe '
+                         'ahí. Lo que le falte a %s (un documento tardío, un error) entra en el mes abierto como ajuste '
+                         'de ese ejercicio: tipo ajuste_cpa, afecta_periodo = ''%s'', con su motivo; así no cae en el '
+                         'resultado de %s. Para corregir un asiento, fn_reversar: marca así su reverso, solo.',
+                         v_per.periodo, v_per.anio, v_abierto_anio, v_per.anio, v_per.periodo, v_abierto_anio);
+    end if;
     raise exception using errcode = 'MX002',
       message = format('El período %s está cerrado: nadie escribe ahí. Un documento tardío va al primer día del '
                        'período abierto; una corrección, con fn_reversar.', v_per.periodo);
@@ -1565,7 +1647,17 @@ begin
     raise exception using errcode = 'MX002',
       message = format('El período %s solo admite el asiento de apertura y sus reversos.', v_per.periodo);
   end if;
-  if new.tipo = 'apertura' and v_per.tipo <> 'apertura' and new.reversa_a is null then
+  -- Un asiento de apertura, solo en la apertura; sus reversos también (con
+  -- la apertura abierta, fn_reversar lo pone el mismo día).
+  if new.tipo = 'apertura' and v_per.tipo <> 'apertura' then
+    if new.reversa_a is not null then
+      raise exception using errcode = 'MX007',
+        message = format('El reverso de un asiento de apertura va el mismo día de la apertura, con la apertura abierta. '
+                         'Cerrada, ya no se reversa: lo que faltó o sobró se corrige en el mes abierto con un ajuste a la '
+                         'apertura (tipo ajuste_cpa, afecta_periodo = ''%s''), solo con cuentas de balance, contra 3900.',
+                         coalesce((select p.periodo from periodos p where p.tipo = 'apertura' order by p.desde limit 1),
+                                  'la apertura'));
+    end if;
     raise exception using errcode = 'MX002',
       message = 'Un asiento de apertura va fechado el día de la apertura (30-sep-2026).';
   end if;
@@ -1645,7 +1737,16 @@ begin
     if new.fecha_contable < v_orig.fecha_contable then
       raise exception using errcode = 'MX007', message = 'Un reverso no va antes que su original.';
     end if;
-    if new.tipo is distinct from v_orig.tipo or new.afecta_periodo is distinct from v_orig.afecta_periodo then
+    -- El tipo: el de su original, salvo la corrección de un asiento normal
+    -- de un ejercicio anterior, que es un ajuste de ese ejercicio.
+    if new.camino = 'reverso' and v_orig.reversa_a is null and v_orig.tipo = 'normal' and new.anio > v_orig.anio then
+      if new.tipo is distinct from 'ajuste_cpa' or new.afecta_periodo is distinct from v_orig.periodo then
+        raise exception using errcode = 'MX007',
+          message = format('%s es de %s, un ejercicio anterior al del reverso (%s): su reverso va como ajuste de ese '
+                           'ejercicio (tipo ajuste_cpa, afecta_periodo = ''%s''), para que no caiga en el resultado de '
+                           '%s. fn_reversar lo hace solo.', v_orig.numero, v_orig.anio, new.anio, v_orig.periodo, new.anio);
+      end if;
+    elsif new.tipo is distinct from v_orig.tipo or new.afecta_periodo is distinct from v_orig.afecta_periodo then
       raise exception using errcode = 'MX007', message = 'Un reverso conserva el tipo de su original.';
     end if;
     if new.camino = 'reverso_automatico'
@@ -1728,6 +1829,17 @@ begin
         raise exception using errcode = 'MX007',
           message = format('%s ya tiene su sustituto (%s): si también estaba mal, se reversa ese y se sustituye a él.',
                            v_sust.numero, v_libre);
+      end if;
+      -- De un ejercicio anterior (el de su afecta_periodo, si ya era un
+      -- ajuste): el sustituto es un ajuste de ese ejercicio, como su
+      -- reverso. v_afecta se leyó en el paso 1 (solo si es ajuste_cpa).
+      v_ej := coalesce((select p.anio from periodos p where p.periodo = v_sust.afecta_periodo), v_sust.anio);
+      if v_ej < new.anio and (new.tipo is distinct from 'ajuste_cpa' or v_afecta.anio is distinct from v_ej) then
+        raise exception using errcode = 'MX007',
+          message = format('%s, al que este sustituye, es del ejercicio %s, anterior a este (%s): el sustituto es un '
+                           'ajuste de ese ejercicio, como su reverso (tipo ajuste_cpa, afecta_periodo = un período '
+                           'cerrado de %s, p. ej. ''%s'', con su motivo). Así no cae en el resultado de %s.',
+                           v_sust.numero, v_ej, new.anio, v_ej, coalesce(v_sust.afecta_periodo, v_sust.periodo), new.anio);
       end if;
     end if;
   elsif new.sustituye_a is not null then
@@ -2179,6 +2291,17 @@ grant  execute on function public.fn_postear(jsonb) to authenticated;
 --   · si está cerrado: greatest(fecha original, primer día del mes
 --     abierto más antiguo POSTERIOR al original). El período de apertura
 --     no cuenta como destino: solo admite la apertura.
+-- El tipo del reverso: el de su original, salvo que corrija un asiento
+-- normal de un ejercicio ANTERIOR al de la fecha del reverso: entonces va
+-- como ajuste de ese ejercicio (tipo ajuste_cpa, afecta_periodo = el
+-- período del original). Así el error del paralelo de 2026 corregido en
+-- 2027 no mueve el resultado de 2027 (la base de su 1120-S): f04 lo
+-- pliega a 3900 y lo enseña en 2026 «con ajustes posteriores». Dentro del
+-- mismo año, el reverso es un asiento como su original (regla A de f08).
+-- El asiento de apertura con la apertura ya cerrada no se reversa (MX007):
+-- el reverso caería en octubre y dejaría el balance de apertura vacío, y
+-- la balanza buena ya no entraría como apertura. Lo que la balanza traía
+-- mal se corrige con un ajuste a la apertura (ver la cabecera).
 -- Un devengo reversible (el ajuste de WIP de f10, el devengo de horas de
 -- f03) se corrige DENTRO de su mes, antes de cerrarlo: su reverso va en su
 -- misma fecha y, en la misma transacción, se anula su reverso automático
@@ -2203,6 +2326,8 @@ declare
   v_auto  asientos;
   v_anula jsonb;
   v_desc  text;
+  v_tipo   text;
+  v_afecta text;
 begin
   if coalesce(btrim(p_motivo), '') = '' then
     raise exception using errcode = '22023', message = 'Todo reverso dice por qué (motivo).';
@@ -2235,6 +2360,15 @@ begin
      or (p_camino = 'reverso_automatico' and exists (select 1 from asientos where reversa_a = v_o.id)) then
     raise exception using errcode = 'MX007', message = format('%s ya se reversó.', v_o.numero);
   end if;
+  -- La apertura cerrada no se reversa: se ajusta (ver arriba).
+  if v_o.tipo = 'apertura'
+     and exists (select 1 from periodos where periodo = v_o.periodo and estado = 'cerrado') then
+    raise exception using errcode = 'MX007',
+      message = format('%s es el asiento de apertura y la apertura (%s) ya está cerrada: no se reversa entero. Lo que la '
+                       'balanza de QuickBooks traía mal se corrige en el mes abierto con un ajuste a la apertura: tipo '
+                       'ajuste_cpa, afecta_periodo = ''%s'', con su motivo, solo con cuentas de balance y contra 3900 '
+                       '(utilidades retenidas).', v_o.numero, v_o.periodo, v_o.periodo);
+  end if;
 
   if p_camino = 'reverso_automatico' then
     v_fecha := (date_trunc('month', v_o.fecha_contable::timestamp) + interval '1 month')::date;
@@ -2261,9 +2395,21 @@ begin
     v_fecha := greatest(v_o.fecha_contable, v_fecha);
   end if;
 
+  -- El tipo (ver arriba): el de su original, o el ajuste de un ejercicio
+  -- anterior.
+  v_tipo   := v_o.tipo;
+  v_afecta := v_o.afecta_periodo;
+  if p_camino = 'reverso' and v_o.reversa_a is null and v_o.tipo = 'normal'
+     and extract(year from v_fecha)::int > v_o.anio then
+    v_tipo   := 'ajuste_cpa';
+    v_afecta := v_o.periodo;
+  end if;
+
   v_desc := case when v_o.reversa_a is not null
                  then format('Anula %s, el reverso automático del devengo %s, que se corrigió en su mes', v_o.numero,
                              (select o.numero from asientos o where o.id = v_o.reversa_a))
+                 when v_tipo is distinct from v_o.tipo
+                 then format('Reverso de %s (ajuste de %s, un ejercicio anterior): %s', v_o.numero, v_o.anio, v_o.descripcion)
                  else 'Reverso de ' || v_o.numero || ': ' || v_o.descripcion end;
 
   -- Las líneas de este reverso no se juzgan contra el plan de hoy (ver
@@ -2277,7 +2423,7 @@ begin
 
   insert into asientos (id, fecha_contable, tipo, afecta_periodo, camino, descripcion, motivo, reversa_a,
                         reversible, origen_tabla, origen_id, documento_ruta, procedencia)
-  values (v_id, v_fecha, v_o.tipo, v_o.afecta_periodo, p_camino, v_desc, btrim(p_motivo), v_o.id,
+  values (v_id, v_fecha, v_tipo, v_afecta, p_camino, v_desc, btrim(p_motivo), v_o.id,
           false, v_o.origen_tabla, v_o.origen_id, v_o.documento_ruta,
           p_procedencia || jsonb_build_object('reversa', v_o.numero))
   returning * into v_a;
@@ -2294,8 +2440,8 @@ begin
   end if;
 
   return jsonb_strip_nulls(jsonb_build_object('id', v_a.id, 'numero', v_a.numero, 'fecha_contable', v_a.fecha_contable,
-                                              'periodo', v_a.periodo, 'hash', v_a.hash, 'reversa', v_o.numero,
-                                              'anula', v_anula));
+                                              'periodo', v_a.periodo, 'tipo', v_a.tipo, 'afecta_periodo', v_a.afecta_periodo,
+                                              'hash', v_a.hash, 'reversa', v_o.numero, 'anula', v_anula));
 end $$;
 revoke execute on function public.fn_reversar_interno(uuid, text, text, jsonb) from public, anon, authenticated, service_role;
 
@@ -2304,7 +2450,9 @@ revoke execute on function public.fn_reversar_interno(uuid, text, text, jsonb) f
 -- Solo el dueño (o el SQL Editor). Un reverso no se reversa; un asiento
 -- se reversa una sola vez; el motivo es obligatorio. Un devengo
 -- reversible, dentro de su mes: devuelve también la anulación de su
--- reverso del día 1 («anula»).
+-- reverso del día 1 («anula»). Devuelve el tipo del reverso: un asiento
+-- de un ejercicio anterior sale como ajuste de ese ejercicio (tipo
+-- ajuste_cpa y su afecta_periodo), y conta.js lo dice así.
 -- ---------------------------------------------------------------------
 create or replace function public.fn_reversar(p_asiento uuid, p_motivo text)
 returns jsonb
@@ -2370,14 +2518,17 @@ grant  execute on function public.fn_estado(text) to authenticated;
 --   numeracion  por año, los números van del 1 al último sin huecos
 --   contadores  cada contador de asientos está en el último número
 --   cuadre      cada asiento suma cero y tiene al menos dos líneas
---   reversos    cada reverso es el espejo de su original; cada
+--   reversos    cada reverso es el espejo de su original y lleva su tipo
+--               (o, si corrige un asiento normal de un ejercicio anterior,
+--               el ajuste de ese ejercicio); cada
 --               reversible tiene su reverso automático, del día 1; un
 --               devengo corregido en su mes lo fue en su misma fecha y con
 --               su reverso automático anulado; ningún otro reverso se
 --               reversó; cada sustituto sustituye a un asiento reversado
 --               (con su reverso de corrección, no solo el automático) de
---               su mismo documento; y ningún documento tiene dos asientos
---               vivos
+--               su mismo documento, y si ese es de un ejercicio anterior,
+--               es un ajuste de ese ejercicio; y ningún documento tiene
+--               dos asientos vivos
 --   periodos    en cada período cerrado: el hash del cierre sigue en la
 --               cadena, y nada fechado hasta su último día entró después
 --               del cierre ni detrás de su foto (esto también mira los
@@ -2386,9 +2537,11 @@ grant  execute on function public.fn_estado(text) to authenticated;
 --               de la foto del mes siguiente); se cerró cuando ya había
 --               terminado; los meses se cerraron en orden, también en la
 --               hora del cierre y en la posición de la foto (la apertura
---               antes, y el año después de todos sus meses); el
---               calendario no tiene huecos; y hay UNA apertura, con su
---               asiento, y nada antes de ella
+--               antes, el año después de todos sus meses, y cada año
+--               después del anterior); el calendario no tiene huecos; y
+--               hay UNA apertura, nada antes de ella, y cerrada, con su
+--               asiento de apertura VIVO (sin reverso de corrección), la
+--               misma condición con que la deja cerrar su guarda (B.5)
 --   triggers    las guardas existen, están habilitadas y llaman a su
 --               función; su definición y la de las funciones del libro
 --               siguen siendo las que dejó este archivo; las tablas del
@@ -2408,9 +2561,21 @@ grant  execute on function public.fn_estado(text) to authenticated;
 --               tabla ni por columna (anon, ninguno); ninguna vista que lea
 --               el libro sin security_invoker, directa o a través de otra
 --               vista, ni vista materializada que lo copie a la API; las
---               funciones con el reparto de B.20; y es_dueno() igual que
---               cuando se pegó este archivo (es compartida con Planos: si
---               cambia, alguien tiene que mirarla)
+--               funciones con el reparto de B.20 (a service_role se le
+--               acepta EXECUTE en las de trigger, que nadie puede llamar
+--               sueltas: es la convención de docs/sql/e37-seguridad.sql, y
+--               volver a pegar e37 no debe encender una falsa alarma);
+--               NINGUNA OTRA función SECURITY DEFINER que lea o escriba el
+--               libro (que nombre una de sus tablas, o una vista que lo
+--               lee, o llame a una puerta interna, a fn_estado o a otra de
+--               ellas) y que la API pueda ejecutar: con los permisos de su
+--               dueño se salta la policy, y en Supabase toda función nace
+--               ejecutable por anon; ni una vista que llame a una de esas,
+--               aunque sea security_invoker; y es_dueno() igual que cuando
+--               se pegó este archivo (es compartida con Planos: si cambia,
+--               alguien tiene que mirarla). Cada línea dice qué archivo la
+--               arregla al volver a pegarlo (c1 o c2), o que no es de
+--               ninguno de los dos
 -- LO QUE NO VE (la frontera, dicha también en la cabecera): el dueño de la
 -- base puede recalcular la cadena con fn_asiento_canonico y reescribir
 -- sus anclas (contadores, cadena_al_cerrar, las horas de cierre), y hasta
@@ -2432,9 +2597,26 @@ declare
   v_orden jsonb;
   v_antes jsonb;
   v_apert jsonb;
+  -- Para el control permisos: lo que lee el libro (tablas, vistas y
+  -- funciones que no son de este archivo), y lo que de eso ve la API.
+  v_tablas     oid[];
+  v_rel        oid[];
+  v_rel_vistas oid[];
+  v_nombres    text[];
+  v_conocidas  oid[];
+  v_semillas   oid[];
+  v_fn_nombres text[];
+  v_lee        oid[] := '{}';
+  v_nuevas     oid[];
+  v_rx_rel     text;
+  v_rx_fn      text;
+  v_sospechosas oid[];
+  v_vistas_fn  oid[];
   c_tablas constant text[] := array['cuentas', 'cuentas_historial', 'periodos', 'contadores', 'asientos', 'asiento_lineas'];
   -- Las que llama conta.js (grant a authenticated) y las de dentro (sin
-  -- grant a nadie de la API). Ver B.20.
+  -- grant a nadie de la API). Ver B.20. Una fase que añada una función
+  -- que lee el libro y que la app llama a propósito la pone aquí, en el
+  -- mismo pegado (y en las huellas de B.22).
   c_fn_app constant text[] := array['fn_postear(jsonb)', 'fn_reversar(uuid,text)', 'fn_estado(text)',
                                     'fn_verificar_cadena()', 'fn_cerrar_periodo(text)', 'fn_abrir_periodo(text)',
                                     'fn_fecha_miami(timestamptz)'];
@@ -2587,6 +2769,25 @@ begin
                   or not exists (select 1 from asientos r
                                   where r.reversa_a = o.id and r.camino = 'reverso' and r.cadena_pos < x.cadena_pos))
           union all
+          -- un reverso sin el tipo que le toca (B.8, paso 4): el de su original, o el ajuste
+          -- del ejercicio anterior si corrige un asiento normal de ese ejercicio
+          select r.numero
+            from asientos r
+            join asientos o on o.id = r.reversa_a
+           where case when r.camino = 'reverso' and o.reversa_a is null and o.tipo = 'normal' and r.anio > o.anio
+                      then r.tipo is distinct from 'ajuste_cpa' or r.afecta_periodo is distinct from o.periodo
+                      else r.tipo is distinct from o.tipo or r.afecta_periodo is distinct from o.afecta_periodo end
+          union all
+          -- el sustituto de un asiento de un ejercicio anterior que no es un ajuste de ese
+          -- ejercicio (B.8, paso 5)
+          select x.numero
+            from asientos x
+            join asientos o on o.id = x.sustituye_a
+            left join periodos po on po.periodo = o.afecta_periodo
+            left join periodos px on px.periodo = x.afecta_periodo
+           where coalesce(po.anio, o.anio) < x.anio
+             and (x.tipo is distinct from 'ajuste_cpa' or px.anio is distinct from coalesce(po.anio, o.anio))
+          union all
           -- un documento con dos asientos vivos (sin su reverso de corrección)
           select min(a.numero)
             from asientos a
@@ -2641,7 +2842,8 @@ begin
   --   calendario; un mes (o la apertura) cerrado con otro anterior abierto,
   --   o cerrado DESPUÉS que uno posterior, o con su foto más adelante en la
   --   cadena que la de uno posterior; un año cerrado antes que alguno de
-  --   sus períodos.
+  --   sus períodos; y un año cerrado con el año anterior abierto, o antes
+  --   que él (por la hora o por la foto).
   select coalesce(jsonb_agg(s.periodo order by s.desde), '[]'::jsonb) into v_orden
     from (select p.periodo, p.desde
             from periodos p
@@ -2674,6 +2876,17 @@ begin
                            left join asientos fq on fq.hash = q.cadena_al_cerrar
                           where q.tipo <> 'anio' and q.anio = p.anio
                             and (q.estado <> 'cerrado' or q.cerrado_el > p.cerrado_el
+                                 or coalesce(fq.cadena_pos, 0) > coalesce(fp.cadena_pos, 0)))
+          union
+          select p.periodo, p.desde
+            from periodos p
+            left join asientos fp on fp.hash = p.cadena_al_cerrar
+           where p.tipo = 'anio' and p.estado = 'cerrado'
+             and exists (select 1
+                           from periodos q
+                           left join asientos fq on fq.hash = q.cadena_al_cerrar
+                          where q.tipo = 'anio' and q.anio < p.anio
+                            and (q.estado <> 'cerrado' or q.cerrado_el > p.cerrado_el
                                  or coalesce(fq.cadena_pos, 0) > coalesce(fp.cadena_pos, 0)))) s;
   -- · cerrado antes de terminar: la hora del cierre, en Miami, no es
   --   posterior a su último día.
@@ -2681,7 +2894,9 @@ begin
     from periodos p
    where p.estado = 'cerrado' and fn_fecha_miami(p.cerrado_el) <= p.hasta;
   -- · la apertura: una sola, nada antes de ella, y si está cerrada, con su
-  --   asiento de apertura dentro.
+  --   asiento de apertura VIVO dentro (sin su reverso de corrección): la
+  --   misma condición que pide su guarda para cerrarla (B.5). Antes bastaba
+  --   con que existiera, y una apertura reversada entera salía en verde.
   select coalesce(jsonb_agg(s.falla), '[]'::jsonb) into v_apert
     from (select format('hay %s aperturas: el libro tiene una sola', count(*)) as falla
             from periodos
@@ -2693,11 +2908,13 @@ begin
            where p.tipo in ('mes', 'apertura')
              and exists (select 1 from periodos a where a.tipo = 'apertura' and p.desde < a.desde)
           union all
-          select format('la apertura %s se cerró sin su asiento de apertura', p.periodo)
+          select format('la apertura %s está cerrada sin su asiento de apertura vivo (falta, o se reversó)', p.periodo)
             from periodos p
            where p.tipo = 'apertura' and p.estado = 'cerrado'
              and not exists (select 1 from asientos a
-                              where a.periodo = p.periodo and a.tipo = 'apertura' and a.reversa_a is null)) s;
+                              where a.periodo = p.periodo and a.tipo = 'apertura' and a.reversa_a is null
+                                and not exists (select 1 from asientos r
+                                                 where r.reversa_a = a.id and r.camino = 'reverso'))) s;
   control := 'periodos';
   ok      := jsonb_array_length(v_malos) = 0 and jsonb_array_length(v_orden) = 0
              and jsonb_array_length(v_antes) = 0 and jsonb_array_length(v_apert) = 0;
@@ -2790,10 +3007,109 @@ begin
   return next;
 
   -- permisos
+  -- · Lo que lee o escribe el libro sin ser de este archivo, hasta que no
+  --   aparezca nada nuevo: las vistas que leen sus tablas (directo o a
+  --   través de otra vista) o que llaman a una función de estas; y las
+  --   funciones que no son del reparto de B.20 y que nombran en su cuerpo
+  --   una tabla del libro o una de esas vistas (detrás de from, join, into,
+  --   update…), o llaman a una puerta interna (fn_postear_interno,
+  --   fn_reversar_interno, fn_asiento_canonico), a fn_estado o a otra
+  --   función de estas, o dependen de ellas (un cuerpo BEGIN ATOMIC).
+  --   fn_estado lee con los permisos de quien la llama: desde una función
+  --   SECURITY DEFINER, con los de su dueño, que se salta la policy. Las
+  --   otras de conta.js miran es_dueno() por dentro y, llamadas desde
+  --   donde sea, dicen que no. Se busca en todos los esquemas que no son
+  --   del sistema, sin las funciones de las extensiones. Por el texto se
+  --   caza el error honesto (el revoke que se olvidó en un pegado); un SQL
+  --   dinámico armado a propósito para esconderse no se ve.
+  select coalesce(array_agg(c.oid), '{}') into v_tablas
+    from pg_class c
+   where c.relnamespace = 'public'::regnamespace and c.relname = any (c_tablas);
+  select coalesce(array_agg(to_regprocedure('public.' || f)::oid), '{}') into v_conocidas
+    from unnest(c_fn_app || c_fn_internas) f
+   where to_regprocedure('public.' || f) is not null;
+  select coalesce(array_agg(to_regprocedure('public.' || f)::oid), '{}') into v_semillas
+    from unnest(array['fn_postear_interno(jsonb)', 'fn_reversar_interno(uuid,text,text,jsonb)',
+                      'fn_asiento_canonico(asientos)', 'fn_estado(text)']) f
+   where to_regprocedure('public.' || f) is not null;
+  loop
+    with recursive dep(oid) as (
+           select x.oid
+             from (select unnest(v_tablas) as oid
+                   union
+                   select rw.ev_class
+                     from pg_depend d
+                     join pg_rewrite rw on rw.oid = d.objid
+                    where d.classid = 'pg_rewrite'::regclass and d.refclassid = 'pg_proc'::regclass
+                      and (d.refobjid = any (v_semillas) or d.refobjid = any (v_lee))) x
+           union
+           select rw.ev_class
+             from dep
+             join pg_depend d on d.refobjid = dep.oid and d.refclassid = 'pg_class'::regclass
+                             and d.classid = 'pg_rewrite'::regclass
+             join pg_rewrite rw on rw.oid = d.objid
+            where rw.ev_class <> dep.oid
+         )
+    select coalesce(array_agg(distinct dep.oid), '{}') into v_rel from dep;
+    select coalesce(array_agg(distinct c.relname::text), '{}') into v_nombres
+      from pg_class c
+     where c.oid = any (v_rel) and c.relname ~ '^[[:alnum:]_]+$';
+    select coalesce(array_agg(distinct p.proname::text), '{}') into v_fn_nombres
+      from pg_proc p
+     where (p.oid = any (v_semillas) or p.oid = any (v_lee)) and p.proname ~ '^[[:alnum:]_]+$';
+    v_rx_rel := '[[:<:]](from|join|into|update|table|only|truncate)[[:space:]]+'
+                || '(([[:alnum:]_]+|"[^"]+")[[:space:]]*[.][[:space:]]*)?"?('
+                || array_to_string(v_nombres, '|') || ')"?[[:>:]]';
+    v_rx_fn  := '[[:<:]](' || array_to_string(v_fn_nombres, '|') || ')[[:space:]]*[(]';
+    select coalesce(array_agg(p.oid), '{}') into v_nuevas
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname !~ '^pg_' and n.nspname <> 'information_schema'
+       and p.prokind in ('f', 'p')
+       and not (p.oid = any (v_lee) or p.oid = any (v_conocidas) or p.oid = any (v_semillas))
+       and not exists (select 1 from pg_depend e
+                        where e.classid = 'pg_proc'::regclass and e.objid = p.oid and e.deptype = 'e')
+       and (   (cardinality(v_nombres) > 0 and p.prosrc ~* v_rx_rel)
+            or (cardinality(v_fn_nombres) > 0 and p.prosrc ~* v_rx_fn)
+            or exists (select 1 from pg_depend d
+                        where d.classid = 'pg_proc'::regclass and d.objid = p.oid
+                          and (   (d.refclassid = 'pg_class'::regclass and d.refobjid = any (v_rel))
+                               or (d.refclassid = 'pg_proc'::regclass
+                                   and (d.refobjid = any (v_semillas) or d.refobjid = any (v_lee))))));
+    exit when cardinality(v_nuevas) = 0;
+    v_lee := v_lee || v_nuevas;
+  end loop;
+  -- · De esas funciones, las que son peligro: SECURITY DEFINER (corren con
+  --   los permisos de su dueño, que se salta la policy), no de trigger
+  --   (esas no se pueden llamar sueltas), y que la API puede ejecutar.
+  select coalesce(array_agg(p.oid), '{}') into v_sospechosas
+    from pg_proc p
+   where p.oid = any (v_lee) and p.prosecdef and p.prokind = 'f'
+     and p.prorettype not in ('trigger'::regtype, 'event_trigger'::regtype)
+     and exists (select 1 from unnest(array['anon', 'authenticated', 'service_role']) r
+                  where has_schema_privilege(r, p.pronamespace, 'USAGE')
+                    and has_function_privilege(r, p.oid, 'EXECUTE'));
+  -- · Las vistas que llaman a una de esas (o leen otra vista que la llama):
+  --   aunque sean security_invoker, la función se salta la policy.
+  with recursive vf(oid) as (
+         select rw.ev_class
+           from pg_depend d
+           join pg_rewrite rw on rw.oid = d.objid
+          where d.classid = 'pg_rewrite'::regclass and d.refclassid = 'pg_proc'::regclass
+            and d.refobjid = any (v_sospechosas)
+         union
+         select rw.ev_class
+           from vf
+           join pg_depend d on d.refobjid = vf.oid and d.refclassid = 'pg_class'::regclass
+                           and d.classid = 'pg_rewrite'::regclass
+           join pg_rewrite rw on rw.oid = d.objid
+          where rw.ev_class <> vf.oid
+       )
+  select coalesce(array_agg(distinct vf.oid), '{}') into v_vistas_fn from vf;
+  -- · Las vistas que leen las tablas del libro, directo o a través de otra
+  --   vista: sin security_invoker, leen con los permisos de su dueño.
   with recursive dep(oid) as (
-         -- las tablas del libro, y todo lo que las lee a través de una vista
-         select c.oid from pg_class c
-          where c.relnamespace = 'public'::regnamespace and c.relname = any (c_tablas)
+         select unnest(v_tablas)
          union
          select rw.ev_class
            from dep
@@ -2801,40 +3117,38 @@ begin
                            and d.classid = 'pg_rewrite'::regclass
            join pg_rewrite rw on rw.oid = d.objid
           where rw.ev_class <> dep.oid
-       ),
-       vistas as (
-         select c.oid, n.nspname || '.' || c.relname as nombre, c.relkind,
-                coalesce((select o.option_value::boolean from pg_options_to_table(c.reloptions) o
-                           where o.option_name = 'security_invoker'), false) as invoker
-           from dep
-           join pg_class c on c.oid = dep.oid
-           join pg_namespace n on n.oid = c.relnamespace
-          where c.relkind in ('v', 'm')
        )
+  select coalesce(array_agg(distinct dep.oid), '{}') into v_rel_vistas from dep;
   select coalesce(jsonb_agg(s.falla), '[]'::jsonb) into v_malos
-    from (select format('falta la tabla %s', t) as falla
+    from (select format('falta la tabla %s (vuelve a pegar %s)', t,
+                        case when t like 'cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end) as falla
             from unnest(c_tablas) t
            where to_regclass('public.' || t) is null
           union all
-          select format('%s sin RLS', t)
+          select format('%s sin RLS (vuelve a pegar %s)', t,
+                        case when t like 'cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end)
             from unnest(c_tablas) t
            where to_regclass('public.' || t) is not null
              and not (select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.' || t))
           union all
-          select format('%s: la policy %s_dueno falta o no es «solo el dueño lee» (select, permisiva, authenticated, es_dueno())', t, t)
+          select format('%s: la policy %s_dueno falta o no es «solo el dueño lee» (select, permisiva, authenticated, '
+                        'es_dueno()) (vuelve a pegar %s)', t, t,
+                        case when t like 'cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end)
             from unnest(c_tablas) t
            where not exists (select 1 from pg_policies pl
                               where pl.schemaname = 'public' and pl.tablename = t and pl.policyname = t || '_dueno'
                                 and pl.cmd = 'SELECT' and pl.permissive = 'PERMISSIVE'
                                 and pl.roles = array['authenticated']::name[] and pl.qual = 'es_dueno()')
           union all
-          select format('%s tiene una policy ajena: %s', pl.tablename, pl.policyname)
+          select format('%s tiene una policy ajena: %s (vuelve a pegar %s: la borra)', pl.tablename, pl.policyname,
+                        case when pl.tablename like 'cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end)
             from pg_policies pl
            where pl.schemaname = 'public' and pl.tablename = any (c_tablas) and pl.policyname <> pl.tablename || '_dueno'
           union all
           -- privilegios de tabla: la API solo SELECT; anon y PUBLIC, nada
-          select format('%s tiene %s en %s', case when a.grantee = 0 then 'PUBLIC' else r.rolname::text end,
-                        a.privilege_type, c.relname)
+          select format('%s tiene %s en %s (vuelve a pegar %s)', case when a.grantee = 0 then 'PUBLIC' else r.rolname::text end,
+                        a.privilege_type, c.relname,
+                        case when c.relname like 'cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end)
             from pg_class c
             cross join lateral aclexplode(c.relacl) a
             left join pg_roles r on r.oid = a.grantee
@@ -2843,8 +3157,10 @@ begin
              and (a.grantee = 0 or r.rolname = 'anon' or a.privilege_type <> 'SELECT')
           union all
           -- privilegios por columna: a la API, ninguno
-          select format('%s tiene %s en la columna %s.%s', case when a.grantee = 0 then 'PUBLIC' else r.rolname::text end,
-                        a.privilege_type, c.relname, at.attname)
+          select format('%s tiene %s en la columna %s.%s (vuelve a pegar %s)',
+                        case when a.grantee = 0 then 'PUBLIC' else r.rolname::text end,
+                        a.privilege_type, c.relname, at.attname,
+                        case when c.relname like 'cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end)
             from pg_class c
             join pg_attribute at on at.attrelid = c.oid and at.attacl is not null
             cross join lateral aclexplode(at.attacl) a
@@ -2853,35 +3169,69 @@ begin
              and (a.grantee = 0 or r.rolname in ('anon', 'authenticated', 'service_role'))
           union all
           -- una vista que lee el libro con los permisos de su dueño se salta la policy
-          select format('la vista %s lee el libro sin security_invoker', v.nombre)
-            from vistas v
-           where v.relkind = 'v' and not v.invoker
+          select format('la vista %s.%s lee el libro sin security_invoker (no es de c1 ni de c2: se le pone '
+                        'with (security_invoker = true), o se quita)', n.nspname, c.relname)
+            from pg_class c
+            join pg_namespace n on n.oid = c.relnamespace
+           where c.oid = any (v_rel_vistas) and c.relkind = 'v'
+             and not coalesce((select o.option_value::boolean from pg_options_to_table(c.reloptions) o
+                                where o.option_name = 'security_invoker'), false)
           union all
           -- una vista materializada no tiene RLS: lo que copia lo lee quien tenga grant
-          select format('la vista materializada %s copia el libro y la puede leer la API', v.nombre)
-            from vistas v
-           where v.relkind = 'm'
-             and (has_table_privilege('anon', v.oid, 'SELECT') or has_table_privilege('authenticated', v.oid, 'SELECT'))
+          select format('la vista materializada %s.%s copia el libro y la puede leer la API (no es de c1 ni de c2: '
+                        'se le quita la API, o se quita)', n.nspname, c.relname)
+            from pg_class c
+            join pg_namespace n on n.oid = c.relnamespace
+           where c.oid = any (v_rel_vistas) and c.relkind = 'm'
+             and (has_table_privilege('anon', c.oid, 'SELECT') or has_table_privilege('authenticated', c.oid, 'SELECT'))
           union all
           -- las funciones: ver B.20
-          select format('falta la función %s', f)
+          select format('falta la función %s (vuelve a pegar %s)', f,
+                        case when f like 'fn_cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end)
             from unnest(c_fn_app || c_fn_internas) f
            where to_regprocedure('public.' || f) is null
           union all
-          select format('anon ejecuta %s', f)
+          select format('anon ejecuta %s (vuelve a pegar %s)', f,
+                        case when f like 'fn_cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end)
             from unnest(c_fn_app || c_fn_internas) f
            where to_regprocedure('public.' || f) is not null
              and has_function_privilege('anon', to_regprocedure('public.' || f)::oid, 'execute')
           union all
-          select format('authenticated ejecuta %s', f)
+          select format('authenticated ejecuta %s (vuelve a pegar %s)', f,
+                        case when f like 'fn_cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end)
             from unnest(c_fn_internas) f
            where to_regprocedure('public.' || f) is not null
              and has_function_privilege('authenticated', to_regprocedure('public.' || f)::oid, 'execute')
           union all
-          select format('service_role ejecuta %s', f)
+          -- A service_role se le acepta EXECUTE en las de trigger: nadie las
+          -- puede llamar sueltas, y es lo que les da e37-seguridad.sql, que
+          -- se puede volver a pegar (ver B.20).
+          select format('service_role ejecuta %s (vuelve a pegar %s)', f,
+                        case when f like 'fn_cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end)
             from unnest(c_fn_app || c_fn_internas) f
-           where to_regprocedure('public.' || f) is not null
-             and has_function_privilege('service_role', to_regprocedure('public.' || f)::oid, 'execute')) s;
+            join pg_proc p on p.oid = to_regprocedure('public.' || f)
+           where p.prorettype <> 'trigger'::regtype
+             and has_function_privilege('service_role', p.oid, 'execute')
+          union all
+          -- una función ajena, SECURITY DEFINER, que lee o escribe el libro y la API ejecuta
+          select format('la función %s es SECURITY DEFINER, lee o escribe el libro y la puede ejecutar %s. No es de c1 '
+                        'ni de c2: o es SECURITY INVOKER, o se le quita la API (revoke execute on function … from '
+                        'public, anon, authenticated, service_role); si conta.js la llama a propósito, mira es_dueno() '
+                        'por dentro y va en el reparto de B.20 (c_fn_app, en c2-libro.sql)', p.oid::regprocedure,
+                        (select string_agg(r, ', ' order by r)
+                           from unnest(array['anon', 'authenticated', 'service_role']) r
+                          where has_schema_privilege(r, p.pronamespace, 'USAGE')
+                            and has_function_privilege(r, p.oid, 'EXECUTE')))
+            from pg_proc p
+           where p.oid = any (v_sospechosas)
+          union all
+          -- y la vista que la llama
+          select format('la vista %s.%s lee el libro a través de una función SECURITY DEFINER que la API puede '
+                        'ejecutar: aunque sea security_invoker, esa función se salta la policy (no es de c1 ni de c2)',
+                        n.nspname, c.relname)
+            from pg_class c
+            join pg_namespace n on n.oid = c.relnamespace
+           where c.oid = any (v_vistas_fn)) s;
   -- es_dueno(), el candado del libro, igual que cuando se pegó.
   if to_regprocedure('public.fn_libro_huellas()') is null then
     v_mas := '["faltan las huellas (fn_libro_huellas): vuelve a pegar c2-libro.sql"]'::jsonb;
@@ -3047,6 +3397,26 @@ create or replace trigger trg_proyectos_con_libro
 --     fn_fecha_miami): solo authenticated, y por dentro solo pasa el
 --     dueño; ni anon ni service_role.
 -- fn_verificar_cadena comprueba este reparto cada vez (control permisos).
+-- Una excepción, a propósito: a service_role se le acepta EXECUTE en las
+-- funciones de trigger. docs/sql/e37-seguridad.sql (ya en producción, y se
+-- puede volver a pegar) se lo da a todas las de trigger de public, y no
+-- abre nada: una función de trigger no se puede llamar suelta, y al
+-- dispararse no se mira ese permiso. Sin la excepción, volver a pegar e37
+-- ponía el control en rojo por nada, y un control que grita por nada deja
+-- de creerse. Este archivo y c1 se lo siguen quitando al pegarse.
+--
+-- LA REGLA PARA LAS FASES QUE VIENEN (f03, f04, f05, f08…): una función
+-- que lee o escribe el libro es SECURITY INVOKER (entonces la policy
+-- manda, y no hace falta nada más), o, si tiene que ser SECURITY DEFINER:
+-- lleva justo después su revoke de public, anon, authenticated y
+-- service_role; si la llama la app a propósito, mira es_dueno() por dentro
+-- y se añade a c_fn_app (B.16) y a las huellas (B.22) en el mismo pegado.
+-- Una vista contable es security_invoker, y no llama a una función SECURITY
+-- DEFINER que lea el libro. El control permisos da en rojo lo que se salga
+-- de esto: una SECURITY DEFINER que nombra una tabla del libro (o una vista
+-- que lo lee, o una puerta interna, o fn_estado) y que la API puede
+-- ejecutar, y la vista que la llama. En Supabase toda función nace
+-- ejecutable por anon: el revoke olvidado es el error más probable.
 -- ---------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------
@@ -3055,8 +3425,8 @@ create or replace trigger trg_proyectos_con_libro
 -- ---------------------------------------------------------------------
 comment on table public.periodos is
   'Períodos contables (c2): un mes, la apertura (30-sep-2026, una sola) o un año. Nacen abiertos, seguidos y sin huecos; se cierran '
-  'cuando ya terminaron (hora de Miami), en orden (la apertura primero, con su asiento de apertura) y no se reabren ni se borran. '
-  'Nadie escribe en un período cerrado.';
+  'cuando ya terminaron (hora de Miami), en orden (la apertura primero, con su asiento de apertura; cada año después del anterior) y '
+  'no se reabren ni se borran. Nadie escribe en un período cerrado.';
 comment on column public.periodos.periodo          is 'AAAA-MM (mes), AAAA-MM-APERTURA o AAAA (año).';
 comment on column public.periodos.tipo             is 'mes, apertura o anio.';
 comment on column public.periodos.estado           is 'abierto o cerrado. De cerrado no se vuelve.';
@@ -3077,8 +3447,8 @@ comment on column public.asientos.numero         is 'AAAA-NNNNNN, correlativo po
 comment on column public.asientos.cadena_pos     is 'Posición en la cadena de hashes (orden de posteo, en todo el libro).';
 comment on column public.asientos.fecha_contable is 'La fecha del asiento, en hora de Miami. Decide el período.';
 comment on column public.asientos.periodo        is 'El período que contiene la fecha. Lo pone la base.';
-comment on column public.asientos.tipo           is 'normal, apertura o ajuste_cpa.';
-comment on column public.asientos.afecta_periodo is 'Solo ajuste_cpa: el período cerrado al que corresponde el ajuste.';
+comment on column public.asientos.tipo           is 'normal, apertura o ajuste_cpa. El reverso o el sustituto de un asiento de un ejercicio anterior es un ajuste_cpa de ese ejercicio.';
+comment on column public.asientos.afecta_periodo is 'Solo ajuste_cpa: el período cerrado al que corresponde el ajuste (en el reverso de un asiento de un ejercicio anterior, el período del original).';
 comment on column public.asientos.camino         is 'Por dónde entró: mano (el dueño), puente (automático, desde un documento), ia (propuesta aprobada, f07), reverso o reverso_automatico.';
 comment on column public.asientos.descripcion    is 'Qué es el asiento, en palabras.';
 comment on column public.asientos.motivo         is 'Por qué: obligatorio en un reverso y en un ajuste del CPA.';
@@ -3110,7 +3480,7 @@ comment on column public.asiento_lineas.fase        is 'Fase de la obra, opciona
 comment on column public.asiento_lineas.memo        is 'Nota de la línea.';
 
 comment on function public.fn_postear(jsonb)          is 'Postea un asiento a mano (solo el dueño). Devuelve id, número, período y hash.';
-comment on function public.fn_reversar(uuid, text)    is 'Reversa un asiento con su motivo (solo el dueño). Una vez; un reverso no se reversa. Un devengo, dentro de su mes, y anulando su reverso del día 1.';
+comment on function public.fn_reversar(uuid, text)    is 'Reversa un asiento con su motivo (solo el dueño). Una vez; un reverso no se reversa. Un devengo, dentro de su mes, y anulando su reverso del día 1. El de un ejercicio anterior sale como ajuste de ese ejercicio; la apertura cerrada no se reversa (se ajusta).';
 comment on function public.fn_estado(text)           is 'Fila de control de un período: asientos, filas, debe, haber y si cuadra.';
 comment on function public.fn_verificar_cadena()      is 'Verifica hashes, enlaces, numeración, contadores, cuadre, reversos, cierres, triggers y tablas, cuentas contra su historial, y permisos.';
 comment on function public.fn_cerrar_periodo(text)    is 'Cierra un período ya terminado (solo el dueño), en orden. No se reabre.';

@@ -31,7 +31,7 @@
 --   El cost code NO forma parte de la cuenta. Es una columna de cada
 --   línea del libro (asiento_lineas.cost_code, en c2) con llave foránea a
 --   la tabla que YA existe, codigos_partida(codigo). El plan se queda en
---   84 cuentas y el costo se corta por obra, por código, por los dos o
+--   86 cuentas y el costo se corta por obra, por código, por los dos o
 --   por ninguno. No se crea ninguna tabla cost_codes, y aquí NO se
 --   inserta nada en codigos_partida: en producción ya tiene sus filas y
 --   la maneja Edgar desde la app.
@@ -286,7 +286,12 @@ create index if not exists cuentas_historial_codigo_idx on public.cuentas_histor
 --     inactiva. Saldo vivo: en una cuenta de balance (activo, pasivo,
 --     capital), la suma de todo su historial; en una de resultados, la de
 --     los años que todavía no se cierran (un ajuste del CPA puede tener
---     que llegar a ella hasta entonces);
+--     que llegar a ella hasta entonces). Y se mide POR OBRA Y POR CÓDIGO,
+--     como el auxiliar, no solo el total: un total en cero puede esconder
+--     una obra que debe 1,000 y otra en −1,000 (el cobro de una retención
+--     aplicado a la obra equivocada). Inactivada, ya no entraría la
+--     reclasificación entre obras, y la cédula de retención por obra (o
+--     el costo por obra) quedaría mal para siempre;
 --   · por lo mismo, con saldo vivo no cambia una REGLA DE DIMENSIÓN
 --     (regla_obra, regla_cost_code) si ese saldo queda en una combinación
 --     que la regla nueva ya no admite: a obligatoria con saldo vivo sin
@@ -312,7 +317,6 @@ set search_path = public, pg_temp
 as $$
 declare
   v_con_mov  boolean := false;
-  v_saldo    numeric := 0;
   v_atrapado text;
 begin
   if tg_op = 'TRUNCATE' then
@@ -361,23 +365,31 @@ begin
       message = format('La cuenta %s tiene movimientos: su tipo y su saldo normal ya no cambian. '
                        'Crea otra cuenta y reclasifica con un asiento.', old.codigo);
   end if;
+  -- Inactivar o volver de grupo: ninguna combinación de obra y código con
+  -- saldo vivo (ver arriba). La lista dice cuáles, para trasladarlas.
   if v_con_mov
      and ((old.activa and not new.activa) or (old.imputable and not new.imputable))
      and to_regclass('public.asientos') is not null and to_regclass('public.periodos') is not null then
     execute $q$
-      select coalesce(sum(l.monto), 0)
-        from public.asiento_lineas l
-        join public.asientos a on a.id = l.asiento_id
-       where l.cuenta = $1
-         and (   $2 in ('activo', 'pasivo', 'capital')
-              or not exists (select 1 from public.periodos p
-                              where p.tipo = 'anio' and p.anio = a.anio and p.estado = 'cerrado'))
-    $q$ into v_saldo using old.codigo, old.tipo;
-    if v_saldo <> 0 then
+      select string_agg(format('%s%s: %s', coalesce(x.obra, '(sin obra)'),
+                               case when x.cc is not null then ' / ' || x.cc else '' end,
+                               x.saldo), '; ' order by x.obra nulls first, x.cc nulls first)
+        from (select l.proyecto_id as obra, l.cost_code as cc, sum(l.monto) as saldo
+                from public.asiento_lineas l
+                join public.asientos a on a.id = l.asiento_id
+               where l.cuenta = $1
+                 and (   $2 in ('activo', 'pasivo', 'capital')
+                      or not exists (select 1 from public.periodos p
+                                      where p.tipo = 'anio' and p.anio = a.anio and p.estado = 'cerrado'))
+               group by l.proyecto_id, l.cost_code
+              having sum(l.monto) <> 0) x
+    $q$ into v_atrapado using old.codigo, old.tipo;
+    if v_atrapado is not null then
       raise exception using errcode = 'MX003',
-        message = format('La cuenta %s (%s) tiene saldo vivo de %s: antes de %s se traslada ese saldo con un asiento '
-                         'a la cuenta que la sustituye. Si no, el saldo se queda atrapado: ya no entraría ni el '
-                         'asiento que lo mueve.', old.codigo, old.nombre, v_saldo,
+        message = format('La cuenta %s (%s) tiene saldo vivo (%s): antes de %s se traslada ese saldo con un asiento, '
+                         'entre obras y códigos o a la cuenta que la sustituye. Si no, se queda atrapado: ya no entraría '
+                         'ni el asiento que lo mueve. Cuenta por obra y por código, no solo el total: un total en cero '
+                         'puede esconder una obra que debe y otra en negativo.', old.codigo, old.nombre, v_atrapado,
                          case when old.activa and not new.activa then 'inactivarla' else 'volverla cuenta de grupo' end);
     end if;
   end if;
@@ -489,6 +501,30 @@ create or replace trigger trg_cuentas_historial_sin_truncate
   for each statement execute function public.fn_cuentas_historial_inmutable();
 
 -- ---------------------------------------------------------------------
+-- El relleno del historial, una sola vez. Si el historial está VACÍO y ya
+-- hay cuentas, este archivo se está pegando encima de un c1 anterior que
+-- no lo tenía (el borrador del 23-sep). Cada cuenta que ya estaba entra
+-- con una fila de alta, tal como está en este momento, y el rol lo dice
+-- («… · relleno de c1»): así queda escrito de dónde sale esa fila. Sin
+-- esto, el verificador de c2 (control cuentas) daba en rojo, para
+-- siempre, todas las cuentas que el upsert de abajo no toca, con un
+-- texto que se lee como una cuenta cambiada por debajo; y volver a pegar
+-- no lo arreglaba (un update que no cambia nada no se apunta).
+-- Solo con el historial vacío: con historial, una cuenta sin rastro es
+-- justo lo que el verificador tiene que cantar, y un pegado no la
+-- blanquea. Va antes del arreglo del padre y del upsert, para que lo que
+-- ellos cambien quede apuntado encima, como un cambio más.
+-- ---------------------------------------------------------------------
+insert into public.cuentas_historial (codigo, operacion, usuario_id, rol, antes, despues)
+select c.codigo, 'INSERT', auth.uid(),
+       coalesce(nullif(current_setting('role', true), 'none'), session_user::text)
+         || ' · relleno de c1: la cuenta ya existía cuando se creó el historial',
+       null, to_jsonb(c)
+  from public.cuentas c
+ where not exists (select 1 from public.cuentas_historial)
+ order by c.codigo;
+
+-- ---------------------------------------------------------------------
 -- Si la tabla ya existía de un pegado anterior con el check viejo del
 -- padre, se cambia por el de la tabla. Antes se ponen los padres que
 -- falten (una subcuenta añadida con el upsert viejo quedó sin padre),
@@ -562,8 +598,8 @@ comment on column public.cuentas.nombre_en       is 'Nombre en inglés, para el 
 comment on column public.cuentas.tipo            is 'activo, pasivo, capital, ingreso, costo, gasto, otro_ingreso u otro_gasto. Atado al primer dígito del código.';
 comment on column public.cuentas.padre           is 'Cuenta de la que cuelga una subcuenta (la pone la base a partir del código). Nulo en las cuentas de cuatro dígitos.';
 comment on column public.cuentas.saldo_normal    is 'debe o haber: el lado del que crece. Las contra-cuentas van al revés de su tipo.';
-comment on column public.cuentas.imputable       is 'false = cuenta de grupo: no recibe asientos, solo agrupa subcuentas. Con saldo vivo no pasa a false.';
-comment on column public.cuentas.activa          is 'false = no recibe asientos nuevos; su historia queda. Se inactiva en vez de borrar, y solo sin saldo vivo.';
+comment on column public.cuentas.imputable       is 'false = cuenta de grupo: no recibe asientos, solo agrupa subcuentas. Con saldo vivo (en cualquier obra o código) no pasa a false.';
+comment on column public.cuentas.activa          is 'false = no recibe asientos nuevos; su historia queda. Se inactiva en vez de borrar, y solo sin saldo vivo en ninguna obra ni código.';
 comment on column public.cuentas.regla_obra      is 'Qué exige a cada línea sobre proyecto_id: obligatoria, opcional o prohibida (MX006). Con saldo vivo, no se endurece si lo dejaría atrapado.';
 comment on column public.cuentas.regla_cost_code is 'Qué exige a cada línea sobre cost_code (codigos_partida): obligatoria, opcional o prohibida (MX006). Con saldo vivo, no se endurece si lo dejaría atrapado.';
 comment on column public.cuentas.etiqueta_fiscal is 'Pista para el CPA: M&E 50%, 1099, vehiculo… Vocabulario del CPA.';
@@ -574,7 +610,7 @@ comment on table public.cuentas_historial is
   'Un nombre o una etiqueta fiscal cambian cómo se lee lo ya asentado: aquí queda cuándo y de qué a qué.';
 comment on column public.cuentas_historial.operacion is 'INSERT, UPDATE o DELETE.';
 comment on column public.cuentas_historial.usuario_id is 'auth.uid() de quien hizo el cambio; nulo desde el SQL Editor.';
-comment on column public.cuentas_historial.rol        is 'Rol con que se hizo el cambio (el dueño de la base desde el SQL Editor).';
+comment on column public.cuentas_historial.rol        is 'Rol con que se hizo el cambio (el dueño de la base desde el SQL Editor). Un alta que dice «relleno de c1» es una cuenta que ya estaba cuando se creó el historial.';
 comment on column public.cuentas_historial.antes      is 'La fila como estaba (nula en un alta).';
 comment on column public.cuentas_historial.despues    is 'La fila como quedó (nula en una baja).';
 
@@ -599,6 +635,16 @@ comment on column public.cuentas_historial.despues    is 'La fila como quedó (n
 --   · 7200 pasa a 6130: la comisión de tarjeta y los cargos del banco son
 --     gasto de operación. Debajo de la utilidad de operación la bajaban,
 --     y esa utilidad es la que miran el banco y la afianzadora.
+-- Y lo que añadió la del 24-sep, dos pasivos que no tenían dónde ir:
+--   · 2050, los costos y gastos devengados por pagar: el devengo de cierre
+--     sin factura (el avance de un sub sin facturar, el material recibido
+--     sin factura), que el WIP de f10 necesita como costo a la fecha. En
+--     2010 no cabe: 2010 va por proveedor y se concilia contra el
+--     statement de cada supply (f08), y un devengo no está en ningún
+--     statement;
+--   · 2225, el FUTA por pagar (940): el journal de Gusto lo da aparte, y
+--     la balanza de QuickBooks trae su pasivo. En 2220 o en 2230 rompía el
+--     amarre de f11 (2220 contra el 941, 2230 contra el RT-6).
 -- ▶ Edgar confirma con el CPA las cuentas del 1120-S (y si la parte de
 -- obra de su sueldo va en 5001 o prefiere otra forma de apartarla).
 --
@@ -626,8 +672,8 @@ comment on column public.cuentas_historial.despues    is 'La fila como quedó (n
 --     y 5019: sin obra) y 5950 (por obra, sin cost code).
 --   · 6xxx, 7xxx y 9000 nunca llevan obra.
 --   · En el balance, solo lo que es de una obra por naturaleza la exige
---     (1120, 1200, 2020, 2400, 2410); 1110, 1190 y 1420 la admiten; el
---     resto la prohíbe. f03 y f10 pueden afinarlo; con el libro ya en
+--     (1120, 1200, 2020, 2400, 2410); 1110, 1190, 1420 y 2050 la admiten;
+--     el resto la prohíbe. f03 y f10 pueden afinarlo; con el libro ya en
 --     marcha, la guarda no deja endurecer una regla que atraparía saldo
 --     vivo (antes se traslada ese saldo con un asiento).
 --
@@ -696,12 +742,14 @@ select v.codigo, v.nombre, v.nombre_en, v.tipo,
   ('1600', 'Depósitos',                                 'Deposits',                                            'activo',  'debe',  true,  'prohibida',   'prohibida',   null,           null),
 
   -- 2000 · Pasivo
-  ('2010', 'Cuentas por pagar',                         'Accounts payable',                                    'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           'Una línea abierta por proveedor (f03); se concilia contra el statement del supply (f08).'),
+  ('2010', 'Cuentas por pagar',                         'Accounts payable',                                    'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           'Una línea abierta por proveedor (f03); se concilia contra el statement del supply (f08). Lo devengado sin factura no va aquí: va a 2050.'),
   ('2020', 'Retención por pagar a subcontratistas',     'Retainage payable to subcontractors',                 'pasivo',  'haber', true,  'obligatoria', 'prohibida',   null,           'Por obra.'),
+  ('2050', 'Costos y gastos devengados por pagar',      'Accrued costs and expenses',                          'pasivo',  'haber', true,  'opcional',    'prohibida',   null,           'El devengo de cierre sin factura (el avance de un sub sin facturar, el material recibido sin factura): reversible, se deshace solo el día 1 (c2). Nunca contra 2010, que se concilia contra el statement de cada proveedor. Los sueldos devengados van a 2210 y el PTO a 2215.'),
   ('2100', 'Tarjetas de crédito',                       'Credit cards',                                        'pasivo',  'haber', false, 'prohibida',   'prohibida',   null,           'Cuenta de GRUPO: no recibe asientos. Una subcuenta por tarjeta (2100-XXXX, los últimos 4); cuelga sola de 2100.'),
   ('2210', 'Sueldos acumulados',                        'Accrued wages',                                       'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           null),
   ('2215', 'Vacaciones devengadas',                     'Accrued paid time off',                               'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           'Solo si se devenga PTO.'),
-  ('2220', 'Impuestos de nómina retenidos',             'Payroll taxes withheld (941)',                        'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           'Del journal del proveedor de nómina (f11).'),
+  ('2220', 'Impuestos de nómina retenidos',             'Payroll taxes withheld (941)',                        'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           'Solo el 941: lo retenido al empleado (impuesto federal, Social Security y Medicare) y la parte patronal de Social Security y Medicare, que se depositan juntos. Del journal del proveedor de nómina (f11). El FUTA va a 2225 y el RT-6 a 2230.'),
+  ('2225', 'FUTA por pagar',                            'Federal unemployment tax payable (940)',              'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           'El FUTA patronal (940), del journal del proveedor de nómina (f11). Aparte del 941 (2220) y del RT-6 (2230): cada uno amarra contra su declaración.'),
   ('2230', 'Reempleo de Florida por pagar',             'Florida reemployment tax payable (RT-6)',             'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           null),
   ('2240', 'Deducciones a empleados',                   'Employee deductions payable',                         'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           null),
   ('2250', 'Reembolsos a empleados por pagar',          'Employee reimbursements payable',                     'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           'Lo que un empleado pagó de su bolsillo por la empresa (f03: recibo con forma de pago reembolso). Lo de Edgar va a 2900.'),
@@ -798,7 +846,7 @@ where (c.nombre, c.nombre_en, c.tipo, c.padre, c.saldo_normal, c.imputable,
 
 -- =====================================================================
 -- Lo que enseña el SQL Editor al terminar: el plan, para reconocerlo.
--- Esperado: 84 cuentas (83 imputables; 2100 es de grupo), más las
+-- Esperado: 86 cuentas (85 imputables; 2100 es de grupo), más las
 -- subcuentas de tarjeta que Edgar haya añadido.
 -- =====================================================================
 select codigo, nombre, tipo, saldo_normal as saldo, imputable, activa,

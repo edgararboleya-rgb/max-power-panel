@@ -29,6 +29,18 @@
 -- app postea justo en ese momento, la prueba la espera (y no se esperan
 -- la una a la otra). También se deshace.
 --
+-- EL CANDADO DE PERIODOS. El libro toma siempre primero la fila del
+-- período («for share» al postear, el update al cerrar) y después el
+-- candado de la cadena. Una prueba que postea y después cierra (o cierra
+-- dos períodos seguidos) los tomaría al revés: si la app postea en ese
+-- mes justo entonces, cada una esperaría a la otra y Postgres mataría el
+-- posteo de la app (40P01, «deadlock detected», un HTTP 500 en inglés).
+-- Por eso toda prueba que cierra períodos toma, como PRIMERA sentencia de
+-- su subtransacción, «lock table public.periodos in exclusive mode» (o
+-- «access exclusive» si después hace un ALTER TABLE de periodos): así la
+-- app la espera a ella, unos milisegundos, y no se traban. El candado se
+-- suelta con el MXT00. Los ayudantes que cierran lo exigen (MXT09).
+--
 -- Rojo primero, SOLO en el banco de pruebas (pruebas/conta/correr.sh con
 -- «c2-libro.sql:A»; en Supabase c2-libro.sql se pega siempre entero): con
 -- solo el bloque A, estas pruebas fallan porque los ataques ENTRAN
@@ -98,6 +110,9 @@ end $$;
 --     último día de ese período, deja la apertura con su asiento y cierra
 --     en orden, como el SQL Editor, todo lo abierto ANTES de él.
 --   · mx_cerrar_hasta(periodo): lo mismo, y cierra también ese período.
+--   · mx_exigir_candado(): los dos de arriba y mx_apertura_con_asiento
+--     la llaman antes de nada; si la prueba no tomó el candado de
+--     periodos (ver la cabecera), se niega (MXT09).
 -- Los cierres llevan «cerrado_el = now()» solo para que el rojo (el bloque
 -- A solo, sin guarda) cumpla el check de la tabla; con el bloque B, la
 -- guarda pone la hora del cierre y su foto.
@@ -150,6 +165,23 @@ begin
 end $$;
 revoke execute on function pg_temp.mx_fingir_hoy(date) from public, anon, authenticated, service_role;
 
+create or replace function pg_temp.mx_exigir_candado() returns void
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if not exists (select 1 from pg_locks l
+                  where l.locktype = 'relation' and l.relation = 'public.periodos'::regclass
+                    and l.pid = pg_backend_pid() and l.granted
+                    and l.mode in ('ExclusiveLock', 'AccessExclusiveLock')) then
+    raise exception using errcode = 'MXT09',
+      message = 'c2-pruebas: una prueba que cierra períodos toma antes, como primera sentencia de su subtransacción, '
+                'lock table public.periodos in exclusive mode (ver la cabecera: sin él, se puede trabar con un '
+                'posteo de la app).';
+  end if;
+end $$;
+revoke execute on function pg_temp.mx_exigir_candado() from public, anon, authenticated, service_role;
+
 create or replace function pg_temp.mx_apertura_con_asiento() returns void
 language plpgsql
 set search_path = public, pg_temp
@@ -159,6 +191,7 @@ declare
   v_banco text := nullif(current_setting('mx_pruebas.banco', true), '');
   v_cap   text := nullif(current_setting('mx_pruebas.capital', true), '');
 begin
+  perform pg_temp.mx_exigir_candado();
   select * into v_ap from periodos where tipo = 'apertura' and estado = 'abierto' order by desde limit 1;
   if v_ap.periodo is null
      or exists (select 1 from asientos a
@@ -186,6 +219,7 @@ declare
   v_p periodos;
   v_q text;
 begin
+  perform pg_temp.mx_exigir_candado();
   select * into v_p from periodos where periodo = p_periodo;
   if v_p.periodo is null then
     raise exception using errcode = 'MXT09', message = format('c2-pruebas: no existe el período %s.', p_periodo);
