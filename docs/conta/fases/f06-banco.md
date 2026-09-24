@@ -26,8 +26,14 @@
   `transferencia` 1010 → 1030 sin tocar resultados; sus intereses van a 4910;
   lo que sale para el impuesto sobre la renta de Edgar va a **3200** (f07,
   regla a); se concilia contra su statement como cualquier banco.
-- **American Express Business Gold** → `2100-XXXX` (sus últimos 4).
-- **American Express Business Blue** → `2100-XXXX` (sus últimos 4).
+- **American Express Business Gold** → `2100-2013` (la tarjeta acaba en 2013;
+  en QuickBooks la Gold figura como 1007: si es otra tarjeta o la anterior,
+  se da de alta también en `tarjetas`, a la misma subcuenta).
+- **American Express Business Blue** → `2100-2009`.
+- **Chase débito** acaba en **9420** → `1010` (la cuenta operativa; en
+  QuickBooks la cuenta es «Chase Chk 4392»: 4392 es el número de la cuenta,
+  9420 el de la tarjeta, que es el que sale en los tickets).
+- Las tres están dadas de alta en producción (tabla `tarjetas`, 24-sep).
   Amex en su web muestra los últimos **5** dígitos; la subcuenta y
   `recibos.ultimos4` usan los últimos 4.
 - Pago de cada Amex desde Chase = `transferencia`: Dr 2100-XXXX / Cr 1010,

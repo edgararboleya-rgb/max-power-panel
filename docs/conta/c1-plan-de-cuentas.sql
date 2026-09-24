@@ -745,6 +745,8 @@ select v.codigo, v.nombre, v.nombre_en, v.tipo,
   ('2020', 'Retención por pagar a subcontratistas',     'Retainage payable to subcontractors',                 'pasivo',  'haber', true,  'obligatoria', 'prohibida',   null,           'Por obra.'),
   ('2050', 'Costos y gastos devengados por pagar',      'Accrued costs and expenses',                          'pasivo',  'haber', true,  'opcional',    'prohibida',   null,           'El devengo de cierre sin factura (el avance de un sub sin facturar, el material recibido sin factura): reversible, se deshace solo el día 1 (c2). Nunca contra 2010, que se concilia contra el statement de cada proveedor. Los sueldos devengados van a 2210 y el PTO a 2215.'),
   ('2100', 'Tarjetas de crédito',                       'Credit cards',                                        'pasivo',  'haber', false, 'prohibida',   'prohibida',   null,           'Cuenta de GRUPO: no recibe asientos. Una subcuenta por tarjeta (2100-XXXX, los últimos 4); cuelga sola de 2100.'),
+  ('2100-2009', 'Amex Business Blue',                  'Amex Business Blue',                                  'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           'La tarjeta que acaba en 2009 (Edgar, 24-sep). En QuickBooks: Amex Blue (2009).'),
+  ('2100-2013', 'Amex Business Gold',                  'Amex Business Gold',                                  'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           'La tarjeta que acaba en 2013 (Edgar, 24-sep). En QuickBooks la Gold figura como 1007.'),
   ('2210', 'Sueldos acumulados',                        'Accrued wages',                                       'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           null),
   ('2215', 'Vacaciones devengadas',                     'Accrued paid time off',                               'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           'Solo si se devenga PTO.'),
   ('2220', 'Impuestos de nómina retenidos',             'Payroll taxes withheld (941)',                        'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           'Solo el 941: lo retenido al empleado (impuesto federal, Social Security y Medicare) y la parte patronal de Social Security y Medicare, que se depositan juntos. Del journal del proveedor de nómina (f11). El FUTA va a 2225 y el RT-6 a 2230.'),
@@ -845,8 +847,8 @@ where (c.nombre, c.nombre_en, c.tipo, c.padre, c.saldo_normal, c.imputable,
 
 -- =====================================================================
 -- Lo que enseña el SQL Editor al terminar: el plan, para reconocerlo.
--- Esperado: 85 cuentas (84 imputables; 2100 es de grupo), más las
--- subcuentas de tarjeta que Edgar haya añadido.
+-- Esperado: 87 cuentas (86 imputables; 2100 es de grupo, con las dos
+-- Amex: 2100-2009 la Blue y 2100-2013 la Gold).
 -- =====================================================================
 select codigo, nombre, tipo, saldo_normal as saldo, imputable, activa,
        regla_obra as obra, regla_cost_code as cost_code, etiqueta_fiscal
