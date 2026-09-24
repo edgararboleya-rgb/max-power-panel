@@ -112,3 +112,17 @@ no lee una línea**, y lo demuestras.
 
 ## Desbloquea
 Todo lo demás.
+
+## Lo construido (24-sep) — versión candidata, sin pegar
+- `docs/conta/c2-libro.sql` (A: tablas y mínimas para el rojo; B: controles) y
+  `docs/conta/c2-pruebas.sql` (**78 pruebas**, no dejan rastro). No hizo falta
+  `pruebas/conta-libro.js`: las pruebas son SQL y corren en el SQL Editor.
+- Tres rondas de ataque con cuatro lentes (invariantes, seguridad, contable,
+  operación): 27, 14 y 11 hallazgos, cada uno reproducido en base limpia y
+  corregido con su prueba.
+- `fn_verificar_cadena()`: 10 controles (hash, enlace, numeración, contadores,
+  cuadre, reversos, períodos, triggers, cuentas, permisos).
+- Banco de pruebas en `pruebas/conta/` (imita Supabase: roles, RLS, privilegios
+  por defecto, SQL Editor en una transacción). Verde en Postgres 16 y en
+  **17.6**, la versión de producción (`pg17.sh`).
+- Orden de pegado y qué debe verse: `pruebas/conta/README.md` §0.

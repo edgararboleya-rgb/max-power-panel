@@ -185,3 +185,15 @@ centavos vive solo en `asiento_lineas.monto`.
 
 ## Desbloquea
 Fase 2 (el libro) y, sobre todo, Fase 9 (estimado contra real).
+
+## Lo construido (24-sep) — versión candidata, sin pegar
+- `docs/conta/c1-plan-de-cuentas.sql`: **85 cuentas** (84 imputables; 2100 es
+  de grupo y cada tarjeta cuelga como `2100-XXXX`). 1020 salió (no hay cuenta de
+  nómina); 1030 (reserva de impuestos) se queda.
+- Cost codes: **opción B** (columna `cost_code` de la línea, con llave a
+  `codigos_partida`). En costo la obra es obligatoria y el código opcional.
+- Una cuenta con movimientos no se borra (se inactiva); con saldo vivo, ni se
+  inactiva ni se le endurece una regla de dimensión. Todo cambio queda en
+  `cuentas_historial` y el verificador de c2 lo compara.
+- ▶ Pendiente de Edgar: revisar el borrador de cuentas y añadir las dos Amex
+  con sus últimos 4.

@@ -92,3 +92,20 @@ Un recibo nuevo desde el teléfono aparece como asiento con su proveedor y su
 forma de pago; una factura emitida no se puede borrar; correr el puente dos
 veces no duplica nada; y **un asiento de mano de obra en el libro solo puede
 haber nacido de un journal o de un devengo reversible**.
+
+## Lo construido (24-sep) — versión candidata, sin pegar
+- `docs/conta/c3-puentes.sql` y `docs/conta/c3-pruebas.sql` (**112 pruebas**;
+  2 necesitan Storage). Recibos, trabajos externos, facturas, cobros (con
+  devolución de cheque rebotado) y horas (solo reparto y devengo reversible).
+  Lo que falta va a `puentes_bandeja` con el motivo en llano; «reintentar» es
+  `fn_puentes_correr()`; `fn_puentes_verificar()` da 13 controles.
+- Guardarraíl: nada fechado antes del 1-oct-2026 postea.
+- Tres rondas de ataque (regresión de la app, contable, robustez, seguridad):
+  30, 20 y 22 hallazgos, todos corregidos con su prueba. **La última ronda no
+  se ha vuelto a atacar.**
+- Cambios a propósito en la app de obra (el pegado los trae): un papel ya
+  contabilizado no se borra (se anula, MX003); una factura emitida no se
+  edita (nota de crédito); un recibo anulado no vuelve con un ✎
+  (`fn_recibo_desanular`); en Storage no se borra ni se mueve nada de
+  `recibos/` ni `docs/`; `trg_recibo_marca_material` corre solo si cambian
+  obra, notas o estado; aprobar horas no dispara la guarda de correcciones.

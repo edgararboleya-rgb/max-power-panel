@@ -31,7 +31,7 @@
 --   El cost code NO forma parte de la cuenta. Es una columna de cada
 --   línea del libro (asiento_lineas.cost_code, en c2) con llave foránea a
 --   la tabla que YA existe, codigos_partida(codigo). El plan se queda en
---   86 cuentas y el costo se corta por obra, por código, por los dos o
+--   85 cuentas y el costo se corta por obra, por código, por los dos o
 --   por ninguno. No se crea ninguna tabla cost_codes, y aquí NO se
 --   inserta nada en codigos_partida: en producción ya tiene sus filas y
 --   la maneja Edgar desde la app.
@@ -845,7 +845,7 @@ where (c.nombre, c.nombre_en, c.tipo, c.padre, c.saldo_normal, c.imputable,
 
 -- =====================================================================
 -- Lo que enseña el SQL Editor al terminar: el plan, para reconocerlo.
--- Esperado: 86 cuentas (85 imputables; 2100 es de grupo), más las
+-- Esperado: 85 cuentas (84 imputables; 2100 es de grupo), más las
 -- subcuentas de tarjeta que Edgar haya añadido.
 -- =====================================================================
 select codigo, nombre, tipo, saldo_normal as saldo, imputable, activa,
