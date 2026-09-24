@@ -3642,6 +3642,7 @@ declare
   v_obra  text := nullif(current_setting('mx3.obra', true), '');
   v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
   v_mes   text := nullif(current_setting('mx3.mes', true), '');
+  v_ofi   int;
   v_obt   text;
   v_esp   text := 'oficial=si linea_de_edgar=0';
 begin
@@ -3663,8 +3664,13 @@ begin
       null;  -- sin otras horas en el mes: no hay devengo, y ninguna línea de Edgar
     end;
     execute 'reset role';
+    -- El plan del devengo es del bloque B: en rojo no existe (y la prueba
+    -- sigue y dice qué no pasó, sin fallar por una función que falta).
+    if to_regprocedure('public.fn_puente_devengo_plan(text)') is not null then
+      execute 'select coalesce((public.fn_puente_devengo_plan($1)->''fuera''->>''oficial'')::int, 0)' into v_ofi using v_mes;
+    end if;
     select format('oficial=%s linea_de_edgar=%s',
-                  case when coalesce((fn_puente_devengo_plan(v_mes)->'fuera'->>'oficial')::int, 0) >= 1 then 'si' else 'no' end,
+                  case when coalesce(v_ofi, 0) >= 1 then 'si' else 'no' end,
                   (select count(*) from asiento_lineas l
                     where l.asiento_id = pg_temp.c3_vivo('horas_devengo', v_mes) and l.co = 'C3-OFI'))
       into v_obt;
@@ -5006,15 +5012,23 @@ begin
       v_h := sqlstate;
     end;
     -- Con la guarda apagada un instante (si la tabla está en uso, omitida).
-    execute 'set local lock_timeout = ''2s''';
-    begin
-      execute 'alter table public.puente_cuentas disable trigger trg_puente_cuentas_guarda';
-    exception when lock_not_available then
-      v_omite := 'la tabla puente_cuentas estaba en uso (se prueba en el banco)';
-      raise exception using errcode = 'MXT00';
-    end;
+    -- Solo si la guarda existe: en rojo (bloque A) no hay guarda, el update
+    -- entra igual y la prueba sigue y dice qué no pasó.
+    if exists (select 1 from pg_trigger
+                where tgname = 'trg_puente_cuentas_guarda' and tgrelid = 'public.puente_cuentas'::regclass) then
+      execute 'set local lock_timeout = ''2s''';
+      begin
+        execute 'alter table public.puente_cuentas disable trigger trg_puente_cuentas_guarda';
+      exception when lock_not_available then
+        v_omite := 'la tabla puente_cuentas estaba en uso (se prueba en el banco)';
+        raise exception using errcode = 'MXT00';
+      end;
+    end if;
     update puente_cuentas set cuenta = v_cxp where rol = 'sueldos_devengados';
-    execute 'alter table public.puente_cuentas enable trigger trg_puente_cuentas_guarda';
+    if exists (select 1 from pg_trigger
+                where tgname = 'trg_puente_cuentas_guarda' and tgrelid = 'public.puente_cuentas'::regclass) then
+      execute 'alter table public.puente_cuentas enable trigger trg_puente_cuentas_guarda';
+    end if;
     select case when v.ok then 't' else 'f' end
            || case when v.detalle::text like '%es de dos papeles del puente%' then '/dos_papeles' else '' end
       into v_ctl

@@ -52,9 +52,9 @@
 --   · las que prueban c1 (el plan y su guarda: 29, 40, 42, 44, 45, 46, 50,
 --     64, 72 y 74), que no depende del bloque A; la del candado de las
 --     pruebas (75), que prueba a estas mismas pruebas; y la del rastro
---     (78);
+--     (77);
 --   · unas pocas que usan piezas que solo existen en el bloque B
---     (fn_postear_interno en la 41, la 63, la 69, la 70 y la 77; la guarda de
+--     (fn_postear_interno en la 41, la 63, la 69, la 70 y la 76; la guarda de
 --     periodos, que la 60, la 65, la 71 y la 73 apagan un momento), que
 --     fallan porque falta la pieza.
 -- Con el bloque B, todas en true.
@@ -3620,7 +3620,7 @@ begin
 end $$;
 
 
--- 77. Un papel de un puente cuya fecha se corrige de diciembre a enero (un
+-- 76. Un papel de un puente cuya fecha se corrige de diciembre a enero (un
 --     ticket de 2027 mal leído como de 2026): su asiento viejo se reversa
 --     como ajuste de 2026 (prueba 70) y el sustituto es un asiento NORMAL de
 --     enero, porque el papel ya es de 2027: el puente lo dice en
@@ -3658,11 +3658,11 @@ begin
   v_esp := format('papel_de_%s=MX007 papel_de_%s=entró/normal/%s reversos=t', extract(year from v_dic_desde),
                   extract(year from v_ene_desde), extract(year from v_ene_desde));
   if v_dueno is null or v_c5 is null or v_banco is null or v_obra is null or v_dic is null then
-    insert into _pruebas values (77, 'el sustituto de un papel que pasó al año nuevo es un asiento normal de ese año', v_esp, 'omitida: falta dueño, cuentas, obra o un diciembre abierto con su enero', null);
+    insert into _pruebas values (76, 'el sustituto de un papel que pasó al año nuevo es un asiento normal de ese año', v_esp, 'omitida: falta dueño, cuentas, obra o un diciembre abierto con su enero', null);
     return;
   end if;
   v_doc := jsonb_build_object(
-    'camino', 'puente', 'origen_tabla', 'c2_pruebas_doc', 'origen_id', 'c2-pruebas-77',
+    'camino', 'puente', 'origen_tabla', 'c2_pruebas_doc', 'origen_id', 'c2-pruebas-76',
     'fecha', to_char(v_dic_desde + 29, 'YYYY-MM-DD'), 'descripcion', 'c2-pruebas: un ticket de diciembre (se deshace)',
     'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_c5, 'monto', '100.00', 'proyecto_id', v_obra),
                                 jsonb_build_object('cuenta', v_banco, 'monto', '-100.00')),
@@ -3704,11 +3704,11 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
   end;
-  insert into _pruebas values (77, 'el sustituto de un papel que pasó al año nuevo es un asiento normal de ese año', v_esp, v_obt, v_obt = v_esp);
+  insert into _pruebas values (76, 'el sustituto de un papel que pasó al año nuevo es un asiento normal de ese año', v_esp, v_obt, v_obt = v_esp);
 end $$;
 
 
--- 78. Las pruebas no dejaron rastro: el libro, el plan, su historial, las
+-- 77. Las pruebas no dejaron rastro: el libro, el plan, su historial, las
 --     secuencias y las huellas (el reloj fingido y los ALTER TABLE de
 --     algunas pruebas se deshicieron) están igual que al empezar. Va la
 --     última.
@@ -3718,7 +3718,7 @@ declare
   v_obt   text;
 begin
   v_obt := pg_temp.mx_foto();
-  insert into _pruebas values (78, 'las pruebas no dejan rastro (libro, plan, historial, secuencias y huellas)', v_antes, v_obt, v_obt = v_antes);
+  insert into _pruebas values (77, 'las pruebas no dejan rastro (libro, plan, historial, secuencias y huellas)', v_antes, v_obt, v_obt = v_antes);
 end $$;
 
 select * from _pruebas order by n;

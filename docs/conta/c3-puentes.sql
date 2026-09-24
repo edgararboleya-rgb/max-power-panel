@@ -869,7 +869,14 @@ create index if not exists horas_aprobaciones_horas_idx on public.horas_aprobaci
 --     distinto cae en la bandeja con su texto tal cual, y se añade.
 --   · tarjetas y proveedores: vacías. ▶ Edgar da de alta sus tarjetas (y
 --     añade antes sus subcuentas 2100-XXXX a c1) y sus supplies.
--- «on conflict do nothing»: volver a pegar NO pisa lo que Edgar corrigió.
+-- Volver a pegar NO pisa lo que Edgar corrigió: solo entra lo que falta
+-- (la llave que no está), y a una cuenta activa. Por eso «not exists» y
+-- no solo «on conflict do nothing»: la guarda de las reglas (bloque B)
+-- corre ANTES de que Postgres vea el conflicto, y juzgaría el valor de
+-- arranque contra el plan de hoy. Si Edgar retiró una cuenta que un valor
+-- de arranque usaba (la 5600, o la 4030 después de cerrar el año, como
+-- dice c1) y ya apuntó la regla a otra, o le dio a un papel la cuenta que
+-- otro tenía de arranque, el segundo pegado se caía en esa fila.
 -- ---------------------------------------------------------------------
 insert into public.puente_cuentas (rol, cuenta, descripcion)
 select v.rol, v.cuenta, v.descripcion
@@ -886,7 +893,8 @@ select v.rol, v.cuenta, v.descripcion
     ('mano_obra_oficial',  '5001', 'La parte de obra del sueldo de Edgar: solo del journal de nómina (f11). Aquí solo se vigila.'),
     ('use_tax',            '2300', 'Use tax por pagar: NUNCA desde un recibo (el impuesto del ticket es costo). Aquí solo se vigila.')
   ) as v(rol, cuenta, descripcion)
- where exists (select 1 from public.cuentas c where c.codigo = v.cuenta)
+ where exists (select 1 from public.cuentas c where c.codigo = v.cuenta and c.activa and c.imputable)
+   and not exists (select 1 from public.puente_cuentas pc where pc.rol = v.rol)
 on conflict (rol) do nothing;
 
 insert into public.mapeo_categoria_recibo (categoria, cuenta, cuenta_sin_obra, notas)
@@ -918,7 +926,8 @@ select v.categoria, v.cuenta, v.sin_obra, v.notas
     ('oficina',           '6500', null, null),
     ('office',            '6500', null, null)
   ) as v(categoria, cuenta, sin_obra, notas)
- where exists (select 1 from public.cuentas c where c.codigo = v.cuenta)
+ where exists (select 1 from public.cuentas c where c.codigo = v.cuenta and c.activa and c.imputable)
+   and not exists (select 1 from public.mapeo_categoria_recibo m where m.categoria = v.categoria)
 on conflict (categoria) do nothing;
 
 insert into public.mapeo_metodo_pago (metodo_pago, forma, cuenta, notas)
@@ -961,7 +970,8 @@ select v.metodo, v.forma, v.cuenta, v.notas
     ('reimbursement',       'reembolso',        null,   null),
     ('personal',            'reembolso',        null,   null)
   ) as v(metodo, forma, cuenta, notas)
- where v.cuenta is null or exists (select 1 from public.cuentas c where c.codigo = v.cuenta)
+ where (v.cuenta is null or exists (select 1 from public.cuentas c where c.codigo = v.cuenta and c.activa and c.imputable))
+   and not exists (select 1 from public.mapeo_metodo_pago m where m.metodo_pago = v.metodo)
 on conflict (metodo_pago) do nothing;
 
 insert into public.mapeo_tipo_proyecto (tipo, cuenta, notas)
@@ -971,7 +981,8 @@ select v.tipo, v.cuenta, v.notas
     ('comercial',   '4020', 'Contrato comercial.'),
     ('servicio',    '4030', 'Servicio y T&M. Las órdenes de cambio (4040) las separa f10 por su alcance.')
   ) as v(tipo, cuenta, notas)
- where exists (select 1 from public.cuentas c where c.codigo = v.cuenta)
+ where exists (select 1 from public.cuentas c where c.codigo = v.cuenta and c.activa and c.imputable)
+   and not exists (select 1 from public.mapeo_tipo_proyecto m where m.tipo = v.tipo)
 on conflict (tipo) do nothing;
 
 

@@ -27,6 +27,11 @@
 #      crédito: el cobro espera y ve la factura anulada (MX008).
 #   7. Dos anticipos distintos aplicados a la vez a la misma factura: el
 #      segundo espera y ya no cabe (MX008).
+#   8. Dos cobros a la vez a la misma factura con su número escrito de
+#      otra forma (« 951», «+951», «951 »): el candado y la búsqueda leen
+#      el mismo número, así que el segundo espera igual y ya no cabe
+#      (MX008). (Antes el candado se saltaba esos y la factura se cobraba
+#      dos veces.)
 # Y comprueba: fn_verificar_cadena y los controles de los puentes en true
 # (también partidas: ninguna factura en negativo ni anulada con cobro).
 #
@@ -62,18 +67,22 @@ begin
   perform fn_mapeo_confirmar('tipo_proyecto');
 end $$;
 -- Dos recibos ya contabilizados (escenarios 1 y 2) y seis que esperan una
--- regla que todavía no existe (escenario 4).
-insert into recibos (id, proyecto_id, ruta, total, proveedor, estado, autor_id, fecha, categoria, metodo_pago, ultimos4)
+-- regla que todavía no existe (escenario 4). Subidos el día de su fecha
+-- (creado): el reloj del banco puede ser de antes del corte, y un recibo
+-- subido antes del corte es de antes del corte (c3, punto 6).
+insert into recibos (id, proyecto_id, ruta, total, proveedor, estado, autor_id, creado, fecha, categoria, metodo_pago, ultimos4)
 overriding system value
 select v.id, 'casa-perez-k3m9', 'recibos/banco/' || v.id || '.jpg', v.total, 'CED', 'leido',
-       '00000000-0000-4000-a000-000000000001', date '2026-10-06', 'material', v.metodo, '9998'
+       '00000000-0000-4000-a000-000000000001', timestamptz '2026-10-06 12:00-04', date '2026-10-06', 'material', v.metodo, '9998'
   from (values (-900, 245.37, 'tarjeta'), (-901, 100.00, 'tarjeta'),
                (-920, 11.00, 'c3 metodo nuevo'), (-921, 12.00, 'c3 metodo nuevo'), (-922, 13.00, 'c3 metodo nuevo'),
                (-923, 14.00, 'c3 metodo nuevo'), (-924, 15.00, 'c3 metodo nuevo'), (-925, 16.00, 'c3 metodo nuevo'))
        as v(id, total, metodo);
--- La factura de los anticipos (escenario 7): entra al libro al confirmar.
+-- La factura de los anticipos (escenario 7) y la del número escrito de
+-- otra forma (escenario 8): entran al libro al confirmar.
 insert into facturas (id, proyecto_id, num, fecha, monto, pagada, retencion) overriding system value
-values (-950, 'casa-perez-k3m9', 'C3-950', date '2026-10-10', 1000.00, false, 0);
+values (-950, 'casa-perez-k3m9', 'C3-950', date '2026-10-10', 1000.00, false, 0),
+       (951, 'casa-perez-k3m9', 'C3-951', date '2026-10-10', 700.00, false, 0);
 SQL
 
 echo "== Base $BD: c1 + c2 + c3 + las reglas"
@@ -114,10 +123,11 @@ revisa "al confirmar, el puente de Edgar lo contabilizó: asiento, reverso, sust
 echo "== 3. Diez recibos subidos a la vez, como la app"
 for i in $(seq 910 919); do
   ed -c "begin; $APP
-         insert into recibos (id, proyecto_id, ruta, total, proveedor, estado, autor_id, fecha, categoria, metodo_pago, ultimos4)
+         insert into recibos (id, proyecto_id, ruta, total, proveedor, estado, autor_id, creado, fecha, categoria, metodo_pago, ultimos4)
          overriding system value
          values (-$i, 'oficina-nch-7xq2', 'recibos/banco/$i.jpg', 10.00, 'Home Depot', 'leido',
-                 '00000000-0000-4000-a000-000000000001', date '2026-10-15', 'material', 'tarjeta', '9998');
+                 '00000000-0000-4000-a000-000000000001', timestamptz '2026-10-15 12:00-04', date '2026-10-15', 'material',
+                 'tarjeta', '9998');
          commit;" > "$TMP/3-$i.out" 2>&1 &
 done
 wait
@@ -142,8 +152,8 @@ if grep -qi error "$TMP"/1a.out "$TMP"/1b.out "$TMP"/2a.out "$TMP"/2b.out "$TMP"
 fi
 
 # Las facturas 1101 (id 1) y 1103 (id 3) ya entraron con los backfills de arriba.
-revisa "las facturas de los cobros están en el libro" "3" \
-  "$(ed -c "select count(*) from facturas where id in (1, 3, -950) and contabilizado_en is not null")"
+revisa "las facturas de los cobros están en el libro" "4" \
+  "$(ed -c "select count(*) from facturas where id in (1, 3, -950, 951) and contabilizado_en is not null")"
 
 echo "== 5. Dos cobros a la vez por el total de la misma factura"
 ed -c "begin; $APP select fn_cobro_registrar('{\"fecha\":\"2026-10-21\",\"monto\":\"8000.00\",\"medio\":\"ach\",\"referencia\":\"A\",\"aplicaciones\":[{\"factura_id\":3,\"monto\":\"8000.00\"}]}'); select pg_sleep(2); commit;" > "$TMP/5a.out" 2>&1 &
@@ -186,6 +196,27 @@ revisa "la factura en cero, con un anticipo aplicado" "1/0.00" \
   "$(ed -c "select (select count(*) from aplicaciones_cobro a where a.factura_id = -950 and a.desde_anticipo) || '/' ||
                     (select coalesce(sum(l.monto), 0) from asiento_lineas l
                       where l.partida_tabla = 'facturas' and l.partida_id = '-950' and l.cuenta = '1110')")"
+echo "== 8. Dos cobros a la vez a la misma factura, con su número escrito de otra forma"
+# Cada par: A toma la factura y duerme; B llega con el número escrito
+# distinto. B tiene que esperar a A (la misma fila) y ya no caber.
+for par in " 951|+951" "951|+951" "+951|951 "; do
+  a="${par%%|*}"; b="${par##*|}"
+  ed -c "begin; $APP select fn_cobro_registrar('{\"fecha\":\"2026-10-21\",\"monto\":\"700.00\",\"medio\":\"ach\",\"referencia\":\"A8\",\"aplicaciones\":[{\"factura_id\":\"$a\",\"monto\":\"700.00\"}]}'); select pg_sleep(2); commit;" > "$TMP/8a.out" 2>&1 &
+  sleep 0.5
+  ed -c "begin; $APP select fn_cobro_registrar('{\"fecha\":\"2026-10-21\",\"monto\":\"700.00\",\"medio\":\"ach\",\"referencia\":\"B8\",\"aplicaciones\":[{\"factura_id\":\"$b\",\"monto\":\"700.00\"}]}'); commit;" > "$TMP/8b.out" 2>&1 &
+  wait
+  revisa "«$a» entró" "0" "$(grep -ci error "$TMP/8a.out")"
+  revisa "«$b» esperó y ya no cupo (MX008)" "MX008" "$(grep -o 'MX008' "$TMP/8b.out" | head -n 1)"
+  revisa "un solo cobro vigente a la C3-951, y en cero (no en negativo)" "1/0.00" \
+    "$(ed -c "select (select count(*) from aplicaciones_cobro a join cobros c on c.id = a.cobro_id
+                       where a.factura_id = 951 and c.estado = 'vigente') || '/' ||
+                      (select coalesce(sum(l.monto), 0) from asiento_lineas l
+                        where l.partida_tabla = 'facturas' and l.partida_id = '951' and l.cuenta = '1110')")"
+  # Se anula el cobro que entró, para el par siguiente.
+  ed -c "begin; $APP select fn_cobro_anular(c.id, 'c3-concurrencia: otro par') from cobros c
+          join aplicaciones_cobro a on a.cobro_id = c.id where a.factura_id = 951 and c.estado = 'vigente'; commit;" > /dev/null 2>&1
+done
+
 revisa "ningún papel quedó en error en la bandeja" "0" "$(ed -c "select count(*) from puente_documentos where estado = 'error'")"
 revisa "fn_verificar_cadena: todos los controles en true" "" "$(ed -c "select coalesce(string_agg(control, ', '), '') from fn_verificar_cadena() where not ok")"
 revisa "los controles de los puentes (triggers, documentos, bandeja, use_tax, mano_de_obra, partidas) en true" "" \
