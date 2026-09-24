@@ -94,8 +94,8 @@ veces no duplica nada; y **un asiento de mano de obra en el libro solo puede
 haber nacido de un journal o de un devengo reversible**.
 
 ## Lo construido (24-sep) — versión candidata, sin pegar
-- `docs/conta/c3-puentes.sql` y `docs/conta/c3-pruebas.sql` (**112 pruebas**;
-  2 necesitan Storage). Recibos, trabajos externos, facturas, cobros (con
+- `docs/conta/c3-puentes.sql` y `docs/conta/c3-pruebas.sql` (**113 pruebas**;
+  2 necesitan Storage; en producción la 45 sale «omitida»). Recibos, trabajos externos, facturas, cobros (con
   devolución de cheque rebotado) y horas (solo reparto y devengo reversible).
   Lo que falta va a `puentes_bandeja` con el motivo en llano; «reintentar» es
   `fn_puentes_correr()`; `fn_puentes_verificar()` da 13 controles.
@@ -109,3 +109,12 @@ haber nacido de un journal o de un devengo reversible**.
   (`fn_recibo_desanular`); en Storage no se borra ni se mueve nada de
   `recibos/` ni `docs/`; `trg_recibo_marca_material` corre solo si cambian
   obra, notas o estado; aprobar horas no dispara la guarda de correcciones.
+- **Tickets repartidos entre obras** (24-sep, visto en producción: 4 tickets
+  así): la misma foto en un recibo de cada obra, con su parte del total, entra
+  en cada obra. La misma foto en la misma obra se rechaza; en otra obra por el
+  mismo total espera como duplicado; el equipo no usa la foto de otro recibo.
+  `recibos_ruta_unica` es por (foto, obra).
+- **Pegado en producción (24-sep):** c1, c2 y c3 pegados; c2-pruebas 78/78.
+  La primera c3-pruebas falló sin probar nada (las restricciones reales de la
+  base: 7 categorías, 5 formas de pago, ids GENERATED ALWAYS); el banco ya
+  las tiene (`pruebas/conta/02b-restricciones-produccion.sql`).

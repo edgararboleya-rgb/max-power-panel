@@ -252,7 +252,9 @@
 --         libro la contaría como compra;
 --       · impuesto: trae subtotal y tax y no suman el total (más de un
 --         centavo): el total sin el impuesto, o al revés;
---       · duplicado: otro recibo no anulado tiene la misma foto (ruta) o el
+--       · duplicado: otro recibo no anulado tiene la misma foto (ruta) en
+--         la misma obra o por el mismo total (en otra obra y con su parte
+--         del total es un ticket repartido, y entra), o el
 --         mismo ticket: el mismo número de recibo y el mismo total, del
 --         mismo proveedor (el de proveedores_alias: «CED» y «Consolidated
 --         Electrical Distributors» son el mismo) o del mismo día. Entra el
@@ -3230,6 +3232,11 @@ begin
             from recibos o
            where v_ruta is not null and btrim(o.ruta) = v_ruta
              and o.id <> r.id and o.estado is distinct from 'anulado'
+             -- Un ticket repartido (otra obra, su parte del total) no es
+             -- duplicado; la misma foto en la misma obra, o por el mismo
+             -- total en otra, sí se pregunta.
+             and (coalesce(o.proyecto_id, '') = coalesce(r.proyecto_id, '')
+                  or round(o.total, 2) is not distinct from round(r.total, 2))
           union all
           select o.id, o.contabilizado_en, 'ticket:' || v_clave,
                  format('el mismo ticket (%s #%s por %s%s)', coalesce(nullif(btrim(r.proveedor), ''), 'sin proveedor'),
@@ -4683,14 +4690,27 @@ begin
     -- a ese lo para la llave única con su 409, «ya estaba»). (Por su
     -- índice, recibos_ruta_idx: mirar la tabla entera por cada recibo
     -- hacía que meter muchos a la vez creciera al cuadrado.)
+    -- Salvo un ticket REPARTIDO entre obras (24-sep: producción ya tenía
+    -- cuatro): una compra para dos obras es la misma foto en un recibo de
+    -- cada obra, con su parte del total. Eso lo hacen Edgar, la lectura o el
+    -- conector (v_priv), nunca el equipo; y la foto no se repite en la MISMA
+    -- obra (ahí es el mismo papel dos veces).
     if nullif(btrim(new.ruta), '') is not null
        and exists (select 1 from recibos o
                     where btrim(o.ruta) = btrim(new.ruta)
-                      and (new.llave_cliente is null or o.llave_cliente is distinct from new.llave_cliente)) then
+                      and (new.llave_cliente is null or o.llave_cliente is distinct from new.llave_cliente)
+                      and (not v_priv or coalesce(o.proyecto_id, '') = coalesce(new.proyecto_id, ''))) then
       raise exception using errcode = case when v_priv then 'MX003' else '42501' end,
-        message = format('Esa foto (%s) ya es la de otro recibo (%s): una foto es el papel de un solo recibo. Sube la foto de este.',
-                         btrim(new.ruta), (select string_agg(o.id::text, ', ') from recibos o
-                                            where btrim(o.ruta) = btrim(new.ruta)));
+        message = case when v_priv
+                       then format('Esa foto (%s) ya es la del recibo %s de esta misma obra: una foto es el papel de un solo '
+                                   'recibo por obra. Si es un ticket repartido entre obras, cada parte va a su obra.',
+                                   btrim(new.ruta), (select string_agg(o.id::text, ', ') from recibos o
+                                                      where btrim(o.ruta) = btrim(new.ruta)
+                                                        and coalesce(o.proyecto_id, '') = coalesce(new.proyecto_id, '')))
+                       else format('Esa foto (%s) ya es la de otro recibo (%s): una foto es el papel de un solo recibo. '
+                                   'Sube la foto de este.', btrim(new.ruta),
+                                   (select string_agg(o.id::text, ', ') from recibos o where btrim(o.ruta) = btrim(new.ruta)))
+                  end;
     end if;
     -- Y lo que sube el equipo va en la carpeta de recibos (así sube la app:
     -- recibos/<obra>/…) y no es un archivo que subió otra persona (un
@@ -4726,13 +4746,20 @@ begin
           message = format('Este recibo ya está en el libro contable (%s): su número ya no cambia.', v_libro);
       end if;
     end if;
-    -- Una foto nueva (📷) no puede ser la de otro recibo.
-    if nullif(btrim(new.ruta), '') is not null and nullif(btrim(new.ruta), '') is distinct from nullif(btrim(old.ruta), '')
-       and exists (select 1 from recibos o where o.id <> old.id and btrim(o.ruta) = btrim(new.ruta)) then
+    -- Una foto nueva (📷) no puede ser la de otro recibo de la misma obra,
+    -- ni una obra nueva (📌) la del recibo que ya tiene esa foto ahí (un
+    -- ticket repartido va una parte por obra).
+    if nullif(btrim(new.ruta), '') is not null
+       and (nullif(btrim(new.ruta), '') is distinct from nullif(btrim(old.ruta), '')
+            or coalesce(new.proyecto_id, '') is distinct from coalesce(old.proyecto_id, ''))
+       and exists (select 1 from recibos o where o.id <> old.id and btrim(o.ruta) = btrim(new.ruta)
+                                              and coalesce(o.proyecto_id, '') = coalesce(new.proyecto_id, '')) then
       raise exception using errcode = 'MX003',
-        message = format('Esa foto (%s) ya es la de otro recibo (%s): una foto es el papel de un solo recibo.', btrim(new.ruta),
+        message = format('Esa foto (%s) ya es la del recibo %s de esta misma obra: una foto es el papel de un solo recibo por '
+                         'obra.', btrim(new.ruta),
                          (select string_agg(o.id::text, ', ') from recibos o
-                           where o.id <> old.id and btrim(o.ruta) = btrim(new.ruta)));
+                           where o.id <> old.id and btrim(o.ruta) = btrim(new.ruta)
+                             and coalesce(o.proyecto_id, '') = coalesce(new.proyecto_id, '')));
     end if;
     -- Un recibo ANULADO no vuelve con un update cualquiera. El ✎ de la app
     -- manda estado = 'leido' cada vez que lleva total (y enseña los
@@ -6648,8 +6675,10 @@ create or replace trigger trg_puente_lineas_partida
 create unique index if not exists recibos_llave_cliente_unica on public.recibos (llave_cliente);
 -- Y lo mismo en los cobros (fn_cobro_registrar devuelve el que ya estaba).
 create unique index if not exists cobros_llave_cliente_unica on public.cobros (llave_cliente) where llave_cliente is not null;
--- Una foto, un recibo VIVO. La ruta ES el papel que lee la lectura: dos
--- recibos con la misma foto serían el mismo ticket dos veces en el libro
+-- Una foto, un recibo VIVO POR OBRA (un ticket repartido entre obras es la
+-- misma foto en un recibo de cada una: 24-sep). La ruta ES el papel que lee
+-- la lectura: dos recibos de la misma obra con la misma foto serían el
+-- mismo ticket dos veces en el libro
 -- (la guarda ya lo rechaza; el índice lo cierra también para dos subidas a
 -- la vez, que la guarda no ve, y para quien no pasa por ella). Los
 -- anulados no cuentan: un recibo anulado no se borra ni suelta su foto
@@ -6663,17 +6692,18 @@ create unique index if not exists cobros_llave_cliente_unica on public.cobros (l
 do $$
 begin
   if to_regclass('public.recibos_ruta_unica') is not null
-     and pg_get_indexdef(to_regclass('public.recibos_ruta_unica')) not like '%anulado%' then
+     and (pg_get_indexdef(to_regclass('public.recibos_ruta_unica')) not like '%anulado%'
+          or pg_get_indexdef(to_regclass('public.recibos_ruta_unica')) not like '%proyecto_id%') then
     drop index public.recibos_ruta_unica;
   end if;
   if to_regclass('public.recibos_ruta_unica') is null then
     if exists (select 1 from public.recibos
                 where nullif(btrim(ruta), '') is not null and estado is distinct from 'anulado'
-                group by btrim(ruta) having count(*) > 1) then
-      raise notice 'c3-puentes: hay recibos vivos que comparten foto (ruta): no se crea recibos_ruta_unica. El control '
-                   'duplicados los enseña; anula el repetido y vuelve a pegar.';
+                group by btrim(ruta), coalesce(proyecto_id, '') having count(*) > 1) then
+      raise notice 'c3-puentes: hay recibos vivos de la misma obra que comparten foto (ruta): no se crea recibos_ruta_unica. '
+                   'El control duplicados los enseña; anula el repetido y vuelve a pegar.';
     else
-      create unique index recibos_ruta_unica on public.recibos (btrim(ruta))
+      create unique index recibos_ruta_unica on public.recibos (btrim(ruta), coalesce(proyecto_id, ''))
         where nullif(btrim(ruta), '') is not null and estado is distinct from 'anulado';
     end if;
   end if;
@@ -6869,18 +6899,22 @@ begin
     raise exception using errcode = 'MX008',
       message = format('El recibo %s no está anulado (está «%s»): no hay nada que des-anular.', p_id, coalesce(r.estado, 'por_leer'));
   end if;
-  -- Una foto, un recibo vivo (recibos_ruta_unica, B.8): si otro recibo
-  -- vivo ya tiene su foto, este fue su repetido y se queda anulado.
+  -- Una foto, un recibo vivo por obra (recibos_ruta_unica, B.8): si otro
+  -- recibo vivo de su obra ya tiene su foto, este fue su repetido y se
+  -- queda anulado (en otra obra es la otra parte de un ticket repartido).
   if nullif(btrim(r.ruta), '') is not null
      and exists (select 1 from recibos o
-                  where btrim(o.ruta) = btrim(r.ruta) and o.id <> r.id and o.estado is distinct from 'anulado') then
+                  where btrim(o.ruta) = btrim(r.ruta) and o.id <> r.id and o.estado is distinct from 'anulado'
+                    and coalesce(o.proyecto_id, '') = coalesce(r.proyecto_id, '')) then
     raise exception using errcode = 'MX008',
       message = format('La foto del recibo %s (%s) ya es del recibo %s, que está vivo: un papel cuenta una vez. Si el bueno es '
                        'este, anula antes aquel (select fn_recibo_anular(%s, ''motivo'');).', p_id, btrim(r.ruta),
                        (select min(o.id) from recibos o
-                         where btrim(o.ruta) = btrim(r.ruta) and o.id <> r.id and o.estado is distinct from 'anulado'),
+                         where btrim(o.ruta) = btrim(r.ruta) and o.id <> r.id and o.estado is distinct from 'anulado'
+                           and coalesce(o.proyecto_id, '') = coalesce(r.proyecto_id, '')),
                        (select min(o.id) from recibos o
-                         where btrim(o.ruta) = btrim(r.ruta) and o.id <> r.id and o.estado is distinct from 'anulado'));
+                         where btrim(o.ruta) = btrim(r.ruta) and o.id <> r.id and o.estado is distinct from 'anulado'
+                           and coalesce(o.proyecto_id, '') = coalesce(r.proyecto_id, '')));
   end if;
   v_est := case when r.total is not null then 'leido'
                 when nullif(btrim(r.ruta), '') is null then 'sin_foto'
@@ -7050,7 +7084,9 @@ grant  execute on function public.fn_puentes_antes_del_corte(text, bigint, text)
 --                deshace); y ningún mes CERRADO con devengo y journal
 --                juntos sin el asiento que lo corrige (que lo nombra en su
 --                motivo)
---   duplicados   ningún recibo dos veces en el libro: la misma foto, o el
+--   duplicados   ningún recibo dos veces en el libro: la misma foto en la
+--                misma obra o por el mismo total (un ticket repartido entre
+--                obras no cuenta), o el
 --                mismo ticket (número y total, del mismo proveedor o del
 --                mismo día), salvo lo que Edgar confirmó; y ningún
 --                depósito dos veces (dos cobros vigentes iguales)
@@ -7514,20 +7550,25 @@ begin
            from recibos r
            join asientos a on a.id = r.contabilizado_en
           where fn_puente_recibo_ticket(r.num_recibo, r.total) is not null
+       ),
+       -- La foto: dos recibos con asiento vivo y la misma foto son el mismo
+       -- papel dos veces si son de la misma obra o por el mismo total. De
+       -- obras distintas y con su parte cada uno, es un ticket repartido.
+       f as (
+         select btrim(r.ruta) as dato, r.id, a.numero, coalesce(r.proyecto_id, '') as obra, round(r.total, 2) as total
+           from recibos r
+           join asientos a on a.id = r.contabilizado_en
+          where nullif(btrim(r.ruta), '') is not null
+            and not exists (select 1 from puente_revisados pr
+                             where pr.tabla = 'recibos' and pr.documento_id = r.id::text and pr.codigo = 'duplicado'
+                               and pr.dato = 'ruta:' || btrim(r.ruta))
        )
   select coalesce(jsonb_agg(s.falla order by s.falla), '[]'::jsonb) into v_malos
-    from (select format('la foto %s está en %s recibos con asiento vivo (%s): el mismo papel dos veces. Anula el repetido '
-                        '(fn_recibo_anular) y el libro lo reversa', k.dato, count(*),
-                        string_agg(format('recibo %s → %s', k.id, k.numero), ', ' order by k.id)) as falla
-            from (select btrim(r.ruta) as dato, r.id, a.numero
-                    from recibos r
-                    join asientos a on a.id = r.contabilizado_en
-                   where nullif(btrim(r.ruta), '') is not null
-                     and not exists (select 1 from puente_revisados pr
-                                      where pr.tabla = 'recibos' and pr.documento_id = r.id::text and pr.codigo = 'duplicado'
-                                        and pr.dato = 'ruta:' || btrim(r.ruta))) k
-           group by k.dato
-          having count(*) > 1
+    from (select format('la foto %s está en dos recibos con asiento vivo de la misma obra o por el mismo total (recibo %s → %s, '
+                        'recibo %s → %s): el mismo papel dos veces. Anula el repetido (fn_recibo_anular) y el libro lo reversa',
+                        x.dato, x.id, x.numero, y.id, y.numero) as falla
+            from f x
+            join f y on y.dato = x.dato and y.id > x.id and (y.obra = x.obra or y.total is not distinct from x.total)
           union all
           select format('el ticket %s está en dos recibos con asiento vivo (recibo %s → %s, recibo %s → %s): el mismo gasto dos '
                         'veces%s. Anula el repetido (select fn_recibo_anular(%s, ''repetido del recibo %s'');); si son dos '

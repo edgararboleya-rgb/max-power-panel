@@ -6838,7 +6838,9 @@ begin
                                coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
 end $$;
 
--- 109. Una foto, un recibo VIVO: recibos_ruta_unica deja fuera a los
+-- 109. Una foto, un recibo VIVO por obra: recibos_ruta_unica es por (foto,
+--      obra) —un ticket repartido es la misma foto en otra obra, prueba
+--      112— y deja fuera a los
 --      anulados (un recibo anulado se queda con su foto como rastro, y
 --      contarlo dejaba sin índice, para siempre, a la base que alguna vez
 --      tuvo la misma foto dos veces). Y la foto de un anulado no se le da a
@@ -6850,7 +6852,7 @@ declare
   v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
   v_a     text;
   v_obt   text;
-  v_esp   text := 'indice=unico/sin_anulados foto_de_anulado=MX003';
+  v_esp   text := 'indice=unico/sin_anulados/por_obra foto_de_anulado=MX003';
 begin
   if v_dueno is null or v_obra is null or v_desde is null then
     insert into _pruebas values (109, 'recibos_ruta_unica deja fuera a los anulados', v_esp,
@@ -6871,6 +6873,7 @@ begin
     select format('indice=%s foto_de_anulado=%s',
                   coalesce((select case when i.indisunique then 'unico' else 'no_unico' end
                                    || case when pg_get_indexdef(i.indexrelid) like '%anulado%' then '/sin_anulados' else '/con_anulados' end
+                                   || case when pg_get_indexdef(i.indexrelid) like '%proyecto_id%' then '/por_obra' else '/por_foto' end
                               from pg_index i where i.indexrelid = to_regclass('public.recibos_ruta_unica')), 'no_existe'),
                   v_a)
       into v_obt;
@@ -7040,7 +7043,103 @@ begin
 end $$;
 
 
--- 112. NO DEJA RASTRO: todo lo de arriba se deshizo. El libro, los papeles,
+-- 112. Un ticket REPARTIDO entre obras (24-sep: producción tenía cuatro,
+--      p. ej. CES CWD/004675 entre Dejeneffe y Rambuild MLK): Edgar sube la
+--      misma foto en un recibo de otra obra con su parte del total, y las
+--      dos partes entran, cada una a su obra; el control duplicados sigue en
+--      verde. La misma foto otra vez en la MISMA obra no entra (MX003); en
+--      otra obra pero por el MISMO total espera como duplicado; y el equipo
+--      no usa la foto de otro recibo (42501).
+do $$
+declare
+  v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_equipo uuid := nullif(current_setting('mx3.equipo', true), '')::uuid;
+  v_obra   text := nullif(current_setting('mx3.obra', true), '');
+  v_desde  date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_obra2  text;
+  v_obra3  text;
+  v_a      text;
+  v_b      text;
+  v_c      text;
+  v_obt    text;
+  v_esp    text := 'reparto=contabilizado:50.00 original=contabilizado:245.37 misma_obra=MX003 mismo_total=pendiente/duplicado '
+                   'equipo=42501/foto control=t indice=t';
+begin
+  select p.id into v_obra2 from proyectos p where p.id <> v_obra and nullif(btrim(p.tipo), '') is not null order by p.id limit 1;
+  select p.id into v_obra3 from proyectos p where p.id not in (v_obra, coalesce(v_obra2, '')) and nullif(btrim(p.tipo), '') is not null
+   order by p.id limit 1;
+  if v_dueno is null or v_equipo is null or v_obra is null or v_obra2 is null or v_obra3 is null or v_desde is null then
+    insert into _pruebas values (112, 'un ticket repartido entre obras entra en cada una; el duplicado no', v_esp,
+                                 'omitida: falta dueño, alguien del equipo, tres obras o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3400300, 'total', '245.37', 'ruta', 'recibos/c3-pruebas/r112.jpg',
+                                                 'num_recibo', 'C3-REP-112'));
+    -- Edgar, por la app: la otra parte del ticket, a otra obra.
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    insert into recibos (id, proyecto_id, ruta, total, proveedor, notas, estado, autor_id, creado, fecha, categoria, num_recibo,
+                         metodo_pago, ultimos4) overriding system value
+    values (-3400301, v_obra2, 'recibos/c3-pruebas/r112.jpg', 50.00, 'C3 PRUEBAS SUPPLY', 'c3: PARTE de C3-REP-112 repartido',
+            'leido', v_dueno, ((v_desde + 4) + time '12:00') at time zone 'America/New_York', v_desde + 4, 'material', 'C3-REP-112',
+            'credito', '9998');
+    begin
+      insert into recibos (id, proyecto_id, ruta, total, proveedor, estado, autor_id, fecha, categoria, metodo_pago, ultimos4)
+      overriding system value
+      values (-3400302, v_obra, 'recibos/c3-pruebas/r112.jpg', 60.00, 'C3 PRUEBAS SUPPLY', 'leido', v_dueno, v_desde + 4,
+              'material', 'credito', '9998');
+      v_a := 'entró';
+    exception when others then
+      v_a := sqlstate;
+    end;
+    insert into recibos (id, proyecto_id, ruta, total, proveedor, estado, autor_id, creado, fecha, categoria, num_recibo,
+                         metodo_pago, ultimos4) overriding system value
+    values (-3400303, v_obra3, 'recibos/c3-pruebas/r112.jpg', 245.37, 'C3 PRUEBAS SUPPLY', 'leido', v_dueno,
+            ((v_desde + 4) + time '12:00') at time zone 'America/New_York', v_desde + 4, 'material', 'C3-REP-112-B',
+            'credito', '9998');
+    execute 'reset role';
+    -- El equipo, con la foto de ese ticket, a otra obra.
+    perform set_config('request.jwt.claims', json_build_object('sub', v_equipo, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      insert into recibos (id, proyecto_id, ruta, notas, autor_id) overriding system value
+      values (-3400304, v_obra2, 'recibos/c3-pruebas/r112.jpg', 'c3', v_equipo);
+      v_b := 'entró';
+    exception when others then
+      v_b := sqlstate || case when sqlerrm like '%foto%' then '/foto' else '' end;
+    end;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '', true);
+    select format('reparto=%s original=%s misma_obra=%s mismo_total=%s equipo=%s control=%s indice=%s',
+                  (select d.estado || ':' || coalesce((select l.monto::text from asiento_lineas l
+                                                        where l.asiento_id = r.contabilizado_en and l.monto > 0 limit 1), '-')
+                     from puente_documentos d join recibos r on r.id::text = d.documento_id
+                    where d.tabla = 'recibos' and d.documento_id = '-3400301'),
+                  (select d.estado || ':' || coalesce((select l.monto::text from asiento_lineas l
+                                                        where l.asiento_id = r.contabilizado_en and l.monto > 0 limit 1), '-')
+                     from puente_documentos d join recibos r on r.id::text = d.documento_id
+                    where d.tabla = 'recibos' and d.documento_id = '-3400300'),
+                  v_a,
+                  (select d.estado || '/' || d.codigo from puente_documentos d
+                    where d.tabla = 'recibos' and d.documento_id = '-3400303'),
+                  v_b,
+                  (select case when v.ok then 't' else 'f' end from fn_puentes_verificar() v where v.control = 'duplicados'),
+                  to_regclass('public.recibos_ruta_unica') is not null)
+      into v_obt;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (112, 'un ticket repartido entre obras entra en cada una; el duplicado no', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+
+-- 113. NO DEJA RASTRO: todo lo de arriba se deshizo. El libro, los papeles,
 --      las reglas, los historiales, los contadores, las secuencias de la
 --      app y las huellas están como al empezar.
 do $$
@@ -7049,7 +7148,7 @@ declare
   v_ahora text;
 begin
   v_ahora := pg_temp.c3_foto();
-  insert into _pruebas values (112, 'no deja rastro: todo como al empezar', v_antes, v_ahora, v_ahora = v_antes);
+  insert into _pruebas values (113, 'no deja rastro: todo como al empezar', v_antes, v_ahora, v_ahora = v_antes);
 end $$;
 
 select * from _pruebas order by n;

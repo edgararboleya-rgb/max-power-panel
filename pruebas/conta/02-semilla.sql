@@ -44,7 +44,10 @@ on conflict (id) do nothing;
 -- ---------------------------------------------------------------------
 insert into proyectos (id, tipo, nombre, direccion, cliente, estado, fase, estado_detalle, proxima_accion, ref, horas_estimadas) values
   ('casa-perez-k3m9',  'residencial', 'Casa Pérez',   '123 SW 8th St, Miami, FL',    'Familia Pérez', 'ejecucion', 'rough',        'Obra de prueba', 'Seguir rough', 'Por definir', 120),
-  ('oficina-nch-7xq2', 'comercial',   'Oficina NCH',  '900 Brickell Ave, Miami, FL', 'NCH Group',     'ejecucion', 'mobilizacion', 'Obra de prueba', 'Pedir panel',  'Por definir', 480)
+  ('oficina-nch-7xq2', 'comercial',   'Oficina NCH',  '900 Brickell Ave, Miami, FL', 'NCH Group',     'ejecucion', 'mobilizacion', 'Obra de prueba', 'Pedir panel',  'Por definir', 480),
+  -- Una tercera obra: un ticket repartido entre obras (c3-pruebas 112)
+  -- necesita tres (producción tiene muchas).
+  ('taller-ruiz-5b2n', 'servicio',    'Taller Ruiz',  '45 NW 36th St, Miami, FL',    'Ruiz Auto',     'ejecucion', 'trim',         'Obra de prueba', 'Cambiar panel', 'Por definir', 16)
 on conflict (id) do nothing;
 
 insert into finanzas_proyecto (proyecto_id, contrato, cobrado, presupuesto_materiales) values

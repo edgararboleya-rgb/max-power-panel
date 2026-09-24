@@ -42,7 +42,7 @@ comprobando si algo ya estaba.
 | 4 | Una línea: `select fn_puentes_correr();` | Un solo valor (jsonb) con `"desde": "2026-10-01"`, cuántos papeles quedaron en cada estado (`contabilizado`, `pendiente`, `espera`, `no_aplica`…) y **`"errores": 0`**. |
 | 5 | Una línea: `select * from fn_puentes_verificar();` | Los **13 controles** de los puentes, **todos en `true`** (ahora también `sin_evaluar`). `bandeja` dice cuántos papeles esperan a Edgar; solo se pone en rojo si el libro rechazó alguno. |
 | 6 | `docs/conta/c2-pruebas.sql` | La tabla `_pruebas`: **78 filas**, todas con `ok = true`. |
-| 7 | `docs/conta/c3-pruebas.sql` | La tabla `_pruebas`: **112 filas**, todas con `ok = true` salvo la **45**, que en producción sale «omitida» (Supabase no deja borrar de Storage por SQL; se prueba en el banco). Si no hay ningún perfil activo que no sea el dueño, las pruebas «del equipo» salen con `ok` vacío (`null`) y `obtenido` = «omitida…»: no es un fallo. |
+| 7 | `docs/conta/c3-pruebas.sql` | La tabla `_pruebas`: **113 filas**, todas con `ok = true` salvo la **45**, que en producción sale «omitida» (Supabase no deja borrar de Storage por SQL; se prueba en el banco). Si no hay ningún perfil activo que no sea el dueño, las pruebas «del equipo» salen con `ok` vacío (`null`) y `obtenido` = «omitida…»: no es un fallo. |
 
 - **El orden importa**: c2 necesita c1; c3 necesita c1 y c2. Las pruebas
   (6 y 7) van siempre después de los tres.
@@ -78,7 +78,7 @@ D=../../docs/conta
 ./correr.sh final_mia $D/c1-plan-de-cuentas.sql $D/c2-libro.sql $D/c3-puentes.sql \
                       $D/c2-pruebas.sql $D/c3-pruebas.sql
 #   → PRUEBAS total=78 ok=78 fallan=0 omitidas=0
-#   → PRUEBAS total=112 ok=110 fallan=0 omitidas=2
+#   → PRUEBAS total=113 ok=111 fallan=0 omitidas=2
 
 # Idempotencia: sobre la MISMA base, volver a pegar c1, c2 y c3 (dos veces)
 # y las pruebas otra vez; tiene que seguir todo en verde.
@@ -304,7 +304,7 @@ tocar `docs/conta/c2-libro.sql`:
   diferencias finas del planificador. Para probar en la versión de
   producción, `./pg17.sh` monta un Postgres **17.6** en el puerto 5433 y
   cualquier script corre allí con `PGPORT=5433`. El 24-sep se corrió así
-  todo: c2-pruebas 78/78, c3-pruebas 112/112 (con Storage), pegado,
+  todo: c2-pruebas 78/78, c3-pruebas 113/113 (con Storage), pegado,
   concurrencia y volumen, en verde en 16 y en 17.
 - **pg_cron** no está (tampoco en producción hasta la Fase 8).
 - El rol `editor_sql` no es superusuario y tiene `BYPASSRLS`, `CREATEROLE` y
