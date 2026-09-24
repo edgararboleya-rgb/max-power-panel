@@ -731,6 +731,9 @@ function esFalloDeRed(err) {
     return Uint8Array.from(raw, c => c.charCodeAt(0));
   };
 
+  // 🔔 Teléfonos con avisos por persona, para el semáforo del dueño (P86).
+  // undefined = no se ha preguntado · "pidiendo" · objeto · null = no se pudo saber
+  let avisosEquipo;
   // ¿La base ya tiene el candado que le quita los montos a los avisos?
   // Se pregunta una sola vez por sesión. null = todavía no se sabe.
   let avisosSeguros = null;
@@ -738,10 +741,17 @@ function esFalloDeRed(err) {
     const caja = $("inicio-notif");
     if (!caja) return;
     const soporta = "serviceWorker" in navigator && "PushManager" in window && location.protocol.startsWith("http");
+    // En un iPhone abierto desde Safari no existe PushManager: los avisos solo
+    // funcionan con la app puesta en la pantalla de inicio. Antes la tarjeta ni
+    // salía y nadie le decía a Jian u Osbel que faltaba ese paso (P86).
+    const iphoneSinInstalar = esIphone() && !appInstalada();
     // Los avisos son para TODOS, no solo para el dueño: Jian y Osbel también
     // tienen que enterarse de un 🔴 urgente o de un mensaje del chat.
-    if (!soporta || (window.Notification && Notification.permission === "granted")) {
-      caja.innerHTML = ""; return;
+    if (!soporta && !iphoneSinInstalar) { caja.innerHTML = ""; return; }
+    if (soporta && window.Notification && Notification.permission === "granted") {
+      caja.innerHTML = "";
+      revisarMiSuscripcion();
+      return;
     }
     // CANDADO: al equipo NO se le ofrece encender los avisos hasta que la
     // base tenga puesto el filtro que le quita los montos al aviso. Si no,
@@ -764,20 +774,107 @@ function esFalloDeRed(err) {
           <button class="accion secundaria" id="btn-notif-activar">Activar notificaciones</button>
         </div>
       </div>`;
-    $("btn-notif-activar").addEventListener("click", activarNotificaciones);
+    $("btn-notif-activar").addEventListener("click", () =>
+      iphoneSinInstalar || (window.Notification && Notification.permission === "denied")
+        ? pantallaAvisos(true) : activarNotificaciones());
+    // Al equipo, además, una pantalla entera una vez al día hasta que los encienda
+    if (!usuario.finanzas) pantallaAvisos(false);
+  }
+
+  const esIphone = () => /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const appInstalada = () => !!(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+
+  // 🔔 PANTALLA «ENCIENDE LOS AVISOS» (P86). Al equipo se le enseña al entrar,
+  // una vez al día, hasta que su teléfono reciba avisos. Con los pasos que tocan
+  // a ese teléfono: en iPhone primero la pantalla de inicio; si los bloqueó,
+  // dónde se desbloquean. «Ahora no» la calla hasta mañana.
+  function pantallaAvisos(aMano) {
+    const CLAVE = "mxp_avisos_pantalla";
+    const hoy = hoyISO();
+    if (!aMano) {
+      try { if (localStorage.getItem(CLAVE) === hoy) return; } catch { /* sin almacén: se enseña */ }
+      if (document.querySelector("dialog.pantalla-avisos")) return;
+    }
+    const bloqueados = window.Notification && Notification.permission === "denied";
+    const iphone = esIphone();
+    const porque = `<p style="margin:0">Aquí te llegan los 🔴 urgentes, los mensajes del chat y el permiso para corregir tus horas.</p>`;
+    let pasos, boton;
+    if (iphone && !appInstalada()) {
+      pasos = `<p style="margin:0"><b>En iPhone, primero pon la app en la pantalla de inicio:</b></p>
+        <ol style="margin:0;padding-left:1.3rem;display:grid;gap:.45rem">
+          <li>Abajo en Safari, toca el botón <b>Compartir</b> (el cuadrito con la flecha hacia arriba).</li>
+          <li>Baja y toca <b>«Agregar a pantalla de inicio»</b>, y luego <b>Agregar</b>.</li>
+          <li>Cierra Safari y abre la app desde el <b>icono del rayo</b>.</li>
+          <li>Ahí te vuelve a salir esta pantalla: toca <b>Encender los avisos</b>.</li>
+        </ol>`;
+      boton = "";
+    } else if (bloqueados) {
+      pasos = `<p style="margin:0"><b>Los avisos están bloqueados en este teléfono.</b> Para abrirlos:</p>
+        <ul style="margin:0;padding-left:1.3rem;display:grid;gap:.45rem">
+          <li><b>iPhone:</b> Ajustes → Notificaciones → Max Power → <b>Permitir notificaciones</b>.</li>
+          <li><b>Android:</b> deja el dedo sobre el icono de la app → Información de la app → Notificaciones → <b>Permitir</b>.</li>
+        </ul>
+        <p style="margin:0">Después vuelve a abrir la app.</p>`;
+      boton = "";
+    } else {
+      pasos = `<p style="margin:0">Toca el botón y, cuando el teléfono pregunte, di <b>Permitir</b>.</p>`;
+      boton = `<button type="button" class="accion" id="pa-encender" style="min-height:56px;font-size:1.05rem">🔔 Encender los avisos</button>`;
+    }
+    const dlg = document.createElement("dialog");
+    dlg.className = "modal pantalla-avisos";
+    dlg.style.cssText = "width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;margin:0;border-radius:0;border:0";
+    dlg.innerHTML = `<form method="dialog" class="modal-form" style="min-height:100%;align-content:center;max-width:30rem;margin:0 auto;gap:1rem;font-size:1rem;line-height:1.45">
+        <div style="font-size:3rem;text-align:center">🔔</div>
+        <h3 class="modal-titulo" style="text-align:center">Enciende los avisos en este teléfono</h3>
+        ${porque}
+        ${pasos}
+        ${boton}
+        <button type="submit" value="" class="accion secundaria">${boton ? "Ahora no" : "Entendido"}</button>
+      </form>`;
+    document.body.appendChild(dlg);
+    dlg.addEventListener("close", () => {
+      try { localStorage.setItem(CLAVE, hoy); } catch { /* nada */ }
+      dlg.remove();
+    });
+    const b = dlg.querySelector("#pa-encender");
+    if (b) b.addEventListener("click", async () => {
+      b.disabled = true;
+      const ok = await activarNotificaciones();
+      if (ok) { dlg.close(""); return; }
+      b.disabled = false;
+      // Si dijo que no, el teléfono ya no vuelve a preguntar: se le enseña dónde abrirlos
+      if (window.Notification && Notification.permission === "denied") { dlg.close(""); pantallaAvisos(true); }
+    });
+    dlg.showModal();
+  }
+
+  // Con el permiso dado, comprobar UNA vez por sesión que este teléfono sigue
+  // apuntado a mi nombre (el teléfono renueva su dirección de avisos sin decir
+  // nada, o se borró la fila). Si no, se apunta otra vez en silencio.
+  let suscripcionRevisada = false;
+  async function revisarMiSuscripcion() {
+    if (suscripcionRevisada) return;
+    suscripcionRevisada = true;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (sub && await DB.miSuscripcion(sub.endpoint)) return;
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64aBytes(VAPID_PUBLICA) });
+      const j = sub.toJSON();
+      await DB.guardarSuscripcion({ endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth });
+    } catch { /* en silencio: la tarjeta volverá a salir si hace falta */ }
   }
 
   async function activarNotificaciones() {
     try {
-      const esIphone = /iPhone|iPad/.test(navigator.userAgent);
-      const instalada = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
-      if (esIphone && !instalada) {
-        avisar("En iPhone: primero agrega la app a la pantalla de inicio y ábrela desde el icono del rayo", true);
-        return;
+      if (esIphone() && !appInstalada()) {
+        pantallaAvisos(true);
+        return false;
       }
       const reg = await navigator.serviceWorker.ready;
       const permiso = await Notification.requestPermission();
-      if (permiso !== "granted") { avisar("Sin permiso — se puede activar después desde Ajustes del teléfono", true); return; }
+      if (permiso !== "granted") { avisar("Sin permiso — se puede activar después desde Ajustes del teléfono", true); return false; }
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: b64aBytes(VAPID_PUBLICA)
@@ -785,8 +882,10 @@ function esFalloDeRed(err) {
       const j = sub.toJSON();
       await DB.guardarSuscripcion({ endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth });
       avisar("🔔 Notificaciones activadas en este teléfono ✓");
+      suscripcionRevisada = true;
       pintarInicioNotif();
-    } catch (err) { avisar("No se pudo activar: " + err.message, true); }
+      return true;
+    } catch (err) { avisar("No se pudo activar: " + err.message, true); return false; }
   }
 
   // Franja "HOY": lo de hoy y mañana (los pendientes viven en 🔥 Urgentes)
@@ -1120,6 +1219,15 @@ function esFalloDeRed(err) {
     // Solo los de campo ACTIVOS: Gustavo (license) no reporta horas de obra
     const equipo = (state.equipo || []).filter(u => u.rol === "campo" && u.activo);
     if (!equipo.length) { $("inicio-equipo").innerHTML = ""; return; }
+    // 🔔 ¿Le llegan los avisos a cada uno? Se pregunta a la base una vez por
+    // sesión (fn_avisos_por_persona: solo conteos, nunca las llaves del teléfono).
+    if (avisosEquipo === undefined) {
+      avisosEquipo = "pidiendo";
+      DB.avisosPorPersona().then(m => {
+        avisosEquipo = m && Object.keys(m).length ? m : null;
+        if (avisosEquipo) pintarInicioEquipo();
+      });
+    }
     // 📊 Capacidad: cuántos días de los próximos 7 tiene cada quien agendados
     const hoy = hoyISO();
     const tope = new Date(Date.parse(hoy) + 7 * 86400000).toISOString().slice(0, 10);
@@ -1192,6 +1300,12 @@ function esFalloDeRed(err) {
                 const d = diasDesde(String(u.ultimaVista).slice(0, 10));
                 const f = esc(String(u.ultimaVista).slice(0, 10));
                 return d !== null && d >= 3 ? ` · <b style="color:#B3261E">📱 no abre la app hace ${d} días (${f})</b>` : ` · 📱 en la app: ${f}`;
+              })()}${(() => {
+                // P86: sin teléfono apuntado no le llega ni un 🔴 urgente ni el chat
+                if (!avisosEquipo || typeof avisosEquipo !== "object") return "";
+                const n = (avisosEquipo[u.id] || {}).telefonos || 0;
+                return n ? ` · 🔔 avisos en ${n === 1 ? "su teléfono" : n + " teléfonos"}`
+                  : ` · <b style="color:#B3261E">🔕 no le llegan los avisos</b>`;
               })()} · toca para ver sus reportes</span>
               ${semanas}
             </span>

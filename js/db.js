@@ -698,6 +698,14 @@
       metodo: "POST", cuerpo: { ...fila, usuario_id: uid() },
       headers: { Prefer: "resolution=merge-duplicates,return=minimal" }
     }),
+    // ¿Este teléfono sigue apuntado a mi nombre? (solo leo los míos: la tabla no deja más)
+    miSuscripcion: endpoint => leer(`push_suscripciones?select=id&endpoint=eq.${encodeURIComponent(endpoint)}`)
+      .then(f => f.length > 0),
+    // 🔔 Cuántos teléfonos tiene apuntados cada persona (solo el dueño; sin las llaves).
+    // { uid: { telefonos, ultimo } } — o null si la base no contesta.
+    avisosPorPersona: () => api("rpc/fn_avisos_por_persona", { metodo: "POST", cuerpo: {} })
+      .then(filas => Object.fromEntries((filas || []).map(f => [f.usuario_id, { telefonos: Number(f.telefonos) || 0, ultimo: f.ultimo || "" }])))
+      .catch(() => null),
     // 💬 Chat del equipo
     miUid: () => uid(),
     leerMensajes: () => leer("mensajes?select=*&order=creado"),
