@@ -374,6 +374,7 @@ begin
     return;
   end if;
   begin
+    lock table public.periodos in exclusive mode;   -- antes que el de la cadena (ver la cabecera)
     perform pg_temp.mx_cerrar_hasta(v_mes);   -- reloj fingido; antes, la apertura con su asiento
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
@@ -408,6 +409,7 @@ begin
   end if;
   v_anio := extract(year from v_desde)::int;
   begin
+    lock table public.periodos in exclusive mode;   -- antes que el de la cadena (ver la cabecera)
     perform pg_temp.mx_cerrar_hasta(v_mes);   -- reloj fingido; antes, la apertura con su asiento
     insert into asiento_lineas (asiento_id, orden, cuenta, monto, proyecto_id, cost_code)
     values (v_id, 1, v_c5, 100.00, v_obra, v_cc), (v_id, 2, v_banco, -100.00, null, null);
@@ -463,6 +465,7 @@ begin
     return;
   end if;
   begin
+    lock table public.periodos in exclusive mode;   -- antes que el de la cadena (ver la cabecera)
     -- el asiento va en el mes siguiente; luego se cierra el mes anterior y
     -- se intenta llevar la fecha allí.
     v_id := (fn_postear(jsonb_set(v_bueno, '{fecha}', to_jsonb(to_char(v_sig_desde + 4, 'YYYY-MM-DD'))))->>'id')::uuid;
@@ -727,6 +730,7 @@ begin
     return;
   end if;
   begin
+    lock table public.periodos in exclusive mode;   -- antes que el de la cadena (ver la cabecera)
     v_id := (fn_postear(v_bueno)->>'id')::uuid;   -- como editor, en el mes abierto más antiguo
     perform pg_temp.mx_cerrar_hasta(v_mes);   -- reloj fingido; antes, la apertura con su asiento
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
@@ -2344,6 +2348,7 @@ begin
     return;
   end if;
   begin
+    lock table public.periodos in exclusive mode;   -- antes que el de la cadena (ver la cabecera)
     v_id1 := (fn_postear(v_bueno)->>'id')::uuid;   -- el SQL Editor
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
@@ -2512,6 +2517,8 @@ begin
     return;
   end if;
   begin
+    -- «access exclusive»: más abajo hay un ALTER TABLE de periodos (ver la cabecera).
+    lock table public.periodos in access exclusive mode;
     begin
       perform pg_temp.mx_apertura_con_asiento();
       for v_q in select p.periodo from periodos p
@@ -2584,6 +2591,7 @@ begin
     return;
   end if;
   begin
+    lock table public.periodos in exclusive mode;   -- antes que el de la cadena (ver la cabecera)
     perform pg_temp.mx_fingir_hoy(v_ap.hasta + 1);
     begin
       update periodos set estado = 'cerrado', cerrado_el = now() where periodo = v_ap.periodo;
@@ -2629,6 +2637,7 @@ begin
     return;
   end if;
   begin
+    lock table public.periodos in exclusive mode;   -- antes que el de la cadena (ver la cabecera)
     perform pg_temp.mx_cerrar_hasta(v_ap);   -- la apertura, cerrada (reloj fingido, con su asiento)
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
@@ -2903,6 +2912,7 @@ begin
   v_desde := v_ap.desde - 30;
   v_nueva := to_char(v_desde, 'YYYY-MM') || '-APERTURA';
   begin
+    lock table public.periodos in access exclusive mode;   -- el ALTER TABLE de abajo (ver la cabecera)
     begin
       execute 'alter table public.periodos disable trigger trg_periodos_guarda';
       insert into periodos (periodo, tipo, anio, desde, hasta, paralelo)
@@ -2991,6 +3001,7 @@ begin
     return;
   end if;
   begin
+    lock table public.periodos in exclusive mode;   -- antes que el de la cadena (ver la cabecera)
     perform pg_temp.mx_cerrar_hasta(v_mes);
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
