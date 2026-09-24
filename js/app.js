@@ -11998,6 +11998,22 @@ Power done right the first time. ⚡`;
     return f;
   }
 
+  // Los añadidos de una propuesta y lo que cuesta cada uno SOLO (P60).
+  // Dos clases de opciones:
+  //  · las del lector del alcance llevan es_addon y su precio ya es el del
+  //    añadido solo;
+  //  · las del estimador son ACUMULADAS (A = base, B = base + x1,
+  //    C = base + x1 + x2): el añadido cuesta la diferencia con la opción
+  //    anterior de la cadena, no con la base (antes la C imprimía x1 + x2).
+  // Las opciones acumuladas que van ANTES de la base elegida no son añadidos.
+  function addonsDeCierre(ops, base) {
+    if (!base) return [];
+    const suyos = ops.filter(o => o !== base && o.es_addon);
+    if (suyos.length) return suyos.map(o => ({ o, monto: Number(o.precio || 0) }));
+    const tras = ops.filter(o => o !== base && !o.es_addon && (o.orden || 0) > (base.orden || 0));
+    return tras.map((o, k) => ({ o, monto: Math.round((Number(o.precio || 0) - Number((k ? tras[k - 1] : base).precio || 0)) * 100) / 100 }));
+  }
+
   function irCierre(propuestaId) {
     if (!usuario.finanzas) return;
     const p = (propData.propuestas || []).find(x => x.id === propuestaId);
@@ -12024,7 +12040,6 @@ Power done right the first time. ⚡`;
     const ops = c.opciones;
     const base = ops.find(o => o.letra === d.base) || ops[0] || {};
     const hitos = (base.hitos_plan || []);
-    const extras = ops.filter(o => o.letra !== d.base);
 
     $("cierre-panel").innerHTML = `
       <div class="cal-panel-card">
@@ -12072,7 +12087,7 @@ Power done right the first time. ⚡`;
         <p class="lev-nota">Lo que elijas es el <b>total</b> del contrato. Las demás salen como opciones que el cliente puede añadir.</p>
         <div class="cierre-cuadro">
           <div><span>Total del contrato</span><b>${fmt(base.precio || 0)}</b></div>
-          ${extras.map(o => `<div><span>Opción ${esc(o.letra)} — ${esc(o.titulo)}</span><b>${fmt(o.precio - (base.precio || 0))}</b></div>`).join("")}
+          ${addonsDeCierre(ops, base).map(({ o, monto }) => `<div><span>Opción ${esc(o.letra)} — ${esc(o.titulo)}</span><b>${fmt(monto)}</b></div>`).join("")}
           ${hitos.map((h, i) => `<div><span>Pago ${i + 1}${h.es_deposito ? " (depósito)" : ""} — ${h.pct}%</span><b>${fmt(h.monto)}</b></div>`).join("")}
         </div>
         ${hitos.length && hitos[0].pct > 10 ? `<p class="lev-nota">El depósito es el ${hitos[0].pct}% (más del 10%): el contrato lleva la cláusula 9.16 con los plazos de permiso y arranque que exige la ley.</p>` : ""}
@@ -12123,7 +12138,7 @@ Power done right the first time. ⚡`;
     const ops = c.opciones;
     const base = ops.find(o => o.letra === d.base) || ops[0];
     if (!base) { avisar("Esa propuesta no tiene opciones", true); return; }
-    const extras = ops.filter(o => o.letra !== d.base);
+    const extras = addonsDeCierre(ops, base);
     const hitos = base.hitos_plan || [];
     const hoy = hoyFlorida();
     const vence = c.propuesta.valida_hasta
@@ -12153,10 +12168,10 @@ Power done right the first time. ⚡`;
       CIUDAD: d.ciudad,
       TOTAL: dinero(base.precio),
       PCT_DEPOSITO: hitos.length ? String(hitos[0].pct) : "",
-      ADDON_A: extras[0] ? extras[0].titulo : "",
-      MONTO_A: extras[0] ? dinero(extras[0].precio - base.precio) : "",
-      ADDON_B: extras[1] ? extras[1].titulo : "",
-      MONTO_B: extras[1] ? dinero(extras[1].precio - base.precio) : "",
+      ADDON_A: extras[0] ? extras[0].o.titulo : "",
+      MONTO_A: extras[0] ? dinero(extras[0].monto) : "",
+      ADDON_B: extras[1] ? extras[1].o.titulo : "",
+      MONTO_B: extras[1] ? dinero(extras[1].monto) : "",
       // La línea "Accepted:" del contrato: un solo alcance y un solo precio.
       OPCION_ACEPTADA: `Option ${base.letra} — ${base.titulo}`,
       TOTAL_ACEPTADO: dinero(base.precio)
