@@ -89,6 +89,19 @@
     archivo:   P('<rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M4 10h16M4 15h16"/>'),
     hilo:      P('<path d="M4 6c3-3 6 3 9 0s6 3 7 0"/><path d="M4 12c3-3 6 3 9 0s6 3 7 0"/><path d="M4 18c3-3 6 3 9 0s6 3 7 0"/>'),
     check:     P('<path d="m5 12.5 4.5 4.5L19 7"/>'),
+    // Ficha v2 (P179): los que faltaban para quitar los últimos emojis de la ficha
+    navegar:   P('<path d="M4 11.5 20 4l-7.5 16-1.8-6.7z"/>'),
+    grua:      P('<path d="M5 21V4h14"/><path d="M5 8l4-4"/><path d="M16 4v6"/><path d="M14.5 10h3v3h-3z"/><path d="M3 21h6"/>'),
+    etiqueta:  P('<path d="M3.5 12.5v-8a1 1 0 0 1 1-1h8l8 8-9 9z"/><circle cx="8" cy="8" r="1.5"/>'),
+    megafono:  P('<path d="M3.5 10v4h3l8 4.5v-13L6.5 10z"/><path d="M18 9a4.5 4.5 0 0 1 0 6"/>'),
+    reloj:     P('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
+    puntos:    P('<circle cx="5.5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.6" fill="currentColor" stroke="none"/>'),
+    compartir: P('<circle cx="18" cy="5.5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="18.5" r="2.5"/><path d="m8.2 10.8 7.6-4.1M8.2 13.2l7.6 4.1"/>'),
+    pulso:     P('<path d="M3 12h4l2.5-6.5 5 13L17 12h4"/>'),
+    casco:     P('<path d="M4 16.5a8 8 0 0 1 16 0"/><path d="M2.5 16.5h19V19h-19z"/><path d="M10 8.7V5.5h4v3.2"/>'),
+    chevron:   P('<path d="m9 5 7 7-7 7"/>'),
+    escudo:    P('<path d="M12 3 5 6v5.5c0 4.4 3 8.1 7 9.5 4-1.4 7-5.1 7-9.5V6z"/><path d="m9 12 2.2 2.2L15.5 10"/>'),
+    bombilla:  P('<path d="M9 17.5h6"/><path d="M10 21h4"/><path d="M8.5 14.5a6 6 0 1 1 7 0c-.9.7-1.5 1.7-1.5 3h-4c0-1.3-.6-2.3-1.5-3z"/>'),
     rojo: punto("#E5484D"), ambar: punto("#F2B705"), verde: punto("#2FB56B"), gris: punto("#B9C7D3"),
   };
 
@@ -106,8 +119,15 @@
     "💾": "guardar", "🧰": "caja", "📦": "caja", "⭐": "estrella", "★": "estrella", "📐": "regla", "📏": "regla",
     "🔎": "lupa", "📖": "libro", "☎": "telefono", "📱": "movil", "➡": "flecha", "💬": "chat", "🧹": "escoba",
     "🔗": "enlace", "🧩": "pieza", "🎯": "diana", "🔌": "enchufe", "🔥": "fuego", "🚗": "coche", "🌍": "tierra",
-    "⛏": "pala", "🔲": "toma", "🗄": "archivo", "🧵": "hilo"
+    "⛏": "pala", "🔲": "toma", "🗄": "archivo", "🧵": "hilo",
+    // Ficha v2 (P179)
+    "🧭": "navegar", "🏗": "grua", "🏷": "etiqueta", "📣": "megafono", "⏰": "reloj", "⏳": "reloj", "📬": "correo"
   };
+  // Para que la app pinte un icono directamente, sin pasar por un emoji:
+  // window.MXP_ICONO("camara") devuelve el mismo <span class="ico ico-camara"> que
+  // pone el observador. Si el nombre no existe devuelve "" (nunca revienta).
+  window.MXP_ICONO = n => Object.prototype.hasOwnProperty.call(I, n)
+    ? `<span class="ico ico-${n}" aria-hidden="true">${I[n]}</span>` : "";
   const CLAVES = Object.keys(MAPA).sort((a, b) => b.length - a.length);
   // el emoji puede venir con el selector de presentación (️) o un espacio detrás
   const RE = new RegExp("(" + CLAVES.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")️?", "g");

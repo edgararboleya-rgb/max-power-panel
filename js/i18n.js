@@ -205,6 +205,180 @@
     "Correo del cliente": "Client email", "Teléfono del cliente": "Client phone",
     "Quién coordina esta obra por parte del contratista (opcional)": "Contractor's coordinator for this job (optional)"
   });
+  // ---------- Ficha v2 (P179): tablero + pestañas + hojas ----------
+  Object.assign(D, {
+    // Pestañas y tablero
+    "Resumen": "Summary", "Obra": "Job", "Dinero": "Money", "Cliente": "Client", "Archivos": "Files",
+    "Foto": "Photo", "Agregar": "Add", "Ir": "Go", "🧭 Ir": "🧭 Go", "Abrir en el mapa": "Open in maps",
+    "Secciones de la obra": "Job sections",
+    "Marcar aprobado": "Mark approved", "Iniciar ejecución": "Start work",
+    "Marcar completado": "Mark completed", "Reanudar ejecución": "Resume work",
+    "Pausar": "Pause", "Reabrir (a ejecución)": "Reopen (to in-progress)",
+    "Escribir el alcance": "Write the scope", "Deshacer": "Undo", "Fase devuelta ✓": "Phase restored ✓",
+    "Estimando": "Estimating",
+    "Cotizándose — todavía sin precio enviado": "Being estimated — no price sent yet",
+    // Fases
+    "Inicio / Movilización": "Start / Mobilization", "Rough-in": "Rough-in",
+    "Inspección de rough": "Rough inspection", "Trim / Terminación": "Trim / Finish",
+    "Inspección final": "Final inspection",
+    // Resumen
+    "Qué toca ahora": "What's next", "Próximos días de trabajo": "Upcoming work days",
+    "📅 Próximos días de trabajo": "📅 Upcoming work days", "Arranque": "Kickoff",
+    // Obra
+    "Alcance del trabajo": "Scope of work", "Corregir": "Edit", "Sin bloque": "No block",
+    "no cuenta para el avance": "not counted in progress",
+    "Pendientes de obra": "Job issues", "Checklist de la obra ›": "Job checklist ›",
+    "Checklist de la obra": "Job checklist", "Sin pendientes de obra.": "No job issues.",
+    "Contrato y cambios (SOW / CO)": "Contract and changes (SOW / CO)",
+    "Sin inspecciones anotadas todavía.": "No inspections logged yet.",
+    "Programada": "Scheduled", "Pasó": "Passed", "Falló": "Failed", "falló": "failed",
+    "Resultado": "Result", "Categoría": "Category", "Renglón": "Item", "Opciones": "Options",
+    "Corregir el texto": "Edit the text", "Bloque del portal": "Portal block",
+    "Eliminar": "Delete", "Eliminar inspección": "Delete inspection",
+    "Inspección guardada ✓": "Inspection saved ✓", "Inspección pasada ✓": "Inspection passed ✓",
+    "Inspección eliminada ✓": "Inspection deleted ✓", "Inspección final aprobada": "Final inspection approved",
+    // Dinero
+    "Facturas": "Invoices", "Por cobrar": "Outstanding", "Marcar cobrada": "Mark paid",
+    "Total facturado": "Total invoiced", "(sin la #1110, que es personal)": "(excluding #1110, personal)",
+    "Facturar": "Invoice", "Ya cobré": "Paid", "Ya cobré sin factura": "Paid without invoice",
+    "Release": "Release", "Release del pago": "Payment release", "Facturando…": "Invoicing…",
+    "Rentabilidad": "Profitability", "Crea la factura con las reglas de la casa": "Creates the invoice with the house rules",
+    "Factura sin cobrar": "Unpaid invoice", "Próximo cobro": "Next payment",
+    "Cobrado no cuadra": "Collected doesn't match", "El cliente decide": "Client decides",
+    // Cliente
+    "Qué ve el cliente": "What the client sees", "Ve el dinero:": "Sees money:",
+    "Acceso completo:": "Full access:", "SÍ": "YES", "NO": "NO",
+    "Última visita:": "Last visit:", "(hora de Florida)": "(Florida time)",
+    "¿Qué ve exactamente?": "What exactly do they see?", "Compartir y avisar": "Share and notify",
+    "Email del cliente:": "Client email:", "sin anotar": "not set",
+    "Dónde vamos": "Where we are", "📣 Dónde vamos": "📣 Where we are",
+    "Cambiar el resumen": "Edit the summary", "Escribir el resumen": "Write the summary",
+    "Decisiones del cliente": "Client decisions", "Decisión del cliente": "Client decision",
+    "Sin decisiones pendientes del cliente.": "No pending client decisions.",
+    "Marcar decidida": "Mark decided", "Contratista": "Contractor",
+    "Solo coordinan": "Coordination only", "Le facturamos a ellos": "We bill them",
+    "Notice to Owner (opcional) · sin anotar": "Notice to Owner (optional) · not logged",
+    "Mándalo solo si crees que el cobro puede complicarse; el plazo es de 45 días desde el primer día de trabajo.":
+      "Send it only if you think payment may get complicated; the deadline is 45 days from the first day of work.",
+    "Anotar envío": "Log sent", "Cambiar contratista o coordinador": "Change contractor or coordinator",
+    "Asignar un contratista": "Assign a contractor", "Obra directa: sin contratista.": "Direct job: no contractor.",
+    "Cada vez que lo abrieron desde el portal, en hora de Florida": "Each time it was opened from the portal, in Florida time",
+    // Compartir
+    "Copiar el link del cliente": "Copy the client link", "Corregir el email del cliente": "Edit the client email",
+    "Enlace a esta obra": "Link to this job", "Enlace a todas sus obras": "Link to all their jobs",
+    "Avisar al contratista": "Notify the contractor", "Regenerar la llave del cliente": "Regenerate the client key",
+    "El link viejo deja de funcionar": "The old link stops working",
+    "Pasó la inspección": "Inspection passed", "Se emitió una factura": "An invoice was issued",
+    "Licencia y seguros al día": "License and insurance up to date",
+    "Hay un contrato esperando su firma": "A contract is waiting for their signature",
+    // Archivos y documentos
+    "Documentos": "Documents", "RFIs": "RFIs", "Oculto": "Hidden", "Lo ve": "Visible",
+    "Lo ve (luz verde)": "Visible (green light)", "Pide firma": "Signature requested",
+    "Pide aprobación": "Approval requested", "Firmado · falta tu firma": "Signed · your signature missing",
+    "Firmaste tú · falta el cliente": "You signed · client missing", "Firmado por los dos": "Signed by both",
+    "Aprobó": "Approved", "Enseñar al cliente": "Show to client", "Ocultar al cliente": "Hide from client",
+    "Pedir firma": "Request signature", "Quitar la firma pedida": "Remove signature request",
+    "Pedir aprobación": "Request approval", "Quitar la aprobación pedida": "Remove approval request",
+    "Firmar yo (Edgar Arboleya)": "Sign myself (Edgar Arboleya)",
+    "Enseñársela al cliente": "Show it to the client", "El cliente la ve · ocultársela": "Client sees it · hide it",
+    "Corregir la nota": "Edit the note", "Abrir el original": "Open the original",
+    "El cliente ve todas las fotos (luz verde)": "The client sees all photos (green light)",
+    "Luz verde encendida: el cliente ve todos los documentos.": "Green light on: the client sees all documents.",
+    "Luz verde encendida: el cliente ve todos los documentos, fotos y videos de esta obra.":
+      "Green light on: the client sees all documents, photos and videos of this job.",
+    // Hojas
+    "Cancelar": "Cancel", "Cerrar": "Close", "Siguiente paso": "Next step", "Otras acciones": "Other actions",
+    "Cambiar a otro estado": "Change to another status", "Zona de peligro": "Danger zone",
+    "Eliminar esta obra…": "Delete this job…",
+    "Borra la obra con todo lo suyo. Antes baja una copia y pide escribir ELIMINAR.":
+      "Deletes the job and everything in it. It downloads a copy first and asks you to type ELIMINAR.",
+    "Agregar a esta obra": "Add to this job", "Foto o video con nota": "Photo or video with a note",
+    "De la galería, un video corto o con descripción. La cámara del tablero sube solo fotos, sin nota.":
+      "From the gallery, a short video or with a description. The dashboard camera uploads photos only, without a note.",
+    "Pendiente de obra": "Job issue", "Se anota en la Checklist de esta obra": "It goes on this job's checklist",
+    "Inspección": "Inspection", "Documento o RFI": "Document or RFI", "Trabajo externo": "Outside work",
+    "Fases de la obra": "Job phases",
+    "Abre la cámara y sube la foto a esta obra (sin nota)": "Opens the camera and uploads the photo to this job (no note)",
+    "Opciones del renglón": "Item options",
+    // Lista
+    "Abrir la obra ›": "Open job ›", "Abrir la obra": "Open job",
+    "Se actualizó la pantalla: vuelve a elegir el archivo.": "The screen refreshed: pick the file again.",
+    // Renglones de la ficha (tanda 2)
+    "Todavía no hay renglones. Nacen solos al armar el contrato en «Escribir el alcance».":
+      "No items yet. They are created when you build the contract in «Write the scope».",
+    "Video": "Video", "El cliente la ve": "The client sees it", "PRÓXIMO": "NEXT",
+    "Agregar foto o video": "Add photo or video", "dinero personal: no cuenta en la obra": "personal money: not counted in the job",
+    "Sin trabajos externos anotados.": "No outside work logged.",
+    "Este proyecto no tiene documentos todavía.": "This job has no documents yet.",
+    "Guardar inspección": "Save inspection", "Guardar documento": "Save document",
+    "la necesitamos antes del": "we need it before",
+    // Arreglos de la revisión de la ficha
+    "le facturamos a ellos": "we bill them", "solo coordinan": "coordination only",
+    "Cobrando…": "Collecting…", "Firmado": "Signed", "Firmaste tú": "You signed",
+    "Firmado · falta la firma de Edgar": "Signed · Edgar's signature missing",
+    "faltan recibos": "receipts missing",
+    "Ese hito ya se está facturando: espera a que termine.": "That milestone is already being invoiced: wait until it finishes.",
+    "Ese hito ya se está guardando: espera a que termine.": "That milestone is already being saved: wait until it finishes.",
+    "Esa factura ya se está guardando: espera a que termine.": "That invoice is already being saved: wait until it finishes.",
+    "No encuentro a ese contratista en la lista: cámbialo en «Cambiar contratista o coordinador».":
+      "I can't find that contractor in the list: change it in «Change contractor or coordinator».",
+    "Solo Edgar puede firmar en su nombre.": "Only Edgar can sign in his name."
+  });
+
+  // Solo traduce "Pasar a …" / "Volver a …" cuando lo de detrás es una fase o un estado
+  // conocido: hay otros botones que empiezan igual ("Volver a la hoja") y no son esto.
+  const conocido = (s, prefijo, en) => {
+    const resto = s.slice(prefijo.length);
+    return D[resto] !== undefined ? en + D[resto] : s;
+  };
+  const ESTADO_ES = /^(Estimando|Enviado|Aprobado|En ejecución|En pausa|Completado|No aprobado) · /;
+  REGLAS.push(
+    [/^Pasar a (.+)$/, s => conocido(s, "Pasar a ", "Move to ")],
+    [/^Volver a (.+)$/, s => conocido(s, "Volver a ", "Back to ")],
+    [/^Fase: (.+) ✓$/, s => { const f = s.slice(6, -2); return D[f] !== undefined ? "Phase: " + D[f] + " ✓" : s; }],
+    [/^fase (\d+) de (\d+)$/, "phase $1 of $2"],
+    [/^(\d+) de (\d+) · (\d+)%$/, "$1 of $2 · $3%"],
+    [/^(\d+) de (\d+)$/, "$1 of $2"],
+    [/^(\d+) pendientes? · (\d+) urgentes?$/, "$1 open · $2 urgent"],
+    [/^(\d+) pendientes?$/, "$1 open"],
+    [/^(\d+) urgentes?$/, "$1 urgent"],
+    [/^Alcance (\d+)%$/, "Scope $1%"],
+    [/^(\d+) por comprar$/, "$1 to buy"],
+    [/^(\d+) gesti(ón|ones)$/, s => { const n = parseInt(s, 10); return n + (n === 1 ? " task" : " tasks"); }],
+    // "Inspección rough" → "rough inspection"; los avisos que empiezan igual llevan ✓, — o ":" y no entran
+    [/^Inspección ([^✓—:]+)$/, "$1 inspection"],
+    [/^(\d+) facturas sin cobrar$/, "$1 unpaid invoices"],
+    [/^Hechos \((\d+)\)$/, "Done ($1)"], [/^Resueltos \((\d+)\)$/, "Resolved ($1)"],
+    [/^Cobradas \((\d+)\)$/, "Paid ($1)"], [/^Cobrados \((\d+)\)$/, "Collected ($1)"],
+    [/^Ver las (\d+)$/, "See all $1"], [/^Ver (\d+) más$/, "See $1 more"],
+    [/^Últimos reportes \((\d+)\)$/, "Latest reports ($1)"],
+    [/^Pendientes de obra \((\d+)\)$/, "Job issues ($1)"], [/^Fotos de obra \((\d+)\)$/, "Job photos ($1)"],
+    [/^margen (-?\d+)%$/, "margin $1%"],
+    [/^Cobrado (\d+)% · falta (.+)$/, "Collected $1% · $2 left"],
+    [/^Cobrado (\d+)%$/, "Collected $1%"],
+    [/^falta (-?\$.+)$/, "$1 left"],
+    [/^\(?abonó (.+) de ([^)]+)\)?$/, s => s.replace(/abonó (.+) de ([^)]+)/, "paid $1 of $2")],
+    [/^vía (.+)$/, s => "via " + s.slice(4)
+      .replace(/\(contrato con ellos\)$/, "(contract with them)").replace(/\(referido\)$/, "(referral)")
+      .replace(/ \+ directo$/, " + direct")],
+    [/^¿Qué le aviso a (.+)\?$/, "What should I tell $1?"],
+    [/^Factura #(\S+) sin cobrar · (.+)$/, "Invoice #$1 unpaid · $2"],
+    [/^Email del cliente: (.+)$/, "Client email: $1"],
+    [/^Notice to Owner mandado el (.+)$/, "Notice to Owner sent on $1"],
+    // "Rough-in 2/5" de la tarjeta de la lista
+    [/^(.+) (\d+)\/(\d+)$/, s => { const m = s.match(/^(.+) (\d+)\/(\d+)$/); return D[m[1]] !== undefined ? D[m[1]] + " " + m[2] + "/" + m[3] : s; }],
+    // Subtítulo de la hoja Estado: "En ejecución · Rough-in · Origen: …"
+    [ESTADO_ES, s => s.split(" · ").map(p => D[p] !== undefined ? D[p] : p.replace(/^Origen: /, "Source: ")).join(" · ")],
+    // La historia de un documento (hoja del botón de estado)
+    [/^Firmó (.+) · (.+)$/, "Signed by $1 · $2"],
+    [/^Contrafirmado (.+)$/, "Countersigned $1"],
+    [/^Aprobó (.+)$/, "Approved $1"],
+    [/^Visto (.+)$/, "Seen $1"],
+    [/^El (cliente|contratista) lo abrió (\d+) (vez|veces) · última (.+) \(hora de Florida\)$/, s => {
+      const m = s.match(/^El (cliente|contratista) lo abrió (\d+) (vez|veces) · última (.+) \(hora de Florida\)$/);
+      return `The ${m[1] === "cliente" ? "client" : "contractor"} opened it ${m[2]} ${m[2] === "1" ? "time" : "times"} · last ${m[4]} (Florida time)`;
+    }]
+  );
   function traducirTexto(t) {
     const limpio = t.trim();
     if (!limpio) return t;
@@ -229,10 +403,16 @@
       const nuevo = traducirTexto(n.nodeValue);
       if (nuevo !== n.nodeValue) n.nodeValue = nuevo;
     }
-    const conAttr = raiz.querySelectorAll ? raiz.querySelectorAll("[placeholder], [title]") : [];
+    // Los atributos que se leen o se oyen (placeholder, title, aria-label), también
+    // en el propio nodo que se acaba de pintar, no solo en sus hijos
+    const SEL_ATTR = "[placeholder], [title], [aria-label]";
+    const conAttr = raiz.querySelectorAll ? Array.from(raiz.querySelectorAll(SEL_ATTR)) : [];
+    if (raiz.matches && raiz.matches(SEL_ATTR)) conAttr.push(raiz);
     conAttr.forEach(el => {
       if (el.placeholder && D[el.placeholder]) el.placeholder = D[el.placeholder];
       if (el.title && D[el.title]) el.title = D[el.title];
+      const aria = el.getAttribute("aria-label");
+      if (aria && D[aria]) el.setAttribute("aria-label", D[aria]);
     });
   }
 

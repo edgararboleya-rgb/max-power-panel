@@ -402,7 +402,7 @@ function esFalloDeRed(err) {
   }
 
   // ---------- Cambio de vista ----------
-  function mostrar(vista, { kicker, titulo, volver, nuevo }) {
+  function mostrar(vista, { kicker, titulo, volver, nuevo, mantenerScroll }) {
     lateralVista = vista;
     pintarLateral();
     $home.hidden = vista !== "home";
@@ -425,7 +425,8 @@ function esFalloDeRed(err) {
     $titulo.textContent = titulo;
     $btnVolver.hidden = !volver;
     $btnNuevo.hidden = !(nuevo && usuario && usuario.editar);
-    window.scrollTo(0, 0);
+    // Al repintar la MISMA ficha (después de guardar algo) la pantalla se queda donde estaba
+    if (!mantenerScroll) window.scrollTo(0, 0);
   }
 
   // ============================================================
@@ -1037,19 +1038,19 @@ function esFalloDeRed(err) {
       if (typeof p.contrato !== "number" || typeof p.cobrado !== "number") continue;
       const falta = p.contrato - p.cobrado;
       if (falta > 1)
-        avisos.push({ id: p.id, icono: "💵", texto: `${p.nombre} está TERMINADO y quedan ${fmt(falta)} sin cobrar` });
+        avisos.push({ id: p.id, pestana: "dinero", icono: "💵", texto: `${p.nombre} está TERMINADO y quedan ${fmt(falta)} sin cobrar` });
     }
     // 📋 Aprobado sin monto de contrato: no se puede facturar ni medir el margen
     for (const p of proyectos()) {
       if (p.estado !== "aprobado") continue;
       if (typeof p.contrato === "number" && p.contrato > 0) continue;
-      avisos.push({ id: p.id, icono: "📋", texto: `${p.nombre} está aprobado SIN monto de contrato — ponle el precio para poder facturar` });
+      avisos.push({ id: p.id, pestana: "dinero", icono: "📋", texto: `${p.nombre} está aprobado SIN monto de contrato — ponle el precio para poder facturar` });
     }
     for (const p of proyectos()) {
       for (const f of facturasPendientes(p)) {
         const dias = diasDesde(f.fechaISO);
         if (dias !== null && dias >= 30)
-          avisos.push({ id: p.id, icono: "💵", texto: `Factura #${f.num} de ${p.nombre} lleva ${dias} días sin pagar (${fmt(saldoFactura(f))}${f.cobrado > 0 ? ` de ${fmt(f.monto)}` : ""})` });
+          avisos.push({ id: p.id, pestana: "dinero", icono: "💵", texto: `Factura #${f.num} de ${p.nombre} lleva ${dias} días sin pagar (${fmt(saldoFactura(f))}${f.cobrado > 0 ? ` de ${fmt(f.monto)}` : ""})` });
       }
       if (p.estado === "enviado") {
         const dias = diasDesde(p.actualizado);
@@ -1059,18 +1060,18 @@ function esFalloDeRed(err) {
       if (p.estado === "ejecucion" && p.horas && p.horas.estimadas > 0) {
         const razon = p.horas.reales / p.horas.estimadas;
         if (razon > 1)
-          avisos.push({ id: p.id, icono: "⏱", texto: `${p.nombre}: ${p.horas.reales}h trabajadas de ${p.horas.estimadas}h estimadas — se está comiendo el margen` });
+          avisos.push({ id: p.id, pestana: "dinero", icono: "⏱", texto: `${p.nombre}: ${p.horas.reales}h trabajadas de ${p.horas.estimadas}h estimadas — se está comiendo el margen` });
         else if (razon >= 0.8)
-          avisos.push({ id: p.id, icono: "⏱", texto: `${p.nombre}: el labor va al ${Math.round(razon * 100)}% de lo estimado (${p.horas.reales}h de ${p.horas.estimadas}h) — vigílalo` });
+          avisos.push({ id: p.id, pestana: "dinero", icono: "⏱", texto: `${p.nombre}: el labor va al ${Math.round(razon * 100)}% de lo estimado (${p.horas.reales}h de ${p.horas.estimadas}h) — vigílalo` });
       }
       if (["ejecucion", "aprobado", "pausa"].includes(p.estado)
           && p.presupuestoMateriales > 0) {
         const gasto = gastoMateriales(p.id);
         const razon = gasto / p.presupuestoMateriales;
         if (razon > 1)
-          avisos.push({ id: p.id, icono: "🛒", texto: `${p.nombre}: materiales PASADOS del presupuesto — ${fmt(gasto)} de ${fmt(p.presupuestoMateriales)}` });
+          avisos.push({ id: p.id, pestana: "dinero", icono: "🛒", texto: `${p.nombre}: materiales PASADOS del presupuesto — ${fmt(gasto)} de ${fmt(p.presupuestoMateriales)}` });
         else if (razon >= 0.8)
-          avisos.push({ id: p.id, icono: "🛒", texto: `${p.nombre}: materiales al ${Math.round(razon * 100)}% del presupuesto (${fmt(gasto)} de ${fmt(p.presupuestoMateriales)})` });
+          avisos.push({ id: p.id, pestana: "dinero", icono: "🛒", texto: `${p.nombre}: materiales al ${Math.round(razon * 100)}% del presupuesto (${fmt(gasto)} de ${fmt(p.presupuestoMateriales)})` });
       }
     }
     if (!avisos.length) { $("inicio-avisos").innerHTML = ""; return; }
@@ -1078,7 +1079,7 @@ function esFalloDeRed(err) {
       <div class="inicio-card avisos">
         <div class="inicio-card-titulo">⚠ Avisos</div>
         ${avisos.map(a => `
-          <button class="aviso-linea" data-id="${esc(a.id || "")}" data-accion="${esc(a.accion || "")}">
+          <button class="aviso-linea" data-id="${esc(a.id || "")}" data-accion="${esc(a.accion || "")}" data-pestana="${esc(a.pestana || "")}">
             <span>${a.icono}</span>
             <span class="aviso-texto">${esc(a.texto)}</span>
             <span class="cat-flecha">›</span>
@@ -1088,7 +1089,8 @@ function esFalloDeRed(err) {
       btn.addEventListener("click", () => {
         if (btn.dataset.accion === "materiales") irMateriales();
         else if (btn.dataset.accion === "arranque") irMateriales(btn.dataset.id);
-        else irDetalle(btn.dataset.id);
+        // Los avisos de dinero abren la ficha en la pestaña Dinero (Inicio avisos es solo del dueño)
+        else irDetalle(btn.dataset.id, btn.dataset.pestana || undefined);
       });
     });
   }
@@ -1487,6 +1489,12 @@ function esFalloDeRed(err) {
     $lista.querySelectorAll(".abrir-ficha").forEach(btn => {
       btn.addEventListener("click", () => irDetalle(btn.closest(".proy-det").dataset.id));
     });
+    // «Marcar cobrada» de la tarjeta: antes el botón salía pero nadie lo escuchaba.
+    // Lleva su propia obra en data-proyecto (aquí no hay ninguna obra abierta).
+    $lista.querySelectorAll(".factura-pagada").forEach(b => b.addEventListener("click", ev => {
+      ev.stopPropagation();
+      marcarFacturaCobrada(b);
+    }));
   }
 
   $buscador.addEventListener("input", () => {
@@ -1516,8 +1524,10 @@ function esFalloDeRed(err) {
     const indice = h.estimadas > 0 ? h.reales / h.estimadas : null;
     const restantes = Math.max(0, h.estimadas - h.reales);
     const color = indice === null ? "" : indice <= 1 ? "ok" : indice <= 1.15 ? "warn" : "bad";
+    // Los últimos reportes van plegados: el número se ve sin abrir nada
+    const nReg = Math.min(5, (state.registroHoras || []).filter(r => r.proyecto === p.id).length);
     return `
-      <div class="detalle-seccion">
+      <div class="detalle-seccion" id="ficha-horas">
         <h3>Horas — plan vs. real</h3>
         <div class="horas-linea">
           <span class="horas-num ${color}">${h.reales} h</span>
@@ -1525,7 +1535,7 @@ function esFalloDeRed(err) {
           ${p.estado !== "completado" ? `<span class="horas-restan">quedan ${Math.round(restantes * 10) / 10} h</span>` : ""}
         </div>
         <div class="barra horas-barra"><div class="barra-relleno ${color}" style="width:${pct}%"></div></div>
-        ${registroHorasHTML(p)}
+        ${nReg ? plegableHTML(p, "horas-reportes", `Últimos reportes (${nReg})`, "", registroHorasHTML(p), false) : ""}
       </div>`;
   }
 
@@ -1543,7 +1553,8 @@ function esFalloDeRed(err) {
       </div>`).join("") + `</div>`;
   }
 
-  function desgloseHTML(p) {
+  // opc.sinTitulo: el dueño lo ve dentro del plegable «Desglose del contrato», que ya lo dice
+  function desgloseHTML(p, opc = {}) {
     if (!p.alcances || !p.alcances.length) return "";
     if (!usuario.finanzas) {
       const items = p.alcances.map(a => `
@@ -1554,7 +1565,7 @@ function esFalloDeRed(err) {
             <span class="alcance-estado">${esc(sinMontos(a.estado || ""))}</span>
           </span>
         </div>`).join("");
-      return `<div class="detalle-seccion"><h3>Alcances del proyecto</h3>${items}</div>`;
+      return `<div class="detalle-seccion" id="ficha-contrato"><h3>Contrato y cambios (SOW / CO)</h3>${items}</div>`;
     }
     const filas = p.alcances.map(a => {
       const pct = (typeof a.monto === "number" && a.monto > 0 && typeof a.cobrado === "number")
@@ -1569,7 +1580,7 @@ function esFalloDeRed(err) {
     const totalCobrado = p.alcances.reduce((s, a) => s + (a.cobrado || 0), 0);
     return `
       <div class="detalle-seccion">
-        <h3>Desglose del contrato</h3>
+        ${opc.sinTitulo ? "" : "<h3>Desglose del contrato</h3>"}
         <div class="tabla-envoltura">
           <table class="facturas desglose">
             <thead><tr><th>Alcance</th><th class="r">Monto</th><th class="r">Cobrado</th></tr></thead>
@@ -1587,26 +1598,25 @@ function esFalloDeRed(err) {
     return p.hitos.find(h => h.estado !== "cobrado") || null;
   }
 
-  function proximoCobroHTML(p) {
-    if (!usuario.finanzas) return "";
-    const h = proximoHito(p);
-    if (!h) return "";
-    const nota = h.estado === "facturado" ? " · ya facturado, sin pagar" : "";
-    return `<div class="proximo-cobro">➡ Próximo cobro: <strong>${fmt(h.monto)}</strong> — ${esc((h.condicion || "").toLowerCase())}${nota}</div>`;
-  }
-
+  // Candado que NO depende de la pantalla: el hito que se está facturando o
+  // cobrando se apunta aquí hasta que termine. Si la ficha se repinta mientras
+  // tanto (una palomita, la cola de reportes al volver la señal), el botón nuevo
+  // sale apagado y un segundo toque no manda otra factura a QuickBooks.
+  const facturandoHitos = new Set();
+  const cobrandoHitos = new Set();
+  const cobrandoFacturas = new Set();
   function hitosHTML(p) {
     if (!usuario.finanzas) return "";
     // Una obra con contrato y SIN hitos es dinero que no se puede facturar
-    // con el botón 🧾 y que no sale en ningún aviso. Antes esta sección
+    // con el botón Facturar y que no sale en ningún aviso. Antes esta sección
     // simplemente no aparecía y el hueco quedaba invisible.
     if (!p.hitos || !p.hitos.length) {
       if (typeof p.contrato !== "number" || p.contrato <= 0) return "";
       return `
-        <div class="detalle-seccion">
+        <div class="detalle-seccion" id="ficha-hitos">
           <h3>Hitos de pago</h3>
           <div class="rent-humo">⚠ Este proyecto tiene contrato de ${fmt(p.contrato)} pero
-          <strong>ningún hito de pago</strong>. Así no se puede facturar con el botón 🧾 ni
+          <strong>ningún hito de pago</strong>. Así no se puede facturar con el botón Facturar ni
           avisa cuando toca cobrar. Cópialos del SOW (normalmente 35/45/20 o 50/50).</div>
         </div>`;
     }
@@ -1620,31 +1630,55 @@ function esFalloDeRed(err) {
       `Amount: ${fmt(h.monto)}`,
       "Terms: Due on receipt"
     ].filter(Boolean).join("\n");
-    const filas = p.hitos.map(h => {
+    // Cada hito enseña UN solo botón. Los tres de siempre (release, facturar,
+    // cobrar) siguen con las mismas condiciones, clases y datos, pero escondidos:
+    // la hoja del renglón los activa y así cada uno conserva sus preguntas.
+    const filaHito = h => {
       const esSiguiente = h === siguiente;
       const icono = h.estado === "cobrado" ? "✓" : h.estado === "facturado" ? "⚠" : "○";
       const claseFila = h.estado === "cobrado" ? "hito-cobrado" : esSiguiente ? "hito-siguiente" : "hito-pendiente";
-      return `<div class="hito ${claseFila}">
+      const sub = [fmt(h.monto), h.condicion || ""].filter(Boolean).join(" · ");
+      // Mientras se factura o se cobra: un botón apagado y ninguna herramienta
+      const ocupado = facturandoHitos.has(String(h.id)) ? "Facturando…" : cobrandoHitos.has(String(h.id)) ? "Cobrando…" : "";
+      const escondidos = ocupado ? "" : [
+        h.estado === "cobrado" && usuario.editar ? `<button type="button" class="hito-release"
+            data-hito="${esc(h.id)}" title="Waiver and Release of Lien de este pago (F.S. 713.20)">Release del pago</button>` : "",
+        /* Facturar solo en un hito PENDIENTE: uno ya facturado tiene su factura en
+           QuickBooks y un segundo toque sacaría otra (P03, 24-sep). */
+        h.estado === "pendiente" && usuario.editar ? `<button type="button" class="hito-facturar"
+            data-texto="${esc(textoFactura(h))}" data-hito="${esc(h.id)}" data-proyecto="${esc(p.id)}"
+            title="Crea la factura con las reglas de la casa">Facturar</button>` : "",
+        /* El cobrar lleva su propia clase: antes compartía «hito-cobrado» con la
+           FILA de un hito cobrado, y tocar esa fila preguntaba por "undefined". */
+        h.estado !== "cobrado" && usuario.editar ? `<button type="button" class="hito-cobrar" data-hito="${esc(h.id)}" data-titulo="${esc(h.titulo)}" data-monto="${h.monto}"
+            title="Ya entró el dinero de este hito — marcarlo COBRADO">Ya cobré</button>` : ""
+      ].join("");
+      // El botón visible: «Facturar ▾» (pendiente), «Ya cobré» (facturado) o «Release» (cobrado)
+      const visible = !usuario.editar ? ""
+        : ocupado
+          ? `<button type="button" class="accion secundaria chica fila-menu" disabled><span>${ocupado}</span></button>`
+        : h.estado === "pendiente"
+          ? `<button type="button" class="accion secundaria chica fila-menu" aria-haspopup="dialog">${ico("recibo")}<span>Facturar</span><span class="abajo">${ico("chevron") || "▾"}</span></button>`
+        : h.estado === "facturado"
+          ? `<button type="button" class="accion secundaria chica fila-menu" data-directo="1">${ico("dolar")}<span>Ya cobré</span></button>`
+        // Release solo en un hito COBRADO (un estado raro no enseña ningún botón)
+        : h.estado === "cobrado"
+          ? `<button type="button" class="accion secundaria chica fila-menu" data-directo="1">${ico("escudo")}<span>Release</span></button>`
+          : "";
+      return `<div class="hito ${claseFila}" data-fila="hito" data-titulo="${esc(h.titulo)}" data-sub="${esc(sub)}">
           <span class="hito-icono">${icono}</span>
           <span class="hito-info">
             <span class="hito-titulo">${esc(h.titulo)}${esSiguiente ? ' <span class="hito-chip">PRÓXIMO</span>' : ""}</span>
             <span class="hito-cond">${esc(h.condicion || "")}${h.estado === "facturado" ? " · facturado, sin pagar" : ""}</span>
           </span>
           <span class="hito-monto">${fmt(h.monto)}</span>
-          ${h.estado === "cobrado" && usuario.editar ? `<button type="button" class="insp-borrar hito-release"
-            data-hito="${esc(h.id)}" title="Waiver and Release of Lien de este pago (F.S. 713.20)">📄</button>` : ""}
-          ${/* 🧾 solo en un hito PENDIENTE: uno ya facturado tiene su factura en
-               QuickBooks y un segundo toque sacaría otra (P03, 24-sep). */
-            h.estado === "pendiente" && usuario.editar ? `<button type="button" class="insp-borrar hito-facturar"
-            data-texto="${esc(textoFactura(h))}" data-hito="${esc(h.id)}" data-proyecto="${esc(p.id)}"
-            title="Crea la factura en QuickBooks con las reglas de la casa">🧾</button>` : ""}
-          ${/* El 💵 lleva su propia clase: antes compartía «hito-cobrado» con la
-               FILA de un hito cobrado, y tocar esa fila preguntaba por "undefined". */
-            h.estado !== "cobrado" && usuario.editar ? `<button type="button" class="chip-cobrar hito-cobrar" data-hito="${esc(h.id)}" data-titulo="${esc(h.titulo)}" data-monto="${h.monto}"
-            title="Ya entró el dinero de este hito — marcarlo COBRADO">💵</button>` : ""}
+          ${visible}
+          ${escondidos ? `<span class="herramientas" hidden><!-- botones de siempre: las hojas los activan; no borrar -->${escondidos}</span>` : ""}
         </div>`;
-    }).join("");
-    const porCobrarTotal = p.hitos.filter(h => h.estado !== "cobrado").reduce((s, h) => s + h.monto, 0);
+    };
+    const abiertos = p.hitos.filter(h => h.estado !== "cobrado");
+    const cobrados = p.hitos.filter(h => h.estado === "cobrado");
+    const porCobrarTotal = abiertos.reduce((s, h) => s + h.monto, 0);
     // ¿Los hitos suman lo mismo que el contrato? Si no, uno de los dos está
     // mal — y el que manda es el SOW firmado.
     const sumaHitos = p.hitos.reduce((s, h) => s + h.monto, 0);
@@ -1656,18 +1690,16 @@ function esFalloDeRed(err) {
          Compáralo con el SOW firmado: manda el SOW.</div>`
       : "";
     return `
-      <div class="detalle-seccion">
+      <div class="detalle-seccion" id="ficha-hitos">
         <h3>Hitos de pago</h3>
         ${avisoDesfase}
-        ${filas}
+        ${abiertos.map(filaHito).join("")}
+        ${cobrados.length ? plegableHTML(p, "hitos-cobrados", `Cobrados (${cobrados.length})`,
+            fmt(cobrados.reduce((s, h) => s + h.monto, 0)), cobrados.map(filaHito).join(""), false) : ""}
         <div class="hito hito-total">
           <span class="hito-icono"></span>
           <span class="hito-info"><span class="hito-titulo">Total por cobrar</span></span>
           <span class="hito-monto">${fmt(porCobrarTotal)}</span>
-        </div>
-        <div class="modal-botones">
-          <a class="accion secundaria" target="_blank" rel="noopener" href="https://qbo.intuit.com/app/invoice">🧾 Nueva factura en QuickBooks</a>
-          <a class="accion secundaria" target="_blank" rel="noopener" href="https://qbo.intuit.com/app/estimate">📄 Nuevo estimado en QuickBooks</a>
         </div>
       </div>`;
   }
@@ -1826,27 +1858,41 @@ function esFalloDeRed(err) {
       Mientras falten compras por cargar, el margen sale más alto de lo que es.</div>`;
   }
 
-  function rentabilidadHTML(p) {
-    if (!usuario.finanzas || typeof p.contrato !== "number" || p.contrato <= 0) return "";
+  // El margen real de una obra (contrato − labor − materiales − ayuda externa).
+  // null si no hay contrato, si falta el costo del equipo o si no hay nada gastado.
+  // Lo usan la rentabilidad y la tapa de su plegable («margen 41%»).
+  function margenObra(p) {
+    if (!p || typeof p.contrato !== "number" || p.contrato <= 0) return null;
     const mo = costoManoDeObra(p);
-    if (!mo) {
-      return `<div class="detalle-seccion"><h3>Rentabilidad y gastos</h3>
-        <p>Define el costo por hora del equipo en <strong>📊 Gastos → 💲 Costos del equipo</strong>
-        y aquí verás la ganancia real de este proyecto.</p></div>`;
-    }
+    if (!mo) return null;
     const matGasto = gastoMateriales(p.id);
-    const matPresu = p.presupuestoMateriales;
     const extGasto = gastoExternos(p.id);
-    if (mo.horas <= 0 && matGasto <= 0 && extGasto <= 0) {
-      return `<div class="detalle-seccion"><h3>Rentabilidad y gastos</h3>
-        <p>Todavía no hay horas ni compras registradas en este proyecto.</p></div>`;
-    }
+    if (mo.horas <= 0 && matGasto <= 0 && extGasto <= 0) return null;
     const margen = p.contrato - mo.costo - matGasto - extGasto;
     const pct = Math.round((margen / p.contrato) * 100);
     const clase = pct >= 50 ? "ok" : pct >= 30 ? "warn" : "bad";
+    return { margen, pct, clase, mo, matGasto, extGasto };
+  }
+
+  // opc.sinTitulo: el dueño lo ve dentro del plegable «Rentabilidad · margen N%»
+  function rentabilidadHTML(p, opc = {}) {
+    if (!usuario.finanzas || typeof p.contrato !== "number" || p.contrato <= 0) return "";
+    const h3 = opc.sinTitulo ? "" : "<h3>Rentabilidad y gastos</h3>";
+    if (!costoManoDeObra(p)) {
+      return `<div class="detalle-seccion">${h3}
+        <p>Define el costo por hora del equipo en <strong>📊 Gastos → 💲 Costos del equipo</strong>
+        y aquí verás la ganancia real de este proyecto.</p></div>`;
+    }
+    const m = margenObra(p);
+    if (!m) {
+      return `<div class="detalle-seccion">${h3}
+        <p>Todavía no hay horas ni compras registradas en este proyecto.</p></div>`;
+    }
+    const { margen, pct, clase, mo, matGasto, extGasto } = m;
+    const matPresu = p.presupuestoMateriales;
     return `
       <div class="detalle-seccion">
-        <h3>Rentabilidad y gastos</h3>
+        ${h3}
         <div class="rent-fila"><span>Contrato</span><span>${fmt(p.contrato)}</span></div>
         <div class="rent-fila"><span>Mano de obra (${mo.horas} h)</span><span>−${fmt(mo.costo)}</span></div>
         ${barraGasto(mo.costo, mo.presupuesto)}
@@ -1861,12 +1907,15 @@ function esFalloDeRed(err) {
       </div>`;
   }
 
-  // Avance de obra: % de cumplimiento según los puntos del alcance
+  // Avance de obra: % de cumplimiento según los puntos del alcance. Es la MISMA
+  // cuenta que el portal del cliente: solo los puntos del alcance, sin los bloques
+  // informativos (opcional, etapa futura, «(modificado)»…). Antes contaba también
+  // los pendientes de obra y la lista decía 39% mientras la ficha decía 48%.
   function avanceObra(pid) {
-    const tareas = tareasDe(pid);
-    if (!tareas.length) return null;
-    const hechos = tareas.filter(t => t.hecha).length;
-    return { hechos, total: tareas.length, pct: Math.round((hechos / tareas.length) * 100) };
+    const puntos = tareasDe(pid).filter(t => t.tipo === "punto" && !puntoInformativo(t));
+    if (!puntos.length) return null;
+    const hechos = puntos.filter(t => t.hecha).length;
+    return { hechos, total: puntos.length, pct: Math.round((hechos / puntos.length) * 100) };
   }
 
   // ============================================================
@@ -1933,16 +1982,38 @@ function esFalloDeRed(err) {
   }
 
   // Una fila del checklist: palomita · texto · categoría · ✎ · 🗑
-  function filaTarea(t) {
+  // opc.ficha (solo en la ficha de la obra): la fila enseña la palomita y el
+  // texto; la categoría, ✎, 🏷 y 🗑 van escondidos y los abre el ⋯ («Corregir»).
+  // OJO: .map(filaTarea) le pasa el ÍNDICE como segundo argumento; por eso se
+  // pregunta por opc.ficha === true y no por opc a secas. Sin ficha pinta igual que siempre.
+  function filaTarea(t, opc) {
+    const ficha = !!(opc && opc.ficha === true);
     const p = prioDe(t.prioridad);
     const meta = [t.proyectoNombre ? "🔧 " + t.proyectoNombre : "", t.autor || "", t.fecha || "",
-                  t.grupo ? "🏷 " + t.grupo : ""]
+                  !ficha && t.grupo ? "🏷 " + sinMontos(t.grupo) : ""]
       .filter(Boolean).join(" · ");
     const selector = `
       <select class="tarea-prio ${p}" title="Categoría de la tarea">
         ${Object.entries(PRIO).map(([v, c]) =>
           `<option value="${v}"${v === p ? " selected" : ""}>${c.icono} ${c.etiqueta}</option>`).join("")}
       </select>`;
+    if (ficha) {
+      const escondidos = (t.hecha ? "" : selector) + (usuario.editar ? `<button type="button" class="tarea-editar" title="Corregir el texto">Corregir el texto</button>
+        ${t.tipo === "punto" ? `<button type="button" class="tarea-grupo" title="Bloque en que sale en el portal del cliente">Bloque del portal</button>` : ""}
+        <button type="button" class="tarea-borrar" title="Eliminar">Eliminar</button>` : "");
+      const punto = p === "urgente" ? ico("rojo") : p === "espera" ? ico("gris") : "";
+      return `
+      <div class="tarea ficha-fila prio-${p}${t.hecha ? " hecha" : ""}" data-tipo="${t.tipo}" data-id="${t.id}" data-fila="tarea" data-titulo="Renglón" data-sub="${esc(sinMontos(t.texto))}">
+        <button type="button" class="tarea-check" title="${t.hecha ? "Devolver a pendiente" : "Marcar completada"}">${t.hecha ? "✅" : "⬜"}</button>
+        ${punto && !t.hecha ? `<span class="prio-punto" title="${esc(PRIO[p].etiqueta)}">${punto}</span>` : ""}
+        <span class="tarea-info">
+          <span class="tarea-texto">${esc(sinMontos(t.texto))}</span>
+          ${meta ? `<span class="tarea-meta">${esc(meta)}</span>` : ""}
+        </span>
+        ${escondidos.trim() ? `<button type="button" class="accion secundaria icono tarea-menu fila-menu" aria-label="Opciones del renglón" title="Opciones">${ico("puntos") || "⋯"}</button>
+        <span class="herramientas" hidden><!-- botones de siempre: las hojas los activan; no borrar -->${escondidos}</span>` : ""}
+      </div>`;
+    }
     return `
       <div class="tarea prio-${p}${t.hecha ? " hecha" : ""}" data-tipo="${t.tipo}" data-id="${t.id}">
         <button class="tarea-check" title="${t.hecha ? "Devolver a pendiente" : "Marcar completada"}">${t.hecha ? "✅" : "⬜"}</button>
@@ -2453,20 +2524,12 @@ function esFalloDeRed(err) {
   $("btn-asistente").addEventListener("click", irAsistente);
   $("btn-chat").addEventListener("click", () => irChat(chatConv));
 
-  // 🚀 Arranque: lo que falta para empezar (mismos registros que 🛒)
+  // 🚀 Arranque: las gestiones que faltan para empezar. Los materiales por comprar
+  // ya no se listan aquí: los lleva la señal «N por comprar» del tablero.
   function arranqueHTML(p) {
     if (!["enviado", "aprobado", "ejecucion", "pausa"].includes(p.estado)) return "";
-    const matsFalta = (state.materiales || []).filter(m => m.proyecto === p.id && m.estado === "falta");
     const gests = (state.gestiones || []).filter(g => g.proyecto === p.id && !g.hecha);
-    if (!matsFalta.length && !gests.length) return "";
-    const filasM = matsFalta.map(m => `
-      <div class="mat-item falta">
-        <span class="mat-icono">🛒</span>
-        <span class="alcance-info">
-          <span class="alcance-titulo">${esc(sinMontos(m.descripcion))}${m.cantidad ? ` <span class="mat-cant">— ${esc(sinMontos(m.cantidad))}</span>` : ""}</span>
-          <span class="alcance-estado">material por comprar</span>
-        </span>
-      </div>`).join("");
+    if (!gests.length) return "";
     const filasG = gests.map(g => `
       <div class="mat-item falta">
         <span class="mat-icono">📌</span>
@@ -2477,15 +2540,16 @@ function esFalloDeRed(err) {
         ${usuario.editar ? `<button class="accion btn-gestion-hecha-ficha" data-id="${g.id}">✓ Hecha</button>` : ""}
       </div>`).join("");
     return `
-      <div class="detalle-seccion">
+      <div class="detalle-seccion" id="ficha-arranque">
         <h3>🚀 Arranque — lo que falta para empezar</h3>
-        ${filasM}${filasG}
+        ${filasG}
         <button type="button" class="accion secundaria btn-ir-materiales" data-id="${esc(p.id)}">Ver en Materiales ›</button>
       </div>`;
   }
 
   // Ayuda externa: contratados puntuales sin cuenta en la app (SOLO dueño)
-  function externosHTML(p) {
+  // opc.sinTitulo: va dentro del plegable «Ayuda externa» de la pestaña Dinero
+  function externosHTML(p, opc = {}) {
     if (!usuario.finanzas) return "";
     const lista = (state.externos || []).filter(x => x.proyecto === p.id);
     const filas = lista.map(x => `
@@ -2496,13 +2560,13 @@ function esFalloDeRed(err) {
           <span class="alcance-estado">${x.fecha ? fechaBonita(x.fecha) : ""}</span>
         </span>
         <span class="mat-precio">${fmt(x.costo)}</span>
-        <button type="button" class="insp-borrar btn-ext-borrar" data-id="${x.id}" title="Eliminar">🗑</button>
+        <button type="button" class="accion secundaria icono btn-ext-borrar" data-id="${x.id}" aria-label="Eliminar" title="Eliminar">${ico("basura") || "🗑"}</button>
       </div>`).join("");
     return `
       <div class="detalle-seccion">
-        <h3>Ayuda externa (por día o por ajuste)</h3>
+        ${opc.sinTitulo ? "" : "<h3>Ayuda externa (por día o por ajuste)</h3>"}
         ${filas || `<span class="sin-docs">Sin trabajos externos anotados.</span>`}
-        <button type="button" class="accion secundaria btn-agregar-ext">+ Anotar trabajo externo</button>
+        <span class="herramientas" hidden><!-- botones de siempre: las hojas los activan; no borrar --><button type="button" class="accion secundaria btn-agregar-ext">+ Anotar trabajo externo</button></span>
         <form class="cal-form form-ext" hidden>
           ${(state.ayudantes || []).filter(a => a.activo).length ? `
           <label>Ayudante de tu nómina (opcional — usa su tarifa sola)
@@ -2536,7 +2600,10 @@ function esFalloDeRed(err) {
           </div>
           <p class="modal-nota">Esto entra como gasto del proyecto y se resta del margen.
           El trabajador NO necesita cuenta en la app.</p>
-          <button type="submit" class="accion">Guardar</button>
+          <div class="modal-botones">
+            <button type="button" class="accion secundaria form-cerrar">Cancelar</button>
+            <button type="submit" class="accion">Guardar</button>
+          </div>
         </form>
       </div>`;
   }
@@ -2556,27 +2623,46 @@ function esFalloDeRed(err) {
     return `<div class="detalle-seccion"><h3>RFIs</h3>${items}</div>`;
   }
 
+  // Facturas de la obra: primero lo que falta por cobrar, con su botón; las
+  // cobradas van plegadas. «Total facturado» no cuenta la #1110 (dinero personal
+  // de Edgar), igual que la franja de dinero.
   function facturasHTML(p) {
     if (!usuario.finanzas || !p.facturas || !p.facturas.length) return "";
-    const filas = p.facturas.map(f => `<tr>
+    const personal = f => String(f.num) === "1110";
+    const porCobrar = p.facturas.filter(f => !f.pagada);
+    const cobradas = p.facturas.filter(f => f.pagada);
+    const filaPorCobrar = f => `
+      <div class="tv2-factura factura-fila">
+        <span class="alcance-info">
+          <span class="alcance-titulo"><span>#${esc(f.num)}</span> · <span>${esc(f.fecha || "")}</span> · <strong>${fmt(saldoFactura(f))}</strong></span>
+          ${f.cobrado > 0 ? `<span class="alcance-estado">abonó ${fmt(f.cobrado)} de ${fmt(f.monto)}</span>` : ""}
+          ${personal(f) ? `<span class="alcance-estado">dinero personal: no cuenta en la obra</span>` : ""}
+        </span>
+        ${f.id && usuario.editar ? `<button type="button" class="accion secundaria chica factura-pagada" data-id="${f.id}" data-num="${esc(f.num)}" data-monto="${saldoFactura(f)}" data-proyecto="${esc(p.id)}"${personal(f) ? ' data-personal="1"' : ""}${cobrandoFacturas.has(String(f.id)) ? " disabled" : ""}
+          title="${personal(f) ? "Marcarla como COBRADA — es dinero personal: no se suma a lo cobrado de la obra" : "Marcarla como COBRADA — es lo que cuadra el dinero de la app con el banco"}">Marcar cobrada</button>` : ""}
+      </div>`;
+    const filasCobradas = cobradas.map(f => `<tr>
         <td>#${esc(f.num)}</td>
         <td>${esc(f.fecha)}</td>
         <td class="r">${fmt(f.monto)}</td>
-        <td class="r"><span class="f-estado ${f.pagada ? "pagada" : "pendiente"}">${f.pagada ? "PAGADA" : "PENDIENTE"}</span></td>
+        <td class="r"><span class="f-estado pagada">PAGADA</span></td>
       </tr>`).join("");
-    const total = p.facturas.reduce((s, f) => s + f.monto, 0);
+    const sumaCobradas = cobradas.filter(f => !personal(f)).reduce((s, f) => s + (Number(f.monto) || 0), 0);
+    const total = p.facturas.filter(f => !personal(f)).reduce((s, f) => s + (Number(f.monto) || 0), 0);
+    const hayPersonal = p.facturas.some(personal);
     return `
-      <div class="detalle-seccion">
-        <h3>Facturas (QuickBooks)</h3>
-        <div class="tabla-envoltura">
-          <table class="facturas">
-            <thead><tr><th>Nº</th><th>Fecha</th><th class="r">Monto</th><th class="r">Estado</th></tr></thead>
-            <tbody>
-              ${filas}
-              <tr class="total"><td colspan="2">Total facturado</td><td class="r">${fmt(total)}</td><td></td></tr>
-            </tbody>
-          </table>
-        </div>
+      <div class="detalle-seccion" id="ficha-facturas">
+        <h3>Facturas</h3>
+        ${porCobrar.length ? `<h4 class="portal-sub">Por cobrar</h4>${porCobrar.map(filaPorCobrar).join("")}` : ""}
+        ${cobradas.length ? plegableHTML(p, "facturas-cobradas", `Cobradas (${cobradas.length})`, fmt(sumaCobradas), `
+          <div class="tabla-envoltura">
+            <table class="facturas">
+              <thead><tr><th>Nº</th><th>Fecha</th><th class="r">Monto</th><th class="r">Estado</th></tr></thead>
+              <tbody>${filasCobradas}</tbody>
+            </table>
+          </div>`, false) : ""}
+        <div class="rent-fila rent-total"><span>Total facturado</span><span>${fmt(total)}</span></div>
+        ${hayPersonal ? `<p class="rent-nota">(sin la #1110, que es personal)</p>` : ""}
       </div>`;
   }
 
@@ -2600,9 +2686,18 @@ function esFalloDeRed(err) {
     if (!p) return;
     // Por si quedara un selector viejo en pantalla con la opción de borrar
     if (valor === "__eliminar") {
-      selectEl.value = p.estado;
+      if (selectEl) selectEl.value = p.estado;
       await eliminarProyectoConPalabra(id);
       return;
+    }
+    // Desde la hoja Estado es una ficha grande de un toque: se pregunta antes,
+    // igual que «Marcar completado» del botón principal
+    if (valor !== p.estado) {
+      const etq = ESTADOS[valor] ? ESTADOS[valor].etiqueta : valor;
+      const pregunta = valor === "completado"
+        ? `¿Marcar «${p.nombre}» como COMPLETADA?\n\nSale de las obras en ejecución. Si fue sin querer, se reabre desde el estado.`
+        : `¿Pasar «${p.nombre}» a ${etq}?`;
+      if (!confirm(pregunta)) { if (selectEl) selectEl.value = p.estado; return; }
     }
     const cambios = { estado: valor };
     if (valor === "ejecucion" && !p.fase) cambios.fase = "mobilizacion";
@@ -2613,44 +2708,9 @@ function esFalloDeRed(err) {
       refrescarVistaProyecto(id);
       avisar(`Estado: ${ESTADOS[valor].etiqueta} ✓`);
     } catch (err) {
-      selectEl.value = p.estado;
+      if (selectEl) selectEl.value = p.estado;
       avisar("No se pudo cambiar: " + err.message, true);
     }
-  }
-
-  function accionesHTML(p) {
-    if (!usuario.editar) return "";
-    const b = [];
-    if (p.estado === "enviado")
-      b.push(`<button class="accion" data-accion="aprobar" data-id="${esc(p.id)}">✓ Marcar aprobado</button>`);
-    if (p.estado === "aprobado")
-      b.push(`<button class="accion" data-accion="iniciar" data-id="${esc(p.id)}">▶ Iniciar ejecución</button>`);
-    if (p.estado === "ejecucion") {
-      // Con una sola fase (los servicios) no hay a dónde adelantar ni atrasar
-      const fases = fasesDe(p);
-      const idx = Math.max(0, fases.findIndex(f => f.clave === p.fase));
-      if (idx > 0)
-        b.push(`<button class="accion secundaria" data-accion="fase-atras" data-id="${esc(p.id)}">◀ Fase anterior</button>`);
-      if (idx < fases.length - 1)
-        b.push(`<button class="accion" data-accion="fase-adelante" data-id="${esc(p.id)}">Fase siguiente ▶</button>`);
-      else
-        b.push(`<button class="accion" data-accion="completar" data-id="${esc(p.id)}">✓ Marcar completado</button>`);
-      b.push(`<button class="accion secundaria" data-accion="pausar" data-id="${esc(p.id)}">⏸ Pausar</button>`);
-    }
-    if (p.estado === "pausa")
-      b.push(`<button class="accion" data-accion="iniciar" data-id="${esc(p.id)}">▶ Reanudar ejecución</button>`);
-    if (p.estado === "completado")
-      b.push(`<button class="accion secundaria" data-accion="reabrir" data-id="${esc(p.id)}">↩ Reabrir (a ejecución)</button>`);
-    // Escribir el alcance: solo el dueño, y en las obras que todavía no se hicieron
-    if (usuario.finanzas && ["estimando", "enviado", "aprobado"].includes(p.estado)) {
-      // En Estimando es EL siguiente paso: va primero y en azul
-      const sinSow = !p.ref || /por definir/i.test(p.ref);
-      const btn = `<button class="accion${p.estado === "estimando" || sinSow ? "" : " secundaria"}" data-accion="alcance" data-id="${esc(p.id)}">Escribir el alcance</button>`;
-      if (p.estado === "estimando") b.unshift(btn); else b.push(btn);
-    }
-    return b.length
-      ? `<div class="detalle-seccion"><h3>Acciones</h3><div class="acciones">${b.join("")}</div></div>`
-      : "";
   }
 
   // Piezas que comparten la tarjeta resumida y la ficha completa
@@ -2735,36 +2795,39 @@ function esFalloDeRed(err) {
     const gc = gcDeProyecto(p);
     if (!libreta.length && !gc) {
       return `
-        <div class="detalle-seccion">
-          <h3>🏗 Portal del contratista</h3>
+        <div class="detalle-seccion" id="ficha-contratista">
+          <h3>Contratista</h3>
           <p class="cal-sin-eventos">Pega el SQL de contratistas y aquí podrás decir de qué empresa es esta obra.</p>
         </div>`;
     }
-    const opciones = libreta.filter(c => c.activo)
+    // El contratista ACTUAL sale siempre, aunque esté desactivado: si no, el select
+    // se quedaría en «ninguno» y Guardar (o una ficha del modo) le quitaría la obra
+    const opciones = libreta.filter(c => c.activo || (gc && c.id === gc.id))
       .map(c => `<option value="${esc(c.id)}"${gc && gc.id === c.id ? " selected" : ""}>${esc(c.nombre)}</option>`).join("");
-    const nto = gc && p.contratistaModo === "contrato"
+    const contrato = p.contratistaModo === "contrato";
+    // El Notice to Owner es OPCIONAL: solo cuando el cobro puede complicarse
+    const nto = gc && contrato
       ? (p.ntoEnviadoEl
-          ? `<p class="modal-nota">📬 Notice to Owner mandado el <strong>${esc(p.ntoEnviadoEl)}</strong>.</p>`
-          : `<p class="modal-nota">📬 <strong>Notice to Owner:</strong> todavía no está mandado. Hay 45 días desde el
-             primer día de trabajo; sin eso se pierde el derecho a gravamen.
-             <button type="button" class="accion secundaria" id="btn-nto-hecho">Ya lo mandé</button></p>`)
+          ? `<p class="modal-nota nto-linea">${ico("correo")}<span>Notice to Owner mandado el</span> <strong>${esc(fechaBonita(p.ntoEnviadoEl))}</strong></p>`
+          : `<p class="nto-linea">${ico("correo")}<span>Notice to Owner (opcional) · sin anotar</span></p>
+             <p class="modal-nota">Mándalo solo si crees que el cobro puede complicarse; el plazo es de 45 días desde el primer día de trabajo.</p>
+             <button type="button" class="accion secundaria" id="btn-nto-hecho">Anotar envío</button>`)
       : "";
-    return `
-      <div class="detalle-seccion">
-        <h3>🏗 Portal del contratista</h3>
-        ${gc ? `
-        <p class="modal-nota">Esta obra es de <strong>${esc(gc.nombre)}</strong>${gc.contacto ? ` (${esc(gc.contacto)})` : ""}.
-          ${p.contratistaModo === "contrato"
-            ? "El contrato es con ellos: en su portal ven los hitos, lo facturado y lo cobrado <strong>de esta obra</strong>."
-            : "La obra la paga el dueño de la casa: ellos ven calendario, inspecciones, fotos y documentos, pero <strong>ningún monto</strong>, y no firman."}</p>
-        <div class="modal-botones">
-          <button type="button" class="accion secundaria" id="btn-gc-copiar" data-llave="${esc(gc.token)}" data-obra="${esc(p.id)}">🔗 Copiar el enlace (les abre esta obra)</button>
-          <button type="button" class="accion secundaria" id="btn-gc-portada" data-llave="${esc(gc.token)}">🏗 Copiar el enlace de todas sus obras</button>
-          <button type="button" class="accion secundaria" id="btn-gc-avisar">✉️ Avisarle algo</button>
-          <button type="button" class="doc-cliente${p.contratistaModo === "contrato" ? " on" : ""}" id="btn-gc-modo"
-            title="${p.contratistaModo === "contrato" ? "El contrato es con el contratista: SÍ ve la facturación de esta obra. Toca para cambiarlo." : "La obra la paga el dueño: el contratista NO ve dinero. Toca para cambiarlo."}">${p.contratistaModo === "contrato" ? "💵 le facturamos a ellos" : "👀 solo coordinan (sin dinero)"}</button>
-        </div>
-        ${nto}` : `<p class="modal-nota">Esta obra no es de ningún contratista todavía.</p>`}
+    // Las dos fichas del modo: tocar la que no está puesta pasa por #form-gc,
+    // así siempre sale el aviso legal completo (cambiarModoGC)
+    const modos = gc ? `<div class="gc-modos">${[["referido", "Solo coordinan"], ["contrato", "Le facturamos a ellos"]].map(([m, t]) => {
+      const on = (contrato ? "contrato" : "referido") === m;
+      return `<button type="button" class="lev-chip gc-modo-op${on ? " puesto" : ""}" data-modo="${m}" data-gc="${esc(gc.id)}" aria-pressed="${on}">${esc(t)}</button>`;
+    }).join("")}</div>` : "";
+    const herr = gc ? `<div class="herramientas" hidden id="gc-herramientas"><!-- botones de siempre: las hojas los activan; no borrar -->
+          <button type="button" class="accion secundaria" id="btn-gc-copiar" data-llave="${esc(gc.token)}" data-obra="${esc(p.id)}">Enlace a esta obra</button>
+          <button type="button" class="accion secundaria" id="btn-gc-portada" data-llave="${esc(gc.token)}">Enlace a todas sus obras</button>
+          <button type="button" class="accion secundaria" id="btn-gc-avisar">Avisar al contratista</button>
+        </div>` : "";
+    // Sin llave del cliente, el botón de compartir no sale arriba: va aquí
+    const compartir = gc && !p.portalToken
+      ? `<button type="button" class="accion secundaria" data-rapido="compartir">${ico("compartir")}<span>Compartir y avisar</span></button>` : "";
+    const form = `
         <form class="cal-form" id="form-gc">
           <div class="modal-fila">
             <label>¿De qué contratista es esta obra?
@@ -2775,8 +2838,8 @@ function esFalloDeRed(err) {
             </label>
             <label>¿Cómo participan?
               <select name="modo">
-                <option value="referido"${p.contratistaModo === "contrato" ? "" : " selected"}>Solo coordinan — la paga el dueño (NO ven dinero)</option>
-                <option value="contrato"${p.contratistaModo === "contrato" ? " selected" : ""}>Es el cliente — le facturamos a ellos (SÍ ven el dinero)</option>
+                <option value="referido"${contrato ? "" : " selected"}>Solo coordinan — la paga el dueño (NO ven dinero)</option>
+                <option value="contrato"${contrato ? " selected" : ""}>Es el cliente — le facturamos a ellos (SÍ ven el dinero)</option>
               </select>
             </label>
           </div>
@@ -2784,48 +2847,21 @@ function esFalloDeRed(err) {
             <input name="contratista_contacto" type="text" value="${esc(p.contratistaContacto || "")}" placeholder="Ej: Kevin Haseney — sale en el contrato junto al contacto de la empresa" autocomplete="off">
           </label>
           <button type="submit" class="accion secundaria">Guardar</button>
-        </form>
-      </div>`;
-  }
-
-  function cabeceraHTML(p, conSelector) {
-    const fases = fasesDe(p);
-    // En un servicio, cualquier fase guardada se enseña como la única que hay
-    const fase = p.estado !== "ejecucion" ? null
-      : fases.length === 1 ? fases[0]
-      : fases.find(f => f.clave === p.fase) || null;
-    const miniFase = fase ? `<span class="mini-fase">${fase.etiqueta}</span>` : "";
+        </form>`;
     return `
-      <div class="proyecto-head">
-        <div class="proyecto-titulo">
-          <div>
-            <h2>${esc(p.nombre)}</h2>
-            <div class="proyecto-dir">📍 ${esc(p.direccion)} ${enlaceMapa(p.direccion)}</div>
-            <div class="proyecto-cliente">Cliente: <strong>${esc(p.cliente)}</strong> · vía ${esc(p.via)}${p.origen ? ` · 🧲 ${esc(p.origen)}` : ""}</div>
-            ${gcDeProyecto(p) ? `<div class="proyecto-cliente">🏗 Contratista: <strong>${esc(gcDeProyecto(p).nombre)}</strong> · ${p.contratistaModo === "contrato" ? "el contrato es con ellos" : "la paga el dueño; ellos solo coordinan"}</div>` : ""}
-          </div>
-          <div class="chips-col">
-            ${conSelector && usuario.editar ? selectorEstadoHTML(p) : chipHTML(p.estado)}
-            ${miniFase}
-          </div>
-        </div>
+      <div class="detalle-seccion" id="ficha-contratista">
+        <h3>${ico("grua")}<span>Contratista</span></h3>
+        ${gc ? `
+        <p class="modal-nota">Esta obra es de <strong>${esc(gc.nombre)}</strong>${gc.contacto ? ` (${esc(gc.contacto)})` : ""}.
+          ${contrato
+            ? "El contrato es con ellos: en su portal ven los hitos, lo facturado y lo cobrado <strong>de esta obra</strong>."
+            : "La obra la paga el dueño de la casa: ellos ven calendario, inspecciones, fotos y documentos, pero <strong>ningún monto</strong>, y no firman."}</p>
+        ${modos}
+        ${nto}
+        ${compartir}
+        ${herr}` : `<p class="modal-nota">Obra directa: sin contratista.</p>`}
+        ${plegableHTML(p, "gc-form", gc ? "Cambiar contratista o coordinador" : "Asignar un contratista", "", form, !gc && libreta.length > 0)}
       </div>`;
-  }
-
-  function avisoObraHTML(p) {
-    const pensObra = pendientesAbiertos(p.id);
-    return pensObra.length
-      ? `<div class="aviso-obra">🔴 ${pensObra.map(x => `${esc(sinMontos(x.descripcion))} <span class="aviso-obra-autor">(${esc(x.autor || "")}, ${esc(x.fecha)})</span>`).join(" · ")}</div>`
-      : "";
-  }
-
-  // Aviso rojo si el proyecto tiene materiales por comprar
-  function avisoMaterialesHTML(p) {
-    const n = (state.materiales || [])
-      .filter(m => m.proyecto === p.id && m.estado === "falta").length;
-    return n
-      ? `<div class="aviso-obra">🛒 Verificar lista de materiales — ${n} por comprar</div>`
-      : "";
   }
 
   // Sube la casilla "cobrado" del proyecto cuando entra dinero. Pregunta
@@ -2842,28 +2878,11 @@ function esFalloDeRed(err) {
     await DB.cambiarFinanzas(p.id, { cobrado: despues });
   }
 
-  function avisoFacturasHTML(p) {
-    if (!usuario.finanzas) return "";
-    const pend = facturasPendientes(p);
-    return pend.length
-      ? `<div class="aviso-pendiente">⚠ Factura sin pagar: ${pend.map(f => `#${esc(f.num)} ${fmt(saldoFactura(f))}${f.cobrado > 0 ? ` (ya abonó ${fmt(f.cobrado)} de ${fmt(f.monto)})` : ""}${f.id && usuario.editar ? `
-          <button type="button" class="chip-cobrar factura-pagada" data-id="${f.id}" data-num="${esc(f.num)}" data-monto="${saldoFactura(f)}"
-            title="Marcarla como COBRADA — es lo que cuadra el dinero de la app con el banco">✓ cobrada</button>` : ""}`).join(", ")}</div>`
-      : "";
-  }
-
-  function franjaDineroHTML(p) {
-    if (!usuario.finanzas) return "";
-    const falta = (typeof p.contrato === "number" && typeof p.cobrado === "number")
-      ? p.contrato - p.cobrado : null;
-    const pct = (typeof p.contrato === "number" && typeof p.cobrado === "number" && p.contrato > 0)
-      ? Math.round((p.cobrado / p.contrato) * 100) : null;
-    const barra = pct === null ? "" :
-      `<div class="barra"><div class="barra-relleno" style="width:${Math.min(pct, 100)}%"></div></div>
-       <div class="barra-texto">${pct}% cobrado</div>`;
-    // ¿"Cobrado" cuadra con las facturas que están marcadas pagadas?
-    // Son dos casillas distintas que nadie mantenía juntas — de ahí salió
-    // el descuadre que encontró la auditoría.
+  // ¿"Cobrado" cuadra con las facturas que están marcadas pagadas?
+  // Son dos casillas distintas que nadie mantenía juntas — de ahí salió
+  // el descuadre que encontró la auditoría. Devuelve el aviso, o "" si cuadra.
+  // Lo usan la franja de dinero y la señal roja «Cobrado no cuadra».
+  function descuadreCobrado(p) {
     const pagadas = (p.facturas || [])
       .filter(f => f.pagada && String(f.num) !== "1110")
       .reduce((s, f) => s + (Number(f.monto) || 0), 0);
@@ -2878,53 +2897,816 @@ function esFalloDeRed(err) {
       .filter(f => String(f.num) !== "1110")
       .reduce((s, f) => s + (Number(f.monto) || 0), 0);
     const cob = typeof p.cobrado === "number" ? p.cobrado : null;
-    let avisoCobrado = "";
-    if (cob !== null && p.facturas && p.facturas.length) {
-      if (cob < pagadas - 0.02) {
-        avisoCobrado = `<div class="rent-humo">⚠ "Cobrado" dice ${fmt(cob)} pero las facturas ya marcadas cobradas suman ${fmt(pagadas)} —
+    if (cob === null || !p.facturas || !p.facturas.length) return "";
+    if (cob < pagadas - 0.02) {
+      return `<div class="rent-humo">⚠ "Cobrado" dice ${fmt(cob)} pero las facturas ya marcadas cobradas suman ${fmt(pagadas)} —
           faltan ${fmt(Math.round((pagadas - cob) * 100) / 100)} por contar.</div>`;
-      } else if (cob > todas + 0.02) {
-        avisoCobrado = `<div class="rent-humo">⚠ "Cobrado" dice ${fmt(cob)} y todas las facturas de este proyecto juntas suman ${fmt(todas)} —
-          sobran ${fmt(Math.round((cob - todas) * 100) / 100)} sin ninguna factura detrás.</div>`;
-      }
     }
-    return `
-      <div class="proyecto-money">
-        <div class="money-item"><div class="money-label">Contrato</div><div class="money-num contrato">${fmt(p.contrato)}</div></div>
-        <div class="money-item"><div class="money-label">Cobrado</div><div class="money-num cobrado">${fmt(p.cobrado)}</div></div>
-        <div class="money-item"><div class="money-label">Falta</div><div class="money-num falta">${fmt(falta)}</div></div>
-      </div>
-      ${barra}
-      ${avisoCobrado}`;
+    if (cob > todas + 0.02) {
+      return `<div class="rent-humo">⚠ "Cobrado" dice ${fmt(cob)} y todas las facturas de este proyecto juntas suman ${fmt(todas)} —
+          sobran ${fmt(Math.round((cob - todas) * 100) / 100)} sin ninguna factura detrás.</div>`;
+    }
+    return "";
   }
 
-  // Tarjeta RESUMIDA de la lista: al tocarla se abre la ficha
+  function franjaDineroHTML(p) {
+    if (!usuario.finanzas) return "";
+    const falta = (typeof p.contrato === "number" && typeof p.cobrado === "number")
+      ? p.contrato - p.cobrado : null;
+    const pct = (typeof p.contrato === "number" && typeof p.cobrado === "number" && p.contrato > 0)
+      ? Math.round((p.cobrado / p.contrato) * 100) : null;
+    const barra = pct === null ? "" :
+      `<div class="barra"><div class="barra-relleno" style="width:${Math.min(pct, 100)}%"></div></div>
+       <div class="barra-texto">${pct}% cobrado</div>`;
+    return `
+      <div class="detalle-seccion" id="ficha-franja">
+        <div class="proyecto-money">
+          <div class="money-item"><div class="money-label">Contrato</div><div class="money-num contrato">${fmt(p.contrato)}</div></div>
+          <div class="money-item"><div class="money-label">Cobrado</div><div class="money-num cobrado">${fmt(p.cobrado)}</div></div>
+          <div class="money-item"><div class="money-label">Falta</div><div class="money-num falta">${fmt(falta)}</div></div>
+        </div>
+        ${barra}
+        ${descuadreCobrado(p)}
+      </div>`;
+  }
+
+  // Tarjeta RESUMIDA de la lista: al tocarla se abre; «Abrir la obra ›» lleva a la ficha.
+  // Solo lo que sirve para decidir si hay que entrar: dirección, estado, señales,
+  // lo urgente en una línea y (solo el dueño) cuánto falta por cobrar.
   function tarjetaResumenHTML(p) {
     const av = avanceObra(p.id);
-    const urg = (state.pendientes || []).some(x =>
+    // Lo urgente de verdad: los pendientes de obra Y los puntos del alcance urgentes sin hacer
+    const urgPend = (state.pendientes || []).filter(x =>
       x.proyecto === p.id && !x.resuelto && x.prioridad === "urgente");
+    const urgPuntos = (state.puntos || []).filter(x =>
+      x.proyecto === p.id && !x.hecho && prioDe(x.prioridad) === "urgente");
+    const urg = urgPend.length + urgPuntos.length > 0;
+    const primerUrg = urgPend.length ? urgPend[0].descripcion : urgPuntos.length ? urgPuntos[0].texto : "";
     const resumen = av && p.estado !== "completado" ? `${av.pct}%` : "";
+    const fases = fasesDe(p);
+    const idx = Math.max(0, fases.findIndex(f => f.clave === p.fase));
+    const fase = p.estado !== "ejecucion" ? null : fases.length === 1 ? fases[0] : fases.find(f => f.clave === p.fase) || null;
+    let dineroHTML = "";
+    if (usuario.finanzas) {
+      const conCuenta = typeof p.contrato === "number" && p.contrato > 0 && typeof p.cobrado === "number";
+      const pct = conCuenta ? Math.round((p.cobrado / p.contrato) * 100) : null;
+      const cobrado = pct === null ? "" : `
+          <div class="tv2-dinero"><span>Cobrado ${pct}%</span> · <span>falta ${fmt(p.contrato - p.cobrado)}</span></div>
+          <div class="barra fina"><div class="barra-relleno" style="width:${Math.max(0, Math.min(100, pct))}%"></div></div>`;
+      // La #1110 es dinero personal de Edgar: nunca sale como «sin cobrar» de una obra
+      const facturas = facturasPendientes(p).filter(f => String(f.num) !== "1110").map(f => `
+          <div class="tv2-factura">
+            <span>Factura #${esc(f.num)} sin cobrar · ${fmt(saldoFactura(f))}</span>
+            ${f.id && usuario.editar ? `<button type="button" class="accion secundaria chica factura-pagada" data-id="${f.id}" data-num="${esc(f.num)}" data-monto="${saldoFactura(f)}" data-proyecto="${esc(p.id)}"${cobrandoFacturas.has(String(f.id)) ? " disabled" : ""}
+              title="Marcarla como COBRADA — es lo que cuadra el dinero de la app con el banco">Marcar cobrada</button>` : ""}
+          </div>`).join("");
+      dineroHTML = cobrado + facturas;
+    }
     return `
       <details class="chk-det proy-det${urg ? " con-urgentes" : ""}" data-id="${esc(p.id)}"${listaAbiertos.has(p.id) ? " open" : ""}>
         <summary>
           <span class="chk-nombre">${esc(p.nombre)}</span>
-          <span class="chk-avance">${urg ? "🔴 " : ""}${resumen}</span>
+          <span class="chk-avance">${urg ? `${ico("rojo") || "🔴"} ` : ""}${resumen}</span>
         </summary>
         <div class="chk-cuerpo">
-          <article class="proyecto" data-id="${esc(p.id)}">
-            ${cabeceraHTML(p, false)}
-            ${avisoObraHTML(p)}
-            ${avisoMaterialesHTML(p)}
-            ${avisoFacturasHTML(p)}
-            ${franjaDineroHTML(p)}
-            ${proximoCobroHTML(p)}
-            ${av && p.estado !== "completado"
-              ? `<div class="avance-mini">🔧 Avance de obra: <strong>${av.pct}%</strong> (${av.hechos} de ${av.total} puntos)</div>`
-              : ""}
-            <div class="abrir-ficha">Ver proyecto completo <span class="cat-flecha">›</span></div>
+          <article class="proyecto tarjeta-v2" data-id="${esc(p.id)}">
+            ${p.direccion ? `<div class="tv2-dir">${ico("pin")}<span class="tb-dir-txt">${esc(p.direccion)}</span>${enlaceMapa(p.direccion)}</div>` : ""}
+            <div class="tv2-estado">${chipHTML(p.estado)}${fase ? `<span>${esc(fase.etiqueta)}</span>${fases.length > 1 ? `<span>${idx + 1}/${fases.length}</span>` : ""}` : ""}</div>
+            ${senalesHTML(p, true)}
+            ${primerUrg ? `<div class="tv2-urgente">${ico("alerta")}<span>${esc(sinMontos(primerUrg))}</span></div>` : ""}
+            ${dineroHTML}
+            <button type="button" class="accion abrir-ficha"><span>Abrir la obra ›</span></button>
           </article>
         </div>
       </details>`;
+  }
+
+  // ==== Ficha v2 (P179) ====
+  // La ficha de la obra en TABLERO + PESTAÑAS. Arriba, un tablero oscuro con la
+  // dirección, el estado, el botón del siguiente paso, la cámara, «Agregar» y las
+  // señales; debajo, cinco pestañas (el equipo de campo ve tres: Resumen, Obra y
+  // Archivos; las de Dinero y Cliente ni se generan). Lo que se usa poco vive en
+  // botones escondidos (.herramientas) que las hojas de abajo activan: así cada
+  // botón sigue con su candado, su pregunta y su manejador de siempre.
+  const ico = n => (window.MXP_ICONO ? window.MXP_ICONO(n) : "");
+  const esEscritorio = () => window.matchMedia("(min-width: 1024px)").matches;
+  // La hora de la base puede venir sin zona: sin la Z se leería como hora local y se correría 4 h.
+  const fechaHoraFlorida = iso => {
+    const s = String(iso || "").trim(); if (!s) return "";
+    return fechaHoraCorta(/(Z|[+-]\d{2}:?\d{2})$/i.test(s) ? s : s.replace(" ", "T") + "Z");
+  };
+  // Copia exacta de esInformativo de cliente.html: ni suma ni resta al avance.
+  const puntoInformativo = t => {
+    const g = String(t.grupo || "").trim();
+    return /^(opcional|optional|etapa futura|future stage|m[aá]s adelante|later)\b/i.test(g) ||
+           /\((modificad[oa]|modified|aplazad[oa]|deferred|pendiente|pending|no se hizo|not performed)[^)]*\)\s*$/i.test(g);
+  };
+
+  // Memoria de la ficha: qué pestaña, qué plegables tocó, si «Corregir» está
+  // prendido y si pidió ver todas las fotos. Vive mientras la app está abierta
+  // (la pestaña, además, en este teléfono).
+  const fichaVista = { pestana: new Map(), plegables: new Map(), editando: new Set(), fotosTodas: new Set() };
+  const PESTANAS = [
+    { k: "resumen", texto: "Resumen", icono: "pulso" },
+    { k: "obra", texto: "Obra", icono: "casco" },
+    { k: "dinero", texto: "Dinero", icono: "dolar", dinero: true },
+    { k: "cliente", texto: "Cliente", icono: "persona", dinero: true },
+    { k: "archivos", texto: "Archivos", icono: "carpeta" }
+  ];
+  const pestanasDe = () => PESTANAS.filter(t => !t.dinero || usuario.finanzas);
+  const LS_PESTANA = "mxp_ficha_pestana";
+  function leerPestanasGuardadas() {
+    try { const m = JSON.parse(localStorage.getItem(LS_PESTANA) || "{}"); return m && typeof m === "object" ? m : {}; }
+    catch { return {}; }
+  }
+  // La pestaña de cada obra: la de esta vez, la guardada en el teléfono, o la
+  // de siempre (Resumen para el dueño, Obra para el campo)
+  function pestanaDe(p) {
+    const validas = pestanasDe().map(t => t.k);
+    let k = fichaVista.pestana.get(p.id);
+    if (!k) k = leerPestanasGuardadas()[p.id];
+    if (!validas.includes(k)) k = usuario.finanzas ? "resumen" : "obra";
+    return k;
+  }
+  function guardarPestana(pid, k) {
+    if (!pid) return;
+    fichaVista.pestana.set(pid, k);
+    try {
+      const m = leerPestanasGuardadas();
+      m[pid] = k;
+      localStorage.setItem(LS_PESTANA, JSON.stringify(m));
+    } catch { /* sin almacenamiento: se recuerda solo mientras la app está abierta */ }
+  }
+  const plegableAbierto = (pid, clave, porDefecto) => {
+    const k = pid + ":" + clave;
+    return fichaVista.plegables.has(k) ? fichaVista.plegables.get(k) : !!porDefecto;
+  };
+  // titulo y dato llegan YA escapados por quien llama. claseDato: ok | warn | bad
+  function plegableHTML(p, clave, titulo, dato, cuerpo, porDefecto, extra = "", claseDato = "") {
+    return `<details class="chk-det ficha-plegable ${extra}" data-plegable="${esc(clave)}"${plegableAbierto(p.id, clave, porDefecto) ? " open" : ""}>
+    <summary><span class="pl-tit">${titulo}</span>${dato ? `<span class="pl-dato${claseDato ? " " + claseDato : ""}">${dato}</span>` : ""}</summary>
+    <div class="pl-cuerpo">${cuerpo}</div></details>`;
+  }
+
+  // ---- Acciones de estado: el botón principal del tablero y las otras ----
+  const ICONO_ACCION = { alcance: "lapiz", aprobar: "check", iniciar: "play", "fase-adelante": "flecha",
+    completar: "okCirc", "fase-atras": "atras", pausar: "pausa", reabrir: "deshacer" };
+  // Cada data-accion sale UNA sola vez en la página: el lazo de pintarDetalle
+  // les pone el click, y las hojas activan los escondidos.
+  function accionesObra(p) {
+    if (!usuario.editar) return { principal: "", secundarias: "" };
+    const fases = fasesDe(p);
+    const idx = Math.max(0, fases.findIndex(f => f.clave === p.fase));
+    const boton = (accion, texto, clase, extra = "") =>
+      `<button type="button" class="${clase}" data-accion="${accion}" data-id="${esc(p.id)}"${extra}>${ico(ICONO_ACCION[accion])}<span>${esc(texto)}</span></button>`;
+    let pr = null;
+    if (p.estado === "estimando" && usuario.finanzas) pr = ["alcance", "Escribir el alcance"];
+    else if (p.estado === "enviado") pr = ["aprobar", "Marcar aprobado"];
+    else if (p.estado === "aprobado") pr = ["iniciar", "Iniciar ejecución"];
+    else if (p.estado === "ejecucion") {
+      // Con una sola fase (los servicios) no hay a dónde pasar: se completa
+      pr = fases.length > 1 && idx < fases.length - 1
+        ? ["fase-adelante", "Pasar a " + fases[idx + 1].etiqueta]
+        : ["completar", "Marcar completado"];
+    } else if (p.estado === "pausa") pr = ["iniciar", "Reanudar ejecución"];
+    const sec = [];
+    if (p.estado === "ejecucion" && fases.length > 1 && idx > 0)
+      sec.push(boton("fase-atras", "Volver a " + fases[idx - 1].etiqueta, "accion secundaria"));
+    if (p.estado === "ejecucion") sec.push(boton("pausar", "Pausar", "accion secundaria"));
+    // «Reabrir» nunca es el botón principal: vive en la hoja del estado
+    if (p.estado === "completado") sec.push(boton("reabrir", "Reabrir (a ejecución)", "accion secundaria"));
+    if (usuario.finanzas && ["enviado", "aprobado"].includes(p.estado)) {
+      const sinSow = !p.ref || /por definir/i.test(p.ref);
+      sec.push(boton("alcance", "Escribir el alcance", "accion secundaria", sinSow ? ' data-destacar="1"' : ""));
+    }
+    return {
+      principal: pr ? boton(pr[0], pr[1], "accion tablero-principal") : "",
+      secundarias: sec.join("")
+    };
+  }
+
+  // ---- Tablero ----
+  function tableroHTML(p) {
+    const fases = fasesDe(p);
+    const idx = Math.max(0, fases.findIndex(f => f.clave === p.fase));
+    const conFase = p.estado === "ejecucion" || (p.estado === "pausa" && p.fase);
+    const fase = !conFase ? null : fases.length === 1 ? fases[0] : fases.find(f => f.clave === p.fase) || null;
+    const linea = fase
+      ? `<span class="te-fase">${esc(fase.etiqueta)}</span>${fases.length > 1 ? `<span class="te-num">fase ${idx + 1} de ${fases.length}</span>` : ""}`
+      : `<span class="te-num">${esc(DESC_ETAPA[p.estado] || "")}</span>`;
+    const pasos = fase && fases.length > 1
+      ? `<span class="te-pasos" aria-hidden="true">${fases.map((f, i) =>
+          `<span class="te-paso${i < idx ? " hecho" : ""}${i === idx ? " actual" : ""}"></span>`).join("")}</span>`
+      : "";
+    const gc = gcDeProyecto(p);
+    const acc = accionesObra(p);
+    return `
+      <section class="ficha-tablero">
+        ${p.direccion ? `<div class="tb-dir">${ico("pin")}<span class="tb-dir-txt">${esc(p.direccion)}</span>${enlaceMapa(p.direccion)}</div>` : ""}
+        <div class="tb-cliente">
+          <div><span>${esc(p.cliente || "")}</span>${p.via ? ` · <span class="tb-via">vía ${esc(p.via)}</span>` : ""}</div>
+          ${gc ? `<div>${ico("grua")}<span>${esc(gc.nombre)}</span> · <span>${p.contratistaModo === "contrato" ? "le facturamos a ellos" : "solo coordinan"}</span></div>` : ""}
+        </div>
+        <div class="tb-estado-fila">
+          <button type="button" class="tablero-estado${usuario.editar ? "" : " solo-ver"}" data-rapido="estado" aria-haspopup="dialog">
+            <span class="dot ${DOT[p.estado] || "navy"}"></span>
+            <span class="te-textos">
+              <span class="te-etq">${esc(ESTADOS[p.estado] ? ESTADOS[p.estado].etiqueta : p.estado)}</span>
+              <span class="te-linea">${linea}</span>
+              ${pasos}
+            </span>
+            ${ico("chevron")}
+          </button>
+          <button type="button" class="btn-cuadro" data-rapido="camara" title="Abre la cámara y sube la foto a esta obra (sin nota)">${ico("camara")}<span>Foto</span></button>
+          <button type="button" class="btn-cuadro" data-rapido="agregar" aria-haspopup="dialog">${ico("mas")}<span>Agregar</span></button>
+        </div>
+        ${acc.principal}
+        ${senalesHTML(p, false)}
+        <div class="herramientas" hidden><!-- botones de siempre: las hojas los activan; no borrar -->
+          ${acc.secundarias}
+          ${usuario.editar ? selectorEstadoHTML(p) : ""}
+          ${usuario.finanzas ? `<button type="button" class="accion btn-eliminar-proyecto" data-id="${esc(p.id)}">Eliminar esta obra…</button>` : ""}
+        </div>
+      </section>`;
+  }
+
+  // ---- Señales: fichas que solo llevan a un sitio (no cambian nada) ----
+  // Las de dinero solo se generan con finanzas. En la lista salen de solo mirar.
+  function senalesDe(p, enLista) {
+    const s = [];
+    const fin = usuario.finanzas;
+    const hoy = hoyISO();
+    if (fin && !enLista && descuadreCobrado(p))
+      s.push({ k: "descuadre", txt: "Cobrado no cuadra", color: "rojo", ir: "dinero:ficha-franja", prio: 0 });
+    // Pendientes de obra abiertos + puntos del alcance urgentes sin hacer
+    const pend = pendientesAbiertos(p.id);
+    const urgPend = pend.filter(x => x.prioridad === "urgente").length;
+    const urgPuntos = (state.puntos || []).filter(x => x.proyecto === p.id && !x.hecho && prioDe(x.prioridad) === "urgente").length;
+    const urg = urgPend + urgPuntos;
+    if (pend.length || urg) {
+      const txtUrg = `${urg} ${urg === 1 ? "urgente" : "urgentes"}`;
+      const txt = pend.length
+        ? `${pend.length} ${pend.length === 1 ? "pendiente" : "pendientes"}${urg ? " · " + txtUrg : ""}`
+        : txtUrg;
+      s.push({ k: "pendientes", txt, color: urg ? "rojo" : "ambar",
+               ir: pend.length || !urgPuntos ? "obra:ficha-pendientes" : "obra:ficha-alcance", prio: urg ? 0 : 3 });
+    }
+    const insps = (state.inspecciones || []).filter(i => i.proyecto === p.id);
+    // Una inspección fallida cuenta mientras no haya otra del mismo tipo después
+    const fallida = insps.find(i => i.resultado === "fallo" &&
+      !insps.some(o => o !== i && o.tipo === i.tipo && o.resultado !== "fallo" && String(o.fecha || "") >= String(i.fecha || "")));
+    if (fallida) s.push({ k: "insp-fallo", txt: "Inspección " + fallida.tipo, dato: "falló", color: "rojo", ir: "obra:ficha-insp", prio: 1 });
+    if (fin && !enLista) {
+      const sinCobrar = facturasPendientes(p).filter(f => String(f.num) !== "1110");
+      if (sinCobrar.length) s.push({ k: "facturas", txt: sinCobrar.length === 1 ? "Factura sin cobrar" : `${sinCobrar.length} facturas sin cobrar`,
+        dato: fmt(sinCobrar.reduce((t, f) => t + saldoFactura(f), 0)), color: "ambar", ir: "dinero:ficha-facturas", prio: 1 });
+    }
+    if (!["completado", "no_aprobado"].includes(p.estado)) {
+      const mats = (state.materiales || []).filter(m => m.proyecto === p.id && m.estado === "falta").length;
+      if (mats) s.push({ k: "materiales", txt: `${mats} por comprar`, color: "ambar", ir: "materiales", prio: 2 });
+    }
+    if (["enviado", "aprobado", "ejecucion", "pausa"].includes(p.estado)) {
+      const gests = (state.gestiones || []).filter(g => g.proyecto === p.id && !g.hecha).length;
+      if (gests) s.push({ k: "gestiones", txt: gests === 1 ? "1 gestión" : `${gests} gestiones`, color: "ambar", ir: "resumen:ficha-arranque", prio: 3 });
+    }
+    const prox = insps.filter(i => i.resultado === "programada" && i.fecha && i.fecha >= hoy)
+      .sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)))[0];
+    if (prox) s.push({ k: "insp-prox", txt: "Inspección " + prox.tipo,
+      dato: new Date(prox.fecha + "T12:00:00").toLocaleDateString(LOCALE, { day: "numeric", month: "short" }), ir: "obra:ficha-insp", prio: 4 });
+    if (fin && !enLista) {
+      const dec = (state.decisiones || []).filter(d => d.proyecto === p.id && !d.hecha).length;
+      if (dec) s.push({ k: "decisiones", txt: "El cliente decide", dato: String(dec), ir: "cliente:ficha-decisiones", prio: 4 });
+    }
+    const av = avanceObra(p.id);
+    if (av && p.estado !== "completado")
+      s.push({ k: "alcance", txt: `Alcance ${av.pct}%`, color: av.pct >= 100 ? "verde" : "", ir: "obra:ficha-alcance", prio: 5 });
+    if (fin) {
+      const h = proximoHito(p);
+      if (h) s.push({ k: "cobro", txt: "Próximo cobro", dato: fmt(h.monto), ir: "dinero:ficha-hitos", prio: 6 });
+    }
+    const lista = enLista ? s.filter(x => ["pendientes", "alcance", "materiales", "cobro"].includes(x.k)) : s;
+    return lista.map((x, i) => ({ ...x, i })).sort((a, b) => (a.prio - b.prio) || (a.i - b.i));
+  }
+  function senalesHTML(p, enLista) {
+    const s = senalesDe(p, enLista);
+    if (!s.length) return "";
+    const dentro = x => `<span class="senal-punto${x.color ? " " + x.color : ""}"></span><span class="senal-txt">${esc(x.txt)}</span>${x.dato ? `<span class="senal-dato">${esc(x.dato)}</span>` : ""}`;
+    if (enLista) return `<div class="senales">${s.map(x => `<span class="senal claro">${dentro(x)}</span>`).join("")}</div>`;
+    const vis = s.length > 5 ? s.slice(0, 4) : s;
+    return `<div class="senales">${vis.map(x => `<button type="button" class="senal" data-ir="${esc(x.ir)}">${dentro(x)}</button>`).join("")}${
+      s.length > 5 ? `<button type="button" class="senal mas" data-rapido="senales-mas" aria-haspopup="dialog"><span class="senal-txt">+${s.length - 4}</span></button>` : ""}</div>`;
+  }
+
+  // ---- Barra de pestañas ----
+  function pestanasHTML(p, activa) {
+    const ts = pestanasDe();
+    return `<nav class="ficha-pestanas" role="tablist" aria-label="Secciones de la obra" style="--n:${ts.length}">${ts.map(t => {
+      const on = t.k === activa;
+      return `<button type="button" role="tab" class="ficha-tab" id="tab-${t.k}" aria-controls="panel-${t.k}" aria-selected="${on}" tabindex="${on ? 0 : -1}" data-pestana="${t.k}">${ico(t.icono)}<span>${esc(t.texto)}</span></button>`;
+    }).join("")}</nav>`;
+  }
+
+  // El interruptor «Corregir» (el mismo modo para el alcance y los pendientes)
+  const corregirHTML = p => {
+    const on = fichaVista.editando.has(p.id);
+    return `<button type="button" class="lev-chip corregir${on ? " puesto" : ""}" data-corregir aria-pressed="${on}">${ico("lapiz")}<span>Corregir</span></button>`;
+  };
+
+  // ---- Paneles: cada uno devuelve {izq, der} ----
+  function panelResumenHTML(p) {
+    const ahora = `
+      <div class="detalle-seccion ficha-ahora" id="ficha-ahora">
+        <h3>Qué toca ahora</h3>
+        ${p.proximaAccion ? `<h4 class="fa-etq">Próxima acción</h4><p>${esc(sinMontos(p.proximaAccion))}</p>` : ""}
+        ${p.estadoDetalle ? `<h4 class="fa-etq">Situación</h4><p>${esc(sinMontos(p.estadoDetalle))}</p>` : ""}
+        ${p.ref ? `<div class="fa-ref detalle-ref">Ref: ${esc(sinMontos(p.ref))}</div>` : ""}
+      </div>`;
+    return { izq: ahora + eventosProyectoHTML(p), der: horasHTML(p) + arranqueHTML(p) };
+  }
+  function pendientesFichaHTML(p) {
+    const todas = tareasDe(p.id).filter(t => t.tipo === "pend");
+    const abiertos = todas.filter(t => !t.hecha);   // tareasDe ya pone lo urgente primero
+    const resueltos = todas.filter(t => t.hecha);   // los de los últimos 15 días
+    return `
+      <div class="detalle-seccion" id="ficha-pendientes">
+        <div class="sec-cab"><h3>Pendientes de obra (${abiertos.length})</h3>${todas.length ? corregirHTML(p) : ""}</div>
+        ${abiertos.length ? abiertos.map(t => filaTarea(t, { ficha: true })).join("") : `<p class="cal-sin-eventos">Sin pendientes de obra.</p>`}
+        ${resueltos.length ? plegableHTML(p, "pend-resueltos", `Resueltos (${resueltos.length})`, "",
+            resueltos.map(t => filaTarea(t, { ficha: true })).join(""), false) : ""}
+        <button type="button" class="accion secundaria btn-ir-checklist">Checklist de la obra ›</button>
+      </div>`;
+  }
+  function panelObraHTML(p) {
+    return {
+      izq: alcanceFichaHTML(p),
+      // El campo ve aquí el contrato sin montos; el dueño lo tiene en Dinero
+      der: pendientesFichaHTML(p) + inspeccionesHTML(p) + (usuario.finanzas ? "" : desgloseHTML(p))
+    };
+  }
+  function panelDineroHTML(p) {
+    if (!usuario.finanzas) return null;
+    const pl = [];
+    if (p.alcances && p.alcances.length)
+      pl.push(plegableHTML(p, "desglose", "Desglose del contrato", fmt(p.contrato), desgloseHTML(p, { sinTitulo: true }), esEscritorio()));
+    const rent = rentabilidadHTML(p, { sinTitulo: true });
+    if (rent) {
+      const m = margenObra(p);
+      // Si faltan compras u horas, el margen «no es real»: la tapa no puede decir
+      // «bien» en verde mientras el aviso de dentro (plegado en el teléfono) dice que no
+      const flojo = m && avisoMargenFlojo(p, m.matGasto, p.presupuestoMateriales, m.mo);
+      pl.push(plegableHTML(p, "rentabilidad", "Rentabilidad",
+        m ? (flojo ? `<span>margen ${m.pct}%</span><span class="pl-nota">faltan recibos</span>` : `margen ${m.pct}%`) : "",
+        rent, esEscritorio(), "", m ? (flojo ? "warn" : m.clase) : ""));
+    }
+    const ext = (state.externos || []).filter(x => x.proyecto === p.id);
+    pl.push(plegableHTML(p, "externos", "Ayuda externa",
+      ext.length ? `${ext.length} · ${fmt(ext.reduce((s, x) => s + (Number(x.costo) || 0), 0))}` : "",
+      externosHTML(p, { sinTitulo: true }), esEscritorio()));
+    return { izq: franjaDineroHTML(p) + facturasHTML(p) + hitosHTML(p), der: pl.join("") };
+  }
+  function panelClienteHTML(p) {
+    if (!usuario.finanzas) return null;
+    return { izq: clienteHTML(p), der: portalGCHTML(p) };
+  }
+  function panelArchivosHTML(p) {
+    return { izq: fotosHTML(p), der: documentosHTML(p) + rfisHTML(p) };
+  }
+
+  // ---- Hoja que sube desde abajo (en la computadora sale centrada) ----
+  // grupos: [{ titulo, fichas?: bool, opciones: [{ valor, texto, sub, icono, clase: "principal"|"peligro"|"puesto", dinero, editar, href }] }]
+  // SEGUNDO CANDADO: fuera toda opción dinero && !usuario.finanzas y editar && !usuario.editar.
+  // Un grupo sin opciones no se pinta. Devuelve el valor elegido, o null.
+  function hojaAcciones({ titulo, sub, info, media, grupos, clase }) {
+    return new Promise(resolver => {
+      const puede = o => !(o.dinero && !usuario.finanzas) && !(o.editar && !usuario.editar);
+      const gs = (grupos || []).map(g => ({ ...g, opciones: (g.opciones || []).filter(puede) })).filter(g => g.opciones.length);
+      const valores = {};
+      let n = 0;
+      const clave = o => { const k = "o" + (n++); valores[k] = o.valor; return k; };
+      const opcion = o => {
+        const cuerpo = `${o.icono ? ico(o.icono) : ""}<span class="hoja-txt"><span class="hoja-t">${esc(o.texto)}</span>${o.sub ? `<span class="hoja-s">${esc(o.sub)}</span>` : ""}</span>`;
+        if (o.href) return `<a class="hoja-op ${o.clase || ""}" href="${esc(o.href)}" target="_blank" rel="noopener">${cuerpo}</a>`;
+        return `<button type="submit" class="hoja-op ${o.clase || ""}" value="${clave(o)}">${cuerpo}</button>`;
+      };
+      const ficha = o => `<button type="submit" class="lev-chip${o.clase === "puesto" ? " puesto" : ""}" value="${clave(o)}"${o.clase === "puesto" ? ' aria-pressed="true"' : ""}>${o.icono ? ico(o.icono) : ""}<span>${esc(o.texto)}</span></button>`;
+      const dlg = document.createElement("dialog");
+      dlg.className = "modal hoja" + (clase ? " " + clase : "");
+      dlg.innerHTML = `<form method="dialog" class="modal-form">
+          <div class="hoja-asa"></div>
+          ${titulo ? `<h3 class="hoja-titulo">${esc(titulo)}</h3>` : ""}
+          ${sub ? `<p class="hoja-sub">${esc(sub)}</p>` : ""}
+          ${info && info.length ? `<ul class="hoja-info">${info.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
+          ${media ? `<div class="hoja-media">${media}</div>` : ""}
+          ${gs.map(g => `<div class="hoja-grupo">${g.titulo ? `<h4>${esc(g.titulo)}</h4>` : ""}${g.fichas
+            ? `<div class="hoja-fichas">${g.opciones.map(ficha).join("")}</div>`
+            : g.opciones.map(opcion).join("")}</div>`).join("")}
+          <button type="submit" value="" class="accion secundaria hoja-cancelar">${gs.length ? "Cancelar" : "Cerrar"}</button>
+        </form>`;
+      document.body.appendChild(dlg);
+      dlg.querySelectorAll("a.hoja-op").forEach(a => a.addEventListener("click", () => dlg.close("")));
+      // Un toque en el fondo oscuro cierra sin hacer nada
+      dlg.addEventListener("click", ev => { if (ev.target === dlg) dlg.close(""); });
+      dlg.addEventListener("close", () => {
+        const v = dlg.returnValue;
+        dlg.remove();
+        resolver(v && Object.prototype.hasOwnProperty.call(valores, v) ? valores[v] : null);
+      });
+      dlg.showModal();
+    });
+  }
+
+  // Qué dice en la hoja cada botón escondido. Si alguien renombra una clase, la
+  // opción desaparece: por eso lo que no casa avisa en la consola (la prueba lo cuenta).
+  const HERRAMIENTAS = [
+    [".hito-facturar", () => ({ texto: "Facturar", icono: "recibo", clase: "principal", dinero: true })],
+    [".hito-cobrar", el => ({ texto: el.closest("[data-fila]") && el.closest("[data-fila]").querySelector(".hito-facturar") ? "Ya cobré sin factura" : "Ya cobré", icono: "dolar", dinero: true })],
+    [".hito-release", () => ({ texto: "Release del pago", icono: "escudo", dinero: true })],
+    [".doc-portal", el => el.dataset.portal === "1"
+      ? { texto: "Ocultar al cliente", icono: "ojoNo", dinero: true }
+      : { texto: "Enseñar al cliente", icono: "ojo", dinero: true }],
+    [".doc-firma", el => ({ texto: el.dataset.pide === "1" ? "Quitar la firma pedida" : "Pedir firma", icono: "pluma", dinero: true })],
+    [".doc-aprobacion", el => ({ texto: el.dataset.pide === "1" ? "Quitar la aprobación pedida" : "Pedir aprobación", icono: "okCirc", dinero: true })],
+    [".doc-contrafirma", () => ({ texto: "Firmar yo (Edgar Arboleya)", icono: "pluma", clase: "principal", dinero: true })],
+    [".foto-cliente", el => el.dataset.portal === "1"
+      ? { texto: "El cliente la ve · ocultársela", icono: "ojoNo", dinero: true }
+      : { texto: "Enseñársela al cliente", icono: "ojo", dinero: true }],
+    [".foto-nota", () => ({ texto: "Corregir la nota", icono: "lapiz" })],
+    [".tarea-editar", () => ({ texto: "Corregir el texto", icono: "lapiz", editar: true })],
+    [".tarea-grupo", () => ({ texto: "Bloque del portal", icono: "etiqueta", editar: true })],
+    [".tarea-borrar", () => ({ texto: "Eliminar", icono: "basura", clase: "peligro", editar: true })],
+    [".btn-insp-borrar", () => ({ texto: "Eliminar inspección", icono: "basura", clase: "peligro", editar: true })],
+    [".btn-dec-hecha", () => ({ texto: "Marcar decidida", icono: "check", dinero: true })],
+    [".btn-dec-borrar", () => ({ texto: "Eliminar", icono: "basura", clase: "peligro", dinero: true })],
+    ["#btn-portal-copiar", () => ({ texto: "Copiar el link del cliente", icono: "enlace", dinero: true })],
+    ["#btn-cliente-email", el => ({ texto: "Corregir el email del cliente", sub: el.dataset.email || "sin anotar", icono: "correo", dinero: true })],
+    ["#btn-gc-copiar", () => ({ texto: "Enlace a esta obra", icono: "enlace", dinero: true })],
+    ["#btn-gc-portada", () => ({ texto: "Enlace a todas sus obras", icono: "grua", dinero: true })],
+    ["#btn-gc-avisar", () => ({ texto: "Avisar al contratista", icono: "correo", dinero: true })],
+    ["#btn-portal-regenerar", () => ({ texto: "Regenerar la llave del cliente", sub: "El link viejo deja de funcionar", icono: "ciclo", clase: "peligro", dinero: true })],
+    ["[data-accion]", el => ({ texto: el.textContent.trim(), icono: ICONO_ACCION[el.dataset.accion], editar: true,
+      dinero: el.dataset.accion === "alcance", clase: el.dataset.destacar === "1" ? "principal" : "" })],
+    [".btn-eliminar-proyecto", () => ({ texto: "Eliminar esta obra…", sub: "Borra la obra con todo lo suyo. Antes baja una copia y pide escribir ELIMINAR.",
+      icono: "basura", clase: "peligro", dinero: true })]
+  ];
+  // Los select escondidos salen como un grupo de fichas
+  const SELECTS = [
+    [".tarea-prio", el => ({ titulo: "Categoría", opciones: Object.entries(PRIO).map(([v, c]) =>
+      ({ valor: v, texto: c.etiqueta, icono: { urgente: "rojo", normal: "ambar", espera: "gris" }[v] })) })],
+    [".insp-resultado", () => ({ titulo: "Resultado", editar: true, opciones: Object.entries(RES_INSP).map(([v, c]) => ({ valor: v, texto: c.etiqueta })) })],
+    [".chip-select", () => ({ titulo: "Cambiar a otro estado", editar: true, opciones: Object.entries(ESTADOS).map(([v, c]) => ({ valor: v, texto: c.etiqueta })) })]
+  ];
+  // Los botones y select escondidos de UNA caja, con su etiqueta
+  function herramientasDe(caja) {
+    if (!caja) return [];
+    const out = [];
+    caja.querySelectorAll("button, select").forEach(el => {
+      const lista = el.tagName === "SELECT" ? SELECTS : HERRAMIENTAS;
+      const h = lista.find(([sel]) => el.matches(sel));
+      if (!h) { console.warn("herramienta sin etiqueta", el.className || el.id); return; }
+      out.push({ el, ...h[1](el) });
+    });
+    return out;
+  }
+  const puedeUsar = h => !(h.dinero && !usuario.finanzas) && !(h.editar && !usuario.editar);
+  // Toca el botón escondido. Si su manejador lo desactiva (facturando, cobrando…),
+  // el botón visible también queda desactivado: es el candado contra el doble toque.
+  function activar(el, visible) {
+    if (!el || el.tagName === "SELECT") return;
+    el.click();
+    if (visible && el.disabled) visible.disabled = true;
+  }
+  // Lo que devolvió la hoja: "sel:i:valor" (un select) o "btn:i" (un botón)
+  function aplicarEleccion(v, hs, visible) {
+    const s = /^sel:(\d+):(.*)$/.exec(v || "");
+    if (s) {
+      const el = hs[Number(s[1])] && hs[Number(s[1])].el;
+      if (el && el.value !== s[2]) {
+        el.value = s[2];
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      return;
+    }
+    const b = /^btn:(\d+)$/.exec(v || "");
+    if (b && hs[Number(b[1])]) activar(hs[Number(b[1])].el, visible);
+  }
+  // Las opciones de una lista de herramientas: los select como fichas y los
+  // botones en «Opciones» (los de peligro, al final)
+  function gruposDeHerramientas(hs) {
+    const grupos = [];
+    hs.forEach((h, i) => {
+      if (h.el.tagName !== "SELECT") return;
+      grupos.push({ titulo: h.titulo, fichas: true, opciones: h.opciones.map(o => ({
+        valor: `sel:${i}:${o.valor}`, texto: o.texto, icono: o.icono, editar: h.editar, dinero: h.dinero,
+        clase: o.valor === h.el.value ? "puesto" : "" })) });
+    });
+    const botones = hs.map((h, i) => ({ h, i })).filter(x => x.h.el.tagName !== "SELECT");
+    const orden = botones.filter(x => x.h.clase !== "peligro").concat(botones.filter(x => x.h.clase === "peligro"));
+    if (orden.length) grupos.push({ titulo: "Opciones", opciones: orden.map(({ h, i }) => ({
+      valor: "btn:" + i, texto: h.texto, sub: h.sub, icono: h.icono, clase: h.clase, dinero: h.dinero, editar: h.editar })) });
+    return grupos;
+  }
+  // El botón único de un renglón (hito, documento, punto, inspección, decisión)
+  async function menuDeFila(btn) {
+    const fila = btn.closest("[data-fila]");
+    if (!fila) return;
+    if (fila.dataset.fila === "foto") { abrirVisorFoto(fila); return; }
+    const hs = herramientasDe(fila.querySelector(".herramientas")).filter(puedeUsar);
+    const botones = hs.filter(h => h.el.tagName !== "SELECT");
+    if (btn.dataset.directo === "1" && hs.length === 1 && botones.length === 1) { activar(botones[0].el, btn); return; }
+    const info = fila.dataset.fila === "doc" ? [...fila.querySelectorAll(".doc-historia li")].map(li => li.textContent.trim()).filter(Boolean) : [];
+    const p = proyectoPorId(proyectoActivo);
+    if (fila.dataset.fila === "doc" && p && p.portalCompleto) info.push("Luz verde encendida: el cliente ve todos los documentos.");
+    const v = await hojaAcciones({ titulo: fila.dataset.titulo || "", sub: fila.dataset.sub || "", info, grupos: gruposDeHerramientas(hs) });
+    if (v) aplicarEleccion(v, hs, btn);
+  }
+  // El visor de una foto o video: la foto grande y lo que se puede hacer con ella
+  async function abrirVisorFoto(fig) {
+    if (!fig) return;
+    const a = fig.querySelector("a.foto-enlace"), img = fig.querySelector("img"), vid = fig.querySelector("video");
+    const src = (a && a.getAttribute("href")) || (img && img.getAttribute("src")) || (vid && vid.getAttribute("src")) || "";
+    const seguro = /^https:\/\//i.test(src) ? src : "";
+    const media = !seguro ? "" : vid
+      ? `<video class="visor-foto" controls playsinline preload="metadata" src="${esc(seguro)}"></video>`
+      : `<img class="visor-foto" src="${esc(seguro)}" alt="">`;
+    const p = proyectoPorId(proyectoActivo);
+    const info = p && p.portalCompleto && usuario.finanzas ? ["El cliente ve todas las fotos (luz verde)"] : [];
+    const hs = herramientasDe(fig.querySelector(".herramientas")).filter(puedeUsar);
+    const opciones = hs.filter(h => h.el.tagName !== "SELECT").map(h => ({
+      valor: "btn:" + hs.indexOf(h), texto: h.texto, sub: h.sub, icono: h.icono, clase: h.clase, dinero: h.dinero, editar: h.editar }));
+    if (seguro) opciones.push({ valor: "original", texto: "Abrir el original", icono: "enlace", href: seguro });
+    const v = await hojaAcciones({ titulo: "", sub: fig.dataset.sub || "", info, media, grupos: [{ titulo: "", opciones }], clase: "visor" });
+    if (v) aplicarEleccion(v, hs, null);
+  }
+  // La loseta del estado: fases, siguiente paso, otras acciones, cambiar de estado y peligro
+  async function menuEstado(p) {
+    const tb = $detalle.querySelector(".ficha-tablero .herramientas");
+    const hs = herramientasDe(tb).filter(puedeUsar);
+    const fases = fasesDe(p);
+    const conFase = p.estado === "ejecucion" || (p.estado === "pausa" && p.fase);
+    const fase = !conFase ? null : fases.length === 1 ? fases[0] : fases.find(f => f.clave === p.fase) || null;
+    const sub = [ESTADOS[p.estado] ? ESTADOS[p.estado].etiqueta : p.estado, fase ? fase.etiqueta : "",
+                 p.origen ? "Origen: " + p.origen : ""].filter(Boolean).join(" · ");
+    const grupos = [];
+    const pr = $detalle.querySelector(".ficha-tablero .tablero-principal");
+    if (pr) grupos.push({ titulo: "Siguiente paso", opciones: [{ valor: "principal", texto: pr.textContent.trim(),
+      icono: ICONO_ACCION[pr.dataset.accion], clase: "principal", editar: true, dinero: pr.dataset.accion === "alcance" }] });
+    const otras = [];
+    const cambiar = [];
+    const peligro = [];
+    hs.forEach((h, i) => {
+      if (h.el.tagName === "SELECT") {
+        cambiar.push(...h.opciones.map(o => ({ valor: `sel:${i}:${o.valor}`, texto: o.texto, editar: true,
+          clase: o.valor === h.el.value ? "puesto" : "" })));
+      } else if (h.clase === "peligro") {
+        peligro.push({ valor: "btn:" + i, texto: h.texto, sub: h.sub, icono: h.icono, clase: "peligro", dinero: h.dinero, editar: h.editar });
+      } else {
+        otras.push({ valor: "btn:" + i, texto: h.texto, sub: h.sub, icono: h.icono, clase: h.clase, dinero: h.dinero, editar: h.editar });
+      }
+    });
+    if (otras.length) grupos.push({ titulo: "Otras acciones", opciones: otras });
+    if (cambiar.length) grupos.push({ titulo: "Cambiar a otro estado", fichas: true, opciones: cambiar });
+    if (peligro.length) grupos.push({ titulo: "Zona de peligro", opciones: peligro });
+    const v = await hojaAcciones({ titulo: p.nombre, sub, media: stepperHTML(p), grupos });
+    if (!v) return;
+    if (v === "principal") { const b = $detalle.querySelector(".ficha-tablero .tablero-principal"); if (b) b.click(); return; }
+    aplicarEleccion(v, hs, null);
+  }
+  // «Agregar»: una opción solo sale si su botón escondido existe y pasa su candado
+  async function menuAgregar(p) {
+    const hay = s => !!$detalle.querySelector(s);
+    const ops = [];
+    if (hay(".btn-agregar-foto")) ops.push({ valor: "foto", texto: "Foto o video con nota", icono: "camara",
+      sub: "De la galería, un video corto o con descripción. La cámara del tablero sube solo fotos, sin nota." });
+    ops.push({ valor: "pendiente", texto: "Pendiente de obra", sub: "Se anota en la Checklist de esta obra", icono: "alerta" });
+    if (hay(".btn-agregar-insp")) ops.push({ valor: "insp", texto: "Inspección", icono: "calendario", editar: true });
+    if (hay(".btn-agregar-doc")) ops.push({ valor: "doc", texto: "Documento o RFI", icono: "doc", dinero: true });
+    if (hay(".btn-agregar-dec")) ops.push({ valor: "dec", texto: "Decisión del cliente", icono: "mano", dinero: true });
+    if (hay(".btn-agregar-ext")) ops.push({ valor: "ext", texto: "Trabajo externo", icono: "dolar", dinero: true });
+    const v = await hojaAcciones({ titulo: "Agregar a esta obra", grupos: [{ titulo: "", opciones: ops }] });
+    if (v === "foto") abrirForm({ pestana: "archivos", boton: ".btn-agregar-foto", form: ".form-foto" });
+    else if (v === "pendiente") irChecklist(p.id);
+    else if (v === "insp") abrirForm({ pestana: "obra", boton: ".btn-agregar-insp", form: ".form-insp" });
+    else if (v === "doc") abrirForm({ pestana: "archivos", boton: ".btn-agregar-doc", form: ".form-doc" });
+    else if (v === "dec") abrirForm({ pestana: "cliente", boton: ".btn-agregar-dec", form: "#form-decision" });
+    else if (v === "ext") abrirForm({ pestana: "dinero", boton: ".btn-agregar-ext", form: ".form-ext" });
+  }
+  // «Compartir y avisar»: los enlaces y avisos del cliente y del contratista
+  async function menuCompartir(p) {
+    const cli = herramientasDe($detalle.querySelector("#cliente-herramientas"));
+    const gcs = herramientasDe($detalle.querySelector("#gc-herramientas"));
+    const todos = cli.concat(gcs).filter(puedeUsar);
+    const op = h => ({ valor: "btn:" + todos.indexOf(h), texto: h.texto, sub: h.sub, icono: h.icono,
+      clase: h.clase === "peligro" ? "peligro" : "", dinero: h.dinero, editar: h.editar });
+    const grupos = [];
+    const deCli = todos.filter(h => cli.includes(h) && h.clase !== "peligro");
+    if (deCli.length) grupos.push({ titulo: "Cliente", opciones: deCli.map(op) });
+    const deGC = todos.filter(h => gcs.includes(h) && h.clase !== "peligro");
+    const gc = gcDeProyecto(p);
+    if (deGC.length) grupos.push({ titulo: gc ? gc.nombre : "Contratista", opciones: deGC.map(op) });
+    const pel = todos.filter(h => h.clase === "peligro");
+    if (pel.length) grupos.push({ titulo: "Zona de peligro", opciones: pel.map(op) });
+    const v = await hojaAcciones({ titulo: "Compartir y avisar", grupos });
+    if (v) aplicarEleccion(v, todos, null);
+  }
+  // «+N» de las señales: todas en una hoja
+  async function menuSenales(p) {
+    const s = senalesDe(p, false);
+    const v = await hojaAcciones({ titulo: p.nombre, grupos: [{ titulo: "", opciones: s.map(x => ({
+      valor: x.ir, texto: x.txt, sub: x.dato || "", icono: x.color === "rojo" ? "rojo" : x.color === "ambar" ? "ambar" : x.color === "verde" ? "verde" : "" })) }] });
+    if (v) irSenal(v);
+  }
+  // Abre un formulario escondido en su pestaña, y lo deja a la vista con el cursor puesto
+  function abrirForm({ pestana, boton, form }) {
+    cambiarPestana(pestana, { sinDesplazar: true });
+    const f = $detalle.querySelector(form);
+    if (!f) return;
+    const det = f.closest("details");
+    if (det && !det.open) {
+      det.open = true;
+      if (det.dataset.plegable) fichaVista.plegables.set(proyectoActivo + ":" + det.dataset.plegable, true);
+    }
+    if (f.hidden) {
+      const b = $detalle.querySelector(boton);
+      if (b) b.click();
+      if (f.hidden) f.hidden = false;
+    }
+    f.scrollIntoView({ block: "center" });
+    const campo = f.querySelector("input:not([type=file]):not([type=hidden]), select, textarea");
+    if (campo) campo.focus({ preventScroll: true });
+  }
+  function cambiarPestana(k, { sinDesplazar } = {}) {
+    const art = $detalle.querySelector(".ficha-v2");
+    if (!art || !pestanasDe().some(t => t.k === k)) return;
+    art.querySelectorAll(".ficha-tab").forEach(t => {
+      const on = t.dataset.pestana === k;
+      t.setAttribute("aria-selected", on ? "true" : "false");
+      t.tabIndex = on ? 0 : -1;
+    });
+    art.querySelectorAll(".ficha-panel").forEach(s => { s.hidden = s.dataset.pestana !== k; });
+    guardarPestana(proyectoActivo, k);
+    if (sinDesplazar) return;
+    // Si la barra ya está pegada arriba, el panel nuevo empieza justo debajo de ella
+    const barra = art.querySelector(".ficha-pestanas");
+    const panel = art.querySelector("#panel-" + k);
+    const alto = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--membrete-alto")) || 0;
+    if (barra && panel && barra.getBoundingClientRect().top <= alto + 1) {
+      const y = window.scrollY + panel.getBoundingClientRect().top - alto - barra.offsetHeight - 8;
+      window.scrollTo(0, Math.max(0, y));
+    }
+  }
+  // Una señal lleva a su sitio: "materiales" o "pestaña:id"
+  function irSenal(dest) {
+    if (dest === "materiales") { irMateriales(proyectoActivo); return; }
+    const [k, id] = String(dest || "").split(":");
+    cambiarPestana(k, { sinDesplazar: true });
+    const el = id ? $detalle.querySelector("#" + CSS.escape(id)) : null;
+    if (!el) return;
+    for (let d = el.closest("details"); d; d = d.parentElement ? d.parentElement.closest("details") : null) {
+      if (!d.open) {
+        d.open = true;
+        if (d.dataset.plegable) fichaVista.plegables.set(proyectoActivo + ":" + d.dataset.plegable, true);
+      }
+    }
+    el.scrollIntoView({ block: "start" });
+  }
+  // Las fichas «Solo coordinan / Le facturamos a ellos»: pasan por el formulario
+  // del contratista, así SIEMPRE sale el aviso legal completo de siempre
+  function cambiarModoGC(btn) {
+    if (!usuario.editar || btn.classList.contains("puesto")) return;
+    const f = $detalle.querySelector("#form-gc");
+    if (!f) return;
+    const sel = f.elements.contratista, modo = f.elements.modo, coord = f.elements.contratista_contacto;
+    const antes = [sel.value, modo.value, coord ? coord.value : ""];
+    const devolver = () => { sel.value = antes[0]; modo.value = antes[1]; if (coord) coord.value = antes[2]; };
+    sel.value = btn.dataset.gc;
+    // Si ese contratista no está en la lista, el select se queda en «ninguno» y
+    // guardar le quitaría la obra sin preguntar: se para aquí
+    if (!btn.dataset.gc || sel.value !== btn.dataset.gc) {
+      devolver();
+      avisar("No encuentro a ese contratista en la lista: cámbialo en «Cambiar contratista o coordinador».", true);
+      return;
+    }
+    modo.value = btn.dataset.modo;
+    // La ficha solo cambia el modo: el coordinador se manda como está guardado,
+    // no lo que se haya escrito en el plegable sin darle a Guardar
+    const p = proyectoPorId(proyectoActivo);
+    if (coord) coord.value = (p && p.contratistaContacto) || "";
+    // El manejador lee el formulario antes de su primer await (y la pregunta es
+    // síncrona): al volver de aquí ya se puede dejar todo como estaba,
+    // por si se canceló.
+    f.requestSubmit();
+    devolver();
+  }
+  // ✓ Marcar una FACTURA como cobrada (la ficha y la tarjeta de la lista)
+  async function marcarFacturaCobrada(btn) {
+    if (!usuario.finanzas) return;
+    const monto = Number(btn.dataset.monto) || 0;
+    const clave = String(btn.dataset.id);
+    if (cobrandoFacturas.has(clave)) { avisar("Esa factura ya se está guardando: espera a que termine.", true); return; }
+    // La #1110 es dinero personal de Edgar: se marca pagada, pero NUNCA se
+    // suma a lo cobrado de la obra (regla 5)
+    const personal = btn.dataset.personal === "1";
+    if (!confirm(personal
+      ? `¿Se cobró la factura #${btn.dataset.num} (${fmt(monto)})?\n\nEs dinero personal: solo se marca pagada, no se suma a lo cobrado de la obra.`
+      : `¿Se cobró la factura #${btn.dataset.num} (${fmt(monto)})?`)) return;
+    if (cobrandoFacturas.has(clave)) return;
+    const p = proyectoPorId(btn.dataset.proyecto || proyectoActivo);
+    cobrandoFacturas.add(clave);
+    btn.disabled = true;
+    try {
+      await DB.cambiarFactura(btn.dataset.id, { pagada: true });
+      if (!personal) await sumarACobrado(p, monto, `la factura #${btn.dataset.num}`);
+      cobrandoFacturas.delete(clave);
+      await recargar(p ? p.id : undefined);
+      avisar("✓ Factura marcada cobrada");
+    } catch (err) { cobrandoFacturas.delete(clave); avisar("No se pudo: " + err.message, true); btn.disabled = false; }
+  }
+  // Un aviso con el botón «Deshacer» (los 5 segundos del aviso)
+  function avisarDeshacer(msg, deshacer) {
+    avisar(msg);
+    const $t = $("toast");
+    if (!$t) return;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "toast-deshacer";
+    b.textContent = "Deshacer";
+    b.addEventListener("click", () => { clearTimeout($t._timer); $t.hidden = true; deshacer(); }, { once: true });
+    $t.appendChild(b);
+  }
+  // Los enlaces firmados duran 1 hora: se guardan 50 minutos y solo se piden
+  // los que faltan o se vencieron (Dejeneffe pedía 60 firmas en cada repintado)
+  const firmasGuardadas = new Map();
+  async function firmarConMemoria(rutas) {
+    const ahora = Date.now();
+    const faltan = [...new Set(rutas)].filter(r => { const x = firmasGuardadas.get(r); return !x || x.hasta <= ahora; });
+    let nuevo = {};
+    if (faltan.length) {
+      nuevo = await DB.firmarFotos(faltan);
+      const hasta = Date.now() + 50 * 60 * 1000;
+      for (const [r, url] of Object.entries(nuevo)) firmasGuardadas.set(r, { url, hasta });
+      // Las que el servidor NO firmó (una foto que falta en el almacenamiento) se
+      // apuntan 5 minutos sin enlace: así cada repintado no las vuelve a pedir ni
+      // saca otra vez «no cargó», que se comía el «Deshacer» del aviso
+      const fallo = Date.now() + 5 * 60 * 1000;
+      for (const r of faltan) if (!nuevo[r]) firmasGuardadas.set(r, { url: "", hasta: fallo });
+    }
+    const mapa = {};
+    for (const r of rutas) { const x = firmasGuardadas.get(r); if (x && x.url) mapa[r] = x.url; }
+    if (nuevo.__faltan) Object.defineProperty(mapa, "__faltan", { value: nuevo.__faltan, enumerable: false });
+    return mapa;
+  }
+  // La barra de pestañas se pega justo debajo del membrete: aquí se mide su alto
+  function medirMembrete() {
+    const m = document.querySelector(".membrete");
+    const alto = m ? Math.round(m.getBoundingClientRect().height) : 0;
+    document.documentElement.style.setProperty("--membrete-alto", alto + "px");
+    $detalle.classList.toggle("sin-fijar", !alto);
+    marcarTiraSenales();
+  }
+  // En el teléfono las señales van en una tira que se desliza: si no caben,
+  // el borde derecho se desvanece para que se note que hay más (y se quita
+  // al llegar al final).
+  function marcarTiraSenales() {
+    const tira = $detalle.querySelector(".ficha-tablero .senales");
+    if (!tira) return;
+    const mirar = () => tira.classList.toggle("con-mas", tira.scrollLeft + tira.clientWidth < tira.scrollWidth - 4);
+    mirar();
+    if (!tira.dataset.mira) { tira.dataset.mira = "1"; tira.addEventListener("scroll", mirar, { passive: true }); }
+  }
+  // Los formularios que estaban abiertos (y sin mandar) vuelven igual después de repintar
+  const FORMS_FICHA = [".form-ext", ".form-insp", ".form-doc", ".form-foto", "#form-decision"];
+  function recordarForms() {
+    const lista = [];
+    FORMS_FICHA.forEach(sel => {
+      const f = $detalle.querySelector(sel);
+      if (!f || f.hidden || f.dataset.enviado === "1") return;
+      const valores = {};
+      let conArchivo = false;
+      [...f.elements].forEach(el => {
+        if (!el.name) return;
+        if (el.type === "file") { if (el.files && el.files.length) conArchivo = true; return; }
+        valores[el.name] = (el.type === "checkbox" || el.type === "radio") ? el.checked : el.value;
+      });
+      lista.push({ sel, valores, conArchivo });
+    });
+    return lista;
+  }
+  function devolverForms(lista) {
+    let archivo = false;
+    (lista || []).forEach(({ sel, valores, conArchivo }) => {
+      const f = $detalle.querySelector(sel);
+      if (!f) return;
+      f.hidden = false;
+      const det = f.closest("details");
+      if (det) det.open = true;
+      for (const [n, v] of Object.entries(valores)) {
+        const el = f.elements[n];
+        if (!el || el.type === "file") continue;
+        if (el.type === "checkbox" || el.type === "radio") el.checked = !!v; else el.value = v;
+      }
+      if (conArchivo) archivo = true;
+    });
+    if (archivo) avisar("Se actualizó la pantalla: vuelve a elegir el archivo.", true);
   }
 
   // FICHA completa: la pantalla dedicada a un solo proyecto
@@ -2933,169 +3715,243 @@ function esFalloDeRed(err) {
   // mismas filas de la pantalla Checklist, así que marcar aquí es marcar allá.
   function alcanceFichaHTML(p) {
     const puntos = tareasDe(p.id).filter(t => t.tipo === "punto");
-    const hechos = puntos.filter(t => t.hecha).length;
-    const pct = puntos.length ? Math.round(hechos / puntos.length * 100) : 0;
+    // El % es el mismo de la lista, la señal y el portal: sin los bloques informativos
+    const av = avanceObra(p.id);
+    const pct = av ? av.pct : 0;
+    if (!puntos.length) {
+      return `<div class="detalle-seccion" id="ficha-alcance">
+      <h3>Alcance del trabajo</h3>
+      <p class="cal-sin-eventos">Todavía no hay renglones. Nacen solos al armar el contrato en «Escribir el alcance».</p>
+    </div>`;
+    }
+    const filas = lista => lista.map(t => filaTarea(t, { ficha: true })).join("");
+    // Lo que falta arriba; lo hecho, plegado al final («Hechos (N)»)
+    const cuerpo = (lista, claveHechos) => {
+      const faltan = lista.filter(t => !t.hecha);
+      const hechos = lista.filter(t => t.hecha);
+      return filas(faltan) + (hechos.length
+        ? plegableHTML(p, claveHechos, `Hechos (${hechos.length})`, "", filas(hechos), false) : "");
+    };
+    // Agrupado por el bloque del portal (Fase 1, Generador…), en el orden de sus renglones
+    const grupos = new Map();
+    puntos.forEach(t => {
+      const g = String(t.grupo || "").trim();
+      if (!grupos.has(g)) grupos.set(g, []);
+      grupos.get(g).push(t);
+    });
+    const conBloques = [...grupos.keys()].some(g => g);
+    // La clave del plegable no lleva el nombre del bloque (lo escribe Edgar a mano
+    // y podría llevar un monto): lleva una huella corta y fija de ese nombre
+    const huella = g => { let h = 0; for (const c of g) h = (h * 31 + c.codePointAt(0)) >>> 0; return h.toString(36); };
+    let bloques;
+    if (!conBloques) {
+      bloques = cuerpo(puntos, "alc-hechos");
+    } else {
+      const minOrden = lista => Math.min(...lista.map(t => Number(t.orden) || 0));
+      const orden = [...grupos.entries()].map(([g, lista]) => ({ g, lista, info: !!g && puntoInformativo(lista[0]) }))
+        .sort((x, y) => (x.info - y.info) || ((x.g ? 1 : 0) - (y.g ? 1 : 0)) || (minOrden(x.lista) - minOrden(y.lista)));
+      bloques = orden.map(({ g, lista, info }) => {
+        const hechos = lista.filter(t => t.hecha).length;
+        const faltaAlgo = hechos < lista.length;
+        const pctB = Math.round(hechos / lista.length * 100);
+        // El nombre del bloque sale en grande también en el teléfono del campo: sin montos
+        const titulo = g ? `<span data-no-i18n>${esc(sinMontos(g))}</span>` : "<span>Sin bloque</span>";
+        const dato = info ? "<span>no cuenta para el avance</span>" : `${hechos} de ${lista.length}`;
+        const barra = info ? "" : `<div class="barra fina"><div class="barra-relleno${pctB >= 100 ? " ok" : ""}" style="width:${pctB}%"></div></div>`;
+        const kb = g ? huella(g) : "";
+        return plegableHTML(p, "alc:" + kb, titulo, dato, barra + cuerpo(lista, "alc-hechos:" + kb),
+          faltaAlgo && !info, info ? "informativo" : "");
+      }).join("");
+    }
     return `<div class="detalle-seccion" id="ficha-alcance">
-      <h3>Alcance del trabajo${puntos.length ? ` <span class="recibo-chip leido">${hechos} de ${puntos.length} · ${pct}%</span>` : ""}</h3>
-      ${puntos.length
-        ? `<div class="barra horas-barra"><div class="barra-relleno ${pct >= 100 ? "ok" : ""}" style="width:${pct}%"></div></div>
-           ${puntos.map(filaTarea).join("")}`
-        : `<p class="cal-sin-eventos">Todavía no hay renglones. Nacen solos al armar el contrato en «Escribir el alcance», o agrégalos en la pantalla Checklist.</p>`}
+      <div class="sec-cab"><h3><span>Alcance del trabajo</span>${av ? ` <span class="recibo-chip leido">${av.hechos} de ${av.total} · ${pct}%</span>` : ""}</h3>${corregirHTML(p)}</div>
+      ${av ? `<div class="barra horas-barra"><div class="barra-relleno ${pct >= 100 ? "ok" : ""}" style="width:${pct}%"></div></div>` : ""}
+      ${bloques}
     </div>`;
   }
 
   // Fecha y hora cortas en hora de Florida, para las visitas del portal («9/9, 9:33 p. m.»)
   const fechaHoraCorta = iso => { const d = new Date(iso || ""); return isNaN(d.getTime()) ? "" :
     d.toLocaleString("es-US", { timeZone: "America/New_York", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }); };
+  // La ficha: tablero + barra de pestañas + un panel por pestaña. Los paneles de
+  // Dinero y Cliente NI SE GENERAN para el equipo de campo.
   function fichaProyectoHTML(p) {
-    const linksDocs = (p.docs || [])
-      .map(d => `<span class="doc-fila"><a class="doc-link" ${d.ruta ? `href="#" data-docruta="${esc(d.ruta)}"` : `href="${esc(urlSegura(d.url) || "#")}"`} target="_blank" rel="noopener">📄 ${esc(d.titulo)}${d.ruta ? "" : ` <span class="doc-drive-tag">Drive</span>`}</a>${d.id ? `
-        ${p.portalCompleto ? `<span class="cl-chip-aprobado" title="Luz verde encendida: con acceso completo el cliente ve TODOS los documentos, estén marcados o no">🟢 lo ve</span>` : `
-        <button type="button" class="doc-cliente doc-portal${d.portal ? " on" : ""}" data-id="${d.id}" data-portal="${d.portal ? 1 : 0}"
-          title="${d.portal ? "El cliente SÍ ve este documento — toca para ocultarlo" : "El cliente NO lo ve — toca para mostrárselo"}">${d.portal ? "👁 cliente" : "🚫 cliente"}</button>`}${(d.portal || p.portalCompleto) && docFirmable(d) ? `
-        ${d.visitas ? `<span class="cl-chip-aprobado" title="Cada vez que lo abrieron desde el portal, con fecha y hora (hora de la base, UTC)">👁 ${d.visitas.quien === "contratista" ? "el contratista" : "el cliente"} lo abrió ${d.visitas.n === 1 ? "1 vez" : d.visitas.n + " veces"} · última ${esc(fechaHoraCorta(d.visitas.ultima))}</span>`
-          : (!d.firmadoEl && d.vistoEl ? `<span class="cl-chip-aprobado">👁 visto ${esc(d.vistoEl)}</span>` : "")}
-        ${d.firmadoEl ? `<span class="cl-chip-aprobado">🖊 firmó ${esc(d.firmaNombre || "")} · ${esc(d.firmadoEl)}</span>` : `
-        <button type="button" class="doc-cliente${d.pideFirma ? " on" : ""} doc-firma" data-id="${d.id}" data-pide="${d.pideFirma ? 1 : 0}"
-          title="${d.pideFirma ? "Le está pidiendo FIRMA al cliente (nombre + firma con el dedo) — toca para quitarla" : "Pedirle al cliente que lo FIRME (nombre + firma con el dedo, queda de respaldo)"}">🖊 firma</button>`}
-        ${d.contrafirmaEl ? `<span class="cl-chip-aprobado">✒️ contrafirmado ${esc(d.contrafirmaEl)}</span>`
-          : (usuario.finanzas && (d.pideFirma || d.firmadoEl)) ? `
-        <button type="button" class="doc-cliente doc-contrafirma" data-id="${d.id}" data-titulo="${esc(d.titulo)}"
-          title="Firmarlo tú también: tu firma sale en el certificado junto a la del cliente">✒️ firmar yo</button>` : ""}
-        ${d.aprobadoEl ? `<span class="cl-chip-aprobado">✔ aprobó ${esc(d.aprobadoEl)}</span>` : (d.firmadoEl || d.pideFirma) ? "" : `
-        <button type="button" class="doc-cliente${d.pideAprobacion ? " on" : ""} doc-aprobacion" data-id="${d.id}" data-pide="${d.pideAprobacion ? 1 : 0}"
-          title="${d.pideAprobacion ? "Le está pidiendo aprobación al cliente — toca para quitarla" : "Pedirle al cliente que lo apruebe con un toque"}">✍️ aprobación</button>`}` : ""}` : ""}</span>`)
-      .join("");
-    // El dueño siempre ve la sección, con el botón para agregar más
-    const docs = usuario.finanzas
-      ? `<div class="detalle-seccion">
-           <h3>Documentos</h3>
-           ${p.portalCompleto ? `<div class="aviso-luzverde">🟢 Luz verde encendida: el cliente ve <strong>todos</strong> estos documentos, aunque no estén marcados 👁. Lo que subas aquí se le publica solo.</div>` : ""}
-           <div class="detalle-docs">${linksDocs || `<span class="sin-docs">Este proyecto no tiene documentos todavía.</span>`}</div>
-           <button type="button" class="accion secundaria btn-agregar-doc">+ Agregar documento</button>
-           <form class="cal-form form-doc" hidden>
-             <div class="modal-fila">
-               <label>Tipo
-                 <select name="clase">
-                   <option value="doc">Documento</option>
-                   <option value="rfi">RFI</option>
-                 </select>
-               </label>
-               <label>Título
-                 <input name="titulo" type="text" required placeholder="Ej: SOW firmado" autocomplete="off">
-               </label>
-             </div>
-             <label>Archivo PDF (recomendado — vive en la app, sin permisos de Drive)
-               <input name="archivo" type="file" accept="application/pdf">
-             </label>
-             <label>… o pega un enlace de Drive
-               <input name="url" type="url" placeholder="https://drive.google.com/…" autocomplete="off">
-             </label>
-             <button type="submit" class="accion">Guardar documento</button>
-           </form>
-         </div>
-         <div class="detalle-seccion">
-           <h3>🌐 Portal del cliente</h3>
-           <p class="modal-nota">${p.portalCompleto
-             ? `🟢 <strong>Luz verde encendida:</strong> el cliente ve TODOS los documentos —contratos y Change Orders incluidos—,
-                todas las fotos y todos los videos, estén marcados 👁 o no. Lo que subas a este proyecto se le publica solo.`
-             : `El cliente ve: etapa, checklist con su %, inspecciones, próximos días de trabajo y los documentos con 👁.
-                Los RFI salen siempre; los CONTRATOS nunca salen (tienen precios) a menos que tú los marques.`}
-           El dinero solo sale si tú prendes el botón 💵 — pensado para clientes directos, no para trabajos vía contratista.</p>
-           ${(state.visitasPortal || {})[p.id] ? `
-           <p class="modal-nota">👀 Última visita del cliente: <strong>${esc(String(state.visitasPortal[p.id]).slice(0, 16).replace("T", " "))}</strong> (hora universal)</p>` : `
-           <p class="modal-nota">👀 El cliente todavía no ha abierto su portal.</p>`}
-           ${p.portalToken ? `
-           <div class="modal-botones">
-             <p class="modal-nota">✉️ Email del cliente: <strong>${esc(p.clienteEmail || "sin anotar")}</strong>
-               <button type="button" class="insp-borrar" id="btn-cliente-email" data-id="${esc(p.id)}" data-email="${esc(p.clienteEmail || "")}"
-                 title="Anotar o corregir el email (para mandarle su copia firmada y avisos)">✎</button></p>
-             <button type="button" class="accion secundaria" id="btn-portal-copiar" data-token="${esc(p.portalToken)}">🔗 Copiar el link del cliente</button>
-             <button type="button" class="accion secundaria" id="btn-portal-regenerar">♻ Regenerar la llave</button>
-             <button type="button" class="doc-cliente${p.portalDinero ? " on" : ""}" id="btn-portal-dinero"
-               title="${p.portalDinero ? "El cliente SÍ ve su contrato, pagos y facturas — toca para ocultarlos" : "El cliente NO ve dinero — toca para mostrarle su contrato, pagos y facturas"}">${p.portalDinero ? "💵 dinero: SÍ lo ve" : "💵 dinero: NO lo ve"}</button>
-             <button type="button" class="doc-cliente${p.portalCompleto ? " on" : ""}" id="btn-portal-completo"
-               title="${p.portalCompleto ? "Luz verde: el cliente ve TODOS los documentos, fotos y videos — toca para volver al modo uno-a-uno" : "Toca para darle luz verde: verá TODOS los documentos (contratos y CO), fotos y videos sin marcarlos uno a uno"}">${p.portalCompleto ? "🟢 acceso completo: SÍ" : "⚪ acceso completo: NO"}</button>
-           </div>` : `<p class="cal-sin-eventos">Corre el SQL del portal para crearle la llave a este proyecto.</p>`}
-           ${p.portalToken ? `
-           <h4 class="portal-sub">📣 Dónde vamos — el párrafo que el cliente lee arriba</h4>
-           <p class="cal-sin-eventos" style="margin:.2rem 0 .4rem">${p.portalResumen ? esc(p.portalResumen) : "Sin escribir. El cliente no ve esta tarjeta hasta que digas en qué va la obra."}</p>
-           <div class="modal-botones">
-             <button type="button" class="accion secundaria" id="btn-portal-resumen">✎ ${p.portalResumen ? "Cambiar" : "Escribir"} el resumen del portal</button>
-           </div>` : ""}
-           <h4 class="portal-sub">🛋 Decisiones del cliente ("te toca a ti")</h4>
-           ${(state.decisiones || []).filter(d => d.proyecto === p.id).map(d => `
-             <div class="eq-reporte${d.hecha ? "" : " eq-pide"}" data-id="${d.id}">
-               <span class="alcance-info">
-                 <span class="alcance-titulo">${d.hecha ? "✅ " : "🛋 "}${esc(d.texto)}</span>
-                 ${d.fechaLimite && !d.hecha ? `<span class="alcance-estado">⏰ la necesitamos antes del ${esc(d.fechaLimite)}</span>` : ""}
-               </span>
-               ${!d.hecha ? `<button type="button" class="insp-borrar btn-dec-hecha" data-id="${d.id}" title="Marcar decidida">✓</button>` : ""}
-               <button type="button" class="insp-borrar btn-dec-borrar" data-id="${d.id}" title="Eliminar">🗑</button>
-             </div>`).join("") || `<p class="cal-sin-eventos">Sin decisiones pendientes del cliente.</p>`}
-           <form class="cal-form" id="form-decision">
-             <div class="modal-fila">
-               <label>Qué necesita decidir el cliente
-                 <input name="texto" type="text" required placeholder="Ej: elegir el fixture del comedor" autocomplete="off">
-               </label>
-               <label>Para cuándo (opcional)
-                 <input name="fecha" type="date">
-               </label>
-             </div>
-             <button type="submit" class="accion secundaria">+ Agregar decisión</button>
-           </form>
-         </div>
-         ${portalGCHTML(p)}`
-      : "";
-
+    const activa = pestanaDe(p);
+    const paneles = [["resumen", panelResumenHTML(p)], ["obra", panelObraHTML(p)]];
+    if (usuario.finanzas) paneles.push(["dinero", panelDineroHTML(p)], ["cliente", panelClienteHTML(p)]);
+    paneles.push(["archivos", panelArchivosHTML(p)]);
+    const panel = ([k, c]) => `
+        <section class="ficha-panel${k === "obra" ? " panel-obra" + (fichaVista.editando.has(p.id) ? " editando" : "") : ""}" id="panel-${k}" role="tabpanel" aria-labelledby="tab-${k}" data-pestana="${k}"${k === activa ? "" : " hidden"}>
+          ${k === "archivos" && usuario.finanzas && p.portalCompleto
+            ? `<div class="aviso-luzverde">${ico("verde") || "🟢"}<span>Luz verde encendida: el cliente ve todos los documentos, fotos y videos de esta obra.</span></div>` : ""}
+          <div class="proyecto-detalle">
+            <div class="det-col det-izq">${c ? c.izq : ""}</div>
+            <div class="det-col det-der">${c ? c.der : ""}</div>
+          </div>
+        </section>`;
     return `
-      <article class="proyecto ficha abierto" data-id="${esc(p.id)}">
-        ${cabeceraHTML(p, true)}
-        ${avisoObraHTML(p)}
-        ${avisoMaterialesHTML(p)}
-        ${avisoFacturasHTML(p)}
-        ${franjaDineroHTML(p)}
-        ${proximoCobroHTML(p)}
-        <div class="proyecto-detalle">
-          <!-- En escritorio: a la izquierda el trabajo y el dinero; a la derecha lo operativo.
-               En el teléfono las dos columnas se apilan en este mismo orden. -->
-          <div class="det-col det-izq">
-          <div class="detalle-seccion"><h3>Situación</h3><p>${esc(sinMontos(p.estadoDetalle))}</p></div>
-          <div class="detalle-seccion"><h3>Próxima acción</h3><p>${esc(sinMontos(p.proximaAccion))}</p></div>
-          ${eventosProyectoHTML(p)}
-          ${arranqueHTML(p)}
-          ${stepperHTML(p)}
-          ${horasHTML(p)}
-          ${desgloseHTML(p)}
-          ${hitosHTML(p)}
-          ${alcanceFichaHTML(p)}
-          ${rentabilidadHTML(p)}
-          ${externosHTML(p)}
-          </div>
-          <div class="det-col det-der">
-          ${accionesHTML(p)}
-          ${inspeccionesHTML(p)}
-          ${fotosHTML(p)}
-          ${rfisHTML(p)}
-          ${facturasHTML(p)}
-          ${docs}
-          <div class="detalle-ref">Ref: ${esc(sinMontos(p.ref))}</div>
-          ${zonaPeligroHTML(p)}
-          </div>
-        </div>
+      <article class="proyecto ficha abierto ficha-v2" data-id="${esc(p.id)}">
+        ${tableroHTML(p)}
+        ${pestanasHTML(p, activa)}
+        ${paneles.map(panel).join("")}
       </article>`;
   }
 
-  // Zona de peligro: lo único que no se puede deshacer, abajo del todo,
-  // lejos de cualquier cosa que se toque a diario.
-  function zonaPeligroHTML(p) {
+  // Documentos de la obra (solo el dueño), con el botón escondido para agregar más
+  function documentosHTML(p) {
     if (!usuario.finanzas) return "";
+    // Cada documento: el título es el enlace, y UN botón con su estado («Oculto»,
+    // «Lo ve», «Pide firma»…). Los botones de siempre van escondidos con las MISMAS
+    // condiciones de antes (firma y aprobación nunca juntas); los abre la hoja del
+    // renglón, que también enseña la historia (visitas, firmas, aprobación).
+    const filaDoc = d => {
+      const enlace = `<a class="doc-link" ${d.ruta ? `href="#" data-docruta="${esc(d.ruta)}"` : `href="${esc(urlSegura(d.url) || "#")}"`} target="_blank" rel="noopener">${ico("doc")}<span>${esc(d.titulo)}</span>${d.ruta ? "" : ` <span class="doc-drive-tag">Drive</span>`}</a>`;
+      if (!d.id) return `<div class="doc-fila">${enlace}</div>`;
+      const visible = !!(d.portal || p.portalCompleto);
+      const firmable = visible && docFirmable(d);
+      // «Firmar yo (Edgar Arboleya)» firma en nombre de Edgar: solo lo ve Edgar
+      // (Flavia también es dueña, y su toque pondría la firma de él en el certificado)
+      const esEdgar = usuario.id === EDGAR_ID;
+      // La etiqueta: la primera que se cumpla. «Falta tu firma» y «falta el cliente»
+      // solo cuando se puede firmar de verdad (si no, la hoja no trae cómo)
+      const [etq, color, icono] =
+          d.firmadoEl && d.contrafirmaEl ? ["Firmado por los dos", "on-verde", "okCirc"]
+        : d.firmadoEl ? (firmable && esEdgar ? ["Firmado · falta tu firma", "on-verde", "pluma"]
+            : firmable ? ["Firmado · falta la firma de Edgar", "on-verde", "pluma"]
+            : ["Firmado", "on-verde", "okCirc"])
+        : d.contrafirmaEl ? (firmable ? ["Firmaste tú · falta el cliente", "on-azul", "pluma"] : ["Firmaste tú", "on-azul", "pluma"])
+        : d.aprobadoEl ? ["Aprobó", "on-verde", "okCirc"]
+        : firmable && d.pideFirma ? ["Pide firma", "on-azul", "pluma"]
+        : firmable && d.pideAprobacion ? ["Pide aprobación", "on-azul", "okCirc"]
+        : p.portalCompleto ? ["Lo ve (luz verde)", "on-azul", "ojo"]
+        : d.portal ? ["Lo ve", "on-azul", "ojo"]
+        : ["Oculto", "", "ojoNo"];
+      const historia = [];
+      const escondidos = [];
+      if (!p.portalCompleto) escondidos.push(`<button type="button" class="doc-portal" data-id="${d.id}" data-portal="${d.portal ? 1 : 0}"
+          title="${d.portal ? "El cliente SÍ ve este documento — toca para ocultarlo" : "El cliente NO lo ve — toca para mostrárselo"}">${d.portal ? "Ocultar al cliente" : "Enseñar al cliente"}</button>`);
+      if (firmable) {
+        if (d.visitas) historia.push(`${d.visitas.quien === "contratista" ? "El contratista" : "El cliente"} lo abrió ${d.visitas.n === 1 ? "1 vez" : d.visitas.n + " veces"} · última ${fechaHoraFlorida(d.visitas.ultima)} (hora de Florida)`);
+        else if (!d.firmadoEl && d.vistoEl) historia.push(`Visto ${d.vistoEl}`);
+        if (d.firmadoEl) historia.push(`Firmó ${d.firmaNombre || ""} · ${d.firmadoEl}`);
+        else escondidos.push(`<button type="button" class="doc-firma" data-id="${d.id}" data-pide="${d.pideFirma ? 1 : 0}"
+          title="${d.pideFirma ? "Le está pidiendo FIRMA al cliente (nombre + firma con el dedo) — toca para quitarla" : "Pedirle al cliente que lo FIRME (nombre + firma con el dedo, queda de respaldo)"}">${d.pideFirma ? "Quitar la firma pedida" : "Pedir firma"}</button>`);
+        if (d.contrafirmaEl) historia.push(`Contrafirmado ${d.contrafirmaEl}`);
+        else if (usuario.finanzas && esEdgar && (d.pideFirma || d.firmadoEl)) escondidos.push(`<button type="button" class="doc-contrafirma" data-id="${d.id}" data-titulo="${esc(d.titulo)}"
+          title="Firmarlo tú también: tu firma sale en el certificado junto a la del cliente">Firmar yo (Edgar Arboleya)</button>`);
+        if (d.aprobadoEl) historia.push(`Aprobó ${d.aprobadoEl}`);
+        else if (!(d.firmadoEl || d.pideFirma)) escondidos.push(`<button type="button" class="doc-aprobacion" data-id="${d.id}" data-pide="${d.pideAprobacion ? 1 : 0}"
+          title="${d.pideAprobacion ? "Le está pidiendo aprobación al cliente — toca para quitarla" : "Pedirle al cliente que lo apruebe con un toque"}">${d.pideAprobacion ? "Quitar la aprobación pedida" : "Pedir aprobación"}</button>`);
+      }
+      return `<div class="doc-fila" data-fila="doc" data-titulo="${esc(d.titulo)}">
+        ${enlace}
+        <button type="button" class="estado-doc fila-menu${color ? " " + color : ""}" aria-haspopup="dialog">${ico(icono)}<span>${etq}</span></button>
+        ${escondidos.length ? `<span class="herramientas" hidden><!-- botones de siempre: las hojas los activan; no borrar -->${escondidos.join("")}</span>` : ""}
+        ${historia.length ? `<ul class="doc-historia" hidden>${historia.map(h => `<li>${esc(h)}</li>`).join("")}</ul>` : ""}
+      </div>`;
+    };
+    const linksDocs = (p.docs || []).map(filaDoc).join("");
     return `
-      <div class="detalle-seccion zona-peligro">
-        <h3>Zona de peligro</h3>
-        <p class="rent-nota">Eliminar este proyecto borra también sus finanzas, hitos,
-        facturas, horas del equipo, fotos, documentos y pendientes. No hay papelera.</p>
-        <button type="button" class="accion btn-eliminar-proyecto" data-id="${esc(p.id)}">🗑 Eliminar este proyecto</button>
+      <div class="detalle-seccion" id="ficha-docs">
+        <h3>Documentos</h3>
+        <div class="detalle-docs">${linksDocs || `<span class="sin-docs">Este proyecto no tiene documentos todavía.</span>`}</div>
+        <span class="herramientas" hidden><!-- botones de siempre: las hojas los activan; no borrar --><button type="button" class="accion secundaria btn-agregar-doc">+ Agregar documento</button></span>
+        <form class="cal-form form-doc" hidden>
+          <div class="modal-fila">
+            <label>Tipo
+              <select name="clase">
+                <option value="doc">Documento</option>
+                <option value="rfi">RFI</option>
+              </select>
+            </label>
+            <label>Título
+              <input name="titulo" type="text" required placeholder="Ej: SOW firmado" autocomplete="off">
+            </label>
+          </div>
+          <label>Archivo PDF (recomendado — vive en la app, sin permisos de Drive)
+            <input name="archivo" type="file" accept="application/pdf">
+          </label>
+          <label>… o pega un enlace de Drive
+            <input name="url" type="url" placeholder="https://drive.google.com/…" autocomplete="off">
+          </label>
+          <div class="modal-botones">
+            <button type="button" class="accion secundaria form-cerrar">Cancelar</button>
+            <button type="submit" class="accion">Guardar documento</button>
+          </div>
+        </form>
+      </div>`;
+  }
+
+  // Lo que ve el cliente en su portal, el párrafo «dónde vamos» y sus decisiones (solo el dueño)
+  function clienteHTML(p) {
+    if (!usuario.finanzas) return "";
+    const visita = (state.visitasPortal || {})[p.id];
+    const lineaVisita = visita
+      ? `<p class="modal-nota">${ico("ojo")}<span>Última visita:</span> <strong>${esc(fechaHoraFlorida(visita))}</strong> <span>(hora de Florida)</span></p>`
+      : `<p class="modal-nota">El cliente todavía no ha abierto su portal.</p>`;
+    const notaQueVe = p.portalCompleto
+      ? `<strong>Luz verde encendida:</strong> el cliente ve TODOS los documentos —contratos y Change Orders incluidos—,
+         todas las fotos y todos los videos, estén marcados o no. Lo que subas a este proyecto se le publica solo.`
+      : `El cliente ve: etapa, checklist con su %, inspecciones, próximos días de trabajo y los documentos que le enseñes.
+         Los RFI salen siempre; los CONTRATOS nunca salen (tienen precios) a menos que tú los marques.`;
+    const queVe = p.portalToken ? `
+      <div class="detalle-seccion" id="ficha-que-ve">
+        <h3>Qué ve el cliente</h3>
+        <div class="portal-ops">
+          <button type="button" class="lev-chip portal-op${p.portalDinero ? " puesto" : ""}" id="btn-portal-dinero" aria-pressed="${!!p.portalDinero}"
+            title="${p.portalDinero ? "El cliente SÍ ve su contrato, pagos y facturas — toca para ocultarlos" : "El cliente NO ve dinero — toca para mostrarle su contrato, pagos y facturas"}">${ico("dolar")}<span>Ve el dinero:</span> <b>${p.portalDinero ? "SÍ" : "NO"}</b></button>
+          <button type="button" class="lev-chip portal-op${p.portalCompleto ? " puesto" : ""}" id="btn-portal-completo" aria-pressed="${!!p.portalCompleto}"
+            title="${p.portalCompleto ? "Luz verde: el cliente ve TODOS los documentos, fotos y videos — toca para volver al modo uno-a-uno" : "Toca para darle luz verde: verá TODOS los documentos (contratos y CO), fotos y videos sin marcarlos uno a uno"}">${ico("globo")}<span>Acceso completo:</span> <b>${p.portalCompleto ? "SÍ" : "NO"}</b></button>
+        </div>
+        <p class="modal-nota"><span>Email del cliente:</span> <strong>${esc(p.clienteEmail || "sin anotar")}</strong></p>
+        ${lineaVisita}
+        ${plegableHTML(p, "que-ve", "¿Qué ve exactamente?", "", `<p class="modal-nota">${notaQueVe}
+          El dinero solo sale si prendes «Ve el dinero» — pensado para clientes directos, no para trabajos vía contratista.</p>`, false)}
+        <button type="button" class="accion secundaria" data-rapido="compartir">${ico("compartir")}<span>Compartir y avisar</span></button>
+        <div class="herramientas" hidden id="cliente-herramientas"><!-- botones de siempre: las hojas los activan; no borrar -->
+          <button type="button" class="accion secundaria" id="btn-portal-copiar" data-token="${esc(p.portalToken)}">Copiar el link del cliente</button>
+          <button type="button" class="accion secundaria" id="btn-cliente-email" data-id="${esc(p.id)}" data-email="${esc(p.clienteEmail || "")}">Corregir el email del cliente</button>
+          <button type="button" class="accion secundaria" id="btn-portal-regenerar">Regenerar la llave del cliente</button>
+        </div>
+      </div>
+      <div class="detalle-seccion" id="ficha-donde-vamos">
+        <h3>${ico("megafono")}<span>Dónde vamos</span></h3>
+        <p class="cal-sin-eventos" style="margin:.2rem 0 .4rem">${p.portalResumen ? esc(p.portalResumen) : "Sin escribir. El cliente no ve esta tarjeta hasta que digas en qué va la obra."}</p>
+        <button type="button" class="accion secundaria" id="btn-portal-resumen">${ico("lapiz")}<span>${p.portalResumen ? "Cambiar el resumen" : "Escribir el resumen"}</span></button>
+      </div>` : `
+      <div class="detalle-seccion" id="ficha-que-ve">
+        <h3>Qué ve el cliente</h3>
+        ${lineaVisita}
+        <p class="cal-sin-eventos">Corre el SQL del portal para crearle la llave a este proyecto.</p>
+      </div>`;
+    const decisiones = (state.decisiones || []).filter(d => d.proyecto === p.id).map(d => `
+          <div class="eq-reporte${d.hecha ? "" : " eq-pide"}" data-id="${d.id}" data-fila="dec" data-titulo="Decisión del cliente" data-sub="${esc(d.texto)}">
+            <span class="alcance-info">
+              <span class="alcance-titulo">${ico(d.hecha ? "check" : "mano")}<span>${esc(d.texto)}</span></span>
+              ${d.fechaLimite && !d.hecha ? `<span class="alcance-estado">${ico("reloj")}<span>la necesitamos antes del</span> <span>${esc(fechaBonita(d.fechaLimite))}</span></span>` : ""}
+            </span>
+            <button type="button" class="accion secundaria icono fila-menu" aria-label="Opciones" title="Opciones">${ico("puntos") || "⋯"}</button>
+            <span class="herramientas" hidden><!-- botones de siempre: las hojas los activan; no borrar -->${!d.hecha ? `<button type="button" class="btn-dec-hecha" data-id="${d.id}">Marcar decidida</button>` : ""}<button type="button" class="btn-dec-borrar" data-id="${d.id}">Eliminar</button></span>
+          </div>`).join("");
+    return queVe + `
+      <div class="detalle-seccion" id="ficha-decisiones">
+        <h3>Decisiones del cliente</h3>
+        ${decisiones || `<p class="cal-sin-eventos">Sin decisiones pendientes del cliente.</p>`}
+        <span class="herramientas" hidden><!-- botones de siempre: las hojas los activan; no borrar --><button type="button" class="btn-agregar-dec">+</button></span>
+        <form class="cal-form" id="form-decision" hidden>
+          <div class="modal-fila">
+            <label>Qué necesita decidir el cliente
+              <input name="texto" type="text" required placeholder="Ej: elegir el fixture del comedor" autocomplete="off">
+            </label>
+            <label>Para cuándo (opcional)
+              <input name="fecha" type="date">
+            </label>
+          </div>
+          <div class="modal-botones">
+            <button type="button" class="accion secundaria form-cerrar">Cancelar</button>
+            <button type="submit" class="accion secundaria">+ Agregar decisión</button>
+          </div>
+        </form>
       </div>`;
   }
 
@@ -3162,20 +4018,23 @@ function esFalloDeRed(err) {
     const lista = (state.inspecciones || []).filter(i => i.proyecto === p.id);
     const filas = lista.map(i => {
       const r = RES_INSP[i.resultado] || RES_INSP.programada;
-      const detalles = [
-        i.fecha ? "📅 " + fechaBonita(i.fecha) : "",
-        i.permiso ? "Permiso " + esc(i.permiso) : "",
-        i.jurisdiccion ? esc(i.jurisdiccion) : "",
-        i.notas ? esc(sinMontos(i.notas)) : ""
-      ].filter(Boolean).join(" · ");
+      const partes = [
+        i.fecha ? fechaBonita(i.fecha) : "",
+        i.permiso ? "Permiso " + i.permiso : "",
+        i.jurisdiccion || "",
+        i.notas ? sinMontos(i.notas) : ""
+      ].filter(Boolean);
+      const detalles = partes.map(esc).join(" · ");
+      // El dueño ve UN botón con el resultado («Programada ▾»); el select y la
+      // basura de siempre van escondidos y los abre la hoja. El campo ve la ficha de siempre.
       const control = usuario.editar
-        ? `<select class="insp-resultado" data-id="${i.id}" title="Cambiar resultado">
+        ? `<button type="button" class="accion secundaria chica fila-menu" aria-haspopup="dialog"><span>${r.etiqueta}</span>${ico("chevron") || " ▾"}</button>
+           <span class="herramientas" hidden><!-- botones de siempre: las hojas los activan; no borrar --><select class="insp-resultado" data-id="${i.id}" title="Cambiar resultado">
              ${Object.entries(RES_INSP).map(([clave, x]) =>
                `<option value="${clave}"${clave === i.resultado ? " selected" : ""}>${x.etiqueta}</option>`).join("")}
-           </select>
-           <button type="button" class="insp-borrar btn-insp-borrar" data-id="${i.id}" data-tipo="${esc(i.tipo)}" title="Eliminar inspección">🗑</button>`
+           </select><button type="button" class="btn-insp-borrar" data-id="${i.id}" data-tipo="${esc(i.tipo)}" title="Eliminar inspección">Eliminar inspección</button></span>`
         : `<span class="insp-chip ${r.clase}">${r.etiqueta}</span>`;
-      return `<div class="insp-item ${r.clase}">
+      return `<div class="insp-item ${r.clase}" data-fila="insp" data-titulo="Inspección ${esc(i.tipo)}" data-sub="${esc(partes.join(" · "))}">
           <span class="insp-icono">${r.icono}</span>
           <span class="alcance-info">
             <span class="alcance-titulo">Inspección ${esc(i.tipo)}</span>
@@ -3186,7 +4045,7 @@ function esFalloDeRed(err) {
     }).join("");
 
     const form = usuario.editar
-      ? `<button type="button" class="accion secundaria btn-agregar-insp">+ Agregar inspección</button>
+      ? `<span class="herramientas" hidden><!-- botones de siempre: las hojas los activan; no borrar --><button type="button" class="accion secundaria btn-agregar-insp">+ Agregar inspección</button></span>
          <form class="cal-form form-insp" hidden>
            <div class="modal-fila">
              <label>Tipo
@@ -3213,45 +4072,68 @@ function esFalloDeRed(err) {
            <label>Notas (opcional)
              <input name="notas" type="text" placeholder="Ej: llamar al inspector antes de las 8am" autocomplete="off">
            </label>
-           <button type="submit" class="accion">Guardar inspección</button>
+           <div class="modal-botones">
+             <button type="button" class="accion secundaria form-cerrar">Cancelar</button>
+             <button type="submit" class="accion">Guardar inspección</button>
+           </div>
          </form>`
       : "";
 
     if (!filas && !form) return "";
     return `
-      <div class="detalle-seccion">
+      <div class="detalle-seccion" id="ficha-insp">
         <h3>Permisos e inspecciones</h3>
         ${filas || `<span class="sin-docs">Sin inspecciones anotadas todavía.</span>`}
         ${form}
       </div>`;
   }
 
-  // Fotos de obra: las ve y las sube TODO el equipo
+  // Fotos de obra: las ve y las sube TODO el equipo. Cuadrícula con las más
+  // nuevas (9 en el teléfono, 15 en la computadora) y «Ver las N». Al tocar una
+  // se abre el visor, que trae lo que se puede hacer con ella.
   function fotosHTML(p) {
-    const fotos = (state.fotos || []).filter(f => f.proyecto === p.id);
-    const items = fotos.map(f => `
-      <figure class="foto-item">
-        ${esVideo(f.ruta) ? `
+    const todas = (state.fotos || []).filter(f => f.proyecto === p.id)
+      .map((f, i) => ({ f, i }))
+      .sort((x, y) => String(y.f.fecha || "").localeCompare(String(x.f.fecha || "")) || (y.i - x.i))
+      .map(x => x.f);
+    const cuantas = fichaVista.fotosTodas.has(p.id) ? todas.length : (esEscritorio() ? 15 : 9);
+    const fotos = todas.slice(0, cuantas);
+    const items = fotos.map(f => {
+      const nota = f.nota ? sinMontos(f.nota) : "";
+      const pie = [nota, [f.autor, f.fecha].filter(Boolean).join(" ")].filter(Boolean).join(" · ");
+      // Los botones de siempre, con las MISMAS condiciones: el dueño enseña u oculta
+      // (si no hay luz verde) y corrige cualquier nota; el campo solo la de sus fotos,
+      // y no si la nota lleva un monto (el botón guarda la nota entera en data-nota,
+      // y el campo nunca recibe dinero ni escondido)
+      const escondidos = usuario.finanzas ? `${p.portalCompleto ? "" : `
+          <button type="button" class="foto-cliente${f.portal ? " on" : ""}" data-id="${f.id}" data-portal="${f.portal ? 1 : 0}"
+            title="${f.portal ? "El cliente SÍ ve esta foto" : "El cliente NO la ve"}">${f.portal ? "El cliente la ve · ocultársela" : "Enseñársela al cliente"}</button>`}
+          <button type="button" class="foto-nota" data-id="${f.id}" data-nota="${esc(f.nota || "")}"
+            title="Corregir la descripción de la foto">Corregir la nota</button>` : (f.autorId === usuario.id && sinMontos(f.nota || "") === (f.nota || "") ? `
+          <button type="button" class="foto-nota" data-id="${f.id}" data-nota="${esc(f.nota || "")}"
+            title="Corregir la descripción de tu foto">Corregir la nota</button>` : "");
+      const video = esVideo(f.ruta);
+      return `
+      <figure class="foto-item" data-fila="foto" data-sub="${esc(pie)}">
+        ${video ? `
         <video class="foto-mini foto-video" data-ruta="${esc(f.ruta)}" controls preload="metadata" playsinline></video>` : `
-        <a class="foto-enlace" data-ruta="${esc(f.ruta)}" target="_blank" rel="noopener">
-          <img class="foto-mini" data-ruta="${esc(f.ruta)}" alt="${esc(f.nota || "Foto de obra")}" loading="lazy">
+        <a class="foto-enlace" data-ruta="${esc(f.ruta)}" target="_blank" rel="noopener" aria-label="${esc(nota || "Foto de obra")}">
+          <img class="foto-mini" data-ruta="${esc(f.ruta)}" alt="${esc(nota || "Foto de obra")}" loading="lazy">
         </a>`}
-        <figcaption class="foto-pie">${f.nota ? esc(sinMontos(f.nota)) + " · " : ""}${esc(f.autor)} ${esc(f.fecha)}${usuario.finanzas ? `
-          ${p.portalCompleto ? `
-          <span class="cl-chip-aprobado" title="Luz verde encendida: con acceso completo el cliente ve TODAS las fotos, estén marcadas o no">🟢 la ve</span>` : `
-          <button type="button" class="doc-cliente foto-cliente${f.portal ? " on" : ""}" data-id="${f.id}" data-portal="${f.portal ? 1 : 0}"
-            title="${f.portal ? "El cliente SÍ ve esta foto" : "El cliente NO la ve"}">${f.portal ? "👁" : "🚫"}</button>`}
-          <button type="button" class="doc-cliente foto-nota" data-id="${f.id}" data-nota="${esc(f.nota || "")}"
-            title="Corregir la descripción de la foto">✎</button>` : (f.autorId === usuario.id ? `
-          <button type="button" class="doc-cliente foto-nota" data-id="${f.id}" data-nota="${esc(f.nota || "")}"
-            title="Corregir la descripción de tu foto">✎</button>` : "")}</figcaption>
-      </figure>`).join("");
+        ${usuario.finanzas && !p.portalCompleto && f.portal ? `<span class="foto-marca" title="El cliente la ve">${ico("ojo")}</span>` : ""}
+        <figcaption class="foto-pie">${video
+          ? `<button type="button" class="fila-menu" aria-haspopup="dialog">${esc(pie) || "Video"}</button>`
+          : esc(pie)}</figcaption>
+        ${escondidos.trim() ? `<span class="herramientas" hidden><!-- botones de siempre: las hojas los activan; no borrar -->${escondidos}</span>` : ""}
+      </figure>`;
+    }).join("");
+    const faltan = todas.length - fotos.length;
     return `
-      <div class="detalle-seccion">
-        <h3>Fotos de obra</h3>
-        ${p.portalCompleto ? `<div class="aviso-luzverde">🟢 Luz verde encendida: el cliente ve <strong>todas</strong> estas fotos, aunque no estén marcadas 👁.</div>` : ""}
+      <div class="detalle-seccion" id="ficha-fotos">
+        <h3>${todas.length ? `Fotos de obra (${todas.length})` : "Fotos de obra"}</h3>
         ${items ? `<div class="fotos-grid">${items}</div>` : `<span class="sin-docs">Sin fotos todavía.</span>`}
-        <button type="button" class="accion secundaria btn-agregar-foto">📸 Agregar foto o video</button>
+        ${faltan > 0 ? `<button type="button" class="accion secundaria" data-ver-fotos>Ver las ${todas.length}</button>` : ""}
+        <span class="herramientas" hidden><!-- botones de siempre: las hojas los activan; no borrar --><button type="button" class="accion secundaria btn-agregar-foto">Agregar foto o video</button></span>
         <form class="cal-form form-foto" hidden>
           <label>Foto o video corto (cámara o galería)
             <input name="archivo" type="file" accept="image/*,video/mp4,video/quicktime,video/webm" multiple required>
@@ -3259,7 +4141,10 @@ function esFalloDeRed(err) {
           <label>Nota (opcional)
             <input name="nota" type="text" placeholder="Ej: rough del segundo piso terminado" autocomplete="off">
           </label>
-          <button type="submit" class="accion">⬆ Subir foto</button>
+          <div class="modal-botones">
+            <button type="button" class="accion secundaria form-cerrar">Cancelar</button>
+            <button type="submit" class="accion">⬆ Subir foto</button>
+          </div>
         </form>
       </div>`;
   }
@@ -3286,12 +4171,95 @@ function esFalloDeRed(err) {
   // ============================================================
   // NIVEL 4 · FICHA DEL PROYECTO (una pantalla para él solo)
   // ============================================================
-  function irDetalle(id) {
+  // pestana (opcional): abre la ficha directamente en esa pestaña
+  function irDetalle(id, pestana) {
     const p = proyectos().find(x => x.id === id);
     if (!p) return;
     proyectoActivo = id;
+    if (pestana) guardarPestana(id, pestana);
     pintarDetalle();
   }
+
+  // Los toques de la ficha v2 se escuchan UNA sola vez sobre #detalle, que nunca
+  // se reemplaza (solo cambia su contenido). NUNCA llamar esto dentro de
+  // pintarDetalle: cada repintado sumaría otro oído y una factura saldría dos veces.
+  let fichaDelegada = false;
+  function engancharFichaDelegada() {
+    if (fichaDelegada) return;
+    fichaDelegada = true;
+    // Formularios: se marca el que se mandó (no vuelve a abrirse al repintar)
+    // y se desmarca en cuanto se vuelve a escribir (si el guardado falló)
+    $detalle.addEventListener("submit", ev => { if (ev.target && ev.target.dataset) ev.target.dataset.enviado = "1"; }, true);
+    $detalle.addEventListener("input", ev => { const f = ev.target && ev.target.form; if (f) f.dataset.enviado = ""; }, true);
+    // Flechas, Inicio y Fin mueven entre pestañas (como en cualquier barra de pestañas)
+    $detalle.addEventListener("keydown", ev => {
+      const t = ev.target && ev.target.closest ? ev.target.closest(".ficha-tab") : null;
+      if (!t) return;
+      const tabs = [...$detalle.querySelectorAll(".ficha-tab")];
+      const n = tabs.length;
+      let i = tabs.indexOf(t);
+      if (ev.key === "ArrowRight") i = (i + 1) % n;
+      else if (ev.key === "ArrowLeft") i = (i - 1 + n) % n;
+      else if (ev.key === "Home") i = 0;
+      else if (ev.key === "End") i = n - 1;
+      else return;
+      ev.preventDefault();
+      cambiarPestana(tabs[i].dataset.pestana);
+      tabs[i].focus();
+    });
+    $detalle.addEventListener("click", ev => {
+      const t = ev.target;
+      if (!t || !t.closest) return;
+      // Un plegable tocado se recuerda abierto o cerrado
+      const sum = t.closest("summary");
+      const det = sum && sum.parentElement;
+      if (det && det.matches("details[data-plegable]")) {
+        fichaVista.plegables.set(proyectoActivo + ":" + det.dataset.plegable, !det.open);
+        return;
+      }
+      const p = proyectoPorId(proyectoActivo);
+      if (!p) return;
+      let el;
+      if ((el = t.closest("a.foto-enlace"))) { ev.preventDefault(); abrirVisorFoto(el.closest("[data-fila], figure")); return; }
+      if ((el = t.closest(".ficha-tab"))) { cambiarPestana(el.dataset.pestana); return; }
+      if ((el = t.closest(".senal[data-ir]"))) { irSenal(el.dataset.ir); return; }
+      if ((el = t.closest("[data-rapido]"))) {
+        const r = el.dataset.rapido;
+        if (r === "estado") menuEstado(p);
+        else if (r === "camara") fotoRapida(p.id);
+        else if (r === "agregar") menuAgregar(p);
+        else if (r === "compartir") menuCompartir(p);
+        else if (r === "senales-mas") menuSenales(p);
+        return;
+      }
+      if ((el = t.closest(".fila-menu"))) {
+        const fila = el.closest("[data-fila]");
+        if (fila && fila.dataset.fila === "foto") abrirVisorFoto(fila); else menuDeFila(el);
+        return;
+      }
+      if ((el = t.closest("[data-corregir]"))) {
+        const on = !fichaVista.editando.has(p.id);
+        if (on) fichaVista.editando.add(p.id); else fichaVista.editando.delete(p.id);
+        const po = $detalle.querySelector("#panel-obra");
+        if (po) po.classList.toggle("editando", on);
+        $detalle.querySelectorAll("[data-corregir]").forEach(b => {
+          b.classList.toggle("puesto", on);
+          b.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+        return;
+      }
+      if ((el = t.closest(".gc-modo-op"))) { cambiarModoGC(el); return; }
+      if ((el = t.closest("[data-ver-fotos]"))) { fichaVista.fotosTodas.add(p.id); pintarDetalle(); return; }
+      if ((el = t.closest(".form-cerrar"))) { const f = el.closest("form"); if (f) f.hidden = true; return; }
+      if ((el = t.closest(".btn-ir-checklist"))) { irChecklist(p.id); return; }
+      if ((el = t.closest(".btn-agregar-dec"))) {
+        const f = $detalle.querySelector("#form-decision");
+        if (f) f.hidden = !f.hidden;
+      }
+    });
+    window.addEventListener("resize", () => { if (!$vDetalle.hidden) medirMembrete(); }, { passive: true });
+  }
+  engancharFichaDelegada();
 
   function pintarDetalle() {
     const p = proyectos().find(x => x.id === proyectoActivo);
@@ -3301,16 +4269,28 @@ function esFalloDeRed(err) {
       if (tipoActivo && etapaActiva) irLista(etapaActiva); else irHome();
       return;
     }
+    // ¿Es la MISMA ficha que ya está a la vista (se repinta tras guardar algo)?
+    // Entonces la pantalla se queda donde estaba, con los formularios abiertos.
+    const mismo = !$vDetalle.hidden && $detalle.dataset.pid === String(p.id);
+    const y = mismo ? window.scrollY : 0;
+    const forms = mismo ? recordarForms() : [];
     mostrar("detalle", {
       kicker: `${TIPOS[p.tipo] ? TIPOS[p.tipo].etiqueta : ""} · ${ESTADOS[p.estado] ? ESTADOS[p.estado].etiqueta : p.estado}`,
       titulo: p.nombre,
       volver: true,
-      nuevo: false
+      nuevo: false,
+      mantenerScroll: mismo
     });
     $detalle.innerHTML = fichaProyectoHTML(p);
-    // las palomitas del alcance en la ficha: mismos botones que en Checklist
+    $detalle.dataset.pid = String(p.id);
+    medirMembrete();
+    devolverForms(forms);
+    if (mismo) { window.scrollTo(0, y); requestAnimationFrame(() => window.scrollTo(0, y)); }
+    // las palomitas del alcance y de los pendientes: mismos botones que en Checklist
     const cajaAlc = $detalle.querySelector("#ficha-alcance");
     if (cajaAlc) engancharTareas(cajaAlc, pintarDetalle);
+    const cajaPend = $detalle.querySelector("#ficha-pendientes");
+    if (cajaPend) engancharTareas(cajaPend, pintarDetalle);
 
     $detalle.querySelectorAll(".accion").forEach(btn => {
       if (btn.dataset.accion)
@@ -3417,15 +4397,13 @@ function esFalloDeRed(err) {
       if (!gc0) return;
       if (!gc0.email) { avisar("El contratista no tiene email. Ponlo en Licencia y seguros ✎", true); return; }
       const conDinero = p0.contratistaModo === "contrato";
-      const que = prompt(
-        `¿Qué le aviso a ${gc0.nombre}?\n\n` +
-        "1 = pasó la inspección\n" +
-        (conDinero ? "2 = se emitió una factura\n" : "") +
-        "3 = licencia y seguros al día\n" +
-        (conDinero ? "4 = hay un contrato nuevo esperando su firma\n" : "") + "\nEscribe el número:", "1");
-      if (que === null) return;
-      const tipo = { "1": "inspeccion", "2": "factura", "3": "coi", "4": "contrato" }[String(que).trim()];
-      if (!tipo) { avisar("No entendí el número", true); return; }
+      // Una lista para tocar, en vez de escribir un número (las de dinero solo en modo contrato)
+      const opciones = [{ valor: "inspeccion", texto: "Pasó la inspección" }];
+      if (conDinero) opciones.push({ valor: "factura", texto: "Se emitió una factura" });
+      opciones.push({ valor: "coi", texto: "Licencia y seguros al día" });
+      if (conDinero) opciones.push({ valor: "contrato", texto: "Hay un contrato esperando su firma" });
+      const tipo = await elegirDeLista(`¿Qué le aviso a ${gc0.nombre}?`, opciones);
+      if (!tipo) return;
       if ((tipo === "factura" || tipo === "contrato") && !conDinero) { avisar("Esta obra la paga el dueño: el contratista no factura ni firma aquí", true); return; }
       btnGCAvisar.disabled = true;
       try {
@@ -3434,25 +4412,14 @@ function esFalloDeRed(err) {
       } catch (e) { avisar("No salió el aviso: " + e.message, true); }
       btnGCAvisar.disabled = false;
     });
-    const btnGCModo = $detalle.querySelector("#btn-gc-modo");
-    if (btnGCModo) btnGCModo.addEventListener("click", async () => {
-      const p0 = proyectos().find(x => x.id === proyectoActivo);
-      const nuevo = p0 && p0.contratistaModo === "contrato" ? "referido" : "contrato";
-      if (nuevo === "contrato" &&
-          !confirm("¿El contrato de esta obra es con el contratista?\n\nSi dices que sí, en su portal verá los hitos, lo facturado y lo cobrado de esta obra.")) return;
-      try {
-        await DB.cambiarProyecto(proyectoActivo, { contratista_modo: nuevo });
-        await recargar(proyectoActivo);
-        avisar(nuevo === "contrato" ? "Le facturamos a ellos ✓" : "Solo coordinan — sin dinero ✓");
-      } catch (err) { avisar("No se pudo: " + err.message, true); }
-    });
     const btnNTO = $detalle.querySelector("#btn-nto-hecho");
     if (btnNTO) btnNTO.addEventListener("click", async () => {
       const como = prompt("¿Cómo mandaste el Notice to Owner? (certificado, servicio, en mano…)", "correo certificado");
       if (como === null) return;
       try {
+        // El día de hoy EN FLORIDA (a las 9 de la noche en UTC ya es mañana)
         await DB.cambiarProyecto(proyectoActivo, {
-          nto_enviado_el: new Date().toISOString(),
+          nto_enviado_el: new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }),
           nto_nota: como.trim() || null
         });
         await recargar(proyectoActivo);
@@ -3529,6 +4496,7 @@ function esFalloDeRed(err) {
     // el documento queda "firmado por las dos partes" en el portal)
     $detalle.querySelectorAll(".doc-contrafirma").forEach(btn => {
       btn.addEventListener("click", async () => {
+        if (usuario.id !== EDGAR_ID) { avisar("Solo Edgar puede firmar en su nombre.", true); return; }
         if (!confirm(`Vas a firmar "${btn.dataset.titulo}" como:\n\nEdgar Arboleya\nMax Power Electrical Solutions Inc. (EC13016045)\n\nTu firma saldrá en el certificado junto a la del cliente. ¿Firmar?`)) return;
         try {
           await DB.cambiarDocumento(btn.dataset.id, {
@@ -3578,8 +4546,27 @@ function esFalloDeRed(err) {
         const pregunta = destino
           ? `¿Crear esta factura en QuickBooks y MANDARLA ahora a ${quien}?`
           : "Este proyecto no tiene email de cobro. ¿Crear la factura en QuickBooks SIN mandarla? (después la mandas desde QuickBooks)";
+        // Candado que no depende del botón: si la ficha se repintó mientras se
+        // facturaba, el botón nuevo no sabe nada; este apunte sí (P03)
+        const clave = String(btn.dataset.hito);
+        if (facturandoHitos.has(clave) || cobrandoHitos.has(clave)) { avisar("Ese hito ya se está facturando: espera a que termine.", true); return; }
         if (!confirm(pregunta)) return;
-        btn.disabled = true; btn.textContent = "⏳";
+        if (facturandoHitos.has(clave) || cobrandoHitos.has(clave)) return;
+        facturandoHitos.add(clave);
+        // El botón que se ve es el «Facturar ▾» del renglón: se apaga y dice
+        // «Facturando…» mientras tanto, y devolver() le pone su etiqueta de nuevo
+        const vis = btn.closest("[data-fila]")?.querySelector(".fila-menu");
+        const etq = vis ? vis.innerHTML : "";
+        const devolver = () => {
+          facturandoHitos.delete(clave);
+          btn.disabled = false;
+          if (vis) { vis.disabled = false; vis.innerHTML = etq; }
+          // Si la ficha se repintó mientras tanto, el botón a la vista es otro
+          // (el apagado «Facturando…»): se repinta para devolverle su etiqueta
+          if (vis && !vis.isConnected && !$vDetalle.hidden) pintarDetalle();
+        };
+        btn.disabled = true;
+        if (vis) { vis.disabled = true; vis.textContent = "Facturando…"; }
         try {
           const pedir = extra => fetch("https://zeogjvwcmstmkwxjvykz.supabase.co/functions/v1/qb", {
             method: "POST",
@@ -3594,13 +4581,13 @@ function esFalloDeRed(err) {
           if (d.error === "cliente_ambiguo") {
             const cands = Array.isArray(d.candidatos) ? d.candidatos : [];
             if (!cands.length) {
-              avisar("QuickBooks no encontró el cliente de esta obra: créalo primero en QuickBooks y vuelve a tocar 🧾.", true);
-              btn.disabled = false; btn.textContent = "🧾";
+              avisar("QuickBooks no encontró el cliente de esta obra: créalo primero en QuickBooks y vuelve a tocar Facturar.", true);
+              devolver();
               return;
             }
             const elegido = await elegirDeLista("¿Cuál de estos clientes de QuickBooks es el de esta obra?",
               cands.map(c => ({ valor: String(c.id), texto: c.nombre || ("Cliente " + c.id) })));
-            if (!elegido) { btn.disabled = false; btn.textContent = "🧾"; return; }
+            if (!elegido) { devolver(); return; }
             r = await pedir({ qb_customer_id: elegido });
             d = await r.json().catch(() => ({}));
           }
@@ -3617,13 +4604,16 @@ function esFalloDeRed(err) {
                 : `Factura ${num}creada en QuickBooks ✓ (sin mandar)`));
             if (Array.isArray(d.avisos) && d.avisos.length) setTimeout(() => avisar(d.avisos.join(" · "), true), 2500);
             if (d.link && !enTelefono) window.open(d.link, "_blank", "noopener");
-            await recargar();
+            // La factura ya existe: se suelta el candado ANTES de recargar, así el
+            // repintado enseña el hito ya facturado (y no un «Facturando…» colgado)
+            facturandoHitos.delete(clave);
+            await recargar().catch(() => {});
             return;
           }
           if (d.error === "sin_conexion" || r.status === 404) { await planB(); }
           else avisar("QuickBooks dijo: " + (d.detalle || d.error || "error"), true);
         } catch { await planB(); }
-        btn.disabled = false; btn.textContent = "🧾";
+        devolver();
       });
     });
     // 💵 Marcar un HITO como cobrado — y ofrecer sumarlo a "cobrado" del
@@ -3633,32 +4623,35 @@ function esFalloDeRed(err) {
     $detalle.querySelectorAll(".hito-cobrar").forEach(btn => {
       btn.addEventListener("click", async () => {
         const monto = Number(btn.dataset.monto) || 0;
+        // El mismo candado del Facturar: no se cobra un hito que ya se está cobrando o facturando
+        const clave = String(btn.dataset.hito);
+        if (facturandoHitos.has(clave) || cobrandoHitos.has(clave)) { avisar("Ese hito ya se está guardando: espera a que termine.", true); return; }
         if (!confirm(`¿Ya entró el dinero de "${btn.dataset.titulo}" (${fmt(monto)})?`)) return;
+        if (facturandoHitos.has(clave) || cobrandoHitos.has(clave)) return;
         const p = proyectoPorId(proyectoActivo);
+        // activar() apaga también el botón visible del renglón: si falla, se encienden los dos
+        const vis = btn.closest("[data-fila]")?.querySelector(".fila-menu");
+        cobrandoHitos.add(clave);
         btn.disabled = true;
         try {
           await DB.cambiarHito(btn.dataset.hito, { estado: "cobrado" });
           await sumarACobrado(p, monto, `el hito "${btn.dataset.titulo}"`);
+          cobrandoHitos.delete(clave);
           await recargar();
           avisar("💵 Hito marcado cobrado ✓");
-        } catch (err) { avisar("No se pudo: " + err.message, true); btn.disabled = false; }
+        } catch (err) {
+          cobrandoHitos.delete(clave);
+          avisar("No se pudo: " + err.message, true);
+          btn.disabled = false;
+          if (vis) vis.disabled = false;
+          if (vis && !vis.isConnected && !$vDetalle.hidden) pintarDetalle();
+        }
       });
     });
 
-    // ✓ Marcar una FACTURA como cobrada
+    // ✓ Marcar una FACTURA como cobrada (el mismo cuerpo que la tarjeta de la lista)
     $detalle.querySelectorAll(".factura-pagada").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const monto = Number(btn.dataset.monto) || 0;
-        if (!confirm(`¿Se cobró la factura #${btn.dataset.num} (${fmt(monto)})?`)) return;
-        const p = proyectoPorId(proyectoActivo);
-        btn.disabled = true;
-        try {
-          await DB.cambiarFactura(btn.dataset.id, { pagada: true });
-          await sumarACobrado(p, monto, `la factura #${btn.dataset.num}`);
-          await recargar();
-          avisar("✓ Factura marcada cobrada");
-        } catch (err) { avisar("No se pudo: " + err.message, true); btn.disabled = false; }
-      });
+      btn.addEventListener("click", () => marcarFacturaCobrada(btn));
     });
 
     $detalle.querySelectorAll(".foto-nota").forEach(btn => {
@@ -3687,12 +4680,13 @@ function esFalloDeRed(err) {
       e.preventDefault();
       const d = new FormData(formDec);
       const texto = (d.get("texto") || "").toString().trim();
-      if (!texto) return;
+      // Si no se guarda, se desmarca: el formulario vuelve igual en el siguiente repintado
+      if (!texto) { formDec.dataset.enviado = ""; return; }
       try {
         await DB.crearDecision({ proyecto_id: proyectoActivo, texto, fecha_limite: d.get("fecha") || null });
         await recargar();
         avisar("Decisión agregada ✓ — el cliente la verá en su portal");
-      } catch (err) { avisar("No se pudo: " + err.message, true); }
+      } catch (err) { formDec.dataset.enviado = ""; avisar("No se pudo: " + err.message, true); }
     });
     $detalle.querySelectorAll(".btn-dec-hecha").forEach(btn =>
       btn.addEventListener("click", async () => {
@@ -3723,11 +4717,14 @@ function esFalloDeRed(err) {
         const titulo = (d.get("titulo") || "").toString().trim();
         const archivo = formDoc.elements.archivo.files[0] || null;
         const url = (d.get("url") || "").toString().trim();
+        // Si no se guarda, se desmarca: el formulario vuelve igual en el siguiente repintado
         if (!archivo && !url) {
+          formDoc.dataset.enviado = "";
           avisar("Ponle el archivo PDF o pega el enlace de Drive.", true);
           return;
         }
         if (archivo && archivo.size > 20 * 1024 * 1024) {
+          formDoc.dataset.enviado = "";
           avisar("Ese PDF pasa de 20 MB — comprímelo o usa el enlace de Drive.", true);
           return;
         }
@@ -3752,6 +4749,7 @@ function esFalloDeRed(err) {
           await recargar();
           avisar(clase === "rfi" ? "RFI guardado ✓" : "Documento guardado ✓");
         } catch (err) {
+          formDoc.dataset.enviado = "";
           avisar("No se pudo guardar: " + err.message, true);
           $btnDoc.disabled = false;
           $btnDoc.textContent = "Guardar documento";
@@ -3780,6 +4778,7 @@ function esFalloDeRed(err) {
           await recargar();
           avisar("Inspección guardada ✓" + (d.get("fecha") ? " — ya aparece en el calendario" : ""));
         } catch (err) {
+          formInsp.dataset.enviado = "";
           avisar("No se pudo guardar: " + err.message, true);
         }
       });
@@ -3860,6 +4859,9 @@ function esFalloDeRed(err) {
         e.preventDefault();
         const d = new FormData(formExt);
         const horasTxt = (d.get("horas") || "").toString().trim();
+        // Se apaga mientras guarda: con mala señal, un segundo toque anotaba el gasto dos veces
+        const $b = formExt.querySelector('button[type="submit"]');
+        $b.disabled = true;
         try {
           await DB.crearExterno({
             proyecto_id: p.id,
@@ -3872,7 +4874,7 @@ function esFalloDeRed(err) {
           });
           await recargar();
           avisar("Trabajo externo anotado ✓ — ya cuenta como gasto del proyecto");
-        } catch (err) { avisar("No se pudo anotar: " + err.message, true); }
+        } catch (err) { formExt.dataset.enviado = ""; avisar("No se pudo anotar: " + err.message, true); $b.disabled = false; }
       });
     }
     $detalle.querySelectorAll(".btn-ext-borrar").forEach(btn => {
@@ -3901,7 +4903,7 @@ function esFalloDeRed(err) {
       formFoto.addEventListener("submit", async e => {
         e.preventDefault();
         const archivos = [...formFoto.elements.archivo.files];
-        if (!archivos.length) return;
+        if (!archivos.length) { formFoto.dataset.enviado = ""; return; }
         const nota = (formFoto.elements.nota.value || "").trim() || null;
         const $btn = formFoto.querySelector('button[type="submit"]');
         $btn.disabled = true;
@@ -3932,6 +4934,9 @@ function esFalloDeRed(err) {
         }
         $btn.disabled = false;
         $btn.textContent = textoSubir();
+        // Si no subió ninguna, el formulario sigue abierto: se desmarca para que no
+        // se pierda en el siguiente repintado
+        if (!subidas) formFoto.dataset.enviado = "";
         // Una sola recarga al final, no una por foto
         if (subidas) {
           await recargar();
@@ -3945,17 +4950,17 @@ function esFalloDeRed(err) {
     // Documentos que viven en la app: pedir sus enlaces firmados
     const rutasDocs = [...$detalle.querySelectorAll("[data-docruta]")].map(a => a.dataset.docruta);
     if (rutasDocs.length) {
-      DB.firmarFotos(rutasDocs).then(mapa => {
+      firmarConMemoria(rutasDocs).then(mapa => {
         $detalle.querySelectorAll("[data-docruta]").forEach(a => {
           if (mapa[a.dataset.docruta]) a.href = mapa[a.dataset.docruta];
         });
       }).catch(() => avisar("No se pudieron cargar los documentos — revisa la señal.", true));
     }
 
-    // Pedir los enlaces temporales de las fotos y pintarlas
+    // Pedir los enlaces temporales de las fotos pintadas y ponerlas (con memoria de 50 min)
     const rutas = [...$detalle.querySelectorAll(".foto-mini")].map(i => i.dataset.ruta);
     if (rutas.length) {
-      DB.firmarFotos(rutas).then(mapa => {
+      firmarConMemoria(rutas).then(mapa => {
         $detalle.querySelectorAll(".foto-mini").forEach(img => {
           if (mapa[img.dataset.ruta]) img.src = mapa[img.dataset.ruta];
         });
@@ -3983,6 +4988,9 @@ function esFalloDeRed(err) {
     const p = proyectos().find(x => x.id === id);
     if (!p) return;
     if (accion === "alcance") { irAlcance(id); return; }
+    // Completar puede poner la fecha de terminada: se pregunta antes
+    if (accion === "completar" && !confirm(`¿Marcar «${p.nombre}» como COMPLETADA?\n\nSale de las obras en ejecución. Si fue sin querer, se reabre desde el estado.`)) return;
+    const faseAntes = p.fase;
     const fases = fasesDe(p);
     const idx = Math.max(0, fases.findIndex(f => f.clave === p.fase));
     let cambios = null;
@@ -4001,6 +5009,23 @@ function esFalloDeRed(err) {
       await DB.cambiarProyecto(id, cambios);
       Object.assign(p, { estado: cambios.estado || p.estado, fase: cambios.fase || p.fase });
       refrescarVistaProyecto(id);
+      // Pasar de fase es un solo toque: por si fue sin querer, 5 segundos para deshacerlo
+      // (solo devuelve la fase; el estado no se toca)
+      if (accion === "fase-adelante" && cambios.fase && cambios.fase !== faseAntes) {
+        const nueva = fases.find(f => f.clave === cambios.fase);
+        avisarDeshacer("Fase: " + (nueva ? nueva.etiqueta : cambios.fase) + " ✓", async () => {
+          try {
+            const volver = faseAntes || fases[0].clave;
+            await DB.cambiarProyecto(id, { fase: volver });
+            // Si hubo una recarga en estos 5 segundos, la obra de la pantalla es otro objeto
+            const p2 = proyectoPorId(id);
+            if (p2) p2.fase = volver;
+            p.fase = volver;
+            refrescarVistaProyecto(id);
+            avisar("Fase devuelta ✓");
+          } catch (err) { avisar("No se pudo: " + err.message, true); }
+        });
+      }
     } catch (err) {
       avisar("No se pudo guardar: " + err.message, true);
     }
@@ -10380,17 +11405,21 @@ Power done right the first time. ⚡`;
       .sort((a, b) => a.fecha.localeCompare(b.fecha))
       .slice(0, 6);
     if (!evs.length) return "";
-    return `
-      <div class="detalle-seccion">
-        <h3>📅 Próximos días de trabajo</h3>
-        ${evs.map(e => `<div class="agenda-item">
+    // Los 3 primeros a la vista; el resto (hasta 6) en «Ver N más»
+    const fila = e => `<div class="agenda-item">
           <span class="agenda-hora">${esc(e.fecha.slice(5))} ${esc(e.hora || "")}</span>
           <span class="agenda-info">
             <span class="agenda-titulo">${esc(sinMontos(e.titulo))}</span>
             ${e.asignados && e.asignados.length ? `<span class="agenda-lugar">👤 ${esc(e.asignados.join(", "))}</span>` : ""}
             ${e.ubicacion ? `<span class="agenda-lugar">📍 ${esc(e.ubicacion)}</span>` : ""}
           </span>
-        </div>`).join("")}
+        </div>`;
+    const mas = evs.slice(3);
+    return `
+      <div class="detalle-seccion" id="ficha-eventos">
+        <h3>📅 Próximos días de trabajo</h3>
+        ${evs.slice(0, 3).map(fila).join("")}
+        ${mas.length ? plegableHTML(p, "eventos-mas", `Ver ${mas.length} más`, "", mas.map(fila).join(""), false) : ""}
       </div>`;
   }
   function pintarDiaPanel() {
