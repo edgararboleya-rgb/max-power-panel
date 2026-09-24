@@ -58,6 +58,7 @@ EOF
 fi
 
 if ! runuser -u postgres -- "$BIN/bin/pg_ctl" -D "$DATOS" status >/dev/null 2>&1; then
-  runuser -u postgres -- "$BIN/bin/pg_ctl" -D "$DATOS" -l "$LOG" -w start >/dev/null
+  # setsid: que el servidor no muera con la sesión de la terminal que lo arrancó.
+  setsid runuser -u postgres -- "$BIN/bin/pg_ctl" -D "$DATOS" -l "$LOG" -w start >/dev/null
 fi
 runuser -u postgres -- psql -h /var/run/postgresql -p 5433 -Atc "select version()"
