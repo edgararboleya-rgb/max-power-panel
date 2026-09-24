@@ -4130,7 +4130,7 @@ function esFalloDeRed(err) {
       ? contratos.map(t => `<option value="">📄 Contrato — ${esc(t.titulo)}</option>`).join("")
       : `<option value="">📄 Contrato base (sin SOW subido aún)</option>`;
     const opcionesCO = Object.keys(porCO).map(Number).sort((a, b) => a - b)
-      .map(n => `<option value="${esc("CO #" + n)}">🧾 CO #${n} — ${esc(porCO[n])}</option>`).join("");
+      .map(n => `<option value="${esc("CO #" + n)}">🧾 CO #${n} — ${esc(sinMontos(porCO[n]))}</option>`).join("");
     sel.innerHTML = opcionesBase + opcionesCO +
       `<option value="__otro__">✍️ Otro (escribirlo)</option>`;
   }

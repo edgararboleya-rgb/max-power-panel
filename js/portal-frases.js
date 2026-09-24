@@ -6,6 +6,27 @@
    esta lista, sale tal cual: nunca se inventa una traducción.
    ============================================================================ */
 window.MXP_FRASES = [
+  /* Las 20 que todavía salían en español — 24-sep (P36) */
+  [/^Al completar el pathway y las 4 corridas de Cat6 · firmado por el cliente el (\d+)-ago$/i, "On completion of the pathway and the 4 Cat6 runs · signed by the client on Aug $1"],
+  [/^Al completar el trabajo$/i, "On completion of the work"],
+  [/^Al firmar \/ movilización \(cobrado en un año fiscal anterior\)$/i, "On signing / mobilization (collected in a prior fiscal year)"],
+  [/^Al firmar el contrato$/i, "On signing the contract"],
+  [/^Al terminar el rough-in \(no depende del drywall ni de los fixtures del dueño\)$/i, "On completion of the rough-in (does not depend on drywall or the owner's fixtures)"],
+  [/^Change Order #(\d+) — Cat6 data pathway \(50% depósito, cobrado con M2\)$/i, "Change Order #$1 — Cat6 data pathway (50% deposit, collected with M2)"],
+  [/^Change Order #(\d+) — cocina\/comedor Rev\. (\d+) \+ baño master$/i, "Change Order #$1 — kitchen/dining Rev. $2 + master bath"],
+  [/^Change order \(requerido por el inspector\) cobrado (\S+)$/i, "Change order (required by the inspector) collected $1"],
+  [/^Devices finales, programación del sistema e inspección final aprobada$/i, "Final devices, system programming and final inspection passed"],
+  [/^Facturado aparte el (\d+)-sep \((\S+)\)$/i, "Invoiced separately on Sep $1 ($2)"],
+  [/^Fee de supervisión y revisión para el permiso$/i, "Supervision and review fee for the permit"],
+  [/^Inspección final pasada$/i, "Final inspection passed"],
+  [/^Pago completo al terminar \(sin depósito, por el monto del contrato\)$/i, "Full payment on completion (no deposit, for the contract amount)"],
+  [/^Pago único al completar$/i, "Single payment on completion"],
+  [/^Pago único — al completar el trabajo$/i, "Single payment — on completion of the work"],
+  [/^Rough-in terminado \(canalización, cajas y circuitos\)$/i, "Rough-in complete (raceways, boxes and circuits)"],
+  [/^Sin depósito: el total a los (\d+) días de terminar$/i, "No deposit: the full amount $1 days after completion"],
+  [/^Trabajo ya hecho por otros; revisión en sitio y trámite del permiso$/i, "Work already done by others; on-site review and permit processing"],
+  [/^Trim terminado$/i, "Trim complete"],
+  [/^Trim, fixtures e inspección final aprobada$/i, "Trim, fixtures and final inspection passed"],
   [/^Añadido — .*$/i, "Add-on work"],
   [/Milestone (\d+) — (\d+)% movilización/i, "Milestone $1 — $2% mobilization"],
   [/Milestone (\d+) — (\d+)% avance/i, "Milestone $1 — $2% progress"],
