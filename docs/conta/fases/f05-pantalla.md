@@ -39,3 +39,13 @@ contabilidad.
 Ves tu P&L en el teléfono; si desconectas una tabla a propósito la pantalla
 **te lo dice** en vez de enseñar ceros; y **un trabajador con su login no ve ni
 el botón ni una fila**.
+
+## Vista previa (24-sep)
+`docs/conta/f05-vista-previa.html`: una sola página con datos de ejemplo que
+imita la app (membrete, mosaico con el botón nuevo, pestañas Bandeja ·
+Balanza · Resultados · Libro, clic de la cifra al asiento y del asiento al
+recibo, la marcha en paralelo contra QuickBooks línea por línea) y los tres
+estados que exige esta fase: «Sin señal», la falla ruidosa (0 filas donde
+debía haber 88 cuentas: no se pinta nada) y la vista del equipo (sin botón).
+Se publicó como artefacto para que Edgar la abriera en el teléfono y dijera
+qué cambiar antes de construir `js/conta.js`.
