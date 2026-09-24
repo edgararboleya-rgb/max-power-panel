@@ -8,34 +8,48 @@
 -- corrompe después; si queda mal, no hay pantalla que lo salve.
 --
 -- DOS BLOQUES, separados por la línea «-- ==== BLOQUE B ====»:
---   A · Las tablas y unas funciones MÍNIMAS, sin controles. Existen para
---       probar en rojo: con solo el bloque A, c2-pruebas.sql tiene que
---       fallar porque los ataques ENTRAN, no porque falte una función.
---       Las mínimas se crean SOLO si la función no existe: pegar el
---       archivo por segunda vez nunca baja un control, ni un instante.
+--   A · Las tablas y unas funciones MÍNIMAS, sin controles de contenido.
+--       Existen para probar en rojo: con solo el bloque A, c2-pruebas.sql
+--       tiene que fallar porque los ataques ENTRAN, no porque falte una
+--       función. Las mínimas se crean SOLO si la función no existe: pegar
+--       el archivo por segunda vez nunca baja un control, ni un instante.
 --   B · Los controles: triggers, numeración, cadena de hashes, período,
---       reverso, las funciones de verdad, RLS y permisos.
+--       reverso, las funciones de verdad y el verificador.
+-- EL ROJO SE CORRE SOLO EN EL BANCO DE PRUEBAS (pruebas/conta/correr.sh
+-- con «c2-libro.sql:A»). En Supabase este archivo se pega SIEMPRE entero:
+-- entre un bloque A pegado solo y el bloque B, el libro no tiene guardas,
+-- y lo que entre en esa ventana no se podría borrar después. Por si acaso
+-- se pega solo por error, el bloque A nace cerrado (RLS y permisos, A.9)
+-- y sus funciones mínimas solo dejan pasar al dueño; y el bloque B se
+-- niega a ponerse encima de datos escritos sin controles (B.0, MX000).
 --
 -- LOS ERRORES CON NOMBRE (conta.js los traduce mirando el código ANTES
 -- de que enCristiano los pise):
---   MX000  falta algo que el archivo da por hecho (precondición)
+--   MX000  falta algo que el archivo da por hecho (precondición), o el
+--          bloque B encuentra datos escritos con el bloque A solo
 --   MX001  descuadre: debe ≠ haber, o menos de dos líneas
---   MX002  período: cerrado, inexistente, de apertura, cierre fuera de
---          orden, o un intento de reabrir
+--   MX002  período: cerrado, inexistente, anterior a la apertura, a más
+--          de lo permitido en el futuro, de apertura, fuera de orden, con
+--          un hueco en el calendario, o un intento de reabrir o de borrar
 --   MX003  inmutable: update, delete o truncate del libro; una línea
---          nueva en un asiento ya sellado; un contador que salta
+--          nueva en un asiento ya sellado (también si llega de otra sesión:
+--          se mira otra vez al confirmar); un contador que salta; una obra
+--          con asientos que se quiere borrar
 --   MX004  cuenta: no existe, está inactiva o es de grupo
 --   MX005  monto: más de dos decimales, cero, no numérico o fuera de rango
 --   MX006  dimensión: la obra, el cost code, el co o la fase no son los
 --          que pide la cuenta (cuentas.regla_obra / regla_cost_code), o
 --          un asiento de apertura con cuentas de resultados
 --   MX007  reverso: ya reversado, reversar un reverso, reverso que no es
---          el espejo exacto, o un reversible sin su reverso del día 1
+--          el espejo exacto, un reversible sin su reverso del día 1, o un
+--          sustituto (sustituye_a) que no sustituye a un asiento reversado
+--          de su mismo documento
 --   42501  permiso: solo el dueño postea; anon y service_role, nada
---   22023  entrada mal formada (clave desconocida, camino no válido…)
+--   22023  entrada mal formada (clave desconocida, camino no válido,
+--          afecta_periodo sin tipo ajuste_cpa, ajuste_cpa sin motivo…)
 --   22007  fecha que no viene como texto AAAA-MM-DD
---   23505  en asientos_origen_unico: ese documento ya tiene su asiento
---          (la idempotencia de los puentes de f03)
+--   23505  ese documento ya tiene su asiento VIVO (la idempotencia de los
+--          puentes de f03: correr un puente dos veces no duplica)
 --
 -- QUIÉN LLAMA QUÉ (la frontera se decide aquí):
 --   · El dueño, por RPC desde conta.js (grant a authenticated; cada
@@ -47,8 +61,8 @@
 --       fn_verificar_cadena()                     hashes, numeración, triggers, permisos
 --       fn_abrir_periodo(p_mes 'AAAA-MM'), fn_cerrar_periodo(p_periodo text)
 --       fn_fecha_miami(t timestamptz)             «hoy» en Miami, calculado en SQL
---     Y lee directo (select, con la policy solo-dueño) cuentas, periodos,
---     contadores, asientos y asiento_lineas.
+--     Y lee directo (select, con la policy solo-dueño) cuentas,
+--     cuentas_historial, periodos, contadores, asientos y asiento_lineas.
 --   · Solo por dentro (sin grant a ningún rol de la API):
 --       fn_postear_interno(asiento jsonb)  la usan los puentes de f03
 --         (SECURITY DEFINER, camino 'puente', con su documento de origen).
@@ -57,24 +71,63 @@
 --       fn_reversar_interno(...)           la usan fn_reversar, el reverso
 --         automático y los puentes (un recibo anulado se reversa).
 --   · El SQL Editor (el dueño de la base) puede llamar a todas. Queda
---     escrito en cada asiento como rol_bd = 'postgres'.
+--     escrito en cada asiento como rol_bd = 'postgres', con la conexión
+--     de la que vino en la procedencia (application_name, dirección y
+--     puerto del cliente).
 --   · service_role (las funciones de borde, la IA) solo LEE: no ejecuta
 --     ninguna función que escriba. «La IA propone, nunca postea» lo
---     garantiza la base, no la buena voluntad del código.
+--     garantiza la base PARA LO QUE ENTRA POR LA API. Una conexión directa
+--     a Postgres (el secreto SUPABASE_DB_URL que Supabase da a toda
+--     función de borde, o la contraseña de la base) ES el SQL Editor: la
+--     base no la puede distinguir, y ninguna base se defiende de su dueño.
+--     Por eso la regla para f07 (y para cualquier función de borde):
+--     contador habla con la base SOLO por la API (supabase-js con la llave
+--     de servicio), nunca con SUPABASE_DB_URL ni con un driver de
+--     Postgres. Lo que entrara así llevaría en su procedencia la conexión
+--     de la que vino: ayuda a notar un error honesto, no frena un abuso
+--     (application_name lo pone quien se conecta).
 --
 -- CÓMO SE ABRE Y SE CIERRA UN PERÍODO:
 --   · Aquí nacen abiertos: la apertura (2026-09-APERTURA, solo el día
 --     30-sep), octubre–diciembre de 2026 (paralelo) y los doce meses de
 --     2027, más un período por año (2026 y 2027). Los meses de 2028 se
---     abren con fn_abrir_periodo('2028-01') (abre también el año).
+--     abren con fn_abrir_periodo('2028-01'), en orden: el calendario no
+--     tiene huecos (un mes se abre solo si existe el anterior) y ningún
+--     período se borra.
 --   · Se cierra con fn_cerrar_periodo(periodo), o con un update del
 --     estado desde el SQL Editor: el trigger de periodos valida igual por
---     los dos caminos. Los meses se cierran en orden; la apertura cuando
---     se cuadre (semana del 18-ene); el año, cuando todos sus meses estén
---     cerrados (tras los ajustes del CPA). Al cerrar se guarda el hash de
---     la cadena en ese momento (cadena_al_cerrar).
+--     los dos caminos. Todo se cierra en orden, y la APERTURA VA PRIMERO:
+--     se cierra antes que octubre. Si quedara abierta con octubre ya
+--     cerrado, un asiento fechado el 30-sep cambiaría el saldo de balance
+--     de todos los meses cerrados. Lo que aparezca después en la apertura
+--     se corrige en el mes abierto (un asiento que la cite, o un ajuste
+--     con tipo ajuste_cpa y afecta_periodo = '2026-09-APERTURA'). ▶ Esto
+--     adelanta el cierre de la apertura que el calendario del plan ponía
+--     en la semana del 18-ene. El año se cierra cuando todos sus meses
+--     existan y estén cerrados (tras los ajustes del CPA). Al cerrar se
+--     guarda el hash de la cadena en ese momento (cadena_al_cerrar).
 --   · Un período cerrado NO se reabre (regla A de f08): los ajustes van
 --     al período abierto, con tipo 'ajuste_cpa' y afecta_periodo.
+--
+-- LO QUE ESTE ARCHIVO NO PUEDE HACER (dicho claro, para el auditor):
+--   · Ningún control que vive DENTRO de la base frena ni delata a quien
+--     es dueño de la base (el SQL Editor, la contraseña de Postgres, una
+--     conexión con SUPABASE_DB_URL). Puede apagar los triggers, reescribir
+--     un asiento, recalcular la cadena de hashes con fn_asiento_canonico
+--     y reescribir también los contadores y periodos.cadena_al_cerrar; o
+--     reemplazar las propias funciones. Después, fn_verificar_cadena da
+--     todo en verde: el hash no lleva secreto y sus anclas están en la
+--     misma base.
+--   · Lo que fn_verificar_cadena SÍ caza: a quien toca el libro sin
+--     recalcular (o recalcula sin arreglar las anclas), las guardas
+--     apagadas o cambiadas (sus huellas), los permisos abiertos, los
+--     meses fuera de orden.
+--   · Contra el dueño de la base, la detección real es un ANCLA FUERA de
+--     ella: el hash del mayor que sale por correo en cada cierre (f08,
+--     CONTA-PLAN §3.6 y §5.6) y la balanza exportada. f08 guarda ese ancla
+--     desde el primer cierre, y conviene mandar también el tope corriente
+--     (número, posición en la cadena y hash) del mes ABIERTO, para cazar
+--     un truncamiento o una reescritura del mes en curso.
 -- =====================================================================
 
 
@@ -97,6 +150,11 @@ begin
     v_falta := v_falta || ' · falta la tabla cuentas de c1: pega antes c1-plan-de-cuentas.sql';
   elsif not exists (select 1 from public.cuentas) then
     v_falta := v_falta || ' · la tabla cuentas está vacía: pega antes c1-plan-de-cuentas.sql';
+  end if;
+  -- La versión de c1 que va con este archivo trae el historial de cuentas
+  -- (el verificador de abajo revisa sus guardas y sus permisos).
+  if to_regclass('public.cuentas_historial') is null then
+    v_falta := v_falta || ' · falta cuentas_historial: pega antes la versión nueva de c1-plan-de-cuentas.sql';
   end if;
   if to_regprocedure('public.es_dueno()') is null then
     v_falta := v_falta || ' · falta la función public.es_dueno()';
@@ -121,6 +179,8 @@ begin
                        and i.indkey[0] = (select attnum from pg_attribute
                                            where attrelid = 'public.proyectos'::regclass and attname = 'id')) then
     v_falta := v_falta || ' · proyectos.id no existe, no es text o no es único (el libro le pone una FK)';
+  elsif not has_table_privilege('public.proyectos', 'TRIGGER') then
+    v_falta := v_falta || ' · quien pega no puede poner triggers en proyectos (el libro le pone uno: una obra con asientos no se borra)';
   end if;
   -- Si ya hay un «asientos», tiene que ser el de este archivo.
   if to_regclass('public.asientos') is not null
@@ -153,7 +213,7 @@ begin
       set search_path = public, pg_temp
       as 'select t::date'
     $f$;
-    execute 'revoke execute on function public.fn_fecha_miami(timestamptz) from public, anon';
+    execute 'revoke execute on function public.fn_fecha_miami(timestamptz) from public, anon, service_role';
     execute 'revoke execute on function public.fn_fecha_miami(timestamptz) from authenticated';
     execute 'grant execute on function public.fn_fecha_miami(timestamptz) to authenticated';
   end if;
@@ -178,6 +238,7 @@ create table if not exists public.periodos (
   cerrado_el        timestamptz,
   cerrado_por       uuid,
   cerrado_rol       text,
+  cerrado_conexion  jsonb,
   cadena_al_cerrar  text,
   creado            timestamptz not null default now(),
 
@@ -206,6 +267,9 @@ create table if not exists public.periodos (
     exclude using gist (daterange(desde, hasta, '[]') with &&) where (tipo <> 'anio')
 );
 
+-- Por si la tabla ya existía de un borrador anterior sin la columna.
+alter table public.periodos add column if not exists cerrado_conexion jsonb;
+
 -- ---------------------------------------------------------------------
 -- A.3 · contadores — la numeración sin huecos. Una fila por serie
 -- ('asientos-2027'); f10 añadirá la de facturas. Es una fila y no una
@@ -225,6 +289,11 @@ create table if not exists public.contadores (
 -- usuario_id, rol_bd, creado_el, hash_anterior, hash) las pone el
 -- trigger del bloque B, pisando lo que mande quien inserta: nadie elige
 -- su número, su período, su sello ni su hash.
+-- sustituye_a: un documento tiene UN asiento vivo. Si su asiento estaba
+-- mal (el mapeo del puente, una forma de pago mal leída, un recibo
+-- anulado que se des-anula), se reversa, y el asiento nuevo del MISMO
+-- documento dice a cuál sustituye. Así el papel enseña su historia
+-- entera: original, reverso y sustituto, enlazados.
 -- ---------------------------------------------------------------------
 create table if not exists public.asientos (
   id               uuid        primary key default gen_random_uuid(),
@@ -243,6 +312,7 @@ create table if not exists public.asientos (
   reversible       boolean     not null default false,
   origen_tabla     text,
   origen_id        text,
+  sustituye_a      uuid        references public.asientos (id),
   documento_ruta   text,
   propuesta_id     uuid,
   procedencia      jsonb       not null default '{}'::jsonb,
@@ -273,6 +343,9 @@ create table if not exists public.asientos (
   constraint asientos_procedencia_objeto    check (jsonb_typeof(procedencia) = 'object')
 );
 
+-- Por si la tabla ya existía de un borrador anterior sin la columna.
+alter table public.asientos add column if not exists sustituye_a uuid references public.asientos (id);
+
 create index if not exists asientos_periodo_idx on public.asientos (periodo);
 create index if not exists asientos_origen_idx  on public.asientos (origen_tabla, origen_id) where origen_tabla is not null;
 
@@ -283,9 +356,21 @@ create index if not exists asientos_origen_idx  on public.asientos (origen_tabla
 -- y la cabecera DESPUÉS, para que el trigger de la cabecera las vea todas
 -- al calcular el cuadre y el hash. Una línea sin cabecera no llega viva
 -- al commit.
+-- La llave es (asiento_id, orden), sin secuencia: una secuencia no se
+-- deshace con el rollback, y cada asiento rechazado (o cada pegado de
+-- c2-pruebas.sql) dejaría huecos en un número que un auditor leería.
+-- El monto es numeric(14,2): se redondea a centavos AL GUARDAR, antes de
+-- que ningún trigger lo vea. Por eso la escala (MX005) la mira
+-- fn_postear_interno leyendo el texto; un insert directo desde el SQL
+-- Editor no pasa por ahí y queda marcado en la procedencia de su asiento
+-- como «insert_directo» (B.8).
+-- El tercero de cada línea (proveedor, cliente, subcontratista) y la
+-- partida abierta que crea o salda los decide f03, que crea la tabla de
+-- proveedores, ANTES del primer asiento real: entran como columnas nulas
+-- y fn_asiento_canonico las sella solo cuando no son nulas, así que no
+-- rompen ningún hash.
 -- ---------------------------------------------------------------------
 create table if not exists public.asiento_lineas (
-  id           bigint        generated always as identity primary key,
   asiento_id   uuid          not null references public.asientos (id) deferrable initially deferred,
   orden        int           not null,
   cuenta       text          not null references public.cuentas (codigo),
@@ -295,10 +380,24 @@ create table if not exists public.asiento_lineas (
   co           text,
   fase         text,
   memo         text,
-  constraint asiento_lineas_orden_unico     unique (asiento_id, orden),
+  constraint asiento_lineas_pk              primary key (asiento_id, orden),
   constraint asiento_lineas_orden_positivo  check (orden >= 1),
   constraint asiento_lineas_monto_no_cero   check (monto <> 0)
 );
+
+-- Un borrador anterior de este archivo tenía un id con secuencia. Si esa
+-- tabla existe y sigue vacía, se deja como la de arriba; con líneas no se
+-- toca (el id no entra en el hash, así que tampoco estorba).
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'asiento_lineas' and column_name = 'id')
+     and not exists (select 1 from public.asiento_lineas) then
+    alter table public.asiento_lineas drop column id;
+    alter table public.asiento_lineas drop constraint if exists asiento_lineas_orden_unico;
+    alter table public.asiento_lineas add constraint asiento_lineas_pk primary key (asiento_id, orden);
+  end if;
+end $$;
 
 create index if not exists asiento_lineas_cuenta_idx   on public.asiento_lineas (cuenta);
 create index if not exists asiento_lineas_proyecto_idx on public.asiento_lineas (proyecto_id) where proyecto_id is not null;
@@ -333,18 +432,56 @@ on conflict (periodo) do nothing;
 
 
 -- ---------------------------------------------------------------------
--- A.7 · Las funciones MÍNIMAS, sin controles. Mismo nombre, mismos
--- parámetros y mismo resultado que las de verdad del bloque B, para que
--- c2-pruebas.sql corra entero en rojo y cada ataque diga «entró».
--- Se crean SOLO si no existen: al volver a pegar el archivo, las de
--- verdad siguen puestas. Llevan los revoke de la regla de siempre desde
--- el primer momento (toda función nueva nace ejecutable por anon).
+-- A.7 · Quién llama. Dos ayudantes que usan las funciones de verdad del
+-- bloque B y también las mínimas de abajo (por eso van aquí).
+--   fn_rol_llamante: dentro de una función SECURITY DEFINER current_user
+--     es el dueño de la función, pero el ajuste «role» sigue diciendo con
+--     qué rol entró la petición: authenticated, anon o service_role por
+--     la API; 'none' en el SQL Editor (y en pg_cron), que entra como el
+--     dueño de la base. Así cada asiento guarda el rol real, no el de la
+--     función.
+--   fn_desde_editor: sin «set role» y con la sesión del dueño de las
+--     tablas del libro. Por la API la sesión es de «authenticator», que no
+--     es el dueño, y el rol nunca es 'none'. OJO: una conexión directa con
+--     la contraseña de la base, o con SUPABASE_DB_URL desde una función de
+--     borde, TAMBIÉN es «el editor»: la base no puede distinguirla (ver la
+--     cabecera, QUIÉN LLAMA QUÉ).
+-- ---------------------------------------------------------------------
+create or replace function public.fn_rol_llamante() returns text
+language sql stable
+set search_path = public, pg_temp
+as $$
+  select coalesce(nullif(current_setting('role', true), 'none'), session_user::text)
+$$;
+revoke execute on function public.fn_rol_llamante() from public, anon, authenticated, service_role;
+
+create or replace function public.fn_desde_editor() returns boolean
+language sql stable
+set search_path = public, pg_temp
+as $$
+  select coalesce(current_setting('role', true), 'none') = 'none'
+     and pg_has_role(session_user,
+                     (select c.relowner from pg_class c where c.oid = 'public.asientos'::regclass),
+                     'member')
+$$;
+revoke execute on function public.fn_desde_editor() from public, anon, authenticated, service_role;
+
+-- ---------------------------------------------------------------------
+-- A.8 · Las funciones MÍNIMAS, sin controles de contenido. Mismo nombre,
+-- mismos parámetros y mismo resultado que las de verdad del bloque B,
+-- para que c2-pruebas.sql corra entero en rojo y cada ataque diga
+-- «entró». Se crean SOLO si no existen: al volver a pegar el archivo, las
+-- de verdad siguen puestas. Llevan los revoke de la regla de siempre desde
+-- el primer momento (toda función nueva nace ejecutable por anon), y las
+-- que escriben dejan pasar SOLO al dueño (o al SQL Editor): si alguien
+-- pega el bloque A solo por error en Supabase, ni un trabajador ni la
+-- llave pública pueden escribir en el libro mientras falta el bloque B.
 -- ---------------------------------------------------------------------
 do $$
 begin
-  -- fn_postear MÍNIMA: sin permisos, sin cuadre, sin escala, sin período
-  -- cerrado, sin cuentas ni dimensiones, sin reverso automático, sin
-  -- cadena (hash de ceros), numerando con max + 1.
+  -- fn_postear MÍNIMA: sin cuadre, sin escala, sin período cerrado, sin
+  -- cuentas ni dimensiones, sin reverso automático, sin cadena (hash de
+  -- ceros), numerando con max + 1. Solo mira quién.
   if to_regprocedure('public.fn_postear(jsonb)') is null then
     execute $f$
       create function public.fn_postear(p_asiento jsonb) returns jsonb
@@ -361,6 +498,9 @@ begin
         v_l     jsonb;
         v_i     int := 0;
       begin
+        if not (es_dueno() or fn_desde_editor()) then
+          raise exception using errcode = '42501', message = 'Solo el dueño postea (versión mínima del bloque A).';
+        end if;
         select coalesce(max(secuencia), 0) + 1 into v_sec from asientos where anio = v_anio;
         select coalesce(max(cadena_pos), 0) + 1 into v_pos from asientos;
         select periodo into v_per from periodos where tipo <> 'anio' and v_fecha between desde and hasta;
@@ -381,13 +521,14 @@ begin
       end
       $b$
     $f$;
-    execute 'revoke execute on function public.fn_postear(jsonb) from public, anon';
+    execute 'revoke execute on function public.fn_postear(jsonb) from public, anon, service_role';
     execute 'revoke execute on function public.fn_postear(jsonb) from authenticated';
     execute 'grant execute on function public.fn_postear(jsonb) to authenticated';
   end if;
 
   -- fn_reversar MÍNIMA: espejo con la fecha del original, sin mirar si ya
-  -- se reversó, si es un reverso ni si su período está cerrado.
+  -- se reversó, si es un reverso ni si su período está cerrado. Solo mira
+  -- quién.
   if to_regprocedure('public.fn_reversar(uuid,text)') is null then
     execute $f$
       create function public.fn_reversar(p_asiento uuid, p_motivo text) returns jsonb
@@ -400,6 +541,9 @@ begin
         v_sec int;
         v_pos bigint;
       begin
+        if not (es_dueno() or fn_desde_editor()) then
+          raise exception using errcode = '42501', message = 'Solo el dueño reversa (versión mínima del bloque A).';
+        end if;
         select * into v_o from asientos where id = p_asiento;
         select coalesce(max(secuencia), 0) + 1 into v_sec from asientos where anio = v_o.anio;
         select coalesce(max(cadena_pos), 0) + 1 into v_pos from asientos;
@@ -417,7 +561,7 @@ begin
       end
       $b$
     $f$;
-    execute 'revoke execute on function public.fn_reversar(uuid, text) from public, anon';
+    execute 'revoke execute on function public.fn_reversar(uuid, text) from public, anon, service_role';
     execute 'revoke execute on function public.fn_reversar(uuid, text) from authenticated';
     execute 'grant execute on function public.fn_reversar(uuid, text) to authenticated';
   end if;
@@ -440,7 +584,7 @@ begin
          where p.periodo = p_periodo
       $b$
     $f$;
-    execute 'revoke execute on function public.fn_estado(text) from public, anon';
+    execute 'revoke execute on function public.fn_estado(text) from public, anon, service_role';
     execute 'revoke execute on function public.fn_estado(text) from authenticated';
     execute 'grant execute on function public.fn_estado(text) to authenticated';
   end if;
@@ -456,12 +600,13 @@ begin
         select 'cadena'::text, true, jsonb_build_object('nota', 'versión mínima del bloque A: no verifica nada')
       $b$
     $f$;
-    execute 'revoke execute on function public.fn_verificar_cadena() from public, anon';
+    execute 'revoke execute on function public.fn_verificar_cadena() from public, anon, service_role';
     execute 'revoke execute on function public.fn_verificar_cadena() from authenticated';
     execute 'grant execute on function public.fn_verificar_cadena() to authenticated';
   end if;
 
-  -- fn_cerrar_periodo MÍNIMA: cierra sin mirar quién, orden ni cuadre.
+  -- fn_cerrar_periodo MÍNIMA: cierra sin mirar orden ni cuadre (y sin
+  -- guardar el hash). Solo mira quién.
   if to_regprocedure('public.fn_cerrar_periodo(text)') is null then
     execute $f$
       create function public.fn_cerrar_periodo(p_periodo text) returns jsonb
@@ -471,6 +616,9 @@ begin
       declare
         v_p periodos;
       begin
+        if not (es_dueno() or fn_desde_editor()) then
+          raise exception using errcode = '42501', message = 'Solo el dueño cierra (versión mínima del bloque A).';
+        end if;
         update periodos set estado = 'cerrado', cerrado_el = now()
          where periodo = p_periodo
         returning * into v_p;
@@ -478,12 +626,12 @@ begin
       end
       $b$
     $f$;
-    execute 'revoke execute on function public.fn_cerrar_periodo(text) from public, anon';
+    execute 'revoke execute on function public.fn_cerrar_periodo(text) from public, anon, service_role';
     execute 'revoke execute on function public.fn_cerrar_periodo(text) from authenticated';
     execute 'grant execute on function public.fn_cerrar_periodo(text) to authenticated';
   end if;
 
-  -- fn_abrir_periodo MÍNIMA: abre sin mirar quién.
+  -- fn_abrir_periodo MÍNIMA: abre sin mirar el orden. Solo mira quién.
   if to_regprocedure('public.fn_abrir_periodo(text)') is null then
     execute $f$
       create function public.fn_abrir_periodo(p_mes text) returns jsonb
@@ -495,6 +643,9 @@ begin
         v_anio  int  := extract(year from (p_mes || '-01')::date)::int;
         v_p     periodos;
       begin
+        if not (es_dueno() or fn_desde_editor()) then
+          raise exception using errcode = '42501', message = 'Solo el dueño abre (versión mínima del bloque A).';
+        end if;
         insert into periodos (periodo, tipo, anio, desde, hasta)
         values (v_anio::text, 'anio', v_anio, make_date(v_anio, 1, 1), make_date(v_anio, 12, 31))
         on conflict (periodo) do nothing;
@@ -506,10 +657,58 @@ begin
       end
       $b$
     $f$;
-    execute 'revoke execute on function public.fn_abrir_periodo(text) from public, anon';
+    execute 'revoke execute on function public.fn_abrir_periodo(text) from public, anon, service_role';
     execute 'revoke execute on function public.fn_abrir_periodo(text) from authenticated';
     execute 'grant execute on function public.fn_abrir_periodo(text) to authenticated';
   end if;
+end $$;
+
+
+-- ---------------------------------------------------------------------
+-- A.9 · Quién lee. Al final del bloque A, y no en el B: las tablas nacen
+-- abiertas (así es Supabase: grant all a anon y authenticated) y se
+-- cierran en el mismo bloque que las crea. Pegado solo, por error, el
+-- bloque A no deja el libro abierto a la API. Es el bloque fijo de todo
+-- docs/conta/c*.sql, tabla por tabla: solo el dueño lee (policy); nadie
+-- de la API escribe (todo entra por las funciones); anon, nada.
+-- service_role conserva la lectura (la función «contador» de f07 lee para
+-- proponer) y ninguna escritura. Los triggers, además, frenan al propio
+-- SQL Editor.
+--   · «revoke all» y luego «grant select», y no una lista de privilegios:
+--     en Postgres 17 (producción) el «grant all» de Supabase incluye
+--     MAINTAIN (LOCK TABLE, VACUUM, CLUSTER…), que una lista escrita para
+--     16 no nombra. «all» vale igual en 16 y en 17, y quita también lo
+--     concedido por columna.
+--   · Al volver a pegar se borra toda policy de estas tablas que no sea la
+--     de aquí: una «Enable read access for all users» creada desde el
+--     dashboard, o una editada a mano, no sobrevive a un pegado.
+--   · Riesgo conocido y aceptado: authenticated necesita el SELECT de
+--     tabla (la policy es la que filtra), y con él PostgREST puede dar la
+--     ESTIMACIÓN del planificador («Prefer: count=planned»), que sale de
+--     las estadísticas reales. Un trabajador puede asomar así cuántas
+--     líneas hay por cuenta, por obra o por fecha; nunca un monto, una
+--     descripción ni una contraparte (numeric no es «leakproof»: el
+--     planificador no usa sus estadísticas para quien no puede ver las
+--     filas). Pasa igual hoy con facturas y recibos. Cerrarlo pide un rol
+--     propio para el dueño en el token (un hook de Supabase) o leer solo
+--     por funciones; se decide si algún día hace falta el rol «contador».
+-- ---------------------------------------------------------------------
+do $$
+declare
+  t text;
+  p record;
+begin
+  foreach t in array array['periodos', 'contadores', 'asientos', 'asiento_lineas'] loop
+    execute format('alter table public.%I enable row level security', t);
+    execute format('revoke all on public.%I from public, anon, authenticated, service_role', t);
+    execute format('grant select on public.%I to authenticated, service_role', t);
+    for p in select pl.policyname from pg_policies pl
+              where pl.schemaname = 'public' and pl.tablename = t and pl.policyname <> t || '_dueno' loop
+      execute format('drop policy %I on public.%I', p.policyname, t);
+    end loop;
+    execute format('drop policy if exists %I on public.%I', t || '_dueno', t);
+    execute format('create policy %I on public.%I for select to authenticated using (es_dueno())', t || '_dueno', t);
+  end loop;
 end $$;
 
 
@@ -521,29 +720,45 @@ end $$;
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
--- B.0 · Quién lee. Lo PRIMERO del bloque B: las tablas del bloque A nacen
--- abiertas (así es Supabase) y aquí se cierran antes que nada. Es el
--- bloque fijo de todo docs/conta/c*.sql, tabla por tabla: solo el dueño
--- lee (policy); nadie de la API escribe (todo entra por las funciones);
--- anon, nada. service_role conserva la lectura (la función «contador» de
--- f07 lee para proponer) y ninguna escritura. Los triggers, además,
--- frenan al propio SQL Editor.
+-- B.0 · Antes de nada: el bloque B no se pone ENCIMA de datos escritos
+-- sin controles. Si alguien pegó el bloque A solo (en Supabase, por
+-- error) y en esa ventana entró algo por las funciones mínimas (un
+-- asiento sin sellar, un contador suelto, un período cerrado sin la foto
+-- de la cadena), el bloque B se niega con MX000 y no toca nada: puesto
+-- encima, ese dato no se podría borrar nunca (lo impiden las guardas de
+-- abajo) y el libro no volvería a aceptar un posteo. Con el bloque A solo
+-- todavía se puede borrar a mano; después se vuelve a pegar el archivo.
+-- Sobre un libro sano (volver a pegar el archivo entero) no encuentra
+-- nada.
 -- ---------------------------------------------------------------------
 do $$
 declare
-  t text;
+  v_sucio text := '';
+  v_n     bigint;
 begin
-  foreach t in array array['periodos','contadores','asientos','asiento_lineas'] loop
-    execute format('alter table public.%I enable row level security', t);
-    execute format('revoke all on public.%I from anon', t);
-    execute format('revoke insert, update, delete, truncate, references, trigger on public.%I from authenticated, service_role', t);
-    execute format('grant select on public.%I to authenticated, service_role', t);
-    execute format('drop policy if exists %I on public.%I', t || '_dueno', t);
-    execute format('create policy %I on public.%I for select to authenticated using (es_dueno())', t || '_dueno', t);
-  end loop;
-  -- La secuencia de los id de línea tampoco es de la API.
-  execute format('revoke all on sequence %s from anon, authenticated, service_role',
-                 pg_get_serial_sequence('public.asiento_lineas', 'id'));
+  select count(*) into v_n from public.asientos where hash = repeat('0', 64);
+  if v_n > 0 then
+    v_sucio := v_sucio || format(' · %s asiento(s) sin sellar (hash de ceros): los escribió una función mínima', v_n);
+  end if;
+  select count(*) into v_n
+    from public.contadores c
+   where c.serie like 'asientos-%'
+     and c.ultimo <> coalesce((select max(a.secuencia) from public.asientos a
+                                where 'asientos-' || a.anio::text = c.serie), 0);
+  if v_n > 0 then
+    v_sucio := v_sucio || format(' · %s contador(es) de asientos que no casan con el libro', v_n);
+  end if;
+  select count(*) into v_n from public.periodos where estado = 'cerrado' and cadena_al_cerrar is null;
+  if v_n > 0 then
+    v_sucio := v_sucio || format(' · %s período(s) cerrado(s) sin la foto de la cadena (los cerró la función mínima)', v_n);
+  end if;
+  if v_sucio <> '' then
+    raise exception using
+      errcode = 'MX000',
+      message = 'c2-libro (bloque B) NO se aplicó, no se tocó nada: hay datos escritos con el bloque A solo, sin controles:' || v_sucio,
+      hint    = 'Con el bloque A solo todavía se pueden borrar a mano (delete de asiento_lineas, asientos y contadores; '
+                'update de periodos a abierto). Después se pega el archivo ENTERO.';
+  end if;
 end $$;
 
 -- ---------------------------------------------------------------------
@@ -559,34 +774,8 @@ as $$ select (t at time zone 'America/New_York')::date $$;
 revoke execute on function public.fn_fecha_miami(timestamptz) from public, anon, authenticated, service_role;
 grant  execute on function public.fn_fecha_miami(timestamptz) to authenticated;
 
--- ---------------------------------------------------------------------
--- B.2 · Quién llama. Dentro de una función SECURITY DEFINER current_user
--- es el dueño de la función, pero el ajuste «role» sigue diciendo con qué
--- rol entró la petición: authenticated, anon o service_role por la API;
--- 'none' en el SQL Editor (y en pg_cron), que entra como el dueño de la
--- base. Así cada asiento guarda el rol real, no el de la función.
--- ---------------------------------------------------------------------
-create or replace function public.fn_rol_llamante() returns text
-language sql stable
-set search_path = public, pg_temp
-as $$
-  select coalesce(nullif(current_setting('role', true), 'none'), session_user::text)
-$$;
-revoke execute on function public.fn_rol_llamante() from public, anon, authenticated, service_role;
-
--- El SQL Editor: sin «set role» y con la sesión del dueño de las tablas
--- del libro. Por la API la sesión es de «authenticator», que no es el
--- dueño, y el rol nunca es 'none'.
-create or replace function public.fn_desde_editor() returns boolean
-language sql stable
-set search_path = public, pg_temp
-as $$
-  select coalesce(current_setting('role', true), 'none') = 'none'
-     and pg_has_role(session_user,
-                     (select c.relowner from pg_class c where c.oid = 'public.asientos'::regclass),
-                     'member')
-$$;
-revoke execute on function public.fn_desde_editor() from public, anon, authenticated, service_role;
+-- (B.2 · Quién llama: fn_rol_llamante y fn_desde_editor están en A.7,
+-- porque también las usan las funciones mínimas del bloque A.)
 
 -- ---------------------------------------------------------------------
 -- B.3 · La forma canónica de un asiento: el texto exacto que se sella con
@@ -623,6 +812,7 @@ as $$
     'reversible',     a.reversible::text,
     'origen_tabla',   a.origen_tabla,
     'origen_id',      a.origen_id,
+    'sustituye_a',    a.sustituye_a::text,
     'documento_ruta', a.documento_ruta,
     'propuesta_id',   a.propuesta_id::text,
     'procedencia',    a.procedencia::text,
@@ -647,6 +837,8 @@ revoke execute on function public.fn_asiento_canonico(public.asientos) from publ
 -- ---------------------------------------------------------------------
 -- B.4 · Restricciones que SON controles (por eso no están en el bloque A):
 --   · un asiento se reversa una sola vez;
+--   · un asiento reversado se sustituye una sola vez, y el sustituto
+--     lleva el documento de origen y no es un reverso;
 --   · la cadena no se bifurca: cada hash, y cada hash anterior, una vez;
 --   · el hash tiene forma de sha256.
 -- Solo se añaden si faltan: volver a pegar no reconstruye índices.
@@ -656,6 +848,17 @@ begin
   if not exists (select 1 from pg_constraint
                   where conrelid = 'public.asientos'::regclass and conname = 'asientos_reversa_a_unica') then
     alter table public.asientos add constraint asientos_reversa_a_unica unique (reversa_a);
+  end if;
+  if not exists (select 1 from pg_constraint
+                  where conrelid = 'public.asientos'::regclass and conname = 'asientos_sustituye_a_unica') then
+    alter table public.asientos add constraint asientos_sustituye_a_unica unique (sustituye_a);
+  end if;
+  if not exists (select 1 from pg_constraint
+                  where conrelid = 'public.asientos'::regclass and conname = 'asientos_sustituye_coherente') then
+    alter table public.asientos add constraint asientos_sustituye_coherente
+      check (sustituye_a is null
+             or (sustituye_a <> id and origen_tabla is not null
+                 and camino not in ('reverso', 'reverso_automatico')));
   end if;
   if not exists (select 1 from pg_constraint
                   where conrelid = 'public.asientos'::regclass and conname = 'asientos_hash_unico') then
@@ -672,13 +875,26 @@ begin
   end if;
 end $$;
 
--- Un documento, un asiento (el contrato de los puentes de f03): correr un
--- puente dos veces no duplica; la segunda da 23505 en este índice. El
--- reverso lleva el mismo origen que su original (así el papel enseña su
--- historia entera) y por eso no cuenta.
+-- Un documento, un asiento VIVO (el contrato de los puentes de f03):
+-- correr un puente dos veces no duplica. Lo hace cumplir el trigger de la
+-- cabecera (B.8), con el candado de la cadena puesto: un documento cuyo
+-- asiento no está reversado da 23505. Y si su asiento ya se reversó, el
+-- nuevo dice a cuál sustituye (sustituye_a).
+-- Este índice es la segunda red, para el PRIMER asiento de cada
+-- documento: aguanta aunque alguien apague los triggers. No cuentan ni
+-- los reversos (llevan el origen de su original: así el papel enseña su
+-- historia entera) ni los sustitutos (su unicidad es la de sustituye_a).
+-- Un borrador anterior lo tenía sin «sustituye_a is null»: se rehace.
+do $$
+begin
+  if to_regclass('public.asientos_origen_unico') is not null
+     and pg_get_indexdef(to_regclass('public.asientos_origen_unico')) not like '%sustituye_a IS NULL%' then
+    drop index public.asientos_origen_unico;
+  end if;
+end $$;
 create unique index if not exists asientos_origen_unico
   on public.asientos (origen_tabla, origen_id)
-  where origen_tabla is not null and camino not in ('reverso', 'reverso_automatico');
+  where origen_tabla is not null and camino not in ('reverso', 'reverso_automatico') and sustituye_a is null;
 
 
 -- ---------------------------------------------------------------------
@@ -686,13 +902,25 @@ create unique index if not exists asientos_origen_unico
 -- también al SQL Editor, a fn_cerrar_periodo y a cualquier puente.
 --   · Un período nace abierto, cuelga de su año y no va antes de la
 --     apertura (el libro empieza el 30-sep-2026) ni antes de un mes ya
---     cerrado.
---   · Lo único que le pasa después es cerrarse. Los meses, en orden; el
---     año, cuando todos sus períodos estén cerrados; la apertura, cuando
---     se cuadre (puede quedarse abierta con octubre ya cerrado).
+--     cerrado. El libro tiene una sola apertura.
+--   · El calendario va SEGUIDO: un mes se abre solo si existe el período
+--     del día anterior (el mes anterior, o la apertura para el primero).
+--     Con un hueco, el mes que falta ya no se podría abrir nunca (hay
+--     meses posteriores cerrados) y lo fechado en él no tendría dónde
+--     entrar.
+--   · Lo único que le pasa después es cerrarse, y TODO en orden: un mes se
+--     cierra con todos los períodos anteriores ya cerrados, LA APERTURA
+--     INCLUIDA. Si la apertura siguiera abierta con octubre cerrado, un
+--     asiento fechado el 30-sep (uno nuevo, o el reverso de uno de
+--     apertura, que cae el mismo día) cambiaría el saldo de balance de
+--     todos los meses ya cerrados sin que nadie escribiera en ellos. Lo
+--     que aparezca después en la apertura se corrige en el mes abierto.
+--   · El año se cierra cuando todos sus meses EXISTEN y están cerrados
+--     (no basta con que estén cerrados los que existen).
 --   · Al cerrarse, la base apunta quién, cuándo y el hash de la cadena en
 --     ese instante (con el candado de la cadena: nadie postea mientras).
---   · Cerrado no se reabre, no se toca y no se borra.
+--   · Cerrado no se reabre ni se toca. Y ningún período se borra: ni uno
+--     cerrado, ni uno abierto y vacío (dejaría un hueco en el calendario).
 -- ---------------------------------------------------------------------
 create or replace function public.fn_periodos_guarda()
 returns trigger
@@ -702,6 +930,7 @@ as $$
 declare
   v_anio     periodos;
   v_abiertos text;
+  v_faltan   text;
   v_suma     numeric;
 begin
   if tg_op = 'TRUNCATE' then
@@ -709,16 +938,14 @@ begin
   end if;
 
   if tg_op = 'DELETE' then
-    if old.estado = 'cerrado' then
-      raise exception using errcode = 'MX002',
-        message = format('El período %s está cerrado: no se borra.', old.periodo);
-    end if;
-    return old;  -- con asientos, además, lo impide la FK de asientos.periodo
+    raise exception using errcode = 'MX002',
+      message = format('El período %s no se borra: el calendario del libro va seguido, sin huecos. '
+                       'Si se abrió de más, se queda abierto y vacío.', old.periodo);
   end if;
 
   if tg_op = 'INSERT' then
     if new.estado <> 'abierto' or new.cerrado_el is not null or new.cerrado_por is not null
-       or new.cerrado_rol is not null or new.cadena_al_cerrar is not null then
+       or new.cerrado_rol is not null or new.cerrado_conexion is not null or new.cadena_al_cerrar is not null then
       raise exception using errcode = 'MX002',
         message = format('El período %s nace abierto; se cierra después, con fn_cerrar_periodo.', new.periodo);
     end if;
@@ -737,6 +964,10 @@ begin
           message = format('%s va con paralelo = %s, igual que su año.', new.periodo, v_anio.paralelo);
       end if;
     end if;
+    if new.tipo = 'apertura' and exists (select 1 from periodos where tipo = 'apertura') then
+      raise exception using errcode = 'MX002',
+        message = format('El libro tiene una sola apertura: no se abre %s.', new.periodo);
+    end if;
     if new.tipo = 'mes' then
       if exists (select 1 from periodos where tipo = 'apertura' and desde >= new.desde) then
         raise exception using errcode = 'MX002',
@@ -745,6 +976,12 @@ begin
       if exists (select 1 from periodos where tipo = 'mes' and estado = 'cerrado' and desde > new.desde) then
         raise exception using errcode = 'MX002',
           message = format('No se abre %s: ya hay meses posteriores cerrados.', new.periodo);
+      end if;
+      if not exists (select 1 from periodos p
+                      where p.tipo in ('mes', 'apertura') and new.desde - 1 between p.desde and p.hasta) then
+        raise exception using errcode = 'MX002',
+          message = format('No se abre %s: falta %s. El calendario del libro va seguido: los meses se abren en '
+                           'orden, sin huecos.', new.periodo, to_char(new.desde - 1, 'YYYY-MM'));
       end if;
     end if;
     return new;
@@ -763,7 +1000,7 @@ begin
   end if;
   if new.estado = 'abierto' then
     if new.cerrado_el is not null or new.cerrado_por is not null
-       or new.cerrado_rol is not null or new.cadena_al_cerrar is not null then
+       or new.cerrado_rol is not null or new.cerrado_conexion is not null or new.cadena_al_cerrar is not null then
       raise exception using errcode = 'MX002',
         message = format('El sello de cierre de %s lo pone la base al cerrarlo, no se escribe a mano.', old.periodo);
     end if;
@@ -771,12 +1008,22 @@ begin
   end if;
 
   -- abierto → cerrado
-  if new.tipo = 'mes' then
+  if new.tipo in ('mes', 'apertura') then
     select string_agg(p.periodo, ', ' order by p.desde) into v_abiertos
-      from periodos p where p.tipo = 'mes' and p.estado = 'abierto' and p.desde < new.desde;
+      from periodos p where p.tipo in ('mes', 'apertura') and p.estado = 'abierto' and p.desde < new.desde;
     if v_abiertos is not null then
       raise exception using errcode = 'MX002',
-        message = format('Los meses se cierran en orden: antes de %s hay que cerrar %s.', new.periodo, v_abiertos);
+        message = format('Todo se cierra en orden: antes de %s hay que cerrar %s.%s', new.periodo, v_abiertos,
+                         case when exists (select 1 from periodos p where p.tipo = 'apertura' and p.estado = 'abierto'
+                                                                       and p.desde < new.desde)
+                              then ' La apertura va primero: lo que aparezca después en ella se corrige en el mes abierto.'
+                              else '' end);
+    end if;
+    if new.tipo = 'mes'
+       and not exists (select 1 from periodos p
+                        where p.tipo in ('mes', 'apertura') and new.desde - 1 between p.desde and p.hasta) then
+      raise exception using errcode = 'MX002',
+        message = format('No se cierra %s: falta %s en el calendario (hueco).', new.periodo, to_char(new.desde - 1, 'YYYY-MM'));
     end if;
   elsif new.tipo = 'anio' then
     select string_agg(p.periodo, ', ' order by p.desde) into v_abiertos
@@ -784,6 +1031,19 @@ begin
     if v_abiertos is not null then
       raise exception using errcode = 'MX002',
         message = format('El año %s se cierra cuando todos sus períodos estén cerrados; faltan: %s.', new.periodo, v_abiertos);
+    end if;
+    select string_agg(to_char(m, 'YYYY-MM'), ', ' order by m) into v_faltan
+      from generate_series(
+             date_trunc('month', greatest(make_date(new.anio, 1, 1),
+                                          coalesce((select max(p.hasta) + 1 from periodos p
+                                                     where p.tipo = 'apertura' and p.anio = new.anio),
+                                                   make_date(new.anio, 1, 1)))::timestamp),
+             make_date(new.anio, 12, 1)::timestamp,
+             interval '1 month') as m
+     where not exists (select 1 from periodos p where p.tipo = 'mes' and p.desde = m::date);
+    if v_faltan is not null then
+      raise exception using errcode = 'MX002',
+        message = format('El año %s no se cierra: le faltan meses en el calendario (%s).', new.periodo, v_faltan);
     end if;
   end if;
 
@@ -805,6 +1065,14 @@ begin
   new.cerrado_el       := clock_timestamp();
   new.cerrado_por      := auth.uid();
   new.cerrado_rol      := fn_rol_llamante();
+  -- Si lo cierra una conexión directa del dueño de la base (SQL Editor,
+  -- pg_cron, o una función con SUPABASE_DB_URL), de dónde vino.
+  new.cerrado_conexion := case when fn_desde_editor() then
+                            jsonb_strip_nulls(jsonb_build_object(
+                              'application_name', nullif(current_setting('application_name', true), ''),
+                              'cliente',          host(inet_client_addr()),
+                              'puerto',           inet_client_port()))
+                          end;
   new.cadena_al_cerrar := coalesce((select a.hash from asientos a order by a.cadena_pos desc limit 1),
                                    repeat('0', 64));
   return new;
@@ -867,13 +1135,17 @@ create or replace trigger trg_contadores_sin_truncate
 -- B.7 · Cada línea, al entrar (vale para TODO camino: fn_postear, un
 -- puente, o un insert a mano en el SQL Editor).
 --   · MX003: una línea solo entra ANTES que su cabecera. Con la cabecera
---     ya puesta, el asiento está sellado: ni una línea más.
+--     ya puesta, el asiento está sellado: ni una línea más. Aquí se mira
+--     con lo que ve la transacción que inserta la línea; si la cabecera
+--     la está poniendo OTRA sesión que aún no confirma, no se ve. Por eso
+--     se vuelve a mirar al confirmar (B.7b).
 --   · MX004: la cuenta existe, está activa y es imputable.
 --   · MX006: las dimensiones que pide la cuenta (cuentas.regla_obra y
 --     regla_cost_code); cost_code, co y fase solo con obra; la obra y el
 --     código existen.
 -- La escala del monto (MX005) no se puede mirar aquí: numeric(14,2) ya
--- redondeó. La mira fn_postear_interno leyendo el texto.
+-- redondeó al guardar. La mira fn_postear_interno leyendo el texto; un
+-- insert directo queda marcado en su asiento (B.8, «insert_directo»).
 -- ---------------------------------------------------------------------
 create or replace function public.fn_asiento_lineas_al_insertar()
 returns trigger
@@ -947,24 +1219,89 @@ create or replace trigger trg_asiento_lineas_al_insertar
   for each row execute function public.fn_asiento_lineas_al_insertar();
 
 -- ---------------------------------------------------------------------
+-- B.7b · El sello se vuelve a mirar AL CONFIRMAR (MX003). La carrera que
+-- cierra: la sesión A pone sus líneas y su cabecera y todavía no
+-- confirma; la sesión B cuelga otra línea del mismo asiento. El trigger
+-- de B.7 de la sesión B no ve la cabecera de A, la FK diferida la
+-- encuentra al confirmar B, y quedaría sellado un asiento que no cuadra y
+-- que ya no se puede corregir (update y delete dan MX003; su reverso
+-- también descuadra). Aquí, al confirmar, si la cabecera ya existe, su
+-- hash tiene que seguir saliendo de sus líneas: si llegó una de más, no
+-- sale, y la transacción de la línea tardía no confirma.
+-- En el camino normal (líneas y cabecera en la misma transacción) el
+-- hash sale igual y no pasa nada. Con aislamiento repeatable read o
+-- serializable, la cabecera de otra sesión no se ve ni al confirmar, y es
+-- la FK diferida la que para la línea.
+-- (Un trigger de restricción no admite «or replace»: se borra y se crea.)
+-- ---------------------------------------------------------------------
+create or replace function public.fn_asiento_lineas_sello_al_confirmar()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_a asientos;
+begin
+  select * into v_a from asientos where id = new.asiento_id;
+  if found and v_a.hash is distinct from encode(sha256(convert_to(fn_asiento_canonico(v_a), 'UTF8')), 'hex') then
+    raise exception using errcode = 'MX003',
+      message = format('El asiento %s ya estaba sellado cuando llegó la línea %s: no admite líneas nuevas. '
+                       'Se corrige con fn_reversar y un asiento nuevo.', v_a.numero, new.orden);
+  end if;
+  return null;
+end $$;
+revoke execute on function public.fn_asiento_lineas_sello_al_confirmar() from public, anon, authenticated, service_role;
+
+drop trigger if exists trg_asiento_lineas_sello_diferido on public.asiento_lineas;
+create constraint trigger trg_asiento_lineas_sello_diferido
+  after insert on public.asiento_lineas
+  deferrable initially deferred
+  for each row execute function public.fn_asiento_lineas_sello_al_confirmar();
+
+-- ---------------------------------------------------------------------
 -- B.8 · La cabecera, al entrar. Es el corazón del libro y vale para TODO
 -- camino. En este orden:
---   0. Quién: a mano (o por la IA, f07) solo el dueño o el SQL Editor.
---   1. Período (MX002): lo pone la base según la fecha, nunca quien
---      inserta. Toma el período «for share»: si alguien lo está cerrando,
---      uno espera al otro y el asiento no se cuela en un mes cerrado.
+--   0. Quién: a mano (o por la IA, f07) solo el dueño o el SQL Editor. Y
+--      la forma del ajuste del CPA (22023): afecta_periodo va solo con
+--      tipo ajuste_cpa, y un ajuste_cpa lleva motivo.
+--   1. Fecha y período (MX002):
+--      · ni tan lejos en el futuro que sea un error de dedo: el tope es
+--        el último día del mes siguiente al mes abierto más antiguo, o 45
+--        días después de hoy en Miami (lo que quede más lejos). Un año mal
+--        tecleado (2027 por 2026) o un 01/05 mal leído caerían en un mes
+--        abierto de 2027 sin que nadie los viera, y el primero se llevaría
+--        el número 2027-000001 de los libros oficiales. Los reversos no
+--        miran el tope (el automático cae el día 1 del mes siguiente, a
+--        propósito);
+--      · el período lo pone la base según la fecha, nunca quien inserta.
+--        Se toma «for share»: si alguien lo está cerrando, uno espera al
+--        otro y el asiento no se cuela en un mes cerrado. Si no hay
+--        período, el mensaje dice por qué: antes de la apertura, eso vive
+--        en QuickBooks; después del último mes, se abre el mes.
 --   2. Cuadre (MX001) con las líneas, que ya entraron; y la apertura,
 --      solo con cuentas de balance (MX006).
 --   3. Desde aquí, el candado de la cadena: un asiento a la vez en todo
 --      el libro (se suelta al terminar la transacción).
 --   4. Reverso (MX007): existe el original, no es un reverso, no tiene ya
 --      el suyo, no va antes, y las líneas son su espejo exacto.
---   5. Número: contadores, «select … for update», DESPUÉS de validar. Si
+--   5. Documento (23505 y MX007): un documento de origen tiene UN asiento
+--      vivo (no reversado). Si su asiento ya se reversó, el nuevo dice a
+--      cuál sustituye (sustituye_a), y ese tiene que ser del mismo
+--      documento y estar reversado.
+--   6. Número: contadores, «select … for update», DESPUÉS de validar. Si
 --      algo falla después, el rollback deshace también el contador: no
 --      hay hueco (una secuencia de Postgres sí lo dejaría).
---   6. El sello: quién, con qué rol y cuándo (la hora del reloj, con el
---      candado puesto), puestos por la base.
---   7. El eslabón: posición, hash anterior y hash.
+--   7. El sello: quién, con qué rol y cuándo (la hora del reloj, con el
+--      candado puesto), puestos por la base. En la procedencia, además:
+--      · «conexion» (application_name, dirección y puerto del cliente)
+--        cuando entra por una conexión directa del dueño de la base (el
+--        SQL Editor, pg_cron, o una función con SUPABASE_DB_URL): ayuda a
+--        distinguir quién fue;
+--      · «puerta»: 'insert_directo' cuando las líneas NO entraron por
+--        fn_postear_interno ni por fn_reversar_interno. Esas líneas no
+--        pasaron la mirada de la escala: numeric(14,2) redondeó sus
+--        montos a centavos sin avisar. El auditor las encuentra así.
+--   8. El eslabón: posición, hash anterior y hash.
 -- Todas las columnas de sistema se pisan: nadie elige su número, su
 -- período, su sello ni su hash, ni siquiera el SQL Editor.
 -- ---------------------------------------------------------------------
@@ -977,14 +1314,20 @@ declare
   v_per    periodos;
   v_afecta periodos;
   v_orig   asientos;
+  v_sust   asientos;
   v_n      int;
   v_suma   numeric;
   v_debe   numeric;
   v_serie  text;
   v_sec    bigint;
   v_cabeza asientos;
+  v_hoy    date;
+  v_tope   date;
+  v_desde  date;
+  v_vivos  text;
+  v_libre  text;
 begin
-  -- 0. Quién.
+  -- 0. Quién, y la forma del ajuste del CPA.
   if new.camino in ('mano', 'ia') and not (es_dueno() or fn_desde_editor()) then
     raise exception using errcode = '42501', message = 'Solo el dueño postea asientos a mano.';
   end if;
@@ -992,16 +1335,46 @@ begin
     raise exception using errcode = 'MX007',
       message = 'Las líneas entraron como las de un reverso, pero la cabecera no dice qué asiento reversa.';
   end if;
+  if new.afecta_periodo is not null and new.tipo is distinct from 'ajuste_cpa' then
+    raise exception using errcode = '22023',
+      message = 'afecta_periodo va solo con un ajuste del CPA (tipo ajuste_cpa): dice a qué período cerrado corresponde.';
+  end if;
+  if new.tipo = 'ajuste_cpa' and new.afecta_periodo is null then
+    raise exception using errcode = '22023',
+      message = 'Un ajuste del CPA dice a qué período cerrado afecta (afecta_periodo), p. ej. ''2026-12''.';
+  end if;
+  if new.tipo = 'ajuste_cpa' and coalesce(btrim(new.motivo), '') = '' then
+    raise exception using errcode = '22023',
+      message = 'Un ajuste del CPA dice por qué (motivo), p. ej. «Ajuste del CPA a 2026 según la declaración».';
+  end if;
 
-  -- 1. Período.
+  -- 1. Fecha y período.
+  if new.camino not in ('reverso', 'reverso_automatico') then
+    v_hoy  := fn_fecha_miami(now());
+    v_tope := greatest(v_hoy + 45,
+                       coalesce((select (date_trunc('month', min(p.desde)::timestamp) + interval '2 month')::date - 1
+                                   from periodos p where p.tipo = 'mes' and p.estado = 'abierto'),
+                                v_hoy + 45));
+    if new.fecha_contable > v_tope then
+      raise exception using errcode = 'MX002',
+        message = format('Fecha en el futuro lejano: el %s pasa del tope del %s (hoy es %s en Miami). ¿El año o el mes '
+                         'están bien? Un asiento se postea cuando llega su fecha.', new.fecha_contable, v_tope, v_hoy);
+    end if;
+  end if;
   select * into v_per
     from periodos p
    where p.tipo <> 'anio' and new.fecha_contable between p.desde and p.hasta
      for share;
   if not found then
+    select min(p.desde) into v_desde from periodos p where p.tipo <> 'anio';
+    if new.fecha_contable < v_desde then
+      raise exception using errcode = 'MX002',
+        message = format('El %s es anterior a la apertura del libro (%s): eso vive en QuickBooks y no entra en este '
+                         'libro.', new.fecha_contable, v_desde);
+    end if;
     raise exception using errcode = 'MX002',
-      message = format('No hay período contable para el %s. El libro empieza en la apertura del 30-sep-2026; '
-                       'un mes nuevo se abre con fn_abrir_periodo.', coalesce(new.fecha_contable::text, '(sin fecha)'));
+      message = format('No hay período contable para el %s: el mes todavía no se abrió. Se abre con '
+                       'fn_abrir_periodo(''AAAA-MM''), en orden.', coalesce(new.fecha_contable::text, '(sin fecha)'));
   end if;
   if v_per.estado <> 'abierto' then
     raise exception using errcode = 'MX002',
@@ -1096,7 +1469,61 @@ begin
     end if;
   end if;
 
-  -- 5. Número correlativo, sin huecos, por año.
+  -- 5. Documento: un asiento vivo por documento de origen. Con el candado
+  --    de la cadena puesto: dos sesiones con el mismo papel no pasan las
+  --    dos (la segunda ve la primera cuando le toca el candado).
+  if new.origen_tabla is not null and new.camino not in ('reverso', 'reverso_automatico') then
+    select string_agg(a.numero, ', ' order by a.cadena_pos) into v_vivos
+      from asientos a
+     where a.origen_tabla = new.origen_tabla and a.origen_id = new.origen_id
+       and a.camino not in ('reverso', 'reverso_automatico')
+       and not exists (select 1 from asientos r where r.reversa_a = a.id);
+    if v_vivos is not null then
+      raise exception using errcode = '23505',
+        message = format('El documento %s %s ya tiene su asiento vivo (%s): no se postea dos veces. Si está mal, se '
+                         'reversa con fn_reversar y el asiento nuevo dice a cuál sustituye (sustituye_a).',
+                         new.origen_tabla, new.origen_id, v_vivos);
+    end if;
+    if new.sustituye_a is null then
+      select a.numero || ' (id ' || a.id || ')' into v_libre
+        from asientos a
+       where a.origen_tabla = new.origen_tabla and a.origen_id = new.origen_id
+         and a.camino not in ('reverso', 'reverso_automatico')
+         and not exists (select 1 from asientos s2 where s2.sustituye_a = a.id)
+       order by a.cadena_pos desc
+       limit 1;
+      if v_libre is not null then
+        raise exception using errcode = 'MX007',
+          message = format('El documento %s %s ya tuvo asiento, reversado: %s. El nuevo dice que lo sustituye '
+                           '(sustituye_a).', new.origen_tabla, new.origen_id, v_libre);
+      end if;
+    else
+      select * into v_sust from asientos where id = new.sustituye_a;
+      if not found
+         or v_sust.origen_tabla is distinct from new.origen_tabla or v_sust.origen_id is distinct from new.origen_id
+         or v_sust.camino in ('reverso', 'reverso_automatico') then
+        raise exception using errcode = 'MX007',
+          message = format('sustituye_a apunta a un asiento que no es de este documento (%s %s), o a un reverso.',
+                           new.origen_tabla, new.origen_id);
+      end if;
+      if not exists (select 1 from asientos r where r.reversa_a = v_sust.id) then
+        raise exception using errcode = 'MX007',
+          message = format('%s todavía no se reversó: primero fn_reversar, después el asiento que lo sustituye.',
+                           v_sust.numero);
+      end if;
+      select a.numero into v_libre from asientos a where a.sustituye_a = v_sust.id;
+      if v_libre is not null then
+        raise exception using errcode = 'MX007',
+          message = format('%s ya tiene su sustituto (%s): si también estaba mal, se reversa ese y se sustituye a él.',
+                           v_sust.numero, v_libre);
+      end if;
+    end if;
+  elsif new.sustituye_a is not null then
+    raise exception using errcode = 'MX007',
+      message = 'Un sustituto dice de qué documento sale (origen_tabla y origen_id): el mismo del asiento que sustituye.';
+  end if;
+
+  -- 6. Número correlativo, sin huecos, por año.
   v_serie := 'asientos-' || new.anio;
   insert into contadores (serie, ultimo) values (v_serie, 0) on conflict (serie) do nothing;
   select c.ultimo + 1 into v_sec from contadores c where c.serie = v_serie for update;
@@ -1104,15 +1531,25 @@ begin
   new.secuencia := v_sec;
   new.numero    := new.anio::text || '-' || lpad(v_sec::text, 6, '0');
 
-  -- 6. El sello. La hora es la del reloj en este instante, con el candado
+  -- 7. El sello. La hora es la del reloj en este instante, con el candado
   --    ya puesto, y no now() (que es la hora en que EMPEZÓ la transacción):
   --    así las horas siguen el orden de la cadena y se pueden comparar con
   --    la hora de cierre de un período, tomada igual.
   new.creado_el  := clock_timestamp();
   new.usuario_id := auth.uid();
   new.rol_bd     := fn_rol_llamante();
+  if fn_desde_editor() then
+    new.procedencia := new.procedencia || jsonb_build_object('conexion', jsonb_strip_nulls(jsonb_build_object(
+                         'application_name', nullif(current_setting('application_name', true), ''),
+                         'cliente',          host(inet_client_addr()),
+                         'puerto',           inet_client_port())));
+  end if;
+  if coalesce(current_setting('mx_libro.puerta', true), '') <> new.id::text
+     and coalesce(current_setting('mx_libro.reverso_de', true), '') <> new.id::text then
+    new.procedencia := new.procedencia || jsonb_build_object('puerta', 'insert_directo');
+  end if;
 
-  -- 7. El eslabón.
+  -- 8. El eslabón.
   select * into v_cabeza from asientos a order by a.cadena_pos desc limit 1;
   new.cadena_pos    := coalesce(v_cabeza.cadena_pos, 0) + 1;
   new.hash_anterior := coalesce(v_cabeza.hash, repeat('0', 64));
@@ -1129,8 +1566,16 @@ create or replace trigger trg_asientos_al_insertar
 -- B.9 · Inmutabilidad (MX003). En TRIGGERS y no en policies: una policy
 -- no frena al SQL Editor ni a una función SECURITY DEFINER; un trigger
 -- sí. Ni la cabecera ni las líneas admiten update, delete o truncate, sin
--- ninguna excepción. Lo único que queda fuera es deshabilitar el trigger,
--- y eso lo detecta la cadena de hashes (fn_verificar_cadena).
+-- ninguna excepción. Desde la API nadie los salta.
+-- Lo que queda fuera es el DUEÑO DE LA BASE: puede apagar un trigger
+-- (alter table … disable trigger) o vaciar esta función con «create or
+-- replace». fn_verificar_cadena delata lo que se hizo así SIN recalcular:
+-- el trigger apagado o cambiado (control triggers, con sus huellas) y el
+-- asiento tocado (control hash). Pero quien además recalcula la cadena con
+-- fn_asiento_canonico y reescribe los contadores y cadena_al_cerrar deja
+-- los nueve controles en verde: contra él, la detección es el hash
+-- EXPORTADO fuera de la base (f08). Ver la cabecera, «Lo que este archivo
+-- no puede hacer».
 -- ---------------------------------------------------------------------
 create or replace function public.fn_libro_inmutable()
 returns trigger
@@ -1206,6 +1651,8 @@ create constraint trigger trg_asientos_reversible_diferido
 --     "motivo": "…",                     (obligatorio en ajuste_cpa)
 --     "documento_ruta": "…",             (el papel en Storage, si no hay fila origen)
 --     "origen_tabla": "recibos", "origen_id": "123",   (obligatorios en 'puente')
+--     "sustituye_a": "uuid",             (el asiento REVERSADO de ese mismo
+--                                         documento al que este sustituye)
 --     "procedencia": { … } }             (lo que el puente quiera dejar escrito)
 -- Monto con signo: positivo = debe, negativo = haber. Va como TEXTO
 -- ("245.37"): se mira su escala antes de convertirlo, porque numeric(14,2)
@@ -1221,7 +1668,7 @@ as $$
 declare
   c_claves       constant text[] := array['camino','fecha','descripcion','lineas','reversible','tipo',
                                           'afecta_periodo','motivo','documento_ruta','origen_tabla',
-                                          'origen_id','procedencia','propuesta_id'];
+                                          'origen_id','sustituye_a','procedencia','propuesta_id'];
   c_claves_linea constant text[] := array['cuenta','monto','proyecto_id','cost_code','co','fase','memo'];
   v_sobra      text;
   v_camino     text;
@@ -1237,6 +1684,7 @@ declare
   v_debe       numeric := 0;
   v_lineas     jsonb := '[]'::jsonb;
   v_id         uuid := gen_random_uuid();
+  v_sustituye  uuid;
   v_a          asientos;
   v_rev        jsonb;
 begin
@@ -1305,9 +1753,36 @@ begin
     raise exception using errcode = '22023',
       message = 'Solo un asiento normal es reversible (el devengo de cierre).';
   end if;
+  -- La forma del ajuste del CPA, con su propio mensaje (sin esto la
+  -- rechazaba un check de la tabla con un 23514 en inglés, y la app le
+  -- habría dicho a Edgar que pegara un SQL).
+  if coalesce(p_asiento->>'afecta_periodo', '') <> '' and v_tipo <> 'ajuste_cpa' then
+    raise exception using errcode = '22023',
+      message = 'afecta_periodo va solo con un ajuste del CPA (tipo ajuste_cpa): dice a qué período cerrado corresponde.';
+  end if;
+  if v_tipo = 'ajuste_cpa' and coalesce(p_asiento->>'afecta_periodo', '') = '' then
+    raise exception using errcode = '22023',
+      message = 'Un ajuste del CPA dice a qué período cerrado afecta (afecta_periodo), p. ej. ''2026-12''.';
+  end if;
+  if v_tipo = 'ajuste_cpa' and coalesce(btrim(p_asiento->>'motivo'), '') = '' then
+    raise exception using errcode = '22023',
+      message = 'Un ajuste del CPA dice por qué (motivo), p. ej. «Ajuste del CPA a 2026 según la declaración».';
+  end if;
   v_proc := coalesce(p_asiento->'procedencia', '{}'::jsonb);
   if jsonb_typeof(v_proc) <> 'object' then
     raise exception using errcode = '22023', message = 'procedencia es un objeto JSON.';
+  end if;
+  -- El sustituto de un asiento reversado del mismo documento (B.8, paso 5).
+  if coalesce(p_asiento->>'sustituye_a', '') <> '' then
+    begin
+      v_sustituye := (p_asiento->>'sustituye_a')::uuid;
+    exception when others then
+      raise exception using errcode = '22023', message = 'sustituye_a es el id (uuid) del asiento reversado al que sustituye.';
+    end;
+    if coalesce(p_asiento->>'origen_tabla', '') = '' or coalesce(p_asiento->>'origen_id', '') = '' then
+      raise exception using errcode = '22023',
+        message = 'Un sustituto dice de qué documento sale (origen_tabla y origen_id): el mismo del asiento que sustituye.';
+    end if;
   end if;
 
   -- Las líneas.
@@ -1381,6 +1856,10 @@ begin
       message = format('Descuadrado: debe %s, haber %s, diferencia %s. No entra.', v_debe, v_debe - v_suma, v_suma);
   end if;
 
+  -- La marca de que estas líneas entraron por aquí (con la escala ya
+  -- mirada): el trigger de la cabecera no las apunta como insert directo.
+  perform set_config('mx_libro.puerta', v_id::text, true);
+
   -- Primero las líneas (cada una pasa su trigger: MX004, MX006)…
   insert into asiento_lineas (asiento_id, orden, cuenta, monto, proyecto_id, cost_code, co, fase, memo)
   select v_id, x.orden, x.cuenta, x.monto, x.proyecto_id, x.cost_code, x.co, x.fase, x.memo
@@ -1388,14 +1867,16 @@ begin
          as x(orden int, cuenta text, monto numeric, proyecto_id text, cost_code text, co text, fase text, memo text)
    order by x.orden;
 
-  -- …y después la cabecera (su trigger: período, cuadre, número, sello y hash).
+  -- …y después la cabecera (su trigger: período, cuadre, documento,
+  -- número, sello y hash).
   insert into asientos (id, fecha_contable, tipo, afecta_periodo, camino, descripcion, motivo, reversible,
-                        origen_tabla, origen_id, documento_ruta, procedencia)
+                        origen_tabla, origen_id, sustituye_a, documento_ruta, procedencia)
   values (v_id, v_fecha, v_tipo, nullif(p_asiento->>'afecta_periodo', ''), v_camino,
           btrim(p_asiento->>'descripcion'), nullif(btrim(p_asiento->>'motivo'), ''), v_reversible,
-          nullif(p_asiento->>'origen_tabla', ''), nullif(p_asiento->>'origen_id', ''),
+          nullif(p_asiento->>'origen_tabla', ''), nullif(p_asiento->>'origen_id', ''), v_sustituye,
           nullif(p_asiento->>'documento_ruta', ''), v_proc)
   returning * into v_a;
+  perform set_config('mx_libro.puerta', '', true);
 
   -- El devengo reversible trae su reverso del día 1, en la misma transacción.
   if v_reversible then
@@ -1411,8 +1892,11 @@ revoke execute on function public.fn_postear_interno(jsonb) from public, anon, a
 
 -- ---------------------------------------------------------------------
 -- B.12 · fn_postear(asiento jsonb) — lo que llama conta.js (camino 'mano').
--- Solo el dueño (o el SQL Editor). El camino, el origen y el sello no los
--- manda el cliente: los pone la base.
+-- Solo el dueño (o el SQL Editor). El camino y el sello no los manda el
+-- cliente: los pone la base. El origen (origen_tabla, origen_id) solo
+-- viaja junto con sustituye_a: la corrección a mano del asiento reversado
+-- de un documento dice de qué papel sale y a cuál sustituye. El PRIMER
+-- asiento de un documento lo postea su puente (f03), no la mano.
 --   _rpc('fn_postear', { p_asiento: { fecha, descripcion, lineas, … } })
 -- ---------------------------------------------------------------------
 create or replace function public.fn_postear(p_asiento jsonb)
@@ -1432,10 +1916,16 @@ begin
   end if;
   select string_agg(k, ', ' order by k) into v_sobra
     from jsonb_object_keys(p_asiento) as k
-   where k not in ('fecha','descripcion','lineas','reversible','tipo','afecta_periodo','motivo','documento_ruta');
+   where k not in ('fecha','descripcion','lineas','reversible','tipo','afecta_periodo','motivo','documento_ruta',
+                   'origen_tabla','origen_id','sustituye_a');
   if v_sobra is not null then
     raise exception using errcode = '22023',
-      message = format('fn_postear no acepta %s: el camino, el origen y el sello los pone la base.', v_sobra);
+      message = format('fn_postear no acepta %s: el camino y el sello los pone la base.', v_sobra);
+  end if;
+  if (p_asiento ? 'origen_tabla' or p_asiento ? 'origen_id') and coalesce(p_asiento->>'sustituye_a', '') = '' then
+    raise exception using errcode = '22023',
+      message = 'fn_postear lleva origen_tabla y origen_id solo para sustituir el asiento reversado de ese documento '
+                '(sustituye_a). El primer asiento de un documento lo postea su puente.';
   end if;
   return fn_postear_interno(p_asiento || jsonb_build_object('camino', 'mano',
                                                             'procedencia', jsonb_build_object('funcion', 'fn_postear')));
@@ -1585,7 +2075,8 @@ revoke execute on function public.fn_estado(text) from public, anon, authenticat
 grant  execute on function public.fn_estado(text) to authenticated;
 
 -- ---------------------------------------------------------------------
--- B.16 · fn_verificar_cadena() — lo que no se puede impedir, se detecta.
+-- B.16 · fn_verificar_cadena() — lo que no se impide desde la API, se
+-- detecta desde dentro… hasta donde se puede desde dentro (ver abajo).
 -- Una fila por control, con la forma de ronda_resultados de f08
 -- (control, ok, detalle). La ronda nocturna la llamará desde pg_cron; el
 -- dueño, cuando quiera, por RPC. SECURITY DEFINER porque tiene que ver
@@ -1596,12 +2087,32 @@ grant  execute on function public.fn_estado(text) to authenticated;
 --   numeracion  por año, los números van del 1 al último sin huecos
 --   contadores  cada contador de asientos está en el último número
 --   cuadre      cada asiento suma cero y tiene al menos dos líneas
---   reversos    cada reverso es el espejo de su original y cada
---               reversible tiene su reverso automático
+--   reversos    cada reverso es el espejo de su original; cada
+--               reversible tiene su reverso automático; cada sustituto
+--               sustituye a un asiento reversado de su mismo documento; y
+--               ningún documento tiene dos asientos vivos
 --   periodos    en cada período cerrado: el hash del cierre sigue en la
---               cadena y nada entró después del cierre
---   triggers    las guardas existen y están habilitadas
---   permisos    RLS, policies y grants como los dejó este archivo
+--               cadena y nada entró después del cierre; los meses se
+--               cerraron en orden (la apertura antes) y el calendario no
+--               tiene huecos
+--   triggers    las guardas existen, están habilitadas y llaman a su
+--               función; su definición y la de las funciones del libro
+--               siguen siendo las que dejó este archivo (las huellas de
+--               B.22); y no hay triggers ajenos sobre el libro
+--   permisos    RLS; en cada tabla del libro UNA policy, «solo el dueño
+--               lee» tal cual (select, permisiva, authenticated,
+--               es_dueno()); la API sin más privilegio que SELECT, ni por
+--               tabla ni por columna (anon, ninguno); ninguna vista que lea
+--               el libro sin security_invoker, directa o a través de otra
+--               vista, ni vista materializada que lo copie a la API; las
+--               funciones con el reparto de B.20; y es_dueno() igual que
+--               cuando se pegó este archivo (es compartida con Planos: si
+--               cambia, alguien tiene que mirarla)
+-- LO QUE NO VE (la frontera, dicha también en la cabecera): el dueño de la
+-- base puede recalcular la cadena con fn_asiento_canonico y reescribir
+-- sus anclas (contadores, cadena_al_cerrar), y hasta las huellas o esta
+-- misma función. Entonces los nueve controles dan true. Contra él, el
+-- control es el hash exportado FUERA de la base en cada cierre (f08).
 -- ---------------------------------------------------------------------
 create or replace function public.fn_verificar_cadena()
 returns table (control text, ok boolean, detalle jsonb)
@@ -1613,7 +2124,21 @@ as $$
 declare
   v_n     bigint;
   v_malos jsonb;
-  c_tablas constant text[] := array['cuentas','periodos','contadores','asientos','asiento_lineas'];
+  v_mas   jsonb;
+  c_tablas constant text[] := array['cuentas', 'cuentas_historial', 'periodos', 'contadores', 'asientos', 'asiento_lineas'];
+  -- Las que llama conta.js (grant a authenticated) y las de dentro (sin
+  -- grant a nadie de la API). Ver B.20.
+  c_fn_app constant text[] := array['fn_postear(jsonb)', 'fn_reversar(uuid,text)', 'fn_estado(text)',
+                                    'fn_verificar_cadena()', 'fn_cerrar_periodo(text)', 'fn_abrir_periodo(text)',
+                                    'fn_fecha_miami(timestamptz)'];
+  c_fn_internas constant text[] := array['fn_postear_interno(jsonb)', 'fn_reversar_interno(uuid,text,text,jsonb)',
+                                         'fn_asiento_canonico(asientos)', 'fn_rol_llamante()', 'fn_desde_editor()',
+                                         'fn_libro_huellas_calcular()', 'fn_libro_huellas()',
+                                         'fn_cuentas_guarda()', 'fn_cuentas_historial()', 'fn_cuentas_historial_inmutable()',
+                                         'fn_periodos_guarda()', 'fn_contadores_guarda()', 'fn_asiento_lineas_al_insertar()',
+                                         'fn_asiento_lineas_sello_al_confirmar()', 'fn_asientos_al_insertar()',
+                                         'fn_libro_inmutable()', 'fn_asientos_reversible_con_reverso()',
+                                         'fn_proyectos_con_libro()'];
 begin
   if not (es_dueno() or fn_desde_editor()) then
     raise exception using errcode = '42501', message = 'Solo el dueño verifica la cadena.';
@@ -1678,7 +2203,7 @@ begin
             from asientos a
             left join asiento_lineas l on l.asiento_id = a.id
            group by a.id, a.numero, a.cadena_pos
-          having count(l.id) < 2 or coalesce(sum(l.monto), 0) <> 0
+          having count(l.orden) < 2 or coalesce(sum(l.monto), 0) <> 0
            order by a.cadena_pos
            limit 20) s;
   select count(*) into v_n
@@ -1689,9 +2214,10 @@ begin
   detalle := jsonb_build_object('descuadrados', v_malos, 'lineas_sin_cabecera', v_n);
   return next;
 
-  -- reversos
+  -- reversos (y sustitutos)
   select coalesce(jsonb_agg(s.numero), '[]'::jsonb) into v_malos
-    from (select r.numero
+    from (-- un reverso que no es el espejo de su original
+          select r.numero
             from asientos r
             join asientos o on o.id = r.reversa_a
            where exists (
@@ -1707,10 +2233,29 @@ begin
                     select l.cuenta, -l.monto, l.proyecto_id, l.cost_code, l.co, l.fase
                       from asiento_lineas l where l.asiento_id = o.id))
           union all
+          -- un reversible sin su reverso automático
           select o.numero
             from asientos o
            where o.reversible
              and not exists (select 1 from asientos r where r.reversa_a = o.id and r.camino = 'reverso_automatico')
+          union all
+          -- un sustituto que no sustituye a un asiento reversado (antes) de su documento
+          select x.numero
+            from asientos x
+            left join asientos o on o.id = x.sustituye_a
+           where x.sustituye_a is not null
+             and (   o.id is null
+                  or o.origen_tabla is distinct from x.origen_tabla or o.origen_id is distinct from x.origen_id
+                  or o.camino in ('reverso', 'reverso_automatico')
+                  or not exists (select 1 from asientos r where r.reversa_a = o.id and r.cadena_pos < x.cadena_pos))
+          union all
+          -- un documento con dos asientos vivos
+          select min(a.numero)
+            from asientos a
+           where a.origen_tabla is not null and a.camino not in ('reverso', 'reverso_automatico')
+             and not exists (select 1 from asientos r where r.reversa_a = a.id)
+           group by a.origen_tabla, a.origen_id
+          having count(*) > 1
           limit 20) s;
   control := 'reversos';
   ok      := jsonb_array_length(v_malos) = 0;
@@ -1718,8 +2263,8 @@ begin
   return next;
 
   -- periodos
-  select coalesce(jsonb_agg(s.periodo), '[]'::jsonb) into v_malos
-    from (select p.periodo
+  select coalesce(jsonb_agg(s.periodo order by s.desde), '[]'::jsonb) into v_malos
+    from (select p.periodo, p.desde
             from periodos p
            where p.estado = 'cerrado'
              and (   (p.cadena_al_cerrar is distinct from repeat('0', 64)
@@ -1729,76 +2274,181 @@ begin
                   or exists (select 1 from asientos a
                               where a.periodo = p.periodo
                                 and a.cadena_pos > coalesce((select b.cadena_pos from asientos b
-                                                              where b.hash = p.cadena_al_cerrar), 0)))
-           order by p.desde) s;
+                                                              where b.hash = p.cadena_al_cerrar), 0)))) s;
+  select coalesce(jsonb_agg(s.periodo order by s.desde), '[]'::jsonb) into v_mas
+    from (select p.periodo, p.desde
+            from periodos p
+           where p.tipo = 'mes'
+             and (   not exists (select 1 from periodos q
+                                  where q.tipo in ('mes', 'apertura') and p.desde - 1 between q.desde and q.hasta)
+                  or (p.estado = 'cerrado'
+                      and exists (select 1 from periodos q
+                                   where q.tipo in ('mes', 'apertura') and q.estado = 'abierto' and q.desde < p.desde)))) s;
   control := 'periodos';
-  ok      := jsonb_array_length(v_malos) = 0;
+  ok      := jsonb_array_length(v_malos) = 0 and jsonb_array_length(v_mas) = 0;
   detalle := jsonb_build_object('cerrados', (select count(*) from periodos where periodos.estado = 'cerrado'),
-                                'tocados', v_malos);
+                                'tocados', v_malos, 'fuera_de_orden_o_con_hueco', v_mas);
   return next;
 
-  -- triggers
+  -- triggers: los esperados, habilitados y con su función…
   select coalesce(jsonb_agg(jsonb_build_object('tabla', e.tabla, 'trigger', e.nombre,
                                                'estado', coalesce(t.tgenabled::text, 'NO EXISTE'))), '[]'::jsonb)
     into v_malos
-    from (values ('cuentas',        'trg_cuentas_guarda'),
-                 ('cuentas',        'trg_cuentas_sin_truncate'),
-                 ('periodos',       'trg_periodos_guarda'),
-                 ('periodos',       'trg_periodos_sin_truncate'),
-                 ('contadores',     'trg_contadores_guarda'),
-                 ('contadores',     'trg_contadores_sin_truncate'),
-                 ('asientos',       'trg_asientos_al_insertar'),
-                 ('asientos',       'trg_asientos_inmutable'),
-                 ('asientos',       'trg_asientos_sin_truncate'),
-                 ('asientos',       'trg_asientos_reversible_diferido'),
-                 ('asiento_lineas', 'trg_asiento_lineas_al_insertar'),
-                 ('asiento_lineas', 'trg_asiento_lineas_inmutable'),
-                 ('asiento_lineas', 'trg_asiento_lineas_sin_truncate')) as e(tabla, nombre)
+    from (values ('cuentas',           'trg_cuentas_guarda',                'fn_cuentas_guarda'),
+                 ('cuentas',           'trg_cuentas_sin_truncate',          'fn_cuentas_guarda'),
+                 ('cuentas',           'trg_cuentas_historial',             'fn_cuentas_historial'),
+                 ('cuentas_historial', 'trg_cuentas_historial_inmutable',   'fn_cuentas_historial_inmutable'),
+                 ('cuentas_historial', 'trg_cuentas_historial_sin_truncate', 'fn_cuentas_historial_inmutable'),
+                 ('periodos',          'trg_periodos_guarda',               'fn_periodos_guarda'),
+                 ('periodos',          'trg_periodos_sin_truncate',         'fn_periodos_guarda'),
+                 ('contadores',        'trg_contadores_guarda',             'fn_contadores_guarda'),
+                 ('contadores',        'trg_contadores_sin_truncate',       'fn_contadores_guarda'),
+                 ('asientos',          'trg_asientos_al_insertar',          'fn_asientos_al_insertar'),
+                 ('asientos',          'trg_asientos_inmutable',            'fn_libro_inmutable'),
+                 ('asientos',          'trg_asientos_sin_truncate',         'fn_libro_inmutable'),
+                 ('asientos',          'trg_asientos_reversible_diferido',  'fn_asientos_reversible_con_reverso'),
+                 ('asiento_lineas',    'trg_asiento_lineas_al_insertar',    'fn_asiento_lineas_al_insertar'),
+                 ('asiento_lineas',    'trg_asiento_lineas_sello_diferido', 'fn_asiento_lineas_sello_al_confirmar'),
+                 ('asiento_lineas',    'trg_asiento_lineas_inmutable',      'fn_libro_inmutable'),
+                 ('asiento_lineas',    'trg_asiento_lineas_sin_truncate',   'fn_libro_inmutable'),
+                 ('proyectos',         'trg_proyectos_con_libro',           'fn_proyectos_con_libro')) as e(tabla, nombre, funcion)
     left join pg_trigger t
-           on t.tgrelid = to_regclass('public.' || e.tabla) and t.tgname = e.nombre
-   where t.oid is null or t.tgenabled not in ('O', 'A');
+           on t.tgrelid = to_regclass('public.' || e.tabla) and t.tgname = e.nombre and not t.tgisinternal
+   where t.oid is null
+      or t.tgenabled not in ('O', 'A')
+      or t.tgfoid is distinct from to_regprocedure('public.' || e.funcion || '()')::oid;
+  -- …y sus huellas: la definición de cada trigger del libro y de cada
+  -- función del libro, contra las que dejó el último pegado (B.22). Una
+  -- guarda vaciada con «create or replace», un trigger cambiado o uno
+  -- nuevo sobre el libro no pasan callados.
+  if to_regprocedure('public.fn_libro_huellas()') is null then
+    v_mas := '["faltan las huellas (fn_libro_huellas): vuelve a pegar c2-libro.sql"]'::jsonb;
+  else
+    select coalesce(jsonb_agg(format('%s %s: %s', coalesce(h.tipo, a.tipo), coalesce(h.objeto, a.objeto),
+                                     case when h.objeto is null then 'nuevo, no lo puso este archivo'
+                                          when a.objeto is null then 'ya no está'
+                                          else 'cambió desde que se pegó' end)
+                              order by coalesce(h.objeto, a.objeto)), '[]'::jsonb)
+      into v_mas
+      from (select * from fn_libro_huellas() x where x.tipo in ('trigger', 'funcion')) h
+      full join (select * from fn_libro_huellas_calcular() y where y.tipo in ('trigger', 'funcion')) a
+             on a.tipo = h.tipo and a.objeto = h.objeto
+     where a.md5 is distinct from h.md5;
+  end if;
   control := 'triggers';
-  ok      := jsonb_array_length(v_malos) = 0;
-  detalle := jsonb_build_object('fallan', v_malos);
+  ok      := jsonb_array_length(v_malos) = 0 and jsonb_array_length(v_mas) = 0;
+  detalle := jsonb_build_object('fallan', v_malos, 'huellas', v_mas);
   return next;
 
   -- permisos
+  with recursive dep(oid) as (
+         -- las tablas del libro, y todo lo que las lee a través de una vista
+         select c.oid from pg_class c
+          where c.relnamespace = 'public'::regnamespace and c.relname = any (c_tablas)
+         union
+         select rw.ev_class
+           from dep
+           join pg_depend d on d.refobjid = dep.oid and d.refclassid = 'pg_class'::regclass
+                           and d.classid = 'pg_rewrite'::regclass
+           join pg_rewrite rw on rw.oid = d.objid
+          where rw.ev_class <> dep.oid
+       ),
+       vistas as (
+         select c.oid, n.nspname || '.' || c.relname as nombre, c.relkind,
+                coalesce((select o.option_value::boolean from pg_options_to_table(c.reloptions) o
+                           where o.option_name = 'security_invoker'), false) as invoker
+           from dep
+           join pg_class c on c.oid = dep.oid
+           join pg_namespace n on n.oid = c.relnamespace
+          where c.relkind in ('v', 'm')
+       )
   select coalesce(jsonb_agg(s.falla), '[]'::jsonb) into v_malos
-    from (select format('%s sin RLS', t) as falla
+    from (select format('falta la tabla %s', t) as falla
             from unnest(c_tablas) t
-           where not (select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.' || t))
+           where to_regclass('public.' || t) is null
           union all
-          select format('%s sin la policy %s_dueno', t, t)
+          select format('%s sin RLS', t)
+            from unnest(c_tablas) t
+           where to_regclass('public.' || t) is not null
+             and not (select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.' || t))
+          union all
+          select format('%s: la policy %s_dueno falta o no es «solo el dueño lee» (select, permisiva, authenticated, es_dueno())', t, t)
             from unnest(c_tablas) t
            where not exists (select 1 from pg_policies pl
-                              where pl.schemaname = 'public' and pl.tablename = t and pl.policyname = t || '_dueno')
+                              where pl.schemaname = 'public' and pl.tablename = t and pl.policyname = t || '_dueno'
+                                and pl.cmd = 'SELECT' and pl.permissive = 'PERMISSIVE'
+                                and pl.roles = array['authenticated']::name[] and pl.qual = 'es_dueno()')
           union all
-          select format('anon tiene permisos en %s', t)
-            from unnest(c_tablas) t
-           where has_table_privilege('anon', 'public.' || t, 'select,insert,update,delete,truncate,references,trigger')
+          select format('%s tiene una policy ajena: %s', pl.tablename, pl.policyname)
+            from pg_policies pl
+           where pl.schemaname = 'public' and pl.tablename = any (c_tablas) and pl.policyname <> pl.tablename || '_dueno'
           union all
-          select format('%s puede escribir en %s', r, t)
-            from unnest(c_tablas) t, unnest(array['authenticated','service_role']) r
-           where has_table_privilege(r, 'public.' || t, 'insert,update,delete,truncate')
+          -- privilegios de tabla: la API solo SELECT; anon y PUBLIC, nada
+          select format('%s tiene %s en %s', case when a.grantee = 0 then 'PUBLIC' else r.rolname::text end,
+                        a.privilege_type, c.relname)
+            from pg_class c
+            cross join lateral aclexplode(c.relacl) a
+            left join pg_roles r on r.oid = a.grantee
+           where c.relnamespace = 'public'::regnamespace and c.relname = any (c_tablas)
+             and (a.grantee = 0 or r.rolname in ('anon', 'authenticated', 'service_role'))
+             and (a.grantee = 0 or r.rolname = 'anon' or a.privilege_type <> 'SELECT')
+          union all
+          -- privilegios por columna: a la API, ninguno
+          select format('%s tiene %s en la columna %s.%s', case when a.grantee = 0 then 'PUBLIC' else r.rolname::text end,
+                        a.privilege_type, c.relname, at.attname)
+            from pg_class c
+            join pg_attribute at on at.attrelid = c.oid and at.attacl is not null
+            cross join lateral aclexplode(at.attacl) a
+            left join pg_roles r on r.oid = a.grantee
+           where c.relnamespace = 'public'::regnamespace and c.relname = any (c_tablas)
+             and (a.grantee = 0 or r.rolname in ('anon', 'authenticated', 'service_role'))
+          union all
+          -- una vista que lee el libro con los permisos de su dueño se salta la policy
+          select format('la vista %s lee el libro sin security_invoker', v.nombre)
+            from vistas v
+           where v.relkind = 'v' and not v.invoker
+          union all
+          -- una vista materializada no tiene RLS: lo que copia lo lee quien tenga grant
+          select format('la vista materializada %s copia el libro y la puede leer la API', v.nombre)
+            from vistas v
+           where v.relkind = 'm'
+             and (has_table_privilege('anon', v.oid, 'SELECT') or has_table_privilege('authenticated', v.oid, 'SELECT'))
+          union all
+          -- las funciones: ver B.20
+          select format('falta la función %s', f)
+            from unnest(c_fn_app || c_fn_internas) f
+           where to_regprocedure('public.' || f) is null
           union all
           select format('anon ejecuta %s', f)
-            from unnest(array['fn_postear(jsonb)','fn_reversar(uuid,text)','fn_estado(text)','fn_verificar_cadena()',
-                              'fn_cerrar_periodo(text)','fn_abrir_periodo(text)','fn_fecha_miami(timestamptz)',
-                              'fn_postear_interno(jsonb)','fn_reversar_interno(uuid,text,text,jsonb)']) f
-           where has_function_privilege('anon', 'public.' || f, 'execute')
+            from unnest(c_fn_app || c_fn_internas) f
+           where to_regprocedure('public.' || f) is not null
+             and has_function_privilege('anon', to_regprocedure('public.' || f)::oid, 'execute')
           union all
-          select format('%s ejecuta %s', r, f)
-            from unnest(array['fn_postear_interno(jsonb)','fn_reversar_interno(uuid,text,text,jsonb)']) f,
-                 unnest(array['authenticated','service_role']) r
-           where has_function_privilege(r, 'public.' || f, 'execute')
+          select format('authenticated ejecuta %s', f)
+            from unnest(c_fn_internas) f
+           where to_regprocedure('public.' || f) is not null
+             and has_function_privilege('authenticated', to_regprocedure('public.' || f)::oid, 'execute')
           union all
           select format('service_role ejecuta %s', f)
-            from unnest(array['fn_postear(jsonb)','fn_reversar(uuid,text)','fn_cerrar_periodo(text)',
-                              'fn_abrir_periodo(text)']) f
-           where has_function_privilege('service_role', 'public.' || f, 'execute')) s;
+            from unnest(c_fn_app || c_fn_internas) f
+           where to_regprocedure('public.' || f) is not null
+             and has_function_privilege('service_role', to_regprocedure('public.' || f)::oid, 'execute')) s;
+  -- es_dueno(), el candado del libro, igual que cuando se pegó.
+  if to_regprocedure('public.fn_libro_huellas()') is null then
+    v_mas := '["faltan las huellas (fn_libro_huellas): vuelve a pegar c2-libro.sql"]'::jsonb;
+  else
+    select coalesce(jsonb_agg(format('%s cambió desde que se pegó c2-libro.sql: revisa que siga diciendo «solo el '
+                                     'dueño activo» y vuelve a pegar el archivo para fijar su huella nueva',
+                                     coalesce(h.objeto, a.objeto))), '[]'::jsonb)
+      into v_mas
+      from (select * from fn_libro_huellas() x where x.tipo = 'candado') h
+      full join (select * from fn_libro_huellas_calcular() y where y.tipo = 'candado') a
+             on a.objeto = h.objeto
+     where a.md5 is distinct from h.md5;
+  end if;
   control := 'permisos';
-  ok      := jsonb_array_length(v_malos) = 0;
-  detalle := jsonb_build_object('fallan', v_malos);
+  ok      := jsonb_array_length(v_malos) = 0 and jsonb_array_length(v_mas) = 0;
+  detalle := jsonb_build_object('fallan', v_malos || v_mas);
   return next;
 end $$;
 revoke execute on function public.fn_verificar_cadena() from public, anon, authenticated, service_role;
@@ -1822,9 +2472,13 @@ begin
   if not (es_dueno() or fn_desde_editor()) then
     raise exception using errcode = '42501', message = 'Solo el dueño cierra un período.';
   end if;
+  -- MX002 y no P0002: PostgREST devuelve la clase P0 (salvo P0001) como un
+  -- error 500 del servidor, y esto es un nombre mal escrito, no una caída.
   select * into v_p from periodos where periodo = p_periodo;
   if not found then
-    raise exception using errcode = 'P0002', message = format('No existe el período %s.', coalesce(p_periodo, ''));
+    raise exception using errcode = 'MX002',
+      message = format('No existe el período «%s»: revisa el nombre (AAAA-MM para un mes, AAAA para un año, '
+                       'AAAA-MM-APERTURA para la apertura) o ábrelo antes con fn_abrir_periodo.', coalesce(p_periodo, ''));
   end if;
   if v_p.estado = 'cerrado' then
     raise exception using errcode = 'MX002',
@@ -1840,7 +2494,8 @@ grant  execute on function public.fn_cerrar_periodo(text) to authenticated;
 -- ---------------------------------------------------------------------
 -- B.18 · fn_abrir_periodo('AAAA-MM') — el dueño abre un mes (y su año, si
 -- falta). Si ya existe, lo devuelve tal cual. Las reglas (no antes de la
--- apertura, no antes de un mes cerrado, año abierto) viven en el trigger.
+-- apertura, no antes de un mes cerrado, año abierto, y sin huecos: el mes
+-- anterior tiene que existir) viven en el trigger.
 -- ---------------------------------------------------------------------
 create or replace function public.fn_abrir_periodo(p_mes text)
 returns jsonb
@@ -1879,11 +2534,48 @@ grant  execute on function public.fn_abrir_periodo(text) to authenticated;
 
 
 -- ---------------------------------------------------------------------
--- B.19 · Quién ejecuta. En Supabase toda función nace ejecutable por anon
+-- B.19 · Una obra con asientos no se borra (MX003): se archiva. La FK de
+-- asiento_lineas.proyecto_id ya lo impedía, pero con un 23503 que la app
+-- traduce como «eso apunta a algo que ya no existe»: falso, la obra
+-- existe y lo que la protege es el libro. Este trigger lo dice claro, y
+-- enCristiano deja pasar los MX tal cual. Tampoco cambia de id una obra
+-- con asientos. SECURITY DEFINER porque tiene que ver TODAS las líneas
+-- del libro, sea quien sea quien borra (con RLS, alguien que no es el
+-- dueño vería cero y el mensaje se perdería).
+-- ---------------------------------------------------------------------
+create or replace function public.fn_proyectos_con_libro()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_n bigint;
+begin
+  if tg_op = 'UPDATE' and new.id is not distinct from old.id then
+    return new;
+  end if;
+  select count(*) into v_n from asiento_lineas where proyecto_id = old.id;
+  if v_n > 0 then
+    raise exception using errcode = 'MX003',
+      message = format('La obra %s ya tiene asientos en el libro (%s líneas): no se %s; se archiva.',
+                       old.id, v_n, case when tg_op = 'DELETE' then 'borra' else 'le cambia el id' end);
+  end if;
+  return case when tg_op = 'DELETE' then old else new end;
+end $$;
+revoke execute on function public.fn_proyectos_con_libro() from public, anon, authenticated, service_role;
+
+create or replace trigger trg_proyectos_con_libro
+  before delete or update of id on public.proyectos
+  for each row execute function public.fn_proyectos_con_libro();
+
+-- ---------------------------------------------------------------------
+-- B.20 · Quién ejecuta. En Supabase toda función nace ejecutable por anon
 -- y authenticated; por eso cada función de este archivo lleva su revoke
 -- JUSTO DESPUÉS de crearla (arriba). El reparto queda así:
---   · internas (triggers, auxiliares, las dos puertas internas): nadie de
---     la API; solo el dueño de la base y las funciones SECURITY DEFINER;
+--   · internas (triggers, auxiliares, las dos puertas internas, las
+--     huellas): nadie de la API; solo el dueño de la base y las funciones
+--     SECURITY DEFINER;
 --   · las que llama conta.js (fn_postear, fn_reversar, fn_estado,
 --     fn_verificar_cadena, fn_abrir_periodo, fn_cerrar_periodo,
 --     fn_fecha_miami): solo authenticated, y por dentro solo pasa el
@@ -1892,11 +2584,12 @@ grant  execute on function public.fn_abrir_periodo(text) to authenticated;
 -- ---------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------
--- B.20 · Lo que un auditor lee en pg_description (de aquí sale
+-- B.21 · Lo que un auditor lee en pg_description (de aquí sale
 -- docs/conta/MAPA-DATOS.md).
 -- ---------------------------------------------------------------------
 comment on table public.periodos is
-  'Períodos contables (c2): un mes, la apertura (30-sep-2026) o un año. Nacen abiertos, se cierran en orden y no se reabren. Nadie escribe en un período cerrado.';
+  'Períodos contables (c2): un mes, la apertura (30-sep-2026) o un año. Nacen abiertos, seguidos y sin huecos; se cierran en orden '
+  '(la apertura primero) y no se reabren ni se borran. Nadie escribe en un período cerrado.';
 comment on column public.periodos.periodo          is 'AAAA-MM (mes), AAAA-MM-APERTURA o AAAA (año).';
 comment on column public.periodos.tipo             is 'mes, apertura o anio.';
 comment on column public.periodos.estado           is 'abierto o cerrado. De cerrado no se vuelve.';
@@ -1904,7 +2597,8 @@ comment on column public.periodos.paralelo         is 'true = marcha en paralelo
 comment on column public.periodos.cerrado_el       is 'Cuándo se cerró (lo pone la base).';
 comment on column public.periodos.cerrado_por      is 'auth.uid() de quien lo cerró; nulo si fue desde el SQL Editor.';
 comment on column public.periodos.cerrado_rol      is 'Rol con que se cerró: authenticated (la app) o el dueño de la base (SQL Editor).';
-comment on column public.periodos.cadena_al_cerrar is 'Hash de la cadena del libro en el instante del cierre: la foto que se comprueba después.';
+comment on column public.periodos.cerrado_conexion is 'Si lo cerró una conexión directa del dueño de la base (SQL Editor, pg_cron, SUPABASE_DB_URL): application_name, cliente y puerto. Nulo si fue por la app.';
+comment on column public.periodos.cadena_al_cerrar is 'Hash de la cadena del libro en el instante del cierre: la foto que se comprueba después (dentro de la base; el ancla que vale contra el dueño de la base es la exportada en f08).';
 
 comment on table public.contadores is
   'Numeración sin huecos (c2). Una fila por serie y año (asientos-2027). Solo avanza de uno en uno.';
@@ -1922,11 +2616,14 @@ comment on column public.asientos.descripcion    is 'Qué es el asiento, en pala
 comment on column public.asientos.motivo         is 'Por qué: obligatorio en un reverso y en un ajuste del CPA.';
 comment on column public.asientos.reversa_a      is 'El asiento que este reversa. Único: un asiento se reversa una sola vez; un reverso no se reversa.';
 comment on column public.asientos.reversible     is 'true = devengo de cierre: nace con su reverso automático el día 1 del mes siguiente.';
-comment on column public.asientos.origen_tabla   is 'Tabla del documento origen (recibos, facturas…). Un documento, un asiento.';
+comment on column public.asientos.origen_tabla   is 'Tabla del documento origen (recibos, facturas…). Un documento, un asiento vivo (el reversado se sustituye).';
 comment on column public.asientos.origen_id      is 'Id del documento origen, como texto.';
+comment on column public.asientos.sustituye_a    is 'El asiento REVERSADO del mismo documento al que este sustituye (una corrección del mapeo, un documento des-anulado). Único.';
 comment on column public.asientos.documento_ruta is 'Ruta del papel en Storage cuando no hay fila origen (la balanza de apertura en PDF…).';
 comment on column public.asientos.propuesta_id   is 'Reservado para f07: la propuesta de la IA aprobada (ia_propuestas.id, uuid). OJO: no es la tabla propuestas, que son las de los clientes.';
-comment on column public.asientos.procedencia    is 'El sello del camino: qué función lo posteó y lo que el puente dejó escrito (p. ej. la nota de un documento tardío).';
+comment on column public.asientos.procedencia    is 'El sello del camino: qué función lo posteó y lo que el puente dejó escrito (p. ej. la nota de un documento tardío). '
+                                                    'Lo pone la base: «conexion» (application_name, cliente, puerto) si entró por una conexión directa del dueño de la base; '
+                                                    '«puerta» = insert_directo si sus líneas no pasaron por fn_postear_interno (sin la mirada de la escala: numeric(14,2) redondeó).';
 comment on column public.asientos.usuario_id     is 'auth.uid() de la sesión que lo posteó (en un puente, quien subió el papel); nulo desde el SQL Editor.';
 comment on column public.asientos.rol_bd         is 'Rol con que entró: authenticated (la app), o el dueño de la base (SQL Editor, pg_cron).';
 comment on column public.asientos.creado_el      is 'Cuándo se posteó (hora del servidor).';
@@ -1937,7 +2634,7 @@ comment on table public.asiento_lineas is
   'Líneas del libro (c2). Monto con signo: positivo = debe, negativo = haber; cada asiento suma cero. No se editan ni se borran.';
 comment on column public.asiento_lineas.orden       is 'Posición de la línea dentro de su asiento.';
 comment on column public.asiento_lineas.cuenta      is 'Cuenta del plan (cuentas.codigo).';
-comment on column public.asiento_lineas.monto       is 'numeric(14,2), nunca cero. Positivo = debe, negativo = haber.';
+comment on column public.asiento_lineas.monto       is 'numeric(14,2), nunca cero. Positivo = debe, negativo = haber. Más de dos decimales: fn_postear los rechaza (MX005); un insert directo los redondea y su asiento queda marcado (procedencia.puerta).';
 comment on column public.asiento_lineas.proyecto_id is 'Dimensión obra (proyectos.id). La exige o la prohíbe cuentas.regla_obra.';
 comment on column public.asiento_lineas.cost_code   is 'Dimensión cost code (codigos_partida.codigo), opción B de f01. La exige o la prohíbe cuentas.regla_cost_code.';
 comment on column public.asiento_lineas.co          is 'Change Order, copiado tal cual del origen (la FK a alcances llega en f10).';
@@ -1954,6 +2651,85 @@ comment on function public.fn_fecha_miami(timestamptz) is 'La fecha en hora de M
 comment on function public.fn_postear_interno(jsonb)  is 'La puerta interna de todo posteo (puentes, IA aprobada). Sin grant a la API.';
 comment on function public.fn_reversar_interno(uuid, text, text, jsonb) is 'La única fábrica de reversos: las líneas espejo salen de la base. Sin grant a la API.';
 comment on function public.fn_asiento_canonico(public.asientos) is 'El texto exacto que se sella con sha256: el asiento, sus líneas y el hash anterior.';
+comment on function public.fn_proyectos_con_libro()   is 'Una obra con asientos en el libro no se borra ni cambia de id (MX003): se archiva.';
+
+
+-- ---------------------------------------------------------------------
+-- B.22 · Las huellas. Lo ÚLTIMO del archivo, con todo ya puesto: el md5
+-- de la definición de cada trigger del libro, de cada función del libro y
+-- de es_dueno(). fn_verificar_cadena las compara cada vez (controles
+-- triggers y permisos): una guarda vaciada con «create or replace», un
+-- trigger cambiado o añadido sobre el libro, o un es_dueno() distinto, ya
+-- no pasan callados.
+--   · fn_libro_huellas_calcular() dice QUÉ se vigila y calcula las huellas
+--     de hoy (con su search_path fijo, para que los nombres salgan igual
+--     siempre).
+--   · fn_libro_huellas() guarda las de este pegado: se reescribe aquí,
+--     cada vez que se pega el archivo, con los valores literales.
+-- Solo frena ACCIDENTES y cambios torpes: quien es dueño de la base puede
+-- rehacer las huellas (basta con volver a pegar el archivo). Si un cambio
+-- legítimo toca una guarda (una versión nueva de c1 o de c2, o Planos
+-- cambia es_dueno), el control sale en rojo hasta que se vuelve a pegar
+-- c2-libro.sql: es lo que se quiere, que alguien lo mire. Una fase que
+-- añada a propósito un trigger sobre las tablas del libro (c3…) termina
+-- su archivo rehaciendo las huellas con este mismo bloque.
+-- ---------------------------------------------------------------------
+create or replace function public.fn_libro_huellas_calcular()
+returns table (tipo text, objeto text, md5 text)
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select 'trigger'::text, c.relname || '.' || t.tgname, md5(pg_get_triggerdef(t.oid))
+    from pg_trigger t
+    join pg_class c on c.oid = t.tgrelid
+   where c.relnamespace = 'public'::regnamespace
+     and not t.tgisinternal
+     and (   c.relname in ('cuentas', 'cuentas_historial', 'periodos', 'contadores', 'asientos', 'asiento_lineas')
+          or (c.relname = 'proyectos' and t.tgname = 'trg_proyectos_con_libro'))
+  union all
+  select 'funcion'::text, p.oid::regprocedure::text, md5(pg_get_functiondef(p.oid))
+    from pg_proc p
+   where p.pronamespace = 'public'::regnamespace
+     and p.proname in ('fn_cuentas_guarda', 'fn_cuentas_historial', 'fn_cuentas_historial_inmutable',
+                       'fn_fecha_miami', 'fn_rol_llamante', 'fn_desde_editor', 'fn_asiento_canonico',
+                       'fn_periodos_guarda', 'fn_contadores_guarda', 'fn_asiento_lineas_al_insertar',
+                       'fn_asiento_lineas_sello_al_confirmar', 'fn_asientos_al_insertar', 'fn_libro_inmutable',
+                       'fn_asientos_reversible_con_reverso', 'fn_postear_interno', 'fn_postear',
+                       'fn_reversar_interno', 'fn_reversar', 'fn_estado', 'fn_verificar_cadena',
+                       'fn_cerrar_periodo', 'fn_abrir_periodo', 'fn_proyectos_con_libro',
+                       'fn_libro_huellas_calcular')
+  union all
+  select 'candado'::text, p.oid::regprocedure::text, md5(pg_get_functiondef(p.oid))
+    from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and p.proname = 'es_dueno'
+$$;
+revoke execute on function public.fn_libro_huellas_calcular() from public, anon, authenticated, service_role;
+
+do $$
+declare
+  v_filas text;
+begin
+  select string_agg(format('(%L, %L, %L)', h.tipo, h.objeto, h.md5), E',\n    ' order by h.tipo, h.objeto)
+    into v_filas
+    from public.fn_libro_huellas_calcular() h;
+  execute format($f$
+    create or replace function public.fn_libro_huellas()
+    returns table (tipo text, objeto text, md5 text)
+    language sql
+    immutable
+    set search_path = public, pg_temp
+    as $b$
+      select * from (values
+    %s
+      ) as v(tipo, objeto, md5)
+    $b$
+  $f$, v_filas);
+  execute 'revoke execute on function public.fn_libro_huellas() from public, anon, authenticated, service_role';
+  execute format('comment on function public.fn_libro_huellas() is %L',
+                 'Las huellas (md5) de las guardas, las funciones del libro y es_dueno() del último pegado de c2-libro.sql, '
+                 'del ' || to_char(now() at time zone 'America/New_York', 'YYYY-MM-DD HH24:MI') || ' (Miami).');
+end $$;
 
 
 -- =====================================================================
