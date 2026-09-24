@@ -90,9 +90,9 @@ cat > "$TMP/ruta_doble.sql" <<'SQL'
 insert into recibos (id, proyecto_id, ruta, total, proveedor, estado, autor_id, creado, fecha, categoria, metodo_pago)
 overriding system value values
  (-1101, 'casa-perez-k3m9', 'recibos/g/misma.jpg', 90.00, 'CED', 'leido', '00000000-0000-4000-a000-000000000002',
-  timestamptz '2026-10-12 10:00-04', date '2026-10-12', 'material', 'Account'),
+  timestamptz '2026-10-12 10:00-04', date '2026-10-12', 'material', 'cuenta_proveedor'),
  (-1102, 'casa-perez-k3m9', 'recibos/g/misma.jpg', 90.00, 'CED', 'leido', '00000000-0000-4000-a000-000000000002',
-  timestamptz '2026-10-12 10:05-04', date '2026-10-12', 'material', 'Account');
+  timestamptz '2026-10-12 10:05-04', date '2026-10-12', 'material', 'cuenta_proveedor');
 SQL
 "$DIR/correr.sh" "$BD" "$DOCS/c1-plan-de-cuentas.sql" "$DOCS/c2-libro.sql" "$TMP/ruta_doble.sql" "$DOCS/c3-puentes.sql" \
   > "$TMP/carga3.out" 2>&1 || { cat "$TMP/carga3.out"; echo "FALLÓ la carga del escenario 3" >&2; exit 2; }

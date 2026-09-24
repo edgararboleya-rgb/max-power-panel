@@ -80,9 +80,13 @@ end $$;
 --     y las huellas. La última prueba la compara con la del principio.
 --   · c3_montar(): lo que usan casi todas las pruebas, dentro de su
 --     subtransacción (el MXT00 lo deshace): una tarjeta de prueba (cuenta
---     2100-9998, últimos 4 «9998»), reglas CONFIRMADAS con nombres propios
---     («c3 pruebas material», «c3 pruebas tarjeta»…), la regla del tipo de
---     la obra confirmada, un supply y un ayudante (con su proveedor).
+--     2100-9998, últimos 4 «9998»), las reglas que usan las pruebas
+--     CONFIRMADAS sobre los valores que producción admite (su CHECK: las 7
+--     categorías y las 5 formas de pago): material, combustible, credito,
+--     cuenta_proveedor, zelle (banco) y efectivo (como reembolso, para
+--     probarlo); la regla del tipo de la obra confirmada, un supply y un
+--     ayudante (con su proveedor). Todo se deshace con la prueba: las
+--     reglas de Edgar quedan como estaban.
 --   · c3_recibo(json): un recibo de prueba con su id (negativo), como lo
 --     deja la lectura de cerebro: leído, con total, fecha, categoría y forma
 --     de pago; subido el día de su fecha, salvo que se diga «creado».
@@ -152,12 +156,12 @@ begin
   values ('2100-9998', 'c3-pruebas: tarjeta de prueba', 'c3 test card', 'pasivo', 'haber', true, 'prohibida', 'prohibida')
   on conflict (codigo) do nothing;
   perform fn_tarjeta_alta('9998', '2100-9998', 'c3-pruebas: tarjeta');
-  perform fn_mapeo_categoria('c3 pruebas material', current_setting('mx3.material'));
-  perform fn_mapeo_categoria('c3 pruebas gasolina', current_setting('mx3.vehiculo'));
-  perform fn_mapeo_metodo_pago('c3 pruebas tarjeta', 'tarjeta');
-  perform fn_mapeo_metodo_pago('c3 pruebas cuenta', 'cuenta_proveedor');
-  perform fn_mapeo_metodo_pago('c3 pruebas banco', 'banco', fn_puente_cuenta_de('banco'));
-  perform fn_mapeo_metodo_pago('c3 pruebas reembolso', 'reembolso');
+  perform fn_mapeo_categoria('material', current_setting('mx3.material'));
+  perform fn_mapeo_categoria('combustible', current_setting('mx3.vehiculo'));
+  perform fn_mapeo_metodo_pago('credito', 'tarjeta');
+  perform fn_mapeo_metodo_pago('cuenta_proveedor', 'cuenta_proveedor');
+  perform fn_mapeo_metodo_pago('zelle', 'banco', fn_puente_cuenta_de('banco'));
+  perform fn_mapeo_metodo_pago('efectivo', 'reembolso');
   select p.tipo into v_tipo from proyectos p where p.id = v_obra;
   select m.cuenta into v_ing from mapeo_tipo_proyecto m where m.tipo = fn_puente_normalizar(v_tipo);
   v_ing := coalesce(v_ing, (select c.codigo from cuentas c
@@ -197,9 +201,9 @@ begin
                    (coalesce((p->>'fecha')::date, current_setting('mx3.desde')::date + 4) + time '12:00')
                      at time zone 'America/New_York'), p->>'co',
           case when p ? 'fecha' then (p->>'fecha')::date else current_setting('mx3.desde')::date + 4 end,
-          coalesce(p->>'categoria', 'c3 pruebas material'), (p->>'subtotal')::numeric, (p->>'tax')::numeric,
+          coalesce(p->>'categoria', 'material'), (p->>'subtotal')::numeric, (p->>'tax')::numeric,
           coalesce(p->>'num_recibo', 'C3-' || (p->>'id')),
-          case when p ? 'metodo_pago' then p->>'metodo_pago' else 'c3 pruebas tarjeta' end,
+          case when p ? 'metodo_pago' then p->>'metodo_pago' else 'credito' end,
           case when p ? 'ultimos4' then p->>'ultimos4' else '9998' end)
   returning id into v_id;
   return v_id;
@@ -471,7 +475,7 @@ begin
                          num_recibo, metodo_pago, ultimos4, creado)
     overriding system value
     values (-3100001, v_obra, 'recibos/c3/1.jpg', 245.37, 'C3 PRUEBAS SUPPLY', 'c3-pruebas', 'leido', v_dueno, 'CO-9',
-            v_desde + 4, 'c3 pruebas material', 229.32, 16.05, 'T-1', 'c3 pruebas tarjeta', '9998',
+            v_desde + 4, 'material', 229.32, 16.05, 'T-1', 'credito', '9998',
             ((v_desde + 4) + time '12:00') at time zone 'America/New_York');
     execute 'reset role';
     v_id := pg_temp.c3_vivo('recibos', '-3100001');
@@ -515,7 +519,7 @@ begin
     v_f := pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
     perform pg_temp.c3_recibo(jsonb_build_object('id', -3100002, 'total', '1288.10', 'tax', '84.27',
-                                                 'metodo_pago', 'c3 pruebas cuenta', 'ultimos4', null));
+                                                 'metodo_pago', 'cuenta_proveedor', 'ultimos4', null));
     v_id := pg_temp.c3_vivo('recibos', '-3100002');
     select case when l.tercero_id = v_f->>'proveedor' then 'el supply' else coalesce(l.tercero_id, '-') end into v_ter
       from asiento_lineas l where l.asiento_id = v_id and l.tercero_tipo is not null;
@@ -549,7 +553,7 @@ begin
   begin
     perform pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100003, 'total', '60.00', 'metodo_pago', 'c3 pruebas banco', 'ultimos4', null));
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100003, 'total', '60.00', 'metodo_pago', 'zelle', 'ultimos4', null));
     perform pg_temp.c3_recibo(jsonb_build_object('id', -3100004, 'total', '-45.99', 'notas', 'DEVOLUCIÓN — c3-pruebas'));
     v_obt := format('banco=%s devolucion=%s', pg_temp.c3_lineas(pg_temp.c3_vivo('recibos', '-3100003')),
                     pg_temp.c3_lineas(pg_temp.c3_vivo('recibos', '-3100004')));
@@ -583,9 +587,9 @@ begin
   begin
     perform pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100005, 'total', '30.00', 'metodo_pago', 'c3 pruebas reembolso',
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100005, 'total', '30.00', 'metodo_pago', 'efectivo',
                                                  'ultimos4', null, 'autor_id', v_equipo));
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100006, 'total', '40.00', 'metodo_pago', 'c3 pruebas reembolso',
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100006, 'total', '40.00', 'metodo_pago', 'efectivo',
                                                  'ultimos4', null, 'autor_id', v_dueno));
     select case when l.tercero_id = v_equipo::text then 'el empleado' else coalesce(l.tercero_id, '-') end into v_ter
       from asiento_lineas l where l.asiento_id = pg_temp.c3_vivo('recibos', '-3100005') and l.monto < 0;
@@ -764,9 +768,10 @@ begin
                                coalesce(v_obt = v_esp, false));
 end $$;
 
--- 9. Un metodo_pago que el mapeo no conoce («APPLE PAY ??») o vacío NO
---    postea: el recibo queda en la bandeja, con el texto tal cual y qué
---    hacer. (Vacío y de un proveedor SIN cuenta abierta: con términos iría a
+-- 9. Un metodo_pago que el mapeo no conoce o vacío NO postea: el recibo
+--    queda en la bandeja, con el texto tal cual y qué hacer. Producción
+--    solo admite 5 formas de pago (su CHECK): la «desconocida» es una de
+--    ellas sin regla (aquí zelle, con su regla quitada dentro de la prueba). (Vacío y de un proveedor SIN cuenta abierta: con términos iría a
 --    su cuenta, prueba 70.)
 do $$
 declare
@@ -782,14 +787,15 @@ begin
   begin
     perform pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100012, 'total', '60.00', 'metodo_pago', 'APPLE PAY ??c3', 'ultimos4', '0092'));
+    delete from mapeo_metodo_pago where metodo_pago = 'zelle';
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100012, 'total', '60.00', 'metodo_pago', 'zelle', 'ultimos4', '0092'));
     perform pg_temp.c3_recibo(jsonb_build_object('id', -3100013, 'total', '19.99', 'metodo_pago', null, 'ultimos4', null,
                                                  'proveedor', 'c3 pruebas sin cuenta'));
     select format('raro=%s en_bandeja=%s dice_el_texto=%s vacio=%s asientos=%s',
                   (select d.estado || '/' || d.codigo from puente_documentos d where d.tabla = 'recibos' and d.documento_id = '-3100012'),
                   exists (select 1 from puentes_bandeja b where b.tabla = 'recibos' and b.documento_id = '-3100012'),
                   exists (select 1 from puentes_bandeja b where b.tabla = 'recibos' and b.documento_id = '-3100012'
-                                                           and b.motivo like '%APPLE PAY ??c3%'),
+                                                           and b.motivo like '%zelle%'),
                   (select d.estado || '/' || d.codigo from puente_documentos d where d.tabla = 'recibos' and d.documento_id = '-3100013'),
                   (select count(*) from asientos where origen_tabla = 'recibos' and origen_id in ('-3100012', '-3100013')))
       into v_obt;
@@ -820,10 +826,13 @@ begin
   begin
     perform pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
-    insert into mapeo_categoria_recibo (categoria, cuenta) values ('c3 pruebas borrador', current_setting('mx3.material'));
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100014, 'total', '77.00', 'categoria', 'c3 pruebas borrador'));
+    -- 'otro' es una de las 7 categorías de producción y no trae regla: se le
+    -- pone una en borrador (quitando la que Edgar le haya dado).
+    delete from mapeo_categoria_recibo where categoria = 'otro';
+    insert into mapeo_categoria_recibo (categoria, cuenta) values ('otro', current_setting('mx3.material'));
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100014, 'total', '77.00', 'categoria', 'otro'));
     select d.estado || '/' || d.codigo into v_antes from puente_documentos d where d.tabla = 'recibos' and d.documento_id = '-3100014';
-    perform fn_mapeo_confirmar('categoria', 'c3 pruebas borrador');
+    perform fn_mapeo_confirmar('categoria', 'otro');
     perform fn_puentes_correr();
     select format('borrador=%s confirmada=%s asientos=%s', coalesce(v_antes, '-'), d.estado,
                   (select count(*) from asientos where origen_tabla = 'recibos' and origen_id = '-3100014'))
@@ -859,7 +868,7 @@ begin
   begin
     perform pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100015, 'total', '500.00', 'metodo_pago', 'c3 pruebas cuenta', 'ultimos4', null));
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100015, 'total', '500.00', 'metodo_pago', 'cuenta_proveedor', 'ultimos4', null));
     v_orig := pg_temp.c3_vivo('recibos', '-3100015');
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
@@ -984,7 +993,8 @@ begin
     perform pg_temp.c3_recibo(jsonb_build_object('id', -3100017, 'total', '120.00'));
     perform pg_temp.c3_recibo(jsonb_build_object('id', -3100018, 'total', '130.00'));
     update recibos set estado = 'anulado' where id = -3100018;
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100019, 'total', '140.00', 'metodo_pago', 'APPLE PAY ??c3'));
+    delete from mapeo_metodo_pago where metodo_pago = 'zelle';   -- una forma de pago sin regla: no entra al libro
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100019, 'total', '140.00', 'metodo_pago', 'zelle'));
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     begin
@@ -1678,16 +1688,16 @@ begin
     perform pg_temp.c3_inmediato();
     perform set_config('request.jwt.claims', json_build_object('sub', v_quien, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    insert into recibos (id, proyecto_id, ruta, notas, co, autor_id, llave_cliente)
+    insert into recibos (id, proyecto_id, ruta, notas, co, autor_id, llave_cliente) overriding system value
     values (-3100200, v_obra, 'recibos/c3-pruebas/200.jpg', 'c3-pruebas', null, v_quien, 'c3-llave-1');
     begin
-      insert into recibos (id, proyecto_id, ruta, notas, co, autor_id, llave_cliente)
+      insert into recibos (id, proyecto_id, ruta, notas, co, autor_id, llave_cliente) overriding system value
       values (-3100201, v_obra, 'recibos/c3-pruebas/200.jpg', 'c3-pruebas', null, v_quien, 'c3-llave-1');
       v_2 := 'entró';
     exception when others then
       v_2 := sqlstate;
     end;
-    insert into recibos (id, proyecto_id, ruta, notas, autor_id)
+    insert into recibos (id, proyecto_id, ruta, notas, autor_id) overriding system value
     values (-3100202, v_obra, 'recibos/c3-pruebas/202.jpg', 'c3-pruebas', v_quien),
            (-3100203, v_obra, 'recibos/c3-pruebas/203.jpg', 'c3-pruebas', v_quien);
     execute 'reset role';
@@ -1742,7 +1752,7 @@ begin
     select count(*) into v_n0 from asientos;
     perform set_config('request.jwt.claims', json_build_object('sub', v_equipo, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    insert into horas (id, fecha, usuario_id, proyecto_id, fase, horas, notas, co, llave_cliente)
+    insert into horas (id, fecha, usuario_id, proyecto_id, fase, horas, notas, co, llave_cliente) overriding system value
     values (-3100300, v_dia, v_equipo, v_obra, 'rough-in', 8.5, 'c3-pruebas', 'C3-CO', 'c3-horas-1')
     returning id into v_id;
     execute 'reset role';
@@ -1792,7 +1802,7 @@ begin
     return;
   end if;
   begin
-    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas, correccion_estado)
+    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas, correccion_estado) overriding system value
     values (-3100310, v_desde + 26, v_equipo, v_obra, 8.0, 'c3-pruebas', 'aprobada'),
            (-3100311, v_desde + 27, v_equipo, v_obra, 4.0, 'c3-pruebas', 'aprobada');
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
@@ -1857,7 +1867,7 @@ begin
     return;
   end if;
   begin
-    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas)
+    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas) overriding system value
     values (-3100320, v_desde + 26, v_equipo, v_obra, 8.0, 'c3-pruebas');
     perform set_config('request.jwt.claims', json_build_object('sub', v_equipo, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
@@ -1931,7 +1941,7 @@ begin
   begin
     insert into costos_equipo (usuario_id, costo_hora) values (v_equipo, 30.00)
     on conflict (usuario_id) do update set costo_hora = 30.00;
-    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas, co)
+    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas, co) overriding system value
     values (-3100330, v_desde + 11, v_equipo, v_obra, 8.0, 'c3-pruebas', 'C3-DEV');
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
@@ -1995,7 +2005,7 @@ begin
     perform set_config('request.jwt.claims', json_build_object('sub', v_equipo, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     begin
-      insert into recibos (id, proyecto_id, ruta, notas, co, autor_id)
+      insert into recibos (id, proyecto_id, ruta, notas, co, autor_id) overriding system value
       values (-3100400, v_obra, 'recibos/c3-pruebas/400.jpg', 'c3-pruebas: cable y cajas', 'CO-2', v_equipo);
       v_ins := 'ok';
     exception when others then
@@ -2097,11 +2107,11 @@ begin
   end if;
   begin
     perform pg_temp.c3_inmediato();
-    insert into materiales (id, proyecto_id, descripcion, cantidad, estado, autor_id)
+    insert into materiales (id, proyecto_id, descripcion, cantidad, estado, autor_id) overriding system value
     values (-3100410, v_obra, 'C3 BREAKER 20A GE', '4', 'falta', v_dueno);
     perform set_config('request.jwt.claims', json_build_object('sub', v_quien, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    insert into recibos (id, proyecto_id, ruta, notas, autor_id)
+    insert into recibos (id, proyecto_id, ruta, notas, autor_id) overriding system value
     values (-3100411, v_obra, 'recibos/c3-pruebas/411.jpg', 'compré c3 breaker 20a ge x4 y cinta', v_quien);
     execute 'reset role';
     select m.estado || '/' || coalesce(m.recibo_id::text, '-') into v_subir from materiales m where m.id = -3100410;
@@ -2152,7 +2162,7 @@ begin
     update recibos set total = 312.40, subtotal = 291.96, tax = 20.44, fecha = v_desde + 4, proveedor = 'C3 PRUEBAS SUPPLY',
                        num_recibo = 'T-420', estado = 'leido'
      where id = -3100420;
-    update recibos set categoria = 'c3 pruebas material', metodo_pago = 'c3 pruebas tarjeta', ultimos4 = '9998', co = 'CO-3'
+    update recibos set categoria = 'material', metodo_pago = 'credito', ultimos4 = '9998', co = 'CO-3'
      where id = -3100420;
     -- «Confirmar» con el rol de cerebro puesto: corren los puentes pendientes.
     execute v_inm;
@@ -2217,7 +2227,7 @@ begin
       v_a1 := sqlstate;
     end;
     begin
-      insert into recibos (id, proyecto_id, ruta, notas, autor_id, contabilizado_en)
+      insert into recibos (id, proyecto_id, ruta, notas, autor_id, contabilizado_en) overriding system value
       values (-3100431, v_obra, 'recibos/c3-pruebas/431.jpg', 'c3-pruebas', v_dueno, v_as);
       v_a2 := 'entró';
     exception when others then
@@ -2440,7 +2450,7 @@ begin
     v_orig := pg_temp.c3_vivo('recibos', '-3100450');
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    perform fn_mapeo_categoria('c3 pruebas material', v_otra);
+    perform fn_mapeo_categoria('material', v_otra);
     execute 'reset role';
     select l.cuenta into v_1 from asiento_lineas l where l.asiento_id = pg_temp.c3_vivo('recibos', '-3100450') and l.monto > 0;
     execute 'set local role authenticated';
@@ -2459,7 +2469,7 @@ begin
                            where r.reversa_a = v_orig and r.camino = 'reverso'
                              and r.motivo like 'Rehecho con las reglas de hoy%Motivo de Edgar: c3: la regla del material estaba mal'),
                   exists (select 1 from puente_reglas_historial h
-                           where h.tabla = 'mapeo_categoria_recibo' and h.clave = 'c3 pruebas material' and h.operacion = 'UPDATE'
+                           where h.tabla = 'mapeo_categoria_recibo' and h.clave = 'material' and h.operacion = 'UPDATE'
                              and h.despues->>'cuenta' = v_otra and h.antes->>'cuenta' = v_mat))
       into v_obt;
     raise exception using errcode = 'MXT00';
@@ -2491,7 +2501,7 @@ begin
   begin
     perform pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100460, 'total', '45.00', 'categoria', 'c3 pruebas gasolina'));
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100460, 'total', '45.00', 'categoria', 'combustible'));
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     begin
@@ -2532,7 +2542,7 @@ begin
   begin
     perform pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100470, 'total', '25.00', 'categoria', 'c3 pruebas gasolina',
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100470, 'total', '25.00', 'categoria', 'combustible',
                                                  'proveedor', 'C3 PRUEBAS GAS'));
     v_as := pg_temp.c3_vivo('recibos', '-3100470');
     select format('lineas=%s obra_en_la_nota=%s nota=%s', pg_temp.c3_lineas(v_as),
@@ -2632,7 +2642,7 @@ begin
     perform pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
     perform pg_temp.c3_recibo(jsonb_build_object('id', -3100490, 'total', '10.00'));
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100491, 'total', '20.00', 'metodo_pago', 'c3 pruebas cuenta', 'ultimos4', null));
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100491, 'total', '20.00', 'metodo_pago', 'cuenta_proveedor', 'ultimos4', null));
     update recibos set total = 11.00 where id = -3100490;
     update recibos set estado = 'anulado' where id = -3100491;
     insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
@@ -2682,16 +2692,16 @@ begin
     perform set_config('request.jwt.claims', json_build_object('sub', v_equipo, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     begin
-      insert into recibos (id, proyecto_id, ruta, notas, autor_id, total, estado, fecha, categoria, metodo_pago, proveedor)
+      insert into recibos (id, proyecto_id, ruta, notas, autor_id, total, estado, fecha, categoria, metodo_pago, proveedor) overriding system value
       values (-3100610, v_obra, 'recibos/c3-pruebas/610.jpg', 'c3-pruebas', v_equipo, 5000.00, 'leido', v_desde + 4,
-              'c3 pruebas material', 'c3 pruebas cuenta', 'C3 PRUEBAS SUPPLY');
+              'material', 'cuenta_proveedor', 'C3 PRUEBAS SUPPLY');
       v_1 := 'entró';
     exception when others then
       v_1 := sqlstate;
     end;
     begin
-      insert into recibos (id, proyecto_id, ruta, notas, autor_id, total, estado, metodo_pago)
-      values (-3100611, v_obra, 'recibos/c3-pruebas/611.jpg', 'c3-pruebas', v_equipo, 900.00, 'leido', 'c3 pruebas reembolso');
+      insert into recibos (id, proyecto_id, ruta, notas, autor_id, total, estado, metodo_pago) overriding system value
+      values (-3100611, v_obra, 'recibos/c3-pruebas/611.jpg', 'c3-pruebas', v_equipo, 900.00, 'leido', 'efectivo');
       v_2 := 'entró';
     exception when others then
       v_2 := sqlstate;
@@ -2848,7 +2858,8 @@ begin
     values (-3100600, v_obra, 'C3-600', v_desde + 2, null),
            (-3100601, null, 'C3-601', v_desde + 2, 100.00),
            (-3100602, v_obra, 'C3-602', v_desde + 2, 100.00);
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100603, 'total', '15.00', 'categoria', 'c3 algo que nadie ha visto'));
+    delete from mapeo_categoria_recibo where categoria = 'otro';   -- una categoría sin regla
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100603, 'total', '15.00', 'categoria', 'otro'));
     select format('bandeja=%s con_motivo=%s asientos=%s',
                   coalesce(string_agg(b.documento_id || ':' || b.codigo, ' ' order by b.documento_id), '-'),
                   count(*) filter (where coalesce(btrim(b.motivo), '') <> ''),
@@ -2949,7 +2960,7 @@ begin
   begin
     v_f := pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100630, 'total', '70.00', 'metodo_pago', 'c3 pruebas cuenta',
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100630, 'total', '70.00', 'metodo_pago', 'cuenta_proveedor',
                                                  'ultimos4', null));
     v_otro := fn_proveedor_alta('C3 PRUEBAS OTRO SUPPLY', null, '{}');
     begin
@@ -3006,7 +3017,7 @@ begin
     perform pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
     perform pg_temp.c3_recibo(jsonb_build_object('id', -3200001, 'total', '120.00', 'notas', 'c3 cable thhn 12 rollo'));
-    insert into materiales (id, proyecto_id, descripcion, cantidad, estado, autor_id)
+    insert into materiales (id, proyecto_id, descripcion, cantidad, estado, autor_id) overriding system value
     values (-3200002, v_obra, 'C3 CABLE THHN 12', '1', 'falta', v_dueno);
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
@@ -3055,7 +3066,7 @@ begin
     from horas h where h.usuario_id = v_equipo and h.fecha = v_dia;
   v_esp := format('aprobar=%s permiso=-/aprobada retirar=%s permiso_despues=-/aprobada', v_otros + 2, v_otros + v_antes + 2);
   begin
-    insert into horas (id, fecha, usuario_id, proyecto_id, fase, horas, notas, correccion_estado, llave_cliente)
+    insert into horas (id, fecha, usuario_id, proyecto_id, fase, horas, notas, correccion_estado, llave_cliente) overriding system value
     values (-3200010, v_dia, v_equipo, v_obra, 'rough', 8, 'c3-pruebas', null, 'c3-horas-10'),
            (-3200011, v_dia, v_equipo, v_obra, 'rough', 2, 'c3-pruebas', 'aprobada', 'c3-horas-11');
     -- El editor: sin sesión de la API (auth.uid() nulo).
@@ -3152,7 +3163,7 @@ begin
     v_f := pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
     perform pg_temp.c3_recibo(jsonb_build_object('id', -3200030, 'total', '310.00', 'fecha', (v_corte - 3)::text,
-                                                 'creado', (v_corte - 3)::text || ' 15:00-04', 'metodo_pago', 'c3 pruebas cuenta'));
+                                                 'creado', (v_corte - 3)::text || ' 15:00-04', 'metodo_pago', 'cuenta_proveedor'));
     v_ap := pg_temp.c3_apertura('recibos', '-3200030', fn_puente_cuenta_de('cxp'), 310.00, 'proveedor', v_f->>'proveedor');
     if v_ap is null then
       v_obt := 'omitida: no hay período de apertura';
@@ -3381,7 +3392,7 @@ begin
     v_f := pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
     perform pg_temp.c3_recibo(jsonb_build_object('id', -3200070, 'total', '245.37'));
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3200071, 'total', '1288.10', 'metodo_pago', 'c3 pruebas cuenta'));
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3200071, 'total', '1288.10', 'metodo_pago', 'cuenta_proveedor'));
     update tarjetas set activa = false where ultimos4 = '9998';
     update proveedores set activo = false where id = (v_f->>'proveedor')::uuid;
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
@@ -3432,7 +3443,7 @@ begin
     -- apertura lo nombra (no_aplica). (Uno SUBIDO antes del corte es de
     -- antes del corte diga lo que diga la fecha: prueba 84.)
     perform pg_temp.c3_recibo(jsonb_build_object('id', -3200080, 'total', '500.00', 'fecha', (v_corte - 2)::text,
-                                                 'creado', (v_corte + 1)::text || ' 17:00-04', 'metodo_pago', 'c3 pruebas cuenta'));
+                                                 'creado', (v_corte + 1)::text || ' 17:00-04', 'metodo_pago', 'cuenta_proveedor'));
     v_ap := pg_temp.c3_apertura('recibos', '-3200080', fn_puente_cuenta_de('cxp'), 500.00, 'proveedor', v_f->>'proveedor');
     if v_ap is null then
       v_obt := 'omitida: no hay período de apertura';
@@ -3441,7 +3452,7 @@ begin
     -- La fecha estaba mal leída: la buena es la del corte.
     update recibos set fecha = v_desde where id = -3200080;
     -- Al revés: el puente lo contabiliza primero y la apertura lo nombra después.
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3200081, 'total', '75.00', 'metodo_pago', 'c3 pruebas cuenta'));
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3200081, 'total', '75.00', 'metodo_pago', 'cuenta_proveedor'));
     perform pg_temp.c3_apertura('recibos', '-3200081', fn_puente_cuenta_de('cxp'), 75.00, 'proveedor', v_f->>'proveedor');
     select format('estado=%s partida=%s propios=%s doble=%s',
                   coalesce((select d.estado || '/' || d.codigo from puente_documentos d
@@ -3535,7 +3546,7 @@ begin
     insert into costos_equipo (usuario_id, costo_hora) values (v_equipo, 30.00) on conflict (usuario_id) do nothing;
     select ce.costo_hora into v_costo from costos_equipo ce where ce.usuario_id = v_equipo;
     v_esp := format('antes=false accion=sustituido obra2=%s obra1=- despues=true', round(8 * v_costo, 2));
-    insert into horas (id, fecha, usuario_id, proyecto_id, fase, horas, notas, co, llave_cliente)
+    insert into horas (id, fecha, usuario_id, proyecto_id, fase, horas, notas, co, llave_cliente) overriding system value
     values (-3200100, v_desde + 3, v_equipo, v_obra, 'rough', 8, 'c3-pruebas', 'C3-DEV', 'c3-horas-100');
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
@@ -3694,7 +3705,7 @@ begin
   end if;
   begin
     insert into costos_equipo (usuario_id, costo_hora) values (v_dueno, 45.00) on conflict (usuario_id) do nothing;
-    insert into horas (id, fecha, usuario_id, proyecto_id, fase, horas, notas, co, llave_cliente)
+    insert into horas (id, fecha, usuario_id, proyecto_id, fase, horas, notas, co, llave_cliente) overriding system value
     values (-3200130, v_desde + 3, v_dueno, v_obra, 'rough', 6, 'c3-pruebas', 'C3-OFI', 'c3-horas-130');
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
@@ -4072,7 +4083,7 @@ begin
   end if;
   begin
     insert into costos_equipo (usuario_id, costo_hora) values (v_equipo, 30.00) on conflict (usuario_id) do nothing;
-    insert into horas (id, fecha, usuario_id, proyecto_id, fase, horas, notas, llave_cliente)
+    insert into horas (id, fecha, usuario_id, proyecto_id, fase, horas, notas, llave_cliente) overriding system value
     values (-3200190, v_desde + 3, v_equipo, v_obra, 'rough', 8, 'c3-pruebas', 'c3-horas-190');
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
@@ -4189,7 +4200,7 @@ begin
     perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
     execute 'set local role anon';
     begin
-      insert into recibos_equipo (id, proyecto_id, ruta, estado, autor_id)
+      insert into recibos_equipo (id, proyecto_id, ruta, estado, autor_id) overriding system value
       values (-3200211, v_obra, 'recibos/c3-pruebas/anon.jpg', 'por_leer', v_dueno);
       v_c := 'entró';
     exception when others then
@@ -4217,7 +4228,7 @@ begin
     perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
     execute 'set local role anon';
     begin
-      insert into recibos_equipo (id, proyecto_id, ruta, estado, autor_id)
+      insert into recibos_equipo (id, proyecto_id, ruta, estado, autor_id) overriding system value
       values (-3200211, v_obra, 'recibos/c3-pruebas/anon.jpg', 'por_leer', v_dueno);
       v_f := 'entró';
     exception when others then
@@ -4323,7 +4334,7 @@ begin
   begin
     perform pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3300010, 'total', '45.00', 'categoria', 'c3 pruebas gasolina',
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3300010, 'total', '45.00', 'categoria', 'combustible',
                                                  'proyecto_id', null));
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
@@ -4526,7 +4537,7 @@ begin
   begin
     insert into costos_equipo (usuario_id, costo_hora) values (v_equipo, 30.00)
     on conflict (usuario_id) do update set costo_hora = 30.00;
-    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas, co)
+    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas, co) overriding system value
     values (-3300040, v_desde + 11, v_equipo, v_obra, 8.0, 'c3-pruebas', 'C3-NOM');
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
@@ -4692,12 +4703,13 @@ begin
   begin
     v_f := pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3300060, 'total', '300.00', 'metodo_pago', 'c3 pruebas cuenta'));
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3300060, 'total', '300.00', 'metodo_pago', 'cuenta_proveedor'));
     perform pg_temp.c3_recibo(jsonb_build_object('id', -3300061, 'total', '150.00'));
+    delete from mapeo_categoria_recibo where categoria = 'otro';   -- la categoría nueva, sin regla todavía
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     update recibos set proveedor = 'C3 Pruebas Supplies LLC' where id = -3300060;
-    update recibos set categoria = 'c3 pruebas herramienta nueva' where id = -3300061;
+    update recibos set categoria = 'otro' where id = -3300061;
     execute 'reset role';
     select format('retenidos=%s:%s %s:%s deuda=%s documentos=%s bandeja=%s',
                   pg_temp.c3_cuantos('recibos', '-3300060'),
@@ -4717,7 +4729,7 @@ begin
     -- Edgar arregla las reglas: el nombre nuevo es del mismo proveedor, y la
     -- categoría nueva tiene su cuenta. El backfill hace lo que faltaba.
     perform fn_proveedor_alias((v_f->>'proveedor')::uuid, 'C3 Pruebas Supplies LLC');
-    perform fn_mapeo_categoria('c3 pruebas herramienta nueva', current_setting('mx3.material'));
+    perform fn_mapeo_categoria('otro', current_setting('mx3.material'));
     perform fn_puentes_correr();
     v_obt := v_uno || format(' arreglado=%s %s deuda=%s', pg_temp.c3_cuantos('recibos', '-3300060'),
                              pg_temp.c3_cuantos('recibos', '-3300061'), pg_temp.c3_saldo(v_cxp, 'recibos', '-3300060'));
@@ -4757,7 +4769,7 @@ begin
   begin
     insert into costos_equipo (usuario_id, costo_hora) values (v_equipo, 30.00)
     on conflict (usuario_id) do update set costo_hora = 30.00;
-    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas, co)
+    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas, co) overriding system value
     values (-3300070, v_desde + 11, v_equipo, v_obra, 8.0, 'c3-pruebas', 'C3-MO');
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
@@ -4817,9 +4829,9 @@ begin
   begin
     perform pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3300089, 'total', '212.40', 'metodo_pago', 'c3 pruebas reembolso',
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3300089, 'total', '212.40', 'metodo_pago', 'efectivo',
                                                  'autor_id', v_autor, 'proveedor', 'Home Depot c3', 'num_recibo', 'HD-4471-0092'));
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3300088, 'total', '212.40', 'metodo_pago', 'c3 pruebas reembolso',
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3300088, 'total', '212.40', 'metodo_pago', 'efectivo',
                                                  'autor_id', v_autor, 'proveedor', 'HOME DEPOT C3', 'num_recibo', 'hd 4471 0092'));
     select format('segundo=%s nombra=%s bandeja=%s asientos=%s',
                   coalesce(d.estado || '/' || d.codigo, '-'),
@@ -4837,7 +4849,7 @@ begin
                              coalesce((select case when v.ok then 't' else 'f' end from fn_puentes_verificar() v
                                         where v.control = 'duplicados'), '-'));
     -- Otro recibo, ya contabilizado, que se corrige y resulta el mismo ticket.
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3300087, 'total', '212.40', 'metodo_pago', 'c3 pruebas reembolso',
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3300087, 'total', '212.40', 'metodo_pago', 'efectivo',
                                                  'autor_id', v_autor, 'proveedor', 'Otro c3', 'num_recibo', 'X-1'));
     update recibos set proveedor = 'Home Depot c3', num_recibo = 'HD-4471-0092' where id = -3300087;
     v_obt := v_uno || format(' editado=%s control=%s',
@@ -5506,7 +5518,9 @@ end $$;
 
 -- 89. La guarda de horas: un reporte que está (o estuvo) aprobado no cambia
 --     de número, ni el equipo renumera uno con su permiso de corrección
---     (MX003). Y si Edgar cambia las horas Y el sello en un solo cambio,
+--     (MX003; en producción la id es GENERATED ALWAYS y la base ya lo
+--     impide antes, con 428C9: las dos cosas son «no se renumera»). Y si
+--     Edgar cambia las horas Y el sello en un solo cambio,
 --     quedan escritas las dos cosas (invalidada lo de antes, aprobada lo de
 --     ahora).
 do $$
@@ -5518,7 +5532,7 @@ declare
   v_a      text;
   v_b      text;
   v_obt    text;
-  v_esp    text := 'equipo_renumera=MX003 edgar_renumera_aprobada=MX003 horas_y_sello=aprobada>invalidada>aprobada sigue_aprobada=t horas=6.0';
+  v_esp    text := 'equipo_renumera=no_se_renumera edgar_renumera_aprobada=no_se_renumera horas_y_sello=aprobada>invalidada>aprobada sigue_aprobada=t horas=6.0';
 begin
   if v_dueno is null or v_equipo is null or v_obra is null or v_desde is null then
     insert into _pruebas values (89, 'horas: no se renumeran; horas y sello a la vez quedan escritos', v_esp,
@@ -5526,7 +5540,7 @@ begin
     return;
   end if;
   begin
-    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas, correccion_estado)
+    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas, correccion_estado) overriding system value
     values (-3300190, v_desde + 26, v_equipo, v_obra, 8.0, 'c3-pruebas', null),
            (-3300191, v_desde + 27, v_equipo, v_obra, 4.0, 'c3-pruebas', 'aprobada');
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
@@ -5543,7 +5557,7 @@ begin
       update horas set id = -3300192 where id = -3300191;
       v_a := case when found then 'entró' else 'no_tocó' end;
     exception when others then
-      v_a := sqlstate;
+      v_a := case when sqlstate in ('MX003', '428C9') then 'no_se_renumera' else sqlstate end;
     end;
     execute 'reset role';
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
@@ -5552,7 +5566,7 @@ begin
       update horas set id = -3300193 where id = -3300190;
       v_b := case when found then 'entró' else 'no_tocó' end;
     exception when others then
-      v_b := sqlstate;
+      v_b := case when sqlstate in ('MX003', '428C9') then 'no_se_renumera' else sqlstate end;
     end;
     -- Horas y sello en un solo update (por la API).
     update horas set horas = 6.0, aprobado_por = v_dueno, aprobado_el = clock_timestamp() where id = -3300190;
@@ -5804,7 +5818,8 @@ end $$;
 -- 93. El VOCABULARIO del conector Max Power (registrar_gasto /
 --     importar_gastos): 'cuenta_proveedor', 'debito' y 'credito' como forma
 --     de pago, 'renta_equipo' y 'labor_externo' como categoría, y
---     'sin_asignar' como obra. Vienen en el arranque (en borrador, como
+--     un gasto sin obra (el conector la deja vacía: en producción la obra es
+--     llave foránea y 'sin_asignar' no existe). Vienen en el arranque (en borrador, como
 --     todo); confirmados, sus gastos entran: el de cuenta_proveedor a la
 --     cuenta de su proveedor, el de débito a su tarjeta, la renta de equipo
 --     a su cuenta, y el sin_asignar sin obra (a la cuenta sin obra de su
@@ -5842,16 +5857,16 @@ begin
                          num_recibo, metodo_pago, ultimos4)
     overriding system value values
       (-3400020, v_obra, 107.00, 100.00, 7.00, 'C3 PRUEBAS SUPPLY', 'c3: statement', 'leido', v_dueno,
-       ((v_desde + 13) + time '12:00') at time zone 'America/New_York', v_desde + 13, 'c3 pruebas material', 'C3-9001',
+       ((v_desde + 13) + time '12:00') at time zone 'America/New_York', v_desde + 13, 'material', 'C3-9001',
        'cuenta_proveedor', null),
       (-3400021, v_obra, 53.50, 50.00, 3.50, 'C3 HD', 'c3: via Claude', 'leido', v_dueno,
-       ((v_desde + 13) + time '12:00') at time zone 'America/New_York', v_desde + 13, 'c3 pruebas material', 'C3-HD-1',
+       ((v_desde + 13) + time '12:00') at time zone 'America/New_York', v_desde + 13, 'material', 'C3-HD-1',
        'debito', '9998'),
       (-3400022, v_obra, 214.00, 200.00, 14.00, 'C3 SUNBELT', 'c3: via Claude', 'leido', v_dueno,
        ((v_desde + 13) + time '12:00') at time zone 'America/New_York', v_desde + 13, 'renta_equipo', 'C3-SB-7',
        'credito', '9998'),
-      (-3400023, 'sin_asignar', 20.00, null, null, 'C3 GAS', 'c3: via Claude', 'leido', v_dueno,
-       ((v_desde + 13) + time '12:00') at time zone 'America/New_York', v_desde + 13, 'c3 pruebas gasolina', 'C3-G-1',
+      (-3400023, null, 20.00, null, null, 'C3 GAS', 'c3: via Claude', 'leido', v_dueno,
+       ((v_desde + 13) + time '12:00') at time zone 'America/New_York', v_desde + 13, 'combustible', 'C3-G-1',
        'debito', '9998');
     execute 'reset role';
     select format('arranque=%s cuenta_proveedor=%s debito=%s renta=%s sin_asignar=%s',
@@ -6241,7 +6256,7 @@ begin
     lock table public.periodos in exclusive mode;   -- antes que el de la cadena (ver la cabecera)
     insert into costos_equipo (usuario_id, costo_hora) values (v_equipo, 30.00)
     on conflict (usuario_id) do update set costo_hora = 30.00;
-    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas, co)
+    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas, co) overriding system value
     values (-3400090, v_desde + 11, v_equipo, v_obra, 8.0, 'c3-pruebas', 'C3-CIE');
     perform fn_horas_aprobar(v_equipo, v_desde + 11, v_desde + 11, '{"ids": [-3400090]}'::jsonb);
     -- a) Cerrar con los dos juntos: no.
@@ -6749,7 +6764,7 @@ begin
                                                  'ultimos4', null));
     perform set_config('request.jwt.claims', json_build_object('role', 'service_role')::text, true);
     execute 'set local role service_role';
-    update recibos set estado = 'leido', total = 0, subtotal = 229.32, tax = 16.05, metodo_pago = 'c3 pruebas tarjeta',
+    update recibos set estado = 'leido', total = 0, subtotal = 229.32, tax = 16.05, metodo_pago = 'credito',
                        ultimos4 = '9998'
      where id = -3400172;
     execute 'reset role';
@@ -6892,7 +6907,7 @@ begin
     perform pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
     perform pg_temp.c3_recibo(jsonb_build_object('id', -3400200, 'total', '88.20', 'proveedor', 'Lowe''s c3',
-                                                 'metodo_pago', 'c3 pruebas cuenta', 'ultimos4', null));
+                                                 'metodo_pago', 'cuenta_proveedor', 'ultimos4', null));
     select d.estado || '/' || d.codigo, substring(d.motivo from '(select fn_proveedor_alta\(.*?\);)')
       into v_a, v_sql
       from puente_documentos d where d.tabla = 'recibos' and d.documento_id = '-3400200';
@@ -6902,7 +6917,8 @@ begin
     exception when others then
       v_a := v_a || ' su_sql=' || sqlstate;
     end;
-    update recibos set categoria = 'Lowe''s c3 tools' where id = -3400200;
+    delete from mapeo_categoria_recibo where categoria = 'otro';   -- una categoría sin regla
+    update recibos set categoria = 'otro' where id = -3400200;
     select d.estado || '/' || d.codigo, substring(d.motivo from '(select fn_mapeo_categoria\(.*?\);)')
       into v_b, v_sql
       from puente_documentos d where d.tabla = 'recibos' and d.documento_id = '-3400200';
@@ -6931,7 +6947,9 @@ end $$;
 --      (22023); si alguien reportó entre medias, MX008 y nada aprobado; con
 --      lo que hay, sí, y devuelve los reportes. Y unas horas fuera de
 --      medida que haya escrito el dueño no entran al devengo (van a
---      «fuera»).
+--      «fuera»); en producción la tabla ni las deja escribir (su CHECK
+--      horas_horas_check: más de 0 y hasta 16 por reporte), y entonces la
+--      prueba dice «la_base_no_la_deja».
 do $$
 declare
   v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
@@ -6947,7 +6965,8 @@ declare
   v_d      text;
   v_e      text;
   v_obt    text;
-  v_esp    text := 'cuatro_mil=22023 negativa=22023 mas_de_24=22023 sin_visto=22023 visto_viejo=MX008/0 aprobadas=t fuera_de_medida=1';
+  v_esp    text := 'cuatro_mil=22023 negativa=22023 mas_de_24=22023 sin_visto=22023 visto_viejo=MX008/0 aprobadas=t fuera_de_medida=la_base_no_la_deja';
+  v_fuera  text;
 begin
   if v_dueno is null or v_equipo is null or v_obra is null or v_desde is null or v_mes is null then
     insert into _pruebas values (111, 'horas con medida; se aprueba lo que se vio', v_esp,
@@ -6960,16 +6979,16 @@ begin
     perform set_config('request.jwt.claims', json_build_object('sub', v_equipo, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     begin
-      insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas) values (-3400210, v_desde + 22, v_equipo, v_obra, 4000, 'c3');
+      insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas) overriding system value values (-3400210, v_desde + 22, v_equipo, v_obra, 4000, 'c3');
       v_a := 'entró';
     exception when others then v_a := sqlstate; end;
     begin
-      insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas) values (-3400211, v_desde + 22, v_equipo, v_obra, -300, 'c3');
+      insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas) overriding system value values (-3400211, v_desde + 22, v_equipo, v_obra, -300, 'c3');
       v_b := 'entró';
     exception when others then v_b := sqlstate; end;
-    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas) values (-3400212, v_desde + 22, v_equipo, v_obra, 20, 'c3');
+    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas) overriding system value values (-3400212, v_desde + 22, v_equipo, v_obra, 16, 'c3');
     begin
-      insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas) values (-3400213, v_desde + 22, v_equipo, v_obra, 8, 'c3');
+      insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas) overriding system value values (-3400213, v_desde + 22, v_equipo, v_obra, 9, 'c3');
       v_c := 'entró';
     exception when others then v_c := sqlstate; end;
     execute 'reset role';
@@ -6979,7 +6998,7 @@ begin
     -- Entre medias, el trabajador reporta otra.
     perform set_config('request.jwt.claims', json_build_object('sub', v_equipo, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas) values (-3400214, v_desde + 23, v_equipo, v_obra, 2, 'c3');
+    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas) overriding system value values (-3400214, v_desde + 23, v_equipo, v_obra, 2, 'c3');
     execute 'reset role';
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
@@ -6997,13 +7016,20 @@ begin
               (select jsonb_build_object('ids', coalesce(jsonb_agg(h.id order by h.id), '[]'::jsonb))
                  from horas h where h.usuario_id = v_equipo and h.fecha between v_desde + 22 and v_desde + 23 and h.aprobado_el is null));
     execute 'reset role';
-    -- Unas del dueño (el SQL Editor), aprobadas y fuera de medida.
-    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas, aprobado_el)
-    values (-3400215, v_desde + 24, v_equipo, v_obra, -5, 'c3: fuera de medida', now());
+    -- Unas del dueño (el SQL Editor), aprobadas y fuera de medida: si la
+    -- tabla las deja escribir, el devengo las aparta; si no, ni existen.
+    begin
+      insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas, aprobado_el) overriding system value
+      values (-3400215, v_desde + 24, v_equipo, v_obra, -5, 'c3: fuera de medida', now());
+      v_fuera := case when (fn_puente_devengo_plan(v_mes)->'fuera'->>'fuera_de_medida') = '1' then 'la_aparta_el_devengo'
+                      else 'entró_al_devengo' end;
+    exception when check_violation then
+      v_fuera := 'la_base_no_la_deja';
+    end;
     v_obt := format('cuatro_mil=%s negativa=%s mas_de_24=%s sin_visto=%s visto_viejo=%s aprobadas=%s fuera_de_medida=%s',
                     v_a, v_b, v_c, v_d, v_e,
                     (v_ap->'ids') @> '[-3400212, -3400214]'::jsonb,
-                    fn_puente_devengo_plan(v_mes)->'fuera'->>'fuera_de_medida');
+                    v_fuera);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;

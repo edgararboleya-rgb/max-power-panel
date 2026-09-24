@@ -9,7 +9,8 @@ de que Edgar los pegue. **Nunca** se conecta a `*.supabase.co`.
 |---|---|
 | `00-shim-supabase.sql` | Lo que Supabase trae de fábrica: roles `anon`, `authenticated`, `service_role` y `editor_sql`; esquemas `auth`, `extensions` (pgcrypto, uuid-ossp) y `net` (stub); privilegios por defecto. Lo corre el superusuario. |
 | `01-replica-esquema.sql` | Las 21 tablas que tocan los libros, con columnas **idénticas** a producción (generadas desde `esquema-columnas-23sep.json`), `es_dueno()`, `es_activo()`, los triggers existentes, RLS con las policies reales y la vista `recibos_equipo`. |
-| `02-semilla.sql` | Datos de prueba con ids fijos (abajo). |
+| `02-semilla.sql` | Datos de prueba con ids fijos (abajo), con valores que producción admite. |
+| `02b-restricciones-produccion.sql` | Lo que producción tiene y el banco no tenía, leído el 24-sep: las `id` GENERATED ALWAYS de 13 tablas, los CHECK de valores (recibos: 7 categorías y 5 formas de pago; horas: más de 0 y hasta 16), el UNIQUE de facturas y las llaves foráneas. `correr.sh` lo carga después de la semilla. |
 | `c0-banco-pruebas.sql` | El banco se prueba a sí mismo: 18 comprobaciones. **También es el molde** para los `c*-pruebas.sql`. |
 | `correr.sh` | Crea una base, carga 00-01-02 y los archivos que le pases. |
 | `c2-concurrencia.sh` | Lo que `c2-pruebas.sql` no puede probar en una sola sesión: varias sesiones a la vez contra el libro (cierres con posteos en vuelo, ráfagas, una línea tardía, un cierre en repeatable read). La mitad de los posteos confirma como la app (rol `authenticated`). |
@@ -41,7 +42,7 @@ comprobando si algo ya estaba.
 | 4 | Una línea: `select fn_puentes_correr();` | Un solo valor (jsonb) con `"desde": "2026-10-01"`, cuántos papeles quedaron en cada estado (`contabilizado`, `pendiente`, `espera`, `no_aplica`…) y **`"errores": 0`**. |
 | 5 | Una línea: `select * from fn_puentes_verificar();` | Los **13 controles** de los puentes, **todos en `true`** (ahora también `sin_evaluar`). `bandeja` dice cuántos papeles esperan a Edgar; solo se pone en rojo si el libro rechazó alguno. |
 | 6 | `docs/conta/c2-pruebas.sql` | La tabla `_pruebas`: **78 filas**, todas con `ok = true`. |
-| 7 | `docs/conta/c3-pruebas.sql` | La tabla `_pruebas`: **112 filas**, todas con `ok = true`. Si no hay ningún perfil activo que no sea el dueño, las pruebas «del equipo» salen con `ok` vacío (`null`) y `obtenido` = «omitida…»: no es un fallo. |
+| 7 | `docs/conta/c3-pruebas.sql` | La tabla `_pruebas`: **112 filas**, todas con `ok = true` salvo la **45**, que en producción sale «omitida» (Supabase no deja borrar de Storage por SQL; se prueba en el banco). Si no hay ningún perfil activo que no sea el dueño, las pruebas «del equipo» salen con `ok` vacío (`null`) y `obtenido` = «omitida…»: no es un fallo. |
 
 - **El orden importa**: c2 necesita c1; c3 necesita c1 y c2. Las pruebas
   (6 y 7) van siempre después de los tres.
@@ -269,9 +270,12 @@ tocar `docs/conta/c2-libro.sql`:
 
 ## 6. Lo que el banco NO imita
 
-- **Llaves foráneas y unique**: no se leyeron de producción; aquí no hay
-  ninguna (salvo las primarias, que son supuestas). Ninguna prueba debe
-  depender de que exista o no un FK de las tablas viejas.
+- **Llaves foráneas, unique y CHECK**: desde el 24-sep sí están, las de
+  producción (`02b-restricciones-produccion.sql`). Antes no estaban, y por
+  eso la primera corrida de `c3-pruebas.sql` en producción falló en 72
+  pruebas (categorías y formas de pago inventadas, ids escritos en tablas
+  GENERATED ALWAYS) sin haber probado nada: si producción cambia sus
+  restricciones, se vuelven a leer y se actualiza ese archivo.
 - **Policies SUPUESTAS** (marcadas en 01): `contratistas`, `gastos_generales`,
   `catalogo_items`, `escenarios`, `estimados`, `asistente_ajustes` (solo
   dueño) y `pendientes` (el equipo lee, crea y resuelve). Las demás son las

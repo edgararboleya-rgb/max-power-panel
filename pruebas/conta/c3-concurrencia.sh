@@ -72,8 +72,11 @@ begin
   end if;
   perform fn_tarjeta_alta('9998', '2100-9998', 'banco de pruebas');
   perform fn_mapeo_confirmar('categoria', 'material');
-  perform fn_mapeo_confirmar('metodo_pago', 'tarjeta');
+  perform fn_mapeo_confirmar('metodo_pago', 'credito');
   perform fn_mapeo_confirmar('tipo_proyecto');
+  -- La forma de pago del escenario 4 empieza SIN regla: producción solo
+  -- admite 5 (su CHECK), así que la «nueva» es debito sin su regla.
+  delete from mapeo_metodo_pago where metodo_pago = 'debito';
 end $$;
 -- Dos recibos ya contabilizados (escenarios 1 y 2) y seis que esperan una
 -- regla que todavía no existe (escenario 4). Subidos el día de su fecha
@@ -83,9 +86,9 @@ insert into recibos (id, proyecto_id, ruta, total, proveedor, estado, autor_id, 
 overriding system value
 select v.id, 'casa-perez-k3m9', 'recibos/banco/' || v.id || '.jpg', v.total, 'CED', 'leido',
        '00000000-0000-4000-a000-000000000001', timestamptz '2026-10-06 12:00-04', date '2026-10-06', 'material', v.metodo, '9998'
-  from (values (-900, 245.37, 'tarjeta'), (-901, 100.00, 'tarjeta'),
-               (-920, 11.00, 'c3 metodo nuevo'), (-921, 12.00, 'c3 metodo nuevo'), (-922, 13.00, 'c3 metodo nuevo'),
-               (-923, 14.00, 'c3 metodo nuevo'), (-924, 15.00, 'c3 metodo nuevo'), (-925, 16.00, 'c3 metodo nuevo'))
+  from (values (-900, 245.37, 'credito'), (-901, 100.00, 'credito'),
+               (-920, 11.00, 'debito'), (-921, 12.00, 'debito'), (-922, 13.00, 'debito'),
+               (-923, 14.00, 'debito'), (-924, 15.00, 'debito'), (-925, 16.00, 'debito'))
        as v(id, total, metodo);
 -- Dos fotos del mismo ticket, subidas por Gustavo y todavía por leer
 -- (escenario 9).
@@ -145,7 +148,7 @@ for i in $(seq 910 919); do
          overriding system value
          values (-$i, 'oficina-nch-7xq2', 'recibos/banco/$i.jpg', 10.00, 'Home Depot', 'leido',
                  '00000000-0000-4000-a000-000000000001', timestamptz '2026-10-15 12:00-04', date '2026-10-15', 'material',
-                 'tarjeta', '9998');
+                 'credito', '9998');
          commit;" > "$TMP/3-$i.out" 2>&1 &
 done
 wait
@@ -154,7 +157,7 @@ revisa "diez recibos, diez asientos, confirmados como la app" "10/10" \
              where origen_tabla = 'recibos' and origen_id::bigint between -919 and -910")"
 
 echo "== 4. Dos backfills a la vez, sobre seis recibos que esperaban una regla"
-ed -c "select fn_mapeo_metodo_pago('c3 metodo nuevo', 'tarjeta')" > /dev/null 2>&1
+ed -c "select fn_mapeo_metodo_pago('debito', 'tarjeta')" > /dev/null 2>&1
 ed -c "select fn_puentes_correr()->>'errores'" > "$TMP/4a.out" 2>&1 &
 ed -c "select fn_puentes_correr()->>'errores'" > "$TMP/4b.out" 2>&1 &
 wait
@@ -240,7 +243,7 @@ echo "== 9. Dos lecturas del mismo ticket a la vez"
 # A y B: la lectura de cada foto (cerebro, service_role); sus puentes
 # corren al confirmar, mientras H sigue ahí.
 CER="select set_config('request.jwt.claims', '{\"role\":\"service_role\"}', true); set local role service_role;"
-LEE="set estado = 'leido', total = 245.37, subtotal = 229.32, tax = 16.05, fecha = '2026-10-14', proveedor = 'CED', num_recibo = 'CED-7777', metodo_pago = 'tarjeta', ultimos4 = '9998'"
+LEE="set estado = 'leido', total = 245.37, subtotal = 229.32, tax = 16.05, fecha = '2026-10-14', proveedor = 'CED', num_recibo = 'CED-7777', metodo_pago = 'credito', ultimos4 = '9998'"
 ed -c "begin; select pg_advisory_xact_lock(820260923); select pg_sleep(3); commit;" > "$TMP/9h.out" 2>&1 &
 sleep 0.5
 ed -c "begin; $CER update recibos $LEE where id = -930; commit;" > "$TMP/9a.out" 2>&1 &

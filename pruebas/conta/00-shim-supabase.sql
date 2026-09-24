@@ -134,8 +134,10 @@ create table if not exists auth.users (
 grant usage on schema auth to anon, authenticated, service_role, editor_sql;
 grant execute on function auth.uid(), auth.role(), auth.jwt()
   to anon, authenticated, service_role, editor_sql;
--- En Supabase el rol postgres puede leer y tocar auth.users; la API no.
+-- En Supabase el rol postgres puede leer y tocar auth.users, y colgarle
+-- llaves foráneas (perfiles.id → auth.users.id, como en producción); la API no.
 grant select, insert, update, delete on auth.users to editor_sql, service_role;
+grant references on auth.users to editor_sql;
 
 -- ---------------------------------------------------------------------
 -- 4. Esquema net: stub de pg_net. En producción net.http_post encola una

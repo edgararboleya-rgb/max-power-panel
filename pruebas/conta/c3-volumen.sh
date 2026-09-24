@@ -59,7 +59,7 @@ begin
   end if;
   perform fn_tarjeta_alta('9998', '2100-9998', 'banco de pruebas');
   perform fn_mapeo_confirmar('categoria', 'material');
-  perform fn_mapeo_confirmar('metodo_pago', 'tarjeta');
+  perform fn_mapeo_confirmar('metodo_pago', 'credito');
 end $$;
 SQL
 
@@ -79,7 +79,7 @@ select -100000 - g, case when g % 2 = 0 then 'casa-perez-k3m9' else 'oficina-nch
        round((10 + (g * 37 % 900) + (g % 100) / 100.0)::numeric, 2),
        case g % 3 when 0 then 'CED' when 1 then 'Home Depot' else 'Platt' end,
        'leido', '00000000-0000-4000-a000-000000000001', timestamptz '2026-10-01 12:00-04' + ((g % 60) || ' days')::interval,
-       date '2026-10-01' + (g % 60), 'material', 'tarjeta', '9998', 'V-' || g
+       date '2026-10-01' + (g % 60), 'material', 'credito', '9998', 'V-' || g
   from generate_series($desde, $hasta) g;
 SQL
   desde=$(( hasta + 1 ))

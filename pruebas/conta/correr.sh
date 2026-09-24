@@ -99,6 +99,8 @@ echo "== 01-replica-esquema.sql (editor_sql)"
 PGOPTIONS='-c client_min_messages=warning' ed_psql -d "$BD" -f "$DIR/01-replica-esquema.sql" || { echo "FALLÓ 01-replica-esquema.sql" >&2; exit 2; }
 echo "== 02-semilla.sql (editor_sql)"
 PGOPTIONS='-c client_min_messages=warning' ed_psql -d "$BD" -f "$DIR/02-semilla.sql" || { echo "FALLÓ 02-semilla.sql" >&2; exit 2; }
+echo "== 02b-restricciones-produccion.sql (editor_sql)"
+PGOPTIONS='-c client_min_messages=warning' ed_psql -d "$BD" -f "$DIR/02b-restricciones-produccion.sql" || { echo "FALLÓ 02b-restricciones-produccion.sql" >&2; exit 2; }
 
 # Lo que se corre, en la misma sesión, después de un c*-pruebas.sql.
 cat > "$TMP/resumen.sql" <<'SQL'

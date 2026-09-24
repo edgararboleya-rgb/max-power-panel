@@ -101,30 +101,33 @@ on conflict (id) do nothing;
 
 -- ---------------------------------------------------------------------
 -- Recibos: los tres estados que usa la app (por_leer, leido, anulado),
--- con y sin total. metodo_pago lo llena la lectura del recibo en "cerebro"
--- y su vocabulario NO se conoce: aquí van valores distintos a propósito
--- (incluido uno raro y uno nulo) para que el puente aprenda a aguantarlos.
+-- con y sin total. metodo_pago lo llena la lectura del recibo en "cerebro".
+-- Producción solo admite 7 categorías (material, labor_externo, permiso,
+-- herramienta, combustible, renta_equipo, otro) y 5 formas de pago (debito,
+-- credito, cuenta_proveedor, efectivo, zelle): lo dice su CHECK, leído el
+-- 24-sep (02b-restricciones-produccion.sql). Aquí van valores distintos de
+-- esas listas, y uno nulo con unos últimos 4 que no son de ninguna tarjeta.
 -- ---------------------------------------------------------------------
 insert into recibos (id, proyecto_id, ruta, total, proveedor, notas, estado, autor_id, creado, co, fecha, categoria, subtotal, tax, num_recibo, metodo_pago, ultimos4, po_job) values
   -- recién subido desde el teléfono: sin leer, sin total, sin fecha
   (1, 'casa-perez-k3m9',  'recibos/g/0001.jpg', null,     null,        null,                       'por_leer', '00000000-0000-4000-a000-000000000002', '2026-10-02 07:40-04', null, null,         'material', null,    null,  null,      null,          null,   null),
   -- leído, con impuesto, pagado con tarjeta
-  (2, 'casa-perez-k3m9',  'recibos/g/0002.jpg', 245.37,   'CED',       'THHN #12 STRANDED 500 ft', 'leido',    '00000000-0000-4000-a000-000000000002', '2026-10-05 10:15-04', null, '2026-10-05', 'material', 229.32,  16.05, 'CED-88121', 'tarjeta',     '4417', 'PEREZ'),
+  (2, 'casa-perez-k3m9',  'recibos/g/0002.jpg', 245.37,   'CED',       'THHN #12 STRANDED 500 ft', 'leido',    '00000000-0000-4000-a000-000000000002', '2026-10-05 10:15-04', null, '2026-10-05', 'material', 229.32,  16.05, 'CED-88121', 'credito',     '4417', 'PEREZ'),
   -- leído, a cuenta del proveedor (vocabulario distinto)
-  (3, 'oficina-nch-7xq2', 'recibos/e/0003.jpg', 1288.10,  'Platt',     'EMT y accesorios',         'leido',    '00000000-0000-4000-a000-000000000001', '2026-10-07 13:02-04', null, '2026-10-07', 'material', 1203.83, 84.27, 'PL-55190',  'Account',     null,   'NCH'),
+  (3, 'oficina-nch-7xq2', 'recibos/e/0003.jpg', 1288.10,  'Platt',     'EMT y accesorios',         'leido',    '00000000-0000-4000-a000-000000000001', '2026-10-07 13:02-04', null, '2026-10-07', 'material', 1203.83, 84.27, 'PL-55190',  'cuenta_proveedor', null, 'NCH'),
   -- leído, SIN impuesto conocido (tax nulo) y total con 4 decimales (el
   -- repo guarda precios así: el redondeo a centavos es del libro)
   (4, 'oficina-nch-7xq2', 'recibos/g/0004.jpg', 19.9950,  'Home Depot','tornillería',              'leido',    '00000000-0000-4000-a000-000000000002', '2026-10-08 16:20-04', null, '2026-10-08', 'material', null,    null,  'HD-7781',   null,          null,   null),
-  -- leído con una forma de pago que nadie espera
-  (5, 'casa-perez-k3m9',  'recibos/e/0005.jpg', 60.00,    'Shell',     'gasolina camioneta',       'leido',    '00000000-0000-4000-a000-000000000001', '2026-10-09 07:05-04', null, '2026-10-09', 'gasolina', 60.00,   0,     null,      'APPLE PAY ??', '0092', null),
+  -- leído sin forma de pago y con unos últimos 4 que no son de ninguna tarjeta
+  (5, 'casa-perez-k3m9',  'recibos/e/0005.jpg', 60.00,    'Shell',     'gasolina camioneta',       'leido',    '00000000-0000-4000-a000-000000000001', '2026-10-09 07:05-04', null, '2026-10-09', 'combustible', 60.00, 0,     null,      null,          '0092', null),
   -- anulado (con total): la app lo usa; contabilizarlo exige un reverso
-  (6, 'casa-perez-k3m9',  'recibos/g/0006.jpg', 50.00,    'CED',       'duplicado',                'anulado',  '00000000-0000-4000-a000-000000000002', '2026-10-06 09:00-04', null, '2026-10-06', 'material', 46.73,   3.27,  'CED-88130', 'tarjeta',     '4417', null),
+  (6, 'casa-perez-k3m9',  'recibos/g/0006.jpg', 50.00,    'CED',       'duplicado',                'anulado',  '00000000-0000-4000-a000-000000000002', '2026-10-06 09:00-04', null, '2026-10-06', 'material', 46.73,   3.27,  'CED-88130', 'credito',     '4417', null),
   -- anulado sin total
   (7, 'oficina-nch-7xq2', 'recibos/g/0007.jpg', null,     null,        null,                       'anulado',  '00000000-0000-4000-a000-000000000002', '2026-10-06 09:01-04', null, null,         'material', null,    null,  null,      null,          null,   null),
   -- por leer pero ya con total (lo tecleó alguien)
   (8, 'oficina-nch-7xq2', 'recibos/e/0008.jpg', 412.00,   'Graybar',   null,                       'por_leer', '00000000-0000-4000-a000-000000000001', '2026-10-10 11:30-04', 'CO-1', '2026-10-10', 'material', null,  null,  null,      null,          null,   null),
   -- SEPTIEMBRE: antes de la apertura; el guardarraíl no lo deja postear
-  (9, 'casa-perez-k3m9',  'recibos/g/0009.jpg', 310.00,   'CED',       'breakers',                 'leido',    '00000000-0000-4000-a000-000000000002', '2026-09-28 15:00-04', null, '2026-09-28', 'material', 289.72,  20.28, 'CED-87999', 'tarjeta',     '4417', null)
+  (9, 'casa-perez-k3m9',  'recibos/g/0009.jpg', 310.00,   'CED',       'breakers',                 'leido',    '00000000-0000-4000-a000-000000000002', '2026-09-28 15:00-04', null, '2026-09-28', 'material', 289.72,  20.28, 'CED-87999', 'credito',     '4417', null)
 on conflict (id) do nothing;
 
 -- ---------------------------------------------------------------------
