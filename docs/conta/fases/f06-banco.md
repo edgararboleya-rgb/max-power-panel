@@ -26,10 +26,22 @@
   sin gasto.
 - Archivo preferido: **QFX/OFX**, porque cada movimiento trae su propio id
   (FITID) y eso ayuda a la idempotencia. CSV solo si no hay otro.
-- **Conector automático (decide Edgar):** Plaid. Chase comparte datos con
-  Plaid por API oficial (acuerdo de 2020) y Amex también está en Plaid. La API
-  directa de Chase es solo para clientes de tesorería de J.P. Morgan. El
-  archivo sigue siendo el respaldo permanente (§5.5 del plan).
+- **Conector automático: Plaid, plan Trial** (Edgar lo pide, 24-sep). Gratis,
+  hasta 10 conexiones reales, incluye Chase, Amex y Transactions, sin
+  cuestionario de seguridad. Max Power usa **2 conexiones**: Chase y Amex (Gold
+  y Blue entran juntas con el mismo usuario de Amex). No pedir Production de
+  pago: el Trial solo existe para cuentas que nunca lo pidieron, y fuera del
+  Trial Chase tardaba 3–4 meses en aprobar (julio 2025). Chase comparte datos
+  con Plaid por API oficial; la API directa de Chase es solo para clientes de
+  tesorería de J.P. Morgan. El archivo sigue siendo el respaldo permanente
+  (§5.5 del plan).
+- **Plaid en la Fase 6 (🔵 azul):** función `plaid` en Supabase (link token,
+  canje del token, `/transactions/sync` diario + webhook). El access token vive
+  en **Vault**, nunca en una tabla. Los movimientos entran a la misma tabla
+  que los del archivo, y **el mismo cargo por Plaid y por archivo entra una
+  sola vez**. Solo se contabiliza lo posteado, nunca lo pendiente. Edgar pone
+  `PLAID_CLIENT_ID` y `PLAID_SECRET` en los secretos de Supabase y la URL de
+  la app en las redirect URIs de Plaid; el secreto nunca pasa por el chat.
 
 ## 🔵 Azul — se crea (`/effort max`)
 
