@@ -3009,3 +3009,25 @@ button.btn-ir { border: 0; cursor: pointer; font: inherit; font-weight: 700; fon
 .esc-benef .rap-rol { gap: .4rem; }
 .esc-benef .rap-desc { font-size: .8rem; }
 .esc-benef input { width: 5rem; text-align: right; }
+
+/* (24/09, P178) En el teléfono: las casillas con letra de 16 px para que el
+   iPhone no amplíe la pantalla al tocarlas, y los botones de acción a 44 px,
+   que es lo que pide un dedo con guantes o con prisa en la obra. */
+@media (pointer: coarse), (max-width: 1023px) {
+  input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea { font-size: 16px !important; }
+  button.accion, .accion, .btn-volver, .btn-nuevo, .btn-entrar, .btn-ir { min-height: 44px; }
+  .btn-volver { display: inline-flex; align-items: center; }
+}
+
+/* (24/09, P181) «+ Nuevo proyecto» y «Entrar»: la letra oscura sobre el
+   degradado azul no se leía al sol (1.7:1). Letra blanca con sombra. */
+.btn-nuevo, .btn-entrar { color: #fff; text-shadow: 0 1px 2px rgba(4, 32, 42, .55); }
+
+/* (24/09, P183) Tarjetas grises mientras carga: la app ya no parece colgada
+   durante las ~30 lecturas del arranque. Se van solas al pintar el inicio. */
+.esqueleto { height: 5.5rem; border-radius: 16px; margin: .6rem 0;
+  background: linear-gradient(90deg, rgba(11,32,54,.06) 25%, rgba(11,32,54,.12) 50%, rgba(11,32,54,.06) 75%);
+  background-size: 200% 100%; animation: esqueleto-brillo 1.3s ease-in-out infinite; }
+.esqueleto.corto { height: 3rem; width: 70%; }
+@keyframes esqueleto-brillo { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .esqueleto { animation: none; } }

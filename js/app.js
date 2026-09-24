@@ -1180,7 +1180,14 @@ function esFalloDeRed(err) {
             <span class="equipo-dot ${clase}"></span>
             <span class="alcance-info">
               <span class="alcance-titulo">${esc(u.nombre)}</span>
-              <span class="alcance-estado">${texto}${u.ultimaVista ? ` · 📱 en la app: ${esc(String(u.ultimaVista).slice(0, 10))}` : ""} · toca para ver sus reportes</span>
+              <span class="alcance-estado">${texto}${(() => {
+                // P86 (24-sep): quién NO abre la app salta a la vista — si no la
+                // abre, no le llegan ni los avisos ni lo que se le asigna.
+                if (!u.ultimaVista) return ` · <b style="color:#B3261E">📱 nunca ha abierto la app</b>`;
+                const d = diasDesde(String(u.ultimaVista).slice(0, 10));
+                const f = esc(String(u.ultimaVista).slice(0, 10));
+                return d !== null && d >= 3 ? ` · <b style="color:#B3261E">📱 no abre la app hace ${d} días (${f})</b>` : ` · 📱 en la app: ${f}`;
+              })()} · toca para ver sus reportes</span>
               ${semanas}
             </span>
           </summary>
@@ -1297,7 +1304,7 @@ function esFalloDeRed(err) {
       const activos = del.filter(p => !SIN_CONTRATO.includes(p.estado));
       const enObra = del.filter(p => p.estado === "ejecucion").length;
       const dineroLinea = usuario.finanzas
-        ? `<div class="cat-dinero">${fmt(sumaContrato(del, FIRMADO))} firmado${del.some(p => p.estado === "enviado") ? ` · ${fmt(sumaContrato(del, ["enviado"]))} propuesto` : ""}</div>`
+        ? `<div class="cat-dinero">${fmt(sumaContrato(del, FIRMADO))} firmado</div>${del.some(p => p.estado === "enviado") ? `<div class="cat-dinero" style="opacity:.75">${fmt(sumaContrato(del, ["enviado"]))} propuesto</div>` : ""}`
         : "";
       // El desglose por etapa: llena el hueco de la derecha con lo que de
       // verdad quieres saber de un vistazo, sin abrir la categoría.
