@@ -57,7 +57,10 @@
 --          apertura ya cerrada (no se reversa: se ajusta), o el reverso o
 --          el sustituto de un asiento de un ejercicio anterior que no va
 --          como ajuste de ese ejercicio (salvo el sustituto de un papel
---          que ya es del año nuevo, B.8 paso 5)
+--          que ya es del año nuevo, B.8 paso 5); y, a mano, el asiento de
+--          un PUENTE (fn_reversar no lo reversa y fn_postear no lo
+--          sustituye: se corrige su papel y su puente pone el reverso y el
+--          asiento nuevo; B.12 y B.14)
 --   42501  permiso: solo el dueño postea; anon y service_role, nada
 --   22023  entrada mal formada (clave desconocida, camino no válido,
 --          afecta_periodo sin tipo ajuste_cpa, ajuste_cpa sin motivo…)
@@ -75,7 +78,8 @@
 --       fn_reversar(p_asiento uuid, p_motivo text) camino 'reverso' (un
 --         devengo reversible se corrige en su mes: su reverso va en su
 --         misma fecha y, en la misma transacción, anula su reverso del
---         día 1)
+--         día 1). El asiento de un PUENTE no: se corrige su papel y su
+--         puente lo rehace (MX007, con el camino según el papel)
 --       fn_estado(p_periodo text)                 la fila de control (lee con RLS)
 --       fn_verificar_cadena()                     hashes, numeración, triggers, permisos
 --       fn_abrir_periodo(p_mes 'AAAA-MM'), fn_cerrar_periodo(p_periodo text)
@@ -2426,7 +2430,8 @@ revoke execute on function public.fn_postear_interno(jsonb) from public, anon, a
 -- cliente: los pone la base. El origen (origen_tabla, origen_id) solo
 -- viaja junto con sustituye_a: la corrección a mano del asiento reversado
 -- de un documento dice de qué papel sale y a cuál sustituye. El PRIMER
--- asiento de un documento lo postea su puente (f03), no la mano.
+-- asiento de un documento lo postea su puente (f03), no la mano; y el de
+-- un papel que lleva su puente no se sustituye a mano (MX007).
 --   _rpc('fn_postear', { p_asiento: { fecha, descripcion, lineas, … } })
 -- ---------------------------------------------------------------------
 create or replace function public.fn_postear(p_asiento jsonb)
@@ -2456,6 +2461,18 @@ begin
     raise exception using errcode = '22023',
       message = 'fn_postear lleva origen_tabla y origen_id solo para sustituir el asiento reversado de ese documento '
                 '(sustituye_a). El primer asiento de un documento lo postea su puente.';
+  end if;
+  -- Un papel que lleva su PUENTE (f03) no se sustituye a mano: el puente
+  -- lo tomaría por un papel que cambió, reversaría la corrección con un
+  -- motivo falso y pondría el suyo. Se corrige el papel y su puente pone el
+  -- asiento nuevo (fn_reversar dice cómo, según el papel).
+  if exists (select 1 from asientos a
+              where a.origen_tabla = p_asiento->>'origen_tabla' and a.origen_id = p_asiento->>'origen_id'
+                and a.camino = 'puente') then
+    raise exception using errcode = 'MX007',
+      message = format('%s %s lo lleva su puente: su asiento no se sustituye a mano. Se corrige el papel y su puente pone el '
+                       'reverso y el asiento nuevo (con su motivo); para mover un importe de cuenta sin tocar el papel, un '
+                       'asiento a mano de reclasificación, sin origen.', p_asiento->>'origen_tabla', p_asiento->>'origen_id');
   end if;
   return fn_postear_interno(p_asiento || jsonb_build_object('camino', 'mano',
                                                             'procedencia', jsonb_build_object('funcion', 'fn_postear')));
@@ -2637,7 +2654,9 @@ revoke execute on function public.fn_reversar_interno(uuid, text, text, jsonb) f
 -- reversible, dentro de su mes: devuelve también la anulación de su
 -- reverso del día 1 («anula»). Devuelve el tipo del reverso: un asiento
 -- de un ejercicio anterior sale como ajuste de ese ejercicio (tipo
--- ajuste_cpa y su afecta_periodo), y conta.js lo dice así.
+-- ajuste_cpa y su afecta_periodo), y conta.js lo dice así. El asiento de
+-- un PUENTE no (MX007): se corrige su papel y su puente pone el reverso y
+-- el asiento nuevo; el mensaje dice cómo, según el papel.
 -- ---------------------------------------------------------------------
 create or replace function public.fn_reversar(p_asiento uuid, p_motivo text)
 returns jsonb
@@ -2645,9 +2664,48 @@ language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
+declare
+  v_o asientos;
 begin
   if not (es_dueno() or fn_desde_editor()) then
     raise exception using errcode = '42501', message = 'Solo el dueño reversa asientos.';
+  end if;
+  -- El asiento de un PUENTE (f03) no se reversa a mano: el papel seguiría
+  -- ahí sin asiento, y el siguiente backfill («reintentar puente», el de la
+  -- noche, cualquier ✎) lo volvería a postear igual: la corrección quedaba
+  -- doble (el gasto y la deuda, el ingreso y la CxC, el banco). Se corrige
+  -- el papel, y su puente pone el reverso y el asiento nuevo; el mensaje
+  -- dice cómo, según el papel.
+  select * into v_o from asientos where id = p_asiento;
+  if found and v_o.camino = 'puente' then
+    raise exception using errcode = 'MX007',
+      message = format('%s es el asiento del puente de %s %s: no se reversa a mano (el papel seguiría ahí, y el siguiente '
+                       'backfill lo volvería a poner). %s Si lo que estaba mal era una regla (la cuenta de una categoría, de '
+                       'una tarjeta, de un tipo de obra), corrige la regla y rehazlo: select fn_puentes_rehacer(%L, %L, '
+                       '''motivo'');. Para mover un importe de cuenta sin tocar el papel, un asiento a mano de '
+                       'reclasificación (fn_postear, sin origen).', v_o.numero, v_o.origen_tabla, v_o.origen_id,
+                       case v_o.origen_tabla
+                         when 'recibos' then format('Corrige el recibo (✎ en la app, o update recibos … where id = %s; en el '
+                                                    'SQL Editor) y su puente pone el reverso y el asiento nuevo; si no va, '
+                                                    'anúlalo: select fn_recibo_anular(%s, ''motivo'');.', v_o.origen_id,
+                                                    v_o.origen_id)
+                         when 'trabajos_externos' then format('Corrige el trabajo externo y su puente lo rehace; si no va, '
+                                                              'anúlalo: select fn_externo_anular(%s, ''motivo'');.',
+                                                              v_o.origen_id)
+                         when 'facturas' then format('Una factura emitida se anula con su nota de crédito: select '
+                                                     'fn_factura_anular(%s, ''motivo'');.', v_o.origen_id)
+                         when 'cobros' then format('Un cobro mal registrado se anula: select fn_cobro_anular(%L, ''motivo'');; '
+                                                   'un cheque que rebotó se devuelve en su fecha: select fn_cobro_devolver(%L, '
+                                                   '''AAAA-MM-DD'', ''motivo'');.', v_o.origen_id, v_o.origen_id)
+                         when 'aplicaciones_cobro' then 'Un anticipo aplicado se deshace con su cobro (fn_cobro_anular).'
+                         when 'cobros_devoluciones' then 'Una devolución no se deshace: si fue un error, el cobro se registra '
+                                                         'otra vez (fn_cobro_registrar).'
+                         when 'notas_credito' then 'Una nota de crédito no se deshace: la factura anulada se queda anulada, y '
+                                                   'la buena se emite de nuevo.'
+                         when 'horas_devengo' then format('El devengo de un mes lo pone al día (o lo deshace): select '
+                                                          'fn_horas_devengar(%L);.', v_o.origen_id)
+                         else 'Se corrige su papel y su puente lo rehace.' end,
+                       v_o.origen_tabla, v_o.origen_id);
   end if;
   return fn_reversar_interno(p_asiento, p_motivo, 'reverso', jsonb_build_object('funcion', 'fn_reversar'));
 end $$;
@@ -2828,7 +2886,8 @@ declare
     -- f03 · c3-puentes.sql
     'fn_puentes_correr(date)', 'fn_puentes_rehacer(text,text,text)', 'fn_puentes_verificar()',
     'fn_puentes_cuenta(text,text)', 'fn_factura_anular(bigint,text,date)', 'fn_cobro_registrar(jsonb)',
-    'fn_cobro_anular(uuid,text)', 'fn_anticipo_aplicar(uuid,bigint,text,date)', 'fn_horas_aprobar(uuid,date,date)',
+    'fn_cobro_anular(uuid,text)', 'fn_cobro_devolver(uuid,date,text,text)',
+    'fn_anticipo_aplicar(uuid,bigint,text,date,boolean)', 'fn_horas_aprobar(uuid,date,date,jsonb)',
     'fn_horas_desaprobar(uuid,date,date,text)', 'fn_horas_devengar(text)', 'fn_recibo_anular(bigint,text)',
     'fn_externo_anular(bigint,text)', 'fn_mapeo_categoria(text,text,text)', 'fn_mapeo_metodo_pago(text,text,text)',
     'fn_mapeo_tipo_proyecto(text,text)', 'fn_mapeo_confirmar(text,text)', 'fn_tarjeta_alta(text,text,text,uuid)',
@@ -3797,7 +3856,8 @@ as $$
                            'fn_libro_huellas_calcular', 'fn_libro_huellas_sellar',
                            -- f03 · c3-puentes.sql (las que llama la app)
                            'fn_puentes_correr', 'fn_puentes_rehacer', 'fn_puentes_verificar', 'fn_puentes_cuenta',
-                           'fn_factura_anular', 'fn_cobro_registrar', 'fn_cobro_anular', 'fn_anticipo_aplicar',
+                           'fn_factura_anular', 'fn_cobro_registrar', 'fn_cobro_anular', 'fn_cobro_devolver',
+                           'fn_anticipo_aplicar',
                            'fn_horas_aprobar', 'fn_horas_desaprobar', 'fn_horas_devengar', 'fn_recibo_anular',
                            'fn_externo_anular', 'fn_mapeo_categoria', 'fn_mapeo_metodo_pago', 'fn_mapeo_tipo_proyecto',
                            'fn_mapeo_confirmar', 'fn_tarjeta_alta', 'fn_proveedor_alta', 'fn_proveedor_alias',

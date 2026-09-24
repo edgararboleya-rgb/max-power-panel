@@ -14,8 +14,10 @@
 #      fila del recibo), y al final hay dos correcciones enlazadas: el
 #      asiento vivo es el del último total, sin asientos de más.
 #   2. El backfill corre mientras Edgar está guardando un recibo: el
-#      backfill no lo espera ni lo toca (lo salta: «en uso»), y al
-#      confirmar Edgar, su propio puente lo contabiliza.
+#      backfill no lo espera ni lo toca (lo salta: «en uso», o «sin
+#      cambios» si lo que ve confirmado es lo de su asiento vivo: el
+#      backfill ya no vuelve a planear lo que no cambió), y al confirmar
+#      Edgar, su propio puente lo contabiliza.
 #   3. Diez recibos subidos a la vez (como la app): diez asientos, sin
 #      huecos ni repetidos en la numeración.
 #   4. Dos backfills a la vez sobre seis recibos que esperaban una regla:
@@ -32,6 +34,13 @@
 #      el mismo número, así que el segundo espera igual y ya no cabe
 #      (MX008). (Antes el candado se saltaba esos y la factura se cobraba
 #      dos veces.)
+#   9. Dos lecturas del MISMO ticket a la vez (dos fotos del mismo papel,
+#      leídas por cerebro en dos peticiones que confirman juntas, con otro
+#      posteo en vuelo que tiene el candado de la cadena): la segunda
+#      espera el candado del ticket de la primera, mira después de que
+#      confirmó y la ve: una en el libro y la otra pendiente
+#      (duplicado). (Antes miraban las dos antes de que la otra confirmara
+#      y entraban las dos: la deuda doble.)
 # Y comprueba: fn_verificar_cadena y los controles de los puentes en true
 # (también partidas: ninguna factura en negativo ni anulada con cobro).
 #
@@ -78,6 +87,13 @@ select v.id, 'casa-perez-k3m9', 'recibos/banco/' || v.id || '.jpg', v.total, 'CE
                (-920, 11.00, 'c3 metodo nuevo'), (-921, 12.00, 'c3 metodo nuevo'), (-922, 13.00, 'c3 metodo nuevo'),
                (-923, 14.00, 'c3 metodo nuevo'), (-924, 15.00, 'c3 metodo nuevo'), (-925, 16.00, 'c3 metodo nuevo'))
        as v(id, total, metodo);
+-- Dos fotos del mismo ticket, subidas por Gustavo y todavía por leer
+-- (escenario 9).
+insert into recibos (id, proyecto_id, ruta, notas, estado, autor_id, creado, categoria) overriding system value
+values (-930, 'casa-perez-k3m9', 'recibos/banco/930.jpg', 'breakers 20A', 'por_leer', '00000000-0000-4000-a000-000000000002',
+        timestamptz '2026-10-14 09:00-04', 'material'),
+       (-931, 'casa-perez-k3m9', 'recibos/banco/931.jpg', 'breakers 20A', 'por_leer', '00000000-0000-4000-a000-000000000002',
+        timestamptz '2026-10-14 09:05-04', 'material');
 -- La factura de los anticipos (escenario 7) y la del número escrito de
 -- otra forma (escenario 8): entran al libro al confirmar.
 insert into facturas (id, proyecto_id, num, fecha, monto, pagada, retencion) overriding system value
@@ -112,10 +128,12 @@ echo "== 2. El backfill mientras Edgar guarda un recibo"
 ed -c "begin; $APP update recibos set total = 111.00 where id = -901; select pg_sleep(3); commit;" > "$TMP/2a.out" 2>&1 &
 sleep 0.7
 inicio=$(date +%s.%N)
-ed -c "select (fn_puentes_correr()->>'en_uso_saltados')::int >= 1" > "$TMP/2b.out" 2>&1
+ed -c "select fn_puentes_correr() is not null" > "$TMP/2b.out" 2>&1
 fin=$(date +%s.%N)
+# (Edgar todavía no confirmó: lo que el backfill hizo ya está confirmado.)
+ed -c "select count(*) from asientos where origen_tabla = 'recibos' and origen_id = '-901'" > "$TMP/2c.out" 2>&1
 wait
-revisa "el backfill saltó el recibo en uso" "t" "$(tail -n 1 "$TMP/2b.out")"
+revisa "el backfill no tocó el recibo en uso (su único asiento sigue siendo el de antes)" "1" "$(tail -n 1 "$TMP/2c.out")"
 revisa "el backfill no esperó a Edgar" "t" "$(python3 -c "print('t' if $fin - $inicio < 2 else 'f')")"
 revisa "al confirmar, el puente de Edgar lo contabilizó: asiento, reverso, sustituto" "3/1" \
   "$(ed -c "select count(*) || '/' || count(*) filter (where camino = 'reverso') from asientos where origen_tabla = 'recibos' and origen_id = '-901'")"
@@ -216,6 +234,24 @@ for par in " 951|+951" "951|+951" "+951|951 "; do
   ed -c "begin; $APP select fn_cobro_anular(c.id, 'c3-concurrencia: otro par') from cobros c
           join aplicaciones_cobro a on a.cobro_id = c.id where a.factura_id = 951 and c.estado = 'vigente'; commit;" > /dev/null 2>&1
 done
+
+echo "== 9. Dos lecturas del mismo ticket a la vez"
+# H: un posteo en vuelo, con el candado de la cadena de c2 hasta confirmar.
+# A y B: la lectura de cada foto (cerebro, service_role); sus puentes
+# corren al confirmar, mientras H sigue ahí.
+CER="select set_config('request.jwt.claims', '{\"role\":\"service_role\"}', true); set local role service_role;"
+LEE="set estado = 'leido', total = 245.37, subtotal = 229.32, tax = 16.05, fecha = '2026-10-14', proveedor = 'CED', num_recibo = 'CED-7777', metodo_pago = 'tarjeta', ultimos4 = '9998'"
+ed -c "begin; select pg_advisory_xact_lock(820260923); select pg_sleep(3); commit;" > "$TMP/9h.out" 2>&1 &
+sleep 0.5
+ed -c "begin; $CER update recibos $LEE where id = -930; commit;" > "$TMP/9a.out" 2>&1 &
+sleep 0.5
+ed -c "begin; $CER update recibos $LEE where id = -931; commit;" > "$TMP/9b.out" 2>&1 &
+wait
+revisa "las dos lecturas confirmaron sin error" "0" "$(cat "$TMP/9a.out" "$TMP/9b.out" | grep -ci error)"
+revisa "el ticket entró UNA vez: una foto en el libro y la otra pendiente (duplicado)" "1/pendiente:duplicado" \
+  "$(ed -c "select (select count(*) from recibos r where r.id in (-930, -931) and r.contabilizado_en is not null) || '/' ||
+                    (select string_agg(d.estado || ':' || d.codigo, ',') from puente_documentos d
+                      where d.tabla = 'recibos' and d.documento_id in ('-930', '-931') and d.estado <> 'contabilizado')")"
 
 revisa "ningún papel quedó en error en la bandeja" "0" "$(ed -c "select count(*) from puente_documentos where estado = 'error'")"
 revisa "fn_verificar_cadena: todos los controles en true" "" "$(ed -c "select coalesce(string_agg(control, ', '), '') from fn_verificar_cadena() where not ok")"

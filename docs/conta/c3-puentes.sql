@@ -55,10 +55,17 @@
 --         papel) espera la foto: todo número llega a su papel. La forma de
 --         pago la trae la LECTURA (la app no tiene dónde escribirla): un
 --         total tecleado con ✎ o una compra anotada a mano quedan sin
---         ella. Entonces va a cuenta de su proveedor si ese proveedor
---         tiene términos (f03: «o derivada de proveedores.terminos», y la
---         procedencia lo dice); si no, espera en la bandeja con el SQL
---         exacto para escribirla.
+--         ella. Entonces se deriva, y la procedencia dice de dónde: si el
+--         recibo trae los 4 últimos de una tarjeta dada de alta, se pagó
+--         con esa tarjeta (el papel lo dice; nunca va a la cuenta del
+--         proveedor, o la tarjeta pagaría otra vez lo mismo cuando llegue
+--         su statement); si trae unos 4 últimos que no son de ninguna,
+--         espera con la pregunta; si no trae nada, va a cuenta de su
+--         proveedor solo si sus términos dicen CRÉDITO (Net 30, 30 días,
+--         EOM, a cuenta…: f03, «o derivada de proveedores.terminos»; un
+--         «Contado» o un «COD» no abren una deuda); si no, espera en la
+--         bandeja con el SQL exacto para escribirla. El proveedor
+--         'sin_asignar' del conector es «sin obra».
 --       · trabajos_externos: al anotarse (la app los guarda completos).
 --       · facturas: al existir con número, fecha, monto y obra. La tabla
 --         no tenía estado: se le pone 'emitida' por omisión (como nacen
@@ -77,16 +84,28 @@
 --         fecha del papel pasa a otro año (el ticket del 20-dic que era
 --         del 4-ene), el asiento nuevo es normal en su año: el gasto es de
 --         enero (c2, B.8 paso 5).
+--       · El total que Edgar TECLEA (con ✎, o en el SQL Editor) es lo que
+--         se pagó, aunque el subtotal y el tax de la lectura ya no lo sumen
+--         (el ✎ no los tiene): entra igual —reverso y asiento nuevo— y el
+--         descuadre queda como AVISO en la bandeja, con el SQL para
+--         corregir el subtotal y el tax o confirmar el total. La guarda del
+--         recibo lo deja escrito al guardarlo (puente_revisados,
+--         total_a_mano: quién, cuándo, de cuánto a cuánto). Un total que
+--         cambia la lectura o el conector (service_role) no es de Edgar:
+--         ese sí se pregunta. Y una duda que el asiento vivo ya tenía (el
+--         mismo dato con que entró) no congela lo demás: la foto nueva
+--         (📷) o la obra (📌) entran, y la duda sigue como aviso.
 --       · Solo queda el reverso, sin asiento nuevo, cuando el papel deja
 --         de contar POR SÍ MISMO: anulado, en total 0, de antes del corte,
 --         o ya dentro de la apertura. Si lo que falta es una REGLA o un
 --         dato (el proveedor escrito con otro nombre, una categoría o una
---         forma de pago que el mapeo no conoce, una duda de la bandeja),
---         el asiento vivo SE QUEDA como estaba —la deuda y el costo siguen
---         siendo reales— y el papel sale en la bandeja como aviso; cuando
---         se resuelve, el puente pone el reverso y el asiento nuevo juntos.
---         Y si el asiento vivo usa una cuenta que ya está inactiva, tampoco
---         se reversa: el saldo quedaría atrapado en ella (c1).
+--         forma de pago que el mapeo no conoce, una duda NUEVA de la
+--         bandeja), el asiento vivo SE QUEDA como estaba —la deuda y el
+--         costo siguen siendo reales— y el papel sale en la bandeja como
+--         aviso; cuando se resuelve, el puente pone el reverso y el asiento
+--         nuevo juntos. Y si el asiento vivo usa una cuenta que ya está
+--         inactiva, tampoco se reversa: el saldo quedaría atrapado en ella
+--         (c1).
 --       · facturas: BLOQUEO con mensaje. Una factura emitida es un papel
 --         que ya tiene el cliente: su monto, fecha, obra, número y
 --         retención no cambian; se anula con NOTA DE CRÉDITO enlazada
@@ -94,12 +113,19 @@
 --         cobrada_el, el enlace de pago y lo de QuickBooks siguen libres.
 --  4. ANULADO → REVERSO. Un recibo 'anulado' (o en total 0) se reversa. Un
 --     trabajo externo se anula con fn_externo_anular (su costo queda en 0).
---     Un cobro, con fn_cobro_anular. Un recibo anulado NO vuelve con un
---     update cualquiera: el ✎ de la app le manda estado = 'leido' con la
---     nota que Edgar le apunta, y eso lo metía otra vez al libro sin que
---     nadie lo pidiera. La guarda lo deja anulado (la nota y el proveedor
---     sí se guardan); se des-anula a propósito, con su motivo, con
---     fn_recibo_desanular(id, motivo).
+--     Un cobro mal registrado, con fn_cobro_anular (su reverso va en su
+--     fecha: el cobro nunca debió estar). Un cheque REBOTADO no es un
+--     error de registro: el depósito sí pasó, y la devolución es un hecho
+--     nuevo, con su fecha (fn_cobro_devolver: el depósito se queda en su
+--     mes y la devolución entra en el suyo). Un recibo anulado NO vuelve
+--     con un update cualquiera: el ✎ de la app le manda estado = 'leido'
+--     con la nota que Edgar le apunta, y eso lo metía otra vez al libro sin
+--     que nadie lo pidiera. La guarda lo deja anulado (la nota y el
+--     proveedor sí se guardan); y si el update SOLO le cambia el estado
+--     (el editar_gasto del conector, o un ✎ sin tocar nada más), no lo
+--     ignora callada: MX003 con el camino. Se des-anula a propósito, con
+--     su motivo, con fn_recibo_desanular(id, motivo), que solo corre Edgar
+--     (el conector se lo pide).
 --  5. BORRAR un papel que está (o estuvo) en el libro → BLOQUEADO (MX003),
 --     con el mensaje de qué hacer, que depende de POR QUÉ está: con su
 --     asiento vivo (un recibo se anula con fn_recibo_anular, que también
@@ -129,9 +155,16 @@
 --     fecha leída POSTERIOR al día en que se subió (más de un día) se
 --     pregunta: fecha_posterior_a_subida (punto 15).
 --     Y UN PAPEL QUE YA ESTÁ EN LA APERTURA no entra otra vez por su puente
---     (si su fecha cambia al corte o después, espera en la bandeja:
---     en_apertura). Las facturas no tienen hora de subida: el guardarraíl
---     solo mira su fecha.
+--     (un recibo o un trabajo externo fechado desde el corte espera en la
+--     bandeja: en_apertura; una factura, que QuickBooks fechó antes del
+--     corte y la app el 1-oct, se queda fuera: su saldo ya vino con la
+--     balanza). Las facturas no tienen hora de subida: el guardarraíl solo
+--     mira su fecha. La apertura trae cada factura abierta en 1110/1120
+--     por su partida (facturas/<id>) y CON LA OBRA DE LA FACTURA: toda
+--     línea de 1110 o 1120 contra esa partida lleva esa obra (MX006, el
+--     trigger de las líneas), para que la factura sea una sola partida
+--     por cobrar y no dos (una sin obra desde el 30-sep y su cobro en la
+--     obra).
 --  7. DOCUMENTO TARDÍO: si la fecha del papel cae en un mes ya cerrado, se
 --     postea el primer día del período abierto, con la nota en la
 --     procedencia (§5.7 del plan). Si además ese mes es de un EJERCICIO
@@ -194,11 +227,22 @@
 --     sus facturas antes de mirar su saldo (dos cobros a la vez, o un cobro
 --     mientras se anula la factura, se esperan); con la llave del teléfono
 --     (llave_cliente) el mismo cobro mandado dos veces entra una; un
---     movimiento del banco casa con un solo cobro vigente; y lo cobrado
---     antes de la fecha de una factura no se le aplica: es anticipo de la
---     obra. Entra a una cuenta de banco (10xx), no a otra de activo. Cada
+--     movimiento del banco casa con un solo cobro vigente; el MISMO
+--     DEPÓSITO no entra dos veces aunque llegue por dos caminos (a mano
+--     desde el teléfono y después con su movimiento del banco): un cobro
+--     vigente de la misma cuenta y monto, con fecha a tres días o menos y
+--     la misma referencia (o sin ella), para el segundo con MX008 y el SQL
+--     para casarlo con su movimiento; si de verdad son dos depósitos, se
+--     dice («duplicado_confirmado») y queda escrito; y lo cobrado antes de
+--     la fecha de una factura no se le aplica: es anticipo de la obra.
+--     Entra a una cuenta de banco (10xx), no a otra de activo. Cada
 --     factura_id se lee UNA vez: el candado y la búsqueda usan el mismo
---     número (« 3» y «+3» son la factura 3 para los dos).
+--     número (« 3» y «+3» son la factura 3 para los dos). Lo que sobra de
+--     una factura con retención abierta se ofrece como su retención
+--     (es_retencion), no como anticipo; y un anticipo también se aplica a
+--     la retención (fn_anticipo_aplicar con p_es_retencion). Una factura
+--     con más por cobrar en el libro que su monto (está dos veces) no se
+--     cobra hasta arreglarla.
 -- 15. LO QUE NO CUADRA EN EL PAPEL SE PREGUNTA, no se contabiliza callado.
 --     Un recibo espera en la bandeja, con sus números, si:
 --       · fecha_posterior_a_subida: la fecha leída es de más de un día
@@ -209,27 +253,58 @@
 --       · impuesto: trae subtotal y tax y no suman el total (más de un
 --         centavo): el total sin el impuesto, o al revés;
 --       · duplicado: otro recibo no anulado tiene la misma foto (ruta) o el
---         mismo ticket (proveedor, número de recibo y total). Entra el que
---         ya está en el libro (o el más viejo); el otro espera, y el motivo
---         dice cuál es. El mismo ticket subido dos veces (otro envío, otra
---         llave) no se le debe dos veces a nadie.
+--         mismo ticket: el mismo número de recibo y el mismo total, del
+--         mismo proveedor (el de proveedores_alias: «CED» y «Consolidated
+--         Electrical Distributors» son el mismo) o del mismo día. Entra el
+--         que ya está en el libro (o el más viejo); el otro espera, y el
+--         motivo dice cuál es. El mismo ticket subido dos veces (otro
+--         envío, otra llave) no se le debe dos veces a nadie, tampoco si
+--         las dos lecturas confirman a la vez: antes de mirar, cada puente
+--         de recibo toma el candado de su foto y de su ticket, y el segundo
+--         mira después de que el primero confirmó;
+--       · total_cero: la lectura lo dejó en total 0 (o que redondea a 0) y
+--         nunca entró al libro: ¿no leyó el total? El 0 que teclea Edgar con
+--         ✎ sigue siendo anularlo, como siempre, y el 0 de un recibo que ya
+--         estaba en el libro lo reversa.
 --     Edgar corrige el papel (y entra solo) o confirma que está bien:
 --     fn_puentes_confirmar(tabla, id, código, motivo). La confirmación
 --     queda escrita (puente_revisados) y vale para ESE dato: si el papel
 --     cambia, se vuelve a preguntar. El control duplicados vigila lo que
---     ya está en el libro.
+--     ya está en el libro (y los cobros: el mismo depósito dos veces).
 -- 16. LA MANO DE OBRA ESTÁNDAR NO SE CUENTA DOS VECES. El devengo de cierre
 --     es solo lo trabajado y todavía no pagado. Hasta que f11 traiga el
 --     «pagado hasta» de cada corrida, un mes que ya tiene journal de
 --     nómina no se devenga (MX008), y un devengo que convive con un
 --     journal del mismo mes sale en rojo (control devengo); volver a
---     devengar lo deshace.
+--     devengar lo deshace. Un mes no se CIERRA con su devengo así (ni con
+--     uno que ya no es el de las horas aprobadas): el cierre lo para y dice
+--     cómo ponerlo al día, que es cuando todavía se puede. Y si aun así un
+--     mes cerrado quedó con devengo y journal juntos, el control lo sigue
+--     diciendo en rojo, con el ajuste que va en el mes abierto.
 -- 17. LA NOTA DE CRÉDITO SALDA LA FACTURA COMO ESTÁ HOY: lo que su partida
 --     debe en cada cuenta de cobrar (1110 y 1120, con su obra, también
 --     después de reclasificar la retención) y el espejo de su ingreso. Si
 --     otro asiento movió la partida contra otra cuenta (un castigo a
 --     incobrables), la nota no lo deshace: fn_factura_anular lo dice
 --     (MX008) y nombra ese asiento.
+-- 18. EL ASIENTO DE UN PUENTE NO SE REVERSA A MANO. Se corrige su papel, y
+--     su puente pone el reverso y el asiento nuevo: el ✎ del recibo,
+--     fn_recibo_anular, fn_externo_anular, fn_factura_anular (con nota de
+--     crédito), fn_cobro_anular, fn_puentes_rehacer si lo que estaba mal
+--     era una regla, fn_horas_devengar. c2 lo hace cumplir: fn_reversar no
+--     reversa un asiento de camino puente, y fn_postear no sustituye el de
+--     un papel que lleva su puente (MX007, con el camino bueno). Antes un
+--     reverso a mano dejaba el papel sin asiento, el siguiente backfill lo
+--     reponía «sin diferencias», y la corrección de Edgar quedaba doble.
+--     Para mover un importe de cuenta sin tocar el papel, un asiento a mano
+--     de reclasificación.
+-- 19. LAS HORAS QUE REPORTA EL EQUIPO TIENEN MEDIDA: más de 0 y hasta 24
+--     por reporte, y hasta 24 por trabajador y día (22023); y Edgar aprueba
+--     LO QUE VIO: fn_horas_aprobar recibe cuántos reportes y cuántas horas
+--     le enseñó la pantalla (o sus ids), y si en la tabla ya no es eso
+--     (alguien reportó entre medias), MX008 y no aprueba nada. El devengo
+--     estándar deja fuera, y lo dice, las horas fuera de medida que
+--     hubiera escrito el dueño.
 --
 -- PARCHE PENDIENTE DE LA APP (f05; no es de este archivo, que no toca js/):
 --   · la app no conoce facturas.estado. Una factura anulada con su nota de
@@ -241,15 +316,29 @@
 --     formRecibo, ni el ✎ del dueño mandan metodo_pago ni ultimos4 (los
 --     llena solo la lectura de cerebro). Falta un selector de forma de
 --     pago (con los textos del mapeo confirmado) y los últimos 4 de la
---     tarjeta en los tres. Hasta entonces, un total tecleado va a cuenta
---     de su proveedor si tiene términos, o espera con el SQL exacto.
+--     tarjeta en los tres. Hasta entonces, un total tecleado va a la
+--     tarjeta si el recibo trae sus 4 últimos, a cuenta de su proveedor si
+--     sus términos dicen crédito, o espera con el SQL exacto.
 --   · el 🗑 de un recibo que YA está en el libro debe ofrecer «anular»
 --     (estado 'anulado', lo que hace fn_recibo_anular) en vez de borrar:
 --     la lista «📥 Por completar» solo suelta un recibo anulado o con
 --     obra, y un repetido sin obra se quedaba en ella para siempre.
 --   · el ✎ de un recibo ANULADO le manda estado = 'leido': la guarda lo
---     deja anulado y guarda la nota. Para volver a contarlo:
---     fn_recibo_desanular(id, motivo).
+--     deja anulado y guarda la nota (si no cambia nada más, MX003 con el
+--     camino). Para volver a contarlo: fn_recibo_desanular(id, motivo).
+--   · el CONECTOR de Claude (registrar_gasto, importar_gastos,
+--     editar_gasto) escribe recibos con su propio vocabulario, que ya
+--     viene en el borrador de los mapeos (A.6): metodo_pago «debito»,
+--     «credito», «cuenta_proveedor», «efectivo», «zelle»; categoria
+--     «material», «labor_externo», «permiso», «herramienta»,
+--     «combustible», «renta_equipo» (y «otro», que Edgar decide). Su
+--     proyecto_id 'sin_asignar' es «sin obra». editar_gasto con estado
+--     'leido' sobre un anulado da MX003: el conector no des-anula, se lo
+--     pide a Edgar (fn_recibo_desanular, con su motivo).
+--   · conta.js, al aprobar horas, manda lo que la pantalla enseñó
+--     (fn_horas_aprobar(usuario, desde, hasta, '{"reportes": N, "horas":
+--     "H"}') o '{"ids": […]}'): si alguien reportó entre medias, MX008 y se
+--     vuelve a mirar.
 --
 -- LO QUE NO LLEVA contabilizado_en (f03 lo pedía también en horas y
 -- materiales): las horas no postean dinero (son la clave de reparto; su
@@ -264,21 +353,34 @@
 -- octubre de algo de septiembre se aplica a su partida igual que los de
 -- los puentes (fn_cobro_registrar mira el saldo de la partida en el libro).
 -- Un papel que la apertura nombra ya está en el libro: su puente no lo
--- vuelve a meter (en_apertura, en la bandeja), y lo que esté mal en él se
--- corrige con un ajuste a la apertura (tipo ajuste_cpa, afecta_periodo =
--- la apertura) contra su partida. Si llegara al revés (el puente primero y
--- la apertura después), el control partidas lo dice.
+-- vuelve a meter (en_apertura), y lo que esté mal en él se corrige con un
+-- ajuste a la apertura (tipo ajuste_cpa, afecta_periodo = la apertura)
+-- contra su partida. Vale igual para recibos, trabajos externos y
+-- FACTURAS (la factura del 30-sep en QuickBooks que la app fechó el
+-- 1-oct). Si llega al revés (el puente primero y la apertura después), la
+-- firma del papel cambia (ahora está en la apertura) y la siguiente pasada
+-- del puente reversa el suyo: queda el de la apertura; mientras tanto el
+-- control partidas lo dice en rojo, y una factura con más por cobrar que
+-- su monto no se deja cobrar. Toda línea de 1110/1120 con partida
+-- facturas/<id> lleva la obra de su factura (MX006): una factura no se
+-- parte en dos partidas abiertas.
 --
 -- LOS ERRORES CON NOMBRE que añade este archivo (además de los de c2):
 --   MX003  el papel está en el libro: no se borra (y la factura, no se
 --          cambia); una foto que ya es de otro recibo; unas horas que
---          están o estuvieron aprobadas no cambian de número
+--          están o estuvieron aprobadas no cambian de número; un update
+--          que solo le cambia el estado a un recibo anulado
+--   MX006  una línea de 1110/1120 con partida facturas/<id> sin la obra de
+--          su factura
 --   MX008  al puente le falta algo para contabilizar lo que se le pide a
 --          propósito (un cobro a una factura que no está en el libro, una
 --          nota de crédito de una factura con cobros o movida a mano, un
 --          anticipo que no alcanza, un devengo en un mes con nómina, anular
---          un papel cuyo asiento usa una cuenta inactiva…). En los
---          triggers no sale: va a la bandeja.
+--          un papel cuyo asiento usa una cuenta inactiva, el mismo depósito
+--          otra vez, aprobar unas horas que ya no son las que se vieron…).
+--          En los triggers no sale: va a la bandeja. Y cerrar un mes con su
+--          devengo estándar sin poner al día.
+--   22023  además: unas horas del equipo fuera de medida
 --
 -- QUIÉN LLAMA QUÉ:
 --   · El dueño, por RPC desde conta.js (grant a authenticated; por dentro
@@ -289,9 +391,10 @@
 --                                     las reglas de hoy
 --       fn_puentes_verificar()        los controles de los puentes
 --       fn_cobro_registrar(cobro), fn_cobro_anular(id, motivo),
---       fn_anticipo_aplicar(cobro, factura, monto, fecha)
+--       fn_cobro_devolver(id, fecha, motivo, movimiento)   el cheque rebotó
+--       fn_anticipo_aplicar(cobro, factura, monto, fecha, es_retencion)
 --       fn_factura_anular(factura, motivo, fecha)
---       fn_horas_aprobar(usuario, desde, hasta), fn_horas_desaprobar(…),
+--       fn_horas_aprobar(usuario, desde, hasta, visto), fn_horas_desaprobar(…),
 --       fn_horas_devengar('AAAA-MM')
 --       fn_recibo_anular(id, motivo), fn_externo_anular(id, motivo)
 --       fn_recibo_desanular(id, motivo)   volver a contar un recibo anulado
@@ -505,6 +608,8 @@ end $$;
 create index if not exists recibos_contabilizado_idx  on public.recibos (contabilizado_en) where contabilizado_en is not null;
 create index if not exists facturas_contabilizado_idx on public.facturas (contabilizado_en) where contabilizado_en is not null;
 create index if not exists horas_aprobadas_idx        on public.horas (usuario_id, fecha) where aprobado_el is not null;
+-- (Las horas de un trabajador en un día: la medida de lo que reporta, B.6.)
+create index if not exists horas_usuario_dia_idx      on public.horas (usuario_id, fecha);
 
 
 -- ---------------------------------------------------------------------
@@ -608,6 +713,10 @@ create table if not exists public.tarjetas (
 -- ayudantes de la app). En f12 se le añaden TIN, dirección, tipo, W-9 y
 -- COI. El nombre que trae el recibo (texto libre de la lectura) se casa
 -- por proveedores_alias: el nombre normalizado y sus variantes.
+-- terminos: el texto de sus condiciones de pago. Solo cuando dice CRÉDITO
+-- (Net 30, 2% 10 Net 30, 30 días, EOM, a cuenta, statement…:
+-- fn_puente_terminos_a_cuenta) un recibo sin forma de pago va a su cuenta
+-- abierta (2010); «Contado», «COD» o «Due on receipt» no abren deuda.
 create table if not exists public.proveedores (
   id          uuid        primary key default gen_random_uuid(),
   nombre      text        not null,
@@ -693,6 +802,11 @@ create table if not exists public.cobros (
                                           and (estado <> 'anulado' or coalesce(btrim(anulado_motivo), '') <> ''))
 );
 alter table public.cobros add column if not exists llave_cliente text;
+-- El mismo depósito no entra dos veces (cabecera, punto 14): si Edgar
+-- registra un cobro igual a otro vigente (misma cuenta y monto, fecha
+-- cercana, la misma referencia o sin ella) es porque de verdad son dos
+-- depósitos, y aquí queda por qué lo dijo. Nulo en los demás.
+alter table public.cobros add column if not exists duplicado_motivo text;
 
 -- Un movimiento del banco casa con UN cobro vigente. Uno anulado (aplicado
 -- a la factura equivocada, registrado dos veces) conserva su movimiento
@@ -708,6 +822,31 @@ begin
 end $$;
 create unique index if not exists cobros_movimiento_unico on public.cobros (movimiento_id)
   where movimiento_id is not null and estado = 'vigente';
+
+-- La DEVOLUCIÓN de un cobro (el cheque rebotó, el banco revirtió el
+-- depósito): un hecho nuevo, con su propia fecha, que no deshace el
+-- depósito (ese sí pasó, en su mes: el estado del banco lo trae) sino que
+-- lo compensa el día que el banco lo devolvió. Su asiento es el espejo del
+-- del cobro (y de sus anticipos ya aplicados) en esa fecha: la factura
+-- vuelve a quedar por cobrar y el dinero sale del banco.
+-- movimiento_id: el movimiento de la devolución en el banco (f06 lo casa).
+-- Una por cobro. No se edita ni se borra.
+create table if not exists public.cobros_devoluciones (
+  id               uuid          primary key default gen_random_uuid(),
+  cobro_id         uuid          not null references public.cobros (id),
+  fecha            date          not null,
+  monto            numeric(14,2) not null,
+  motivo           text          not null,
+  movimiento_id    text,
+  contabilizado_en uuid          references public.asientos (id),
+  creado_por       uuid,
+  creado_el        timestamptz   not null default now(),
+  constraint cobros_devoluciones_una_por_cobro unique (cobro_id),
+  constraint cobros_devoluciones_monto_positivo check (monto > 0),
+  constraint cobros_devoluciones_motivo check (btrim(motivo) <> '')
+);
+create unique index if not exists cobros_devoluciones_movimiento_unico on public.cobros_devoluciones (movimiento_id)
+  where movimiento_id is not null;
 
 --   monto          el dinero de este cobro que va a esta factura (o que
 --                  queda de anticipo)
@@ -786,11 +925,25 @@ create table if not exists public.puente_documentos (
   actualizado  timestamptz not null default now(),
   constraint puente_documentos_pk primary key (tabla, documento_id),
   constraint puente_documentos_tabla  check (tabla in ('recibos', 'facturas', 'trabajos_externos', 'cobros',
-                                                       'aplicaciones_cobro', 'notas_credito', 'horas_devengo')),
+                                                       'aplicaciones_cobro', 'notas_credito', 'horas_devengo',
+                                                       'cobros_devoluciones')),
   constraint puente_documentos_estado check (estado in ('contabilizado', 'pendiente', 'espera', 'no_aplica', 'error')),
   constraint puente_documentos_asiento check (estado <> 'contabilizado' or asiento_id is not null)
 );
 create index if not exists puente_documentos_estado_idx on public.puente_documentos (estado) where estado in ('pendiente', 'error', 'espera');
+-- (Una versión anterior de este archivo no tenía las devoluciones de
+-- cobros: se rehace la restricción si es esa.)
+do $$
+begin
+  if exists (select 1 from pg_constraint
+              where conrelid = 'public.puente_documentos'::regclass and conname = 'puente_documentos_tabla'
+                and pg_get_constraintdef(oid) not like '%cobros_devoluciones%') then
+    alter table public.puente_documentos drop constraint puente_documentos_tabla;
+    alter table public.puente_documentos add constraint puente_documentos_tabla
+      check (tabla in ('recibos', 'facturas', 'trabajos_externos', 'cobros', 'aplicaciones_cobro', 'notas_credito',
+                       'horas_devengo', 'cobros_devoluciones'));
+  end if;
+end $$;
 
 -- Lo que Edgar revisó y confirmó de un papel que el puente dejó en la
 -- bandeja por una duda que solo él resuelve (cabecera, puntos 6 y 15):
@@ -804,10 +957,16 @@ create index if not exists puente_documentos_estado_idx on public.puente_documen
 --                             lo que se pagó
 --   devolucion                dice DEVOLUCIÓN y el signo del total es el
 --                             bueno
+--   total_a_mano              no es una pregunta: lo apunta la guarda del
+--                             recibo cuando Edgar teclea el total (con ✎ o
+--                             en el SQL Editor). Ese total es lo que se
+--                             pagó: si el subtotal y el tax de la lectura
+--                             no lo suman, entra igual y el descuadre queda
+--                             como aviso; y un 0 que teclea él es anularlo
 -- dato: lo que confirmó (la fecha, la foto o el ticket, los tres números,
 -- el total): si el papel cambia ese dato, la confirmación ya no vale y
 -- vuelve a preguntar. Solo se añade (fn_puentes_confirmar,
--- fn_puentes_antes_del_corte).
+-- fn_puentes_antes_del_corte, y la guarda del recibo).
 create table if not exists public.puente_revisados (
   tabla        text        not null,
   documento_id text        not null,
@@ -820,19 +979,20 @@ create table if not exists public.puente_revisados (
   constraint puente_revisados_pk     primary key (tabla, documento_id, codigo, dato),
   constraint puente_revisados_tabla  check (tabla in ('recibos', 'trabajos_externos')),
   constraint puente_revisados_codigo check (codigo in ('fecha_antes_del_corte', 'fecha_posterior_a_subida', 'duplicado',
-                                                      'impuesto', 'devolucion')),
+                                                      'impuesto', 'devolucion', 'total_a_mano')),
   constraint puente_revisados_motivo check (btrim(motivo) <> '')
 );
--- (Una versión anterior de este archivo solo admitía fecha_antes_del_corte:
--- se rehace la restricción si es esa.)
+-- (Las versiones anteriores de este archivo admitían menos códigos: se
+-- rehace la restricción si no tiene el último.)
 do $$
 begin
   if exists (select 1 from pg_constraint
               where conrelid = 'public.puente_revisados'::regclass and conname = 'puente_revisados_codigo'
-                and pg_get_constraintdef(oid) not like '%duplicado%') then
+                and pg_get_constraintdef(oid) not like '%total_a_mano%') then
     alter table public.puente_revisados drop constraint puente_revisados_codigo;
     alter table public.puente_revisados add constraint puente_revisados_codigo
-      check (codigo in ('fecha_antes_del_corte', 'fecha_posterior_a_subida', 'duplicado', 'impuesto', 'devolucion'));
+      check (codigo in ('fecha_antes_del_corte', 'fecha_posterior_a_subida', 'duplicado', 'impuesto', 'devolucion',
+                        'total_a_mano'));
   end if;
 end $$;
 
@@ -864,9 +1024,17 @@ create index if not exists horas_aprobaciones_horas_idx on public.horas_aprobaci
 --   · Los tres mapeos: BORRADOR (confirmado_el nulo). ▶ Edgar los corrige
 --     y los confirma antes del viernes 2-oct: hasta entonces no postea
 --     nada con ellos (el papel espera en la bandeja). El vocabulario de
---     metodo_pago y de categoria lo escribe cerebro y no se conoce entero:
---     van las variantes probables en inglés y en español; lo que llegue
---     distinto cae en la bandeja con su texto tal cual, y se añade.
+--     metodo_pago y de categoria lo escriben DOS: la lectura del recibo
+--     (cerebro), que no se conoce entero —van las variantes probables en
+--     inglés y en español—, y el conector de Claude (registrar_gasto,
+--     importar_gastos para los statements de CES/CED, editar_gasto), cuyo
+--     vocabulario está escrito en la definición de sus herramientas:
+--     metodo_pago «debito, credito, cuenta_proveedor, efectivo o zelle» y
+--     categoria «material, labor_externo, permiso, herramienta,
+--     combustible, renta_equipo u otro» (leído el 24-sep; si el conector
+--     cambia, se añade aquí). «otro» no lleva cuenta de arranque: lo decide
+--     Edgar. Lo que llegue distinto cae en la bandeja con su texto tal cual,
+--     y se añade.
 --   · tarjetas y proveedores: vacías. ▶ Edgar da de alta sus tarjetas (y
 --     añade antes sus subcuentas 2100-XXXX a c1) y sus supplies.
 -- Volver a pegar NO pisa lo que Edgar corrigió: solo entra lo que falta
@@ -914,8 +1082,12 @@ select v.categoria, v.cuenta, v.sin_obra, v.notas
     ('comidas',           '6350', null, null),
     ('meals',             '6350', null, null),
     ('renta de equipo',   '5300', null, 'Equipo y renta, por obra.'),
+    ('renta_equipo',      '5300', null, 'La del conector de Claude (registrar_gasto).'),
     ('equipo',            '5300', null, null),
     ('equipment rental',  '5300', null, null),
+    ('labor_externo',     '5200', null, 'La del conector de Claude: mano de obra de fuera pagada con un recibo (un ayudante, un '
+                                        'sub): subcontratos, por obra. ▶ Edgar: el ayudante de la nómina de la app va por '
+                                        'trabajos externos, no por recibo.'),
     ('permiso',           '5400', null, 'Permisos e inspecciones, por obra.'),
     ('permisos',          '5400', null, null),
     ('permit',            '5400', null, null),
@@ -940,6 +1112,7 @@ select v.metodo, v.forma, v.cuenta, v.notas
     ('a cuenta',            'cuenta_proveedor', null,   null),
     ('cuenta',              'cuenta_proveedor', null,   null),
     ('credito proveedor',   'cuenta_proveedor', null,   null),
+    ('cuenta_proveedor',    'cuenta_proveedor', null,   'La del conector de Claude (importar_gastos, los statements de CES/CED).'),
     ('net 30',              'cuenta_proveedor', null,   null),
     ('tarjeta',             'tarjeta',          null,   'La cuenta la dice la tarjeta (tabla tarjetas, por los últimos 4).'),
     ('tarjeta de credito',  'tarjeta',          null,   null),
@@ -951,6 +1124,9 @@ select v.metodo, v.forma, v.cuenta, v.notas
     ('card',                'tarjeta',          null,   null),
     ('debit',               'tarjeta',          null,   'La débito de Chase: su tarjeta, con cuenta 1010.'),
     ('debit card',          'tarjeta',          null,   null),
+    ('debito',              'tarjeta',          null,   'La del conector de Claude: la tarjeta la dicen sus últimos 4.'),
+    ('débito',              'tarjeta',          null,   null),
+    ('credito',             'tarjeta',          null,   'La del conector de Claude: la tarjeta la dicen sus últimos 4.'),
     ('visa',                'tarjeta',          null,   null),
     ('mastercard',          'tarjeta',          null,   null),
     ('amex',                'tarjeta',          null,   null),
@@ -1004,7 +1180,7 @@ begin
   foreach t in array array['puente_cuentas', 'mapeo_categoria_recibo', 'mapeo_metodo_pago', 'mapeo_tipo_proyecto',
                            'tarjetas', 'proveedores', 'proveedores_alias', 'puente_reglas_historial', 'cobros',
                            'aplicaciones_cobro', 'notas_credito', 'puente_documentos', 'horas_aprobaciones',
-                           'puente_revisados'] loop
+                           'puente_revisados', 'cobros_devoluciones'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('revoke all on public.%I from public, anon, authenticated, service_role', t);
     execute format('grant select on public.%I to authenticated, service_role', t);
@@ -1037,15 +1213,16 @@ select d.tabla,
        d.codigo,
        d.motivo,
        coalesce(r.fecha, (r.creado at time zone 'America/New_York')::date, f.fecha, x.fecha,
-                (x.creado at time zone 'America/New_York')::date, c.fecha) as fecha_documento,
-       coalesce(r.total, f.monto, x.costo, c.monto)                          as monto,
-       coalesce(r.proyecto_id, f.proyecto_id, x.proyecto_id, c.proyecto_id) as proyecto_id,
+                (x.creado at time zone 'America/New_York')::date, c.fecha, dv.fecha) as fecha_documento,
+       coalesce(r.total, f.monto, x.costo, c.monto, dv.monto)                 as monto,
+       coalesce(r.proyecto_id, f.proyecto_id, x.proyecto_id, c.proyecto_id)  as proyecto_id,
        case d.tabla
-         when 'recibos'           then concat_ws(' · ', r.proveedor, 'metodo_pago: ' || coalesce(r.metodo_pago, '(vacío)'),
-                                                 'categoría: ' || coalesce(r.categoria, '(vacía)'), r.estado)
-         when 'facturas'          then concat_ws(' · ', '#' || f.num, f.estado)
-         when 'trabajos_externos' then x.descripcion
-         when 'cobros'            then concat_ws(' · ', c.medio, c.referencia)
+         when 'recibos'             then concat_ws(' · ', r.proveedor, 'metodo_pago: ' || coalesce(r.metodo_pago, '(vacío)'),
+                                                   'categoría: ' || coalesce(r.categoria, '(vacía)'), r.estado)
+         when 'facturas'            then concat_ws(' · ', '#' || f.num, f.estado)
+         when 'trabajos_externos'   then x.descripcion
+         when 'cobros'              then concat_ws(' · ', c.medio, c.referencia)
+         when 'cobros_devoluciones' then 'Devolución: ' || dv.motivo
        end as papel,
        d.intentos,
        d.actualizado
@@ -1058,6 +1235,8 @@ select d.tabla,
          on d.tabla = 'trabajos_externos' and x.id = (case when d.tabla = 'trabajos_externos' then d.documento_id::bigint end)
   left join public.cobros c
          on d.tabla = 'cobros' and c.id = (case when d.tabla = 'cobros' then d.documento_id::uuid end)
+  left join public.cobros_devoluciones dv
+         on d.tabla = 'cobros_devoluciones' and dv.id = (case when d.tabla = 'cobros_devoluciones' then d.documento_id::uuid end)
  where d.estado in ('pendiente', 'error')
     or (d.estado = 'espera' and d.actualizado < now() - interval '2 days')
     or (d.estado = 'contabilizado' and d.codigo is not null);
@@ -1111,9 +1290,15 @@ having sum(l.monto) <> 0;
 -- anticipo a favor del cliente (lo normal); en la de una factura, que se
 -- cobró de más o que su ingreso se reversó (no debería pasar: el control
 -- partidas de fn_puentes_verificar lo marca en rojo).
+-- Una factura es UNA partida por cuenta, con la obra de la factura como
+-- dato: una línea que la nombrara con otra obra (o sin ella: la apertura
+-- de QuickBooks no trae la obra) no la parte en dos partidas abiertas, una
+-- vencida y otra en negativo. (La guarda de las líneas ya no deja entrar
+-- esa línea: esto es la segunda red.) El anticipo va por obra: un cobro
+-- puede dejar anticipo a dos obras.
 create or replace view public.cxc_abierta with (security_invoker = true) as
 select l.cuenta,
-       l.proyecto_id,
+       case when l.partida_tabla = 'facturas' then f.proyecto_id else l.proyecto_id end as proyecto_id,
        l.partida_tabla,
        l.partida_id,
        f.num                                   as factura,
@@ -1125,19 +1310,23 @@ select l.cuenta,
   left join public.facturas f
          on l.partida_tabla = 'facturas' and f.id = (case when l.partida_tabla = 'facturas' then l.partida_id::bigint end)
  where l.cuenta in (select pc.cuenta from public.puente_cuentas pc where pc.rol in ('cxc', 'retencion_cxc'))
- group by l.cuenta, l.proyecto_id, l.partida_tabla, l.partida_id, f.num
+ group by l.cuenta, case when l.partida_tabla = 'facturas' then f.proyecto_id else l.proyecto_id end,
+          l.partida_tabla, l.partida_id, f.num
 having sum(l.monto) <> 0;
 
 -- La convivencia con la casilla «pagada»: cada factura, con lo que dice la
 -- app (pagada, cobrado, que pone Edgar a mano o QuickBooks) y lo que dice
 -- el libro (su saldo por cobrar y lo cobrado por cobros). Lo que no casa
 -- lo dice el aviso: es lo que f06 tiene que casar con el banco. «cuadra»
--- solo si de verdad cuadra: una anulada (que la app todavía enseña «por
--- cobrar»), una en negativo en el libro o una anulada con saldo tienen su
--- propio aviso.
+-- solo si de verdad cuadra: la casilla (pagada y cobrado) y el libro dicen
+-- lo mismo. Una anulada (que la app todavía enseña «por cobrar»), una en
+-- negativo en el libro, una anulada con saldo, una con más por cobrar que
+-- su monto (está dos veces) y un cobro parcial (la casilla no lleva
+-- parciales: la app dice 0 y el libro 3000) tienen su propio aviso.
 --   cobrado_libro    SOLO el dinero: lo que los cobros vigentes le
 --                    aplicaron (lo que entró al banco, o el anticipo que
---                    se le aplicó). El descuento no es dinero: va aparte.
+--                    se le aplicó), menos lo que el banco devolvió (un
+--                    cheque rebotado). El descuento no es dinero: va aparte.
 --   descuento_libro  lo que se le perdonó al cliente al cobrar (baja el
 --                    ingreso; cierra la factura sin dinero)
 --   saldo_cxc, saldo_retencion
@@ -1171,6 +1360,10 @@ select f.id,
          when f.estado = 'anulada'
            then 'anulada' || coalesce(' con la nota de crédito ' || n.numero, ' antes de entrar al libro')
                 || ': no se cobra; la app todavía la enseña «por cobrar» hasta su parche (f05)'
+         when f.monto is not null and coalesce(s.saldo, 0) > round(f.monto, 2)
+           then format('más por cobrar en el libro (%s) que su monto (%s): la factura está dos veces (en la apertura y por su '
+                       'puente, o un asiento a mano contra su partida). No se cobra hasta arreglarla: mira el control partidas '
+                       'de fn_puentes_verificar', coalesce(s.saldo, 0), round(f.monto, 2))
          when coalesce(s.saldo_cxc, 0) < 0 or coalesce(s.saldo_retencion, 0) < 0
            then format('en negativo en el libro (%s en cuentas por cobrar, %s en retención): se cobró de más, su ingreso se '
                        'reversó, o se reclasificó de más entre las dos (control partidas de fn_puentes_verificar)',
@@ -1187,6 +1380,19 @@ select f.id,
                        'el descuento como dinero: lo que casa con el banco es %s', coalesce(f.cobrado, 0),
                        coalesce(s.cobrado, 0) - coalesce(d.descuento, 0), d.descuento,
                        coalesce(s.cobrado, 0) - coalesce(d.descuento, 0))
+         -- Lo cobrado, según la casilla y según el libro (solo las que
+         -- entraron por su puente: de una de antes del corte, la app lleva
+         -- también lo que se cobró en QuickBooks).
+         when f.contabilizado_en is not null
+              and coalesce(f.cobrado, 0) <> coalesce(s.cobrado, 0) - coalesce(d.descuento, 0)
+           then format('cobrado distinto: la app dice %s y el libro %s (%s)', coalesce(f.cobrado, 0),
+                       coalesce(s.cobrado, 0) - coalesce(d.descuento, 0),
+                       case when coalesce(s.cobrado, 0) - coalesce(d.descuento, 0) > 0 and coalesce(s.saldo, 0) > 0
+                            then 'cobro parcial: la casilla de la app no lleva parciales; lo que casa con el banco es lo del libro'
+                            when coalesce(s.cobrado, 0) - coalesce(d.descuento, 0) = 0
+                            then 'la app lo tiene cobrado a mano y en el libro no hay cobro: llega con el banco (f06) o con '
+                                 'fn_cobro_registrar'
+                            else 'revisa la casilla contra los cobros del libro' end)
          else 'cuadra'
        end                                     as aviso,
        n.numero                                as nota_credito,
@@ -1201,7 +1407,8 @@ select f.id,
                       as saldo_cxc,
                     sum(l.monto) filter (where l.cuenta = (select pc.cuenta from public.puente_cuentas pc where pc.rol = 'retencion_cxc'))
                       as saldo_retencion,
-                    -sum(l.monto) filter (where a.origen_tabla in ('cobros', 'aplicaciones_cobro')) as cobrado
+                    -sum(l.monto) filter (where a.origen_tabla in ('cobros', 'aplicaciones_cobro', 'cobros_devoluciones'))
+                      as cobrado
                from public.asiento_lineas l
                join public.asientos a on a.id = l.asiento_id
               where l.partida_tabla = 'facturas'
@@ -1209,11 +1416,14 @@ select f.id,
               group by l.partida_id) s
          on s.partida_id = f.id::text
   -- El descuento de los cobros vigentes y contabilizados (el de un cobro
-  -- anulado se reversó con él).
+  -- anulado se reversó con él, y el de uno que el banco devolvió, con su
+  -- devolución).
   left join (select ap.factura_id, sum(ap.descuento) as descuento
                from public.aplicaciones_cobro ap
                join public.cobros c on c.id = ap.cobro_id
               where c.estado = 'vigente' and c.contabilizado_en is not null and not ap.desde_anticipo
+                and not exists (select 1 from public.cobros_devoluciones dv
+                                 where dv.cobro_id = c.id and dv.contabilizado_en is not null)
               group by ap.factura_id) d
          on d.factura_id = f.id;
 
@@ -1515,38 +1725,11 @@ end $$;
 revoke execute on function public.fn_puentes_cuenta(text, text) from public, anon, authenticated, service_role;
 grant  execute on function public.fn_puentes_cuenta(text, text) to authenticated;
 
--- Aprobar las horas de un trabajador en un período (un toque por empleado),
--- desde la app o desde el SQL Editor. Solo las que no estaban aprobadas. El
--- update toca únicamente la aprobación: la guarda de correcciones de la app
--- (trg_guarda_correccion) no corre con eso (el bloque B la rehace así), de
--- modo que aprobar no se topa con «pídele permiso a Edgar» ni gasta el
--- permiso de corrección de un trabajador. Quién aprueba lo vigila la guarda
--- de horas del bloque B, que apunta cada aprobación en horas_aprobaciones.
--- Devuelve cuántos reportes y cuántas horas quedaron aprobados.
-create or replace function public.fn_horas_aprobar(p_usuario uuid, p_desde date, p_hasta date)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_n     int;
-  v_horas numeric;
-begin
-  perform fn_puente_exigir_dueno();
-  if p_usuario is null or p_desde is null or p_hasta is null or p_desde > p_hasta then
-    raise exception using errcode = '22023', message = 'Se aprueba un trabajador en un período: usuario, desde y hasta (desde ≤ hasta).';
-  end if;
-  with a as (
-    update horas set aprobado_por = auth.uid(), aprobado_el = clock_timestamp()
-     where usuario_id = p_usuario and fecha between p_desde and p_hasta and aprobado_el is null
-    returning horas.horas
-  )
-  select count(*), coalesce(sum(a.horas), 0) into v_n, v_horas from a;
-  return jsonb_build_object('usuario', p_usuario, 'desde', p_desde, 'hasta', p_hasta, 'reportes', v_n, 'horas', v_horas);
-end $$;
-revoke execute on function public.fn_horas_aprobar(uuid, date, date) from public, anon, authenticated, service_role;
-grant  execute on function public.fn_horas_aprobar(uuid, date, date) to authenticated;
+-- Aprobar las horas de un trabajador (fn_horas_aprobar) aprueba LO QUE
+-- EDGAR VIO: es un control, y va con los del bloque B (aquí, su mínima en
+-- A.10). La versión anterior, de tres parámetros (usuario, desde, hasta),
+-- aprobaba lo que hubiera en la tabla en ese instante: se quita.
+drop function if exists public.fn_horas_aprobar(uuid, date, date);
 
 create or replace function public.fn_horas_desaprobar(p_usuario uuid, p_desde date, p_hasta date, p_motivo text)
 returns jsonb
@@ -1644,12 +1827,43 @@ begin
                    return jsonb_build_object('minima', true); end $b$
     $f$;
   end if;
-  if to_regprocedure('public.fn_anticipo_aplicar(uuid,bigint,text,date)') is null then
+  -- (Con la retención: la de cuatro parámetros de una versión anterior se
+  -- quita, y la de cinco la sustituye.)
+  drop function if exists public.fn_anticipo_aplicar(uuid, bigint, text, date);
+  if to_regprocedure('public.fn_anticipo_aplicar(uuid,bigint,text,date,boolean)') is null then
     execute $f$
-      create function public.fn_anticipo_aplicar(p_cobro uuid, p_factura bigint, p_monto text, p_fecha date default null)
+      create function public.fn_anticipo_aplicar(p_cobro uuid, p_factura bigint, p_monto text, p_fecha date default null,
+                                                 p_es_retencion boolean default false)
       returns jsonb
       language plpgsql security definer set search_path = public, pg_temp
       as $b$ begin perform fn_puente_exigir_dueno(); return jsonb_build_object('minima', true); end $b$
+    $f$;
+  end if;
+  if to_regprocedure('public.fn_cobro_devolver(uuid,date,text,text)') is null then
+    execute $f$
+      create function public.fn_cobro_devolver(p_cobro uuid, p_fecha date, p_motivo text, p_movimiento text default null)
+      returns jsonb
+      language plpgsql security definer set search_path = public, pg_temp
+      as $b$ begin perform fn_puente_exigir_dueno(); return jsonb_build_object('minima', true); end $b$
+    $f$;
+  end if;
+  if to_regprocedure('public.fn_horas_aprobar(uuid,date,date,jsonb)') is null then
+    execute $f$
+      create function public.fn_horas_aprobar(p_usuario uuid, p_desde date, p_hasta date, p_visto jsonb default null)
+      returns jsonb
+      language plpgsql security definer set search_path = public, pg_temp
+      as $b$
+      declare v_n int; v_horas numeric;
+      begin
+        perform fn_puente_exigir_dueno();
+        with a as (
+          update horas set aprobado_por = auth.uid(), aprobado_el = clock_timestamp()
+           where usuario_id = p_usuario and fecha between p_desde and p_hasta and aprobado_el is null
+          returning horas.horas
+        )
+        select count(*), coalesce(sum(a.horas), 0) into v_n, v_horas from a;
+        return jsonb_build_object('reportes', v_n, 'horas', v_horas, 'minima', true);
+      end $b$
     $f$;
   end if;
   if to_regprocedure('public.fn_recibo_anular(bigint,text)') is null then
@@ -1707,7 +1921,9 @@ begin
   execute 'revoke execute on function public.fn_factura_anular(bigint, text, date) from public, anon, authenticated, service_role';
   execute 'revoke execute on function public.fn_cobro_registrar(jsonb) from public, anon, authenticated, service_role';
   execute 'revoke execute on function public.fn_cobro_anular(uuid, text) from public, anon, authenticated, service_role';
-  execute 'revoke execute on function public.fn_anticipo_aplicar(uuid, bigint, text, date) from public, anon, authenticated, service_role';
+  execute 'revoke execute on function public.fn_anticipo_aplicar(uuid, bigint, text, date, boolean) from public, anon, authenticated, service_role';
+  execute 'revoke execute on function public.fn_cobro_devolver(uuid, date, text, text) from public, anon, authenticated, service_role';
+  execute 'revoke execute on function public.fn_horas_aprobar(uuid, date, date, jsonb) from public, anon, authenticated, service_role';
   execute 'revoke execute on function public.fn_horas_devengar(text) from public, anon, authenticated, service_role';
   execute 'revoke execute on function public.fn_recibo_anular(bigint, text) from public, anon, authenticated, service_role';
   execute 'revoke execute on function public.fn_externo_anular(bigint, text) from public, anon, authenticated, service_role';
@@ -1720,7 +1936,9 @@ begin
   execute 'grant execute on function public.fn_factura_anular(bigint, text, date) to authenticated';
   execute 'grant execute on function public.fn_cobro_registrar(jsonb) to authenticated';
   execute 'grant execute on function public.fn_cobro_anular(uuid, text) to authenticated';
-  execute 'grant execute on function public.fn_anticipo_aplicar(uuid, bigint, text, date) to authenticated';
+  execute 'grant execute on function public.fn_anticipo_aplicar(uuid, bigint, text, date, boolean) to authenticated';
+  execute 'grant execute on function public.fn_cobro_devolver(uuid, date, text, text) to authenticated';
+  execute 'grant execute on function public.fn_horas_aprobar(uuid, date, date, jsonb) to authenticated';
   execute 'grant execute on function public.fn_horas_devengar(text) to authenticated';
   execute 'grant execute on function public.fn_recibo_anular(bigint, text) to authenticated';
   execute 'grant execute on function public.fn_externo_anular(bigint, text) to authenticated';
@@ -1917,8 +2135,8 @@ $$;
 revoke execute on function public.fn_puente_en_apertura(text, text) from public, anon, authenticated, service_role;
 
 -- ¿Es una cuenta de BANCO (o de efectivo)? El bloque 10xx del plan de c1
--- (1010 la operativa, 1020 la de nómina, 1030 la reserva, y sus
--- subcuentas): de activo, deudora y sin obra. Un cobro entra ahí, y una
+-- (1010 la operativa, 1030 la reserva de impuestos, y las que se abran
+-- después con sus subcuentas): de activo, deudora y sin obra. Un cobro entra ahí, y una
 -- forma de pago «banco» sale de ahí; no de la depreciación acumulada, ni de
 -- la cuenta del accionista, ni de la bodega.
 create or replace function public.fn_puente_es_banco(p_cuenta text)
@@ -2052,22 +2270,229 @@ as $$
 $$;
 revoke execute on function public.fn_puente_revisado(text, text, text, text) from public, anon, authenticated, service_role;
 
--- La llave del TICKET de un recibo: su proveedor, su número y su total,
--- sin adornos (solo letras y dígitos, en minúsculas: «HD-4471-0092» y
--- «hd 4471 0092» son el mismo número). Nula si falta alguno (o el total es
--- 0): sin los tres no se puede decir que dos recibos son el mismo ticket.
-create or replace function public.fn_puente_recibo_clave(p_proveedor text, p_num text, p_total numeric)
+-- El TICKET de un recibo: su número y su total, sin adornos (solo letras y
+-- dígitos, en minúsculas: «HD-4471-0092» y «hd 4471 0092» son el mismo
+-- número; el total, a centavos). Nulo si falta el número o el total (o el
+-- total es 0): sin ellos no se puede decir que dos recibos son el mismo
+-- ticket. Sin el proveedor: la lectura escribe al mismo proveedor de varias
+-- formas, y eso se casa aparte (fn_puente_recibo_proveedor). La búsqueda
+-- de duplicados no la llama por cada recibo: compara la misma expresión,
+-- escrita con funciones del sistema, por su índice (recibos_ticket_idx,
+-- B.8), y así no recorre todos los recibos por cada recibo.
+-- (Una versión anterior tenía el proveedor en texto dentro de la llave:
+-- «CED» y «Consolidated Electrical Distributors» eran dos tickets. Se
+-- quita.)
+drop function if exists public.fn_puente_recibo_clave(text, text, numeric);
+create or replace function public.fn_puente_recibo_ticket(p_num text, p_total numeric)
 returns text
 language sql
 immutable
 set search_path = public, pg_temp
 as $$
-  select case when x.prov is not null and x.num is not null and p_total is not null and round(p_total, 2) <> 0
-              then x.prov || '|' || x.num || '|' || round(p_total, 2)::text end
-    from (select nullif(regexp_replace(lower(coalesce(p_proveedor, '')), '[^0-9a-z]', '', 'g'), '') as prov,
-                 nullif(regexp_replace(lower(coalesce(p_num, '')), '[^0-9a-z]', '', 'g'), '') as num) x
+  select case when x.num is not null and p_total is not null and round(p_total, 2) <> 0
+              then x.num || '|' || round(p_total, 2)::text end
+    from (select nullif(regexp_replace(lower(coalesce(p_num, '')), '[^0-9a-z]', '', 'g'), '') as num) x
 $$;
-revoke execute on function public.fn_puente_recibo_clave(text, text, numeric) from public, anon, authenticated, service_role;
+revoke execute on function public.fn_puente_recibo_ticket(text, numeric) from public, anon, authenticated, service_role;
+
+-- El PROVEEDOR de un recibo, para ver si dos recibos son del mismo: el de
+-- proveedores_alias si su nombre está dado de alta («CED» y «Consolidated
+-- Electrical Distributors», los dos alias de CED, son el mismo) y si no, su
+-- nombre sin adornos. Nulo si no trae proveedor.
+create or replace function public.fn_puente_recibo_proveedor(p_proveedor text)
+returns text
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select coalesce((select 'id:' || a.proveedor_id::text from proveedores_alias a where a.alias = fn_puente_normalizar(p_proveedor)),
+                  'txt:' || nullif(regexp_replace(lower(coalesce(p_proveedor, '')), '[^0-9a-z]', '', 'g'), ''))
+$$;
+revoke execute on function public.fn_puente_recibo_proveedor(text) from public, anon, authenticated, service_role;
+
+-- Los CANDADOS de un recibo antes de mirar si es un duplicado (cabecera,
+-- punto 15): el de su foto y el de su ticket (número y total), candados de
+-- aviso de dos llaves, como los del cobro. Sin ellos, dos lecturas del
+-- mismo ticket que confirmaban a la vez miraban las dos antes de que la
+-- otra confirmara, cada una veía a la otra todavía «por leer», y entraban
+-- las dos. Con ellos, la segunda espera a que la primera confirme, y
+-- cuando mira (en una sentencia nueva de fn_puente_recibo) ya la ve. En el
+-- orden de su número: dos sesiones con los mismos dos candados los piden
+-- igual y no se cruzan. p_intentar (el backfill): no espera; si alguno está
+-- tomado, devuelve false y ese papel se salta (lo contabiliza quien lo
+-- tiene), como hace con la fila en uso. Van en 512 cajones (la clave
+-- 820260925 y hashtext & 511), no uno por foto o ticket: un candado de
+-- transacción no se suelta hasta el final, y una pasada del backfill (o una
+-- importación) por miles de recibos se quedaba con miles de candados, más
+-- de los que caben en la tabla de candados de Postgres, que es chica y
+-- compartida por todas las sesiones. Dos recibos distintos que caen en el
+-- mismo cajón solo se esperan unos milisegundos.
+create or replace function public.fn_puente_recibo_candados(p_id bigint, p_intentar boolean default false)
+returns boolean
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  r   recibos;
+  v_k int;
+begin
+  select * into r from recibos where id = p_id;
+  if not found then
+    return true;
+  end if;
+  for v_k in
+    select distinct hashtext(x.k) & 511
+      from (values ('recibo.ruta:' || nullif(btrim(r.ruta), '')),
+                   ('recibo.ticket:' || fn_puente_recibo_ticket(r.num_recibo, r.total))) as x(k)
+     where x.k is not null
+     order by 1
+  loop
+    if p_intentar then
+      if not pg_try_advisory_xact_lock(820260925, v_k) then
+        return false;
+      end if;
+    else
+      perform pg_advisory_xact_lock(820260925, v_k);
+    end if;
+  end loop;
+  return true;
+end $$;
+revoke execute on function public.fn_puente_recibo_candados(bigint, boolean) from public, anon, authenticated, service_role;
+
+-- El PAPEL de un recibo tal como lo usa su puente, y su FIRMA (el md5 de
+-- eso). El plan la usa (con la búsqueda de duplicados y las reglas), y el
+-- backfill y el control documentos la miran SOLA para saber si el papel
+-- cambió desde su asiento vivo, sin volver a planear cada recibo ya
+-- contabilizado: con miles de recibos, planearlos todos cada vez tardaba
+-- más que el tope de la API (8 s) y «reintentar» dejaba de funcionar.
+--   · leido y conciliado son lo mismo para el libro (pasar de uno a otro
+--     no reversa nada);
+--   · la foto (ruta) cuenta: el asiento vivo apunta a su papel
+--     (documento_ruta), y si la foto llega o se cambia, el nuevo la lleva;
+--   · la marca de devolución y «está en la apertura», solo cuando están
+--     (así la firma de un recibo sin ellas es la de siempre). La apertura
+--     entra: si llega DESPUÉS de que el puente lo contabilizó, el papel ya
+--     está en el libro por otro lado, y la siguiente pasada reversa el del
+--     puente.
+create or replace function public.fn_puente_recibo_doc(r public.recibos)
+returns jsonb
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select jsonb_build_object(
+           'estado',      case when coalesce(r.estado, 'por_leer') in ('leido', 'conciliado') then 'leido'
+                               else coalesce(r.estado, 'por_leer') end,
+           'total',       trim_scale(r.total)::text,
+           'fecha',       coalesce(r.fecha, fn_fecha_miami(r.creado)),
+           'proyecto_id', r.proyecto_id,
+           'co',          nullif(btrim(r.co), ''),
+           'categoria',   fn_puente_normalizar(r.categoria),
+           'metodo_pago', fn_puente_normalizar(r.metodo_pago),
+           'ultimos4',    fn_puente_ultimos4(r.ultimos4),
+           'proveedor',   fn_puente_normalizar(r.proveedor),
+           'autor_id',    r.autor_id,
+           -- f01: el día que recibos traiga cost_code, entra solo (to_jsonb
+           -- lo lee si la columna existe; si no, es nulo).
+           'cost_code',   nullif(btrim(to_jsonb(r)->>'cost_code'), ''),
+           'ruta',        nullif(btrim(r.ruta), ''))
+         || case when coalesce(r.notas, '') ~* 'devoluci' then jsonb_build_object('devolucion', true) else '{}'::jsonb end
+         || case when fn_puente_en_apertura('recibos', r.id::text) is not null
+                 then jsonb_build_object('en_apertura', true) else '{}'::jsonb end
+$$;
+revoke execute on function public.fn_puente_recibo_doc(public.recibos) from public, anon, authenticated, service_role;
+
+create or replace function public.fn_puente_recibo_firma(p_id bigint)
+returns text
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select md5(fn_puente_recibo_doc(r)::text) from recibos r where r.id = p_id
+$$;
+revoke execute on function public.fn_puente_recibo_firma(bigint) from public, anon, authenticated, service_role;
+
+-- ¿Dicen CRÉDITO los términos de un proveedor? Solo entonces un recibo sin
+-- forma de pago va a su cuenta abierta (2010). Crédito: «Net 30», «2% 10
+-- Net 30», «Net 10th», «30 días», «EOM», «a cuenta», «statement», «a
+-- crédito»…; no: «Contado», «COD», «Due on receipt», «tarjeta»,
+-- «efectivo»… (si dice las dos cosas, no). Otro texto, tampoco: el recibo
+-- espera y el mensaje dice cómo escribirlos. Antes bastaba con que
+-- hubiera algún texto: un «Contado» abría una deuda que no existía.
+create or replace function public.fn_puente_terminos_a_cuenta(p_terminos text)
+returns boolean
+language sql
+immutable
+set search_path = public, pg_temp
+as $$
+  select coalesce(
+           (   x.t ~ '\m(net|neto)[[:space:]]*[0-9]+'
+            or x.t ~ '\m[0-9]+[[:space:]]*(d[ií]as|days)\M'
+            or x.t ~ '\m(eom|fin de mes|a cuenta|on account|house account|statement|a cr[eé]dito|cuenta abierta|open account)\M'
+            or x.t ~ '^(cr[eé]dito|credit|cuenta|account|charge)$')
+           and not x.t ~ '\m(contado|cod|c\.o\.d|cash|efectivo|tarjeta|card|due on receipt|al recibir|prepago|prepaid)\M',
+           false)
+    from (select lower(btrim(coalesce(p_terminos, ''))) as t) x
+$$;
+revoke execute on function public.fn_puente_terminos_a_cuenta(text) from public, anon, authenticated, service_role;
+
+-- La referencia de un cobro sin adornos (el número del cheque, de la
+-- transferencia): «#551», «551 » y «Cheque 551» no son iguales para el
+-- banco, pero «551» y «#551» sí. Nula si no trae letras ni dígitos.
+create or replace function public.fn_puente_ref(p text)
+returns text
+language sql
+immutable
+set search_path = public, pg_temp
+as $$
+  select nullif(regexp_replace(lower(coalesce(p, '')), '[^0-9a-z]', '', 'g'), '')
+$$;
+revoke execute on function public.fn_puente_ref(text) from public, anon, authenticated, service_role;
+
+-- ¿Puede salir un PAGO de esta cuenta? Nulo = sí; si no, el porqué en
+-- llano. p_forma: tarjeta (la cuenta de una tarjeta), banco o efectivo (la
+-- de una forma de pago del mapeo).
+--   · una tarjeta: una 2100-XXXX (las tarjetas de crédito, c1), un banco
+--     (la débito) o lo que se le debe a quien la pagó de su bolsillo
+--     (reembolso: 2900 Edgar, 2250 un empleado);
+--   · el efectivo: un banco, o el bolsillo de alguien (esas dos);
+--   · un pago por banco: un banco.
+-- Nunca un pasivo de NÓMINA (2210-2240: los llena el journal de f11 y se
+-- concilian contra el 941 y el RT-6), un PRÉSTAMO (25xx: contra el
+-- statement del prestamista) ni la cuenta de otro papel de los puentes.
+-- La usan la guarda de las reglas y el control reglas.
+create or replace function public.fn_puente_cuenta_pago_mal(p_forma text, p_cuenta text)
+returns text
+language plpgsql
+stable
+set search_path = public, pg_temp
+as $$
+declare
+  v_c        cuentas;
+  v_mal      text := fn_puente_cuenta_mal(p_cuenta);
+  v_bolsillo boolean;
+begin
+  if v_mal is not null then
+    return v_mal;
+  end if;
+  select * into v_c from cuentas where codigo = p_cuenta;
+  v_bolsillo := v_c.codigo in (fn_puente_cuenta_de('reembolso_dueno'), fn_puente_cuenta_de('reembolso_empleado'));
+  if p_forma = 'banco' then
+    return case when not fn_puente_es_banco(v_c.codigo)
+                then format('%s (%s) no es una cuenta de banco (10xx, de activo, sin obra)', v_c.codigo, v_c.nombre) end;
+  elsif p_forma = 'efectivo' then
+    return case when not (fn_puente_es_banco(v_c.codigo) or v_bolsillo)
+                then format('%s (%s) no es de donde sale el efectivo: un banco, o lo que se le debe a quien lo pagó de su '
+                            'bolsillo (%s Edgar, %s un empleado)', v_c.codigo, v_c.nombre,
+                            fn_puente_cuenta_de('reembolso_dueno'), fn_puente_cuenta_de('reembolso_empleado')) end;
+  end if;
+  return case when not (coalesce(v_c.padre = '2100', false) or fn_puente_es_banco(v_c.codigo) or v_bolsillo)
+              then format('%s (%s) no es la cuenta de una tarjeta: una 2100-XXXX (las tarjetas de crédito), un banco (la '
+                          'débito), %s (una personal de Edgar) o %s (la de un empleado). Un pasivo de nómina o un préstamo '
+                          'no pagan recibos', v_c.codigo, v_c.nombre, fn_puente_cuenta_de('reembolso_dueno'),
+                          fn_puente_cuenta_de('reembolso_empleado')) end;
+end $$;
+revoke execute on function public.fn_puente_cuenta_pago_mal(text, text) from public, anon, authenticated, service_role;
 
 -- ¿Es la foto de OTRO en el almacén? Un archivo de fotos/ con ese nombre
 -- que subió otra persona (su dueño en Storage no es quien llama). Sin
@@ -2149,10 +2574,12 @@ begin
    where (puente_documentos.estado, puente_documentos.codigo, puente_documentos.motivo,
           puente_documentos.asiento_id, puente_documentos.firma)
          is distinct from (excluded.estado, excluded.codigo, excluded.motivo, excluded.asiento_id, excluded.firma);
-  if p_tabla in ('recibos', 'facturas', 'trabajos_externos', 'cobros', 'aplicaciones_cobro', 'notas_credito') then
+  if p_tabla in ('recibos', 'facturas', 'trabajos_externos', 'cobros', 'aplicaciones_cobro', 'notas_credito',
+                 'cobros_devoluciones') then
     perform set_config('mx_puente.escribe', p_tabla || ':' || p_id, true);
     execute format('update public.%I set contabilizado_en = $1 where id = $2::%s and contabilizado_en is distinct from $1',
-                   p_tabla, case when p_tabla in ('cobros', 'aplicaciones_cobro', 'notas_credito') then 'uuid' else 'bigint' end)
+                   p_tabla, case when p_tabla in ('cobros', 'aplicaciones_cobro', 'notas_credito', 'cobros_devoluciones')
+                                 then 'uuid' else 'bigint' end)
       using p_asiento, p_id;
     perform set_config('mx_puente.escribe', '', true);
   end if;
@@ -2188,10 +2615,13 @@ revoke execute on function public.fn_puente_marcar_error(text, text, text, text)
 --     depreciación acumulada (fn_puente_cuenta_gasto_mal); su cuenta sin
 --     obra, igual, y no exige obra; un banco es un banco (el bloque 10xx:
 --     no la depreciación acumulada, ni la cuenta del accionista, ni la
---     bodega); una tarjeta es un pasivo o un banco (la débito), nunca la
---     cuenta de otro papel de los puentes (cuentas por pagar, use tax,
---     sueldos devengados…), y si es la de reembolsos a empleados dice de
---     quién; un tipo de obra lleva a un ingreso por obra; y cada cuenta de
+--     bodega); una tarjeta es una 2100-XXXX, un banco (la débito) o el
+--     bolsillo de alguien (2900, 2250), y el efectivo, un banco o ese
+--     bolsillo: nunca un pasivo de nómina (2220 el 941, 2230 el RT-6…), un
+--     préstamo (25xx) ni la cuenta de otro papel de los puentes
+--     (fn_puente_cuenta_pago_mal); la tarjeta de los reembolsos a
+--     empleados dice de quién es; un tipo de obra lleva a un ingreso por
+--     obra; y cada cuenta de
 --     los puentes es de su clase (fn_puente_cuenta_rol_mal: cobrar = 11xx,
 --     banco = 10xx, lo que se debe = pasivo, subcontratos = costo por
 --     obra, 50xx solo la mano de obra) y es SOLO suya: dos papeles no
@@ -2231,21 +2661,11 @@ begin
     end if;
 
   elsif tg_table_name = 'mapeo_metodo_pago' then
+    -- Un pago por banco sale de un banco; el efectivo, de un banco o del
+    -- bolsillo de alguien (2900, 2250). Nunca de un pasivo de nómina, de un
+    -- préstamo ni de la cuenta de otro papel (fn_puente_cuenta_pago_mal).
     if new.cuenta is not null then
-      v_mal := fn_puente_cuenta_mal(new.cuenta);
-      if v_mal is null then
-        select * into v_c from cuentas where codigo = new.cuenta;
-        if new.forma = 'banco' and not fn_puente_es_banco(v_c.codigo) then
-          v_mal := format('%s (%s) no es una cuenta de banco (10xx, de activo, sin obra)', v_c.codigo, v_c.nombre);
-        elsif v_c.tipo not in ('activo', 'pasivo')
-              or (v_c.tipo = 'activo' and not fn_puente_es_banco(v_c.codigo))
-              or exists (select 1 from puente_cuentas pc
-                          where pc.cuenta = v_c.codigo and pc.rol not in ('banco', 'reembolso_dueno', 'reembolso_empleado')) then
-          -- (Ni la cuenta de otro papel de los puentes: la de por pagar a
-          -- proveedores, la de use tax, la de sueldos devengados…)
-          v_mal := format('%s (%s) no es de donde sale un pago (un banco, o lo que se le debe a quien pagó)', v_c.codigo, v_c.nombre);
-        end if;
-      end if;
+      v_mal := fn_puente_cuenta_pago_mal(new.forma, new.cuenta);
       if v_mal is not null then
         raise exception using errcode = 'MX004', message = format('La forma de pago «%s» no puede ir ahí: %s.', new.metodo_pago, v_mal);
       end if;
@@ -2264,15 +2684,13 @@ begin
     end if;
 
   elsif tg_table_name = 'tarjetas' then
-    v_mal := fn_puente_cuenta_mal(new.cuenta);
+    -- Una 2100-XXXX, un banco (la débito), 2900 o 2250: nunca un pasivo de
+    -- nómina (2220, el 941; 2230, el RT-6…) ni un préstamo
+    -- (fn_puente_cuenta_pago_mal).
+    v_mal := fn_puente_cuenta_pago_mal('tarjeta', new.cuenta);
     if v_mal is null then
       select * into v_c from cuentas where codigo = new.cuenta;
-      if v_c.tipo not in ('activo', 'pasivo') or v_c.regla_obra <> 'prohibida'
-         or (v_c.tipo = 'activo' and not fn_puente_es_banco(v_c.codigo))
-         or exists (select 1 from puente_cuentas pc
-                     where pc.cuenta = v_c.codigo and pc.rol not in ('banco', 'reembolso_dueno', 'reembolso_empleado')) then
-        v_mal := format('%s (%s) no es la cuenta de una tarjeta (una 2100-XXXX, el banco, 2900 o 2250)', v_c.codigo, v_c.nombre);
-      elsif v_c.codigo = fn_puente_cuenta_de('reembolso_empleado')
+      if v_c.codigo = fn_puente_cuenta_de('reembolso_empleado')
             and (new.empleado_id is null or not exists (select 1 from perfiles p where p.id = new.empleado_id)) then
         v_mal := 'la tarjeta de un empleado dice de quién es (empleado_id, un perfil que existe)';
       end if;
@@ -2350,6 +2768,8 @@ begin
     raise exception using errcode = 'MX003',
       message = format('Un papel de dinero no se borra (%s): %s', tg_table_name,
                        case tg_table_name when 'cobros' then 'un cobro se anula con fn_cobro_anular y se registra el bueno.'
+                                          when 'cobros_devoluciones'
+                                          then 'una devolución no se deshace: si fue un error, el cobro se registra otra vez.'
                                           else 'se anula lo que lo originó, y el libro lo reversa.' end);
   end if;
   -- UPDATE
@@ -2405,7 +2825,8 @@ begin
                                  ('puente_revisados',        'revisados'),
                                  ('cobros',                  'cobros'),
                                  ('aplicaciones_cobro',      'aplicaciones'),
-                                 ('notas_credito',           'notas_credito')) as v(tabla, nombre) loop
+                                 ('notas_credito',           'notas_credito'),
+                                 ('cobros_devoluciones',     'devoluciones')) as v(tabla, nombre) loop
     execute format('create or replace trigger %I before update or delete on public.%I
                       for each row execute function public.fn_puente_papeles_guarda()',
                    'trg_puente_' || r.nombre || '_guarda', r.tabla);
@@ -2469,7 +2890,15 @@ create or replace trigger trg_puente_proveedores_borrar
 -- con el total en positivo, un total que no es subtotal + tax, el mismo
 -- ticket en otro recibo. Cada pregunta lleva su «dato»: lo que Edgar
 -- confirma con fn_puentes_confirmar (y si el papel cambia ese dato, se
--- vuelve a preguntar).
+-- vuelve a preguntar). Una pregunta NO frena el asiento, y queda como aviso
+-- en la bandeja (plan «aviso»), cuando:
+--   · el total que no suman el subtotal y el tax lo tecleó Edgar (la marca
+--     total_a_mano que deja la guarda del recibo): es lo que se pagó;
+--   · el asiento vivo ya entró con esa misma duda (el mismo dato): lo que
+--     cambió es otra cosa (la foto, la obra), y eso sí tiene que llegar al
+--     libro;
+--   · es un duplicado de un recibo que ya tiene asiento vivo: retener el
+--     suyo no lo saca del libro (lo dice el control duplicados, en rojo).
 create or replace function public.fn_puente_recibo_plan(p_id bigint)
 returns jsonb
 language plpgsql
@@ -2493,14 +2922,23 @@ declare
   v_u4       text;
   v_u4raw    text;
   v_ruta     text;
+  v_obra_id  text;
   v_devol    boolean;
   v_dato     text;
   v_suma     numeric;
+  v_tick     text;
+  v_tnum     text;
+  v_provk    text;
   v_clave    text;
   v_dup      record;
   v_vivo     asientos;
+  v_vdoc     jsonb;
+  v_vpapel   jsonb;
   v_aper     jsonb;
   v_rev      puente_revisados;
+  v_mano     puente_revisados;
+  v_duda     text;
+  v_aviso    jsonb;
   v_mc       mapeo_categoria_recibo;
   v_mm       mapeo_metodo_pago;
   v_t        tarjetas;
@@ -2538,36 +2976,23 @@ begin
   -- «XXXX4417»): cuentan sus dígitos.
   v_u4raw  := nullif(btrim(r.ultimos4), '');
   v_u4     := fn_puente_ultimos4(r.ultimos4);
-  -- f01: el día que recibos traiga cost_code, entra solo (to_jsonb lo lee
-  -- si la columna existe; si no, es nulo).
   v_cc     := nullif(btrim(to_jsonb(r)->>'cost_code'), '');
   -- La marca de devolución que la app pone en las notas («DEVOLUCIÓN — …»,
   -- formRecibo y formMano): la ve la rutina, la ve la lista, y la ve el puente.
   v_devol  := coalesce(r.notas, '') ~* 'devoluci';
+  -- La obra. 'sin_asignar' es como el conector de Claude deja una compra
+  -- cuya obra todavía no se sabe: es sin obra (📌 se la pone).
+  v_obra_id := case when fn_puente_normalizar(r.proyecto_id) in ('sin_asignar', 'sin asignar') then null
+                    else nullif(btrim(r.proyecto_id), '') end;
 
-  -- La firma: lo que el puente usa del papel. leido y conciliado son lo
-  -- mismo para el libro (pasar de uno a otro no reversa nada). La foto
-  -- (ruta) sí cuenta: el asiento vivo apunta a su papel (documento_ruta), y
-  -- si la foto llega o se cambia después, el asiento nuevo la lleva. La
-  -- marca de devolución, solo cuando está (así la firma de un recibo sin
-  -- ella es la de siempre).
-  v_doc := jsonb_build_object(
-    'estado',      case when v_estado in ('leido', 'conciliado') then 'leido' else v_estado end,
-    'total',       trim_scale(r.total)::text,
-    'fecha',       v_fecha,
-    'proyecto_id', r.proyecto_id,
-    'co',          nullif(btrim(r.co), ''),
-    'categoria',   v_cat,
-    'metodo_pago', v_met,
-    'ultimos4',    v_u4,
-    'proveedor',   v_prov,
-    'autor_id',    r.autor_id,
-    'cost_code',   v_cc,
-    'ruta',        v_ruta)
-    || case when v_devol then jsonb_build_object('devolucion', true) else '{}'::jsonb end;
-  v_firma := md5(v_doc::text);
-  v_aper  := fn_puente_en_apertura('recibos', r.id::text);
-  v_vivo  := fn_puente_vivo('recibos', r.id::text);
+  -- La firma: lo que el puente usa del papel (fn_puente_recibo_doc).
+  v_doc    := fn_puente_recibo_doc(r);
+  v_firma  := md5(v_doc::text);
+  v_aper   := fn_puente_en_apertura('recibos', r.id::text);
+  v_vivo   := fn_puente_vivo('recibos', r.id::text);
+  -- El papel con que entró su asiento vivo (para ver si una duda es nueva).
+  v_vdoc   := v_vivo.procedencia->'documento';
+  v_vpapel := v_vivo.procedencia->'papel';
 
   if v_estado = 'anulado' then
     if v_aper is not null then
@@ -2656,7 +3081,25 @@ begin
     return fn_puente_plan_no('pendiente', 'sin_total', 'Leído pero sin total: ponle el total con ✎.', v_firma, v_doc);
   end if;
   v_total := round(r.total, 2);
+  -- Los tres números del papel (el «dato» del impuesto) y si el total lo
+  -- tecleó Edgar (la marca que deja la guarda del recibo al guardarlo).
+  v_dato := format('%s|%s|%s', trim_scale(r.total), trim_scale(r.subtotal), trim_scale(r.tax));
+  v_mano := fn_puente_revisado('recibos', r.id::text, 'total_a_mano', v_dato);
   if v_total = 0 then
+    -- En 0 (o que redondea a 0). Lo que ya estaba en el libro se reversa
+    -- sin preguntar, y el 0 que Edgar teclea con ✎ es anularlo (así lo
+    -- hace la app). Pero un recibo que NUNCA entró y que la lectura dejó
+    -- en 0 no se calla: ¿no leyó el total? Espera en la bandeja.
+    if v_mano.tabla is null and v_vivo.id is null and fn_puente_sustituible('recibos', r.id::text) is null then
+      return fn_puente_plan_no('pendiente', 'total_cero',
+        format('Leído con total %s%s, y nunca entró al libro: ¿la lectura no leyó el total? Pónselo (con ✎, o en el SQL Editor: '
+               'update recibos set total = … where id = %s;). Si no va, anúlalo: select fn_recibo_anular(%s, ''motivo'');. (Un 0 '
+               'que Edgar teclea con ✎ es anularlo, como siempre.)', trim_scale(r.total),
+               case when r.subtotal is not null and r.tax is not null
+                    then format(', pero su subtotal (%s) + tax (%s) = %s', r.subtotal, r.tax, round(r.subtotal + r.tax, 2))
+                    else '' end,
+               r.id, r.id), v_firma, v_doc);
+    end if;
     return fn_puente_plan_no('no_aplica', 'total_cero',
       'Total en 0: no suma nada (así se anula un recibo desde la app).', v_firma, v_doc);
   end if;
@@ -2678,15 +3121,23 @@ begin
     v_dato := to_char(r.fecha, 'YYYY-MM-DD');
     v_rev  := fn_puente_revisado('recibos', r.id::text, 'fecha_posterior_a_subida', v_dato);
     if v_rev.tabla is null then
-      return fn_puente_plan_no('pendiente', 'fecha_posterior_a_subida',
-        format('La fecha leída (%s) es posterior al día en que se subió el recibo (%s): un ticket no es de después de su foto. '
-               '¿Mes y día cruzados? Corrígela (en el SQL Editor: update recibos set fecha = ''AAAA-MM-DD'' where id = %s;). Si de '
-               'verdad es esa, confírmalo: select fn_puentes_confirmar(''recibos'', %s, ''fecha_posterior_a_subida'', ''motivo'');',
-               r.fecha, v_subido, r.id, r.id), v_firma, v_doc)
-             || jsonb_build_object('dato', v_dato);
+      v_duda := format('La fecha leída (%s) es posterior al día en que se subió el recibo (%s): un ticket no es de después de su '
+                       'foto. ¿Mes y día cruzados? Corrígela (en el SQL Editor: update recibos set fecha = ''AAAA-MM-DD'' where id = '
+                       '%s;). Si de verdad es esa, confírmalo: select fn_puentes_confirmar(''recibos'', %s, '
+                       '''fecha_posterior_a_subida'', ''motivo'');', r.fecha, v_subido, r.id, r.id);
+      -- Su asiento vivo ya entró con esa fecha: lo que cambió es otra cosa.
+      if v_vdoc->>'fecha' is not distinct from v_dato then
+        v_aviso := coalesce(v_aviso, jsonb_build_object('codigo', 'fecha_posterior_a_subida', 'dato', v_dato,
+                     'motivo', format('Su asiento %s ya entró con esta fecha; lo demás que cambió sí entró. ', v_vivo.numero)
+                               || v_duda));
+      else
+        return fn_puente_plan_no('pendiente', 'fecha_posterior_a_subida', v_duda, v_firma, v_doc)
+               || jsonb_build_object('dato', v_dato);
+      end if;
+    else
+      v_notas := v_notas || to_jsonb(format('La fecha leída (%s) es posterior a la subida (%s): Edgar confirmó que es la buena (%s).',
+                                            r.fecha, v_subido, v_rev.motivo));
     end if;
-    v_notas := v_notas || to_jsonb(format('La fecha leída (%s) es posterior a la subida (%s): Edgar confirmó que es la buena (%s).',
-                                          r.fecha, v_subido, v_rev.motivo));
   end if;
   -- b) DEVOLUCIÓN en las notas y el total en positivo: la app la enseña
   --    como devolución (↩) y el libro la contaría como compra. El total de
@@ -2695,36 +3146,62 @@ begin
     v_dato := v_total::text;
     v_rev  := fn_puente_revisado('recibos', r.id::text, 'devolucion', v_dato);
     if v_rev.tabla is null then
-      return fn_puente_plan_no('pendiente', 'devolucion',
-        format('Las notas dicen DEVOLUCIÓN y el total es positivo (%s): la app lo enseña como devolución y el libro lo contaría '
-               'como compra. Si es una devolución, el total va con signo menos (en el SQL Editor: update recibos set total = -%s '
-               'where id = %s;, o con ✎); si es una compra, confírmalo: select fn_puentes_confirmar(''recibos'', %s, ''devolucion'', '
-               '''motivo'');', v_total, v_total, r.id, r.id), v_firma, v_doc)
-             || jsonb_build_object('dato', v_dato);
+      v_duda := format('Las notas dicen DEVOLUCIÓN y el total es positivo (%s): la app lo enseña como devolución y el libro lo '
+                       'contaría como compra. Si es una devolución, el total va con signo menos (en el SQL Editor: update recibos '
+                       'set total = -%s where id = %s;, o con ✎); si es una compra, confírmalo: select '
+                       'fn_puentes_confirmar(''recibos'', %s, ''devolucion'', ''motivo'');', v_total, v_total, r.id, r.id);
+      if (v_vdoc->>'devolucion') = 'true' and (v_vdoc->>'total') is not distinct from trim_scale(r.total)::text then
+        v_aviso := coalesce(v_aviso, jsonb_build_object('codigo', 'devolucion', 'dato', v_dato,
+                     'motivo', format('Su asiento %s ya entró así; lo demás que cambió sí entró. ', v_vivo.numero) || v_duda));
+      else
+        return fn_puente_plan_no('pendiente', 'devolucion', v_duda, v_firma, v_doc) || jsonb_build_object('dato', v_dato);
+      end if;
+    else
+      v_notas := v_notas || to_jsonb(format('Las notas dicen DEVOLUCIÓN y el total es positivo: Edgar confirmó que es una compra (%s).',
+                                            v_rev.motivo));
     end if;
-    v_notas := v_notas || to_jsonb(format('Las notas dicen DEVOLUCIÓN y el total es positivo: Edgar confirmó que es una compra (%s).',
-                                          v_rev.motivo));
   end if;
   -- c) El impuesto: subtotal + tax es el total (al centavo; con el signo
   --    del total o sin él, porque una devolución a veces se lee en
   --    positivo). Si no cuadran, la lectura tomó el total sin el impuesto
-  --    (o con algo de más): se pregunta. «Incluido en el total» solo se
-  --    escribe cuando se comprobó.
+  --    (o con algo de más): se pregunta. Salvo que el total lo haya
+  --    tecleado Edgar (✎): ese es lo que se pagó, entra, y el descuadre del
+  --    subtotal y el tax de la lectura queda como aviso. «Incluido en el
+  --    total» solo se escribe cuando se comprobó.
   if r.subtotal is not null and r.tax is not null then
     v_suma := round(r.subtotal + r.tax, 2);
     if abs(v_suma - v_total) > 0.01 and abs(v_suma + v_total) > 0.01 then
       v_dato := format('%s|%s|%s', trim_scale(r.total), trim_scale(r.subtotal), trim_scale(r.tax));
       v_rev  := fn_puente_revisado('recibos', r.id::text, 'impuesto', v_dato);
-      if v_rev.tabla is null then
-        return fn_puente_plan_no('pendiente', 'impuesto',
-          format('Subtotal (%s) + tax (%s) = %s, y el total es %s: no cuadran. ¿La lectura tomó el total sin el impuesto (o con '
-                 'algo de más)? Corrige el que esté mal (en el SQL Editor: update recibos set total = … where id = %s;). Si el total '
-                 'es lo que se pagó (un descuento, un depósito, un flete aparte), confírmalo: select fn_puentes_confirmar(''recibos'', '
-                 '%s, ''impuesto'', ''motivo'');', r.subtotal, r.tax, v_suma, v_total, r.id, r.id), v_firma, v_doc)
-               || jsonb_build_object('dato', v_dato);
+      v_duda := format('Subtotal (%s) + tax (%s) = %s, y el total es %s: no cuadran. ¿La lectura tomó el total sin el impuesto (o '
+                       'con algo de más)? Corrige el que esté mal (en el SQL Editor: update recibos set total = … where id = %s; o '
+                       'update recibos set subtotal = …, tax = … where id = %s;). Si el total es lo que se pagó (un descuento, un '
+                       'depósito, un flete aparte), confírmalo: select fn_puentes_confirmar(''recibos'', %s, ''impuesto'', '
+                       '''motivo'');', r.subtotal, r.tax, v_suma, v_total, r.id, r.id, r.id);
+      if v_rev.tabla is not null then
+        v_impuesto := format('%s: subtotal %s + tax %s = %s no es el total (%s); Edgar confirmó que el total es lo que se pagó (%s). '
+                             'Entra el total; es costo, nada a 2300', r.tax, r.subtotal, r.tax, v_suma, v_total, v_rev.motivo);
+      elsif v_mano.tabla is not null
+            or (v_vivo.id is not null and (v_vdoc->>'total') is not distinct from trim_scale(r.total)::text
+                and (v_vpapel->>'subtotal')::numeric is not distinct from r.subtotal
+                and (v_vpapel->>'tax')::numeric is not distinct from r.tax) then
+        -- El total lo tecleó Edgar (o el asiento vivo ya entró con estos
+        -- mismos tres números): entra, y el descuadre, como aviso.
+        v_aviso := coalesce(v_aviso, jsonb_build_object('codigo', 'impuesto', 'dato', v_dato,
+                     'motivo', case when v_mano.tabla is not null
+                                    then format('Edgar puso el total a mano (%s) y entró así; ', v_total)
+                                    else format('Su asiento %s ya entró con estos números; lo demás que cambió sí entró. ',
+                                                v_vivo.numero) end
+                               || v_duda));
+        v_impuesto := format('%s: subtotal %s + tax %s = %s no es el total (%s); %s. Entra el total; es costo, nada a 2300. El '
+                             'descuadre queda como aviso en la bandeja', r.tax, r.subtotal, r.tax, v_suma, v_total,
+                             case when v_mano.tabla is not null
+                                  then format('el total lo tecleó Edgar (%s, %s)', v_mano.motivo,
+                                              (v_mano.revisado_el at time zone 'America/New_York')::date)
+                                  else 'así entró ya su asiento anterior' end);
+      else
+        return fn_puente_plan_no('pendiente', 'impuesto', v_duda, v_firma, v_doc) || jsonb_build_object('dato', v_dato);
       end if;
-      v_impuesto := format('%s: subtotal %s + tax %s = %s no es el total (%s); Edgar confirmó que el total es lo que se pagó (%s). '
-                           'Entra el total; es costo, nada a 2300', r.tax, r.subtotal, r.tax, v_suma, v_total, v_rev.motivo);
     else
       v_impuesto := format('%s, incluido en el total (subtotal %s + tax %s = total %s): es costo, nada a 2300',
                            r.tax, r.subtotal, r.tax, v_total);
@@ -2736,40 +3213,63 @@ begin
                          'cual, es costo, nada a 2300', r.tax);
   end if;
   -- d) El mismo papel en OTRO recibo no anulado: la misma foto, o el mismo
-  --    ticket (proveedor, número y total). Entra uno: el que ya está en el
-  --    libro, o si ninguno está, el más viejo. El otro espera, y el motivo
-  --    dice cuál es. Lo que Edgar confirmó que no es el mismo gasto (para
-  --    esa foto o ese ticket) ya no se pregunta.
-  v_clave := fn_puente_recibo_clave(r.proveedor, r.num_recibo, v_total);
-  select o.id,
-         (select a.numero from asientos a where a.id = o.contabilizado_en) as numero,
-         case when v_ruta is not null and nullif(btrim(o.ruta), '') = v_ruta then 'ruta:' || v_ruta else 'ticket:' || v_clave end
-           as dato,
-         case when v_ruta is not null and nullif(btrim(o.ruta), '') = v_ruta then format('la misma foto (%s)', v_ruta)
-              else format('el mismo ticket (%s #%s por %s)', r.proveedor, r.num_recibo, v_total) end as que
+  --    ticket (el mismo número y total, del mismo proveedor —el de
+  --    proveedores_alias: dos alias de CED son CED— o del mismo día). Entra
+  --    uno: el que ya está en el libro, o si ninguno está, el más viejo. El
+  --    otro espera, y el motivo dice cuál es. Lo que Edgar confirmó que no
+  --    es el mismo gasto (para esa foto o ese ticket) ya no se pregunta.
+  --    Las dos búsquedas van por índice (la foto, y el ticket: B.8, con
+  --    la misma expresión que aquí: el número sin signos, y el total).
+  v_tick  := fn_puente_recibo_ticket(r.num_recibo, r.total);
+  v_tnum  := nullif(regexp_replace(lower(coalesce(r.num_recibo, '')), '[^0-9a-z]', '', 'g'), '');
+  v_provk := fn_puente_recibo_proveedor(r.proveedor);
+  v_clave := case when v_tick is not null then coalesce(v_provk, 'sin_proveedor') || '|' || v_tick end;
+  select x.id, n.numero, x.dato, x.que
     into v_dup
-    from recibos o
-   where o.id <> r.id
-     and coalesce(o.estado, '') <> 'anulado'
-     and (   (v_ruta is not null and nullif(btrim(o.ruta), '') = v_ruta)
-          or (v_clave is not null and round(o.total, 2) = v_total
-              and fn_puente_recibo_clave(o.proveedor, o.num_recibo, o.total) = v_clave))
-     and (   (o.contabilizado_en is not null and r.contabilizado_en is null)
-          or ((o.contabilizado_en is not null) = (r.contabilizado_en is not null) and o.id < r.id))
+    from (select o.id, o.contabilizado_en, 'ruta:' || v_ruta as dato, format('la misma foto (%s)', v_ruta) as que
+            from recibos o
+           where v_ruta is not null and btrim(o.ruta) = v_ruta
+             and o.id <> r.id and o.estado is distinct from 'anulado'
+          union all
+          select o.id, o.contabilizado_en, 'ticket:' || v_clave,
+                 format('el mismo ticket (%s #%s por %s%s)', coalesce(nullif(btrim(r.proveedor), ''), 'sin proveedor'),
+                        r.num_recibo, v_total,
+                        case when v_provk is not null and fn_puente_recibo_proveedor(o.proveedor) = v_provk
+                                  and fn_puente_normalizar(o.proveedor) is distinct from v_prov
+                             then format(', del mismo proveedor aunque se leyó «%s»', o.proveedor)
+                             when v_provk is null or fn_puente_recibo_proveedor(o.proveedor) is distinct from v_provk
+                             then format(', el mismo día; en el otro el proveedor se leyó «%s»', coalesce(o.proveedor, '(nada)'))
+                             else '' end)
+            from recibos o
+           where v_tick is not null
+             and nullif(regexp_replace(lower(coalesce(o.num_recibo, '')), '[^0-9a-z]', '', 'g'), '') = v_tnum
+             and round(o.total, 2) = v_total
+             and o.id <> r.id and o.estado is distinct from 'anulado'
+             and (   (v_provk is not null and fn_puente_recibo_proveedor(o.proveedor) = v_provk)
+                  or coalesce(o.fecha, fn_fecha_miami(o.creado)) = v_fecha)) x
+    left join lateral (select a.numero from asientos a where a.id = x.contabilizado_en) n on true
+   where (   (x.contabilizado_en is not null and r.contabilizado_en is null)
+          or ((x.contabilizado_en is not null) = (r.contabilizado_en is not null) and x.id < r.id))
      and not exists (select 1 from puente_revisados pr
                       where pr.tabla = 'recibos' and pr.documento_id = r.id::text and pr.codigo = 'duplicado'
-                        and pr.dato = case when v_ruta is not null and nullif(btrim(o.ruta), '') = v_ruta then 'ruta:' || v_ruta
-                                           else 'ticket:' || v_clave end)
-   order by (o.contabilizado_en is not null) desc, o.id
+                        and pr.dato = x.dato)
+   order by (x.contabilizado_en is not null) desc, x.id
    limit 1;
   if v_dup.id is not null then
-    return fn_puente_plan_no('pendiente', 'duplicado',
-      format('Parece el mismo gasto que el recibo %s: %s%s. Subido dos veces no se debe dos veces. Si es el mismo, anula este: select '
-             'fn_recibo_anular(%s, ''repetido del recibo %s''); si son dos gastos distintos, confírmalo: select '
-             'fn_puentes_confirmar(''recibos'', %s, ''duplicado'', ''motivo'');', v_dup.id, v_dup.que,
-             coalesce(', que ya está en el libro (asiento ' || v_dup.numero || ')', ', que todavía no está en el libro'),
-             r.id, v_dup.id, r.id), v_firma, v_doc)
-           || jsonb_build_object('dato', v_dup.dato, 'duplicado_de', v_dup.id);
+    v_duda := format('Parece el mismo gasto que el recibo %s: %s%s. Subido dos veces no se debe dos veces. Si es el mismo, anula '
+                     'este: select fn_recibo_anular(%s, ''repetido del recibo %s''); si son dos gastos distintos, confírmalo: '
+                     'select fn_puentes_confirmar(''recibos'', %s, ''duplicado'', ''motivo'');', v_dup.id, v_dup.que,
+                     coalesce(', que ya está en el libro (asiento ' || v_dup.numero || ')', ', que todavía no está en el libro'),
+                     r.id, v_dup.id, r.id);
+    if v_vivo.id is not null then
+      -- Ya está en el libro: retener su asiento no lo saca (lo que cambió sí
+      -- entra), y el control duplicados lo tiene en rojo.
+      v_aviso := coalesce(v_aviso, jsonb_build_object('codigo', 'duplicado', 'dato', v_dup.dato, 'duplicado_de', v_dup.id,
+                   'motivo', format('Su asiento %s ya está en el libro; ', v_vivo.numero) || v_duda));
+    else
+      return fn_puente_plan_no('pendiente', 'duplicado', v_duda, v_firma, v_doc)
+             || jsonb_build_object('dato', v_dup.dato, 'duplicado_de', v_dup.id);
+    end if;
   end if;
   select * into v_rev from puente_revisados pr
    where pr.tabla = 'recibos' and pr.documento_id = r.id::text and pr.codigo = 'duplicado'
@@ -2800,18 +3300,19 @@ begin
   select * into v_mc from mapeo_categoria_recibo where categoria = v_cat;
   if not found then
     return fn_puente_plan_no('pendiente', 'categoria',
-      format('La categoría «%s» no tiene cuenta: dásela con fn_mapeo_categoria(''%s'', cuenta).', r.categoria, v_cat), v_firma, v_doc);
+      format('La categoría «%s» no tiene cuenta: dásela con select fn_mapeo_categoria(%L, cuenta);.', r.categoria, v_cat),
+      v_firma, v_doc);
   end if;
   if v_mc.confirmado_el is null then
     return fn_puente_plan_no('pendiente', 'categoria_borrador',
-      format('La regla de la categoría «%s» (→ %s) está en borrador: confírmala con fn_mapeo_confirmar(''categoria'', ''%s'').',
+      format('La regla de la categoría «%s» (→ %s) está en borrador: confírmala con select fn_mapeo_confirmar(''categoria'', %L);.',
              v_cat, v_mc.cuenta, v_cat), v_firma, v_doc);
   end if;
   v_reglas := v_reglas || jsonb_build_object('categoria', to_jsonb(v_mc));
-  if r.proyecto_id is not null then
-    select * into v_obra from proyectos where id = r.proyecto_id;
+  if v_obra_id is not null then
+    select * into v_obra from proyectos where id = v_obra_id;
     if not found then
-      return fn_puente_plan_no('pendiente', 'obra', format('La obra %s del recibo no existe.', r.proyecto_id), v_firma, v_doc);
+      return fn_puente_plan_no('pendiente', 'obra', format('La obra %s del recibo no existe.', v_obra_id), v_firma, v_doc);
     end if;
     v_debe := v_mc.cuenta;
   else
@@ -2837,48 +3338,79 @@ begin
   -- La forma de pago → la cuenta del haber (y con quién, y qué partida abre).
   if v_met is null then
     -- Sin forma de pago: la trae la lectura, y un total puesto a mano (✎, o
-    -- una compra anotada a mano) no la tiene. Si su proveedor tiene
-    -- términos (una cuenta abierta con él), va a su cuenta: f03, «o
-    -- derivada de proveedores.terminos», y la procedencia lo dice. Si no,
-    -- espera, con el SQL exacto para escribirla.
-    if v_prov is not null then
-      select p.* into v_pr from proveedores_alias a join proveedores p on p.id = a.proveedor_id where a.alias = v_prov;
+    -- una compra anotada a mano) no la tiene. Se deriva, y la procedencia
+    -- dice de dónde:
+    --   · si trae los 4 últimos de una tarjeta dada de alta, se pagó con
+    --     ella: el papel lo dice. Nunca a la cuenta del proveedor, o cuando
+    --     llegue el statement de la tarjeta ese cargo entraría otra vez;
+    --   · si trae unos 4 últimos que no son de ninguna tarjeta, espera con
+    --     la pregunta;
+    --   · si no trae ninguno, a la cuenta abierta de su proveedor solo si
+    --     sus términos dicen crédito (f03, «o derivada de
+    --     proveedores.terminos»; fn_puente_terminos_a_cuenta). Si no,
+    --     espera con el SQL exacto para escribirla.
+    if v_u4 is not null and length(v_u4) = 4 then
+      select * into v_t from tarjetas where ultimos4 = v_u4;
     end if;
-    if v_pr.id is null or nullif(btrim(v_pr.terminos), '') is null
-       or (not v_pr.activo and (v_vivo.procedencia->'reglas'->'proveedor'->>'id') is distinct from v_pr.id::text) then
+    if v_t.ultimos4 is not null then
+      v_forma  := 'tarjeta';
+      v_reglas := v_reglas || jsonb_build_object('metodo_pago', jsonb_build_object(
+                    'derivada_de', 'recibos.ultimos4', 'forma', 'tarjeta', 'ultimos4', v_u4));
+      v_notas  := v_notas || to_jsonb(format('Sin forma de pago en el recibo, pero trae los últimos 4 de la tarjeta %s (%s): se '
+                                             'pagó con ella. Si se pagó de otra forma, escríbela (update recibos set metodo_pago = '
+                                             '''…'' where id = %s;) y el libro lo corrige solo.', v_u4, v_t.titular, r.id));
+    elsif v_u4raw is not null then
       return fn_puente_plan_no('pendiente', 'metodo_pago',
-        format('Sin forma de pago (metodo_pago vacío): la trae la lectura del recibo, y un total puesto a mano (✎, o una compra '
-               'anotada a mano) no la tiene; la app todavía no tiene dónde escribirla (parche de f05). Escríbela en el SQL Editor '
-               'con un texto del mapeo confirmado (select metodo_pago, forma from mapeo_metodo_pago where confirmado_el is not null '
-               'order by forma;), por ejemplo: update recibos set metodo_pago = ''tarjeta'', ultimos4 = ''NNNN'' where id = %s; '
-               '(con tarjeta) o update recibos set metodo_pago = ''cheque'' where id = %s;.%s', r.id, r.id,
-               case when v_pr.id is not null and not v_pr.activo
-                      then format(' (Su proveedor, %s, está inactivo.)', v_pr.nombre)
-                    when v_pr.id is not null
-                      then format(' (Su proveedor, %s, no tiene términos: con términos iría a su cuenta sola.)', v_pr.nombre)
-                    when v_prov is not null
-                      then format(' (Si es a la cuenta de «%s», dalo de alta con sus términos, fn_proveedor_alta(''%s'', ''Net 30''), '
-                                  'y entra a su cuenta solo.)', r.proveedor, r.proveedor)
-                    else '' end), v_firma, v_doc);
+        format('Sin forma de pago, y la lectura trajo «%s» como los últimos 4 de una tarjeta que no está dada de alta: ¿se pagó con '
+               'ella? Dala de alta (select fn_tarjeta_alta(%L, cuenta, titular);) y entra sola; si no, corrige los últimos 4 o '
+               'escribe la forma de pago (update recibos set metodo_pago = ''…'' where id = %s;). No va a la cuenta de su '
+               'proveedor: el papel dice que se pagó con tarjeta.', v_u4raw, coalesce(v_u4, v_u4raw), r.id), v_firma, v_doc);
+    else
+      if v_prov is not null then
+        select p.* into v_pr from proveedores_alias a join proveedores p on p.id = a.proveedor_id where a.alias = v_prov;
+      end if;
+      if v_pr.id is null or not fn_puente_terminos_a_cuenta(v_pr.terminos)
+         or (not v_pr.activo and (v_vivo.procedencia->'reglas'->'proveedor'->>'id') is distinct from v_pr.id::text) then
+        return fn_puente_plan_no('pendiente', 'metodo_pago',
+          format('Sin forma de pago (metodo_pago vacío): la trae la lectura del recibo, y un total puesto a mano (✎, o una compra '
+                 'anotada a mano) no la tiene; la app todavía no tiene dónde escribirla (parche de f05). Escríbela en el SQL Editor '
+                 'con un texto del mapeo confirmado (select metodo_pago, forma from mapeo_metodo_pago where confirmado_el is not null '
+                 'order by forma;), por ejemplo: update recibos set metodo_pago = ''tarjeta'', ultimos4 = ''NNNN'' where id = %s; '
+                 '(con tarjeta) o update recibos set metodo_pago = ''cheque'' where id = %s;.%s', r.id, r.id,
+                 case when v_pr.id is not null and not v_pr.activo
+                        then format(' (Su proveedor, %s, está inactivo.)', v_pr.nombre)
+                      when v_pr.id is not null and nullif(btrim(v_pr.terminos), '') is not null
+                        then format(' (Su proveedor, %s, tiene términos «%s»: no dicen crédito (Net 30, 30 días, EOM, a cuenta…), y '
+                                    'un recibo sin forma de pago no se le carga a cuenta. Si sí le compras a crédito, escribe sus '
+                                    'términos: update proveedores set terminos = ''Net 30'' where id = %L;)', v_pr.nombre,
+                                    v_pr.terminos, v_pr.id)
+                      when v_pr.id is not null
+                        then format(' (Su proveedor, %s, no tiene términos: con términos de crédito iría a su cuenta sola.)',
+                                    v_pr.nombre)
+                      when v_prov is not null
+                        then format(' (Si es a la cuenta de «%s», dalo de alta con sus términos, select fn_proveedor_alta(%L, '
+                                    '''Net 30'');, y entra a su cuenta solo.)', r.proveedor, btrim(r.proveedor))
+                      else '' end), v_firma, v_doc);
+      end if;
+      v_forma  := 'cuenta_proveedor';
+      v_reglas := v_reglas || jsonb_build_object('metodo_pago', jsonb_build_object(
+                    'derivada_de', 'proveedores.terminos', 'forma', 'cuenta_proveedor', 'proveedor', v_pr.nombre,
+                    'terminos', v_pr.terminos));
+      v_notas  := v_notas || to_jsonb(format('Sin forma de pago en el recibo: va a la cuenta de %s porque sus términos dicen crédito '
+                                             '(%s). Si se pagó de otra forma, escríbela (update recibos set metodo_pago = ''…'' where '
+                                             'id = %s;) y el libro lo corrige solo.', v_pr.nombre, v_pr.terminos, r.id));
     end if;
-    v_forma  := 'cuenta_proveedor';
-    v_reglas := v_reglas || jsonb_build_object('metodo_pago', jsonb_build_object(
-                  'derivada_de', 'proveedores.terminos', 'forma', 'cuenta_proveedor', 'proveedor', v_pr.nombre,
-                  'terminos', v_pr.terminos));
-    v_notas  := v_notas || to_jsonb(format('Sin forma de pago en el recibo: va a la cuenta de %s porque tiene términos (%s). Si se '
-                                           'pagó de otra forma, escríbela (update recibos set metodo_pago = ''…'' where id = %s;) y el '
-                                           'libro lo corrige solo.', v_pr.nombre, v_pr.terminos, r.id));
   else
     select * into v_mm from mapeo_metodo_pago where metodo_pago = v_met;
     if not found then
       return fn_puente_plan_no('pendiente', 'metodo_pago',
-        format('La forma de pago «%s» no está en el mapeo: dile cuál es con fn_mapeo_metodo_pago(''%s'', forma[, cuenta]).',
+        format('La forma de pago «%s» no está en el mapeo: dile cuál es con select fn_mapeo_metodo_pago(%L, forma[, cuenta]);.',
                r.metodo_pago, v_met), v_firma, v_doc);
     end if;
     if v_mm.confirmado_el is null then
       return fn_puente_plan_no('pendiente', 'metodo_pago_borrador',
-        format('La regla de la forma de pago «%s» (→ %s) está en borrador: confírmala con fn_mapeo_confirmar(''metodo_pago'', ''%s'').',
-               v_met, v_mm.forma, v_met), v_firma, v_doc);
+        format('La regla de la forma de pago «%s» (→ %s) está en borrador: confírmala con select fn_mapeo_confirmar(''metodo_pago'', '
+               '%L);.', v_met, v_mm.forma, v_met), v_firma, v_doc);
     end if;
     v_forma  := v_mm.forma;
     v_reglas := v_reglas || jsonb_build_object('metodo_pago', to_jsonb(v_mm));
@@ -2898,7 +3430,8 @@ begin
     select * into v_t from tarjetas where ultimos4 = v_u4;
     if not found then
       return fn_puente_plan_no('pendiente', 'tarjeta',
-        format('La tarjeta terminada en %s no está dada de alta: fn_tarjeta_alta(''%s'', cuenta, titular).', v_u4, v_u4), v_firma, v_doc);
+        format('La tarjeta terminada en %s no está dada de alta: select fn_tarjeta_alta(%L, cuenta, titular);.', v_u4, v_u4),
+        v_firma, v_doc);
     end if;
     if not v_t.activa then
       -- Inactiva frena lo NUEVO. Un recibo que ya estaba cargado a ella (un
@@ -2906,7 +3439,7 @@ begin
       if (v_vivo.procedencia->'reglas'->'tarjeta'->>'ultimos4') is distinct from v_u4 then
         return fn_puente_plan_no('pendiente', 'tarjeta',
           format('La tarjeta terminada en %s está inactiva: un recibo nuevo no se le carga. Si el recibo sí es de ella, '
-                 'reactívala (fn_tarjeta_alta(''%s'', cuenta, titular)); si es de otra, corrige sus últimos 4.', v_u4, v_u4),
+                 'reactívala (select fn_tarjeta_alta(%L, cuenta, titular);); si es de otra, corrige sus últimos 4.', v_u4, v_u4),
           v_firma, v_doc);
       end if;
       v_notas := v_notas || to_jsonb(format('La tarjeta %s está inactiva: se le sigue cargando porque este recibo ya estaba '
@@ -2927,8 +3460,9 @@ begin
       select p.* into v_pr from proveedores_alias a join proveedores p on p.id = a.proveedor_id where a.alias = v_prov;
       if not found then
         return fn_puente_plan_no('pendiente', 'proveedor',
-          format('El proveedor «%s» no está dado de alta (o no con ese nombre): fn_proveedor_alta(''%s'', términos) o '
-                 'fn_proveedor_alias(proveedor, ''%s'').', r.proveedor, r.proveedor, v_prov), v_firma, v_doc);
+          format('El proveedor «%s» no está dado de alta (o no con ese nombre): select fn_proveedor_alta(%L, ''Net 30''); (con sus '
+                 'términos), o si es otro nombre de uno que ya está: select fn_proveedor_alias((select id from proveedores where '
+                 'nombre = ''…''), %L);.', r.proveedor, btrim(r.proveedor), v_prov), v_firma, v_doc);
       end if;
     end if;
     if not v_pr.activo then
@@ -2950,8 +3484,8 @@ begin
   elsif v_forma in ('banco', 'efectivo') then
     if v_mm.cuenta is null then
       return fn_puente_plan_no('pendiente', 'efectivo',
-        format('Pagado en efectivo («%s»): el mapeo no dice de dónde salió el efectivo; dale su cuenta con fn_mapeo_metodo_pago.',
-               r.metodo_pago), v_firma, v_doc);
+        format('Pagado en efectivo («%s»): el mapeo no dice de dónde salió el efectivo; dale su cuenta con select '
+               'fn_mapeo_metodo_pago(%L, ''efectivo'', cuenta);.', r.metodo_pago, v_met), v_firma, v_doc);
     end if;
     v_haber := v_mm.cuenta;
   else -- reembolso: lo pagó de su bolsillo quien subió el recibo
@@ -2988,16 +3522,16 @@ begin
 
   -- Las dos líneas.
   v_memo := concat_ws(' · ', 'Recibo ' || r.id, nullif(btrim(r.proveedor), ''), '#' || nullif(btrim(r.num_recibo), ''));
-  if r.proyecto_id is not null and v_cd.regla_obra <> 'prohibida' then
+  if v_obra_id is not null and v_cd.regla_obra <> 'prohibida' then
     v_ldebe := jsonb_strip_nulls(jsonb_build_object(
-      'cuenta', v_debe, 'monto', v_total::text, 'proyecto_id', r.proyecto_id, 'co', nullif(btrim(r.co), ''),
+      'cuenta', v_debe, 'monto', v_total::text, 'proyecto_id', v_obra_id, 'co', nullif(btrim(r.co), ''),
       'cost_code', case when v_cd.regla_cost_code <> 'prohibida' then v_cc end, 'memo', v_memo));
   else
     v_ldebe := jsonb_build_object('cuenta', v_debe, 'monto', v_total::text,
-                                  'memo', v_memo || coalesce(' · obra ' || r.proyecto_id, ''));
-    if r.proyecto_id is not null then
+                                  'memo', v_memo || coalesce(' · obra ' || v_obra_id, ''));
+    if v_obra_id is not null then
       v_notas := v_notas || to_jsonb(format('La cuenta %s (%s) no va por obra: la obra %s queda en la nota de la línea.',
-                                            v_cd.codigo, v_cd.nombre, r.proyecto_id));
+                                            v_cd.codigo, v_cd.nombre, v_obra_id));
     end if;
   end if;
   v_lhaber := jsonb_strip_nulls(jsonb_build_object(
@@ -3019,7 +3553,8 @@ begin
         'impuesto', v_impuesto,
         'papel', jsonb_strip_nulls(jsonb_build_object('num_recibo', r.num_recibo, 'subtotal', r.subtotal, 'tax', r.tax,
                                                       'ruta', r.ruta, 'estado', r.estado, 'creado', r.creado, 'notas', r.notas)),
-        'notas', v_notas))));
+        'notas', v_notas))))
+    || case when v_aviso is not null then jsonb_build_object('aviso', v_aviso) else '{}'::jsonb end;
 end $$;
 revoke execute on function public.fn_puente_recibo_plan(bigint) from public, anon, authenticated, service_role;
 
@@ -3089,10 +3624,13 @@ begin
     v_pr := null;
   end if;
   -- La firma: el papel y a quién se le debe (sin la clave si no hay nadie,
-  -- como antes de que existiera).
+  -- como antes de que existiera). Y si la apertura ya lo nombra: si llega
+  -- después de que el puente lo contabilizó, el papel cambió (ya está en el
+  -- libro por la apertura) y la siguiente pasada reversa el del puente.
   v_doc := jsonb_build_object('costo', trim_scale(x.costo)::text, 'fecha', v_fecha, 'proyecto_id', x.proyecto_id,
                               'externo_id', x.externo_id, 'descripcion', x.descripcion)
-           || case when v_pr.id is not null then jsonb_build_object('proveedor', v_pr.id) else '{}'::jsonb end;
+           || case when v_pr.id is not null then jsonb_build_object('proveedor', v_pr.id) else '{}'::jsonb end
+           || case when v_aper is not null then jsonb_build_object('en_apertura', true) else '{}'::jsonb end;
   v_firma := md5(v_doc::text);
   if v_aper is not null and round(x.costo, 2) = 0 then
     return fn_puente_plan_no('pendiente', 'en_apertura',
@@ -3192,6 +3730,14 @@ revoke execute on function public.fn_puente_externo_plan(bigint) from public, an
 -- que la lleva (es a un contratista, o su obra la tiene pactada en su
 -- estimado), no se adivina: espera en la bandeja a que Edgar la diga (0 si
 -- esta no lleva). Así nunca entra entera a 1110 sin que nadie lo vea.
+-- Una factura que la APERTURA ya trae (su partida facturas/<id> en 1110 o
+-- 1120, abierta al 30-sep en la balanza de QuickBooks) no entra otra vez:
+-- su cuenta por cobrar y su ingreso (en 3900) ya están en el libro. Pasa
+-- en la frontera del corte (QuickBooks la fechó el 30-sep y la app el
+-- 1-oct), y con una que esperaba una regla cuando se cargó la apertura.
+-- Queda fuera (no_aplica), con el porqué; si la apertura llega después de
+-- que su puente la contabilizó, su firma cambia y la siguiente pasada
+-- reversa el asiento del puente (queda el de la apertura).
 create or replace function public.fn_puente_factura_plan(p_id bigint)
 returns jsonb
 language plpgsql
@@ -3213,6 +3759,7 @@ declare
   v_cret   text := fn_puente_cuenta_de('retencion_cxc');
   v_mal    text;
   v_memo   text;
+  v_aper   jsonb;
   v_lineas jsonb := '[]'::jsonb;
   v_notas  jsonb := '[]'::jsonb;
 begin
@@ -3220,10 +3767,13 @@ begin
   if not found then
     return fn_puente_plan_no('no_aplica', 'no_existe', 'La factura ya no existe.', null, null);
   end if;
+  v_aper := fn_puente_en_apertura('facturas', f.id::text);
   -- El estado no entra en la firma: anular una factura contabilizada no
   -- reversa su asiento (lo compensa su nota de crédito, que es otro papel).
+  -- La apertura sí, cuando la nombra (ver arriba).
   v_doc := jsonb_build_object('num', f.num, 'monto', trim_scale(f.monto)::text, 'fecha', f.fecha, 'proyecto_id', f.proyecto_id,
-                              'retencion', trim_scale(f.retencion)::text);
+                              'retencion', trim_scale(f.retencion)::text)
+           || case when v_aper is not null then jsonb_build_object('en_apertura', true) else '{}'::jsonb end;
   v_firma := md5(v_doc::text);
   if f.estado = 'borrador' then
     return fn_puente_plan_no('espera', 'borrador', 'Factura en borrador: se contabiliza al emitirse.', v_firma, v_doc);
@@ -3236,6 +3786,19 @@ begin
       coalesce('Factura anulada con la nota de crédito ' || (select n.numero from notas_credito n where n.anula_a = f.id)
                || ': su asiento se queda y la nota lo compensa.',
                'Factura anulada antes de entrar al libro: no se contabiliza.'), v_firma, v_doc);
+  end if;
+  -- Ya está en el libro por la apertura (ver arriba): no entra otra vez.
+  if v_aper is not null then
+    return fn_puente_plan_no('no_aplica', 'en_apertura',
+      format('La factura #%s ya está en la apertura (%s) con %s por cobrar en su partida: su saldo al 30-sep vino de la balanza '
+             'de QuickBooks, y su ingreso es de antes del corte (dentro de 3900). No entra otra vez por su puente.%s Si de verdad '
+             'es de después del corte y la apertura la trae de más, se corrige la apertura con un ajuste (tipo ajuste_cpa, '
+             'afecta_periodo = ''%s'') contra su partida facturas/%s (Dr 3900 / Cr la cuenta por cobrar, con su obra), y '
+             'entonces entra.', f.num, v_aper->>'asientos', (v_aper->>'saldo')::numeric,
+             case when f.fecha >= fn_puente_corte()
+                  then format(' En la app está fechada el %s, después del corte: QuickBooks la tiene antes.', f.fecha)
+                  else '' end,
+             v_aper->>'apertura', f.id), v_firma, v_doc);
   end if;
   if f.fecha is null then
     return fn_puente_plan_no('pendiente', 'sin_fecha', format('La factura #%s no tiene fecha.', f.num), v_firma, v_doc);
@@ -3276,13 +3839,13 @@ begin
   select * into v_mt from mapeo_tipo_proyecto where tipo = fn_puente_normalizar(v_obra.tipo);
   if not found then
     return fn_puente_plan_no('pendiente', 'tipo_proyecto',
-      format('El tipo de obra «%s» no tiene cuenta de ingreso: dásela con fn_mapeo_tipo_proyecto(''%s'', cuenta).',
+      format('El tipo de obra «%s» no tiene cuenta de ingreso: dásela con select fn_mapeo_tipo_proyecto(%L, cuenta);.',
              v_obra.tipo, fn_puente_normalizar(v_obra.tipo)), v_firma, v_doc);
   end if;
   if v_mt.confirmado_el is null then
     return fn_puente_plan_no('pendiente', 'tipo_proyecto_borrador',
-      format('La regla del tipo de obra «%s» (→ %s) está en borrador: confírmala con fn_mapeo_confirmar(''tipo_proyecto'', ''%s'').',
-             v_mt.tipo, v_mt.cuenta, v_mt.tipo), v_firma, v_doc);
+      format('La regla del tipo de obra «%s» (→ %s) está en borrador: confírmala con select '
+             'fn_mapeo_confirmar(''tipo_proyecto'', %L);.', v_mt.tipo, v_mt.cuenta, v_mt.tipo), v_firma, v_doc);
   end if;
   v_ing := v_mt.cuenta;
   if f.retencion is null then
@@ -3579,7 +4142,7 @@ begin
       join asientos a on a.id = l.asiento_id
      where l.partida_tabla = 'facturas' and l.partida_id = p_factura::text and l.cuenta in (v_cxc, v_cret)
        and not (coalesce(a.origen_tabla, '') = 'facturas' and coalesce(a.origen_id, '') = p_factura::text)
-       and coalesce(a.origen_tabla, '') not in ('cobros', 'aplicaciones_cobro')
+       and coalesce(a.origen_tabla, '') not in ('cobros', 'aplicaciones_cobro', 'cobros_devoluciones')
        and a.camino not in ('reverso', 'reverso_automatico')
        and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso');
   end if;
@@ -3639,6 +4202,68 @@ begin
                                                         v_lin->>'debe_hoy'))));
 end $$;
 revoke execute on function public.fn_puente_nota_plan(uuid) from public, anon, authenticated, service_role;
+
+-- La DEVOLUCIÓN de un cobro (el cheque rebotó): el espejo del asiento vivo
+-- del cobro, y del de cada anticipo suyo ya aplicado, en la fecha en que
+-- el banco lo devolvió. NO es un reverso: el depósito sí pasó (en su mes,
+-- y el estado del banco lo trae), y la devolución es otro hecho, en el
+-- suyo. La factura vuelve a quedar por cobrar (su partida, con su obra),
+-- el descuento que se le dio al cobrar se deshace (el cliente no pagó), el
+-- anticipo que dejó ya no está, y el dinero sale del banco. Si el cobro ya
+-- no tiene asiento vivo (se anuló), no hay nada que devolver.
+create or replace function public.fn_puente_devolucion_plan(p_id uuid)
+returns jsonb
+language plpgsql
+stable
+set search_path = public, pg_temp
+as $$
+declare
+  d       cobros_devoluciones;
+  c       cobros;
+  v_doc   jsonb;
+  v_firma text;
+  v_vivo  asientos;
+  v_lin   jsonb;
+  v_nums  text;
+begin
+  select * into d from cobros_devoluciones where id = p_id;
+  if not found then
+    return fn_puente_plan_no('no_aplica', 'no_existe', 'La devolución ya no existe.', null, null);
+  end if;
+  select * into c from cobros where id = d.cobro_id;
+  v_doc := jsonb_build_object('cobro', d.cobro_id, 'fecha', d.fecha, 'monto', d.monto::text, 'movimiento_id', d.movimiento_id);
+  v_firma := md5(v_doc::text);
+  v_vivo := fn_puente_vivo('cobros', d.cobro_id::text);
+  if c.estado = 'anulado' or v_vivo.id is null then
+    return fn_puente_plan_no('pendiente', 'cobro_sin_asiento',
+      format('El cobro que se devolvió (%s) no tiene asiento vivo%s: no hay depósito que compensar.', d.cobro_id,
+             case when c.estado = 'anulado' then ' (se anuló)' else '' end), v_firma, v_doc);
+  end if;
+  -- El espejo, con sus dimensiones, sus terceros y sus partidas, en el
+  -- orden en que entraron.
+  select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+           'cuenta', l.cuenta, 'monto', (-l.monto)::text, 'proyecto_id', l.proyecto_id, 'cost_code', l.cost_code, 'co', l.co,
+           'fase', l.fase, 'tercero_tipo', l.tercero_tipo, 'tercero_id', l.tercero_id,
+           'partida_tabla', l.partida_tabla, 'partida_id', l.partida_id,
+           'memo', 'Devolución · ' || coalesce(l.memo, a.descripcion))) order by a.cadena_pos, l.orden), '[]'::jsonb),
+         string_agg(distinct a.numero, ', ')
+    into v_lin, v_nums
+    from asientos a
+    join asiento_lineas l on l.asiento_id = a.id
+   where a.id = v_vivo.id
+      or a.id in (select (fn_puente_vivo('aplicaciones_cobro', ap.id::text)).id
+                    from aplicaciones_cobro ap where ap.cobro_id = d.cobro_id and ap.desde_anticipo);
+  return jsonb_build_object(
+    'accion', 'postear', 'firma', v_firma, 'documento', v_doc, 'fecha_documento', d.fecha,
+    'asiento', jsonb_build_object(
+      'descripcion', concat_ws(' · ', 'Devolución del cobro', c.medio, c.referencia, 'el banco lo devolvió el ' || d.fecha),
+      'lineas', v_lin,
+      'origen_tabla', 'cobros_devoluciones', 'origen_id', d.id::text,
+      'procedencia', jsonb_strip_nulls(jsonb_build_object('funcion', 'fn_puente_devolucion', 'cobro', d.cobro_id,
+                                                          'cobro_fecha', c.fecha, 'compensa', v_nums, 'motivo', d.motivo,
+                                                          'movimiento_id', d.movimiento_id))));
+end $$;
+revoke execute on function public.fn_puente_devolucion_plan(uuid) from public, anon, authenticated, service_role;
 
 
 -- ---------------------------------------------------------------------
@@ -3840,6 +4465,9 @@ revoke execute on function public.fn_puente_aplicar(text, text, jsonb, text, boo
 -- Los puentes, uno por papel: la fila del papel quieta mientras se
 -- contabiliza (el trigger ya la tiene; el backfill la toma antes), y su plan
 -- aplicado. p_forzar: rehacer con las reglas de hoy (fn_puentes_rehacer).
+-- El recibo, además, toma antes los candados de su foto y de su ticket
+-- (fn_puente_recibo_candados): el plan, que mira si es un duplicado, corre
+-- en la sentencia siguiente, y ya ve lo que confirmó quien los tenía.
 create or replace function public.fn_puente_recibo(p_id bigint, p_disparo text default 'trigger',
                                                    p_forzar boolean default false, p_motivo text default null)
 returns jsonb
@@ -3848,6 +4476,7 @@ set search_path = public, pg_temp
 as $$
 begin
   perform 1 from recibos where id = p_id for update;
+  perform fn_puente_recibo_candados(p_id);
   return fn_puente_aplicar('recibos', p_id::text, fn_puente_recibo_plan(p_id), p_disparo, p_forzar, p_motivo);
 end $$;
 revoke execute on function public.fn_puente_recibo(bigint, text, boolean, text) from public, anon, authenticated, service_role;
@@ -3909,6 +4538,17 @@ begin
   return fn_puente_aplicar('notas_credito', p_id::text, fn_puente_nota_plan(p_id), p_disparo);
 end $$;
 revoke execute on function public.fn_puente_nota(uuid, text) from public, anon, authenticated, service_role;
+
+create or replace function public.fn_puente_devolucion(p_id uuid, p_disparo text default 'devolver')
+returns jsonb
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  perform 1 from cobros_devoluciones where id = p_id for update;
+  return fn_puente_aplicar('cobros_devoluciones', p_id::text, fn_puente_devolucion_plan(p_id), p_disparo);
+end $$;
+revoke execute on function public.fn_puente_devolucion(uuid, text) from public, anon, authenticated, service_role;
 
 
 -- ---------------------------------------------------------------------
@@ -4040,15 +4680,17 @@ begin
     -- apuntar a la foto de un ticket ya contabilizado lo hacía entrar otra
     -- vez, a la obra que uno quisiera o como reembolso a su nombre—, salvo
     -- el MISMO envío otra vez (el doble toque sin señal, con su misma llave:
-    -- a ese lo para la llave única con su 409, «ya estaba»).
+    -- a ese lo para la llave única con su 409, «ya estaba»). (Por su
+    -- índice, recibos_ruta_idx: mirar la tabla entera por cada recibo
+    -- hacía que meter muchos a la vez creciera al cuadrado.)
     if nullif(btrim(new.ruta), '') is not null
        and exists (select 1 from recibos o
-                    where nullif(btrim(o.ruta), '') = btrim(new.ruta)
+                    where btrim(o.ruta) = btrim(new.ruta)
                       and (new.llave_cliente is null or o.llave_cliente is distinct from new.llave_cliente)) then
       raise exception using errcode = case when v_priv then 'MX003' else '42501' end,
         message = format('Esa foto (%s) ya es la de otro recibo (%s): una foto es el papel de un solo recibo. Sube la foto de este.',
                          btrim(new.ruta), (select string_agg(o.id::text, ', ') from recibos o
-                                            where nullif(btrim(o.ruta), '') = btrim(new.ruta)));
+                                            where btrim(o.ruta) = btrim(new.ruta)));
     end if;
     -- Y lo que sube el equipo va en la carpeta de recibos (así sube la app:
     -- recibos/<obra>/…) y no es un archivo que subió otra persona (un
@@ -4086,21 +4728,49 @@ begin
     end if;
     -- Una foto nueva (📷) no puede ser la de otro recibo.
     if nullif(btrim(new.ruta), '') is not null and nullif(btrim(new.ruta), '') is distinct from nullif(btrim(old.ruta), '')
-       and exists (select 1 from recibos o where o.id <> old.id and nullif(btrim(o.ruta), '') = btrim(new.ruta)) then
+       and exists (select 1 from recibos o where o.id <> old.id and btrim(o.ruta) = btrim(new.ruta)) then
       raise exception using errcode = 'MX003',
         message = format('Esa foto (%s) ya es la de otro recibo (%s): una foto es el papel de un solo recibo.', btrim(new.ruta),
                          (select string_agg(o.id::text, ', ') from recibos o
-                           where o.id <> old.id and nullif(btrim(o.ruta), '') = btrim(new.ruta)));
+                           where o.id <> old.id and btrim(o.ruta) = btrim(new.ruta)));
     end if;
     -- Un recibo ANULADO no vuelve con un update cualquiera. El ✎ de la app
     -- manda estado = 'leido' cada vez que lleva total (y enseña los
     -- anulados con su ✎): apuntarle una nota a un repetido ya anulado lo
     -- metía otra vez al libro, sin que nadie lo pidiera. Se queda anulado
-    -- (la nota, el proveedor y el total que manda sí se guardan). Volver a
-    -- contarlo es a propósito, con su motivo: fn_recibo_desanular.
+    -- (la nota, el proveedor y el total que manda sí se guardan). Pero si
+    -- el update SOLO le cambia el estado (el editar_gasto del conector con
+    -- estado 'leido', o un ✎ sin tocar nada más), eso es querer
+    -- des-anularlo: callado, quien lo mandó recibía «hecho» y el recibo
+    -- seguía anulado. Se dice (MX003) y cómo. Volver a contarlo es a
+    -- propósito, con su motivo: fn_recibo_desanular (solo Edgar).
     if old.estado = 'anulado' and new.estado is distinct from 'anulado'
        and coalesce(current_setting('mx_puente.escribe', true), '') <> 'recibos_desanular:' || old.id then
+      if (to_jsonb(new) - array['estado', 'contabilizado_en']) = (to_jsonb(old) - array['estado', 'contabilizado_en']) then
+        raise exception using errcode = 'MX003',
+          message = format('El recibo %s está anulado: cambiarle el estado no lo vuelve a contar. Para des-anularlo, con su motivo '
+                           '(solo Edgar): select fn_recibo_desanular(%s, ''motivo'');', old.id, old.id);
+      end if;
       new.estado := 'anulado';
+    end if;
+    -- El TOTAL que teclea Edgar (con ✎, o en el SQL Editor; no la lectura
+    -- ni el conector, que entran con service_role) es lo que se pagó: se
+    -- apunta (puente_revisados, total_a_mano) con los tres números como
+    -- quedan. Con eso el puente lo contabiliza aunque el subtotal y el tax
+    -- de la lectura ya no lo sumen (el ✎ no los tiene), y deja el
+    -- descuadre como aviso; y un 0 tecleado por él es anularlo, como
+    -- siempre (cabecera, puntos 3 y 15).
+    if new.total is distinct from old.total and (es_dueno() or fn_desde_editor()) then
+      insert into puente_revisados (tabla, documento_id, codigo, dato, motivo, revisado_por, revisado_rol)
+      values ('recibos', new.id::text, 'total_a_mano',
+              format('%s|%s|%s', trim_scale(new.total), trim_scale(new.subtotal), trim_scale(new.tax)),
+              format('Edgar puso el total a mano: %s → %s%s', coalesce(trim_scale(old.total)::text, '(vacío)'),
+                     coalesce(trim_scale(new.total)::text, '(vacío)'),
+                     case when new.subtotal is not null and new.tax is not null
+                          then format(' (el subtotal %s y el tax %s son los de la lectura)', new.subtotal, new.tax)
+                          else '' end),
+              auth.uid(), fn_rol_llamante())
+      on conflict do nothing;
     end if;
     return new;
   end if;
@@ -4420,7 +5090,11 @@ end $$;
 --   · el número de un reporte (id) no cambia si está o estuvo aprobado, ni
 --     nunca desde el teléfono del equipo;
 --   · cada aprobación, retirada, invalidación o borrado de horas aprobadas
---     queda en horas_aprobaciones.
+--     queda en horas_aprobaciones (la aprobación, con lo que Edgar vio);
+--   · lo que reporta quien no es el dueño tiene MEDIDA (cabecera, punto
+--     19): más de 0 y hasta 24 horas por reporte, un número de verdad (ni
+--     NaN ni infinito), y hasta 24 por trabajador y día. La app ya lo mide
+--     en el teléfono; esto vale también por la API. 22023, en llano.
 -- SECURITY DEFINER: apunta en horas_aprobaciones, que no tiene policy de
 -- escritura, aunque quien corrige sea un trabajador.
 -- ---------------------------------------------------------------------
@@ -4434,7 +5108,25 @@ declare
   v_dueno  boolean := es_dueno() or fn_desde_editor();
   v_rol    text    := fn_rol_llamante();
   v_cambio boolean;
+  v_dia    numeric;
 begin
+  -- La medida de lo que reporta el equipo (y el conector).
+  if tg_op in ('INSERT', 'UPDATE') and not v_dueno
+     and (tg_op = 'INSERT' or (new.horas, new.fecha, new.usuario_id) is distinct from (old.horas, old.fecha, old.usuario_id)) then
+    if new.horas is null or scale(new.horas) is null or new.horas <= 0 or new.horas > 24 then
+      raise exception using errcode = '22023',
+        message = format('Un reporte de horas va de más de 0 a 24 horas (llegó %s).', coalesce(new.horas::text, 'nada'));
+    end if;
+    select coalesce(sum(h.horas), 0) into v_dia
+      from horas h
+     where h.usuario_id = new.usuario_id and h.fecha = new.fecha and h.id is distinct from new.id
+       and scale(h.horas) is not null;
+    if v_dia + new.horas > 24 then
+      raise exception using errcode = '22023',
+        message = format('Con este reporte serían %s horas el %s: más de 24 en un día no entra. Revisa los reportes de ese día.',
+                         trim_scale(v_dia + new.horas), new.fecha);
+    end if;
+  end if;
   if tg_op = 'INSERT' then
     if (new.aprobado_por is not null or new.aprobado_el is not null) and not v_dueno then
       raise exception using errcode = '42501', message = 'Las horas las aprueba Edgar: un reporte nuevo entra sin aprobar.';
@@ -4495,8 +5187,10 @@ begin
             jsonb_build_object('antes', jsonb_build_object('horas', old.horas, 'fecha', old.fecha, 'proyecto_id', old.proyecto_id,
                                                            'co', old.co, 'fase', old.fase, 'aprobado_el', old.aprobado_el)));
   elsif old.aprobado_el is null and new.aprobado_el is not null then
-    insert into horas_aprobaciones (horas_id, accion, usuario_id, fecha, proyecto_id, horas, aprobado_por, hecho_por, rol)
-    values (new.id, 'aprobada', new.usuario_id, new.fecha, new.proyecto_id, new.horas, new.aprobado_por, auth.uid(), v_rol);
+    -- (Con lo que Edgar vio al aprobar, si lo aprobó fn_horas_aprobar.)
+    insert into horas_aprobaciones (horas_id, accion, usuario_id, fecha, proyecto_id, horas, aprobado_por, hecho_por, rol, detalle)
+    values (new.id, 'aprobada', new.usuario_id, new.fecha, new.proyecto_id, new.horas, new.aprobado_por, auth.uid(), v_rol,
+            jsonb_strip_nulls(jsonb_build_object('visto', nullif(current_setting('mx_puente.aprobacion', true), '')::jsonb)));
   elsif old.aprobado_el is not null and new.aprobado_el is null then
     insert into horas_aprobaciones (horas_id, accion, usuario_id, fecha, proyecto_id, horas, aprobado_por, hecho_por, rol, detalle)
     values (old.id, 'retirada', old.usuario_id, old.fecha, old.proyecto_id, old.horas, old.aprobado_por, auth.uid(), v_rol,
@@ -4624,9 +5318,16 @@ revoke execute on function public.fn_puente_saldo(text, text, text) from public,
 -- lo que ya está contabilizado y no cambió no se toca; lo que cambió se
 -- reversa y se sustituye; lo pendiente se vuelve a intentar (por ejemplo,
 -- después de confirmar un mapeo). Un papel que alguien está guardando en
--- este mismo momento se salta (su propio trigger lo contabiliza). Cada
--- papel va en su propia subtransacción: un error queda en la bandeja y el
--- resto sigue. Devuelve cuántos pasó y cómo quedó la bandeja.
+-- este mismo momento se salta (su propio trigger lo contabiliza), y un
+-- recibo cuya foto o ticket tiene tomados otro puente, también (no espera:
+-- ver fn_puente_recibo_candados). Cada papel va en su propia
+-- subtransacción: un error queda en la bandeja y el resto sigue.
+-- Un recibo contabilizado cuyo papel NO cambió (su firma de hoy es la de
+-- su asiento vivo, fn_puente_recibo_firma) no se vuelve a planear: con
+-- miles de recibos en el libro, planearlos todos —cada uno buscando sus
+-- duplicados— pasaba del tope de 8 s de la API, y «reintentar» se cortaba
+-- sin hacer nada. Devuelve cuántos pasó, cuántos no cambiaron y cómo quedó
+-- la bandeja.
 create or replace function public.fn_puentes_correr(p_desde date default null)
 returns jsonb
 language plpgsql
@@ -4638,6 +5339,7 @@ declare
   v_id    text;
   v_tabla text;
   v_n     int := 0;
+  v_igual int := 0;
   v_salta int := 0;
   v_error int := 0;
   v_uno   int;
@@ -4669,34 +5371,61 @@ begin
     union all
     select 'notas_credito', n.id::text from notas_credito n
      where n.fecha >= v_desde or n.contabilizado_en is not null
+    union all
+    select 'cobros_devoluciones', dv.id::text from cobros_devoluciones dv
+     where dv.fecha >= v_desde or dv.contabilizado_en is not null
     order by 1, 2
   loop
     begin
+      -- Un recibo contabilizado que no cambió: nada que hacer (lo mismo que
+      -- diría su puente, sin planearlo). Si tiene algo en la bandeja (un
+      -- aviso, una duda), sí se pasa.
+      if v_tabla = 'recibos'
+         and exists (select 1 from recibos r
+                       join asientos a on a.id = r.contabilizado_en
+                       join puente_documentos d on d.tabla = 'recibos' and d.documento_id = v_id
+                                               and d.estado = 'contabilizado' and d.codigo is null and d.asiento_id = a.id
+                      where r.id = v_id::bigint
+                        and not exists (select 1 from asientos x where x.reversa_a = a.id and x.camino = 'reverso')
+                        and a.procedencia->>'firma' = fn_puente_recibo_firma(r.id)) then
+        v_igual := v_igual + 1;
+        continue;
+      end if;
       -- (EXECUTE no mueve FOUND: se mira lo que devolvió.)
       v_uno := null;
       execute format('select 1 from public.%I where id = $1::%s for update skip locked', v_tabla,
-                     case when v_tabla in ('cobros', 'aplicaciones_cobro', 'notas_credito') then 'uuid' else 'bigint' end)
+                     case when v_tabla in ('cobros', 'aplicaciones_cobro', 'notas_credito', 'cobros_devoluciones') then 'uuid'
+                          else 'bigint' end)
         into v_uno using v_id;
       if v_uno is null then
         v_salta := v_salta + 1;
+      elsif v_tabla = 'recibos' and not fn_puente_recibo_candados(v_id::bigint, true) then
+        -- La foto o el ticket los tiene otro puente en este momento: lo
+        -- contabiliza él (o la siguiente pasada). Deshacer la
+        -- subtransacción suelta lo que se tomó.
+        raise exception using errcode = 'MXP01';
       else
         case v_tabla
-          when 'recibos'            then perform fn_puente_recibo(v_id::bigint, 'correr');
-          when 'trabajos_externos'  then perform fn_puente_externo(v_id::bigint, 'correr');
-          when 'facturas'           then perform fn_puente_factura(v_id::bigint, 'correr');
-          when 'cobros'             then perform fn_puente_cobro(v_id::uuid, 'correr');
-          when 'aplicaciones_cobro' then perform fn_puente_aplicacion(v_id::uuid, 'correr');
-          when 'notas_credito'      then perform fn_puente_nota(v_id::uuid, 'correr');
+          when 'recibos'             then perform fn_puente_recibo(v_id::bigint, 'correr');
+          when 'trabajos_externos'   then perform fn_puente_externo(v_id::bigint, 'correr');
+          when 'facturas'            then perform fn_puente_factura(v_id::bigint, 'correr');
+          when 'cobros'              then perform fn_puente_cobro(v_id::uuid, 'correr');
+          when 'aplicaciones_cobro'  then perform fn_puente_aplicacion(v_id::uuid, 'correr');
+          when 'notas_credito'       then perform fn_puente_nota(v_id::uuid, 'correr');
+          when 'cobros_devoluciones' then perform fn_puente_devolucion(v_id::uuid, 'correr');
         end case;
         v_n := v_n + 1;
       end if;
-    exception when others then
-      perform fn_puente_marcar_error(v_tabla, v_id, sqlstate, sqlerrm);
-      v_error := v_error + 1;
+    exception
+      when sqlstate 'MXP01' then
+        v_salta := v_salta + 1;
+      when others then
+        perform fn_puente_marcar_error(v_tabla, v_id, sqlstate, sqlerrm);
+        v_error := v_error + 1;
     end;
   end loop;
   return jsonb_build_object(
-    'desde', v_desde, 'pasados', v_n, 'en_uso_saltados', v_salta, 'errores', v_error,
+    'desde', v_desde, 'pasados', v_n, 'sin_cambios', v_igual, 'en_uso_saltados', v_salta, 'errores', v_error,
     'estado', (select coalesce(jsonb_object_agg(t.tabla, t.estados), '{}'::jsonb)
                  from (select d.tabla, jsonb_object_agg(d.estado, d.n) as estados
                          from (select tabla, estado, count(*) as n from puente_documentos group by tabla, estado) d
@@ -4776,7 +5505,20 @@ grant  execute on function public.fn_puentes_rehacer(text, text, text) to authen
 -- El MISMO cobro mandado dos veces (un doble toque, un reintento tras un
 -- corte): con su llave_cliente entra una vez; la segunda devuelve el que ya
 -- estaba (ya_estaba), y con otros datos, MX008. Un movimiento del banco
--- casa con un solo cobro vigente.
+-- casa con un solo cobro vigente. Y el MISMO DEPÓSITO por dos caminos (a
+-- mano desde el teléfono, y después con su movimiento del banco; o a mano
+-- dos veces, con dos llaves): si ya hay un cobro vigente a la misma cuenta,
+-- por el mismo monto, con fecha a 3 días o menos y la misma referencia (o
+-- sin ella en uno de los dos), y no son dos movimientos distintos del
+-- banco, MX008: si llega con su movimiento y el otro no lo tiene, el SQL
+-- para casarlos; si de verdad es otro depósito, se dice con
+-- "duplicado_confirmado": "motivo" (queda escrito en el cobro).
+-- Lo que no cabe en la parte normal (1110) de una factura con retención
+-- abierta es, casi siempre, su retención: el mensaje lo dice (una segunda
+-- aplicación con "es_retencion": true), no «déjalo de anticipo».
+-- Y una factura con más por cobrar en el libro que su monto está dos veces
+-- (la apertura y su puente, o un asiento a mano): no se cobra hasta
+-- arreglarla.
 -- La casilla «pagada» de la app no cambia: la sigue llevando Edgar a mano
 -- durante el paralelo (ver la cabecera, punto 10).
 create or replace function public.fn_cobro_registrar(p_cobro jsonb)
@@ -4814,6 +5556,11 @@ declare
   v_prev   cobros;
   v_otro   cobros;
   v_huella text;
+  v_dupmot text;
+  v_ref    text;
+  v_rsaldo numeric;
+  v_rret   numeric;
+  v_libro  numeric;
 begin
   perform fn_puente_exigir_dueno();
   if p_cobro is null or jsonb_typeof(p_cobro) <> 'object' then
@@ -4822,7 +5569,7 @@ begin
   select string_agg(k, ', ' order by k) into v_sobra
     from jsonb_object_keys(p_cobro) k
    where k not in ('fecha', 'monto', 'cuenta', 'medio', 'referencia', 'proyecto_id', 'notas', 'movimiento_id', 'llave_cliente',
-                   'aplicaciones');
+                   'aplicaciones', 'duplicado_confirmado');
   if v_sobra is not null then
     raise exception using errcode = '22023', message = format('Clave desconocida en el cobro: %s.', v_sobra);
   end if;
@@ -4930,6 +5677,39 @@ begin
                          'veces. Si ese estaba mal, anúlalo (fn_cobro_anular) y registra este.', v_mov, v_otro.fecha, v_otro.monto);
     end if;
   end if;
+  -- El MISMO DEPÓSITO por dos caminos (ver arriba): un cobro vigente igual
+  -- (misma cuenta y monto, fecha a 3 días o menos, la misma referencia o
+  -- sin ella en uno de los dos; no dos movimientos distintos del banco; y
+  -- que el banco no haya devuelto). Si de verdad son dos depósitos, se dice
+  -- ("duplicado_confirmado") y queda escrito en el cobro.
+  v_dupmot := nullif(btrim(p_cobro->>'duplicado_confirmado'), '');
+  v_ref    := fn_puente_ref(p_cobro->>'referencia');
+  if v_dupmot is null then
+    select c.* into v_otro
+      from cobros c
+     where c.estado = 'vigente' and c.cuenta = v_cuenta and c.monto = v_monto
+       and abs(c.fecha - v_fecha) <= 3
+       and (v_ref is null or fn_puente_ref(c.referencia) is null or fn_puente_ref(c.referencia) = v_ref)
+       and not (v_mov is not null and c.movimiento_id is not null)
+       and not exists (select 1 from cobros_devoluciones dv where dv.cobro_id = c.id)
+     order by abs(c.fecha - v_fecha), c.creado_el
+     limit 1;
+    if found then
+      if v_mov is not null and v_otro.movimiento_id is null then
+        raise exception using errcode = 'MX008',
+          message = format('Ese depósito parece el cobro que ya está (del %s, por %s a %s%s, sin su movimiento del banco): el mismo '
+                           'dinero no entra dos veces. Cásalo con su movimiento en vez de registrarlo otra vez: update cobros set '
+                           'movimiento_id = %L where id = %L;. Si de verdad son dos depósitos distintos, regístralo diciéndolo: '
+                           '"duplicado_confirmado": "motivo".', v_otro.fecha, v_otro.monto, v_otro.cuenta,
+                           coalesce(', ref ' || v_otro.referencia, ''), v_mov, v_otro.id);
+      end if;
+      raise exception using errcode = 'MX008',
+        message = format('Ya hay un cobro igual (del %s, por %s a %s%s%s): el mismo depósito no se registra dos veces. Si es otro '
+                         'depósito, regístralo diciéndolo: "duplicado_confirmado": "motivo".', v_otro.fecha, v_otro.monto,
+                         v_otro.cuenta, coalesce(', ref ' || v_otro.referencia, ''),
+                         coalesce(', movimiento ' || v_otro.movimiento_id, ''));
+    end if;
+  end if;
 
   -- Cada aplicación, mirada antes de escribir nada (con sus facturas ya
   -- tomadas: lo que se lee es lo último confirmado).
@@ -4984,6 +5764,17 @@ begin
                          coalesce((select d.motivo from puente_documentos d
                                     where d.tabla = 'facturas' and d.documento_id = v_fact.id::text), 'sin pasar por el puente'));
     end if;
+    -- Con más por cobrar en el libro que su monto, la factura está dos
+    -- veces (la apertura y su puente, o un asiento a mano): cobrarla así
+    -- dejaría cobrar el doble. Se arregla antes.
+    v_libro := fn_puente_saldo(fn_puente_cuenta_de('cxc'), 'facturas', v_fact.id::text)
+               + fn_puente_saldo(fn_puente_cuenta_de('retencion_cxc'), 'facturas', v_fact.id::text);
+    if v_fact.monto is not null and v_libro > round(v_fact.monto, 2) then
+      raise exception using errcode = 'MX008',
+        message = format('La factura #%s tiene %s por cobrar en el libro y su monto es %s: está dos veces (en la apertura y por su '
+                         'puente, o un asiento a mano contra su partida). No se cobra hasta arreglarla: mira el control partidas de '
+                         'select * from fn_puentes_verificar();.', v_fact.num, v_libro, round(v_fact.monto, 2));
+    end if;
     -- Lo cobrado antes de facturar no se aplica a la factura: al cierre de
     -- ese mes, la cuenta por cobrar enseñaría una factura que todavía no
     -- existía. Es un anticipo de la obra.
@@ -5000,6 +5791,16 @@ begin
       from jsonb_array_elements(v_apps) x
      where (x->>'factura_id')::bigint = v_fact.id and (x->>'es_retencion')::boolean = v_ret;
     if v_am + v_desc > v_saldo - v_ya then
+      -- Lo que sobra de la parte normal de una factura con retención
+      -- abierta es, casi siempre, su retención (el GC pagó todo): se dice,
+      -- con cuánto va en cada aplicación.
+      v_rsaldo := 0;
+      if not v_ret then
+        select coalesce(sum((x->>'monto')::numeric + (x->>'descuento')::numeric), 0) into v_rret
+          from jsonb_array_elements(v_apps) x
+         where (x->>'factura_id')::bigint = v_fact.id and (x->>'es_retencion')::boolean;
+        v_rsaldo := fn_puente_saldo(fn_puente_cuenta_de('retencion_cxc'), 'facturas', v_fact.id::text) - v_rret;
+      end if;
       raise exception using errcode = 'MX008',
         message = format('La factura #%s tiene abiertos %s en %s y esta aplicación le cobra %s: no cabe.%s', v_fact.num,
                          v_saldo - v_ya, v_cta, v_am + v_desc,
@@ -5009,6 +5810,13 @@ begin
                                               || fn_puente_cuenta_de('cxc') || ', reclasifícala antes contra su partida (Dr '
                                               || fn_puente_cuenta_de('retencion_cxc') || ' / Cr ' || fn_puente_cuenta_de('cxc')
                                               || ', con fn_postear).'
+                              when v_rsaldo > 0 and (v_am + v_desc) - (v_saldo - v_ya) <= v_rsaldo
+                              then format(' Además tiene %s de retención por cobrar en %s: si el cliente pagó también la '
+                                          'retención, lo que sobra (%s) es ella. Van dos aplicaciones a la misma factura: '
+                                          '{"factura_id": %s, "monto": "%s"} y {"factura_id": %s, "monto": "%s", "es_retencion": '
+                                          'true}.', v_rsaldo, fn_puente_cuenta_de('retencion_cxc'),
+                                          (v_am + v_desc) - (v_saldo - v_ya), v_fact.id, (v_saldo - v_ya) - v_desc, v_fact.id,
+                                          (v_am + v_desc) - (v_saldo - v_ya))
                               else ' Lo que sobre, déjalo de anticipo de la obra.' end);
     end if;
     v_apps := v_apps || jsonb_build_array(jsonb_build_object('factura_id', v_fact.id, 'proyecto_id', v_fact.proyecto_id,
@@ -5019,9 +5827,10 @@ begin
       message = format('Las aplicaciones suman %s y el cobro es de %s: tienen que sumar lo mismo, al centavo.', v_suma, v_monto);
   end if;
 
-  insert into cobros (fecha, monto, cuenta, medio, referencia, proyecto_id, movimiento_id, notas, llave_cliente, creado_por)
+  insert into cobros (fecha, monto, cuenta, medio, referencia, proyecto_id, movimiento_id, notas, llave_cliente, creado_por,
+                      duplicado_motivo)
   values (v_fecha, v_monto, v_cuenta, nullif(btrim(p_cobro->>'medio'), ''), nullif(btrim(p_cobro->>'referencia'), ''),
-          nullif(btrim(p_cobro->>'proyecto_id'), ''), v_mov, nullif(btrim(p_cobro->>'notas'), ''), v_llave, auth.uid())
+          nullif(btrim(p_cobro->>'proyecto_id'), ''), v_mov, nullif(btrim(p_cobro->>'notas'), ''), v_llave, auth.uid(), v_dupmot)
   returning id into v_id;
   insert into aplicaciones_cobro (cobro_id, factura_id, proyecto_id, monto, es_retencion, descuento, creado_por)
   select v_id, (x->>'factura_id')::bigint, x->>'proyecto_id', (x->>'monto')::numeric, (x->>'es_retencion')::boolean,
@@ -5038,9 +5847,13 @@ end $$;
 revoke execute on function public.fn_cobro_registrar(jsonb) from public, anon, authenticated, service_role;
 grant  execute on function public.fn_cobro_registrar(jsonb) to authenticated;
 
--- ANULAR UN COBRO (el cheque rebotó, se registró dos veces): su asiento se
--- reversa, y también el de cada anticipo suyo que ya se había aplicado. El
--- cobro se queda, anulado, con su motivo: es el rastro.
+-- ANULAR UN COBRO mal registrado (dos veces, a la factura o a la cuenta
+-- equivocadas): nunca debió estar, y su asiento se reversa (en su fecha,
+-- si su mes sigue abierto), y también el de cada anticipo suyo que ya se
+-- había aplicado. El cobro se queda, anulado, con su motivo: es el rastro.
+-- Un cheque que REBOTÓ no es esto: el depósito sí pasó, y la devolución es
+-- otro hecho, en su fecha (fn_cobro_devolver). Uno ya devuelto no se anula
+-- (se sacaría dos veces).
 create or replace function public.fn_cobro_anular(p_cobro uuid, p_motivo text)
 returns jsonb
 language plpgsql
@@ -5065,6 +5878,11 @@ begin
   end if;
   if c.estado = 'anulado' then
     raise exception using errcode = 'MX008', message = format('Ese cobro ya estaba anulado (%s).', c.anulado_motivo);
+  end if;
+  if exists (select 1 from cobros_devoluciones dv where dv.cobro_id = c.id) then
+    raise exception using errcode = 'MX008',
+      message = format('Ese cobro ya se devolvió (%s): su devolución lo compensa, y anularlo lo sacaría dos veces del libro.',
+                       (select dv.fecha || ', ' || dv.motivo from cobros_devoluciones dv where dv.cobro_id = c.id));
   end if;
   -- Su asiento (y el de sus anticipos aplicados) no se reversa sobre una
   -- cuenta que ya está inactiva: el saldo quedaría atrapado en ella (c1).
@@ -5095,12 +5913,104 @@ end $$;
 revoke execute on function public.fn_cobro_anular(uuid, text) from public, anon, authenticated, service_role;
 grant  execute on function public.fn_cobro_anular(uuid, text) to authenticated;
 
+-- UN CHEQUE REBOTADO (o un depósito que el banco revirtió): la DEVOLUCIÓN,
+-- con la fecha en que el banco lo devolvió (igual o posterior al cobro).
+-- No reversa el depósito: ese pasó en su mes (el estado del banco lo
+-- trae) y sigue ahí; la devolución entra en el suyo, igual que en el banco
+-- (+8000 el 25-oct y −8000 el 3-nov: las dos conciliaciones casan, y al
+-- 31-oct el cliente sí había pagado). Anularlo (fn_cobro_anular) ponía su
+-- reverso el MISMO día del depósito: octubre quedaba sin el depósito que el
+-- banco sí tiene, y noviembre sin la devolución. La factura vuelve a quedar
+-- por cobrar (con su obra), el descuento se deshace y, si el cobro dejó
+-- anticipo, ya no está (también el que se aplicó a otra factura). El cobro
+-- sigue vigente (su movimiento del banco es de verdad); su devolución lo
+-- compensa. p_movimiento: el movimiento de la devolución en el banco (f06
+-- lo casa). Una devolución no se deshace: si se registró por error, el
+-- cobro se registra otra vez (fn_cobro_registrar) con su fecha.
+create or replace function public.fn_cobro_devolver(p_cobro uuid, p_fecha date, p_motivo text, p_movimiento text default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  c       cobros;
+  v_dv    cobros_devoluciones;
+  v_fecha date;
+  v_mov   text := nullif(btrim(p_movimiento), '');
+  v_inact text;
+  v_id    uuid;
+  v_res   jsonb;
+begin
+  perform fn_puente_exigir_dueno();
+  if coalesce(btrim(p_motivo), '') = '' then
+    raise exception using errcode = '22023', message = 'Una devolución dice por qué (motivo): p. ej. «el cheque 4471 rebotó».';
+  end if;
+  perform 1 from periodos for share;
+  select * into c from cobros where id = p_cobro for update;
+  if not found then
+    raise exception using errcode = '22023', message = 'No existe ese cobro.';
+  end if;
+  if c.estado = 'anulado' then
+    raise exception using errcode = 'MX008',
+      message = format('Ese cobro está anulado (%s): no hay depósito que devolver.', c.anulado_motivo);
+  end if;
+  select * into v_dv from cobros_devoluciones where cobro_id = c.id;
+  if found then
+    raise exception using errcode = 'MX008', message = format('Ese cobro ya se devolvió el %s (%s).', v_dv.fecha, v_dv.motivo);
+  end if;
+  if (fn_puente_vivo('cobros', c.id::text)).id is null then
+    raise exception using errcode = 'MX008',
+      message = 'Ese cobro todavía no está en el libro (míralo en la bandeja): no hay depósito que devolver.';
+  end if;
+  v_fecha := coalesce(p_fecha, fn_fecha_miami(now()));
+  if v_fecha < c.fecha then
+    raise exception using errcode = 'MX002',
+      message = format('La devolución (%s) no va antes que su cobro (%s): el banco devuelve lo que ya se depositó.', v_fecha, c.fecha);
+  end if;
+  if v_mov is not null and exists (select 1 from cobros_devoluciones x where x.movimiento_id = v_mov) then
+    raise exception using errcode = 'MX008',
+      message = format('El movimiento del banco %s ya es de otra devolución: el mismo dinero no sale dos veces.', v_mov);
+  end if;
+  -- El espejo va a las mismas cuentas del cobro: una ya inactiva no recibe
+  -- asientos. Se dice antes de tocar nada.
+  select string_agg(distinct s.x, ', ') into v_inact
+    from (select fn_puente_cuentas_inactivas((fn_puente_vivo('cobros', c.id::text)).id) as x
+          union all
+          select fn_puente_cuentas_inactivas((fn_puente_vivo('aplicaciones_cobro', ap.id::text)).id)
+            from aplicaciones_cobro ap where ap.cobro_id = c.id and ap.desde_anticipo) s
+   where s.x is not null;
+  if v_inact is not null then
+    raise exception using errcode = 'MX008',
+      message = format('El asiento de ese cobro usa %s, que ya está inactiva: la devolución va a las mismas cuentas y ahí ya no '
+                       'entra nada. Reactívala antes (update cuentas set activa = true where codigo = ''…'';), registra la '
+                       'devolución, y vuelve a inactivarla cuando quede sin saldo.', v_inact);
+  end if;
+  insert into cobros_devoluciones (cobro_id, fecha, monto, motivo, movimiento_id, creado_por)
+  values (c.id, v_fecha, c.monto, btrim(p_motivo), v_mov, auth.uid())
+  returning id into v_id;
+  v_res := fn_puente_devolucion(v_id, 'devolver');
+  if v_res->>'accion' not in ('posteado', 'sustituido') then
+    raise exception using errcode = 'MX008', message = format('La devolución no se pudo contabilizar: %s', v_res->>'motivo');
+  end if;
+  return jsonb_strip_nulls(jsonb_build_object('cobro', c.id, 'devolucion', v_id, 'asiento', v_res->>'asiento',
+                                              'fecha_contable', v_res->>'fecha_contable', 'tardio', v_res->>'tardio'));
+end $$;
+revoke execute on function public.fn_cobro_devolver(uuid, date, text, text) from public, anon, authenticated, service_role;
+grant  execute on function public.fn_cobro_devolver(uuid, date, text, text) to authenticated;
+
 -- APLICAR UN ANTICIPO a una factura de su obra: sin dinero nuevo (el
 -- dinero entró con el cobro). Solo lo que el anticipo tiene disponible,
 -- solo lo que la factura tiene abierto, y no antes de la factura (ni del
 -- cobro). Toma el cobro y la factura antes de mirar sus saldos: dos
--- anticipos a la vez a la misma factura se esperan.
-create or replace function public.fn_anticipo_aplicar(p_cobro uuid, p_factura bigint, p_monto text, p_fecha date default null)
+-- anticipos a la vez a la misma factura se esperan. p_es_retencion: lo
+-- aplica a la RETENCIÓN de la factura (su saldo en 1120, y la línea va a
+-- 1120), para cuando el cliente pagó la retención junto con otra cosa y
+-- quedó de anticipo; si lo que se aplica no cabe en 1110 y sí en su
+-- retención, el mensaje lo dice. No de un cobro que el banco devolvió (su
+-- anticipo ya no está), ni a una factura que está dos veces en el libro.
+create or replace function public.fn_anticipo_aplicar(p_cobro uuid, p_factura bigint, p_monto text, p_fecha date default null,
+                                                      p_es_retencion boolean default false)
 returns jsonb
 language plpgsql
 security definer
@@ -5111,9 +6021,14 @@ declare
   f         facturas;
   v_monto   numeric;
   v_fecha   date;
+  v_ret     boolean := coalesce(p_es_retencion, false);
   v_cxc     text := fn_puente_cuenta_de('cxc');
+  v_cret    text := fn_puente_cuenta_de('retencion_cxc');
+  v_cta     text;
   v_disp    numeric;
   v_saldo   numeric;
+  v_sret    numeric;
+  v_libro   numeric;
   v_id      uuid;
   v_res     jsonb;
 begin
@@ -5122,6 +6037,10 @@ begin
   select * into c from cobros where id = p_cobro for update;
   if not found or c.estado <> 'vigente' then
     raise exception using errcode = 'MX008', message = 'Ese cobro no existe o está anulado.';
+  end if;
+  if exists (select 1 from cobros_devoluciones dv where dv.cobro_id = c.id) then
+    raise exception using errcode = 'MX008',
+      message = 'El banco devolvió ese cobro (fn_cobro_devolver): su anticipo ya no está y no se aplica.';
   end if;
   select * into f from facturas where id = p_factura for update;
   if not found then
@@ -5142,6 +6061,9 @@ begin
     raise exception using errcode = 'MX002',
       message = format('Un anticipo se aplica a la factura #%s cuando ya existe: el %s o después (llegó %s).', f.num, f.fecha, v_fecha);
   end if;
+  if v_ret and fn_puente_cuenta_mal(v_cret) is not null then
+    raise exception using errcode = 'MX004', message = format('La cuenta de retención: %s.', fn_puente_cuenta_mal(v_cret));
+  end if;
   -- Lo disponible: lo que el anticipo de este cobro tiene a favor, en la
   -- obra de la factura.
   select -coalesce(sum(l.monto), 0) into v_disp
@@ -5151,18 +6073,42 @@ begin
     raise exception using errcode = 'MX008',
       message = format('El anticipo de ese cobro tiene disponibles %s en la obra %s; no alcanza para %s.', v_disp, f.proyecto_id, v_monto);
   end if;
+  -- Con más por cobrar en el libro que su monto, la factura está dos
+  -- veces (fn_cobro_registrar dice lo mismo): no se le aplica nada.
   v_saldo := fn_puente_saldo(v_cxc, 'facturas', f.id::text);
-  if v_monto > v_saldo then
-    raise exception using errcode = 'MX008', message = format('La factura #%s tiene abiertos %s: no cabe %s.', f.num, v_saldo, v_monto);
+  v_sret  := fn_puente_saldo(v_cret, 'facturas', f.id::text);
+  v_libro := v_saldo + v_sret;
+  if f.monto is not null and v_libro > round(f.monto, 2) then
+    raise exception using errcode = 'MX008',
+      message = format('La factura #%s tiene %s por cobrar en el libro y su monto es %s: está dos veces. No se le aplica nada '
+                       'hasta arreglarla (control partidas de select * from fn_puentes_verificar();).', f.num, v_libro,
+                       round(f.monto, 2));
   end if;
-  insert into aplicaciones_cobro (cobro_id, factura_id, proyecto_id, monto, desde_anticipo, fecha, creado_por)
-  values (c.id, f.id, f.proyecto_id, v_monto, true, v_fecha, auth.uid())
+  v_cta := case when v_ret then v_cret else v_cxc end;
+  if v_ret then
+    v_saldo := v_sret;
+  end if;
+  if v_monto > v_saldo then
+    raise exception using errcode = 'MX008',
+      message = format('La factura #%s tiene abiertos %s en %s: no cabe %s.%s', f.num, v_saldo, v_cta, v_monto,
+                       case when not v_ret and v_sret > 0 and v_monto <= v_sret
+                            then format(' Su retención tiene %s por cobrar en %s: si ese anticipo es la retención que el '
+                                        'cliente pagó, aplícalo a ella: select fn_anticipo_aplicar(%L, %s, %L, %L, true);',
+                                        v_sret, v_cret, c.id, f.id, v_monto::text, v_fecha)
+                            else '' end);
+  end if;
+  insert into aplicaciones_cobro (cobro_id, factura_id, proyecto_id, monto, es_retencion, desde_anticipo, fecha, creado_por)
+  values (c.id, f.id, f.proyecto_id, v_monto, v_ret, true, v_fecha, auth.uid())
   returning id into v_id;
   v_res := fn_puente_aplicacion(v_id, 'aplicar');
-  return jsonb_build_object('aplicacion', v_id, 'asiento', v_res->>'asiento', 'fecha_contable', v_res->>'fecha_contable');
+  if v_res->>'accion' not in ('posteado', 'sustituido', 'sin_cambios') then
+    raise exception using errcode = 'MX008', message = format('El anticipo no se pudo aplicar: %s', v_res->>'motivo');
+  end if;
+  return jsonb_build_object('aplicacion', v_id, 'asiento', v_res->>'asiento', 'fecha_contable', v_res->>'fecha_contable',
+                            'es_retencion', v_ret);
 end $$;
-revoke execute on function public.fn_anticipo_aplicar(uuid, bigint, text, date) from public, anon, authenticated, service_role;
-grant  execute on function public.fn_anticipo_aplicar(uuid, bigint, text, date) to authenticated;
+revoke execute on function public.fn_anticipo_aplicar(uuid, bigint, text, date, boolean) from public, anon, authenticated, service_role;
+grant  execute on function public.fn_anticipo_aplicar(uuid, bigint, text, date, boolean) to authenticated;
 
 -- ANULAR UNA FACTURA EMITIDA: con su NOTA DE CRÉDITO (número propio, sin
 -- huecos, por año: NC-2026-0001), que salda la factura como está hoy (lo
@@ -5191,6 +6137,7 @@ declare
   v_numero text;
   v_nc     uuid;
   v_res    jsonb;
+  v_aper   jsonb;
 begin
   perform fn_puente_exigir_dueno();
   if coalesce(btrim(p_motivo), '') = '' then
@@ -5210,6 +6157,28 @@ begin
     raise exception using errcode = 'MX008',
       message = format('La factura #%s está en borrador: todavía no se emitió, no se anula (se corrige o se borra).', f.num);
   end if;
+  -- La que trae la APERTURA (su saldo al 30-sep vino de QuickBooks) no se
+  -- anula con nota de crédito: la nota saldaría una partida que no puso su
+  -- puente, y el mensaje de abajo mandaba a reversar el asiento de apertura
+  -- ENTERO (toda la balanza). Lo que no se deba se corrige en la apertura,
+  -- contra su partida. Si además tiene el asiento de su puente, está dos
+  -- veces: la siguiente pasada del puente reversa el suyo.
+  v_aper := fn_puente_en_apertura('facturas', f.id::text);
+  if v_aper is not null then
+    raise exception using errcode = 'MX008',
+      message = format('La factura #%s está en la apertura (%s) con %s por cobrar: su saldo al 30-sep vino de QuickBooks. No se '
+                       'anula con nota de crédito: si ya no se debe, %s contra su partida facturas/%s (Dr 3900 / Cr la cuenta '
+                       'por cobrar, con su obra).%s', f.num, v_aper->>'asientos', (v_aper->>'saldo')::numeric,
+                       case when exists (select 1 from periodos p where p.tipo = 'apertura' and p.estado = 'abierto')
+                            then 'la apertura sigue abierta: se corrige con otro asiento de apertura del 30-sep (tipo apertura)'
+                            else format('se corrige con un ajuste a la apertura (tipo ajuste_cpa, afecta_periodo = %L)',
+                                        v_aper->>'apertura') end,
+                       f.id,
+                       case when (fn_puente_vivo('facturas', f.id::text)).id is not null
+                            then format(' Además tiene el asiento de su puente (%s): está dos veces en el libro; select '
+                                        'fn_puentes_correr(); reversa el del puente.', (fn_puente_vivo('facturas', f.id::text)).numero)
+                            else '' end);
+  end if;
   if f.fecha < fn_puente_corte() then
     raise exception using errcode = 'MX008',
       message = format('La factura #%s es de antes del corte: su saldo viene de QuickBooks en la apertura. Se corrige con un '
@@ -5221,7 +6190,7 @@ begin
     from asiento_lineas l
     join asientos a on a.id = l.asiento_id
    where l.partida_tabla = 'facturas' and l.partida_id = f.id::text
-     and a.origen_tabla in ('cobros', 'aplicaciones_cobro');
+     and a.origen_tabla in ('cobros', 'aplicaciones_cobro', 'cobros_devoluciones');
   if v_cobros <> 0 then
     raise exception using errcode = 'MX008',
       message = format('La factura #%s tiene cobros aplicados por %s: anula antes esos cobros (fn_cobro_anular). Una nota por '
@@ -5302,6 +6271,96 @@ end $$;
 revoke execute on function public.fn_factura_anular(bigint, text, date) from public, anon, authenticated, service_role;
 grant  execute on function public.fn_factura_anular(bigint, text, date) to authenticated;
 
+-- APROBAR LAS HORAS de un trabajador en un período (un toque por empleado),
+-- desde la app o desde el SQL Editor: aprueba LO QUE EDGAR VIO. p_visto es
+-- lo que la pantalla le enseñó: {"reportes": N, "horas": "H"} (cuántos
+-- reportes y cuántas horas), o {"ids": [...]} (cuáles). Si lo que hay por
+-- aprobar ya no es eso —alguien reportó, cambió o borró entre que Edgar
+-- miró y que tocó—, MX008 con lo que hay ahora, y no aprueba nada: se
+-- vuelve a mirar. Antes aprobaba lo que hubiera en la tabla en ese
+-- instante, también lo que un trabajador metía por la API mientras tanto
+-- (y eso entraba al devengo y a la clave de reparto de la nómina). Solo lo
+-- que no estaba aprobado, con sus filas tomadas mientras. El update toca
+-- únicamente la aprobación: la guarda de correcciones de la app
+-- (trg_guarda_correccion) no corre con eso (B.6 la rehace así), de modo que
+-- aprobar no se topa con «pídele permiso a Edgar» ni gasta el permiso de
+-- corrección de un trabajador. La guarda de horas apunta cada aprobación en
+-- horas_aprobaciones, con lo que se vio. Devuelve cuántos reportes, cuántas
+-- horas y cuáles (ids).
+create or replace function public.fn_horas_aprobar(p_usuario uuid, p_desde date, p_hasta date, p_visto jsonb default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_n      int;
+  v_horas  numeric;
+  v_ids    bigint[];
+  v_ver    bigint[];
+  v_vn     int;
+  v_vh     numeric;
+  v_hechos bigint[];
+begin
+  perform fn_puente_exigir_dueno();
+  if p_usuario is null or p_desde is null or p_hasta is null or p_desde > p_hasta then
+    raise exception using errcode = '22023', message = 'Se aprueba un trabajador en un período: usuario, desde y hasta (desde ≤ hasta).';
+  end if;
+  if p_visto is null or jsonb_typeof(p_visto) <> 'object' or not (p_visto ? 'ids' or (p_visto ? 'reportes' and p_visto ? 'horas')) then
+    raise exception using errcode = '22023',
+      message = format('Aprobar dice lo que viste, para no aprobar lo que alguien metió después: select fn_horas_aprobar(%L, %L, %L, '
+                       '''{"reportes": N, "horas": "H"}''); (o ''{"ids": [...]}''). Lo que hay por aprobar: select id, fecha, '
+                       'proyecto_id, horas from horas where usuario_id = %L and fecha between %L and %L and aprobado_el is null '
+                       'order by fecha;', p_usuario, p_desde, p_hasta, p_usuario, p_desde, p_hasta);
+  end if;
+  -- Lo que hay por aprobar, con sus filas tomadas: nadie las cambia mientras.
+  select coalesce(array_agg(x.id order by x.id), '{}'), count(*), coalesce(sum(x.horas), 0)
+    into v_ids, v_n, v_horas
+    from (select h.id, h.horas from horas h
+           where h.usuario_id = p_usuario and h.fecha between p_desde and p_hasta and h.aprobado_el is null
+           order by h.id
+             for update) x;
+  if p_visto ? 'ids' then
+    begin
+      select coalesce(array_agg(distinct x.v::bigint order by x.v::bigint), '{}') into v_ver
+        from jsonb_array_elements_text(p_visto->'ids') x(v);
+    exception when others then
+      raise exception using errcode = '22023', message = 'ids es la lista de los números de reporte que viste (p. ej. [12, 15]).';
+    end;
+    if v_ver is distinct from v_ids then
+      raise exception using errcode = 'MX008',
+        message = format('Lo que hay por aprobar ya no es lo que viste: ahora son los reportes %s (%s horas), y viste %s. Alguien '
+                         'reportó, cambió o borró horas entre medias: vuelve a mirarlas antes de aprobar.', v_ids::text,
+                         trim_scale(v_horas), v_ver::text);
+    end if;
+  else
+    begin
+      v_vn := (p_visto->>'reportes')::int;
+      v_vh := (p_visto->>'horas')::numeric;
+    exception when others then
+      raise exception using errcode = '22023', message = 'reportes es un número entero y horas un número (como texto: "27.5").';
+    end;
+    if v_vn is distinct from v_n or v_vh is distinct from v_horas then
+      raise exception using errcode = 'MX008',
+        message = format('Lo que hay por aprobar ya no es lo que viste: ahora son %s reportes y %s horas, y viste %s y %s. Alguien '
+                         'reportó, cambió o borró horas entre medias: vuelve a mirarlas antes de aprobar.', v_n, trim_scale(v_horas),
+                         coalesce(v_vn::text, '?'), coalesce(trim_scale(v_vh)::text, '?'));
+    end if;
+  end if;
+  perform set_config('mx_puente.aprobacion', p_visto::text, true);
+  with a as (
+    update horas set aprobado_por = auth.uid(), aprobado_el = clock_timestamp()
+     where id = any (v_ids) and aprobado_el is null
+    returning horas.id
+  )
+  select coalesce(array_agg(a.id order by a.id), '{}') into v_hechos from a;
+  perform set_config('mx_puente.aprobacion', '', true);
+  return jsonb_build_object('usuario', p_usuario, 'desde', p_desde, 'hasta', p_hasta, 'reportes', v_n, 'horas', v_horas,
+                            'ids', to_jsonb(v_hechos));
+end $$;
+revoke execute on function public.fn_horas_aprobar(uuid, date, date, jsonb) from public, anon, authenticated, service_role;
+grant  execute on function public.fn_horas_aprobar(uuid, date, date, jsonb) to authenticated;
+
 -- EL DEVENGO ESTÁNDAR DE HORAS (opcional, al cierre de un mes): Dr 5000 por
 -- obra / Cr 2210, por las horas APROBADAS del mes × costos_equipo.costo_hora.
 -- Etiquetado ESTÁNDAR en todas partes: no es la nómina real (esa es del
@@ -5362,12 +6421,17 @@ begin
      and a.camino not in ('reverso', 'reverso_automatico')
      and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso');
   -- Lo que entra: horas aprobadas del mes, con obra y con costo por hora, de
-  -- quien no es el dueño.
+  -- quien no es el dueño, y con medida (más de 0 y hasta 24 por reporte:
+  -- unas horas negativas pasaban costo de una obra a otra sin mover el
+  -- total, y unas de miles inflaban el 5000; la guarda de horas ya no las
+  -- deja entrar desde el equipo, y aquí quedan fuera, contadas, las que
+  -- hubiera escrito el dueño).
   with h as (
     select h.id, h.proyecto_id, nullif(btrim(h.co), '') as co, h.horas, ce.costo_hora
       from horas h
       join costos_equipo ce on ce.usuario_id = h.usuario_id
      where h.fecha between v_per.desde and v_per.hasta and h.aprobado_el is not null and h.proyecto_id is not null
+       and scale(h.horas) is not null and h.horas > 0 and h.horas <= 24
        and not exists (select 1 from perfiles p where p.id = h.usuario_id and p.rol = 'dueno')
   ), g as (
     select h.proyecto_id, h.co, sum(h.horas) as horas, round(sum(h.horas * h.costo_hora), 2) as monto
@@ -5386,6 +6450,7 @@ begin
     into v_detalle
     from horas h join costos_equipo ce on ce.usuario_id = h.usuario_id
    where h.fecha between v_per.desde and v_per.hasta and h.aprobado_el is not null and h.proyecto_id is not null
+     and scale(h.horas) is not null and h.horas > 0 and h.horas <= 24
      and not exists (select 1 from perfiles p where p.id = h.usuario_id and p.rol = 'dueno');
   select jsonb_build_object(
            'sin_aprobar', count(*) filter (where h.aprobado_el is null),
@@ -5394,7 +6459,10 @@ begin
                                              and exists (select 1 from perfiles p where p.id = h.usuario_id and p.rol = 'dueno')),
            'sin_costo',   count(*) filter (where h.aprobado_el is not null and h.proyecto_id is not null
                                              and not exists (select 1 from perfiles p where p.id = h.usuario_id and p.rol = 'dueno')
-                                             and not exists (select 1 from costos_equipo ce where ce.usuario_id = h.usuario_id)))
+                                             and not exists (select 1 from costos_equipo ce where ce.usuario_id = h.usuario_id)),
+           'fuera_de_medida', count(*) filter (where h.aprobado_el is not null and h.proyecto_id is not null
+                                             and not exists (select 1 from perfiles p where p.id = h.usuario_id and p.rol = 'dueno')
+                                             and not (scale(h.horas) is not null and h.horas > 0 and h.horas <= 24)))
     into v_fuera
     from horas h
    where h.fecha between v_per.desde and v_per.hasta;
@@ -5429,7 +6497,8 @@ begin
       'origen_tabla', 'horas_devengo', 'origen_id', p_mes,
       'procedencia', jsonb_build_object('funcion', 'fn_horas_devengar', 'etiqueta', 'estándar',
                                         'regla', 'horas aprobadas × costos_equipo.costo_hora, por obra y CO; sin las del dueño '
-                                                 '(oficial: su parte de obra es del journal, 5001)',
+                                                 '(oficial: su parte de obra es del journal, 5001) ni las de fuera de medida '
+                                                 '(de más de 0 a 24 por reporte)',
                                         'corte_nomina', 'sin journal de nómina en el mes al devengar: todas sus horas aprobadas '
                                                         'están sin pagar (f11 traerá el «pagado hasta» de cada corrida)',
                                         'fuera', v_fuera)));
@@ -5475,6 +6544,100 @@ end $$;
 revoke execute on function public.fn_horas_devengar(text) from public, anon, authenticated, service_role;
 grant  execute on function public.fn_horas_devengar(text) to authenticated;
 
+-- EL CIERRE DE UN MES MIRA SU DEVENGO (cabecera, punto 16). Un mes no se
+-- cierra con un devengo estándar que ya no es el de hoy: el que convive con
+-- el journal de nómina del mes (contaría dos veces esas horas: el 5000 del
+-- mes al doble, y el siguiente sin ellas por el reverso del día 1) o el de
+-- unas horas aprobadas que cambiaron. Abierto, fn_horas_devengar lo pone al
+-- día o lo deshace; cerrado, ya no (MX002), y el control devengo lo tendría
+-- que decir para siempre. Vale para fn_cerrar_periodo y para el SQL Editor
+-- (es un trigger de periodos, no de la función). Lee lo mismo que
+-- fn_horas_devengar.
+create or replace function public.fn_puente_periodos_devengo()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_vivo asientos;
+  v_plan jsonb;
+begin
+  -- (La condición va aquí y no en el WHEN del trigger: un trigger que nombra
+  -- columnas impide el ALTER TABLE … TYPE de esas columnas, y c2 lo usa
+  -- para comprobar que un cambio así se delata.)
+  if not (old.estado = 'abierto' and new.estado = 'cerrado' and new.tipo = 'mes') then
+    return new;
+  end if;
+  v_vivo := fn_puente_vivo('horas_devengo', new.periodo);
+  if v_vivo.id is null then
+    return new;
+  end if;
+  v_plan := fn_puente_devengo_plan(new.periodo);
+  if v_plan->>'codigo' = 'nomina_en_el_mes' then
+    raise exception using errcode = 'MX008',
+      message = format('El mes %s no se cierra con su devengo estándar (%s) y el journal de nómina del mes (%s) juntos: contaría '
+                       'dos veces esas horas, y cerrado ya no se deshace. Deshazlo antes: select fn_horas_devengar(%L); y '
+                       'ciérralo después.', new.periodo, v_vivo.numero,
+                       (select string_agg(n.v, ', ') from jsonb_array_elements_text(v_plan->'nomina') n(v)), new.periodo);
+  end if;
+  if v_vivo.procedencia->>'firma' is distinct from v_plan->>'firma' then
+    raise exception using errcode = 'MX008',
+      message = format('El mes %s no se cierra con su devengo estándar (%s) desfasado: las horas aprobadas del mes cambiaron '
+                       'después de devengarlo, y cerrado ya no se pone al día. Ponlo al día antes: select '
+                       'fn_horas_devengar(%L); (lo rehace con las horas de hoy, o lo deshace si ya no hay), y ciérralo después.',
+                       new.periodo, v_vivo.numero, new.periodo);
+  end if;
+  return new;
+end $$;
+revoke execute on function public.fn_puente_periodos_devengo() from public, anon, authenticated, service_role;
+
+create or replace trigger trg_puente_periodos_devengo
+  before update on public.periodos
+  for each row execute function public.fn_puente_periodos_devengo();
+
+-- UNA FACTURA, UNA PARTIDA, UNA OBRA (cabecera, punto 6). Toda línea de
+-- 1110 o 1120 contra la partida facturas/<id> va con la obra de ESA
+-- factura: la del puente, la de sus cobros y sus anticipos, la de su nota
+-- de crédito, la de la apertura (f04) y la de un asiento a mano. Sin esto,
+-- una apertura sin obra (en c1 la obra de 1110 es opcional, y QuickBooks
+-- no la trae) y un cobro con la obra de la factura dejaban la misma
+-- factura, ya cobrada, como dos partidas abiertas: +2000 sin obra desde
+-- el 30-sep y −2000 en la obra, vencida en la antigüedad de saldos. Las
+-- líneas de un reverso no se juzgan: copian un asiento que ya entró (como
+-- en la guarda de c2).
+create or replace function public.fn_puente_lineas_partida()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  f facturas;
+begin
+  if new.partida_tabla is distinct from 'facturas'
+     or new.asiento_id::text = coalesce(current_setting('mx_libro.reverso_de', true), '') then
+    return new;
+  end if;
+  if new.cuenta not in (fn_puente_cuenta_de('cxc'), fn_puente_cuenta_de('retencion_cxc'))
+     or coalesce(new.partida_id, '') !~ '^-?[0-9]{1,18}$' then
+    return new;
+  end if;
+  select * into f from facturas where id = new.partida_id::bigint;
+  if found and new.proyecto_id is distinct from f.proyecto_id then
+    raise exception using errcode = 'MX006',
+      message = format('Línea %s: la partida facturas/%s es la factura #%s, de %s: en %s va con esa obra (llegó %s). Una factura '
+                       'es una sola partida por cobrar, con su obra: así la cuenta por cobrar por obra y la antigüedad de '
+                       'saldos no la parten en dos.', new.orden, new.partida_id, f.num,
+                       coalesce('la obra ' || f.proyecto_id, 'ninguna obra'), new.cuenta,
+                       coalesce('la obra ' || new.proyecto_id, 'sin obra'));
+  end if;
+  return new;
+end $$;
+revoke execute on function public.fn_puente_lineas_partida() from public, anon, authenticated, service_role;
+
+create or replace trigger trg_puente_lineas_partida
+  before insert on public.asiento_lineas
+  for each row execute function public.fn_puente_lineas_partida();
+
 
 -- ---------------------------------------------------------------------
 -- B.8 · El doble toque sin señal (recibos.llave_cliente, única): el mismo
@@ -5485,24 +6648,46 @@ grant  execute on function public.fn_horas_devengar(text) to authenticated;
 create unique index if not exists recibos_llave_cliente_unica on public.recibos (llave_cliente);
 -- Y lo mismo en los cobros (fn_cobro_registrar devuelve el que ya estaba).
 create unique index if not exists cobros_llave_cliente_unica on public.cobros (llave_cliente) where llave_cliente is not null;
--- Una foto, un recibo. La ruta ES el papel que lee la lectura: dos recibos
--- con la misma foto serían el mismo ticket dos veces en el libro (la guarda
--- ya lo rechaza; el índice lo cierra también para quien no pasa por ella).
--- Solo si hoy no hay rutas repetidas: si las hay, el pegado sigue, esos
--- recibos esperan en la bandeja como duplicados y el control duplicados los
--- enseña; cuando se anulen, el siguiente pegado crea el índice.
+-- Una foto, un recibo VIVO. La ruta ES el papel que lee la lectura: dos
+-- recibos con la misma foto serían el mismo ticket dos veces en el libro
+-- (la guarda ya lo rechaza; el índice lo cierra también para dos subidas a
+-- la vez, que la guarda no ve, y para quien no pasa por ella). Los
+-- anulados no cuentan: un recibo anulado no se borra ni suelta su foto
+-- (es el rastro), y contarlo dejaba sin índice, para siempre, a una base
+-- que alguna vez tuvo el mismo ticket dos veces. Solo si hoy no hay dos
+-- VIVOS con la misma foto: si los hay, el pegado sigue, esos recibos
+-- esperan en la bandeja como duplicados y el control duplicados los
+-- enseña; cuando se anule el repetido (fn_recibo_anular), el siguiente
+-- pegado crea el índice. (Una versión anterior lo pedía entre todos,
+-- anulados incluidos: se rehace si es esa.)
 do $$
 begin
+  if to_regclass('public.recibos_ruta_unica') is not null
+     and pg_get_indexdef(to_regclass('public.recibos_ruta_unica')) not like '%anulado%' then
+    drop index public.recibos_ruta_unica;
+  end if;
   if to_regclass('public.recibos_ruta_unica') is null then
     if exists (select 1 from public.recibos
-                where nullif(btrim(ruta), '') is not null
+                where nullif(btrim(ruta), '') is not null and estado is distinct from 'anulado'
                 group by btrim(ruta) having count(*) > 1) then
-      raise notice 'c3-puentes: hay recibos que comparten foto (ruta): no se crea recibos_ruta_unica. El control duplicados los enseña.';
+      raise notice 'c3-puentes: hay recibos vivos que comparten foto (ruta): no se crea recibos_ruta_unica. El control '
+                   'duplicados los enseña; anula el repetido y vuelve a pegar.';
     else
-      create unique index recibos_ruta_unica on public.recibos (btrim(ruta)) where nullif(btrim(ruta), '') is not null;
+      create unique index recibos_ruta_unica on public.recibos (btrim(ruta))
+        where nullif(btrim(ruta), '') is not null and estado is distinct from 'anulado';
     end if;
   end if;
 end $$;
+-- Las dos búsquedas de la pregunta «duplicado» (fn_puente_recibo_plan) van
+-- por índice: la foto (con anulados o sin ellos) y el ticket (el número y
+-- el total, como los compara fn_puente_recibo_ticket). Sin ellos, cada
+-- recibo leía todos los demás, y el backfill crecía al cuadrado.
+create index if not exists recibos_ruta_idx on public.recibos (btrim(ruta));
+-- (Con funciones del sistema, no con fn_puente_recibo_ticket: la
+-- expresión de un índice se evalúa con los permisos de quien inserta, y la
+-- app y el conector no tienen permiso sobre las ayudantes de los puentes.)
+create index if not exists recibos_ticket_idx
+  on public.recibos ((nullif(regexp_replace(lower(coalesce(num_recibo, '')), '[^0-9a-z]', '', 'g'), '')), (round(total, 2)));
 
 
 -- ---------------------------------------------------------------------
@@ -5684,6 +6869,19 @@ begin
     raise exception using errcode = 'MX008',
       message = format('El recibo %s no está anulado (está «%s»): no hay nada que des-anular.', p_id, coalesce(r.estado, 'por_leer'));
   end if;
+  -- Una foto, un recibo vivo (recibos_ruta_unica, B.8): si otro recibo
+  -- vivo ya tiene su foto, este fue su repetido y se queda anulado.
+  if nullif(btrim(r.ruta), '') is not null
+     and exists (select 1 from recibos o
+                  where btrim(o.ruta) = btrim(r.ruta) and o.id <> r.id and o.estado is distinct from 'anulado') then
+    raise exception using errcode = 'MX008',
+      message = format('La foto del recibo %s (%s) ya es del recibo %s, que está vivo: un papel cuenta una vez. Si el bueno es '
+                       'este, anula antes aquel (select fn_recibo_anular(%s, ''motivo'');).', p_id, btrim(r.ruta),
+                       (select min(o.id) from recibos o
+                         where btrim(o.ruta) = btrim(r.ruta) and o.id <> r.id and o.estado is distinct from 'anulado'),
+                       (select min(o.id) from recibos o
+                         where btrim(o.ruta) = btrim(r.ruta) and o.id <> r.id and o.estado is distinct from 'anulado'));
+  end if;
   v_est := case when r.total is not null then 'leido'
                 when nullif(btrim(r.ruta), '') is null then 'sin_foto'
                 else 'por_leer' end;
@@ -5749,6 +6947,12 @@ begin
     perform 1 from trabajos_externos where id = p_id for update;
     v_plan := fn_puente_externo_plan(p_id);
   end if;
+  -- Lo que pregunta: la duda por la que espera, o la del aviso con que ya
+  -- entró (un total tecleado por Edgar que el subtotal y el tax no suman:
+  -- confirmarlo quita el aviso).
+  if v_plan->>'accion' = 'postear' then
+    v_plan := coalesce(v_plan->'aviso', '{}'::jsonb) || jsonb_build_object('accion', 'postear', 'documento', v_plan->'documento');
+  end if;
   if v_plan->>'codigo' is distinct from p_codigo then
     raise exception using errcode = 'MX008',
       message = format('%s %s no está esperando por eso (%s): está en «%s». %s', p_tabla, p_id, p_codigo,
@@ -5807,7 +7011,7 @@ grant  execute on function public.fn_puentes_antes_del_corte(text, bigint, text)
 --   documentos   cada papel apunta a su asiento vivo (contabilizado_en) y
 --                cada asiento vivo de puente tiene su papel; y ningún papel
 --                contabilizado cambió por debajo de su puente (su firma de
---                hoy es la de su asiento)
+--                hoy es la de su asiento; la de un recibo, sin planearlo)
 --   sin_evaluar  papeles desde el corte (o subidos desde el corte) que el
 --                puente nunca miró (se arregla con fn_puentes_correr())
 --   bandeja      cuántos papeles pendientes, en espera, con error y con
@@ -5821,8 +7025,9 @@ grant  execute on function public.fn_puentes_antes_del_corte(text, bigint, text)
 --                papel del puente con su propia cuenta
 --   use_tax      ninguna línea de un recibo en 2300
 --   mano_de_obra ninguna línea de mano de obra directa (5000, 5001) que no
---                venga de la nómina (f11), de un ajuste del CPA, de un
---                reverso o, la 5000, del devengo estándar de
+--                venga de la nómina (f11), de un ajuste del CPA de un
+--                ejercicio anterior o que solo reclasifica entre costos y
+--                gastos, de un reverso o, la 5000, del devengo estándar de
 --                fn_horas_devengar (5000 contra 2210; uno a mano marcado
 --                «reversible» no lo es): «un asiento de mano de obra solo
 --                puede nacer de un journal o de un devengo reversible» (f03). Y su burden (5010-5019), como lo dice
@@ -5834,15 +7039,21 @@ grant  execute on function public.fn_puentes_antes_del_corte(text, bigint, text)
 --   partidas     ninguna factura en negativo en 1110/1120 (cobrada de más,
 --                o su ingreso reversado), ninguna anulada con saldo en
 --                ninguna de las dos (por cuenta, no la suma) ni con un
---                cobro vivo, ningún anticipo con saldo deudor, y ningún
---                papel dos veces (en la apertura y por su puente)
+--                cobro vivo sin devolver, ninguna con más por cobrar que
+--                su monto, ninguna con su partida en otra obra que la
+--                suya, ningún anticipo con saldo deudor, y ningún papel
+--                dos veces (en la apertura y por su puente: recibos,
+--                trabajos externos y facturas)
 --   devengo      cada devengo estándar vivo de un mes abierto es el de las
 --                horas aprobadas de hoy, y el mes no tiene journal de
 --                nómina (si no, fn_horas_devengar lo pone al día o lo
---                deshace)
+--                deshace); y ningún mes CERRADO con devengo y journal
+--                juntos sin el asiento que lo corrige (que lo nombra en su
+--                motivo)
 --   duplicados   ningún recibo dos veces en el libro: la misma foto, o el
---                mismo ticket (proveedor, número y total), salvo lo que
---                Edgar confirmó
+--                mismo ticket (número y total, del mismo proveedor o del
+--                mismo día), salvo lo que Edgar confirmó; y ningún
+--                depósito dos veces (dos cobros vigentes iguales)
 --   cuentas_inactivas  ninguna cuenta inactiva con saldo vivo (c1)
 --   vistas       ninguna vista que lea los papeles con los permisos de su
 --                dueño (recibos_equipo…) se puede escribir por la API: por
@@ -5884,6 +7095,10 @@ begin
                  ('aplicaciones_cobro',      'trg_puente_aplicaciones_sin_truncate',     'fn_puente_papeles_guarda'),
                  ('notas_credito',           'trg_puente_notas_credito_guarda',          'fn_puente_papeles_guarda'),
                  ('notas_credito',           'trg_puente_notas_credito_sin_truncate',    'fn_puente_papeles_guarda'),
+                 ('cobros_devoluciones',     'trg_puente_devoluciones_guarda',           'fn_puente_papeles_guarda'),
+                 ('cobros_devoluciones',     'trg_puente_devoluciones_sin_truncate',     'fn_puente_papeles_guarda'),
+                 ('asiento_lineas',          'trg_puente_lineas_partida',                'fn_puente_lineas_partida'),
+                 ('periodos',                'trg_puente_periodos_devengo',              'fn_puente_periodos_devengo'),
                  ('puente_reglas_historial', 'trg_puente_reglas_historial_guarda',       'fn_puente_papeles_guarda'),
                  ('puente_reglas_historial', 'trg_puente_reglas_historial_sin_truncate', 'fn_puente_papeles_guarda'),
                  ('horas_aprobaciones',      'trg_puente_horas_aprobaciones_guarda',     'fn_puente_papeles_guarda'),
@@ -5940,12 +7155,14 @@ begin
          union all select 'cobros', c.id::text, c.contabilizado_en from cobros c
          union all select 'aplicaciones_cobro', a.id::text, a.contabilizado_en from aplicaciones_cobro a where a.desde_anticipo
          union all select 'notas_credito', n.id::text, n.contabilizado_en from notas_credito n
+         union all select 'cobros_devoluciones', d.id::text, d.contabilizado_en from cobros_devoluciones d
        ),
        vivos as (
          select a.origen_tabla as tabla, a.origen_id as id, a.id as asiento, a.numero, a.procedencia->>'firma' as firma
            from asientos a
           where a.camino = 'puente'
-            and a.origen_tabla in ('recibos', 'facturas', 'trabajos_externos', 'cobros', 'aplicaciones_cobro', 'notas_credito')
+            and a.origen_tabla in ('recibos', 'facturas', 'trabajos_externos', 'cobros', 'aplicaciones_cobro', 'notas_credito',
+                                   'cobros_devoluciones')
             and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso')
        )
   select coalesce(jsonb_agg(s.falla order by s.falla), '[]'::jsonb) into v_malos
@@ -5970,11 +7187,14 @@ begin
                                   'al día', v.tabla, v.id, v.numero) end
             from vivos v
             left join puente_documentos d on d.tabla = v.tabla and d.documento_id = v.id
+           -- (Los recibos, por su firma sola: planear cada recibo del libro,
+           -- con su búsqueda de duplicados, tardaba más que el tope de la API
+           -- con unos miles.)
            where v.tabla in ('recibos', 'trabajos_externos', 'facturas')
              and v.firma is distinct from (case v.tabla
-                                             when 'recibos'           then fn_puente_recibo_plan(v.id::bigint)
-                                             when 'trabajos_externos' then fn_puente_externo_plan(v.id::bigint)
-                                             else fn_puente_factura_plan(v.id::bigint) end)->>'firma'
+                                             when 'recibos'           then fn_puente_recibo_firma(v.id::bigint)
+                                             when 'trabajos_externos' then fn_puente_externo_plan(v.id::bigint)->>'firma'
+                                             else fn_puente_factura_plan(v.id::bigint)->>'firma' end)
           limit 50) s;
   control := 'documentos';
   ok      := jsonb_array_length(v_malos) = 0;
@@ -6048,17 +7268,21 @@ begin
           select format('tipo de obra «%s» → %s: %s', m.tipo, m.cuenta, fn_puente_cuenta_mal(m.cuenta))
             from mapeo_tipo_proyecto m where m.confirmado_el is not null and fn_puente_cuenta_mal(m.cuenta) is not null
           union all
-          select format('forma de pago «%s» (%s) → %s: no es un banco', m.metodo_pago, m.forma, m.cuenta)
+          -- (De donde sale un pago: un banco, una tarjeta o el bolsillo de
+          -- alguien; nunca un pasivo de nómina, que concilia el 941 y el
+          -- RT-6, ni un préstamo: fn_puente_cuenta_pago_mal.)
+          select format('forma de pago «%s» (%s) → %s: %s', m.metodo_pago, m.forma, m.cuenta,
+                        fn_puente_cuenta_pago_mal(m.forma, m.cuenta))
             from mapeo_metodo_pago m
-            join cuentas c on c.codigo = m.cuenta
-           where m.confirmado_el is not null and (m.forma = 'banco' or c.tipo = 'activo') and not fn_puente_es_banco(m.cuenta)
+           where m.confirmado_el is not null and m.cuenta is not null and fn_puente_cuenta_mal(m.cuenta) is null
+             and fn_puente_cuenta_pago_mal(m.forma, m.cuenta) is not null
           union all
           select format('tarjeta %s → %s: %s', t.ultimos4, t.cuenta, fn_puente_cuenta_mal(t.cuenta))
             from tarjetas t where t.activa and fn_puente_cuenta_mal(t.cuenta) is not null
           union all
-          select format('tarjeta %s → %s: una cuenta de activo que no es un banco', t.ultimos4, t.cuenta)
-            from tarjetas t join cuentas c on c.codigo = t.cuenta
-           where t.activa and c.tipo = 'activo' and not fn_puente_es_banco(t.cuenta)
+          select format('tarjeta %s → %s: %s', t.ultimos4, t.cuenta, fn_puente_cuenta_pago_mal('tarjeta', t.cuenta))
+            from tarjetas t
+           where t.activa and fn_puente_cuenta_mal(t.cuenta) is null and fn_puente_cuenta_pago_mal('tarjeta', t.cuenta) is not null
           union all
           select format('cuenta del puente «%s» → %s: %s', pc.rol, pc.cuenta, fn_puente_cuenta_rol_mal(pc.rol, pc.cuenta))
             from puente_cuentas pc where fn_puente_cuenta_rol_mal(pc.rol, pc.cuenta) is not null) s;
@@ -6084,7 +7308,12 @@ begin
   return next;
 
   -- mano_de_obra: la directa (5000, 5001) y su burden (el resto del bloque
-  -- 50xx, c1). Un reverso o un ajuste del CPA valen siempre (corrigen).
+  -- 50xx, c1). Un reverso vale siempre (es el espejo de uno que ya entró).
+  -- Un ajuste_cpa, solo si es del CPA de verdad: el de un ejercicio
+  -- ANTERIOR, o una reclasificación pura (todas sus líneas en costos y
+  -- gastos, sin dinero ni pasivos). c2 no reserva la etiqueta para el CPA
+  -- (cualquier asiento a mano que nombre un mes cerrado la lleva): unos
+  -- sueldos pagados con cheque y marcados ajuste_cpa pasaban en verde.
   --   · directa: del journal (origen nomina…); y 5000, también del devengo
   --     estándar: el de fn_horas_devengar (camino puente, origen
   --     horas_devengo, reversible, solo 5000 contra 2210). Un asiento a
@@ -6105,7 +7334,10 @@ begin
     join cuentas c on c.codigo = l.cuenta
    where fn_puente_es_mano_de_obra(l.cuenta)
      and a.camino not in ('reverso', 'reverso_automatico')
-     and a.tipo <> 'ajuste_cpa'
+     and not (a.tipo = 'ajuste_cpa'
+              and (   exists (select 1 from periodos pa where pa.periodo = a.afecta_periodo and pa.anio < a.anio)
+                   or not exists (select 1 from asiento_lineas m join cuentas cm on cm.codigo = m.cuenta
+                                   where m.asiento_id = a.id and cm.tipo not in ('costo', 'gasto'))))
      and (   (l.cuenta = fn_puente_cuenta_de('mano_obra_oficial') and coalesce(a.origen_tabla, '') not like 'nomina%')
           or (l.cuenta = fn_puente_cuenta_de('mano_obra') and coalesce(a.origen_tabla, '') not like 'nomina%'
               and not (a.camino = 'puente' and coalesce(a.origen_tabla, '') = 'horas_devengo' and a.reversible
@@ -6127,7 +7359,8 @@ begin
   detalle := jsonb_build_object('asientos', v_malos,
                                 'regla', 'La mano de obra directa solo entra por el journal de nómina (f11) o, la 5000, por el '
                                          'devengo estándar reversible de fn_horas_devengar (5000 contra 2210); 5001, solo por el '
-                                         'journal. El burden de obra (5010), solo por reparto '
+                                         'journal. Un ajuste_cpa no la exime, salvo el de un ejercicio anterior o una '
+                                         'reclasificación entre costos y gastos. El burden de obra (5010), solo por reparto '
                                          'desde sus bolsas (5011, 5015); las bolsas, desde el journal, desde 1410 (la prima de '
                                          'WC) o contra una factura por pagar (2010, 2050), nunca pagadas directo del banco.');
   return next;
@@ -6158,6 +7391,31 @@ begin
             join cobros c on c.id = ap.cobro_id
             join facturas f on f.id = ap.factura_id
            where c.estado = 'vigente' and f.estado = 'anulada'
+             and not exists (select 1 from cobros_devoluciones dv where dv.cobro_id = c.id)
+          union all
+          -- Más por cobrar en el libro que el monto de la factura: está dos
+          -- veces (la apertura y su puente, o un asiento a mano contra su
+          -- partida), y así se le podía cobrar el doble.
+          select format('la factura #%s tiene %s por cobrar en el libro (1110 + 1120) y su monto es %s: está dos veces',
+                        f.num, sum(fac.saldo), round(f.monto, 2))
+            from facturas f
+            join fac on fac.partida_id = f.id::text
+           where f.monto is not null
+           group by f.id, f.num, f.monto
+          having sum(fac.saldo) > round(f.monto, 2)
+          union all
+          -- Una partida, una obra: la de su factura (la guarda de las líneas
+          -- ya lo exige; esto ve lo que entró antes).
+          select format('la factura #%s tiene %s en %s con %s, y la factura es de la obra %s: la cuenta por cobrar por obra la '
+                        'parte en dos. Reclasifícalo con un asiento a mano contra su partida', f.num, sum(l.monto), l.cuenta,
+                        coalesce('la obra ' || l.proyecto_id, 'sin obra'), coalesce(f.proyecto_id, '(ninguna)'))
+            from asiento_lineas l
+            join facturas f on f.id::text = l.partida_id
+           where l.partida_tabla = 'facturas'
+             and l.cuenta in (fn_puente_cuenta_de('cxc'), fn_puente_cuenta_de('retencion_cxc'))
+             and l.proyecto_id is distinct from f.proyecto_id
+           group by f.num, l.cuenta, l.proyecto_id, f.proyecto_id
+          having sum(l.monto) <> 0
           union all
           select format('el anticipo del cobro %s tiene %s en %s: saldo deudor (se aplicó más de lo que dejó)',
                         l.partida_id, sum(l.monto), l.cuenta)
@@ -6173,7 +7431,10 @@ begin
                     from recibos r where r.contabilizado_en is not null
                   union all
                   select 'trabajos_externos', x.id::text, x.contabilizado_en
-                    from trabajos_externos x where x.contabilizado_en is not null) p
+                    from trabajos_externos x where x.contabilizado_en is not null
+                  union all
+                  select 'facturas', f.id::text, f.contabilizado_en
+                    from facturas f where f.contabilizado_en is not null) p
             join asientos a on a.id = p.asiento
            where fn_puente_en_apertura(p.tabla, p.id) is not null
           limit 50) s;
@@ -6186,8 +7447,24 @@ begin
   -- aprobadas de hoy (las mismas cuentas que haría fn_horas_devengar).
   -- Y si el mes ya tiene journal de nómina, el devengo cuenta dos veces lo
   -- que ese journal pagó (el 5000 del mes, journal más devengo, por encima
-  -- de las horas): se deshace.
-  select coalesce(jsonb_agg(case when x.plan->>'codigo' = 'nomina_en_el_mes'
+  -- de las horas): se deshace. Un mes CERRADO así (el cierre ya no lo deja,
+  -- pero pudo pasar antes) sigue en rojo: el doble ya no se deshace con
+  -- fn_horas_devengar, y el mensaje dice el ajuste; queda en verde cuando
+  -- un asiento vivo lo corrige y lo nombra en su motivo (el número del
+  -- devengo). Un mes cerrado cuyas horas cambiaron DESPUÉS
+  -- de cerrarlo no pone el control en rojo (su devengo era el de entonces,
+  -- y ya se reversó el día 1): se enseña en «cerrados_con_horas_cambiadas».
+  select coalesce(jsonb_agg(case when x.estado = 'cerrado'
+                                 then format('el devengo de %s (%s) se quedó en el mes cerrado junto con el journal de nómina '
+                                             'del mes (%s): %s tiene esas horas dos veces en 5000 (y su reverso del día 1 las '
+                                             'saca del mes siguiente). El mes ya no se toca: si el mes siguiente es del mismo '
+                                             'año, el año cuadra y solo el reparto por mes quedó mal; si es de otro año, el '
+                                             'año del devengo quedó con ese costo de más y lo ajusta el CPA en el mes abierto. '
+                                             'El asiento que lo corrija (o que lo deje dicho) nombra el devengo en su motivo '
+                                             '(«corrige el devengo %s»), y esto queda en verde.', x.periodo, x.numero,
+                                             (select string_agg(n.v, ', ') from jsonb_array_elements_text(x.plan->'nomina') n(v)),
+                                             x.periodo, x.numero)
+                                 when x.plan->>'codigo' = 'nomina_en_el_mes'
                                  then format('el devengo de %s (%s) convive con el journal de nómina del mes (%s): cuenta dos veces '
                                              'las horas que ese journal ya pagó (en 5000, y en 2210 como por pagar). select '
                                              'fn_horas_devengar(''%s''); lo deshace.', x.periodo, x.numero,
@@ -6195,24 +7472,49 @@ begin
                                              x.periodo)
                                  else format('el devengo de %s (%s) ya no es el de las horas aprobadas de hoy: select '
                                              'fn_horas_devengar(''%s'');', x.periodo, x.numero, x.periodo) end
-                            order by x.periodo), '[]'::jsonb)
-    into v_malos
-    from (select p.periodo, v.numero, v.procedencia->>'firma' as firma, fn_puente_devengo_plan(p.periodo) as plan
+                            order by x.periodo) filter (where x.falla), '[]'::jsonb),
+         coalesce(jsonb_agg(format('%s (%s): sus horas aprobadas cambiaron después de cerrarlo; su devengo repartió las de '
+                                   'entonces y ya se reversó el día 1. Si el cambio importa, se ajusta en el mes abierto.',
+                                   x.periodo, x.numero) order by x.periodo) filter (where x.cambiado), '[]'::jsonb)
+    into v_malos, v_mas
+    from (select p.periodo, p.estado, v.numero, pl.plan,
+                 case when p.estado = 'abierto'
+                      then v.procedencia->>'firma' is distinct from pl.plan->>'firma' or pl.plan->>'codigo' = 'nomina_en_el_mes'
+                      else pl.plan->>'codigo' = 'nomina_en_el_mes'
+                           and not exists (select 1 from asientos c
+                                            where c.id <> v.id and position(v.numero in coalesce(c.motivo, '')) > 0
+                                              and c.camino not in ('reverso', 'reverso_automatico')
+                                              and not exists (select 1 from asientos r
+                                                               where r.reversa_a = c.id and r.camino = 'reverso')) end as falla,
+                 p.estado = 'cerrado' and pl.plan->>'codigo' is distinct from 'nomina_en_el_mes'
+                   and v.procedencia->>'firma' is distinct from pl.plan->>'firma' as cambiado
             from periodos p
             cross join lateral fn_puente_vivo('horas_devengo', p.periodo) v
-           where p.tipo = 'mes' and p.estado = 'abierto' and v.id is not null) x
-   where x.firma is distinct from x.plan->>'firma'
-      or x.plan->>'codigo' = 'nomina_en_el_mes';
+            cross join lateral (select fn_puente_devengo_plan(p.periodo) as plan) pl
+           where p.tipo = 'mes' and v.id is not null) x;
   control := 'devengo';
   ok      := jsonb_array_length(v_malos) = 0;
-  detalle := jsonb_build_object('fallan', v_malos);
+  detalle := jsonb_build_object('fallan', v_malos, 'cerrados_con_horas_cambiadas', v_mas);
   return next;
 
   -- duplicados: el mismo papel dos veces en el libro. Dos recibos con
-  -- asiento vivo y la misma foto, o el mismo ticket (proveedor, número y
-  -- total): un reembolso no tiene statement de un tercero que lo
-  -- contradiga, y se detecta sin la IA. Lo que Edgar confirmó que no es el
-  -- mismo gasto (puente_revisados, duplicado) no cuenta.
+  -- asiento vivo y la misma foto, o el mismo ticket (número y total, del
+  -- mismo proveedor —por sus alias— o del mismo día): un reembolso no tiene
+  -- statement de un tercero que lo contradiga, y se detecta sin la IA. Lo
+  -- que Edgar confirmó que no es el mismo gasto (puente_revisados,
+  -- duplicado) no cuenta. Y dos cobros vigentes que son el mismo depósito.
+  -- (El ticket: su número y su total, y el mismo proveedor —por sus alias—
+  -- o el mismo día, como lo pregunta el puente.)
+  with t as (
+         select r.id, a.numero, fn_puente_recibo_ticket(r.num_recibo, r.total) as tick,
+                fn_puente_recibo_proveedor(r.proveedor) as provk, nullif(btrim(r.proveedor), '') as prov,
+                coalesce(fn_puente_recibo_proveedor(r.proveedor), 'sin_proveedor') || '|'
+                  || fn_puente_recibo_ticket(r.num_recibo, r.total) as clave,
+                coalesce(r.fecha, fn_fecha_miami(r.creado)) as fecha
+           from recibos r
+           join asientos a on a.id = r.contabilizado_en
+          where fn_puente_recibo_ticket(r.num_recibo, r.total) is not null
+       )
   select coalesce(jsonb_agg(s.falla order by s.falla), '[]'::jsonb) into v_malos
     from (select format('la foto %s está en %s recibos con asiento vivo (%s): el mismo papel dos veces. Anula el repetido '
                         '(fn_recibo_anular) y el libro lo reversa', k.dato, count(*),
@@ -6227,19 +7529,39 @@ begin
            group by k.dato
           having count(*) > 1
           union all
-          select format('el ticket %s está en %s recibos con asiento vivo (%s): el mismo gasto dos veces. Anula el repetido '
-                        '(fn_recibo_anular); si son dos gastos distintos, confírmalo en el que llegó después '
-                        '(fn_puentes_confirmar(''recibos'', id, ''duplicado'', ''motivo''))', k.dato, count(*),
-                        string_agg(format('recibo %s → %s', k.id, k.numero), ', ' order by k.id))
-            from (select fn_puente_recibo_clave(r.proveedor, r.num_recibo, r.total) as dato, r.id, a.numero
-                    from recibos r
-                    join asientos a on a.id = r.contabilizado_en
-                   where not exists (select 1 from puente_revisados pr
-                                      where pr.tabla = 'recibos' and pr.documento_id = r.id::text and pr.codigo = 'duplicado'
-                                        and pr.dato = 'ticket:' || fn_puente_recibo_clave(r.proveedor, r.num_recibo, r.total))) k
-           where k.dato is not null
-           group by k.dato
-          having count(*) > 1
+          select format('el ticket %s está en dos recibos con asiento vivo (recibo %s → %s, recibo %s → %s): el mismo gasto dos '
+                        'veces%s. Anula el repetido (select fn_recibo_anular(%s, ''repetido del recibo %s'');); si son dos '
+                        'gastos distintos, confírmalo: select fn_puentes_confirmar(''recibos'', %s, ''duplicado'', ''motivo'');',
+                        y.tick, x.id, x.numero, y.id, y.numero,
+                        case when x.provk is not null and x.provk = y.provk
+                                  and x.prov is distinct from y.prov
+                             then format(' (del mismo proveedor, leído «%s» y «%s»)', x.prov, y.prov)
+                             when x.provk is distinct from y.provk then ' (del mismo día)' else '' end,
+                        y.id, x.id, y.id)
+            from t x
+            join t y on y.tick = x.tick and y.id > x.id
+                    and ((x.provk is not null and x.provk = y.provk) or x.fecha = y.fecha)
+           where not exists (select 1 from puente_revisados pr
+                              where pr.tabla = 'recibos' and pr.codigo = 'duplicado'
+                                and (   (pr.documento_id = y.id::text and pr.dato = 'ticket:' || y.clave)
+                                     or (pr.documento_id = x.id::text and pr.dato = 'ticket:' || x.clave)))
+          union all
+          -- Los cobros: el mismo depósito dos veces (la misma cuenta y el
+          -- mismo monto, a 3 días o menos, la misma referencia o sin ella en
+          -- uno, y no dos movimientos distintos del banco), salvo el que
+          -- Edgar registró diciendo que es otro (duplicado_motivo) y los que
+          -- el banco devolvió.
+          select format('los cobros %s (del %s) y %s (del %s), los dos vigentes, parecen el mismo depósito: %s a %s%s. Anula el '
+                        'repetido (select fn_cobro_anular(%L, ''repetido del cobro del %s'');)', a.id, a.fecha, b.id, b.fecha,
+                        a.monto, a.cuenta, coalesce(', ref ' || coalesce(a.referencia, b.referencia), ''), b.id, a.fecha)
+            from cobros a
+            join cobros b on b.cuenta = a.cuenta and b.monto = a.monto and abs(b.fecha - a.fecha) <= 3
+                         and (b.creado_el, b.id) > (a.creado_el, a.id)
+           where a.estado = 'vigente' and b.estado = 'vigente' and a.duplicado_motivo is null and b.duplicado_motivo is null
+             and (fn_puente_ref(a.referencia) is null or fn_puente_ref(b.referencia) is null
+                  or fn_puente_ref(a.referencia) = fn_puente_ref(b.referencia))
+             and not (a.movimiento_id is not null and b.movimiento_id is not null)
+             and not exists (select 1 from cobros_devoluciones dv where dv.cobro_id in (a.id, b.id))
           limit 50) s;
   control := 'duplicados';
   ok      := jsonb_array_length(v_malos) = 0;
@@ -6365,7 +7687,12 @@ comment on table public.puente_reglas_historial is
   'No se edita ni se borra.';
 comment on table public.cobros is
   'Un cobro = un depósito (c3): fecha, monto, cuenta de banco; se reparte en aplicaciones_cobro. Postea Dr banco / Cr 1110-1120 '
-  'por partida. No se edita ni se borra: se anula (fn_cobro_anular). movimiento_id: su movimiento del banco (f06).';
+  'por partida. No se edita ni se borra: se anula (fn_cobro_anular, mal registrado) o se devuelve (fn_cobro_devolver, el cheque '
+  'rebotó). movimiento_id: su movimiento del banco (f06).';
+comment on table public.cobros_devoluciones is
+  'La devolución de un cobro (el cheque rebotó, el banco revirtió el depósito), en su propia fecha: el espejo del asiento del cobro '
+  '(y de sus anticipos aplicados) ese día. El depósito se queda en su mes, como en el banco. Una por cobro; no se edita ni se borra. c3.';
+comment on column public.cobros.duplicado_motivo   is 'Por qué Edgar dijo que este cobro es otro depósito y no el mismo que uno vigente igual (misma cuenta y monto, fecha cercana). Nulo en los demás. c3.';
 comment on table public.aplicaciones_cobro is
   'A qué va cada parte de un cobro: una factura, su retención, un descuento, o anticipo de una obra (sin factura); desde_anticipo = '
   'aplica un anticipo ya cobrado a una factura, sin dinero nuevo, con su propio asiento.';
@@ -6378,7 +7705,8 @@ comment on table public.puente_documentos is
 comment on table public.puente_revisados is
   'Lo que Edgar confirmó de un papel que esperaba en la bandeja por una duda que solo él resuelve: fecha_antes_del_corte (de verdad es '
   'de antes y está en QuickBooks), fecha_posterior_a_subida (la fecha leída es la buena), duplicado (no es el mismo gasto que el otro '
-  'recibo), impuesto (el total es lo que se pagó), devolucion (es una compra). Vale para ese dato: si el papel lo cambia, se vuelve a '
+  'recibo), impuesto (el total es lo que se pagó), devolucion (es una compra); y total_a_mano, que apunta la guarda cuando Edgar '
+  'teclea el total (entra aunque subtotal + tax no lo sumen, con aviso). Vale para ese dato: si el papel lo cambia, se vuelve a '
   'preguntar. Solo se añade (c3).';
 comment on table public.horas_aprobaciones is
   'Cada aprobación de horas y lo que le pasó: retirada, invalidada (las horas cambiaron después) o borrada. El reporte de horas '
@@ -6408,13 +7736,14 @@ comment on function public.fn_puentes_correr(date)            is 'El backfill y 
 comment on function public.fn_puentes_rehacer(text, text, text) is 'Reverso + asiento nuevo de un papel con las reglas de hoy, con su motivo (solo el dueño).';
 comment on function public.fn_puentes_verificar()             is 'Los controles de los puentes: triggers, papeles contra el libro, bandeja, reglas, use tax, mano de obra y burden, partidas, devengo, duplicados, cuentas inactivas con saldo, vistas del equipo y el papel en Storage.';
 comment on function public.fn_puentes_antes_del_corte(text, bigint, text) is 'Confirma que un recibo o trabajo externo fechado antes del corte (y subido después) es de verdad de antes y está en QuickBooks.';
-comment on function public.fn_puentes_confirmar(text, bigint, text, text) is 'Confirma, con su motivo, lo que el puente pregunta de un papel (fecha_antes_del_corte, fecha_posterior_a_subida, duplicado, impuesto, devolucion): vale para ese dato.';
+comment on function public.fn_puentes_confirmar(text, bigint, text, text) is 'Confirma, con su motivo, lo que el puente pregunta de un papel (fecha_antes_del_corte, fecha_posterior_a_subida, duplicado, impuesto, devolucion): vale para ese dato; también quita el aviso de un total tecleado que el subtotal y el tax no suman.';
 comment on function public.fn_recibo_desanular(bigint, text)  is 'Vuelve a contar un recibo anulado (a propósito, con su motivo): el ✎ de la app no lo des-anula.';
 comment on function public.fn_cobro_registrar(jsonb)          is 'Registra un cobro con sus aplicaciones (facturas, retención, descuento, anticipo) y lo postea: Dr banco / Cr 1110-1120.';
-comment on function public.fn_cobro_anular(uuid, text)        is 'Anula un cobro: reversa su asiento y el de sus anticipos aplicados. El cobro se queda, anulado.';
-comment on function public.fn_anticipo_aplicar(uuid, bigint, text, date) is 'Aplica el anticipo de un cobro a una factura de su obra, sin dinero nuevo.';
+comment on function public.fn_cobro_anular(uuid, text)        is 'Anula un cobro mal registrado: reversa su asiento y el de sus anticipos aplicados. El cobro se queda, anulado.';
+comment on function public.fn_cobro_devolver(uuid, date, text, text) is 'La devolución de un cobro (cheque rebotado), en su fecha: el espejo de su asiento ese día; el depósito se queda en su mes.';
+comment on function public.fn_anticipo_aplicar(uuid, bigint, text, date, boolean) is 'Aplica el anticipo de un cobro a una factura de su obra, sin dinero nuevo (a su retención, 1120, con es_retencion).';
 comment on function public.fn_factura_anular(bigint, text, date) is 'Anula una factura emitida con su nota de crédito (NC-AAAA-NNNN): el espejo de su asiento.';
-comment on function public.fn_horas_aprobar(uuid, date, date) is 'Aprueba las horas de un trabajador en un período (un toque por empleado). Horas, nunca dinero.';
+comment on function public.fn_horas_aprobar(uuid, date, date, jsonb) is 'Aprueba las horas de un trabajador en un período, las que Edgar vio (ids, o reportes y horas): si hay otras, no aprueba nada. Horas, nunca dinero.';
 comment on function public.fn_horas_devengar(text)            is 'El devengo ESTÁNDAR opcional de un mes: Dr 5000 / Cr 2210 por horas aprobadas × costo por hora (sin las del dueño), reversible el día 1; sin horas, o con journal de nómina en el mes, no devenga (y deshace el que había).';
 comment on function public.fn_recibo_anular(bigint, text)     is 'Anula un recibo (estado anulado) y el puente lo reversa con el motivo. Es lo que lo saca de las listas de la app.';
 comment on function public.fn_externo_anular(bigint, text)    is 'Anula un trabajo externo (costo 0) y el puente lo reversa con el motivo.';

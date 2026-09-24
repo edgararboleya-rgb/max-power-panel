@@ -13,6 +13,12 @@
 #      reglas juzgaba los valores de arranque ANTES de que el «on conflict
 #      do nothing» los saltara: MX004 y no se pegaba nada) y lo que Edgar
 #      puso se queda.
+#   3. Una base que ya tenía dos recibos con la MISMA foto antes de c3
+#      (como pudo dejarlos la app de antes): el primer pegado no crea
+#      recibos_ruta_unica (lo dice y el control duplicados los enseña);
+#      Edgar anula el repetido, vuelve a pegar, y el índice YA existe
+#      (los anulados no cuentan: antes no se creaba nunca). Con él, dos
+#      subidas a la vez con la misma foto: entra una, la otra no.
 #
 #   ./c3-pegado.sh [nombre_bd]      (por defecto c3_pegado)
 #
@@ -74,6 +80,38 @@ r="$(ed -c "select string_agg(rol || '=' || cuenta, ' ' order by rol) from puent
 if [ "$r" = "reembolso_dueno=2905 reembolso_empleado=2900" ]; then bien "los papeles siguen con su cuenta ($r)"; else falla "los papeles cambiaron: $r"; fi
 r="$(ed -c "select activa from cuentas where codigo = '5600'")"
 if [ "$r" = "f" ]; then bien "la 5600 sigue retirada"; else falla "la 5600 volvió a estar activa ($r)"; fi
+r="$(controles)"
+if [ -z "$r" ]; then bien "los controles del libro y de los puentes en true"; else falla "en false: $r"; fi
+
+# ---------------------------------------------------------------------
+echo "== 3. Dos recibos con la misma foto de antes de c3: anular el repetido y volver a pegar"
+cat > "$TMP/ruta_doble.sql" <<'SQL'
+-- Dos recibos con la misma foto, como pudo dejarlos la app antes de c3.
+insert into recibos (id, proyecto_id, ruta, total, proveedor, estado, autor_id, creado, fecha, categoria, metodo_pago)
+overriding system value values
+ (-1101, 'casa-perez-k3m9', 'recibos/g/misma.jpg', 90.00, 'CED', 'leido', '00000000-0000-4000-a000-000000000002',
+  timestamptz '2026-10-12 10:00-04', date '2026-10-12', 'material', 'Account'),
+ (-1102, 'casa-perez-k3m9', 'recibos/g/misma.jpg', 90.00, 'CED', 'leido', '00000000-0000-4000-a000-000000000002',
+  timestamptz '2026-10-12 10:05-04', date '2026-10-12', 'material', 'Account');
+SQL
+"$DIR/correr.sh" "$BD" "$DOCS/c1-plan-de-cuentas.sql" "$DOCS/c2-libro.sql" "$TMP/ruta_doble.sql" "$DOCS/c3-puentes.sql" \
+  > "$TMP/carga3.out" 2>&1 || { cat "$TMP/carga3.out"; echo "FALLÓ la carga del escenario 3" >&2; exit 2; }
+if grep -q "no se crea recibos_ruta_unica" "$TMP/carga3.out"; then bien "el primer pegado avisa que no crea el índice"; else falla "el primer pegado no avisó"; fi
+r="$(ed -c "select to_regclass('public.recibos_ruta_unica') is null")"
+if [ "$r" = "t" ]; then bien "sin el índice mientras haya dos vivos con la misma foto"; else falla "el índice existe con dos vivos ($r)"; fi
+ed -c "select fn_recibo_anular(-1102, 'repetido del recibo -1101')" > /dev/null 2>&1 || falla "no se pudo anular el repetido"
+r="$(ed -1 -v ON_ERROR_STOP=1 -f "$DOCS/c3-puentes.sql" 2>&1)"; rc=$?
+if [ $rc -eq 0 ]; then bien "volver a pegar c3 entró"; else falla "volver a pegar c3 se cayó (rc=$rc): $(grep -m1 -i error <<< "$r")"; fi
+r="$(ed -c "select to_regclass('public.recibos_ruta_unica') is not null")"
+if [ "$r" = "t" ]; then bien "anulado el repetido, el segundo pegado crea recibos_ruta_unica"; else falla "el índice sigue sin crearse ($r)"; fi
+GUS="select set_config('request.jwt.claims', '{\"sub\":\"00000000-0000-4000-a000-000000000002\",\"role\":\"authenticated\"}', true); set local role authenticated;"
+ed -c "begin; $GUS insert into recibos (proyecto_id, ruta, notas, autor_id) values ('casa-perez-k3m9', 'recibos/casa-perez-k3m9/doble.jpg', 'c3-pegado A', '00000000-0000-4000-a000-000000000002'); select pg_sleep(1.5); commit;" > "$TMP/3a.out" 2>&1 &
+sleep 0.4
+ed -c "begin; $GUS insert into recibos (proyecto_id, ruta, notas, autor_id) values ('casa-perez-k3m9', 'recibos/casa-perez-k3m9/doble.jpg', 'c3-pegado B', '00000000-0000-4000-a000-000000000002'); commit;" > "$TMP/3b.out" 2>&1 &
+wait
+r="$(ed -c "select count(*) from recibos where btrim(ruta) = 'recibos/casa-perez-k3m9/doble.jpg'")"
+if [ "$r" = "1" ]; then bien "dos subidas a la vez con la misma foto: entró una"; else falla "entraron $r con la misma foto"; fi
+if grep -qi "error" "$TMP/3b.out"; then bien "la segunda subida recibió su error ($(grep -o -m1 '23505\|MX003\|42501' "$TMP/3b.out"))"; else falla "la segunda subida no dio error"; fi
 r="$(controles)"
 if [ -z "$r" ]; then bien "los controles del libro y de los puentes en true"; else falla "en false: $r"; fi
 

@@ -52,9 +52,9 @@
 --   · las que prueban c1 (el plan y su guarda: 29, 40, 42, 44, 45, 46, 50,
 --     64, 72 y 74), que no depende del bloque A; la del candado de las
 --     pruebas (75), que prueba a estas mismas pruebas; y la del rastro
---     (77);
+--     (78);
 --   · unas pocas que usan piezas que solo existen en el bloque B
---     (fn_postear_interno en la 41, la 63, la 69, la 70 y la 76; la guarda de
+--     (fn_postear_interno en la 41, la 63, la 69, la 70, la 76 y la 77; la guarda de
 --     periodos, que la 60, la 65, la 71 y la 73 apagan un momento), que
 --     fallan porque falta la pieza.
 -- Con el bloque B, todas en true.
@@ -1723,10 +1723,13 @@ end $$;
 
 -- 41. Un documento, un asiento VIVO. El puente postea un recibo con el
 --     mapeo equivocado (se simula desde el SQL Editor con
---     fn_postear_interno). Otra vez el mismo papel → 23505. Se reversa.
---     Otra vez sin decir a cuál sustituye → MX007. La corrección a mano
---     (fn_postear) dice de qué papel sale y a cuál sustituye → entra,
---     enlazada. Y la cadena sigue sana.
+--     fn_postear_interno). Otra vez el mismo papel → 23505. A mano no se
+--     reversa (fn_reversar → MX007: se corrige el papel y su puente lo
+--     rehace). El puente lo reversa (fn_reversar_interno, como hace
+--     fn_puente_aplicar). Otra vez sin decir a cuál sustituye → MX007. La
+--     corrección a mano (fn_postear con origen y sustituye_a) → MX007: el
+--     papel lo lleva su puente. El sustituto del puente dice a cuál
+--     sustituye → entra, enlazado. Y la cadena sigue sana.
 do $$
 declare
   v_c5    text := nullif(current_setting('mx_pruebas.c5', true), '');
@@ -1737,13 +1740,16 @@ declare
   v_o1    uuid;
   v_s     uuid;
   v_viv   text;
+  v_mano  text;
   v_sin   text;
+  v_smano text;
   v_sus   text;
   v_cad   text;
   v_obt   text;
+  v_esp   text := 'vivo=23505 a_mano=MX007 sin_sustituye=MX007 sustituto_a_mano=MX007 sustituto=entró cadena=t';
 begin
   if v_c5 is null or v_banco is null or v_obra is null or v_desde is null then
-    insert into _pruebas values (41, 'reversar y sustituir el asiento de un documento', 'vivo=23505 sin_sustituye=MX007 sustituto=entró cadena=t', 'omitida: falta obra, cuenta o mes abierto', null);
+    insert into _pruebas values (41, 'reversar y sustituir el asiento de un documento', v_esp, 'omitida: falta obra, cuenta o mes abierto', null);
     return;
   end if;
   v_doc := jsonb_build_object(
@@ -1761,7 +1767,15 @@ begin
       when sqlstate 'MXT01' then null;
       when others then v_viv := sqlstate;
     end;
-    perform fn_reversar(v_o1, 'c2-pruebas: mapeo equivocado');
+    begin
+      perform fn_reversar(v_o1, 'c2-pruebas: mapeo equivocado, a mano');
+      v_mano := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_mano := sqlstate;
+    end;
+    perform fn_reversar_interno(v_o1, 'c2-pruebas: mapeo equivocado', 'reverso', '{"funcion": "c2-pruebas"}'::jsonb);
     begin
       perform fn_postear_interno(v_doc);
       v_sin := 'entró';
@@ -1770,21 +1784,29 @@ begin
       when sqlstate 'MXT01' then null;
       when others then v_sin := sqlstate;
     end;
-    v_s := (fn_postear(jsonb_build_object(
-              'fecha', to_char(v_desde + 4, 'YYYY-MM-DD'), 'descripcion', 'c2-pruebas: recibo corregido a mano',
-              'origen_tabla', 'recibos', 'origen_id', 'c2-pruebas-41', 'sustituye_a', v_o1,
-              'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_c5, 'monto', '245.37', 'proyecto_id', v_obra),
-                                          jsonb_build_object('cuenta', v_banco, 'monto', '-245.37'))))->>'id')::uuid;
+    begin
+      perform fn_postear(jsonb_build_object(
+        'fecha', to_char(v_desde + 4, 'YYYY-MM-DD'), 'descripcion', 'c2-pruebas: recibo corregido a mano',
+        'origen_tabla', 'recibos', 'origen_id', 'c2-pruebas-41', 'sustituye_a', v_o1,
+        'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_c5, 'monto', '245.37', 'proyecto_id', v_obra),
+                                    jsonb_build_object('cuenta', v_banco, 'monto', '-245.37'))));
+      v_smano := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_smano := sqlstate;
+    end;
+    v_s := (fn_postear_interno(v_doc || jsonb_build_object('sustituye_a', v_o1))->>'id')::uuid;
     select case when a.sustituye_a = v_o1 then 'entró' else 'sin enlace' end into v_sus from asientos a where a.id = v_s;
     select case when bool_and(v.ok) then 't' else 'f' end into v_cad from fn_verificar_cadena() v;
-    v_obt := format('vivo=%s sin_sustituye=%s sustituto=%s cadena=%s', v_viv, v_sin, v_sus, v_cad);
+    v_obt := format('vivo=%s a_mano=%s sin_sustituye=%s sustituto_a_mano=%s sustituto=%s cadena=%s', v_viv, v_mano, v_sin,
+                    v_smano, v_sus, v_cad);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
   end;
-  insert into _pruebas values (41, 'reversar y sustituir el asiento de un documento', 'vivo=23505 sin_sustituye=MX007 sustituto=entró cadena=t',
-                               v_obt, v_obt = 'vivo=23505 sin_sustituye=MX007 sustituto=entró cadena=t');
+  insert into _pruebas values (41, 'reversar y sustituir el asiento de un documento', v_esp, v_obt, v_obt = v_esp);
 end $$;
 
 -- 42. La amortización mensual de la prima de WC (Dr 5015 / Cr 1410) es un
@@ -2764,13 +2786,11 @@ begin
       when sqlstate 'MXT01' then null;
       when others then v_rauto := sqlstate;
     end;
-    -- La corrección, como la haría el dueño desde la app (se queda).
+    -- La corrección, como la hace su puente (se queda): el asiento de un
+    -- puente no lo reversa la mano (fn_reversar → MX007), lo reversa su
+    -- puente con fn_reversar_interno.
     begin
-      perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
-      execute 'set local role authenticated';
-      perform fn_reversar(v_a, 'c2-pruebas: el estimado revisado cambió');
-      execute 'reset role';
-      perform set_config('request.jwt.claims', '', true);
+      perform fn_reversar_interno(v_a, 'c2-pruebas: el estimado revisado cambió', 'reverso', '{"funcion": "c2-pruebas"}'::jsonb);
       v_corr := 'entró';
     exception
       when others then v_corr := sqlstate;
@@ -3228,11 +3248,9 @@ begin
       when sqlstate 'MXT01' then null;
       when others then v_b := sqlstate;
     end;
-    -- c) El dueño lo reversa desde la app (se queda).
-    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
-    execute 'set local role authenticated';
-    v_r := fn_reversar(v_o, 'c2-pruebas: el documento no existía');
-    execute 'reset role';
+    -- c) Su puente lo reversa (se queda): el asiento de un puente no lo
+    --    reversa la mano (fn_reversar → MX007).
+    v_r := fn_reversar_interno(v_o, 'c2-pruebas: el documento no existía', 'reverso', '{"funcion": "c2-pruebas"}'::jsonb);
     v_c := format('%s/%s', v_r->>'tipo', v_r->>'afecta_periodo');
     -- d) El sustituto, como asiento normal del año nuevo.
     begin
@@ -3672,10 +3690,9 @@ begin
     perform pg_temp.mx_fingir_hoy(v_dic_desde + 29);
     v_o := (fn_postear_interno(v_doc)->>'id')::uuid;
     perform pg_temp.mx_cerrar_hasta(v_dic);   -- «hoy» es el 1 de enero; diciembre, cerrado
-    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
-    execute 'set local role authenticated';
-    perform fn_reversar(v_o, 'c2-pruebas: la fecha del ticket estaba mal leída');
-    execute 'reset role';
+    -- (Lo reversa su puente: la mano no reversa el asiento de un puente.)
+    perform fn_reversar_interno(v_o, 'c2-pruebas: la fecha del ticket estaba mal leída', 'reverso',
+                                '{"funcion": "c2-pruebas"}'::jsonb);
     -- a) El papel sigue siendo de diciembre: sustituto normal de enero → MX007.
     begin
       perform fn_postear_interno(v_doc || jsonb_build_object(
@@ -3708,7 +3725,72 @@ begin
 end $$;
 
 
--- 77. Las pruebas no dejaron rastro: el libro, el plan, su historial, las
+-- 77. El asiento de un PUENTE no se corrige a mano (f03): el dueño, desde
+--     la app, no lo reversa (fn_reversar → MX007, y el mensaje dice el
+--     camino bueno según el papel: un recibo se corrige o se anula con
+--     fn_recibo_anular) ni lo sustituye (fn_postear con origen y
+--     sustituye_a → MX007), y el asiento sigue vivo, sin reverso. Antes el
+--     reverso a mano dejaba el papel sin asiento y el siguiente backfill
+--     lo volvía a postear: la corrección quedaba doble.
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx_pruebas.dueno', true), '')::uuid;
+  v_c5    text := nullif(current_setting('mx_pruebas.c5', true), '');
+  v_banco text := nullif(current_setting('mx_pruebas.banco', true), '');
+  v_obra  text := nullif(current_setting('mx_pruebas.obra', true), '');
+  v_desde date := nullif(current_setting('mx_pruebas.desde', true), '')::date;
+  v_o     uuid;
+  v_rev   text;
+  v_sus   text;
+  v_vivo  text;
+  v_obt   text;
+  v_esp   text := 'reversar=MX007 (dice fn_recibo_anular) sustituir=MX007 vivo=t';
+begin
+  if v_dueno is null or v_c5 is null or v_banco is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (77, 'el asiento de un puente no se reversa ni se sustituye a mano', v_esp, 'omitida: falta dueño, obra, cuenta o mes abierto', null);
+    return;
+  end if;
+  begin
+    v_o := (fn_postear_interno(jsonb_build_object(
+             'camino', 'puente', 'origen_tabla', 'recibos', 'origen_id', 'c2-pruebas-77',
+             'fecha', to_char(v_desde + 4, 'YYYY-MM-DD'), 'descripcion', 'c2-pruebas: recibo por puente (se deshace)',
+             'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_c5, 'monto', '80.00', 'proyecto_id', v_obra),
+                                         jsonb_build_object('cuenta', v_banco, 'monto', '-80.00')))) ->> 'id')::uuid;
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      perform fn_reversar(v_o, 'c2-pruebas: estaba mal clasificado');
+      v_rev := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_rev := sqlstate || case when sqlerrm like '%fn_recibo_anular%' then ' (dice fn_recibo_anular)' else '' end;
+    end;
+    begin
+      perform fn_postear(jsonb_build_object(
+        'fecha', to_char(v_desde + 4, 'YYYY-MM-DD'), 'descripcion', 'c2-pruebas: corrección a mano enlazada',
+        'origen_tabla', 'recibos', 'origen_id', 'c2-pruebas-77', 'sustituye_a', v_o,
+        'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_c5, 'monto', '80.00', 'proyecto_id', v_obra),
+                                    jsonb_build_object('cuenta', v_banco, 'monto', '-80.00'))));
+      v_sus := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_sus := sqlstate;
+    end;
+    execute 'reset role';
+    select case when not exists (select 1 from asientos r where r.reversa_a = v_o) then 't' else 'f' end into v_vivo;
+    v_obt := format('reversar=%s sustituir=%s vivo=%s', v_rev, v_sus, v_vivo);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
+  end;
+  insert into _pruebas values (77, 'el asiento de un puente no se reversa ni se sustituye a mano', v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+
+-- 78. Las pruebas no dejaron rastro: el libro, el plan, su historial, las
 --     secuencias y las huellas (el reloj fingido y los ALTER TABLE de
 --     algunas pruebas se deshicieron) están igual que al empezar. Va la
 --     última.
@@ -3718,7 +3800,7 @@ declare
   v_obt   text;
 begin
   v_obt := pg_temp.mx_foto();
-  insert into _pruebas values (77, 'las pruebas no dejan rastro (libro, plan, historial, secuencias y huellas)', v_antes, v_obt, v_obt = v_antes);
+  insert into _pruebas values (78, 'las pruebas no dejan rastro (libro, plan, historial, secuencias y huellas)', v_antes, v_obt, v_obt = v_antes);
 end $$;
 
 select * from _pruebas order by n;

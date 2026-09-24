@@ -724,7 +724,6 @@ select v.codigo, v.nombre, v.nombre_en, v.tipo,
   from (values
   -- 1000 · Activo
   ('1010', 'Banco operativo',                           'Operating bank account',                              'activo',  'debe',  true,  'prohibida',   'prohibida',   null,           null),
-  ('1020', 'Banco de nómina',                           'Payroll bank account',                                'activo',  'debe',  true,  'prohibida',   'prohibida',   null,           'Si se quiere separar del operativo.'),
   ('1030', 'Reserva de impuestos',                      'Tax reserve account',                                 'activo',  'debe',  true,  'prohibida',   'prohibida',   null,           null),
   ('1110', 'Cuentas por cobrar',                        'Accounts receivable',                                 'activo',  'debe',  true,  'opcional',    'prohibida',   null,           'Por factura (f03). La obra va cuando la factura la tiene.'),
   ('1120', 'Retención por cobrar',                      'Retainage receivable',                                'activo',  'debe',  true,  'obligatoria', 'prohibida',   null,           'Retainage, siempre por obra. En QuickBooks es un parche.'),

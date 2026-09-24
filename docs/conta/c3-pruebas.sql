@@ -20,10 +20,11 @@
 -- llaman a pg_net, su cola interna gasta un número; la petición se deshace
 -- con todo lo demás y no sale ningún aviso.)
 --
--- CANDADOS BREVES: la prueba 39 apaga un instante el puente de recibos, y
--- la 82 la guarda de puente_cuentas (alter table, con lock_timeout de 2 s:
--- si la app está usando la tabla, sale «omitida» en vez de hacerla
--- esperar), las que cierran meses toman periodos en exclusiva, la 69 le
+-- CANDADOS BREVES: la prueba 39 apaga un instante el puente de recibos, la
+-- 82 la guarda de puente_cuentas y la 99 la del cierre de periodos (alter
+-- table, con lock_timeout de 2 s: si la app está usando la tabla, sale
+-- «omitida» en vez de hacerla esperar), las que cierran meses toman
+-- periodos en exclusiva, la 69 le
 -- devuelve un instante la escritura a la vista recibos_equipo (grant) para
 -- ver que la guarda del recibo la para igual, y la 90 le da al dueño un
 -- instante un update en Storage (una policy) para ver que el papel no se
@@ -101,6 +102,10 @@ begin
   -- c3-puentes.sql anterior, que no la tenía.)
   if to_regclass('public.puente_revisados') is not null then
     execute 'select count(*)::text from public.puente_revisados' into v_rev;
+  end if;
+  -- (Las devoluciones de cobros, igual: una versión anterior no las tenía.)
+  if to_regclass('public.cobros_devoluciones') is not null then
+    execute 'select ' || quote_literal(v_rev) || ' || ''/'' || count(*)::text from public.cobros_devoluciones' into v_rev;
   end if;
   select left(md5(string_agg(h.tipo || ' ' || h.objeto || ' ' || h.md5, ',' order by h.tipo, h.objeto)), 12)
     into v_huellas
@@ -345,9 +350,13 @@ revoke execute on function pg_temp.c3_cuantos(text, text) from public, anon, aut
 -- Una deuda de la APERTURA a nombre de un papel (partida tabla/id), como la
 -- cargará f04: si la apertura sigue abierta, un asiento de apertura el día
 -- de la apertura; si ya se cerró, un ajuste a la apertura (ajuste_cpa) en
--- el primer mes abierto. Contra el capital. Nulo si no hay apertura.
+-- el primer mes abierto. Contra el capital. Nulo si no hay apertura. Con
+-- p_obra, la línea de la partida va con esa obra (una factura: 1110 con la
+-- obra de la factura, como la cargará f04). Monto con el signo del capital:
+-- una deuda (2010) va en positivo; una cuenta por cobrar (1110), en negativo.
+drop function if exists pg_temp.c3_apertura(text, text, text, numeric, text, text);
 create or replace function pg_temp.c3_apertura(p_tabla text, p_id text, p_cuenta text, p_monto numeric,
-                                               p_tercero_tipo text, p_tercero_id text) returns text
+                                               p_tercero_tipo text, p_tercero_id text, p_obra text default null) returns text
 language plpgsql
 set search_path = public, pg_temp
 as $$
@@ -362,7 +371,8 @@ begin
   v_lin := jsonb_build_array(
              jsonb_build_object('cuenta', current_setting('mx3.capital'), 'monto', p_monto::text),
              jsonb_strip_nulls(jsonb_build_object('cuenta', p_cuenta, 'monto', (-p_monto)::text, 'tercero_tipo', p_tercero_tipo,
-                                                  'tercero_id', p_tercero_id, 'partida_tabla', p_tabla, 'partida_id', p_id)));
+                                                  'tercero_id', p_tercero_id, 'partida_tabla', p_tabla, 'partida_id', p_id,
+                                                  'proyecto_id', p_obra)));
   if v_ap.estado = 'abierto' then
     return fn_postear(jsonb_build_object('tipo', 'apertura', 'fecha', to_char(v_ap.desde, 'YYYY-MM-DD'),
                                          'descripcion', 'c3-pruebas: apertura de prueba (se deshace)', 'lineas', v_lin))->>'numero';
@@ -372,7 +382,7 @@ begin
                                        'motivo', 'c3-pruebas: ajuste a la apertura de prueba (se deshace)',
                                        'descripcion', 'c3-pruebas: ajuste a la apertura (se deshace)', 'lineas', v_lin))->>'numero';
 end $$;
-revoke execute on function pg_temp.c3_apertura(text, text, text, numeric, text, text) from public, anon, authenticated, service_role;
+revoke execute on function pg_temp.c3_apertura(text, text, text, numeric, text, text, text) from public, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------
 -- Preparación: solo lee. Lo que usan todas las pruebas, en ajustes de la
@@ -883,7 +893,10 @@ end $$;
 -- 12. Edgar corrige el TOTAL de un recibo ya contabilizado con ✎ (lo de
 --     siempre en la app): el libro no se edita. Queda el reverso (con qué
 --     cambió) y un asiento nuevo que dice a cuál sustituye; el recibo
---     apunta al nuevo; y al confirmar, todo el libro sigue en verde.
+--     apunta al nuevo; y al confirmar, todo el libro sigue en verde. El
+--     recibo trae subtotal y tax, como lo deja la lectura (el ✎ no los
+--     tiene): el total que tecleó Edgar entra igual, y el descuadre queda
+--     como aviso en la bandeja (antes el asiento viejo se quedaba).
 do $$
 declare
   v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
@@ -893,7 +906,8 @@ declare
   v_nuevo uuid;
   v_ok    text;
   v_obt   text;
-  v_esp   text := 'reverso=con_cambio sustituto=enlazado monto=247.37 papel=apunta_al_nuevo confirma=t libro=t';
+  v_esp   text := 'reverso=con_cambio sustituto=enlazado monto=247.37 papel=apunta_al_nuevo aviso=contabilizado/impuesto '
+                  'confirma=t libro=t';
 begin
   if v_dueno is null or v_obra is null or v_desde is null then
     insert into _pruebas values (12, 'editar el total de un recibo contabilizado: reverso + sustituto enlazados', v_esp,
@@ -903,7 +917,7 @@ begin
   begin
     perform pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
-    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100016, 'total', '245.37'));
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3100016, 'total', '245.37', 'subtotal', '229.32', 'tax', '16.05'));
     v_orig := pg_temp.c3_vivo('recibos', '-3100016');
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
@@ -912,13 +926,15 @@ begin
     v_nuevo := pg_temp.c3_vivo('recibos', '-3100016');
     set constraints all immediate;   -- lo que hace el commit
     select case when bool_and(v.ok) then 't' else 'f' end into v_ok from fn_verificar_cadena() v;
-    select format('reverso=%s sustituto=%s monto=%s papel=%s confirma=t libro=%s',
+    select format('reverso=%s sustituto=%s monto=%s papel=%s aviso=%s confirma=t libro=%s',
                   coalesce((select case when r.motivo like '%total: 245.37 → 247.37%' then 'con_cambio' else r.motivo end
                               from asientos r where r.reversa_a = v_orig and r.camino = 'reverso'), '-'),
                   case when (select a.sustituye_a from asientos a where a.id = v_nuevo) = v_orig then 'enlazado' else 'no' end,
                   coalesce((select l.monto::text from asiento_lineas l where l.asiento_id = v_nuevo and l.monto > 0), '-'),
                   (select case when r.contabilizado_en = v_nuevo and v_nuevo <> v_orig then 'apunta_al_nuevo' else 'no' end
                      from recibos r where r.id = -3100016),
+                  coalesce((select d.estado || '/' || coalesce(d.codigo, '-') from puente_documentos d
+                             where d.tabla = 'recibos' and d.documento_id = '-3100016'), '-'),
                   v_ok)
       into v_obt;
     raise exception using errcode = 'MXT00';
@@ -1732,7 +1748,10 @@ begin
     execute 'reset role';
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    v_ap := fn_horas_aprobar(v_equipo, v_dia, v_dia);
+    v_ap := fn_horas_aprobar(v_equipo, v_dia, v_dia,
+                             (select jsonb_build_object('ids', coalesce(jsonb_agg(h.id order by h.id), '[]'::jsonb))
+                                from horas h
+                               where h.usuario_id = v_equipo and h.fecha between v_dia and v_dia and h.aprobado_el is null));
     execute 'reset role';
     select format('reporta=%s asientos_nuevos=%s aprobar=%s/%s por=%s vista=%s rastro=%s', v_id,
                   (select count(*) from asientos) - v_n0, v_ap->>'reportes', v_ap->>'horas',
@@ -1778,7 +1797,10 @@ begin
            (-3100311, v_desde + 27, v_equipo, v_obra, 4.0, 'c3-pruebas', 'aprobada');
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    perform fn_horas_aprobar(v_equipo, v_desde + 27, v_desde + 27);
+    perform fn_horas_aprobar(v_equipo, v_desde + 27, v_desde + 27,
+                             (select jsonb_build_object('ids', coalesce(jsonb_agg(h.id order by h.id), '[]'::jsonb))
+                                from horas h
+                               where h.usuario_id = v_equipo and h.fecha between v_desde + 27 and v_desde + 27 and h.aprobado_el is null));
     execute 'reset role';
     perform set_config('request.jwt.claims', json_build_object('sub', v_equipo, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
@@ -1913,7 +1935,10 @@ begin
     values (-3100330, v_desde + 11, v_equipo, v_obra, 8.0, 'c3-pruebas', 'C3-DEV');
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    perform fn_horas_aprobar(v_equipo, v_desde + 11, v_desde + 11);
+    perform fn_horas_aprobar(v_equipo, v_desde + 11, v_desde + 11,
+                             (select jsonb_build_object('ids', coalesce(jsonb_agg(h.id order by h.id), '[]'::jsonb))
+                                from horas h
+                               where h.usuario_id = v_equipo and h.fecha between v_desde + 11 and v_desde + 11 and h.aprobado_el is null));
     v_r1 := fn_horas_devengar(v_mes);
     v_r2 := fn_horas_devengar(v_mes);
     execute 'reset role';
@@ -2211,7 +2236,8 @@ begin
     foreach v_fn in array array['select public.fn_mapeo_categoria(''c3 x'', ''5100'')',
                                 'select public.fn_puentes_correr()',
                                 'select public.fn_cobro_registrar(''{}''::jsonb)',
-                                format('select public.fn_horas_aprobar(%L::uuid, %L::date, %L::date)', v_equipo, v_desde, v_desde),
+                                format('select public.fn_horas_aprobar(%L::uuid, %L::date, %L::date, ''{"reportes": 0, "horas": "0"}''::jsonb)',
+                                       v_equipo, v_desde, v_desde),
                                 'select public.fn_recibo_anular(-3100430, ''c3'')'] loop
       begin
         execute v_fn;
@@ -3034,7 +3060,10 @@ begin
            (-3200011, v_dia, v_equipo, v_obra, 'rough', 2, 'c3-pruebas', 'aprobada', 'c3-horas-11');
     -- El editor: sin sesión de la API (auth.uid() nulo).
     perform set_config('request.jwt.claims', '', true);
-    v_ap := fn_horas_aprobar(v_equipo, v_dia, v_dia);
+    v_ap := fn_horas_aprobar(v_equipo, v_dia, v_dia,
+                             (select jsonb_build_object('ids', coalesce(jsonb_agg(h.id order by h.id), '[]'::jsonb))
+                                from horas h
+                               where h.usuario_id = v_equipo and h.fecha between v_dia and v_dia and h.aprobado_el is null));
     select string_agg(coalesce(h.correccion_estado, '-'), '/' order by h.id desc) into v_perm
       from horas h where h.id in (-3200010, -3200011);
     v_des := fn_horas_desaprobar(v_equipo, v_dia, v_dia, 'c3: retiro de prueba');
@@ -3215,7 +3244,9 @@ begin
 end $$;
 
 -- 52. Anular una factura que ESTUVO en el libro y hoy no tiene asiento vivo
---     (se reversó a mano y el puente todavía no la repuso): con un cobro
+--     (se reversó —la mano ya no puede, fn_reversar dice MX007; aquí lo
+--     simula el SQL Editor con fn_reversar_interno— y el puente todavía no
+--     la repuso): con un cobro
 --     aplicado, MX008 (primero el cobro); sin cobros, MX008 también (primero
 --     se repone su asiento). Nunca «anulada sin nota de crédito».
 do $$
@@ -3243,8 +3274,12 @@ begin
     execute 'set local role authenticated';
     perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 5)::text, 'monto', '300.00',
               'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3200050, 'monto', '300.00'))));
-    perform fn_reversar((select f.contabilizado_en from facturas f where f.id = -3200050), 'c3: lo rehago');
-    perform fn_reversar((select f.contabilizado_en from facturas f where f.id = -3200051), 'c3: lo rehago');
+    execute 'reset role';
+    perform fn_reversar_interno((select f.contabilizado_en from facturas f where f.id = -3200050), 'c3: lo rehago', 'reverso',
+                                '{"funcion": "c3-pruebas"}'::jsonb);
+    perform fn_reversar_interno((select f.contabilizado_en from facturas f where f.id = -3200051), 'c3: lo rehago', 'reverso',
+                                '{"funcion": "c3-pruebas"}'::jsonb);
+    execute 'set local role authenticated';
     begin
       perform fn_factura_anular(-3200050, 'c3: la cambio por otra', v_desde + 6);
       v_a := 'anuló';
@@ -3504,10 +3539,16 @@ begin
     values (-3200100, v_desde + 3, v_equipo, v_obra, 'rough', 8, 'c3-pruebas', 'C3-DEV', 'c3-horas-100');
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    perform fn_horas_aprobar(v_equipo, v_desde + 3, v_desde + 3);
+    perform fn_horas_aprobar(v_equipo, v_desde + 3, v_desde + 3,
+                             (select jsonb_build_object('ids', coalesce(jsonb_agg(h.id order by h.id), '[]'::jsonb))
+                                from horas h
+                               where h.usuario_id = v_equipo and h.fecha between v_desde + 3 and v_desde + 3 and h.aprobado_el is null));
     perform fn_horas_devengar(v_mes);
     update horas set proyecto_id = v_obra2 where id = -3200100;
-    perform fn_horas_aprobar(v_equipo, v_desde + 3, v_desde + 3);
+    perform fn_horas_aprobar(v_equipo, v_desde + 3, v_desde + 3,
+                             (select jsonb_build_object('ids', coalesce(jsonb_agg(h.id order by h.id), '[]'::jsonb))
+                                from horas h
+                               where h.usuario_id = v_equipo and h.fecha between v_desde + 3 and v_desde + 3 and h.aprobado_el is null));
     execute 'reset role';
     select v.ok::text into v_ctl from fn_puentes_verificar() v where v.control = 'devengo';
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
@@ -3657,7 +3698,10 @@ begin
     values (-3200130, v_desde + 3, v_dueno, v_obra, 'rough', 6, 'c3-pruebas', 'C3-OFI', 'c3-horas-130');
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    perform fn_horas_aprobar(v_dueno, v_desde + 3, v_desde + 3);
+    perform fn_horas_aprobar(v_dueno, v_desde + 3, v_desde + 3,
+                             (select jsonb_build_object('ids', coalesce(jsonb_agg(h.id order by h.id), '[]'::jsonb))
+                                from horas h
+                               where h.usuario_id = v_dueno and h.fecha between v_desde + 3 and v_desde + 3 and h.aprobado_el is null));
     begin
       perform fn_horas_devengar(v_mes);
     exception when sqlstate 'MX008' then
@@ -3683,8 +3727,10 @@ begin
 end $$;
 
 -- 61. Una factura que queda en NEGATIVO en el libro (su ingreso se reversó
---     y tenía un cobro aplicado) no dice «cuadra»: facturas_cobro lo avisa y
---     el control partidas de fn_puentes_verificar se pone en rojo.
+--     —aquí con fn_reversar_interno desde el SQL Editor: la mano ya no
+--     reversa el asiento de un puente— y tenía un cobro aplicado) no dice
+--     «cuadra»: facturas_cobro lo avisa y el control partidas de
+--     fn_puentes_verificar se pone en rojo.
 do $$
 declare
   v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
@@ -3707,8 +3753,9 @@ begin
     execute 'set local role authenticated';
     perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 5)::text, 'monto', '400.00',
               'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3200140, 'monto', '400.00'))));
-    perform fn_reversar((select f.contabilizado_en from facturas f where f.id = -3200140), 'c3: lo rehago');
     execute 'reset role';
+    perform fn_reversar_interno((select f.contabilizado_en from facturas f where f.id = -3200140), 'c3: lo rehago', 'reverso',
+                                '{"funcion": "c3-pruebas"}'::jsonb);
     select format('saldo=%s aviso=%s partidas=%s', fc.saldo_libro,
                   case when fc.aviso like 'en negativo en el libro%' then 'en_negativo' else fc.aviso end,
                   coalesce((select v.ok::text from fn_puentes_verificar() v where v.control = 'partidas'), '-'))
@@ -4029,7 +4076,10 @@ begin
     values (-3200190, v_desde + 3, v_equipo, v_obra, 'rough', 8, 'c3-pruebas', 'c3-horas-190');
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    perform fn_horas_aprobar(v_equipo, v_desde + 3, v_desde + 3);
+    perform fn_horas_aprobar(v_equipo, v_desde + 3, v_desde + 3,
+                             (select jsonb_build_object('ids', coalesce(jsonb_agg(h.id order by h.id), '[]'::jsonb))
+                                from horas h
+                               where h.usuario_id = v_equipo and h.fecha between v_desde + 3 and v_desde + 3 and h.aprobado_el is null));
     perform fn_horas_devengar(v_mes);
     -- Se retiran TODAS las aprobaciones del mes (solo aquí adentro).
     update horas set aprobado_por = null, aprobado_el = null
@@ -4480,7 +4530,10 @@ begin
     values (-3300040, v_desde + 11, v_equipo, v_obra, 8.0, 'c3-pruebas', 'C3-NOM');
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    perform fn_horas_aprobar(v_equipo, v_desde + 11, v_desde + 11);
+    perform fn_horas_aprobar(v_equipo, v_desde + 11, v_desde + 11,
+                             (select jsonb_build_object('ids', coalesce(jsonb_agg(h.id order by h.id), '[]'::jsonb))
+                                from horas h
+                               where h.usuario_id = v_equipo and h.fecha between v_desde + 11 and v_desde + 11 and h.aprobado_el is null));
     v_r1 := fn_horas_devengar(v_mes);
     execute 'reset role';
     -- El journal del proveedor de nómina de esas horas (como lo postea f11).
@@ -4708,7 +4761,10 @@ begin
     values (-3300070, v_desde + 11, v_equipo, v_obra, 8.0, 'c3-pruebas', 'C3-MO');
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    perform fn_horas_aprobar(v_equipo, v_desde + 11, v_desde + 11);
+    perform fn_horas_aprobar(v_equipo, v_desde + 11, v_desde + 11,
+                             (select jsonb_build_object('ids', coalesce(jsonb_agg(h.id order by h.id), '[]'::jsonb))
+                                from horas h
+                               where h.usuario_id = v_equipo and h.fecha between v_desde + 11 and v_desde + 11 and h.aprobado_el is null));
     perform fn_horas_devengar(v_mes);
     execute 'reset role';
     v_a1 := fn_postear(jsonb_build_object('fecha', to_char(v_desde + 14, 'YYYY-MM-DD'), 'reversible', true,
@@ -5475,7 +5531,10 @@ begin
            (-3300191, v_desde + 27, v_equipo, v_obra, 4.0, 'c3-pruebas', 'aprobada');
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    perform fn_horas_aprobar(v_equipo, v_desde + 26, v_desde + 26);
+    perform fn_horas_aprobar(v_equipo, v_desde + 26, v_desde + 26,
+                             (select jsonb_build_object('ids', coalesce(jsonb_agg(h.id order by h.id), '[]'::jsonb))
+                                from horas h
+                               where h.usuario_id = v_equipo and h.fecha between v_desde + 26 and v_desde + 26 and h.aprobado_el is null));
     execute 'reset role';
     -- El trabajador, con su permiso de corrección, le cambia el número.
     perform set_config('request.jwt.claims', json_build_object('sub', v_equipo, 'role', 'authenticated')::text, true);
@@ -5600,16 +5659,1371 @@ begin
   end if;
 end $$;
 
--- 91. NO DEJA RASTRO: todo lo de arriba se deshizo. El libro, los papeles,
---     las reglas, los historiales, los contadores, las secuencias de la app
---     y las huellas están como al empezar.
+-- =====================================================================
+-- Ronda 5: lo que se encontró después (una prueba por hallazgo)
+-- =====================================================================
+
+-- 91. El ✎ de Edgar sobre un recibo LEÍDO con subtotal y tax (como lo deja
+--     la lectura; el ✎ no los tiene, así que el total nuevo ya no es su
+--     suma): entra igual (lo que se pagó es lo que tecleó Edgar), con el
+--     descuadre como aviso en la bandeja; y la foto nueva que le pone
+--     después con 📷 también llega al libro (el recibo no se queda
+--     congelado). Confirmar el aviso lo quita, y el libro no se mueve.
+--     Antes: el libro se quedaba con el total viejo y la foto vieja, y el
+--     control documentos en rojo.
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_vivo  uuid;
+  v_uno   text;
+  v_obt   text;
+  v_esp   text := 'total=243.57 aviso=contabilizado/impuesto foto=recibos/c3-pruebas/nueva-91.jpg asientos=5/2 documentos=t '
+                  'confirmado=contabilizado/- asientos=5/2';
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (91, 'el ✎ del total con subtotal y tax de la lectura entra (con aviso) y la foto nueva también',
+                                 v_esp, 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3400001, 'total', '245.37', 'subtotal', '229.32', 'tax', '16.05'));
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    -- El ✎ (btn-recibo-total): proveedor, notas, total y estado.
+    update recibos set proveedor = 'C3 PRUEBAS SUPPLY', notas = 'c3: corregido', total = 243.57, estado = 'leido'
+     where id = -3400001;
+    -- El 📷: la foto nueva.
+    update recibos set ruta = 'recibos/c3-pruebas/nueva-91.jpg' where id = -3400001;
+    execute 'reset role';
+    v_vivo := pg_temp.c3_vivo('recibos', '-3400001');
+    select format('total=%s aviso=%s foto=%s asientos=%s documentos=%s',
+                  coalesce((select l.monto::text from asiento_lineas l where l.asiento_id = v_vivo and l.monto > 0), '-'),
+                  coalesce((select d.estado || '/' || coalesce(d.codigo, '-') from puente_documentos d
+                             where d.tabla = 'recibos' and d.documento_id = '-3400001'), '-'),
+                  coalesce((select a.documento_ruta from asientos a where a.id = v_vivo), '-'),
+                  pg_temp.c3_cuantos('recibos', '-3400001'),
+                  coalesce((select case when c.ok then 't' else 'f' end from fn_puentes_verificar() c
+                             where c.control = 'documentos'), '-'))
+      into v_uno;
+    perform fn_puentes_confirmar('recibos', -3400001, 'impuesto', 'c3: el total es lo que se pagó');
+    v_obt := v_uno || format(' confirmado=%s asientos=%s',
+                             coalesce((select d.estado || '/' || coalesce(d.codigo, '-') from puente_documentos d
+                                        where d.tabla = 'recibos' and d.documento_id = '-3400001'), '-'),
+                             pg_temp.c3_cuantos('recibos', '-3400001'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (91, 'el ✎ del total con subtotal y tax de la lectura entra (con aviso) y la foto nueva también',
+                               v_esp, coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 92. Un recibo ANULADO no vuelve con un update que solo le cambia el
+--     estado (el editar_gasto del conector con estado 'leido'): MX003 y el
+--     mensaje dice cómo (fn_recibo_desanular, con su motivo, solo Edgar),
+--     en vez de «hecho» y seguir anulado. El ✎ que trae una nota la guarda
+--     y el recibo sigue anulado. El conector no des-anula (42501: se lo
+--     pide a Edgar); Edgar sí, y el recibo vuelve al libro.
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_a     text;
+  v_b     text;
+  v_c     text;
+  v_d     text;
+  v_obt   text;
+  v_esp   text := 'conector=MX003/dice_como nota=guardada/anulado desanular_conector=42501 desanular_edgar=leido/contabilizado';
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (92, 'des-anular un recibo: el conector recibe MX003 con el camino, no un «hecho» callado', v_esp,
+                                 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3400010, 'total', '50.00'));
+    perform fn_recibo_anular(-3400010, 'c3: repetido');
+    -- a) El conector (service_role): editar_gasto con estado 'leido'.
+    begin
+      perform set_config('request.jwt.claims', json_build_object('role', 'service_role')::text, true);
+      execute 'set local role service_role';
+      update recibos set estado = 'leido' where id = -3400010;
+      v_a := 'hecho/' || (select r.estado from recibos r where r.id = -3400010);
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_a := sqlstate || case when sqlerrm like '%fn_recibo_desanular(-3400010%' then '/dice_como' else '' end;
+    end;
+    execute 'reset role';
+    -- b) El ✎ de Edgar sobre el anulado, con su nota.
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    update recibos set proveedor = 'C3 PRUEBAS SUPPLY', notas = 'c3: no era repetido', total = 50.00, estado = 'leido'
+     where id = -3400010;
+    execute 'reset role';
+    select case when r.notas = 'c3: no era repetido' then 'guardada' else 'perdida' end || '/' || r.estado into v_b
+      from recibos r where r.id = -3400010;
+    -- c) La puerta, con el rol del conector.
+    begin
+      perform set_config('request.jwt.claims', json_build_object('role', 'service_role')::text, true);
+      execute 'set local role service_role';
+      perform fn_recibo_desanular(-3400010, 'c3: no era repetido');
+      v_c := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_c := sqlstate;
+    end;
+    execute 'reset role';
+    -- d) Edgar.
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform fn_recibo_desanular(-3400010, 'c3: no era repetido');
+    execute 'reset role';
+    select r.estado || '/' || coalesce(d.estado, '-') into v_d
+      from recibos r left join puente_documentos d on d.tabla = 'recibos' and d.documento_id = r.id::text
+     where r.id = -3400010;
+    v_obt := format('conector=%s nota=%s desanular_conector=%s desanular_edgar=%s', v_a, v_b, v_c, v_d);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (92, 'des-anular un recibo: el conector recibe MX003 con el camino, no un «hecho» callado', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 93. El VOCABULARIO del conector Max Power (registrar_gasto /
+--     importar_gastos): 'cuenta_proveedor', 'debito' y 'credito' como forma
+--     de pago, 'renta_equipo' y 'labor_externo' como categoría, y
+--     'sin_asignar' como obra. Vienen en el arranque (en borrador, como
+--     todo); confirmados, sus gastos entran: el de cuenta_proveedor a la
+--     cuenta de su proveedor, el de débito a su tarjeta, la renta de equipo
+--     a su cuenta, y el sin_asignar sin obra (a la cuenta sin obra de su
+--     categoría). Antes: todos en la bandeja.
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_obt   text;
+  v_esp   text;
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (93, 'el vocabulario del conector entra: cuenta_proveedor, debito, credito, renta_equipo', '-',
+                                 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  v_esp := format('arranque=credito/tarjeta,cuenta_proveedor/cuenta_proveedor,debito/tarjeta,labor_externo/%s,renta_equipo/%s '
+                  'cuenta_proveedor=%s debito=2100-9998 renta=%s sin_asignar=sin_obra',
+                  (select m.cuenta from mapeo_categoria_recibo m where m.categoria = 'labor_externo'),
+                  (select m.cuenta from mapeo_categoria_recibo m where m.categoria = 'renta_equipo'),
+                  fn_puente_cuenta_de('cxp'),
+                  (select m.cuenta from mapeo_categoria_recibo m where m.categoria = 'renta_equipo'));
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    perform fn_mapeo_confirmar('metodo_pago', 'cuenta_proveedor');
+    perform fn_mapeo_confirmar('metodo_pago', 'debito');
+    perform fn_mapeo_confirmar('metodo_pago', 'credito');
+    perform fn_mapeo_confirmar('categoria', 'renta_equipo');
+    -- Como los escribe el conector (service_role).
+    perform set_config('request.jwt.claims', json_build_object('role', 'service_role')::text, true);
+    execute 'set local role service_role';
+    insert into recibos (id, proyecto_id, total, subtotal, tax, proveedor, notas, estado, autor_id, creado, fecha, categoria,
+                         num_recibo, metodo_pago, ultimos4)
+    overriding system value values
+      (-3400020, v_obra, 107.00, 100.00, 7.00, 'C3 PRUEBAS SUPPLY', 'c3: statement', 'leido', v_dueno,
+       ((v_desde + 13) + time '12:00') at time zone 'America/New_York', v_desde + 13, 'c3 pruebas material', 'C3-9001',
+       'cuenta_proveedor', null),
+      (-3400021, v_obra, 53.50, 50.00, 3.50, 'C3 HD', 'c3: via Claude', 'leido', v_dueno,
+       ((v_desde + 13) + time '12:00') at time zone 'America/New_York', v_desde + 13, 'c3 pruebas material', 'C3-HD-1',
+       'debito', '9998'),
+      (-3400022, v_obra, 214.00, 200.00, 14.00, 'C3 SUNBELT', 'c3: via Claude', 'leido', v_dueno,
+       ((v_desde + 13) + time '12:00') at time zone 'America/New_York', v_desde + 13, 'renta_equipo', 'C3-SB-7',
+       'credito', '9998'),
+      (-3400023, 'sin_asignar', 20.00, null, null, 'C3 GAS', 'c3: via Claude', 'leido', v_dueno,
+       ((v_desde + 13) + time '12:00') at time zone 'America/New_York', v_desde + 13, 'c3 pruebas gasolina', 'C3-G-1',
+       'debito', '9998');
+    execute 'reset role';
+    select format('arranque=%s cuenta_proveedor=%s debito=%s renta=%s sin_asignar=%s',
+                  (select string_agg(x, ',' order by x) from (
+                     select m.metodo_pago || '/' || m.forma as x from mapeo_metodo_pago m
+                      where m.metodo_pago in ('cuenta_proveedor', 'debito', 'credito')
+                     union all
+                     select m.categoria || '/' || m.cuenta from mapeo_categoria_recibo m
+                      where m.categoria in ('renta_equipo', 'labor_externo')) q),
+                  coalesce((select l.cuenta from asiento_lineas l where l.asiento_id = pg_temp.c3_vivo('recibos', '-3400020')
+                              and l.monto < 0), (select d.estado || '/' || d.codigo from puente_documentos d
+                                                   where d.tabla = 'recibos' and d.documento_id = '-3400020')),
+                  coalesce((select l.cuenta from asiento_lineas l where l.asiento_id = pg_temp.c3_vivo('recibos', '-3400021')
+                              and l.monto < 0), (select d.estado || '/' || d.codigo from puente_documentos d
+                                                   where d.tabla = 'recibos' and d.documento_id = '-3400021')),
+                  coalesce((select l.cuenta from asiento_lineas l where l.asiento_id = pg_temp.c3_vivo('recibos', '-3400022')
+                              and l.monto > 0), (select d.estado || '/' || d.codigo from puente_documentos d
+                                                   where d.tabla = 'recibos' and d.documento_id = '-3400022')),
+                  coalesce((select case when l.proyecto_id is null then 'sin_obra' else l.proyecto_id end
+                              from asiento_lineas l where l.asiento_id = pg_temp.c3_vivo('recibos', '-3400023') and l.monto > 0),
+                           (select d.estado || '/' || d.codigo from puente_documentos d
+                             where d.tabla = 'recibos' and d.documento_id = '-3400023')))
+      into v_obt;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (93, 'el vocabulario del conector entra: cuenta_proveedor, debito, credito, renta_equipo', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 94. Una factura que la APERTURA ya trae (su partida facturas/<id>, con su
+--     obra) no entra otra vez por su puente: si la apertura llega después
+--     de que el puente la contabilizó, mientras está dos veces el control
+--     partidas lo dice y no se deja cobrar el doble (MX008); la siguiente
+--     pasada reversa el asiento del puente (no_aplica/en_apertura) y queda
+--     lo de la apertura. Una que la apertura ya traía no entra nunca.
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_ap    text;
+  v_a     text;
+  v_b     text;
+  v_obt   text;
+  v_esp   text := 'dos_veces=f cobrar_el_doble=MX008 pasada=no_aplica/en_apertura saldo=2000.00 partidas=t '
+                  'ya_estaba=no_aplica/en_apertura asientos=0/0';
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (94, 'una factura que la apertura ya trae no entra otra vez por su puente', v_esp,
+                                 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
+    values (-3400040, v_obra, 'C3-4040', v_desde, 2000.00, 0);
+    -- f04 carga la apertura DESPUÉS: 1110 por factura abierta, con su obra.
+    v_ap := pg_temp.c3_apertura('facturas', '-3400040', fn_puente_cuenta_de('cxc'), -2000.00, null, null, v_obra);
+    if v_ap is null then
+      v_obt := 'omitida: sin apertura';
+      raise exception using errcode = 'MXT00';
+    end if;
+    select case when c.ok then 't' else 'f' end into v_a from fn_puentes_verificar() c where c.control = 'partidas';
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 9)::text, 'monto', '4000.00', 'medio', 'cheque',
+                'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400040, 'monto', '4000.00'))));
+      v_b := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_b := sqlstate;
+    end;
+    perform fn_puentes_correr();
+    execute 'reset role';
+    -- Una que la apertura ya traía antes de pasar por su puente: se guarda
+    -- (su puente, diferido, espera al final), llega la apertura, y el
+    -- puente corre al «confirmar».
+    set constraints trg_puente_facturas_despues deferred;
+    insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
+    values (-3400041, v_obra, 'C3-4041', v_desde, 600.00, 0);
+    perform pg_temp.c3_apertura('facturas', '-3400041', fn_puente_cuenta_de('cxc'), -600.00, null, null, v_obra);
+    set constraints trg_puente_facturas_despues immediate;
+    select format('dos_veces=%s cobrar_el_doble=%s pasada=%s saldo=%s partidas=%s ya_estaba=%s asientos=%s', v_a, v_b,
+                  coalesce((select d.estado || '/' || d.codigo from puente_documentos d
+                             where d.tabla = 'facturas' and d.documento_id = '-3400040'), '-'),
+                  pg_temp.c3_saldo(fn_puente_cuenta_de('cxc'), 'facturas', '-3400040'),
+                  coalesce((select case when c.ok then 't' else 'f' end from fn_puentes_verificar() c
+                             where c.control = 'partidas'), '-'),
+                  coalesce((select d.estado || '/' || d.codigo from puente_documentos d
+                             where d.tabla = 'facturas' and d.documento_id = '-3400041'), '-'),
+                  pg_temp.c3_cuantos('facturas', '-3400041'))
+      into v_obt;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  if v_obt like 'omitida:%' then
+    insert into _pruebas values (94, 'una factura que la apertura ya trae no entra otra vez por su puente', v_esp, v_obt, null);
+  else
+    insert into _pruebas values (94, 'una factura que la apertura ya trae no entra otra vez por su puente', v_esp,
+                                 coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+  end if;
+end $$;
+
+-- 95. El MISMO depósito dos veces: registrado a mano desde el teléfono y
+--     después con su movimiento del banco (o a mano otra vez, con otra
+--     llave). El segundo no entra (MX008): con su movimiento, el mensaje
+--     trae el SQL para casarlo con el que ya está; si de verdad es otro
+--     depósito, se dice (duplicado_confirmado) y entra, con su motivo
+--     escrito. Y dos cobros vigentes iguales metidos por debajo salen en el
+--     control duplicados.
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_cobro jsonb;
+  v_a     text;
+  v_b     text;
+  v_c     text;
+  v_d     text;
+  v_obt   text;
+  v_esp   text := 'banco=MX008/casar otra_llave=MX008 confirmado=entró/con_motivo duplicados=t por_debajo=f';
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (95, 'el mismo depósito dos veces no entra; si es otro, se dice', v_esp,
+                                 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
+    values (-3400050, v_obra, 'C3-4050', v_desde + 1, 5000.00, 0);
+    v_cobro := jsonb_build_object('fecha', (v_desde + 10)::text, 'monto', '1000.00', 'medio', 'cheque', 'referencia', '4471',
+                                  'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400050, 'monto', '1000.00')));
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform fn_cobro_registrar(v_cobro || '{"llave_cliente": "c3-95-a"}'::jsonb);
+    begin
+      perform fn_cobro_registrar(v_cobro || jsonb_build_object('movimiento_id', 'C3-MOV-95', 'fecha', (v_desde + 11)::text,
+                                                               'referencia', '#4471'));
+      v_a := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_a := sqlstate || case when sqlerrm like '%update cobros set movimiento_id = ''C3-MOV-95''%' then '/casar'
+                                               else '' end;
+    end;
+    begin
+      perform fn_cobro_registrar(v_cobro || '{"llave_cliente": "c3-95-b"}'::jsonb);
+      v_b := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_b := sqlstate;
+    end;
+    begin
+      perform fn_cobro_registrar(v_cobro || '{"llave_cliente": "c3-95-c", "duplicado_confirmado": "c3: dos cheques iguales"}'::jsonb);
+      v_c := 'entró/' || coalesce((select 'con_motivo' from cobros c
+                                    where c.llave_cliente = 'c3-95-c' and c.duplicado_motivo = 'c3: dos cheques iguales'), 'sin');
+    exception
+      when others then v_c := sqlstate;
+    end;
+    execute 'reset role';
+    select case when c.ok then 't' else 'f' end into v_d from fn_puentes_verificar() c where c.control = 'duplicados';
+    -- Por debajo (sin fn_cobro_registrar): el mismo depósito otra vez.
+    insert into cobros (fecha, monto, cuenta, medio, referencia, creado_por)
+    values (v_desde + 10, 1000.00, fn_puente_cuenta_de('banco'), 'cheque', '4471', v_dueno);
+    v_obt := format('banco=%s otra_llave=%s confirmado=%s duplicados=%s por_debajo=%s', v_a, v_b, v_c, v_d,
+                    coalesce((select case when c.ok then 't' else 'f' end from fn_puentes_verificar() c
+                               where c.control = 'duplicados'), '-'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (95, 'el mismo depósito dos veces no entra; si es otro, se dice', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 96. El mismo ticket leído con OTRO ALIAS de su proveedor (el nombre y
+--     «c3 pruebas supply inc» son el mismo proveedor): el segundo espera
+--     (duplicado) aunque sea de otro día, y el motivo dice que es el mismo
+--     proveedor. El mismo número y total de OTRO proveedor y otro día sí
+--     entra.
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_obt   text;
+  v_esp   text := 'alias=pendiente/duplicado mismo_proveedor=t otro_proveedor=contabilizado';
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (96, 'el mismo ticket con otro alias del proveedor espera como duplicado', v_esp,
+                                 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3400060, 'total', '107.00', 'proveedor', 'C3 PRUEBAS SUPPLY',
+                                                 'num_recibo', 'CED-77', 'fecha', (v_desde + 4)::text));
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3400061, 'total', '107.00', 'proveedor', 'c3 pruebas supply inc',
+                                                 'num_recibo', 'CED 77', 'fecha', (v_desde + 6)::text));
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3400062, 'total', '107.00', 'proveedor', 'C3 Otro',
+                                                 'num_recibo', 'CED-77', 'fecha', (v_desde + 8)::text));
+    select format('alias=%s mismo_proveedor=%s otro_proveedor=%s',
+                  coalesce((select d.estado || '/' || d.codigo from puente_documentos d
+                             where d.tabla = 'recibos' and d.documento_id = '-3400061'), '-'),
+                  coalesce((select d.motivo like '%recibo -3400060%del mismo proveedor aunque se leyó%' from puente_documentos d
+                             where d.tabla = 'recibos' and d.documento_id = '-3400061'), false),
+                  coalesce((select d.estado from puente_documentos d
+                             where d.tabla = 'recibos' and d.documento_id = '-3400062'), '-'))
+      into v_obt;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (96, 'el mismo ticket con otro alias del proveedor espera como duplicado', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 97. Sin forma de pago, la cuenta del proveedor SOLO si sus términos dicen
+--     crédito: «Contado» no abre una deuda (espera, y el mensaje dice por
+--     qué); «Net 30» sí. Y un ticket que trae los 4 últimos de una tarjeta
+--     dada de alta se pagó con ella: va a la tarjeta, no al proveedor.
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_obt   text;
+  v_esp   text;
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (97, 'sin forma de pago: a cuenta solo con términos de crédito; con los 4 de una tarjeta, a ella',
+                                 '-', 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  v_esp := format('contado=pendiente/metodo_pago dice_por_que=t net30=%s tarjeta=2100-9998/recibos.ultimos4 terminos=t,t,f,f,f,f',
+                  fn_puente_cuenta_de('cxp'));
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    perform fn_proveedor_alta('C3 CONTADO', 'Contado');
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3400070, 'total', '97.43', 'proveedor', 'C3 CONTADO',
+                                                 'metodo_pago', null, 'ultimos4', null));
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3400071, 'total', '97.44', 'proveedor', 'C3 PRUEBAS SUPPLY',
+                                                 'metodo_pago', null, 'ultimos4', null));
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3400072, 'total', '97.45', 'proveedor', 'C3 PRUEBAS SUPPLY',
+                                                 'metodo_pago', null, 'ultimos4', '9998'));
+    select format('contado=%s dice_por_que=%s net30=%s tarjeta=%s terminos=%s',
+                  coalesce((select d.estado || '/' || d.codigo from puente_documentos d
+                             where d.tabla = 'recibos' and d.documento_id = '-3400070'), '-'),
+                  coalesce((select d.motivo like '%«Contado»: no dicen crédito%' from puente_documentos d
+                             where d.tabla = 'recibos' and d.documento_id = '-3400070'), false),
+                  coalesce((select l.cuenta from asiento_lineas l
+                             where l.asiento_id = pg_temp.c3_vivo('recibos', '-3400071') and l.monto < 0), '-'),
+                  coalesce((select l.cuenta || '/' || (a.procedencia->'reglas'->'metodo_pago'->>'derivada_de')
+                              from asiento_lineas l join asientos a on a.id = l.asiento_id
+                             where l.asiento_id = pg_temp.c3_vivo('recibos', '-3400072') and l.monto < 0), '-'),
+                  (select string_agg(case when fn_puente_terminos_a_cuenta(t) then 't' else 'f' end, ',' order by n)
+                     from unnest(array['Net 30', '2% 10 Net 30', 'Contado', 'COD', 'Due on receipt', 'lo que sea']) with ordinality x(t, n)))
+      into v_obt;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (97, 'sin forma de pago: a cuenta solo con términos de crédito; con los 4 de una tarjeta, a ella',
+                               v_esp, coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 98. Un cheque que REBOTA: su devolución (fn_cobro_devolver) va en SU
+--     fecha, no en la del depósito. El depósito se queda en su día (el
+--     banco lo tiene: no se reversa), la devolución sale el día que el
+--     banco lo devolvió, y la factura vuelve a quedar por cobrar, con su
+--     obra. Un cobro ya devuelto no se anula (MX008: saldría dos veces) ni
+--     se devuelve otra vez.
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_cobro uuid;
+  v_dev   jsonb;
+  v_a     text;
+  v_b     text;
+  v_obt   text;
+  v_esp   text;
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (98, 'un cheque rebotado se devuelve en su fecha: el depósito se queda en la suya', '-',
+                                 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  v_esp := format('deposito=%s/8000.00 reversos=0 devolucion=%s/-8000.00 factura=8000.00/%s cobrado=0.00 anular=MX008 '
+                  'otra_vez=MX008', v_desde + 20, v_desde + 25, v_obra);
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
+    values (-3400080, v_obra, 'C3-4080', v_desde + 1, 8000.00, 0);
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_cobro := (fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 20)::text, 'monto', '8000.00', 'medio', 'cheque',
+                  'referencia', '9001',
+                  'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400080, 'monto', '8000.00'))))->>'cobro')::uuid;
+    v_dev := fn_cobro_devolver(v_cobro, v_desde + 25, 'c3: el cheque 9001 rebotó', 'C3-MOV-98');
+    begin
+      perform fn_cobro_anular(v_cobro, 'c3: rebotó');
+      v_a := 'anuló';
+    exception when others then
+      v_a := sqlstate;
+    end;
+    begin
+      perform fn_cobro_devolver(v_cobro, v_desde + 26, 'c3: otra vez', null);
+      v_b := 'entró';
+    exception when others then
+      v_b := sqlstate;
+    end;
+    execute 'reset role';
+    select format('deposito=%s reversos=%s devolucion=%s factura=%s cobrado=%s anular=%s otra_vez=%s',
+                  (select a.fecha_contable || '/' || l.monto from asientos a join asiento_lineas l on l.asiento_id = a.id
+                    where a.origen_tabla = 'cobros' and a.origen_id = v_cobro::text and a.camino = 'puente'
+                      and l.cuenta = fn_puente_cuenta_de('banco')),
+                  (select count(*) from asientos a where a.origen_tabla = 'cobros' and a.origen_id = v_cobro::text
+                      and a.camino = 'reverso'),
+                  (select a.fecha_contable || '/' || l.monto from asientos a join asiento_lineas l on l.asiento_id = a.id
+                    where a.origen_tabla = 'cobros_devoluciones' and a.origen_id = v_dev->>'devolucion'
+                      and l.cuenta = fn_puente_cuenta_de('banco')),
+                  (select sum(l.monto) || '/' || string_agg(distinct coalesce(l.proyecto_id, 'sin obra'), ',')
+                     from asiento_lineas l
+                    where l.partida_tabla = 'facturas' and l.partida_id = '-3400080' and l.cuenta = fn_puente_cuenta_de('cxc')),
+                  (select fc.cobrado_libro from facturas_cobro fc where fc.id = -3400080),
+                  v_a, v_b)
+      into v_obt;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (98, 'un cheque rebotado se devuelve en su fecha: el depósito se queda en la suya', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 99. Un mes no se CIERRA con su devengo estándar y el journal de nómina
+--     juntos (MX008, y el mensaje dice cómo deshacerlo); deshecho, se
+--     cierra. Y un mes que ya quedó cerrado así (antes de esta guarda: se
+--     simula apagándola un instante) no se pone en verde al cerrarse: el
+--     control devengo lo sigue diciendo, hasta que un asiento lo corrige y
+--     lo nombra en su motivo.
+do $$
+declare
+  v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_equipo uuid := nullif(current_setting('mx3.equipo', true), '')::uuid;
+  v_obra   text := nullif(current_setting('mx3.obra', true), '');
+  v_desde  date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_mes    text := nullif(current_setting('mx3.mes', true), '');
+  v_sig    text := nullif(current_setting('mx3.sig', true), '');
+  v_mo     text := fn_puente_cuenta_de('mano_obra');
+  v_dev    jsonb;
+  v_a      text;
+  v_b      text;
+  v_c      text;
+  v_d      text;
+  v_e      text;
+  v_obt    text;
+  v_esp    text := 'cerrar=MX008/dice_como deshacer=reversado cerrar_despues=cerrado cerrado_con_los_dos=f/en_el_cerrado corregido=t';
+begin
+  if v_dueno is null or v_equipo is null or v_obra is null or v_desde is null or v_sig is null then
+    insert into _pruebas values (99, 'un mes no se cierra con devengo y journal juntos; el cerrado así sigue en rojo', v_esp,
+                                 'omitida: falta dueño, alguien del equipo, obra, o el mes abierto y el siguiente', null);
+    return;
+  end if;
+  begin
+    lock table public.periodos in exclusive mode;   -- antes que el de la cadena (ver la cabecera)
+    insert into costos_equipo (usuario_id, costo_hora) values (v_equipo, 30.00)
+    on conflict (usuario_id) do update set costo_hora = 30.00;
+    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas, co)
+    values (-3400090, v_desde + 11, v_equipo, v_obra, 8.0, 'c3-pruebas', 'C3-CIE');
+    perform fn_horas_aprobar(v_equipo, v_desde + 11, v_desde + 11, '{"ids": [-3400090]}'::jsonb);
+    -- a) Cerrar con los dos juntos: no.
+    begin
+      v_dev := fn_horas_devengar(v_mes);
+      perform fn_postear_interno(jsonb_build_object(
+        'camino', 'puente', 'fecha', to_char(v_desde + 14, 'YYYY-MM-DD'), 'origen_tabla', 'nomina_corridas',
+        'origen_id', 'c3-pruebas-99a', 'descripcion', 'c3-pruebas: journal de nómina (se deshace)',
+        'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_mo, 'monto', '240.00', 'proyecto_id', v_obra),
+                                    jsonb_build_object('cuenta', current_setting('mx3.banco'), 'monto', '-240.00'))));
+      begin
+        perform pg_temp.c3_cerrar_hasta(v_mes);
+        v_a := 'cerrado';
+        raise exception using errcode = 'MXT01';
+      exception
+        when sqlstate 'MXT01' then null;
+        when others then v_a := sqlstate || case when sqlerrm like '%fn_horas_devengar(%' then '/dice_como' else '' end;
+      end;
+      v_b := fn_horas_devengar(v_mes)->>'accion';
+      perform pg_temp.c3_cerrar_hasta(v_mes);
+      select p.estado into v_c from periodos p where p.periodo = v_mes;
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+    end;
+    -- b) Un mes que ya quedó cerrado con los dos (la guarda, apagada).
+    v_dev := fn_horas_devengar(v_mes);
+    perform fn_postear_interno(jsonb_build_object(
+      'camino', 'puente', 'fecha', to_char(v_desde + 14, 'YYYY-MM-DD'), 'origen_tabla', 'nomina_corridas',
+      'origen_id', 'c3-pruebas-99b', 'descripcion', 'c3-pruebas: journal de nómina (se deshace)',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_mo, 'monto', '240.00', 'proyecto_id', v_obra),
+                                  jsonb_build_object('cuenta', current_setting('mx3.banco'), 'monto', '-240.00'))));
+    set local lock_timeout = '2s';
+    alter table public.periodos disable trigger trg_puente_periodos_devengo;
+    perform pg_temp.c3_cerrar_hasta(v_mes);
+    alter table public.periodos enable trigger trg_puente_periodos_devengo;
+    select case when c.ok then 't' else 'f' end
+           || case when c.detalle::text like '%se quedó en el mes cerrado%' then '/en_el_cerrado' else '' end
+      into v_d
+      from fn_puentes_verificar() c where c.control = 'devengo';
+    -- El ajuste, en el mes abierto, que lo nombra.
+    perform fn_postear(jsonb_build_object(
+      'fecha', to_char((select p.desde from periodos p where p.periodo = v_sig), 'YYYY-MM-DD'),
+      'descripcion', 'c3-pruebas: lo deja dicho (se deshace)',
+      'motivo', 'c3: corrige el devengo ' || (v_dev->>'asiento') || ', que convivió con el journal',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', current_setting('mx3.vehiculo'), 'monto', '1.00'),
+                                  jsonb_build_object('cuenta', current_setting('mx3.banco'), 'monto', '-1.00'))));
+    select case when c.ok then 't' else 'f' end into v_e from fn_puentes_verificar() c where c.control = 'devengo';
+    v_obt := format('cerrar=%s deshacer=%s cerrar_despues=%s cerrado_con_los_dos=%s corregido=%s', v_a, v_b, v_c, v_d, v_e);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate '55P03' then v_obt := 'omitida: periodos en uso (lock_timeout)';
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  if v_obt like 'omitida:%' then
+    insert into _pruebas values (99, 'un mes no se cierra con devengo y journal juntos; el cerrado así sigue en rojo', v_esp,
+                                 v_obt, null);
+  else
+    insert into _pruebas values (99, 'un mes no se cierra con devengo y journal juntos; el cerrado así sigue en rojo', v_esp,
+                                 coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+  end if;
+end $$;
+
+-- 100. Un asiento a mano marcado ajuste_cpa del MISMO ejercicio no exime a
+--      la mano de obra: sueldos (5000), la parte de Edgar (5001) y el
+--      burden (5015) pagados del banco salen en rojo igual que si fuera
+--      normal. El ajuste que solo reclasifica entre costos (sin dinero ni
+--      pasivos) sigue en verde.
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_mes   text := nullif(current_setting('mx3.mes', true), '');
+  v_sig   text := nullif(current_setting('mx3.sig', true), '');
+  v_mat   text := current_setting('mx3.material', true);
+  v_fecha date;
+  v_num   text;
+  v_a     text;
+  v_b     text;
+  v_obt   text;
+  v_esp   text := 'ajuste_mismo_ejercicio=f/nombrado reclasificacion=t';
+begin
+  if v_dueno is null or v_obra is null or v_desde is null or v_sig is null then
+    insert into _pruebas values (100, 'mano de obra: un ajuste_cpa del mismo ejercicio no la exime', v_esp,
+                                 'omitida: falta dueño, obra, o el mes abierto y el siguiente', null);
+    return;
+  end if;
+  begin
+    lock table public.periodos in exclusive mode;   -- antes que el de la cadena (ver la cabecera)
+    perform pg_temp.c3_cerrar_hasta(v_mes);
+    select p.desde into v_fecha from periodos p where p.periodo = v_sig;
+    begin
+      v_num := fn_postear(jsonb_build_object(
+        'tipo', 'ajuste_cpa', 'afecta_periodo', v_mes, 'motivo', 'c3: sueldos del mes pagados con cheque',
+        'fecha', to_char(v_fecha, 'YYYY-MM-DD'), 'descripcion', 'c3-pruebas: sueldos pagados con cheque (se deshace)',
+        'lineas', jsonb_build_array(jsonb_build_object('cuenta', '5000', 'monto', '1500.00', 'proyecto_id', v_obra),
+                                    jsonb_build_object('cuenta', '5001', 'monto', '900.00', 'proyecto_id', v_obra),
+                                    jsonb_build_object('cuenta', '5015', 'monto', '300.00'),
+                                    jsonb_build_object('cuenta', current_setting('mx3.banco'), 'monto', '-2700.00'))))->>'numero';
+      select case when c.ok then 't' else 'f' end
+             || case when c.detalle->'asientos' ? v_num then '/nombrado' else '' end
+        into v_a
+        from fn_puentes_verificar() c where c.control = 'mano_de_obra';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+    end;
+    perform fn_postear(jsonb_build_object(
+      'tipo', 'ajuste_cpa', 'afecta_periodo', v_mes, 'motivo', 'c3: era material, no mano de obra',
+      'fecha', to_char(v_fecha, 'YYYY-MM-DD'), 'descripcion', 'c3-pruebas: reclasificación (se deshace)',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '5000', 'monto', '-100.00', 'proyecto_id', v_obra),
+                                  jsonb_build_object('cuenta', v_mat, 'monto', '100.00', 'proyecto_id', v_obra))));
+    select case when c.ok then 't' else 'f' end into v_b from fn_puentes_verificar() c where c.control = 'mano_de_obra';
+    v_obt := format('ajuste_mismo_ejercicio=%s reclasificacion=%s', coalesce(v_a, '-'), coalesce(v_b, '-'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (100, 'mano de obra: un ajuste_cpa del mismo ejercicio no la exime', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 101. Una factura CON retención que el GC paga entera: el MX008 de
+--      fn_cobro_registrar dice que lo que sobra es su retención (una
+--      segunda aplicación con es_retencion), no «déjalo de anticipo». Y un
+--      anticipo que sí era la retención se aplica a ella
+--      (fn_anticipo_aplicar con es_retencion): sin la marca, el mensaje lo
+--      dice; con ella, sale del anticipo y salda 1120. Antes: 1120 se
+--      quedaba con la retención ya cobrada, y el anticipo no se podía
+--      aplicar («tiene abiertos 0.00»).
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_cobro uuid;
+  v_a     text;
+  v_b     text;
+  v_c     text;
+  v_obt   text;
+  v_esp   text := 'todo_junto=MX008/es_su_retencion sin_marca=MX008/aplicalo_a_ella con_marca=entró 1110=0.00 1120=0.00 '
+                  'anticipo=0.00';
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (101, 'retención cobrada con la factura: el mensaje la nombra y el anticipo se le aplica', v_esp,
+                                 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
+    values (-3400110, v_obra, 'C3-4110', v_desde + 1, 3200.50, 320.05);
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 20)::text, 'monto', '3200.50', 'medio', 'cheque',
+                'referencia', '9101',
+                'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400110, 'monto', '3200.50'))));
+      v_a := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_a := sqlstate || case when sqlerrm like '%"es_retencion": true%' and sqlerrm not like '%anticipo%'
+                                               then '/es_su_retencion' else '' end;
+    end;
+    -- Como hacía Edgar siguiendo el mensaje de antes: lo que sobra, de anticipo.
+    v_cobro := (fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 20)::text, 'monto', '3200.50', 'medio', 'cheque',
+                  'referencia', '9101',
+                  'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400110, 'monto', '2880.45'),
+                                                    jsonb_build_object('proyecto_id', v_obra, 'monto', '320.05'))))->>'cobro')::uuid;
+    begin
+      perform fn_anticipo_aplicar(v_cobro, -3400110, '320.05', v_desde + 20);
+      v_b := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_b := sqlstate || case when sqlerrm like '%aplícalo a ella%' then '/aplicalo_a_ella' else '' end;
+    end;
+    begin
+      perform fn_anticipo_aplicar(v_cobro, -3400110, '320.05', v_desde + 20, true);
+      v_c := 'entró';
+    exception when others then
+      v_c := sqlstate || ' ' || left(sqlerrm, 60);
+    end;
+    execute 'reset role';
+    v_obt := format('todo_junto=%s sin_marca=%s con_marca=%s 1110=%s 1120=%s anticipo=%s', v_a, v_b, v_c,
+                    pg_temp.c3_saldo(fn_puente_cuenta_de('cxc'), 'facturas', '-3400110'),
+                    pg_temp.c3_saldo(fn_puente_cuenta_de('retencion_cxc'), 'facturas', '-3400110'),
+                    pg_temp.c3_saldo(fn_puente_cuenta_de('cxc'), 'cobros', v_cobro::text));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (101, 'retención cobrada con la factura: el mensaje la nombra y el anticipo se le aplica', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 102. facturas_cobro con un cobro PARCIAL no dice «cuadra»: el libro tiene
+--      3000 cobrados y la app nada (su casilla no lleva parciales): el
+--      aviso dice que lo cobrado es distinto, y que lo que casa con el banco
+--      es lo del libro.
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_obt   text;
+  v_esp   text := 'app=0.00 libro=3000.00 saldo=5000.00 aviso=cobrado_distinto/parcial';
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (102, 'facturas_cobro: un cobro parcial no «cuadra»', v_esp,
+                                 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
+    values (-3400120, v_obra, 'C3-4120', v_desde + 1, 8000.00, 0);
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 12)::text, 'monto', '3000.00', 'medio', 'cheque',
+              'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400120, 'monto', '3000.00'))));
+    execute 'reset role';
+    select format('app=%s libro=%s saldo=%s aviso=%s', coalesce(fc.cobrado_app, 0.00), fc.cobrado_libro, fc.saldo_libro,
+                  case when fc.aviso like 'cobrado distinto%cobro parcial%' then 'cobrado_distinto/parcial' else fc.aviso end)
+      into v_obt
+      from facturas_cobro fc where fc.id = -3400120;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (102, 'facturas_cobro: un cobro parcial no «cuadra»', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 103. Una factura es UNA partida por cobrar, con la obra de la factura:
+--      una línea de 1110 contra facturas/<id> sin obra (una apertura que no
+--      la trae) no entra (MX006, y el mensaje dice la obra); con su obra sí,
+--      y su cobro de octubre la salda entera: cxc_abierta no la enseña
+--      partida en dos (+2000 sin obra desde el 30-sep y −2000 en la obra).
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_a     text;
+  v_b     text;
+  v_obt   text;
+  v_esp   text := 'sin_obra=MX006/dice_la_obra con_obra=entró cobro=entró abiertas=0 por_obra=0.00/0.00';
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (103, 'una factura, una partida, una obra: la apertura sin obra no entra', v_esp,
+                                 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
+    values (-3400130, v_obra, 'C3-4130', fn_puente_corte() - 10, 2000.00, 0);
+    begin
+      v_a := pg_temp.c3_apertura('facturas', '-3400130', fn_puente_cuenta_de('cxc'), -2000.00, null, null);
+      v_a := coalesce('entró ' || v_a, 'omitida: sin apertura');
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_a := sqlstate || case when sqlerrm like '%' || v_obra || '%' then '/dice_la_obra' else '' end;
+    end;
+    if v_a = 'omitida: sin apertura' then
+      v_obt := v_a;
+      raise exception using errcode = 'MXT00';
+    end if;
+    v_b := case when pg_temp.c3_apertura('facturas', '-3400130', fn_puente_cuenta_de('cxc'), -2000.00, null, null, v_obra) is not null
+                then 'entró' else '-' end;
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 7)::text, 'monto', '2000.00', 'medio', 'cheque',
+              'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400130, 'monto', '2000.00'))));
+    execute 'reset role';
+    v_obt := format('sin_obra=%s con_obra=%s cobro=entró abiertas=%s por_obra=%s/%s', v_a, v_b,
+                    (select count(*) from cxc_abierta c where c.partida_tabla = 'facturas' and c.partida_id = '-3400130'),
+                    (select coalesce(sum(l.monto), 0.00) from asiento_lineas l
+                      where l.partida_tabla = 'facturas' and l.partida_id = '-3400130' and l.proyecto_id = v_obra),
+                    (select coalesce(sum(l.monto), 0.00) from asiento_lineas l
+                      where l.partida_tabla = 'facturas' and l.partida_id = '-3400130' and l.proyecto_id is null));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  if v_obt like 'omitida:%' then
+    insert into _pruebas values (103, 'una factura, una partida, una obra: la apertura sin obra no entra', v_esp, v_obt, null);
+  else
+    insert into _pruebas values (103, 'una factura, una partida, una obra: la apertura sin obra no entra', v_esp,
+                                 coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+  end if;
+end $$;
+
+-- 104. Una tarjeta o el efectivo no pagan desde un pasivo de NÓMINA (2220,
+--      el 941; 2230, el RT-6) ni desde un préstamo (25xx): la guarda de las
+--      reglas los rechaza (MX004). Una 2100-XXXX, un banco y el bolsillo de
+--      Edgar sí.
+do $$
+declare
+  v_dueno    uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_prestamo text;
+  v_a        text;
+  v_b        text;
+  v_c        text;
+  v_d        text;
+  v_e        text;
+  v_obt      text;
+  v_esp      text := 'tarjeta_2220=MX004 efectivo_2230=MX004 prestamo=MX004 tarjeta_2900=entró efectivo_banco=entró reglas=t';
+begin
+  select c.codigo into v_prestamo from cuentas c
+   where c.codigo like '25%' and c.tipo = 'pasivo' and c.imputable and c.activa order by c.codigo limit 1;
+  if v_dueno is null or v_prestamo is null or not exists (select 1 from cuentas where codigo = '2220')
+     or not exists (select 1 from cuentas where codigo = '2230') then
+    insert into _pruebas values (104, 'una tarjeta o el efectivo no pagan desde un pasivo de nómina ni un préstamo', v_esp,
+                                 'omitida: falta dueño, 2220, 2230 o un préstamo 25xx', null);
+    return;
+  end if;
+  begin
+    begin perform fn_tarjeta_alta('5555', '2220', 'c3-pruebas'); v_a := 'entró';
+    exception when others then v_a := sqlstate; end;
+    begin perform fn_mapeo_metodo_pago('c3 cash', 'efectivo', '2230'); v_b := 'entró';
+    exception when others then v_b := sqlstate; end;
+    begin perform fn_tarjeta_alta('5557', v_prestamo, 'c3-pruebas'); v_c := 'entró';
+    exception when others then v_c := sqlstate; end;
+    begin perform fn_tarjeta_alta('5556', fn_puente_cuenta_de('reembolso_dueno'), 'c3-pruebas: personal de Edgar'); v_d := 'entró';
+    exception when others then v_d := sqlstate; end;
+    begin perform fn_mapeo_metodo_pago('c3 cash', 'efectivo', fn_puente_cuenta_de('banco')); v_e := 'entró';
+    exception when others then v_e := sqlstate; end;
+    v_obt := format('tarjeta_2220=%s efectivo_2230=%s prestamo=%s tarjeta_2900=%s efectivo_banco=%s reglas=%s', v_a, v_b, v_c, v_d,
+                    v_e, coalesce((select case when c.ok then 't' else 'f' end from fn_puentes_verificar() c
+                                    where c.control = 'reglas'), '-'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (104, 'una tarjeta o el efectivo no pagan desde un pasivo de nómina ni un préstamo', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 105. El asiento de un PUENTE no se corrige a mano: fn_reversar sobre el de
+--      un recibo, una factura o un cobro → MX007, y el mensaje dice el
+--      camino bueno (fn_recibo_anular, la nota de crédito, fn_cobro_anular
+--      o fn_cobro_devolver); tampoco se sustituye con fn_postear. Nada
+--      cambia, y el siguiente backfill no pone nada doble. Antes: el
+--      backfill volvía a postear el papel y la corrección quedaba doble.
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_cobro uuid;
+  v_ar    uuid;
+  v_af    uuid;
+  v_ac    uuid;
+  v_a     text;
+  v_b     text;
+  v_c     text;
+  v_d     text;
+  v_obt   text;
+  v_esp   text := 'recibo=MX007/anular factura=MX007/nota cobro=MX007/anular_o_devolver sustituir=MX007 backfill=1/0,1/0,1/0';
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (105, 'el asiento de un puente no se reversa a mano: MX007 con el camino bueno', v_esp,
+                                 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3400150, 'total', '245.37'));
+    insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
+    values (-3400151, v_obra, 'C3-4151', v_desde + 1, 1000.00, 0);
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_cobro := (fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 8)::text, 'monto', '1000.00', 'medio', 'cheque',
+                  'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400151, 'monto', '1000.00'))))->>'cobro')::uuid;
+    execute 'reset role';
+    v_ar := pg_temp.c3_vivo('recibos', '-3400150');
+    v_af := pg_temp.c3_vivo('facturas', '-3400151');
+    v_ac := pg_temp.c3_vivo('cobros', v_cobro::text);
+    execute 'set local role authenticated';
+    begin
+      perform fn_reversar(v_ar, 'c3: mal clasificado');
+      v_a := 'entró';
+    exception when others then
+      v_a := sqlstate || case when sqlerrm like '%fn_recibo_anular(-3400150%' then '/anular' else '' end;
+    end;
+    begin
+      perform fn_reversar(v_af, 'c3: era una orden de cambio');
+      v_b := 'entró';
+    exception when others then
+      v_b := sqlstate || case when sqlerrm like '%fn_factura_anular(-3400151%' then '/nota' else '' end;
+    end;
+    begin
+      perform fn_reversar(v_ac, 'c3: la cuenta equivocada');
+      v_c := 'entró';
+    exception when others then
+      v_c := sqlstate || case when sqlerrm like '%fn_cobro_anular(%' and sqlerrm like '%fn_cobro_devolver(%' then '/anular_o_devolver'
+                              else '' end;
+    end;
+    begin
+      perform fn_postear(jsonb_build_object(
+        'fecha', to_char(v_desde + 4, 'YYYY-MM-DD'), 'descripcion', 'c3: corregido a mano',
+        'origen_tabla', 'recibos', 'origen_id', '-3400150', 'sustituye_a', v_ar,
+        'lineas', jsonb_build_array(jsonb_build_object('cuenta', current_setting('mx3.material'), 'monto', '245.37',
+                                                       'proyecto_id', v_obra),
+                                    jsonb_build_object('cuenta', '2100-9998', 'monto', '-245.37'))));
+      v_d := 'entró';
+    exception when others then
+      v_d := sqlstate;
+    end;
+    perform fn_puentes_correr();
+    execute 'reset role';
+    v_obt := format('recibo=%s factura=%s cobro=%s sustituir=%s backfill=%s,%s,%s', v_a, v_b, v_c, v_d,
+                    pg_temp.c3_cuantos('recibos', '-3400150'), pg_temp.c3_cuantos('facturas', '-3400151'),
+                    pg_temp.c3_cuantos('cobros', v_cobro::text));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (105, 'el asiento de un puente no se reversa a mano: MX007 con el camino bueno', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 106. Antes de mirar si un recibo es un DUPLICADO, su puente toma los
+--      candados de su foto y de su ticket (en su cajón: 820260925 y
+--      hashtext & 511): dos lecturas del mismo ticket que confirman a la
+--      vez se esperan, y la segunda ve a la primera (c3-concurrencia.sh,
+--      escenario 9, lo prueba con dos sesiones). Aquí: pasado el puente de
+--      un recibo, esta transacción tiene los dos.
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_obt   text;
+  v_esp   text := 'ticket=t foto=t';
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (106, 'el puente de un recibo toma los candados de su foto y su ticket antes de mirar', v_esp,
+                                 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3400160, 'total', '99.10', 'num_recibo', 'C3-T-106'));
+    select format('ticket=%s foto=%s',
+                  exists (select 1 from pg_locks l
+                           where l.locktype = 'advisory' and l.pid = pg_backend_pid() and l.granted
+                             and l.classid::bigint = 820260925
+                             and l.objid::bigint = (hashtext('recibo.ticket:' || fn_puente_recibo_ticket('C3-T-106', 99.10)) & 511)),
+                  exists (select 1 from pg_locks l
+                           where l.locktype = 'advisory' and l.pid = pg_backend_pid() and l.granted
+                             and l.classid::bigint = 820260925
+                             and l.objid::bigint = (hashtext('recibo.ruta:recibos/c3-pruebas/-3400160.jpg') & 511)))
+      into v_obt;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (106, 'el puente de un recibo toma los candados de su foto y su ticket antes de mirar', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 107. Un recibo que la LECTURA deja en total 0 (o que redondea a 0) y que
+--      nunca entró al libro no desaparece callado: espera
+--      (pendiente/total_cero) con la pregunta, igual si lo escribe cerebro
+--      con service_role. El 0 que teclea Edgar con ✎ sigue siendo anularlo
+--      (no_aplica), y el de uno que ya estaba en el libro lo reversa.
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_obt   text;
+  v_esp   text := 'lectura=pendiente/total_cero pregunta=t cerebro=pendiente/total_cero edgar=no_aplica/total_cero asientos=2/1';
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (107, 'total 0 de la lectura: espera con la pregunta; el 0 de Edgar anula', v_esp,
+                                 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3400170, 'total', '0.004', 'subtotal', '229.32', 'tax', '16.05'));
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3400171, 'total', '50.00'));
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3400172, 'total', null, 'estado', 'por_leer', 'metodo_pago', null,
+                                                 'ultimos4', null));
+    perform set_config('request.jwt.claims', json_build_object('role', 'service_role')::text, true);
+    execute 'set local role service_role';
+    update recibos set estado = 'leido', total = 0, subtotal = 229.32, tax = 16.05, metodo_pago = 'c3 pruebas tarjeta',
+                       ultimos4 = '9998'
+     where id = -3400172;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    update recibos set proveedor = 'C3 PRUEBAS SUPPLY', notas = 'c3: no va', total = 0, estado = 'leido' where id = -3400171;
+    execute 'reset role';
+    select format('lectura=%s pregunta=%s cerebro=%s edgar=%s asientos=%s',
+                  coalesce((select d.estado || '/' || d.codigo from puente_documentos d
+                             where d.tabla = 'recibos' and d.documento_id = '-3400170'), '-'),
+                  coalesce((select d.motivo like '%¿la lectura no leyó el total?%fn_recibo_anular(-3400170%' from puente_documentos d
+                             where d.tabla = 'recibos' and d.documento_id = '-3400170'), false),
+                  coalesce((select d.estado || '/' || d.codigo from puente_documentos d
+                             where d.tabla = 'recibos' and d.documento_id = '-3400172'), '-'),
+                  coalesce((select d.estado || '/' || d.codigo from puente_documentos d
+                             where d.tabla = 'recibos' and d.documento_id = '-3400171'), '-'),
+                  pg_temp.c3_cuantos('recibos', '-3400171'))
+      into v_obt;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (107, 'total 0 de la lectura: espera con la pregunta; el 0 de Edgar anula', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 108. El backfill no vuelve a PLANEAR lo que no cambió: cada recibo
+--      contabilizado cuyo papel es el de su asiento (y sin nada en la
+--      bandeja) cuenta como «sin_cambios» sin pasar por su plan; y la
+--      búsqueda de duplicados va por índice (recibos_ticket_idx,
+--      recibos_ruta_idx). Antes, con 3.000 recibos, «reintentar puente» se
+--      cortaba a los 8 s. (La prueba de volumen, con 3.000 recibos como
+--      authenticated y 8 s de tope, es c3-volumen.sh.)
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_quietos int;
+  v_res   jsonb;
+  v_obt   text;
+  v_esp   text := 'sin_cambios=todos_los_quietos indices=t/t';
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (108, 'el backfill no vuelve a planear lo que no cambió; duplicados por índice', v_esp,
+                                 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3400180, 'total', '11.00'));
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3400181, 'total', '12.00'));
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3400182, 'total', '13.00'));
+    select count(*) into v_quietos
+      from recibos r
+      join puente_documentos d on d.tabla = 'recibos' and d.documento_id = r.id::text
+     where r.contabilizado_en is not null and d.estado = 'contabilizado' and d.codigo is null;
+    v_res := fn_puentes_correr();
+    v_obt := format('sin_cambios=%s indices=%s/%s',
+                    case when (v_res->>'sin_cambios')::int = v_quietos and v_quietos >= 3 then 'todos_los_quietos'
+                         else format('%s de %s', v_res->>'sin_cambios', v_quietos) end,
+                    to_regclass('public.recibos_ticket_idx') is not null, to_regclass('public.recibos_ruta_idx') is not null);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (108, 'el backfill no vuelve a planear lo que no cambió; duplicados por índice', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 109. Una foto, un recibo VIVO: recibos_ruta_unica deja fuera a los
+--      anulados (un recibo anulado se queda con su foto como rastro, y
+--      contarlo dejaba sin índice, para siempre, a la base que alguna vez
+--      tuvo la misma foto dos veces). Y la foto de un anulado no se le da a
+--      un recibo nuevo (la guarda lo dice).
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_a     text;
+  v_obt   text;
+  v_esp   text := 'indice=unico/sin_anulados foto_de_anulado=MX003';
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (109, 'recibos_ruta_unica deja fuera a los anulados', v_esp,
+                                 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3400190, 'total', '19.00', 'ruta', 'recibos/c3-pruebas/r109.jpg'));
+    perform fn_recibo_anular(-3400190, 'c3: repetido');
+    begin
+      perform pg_temp.c3_recibo(jsonb_build_object('id', -3400191, 'total', '19.00', 'ruta', 'recibos/c3-pruebas/r109.jpg'));
+      v_a := 'entró';
+    exception when others then
+      v_a := sqlstate;
+    end;
+    select format('indice=%s foto_de_anulado=%s',
+                  coalesce((select case when i.indisunique then 'unico' else 'no_unico' end
+                                   || case when pg_get_indexdef(i.indexrelid) like '%anulado%' then '/sin_anulados' else '/con_anulados' end
+                              from pg_index i where i.indexrelid = to_regclass('public.recibos_ruta_unica')), 'no_existe'),
+                  v_a)
+      into v_obt;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (109, 'recibos_ruta_unica deja fuera a los anulados', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 110. El SQL que da la bandeja se pega TAL CUAL aunque el papel traiga un
+--      apóstrofo (Lowe's): va entre comillas bien escapadas. Se ejecuta el
+--      que da para dar de alta al proveedor y el de la categoría, y el
+--      recibo entra.
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_sql   text;
+  v_a     text;
+  v_b     text;
+  v_obt   text;
+  v_esp   text := 'proveedor=pendiente/proveedor su_sql=corre categoria=pendiente/categoria su_sql=corre recibo=contabilizado';
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (110, 'el SQL de la bandeja se pega tal cual con un apóstrofo (Lowe''s)', v_esp,
+                                 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    perform pg_temp.c3_recibo(jsonb_build_object('id', -3400200, 'total', '88.20', 'proveedor', 'Lowe''s c3',
+                                                 'metodo_pago', 'c3 pruebas cuenta', 'ultimos4', null));
+    select d.estado || '/' || d.codigo, substring(d.motivo from '(select fn_proveedor_alta\(.*?\);)')
+      into v_a, v_sql
+      from puente_documentos d where d.tabla = 'recibos' and d.documento_id = '-3400200';
+    begin
+      execute v_sql;
+      v_a := v_a || ' su_sql=corre';
+    exception when others then
+      v_a := v_a || ' su_sql=' || sqlstate;
+    end;
+    update recibos set categoria = 'Lowe''s c3 tools' where id = -3400200;
+    select d.estado || '/' || d.codigo, substring(d.motivo from '(select fn_mapeo_categoria\(.*?\);)')
+      into v_b, v_sql
+      from puente_documentos d where d.tabla = 'recibos' and d.documento_id = '-3400200';
+    begin
+      execute replace(v_sql, ', cuenta)', ', ' || quote_literal(current_setting('mx3.material')) || ')');
+      v_b := v_b || ' su_sql=corre';
+    exception when others then
+      v_b := v_b || ' su_sql=' || sqlstate;
+    end;
+    perform fn_puente_recibo(-3400200, 'correr');
+    v_obt := format('proveedor=%s categoria=%s recibo=%s', v_a, v_b,
+                    coalesce((select d.estado from puente_documentos d
+                               where d.tabla = 'recibos' and d.documento_id = '-3400200'), '-'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (110, 'el SQL de la bandeja se pega tal cual con un apóstrofo (Lowe''s)', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 111. Las horas del equipo tienen MEDIDA y Edgar aprueba LO QUE VIO: un
+--      reporte de 4000 h, uno negativo o uno que pasa de 24 en el día no
+--      entran (22023). Aprobar sin decir lo que se vio no aprueba nada
+--      (22023); si alguien reportó entre medias, MX008 y nada aprobado; con
+--      lo que hay, sí, y devuelve los reportes. Y unas horas fuera de
+--      medida que haya escrito el dueño no entran al devengo (van a
+--      «fuera»).
+do $$
+declare
+  v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_equipo uuid := nullif(current_setting('mx3.equipo', true), '')::uuid;
+  v_obra   text := nullif(current_setting('mx3.obra', true), '');
+  v_desde  date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_mes    text := nullif(current_setting('mx3.mes', true), '');
+  v_visto  jsonb;
+  v_ap     jsonb;
+  v_a      text;
+  v_b      text;
+  v_c      text;
+  v_d      text;
+  v_e      text;
+  v_obt    text;
+  v_esp    text := 'cuatro_mil=22023 negativa=22023 mas_de_24=22023 sin_visto=22023 visto_viejo=MX008/0 aprobadas=t fuera_de_medida=1';
+begin
+  if v_dueno is null or v_equipo is null or v_obra is null or v_desde is null or v_mes is null then
+    insert into _pruebas values (111, 'horas con medida; se aprueba lo que se vio', v_esp,
+                                 'omitida: falta dueño, alguien del equipo, obra o mes abierto', null);
+    return;
+  end if;
+  begin
+    insert into costos_equipo (usuario_id, costo_hora) values (v_equipo, 30.00)
+    on conflict (usuario_id) do update set costo_hora = 30.00;
+    perform set_config('request.jwt.claims', json_build_object('sub', v_equipo, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas) values (-3400210, v_desde + 22, v_equipo, v_obra, 4000, 'c3');
+      v_a := 'entró';
+    exception when others then v_a := sqlstate; end;
+    begin
+      insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas) values (-3400211, v_desde + 22, v_equipo, v_obra, -300, 'c3');
+      v_b := 'entró';
+    exception when others then v_b := sqlstate; end;
+    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas) values (-3400212, v_desde + 22, v_equipo, v_obra, 20, 'c3');
+    begin
+      insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas) values (-3400213, v_desde + 22, v_equipo, v_obra, 8, 'c3');
+      v_c := 'entró';
+    exception when others then v_c := sqlstate; end;
+    execute 'reset role';
+    -- Lo que la pantalla de Edgar enseña.
+    select jsonb_build_object('ids', coalesce(jsonb_agg(h.id order by h.id), '[]'::jsonb)) into v_visto
+      from horas h where h.usuario_id = v_equipo and h.fecha between v_desde + 22 and v_desde + 23 and h.aprobado_el is null;
+    -- Entre medias, el trabajador reporta otra.
+    perform set_config('request.jwt.claims', json_build_object('sub', v_equipo, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas) values (-3400214, v_desde + 23, v_equipo, v_obra, 2, 'c3');
+    execute 'reset role';
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      perform fn_horas_aprobar(v_equipo, v_desde + 22, v_desde + 23);
+      v_d := 'entró';
+    exception when others then v_d := sqlstate; end;
+    begin
+      perform fn_horas_aprobar(v_equipo, v_desde + 22, v_desde + 23, v_visto);
+      v_e := 'entró';
+    exception when others then
+      v_e := sqlstate || '/' || (select count(*) from horas h where h.id in (-3400212, -3400214) and h.aprobado_el is not null);
+    end;
+    v_ap := fn_horas_aprobar(v_equipo, v_desde + 22, v_desde + 23,
+              (select jsonb_build_object('ids', coalesce(jsonb_agg(h.id order by h.id), '[]'::jsonb))
+                 from horas h where h.usuario_id = v_equipo and h.fecha between v_desde + 22 and v_desde + 23 and h.aprobado_el is null));
+    execute 'reset role';
+    -- Unas del dueño (el SQL Editor), aprobadas y fuera de medida.
+    insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas, aprobado_el)
+    values (-3400215, v_desde + 24, v_equipo, v_obra, -5, 'c3: fuera de medida', now());
+    v_obt := format('cuatro_mil=%s negativa=%s mas_de_24=%s sin_visto=%s visto_viejo=%s aprobadas=%s fuera_de_medida=%s',
+                    v_a, v_b, v_c, v_d, v_e,
+                    (v_ap->'ids') @> '[-3400212, -3400214]'::jsonb,
+                    fn_puente_devengo_plan(v_mes)->'fuera'->>'fuera_de_medida');
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (111, 'horas con medida; se aprueba lo que se vio', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+
+-- 112. NO DEJA RASTRO: todo lo de arriba se deshizo. El libro, los papeles,
+--      las reglas, los historiales, los contadores, las secuencias de la
+--      app y las huellas están como al empezar.
 do $$
 declare
   v_antes text := current_setting('mx3.foto', true);
   v_ahora text;
 begin
   v_ahora := pg_temp.c3_foto();
-  insert into _pruebas values (91, 'no deja rastro: todo como al empezar', v_antes, v_ahora, v_ahora = v_antes);
+  insert into _pruebas values (112, 'no deja rastro: todo como al empezar', v_antes, v_ahora, v_ahora = v_antes);
 end $$;
 
 select * from _pruebas order by n;

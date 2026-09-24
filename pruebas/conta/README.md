@@ -15,9 +15,92 @@ de que Edgar los pegue. **Nunca** se conecta a `*.supabase.co`.
 | `c2-concurrencia.sh` | Lo que `c2-pruebas.sql` no puede probar en una sola sesión: varias sesiones a la vez contra el libro (cierres con posteos en vuelo, ráfagas, una línea tardía, un cierre en repeatable read). La mitad de los posteos confirma como la app (rol `authenticated`). |
 | `c2-pegado.sh` | Lo que pasa AL PEGAR: el bloque A solo, el B encima de datos sucios, las pruebas antes que el libro, volver a pegar c1 y c2, la 7200. |
 | `03-storage-simulacro.sql` | Un Storage mínimo (`storage.objects` con RLS y las policies de hoy según ESQUEMA-REAL). **Solo del banco**: con él, la prueba 45 de `c3-pruebas.sql` (el papel no se borra) corre de verdad; sin él sale «omitida». Se pasa ANTES de c3. |
-| `c3-concurrencia.sh` | Lo que `c3-pruebas.sql` no puede probar en una sola sesión: el mismo recibo corregido desde dos teléfonos, el backfill mientras alguien guarda, diez recibos a la vez, dos backfills a la vez, dos cobros a la vez a la misma factura (también con su número escrito de otra forma: « 951», «+951»), un cobro mientras se anula la factura y dos anticipos a la vez. Cada sesión confirma (los puentes son diferidos). Sus recibos llevan `creado` de octubre: el reloj del banco es de antes del corte, y un recibo subido antes del corte no entra al libro. |
-| `c3-pegado.sh` | Lo que pasa al VOLVER a pegar c3-puentes.sql con las reglas ya tocadas por Edgar: dos pegados seguidos, y otro después de retirar una cuenta que un valor de arranque usaba (la 5600, con su regla ya en la 5500) y de darle a un papel la cuenta que otro tenía de arranque. No se cae, y lo que Edgar puso se queda. |
+| `c3-concurrencia.sh` | Lo que `c3-pruebas.sql` no puede probar en una sola sesión: el mismo recibo corregido desde dos teléfonos, el backfill mientras alguien guarda, diez recibos a la vez, dos backfills a la vez, dos cobros a la vez a la misma factura (también con su número escrito de otra forma: « 951», «+951»), un cobro mientras se anula la factura, dos anticipos a la vez y dos lecturas del mismo ticket que confirman juntas (entra una; la otra espera como duplicado). Cada sesión confirma (los puentes son diferidos). Sus recibos llevan `creado` de octubre: el reloj del banco es de antes del corte, y un recibo subido antes del corte no entra al libro. |
+| `c3-pegado.sh` | Lo que pasa al VOLVER a pegar c3-puentes.sql con las reglas ya tocadas por Edgar: dos pegados seguidos, y otro después de retirar una cuenta que un valor de arranque usaba (la 5600, con su regla ya en la 5500) y de darle a un papel la cuenta que otro tenía de arranque. No se cae, y lo que Edgar puso se queda. Y una base que ya tenía dos recibos con la misma foto antes de c3: anulado el repetido, el siguiente pegado crea `recibos_ruta_unica`, y con él dos subidas a la vez con la misma foto dejan entrar una. |
+| `c3-volumen.sh` | Lo que pasa con MUCHOS papeles: 3.000 recibos en el libro (un año largo de la cuadrilla) y la app pidiendo «reintentar puente» (`fn_puentes_correr`) y los controles (`fn_puentes_verificar`) como `authenticated`, con el tope de la API de Supabase (`statement_timeout` de 8 s): terminan, y lo que no cambió no se vuelve a planear. Imprime cuánto tardó cada cosa. `./c3-volumen.sh [bd] [recibos]`. |
 | `generar-tablas.py`, `esquema-columnas-23sep.json` | Para regenerar las tablas de 01 si se vuelve a leer el esquema. |
+
+## 0. Para Edgar: qué se pega en Supabase, en qué orden y qué debe salir
+
+Todo va en el **SQL Editor** de Supabase (Dashboard → SQL Editor → New
+query). Cada archivo se abre, se copia **entero**, se pega en una pestaña
+vacía y se le da **Run**. El editor manda todo lo pegado de una vez: si algo
+falla, sale el error en rojo y **no queda nada** de ese archivo; se avisa, se
+arregla y se vuelve a pegar entero. Pegar un archivo dos veces no hace daño
+(no duplica nada ni borra lo que Edgar ya tocó).
+
+Las líneas `NOTICE: … does not exist, skipping` o `… already exists,
+skipping` que pueda enseñar el editor **no son errores**: es el archivo
+comprobando si algo ya estaba.
+
+| Paso | Qué se pega | Qué debe verse al final |
+|---|---|---|
+| 1 | `docs/conta/c1-plan-de-cuentas.sql` | Una tabla con el plan de cuentas: **85 filas** (`codigo`, `nombre`, `tipo`, `saldo`, `imputable`, `activa`, `obra`, `cost_code`, `etiqueta_fiscal`), de la 1000 a la 9000. |
+| 2 | `docs/conta/c2-libro.sql` | Los **10 controles** del libro (`fn_verificar_cadena`), **todos con `ok = true`**: `hash`, `enlace`, `numeracion`, `contadores`, `cuadre`, `reversos`, `periodos`, `triggers`, `cuentas` (dice `"cuentas": 85`) y `permisos`. Uno en `false` = parar y avisar. |
+| 3 | `docs/conta/c3-puentes.sql` | **23 filas**: los 10 `libro · …` y 13 `puentes · …`. Todas en `true` **salvo `puentes · sin_evaluar`**, que la primera vez sale en `false` con la lista de papeles que el puente todavía no miró y `"arreglo": "select fn_puentes_correr();"`. Es lo esperado. `puentes · reglas` sale en `true` y dice cuántas reglas siguen en borrador (`en_borrador`): esas no postean hasta que Edgar las confirme. `puentes · papel` en producción sí mira Storage (en el banco dice «no aplica»). |
+| 4 | Una línea: `select fn_puentes_correr();` | Un solo valor (jsonb) con `"desde": "2026-10-01"`, cuántos papeles quedaron en cada estado (`contabilizado`, `pendiente`, `espera`, `no_aplica`…) y **`"errores": 0`**. |
+| 5 | Una línea: `select * from fn_puentes_verificar();` | Los **13 controles** de los puentes, **todos en `true`** (ahora también `sin_evaluar`). `bandeja` dice cuántos papeles esperan a Edgar; solo se pone en rojo si el libro rechazó alguno. |
+| 6 | `docs/conta/c2-pruebas.sql` | La tabla `_pruebas`: **78 filas**, todas con `ok = true`. |
+| 7 | `docs/conta/c3-pruebas.sql` | La tabla `_pruebas`: **112 filas**, todas con `ok = true`. Si no hay ningún perfil activo que no sea el dueño, las pruebas «del equipo» salen con `ok` vacío (`null`) y `obtenido` = «omitida…»: no es un fallo. |
+
+- **El orden importa**: c2 necesita c1; c3 necesita c1 y c2. Las pruebas
+  (6 y 7) van siempre después de los tres.
+- **Las pruebas no dejan rastro**: cada ataque se hace dentro de una
+  subtransacción que se deshace a sí misma. No escriben asientos, líneas,
+  contadores, cobros, aprobaciones, bandeja ni secuencias (usan ids
+  negativos); lo único que queda es la tabla temporal `_pruebas` y unas
+  funciones `pg_temp.*` de ayuda, que mueren al cerrarse la sesión del
+  editor. Tardan unos segundos (en el banco: c2 ≈ 1 s, c3 ≈ 3 s). Mejor
+  correrlas cuando nadie esté subiendo recibos: por un instante bloquean
+  la tabla `periodos`.
+- **Si el editor no acepta un archivo tan grande** (`c3-puentes.sql` pesa
+  ≈ 466 KB): se puede pegar en dos partes, desde el principio hasta la línea
+  `-- ==== BLOQUE B ====` (sin ella), Run, y desde esa línea hasta el
+  final, Run. Lo mismo `c2-libro.sql`. En el banco se prueban así con
+  `archivo.sql:A` y `archivo.sql:B`.
+- **Re-correr la suite en producción** (después de cualquier cambio, o
+  cuando se quiera comprobar): pegar otra vez `c2-pruebas.sql` y luego
+  `c3-pruebas.sql` (pasos 6 y 7), cada una en su pestaña. Y para ver el
+  estado del libro sin tocar nada: `select * from fn_verificar_cadena();` y
+  `select * from fn_puentes_verificar();`.
+
+## 0b. La prueba final en el banco, de cero
+
+Lo mismo que el paso 1–7 de arriba, sin tocar producción. Tarda segundos:
+
+```bash
+cd /home/user/max-power-panel/pruebas/conta
+D=../../docs/conta
+
+# De cero: las tres entregas y las dos suites (sin Storage: 45 y 90 salen
+# «omitida»; con 03-storage-simulacro.sql delante salen en verde).
+./correr.sh final_mia $D/c1-plan-de-cuentas.sql $D/c2-libro.sql $D/c3-puentes.sql \
+                      $D/c2-pruebas.sql $D/c3-pruebas.sql
+#   → PRUEBAS total=78 ok=78 fallan=0 omitidas=0
+#   → PRUEBAS total=112 ok=110 fallan=0 omitidas=2
+
+# Idempotencia: sobre la MISMA base, volver a pegar c1, c2 y c3 (dos veces)
+# y las pruebas otra vez; tiene que seguir todo en verde.
+for i in 1 2; do for f in c1-plan-de-cuentas c2-libro c3-puentes; do
+  PGPASSWORD=editor_sql psql -X -q -h 127.0.0.1 -U editor_sql -d final_mia \
+    -v ON_ERROR_STOP=1 -1 -o /dev/null -f $D/$f.sql || echo "FALLÓ $f"
+done; done
+
+# Varias sesiones, volver a pegar con reglas tocadas, y volumen:
+./c2-pegado.sh final_c2p; ./c3-pegado.sh final_c3p
+./c2-concurrencia.sh final_c2c; ./c3-concurrencia.sh final_c3c
+./c3-volumen.sh final_c3v 3000
+
+./correr.sh --borrar final_mia
+```
+
+Para comprobar que las pruebas no dejan rastro, se saca una «foto» de la
+base (cuántas filas y un md5 de cada tabla de `public`, `auth` y `storage`,
+el `last_value` de cada secuencia, y las definiciones y permisos de
+funciones, triggers, policies, vistas y columnas) antes y después de
+correr `c2-pruebas.sql` y `c3-pruebas.sql`: las dos fotos tienen que ser
+idénticas. La prueba final del 24-sep lo hizo así, también con asientos y
+bandeja ya llenos (después de `fn_puentes_correr()`), y salieron iguales.
 
 ## 1. Arrancar el cluster
 
@@ -69,6 +152,8 @@ cd /home/user/max-power-panel/pruebas/conta
 ./c3-concurrencia.sh c3_conc_mia
 # Volver a pegar c3 con las reglas ya tocadas (crea y borra su base):
 ./c3-pegado.sh c3_pegado_mio
+# Muchos papeles, con el tope de 8 s de la API (crea y borra su base):
+./c3-volumen.sh c3_volumen_mio 3000
 
 # Al terminar, borra TU base:
 ./correr.sh --borrar banco_mio
@@ -212,7 +297,11 @@ tocar `docs/conta/c2-libro.sql`:
   pero con los argumentos cruzados.
 - **Versión**: el banco es Postgres **16.13**; producción es **17.6**. Evita
   sintaxis solo de 17 (p. ej. `json_table`, `merge … returning`) y ojo con
-  diferencias finas del planificador.
+  diferencias finas del planificador. Para probar en la versión de
+  producción, `./pg17.sh` monta un Postgres **17.6** en el puerto 5433 y
+  cualquier script corre allí con `PGPORT=5433`. El 24-sep se corrió así
+  todo: c2-pruebas 78/78, c3-pruebas 112/112 (con Storage), pegado,
+  concurrencia y volumen, en verde en 16 y en 17.
 - **pg_cron** no está (tampoco en producción hasta la Fase 8).
 - El rol `editor_sql` no es superusuario y tiene `BYPASSRLS`, `CREATEROLE` y
   `CREATEDB`, que es como entendemos al `postgres` de Supabase (no se
