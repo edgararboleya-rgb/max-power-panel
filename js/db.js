@@ -421,7 +421,9 @@
         })),
         facturas: (facPor[p.id] || []).map(f => ({
           id: f.id, num: f.num, fecha: fechaCorta(f.fecha), fechaISO: f.fecha || "",
-          monto: Number(f.monto), pagada: !!f.pagada, cobradaEl: f.cobrada_el ? String(f.cobrada_el).slice(0, 10) : ""
+          monto: Number(f.monto), pagada: !!f.pagada, cobradaEl: f.cobrada_el ? String(f.cobrada_el).slice(0, 10) : "",
+          // Lo ya abonado de esta factura (P07): una factura puede estar pagada a medias
+          cobrado: f.cobrado === null || f.cobrado === undefined ? 0 : Number(f.cobrado)
         })),
         docs: docs.filter(d => d.clase === "doc").map(d => ({ id: d.id, titulo: d.titulo, url: d.url, ruta: d.ruta || "", portal: !!d.portal, propuestaId: d.propuesta_id || null,
           pideAprobacion: !!d.pide_aprobacion, aprobadoEl: d.aprobado_el ? String(d.aprobado_el).slice(0, 10) : "",

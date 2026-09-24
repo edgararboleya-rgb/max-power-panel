@@ -142,6 +142,10 @@
   const sinMontos = t => (usuario && usuario.finanzas)
     ? t : String(t ?? "").replace(/\$\s?[\d][\d,.]*/g, "$•••");
   const facturasPendientes = p => (p.facturas || []).filter(f => !f.pagada);
+  // Lo que de verdad falta de una factura: el monto menos lo ya abonado (P07,
+  // 24-sep). Antes «Facturado sin pagar» sumaba el monto entero aunque el
+  // cliente ya hubiera pagado una parte.
+  const saldoFactura = f => f.pagada ? 0 : Math.max(0, Math.round(((Number(f.monto) || 0) - (Number(f.cobrado) || 0)) * 100) / 100);
   const chipHTML = clave => {
     const e = ESTADOS[clave] || { etiqueta: clave };
     return `<span class="chip"><span class="dot ${DOT[clave] || "navy"}"></span>${esc(e.etiqueta)}</span>`;
@@ -1041,7 +1045,7 @@ function esFalloDeRed(err) {
       for (const f of facturasPendientes(p)) {
         const dias = diasDesde(f.fechaISO);
         if (dias !== null && dias >= 30)
-          avisos.push({ id: p.id, icono: "💵", texto: `Factura #${f.num} de ${p.nombre} lleva ${dias} días sin pagar (${fmt(f.monto)})` });
+          avisos.push({ id: p.id, icono: "💵", texto: `Factura #${f.num} de ${p.nombre} lleva ${dias} días sin pagar (${fmt(saldoFactura(f))}${f.cobrado > 0 ? ` de ${fmt(f.monto)}` : ""})` });
       }
       if (p.estado === "enviado") {
         const dias = diasDesde(p.actualizado);
@@ -1236,6 +1240,24 @@ function esFalloDeRed(err) {
             }
           }
         }
+        // ¿Contrato o change order? (P79, 24-sep): antes, para pasar a un CO las
+        // horas de Jian u Osbel había que borrarlas y volverlas a meter.
+        const pidFinal = cambios.proyecto_id || rep.proyecto;
+        const cos = changeOrdersDe(pidFinal);
+        const numsCO = Object.keys(cos).map(Number).sort((x, y) => x - y);
+        if (numsCO.length || rep.co) {
+          const opciones = [{ valor: "__contrato__", texto: (rep.co ? "" : "✓ ") + "📄 Contrato (sin change order)" }]
+            .concat(numsCO.map(n => ({ valor: "CO #" + n, texto: (rep.co === "CO #" + n ? "✓ " : "") + `🧾 CO #${n} — ${sinMontos(cos[n])}` })));
+          const co = await elegirDeLista("¿Estas horas van al contrato o a un change order?", opciones);
+          if (co !== null) {
+            const nuevo = co === "__contrato__" ? null : co;
+            if ((nuevo || null) !== (rep.co || null)) {
+              cambios.co = nuevo;
+              cambios.notas = (cambios.notas ? cambios.notas + "\n\n" : "") +
+                `[Corregido por Edgar el ${hoyISO()}: de ${rep.co || "contrato"} a ${nuevo || "contrato"}.]`;
+            }
+          }
+        }
         try {
           await DB.cambiarHoras(id, cambios);
           await recargar();
@@ -1317,7 +1339,7 @@ function esFalloDeRed(err) {
       .filter(p => ["ejecucion", "aprobado"].includes(p.estado))
       .reduce((s, p) => s + (p.contrato - p.cobrado), 0);
     const pendFact = lista.flatMap(facturasPendientes);
-    const pendTotal = pendFact.reduce((s, f) => s + f.monto, 0);
+    const pendTotal = pendFact.reduce((s, f) => s + saldoFactura(f), 0);
 
     $resumen.innerHTML = `
       <div class="resumen-card"><div class="valor">${activos.length}</div><div class="etiqueta">Proyectos activos</div></div>
@@ -2813,8 +2835,8 @@ function esFalloDeRed(err) {
     if (!usuario.finanzas) return "";
     const pend = facturasPendientes(p);
     return pend.length
-      ? `<div class="aviso-pendiente">⚠ Factura sin pagar: ${pend.map(f => `#${esc(f.num)} ${fmt(f.monto)}${f.id && usuario.editar ? `
-          <button type="button" class="chip-cobrar factura-pagada" data-id="${f.id}" data-num="${esc(f.num)}" data-monto="${f.monto}"
+      ? `<div class="aviso-pendiente">⚠ Factura sin pagar: ${pend.map(f => `#${esc(f.num)} ${fmt(saldoFactura(f))}${f.cobrado > 0 ? ` (ya abonó ${fmt(f.cobrado)} de ${fmt(f.monto)})` : ""}${f.id && usuario.editar ? `
+          <button type="button" class="chip-cobrar factura-pagada" data-id="${f.id}" data-num="${esc(f.num)}" data-monto="${saldoFactura(f)}"
             title="Marcarla como COBRADA — es lo que cuadra el dinero de la app con el banco">✓ cobrada</button>` : ""}`).join(", ")}</div>`
       : "";
   }
@@ -3081,6 +3103,27 @@ function esFalloDeRed(err) {
       avisar("No se eliminó nada — no escribiste ELIMINAR.");
       return;
     }
+    // Antes de borrar, una copia de TODO lo de esa obra que la app tiene en la
+    // mano, bajada a este teléfono o computadora (P188, 24-sep). Si la copia
+    // no se puede bajar, NO se borra.
+    try {
+      const copia = { obra: p, bajada_el: new Date().toISOString() };
+      for (const [clave, valor] of Object.entries(state || {})) {
+        if (!Array.isArray(valor) || clave === "proyectos") continue;
+        const suyas = valor.filter(x => x && typeof x === "object" &&
+          (x.proyecto === id || x.proyecto_id === id || x.proyectoId === id));
+        if (suyas.length) copia[clave] = suyas;
+      }
+      const url = URL.createObjectURL(new Blob([JSON.stringify(copia, null, 2)], { type: "application/json" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = `copia-${id}-${hoyISO()}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (err) {
+      avisar("No se pudo bajar la copia de la obra, así que no se borró nada: " + err.message, true);
+      return;
+    }
+    if (!confirm(`Se bajó la copia "copia-${id}-${hoyISO()}.json". ¿Borrar ya "${p.nombre}"?`)) return;
     try {
       await DB.eliminarProyecto(id);
       state.proyectos = state.proyectos.filter(x => x.id !== id);
@@ -4105,6 +4148,20 @@ function esFalloDeRed(err) {
   // base con su título ("SOW firmado", "SOW 410 Sterling v7"…) y cada
   // Change Order con el suyo ("Change Order #1 — Cat6 data pathway
   // (MXP-CO-2026-0816-DICKE-01)"). Nada de "contrato normal" a secas.
+  // Los change orders de una obra, sacados de sus documentos: {n: título}.
+  // Lo usan el formulario de horas y el ✎ del dueño (P79).
+  function changeOrdersDe(pid) {
+    const porCO = {};
+    for (const t of (state.titulosDocs || []).filter(t => t.proyecto === pid && !esDocAparte(t.titulo))) {
+      const n = numeroCO(t.titulo);
+      if (n === null) continue;
+      const actual = porCO[n];
+      if (!actual || (/MXP-/i.test(t.titulo) && !/MXP-/i.test(actual)) ||
+          (/MXP-/i.test(t.titulo) === /MXP-/i.test(actual) && t.titulo.length > actual.length)) porCO[n] = t.titulo;
+    }
+    return porCO;
+  }
+
   function llenarCOHoras() {
     const sel = $formHoras.elements.co;
     if (!sel || sel.tagName !== "SELECT") return;
