@@ -344,6 +344,48 @@ a la apertura del 30-sep-2026 postea por puente**: eso ya está en QuickBooks.
 
 ---
 
+### 6b. Adelantar los motores (24-sep) — lo que no espera a QuickBooks ni al banco
+
+Edgar quiere «todo el espectro contable, nada básico», y hasta el 9-oct
+(balanza de QuickBooks) y el 16-oct (archivos del banco) el calendario tiene
+hueco. Todo esto se construye y se ataca en el banco de pruebas con datos
+sintéticos; lo único que espera a Edgar son los números reales.
+
+| Bloque | Qué se adelanta (🔵 azul, probado en el banco) | Qué espera a Edgar |
+|---|---|---|
+| **A · Estados (f04)** | Vistas de lectura: balance, resultados, flujo de caja (directo e indirecto), balanza, mayor con saldo corrido, auxiliar por obra = mayor, antigüedad de CxC y CxP, gasto por categoría y proveedor, flujo real por mes; `fn_apertura` (balanza → asiento de apertura con sus partidas por factura y proveedor); tabla de comparación contra QuickBooks. | La balanza real al 30-sep (9-oct). |
+| **B · Banco (f06)** | `movimientos_banco`, importador OFX/QFX (formato estándar), casado determinista (depósito → factura, pago → CxP, tarjeta ↔ banco = transferencia, retiro → ¿caja chica o 3200?), conciliación con partidas en tránsito, `prestamos` con amortización, seguros pagados por adelantado (1410) que se amortizan solos. | Los archivos reales (16-oct) para el lector CSV de cada banco, y Plaid. |
+| **C · Cierre (f08)** | `fn_ronda`, `fn_cerrar_mes` con su lista de requisitos, export CSV/PDF con procedencia y sello, `activos_fijos` y depreciación, asientos recurrentes, regla de ajustes post-cierre. | pg_cron y el plan de Supabase. |
+| **D · Obra y factura (f09, f10)** | Costo por obra (estimado vs real), reparto de mano de obra y burden, WIP por % de avance (1200/2400), provisión por pérdida, facturación por hitos con catálogo y retención. | Método de avance y cómo se compara. |
+| **E · Nómina y fiscal (f11, f12, f17)** | Lector del journal de Gusto (formato conocido, prueba sintética), cédula de corte, W-9/COI/1099, vistas del 1120-S (líneas, K-1, M-1, M&E 50 %, vehículo), DR-15. | Gusto contratado; W-9 de cada sub. |
+
+**Pregunta nueva para el CPA:** ¿el 1120-S se presenta por **caja o por
+devengo**? El libro es de devengo; si el CPA declara por caja, f17 necesita
+la vista de conversión devengo → caja (CxC, CxP y devengos fuera). Se añade
+a la lista de f17.
+
+**El espectro contable, y dónde está cada pieza:**
+libro mayor, diario, plan, períodos, cierre, rastro de auditoría → hecho ·
+CxC (facturas, cobros, anticipos, notas de crédito, retención, antigüedad) →
+motor hecho (f03); estados de cuenta y recordatorios (f10, f16) · CxP
+(facturas de proveedor, pagos, devoluciones, antigüedad, 1099) → motor hecho
+(f03); 1099 (f12) · bancos, tarjetas, conciliación, transferencias → f06 ·
+caja chica → cuenta hecha; movimientos (f06) · nómina, devengo, burden,
+reparto → devengo hecho; journal (f11) · activos fijos, depreciación,
+préstamos, prepagados, devengados → f06/f08 · costo por obra, WIP,
+retención, órdenes de cambio → f09/f10 · impuestos (use tax, nómina,
+estimados, reserva, 1120-S, K-1, 1099) → f08/f12/f17 · estados financieros,
+comparativos, presupuesto vs real, flujo proyectado → f04/f18 · inventario:
+solo bodega simple (1300), sin inventario perpetuo (es un contratista) ·
+multi-moneda y multi-empresa: no · roles, historial, respaldo, 7 años,
+export al CPA → hecho/f08/f17.
+
+**Diseño de la pantalla (24-sep):** a Edgar le gusta la dirección del
+tablero, pero quiere para Contabilidad una identidad **distinta de la web**,
+más original y con los colores y tendencias de las apps contables. Se decide
+en f05, después de los motores; el tablero de la vista previa es la
+estructura, no el acabado.
+
 ## 7. Cómo gastar poco crédito
 
 1. **Una fase por sesión, dicha por número.** «Hagamos la Fase 4.»
