@@ -114,7 +114,16 @@ haber nacido de un journal o de un devengo reversible**.
   en cada obra. La misma foto en la misma obra se rechaza; en otra obra por el
   mismo total espera como duplicado; el equipo no usa la foto de otro recibo.
   `recibos_ruta_unica` es por (foto, obra).
-- **Pegado en producción (24-sep):** c1, c2 y c3 pegados; c2-pruebas 78/78.
-  La primera c3-pruebas falló sin probar nada (las restricciones reales de la
-  base: 7 categorías, 5 formas de pago, ids GENERATED ALWAYS); el banco ya
-  las tiene (`pruebas/conta/02b-restricciones-produccion.sql`).
+- **Pegado en producción (24-sep), por Edgar, archivo por archivo:** c1 (85
+  cuentas), c2 (10/10 controles), c3 (13/13, re-pegada con los tickets
+  repartidos: `recibos_ruta_unica` por foto y obra ya existe), c2-pruebas
+  78/78 y c3-pruebas 112/113 con la 45 omitida (Supabase no deja borrar de
+  Storage por SQL). Sin rastro: 0 asientos. La primera c3-pruebas falló sin
+  probar nada (las restricciones reales de la base: 7 categorías, 5 formas de
+  pago, ids GENERATED ALWAYS); el banco ya las tiene
+  (`pruebas/conta/02b-restricciones-produccion.sql`).
+- **▶ Antes del 1-oct (Edgar):** confirmar las reglas que de verdad se usan
+  (las 7 categorías, las 5 formas de pago y los 3 tipos de obra; los demás
+  sinónimos no pueden llegar por el CHECK de recibos) y dar de alta las
+  tarjetas (Amex Gold, Amex Blue y la débito de Chase) con sus últimos 4. Sin
+  eso, lo de octubre espera en la bandeja.
