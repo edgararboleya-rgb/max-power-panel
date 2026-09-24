@@ -13,6 +13,19 @@
    empleados dados de alta (W-4, depósito directo) **antes del 11-dic**. Ver f11.
 3. Los statements de préstamo y la póliza de cada seguro pagado por adelantado.
 
+## Las cuentas (Edgar, 24-sep)
+- **Chase**: la operativa es 1010. Falta confirmar si hay más cuentas (nómina
+  1020, reserva 1030) o alguna tarjeta Chase.
+- **American Express Business, 2 cuentas**: una subcuenta `2100-XXXX` por cada
+  una (los últimos 4). Si el equipo tiene tarjetas adicionales, sus últimos 4
+  casan con `recibos.ultimos4` del ticket.
+- Archivo preferido: **QFX/OFX**, porque cada movimiento trae su propio id
+  (FITID) y eso ayuda a la idempotencia. CSV solo si no hay otro.
+- **Conector automático (decide Edgar):** Plaid. Chase comparte datos con
+  Plaid por API oficial (acuerdo de 2020) y Amex también está en Plaid. La API
+  directa de Chase es solo para clientes de tesorería de J.P. Morgan. El
+  archivo sigue siendo el respaldo permanente (§5.5 del plan).
+
 ## 🔵 Azul — se crea (`/effort max`)
 
 - **Idempotencia** por movimiento **y entre archivos**: la salida del banco y
