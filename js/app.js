@@ -219,6 +219,63 @@
     }
   });
 
+  // ---------- P82: la copia en el teléfono, para abrir la app sin señal ----------
+  // Cada vez que los datos cargan bien se guarda una copia (mxp_copia). Si la app
+  // se abre sin señal, se entra con esa copia y una franja arriba dice de cuándo
+  // es. Para el rol campo la copia se guarda YA sin dinero (regla 3): se limpia
+  // antes de escribirla en el teléfono, no al pintarla.
+  const COPIA_LLAVE = "mxp_copia";
+  let modoSinSenal = false;
+  const LLAVES_DINERO = /^(contrato|cobrado|facturado|porCobrar|porFacturar|monto|montos|precio|precioUnit|costo|costoHora|costos|subtotal|impuesto|total|saldo|hitos|facturas|facturasAnuladas|finanzas|presupuesto|margen|valor|pagado|deuda|retencion)$/i;
+  function copiaSinDinero(x) {
+    if (Array.isArray(x)) return x.map(copiaSinDinero);
+    if (x && typeof x === "object") {
+      const o = {};
+      for (const [k, v] of Object.entries(x)) { if (!LLAVES_DINERO.test(k)) o[k] = copiaSinDinero(v); }
+      return o;
+    }
+    if (typeof x === "string") return x.replace(/\$\s?[\d][\d,.]*/g, "$•••");
+    return x;
+  }
+  function guardarCopia(st) {
+    if (!st || !st.perfil) return;
+    const campo = st.perfil.rol !== "dueno";
+    const base = campo ? copiaSinDinero(st) : st;
+    const paquete = recorte => { const c = { ...base }; for (const k of recorte) delete c[k];
+      return JSON.stringify({ el: new Date().toISOString(), uid: st.perfil.id, rol: st.perfil.rol, recorte, state: c }); };
+    // Si no cabe entera, se guarda sin lo que más pesa (fotos, recibos, gestiones)
+    for (const recorte of [[], ["fotos", "recibos"], ["fotos", "recibos", "gestiones", "visitasPortal", "registroHoras"]]) {
+      try { localStorage.setItem(COPIA_LLAVE, paquete(recorte)); return; } catch { /* siguiente recorte */ }
+    }
+  }
+  function leerCopia() {
+    try {
+      const c = JSON.parse(localStorage.getItem(COPIA_LLAVE) || "null");
+      return c && c.state && c.state.perfil && c.uid === DB.miUid() ? c : null;
+    } catch { return null; }
+  }
+  const horaCopia = iso => new Intl.DateTimeFormat("es-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" }).format(new Date(iso));
+  function franjaSinSenal(copia) {
+    let f = document.getElementById("franja-sin-senal");
+    if (!copia) { if (f) f.remove(); return; }
+    if (!f) { f = document.createElement("div"); f.id = "franja-sin-senal"; f.className = "franja-sin-senal"; $app.prepend(f); }
+    f.innerHTML = `<span>📶 Sin señal — estás viendo los datos de <b>${esc(horaCopia(copia.el))}</b>${copia.recorte && copia.recorte.length ? " (sin fotos)" : ""}. Lo que apuntes se manda cuando vuelva.</span><button type="button" class="accion secundaria" id="franja-reintentar">Reintentar</button>`;
+    f.querySelector("#franja-reintentar").addEventListener("click", () => arrancarApp());
+  }
+  // Entra con la copia del teléfono. Devuelve false si no hay copia de este usuario.
+  function entrarConCopia() {
+    const copia = leerCopia();
+    if (!copia) return false;
+    state = copia.state;
+    modoSinSenal = true;
+    quitarSinSenal();
+    $login.hidden = true;
+    $app.hidden = false;
+    entrarConEstado();
+    franjaSinSenal(copia);
+    return true;
+  }
+
   async function arrancarApp() {
     $login.hidden = true;
     $app.hidden = false;
@@ -226,10 +283,16 @@
     try {
       state = await DB.cargarTodo();
       quitarSinSenal();
+      modoSinSenal = false;
+      franjaSinSenal(null);
+      guardarCopia(state);
       enviarColaHoras(); // por si quedó algún reporte esperando señal
+      enviarCola();      // y lo demás que esperaba señal (fotos, checklist, pendientes, materiales)
     } catch (err) {
       if (esFalloDeRed(err)) {
-        // Sin señal: la sesión NO se toca, solo se ofrece reintentar
+        // Sin señal: la sesión NO se toca. Con copia en el teléfono se entra con
+        // ella (P82); si no la hay, solo se ofrece reintentar.
+        if (entrarConCopia()) return;
         pantallaSinSenal(arrancarApp);
         return;
       }
@@ -244,6 +307,10 @@
       salirApp();
       return;
     }
+    entrarConEstado();
+  }
+  // Con state ya cargado (de la red o de la copia): quién es y a la portada
+  function entrarConEstado() {
     const perfil = state.perfil;
     if (!perfil) {
       avisar("Tu cuenta no tiene perfil asignado. Avísale a Edgar.", true);
@@ -266,6 +333,9 @@
 
   function salirApp() {
     DB.salir();
+    try { localStorage.removeItem(COPIA_LLAVE); } catch { /* nada */ }
+    franjaSinSenal(null);
+    modoSinSenal = false;
     state = null;
     usuario = null;
     $("btn-chat").hidden = true;
@@ -278,18 +348,49 @@
 
   let recargaTurno = 0; // si hay dos recargas en vuelo, solo manda la última
   let vistaMarcada = false; // una sola marca de "estuve en la app" por sesión
-  async function recargar(abrirId) {
+  // P186: qué tablas baja cada recarga. Sin grupo (o uno desconocido) baja todo,
+  // como siempre. Cada grupo lleva también lo que la base toca de rebote (un
+  // recibo marca materiales, un evento crea su inspección, un hito mueve el dinero).
+  const GRUPOS_RECARGA = {
+    contratistas: ["contratistas", "contratista_llaves"],
+    empresa: ["documentos_empresa"],
+    horas: ["horas"],
+    horas_pend: ["horas", "pendientes"],
+    pendientes: ["pendientes"],
+    checklist: ["alcance_puntos", "pendientes"],
+    dinero: ["facturas", "hitos", "finanzas_proyecto", "proyectos", "proyectos_equipo"],
+    proyecto: ["proyectos", "proyectos_equipo", "portal_llaves", "finanzas_proyecto"],
+    documentos: ["documentos", "documentos_equipo", "documento_visitas"],
+    fotos: ["fotos"],
+    decisiones: ["decisiones_cliente"],
+    inspecciones: ["inspecciones", "eventos"],
+    gestiones: ["gestiones"],
+    externos: ["trabajos_externos", "externos_equipo", "finanzas_proyecto"],
+    materiales: ["materiales", "materiales_equipo", "pendientes"],
+    recibos: ["recibos", "recibos_equipo", "materiales", "materiales_equipo", "finanzas_proyecto"],
+    equipo: ["perfiles", "costos_equipo"],
+    ayudantes: ["externos_equipo"],
+    eventos: ["eventos", "inspecciones"],
+    eventos_pend: ["eventos", "inspecciones", "pendientes"],
+    cola: ["horas", "pendientes", "alcance_puntos", "materiales", "materiales_equipo", "fotos"],
+  };
+  async function recargar(abrirId, que) {
     const turno = ++recargaTurno;
     if (!vistaMarcada) { vistaMarcada = true; DB.estuve(); }
     try {
-      const nuevo = await DB.cargarTodo();
+      const nuevo = await DB.cargarTodo(GRUPOS_RECARGA[que]);
       if (turno !== recargaTurno) return;
       state = nuevo;
+      guardarCopia(nuevo);
+      if (modoSinSenal) { modoSinSenal = false; franjaSinSenal(null); }
     } catch (err) {
-      avisar("Error actualizando: " + err.message, true);
+      avisar(modoSinSenal || esFalloDeRed(err) ? "📶 Sin señal: sigues viendo la copia del teléfono." : "Error actualizando: " + err.message, true);
       return;
     }
-    // Re-pinta la vista activa
+    repintarVistaActiva(abrirId);
+  }
+  // Re-pinta la vista activa con lo que haya en state
+  function repintarVistaActiva(abrirId) {
     if (!$vDetalle.hidden) pintarDetalle();
     else if (!$vLista.hidden) pintarLista(abrirId);
     else if (!$vEtapas.hidden) pintarEtapas();
@@ -649,16 +750,16 @@ function esFalloDeRed(err) {
       btn.addEventListener("click", async () => {
         const url = enlaceGC(btn.dataset.llave);
         try { await navigator.clipboard.writeText(url); avisar("Enlace del contratista copiado ✓"); }
-        catch { prompt("Copia el enlace del contratista:", url); }
+        catch { await pedirDato("Copia el enlace del contratista:", url); }
       });
     });
     $("inicio-empresa").querySelectorAll(".gc-email").forEach(btn => {
       btn.addEventListener("click", async () => {
-        const nuevo = prompt("Email del contratista (ahí le llega la invitación a su portal):", btn.dataset.email || "");
+        const nuevo = await pedirDato("Email del contratista (ahí le llega la invitación a su portal):", btn.dataset.email || "");
         if (nuevo === null) return;
         try {
           await DB.cambiarContratista(btn.dataset.id, { email: nuevo.trim() || null });
-          await recargar(); avisar("Email guardado ✓");
+          await recargar(undefined, "contratistas"); avisar("Email guardado ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
@@ -667,11 +768,11 @@ function esFalloDeRed(err) {
         const c = (state.contratistas || []).find(x => x.id === btn.dataset.id);
         if (!c) return;
         if (!c.email) { avisar("Primero ponle el email con el lapicito ✎", true); return; }
-        if (!confirm(`¿Mandarle a ${c.nombre} (${c.email}) la invitación a su portal?`)) return;
+        if (!await confirmar(`¿Mandarle a ${c.nombre} (${c.email}) la invitación a su portal?`)) return;
         btn.disabled = true;
         try {
           const r = await DB.pedirCorreo("invitar_gc", { contratista_id: c.id });
-          await recargar();
+          await recargar(undefined, "contratistas");
           avisar(`Invitación enviada a ${r.para || c.email} ✓`);
         } catch (err) { avisar("No salió el correo: " + err.message, true); }
         btn.disabled = false;
@@ -679,21 +780,21 @@ function esFalloDeRed(err) {
     });
     $("inicio-empresa").querySelectorAll(".gc-llave").forEach(btn => {
       btn.addEventListener("click", async () => {
-        if (!confirm("¿Regenerar la llave? El enlace viejo deja de funcionar y hay que mandarle el nuevo.")) return;
+        if (!await confirmar("¿Regenerar la llave? El enlace viejo deja de funcionar y hay que mandarle el nuevo.")) return;
         const nueva = crypto.randomUUID
           ? crypto.randomUUID().replace(/-/g, "")
           : [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, "0")).join("");
         try {
           await DB.cambiarLlaveContratista(btn.dataset.id, nueva);
-          await recargar(); avisar("Llave nueva ✓ — copia el enlace otra vez");
+          await recargar(undefined, "contratistas"); avisar("Llave nueva ✓ — copia el enlace otra vez");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
 
     $("inicio-empresa").querySelectorAll(".emp-borrar").forEach(btn => {
       btn.addEventListener("click", async () => {
-        if (!confirm("¿Eliminar este documento de la empresa?")) return;
-        try { await DB.eliminarDocEmpresa(btn.dataset.id); await recargar(); avisar("Documento eliminado ✓"); }
+        if (!await confirmar("¿Eliminar este documento de la empresa?")) return;
+        try { await DB.eliminarDocEmpresa(btn.dataset.id); await recargar(undefined, "empresa"); avisar("Documento eliminado ✓"); }
         catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
@@ -715,7 +816,7 @@ function esFalloDeRed(err) {
         const cambios = { vence };
         if (archivo) cambios.ruta = await DB.subirDocumento("empresa", archivo, "docs-equipo");
         await DB.cambiarDocEmpresa(id, cambios);
-        await recargar();
+        await recargar(undefined, "empresa");
         avisar(archivo ? "Papel actualizado ✓ — el equipo y los portales ya ven el nuevo" : "Fecha guardada ✓");
       } catch (err) {
         avisar("No se pudo: " + err.message, true);
@@ -1098,7 +1199,7 @@ function esFalloDeRed(err) {
   async function editarPendiente(id, repintar) {
     const pen = pendientesTodos().find(x => String(x.id) === String(id));
     if (!pen) return;
-    const nuevo = prompt("Corrige el texto del pendiente:", pen.descripcion);
+    const nuevo = await pedirDato("Corrige el texto del pendiente:", pen.descripcion);
     if (nuevo === null) return; // canceló
     const limpio = nuevo.trim();
     if (!limpio || limpio === pen.descripcion) return;
@@ -1328,7 +1429,7 @@ function esFalloDeRed(err) {
         e.preventDefault();
         try {
           await DB.cambiarHoras(btn.closest(".eq-reporte").dataset.id, { correccion_estado: "aprobada" });
-          await recargar();
+          await recargar(undefined, "horas");
           avisar("Permiso dado ✓ — le llegó el aviso al teléfono");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
@@ -1340,7 +1441,7 @@ function esFalloDeRed(err) {
         const id = btn.closest(".eq-reporte").dataset.id;
         const rep = (state.registroHoras || []).find(r => String(r.id) === String(id));
         if (!rep) return;
-        const h = prompt("Horas trabajadas:", rep.horas);
+        const h = await pedirDato("Horas trabajadas:", rep.horas);
         if (h === null) return;
         const horasNum = Number(String(h).replace(",", "."));
         if (!Number.isFinite(horasNum) || horasNum <= 0 || horasNum > 16) {
@@ -1353,7 +1454,7 @@ function esFalloDeRed(err) {
         if (notas === null) return;
         const cambios = { horas: horasNum, notas: notas.trim() };
         // Si el trabajador se equivocó de proyecto, aquí se mueve (queda constancia)
-        if (confirm("¿Quieres MOVER este reporte a OTRO proyecto?\n\nAceptar = elegir el proyecto correcto.\nCancelar = dejarlo donde está.")) {
+        if (await confirmar("¿Quieres MOVER este reporte a OTRO proyecto?\n\nAceptar = elegir el proyecto correcto.\nCancelar = dejarlo donde está.")) {
           const lista = proyectosConTrabajo();
           const idElegido = await elegirDeLista("¿A qué proyecto va este reporte?",
             lista.map(x => ({ valor: x.id, texto: x.nombre })));
@@ -1387,7 +1488,7 @@ function esFalloDeRed(err) {
         }
         try {
           await DB.cambiarHoras(id, cambios);
-          await recargar();
+          await recargar(undefined, "horas");
           avisar(cambios.proyecto_id ? "Reporte corregido y movido de proyecto ✓" : "Reporte corregido ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
@@ -1395,10 +1496,10 @@ function esFalloDeRed(err) {
     $("inicio-equipo").querySelectorAll(".eq-rep-borrar").forEach(btn => {
       btn.addEventListener("click", async e => {
         e.preventDefault();
-        if (!confirm("¿Eliminar este reporte de horas?")) return;
+        if (!await confirmar("¿Eliminar este reporte de horas?")) return;
         try {
           await DB.eliminarHoras(btn.closest(".eq-reporte").dataset.id);
-          await recargar();
+          await recargar(undefined, "horas");
           avisar("Reporte eliminado ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
@@ -1880,17 +1981,17 @@ function esFalloDeRed(err) {
 </body></html>`;
   }
 
-  function releaseImprimir(p, hito) {
+  async function releaseImprimir(p, hito) {
     // Es el final cuando ya no queda ningún hito por cobrar
     const quedan = (p.hitos || []).filter(h => h.estado !== "cobrado").length;
     const esFinal = quedan === 0 && (p.hitos || []).length > 0 &&
-      confirm("¿Es el ÚLTIMO pago de la obra?\n\nAceptar = release FINAL (713.20(5)).\nCancelar = release de pago parcial (713.20(4)).");
+      await confirmar("¿Es el ÚLTIMO pago de la obra?\n\nAceptar = release FINAL (713.20(5)).\nCancelar = release de pago parcial (713.20(4)).");
     // El formulario de la ley pide el nombre del dueño de la propiedad. Si el
     // contrato es con una empresa, ese nombre no está en ningún sitio de la app.
     const gc0 = gcDeProyecto(p);
     let dueno = "";
     if (gc0 && p.contratistaModo === "contrato") {
-      const r = prompt("¿A nombre de quién está la propiedad?\n\nEl formulario de la ley (713.20) pide el nombre del dueño, y no es la empresa que te paga.", "");
+      const r = await pedirDato("¿A nombre de quién está la propiedad?\n\nEl formulario de la ley (713.20) pide el nombre del dueño, y no es la empresa que te paga.", "");
       if (r === null) return;
       dueno = r.trim();
       if (!dueno) { avisar("Sin el nombre del dueño no se puede armar el release", true); return; }
@@ -2227,14 +2328,16 @@ function esFalloDeRed(err) {
         const d = new FormData(f);
         const texto = (d.get("texto") || "").toString().trim();
         if (!texto) return;
+        const fila = { fecha: hoyISO(), proyecto_id: f.dataset.id || null, descripcion: texto, prioridad: prioDe(d.get("prioridad")) };
         try {
-          await DB.crearPendiente({
-            fecha: hoyISO(), proyecto_id: f.dataset.id || null,
-            descripcion: texto, prioridad: prioDe(d.get("prioridad"))
-          });
-          await recargar();
+          if (modoSinSenal) throw new TypeError("sin conexión");
+          await DB.crearPendiente(fila);
+          await recargar(undefined, "pendientes");
           avisar("Tarea agregada ✓");
-        } catch (err) { avisar("No se pudo: " + err.message, true); }
+        } catch (err) {
+          if (seDejaEsperando(err)) { dejarEsperando({ k: llaveNueva("pendiente"), tipo: "pendiente", datos: fila }); return; }
+          avisar("No se pudo: " + err.message, true);
+        }
       });
     });
   }
@@ -2250,6 +2353,7 @@ function esFalloDeRed(err) {
         const { tipo, id, fila } = dato(btn);
         const estaHecha = fila.classList.contains("hecha");
         try {
+          if (modoSinSenal) throw new TypeError("sin conexión");
           if (tipo === "punto") await DB.cambiarPunto(id, { hecho: !estaHecha });
           else if (estaHecha) await DB.reabrirPendiente(id);
           else await DB.resolverPendiente(id);
@@ -2258,8 +2362,15 @@ function esFalloDeRed(err) {
           // tablas y con mala señal congelaba el teléfono varios segundos.
           fila.classList.toggle("hecha");
           avisar(estaHecha ? "Tarea devuelta a pendiente" : "Tarea completada ✓");
-          recargar();
-        } catch (err) { avisar("No se pudo: " + err.message, true); }
+          recargar(undefined, "checklist");
+        } catch (err) {
+          if (seDejaEsperando(err)) {
+            // P83: sin señal, la palomita espera en el teléfono
+            dejarEsperando(tipo === "punto" ? { k: "punto:" + id, tipo: "punto", datos: { id, hecho: !estaHecha } }
+              : { k: "pend:" + id, tipo: estaHecha ? "reabrir" : "resolver", datos: { id } });
+            return;
+          }
+ avisar("No se pudo: " + err.message, true); }
       });
     });
     raiz.querySelectorAll(".tarea-prio").forEach(sel => {
@@ -2271,12 +2382,12 @@ function esFalloDeRed(err) {
           else await DB.cambiarPendiente(id, { prioridad: nueva });
           // Igual que la palomita: se pinta al instante con el estado que ya
           // está en memoria y la base entera se vuelve a bajar por detrás.
-          // Con "await recargar()" cada cambio de categoría se comía 28
+          // Con "await recargar(undefined, "checklist")" cada cambio de categoría se comía 28
           // tablas y en la obra se sentía como si la app se hubiera colgado.
           const lista = tipo === "punto" ? (state.puntos || []) : (state.pendientes || []);
           const enEstado = lista.find(x => String(x.id) === String(id));
           if (enEstado) enEstado.prioridad = nueva;
-          recargar();
+          recargar(undefined, "checklist");
           avisar(nueva === "urgente"
             ? "🔴 Urgente — sale en el inicio y avisa al equipo"
             : `Categoría: ${PRIO[nueva].icono} ${PRIO[nueva].etiqueta}`);
@@ -2295,14 +2406,14 @@ function esFalloDeRed(err) {
         const actual = enEstado
           ? (tipo === "punto" ? enEstado.texto : enEstado.descripcion)
           : fila.querySelector(".tarea-texto").textContent;
-        const nuevo = prompt("Corrige el texto de la tarea:", actual);
+        const nuevo = await pedirDato("Corrige el texto de la tarea:", actual);
         if (nuevo === null) return;
         const limpio = nuevo.trim();
         if (!limpio || limpio === actual) return;
         try {
           if (tipo === "punto") await DB.cambiarPunto(id, { texto: limpio });
           else await DB.cambiarPendiente(id, { descripcion: limpio });
-          await recargar();
+          await recargar(undefined, "checklist");
           avisar("Tarea corregida ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
@@ -2317,7 +2428,7 @@ function esFalloDeRed(err) {
         if (!punto) return;
         const yaUsados = [...new Set((state.puntos || [])
           .filter(x => x.proyecto === punto.proyecto && x.grupo).map(x => x.grupo))];
-        const nuevo = prompt(
+        const nuevo = await pedirDato(
           "¿En qué bloque sale este punto en el portal del cliente?\n" +
           (yaUsados.length ? "Bloques de esta obra: " + yaUsados.join(" · ") + "\n" : "") +
           "(Déjalo vacío para que salga en la lista de siempre.)",
@@ -2329,7 +2440,7 @@ function esFalloDeRed(err) {
           // El inglés se borra para que la rutina del idioma lo vuelva a traducir
           await DB.cambiarPunto(id, { grupo: limpio || null, grupo_en: null });
           punto.grupo = limpio;
-          await recargar();
+          await recargar(undefined, "checklist");
           avisar(limpio ? "🏷 Bloque: " + limpio : "El punto vuelve a la lista de siempre");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
@@ -2337,11 +2448,11 @@ function esFalloDeRed(err) {
     raiz.querySelectorAll(".tarea-borrar").forEach(btn => {
       btn.addEventListener("click", async () => {
         const { tipo, id } = dato(btn);
-        if (!confirm("¿Eliminar esta tarea?")) return;
+        if (!await confirmar("¿Eliminar esta tarea?")) return;
         try {
           if (tipo === "punto") await DB.eliminarPunto(id);
           else await DB.eliminarPendiente(id);
-          await recargar();
+          await recargar(undefined, "checklist");
           avisar("Tarea eliminada ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
@@ -2610,8 +2721,8 @@ function esFalloDeRed(err) {
       b.addEventListener("click", () => asisEnviar(b.textContent));
     });
     const limpiar = $("asis-limpiar");
-    if (limpiar) limpiar.addEventListener("click", () => {
-      if (!confirm("¿Borrar esta conversación y empezar de nuevo?")) return;
+    if (limpiar) limpiar.addEventListener("click", async () => {
+      if (!await confirmar("¿Borrar esta conversación y empezar de nuevo?")) return;
       asisMsgs = []; asisGuardar(); pintarAsistente();
     });
     const caja = $("asis-texto");
@@ -2817,7 +2928,7 @@ function esFalloDeRed(err) {
       const pregunta = valor === "completado"
         ? `¿Marcar «${p.nombre}» como COMPLETADA?\n\nSale de las obras en ejecución. Si fue sin querer, se reabre desde el estado.`
         : `¿Pasar «${p.nombre}» a ${etq}?`;
-      if (!confirm(pregunta)) { if (selectEl) selectEl.value = p.estado; return; }
+      if (!await confirmar(pregunta)) { if (selectEl) selectEl.value = p.estado; return; }
     }
     const cambios = { estado: valor };
     if (valor === "ejecucion" && !p.fase) cambios.fase = "mobilizacion";
@@ -2991,7 +3102,7 @@ function esFalloDeRed(err) {
     if (!p || !monto || typeof p.contrato !== "number") return;
     const antes = typeof p.cobrado === "number" ? p.cobrado : 0;
     const despues = Math.round((antes + monto) * 100) / 100;
-    if (!confirm(
+    if (!await confirmar(
       `¿Le sumo ${fmt(monto)} de ${deQue} a lo cobrado del proyecto?\n\n` +
       `Cobrado ahora: ${fmt(antes)}\nQuedaría en: ${fmt(despues)}\n\n` +
       `(Si ese dinero ya estaba contado, dile que NO.)`)) return;
@@ -3727,7 +3838,7 @@ function esFalloDeRed(err) {
     // La #1110 es dinero personal de Edgar: se marca pagada, pero NUNCA se
     // suma a lo cobrado de la obra (regla 5)
     const personal = btn.dataset.personal === "1";
-    if (!confirm(personal
+    if (!await confirmar(personal
       ? `¿Se cobró la factura #${btn.dataset.num} (${fmt(monto)})?\n\nEs dinero personal: solo se marca pagada, no se suma a lo cobrado de la obra.`
       : `¿Se cobró la factura #${btn.dataset.num} (${fmt(monto)})?`)) return;
     if (cobrandoFacturas.has(clave)) return;
@@ -3738,7 +3849,7 @@ function esFalloDeRed(err) {
       await DB.cambiarFactura(btn.dataset.id, { pagada: true });
       if (!personal) await sumarACobrado(p, monto, `la factura #${btn.dataset.num}`);
       cobrandoFacturas.delete(clave);
-      await recargar(p ? p.id : undefined);
+      await recargar(p ? p.id : undefined, "dinero");
       avisar("✓ Factura marcada cobrada");
     } catch (err) { cobrandoFacturas.delete(clave); avisar("No se pudo: " + err.message, true); btn.disabled = false; }
   }
@@ -4090,7 +4201,7 @@ function esFalloDeRed(err) {
   async function eliminarProyectoConPalabra(id) {
     const p = proyectos().find(x => x.id === id);
     if (!p) return;
-    const escrito = prompt(
+    const escrito = await pedirDato(
       `⚠️ Vas a ELIMINAR "${p.nombre}" para siempre.\n\n` +
       `Se borran también sus finanzas, hitos, facturas, horas del equipo, fotos, ` +
       `documentos y pendientes. Esto NO se puede deshacer.\n\n` +
@@ -4120,7 +4231,7 @@ function esFalloDeRed(err) {
       avisar("No se pudo bajar la copia de la obra, así que no se borró nada: " + err.message, true);
       return;
     }
-    if (!confirm(`Se bajó la copia "copia-${id}-${hoyISO()}.json". ¿Borrar ya "${p.nombre}"?`)) return;
+    if (!await confirmar(`Se bajó la copia "copia-${id}-${hoyISO()}.json". ¿Borrar ya "${p.nombre}"?`)) return;
     try {
       await DB.eliminarProyecto(id);
       state.proyectos = state.proyectos.filter(x => x.id !== id);
@@ -4130,7 +4241,7 @@ function esFalloDeRed(err) {
       // Una obra con papeles en el libro contable no se borra (MX003): la base
       // lo explica, y aquí se ofrece lo que sí se puede, marcarla Completado.
       if (/^MX/i.test(err.codigo || "") && p.estado !== "completado") {
-        if (confirm(err.message + "\n\n¿La marco Completado ahora?")) {
+        if (await confirmar(err.message + "\n\n¿La marco Completado ahora?")) {
           try {
             await DB.cambiarProyecto(id, { estado: "completado" });
             p.estado = "completado";
@@ -4461,11 +4572,11 @@ function esFalloDeRed(err) {
     // Portal del cliente: copiar link, regenerar llave, y el 👁 por documento
     const btnEmailCli = $detalle.querySelector("#btn-cliente-email");
     if (btnEmailCli) btnEmailCli.addEventListener("click", async () => {
-      const nuevo = prompt("Email del cliente (para mandarle su copia firmada y avisos):", btnEmailCli.dataset.email || "");
+      const nuevo = await pedirDato("Email del cliente (para mandarle su copia firmada y avisos):", btnEmailCli.dataset.email || "");
       if (nuevo === null) return;
       try {
         await DB.cambiarProyecto(btnEmailCli.dataset.id, { cliente_email: nuevo.trim() || null });
-        await recargar(btnEmailCli.dataset.id);
+        await recargar(btnEmailCli.dataset.id, "proyecto");
         avisar("✉️ Email del cliente guardado");
       } catch (err) { avisar("No se pudo: " + err.message, true); }
     });
@@ -4475,7 +4586,7 @@ function esFalloDeRed(err) {
     if (btnPortalResumen) btnPortalResumen.addEventListener("click", async () => {
       const p = state.proyectos.find(x => x.id === proyectoActivo);
       if (!p) return;
-      const nuevo = prompt(
+      const nuevo = await pedirDato(
         "En dos o tres frases, ¿en qué va la obra y qué falta del lado del cliente?\n" +
         "(Sin montos: esto lo lee el cliente arriba de todo. Déjalo vacío para quitar la tarjeta.)",
         p.portalResumen || "");
@@ -4483,7 +4594,7 @@ function esFalloDeRed(err) {
       const limpio = nuevo.trim();
       try {
         await DB.cambiarProyecto(proyectoActivo, { portal_resumen: limpio || null, portal_resumen_en: null });
-        await recargar();
+        await recargar(undefined, "proyecto");
         avisar(limpio ? "📣 El cliente ya ve en qué va la obra" : "Se quitó el resumen del portal");
       } catch (e) { avisar("No se pudo guardar: " + (e.message || e), true); }
     });
@@ -4496,14 +4607,14 @@ function esFalloDeRed(err) {
         await navigator.clipboard.writeText(link);
         avisar("Link del cliente copiado ✓ — pégalo en WhatsApp");
       } catch {
-        prompt("Copia el link del cliente:", link);
+        await pedirDato("Copia el link del cliente:", link);
       }
     });
     const btnPortalCompleto = $detalle.querySelector("#btn-portal-completo");
     if (btnPortalCompleto) btnPortalCompleto.addEventListener("click", async () => {
       const p = proyectos().find(x => x.id === proyectoActivo);
       if (!p) return;
-      if (!p.portalCompleto && !confirm(
+      if (!p.portalCompleto && !await confirmar(
         "🟢 ¿Darle a este cliente ACCESO COMPLETO a su proyecto?\n\n" +
         "Verá TODOS los documentos (contratos y change orders incluidos, con sus precios) " +
         "y TODAS las fotos y videos — sin tener que marcarlos uno a uno.\n\n" +
@@ -4511,7 +4622,7 @@ function esFalloDeRed(err) {
         "Solo para clientes directos.")) return;
       try {
         await DB.cambiarProyecto(proyectoActivo, { portal_completo: !p.portalCompleto });
-        await recargar();
+        await recargar(undefined, "proyecto");
         avisar(!p.portalCompleto ? "🟢 Luz verde — el cliente ve todo su proyecto" : "De vuelta al modo uno-a-uno (solo lo marcado con 👁)");
       } catch (err) { avisar("No se pudo: " + err.message, true); }
     });
@@ -4519,20 +4630,20 @@ function esFalloDeRed(err) {
     if (btnPortalDinero) btnPortalDinero.addEventListener("click", async () => {
       const p = proyectos().find(x => x.id === proyectoActivo);
       if (!p) return;
-      if (!p.portalDinero && !confirm(
+      if (!p.portalDinero && !await confirmar(
         "¿Mostrarle a este cliente su contrato, pagos y facturas en el portal?\n\n" +
         "Solo para proyectos donde tratas DIRECTO con el cliente. " +
         "Si el trabajo va a través de un contratista (Wisdom u otro), déjalo apagado.")) return;
       try {
         await DB.cambiarProyecto(proyectoActivo, { portal_dinero: !p.portalDinero });
-        await recargar();
+        await recargar(undefined, "proyecto");
         avisar(!p.portalDinero ? "💵 El cliente ahora VE su contrato y pagos" : "El dinero quedó oculto para el cliente");
       } catch (err) { avisar("No se pudo: " + err.message, true); }
     });
     // ── 🏗 Portal del contratista ──────────────────────────────────
     const copiar = async (url, bien) => {
       try { await navigator.clipboard.writeText(url); avisar(bien); }
-      catch { prompt("Copia el enlace:", url); }
+      catch { await pedirDato("Copia el enlace:", url); }
     };
     const btnGCObra = $detalle.querySelector("#btn-gc-copiar");
     if (btnGCObra) btnGCObra.addEventListener("click", () => {
@@ -4568,7 +4679,7 @@ function esFalloDeRed(err) {
     });
     const btnNTO = $detalle.querySelector("#btn-nto-hecho");
     if (btnNTO) btnNTO.addEventListener("click", async () => {
-      const como = prompt("¿Cómo mandaste el Notice to Owner? (certificado, servicio, en mano…)", "correo certificado");
+      const como = await pedirDato("¿Cómo mandaste el Notice to Owner? (certificado, servicio, en mano…)", "correo certificado");
       if (como === null) return;
       try {
         // El día de hoy EN FLORIDA (a las 9 de la noche en UTC ya es mañana)
@@ -4588,7 +4699,7 @@ function esFalloDeRed(err) {
       const modo = cual ? String(d.get("modo") || "referido") : null;
       if (modo === "contrato") {
         const emp = (state.contratistas || []).find(c => c.id === cual);
-        if (!confirm(`Vas a decir que el contrato de esta obra es con ${emp ? emp.nombre : "esa empresa"}.\n\n` +
+        if (!await confirmar(`Vas a decir que el contrato de esta obra es con ${emp ? emp.nombre : "esa empresa"}.\n\n` +
                      "Dos cosas cambian:\n" +
                      "· En su portal verán los hitos, lo facturado y lo cobrado de esta obra.\n" +
                      "· El contrato saldrá SIN el aviso de la ley de gravámenes y SIN los tres días para cancelar " +
@@ -4599,20 +4710,20 @@ function esFalloDeRed(err) {
         const cambiosGC = { contratista_id: cual || null, contratista_modo: modo,
                             contratista_contacto: cual ? (String(d.get("contratista_contacto") || "").trim() || null) : null };
         await DB.cambiarProyecto(proyectoActivo, cambiosGC);
-        await recargar(proyectoActivo);
+        await recargar(proyectoActivo, "proyecto");
         avisar(cual ? "Contratista guardado ✓" : "Obra directa ✓");
       } catch (err) { avisar("No se pudo: " + err.message, true); }
     });
 
     const btnPortalRegen = $detalle.querySelector("#btn-portal-regenerar");
     if (btnPortalRegen) btnPortalRegen.addEventListener("click", async () => {
-      if (!confirm("¿Regenerar la llave? El link viejo dejará de funcionar y tendrás que mandarle el nuevo al cliente.")) return;
+      if (!await confirmar("¿Regenerar la llave? El link viejo dejará de funcionar y tendrás que mandarle el nuevo al cliente.")) return;
       const nueva = crypto.randomUUID
         ? crypto.randomUUID().replace(/-/g, "")
         : [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, "0")).join("");
       try {
         await DB.cambiarLlavePortal(proyectoActivo, nueva);
-        await recargar();
+        await recargar(undefined, "proyecto");
         avisar("Llave nueva ✓ — copia el link otra vez");
       } catch (err) { avisar("No se pudo: " + err.message, true); }
     });
@@ -4625,7 +4736,7 @@ function esFalloDeRed(err) {
         const visible = btn.dataset.portal === "1";
         try {
           await DB.cambiarDocumento(btn.dataset.id, { portal: !visible });
-          await recargar();
+          await recargar(undefined, "documentos");
           avisar(!visible ? "👁 El cliente ahora VE este documento — OJO: en Drive debe estar compartido como 'cualquiera con el enlace' para que pueda abrirlo" : "🚫 Documento oculto para el cliente");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
@@ -4645,7 +4756,7 @@ function esFalloDeRed(err) {
         }
         try {
           await DB.cambiarDocumento(btn.dataset.id, cambios);
-          await recargar();
+          await recargar(undefined, "documentos");
           avisar(!pide ? "🖊 El cliente verá 'Revisar y firmar' en su portal" + (cambios.valida_hasta ? ` (vale hasta ${cambios.valida_hasta})` : "") : "Petición de firma quitada");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
@@ -4660,7 +4771,7 @@ function esFalloDeRed(err) {
         try {
           await DB.cambiarDocumento(btn.dataset.id, { valida_hasta: f });
           if (btn.dataset.propuesta) await DB.cambiarPropuesta(Number(btn.dataset.propuesta), { valida_hasta: f });
-          await recargar();
+          await recargar(undefined, "documentos");
           avisar(`Vale hasta ${f} ✓`);
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
@@ -4671,7 +4782,7 @@ function esFalloDeRed(err) {
     $detalle.querySelectorAll(".doc-contrafirma").forEach(btn => {
       btn.addEventListener("click", async () => {
         if (usuario.id !== EDGAR_ID) { avisar("Solo Edgar puede firmar en su nombre.", true); return; }
-        if (!confirm(`Vas a firmar "${btn.dataset.titulo}" como:\n\nEdgar Arboleya\nMax Power Electrical Solutions Inc. (EC13016045)\n\nTu firma saldrá en el certificado junto a la del cliente. ¿Firmar?`)) return;
+        if (!await confirmar(`Vas a firmar "${btn.dataset.titulo}" como:\n\nEdgar Arboleya\nMax Power Electrical Solutions Inc. (EC13016045)\n\nTu firma saldrá en el certificado junto a la del cliente. ¿Firmar?`)) return;
         try {
           await DB.cambiarDocumento(btn.dataset.id, {
             contrafirma_nombre: "Edgar Arboleya",
@@ -4687,7 +4798,7 @@ function esFalloDeRed(err) {
         const pide = btn.dataset.pide === "1";
         try {
           await DB.cambiarDocumento(btn.dataset.id, { pide_aprobacion: !pide });
-          await recargar();
+          await recargar(undefined, "documentos");
           avisar(!pide ? "✍️ El cliente verá el botón de aprobar" : "Aprobación quitada");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
@@ -4695,10 +4806,10 @@ function esFalloDeRed(err) {
     // 🧾 Facturar un hito: crea la factura DIRECTO en QuickBooks.
     // Si la conexión API aún no está montada, plan B: copia el texto y abre QB.
     $detalle.querySelectorAll(".hito-release").forEach(btn => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
         const p0 = proyectos().find(x => x.id === proyectoActivo);
         const h0 = p0 && (p0.hitos || []).find(h => String(h.id) === String(btn.dataset.hito));
-        if (p0 && h0) releaseImprimir(p0, h0);
+        if (p0 && h0) await releaseImprimir(p0, h0);
       });
     });
     $detalle.querySelectorAll(".hito-facturar").forEach(btn => {
@@ -4708,7 +4819,7 @@ function esFalloDeRed(err) {
           try {
             await navigator.clipboard.writeText(texto);
             avisar("QB directo aún no conectado — texto copiado ✓, pégalo en la factura");
-          } catch { prompt("Cópialo y pégalo en QuickBooks:", texto); }
+          } catch { await pedirDato("Cópialo y pégalo en QuickBooks:", texto); }
           window.open("https://qbo.intuit.com/app/invoice", "_blank", "noopener");
         };
         // A quién se manda: al contratista si la obra es contrato con él; si no, al cliente.
@@ -4724,7 +4835,7 @@ function esFalloDeRed(err) {
         // facturaba, el botón nuevo no sabe nada; este apunte sí (P03)
         const clave = String(btn.dataset.hito);
         if (facturandoHitos.has(clave) || cobrandoHitos.has(clave)) { avisar("Ese hito ya se está facturando: espera a que termine.", true); return; }
-        if (!confirm(pregunta)) return;
+        if (!await confirmar(pregunta)) return;
         if (facturandoHitos.has(clave) || cobrandoHitos.has(clave)) return;
         facturandoHitos.add(clave);
         // El botón que se ve es el «Facturar ▾» del renglón: se apaga y dice
@@ -4781,7 +4892,7 @@ function esFalloDeRed(err) {
             // La factura ya existe: se suelta el candado ANTES de recargar, así el
             // repintado enseña el hito ya facturado (y no un «Facturando…» colgado)
             facturandoHitos.delete(clave);
-            await recargar().catch(() => {});
+            await recargar(undefined, "dinero").catch(() => {});
             return;
           }
           if (d.error === "sin_conexion" || r.status === 404) { await planB(); }
@@ -4800,7 +4911,7 @@ function esFalloDeRed(err) {
         // El mismo candado del Facturar: no se cobra un hito que ya se está cobrando o facturando
         const clave = String(btn.dataset.hito);
         if (facturandoHitos.has(clave) || cobrandoHitos.has(clave)) { avisar("Ese hito ya se está guardando: espera a que termine.", true); return; }
-        if (!confirm(`¿Ya entró el dinero de "${btn.dataset.titulo}" (${fmt(monto)})?`)) return;
+        if (!await confirmar(`¿Ya entró el dinero de "${btn.dataset.titulo}" (${fmt(monto)})?`)) return;
         if (facturandoHitos.has(clave) || cobrandoHitos.has(clave)) return;
         const p = proyectoPorId(proyectoActivo);
         // activar() apaga también el botón visible del renglón: si falla, se encienden los dos
@@ -4811,7 +4922,7 @@ function esFalloDeRed(err) {
           await DB.cambiarHito(btn.dataset.hito, { estado: "cobrado" });
           await sumarACobrado(p, monto, `el hito "${btn.dataset.titulo}"`);
           cobrandoHitos.delete(clave);
-          await recargar();
+          await recargar(undefined, "dinero");
           avisar("💵 Hito marcado cobrado ✓");
         } catch (err) {
           cobrandoHitos.delete(clave);
@@ -4830,11 +4941,11 @@ function esFalloDeRed(err) {
 
     $detalle.querySelectorAll(".foto-nota").forEach(btn => {
       btn.addEventListener("click", async () => {
-        const nota = prompt("Descripción de la foto (o video):", btn.dataset.nota || "");
+        const nota = await pedirDato("Descripción de la foto (o video):", btn.dataset.nota || "");
         if (nota === null) return;
         try {
           await DB.cambiarFoto(btn.dataset.id, { nota: nota.trim() || null });
-          await recargar();
+          await recargar(undefined, "fotos");
           avisar("Descripción corregida ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
@@ -4844,7 +4955,7 @@ function esFalloDeRed(err) {
         const visible = btn.dataset.portal === "1";
         try {
           await DB.cambiarFoto(btn.dataset.id, { portal: !visible });
-          await recargar();
+          await recargar(undefined, "fotos");
           avisar(!visible ? "👁 El cliente ahora VE esta foto" : "🚫 Foto oculta para el cliente");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
@@ -4858,7 +4969,7 @@ function esFalloDeRed(err) {
       if (!texto) { formDec.dataset.enviado = ""; return; }
       try {
         await DB.crearDecision({ proyecto_id: proyectoActivo, texto, fecha_limite: d.get("fecha") || null });
-        await recargar();
+        await recargar(undefined, "decisiones");
         avisar("Decisión agregada ✓ — el cliente la verá en su portal");
       } catch (err) { formDec.dataset.enviado = ""; avisar("No se pudo: " + err.message, true); }
     });
@@ -4866,16 +4977,16 @@ function esFalloDeRed(err) {
       btn.addEventListener("click", async () => {
         try {
           await DB.cambiarDecision(btn.dataset.id, { hecha: true, hecha_el: new Date().toISOString() });
-          await recargar();
+          await recargar(undefined, "decisiones");
           avisar("Decisión marcada ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       }));
     $detalle.querySelectorAll(".btn-dec-borrar").forEach(btn =>
       btn.addEventListener("click", async () => {
-        if (!confirm("¿Eliminar esta decisión?")) return;
+        if (!await confirmar("¿Eliminar esta decisión?")) return;
         try {
           await DB.eliminarDecision(btn.dataset.id);
-          await recargar();
+          await recargar(undefined, "decisiones");
           avisar("Decisión eliminada ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       }));
@@ -4961,7 +5072,7 @@ function esFalloDeRed(err) {
       sel.addEventListener("change", async () => {
         try {
           await DB.cambiarInspeccion(sel.dataset.id, { resultado: sel.value });
-          await recargar();
+          await recargar(undefined, "inspecciones");
           if (sel.value === "paso") {
             const h = proximoHito(p);
             avisar(usuario.finanzas && h
@@ -4981,10 +5092,10 @@ function esFalloDeRed(err) {
     // 🗑 Eliminar inspección (solo dueño, con confirmación)
     $detalle.querySelectorAll(".btn-insp-borrar").forEach(btn => {
       btn.addEventListener("click", async () => {
-        if (!confirm(`¿Eliminar la inspección ${btn.dataset.tipo}?\n\nÚsalo solo si se anotó por error. Esto no se puede deshacer.`)) return;
+        if (!await confirmar(`¿Eliminar la inspección ${btn.dataset.tipo}?\n\nÚsalo solo si se anotó por error. Esto no se puede deshacer.`)) return;
         try {
           await DB.eliminarInspeccion(btn.dataset.id);
-          await recargar();
+          await recargar(undefined, "inspecciones");
           avisar("Inspección eliminada ✓");
         } catch (err) {
           avisar("No se pudo eliminar: " + err.message, true);
@@ -4997,7 +5108,7 @@ function esFalloDeRed(err) {
       btn.addEventListener("click", async () => {
         try {
           await DB.cambiarGestion(btn.dataset.id, { hecha: true });
-          await recargar();
+          await recargar(undefined, "gestiones");
           avisar("Gestión hecha ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
@@ -5061,7 +5172,7 @@ function esFalloDeRed(err) {
         btn.disabled = true;
         try {
           await DB.anularExterno(btn.dataset.id, motivo.trim());
-          await recargar();
+          await recargar(undefined, "externos");
           avisar("Trabajo externo anulado ✓ — ya no cuenta como gasto");
         } catch (err) { btn.disabled = false; avisar("No se pudo anular: " + err.message, true); }
       });
@@ -5090,7 +5201,7 @@ function esFalloDeRed(err) {
         // Si una falla se CORTA ahí (break), pero las que ya subieron se
         // guardan y se pintan: antes se salía con return y las de antes
         // parecían perdidas, con el botón trabado y el formulario abierto.
-        let subidas = 0;
+        let subidas = 0, esperando = 0;
         for (const archivo of archivos) {
           $btn.textContent = archivos.length > 1 ? `Subiendo ${subidas + 1} de ${archivos.length}…` : "Subiendo…";
           try {
@@ -5103,8 +5214,16 @@ function esFalloDeRed(err) {
             // Foto: se achica antes de subir. Video: sube tal cual.
             const blob = esVid ? archivo : await reducirImagen(archivo).catch(() => archivo);
             const tipoSubida = blob.type || archivo.type || (esVid ? "video/mp4" : "image/jpeg");
-            const ruta = esVid ? await DB.subirFoto(p.id, blob, tipoSubida) : await subirFotoConMini(p.id, archivo, blob, tipoSubida);
-            await DB.crearFoto({ proyecto_id: p.id, ruta, nota });
+            try {
+              if (modoSinSenal) throw new TypeError("sin conexión");
+              const ruta = esVid ? await DB.subirFoto(p.id, blob, tipoSubida) : await subirFotoConMini(p.id, archivo, blob, tipoSubida);
+              await DB.crearFoto({ proyecto_id: p.id, ruta, nota });
+            } catch (err) {
+              // P83: sin señal, la foto (ya achicada) espera en el teléfono; el video también
+              if (!seDejaEsperando(err)) throw err;
+              await encolarFoto(p.id, blob, esVid ? null : await reducirImagen(blob, 400, 0.75).catch(() => null), tipoSubida, nota);
+              esperando++;
+            }
             subidas++;
           } catch (err) {
             avisar("No se pudo subir: " + err.message, true);
@@ -5117,8 +5236,9 @@ function esFalloDeRed(err) {
         // se pierda en el siguiente repintado
         if (!subidas) formFoto.dataset.enviado = "";
         // Una sola recarga al final, no una por foto
-        if (subidas) {
-          await recargar();
+        if (esperando) { avisar(esperando === 1 ? "📶 Sin señal — la foto quedó guardada en el teléfono y se sube sola cuando vuelva la señal." : `📶 Sin señal — ${esperando} fotos quedaron guardadas en el teléfono y se suben solas cuando vuelva la señal.`); formFoto.reset(); formFoto.dataset.enviado = ""; }
+        else if (subidas) {
+          await recargar(undefined, "fotos");
           avisar(subidas === archivos.length
             ? (subidas > 1 ? `${subidas} archivos subidos ✓` : "Subido ✓")
             : `${subidas} de ${archivos.length} subidos ✓ — los demás se quedaron, inténtalo otra vez.`);
@@ -5175,7 +5295,7 @@ function esFalloDeRed(err) {
     if (!p) return;
     if (accion === "alcance") { irAlcance(id); return; }
     // Completar puede poner la fecha de terminada: se pregunta antes
-    if (accion === "completar" && !confirm(`¿Marcar «${p.nombre}» como COMPLETADA?\n\nSale de las obras en ejecución. Si fue sin querer, se reabre desde el estado.`)) return;
+    if (accion === "completar" && !await confirmar(`¿Marcar «${p.nombre}» como COMPLETADA?\n\nSale de las obras en ejecución. Si fue sin querer, se reabre desde el estado.`)) return;
     const faseAntes = p.fase;
     const fases = fasesDe(p);
     const idx = Math.max(0, fases.findIndex(f => f.clave === p.fase));
@@ -5238,15 +5358,22 @@ function esFalloDeRed(err) {
       if (!archivos.length) return;
       let subidas = 0;
       avisar(archivos.length > 1 ? `Subiendo ${archivos.length} fotos…` : "Subiendo la foto…");
+      let esperando = 0;
       for (const archivo of archivos) {
+        const blob = await reducirImagen(archivo).catch(() => archivo);
+        const tipoF = blob.type || archivo.type || "image/jpeg";
         try {
-          const blob = await reducirImagen(archivo).catch(() => archivo);
-          const ruta = await subirFotoConMini(pid, archivo, blob, blob.type || archivo.type || "image/jpeg");
+          if (modoSinSenal) throw new TypeError("sin conexión");
+          const ruta = await subirFotoConMini(pid, archivo, blob, tipoF);
           await DB.crearFoto({ proyecto_id: pid, ruta, nota: null });
           subidas++;
-        } catch (err) { avisar("No se pudo subir: " + err.message, true); break; }
+        } catch (err) {
+          if (seDejaEsperando(err)) { await encolarFoto(pid, blob, await reducirImagen(blob, 400, 0.75).catch(() => null), tipoF, null).catch(() => {}); esperando++; continue; }
+          avisar("No se pudo subir: " + err.message, true); break;
+        }
       }
-      if (subidas) { await recargar(); avisar(`📸 ${subidas > 1 ? subidas + " fotos subidas" : "Foto subida"} a ${nombreProyecto(pid)} ✓`); }
+      if (esperando) avisar(`📶 Sin señal — ${esperando > 1 ? esperando + " fotos quedaron guardadas" : "la foto quedó guardada"} en el teléfono y se sube${esperando > 1 ? "n solas" : " sola"} cuando vuelva la señal.`);
+      if (subidas) { await recargar(undefined, "fotos"); avisar(`📸 ${subidas > 1 ? subidas + " fotos subidas" : "Foto subida"} a ${nombreProyecto(pid)} ✓`); }
     }, { once: true });
     inp.click();
   }
@@ -5272,6 +5399,61 @@ function esFalloDeRed(err) {
         resolver(ok ? t : null);
       });
       dlg.showModal();
+    });
+  }
+
+  // ---------- P180: las ventanas de la app en vez de los cuadros grises ----------
+  // confirmar()  → Aceptar / Cancelar   (como confirm)
+  // pedirDato()  → un renglón para escribir (como prompt: null si cancela)
+  // alertar()    → un aviso con «Entendido» (como alert)
+  // Con la app manejada por un robot de pruebas (navigator.webdriver) se usan
+  // los cuadros del navegador de siempre, para que las pruebas viejas sigan
+  // valiendo; la prueba de las ventanas lo apaga con window.__mxpDialogosNativos = false.
+  const dialogosNativos = () => window.__mxpDialogosNativos !== undefined ? !!window.__mxpDialogosNativos : !!navigator.webdriver;
+  const parrafos = m => String(m ?? "").split(/\n{2,}/).map(t => `<p style="margin:0">${esc(t).replace(/\n/g, "<br>")}</p>`).join("");
+  function ventana({ cuerpo, botones, alCerrar }) {
+    const dlg = document.createElement("dialog");
+    dlg.className = "modal ventana-app";
+    dlg.innerHTML = `<form method="dialog" class="modal-form" style="gap:.8rem">${cuerpo}
+        <div class="modal-botones">${botones}</div></form>`;
+    document.body.appendChild(dlg);
+    dlg.addEventListener("cancel", ev => { ev.preventDefault(); dlg.close(""); });
+    dlg.addEventListener("close", () => { const v = dlg.returnValue; const leido = alCerrar ? alCerrar(dlg, v) : v; dlg.remove(); dlg._resolver(leido); });
+    dlg.showModal();
+    const primero = dlg.querySelector("input, textarea");
+    if (primero) { primero.focus(); if (primero.select) primero.select(); }
+    return new Promise(res => { dlg._resolver = res; });
+  }
+  function confirmar(mensaje, opciones) {
+    if (dialogosNativos()) return Promise.resolve(confirm(mensaje));
+    const o = opciones || {};
+    return ventana({
+      cuerpo: `<div class="ventana-texto">${parrafos(mensaje)}</div>`,
+      botones: `<button type="submit" class="accion secundaria" value="">${esc(o.no || "Cancelar")}</button>
+                <button type="submit" class="accion${o.peligro ? " peligro" : ""}" value="si" autofocus>${esc(o.si || "Aceptar")}</button>`,
+      alCerrar: (dlg, v) => v === "si",
+    });
+  }
+  function pedirDato(mensaje, valor, opciones) {
+    if (dialogosNativos()) return Promise.resolve(prompt(mensaje, valor === undefined || valor === null ? "" : String(valor)));
+    const o = opciones || {};
+    const v0 = valor === undefined || valor === null ? "" : String(valor);
+    return ventana({
+      // (sin <label>: el estilo de las etiquetas del modal pone el texto en mayúsculas chicas)
+      cuerpo: `<div class="ventana-texto">${parrafos(mensaje)}</div>${o.multilinea
+        ? `<textarea name="dato" rows="4" aria-label="Respuesta" style="width:100%">${esc(v0)}</textarea>`
+        : `<input name="dato" type="${esc(o.tipo || "text")}" value="${esc(v0)}" aria-label="Respuesta" style="width:100%" autocomplete="off"${o.tipo === "number" ? ' inputmode="decimal" step="any"' : ""}>`}`,
+      botones: `<button type="submit" class="accion secundaria" value="">${esc(o.no || "Cancelar")}</button>
+                <button type="submit" class="accion" value="si">${esc(o.si || "Aceptar")}</button>`,
+      alCerrar: (dlg, v) => v === "si" ? dlg.querySelector("[name=dato]").value : null,
+    });
+  }
+  function alertar(mensaje) {
+    if (dialogosNativos()) { alert(mensaje); return Promise.resolve(); }
+    return ventana({
+      cuerpo: `<div class="ventana-texto">${parrafos(mensaje)}</div>`,
+      botones: `<button type="submit" class="accion" value="ok" autofocus>Entendido</button>`,
+      alCerrar: () => undefined,
     });
   }
 
@@ -5571,10 +5753,10 @@ function esFalloDeRed(err) {
             return;
           }
           if (rep.correccion !== "aprobada") {
-            if (!confirm("Para corregir este reporte necesitas el permiso de Edgar. ¿Se lo pedimos ahora?")) return;
+            if (!await confirmar("Para corregir este reporte necesitas el permiso de Edgar. ¿Se lo pedimos ahora?")) return;
             try {
               await DB.cambiarHoras(rep.id, { correccion_estado: "pedida" });
-              await recargar();
+              await recargar(undefined, "horas");
               avisar("Permiso pedido ✓ — a Edgar le llegó el aviso al teléfono");
             } catch (err) { avisar("No se pudo: " + err.message, true); }
             return;
@@ -5605,10 +5787,10 @@ function esFalloDeRed(err) {
     });
     $("horas-historial").querySelectorAll(".btn-horas-borrar").forEach(btn => {
       btn.addEventListener("click", async () => {
-        if (!confirm("¿Eliminar este reporte de horas?\n\nÚsalo solo si se reportó por error.")) return;
+        if (!await confirmar("¿Eliminar este reporte de horas?\n\nÚsalo solo si se reportó por error.")) return;
         try {
           await DB.eliminarHoras(btn.dataset.id);
-          await recargar();
+          await recargar(undefined, "horas");
           avisar("Reporte eliminado ✓");
         } catch (err) { avisar("No se pudo eliminar: " + err.message, true); }
       });
@@ -5640,7 +5822,7 @@ function esFalloDeRed(err) {
       llave_cliente: llaveUnica()
     };
     if (fila.co === "__otro__") {
-      const escrito = prompt("¿De cuál Change Order fue el trabajo? (Ej: CO #2)");
+      const escrito = await pedirDato("¿De cuál Change Order fue el trabajo? (Ej: CO #2)");
       if (escrito === null) return;
       fila.co = escrito.trim() || null;
     }
@@ -5662,7 +5844,7 @@ function esFalloDeRed(err) {
       $formHoras.elements.notas.value = "";
       $formHoras.elements.co.value = "";
       $formHoras.elements.pendiente.value = "";
-      await recargar();
+      await recargar(undefined, "horas_pend");
       avisar(pendiente ? "Horas y pendiente guardados ✓ (el pendiente queda en rojo)" : "Horas guardadas ✓");
     } catch (err) {
       if (esFalloDeRed(err)) {
@@ -5685,7 +5867,7 @@ function esFalloDeRed(err) {
         // La llave única dijo "ese reporte ya está": no se duplicó nada.
         $formHoras.elements.horas.value = "";
         avisar("Ese reporte ya estaba guardado ✓");
-        await recargar();
+        await recargar(undefined, "horas_pend");
         return;
       }
       avisar("No se pudo guardar: " + err.message, true);
@@ -5752,10 +5934,112 @@ function esFalloDeRed(err) {
     if (mandados) {
       avisar(mandados === 1 ? "Se mandó el reporte que estaba esperando señal ✓"
         : `Se mandaron ${mandados} reportes que estaban esperando señal ✓`);
-      recargar();
+      recargar(undefined, "horas_pend");
     }
   }
   window.addEventListener("online", enviarColaHoras);
+
+  // ============================================================
+  // P83: LA COLA GENERAL — lo que falla por falta de señal espera en el
+  // teléfono (fotos, checklist, pendientes, materiales) y se manda solo
+  // cuando vuelve. Cada cosa lleva una llave única para no duplicarse.
+  // Las fotos van al almacén grande del teléfono (IndexedDB): pesan mucho.
+  // ============================================================
+  const COLA_LLAVE = "mxp_cola";
+  const leerCola = () => { try { return JSON.parse(localStorage.getItem(COLA_LLAVE) || "[]") || []; } catch { return []; } };
+  const escribirCola = c => { try { localStorage.setItem(COLA_LLAVE, JSON.stringify(c)); } catch { /* lleno */ } };
+  const llaveNueva = pre => pre + ":" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  function encolar(item) {
+    const cola = leerCola().filter(x => x.k !== item.k);
+    cola.push({ ...item, creado: new Date().toISOString() });
+    escribirCola(cola);
+  }
+  const AVISO_COLA = "📶 Sin señal — quedó guardado en el teléfono y se manda solo cuando vuelva la señal.";
+  // El almacén grande, solo para las fotos que esperan
+  function almacenFotos() {
+    return new Promise((res, rej) => {
+      if (!window.indexedDB) return rej(new Error("sin almacén"));
+      const ab = indexedDB.open("mxp-cola", 1);
+      ab.onupgradeneeded = () => { if (!ab.result.objectStoreNames.contains("fotos")) ab.result.createObjectStore("fotos", { keyPath: "k" }); };
+      ab.onsuccess = () => res(ab.result);
+      ab.onerror = () => rej(ab.error);
+    });
+  }
+  async function fotoEnAlmacen(modo, k, valor) {
+    const db = await almacenFotos();
+    return new Promise((res, rej) => {
+      const tx = db.transaction("fotos", modo === "leer" ? "readonly" : "readwrite");
+      const st = tx.objectStore("fotos");
+      const pet = modo === "leer" ? st.get(k) : modo === "borrar" ? st.delete(k) : st.put({ k, ...valor });
+      pet.onsuccess = () => res(pet.result);
+      pet.onerror = () => rej(pet.error);
+    });
+  }
+  // Guarda una foto para mandarla después (la grande ya achicada y su miniatura)
+  async function encolarFoto(proyectoId, blob, mini, tipo, nota) {
+    const k = llaveNueva("foto");
+    await fotoEnAlmacen("guardar", k, { blob, mini, tipo });
+    encolar({ k, tipo: "foto", datos: { proyecto_id: proyectoId, nota: nota || null, tipo } });
+  }
+  // ¿Se puede dejar esperando? Solo si el fallo fue de señal (o se está en la copia)
+  const seDejaEsperando = err => esFalloDeRed(err) || modoSinSenal;
+  let enviandoColaGeneral = false;
+  async function enviarCola() {
+    if (enviandoColaGeneral || !DB.haySesion()) return;
+    const cola = leerCola();
+    if (!cola.length) return;
+    enviandoColaGeneral = true;
+    const quedan = [];
+    let mandados = 0;
+    for (const item of cola) {
+      try {
+        const d = item.datos || {};
+        if (item.tipo === "punto") await DB.cambiarPunto(d.id, { hecho: !!d.hecho });
+        else if (item.tipo === "resolver") await DB.resolverPendiente(d.id);
+        else if (item.tipo === "reabrir") await DB.reabrirPendiente(d.id);
+        else if (item.tipo === "pendiente") await DB.crearPendiente(d);
+        else if (item.tipo === "material") await DB.crearMaterial(d);
+        else if (item.tipo === "foto") {
+          const g = await fotoEnAlmacen("leer", item.k);
+          if (!g || !g.blob) { continue; }   // el teléfono perdió el archivo: no hay qué mandar
+          const ruta = await DB.subirFoto(d.proyecto_id, g.blob, g.tipo || "image/jpeg");
+          if (g.mini) { try { await DB.subirMiniatura(ruta, g.mini); } catch { /* sin miniatura */ } }
+          await DB.crearFoto({ proyecto_id: d.proyecto_id, ruta, nota: d.nota });
+          try { await fotoEnAlmacen("borrar", item.k); } catch { /* nada */ }
+        } else continue;
+        mandados++;
+      } catch (err) {
+        const st = err && err.status;
+        if (st === 409) { mandados++; continue; }   // ya estaba dentro
+        if (esFalloDeRed(err) || st === 401 || (st >= 500 && st < 600)) quedan.push(item);
+        // 400/403: rechazado de verdad; se descarta para no reintentar para siempre
+      }
+    }
+    escribirCola(quedan);
+    enviandoColaGeneral = false;
+    if (mandados) {
+      avisar(mandados === 1 ? "Se mandó 1 cosa que estaba esperando señal ✓" : `Se mandaron ${mandados} cosas que estaban esperando señal ✓`);
+      recargar(undefined, "cola");
+    }
+  }
+  window.addEventListener("online", enviarCola);
+  // Lo que se apunta sin señal se ve al instante en la copia del teléfono
+  function ecoLocal(item) {
+    if (!state) return;
+    const d = item.datos || {};
+    if (item.tipo === "punto") { const x = (state.puntos || []).find(q => String(q.id) === String(d.id)); if (x) x.hecho = !!d.hecho; }
+    else if (item.tipo === "resolver" || item.tipo === "reabrir") { const x = (state.pendientes || []).find(q => String(q.id) === String(d.id)); if (x) x.resuelto = item.tipo === "resolver"; }
+    else if (item.tipo === "pendiente") (state.pendientes = state.pendientes || []).push({ id: item.k, fecha: d.fecha, proyecto: d.proyecto_id || null, descripcion: d.descripcion, autor: usuario ? usuario.nombre : "", autorId: usuario ? usuario.id : null, prioridad: d.prioridad || "normal", resuelto: false, enEspera: true });
+    else if (item.tipo === "material") (state.materiales = state.materiales || []).push({ id: item.k, proyecto: d.proyecto_id || null, descripcion: d.descripcion, cantidad: d.cantidad || "", estado: "falta", origenPendiente: d.origen_pendiente || null, precio: null, autor: usuario ? usuario.nombre : "", fecha: hoyISO(), enEspera: true });
+    guardarCopia(state);
+  }
+  // Se apunta en el teléfono, se refleja en pantalla y se avisa
+  function dejarEsperando(item, abrirId) {
+    encolar(item);
+    ecoLocal(item);
+    avisar(AVISO_COLA);
+    repintarVistaActiva(abrirId);
+  }
 
   // ============================================================
   // MATERIALES — lista de compras de toda la empresa
@@ -6052,15 +6336,18 @@ function esFalloDeRed(err) {
     $("form-material").addEventListener("submit", async e => {
       e.preventDefault();
       const d = new FormData(e.target);
+      const filaM = {
+        proyecto_id: d.get("proyecto") || null,
+        descripcion: (d.get("descripcion") || "").toString().trim(),
+        cantidad: (d.get("cantidad") || "").toString().trim() || null
+      };
       try {
-        await DB.crearMaterial({
-          proyecto_id: d.get("proyecto") || null,
-          descripcion: (d.get("descripcion") || "").toString().trim(),
-          cantidad: (d.get("cantidad") || "").toString().trim() || null
-        });
-        await recargar();
+        if (modoSinSenal) throw new TypeError("sin conexión");
+        await DB.crearMaterial(filaM);
+        await recargar(undefined, "materiales");
         avisar("Material agregado ✓");
       } catch (err) {
+        if (seDejaEsperando(err)) { dejarEsperando({ k: llaveNueva("material"), tipo: "material", datos: filaM }); return; }
         avisar("No se pudo agregar: " + err.message, true);
       }
     });
@@ -6100,17 +6387,23 @@ function esFalloDeRed(err) {
       const filas = (d.get("lista") || "").toString()
         .split("\n").map(desglosarLinea).filter(Boolean);
       if (!filas.length) return;
+      let hechas = 0;
       try {
+        if (modoSinSenal) throw new TypeError("sin conexión");
         for (const f of filas) {
-          await DB.crearMaterial({
-            proyecto_id: proyecto,
-            descripcion: f.descripcion,
-            cantidad: f.cantidad
-          });
+          await DB.crearMaterial({ proyecto_id: proyecto, descripcion: f.descripcion, cantidad: f.cantidad });
+          hechas++;
         }
-        await recargar();
+        await recargar(undefined, "materiales");
         avisar(`${filas.length} materiales agregados ✓`);
-      } catch (err) { avisar("No se pudo: " + err.message, true); }
+      } catch (err) {
+        if (seDejaEsperando(err)) {
+          // las que no entraron esperan en el teléfono
+          for (const f of filas.slice(hechas)) { const it = { k: llaveNueva("material"), tipo: "material", datos: { proyecto_id: proyecto, descripcion: f.descripcion, cantidad: f.cantidad } }; encolar(it); ecoLocal(it); }
+          avisar(AVISO_COLA); repintarVistaActiva(); return;
+        }
+        avisar("No se pudo: " + err.message, true);
+      }
     });
 
     // Importar una nota .txt: la vuelca en la caja para revisar antes de agregar
@@ -6260,14 +6553,14 @@ function esFalloDeRed(err) {
     $("materiales-panel").querySelectorAll(".btn-mat-comprado").forEach(btn => {
       btn.addEventListener("click", async () => {
         // Al comprar, se anota el precio para el control de gastos
-        const respuesta = prompt("¿Cuánto costó? (solo el número, ej: 45.99)\n\nDéjalo vacío si no quieres anotar el precio ahora — lo puedes poner después con el ✎.");
+        const respuesta = await pedirDato("¿Cuánto costó? (solo el número, ej: 45.99)\n\nDéjalo vacío si no quieres anotar el precio ahora — lo puedes poner después con el ✎.");
         if (respuesta === null) return; // canceló
         const limpio = respuesta.replace(/[$,\s]/g, "");
         const precio = limpio ? Number(limpio) : null;
         if (limpio && !Number.isFinite(precio)) { avisar("Ese precio no se entendió — solo el número, ej: 45.99", true); return; }
         try {
           await DB.cambiarMaterial(btn.dataset.id, { estado: "comprado", precio });
-          await recargar();
+          await recargar(undefined, "materiales");
           avisar(precio !== null ? `Comprado ✓ — ${fmt(precio)} anotado al proyecto` : "Marcado como comprado ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
@@ -6295,17 +6588,17 @@ function esFalloDeRed(err) {
         }
         try {
           await DB.cambiarMaterial(form.dataset.id, cambios);
-          await recargar();
+          await recargar(undefined, "materiales");
           avisar("Material corregido ✓");
         } catch (err) { avisar("No se pudo corregir: " + err.message, true); }
       });
     });
     $("materiales-panel").querySelectorAll(".btn-mat-eliminar").forEach(btn => {
       btn.addEventListener("click", async () => {
-        if (!confirm("¿Eliminar este material de la lista?\n\nÚsalo si se anotó por error o su trabajo ya no existe.")) return;
+        if (!await confirmar("¿Eliminar este material de la lista?\n\nÚsalo si se anotó por error o su trabajo ya no existe.")) return;
         try {
           await DB.eliminarMaterial(btn.dataset.id);
-          await recargar();
+          await recargar(undefined, "materiales");
           avisar("Material eliminado ✓");
         } catch (err) { avisar("No se pudo eliminar: " + err.message, true); }
       });
@@ -6314,15 +6607,16 @@ function esFalloDeRed(err) {
       btn.addEventListener("click", async () => {
         const pen = pendientesTodos().find(x => String(x.id) === String(btn.dataset.id));
         if (!pen) return;
+        const filaP = { proyecto_id: pen.proyecto || null, descripcion: pen.descripcion, origen_pendiente: pen.id };
         try {
-          await DB.crearMaterial({
-            proyecto_id: pen.proyecto || null,
-            descripcion: pen.descripcion,
-            origen_pendiente: pen.id
-          });
-          await recargar();
+          if (modoSinSenal) throw new TypeError("sin conexión");
+          await DB.crearMaterial(filaP);
+          await recargar(undefined, "materiales");
           avisar("Pasado a la lista de compras ✓ (el pendiente sigue rojo hasta resolverse en obra)");
-        } catch (err) { avisar("No se pudo pasar: " + err.message, true); }
+        } catch (err) {
+          if (seDejaEsperando(err)) { dejarEsperando({ k: "mat-pend:" + pen.id, tipo: "material", datos: filaP }); return; }
+          avisar("No se pudo pasar: " + err.message, true);
+        }
       });
     });
 
@@ -6349,17 +6643,17 @@ function esFalloDeRed(err) {
       btn.addEventListener("click", async () => {
         try {
           await DB.cambiarGestion(btn.dataset.id, { hecha: true });
-          await recargar();
+          await recargar(undefined, "gestiones");
           avisar("Gestión hecha ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
     $("materiales-panel").querySelectorAll(".btn-gestion-borrar").forEach(btn => {
       btn.addEventListener("click", async () => {
-        if (!confirm("¿Eliminar esta gestión?")) return;
+        if (!await confirmar("¿Eliminar esta gestión?")) return;
         try {
           await DB.eliminarGestion(btn.dataset.id);
-          await recargar();
+          await recargar(undefined, "gestiones");
           avisar("Gestión eliminada ✓");
         } catch (err) { avisar("No se pudo eliminar: " + err.message, true); }
       });
@@ -6400,7 +6694,7 @@ function esFalloDeRed(err) {
       }
       try {
         await DB.crearRecibo(fila);
-        await recargar();
+        await recargar(undefined, "recibos");
         avisar(fila.total !== undefined
           ? `Compra registrada ✓ — ${fmt(fila.total)} anotado al proyecto`
           : "Compra registrada ✓ — Edgar le pone el total con el ✎");
@@ -6439,7 +6733,7 @@ function esFalloDeRed(err) {
           if (prov) fila.proveedor = prov;
         }
         await DB.crearRecibo(fila);
-        await recargar();
+        await recargar(undefined, "recibos");
         avisar(fila.total !== undefined
           ? `Recibo subido ✓ — ${fmt(fila.total)} anotado al proyecto`
           : "Recibo subido ✓ — la rutina le pondrá el total al leerlo (12pm/6pm)");
@@ -6452,11 +6746,11 @@ function esFalloDeRed(err) {
     $("materiales-panel").querySelectorAll(".btn-recibo-total").forEach(btn => {
       btn.addEventListener("click", async () => {
         // Se corrigen las tres cosas, una por una (cancelar en cualquiera = no cambia nada)
-        const respuesta = prompt("Total del recibo (solo el número, ej: 342.18).\nDEVOLUCIÓN va con signo menos (ej: -45.99).\nDéjalo igual para no cambiarlo:", btn.dataset.total || "");
+        const respuesta = await pedirDato("Total del recibo (solo el número, ej: 342.18).\nDEVOLUCIÓN va con signo menos (ej: -45.99).\nDéjalo igual para no cambiarlo:", btn.dataset.total || "");
         if (respuesta === null) return;
-        const proveedor = prompt("¿Dónde se compró? (proveedor):", btn.dataset.proveedor || "");
+        const proveedor = await pedirDato("¿Dónde se compró? (proveedor):", btn.dataset.proveedor || "");
         if (proveedor === null) return;
-        const notas = prompt("Descripción (qué se compró / nota):", btn.dataset.notas || "");
+        const notas = await pedirDato("Descripción (qué se compró / nota):", btn.dataset.notas || "");
         if (notas === null) return;
         const cambios = { proveedor: proveedor.trim() || null, notas: notas.trim() || null };
         const limpio = respuesta.replace(/[$,\s]/g, "");
@@ -6468,7 +6762,7 @@ function esFalloDeRed(err) {
         }
         try {
           await DB.cambiarRecibo(btn.dataset.id, cambios);
-          await recargar();
+          await recargar(undefined, "recibos");
           avisar("Recibo corregido ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
@@ -6490,7 +6784,7 @@ function esFalloDeRed(err) {
             const cambios = { ruta };
             if (btn.dataset.estado === "sin_foto") cambios.estado = "leido";
             await DB.cambiarRecibo(btn.dataset.id, cambios);
-            await recargar();
+            await recargar(undefined, "recibos");
             avisar("Foto del recibo guardada ✓");
           } catch (err) {
             avisar("No se pudo subir la foto: " + err.message, true);
@@ -6507,13 +6801,13 @@ function esFalloDeRed(err) {
         const opciones = proyectos().filter(x => ["ejecucion", "aprobado", "pausa"].includes(x.estado));
         if (!opciones.length) { avisar("No hay proyectos activos para asignar.", true); return; }
         const menu = opciones.map((x, i) => `${i + 1}. ${x.nombre}`).join("\n");
-        const resp = prompt("¿A qué proyecto va esta compra?\n\n" + menu + "\n\nEscribe el número:");
+        const resp = await pedirDato("¿A qué proyecto va esta compra?\n\n" + menu + "\n\nEscribe el número:");
         if (!resp) return;
         const idx = parseInt(resp, 10) - 1;
         if (isNaN(idx) || !opciones[idx]) { avisar("Número inválido.", true); return; }
         try {
           await DB.cambiarRecibo(btn.dataset.id, { proyecto_id: opciones[idx].id });
-          await recargar();
+          await recargar(undefined, "recibos");
           avisar(`Compra asignada a ${opciones[idx].nombre} ✓`);
         } catch (err) { avisar("No se pudo asignar: " + err.message, true); }
       });
@@ -6534,7 +6828,7 @@ function esFalloDeRed(err) {
         btn.disabled = true;
         try {
           await DB.anularRecibo(btn.dataset.id, motivo);
-          await recargar();
+          await recargar(undefined, "recibos");
           avisar("Recibo anulado ✓ — ya no suma");
         } catch (err) { btn.disabled = false; avisar("No se pudo anular: " + err.message, true); }
       });
@@ -6546,7 +6840,7 @@ function esFalloDeRed(err) {
         btn.disabled = true;
         try {
           await DB.desanularRecibo(btn.dataset.id, motivo);
-          await recargar();
+          await recargar(undefined, "recibos");
           avisar("Recibo de vuelta ✓ — vuelve a sumar");
         } catch (err) { btn.disabled = false; avisar("No se pudo: " + err.message, true); }
       });
@@ -6706,10 +7000,10 @@ function esFalloDeRed(err) {
     $("gastos-panel").querySelectorAll(".btn-perfil-activo").forEach(btn => {
       btn.addEventListener("click", async () => {
         const activar = !btn.dataset.activo;
-        if (!activar && !confirm("¿Marcar a esta persona como inactiva?\n\nDesaparece de las listas y semáforos, pero sus horas e historia quedan intactas. Se puede reactivar cuando quieras.")) return;
+        if (!activar && !await confirmar("¿Marcar a esta persona como inactiva?\n\nDesaparece de las listas y semáforos, pero sus horas e historia quedan intactas. Se puede reactivar cuando quieras.")) return;
         try {
           await DB.cambiarPerfil(btn.dataset.id, { activo: activar });
-          await recargar();
+          await recargar(undefined, "equipo");
           avisar(activar ? "Reactivado ✓" : "Marcado como inactivo ✓ (su historia queda)");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
@@ -6731,13 +7025,13 @@ function esFalloDeRed(err) {
     });
     $("gastos-panel").querySelectorAll(".btn-ayud-tarifa").forEach(btn => {
       btn.addEventListener("click", async () => {
-        const resp = prompt(`Tarifa por hora de ${btn.dataset.nombre} ($):`, btn.dataset.tarifa);
+        const resp = await pedirDato(`Tarifa por hora de ${btn.dataset.nombre} ($):`, btn.dataset.tarifa);
         if (resp === null) return;
         const tarifa = Number(resp.replace(/[$,\s]/g, ""));
         if (!Number.isFinite(tarifa) || tarifa <= 0) { avisar("Esa tarifa no se entendió", true); return; }
         try {
           await DB.cambiarAyudante(btn.dataset.id, { costo_hora: tarifa });
-          await recargar();
+          await recargar(undefined, "ayudantes");
           avisar("Tarifa actualizada ✓ (los trabajos ya anotados no cambian)");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
@@ -6746,7 +7040,7 @@ function esFalloDeRed(err) {
       btn.addEventListener("click", async () => {
         try {
           await DB.cambiarAyudante(btn.dataset.id, { activo: !btn.dataset.activo });
-          await recargar();
+          await recargar(undefined, "ayudantes");
           avisar(btn.dataset.activo ? "Ayudante inactivo ✓ (su historia queda)" : "Ayudante reactivado ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
@@ -6763,7 +7057,7 @@ function esFalloDeRed(err) {
         if (v !== "" && !Number.isFinite(monto)) { avisar("Ese monto no se entendió", true); return; }
         try {
           await DB.guardarPresupuesto(btn.dataset.id, monto);
-          await recargar();
+          await recargar(undefined, "dinero");
           avisar("Presupuesto guardado ✓");
         } catch (err) { avisar("No se pudo guardar: " + err.message, true); }
       });
@@ -8768,7 +9062,7 @@ function esFalloDeRed(err) {
     const ceros = P.cambios.filter((c, i) => precioMarcadas[i] && c.eraCero);
     let aviso = `¿Aplicar ${lista.length} ${lista.length === 1 ? "cambio" : "cambios"} ${P.ref ? "a los precios de REFERENCIA" : "a TUS precios"}?`;
     if (ceros.length) aviso += `\n\nOJO: ${ceros.length} ${ceros.length === 1 ? "estaba" : "estaban"} a $0 a propósito (${[...new Set(ceros.map(c => c.ceroMotivo))].join(", ")}). Ponerles precio fijo cambia cómo se cotizan.`;
-    if (!confirm(aviso)) return;
+    if (!await confirmar(aviso)) return;
     const btn = $("btn-precio-aplicar"); if (btn) { btn.disabled = true; btn.textContent = "Aplicando…"; }
     let hechos = 0; const fallos = [];
     for (const x of lista) {
@@ -8967,7 +9261,7 @@ function esFalloDeRed(err) {
     });
     $("estimador-panel").querySelectorAll(".btn-est-borrar").forEach(btn => {
       btn.addEventListener("click", async () => {
-        if (!confirm("¿Eliminar este estimado con todos sus ítems?")) return;
+        if (!await confirmar("¿Eliminar este estimado con todos sus ítems?")) return;
         try {
           await DB.eliminarEstimado(btn.dataset.id);
           await recargarEstimador();
@@ -9786,19 +10080,19 @@ Power done right the first time. ⚡`;
 
     // Material: líneas sueltas
     const lineas = () => (Array.isArray(est.lineas_material) ? est.lineas_material : []).map(l => ({ ...l }));
-    document.querySelectorAll(".rap-mat-agregar").forEach(b => b.addEventListener("click", () => {
-      const desc = prompt("¿Qué material? (o escribe 'Material' para un total)", lineas().length ? "" : "Material");
+    document.querySelectorAll(".rap-mat-agregar").forEach(b => b.addEventListener("click", async () => {
+      const desc = await pedirDato("¿Qué material? (o escribe 'Material' para un total)", lineas().length ? "" : "Material");
       if (desc === null) return;
-      const m = prompt(`¿Cuánto cuesta "${desc || "Material"}"? (sin tax)`);
+      const m = await pedirDato(`¿Cuánto cuesta "${desc || "Material"}"? (sin tax)`);
       if (m === null) return;
       const monto = Number(String(m).replace(/[,$\s]/g, ""));
       if (!Number.isFinite(monto) || monto < 0) { avisar("Monto no válido", true); return; }
       guardar({ lineas_material: [...lineas(), { desc: (desc || "Material").trim().slice(0, 80), monto }] }, "Material agregado ✓");
     }));
-    document.querySelectorAll(".rap-mat-editar").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll(".rap-mat-editar").forEach(b => b.addEventListener("click", async () => {
       const arr = lineas(); const i = Number(b.dataset.i); const l = arr[i]; if (!l) return;
-      const desc = prompt("Descripción:", l.desc || "Material"); if (desc === null) return;
-      const m = prompt("Monto (sin tax):", l.monto); if (m === null) return;
+      const desc = await pedirDato("Descripción:", l.desc || "Material"); if (desc === null) return;
+      const m = await pedirDato("Monto (sin tax):", l.monto); if (m === null) return;
       const monto = Number(String(m).replace(/[,$\s]/g, ""));
       if (!Number.isFinite(monto) || monto < 0) { avisar("Monto no válido", true); return; }
       arr[i] = { ...l, desc: (desc || "Material").trim().slice(0, 80), monto };
@@ -9836,9 +10130,9 @@ Power done right the first time. ⚡`;
     };
     document.querySelectorAll(".rap-rol-nombre, .rap-rol-tarifa, .rap-rol-pct").forEach(el =>
       el.addEventListener("change", () => guardar({ mezcla: leerCuadrilla() })));
-    document.querySelectorAll(".rap-rol-agregar").forEach(b => b.addEventListener("click", () => {
-      const rol = prompt("Nombre del rol nuevo (Ej: Apprentice):", "Apprentice"); if (rol === null) return;
-      const t = prompt(`Tarifa por hora de ${rol} ($):`, "20"); if (t === null) return;
+    document.querySelectorAll(".rap-rol-agregar").forEach(b => b.addEventListener("click", async () => {
+      const rol = await pedirDato("Nombre del rol nuevo (Ej: Apprentice):", "Apprentice"); if (rol === null) return;
+      const t = await pedirDato(`Tarifa por hora de ${rol} ($):`, "20"); if (t === null) return;
       const arr = cuadrillaDe(est, escAct);
       arr.push({ rol: rol.trim().slice(0, 30) || "Rol", tarifa: Number(t) || 0, pct: 0 });
       guardar({ mezcla: arr }, "Rol agregado — ahora reparte los % para que sumen 100");
@@ -10121,7 +10415,7 @@ Power done right the first time. ⚡`;
     } catch (err) { avisar("No se pudo guardar: " + (err.message || err), true); }
   }
   async function resetConsumibles() {
-    if (!confirm("¿Volver a los números de arranque? Se pierden los tuyos.")) return;
+    if (!await confirmar("¿Volver a los números de arranque? Se pierden los tuyos.")) return;
     try {
       await DB.guardarConfig("consumibles", "{}");
       await recargarEstimador();
@@ -10956,7 +11250,7 @@ Power done right the first time. ⚡`;
     const btnFoto = $("btn-est-foto");
     if (btnFoto) btnFoto.addEventListener("click", async () => {
       const f = fotoParaGuardar(est);
-      if (!confirm(`Se guarda ${fmt(f.bid_final)} como el número de este trabajo.\n\n` +
+      if (!await confirmar(`Se guarda ${fmt(f.bid_final)} como el número de este trabajo.\n\n` +
                    `A partir de ahí no vuelve a moverse aunque cambien los precios del catálogo, y el historial lo usa tal cual.\n\n¿Lo congelo?`)) return;
       try {
         await DB.cambiarEstimado(est.id, f);
@@ -10983,7 +11277,7 @@ Power done right the first time. ⚡`;
         const { campo, tipo, actual, nombre } = btn.dataset;
         const esPct = tipo === "pct", esDias = tipo === "dias";
         const mostrado = esPct ? String(Math.round(Number(actual) * 1000) / 10) : String(actual);
-        const resp = prompt(esDias
+        const resp = await pedirDato(esDias
           ? `${nombre}\n\nEscribe los días (vacío = volver a ${DIAS_VALIDEZ}):`
           : `${nombre}\n\nEscribe ${esPct ? "el %" : "el monto en $"} (0 = quitarlo · vacío = volver al valor del escenario):`,
           mostrado);
@@ -11111,7 +11405,7 @@ Power done right the first time. ⚡`;
     if (btnOver) btnOver.addEventListener("click", async () => {
       const antes = c.bid;
       const despues = calcularEstimado({ ...est, overhead_hh: oReal.valor }).bid;
-      const ok = confirm(
+      const ok = await confirmar(
         `Esto cambia el overhead de ${fmt(ohEsc)} a ${fmt(oReal.valor)} por hora en los tres escenarios.\n\n` +
         `Este estimado pasaría de ${fmt(Math.round(antes * 100) / 100)} a ${fmt(Math.round(despues * 100) / 100)}.\n\n` +
         `Afecta a TODAS las ofertas nuevas. ¿Seguro?`);
@@ -11157,7 +11451,7 @@ Power done right the first time. ⚡`;
           const prom = piesPromedioEnsamble(ens.id);
           // (16/09) «pies de cable» confundía: en una receta en tubo lo que se
           // mide es la CORRIDA (el tubo), y el conductor sale de ahí con sus hilos
-          const resp = prompt(`¿Cuántos pies de corrida hasta el panel?\n(el tubo y el cable salen de ahí; deja vacío para usar los ${prom || "?"} ft de la receta)`);
+          const resp = await pedirDato(`¿Cuántos pies de corrida hasta el panel?\n(el tubo y el cable salen de ahí; deja vacío para usar los ${prom || "?"} ft de la receta)`);
           const pies = Number((resp || "").replace(/[^\d.]/g, ""));
           if (pies > 0) cuerpo.pies = pies;
         }
@@ -11186,8 +11480,8 @@ Power done right the first time. ⚡`;
       });
     });
     $("estimador-panel").querySelectorAll(".btn-ens-pies").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const resp = prompt(`Pies de cable medidos hasta el panel:\n(Deja vacío para volver al promedio de ${btn.dataset.prom || "?"} ft)`);
+      btn.addEventListener("click", async () => {
+        const resp = await pedirDato(`Pies de cable medidos hasta el panel:\n(Deja vacío para volver al promedio de ${btn.dataset.prom || "?"} ft)`);
         if (resp === null) return;
         const pies = Number(resp.replace(/[^\d.]/g, ""));
         enFilaEnsamble(() => DB.cambiarEnsamblePies(Number(btn.dataset.eid), pies > 0 ? pies : null));
@@ -11286,11 +11580,11 @@ Power done right the first time. ⚡`;
 
     const btnCatNuevo = $("btn-cat-nuevo");
     if (btnCatNuevo) btnCatNuevo.addEventListener("click", async () => {
-      const nombre = prompt("Nombre del ítem nuevo (como quieres verlo en el catálogo):");
+      const nombre = await pedirDato("Nombre del ítem nuevo (como quieres verlo en el catálogo):");
       if (!nombre || !nombre.trim()) return;
-      const precio = Number((prompt("Precio por unidad ($):") || "").replace(/[$,\s]/g, ""));
-      const horas = Number((prompt("Horas de labor por unidad (ej: 0.5):") || "").replace(/[,\s]/g, ""));
-      const unidad = prompt("Unidad (E, LF, MLF…):", "E") || "E";
+      const precio = Number((await pedirDato("Precio por unidad ($):") || "").replace(/[$,\s]/g, ""));
+      const horas = Number((await pedirDato("Horas de labor por unidad (ej: 0.5):") || "").replace(/[,\s]/g, ""));
+      const unidad = await pedirDato("Unidad (E, LF, MLF…):", "E") || "E";
       if (!Number.isFinite(precio) || !Number.isFinite(horas)) { avisar("Precio u horas no válidos", true); return; }
       try {
         await DB.crearItemCatalogo({ seccion: "MISCELLANEOUS", item: nombre.trim().toUpperCase(),
@@ -11303,7 +11597,7 @@ Power done right the first time. ⚡`;
     // --- items qty / quitar ---
     $("estimador-panel").querySelectorAll(".btn-item-qty").forEach(btn => {
       btn.addEventListener("click", async () => {
-        const qty = prompt("Nueva cantidad:", btn.dataset.qty);
+        const qty = await pedirDato("Nueva cantidad:", btn.dataset.qty);
         if (qty === null) return;
         const cantidad = Number(qty.replace(/[,\s]/g, ""));
         if (!Number.isFinite(cantidad) || cantidad <= 0) { avisar("Cantidad no válida", true); return; }
@@ -11318,7 +11612,7 @@ Power done right the first time. ⚡`;
        el precio es de este estimado y cuál es el del catálogo. */
     $("estimador-panel").querySelectorAll(".btn-item-precio").forEach(btn => {
       btn.addEventListener("click", async () => {
-        const resp = prompt(`Precio unitario de «${btn.dataset.item}» en ESTE estimado (sin tax).\nEl catálogo no cambia.`, btn.dataset.precio);
+        const resp = await pedirDato(`Precio unitario de «${btn.dataset.item}» en ESTE estimado (sin tax).\nEl catálogo no cambia.`, btn.dataset.precio);
         if (resp === null) return;
         const precio = Number(String(resp).replace(/[,$\s]/g, ""));
         if (!Number.isFinite(precio) || precio < 0) { avisar("Precio no válido", true); return; }
@@ -11360,7 +11654,7 @@ Power done right the first time. ⚡`;
           if (!id) { avisar("Ese nombre no está en el catálogo: corrígelo primero", true); return; }
           const cambios = { cero_motivo: v, cero_revisado: hoy };
           if (v === "falta_precio") {
-            const m = prompt("Precio por unidad de " + sel.dataset.item + " ($).\n\nDéjalo vacío si todavía no lo sabes:", "");
+            const m = await pedirDato("Precio por unidad de " + sel.dataset.item + " ($).\n\nDéjalo vacío si todavía no lo sabes:", "");
             if (m === null) return;
             const n = Number(String(m).replace(/[,$\s]/g, ""));
             if (String(m).trim() !== "") {
@@ -11369,7 +11663,7 @@ Power done right the first time. ⚡`;
               // cada recálculo, también en estimados congelados y convertidos:
               // poner un precio aquí puede mover un bid ya emitido.
               const enEns = (estData.ensambleItems || []).some(ei => normTxt(ei.item) === normTxt(sel.dataset.item));
-              if (enEns && !confirm("Vas a poner " + fmt(n) + ' a "' + sel.dataset.item + '" en el catálogo.\n\n' +
+              if (enEns && !await confirmar("Vas a poner " + fmt(n) + ' a "' + sel.dataset.item + '" en el catálogo.\n\n' +
                   "Este ítem vive dentro de un ENSAMBLE, y los ensambles leen el precio vivo: los estimados congelados o convertidos que lo usen SE VAN A MOVER.\n\n" +
                   "Aceptar = ponerlo igual.")) return;
               cambios.precio = n;
@@ -11389,12 +11683,12 @@ Power done right the first time. ⚡`;
     // botones: Aceptar = seguir, Cancelar = volver, igual que los demás
     // confirm() de la app. Invertir la inercia convertiría el botón de
     // abortar de siempre en el que manda el bid a coste cero.
-    const ceroDejaPasar = () => { const t = ceroTextoSalida(est, c); return !t || confirm(t); };
+    const ceroDejaPasar = async () => { const t = ceroTextoSalida(est, c); return !t || await confirmar(t); };
 
     // Cambiar de empresa: un toque, y la pantalla se reordena sola.
     const btnMep = $("btn-est-mep"), btnMio = $("btn-est-mio");
     if (btnMep) btnMep.addEventListener("click", async () => {
-      if (!confirm(`¿Pasar "${est.nombre}" a MXP MEP?\n\nDeja de ser tuyo: sale de tu lista, y la app solo te dará el número. No se borra nada.`)) return;
+      if (!await confirmar(`¿Pasar "${est.nombre}" a MXP MEP?\n\nDeja de ser tuyo: sale de tu lista, y la app solo te dará el número. No se borra nada.`)) return;
       try {
         const escNuevo = escenarioQueToca(EMPRESA_MEP, est.escenario);
         await DB.cambiarEstimado(est.id, { empresa: "mep", escenario: escNuevo });
@@ -11411,8 +11705,8 @@ Power done right the first time. ⚡`;
       catch (err) { avisar("No se pudo: " + err.message, true); }
     });
 
-    $("btn-est-propuesta").addEventListener("click", () => {
-      if (!ceroDejaPasar()) return;
+    $("btn-est-propuesta").addEventListener("click", async () => {
+      if (!await ceroDejaPasar()) return;
       $("propuesta-caja").innerHTML = `
         <div class="cal-panel-card">
           <div class="cal-form-titulo">${esMEP(est) ? "🔒 Resumen INTERNO de MXP MEP — lleva el margen: no se manda al cliente" : "📄 Propuesta lista para copiar"}</div>
@@ -11428,8 +11722,8 @@ Power done right the first time. ⚡`;
     });
     // (23/09) El papel de MXP MEP para el cliente (Integrated Systems en Mariners)
     const btnPM = $("btn-est-prop-mep");
-    if (btnPM) btnPM.addEventListener("click", () => {
-      if (!ceroDejaPasar()) return;
+    if (btnPM) btnPM.addEventListener("click", async () => {
+      if (!await ceroDejaPasar()) return;
       $("propuesta-caja").innerHTML = `
         <div class="cal-panel-card">
           <div class="cal-form-titulo">📄 Propuesta de ${esc(emisorMEP())} para el cliente — lump sum, sin desglose${est.estado === "borrador" ? ` <span class="recibo-chip por_leer">SIN CONGELAR</span>` : ""}</div>
@@ -11462,7 +11756,7 @@ Power done right the first time. ⚡`;
     });
     const btnCong = $("btn-est-congelar"), btnDesc = $("btn-est-descongelar");
     if (btnCong) btnCong.addEventListener("click", async () => {
-      if (!ceroDejaPasar()) return;
+      if (!await ceroDejaPasar()) return;
       /* (21/09, verificación) CONGELAR AHORA CONGELA EL NÚMERO. Antes solo
          escribía estado:'congelado' y calcularEstimado seguía recalculando
          desde el catálogo y la configuración VIVOS: enseñarle una familia de
@@ -11506,7 +11800,7 @@ Power done right the first time. ⚡`;
     // seguido irPropuesta() cambiaba de pantalla, o sea que el texto se pintaba
     // y se abandonaba, y este botón no hacía nada. Ahora cada uno el suyo.
     const btnProp = $("btn-est-armar");
-    if (btnProp) btnProp.addEventListener("click", () => { if (ceroDejaPasar()) irPropuesta(est.id); });
+    if (btnProp) btnProp.addEventListener("click", async () => { if (await ceroDejaPasar()) irPropuesta(est.id); });
     enganchaResultado(est);
     enganchaDatos(est);
     enganchaPagos(est, c);
@@ -11517,13 +11811,13 @@ Power done right the first time. ⚡`;
 
     const btnConv = $("btn-est-convertir");
     if (btnConv && est.proyecto_id && proyectos().find(x => x.id === est.proyecto_id)) btnConv.addEventListener("click", async () => {
-      if (!ceroDejaPasar()) return;
+      if (!await ceroDejaPasar()) return;
       // Un trabajo añadido: se suma al proyecto que ya existe (contrato, horas, material,
       // un hito de pago único y sus puntos de alcance). No se crea otro proyecto.
       const proy = proyectos().find(x => x.id === est.proyecto_id);
       // (23/09) con el número CONGELADO si lo hay: es el que se ofertó
       const fo = fotoDe(est, c), bid = r2(fo.bid);
-      if (!confirm(`¿Añadir "${est.nombre}" al proyecto "${proy.nombre}"?\n\nSube el contrato en ${fmt(bid)}${fo.recalculado ? "" : " (el número congelado)"}, suma ${r2(fo.horas)} h y el material, y crea un hito de pago único por el añadido.`)) return;
+      if (!await confirmar(`¿Añadir "${est.nombre}" al proyecto "${proy.nombre}"?\n\nSube el contrato en ${fmt(bid)}${fo.recalculado ? "" : " (el número congelado)"}, suma ${r2(fo.horas)} h y el material, y crea un hito de pago único por el añadido.`)) return;
       try {
         // el proyecto ya trae su dinero mapeado (contrato / presupuestoMateriales); null = sin fila de finanzas
         const hayFin = proy.contrato !== null && proy.contrato !== undefined;
@@ -11550,7 +11844,7 @@ Power done right the first time. ⚡`;
       } catch (err) { avisar("No se pudo añadir: " + err.message, true); }
     });
     else if (btnConv) btnConv.addEventListener("click", async () => {
-      if (!ceroDejaPasar()) return;
+      if (!await ceroDejaPasar()) return;
       // (23/09) con el número CONGELADO si lo hay: es el que se ofertó, no el de hoy
       const fo = fotoDe(est, c), bid = r2(fo.bid), ret = retencionDe(est);
       // El reparto de los pagos: el de la propuesta, o el que decida la IA ahora
@@ -11559,12 +11853,12 @@ Power done right the first time. ⚡`;
         avisar("La IA está decidiendo el reparto de los pagos…");
         try { await pedirRepartoIA(est, fo); plan = planDePagos(est, fo); }
         catch (e) {
-          if (!confirm(`${e.message}.\n\n¿Convierto con la regla de respaldo (${plan.pcts.join(" / ")})?`)) return;
+          if (!await confirmar(`${e.message}.\n\n¿Convierto con la regla de respaldo (${plan.pcts.join(" / ")})?`)) return;
         }
       }
       const hitosN = hitosDePago(bid, ret, plan);
       const txtPagos = plan.pcts.length === 1 ? "un pago único al terminar" : `${plan.pcts.length} pagos (${plan.pcts.join(" / ")})`;
-      if (!confirm(`¿Convertir "${est.nombre}" en proyecto?\n\nSe crea con contrato ${fmt(bid)}${fo.recalculado ? "" : " (el número congelado)"}, horas estimadas, presupuesto de materiales, ${txtPagos}${ret ? " + la retención del " + Math.round(ret * 1000) / 10 + " % al cierre" : ""} y su alcance por puntos.\n\nPagos: ${plan.dePropuesta ? "los de la propuesta" : plan.deIA ? "los decidió la IA" : "regla de respaldo"}.`)) return;
+      if (!await confirmar(`¿Convertir "${est.nombre}" en proyecto?\n\nSe crea con contrato ${fmt(bid)}${fo.recalculado ? "" : " (el número congelado)"}, horas estimadas, presupuesto de materiales, ${txtPagos}${ret ? " + la retención del " + Math.round(ret * 1000) / 10 + " % al cierre" : ""} y su alcance por puntos.\n\nPagos: ${plan.dePropuesta ? "los de la propuesta" : plan.deIA ? "los decidió la IA" : "regla de respaldo"}.`)) return;
       const idNuevo = est.nombre.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
         .slice(0, 30) + "-" + Math.random().toString(36).slice(2, 6);
       try {
@@ -11669,8 +11963,8 @@ Power done right the first time. ⚡`;
           else if (f.decision && f.decision.startsWith("cat:")) {
             cat = (estData.catalogo || []).find(x => String(x.id) === f.decision.slice(4));
           } else if (f.decision === "nuevo") {
-            const precio = Number((prompt(`Precio por unidad de "${f.subject}" ($):`) || "0").replace(/[$,\s]/g, "")) || 0;
-            const horas = Number((prompt(`Horas por unidad de "${f.subject}":`) || "0").replace(/[,\s]/g, "")) || 0;
+            const precio = Number((await pedirDato(`Precio por unidad de "${f.subject}" ($):`) || "0").replace(/[$,\s]/g, "")) || 0;
+            const horas = Number((await pedirDato(`Horas por unidad de "${f.subject}":`) || "0").replace(/[,\s]/g, "")) || 0;
             const creado = await DB.crearItemCatalogo({ seccion: "MISCELLANEOUS",
               item: f.subject.toUpperCase(), unidad: "E", precio, horas_unidad: horas, orden: 3000 });
             cat = creado[0];
@@ -11882,7 +12176,7 @@ Power done right the first time. ⚡`;
         const dice = { hecho: "✓ Día cerrado como HECHO", cancelado: "✗ Día marcado como que NO se hizo", programado: "↩ Vuelve a estar abierto" };
         try {
           await DB.cambiarEvento(btn.dataset.id, { estado: btn.dataset.estado });
-          await recargar();
+          await recargar(undefined, "eventos");
           pintarCalendario();
           avisar(dice[btn.dataset.estado] || "Listo ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
@@ -11890,10 +12184,10 @@ Power done right the first time. ⚡`;
     });
     $("cal-dia-panel").querySelectorAll(".ev-borrar").forEach(btn => {
       btn.addEventListener("click", async () => {
-        if (!confirm("¿Eliminar este evento del calendario?")) return;
+        if (!await confirmar("¿Eliminar este evento del calendario?")) return;
         try {
           await DB.eliminarEvento(btn.dataset.id);
-          await recargar();
+          await recargar(undefined, "eventos");
           avisar("Evento eliminado ✓");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
@@ -11929,6 +12223,7 @@ Power done right the first time. ⚡`;
       }
       try {
         if (esPendiente) {
+          if (modoSinSenal) throw new TypeError("sin conexión");
           await DB.crearPendiente({ fecha: calDiaSel, proyecto_id: proyectoId, descripcion });
         } else {
           await DB.crearEvento({
@@ -11936,9 +12231,11 @@ Power done right the first time. ⚡`;
             proyecto_id: proyectoId, nota: "Agregado por " + usuario.nombre
           });
         }
-        await recargar();
+        await recargar(undefined, "eventos_pend");
         avisar(esPendiente ? "Pendiente guardado ✓ (en rojo hasta resolverse)" : "Evento guardado ✓");
       } catch (err) {
+        if (esPendiente && seDejaEsperando(err)) { dejarEsperando({ k: llaveNueva("pendiente"), tipo: "pendiente", datos: { fecha: calDiaSel, proyecto_id: proyectoId, descripcion } }); return; }
+
         avisar("No se pudo guardar: " + err.message, true);
       }
     });
@@ -12469,8 +12766,8 @@ Power done right the first time. ⚡`;
       pintarCierre();
     });
     const otra = $("cierre-otra");
-    if (otra) otra.addEventListener("click", () => {
-      if (!confirm("¿Quitar la plantilla guardada y elegir otra?")) return;
+    if (otra) otra.addEventListener("click", async () => {
+      if (!await confirmar("¿Quitar la plantilla guardada y elegir otra?")) return;
       try { localStorage.removeItem(LLAVE_PLANTILLA); } catch { /* nada */ }
       pintarCierre();
     });
@@ -13682,7 +13979,7 @@ Power done right the first time. ⚡`;
     const bDir = $("alc-directo");
     if (bDir) bDir.addEventListener("click", alcDirecto);
     const bRe = $("alc-reredactar");
-    if (bRe) bRe.addEventListener("click", () => { if (confirm("Se pierden las correcciones que hiciste a mano. ¿Sigo?")) alcRedactar(); });
+    if (bRe) bRe.addEventListener("click", async () => { if (await confirmar("Se pierden las correcciones que hiciste a mano. ¿Sigo?")) alcRedactar(); });
     const bArmar = $("alc-a-contrato");
     if (bArmar) bArmar.addEventListener("click", alcArmar);
     const bBajar = $("alc-bajar");
@@ -13719,7 +14016,7 @@ Power done right the first time. ⚡`;
       try {
         let email = alcActivo.proyecto.cliente_email || "";
         if (!email) {
-          const nuevo = prompt("Email del cliente:", "");
+          const nuevo = await pedirDato("Email del cliente:", "");
           if (nuevo === null) return;
           email = nuevo.trim();
           if (email) { try { await DB.cambiarProyecto(alcActivo.proyecto.id, { cliente_email: email }); alcActivo.proyecto.cliente_email = email; } catch { /* se manda igual */ } }
@@ -13745,7 +14042,7 @@ Power done right the first time. ⚡`;
       const quien = alcQuienFirma();
       let email = quien.email;
       if (!email) {
-        const nuevo = prompt(quien.gc
+        const nuevo = await pedirDato(quien.gc
           ? `Email de ${quien.gc.nombre} para mandarle la invitación a su portal:`
           : "Email del cliente para mandarle la invitación al portal:", "");
         if (nuevo === null) return;
@@ -13769,7 +14066,7 @@ Power done right the first time. ⚡`;
           mensaje = `Invitación enviada a ${r.para} ✓`;
         } catch (e) {
           // el correo no salió: se dice claro, pero el contrato sigue en el portal
-          alert("El contrato está en el portal, pero el email no salió:\n" + e.message + "\n\nPuedes mandarle el enlace con «Mandar por email» o «Copiar el enlace».");
+          await alertar("El contrato está en el portal, pero el email no salió:\n" + e.message + "\n\nPuedes mandarle el enlace con «Mandar por email» o «Copiar el enlace».");
           bFin.disabled = false; bFin.textContent = "Terminado — mandar la invitación e ir al proyecto";
           return;
         }
@@ -13834,12 +14131,12 @@ Power done right the first time. ⚡`;
     }
     if (f.size > 400000) { avisar("Ese archivo es muy grande para una hoja de alcance", true); return; }
     const lector = new FileReader();
-    lector.onload = () => {
+    lector.onload = async () => {
       const txt = String(lector.result || "").replace(/\r/g, "");
       if (!txt.trim()) { avisar("El archivo está vacío", true); return; }
       const caja = $("alc-texto");
       const habia = caja && caja.value.trim();
-      if (habia && !confirm("Ya hay algo escrito en el cuadro. ¿Lo reemplazo con el archivo?")) return;
+      if (habia && !await confirmar("Ya hay algo escrito en el cuadro. ¿Lo reemplazo con el archivo?")) return;
       alcActivo.texto = txt;
       if (caja) caja.value = txt;
       // otra hoja es otra lectura: la vieja se borra (no se arrastra a un texto que no vio)
@@ -14694,7 +14991,7 @@ Power done right the first time. ⚡`;
 
   async function alcRedactar() {
     const A = alcActivo;
-    if (alcEsperarAlAsistente()) return;
+    if (await alcEsperarAlAsistente()) return;
     alcCalcularSeguro();
     if (A.validado.errores.length) { avisar("Arregla primero lo que está en rojo", true); return; }
     const enc = Alcance.prepararEncargo(A.leido, A.decision);
@@ -14733,17 +15030,17 @@ Power done right the first time. ⚡`;
   // Si el asistente está mirando la hoja justo ahora, se le pregunta a Edgar:
   // esperarlo (menos de 2 min) o seguir sin él. Si sigue, la lectura que llegue
   // después NO se aplica sola (regla de la lectura tardía).
-  function alcEsperarAlAsistente() {
+  async function alcEsperarAlAsistente() {
     const A = alcActivo;
     if (!A || !A.lectura_en_marcha) return false;
-    const esperar = confirm("El asistente todavía está mirando tu hoja (suele tardar menos de 2 minutos).\n\nAceptar: lo espero.\nCancelar: sigo sin él.");
+    const esperar = await confirmar("El asistente todavía está mirando tu hoja (suele tardar menos de 2 minutos).\n\nAceptar: lo espero.\nCancelar: sigo sin él.");
     if (esperar) { avisar("Espero al asistente; en cuanto llegue, vuelve a tocar"); return true; }
     return false;
   }
 
   async function alcDirecto() {
     const A = alcActivo;
-    if (alcEsperarAlAsistente()) return;
+    if (await alcEsperarAlAsistente()) return;
     A.texto = $("alc-texto") ? $("alc-texto").value : A.texto;
     alcCalcularSeguro();
     if (A.validado.errores.length) { avisar("Arregla primero lo que está en rojo", true); return; }
@@ -14998,7 +15295,7 @@ Power done right the first time. ⚡`;
       // y aquí se le puede avisar por correo con el enlace directo a la obra.
       const pSub = proyectos().find(x => x.id === A.proyecto.id);
       const gcSub = pSub && pSub.contratistaModo === "contrato" ? gcDeProyecto(pSub) : null;
-      if (gcSub && gcSub.email && confirm(`¿Le aviso a ${gcSub.nombre} por correo (${gcSub.email}) que hay un contrato nuevo esperando su firma?\n\nEn su portal ya sale primero, marcado NUEVO.`)) {
+      if (gcSub && gcSub.email && await confirmar(`¿Le aviso a ${gcSub.nombre} por correo (${gcSub.email}) que hay un contrato nuevo esperando su firma?\n\nEn su portal ya sale primero, marcado NUEVO.`)) {
         try {
           const r = await DB.pedirCorreo("avisar_gc", { contratista_id: gcSub.id, proyecto_id: pSub.id, tipo: "contrato" });
           avisar(`Aviso enviado a ${r.para} ✓`);
@@ -15854,7 +16151,7 @@ Power done right the first time. ⚡`;
     $("levantamiento-panel").querySelectorAll(".lev-borrar-cuarto").forEach(b => {
       b.addEventListener("click", async () => {
         const c = (l.cuartos || []).find(x => x.llave_cliente === b.dataset.k);
-        if (!c || !confirm(`¿Quitar «${c.nombre}» con todo lo contado?`)) return;
+        if (!c || !await confirmar(`¿Quitar «${c.nombre}» con todo lo contado?`)) return;
         l.cuartos = l.cuartos.filter(x => x.llave_cliente !== b.dataset.k);
         if (c.id) { try { await DB.eliminarCuarto(c.id); } catch { /* se va con el levantamiento */ } }
         levTocado();
@@ -16132,7 +16429,7 @@ Power done right the first time. ⚡`;
     const lista = proyectos().filter(p => p.estado !== "completado");
     if (!lista.length) { avisar("No hay proyectos abiertos donde ponerlo", true); return; }
     const nombres = lista.map((p, i) => `${i + 1}. ${p.nombre}`).join("\n");
-    const eleccion = prompt("¿A qué proyecto le pongo el alcance?\n\n" + nombres, "1");
+    const eleccion = await pedirDato("¿A qué proyecto le pongo el alcance?\n\n" + nombres, "1");
     if (eleccion === null) return;
     const p = lista[Number(eleccion) - 1];
     if (!p) { avisar("Ese número no es de la lista", true); return; }
@@ -16158,7 +16455,7 @@ Power done right the first time. ⚡`;
       .filter(x => x.proyecto === p.id).map(x => x.texto));
     const nuevos = textos.filter(t => !yaEstan.has(t));
     if (!nuevos.length) { avisar("Todo eso ya estaba en el alcance de ese proyecto"); return; }
-    if (!confirm(`Se van a añadir ${nuevos.length} puntos al alcance de ${p.nombre}. ¿Sigo?`)) return;
+    if (!await confirmar(`Se van a añadir ${nuevos.length} puntos al alcance de ${p.nombre}. ¿Sigo?`)) return;
 
     try {
       // TODOS con prioridad 'normal'. La base tiene un disparador que ante
@@ -16209,7 +16506,7 @@ Power done right the first time. ⚡`;
     });
     $("levantamiento-panel").querySelectorAll(".lev-borrar").forEach(b => {
       b.addEventListener("click", async () => {
-        if (!confirm("¿Eliminar este levantamiento con todos sus cuartos?")) return;
+        if (!await confirmar("¿Eliminar este levantamiento con todos sus cuartos?")) return;
         try {
           if (b.dataset.id) await DB.eliminarLevantamiento(Number(b.dataset.id));
           const x = todos.find(y => y.llave_cliente === b.dataset.k);
@@ -16243,8 +16540,9 @@ Power done right the first time. ⚡`;
       .then(arrancarApp)
       .catch(err => {
         if (esFalloDeRed(err)) {
-          // Sin señal al abrir: la sesión se queda guardada
-          pantallaSinSenal(arrancarConSesion);
+          // Sin señal al abrir: la sesión se queda guardada. Con copia en el
+          // teléfono se entra con ella (P82).
+          if (!entrarConCopia()) pantallaSinSenal(arrancarConSesion);
           return;
         }
         // Solo se borra la sesión si el servidor dijo que el token NO sirve.
@@ -16261,6 +16559,7 @@ Power done right the first time. ⚡`;
   // Si el teléfono recupera la señal, se reintenta solo
   window.addEventListener("online", () => {
     const c = document.getElementById("sin-senal");
-    if (c && !c.hidden) { c.hidden = true; if (DB.haySesion()) arrancarApp(); }
+    if (c && !c.hidden) { c.hidden = true; if (DB.haySesion()) arrancarApp(); return; }
+    if (modoSinSenal && DB.haySesion()) arrancarApp();
   });
 })();

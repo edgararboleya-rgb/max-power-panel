@@ -93,6 +93,7 @@
   }
 
   function salir() {
+    crudo = null;
     sesion = null;
     guardarSesion(null);
     if (temporizadorRefresco) clearTimeout(temporizadorRefresco);
@@ -303,61 +304,75 @@
   }
 
   // ---------- Carga completa según el rol ----------
-  async function cargarTodo() {
+  // ---------- Las fuentes de la carga (P186) ----------
+  // Cada fuente: [nombre, consulta, suave]. «suave» = si falla, sigue con [] (la
+  // tabla puede no existir o el equipo no tiene permiso). El orden es el de la
+  // lista de variables de más abajo: no se cambia uno sin el otro.
+  const FUENTES = [
+    ["perfiles", "perfiles?select=*", false],
+    // El dueño lee la tabla completa; al equipo la base le devuelve vacío
+    // y usa la vista sin montos (misma regla que materiales y alcances)
+    ["proyectos", "proyectos?select=*&order=nombre", true],
+    ["proyectos_equipo", "proyectos_equipo?select=*&order=nombre", true],
+    ["finanzas_proyecto", "finanzas_proyecto?select=*", true],
+    ["alcances", "alcances?select=*&order=orden", true],
+    ["alcances_equipo", "alcances_equipo?select=*&order=orden", true],
+    ["hitos", "hitos?select=*&order=orden", true],
+    ["facturas", "facturas?select=*&order=fecha", true],
+    ["horas", "horas?select=*&order=fecha", false],
+    ["eventos", "eventos?select=*&order=fecha", false],
+    ["pendientes", "pendientes?select=*&order=fecha", false],
+    ["documentos", "documentos?select=*", true],
+    // Estas tablas pueden no existir todavía: la app sigue andando
+    ["fotos", "fotos?select=*&order=creado", true],
+    ["inspecciones", "inspecciones?select=*&order=fecha", true],
+    ["materiales", "materiales?select=*&order=creado", true],
+    ["materiales_equipo", "materiales_equipo?select=*&order=creado", true],
+    ["costos_equipo", "costos_equipo?select=*", true],
+    ["trabajos_externos", "trabajos_externos?select=*&order=fecha", true],
+    ["gestiones", "gestiones?select=*&order=creado", true],
+    ["recibos", "recibos?select=*&order=creado", true],
+    ["recibos_equipo", "recibos_equipo?select=*&order=creado", true],
+    ["alcance_puntos", "alcance_puntos?select=*&order=orden", true],
+    ["externos_equipo", "externos_equipo?select=*&order=nombre", true],
+    ["decisiones_cliente", "decisiones_cliente?select=*&order=creado", true],
+    // Llaves del portal: solo el dueño recibe filas (RLS)
+    ["portal_llaves", "portal_llaves?select=*", true],
+    // Visitas del portal (solo el dueño recibe filas)
+    ["portal_visitas", "portal_visitas?select=proyecto_id,cuando&order=cuando.desc&limit=300", true],
+    // Documentos de la empresa (licencia y seguros) — todos los ven
+    ["documentos_empresa", "documentos_empresa?select=*&order=orden,id", true],
+    // Solo títulos de documentos (para elegir el CO en el reporte de horas)
+    ["documentos_equipo", "documentos_equipo?select=proyecto_id,titulo", true],
+    // Permisos por jurisdicción (todos leen; el dueño edita)
+    ["jurisdicciones", "jurisdicciones?select=*&order=condado", true],
+    // Contratistas (GC): solo el dueño recibe filas (RLS)
+    ["contratistas", "contratistas?select=*&order=nombre", true],
+    // Las llaves de los contratistas viven aparte (nunca van al respaldo)
+    ["contratista_llaves", "contratista_llaves?select=*", true],
+    // v159: cada vez que alguien abre un documento desde el portal (solo el dueño recibe filas)
+    ["documento_visitas", "documento_visitas?select=documento_id,quien,cuando&order=cuando.desc&limit=1000", true]
+  ];
+  // Lo último que bajó cada fuente: con esto la recarga parcial vuelve a armar
+  // el estado entero bajando solo las tablas que se tocaron.
+  let crudo = null;
+
+  // cargarTodo()          → baja las 32 fuentes
+  // cargarTodo(["horas"]) → baja solo esas (si ya hubo una carga completa) y
+  //                          rearma todo con lo demás que ya estaba
+  async function cargarTodo(soloEstas) {
+    const parcial = Array.isArray(soloEstas) && soloEstas.length > 0 && crudo !== null;
+    const pedir = parcial ? FUENTES.filter(f => soloEstas.includes(f[0])) : FUENTES;
+    const bajado = await Promise.all(pedir.map(([, consulta, suave]) => suave ? leer(consulta).catch(() => []) : leer(consulta)));
+    const nuevo = parcial ? { ...crudo } : {};
+    pedir.forEach(([nombre], k) => { nuevo[nombre] = bajado[k]; });
+    crudo = nuevo;
     const [perfiles, proyectos, proyectosEquipo, finanzas, alcances, alcancesEquipo,
            hitos, facturas, horas, eventos, pendientes, documentos, fotos,
            inspecciones, materiales, materialesEquipo, costos, externos,
            gestiones, recibos, recibosEquipo, alcancePuntos, ayudantes, decisiones,
            llavesPortal, visitasPortal, docsEmpresa, titulosDocs, jurisdicciones,
-           contratistas, llavesGC, visitasDocs] =
-      await Promise.all([
-        leer("perfiles?select=*"),
-        // El dueño lee la tabla completa; al equipo la base le devuelve vacío
-        // y usa la vista sin montos (misma regla que materiales y alcances)
-        leer("proyectos?select=*&order=nombre").catch(() => []),
-        leer("proyectos_equipo?select=*&order=nombre").catch(() => []),
-        leer("finanzas_proyecto?select=*").catch(() => []),
-        leer("alcances?select=*&order=orden").catch(() => []),
-        leer("alcances_equipo?select=*&order=orden").catch(() => []),
-        leer("hitos?select=*&order=orden").catch(() => []),
-        leer("facturas?select=*&order=fecha").catch(() => []),
-        leer("horas?select=*&order=fecha"),
-        leer("eventos?select=*&order=fecha"),
-        leer("pendientes?select=*&order=fecha"),
-        leer("documentos?select=*").catch(() => []),
-        // Estas tablas pueden no existir todavía: la app sigue andando
-        leer("fotos?select=*&order=creado").catch(() => []),
-        leer("inspecciones?select=*&order=fecha").catch(() => []),
-        leer("materiales?select=*&order=creado").catch(() => []),
-        leer("materiales_equipo?select=*&order=creado").catch(() => []),
-        leer("costos_equipo?select=*").catch(() => []),
-        leer("trabajos_externos?select=*&order=fecha").catch(() => []),
-        leer("gestiones?select=*&order=creado").catch(() => []),
-        leer("recibos?select=*&order=creado").catch(() => []),
-        leer("recibos_equipo?select=*&order=creado").catch(() => []),
-        leer("alcance_puntos?select=*&order=orden").catch(() => []),
-        leer("externos_equipo?select=*&order=nombre").catch(() => []),
-        leer("decisiones_cliente?select=*&order=creado").catch(() => []),
-        // Llaves del portal: solo el dueño recibe filas (RLS); si la tabla
-        // no existe todavía, la app sigue andando
-        leer("portal_llaves?select=*").catch(() => []),
-        // Visitas del portal (solo el dueño recibe filas)
-        leer("portal_visitas?select=proyecto_id,cuando&order=cuando.desc&limit=300").catch(() => []),
-        // Documentos de la empresa (licencia y seguros) — todos los ven
-        leer("documentos_empresa?select=*&order=orden,id").catch(() => []),
-        // Solo títulos de documentos (para elegir el CO en el reporte de horas)
-        leer("documentos_equipo?select=proyecto_id,titulo").catch(() => []),
-        // Permisos por jurisdicción (todos leen; el dueño edita)
-        leer("jurisdicciones?select=*&order=condado").catch(() => []),
-        // Contratistas (GC): llevan las llaves de su portal — solo el dueño
-        // recibe filas (RLS). Si el SQL no está pegado, la app sigue andando.
-        leer("contratistas?select=*&order=nombre").catch(() => []),
-        // Las llaves de los contratistas viven aparte (nunca van al respaldo)
-        leer("contratista_llaves?select=*").catch(() => []),
-        // v159: cada vez que alguien abre un documento desde el portal (solo el dueño recibe filas;
-        // si el SQL VISITAS-CONTRATO no está pegado, la app sigue andando)
-        leer("documento_visitas?select=documento_id,quien,cuando&order=cuando.desc&limit=1000").catch(() => [])
-      ]);
+           contratistas, llavesGC, visitasDocs] = FUENTES.map(f => crudo[f[0]] || []);
     // Visitas por documento: cuántas y la última (vienen de la más nueva a la más vieja)
     const visitasPorDoc = {};
     (visitasDocs || []).forEach(v => {

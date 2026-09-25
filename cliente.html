@@ -823,6 +823,21 @@
     // ---- ✏️ Pedir un cambio en vez de firmar ----
     // Que nadie firme por no tener salida: está a un toque y del mismo
     // tamaño que el botón de firmar.
+    // P180: un aviso en rojo dentro del formulario (antes era un cuadro gris del
+    // navegador). Se pone encima del botón y se va solo al tocar cualquier cosa.
+    function avisoRojo(fondo, botonSel, texto) {
+      var viejo = fondo.querySelector(".cl-aviso-rojo");
+      if (viejo) viejo.remove();
+      var boton = fondo.querySelector(botonSel);
+      var aviso = document.createElement("div");
+      aviso.className = "cl-aviso-rojo";
+      aviso.setAttribute("role", "alert");
+      aviso.textContent = texto;
+      if (boton && boton.parentNode) boton.parentNode.insertBefore(aviso, boton); else fondo.appendChild(aviso);
+      var quitar = function () { aviso.remove(); fondo.removeEventListener("input", quitar); fondo.removeEventListener("change", quitar); fondo.removeEventListener("pointerdown", quitar, true); };
+      fondo.addEventListener("input", quitar); fondo.addEventListener("change", quitar);
+      setTimeout(function () { fondo.addEventListener("pointerdown", quitar, true); }, 300);
+    }
     function abrirCambio(docId) {
       if (document.querySelector(".cl-firma-fondo")) return;
       var fondo = document.createElement("div");
@@ -886,7 +901,7 @@
       document.body.appendChild(fondo);
       fondo.querySelector("#cl-cons-no").addEventListener("click", function () { fondo.remove(); });
       fondo.querySelector("#cl-cons-seguir").addEventListener("click", function () {
-        if (!fondo.querySelector("#cl-cons-ok").checked) { alert(TXT.firmaConsent); return; }
+        if (!fondo.querySelector("#cl-cons-ok").checked) { avisoRojo(fondo, "#cl-cons-seguir", TXT.firmaConsent); return; }
         var b = fondo.querySelector("#cl-cons-seguir");
         b.disabled = true; b.textContent = "…";
         fetch(PORTAL, {
@@ -1047,16 +1062,16 @@
       });
       fondo.querySelector("#cl-firma-ok").addEventListener("click", function () {
         var nombre = fondo.querySelector("#cl-firma-nombre").value.trim();
-        if (!fondo.querySelector("#cl-firma-acepto").checked) { alert(TXT.firmaConsent); return; }
+        if (!fondo.querySelector("#cl-firma-acepto").checked) { avisoRojo(fondo, "#cl-firma-ok", TXT.firmaConsent); return; }
         if (modo === "escribir") {
-          if (!nombre) { alert(TXT.firmaFalta); return; }
+          if (!nombre) { avisoRojo(fondo, "#cl-firma-ok", TXT.firmaFalta); return; }
           pintarNombre(); // asegura que el lienzo tenga la firma final
-        } else if (!nombre || trazos === 0) { alert(TXT.firmaFalta); return; }
+        } else if (!nombre || trazos === 0) { avisoRojo(fondo, "#cl-firma-ok", TXT.firmaFalta); return; }
         var cuerpoFirma = conAccion({ accion: "firmar_doc", id: docId, nombre: nombre,
                             firma: lienzo.toDataURL("image/png") });
         if (casillaDos.checked) {
           var n2 = fondo.querySelector("#cl-firma2-nombre").value.trim();
-          if (!n2 || trazos2 === 0) { alert(TXT.firma2Falta); return; }
+          if (!n2 || trazos2 === 0) { avisoRojo(fondo, "#cl-firma-ok", TXT.firma2Falta); return; }
           cuerpoFirma.nombre2 = n2;
           cuerpoFirma.firma2 = lienzo2.toDataURL("image/png");
         }

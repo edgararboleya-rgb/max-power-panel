@@ -175,3 +175,6 @@ a.pt-doc-t:hover { text-decoration: underline; }
 .pt-resena { display: inline-block; margin-top: .6rem; background: linear-gradient(135deg, var(--mp-yellow), #F7C948);
   color: #3d3400; font-weight: 800; padding: .7rem 1.2rem; border-radius: 999px; text-decoration: none; min-height: 36px; }
 .pt-resena:hover { filter: brightness(1.05); }
+
+/* P180: el aviso en rojo dentro del formulario de firma */
+.cl-aviso-rojo { background: #FDF1F0; color: #B3261E; border: 1px solid rgba(179,38,30,.35); border-radius: 10px; padding: .55rem .8rem; margin: .5rem 0; font-size: .92rem; line-height: 1.4; }
