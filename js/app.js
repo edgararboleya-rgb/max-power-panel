@@ -360,7 +360,7 @@
     checklist: ["alcance_puntos", "pendientes"],
     dinero: ["facturas", "hitos", "finanzas_proyecto", "proyectos", "proyectos_equipo"],
     proyecto: ["proyectos", "proyectos_equipo", "portal_llaves", "finanzas_proyecto"],
-    documentos: ["documentos", "documentos_equipo", "documento_visitas"],
+    documentos: ["documentos", "documentos_equipo", "documento_visitas", "propuestas_vigencia"],
     fotos: ["fotos"],
     decisiones: ["decisiones_cliente"],
     inspecciones: ["inspecciones", "eventos"],
@@ -571,6 +571,7 @@ function esFalloDeRed(err) {
     const h = new Date();
     return fechaISO(h.getFullYear(), h.getMonth(), h.getDate());
   };
+  const plural = (n, una) => `${n} ${una}${n === 1 ? "" : "s"}`;
   const diasDesde = iso => {
     if (!iso) return null;
     const [a, m, d] = String(iso).slice(0, 10).split("-").map(Number);
@@ -1253,9 +1254,18 @@ function esFalloDeRed(err) {
           avisos.push({ id: p.id, pestana: "dinero", icono: "💵", texto: `Factura #${f.num} de ${p.nombre} lleva ${dias} días sin pagar (${fmt(saldoFactura(f))}${f.cobrado > 0 ? ` de ${fmt(f.monto)}` : ""})` });
       }
       if (p.estado === "enviado") {
-        const dias = diasDesde(p.actualizado);
-        if (dias !== null && dias >= 21)
-          avisos.push({ id: p.id, icono: "⏳", texto: `${p.nombre}: propuesta sin movimiento hace ${dias} días — revívela o márcala perdida` });
+        // P09 (25-sep, Edgar lo pidió): la propuesta avisa cuando le quedan 5 días
+        // o menos, cuando ya venció, y cuando lleva 7 días sin respuesta
+        if (p.propuestaValidaHasta) {
+          const pasados = diasDesde(p.propuestaValidaHasta);
+          if (pasados > 0)
+            avisos.push({ id: p.id, pestana: "archivos", icono: "⏳", texto: `${p.nombre}: la propuesta VENCIÓ hace ${plural(pasados, "día")} (valía hasta ${p.propuestaValidaHasta}) — renuévala desde la ficha o márcala no aprobada` });
+          else if (pasados >= -5)
+            avisos.push({ id: p.id, pestana: "archivos", icono: "⏳", texto: `${p.nombre}: la propuesta vence ${pasados === 0 ? "HOY" : `en ${plural(-pasados, "día")}`} (${p.propuestaValidaHasta}) — llama al cliente antes` });
+        }
+        const dias = diasDesde(p.propuestaArmadaEl || p.actualizado);
+        if (dias !== null && dias >= 7)
+          avisos.push({ id: p.id, icono: "⏳", texto: `${p.nombre}: propuesta sin respuesta hace ${plural(dias, "día")} — llama o escribe al cliente, o márcala no aprobada` });
       }
       if (p.estado === "ejecucion" && p.horas && p.horas.estimadas > 0) {
         const razon = p.horas.reales / p.horas.estimadas;
@@ -4078,6 +4088,10 @@ function esFalloDeRed(err) {
             title="Hasta qué día puede firmarlo el cliente con estos precios">${vencido ? "Renovar la fecha de validez" : d.validaHasta ? "Cambiar hasta cuándo vale" : "Ponerle fecha de validez"}</button>`);
         }
         if (d.contrafirmaEl) historia.push(`Contrafirmado ${d.contrafirmaEl}`);
+        // P42 (25-sep): en los contratos que arma la app (vienen de una propuesta) la firma
+        // de Edgar se pone sola en el momento en que firma el cliente; el botón queda
+        // para los documentos subidos a mano y para los firmados antes de ese cambio
+        else if (d.propuestaId && !d.firmadoEl && d.pideFirma) { if (usuario.finanzas && esEdgar) historia.push("Tu firma se pone sola cuando firme el cliente"); }
         else if (usuario.finanzas && esEdgar && (d.pideFirma || d.firmadoEl)) escondidos.push(`<button type="button" class="doc-contrafirma" data-id="${d.id}" data-titulo="${esc(d.titulo)}"
           title="Firmarlo tú también: tu firma sale en el certificado junto a la del cliente">Firmar yo (Edgar Arboleya)</button>`);
         if (d.aprobadoEl) historia.push(`Aprobó ${d.aprobadoEl}`);

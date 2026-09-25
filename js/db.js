@@ -351,13 +351,16 @@
     // Las llaves de los contratistas viven aparte (nunca van al respaldo)
     ["contratista_llaves", "contratista_llaves?select=*", true],
     // v159: cada vez que alguien abre un documento desde el portal (solo el dueño recibe filas)
-    ["documento_visitas", "documento_visitas?select=documento_id,quien,cuando&order=cuando.desc&limit=1000", true]
+    ["documento_visitas", "documento_visitas?select=documento_id,quien,cuando&order=cuando.desc&limit=1000", true],
+    // P09 (25-sep): solo la vigencia de cada propuesta, para avisar cuando vence o
+    // lleva días sin respuesta (el equipo no recibe filas: la lista queda vacía)
+    ["propuestas_vigencia", "propuestas?select=id,proyecto_id,estado,valida_hasta,armado_el,creado&order=creado.desc", true]
   ];
   // Lo último que bajó cada fuente: con esto la recarga parcial vuelve a armar
   // el estado entero bajando solo las tablas que se tocaron.
   let crudo = null;
 
-  // cargarTodo()          → baja las 32 fuentes
+  // cargarTodo()          → baja las 33 fuentes
   // cargarTodo(["horas"]) → baja solo esas (si ya hubo una carga completa) y
   //                          rearma todo con lo demás que ya estaba
   async function cargarTodo(soloEstas) {
@@ -372,7 +375,15 @@
            inspecciones, materiales, materialesEquipo, costos, externos,
            gestiones, recibos, recibosEquipo, alcancePuntos, ayudantes, decisiones,
            llavesPortal, visitasPortal, docsEmpresa, titulosDocs, jurisdicciones,
-           contratistas, llavesGC, visitasDocs] = FUENTES.map(f => crudo[f[0]] || []);
+           contratistas, llavesGC, visitasDocs, propuestasVigencia] = FUENTES.map(f => crudo[f[0]] || []);
+    // La propuesta viva más nueva de cada obra (las archivadas no cuentan)
+    const propPorProyecto = {};
+    // (manda la 'enviada' más nueva; si no hay ninguna enviada, la viva más nueva)
+    for (const x of propuestasVigencia) {
+      if (!x.proyecto_id || x.estado === "archivada") continue;
+      const y = propPorProyecto[x.proyecto_id];
+      if (!y || (x.estado === "enviada" && y.estado !== "enviada")) propPorProyecto[x.proyecto_id] = x;
+    }
     // Visitas por documento: cuántas y la última (vienen de la más nueva a la más vieja)
     const visitasPorDoc = {};
     (visitasDocs || []).forEach(v => {
@@ -448,6 +459,9 @@
         proximaAccion: p.proxima_accion || "",
         ref: p.ref || "—",
         actualizado: p.actualizado ? String(p.actualizado).slice(0, 10) : "",
+        // P09: hasta cuándo vale la propuesta viva y cuándo se armó
+        propuestaValidaHasta: propPorProyecto[p.id] ? (propPorProyecto[p.id].valida_hasta || "") : "",
+        propuestaArmadaEl: propPorProyecto[p.id] && propPorProyecto[p.id].armado_el ? String(propPorProyecto[p.id].armado_el).slice(0, 10) : "",
         contrato: fin.contrato !== undefined && fin.contrato !== null ? Number(fin.contrato) : null,
         cobrado: fin.cobrado !== undefined && fin.cobrado !== null ? Number(fin.cobrado) : null,
         presupuestoMateriales: fin.presupuesto_materiales !== undefined && fin.presupuesto_materiales !== null
