@@ -59,3 +59,39 @@ conciliación de apertura (f06).
 > completo; la auditoría entera, en las Fases 13–14. En la semana 4 todavía no
 > hay banco, ni nómina, ni categorización: pedirla aquí era una puerta que
 > nadie podía cruzar.
+
+## Lo construido (25-sep) — versión candidata, sin pegar
+- `docs/conta/c4-estados.sql` (todo como vistas, 28) y `docs/conta/c4-pruebas.sql`
+  (**110 pruebas**; la 109 solo corre en Postgres 17). Balanza (con arrastre y
+  «por cerrar»), mayor con saldo corrido y clic al papel, balance general (activo −
+  pasivo − capital = 0, 3900 = apertura + años cerrados, 3200 aparte o plegado por
+  configuración), resultados (mes, mes anterior, variación, acumulado, ajustes del
+  CPA), flujo de caja directo e indirecto (los dos = cambio del efectivo), las
+  vistas del tablero (saldos de dinero, antigüedad de CxC y CxP con vencimientos,
+  gasto por categoría y proveedor, costo y dinero por obra, flujo real por mes),
+  `fn_estados_control` (lo esperado se cuenta desde el libro, no desde las
+  vistas), la apertura desde la balanza de QuickBooks (`apertura_balanza_qb`,
+  `apertura_mapeo_qb`, `fn_apertura_plan`, `fn_apertura_revisar`, `fn_apertura`:
+  1110 por factura, 1120 por obra, 2010 por proveedor, resultado ene–sep a 3900,
+  diferencias de criterio anotadas solas) y la comparación por mes
+  (`comparacion_qb`, `v_comparacion`, `v_comparacion_obra`, `diferencias`).
+- Bloque A del §6b: diseño + 3 rondas de ataque (45, 29 y 24 hallazgos, todos
+  verificados; 86 corregidos, 5 rechazados con motivo). Prueba final de cero en
+  Postgres 16 y 17.6: c2 80/80, c3 118/118, c4 110/110; idempotente; sin rastro;
+  pegado, concurrencia y volumen (10.000 asientos: la vista más lenta 0,63 s) en
+  verde. Repetido a mano el 25-sep con el mismo resultado.
+- **c2 y c3 cambian (mínimo) y se vuelven a pegar antes de c4:** las policies de
+  lectura pasan a `using ((select es_dueno()))` (una llamada por consulta, no por
+  fila: las vistas bajan de 0,4–1,7 s a 0,1–0,4 s), marca de versión en su texto
+  (c4 la lee al pegarse y avisa si c2 o c3 están viejos), y unos ajustes chicos
+  del ataque a c4 (ver sus cabeceras «CAMBIOS PARA c4»). El camino de
+  actualización desde la versión de producción se probó en el banco.
+- Para conta.js: `fn_estados_control` se llama con la lista de vistas de la
+  pantalla (`p_vistas`), no con las 24 de golpe (con 10.000 asientos pasa del
+  tope de 8 s de la API).
+- Dudas para Edgar y el CPA (del diseñador): la retención en QuickBooks (¿cuenta
+  aparte o dentro de A/R?), Undeposited Funds → 1010 como depósito en tránsito,
+  las tarjetas que traiga la balanza (dar de alta antes en c1), plegar 3200 al
+  cerrar el año, una vista que sume ene–sep de QuickBooks + oct–dic del libro
+  para la declaración de 2026, contrato y presupuesto al lado o dentro de
+  `v_obras_dinero`.

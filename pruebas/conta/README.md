@@ -45,7 +45,7 @@ comprobando si algo ya estaba.
 | 5 | Una línea: `select fn_puentes_correr();` | Un solo valor (jsonb) con `"desde": "2026-10-01"`, cuántos papeles quedaron en cada estado (`contabilizado`, `pendiente`, `espera`, `no_aplica`…) y **`"errores": 0`**. |
 | 6 | Una línea: `select * from fn_puentes_verificar();` | Los **13 controles** de los puentes, **todos en `true`** (ahora también `sin_evaluar`). `bandeja` dice cuántos papeles esperan a Edgar; solo se pone en rojo si el libro rechazó alguno. |
 | 7 | `docs/conta/c2-pruebas.sql` | La tabla `_pruebas`: **80 filas**, todas con `ok = true`. (Con la apertura de verdad ya en el libro, la **61** sale «omitida»: no es un fallo.) |
-| 8 | `docs/conta/c3-pruebas.sql` | La tabla `_pruebas`: **118 filas**, todas con `ok = true` salvo la **45**, que en producción sale «omitida» (Supabase no deja borrar de Storage por SQL; se prueba en el banco). Si no hay ningún perfil activo que no sea el dueño, las pruebas «del equipo» salen con `ok` vacío (`null`) y `obtenido` = «omitida…»: no es un fallo. |
+| 8 | `docs/conta/c3-pruebas.sql` | La tabla `_pruebas`: **118 filas**, todas con `ok = true` salvo la **45**, que en producción sale «omitida» (Supabase no deja borrar de Storage por SQL; se prueba en el banco). Con la apertura de verdad ya en el libro, la **115** y la **117** (las que postean una apertura de prueba) también salen «omitida»: no es un fallo. Si no hay ningún perfil activo que no sea el dueño, las pruebas «del equipo» salen con `ok` vacío (`null`) y `obtenido` = «omitida…»: no es un fallo. |
 | 9 | `docs/conta/c4-pruebas.sql` | La tabla `_pruebas`: **110 filas**, todas con `ok = true`. **Córrelas recién pegado c4 y ANTES de postear la apertura de verdad**: con ella ya en el libro, las **29 a 36, 50, 51, 53, 56, 61, 62, 69, 73, 76, 81, 84, 86, 91, 93, 94, 98, 102, 105 y 107** (las que postean una apertura de prueba) salen «omitida», y no es un fallo. Sin nadie del equipo activo, la **2** y la **38** salen «omitida»; la 38, 55, 56, 57, 58, 64, 77, 79, 80, 82, 89, 101, 103 y 109 también si la app estaba usando justo lo que tocan (esperan 2 s y se saltan). La **109** (el privilegio MAINTAIN) es de Postgres 17: en producción corre; en el banco con 16 sale «omitida». La **88** en rojo = el JIT sigue encendido para la app (ver el paso 4). Tardan unos 40 s (con el libro lleno, cerca de dos minutos). |
 
 - **El orden importa**: c2 necesita c1; c3 necesita c1 y c2; c4 necesita
@@ -224,7 +224,8 @@ done; done
 
 Con la apertura de verdad ya posteada (una balanza, su mapeo y
 `fn_apertura`, confirmados antes de las suites) tiene que salir igual de
-verde: c2 con la 61 «omitida», c4 con la 29 a la 36, 50, 51, 53, 56, 61,
+verde: c2 con la 61 «omitida», c3 con la 115 y la 117 «omitidas» (más la
+45 en producción), c4 con la 29 a la 36, 50, 51, 53, 56, 61,
 62, 69, 73, 76, 81, 84, 86, 91, 93, 94, 98, 102, 105 y 107 «omitidas»,
 nada en rojo. Y con datos de verdad en el mes (un depósito normal que se
 parece a un cobro de prueba, la renta, un pago de préstamo, una
@@ -236,9 +237,20 @@ Para comprobar que las pruebas no dejan rastro, se saca una «foto» de la
 base (cuántas filas y un md5 de cada tabla de `public`, `auth` y `storage`,
 el `last_value` de cada secuencia, y las definiciones y permisos de
 funciones, triggers, policies, vistas y columnas) antes y después de
-correr `c2-pruebas.sql` y `c3-pruebas.sql`: las dos fotos tienen que ser
-idénticas. La prueba final del 24-sep lo hizo así, también con asientos y
-bandeja ya llenos (después de `fn_puentes_correr()`), y salieron iguales.
+correr `c2-pruebas.sql`, `c3-pruebas.sql` y `c4-pruebas.sql`: las fotos
+tienen que ser idénticas. La prueba final del 24-sep lo hizo así, también
+con asientos y bandeja ya llenos (después de `fn_puentes_correr()`), y
+salieron iguales. La del 25-sep (con c4) también, en 16 y en 17.6, en tres
+estados de la base: recién pegados c1–c4, con `fn_puentes_correr()` ya
+corrido, y con la apertura de verdad posteada; la foto tenía además las
+restricciones, índices, comentarios, ajustes de los roles
+(`rolconfig`, `pg_db_role_setting`), privilegios por defecto y miembros
+de roles. Las tres suites seguidas: foto igual antes y después de cada una.
+Al VOLVER a pegar c1–c4 encima, lo único que cambia es lo que tiene que
+cambiar: la hora del sello en el comentario de `fn_libro_huellas()` y de
+`fn_estados_huellas()` («selladas por el último pegado, el … (Miami)») y
+los oid de las vistas de c4 (el pegado las rehace); filas, secuencias,
+definiciones y permisos, iguales.
 
 ## 1. Arrancar el cluster
 
@@ -479,6 +491,35 @@ tocar `docs/conta/c2-libro.sql`:
   tablero leyendo—, c3-volumen) y c4-volumen con 10.000 asientos, en los
   dos; y `SOLO_MEDIR=1 ./c4-volumen.sh bd 1332` (20.553 asientos) en 17.6:
   todo bajo su tope, el control del Panel en 6,7 s.
+- **La prueba final de c4, de cero (25-sep, noche)**, con los archivos de
+  la cuarta ronda, en 16.13 y en 17.6:
+  - Carga completa (`03-storage-simulacro`, c1, c2, c3, c4 y las tres
+    suites): c2-pruebas 80/80, c3-pruebas 118/118, c4-pruebas 110/110 en
+    17.6 y 109 + la 109 «omitida» en 16. El pegado de c4 enseña sus 9
+    filas, todas en true salvo `c4 · apertura` y «apertura en el libro».
+  - Idempotencia: c1, c2, c3 y c4 pegados dos veces más sobre la misma
+    base, y las suites otra vez: iguales. Y como en producción: c1 + c2 y
+    c3 de producción (los del 24-sep, 16c37fa) con el puente corrido, y
+    encima c2, c3 y c4 nuevos; lo mismo con el c4 del diseñador (16c37fa)
+    ya pegado, con la instantánea de la ronda 3 (0718d99, c2, c3 y c4), y
+    con c4 nuevo pegado ANTES que c2 y c3 nuevos (sale «c2 y c3 al día»
+    en false y «protecciones de c4» en rojo, diciendo qué volver a pegar;
+    pegados c2 y c3, todo en verde). Las tres suites en verde en los
+    cuatro casos, en 16 y en 17.6.
+  - Sin rastro: la foto (arriba) igual antes y después de cada suite, en
+    los tres estados de la base, en 16 y en 17.6. Con la apertura de
+    verdad: c2 79 + la 61 omitida, c3 116 + la 115 y la 117 omitidas, c4
+    83 + las 27 de la lista (16: 82 + 28, con la 109), nada en rojo.
+  - Scripts del banco, en los dos: c2-pegado (18 ok), c3-pegado (14),
+    c2-concurrencia (12), c3-concurrencia (34), c4-concurrencia (17),
+    c3-volumen con 3.000 recibos (reintentar 1,5 s / 1,8 s; controles
+    2,1 s / 2,2 s), c4-volumen con 10.333 asientos (ninguna vista por
+    encima de 0,65 s; el control del Panel 3,4 s en 16 y 3,7 s en 17.6;
+    todas las vistas 4,8 s / 5,8 s; volver a pegar c4 sobre el libro
+    lleno 0,7 s / 0,8 s; con cuatro teléfonos subiendo, la subida más
+    lenta 5,4 s / 6,3 s mientras corre c3-pruebas y 3,2 s como mucho
+    mientras corre c4-pruebas; nada en rojo). c0-banco-pruebas 18/18.
+    Sin Storage, c3-pruebas da 116 + la 45 y la 90 omitidas.
 - **JIT**: el Postgres del banco trae el compilador JIT encendido (lo de
   fábrica). Con consultas grandes compila más de lo que corre (una vista
   del tablero leída como el editor, 16 s con JIT y 0,15 s sin él; la
