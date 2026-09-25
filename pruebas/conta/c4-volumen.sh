@@ -19,30 +19,51 @@
 # con su partida; trabajos externos de 10 ayudantes y su pago; la nómina de
 # cada semana (mano de obra por obra y cost code, y sueldo de oficina, con
 # retenciones); statements de material repartidos entre obras; gastos del
-# banco; y el pago de cada tarjeta. Con «hoy» fingido al 20-dic-2027 (el
-# reloj del banco; sus huellas se vuelven a sellar para que c2 lo sepa).
+# banco; y el pago de cada tarjeta. Más tres depósitos de verdad que se
+# parecen a los cobros de las pruebas (redondos, uno sin referencia,
+# anticipos de las obras de las pruebas) en octubre de 2026 y en enero de
+# 2027, y el puente pasado por todo (lo que Edgar hace al pegar c3). Con
+# «hoy» fingido al 20-dic-2027 (el reloj del banco: solo la hora de ahora
+# cae ese día; cualquier otra fecha es la suya, como en producción; sus
+# huellas se vuelven a sellar para que c2 lo sepa).
 #
 # LO QUE MIDE, cada consulta como la app, con su tope:
 #   · cada vista de las pantallas (Panel, estados, tablero), en el último
 #     mes y en 'hoy', leída como la lee PostgREST (json_agg de «select *»,
 #     con los ajustes del rol authenticated que PostgREST aplica en cada
-#     consulta: el tope de 8 s y el jit = off que pone c4; el JIT del
-#     servidor, encendido de fábrica): no más de 2 s cada una;
-#   · fn_estados_control como la pide cada pantalla (el Panel, los
-#     estados, 'hoy', el año, y todas las vistas juntas): no más de 8 s (el
-#     tope de la API), y nada en rojo;
+#     consulta —los de pg_roles.rolconfig, como él—: el tope de 8 s y el
+#     jit = off que pone c4; el JIT del servidor, encendido de fábrica): no
+#     más de 2 s cada una;
+#   · fn_estados_control como la pide cada pantalla, con su lista (el
+#     Panel, los estados, 'hoy', el año): no más de 8 s (el tope de la
+#     API), y nada en rojo; y con todas las vistas juntas (sin lista: solo
+#     desde el SQL Editor, que no tiene el tope de la API) no más de 60 s:
+#     con unos 20.000 asientos ya no cabría en los 8 s, y por eso conta.js
+#     pide siempre la lista de su pantalla;
+#   · VOLVER A PEGAR c4-estados.sql sobre el libro lleno: lo que tarda, lo
+#     que tarda su resumen del final (el control corto: mapeo,
+#     protecciones y la apertura), que es lo que el pegado tiene tomadas
+#     las vistas al terminar, y el control del Panel pedido mientras se
+#     pega (como la app: tope de 8 s, sin cortarse);
 #   · el libro sano (fn_verificar_cadena);
 #   · c4-pruebas.sql entero sobre ese libro MIENTRAS cuatro «teléfonos»
 #     suben un ticket cada 0,25 s (el dueño, como la app: el puente en
 #     immediate y rollback, sin rastro) y el Panel lee los bancos cada
 #     segundo: ninguna subida ni lectura cortada por el tope de 8 s (ni
-#     esperando 8 s o más), y c4-pruebas sin nada en rojo (las pruebas de
+#     esperando 8 s o más), cada ticket subido con su asiento (ninguno en
+#     la bandeja porque una prueba le cruzó los candados: 40P01), y
+#     c4-pruebas sin nada en rojo (las pruebas de
 #     la apertura salen «omitidas»: el libro ya tiene la suya). Dos
-#     veces: con 2026 abierto, y con sus meses ya cerrados (el estado de
-#     2027: enero es el mes abierto más antiguo).
+#     veces: con 2026 abierto, y con sus meses ya cerrados y un ajuste del
+#     CPA a diciembre fechado en febrero (el estado de 2027: enero es el
+#     mes abierto más antiguo).
 #   · c3-pruebas.sql entero sobre ese libro, con los mismos teléfonos: lo
 #     mismo (y lo que tarda, para el README).
 # Imprime la tabla de tiempos (la de la cabecera de c4-estados.sql).
+#
+# Con SOLO_MEDIR=1 para después de medir las vistas, los controles y el
+# pegado (sin las suites con los teléfonos): para ver cómo crece con el
+# libro, p. ej. SOLO_MEDIR=1 ./c4-volumen.sh bd 1332 (≈ 20.000 asientos).
 #
 # Salida: 0 todo bien · 1 algo falla · 2 no se pudo cargar. Borra su base
 # al terminar (con CONSERVAR=1 la deja, para mirarla; se borra con
@@ -77,16 +98,26 @@ echo "== Base $BD: c1 + c2 + c3 + c4"
 DUENO="$(ed -c "select id from perfiles where rol = 'dueno' order by creado limit 1")"
 [ -n "$DUENO" ] || { echo "No hay dueño en la semilla" >&2; exit 2; }
 # Como la app: el dueño, con el rol authenticated, los ajustes de ese rol
-# en esta base (PostgREST los aplica en cada consulta: jit = off, de c4) y
-# el tope de la API.
-APP="select set_config('request.jwt.claims', '{\"sub\":\"$DUENO\",\"role\":\"authenticated\"}', true); select count(set_config(split_part(c, '=', 1), substr(c, strpos(c, '=') + 1), true)) from pg_db_role_setting s, unnest(s.setconfig) c where s.setrole = 'authenticated'::regrole and s.setdatabase in (0, (select d.oid from pg_database d where d.datname = current_database())); set local role authenticated; set local statement_timeout = '8s';"
+# que PostgREST aplica en cada consulta (los de pg_roles.rolconfig, que son
+# los del rol para todas las bases, y solo los que un usuario puede cambiar:
+# el jit = off de c4; uno puesto «in database …» PostgREST no lo ve) y el
+# tope de la API.
+APP="select set_config('request.jwt.claims', '{\"sub\":\"$DUENO\",\"role\":\"authenticated\"}', true); select count(set_config(k.k, k.v, true)) from (select split_part(c, '=', 1) as k, lower(substr(c, strpos(c, '=') + 1)) as v from pg_roles r, unnest(r.rolconfig) c where r.rolname = 'authenticated') k join pg_settings ps on ps.name = k.k and ps.context = 'user'; set local role authenticated; set local statement_timeout = '8s';"
 
 echo "== El libro: la apertura por su balanza y 15 meses por los puentes ($K por mes)"
 t0=$(date +%s.%N)
 ed -v ON_ERROR_STOP=1 -v k="$K" -v dueno="$DUENO" > "$TMP/libro.out" 2>&1 <<'SQL' || { tail -n 20 "$TMP/libro.out"; echo "FALLÓ el libro" >&2; exit 2; }
--- «Hoy» en el banco: el 20-dic-2027 (el libro llega hasta ahí).
+-- «Hoy» en el banco: el 20-dic-2027 (el libro llega hasta ahí). Solo HOY:
+-- una hora de hoy (la de ahora, más o menos seis horas) cae el 20-dic-2027;
+-- cualquier otra fecha es la suya, como en producción (con «greatest» a
+-- secas, cada recibo de octubre salía «subido» el 20-dic-2027, y las
+-- pruebas del corte y de la fecha de subida de c3-pruebas daban falsos
+-- rojos que en producción no se ven).
 create or replace function public.fn_fecha_miami(t timestamptz) returns date language sql stable
-set search_path = public, pg_temp as $$ select greatest((t at time zone 'America/New_York')::date, date '2027-12-20') $$;
+set search_path = public, pg_temp as $$
+  select case when t between now() - interval '6 hours' and now() + interval '6 hours'
+              then greatest((t at time zone 'America/New_York')::date, date '2027-12-20')
+              else (t at time zone 'America/New_York')::date end $$;
 select set_config('vol.k', :'k', false), set_config('vol.dueno', :'dueno', false);
 insert into proyectos (id, tipo, nombre, cliente, estado)
 select 'vol-obra-' || lpad(g::text, 2, '0'), (array['residencial', 'comercial', 'servicio'])[1 + g % 3], 'Obra ' || g, 'Cliente ' || g,
@@ -127,7 +158,8 @@ begin
     jsonb_build_object('cuenta_qb', 'Rent Expense', 'debe', '120000.00'),
     -- su control de QuickBooks (el Balance Sheet al 30-sep)
     jsonb_build_object('cuenta_qb', 'Net Income', 'haber', '380000.00'),
-    jsonb_build_object('cuenta_qb', 'TOTAL ASSETS', 'debe', '560000.00')));
+    jsonb_build_object('cuenta_qb', 'TOTAL ASSETS', 'debe', '560000.00'),
+    jsonb_build_object('cuenta_qb', 'Total Liabilities', 'haber', '30000.00')));
   perform fn_apertura_mapeo_qb(x.n, x.c)
      from (values ('Chase Chk 4392', '1010'), ('Vehicles', '1510'), ('Accumulated Depreciation', '1590'), ('Accounts Payable', '2010'),
                   ('Common Stock', '3000'), ('Opening Balance Equity', '3900'), ('Construction Income', '4010'),
@@ -246,9 +278,42 @@ begin
     end loop;
   end loop;
 end $$;
+-- Depósitos DE VERDAD que se parecen a los cobros de las pruebas (montos
+-- redondos, uno sin referencia, anticipos de las obras que usan las
+-- pruebas, en los días de su escenario), en el primer mes abierto con 2026
+-- abierto (octubre) y con 2026 cerrado (enero de 2027): c3- y c4-pruebas
+-- tienen que seguir en verde con ellos (antes, uno así tumbaba 34 pruebas
+-- de c4 y la 102 de c3). Entran diciendo que no son un duplicado de los
+-- cobros del generador.
+do $$
+declare
+  d date;
+begin
+  foreach d in array array[date '2026-10-01', date '2027-01-01'] loop
+    perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'vol: depósito de verdad', 'fecha', (d + 9)::text,
+      'monto', '1500.00', 'cuenta', '1010', 'medio', 'zelle', 'referencia', 'ZL-901', 'proyecto_id', 'taller-ruiz-5b2n',
+      'aplicaciones', jsonb_build_array(jsonb_build_object('proyecto_id', 'taller-ruiz-5b2n', 'monto', '1500.00'))));
+    perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'vol: depósito de verdad', 'fecha', (d + 11)::text,
+      'monto', '3000.00', 'cuenta', '1010', 'medio', 'cheque', 'referencia', '5512', 'proyecto_id', 'casa-perez-k3m9',
+      'aplicaciones', jsonb_build_array(jsonb_build_object('proyecto_id', 'casa-perez-k3m9', 'monto', '3000.00'))));
+    perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'vol: depósito de verdad', 'fecha', (d + 6)::text,
+      'monto', '1000.00', 'cuenta', '1010', 'medio', 'zelle', 'proyecto_id', 'oficina-nch-7xq2',
+      'aplicaciones', jsonb_build_array(jsonb_build_object('proyecto_id', 'oficina-nch-7xq2', 'monto', '1000.00'))));
+  end loop;
+end $$;
 -- El reloj fingido cambió fn_fecha_miami: se vuelven a sellar las huellas
 -- de c2 (en producción nadie la cambia).
 select fn_libro_huellas_sellar('c4-volumen.sh: el reloj del banco en 2027-12-20') is not null;
+-- Lo que Edgar hace después de pegar c3 (README, paso 5): el puente pasa
+-- por lo que todavía no miró (los papeles de la semilla).
+do $$
+declare
+  r jsonb := fn_puentes_correr();
+begin
+  if (r->>'errores')::int <> 0 then
+    raise exception 'El puente dejó errores en el libro de volumen: %', r;
+  end if;
+end $$;
 analyze;
 SQL
 t1=$(date +%s.%N)
@@ -299,12 +364,42 @@ ctl "el Panel ($P, 9 vistas)" "$P" "array['v_saldos_dinero', 'v_flujo_real_por_m
 ctl "el Panel a hoy" "hoy" "null"
 ctl "los estados ($P, 4 vistas)" "$P" "array['v_balanza', 'v_balance_general', 'v_resultados', 'v_flujo_caja']"
 ctl "el año ($A, estados)" "$A" "array['v_balanza', 'v_balance_general', 'v_resultados', 'v_flujo_caja']"
-ctl "todas las vistas ($P)" "$P" "null"
+# (Sin lista, todas las vistas: el SQL Editor, sin el tope de 8 s de la API.)
+mide "todas las vistas ($P, SQL Editor, tope 60 s)" 60000 "set local statement_timeout = '60s'; select count(*) || ' filas, en rojo: ' || coalesce(string_agg(vista || coalesce(' (' || left(detalle, 80) || ')', ''), '; ') filter (where not ok), 'ninguna') from fn_estados_control('$P', null)"
 for x in "$P|null" "hoy|null" "$A|array['v_balanza', 'v_balance_general', 'v_resultados', 'v_flujo_caja']"; do
   revisa "fn_estados_control(${x%%|*}): nada en rojo" "ninguna" \
-    "$(ed -c "begin; $APP select coalesce(string_agg(vista, ', ') filter (where not ok), 'ninguna') from fn_estados_control('${x%%|*}', ${x#*|}); rollback;" 2>&1 | tail -n 1)"
+    "$(ed -c "begin; $APP set local statement_timeout = '60s'; select coalesce(string_agg(vista, ', ') filter (where not ok), 'ninguna') from fn_estados_control('${x%%|*}', ${x#*|}); rollback;" 2>&1 | tail -n 1)"
 done
+echo "== Volver a pegar c4-estados.sql sobre este libro, con el Panel pidiendo su control mientras (como la app, tope 8 s)"
+# El pegado tiene tomadas las vistas hasta que termina: el Panel pedido
+# mientras tanto espera y después corre lo suyo; con el resumen corto del
+# final, las dos cosas caben de sobra en los 8 s de la API (antes, con el
+# control entero dentro del pegado, el Panel se cortaba: 57014). Si el
+# Panel llega a tomar una vista antes que el pegado, el pegado se rinde
+# con 55P03 (el lock_timeout de medio segundo, ver c4-concurrencia.sh) y
+# se vuelve a pegar; el Panel no se corta en ningún caso.
+( t0=$(date +%s%N); ed -1 -v ON_ERROR_STOP=1 -f "$DOCS/c4-estados.sql" > "$TMP/repegado.out" 2>&1; rc=$?
+  t1=$(date +%s%N); echo "$rc $(( (t1 - t0) / 1000000 ))" > "$TMP/repegado.rc" ) &
+sleep 0.3
+ctl "el Panel, pedido durante el pegado" "$P" "array['v_saldos_dinero', 'v_flujo_real_por_mes', 'v_cxc_antiguedad', 'v_cxp_antiguedad', 'v_resultados', 'v_comparacion_resumen', 'v_gasto_por_categoria', 'v_gasto_por_proveedor', 'v_obras_dinero']"
+wait
+read rc ms < "$TMP/repegado.rc"
+if [ "$rc" -ne 0 ] && grep -q '55P03' "$TMP/repegado.out"; then
+  printf '  %-44s %6d ms  (se rindió: 55P03, el Panel ya leía; se vuelve a pegar)\n' "el pegado, con el Panel leyendo" "$ms"
+  t0=$(date +%s%N); ed -1 -v ON_ERROR_STOP=1 -f "$DOCS/c4-estados.sql" > "$TMP/repegado.out" 2>&1; rc=$?
+  t1=$(date +%s%N); ms=$(( (t1 - t0) / 1000000 ))
+fi
+revisa "el pegado entra" "0" "$rc"
+printf '  %-44s %6d ms\n' "el pegado entero" "$ms"
+# (el resumen del final: lo que el pegado tiene tomadas las vistas al terminar)
+mide "su resumen del final (tope 2 s)" 2000 "set local statement_timeout = '60s'; select count(*) || ' filas, en rojo: ' || coalesce(string_agg(vista, '; ') filter (where not ok), 'ninguna') from fn_estados_control('$P', array['v_estados_mapeo'])"
 revisa "el libro sigue sano (fn_verificar_cadena)" "ninguno" "$(ed -c "select coalesce(string_agg(control, ', '), 'ninguno') from fn_verificar_cadena() where not ok")"
+if [ "${SOLO_MEDIR:-0}" = "1" ]; then
+  # (Para medir cómo crece con el libro, p. ej. SOLO_MEDIR=1 ./c4-volumen.sh bd 1332:
+  # ≈ 20.000 asientos, sin las suites con los teléfonos.)
+  [ $malos -eq 0 ] && echo "VOLUMEN c4 ok (solo lo medido)" || echo "VOLUMEN c4 FALLA"
+  exit $malos
+fi
 
 cat > "$TMP/resumen.sql" <<'SQL'
 \o
@@ -337,7 +432,9 @@ con_telefonos() {
               values (-$n, 'vol-obra-01', 'recibos/telefono/$n.jpg', 12.34, 'Home Depot', 'leido', '$DUENO',
                       (fn_fecha_miami(now()) + time '12:00') at time zone 'America/New_York', fn_fecha_miami(now()), 'material',
                       'credito', '2009', 'TEL-$n');
-              select count(*) from asientos where origen_tabla = 'recibos' and origen_id = '-$n'; rollback;" 2>&1 \
+              select 'asientos=' || count(*) from asientos where origen_tabla = 'recibos' and origen_id = '-$n';
+              select 'puente=' || coalesce((select d.estado || ':' || coalesce(d.codigo, '-') from puente_documentos d
+                                             where d.tabla = 'recibos' and d.documento_id = '-$n'), '-'); rollback;" 2>&1 \
              | grep -v '^{"sub' | tr '\n' ' ')"
         t1=$(date +%s.%N)
         echo "$(python3 -c "print(round($t1 - $t0, 2))") s teléfono $tel subida $i → $r" >> "$TMP/telefono.log"
@@ -366,9 +463,16 @@ con_telefonos() {
        "el Panel: $(wc -l < "$TMP/panel.log") lecturas, la más lenta $(sort -rn "$TMP/panel.log" | head -n 1 | cut -d' ' -f1) s"
   revisa "$et corrió entero" "0" "$rc"
   revisa "$et: nada en rojo" "0" "$(grep -o 'fallan=[0-9]*' "$TMP/pruebas.out" | cut -d= -f2)"
-  grep -E '^ +[0-9]+ \| FALLA' "$TMP/pruebas.out" | cut -c1-300
+  # (ed() saca las filas sin alinear: «95|FALLA|…»)
+  grep -E '^ *[0-9]+ *\| *FALLA' "$TMP/pruebas.out" | cut -c1-400
   revisa "$et: ninguna subida cortada por el tope de 8 s" "0" "$(grep -ciE 'error|cancel' "$TMP/telefono.log")"
   revisa "$et: ninguna subida esperó 8 s o más" "0" "$(awk '$1 >= 8' "$TMP/telefono.log" | wc -l)"
+  # Cada ticket subido, con su asiento: un candado pedido al revés por las
+  # pruebas (la cadena y después el cajón de un recibo) hacía que Postgres
+  # cortara a uno de los dos, y el puente, que no tumba la subida, dejaba el
+  # recibo del teléfono en la bandeja («error:40P01»), sin asiento.
+  revisa "$et: cada subida con su asiento (ninguna en la bandeja)" "0" "$(grep -vc 'asientos=1' "$TMP/telefono.log")"
+  grep -v 'asientos=1' "$TMP/telefono.log" | head -n 3 | cut -c1-250
   revisa "$et: ninguna lectura del Panel cortada" "0" "$(grep -ciE 'error|cancel' "$TMP/panel.log")"
   grep -iE 'error|cancel' "$TMP/telefono.log" "$TMP/panel.log" | head -n 3 | cut -c1-250
 }
@@ -377,8 +481,11 @@ echo "== c4-pruebas sobre este libro mientras la app se usa (cuatro teléfonos, 
 con_telefonos "$DOCS/c4-pruebas.sql" "c4-pruebas (2026 abierto)"
 echo "== c3-pruebas sobre este libro, igual"
 con_telefonos "$DOCS/c3-pruebas.sql" "c3-pruebas"
-echo "== Con los meses de 2026 ya cerrados (el estado de 2027: enero es el mes abierto más antiguo)"
+echo "== Con los meses de 2026 ya cerrados (el estado de 2027: enero es el mes abierto más antiguo) y un ajuste del CPA a diciembre"
+# (El ajuste del CPA a diciembre fechado en febrero, como llegará: es un
+# «posterior» de enero y de febrero; c4-pruebas no puede tropezar con él.)
 ed -v ON_ERROR_STOP=1 -c "select count(fn_cerrar_periodo(p)) from unnest(array['2026-09-APERTURA', '2026-10', '2026-11', '2026-12']) p" \
+  -c "select fn_postear('{\"fecha\": \"2027-02-10\", \"tipo\": \"ajuste_cpa\", \"afecta_periodo\": \"2026-12\", \"motivo\": \"CPA: honorarios de diciembre devengados\", \"descripcion\": \"Ajuste del CPA a diciembre de 2026\", \"lineas\": [{\"cuenta\": \"6600\", \"monto\": \"1200.00\"}, {\"cuenta\": \"2050\", \"monto\": \"-1200.00\"}]}') is not null" \
   > "$TMP/cierre.out" 2>&1 || { cat "$TMP/cierre.out"; echo "FALLÓ el cierre de 2026" >&2; malos=1; }
 con_telefonos "$DOCS/c4-pruebas.sql" "c4-pruebas (2026 cerrado)"
 revisa "fn_estados_control(hoy) con 2026 cerrado: nada en rojo" "ninguna" \

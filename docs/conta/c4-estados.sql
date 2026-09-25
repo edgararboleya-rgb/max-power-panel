@@ -43,14 +43,16 @@
 --              fn_estados_linea, fn_estados_config, fn_apertura_mapeo_qb,
 --              fn_apertura_mapeo_trabajo, fn_apertura_balanza_cargar,
 --              fn_apertura_plan, fn_apertura_revisar, fn_apertura,
---              fn_comparacion_qb_cargar, fn_diferencia_anotar,
---              fn_diferencia_retirar (y sus ayudantes internos), y las
+--              fn_comparacion_qb_cargar, fn_comparacion_qb_retirar,
+--              fn_diferencia_anotar, fn_diferencia_retirar (y sus
+--              ayudantes internos), y las
 --              huellas de c4 (fn_estados_huellas, sellada al final de cada
 --              pegado). De la app: fn_estados_control (la única con grant a
 --              authenticated).
---   el JIT     apagado para el rol de la app en esta base («alter role
---              authenticated in database … set jit = off», 10): PostgREST lo
---              aplica en cada consulta, como su tope de 8 s.
+--   el JIT     apagado para el rol de la app («alter role authenticated
+--              set jit = off», 10: el rol entero, que es lo que PostgREST
+--              lee): PostgREST lo aplica en cada consulta, como su tope de
+--              8 s.
 --   NADA en el libro: ni triggers, ni índices, ni cambios en sus tablas.
 --   Las huellas de c2 no cambian y no hay que resellarlas; el control
 --   «permisos» de fn_verificar_cadena sigue en verde (lo mira: ninguna
@@ -62,19 +64,32 @@
 --   y se salta la RLS); una función, sin SECURITY DEFINER. Si no,
 --   fn_estados_control lo dice en rojo («protecciones de c4»).
 --
--- CAMBIOS A c2 Y c3: UNO, la forma de sus policies de lectura (las del
--- dueño): «using ((select es_dueno()))» en vez de «using (es_dueno())».
--- Dicen lo mismo, pero así Postgres llama a es_dueno() UNA vez por
--- consulta y no una por fila leída: con 10.000 asientos, el control del
--- Panel pasa de 6.4 s a 2.4 s. Para tenerla hay que volver a pegar
--- c2-libro.sql y c3-puentes.sql (antes o después de este archivo, da
--- igual: se pegan encima de sí mismos sin tocar el libro); sin volver a
--- pegarlos todo funciona igual, solo más lento. Las tablas de este archivo
--- ya la llevan, y los controles aceptan las dos formas. Y en c3 (ronda 3
--- de c4; ver su cabecera): «reintentar puente» ya no vuelve a planear lo
--- que no cambió (con el libro lleno pasaba de los 8 s de la API), y el
--- cobro de una factura de antes del corte que no cabe dice qué hacer con
--- la apertura ya en el libro.
+-- CAMBIOS A c2 Y c3: HAY QUE VOLVER A PEGARLOS (c2-libro.sql y después
+-- c3-puentes.sql; antes o después de este archivo, da igual: se pegan
+-- encima de sí mismos sin tocar el libro). No es solo velocidad: con los
+-- de producción del 24-sep, c2-pruebas y c3-pruebas salen en rojo y faltan
+-- arreglos de verdad. Lo que traen para c4:
+--   · la forma de sus policies de lectura (las del dueño): «using ((select
+--     es_dueno()))» en vez de «using (es_dueno())». Dicen lo mismo, pero
+--     Postgres llama a es_dueno() UNA vez por consulta y no una por fila
+--     leída: con 10.000 asientos, el control del Panel pasa de 6.4 s a
+--     2.4 s. Las tablas de este archivo ya la llevan;
+--   · c3 (ronda 3 de c4): «reintentar puente» ya no vuelve a planear lo que
+--     no cambió (con el libro lleno pasaba de los 8 s de la API), y el cobro
+--     de una factura de antes del corte que no cabe dice qué hacer con la
+--     apertura ya en el libro;
+--   · c2 (ronda 4 de c4): el control «permisos» ve también la función
+--     SECURITY DEFINER ajena que lee el libro con un join de coma o con un
+--     comentario en medio («from/**/asientos»), como «protecciones de c4»
+--     aquí;
+--   · c3 (ronda 4 de c4): una factura que la apertura trae con más por
+--     cobrar que su monto ya no dice «está dos veces» (solo la tiene la
+--     apertura: se corrige la apertura o el monto);
+--   · y la MARCA de su versión (fn_libro_version en c2, fn_puente_version
+--     en c3): este archivo la mira al pegarse (fila «c4 · c2 y c3 al día»)
+--     y fn_estados_control también, en «protecciones de c4»; con un c2 o un
+--     c3 viejo sale en rojo, con qué volver a pegar (con las policies de la
+--     forma vieja, también).
 --
 -- =====================================================================
 -- CÓMO SE LEEN LAS CIFRAS (lo mismo en todas las vistas)
@@ -174,20 +189,23 @@
 --   v_balance_general      a cada corte (también 'hoy'): cuentas de balance,
 --                          componentes del capital ('resultado' del año;
 --                          'resultado_apertura', lo de enero al día de la
---                          apertura según su balanza de QuickBooks, que pasa
---                          de utilidades retenidas al resultado del año, y
---                          en los años siguientes, mientras ese año no se
---                          cierre, a «ejercicios anteriores por cerrar»;
---                          'arrastre', 'por_cerrar', y 'plegado_3200' si el
---                          CPA lo pide), las reclasificaciones de
---                          presentación (los saldos contrarios van del otro
---                          lado: anticipos de clientes al pasivo, saldos a
---                          favor con proveedores y tarjetas al activo, un
---                          banco en rojo al pasivo como sobregiro, y toda
---                          otra cuenta de pasivo deudora al activo —2900 a
---                          «cuenta por cobrar al accionista», la nómina y
---                          los impuestos pagados de más— o de activo
---                          acreedora al pasivo),
+--                          apertura TAL COMO LO POSTEÓ fn_apertura —la línea
+--                          del resultado en 3900 de su asiento, no el mapeo
+--                          de QuickBooks de hoy—, que pasa de utilidades
+--                          retenidas al resultado del año, y en los años
+--                          siguientes, mientras ese año no se cierre, a
+--                          «ejercicios anteriores por cerrar»; 'arrastre',
+--                          'por_cerrar', y 'plegado_3200' si el CPA lo pide),
+--                          las reclasificaciones de presentación (los saldos
+--                          contrarios van del otro lado: anticipos de
+--                          clientes al pasivo, saldos a favor con proveedores
+--                          y tarjetas al activo, un banco en rojo al pasivo
+--                          como sobregiro, la caja chica en rojo al pasivo
+--                          como lo que es —efectivo que alguien adelantó, no
+--                          un sobregiro de un banco—, y toda otra cuenta de
+--                          pasivo deudora al activo —2900 a «cuenta por
+--                          cobrar al accionista», la nómina y los impuestos
+--                          pagados de más— o de activo acreedora al pasivo),
 --                          renglones, secciones y los totales total_activo,
 --                          total_pasivo, total_capital, pasivo_mas_capital y
 --                          cuadra (activo − pasivo − capital = 0.00, cuadra
@@ -209,17 +227,24 @@
 --                          secciones (operación, inversión, financiamiento,
 --                          ajustes y el bloque 'sin_dinero', que se revela
 --                          y NO suma: un activo con tarjeta o con préstamo,
---                          una distribución sin dinero, ASC 230), totales
---                          (efectivo_inicial, cambio, efectivo_final) y los
---                          'control': 'cuadra' (el cambio de cada método =
---                          el del efectivo = el del otro método) y
---                          'cuadra_<sección>' (cada sección igual en los dos
---                          métodos). importe en positivo = dinero que entra.
---                          El efectivo es el del balance (las cuentas en
---                          negro); lo que prestan las que están en rojo es
---                          financiamiento, «Sobregiro bancario». La
---                          apertura no es un flujo: en su período (y en su
---                          año) lo que trajo es el efectivo al inicio.
+--                          una distribución sin dinero, el préstamo del
+--                          accionista convertido en capital, ASC 230; las
+--                          dos patas de una misma transacción no se anulan
+--                          entre sí), totales (efectivo_inicial, cambio,
+--                          efectivo_final) y los 'control': 'cuadra' (el
+--                          cambio de cada método = el del efectivo = el del
+--                          otro método) y 'cuadra_<sección>' (cada sección
+--                          igual en los dos métodos). importe en positivo =
+--                          dinero que entra. El efectivo es el del balance
+--                          (las cuentas en negro); lo que prestan los
+--                          bancos que están en rojo es financiamiento,
+--                          «Sobregiro bancario», y lo que la caja chica en
+--                          rojo dice que alguien adelantó, su renglón
+--                          «caja_en_rojo». Un adelanto de efectivo de la
+--                          tarjeta es un préstamo (financiamiento), y su
+--                          pago también. La apertura no es un flujo: en su
+--                          período (y en su año) lo que trajo es el
+--                          efectivo al inicio.
 --   v_flujo_lineas         las piezas que explican el dinero, con su renglón
 --                          de cada método (la base de los dos flujos): la
 --                          línea que no es dinero, y sus reclasificaciones
@@ -236,11 +261,12 @@
 --                          ENTRÓ y SALIÓ de verdad de los bancos (el neto de
 --                          cada asiento; sin los pares error-reverso del
 --                          mes), neto, sobregiro (lo que prestan los bancos
---                          en rojo), efectivo_final (el del balance) y el
---                          neto por sección (operación, inversión,
---                          financiamiento, ajustes).
---   v_saldos_dinero        por corte, una por banco, tarjeta y línea de
---                          crédito (activa o con saldo): saldo en su lado
+--                          en rojo), caja_en_rojo (lo que la caja chica en
+--                          rojo dice que alguien adelantó), efectivo_final
+--                          (el del balance) y el neto por sección
+--                          (operación, inversión, financiamiento, ajustes).
+--   v_saldos_dinero        por corte, una por banco, caja, tarjeta y línea
+--                          de crédito (activa o con saldo): saldo en su lado
 --                          (lo que hay; lo que se debe), saldo_inicial,
 --                          cargos, abonos, ultimo_movimiento.
 --   v_cxc_antiguedad       por corte, una por partida abierta de cobrar
@@ -254,7 +280,9 @@
 --                          queda la retención). Un cobro parcial deja la
 --                          factura abierta por la diferencia; una nota de
 --                          crédito la cierra; un cheque devuelto la vuelve
---                          a abrir. El total, contra el mayor de 1110 +
+--                          a abrir. Lo que va sin factura (por obra) se
+--                          fecha por lo más viejo que sigue sin cobrar
+--                          (FIFO). El total, contra el mayor de 1110 +
 --                          1120 (cuadra).
 --   v_cxp_antiguedad       lo mismo de pagar (2010 y la retención a
 --                          subcontratistas, 2020), por partida o proveedor:
@@ -264,12 +292,21 @@
 --                          salió (fecha_origen); sin fecha, tramo
 --                          'apertura' (sin_fecha); vence (el de la balanza,
 --                          o por los términos del proveedor: Net 30, Net 10
---                          EOM, Net 10th Prox…) y dias_vencida; por_pagar en
---                          positivo; a_favor.
+--                          EOM, Net 10th Prox…) y dias_vencida (la
+--                          retención no vence por términos: se paga al
+--                          terminar la obra); por_pagar en positivo;
+--                          a_favor. Lo pagado sin partida (el cheque por el
+--                          statement) salda lo más viejo DEL MISMO
+--                          proveedor, papeles incluidos: esos papeles van
+--                          en la fila del proveedor, y «a favor» es por
+--                          proveedor y neto, como en el balance.
 --   v_gasto_lineas         una por línea de gasto (costo, gastos, otros
 --                          gastos) con su proveedor y de dónde salió (la
 --                          línea, el asiento, el papel; «varios» si el
---                          asiento tiene varios y no se puede repartir).
+--                          asiento tiene varios y no se puede repartir). El
+--                          del asiento, solo para lo que su deuda explica:
+--                          en un journal de nómina con la línea del seguro,
+--                          los sueldos no son de la aseguradora.
 --   v_gasto_por_categoria  por período, una por cuenta de gasto y el total:
 --                          mes, acumulado, pct.
 --   v_gasto_por_proveedor  por período, una por proveedor y el total.
@@ -296,20 +333,29 @@
 --                          la app.)
 -- QUICKBOOKS
 --   v_qb_balanzas          las filas de QuickBooks de cada período, con su
---                          cuenta del plan y su obra (vigente = la que vale;
---                          con_posteriores = la final del CPA; al = su
---                          fecha si es de una quincena; vivo = el asiento
---                          de la apertura sigue vivo). Las filas de control
---                          (Net Income, TOTAL ASSETS) no salen.
+--                          cuenta del plan y su obra (tipo: 'balanza', la
+--                          del mes, o 'por_obra', el complemento por
+--                          Customer:Job; vigente = la que vale de su tipo
+--                          —una retirada no vale—; con_posteriores = la
+--                          final del CPA; al = su fecha si es de una
+--                          quincena; vivo = el asiento de la apertura sigue
+--                          vivo). Las filas de control (Net Income, TOTAL
+--                          ASSETS, Total Liabilities…) no salen.
 --   v_comparacion          por período con balanza de QuickBooks, una por
 --                          cuenta (y una por cada nombre sin mapeo), con el
---                          libro cortado a la fecha de la balanza (al):
---                          arrastre_apertura, posteriores (si la balanza es
---                          la final), comparable, qb, diferencia, explicada,
---                          sin_explicar, ok; cada cifra con su «bajar».
---   v_comparacion_obra     lo mismo por obra, solo en las cuentas que la
---                          balanza del período trae por Customer:Job (con el
---                          arrastre de cada obra).
+--                          libro cortado a la fecha de la balanza (al) y
+--                          qué balanza es (documento; otra versión cargada
+--                          del período, con set c4.comparar_documento):
+--                          arrastre_apertura (a 3900 se le resta lo que la
+--                          apertura POSTEÓ como resultado), posteriores (si
+--                          la balanza es la final; en la apertura, siempre
+--                          sus ajustes a la apertura), comparable, qb,
+--                          diferencia, explicada, sin_explicar, ok; cada
+--                          cifra con su «bajar».
+--   v_comparacion_obra     lo mismo por obra, solo en las cuentas que el
+--                          período trae por Customer:Job (el complemento
+--                          'por_obra' si se cargó; si no, la balanza del
+--                          mes), con el arrastre de cada obra.
 --   v_comparacion_resumen  una por período: cuentas que cuadran, lo sin
 --                          explicar y la utilidad del libro contra la de
 --                          QuickBooks (acumulada y del mes), con su «bajar».
@@ -330,13 +376,17 @@
 --   estado = el del balance (si se piden los dos); mapeo completo;
 --   QuickBooks sin diferencias sin explicar, por cuenta y por obra; el
 --   dinero por obra; el efectivo del flujo (y el del Panel) = el del
---   balance; y SIEMPRE las protecciones de c4 (sus triggers, sus huellas,
---   sus permisos también por columna, el rastro de cada regla y cada
---   balanza, y lo ajeno que abra sus tablas a la API) y la apertura en el
---   libro (la de la balanza, viva y como entró). Con 'hoy', solo las
---   vistas por corte. Un nombre que no conoce, un nulo o la lista vacía:
---   una fila en rojo (orden 0). Cualquier ok = false: la pantalla no pinta
---   y dice cuál.
+--   balance; la caja chica no está en rojo (con el balance, el flujo o los
+--   saldos); y SIEMPRE las protecciones de c4 (sus triggers, sus huellas,
+--   sus permisos también por columna y todos los de su ACL —MAINTAIN, en
+--   17—, el rastro de cada regla y cada balanza, lo ajeno que abra sus
+--   tablas a la API, y c2 y c3 al día) y la apertura en el libro (la de
+--   la balanza, viva y como entró). Con 'hoy', solo las vistas por corte.
+--   Un nombre que no conoce, un nulo o la lista vacía: una fila en rojo
+--   (orden 0). Cualquier ok = false: la pantalla no pinta y dice cuál.
+--   conta.js pide SIEMPRE la lista de su pantalla: sin lista (todas las
+--   vistas) es para el SQL Editor, que no tiene el tope de 8 s de la API
+--   (con unos 20.000 asientos ya no cabría en él).
 --
 -- =====================================================================
 -- LA APERTURA, PASO A PASO (Edgar, en el SQL Editor, cuando llegue la
@@ -353,39 +403,70 @@
 --      factura, la retención por pagar (2020) por proveedor, cuentas por
 --      obra (cliente_trabajo). La fila TOTAL del reporte se aparta (no se
 --      suma) y dice si coincide. Y SU CONTROL, de su Balance Sheet: la fila
---      «Net Income» (la utilidad de enero a septiembre) y la fila «TOTAL
---      ASSETS»; se apartan (no se suman) y fn_apertura exige que el mapeo
---      dé lo mismo. Dice qué nombres no tienen mapeo todavía.
+--      «Net Income» (la utilidad de enero a septiembre), la fila «TOTAL
+--      ASSETS» y la fila «Total Liabilities» (y, si se quiere, «Total
+--      Equity» y «TOTAL LIABILITIES AND EQUITY»); se apartan (no se suman)
+--      y fn_apertura exige que el mapeo dé lo mismo: así una cuenta mapeada
+--      al lado equivocado —de resultados al balance, o una deuda a capital—
+--      no pasa. En estas filas «saldo» es la cifra como la enseña el
+--      Balance Sheet (su única columna): Net Income en positivo es
+--      utilidad; los totales, en positivo. Dice qué nombres no tienen mapeo
+--      todavía.
 --   3. Mapea cada nombre: fn_apertura_mapeo_qb('Opening Balance Equity', '3900');
 --      y cada Customer:Job: fn_apertura_mapeo_trabajo('Pérez, Juan:Casa Pérez', 'casa-perez-k3m9').
 --   4. Mírala: select * from fn_apertura_revisar('docs/apertura/…');
 --      Fila por fila de QuickBooks, a qué cuenta del plan va y de qué tipo
 --      (activo, costo…), para auditar el mapeo. Para en el primer problema,
 --      con su nombre (MX001 no cuadra o no amarra con su control, MX004 sin
---      mapeo, MX006 una fila que no va así, MX008 falta algo de la app).
+--      mapeo, MX006 una fila que no va así —también una factura con más
+--      por cobrar que su monto en la app—, MX008 falta algo de la app).
 --   5. Postéala: select fn_apertura('2026-09-30', 'docs/apertura/…');
 --      Otra vez con la misma balanza y el mismo mapeo: no hace nada. Con
 --      otra balanza, o con la misma y un mapeo corregido: dice qué cambia y
---      no toca nada; con el motivo, la sustituye. Si hay una apertura hecha
---      a mano viva, para (se reversa antes).
+--      no toca nada; con el motivo, la sustituye. OJO: el SQL Editor manda
+--      la pestaña entera en una transacción, y ese «no toca nada» es un
+--      error que deshace TODO lo pegado con él, también el mapeo corregido
+--      o la balanza cargada en esa pestaña: el mensaje trae el bloque a
+--      pegar junto (los mapeos que cambiaron y la línea con el motivo). La
+--      línea con el motivo, sola y sin nada que sustituir, para y lo dice
+--      (no responde «sin cambios» callada). Si hay una apertura hecha a
+--      mano viva, para (se reversa antes).
 --   6. Compárala: select * from v_comparacion where periodo = '2026-09-APERTURA';
---      todo en ok (la retención partida a 1120 ya viene anotada).
+--      todo en ok (la retención partida a 1120 ya viene anotada). Cerrada la
+--      apertura, lo que traía mal se corrige con un ajuste a la apertura
+--      (ajuste_cpa, afecta_periodo = la apertura): entra solo en su
+--      comparación, como «posteriores».
+--   Después del paralelo, un mapeo que cambia de clase (de resultados al
+--   balance, de pasivo a capital…) un nombre que la apertura viva usa NO
+--   cambia la apertura ni el balance (el resultado de enero a septiembre
+--   sale de lo posteado): fn_apertura_mapeo_qb lo avisa, y lo que estaba
+--   mal se corrige con fn_apertura y su motivo (abierta) o con un ajuste a
+--   la apertura (cerrada).
 -- LAS TRAMPAS DE QUICKBOOKS, y qué hace cada una:
 --   Opening Balance Equity y Retained Earnings: capital; se mapean (a 3900,
 --     salvo que el CPA diga otra cosa). Sin mapeo, para y lo dice.
 --   Net Income: no es una cuenta (ya está en las de resultados): es el
---     CONTROL de la balanza, con TOTAL ASSETS; se aparta al cargarla y la
---     utilidad que da el mapeo tiene que ser la suya. Un mapeo al lado
---     equivocado (material de enero a septiembre a una cuenta de balance)
---     para con MX001 y la fila que lo explica.
+--     CONTROL de la balanza, con TOTAL ASSETS y Total Liabilities; se
+--     aparta al cargarla y la utilidad que da el mapeo tiene que ser la
+--     suya. Un mapeo al lado equivocado (material de enero a septiembre a
+--     una cuenta de balance; el préstamo del accionista o el del camión a
+--     capital) para con MX001 y la fila que lo explica. Si el CPA
+--     reclasifica a propósito entre pasivo y capital, la apertura va como
+--     QuickBooks y la reclasificación se postea aparte, con su motivo.
+--     Con el control al revés (una utilidad en debe) lo dice así, y no
+--     culpa al mapeo.
 --   Las cuentas de resultados de enero a septiembre: a 3900, en una línea
 --     con su nota (utilidad, ingresos, costo, gastos).
 --   Undeposited Funds: cobros recibidos sin depositar; se mapean al banco
 --     (depósito en tránsito). Sin mapeo, para y lo dice.
 --   Subcuentas («Credit Cards:Amex 2009», «Chase  Chk 4392 »): el nombre se
---     casa sin mayúsculas ni espacios de sobra, ni alrededor de «:». Una
---     tarjeta que no esté en el plan (Amex 1007) se añade antes en c1. La
---     fila del grupo en 0 se salta.
+--     casa sin mayúsculas ni espacios de sobra, ni alrededor de «:». Las
+--     tarjetas ya están en el plan: «Amex Blue (2009)» es la 2100-2009 y
+--     «Amex Gold (1007)» es la 2100-2013 (en QuickBooks la Gold figura como
+--     1007: no es otra tarjeta, c1 y f06). Solo una tarjeta que de verdad
+--     no esté en el plan se añade antes en c1 (el error de una cuenta que
+--     no existe nombra las que ya tiene el grupo). La fila del grupo en 0
+--     se salta.
 --   Saldos negativos: en su columna con signo menos o entre paréntesis;
 --     saldo = debe − haber, y así entran (una tarjeta con saldo a favor, un
 --     banco sobregirado, un crédito del cliente).
@@ -436,26 +517,53 @@
 --     lo exige). La apertura no es un flujo: lo que trajo es el efectivo al
 --     inicio de su período y de su año. Lo que se
 --     mueve sin dinero (un activo con tarjeta o con préstamo, una
---     distribución a cuenta del accionista) se revela aparte y no suma (ASC
---     230); la venta de un activo sale entera en inversión (la ganancia se
---     resta de la utilidad en el indirecto); el pago de una tarjeta que
---     compró un activo, en inversión (sus cargos más viejos primero). Lo
---     que la empresa le presta al accionista (1130) es inversión.
+--     distribución a cuenta del accionista, el préstamo del accionista
+--     convertido en capital) se revela aparte y no suma (ASC 230-10-50-3 y
+--     50-4), con sus dos patas a la vista aunque sean de la misma sección
+--     (la que sube, en su renglón; la que la paga, en «su contrapartida»);
+--     solo el traspaso de la porción corriente de un préstamo a largo
+--     plazo (2530 → 2520) se queda neto: es la misma deuda. La venta de un
+--     activo sale entera en inversión (la ganancia se resta de la utilidad
+--     en el indirecto); el pago de una tarjeta que compró un activo, en
+--     inversión (sus cargos más viejos primero). Lo que la empresa le
+--     presta al accionista (1130) es inversión. El adelanto de efectivo de
+--     una tarjeta (la tarjeta pone dinero en el banco o en la caja) es un
+--     préstamo del emisor (ASC 230-10-45-14): financiamiento, y su pago
+--     también (por la misma cola de cargos de la tarjeta).
 --   · El balance no compensa saldos contrarios (ASC 210-20): un anticipo de
 --     un cliente es pasivo, un saldo a favor con un proveedor es activo, un
 --     banco en rojo es sobregiro (y en el flujo, financiamiento), un
 --     préstamo del accionista deudor es una cuenta por cobrar al accionista
 --     (Schedule L, renglón 7 y no 19), una nómina o un impuesto pagado de
 --     más es activo; se reclasifican al presentarlos, cada uno con su
---     «bajar», sin postear nada.
+--     «bajar», sin postear nada. La CAJA CHICA en rojo (estados_mapeo.caja)
+--     no es un sobregiro —ningún banco presta—: es efectivo que alguien
+--     adelantó y el libro no tiene (Edgar, 2900; un empleado, 2250), o un
+--     retiro del banco sin registrar. Va al pasivo con ese nombre, en el
+--     flujo en su propio renglón, y fn_estados_control lo dice en rojo
+--     hasta que se corrija con un asiento.
 --   · La antigüedad por la fecha del papel (factura, recibo); la de pagar
 --     dice además cuándo vence por los términos del proveedor. Lo que trajo
 --     la apertura se envejece con la fecha que trae la balanza, o se dice
---     sin fecha: no se inventa el 30-sep.
+--     sin fecha: no se inventa el 30-sep. Lo pagado sin partida (el cheque
+--     por el statement, un abono a mano) salda lo más viejo del MISMO
+--     proveedor, sus papeles incluidos (primero lo que va sin partida, la
+--     apertura; después los papeles por su fecha): los papeles que salda
+--     van en la fila del proveedor, con la fecha de lo más viejo que sigue
+--     sin pagar. Así «a favor» es por proveedor y neto, la misma regla del
+--     balance, y un recibo ya pagado no se ve abierto ni vencido. La
+--     retención no vence por términos: sin su vence en la balanza, vence y
+--     dias_vencida van nulos.
 --   · El proveedor de un gasto: el de la línea, el del asiento (su deuda en
 --     2010; con varios, el de la deuda del mismo monto, o «varios» si no se
 --     puede saber) o el del papel (el nombre del recibo casado con sus
---     alias); un recibo de tarjeta sin alta sale con su nombre escrito.
+--     alias); un recibo de tarjeta sin alta sale con su nombre escrito. El
+--     del asiento vale para todas sus líneas de gasto solo si el asiento es
+--     la factura de ese proveedor y lo demás que abona son medios de pago
+--     (el banco, la caja, una tarjeta, la línea de crédito, el bolsillo de
+--     Edgar o de un empleado); si abona otras cosas (un journal de nómina:
+--     sueldos por pagar, retenciones) o es un pago a él, solo la línea del
+--     mismo monto (y obra) que su deuda es suya.
 --   · El reembolso a un empleado (2250) sale en «Nómina», como la nómina:
 --     ASC 230-10-45-25 deja juntar los pagos a empleados y a proveedores, y
 --     nadie concilia ese renglón aparte.
@@ -489,47 +597,64 @@
 --   cobros parciales, tickets con dos tarjetas y su pago, recibos a cuenta
 --   de 40 proveedores y su pago con partida, trabajos externos de 10
 --   ayudantes, la nómina de cada semana con retenciones, statements
---   repartidos entre obras y gastos del banco: 10.324 asientos, 23.188
+--   repartidos entre obras, gastos del banco y tres depósitos de verdad
+--   que se parecen a los cobros de las pruebas: 10.333 asientos, 23.206
 --   líneas. Se lee el último mes (2027-12) y 'hoy', en ms (el banco es un
 --   contenedor: en Supabase las cifras serán otras, del mismo orden):
 --                                                  PG16    PG17.6
---     v_balanza                                     233       231
---     v_balanza_obra                                227       259
---     v_balance_general (el mes / hoy)          388/397   431/410
---     v_resultados                                  158       170
---     v_flujo_caja                                  270       310
---     v_flujo_real_por_mes (todos los meses)        433       499
---     v_saldos_dinero (hoy)                         200       136
---     v_cxc_antiguedad (hoy)                        169       184
---     v_cxp_antiguedad (hoy)                        210       260
---     v_gasto_por_categoria                         417       528
---     v_gasto_por_proveedor                         455       563
---     v_costo_por_obra                              413       461
---     v_obras_dinero (hoy)                          459       541
---     v_comparacion_resumen                         148       144
---     v_libro (el mes)                              103       118
---     v_mayor (1010, el mes)                         91       100
---     v_asiento_papel (el mes)                       72        75
---     fn_estados_control, el Panel (9 vistas)      2414      2944
---     fn_estados_control('hoy')                    1560      1651
---     fn_estados_control, los estados (4)          1268      1523
---     fn_estados_control, el año (4)               1575      1704
---     fn_estados_control, todas las vistas         4030      4746
---     c4-pruebas.sql entero, sobre ese libro      53,5 s    63,1 s
---       (con un teléfono subiendo un ticket cada segundo: ninguna subida
---       cortada; la que más esperó, 6,1 s y 7,4 s)
---   Todo bajo su tope (4 s cada vista, 8 s cada control), los cuadres en
+--     v_balanza                                     211       260
+--     v_balanza_obra                                249       307
+--     v_balance_general (el mes / hoy)          422/461   497/580
+--     v_resultados                                  194       208
+--     v_flujo_caja                                  358       405
+--     v_flujo_real_por_mes (todos los meses)        586       787
+--     v_saldos_dinero (hoy)                         152       159
+--     v_cxc_antiguedad (hoy)                        193       251
+--     v_cxp_antiguedad (hoy)                        284       373
+--     v_gasto_por_categoria                         427       488
+--     v_gasto_por_proveedor                         473       683
+--     v_costo_por_obra                              339       416
+--     v_obras_dinero (hoy)                          559       699
+--     v_comparacion_resumen                         217       265
+--     v_libro (el mes)                              123       140
+--     v_mayor (1010, el mes)                        139       177
+--     v_asiento_papel (el mes)                       83       108
+--     fn_estados_control, el Panel (9 vistas)      3196      3911
+--     fn_estados_control('hoy')                    2097      2360
+--     fn_estados_control, los estados (4)          1688      2118
+--     fn_estados_control, el año (4)               2127      2375
+--     fn_estados_control, todas las vistas         5316      5862
+--       (solo desde el SQL Editor, sin el tope de 8 s de la API)
+--     este archivo, pegado otra vez                 776       883
+--       su resumen del final                        307       372
+--       el Panel pedido mientras se pega           3560      4426
+--     c4-pruebas.sql entero, sobre ese libro     100,9 s   117,1 s
+--       (y con 2026 cerrado, 115,6 s y 132,2 s; las dos veces con cuatro
+--       teléfonos subiendo un ticket cada 0,25 s: ninguna subida cortada
+--       ni sin su asiento; la que más esperó, de 2,6 s a 3,4 s)
+--   Con el doble (c4-volumen.sh con 1332 por mes y SOLO_MEDIR=1: 20.553
+--   asientos, 45.401 líneas, unos dos años y medio a ese ritmo), en 17.6:
+--   cada vista bajo 1,3 s (la más lenta, v_gasto_por_proveedor, 1.257
+--   ms); el control del Panel 6.677 ms (7.449 ms pedido mientras se pega
+--   este archivo), 'hoy' 4.126, los estados 3.081, el año 4.325, y el de
+--   todas las vistas 10.224 ms (no cabría en los 8 s de la API: por eso
+--   la app pide siempre la lista de su pantalla, y el pegado solo el
+--   control corto); el pegado, 840 ms. Ver «LO QUE QUEDA ABIERTO».
+--   Todo bajo su tope (2 s cada vista, 8 s cada control), los cuadres en
 --   verde y fn_verificar_cadena también. Lo que pesaba y ya no: la policy
 --   del libro, «using (es_dueno())», llamaba a es_dueno() por cada fila
 --   leída (ahora «(select es_dueno())», una vez por consulta: el control
 --   del Panel de 6,4 s a 2,4 s); el compilador JIT de Postgres, que tarda
 --   más en compilar estas consultas que en correrlas (fn_estados_control
---   lo apaga para sí: el Panel de 4,4 s a 2,5 s, y este archivo se pega en
---   5 s y no en 26 con el libro lleno); v_gasto_lineas, que recorría
---   trabajos_externos por cada línea de gasto (la llave del join era una
---   expresión: ahora se calcula antes, y v_gasto_por_proveedor pasa de
---   4,2 s a 0,5 s); y v_flujo_real_por_mes, que leía el libro entero una
---   vez por cada mes (ahora una pasada).
+--   lo apaga para sí: el Panel de 4,4 s a 2,5 s, y este archivo se pegaba
+--   en 5 s y no en 26 con el libro lleno; y la app, por el ajuste de su
+--   rol, 10); el resumen del final de este pegado, que corría el control
+--   entero del mes y fn_verificar_cadena con las vistas tomadas (el Panel
+--   pedido mientras tanto esperaba y se cortaba a los 8 s: ahora el pegado
+--   entero tarda menos de 1 s); v_gasto_lineas, que recorría trabajos_externos por cada línea de
+--   gasto (la llave del join era una expresión: ahora se calcula antes, y
+--   v_gasto_por_proveedor pasa de 4,2 s a 0,5 s); y v_flujo_real_por_mes,
+--   que leía el libro entero una vez por cada mes (ahora una pasada).
 -- ÍNDICES: este archivo no añade ninguno al libro. Los que usan las vistas
 -- ya están (asientos por período, líneas por asiento, por cuenta, por
 -- partida, por obra y por tercero); los de sus propias tablas son sus
@@ -542,8 +667,9 @@
 -- =====================================================================
 --   · La apertura de verdad (fn_apertura, ya confirmada) deja fuera de
 --     juego las pruebas de c4-pruebas que postean una apertura de prueba
---     (29 a 36, 50, 51, 53, 56, 61, 62, 69, 73, 76, 81, 84 y 86: salen
---     «omitida»): se corren antes, recién pegado c4.
+--     (29 a 36, 50, 51, 53, 56, 61, 62, 69, 73, 76, 81, 84, 86, 91, 93, 94,
+--     98, 102, 105 y 107: salen «omitida»): se corren antes, recién pegado
+--     c4.
 --   · El flujo sigue por lo que compró el pago de una tarjeta que compró un
 --     activo (o una distribución), pero no un activo comprado a crédito de
 --     un proveedor (2010), ni la parte a tarjeta de un activo pagado en
@@ -551,31 +677,58 @@
 --     pasa, se reclasifica con un asiento, o se postea la compra en dos.
 --     (Un activo pagado en parte con un PRÉSTAMO en el mismo asiento sí:
 --     la parte del préstamo va a «sin dinero».)
---   · El compilador JIT: apagado para la app (el rol authenticated en esta
---     base, 10) y para fn_estados_control y c4-pruebas. Cambiar el rol pide
---     ser su dueño o tener ADMIN sobre él (en Supabase, el SQL Editor lo
---     es): si el pegado no pudo, lo dice con un WARNING, la fila «c4 · jit»
---     del final sale en false y la prueba 88 de c4-pruebas en rojo; se
---     arregla pegando esa sentencia como dueño. Con el JIT del servidor, la
---     gráfica del Panel pasaba de 2 s con el libro lleno, casi todo
---     compilando.
---   · c4-pruebas con el libro lleno tarda algo más de un minuto; ninguna
---     de sus subtransacciones tiene el libro más de 2 o 3 s (la 25 y la 37
---     van por período y por grupo de vistas), pero mientras corre una
---     subida de la app puede esperar eso: mejor correrla sin nadie usando
---     la app. (c4-volumen.sh la corre con cuatro teléfonos subiendo un
---     ticket cada 0,25 s, con 2026 abierto y cerrado, y falla si alguna
---     subida se corta o espera 8 s.)
+--   · El compilador JIT: apagado para la app (el rol authenticated, para
+--     todas las bases: es lo que PostgREST lee, 10) y para
+--     fn_estados_control y c4-pruebas. Cambiar el rol pide ser su dueño o
+--     tener ADMIN sobre él (en Supabase, el SQL Editor lo es): si el pegado
+--     no pudo, lo dice con un WARNING, la fila «c4 · jit» del final sale en
+--     false y la prueba 88 de c4-pruebas en rojo; se arregla pegando esa
+--     sentencia como dueño. Con el JIT del servidor, la gráfica del Panel
+--     pasaba de 2 s con el libro lleno, casi todo compilando.
+--   · c4-pruebas con el libro lleno tarda cerca de dos minutos (algo más en
+--     17.6); ninguna de sus subtransacciones tiene el libro más de unos
+--     3 s (la 25 y la 37 van por período y por grupo de vistas), y pide
+--     los candados en el orden de la app (los de los recibos, periodos y la
+--     cadena), así que una subida de la app puede esperar eso pero no se
+--     cruza con ella: mejor correrla sin nadie usando la app. (c4-volumen.sh
+--     la corre con cuatro teléfonos subiendo un ticket cada 0,25 s, con
+--     2026 abierto y cerrado, y falla si alguna subida se corta, espera
+--     8 s o se queda sin su asiento.)
 --   · El contrato y el presupuesto de cada obra viven en la app
 --     (finanzas_proyecto, estimados): la pantalla los pone al lado de
 --     v_obras_dinero.
 --   · La conciliación de bancos y tarjetas (f06), la nómina (f11) y el WIP
 --     (f13-14) llenan sus renglones cuando lleguen: las vistas ya los
 --     tienen.
+--   · PEGAR ESTE ARCHIVO CON EL TABLERO CERRADO. El pegado rehace las
+--     vistas (las toma un instante enteras) y la app las lee en otro orden:
+--     con una pantalla leyendo, Postgres cortaba a uno de los dos (40P01,
+--     «deadlock detected»). Ahora el pegado espera un candado como mucho
+--     medio segundo (lock_timeout, la primera sentencia): si el tablero lo
+--     tiene, el pegado para con 55P03 («lock timeout»), no se aplica nada y
+--     basta volver a pegarlo, sin cortar a nadie; y ya no pide el candado
+--     entero de sus tablas cuando no hace falta (la RLS, su policy y sus
+--     columnas ya están). Su resumen del final es corto (lo de c4 y el
+--     control de la apertura y las protecciones): el control completo del
+--     mes se corre aparte, en otra pestaña.
+--   · El volumen: todo recorre el libro entero en cada lectura (los saldos
+--     de balance necesitan toda su historia), y el tiempo crece con toda la
+--     historia, no con el período pedido. Con 10.000 asientos, todo bajo
+--     su tope; con 20.553 (dos años y medio al ritmo de c4-volumen.sh;
+--     medido en 17.6, ver «ÍNDICES Y TIEMPOS»), el control de TODAS las
+--     vistas tarda 10 s y ya no cabe en los 8 s de la API (en el SQL
+--     Editor sí), y el del Panel 6,7 s: cerca. Por eso conta.js pide
+--     siempre la lista de su pantalla (nunca el control sin lista), y el
+--     pegado solo el control corto. Antes de llegar ahí (≈ 2029) se decide
+--     entre el índice por fecha en asientos (toca las huellas de c2) y los
+--     saldos por mes precalculados de todo lo cerrado (f08, con el
+--     cierre): «SOLO_MEDIR=1 ./c4-volumen.sh bd 1332» mide ese volumen, y
+--     el de siempre (666 por mes) sigue en c4-volumen.sh.
 --
 -- LOS ERRORES CON NOMBRE de este archivo (los de c2 y c3 siguen igual):
 --   MX000 falta lo que el archivo da por hecho (no se aplica nada)
---   MX001 la balanza de QuickBooks no cuadra
+--   MX001 la balanza de QuickBooks no cuadra, o no amarra con su control
+--         (Net Income, TOTAL ASSETS, Total Liabilities…), o le falta
 --   MX002 la apertura va fechada el día de la apertura; no hay apertura
 --   MX003 lo importado o anotado no se edita, no se borra, no crece y no se
 --         vacía (se carga otro, se retira); las reglas y los mapeos no se
@@ -584,16 +737,25 @@
 --         inactiva; una cuenta que no existe
 --   MX005 un monto que no es monto o con más de dos decimales
 --   MX006 una fila o un mapeo que no puede ir así (sección, signo, obra,
---         factura, retención)
+--         factura, retención; una factura con más por cobrar que su monto)
 --   MX007 la apertura ya está con otra balanza o con otro mapeo (dice qué
---         cambia; con motivo, la sustituye); ya hay una apertura a mano; la
---         balanza cambió desde que entró (su huella)
+--         cambia y qué pegar junto; con motivo, la sustituye); con motivo y
+--         nada que sustituir; ya hay una apertura a mano; la balanza cambió
+--         desde que entró (su huella)
 --   MX008 falta algo de la app: la factura (por su id o su número), el
 --         proveedor, el recibo, el trabajo externo, la obra, el
 --         Customer:Job, la balanza; un número de factura que está en dos
 --         obras sin decir cuál
+--   55P03 (de Postgres, «lock timeout») el tablero estaba leyendo mientras
+--         se pegaba este archivo: no se aplicó nada, se vuelve a pegar
 --   42501 no es el dueño
 -- =====================================================================
+-- (Lo primero: el pegado espera un candado como mucho medio segundo. Con
+-- el tablero leyendo, para con 55P03 y se vuelve a pegar; sin esto,
+-- Postgres cortaba al tablero o al pegado con 40P01 —ver «LO QUE QUEDA
+-- ABIERTO»—. Menos que deadlock_timeout, 1 s: así nunca llega a cortar a
+-- nadie. Dura lo que dura el pegado, una transacción.)
+set local lock_timeout = '500ms';
 
 
 -- =====================================================================
@@ -615,8 +777,9 @@
 -- no tiene que resellarlas, y fn_verificar_cadena sigue en verde después
 -- de pegarlo (su control permisos sí mira las vistas y funciones de aquí:
 -- todas son security_invoker, y ninguna SECURITY DEFINER lee el libro).
--- Fuera de sus tablas solo cambia un ajuste del rol de la app en esta
--- base (jit = off, 10). Sus propias huellas (7.7) se sellan al final.
+-- Fuera de sus tablas solo cambia un ajuste del rol de la app (jit = off,
+-- para el rol entero: es lo que PostgREST lee, 10). Sus propias huellas
+-- (7.7) se sellan al final.
 -- =====================================================================
 -- Lo ajeno que depende de las vistas de este archivo (vistas o funciones
 -- de otro, sobre v_libro u otra de c4), o nulo si no hay: al volver a
@@ -751,6 +914,27 @@ end $$;
 -- versión.
 -- =====================================================================
 
+-- Una columna que una versión nueva de este archivo añade a su tabla, solo
+-- si falta. «alter table … add column if not exists» pide el candado
+-- ENTERO de la tabla aunque la columna ya esté, y con el tablero leyendo
+-- ese candado cruzaba al pegado con la app (40P01): mirándolo antes, un
+-- pegado encima de sí mismo no lo pide. Solo del SQL Editor.
+create or replace function public.fn_estados_columna(p_tabla text, p_columna text, p_definicion text)
+returns boolean
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if exists (select 1 from pg_attribute a
+              where a.attrelid = to_regclass('public.' || p_tabla) and a.attname = p_columna and a.attnum > 0
+                and not a.attisdropped) then
+    return false;
+  end if;
+  execute format('alter table public.%I add column %I %s', p_tabla, p_columna, p_definicion);
+  return true;
+end $$;
+revoke execute on function public.fn_estados_columna(text, text, text) from public, anon, authenticated, service_role;
+
 -- ---------------------------------------------------------------------
 -- 1.1 · estados_historial — el rastro de todo lo de este archivo que se
 -- puede cambiar: las líneas de los estados y sus etiquetas, el mapeo de
@@ -868,6 +1052,18 @@ create table if not exists public.estados_mapeo (
   constraint estados_mapeo_etiquetas check (coalesce(btrim(etiqueta_es), '-') <> '' and coalesce(btrim(etiqueta_en), '-') <> ''),
   constraint estados_mapeo_linea_fk  foreign key (estado, seccion, linea) references public.estados_lineas (estado, seccion, linea)
 );
+-- caja: la cuenta de efectivo es DINERO EN LA MANO (la caja chica, 1050),
+-- no un banco. Un banco en rojo es un sobregiro (el banco presta); una caja
+-- en rojo no la presta nadie: es efectivo que alguien adelantó y el libro
+-- no tiene (Edgar, 2900; un empleado, 2250), o un retiro del banco sin
+-- registrar. El balance la pasa al pasivo con ese nombre (no como
+-- «Sobregiro bancario»), el flujo le da su renglón y fn_estados_control lo
+-- dice en rojo. Solo con efectivo (la guarda de 1.6). Lo propuesto: la
+-- 1050, o una cuenta de efectivo que diga «caja» en su nombre.
+do $$
+begin
+  perform public.fn_estados_columna('estados_mapeo', 'caja', 'boolean not null default false');
+end $$;
 
 -- ---------------------------------------------------------------------
 -- 1.4 · estados_config — lo que el CPA decide de la presentación. Hoy una
@@ -991,25 +1187,35 @@ create table if not exists public.apertura_balanza_qb (
 --   factura_num      el número de la factura como lo trae el A/R Aging de
 --                    QuickBooks («1095»): fn_apertura_balanza_cargar busca
 --                    con él la factura de la app y pone su factura_id.
-alter table public.apertura_balanza_qb add column if not exists fecha_documento date;
-alter table public.apertura_balanza_qb add column if not exists vence date;
-alter table public.apertura_balanza_qb add column if not exists factura_num text;
 -- control: la fila no es una cuenta sino un CONTROL que QuickBooks da
 -- aparte, sacado de su Balance Sheet al 30-sep: 'utilidad' = «Net Income»
--- (la utilidad de enero a septiembre; la misma del Profit and Loss) y
--- 'activo' = «TOTAL ASSETS». No se suman a la balanza ni se postean:
--- fn_apertura_plan compara con ellas lo que da el mapeo, y para si no
--- coinciden. Sin ellas, la apertura se comparaba contra la MISMA balanza
--- pasada por el MISMO mapeo (cuadraba siempre): una cuenta de resultados
--- mapeada al balance («Job Materials» a 1300, bodega) metía 210,000 de
--- inventario que no existe y todo salía en verde.
-alter table public.apertura_balanza_qb add column if not exists control text;
+-- (la utilidad de enero a septiembre; la misma del Profit and Loss),
+-- 'activo' = «TOTAL ASSETS», 'pasivo' = «Total Liabilities» y, si vienen,
+-- 'capital' = «Total Equity» y 'pasivo_capital' = «TOTAL LIABILITIES AND
+-- EQUITY». No se suman a la balanza ni se postean: fn_apertura_plan
+-- compara con ellas lo que da el mapeo, y para si no coinciden. Sin
+-- ellas, la apertura se comparaba contra la MISMA balanza pasada por el
+-- MISMO mapeo (cuadraba siempre): una cuenta de resultados mapeada al
+-- balance («Job Materials» a 1300, bodega) metía 210,000 de inventario que
+-- no existe y todo salía en verde. Y con solo la utilidad y el activo, una
+-- deuda mapeada a capital (el préstamo del accionista a 3100, el del
+-- camión a 3900) no movía ninguno de los dos: pasaba en verde, con el
+-- pasivo en 0.
 do $$
 begin
+  perform public.fn_estados_columna('apertura_balanza_qb', 'fecha_documento', 'date');
+  perform public.fn_estados_columna('apertura_balanza_qb', 'vence', 'date');
+  perform public.fn_estados_columna('apertura_balanza_qb', 'factura_num', 'text');
+  perform public.fn_estados_columna('apertura_balanza_qb', 'control', 'text');
+  -- (La restricción de los controles, rehecha solo si no es la de hoy: con
+  -- la de antes no entraban el pasivo y el capital.)
   if not exists (select 1 from pg_constraint
-                  where conrelid = 'public.apertura_balanza_qb'::regclass and conname = 'apertura_balanza_qb_control') then
+                  where conrelid = 'public.apertura_balanza_qb'::regclass and conname = 'apertura_balanza_qb_control'
+                    and pg_get_constraintdef(oid) like '%pasivo_capital%') then
+    alter table public.apertura_balanza_qb drop constraint if exists apertura_balanza_qb_control;
     alter table public.apertura_balanza_qb
-      add constraint apertura_balanza_qb_control check (control is null or control in ('utilidad', 'activo'));
+      add constraint apertura_balanza_qb_control
+      check (control is null or control in ('utilidad', 'activo', 'pasivo', 'capital', 'pasivo_capital'));
   end if;
 end $$;
 
@@ -1053,11 +1259,39 @@ create table if not exists public.comparacion_qb (
 -- fechados después que corrigen hasta ese período. La preliminar no. Lo
 -- marca fn_comparacion_qb_cargar(…, true); las cargadas antes de esta
 -- versión, false.
-alter table public.comparacion_qb add column if not exists con_posteriores boolean not null default false;
 -- al: la FECHA de la balanza, si no es la del cierre del período (f13-14
 -- compara la de cada quincena: la del 15-dic): v_comparacion corta el
 -- libro a esa fecha. Nula = el último día del período (lo de siempre).
-alter table public.comparacion_qb add column if not exists al date;
+-- tipo: 'balanza' (la del mes, la de siempre: de ella sale v_comparacion)
+-- o 'por_obra' (el COMPLEMENTO por Customer:Job: el «Profit and Loss by
+-- Customer», que es lo único por obra que exporta QuickBooks; alimenta
+-- v_comparacion_obra y no compite con la balanza del mes: antes, cargado
+-- como otra balanza del mes, pasaba a ser «la vigente» y todas las cuentas
+-- de balance salían en rojo). Vale la más reciente DE CADA TIPO.
+-- retirada_el, retirada_por, retirada_motivo: una carga equivocada (en el
+-- período que no era, una quincena cargada después del cierre, el P&L
+-- cargado como balanza) se RETIRA con su motivo (fn_comparacion_qb_retirar):
+-- no se borra, queda como rastro, y ya no vale. Antes no había cómo
+-- deshacerla (no se borra, y la buena ya estaba cargada con su nombre).
+do $$
+begin
+  perform public.fn_estados_columna('comparacion_qb', 'con_posteriores', 'boolean not null default false');
+  perform public.fn_estados_columna('comparacion_qb', 'al', 'date');
+  perform public.fn_estados_columna('comparacion_qb', 'tipo', 'text not null default ''balanza''');
+  perform public.fn_estados_columna('comparacion_qb', 'retirada_el', 'timestamptz');
+  perform public.fn_estados_columna('comparacion_qb', 'retirada_por', 'uuid');
+  perform public.fn_estados_columna('comparacion_qb', 'retirada_motivo', 'text');
+  if not exists (select 1 from pg_constraint
+                  where conrelid = 'public.comparacion_qb'::regclass and conname = 'comparacion_qb_tipo') then
+    alter table public.comparacion_qb add constraint comparacion_qb_tipo check (tipo in ('balanza', 'por_obra'));
+  end if;
+  if not exists (select 1 from pg_constraint
+                  where conrelid = 'public.comparacion_qb'::regclass and conname = 'comparacion_qb_retiro') then
+    alter table public.comparacion_qb
+      add constraint comparacion_qb_retiro
+      check ((retirada_el is null) = (retirada_motivo is null) and (retirada_motivo is null or btrim(retirada_motivo) <> ''));
+  end if;
+end $$;
 
 -- diferencias — lo que el libro y QuickBooks no dicen igual, EXPLICADO:
 -- período, cuenta (y obra si la diferencia es de una obra), monto (libro −
@@ -1171,11 +1405,13 @@ begin
                        '(estados_historial); un TRUNCATE las borraría todas sin una. Una regla se cambia con su función '
                        '(fn_estados_mapeo, fn_estados_linea, fn_estados_config, fn_apertura_mapeo_qb).', tg_table_name);
   end if;
-  if tg_table_name = 'diferencias' and tg_op = 'UPDATE' then
-    if (to_jsonb(new) - array['retirada_el', 'retirada_por', 'retirada_motivo'])
-         = (to_jsonb(old) - array['retirada_el', 'retirada_por', 'retirada_motivo'])
+  if tg_table_name in ('diferencias', 'comparacion_qb') and tg_op = 'UPDATE' then
+    -- (clave y cliente_clave, de comparacion_qb, son columnas generadas: en
+    -- un trigger BEFORE todavía no están calculadas, y no cuentan.)
+    if (to_jsonb(new) - array['retirada_el', 'retirada_por', 'retirada_motivo', 'clave', 'cliente_clave'])
+         = (to_jsonb(old) - array['retirada_el', 'retirada_por', 'retirada_motivo', 'clave', 'cliente_clave'])
        and to_jsonb(old)->>'retirada_el' is null and to_jsonb(new)->>'retirada_el' is not null then
-      return new;  -- retirarla (fn_diferencia_retirar): lo único que se le hace
+      return new;  -- retirarla (fn_diferencia_retirar, fn_comparacion_qb_retirar): lo único que se le hace
     end if;
   end if;
   raise exception using errcode = 'MX003',
@@ -1183,7 +1419,8 @@ begin
                      case tg_table_name
                        when 'estados_historial' then 'es el rastro de cada cambio a los estados.'
                        when 'comparacion_qb' then 'una balanza de QuickBooks cargada es un papel. Si estaba mal, se carga la '
-                                                  'buena con otro documento (fn_comparacion_qb_cargar): vale la más reciente.'
+                                                  'buena con otro documento (fn_comparacion_qb_cargar: vale la más reciente de '
+                                                  'su tipo), o se retira con su motivo (fn_comparacion_qb_retirar) y queda.'
                        when 'diferencias' then 'una diferencia anotada se retira con su motivo (fn_diferencia_retirar) y se '
                                                'anota la buena; queda el rastro de las dos.'
                        else 'es rastro.' end);
@@ -1207,7 +1444,23 @@ language plpgsql
 set search_path = public, pg_temp
 as $$
 begin
-  if tg_table_name in ('comparacion_qb', 'apertura_balanza_qb') then
+  if tg_table_name = 'comparacion_qb' then
+    if tg_op = 'UPDATE' then
+      -- (Retirarla: quién y cuándo, de la base.)
+      if old.retirada_el is null and new.retirada_el is not null then
+        new.retirada_el  := clock_timestamp();
+        new.retirada_por := auth.uid();
+      end if;
+    else
+      if new.retirada_el is not null or new.retirada_por is not null or new.retirada_motivo is not null then
+        raise exception using errcode = 'MX003',
+          message = 'Una balanza de QuickBooks se carga vigente y se retira después, con su motivo (fn_comparacion_qb_retirar).';
+      end if;
+      new.cargado_por := auth.uid();
+      new.cargado_rol := fn_rol_llamante();
+      new.cargado_el  := clock_timestamp();
+    end if;
+  elsif tg_table_name = 'apertura_balanza_qb' then
     new.cargado_por := auth.uid();
     new.cargado_rol := fn_rol_llamante();
     new.cargado_el  := clock_timestamp();
@@ -1323,6 +1576,12 @@ begin
     raise exception using errcode = 'MX006',
       message = format('La cuenta %s no puede ser efectivo: el dinero es un activo circulante de saldo deudor.', v_c.codigo);
   end if;
+  -- Una caja es efectivo (dinero en la mano): la marca va solo con él.
+  if new.caja and not new.efectivo then
+    raise exception using errcode = 'MX006',
+      message = format('La cuenta %s no es efectivo: no puede ser caja (la caja es el efectivo en la mano, como la 1050).',
+                       v_c.codigo);
+  end if;
   if new.efectivo <> (new.flujo_directo = 'efectivo') or new.efectivo <> (new.flujo_indirecto = 'efectivo') then
     raise exception using errcode = 'MX006',
       message = format('La cuenta %s: efectivo = %s va con flujo_directo y flujo_indirecto = ''efectivo'' (y solo ella).',
@@ -1413,7 +1672,7 @@ create or replace trigger trg_diferencias_historial
   for each row execute function public.fn_estados_historial('periodo', 'cuenta', 'id');
 -- Quién y cuándo, de la base (ver fn_estados_quien).
 create or replace trigger trg_comparacion_qb_quien
-  before insert on public.comparacion_qb
+  before insert or update on public.comparacion_qb
   for each row execute function public.fn_estados_quien();
 create or replace trigger trg_apertura_balanza_quien
   before insert on public.apertura_balanza_qb
@@ -1571,7 +1830,13 @@ declare
 begin
   foreach t in array array['estados_historial', 'estados_lineas', 'estados_mapeo', 'estados_config', 'apertura_mapeo_qb',
                            'apertura_balanza_qb', 'comparacion_qb', 'diferencias'] loop
-    execute format('alter table public.%I enable row level security', t);
+    -- (La RLS y la policy piden el candado ENTERO de la tabla aunque ya
+    -- estén como deben: solo si hace falta. Con el tablero leyendo, ese
+    -- candado cruzaba al pegado con la app: 40P01. «revoke» y «grant» no
+    -- lo piden.)
+    if not (select c.relrowsecurity from pg_class c where c.oid = ('public.' || t)::regclass) then
+      execute format('alter table public.%I enable row level security', t);
+    end if;
     execute format('revoke all on public.%I from public, anon, authenticated, service_role', t);
     select string_agg(quote_ident(a.attname), ', ' order by a.attnum) into v_cols
       from pg_attribute a
@@ -1597,10 +1862,16 @@ begin
               where pl.schemaname = 'public' and pl.tablename = t and pl.policyname <> t || '_dueno' loop
       execute format('drop policy %I on public.%I', p.policyname, t);
     end loop;
-    execute format('drop policy if exists %I on public.%I', t || '_dueno', t);
     -- «(select es_dueno())»: una vez por consulta, no por fila (como el
-    -- libro en c2 y los puentes en c3).
-    execute format('create policy %I on public.%I for select to authenticated using ((select es_dueno()))', t || '_dueno', t);
+    -- libro en c2 y los puentes en c3). Se rehace solo si no es esa.
+    if not exists (select 1 from pg_policies pl
+                    where pl.schemaname = 'public' and pl.tablename = t and pl.policyname = t || '_dueno'
+                      and pl.cmd = 'SELECT' and pl.roles = '{authenticated}' and pl.permissive = 'PERMISSIVE'
+                      and pl.with_check is null
+                      and regexp_replace(pl.qual, '[[:space:]]', '', 'g') = '(SELECTes_dueno()ASes_dueno)') then
+      execute format('drop policy if exists %I on public.%I', t || '_dueno', t);
+      execute format('create policy %I on public.%I for select to authenticated using ((select es_dueno()))', t || '_dueno', t);
+    end if;
   end loop;
 end $$;
 -- =====================================================================
@@ -1668,7 +1939,9 @@ select c.codigo as cuenta,
                                then 'debe' else 'haber' end) as contra,
        d.r[3] = 'efectivo' as efectivo,
        d.r[3] as flujo_directo,
-       d.r[4] as flujo_indirecto
+       d.r[4] as flujo_indirecto,
+       -- (la caja: el efectivo en la mano, la 1050 o una que diga «caja»)
+       d.r[3] = 'efectivo' and (c.codigo = '1050' or lower(c.nombre) ~ '(^|[^[:alpha:]])caja([^[:alpha:]]|$)') as caja
   from public.cuentas c
   cross join lateral (select jsonb_path_query_first(to_jsonb(c), 'strict $.saldo_normal') #>> '{}' as saldo_normal) cn
   cross join lateral (
@@ -1764,7 +2037,8 @@ select p.cuenta,
        coalesce(ll.etiqueta_es, coalesce(m.linea, p.linea)) as linea_es,
        coalesce(ll.etiqueta_en, coalesce(m.linea, p.linea)) as linea_en,
        case when coalesce(m.efectivo, p.efectivo) then 'efectivo' else fd.seccion end as flujo_directo_seccion,
-       case when coalesce(m.efectivo, p.efectivo) then 'efectivo' else fi.seccion end as flujo_indirecto_seccion
+       case when coalesce(m.efectivo, p.efectivo) then 'efectivo' else fi.seccion end as flujo_indirecto_seccion,
+       coalesce(m.caja, p.caja)                             as caja
   from public.v_estados_mapeo_propuesto p
   left join public.estados_mapeo m on m.cuenta = p.cuenta
   left join public.estados_lineas ls
@@ -1800,8 +2074,9 @@ declare
 begin
   perform fn_estados_exigir_dueno();
   with ins as (
-    insert into estados_mapeo (cuenta, estado, seccion, linea, orden, signo, contra, efectivo, flujo_directo, flujo_indirecto)
-    select p.cuenta, p.estado, p.seccion, p.linea, p.orden, p.signo, p.contra, p.efectivo, p.flujo_directo, p.flujo_indirecto
+    insert into estados_mapeo (cuenta, estado, seccion, linea, orden, signo, contra, efectivo, flujo_directo, flujo_indirecto, caja)
+    select p.cuenta, p.estado, p.seccion, p.linea, p.orden, p.signo, p.contra, p.efectivo, p.flujo_directo, p.flujo_indirecto,
+           p.caja
       from v_estados_mapeo_propuesto p
      where not exists (select 1 from estados_mapeo m where m.cuenta = p.cuenta)
      order by p.cuenta
@@ -1850,6 +2125,7 @@ begin
     ('balance', 'otros_activos',      'otros_activos_varios',     330, 'Otros activos',                                       'Other assets'),
     ('balance', 'pasivo_circulante',  'pasivo_circulante',        400, 'Pasivo circulante',                                   'Current liabilities'),
     ('balance', 'pasivo_circulante',  'sobregiro_bancario',       405, 'Sobregiro bancario',                                  'Bank overdraft'),
+    ('balance', 'pasivo_circulante',  'caja_en_rojo',             406, 'Caja chica en rojo: efectivo que alguien adelantó (por corregir)', 'Negative petty cash: cash advanced by someone (to be corrected)'),
     ('balance', 'pasivo_circulante',  'cuentas_por_pagar',        410, 'Cuentas por pagar',                                   'Accounts payable'),
     ('balance', 'pasivo_circulante',  'anticipos_clientes',       415, 'Anticipos y saldos a favor de clientes',              'Customer deposits and credit balances'),
     ('balance', 'pasivo_circulante',  'retencion_por_pagar',      420, 'Retención por pagar a subcontratistas',               'Retainage payable'),
@@ -1905,6 +2181,7 @@ begin
     ('flujo_directo', 'financiamiento', 'prestamos',              310, 'Préstamos',                                           'Loans'),
     ('flujo_directo', 'financiamiento', 'dueno',                  320, 'Accionista: aportaciones, préstamos recibidos y distribuciones', 'Shareholder: contributions, loans received and distributions'),
     ('flujo_directo', 'financiamiento', 'sobregiro',              330, 'Sobregiro bancario (cambio neto)',                    'Bank overdraft (net change)'),
+    ('flujo_directo', 'financiamiento', 'caja_en_rojo',           335, 'Caja chica en rojo: efectivo que alguien adelantó (cambio neto; por corregir)', 'Negative petty cash: cash advanced by someone (net change; to be corrected)'),
     ('flujo_directo', 'ajustes',        'ajustes',                400, 'Ajustes de ejercicios anteriores y de la apertura',   'Prior-period and opening adjustments'),
     -- Lo que se movió SIN dinero (un activo con tarjeta o con préstamo, una
     -- distribución sin dinero): se revela aparte y no suma al cambio del
@@ -1942,6 +2219,7 @@ begin
     ('flujo_indirecto', 'financiamiento', 'fin_capital',          330, 'Capital aportado',                                    'Contributed capital'),
     ('flujo_indirecto', 'financiamiento', 'fin_distribuciones',   340, 'Distribuciones al accionista',                        'Shareholder distributions'),
     ('flujo_indirecto', 'financiamiento', 'sobregiro',            350, 'Sobregiro bancario (cambio neto)',                    'Bank overdraft (net change)'),
+    ('flujo_indirecto', 'financiamiento', 'caja_en_rojo',         355, 'Caja chica en rojo: efectivo que alguien adelantó (cambio neto; por corregir)', 'Negative petty cash: cash advanced by someone (net change; to be corrected)'),
     ('flujo_indirecto', 'ajustes',        'ajustes',              400, 'Ajustes a utilidades retenidas y a la apertura',      'Retained earnings and opening adjustments'),
     ('flujo_indirecto', 'sin_dinero',     'sin_dinero',           500, 'Actividades sin dinero (se revelan; no suman)',       'Non-cash investing and financing activities (disclosed; not in cash flow)'),
     ('flujo_indirecto', 'sin_dinero',     'sd_inversion',         510, 'Inversión sin mover dinero (propiedad y equipo, préstamos otorgados)', 'Non-cash investing (property and equipment, loans made)'),
@@ -1972,6 +2250,15 @@ begin
    where p.cuenta = m.cuenta and left(m.cuenta, 4) = '1130'
      and m.flujo_directo = 'dueno' and m.flujo_indirecto = 'fin_accionista'
      and p.flujo_directo = 'prestamos_otorgados' and p.flujo_indirecto = 'prestamos_otorgados';
+  -- La marca de la caja (ronda 4 de c4): las filas que ya estaban antes de
+  -- la columna la reciben una vez, la propuesta (la 1050), con su rastro;
+  -- una que Edgar ya tocó después (su historial la trae) no se pisa.
+  update estados_mapeo m
+     set caja = p.caja
+    from v_estados_mapeo_propuesto p
+   where p.cuenta = m.cuenta and p.caja and not m.caja and m.efectivo
+     and not exists (select 1 from estados_historial h
+                      where h.tabla = 'estados_mapeo' and h.clave = m.cuenta and h.despues ? 'caja');
   v_mapeo := fn_estados_mapeo_derivar();
   return jsonb_build_object('renglones', v_lineas, 'configuracion', v_config, 'mapeo', v_mapeo->'anadidas');
 end $$;
@@ -2116,7 +2403,8 @@ select l.asiento_id,
        l.tercero_tipo,
        l.tercero_id,
        l.partida_tabla,
-       l.partida_id
+       l.partida_id,
+       m.caja
   from public.asiento_lineas l
   join public.asientos a on a.id = l.asiento_id
   join m on m.cuenta = l.cuenta;
@@ -2240,9 +2528,18 @@ select a.id                                   as asiento_id,
 -- ---------------------------------------------------------------------
 -- 3.6 · v_qb_balanzas — cada fila de QuickBooks que cuenta para comparar,
 -- con la cuenta del plan a la que va (apertura_mapeo_qb) y su obra:
---   · de cada período, la balanza de comparacion_qb cargada MÁS TARDE (las
---     anteriores quedan como rastro, vigente = false); la hora la pone la
---     base al cargarla (1.6), no quien escribe;
+--   · de cada período y de cada TIPO (la balanza del mes, 'balanza'; su
+--     complemento por Customer:Job, 'por_obra'), la de comparacion_qb
+--     cargada MÁS TARDE que no se retiró (las anteriores y las retiradas
+--     quedan como rastro, vigente = false; retirada lo dice); la hora la
+--     pone la base al cargarla (1.6), no quien escribe. Un complemento por
+--     obra no desplaza a la balanza del mes, ni al revés. Cada versión
+--     cargada sigue comparable: en una sesión del SQL Editor,
+--       set c4.comparar_documento = 'docs/qb/balanza-2026-12-15.csv';
+--     hace vigente ESA versión de su período (la de una quincena ya
+--     superada por la del 31-dic), y las tres vistas de la comparación la
+--     comparan a su fecha (al); «reset c4.comparar_documento;» vuelve a la
+--     última. fn_estados_control no lo mira: siempre controla la última;
 --   · de la apertura, si no se cargó una en comparacion_qb, la balanza con
 --     que fn_apertura posteó el ÚLTIMO asiento de apertura (fuente
 --     'apertura_balanza_qb', con su asiento_id), VIVO O REVERSADO (vivo lo
@@ -2267,9 +2564,10 @@ select a.id                                   as asiento_id,
 --                   hasta ese período;
 --   al              la fecha de la balanza (nula = el fin del período): la
 --                   de una quincena corta el libro a ese día;
---   vivo            (la de la apertura) su asiento sigue vivo.
--- (Va aquí, en la base: el balance general la usa para el resultado de
--- enero a septiembre de la apertura.)
+--   vivo            (la de la apertura) su asiento sigue vivo;
+--   tipo            'balanza' o 'por_obra' (la de la apertura, 'balanza');
+--   retirada        la carga se retiró (fn_comparacion_qb_retirar): no vale.
+-- (Va aquí, en la base: la comparación y el control la usan.)
 -- ---------------------------------------------------------------------
 drop view if exists public.v_qb_balanzas cascade;
 create view public.v_qb_balanzas with (security_invoker = true) as
@@ -2294,15 +2592,26 @@ with ap as materialized (
        limit 1) y on x.asiento_id is null
    where coalesce(x.documento_ruta, y.documento) is not null
 ), cq as materialized (
-  -- La que vale: la balanza (el documento) cargada más tarde en el período.
+  -- La que vale: de cada período y tipo, el documento cargado más tarde que
+  -- no se retiró; o, en la sesión que lo pide, otra versión cargada (y no
+  -- retirada) de ese período y tipo (la de una quincena ya superada: set
+  -- c4.comparar_documento = '<documento>'). (Una carga se retira entera:
+  -- todas las filas de un documento son retiradas o ninguna.)
   select q.*,
-         q.documento = first_value(q.documento) over (partition by q.periodo order by q.cargado_el desc, q.documento desc) as ultima
+         q.retirada_el is null
+         and q.documento = coalesce(
+           (select x.documento from public.comparacion_qb x
+             where x.periodo = q.periodo and x.tipo = q.tipo and x.retirada_el is null
+               and x.documento = nullif(current_setting('c4.comparar_documento', true), '')
+             limit 1),
+           first_value(q.documento) over (partition by q.periodo, q.tipo, q.retirada_el is null
+                                          order by q.cargado_el desc, q.documento desc)) as ultima
     from public.comparacion_qb q
 )
 select cq.periodo, 'comparacion_qb'::text as fuente, cq.documento, cq.linea, cq.cuenta_qb, cq.clave, cq.cliente_trabajo,
        coalesce(cq.proyecto_id, mt.proyecto_id) as proyecto_id, cq.saldo::numeric(14,2) as saldo,
        mc.cuenta, c.tipo as cuenta_tipo, cq.ultima as vigente, null::uuid as asiento_id, null::text as numero,
-       cq.con_posteriores, cq.al, null::boolean as vivo
+       cq.con_posteriores, cq.al, null::boolean as vivo, cq.tipo, cq.retirada_el is not null as retirada
   from cq
   left join public.apertura_mapeo_qb mc on mc.tipo = 'cuenta' and mc.clave = cq.clave
   left join public.apertura_mapeo_qb mt on mt.tipo = 'trabajo' and mt.clave = cq.cliente_clave
@@ -2311,8 +2620,10 @@ union all
 select ap.periodo, 'apertura_balanza_qb', b.documento, b.linea, b.cuenta_qb, b.clave, b.cliente_trabajo,
        coalesce(b.proyecto_id, mt.proyecto_id, f.proyecto_id),
        (coalesce(b.debe, 0) - coalesce(b.haber, 0))::numeric(14,2),
-       mc.cuenta, c.tipo, not exists (select 1 from public.comparacion_qb q where q.periodo = ap.periodo), ap.asiento_id, ap.numero,
-       false, null::date, ap.vivo
+       mc.cuenta, c.tipo,
+       not exists (select 1 from public.comparacion_qb q
+                    where q.periodo = ap.periodo and q.tipo = 'balanza' and q.retirada_el is null), ap.asiento_id, ap.numero,
+       false, null::date, ap.vivo, 'balanza'::text, false
   from ap
   join public.apertura_balanza_qb b on b.documento = ap.documento_ruta and b.control is null
   left join public.apertura_mapeo_qb mc on mc.tipo = 'cuenta' and mc.clave = b.clave
@@ -2339,7 +2650,17 @@ select ap.periodo, 'apertura_balanza_qb', b.documento, b.linea, b.cuenta_qb, b.c
 --   balance van dentro de utilidades retenidas, 3900) y «por_cerrar» (los
 --   años anteriores que todavía no se cierran: 2026 hasta que el CPA
 --   entregue). El libro no postea asientos de cierre: esos renglones son
---   el arrastre, hecho aquí, a la vista.
+--   el arrastre, hecho aquí, a la vista. La balanza es el LIBRO, cuenta
+--   por cuenta (su saldo final es el del mayor, prueba 10): lo de enero al
+--   día de la apertura del año de la apertura lo trajo la apertura DENTRO
+--   de 3900 (la apertura es balance únicamente), y aquí se queda en 3900;
+--   «por_cerrar» es lo que el libro tiene en sus cuentas de resultados de
+--   esos años (en 2027, octubre a diciembre de 2026). El balance general
+--   (4.2) es el que lo presenta en su renglón: el resultado entero de 2026
+--   en «por cerrar» y utilidades retenidas como al 31-dic. Las dos dicen
+--   lo mismo en total: 3900 + arrastre + por_cerrar de la balanza =
+--   utilidades retenidas + por cerrar del balance (sin el plegado de 3200,
+--   si el CPA lo pide).
 --   EN CERO: la suma de saldo_final (y la de saldo_inicial) es 0 y el
 --   debe es igual al haber: cada asiento cuadra (c2). El renglón nivel
 --   'total' lo dice (cuadra).
@@ -2428,9 +2749,9 @@ select p.periodo, p.tipo as periodo_tipo, p.desde, p.hasta, x.*
     union all
     select f.por_obra, 'componente', f.orden_cuenta, null, null, null, null, f.clase,
            case f.clase when 'arrastre' then 'Resultados de ejercicios cerrados (en utilidades retenidas)'
-                        else 'Resultados de ejercicios anteriores por cerrar' end,
+                        else 'Resultados de ejercicios anteriores por cerrar (lo del libro; lo de antes de la apertura está en 3900)' end,
            case f.clase when 'arrastre' then 'Closed-year results (in retained earnings)'
-                        else 'Prior-year results not yet closed' end,
+                        else 'Prior-year results not yet closed (per the ledger; pre-opening results are in 3900)' end,
            'balance', 'capital', case f.clase when 'arrastre' then 'utilidades_retenidas' else 'ejercicios_por_cerrar' end,
            f.saldo_inicial, f.debe, f.haber, f.saldo_final, (-f.saldo_final)::numeric(14,2),
            f.asientos, case when f.asientos = 1 then f.asiento_min::uuid end, case when f.asientos = 1 then f.numero_min end,
@@ -2498,12 +2819,18 @@ select b.periodo, b.periodo_tipo, b.desde, b.hasta, b.nivel, b.orden, b.cuenta, 
 --     de la apertura (componente 'resultado_apertura'), que va en…
 --   · «Resultado del ejercicio» = el resultado del año del corte, de enero
 --     al corte: lo del libro (componente 'resultado') y, en el año de la
---     apertura, lo de antes de ella según la balanza de QuickBooks con que
---     fn_apertura la posteó (componente 'resultado_apertura', que baja a
---     esa balanza). Así el balance al 31-oct-2026 dice lo mismo que el de
+--     apertura, lo de antes de ella TAL COMO LO POSTEÓ fn_apertura
+--     (componente 'resultado_apertura': la línea de 3900 de su asiento que
+--     trae el resultado de enero a septiembre según QuickBooks, y baja a
+--     ella). Así el balance al 31-oct-2026 dice lo mismo que el de
 --     QuickBooks: las utilidades retenidas al 1-ene y el resultado de todo
---     el año. Sin esa balanza (una apertura a mano), el componente
---     'resultado' lo dice en su etiqueta: «desde el 1-oct»;
+--     el año. No se vuelve a sumar la balanza con el mapeo de HOY: si
+--     alguien re-mapea después una cuenta de resultados a una de balance,
+--     3900 sigue teniendo lo que se posteó, y es eso lo que sale de
+--     utilidades retenidas (antes salía otra cifra: las dos líneas del
+--     capital mal y el total bien, en verde). Sin ese asiento (una
+--     apertura a mano), el componente 'resultado' lo dice en su etiqueta:
+--     «desde el 1-oct»;
 --   · «Resultado de ejercicios anteriores por cerrar» = el resultado de los
 --     años anteriores que todavía no se cierran (componente 'por_cerrar'):
 --     2026, mientras el CPA no entregue. Con el de antes de la apertura
@@ -2534,6 +2861,12 @@ select b.periodo, b.periodo_tipo, b.desde, b.hasta, b.nivel, b.orden, b.cuenta, 
 --         «Saldos a favor con proveedores y tarjetas»;
 --       · reclasif_sobregiro: una cuenta de efectivo en rojo (saldo
 --         ACREEDOR, cuenta por cuenta) va al pasivo, «Sobregiro bancario»;
+--         pero no la CAJA (estados_mapeo.caja, la 1050):
+--       · reclasif_caja: la caja chica en rojo no es un sobregiro (no la
+--         presta ningún banco): es efectivo que alguien adelantó y el libro
+--         no tiene (Edgar, un empleado) o un retiro sin registrar. Va al
+--         pasivo en su propio renglón, «Caja chica en rojo… (por
+--         corregir)», y fn_estados_control lo dice en rojo;
 --       · reclasif_pasivo_deudor: cualquier otra cuenta de PASIVO con saldo
 --         DEUDOR (cuenta por cuenta; no una contra-cuenta) va al activo: el
 --         préstamo del accionista (2900) a «Cuenta por cobrar al
@@ -2561,10 +2894,32 @@ select b.periodo, b.periodo_tipo, b.desde, b.hasta, b.nivel, b.orden, b.cuenta, 
 --                    toman al corte.
 -- «bajar» dice, por cada cifra, qué líneas del libro la suman (ver la
 -- cabecera: una lista de filtros sobre v_libro; el resultado de la apertura
--- baja a v_qb_balanzas, la balanza con que se posteó).
+-- baja a su línea en 3900: asiento_id y orden).
 -- ---------------------------------------------------------------------
 drop view if exists public.v_balance_general cascade;
 create view public.v_balance_general with (security_invoker = true) as
+with apr as materialized (
+  -- EL RESULTADO DE ANTES DE LA APERTURA, TAL COMO LO POSTEÓ fn_apertura:
+  -- la línea de 3900 del último asiento que posteó (si sigue vivo; si se
+  -- reversó, 3900 ya no lo trae). Su lugar en el asiento lo guarda la
+  -- procedencia (resultado_qb.orden: 0 si no hubo resultado); en uno de
+  -- una versión anterior de este archivo, es la línea de 3900 con la nota
+  -- del resultado. Una vez por consulta, no por corte.
+  select a.id as asiento_id, a.numero, al.orden, al.monto as q
+    from (select x.id, x.numero, x.procedencia,
+                 not exists (select 1 from public.asientos r where r.reversa_a = x.id and r.camino = 'reverso') as vivo
+            from public.asientos x
+           where x.origen_tabla = 'apertura_balanza_qb' and x.tipo = 'apertura'
+             and coalesce(x.procedencia->>'funcion', '') = 'fn_apertura'
+             and x.camino not in ('reverso', 'reverso_automatico')
+           order by x.cadena_pos desc
+           limit 1) a
+    join public.asiento_lineas al on al.asiento_id = a.id
+   where a.vivo
+     and case when a.procedencia->'resultado_qb' ? 'orden'
+              then al.orden = (a.procedencia->'resultado_qb'->>'orden')::int
+              else al.cuenta = '3900' and al.memo like 'Resultado de enero a septiembre%' end
+)
 select c.periodo, c.tipo as periodo_tipo, c.corte, c.anio, x.*
   from public.v_cortes c
   cross join lateral (
@@ -2572,8 +2927,8 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, c.anio, x.*
       -- Lo que cuenta al corte; y, en los cortes de un período (no en
       -- 'hoy'), los ajustes del CPA fechados después que corrigen hasta él
       -- (al_corte = false): van aparte, a las columnas «ajustadas».
-      select v.cuenta, v.estado, v.seccion, v.linea, v.signo, v.contra, v.efectivo, v.monto, v.asiento_id, v.numero, v.ejercicio,
-             v.proyecto_id, v.tercero_tipo, v.tercero_id, v.partida_tabla, v.partida_id, v.fecha <= c.corte as al_corte
+      select v.cuenta, v.estado, v.seccion, v.linea, v.signo, v.contra, v.efectivo, v.caja, v.monto, v.asiento_id, v.numero,
+             v.ejercicio, v.proyecto_id, v.tercero_tipo, v.tercero_id, v.partida_tabla, v.partida_id, v.fecha <= c.corte as al_corte
         from public.v_libro v
        where v.fecha <= c.corte
           or (c.tipo in ('mes', 'apertura', 'anio') and v.tipo = 'ajuste_cpa'
@@ -2596,9 +2951,8 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, c.anio, x.*
       -- La apertura (su año y su día): el libro tiene resultados desde el día siguiente.
       select p.periodo, p.anio, p.hasta from public.periodos p where p.tipo = 'apertura' order by p.desde limit 1
     ), ap as materialized (
-      -- El resultado de antes de la apertura en su año, según la balanza de
-      -- QuickBooks con que fn_apertura la posteó (viva: si se reversó, 3900
-      -- ya no lo trae): q = debe − haber de sus cuentas de resultados
+      -- El resultado de antes de la apertura en su año, tal como lo posteó
+      -- fn_apertura (apr, arriba): q = el monto de su línea en 3900
       -- (negativo = utilidad). En los cortes desde el día de la apertura:
       -- los de su año lo ponen en el resultado del ejercicio; los de años
       -- siguientes, mientras ese año NO se cierre, en «ejercicios anteriores
@@ -2607,16 +2961,14 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, c.anio, x.*
       -- retenidas y no hace falta moverlo. (Antes solo en su año: al
       -- 31-ene-2027 las utilidades retenidas saltaban de 10,000 a 49,000 y
       -- «por cerrar» decía 8,000, sin que se cerrara nada.)
-      select apx.periodo, sum(b.saldo) as q, min(b.asiento_id::text) as asiento, min(b.numero) as numero,
+      select apx.periodo, apr.q, apr.asiento_id::text as asiento, apr.numero, apr.orden,
              case when apx.anio = c.anio then 'resultado_ejercicio' else 'ejercicios_por_cerrar' end as destino
         from apx
-        join public.v_qb_balanzas b on b.periodo = apx.periodo
-       where b.fuente = 'apertura_balanza_qb' and b.vivo and b.cuenta_tipo not in ('activo', 'pasivo', 'capital')
-         and c.corte >= apx.hasta
+        cross join apr
+       where c.corte >= apx.hasta
          and (apx.anio = c.anio
               or (apx.anio < c.anio and not coalesce((select e.cerrado from ej e where e.anio = apx.anio), false)))
-       group by apx.periodo, apx.anio
-      having sum(b.saldo) <> 0
+         and apr.q <> 0
     ), r as materialized (
       -- Las reclasificaciones de presentación, una fila por partida,
       -- proveedor o cuenta que va contra su renglón (al corte). comp: la
@@ -2648,7 +3000,15 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, c.anio, x.*
       select 'reclasif_sobregiro', 'pasivo_circulante', 'sobregiro_bancario', -1, l.seccion, l.linea, l.signo, sum(l.monto),
              array_agg(distinct l.asiento_id), min(l.numero), jsonb_build_object('cuenta', l.cuenta)
         from l
-       where l.al_corte and l.efectivo
+       where l.al_corte and l.efectivo and not l.caja
+       group by l.seccion, l.linea, l.signo, l.cuenta
+      having sum(l.monto) < 0
+      union all
+      -- La caja chica en rojo: al pasivo, con su nombre (no es un sobregiro).
+      select 'reclasif_caja', 'pasivo_circulante', 'caja_en_rojo', -1, l.seccion, l.linea, l.signo, sum(l.monto),
+             array_agg(distinct l.asiento_id), min(l.numero), jsonb_build_object('cuenta', l.cuenta)
+        from l
+       where l.al_corte and l.caja
        group by l.seccion, l.linea, l.signo, l.cuenta
       having sum(l.monto) < 0
       union all
@@ -2755,10 +3115,8 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, c.anio, x.*
       -- anteriores por cerrar» (después, mientras su año no se cierre).
       select 'componente', 'capital', z.linea, null, 'resultado_apertura', -1::smallint,
              z.s * ap.q, 0, 1::bigint, ap.asiento, ap.numero,
-             jsonb_build_array(jsonb_build_object('vista', 'v_qb_balanzas', 'campo', 'saldo', 'signo', -z.s,
-                                                  'filtros', jsonb_build_object('periodo', ap.periodo, 'fuente', 'apertura_balanza_qb',
-                                                                                'vivo', true,
-                                                                                'cuenta_tipo_no', jsonb_build_array('activo', 'pasivo', 'capital')))),
+             jsonb_build_array(jsonb_build_object('vista', 'v_libro', 'campo', 'monto', 'signo', -z.s,
+                                                  'filtros', jsonb_build_object('asiento_id', ap.asiento, 'orden', ap.orden))),
              '[]'::jsonb
         from ap
         cross join lateral (values ('utilidades_retenidas', -1), (ap.destino, 1)) as z(linea, s)
@@ -2799,7 +3157,8 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, c.anio, x.*
              coalesce(m.orden, case d.componente when 'arrastre' then 1 when 'plegado_3200' then 2 when 'resultado_apertura' then 3
                                                  when 'reclasif_anticipos' then 4 when 'reclasif_a_favor' then 5
                                                  when 'reclasif_sobregiro' then 6 when 'reclasif_pasivo_deudor' then 7
-                                                 when 'reclasif_activo_acreedor' then 8 else 0 end) as orden,
+                                                 when 'reclasif_activo_acreedor' then 8 when 'reclasif_caja' then 9
+                                                 else 0 end) as orden,
              coalesce(m.etiqueta_es, case d.componente
                when 'arrastre'     then 'Resultados de ejercicios cerrados'
                when 'por_cerrar'   then 'Resultados de ejercicios anteriores por cerrar'
@@ -2824,6 +3183,10 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, c.anio, x.*
                when 'reclasif_sobregiro' then
                  case when d.linea = 'sobregiro_bancario' then 'Sobregiro de las cuentas de efectivo en rojo'
                       else 'Más: cuentas de efectivo en rojo (van al pasivo, sobregiro)' end
+               when 'reclasif_caja' then
+                 case when d.linea = 'caja_en_rojo'
+                      then 'Caja chica en rojo: efectivo que alguien adelantó y el libro no tiene (por corregir)'
+                      else 'Más: la caja chica en rojo (va al pasivo; no es un sobregiro)' end
                when 'reclasif_pasivo_deudor' then
                  case when d.seccion in ('pasivo_circulante', 'pasivo_largo_plazo')
                       then 'Más: saldos deudores de esta cuenta de pasivo (van al activo)'
@@ -2860,6 +3223,10 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, c.anio, x.*
                when 'reclasif_sobregiro' then
                  case when d.linea = 'sobregiro_bancario' then 'Overdrawn cash accounts'
                       else 'Add back: overdrawn cash accounts (shown as liabilities)' end
+               when 'reclasif_caja' then
+                 case when d.linea = 'caja_en_rojo'
+                      then 'Negative petty cash: cash someone advanced that the books do not show (to be corrected)'
+                      else 'Add back: negative petty cash (shown as a liability; not a bank overdraft)' end
                when 'reclasif_pasivo_deudor' then
                  case when d.seccion in ('pasivo_circulante', 'pasivo_largo_plazo')
                       then 'Add back: debit balances of this liability (shown as assets)'
@@ -3216,7 +3583,14 @@ select p.periodo, p.tipo as periodo_tipo, p.desde, p.hasta, p.anio, x.*
 --       flujo: van al bloque 'sin_dinero', que se revela y no suma (ASC
 --       230), igual en los dos métodos ('sd_inversion',
 --       'sd_financiamiento', 'sd_ajustes' y su contrapartida,
---       'sd_contrapartida');
+--       'sd_contrapartida'). Las dos patas de UNA transacción que caen en
+--       la misma sección no se anulan entre sí: si son de renglones
+--       distintos del balance (el préstamo del accionista, 2900, convertido
+--       en capital, 3100: las dos de financiamiento), la que abona va a
+--       'sd_contrapartida' y la otra se revela en su sección (antes el
+--       bloque decía 0 y la conversión no se veía). Salvo la porción
+--       corriente de un préstamo (2530 → 2520): es el mismo préstamo, se
+--       anula y no se revela;
 --   'sin_dinero_en_resultado'  en el indirecto, la parte de la utilidad
 --       que no fue dinero de operación: lo que un asiento sin dinero de
 --       inversión o financiamiento movió en resultados (un gasto
@@ -3236,6 +3610,15 @@ select p.periodo, p.tipo as periodo_tipo, p.desde, p.hasta, p.anio, x.*
 --       a tarjeta de un activo pagado en parte con dinero EN EL MISMO
 --       asiento: su pago sale en operación. Si pasa, se reclasifica con un
 --       asiento, o se postea la compra en dos.)
+--   'adelanto_de_tarjeta' / 'adelanto_a_prestamos'  el ADELANTO DE EFECTIVO
+--       de una tarjeta (cash advance: entra dinero al banco y se abona la
+--       tarjeta) es un préstamo, no una operación: sale de «tarjetas» y
+--       entra en préstamos (financiamiento), en los dos métodos. Lo que ese
+--       abono devuelve de un saldo a favor que la tarjeta ya tenía (el
+--       reembolso de un pago de más) sigue en operación. Y su PAGO también
+--       va a préstamos: el adelanto entra en la cola de la tarjeta como un
+--       cargo más, y 'tarjeta_paga' / 'tarjeta_compro' lo sacan de
+--       «tarjetas» por lo que salda (FIFO);
 --   'cubierto_sin_dinero' / 'cubierto_se_revela'  un activo comprado con
 --       préstamo (o aportación) y enganche EN EL MISMO asiento: la parte que
 --       pagó el préstamo sin pasar por el banco (el menor de lo invertido y
@@ -3266,7 +3649,7 @@ with el as materialized (
   -- Las líneas de las TARJETAS (el renglón 'tarjetas' del balance), toda su
   -- historia, en el orden del libro, con lo cargado (cc) y lo pagado (cp)
   -- acumulado hasta cada una: la cola de cada tarjeta.
-  select al.asiento_id, al.orden, al.cuenta, al.monto,
+  select al.asiento_id, al.orden, al.cuenta, al.monto, a.tipo,
          sum(greatest(-al.monto, 0)) over w as cc, sum(greatest(al.monto, 0)) over w as cp
     from public.asiento_lineas al
     join public.asientos a on a.id = al.asiento_id
@@ -3274,16 +3657,36 @@ with el as materialized (
   window w as (partition by al.cuenta order by a.fecha_contable, a.cadena_pos, al.orden
                rows between unbounded preceding and current row)
 ), ta as materialized (
-  -- Los asientos de esas líneas: si mueven dinero, y cuánto cargaron.
-  select al.asiento_id, bool_or(mp.efectivo) as toca, coalesce(sum(al.monto) filter (where al.monto > 0), 0) as debe
+  -- Los asientos de esas líneas: si mueven dinero, cuánto cargaron y
+  -- cuánto dinero entró (o salió) en ellos.
+  select al.asiento_id, bool_or(mp.efectivo) as toca, coalesce(sum(al.monto) filter (where al.monto > 0), 0) as debe,
+         coalesce(sum(al.monto) filter (where mp.efectivo), 0) as dinero
     from public.asiento_lineas al
     join mp on mp.cuenta = al.cuenta
    where al.asiento_id in (select tl.asiento_id from tl)
    group by al.asiento_id
+), av as materialized (
+  -- EL ADELANTO DE EFECTIVO DE LA TARJETA: en un asiento con dinero que
+  -- ENTRA, el abono a una tarjeta es un préstamo de la tarjeta. x = lo del
+  -- abono de cada línea que es adelanto: sin lo que devuelve un saldo a
+  -- favor que la tarjeta ya tenía (su saldo deudor antes de la línea: lo
+  -- pagado menos lo cargado hasta ahí), y hasta lo que entró de dinero en
+  -- el asiento, línea por línea en su orden. La apertura no: lo que trae
+  -- es saldo, no un adelanto. (Antes salía como dinero de operación, en
+  -- «tarjetas», y su pago también.)
+  select q.asiento_id, q.orden, q.cuenta, q.cc, q.a0,
+         greatest(0, least(q.a, q.dinero - coalesce(sum(q.a) over (partition by q.asiento_id order by q.orden
+                                                                   rows between unbounded preceding and 1 preceding), 0))) as x
+    from (select t.asiento_id, t.orden, t.cuenta, t.cc, -t.monto as a0,
+                 greatest(0, -t.monto - greatest(0, t.cp - t.cc - t.monto)) as a, ta.dinero
+            from tl t
+            join ta on ta.asiento_id = t.asiento_id and ta.toca and ta.dinero > 0
+           where t.monto < 0 and t.tipo <> 'apertura') q
 ), cg as materialized (
   -- Los cargos a tarjeta de un asiento SIN dinero que compró algo de
   -- inversión o de financiamiento: por cada renglón de lo comprado, su
-  -- parte del cargo (w).
+  -- parte del cargo (w). Y los adelantos de efectivo: la parte del cargo
+  -- que fue adelanto va a préstamos (su pago es financiamiento).
   select t.cuenta, t.cc, -t.monto as a, al.monto / ta.debe as w, mp.flujo_directo as fd, mp.flujo_indirecto as fi
     from tl t
     join ta on ta.asiento_id = t.asiento_id and not ta.toca and ta.debe > 0
@@ -3291,6 +3694,10 @@ with el as materialized (
     join mp on mp.cuenta = al.cuenta and mp.estado = 'balance' and not mp.efectivo
            and mp.flujo_indirecto_seccion in ('inversion', 'financiamiento')
    where t.monto < 0
+  union all
+  select av.cuenta, av.cc, av.a0, av.x / av.a0, 'prestamos', 'fin_prestamos'
+    from av
+   where av.x > 0
 ), pg as materialized (
   -- Los pagos a tarjeta de un asiento CON dinero y la parte de cada uno
   -- que salda esos cargos: lo pagado hasta este pago cubre primero los
@@ -3360,11 +3767,22 @@ with el as materialized (
               when b.baja_indirecto is not null and b.estado = 'balance' and b.seccion = 'activo_fijo' and b.contra
                 then b.baja_indirecto
               else b.flujo_indirecto end as li,
-         case b.flujo_indirecto_seccion when 'inversion' then 'sd_inversion' when 'financiamiento' then 'sd_financiamiento'
-                                        when 'ajustes' then 'sd_ajustes' else 'sd_contrapartida' end as lsd
+         -- (Las dos patas de una transacción sin dinero en la misma sección y
+         -- en renglones distintos del balance: la que abona, a la
+         -- contrapartida, para que no se anulen; ver arriba. La porción
+         -- corriente de un préstamo, no.)
+         case when not b.toca_efectivo and b.no_operativo and b.tipo <> 'apertura' and b.estado = 'balance'
+                   and b.flujo_indirecto_seccion in ('inversion', 'financiamiento', 'ajustes') and b.monto < 0
+                   and min(b.linea) over ws <> max(b.linea) over ws
+                   and not bool_and(b.linea in ('prestamos_corto', 'prestamos_largo')) over ws
+              then 'sd_contrapartida'
+              else case b.flujo_indirecto_seccion when 'inversion' then 'sd_inversion'
+                                                  when 'financiamiento' then 'sd_financiamiento'
+                                                  when 'ajustes' then 'sd_ajustes' else 'sd_contrapartida' end end as lsd
     from b
    where not b.efectivo
-  window wg as (partition by b.periodo, b.fecha, b.asiento_id,
+  window ws as (partition by b.periodo, b.fecha, b.asiento_id, b.estado, b.flujo_indirecto_seccion),
+         wg as (partition by b.periodo, b.fecha, b.asiento_id,
                              case when b.estado = 'balance' and b.flujo_indirecto_seccion = 'inversion'
                                        and sign(-b.monto) = sign(b.inv_neto) then 1
                                   when b.estado = 'balance' and b.flujo_indirecto_seccion = 'financiamiento'
@@ -3376,6 +3794,7 @@ with el as materialized (
   select c.*, z.pieza, z.importe, z.linea_directo, z.linea_indirecto
     from c
     left join pg on pg.asiento_id = c.asiento_id and pg.orden = c.orden and c.toca_efectivo and c.tipo <> 'apertura'
+    left join av on av.asiento_id = c.asiento_id and av.orden = c.orden and c.toca_efectivo and c.tipo <> 'apertura'
     cross join lateral (
       select 'linea'::text as pieza, (-c.monto)::numeric(14,2) as importe,
              case when c.toca_efectivo then c.ld
@@ -3397,6 +3816,14 @@ with el as materialized (
       union all
       select 'tarjeta_compro', (-(d->>'x')::numeric)::numeric(14,2), d->>'fd', d->>'fi'
         from jsonb_array_elements(coalesce(pg.destinos, '[]'::jsonb)) d
+      union all
+      -- El adelanto de efectivo de la tarjeta: sale de «tarjetas»…
+      select 'adelanto_de_tarjeta', (-av.x)::numeric(14,2), c.ld, c.li
+       where av.x > 0
+      union all
+      -- …y entra en préstamos, en los dos métodos.
+      select 'adelanto_a_prestamos', av.x::numeric(14,2), 'prestamos', 'fin_prestamos'
+       where av.x > 0
       union all
       -- Lo cubierto sin dinero (ver cubierto_x): sale de su renglón…
       select 'cubierto_sin_dinero', (sign(c.monto) * c.cubierto_x)::numeric(14,2), c.ld, c.li
@@ -3442,7 +3869,10 @@ select y.asiento_id, y.numero, y.orden, y.fecha, y.periodo, y.periodo_efectivo, 
 -- bancos en rojo «prestan» va a financiamiento, en su renglón «Sobregiro
 -- bancario». Así el efectivo al inicio y al final son los del balance a
 -- cada corte (antes, con un banco en rojo, el flujo decía 19,300 y el
--- balance 20,000, y ningún cuadre lo veía).
+-- balance 20,000, y ningún cuadre lo veía). La CAJA CHICA en rojo
+-- (estados_mapeo.caja) no la presta ningún banco: su cambio va a su propio
+-- renglón, «caja_en_rojo» (financiamiento: es efectivo que alguien
+-- adelantó), como en el balance, y fn_estados_control lo dice en rojo.
 -- LA APERTURA NO ES UN FLUJO: en el período que la contiene (el de la
 -- apertura y el año 2026), lo que trajo de efectivo es el efectivo al
 -- inicio, y su asiento no da piezas (antes el año 2026 empezaba en 0.00 y
@@ -3465,7 +3895,8 @@ select p.periodo, p.tipo as periodo_tipo, p.desde, p.hasta, x.*
       select v.cuenta,
              coalesce(sum(v.monto) filter (where v.fecha < p.desde or v.tipo = 'apertura'), 0) as s0,
              coalesce(sum(v.monto), 0)                                                          as s1,
-             coalesce(bool_or(v.tipo = 'apertura' and v.fecha >= p.desde), false)                as con_apertura
+             coalesce(bool_or(v.tipo = 'apertura' and v.fecha >= p.desde), false)                as con_apertura,
+             bool_or(v.caja)                                                                    as caja
         from public.v_libro v
        where v.efectivo and v.fecha <= p.hasta
        group by v.cuenta
@@ -3473,7 +3904,7 @@ select p.periodo, p.tipo as periodo_tipo, p.desde, p.hasta, x.*
       -- Con qué se baja al saldo de cada cuenta: al empezar (s0: lo de antes
       -- del período, y lo que trae la apertura si cae en él) y al terminar
       -- (s1).
-      select ec.cuenta, ec.s0, ec.s1, e.k, e.o, e.v
+      select ec.cuenta, ec.s0, ec.s1, ec.caja, e.k, e.o, e.v
         from ec
         cross join lateral (
           select 's0' as k, 1 as o, jsonb_build_object('vista', 'v_libro', 'campo', 'monto', 'signo', 1,
@@ -3491,12 +3922,13 @@ select p.periodo, p.tipo as periodo_tipo, p.desde, p.hasta, x.*
     ), ef as materialized (
       -- El efectivo del balance (las cuentas en negro) al empezar y al
       -- terminar; el cambio del sobregiro (lo que las cuentas en rojo pasan a
-      -- deber de más: financiamiento que entra); y cómo se baja a cada uno,
-      -- cuenta por cuenta (el sobregiro: +s0 de las que empezaron en rojo,
-      -- −s1 de las que terminaron en rojo).
+      -- deber de más: financiamiento que entra) y el de la caja en rojo, cada
+      -- uno aparte; y cómo se baja a cada uno, cuenta por cuenta (+s0 de las
+      -- que empezaron en rojo, −s1 de las que terminaron en rojo).
       select coalesce(sum(greatest(ec.s0, 0)), 0)                  as inicial,
              coalesce(sum(greatest(ec.s1, 0)), 0)                  as final,
-             coalesce(sum(least(ec.s0, 0) - least(ec.s1, 0)), 0)   as sobregiro,
+             coalesce(sum(least(ec.s0, 0) - least(ec.s1, 0)) filter (where not ec.caja), 0) as sobregiro,
+             coalesce(sum(least(ec.s0, 0) - least(ec.s1, 0)) filter (where ec.caja), 0)     as caja,
              coalesce(bool_or(ec.con_apertura), false)            as con_apertura,
              (select min(v.fecha) from public.v_libro v
                where v.efectivo and v.tipo = 'apertura' and v.fecha between p.desde and p.hasta) as apertura_fecha,
@@ -3508,7 +3940,10 @@ select p.periodo, p.tipo as periodo_tipo, p.desde, p.hasta, x.*
                                                                    as b_final,
              (select coalesce(jsonb_agg(case when eb.k = 's1' then jsonb_set(eb.v, '{signo}', '-1') else eb.v end
                                         order by eb.cuenta, eb.k, eb.o), '[]'::jsonb)
-                from eb where (eb.k = 's0' and eb.s0 < 0) or (eb.k = 's1' and eb.s1 < 0)) as b_sobregiro
+                from eb where ((eb.k = 's0' and eb.s0 < 0) or (eb.k = 's1' and eb.s1 < 0)) and not eb.caja) as b_sobregiro,
+             (select coalesce(jsonb_agg(case when eb.k = 's1' then jsonb_set(eb.v, '{signo}', '-1') else eb.v end
+                                        order by eb.cuenta, eb.k, eb.o), '[]'::jsonb)
+                from eb where ((eb.k = 's0' and eb.s0 < 0) or (eb.k = 's1' and eb.s1 < 0)) and eb.caja) as b_caja
         from ec
     ), hay as materialized (
       select ef.asientos > 0 or exists (select 1 from ec where ec.s0 <> 0) or exists (select 1 from f) as hay from ef
@@ -3526,6 +3961,11 @@ select p.periodo, p.tipo as periodo_tipo, p.desde, p.hasta, x.*
       select mm.metodo, 'sobregiro', ef.sobregiro, 0, null, null
         from ef, (values ('directo'), ('indirecto')) as mm(metodo)
        where ef.sobregiro <> 0
+      union all
+      -- Y la caja en rojo, en el suyo.
+      select mm.metodo, 'caja_en_rojo', ef.caja, 0, null, null
+        from ef, (values ('directo'), ('indirecto')) as mm(metodo)
+       where ef.caja <> 0
     ), rl as materialized (
       -- Todos los renglones de cada método (estados_lineas), con lo suyo.
       -- Una sección sin renglones propios ('ajustes') es su propio renglón.
@@ -3555,6 +3995,7 @@ select p.periodo, p.tipo as periodo_tipo, p.desde, p.hasta, x.*
            case when rl.asientos = 1 then rl.numero_min end as numero,
            null::boolean as cuadra,
            jsonb_build_object('importe', case when rl.linea = 'sobregiro' then (select ef.b_sobregiro from ef)
+                                              when rl.linea = 'caja_en_rojo' then (select ef.b_caja from ef)
                                               else jsonb_build_array(jsonb_build_object(
                                                      'vista', 'v_flujo_lineas', 'campo', 'importe', 'signo', 1,
                                                      'filtros', jsonb_build_object('linea_' || rl.metodo, rl.linea,
@@ -3573,7 +4014,8 @@ select p.periodo, p.tipo as periodo_tipo, p.desde, p.hasta, x.*
                        'vista', 'v_flujo_lineas', 'campo', 'importe', 'signo', 1,
                        'filtros', jsonb_build_object('seccion_' || s.metodo, s.seccion, 'tipo_no', 'apertura'),
                        'desde', p.desde::text, 'hasta', p.hasta::text))
-                       || case when s.seccion = 'financiamiento' then (select ef.b_sobregiro from ef) else '[]'::jsonb end)
+                       || case when s.seccion = 'financiamiento' then (select ef.b_sobregiro || ef.b_caja from ef)
+                               else '[]'::jsonb end)
                 else '{}'::jsonb end
       from sec s, hay
      where hay.hay
@@ -3596,7 +4038,7 @@ select p.periodo, p.tipo as periodo_tipo, p.desde, p.hasta, x.*
                                               'filtros', jsonb_build_object('seccion_' || m.metodo || '_no', jsonb_build_array('sin_dinero'),
                                                                             'tipo_no', 'apertura'),
                                               'desde', p.desde::text, 'hasta', p.hasta::text))
-         || ef.b_sobregiro),
+         || ef.b_sobregiro || ef.b_caja),
         -- (= inicial + cambio: el cuadre de abajo lo mira)
         ('efectivo_final', ef.inicial + m.cambio, ef.b_final)
       ) as t(linea, importe, bajar)
@@ -3611,7 +4053,8 @@ select p.periodo, p.tipo as periodo_tipo, p.desde, p.hasta, x.*
            (m.cambio - (ef.final - ef.inicial))::numeric(14,2), null, null, null,
            m.cambio = ef.final - ef.inicial and m.cambio = (select o.cambio from m o where o.metodo <> m.metodo),
            -- (cambio − (final − inicial) = las piezas − el dinero del período
-           -- sin la apertura: el sobregiro se va en los dos lados)
+           -- sin la apertura: el sobregiro y la caja en rojo se van en los
+           -- dos lados)
            jsonb_build_object('importe', jsonb_build_array(
              jsonb_build_object('vista', 'v_flujo_lineas', 'campo', 'importe', 'signo', 1,
                                 'filtros', jsonb_build_object('seccion_' || m.metodo || '_no', jsonb_build_array('sin_dinero'),
@@ -3683,12 +4126,14 @@ having sum(v.monto) <> 0;
 -- asiento, su neto de efectivo: un cobro de 1,000 con 30 de comisión son
 -- 970 que entran; una nómina de 5,000 con 800 retenidos son 4,200 que
 -- salen; un traspaso entre bancos no es ni lo uno ni lo otro; un error y
--- su reverso del mismo mes, tampoco), el neto, el cambio del sobregiro, el
--- efectivo al final, y el neto por sección del flujo directo (operación,
--- inversión, financiamiento —con el sobregiro— y ajustes).
+-- su reverso del mismo mes, tampoco), el neto, el cambio del sobregiro y el
+-- de la caja chica en rojo (caja_en_rojo: lo que la caja en rojo dice que
+-- alguien adelantó), el efectivo al final, y el neto por sección del flujo
+-- directo (operación, inversión, financiamiento —con el sobregiro y la
+-- caja en rojo— y ajustes).
 --   entradas − salidas = neto;
---   neto + sobregiro = operacion + inversion + financiamiento + ajustes
---                    = efectivo_final − efectivo_inicial.
+--   neto + sobregiro + caja_en_rojo = operacion + inversion + financiamiento + ajustes
+--                                   = efectivo_final − efectivo_inicial.
 -- El efectivo, al inicio y al final, es el del BALANCE (v_flujo_caja): las
 -- cuentas de efectivo en negro; una en rojo es sobregiro, y lo que cambia
 -- lo que deben los bancos en rojo es la columna sobregiro (financiamiento).
@@ -3706,8 +4151,9 @@ with ef as materialized (
    where v.efectivo
    group by 1
 ), efc as materialized (
-  -- Lo mismo por cuenta de efectivo (para saber cuáles están en rojo).
-  select v.cuenta, date_trunc('month', v.fecha::timestamp)::date as mes, sum(v.monto) as neto
+  -- Lo mismo por cuenta de efectivo (para saber cuáles están en rojo, y si
+  -- son la caja).
+  select v.cuenta, date_trunc('month', v.fecha::timestamp)::date as mes, sum(v.monto) as neto, bool_or(v.caja) as caja
     from public.v_libro v
    where v.efectivo
    group by 1, 2
@@ -3736,10 +4182,11 @@ select p.periodo, p.desde, p.hasta,
        coalesce(mv.salidas, 0)::numeric(14,2)               as salidas,
        coalesce(ef.neto, 0)::numeric(14,2)                  as neto,
        z.sobregiro::numeric(14,2)                           as sobregiro,
+       z.caja::numeric(14,2)                                as caja_en_rojo,
        z.final::numeric(14,2)                               as efectivo_final,
        coalesce(fl.operacion, 0)::numeric(14,2)             as operacion,
        coalesce(fl.inversion, 0)::numeric(14,2)             as inversion,
-       (coalesce(fl.financiamiento, 0) + z.sobregiro)::numeric(14,2) as financiamiento,
+       (coalesce(fl.financiamiento, 0) + z.sobregiro + z.caja)::numeric(14,2) as financiamiento,
        coalesce(fl.ajustes, 0)::numeric(14,2)               as ajustes,
        coalesce(ef.asientos, 0)                             as asientos,
        jsonb_build_object(
@@ -3753,6 +4200,7 @@ select p.periodo, p.desde, p.hasta,
          'neto', jsonb_build_array(jsonb_build_object('vista', 'v_libro', 'campo', 'monto', 'signo', 1,
                                'filtros', jsonb_build_object('efectivo', true), 'desde', p.desde::text, 'hasta', p.hasta::text)),
          'sobregiro', z.b_sobregiro,
+         'caja_en_rojo', z.b_caja,
          'efectivo_final', z.b_final,
          'operacion', jsonb_build_array(jsonb_build_object('vista', 'v_flujo_lineas', 'campo', 'importe', 'signo', 1,
                                'filtros', jsonb_build_object('seccion_directo', 'operacion'),
@@ -3762,7 +4210,7 @@ select p.periodo, p.desde, p.hasta,
                                'desde', p.desde::text, 'hasta', p.hasta::text)),
          'financiamiento', jsonb_build_array(jsonb_build_object('vista', 'v_flujo_lineas', 'campo', 'importe', 'signo', 1,
                                'filtros', jsonb_build_object('seccion_directo', 'financiamiento'),
-                               'desde', p.desde::text, 'hasta', p.hasta::text)) || z.b_sobregiro,
+                               'desde', p.desde::text, 'hasta', p.hasta::text)) || z.b_sobregiro || z.b_caja,
          'ajustes', jsonb_build_array(jsonb_build_object('vista', 'v_flujo_lineas', 'campo', 'importe', 'signo', 1,
                                'filtros', jsonb_build_object('seccion_directo', 'ajustes'),
                                'desde', p.desde::text, 'hasta', p.hasta::text))) as bajar
@@ -3774,11 +4222,12 @@ select p.periodo, p.desde, p.hasta,
   cross join lateral (
     -- Cada cuenta de efectivo al empezar (s0) y al terminar (s1) el mes: el
     -- efectivo del balance (las que están en negro), el cambio del
-    -- sobregiro (+s0 de las que empezaron en rojo, −s1 de las que
-    -- terminaron en rojo) y con qué se baja a cada cifra.
+    -- sobregiro y el de la caja en rojo (+s0 de las que empezaron en rojo,
+    -- −s1 de las que terminaron en rojo), y con qué se baja a cada cifra.
     select coalesce(sum(greatest(q.s0, 0)), 0)                 as inicial,
            coalesce(sum(greatest(q.s1, 0)), 0)                 as final,
-           coalesce(sum(least(q.s0, 0) - least(q.s1, 0)), 0)   as sobregiro,
+           coalesce(sum(least(q.s0, 0) - least(q.s1, 0)) filter (where not q.caja), 0) as sobregiro,
+           coalesce(sum(least(q.s0, 0) - least(q.s1, 0)) filter (where q.caja), 0)     as caja,
            coalesce(bool_or(q.s0 <> 0), false)                 as con_saldo,
            coalesce(jsonb_agg(jsonb_build_object('vista', 'v_libro', 'campo', 'monto', 'signo', 1,
                                                  'filtros', jsonb_build_object('cuenta', q.cuenta), 'hasta', (p.desde - 1)::text)
@@ -3788,11 +4237,17 @@ select p.periodo, p.desde, p.hasta,
                               order by q.cuenta) filter (where q.s1 > 0), '[]'::jsonb) as b_final,
            coalesce(jsonb_agg(jsonb_build_object('vista', 'v_libro', 'campo', 'monto', 'signo', 1,
                                                  'filtros', jsonb_build_object('cuenta', q.cuenta), 'hasta', (p.desde - 1)::text)
-                              order by q.cuenta) filter (where q.s0 < 0), '[]'::jsonb)
+                              order by q.cuenta) filter (where q.s0 < 0 and not q.caja), '[]'::jsonb)
            || coalesce(jsonb_agg(jsonb_build_object('vista', 'v_libro', 'campo', 'monto', 'signo', -1,
                                                     'filtros', jsonb_build_object('cuenta', q.cuenta), 'hasta', p.hasta::text)
-                                 order by q.cuenta) filter (where q.s1 < 0), '[]'::jsonb) as b_sobregiro
-      from (select e.cuenta, coalesce(sum(e.neto) filter (where e.mes < p.desde), 0) as s0,
+                                 order by q.cuenta) filter (where q.s1 < 0 and not q.caja), '[]'::jsonb) as b_sobregiro,
+           coalesce(jsonb_agg(jsonb_build_object('vista', 'v_libro', 'campo', 'monto', 'signo', 1,
+                                                 'filtros', jsonb_build_object('cuenta', q.cuenta), 'hasta', (p.desde - 1)::text)
+                              order by q.cuenta) filter (where q.s0 < 0 and q.caja), '[]'::jsonb)
+           || coalesce(jsonb_agg(jsonb_build_object('vista', 'v_libro', 'campo', 'monto', 'signo', -1,
+                                                    'filtros', jsonb_build_object('cuenta', q.cuenta), 'hasta', p.hasta::text)
+                                 order by q.cuenta) filter (where q.s1 < 0 and q.caja), '[]'::jsonb) as b_caja
+      from (select e.cuenta, bool_or(e.caja) as caja, coalesce(sum(e.neto) filter (where e.mes < p.desde), 0) as s0,
                    coalesce(sum(e.neto) filter (where e.mes <= p.desde), 0) as s1
               from efc e
              group by e.cuenta) q
@@ -3811,7 +4266,8 @@ select p.periodo, p.desde, p.hasta,
 
 -- ---------------------------------------------------------------------
 -- 5.1 · v_saldos_dinero — a cada corte, el saldo de cada cuenta de dinero
--- (tipo 'banco': las de efectivo del mapeo, 10xx), de cada tarjeta
+-- (tipo 'banco': las de efectivo del mapeo, 10xx; 'caja', la caja chica,
+-- estados_mapeo.caja: dinero en la mano, no en un banco), de cada tarjeta
 -- ('tarjeta': el renglón tarjetas, 2100-x) y de la línea de crédito
 -- ('credito'). Una fila por cuenta imputable de esos renglones que esté
 -- activa o tenga movimientos (una tarjeta dada de baja con saldo sigue
@@ -3832,7 +4288,8 @@ select c.periodo, c.tipo as periodo_tipo, c.desde, c.corte, x.*
   cross join lateral (
     with m as materialized (
       select mp.cuenta, mp.cuenta_nombre, mp.etiqueta_es, mp.etiqueta_en, mp.linea, mp.orden, mp.saldo_normal,
-             case when mp.efectivo then 'banco' when mp.linea = 'tarjetas' then 'tarjeta' else 'credito' end as tipo
+             case when mp.caja then 'caja' when mp.efectivo then 'banco' when mp.linea = 'tarjetas' then 'tarjeta'
+                  else 'credito' end as tipo
         from public.v_estados_mapeo mp
         join public.cuentas cu on cu.codigo = mp.cuenta
        where cu.imputable
@@ -3899,9 +4356,12 @@ select c.periodo, c.tipo as periodo_tipo, c.desde, c.corte, x.*
 --                abierta por la diferencia; una nota de crédito la cierra;
 --                un cheque devuelto la vuelve a abrir, en la fecha de la
 --                devolución);
---   fecha, dias  la de la factura (la del cobro en un anticipo; la de la
---                línea más vieja si no hay partida) y los días hasta el
---                corte; tramo '0-30', '31-60', '61-90', '90+', 'anticipo',
+--   fecha, dias  la de la factura (la del cobro en un anticipo; sin
+--                partida, la de lo más viejo que sigue sin cobrar: los
+--                abonos saldan primero los cargos más viejos, FIFO; un saldo
+--                a favor o solo retención, la de su línea más vieja) y los
+--                días hasta el corte; tramo '0-30', '31-60', '61-90', '90+',
+--                'anticipo',
 --                'a_favor' (un saldo a favor del cliente sin factura) o
 --                'retencion' (si solo queda retención); d0_30…d90_mas =
 --                por_cobrar en su tramo; anticipos = los anticipos y los
@@ -3922,9 +4382,26 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, x.*
              (select pc.cuenta from public.puente_cuentas pc where pc.rol = 'retencion_cxc') as ret
     ), l as materialized (
       select v.asiento_id, v.numero, v.fecha, v.cuenta, v.monto, v.proyecto_id, v.partida_tabla, v.partida_id,
-             v.cuenta = k.ret as es_ret
+             v.cuenta = k.ret as es_ret, v.cadena_pos, v.orden
         from public.v_libro v, k
        where v.cuenta in (k.cxc, k.ret) and v.fecha <= c.corte
+    ), fs as materialized (
+      -- Lo que va SIN factura en cuentas por cobrar (por obra), fechado por
+      -- lo más viejo que sigue sin cobrar (FIFO): lo abonado salda primero
+      -- los cargos más viejos. Antes, por la línea más vieja: un cargo de
+      -- enero ya cobrado dejaba en 90+ lo que se cargó en octubre.
+      select y.obra, min(y.fecha) as fecha
+        from (select l.proyecto_id as obra, l.fecha,
+                     sum(l.monto) over (partition by l.proyecto_id order by l.fecha, l.cadena_pos, l.orden
+                                        rows between unbounded preceding and current row) as acum
+                from l
+               where l.partida_tabla is null and not l.es_ret and l.monto > 0) y
+        left join (select l.proyecto_id as obra, -sum(l.monto) as abonado
+                     from l
+                    where l.partida_tabla is null and not l.es_ret and l.monto < 0
+                    group by l.proyecto_id) ab on ab.obra is not distinct from y.obra
+       where y.acum > coalesce(ab.abonado, 0)
+       group by y.obra
     ), g as materialized (
       select l.partida_tabla, l.partida_id,
              case when l.partida_tabla is null then l.proyecto_id end         as obra_sin_partida,
@@ -3944,7 +4421,8 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, x.*
              case when g.partida_tabla = 'facturas' then 'factura' when g.partida_tabla = 'cobros' then 'anticipo'
                   when g.partida_tabla is null then 'sin_partida' else 'otra' end as tipo,
              f.id as factura_id, f.num as factura_num, f.monto as factura_monto,
-             coalesce(case when g.partida_tabla = 'facturas' then f.fecha when g.partida_tabla = 'cobros' then co.fecha end,
+             coalesce(case when g.partida_tabla = 'facturas' then f.fecha when g.partida_tabla = 'cobros' then co.fecha
+                           when g.partida_tabla is null and g.por_cobrar > 0 then fs.fecha end,
                       g.primera) as fecha,
              case when g.partida_tabla is null
                   then jsonb_build_object('partida_tabla', null, 'proyecto_id', g.obra_sin_partida)
@@ -3956,6 +4434,7 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, x.*
         left join public.cobros co
                on g.partida_tabla = 'cobros'
               and co.id = (case when g.partida_tabla = 'cobros' and g.partida_id ~ '^[0-9a-f-]{36}$' then g.partida_id::uuid end)
+        left join fs on g.partida_tabla is null and fs.obra is not distinct from g.obra_sin_partida
        where g.por_cobrar <> 0 or g.retencion <> 0
     ), t as materialized (
       select a.*, c.corte - a.fecha as dias,
@@ -4043,7 +4522,8 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, x.*
 -- 2010 (c3), a nombre de su proveedor; lo que trajo la apertura va por
 -- proveedor (sin partida, o con la del papel si está en la app).
 --   tipo        'papel' (partida recibos/<id> o trabajos_externos/<id>),
---               'proveedor' (sin partida, con proveedor) o 'sin_partida';
+--               'proveedor' (sin partida, con proveedor; y los papeles que
+--               ya salda lo pagado sin partida, abajo) o 'sin_partida';
 --   por_pagar   lo que se debe en cuentas por pagar (2010), en positivo; un
 --               saldo a favor (se pagó de más, una nota del proveedor) sale
 --               en negativo, tramo 'a_favor';
@@ -4068,7 +4548,19 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, x.*
 --               «Net 30» o «30 días» → 30 días; «EOM» → fin de mes;
 --               contado → el mismo día. Nulo si no hay fecha o si los
 --               términos no dicen (no se inventa); dias_vencida = días
---               desde que venció.
+--               desde que venció. La RETENCIÓN no vence por términos (se
+--               paga al terminar la obra): en una fila con solo retención,
+--               vence y dias_vencida van nulos; y la de la apertura sin su
+--               fecha de la balanza no se fecha el 30-sep (fecha nula).
+-- LO PAGADO SIN PARTIDA (el cheque por el statement de un proveedor, un
+-- abono a mano) salda lo de ESE proveedor: primero lo suyo sin papel (la
+-- apertura, lo de los asientos a mano), después sus papeles del más viejo
+-- al más nuevo (su fecha y su id). Los papeles que alcanza, y los que se
+-- pagaron de más, van ENTEROS en la fila del proveedor (una fila son
+-- líneas enteras: su «bajar» es lo suyo sin papel más cada papel), con la
+-- fecha del más viejo que sigue sin pagar; y «a favor» sale por proveedor
+-- y neto, como en el balance. Antes el papel seguía abierto y el cheque
+-- salía aparte como un saldo a favor que el balance no tenía.
 -- La fila 'total' compara la suma con el mayor de 2010 + 2020 (cuadra).
 -- (En cobrar no hace falta: la apertura trae cada cuenta por cobrar con su
 -- factura, que tiene su fecha, y sin factura solo saldos a favor.)
@@ -4084,23 +4576,87 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, x.*
                         where m.estado = 'balance' and m.linea = 'retencion_por_pagar'), '{}'::text[]) as ret
     ), l as materialized (
       select v.asiento_id, v.numero, v.fecha, v.cuenta, v.monto, v.tercero_tipo, v.tercero_id, v.partida_tabla, v.partida_id,
-             v.cuenta = any (k.ret) as es_ret, v.tipo = 'apertura' as de_apertura, v.cadena_pos, v.orden
+             v.cuenta = any (k.ret) as es_ret, v.tipo = 'apertura' as de_apertura, v.cadena_pos, v.orden,
+             -- (la llave de su partida: el papel, o el proveedor si va sin papel)
+             concat_ws('|', coalesce(v.partida_tabla, '-'), coalesce(v.partida_id, '-'),
+                       case when v.partida_tabla is null then coalesce(v.tercero_id, '-') else '-' end) as gk
         from public.v_libro v, k
        where (v.cuenta = k.cxp or v.cuenta = any (k.ret)) and v.fecha <= c.corte
-    ), g as materialized (
-      select l.partida_tabla, l.partida_id,
-             case when l.partida_tabla is null then l.tercero_id end            as tercero_sin_partida,
-             min(l.tercero_id) filter (where l.tercero_tipo = 'proveedor')      as tercero_id,
-             coalesce(-sum(l.monto) filter (where not l.es_ret), 0)             as por_pagar,
-             coalesce(-sum(l.monto) filter (where l.es_ret), 0)                 as retencion,
-             coalesce(-sum(l.monto) filter (where l.monto < 0), 0)              as cargos,
-             coalesce(sum(l.monto) filter (where l.monto > 0), 0)               as pagos,
-             min(l.fecha)                                                       as primera,
-             count(distinct l.asiento_id)                                       as asientos,
-             min(l.asiento_id::text)                                            as asiento_min,
-             min(l.numero)                                                      as numero_min
+    ), g0 as materialized (
+      -- Cada papel, y lo de cada proveedor sin papel (lo de pagar, 2010).
+      select l.gk, min(l.partida_tabla) as partida_tabla, min(l.partida_id) as partida_id,
+             min(case when l.partida_tabla is null then l.tercero_id end) as tercero_sin_partida,
+             min(l.tercero_id) filter (where l.tercero_tipo = 'proveedor') as tercero_id,
+             coalesce(-sum(l.monto) filter (where not l.es_ret), 0) as por_pagar,
+             min(l.fecha) as primera
         from l
-       group by l.partida_tabla, l.partida_id, case when l.partida_tabla is null then l.tercero_id end
+       group by l.gk
+    ), pp as materialized (
+      -- Los papeles de cada proveedor con algo en 2010, con su fecha.
+      select g0.gk, g0.tercero_id, g0.por_pagar, g0.partida_tabla, g0.partida_id,
+             coalesce(case when g0.partida_tabla = 'recibos' then r.fecha when g0.partida_tabla = 'trabajos_externos' then te.fecha end,
+                      g0.primera) as fpapel,
+             case when g0.partida_tabla = 'recibos' then r.num_recibo end as referencia
+        from g0
+        left join public.recibos r
+               on g0.partida_tabla = 'recibos'
+              and r.id = (case when g0.partida_tabla = 'recibos' and g0.partida_id ~ '^-?[0-9]{1,18}$' then g0.partida_id::bigint end)
+        left join public.trabajos_externos te
+               on g0.partida_tabla = 'trabajos_externos'
+              and te.id = (case when g0.partida_tabla = 'trabajos_externos' and g0.partida_id ~ '^-?[0-9]{1,18}$'
+                                then g0.partida_id::bigint end)
+       where g0.partida_tabla is not null and g0.tercero_id is not null and g0.por_pagar <> 0
+    ), ab as materialized (
+      -- Los que van a la fila de su proveedor: los pagados de más, y los que
+      -- alcanza r = lo que queda de lo pagado sin papel (y de los pagados de
+      -- más) después de saldar lo suyo sin papel, del más viejo al más nuevo.
+      select x.*
+        from (select pp.*, rp.r,
+                     row_number() over (partition by pp.tercero_id order by pp.fpapel, pp.partida_tabla, pp.partida_id) as n,
+                     coalesce(sum(greatest(pp.por_pagar, 0))
+                                over (partition by pp.tercero_id order by pp.fpapel, pp.partida_tabla, pp.partida_id
+                                      rows between unbounded preceding and 1 preceding), 0) as antes
+                from pp
+                join (select q.tercero_id,
+                             -(coalesce((select s.por_pagar from g0 s
+                                          where s.partida_tabla is null and s.tercero_sin_partida = q.tercero_id), 0)
+                               + coalesce(sum(q.por_pagar) filter (where q.por_pagar < 0), 0)) as r
+                        from pp q
+                       group by q.tercero_id) rp on rp.tercero_id = pp.tercero_id) x
+       where x.por_pagar < 0 or (x.r > 0 and x.antes < x.r)
+    ), fa as materialized (
+      -- De esos, el más viejo que sigue sin pagar del todo: su fecha es la de
+      -- la fila del proveedor.
+      select distinct on (ab.tercero_id) ab.tercero_id, ab.fpapel, ab.referencia
+        from ab
+       where ab.por_pagar > 0 and ab.antes + ab.por_pagar > ab.r
+       order by ab.tercero_id, ab.n
+    ), lk as materialized (
+      -- Cada línea con la fila en que va: la de su papel, o la de su
+      -- proveedor si su papel va ahí.
+      select l.*, case when ab.gk is not null then '-|-|' || ab.tercero_id else l.gk end as rk, ab.gk is not null as absorbida
+        from l
+        left join ab on ab.gk = l.gk
+    ), g as materialized (
+      select lk.rk,
+             case when lk.rk like '-|-|%' then null else min(lk.partida_tabla) end         as partida_tabla,
+             case when lk.rk like '-|-|%' then null else min(lk.partida_id) end            as partida_id,
+             case when lk.rk like '-|-|%' then nullif(split_part(lk.rk, '|', 3), '-') end   as tercero_sin_partida,
+             min(lk.tercero_id) filter (where lk.tercero_tipo = 'proveedor')             as tercero_id,
+             coalesce(-sum(lk.monto) filter (where not lk.es_ret), 0)                    as por_pagar,
+             coalesce(-sum(lk.monto) filter (where lk.es_ret), 0)                        as retencion,
+             coalesce(-sum(lk.monto) filter (where lk.monto < 0), 0)                     as cargos,
+             coalesce(sum(lk.monto) filter (where lk.monto > 0), 0)                      as pagos,
+             min(lk.fecha)                                                               as primera,
+             bool_and(lk.de_apertura)                                                    as solo_apertura,
+             bool_or(lk.partida_tabla is null)                                           as con_sin_papel,
+             coalesce(jsonb_agg(distinct jsonb_build_object('partida_tabla', lk.partida_tabla, 'partida_id', lk.partida_id))
+                        filter (where lk.absorbida), '[]'::jsonb)                        as papeles,
+             count(distinct lk.asiento_id)                                               as asientos,
+             min(lk.asiento_id::text)                                                    as asiento_min,
+             min(lk.numero)                                                              as numero_min
+        from lk
+       group by lk.rk
     ), qb as materialized (
       -- La balanza de QuickBooks que entró al libro (la de la apertura
       -- viva): lo que se le debía a cada proveedor, fila por fila, sin
@@ -4147,6 +4703,11 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, x.*
       select l.tercero_id, l.fecha, null, null, -l.monto, 'libro', l.fecha, 1, l.cadena_pos * 1000 + l.orden
         from l
        where l.partida_tabla is null and not l.de_apertura and not l.es_ret
+      union all
+      -- (lo pagado de más en sus papeles, que va en su fila, también salda)
+      select ab.tercero_id, null, null, null, ab.por_pagar, null, ab.fpapel, 2, ab.n
+        from ab
+       where ab.por_pagar < 0
     ), ff as materialized (
       -- Lo más viejo que sigue sin pagar, de cada proveedor.
       select distinct on (y.tercero_id) y.tercero_id, y.fecha, y.vence, y.referencia, y.origen, true as hay
@@ -4163,19 +4724,31 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, x.*
                   else 'sin_partida' end as tipo,
              case when g.partida_tabla = 'recibos' then r.fecha
                   when g.partida_tabla = 'trabajos_externos' then te.fecha
+                  when fa.tercero_id is not null then fa.fpapel
                   when ff.hay then ff.fecha
+                  -- (solo retención, y toda de la apertura: sin fecha)
+                  when g.por_pagar = 0 and g.solo_apertura then null
                   else g.primera end as fecha,
-             case when g.partida_tabla in ('recibos', 'trabajos_externos') then 'papel'
+             case when g.partida_tabla in ('recibos', 'trabajos_externos') or fa.tercero_id is not null then 'papel'
                   when ff.hay then ff.origen
+                  when g.por_pagar = 0 and g.solo_apertura then null
                   else 'libro' end as fecha_origen,
-             ff.vence as vence_qb,
-             coalesce(ff.hay and ff.fecha is null, false) as sin_fecha,
+             case when fa.tercero_id is null then ff.vence end as vence_qb,
+             coalesce(fa.tercero_id is null and ff.hay and ff.fecha is null, false) as sin_fecha,
              coalesce(pv.id, pa.id, px.id, pe.id) as proveedor_id,
-             case when g.partida_tabla = 'recibos' then r.num_recibo else ff.referencia end as referencia,
+             case when g.partida_tabla = 'recibos' then r.num_recibo when fa.tercero_id is not null then fa.referencia
+                  else ff.referencia end as referencia,
+             -- (con qué se baja a sus líneas: su papel; o lo suyo sin papel y
+             -- cada papel que salda)
              case when g.partida_tabla is null
-                  then jsonb_build_object('partida_tabla', null, 'tercero_id', g.tercero_sin_partida)
-                  else jsonb_build_object('partida_tabla', g.partida_tabla, 'partida_id', g.partida_id) end as filtros
+                  then case when g.con_sin_papel
+                            then jsonb_build_array(jsonb_build_object('partida_tabla', null, 'tercero_id', g.tercero_sin_partida))
+                            else '[]'::jsonb end
+                       || g.papeles
+                  else jsonb_build_array(jsonb_build_object('partida_tabla', g.partida_tabla, 'partida_id', g.partida_id))
+             end as filtros
         from g
+        left join fa on g.partida_tabla is null and fa.tercero_id = g.tercero_sin_partida
         left join ff on g.partida_tabla is null and ff.tercero_id is not distinct from g.tercero_sin_partida
         left join public.recibos r
                on g.partida_tabla = 'recibos'
@@ -4200,6 +4773,8 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, x.*
       select t.*,
              case when t.vence_qb is not null then t.vence_qb
                   when t.fecha is null then null
+                  -- (la retención no vence por términos: se paga al terminar la obra)
+                  when t.por_pagar = 0 then null
                   -- «Net 10th Prox», «10 Prox»: el día 10 del mes siguiente.
                   when t.tt ~ '[0-9]{1,2}[[:space:]]*(st|nd|rd|th)?[[:space:]]*prox'
                     then (date_trunc('month', t.fecha::timestamp) + interval '1 month')::date
@@ -4232,10 +4807,14 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, x.*
                   when t.dias <= 60 then '31-60'
                   when t.dias <= 90 then '61-90'
                   else '90+' end as tramo,
-             jsonb_build_object('vista', 'v_libro', 'campo', 'monto', 'signo', -1, 'hasta', c.corte::text,
-                                'filtros', t.filtros || jsonb_build_object('cuenta', k.cxp)) as s_cxp,
-             jsonb_build_object('vista', 'v_libro', 'campo', 'monto', 'signo', -1, 'hasta', c.corte::text,
-                                'filtros', t.filtros || jsonb_build_object('cuenta', to_jsonb(k.ret))) as s_ret,
+             (select coalesce(jsonb_agg(jsonb_build_object('vista', 'v_libro', 'campo', 'monto', 'signo', -1, 'hasta', c.corte::text,
+                                                           'filtros', f.v || jsonb_build_object('cuenta', k.cxp)) order by f.o),
+                              '[]'::jsonb)
+                from jsonb_array_elements(t.filtros) with ordinality as f(v, o)) as s_cxp,
+             (select coalesce(jsonb_agg(jsonb_build_object('vista', 'v_libro', 'campo', 'monto', 'signo', -1, 'hasta', c.corte::text,
+                                                           'filtros', f.v || jsonb_build_object('cuenta', to_jsonb(k.ret))) order by f.o),
+                              '[]'::jsonb)
+                from jsonb_array_elements(t.filtros) with ordinality as f(v, o)) as s_ret,
              k.cxp, k.ret
         from t, k
     )
@@ -4254,19 +4833,23 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, x.*
            case when u.asientos = 1 then u.numero_min end as numero,
            null::numeric(14,2) as mayor, null::boolean as cuadra,
            jsonb_build_object(
-             'por_pagar', jsonb_build_array(u.s_cxp),
-             'retencion', jsonb_build_array(u.s_ret),
-             'total',     jsonb_build_array(u.s_cxp, u.s_ret),
-             'd0_30',     case when u.tramo = '0-30'  then jsonb_build_array(u.s_cxp) else '[]'::jsonb end,
-             'd31_60',    case when u.tramo = '31-60' then jsonb_build_array(u.s_cxp) else '[]'::jsonb end,
-             'd61_90',    case when u.tramo = '61-90' then jsonb_build_array(u.s_cxp) else '[]'::jsonb end,
-             'd90_mas',   case when u.tramo = '90+'   then jsonb_build_array(u.s_cxp) else '[]'::jsonb end,
-             'sin_fecha', case when u.tramo = 'apertura' then jsonb_build_array(u.s_cxp) else '[]'::jsonb end,
-             'a_favor',   case when u.tramo = 'a_favor' then jsonb_build_array(u.s_cxp) else '[]'::jsonb end,
-             'cargos',    jsonb_build_array(jsonb_set(jsonb_set(jsonb_set(u.s_cxp, '{campo}', '"haber"'), '{signo}', '1'),
-                                                      '{filtros,cuenta}', to_jsonb(array[u.cxp] || u.ret))),
-             'pagos',     jsonb_build_array(jsonb_set(jsonb_set(jsonb_set(u.s_cxp, '{campo}', '"debe"'), '{signo}', '1'),
-                                                      '{filtros,cuenta}', to_jsonb(array[u.cxp] || u.ret)))) as bajar
+             'por_pagar', u.s_cxp,
+             'retencion', u.s_ret,
+             'total',     u.s_cxp || u.s_ret,
+             'd0_30',     case when u.tramo = '0-30'  then u.s_cxp else '[]'::jsonb end,
+             'd31_60',    case when u.tramo = '31-60' then u.s_cxp else '[]'::jsonb end,
+             'd61_90',    case when u.tramo = '61-90' then u.s_cxp else '[]'::jsonb end,
+             'd90_mas',   case when u.tramo = '90+'   then u.s_cxp else '[]'::jsonb end,
+             'sin_fecha', case when u.tramo = 'apertura' then u.s_cxp else '[]'::jsonb end,
+             'a_favor',   case when u.tramo = 'a_favor' then u.s_cxp else '[]'::jsonb end,
+             'cargos',    (select coalesce(jsonb_agg(jsonb_set(jsonb_set(jsonb_set(e.v, '{campo}', '"haber"'), '{signo}', '1'),
+                                                               '{filtros,cuenta}', to_jsonb(array[u.cxp] || u.ret)) order by e.o),
+                                   '[]'::jsonb)
+                             from jsonb_array_elements(u.s_cxp) with ordinality as e(v, o)),
+             'pagos',     (select coalesce(jsonb_agg(jsonb_set(jsonb_set(jsonb_set(e.v, '{campo}', '"debe"'), '{signo}', '1'),
+                                                               '{filtros,cuenta}', to_jsonb(array[u.cxp] || u.ret)) order by e.o),
+                                   '[]'::jsonb)
+                             from jsonb_array_elements(u.s_cxp) with ordinality as e(v, o))) as bajar
       from u
     union all
     select 'total', null, null, null, null, null, null, null, null, null, null, null, null, null,
@@ -4290,12 +4873,18 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, x.*
              'total',     jsonb_build_array(jsonb_build_object('vista', 'v_libro', 'campo', 'monto', 'signo', -1,
                             'hasta', c.corte::text,
                             'filtros', jsonb_build_object('cuenta', (select to_jsonb(array[k.cxp] || k.ret) from k)))),
-             'd0_30',     coalesce(jsonb_agg(u.s_cxp) filter (where u.tramo = '0-30'), '[]'::jsonb),
-             'd31_60',    coalesce(jsonb_agg(u.s_cxp) filter (where u.tramo = '31-60'), '[]'::jsonb),
-             'd61_90',    coalesce(jsonb_agg(u.s_cxp) filter (where u.tramo = '61-90'), '[]'::jsonb),
-             'd90_mas',   coalesce(jsonb_agg(u.s_cxp) filter (where u.tramo = '90+'), '[]'::jsonb),
-             'sin_fecha', coalesce(jsonb_agg(u.s_cxp) filter (where u.tramo = 'apertura'), '[]'::jsonb),
-             'a_favor',   coalesce(jsonb_agg(u.s_cxp) filter (where u.tramo = 'a_favor'), '[]'::jsonb),
+             'd0_30',     (select coalesce(jsonb_agg(e.v order by u2.rk, e.o), '[]'::jsonb)
+                             from u u2, jsonb_array_elements(u2.s_cxp) with ordinality as e(v, o) where u2.tramo = '0-30'),
+             'd31_60',    (select coalesce(jsonb_agg(e.v order by u2.rk, e.o), '[]'::jsonb)
+                             from u u2, jsonb_array_elements(u2.s_cxp) with ordinality as e(v, o) where u2.tramo = '31-60'),
+             'd61_90',    (select coalesce(jsonb_agg(e.v order by u2.rk, e.o), '[]'::jsonb)
+                             from u u2, jsonb_array_elements(u2.s_cxp) with ordinality as e(v, o) where u2.tramo = '61-90'),
+             'd90_mas',   (select coalesce(jsonb_agg(e.v order by u2.rk, e.o), '[]'::jsonb)
+                             from u u2, jsonb_array_elements(u2.s_cxp) with ordinality as e(v, o) where u2.tramo = '90+'),
+             'sin_fecha', (select coalesce(jsonb_agg(e.v order by u2.rk, e.o), '[]'::jsonb)
+                             from u u2, jsonb_array_elements(u2.s_cxp) with ordinality as e(v, o) where u2.tramo = 'apertura'),
+             'a_favor',   (select coalesce(jsonb_agg(e.v order by u2.rk, e.o), '[]'::jsonb)
+                             from u u2, jsonb_array_elements(u2.s_cxp) with ordinality as e(v, o) where u2.tramo = 'a_favor'),
              'mayor',     jsonb_build_array(jsonb_build_object('vista', 'v_libro', 'campo', 'monto', 'signo', -1,
                             'hasta', c.corte::text,
                             'filtros', jsonb_build_object('cuenta', (select to_jsonb(array[k.cxp] || k.ret) from k)))))
@@ -4310,10 +4899,16 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, x.*
 -- con su PROVEEDOR, el primero que se sepa en este orden:
 --   'linea'      el tercero de la propia línea;
 --   'asiento'    el proveedor del mismo asiento (la deuda en 2010 de un
---                recibo a cuenta o de un trabajo externo), si es UNO; si el
---                asiento tiene varios (un devengo de dos subcontratistas),
---                el de la línea de proveedor del mismo monto y de la misma
---                obra (o sin obra), si es una sola;
+--                recibo a cuenta o de un trabajo externo), si es UNO y su
+--                deuda explica todo el asiento: sus líneas son abonos (lo
+--                que se le debe o se le pagó con tarjeta) y lo demás que se
+--                abona es con qué se pagó (dinero, tarjeta, línea de
+--                crédito, el bolsillo de Edgar o de un empleado). Si no (un
+--                journal de nómina con la línea del seguro de accidentes: los
+--                sueldos no son de la aseguradora), o si el asiento tiene
+--                varios (un devengo de dos subcontratistas), el de la línea
+--                de proveedor del mismo monto y de la misma obra (o sin
+--                obra), si es una sola;
 --   'trabajo_externo' el proveedor del trabajo externo (el que le puso
 --                Edgar, o el de su ayudante);
 --   'recibo'     el nombre que trae el recibo, casado con proveedores_alias
@@ -4357,12 +4952,15 @@ select y.asiento_id, y.numero, y.orden, y.fecha, y.periodo, y.anio, y.ejercicio,
                        x.proyecto_id, x.cost_code, x.memo,
                        case when x.tercero_tipo = 'proveedor' and x.tercero_id ~ '^[0-9a-f-]{36}$'
                             then x.tercero_id::uuid end                                           as prov_linea,
-                       case when x.prov_min = x.prov_max and x.prov_min ~ '^[0-9a-f-]{36}$' then x.prov_min::uuid
-                            -- Varios proveedores en el asiento: el de la línea
-                            -- de su deuda del mismo monto y obra, si es uno
-                            -- solo (una búsqueda por el asiento, solo en
-                            -- estos asientos, que son pocos).
-                            when x.prov_min <> x.prov_max
+                       case when x.prov_min = x.prov_max and x.prov_min ~ '^[0-9a-f-]{36}$'
+                                 and coalesce(x.prov_solo_haber, false) and coalesce(x.otros_haber_pago, true)
+                            then x.prov_min::uuid
+                            -- Si no (varios proveedores, o uno cuya deuda no
+                            -- explica todo el asiento): el de la línea de su
+                            -- deuda del mismo monto y obra, si es uno solo (una
+                            -- búsqueda por el asiento, solo en estos asientos,
+                            -- que son pocos).
+                            when x.prov_min is not null
                               then (select min(o.tercero_id)::uuid
                                       from public.asiento_lineas o
                                      where o.asiento_id = x.asiento_id and o.tercero_tipo = 'proveedor'
@@ -4379,6 +4977,13 @@ select y.asiento_id, y.numero, y.orden, y.fecha, y.periodo, y.anio, y.ejercicio,
                                -- por período y fecha: ver v_flujo_lineas).
                                min(v.tercero_id) filter (where v.tercero_tipo = 'proveedor') over w as prov_min,
                                max(v.tercero_id) filter (where v.tercero_tipo = 'proveedor') over w as prov_max,
+                               -- (¿Su deuda explica todo el asiento? Sus líneas
+                               -- son abonos, y lo demás que se abona es con qué
+                               -- se pagó.)
+                               bool_and(v.monto < 0) filter (where v.tercero_tipo = 'proveedor') over w as prov_solo_haber,
+                               bool_and(v.efectivo or v.linea in ('tarjetas', 'linea_credito') or v.cuenta = any (rb.cuentas))
+                                 filter (where v.monto < 0 and v.tercero_tipo is distinct from 'proveedor') over w
+                                                                                                   as otros_haber_pago,
                                -- (La llave de su papel, ya calculada: el join va
                                -- por la llave primaria, sin recorrer la tabla por
                                -- cada línea.)
@@ -4387,6 +4992,9 @@ select y.asiento_id, y.numero, y.orden, y.fecha, y.periodo, y.anio, y.ejercicio,
                                case when v.origen_tabla = 'trabajos_externos' and v.origen_id ~ '^-?[0-9]{1,18}$'
                                     then v.origen_id::bigint end as trabajo_id
                           from public.v_libro v
+                          cross join (select coalesce(array_agg(pc.cuenta), '{}'::text[]) as cuentas
+                                        from public.puente_cuentas pc
+                                       where pc.rol in ('reembolso_dueno', 'reembolso_empleado')) rb
                         window w as (partition by v.periodo, v.fecha, v.asiento_id)) x
                   left join public.recibos r on r.id = x.recibo_id
                   left join public.trabajos_externos te on te.id = x.trabajo_id
@@ -4525,8 +5133,14 @@ select p.periodo, p.tipo as periodo_tipo, p.desde, p.hasta, x.*
 -- fuera 5011, 5015 y 5019: no podía salir en rojo, y 300 de burden sin
 -- repartir no salían en ninguna fila). Lo sin repartir es la partida de
 -- conciliación, a la vista; si al cierre tiene que quedar en cero lo
--- decide f08. Cifras con el signo del estado de resultados (ingreso y
--- costo en positivo).
+-- decide f08. cuadra = repartido + sin repartir = mayor, Y lo sin
+-- repartir es de cuentas que no exigen obra (regla_obra 'prohibida' u
+-- 'opcional': las bolsas del burden, lo que el plan deja sin obra): lo
+-- sin repartir de una cuenta que EXIGE obra (5000-5010, 5100-5950,
+-- 4010-4040) no tiene explicación —sus guardas no lo dejan entrar; si
+-- está, alguien las saltó— y la fila (y la de su sección) sale en rojo.
+-- Cifras con el signo del estado de resultados (ingreso y costo en
+-- positivo).
 -- ---------------------------------------------------------------------
 drop view if exists public.v_costo_por_obra cascade;
 create view public.v_costo_por_obra with (security_invoker = true) as
@@ -4647,7 +5261,11 @@ select p.periodo, p.tipo as periodo_tipo, p.desde, p.hasta, x.*
     select 'control', null, null, null, k.cuenta, m.etiqueta_es, m.etiqueta_en, coalesce(k.seccion, m.seccion), m.orden,
            null::numeric(14,2), (k.signo * k.rep)::numeric(14,2), null::numeric(14,2), lb.libro_desde, null,
            null, null, null,
-           (k.signo * k.sin)::numeric(14,2), (k.signo * k.mayor)::numeric(14,2), k.rep + k.sin = k.mayor,
+           (k.signo * k.sin)::numeric(14,2), (k.signo * k.mayor)::numeric(14,2),
+           -- (cuadra: lo repartido más lo sin repartir es el mayor, y lo sin
+           -- repartir es de una cuenta que no exige obra; en una que la exige
+           -- —sus guardas no lo dejan entrar— es lo que queda SIN EXPLICAR)
+           k.rep + k.sin = k.mayor and (k.sin = 0 or coalesce(cu.regla_obra, '') <> 'obligatoria'),
            jsonb_build_object(
              -- (lo repartido: todas sus líneas del año menos las que no tienen obra)
              'del_anio', jsonb_build_array(jsonb_build_object('vista', 'v_libro', 'campo', 'monto', 'signo', k.signo,
@@ -4671,6 +5289,7 @@ select p.periodo, p.tipo as periodo_tipo, p.desde, p.hasta, x.*
               full join mx on mx.cuenta = sx.cuenta) k
       cross join lb
       join public.v_estados_mapeo m on m.cuenta = k.cuenta
+      left join public.cuentas cu on cu.codigo = k.cuenta
     union all
     -- Y por sección: el costo (y el ingreso) repartido por obra más lo sin
     -- repartir contra el total de la sección en el mayor (el estado de
@@ -4684,7 +5303,10 @@ select p.periodo, p.tipo as periodo_tipo, p.desde, p.hasta, x.*
              ::numeric(14,2),
            (z.signo * coalesce((select sum(mx.s) from mx where mx.seccion = z.seccion), 0))::numeric(14,2),
            coalesce((select sum(s.s_anio) from s where s.seccion = z.seccion), 0)
-             = coalesce((select sum(mx.s) from mx where mx.seccion = z.seccion), 0),
+             = coalesce((select sum(mx.s) from mx where mx.seccion = z.seccion), 0)
+           and not exists (select 1 from s join public.cuentas cu on cu.codigo = s.cuenta
+                            where s.seccion = z.seccion and s.proyecto_id is null and s.s_anio <> 0
+                              and cu.regla_obra = 'obligatoria'),
            jsonb_build_object(
              'del_anio', jsonb_build_array(jsonb_build_object('vista', 'v_libro', 'campo', 'monto', 'signo', z.signo,
                            'filtros', jsonb_build_object('estado', 'resultados', 'seccion', z.seccion, 'ejercicio', p.anio),
@@ -4874,15 +5496,22 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, x.*
 --               únicamente), y QuickBooks lo sigue teniendo en cada cuenta
 --               de resultados. Para comparar igual, a cada cuenta de
 --               resultados se le suma lo que la balanza de apertura traía en
---               ella, y a 3900 se le resta el total. En la apertura misma
---               es al revés: las cuentas de resultados de QuickBooks se
---               comparan dentro de 3900 (como las posteó fn_apertura);
+--               ella, y a 3900 se le resta lo que la apertura POSTEÓ como
+--               resultado (su línea en 3900, la que 3900 trae de más): no
+--               la suma de la balanza con el mapeo de hoy, que tras un
+--               re-mapeo ya no es lo posteado y dejaba 3900 en rojo además
+--               de la cuenta re-mapeada. En la apertura misma es al revés:
+--               las cuentas de resultados de QuickBooks se comparan dentro
+--               de 3900 (como las posteó fn_apertura);
 --   posteriores si la balanza de QuickBooks del período es la FINAL (se
 --               cargó con p_con_posteriores: ya trae los ajustes del CPA),
 --               los ajuste_cpa del libro fechados después del período que
 --               lo corrigen (efectivo_hasta hasta su último día; en el año,
 --               su ejercicio), como las columnas «ajustadas» del balance y
---               de resultados. Con la preliminar, 0;
+--               de resultados. Con la preliminar, 0. En la APERTURA,
+--               siempre: cerrada la apertura, lo que falte se corrige con un
+--               ajuste a la apertura (c2, MX007), y esa es la apertura de
+--               verdad (antes nunca amarraba: el ajuste no era del 30-sep);
 --   comparable  libro + arrastre_apertura + posteriores;
 --   qb          la suma de las filas de QuickBooks mapeadas a la cuenta;
 --   diferencia  comparable − qb;
@@ -4894,24 +5523,29 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, x.*
 -- anotaciones, restando).
 -- Una fila de QuickBooks sin mapeo sale sola (cuenta nula, cuenta_qb con
 -- su nombre) y en rojo. «Cero diferencias sin explicar» es la meta de cada
--- mes del paralelo.
+-- mes del paralelo. Se compara con la balanza del mes (tipo 'balanza'): el
+-- complemento por obra ('por_obra') es de v_comparacion_obra.
 -- ---------------------------------------------------------------------
 drop view if exists public.v_comparacion_resumen cascade;
 drop view if exists public.v_comparacion cascade;
 create view public.v_comparacion with (security_invoker = true) as
 select p.periodo, p.tipo as periodo_tipo, p.hasta as corte,
-       coalesce((select max(b.al) from public.v_qb_balanzas b where b.periodo = p.periodo and b.vigente), p.hasta) as al,
+       coalesce((select max(b.al) from public.v_qb_balanzas b
+                  where b.periodo = p.periodo and b.vigente and b.tipo = 'balanza'), p.hasta) as al,
+       (select min(b.documento) from public.v_qb_balanzas b
+         where b.periodo = p.periodo and b.vigente and b.tipo = 'balanza') as documento,
        p.anio, x.*
   from public.periodos p
   cross join lateral (
     with q as materialized (
-      select b.* from public.v_qb_balanzas b where b.periodo = p.periodo and b.vigente
+      select b.* from public.v_qb_balanzas b where b.periodo = p.periodo and b.vigente and b.tipo = 'balanza'
     ), pq as materialized (
       -- ¿La balanza vigente es la final (trae los ajustes del CPA)? Y con
       -- qué filtros se baja a esos ajustes (por FECHA: el período que
       -- corrigen termina a más tardar el último día de este). al: la fecha
-      -- de la balanza (su carga la dijo; si no, el fin del período).
-      select coalesce(bool_or(q.con_posteriores), false) as con,
+      -- de la balanza (su carga la dijo; si no, el fin del período). En la
+      -- apertura, sus ajustes siempre (ver arriba).
+      select coalesce(bool_or(q.con_posteriores), false) or p.tipo = 'apertura' as con,
              coalesce(max(q.al), p.hasta) as al,
              case when p.tipo = 'anio' then jsonb_build_object('tipo', 'ajuste_cpa', 'ejercicio_hasta', p.anio)
                   else jsonb_build_object('tipo', 'ajuste_cpa', 'efectivo_hasta_hasta', p.hasta) end as filtros
@@ -4931,6 +5565,24 @@ select p.periodo, p.tipo as periodo_tipo, p.hasta as corte,
          and b.cuenta_tipo not in ('activo', 'pasivo', 'capital')
          and p.anio = apx.ap_anio and p.hasta > apx.ap_hasta and p.periodo <> apx.ap_periodo
        group by b.cuenta
+    ), apr as materialized (
+      -- Lo que la apertura POSTEÓ como resultado de enero a septiembre: la
+      -- línea de 3900 del último asiento de fn_apertura (vivo o reversado,
+      -- el de la balanza de v_qb_balanzas; su lugar lo guarda la
+      -- procedencia, o es la de la nota del resultado). En los mismos
+      -- períodos que jan.
+      select a.id as asiento_id, al.orden, al.monto as q
+        from apx
+        cross join lateral (select x.id, x.procedencia from public.asientos x
+                             where x.origen_tabla = 'apertura_balanza_qb' and x.tipo = 'apertura'
+                               and coalesce(x.procedencia->>'funcion', '') = 'fn_apertura'
+                               and x.camino not in ('reverso', 'reverso_automatico')
+                             order by x.cadena_pos desc limit 1) a
+        join public.asiento_lineas al on al.asiento_id = a.id
+       where p.anio = apx.ap_anio and p.hasta > apx.ap_hasta and p.periodo <> apx.ap_periodo
+         and case when a.procedencia->'resultado_qb' ? 'orden'
+                  then al.orden = (a.procedencia->'resultado_qb'->>'orden')::int
+                  else al.cuenta = '3900' and al.memo like 'Resultado de enero a septiembre%' end
     ), qa as materialized (
       -- QuickBooks por cuenta del plan. En la apertura, sus cuentas de
       -- resultados van a 3900 (como las posteó fn_apertura).
@@ -4967,7 +5619,7 @@ select p.periodo, p.tipo as periodo_tipo, p.hasta as corte,
              coalesce(l.libro, 0) as libro, coalesce(l.posteriores, 0) as posteriores,
              coalesce(jan.saldo, 0)
                - case when coalesce(qa.cuenta, l.cuenta, jan.cuenta, d.cuenta) = '3900'
-                      then coalesce((select sum(j2.saldo) from jan j2), 0) else 0 end as arrastre,
+                      then coalesce((select sum(apr.q) from apr), 0) else 0 end as arrastre,
              coalesce(qa.qb, 0) as qb, qa.cuentas_qb, qa.documento,
              coalesce(d.explicada, 0) as explicada, d.clases, coalesce(d.anotadas, 0) as anotadas,
              coalesce(l.asientos, 0) as asientos, l.asiento_min, l.numero_min
@@ -4993,15 +5645,21 @@ select p.periodo, p.tipo as periodo_tipo, p.hasta as corte,
              case when p.tipo = 'apertura' and u.cuenta = '3900'
                   then jsonb_build_array(
                          jsonb_build_object('vista', 'v_qb_balanzas', 'campo', 'saldo', 'signo', 1,
-                           'filtros', jsonb_build_object('periodo', p.periodo, 'vigente', true, 'cuenta', '3900')),
+                           'filtros', jsonb_build_object('periodo', p.periodo, 'vigente', true, 'tipo', 'balanza', 'cuenta', '3900')),
                          jsonb_build_object('vista', 'v_qb_balanzas', 'campo', 'saldo', 'signo', 1,
-                           'filtros', jsonb_build_object('periodo', p.periodo, 'vigente', true,
+                           'filtros', jsonb_build_object('periodo', p.periodo, 'vigente', true, 'tipo', 'balanza',
                                         'cuenta_tipo_no', jsonb_build_array('activo', 'pasivo', 'capital'))))
                   when p.tipo = 'apertura' and m.estado = 'resultados' then '[]'::jsonb
                   else jsonb_build_array(jsonb_build_object('vista', 'v_qb_balanzas', 'campo', 'saldo', 'signo', 1,
-                         'filtros', jsonb_build_object('periodo', p.periodo, 'vigente', true, 'cuenta', u.cuenta)))
+                         'filtros', jsonb_build_object('periodo', p.periodo, 'vigente', true, 'tipo', 'balanza',
+                                                       'cuenta', u.cuenta)))
              end as b_qb,
              case when u.arrastre = 0 then '[]'::jsonb
+                  -- (3900: la línea del resultado que posteó la apertura)
+                  when u.cuenta = '3900'
+                    then coalesce((select jsonb_agg(jsonb_build_object('vista', 'v_libro', 'campo', 'monto', 'signo', -1,
+                                                      'filtros', jsonb_build_object('asiento_id', apr.asiento_id, 'orden', apr.orden)))
+                                     from apr), '[]'::jsonb)
                   else jsonb_build_array(jsonb_build_object('vista', 'v_qb_balanzas', 'campo', 'saldo',
                          'signo', case when u.cuenta = '3900' then -1 else 1 end,
                          'filtros', jsonb_build_object('fuente', 'apertura_balanza_qb',
@@ -5052,30 +5710,36 @@ select p.periodo, p.tipo as periodo_tipo, p.hasta as corte,
              'libro', '[]'::jsonb, 'arrastre_apertura', '[]'::jsonb, 'posteriores', '[]'::jsonb, 'comparable', '[]'::jsonb,
              'explicada', '[]'::jsonb,
              'qb', jsonb_build_array(jsonb_build_object('vista', 'v_qb_balanzas', 'campo', 'saldo', 'signo', 1,
-                     'filtros', jsonb_build_object('periodo', p.periodo, 'vigente', true, 'clave', q.clave, 'cuenta', null))),
+                     'filtros', jsonb_build_object('periodo', p.periodo, 'vigente', true, 'tipo', 'balanza', 'clave', q.clave,
+                                                   'cuenta', null))),
              'diferencia', jsonb_build_array(jsonb_build_object('vista', 'v_qb_balanzas', 'campo', 'saldo', 'signo', -1,
-                     'filtros', jsonb_build_object('periodo', p.periodo, 'vigente', true, 'clave', q.clave, 'cuenta', null))),
+                     'filtros', jsonb_build_object('periodo', p.periodo, 'vigente', true, 'tipo', 'balanza', 'clave', q.clave,
+                                                   'cuenta', null))),
              'sin_explicar', jsonb_build_array(jsonb_build_object('vista', 'v_qb_balanzas', 'campo', 'saldo', 'signo', -1,
-                     'filtros', jsonb_build_object('periodo', p.periodo, 'vigente', true, 'clave', q.clave, 'cuenta', null))))
+                     'filtros', jsonb_build_object('periodo', p.periodo, 'vigente', true, 'tipo', 'balanza', 'clave', q.clave,
+                                                   'cuenta', null))))
       from q
      where q.cuenta is null
      group by q.cuenta_qb, q.clave
     having sum(q.saldo) <> 0
   ) x
- where exists (select 1 from public.v_qb_balanzas b where b.periodo = p.periodo and b.vigente);
+ where exists (select 1 from public.v_qb_balanzas b where b.periodo = p.periodo and b.vigente and b.tipo = 'balanza');
 
 -- ---------------------------------------------------------------------
--- 6.3 · v_comparacion_obra — lo mismo, por obra, en las cuentas que la
--- balanza vigente del período trae por Customer:Job (o por factura, en la
--- apertura): el saldo del libro de esa cuenta en esa obra contra el de
--- QuickBooks. En una cuenta que QuickBooks NO trae por obra (la balanza
+-- 6.3 · v_comparacion_obra — lo mismo, por obra, en las cuentas que el
+-- período trae por Customer:Job (o por factura, en la apertura): el saldo
+-- del libro de esa cuenta en esa obra contra el de QuickBooks. De dónde:
+-- el complemento por obra del período (fn_comparacion_qb_cargar con
+-- p_tipo 'por_obra': el «Profit and Loss by Customer», lo único por obra
+-- que exporta QuickBooks) si se cargó; si no, la balanza del mes. En una cuenta que QuickBooks NO trae por obra (la balanza
 -- mensual de siempre no trae Customer:Job), una diferencia anotada con
 -- obra explica la fila por cuenta de v_comparacion y no abre filas por
 -- obra (fn_diferencia_anotar lo avisa).
 --   arrastre_apertura  como en v_comparacion, por obra: lo que la balanza
 --               de apertura traía de esa cuenta de resultados en esa obra
 --               (enero a septiembre), en los períodos de 2026 posteriores;
---   posteriores como en v_comparacion (la balanza final), por obra;
+--   posteriores como en v_comparacion (la balanza final; en la apertura,
+--               siempre), por obra;
 --   comparable = libro + arrastre_apertura + posteriores; diferencia =
 --   comparable − qb; explicada: las diferencias anotadas con esa obra y no
 --   retiradas; sin_explicar = diferencia − explicada.
@@ -5083,14 +5747,22 @@ select p.periodo, p.tipo as periodo_tipo, p.hasta as corte,
 drop view if exists public.v_comparacion_obra cascade;
 create view public.v_comparacion_obra with (security_invoker = true) as
 select p.periodo, p.tipo as periodo_tipo, p.hasta as corte,
-       coalesce((select max(b.al) from public.v_qb_balanzas b where b.periodo = p.periodo and b.vigente), p.hasta) as al,
+       coalesce((select max(b.al) from public.v_qb_balanzas b
+                  where b.periodo = p.periodo and b.vigente
+                    and b.tipo = coalesce((select max(o.tipo) from public.v_qb_balanzas o
+                                            where o.periodo = p.periodo and o.vigente and o.tipo = 'por_obra'), 'balanza')),
+                p.hasta) as al,
        x.*
   from public.periodos p
   cross join lateral (
-    with qv as materialized (
-      select b.* from public.v_qb_balanzas b where b.periodo = p.periodo and b.vigente
+    with tq as materialized (
+      -- El complemento por obra del período, si se cargó; si no, la balanza.
+      select coalesce((select max(b.tipo) from public.v_qb_balanzas b
+                        where b.periodo = p.periodo and b.vigente and b.tipo = 'por_obra'), 'balanza') as tipo
+    ), qv as materialized (
+      select b.* from public.v_qb_balanzas b, tq where b.periodo = p.periodo and b.vigente and b.tipo = tq.tipo
     ), pq as materialized (
-      select coalesce(bool_or(qv.con_posteriores), false) as con,
+      select coalesce(bool_or(qv.con_posteriores), false) or p.tipo = 'apertura' as con,
              coalesce(max(qv.al), p.hasta) as al,
              case when p.tipo = 'anio' then jsonb_build_object('tipo', 'ajuste_cpa', 'ejercicio_hasta', p.anio)
                   else jsonb_build_object('tipo', 'ajuste_cpa', 'efectivo_hasta_hasta', p.hasta) end as filtros
@@ -5167,13 +5839,14 @@ select p.periodo, p.tipo as periodo_tipo, p.hasta as corte,
                          'filtros', jsonb_build_object('fuente', 'apertura_balanza_qb', 'cuenta', u.cuenta,
                                                        'proyecto_id', u.proyecto_id))) end as b_arr,
              jsonb_build_array(jsonb_build_object('vista', 'v_qb_balanzas', 'campo', 'saldo', 'signo', 1,
-               'filtros', jsonb_build_object('periodo', p.periodo, 'vigente', true, 'cuenta', u.cuenta,
+               'filtros', jsonb_build_object('periodo', p.periodo, 'vigente', true, 'tipo', tq.tipo, 'cuenta', u.cuenta,
                                              'proyecto_id', u.proyecto_id))) as b_qb,
              jsonb_build_array(jsonb_build_object('vista', 'diferencias', 'campo', 'monto', 'signo', 1,
                'filtros', jsonb_build_object('periodo', p.periodo, 'cuenta', u.cuenta, 'proyecto_id', u.proyecto_id,
                                              'retirada_el', null))) as b_expl
         from u
         cross join pq
+        cross join tq
         left join public.v_estados_mapeo m on m.cuenta = u.cuenta
        where u.proyecto_id is not null
          and (u.libro <> 0 or u.qb <> 0 or u.explicada <> 0 or u.arrastre <> 0 or u.posteriores <> 0)
@@ -5299,7 +5972,7 @@ select r.periodo, r.periodo_tipo, r.corte, r.cuentas, r.cuentas_ok, r.cuentas_ma
                 else a.utilidad_libro end as utilidad_libro,
            case when a.periodo_tipo = 'apertura'
                 then coalesce((select -sum(b.saldo) from public.v_qb_balanzas b
-                                where b.periodo = a.periodo and b.vigente
+                                where b.periodo = a.periodo and b.vigente and b.tipo = 'balanza'
                                   and b.cuenta_tipo not in ('activo', 'pasivo', 'capital')), 0)
                 else a.utilidad_qb end as utilidad_qb,
            case when a.periodo_tipo = 'apertura'
@@ -5309,7 +5982,7 @@ select r.periodo, r.periodo_tipo, r.corte, r.cuentas, r.cuentas_ok, r.cuentas_ma
                 else a.n_ul end as n_libro,
            case when a.periodo_tipo = 'apertura'
                 then jsonb_build_array(jsonb_build_object('vista', 'v_qb_balanzas', 'campo', 'saldo', 'signo', 1,
-                       'filtros', jsonb_build_object('periodo', a.periodo, 'vigente', true,
+                       'filtros', jsonb_build_object('periodo', a.periodo, 'vigente', true, 'tipo', 'balanza',
                                                      'cuenta_tipo_no', jsonb_build_array('activo', 'pasivo', 'capital'))))
                 else a.n_uq end as n_qb
       from r a
@@ -5391,8 +6064,10 @@ revoke execute on function public.fn_estados_clave_qb(text) from public, anon, a
 -- 7.1 · El mapeo de los estados.
 -- ---------------------------------------------------------------------
 -- Ajustar dónde sale UNA cuenta: p_cambios con las llaves que cambian
--- (seccion, linea, orden, etiqueta_es, etiqueta_en, efectivo,
--- flujo_directo, flujo_indirecto, notas). El estado, el signo y «contra»
+-- (seccion, linea, orden, etiqueta_es, etiqueta_en, efectivo, caja,
+-- flujo_directo, flujo_indirecto, notas). caja: la cuenta de efectivo es
+-- dinero en la mano (la caja chica), no un banco; una cuenta que deja de
+-- ser efectivo deja de ser caja. El estado, el signo y «contra»
 -- no se mandan: salen de la cuenta y de su sección. La guarda (1.6) dice en
 -- español lo que no cuadra; el historial guarda el antes y el después.
 --   select fn_estados_mapeo('5010', '{"linea": "mano_de_obra"}');
@@ -5414,7 +6089,8 @@ begin
   end if;
   select string_agg(k, ', ' order by k) into v_sobra
     from jsonb_object_keys(p_cambios) k
-   where k not in ('seccion', 'linea', 'orden', 'etiqueta_es', 'etiqueta_en', 'efectivo', 'flujo_directo', 'flujo_indirecto', 'notas');
+   where k not in ('seccion', 'linea', 'orden', 'etiqueta_es', 'etiqueta_en', 'efectivo', 'caja', 'flujo_directo', 'flujo_indirecto',
+                   'notas');
   if v_sobra is not null then
     raise exception using errcode = '22023',
       message = format('Llave que no se cambia aquí: %s (el estado, el signo y «contra» salen de la cuenta y de su sección).', v_sobra);
@@ -5424,8 +6100,8 @@ begin
     raise exception using errcode = 'MX004', message = format('La cuenta %s no existe en el plan.', coalesce(p_cuenta, '(nula)'));
   end if;
   -- Sin fila todavía: primero la propuesta.
-  insert into estados_mapeo (cuenta, estado, seccion, linea, orden, signo, contra, efectivo, flujo_directo, flujo_indirecto)
-  select p.cuenta, p.estado, p.seccion, p.linea, p.orden, p.signo, p.contra, p.efectivo, p.flujo_directo, p.flujo_indirecto
+  insert into estados_mapeo (cuenta, estado, seccion, linea, orden, signo, contra, efectivo, flujo_directo, flujo_indirecto, caja)
+  select p.cuenta, p.estado, p.seccion, p.linea, p.orden, p.signo, p.contra, p.efectivo, p.flujo_directo, p.flujo_indirecto, p.caja
     from v_estados_mapeo_propuesto p
    where p.cuenta = p_cuenta
      and not exists (select 1 from estados_mapeo m where m.cuenta = p_cuenta)
@@ -5447,6 +6123,9 @@ begin
            etiqueta_en     = case when p_cambios ? 'etiqueta_en' then nullif(btrim(p_cambios->>'etiqueta_en'), '')
                                   else v_m.etiqueta_en end,
            efectivo        = coalesce((p_cambios->>'efectivo')::boolean, v_m.efectivo),
+           caja            = case when p_cambios ? 'caja' then coalesce((p_cambios->>'caja')::boolean, false)
+                                  when not coalesce((p_cambios->>'efectivo')::boolean, v_m.efectivo) then false
+                                  else v_m.caja end,
            flujo_directo   = coalesce(p_cambios->>'flujo_directo', v_m.flujo_directo),
            flujo_indirecto = coalesce(p_cambios->>'flujo_indirecto', v_m.flujo_indirecto),
            notas           = case when p_cambios ? 'notas' then nullif(btrim(p_cambios->>'notas'), '') else v_m.notas end,
@@ -5460,7 +6139,7 @@ begin
         message = format('La cuenta %s: el renglón %s / %s no existe en estados_lineas. Créalo antes con fn_estados_linea.',
                          p_cuenta, v_secc, coalesce(p_cambios->>'linea', v_m.linea));
     when invalid_text_representation then
-      raise exception using errcode = '22023', message = 'orden es un número entero y efectivo es true o false.';
+      raise exception using errcode = '22023', message = 'orden es un número entero; efectivo y caja, true o false.';
   end;
   return to_jsonb(v_m);
 end $$;
@@ -5549,7 +6228,15 @@ revoke execute on function public.fn_estados_config(text, text) from public, ano
 --   select fn_apertura_mapeo_qb('Chase Chk 4392', '1010');
 --   select fn_apertura_mapeo_qb('Opening Balance Equity', '3900', 'Capital que QuickBooks creó al dar saldos iniciales');
 --   select fn_apertura_mapeo_trabajo('Pérez, Juan:Casa Pérez', 'casa-perez-k3m9');
--- Mapear otra vez el mismo nombre lo cambia (con rastro).
+-- Mapear otra vez el mismo nombre lo cambia (con rastro). Si ese nombre
+-- está en la apertura ya posteada y el cambio mueve su asiento (una cuenta
+-- de balance, o de resultados a balance y al revés), lo AVISA (WARNING, y
+-- la llave aviso de lo que devuelve) sin parar: el asiento de apertura no
+-- cambia solo, y el balance sigue con el resultado que se posteó; se
+-- rehace con fn_apertura y su motivo.
+-- Una subcuenta que no existe (2100-1007) no se inventa: se dicen las de su
+-- grupo, y la que dice en sus notas ese número (en QuickBooks una tarjeta
+-- puede ir con otro: la Amex Gold, 2100-2013, figura como 1007).
 -- ---------------------------------------------------------------------
 create or replace function public.fn_apertura_mapeo_qb(p_nombre_qb text, p_cuenta text, p_notas text default null)
 returns jsonb
@@ -5557,8 +6244,15 @@ language plpgsql
 set search_path = public, pg_temp
 as $$
 declare
-  v_c cuentas;
-  v_m apertura_mapeo_qb;
+  v_c     cuentas;
+  v_m     apertura_mapeo_qb;
+  v_antes text;
+  v_t0    text;
+  v_suf   text;
+  v_sug   text;
+  v_hint  text;
+  v_ap    asientos;
+  v_aviso text;
 begin
   perform fn_estados_exigir_dueno();
   if fn_estados_clave_qb(p_nombre_qb) is null then
@@ -5566,21 +6260,67 @@ begin
   end if;
   select * into v_c from cuentas where codigo = btrim(p_cuenta);
   if not found then
+    v_suf := nullif(split_part(btrim(coalesce(p_cuenta, '')), '-', 2), '');
+    if v_suf !~ '^[[:alnum:]]+$' then
+      v_suf := null;
+    end if;
+    select string_agg(format('%s (%s)', c.codigo, c.nombre), ', ' order by c.codigo),
+           min(c.codigo) filter (where v_suf is not null and c.notas ~ ('(^|[^[:alnum:]])' || v_suf || '([^[:alnum:]]|$)'))
+      into v_hint, v_sug
+      from cuentas c
+     where c.imputable and v_suf is not null and c.codigo like split_part(btrim(p_cuenta), '-', 1) || '-%';
     raise exception using errcode = 'MX004',
-      message = format('La cuenta %s no existe en el plan. Si es una subcuenta nueva (una tarjeta), añádela antes en c1.',
-                       coalesce(p_cuenta, '(nula)'));
+      message = format('La cuenta %s no existe en el plan.%s', coalesce(p_cuenta, '(nula)'),
+                       case when v_sug is not null
+                            then format(' ¿Es la %s? Sus notas dicen que QuickBooks la nombra con %s: select fn_apertura_mapeo_qb(%L, %L);',
+                                        v_sug, v_suf, btrim(p_nombre_qb), v_sug)
+                            when v_hint is not null
+                            then format(' En su grupo están: %s. Si es una de ellas (QuickBooks puede nombrarla con otro '
+                                        'número: míralo en sus notas), mapea a esa; solo si de verdad es otra (una tarjeta '
+                                        'nueva), añádela antes en c1.', v_hint)
+                            else ' Si es una subcuenta nueva (una tarjeta), añádela antes en c1.' end);
   end if;
   if not v_c.imputable or not v_c.activa then
     raise exception using errcode = 'MX004',
       message = format('La cuenta %s (%s) %s: el mapeo va a una cuenta donde se puede postear.', v_c.codigo, v_c.nombre,
                        case when not v_c.imputable then 'es de grupo (sus subcuentas llevan el saldo)' else 'está inactiva' end);
   end if;
+  select m.cuenta into v_antes from apertura_mapeo_qb m where m.tipo = 'cuenta' and m.clave = fn_estados_clave_qb(p_nombre_qb);
   insert into apertura_mapeo_qb (tipo, nombre_qb, cuenta, notas)
   values ('cuenta', btrim(p_nombre_qb), v_c.codigo, nullif(btrim(p_notas), ''))
   on conflict (tipo, clave) do update
      set nombre_qb = excluded.nombre_qb, cuenta = excluded.cuenta, notas = coalesce(excluded.notas, apertura_mapeo_qb.notas)
   returning * into v_m;
-  return to_jsonb(v_m);
+  -- ¿Lo usa la apertura viva, y el cambio mueve su asiento?
+  select c.tipo into v_t0 from cuentas c where c.codigo = v_antes;
+  if v_antes is not null and v_antes <> v_c.codigo
+     and (v_t0 in ('activo', 'pasivo', 'capital') or v_c.tipo in ('activo', 'pasivo', 'capital')) then
+    select a.* into v_ap
+      from asientos a
+     where a.tipo = 'apertura' and a.origen_tabla = 'apertura_balanza_qb'
+       and coalesce(a.procedencia->>'funcion', '') = 'fn_apertura'
+       and a.camino not in ('reverso', 'reverso_automatico')
+       and not exists (select 1 from asientos x where x.reversa_a = a.id and x.camino = 'reverso')
+       and exists (select 1 from apertura_balanza_qb b
+                    where b.documento = a.documento_ruta and b.clave = v_m.clave and b.control is null
+                      and (coalesce(b.debe, 0) <> coalesce(b.haber, 0) or coalesce(b.retencion, 0) <> 0))
+     order by a.cadena_pos desc
+     limit 1;
+    if v_ap.id is not null then
+      v_aviso := format('«%s» está en la apertura ya posteada (asiento %s, balanza %s), con la %s (%s); desde ahora va a la %s (%s)%s. '
+                        'El asiento de apertura NO cambia solo: el libro y el balance siguen con lo que se posteó. Para '
+                        'rehacerlo con este mapeo, en la MISMA corrida del SQL Editor que este cambio (si fn_apertura para, '
+                        'deshace la corrida entera): select fn_apertura(%L, %L, ''<motivo>'');',
+                        btrim(p_nombre_qb), v_ap.numero, v_ap.documento_ruta, v_antes, v_t0, v_c.codigo, v_c.tipo,
+                        case when (v_t0 in ('activo', 'pasivo', 'capital')) <> (v_c.tipo in ('activo', 'pasivo', 'capital'))
+                             then ': CAMBIA DE CLASE (resultados ↔ balance), y el resultado de enero a septiembre que la '
+                                  'apertura posteó en 3900 ya no es el de este mapeo'
+                             else '' end,
+                        v_ap.fecha_contable, v_ap.documento_ruta);
+      raise warning '%', v_aviso;
+    end if;
+  end if;
+  return to_jsonb(v_m) || jsonb_strip_nulls(jsonb_build_object('aviso', v_aviso));
 end $$;
 revoke execute on function public.fn_apertura_mapeo_qb(text, text, text) from public, anon, authenticated, service_role;
 
@@ -5628,11 +6368,15 @@ revoke execute on function public.fn_apertura_mapeo_trabajo(text, text, text) fr
 -- La fila de totales del reporte («TOTAL») no es una cuenta: no se carga
 -- (sumarla doblaría el debe y el haber del resumen); el resumen la trae
 -- aparte, con si coincide con la suma de las filas.
--- En la apertura, además, el CONTROL de QuickBooks (f04, ronda 3): la fila
--- «Net Income» y la fila «TOTAL ASSETS» de su Balance Sheet al 30-sep, como
--- dos filas más de la lista (con su debe o su haber: una utilidad va en
--- haber). Se guardan aparte (control), no se suman, y fn_apertura_plan
--- compara con ellas lo que da el mapeo: sin ellas no postea.
+-- En la apertura, además, el CONTROL de QuickBooks (f04, rondas 3 y 4): las
+-- filas «Net Income», «TOTAL ASSETS» y «Total Liabilities» de su Balance
+-- Sheet al 30-sep (y, si se quiere, «Total Equity» y «TOTAL LIABILITIES
+-- AND EQUITY»), como filas más de la lista, con su debe o su haber (una
+-- utilidad, el pasivo y el capital van en haber) o con «saldo»: en ellas,
+-- saldo es la cifra COMO LA PRESENTA QuickBooks (la utilidad, el pasivo y
+-- el capital en positivo; el activo, en positivo). Se guardan aparte
+-- (control), no se suman, y fn_apertura_plan compara con ellas lo que da
+-- el mapeo: sin las tres primeras no postea.
 -- Devuelve el resumen (filas, debe, haber, si cuadra, el control) y los
 -- nombres que no tienen mapeo todavía: se ven antes de apertura.
 -- ---------------------------------------------------------------------
@@ -5679,7 +6423,10 @@ revoke execute on function public.fn_estados_es_total(text) from public, anon, a
 
 -- ¿Es una fila de CONTROL de la apertura (ver apertura_balanza_qb.control)?
 -- «Net Income» (o «Net Income (Loss)», «Utilidad neta»…) = 'utilidad';
--- «TOTAL ASSETS» («Total activo»…) = 'activo'; lo demás, nulo.
+-- «TOTAL ASSETS» («Total activo»…) = 'activo'; «Total Liabilities» («Total
+-- pasivo»…) = 'pasivo'; «Total Equity» («Total Stockholders' Equity»,
+-- «Total capital»…) = 'capital'; «TOTAL LIABILITIES AND EQUITY» («Total
+-- pasivo y capital»…) = 'pasivo_capital'; lo demás, nulo.
 create or replace function public.fn_apertura_control_qb(p_cuenta_qb text)
 returns text
 language sql
@@ -5690,6 +6437,11 @@ as $$
            when x.n ~ '^(net income|net income \(loss\)|net profit|net loss|net profit \(loss\)|utilidad neta|p[ée]rdida neta|'
                       'utilidad \(p[ée]rdida\) neta|resultado neto)$' then 'utilidad'
            when x.n ~ '^(total assets|total activos?|total del activo|total de activos)$' then 'activo'
+           when x.n ~ '^(total liabilities|total pasivos?|total del pasivo|total de pasivos)$' then 'pasivo'
+           when x.n ~ '^total ((stockholders|shareholders)''?|owners?''?s?''?)? ?equity$'
+             or x.n ~ '^total (del )?(capital( contable)?|patrimonio)$' then 'capital'
+           when x.n ~ '^total liabilities (and|&) ((stockholders|shareholders)''?|owners?''?s?''?)? ?equity$'
+             or x.n ~ '^total (del )?pasivos? (y|más) (el )?capital( contable)?$' then 'pasivo_capital'
          end
     from (select lower(btrim(regexp_replace(coalesce(p_cuenta_qb, ''), '[[:space:]]+', ' ', 'g'))) as n) x
 $$;
@@ -5756,9 +6508,20 @@ begin
     if v_saldo is not null and (v_debe is not null or v_haber is not null) then
       raise exception using errcode = '22023', message = format('Fila %s: o debe y haber, o saldo; no los dos.', v_n);
     end if;
+    -- ¿Una fila de CONTROL de QuickBooks? En ellas «saldo» es la cifra como
+    -- la presenta QuickBooks: la utilidad, el pasivo y el capital, en
+    -- positivo en su lado (el haber); el activo, en el suyo (el debe).
+    -- Antes un «Net Income» de 380,000 dado como saldo entraba en el debe
+    -- (una pérdida), y el control culpaba al mapeo.
+    v_ctl := fn_apertura_control_qb(v_f->>'cuenta_qb');
     if v_saldo is not null then
-      v_debe  := greatest(v_saldo, 0);
-      v_haber := greatest(-v_saldo, 0);
+      if v_ctl is not null and v_ctl <> 'activo' then
+        v_debe  := greatest(-v_saldo, 0);
+        v_haber := greatest(v_saldo, 0);
+      else
+        v_debe  := greatest(v_saldo, 0);
+        v_haber := greatest(-v_saldo, 0);
+      end if;
     end if;
     -- La fila de totales del reporte: aparte, no se carga.
     if fn_estados_es_total(v_f->>'cuenta_qb') then
@@ -5766,14 +6529,15 @@ begin
                                     'haber', coalesce(v_haber, 0));
       continue;
     end if;
-    -- El control de QuickBooks (Net Income, TOTAL ASSETS): se guarda
-    -- aparte, una vez cada uno.
-    v_ctl := fn_apertura_control_qb(v_f->>'cuenta_qb');
+    -- El control de QuickBooks (Net Income, TOTAL ASSETS, Total
+    -- Liabilities…): se guarda aparte, una vez cada uno.
     if v_ctl is not null then
       if exists (select 1 from apertura_balanza_qb b where b.documento = btrim(p_documento) and b.control = v_ctl) then
         raise exception using errcode = '22023',
           message = format('Fila %s (%s): la balanza ya trae su fila de control «%s»; va una sola vez.', v_n, v_f->>'cuenta_qb',
-                           case v_ctl when 'utilidad' then 'Net Income' else 'TOTAL ASSETS' end);
+                           case v_ctl when 'utilidad' then 'Net Income' when 'activo' then 'TOTAL ASSETS'
+                                      when 'pasivo' then 'Total Liabilities' when 'capital' then 'Total Equity'
+                                      else 'TOTAL LIABILITIES AND EQUITY' end);
       end if;
       insert into apertura_balanza_qb (documento, linea, cuenta_qb, debe, haber, control, notas, cargado_por, cargado_rol)
       values (btrim(p_documento), v_n, btrim(v_f->>'cuenta_qb'), v_debe, v_haber, v_ctl, nullif(btrim(v_f->>'notas'), ''),
@@ -5884,11 +6648,15 @@ begin
             'control', jsonb_build_object(
                          'utilidad', -sum(coalesce(b.debe, 0) - coalesce(b.haber, 0)) filter (where b.control = 'utilidad'),
                          'activo', sum(coalesce(b.debe, 0) - coalesce(b.haber, 0)) filter (where b.control = 'activo'),
+                         'pasivo', -sum(coalesce(b.debe, 0) - coalesce(b.haber, 0)) filter (where b.control = 'pasivo'),
+                         'capital', -sum(coalesce(b.debe, 0) - coalesce(b.haber, 0)) filter (where b.control = 'capital'),
+                         'pasivo_capital', -sum(coalesce(b.debe, 0) - coalesce(b.haber, 0)) filter (where b.control = 'pasivo_capital'),
                          'falta', case when count(*) filter (where b.control = 'utilidad') = 0
                                             or count(*) filter (where b.control = 'activo') = 0
-                                       then 'Faltan las filas de control de QuickBooks: «Net Income» y «TOTAL ASSETS» de su '
-                                            'Balance Sheet al día de la apertura (fn_apertura_plan compara con ellas lo que da '
-                                            'el mapeo; sin ellas no postea).' end),
+                                            or count(*) filter (where b.control = 'pasivo') = 0
+                                       then 'Faltan filas de control de QuickBooks: «Net Income», «TOTAL ASSETS» y «Total '
+                                            'Liabilities» de su Balance Sheet al día de la apertura (fn_apertura_plan compara '
+                                            'con ellas lo que da el mapeo; sin ellas no postea).' end),
             'sin_mapeo', coalesce(jsonb_agg(distinct b.cuenta_qb) filter (
                            where b.control is null and coalesce(b.debe, 0) <> coalesce(b.haber, 0)
                              and not exists (select 1 from apertura_mapeo_qb m where m.tipo = 'cuenta' and m.clave = b.clave)),
@@ -5908,6 +6676,8 @@ drop function if exists public.fn_comparacion_qb_cargar(text, text, jsonb);
 -- (Y la de cuatro, sin p_al: con dos firmas, una llamada con cuatro
 -- argumentos sería ambigua.)
 drop function if exists public.fn_comparacion_qb_cargar(text, text, jsonb, boolean);
+-- (Y la de cinco, sin p_tipo, por lo mismo.)
+drop function if exists public.fn_comparacion_qb_cargar(text, text, jsonb, boolean, date);
 -- p_con_posteriores: la balanza ya trae los ajustes del CPA posteriores al
 -- período (la FINAL de diciembre, la del CPA): v_comparacion le suma al
 -- libro los ajuste_cpa fechados después que lo corrigen. La preliminar
@@ -5915,9 +6685,17 @@ drop function if exists public.fn_comparacion_qb_cargar(text, text, jsonb, boole
 -- p_al: la FECHA de la balanza, si no es la del cierre del período (la de
 -- una quincena, f13-14: '2026-12-15'); v_comparacion corta el libro a ese
 -- día. Nula = el último día del período. Cada carga queda (vale la más
--- reciente; las anteriores, en v_qb_balanzas y en estados_historial).
+-- reciente de su tipo; las anteriores, en v_qb_balanzas y en
+-- estados_historial).
+-- p_tipo: 'balanza' (la del mes, por omisión) o 'por_obra' (el
+-- complemento por Customer:Job: el «Profit and Loss by Customer», una fila
+-- por cuenta y trabajo; alimenta v_comparacion_obra y no desplaza a la
+-- balanza del mes). Si la carga desplaza a la vigente de su período y
+-- tipo, lo dice (aviso, y WARNING): una carga equivocada se retira con
+-- fn_comparacion_qb_retirar.
 create or replace function public.fn_comparacion_qb_cargar(p_periodo text, p_documento text, p_filas jsonb,
-                                                           p_con_posteriores boolean default false, p_al date default null)
+                                                           p_con_posteriores boolean default false, p_al date default null,
+                                                           p_tipo text default 'balanza')
 returns jsonb
 language plpgsql
 set search_path = public, pg_temp
@@ -5932,8 +6710,17 @@ declare
   v_filas jsonb := '[]'::jsonb;
   v_total jsonb;
   v_p     periodos;
+  v_tipo  text := lower(btrim(coalesce(p_tipo, 'balanza')));
+  v_vig   text;
+  v_vig_el timestamptz;
+  v_aviso text;
 begin
   perform fn_estados_exigir_dueno();
+  if v_tipo not in ('balanza', 'por_obra') then
+    raise exception using errcode = '22023',
+      message = format('Tipo «%s» no válido: ''balanza'' (la del mes) o ''por_obra'' (el complemento por Customer:Job, el «Profit '
+                       'and Loss by Customer»).', coalesce(p_tipo, ''));
+  end if;
   select * into v_p from periodos p where p.periodo = p_periodo;
   if not found then
     raise exception using errcode = '22023', message = format('No existe el período %s.', coalesce(p_periodo, '(nulo)'));
@@ -5947,8 +6734,8 @@ begin
   end if;
   if exists (select 1 from comparacion_qb q where q.periodo = p_periodo and q.documento = btrim(p_documento)) then
     raise exception using errcode = 'MX003',
-      message = format('La balanza %s de %s ya está cargada y no se edita: si QuickBooks la corrigió, cárgala con otro documento '
-                       '(vale la más reciente).', btrim(p_documento), p_periodo);
+      message = format('La balanza %s de %s ya está cargada (o se cargó y se retiró) y no se edita: si QuickBooks la corrigió, '
+                       'cárgala con otro documento (vale la más reciente de su tipo).', btrim(p_documento), p_periodo);
   end if;
   if jsonb_typeof(p_filas) is distinct from 'array' or jsonb_array_length(p_filas) = 0 then
     raise exception using errcode = '22023', message = 'Las filas llegan como una lista JSON, una por cuenta de QuickBooks.';
@@ -5981,6 +6768,13 @@ begin
                                     'debe', coalesce(v_debe, 0), 'haber', coalesce(v_haber, 0));
       continue;
     end if;
+    -- (El complemento por obra va fila por Customer:Job: una fila sin obra
+    -- es de la balanza del mes.)
+    if v_tipo = 'por_obra' and nullif(btrim(v_f->>'cliente_trabajo'), '') is null and nullif(btrim(v_f->>'proyecto_id'), '') is null then
+      raise exception using errcode = '22023',
+        message = format('Fila %s (%s): el complemento por obra va fila por Customer:Job (cliente_trabajo o proyecto_id); una '
+                         'fila sin obra es de la balanza del mes.', v_n, v_f->>'cuenta_qb');
+    end if;
     v_filas := v_filas || jsonb_build_object('linea', v_n, 'cuenta_qb', btrim(v_f->>'cuenta_qb'),
                                              'cliente_trabajo', nullif(btrim(v_f->>'cliente_trabajo'), ''),
                                              'proyecto_id', nullif(btrim(v_f->>'proyecto_id'), ''), 'saldo', v_saldo);
@@ -5988,16 +6782,41 @@ begin
   if jsonb_array_length(v_filas) = 0 then
     raise exception using errcode = '22023', message = 'La balanza no trae ninguna cuenta (solo la fila de totales).';
   end if;
-  insert into comparacion_qb (periodo, documento, linea, cuenta_qb, cliente_trabajo, proyecto_id, saldo, con_posteriores, al,
+  -- La que vale hoy en ese período y tipo: esta carga la desplaza.
+  select q.documento, max(q.cargado_el) into v_vig, v_vig_el
+    from comparacion_qb q
+   where q.periodo = p_periodo and q.tipo = v_tipo and q.retirada_el is null
+   group by q.documento
+   order by max(q.cargado_el) desc, q.documento desc
+   limit 1;
+  insert into comparacion_qb (periodo, documento, linea, cuenta_qb, cliente_trabajo, proyecto_id, saldo, con_posteriores, al, tipo,
                               cargado_por, cargado_rol)
   select p_periodo, btrim(p_documento), x.linea, x.cuenta_qb, x.cliente_trabajo, x.proyecto_id, x.saldo,
-         coalesce(p_con_posteriores, false), case when p_al < v_p.hasta then p_al end, auth.uid(), fn_rol_llamante()
+         coalesce(p_con_posteriores, false), case when p_al < v_p.hasta then p_al end, v_tipo, auth.uid(), fn_rol_llamante()
     from jsonb_to_recordset(v_filas) as x(linea int, cuenta_qb text, cliente_trabajo text, proyecto_id text, saldo numeric)
    order by x.linea;
+  if v_vig is not null or (v_tipo = 'balanza' and not exists (select 1 from jsonb_array_elements(v_filas) e
+                                                               where e.value->>'cliente_trabajo' is null
+                                                                 and e.value->>'proyecto_id' is null)) then
+    v_aviso := concat_ws(' ',
+      case when v_vig is not null
+           then format('Esta carga desplaza a la vigente de %s (%s, %s, cargada el %s): desde ahora %s compara con %s. Si no es lo '
+                       'que querías, retírala: select fn_comparacion_qb_retirar(%L, %L, ''<motivo>'');', p_periodo,
+                       case v_tipo when 'balanza' then 'la balanza del mes' else 'el complemento por obra' end, v_vig,
+                       to_char(v_vig_el at time zone 'America/New_York', 'YYYY-MM-DD HH24:MI'),
+                       case v_tipo when 'balanza' then 'v_comparacion' else 'v_comparacion_obra' end, btrim(p_documento),
+                       p_periodo, btrim(p_documento)) end,
+      case when v_tipo = 'balanza' and not exists (select 1 from jsonb_array_elements(v_filas) e
+                                                    where e.value->>'cliente_trabajo' is null and e.value->>'proyecto_id' is null)
+           then 'Todas sus filas traen Customer:Job: ¿es el «Profit and Loss by Customer»? Ese va con p_tipo ''por_obra'' (el '
+                'complemento por obra), no como la balanza del mes.' end);
+    raise warning '%', v_aviso;
+  end if;
   return (select jsonb_strip_nulls(jsonb_build_object(
-            'periodo', p_periodo, 'documento', btrim(p_documento), 'filas', count(*), 'suma', coalesce(sum(q.saldo), 0),
+            'periodo', p_periodo, 'documento', btrim(p_documento), 'tipo', v_tipo, 'filas', count(*),
+            'suma', coalesce(sum(q.saldo), 0),
             'cuadra', coalesce(sum(q.saldo), 0) = 0, 'con_posteriores', coalesce(p_con_posteriores, false),
-            'al', coalesce(p_al, v_p.hasta),
+            'al', coalesce(p_al, v_p.hasta), 'aviso', v_aviso, 'desplaza', v_vig,
             'fila_total', v_total || jsonb_build_object('ignorada', true),
             'sin_mapeo', coalesce(jsonb_agg(distinct q.cuenta_qb) filter (
                            where q.saldo <> 0
@@ -6006,14 +6825,60 @@ begin
             from comparacion_qb q
            where q.periodo = p_periodo and q.documento = btrim(p_documento));
 end $$;
-revoke execute on function public.fn_comparacion_qb_cargar(text, text, jsonb, boolean, date) from public, anon, authenticated, service_role;
+revoke execute on function public.fn_comparacion_qb_cargar(text, text, jsonb, boolean, date, text) from public, anon, authenticated, service_role;
+
+-- Retirar una carga equivocada de QuickBooks (la del período que no era, una
+-- quincena cargada después del cierre, el P&L por obra cargado como
+-- balanza): no se borra, queda como rastro con su motivo (quién y cuándo
+-- los pone la base, 1.6), y vuelve a valer la anterior de su tipo.
+--   select fn_comparacion_qb_retirar('2026-10', 'docs/qb/pl-por-obra-2026-10.csv', 'Es el P&L por obra, no la balanza');
+create or replace function public.fn_comparacion_qb_retirar(p_periodo text, p_documento text, p_motivo text)
+returns jsonb
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_n    int;
+  v_tipo text;
+  v_vig  text;
+begin
+  perform fn_estados_exigir_dueno();
+  if coalesce(btrim(p_motivo), '') = '' then
+    raise exception using errcode = '22023', message = 'Retirar una balanza de QuickBooks dice por qué (motivo).';
+  end if;
+  update comparacion_qb
+     set retirada_el = clock_timestamp(), retirada_por = auth.uid(), retirada_motivo = btrim(p_motivo)
+   where periodo = p_periodo and documento = btrim(p_documento) and retirada_el is null;
+  get diagnostics v_n = row_count;
+  if v_n = 0 then
+    raise exception using errcode = '22023',
+      message = format('La balanza %s de %s no está cargada, o ya estaba retirada.', coalesce(btrim(p_documento), '(nula)'),
+                       coalesce(p_periodo, '(nulo)'));
+  end if;
+  select q.tipo into v_tipo from comparacion_qb q where q.periodo = p_periodo and q.documento = btrim(p_documento) limit 1;
+  select q.documento into v_vig
+    from comparacion_qb q
+   where q.periodo = p_periodo and q.tipo = v_tipo and q.retirada_el is null
+   order by q.cargado_el desc, q.documento desc
+   limit 1;
+  return jsonb_strip_nulls(jsonb_build_object(
+    'periodo', p_periodo, 'documento', btrim(p_documento), 'tipo', v_tipo, 'filas', v_n, 'vigente_ahora', v_vig,
+    'mensaje', case when v_vig is null
+                    then format('%s ya no tiene %s de QuickBooks vigente: carga la buena con fn_comparacion_qb_cargar.', p_periodo,
+                                case v_tipo when 'balanza' then 'balanza' else 'complemento por obra' end) end));
+end $$;
+revoke execute on function public.fn_comparacion_qb_retirar(text, text, text) from public, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------
 -- 7.4 · Las diferencias explicadas.
 --   select fn_diferencia_anotar('2026-10', '2050', '-1250.00', 'criterio',
 --            'El libro devenga la nómina de la última semana; QuickBooks la registra al pagarla.');
 -- monto = libro − QuickBooks (lo que explica). Una explicación que ya no
--- vale se retira con su motivo (y queda): fn_diferencia_retirar.
+-- vale se retira con su motivo (y queda): fn_diferencia_retirar. Anotar
+-- otra vez la MISMA (período, cuenta, obra, monto, clase, explicación y
+-- asiento), viva, no la duplica: devuelve la que ya estaba (NOTICE). Antes
+-- un segundo pegado de la misma línea la contaba dos veces, y la cuenta
+-- quedaba en rojo por lo explicado de más.
 -- ---------------------------------------------------------------------
 create or replace function public.fn_diferencia_anotar(p_periodo text, p_cuenta text, p_monto text, p_clase text,
                                                        p_explicacion text, p_proyecto_id text default null,
@@ -6050,6 +6915,19 @@ begin
   end if;
   if p_asiento_id is not null and not exists (select 1 from asientos a where a.id = p_asiento_id) then
     raise exception using errcode = '22023', message = 'El asiento que dice explicarla no existe.';
+  end if;
+  -- La misma, viva: no se anota dos veces (dos a la vez, una espera).
+  perform pg_advisory_xact_lock(820260931, hashtext(p_periodo || '|' || p_cuenta));
+  select d.id into v_id
+    from diferencias d
+   where d.periodo = p_periodo and d.cuenta = p_cuenta and d.proyecto_id is not distinct from p_proyecto_id
+     and d.monto = v_monto and d.clase = p_clase and d.explicacion = btrim(p_explicacion)
+     and d.asiento_id is not distinct from p_asiento_id and d.retirada_el is null
+   order by d.anotado_el
+   limit 1;
+  if v_id is not null then
+    raise notice '%', format('Esa diferencia ya estaba anotada (id %s): no se anota dos veces.', v_id);
+    return v_id;
   end if;
   -- Con obra, en una cuenta que la balanza de QuickBooks del período no trae
   -- por Customer:Job (la mensual de siempre no lo trae): vale, explica la
@@ -6097,19 +6975,26 @@ revoke execute on function public.fn_diferencia_retirar(uuid, text) from public,
 -- fn_apertura_plan(documento) — arma el asiento SIN postear nada, y se
 -- para en el PRIMER problema, diciéndolo con su nombre:
 --   MX001  la balanza no cuadra (debe ≠ haber); o no trae su control de
---          QuickBooks (las filas «Net Income» y «TOTAL ASSETS», que se
---          guardan aparte), o lo que da el mapeo NO AMARRA con él: la
---          utilidad de enero a septiembre (−las cuentas de resultados) y
---          el total del activo (las mapeadas a cuentas de activo) tienen que
---          ser los de QuickBooks. Un mapeo equivocado (una cuenta de
---          resultados a una de balance, o al revés) mueve los dos: para, y
---          dice qué filas lo pueden explicar;
+--          QuickBooks (las filas «Net Income», «TOTAL ASSETS» y «Total
+--          Liabilities», que se guardan aparte), o lo que da el mapeo NO
+--          AMARRA con él: la utilidad de enero a septiembre (−las cuentas de
+--          resultados), el total del activo (las mapeadas a cuentas de
+--          activo) y el del pasivo (las mapeadas a pasivo) tienen que ser
+--          los de QuickBooks; y, si vienen, el capital (con la utilidad del
+--          año, como lo presenta el Balance Sheet) y el pasivo más capital.
+--          Un mapeo equivocado (una cuenta de resultados a una de balance,
+--          una deuda a capital) mueve al menos uno: para, y dice qué filas
+--          lo pueden explicar. Si QuickBooks dice justo lo contrario que el
+--          mapeo, lo que está al revés es el signo de la fila de control, y
+--          lo dice. (Una reclasificación que el CPA haga después entre
+--          pasivo y capital va aparte, con su asiento, no en la apertura);
 --   MX004  una cuenta de QuickBooks sin mapeo (y cómo mapearla), o
 --          mapeada a una cuenta de grupo o inactiva;
 --   MX006  una fila que no puede ir como viene: retención sin obra o
 --          mayor que su saldo, una cuenta por obra sin obra, una factura
 --          en una cuenta que no es de cobrar, la obra de la fila distinta
---          de la de su factura;
+--          de la de su factura, o una factura con más por cobrar (cuenta
+--          por cobrar más retención) que su monto en la app;
 --   MX008  falta algo de la app: la factura, el proveedor, el recibo, el
 --          trabajo externo, la obra o el Customer:Job que la fila nombra.
 -- Cómo arma cada fila (saldo = debe − haber; las filas en cero se saltan):
@@ -6142,6 +7027,9 @@ revoke execute on function public.fn_diferencia_retirar(uuid, text) from public,
 --     exista el auxiliar de activos fijos.
 -- Devuelve {lineas, resultado_qb, retencion_partida, partidas, …}. Las
 -- líneas iguales (cuenta, obra, partida, tercero) se suman en una.
+-- resultado_qb.orden es el lugar (desde 1) de la línea del resultado en
+-- 3900 dentro de lineas (0 si no hay): fn_apertura lo guarda, y el balance
+-- y la comparación leen el resultado de esa línea, tal como se posteó.
 -- fn_apertura_revisar(documento) lo enseña como tabla, para mirarlo antes.
 -- ---------------------------------------------------------------------
 create or replace function public.fn_apertura_plan(p_documento text)
@@ -6183,12 +7071,26 @@ declare
   v_cu     numeric;
   v_ca     numeric;
   v_pago   boolean;
+  v_pasivo  numeric := 0;
+  v_capital numeric := 0;
+  v_np     int;
+  v_cp     numeric;
+  v_nk     int;
+  v_ck     numeric;
+  v_npk    int;
+  v_cpk    numeric;
+  v_falta  text[];
+  v_signo  text;
+  v_fsal   jsonb := '{}'::jsonb;
+  v_ffil   jsonb := '{}'::jsonb;
+  v_rorden int;
 begin
   select * into v_ap from periodos where tipo = 'apertura' order by desde limit 1;
   if not found then
     raise exception using errcode = 'MX002', message = 'No hay período de apertura en el calendario (c2).';
   end if;
-  -- (Las filas de control —Net Income, TOTAL ASSETS— no son cuentas: aparte.)
+  -- (Las filas de control —Net Income, TOTAL ASSETS, Total Liabilities…— no
+  -- son cuentas: aparte.)
   select count(*), coalesce(sum(b.debe), 0), coalesce(sum(b.haber), 0) into v_filas, v_debe, v_haber
     from apertura_balanza_qb b where b.documento = p_documento and b.control is null;
   if v_filas = 0 then
@@ -6292,9 +7194,13 @@ begin
     end if;
     v_memo := concat_ws(' · ', 'QuickBooks: ' || r.cuenta_qb, r.cliente_trabajo, 'factura #' || v_f.num, r.proveedor_qb,
                         r.referencia);
-    -- (Para el control: el activo, según el mapeo.)
+    -- (Para el control: el activo, el pasivo y el capital, según el mapeo.)
     if v_c.tipo = 'activo' then
       v_activo := v_activo + v_saldo;
+    elsif v_c.tipo = 'pasivo' then
+      v_pasivo := v_pasivo + v_saldo;
+    elsif v_c.tipo = 'capital' then
+      v_capital := v_capital + v_saldo;
     end if;
 
     if v_c.tipo not in ('activo', 'pasivo', 'capital') then
@@ -6324,6 +7230,10 @@ begin
                              '(y factura_num) de esa fila y di su obra (cliente_trabajo o proyecto_id): entra a %s como saldo a '
                              'favor de la obra %s.', r.linea, v_f.num, v_saldo, v_cxc, coalesce(v_f.proyecto_id, '(sin obra)'));
         end if;
+        -- (Lo que la balanza trae de cada factura, para ver abajo que no pase
+        -- de su monto.)
+        v_fsal := jsonb_set(v_fsal, array[r.factura_id::text], to_jsonb(coalesce((v_fsal->>r.factura_id::text)::numeric, 0) + v_saldo));
+        v_ffil := jsonb_set(v_ffil, array[r.factura_id::text], coalesce(v_ffil->r.factura_id::text, '[]'::jsonb) || to_jsonb(r.linea));
         v_rt := coalesce(r.retencion, 0);
         if v_rt > 0 and v_rt > v_saldo then
           raise exception using errcode = 'MX006',
@@ -6378,6 +7288,8 @@ begin
           message = format('La factura #%s (fila %s) no tiene obra: su retención va a %s con la obra de la factura. Ponle su obra '
                            'en la app.', v_f.num, r.linea, v_ret);
       end if;
+      v_fsal := jsonb_set(v_fsal, array[r.factura_id::text], to_jsonb(coalesce((v_fsal->>r.factura_id::text)::numeric, 0) + v_saldo));
+      v_ffil := jsonb_set(v_ffil, array[r.factura_id::text], coalesce(v_ffil->r.factura_id::text, '[]'::jsonb) || to_jsonb(r.linea));
       v_raw := v_raw || jsonb_build_object('cuenta', v_ret, 'monto', v_saldo, 'proyecto_id', v_obra,
                                            'partida_tabla', 'facturas', 'partida_id', r.factura_id::text, 'memo', v_memo);
     elsif v_m.cuenta = v_cxp
@@ -6438,27 +7350,67 @@ begin
     end if;
   end loop;
 
+  -- 2b. Ninguna factura se debe por más de lo que se facturó: lo que la
+  -- balanza trae de ella (cuenta por cobrar y retención) no pasa de su
+  -- monto en la app. Si pasa, la fila es de otra factura (el mismo número en
+  -- otra obra), trae un cargo que no es de ella, o el monto de la app está
+  -- mal; antes entraba, y en octubre c3 decía que la factura «está dos
+  -- veces» sin que nadie supiera dónde.
+  select format('La factura #%s (id %s, obra %s) es por %s y la balanza %s trae %s por cobrar de ella (fila%s %s): una factura no se '
+                'debe por más de lo que se facturó. Revisa esas filas contra el A/R Aging de QuickBooks (¿otra factura con el mismo '
+                'número?, ¿un cargo que no es de ella?) o el monto de la factura en la app, y vuelve a cargar la balanza.',
+                f.num, f.id, coalesce(f.proyecto_id, 'ninguna'), round(f.monto, 2), p_documento, x.value::numeric,
+                case when jsonb_array_length(v_ffil->x.key) > 1 then 's' else '' end,
+                (select string_agg(e.v, ', ') from jsonb_array_elements_text(v_ffil->x.key) as e(v)))
+    into v_hint
+    from jsonb_each_text(v_fsal) as x
+    join facturas f on f.id = x.key::bigint
+   where x.value::numeric > round(f.monto, 2)
+   order by f.id
+   limit 1;
+  if v_hint is not null then
+    raise exception using errcode = 'MX006', message = v_hint;
+  end if;
+
   -- 3. El control de QuickBooks: lo que da el mapeo tiene que ser lo que
-  -- QuickBooks dice por su lado (la utilidad de enero a septiembre y el
-  -- total del activo). Si no, una cuenta está mapeada al lado equivocado.
+  -- QuickBooks dice por su lado (la utilidad de enero a septiembre, el total
+  -- del activo y el del pasivo; y el capital, si viene). Si no, una cuenta
+  -- está mapeada al lado equivocado. Del lado en que QuickBooks lo
+  -- presenta: utilidad = −v_res; activo = v_activo; pasivo = −v_pasivo;
+  -- capital = −v_capital − v_res (el Balance Sheet trae la utilidad del año
+  -- dentro del capital); pasivo más capital = −v_pasivo − v_capital − v_res.
+  -- (Con solo la utilidad y el activo, una deuda mapeada a capital —el
+  -- préstamo del accionista a 3100— pasaba en verde, con el pasivo en 0.)
   select count(*) filter (where b.control = 'utilidad'),
          -sum(coalesce(b.debe, 0) - coalesce(b.haber, 0)) filter (where b.control = 'utilidad'),
          count(*) filter (where b.control = 'activo'),
-         sum(coalesce(b.debe, 0) - coalesce(b.haber, 0)) filter (where b.control = 'activo')
-    into v_nu, v_cu, v_na, v_ca
+         sum(coalesce(b.debe, 0) - coalesce(b.haber, 0)) filter (where b.control = 'activo'),
+         count(*) filter (where b.control = 'pasivo'),
+         -sum(coalesce(b.debe, 0) - coalesce(b.haber, 0)) filter (where b.control = 'pasivo'),
+         count(*) filter (where b.control = 'capital'),
+         -sum(coalesce(b.debe, 0) - coalesce(b.haber, 0)) filter (where b.control = 'capital'),
+         count(*) filter (where b.control = 'pasivo_capital'),
+         -sum(coalesce(b.debe, 0) - coalesce(b.haber, 0)) filter (where b.control = 'pasivo_capital')
+    into v_nu, v_cu, v_na, v_ca, v_np, v_cp, v_nk, v_ck, v_npk, v_cpk
     from apertura_balanza_qb b
    where b.documento = p_documento and b.control is not null;
-  if v_nu = 0 or v_na = 0 then
+  if v_nu = 0 or v_na = 0 or v_np = 0 then
+    v_falta := array_remove(array[case when v_nu = 0 then '«Net Income»' end, case when v_na = 0 then '«TOTAL ASSETS»' end,
+                                  case when v_np = 0 then '«Total Liabilities»' end], null);
     raise exception using errcode = 'MX001',
       message = format('La balanza %s no trae su control de QuickBooks (falta %s). Sin él, la apertura se compara contra la misma '
-                       'balanza pasada por el mismo mapeo, y un mapeo equivocado (una cuenta de resultados a una de balance) '
-                       'pasa en verde. Añade a la lista de fn_apertura_balanza_cargar las filas «Net Income» (la utilidad de '
-                       'enero a septiembre; en haber si es utilidad) y «TOTAL ASSETS» de su Balance Sheet al %s, y vuelve a '
+                       'balanza pasada por el mismo mapeo, y un mapeo equivocado (una cuenta de resultados a una de balance, '
+                       'una deuda a capital) pasa en verde. Añade a la lista de fn_apertura_balanza_cargar las filas «Net '
+                       'Income» (la utilidad de enero a septiembre: en haber si es utilidad, o como saldo en positivo), «TOTAL '
+                       'ASSETS» y «Total Liabilities» de su Balance Sheet al %s (y, si quieres, «Total Equity»), y vuelve a '
                        'cargarla.', p_documento,
-                       concat_ws(' y ', case when v_nu = 0 then '«Net Income»' end, case when v_na = 0 then '«TOTAL ASSETS»' end),
+                       case when cardinality(v_falta) = 1 then v_falta[1]
+                            else array_to_string(v_falta[1:cardinality(v_falta) - 1], ', ') || ' y ' || v_falta[cardinality(v_falta)]
+                       end,
                        to_char(v_ap.hasta, 'DD-MM-YYYY'));
   end if;
-  if v_cu <> -v_res or v_ca <> v_activo then
+  if v_cu <> -v_res or v_ca <> v_activo or v_cp <> -v_pasivo
+     or (v_nk > 0 and v_ck <> -v_capital - v_res) or (v_npk > 0 and v_cpk <> -v_pasivo - v_capital - v_res) then
     -- Las filas que lo pueden explicar: las de ese monto.
     select string_agg(format('fila %s «%s» (%s) va a %s, de %s', b.linea, b.cuenta_qb, coalesce(b.debe, 0) - coalesce(b.haber, 0),
                              m.cuenta, c.tipo), '; ' order by b.linea)
@@ -6467,28 +7419,51 @@ begin
       join apertura_mapeo_qb m on m.tipo = 'cuenta' and m.clave = b.clave
       join cuentas c on c.codigo = m.cuenta
      where b.documento = p_documento and b.control is null
-       and abs(coalesce(b.debe, 0) - coalesce(b.haber, 0)) in (abs(v_cu + v_res), abs(v_ca - v_activo))
+       and abs(coalesce(b.debe, 0) - coalesce(b.haber, 0)) in (abs(v_cu + v_res), abs(v_ca - v_activo), abs(v_cp + v_pasivo),
+                                                              abs(coalesce(v_ck + v_capital + v_res, 0)))
        and abs(coalesce(b.debe, 0) - coalesce(b.haber, 0)) <> 0;
+    -- ¿Una fila de control con el signo al revés? QuickBooks dice justo lo
+    -- contrario que el mapeo: no es el mapeo.
+    v_signo := concat_ws(', ',
+                 case when v_cu = v_res and v_res <> 0 then '«Net Income»' end,
+                 case when v_ca = -v_activo and v_activo <> 0 then '«TOTAL ASSETS»' end,
+                 case when v_cp = v_pasivo and v_pasivo <> 0 then '«Total Liabilities»' end,
+                 case when v_nk > 0 and v_ck = v_capital + v_res and v_capital + v_res <> 0 then '«Total Equity»' end);
     raise exception using errcode = 'MX001',
       message = format('La balanza %s no amarra con su control de QuickBooks: con el mapeo de hoy la utilidad de enero a septiembre '
-                       'es %s y QuickBooks dice %s (Net Income); el activo es %s y QuickBooks dice %s (TOTAL ASSETS). Una '
-                       'cuenta está mapeada al lado equivocado (resultados ↔ balance) o a otra clase: corrige su mapeo '
-                       '(fn_apertura_mapeo_qb) y míralo fila por fila con select * from fn_apertura_revisar(%L);.%s',
-                       p_documento, -v_res, v_cu, v_activo, v_ca, p_documento,
-                       coalesce(' Pueden ser: ' || v_hint || '.', ''));
+                       'es %s y QuickBooks dice %s (Net Income); el activo es %s y QuickBooks dice %s (TOTAL ASSETS); el pasivo '
+                       'es %s y QuickBooks dice %s (Total Liabilities)%s. %s',
+                       p_documento, -v_res, v_cu, v_activo, v_ca, -v_pasivo, v_cp,
+                       case when v_nk > 0
+                            then format('; el capital (con la utilidad del año) es %s y QuickBooks dice %s (Total Equity)',
+                                        -v_capital - v_res, v_ck)
+                            else '' end,
+                       case when v_signo <> ''
+                            then format('QuickBooks dice justo lo contrario que el mapeo en %s: lo que está al revés parece el '
+                                        'signo de esa fila de control, no el mapeo (la utilidad, el pasivo y el capital van en '
+                                        'haber, o como saldo en positivo; el activo, en debe). Corrígela y vuelve a cargar la '
+                                        'balanza.', v_signo)
+                            else format('Una cuenta está mapeada al lado equivocado (resultados ↔ balance, pasivo ↔ capital) o a '
+                                        'otra clase: corrige su mapeo (fn_apertura_mapeo_qb) y míralo fila por fila con select * '
+                                        'from fn_apertura_revisar(%L);.%s', p_documento,
+                                        coalesce(' Pueden ser: ' || v_hint || '.', '')) end);
   end if;
 
   -- 4. Las líneas iguales, en una; el resultado de enero a septiembre, con
   -- su nota.
+  -- (n: el lugar de cada línea en el asiento, desde 1; el de la del
+  -- resultado se guarda, ver arriba.)
   select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
            'cuenta', x.cuenta, 'monto', x.monto::text, 'proyecto_id', x.proyecto_id,
            'tercero_tipo', x.tercero_tipo, 'tercero_id', x.tercero_id,
            'partida_tabla', x.partida_tabla, 'partida_id', x.partida_id,
            'memo', left(x.memo, 300)))
-         order by x.cuenta, x.clase nulls first, x.proyecto_id nulls first, x.partida_tabla nulls first, x.partida_id,
-                  x.tercero_id), '[]'::jsonb)
-    into v_lineas
-    from (select y.cuenta, y.clase, y.proyecto_id, y.tercero_tipo, y.tercero_id, y.partida_tabla, y.partida_id,
+         order by x.n), '[]'::jsonb),
+         coalesce(min(x.n) filter (where x.clase = 'resultado'), 0)
+    into v_lineas, v_rorden
+    from (select z.*, row_number() over (order by z.cuenta, z.clase nulls first, z.proyecto_id nulls first,
+                                                  z.partida_tabla nulls first, z.partida_id, z.tercero_id) as n
+            from (select y.cuenta, y.clase, y.proyecto_id, y.tercero_tipo, y.tercero_id, y.partida_tabla, y.partida_id,
                  sum(y.monto) as monto,
                  case when y.clase = 'resultado'
                       then format('Resultado de enero a septiembre de %s según QuickBooks: utilidad %s (ingresos %s, costo %s, '
@@ -6501,7 +7476,7 @@ begin
             from jsonb_to_recordset(v_raw) as y(cuenta text, monto numeric, clase text, proyecto_id text, tercero_tipo text,
                                                 tercero_id text, partida_tabla text, partida_id text, memo text)
            group by y.cuenta, y.clase, y.proyecto_id, y.tercero_tipo, y.tercero_id, y.partida_tabla, y.partida_id
-          having sum(y.monto) <> 0) x;
+          having sum(y.monto) <> 0) z) x;
 
   select jsonb_build_object(
            'facturas', coalesce(jsonb_agg(distinct (l->>'partida_id')::bigint) filter (where l->>'partida_tabla' = 'facturas'), '[]'),
@@ -6514,8 +7489,9 @@ begin
   return jsonb_build_object(
     'documento', p_documento, 'periodo', v_ap.periodo, 'fecha', v_ap.desde, 'lineas', v_lineas,
     'filas_qb', v_filas, 'ignoradas_en_cero', v_cero, 'debe', v_debe, 'haber', v_haber,
-    'control_qb', jsonb_build_object('utilidad', v_cu, 'activo', v_ca, 'amarra', true),
-    'resultado_qb', jsonb_build_object('utilidad', -v_res, 'saldo_por_tipo', v_rtipo),
+    'control_qb', jsonb_strip_nulls(jsonb_build_object('utilidad', v_cu, 'activo', v_ca, 'pasivo', v_cp, 'capital', v_ck,
+                                                       'pasivo_capital', v_cpk, 'amarra', true)),
+    'resultado_qb', jsonb_build_object('utilidad', -v_res, 'saldo_por_tipo', v_rtipo, 'orden', v_rorden),
     'retencion_partida', jsonb_build_object('monto', v_rsplit, 'por_obra', v_robra, 'cuentas_qb', to_jsonb(v_rqb)),
     'partidas', v_part);
 end $$;
@@ -6528,7 +7504,9 @@ revoke execute on function public.fn_apertura_plan(text) from public, anon, auth
 -- gasto…), su obra, su partida y su proveedor: así se audita el mapeo, no
 -- solo los saldos (una cuenta de costo de QuickBooks que va a 1300, activo,
 -- se ve aquí). Después, el CONTROL de QuickBooks (que = 'control': Net
--- Income y TOTAL ASSETS) contra lo que da el mapeo. Y al final, el asiento
+-- Income, TOTAL ASSETS, Total Liabilities y, si vienen, Total Equity y
+-- TOTAL LIABILITIES AND EQUITY) contra lo que da el mapeo (y si es justo
+-- el contrario: el signo de la fila de control). Y al final, el asiento
 -- que saldría (que = 'asiento'), o, si la balanza no se puede postear, el
 -- primer problema con su nombre (que = 'problema', MX001…).
 drop function if exists public.fn_apertura_revisar(text);
@@ -6545,12 +7523,18 @@ declare
   v_n    int := 0;
   v_res  numeric;
   v_act  numeric;
+  v_pas  numeric;
+  v_cap  numeric;
 begin
   perform fn_estados_exigir_dueno();
-  -- Lo que da el mapeo (para el control).
+  -- Lo que da el mapeo (para el control), del lado en que QuickBooks lo
+  -- presenta: la utilidad, el activo, el pasivo y el capital (sin la
+  -- utilidad del año: se le suma abajo).
   select -sum(coalesce(b.debe, 0) - coalesce(b.haber, 0)) filter (where c.tipo not in ('activo', 'pasivo', 'capital')),
-         sum(coalesce(b.debe, 0) - coalesce(b.haber, 0)) filter (where c.tipo = 'activo')
-    into v_res, v_act
+         sum(coalesce(b.debe, 0) - coalesce(b.haber, 0)) filter (where c.tipo = 'activo'),
+         -sum(coalesce(b.debe, 0) - coalesce(b.haber, 0)) filter (where c.tipo = 'pasivo'),
+         -sum(coalesce(b.debe, 0) - coalesce(b.haber, 0)) filter (where c.tipo = 'capital')
+    into v_res, v_act, v_pas, v_cap
     from apertura_balanza_qb b
     join apertura_mapeo_qb m on m.tipo = 'cuenta' and m.clave = b.clave
     join cuentas c on c.codigo = m.cuenta
@@ -6570,12 +7554,41 @@ begin
            case b.control
              when 'utilidad' then format('Control: la utilidad de enero a septiembre según QuickBooks es %s; según el mapeo, %s: %s',
                                          -(coalesce(b.debe, 0) - coalesce(b.haber, 0)), coalesce(v_res, 0),
-                                         case when -(coalesce(b.debe, 0) - coalesce(b.haber, 0)) = coalesce(v_res, 0)
-                                              then 'coincide' else 'NO COINCIDE (una cuenta mapeada al lado equivocado)' end)
+                                         case when -(coalesce(b.debe, 0) - coalesce(b.haber, 0)) = coalesce(v_res, 0) then 'coincide'
+                                              when coalesce(b.debe, 0) - coalesce(b.haber, 0) = coalesce(v_res, 0) and coalesce(v_res, 0) <> 0
+                                                then 'NO COINCIDE: es justo el contrario (¿la fila entró con el signo al revés? la '
+                                                     'utilidad va en haber, o como saldo en positivo)'
+                                              else 'NO COINCIDE (una cuenta mapeada al lado equivocado)' end)
              when 'activo' then format('Control: el total del activo según QuickBooks es %s; según el mapeo, %s: %s',
                                        coalesce(b.debe, 0) - coalesce(b.haber, 0), coalesce(v_act, 0),
-                                       case when coalesce(b.debe, 0) - coalesce(b.haber, 0) = coalesce(v_act, 0)
-                                            then 'coincide' else 'NO COINCIDE (una cuenta mapeada a otra clase)' end)
+                                       case when coalesce(b.debe, 0) - coalesce(b.haber, 0) = coalesce(v_act, 0) then 'coincide'
+                                            when -(coalesce(b.debe, 0) - coalesce(b.haber, 0)) = coalesce(v_act, 0) and coalesce(v_act, 0) <> 0
+                                              then 'NO COINCIDE: es justo el contrario (¿la fila entró con el signo al revés? el '
+                                                   'activo va en debe)'
+                                            else 'NO COINCIDE (una cuenta mapeada a otra clase)' end)
+             when 'pasivo' then format('Control: el total del pasivo según QuickBooks es %s; según el mapeo, %s: %s',
+                                       -(coalesce(b.debe, 0) - coalesce(b.haber, 0)), coalesce(v_pas, 0),
+                                       case when -(coalesce(b.debe, 0) - coalesce(b.haber, 0)) = coalesce(v_pas, 0) then 'coincide'
+                                            when coalesce(b.debe, 0) - coalesce(b.haber, 0) = coalesce(v_pas, 0) and coalesce(v_pas, 0) <> 0
+                                              then 'NO COINCIDE: es justo el contrario (¿la fila entró con el signo al revés? el '
+                                                   'pasivo va en haber, o como saldo en positivo)'
+                                            else 'NO COINCIDE (una deuda mapeada a capital o a otra clase, o al revés)' end)
+             when 'capital' then format('Control: el total del capital (con la utilidad del año) según QuickBooks es %s; según el '
+                                        'mapeo, %s: %s',
+                                        -(coalesce(b.debe, 0) - coalesce(b.haber, 0)), coalesce(v_cap, 0) + coalesce(v_res, 0),
+                                        case when -(coalesce(b.debe, 0) - coalesce(b.haber, 0)) = coalesce(v_cap, 0) + coalesce(v_res, 0)
+                                               then 'coincide'
+                                             when coalesce(b.debe, 0) - coalesce(b.haber, 0) = coalesce(v_cap, 0) + coalesce(v_res, 0)
+                                                  and coalesce(v_cap, 0) + coalesce(v_res, 0) <> 0
+                                               then 'NO COINCIDE: es justo el contrario (¿la fila entró con el signo al revés? el '
+                                                    'capital va en haber, o como saldo en positivo)'
+                                             else 'NO COINCIDE (una cuenta de capital mapeada a pasivo o a otra clase, o al revés)' end)
+             when 'pasivo_capital' then format('Control: el pasivo más el capital según QuickBooks es %s; según el mapeo, %s: %s',
+                                        -(coalesce(b.debe, 0) - coalesce(b.haber, 0)),
+                                        coalesce(v_pas, 0) + coalesce(v_cap, 0) + coalesce(v_res, 0),
+                                        case when -(coalesce(b.debe, 0) - coalesce(b.haber, 0))
+                                                    = coalesce(v_pas, 0) + coalesce(v_cap, 0) + coalesce(v_res, 0) then 'coincide'
+                                             else 'NO COINCIDE (el signo de la fila, o una cuenta mapeada a otra clase)' end)
              else case when m.cuenta is null then 'SIN MAPEO: select fn_apertura_mapeo_qb(''' || b.cuenta_qb
                                                   || ''', ''<cuenta del plan>'');'
                        when c.tipo not in ('activo', 'pasivo', 'capital')
@@ -6633,12 +7646,24 @@ revoke execute on function public.fn_apertura_revisar(text) from public, anon, a
 --     que guardó el asiento), para (MX007);
 --   · con OTRA balanza, o con la misma y un plan distinto (un mapeo o un
 --     Customer:Job corregido), y ya hay apertura viva: NO la pisa. Dice qué
---     cambia, renglón por renglón, y para (MX007, sin tocar nada). Si lo
---     nuevo es lo bueno (QuickBooks corrigió septiembre, o el mapeo estaba
---     mal), se repite con el motivo: la apertura vieja se reversa y la
---     nueva la sustituye (sustituye_a), el mismo día. Con la apertura ya
---     cerrada, c2 no deja reversarla: lo que falte se corrige con un
---     ajuste a la apertura (ajuste_cpa).
+--     cambia, renglón por renglón (con el proveedor por su nombre y la
+--     factura por su número), y para (MX007, sin tocar nada). OJO: un
+--     error deshace la corrida ENTERA del SQL Editor, también lo que se
+--     corrió antes en ella (la corrección del mapeo, la carga de la
+--     balanza): el mensaje trae el bloque para pegar junto, en una sola
+--     corrida: las líneas del mapeo que cambió desde que se posteó (la
+--     foto que guarda el asiento, procedencia.mapeo) y el fn_apertura con
+--     su motivo. Si lo nuevo es lo bueno (QuickBooks corrigió septiembre, o
+--     el mapeo estaba mal), se repite con el motivo: la apertura vieja se
+--     reversa y la nueva la sustituye (sustituye_a), el mismo día. Con la
+--     apertura ya cerrada, c2 no deja reversarla: lo que falte se corrige
+--     con un ajuste a la apertura (ajuste_cpa), que v_comparacion de la
+--     apertura cuenta como posterior;
+--   · con motivo y NADA que cambiar: para (MX007) y dice por qué (lo más
+--     probable: la corrección del mapeo se deshizo con un error anterior en
+--     la misma corrida), salvo que la apertura viva ya sea la que se
+--     posteó con ESE motivo (el mismo pegado dos veces: no hace nada).
+--     Antes decía «sin_cambios» y nada más.
 -- Bloquea las filas de la balanza mientras la postea (una recarga del
 -- mismo documento espera, y después su guarda la para): el asiento y su
 -- papel dicen siempre lo mismo.
@@ -6677,6 +7702,9 @@ declare
   v_rsplit  numeric;
   v_dif     int := 0;
   v_huella  text;
+  v_mapeo   jsonb;
+  v_mapeo_t jsonb;
+  v_bloque  text;
 begin
   perform fn_estados_exigir_dueno();
   if coalesce(v_doc, '') = '' then
@@ -6732,6 +7760,14 @@ begin
    where b.documento = v_doc;
 
   v_plan := fn_apertura_plan(v_doc);
+  -- La foto del mapeo con que se postea (el de cada nombre de la balanza):
+  -- con ella, si después cambia, se sabe qué cambió.
+  select coalesce(jsonb_object_agg(m.clave, m.cuenta), '{}'::jsonb) into v_mapeo
+    from apertura_mapeo_qb m
+   where m.tipo = 'cuenta' and m.clave in (select b.clave from apertura_balanza_qb b where b.documento = v_doc and b.control is null);
+  select coalesce(jsonb_object_agg(m.clave, m.proyecto_id), '{}'::jsonb) into v_mapeo_t
+    from apertura_mapeo_qb m
+   where m.tipo = 'trabajo' and m.clave in (select b.cliente_clave from apertura_balanza_qb b where b.documento = v_doc);
 
   if v_vivo.id is not null then
     -- Lo que cambia, renglón por renglón, entre el asiento vivo y el plan
@@ -6750,21 +7786,29 @@ begin
         from jsonb_to_recordset(v_plan->'lineas') as x(cuenta text, monto text, proyecto_id text, partida_tabla text,
                                                        partida_id text, tercero_id text)
        group by 1, 2, 3, 4, 5
+    ), ch as (
+      -- (con el proveedor por su nombre y la factura por su número: el uuid
+      -- solo no dice nada al leer el mensaje)
+      select coalesce(a.k, b.k) as k, coalesce(a.cuenta, b.cuenta) as cuenta, coalesce(a.proyecto_id, b.proyecto_id) as obra,
+             coalesce(a.partida, b.partida) as partida, coalesce(a.tercero_id, b.tercero_id) as tercero,
+             coalesce(a.m, 0) as antes, coalesce(b.m, 0) as despues
+        from a
+        full join b on b.k = a.k
+       where coalesce(a.m, 0) <> coalesce(b.m, 0)
     )
     select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
-             'cuenta', coalesce(a.cuenta, b.cuenta), 'obra', coalesce(a.proyecto_id, b.proyecto_id),
-             'partida', coalesce(a.partida, b.partida), 'tercero', coalesce(a.tercero_id, b.tercero_id),
-             'antes', coalesce(a.m, 0), 'despues', coalesce(b.m, 0), 'cambio', coalesce(b.m, 0) - coalesce(a.m, 0)))
-             order by coalesce(a.k, b.k)), '[]'::jsonb),
+             'cuenta', ch.cuenta, 'obra', ch.obra, 'partida', ch.partida, 'factura', f.num, 'tercero', ch.tercero,
+             'proveedor', pr.nombre, 'antes', ch.antes, 'despues', ch.despues, 'cambio', ch.despues - ch.antes))
+             order by ch.k), '[]'::jsonb),
            count(*),
-           string_agg(format('%s%s%s: %s → %s', coalesce(a.cuenta, b.cuenta),
-                             coalesce(' ' || coalesce(a.proyecto_id, b.proyecto_id), ''),
-                             coalesce(' ' || coalesce(a.partida, b.partida), ''), coalesce(a.m, 0), coalesce(b.m, 0)),
-                      '; ' order by coalesce(a.k, b.k))
+           string_agg(format('%s%s%s%s%s: %s → %s', ch.cuenta, coalesce(' ' || ch.obra, ''), coalesce(' ' || ch.partida, ''),
+                             coalesce(' (factura #' || f.num || ')', ''), coalesce(' ' || pr.nombre, ''), ch.antes, ch.despues),
+                      '; ' order by ch.k)
       into v_cambios, v_n, v_lista
-      from a
-      full join b on b.k = a.k
-     where coalesce(a.m, 0) <> coalesce(b.m, 0);
+      from ch
+      left join proveedores pr on pr.id = case when ch.tercero ~ '^[0-9a-f-]{36}$' then ch.tercero::uuid end
+      left join facturas f on f.id = case when ch.partida ~ '^facturas/-?[0-9]{1,18}$'
+                                          then split_part(ch.partida, '/', 2)::bigint end;
     if v_vivo.documento_ruta = v_doc and v_n = 0 then
       if v_vivo.procedencia ? 'huella_balanza' and v_vivo.procedencia->>'huella_balanza' is distinct from v_huella then
         raise exception using errcode = 'MX007',
@@ -6773,11 +7817,43 @@ begin
                            '(las guardas de 1.6 no lo dejan) y vuelve a cargar la buena con otro documento.', v_doc,
                            v_vivo.numero);
       end if;
+      -- Con motivo y nada que cambiar: no es un «ya está» callado, salvo que
+      -- la viva ya sea la de ESTE motivo (el mismo pegado dos veces).
+      if coalesce(btrim(p_motivo), '') <> '' and v_vivo.procedencia->>'motivo_edgar' is distinct from btrim(p_motivo) then
+        raise exception using errcode = 'MX007',
+          message = format('La apertura ya está en el libro con la balanza %s y este mapeo (asiento %s): con el motivo no hay nada '
+                           'que rehacer, y no se tocó nada. Si corregiste el mapeo (o cargaste la balanza) en la MISMA corrida del '
+                           'SQL Editor que un fn_apertura que paró, ese error deshizo la corrida entera, también la corrección: '
+                           'vuelve a pegar juntos, en una sola corrida, la corrección y el select fn_apertura(%L, %L, ''motivo'');',
+                           v_doc, v_vivo.numero, v_ap.desde, v_doc);
+      end if;
       return jsonb_build_object('accion', 'sin_cambios', 'asiento', v_vivo.numero, 'id', v_vivo.id, 'documento', v_doc,
                                 'mensaje', format('La apertura ya está en el libro con esta balanza y este mapeo (asiento %s): '
                                                   'no se postea otra vez.', v_vivo.numero));
     end if;
     if coalesce(btrim(p_motivo), '') = '' then
+      -- El bloque para pegar junto: lo que el mapeo cambió desde que se
+      -- posteó (la foto del asiento; uno de una versión anterior no la
+      -- tiene) y el fn_apertura con su motivo.
+      select string_agg(x.l, ' ' order by x.o, x.linea)
+        into v_bloque
+        from (select 1 as o, b.linea, format('select fn_apertura_mapeo_qb(%L, %L);', b.cuenta_qb, m.cuenta) as l
+                from (select distinct on (b2.clave) b2.clave, b2.cuenta_qb, b2.linea
+                        from apertura_balanza_qb b2
+                       where b2.documento = v_doc and b2.control is null
+                       order by b2.clave, b2.linea) b
+                join apertura_mapeo_qb m on m.tipo = 'cuenta' and m.clave = b.clave
+               where v_vivo.procedencia->'mapeo' ? b.clave
+                 and v_vivo.procedencia->'mapeo'->>b.clave is distinct from m.cuenta
+              union all
+              select 2, b.linea, format('select fn_apertura_mapeo_trabajo(%L, %L);', b.cliente_trabajo, m.proyecto_id)
+                from (select distinct on (b2.cliente_clave) b2.cliente_clave, b2.cliente_trabajo, b2.linea
+                        from apertura_balanza_qb b2
+                       where b2.documento = v_doc and b2.cliente_clave is not null
+                       order by b2.cliente_clave, b2.linea) b
+                join apertura_mapeo_qb m on m.tipo = 'trabajo' and m.clave = b.cliente_clave
+               where v_vivo.procedencia->'mapeo_trabajo' ? b.cliente_clave
+                 and v_vivo.procedencia->'mapeo_trabajo'->>b.cliente_clave is distinct from m.proyecto_id) x;
       raise exception using errcode = 'MX007',
         message = case
                     when v_vivo.documento_ruta = v_doc
@@ -6788,7 +7864,10 @@ begin
                     else format('La apertura ya está en el libro con la balanza %s (asiento %s). La balanza %s la cambia en %s '
                                 'renglón(es): %s. No se tocó nada. Si %s es la buena, repite con el motivo: select '
                                 'fn_apertura(%L, %L, ''motivo'');', v_vivo.documento_ruta, v_vivo.numero, v_doc, v_n,
-                                coalesce(left(v_lista, 900), 'ninguno (las mismas cifras)'), v_doc, v_ap.desde, v_doc) end,
+                                coalesce(left(v_lista, 900), 'ninguno (las mismas cifras)'), v_doc, v_ap.desde, v_doc) end
+                  || format(' OJO: este error deshace la corrida ENTERA de esta pestaña del SQL Editor, también lo que corriste '
+                            'en ella antes (la corrección del mapeo, la carga de la balanza). Pega juntos, en una sola corrida: '
+                            '%sselect fn_apertura(%L, %L, ''motivo'');', coalesce(v_bloque || ' ', ''), v_ap.desde, v_doc),
         detail = v_cambios::text;
     end if;
     v_rev := fn_reversar_interno(v_vivo.id, format('Apertura rehecha con la balanza %s: %s', v_doc, btrim(p_motivo)),
@@ -6815,6 +7894,7 @@ begin
              'sustituye_a', v_sust,
              'procedencia', jsonb_strip_nulls(jsonb_build_object(
                               'funcion', 'fn_apertura', 'documento', v_doc, 'huella_balanza', v_huella,
+                              'mapeo', v_mapeo, 'mapeo_trabajo', v_mapeo_t,
                               'filas_qb', v_plan->'filas_qb',
                               'ignoradas_en_cero', v_plan->'ignoradas_en_cero', 'resultado_qb', v_plan->'resultado_qb',
                               'retencion_partida', v_plan->'retencion_partida', 'motivo_edgar', nullif(btrim(p_motivo), ''),
@@ -7017,7 +8097,9 @@ revoke execute on function public.fn_estados_huellas_sellar() from public, anon,
 -- compilador JIT de Postgres (encendido por omisión) tarda más en
 -- compilarlas que en correrlas; con 10.000 asientos, el control del Panel
 -- pasa de 4.4 s a 2.5 s (medido en el banco, PG16, pruebas/conta/
--- c4-volumen.sh).
+-- c4-volumen.sh). Y con c4.comparar_documento vacío mientras corre:
+-- controla siempre la última balanza de QuickBooks de cada período, aunque
+-- la sesión esté mirando otra versión (3.6), y al terminar se lo devuelve.
 -- =====================================================================
 create or replace function public.fn_estados_control(p_periodo text, p_vistas text[] default null)
 returns table (orden int, vista text, filas bigint, esperadas bigint, ok boolean, detalle text)
@@ -7073,7 +8155,28 @@ declare
                             'v_flujo_real_por_mes', 'v_saldos_dinero', 'v_cxc_antiguedad', 'v_cxp_antiguedad',
                             'v_gasto_lineas', 'v_gasto_por_categoria', 'v_gasto_por_proveedor', 'v_costo_por_obra',
                             'v_obras_dinero', 'v_qb_balanzas', 'v_comparacion', 'v_comparacion_obra', 'v_comparacion_resumen'];
+  -- La versión de QuickBooks que la sesión esté mirando (3.6): el control
+  -- mira siempre la última, y al terminar la sesión sigue como estaba.
+  -- (Un «set c4.… » en la cabecera de la función no se puede: Postgres no
+  -- deja a quien no es superusuario fijar ahí una variable propia.)
+  v_cmp     text := current_setting('c4.comparar_documento', true);
+  -- (lo ajeno que lee las tablas de c4: ver las protecciones, en 3)
+  v_rel     oid[];
+  v_fn_c4   oid[];
+  v_c2ok    oid[] := '{}';
+  v_lee     oid[];
+  v_nuevas  oid[];
+  v_simples text;
+  v_compues text;
+  v_fnn     text;
+  v_rx_c    text;
+  v_rx_k    text;
+  v_rx_s    text;
+  v_rx_f    text;
+  v_c2sel   text;
+  v_ajenas  text[] := '{}';
 begin
+  perform set_config('c4.comparar_documento', '', true);
   -- (Solo es_dueno(): fn_desde_editor no es de la API, y Postgres pide
   -- permiso sobre cada función de la expresión aunque no la llegue a
   -- evaluar. Desde el SQL Editor el usuario no es authenticated.)
@@ -7157,7 +8260,7 @@ begin
              (select pe.hasta from periodos pe
                where pe.periodo = case when a.tipo = 'ajuste_cpa' then a.afecta_periodo else a.periodo end) as efectivo_hasta,
              a.afecta_periodo, m.estado, m.seccion, m.linea, m.efectivo, m.flujo_directo, m.flujo_indirecto,
-             m.flujo_directo_seccion, m.flujo_indirecto_seccion, m.contra, c.regla_obra
+             m.flujo_directo_seccion, m.flujo_indirecto_seccion, m.contra, c.regla_obra, m.caja
         from asiento_lineas al
         join asientos a on a.id = al.asiento_id
         join m on m.cuenta = al.cuenta
@@ -7191,9 +8294,10 @@ begin
                and exists (select 1 from bx join ej on ej.anio = bx.ejercicio and ej.cerrado
                             where bx.al_corte and bx.estado = 'balance' and bx.linea = 'distribuciones')
             union
-            -- el resultado de antes de la apertura (la balanza de la apertura
-            -- viva): en su año, al resultado del ejercicio; después, mientras
-            -- ese año no se cierre, a «ejercicios anteriores por cerrar»
+            -- el resultado de antes de la apertura, tal como lo posteó
+            -- fn_apertura (la línea de 3900 de su último asiento, vivo): en
+            -- su año, al resultado del ejercicio; después, mientras ese año
+            -- no se cierre, a «ejercicios anteriores por cerrar»
             select 'capital', z.linea, 'c:resultado_apertura'
               from p, apx
               cross join lateral (values ('utilidades_retenidas'),
@@ -7202,17 +8306,19 @@ begin
              where p.hasta >= apx.hasta
                and (apx.anio = p.anio
                     or (apx.anio < p.anio and not coalesce((select e2.cerrado from ej e2 where e2.anio = apx.anio), false)))
-               and exists (select 1 from asientos a
-                             join apertura_balanza_qb qb on qb.documento = a.documento_ruta
-                             join apertura_mapeo_qb mq on mq.tipo = 'cuenta' and mq.clave = qb.clave
-                             join cuentas cq on cq.codigo = mq.cuenta
-                            where a.tipo = 'apertura' and a.origen_tabla = 'apertura_balanza_qb' and a.periodo = apx.periodo
-                              and coalesce(a.procedencia->>'funcion', '') = 'fn_apertura'
-                              and a.camino not in ('reverso', 'reverso_automatico')
-                              and not exists (select 1 from asientos x where x.reversa_a = a.id and x.camino = 'reverso')
-                              and cq.tipo not in ('activo', 'pasivo', 'capital')
-                            group by a.id
-                           having sum(coalesce(qb.debe, 0) - coalesce(qb.haber, 0)) <> 0)
+               and exists (select 1
+                             from (select a.id, a.procedencia,
+                                          not exists (select 1 from asientos x where x.reversa_a = a.id and x.camino = 'reverso') as vivo
+                                     from asientos a
+                                    where a.tipo = 'apertura' and a.origen_tabla = 'apertura_balanza_qb'
+                                      and coalesce(a.procedencia->>'funcion', '') = 'fn_apertura'
+                                      and a.camino not in ('reverso', 'reverso_automatico')
+                                    order by a.cadena_pos desc limit 1) a
+                             join asiento_lineas al on al.asiento_id = a.id
+                            where a.vivo and al.monto <> 0
+                              and case when a.procedencia->'resultado_qb' ? 'orden'
+                                       then al.orden = (a.procedencia->'resultado_qb'->>'orden')::int
+                                       else al.cuenta = '3900' and al.memo like 'Resultado de enero a septiembre%' end)
             union
             -- las reclasificaciones: salen de cada renglón que tiene un saldo
             -- contrario y entran en el suyo
@@ -7232,7 +8338,12 @@ begin
                     having sum(bx.monto) > 0
                     union all
                     select 'reclasif_sobregiro', bx.seccion, bx.linea
-                      from bx where bx.al_corte and bx.efectivo
+                      from bx where bx.al_corte and bx.efectivo and not bx.caja
+                     group by bx.seccion, bx.linea, bx.cuenta
+                    having sum(bx.monto) < 0
+                    union all
+                    select 'reclasif_caja', bx.seccion, bx.linea
+                      from bx where bx.al_corte and bx.caja
                      group by bx.seccion, bx.linea, bx.cuenta
                     having sum(bx.monto) < 0
                     union all
@@ -7281,11 +8392,15 @@ begin
                               case when bx.linea <> 'tarjetas' then bx.tercero_id end
                     having sum(bx.monto) > 0
                     union all
-                    select 'reclasif_sobregiro' from bx where bx.al_corte and bx.efectivo
+                    select 'reclasif_sobregiro' from bx where bx.al_corte and bx.efectivo and not bx.caja
+                     group by bx.cuenta having sum(bx.monto) < 0
+                    union all
+                    select 'reclasif_caja' from bx where bx.al_corte and bx.caja
                      group by bx.cuenta having sum(bx.monto) < 0) y
               join (values ('reclasif_anticipos', 'pasivo_circulante', 'anticipos_clientes'),
                            ('reclasif_a_favor', 'activo_circulante', 'saldos_a_favor'),
-                           ('reclasif_sobregiro', 'pasivo_circulante', 'sobregiro_bancario')) as z(c, s, l) on z.c = y.comp),
+                           ('reclasif_sobregiro', 'pasivo_circulante', 'sobregiro_bancario'),
+                           ('reclasif_caja', 'pasivo_circulante', 'caja_en_rojo')) as z(c, s, l) on z.c = y.comp),
     -- el estado de resultados
     rc as (select distinct l.seccion, l.linea, l.cuenta
              from l, p
@@ -7313,10 +8428,43 @@ begin
             group by b.partida_tabla, b.partida_id, case when b.partida_tabla is null then b.proyecto_id end
            having coalesce(sum(b.monto) filter (where b.cuenta = k.cxc), 0) <> 0
                or coalesce(sum(b.monto) filter (where b.cuenta = k.ret), 0) <> 0),
-    px as (select 1 from b, k where b.cuenta = k.cxp or (b.estado = 'balance' and b.linea = 'retencion_por_pagar')
-            group by b.partida_tabla, b.partida_id, case when b.partida_tabla is null then b.tercero_id end
-           having coalesce(sum(b.monto) filter (where b.cuenta = k.cxp), 0) <> 0
-               or coalesce(sum(b.monto) filter (where b.cuenta <> k.cxp), 0) <> 0),
+    -- (pagar: lo pagado sin partida salda los papeles de su proveedor, que
+    -- van en su fila; la misma regla que v_cxp_antiguedad, desde las tablas)
+    px0 as materialized (
+      select b.fecha, b.monto, b.tercero_tipo, b.tercero_id, b.partida_tabla, b.partida_id, b.cuenta = k.cxp as es_cxp,
+             concat_ws('|', coalesce(b.partida_tabla, '-'), coalesce(b.partida_id, '-'),
+                       case when b.partida_tabla is null then coalesce(b.tercero_id, '-') else '-' end) as gk
+        from b, k
+       where b.cuenta = k.cxp or (b.estado = 'balance' and b.linea = 'retencion_por_pagar')),
+    pxg as (select px0.gk, min(px0.partida_tabla) as pt, min(px0.partida_id) as pid,
+                   min(case when px0.partida_tabla is null then px0.tercero_id end) as tsp,
+                   min(px0.tercero_id) filter (where px0.tercero_tipo = 'proveedor') as ter,
+                   coalesce(-sum(px0.monto) filter (where px0.es_cxp), 0) as pp, min(px0.fecha) as primera
+              from px0 group by px0.gk),
+    pxp as (select pxg.gk, pxg.ter, pxg.pp, pxg.pt, pxg.pid,
+                   coalesce(case when pxg.pt = 'recibos' then rcb.fecha when pxg.pt = 'trabajos_externos' then te.fecha end,
+                            pxg.primera) as fp
+              from pxg
+              left join recibos rcb
+                     on pxg.pt = 'recibos'
+                    and rcb.id = (case when pxg.pt = 'recibos' and pxg.pid ~ '^-?[0-9]{1,18}$' then pxg.pid::bigint end)
+              left join trabajos_externos te
+                     on pxg.pt = 'trabajos_externos'
+                    and te.id = (case when pxg.pt = 'trabajos_externos' and pxg.pid ~ '^-?[0-9]{1,18}$' then pxg.pid::bigint end)
+             where pxg.pt is not null and pxg.ter is not null and pxg.pp <> 0),
+    pxa as (select x.gk, x.ter
+              from (select pxp.*, rp.r,
+                           coalesce(sum(greatest(pxp.pp, 0)) over (partition by pxp.ter order by pxp.fp, pxp.pt, pxp.pid
+                                                                   rows between unbounded preceding and 1 preceding), 0) as antes
+                      from pxp
+                      join (select q.ter, -(coalesce((select s.pp from pxg s where s.pt is null and s.tsp = q.ter), 0)
+                                            + coalesce(sum(q.pp) filter (where q.pp < 0), 0)) as r
+                              from pxp q group by q.ter) rp on rp.ter = pxp.ter) x
+             where x.pp < 0 or (x.r > 0 and x.antes < x.r)),
+    px as (select 1 from px0 left join pxa on pxa.gk = px0.gk
+            group by case when pxa.gk is not null then '-|-|' || pxa.ter else px0.gk end
+           having coalesce(sum(px0.monto) filter (where px0.es_cxp), 0) <> 0
+               or coalesce(sum(px0.monto) filter (where not px0.es_cxp), 0) <> 0),
     -- el gasto
     gc as (select distinct l.cuenta from l, p
             where l.estado = 'resultados' and l.seccion in ('costo', 'gastos', 'otros_gastos')
@@ -7334,9 +8482,15 @@ begin
                     select b.cuenta from b, p where b.estado = 'resultados' and b.seccion in ('ingresos', 'costo')
                                                 and b.ejercicio = p.anio) x),
     -- QuickBooks, desde las tablas: la balanza que vale en el período (la
-    -- de comparacion_qb cargada más tarde; si no hay, en la apertura, la
-    -- que posteó la apertura viva), con su cuenta y su obra.
-    qd as (select q.documento, q.al from comparacion_qb q where q.periodo = v_pid order by q.cargado_el desc, q.documento desc limit 1),
+    -- de comparacion_qb de tipo 'balanza' cargada más tarde y no retirada;
+    -- si no hay, en la apertura, la que posteó la apertura viva), con su
+    -- cuenta y su obra; y el complemento por obra ('por_obra'), si lo hay.
+    qd as (select q.documento, q.al from comparacion_qb q
+            where q.periodo = v_pid and q.tipo = 'balanza' and q.retirada_el is null
+            order by q.cargado_el desc, q.documento desc limit 1),
+    qdo as (select q.documento, q.al from comparacion_qb q
+             where q.periodo = v_pid and q.tipo = 'por_obra' and q.retirada_el is null
+             order by q.cargado_el desc, q.documento desc limit 1),
     -- la balanza de la apertura: la del último asiento de fn_apertura,
     -- vivo o reversado (si se reversó, la comparación dice que el libro ya
     -- no la tiene); si nunca posteó, la cargada más tarde
@@ -7367,7 +8521,39 @@ begin
         left join facturas f on f.id = x.factura_id
         left join cuentas c on c.codigo = mc.cuenta
     ),
-    qp as (select coalesce(bool_or(qt.con_posteriores), false) as con from qt),
+    -- (en la apertura, sus ajustes posteriores siempre: ver v_comparacion)
+    qp as (select coalesce(bool_or(qt.con_posteriores), false) or v_tipo = 'apertura' as con from qt),
+    -- el complemento por obra: sus filas, con su cuenta y su obra; si no
+    -- hay, v_comparacion_obra usa las de la balanza (qt)
+    qto as materialized (
+      select x.cuenta_qb, x.saldo, x.con_posteriores, mc.cuenta, c.tipo as cuenta_tipo,
+             coalesce(x.proyecto_id, mt.proyecto_id) as proyecto_id
+        from comparacion_qb x
+        join qdo on qdo.documento = x.documento
+        left join apertura_mapeo_qb mc on mc.tipo = 'cuenta' and mc.clave = x.clave
+        left join apertura_mapeo_qb mt on mt.tipo = 'trabajo' and mt.clave = x.cliente_clave
+        left join cuentas c on c.codigo = mc.cuenta
+       where x.periodo = v_pid
+      union all
+      select qt.cuenta_qb, qt.saldo, qt.con_posteriores, qt.cuenta, qt.cuenta_tipo, qt.proyecto_id
+        from qt
+       where not exists (select 1 from qdo)),
+    qpo as (select coalesce(bool_or(qto.con_posteriores), false) or v_tipo = 'apertura' as con from qto),
+    qalo as (select coalesce((select qdo.al from qdo), (select qd.al from qd), v_hasta) as al),
+    -- lo que la apertura POSTEÓ como resultado (la línea de 3900 de su último
+    -- asiento de fn_apertura, vivo o reversado): lo que se le resta a 3900
+    qr as (select al.monto as q
+             from apx, p
+             cross join lateral (select a.id, a.procedencia from asientos a
+                                  where a.tipo = 'apertura' and a.origen_tabla = 'apertura_balanza_qb'
+                                    and coalesce(a.procedencia->>'funcion', '') = 'fn_apertura'
+                                    and a.camino not in ('reverso', 'reverso_automatico')
+                                  order by a.cadena_pos desc limit 1) a
+             join asiento_lineas al on al.asiento_id = a.id
+            where p.anio = apx.anio and p.hasta > apx.hasta and p.periodo <> apx.periodo
+              and case when a.procedencia->'resultado_qb' ? 'orden'
+                       then al.orden = (a.procedencia->'resultado_qb'->>'orden')::int
+                       else al.cuenta = '3900' and al.memo like 'Resultado de enero a septiembre%' end),
     -- lo que la balanza de apertura traía en cada cuenta de resultados
     -- (enero a septiembre), para los períodos de su año posteriores a ella
     qj as (select mq.cuenta, qb.proyecto_id as p1, mt.proyecto_id as p2, f.proyecto_id as p3,
@@ -7406,21 +8592,21 @@ begin
              left join vc_d on vc_d.cuenta = x.cuenta
             where coalesce(vc_l.libro, 0) <> 0 or coalesce(vc_q.qb, 0) <> 0 or coalesce(vc_l.post, 0) <> 0
                or coalesce(vc_d.n, 0) > 0
-               or coalesce(vc_j.saldo, 0) - case when x.cuenta = '3900' then coalesce((select sum(j2.saldo) from vc_j j2), 0)
+               or coalesce(vc_j.saldo, 0) - case when x.cuenta = '3900' then coalesce((select sum(qr.q) from qr), 0)
                                                  else 0 end <> 0),
     vs as (select 1 from qt where qt.cuenta is null group by qt.cuenta_qb, qt.clave having sum(qt.saldo) <> 0),
     -- v_comparacion_obra: por obra, solo en las cuentas que QuickBooks trae
     -- por obra en el período
-    vo_q as (select qt.cuenta, qt.proyecto_id, sum(qt.saldo) as qb from qt, p
-              where qt.cuenta is not null and qt.proyecto_id is not null
-                and (p.tipo <> 'apertura' or qt.cuenta_tipo in ('activo', 'pasivo', 'capital'))
-              group by qt.cuenta, qt.proyecto_id),
-    vo_l as (select l.cuenta, l.proyecto_id, coalesce(sum(l.monto) filter (where l.fecha <= qal.al), 0) as libro,
+    vo_q as (select qto.cuenta, qto.proyecto_id, sum(qto.saldo) as qb from qto, p
+              where qto.cuenta is not null and qto.proyecto_id is not null
+                and (p.tipo <> 'apertura' or qto.cuenta_tipo in ('activo', 'pasivo', 'capital'))
+              group by qto.cuenta, qto.proyecto_id),
+    vo_l as (select l.cuenta, l.proyecto_id, coalesce(sum(l.monto) filter (where l.fecha <= qalo.al), 0) as libro,
                     coalesce(sum(l.monto) filter (where l.fecha > p.hasta), 0) as post
-               from l, p, qp, qal
+               from l, p, qpo, qalo
               where (l.estado = 'balance' or l.ejercicio = p.anio)
-                and (l.fecha <= qal.al
-                     or (qp.con and l.tipo = 'ajuste_cpa' and l.fecha > p.hasta
+                and (l.fecha <= qalo.al
+                     or (qpo.con and l.tipo = 'ajuste_cpa' and l.fecha > p.hasta
                          and case when p.tipo = 'anio' then l.ejercicio <= p.anio else l.efectivo_hasta <= p.hasta end))
                 and l.cuenta in (select vo_q.cuenta from vo_q) and l.proyecto_id is not null
               group by l.cuenta, l.proyecto_id),
@@ -7531,7 +8717,8 @@ begin
       'v_obras_dinero', case when 'v_obras_dinero' = any (v_pedidas) then
                         (select count(distinct b.proyecto_id) from b where b.proyecto_id is not null) end,
       'v_qb_balanzas', case when 'v_qb_balanzas' = any (v_pedidas) then
-                       (select count(*) from qt) end,
+                       (select count(*) from qt)
+                         + (select count(*) from comparacion_qb x join qdo on qdo.documento = x.documento where x.periodo = v_pid) end,
       -- (solo si el período tiene balanza de QuickBooks: sin ella, la vista
       -- no da filas)
       'v_comparacion', case when 'v_comparacion' = any (v_pedidas) then
@@ -7540,7 +8727,7 @@ begin
       'v_comparacion_resumen', case when 'v_comparacion_resumen' = any (v_pedidas) then
                                (select case when exists (select 1 from qt) then 1 else 0 end) end,
       'v_comparacion_obra', case when 'v_comparacion_obra' = any (v_pedidas) then
-                            (select count(*) from vo) end)
+                            (select case when exists (select 1 from qto) then (select count(*) from vo) else 0 end) end)
       into v_esp;
   exception when others then
     v_esp := null;
@@ -7595,8 +8782,15 @@ begin
       (24, 'v_gasto_por_categoria', 'select count(*), null::boolean, null::numeric, null::text from public.v_gasto_por_categoria where periodo = $1'),
       (25, 'v_gasto_por_proveedor', 'select count(*), null::boolean, null::numeric, null::text from public.v_gasto_por_proveedor where periodo = $1'),
       (26, 'v_costo_por_obra', $q$ select count(*), bool_and(cuadra) filter (where nivel = 'control'), null::numeric,
-                                      string_agg(format('%s: repartido por obra %s + sin repartir %s ≠ mayor %s',
-                                                        coalesce(cuenta, seccion), del_anio, sin_repartir, mayor), '; ')
+                                      string_agg(case when del_anio + sin_repartir <> mayor
+                                                      then format('%s: repartido por obra %s + sin repartir %s ≠ mayor %s',
+                                                                  coalesce(cuenta, seccion), del_anio, sin_repartir, mayor)
+                                                      when cuenta is null
+                                                      then format('%s: lo sin repartir incluye cuentas que exigen obra (sin '
+                                                                  'explicar; ver sus filas)', seccion)
+                                                      else format('%s: %s sin repartir por obra en una cuenta que exige obra (sin '
+                                                                  'explicar: sus guardas no lo dejan entrar)', cuenta, sin_repartir)
+                                                 end, '; ')
                                         filter (where nivel = 'control' and not cuadra)
                                  from public.v_costo_por_obra where periodo = $1 $q$),
       (27, 'v_obras_dinero', $q$ select count(*), bool_and(cuadra), null::numeric,
@@ -7708,6 +8902,26 @@ begin
                         case when 'v_flujo_caja' = any (v_pedidas) then coalesce(v_ef_fl::text, '(no dio)') else '(no se pidió)' end,
                         case when 'v_flujo_real_por_mes' = any (v_pedidas) and v_tipo = 'mes'
                              then coalesce(v_ef_re::text, '(no dio)') else '(no se pidió)' end));
+  end if;
+
+  -- LA CAJA CHICA NO QUEDA EN ROJO (con el balance, el flujo o los saldos):
+  -- una caja (estados_mapeo.caja) con saldo acreedor al corte es efectivo
+  -- que alguien adelantó y el libro no tiene, o un retiro sin registrar. El
+  -- balance y el flujo la enseñan como pasivo, con su nombre; aquí sale en
+  -- rojo hasta que se corrija con un asiento (esperaba: ninguna).
+  if 'v_balance_general' = any (v_pedidas) or 'v_flujo_caja' = any (v_pedidas) or 'v_flujo_real_por_mes' = any (v_pedidas)
+     or 'v_saldos_dinero' = any (v_pedidas) then
+    select string_agg(format('%s en %s', x.cuenta, x.s), ', ' order by x.cuenta) into v_det
+      from (select al.cuenta, sum(al.monto) as s
+              from asiento_lineas al
+              join asientos a on a.id = al.asiento_id
+             where al.cuenta in (select m.cuenta from v_estados_mapeo m where m.caja) and a.fecha_contable <= v_hasta
+             group by al.cuenta
+            having sum(al.monto) < 0) x;
+    v_cuad := v_cuad || jsonb_build_object('orden', 64, 'vista', 'cuadre: la caja chica no queda en rojo', 'ok', v_det is null,
+      'detalle', format('al %s la caja chica está en rojo (%s): es efectivo que alguien adelantó (Edgar, 2900; un empleado, '
+                        '2250) o un retiro del banco sin registrar. Corrígelo con un asiento; mientras tanto el balance y el '
+                        'flujo la enseñan como pasivo, «Caja chica en rojo»', v_hasta, v_det));
   end if;
 
   -- LA APERTURA EN EL LIBRO, siempre (todo período es desde la apertura, y
@@ -7840,9 +9054,127 @@ begin
       into v_hue;
   end if;
   v_prot := v_prot || v_hue;
+  --   · lo AJENO que abre sus tablas a la API: una vista (de cualquier
+  --     esquema que no sea del sistema) que las lee, directo o a través de
+  --     otra vista, sin security_invoker (lee con los permisos de su dueño y
+  --     se salta la RLS: en Supabase nace así, y con SELECT para anon y
+  --     authenticated); una vista materializada que las copia y que la API
+  --     puede leer; y una función SECURITY DEFINER que la API puede
+  --     ejecutar y que las lee: porque las nombra, porque depende de ellas,
+  --     o porque llama a otra función que las lee (una de c4, o una de
+  --     ayuda SECURITY INVOKER: llamada desde la DEFINER, corre con los
+  --     permisos de su dueño), hasta que no aparezca nada nuevo. En el
+  --     texto de cada función, sin sus comentarios («from/**/diferencias»
+  --     no se escondía más que «from diferencias»); un nombre compuesto
+  --     (estados_mapeo, v_libro) cuenta dondequiera que aparezca como
+  --     palabra, también dentro de un SQL dinámico; uno simple
+  --     (diferencias), detrás de from, join, into, update, using… o de una
+  --     coma o un paréntesis (el join de coma: «from asientos a,
+  --     diferencias d»), fuera de las cadenas. Lo de c1, c2 y c3 sellado por
+  --     c2 (fn_libro_huellas) y sin cambios no es ajeno. (Es el error
+  --     honesto que c2 caza para el libro: una vista de ayuda para el CPA
+  --     hecha en el SQL Editor sobre la balanza de QuickBooks, sin
+  --     security_invoker, se la daba a la llave pública; un SQL dinámico
+  --     armado a propósito para esconderse no se ve.)
+  with recursive dep(oid) as (
+         select c.oid from pg_class c where c.relnamespace = 'public'::regnamespace and c.relname = any (v_tablas)
+         union
+         select rw.ev_class
+           from dep
+           join pg_depend d on d.refobjid = dep.oid and d.refclassid = 'pg_class'::regclass and d.classid = 'pg_rewrite'::regclass
+           join pg_rewrite rw on rw.oid = d.objid
+          where rw.ev_class <> dep.oid)
+  select coalesce(array_agg(dep.oid), '{}') into v_rel from dep;
+  select string_agg(distinct c.relname::text, '|') filter (where c.relname::text !~ '_'),
+         string_agg(distinct c.relname::text, '|') filter (where c.relname::text ~ '_')
+    into v_simples, v_compues
+    from pg_class c
+   where c.oid = any (v_rel) and c.relname ~ '^[[:alnum:]_]+$';
+  select coalesce(array_agg(f.oid), '{}') into v_fn_c4
+    from pg_proc f
+   where f.pronamespace = 'public'::regnamespace
+     and (f.proname like 'fn\_estados\_%' or f.proname like 'fn\_apertura%' or f.proname like 'fn\_comparacion\_%'
+          or f.proname like 'fn\_diferencia\_%');
+  -- (lo sellado por c2 y sin cambios: se corre el TEXTO de sus huellas,
+  -- como las de c4 arriba)
+  select p.prosrc into v_c2sel from pg_proc p where p.oid = to_regprocedure('public.fn_libro_huellas()');
+  if v_c2sel is not null then
+    begin
+      execute 'select coalesce(array_agg(p.oid), ''{}'') from (' || v_c2sel || ') h(tipo, objeto, md5)
+                 join pg_proc p on p.oid = to_regprocedure(''public.'' || h.objeto)
+                where h.tipo = ''funcion'' and md5(pg_get_functiondef(p.oid)) = h.md5'
+        into v_c2ok;
+    exception when others then
+      v_c2ok := '{}';
+    end;
+  end if;
+  v_lee := v_fn_c4;
+  v_rx_c := case when v_compues is not null then '[[:<:]](' || v_compues || ')[[:>:]]' end;
+  v_rx_k := case when v_simples is not null
+                 then '[[:<:]](from|join|into|update|table|only|truncate|using)[[:space:]]+'
+                      || '(([[:alnum:]_]+|"[^"]+")[[:space:]]*[.][[:space:]]*)?"?(' || v_simples || ')"?[[:>:]]' end;
+  v_rx_s := case when v_simples is not null
+                 then '[,(][[:space:]]*(([[:alnum:]_]+|"[^"]+")[[:space:]]*[.][[:space:]]*)?"?(' || v_simples || ')"?[[:>:]]' end;
+  loop
+    select string_agg(distinct f.proname::text, '|') into v_fnn from pg_proc f where f.oid = any (v_lee) and f.proname ~ '^[[:alnum:]_]+$';
+    v_rx_f := case when v_fnn is not null then '[[:<:]](' || v_fnn || ')[[:space:]]*[(]' end;
+    select coalesce(array_agg(x.oid), '{}') into v_nuevas
+      from (select f.oid, regexp_replace(regexp_replace(f.prosrc, '/\*.*?\*/', ' ', 'g'), '--[^\n]*', ' ', 'g') as src
+              from pg_proc f
+              join pg_namespace n on n.oid = f.pronamespace
+             where n.nspname !~ '^pg_' and n.nspname <> 'information_schema'
+               and f.prokind in ('f', 'p')
+               and not (f.oid = any (v_lee)) and not (f.oid = any (v_c2ok))
+               and not exists (select 1 from pg_depend e
+                                where e.classid = 'pg_proc'::regclass and e.objid = f.oid and e.deptype = 'e')) x
+     where (v_rx_c is not null and x.src ~* v_rx_c)
+        or (v_rx_k is not null and x.src ~* v_rx_k)
+        or (v_rx_s is not null and regexp_replace(x.src, '''([^'']|'''')*''', ' ', 'g') ~* v_rx_s)
+        or (v_rx_f is not null and x.src ~* v_rx_f)
+        or exists (select 1 from pg_depend d
+                    where d.classid = 'pg_proc'::regclass and d.objid = x.oid
+                      and ((d.refclassid = 'pg_class'::regclass and d.refobjid = any (v_rel))
+                           or (d.refclassid = 'pg_proc'::regclass and d.refobjid = any (v_lee))));
+    exit when cardinality(v_nuevas) = 0;
+    v_lee := v_lee || v_nuevas;
+  end loop;
+  select coalesce(array_agg(x.f order by x.f), '{}') into v_ajenas
+    from (select format('la vista %s.%s lee las tablas de c4 sin security_invoker: la API la lee con los permisos de su '
+                        'dueño (with (security_invoker = true), y revoke de anon)', n.nspname, c.relname) as f
+            from pg_class c
+            join pg_namespace n on n.oid = c.relnamespace
+           where c.oid = any (v_rel) and c.relkind = 'v'
+             and not coalesce((select o.option_value::boolean from pg_options_to_table(c.reloptions) o
+                                where o.option_name = 'security_invoker'), false)
+          union all
+          select format('la vista materializada %s.%s copia tablas de c4 y la API la puede leer', n.nspname, c.relname)
+            from pg_class c
+            join pg_namespace n on n.oid = c.relnamespace
+           where c.oid = any (v_rel) and c.relkind = 'm'
+             and (has_table_privilege('anon', c.oid, 'SELECT') or has_table_privilege('authenticated', c.oid, 'SELECT')
+                  or has_table_privilege('service_role', c.oid, 'SELECT'))
+          union all
+          select format('la función %s es SECURITY DEFINER, lee tablas o vistas de c4 (directo, o llamando a otra función que '
+                        'las lee) y la puede ejecutar %s', f.oid::regprocedure,
+                        (select string_agg(g, ', ' order by g)
+                           from unnest(array['anon', 'authenticated', 'service_role']) g
+                          where has_schema_privilege(g, f.pronamespace, 'USAGE')
+                            and has_function_privilege(g, f.oid, 'EXECUTE')))
+            from pg_proc f
+           where f.oid = any (v_lee) and not (f.oid = any (v_fn_c4))
+             and f.prosecdef and f.prokind = 'f'
+             and f.prorettype not in ('trigger'::regtype, 'event_trigger'::regtype)
+             and exists (select 1 from unnest(array['anon', 'authenticated', 'service_role']) g
+                          where has_schema_privilege(g, f.pronamespace, 'USAGE')
+                            and has_function_privilege(g, f.oid, 'EXECUTE'))) x;
   --   · sus tablas: RLS encendida, UNA policy (la de lectura del dueño,
   --     «es_dueno()» o «(select es_dueno())»), y de privilegios solo
-  --     SELECT para authenticated y service_role; nada para anon ni PUBLIC;
+  --     SELECT para authenticated y service_role; nada para anon ni PUBLIC.
+  --     Los privilegios se leen de la ACL de la tabla (aclexplode), no de
+  --     una lista fija: así se ve también MAINTAIN (Postgres 17: el «grant
+  --     all» de Supabase lo incluye, y con él la API podía hacer VACUUM
+  --     FULL o REINDEX sobre la tabla) y cualquier privilegio que venga; y
+  --     has_table_privilege, además, ve el que llega heredado de otro rol;
   v_prot := v_prot
     || coalesce((select array_agg(format('tabla %s sin RLS', t.t) order by t.t)
                    from unnest(v_tablas) as t(t)
@@ -7861,18 +9193,23 @@ begin
                   where not exists (select 1 from pg_policies pl
                                      where pl.schemaname = 'public' and pl.tablename = t.t and pl.policyname = t.t || '_dueno')),
                 '{}')
-    || coalesce((select array_agg(format('tabla %s: %s puede %s', t.t, g.r, g.priv) order by t.t, g.r, g.priv)
-                   from unnest(v_tablas) as t(t)
-                   cross join (values ('anon'), ('authenticated'), ('service_role'), ('public')) as g0(r)
-                   cross join lateral (select g0.r as r, x.priv
-                                         from unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES',
-                                                           'TRIGGER']) as x(priv)
-                                        where case when g0.r = 'public'
-                                                   then exists (select 1 from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) e
-                                                                 where c.oid = to_regclass('public.' || t.t) and e.grantee = 0
-                                                                   and e.privilege_type = x.priv)
-                                                   else has_table_privilege(g0.r, 'public.' || t.t, x.priv)
-                                                        and not (x.priv = 'SELECT' and g0.r in ('authenticated', 'service_role')) end) g),
+    || coalesce((select array_agg(distinct format('tabla %s: %s puede %s', g.t, g.r, g.priv))
+                   from (select t.t, g0.r, x.priv
+                           from unnest(v_tablas) as t(t)
+                           cross join (values ('anon'), ('authenticated'), ('service_role')) as g0(r)
+                           cross join unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES',
+                                                   'TRIGGER']) as x(priv)
+                          where to_regclass('public.' || t.t) is not null
+                            and has_table_privilege(g0.r, 'public.' || t.t, x.priv)
+                            and not (x.priv = 'SELECT' and g0.r in ('authenticated', 'service_role'))
+                         union all
+                         select t.t, case when e.grantee = 0 then 'public' else ro.rolname::text end, e.privilege_type
+                           from unnest(v_tablas) as t(t)
+                           join pg_class c on c.oid = to_regclass('public.' || t.t)
+                           cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) e
+                           left join pg_roles ro on ro.oid = e.grantee
+                          where (e.grantee = 0 or ro.rolname in ('anon', 'authenticated', 'service_role'))
+                            and not (e.privilege_type = 'SELECT' and ro.rolname in ('authenticated', 'service_role'))) g),
                 '{}')
   --   · sus vistas: security_invoker, y solo SELECT para authenticated;
     || coalesce((select array_agg(format('vista %s %s', v.v,
@@ -7887,7 +9224,12 @@ begin
                      or not has_table_privilege('authenticated', c.oid, 'SELECT')
                      or has_table_privilege('authenticated', c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
                      or has_table_privilege('anon', c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
-                     or has_table_privilege('service_role', c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')),
+                     or has_table_privilege('service_role', c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+                     -- (y por su ACL: MAINTAIN y lo que venga)
+                     or exists (select 1 from aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) e
+                                  left join pg_roles ro on ro.oid = e.grantee
+                                 where (e.grantee = 0 or ro.rolname in ('anon', 'authenticated', 'service_role'))
+                                   and not (e.privilege_type = 'SELECT' and ro.rolname = 'authenticated'))),
                 '{}')
   --   · sus funciones: ninguna SECURITY DEFINER; de la API, solo
   --     fn_estados_control (y solo para authenticated);
@@ -7961,67 +9303,9 @@ begin
           where h.clave is null
              or (v.clave is null and h.operacion <> 'DELETE')
              or (v.clave is not null and (h.operacion = 'DELETE' or not (v.fila @> h.despues)))), '{}')
-  --   · lo AJENO que abre sus tablas a la API: una vista (de cualquier
-  --     esquema que no sea del sistema) que las lee, directo o a través de
-  --     otra vista, sin security_invoker (lee con los permisos de su dueño
-  --     y se salta la RLS: en Supabase nace así, y con SELECT para anon y
-  --     authenticated); una vista materializada que las copia y que la API
-  --     puede leer; y una función SECURITY DEFINER que las nombra o
-  --     depende de ellas y que anon, authenticated o service_role pueden
-  --     ejecutar. (Es el error honesto que c2 caza para el libro: una vista
-  --     de ayuda para el CPA hecha en el SQL Editor sobre la balanza de
-  --     QuickBooks, sin security_invoker, se la daba a la llave pública.)
-    || coalesce((
-         with recursive dep(oid) as (
-                select c.oid from pg_class c where c.relnamespace = 'public'::regnamespace and c.relname = any (v_tablas)
-                union
-                select rw.ev_class
-                  from dep
-                  join pg_depend d on d.refobjid = dep.oid and d.refclassid = 'pg_class'::regclass
-                                  and d.classid = 'pg_rewrite'::regclass
-                  join pg_rewrite rw on rw.oid = d.objid
-                 where rw.ev_class <> dep.oid),
-              nom as (select coalesce(string_agg(distinct c.relname::text, '|'), '-') as rx
-                        from pg_class c where c.oid in (select dep.oid from dep) and c.relname ~ '^[[:alnum:]_]+$')
-         select array_agg(x.f order by x.f)
-           from (select format('la vista %s.%s lee las tablas de c4 sin security_invoker: la API la lee con los permisos de su '
-                               'dueño (with (security_invoker = true), y revoke de anon)', n.nspname, c.relname) as f
-                   from pg_class c
-                   join pg_namespace n on n.oid = c.relnamespace
-                  where c.oid in (select dep.oid from dep) and c.relkind = 'v'
-                    and not coalesce((select o.option_value::boolean from pg_options_to_table(c.reloptions) o
-                                       where o.option_name = 'security_invoker'), false)
-                 union all
-                 select format('la vista materializada %s.%s copia tablas de c4 y la API la puede leer', n.nspname, c.relname)
-                   from pg_class c
-                   join pg_namespace n on n.oid = c.relnamespace
-                  where c.oid in (select dep.oid from dep) and c.relkind = 'm'
-                    and (has_table_privilege('anon', c.oid, 'SELECT') or has_table_privilege('authenticated', c.oid, 'SELECT')
-                         or has_table_privilege('service_role', c.oid, 'SELECT'))
-                 union all
-                 select format('la función %s es SECURITY DEFINER, lee tablas o vistas de c4 y la puede ejecutar %s',
-                               p.oid::regprocedure,
-                               (select string_agg(g, ', ' order by g)
-                                  from unnest(array['anon', 'authenticated', 'service_role']) g
-                                 where has_schema_privilege(g, p.pronamespace, 'USAGE')
-                                   and has_function_privilege(g, p.oid, 'EXECUTE')))
-                   from pg_proc p
-                   join pg_namespace n on n.oid = p.pronamespace
-                   cross join nom
-                  where n.nspname !~ '^pg_' and n.nspname <> 'information_schema'
-                    and p.prosecdef and p.prokind = 'f'
-                    and p.prorettype not in ('trigger'::regtype, 'event_trigger'::regtype)
-                    and not exists (select 1 from pg_depend e
-                                     where e.classid = 'pg_proc'::regclass and e.objid = p.oid and e.deptype = 'e')
-                    and exists (select 1 from unnest(array['anon', 'authenticated', 'service_role']) g
-                                 where has_schema_privilege(g, p.pronamespace, 'USAGE')
-                                   and has_function_privilege(g, p.oid, 'EXECUTE'))
-                    and (p.prosrc ~* ('[[:<:]](from|join|into|update|table|only|truncate)[[:space:]]+'
-                                      || '(([[:alnum:]_]+|"[^"]+")[[:space:]]*[.][[:space:]]*)?"?(' || nom.rx || ')"?[[:>:]]')
-                         or exists (select 1 from pg_depend d
-                                     where d.classid = 'pg_proc'::regclass and d.objid = p.oid
-                                       and d.refclassid = 'pg_class'::regclass and d.refobjid in (select dep.oid from dep)))) x),
-                '{}')
+  --   · lo AJENO que abre sus tablas a la API (se calcula arriba, antes de
+  --     esta lista: v_ajenas);
+    || v_ajenas
   --   · y el papel de la apertura: su balanza sigue siendo la que se posteó
   --     (la huella que guardó fn_apertura, la misma cuenta que allí).
     || coalesce((select array_agg(format('la balanza %s de la apertura (asiento %s) cambió desde que entró al libro',
@@ -8038,6 +9322,36 @@ begin
                                                              qb.fecha_documento, qb.vence, qb.factura_num)::text,
                                                          E'\n' order by qb.linea), ''))
                            from apertura_balanza_qb qb where qb.documento = a.documento_ruta)), '{}');
+  --   · y c2 y c3 AL DÍA: su marca de versión (fn_libro_version en c2,
+  --     fn_puente_version en c3; se lee su texto, que es de catálogo) al
+  --     menos la que este archivo necesita, y sus policies de lectura de la
+  --     forma de una llamada por consulta. Con un c2 o un c3 anteriores
+  --     faltan arreglos de verdad (y c2-pruebas y c3-pruebas salen en rojo):
+  --     se dice qué volver a pegar.
+  v_prot := v_prot || coalesce((select array_agg(x.f order by x.f)
+                                  from (select format('%s es de una versión anterior (%s; hace falta %s o más): vuelve a pegar %s',
+                                                      q.fn, coalesce(q.v::text, 'sin su marca'), q.minimo, q.archivo) as f
+                                          from (select q0.fn, q0.minimo, q0.archivo,
+                                                       (select substring(pp.prosrc from '([0-9]{10})')::bigint
+                                                          from pg_proc pp where pp.oid = to_regprocedure('public.' || q0.fn)) as v
+                                                  from (values ('fn_libro_version()', 2026092504::bigint, 'c2-libro.sql'),
+                                                               ('fn_puente_version()', 2026092504::bigint, 'c3-puentes.sql'))
+                                                       as q0(fn, minimo, archivo)) q
+                                         where q.v is null or q.v < q.minimo
+                                        union all
+                                        select format('la tabla %s lee con su policy de la forma vieja (es_dueno() una vez por fila): '
+                                                      'vuelve a pegar %s', pl.tablename,
+                                                      case when pl.tablename in ('periodos', 'contadores', 'asientos', 'asiento_lineas')
+                                                           then 'c2-libro.sql' else 'c3-puentes.sql' end)
+                                          from pg_policies pl
+                                         where pl.schemaname = 'public' and pl.policyname = pl.tablename || '_dueno'
+                                           and pl.tablename in ('periodos', 'contadores', 'asientos', 'asiento_lineas',
+                                                                'puente_cuentas', 'mapeo_categoria_recibo', 'mapeo_metodo_pago',
+                                                                'mapeo_tipo_proyecto', 'tarjetas', 'proveedores',
+                                                                'proveedores_alias', 'puente_reglas_historial', 'cobros',
+                                                                'aplicaciones_cobro', 'notas_credito', 'puente_documentos',
+                                                                'horas_aprobaciones', 'puente_revisados', 'cobros_devoluciones')
+                                           and regexp_replace(pl.qual, '[[:space:]]', '', 'g') = 'es_dueno()') x), '{}');
   v_cuad := v_cuad || jsonb_build_object('orden', 61, 'vista', 'cuadre: protecciones de c4', 'ok', cardinality(v_prot) = 0,
                                          'detalle', left(array_to_string(v_prot, '; '), 1500)
                                                     || '. Vuelve a pegar c4-estados.sql (lo pone todo en su sitio) y revisa quién '
@@ -8054,6 +9368,7 @@ begin
     detalle := case when not r.k then format('No cuadra: %s.', coalesce(r.d, '(sin detalle)')) end;
     return next;
   end loop;
+  perform set_config('c4.comparar_documento', coalesce(v_cmp, ''), true);
 end $$;
 revoke execute on function public.fn_estados_control(text, text[]) from public, anon, authenticated, service_role;
 grant  execute on function public.fn_estados_control(text, text[]) to authenticated;
@@ -8101,7 +9416,7 @@ comment on table public.estados_mapeo       is 'c4: dónde sale cada cuenta del 
 comment on table public.estados_config      is 'c4: lo que decide el CPA de la presentación (plegar_3200).';
 comment on table public.apertura_mapeo_qb   is 'c4: cada nombre de QuickBooks (cuenta o Customer:Job) y a qué va en el plan o en qué obra.';
 comment on table public.apertura_balanza_qb is 'c4: la balanza de QuickBooks al 30-sep, fila por cuenta (y por partida donde hay cédula). La que entró al libro no cambia.';
-comment on table public.comparacion_qb      is 'c4: las balanzas de QuickBooks de cada período del paralelo, para comparar. No se editan: vale la más reciente.';
+comment on table public.comparacion_qb      is 'c4: las balanzas de QuickBooks de cada período del paralelo (la del mes y el complemento por obra), para comparar. No se editan: vale la más reciente de su tipo que no se retiró.';
 comment on table public.diferencias         is 'c4: lo que el libro y QuickBooks no dicen igual, explicado (puente, mapeo o criterio), con quién y cuándo. Se retira, no se borra.';
 
 comment on view public.v_estados_mapeo_propuesto is 'c4: el mapeo que se deriva de cuentas.tipo y del código, para cada cuenta del plan.';
@@ -8128,7 +9443,7 @@ comment on view public.v_gasto_por_categoria is 'c4: el gasto de cada período p
 comment on view public.v_gasto_por_proveedor is 'c4: el gasto de cada período por proveedor.';
 comment on view public.v_costo_por_obra      is 'c4: ingreso, costo, margen y otros por obra y cuenta (desde que empieza el libro); y el control auxiliar = mayor.';
 comment on view public.v_obras_dinero        is 'c4: el dinero de cada obra a cada corte: por cobrar de la apertura, facturado, cobrado, otros, por cobrar, retención (y si cuadra), costo y margen.';
-comment on view public.v_qb_balanzas         is 'c4: las filas de QuickBooks de cada período, con su cuenta del plan y su obra.';
+comment on view public.v_qb_balanzas         is 'c4: las filas de QuickBooks de cada período (la balanza del mes y el complemento por obra; vigente, retirada), con su cuenta del plan y su obra.';
 comment on view public.v_comparacion         is 'c4: el libro contra QuickBooks, cuenta por cuenta, con lo explicado y lo que falta por explicar.';
 comment on view public.v_comparacion_obra    is 'c4: el libro contra QuickBooks por obra.';
 comment on view public.v_comparacion_resumen is 'c4: por período con balanza de QuickBooks: cuentas que cuadran, lo sin explicar y la utilidad contra QuickBooks.';
@@ -8145,8 +9460,9 @@ comment on function public.fn_apertura_balanza_cargar(text, jsonb) is 'c4: carga
 comment on function public.fn_apertura_plan(text)             is 'c4: arma el asiento de apertura de una balanza sin postearlo; para en el primer problema, con su nombre.';
 comment on function public.fn_apertura_revisar(text)          is 'c4: la apertura como tabla, para mirarla antes: cada fila de QuickBooks con su cuenta del plan y su tipo, el control de QuickBooks y el asiento (o el primer problema).';
 comment on function public.fn_apertura(date, text, text)      is 'c4: postea la apertura con una balanza de QuickBooks; idempotente; otra balanza dice qué cambia y no pisa (con motivo, la sustituye).';
-comment on function public.fn_comparacion_qb_cargar(text, text, jsonb, boolean, date) is 'c4: carga la balanza de QuickBooks de un período para compararla con el libro (la final, con los ajustes posteriores del CPA; la de una quincena, con su fecha).';
-comment on function public.fn_diferencia_anotar(text, text, text, text, text, text, uuid) is 'c4: anota una diferencia explicada entre el libro y QuickBooks.';
+comment on function public.fn_comparacion_qb_cargar(text, text, jsonb, boolean, date, text) is 'c4: carga la balanza de QuickBooks de un período para compararla con el libro (la final, con los ajustes posteriores del CPA; la de una quincena, con su fecha; o el complemento por obra, p_tipo por_obra). Avisa si desplaza a la vigente.';
+comment on function public.fn_comparacion_qb_retirar(text, text, text) is 'c4: retira una balanza de QuickBooks cargada por error, con su motivo (queda el rastro; vuelve a valer la anterior de su tipo).';
+comment on function public.fn_diferencia_anotar(text, text, text, text, text, text, uuid) is 'c4: anota una diferencia explicada entre el libro y QuickBooks (la misma, viva, no se duplica: devuelve la que ya estaba).';
 comment on function public.fn_diferencia_retirar(uuid, text)  is 'c4: retira una diferencia anotada, con su motivo (queda el rastro).';
 
 
@@ -8160,17 +9476,26 @@ comment on function public.fn_diferencia_retirar(uuid, text)  is 'c4: retira una
 -- 1,3–1,5 s). fn_estados_control y c4-pruebas ya lo apagaban para sí; las
 -- vistas que conta.js lee directo, no. PostgREST aplica en cada petición
 -- los ajustes del rol con que corre (como el statement_timeout de 8 s de
--- authenticated): se le apaga ahí, solo en esta base. Si el que pega no
--- puede cambiar el rol, lo dice (WARNING) y la fila «c4 · jit» del final
--- sale en false, con qué hacer.
+-- authenticated): se le apaga ahí. Va para el ROL ENTERO («alter role
+-- authenticated set», sin «in database»): PostgREST lee los ajustes del
+-- rol de pg_roles.rolconfig, que solo trae los de todas las bases (los de
+-- «in database …» no los ve: así lo hacía la versión anterior de este
+-- archivo, y PostgREST seguía con el JIT encendido). En Supabase la base
+-- es una sola, y el SQL Editor puede cambiar ese rol (como su
+-- statement_timeout). PostgREST lee esos ajustes al arrancar y al
+-- recargar su configuración: «notify pgrst, 'reload config'» se la hace
+-- recargar al confirmar el pegado (sin nadie escuchando, no hace nada).
+-- Si el que pega no puede cambiar el rol, lo dice (WARNING) y la fila
+-- «c4 · jit» del final sale en false, con qué hacer.
 -- =====================================================================
 do $$
 begin
-  execute format('alter role authenticated in database %I set jit = off', current_database());
+  execute 'alter role authenticated set jit = off';
 exception when insufficient_privilege then
-  raise warning 'c4: no se pudo apagar el JIT para authenticated (%). Pégalo como dueño de la base: alter role authenticated in database % set jit = off;',
-    sqlerrm, current_database();
+  raise warning 'c4: no se pudo apagar el JIT para authenticated (%). Pégalo como dueño de la base: alter role authenticated set jit = off; notify pgrst, ''reload config'';',
+    sqlerrm;
 end $$;
+notify pgrst, 'reload config';
 
 -- Las huellas de c4, al final: ya está todo puesto (7.7).
 do $$
@@ -8181,11 +9506,14 @@ end $$;
 
 -- =====================================================================
 -- Lo que enseña el SQL Editor al terminar: lo que este archivo dejó
--- puesto, los controles del libro que miran permisos y triggers (en true:
--- c4 no toca nada de lo que vigilan las huellas de c2), y el control de los
--- estados del último mes con asientos (o de la apertura). Si alguna cuenta
--- del plan no tiene su fila de mapeo, o la apertura todavía no está, lo
--- dice aquí.
+-- puesto (las vistas, el mapeo, la apertura, el JIT, y c2 y c3 al día), y
+-- el control de c4 con lo que mira siempre: el mapeo completo, las
+-- protecciones y la apertura en el libro. CORTO a propósito: antes corría
+-- también fn_verificar_cadena y el control ENTERO del último mes, que con
+-- el libro lleno tardaban segundos mientras este pegado tenía tomadas las
+-- vistas (el tablero esperaba). Las cifras de cada mes las controla la app
+-- (fn_estados_control con la lista de su pantalla), o a mano:
+--   select * from fn_estados_control('2026-10');
 -- =====================================================================
 select 'c4 · ' || x.que as control, x.ok, to_jsonb(x.detalle) as detalle
   from (values
@@ -8224,28 +9552,59 @@ select 'c4 · ' || x.que as control, x.ok, to_jsonb(x.detalle) as detalle
                 order by (coalesce(a.procedencia->>'funcion', '') = 'fn_apertura'), a.cadena_pos desc limit 1),
               'todavía no: carga la balanza (fn_apertura_balanza_cargar), mapea sus cuentas (fn_apertura_mapeo_qb) y '
               'select fn_apertura(''2026-09-30'', ''<documento>'');')),
-    -- (El JIT apagado para la app: 10.)
-    ('jit', exists (select 1 from pg_db_role_setting s
-                     where s.setrole = 'authenticated'::regrole
-                       and s.setdatabase in (0, (select d.oid from pg_database d where d.datname = current_database()))
-                       and 'jit=off' = any (s.setconfig)),
-     case when exists (select 1 from pg_db_role_setting s
-                        where s.setrole = 'authenticated'::regrole
-                          and s.setdatabase in (0, (select d.oid from pg_database d where d.datname = current_database()))
-                          and 'jit=off' = any (s.setconfig))
+    -- (El JIT apagado para la app, donde PostgREST lo lee: los ajustes del
+    -- rol para todas las bases, pg_roles.rolconfig. 10.)
+    ('jit', exists (select 1 from pg_roles r where r.rolname = 'authenticated' and 'jit=off' = any (coalesce(r.rolconfig, '{}'))),
+     case when exists (select 1 from pg_roles r where r.rolname = 'authenticated' and 'jit=off' = any (coalesce(r.rolconfig, '{}')))
           then 'el JIT está apagado para authenticated (la app, por PostgREST)'
-          else format('el JIT sigue encendido para la app: alter role authenticated in database %I set jit = off; (como dueño de la '
-                      'base)', current_database()) end)
+          else 'el JIT sigue encendido para la app: alter role authenticated set jit = off; notify pgrst, ''reload config''; '
+               '(como dueño de la base)' end),
+    -- (c2 y c3 al día: la marca de su versión y la forma de sus policies,
+    -- como en «protecciones de c4». Con uno anterior faltan arreglos de
+    -- verdad: se dice qué volver a pegar.)
+    ('c2 y c3 al día',
+     not exists (select 1
+                   from (values ('fn_libro_version()', 2026092504::bigint), ('fn_puente_version()', 2026092504::bigint)) as q(fn, minimo)
+                  where coalesce((select substring(pp.prosrc from '([0-9]{10})')::bigint
+                                    from pg_proc pp where pp.oid = to_regprocedure('public.' || q.fn)), 0) < q.minimo)
+       and not exists (select 1 from pg_policies pl
+                        where pl.schemaname = 'public' and pl.policyname = pl.tablename || '_dueno'
+                          and pl.tablename in ('periodos', 'contadores', 'asientos', 'asiento_lineas', 'puente_cuentas',
+                                               'mapeo_categoria_recibo', 'mapeo_metodo_pago', 'mapeo_tipo_proyecto', 'tarjetas',
+                                               'proveedores', 'proveedores_alias', 'puente_reglas_historial', 'cobros',
+                                               'aplicaciones_cobro', 'notas_credito', 'puente_documentos', 'horas_aprobaciones',
+                                               'puente_revisados', 'cobros_devoluciones')
+                          and regexp_replace(pl.qual, '[[:space:]]', '', 'g') = 'es_dueno()'),
+     coalesce((select 'vuelve a pegar ' || string_agg(distinct y.archivo, ' y después ' order by y.archivo) || ' (se pegan '
+                      || 'encima de sí mismos sin tocar el libro): '
+                      || string_agg(y.que, '; ' order by y.que)
+                 from (select q.archivo, format('%s dice %s y c4 necesita %s o más', q.fn, coalesce(q.v::text, 'que no existe'),
+                                                q.minimo) as que
+                         from (select q0.*, (select substring(pp.prosrc from '([0-9]{10})')::bigint
+                                               from pg_proc pp where pp.oid = to_regprocedure('public.' || q0.fn)) as v
+                                 from (values ('fn_libro_version()', 2026092504::bigint, 'c2-libro.sql'),
+                                              ('fn_puente_version()', 2026092504::bigint, 'c3-puentes.sql')) as q0(fn, minimo, archivo)) q
+                        where coalesce(q.v, 0) < q.minimo
+                       union all
+                       select case when pl.tablename in ('periodos', 'contadores', 'asientos', 'asiento_lineas') then 'c2-libro.sql'
+                                   else 'c3-puentes.sql' end,
+                              format('la policy de %s es de la forma vieja', pl.tablename)
+                         from pg_policies pl
+                        where pl.schemaname = 'public' and pl.policyname = pl.tablename || '_dueno'
+                          and pl.tablename in ('periodos', 'contadores', 'asientos', 'asiento_lineas', 'puente_cuentas',
+                                               'mapeo_categoria_recibo', 'mapeo_metodo_pago', 'mapeo_tipo_proyecto', 'tarjetas',
+                                               'proveedores', 'proveedores_alias', 'puente_reglas_historial', 'cobros',
+                                               'aplicaciones_cobro', 'notas_credito', 'puente_documentos', 'horas_aprobaciones',
+                                               'puente_revisados', 'cobros_devoluciones')
+                          and regexp_replace(pl.qual, '[[:space:]]', '', 'g') = 'es_dueno()') y
+               having count(*) > 0),
+              'c2-libro.sql y c3-puentes.sql son de la versión que c4 necesita (su marca y sus policies)'))
   ) as x(que, ok, detalle)
-union all
-select 'libro · ' || v.control, v.ok, v.detalle
-  from public.fn_verificar_cadena() v
- where v.control in ('triggers', 'permisos')
 union all
 select 'estados ' || e.periodo || ' · ' || c.vista, c.ok,
        to_jsonb(coalesce(c.detalle, case when c.filas is null then 'cuadra' else format('%s filas', c.filas) end))
   from (select coalesce((select a.periodo from public.asientos a join public.periodos p on p.periodo = a.periodo
                           where p.tipo in ('mes', 'apertura') order by a.fecha_contable desc, a.cadena_pos desc limit 1),
                         (select p.periodo from public.periodos p where p.tipo = 'apertura' order by p.desde limit 1)) as periodo) e
-  cross join lateral public.fn_estados_control(e.periodo) c
+  cross join lateral public.fn_estados_control(e.periodo, array['v_estados_mapeo']) c
  where e.periodo is not null;

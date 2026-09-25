@@ -22,6 +22,20 @@
 #      el asiento quedaba con unas cifras y su papel con otras.)
 #   3. Dos fn_apertura a la vez con la misma balanza nueva: la segunda
 #      espera a la primera y la ve (sin_cambios): una sola apertura viva.
+#   4. VOLVER A PEGAR c4 CON EL TABLERO LEYENDO (ronda 4): una lectura
+#      larga del tablero (el dueño, como la app) está en curso, alguien
+#      pega c4-estados.sql medio segundo después y otra lectura del
+#      tablero entra mientras el pegado espera. El pegado ya no toma el
+#      candado entero de sus tablas cuando no hace falta (la RLS, la
+#      policy y las columnas ya están), y con lock_timeout de 500 ms se
+#      rinde en cuanto tiene que esperar (55P03: «pégalo con el tablero
+#      cerrado»), antes de que Postgres busque un bloqueo mortal (1 s).
+#      Nadie muere por 40P01, las dos lecturas terminan bien y con sus
+#      cifras, y pegado otra vez, sin nadie leyendo, entra.
+#      (Antes: el pegado tomaba el candado entero de estados_lineas y
+#      esperaba el de estados_mapeo; la segunda lectura tenía el de
+#      estados_mapeo y esperaba el de estados_lineas, y Postgres cortaba a
+#      uno de los dos con 40P01.)
 # Y comprueba: fn_verificar_cadena en true, una sola apertura viva, y la
 # comparación de la apertura contra su balanza sin nada sin explicar.
 #
@@ -62,7 +76,8 @@ revisa() {  # revisa <descripción> <esperado> <obtenido>
 }
 balanza() {  # balanza <documento> <monto>: las filas de una balanza que cuadra, con su control de QuickBooks
   echo "[{\"cuenta_qb\": \"Chase Chk 4392\", \"debe\": \"$2\"}, {\"cuenta_qb\": \"Opening Balance Equity\", \"haber\": \"$2\"}," \
-       "{\"cuenta_qb\": \"Net Income\", \"debe\": \"0.00\"}, {\"cuenta_qb\": \"TOTAL ASSETS\", \"debe\": \"$2\"}]"
+       "{\"cuenta_qb\": \"Net Income\", \"debe\": \"0.00\"}, {\"cuenta_qb\": \"TOTAL ASSETS\", \"debe\": \"$2\"}," \
+       "{\"cuenta_qb\": \"Total Liabilities\", \"haber\": \"0.00\"}]"
 }
 viva() {  # el 1010 de la apertura viva y su documento
   ed -c "select coalesce(string_agg(format('%s:%s', a.documento_ruta, l.monto), ','), '-')
@@ -112,7 +127,33 @@ revisa "la primera la sustituyó y la segunda la vio (sin cambios)" "sustituida/
   "$(grep -E '^[a-z_]+$' "$TMP/3a.out" | head -n 1)/$(tail -n 1 "$TMP/3b.out")"
 revisa "una sola apertura viva, con la balanza nueva" "docs/apertura/c4c-3.csv:31000.00" "$(viva)"
 
-if grep -i error "$TMP"/1a.out "$TMP"/1b.out "$TMP"/2a.out "$TMP"/3a.out "$TMP"/3b.out; then
+echo "== 4. Volver a pegar c4 con el tablero leyendo: el pegado se rinde (55P03), nadie muere por 40P01"
+# Como la app: el dueño, con el rol authenticated.
+APP="select set_config('request.jwt.claims', '{\"sub\":\"00000000-0000-4000-a000-000000000001\",\"role\":\"authenticated\"}', true); set local role authenticated;"
+# A: una lectura larga del tablero, que sigue en curso (tiene tomado el
+# libro de c4: v_libro, estados_mapeo, estados_lineas…).
+ed -c "begin; $APP select 'libro=' || count(*) from v_libro where periodo = '$PER'; select pg_sleep(4); commit;" > "$TMP/4a.out" 2>&1 &
+sleep 0.5
+# B: el pegado, como el SQL Editor (una transacción, para en el primer
+# error), medio segundo después. Anota su salida y lo que tardó.
+( i=$(date +%s.%N); ed -1 -v ON_ERROR_STOP=1 -f "$DOCS/c4-estados.sql" > "$TMP/4b.out" 2>&1; rc=$?
+  f=$(date +%s.%N); echo "$rc $(python3 -c "print('t' if $f - $i < 3 else 'f')")" > "$TMP/4b.rc" ) &
+sleep 0.5
+# C: otra lectura del tablero, mientras el pegado espera.
+ed -c "begin; $APP select 'saldos=' || count(*) from v_saldos_dinero where periodo = 'hoy'; commit;" > "$TMP/4c.out" 2>&1
+wait
+read rc4 pronto < "$TMP/4b.rc"
+revisa "el pegado se rindió (55P03, lock timeout)" "1:55P03" "$([ "$rc4" -ne 0 ] && echo 1 || echo 0):$(grep -o '55P03' "$TMP/4b.out" | head -n 1)"
+revisa "y pronto, sin esperar a la lectura larga" "t" "$pronto"
+revisa "nadie murió por un bloqueo mortal (40P01)" "0" "$(cat "$TMP/4a.out" "$TMP/4b.out" "$TMP/4c.out" | grep -c '40P01')"
+revisa "las dos lecturas terminaron bien, con sus cifras" "t:t" \
+  "$(grep -q '^libro=' "$TMP/4a.out" && echo t || echo f):$(grep -q '^saldos=' "$TMP/4c.out" && echo t || echo f)"
+ed -1 -v ON_ERROR_STOP=1 -f "$DOCS/c4-estados.sql" > "$TMP/4d.out" 2>&1
+revisa "sin nadie leyendo, el pegado entra" "0:0" "$?:$(grep -c 'ERROR:' "$TMP/4d.out")"
+
+# (Los pegados de la vuelta 4 no entran aquí: sus avisos «no existe, se
+# salta» traen la palabra en su LOCATION; su salida se mira arriba.)
+if grep -i error "$TMP"/1a.out "$TMP"/1b.out "$TMP"/2a.out "$TMP"/3a.out "$TMP"/3b.out "$TMP"/4a.out "$TMP"/4c.out; then
   echo "FALLA: una sesión dio error (arriba)"
   malos=1
 fi

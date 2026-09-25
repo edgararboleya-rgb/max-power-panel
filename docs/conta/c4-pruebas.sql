@@ -18,11 +18,17 @@
 -- («overriding system value»): las secuencias de la app no avanzan. La
 -- última prueba compara la foto del final con la del principio.
 --
--- EL RELOJ FINGIDO Y EL CANDADO DE PERIODOS: los de c2-pruebas.sql y
--- c3-pruebas.sql (ver su cabecera). Las pruebas que cierran meses o el año
--- (7, 8, 13, 14, 15, 16, 25, 37, 52 y 75) toman antes, como primera
--- sentencia de su subtransacción, «lock table public.periodos in exclusive
--- mode», y rehacen fn_fecha_miami dentro de ella (el MXT00 la deshace; la
+-- EL RELOJ FINGIDO Y LOS CANDADOS: los de c2-pruebas.sql y c3-pruebas.sql
+-- (ver su cabecera), en el orden de la app: los de los recibos, periodos y
+-- la cadena. Toda subtransacción que sube recibos toma antes los 512
+-- cajones de los candados de los recibos (pg_temp.c4_candados_recibos, que
+-- explica por qué: sin eso, con la app subiendo tickets, Postgres cortaba a
+-- uno de los dos y el puente dejaba ese recibo en la bandeja; pedirlos
+-- tarde es MXT10, la 90). Las pruebas que cierran meses o el año
+-- (7, 8, 13, 14, 15, 16, 25, 37, 52 y 75) toman antes, como primeras
+-- sentencias de su subtransacción, esos cajones y «lock table
+-- public.periodos in exclusive mode», y rehacen fn_fecha_miami dentro de
+-- ella (el MXT00 la deshace; la
 -- 45 la rehace para fingir «hoy» a mitad del mes, y la 68 y la 69 en
 -- enero del año siguiente, sin cerrar nada). Las que
 -- cambian un instante algo de c4 que la app podría estar leyendo (la 38 y
@@ -30,9 +36,12 @@
 -- la 56 y la 57 apagan una guarda, la RLS o ponen una policy; la 58 prueba
 -- TRUNCATE; la 64 pone una vista y una función encima de las de c4; la
 -- 77, la 79, la 80 y la 82 ponen una vista de ayuda, apagan un trigger de
--- historial, rehacen una guarda o dan un permiso por columna) van con
--- lock_timeout de 2 s: si la app las está usando, salen «omitida» en vez
--- de hacerla esperar.
+-- historial, rehacen una guarda o dan un permiso por columna; la 89 apaga
+-- un instante los triggers del libro, como la 22 de c2; la 101 pone una
+-- función ajena que lee las tablas de c4; la 103 rehace la marca de c2 y
+-- la policy de cobros a la forma vieja; la 109 da MAINTAIN sobre una
+-- tabla de c4) van con lock_timeout de 2 s: si la app las está usando,
+-- salen «omitida» en vez de hacerla esperar.
 --
 -- TODA CIFRA BAJA (la 25): copia, en tablas temporales que mueren con su
 -- subtransacción, las vistas a las que se baja (v_libro, v_flujo_lineas,
@@ -52,18 +61,21 @@
 -- CUÁNDO: recién pegado c4-estados.sql y ANTES de postear la apertura de
 -- verdad. Con la apertura ya en el libro (o la apertura cerrada), las
 -- pruebas que postean una apertura de prueba (29 a 36, 50, 51, 53, 56, 61,
--- 62, 69, 73, 76, 81, 84 y 86; la 47 y la 75 miran la apertura solo si
--- pueden) salen «omitida»: una segunda apertura encima de la de verdad
--- duplicaría los saldos, y fn_apertura no la pone. Las demás corren igual.
--- Tarda unos 35 s en el banco; con el libro lleno (10.000 asientos, un año
--- largo) algo más de un minuto, y ninguna subtransacción tiene tomado el
--- libro más de 2 o 3 s (la 25 y la 37 van por período, y la 25 además por
--- grupo de vistas: antes, de 6 a 9 s, y se cortaban subidas de la app):
--- aun así, mejor correrla sin nadie usando la app (pruebas/conta/
--- c4-volumen.sh la corre así, con cuatro teléfonos subiendo tickets, con
--- 2026 abierto y cerrado, y lo mide). Corre con el compilador JIT
--- apagado (set jit = off al empezar, reset al final): sus consultas sobre
--- las vistas grandes tardan más en compilarse que en correr.
+-- 62, 69, 73, 76, 81, 84, 86, 91, 93, 94, 98, 102, 105 y 107; la 47 y la
+-- 75 miran la apertura solo si pueden) salen «omitida»: una segunda
+-- apertura encima de la de verdad duplicaría los saldos, y fn_apertura no
+-- la pone. Las demás corren igual.
+-- Tarda unos 40 s en el banco; con el libro lleno (10.000 asientos, un año
+-- largo) cerca de dos minutos (algo más en 17.6), y ninguna
+-- subtransacción tiene tomado el libro más de unos 3 s (la 25 y la 37 van
+-- por período, y la 25 además por grupo de vistas: antes, de 6 a 9 s, y
+-- se cortaban subidas de la app): aun así, mejor correrla sin nadie usando
+-- la app (pruebas/conta/c4-volumen.sh la corre así, con cuatro teléfonos
+-- subiendo tickets, con 2026 abierto y cerrado, y lo mide: ninguna subida
+-- cortada ni sin su asiento, la que más esperó unos 3 s). Corre con el
+-- compilador JIT apagado (set jit = off al empezar, reset al final): sus
+-- consultas sobre las vistas grandes tardan más en compilarse que en
+-- correr.
 --
 -- LOS DATOS se buscan, no se inventan: el dueño, uno del equipo (si no
 -- hay, esas pruebas salen «omitidas»), dos obras con tipo, el mes abierto
@@ -218,8 +230,7 @@ declare
   v_ing  text;
 begin
   insert into cuentas (codigo, nombre, nombre_en, tipo, saldo_normal, imputable, regla_obra, regla_cost_code)
-  values ('2100-9998', 'c4-pruebas: tarjeta de prueba', 'c4 test card', 'pasivo', 'haber', true, 'prohibida', 'prohibida'),
-         ('2100-1007', 'c4-pruebas: Amex 1007', 'c4 test Amex 1007', 'pasivo', 'haber', true, 'prohibida', 'prohibida')
+  values ('2100-9998', 'c4-pruebas: tarjeta de prueba', 'c4 test card', 'pasivo', 'haber', true, 'prohibida', 'prohibida')
   on conflict (codigo) do nothing;
   perform fn_estados_mapeo_derivar();
   perform fn_tarjeta_alta('9998', '2100-9998', 'c4-pruebas: tarjeta');
@@ -241,7 +252,52 @@ begin
 end $$;
 revoke execute on function pg_temp.c4_montar() from public, anon, authenticated, service_role;
 
--- Los puentes diferidos, en immediate (como en c3-pruebas).
+-- LOS CANDADOS EN EL ORDEN DE LA APP. Una subida de la app toma primero el
+-- candado de la foto y el del ticket de su recibo (c3: 512 cajones, la
+-- clave 820260925 y hashtext & 511), después las filas de periodos («for
+-- share») y al final el candado de la cadena (c2). Una prueba que ya había
+-- posteado (la cadena) o cerrado (periodos) y DESPUÉS subía un recibo los
+-- pedía al revés: si un teléfono tenía el cajón de ese recibo y esperaba la
+-- cadena, cada uno esperaba al otro, y Postgres cortaba a uno (40P01,
+-- «deadlock detected»). El puente, que no tumba la subida, dejaba ESE recibo
+-- en la bandeja con el error: el de la prueba (con el libro lleno, la 24
+-- salió en rojo: su material sin asiento) o el del teléfono (un recibo de
+-- verdad sin asiento hasta «reintentar»: dos de 369 subidas mientras corría
+-- c4-pruebas). Por eso toda subtransacción que sube recibos toma ANTES los
+-- 512 cajones, en orden (c4_inmediato lo hace; las que cierran, antes del
+-- candado de periodos): el teléfono espera su cajón como antes esperaba la
+-- cadena, y nadie se cruza. Se sueltan con el MXT00. Pedirlos tarde, con la
+-- cadena o periodos ya tomados, es MXT10: una prueba nueva que lo haga sale
+-- en rojo en el banco, sin necesitar un teléfono que la cruce.
+create or replace function pg_temp.c4_candados_recibos() returns void
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_k int;
+begin
+  if (select count(*) from pg_locks l
+       where l.pid = pg_backend_pid() and l.granted and l.locktype = 'advisory'
+         and l.classid::bigint = 820260925 and l.objsubid = 2) >= 512 then
+    return;   -- ya los tiene (el escenario, dentro de una prueba que cierra)
+  end if;
+  if exists (select 1 from pg_locks l
+              where l.pid = pg_backend_pid() and l.granted
+                and ((l.locktype = 'advisory' and l.classid::bigint = 0 and l.objid::bigint = 820260923 and l.objsubid = 1)
+                     or (l.locktype = 'relation' and l.relation = 'public.periodos'::regclass
+                         and l.mode <> 'AccessShareLock'))) then
+    raise exception using errcode = 'MXT10',
+      message = 'c4-pruebas: los candados de los recibos (pg_temp.c4_candados_recibos()) se toman antes que el de periodos y '
+                'el de la cadena, como en la app.';
+  end if;
+  for v_k in 0 .. 511 loop
+    perform pg_advisory_xact_lock(820260925, v_k);
+  end loop;
+end $$;
+revoke execute on function pg_temp.c4_candados_recibos() from public, anon, authenticated, service_role;
+
+-- Los puentes diferidos, en immediate (como en c3-pruebas), con los
+-- candados de los recibos tomados antes (arriba).
 create or replace function pg_temp.c4_inmediato() returns void
 language plpgsql
 set search_path = public, pg_temp
@@ -249,6 +305,7 @@ as $$
 declare
   v_lista text;
 begin
+  perform pg_temp.c4_candados_recibos();
   select string_agg(quote_ident(t.tgname), ', ' order by t.tgname) into v_lista
     from pg_trigger t
    where t.tgname in ('trg_puente_recibos_despues', 'trg_puente_externos_despues', 'trg_puente_facturas_despues')
@@ -305,10 +362,11 @@ end $$;
 revoke execute on function pg_temp.c4_cerrar_hasta(text) from public, anon, authenticated, service_role;
 
 -- El control de QuickBooks de una balanza de apertura de prueba (las filas
--- «Net Income» y «TOTAL ASSETS», que fn_apertura_plan exige desde la ronda
--- 3 de c4): lo que da su mapeo de hoy, para las pruebas cuyo mapeo es el
--- bueno. (La prueba del mapeo equivocado pone el suyo, el de QuickBooks.)
--- Se escriben como las escribe la carga: dos filas más, apartadas.
+-- «Net Income», «TOTAL ASSETS» y «Total Liabilities», que fn_apertura_plan
+-- exige desde las rondas 3 y 4 de c4): lo que da su mapeo de hoy, para las
+-- pruebas cuyo mapeo es el bueno. (La prueba del mapeo equivocado pone el
+-- suyo, el de QuickBooks.) Se escriben como las escribe la carga: tres
+-- filas más, apartadas.
 create or replace function pg_temp.c4_control_qb(p_documento text) returns void
 language plpgsql
 set search_path = public, pg_temp
@@ -316,20 +374,23 @@ as $$
 declare
   v_res numeric;
   v_act numeric;
+  v_pas numeric;
   v_l   int;
 begin
   delete from apertura_balanza_qb b where b.documento = p_documento and b.control is not null;
   select coalesce(sum(coalesce(b.debe, 0) - coalesce(b.haber, 0)) filter (where c.tipo not in ('activo', 'pasivo', 'capital')), 0),
          coalesce(sum(coalesce(b.debe, 0) - coalesce(b.haber, 0)) filter (where c.tipo = 'activo'), 0),
+         coalesce(sum(coalesce(b.debe, 0) - coalesce(b.haber, 0)) filter (where c.tipo = 'pasivo'), 0),
          coalesce(max(b.linea), 0)
-    into v_res, v_act, v_l
+    into v_res, v_act, v_pas, v_l
     from apertura_balanza_qb b
     left join apertura_mapeo_qb m on m.tipo = 'cuenta' and m.clave = b.clave
     left join cuentas c on c.codigo = m.cuenta
    where b.documento = p_documento;
   insert into apertura_balanza_qb (documento, linea, cuenta_qb, debe, haber, control)
   values (p_documento, v_l + 1, 'Net Income', greatest(v_res, 0), greatest(-v_res, 0), 'utilidad'),
-         (p_documento, v_l + 2, 'TOTAL ASSETS', greatest(v_act, 0), greatest(-v_act, 0), 'activo');
+         (p_documento, v_l + 2, 'TOTAL ASSETS', greatest(v_act, 0), greatest(-v_act, 0), 'activo'),
+         (p_documento, v_l + 3, 'Total Liabilities', greatest(v_pas, 0), greatest(-v_pas, 0), 'pasivo');
 end $$;
 revoke execute on function pg_temp.c4_control_qb(text) from public, anon, authenticated, service_role;
 
@@ -379,7 +440,9 @@ begin
     perform fn_apertura_mapeo_qb('Accumulated Depreciation', '1590');
     perform fn_apertura_mapeo_qb('Accounts Payable', fn_puente_cuenta_de('cxp'));
     perform fn_apertura_mapeo_qb('Credit Cards:Amex 2009', '2100-2009');
-    perform fn_apertura_mapeo_qb('Credit Cards:Amex 1007', '2100-1007');
+    -- (La Amex Gold: en QuickBooks figura como 1007, y es la 2100-2013 del
+    -- plan, c1. No se crea otra cuenta.)
+    perform fn_apertura_mapeo_qb('Credit Cards:Amex 1007', '2100-2013');
     perform fn_apertura_mapeo_qb('Opening Balance Equity', '3900');
     perform fn_apertura_mapeo_qb('Retained Earnings', '3900');
     perform fn_apertura_mapeo_qb('Construction Income', '4010');
@@ -612,6 +675,10 @@ begin
           from public.v_libro x left join pg_temp.c4_bl_papel p on p.asiento_id = x.asiento_id;
       create index on pg_temp.c4_bl_v_libro (cuenta, fecha);
       create index on pg_temp.c4_bl_v_libro (fecha);
+      -- (la antigüedad baja por partida, y el dinero y la balanza por obra:
+      -- sin estos, con el libro lleno cada cifra recorría la cuenta entera)
+      create index on pg_temp.c4_bl_v_libro (partida_id);
+      create index on pg_temp.c4_bl_v_libro (proyecto_id, cuenta);
       analyze pg_temp.c4_bl_v_libro (cuenta, fecha, proyecto_id, tipo, partida_id);
     when 'v_flujo_lineas' then
       create temp table c4_bl_v_flujo_lineas as
@@ -1229,6 +1296,7 @@ begin
     return;
   end if;
   begin
+    perform pg_temp.c4_candados_recibos();
     lock table public.periodos in exclusive mode;
     perform pg_temp.c4_escenario_completo();
     v_ps := array[current_setting('mx4.apertura'), current_setting('mx4.mes'), current_setting('mx4.sig'), current_setting('mx4.anio')];
@@ -1275,6 +1343,7 @@ begin
     return;
   end if;
   begin
+    perform pg_temp.c4_candados_recibos();
     lock table public.periodos in exclusive mode;
     perform pg_temp.c4_escenario_completo();
     v_ps := array[current_setting('mx4.apertura'), current_setting('mx4.mes'), current_setting('mx4.sig'), current_setting('mx4.anio')];
@@ -1515,12 +1584,16 @@ end $$;
 -- 13. UN AJUSTE DEL CPA POSTERIOR (con el mes cerrado, fechado en el
 --     siguiente): el estado de resultados del mes lo enseña en
 --     «posteriores» (y en el acumulado ajustado) sin cambiar su acumulado a
---     esa fecha; el del mes siguiente lo lleva en su mes (el mismo
---     ejercicio); el balance del mes no lo ve y el del siguiente sí.
+--     esa fecha; el del mes siguiente lo lleva en su mes si es del mismo
+--     ejercicio (−400 del devengo que se reversa + 75); si el siguiente es
+--     enero, el ajuste es del año anterior y no entra en su mes (solo el
+--     −400); el balance del mes no lo ve y el del siguiente sí. (Antes la
+--     prueba esperaba siempre −325: con diciembre como mes abierto más
+--     antiguo daba un falso rojo.)
 do $$
 declare
   v_obt text;
-  v_esp text := 'posteriores=75.00 ajustado=acumulado+posteriores siguiente=-325.00 balance_mes=+400.00 balance_sig=+75.00';
+  v_esp text;
   v_mes text := current_setting('mx4.mes', true);
   v_sig text := current_setting('mx4.sig', true);
   v_p0  numeric;
@@ -1528,12 +1601,17 @@ declare
   v_b1  numeric;
   v_b2  numeric;
 begin
+  v_esp := format('posteriores=75.00 ajustado=acumulado+posteriores siguiente=%s balance_mes=+400.00 balance_sig=+75.00',
+                  case when (select pm.anio from periodos pm where pm.periodo = v_mes)
+                            = (select ps.anio from periodos ps where ps.periodo = v_sig)
+                       then '-325.00' else '-400.00' end);
   if nullif(v_sig, '') is null then
     insert into _pruebas values (13, 'un ajuste del CPA posterior: en posteriores del mes, en el mes siguiente', v_esp,
                                  'omitida: falta el mes siguiente', null);
     return;
   end if;
   begin
+    perform pg_temp.c4_candados_recibos();
     lock table public.periodos in exclusive mode;
     -- (Lo que ya había: se mide lo que cambia el escenario.)
     select coalesce(sum(r.posteriores) filter (where r.periodo = v_mes), 0),
@@ -1599,6 +1677,7 @@ begin
     return;
   end if;
   begin
+    perform pg_temp.c4_candados_recibos();
     lock table public.periodos in exclusive mode;
     perform pg_temp.c4_escenario();
     perform pg_temp.c4_cerrar_hasta(v_dic);
@@ -1680,6 +1759,7 @@ begin
     return;
   end if;
   begin
+    perform pg_temp.c4_candados_recibos();
     lock table public.periodos in exclusive mode;
     perform pg_temp.c4_escenario();
     perform pg_temp.c4_cerrar_hasta(v_anio::text);
@@ -1740,7 +1820,9 @@ end $$;
 --     no es flujo; y la apertura no es un flujo: lo que trajo es el
 --     efectivo al inicio del período de la apertura (con su leyenda), y el
 --     cambio de cada período es el del efectivo del balance (las cuentas
---     en negro) sin la apertura.
+--     en negro) sin la apertura. (El flujo de cada período se lee una vez,
+--     a una tabla de la prueba: con el libro lleno la prueba tenía tomado el
+--     libro 4 s.)
 do $$
 declare
   v_obt text;
@@ -1755,22 +1837,27 @@ begin
     return;
   end if;
   begin
-    lock table public.periodos in exclusive mode;
-    -- (Lo que ya había en esos renglones del mes: se mide lo que cambia.)
+    -- (Lo que ya había en esos renglones del mes: se mide lo que cambia.
+    -- Antes del candado: leer no detiene a nadie.)
     create temp table _c4_16 on commit drop as
       select f.metodo, f.linea, f.importe from v_flujo_caja f
        where f.periodo = v_mes and f.nivel = 'linea' and f.linea in ('otros_operacion', 'prestamos', 'dueno', 'no_monetario');
+    perform pg_temp.c4_candados_recibos();
+    lock table public.periodos in exclusive mode;
     perform pg_temp.c4_escenario_completo();
     v_ps := array[current_setting('mx4.apertura'), v_mes, current_setting('mx4.sig'), current_setting('mx4.anio')];
+    -- (Cada período se lee UNA vez: con el libro lleno, cada lectura del
+    -- flujo tarda, y la prueba tiene tomado el libro mientras tanto.)
+    create temp table _c4_16f on commit drop as select * from v_flujo_caja f where f.periodo = any (v_ps);
     select format('cuadra=%s cambio_libro=%s otros_operacion=%s prestamos=%s dueno=%s no_monetario=%s apertura=%s traspaso=%s',
       (select string_agg(coalesce((select case when bool_and(f.cuadra) and bool_and(f.importe = 0) and count(*) = 10 then 't'
                                                else 'f' || count(*) end
-                                     from v_flujo_caja f where f.periodo = x.p and f.nivel = 'control'), 'f'), ',' order by x.n)
+                                     from _c4_16f f where f.periodo = x.p and f.nivel = 'control'), 'f'), ',' order by x.n)
          from unnest(v_ps) with ordinality as x(p, n)),
       -- (El cambio del efectivo del BALANCE, cuenta por cuenta desde el
       -- libro: lo que tenía en negro al terminar menos lo que tenía en negro
       -- al empezar, con lo que trajo la apertura contado al empezar.)
-      (select string_agg(case when (select count(*) from v_flujo_caja f
+      (select string_agg(case when (select count(*) from _c4_16f f
                                      where f.periodo = x.p and f.nivel = 'total' and f.linea = 'cambio'
                                        and f.importe = (select coalesce(sum(greatest(z.s1, 0) - greatest(z.s0, 0)), 0)
                                                           from (select l.cuenta,
@@ -1786,16 +1873,16 @@ begin
          from unnest(v_ps) with ordinality as x(p, n)),
       (select to_char(f.importe - coalesce((select a.importe from _c4_16 a where a.metodo = f.metodo and a.linea = f.linea), 0),
                       'FMSG999999990.00')
-         from v_flujo_caja f where f.periodo = v_mes and f.metodo = 'directo' and f.nivel = 'linea' and f.linea = 'otros_operacion'),
+         from _c4_16f f where f.periodo = v_mes and f.metodo = 'directo' and f.nivel = 'linea' and f.linea = 'otros_operacion'),
       (select to_char(f.importe - coalesce((select a.importe from _c4_16 a where a.metodo = f.metodo and a.linea = f.linea), 0),
                       'FMSG999999990.00')
-         from v_flujo_caja f where f.periodo = v_mes and f.metodo = 'directo' and f.nivel = 'linea' and f.linea = 'prestamos'),
+         from _c4_16f f where f.periodo = v_mes and f.metodo = 'directo' and f.nivel = 'linea' and f.linea = 'prestamos'),
       (select to_char(f.importe - coalesce((select a.importe from _c4_16 a where a.metodo = f.metodo and a.linea = f.linea), 0),
                       'FMSG999999990.00')
-         from v_flujo_caja f where f.periodo = v_mes and f.metodo = 'directo' and f.nivel = 'linea' and f.linea = 'dueno'),
+         from _c4_16f f where f.periodo = v_mes and f.metodo = 'directo' and f.nivel = 'linea' and f.linea = 'dueno'),
       (select to_char(f.importe - coalesce((select a.importe from _c4_16 a where a.metodo = f.metodo and a.linea = f.linea), 0),
                       'FMSG999999990.00')
-         from v_flujo_caja f where f.periodo = v_mes and f.metodo = 'indirecto' and f.nivel = 'linea' and f.linea = 'no_monetario'),
+         from _c4_16f f where f.periodo = v_mes and f.metodo = 'indirecto' and f.nivel = 'linea' and f.linea = 'no_monetario'),
       -- (La apertura: su efectivo es el del inicio, en los dos métodos, con
       -- la leyenda de la apertura; y ningún renglón del período lo cuenta
       -- como entrada.)
@@ -1810,7 +1897,7 @@ begin
                                                               or (a.tipo = 'apertura' and a.fecha_contable <= p.hasta)
                                                            group by l.cuenta) z))
                         and bool_and(f.importe > 0)
-                        and not exists (select 1 from v_flujo_caja o
+                        and not exists (select 1 from _c4_16f o
                                          where o.periodo = v_ps[1] and o.nivel = 'linea' and o.importe <> 0
                                            and o.linea <> 'sobregiro'
                                            and not exists (select 1 from v_flujo_lineas fl
@@ -1818,10 +1905,13 @@ begin
                                                            where fl.fecha between p.desde and p.hasta and fl.tipo <> 'apertura'))
                    then 'inicio'
                    else 'f' || count(*) || coalesce(':' || string_agg(f.importe::text || ' ' || f.etiqueta_es, ';'), '') end
-         from v_flujo_caja f
+         from _c4_16f f
         where f.periodo = v_ps[1] and f.nivel = 'total' and f.linea = 'efectivo_inicial'),
       (select case when exists (select 1 from v_flujo_lineas fl
-                                 where fl.descripcion = 'c4-pruebas: traspaso a la reserva de impuestos') then 'dentro' else 'fuera' end))
+                                 where fl.descripcion = 'c4-pruebas: traspaso a la reserva de impuestos'
+                                   and fl.fecha between current_setting('mx4.desde')::date
+                                                    and (current_setting('mx4.desde')::date + interval '1 month')::date - 1)
+                   then 'dentro' else 'fuera' end))
       into v_obt;
     raise exception using errcode = 'MXT00';
   exception
@@ -1918,7 +2008,8 @@ end $$;
 --     la vuelve a abrir entera; las facturas de la apertura van con su
 --     fecha de QuickBooks, y el crédito del cliente, sin partida. Cada una
 --     en su tramo por los días desde su fecha, y el total = el mayor de
---     1110 + 1120.
+--     1110 + 1120. El anticipo es el del escenario (su cobro, por su id):
+--     un anticipo de verdad en la misma obra no lo confunde.
 do $$
 declare
   v_obt  text;
@@ -1927,6 +2018,7 @@ declare
   v_d    date := nullif(current_setting('mx4.desde', true), '')::date;
   v_c    date;
   v_ap   boolean;
+  v_e    jsonb;
 begin
   if v_d is null then
     insert into _pruebas values (19, 'antigüedad de cobrar: parcial, anticipo, nota de crédito, cheque devuelto', '-', 'omitida: falta el mes abierto', null);
@@ -1934,7 +2026,8 @@ begin
   end if;
   v_c := (date_trunc('month', v_d::timestamp) + interval '1 month')::date - 1;
   begin
-    v_ap := (pg_temp.c4_escenario()->>'con_apertura')::boolean;
+    v_e := pg_temp.c4_escenario();
+    v_ap := (v_e->>'con_apertura')::boolean;
     v_esp := concat_ws(' | ',
       format('C4-2:factura:5000.00:1000.00:%s', case when v_c - (v_d + 2) <= 30 then '0-30' else '31-60' end),
       format('C4-3:factura:500.00:0.00:%s', case when v_c - (v_d + 14) <= 30 then '0-30' else '31-60' end),
@@ -1954,12 +2047,11 @@ begin
          from v_cxc_antiguedad x
         where x.periodo = v_mes and x.nivel = 'partida'
           and ((x.partida_tabla = 'facturas' and x.partida_id::bigint between -4400099 and -4400001)
-               or (x.tipo = 'sin_partida' and x.proyecto_id = current_setting('mx4.obra'))
-               or (x.tipo = 'anticipo' and x.partida_id = (select c.id::text from cobros c where c.referencia is null and c.monto = 1500
-                                                            and c.proyecto_id = current_setting('mx4.obra2') limit 1)))),
+               or (v_ap and x.tipo = 'sin_partida' and x.proyecto_id = current_setting('mx4.obra'))
+               or (x.tipo = 'anticipo' and x.partida_id = v_e->>'cobro_anticipo'))),
       format('anticipo=%s anulada=%s total=%s',
              case when exists (select 1 from v_cxc_antiguedad x where x.periodo = v_mes and x.tipo = 'anticipo'
-                                  and x.partida_id in (select c.id::text from cobros c where c.proyecto_id = current_setting('mx4.obra2')))
+                                  and x.partida_id = v_e->>'cobro_anticipo')
                   then 'abierto' else 'cerrado' end,
              case when exists (select 1 from v_cxc_antiguedad x where x.periodo = v_mes and x.factura_num = 'C4-4')
                   then 'abierta' else 'cerrada' end,
@@ -2222,18 +2314,25 @@ end $$;
 --     la que baja llega a un asiento con su papel (el recibo con su foto,
 --     la factura, el cobro, la balanza de apertura; el asiento a mano es su
 --     propio papel); las de QuickBooks, a su documento. (Un período y un
---     grupo de vistas por vuelta, cada una en su subtransacción con su
---     escenario y solo las copias que usan sus vistas: con el libro lleno
---     ninguna tiene tomado el libro más de un par de segundos. Antes, un
---     período entero por vuelta: de 6 a 9 s con 10.000 asientos, y se
---     cortaban subidas de la app.)
+--     grupo de vistas por vuelta —las que más tardan con el libro lleno,
+--     cada una sola—, cada vuelta en su subtransacción con su escenario y
+--     solo las copias que usan sus vistas, con índices por partida y por
+--     obra: con 10.000 asientos ninguna vuelta tiene tomado el libro más de
+--     unos 2,5 s. Antes, un período entero por vuelta: de 6 a 9 s, y se
+--     cortaban subidas de la app; y hasta esta ronda, seis grupos por
+--     período: hasta 5 s con 2026 cerrado.)
 do $$
 declare
-  v_grupos text[] := array['v_balanza,v_balanza_obra,v_balance_general,v_resultados',
-                           'v_flujo_caja,v_flujo_real_por_mes,v_saldos_dinero',
-                           'v_cxc_antiguedad,v_cxp_antiguedad',
+  -- (Las que más tardan con el libro lleno, cada una en su vuelta.)
+  v_grupos text[] := array['v_balanza,v_balance_general,v_resultados',
+                           'v_balanza_obra',
+                           'v_flujo_caja,v_saldos_dinero',
+                           'v_flujo_real_por_mes',
+                           'v_cxc_antiguedad',
+                           'v_cxp_antiguedad',
                            'v_gasto_por_categoria,v_gasto_por_proveedor',
-                           'v_costo_por_obra,v_obras_dinero',
+                           'v_costo_por_obra',
+                           'v_obras_dinero',
                            'v_comparacion,v_comparacion_obra,v_comparacion_resumen'];
   v_ps     text[];
   v_g      text;
@@ -2255,6 +2354,7 @@ begin
   foreach v_p in array v_ps loop
     foreach v_g in array v_grupos loop
       begin
+        perform pg_temp.c4_candados_recibos();
         lock table public.periodos in exclusive mode;
         perform pg_temp.c4_escenario_completo();
         -- Para la comparación: una balanza de QuickBooks del mes (la del
@@ -2450,7 +2550,7 @@ end $$;
 do $$
 declare
   v_obt text;
-  v_esp text := 'comparacion=ok diferencias=1110:-500.00:{criterio},1120:500.00:{criterio} 1010=26200.00 2100-1007=-150.00 '
+  v_esp text := 'comparacion=ok diferencias=1110:-500.00:{criterio},1120:500.00:{criterio} 1010=26200.00 2100-2013=-150.00 '
                 '1590=-6000.00 3900=-52150.00 resultado=utilidad 38050.00 cero=1';
   v_e   jsonb;
   v_id  uuid;
@@ -2463,12 +2563,12 @@ begin
   begin
     v_e := pg_temp.c4_escenario();
     v_id := (v_e->'apertura'->>'id')::uuid;
-    select format('comparacion=%s diferencias=%s 1010=%s 2100-1007=%s 1590=%s 3900=%s resultado=%s cero=%s',
+    select format('comparacion=%s diferencias=%s 1010=%s 2100-2013=%s 1590=%s 3900=%s resultado=%s cero=%s',
       (select case when bool_and(c.ok) then 'ok' else 'mal' end from v_comparacion c where c.periodo = current_setting('mx4.apertura')),
       (select string_agg(c.cuenta || ':' || c.diferencia || ':' || c.clases::text, ',' order by c.cuenta)
          from v_comparacion c where c.periodo = current_setting('mx4.apertura') and c.diferencia <> 0),
       (select sum(l.monto) from asiento_lineas l where l.asiento_id = v_id and l.cuenta = '1010'),
-      (select sum(l.monto) from asiento_lineas l where l.asiento_id = v_id and l.cuenta = '2100-1007'),
+      (select sum(l.monto) from asiento_lineas l where l.asiento_id = v_id and l.cuenta = '2100-2013'),
       (select sum(l.monto) from asiento_lineas l where l.asiento_id = v_id and l.cuenta = '1590'),
       (select sum(l.monto) from asiento_lineas l where l.asiento_id = v_id and l.cuenta = '3900'),
       (select substring(l.memo from 'utilidad [0-9.]+') from asiento_lineas l
@@ -2905,6 +3005,7 @@ begin
   v_ps := array[current_setting('mx4.mes'), current_setting('mx4.sig'), current_setting('mx4.apertura'), current_setting('mx4.anio')];
   for v_n in 1 .. 4 loop
     begin
+      perform pg_temp.c4_candados_recibos();
       lock table public.periodos in exclusive mode;
       perform pg_temp.c4_escenario_completo();
       select v_acc || coalesce(jsonb_agg(to_jsonb(c) || jsonb_build_object(
@@ -2925,7 +3026,7 @@ begin
        from c where not c.ok and not (c.con_qb and c.vista like 'cuadre: QuickBooks%')),
     (select case when count(*) filter (where c.filas > 0) >= 20 then 't' else 'f' end
        from c where c.n = 1 and c.filas is not null),
-    (select case when count(*) = 14 and bool_and(c.ok or (c.con_qb and c.vista like 'cuadre: QuickBooks%')) then 't'
+    (select case when count(*) = 15 and bool_and(c.ok or (c.con_qb and c.vista like 'cuadre: QuickBooks%')) then 't'
                  else 'f' || count(*) end
        from c where c.n = 1 and c.vista like 'cuadre:%'))
     into v_obt;
@@ -3380,16 +3481,16 @@ end $$;
 --     del mes (el reloj fingido) y un asiento de después de hoy en ese mes
 --     (una cuenta de prueba), fn_estados_control('hoy') cuenta lo de hoy y
 --     no lo del mes: las siete vistas por corte con filas = esperadas y más
---     de 0 (el balance, con menos filas que el del mes), sus siete cuadres
+--     de 0 (el balance, con menos filas que el del mes), sus ocho cuadres
 --     en verde (activo = pasivo + capital, antigüedad de cobrar y de pagar
---     = mayor, mapeo completo, dinero por obra, protecciones y la apertura
---     en el libro); y una vista
+--     = mayor, mapeo completo, dinero por obra, protecciones, la apertura
+--     en el libro y la caja chica que no queda en rojo); y una vista
 --     por período pedida con 'hoy' sale sola en rojo.
 --     Antes: 22023, «No existe el período hoy».
 do $$
 declare
   v_obt  text;
-  v_esp  text := 'vistas=7:t balance=a_hoy cuadres=7:t por_periodo=v_resultados:0:f';
+  v_esp  text := 'vistas=7:t balance=a_hoy cuadres=8:t por_periodo=v_resultados:0:f';
   v_mes  text := current_setting('mx4.mes', true);
   v_d    date := nullif(current_setting('mx4.desde', true), '')::date;
   v_hoy  date;
@@ -3825,6 +3926,7 @@ begin
     return;
   end if;
   begin
+    perform pg_temp.c4_candados_recibos();
     lock table public.periodos in exclusive mode;
     -- (Los ajustes del CPA posteriores que ya había: los que la final le
     -- suma al libro del mes, por cuenta. QuickBooks ya los tiene.)
@@ -5076,6 +5178,7 @@ begin
     return;
   end if;
   begin
+    perform pg_temp.c4_candados_recibos();
     lock table public.periodos in exclusive mode;
     create temp table _c4_75 on commit drop as
       select r.periodo, r.posteriores from v_resultados r where r.periodo = any (v_ps) and r.nivel = 'cuenta' and r.cuenta = '6600';
@@ -5487,7 +5590,10 @@ end $$;
 --     llevan «duplicado_confirmado» (son datos de prueba y la subtransacción
 --     los deshace). El detector de depósito doble de c3 sigue en su sitio
 --     para los de verdad (la 95 de c3-pruebas). Antes, con uno así en el
---     mes, 34 pruebas salían en rojo en producción.
+--     mes, 34 pruebas salían en rojo en producción. (Los dos «de verdad» de
+--     esta prueba también son datos de prueba: entran diciéndolo, para que
+--     un depósito real igual a ellos —el del hallazgo, ya en el libro— no
+--     la tumbe a ella.)
 do $$
 declare
   v_obt  text;
@@ -5503,10 +5609,15 @@ begin
     return;
   end if;
   begin
+    -- (Los candados de los recibos antes de postear: el escenario sube
+    -- recibos. Ver c4_candados_recibos.)
+    perform pg_temp.c4_candados_recibos();
     -- Los de verdad, como los registraría Edgar (anticipos de obra).
-    perform fn_cobro_registrar(jsonb_build_object('fecha', (v_d + 11)::text, 'monto', '1500.00', 'medio', 'ach', 'proyecto_id', v_b,
+    perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c4-pruebas: simula uno de verdad', 'fecha', (v_d + 11)::text,
+              'monto', '1500.00', 'medio', 'ach', 'proyecto_id', v_b,
               'aplicaciones', jsonb_build_array(jsonb_build_object('proyecto_id', v_b, 'monto', '1500.00'))));
-    perform fn_cobro_registrar(jsonb_build_object('fecha', (v_d + 12)::text, 'monto', '3000.00', 'medio', 'cheque', 'proyecto_id', v_a,
+    perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c4-pruebas: simula uno de verdad', 'fecha', (v_d + 12)::text,
+              'monto', '3000.00', 'medio', 'cheque', 'proyecto_id', v_a,
               'aplicaciones', jsonb_build_array(jsonb_build_object('proyecto_id', v_a, 'monto', '3000.00'))));
     v_obt := 'reales=2';
     begin
@@ -5529,7 +5640,8 @@ end $$;
 --     de balance (1300, material en bodega) en vez de a 5100, fn_apertura
 --     para (MX001) y dice por qué: con ese mapeo la utilidad y el activo
 --     no son los de QuickBooks (Net Income, TOTAL ASSETS), con la fila que
---     lo explica; y sin las filas de control no posteala (MX001: faltan).
+--     lo explica; y sin las filas de control no posteala (MX001: faltan, y
+--     dice las tres: Net Income, TOTAL ASSETS y Total Liabilities).
 --     Antes se posteaba con todo en verde: 40,000 de «inventario» y la
 --     utilidad inflada.
 do $$
@@ -5564,7 +5676,7 @@ begin
       perform fn_apertura(v_ap.desde, 'docs/c4-pruebas/qb-apertura-84.csv');
       v_x := 'posteada';
     exception when others then
-      v_x := sqlstate || ':' || case when sqlerrm like '%no trae su control de QuickBooks (falta «Net Income» y «TOTAL ASSETS»)%'
+      v_x := sqlstate || ':' || case when sqlerrm like '%no trae su control de QuickBooks (falta «Net Income», «TOTAL ASSETS» y «Total Liabilities»)%'
                                      then 'faltan' else left(sqlerrm, 200) end;
     end;
     v_obt := v_obt || ' sin_control=' || v_x;
@@ -5698,11 +5810,16 @@ end $$;
 --     su fecha (p_al), cuadra entera aunque después del 15 se pagó la
 --     tarjeta; la comparación dice al = el 15. Cargada sin fecha, ese pago
 --     sale como diferencia en el banco y en la tarjeta. Antes la
---     comparación cortaba siempre el libro al último día del período.
+--     comparación cortaba siempre el libro al último día del período. Y
+--     cada versión cargada sigue comparable: con la otra ya cargada, la de
+--     la quincena, pedida por su documento (c4.comparar_documento), se
+--     compara otra vez a su fecha y cuadra; fn_estados_control sigue
+--     mirando la última (la sin fecha, en rojo). Antes, al cargar la del
+--     31-dic, la del 15 dejaba de verse.
 do $$
 declare
   v_obt  text;
-  v_esp  text := 'al_15=t:0 sin_fecha=2';
+  v_esp  text := 'al_15=t:0 sin_fecha=2 version_15=t:0 control=la_ultima';
   v_d    date := nullif(current_setting('mx4.desde', true), '')::date;
   v_mes  text := current_setting('mx4.mes', true);
   v_bco  text := fn_puente_cuenta_de('banco');
@@ -5725,6 +5842,15 @@ begin
     perform pg_temp.c4_qb_del_libro(v_mes, 'docs/c4-pruebas/qb-quincena-sin-fecha.csv', '{}', false, v_d + 14, false);
     select v_obt || ' sin_fecha=' || count(*) filter (where not c.ok and c.cuenta in (v_bco, '2100-9998')) into v_obt
       from v_comparacion c where c.periodo = v_mes;
+    -- La de la quincena otra vez, pedida por su documento.
+    perform set_config('c4.comparar_documento', 'docs/c4-pruebas/qb-quincena.csv', true);
+    select v_obt || format(' version_15=%s:%s', bool_and(c.al = v_d + 14 and c.documento = 'docs/c4-pruebas/qb-quincena.csv'),
+                           count(*) filter (where not c.ok))
+      into v_obt
+      from v_comparacion c where c.periodo = v_mes;
+    select v_obt || ' control=' || coalesce(max(case when c.ok then 'la_pedida' else 'la_ultima' end), '-') into v_obt
+      from fn_estados_control(v_mes, array['v_comparacion']) c where c.vista = 'cuadre: QuickBooks sin diferencias sin explicar';
+    perform set_config('c4.comparar_documento', '', true);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
@@ -5734,44 +5860,1169 @@ begin
                                coalesce(v_obt = v_esp, false));
 end $$;
 
--- 88. EL JIT APAGADO PARA LA APP: el rol de la app (authenticated) lleva
---     jit = off en esta base (PostgREST lo aplica en cada consulta, como
---     su tope de 8 s) y fn_estados_control también. Con el JIT del
---     servidor, la gráfica del Panel pasaba de 2 s con 10.000 asientos, casi
---     todo compilando. (Si el pegado no pudo cambiar el rol, lo dijo con un
---     WARNING y en la fila «c4 · jit» del final: esta prueba sale en rojo
---     hasta que se haga.)
+-- 88. EL JIT APAGADO PARA LA APP, DONDE PostgREST LO LEE: el rol de la app
+--     (authenticated) lleva jit = off para todas las bases (pg_roles.
+--     rolconfig: es lo que PostgREST lee y aplica en cada consulta, como su
+--     tope de 8 s; un «alter role … in database …» no lo ve), y es de los
+--     ajustes que PostgREST aplica (contexto «user»); fn_estados_control
+--     también lo lleva. Con el JIT del servidor, la gráfica del Panel
+--     pasaba de 2 s con 10.000 asientos, casi todo compilando. Antes el
+--     pegado lo ponía «in database»: esta prueba y «c4 · jit» salían en
+--     verde y PostgREST seguía compilando. (Si el pegado no pudo cambiar el
+--     rol, lo dijo con un WARNING y en la fila «c4 · jit» del final: esta
+--     prueba sale en rojo hasta que se haga.)
 do $$
 declare
   v_obt  text;
-  v_esp  text := 'app=jit_off control=jit_off';
+  v_esp  text := 'postgrest=jit_off control=jit_off';
 begin
-  select format('app=%s control=%s',
-    case when exists (select 1 from pg_db_role_setting s
-                       where s.setrole = 'authenticated'::regrole
-                         and s.setdatabase = (select d.oid from pg_database d where d.datname = current_database())
-                         and 'jit=off' = any (s.setconfig))
-           or exists (select 1 from pg_db_role_setting s
-                       where s.setrole = 'authenticated'::regrole and s.setdatabase = 0 and 'jit=off' = any (s.setconfig))
+  -- (Lo que PostgREST aplica al rol que suplanta: sus ajustes de
+  -- pg_roles.rolconfig cuyo parámetro puede cambiar un usuario.)
+  select format('postgrest=%s control=%s',
+    case when exists (select 1
+                        from pg_roles r
+                        cross join lateral unnest(coalesce(r.rolconfig, '{}')) c
+                        join pg_settings ps on ps.name = split_part(c, '=', 1) and ps.context = 'user'
+                       where r.rolname = 'authenticated' and split_part(c, '=', 1) = 'jit'
+                         and lower(substr(c, strpos(c, '=') + 1)) = 'off')
          then 'jit_off' else 'jit_encendido' end,
     (select case when 'jit=off' = any (coalesce(p.proconfig, '{}')) then 'jit_off' else 'jit_encendido' end
        from pg_proc p where p.oid = 'public.fn_estados_control(text,text[])'::regprocedure))
     into v_obt;
-  insert into _pruebas values (88, 'el JIT apagado para la app (authenticated) y para fn_estados_control', v_esp, coalesce(v_obt, '-'),
+  insert into _pruebas values (88, 'el JIT apagado para la app (donde PostgREST lo lee) y para fn_estados_control', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 89. LO SIN REPARTIR QUE NO SE EXPLICA SALE EN ROJO: el auxiliar por obra
+--     concilia con el mayor, y lo sin repartir se explica solo en las
+--     cuentas que no exigen obra (el burden real, 5015, sin obra: en
+--     verde). Si una línea de una cuenta que EXIGE obra (5100) queda sin
+--     ella —sus guardas no lo dejan: aquí se le quita por debajo, con los
+--     triggers del libro apagados un instante, como el ataque de la 22 de
+--     c2—, su fila de control y la de la sección costo salen en rojo, y
+--     fn_estados_control lo dice con la cuenta. Antes el control sumaba
+--     las mismas líneas contra sí mismas y no podía salir en rojo. (Si la
+--     app está usando el libro, espera 2 s y sale «omitida».)
+do $$
+declare
+  v_obt   text;
+  v_esp   text := 'normal=t,t atacada=5100:f:+300.37 costo=f cuadre=f:5100 bolsa_5015=t';
+  v_d     date := nullif(current_setting('mx4.desde', true), '')::date;
+  v_mes   text := current_setting('mx4.mes', true);
+  v_obra  text := nullif(current_setting('mx4.obra', true), '');
+  v_bco   text := fn_puente_cuenta_de('banco');
+  v_id    uuid;
+  v_s0    numeric;
+  v_norm  text;
+  v_omite text;
+begin
+  if v_d is null or v_obra is null then
+    insert into _pruebas values (89, 'lo sin repartir que no se explica sale en rojo', v_esp, 'omitida: falta el mes abierto o una obra', null);
+    return;
+  end if;
+  begin
+    execute 'set local lock_timeout = ''2s''';
+    begin
+      -- (antes que el candado de la cadena: c2, prueba 24)
+      lock table public.asientos, public.asiento_lineas in access exclusive mode;
+    exception when lock_not_available then
+      v_omite := 'el libro estaba en uso (se prueba en el banco)';
+      raise exception using errcode = 'MXT00';
+    end;
+    execute 'set local lock_timeout = 0';
+    select coalesce(sum(c.sin_repartir), 0) into v_s0
+      from v_costo_por_obra c where c.periodo = v_mes and c.nivel = 'control' and c.cuenta = '5100';
+    v_id := (fn_postear(jsonb_build_object('fecha', (v_d + 9)::text, 'descripcion', 'c4-pruebas: material que pierde su obra por debajo',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '5100', 'monto', '300.37', 'proyecto_id', v_obra),
+                                  jsonb_build_object('cuenta', v_bco, 'monto', '-300.37'))))->>'id')::uuid;
+    perform fn_postear(jsonb_build_object('fecha', (v_d + 9)::text, 'descripcion', 'c4-pruebas: burden real del mes, sin obra',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '5015', 'monto', '100.00'),
+                                  jsonb_build_object('cuenta', v_bco, 'monto', '-100.00'))));
+    select string_agg(case when c.cuadra then 't' else 'f' end, ',' order by c.cuenta) into v_norm
+      from v_costo_por_obra c where c.periodo = v_mes and c.nivel = 'control' and c.cuenta in ('5100', '5015');
+    -- El ataque: la línea de 5100 pierde su obra por debajo de sus guardas.
+    set constraints all immediate;
+    begin
+      execute 'alter table public.asiento_lineas disable trigger user';
+    exception when insufficient_privilege then
+      v_omite := format('el editor no puede apagar los triggers del libro (%s)', sqlstate);
+      raise exception using errcode = 'MXT00';
+    end;
+    update asiento_lineas set proyecto_id = null where asiento_id = v_id and cuenta = '5100';
+    execute 'alter table public.asiento_lineas enable trigger user';
+    select format('normal=%s atacada=%s costo=%s cuadre=%s bolsa_5015=%s', v_norm,
+      (select '5100:' || case when c.cuadra then 't' else 'f' end || ':' || to_char(c.sin_repartir - v_s0, 'FMSG999999990.00')
+         from v_costo_por_obra c where c.periodo = v_mes and c.nivel = 'control' and c.cuenta = '5100'),
+      (select case when c.cuadra then 't' else 'f' end
+         from v_costo_por_obra c where c.periodo = v_mes and c.nivel = 'control' and c.cuenta is null and c.seccion = 'costo'),
+      (select case when c.ok then 't' else 'f' || case when c.detalle like '%5100%sin explicar%' then ':5100' else ':' || coalesce(c.detalle, '-') end end
+         from fn_estados_control(v_mes, array['v_costo_por_obra']) c where c.vista = 'cuadre: auxiliar por obra = mayor'),
+      (select case when c.cuadra then 't' else 'f' end
+         from v_costo_por_obra c where c.periodo = v_mes and c.nivel = 'control' and c.cuenta = '5015'))
+      into v_obt;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  if v_omite is not null then
+    insert into _pruebas values (89, 'lo sin repartir que no se explica sale en rojo', v_esp, 'omitida: ' || v_omite, null);
+  else
+    insert into _pruebas values (89, 'lo sin repartir que no se explica sale en rojo', v_esp, coalesce(v_obt, '-'),
+                                 coalesce(v_obt = v_esp, false));
+  end if;
+end $$;
+
+-- 90. LAS PRUEBAS PIDEN LOS CANDADOS EN EL ORDEN DE LA APP (los cajones de
+--     los recibos, después periodos y la cadena: ver c4_candados_recibos).
+--     Con el escenario puesto, esta transacción tiene los 512 cajones; y
+--     pedirlos con la cadena ya tomada (un asiento a mano) o con periodos
+--     es MXT10. Antes el escenario pedía solo los de sus dos recibos, y ya
+--     con la cadena tomada: con c4-volumen.sh subiendo tickets a la vez,
+--     Postgres cortaba a uno de los dos (40P01) y el puente dejaba ese
+--     recibo en la bandeja (la 24 salió en rojo en 17.6; y dos subidas de
+--     los teléfonos se quedaron sin asiento).
+do $$
+declare
+  v_esp text := 'cajones=512 cadena=MXT10 periodos=MXT10';
+  v_c   text;
+  v_cad text;
+  v_per text;
+  v_obt text;
+begin
+  if nullif(current_setting('mx4.desde', true), '') is null then
+    insert into _pruebas values (90, 'las pruebas piden los candados en el orden de la app', v_esp,
+                                 'omitida: falta el mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c4_escenario();
+    select count(*)::text into v_c
+      from pg_locks l
+     where l.pid = pg_backend_pid() and l.granted and l.locktype = 'advisory'
+       and l.classid::bigint = 820260925 and l.objsubid = 2;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_c := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  -- Tarde: con la cadena ya tomada.
+  begin
+    perform fn_postear(jsonb_build_object('fecha', current_setting('mx4.desde'), 'descripcion', 'c4-pruebas: toma la cadena',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '6500', 'monto', '1.00'),
+                                  jsonb_build_object('cuenta', fn_puente_cuenta_de('banco'), 'monto', '-1.00'))));
+    perform pg_temp.c4_candados_recibos();
+    v_cad := 'los tomó';
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_cad := sqlstate;
+  end;
+  -- Tarde: con periodos ya tomado.
+  begin
+    lock table public.periodos in exclusive mode;
+    perform pg_temp.c4_candados_recibos();
+    v_per := 'los tomó';
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_per := sqlstate;
+  end;
+  v_obt := format('cajones=%s cadena=%s periodos=%s', coalesce(v_c, '-'), coalesce(v_cad, '-'), coalesce(v_per, '-'));
+  insert into _pruebas values (90, 'las pruebas piden los candados en el orden de la app', v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- =====================================================================
+-- RONDA 4 DE c4: una prueba por hallazgo (91 a 109). Cada una falla con
+-- la versión anterior de c4-estados.sql (o de c2 y c3, donde se dice).
+-- =====================================================================
+
+-- 91. EL RESULTADO DE LA APERTURA ES EL QUE SE POSTEÓ: posteada la
+--     apertura, re-mapear en QuickBooks una cuenta de resultados a una de
+--     balance («Job Materials», 40,000, a 1300) lo AVISA (WARNING y la llave
+--     aviso: la usa la apertura ya posteada, y cambia de clase) y no mueve
+--     el balance: el resultado de enero a septiembre sigue siendo el que
+--     3900 trae (38,050, que baja a su línea de la apertura), no el de la
+--     balanza con el mapeo de hoy (78,050); y en la comparación del mes a
+--     3900 se le resta lo posteado (arrastre 38,050, que baja a esa misma
+--     línea). Antes el balance pasaba 78,050 de utilidades retenidas al
+--     resultado del ejercicio (las dos líneas mal, el total bien), sin
+--     aviso, y 3900 salía en rojo en la comparación.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'aviso=t:clase balance=resultado_ejercicio:38050.00,utilidades_retenidas:-38050.00 baja=38050.00:1 '
+                'arrastre_3900=38050.00:38050.00';
+  v_ap  periodos;
+  v_mes text := nullif(current_setting('mx4.mes', true), '');
+  v_d   date := nullif(current_setting('mx4.desde', true), '')::date;
+  v_av  jsonb;
+begin
+  select * into v_ap from periodos p where p.tipo = 'apertura' order by p.desde limit 1;
+  if not pg_temp.c4_apertura_libre() or v_d is null or extract(year from v_d)::int <> v_ap.anio then
+    insert into _pruebas values (91, 'el resultado de la apertura es el que se posteó, aunque se re-mapee (y se avisa)', v_esp,
+                                 'omitida: la apertura ya tiene su asiento (o el mes es de otro año)', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c4_montar();
+    perform pg_temp.c4_balanza_qb('docs/c4-pruebas/qb-apertura-91.csv');
+    perform fn_apertura(v_ap.desde, 'docs/c4-pruebas/qb-apertura-91.csv');
+    v_av := fn_apertura_mapeo_qb('Job Materials', '1300');
+    -- (una balanza del mes cualquiera: con ella el mes tiene comparación)
+    perform fn_comparacion_qb_cargar(v_mes, 'docs/c4-pruebas/qb-91.csv', '[{"cuenta_qb": "QB c4-91", "saldo": "0.00"}]');
+    perform pg_temp.c4_bajar_preparar();
+    select format('aviso=%s balance=%s baja=%s arrastre_3900=%s',
+      case when v_av->>'aviso' like '%está en la apertura ya posteada%CAMBIA DE CLASE%' then 't:clase'
+           else coalesce(v_av->>'aviso', 'no') end,
+      (select string_agg(b.linea || ':' || b.cifra, ',' order by b.linea) from v_balance_general b
+        where b.periodo = v_mes and b.nivel = 'componente' and b.componente = 'resultado_apertura'),
+      (select x.total || ':' || x.filas
+         from v_balance_general b, pg_temp.c4_bajar(b.bajar->'cifra') x
+        where b.periodo = v_mes and b.nivel = 'componente' and b.componente = 'resultado_apertura'
+          and b.linea = 'resultado_ejercicio'),
+      (select c.arrastre_apertura || ':' || (select x.total from pg_temp.c4_bajar(c.bajar->'arrastre_apertura') x)
+         from v_comparacion c where c.periodo = v_mes and c.cuenta = '3900'))
+      into v_obt;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (91, 'el resultado de la apertura es el que se posteó, aunque se re-mapee (y se avisa)', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 92. LO PAGADO SIN PARTIDA SALDA LOS PAPELES DE SU PROVEEDOR: dos recibos
+--     a cuenta de un proveedor (800 del día 3 y 600 del 7) y un cheque por
+--     el statement SIN partida (1,000, el 11): la antigüedad de pagar dice
+--     UNA fila, la del proveedor, con 400 del recibo del 7 (lo más viejo que
+--     sigue sin pagar, fecha del papel), sin los recibos sueltos ni un «a
+--     favor» que el balance no tiene; cada cifra baja a sus líneas (lo suyo
+--     sin papel y los dos recibos) y el total es el mayor. Con otro cheque
+--     de 900, la fila es −500, a favor: lo mismo que el balance pasa al
+--     activo por ese proveedor. Antes: los dos recibos abiertos (1,400) y un
+--     «a favor» de −1,000 que el balance no tenía.
+do $$
+declare
+  v_obt   text;
+  v_esp   text;
+  v_mes   text := nullif(current_setting('mx4.mes', true), '');
+  v_d     date := nullif(current_setting('mx4.desde', true), '')::date;
+  v_a     text := nullif(current_setting('mx4.obra', true), '');
+  v_dueno uuid := nullif(current_setting('mx4.dueno', true), '')::uuid;
+  v_prov  uuid;
+  v_uno   text;
+  v_baj   text;
+  v_af0   numeric;
+  v_dos   text;
+  v_af1   numeric;
+  v_tot   text;
+begin
+  if v_d is null or v_a is null then
+    insert into _pruebas values (92, 'lo pagado sin partida salda los papeles de su proveedor (y el a favor es el del balance)', '-',
+                                 'omitida: falta el mes abierto o una obra', null);
+    return;
+  end if;
+  v_esp := format('uno=proveedor:400.00:%s:papel:0-30 bajar=ok dos=proveedor:-500.00:a_favor balance=500.00 total=mayor', v_d + 6);
+  begin
+    perform pg_temp.c4_montar();
+    perform pg_temp.c4_inmediato();
+    v_prov := fn_proveedor_alta('C4 PRUEBAS PAGOS', 'Net 30', array['c4 pruebas pagos']);
+    insert into recibos (id, proyecto_id, ruta, total, proveedor, estado, autor_id, creado, fecha, categoria, num_recibo,
+                         metodo_pago, ultimos4) overriding system value values
+      (-4410921, v_a, 'recibos/c4-pruebas/921.jpg', 800.00, 'C4 Pruebas Pagos', 'leido', v_dueno,
+       ((v_d + 2) + time '12:00') at time zone 'America/New_York', v_d + 2, 'material', 'C4-PG-1', 'cuenta_proveedor', null),
+      (-4410922, v_a, 'recibos/c4-pruebas/922.jpg', 600.00, 'C4 Pruebas Pagos', 'leido', v_dueno,
+       ((v_d + 6) + time '12:00') at time zone 'America/New_York', v_d + 6, 'material', 'C4-PG-2', 'cuenta_proveedor', null);
+    perform fn_postear(jsonb_build_object('fecha', (v_d + 10)::text, 'descripcion', 'c4-pruebas: cheque por el statement',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', fn_puente_cuenta_de('cxp'), 'monto', '1000.00',
+                                                     'tercero_tipo', 'proveedor', 'tercero_id', v_prov),
+                                  jsonb_build_object('cuenta', fn_puente_cuenta_de('banco'), 'monto', '-1000.00'))));
+    select string_agg(format('%s:%s:%s:%s:%s', x.tipo, x.por_pagar, coalesce(x.fecha::text, '-'), coalesce(x.fecha_origen, '-'),
+                             x.tramo), ' | ' order by x.tipo, x.partida_id)
+      into v_uno
+      from v_cxp_antiguedad x
+     where x.periodo = v_mes and x.nivel = 'partida' and x.proveedor_id = v_prov;
+    perform pg_temp.c4_bajar_preparar();
+    v_baj := pg_temp.c4_revisar_bajar('v_cxp_antiguedad', v_mes);
+    select coalesce(sum(b.cifra), 0) into v_af0 from v_balance_general b
+     where b.periodo = v_mes and b.nivel = 'componente' and b.componente = 'reclasif_a_favor' and b.linea = 'saldos_a_favor';
+    perform fn_postear(jsonb_build_object('fecha', (v_d + 12)::text, 'descripcion', 'c4-pruebas: otro cheque, de más',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', fn_puente_cuenta_de('cxp'), 'monto', '900.00',
+                                                     'tercero_tipo', 'proveedor', 'tercero_id', v_prov),
+                                  jsonb_build_object('cuenta', fn_puente_cuenta_de('banco'), 'monto', '-900.00'))));
+    select string_agg(format('%s:%s:%s', x.tipo, x.por_pagar, x.tramo), ' | ' order by x.tipo, x.partida_id)
+      into v_dos
+      from v_cxp_antiguedad x
+     where x.periodo = v_mes and x.nivel = 'partida' and x.proveedor_id = v_prov;
+    select coalesce(sum(b.cifra), 0) into v_af1 from v_balance_general b
+     where b.periodo = v_mes and b.nivel = 'componente' and b.componente = 'reclasif_a_favor' and b.linea = 'saldos_a_favor';
+    select case when x.cuadra and x.total = x.mayor then 'total=mayor' else 'total=' || x.total || '≠' || x.mayor end
+      into v_tot
+      from v_cxp_antiguedad x where x.periodo = v_mes and x.nivel = 'total';
+    v_obt := format('uno=%s bajar=%s dos=%s balance=%s %s', coalesce(v_uno, '(nada)'),
+                    case when v_baj like 'filas=%' then 'ok' else v_baj end, coalesce(v_dos, '(nada)'), v_af1 - v_af0, v_tot);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (92, 'lo pagado sin partida salda los papeles de su proveedor (y el a favor es el del balance)', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 93. EL CONTROL DEL PASIVO: una deuda mapeada a capital (la Amex 2009,
+--     1,100, a 3100) no mueve la utilidad ni el activo, y antes pasaba en
+--     verde con el pasivo 1,100 corto; ahora la apertura para (MX001) con
+--     «Total Liabilities» y la fila que lo explica. Sin la fila «Total
+--     Liabilities», no postea (MX001: la nombra). Con el mapeo bueno y las
+--     filas opcionales (el capital, con la utilidad del año, y el pasivo más
+--     capital) amarra, y dice sus cifras. Los nombres de las filas de
+--     control se reconocen.
+do $$
+declare
+  v_obt  text;
+  v_esp  text := 'nombres=pasivo,capital,pasivo_capital deuda_a_capital=MX001:total_liabilities+amex_2009 '
+                 'sin_pasivo=MX001:falta_total_liabilities con_capital=amarra:3750.00:53150.00:56900.00';
+  v_doc  text := 'docs/c4-pruebas/qb-apertura-93.csv';
+  v_x    text;
+  v_y    text;
+  v_z    text;
+  v_plan jsonb;
+begin
+  if not pg_temp.c4_apertura_libre() then
+    insert into _pruebas values (93, 'el control del pasivo: una deuda mapeada a capital no pasa la apertura', v_esp,
+                                 'omitida: la apertura ya tiene su asiento (o está cerrada)', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c4_montar();
+    perform pg_temp.c4_balanza_qb(v_doc);
+    v_x := concat_ws(',', fn_apertura_control_qb('Total Liabilities'), fn_apertura_control_qb('Total Stockholders'' Equity'),
+                     fn_apertura_control_qb('TOTAL LIABILITIES AND EQUITY'));
+    perform fn_apertura_mapeo_qb('Credit Cards:Amex 2009', '3100');
+    begin
+      perform fn_apertura_plan(v_doc);
+      v_y := 'amarra';
+    exception when others then
+      v_y := sqlstate || ':' || case when sqlerrm like '%(Total Liabilities)%'
+                                          and sqlerrm like '%«Credit Cards:Amex 2009» (-1100.00) va a 3100, de capital%'
+                                     then 'total_liabilities+amex_2009' else left(sqlerrm, 300) end;
+    end;
+    perform fn_apertura_mapeo_qb('Credit Cards:Amex 2009', '2100-2009');
+    delete from apertura_balanza_qb b where b.documento = v_doc and b.control = 'pasivo';
+    begin
+      perform fn_apertura_plan(v_doc);
+      v_z := 'amarra';
+    exception when others then
+      v_z := sqlstate || ':' || case when sqlerrm like '%(falta «Total Liabilities»)%' then 'falta_total_liabilities'
+                                     else left(sqlerrm, 300) end;
+    end;
+    insert into apertura_balanza_qb (documento, linea, cuenta_qb, debe, haber, control, cargado_rol)
+    values (v_doc, 901, 'Total Liabilities', 0, 3750.00, 'pasivo', 'x'),
+           (v_doc, 902, 'Total Stockholders'' Equity', 0, 53150.00, 'capital', 'x'),
+           (v_doc, 903, 'TOTAL LIABILITIES AND EQUITY', 0, 56900.00, 'pasivo_capital', 'x');
+    v_plan := fn_apertura_plan(v_doc);
+    v_obt := format('nombres=%s deuda_a_capital=%s sin_pasivo=%s con_capital=amarra:%s:%s:%s', v_x, v_y, v_z,
+                    v_plan->'control_qb'->>'pasivo', v_plan->'control_qb'->>'capital', v_plan->'control_qb'->>'pasivo_capital');
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (93, 'el control del pasivo: una deuda mapeada a capital no pasa la apertura', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 94. UNA FACTURA NO SE DEBE POR MÁS DE SU MONTO: la balanza de la
+--     apertura trae de la factura C4-QB-6 (4,000 en la app) 4,000 y 600 más
+--     en otra fila (otro cargo con su número): la apertura para (MX006) y
+--     dice la factura, su monto, lo que trae la balanza y las filas. Antes
+--     entraba, y en octubre c3 decía que la factura «está dos veces».
+do $$
+declare
+  v_obt text;
+  v_esp text := 'MX006:factura_C4-QB-6:4000.00:4600.00:filas';
+  v_doc text := 'docs/c4-pruebas/qb-apertura-94.csv';
+begin
+  if not pg_temp.c4_apertura_libre() then
+    insert into _pruebas values (94, 'una factura no entra a la apertura con más por cobrar que su monto', v_esp,
+                                 'omitida: la apertura ya tiene su asiento (o está cerrada)', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c4_montar();
+    perform pg_temp.c4_balanza_qb(v_doc, true, jsonb_build_array(
+      jsonb_build_object('cuenta_qb', 'Accounts Receivable', 'debe', '600.00', 'factura_id', -4400006),
+      jsonb_build_object('cuenta_qb', 'Construction Income', 'haber', '600.00')));
+    begin
+      perform fn_apertura_plan(v_doc);
+      v_obt := 'amarra';
+    exception when others then
+      v_obt := sqlstate || ':' || case when sqlerrm like '%factura #C4-QB-6%es por 4000.00%trae 4600.00 por cobrar de ella (filas %'
+                                       then 'factura_C4-QB-6:4000.00:4600.00:filas' else left(sqlerrm, 300) end;
+    end;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (94, 'una factura no entra a la apertura con más por cobrar que su monto', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 95. EL PROVEEDOR DEL ASIENTO, SOLO SI SU DEUDA EXPLICA EL ASIENTO: un
+--     journal de nómina a mano (sueldos 3,000 y el seguro 300; 2,500 del
+--     banco, 500 retenidos y 300 que se le deben a la aseguradora, en 2010 a
+--     su nombre): en qué se gasta y a quién, los sueldos van sin proveedor y
+--     el seguro a la aseguradora (por su línea del mismo monto). Antes la
+--     aseguradora se llevaba también los 3,000 de sueldos.
+do $$
+declare
+  v_obt  text;
+  v_esp  text := 'sueldos=ninguno seguro=C4 PRUEBAS SEGUROS:asiento';
+  v_d    date := nullif(current_setting('mx4.desde', true), '')::date;
+  v_prov uuid;
+  v_as   uuid;
+begin
+  if v_d is null then
+    insert into _pruebas values (95, 'el proveedor del asiento solo si su deuda explica el asiento (el journal de nómina)', v_esp,
+                                 'omitida: falta el mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c4_montar();
+    v_prov := fn_proveedor_alta('C4 PRUEBAS SEGUROS', 'Net 30', array['c4 pruebas seguros']);
+    v_as := (fn_postear(jsonb_build_object('fecha', (v_d + 3)::text, 'descripcion', 'c4-pruebas: journal de nómina con el seguro',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '6000', 'monto', '3000.00'),
+                                  jsonb_build_object('cuenta', '6200', 'monto', '300.00'),
+                                  jsonb_build_object('cuenta', fn_puente_cuenta_de('banco'), 'monto', '-2500.00'),
+                                  jsonb_build_object('cuenta', '2220', 'monto', '-500.00'),
+                                  jsonb_build_object('cuenta', fn_puente_cuenta_de('cxp'), 'monto', '-300.00',
+                                                     'tercero_tipo', 'proveedor', 'tercero_id', v_prov))))->>'id')::uuid;
+    select format('sueldos=%s seguro=%s',
+      (select coalesce(g.proveedor, 'ninguno') from v_gasto_lineas g where g.asiento_id = v_as and g.cuenta = '6000'),
+      (select coalesce(g.proveedor, 'ninguno') || ':' || coalesce(g.proveedor_fuente, '-')
+         from v_gasto_lineas g where g.asiento_id = v_as and g.cuenta = '6200'))
+      into v_obt;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (95, 'el proveedor del asiento solo si su deuda explica el asiento (el journal de nómina)', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 96. SIN DINERO, LAS DOS PATAS DE UNA MISMA SECCIÓN NO SE ANULAN: el
+--     préstamo del accionista convertido en capital (Dr 2900 / Cr 3100,
+--     10,000: las dos de financiamiento) se revela: −10,000 en
+--     financiamiento sin dinero y +10,000 en su contrapartida, en los dos
+--     métodos; la porción corriente de un préstamo (Dr 2530 / Cr 2520,
+--     5,000: el mismo préstamo) sigue sin revelarse (0.00); y el flujo
+--     cuadra. Antes la conversión salía en 0.00 y no se veía.
+do $$
+declare
+  v_obt  text;
+  v_esp  text := 'conversion=sd_contrapartida:10000.00,sd_financiamiento:-10000.00|sd_contrapartida:10000.00,sd_financiamiento:-10000.00 '
+                 'porcion=sd_financiamiento:0.00|sd_financiamiento:0.00 cuadra=t';
+  v_mes  text := nullif(current_setting('mx4.mes', true), '');
+  v_d    date := nullif(current_setting('mx4.desde', true), '')::date;
+  v_conv uuid;
+  v_porc uuid;
+begin
+  if v_d is null then
+    insert into _pruebas values (96, 'sin dinero, las dos patas de una misma sección no se anulan', v_esp,
+                                 'omitida: falta el mes abierto', null);
+    return;
+  end if;
+  begin
+    v_conv := (fn_postear(jsonb_build_object('fecha', (v_d + 4)::text, 'descripcion', 'c4-pruebas: el préstamo del accionista, a capital',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '2900', 'monto', '10000.00'),
+                                  jsonb_build_object('cuenta', '3100', 'monto', '-10000.00'))))->>'id')::uuid;
+    v_porc := (fn_postear(jsonb_build_object('fecha', (v_d + 5)::text, 'descripcion', 'c4-pruebas: la porción corriente del préstamo',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '2530', 'monto', '5000.00'),
+                                  jsonb_build_object('cuenta', '2520', 'monto', '-5000.00'))))->>'id')::uuid;
+    select format('conversion=%s|%s porcion=%s|%s cuadra=%s',
+      (select string_agg(y.l || ':' || y.s, ',' order by y.l) from (select fl.linea_directo as l, sum(fl.importe) as s
+                                                                      from v_flujo_lineas fl where fl.asiento_id = v_conv
+                                                                     group by 1) y),
+      (select string_agg(y.l || ':' || y.s, ',' order by y.l) from (select fl.linea_indirecto as l, sum(fl.importe) as s
+                                                                      from v_flujo_lineas fl where fl.asiento_id = v_conv
+                                                                     group by 1) y),
+      (select string_agg(y.l || ':' || y.s, ',' order by y.l) from (select fl.linea_directo as l, sum(fl.importe) as s
+                                                                      from v_flujo_lineas fl where fl.asiento_id = v_porc
+                                                                     group by 1) y),
+      (select string_agg(y.l || ':' || y.s, ',' order by y.l) from (select fl.linea_indirecto as l, sum(fl.importe) as s
+                                                                      from v_flujo_lineas fl where fl.asiento_id = v_porc
+                                                                     group by 1) y),
+      (select case when bool_and(f.cuadra) then 't' else 'f' end from v_flujo_caja f where f.periodo = v_mes and f.nivel = 'control'))
+      into v_obt;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (96, 'sin dinero, las dos patas de una misma sección no se anulan', v_esp, coalesce(v_obt, '-'),
                                coalesce(v_obt = v_esp, false));
 end $$;
 
--- 89. NO DEJA RASTRO: todo lo de arriba se deshizo. El libro, los papeles,
---     las tablas de c4 y su historial, las reglas, los contadores, las
---     secuencias de la app, las huellas y la definición de cada vista y
---     función de c4 están como al empezar.
+-- 97. LO QUE SE COBRA SIN FACTURA SE FECHA POR LO MÁS VIEJO QUE SIGUE SIN
+--     COBRAR (FIFO): en una obra, un cargo a mano a cuentas por cobrar sin
+--     factura el día 1 del mes (1,000), su cobro el 5 y otro cargo el 10 del
+--     mes siguiente (500): al cierre del mes siguiente, la partida sin
+--     factura dice 500 del día 10 (0-30), no del día 1 (31-60). Antes la
+--     fechaba por su línea más vieja.
+do $$
+declare
+  v_obt text;
+  v_esp text;
+  v_sig text := nullif(current_setting('mx4.sig', true), '');
+  v_d   date := nullif(current_setting('mx4.desde', true), '')::date;
+  v_b   text := nullif(current_setting('mx4.obra2', true), '');
+  v_sd  date;
+begin
+  select p.desde into v_sd from periodos p where p.periodo = v_sig;
+  if v_sd is null or v_b is null
+     or exists (select 1 from asiento_lineas l where l.cuenta = fn_puente_cuenta_de('cxc') and l.proyecto_id = v_b
+                   and l.partida_tabla is null) then
+    insert into _pruebas values (97, 'lo que se cobra sin factura se fecha por lo más viejo sin cobrar (FIFO)', '-',
+                                 'omitida: falta el mes siguiente u otra obra, o esa obra ya tiene saldos sin factura', null);
+    return;
+  end if;
+  v_esp := format('fecha=%s tramo=0-30 por_cobrar=500.00', v_sd + 9);
+  begin
+    perform pg_temp.c4_fingir_hoy(v_sd + 10);
+    perform fn_postear(jsonb_build_object('fecha', v_d::text, 'descripcion', 'c4-pruebas: un cargo sin factura',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', fn_puente_cuenta_de('cxc'), 'monto', '1000.00', 'proyecto_id', v_b),
+                                  jsonb_build_object('cuenta', '4900', 'monto', '-1000.00'))));
+    perform fn_postear(jsonb_build_object('fecha', (v_d + 4)::text, 'descripcion', 'c4-pruebas: su cobro, sin factura',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', fn_puente_cuenta_de('banco'), 'monto', '1000.00'),
+                                  jsonb_build_object('cuenta', fn_puente_cuenta_de('cxc'), 'monto', '-1000.00', 'proyecto_id', v_b))));
+    perform fn_postear(jsonb_build_object('fecha', (v_sd + 9)::text, 'descripcion', 'c4-pruebas: otro cargo sin factura',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', fn_puente_cuenta_de('cxc'), 'monto', '500.00', 'proyecto_id', v_b),
+                                  jsonb_build_object('cuenta', '4900', 'monto', '-500.00'))));
+    select format('fecha=%s tramo=%s por_cobrar=%s', x.fecha, x.tramo, x.por_cobrar) into v_obt
+      from v_cxc_antiguedad x
+     where x.periodo = v_sig and x.nivel = 'partida' and x.tipo = 'sin_partida' and x.proyecto_id = v_b;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (97, 'lo que se cobra sin factura se fecha por lo más viejo sin cobrar (FIFO)', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 98. LA RETENCIÓN NO VENCE POR TÉRMINOS: la retención por pagar que trae
+--     la apertura de un subcontratista (700, en 2020, sin la fecha de su
+--     factura en la balanza) sale en la antigüedad de pagar en el tramo
+--     'retencion', sin fecha inventada (no el 30-sep), sin vencimiento y
+--     sin días vencida, aunque el proveedor tenga términos (Net 30). Antes:
+--     fechada el 30-sep, vencida a los 30 días.
+do $$
+declare
+  v_obt  text;
+  v_esp  text := 'retencion=700.00:retencion:fecha=-:vence=-:dias_vencida=-';
+  v_ap   periodos;
+  v_mes  text := nullif(current_setting('mx4.mes', true), '');
+  v_prov uuid;
+  v_doc  text := 'docs/c4-pruebas/qb-apertura-98.csv';
+  v_ret  text;
+begin
+  select * into v_ap from periodos p where p.tipo = 'apertura' order by p.desde limit 1;
+  select m.cuenta into v_ret from v_estados_mapeo m where m.estado = 'balance' and m.linea = 'retencion_por_pagar' order by m.cuenta limit 1;
+  if not pg_temp.c4_apertura_libre() or v_mes is null or v_ret is null then
+    insert into _pruebas values (98, 'la retención por pagar de la apertura no vence por términos ni se fecha el 30-sep', v_esp,
+                                 'omitida: la apertura ya tiene su asiento (o está cerrada), o falta el mes', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c4_montar();
+    v_prov := fn_proveedor_alta('C4 PRUEBAS SUB', 'Net 30', array['c4 pruebas sub']);
+    perform fn_apertura_mapeo_qb('Retainage Payable', v_ret);
+    perform pg_temp.c4_balanza_qb(v_doc, true, jsonb_build_array(
+      jsonb_build_object('cuenta_qb', 'Retainage Payable', 'haber', '700.00', 'proveedor_qb', 'C4 Pruebas Sub',
+                         'cliente_trabajo', 'C4 Pruebas, Cliente:Obra A'),
+      jsonb_build_object('cuenta_qb', 'Opening Balance Equity', 'debe', '700.00')));
+    perform fn_apertura(v_ap.desde, v_doc);
+    select format('retencion=%s:%s:fecha=%s:vence=%s:dias_vencida=%s', x.retencion, x.tramo, coalesce(x.fecha::text, '-'),
+                  coalesce(x.vence::text, '-'), coalesce(x.dias_vencida::text, '-'))
+      into v_obt
+      from v_cxp_antiguedad x
+     where x.periodo = v_mes and x.nivel = 'partida' and x.proveedor_id = v_prov;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (98, 'la retención por pagar de la apertura no vence por términos ni se fecha el 30-sep', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 99. EL ADELANTO DE EFECTIVO DE LA TARJETA ES FINANCIAMIENTO: los 500 que
+--     la tarjeta de prueba adelanta al banco entran en préstamos
+--     (financiamiento), no en «pagos de tarjetas» (operación), en los dos
+--     métodos; y su pago del día 21 sale de préstamos también (la cola de la
+--     tarjeta). El flujo cuadra. Antes: operación, las dos veces.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'adelanto=prestamos:500.00,tarjetas:0.00|fin_prestamos:500.00,op_tarjetas:0.00 '
+                'pago=prestamos:-500.00,tarjetas:0.00|fin_prestamos:-500.00,op_tarjetas:0.00 cuadra=t';
+  v_mes text := nullif(current_setting('mx4.mes', true), '');
+  v_d   date := nullif(current_setting('mx4.desde', true), '')::date;
+  v_a1  uuid;
+  v_a2  uuid;
+begin
+  if v_d is null then
+    insert into _pruebas values (99, 'el adelanto de efectivo de la tarjeta es financiamiento (y su pago)', v_esp,
+                                 'omitida: falta el mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c4_montar();
+    v_a1 := (fn_postear(jsonb_build_object('fecha', (v_d + 5)::text, 'descripcion', 'c4-pruebas: adelanto de efectivo de la tarjeta',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', fn_puente_cuenta_de('banco'), 'monto', '500.00'),
+                                  jsonb_build_object('cuenta', '2100-9998', 'monto', '-500.00'))))->>'id')::uuid;
+    v_a2 := (fn_postear(jsonb_build_object('fecha', (v_d + 20)::text, 'descripcion', 'c4-pruebas: pago de la tarjeta',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '2100-9998', 'monto', '500.00'),
+                                  jsonb_build_object('cuenta', fn_puente_cuenta_de('banco'), 'monto', '-500.00'))))->>'id')::uuid;
+    select format('adelanto=%s|%s pago=%s|%s cuadra=%s',
+      (select string_agg(y.l || ':' || y.s, ',' order by y.l) from (select fl.linea_directo as l, sum(fl.importe) as s
+                                                                      from v_flujo_lineas fl where fl.asiento_id = v_a1
+                                                                     group by 1) y),
+      (select string_agg(y.l || ':' || y.s, ',' order by y.l) from (select fl.linea_indirecto as l, sum(fl.importe) as s
+                                                                      from v_flujo_lineas fl where fl.asiento_id = v_a1
+                                                                     group by 1) y),
+      (select string_agg(y.l || ':' || y.s, ',' order by y.l) from (select fl.linea_directo as l, sum(fl.importe) as s
+                                                                      from v_flujo_lineas fl where fl.asiento_id = v_a2
+                                                                     group by 1) y),
+      (select string_agg(y.l || ':' || y.s, ',' order by y.l) from (select fl.linea_indirecto as l, sum(fl.importe) as s
+                                                                      from v_flujo_lineas fl where fl.asiento_id = v_a2
+                                                                     group by 1) y),
+      (select case when bool_and(f.cuadra) then 't' else 'f' end from v_flujo_caja f where f.periodo = v_mes and f.nivel = 'control'))
+      into v_obt;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (99, 'el adelanto de efectivo de la tarjeta es financiamiento (y su pago)', v_esp, coalesce(v_obt, '-'),
+                               coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 100. LA CAJA CHICA EN ROJO NO ES UN SOBREGIRO: la 1050 (marcada caja)
+--      con 200 menos de lo que tiene (un gasto pagado de la caja que no
+--      tenía): el balance la pasa al pasivo en su renglón «Caja chica en
+--      rojo…» (el sobregiro bancario no cambia), el flujo le da su renglón
+--      de financiamiento en los dos métodos y el Panel su columna, los
+--      saldos de dinero la dicen caja, los cuadres del flujo siguen en
+--      verde, y el control la dice en rojo. Antes: «Sobregiro bancario».
+do $$
+declare
+  v_obt  text;
+  v_esp  text := 'marca=t balance=200.00 sobregiro=0.00 flujo=200.00,200.00 panel=200.00 saldos=caja cuadres=t control=f';
+  v_mes  text := nullif(current_setting('mx4.mes', true), '');
+  v_d    date := nullif(current_setting('mx4.desde', true), '')::date;
+  v_h    date;
+  v_s    numeric;
+  v_so0  numeric;
+begin
+  select p.hasta into v_h from periodos p where p.periodo = v_mes;
+  if v_d is null or not exists (select 1 from cuentas c where c.codigo = '1050' and c.imputable) then
+    insert into _pruebas values (100, 'la caja chica en rojo no es un sobregiro: su renglón, su flujo y su rojo', v_esp,
+                                 'omitida: falta el mes abierto o la 1050', null);
+    return;
+  end if;
+  begin
+    select coalesce(sum(l.monto), 0) into v_s from v_libro l where l.cuenta = '1050' and l.fecha <= v_h;
+    select coalesce(sum(b.cifra), 0) into v_so0 from v_balance_general b
+     where b.periodo = v_mes and b.nivel = 'linea' and b.linea = 'sobregiro_bancario';
+    perform fn_postear(jsonb_build_object('fecha', (v_d + 3)::text, 'descripcion', 'c4-pruebas: gasto pagado de la caja chica',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '6500', 'monto', (greatest(v_s, 0) + 200)::text),
+                                  jsonb_build_object('cuenta', '1050', 'monto', (-(greatest(v_s, 0) + 200))::text))));
+    select format('marca=%s balance=%s sobregiro=%s flujo=%s panel=%s saldos=%s cuadres=%s control=%s',
+      (select case when m.caja then 't' else 'f' end from v_estados_mapeo m where m.cuenta = '1050'),
+      (select coalesce(sum(b.cifra), 0) from v_balance_general b
+        where b.periodo = v_mes and b.nivel = 'linea' and b.linea = 'caja_en_rojo'),
+      (select (coalesce(sum(b.cifra), 0) - v_so0)::numeric(14,2) from v_balance_general b
+        where b.periodo = v_mes and b.nivel = 'linea' and b.linea = 'sobregiro_bancario'),
+      (select string_agg(f.importe::text, ',' order by f.metodo) from v_flujo_caja f
+        where f.periodo = v_mes and f.nivel = 'linea' and f.linea = 'caja_en_rojo'),
+      (select r.caja_en_rojo from v_flujo_real_por_mes r where r.periodo = v_mes),
+      (select s.tipo from v_saldos_dinero s where s.periodo = v_mes and s.cuenta = '1050'),
+      (select case when bool_and(f.cuadra) then 't' else 'f' end from v_flujo_caja f where f.periodo = v_mes and f.nivel = 'control'),
+      (select case when c.ok then 't' else 'f' end from fn_estados_control(v_mes, array['v_balance_general']) c
+        where c.vista = 'cuadre: la caja chica no queda en rojo'))
+      into v_obt;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (100, 'la caja chica en rojo no es un sobregiro: su renglón, su flujo y su rojo', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 101. LO AJENO QUE LEE LAS TABLAS DE c4, TAMBIÉN ESCONDIDO: una función
+--      SECURITY DEFINER que la API puede ejecutar y que lee las diferencias
+--      con un join de coma («from periodos p, diferencias d»), o con un
+--      comentario en medio («from/**/diferencias»), o llamando a una función
+--      de ayuda SECURITY INVOKER que lee estados_mapeo: cada una sale en rojo
+--      en «protecciones de c4», con su nombre. Una que solo habla de las
+--      diferencias en un comentario o en un texto, no. Antes las tres
+--      pasaban en verde. (Van con lock_timeout de 2 s, como las otras que
+--      tocan lo de c4.)
+do $$
+declare
+  v_obt text := '';
+  v_esp text := 'coma=f comentario=f anidada=f inocente=t';
+  v_mes text := nullif(current_setting('mx4.mes', true), '');
+  v_k   text;
+  v_x   text;
+begin
+  if v_mes is null then
+    insert into _pruebas values (101, 'lo ajeno que lee las tablas de c4, también escondido (coma, comentario, anidada)', v_esp,
+                                 'omitida: falta el mes abierto', null);
+    return;
+  end if;
+  foreach v_k in array array['coma', 'comentario', 'anidada', 'inocente'] loop
+    begin
+      perform set_config('lock_timeout', '2s', true);
+      if v_k = 'coma' then
+        execute $f$create function public.fn_c4p_ajena() returns bigint language sql security definer set search_path = public
+                   as 'select count(*) from periodos p, diferencias d where d.periodo = p.periodo'$f$;
+      elsif v_k = 'comentario' then
+        execute $f$create function public.fn_c4p_ajena() returns bigint language sql security definer set search_path = public
+                   as 'select count(*) from/**/diferencias'$f$;
+      elsif v_k = 'anidada' then
+        execute $f$create function public.fn_c4p_ayuda() returns bigint language sql set search_path = public
+                   as 'select count(*) from estados_mapeo'$f$;
+        execute $f$create function public.fn_c4p_ajena() returns bigint language sql security definer set search_path = public
+                   as 'select fn_c4p_ayuda()'$f$;
+      else
+        execute $f$create function public.fn_c4p_ajena() returns bigint language plpgsql security definer set search_path = public
+                   as $b$
+                   begin
+                     -- (una nota: select * from diferencias)
+                     return length('las diferencias, anotadas');
+                   end $b$ $f$;
+      end if;
+      select case when c.ok then 't' when c.detalle like '%fn_c4p_ajena()%' then 'f' else 'f:' || left(c.detalle, 120) end
+        into v_x
+        from fn_estados_control(v_mes, array['v_estados_mapeo']) c where c.vista = 'cuadre: protecciones de c4';
+      raise exception using errcode = 'MXT00';
+    exception
+      when sqlstate 'MXT00' then null;
+      when lock_not_available then v_x := 'omitida';
+      when others then v_x := sqlstate || ' ' || left(sqlerrm, 60);
+    end;
+    v_obt := concat_ws(' ', nullif(v_obt, ''), v_k || '=' || coalesce(v_x, '-'));
+  end loop;
+  insert into _pruebas values (101, 'lo ajeno que lee las tablas de c4, también escondido (coma, comentario, anidada)', v_esp, v_obt,
+                               case when v_obt like '%omitida%' then null else v_obt = v_esp end);
+end $$;
+
+-- 102. EL MX007 DE LA APERTURA DICE QUE SE DESHACE LA CORRIDA ENTERA, Y QUÉ
+--      PEGAR JUNTO: posteada la apertura, se corrige un mapeo (Undeposited
+--      Funds de 1010 a 1030) y fn_apertura sin motivo para (MX007): dice que
+--      el error deshace la corrida entera, y trae la línea del mapeo que
+--      cambió y el fn_apertura con su motivo, para pegarlos juntos. Con el
+--      motivo y NADA que cambiar (el mapeo otra vez en 1010), para (MX007) y
+--      dice por qué, en vez de un «sin_cambios» callado. Con otra balanza
+--      (el proveedor de prueba con 100 más), cada cambio dice su proveedor
+--      por su nombre, no solo su uuid. Y repetir el mismo fn_apertura con el
+--      mismo motivo que ya sustituyó no hace nada (sin_cambios).
+do $$
+declare
+  v_obt  text;
+  v_esp  text := 'mapeo=MX007:corrida+bloque motivo_sin_cambios=MX007:nada_que_rehacer otra_balanza=MX007:proveedor_por_nombre '
+                 'mismo_motivo=sustituida/sin_cambios';
+  v_ap   periodos;
+  v_d1   text := 'docs/c4-pruebas/qb-apertura-102.csv';
+  v_d2   text := 'docs/c4-pruebas/qb-apertura-102b.csv';
+  v_x    text;
+  v_r1   jsonb;
+  v_r2   jsonb;
+begin
+  select * into v_ap from periodos p where p.tipo = 'apertura' order by p.desde limit 1;
+  if not pg_temp.c4_apertura_libre() then
+    insert into _pruebas values (102, 'el MX007 de la apertura: la corrida entera, el bloque, el motivo sin cambios, el proveedor', v_esp,
+                                 'omitida: la apertura ya tiene su asiento (o está cerrada)', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c4_montar();
+    perform pg_temp.c4_balanza_qb(v_d1);
+    perform fn_apertura(v_ap.desde, v_d1);
+    perform fn_apertura_mapeo_qb('Undeposited Funds', '1030');
+    begin
+      perform fn_apertura(v_ap.desde, v_d1);
+      v_x := 'posteada';
+    exception when others then
+      v_x := sqlstate || ':' || case when sqlerrm like '%deshace la corrida ENTERA%'
+                                          and sqlerrm like '%select fn_apertura_mapeo_qb(''Undeposited Funds'', ''1030''); select fn_apertura(%'
+                                     then 'corrida+bloque' else left(sqlerrm, 300) end;
+    end;
+    v_obt := 'mapeo=' || v_x;
+    perform fn_apertura_mapeo_qb('Undeposited Funds', '1010');
+    begin
+      perform fn_apertura(v_ap.desde, v_d1, 'c4-pruebas: el mapeo ya estaba bien');
+      v_x := 'sin error';
+    exception when others then
+      v_x := sqlstate || ':' || case when sqlerrm like '%con el motivo no hay nada que rehacer%deshizo la corrida entera%'
+                                     then 'nada_que_rehacer' else left(sqlerrm, 300) end;
+    end;
+    v_obt := v_obt || ' motivo_sin_cambios=' || v_x;
+    perform pg_temp.c4_balanza_qb(v_d2, true, jsonb_build_array(
+      jsonb_build_object('cuenta_qb', 'Accounts Payable', 'haber', '100.00', 'proveedor_qb', 'C4 Pruebas Supply Inc'),
+      jsonb_build_object('cuenta_qb', 'Retained Earnings', 'debe', '100.00')));
+    begin
+      perform fn_apertura(v_ap.desde, v_d2);
+      v_x := 'posteada';
+    exception when others then
+      v_x := sqlstate || ':' || case when sqlerrm like '%2010%C4 PRUEBAS SUPPLY: -2500.00 → -2600.00%'
+                                     then 'proveedor_por_nombre' else left(sqlerrm, 300) end;
+    end;
+    v_obt := v_obt || ' otra_balanza=' || v_x;
+    v_r1 := fn_apertura(v_ap.desde, v_d2, 'c4-pruebas: QuickBooks corrigió al proveedor');
+    v_r2 := fn_apertura(v_ap.desde, v_d2, 'c4-pruebas: QuickBooks corrigió al proveedor');
+    v_obt := v_obt || ' mismo_motivo=' || (v_r1->>'accion') || '/' || (v_r2->>'accion');
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (102, 'el MX007 de la apertura: la corrida entera, el bloque, el motivo sin cambios, el proveedor', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 103. c2 Y c3 AL DÍA: con la marca de un c2 anterior (fn_libro_version más
+--      vieja) o una policy de c3 de la forma vieja (es_dueno() por fila, en
+--      cobros), «protecciones de c4» sale en rojo y dice qué volver a pegar.
+--      Antes el pegado decía que c2 y c3 «funcionan igual sin volver a
+--      pegarlos», y nada lo miraba. (Con lock_timeout de 2 s.)
+do $$
+declare
+  v_obt text := '';
+  v_esp text := 'hoy=t c2_viejo=f:c2-libro.sql c3_policy=f:c3-puentes.sql';
+  v_mes text := nullif(current_setting('mx4.mes', true), '');
+  v_k   text;
+  v_x   text;
+begin
+  if v_mes is null or to_regclass('public.cobros') is null then
+    insert into _pruebas values (103, 'c2 y c3 al día: una versión vieja o una policy vieja salen en rojo', v_esp,
+                                 'omitida: falta el mes abierto o c3', null);
+    return;
+  end if;
+  foreach v_k in array array['hoy', 'c2_viejo', 'c3_policy'] loop
+    begin
+      perform set_config('lock_timeout', '2s', true);
+      if v_k = 'c2_viejo' then
+        execute $f$create or replace function public.fn_libro_version() returns bigint language sql immutable
+                   set search_path = public, pg_temp as 'select 2026010101::bigint'$f$;
+      elsif v_k = 'c3_policy' then
+        execute 'alter policy cobros_dueno on public.cobros using (es_dueno())';
+      end if;
+      select case when c.ok then 't'
+                  when v_k = 'c2_viejo' and c.detalle like '%fn_libro_version() es de una versión anterior%vuelve a pegar c2-libro.sql%'
+                    then 'f:c2-libro.sql'
+                  when v_k = 'c3_policy' and c.detalle like '%cobros lee con su policy de la forma vieja%vuelve a pegar c3-puentes.sql%'
+                    then 'f:c3-puentes.sql'
+                  else 'f:' || left(c.detalle, 150) end
+        into v_x
+        from fn_estados_control(v_mes, array['v_estados_mapeo']) c where c.vista = 'cuadre: protecciones de c4';
+      raise exception using errcode = 'MXT00';
+    exception
+      when sqlstate 'MXT00' then null;
+      when lock_not_available then v_x := 'omitida';
+      when others then v_x := sqlstate || ' ' || left(sqlerrm, 60);
+    end;
+    v_obt := concat_ws(' ', nullif(v_obt, ''), v_k || '=' || coalesce(v_x, '-'));
+  end loop;
+  insert into _pruebas values (103, 'c2 y c3 al día: una versión vieja o una policy vieja salen en rojo', v_esp, v_obt,
+                               case when v_obt like '%omitida%' then null else v_obt = v_esp end);
+end $$;
+
+-- 104. EL COMPLEMENTO POR OBRA Y LA CARGA EQUIVOCADA: con la balanza del mes
+--      cargada (A), el «Profit and Loss by Customer» cargado como 'por_obra'
+--      (P) no la desplaza ni avisa: v_comparacion sigue con A y
+--      v_comparacion_obra usa P; otra balanza del mes (B) sí desplaza a A, y
+--      lo avisa; retirada con su motivo, vuelve a valer A (B queda como
+--      rastro, retirada), y el control cuenta las filas de las dos vigentes
+--      (A y P). Antes P pasaba a ser «la vigente» (todas las cuentas de
+--      balance en rojo) y una carga equivocada no se podía deshacer.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'por_obra=sin_aviso comparacion=A obra=por_obra otra=aviso:A retirada=A:t control=t';
+  v_mes text := nullif(current_setting('mx4.mes', true), '');
+  v_a   text := nullif(current_setting('mx4.obra', true), '');
+  v_p   jsonb;
+  v_b   jsonb;
+  v_da  text := 'docs/c4-pruebas/qb-104-a.csv';
+  v_dp  text := 'docs/c4-pruebas/qb-104-p.csv';
+  v_db  text := 'docs/c4-pruebas/qb-104-b.csv';
+  v_c1  text;
+  v_o   text;
+  v_c2  text;
+  v_ret text;
+  v_ctl text;
+begin
+  if v_mes is null or v_a is null then
+    insert into _pruebas values (104, 'el complemento por obra no desplaza a la balanza del mes; una carga equivocada se retira', v_esp,
+                                 'omitida: falta el mes abierto o una obra', null);
+    return;
+  end if;
+  begin
+    perform fn_apertura_mapeo_qb('QB c4-104 banco', fn_puente_cuenta_de('banco'));
+    perform fn_apertura_mapeo_qb('QB c4-104 otros', '4900');
+    perform fn_apertura_mapeo_trabajo('C4 Pruebas 104:Obra', v_a);
+    perform fn_comparacion_qb_cargar(v_mes, v_da, '[{"cuenta_qb": "QB c4-104 banco", "saldo": "100.00"}]');
+    v_p := fn_comparacion_qb_cargar(v_mes, v_dp, '[{"cuenta_qb": "QB c4-104 otros", "cliente_trabajo": "C4 Pruebas 104:Obra", "saldo": "-50.00"}]',
+                                    false, null, 'por_obra');
+    select min(c.documento) into v_c1 from v_comparacion c where c.periodo = v_mes;
+    select string_agg(distinct c.bajar->'qb'->0->'filtros'->>'tipo', ',') into v_o
+      from v_comparacion_obra c where c.periodo = v_mes and c.cuenta = '4900' and c.proyecto_id = v_a;
+    v_b := fn_comparacion_qb_cargar(v_mes, v_db, '[{"cuenta_qb": "QB c4-104 banco", "saldo": "120.00"}]');
+    perform fn_comparacion_qb_retirar(v_mes, v_db, 'c4-pruebas: era la de otro mes');
+    select min(c.documento) into v_c2 from v_comparacion c where c.periodo = v_mes;
+    select case when bool_and(b.retirada) and not bool_or(b.vigente) then 't' else 'f' end into v_ret
+      from v_qb_balanzas b where b.periodo = v_mes and b.documento = v_db;
+    select case when c.ok then 't' else 'f:' || coalesce(c.detalle, '') end into v_ctl
+      from fn_estados_control(v_mes, array['v_qb_balanzas']) c where c.vista = 'v_qb_balanzas';
+    v_obt := format('por_obra=%s comparacion=%s obra=%s otra=%s retirada=%s:%s control=%s',
+                    case when v_p ? 'aviso' or v_p ? 'desplaza' then 'aviso' else 'sin_aviso' end,
+                    case v_c1 when v_da then 'A' when v_dp then 'P' else coalesce(v_c1, '-') end,
+                    coalesce(v_o, '-'),
+                    case when v_b->>'desplaza' = v_da and v_b->>'aviso' like '%desplaza%' || v_da || '%' then 'aviso:A'
+                         else coalesce(v_b->>'aviso', 'sin_aviso') end,
+                    case v_c2 when v_da then 'A' when v_db then 'B' else coalesce(v_c2, '-') end, v_ret, v_ctl);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (104, 'el complemento por obra no desplaza a la balanza del mes; una carga equivocada se retira', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 105. LA APERTURA CERRADA Y CORREGIDA CON UN AJUSTE DEL CPA AMARRA EN SU
+--      COMPARACIÓN: con la apertura cerrada, lo que faltaba (100 que
+--      QuickBooks corrigió en septiembre: un depósito) se corrige con un
+--      ajuste a la apertura; cargada la balanza corregida de QuickBooks al
+--      30-sep (la preliminar, sin p_con_posteriores), v_comparacion de la
+--      apertura cuenta ese ajuste como posterior y queda sin nada sin
+--      explicar. Antes la apertura no amarraba nunca: el ajuste no era del
+--      30-sep. (Cierra la apertura: toma antes los candados.)
+do $$
+declare
+  v_obt text;
+  v_esp text := 'posteriores=1010:100.00,3900:-100.00 sin_explicar=0';
+  v_ap  periodos;
+  v_d   date := nullif(current_setting('mx4.desde', true), '')::date;
+  v_doc text := 'docs/c4-pruebas/qb-apertura-105.csv';
+begin
+  select * into v_ap from periodos p where p.tipo = 'apertura' order by p.desde limit 1;
+  if not pg_temp.c4_apertura_libre() or v_d is null then
+    insert into _pruebas values (105, 'la apertura cerrada y corregida con un ajuste del CPA amarra en su comparación', v_esp,
+                                 'omitida: la apertura ya tiene su asiento (o está cerrada), o falta el mes', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c4_candados_recibos();
+    lock table public.periodos in exclusive mode;
+    perform pg_temp.c4_montar();
+    perform pg_temp.c4_balanza_qb(v_doc);
+    perform fn_apertura(v_ap.desde, v_doc);
+    perform pg_temp.c4_cerrar_hasta(v_ap.periodo);
+    perform pg_temp.c4_fingir_hoy(v_d + 5);
+    perform fn_postear(jsonb_build_object('tipo', 'ajuste_cpa', 'afecta_periodo', v_ap.periodo, 'fecha', (v_d + 2)::text,
+      'motivo', 'c4-pruebas: el depósito que QuickBooks corrigió en septiembre', 'descripcion', 'c4-pruebas: ajuste a la apertura',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '1010', 'monto', '100.00'),
+                                  jsonb_build_object('cuenta', '3900', 'monto', '-100.00'))));
+    perform pg_temp.c4_qb_del_libro(v_ap.periodo, 'docs/c4-pruebas/qb-105-corregida.csv', '{"1010": 100, "3900": -100}');
+    select format('posteriores=%s sin_explicar=%s',
+      (select string_agg(c.cuenta || ':' || c.posteriores, ',' order by c.cuenta) from v_comparacion c
+        where c.periodo = v_ap.periodo and c.posteriores <> 0),
+      (select count(*) from v_comparacion c where c.periodo = v_ap.periodo and not c.ok))
+      into v_obt;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (105, 'la apertura cerrada y corregida con un ajuste del CPA amarra en su comparación', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 106. LA AMEX 1007 ES LA 2100-2013: mapear «Credit Cards:Amex 1007» a una
+--      2100-1007 que no existe para (MX004) y dice cuál es: la 2100-2013,
+--      cuyas notas dicen que QuickBooks la nombra 1007, con el select para
+--      mapearla; no manda a crear otra tarjeta en c1. Antes decía «añádela
+--      antes en c1» (y las pruebas la creaban).
+do $$
+declare
+  v_obt text;
+  v_esp text := 'MX004:2100-2013+select';
+begin
+  begin
+    perform fn_apertura_mapeo_qb('Credit Cards:Amex 1007', '2100-1007');
+    v_obt := 'mapeada';
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then
+      v_obt := sqlstate || ':' || case when sqlerrm like '%¿Es la 2100-2013?%'
+                                            and sqlerrm like '%select fn_apertura_mapeo_qb(''Credit Cards:Amex 1007'', ''2100-2013'');%'
+                                            and sqlerrm not like '%añádela antes en c1%'
+                                       then '2100-2013+select' else left(sqlerrm, 200) end;
+  end;
+  insert into _pruebas values (106, 'la Amex 1007 de QuickBooks es la 2100-2013: el mapeo lo dice', v_esp, coalesce(v_obt, '-'),
+                               coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 107. EN LAS FILAS DE CONTROL, «saldo» ES LA CIFRA COMO LA PRESENTA
+--      QUICKBOOKS: cargadas con saldo, todas en positivo (Net Income 38,050,
+--      TOTAL ASSETS 56,900, Total Liabilities 3,750, Total Stockholders'
+--      Equity 53,150 y TOTAL LIABILITIES AND EQUITY 56,900), la apertura
+--      amarra; y un Net Income dado en el debe (el signo al revés) para
+--      (MX001) diciendo que es el signo de esa fila, no el mapeo. Antes el
+--      Net Income dado como saldo entraba como pérdida, y MX001 culpaba al
+--      mapeo.
+do $$
+declare
+  v_obt  text;
+  v_esp  text := 'saldo=amarra:38050.00:56900.00:3750.00:53150.00:56900.00 al_reves=MX001:signo_net_income';
+  v_plan jsonb;
+  v_x    text;
+begin
+  if not pg_temp.c4_apertura_libre() then
+    insert into _pruebas values (107, 'en las filas de control, saldo es la cifra como la presenta QuickBooks (y el signo al revés)',
+                                 v_esp, 'omitida: la apertura ya tiene su asiento (o está cerrada)', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c4_montar();
+    perform pg_temp.c4_balanza_qb('docs/c4-pruebas/qb-apertura-107-mapeo.csv');
+    perform pg_temp.c4_balanza_qb('docs/c4-pruebas/qb-apertura-107.csv', false, jsonb_build_array(
+      jsonb_build_object('cuenta_qb', 'Net Income', 'saldo', '38,050.00'),
+      jsonb_build_object('cuenta_qb', 'TOTAL ASSETS', 'saldo', '56,900.00'),
+      jsonb_build_object('cuenta_qb', 'Total Liabilities', 'saldo', '3,750.00'),
+      jsonb_build_object('cuenta_qb', 'Total Stockholders'' Equity', 'saldo', '53,150.00'),
+      jsonb_build_object('cuenta_qb', 'TOTAL LIABILITIES AND EQUITY', 'saldo', '56,900.00')));
+    begin
+      v_plan := fn_apertura_plan('docs/c4-pruebas/qb-apertura-107.csv');
+      v_obt := 'saldo=amarra:' || concat_ws(':', v_plan->'control_qb'->>'utilidad', v_plan->'control_qb'->>'activo',
+                                            v_plan->'control_qb'->>'pasivo', v_plan->'control_qb'->>'capital',
+                                            v_plan->'control_qb'->>'pasivo_capital');
+    exception when others then
+      v_obt := 'saldo=' || sqlstate || ':' || left(sqlerrm, 200);
+    end;
+    perform pg_temp.c4_balanza_qb('docs/c4-pruebas/qb-apertura-107b.csv', false, jsonb_build_array(
+      jsonb_build_object('cuenta_qb', 'Net Income', 'debe', '38,050.00'),
+      jsonb_build_object('cuenta_qb', 'TOTAL ASSETS', 'debe', '56,900.00'),
+      jsonb_build_object('cuenta_qb', 'Total Liabilities', 'haber', '3,750.00')));
+    begin
+      perform fn_apertura_plan('docs/c4-pruebas/qb-apertura-107b.csv');
+      v_x := 'amarra';
+    exception when others then
+      v_x := sqlstate || ':' || case when sqlerrm like '%justo lo contrario que el mapeo en «Net Income»%el signo de esa fila de control%'
+                                     then 'signo_net_income' else left(sqlerrm, 300) end;
+    end;
+    v_obt := v_obt || ' al_reves=' || v_x;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (107, 'en las filas de control, saldo es la cifra como la presenta QuickBooks (y el signo al revés)',
+                               v_esp, coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 108. ANOTAR DOS VECES LA MISMA DIFERENCIA NO LA DUPLICA: la segunda
+--      devuelve el mismo id y en la tabla queda una; otra con otro monto sí
+--      entra. Antes la segunda entraba, y la cuenta quedaba en rojo por lo
+--      explicado de más.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'mismo_id=t filas=1 otra=nueva';
+  v_mes text := nullif(current_setting('mx4.mes', true), '');
+  v_i1  uuid;
+  v_i2  uuid;
+  v_i3  uuid;
+begin
+  if v_mes is null then
+    insert into _pruebas values (108, 'anotar dos veces la misma diferencia no la duplica', v_esp, 'omitida: falta el mes abierto', null);
+    return;
+  end if;
+  begin
+    v_i1 := fn_diferencia_anotar(v_mes, '6100', '25.00', 'puente', 'c4-pruebas: la renta que QuickBooks tiene en otro mes');
+    v_i2 := fn_diferencia_anotar(v_mes, '6100', '25.00', 'puente', 'c4-pruebas: la renta que QuickBooks tiene en otro mes');
+    v_i3 := fn_diferencia_anotar(v_mes, '6100', '30.00', 'puente', 'c4-pruebas: la renta que QuickBooks tiene en otro mes');
+    v_obt := format('mismo_id=%s filas=%s otra=%s', case when v_i1 = v_i2 then 't' else 'f' end,
+                    (select count(*) from diferencias d
+                      where d.periodo = v_mes and d.cuenta = '6100' and d.monto = 25.00
+                        and d.explicacion = 'c4-pruebas: la renta que QuickBooks tiene en otro mes'),
+                    case when v_i3 is distinct from v_i1 then 'nueva' else 'misma' end);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (108, 'anotar dos veces la misma diferencia no la duplica', v_esp, coalesce(v_obt, '-'),
+                               coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 109. MAINTAIN TAMBIÉN SE VE (Postgres 17): con «grant maintain» sobre una
+--      tabla de c4 a authenticated (el «grant all» de Supabase lo incluye en
+--      17: VACUUM FULL, REINDEX, CLUSTER desde la API), «protecciones de c4»
+--      sale en rojo y lo dice. Antes miraba una lista fija de privilegios,
+--      sin MAINTAIN. En Postgres 16 no existe: omitida. (Con lock_timeout
+--      de 2 s.)
+do $$
+declare
+  v_obt text;
+  v_esp text := 'maintain=f:estados_mapeo:MAINTAIN';
+  v_mes text := nullif(current_setting('mx4.mes', true), '');
+begin
+  if current_setting('server_version_num')::int < 170000 or v_mes is null then
+    insert into _pruebas values (109, 'el privilegio MAINTAIN (Postgres 17) sobre una tabla de c4 sale en rojo', v_esp,
+                                 'omitida: MAINTAIN es de Postgres 17 (o falta el mes abierto)', null);
+    return;
+  end if;
+  begin
+    perform set_config('lock_timeout', '2s', true);
+    execute 'grant maintain on public.estados_mapeo to authenticated';
+    select 'maintain=' || case when c.ok then 't'
+                               when c.detalle like '%tabla estados_mapeo: authenticated puede MAINTAIN%' then 'f:estados_mapeo:MAINTAIN'
+                               else 'f:' || left(c.detalle, 150) end
+      into v_obt
+      from fn_estados_control(v_mes, array['v_estados_mapeo']) c where c.vista = 'cuadre: protecciones de c4';
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when lock_not_available then v_obt := 'omitida';
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (109, 'el privilegio MAINTAIN (Postgres 17) sobre una tabla de c4 sale en rojo', v_esp,
+                               coalesce(v_obt, '-'), case when v_obt = 'omitida' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 110. NO DEJA RASTRO: todo lo de arriba se deshizo. El libro, los papeles,
+--      las tablas de c4 y su historial, las reglas, los contadores, las
+--      secuencias de la app, las huellas y la definición de cada vista y
+--      función de c4 están como al empezar. Va la última.
 do $$
 declare
   v_antes text := current_setting('mx4.foto', true);
   v_ahora text;
 begin
   v_ahora := pg_temp.c4_foto();
-  insert into _pruebas values (89, 'no deja rastro: todo como al empezar', v_antes, v_ahora, v_ahora = v_antes);
+  insert into _pruebas values (110, 'no deja rastro: todo como al empezar', v_antes, v_ahora, v_ahora = v_antes);
 end $$;
 
 reset jit;

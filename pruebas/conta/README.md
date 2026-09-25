@@ -18,8 +18,8 @@ de que Edgar los pegue. **Nunca** se conecta a `*.supabase.co`.
 | `03-storage-simulacro.sql` | Un Storage mínimo (`storage.objects` con RLS y las policies de hoy según ESQUEMA-REAL). **Solo del banco**: con él, la prueba 45 de `c3-pruebas.sql` (el papel no se borra) corre de verdad; sin él sale «omitida». Se pasa ANTES de c3. |
 | `c3-concurrencia.sh` | Lo que `c3-pruebas.sql` no puede probar en una sola sesión: el mismo recibo corregido desde dos teléfonos, el backfill mientras alguien guarda, diez recibos a la vez, dos backfills a la vez, dos cobros a la vez a la misma factura (también con su número escrito de otra forma: « 951», «+951»), un cobro mientras se anula la factura, dos anticipos a la vez y dos lecturas del mismo ticket que confirman juntas (entra una; la otra espera como duplicado). Cada sesión confirma (los puentes son diferidos). Sus recibos llevan `creado` de octubre: el reloj del banco es de antes del corte, y un recibo subido antes del corte no entra al libro. |
 | `c3-pegado.sh` | Lo que pasa al VOLVER a pegar c3-puentes.sql con las reglas ya tocadas por Edgar: dos pegados seguidos, y otro después de retirar una cuenta que un valor de arranque usaba (la 5600, con su regla ya en la 5500) y de darle a un papel la cuenta que otro tenía de arranque. No se cae, y lo que Edgar puso se queda. Y una base que ya tenía dos recibos con la misma foto antes de c3: anulado el repetido, el siguiente pegado crea `recibos_ruta_unica`, y con él dos subidas a la vez con la misma foto dejan entrar una. |
-| `c4-volumen.sh` | Los estados y el tablero con un libro de verdad: la apertura por su balanza y 15 meses hechos **por los puentes** (facturas y cobros parciales, tickets con dos tarjetas, recibos a cuenta y su pago con partida, trabajos externos, la nómina semanal con retenciones, statements repartidos entre obras, gastos del banco y el pago de las tarjetas; 666 por mes ≈ 10.000 asientos, un año largo). Lee cada vista como la lee conta.js por PostgREST (`json_agg` de `select *`, el dueño, `authenticated` con los ajustes de ese rol que PostgREST aplica —el `jit = off` de c4— y el tope de 8 s de la API; cada vista con tope de 2 s) y `fn_estados_control` como cada pantalla (tope de 8 s), y falla si alguna pasa su tope o sale algo en rojo. Después corre `c4-pruebas.sql` y `c3-pruebas.sql` enteros sobre ese libro **mientras cuatro «teléfonos» suben un ticket cada 0,25 s y el Panel lee los bancos**, y otra vez c4-pruebas con los meses de 2026 ya cerrados (el estado de 2027): falla si alguna subida o lectura se corta por el tope de 8 s, o espera 8 s o más. Imprime la tabla de tiempos (la de la cabecera de `c4-estados.sql`). `./c4-volumen.sh [bd] [por_mes]` (200 ≈ 3.000 asientos); con `CONSERVAR=1` deja la base para mirarla. Tarda unos 10 minutos. |
-| `c4-concurrencia.sh` | Lo que `c4-pruebas.sql` no puede probar en una sola sesión: la carga de la balanza de apertura y `fn_apertura` en dos sesiones a la vez (una espera a la otra por su candado: la recarga de una balanza que se está posteando la para su guarda, MX003, y el asiento y su papel dicen lo mismo), y dos `fn_apertura` a la vez con la misma balanza (una sola apertura viva). |
+| `c4-volumen.sh` | Los estados y el tablero con un libro de verdad: la apertura por su balanza y 15 meses hechos **por los puentes** (facturas y cobros parciales, tickets con dos tarjetas, recibos a cuenta y su pago con partida, trabajos externos, la nómina semanal con retenciones, statements repartidos entre obras, gastos del banco y el pago de las tarjetas; 666 por mes ≈ 10.000 asientos, un año largo), con depósitos de verdad que se parecen a los cobros de las pruebas y «hoy» fingido al 20-dic-2027 (solo la hora de ahora cae ese día: cualquier otra fecha es la suya). Lee cada vista como la lee conta.js por PostgREST (`json_agg` de `select *`, el dueño, `authenticated` con los ajustes de ese rol que PostgREST aplica —el `jit = off` de c4— y el tope de 8 s de la API; cada vista con tope de 2 s) y `fn_estados_control` como cada pantalla (tope de 8 s), y falla si alguna pasa su tope o sale algo en rojo. Después corre `c4-pruebas.sql` y `c3-pruebas.sql` enteros sobre ese libro **mientras cuatro «teléfonos» suben un ticket cada 0,25 s y el Panel lee los bancos**, y otra vez c4-pruebas con los meses de 2026 ya cerrados y un ajuste del CPA a diciembre fechado en febrero (el estado de 2027): falla si alguna subida o lectura se corta por el tope de 8 s, espera 8 s o más, o si un ticket subido se queda sin su asiento (en la bandeja porque una prueba le cruzó los candados). También el control con TODAS las vistas como desde el SQL Editor (tope de 60 s) y **vuelve a pegar `c4-estados.sql` sobre el libro lleno**: lo que tarda y lo que tarda su resumen corto del final (tope de 2 s: es lo que el pegado tiene tomadas las vistas al terminar). Imprime la tabla de tiempos (la de la cabecera de `c4-estados.sql`). `./c4-volumen.sh [bd] [por_mes]` (200 ≈ 3.000 asientos; 1332 ≈ 20.000); con `CONSERVAR=1` deja la base para mirarla. Tarda unos 10 minutos. |
+| `c4-concurrencia.sh` | Lo que `c4-pruebas.sql` no puede probar en una sola sesión: la carga de la balanza de apertura y `fn_apertura` en dos sesiones a la vez (una espera a la otra por su candado: la recarga de una balanza que se está posteando la para su guarda, MX003, y el asiento y su papel dicen lo mismo), y dos `fn_apertura` a la vez con la misma balanza (una sola apertura viva). Y **volver a pegar c4 con el tablero leyendo** (una lectura larga del dueño, el pegado medio segundo después y otra lectura mientras espera): el pegado se rinde con 55P03 en menos de 3 s, nadie muere por 40P01, las dos lecturas terminan con sus cifras, y pegado otra vez sin nadie leyendo entra. |
 | `c3-volumen.sh` | Lo que pasa con MUCHOS papeles: 3.000 recibos en el libro (un año largo de la cuadrilla), 1.200 facturas, 1.100 cobros y 600 trabajos externos, y la app pidiendo «reintentar puente» (`fn_puentes_correr`) y los controles (`fn_puentes_verificar`) como `authenticated`, con el tope de la API de Supabase (`statement_timeout` de 8 s): terminan, y lo que no cambió (recibos, facturas, cobros, trabajos externos) no se vuelve a planear. Imprime cuánto tardó cada cosa. `./c3-volumen.sh [bd] [recibos]`. |
 | `generar-tablas.py`, `esquema-columnas-23sep.json` | Para regenerar las tablas de 01 si se vuelve a leer el esquema. |
 
@@ -41,12 +41,12 @@ comprobando si algo ya estaba.
 | 1 | `docs/conta/c1-plan-de-cuentas.sql` | Una tabla con el plan de cuentas: **88 filas** (`codigo`, `nombre`, `tipo`, `saldo`, `imputable`, `activa`, `obra`, `cost_code`, `etiqueta_fiscal`), de la 1000 a la 9000. |
 | 2 | `docs/conta/c2-libro.sql` | Los **10 controles** del libro (`fn_verificar_cadena`), **todos con `ok = true`**: `hash`, `enlace`, `numeracion`, `contadores`, `cuadre`, `reversos`, `periodos`, `triggers`, `cuentas` (dice `"cuentas": 88`) y `permisos`. Uno en `false` = parar y avisar. |
 | 3 | `docs/conta/c3-puentes.sql` | **23 filas**: los 10 `libro · …` y 13 `puentes · …`. Todas en `true` **salvo `puentes · sin_evaluar`**, que la primera vez sale en `false` con la lista de papeles que el puente todavía no miró y `"arreglo": "select fn_puentes_correr();"`. Es lo esperado. `puentes · reglas` sale en `true` y dice cuántas reglas siguen en borrador (`en_borrador`): esas no postean hasta que Edgar las confirme. `puentes · papel` en producción sí mira Storage (en el banco dice «no aplica»). |
-| 4 | `docs/conta/c4-estados.sql` | **45 filas**. Las seis primeras: `c4 · vistas` («28 vistas, todas security_invoker…»), `c4 · mapeo` («88 cuentas con su fila; sin fila: ninguna»), `c4 · apertura`, `c4 · jit` («el JIT está apagado para authenticated…»), `libro · triggers` y `libro · permisos`, todas en `true` **salvo `c4 · apertura`**, que sale en `false` con «todavía no: carga la balanza…» hasta que se postee la apertura (abajo, «Después de c4: la apertura y lo que se ve»). Es lo esperado. (`c4 · jit` en `false`: el pegado no pudo apagar el JIT para la app; su detalle trae la sentencia, que se pega como dueño.) Después, 39 filas `estados <período> · …` (el último mes con asientos, o la apertura si no hay): las 25 vistas con cuántas filas dieron («N filas») y los 14 cuadres («cuadra»; los últimos, «protecciones de c4», «efectivo del flujo = efectivo del balance» y «apertura en el libro»), **todas en `true` salvo «apertura en el libro»**, que hasta que se postee la apertura sale en `false` con «no hay apertura en el libro…» (lo esperado, como `c4 · apertura`). Una en `false` fuera de esas dos = parar y avisar. Si al pegarlo sale **MX000** con una lista de «vistas o funciones ajenas»: hay algo construido encima de las vistas de c4 que el pegado borraría; no se pegó nada, avisa. |
+| 4 | `docs/conta/c4-estados.sql` | **9 filas**, cortas a propósito. Cinco `c4 · …`: `vistas` («28 vistas, todas security_invoker…»), `mapeo` («88 cuentas con su fila; sin fila: ninguna»), `apertura`, `jit` («el JIT está apagado para authenticated…») y `c2 y c3 al día` («c2-libro.sql y c3-puentes.sql son de la versión que c4 necesita…»). Y cuatro `estados <período> · …` (el último mes con asientos, o la apertura si no hay): `v_estados_mapeo` («88 filas») y los tres cuadres que mira siempre: `mapeo completo`, `protecciones de c4` y `apertura en el libro`. Todas en `true` **salvo `c4 · apertura` y «apertura en el libro»**, que salen en `false` («todavía no: carga la balanza…», «no hay apertura en el libro…») hasta que se postee la apertura (abajo, «Después de c4: la apertura y lo que se ve»). Es lo esperado. (`c4 · jit` en `false`: el pegado no pudo apagar el JIT para la app; su detalle trae la sentencia, que se pega como dueño. `c4 · c2 y c3 al día` en `false`: dice qué volver a pegar, c2 y después c3.) Una en `false` fuera de esas = parar y avisar. Si al pegarlo sale **MX000** con una lista de «vistas o funciones ajenas»: hay algo construido encima de las vistas de c4 que el pegado borraría; no se pegó nada, avisa. Si sale **55P03** («canceling statement due to lock timeout»): el tablero estaba leyendo; no se pegó nada: **cierra el tablero y vuelve a pegarlo**. Después, en otra pestaña, el control entero: `select * from fn_verificar_cadena();` (los 10 en `true`: c4 no toca el libro) y `select * from fn_estados_control('<el último mes>');` (todo en `true`, salvo «apertura en el libro» hasta la apertura). |
 | 5 | Una línea: `select fn_puentes_correr();` | Un solo valor (jsonb) con `"desde": "2026-10-01"`, cuántos papeles quedaron en cada estado (`contabilizado`, `pendiente`, `espera`, `no_aplica`…) y **`"errores": 0`**. |
 | 6 | Una línea: `select * from fn_puentes_verificar();` | Los **13 controles** de los puentes, **todos en `true`** (ahora también `sin_evaluar`). `bandeja` dice cuántos papeles esperan a Edgar; solo se pone en rojo si el libro rechazó alguno. |
-| 7 | `docs/conta/c2-pruebas.sql` | La tabla `_pruebas`: **79 filas**, todas con `ok = true`. (Con la apertura de verdad ya en el libro, la **61** sale «omitida»: no es un fallo.) |
-| 8 | `docs/conta/c3-pruebas.sql` | La tabla `_pruebas`: **117 filas**, todas con `ok = true` salvo la **45**, que en producción sale «omitida» (Supabase no deja borrar de Storage por SQL; se prueba en el banco). Si no hay ningún perfil activo que no sea el dueño, las pruebas «del equipo» salen con `ok` vacío (`null`) y `obtenido` = «omitida…»: no es un fallo. |
-| 9 | `docs/conta/c4-pruebas.sql` | La tabla `_pruebas`: **89 filas**, todas con `ok = true`. **Córrelas recién pegado c4 y ANTES de postear la apertura de verdad**: con ella ya en el libro, las **29 a 36, 50, 51, 53, 56, 61, 62, 69, 73, 76, 81, 84 y 86** (las que postean una apertura de prueba) salen «omitida», y no es un fallo. Sin nadie del equipo activo, la **2** y la **38** salen «omitida»; la 38, 55, 56, 57, 58, 64, 77, 79, 80 y 82 también si la app estaba usando justo lo que tocan (esperan 2 s y se saltan). La **88** en rojo = el JIT sigue encendido para la app (ver el paso 4). Tardan unos 35 s (con el libro lleno, algo más de un minuto). |
+| 7 | `docs/conta/c2-pruebas.sql` | La tabla `_pruebas`: **80 filas**, todas con `ok = true`. (Con la apertura de verdad ya en el libro, la **61** sale «omitida»: no es un fallo.) |
+| 8 | `docs/conta/c3-pruebas.sql` | La tabla `_pruebas`: **118 filas**, todas con `ok = true` salvo la **45**, que en producción sale «omitida» (Supabase no deja borrar de Storage por SQL; se prueba en el banco). Si no hay ningún perfil activo que no sea el dueño, las pruebas «del equipo» salen con `ok` vacío (`null`) y `obtenido` = «omitida…»: no es un fallo. |
+| 9 | `docs/conta/c4-pruebas.sql` | La tabla `_pruebas`: **110 filas**, todas con `ok = true`. **Córrelas recién pegado c4 y ANTES de postear la apertura de verdad**: con ella ya en el libro, las **29 a 36, 50, 51, 53, 56, 61, 62, 69, 73, 76, 81, 84, 86, 91, 93, 94, 98, 102, 105 y 107** (las que postean una apertura de prueba) salen «omitida», y no es un fallo. Sin nadie del equipo activo, la **2** y la **38** salen «omitida»; la 38, 55, 56, 57, 58, 64, 77, 79, 80, 82, 89, 101, 103 y 109 también si la app estaba usando justo lo que tocan (esperan 2 s y se saltan). La **109** (el privilegio MAINTAIN) es de Postgres 17: en producción corre; en el banco con 16 sale «omitida». La **88** en rojo = el JIT sigue encendido para la app (ver el paso 4). Tardan unos 40 s (con el libro lleno, cerca de dos minutos). |
 
 - **El orden importa**: c2 necesita c1; c3 necesita c1 y c2; c4 necesita
   los tres. Las pruebas (7, 8 y 9) van siempre después de los cuatro: c2 y
@@ -55,32 +55,54 @@ comprobando si algo ya estaba.
   3) antes de c4.** Cambió la forma de sus policies de lectura del dueño
   (`using ((select es_dueno()))`: Postgres pregunta una vez por consulta
   quién es, no una por fila). No tocan el libro ni lo que Edgar configuró;
-  con 10.000 asientos el control del Panel baja de 6.4 s a 2.4 s. Sin
-  volver a pegarlos todo funciona, más lento.
+  con 10.000 asientos el control del Panel baja de 6.4 s a 2.4 s. Y traen
+  arreglos de verdad (en la cuarta ronda de c4: el control «permisos» de
+  c2 ve la función SECURITY DEFINER ajena que lee el libro con un join de
+  coma o un comentario en medio; c3 ya no dice «está dos veces» de una
+  factura que la apertura trae con más por cobrar que su monto) y la
+  MARCA de su versión (`fn_libro_version`, `fn_puente_version`). Sin
+  volverlos a pegar NO basta: c2-pruebas y c3-pruebas salen en rojo, y c4
+  lo dice (`c4 · c2 y c3 al día` en `false` al pegarlo, y «protecciones
+  de c4» en rojo en cada control, con qué volver a pegar).
+- **Pega c4 con el tablero cerrado.** El pegado rehace las vistas y las
+  toma un instante enteras; con una pantalla leyendo, Postgres cortaba a
+  uno de los dos (40P01, «deadlock detected»). Ahora el pegado espera un
+  candado como mucho medio segundo: si el tablero lo tiene, para con
+  **55P03** («lock timeout»), no se pega nada y no se corta a nadie; se
+  cierra el tablero y se vuelve a pegar (`c4-concurrencia.sh`, vuelta 4).
 - **Las pruebas no dejan rastro**: cada ataque se hace dentro de una
   subtransacción que se deshace a sí misma. No escriben asientos, líneas,
   contadores, cobros, aprobaciones, bandeja ni secuencias (usan ids
   negativos); lo único que queda es la tabla temporal `_pruebas` y unas
   funciones `pg_temp.*` de ayuda, que mueren al cerrarse la sesión del
-  editor. Tardan unos segundos (en el banco: c2 ≈ 1 s, c3 ≈ 4 s, c4 ≈
-  35 s; con el libro lleno, 10.000 asientos: c3 ≈ 2 minutos y c4 algo más
-  de 1 minuto). **Córrelas sin nadie usando la app, mejor de noche**:
+  editor. Tardan unos segundos (en el banco: c2 ≈ 3 s, c3 ≈ 5 s, c4 ≈
+  40 s; con el libro lleno, 10.000 asientos: c3 y c4 cerca de dos
+  minutos cada una). **Córrelas sin nadie usando la app, mejor de noche**:
   mientras una prueba corre tiene tomados el libro (el candado de la
-  cadena de c2) y a veces la tabla `periodos` o `recibos`, y una subida de
-  recibo espera. Con 10.000 asientos ninguna subtransacción de c4 lo tiene
-  más de 2 o 3 s, y ninguna de c3 más de unos 7 s (la 39 y la 114, que
-  barren el libro entero); medido con `c4-volumen.sh`, con cuatro
-  teléfonos subiendo tickets: ninguna subida cortada. (Antes de la ronda 3
-  de c4, c3-pruebas con el libro lleno tardaba 5 o 6 minutos, con pruebas
-  de hasta 31 s, y se cortaban subidas.) La 38, 55, 56, 57, 58, 64, 77,
-  79, 80 y 82 de c4 cambian un instante vistas o tablas de c4 (y se
-  deshacen).
+  cadena de c2), los candados de los recibos y a veces la tabla
+  `periodos` o `recibos`, y una subida de recibo espera. Los pide en el
+  orden de la app (los de los recibos, `periodos` y la cadena), así que
+  la subida espera pero no se cruza con ella: antes, una prueba que ya
+  había posteado pedía después el candado de su recibo, y con un teléfono
+  subiendo a la vez Postgres cortaba a uno de los dos (40P01) y el puente
+  dejaba ese recibo en la bandeja (el de la prueba, que salía en rojo, o
+  el de verdad, sin asiento hasta «reintentar»). Con 10.000 asientos
+  ninguna subtransacción de c4 tiene el libro más de unos 3 s, y ninguna
+  de c3 más de unos 5 s; medido con `c4-volumen.sh`, con cuatro teléfonos
+  subiendo tickets: ninguna subida cortada ni sin su asiento, y la que más
+  esperó, 3,4 s mientras corría c4-pruebas y 6,5 s mientras corría
+  c3-pruebas. (Antes de la ronda 3 de c4, c3-pruebas con el libro lleno
+  tardaba 5 o 6 minutos, con pruebas de hasta 31 s, y se cortaban
+  subidas.) La 38, 55, 56, 57, 58, 64, 77, 79, 80, 82, 89, 101, 103 y 109
+  de c4 cambian un instante vistas, tablas o funciones de c4, del libro o
+  de c3 (y se deshacen).
 - **Si el editor no acepta un archivo tan grande** (`c3-puentes.sql` pesa
-  ≈ 466 KB): se puede pegar en dos partes, desde el principio hasta la línea
+  ≈ 470 KB): se puede pegar en dos partes, desde el principio hasta la línea
   `-- ==== BLOQUE B ====` (sin ella), Run, y desde esa línea hasta el
   final, Run. Lo mismo `c2-libro.sql`. En el banco se prueban así con
-  `archivo.sql:A` y `archivo.sql:B`. `c4-estados.sql` (≈ 474 KB, como c3)
-  va entero.
+  `archivo.sql:A` y `archivo.sql:B`. `c4-estados.sql` (≈ 650 KB) va
+  entero: es una transacción, y su primera sentencia (el lock_timeout)
+  vale para todo el pegado.
 - **Re-correr la suite en producción** (después de cualquier cambio, o
   cuando se quiera comprobar): pegar otra vez `c2-pruebas.sql`,
   `c3-pruebas.sql` y `c4-pruebas.sql` (pasos 7, 8 y 9), cada una en su
@@ -100,12 +122,18 @@ PASO»); en corto:
 1. `select fn_apertura_balanza_cargar('docs/apertura/balanza-2026-09-30.csv', '[…]');`
    — dice si cuadra y qué nombres de QuickBooks no tienen mapeo. La lista
    lleva también **su control, del Balance Sheet al 30-sep: la fila «Net
-   Income»** (la utilidad de enero a septiembre, en `haber` si es
-   utilidad) **y la fila «TOTAL ASSETS»**; se apartan (no se suman) y
+   Income»** (la utilidad de enero a septiembre), **la fila «TOTAL
+   ASSETS» y la fila «Total Liabilities»** (y, si se quiere, «Total
+   Equity» y «TOTAL LIABILITIES AND EQUITY»); se apartan (no se suman) y
    `fn_apertura` no postea si el mapeo no da lo mismo (un mapeo al lado
-   equivocado para con MX001 y la fila que lo explica). La retención por
-   cobrar va por factura (como la cuenta por cobrar) y la retención por
-   pagar (2020) con su proveedor.
+   equivocado —de resultados al balance, o una deuda a capital— para con
+   MX001 y la fila que lo explica; sin «Total Liabilities», MX001 pide
+   que se añada). En esas filas la cifra va como la enseña el Balance
+   Sheet, en `saldo` (su única columna): Net Income en positivo es
+   utilidad; los totales, en positivo. (O en `debe` / `haber`: la
+   utilidad, el pasivo y el capital en `haber`; el activo en `debe`.) La
+   retención por cobrar va por factura (como la cuenta por cobrar) y la
+   retención por pagar (2020) con su proveedor.
 2. `select fn_apertura_mapeo_qb('<nombre en QuickBooks>', '<cuenta>');` por
    cada nombre, y `fn_apertura_mapeo_trabajo('<Cliente:Obra>', '<obra>')`
    por cada Customer:Job.
@@ -143,6 +171,19 @@ select * from v_obras_dinero     where periodo = 'hoy';       -- el dinero de ca
 select * from fn_estados_control('hoy');                       -- el control del Panel (todo en true)
 select * from v_libro where asiento_id = '<id>';              -- las líneas de un asiento
 select * from v_asiento_papel where asiento_id = '<id>';      -- y su papel (la foto, la factura…)
+-- La comparación contra QuickBooks es la de la última balanza cargada del
+-- período; una anterior (la de una quincena), pidiéndola por su documento:
+set c4.comparar_documento = 'docs/qb/balanza-2026-12-15.csv';
+select * from v_comparacion where periodo = '2026-12';       -- esa versión, a su fecha (al)
+reset c4.comparar_documento;                                  -- otra vez la última
+-- Cargar la balanza de QuickBooks de un mes (vale la más reciente de su
+-- tipo; si desplaza a otra, lo avisa), el complemento por obra (el «Profit
+-- and Loss by Customer», tipo 'por_obra': no desplaza a la balanza), y
+-- retirar una carga equivocada con su motivo (queda el rastro y vuelve a
+-- valer la anterior de su tipo):
+select fn_comparacion_qb_cargar('2026-10', 'docs/qb/balanza-2026-10.csv', '[…]');
+select fn_comparacion_qb_cargar('2026-10', 'docs/qb/pl-por-obra-2026-10.csv', '[…]', false, null, 'por_obra');
+select fn_comparacion_qb_retirar('2026-10', 'docs/qb/pl-por-obra-2026-10.csv', 'Es el P&L por obra, no la balanza');
 ```
 
 ## 0b. La prueba final en el banco, de cero
@@ -160,9 +201,10 @@ echo 'select fn_puentes_correr(); select * from fn_puentes_verificar();' > /tmp/
 ./correr.sh final_mia 03-storage-simulacro.sql $D/c1-plan-de-cuentas.sql $D/c2-libro.sql \
                       $D/c3-puentes.sql $D/c4-estados.sql /tmp/puentes_mio.sql \
                       $D/c2-pruebas.sql $D/c3-pruebas.sql $D/c4-pruebas.sql
-#   → PRUEBAS total=79 ok=79 fallan=0 omitidas=0
-#   → PRUEBAS total=117 ok=117 fallan=0 omitidas=0
-#   → PRUEBAS total=89 ok=89 fallan=0 omitidas=0
+#   → PRUEBAS total=80 ok=80 fallan=0 omitidas=0
+#   → PRUEBAS total=118 ok=118 fallan=0 omitidas=0
+#   → PRUEBAS total=110 ok=110 fallan=0 omitidas=0   (en 17.6; en 16, ok=109
+#     omitidas=1: la 109, MAINTAIN, es de Postgres 17)
 
 # Idempotencia: sobre la MISMA base, volver a pegar c1, c2, c3 y c4 (dos
 # veces) y las pruebas otra vez; tiene que seguir todo en verde.
@@ -183,11 +225,11 @@ done; done
 Con la apertura de verdad ya posteada (una balanza, su mapeo y
 `fn_apertura`, confirmados antes de las suites) tiene que salir igual de
 verde: c2 con la 61 «omitida», c4 con la 29 a la 36, 50, 51, 53, 56, 61,
-62, 69, 73, 76, 81, 84 y 86 «omitidas», nada en rojo. Y con datos de verdad
-en el mes (un depósito normal que se parece a un cobro de prueba, la renta, un
-pago de préstamo, una distribución, tickets de Home Depot, la balanza de
-octubre cargada): las pruebas de c4 miden lo que cambia su escenario, no
-el total del mes. El 25-sep se corrió así también, en 16 y en 17.6
+62, 69, 73, 76, 81, 84, 86, 91, 93, 94, 98, 102, 105 y 107 «omitidas»,
+nada en rojo. Y con datos de verdad en el mes (un depósito normal que se
+parece a un cobro de prueba, la renta, un pago de préstamo, una
+distribución, tickets de Home Depot, la balanza de octubre cargada): las
+pruebas de c4 miden lo que cambia su escenario, no el total del mes. El 25-sep se corrió así también, en 16 y en 17.6
 (`c4-volumen.sh` corre c4-pruebas sobre 10.000 asientos con su apertura).
 
 Para comprobar que las pruebas no dejan rastro, se saca una «foto» de la
@@ -421,21 +463,39 @@ tocar `docs/conta/c2-libro.sql`:
   c4-pruebas 68/68 en 16 y en 17.6, con c4 pegado dos veces y encima de la
   versión anterior; c4-concurrencia y c4-volumen (10.000 asientos por los
   puentes, con c4-pruebas encima y un teléfono) en los dos. Y en la
-  tercera ronda de c4 (25-sep): c2-pruebas 79/79, c3-pruebas 117/117 y
-  c4-pruebas 89/89 en 16 y en 17.6, con c4 pegado dos veces y encima de la
-  versión anterior; los scripts del banco, y c4-volumen con cuatro
-  teléfonos, c3-pruebas encima y 2026 abierto y cerrado, en los dos.
+  tercera ronda de c4, con sus correcciones (25-sep): c2-pruebas 79/79,
+  c3-pruebas 117/117 y c4-pruebas 91/91 en 16 y en 17.6, también con c1–c4
+  pegados dos veces más y con c3 y c4 pegados encima de sus versiones
+  anteriores (la de la ronda 2 y la instantánea 0718d99); los scripts del
+  banco (pegado y concurrencia de c2, c3 y c4, c3-volumen), y c4-volumen
+  con cuatro teléfonos, c3-pruebas encima y 2026 abierto y cerrado (con
+  un ajuste del CPA a diciembre), en los dos. Y en la cuarta ronda de c4
+  (25-sep): c2-pruebas 80/80, c3-pruebas 118/118 y c4-pruebas 110/110 en
+  17.6 (en 16, 109 y la 109 «omitida»: MAINTAIN es de 17), también con
+  c1–c4 pegados dos veces más y encima de las versiones de la ronda 3
+  (también c4 nuevo antes que c2 y c3 nuevos: su fila «c2 y c3 al día»
+  sale en false hasta volver a pegarlos); los scripts del banco (pegado
+  y concurrencia de c2, c3 y c4 —con la vuelta 4, pegar c4 con el
+  tablero leyendo—, c3-volumen) y c4-volumen con 10.000 asientos, en los
+  dos; y `SOLO_MEDIR=1 ./c4-volumen.sh bd 1332` (20.553 asientos) en 17.6:
+  todo bajo su tope, el control del Panel en 6,7 s.
 - **JIT**: el Postgres del banco trae el compilador JIT encendido (lo de
   fábrica). Con consultas grandes compila más de lo que corre (una vista
   del tablero leída como el editor, 16 s con JIT y 0,15 s sin él; la
   gráfica del Panel, 2,5 s con 10.000 asientos, casi todo compilando):
   `fn_estados_control` y `c4-pruebas.sql` lo apagan para sí (`set jit =
   off`), y `c4-estados.sql` lo apaga para la app: `alter role
-  authenticated in database … set jit = off` (PostgREST aplica los
-  ajustes del rol en cada consulta, como su tope de 8 s). Para eso el que
-  pega tiene que ser dueño del rol o tener ADMIN sobre él: el `00-shim`
-  del banco se lo da a `editor_sql` (en Supabase, el SQL Editor lo es).
-  `c4-volumen.sh` lee las vistas como PostgREST, con esos ajustes.
+  authenticated set jit = off`, para el rol ENTERO (PostgREST aplica en
+  cada consulta los ajustes del rol que lee de `pg_roles.rolconfig`, que
+  son los de todas las bases —uno puesto `in database …` no lo ve—, como su
+  tope de 8 s; y `notify pgrst, 'reload config'` se los hace releer). La
+  versión anterior lo ponía `in database …`: la prueba 88 y `c4 · jit`
+  salían en verde y PostgREST seguía compilando. Para eso el que pega tiene
+  que ser dueño del rol o tener ADMIN sobre él: el `00-shim` del banco se lo
+  da a `editor_sql` (en Supabase, el SQL Editor lo es: es lo mismo que su
+  statement_timeout). En el banco queda puesto para todo el cluster (el
+  rol es del cluster), sin daño. `c4-volumen.sh` lee las vistas como
+  PostgREST, con esos ajustes y solo esos.
 - **pg_cron** no está (tampoco en producción hasta la Fase 8).
 - El rol `editor_sql` no es superusuario y tiene `BYPASSRLS`, `CREATEROLE` y
   `CREATEDB`, que es como entendemos al `postgres` de Supabase (no se

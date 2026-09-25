@@ -28,7 +28,27 @@
 -- devuelve un instante la escritura a la vista recibos_equipo (grant) para
 -- ver que la guarda del recibo la para igual, y la 90 le da al dueño un
 -- instante un update en Storage (una policy) para ver que el papel no se
--- mueve igual. Todo dura milisegundos y se deshace con la prueba.
+-- mueve igual. En el banco todo dura milisegundos y se deshace con la
+-- prueba.
+--
+-- CON EL LIBRO LLENO (10.000 asientos: pruebas/conta/c4-volumen.sh la
+-- corre sobre uno con cuatro teléfonos subiendo tickets): tarda cerca de
+-- dos minutos, y las pruebas que miran los controles de todo el libro
+-- (fn_puentes_verificar, unos 2 s cada vez con ese libro) tienen el libro
+-- tomado hasta unos 4 s (5 en 17.6); ninguna subida se corta ni se queda
+-- sin su asiento (la que más espera, unos 6 s). Ninguna barre el libro
+-- entero dentro de su subtransacción salvo la 7 y la 114, que prueban
+-- justo el barrido (la 114 en dos subtransacciones cortas; la 39 y la 94
+-- pasan solo el puente de su papel). Aun así, córrela sin nadie usando la
+-- app.
+--
+-- CON DATOS DE VERDAD: cada prueba mide lo suyo. Sus cobros entran
+-- diciendo que son un duplicado confirmado (un depósito de verdad
+-- parecido no la tumba; la 95, que prueba el detector, no); las que miran
+-- un control de todo el libro (la 28, la 40 y la 100) cuentan solo sus
+-- asientos (si el control ya estaba en rojo por lo que trae el libro,
+-- mientras la prueba no le cambie nada, no la pone en rojo); y la 86
+-- retira una cuenta de ingreso de prueba (la 4098), no la de verdad.
 --
 -- LOS PUENTES SON DIFERIDOS: corren al confirmar la transacción. Una
 -- prueba que nunca confirma los pone en «immediate» (set constraints
@@ -37,10 +57,16 @@
 -- CONFIRMAR ponen al final todo en immediate (set constraints all
 -- immediate): así corren también los controles diferidos del libro.
 --
--- EL RELOJ FINGIDO Y EL CANDADO DE PERIODOS: los de c2-pruebas.sql, con
--- sus mismas reglas (ver su cabecera). La prueba que cierra meses toma
--- antes, como primera sentencia de su subtransacción, «lock table
--- public.periodos in exclusive mode».
+-- EL RELOJ FINGIDO Y LOS CANDADOS: los de c2-pruebas.sql, con sus mismas
+-- reglas (ver su cabecera), en el orden de la app: los de los recibos,
+-- periodos y la cadena. Toda prueba que pone los puentes en immediate
+-- (c3_inmediato) toma antes los 512 cajones de los candados de los
+-- recibos (pg_temp.c3_candados_recibos, que explica por qué: sin eso, con
+-- la app subiendo tickets a la vez, Postgres cortaba a uno de los dos y el
+-- puente dejaba ese recibo en la bandeja; pedirlos tarde es MXT10, la
+-- 106). La prueba que cierra meses toma antes, como primeras sentencias de
+-- su subtransacción, esos cajones y «lock table public.periodos in
+-- exclusive mode».
 --
 -- Rojo primero, SOLO en el banco de pruebas (pruebas/conta/correr.sh con
 -- «c3-puentes.sql:A»): con solo el bloque A (tablas, reglas, funciones
@@ -292,16 +318,65 @@ begin
 end $$;
 revoke execute on function pg_temp.c3_cerrar_hasta(text) from public, anon, authenticated, service_role;
 
+-- LOS CANDADOS EN EL ORDEN DE LA APP. Una subida de la app toma primero el
+-- candado de la foto y el del ticket de su recibo (fn_puente_recibo_candados:
+-- 512 cajones, la clave 820260925 y hashtext & 511), después las filas de
+-- periodos («for share») y al final el candado de la cadena (c2). Una prueba
+-- que ya había posteado (la cadena) o cerrado (periodos) y DESPUÉS subía un
+-- recibo (o el segundo de dos) los pedía al revés: si un teléfono tenía el
+-- cajón de ese recibo y esperaba la cadena, cada uno esperaba al otro, y
+-- Postgres cortaba a uno (40P01, «deadlock detected»). El puente, que no
+-- tumba la subida, dejaba ESE recibo en la bandeja con el error: el de la
+-- prueba (en rojo) o el del teléfono (un recibo de verdad sin asiento hasta
+-- «reintentar»; en c4-pruebas, con el libro lleno, pasó). Por eso toda
+-- subtransacción que sube recibos toma ANTES los 512 cajones, en orden
+-- (c3_inmediato lo hace; las que cierran, antes del candado de periodos):
+-- el teléfono espera su cajón como antes esperaba la cadena, y nadie se
+-- cruza. Se sueltan con el MXT00. Pedirlos tarde, con la cadena o periodos
+-- ya tomados, es MXT10: una prueba nueva que lo haga sale en rojo en el
+-- banco, sin necesitar un teléfono que la cruce.
+create or replace function pg_temp.c3_candados_recibos() returns void
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_k int;
+begin
+  if (select count(*) from pg_locks l
+       where l.pid = pg_backend_pid() and l.granted and l.locktype = 'advisory'
+         and l.classid::bigint = 820260925 and l.objsubid = 2) >= 512 then
+    return;   -- ya los tiene
+  end if;
+  if exists (select 1 from pg_locks l
+              where l.pid = pg_backend_pid() and l.granted
+                and ((l.locktype = 'advisory' and l.classid::bigint = 0 and l.objid::bigint = 820260923 and l.objsubid = 1)
+                     or (l.locktype = 'relation' and l.relation = 'public.periodos'::regclass
+                         and l.mode <> 'AccessShareLock'))) then
+    raise exception using errcode = 'MXT10',
+      message = 'c3-pruebas: los candados de los recibos (pg_temp.c3_candados_recibos()) se toman antes que el de periodos y '
+                'el de la cadena, como en la app.';
+  end if;
+  for v_k in 0 .. 511 loop
+    perform pg_advisory_xact_lock(820260925, v_k);
+  end loop;
+end $$;
+revoke execute on function pg_temp.c3_candados_recibos() from public, anon, authenticated, service_role;
+
 -- Los tres puentes diferidos, en immediate (dentro de la subtransacción de
 -- la prueba: el MXT00 los devuelve a diferidos). Solo los que existen: en
--- rojo no hay ninguno, y la prueba sigue y dice qué no pasó.
-create or replace function pg_temp.c3_inmediato() returns void
+-- rojo no hay ninguno, y la prueba sigue y dice qué no pasó. Antes, los
+-- candados de los recibos (arriba); p_candados = false solo en la 106, que
+-- mira que el puente tome los suyos.
+create or replace function pg_temp.c3_inmediato(p_candados boolean default true) returns void
 language plpgsql
 set search_path = public, pg_temp
 as $$
 declare
   v_lista text;
 begin
+  if p_candados then
+    perform pg_temp.c3_candados_recibos();
+  end if;
   select string_agg(quote_ident(t.tgname), ', ' order by t.tgname) into v_lista
     from pg_trigger t
    where t.tgname in ('trg_puente_recibos_despues', 'trg_puente_externos_despues', 'trg_puente_facturas_despues')
@@ -310,7 +385,7 @@ begin
     execute 'set constraints ' || v_lista || ' immediate';
   end if;
 end $$;
-revoke execute on function pg_temp.c3_inmediato() from public, anon, authenticated, service_role;
+revoke execute on function pg_temp.c3_inmediato(boolean) from public, anon, authenticated, service_role;
 
 -- La misma orden, en texto, para ejecutarla con OTRO rol (el de cerebro):
 -- el puente corre como si ese rol confirmara.
@@ -1176,6 +1251,7 @@ begin
     return;
   end if;
   begin
+    perform pg_temp.c3_candados_recibos();
     lock table public.periodos in exclusive mode;
     perform pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
@@ -1235,6 +1311,7 @@ begin
     return;
   end if;
   begin
+    perform pg_temp.c3_candados_recibos();
     lock table public.periodos in exclusive mode;
     perform pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
@@ -1911,7 +1988,9 @@ end $$;
 --     CO / Cr 2210, por horas APROBADAS × costo por hora; etiquetado
 --     estándar, reversible (su reverso automático, el día 1 del mes
 --     siguiente, entra con él). Volver a pedirlo con las mismas horas no
---     hace nada, y el control de mano de obra sigue en verde.
+--     hace nada, y el control de mano de obra no lo nombra (sigue en verde;
+--     en un libro que ya lo tenía en rojo por otros asientos, el devengo
+--     de la prueba no está entre ellos: la prueba mide lo suyo).
 do $$
 declare
   v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
@@ -1953,7 +2032,8 @@ begin
     v_r2 := fn_horas_devengar(v_mes);
     execute 'reset role';
     v_as := pg_temp.c3_vivo('horas_devengo', v_mes);
-    select c.ok into v_ctl from fn_puentes_verificar() c where c.control = 'mano_de_obra';
+    select c.ok or not (coalesce(c.detalle->'asientos', '[]'::jsonb) ? (select a.numero from asientos a where a.id = v_as))
+      into v_ctl from fn_puentes_verificar() c where c.control = 'mano_de_obra';
     select format('accion=%s linea=%s reversible=%s auto_reverso=%s estandar=%s repetir=%s control=%s',
                   v_r1->>'accion',
                   coalesce((select l.cuenta || ':' || l.monto || ':' || l.proyecto_id || ':' || l.co from asiento_lineas l
@@ -2560,8 +2640,11 @@ end $$;
 -- 39. Si alguien APAGA el puente y edita un recibo por debajo, el libro no
 --     se entera... pero el control sí: fn_puentes_verificar marca el trigger
 --     apagado y el papel que ya no es lo que se contabilizó. Encendido otra
---     vez, el backfill lo pone al día (reverso + sustituto) y el control
---     vuelve a verde.
+--     vez, su puente (lo que el backfill hace con cada papel que cambió) lo
+--     pone al día (reverso + sustituto) y el control vuelve a verde. (Solo
+--     el puente de ese papel, no el barrido del libro entero: la prueba
+--     tiene la tabla recibos tomada, y con el libro lleno el barrido eran
+--     1,5 s más de subidas esperando.)
 do $$
 declare
   v_obra  text := nullif(current_setting('mx3.obra', true), '');
@@ -2604,7 +2687,7 @@ begin
     if exists (select 1 from pg_trigger where tgname = 'trg_puente_recibos_despues') then
       execute 'alter table public.recibos enable trigger trg_puente_recibos_despues';
     end if;
-    perform fn_puentes_correr();
+    perform fn_puente_recibo(-3100480, 'correr');
     select case bool_and(c.ok) when true then 't' when false then 'f' else '-' end into v_doc2
       from fn_puentes_verificar() c where c.control = 'documentos';
     v_obt := format('apagado: triggers=%s documentos=%s backfill: documentos=%s asientos=%s', v_trig, v_doc, v_doc2,
@@ -2624,7 +2707,10 @@ end $$;
 -- 40. Después de una mezcla de todo (recibos que entran, se corrigen y se
 --     anulan, una factura con retención y su cobro, un trabajo externo), al
 --     confirmar: la cadena del libro entera en verde (sus diez controles) y
---     los controles de los puentes.
+--     los controles de los puentes. (Un control de los puentes que ya
+--     estaba en rojo ANTES por lo que el libro de verdad trae —con datos
+--     reales, o el libro de c4-volumen.sh— cuenta como bien si la mezcla no
+--     le cambió nada: la prueba mide lo suyo.)
 do $$
 declare
   v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
@@ -2632,6 +2718,7 @@ declare
   v_desde  date := nullif(current_setting('mx3.desde', true), '')::date;
   v_libro  text;
   v_puente text;
+  v_antes  jsonb;
   v_obt    text;
   v_esp    text := 'libro=t puentes=documentos:t mano_de_obra:t reglas:t triggers:t use_tax:t';
 begin
@@ -2641,6 +2728,10 @@ begin
     return;
   end if;
   begin
+    -- (Cómo estaban, antes de tocar nada.)
+    select jsonb_object_agg(c.control, jsonb_build_object('ok', c.ok, 'detalle', c.detalle)) into v_antes
+      from fn_puentes_verificar() c
+     where c.control in ('triggers', 'documentos', 'reglas', 'use_tax', 'mano_de_obra');
     perform pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
     perform pg_temp.c3_recibo(jsonb_build_object('id', -3100490, 'total', '10.00'));
@@ -2657,7 +2748,10 @@ begin
     set constraints all immediate;   -- lo que hace el commit
     select case when bool_and(v.ok) then 't' else 'f: ' || string_agg(v.control, ',') filter (where not v.ok) end
       into v_libro from fn_verificar_cadena() v;
-    select string_agg(c.control || ':' || case when c.ok then 't' else 'f' end, ' ' order by c.control) into v_puente
+    select string_agg(c.control || ':' || case when c.ok then 't'
+                                               when not (v_antes->c.control->>'ok')::boolean
+                                                    and v_antes->c.control->'detalle' = c.detalle then 't'
+                                               else 'f' end, ' ' order by c.control) into v_puente
       from fn_puentes_verificar() c
      where c.control in ('triggers', 'documentos', 'reglas', 'use_tax', 'mano_de_obra');
     v_obt := format('libro=%s puentes=%s', v_libro, coalesce(v_puente, '-'));
@@ -4473,6 +4567,7 @@ begin
     return;
   end if;
   begin
+    perform pg_temp.c3_candados_recibos();
     lock table public.periodos in exclusive mode;
     perform pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
@@ -5296,6 +5391,11 @@ end $$;
 --     (c1 lo deja: su saldo es de un ejercicio cerrado): anularla lo dice en
 --     claro antes de numerar la nota (MX004, con el SQL para reactivarla),
 --     en vez de un rechazo del libro a medio camino. Con el reloj fingido.
+--     La cuenta de ingreso es una de PRUEBA (la 4098, para el tipo de la
+--     obra, dentro de la prueba): la de verdad (4010) tiene saldo del año
+--     siguiente en cuanto el libro trae enero con diciembre abierto, y c1
+--     no deja retirarla (MX003): con datos reales esta prueba salía en
+--     rojo sin haber probado nada.
 do $$
 declare
   v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
@@ -5320,16 +5420,26 @@ begin
                                  'omitida: falta dueño, obra, o el diciembre y el enero abiertos', null);
     return;
   end if;
+  if exists (select 1 from cuentas where codigo = '4098') then
+    insert into _pruebas values (86, 'anular una factura con su cuenta de ingreso retirada: MX004 en claro', v_esp,
+                                 'omitida: ya hay una cuenta 4098 (la de prueba no se puede poner)', null);
+    return;
+  end if;
   begin
+    perform pg_temp.c3_candados_recibos();
     lock table public.periodos in exclusive mode;
     v_f := pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
+    -- La cuenta de ingreso de prueba, para el tipo de la obra.
+    insert into cuentas (codigo, nombre, nombre_en, tipo, saldo_normal, imputable, regla_obra, regla_cost_code)
+    values ('4098', 'c3-pruebas: ingreso de prueba', 'c3 test revenue', 'ingreso', 'haber', true, 'obligatoria', 'opcional');
+    perform fn_mapeo_tipo_proyecto(v_f->>'tipo', '4098');
     insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
     values (-3300160, v_obra, 'C3-3360', v_desde + 2, 900.00, 0);
     perform pg_temp.c3_cerrar_hasta(v_dic);
     update periodos set estado = 'cerrado', cerrado_el = now()
      where tipo = 'anio' and anio = extract(year from v_desde)::int;
-    update cuentas set activa = false where codigo = v_f->>'ingreso';
+    update cuentas set activa = false where codigo = '4098';
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     begin
@@ -5905,8 +6015,11 @@ end $$;
 --     obra) no entra otra vez por su puente: si la apertura llega después
 --     de que el puente la contabilizó, mientras está dos veces el control
 --     partidas lo dice y no se deja cobrar el doble (MX008); la siguiente
---     pasada reversa el asiento del puente (no_aplica/en_apertura) y queda
---     lo de la apertura. Una que la apertura ya traía no entra nunca.
+--     pasada de su puente reversa el asiento del puente (no_aplica/
+--     en_apertura) y queda lo de la apertura. Una que la apertura ya traía
+--     no entra nunca. (La pasada es la del puente de esa factura, lo que el
+--     backfill hace con ella: el barrido del libro entero, con el libro
+--     lleno, era 1,5 s más con el libro tomado.)
 do $$
 declare
   v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
@@ -5947,8 +6060,8 @@ begin
       when sqlstate 'MXT01' then null;
       when others then v_b := sqlstate;
     end;
-    perform fn_puentes_correr();
     execute 'reset role';
+    perform fn_puente_factura(-3400040, 'correr');
     -- Una que la apertura ya traía antes de pasar por su puente: se guarda
     -- (su puente, diferido, espera al final), llega la apertura, y el
     -- puente corre al «confirmar».
@@ -6258,6 +6371,7 @@ begin
     return;
   end if;
   begin
+    perform pg_temp.c3_candados_recibos();
     lock table public.periodos in exclusive mode;   -- antes que el de la cadena (ver la cabecera)
     insert into costos_equipo (usuario_id, costo_hora) values (v_equipo, 30.00)
     on conflict (usuario_id) do update set costo_hora = 30.00;
@@ -6330,7 +6444,8 @@ end $$;
 --      la mano de obra: sueldos (5000), la parte de Edgar (5001) y el
 --      burden (5015) pagados del banco salen en rojo igual que si fuera
 --      normal. El ajuste que solo reclasifica entre costos (sin dinero ni
---      pasivos) sigue en verde.
+--      pasivos) sigue en verde (el control no lo nombra: en un libro que ya
+--      lo tenía en rojo por otros asientos, no está entre ellos).
 do $$
 declare
   v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
@@ -6343,6 +6458,7 @@ declare
   v_num   text;
   v_a     text;
   v_b     text;
+  v_rec   text;
   v_obt   text;
   v_esp   text := 'ajuste_mismo_ejercicio=f/nombrado reclasificacion=t';
 begin
@@ -6352,6 +6468,7 @@ begin
     return;
   end if;
   begin
+    perform pg_temp.c3_candados_recibos();
     lock table public.periodos in exclusive mode;   -- antes que el de la cadena (ver la cabecera)
     perform pg_temp.c3_cerrar_hasta(v_mes);
     select p.desde into v_fecha from periodos p where p.periodo = v_sig;
@@ -6371,12 +6488,13 @@ begin
     exception
       when sqlstate 'MXT01' then null;
     end;
-    perform fn_postear(jsonb_build_object(
+    v_rec := fn_postear(jsonb_build_object(
       'tipo', 'ajuste_cpa', 'afecta_periodo', v_mes, 'motivo', 'c3: era material, no mano de obra',
       'fecha', to_char(v_fecha, 'YYYY-MM-DD'), 'descripcion', 'c3-pruebas: reclasificación (se deshace)',
       'lineas', jsonb_build_array(jsonb_build_object('cuenta', '5000', 'monto', '-100.00', 'proyecto_id', v_obra),
-                                  jsonb_build_object('cuenta', v_mat, 'monto', '100.00', 'proyecto_id', v_obra))));
-    select case when c.ok then 't' else 'f' end into v_b from fn_puentes_verificar() c where c.control = 'mano_de_obra';
+                                  jsonb_build_object('cuenta', v_mat, 'monto', '100.00', 'proyecto_id', v_obra))))->>'numero';
+    select case when c.ok or not (coalesce(c.detalle->'asientos', '[]'::jsonb) ? v_rec) then 't' else 'f' end into v_b
+      from fn_puentes_verificar() c where c.control = 'mano_de_obra';
     v_obt := format('ajuste_mismo_ejercicio=%s reclasificacion=%s', coalesce(v_a, '-'), coalesce(v_b, '-'));
     raise exception using errcode = 'MXT00';
   exception
@@ -6705,14 +6823,23 @@ end $$;
 --      hashtext & 511): dos lecturas del mismo ticket que confirman a la
 --      vez se esperan, y la segunda ve a la primera (c3-concurrencia.sh,
 --      escenario 9, lo prueba con dos sesiones). Aquí: pasado el puente de
---      un recibo, esta transacción tiene los dos.
+--      un recibo, esta transacción tiene los dos (sin los cajones que las
+--      pruebas toman antes: c3_inmediato(false)). Y las pruebas los piden
+--      en el orden de la app (ver c3_candados_recibos): c3_inmediato toma
+--      los 512 antes que nada, y pedirlos con la cadena ya tomada (un
+--      asiento a mano) o con periodos es MXT10. Antes una prueba que
+--      posteaba y después subía un recibo los pedía al revés, y con la app
+--      subiendo tickets a la vez Postgres cortaba a uno de los dos.
 do $$
 declare
   v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
   v_obra  text := nullif(current_setting('mx3.obra', true), '');
   v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
   v_obt   text;
-  v_esp   text := 'ticket=t foto=t';
+  v_c     text;
+  v_cad   text;
+  v_per   text;
+  v_esp   text := 'ticket=t foto=t pruebas: cajones=512 cadena=MXT10 periodos=MXT10';
 begin
   if v_dueno is null or v_obra is null or v_desde is null then
     insert into _pruebas values (106, 'el puente de un recibo toma los candados de su foto y su ticket antes de mirar', v_esp,
@@ -6721,7 +6848,7 @@ begin
   end if;
   begin
     perform pg_temp.c3_montar();
-    perform pg_temp.c3_inmediato();
+    perform pg_temp.c3_inmediato(false);
     perform pg_temp.c3_recibo(jsonb_build_object('id', -3400160, 'total', '99.10', 'num_recibo', 'C3-T-106'));
     select format('ticket=%s foto=%s',
                   exists (select 1 from pg_locks l
@@ -6738,8 +6865,44 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
   end;
+  -- Las pruebas: los 512 cajones con c3_inmediato.
+  begin
+    perform pg_temp.c3_inmediato();
+    select count(*)::text into v_c
+      from pg_locks l
+     where l.pid = pg_backend_pid() and l.granted and l.locktype = 'advisory'
+       and l.classid::bigint = 820260925 and l.objsubid = 2;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_c := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  -- Tarde: con la cadena ya tomada.
+  begin
+    perform fn_postear(jsonb_build_object('fecha', v_desde::text, 'descripcion', 'c3-pruebas: toma la cadena',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', current_setting('mx3.vehiculo'), 'monto', '1.00'),
+                                  jsonb_build_object('cuenta', current_setting('mx3.banco'), 'monto', '-1.00'))));
+    perform pg_temp.c3_candados_recibos();
+    v_cad := 'los tomó';
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_cad := sqlstate;
+  end;
+  -- Tarde: con periodos ya tomado.
+  begin
+    lock table public.periodos in exclusive mode;
+    perform pg_temp.c3_candados_recibos();
+    v_per := 'los tomó';
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_per := sqlstate;
+  end;
+  v_obt := format('%s pruebas: cajones=%s cadena=%s periodos=%s', coalesce(v_obt, '-'), coalesce(v_c, '-'), coalesce(v_cad, '-'),
+                  coalesce(v_per, '-'));
   insert into _pruebas values (106, 'el puente de un recibo toma los candados de su foto y su ticket antes de mirar', v_esp,
-                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+                               v_obt, v_obt = v_esp);
 end $$;
 
 -- 107. Un recibo que la LECTURA deja en total 0 (o que redondea a 0) y que
@@ -7208,7 +7371,11 @@ end $$;
 --      el control documentos de fn_puentes_verificar sigue en verde.
 --      Antes, con el libro de 10.000 asientos, «reintentar» tardaba de 10,6
 --      a 12,5 s y la API lo cortaba a los 8 s (c3-volumen.sh lo mide con
---      facturas, cobros y trabajos externos).
+--      facturas, cobros y trabajos externos). Dos subtransacciones cortas
+--      (cada barrido del libro lleno tarda 1,5 s, y dentro de una
+--      subtransacción que ya posteó tiene tomado el candado de la cadena):
+--      la de lo que no cambió (dos barridos antes de postear nada, uno
+--      después) y la del error (un barrido); el control, fuera de las dos.
 do $$
 declare
   v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
@@ -7217,6 +7384,9 @@ declare
   v_r0    jsonb;
   v_r1    jsonb;
   v_r2    jsonb;
+  v_e0    text;
+  v_sin   text;
+  v_err   text;
   v_obt   text;
   v_esp   text := 'sin_cambios=facturas:+1,cobros:+1,trabajos_externos:+1 pasados=+0 con_error=pasa:contabilizado '
                   'recibo_doc=sin_set documentos=t';
@@ -7226,11 +7396,13 @@ begin
                                  'omitida: falta dueño, obra o mes abierto', null);
     return;
   end if;
+  -- Lo que no cambió: no se vuelve a planear.
   begin
     perform pg_temp.c3_montar();
     perform pg_temp.c3_inmediato();
     -- (Dos pasadas antes: lo que ya había queda como vaya a quedar, y la
-    -- segunda es la línea de base.)
+    -- segunda es la línea de base. Sin nada atrasado en la bandeja, ninguna
+    -- de las dos postea: todavía no se tiene el candado de la cadena.)
     perform fn_puentes_correr();
     v_r0 := fn_puentes_correr();
     insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
@@ -7242,28 +7414,41 @@ begin
     values (-3400141, v_obra, 'c3-pruebas: ayudante 114', v_desde + 2, 'horas', 5, 100.00, -3900001,
             ((v_desde + 2) + time '12:00') at time zone 'America/New_York');
     v_r1 := fn_puentes_correr();
-    -- Con algo en la bandeja (como si su puente hubiera fallado), sí pasa.
-    perform fn_puente_marcar_error('facturas', '-3400140', 'XX000', 'c3-pruebas: error fingido');
-    v_r2 := fn_puentes_correr();
-    select format('sin_cambios=%s pasados=%s con_error=%s recibo_doc=%s documentos=%s',
+    select format('sin_cambios=%s pasados=%s',
       (select string_agg(t || ':' || to_char(coalesce((v_r1->'sin_cambios_por_tabla'->>t)::int, 0)
                                              - coalesce((v_r0->'sin_cambios_por_tabla'->>t)::int, 0), 'FMS0'), ',' order by o)
          from unnest(array['facturas', 'cobros', 'trabajos_externos']) with ordinality as x(t, o)),
-      to_char((v_r1->>'pasados')::int - (v_r0->>'pasados')::int, 'FMS0'),
-      case when (v_r2->>'pasados')::int - (v_r1->>'pasados')::int = 1
-                and (v_r2->'sin_cambios_por_tabla'->>'facturas')::int = (v_r1->'sin_cambios_por_tabla'->>'facturas')::int - 1
-           then 'pasa' else format('pasados %s→%s', v_r1->>'pasados', v_r2->>'pasados') end || ':' ||
-      coalesce((select d.estado || coalesce('/' || d.codigo, '') from puente_documentos d
-                 where d.tabla = 'facturas' and d.documento_id = '-3400140'), '-'),
-      (select case when p.proconfig is null then 'sin_set' else array_to_string(p.proconfig, ',') end
-         from pg_proc p where p.oid = 'public.fn_puente_recibo_doc(public.recibos)'::regprocedure),
-      (select v.ok from fn_puentes_verificar() v where v.control = 'documentos'))
-      into v_obt;
+      to_char((v_r1->>'pasados')::int - (v_r0->>'pasados')::int, 'FMS0'))
+      into v_sin;
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
-    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+    when others then v_sin := sqlstate || ' ' || left(sqlerrm, 90);
   end;
+  -- Con algo en la bandeja (como si su puente hubiera fallado), sí pasa:
+  -- estaba en «error» y el barrido lo deja contabilizado.
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
+    values (-3400140, v_obra, 'C3-4140', v_desde + 1, 5000.37, 0);
+    perform fn_puente_marcar_error('facturas', '-3400140', 'XX000', 'c3-pruebas: error fingido');
+    select d.estado into v_e0 from puente_documentos d where d.tabla = 'facturas' and d.documento_id = '-3400140';
+    v_r2 := fn_puentes_correr();
+    select case when v_e0 = 'error' and (v_r2->>'pasados')::int >= 1 then 'pasa' else format('antes %s, pasados %s', v_e0, v_r2->>'pasados') end
+           || ':' || coalesce((select d.estado || coalesce('/' || d.codigo, '') from puente_documentos d
+                                where d.tabla = 'facturas' and d.documento_id = '-3400140'), '-')
+      into v_err;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_err := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  select format('%s con_error=%s recibo_doc=%s documentos=%s', v_sin, v_err,
+    (select case when p.proconfig is null then 'sin_set' else array_to_string(p.proconfig, ',') end
+       from pg_proc p where p.oid = 'public.fn_puente_recibo_doc(public.recibos)'::regprocedure),
+    (select v.ok from fn_puentes_verificar() v where v.control = 'documentos'))
+    into v_obt;
   insert into _pruebas values (114, 'reintentar puente no vuelve a planear facturas, cobros ni externos sin cambios', v_esp,
                                coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
 end $$;
@@ -7342,7 +7527,9 @@ end $$;
 --      «duplicado_confirmado»: es un dato de prueba, y la subtransacción lo
 --      deshace); sin decirlo, el detector de depósito doble lo sigue
 --      parando (MX008, la prueba 95). Antes, con un depósito así en el
---      mes, la 102 salía en rojo en producción.
+--      mes, la 102 salía en rojo en producción. (El «de verdad» de esta
+--      prueba también es un dato de prueba y entra diciéndolo: un cheque
+--      real igual a él, ya en el libro, no la tumba a ella.)
 do $$
 declare
   v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
@@ -7362,8 +7549,10 @@ begin
     perform pg_temp.c3_inmediato();
     insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
     values (-3400160, v_obra, 'C3-4160', v_desde + 1, 8000.00, 0);
-    -- El de verdad (como lo registraría Edgar): anticipo de la obra.
-    perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 12)::text, 'monto', '3000.00', 'medio', 'cheque',
+    -- El de verdad (como lo registraría Edgar): anticipo de la obra. (Lo
+    -- simula la prueba: entra diciéndolo, por si ya hay uno igual.)
+    perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: simula uno de verdad',
+              'fecha', (v_desde + 12)::text, 'monto', '3000.00', 'medio', 'cheque',
               'proyecto_id', v_obra, 'aplicaciones', jsonb_build_array(jsonb_build_object('proyecto_id', v_obra, 'monto', '3000.00'))));
     v_obt := 'real=entró';
     -- El de la prueba 102, tal cual.
@@ -7391,16 +7580,81 @@ begin
                                coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
 end $$;
 
--- 117. NO DEJA RASTRO: todo lo de arriba se deshizo. El libro, los papeles,
+-- 117. Una factura con MÁS POR COBRAR QUE SU MONTO que su puente no puso
+--      (ronda 4 de c4): la trae así la apertura (una factura de antes del
+--      corte, 1,000 en la app, con 1,500 en la apertura contra su partida) y
+--      su puente no la pasó (contabilizado_en nulo). El cobro para (MX008) y
+--      dice que la trae así la apertura y qué corregir (la apertura o el
+--      monto), no que «está dos veces»; y lo mismo dicen el control partidas
+--      de fn_puentes_verificar y la casilla de facturas_cobro. (La apertura de
+--      prueba es un asiento de apertura mínimo, con la apertura abierta y sin
+--      otra; si no, «omitida».)
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_ap    periodos;
+  v_obt   text;
+  v_esp   text := 'cobro=MX008:la_trae_la_apertura partidas=la_trae_la_apertura casilla=la_trae_la_apertura';
+  v_x     text;
+  v_det   text;
+begin
+  select * into v_ap from periodos p where p.tipo = 'apertura' order by p.desde limit 1;
+  if v_dueno is null or v_obra is null or v_ap.periodo is null or v_ap.estado <> 'abierto'
+     or exists (select 1 from asientos a where a.tipo = 'apertura'
+                   and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso')) then
+    insert into _pruebas values (117, 'una factura con más por cobrar que su monto que solo trae la apertura no «está dos veces»', v_esp,
+                                 'omitida: falta dueño u obra, o la apertura ya tiene su asiento (o está cerrada)', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
+    values (-3400170, v_obra, 'C3-4170', fn_puente_corte() - 5, 1000.00, 0);
+    perform fn_postear(jsonb_build_object('tipo', 'apertura', 'fecha', v_ap.desde::text,
+              'descripcion', 'c3-pruebas: apertura mínima con la factura de más',
+              'lineas', jsonb_build_array(jsonb_build_object('cuenta', fn_puente_cuenta_de('cxc'), 'monto', '1500.00',
+                                                             'proyecto_id', v_obra, 'partida_tabla', 'facturas',
+                                                             'partida_id', '-3400170'),
+                                          jsonb_build_object('cuenta', '3900', 'monto', '-1500.00'))));
+    begin
+      perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba',
+                'fecha', greatest(fn_puente_corte() + 1, current_setting('mx3.desde')::date)::text,
+                'monto', '100.00', 'medio', 'zelle', 'referencia', 'c3-117',
+                'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400170, 'monto', '100.00'))));
+      v_x := 'entró';
+    exception when others then
+      v_x := sqlstate || ':' || case when sqlerrm like '%su puente no la puso en el libro: la trae así la apertura%'
+                                          and sqlerrm not like '%está dos veces%'
+                                     then 'la_trae_la_apertura' else left(sqlerrm, 200) end;
+    end;
+    v_obt := 'cobro=' || v_x;
+    select p.detalle::text into v_det from fn_puentes_verificar() p where p.control = 'partidas';
+    v_obt := v_obt || ' partidas=' || case when v_det like '%#C3-4170%la trae así la apertura%' then 'la_trae_la_apertura'
+                                          when v_det like '%#C3-4170%está dos veces%' then 'dos_veces' else left(coalesce(v_det, '-'), 120) end;
+    select fc.aviso into v_det from facturas_cobro fc where fc.id = -3400170;
+    v_obt := v_obt || ' casilla=' || case when v_det like '%la trae así la%apertura%' then 'la_trae_la_apertura'
+                                          else left(coalesce(v_det, '-'), 120) end;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (117, 'una factura con más por cobrar que su monto que solo trae la apertura no «está dos veces»', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 118. NO DEJA RASTRO: todo lo de arriba se deshizo. El libro, los papeles,
 --      las reglas, los historiales, los contadores, las secuencias de la
---      app y las huellas están como al empezar.
+--      app y las huellas están como al empezar. Va la última.
 do $$
 declare
   v_antes text := current_setting('mx3.foto', true);
   v_ahora text;
 begin
   v_ahora := pg_temp.c3_foto();
-  insert into _pruebas values (117, 'no deja rastro: todo como al empezar', v_antes, v_ahora, v_ahora = v_antes);
+  insert into _pruebas values (118, 'no deja rastro: todo como al empezar', v_antes, v_ahora, v_ahora = v_antes);
 end $$;
 
 select * from _pruebas order by n;

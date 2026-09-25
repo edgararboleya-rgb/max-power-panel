@@ -45,6 +45,22 @@
 --     (un depósito de verdad parecido en el mes no la pone en rojo; la 95,
 --     que prueba el detector, no). Prueba: 116.
 --
+-- CAMBIOS PARA c4, ronda 4 (25-sep-2026), mínimos y sin tocar el libro:
+--   · una factura con más por cobrar en el libro que su monto ya no dice
+--     siempre «está dos veces»: si su puente nunca la puso en el libro
+--     (contabilizado_en nulo), solo la trae la APERTURA (o un asiento a
+--     mano contra su partida), y lo que está mal es esa fila de la balanza
+--     o el monto de la factura en la app: lo dice así, con qué hacer. Los
+--     mismos cuatro lugares (facturas_cobro, fn_cobro_registrar,
+--     fn_anticipo_aplicar y el control partidas de fn_puentes_verificar).
+--     (c4 ya no deja entrar a la apertura una factura con más por cobrar
+--     que su monto, MX006; esto es para lo que entró antes, o a mano.)
+--     Prueba: 117;
+--   · fn_puente_version(): la MARCA de esta versión, un número que sube
+--     cuando una fase necesita la nueva. c4 la mira al pegarse y en su
+--     control («c2 y c3 al día»). No lee nada, nadie de la API la ejecuta,
+--     y la vigilan las huellas de c2 (su prefijo fn_puente_).
+--
 -- =====================================================================
 -- EL CONTRATO DE LOS PUENTES (lo siguen todos)
 -- =====================================================================
@@ -1387,6 +1403,12 @@ select f.id,
          when f.estado = 'anulada'
            then 'anulada' || coalesce(' con la nota de crédito ' || n.numero, ' antes de entrar al libro')
                 || ': no se cobra; la app todavía la enseña «por cobrar» hasta su parche (f05)'
+         when f.monto is not null and coalesce(s.saldo, 0) > round(f.monto, 2) and f.contabilizado_en is null
+           then format('más por cobrar en el libro (%s) que su monto (%s), y su puente no la puso en el libro: la trae así la '
+                       'apertura (o un asiento a mano contra su partida). Lo que está mal es esa fila de la balanza de apertura '
+                       'o el monto de la factura en la app: corrige la apertura (fn_apertura con la balanza corregida y su '
+                       'motivo; cerrada, un ajuste a la apertura) o el monto. No se cobra hasta arreglarla',
+                       coalesce(s.saldo, 0), round(f.monto, 2))
          when f.monto is not null and coalesce(s.saldo, 0) > round(f.monto, 2)
            then format('más por cobrar en el libro (%s) que su monto (%s): la factura está dos veces (en la apertura y por su '
                        'puente, o un asiento a mano contra su partida). No se cobra hasta arreglarla: mira el control partidas '
@@ -5885,9 +5907,18 @@ begin
                + fn_puente_saldo(fn_puente_cuenta_de('retencion_cxc'), 'facturas', v_fact.id::text);
     if v_fact.monto is not null and v_libro > round(v_fact.monto, 2) then
       raise exception using errcode = 'MX008',
-        message = format('La factura #%s tiene %s por cobrar en el libro y su monto es %s: está dos veces (en la apertura y por su '
-                         'puente, o un asiento a mano contra su partida). No se cobra hasta arreglarla: mira el control partidas de '
-                         'select * from fn_puentes_verificar();.', v_fact.num, v_libro, round(v_fact.monto, 2));
+        message = case when v_fact.contabilizado_en is null
+                       -- (su puente no la puso: solo la trae la apertura, o
+                       -- un asiento a mano; no «está dos veces»)
+                       then format('La factura #%s tiene %s por cobrar en el libro y su monto es %s, y su puente no la puso en el '
+                                   'libro: la trae así la apertura (o un asiento a mano contra su partida). Lo que está mal es esa '
+                                   'fila de la balanza de apertura o el monto de la factura en la app: corrige la apertura '
+                                   '(fn_apertura con la balanza corregida y su motivo; cerrada, un ajuste a la apertura) o el '
+                                   'monto. No se cobra hasta arreglarla.', v_fact.num, v_libro, round(v_fact.monto, 2))
+                       else format('La factura #%s tiene %s por cobrar en el libro y su monto es %s: está dos veces (en la apertura '
+                                   'y por su puente, o un asiento a mano contra su partida). No se cobra hasta arreglarla: mira el '
+                                   'control partidas de select * from fn_puentes_verificar();.', v_fact.num, v_libro,
+                                   round(v_fact.monto, 2)) end;
     end if;
     -- Lo cobrado antes de facturar no se aplica a la factura: al cierre de
     -- ese mes, la cuenta por cobrar enseñaría una factura que todavía no
@@ -6235,9 +6266,14 @@ begin
   v_libro := v_saldo + v_sret;
   if f.monto is not null and v_libro > round(f.monto, 2) then
     raise exception using errcode = 'MX008',
-      message = format('La factura #%s tiene %s por cobrar en el libro y su monto es %s: está dos veces. No se le aplica nada '
-                       'hasta arreglarla (control partidas de select * from fn_puentes_verificar();).', f.num, v_libro,
-                       round(f.monto, 2));
+      message = case when f.contabilizado_en is null
+                     then format('La factura #%s tiene %s por cobrar en el libro y su monto es %s, y su puente no la puso en el '
+                                 'libro: la trae así la apertura (o un asiento a mano). Lo que está mal es esa fila de la apertura o '
+                                 'el monto de la factura en la app. No se le aplica nada hasta arreglarla.', f.num, v_libro,
+                                 round(f.monto, 2))
+                     else format('La factura #%s tiene %s por cobrar en el libro y su monto es %s: está dos veces. No se le aplica '
+                                 'nada hasta arreglarla (control partidas de select * from fn_puentes_verificar();).', f.num,
+                                 v_libro, round(f.monto, 2)) end;
   end if;
   v_cta := case when v_ret then v_cret else v_cxc end;
   if v_ret then
@@ -7565,12 +7601,16 @@ begin
           -- Más por cobrar en el libro que el monto de la factura: está dos
           -- veces (la apertura y su puente, o un asiento a mano contra su
           -- partida), y así se le podía cobrar el doble.
-          select format('la factura #%s tiene %s por cobrar en el libro (1110 + 1120) y su monto es %s: está dos veces',
+          select format(case when f.contabilizado_en is null
+                             then 'la factura #%s tiene %s por cobrar en el libro (1110 + 1120) y su monto es %s, y su puente no la '
+                                  'puso en el libro: la trae así la apertura (o un asiento a mano); se corrige la apertura o el '
+                                  'monto de la factura'
+                             else 'la factura #%s tiene %s por cobrar en el libro (1110 + 1120) y su monto es %s: está dos veces' end,
                         f.num, sum(fac.saldo), round(f.monto, 2))
             from facturas f
             join fac on fac.partida_id = f.id::text
            where f.monto is not null
-           group by f.id, f.num, f.monto
+           group by f.id, f.num, f.monto, f.contabilizado_en
           having sum(fac.saldo) > round(f.monto, 2)
           union all
           -- Una partida, una obra: la de su factura (la guarda de las líneas
@@ -7921,6 +7961,17 @@ comment on function public.fn_horas_aprobar(uuid, date, date, jsonb) is 'Aprueba
 comment on function public.fn_horas_devengar(text)            is 'El devengo ESTÁNDAR opcional de un mes: Dr 5000 / Cr 2210 por horas aprobadas × costo por hora (sin las del dueño), reversible el día 1; sin horas, o con journal de nómina en el mes, no devenga (y deshace el que había).';
 comment on function public.fn_recibo_anular(bigint, text)     is 'Anula un recibo (estado anulado) y el puente lo reversa con el motivo. Es lo que lo saca de las listas de la app.';
 comment on function public.fn_externo_anular(bigint, text)    is 'Anula un trabajo externo (costo 0) y el puente lo reversa con el motivo.';
+
+
+-- La MARCA de esta versión (ver la cabecera, ronda 4 de c4): AAAAMMDDNN.
+-- Sube cuando una fase necesita un c3 más nuevo; c4 la lee de su texto.
+create or replace function public.fn_puente_version()
+returns bigint
+language sql
+immutable
+set search_path = public, pg_temp
+as $$ select 2026092504::bigint $$;
+revoke execute on function public.fn_puente_version() from public, anon, authenticated, service_role;
 
 
 -- ---------------------------------------------------------------------

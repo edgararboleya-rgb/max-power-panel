@@ -52,11 +52,12 @@
 --   · las que prueban c1 (el plan y su guarda: 29, 40, 42, 44, 45, 46, 50,
 --     64, 72 y 74), que no depende del bloque A; la del candado de las
 --     pruebas (75), que prueba a estas mismas pruebas; y la del rastro
---     (79);
+--     (80);
 --   · unas pocas que usan piezas que solo existen en el bloque B
 --     (fn_postear_interno en la 41, la 63, la 69, la 70, la 76 y la 77; la guarda de
 --     periodos, que la 60, la 65, la 71 y la 73 apagan un momento; el
---     verificador, que la 78 mira), que fallan porque falta la pieza.
+--     verificador, que la 78 y la 79 miran), que fallan porque falta la
+--     pieza.
 -- Con el bloque B, todas en true.
 --
 -- Los datos que usan se buscan, no se inventan: el dueño (rol 'dueno',
@@ -3845,7 +3846,66 @@ begin
 end $$;
 
 
--- 79. Las pruebas no dejaron rastro: el libro, el plan, su historial, las
+-- 79. El control permisos ve también lo ESCONDIDO (ronda 4 de c4): una
+--     función SECURITY DEFINER que la API puede ejecutar y que lee los
+--     asientos con un join de coma («from periodos p, asientos a»), o con
+--     un comentario en medio («from/**/asientos»), o llamando a una función
+--     de ayuda SECURITY INVOKER que los lee: cada una sale en rojo, con su
+--     nombre. Una que solo habla de los asientos en un comentario o en un
+--     texto, no. Antes la de coma y la del comentario pasaban en verde.
+do $$
+declare
+  v_obt text := '';
+  v_esp text := 'coma=lo_ve comentario=lo_ve anidada=lo_ve inocente=calla';
+  v_k   text;
+  v_ok  boolean;
+  v_det text;
+  v_x   text;
+begin
+  foreach v_k in array array['coma', 'comentario', 'anidada', 'inocente'] loop
+    begin
+      if v_k = 'coma' then
+        create function public.c2_pruebas_ajena() returns bigint
+          language sql stable security definer set search_path = public, pg_temp
+          as $f$ select count(*) from periodos p, asientos a where a.periodo = p.periodo $f$;
+      elsif v_k = 'comentario' then
+        create function public.c2_pruebas_ajena() returns bigint
+          language sql stable security definer set search_path = public, pg_temp
+          as $f$ select count(*) from/**/asientos $f$;
+      elsif v_k = 'anidada' then
+        create function public.c2_pruebas_ayuda() returns bigint
+          language sql stable set search_path = public, pg_temp
+          as $f$ select count(*) from asiento_lineas $f$;
+        create function public.c2_pruebas_ajena() returns bigint
+          language sql stable security definer set search_path = public, pg_temp
+          as $f$ select c2_pruebas_ayuda() $f$;
+      else
+        create function public.c2_pruebas_ajena() returns bigint
+          language plpgsql security definer set search_path = public, pg_temp
+          as $f$
+          begin
+            -- (una nota: select * from asientos)
+            return length('los asientos, todos');
+          end $f$;
+      end if;
+      -- Lo que Supabase da a toda función nueva.
+      grant execute on function public.c2_pruebas_ajena() to anon, authenticated, service_role;
+      select v.ok, v.detalle::text into v_ok, v_det from fn_verificar_cadena() v where v.control = 'permisos';
+      v_x := case when not v_ok and strpos(v_det, 'c2_pruebas_ajena()') > 0 then 'lo_ve'
+                  when strpos(coalesce(v_det, ''), 'c2_pruebas_ajena()') = 0 then 'calla'
+                  else 'raro' end;
+      raise exception using errcode = 'MXT00';
+    exception
+      when sqlstate 'MXT00' then null;
+      when others then v_x := sqlstate || ' ' || left(sqlerrm, 60);
+    end;
+    v_obt := concat_ws(' ', nullif(v_obt, ''), v_k || '=' || coalesce(v_x, '-'));
+  end loop;
+  insert into _pruebas values (79, 'permisos ve lo escondido: join de coma, comentario en medio, función de ayuda', v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+
+-- 80. Las pruebas no dejaron rastro: el libro, el plan, su historial, las
 --     secuencias y las huellas (el reloj fingido y los ALTER TABLE de
 --     algunas pruebas se deshicieron) están igual que al empezar. Va la
 --     última.
@@ -3855,7 +3915,7 @@ declare
   v_obt   text;
 begin
   v_obt := pg_temp.mx_foto();
-  insert into _pruebas values (79, 'las pruebas no dejan rastro (libro, plan, historial, secuencias y huellas)', v_antes, v_obt, v_obt = v_antes);
+  insert into _pruebas values (80, 'las pruebas no dejan rastro (libro, plan, historial, secuencias y huellas)', v_antes, v_obt, v_obt = v_antes);
 end $$;
 
 select * from _pruebas order by n;

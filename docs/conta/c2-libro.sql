@@ -25,6 +25,23 @@
 -- (el bloque de A.9 rehace su policy), y el control «permisos» de
 -- fn_verificar_cadena acepta las dos formas (c1 sigue con la de siempre).
 -- Su prueba: la 78 de c2-pruebas.sql.
+-- CAMBIOS PARA c4, RONDA 4 (25-sep-2026), mínimos (se vuelve a pegar
+-- encima, sin tocar el libro):
+--   · el control «permisos» de fn_verificar_cadena ve también la función
+--     SECURITY DEFINER ajena que lee el libro con un join de coma («from
+--     cuentas c, asientos a») o con un comentario en medio
+--     («from/**/asientos»): busca en el texto SIN sus comentarios; un
+--     nombre compuesto (asiento_lineas, v_libro) cuenta como palabra
+--     dondequiera que esté; uno simple (asientos, cuentas), detrás de
+--     from, join, using… o de una coma o un paréntesis, fuera de las
+--     cadenas. Antes esas dos formas se le escapaban (lo encontró el
+--     ataque a c4, que tiene el mismo control para sus tablas). Su prueba:
+--     la 79 de c2-pruebas.sql;
+--   · fn_libro_version(): la MARCA de esta versión, un número que sube
+--     cuando una fase necesita la nueva. c4 la mira al pegarse y en su
+--     control («c2 y c3 al día»): con un c2 anterior dice que hay que
+--     volver a pegar este archivo. No lee nada; nadie de la API la ejecuta,
+--     y va en las huellas.
 --
 -- EL ROJO SE CORRE SOLO EN EL BANCO DE PRUEBAS (pruebas/conta/correr.sh
 -- con «c2-libro.sql:A»). En Supabase este archivo se pega SIEMPRE entero:
@@ -2866,6 +2883,10 @@ declare
   v_nuevas     oid[];
   v_rx_rel     text;
   v_rx_fn      text;
+  v_rx_coma    text;
+  v_rx_comp    text;
+  v_simples    text;
+  v_compues    text;
   v_sospechosas oid[];
   v_vistas_fn  oid[];
   v_app        text[];
@@ -2887,7 +2908,7 @@ declare
                                          'fn_asiento_lineas_al_insertar()',
                                          'fn_asiento_lineas_sello_al_confirmar()', 'fn_asientos_al_insertar()',
                                          'fn_libro_inmutable()', 'fn_asientos_reversible_con_reverso()',
-                                         'fn_proyectos_con_libro()'];
+                                         'fn_proyectos_con_libro()', 'fn_libro_version()'];
   -- Las de las fases que vienen detrás, que tocan el libro a propósito. Se
   -- miran igual que las de arriba, pero SOLO SI YA EXISTEN: este archivo se
   -- pega antes que ellas. Las que llama conta.js (con es_dueno() por
@@ -3355,25 +3376,38 @@ begin
     select coalesce(array_agg(distinct p.proname::text), '{}') into v_fn_nombres
       from pg_proc p
      where (p.oid = any (v_semillas) or p.oid = any (v_lee)) and p.proname ~ '^[[:alnum:]_]+$';
-    v_rx_rel := '[[:<:]](from|join|into|update|table|only|truncate)[[:space:]]+'
-                || '(([[:alnum:]_]+|"[^"]+")[[:space:]]*[.][[:space:]]*)?"?('
-                || array_to_string(v_nombres, '|') || ')"?[[:>:]]';
-    v_rx_fn  := '[[:<:]](' || array_to_string(v_fn_nombres, '|') || ')[[:space:]]*[(]';
-    select coalesce(array_agg(p.oid), '{}') into v_nuevas
-      from pg_proc p
-      join pg_namespace n on n.oid = p.pronamespace
-     where n.nspname !~ '^pg_' and n.nspname <> 'information_schema'
-       and p.prokind in ('f', 'p')
-       and not (p.oid = any (v_lee) or p.oid = any (v_conocidas) or p.oid = any (v_semillas))
-       and not exists (select 1 from pg_depend e
-                        where e.classid = 'pg_proc'::regclass and e.objid = p.oid and e.deptype = 'e')
-       and (   (cardinality(v_nombres) > 0 and p.prosrc ~* v_rx_rel)
-            or (cardinality(v_fn_nombres) > 0 and p.prosrc ~* v_rx_fn)
-            or exists (select 1 from pg_depend d
-                        where d.classid = 'pg_proc'::regclass and d.objid = p.oid
-                          and (   (d.refclassid = 'pg_class'::regclass and d.refobjid = any (v_rel))
-                               or (d.refclassid = 'pg_proc'::regclass
-                                   and (d.refobjid = any (v_semillas) or d.refobjid = any (v_lee))))));
+    -- (En el texto SIN comentarios: «from/**/asientos» ya no se esconde. Un
+    -- nombre compuesto —asiento_lineas, v_libro— cuenta como palabra
+    -- dondequiera que esté; uno simple —asientos, cuentas—, detrás de
+    -- from, join, using… o de una coma o un paréntesis, fuera de las
+    -- cadenas: el join de coma, «from cuentas c, asientos a».)
+    v_simples := array_to_string(array(select x from unnest(v_nombres) x where x !~ '_'), '|');
+    v_compues := array_to_string(array(select x from unnest(v_nombres) x where x ~ '_'), '|');
+    v_rx_rel  := case when v_simples <> ''
+                      then '[[:<:]](from|join|into|update|table|only|truncate|using)[[:space:]]+'
+                           || '(([[:alnum:]_]+|"[^"]+")[[:space:]]*[.][[:space:]]*)?"?(' || v_simples || ')"?[[:>:]]' end;
+    v_rx_coma := case when v_simples <> ''
+                      then '[,(][[:space:]]*(([[:alnum:]_]+|"[^"]+")[[:space:]]*[.][[:space:]]*)?"?(' || v_simples || ')"?[[:>:]]' end;
+    v_rx_comp := case when v_compues <> '' then '[[:<:]](' || v_compues || ')[[:>:]]' end;
+    v_rx_fn   := '[[:<:]](' || array_to_string(v_fn_nombres, '|') || ')[[:space:]]*[(]';
+    select coalesce(array_agg(x.oid), '{}') into v_nuevas
+      from (select p.oid, regexp_replace(regexp_replace(p.prosrc, '/\*.*?\*/', ' ', 'g'), '--[^\n]*', ' ', 'g') as src
+              from pg_proc p
+              join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname !~ '^pg_' and n.nspname <> 'information_schema'
+               and p.prokind in ('f', 'p')
+               and not (p.oid = any (v_lee) or p.oid = any (v_conocidas) or p.oid = any (v_semillas))
+               and not exists (select 1 from pg_depend e
+                                where e.classid = 'pg_proc'::regclass and e.objid = p.oid and e.deptype = 'e')) x
+     where (v_rx_rel is not null and x.src ~* v_rx_rel)
+        or (v_rx_coma is not null and regexp_replace(x.src, '''([^'']|'''')*''', ' ', 'g') ~* v_rx_coma)
+        or (v_rx_comp is not null and x.src ~* v_rx_comp)
+        or (cardinality(v_fn_nombres) > 0 and x.src ~* v_rx_fn)
+        or exists (select 1 from pg_depend d
+                    where d.classid = 'pg_proc'::regclass and d.objid = x.oid
+                      and (   (d.refclassid = 'pg_class'::regclass and d.refobjid = any (v_rel))
+                           or (d.refclassid = 'pg_proc'::regclass
+                               and (d.refobjid = any (v_semillas) or d.refobjid = any (v_lee)))));
     exit when cardinality(v_nuevas) = 0;
     v_lee := v_lee || v_nuevas;
   end loop;
@@ -3845,6 +3879,16 @@ comment on function public.fn_proyectos_con_libro()   is 'Una obra con asientos 
 -- triggers está en verde: si resellara encima de una guarda tocada, la
 -- bendeciría.
 -- ---------------------------------------------------------------------
+-- La MARCA de esta versión (ver la cabecera, ronda 4 de c4): AAAAMMDDNN.
+-- Sube cuando una fase necesita un c2 más nuevo; c4 la lee de su texto.
+create or replace function public.fn_libro_version()
+returns bigint
+language sql
+immutable
+set search_path = public, pg_temp
+as $$ select 2026092504::bigint $$;
+revoke execute on function public.fn_libro_version() from public, anon, authenticated, service_role;
+
 create or replace function public.fn_libro_huellas_calcular()
 returns table (tipo text, objeto text, md5 text)
 language sql
@@ -3871,7 +3915,7 @@ as $$
                            'fn_asientos_reversible_con_reverso', 'fn_postear_interno', 'fn_postear',
                            'fn_reversar_interno', 'fn_reversar', 'fn_estado', 'fn_verificar_cadena',
                            'fn_cerrar_periodo', 'fn_abrir_periodo', 'fn_proyectos_con_libro',
-                           'fn_libro_huellas_calcular', 'fn_libro_huellas_sellar',
+                           'fn_libro_huellas_calcular', 'fn_libro_huellas_sellar', 'fn_libro_version',
                            -- f03 · c3-puentes.sql (las que llama la app)
                            'fn_puentes_correr', 'fn_puentes_rehacer', 'fn_puentes_verificar', 'fn_puentes_cuenta',
                            'fn_factura_anular', 'fn_cobro_registrar', 'fn_cobro_anular', 'fn_cobro_devolver',
