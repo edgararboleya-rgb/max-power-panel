@@ -22,6 +22,29 @@
 -- EL ROJO SE CORRE SOLO EN EL BANCO DE PRUEBAS. En Supabase este archivo
 -- se pega SIEMPRE entero.
 --
+-- CAMBIO PARA c4 (f04, 25-sep-2026): la policy de lectura de las tablas de
+-- este archivo (A.7) es «using ((select es_dueno()))», como la del libro en
+-- c2: solo el dueño lee, igual que antes, pero Postgres evalúa es_dueno()
+-- una vez por consulta y no una vez por fila (las vistas de c4 que leen
+-- proveedores, alias y cobros bajan a la cuarta parte con unos 10.000
+-- asientos). Volver a pegar este archivo la cambia. Su prueba: la 113 de
+-- c3-pruebas.sql.
+--
+-- CAMBIOS PARA c4, ronda 3 (25-sep-2026), mínimos y sin tocar el libro:
+--   · fn_puentes_correr («reintentar puente») decide de una vez, en una
+--     consulta, qué papeles contabilizados no cambiaron, y ya no los
+--     vuelve a planear uno por uno: con el libro de 10.000 asientos pasaba
+--     de 10 s y la API lo cortaba a los 8 s. fn_puente_recibo_doc va sin
+--     «set search_path» (y con cada nombre con su esquema) para que
+--     Postgres la meta en la consulta que la llama; el control documentos
+--     de fn_puentes_verificar la usa así. Prueba: 114.
+--   · El cobro de una factura de antes del corte que no cabe: si la
+--     apertura ya está en el libro, lo dice (con su número) y da las
+--     salidas, en vez de «regístralo cuando esté cargada». Prueba: 115.
+--   · c3-pruebas.sql: sus cobros de prueba llevan "duplicado_confirmado"
+--     (un depósito de verdad parecido en el mes no la pone en rojo; la 95,
+--     que prueba el detector, no). Prueba: 116.
+--
 -- =====================================================================
 -- EL CONTRATO DE LOS PUENTES (lo siguen todos)
 -- =====================================================================
@@ -1191,7 +1214,9 @@ begin
       execute format('drop policy %I on public.%I', p.policyname, t);
     end loop;
     execute format('drop policy if exists %I on public.%I', t || '_dueno', t);
-    execute format('create policy %I on public.%I for select to authenticated using (es_dueno())', t || '_dueno', t);
+    -- «(select es_dueno())»: una vez por consulta, no por fila (ver la
+    -- cabecera).
+    execute format('create policy %I on public.%I for select to authenticated using ((select es_dueno()))', t || '_dueno', t);
   end loop;
 end $$;
 
@@ -2376,30 +2401,38 @@ revoke execute on function public.fn_puente_recibo_candados(bigint, boolean) fro
 --     entra: si llega DESPUÉS de que el puente lo contabilizó, el papel ya
 --     está en el libro por otro lado, y la siguiente pasada reversa el del
 --     puente.
+-- (Sin «set search_path», a propósito y SOLO esta: con él, Postgres no la
+-- puede meter dentro de la consulta que la llama (no la «inlinea») y la
+-- corre aparte, recibo por recibo, volviendo a planear cada vez las
+-- funciones que llama; con 4.000 recibos, 4 s solo en sus firmas, y el
+-- «reintentar» y el control documentos pasaban del tope de 8 s de la
+-- API. Sin él, entra en la consulta y cuesta lo que sus expresiones. Por
+-- eso cada nombre va con su esquema (public.…): no depende del
+-- search_path de quien la llame. No es SECURITY DEFINER y la API no la
+-- ejecuta.)
 create or replace function public.fn_puente_recibo_doc(r public.recibos)
 returns jsonb
 language sql
 stable
-set search_path = public, pg_temp
 as $$
   select jsonb_build_object(
            'estado',      case when coalesce(r.estado, 'por_leer') in ('leido', 'conciliado') then 'leido'
                                else coalesce(r.estado, 'por_leer') end,
            'total',       trim_scale(r.total)::text,
-           'fecha',       coalesce(r.fecha, fn_fecha_miami(r.creado)),
+           'fecha',       coalesce(r.fecha, public.fn_fecha_miami(r.creado)),
            'proyecto_id', r.proyecto_id,
            'co',          nullif(btrim(r.co), ''),
-           'categoria',   fn_puente_normalizar(r.categoria),
-           'metodo_pago', fn_puente_normalizar(r.metodo_pago),
-           'ultimos4',    fn_puente_ultimos4(r.ultimos4),
-           'proveedor',   fn_puente_normalizar(r.proveedor),
+           'categoria',   public.fn_puente_normalizar(r.categoria),
+           'metodo_pago', public.fn_puente_normalizar(r.metodo_pago),
+           'ultimos4',    public.fn_puente_ultimos4(r.ultimos4),
+           'proveedor',   public.fn_puente_normalizar(r.proveedor),
            'autor_id',    r.autor_id,
            -- f01: el día que recibos traiga cost_code, entra solo (to_jsonb
            -- lo lee si la columna existe; si no, es nulo).
            'cost_code',   nullif(btrim(to_jsonb(r)->>'cost_code'), ''),
            'ruta',        nullif(btrim(r.ruta), ''))
          || case when coalesce(r.notas, '') ~* 'devoluci' then jsonb_build_object('devolucion', true) else '{}'::jsonb end
-         || case when fn_puente_en_apertura('recibos', r.id::text) is not null
+         || case when public.fn_puente_en_apertura('recibos', r.id::text) is not null
                  then jsonb_build_object('en_apertura', true) else '{}'::jsonb end
 $$;
 revoke execute on function public.fn_puente_recibo_doc(public.recibos) from public, anon, authenticated, service_role;
@@ -5349,12 +5382,20 @@ revoke execute on function public.fn_puente_saldo(text, text, text) from public,
 -- recibo cuya foto o ticket tiene tomados otro puente, también (no espera:
 -- ver fn_puente_recibo_candados). Cada papel va en su propia
 -- subtransacción: un error queda en la bandeja y el resto sigue.
--- Un recibo contabilizado cuyo papel NO cambió (su firma de hoy es la de
--- su asiento vivo, fn_puente_recibo_firma) no se vuelve a planear: con
--- miles de recibos en el libro, planearlos todos —cada uno buscando sus
--- duplicados— pasaba del tope de 8 s de la API, y «reintentar» se cortaba
--- sin hacer nada. Devuelve cuántos pasó, cuántos no cambiaron y cómo quedó
--- la bandeja.
+-- Un papel contabilizado que NO cambió no se vuelve a pasar: se sabe de
+-- una vez, en UNA consulta sobre todo el libro, antes de la vuelta. Un
+-- recibo, por su firma sola (la de hoy, fn_puente_recibo_doc, contra la de
+-- su asiento vivo: planearlo busca sus duplicados); una factura, un cobro,
+-- un trabajo externo, una aplicación de anticipo, una nota de crédito o una
+-- devolución, por su plan de hoy: si su firma es la de su asiento vivo, el
+-- plan no trae aviso y la bandeja ya dice exactamente eso (contabilizado,
+-- sin código ni motivo, con ese asiento y esa firma), pasarlo no haría
+-- nada (fn_puente_aplicar, paso 1). Antes solo se saltaban los recibos y el
+-- resto se planeaba uno por uno, cada uno en su subtransacción y
+-- volviendo a planear sus consultas: con el libro de 10.000 asientos, 2.932
+-- papeles, 10,6 s en 16 y 12,5 s en 17.6, y «reintentar» desde la app se
+-- cortaba a los 8 s sin hacer nada. Ahora, ~1 s. Devuelve cuántos pasó,
+-- cuántos no cambiaron y cómo quedó la bandeja.
 create or replace function public.fn_puentes_correr(p_desde date default null)
 returns jsonb
 language plpgsql
@@ -5362,18 +5403,68 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_desde date;
-  v_id    text;
-  v_tabla text;
-  v_n     int := 0;
-  v_igual int := 0;
-  v_salta int := 0;
-  v_error int := 0;
-  v_uno   int;
+  v_desde   date;
+  v_id      text;
+  v_tabla   text;
+  v_n       int := 0;
+  v_igual   int := 0;
+  v_salta   int := 0;
+  v_error   int := 0;
+  v_uno     int;
+  v_iguales jsonb;
+  v_ptabla  jsonb := '{}'::jsonb;
 begin
   perform fn_puente_exigir_dueno();
   v_desde := greatest(coalesce(p_desde, fn_puente_corte()), fn_puente_corte());
   perform 1 from periodos for share;
+  -- Lo que no cambió, de una vez (ver arriba). Con la foto de este momento:
+  -- lo que se toque durante la vuelta lo pone al día su propio puente.
+  -- (Los planes, en un CTE «materialized»: así cada uno se calcula una vez;
+  -- en una subconsulta suelta, Postgres lo copiaría a cada sitio donde se
+  -- nombra y lo calcularía tres veces.)
+  with pl as materialized (
+         select 'facturas' as tabla, f.id::text as id, f.contabilizado_en, fn_puente_factura_plan(f.id) as plan
+           from facturas f
+          where f.contabilizado_en is not null
+         union all
+         select 'trabajos_externos', x.id::text, x.contabilizado_en, fn_puente_externo_plan(x.id)
+           from trabajos_externos x
+          where x.contabilizado_en is not null
+         union all
+         select 'cobros', c.id::text, c.contabilizado_en, fn_puente_cobro_plan(c.id)
+           from cobros c
+          where c.contabilizado_en is not null
+         union all
+         select 'aplicaciones_cobro', ap.id::text, ap.contabilizado_en, fn_puente_aplicacion_plan(ap.id)
+           from aplicaciones_cobro ap
+          where ap.desde_anticipo and ap.contabilizado_en is not null
+         union all
+         select 'notas_credito', n.id::text, n.contabilizado_en, fn_puente_nota_plan(n.id)
+           from notas_credito n
+          where n.contabilizado_en is not null
+         union all
+         select 'cobros_devoluciones', dv.id::text, dv.contabilizado_en, fn_puente_devolucion_plan(dv.id)
+           from cobros_devoluciones dv
+          where dv.contabilizado_en is not null)
+  select coalesce(jsonb_object_agg(i.tabla || '/' || i.id, true), '{}'::jsonb)
+    into v_iguales
+    from (select 'recibos' as tabla, r.id::text as id
+            from recibos r
+            join asientos a on a.id = r.contabilizado_en
+            join puente_documentos d on d.tabla = 'recibos' and d.documento_id = r.id::text
+                                    and d.estado = 'contabilizado' and d.codigo is null and d.asiento_id = a.id
+           where not exists (select 1 from asientos x where x.reversa_a = a.id and x.camino = 'reverso')
+             and a.procedencia->>'firma' = md5(fn_puente_recibo_doc(r)::text)
+          union all
+          select p.tabla, p.id
+            from pl p
+            join puente_documentos d on d.tabla = p.tabla and d.documento_id = p.id
+            cross join lateral fn_puente_vivo(p.tabla, p.id) v
+           where p.plan->'aviso' is null
+             and (d.estado, d.codigo, d.motivo, d.asiento_id, d.firma)
+                 is not distinct from ('contabilizado'::text, null::text, null::text, p.contabilizado_en, p.plan->>'firma')
+             and v.id = p.contabilizado_en
+             and v.procedencia->>'firma' = p.plan->>'firma') i;
   for v_tabla, v_id in
     select 'recibos', r.id::text from recibos r
      where coalesce(r.fecha, fn_fecha_miami(r.creado)) >= v_desde or r.contabilizado_en is not null
@@ -5403,21 +5494,15 @@ begin
      where dv.fecha >= v_desde or dv.contabilizado_en is not null
     order by 1, 2
   loop
+    -- Contabilizado y sin cambios: nada que hacer (lo mismo que diría su
+    -- puente, sin planearlo otra vez ni abrirle una subtransacción). Si
+    -- tiene algo en la bandeja (un aviso, una duda), sí se pasa.
+    if v_iguales ? (v_tabla || '/' || v_id) then
+      v_igual := v_igual + 1;
+      v_ptabla := jsonb_set(v_ptabla, array[v_tabla], to_jsonb(coalesce((v_ptabla->>v_tabla)::int, 0) + 1));
+      continue;
+    end if;
     begin
-      -- Un recibo contabilizado que no cambió: nada que hacer (lo mismo que
-      -- diría su puente, sin planearlo). Si tiene algo en la bandeja (un
-      -- aviso, una duda), sí se pasa.
-      if v_tabla = 'recibos'
-         and exists (select 1 from recibos r
-                       join asientos a on a.id = r.contabilizado_en
-                       join puente_documentos d on d.tabla = 'recibos' and d.documento_id = v_id
-                                               and d.estado = 'contabilizado' and d.codigo is null and d.asiento_id = a.id
-                      where r.id = v_id::bigint
-                        and not exists (select 1 from asientos x where x.reversa_a = a.id and x.camino = 'reverso')
-                        and a.procedencia->>'firma' = fn_puente_recibo_firma(r.id)) then
-        v_igual := v_igual + 1;
-        continue;
-      end if;
       -- (EXECUTE no mueve FOUND: se mira lo que devolvió.)
       v_uno := null;
       execute format('select 1 from public.%I where id = $1::%s for update skip locked', v_tabla,
@@ -5452,7 +5537,8 @@ begin
     end;
   end loop;
   return jsonb_build_object(
-    'desde', v_desde, 'pasados', v_n, 'sin_cambios', v_igual, 'en_uso_saltados', v_salta, 'errores', v_error,
+    'desde', v_desde, 'pasados', v_n, 'sin_cambios', v_igual, 'sin_cambios_por_tabla', v_ptabla,
+    'en_uso_saltados', v_salta, 'errores', v_error,
     'estado', (select coalesce(jsonb_object_agg(t.tabla, t.estados), '{}'::jsonb)
                  from (select d.tabla, jsonb_object_agg(d.estado, d.n) as estados
                          from (select tabla, estado, count(*) as n from puente_documentos group by tabla, estado) d
@@ -5588,6 +5674,7 @@ declare
   v_rsaldo numeric;
   v_rret   numeric;
   v_libro  numeric;
+  v_aper   text;
 begin
   perform fn_puente_exigir_dueno();
   if p_cobro is null or jsonb_typeof(p_cobro) <> 'object' then
@@ -5828,11 +5915,52 @@ begin
          where (x->>'factura_id')::bigint = v_fact.id and (x->>'es_retencion')::boolean;
         v_rsaldo := fn_puente_saldo(fn_puente_cuenta_de('retencion_cxc'), 'facturas', v_fact.id::text) - v_rret;
       end if;
+      -- Una factura de antes del corte: su saldo llega con la apertura. Si la
+      -- apertura YA está en el libro (viva), esperarla no lleva a nada: se
+      -- dice que no la trajo abierta, con su número, y las salidas (f04:
+      -- Undeposited Funds, la apertura por corregir, o su saldo que entró
+      -- por otro lado: la retención sin partida, otra obra).
+      if v_fact.fecha < fn_puente_corte() then
+        select a.numero into v_aper
+          from asientos a
+         where a.tipo = 'apertura'
+           and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso')
+         order by a.cadena_pos desc
+         limit 1;
+      end if;
       raise exception using errcode = 'MX008',
         message = format('La factura #%s tiene abiertos %s en %s y esta aplicación le cobra %s: no cabe.%s', v_fact.num,
                          v_saldo - v_ya, v_cta, v_am + v_desc,
-                         case when v_fact.fecha < fn_puente_corte()
+                         case when v_fact.fecha < fn_puente_corte() and v_aper is null
                               then ' Es de antes del corte: su saldo llega con la apertura (f04); regístralo cuando esté cargada.'
+                              when v_fact.fecha < fn_puente_corte()
+                              then format(' Es de antes del corte y la apertura (asiento %s) no la trae abierta en %s. Si '
+                                          'QuickBooks ya la tenía cobrada (el cobro en Undeposited Funds, que la apertura puso '
+                                          'en el banco), este depósito NO se registra: ya está en el libro. Si de verdad '
+                                          'estaba abierta, se corrige la apertura (fn_apertura con la balanza corregida y su '
+                                          'motivo; con la apertura cerrada, un ajuste a la apertura contra su partida '
+                                          'facturas/%s).%s', v_aper, v_cta, v_fact.id,
+                                          coalesce((select format(' Ojo: la apertura tiene %s en %s de la obra %s SIN partida: si '
+                                                                  'es de esta factura, reclasifícalo contra su partida '
+                                                                  'facturas/%s (fn_postear) y vuelve a registrar el cobro.',
+                                                                  sum(l.monto), v_cta, v_fact.proyecto_id, v_fact.id)
+                                                      from asiento_lineas l
+                                                      join asientos a on a.id = l.asiento_id
+                                                     where a.numero = v_aper and l.cuenta = v_cta
+                                                       and l.proyecto_id is not distinct from v_fact.proyecto_id
+                                                       and l.partida_id is null
+                                                    having sum(l.monto) <> 0), '')
+                                          || coalesce((select format(' Ojo: la apertura puso %s en la factura #%s de OTRA obra '
+                                                                     '(%s, id %s): su Customer:Job estaba mapeado a otra obra.',
+                                                                     sum(l.monto), f2.num, f2.proyecto_id, f2.id)
+                                                         from asiento_lineas l
+                                                         join asientos a on a.id = l.asiento_id
+                                                         join facturas f2 on l.partida_tabla = 'facturas' and l.partida_id = f2.id::text
+                                                        where a.numero = v_aper and l.cuenta = v_cta and f2.num = v_fact.num
+                                                          and f2.id <> v_fact.id
+                                                        group by f2.num, f2.proyecto_id, f2.id
+                                                       having sum(l.monto) <> 0
+                                                        limit 1), ''))
                               when v_ret then ' La retención de la factura se cobra hasta lo retenido. Si su retención entró a '
                                               || fn_puente_cuenta_de('cxc') || ', reclasifícala antes contra su partida (Dr '
                                               || fn_puente_cuenta_de('retencion_cxc') || ' / Cr ' || fn_puente_cuenta_de('cxc')
@@ -7225,10 +7353,15 @@ begin
             left join puente_documentos d on d.tabla = v.tabla and d.documento_id = v.id
            -- (Los recibos, por su firma sola: planear cada recibo del libro,
            -- con su búsqueda de duplicados, tardaba más que el tope de la API
-           -- con unos miles.)
+           -- con unos miles. Y con fn_puente_recibo_doc aquí mismo, no por
+           -- fn_puente_recibo_firma: así lo que llama se planea una vez por
+           -- consulta y no una por recibo; con 4.000 recibos, de 5,9 s a
+           -- 0,4 s.)
            where v.tabla in ('recibos', 'trabajos_externos', 'facturas')
              and v.firma is distinct from (case v.tabla
-                                             when 'recibos'           then fn_puente_recibo_firma(v.id::bigint)
+                                             when 'recibos'
+                                             then (select md5(fn_puente_recibo_doc(r)::text) from recibos r
+                                                    where r.id = v.id::bigint)
                                              when 'trabajos_externos' then fn_puente_externo_plan(v.id::bigint)->>'firma'
                                              else fn_puente_factura_plan(v.id::bigint)->>'firma' end)
           limit 50) s;

@@ -15,6 +15,17 @@
 --       el archivo por segunda vez nunca baja un control, ni un instante.
 --   B · Los controles: triggers, numeración, cadena de hashes, período,
 --       reverso, las funciones de verdad y el verificador.
+-- CAMBIO PARA c4 (f04, 25-sep-2026): la policy de lectura de las tablas
+-- del libro (A.9) es «using ((select es_dueno()))» y no «using
+-- (es_dueno())». Dice lo mismo (solo el dueño lee), pero Postgres
+-- evalúa es_dueno() UNA vez por consulta y no una vez por fila leída: con
+-- unos 10.000 asientos, las vistas de c4 bajan de 0,4-1,7 s a 0,1-0,4 s y
+-- el control del Panel de 6,4 s a 2,4 s (el tope de la API es 8 s). Es la
+-- forma que recomienda Supabase. Volver a pegar este archivo la cambia
+-- (el bloque de A.9 rehace su policy), y el control «permisos» de
+-- fn_verificar_cadena acepta las dos formas (c1 sigue con la de siempre).
+-- Su prueba: la 78 de c2-pruebas.sql.
+--
 -- EL ROJO SE CORRE SOLO EN EL BANCO DE PRUEBAS (pruebas/conta/correr.sh
 -- con «c2-libro.sql:A»). En Supabase este archivo se pega SIEMPRE entero:
 -- entre un bloque A pegado solo y el bloque B, el libro no tiene guardas,
@@ -809,7 +820,9 @@ begin
       execute format('drop policy %I on public.%I', p.policyname, t);
     end loop;
     execute format('drop policy if exists %I on public.%I', t || '_dueno', t);
-    execute format('create policy %I on public.%I for select to authenticated using (es_dueno())', t || '_dueno', t);
+    -- «(select es_dueno())»: una vez por consulta, no por fila (ver la
+    -- cabecera).
+    execute format('create policy %I on public.%I for select to authenticated using ((select es_dueno()))', t || '_dueno', t);
   end loop;
 end $$;
 
@@ -3423,7 +3436,12 @@ begin
            where not exists (select 1 from pg_policies pl
                               where pl.schemaname = 'public' and pl.tablename = t and pl.policyname = t || '_dueno'
                                 and pl.cmd = 'SELECT' and pl.permissive = 'PERMISSIVE'
-                                and pl.roles = array['authenticated']::name[] and pl.qual = 'es_dueno()')
+                                and pl.roles = array['authenticated']::name[]
+                                -- (las dos formas: «es_dueno()» y «(select
+                                -- es_dueno())», que Postgres guarda como
+                                -- «( SELECT es_dueno() AS es_dueno)»)
+                                and regexp_replace(pl.qual, '[[:space:]]', '', 'g')
+                                      in ('es_dueno()', '(SELECTes_dueno()ASes_dueno)'))
           union all
           select format('%s tiene una policy ajena: %s (vuelve a pegar %s: la borra)', pl.tablename, pl.policyname,
                         case when pl.tablename like 'cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end)

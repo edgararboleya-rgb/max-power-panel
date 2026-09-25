@@ -58,10 +58,14 @@ begin
 
   -- El rol del SQL Editor es miembro de los tres roles de la API: por eso
   -- puede hacer "set local role authenticated" para suplantar a un usuario.
-  if not pg_has_role('editor_sql', 'anon', 'member')
-     or not pg_has_role('editor_sql', 'authenticated', 'member')
-     or not pg_has_role('editor_sql', 'service_role', 'member') then
-    grant anon, authenticated, service_role to editor_sql;
+  -- Y con ADMIN OPTION, como postgres en Supabase: así puede cambiar sus
+  -- ajustes («alter role authenticated set statement_timeout = '8s'», que
+  -- documenta Supabase; c4 apaga así el JIT de la app). Desde Postgres 16,
+  -- CREATEROLE ya no basta para cambiar un rol: hace falta ADMIN OPTION.
+  if not pg_has_role('editor_sql', 'anon', 'member with admin option')
+     or not pg_has_role('editor_sql', 'authenticated', 'member with admin option')
+     or not pg_has_role('editor_sql', 'service_role', 'member with admin option') then
+    grant anon, authenticated, service_role to editor_sql with admin option;
   end if;
 
   -- Como en Supabase: el search_path de cada sesión incluye extensions.

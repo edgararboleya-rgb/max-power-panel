@@ -52,11 +52,11 @@
 --   · las que prueban c1 (el plan y su guarda: 29, 40, 42, 44, 45, 46, 50,
 --     64, 72 y 74), que no depende del bloque A; la del candado de las
 --     pruebas (75), que prueba a estas mismas pruebas; y la del rastro
---     (78);
+--     (79);
 --   · unas pocas que usan piezas que solo existen en el bloque B
 --     (fn_postear_interno en la 41, la 63, la 69, la 70, la 76 y la 77; la guarda de
---     periodos, que la 60, la 65, la 71 y la 73 apagan un momento), que
---     fallan porque falta la pieza.
+--     periodos, que la 60, la 65, la 71 y la 73 apagan un momento; el
+--     verificador, que la 78 mira), que fallan porque falta la pieza.
 -- Con el bloque B, todas en true.
 --
 -- Los datos que usan se buscan, no se inventan: el dueño (rol 'dueno',
@@ -3790,7 +3790,62 @@ begin
 end $$;
 
 
--- 78. Las pruebas no dejaron rastro: el libro, el plan, su historial, las
+-- 78. La policy de lectura del libro (A.9) es «(select es_dueno())»: dice
+--     lo mismo que «es_dueno()» (solo el dueño lee: el equipo lee 0
+--     filas), pero Postgres la evalúa una vez por consulta y no por fila
+--     (c4 la necesita para no pasar del tope de la API). El control
+--     permisos la acepta en verde, y sigue cazando una policy cambiada a
+--     otra cosa («using (true)»). Antes de este cambio la forma salía 0/4.
+do $$
+declare
+  v_dueno  uuid;
+  v_equipo uuid;
+  v_forma  text;
+  v_perm   text;
+  v_eq     bigint;
+  v_du     bigint;
+  v_ab     text;
+  v_obt    text;
+  v_esp    text := 'forma=4/4 permisos=t equipo=0 dueno>0 abierta=f';
+begin
+  select id into v_dueno from perfiles where rol = 'dueno' and coalesce(activo, true) order by creado limit 1;
+  select id into v_equipo from perfiles where rol <> 'dueno' and coalesce(activo, true) order by creado limit 1;
+  if v_dueno is null or v_equipo is null then
+    insert into _pruebas values (78, 'la policy del libro se evalúa una vez por consulta (select es_dueno()) y dice lo mismo', v_esp,
+                                 'omitida: falta el dueño o alguien del equipo', null);
+    return;
+  end if;
+  begin
+    select count(*) filter (where regexp_replace(pl.qual, '[[:space:]]', '', 'g') = '(SELECTes_dueno()ASes_dueno)') || '/' || count(*)
+      into v_forma
+      from pg_policies pl
+     where pl.schemaname = 'public' and pl.tablename in ('periodos', 'contadores', 'asientos', 'asiento_lineas')
+       and pl.policyname = pl.tablename || '_dueno';
+    select case when v.ok then 't' else 'f' end into v_perm from fn_verificar_cadena() v where v.control = 'permisos';
+    perform set_config('request.jwt.claims', json_build_object('sub', v_equipo, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    select count(*) into v_eq from periodos;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    select count(*) into v_du from periodos;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '', true);
+    alter policy asientos_dueno on public.asientos using (true);
+    select case when v.ok then 't' else 'f' end into v_ab from fn_verificar_cadena() v where v.control = 'permisos';
+    v_obt := format('forma=%s permisos=%s equipo=%s dueno%s abierta=%s', v_forma, v_perm, v_eq,
+                    case when v_du > 0 then '>0' else '=0' end, v_ab);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (78, 'la policy del libro se evalúa una vez por consulta (select es_dueno()) y dice lo mismo', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+
+-- 79. Las pruebas no dejaron rastro: el libro, el plan, su historial, las
 --     secuencias y las huellas (el reloj fingido y los ALTER TABLE de
 --     algunas pruebas se deshicieron) están igual que al empezar. Va la
 --     última.
@@ -3800,7 +3855,7 @@ declare
   v_obt   text;
 begin
   v_obt := pg_temp.mx_foto();
-  insert into _pruebas values (78, 'las pruebas no dejan rastro (libro, plan, historial, secuencias y huellas)', v_antes, v_obt, v_obt = v_antes);
+  insert into _pruebas values (79, 'las pruebas no dejan rastro (libro, plan, historial, secuencias y huellas)', v_antes, v_obt, v_obt = v_antes);
 end $$;
 
 select * from _pruebas order by n;

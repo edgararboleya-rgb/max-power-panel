@@ -1125,7 +1125,7 @@ begin
     execute 'set local role authenticated';
     v_r := fn_puentes_correr(v_corte - 30);
     begin
-      perform fn_cobro_registrar(jsonb_build_object('fecha', (v_corte - 1)::text, 'monto', '100.00', 'aplicaciones',
+      perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_corte - 1)::text, 'monto', '100.00', 'aplicaciones',
                                                     jsonb_build_array(jsonb_build_object('proyecto_id', v_obra, 'monto', '100.00'))));
       v_cob := 'entró';
     exception when others then
@@ -1288,17 +1288,17 @@ begin
     values (-3100040, v_obra, 'C3-40', v_desde + 2, 10000.00, 1000.00);
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    v_r1 := fn_cobro_registrar(jsonb_build_object(
+    v_r1 := fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 
               'fecha', (v_desde + 10)::text, 'monto', '4000.00', 'medio', 'cheque', 'referencia', 'c3-1',
               'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3100040, 'monto', '4000.00'))));
     execute 'reset role';
     v_abierto := pg_temp.c3_saldo(v_cxc, 'facturas', '-3100040') || '/' || pg_temp.c3_saldo(v_ret, 'facturas', '-3100040');
     execute 'set local role authenticated';
-    v_r2 := fn_cobro_registrar(jsonb_build_object(
+    v_r2 := fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 
               'fecha', (v_desde + 20)::text, 'monto', '1000.00', 'medio', 'ach',
               'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3100040, 'monto', '1000.00', 'es_retencion', true))));
     begin
-      perform fn_cobro_registrar(jsonb_build_object(
+      perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 
                 'fecha', (v_desde + 21)::text, 'monto', '1.00',
                 'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3100040, 'monto', '1.00', 'es_retencion', true))));
       v_mas := 'entró';
@@ -1358,12 +1358,12 @@ begin
     values (-3100041, v_obra, 'C3-41', v_desde + 2, 2000.00), (-3100042, v_obra, 'C3-42', v_desde + 2, 3000.00);
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    v_r := fn_cobro_registrar(jsonb_build_object(
+    v_r := fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 
              'fecha', (v_desde + 12)::text, 'monto', '4950.00', 'medio', 'cheque', 'referencia', 'c3-2',
              'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3100041, 'monto', '2000.00'),
                                                jsonb_build_object('factura_id', -3100042, 'monto', '2950.00', 'descuento', '50.00'))));
     begin
-      perform fn_cobro_registrar(jsonb_build_object(
+      perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 
                 'fecha', (v_desde + 13)::text, 'monto', '100.00',
                 'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3100041, 'monto', '100.00'))));
       v_mas := 'entró';
@@ -1371,7 +1371,7 @@ begin
       v_mas := sqlstate;
     end;
     begin
-      perform fn_cobro_registrar(jsonb_build_object(
+      perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 
                 'fecha', (v_desde + 13)::text, 'monto', '100.00',
                 'aplicaciones', jsonb_build_array(jsonb_build_object('proyecto_id', v_obra, 'monto', '90.00'))));
       v_suma := 'entró';
@@ -1379,7 +1379,7 @@ begin
       v_suma := sqlstate;
     end;
     begin
-      perform fn_cobro_registrar(jsonb_build_object(
+      perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 
                 'fecha', (v_desde + 13)::text, 'monto', '10.005',
                 'aplicaciones', jsonb_build_array(jsonb_build_object('proyecto_id', v_obra, 'monto', '10.005'))));
       v_mil := 'entró';
@@ -1439,7 +1439,7 @@ begin
     values (-3100043, v_obra, 'C3-43', v_desde + 5, 1000.00), (-3100048, v_obra, 'C3-48', v_desde + 5, 600.00);
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    v_r := fn_cobro_registrar(jsonb_build_object(
+    v_r := fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 
              'fecha', (v_desde + 3)::text, 'monto', '1500.00', 'medio', 'zelle', 'referencia', 'c3-anticipo', 'proyecto_id', v_obra,
              'aplicaciones', jsonb_build_array(jsonb_build_object('proyecto_id', v_obra, 'monto', '1500.00'))));
     v_c := v_r->>'cobro';
@@ -2593,12 +2593,14 @@ begin
       end;
     end if;
     update recibos set total = 95.00 where id = -3100480;
-    select case bool_and(c.ok) when true then 't' when false then 'f' else '-' end into v_trig
-      from fn_puentes_verificar() c where c.control = 'triggers';
-    select case bool_and(c.ok) when true then 't' when false then 'f' else '-' end
-           || case when bool_or(c.detalle::text like '%recibos -3100480 cambió por debajo de su puente%') then '/cambio_por_debajo' else '' end
-      into v_doc
-      from fn_puentes_verificar() c where c.control = 'documentos';
+    -- (Los dos controles de UNA pasada: con el libro lleno, cada pasada de
+    -- fn_puentes_verificar es un segundo más con recibos tomada.)
+    select case bool_and(c.ok) filter (where c.control = 'triggers') when true then 't' when false then 'f' else '-' end,
+           case bool_and(c.ok) filter (where c.control = 'documentos') when true then 't' when false then 'f' else '-' end
+           || case when bool_or(c.detalle::text like '%recibos -3100480 cambió por debajo de su puente%')
+                          filter (where c.control = 'documentos') then '/cambio_por_debajo' else '' end
+      into v_trig, v_doc
+      from fn_puentes_verificar() c where c.control in ('triggers', 'documentos');
     if exists (select 1 from pg_trigger where tgname = 'trg_puente_recibos_despues') then
       execute 'alter table public.recibos enable trigger trg_puente_recibos_despues';
     end if;
@@ -2649,7 +2651,7 @@ begin
     values (-3100492, v_obra, 'C3-492', v_desde + 2, 1000.00, 100.00);
     insert into trabajos_externos (id, proyecto_id, descripcion, fecha, tipo, horas, costo) overriding system value
     values (-3100493, v_obra, 'c3-pruebas: subcontrato sin ayudante enlazado', v_desde + 2, 'ajuste', null, 100.00);
-    perform fn_cobro_registrar(jsonb_build_object(
+    perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 
               'fecha', (v_desde + 9)::text, 'monto', '450.00', 'medio', 'cheque',
               'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3100492, 'monto', '450.00'))));
     set constraints all immediate;   -- lo que hace el commit
@@ -2796,18 +2798,18 @@ begin
     values (-3100620, v_obra, 'C3-620', v_desde + 2, 1000.00);
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    perform fn_cobro_registrar(jsonb_build_object(
+    perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 
               'fecha', (v_desde + 8)::text, 'monto', '400.00', 'medio', 'ach', 'movimiento_id', 'c3-pruebas-mov-1',
               'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3100620, 'monto', '400.00'))));
     begin
-      perform fn_cobro_registrar(jsonb_build_object(
+      perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 
                 'fecha', (v_desde + 8)::text, 'monto', '300.00', 'medio', 'ach', 'movimiento_id', 'c3-pruebas-mov-1',
                 'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3100620, 'monto', '300.00'))));
       v_2 := 'entró';
     exception when others then
       v_2 := sqlstate;
     end;
-    v_r := fn_cobro_registrar(jsonb_build_object(
+    v_r := fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 
              'fecha', (v_desde + 9)::text, 'monto', '100.00', 'medio', 'cheque',
              'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3100620, 'monto', '100.00'))));
     execute 'reset role';
@@ -3283,7 +3285,7 @@ begin
            (-3200051, v_obra, 'C3-2051', v_desde + 2, 600.00, 0);
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 5)::text, 'monto', '300.00',
+    perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 5)::text, 'monto', '300.00',
               'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3200050, 'monto', '300.00'))));
     execute 'reset role';
     perform fn_reversar_interno((select f.contabilizado_en from facturas f where f.id = -3200050), 'c3: lo rehago', 'reverso',
@@ -3500,9 +3502,9 @@ begin
     update facturas set retencion = 1000.00 where id = -3200090;
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 5)::text, 'monto', '9000.00',
+    perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 5)::text, 'monto', '9000.00',
               'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3200090, 'monto', '9000.00'))));
-    perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 6)::text, 'monto', '1000.00',
+    perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 6)::text, 'monto', '1000.00',
               'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3200090, 'monto', '1000.00', 'es_retencion', true))));
     execute 'reset role';
     select format('antes=%s lineas=%s cobrada=%s/%s', coalesce(v_antes, '-'),
@@ -3655,10 +3657,10 @@ begin
            (-3200121, v_obra, 'C3-2121', v_desde + 2, 1000.00, 0);
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    v_r := fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 5)::text, 'monto', '300.00', 'movimiento_id', 'c3-pruebas-mov-59',
+    v_r := fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 5)::text, 'monto', '300.00', 'movimiento_id', 'c3-pruebas-mov-59',
              'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3200120, 'monto', '300.00'))));
     begin
-      perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 5)::text, 'monto', '300.00', 'movimiento_id', 'c3-pruebas-mov-59',
+      perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 5)::text, 'monto', '300.00', 'movimiento_id', 'c3-pruebas-mov-59',
                 'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3200121, 'monto', '300.00'))));
       v_2 := 'entró';
     exception when others then
@@ -3666,7 +3668,7 @@ begin
     end;
     perform fn_cobro_anular((v_r->>'cobro')::uuid, 'c3: aplicado a la factura equivocada');
     begin
-      perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 5)::text, 'monto', '300.00', 'movimiento_id', 'c3-pruebas-mov-59',
+      perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 5)::text, 'monto', '300.00', 'movimiento_id', 'c3-pruebas-mov-59',
                 'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3200121, 'monto', '300.00'))));
       v_3 := 'entró';
     exception when others then
@@ -3762,7 +3764,7 @@ begin
     values (-3200140, v_obra, 'C3-2140', v_desde + 2, 1000.00, 0);
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 5)::text, 'monto', '400.00',
+    perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 5)::text, 'monto', '400.00',
               'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3200140, 'monto', '400.00'))));
     execute 'reset role';
     perform fn_reversar_interno((select f.contabilizado_en from facturas f where f.id = -3200140), 'c3: lo rehago', 'reverso',
@@ -3810,13 +3812,13 @@ begin
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     begin
-      perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 10)::text, 'monto', '800.00',
+      perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 10)::text, 'monto', '800.00',
                 'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3200150, 'monto', '800.00'))));
       v_a := 'entró';
     exception when others then
       v_a := sqlstate;
     end;
-    v_ant := fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 10)::text, 'monto', '800.00',
+    v_ant := fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 10)::text, 'monto', '800.00',
                'aplicaciones', jsonb_build_array(jsonb_build_object('proyecto_id', v_obra, 'monto', '800.00'))));
     begin
       perform fn_anticipo_aplicar((v_ant->>'cobro')::uuid, -3200150, '800.00', v_desde + 15);
@@ -3875,7 +3877,7 @@ begin
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     begin
-      perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 5)::text, 'monto', '100.00', 'cuenta', v_activo,
+      perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 5)::text, 'monto', '100.00', 'cuenta', v_activo,
                 'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3200160, 'monto', '100.00'))));
       v_a := 'entró';
     exception when others then
@@ -3989,22 +3991,22 @@ begin
     values (-3200170, v_obra, 'C3-2170', v_desde + 2, 2000.00, 0);
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    v_1 := fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 5)::text, 'monto', '1000.00', 'medio', 'cheque',
+    v_1 := fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 5)::text, 'monto', '1000.00', 'medio', 'cheque',
              'referencia', '5521', 'llave_cliente', 'c3-pruebas-llave-65a',
              'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3200170, 'monto', '1000.00'))));
-    v_2 := fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 5)::text, 'monto', '1000.00', 'medio', 'cheque',
+    v_2 := fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 5)::text, 'monto', '1000.00', 'medio', 'cheque',
              'referencia', '5521', 'llave_cliente', 'c3-pruebas-llave-65a',
              'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3200170, 'monto', '1000.00'))));
     begin
-      perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 5)::text, 'monto', '900.00', 'llave_cliente', 'c3-pruebas-llave-65a',
+      perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 5)::text, 'monto', '900.00', 'llave_cliente', 'c3-pruebas-llave-65a',
                 'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3200170, 'monto', '900.00'))));
       v_3 := 'entró';
     exception when others then
       v_3 := sqlstate;
     end;
-    v_a1 := fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 6)::text, 'monto', '2500.00', 'llave_cliente', 'c3-pruebas-llave-65b',
+    v_a1 := fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 6)::text, 'monto', '2500.00', 'llave_cliente', 'c3-pruebas-llave-65b',
               'aplicaciones', jsonb_build_array(jsonb_build_object('proyecto_id', v_obra, 'monto', '2500.00'))));
-    v_a2 := fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 6)::text, 'monto', '2500.00', 'llave_cliente', 'c3-pruebas-llave-65b',
+    v_a2 := fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 6)::text, 'monto', '2500.00', 'llave_cliente', 'c3-pruebas-llave-65b',
               'aplicaciones', jsonb_build_array(jsonb_build_object('proyecto_id', v_obra, 'monto', '2500.00'))));
     execute 'reset role';
     select format('segunda=%s/%s otra=%s anticipo=%s/%s cobros=%s', coalesce(v_2->>'ya_estaba', '-'),
@@ -4892,7 +4894,7 @@ begin
     values (-3300090, v_obra, 'C3-3390', v_desde + 2, 8000.00, 0);
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 10)::text, 'monto', '7600.00', 'medio', 'cheque',
+    perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 10)::text, 'monto', '7600.00', 'medio', 'cheque',
               'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3300090, 'monto', '7600.00',
                                                                    'descuento', '400.00'))));
     update facturas set pagada = true where id = -3300090;
@@ -5377,26 +5379,26 @@ begin
     values (-3300170, v_obra, 'C3-3370', v_desde + 2, 1000.00, 0);
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    v_r1 := fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 5)::text, 'monto', '300.00',
+    v_r1 := fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 5)::text, 'monto', '300.00',
               'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', ' -3300170', 'monto', '300.00'))));
-    v_r2 := fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 6)::text, 'monto', '200.00',
+    v_r2 := fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 6)::text, 'monto', '200.00',
               'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', '-3300170 ', 'monto', '200.00'))));
     begin
-      perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 7)::text, 'monto', '1.00',
+      perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 7)::text, 'monto', '1.00',
                 'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', 'x-3300170', 'monto', '1.00'))));
       v_c := 'entró';
     exception when others then
       v_c := sqlstate;
     end;
     begin
-      perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 7)::text, 'monto', '1.00',
+      perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 7)::text, 'monto', '1.00',
                 'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', '99999999999999999999', 'monto', '1.00'))));
       v_d := 'entró';
     exception when others then
       v_d := sqlstate;
     end;
     begin
-      perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 7)::text, 'monto', '1.00',
+      perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 7)::text, 'monto', '1.00',
                 'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', '-3300170.0', 'monto', '1.00'))));
       v_e := 'entró';
     exception when others then
@@ -5937,7 +5939,7 @@ begin
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     begin
-      perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 9)::text, 'monto', '4000.00', 'medio', 'cheque',
+      perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 9)::text, 'monto', '4000.00', 'medio', 'cheque',
                 'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400040, 'monto', '4000.00'))));
       v_b := 'entró';
       raise exception using errcode = 'MXT01';
@@ -6008,8 +6010,11 @@ begin
     perform pg_temp.c3_inmediato();
     insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
     values (-3400050, v_obra, 'C3-4050', v_desde + 1, 5000.00, 0);
-    v_cobro := jsonb_build_object('fecha', (v_desde + 10)::text, 'monto', '1000.00', 'medio', 'cheque', 'referencia', '4471',
-                                  'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400050, 'monto', '1000.00')));
+    -- (Un monto con centavos que no trae un depósito de verdad: el detector
+    -- no se tropieza con uno real del mes; esta es la única prueba cuyos
+    -- cobros van SIN "duplicado_confirmado".)
+    v_cobro := jsonb_build_object('fecha', (v_desde + 10)::text, 'monto', '1047.83', 'medio', 'cheque', 'referencia', '4471',
+                                  'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400050, 'monto', '1047.83')));
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     perform fn_cobro_registrar(v_cobro || '{"llave_cliente": "c3-95-a"}'::jsonb);
@@ -6042,7 +6047,7 @@ begin
     select case when c.ok then 't' else 'f' end into v_d from fn_puentes_verificar() c where c.control = 'duplicados';
     -- Por debajo (sin fn_cobro_registrar): el mismo depósito otra vez.
     insert into cobros (fecha, monto, cuenta, medio, referencia, creado_por)
-    values (v_desde + 10, 1000.00, fn_puente_cuenta_de('banco'), 'cheque', '4471', v_dueno);
+    values (v_desde + 10, 1047.83, fn_puente_cuenta_de('banco'), 'cheque', '4471', v_dueno);
     v_obt := format('banco=%s otra_llave=%s confirmado=%s duplicados=%s por_debajo=%s', v_a, v_b, v_c, v_d,
                     coalesce((select case when c.ok then 't' else 'f' end from fn_puentes_verificar() c
                                where c.control = 'duplicados'), '-'));
@@ -6182,7 +6187,7 @@ begin
     values (-3400080, v_obra, 'C3-4080', v_desde + 1, 8000.00, 0);
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    v_cobro := (fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 20)::text, 'monto', '8000.00', 'medio', 'cheque',
+    v_cobro := (fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 20)::text, 'monto', '8000.00', 'medio', 'cheque',
                   'referencia', '9001',
                   'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400080, 'monto', '8000.00'))))->>'cobro')::uuid;
     v_dev := fn_cobro_devolver(v_cobro, v_desde + 25, 'c3: el cheque 9001 rebotó', 'C3-MOV-98');
@@ -6416,7 +6421,7 @@ begin
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     begin
-      perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 20)::text, 'monto', '3200.50', 'medio', 'cheque',
+      perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 20)::text, 'monto', '3200.50', 'medio', 'cheque',
                 'referencia', '9101',
                 'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400110, 'monto', '3200.50'))));
       v_a := 'entró';
@@ -6427,7 +6432,7 @@ begin
                                                then '/es_su_retencion' else '' end;
     end;
     -- Como hacía Edgar siguiendo el mensaje de antes: lo que sobra, de anticipo.
-    v_cobro := (fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 20)::text, 'monto', '3200.50', 'medio', 'cheque',
+    v_cobro := (fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 20)::text, 'monto', '3200.50', 'medio', 'cheque',
                   'referencia', '9101',
                   'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400110, 'monto', '2880.45'),
                                                     jsonb_build_object('proyecto_id', v_obra, 'monto', '320.05'))))->>'cobro')::uuid;
@@ -6483,7 +6488,7 @@ begin
     values (-3400120, v_obra, 'C3-4120', v_desde + 1, 8000.00, 0);
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 12)::text, 'monto', '3000.00', 'medio', 'cheque',
+    perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 12)::text, 'monto', '3000.00', 'medio', 'cheque',
               'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400120, 'monto', '3000.00'))));
     execute 'reset role';
     select format('app=%s libro=%s saldo=%s aviso=%s', coalesce(fc.cobrado_app, 0.00), fc.cobrado_libro, fc.saldo_libro,
@@ -6540,7 +6545,7 @@ begin
                 then 'entró' else '-' end;
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 7)::text, 'monto', '2000.00', 'medio', 'cheque',
+    perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 7)::text, 'monto', '2000.00', 'medio', 'cheque',
               'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400130, 'monto', '2000.00'))));
     execute 'reset role';
     v_obt := format('sin_obra=%s con_obra=%s cobro=entró abiertas=%s por_obra=%s/%s', v_a, v_b,
@@ -6644,7 +6649,7 @@ begin
     values (-3400151, v_obra, 'C3-4151', v_desde + 1, 1000.00, 0);
     perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
-    v_cobro := (fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 8)::text, 'monto', '1000.00', 'medio', 'cheque',
+    v_cobro := (fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 8)::text, 'monto', '1000.00', 'medio', 'cheque',
                   'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400151, 'monto', '1000.00'))))->>'cobro')::uuid;
     execute 'reset role';
     v_ar := pg_temp.c3_vivo('recibos', '-3400150');
@@ -6825,9 +6830,13 @@ begin
       join puente_documentos d on d.tabla = 'recibos' and d.documento_id = r.id::text
      where r.contabilizado_en is not null and d.estado = 'contabilizado' and d.codigo is null;
     v_res := fn_puentes_correr();
+    -- (Desde la ronda 3 de c4 también se saltan las facturas, los cobros…
+    -- que no cambiaron: los recibos se cuentan aparte, en
+    -- sin_cambios_por_tabla.)
     v_obt := format('sin_cambios=%s indices=%s/%s',
-                    case when (v_res->>'sin_cambios')::int = v_quietos and v_quietos >= 3 then 'todos_los_quietos'
-                         else format('%s de %s', v_res->>'sin_cambios', v_quietos) end,
+                    case when (v_res->'sin_cambios_por_tabla'->>'recibos')::int = v_quietos and v_quietos >= 3
+                         then 'todos_los_quietos'
+                         else format('%s de %s', v_res->'sin_cambios_por_tabla'->>'recibos', v_quietos) end,
                     to_regclass('public.recibos_ticket_idx') is not null, to_regclass('public.recibos_ruta_idx') is not null);
     raise exception using errcode = 'MXT00';
   exception
@@ -7139,7 +7148,250 @@ begin
 end $$;
 
 
--- 113. NO DEJA RASTRO: todo lo de arriba se deshizo. El libro, los papeles,
+-- 113. Las policies de lectura de las tablas de c3 (A.7) son «(select
+--      es_dueno())», como la del libro: el dueño lee y el equipo lee 0
+--      filas (igual que antes), pero Postgres evalúa es_dueno() una vez
+--      por consulta y no por fila (c4 lo necesita para no pasar del tope de
+--      la API). Antes de este cambio la forma salía 0/15.
+do $$
+declare
+  v_dueno  uuid;
+  v_equipo uuid;
+  v_forma  text;
+  v_eq     bigint;
+  v_du     bigint;
+  v_obt    text;
+  v_esp    text := 'forma=15/15 equipo=0 dueno=1';
+begin
+  select id into v_dueno from perfiles where rol = 'dueno' and coalesce(activo, true) order by creado limit 1;
+  select id into v_equipo from perfiles where rol <> 'dueno' and coalesce(activo, true) order by creado limit 1;
+  if v_dueno is null or v_equipo is null then
+    insert into _pruebas values (113, 'las policies de c3 se evalúan una vez por consulta (select es_dueno()) y dicen lo mismo', v_esp,
+                                 'omitida: falta el dueño o alguien del equipo', null);
+    return;
+  end if;
+  begin
+    select count(*) filter (where regexp_replace(pl.qual, '[[:space:]]', '', 'g') = '(SELECTes_dueno()ASes_dueno)') || '/' || count(*)
+      into v_forma
+      from pg_policies pl
+     where pl.schemaname = 'public' and pl.policyname = pl.tablename || '_dueno'
+       and pl.tablename in ('puente_cuentas', 'mapeo_categoria_recibo', 'mapeo_metodo_pago', 'mapeo_tipo_proyecto', 'tarjetas',
+                            'proveedores', 'proveedores_alias', 'puente_reglas_historial', 'cobros', 'aplicaciones_cobro',
+                            'notas_credito', 'puente_documentos', 'horas_aprobaciones', 'puente_revisados', 'cobros_devoluciones');
+    perform fn_proveedor_alta('C3 PRUEBAS POLICY', 'Net 30');
+    perform set_config('request.jwt.claims', json_build_object('sub', v_equipo, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    select count(*) into v_eq from proveedores where nombre = 'C3 PRUEBAS POLICY';
+    execute 'reset role';
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    select count(*) into v_du from proveedores where nombre = 'C3 PRUEBAS POLICY';
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '', true);
+    v_obt := format('forma=%s equipo=%s dueno=%s', v_forma, v_eq, v_du);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (113, 'las policies de c3 se evalúan una vez por consulta (select es_dueno()) y dicen lo mismo', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+
+-- 114. «Reintentar puente» (fn_puentes_correr) tampoco vuelve a PLANEAR
+--      las facturas, los cobros ni los trabajos externos que no cambiaron
+--      (los recibos, prueba 108): cada uno cuenta como «sin_cambios» de su
+--      tabla y no pasa; uno con algo en la bandeja (un error) sí pasa, y
+--      queda contabilizado. Y fn_puente_recibo_doc va sin «set
+--      search_path» (así Postgres la mete en la consulta que la llama), y
+--      el control documentos de fn_puentes_verificar sigue en verde.
+--      Antes, con el libro de 10.000 asientos, «reintentar» tardaba de 10,6
+--      a 12,5 s y la API lo cortaba a los 8 s (c3-volumen.sh lo mide con
+--      facturas, cobros y trabajos externos).
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_r0    jsonb;
+  v_r1    jsonb;
+  v_r2    jsonb;
+  v_obt   text;
+  v_esp   text := 'sin_cambios=facturas:+1,cobros:+1,trabajos_externos:+1 pasados=+0 con_error=pasa:contabilizado '
+                  'recibo_doc=sin_set documentos=t';
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (114, 'reintentar puente no vuelve a planear facturas, cobros ni externos sin cambios', v_esp,
+                                 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    -- (Dos pasadas antes: lo que ya había queda como vaya a quedar, y la
+    -- segunda es la línea de base.)
+    perform fn_puentes_correr();
+    v_r0 := fn_puentes_correr();
+    insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
+    values (-3400140, v_obra, 'C3-4140', v_desde + 1, 5000.37, 0);
+    perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 3)::text,
+              'monto', '2000.37', 'medio', 'cheque', 'referencia', 'c3-114',
+              'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400140, 'monto', '2000.37'))));
+    insert into trabajos_externos (id, proyecto_id, descripcion, fecha, tipo, horas, costo, externo_id, creado) overriding system value
+    values (-3400141, v_obra, 'c3-pruebas: ayudante 114', v_desde + 2, 'horas', 5, 100.00, -3900001,
+            ((v_desde + 2) + time '12:00') at time zone 'America/New_York');
+    v_r1 := fn_puentes_correr();
+    -- Con algo en la bandeja (como si su puente hubiera fallado), sí pasa.
+    perform fn_puente_marcar_error('facturas', '-3400140', 'XX000', 'c3-pruebas: error fingido');
+    v_r2 := fn_puentes_correr();
+    select format('sin_cambios=%s pasados=%s con_error=%s recibo_doc=%s documentos=%s',
+      (select string_agg(t || ':' || to_char(coalesce((v_r1->'sin_cambios_por_tabla'->>t)::int, 0)
+                                             - coalesce((v_r0->'sin_cambios_por_tabla'->>t)::int, 0), 'FMS0'), ',' order by o)
+         from unnest(array['facturas', 'cobros', 'trabajos_externos']) with ordinality as x(t, o)),
+      to_char((v_r1->>'pasados')::int - (v_r0->>'pasados')::int, 'FMS0'),
+      case when (v_r2->>'pasados')::int - (v_r1->>'pasados')::int = 1
+                and (v_r2->'sin_cambios_por_tabla'->>'facturas')::int = (v_r1->'sin_cambios_por_tabla'->>'facturas')::int - 1
+           then 'pasa' else format('pasados %s→%s', v_r1->>'pasados', v_r2->>'pasados') end || ':' ||
+      coalesce((select d.estado || coalesce('/' || d.codigo, '') from puente_documentos d
+                 where d.tabla = 'facturas' and d.documento_id = '-3400140'), '-'),
+      (select case when p.proconfig is null then 'sin_set' else array_to_string(p.proconfig, ',') end
+         from pg_proc p where p.oid = 'public.fn_puente_recibo_doc(public.recibos)'::regprocedure),
+      (select v.ok from fn_puentes_verificar() v where v.control = 'documentos'))
+      into v_obt;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (114, 'reintentar puente no vuelve a planear facturas, cobros ni externos sin cambios', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 115. El cobro de una factura de ANTES DEL CORTE que no cabe: sin apertura
+--      en el libro, «regístralo cuando esté cargada»; con la apertura YA en
+--      el libro, no se le pide esperarla: dice su asiento, que no la trae
+--      abierta, y las salidas (si QuickBooks ya la tenía cobrada en
+--      Undeposited Funds, ese depósito no se registra; si estaba abierta,
+--      se corrige la apertura). Antes decía «regístralo cuando esté
+--      cargada» también con la apertura posteada. (La apertura de prueba es
+--      un asiento de apertura mínimo, con la apertura abierta y sin otra;
+--      si no, «omitida».)
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_ap    periodos;
+  v_num   text;
+  v_obt   text;
+  v_esp   text := 'sin_apertura=MX008:cuando_este_cargada con_apertura=MX008:su_asiento:undeposited:corregir_apertura';
+  v_cobro jsonb;
+  v_x     text;
+begin
+  select * into v_ap from periodos p where p.tipo = 'apertura' order by p.desde limit 1;
+  if v_dueno is null or v_obra is null or v_ap.periodo is null or v_ap.estado <> 'abierto'
+     or exists (select 1 from asientos a where a.tipo = 'apertura'
+                   and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso')) then
+    insert into _pruebas values (115, 'el cobro de una factura de antes del corte, con la apertura ya en el libro', v_esp,
+                                 'omitida: falta dueño u obra, o la apertura ya tiene su asiento (o está cerrada)', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
+    values (-3400150, v_obra, 'C3-4150', fn_puente_corte() - 5, 1500.37, 0);
+    v_cobro := jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba',
+                 'fecha', greatest(fn_puente_corte() + 1, current_setting('mx3.desde')::date)::text,
+                 'monto', '1500.37', 'medio', 'zelle', 'referencia', 'c3-115',
+                 'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400150, 'monto', '1500.37')));
+    begin
+      perform fn_cobro_registrar(v_cobro);
+      v_x := 'entró';
+    exception when others then
+      v_x := sqlstate || ':' || case when sqlerrm like '%regístralo cuando esté cargada%' then 'cuando_este_cargada' else sqlerrm end;
+    end;
+    v_obt := 'sin_apertura=' || v_x;
+    v_num := fn_postear(jsonb_build_object('tipo', 'apertura', 'fecha', v_ap.desde::text,
+               'descripcion', 'c3-pruebas: apertura mínima',
+               'lineas', jsonb_build_array(jsonb_build_object('cuenta', fn_puente_cuenta_de('banco'), 'monto', '1.00'),
+                                           jsonb_build_object('cuenta', '3900', 'monto', '-1.00'))))->>'numero';
+    begin
+      perform fn_cobro_registrar(v_cobro);
+      v_x := 'entró';
+    exception when others then
+      v_x := sqlstate || ':' ||
+             case when sqlerrm like '%apertura (asiento ' || v_num || ') no la trae abierta%'
+                       and sqlerrm like '%Undeposited Funds%' and sqlerrm like '%se corrige la apertura%'
+                       and sqlerrm not like '%cuando esté cargada%'
+                  then 'su_asiento:undeposited:corregir_apertura' else sqlerrm end;
+    end;
+    v_obt := v_obt || ' con_apertura=' || v_x;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (115, 'el cobro de una factura de antes del corte, con la apertura ya en el libro', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 116. Un depósito DE VERDAD parecido en el mes no pone en rojo las
+--      pruebas: con un cheque real de 3,000.00 sin referencia el mismo día
+--      que el cobro de la prueba 102, el de la prueba entra (lleva
+--      «duplicado_confirmado»: es un dato de prueba, y la subtransacción lo
+--      deshace); sin decirlo, el detector de depósito doble lo sigue
+--      parando (MX008, la prueba 95). Antes, con un depósito así en el
+--      mes, la 102 salía en rojo en producción.
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_obt   text;
+  v_esp   text := 'real=entró prueba=entró sin_confirmar=MX008';
+  v_x     text;
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (116, 'un depósito de verdad parecido no pone en rojo los cobros de prueba', v_esp,
+                                 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
+    values (-3400160, v_obra, 'C3-4160', v_desde + 1, 8000.00, 0);
+    -- El de verdad (como lo registraría Edgar): anticipo de la obra.
+    perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 12)::text, 'monto', '3000.00', 'medio', 'cheque',
+              'proyecto_id', v_obra, 'aplicaciones', jsonb_build_array(jsonb_build_object('proyecto_id', v_obra, 'monto', '3000.00'))));
+    v_obt := 'real=entró';
+    -- El de la prueba 102, tal cual.
+    begin
+      perform fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba', 'fecha', (v_desde + 12)::text,
+                'monto', '3000.00', 'medio', 'cheque',
+                'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400160, 'monto', '3000.00'))));
+      v_x := 'entró';
+    exception when others then v_x := sqlstate;
+    end;
+    v_obt := v_obt || ' prueba=' || v_x;
+    begin
+      perform fn_cobro_registrar(jsonb_build_object('fecha', (v_desde + 12)::text, 'monto', '3000.00', 'medio', 'cheque',
+                'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400160, 'monto', '3000.00'))));
+      v_x := 'entró';
+    exception when others then v_x := sqlstate;
+    end;
+    v_obt := v_obt || ' sin_confirmar=' || v_x;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (116, 'un depósito de verdad parecido no pone en rojo los cobros de prueba', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 117. NO DEJA RASTRO: todo lo de arriba se deshizo. El libro, los papeles,
 --      las reglas, los historiales, los contadores, las secuencias de la
 --      app y las huellas están como al empezar.
 do $$
@@ -7148,7 +7400,7 @@ declare
   v_ahora text;
 begin
   v_ahora := pg_temp.c3_foto();
-  insert into _pruebas values (113, 'no deja rastro: todo como al empezar', v_antes, v_ahora, v_ahora = v_antes);
+  insert into _pruebas values (117, 'no deja rastro: todo como al empezar', v_antes, v_ahora, v_ahora = v_antes);
 end $$;
 
 select * from _pruebas order by n;
