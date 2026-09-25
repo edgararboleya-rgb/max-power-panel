@@ -4261,7 +4261,7 @@ function esFalloDeRed(err) {
         ${video ? `
         <video class="foto-mini foto-video" data-ruta="${esc(f.ruta)}" controls preload="metadata" playsinline></video>` : `
         <a class="foto-enlace" data-ruta="${esc(f.ruta)}" target="_blank" rel="noopener" aria-label="${esc(nota || "Foto de obra")}">
-          <img class="foto-mini" data-ruta="${esc(f.ruta)}" alt="${esc(nota || "Foto de obra")}" loading="lazy">
+          <img class="foto-mini" data-ruta="${esc(f.ruta)}" data-mini="${esc(DB.rutaMini(f.ruta))}" alt="${esc(nota || "Foto de obra")}" loading="lazy">
         </a>`}
         ${usuario.finanzas && !p.portalCompleto && f.portal ? `<span class="foto-marca" title="El cliente la ve">${ico("ojo")}</span>` : ""}
         <figcaption class="foto-pie">${video
@@ -4299,16 +4299,27 @@ function esFalloDeRed(err) {
   // el resto (planos, RFIs...) es consultivo — solo se lee
   const docFirmable = d => /\bsow\b|scope\s*of\s*work|change\s*order|\bco\b|propuesta|contrato|acknowledgment/i.test(String(d.titulo || ""));
 
-  // Achica la foto antes de subirla (los teléfonos sacan fotos enormes)
-  async function reducirImagen(archivo) {
+  // Achica la foto antes de subirla (los teléfonos sacan fotos enormes).
+  // P184: con lado = 400 saca la miniatura para la galería.
+  async function reducirImagen(archivo, lado = 1600, calidad = 0.82) {
     const imagen = await createImageBitmap(archivo);
-    const escala = Math.min(1, 1600 / Math.max(imagen.width, imagen.height));
+    const escala = Math.min(1, lado / Math.max(imagen.width, imagen.height));
     const lienzo = document.createElement("canvas");
     lienzo.width = Math.round(imagen.width * escala);
     lienzo.height = Math.round(imagen.height * escala);
     lienzo.getContext("2d").drawImage(imagen, 0, 0, lienzo.width, lienzo.height);
     return new Promise((res, rej) =>
-      lienzo.toBlob(b => b ? res(b) : rej(new Error("No se pudo procesar")), "image/jpeg", 0.82));
+      lienzo.toBlob(b => b ? res(b) : rej(new Error("No se pudo procesar")), "image/jpeg", calidad));
+  }
+  // Sube la foto y, al lado, su miniatura de 400 px (P184). Si la miniatura no
+  // sale, la foto igual queda: la galería enseña la grande, como antes.
+  async function subirFotoConMini(proyectoId, archivo, blob, tipo) {
+    const ruta = await DB.subirFoto(proyectoId, blob, tipo);
+    if (!esVideo(ruta)) {
+      try { await DB.subirMiniatura(ruta, await reducirImagen(blob, 400, 0.75)); }
+      catch (e) { console.warn("Sin miniatura:", e && e.message); }
+    }
+    return ruta;
   }
 
   // ============================================================
@@ -5092,7 +5103,7 @@ function esFalloDeRed(err) {
             // Foto: se achica antes de subir. Video: sube tal cual.
             const blob = esVid ? archivo : await reducirImagen(archivo).catch(() => archivo);
             const tipoSubida = blob.type || archivo.type || (esVid ? "video/mp4" : "image/jpeg");
-            const ruta = await DB.subirFoto(p.id, blob, tipoSubida);
+            const ruta = esVid ? await DB.subirFoto(p.id, blob, tipoSubida) : await subirFotoConMini(p.id, archivo, blob, tipoSubida);
             await DB.crearFoto({ proyecto_id: p.id, ruta, nota });
             subidas++;
           } catch (err) {
@@ -5125,20 +5136,27 @@ function esFalloDeRed(err) {
       }).catch(() => avisar("No se pudieron cargar los documentos — revisa la señal.", true));
     }
 
-    // Pedir los enlaces temporales de las fotos pintadas y ponerlas (con memoria de 50 min)
+    // Pedir los enlaces temporales de las fotos pintadas y ponerlas (con memoria de 50 min).
+    // P184: la galería pide la miniatura («-mini») y solo baja la grande al abrirla;
+    // una foto vieja sin miniatura sale con la grande, como antes.
     const rutas = [...$detalle.querySelectorAll(".foto-mini")].map(i => i.dataset.ruta);
+    const minis = [...$detalle.querySelectorAll(".foto-mini[data-mini]")].map(i => i.dataset.mini).filter(m => m && !rutas.includes(m));
     if (rutas.length) {
-      firmarConMemoria(rutas).then(mapa => {
+      firmarConMemoria([...minis, ...rutas]).then(mapa => {
         $detalle.querySelectorAll(".foto-mini").forEach(img => {
-          if (mapa[img.dataset.ruta]) img.src = mapa[img.dataset.ruta];
+          const chica = img.dataset.mini && mapa[img.dataset.mini];
+          if (chica) img.src = chica;
+          else if (mapa[img.dataset.ruta]) img.src = mapa[img.dataset.ruta];
         });
         $detalle.querySelectorAll(".foto-enlace").forEach(a => {
           if (mapa[a.dataset.ruta]) a.href = mapa[a.dataset.ruta];
         });
         // Fallo a medias: unas cargan y otras se quedan en blanco. Antes no
         // se decía nada y parecía que las fotos se habían perdido.
-        if (mapa.__faltan) {
-          avisar(`${mapa.__faltan} ${mapa.__faltan === 1 ? "foto no cargó" : "fotos no cargaron"} — vuelve a entrar al proyecto en un momento.`, true);
+        // (Una miniatura que no existe no cuenta: solo las fotos de verdad.)
+        const faltan = rutas.filter(r => !mapa[r]).length;
+        if (faltan) {
+          avisar(`${faltan} ${faltan === 1 ? "foto no cargó" : "fotos no cargaron"} — vuelve a entrar al proyecto en un momento.`, true);
         }
       }).catch(() => avisar("No se pudieron cargar las fotos — revisa la señal y vuelve a entrar al proyecto.", true));
     }
@@ -5223,7 +5241,7 @@ function esFalloDeRed(err) {
       for (const archivo of archivos) {
         try {
           const blob = await reducirImagen(archivo).catch(() => archivo);
-          const ruta = await DB.subirFoto(pid, blob, blob.type || archivo.type || "image/jpeg");
+          const ruta = await subirFotoConMini(pid, archivo, blob, blob.type || archivo.type || "image/jpeg");
           await DB.crearFoto({ proyecto_id: pid, ruta, nota: null });
           subidas++;
         } catch (err) { avisar("No se pudo subir: " + err.message, true); break; }

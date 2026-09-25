@@ -252,6 +252,23 @@
     return ruta;
   }
 
+  // P184: la miniatura de una foto va al lado de la grande, con el mismo nombre
+  // y «-mini» antes de la extensión. La galería la pide primero y solo baja la
+  // grande al abrirla. Las fotos viejas no tienen miniatura: sale la grande.
+  const rutaMini = ruta => String(ruta || "").replace(/\.(jpe?g|png|webp)$/i, "-mini.jpg");
+  async function subirMiniatura(ruta, blob, reintento = true) {
+    const destino = rutaMini(ruta);
+    if (destino === ruta) return null;
+    const r = await fetch(`${SB.url}/storage/v1/object/fotos/${destino}`, {
+      method: "POST",
+      headers: { apikey: SB.key, Authorization: `Bearer ${sesion ? sesion.access_token : SB.key}`, "Content-Type": "image/jpeg" },
+      body: blob
+    });
+    if (r.status === 401 && reintento && sesion) { await refrescar(); return subirMiniatura(ruta, blob, false); }
+    if (!r.ok) throw new Error(`No se pudo subir la miniatura (${r.status})`);
+    return destino;
+  }
+
   // Convierte las rutas guardadas en enlaces temporales (1 hora)
   async function firmarFotos(rutas, reintento = true) {
     if (!rutas || !rutas.length) return {};
@@ -870,6 +887,8 @@
     desanularRecibo: (id, motivo) => api("rpc/fn_recibo_desanular", { metodo: "POST", cuerpo: { p_id: Number(id), p_motivo: motivo } }),
     crearDocumento: fila => insertar("documentos", fila),
     subirDocumento,
+    rutaMini,
+    subirMiniatura,
     tokenSesion: () => (sesion ? sesion.access_token : null),
     // 🤖 El asistente: manda la conversación al cerebro con el token del
     // usuario. El cerebro mira ese token para saber quién pregunta y qué
