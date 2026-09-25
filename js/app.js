@@ -172,7 +172,7 @@
         nota: i.jurisdiccion ? "Jurisdicción: " + i.jurisdiccion : "",
         alerta: true
       })));
-  const pendientesTodos = () => (state ? state.pendientes : []);
+  const pendientesTodos = () => pendientesVisibles();
   const pendientesAbiertos = pid =>
     pendientesTodos().filter(p => !p.resuelto && (!pid || p.proyecto === pid));
 
@@ -325,6 +325,9 @@
       editar: perfil.rol === "dueno"
     };
     $usuarioChip.textContent = usuario.nombre;
+    // El equipo de campo lleva la barra de abajo (Hoy · Proyectos · Chat · Horas)
+    document.body.classList.toggle("rol-campo", !usuario.finanzas);
+    if ($("nav-campo")) $("nav-campo").hidden = !!usuario.finanzas;
     $("btn-chat").hidden = false;
     $("btn-asistente").hidden = false;
     arrancarChat();
@@ -340,6 +343,9 @@
     usuario = null;
     $("btn-chat").hidden = true;
     $("btn-asistente").hidden = true;
+    document.body.classList.remove("rol-campo");
+    if ($("nav-campo")) $("nav-campo").hidden = true;
+    notaEdgarBorrador = "";
     if (chatTimer) { clearInterval(chatTimer); chatTimer = null; }
     $app.hidden = true;
     $login.hidden = false;
@@ -502,10 +508,40 @@ function esFalloDeRed(err) {
     });
   }
 
+  // ---------- Barra de abajo del campo («Cobre y luz», tanda 2) ----------
+  // Solo el equipo sin dinero y solo en el teléfono (en la computadora está el
+  // menú lateral). Cuatro botones grandes para el pulgar: Hoy, Proyectos, Chat, Horas.
+  function pintarNavCampo() {
+    const nav = $("nav-campo");
+    if (!nav || nav.hidden) return;
+    const activo = { home: "home", etapas: "proyectos", lista: "proyectos", detalle: "proyectos",
+      alcance: "proyectos", chat: "chat", horas: "horas" }[lateralVista] || "";
+    nav.querySelectorAll("button[data-nav]").forEach(b => {
+      const on = b.dataset.nav === activo;
+      b.classList.toggle("active", on);
+      if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+    });
+  }
+  if ($("nav-campo")) $("nav-campo").querySelectorAll("button[data-nav]").forEach(b => b.addEventListener("click", () => {
+    const k = b.dataset.nav;
+    if (k === "home") irHome();
+    else if (k === "proyectos") {
+      // Lo mismo que «Proyectos» del menú lateral: el inicio, bajando a las categorías
+      irHome();
+      const c = $("categorias");
+      if (c) c.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    else if (k === "chat") $("btn-chat").click();
+    else if (k === "horas") irHoras();
+  }));
+
   // ---------- Cambio de vista ----------
   function mostrar(vista, { kicker, titulo, volver, nuevo, mantenerScroll }) {
     lateralVista = vista;
+    // La vista a la vista del CSS: en la pantalla «Hoy» del campo la barra de títulos sobra
+    document.body.dataset.vista = vista;
     pintarLateral();
+    pintarNavCampo();
     $home.hidden = vista !== "home";
     $vEtapas.hidden = vista !== "etapas";
     $vLista.hidden = vista !== "lista";
@@ -583,6 +619,9 @@ function esFalloDeRed(err) {
   };
 
   function pintarInicio() {
+    // El equipo de campo (sin dinero) tiene su propia pantalla «Hoy».
+    // El inicio del dueño sigue exactamente igual.
+    if (!usuario.finanzas) { pintarInicioCampo(); return; }
     pintarInicioHoy();
     pintarInicioUrgentes();
     pintarInicioAvisos();
@@ -995,6 +1034,10 @@ function esFalloDeRed(err) {
   //    Cada renglón: hora · qué · quién va · proyecto. Se toca y abre el proyecto.
   const DIA_CORTO = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
   const EDGAR_ID = "7a8e1ac4-dd9e-4e27-a8e9-e94b313a74fb";
+  // La hora de un evento como número para ordenar («8:00 AM» → 8, «1:30 PM» → 13.5).
+  // La usan los próximos días del dueño y la pantalla «Hoy» del campo.
+  const ordenHora = h => { const m = String(h || "").match(/(\d{1,2})(?::(\d{2}))?\s*([AP]M)?/i); if (!m) return 99;
+    let hh = Number(m[1]) % 12; if ((m[3] || "").toUpperCase() === "PM") hh += 12; return hh + Number(m[2] || 0) / 60; };
   function pintarInicioHoy() {
     const hoy = hoyISO();
     const dias = [];
@@ -1006,8 +1049,6 @@ function esFalloDeRed(err) {
     const evs = eventosCal().filter(e => dias.includes(e.fecha) && e.estadoEv !== "cancelado");
     const porDia = Object.fromEntries(dias.map(d => [d, []]));
     evs.forEach(e => porDia[e.fecha].push(e));
-    const ordenHora = h => { const m = String(h || "").match(/(\d{1,2})(?::(\d{2}))?\s*([AP]M)?/i); if (!m) return 99;
-      let hh = Number(m[1]) % 12; if ((m[3] || "").toUpperCase() === "PM") hh += 12; return hh + Number(m[2] || 0) / 60; };
     const etiqueta = (d, k) => {
       if (k === 0) return "HOY"; if (k === 1) return "MAÑANA";
       const t = new Date(Date.parse(d + "T12:00:00"));
@@ -1038,6 +1079,296 @@ function esFalloDeRed(err) {
     $("inicio-hoy").querySelectorAll(".agenda-ev.abre").forEach(el => el.addEventListener("click", () => irDetalle(el.dataset.proy)));
     $("inicio-hoy").querySelectorAll(".btn-foto-rapida").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); fotoRapida(b.dataset.proy); }));
     const vc = $("agenda-ver-cal"); if (vc) vc.addEventListener("click", ev => { ev.preventDefault(); $("btn-calendario") && $("btn-calendario").click(); });
+  }
+
+  // ============================================================
+  // «HOY» DEL EQUIPO DE CAMPO («Cobre y luz», tanda 2, 25-sep)
+  // Lo que Jian y Osbel necesitan en la obra, de arriba abajo: el saludo con
+  // el resumen, la visita de ahora (la tarjeta noche), las tareas de esa obra,
+  // el panel, la regla del día, las fotos de hoy y una nota para Edgar.
+  // NUNCA dinero: todo texto que viene de la base pasa por sinMontos (y aquí
+  // además se quita el «$» que deja). Sin fichaje de entrada (P78, decisión de
+  // Edgar): el botón que manda es «Reportar mis horas».
+  // ============================================================
+  // Una regla de seguridad u oficio por día (índice = día del año módulo 14)
+  const REGLAS_DEL_DIA = [
+    "Antes de tocar un conductor, pruébalo con el tester aunque el breaker esté abajo. El tester manda, no la memoria.",
+    "Breaker abajo y con candado o cinta con tu nombre. Nadie lo sube sin preguntarte.",
+    "Al panel abierto no se le da la espalda: cierra la tapa si te alejas, aunque sea un minuto.",
+    "Guantes y lentes para cortar, pelar y taladrar. Los ojos no se reponen.",
+    "Escalera en piso firme y con los dos pies dentro. Nada de subirse al último escalón.",
+    "GFCI en baños, toda la cocina, garaje, exterior, laundry y a menos de 6 pies de cualquier fregadero.",
+    "Las varillas de tierra van a 6 pies o más una de otra, y el cable a las varillas nunca más grueso que #6.",
+    "Cargador EV: breaker al 125 % de la carga. 48 A pide breaker de 60 A y #6 THHN en tubería, no Romex.",
+    "Delante del panel: 36 pulgadas de fondo libres y 30 de ancho. Ahí no se guarda nada.",
+    "Zanja de PVC a 18 pulgadas; cable directo (UF) a 24. Fotos antes de tapar.",
+    "Caja llena no se fuerza: cuenta los cables (#12 = 2.25 in³ cada uno, el dispositivo cuenta doble).",
+    "Aprieta los terminales al torque que dice el equipo. Un tornillo flojo es un incendio lento.",
+    "Cada breaker con su nombre en el directorio, escrito a mano y legible. El siguiente que abra el panel te lo agradece.",
+    "Foto de todo lo que se va a tapar: paredes, zanjas, cielos. La foto es la prueba de tu trabajo."
+  ];
+  // Las cinco fases con nombre corto, para que quepan en un teléfono. Van en
+  // los dos idiomas aquí mismo: «Inicio» en el diccionario ya es el menú.
+  const ETAPAS_CORTAS = {
+    es: ["Inicio", "Rough-in", "Insp. rough", "Trim", "Insp. final"],
+    en: ["Start", "Rough-in", "Rough insp.", "Trim", "Final insp."]
+  };
+  // Iconos de línea de 24 px (trazo 1.7, el color del texto), sin emojis
+  const svgLinea = d => `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const SVG_PIN = svgLinea('<path d="M12 21s6-5.6 6-11a6 6 0 0 0-12 0c0 5.4 6 11 6 11z"/><circle cx="12" cy="10" r="2.2"/>');
+  const SVG_CAMARA = svgLinea('<path d="M4 8h3.5l1.5-2.5h6L16.5 8H20a1.5 1.5 0 0 1 1.5 1.5V19a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 19V9.5A1.5 1.5 0 0 1 4 8z"/><circle cx="12" cy="14" r="3.5"/>');
+  const SVG_PALOMITA = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>';
+  // Texto de la base para el campo: sin montos y sin el «$» que deja sinMontos
+  const sinDinero = t => sinMontos(t).replace(/\$•••/g, "•••").replace(/\$/g, "");
+  // Notas de dinero que viven como pendientes («salió facturado… ya cobrada»,
+  // «cobrar el hito que falta»): no son tareas de obra y en la pantalla del
+  // campo no salen (regla 3: ni facturas, ni hitos, ni cobros, ni precios).
+  const hablaDeDinero = t => /\$|factur|cobr|\bhitos?\b|precios?\b|invoice|payment|pag[oaó]d?[ao]?s?\b|dep[oó]sito|monto|dinero|saldo|deuda/i.test(String(t || ""));
+  // Los pendientes que puede ver quien mira: al equipo de campo no le salen los
+  // que hablan de dinero, en NINGUNA pantalla (inicio, checklist, calendario, ficha)
+  const pendientesVisibles = () => (state && state.pendientes ? state.pendientes : []).filter(x => (usuario && usuario.finanzas) || !hablaDeDinero(x.descripcion));
+  // Lo que Jian lleva escrito para Edgar sobrevive a los repintados del inicio
+  let notaEdgarBorrador = "";
+
+  // Las etapas de la obra como un circuito (copia de MP.renderStages del brief):
+  // las pasadas encendidas, la actual latiendo, las que faltan en cobre.
+  // nombres = las etiquetas; actual = índice de la etapa en curso (0…).
+  function pintarEtapasCircuito(el, nombres, actual) {
+    const palomita = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"></path></svg>';
+    let pista = '<div class="stages">';
+    let letreros = '<div class="stages-labels" data-no-i18n>';
+    nombres.forEach((nombre, i) => {
+      const st = i < actual ? "on" : (i === actual ? "now" : "off");
+      pista += `<div class="node ${st}">${st === "on" ? palomita : ""}</div>`;
+      if (i < nombres.length - 1) {
+        const seg = i < actual - 1 ? "on" : (i === actual - 1 ? "half" : "");
+        pista += `<div class="seg ${seg}"></div>`;
+      }
+      const lado = i === 0 ? "left" : (i === nombres.length - 1 ? "right" : "center");
+      letreros += `<div class="${st}" style="text-align:${lado}">${esc(nombre)}</div>`;
+    });
+    el.innerHTML = pista + "</div>" + letreros + "</div>";
+    el.setAttribute("role", "img");
+    el.setAttribute("aria-label", (EN_APP ? "Current stage: " : "Etapa actual: ") + (nombres[Math.min(actual, nombres.length - 1)] || ""));
+  }
+
+  function pintarInicioCampo() {
+    const hoy = hoyISO();
+    const t = x => esc(sinDinero(x));
+    // Las visitas de hoy que son mías: sin nadie asignado o con mi nombre
+    // (la misma regla del formulario de horas), en orden de hora
+    const esMia = e => !e.asignados || !e.asignados.length || e.asignados.includes(usuario.nombre);
+    const visitas = eventos()
+      .filter(e => e.fecha === hoy && e.estadoEv !== "cancelado" && esMia(e))
+      .sort((a, b) => ordenHora(a.hora) - ordenHora(b.hora));
+    // «Ahora» es la primera visita del día que tiene obra (si ninguna la tiene, la primera)
+    const ahora = visitas.find(e => e.proyecto && proyectoPorId(e.proyecto)) || visitas[0] || null;
+    const obra = ahora && ahora.proyecto ? proyectoPorId(ahora.proyecto) : null;
+    const pid = obra ? obra.id : "";
+    const despues = visitas.filter(e => e !== ahora);
+
+    // Mis horas de hoy (lo mismo que miraba el recordatorio de antes)
+    const misHoras = (state.registroHoras || []).filter(r => r.usuarioId === usuario.id && r.fecha === hoy);
+    const yaReporto = misHoras.length > 0;
+    const totalHoras = Math.round(misHoras.reduce((a, r) => a + Number(r.horas || 0), 0) * 100) / 100;
+    const obrasHoras = [...new Set(misHoras.map(r => nombreProyecto(r.proyecto) || "—"))];
+
+    // Las tareas: los pendientes sin resolver de la obra de ahora, urgentes primero.
+    // Sin obra, los urgentes abiertos de cualquier obra.
+    const abiertas = (state.pendientes || [])
+      .filter(x => !x.resuelto && !hablaDeDinero(x.descripcion) && (obra ? x.proyecto === pid : prioDe(x.prioridad) === "urgente"))
+      .sort((a, b) => PRIO[prioDe(a.prioridad)].orden - PRIO[prioDe(b.prioridad)].orden);
+    const tareas = abiertas.slice(0, 8);
+    // Las fotos de hoy de la obra de ahora (las más nuevas primero; los videos no)
+    const fotosHoy = obra ? (state.fotos || [])
+      .filter(f => f.proyecto === pid && f.fecha === hoy && !esVideo(f.ruta)).slice().reverse() : [];
+    // El panel: los puntos del alcance de la obra, hechos de cuántos
+    const puntos = obra ? (state.puntos || []).filter(x => x.proyecto === pid) : [];
+    const hechos = puntos.filter(x => x.hecho).length;
+
+    // ---- 1. Saludo y resumen ----
+    const primerNombre = String(usuario.nombre || "").trim().split(/\s+/)[0] || "";
+    const fechaTxt = new Date(Date.parse(hoy + "T12:00:00")).toLocaleDateString(LOCALE, { weekday: "long", day: "numeric", month: "long" });
+    const fechaLlana = EN_APP ? fechaTxt : fechaTxt.replace(",", "");
+    const chip = (n, una, varias) => `<span class="chip">${n} ${n === 1 ? una : varias}</span>`;
+    const saludo = `
+      <div class="hoy-saludo">
+        <h1 class="hoy-hola">Hola, ${esc(primerNombre)}</h1>
+        <p class="hoy-fecha" data-no-i18n>${esc(fechaLlana)}</p>
+        <div class="hoy-chips">
+          ${chip(visitas.length, "visita hoy", "visitas hoy")}
+          ${chip(abiertas.length, "tarea", "tareas")}
+          ${chip(fotosHoy.length, "foto hoy", "fotos hoy")}
+        </div>
+      </div>`;
+
+    // ---- 2. La tarjeta noche «Ahora» ----
+    const pulso = yaReporto
+      ? `<button type="button" class="btn btn-done hoy-pulso" id="hoy-pulso">${SVG_PALOMITA}<span>Horas reportadas</span></button>`
+      : `<button type="button" class="btn btn-pulse hoy-pulso" id="hoy-pulso">Reportar mis horas</button>`;
+    const reportaste = yaReporto
+      ? `<p class="hoy-reportaste">Reportaste ${totalHoras} h en ${t(obrasHoras.join(" + "))}</p>` : "";
+    let tarjeta;
+    if (ahora) {
+      const dir = ahora.ubicacion || (obra && obra.direccion && obra.direccion !== "Por confirmar" ? obra.direccion : "");
+      const anillo = dir
+        ? `<a class="btn sm btn-ring hoy-anillo" id="hoy-llegar" href="${esc(urlMapa(sinDinero(dir)))}" target="_blank" rel="noopener">Cómo llegar</a>` : "";
+      let etapas = "";
+      if (obra) etapas = fasesDe(obra).length === 1
+        ? `<div class="hoy-etapa-servicio"><span class="chip">Servicio</span></div>`
+        : `<div class="hoy-etapas" id="hoy-etapas"></div>`;
+      tarjeta = `
+        <article class="card card-night hoy-ahora">
+          <div class="wire-cu" aria-hidden="true"></div>
+          <div class="hoy-ahora-cab"><span class="label-cu">Ahora</span>${ahora.hora ? `<span class="hoy-hora">${t(ahora.hora)}</span>` : ""}</div>
+          <h2 class="hoy-obra">${t(obra ? obra.nombre : ahora.titulo)}</h2>
+          ${dir ? `<div class="hoy-dir">${SVG_PIN}<span>${t(dir)}</span></div>` : ""}
+          <div class="hoy-alcance">
+            <div class="label-cu">Alcance del día</div>
+            <p class="hoy-alcance-titulo">${t(ahora.titulo)}</p>
+            ${ahora.nota && !hablaDeDinero(ahora.nota) ? `<p class="hoy-alcance-nota">${t(ahora.nota)}</p>` : ""}
+          </div>
+          ${etapas}
+          ${reportaste}
+          <div class="hoy-botones${anillo ? "" : " solo"}">${pulso}${anillo}</div>
+        </article>`;
+    } else {
+      // Sin visita hoy: la próxima que tenga (fecha y hora), si hay
+      const proxima = eventos()
+        .filter(e => e.fecha > hoy && e.estadoEv !== "cancelado" && esMia(e))
+        .sort((a, b) => a.fecha.localeCompare(b.fecha) || ordenHora(a.hora) - ordenHora(b.hora))[0];
+      let proximaTxt = "";
+      if (proxima) {
+        const d = new Date(Date.parse(proxima.fecha + "T12:00:00"));
+        const dia = d.toLocaleDateString(LOCALE, { weekday: "short" }).replace(".", "").toUpperCase() + " " + d.getDate();
+        const donde = proxima.proyecto ? nombreProyecto(proxima.proyecto) : proxima.titulo;
+        proximaTxt = [dia, proxima.hora, donde].filter(Boolean).join(" · ");
+      }
+      tarjeta = `
+        <article class="card card-night hoy-ahora">
+          <div class="wire-cu" aria-hidden="true"></div>
+          <div class="hoy-ahora-cab"><span class="label-cu">Ahora</span></div>
+          <h2 class="hoy-obra">Hoy no tienes visita programada</h2>
+          ${proximaTxt ? `<p class="hoy-proxima">La próxima: ${t(proximaTxt)}</p>` : ""}
+          ${reportaste}
+          <div class="hoy-botones solo">${pulso}</div>
+        </article>`;
+    }
+    const despuesHTML = despues.length ? `
+      <div class="hoy-despues">${despues.map(e =>
+        `<p>Después: ${t([e.hora, e.proyecto ? nombreProyecto(e.proyecto) : e.titulo].filter(Boolean).join(" · "))}</p>`).join("")}
+      </div>` : "";
+    $("inicio-hoy").innerHTML = saludo + tarjeta + despuesHTML;
+
+    const $et = $("hoy-etapas");
+    if ($et && obra) {
+      const fases = fasesDe(obra);
+      const actual = obra.estado === "completado" ? fases.length : Math.max(0, fases.findIndex(f => f.clave === obra.fase));
+      pintarEtapasCircuito($et, ETAPAS_CORTAS[EN_APP ? "en" : "es"], actual);
+    }
+    $("hoy-pulso").addEventListener("click", () => irHoras(pid || undefined));
+
+    // ---- 3. Tareas de hoy + 4. el panel ----
+    const filaHoy = x => `
+      <div class="chk-row" data-id="${esc(x.id)}">
+        <button type="button" class="chk-toque" aria-label="Marcar hecha"><span class="chk">${SVG_PALOMITA}</span></button>
+        <span class="chk-txt">
+          <span class="chk-linea">${prioDe(x.prioridad) === "urgente" ? `<span class="dot dot-warn" title="Urgente"></span>` : ""}<span>${t(x.descripcion)}</span></span>
+          ${obra ? "" : `<span class="chk-obra">${t(nombreProyecto(x.proyecto) || "General")}</span>`}
+        </span>
+      </div>`;
+    const encendidas = puntos.length ? Math.round((4 * hechos) / puntos.length) : 0;
+    $("inicio-urgentes").innerHTML = `
+      <div class="card card-white hoy-card hoy-tareas">
+        <h2 class="label-cu hoy-titulo">Tareas de hoy</h2>
+        ${tareas.map(filaHoy).join("") || `<p class="hoy-vacio">${obra ? "Nada pendiente en esta obra." : "Nada urgente ahora mismo."}</p>`}
+        <button type="button" class="row-link" id="hoy-ver-checklist"><span class="row-txt">Ver todo el checklist</span><span class="row-flecha" aria-hidden="true">›</span></button>
+      </div>
+      ${obra ? `
+      <div class="card card-white hoy-card hoy-panel">
+        <button type="button" class="row-link" id="hoy-ver-panel">
+          <span class="panel-mini" aria-hidden="true">${[0, 1, 2, 3].map(i => `<i${i < encendidas ? ' class="on"' : ""}></i>`).join("")}</span>
+          <span class="row-txt">Panel del proyecto · ${hechos}/${puntos.length} encendidos</span>
+          <span class="row-flecha" aria-hidden="true">›</span>
+        </button>
+      </div>` : ""}`;
+    $("inicio-urgentes").querySelectorAll(".chk-toque").forEach(b => b.addEventListener("click", () => {
+      const fila = b.closest(".chk-row");
+      marcarTarea("pend", fila.dataset.id, fila);
+    }));
+    $("hoy-ver-checklist").addEventListener("click", () => irChecklist(pid || undefined));
+    if ($("hoy-ver-panel")) $("hoy-ver-panel").addEventListener("click", () => irChecklist(pid));
+
+    // ---- 5. La regla del día + 6. las fotos de hoy ----
+    const [ano, mes, dia] = hoy.split("-").map(Number);
+    const diaDelAno = Math.round((Date.UTC(ano, mes - 1, dia) - Date.UTC(ano, 0, 1)) / 86400000) + 1;
+    const regla = REGLAS_DEL_DIA[diaDelAno % REGLAS_DEL_DIA.length];
+    $("inicio-avisos").innerHTML = `
+      <div class="card card-volt hoy-card hoy-regla">
+        <div class="hoy-regla-etq">Regla del día</div>
+        <p class="hoy-regla-txt">${esc(regla)}</p>
+      </div>
+      ${obra ? `
+      <div class="card card-white hoy-card hoy-fotos-card">
+        <h2 class="label-cu hoy-titulo">Fotos de hoy</h2>
+        <div class="hoy-fotos">
+          <button type="button" class="btn btn-navy hoy-tomar" id="hoy-tomar">${SVG_CAMARA}<span>Tomar</span></button>
+          ${fotosHoy.map(f => `<a class="hoy-foto" data-ruta="${esc(f.ruta)}" target="_blank" rel="noopener"><img data-ruta="${esc(f.ruta)}" data-mini="${esc(DB.rutaMini(f.ruta))}" alt="${t(f.nota) || "Foto de hoy"}" loading="lazy"></a>`).join("")}
+          ${fotosHoy.length ? "" : `<p class="hoy-vacio">Todavía no hay fotos de hoy</p>`}
+        </div>
+      </div>` : ""}`;
+    if ($("hoy-tomar")) $("hoy-tomar").addEventListener("click", () => fotoRapida(pid));
+    if (fotosHoy.length) {
+      // Las firmas de la galería (con su memoria de 50 min): la miniatura si
+      // existe, si no la grande; al tocar se abre la grande
+      const caja = $("inicio-avisos");
+      const rutas = fotosHoy.map(f => f.ruta);
+      const minis = rutas.map(r => DB.rutaMini(r)).filter(m => m && !rutas.includes(m));
+      firmarConMemoria([...minis, ...rutas]).then(mapa => {
+        caja.querySelectorAll(".hoy-foto").forEach(a => {
+          const img = a.querySelector("img");
+          const url = mapa[img.dataset.mini] || mapa[img.dataset.ruta];
+          if (url) img.src = url;
+          if (mapa[a.dataset.ruta]) a.href = mapa[a.dataset.ruta];
+        });
+      }).catch(() => { /* sin señal: los cuadritos se quedan vacíos hasta el próximo repintado */ });
+    }
+
+    // ---- 7. Nota para Edgar (el chat privado con él) ----
+    $("inicio-inspecciones").innerHTML = `
+      <div class="card card-white hoy-card hoy-nota">
+        <h2 class="label-cu hoy-titulo"><label for="hoy-nota-txt">Nota para Edgar</label></h2>
+        <textarea id="hoy-nota-txt" rows="2" maxlength="500" placeholder="Ej.: faltó un breaker de 20 A"></textarea>
+        <div class="hoy-nota-pie"><button type="button" class="btn sm btn-navy" id="hoy-nota-enviar">Enviar</button></div>
+      </div>`;
+    const $nota = $("hoy-nota-txt");
+    $nota.value = notaEdgarBorrador;
+    $nota.addEventListener("input", () => { notaEdgarBorrador = $nota.value; });
+    $("hoy-nota-enviar").addEventListener("click", async ev => {
+      const boton = ev.currentTarget;
+      const texto = (($("hoy-nota-txt") || {}).value || "").trim();
+      if (!texto) { if ($("hoy-nota-txt")) $("hoy-nota-txt").focus(); return; }
+      boton.disabled = true;
+      try {
+        // Es de Jian a Edgar y no sale al equipo: se manda tal cual, con «$» si lo trae
+        await DB.enviarMensaje(texto, EDGAR_ID);
+        notaEdgarBorrador = "";
+        if ($("hoy-nota-txt")) $("hoy-nota-txt").value = "";
+        avisar("Enviado a Edgar ✓");
+      } catch (err) {
+        // Sin señal (o cualquier fallo) el texto se queda en el cuadro, como en el chat
+        avisar("No se pudo enviar: " + err.message, true);
+      } finally { boton.disabled = false; }
+    });
+
+    // Lo de siempre que el campo sigue viendo, debajo: categorías (aparte),
+    // licencia y seguros, la guía del código y el aviso de notificaciones.
+    // El recordatorio de horas ya va dentro de la tarjeta «Ahora».
+    $("inicio-equipo").innerHTML = "";
+    $("inicio-semana").innerHTML = "";
+    $("inicio-mes").innerHTML = "";
+    pintarInicioEmpresa();
+    pintarInicioNotif();
   }
 
   // 🏛 INSPECCIONES DE LA SEMANA (todos): las de esta semana y la que viene, con su
@@ -1394,7 +1725,7 @@ function esFalloDeRed(err) {
       const hEsta = Math.round(sumar(lunEsta, null) * 10) / 10;
       const hPasada = Math.round(sumar(lunPasada, lunEsta) * 10) / 10;
       const semanas = `<div class="eq-semanas">Esta semana: <strong>${hEsta} h</strong> · Semana pasada: <strong>${hPasada} h</strong></div>`;
-      const pendDe = (state.pendientes || [])
+      const pendDe = pendientesVisibles()
         .filter(x => x.autorId === u.id && !x.resuelto).slice(-5).reverse();
       const pendHTML = pendDe.length ? `
         <div class="eq-pend-titulo">Pendientes que reportó (se manejan en el ✅ Checklist):</div>
@@ -2181,7 +2512,7 @@ function esFalloDeRed(err) {
         prioridad: prioDe(x.prioridad), origen: "alcance",
         autor: "", fecha: "", orden: x.orden || 0, grupo: x.grupo || ""
       }));
-    const delCampo = (state.pendientes || [])
+    const delCampo = pendientesVisibles()
       .filter(x => x.proyecto === pid && (!x.resuelto || (x.fecha || "") >= haceQuince))
       .map(x => ({
         tipo: "pend", id: x.id, texto: x.descripcion, hecha: x.resuelto,
@@ -2199,7 +2530,7 @@ function esFalloDeRed(err) {
     const dePro = proyectosConTrabajo(["enviado"])
       .flatMap(p => tareasDe(p.id).filter(t => t.prioridad === "urgente" && !t.hecha)
         .map(t => ({ ...t, proyecto: p.id, proyectoNombre: p.nombre })));
-    const generales = (state.pendientes || [])
+    const generales = pendientesVisibles()
       .filter(x => !x.proyecto && !x.resuelto && x.prioridad === "urgente")
       .map(x => ({ tipo: "pend", id: x.id, texto: x.descripcion, hecha: false,
                    prioridad: "urgente", autor: x.autor, proyecto: null, proyectoNombre: "General" }));
@@ -2302,7 +2633,7 @@ function esFalloDeRed(err) {
         </details>`;
     };
 
-    const generales = (state.pendientes || [])
+    const generales = pendientesVisibles()
       .filter(x => !x.proyecto && !x.resuelto)
       .map(x => ({ tipo: "pend", id: x.id, texto: x.descripcion, hecha: false,
                    prioridad: prioDe(x.prioridad), autor: x.autor, fecha: x.fecha, orden: 0 }))
@@ -2352,6 +2683,34 @@ function esFalloDeRed(err) {
     });
   }
 
+  // La palomita de una tarea (punto del alcance o pendiente de obra). La usan el
+  // checklist, el inicio y la pantalla «Hoy» del campo: una sola manera de
+  // marcar, con la misma cola sin señal. «fila» es el renglón en pantalla: su
+  // clase «hecha» dice si ya estaba hecha y se cambia al guardar.
+  async function marcarTarea(tipo, id, fila) {
+    const estaHecha = fila.classList.contains("hecha");
+    try {
+      if (modoSinSenal) throw new TypeError("sin conexión");
+      if (tipo === "punto") await DB.cambiarPunto(id, { hecho: !estaHecha });
+      else if (estaHecha) await DB.reabrirPendiente(id);
+      else await DB.resolverPendiente(id);
+      // Ya quedó guardado en la nube: se marca en pantalla al instante y la
+      // recarga completa va por detrás. Antes cada palomita bajaba las 28
+      // tablas y con mala señal congelaba el teléfono varios segundos.
+      fila.classList.toggle("hecha");
+      avisar(estaHecha ? "Tarea devuelta a pendiente" : "Tarea completada ✓");
+      recargar(undefined, "checklist");
+    } catch (err) {
+      if (seDejaEsperando(err)) {
+        // P83: sin señal, la palomita espera en el teléfono
+        dejarEsperando(tipo === "punto" ? { k: "punto:" + id, tipo: "punto", datos: { id, hecho: !estaHecha } }
+          : { k: "pend:" + id, tipo: estaHecha ? "reabrir" : "resolver", datos: { id } });
+        return;
+      }
+      avisar("No se pudo: " + err.message, true);
+    }
+  }
+
   // Los botones de cada tarea, sirven en el checklist y en el inicio
   function engancharTareas(raiz, repintar) {
     const dato = el => {
@@ -2359,28 +2718,9 @@ function esFalloDeRed(err) {
       return { tipo: fila.dataset.tipo, id: fila.dataset.id, fila };
     };
     raiz.querySelectorAll(".tarea-check").forEach(btn => {
-      btn.addEventListener("click", async () => {
+      btn.addEventListener("click", () => {
         const { tipo, id, fila } = dato(btn);
-        const estaHecha = fila.classList.contains("hecha");
-        try {
-          if (modoSinSenal) throw new TypeError("sin conexión");
-          if (tipo === "punto") await DB.cambiarPunto(id, { hecho: !estaHecha });
-          else if (estaHecha) await DB.reabrirPendiente(id);
-          else await DB.resolverPendiente(id);
-          // Ya quedó guardado en la nube: se marca en pantalla al instante y la
-          // recarga completa va por detrás. Antes cada palomita bajaba las 28
-          // tablas y con mala señal congelaba el teléfono varios segundos.
-          fila.classList.toggle("hecha");
-          avisar(estaHecha ? "Tarea devuelta a pendiente" : "Tarea completada ✓");
-          recargar(undefined, "checklist");
-        } catch (err) {
-          if (seDejaEsperando(err)) {
-            // P83: sin señal, la palomita espera en el teléfono
-            dejarEsperando(tipo === "punto" ? { k: "punto:" + id, tipo: "punto", datos: { id, hecho: !estaHecha } }
-              : { k: "pend:" + id, tipo: estaHecha ? "reabrir" : "resolver", datos: { id } });
-            return;
-          }
- avisar("No se pudo: " + err.message, true); }
+        marcarTarea(tipo, id, fila);
       });
     });
     raiz.querySelectorAll(".tarea-prio").forEach(sel => {
@@ -2514,6 +2854,9 @@ function esFalloDeRed(err) {
     convs.forEach(c => { total += noLeidos(c); });
     badge.hidden = !total;
     badge.textContent = total > 9 ? "9+" : String(total);
+    // La misma bolita en «Chat» de la barra de abajo del campo
+    const nb = $("nav-chat-badge");
+    if (nb) { nb.hidden = !total; nb.textContent = badge.textContent; }
   }
 
   // Al entrar: contar lo no leído para el numerito, y revisarlo cada minuto
@@ -3177,7 +3520,7 @@ function esFalloDeRed(err) {
   function tarjetaResumenHTML(p) {
     const av = avanceObra(p.id);
     // Lo urgente de verdad: los pendientes de obra Y los puntos del alcance urgentes sin hacer
-    const urgPend = (state.pendientes || []).filter(x =>
+    const urgPend = pendientesVisibles().filter(x =>
       x.proyecto === p.id && !x.resuelto && x.prioridad === "urgente");
     const urgPuntos = (state.puntos || []).filter(x =>
       x.proyecto === p.id && !x.hecho && prioDe(x.prioridad) === "urgente");
@@ -5353,11 +5696,16 @@ function esFalloDeRed(err) {
 
   // 🧭 Un enlace que abre el mapa del teléfono en esa dirección (P84, 24-sep).
   // Google Maps con «search» funciona igual en iPhone y Android.
-  function enlaceMapa(dir) {
+  // La dirección del mapa sola (la usa también «Cómo llegar» de la pantalla Hoy del campo)
+  const urlMapa = dir => {
     const d = String(dir || "").trim();
-    if (!d) return "";
+    return d ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(d)}` : "";
+  };
+  function enlaceMapa(dir) {
+    const url = urlMapa(dir);
+    if (!url) return "";
     return `<a class="btn-ir" target="_blank" rel="noopener" onclick="event.stopPropagation()"
-      href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(d)}" title="Abrir en el mapa">🧭 Ir</a>`;
+      href="${url}" title="Abrir en el mapa">🧭 Ir</a>`;
   }
 
   // 📸 Foto rápida (P87, 24-sep): desde el día de hoy del inicio, un toque abre
@@ -5581,12 +5929,20 @@ function esFalloDeRed(err) {
   // ============================================================
   // MIS HORAS — guarda directo en la nube
   // ============================================================
-  function irHoras() {
+  function irHoras(proyectoId) {
     mostrar("horas", { kicker: "Reporte diario", titulo: "Mis horas", volver: true, nuevo: false });
     // Al ENTRAR siempre se pone la fecha de hoy. Antes, si la pantalla se
     // había quedado abierta de ayer, el reporte se guardaba con la fecha vieja.
     $formHoras.elements.fecha.value = hoyISO();
     prepararHoras();
+    // Desde la tarjeta «Ahora» del campo llega la obra de la visita: se deja
+    // elegida (si está en la lista) con sus change orders. Desde un botón
+    // normal llega el clic (no es texto) y todo sigue como siempre.
+    const sel = $formHoras.elements.proyecto;
+    if (typeof proyectoId === "string" && proyectoId && [...sel.options].some(o => o.value === proyectoId)) {
+      sel.value = proyectoId;
+      llenarCOHoras();
+    }
   }
   $btnHoras.addEventListener("click", irHoras);
 

@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-title" content="Max Power">
   <link rel="apple-touch-icon" href="assets/icon-180.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=234">
+  <link rel="stylesheet" href="css/styles.css?v=235">
 </head>
 <body>
 
@@ -264,6 +264,15 @@
       <p>Max Power Electrical Solutions, Inc. · mxpes.com</p>
       <div class="licencia">FL EC LICENSE #EC13016045</div>
     </footer>
+
+    <!-- Barra de abajo del equipo de campo («Cobre y luz», tanda 2): solo en el teléfono.
+         La enciende app.js cuando entra alguien sin dinero. -->
+    <nav id="nav-campo" class="bottom-nav" aria-label="Menú de abajo" hidden>
+      <button type="button" data-nav="home"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg><span>Hoy</span></button>
+      <button type="button" data-nav="proyectos"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="8" height="7" rx="2"/><rect x="13" y="4" width="8" height="7" rx="2"/><rect x="3" y="13" width="8" height="7" rx="2"/><rect x="13" y="13" width="8" height="7" rx="2"/></svg><span>Proyectos</span></button>
+      <button type="button" data-nav="chat"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a7.5 7.5 0 0 1-7.5 7.5H6.2L3 21.5l.9-4.6A7.5 7.5 0 1 1 21 11.5z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg><span>Chat</span><span id="nav-chat-badge" class="nav-badge" hidden></span></button>
+      <button type="button" data-nav="horas"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/></svg><span>Horas</span></button>
+    </nav>
   </div>
 
   <!-- Ventana para crear un proyecto nuevo -->
@@ -328,8 +337,8 @@
   <script src="assets/config.js?v=209"></script>
   <script src="js/db.js?v=233"></script>
   <script src="js/alcance.js?v=211"></script>
-  <script src="js/app.js?v=234"></script>
-  <script src="js/i18n.js?v=234"></script>
+  <script src="js/app.js?v=235"></script>
+  <script src="js/i18n.js?v=235"></script>
   <script src="js/iconos.js?v=224"></script>
 </body>
 </html>

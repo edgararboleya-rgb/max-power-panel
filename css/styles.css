@@ -3583,3 +3583,143 @@ small { font-size: max(var(--fs-small), 0.8em); }
   .toolbar-titulos { flex: 1 1 calc(100% - 56px); }
   .btn-nuevo { margin-left: 56px; }
 }
+
+/* ===========================================================================
+   «COBRE Y LUZ» · tanda 2 (25-sep): la pantalla «Hoy» del equipo de campo.
+   Todo cuelga de body.rol-campo o de clases que solo pinta pintarInicioCampo():
+   el inicio del dueño no cambia. Pensado para el pulgar con guantes y el sol:
+   filas de 56 px, casillas de 26 px dentro de un toque de 48, letra de 17.
+   =========================================================================== */
+
+/* ---- Piezas del brief que faltaban (copiadas del CSS de referencia) ---- */
+/* Etapas del job como circuito */
+.stages { display: flex; align-items: center; gap: 5px; padding: 2px 4px; }
+.stages .node { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; box-sizing: border-box; }
+.stages .node.on  { background: linear-gradient(135deg, var(--mp-cyan), var(--mp-lime)); box-shadow: 0 0 14px rgba(34,232,224,.75); color: #04202A; }
+.stages .node.now { background: #fff; border: 3px solid var(--mp-cyan); animation: mp-pulse 2s ease-out infinite; }
+.stages .node.off { background: #fff; border: 2px solid var(--cu); }
+.stages .seg { height: 4px; flex-grow: 1; border-radius: 2px; background: var(--wire); }
+.stages .seg.on   { background: linear-gradient(90deg, var(--mp-cyan), var(--mp-lime)); box-shadow: 0 0 10px rgba(34,232,224,.6); }
+.stages .seg.half { background: linear-gradient(90deg, #22E8E0 0%, #8CF06A 45%, #B86A2E 55%, #8F4F1F 100%); }
+.stages-labels { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 2px; margin-top: 6px; font-size: var(--fs-small); font-weight: 700; line-height: 1.2; }
+.stages-labels .on { color: var(--ok-ink); } .stages-labels .now { color: var(--mp-blue); } .stages-labels .off { color: var(--cu-dark); }
+@keyframes mp-pulse { 0% { box-shadow: 0 0 0 0 rgba(34,232,224,.65); } 70% { box-shadow: 0 0 0 9px rgba(34,232,224,0); } 100% { box-shadow: 0 0 0 0 rgba(34,232,224,0); } }
+/* Sobre la tarjeta noche las letras de las etapas van claras (el verde oscuro no se leía) */
+.card-night .stages-labels .on { color: var(--mp-lime); }
+.card-night .stages-labels .now { color: var(--mp-cyan); }
+.card-night .stages-labels .off { color: var(--cu-light); }
+
+/* Renglón de tarea con su casilla de cobre (al marcarla se enciende cian → lima) */
+.chk-row { min-height: 56px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #e9f3fb; font-size: var(--fs-body); font-weight: 600; }
+.chk { width: 26px; height: 26px; border-radius: 7px; border: 2px solid var(--cu); background: #fff; flex-shrink: 0; box-sizing: border-box;
+       display: inline-flex; align-items: center; justify-content: center; color: transparent; }
+.chk.on, .chk-row.hecha .chk { background: linear-gradient(135deg, var(--mp-cyan), var(--mp-lime)); border-color: var(--mp-cyan); color: #04202A; box-shadow: 0 0 10px rgba(34,232,224,.6); }
+.chk-row.done .chk-txt, .chk-row.hecha .chk-txt { color: var(--mp-ink-2); text-decoration: line-through; }
+/* El toque de la casilla es de 48 × 48 aunque la casilla mida 26 (guantes) */
+.chk-toque { width: 48px; height: 48px; min-width: 48px; margin: 4px 0 4px -11px; align-self: flex-start; padding: 0; border: 0; background: transparent; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.chk-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 14px 0 12px; color: var(--mp-ink); line-height: 1.3; overflow-wrap: anywhere; }
+.chk-linea { display: flex; align-items: baseline; gap: 8px; }
+.chk-linea .dot { position: relative; top: -2px; }
+.chk-obra { font-size: var(--fs-small); font-weight: 600; color: var(--mp-ink-2); }
+.dot-warn { width: 8px; height: 8px; background: #E0C400; box-shadow: 0 0 0 2px rgba(224,196,0,.25); }
+
+/* Fila-enlace de 56 px con flecha (checklist, panel) */
+.row-link { min-height: 56px; width: 100%; display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--mp-ink);
+            background: transparent; border: 0; padding: 0; font: inherit; font-size: var(--fs-body); font-weight: 600; text-align: left; cursor: pointer; }
+.row-link .row-txt { flex: 1; min-width: 0; }
+.row-link .row-flecha { color: var(--cu-dark); font-size: 26px; font-weight: 700; line-height: 1; }
+.row-link svg { color: var(--cu-dark); }
+
+/* Miniatura del panel de breakers: 4 barritas, encendidas según lo hecho */
+.panel-mini { width: 44px; height: 34px; flex: none; border-radius: 7px; background: linear-gradient(180deg, #18222E, #0F1720); border: 1px solid #2A3644;
+              display: inline-flex; align-items: center; justify-content: center; gap: 3px; box-sizing: border-box; }
+.panel-mini i { width: 7px; height: 12px; border-radius: 2px; background: #5C6B7D; }
+.panel-mini i.on { background: linear-gradient(180deg, var(--mp-cyan), var(--mp-lime)); box-shadow: 0 0 6px rgba(34,232,224,.9); }
+
+/* Barra de abajo (solo el campo y solo en el teléfono) */
+.bottom-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 150; min-height: 84px; box-sizing: border-box;
+              background: var(--night); border-top: 1px solid rgba(34,232,224,.25);
+              display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); align-items: center;
+              padding: 6px 4px env(safe-area-inset-bottom, 10px); }
+.bottom-nav button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+                     min-height: 64px; background: transparent; border: 0; border-radius: 12px; cursor: pointer;
+                     font: inherit; font-size: var(--fs-small); font-weight: 700; color: #9FB3C8; }
+.bottom-nav button.active { color: var(--mp-cyan); font-weight: 800; }
+.bottom-nav button.active svg { filter: drop-shadow(0 0 6px rgba(34,232,224,.55)); }
+.bottom-nav .nav-badge { position: absolute; top: 4px; left: calc(50% + 6px); min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px;
+                         background: var(--mp-danger-3); color: #fff; font-size: var(--fs-small); font-weight: 700;
+                         display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; }
+@media (min-width: 1024px) { .bottom-nav { display: none; } }   /* en la computadora está el menú lateral */
+
+/* ---- La pantalla «Hoy» ---- */
+/* En el inicio del campo la barra de títulos («Categorías») sobra: el saludo es el título */
+body.rol-campo[data-vista="home"] .toolbar { display: none; }
+.home-izq .hoy-card, .home-izq .hoy-ahora { margin-bottom: 16px; }
+.hoy-titulo { margin: 0 0 4px; }
+.hoy-vacio { margin: 6px 0; font-size: 16px; color: var(--mp-ink-2); }
+
+/* 1. Saludo, fecha en llano y tres chips en frase */
+.hoy-saludo { padding: 6px 0 14px; }
+.hoy-hola { font-size: var(--fs-h1); font-weight: 800; line-height: 1.08; letter-spacing: -.02em; color: var(--mp-ink); margin: 0; }
+.hoy-fecha { margin: 4px 0 10px; font-size: var(--fs-body); color: var(--mp-ink-2); }
+.hoy-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.hoy-chips .chip { min-height: 30px; border-radius: 8px; background: var(--mp-sky-2); border: 1px solid var(--mp-line); color: var(--mp-ink); font-size: 14px; padding: 4px 10px; }
+
+/* 2. La tarjeta noche «Ahora» (la única de la pantalla) */
+.hoy-ahora { padding: 18px; }
+.hoy-ahora-cab { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.hoy-hora { color: var(--mp-cyan); font-weight: 800; font-size: var(--fs-body); }
+.hoy-obra { margin: 4px 0 6px; font-size: 22px; font-weight: 800; line-height: 1.2; letter-spacing: -.01em; color: #fff; overflow-wrap: anywhere; }
+.hoy-dir { display: flex; align-items: flex-start; gap: 6px; font-size: 16px; color: #DCE7F2; }
+.hoy-dir svg { flex: none; color: var(--cu-light); width: 20px; height: 20px; margin-top: 1px; }
+.hoy-alcance { margin: 14px 0 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.12); }
+.hoy-alcance-titulo { margin: 4px 0 0; font-size: 17px; font-weight: 700; color: #fff; overflow-wrap: anywhere; }
+.hoy-alcance-nota { margin: 4px 0 0; font-size: 17px; color: #DCE7F2; white-space: pre-line; overflow-wrap: anywhere; }
+.hoy-etapas { margin: 4px 0 14px; }
+.hoy-etapa-servicio { margin: 2px 0 14px; }
+.card-night .chip { background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.22); color: #fff; font-size: 14px; }
+.hoy-reportaste, .hoy-proxima { margin: 0 0 12px; font-size: 16px; color: #DCE7F2; }
+.hoy-proxima { font-size: 17px; }
+.hoy-botones { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 10px; align-items: center; }
+.hoy-botones.solo { grid-template-columns: minmax(0, 1fr); }
+.hoy-botones .btn { padding: 0 12px; line-height: 1.15; text-align: center; }
+.hoy-pulso { min-height: var(--btn-h); }
+.hoy-despues { margin: -4px 4px 16px; }
+.hoy-despues p { margin: 0 0 4px; font-size: 15px; font-weight: 600; color: var(--mp-ink-2); }
+
+/* 4. Acceso al panel: una tarjeta que es una sola fila */
+.hoy-panel { padding-top: 0; padding-bottom: 0; }
+
+/* 5. Regla del día */
+.hoy-regla-etq { font-size: var(--fs-label); font-weight: 800; color: var(--warn-ink); }
+.hoy-regla-txt { margin: 4px 0 0; font-size: 17px; font-weight: 600; line-height: 1.45; color: var(--mp-ink); }
+
+/* 6. Fotos de hoy: «Tomar» de 92 × 92 y la fila que se desliza */
+.hoy-fotos { display: flex; align-items: center; gap: 10px; overflow-x: auto; padding: 6px 0 4px; -webkit-overflow-scrolling: touch; }
+.hoy-tomar { width: 92px; height: 92px; min-width: 92px; flex: none; flex-direction: column; gap: 4px; padding: 0; font-size: 16px; }
+.hoy-tomar svg { width: 28px; height: 28px; }
+.hoy-foto { flex: none; width: 92px; height: 92px; border-radius: 12px; overflow: hidden; background: var(--mp-sky-2); border: 1px solid var(--mp-line); }
+.hoy-foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.hoy-fotos .hoy-vacio { flex: 1; min-width: 120px; }
+
+/* 7. Nota para Edgar */
+.hoy-nota label { cursor: pointer; }
+.hoy-nota textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 6px; min-height: 64px; padding: 10px 14px; resize: vertical;
+                     font: inherit; font-size: 17px; line-height: 1.4; color: var(--mp-ink); background: var(--mp-sky-1);
+                     border: 1px solid var(--mp-line); border-radius: var(--r-field); }
+.hoy-nota textarea:focus { border-color: var(--mp-blue); outline: none; box-shadow: 0 0 0 3px rgba(42,91,215,.18); }
+.hoy-nota-pie { display: flex; justify-content: flex-end; margin-top: 10px; }
+.hoy-nota-pie .btn { width: auto; min-width: 132px; padding: 0 24px; }
+
+/* En el teléfono: lo nuevo arriba, las losetas y las categorías debajo, y sitio para la barra */
+@media (max-width: 1023px) {
+  body.rol-campo { padding-bottom: 96px; }
+  body.rol-campo #toast { bottom: 104px; }
+  body.rol-campo #vista-home { display: flex; flex-direction: column; }
+  body.rol-campo #vista-home > .home-izq { order: 1; }
+  body.rol-campo #vista-home > .botones-rapidos { order: 2; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  body.rol-campo #vista-home > .home-der { order: 3; }
+  /* «Reportar mis horas» ya es el Pulso de la tarjeta y «Horas» de la barra de abajo */
+  body.rol-campo #btn-horas { display: none; }
+  body.rol-campo #categorias { scroll-margin-top: 76px; }
+}

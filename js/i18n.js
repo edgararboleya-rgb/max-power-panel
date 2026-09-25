@@ -390,6 +390,58 @@
       return `The ${m[1] === "cliente" ? "client" : "contractor"} opened it ${m[2]} ${m[2] === "1" ? "time" : "times"} · last ${m[4]} (Florida time)`;
     }]
   );
+  // ---------- La pantalla «Hoy» del equipo de campo («Cobre y luz», tanda 2) ----------
+  Object.assign(D, {
+    "Ahora": "Now", "Alcance del día": "Today's scope", "Cómo llegar": "Directions",
+    "Horas reportadas": "Hours reported", "Hoy no tienes visita programada": "No visit scheduled for you today",
+    "Tareas de hoy": "Today's tasks", "Ver todo el checklist": "See the full checklist",
+    "Nada pendiente en esta obra.": "Nothing open on this job.", "Nada urgente ahora mismo.": "Nothing urgent right now.",
+    "Marcar hecha": "Mark done", "Regla del día": "Rule of the day",
+    "Fotos de hoy": "Today's photos", "Tomar": "Take", "Todavía no hay fotos de hoy": "No photos yet today",
+    "Foto de hoy": "Today's photo",
+    "Nota para Edgar": "Note for Edgar", "Ej.: faltó un breaker de 20 A": "E.g.: we're short a 20 A breaker",
+    "Enviar": "Send", "Enviado a Edgar ✓": "Sent to Edgar ✓",
+    "Proyectos": "Projects", "Chat": "Chat", "Menú de abajo": "Bottom menu",
+    // Las 14 reglas del día, en inglés de obra
+    "Antes de tocar un conductor, pruébalo con el tester aunque el breaker esté abajo. El tester manda, no la memoria.":
+      "Before you touch a conductor, test it with the tester even if the breaker is off. Trust the tester, not your memory.",
+    "Breaker abajo y con candado o cinta con tu nombre. Nadie lo sube sin preguntarte.":
+      "Breaker off and locked out or taped with your name. Nobody flips it back on without asking you.",
+    "Al panel abierto no se le da la espalda: cierra la tapa si te alejas, aunque sea un minuto.":
+      "Never turn your back on an open panel: close the cover if you step away, even for a minute.",
+    "Guantes y lentes para cortar, pelar y taladrar. Los ojos no se reponen.":
+      "Gloves and safety glasses to cut, strip and drill. You don't get new eyes.",
+    "Escalera en piso firme y con los dos pies dentro. Nada de subirse al último escalón.":
+      "Ladder on solid ground and both feet inside the rails. Never stand on the top step.",
+    "GFCI en baños, toda la cocina, garaje, exterior, laundry y a menos de 6 pies de cualquier fregadero.":
+      "GFCI in bathrooms, the whole kitchen, garage, outdoors, laundry and within 6 feet of any sink.",
+    "Las varillas de tierra van a 6 pies o más una de otra, y el cable a las varillas nunca más grueso que #6.":
+      "Ground rods go 6 feet or more apart, and the wire to the rods never needs to be bigger than #6.",
+    "Cargador EV: breaker al 125 % de la carga. 48 A pide breaker de 60 A y #6 THHN en tubería, no Romex.":
+      "EV charger: breaker at 125% of the load. 48 A needs a 60 A breaker and #6 THHN in conduit, not Romex.",
+    "Delante del panel: 36 pulgadas de fondo libres y 30 de ancho. Ahí no se guarda nada.":
+      "In front of the panel: 36 inches deep and 30 inches wide kept clear. Nothing gets stored there.",
+    "Zanja de PVC a 18 pulgadas; cable directo (UF) a 24. Fotos antes de tapar.":
+      "PVC trench at 18 inches; direct-burial cable (UF) at 24. Photos before you backfill.",
+    "Caja llena no se fuerza: cuenta los cables (#12 = 2.25 in³ cada uno, el dispositivo cuenta doble).":
+      "Don't force a full box: count the wires (#12 = 2.25 in³ each, the device counts double).",
+    "Aprieta los terminales al torque que dice el equipo. Un tornillo flojo es un incendio lento.":
+      "Torque the terminals to the value on the equipment. A loose screw is a slow fire.",
+    "Cada breaker con su nombre en el directorio, escrito a mano y legible. El siguiente que abra el panel te lo agradece.":
+      "Every breaker labeled in the directory, handwritten and legible. The next person who opens the panel will thank you.",
+    "Foto de todo lo que se va a tapar: paredes, zanjas, cielos. La foto es la prueba de tu trabajo.":
+      "Photograph everything before it gets covered: walls, trenches, ceilings. The photo is proof of your work."
+  });
+  REGLAS.push(
+    [/^Hola, (.+)$/, "Hi, $1"],
+    [/^(\d+) visitas? hoy$/, s => { const n = parseInt(s, 10); return n + (n === 1 ? " visit today" : " visits today"); }],
+    [/^(\d+) tareas?$/, s => { const n = parseInt(s, 10); return n + (n === 1 ? " task" : " tasks"); }],
+    [/^(\d+) fotos? hoy$/, s => { const n = parseInt(s, 10); return n + (n === 1 ? " photo today" : " photos today"); }],
+    [/^Reportaste ([\d.]+) h en (.+)$/, "You reported $1 h at $2"],
+    [/^Después: (.+)$/, "Later: $1"],
+    [/^La próxima: (.+)$/, "Next: $1"],
+    [/^Panel del proyecto · (\d+)\/(\d+) encendidos$/, "Project panel · $1/$2 on"]
+  );
   function traducirTexto(t) {
     const limpio = t.trim();
     if (!limpio) return t;
