@@ -447,6 +447,8 @@
           pideAprobacion: !!d.pide_aprobacion, aprobadoEl: d.aprobado_el ? String(d.aprobado_el).slice(0, 10) : "",
           pideFirma: !!d.pide_firma, firmadoEl: d.firmado_el ? String(d.firmado_el).slice(0, 10) : "", firmaNombre: d.firma_nombre || "",
           vistoEl: d.visto_el ? String(d.visto_el).slice(0, 10) : "",
+          // P48: hasta cuándo vale (el portal no deja firmar después de esa fecha)
+          validaHasta: d.valida_hasta ? String(d.valida_hasta).slice(0, 10) : "",
           visitas: visitasPorDoc[d.id] || null,
           contrafirmaEl: d.contrafirma_el ? String(d.contrafirma_el).slice(0, 10) : "" })),
         rfis: docs.filter(d => d.clase === "rfi").map(d => ({ id: d.id, titulo: d.titulo, estado: d.estado, url: d.url, ruta: d.ruta || "" })),
@@ -671,19 +673,7 @@
       metodo: "POST", cuerpo: { proyecto_id: proyectoId, contrato },
       headers: { Prefer: "resolution=merge-duplicates,return=minimal" }
     }),
-    reportarHoras: async fila => {
-      fila = conCO(fila);
-      try { return await insertar("horas", { ...fila, usuario_id: uid() }); }
-      catch (e) {
-        // Si la base todavía no tiene la columna llave_cliente (SQL sin pegar),
-        // se manda sin ella para que las horas nunca dejen de entrar.
-        if (fila && fila.llave_cliente && e && e.status !== 409 && /llave_cliente/i.test(String((e && e.crudo) || (e && e.message) || ""))) {
-          const { llave_cliente, ...sin } = fila;
-          return insertar("horas", { ...sin, usuario_id: uid() });
-        }
-        throw e;
-      }
-    },
+    reportarHoras: fila => insertar("horas", { ...conCO(fila), usuario_id: uid() }),
     cambiarHoras: (id, cambios) => actualizar(`horas?id=eq.${id}`, conCO(cambios)),
     eliminarHoras: id => api(`horas?id=eq.${id}`, { metodo: "DELETE" }),
     crearExterno: fila => insertar("trabajos_externos", fila),

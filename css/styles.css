@@ -3190,6 +3190,7 @@ button.btn-ir { border: 0; cursor: pointer; font: inherit; font-weight: 700; fon
 .estado-doc .ico { margin: 0; }
 .estado-doc.on-azul { background: var(--mp-relieve-azul); color: #F4FBFF; border-color: rgba(27,60,140,.55); box-shadow: var(--mp-sombra-encendido); }
 .estado-doc.on-verde { color: var(--mp-ok); border-color: rgba(59,142,30,.45); background: #F3FBEC; }
+.estado-doc.on-rojo { color: #B3261E; border-color: rgba(179,38,30,.45); background: #FDF1F0; }
 .estado-doc:focus-visible { outline: 2px solid var(--mp-blue); outline-offset: 2px; }
 
 /* ---- Fotos ---- */

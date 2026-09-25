@@ -3447,6 +3447,7 @@ function esFalloDeRed(err) {
     [".doc-firma", el => ({ texto: el.dataset.pide === "1" ? "Quitar la firma pedida" : "Pedir firma", icono: "pluma", dinero: true })],
     [".doc-aprobacion", el => ({ texto: el.dataset.pide === "1" ? "Quitar la aprobación pedida" : "Pedir aprobación", icono: "okCirc", dinero: true })],
     [".doc-contrafirma", () => ({ texto: "Firmar yo (Edgar Arboleya)", icono: "pluma", clase: "principal", dinero: true })],
+    [".doc-validez", el => ({ texto: el.dataset.vencido === "1" ? "Renovar la fecha de validez" : el.dataset.hasta ? `Cambiar hasta cuándo vale (${el.dataset.hasta})` : "Ponerle fecha de validez", sub: el.dataset.vencido === "1" ? `Venció el ${el.dataset.hasta}` : "", icono: "calendario", dinero: true })],
     [".foto-cliente", el => el.dataset.portal === "1"
       ? { texto: "El cliente la ve · ocultársela", icono: "ojoNo", dinero: true }
       : { texto: "Enseñársela al cliente", icono: "ojo", dinero: true }],
@@ -3941,6 +3942,7 @@ function esFalloDeRed(err) {
             : ["Firmado", "on-verde", "okCirc"])
         : d.contrafirmaEl ? (firmable ? ["Firmaste tú · falta el cliente", "on-azul", "pluma"] : ["Firmaste tú", "on-azul", "pluma"])
         : d.aprobadoEl ? ["Aprobó", "on-verde", "okCirc"]
+        : firmable && d.pideFirma && d.validaHasta && d.validaHasta < hoyISO() ? [`Venció el ${d.validaHasta} · no se puede firmar`, "on-rojo", "pluma"]
         : firmable && d.pideFirma ? ["Pide firma", "on-azul", "pluma"]
         : firmable && d.pideAprobacion ? ["Pide aprobación", "on-azul", "okCirc"]
         : p.portalCompleto ? ["Lo ve (luz verde)", "on-azul", "ojo"]
@@ -3956,6 +3958,14 @@ function esFalloDeRed(err) {
         if (d.firmadoEl) historia.push(`Firmó ${d.firmaNombre || ""} · ${d.firmadoEl}`);
         else escondidos.push(`<button type="button" class="doc-firma" data-id="${d.id}" data-pide="${d.pideFirma ? 1 : 0}"
           title="${d.pideFirma ? "Le está pidiendo FIRMA al cliente (nombre + firma con el dedo) — toca para quitarla" : "Pedirle al cliente que lo FIRME (nombre + firma con el dedo, queda de respaldo)"}">${d.pideFirma ? "Quitar la firma pedida" : "Pedir firma"}</button>`);
+        // P48: hasta cuándo vale. Un contrato subido a mano lleva su fecha desde que
+        // se pide la firma; después de esa fecha el portal no deja firmar con precios viejos.
+        if (d.pideFirma && !d.firmadoEl) {
+          const vencido = !!(d.validaHasta && d.validaHasta < hoyISO());
+          if (d.validaHasta) historia.push(vencido ? `Venció el ${d.validaHasta}: el cliente ya no puede firmarlo con estos precios` : `Vale hasta ${d.validaHasta}`);
+          escondidos.push(`<button type="button" class="doc-validez" data-id="${d.id}" data-hasta="${esc(d.validaHasta || "")}" data-propuesta="${d.propuestaId || ""}" data-vencido="${vencido ? 1 : 0}"
+            title="Hasta qué día puede firmarlo el cliente con estos precios">${vencido ? "Renovar la fecha de validez" : d.validaHasta ? "Cambiar hasta cuándo vale" : "Ponerle fecha de validez"}</button>`);
+        }
         if (d.contrafirmaEl) historia.push(`Contrafirmado ${d.contrafirmaEl}`);
         else if (usuario.finanzas && esEdgar && (d.pideFirma || d.firmadoEl)) escondidos.push(`<button type="button" class="doc-contrafirma" data-id="${d.id}" data-titulo="${esc(d.titulo)}"
           title="Firmarlo tú también: tu firma sale en el certificado junto a la del cliente">Firmar yo (Edgar Arboleya)</button>`);
@@ -4577,12 +4587,7 @@ function esFalloDeRed(err) {
       try {
         const cambiosGC = { contratista_id: cual || null, contratista_modo: modo,
                             contratista_contacto: cual ? (String(d.get("contratista_contacto") || "").trim() || null) : null };
-        try { await DB.cambiarProyecto(proyectoActivo, cambiosGC); }
-        catch (e) {
-          if (!/contratista_contacto/.test(String(e.crudo || e.message || ""))) throw e;
-          delete cambiosGC.contratista_contacto; await DB.cambiarProyecto(proyectoActivo, cambiosGC);
-          avisar("Ojo: falta pegar el SQL «COORDINADOR-OBRA» para guardar al coordinador", true);
-        }
+        await DB.cambiarProyecto(proyectoActivo, cambiosGC);
         await recargar(proyectoActivo);
         avisar(cual ? "Contratista guardado ✓" : "Obra directa ✓");
       } catch (err) { avisar("No se pudo: " + err.message, true); }
@@ -4617,10 +4622,35 @@ function esFalloDeRed(err) {
     $detalle.querySelectorAll(".doc-firma").forEach(btn => {
       btn.addEventListener("click", async () => {
         const pide = btn.dataset.pide === "1";
+        const doc = (p.docs || []).find(d => String(d.id) === String(btn.dataset.id)) || {};
+        const cambios = { pide_firma: !pide };
+        // P48: un contrato subido a mano (sin propuesta) necesita hasta cuándo vale,
+        // para que el portal lo bloquee al vencer y no se firme con precios viejos.
+        if (!pide && !doc.propuestaId) {
+          const f = await pedirFecha("¿Hasta qué día puede firmarlo el cliente con estos precios?", doc.validaHasta || enTreintaDias(),
+            "Después de ese día el portal no le deja firmar y le pide el precio al día.");
+          if (!f) return;
+          cambios.valida_hasta = f;
+        }
         try {
-          await DB.cambiarDocumento(btn.dataset.id, { pide_firma: !pide });
+          await DB.cambiarDocumento(btn.dataset.id, cambios);
           await recargar();
-          avisar(!pide ? "🖊 El cliente verá 'Revisar y firmar' en su portal" : "Petición de firma quitada");
+          avisar(!pide ? "🖊 El cliente verá 'Revisar y firmar' en su portal" + (cambios.valida_hasta ? ` (vale hasta ${cambios.valida_hasta})` : "") : "Petición de firma quitada");
+        } catch (err) { avisar("No se pudo: " + err.message, true); }
+      });
+    });
+    // P48: cambiar o renovar hasta cuándo vale. Si el papel viene de una propuesta,
+    // la propuesta lleva la misma fecha (el portal mira las dos).
+    $detalle.querySelectorAll(".doc-validez").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const f = await pedirFecha("¿Hasta qué día puede firmarlo el cliente con estos precios?", (btn.dataset.vencido === "1" ? "" : btn.dataset.hasta) || enTreintaDias(),
+          btn.dataset.vencido === "1" ? "Ya venció: con una fecha nueva el cliente vuelve a poder firmarlo. Revisa antes que los precios sigan valiendo." : "Después de ese día el portal no le deja firmar y le pide el precio al día.");
+        if (!f) return;
+        try {
+          await DB.cambiarDocumento(btn.dataset.id, { valida_hasta: f });
+          if (btn.dataset.propuesta) await DB.cambiarPropuesta(Number(btn.dataset.propuesta), { valida_hasta: f });
+          await recargar();
+          avisar(`Vale hasta ${f} ✓`);
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
@@ -5227,6 +5257,34 @@ function esFalloDeRed(err) {
     });
   }
 
+  // Una ventanita para elegir una fecha (P48: hasta cuándo vale un contrato).
+  // Devuelve AAAA-MM-DD, o null si se cancela.
+  function pedirFecha(titulo, valorISO, nota) {
+    return new Promise(resolver => {
+      const dlg = document.createElement("dialog");
+      dlg.className = "modal pedir-fecha";
+      dlg.innerHTML = `<form method="dialog" class="modal-form">
+          <label>${esc(titulo)}<input type="date" name="fecha" value="${esc(valorISO || "")}" required style="width:100%"></label>
+          ${nota ? `<p class="modal-nota">${esc(nota)}</p>` : ""}
+          <div class="modal-botones">
+            <button type="button" class="accion secundaria" data-cerrar>Cancelar</button>
+            <button type="submit" class="accion" value="si">Guardar</button>
+          </div>
+        </form>`;
+      document.body.appendChild(dlg);
+      dlg.querySelector("[data-cerrar]").addEventListener("click", () => dlg.close(""));
+      dlg.addEventListener("close", () => {
+        const f = dlg.querySelector("input").value;
+        const ok = dlg.returnValue === "si" && /^\d{4}-\d{2}-\d{2}$/.test(f);
+        dlg.remove();
+        resolver(ok ? f : null);
+      });
+      dlg.showModal();
+    });
+  }
+  // 30 días a partir de hoy, en AAAA-MM-DD (lo que suele valer una propuesta)
+  const enTreintaDias = () => { const d = new Date(); d.setDate(d.getDate() + 30); return fechaISO(d.getFullYear(), d.getMonth(), d.getDate()); };
+
   // Una ventanita de la app para elegir una opción de una lista (en vez del
   // cuadro gris del navegador). Devuelve el valor elegido, o null si se cierra.
   function elegirDeLista(titulo, opciones) {
@@ -5291,12 +5349,7 @@ function esFalloDeRed(err) {
       ref: (d.get("ref") || "Por definir").toString().trim() || "Por definir"
     };
     try {
-      try { await DB.crearProyecto(fila); }
-      catch (e) {
-        if (!/contratista_contacto/.test(String(e.crudo || e.message || ""))) throw e;
-        delete fila.contratista_contacto; await DB.crearProyecto(fila);   // falta pegar COORDINADOR-OBRA.sql
-        avisar("Ojo: falta pegar el SQL «COORDINADOR-OBRA»; el proyecto se creó sin el coordinador", true);
-      }
+      await DB.crearProyecto(fila);
       if (Number.isFinite(contrato) && contrato !== null)
         await DB.crearFinanzas({ proyecto_id: id, contrato, cobrado: 0 });
       $formNuevo.reset();
@@ -8864,29 +8917,7 @@ function esFalloDeRed(err) {
           cliente_email: (d.get("cliente_email") || "").toString().trim() || null,
           cliente_tel: (d.get("cliente_tel") || "").toString().trim() || null
         };
-        const CASILLAS_TRATO = ["via", "contratista_id", "contratista_modo", "contratista_contacto", "cliente_email", "cliente_tel"];
-        const filasNueva = await DB.crearEstimado(fila).catch(async err => {
-          const txt = String(err.crudo || err.message || "");
-          // Si la base todavía no tiene las casillas del trato (falta pegar ESTIMADOR-GC.sql), se crea sin ellas
-          if (CASILLAS_TRATO.some(c => txt.includes(c))) {
-            avisar("Ojo: falta pegar el SQL «ESTIMADOR-GC» en la base; el estimado se creó sin el trato ni el contacto", true);
-            const sin = { ...fila }; CASILLAS_TRATO.forEach(c => delete sin[c]);
-            return DB.crearEstimado(sin);
-          }
-          // Si la base todavía no tiene la casilla proyecto_id (falta pegar el SQL), se crea sin ella
-          if (/proyecto_id/.test(txt)) {
-            avisar("Ojo: falta pegar el SQL de «proyecto_id» en la base; el estimado se creó suelto", true);
-            const sin = { ...fila }; delete sin.proyecto_id; CASILLAS_TRATO.forEach(c => delete sin[c]);
-            return DB.crearEstimado(sin);
-          }
-          // Si la base todavía no tiene la casilla empresa (falta pegar e0c-mxp-mep.sql)
-          if (/empresa/.test(txt)) {
-            avisar("Ojo: falta pegar el SQL «e0c-mxp-mep» en la base; el estimado se creó como tuyo", true);
-            const sin = { ...fila }; delete sin.empresa;
-            return DB.crearEstimado(sin);
-          }
-          throw err;
-        });
+        const filasNueva = await DB.crearEstimado(fila);
         estimadoActivo = filasNueva[0].id;
         await recargarEstimador();
         avisar(modoNuevo === "rapido" ? "Estimado creado ✓ — pon las horas y el material" : "Estimado creado ✓ — busca ítems del catálogo y ponles cantidad");
@@ -9905,16 +9936,7 @@ Power done right the first time. ⚡`;
         const suma = Math.round(datos.mezcla.reduce((t, m) => t + m.pct, 0) * 1000) / 10;
         if (Math.abs(suma - 100) >= 0.6) { avisar(`Los % de la cuadrilla suman ${suma}% — tienen que dar 100%`, true); return; }
         try {
-          try {
-            await DB.cambiarEscenario(id, datos);
-          } catch (err) {
-            // Si todavía no se pegó el SQL del modo rápido, la columna "mezcla"
-            // no existe: se guardan las tres tarifas de siempre y se avisa.
-            if (!/mezcla/i.test(String((err && err.crudo) || (err && err.message) || ""))) throw err;
-            const { mezcla, ...sinMezcla } = datos;
-            await DB.cambiarEscenario(id, sinMezcla);
-            if (mezcla.length > 3) avisar("Se guardaron los 3 primeros roles. Para más de 3, pega el SQL del modo rápido.", true);
-          }
+          await DB.cambiarEscenario(id, datos);
           await recargarEstimador();
           avisar(`Escenario ${id} guardado ✓ — vale para los estimados nuevos`);
         } catch (err) { avisar("No se pudo guardar: " + err.message, true); }
@@ -11361,7 +11383,7 @@ Power done right the first time. ⚡`;
         await recargarEstimador();
         avisar(escNuevo === ESC_MEP ? "Pasado a MXP MEP ✓ — con sus tarifas" : "Pasado a MXP MEP ✓");
       }
-      catch (err) { avisar("No se pudo: " + err.message + " — ¿falta pegar el SQL e0c-mxp-mep?", true); }
+      catch (err) { avisar("No se pudo: " + err.message, true); }
     });
     if (btnMio) btnMio.addEventListener("click", async () => {
       try {
