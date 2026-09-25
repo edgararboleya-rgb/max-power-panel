@@ -126,7 +126,7 @@
   const $formLogin = $("form-login"), $loginError = $("login-error");
   const $formHoras = $("form-horas"), $btnHoras = $("btn-horas"), $btnCal = $("btn-calendario");
 
-  for (const id of ["logo", "logo-login"]) {
+  for (const id of ["logo", "logo-login", "logo-login-barra"]) {
     const el = $(id);
     if (el && window.MAXPOWER_LOGO) el.src = window.MAXPOWER_LOGO;
     // En pantalla grande va el icono de 512 px (nítido); el de 200 px se ve blando

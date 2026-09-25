@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="260" height="260" viewBox="0 0 260 260" fill="none" stroke="#22E8E0" stroke-opacity="0.26" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700">
+<circle cx="34" cy="34" r="12"/>
+<path d="M28 26v16M40 26v16"/>
+<text x="92" y="41" fill="#22E8E0" fill-opacity="0.26" stroke="none" font-style="italic">S</text>
+<text x="176" y="41" fill="#22E8E0" fill-opacity="0.26" stroke="none" font-style="italic">S3</text>
+<circle cx="230" cy="34" r="11"/>
+<path d="M230 16v7M230 45v7M212 34h7M241 34h7"/>
+<rect x="18" y="86" width="26" height="26"/>
+<text x="24" y="108" fill="#22E8E0" fill-opacity="0.26" stroke="none">J</text>
+<rect x="84" y="82" width="20" height="36"/>
+<path d="M84 88l20 12M84 100l20 12M84 112l14 6M90 82l14 8"/>
+<circle cx="160" cy="100" r="13"/>
+<text x="153" y="105" fill="#22E8E0" fill-opacity="0.26" stroke="none">M</text>
+<path d="M210 92h12M222 92l12-9M234 92h12"/>
+<circle cx="234" cy="92" r="2" fill="#22E8E0" fill-opacity="0.26" stroke="none"/>
+<path d="M22 170h32M26 178h24M31 186h14"/>
+<path d="M96 166a8 8 0 0 1 16 0a8 8 0 0 1 16 0"/>
+<path d="M96 178a8 8 0 0 0 16 0a8 8 0 0 0 16 0"/>
+<path d="M170 172c10-14 30-14 40 0"/>
+<path d="M190 172v10M186 166l4 6 4-6"/>
+<path d="M20 232q30-18 60 0t60 0t60 0"/>
+<path d="M58 222l4 8M64 220l4 8"/>
+<path d="M196 226l12-6-3 12z" fill="#22E8E0" fill-opacity="0.26" stroke="none"/>
+<circle cx="238" cy="222" r="10"/>
+<path d="M232 216v12M244 216v12M226 222h-8"/>
+</svg>

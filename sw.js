@@ -6,13 +6,14 @@
 //      ABRA sin señal o si GitHub Pages se cae. Antes, sin internet, tocar
 //      el icono dejaba la pantalla en blanco.
 // ============================================================
-const CACHE = "mxp-casco-v140";
+const CACHE = "mxp-casco-v141";
 const CASCO = [
   "./", "./index.html", "./css/styles.css",
   "./js/app.js", "./js/db.js", "./js/i18n.js",
   "./assets/config.js", "./assets/logo.js",
   "./manifest.webmanifest",
-  "./assets/icon-192.png", "./assets/icon-512.png", "./assets/icon-180.png"
+  "./assets/icon-192.png", "./assets/icon-512.png", "./assets/icon-180.png",
+  "./assets/fonts/manrope.woff2", "./assets/fonts/jetbrains-mono.woff2", "./assets/symbols-tile.svg"
 ];
 
 self.addEventListener("install", e => {

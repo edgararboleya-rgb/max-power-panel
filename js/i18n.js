@@ -28,6 +28,8 @@
     "Usuario": "Username", "Contraseña": "Password", "Entrar": "Sign in",
     "Entrando…": "Signing in…", "Usuario o contraseña incorrectos.": "Wrong username or password.",
     "Power done right the first time.": "Power done right the first time.",
+    "¿No puedes entrar?": "Can't sign in?",
+    "Pídele a Edgar que te cambie la contraseña.": "Ask Edgar to reset your password.",
     // Membrete y navegación
     "Salir": "Log out", "Panel de proyectos": "Projects panel", "Categorías": "Categories",
     "+ Nuevo proyecto": "+ New project", "Cargando…": "Loading…",

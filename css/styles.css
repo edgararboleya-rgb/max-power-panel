@@ -1,3 +1,24 @@
+/* ==== «Cobre y luz» (tanda 1, 25-sep): la letra va DENTRO de la app ====
+   Manrope para todo y JetBrains Mono para números de permiso, factura y licencia.
+   Los archivos están en assets/fonts (subconjunto latino): la app abre sin señal,
+   nada se baja de Google. */
+@font-face {
+  font-family: 'Manrope';
+  src: url('../assets/fonts/manrope.woff2') format('woff2');
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../assets/fonts/jetbrains-mono.woff2') format('woff2');
+  font-weight: 500 600;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+2013-2014, U+2018-201A, U+201C-201E, U+2022, U+2026;
+}
+
 :root {
   /* Marca */
   --mp-navy:   #1B3C8C;
@@ -14,24 +35,24 @@
   --mp-sky-2: #E8F3FA;
   --mp-sky-3: #DCEEF7;
   --mp-card:  #FFFFFF;
-  --mp-line:  #D6E7F1;
+  --mp-line:  #cfe0ee;
 
   /* Texto sobre claro */
   --mp-ink:   #0B2036;
   --mp-ink-2: #4D6A83;
-  --mp-ink-3: #5B7690;
+  --mp-ink-3: #5B7690;   /* el #7e97ad del brief da 3.0:1 sobre blanco; este llega a 4.5:1 */
 
   /* Acento claro-seguro (el cyan no se usa como texto en claro) */
   --mp-teal-text: #0D7D92;
 
   /* Semántica de estado: cyan = activo, lima = completo, amarillo = urgencia */
-  --mp-ok:     #3B8E1E;   /* lima oscurecida para texto sobre claro */
-  --mp-warn-bg:#FDF9D8;
-  --mp-warn-bd:#E7D839;
-  --mp-warn-tx:#7A6A00;
-  --mp-danger: #B3383B;
+  --mp-ok:     #1E6B35;   /* verde oscuro para texto sobre claro */
+  --mp-warn-bg:#FBF6C9;
+  --mp-warn-bd:#efdc7c;
+  --mp-warn-tx:#5A4300;
+  --mp-danger: #C8372D;
 
-  --mp-shadow:    0 1px 2px rgba(11,32,54,.05), 0 8px 24px -12px rgba(11,32,54,.18);
+  --mp-shadow:    0 2px 4px rgba(11,32,54,.06), 0 16px 36px -18px rgba(11,32,54,.34);
   --mp-shadow-lg: 0 2px 4px rgba(11,32,54,.05), 0 22px 48px -20px rgba(11,32,54,.28);
   --mp-ease: cubic-bezier(.2,.8,.3,1);
 
@@ -39,28 +60,68 @@
   --mp-white:      #FFFFFF;
   --mp-black:      #000000;
   --mp-sky-0:      #F4FBFF;   /* texto/fondo casi blanco sobre azul profundo */
-  --mp-danger-tx:  #B3261E;   /* rojo de texto (avisos, vencido) */
+  --mp-danger-tx:  #C8372D;   /* rojo de texto (avisos, vencido) */
   --mp-danger-bg:  #FDF1F1;
   --mp-danger-bg2: #FDF4F4;
-  --mp-danger-bd:  #F3B9B9;
+  --mp-danger-bd:  #F3D2CE;
   --mp-danger-2:   #B23232;
   --mp-danger-3:   #E5484D;
   --mp-ok-2:       #4C8A1F;   /* verde de texto */
-  --mp-ok-bg:      #F3FBEC;
+  --mp-ok-bg:      #E3F7DA;
   --mp-ok-bd:      #BFE8A8;
   --mp-cyan-bg:    #EAFBFA;
   --mp-blue-2:     #2E62E0;
   --mp-line-2:     #BCDCEA;
   --mp-deep-2:     #0E2A4C;
-  /* La escala de letras (P182): 8 tamaños; lo que era casi igual se acercó al más próximo (6 % o menos) */
-  --fs-1: 10px;      /* etiquetas chicas en mayúsculas */
-  --fs-2: 0.7rem;    /* notas, metadatos */
-  --fs-3: 0.78rem;   /* texto secundario */
-  --fs-4: 0.86rem;   /* texto de apoyo */
-  --fs-5: 0.93rem;   /* texto normal */
-  --fs-6: 1rem;      /* botones y títulos de tarjeta */
-  --fs-7: 1.2rem;    /* títulos */
-  --fs-8: 1.5rem;    /* cifras grandes */
+  /* La escala de letras (P182), subida a la de «Cobre y luz»: nada por debajo de 13 px */
+  --fs-1: 13px;      /* etiquetas chicas */
+  --fs-2: 13px;      /* notas, metadatos */
+  --fs-3: 14px;      /* texto secundario */
+  --fs-4: 15px;      /* texto de apoyo */
+  --fs-5: 16px;      /* texto normal */
+  --fs-6: 17px;      /* botones y títulos de tarjeta */
+  --fs-7: 20px;      /* títulos */
+  --fs-8: 26px;      /* cifras grandes */
+  --fs-h1: 30px;     /* título de pantalla · 800 */
+  --fs-h2: 18px;     /* título de tarjeta · 800 */
+  --fs-body: 17px;   /* cuerpo */
+  --fs-label: 14px;  /* etiquetas en frase, no en mayúsculas (se leen mejor) */
+  --fs-small: 13px;  /* lo más chico que se escribe en la app */
+  --fs-money: 44px;
+
+  /* ==== «Cobre y luz» (tanda 1): tokens nuevos, con los valores del brief ==== */
+  /* Cobre: el oficio. Solo acento (cables, iconos, etiquetas de sección); nunca fondos ni texto largo */
+  --cu: #C8783A;
+  --cu-light: #E3A06A;
+  --cu-deep: #B86A2E;
+  --cu-dark: #8F4F1F;
+  --wire: linear-gradient(180deg, #E3A06A, #B86A2E 55%, #8F4F1F);
+  --grad-warm: linear-gradient(96deg, #22E8E0 0%, #8CF06A 55%, #EFE22E 100%);
+  /* La noche: barra de arriba y la tarjeta que más importa */
+  --night: #071A2E;
+  --night-2: #0B1F47;
+  --night-3: #163B8F;
+  /* Estados */
+  --ok: #1E8E4E;  --ok-ink: #1E6B35;  --ok-bg: #E3F7DA;
+  --warn-ink: #5A4300;  --warn-bg: #FBF6C9;
+  --bad: #C8372D;  --bad-line: #F3D2CE;
+  /* Fondo «Niebla viva»: blanco que baja a celeste, con tres auras de luz */
+  --bg: radial-gradient(circle at 12% 2%, rgba(34,232,224,.28), transparent 30%),
+        radial-gradient(circle at 100% 35%, rgba(42,91,215,.14), transparent 36%),
+        radial-gradient(circle at 40% 100%, rgba(200,120,58,.16), transparent 36%),
+        linear-gradient(180deg, #f4f9fd 0%, #e3eef8 100%);
+  --shadow-night: 0 20px 44px -18px rgba(11,32,54,.6), inset 0 1px 0 rgba(255,255,255,.14);
+  /* Letra */
+  --font: 'Manrope', system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Medidas para el dedo (con guantes) */
+  --tap: 44px;       /* lo mínimo para tocar */
+  --btn-h: 56px;     /* botón principal */
+  --btn2-h: 50px;    /* botón secundario */
+  --field-h: 54px;   /* campos de escribir */
+  --r-btn: 12px;
+  --r-card: 18px;
+  --r-field: 10px;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -70,190 +131,203 @@
 select, input, textarea { max-width: 100%; min-width: 0; }
 body { overflow-x: hidden; }
 
+html { font-size: 100%; }
 body {
-  font-family: system-ui, -apple-system, "Segoe UI Variable", "Segoe UI", sans-serif;
-  /* Fondo tech: textura de circuito casi invisible sobre el cielo */
-  background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cg fill='none' stroke='%23CFE8F4' stroke-width='1'%3E%3Cpath d='M24 0v44h48M24 160v-34h66M160 68h-36V24M104 160v-28h56M0 110h30v-24'/%3E%3C/g%3E%3Cg fill='%23C2E2F1'%3E%3Ccircle cx='72' cy='44' r='2.2'/%3E%3Ccircle cx='90' cy='126' r='2.2'/%3E%3Ccircle cx='124' cy='24' r='2.2'/%3E%3Ccircle cx='30' cy='86' r='2.2'/%3E%3C/g%3E%3C/svg%3E"),
-    var(--mp-sky-2);
+  font-family: var(--font);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  /* Color de respaldo; la niebla va en la capa fija de abajo (body::before) */
+  background: #e3eef8;
   color: var(--mp-ink);
   -webkit-font-smoothing: antialiased;
   position: relative;
+  isolation: isolate;   /* la capa de la niebla queda debajo de todo, pero dentro del body */
 }
-
-/* Grano de película sutil sobre toda la app */
-body::after {
+/* Fondo «Niebla viva» en una capa fija por debajo. Nunca background-attachment: fixed
+   (el Safari del iPhone lo rompe y la pantalla salta al deslizar). */
+body::before {
   content: "";
   position: fixed;
   inset: 0;
+  z-index: -1;
+  background: var(--bg);
   pointer-events: none;
-  opacity: 0.035;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
-  z-index: 99;
 }
 
-/* ============ PORTADA: selección de usuario ============ */
+/* ============ PORTADA: usuario y contraseña («Cobre y luz», tanda 1) ============ */
 /* El atributo hidden debe ganar aunque .login declare display:flex */
 [hidden] { display: none !important; }
 
+/* Fondo claro con la niebla (la del body): ya no es la pantalla azul oscura entera.
+   Arriba la misma barra noche de la app con su cable de cobre. */
 .login {
   min-height: 100vh;
   min-height: 100dvh;
-  background:
-    radial-gradient(60% 100% at 85% 0%, rgba(34,232,224,.20), transparent 60%),
-    var(--mp-deep);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.login-barra {
+  position: relative;
+  height: 60px;
+  flex-shrink: 0;
+  background: var(--night);
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 1.5rem 1rem;
-  position: relative;
+  gap: 10px;
+  padding: 0 16px;
 }
-/* Rejilla de plano detrás del héroe, desvanecida */
-.login::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(34,232,224,.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(34,232,224,.06) 1px, transparent 1px);
-  background-size: 64px 64px;
-  -webkit-mask-image: radial-gradient(70% 60% at 50% 35%, var(--mp-black), transparent);
-  mask-image: radial-gradient(70% 60% at 50% 35%, var(--mp-black), transparent);
-  pointer-events: none;
-}
+.login-barra-logo { width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0; }
+.login-barra > .wire-cu { position: absolute; left: 0; right: 0; bottom: -4px; }
 .login-caja {
-  width: min(380px, 100%);
+  width: min(420px, 100%);
+  margin: 0 auto;
+  padding: 28px 16px 24px;
   text-align: center;
   position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 .login-logo {
-  width: 108px;
-  height: 108px;
-  margin-bottom: 0.4rem;
-  filter: drop-shadow(0 0 22px rgba(34,232,224,.35));
+  width: 164px;
+  height: 164px;
+  margin: 0 auto 10px;
+  object-fit: contain;
 }
-
-/* Wordmark como en el nav de mxpes.com: "max power" en gradiente,
-   minúsculas, con la línea cyan debajo */
-.wordmark {
-  white-space: nowrap;
-  font-weight: 650;
+.login-titulo {
+  font-size: var(--fs-h1);
+  font-weight: 800;
+  line-height: 1.08;
   letter-spacing: -0.02em;
-  line-height: 1;
-  text-transform: lowercase;
-  background: var(--mp-grad);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  width: fit-content;
-  font-size: var(--fs-7);
+  color: var(--mp-ink);
+  text-wrap: balance;
 }
-.wordmark-sub {
-  color: var(--mp-cyan);
-  font-size: 8.5px;
-  font-weight: 650;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  margin-top: 2px;
-}
-.wordmark.grande { font-size: clamp(2rem, 9vw, 2.6rem); margin: 0 auto; }
-.wordmark-sub.grande { font-size: var(--fs-2); }
-
-.login-tagline {
-  color: rgba(255,255,255,.6);
-  font-size: var(--fs-3);
-  margin: 0.7rem 0 1.8rem;
+.login-empresa {
+  font-size: var(--fs-label);
+  color: var(--mp-ink-2);
+  margin: 8px 0 20px;
 }
 
-/* Formulario de entrada */
-.login-form { display: grid; gap: 0.75rem; text-align: left; }
+/* La tarjeta blanca con el cable de cobre como filo de arriba */
+.login-form { display: grid; gap: 14px; text-align: left; }
 .login-form label {
   display: grid;
-  gap: 0.3rem;
-  color: var(--mp-cyan);
-  font-size: var(--fs-1);
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-}
-.login-form input {
-  font: inherit;
-  font-size: var(--fs-6);
-  padding: 0.7rem 0.85rem;
-  border-radius: 12px;
-  border: 1px solid rgba(34,232,224,.28);
-  background: rgba(255,255,255,.06);
-  color: var(--mp-white);
-}
-.login-form input:focus {
-  outline: none;
-  border-color: var(--mp-cyan);
-  box-shadow: 0 0 0 3px rgba(34,232,224,.18);
+  gap: 7px;
+  color: var(--mp-ink);
+  font-size: 15px;
+  font-weight: 700;
 }
 .login-error {
-  background: rgba(239,226,46,.1);
-  border: 1px solid rgba(239,226,46,.4);
-  border-radius: 10px;
-  color: var(--mp-yellow);
-  font-size: var(--fs-3);
-  font-weight: 600;
-  padding: 0.5rem 0.7rem;
+  background: var(--mp-card);
+  border: 1px solid var(--bad-line);
+  border-radius: var(--r-field);
+  color: var(--bad);
+  font-size: var(--fs-4);
+  font-weight: 700;
+  padding: 10px 12px;
   text-align: center;
 }
-.btn-entrar {
-  background: var(--mp-grad);
-  background-size: 190% 100%;
-  color: #04202A;
-  border: none;
-  border-radius: 12px;
-  padding: 0.8rem;
-  font-size: var(--fs-5);
-  font-weight: 650;
+.login-form .btn-entrar { margin-top: 4px; }
+/* «¿No puedes entrar?»: se toca y dice qué hacer. Sin correo ni formulario. */
+.login-ayuda { text-align: center; }
+.login-ayuda > summary {
+  list-style: none;
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  font-size: var(--fs-4);
+  font-weight: 700;
+  color: var(--mp-navy);
+  text-decoration: underline;
+  text-underline-offset: 3px;
   cursor: pointer;
-  font-family: inherit;
-  box-shadow: 0 8px 26px -8px rgba(34,232,224,.7);
-  animation: grad-shift 7s ease infinite;
-  transition: transform .24s var(--mp-ease);
-  margin-top: 0.2rem;
 }
-.btn-entrar:hover, .btn-entrar:focus-visible { transform: translateY(-2px); outline: none; }
-.login-nota {
-  color: rgba(255,255,255,.45);
-  font-size: var(--fs-2);
-  margin-top: 1.7rem;
-  letter-spacing: 0.02em;
+.login-ayuda > summary::-webkit-details-marker { display: none; }
+.login-ayuda p { font-size: var(--fs-3); color: var(--mp-ink-2); margin: 2px 0 4px; }
+.login-pie {
+  margin-top: auto;
+  padding-top: 22px;
+  display: grid;
+  gap: 4px;
+  font-size: var(--fs-small);
+  color: var(--mp-ink-2);
 }
+.login-pie .mono { font-size: var(--fs-small); color: var(--mp-ink); }
 
-/* ============ MARCO OSCURO: encabezado ============ */
+/* ============ BARRA NOCHE de arriba + cable de cobre («Cobre y luz») ============ */
+/* Fondo sólido (sin el desenfoque): se lee igual al sol y no pesa en el teléfono.
+   El cable de cobre cuelga debajo (.wire-cu, último hijo) y viaja con la barra pegajosa. */
 .membrete {
-  background: rgba(7,26,46,.94);
-  backdrop-filter: blur(16px) saturate(1.6);
-  -webkit-backdrop-filter: blur(16px) saturate(1.6);
-  border-bottom: 1px solid rgba(34,232,224,.22);
+  background: var(--night);
+  border-bottom: 0;
   position: sticky;
   top: 0;
   z-index: 20;
 }
+.membrete > .wire-cu { position: absolute; left: 0; right: 0; bottom: -4px; }
 .membrete-inner {
   max-width: 1120px;
   margin: 0 auto;
-  padding: 0.6rem 20px;
+  height: 60px;
+  padding: 0 16px;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 10px;
 }
 .membrete-logo {
-  width: 46px;
-  height: 46px;
+  width: 36px;
+  height: 36px;
   flex-shrink: 0;
-  filter: drop-shadow(0 0 8px rgba(34,232,224,.3));
 }
 .membrete-der {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 6px;
 }
+/* La marca: «max power» con la luz cálida (cian → lima → amarillo; va sobre la noche) */
+.wordmark {
+  white-space: nowrap;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  text-transform: lowercase;
+  width: fit-content;
+}
+/* 9 px a propósito: es parte de la marca, no texto para leer (brief, barra superior) */
+.wordmark-sub {
+  color: var(--cu-light);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  margin-top: 2px;
+  line-height: 1.2;
+}
+
+/* El cable de cobre con la chispa que lo recorre (la corriente) */
+.wire-cu { position: relative; height: 4px; background: var(--wire); overflow: hidden; }
+.wire-cu::after {
+  content: ''; position: absolute; top: -2px; bottom: -2px; width: 90px; left: -100px; border-radius: 4px;
+  background: linear-gradient(90deg, transparent, var(--mp-cyan) 35%, #fff 50%, var(--mp-cyan) 65%, transparent);
+  box-shadow: 0 0 14px rgba(34,232,224,.9);
+  animation: mp-spark 3.2s linear infinite;
+}
+@keyframes mp-spark { 0% { left: -100px; } 100% { left: 105%; } }
+
+/* Texto con la luz de la marca (solo una palabra del título) */
+.grad-text { background: var(--mp-grad); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
+.grad-text-warm { background: var(--grad-warm); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
+/* Letra de dato: permiso, factura, licencia, circuito */
+.mono { font-family: var(--mono); font-weight: 600; }
+.muted { color: var(--mp-ink-2); }
+/* Etiqueta de sección: cobre, en frase (sin mayúsculas ni espaciado) */
+.label-cu { font-size: var(--fs-label); font-weight: 800; color: var(--cu-dark); }
 .usuario-chip {
   color: rgba(255,255,255,.8);
   font-size: var(--fs-2);
@@ -265,43 +339,45 @@ body::after {
 /* En el teléfono el nombre no cabe junto al logo: se oculta y quedan EN + Salir */
 @media (max-width: 480px) {
   .usuario-chip { display: none; }
-  .membrete-inner { padding: 0.6rem 14px; }
   .cal-semana-nombres span, .cal-grid { font-size: var(--fs-2); }
 }
+/* Todo lo que se toca en la barra: 44 × 44 como mínimo */
 .btn-salir {
-  background: rgba(255,255,255,.08);
+  min-height: var(--tap);
+  background: rgba(255,255,255,.06);
   color: var(--mp-white);
-  border: 1px solid rgba(34,232,224,.4);
-  border-radius: 10px;
-  padding: 0.35rem 0.8rem;
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: var(--r-btn);
+  padding: 0 0.8rem;
   font-size: var(--fs-3);
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   font-family: inherit;
 }
-.btn-salir:hover, .btn-salir:focus-visible { color: var(--mp-cyan); outline: none; }
+.btn-salir:hover, .btn-salir:focus-visible { color: var(--mp-cyan); }
 
-/* 🌐 Cambio de idioma: muestra el idioma AL QUE cambias */
+/* Cambio de idioma: muestra el idioma AL QUE cambias (sin el globito) */
 .btn-idioma {
+  min-width: var(--tap);
+  min-height: var(--tap);
   background: none;
   color: var(--mp-cyan);
   border: 1px dashed rgba(34,232,224,.5);
-  border-radius: 10px;
-  padding: 0.35rem 0.6rem;
-  font-size: var(--fs-2);
-  font-weight: 650;
-  letter-spacing: 0.08em;
+  border-radius: var(--r-btn);
+  padding: 0 0.4rem;
+  font-size: var(--fs-3);
+  font-weight: 700;
+  letter-spacing: 0.04em;
   cursor: pointer;
   font-family: inherit;
 }
-.btn-idioma::before { content: "🌐 "; }
-.btn-idioma:hover, .btn-idioma:focus-visible { border-style: solid; outline: none; }
+.btn-idioma:hover, .btn-idioma:focus-visible { border-style: solid; }
 
 /* ============ Barra de herramientas (migas + acciones) ============ */
 .toolbar {
   max-width: 1120px;
   margin: 0 auto;
-  padding: 1rem 20px 0;
+  padding: 1.1rem 16px 0;
   display: flex;
   align-items: center;
   gap: 0.7rem;
@@ -309,52 +385,48 @@ body::after {
 .btn-volver {
   background: var(--mp-card);
   color: var(--mp-navy);
-  border: 1.5px solid var(--mp-line-2);
-  border-radius: 10px;
-  width: 34px; height: 34px;
+  border: 1px solid var(--mp-line);
+  border-radius: var(--r-btn);
+  width: 44px; height: 44px;
+  min-width: 44px;
   font-size: var(--fs-6);
+  font-weight: 700;
   cursor: pointer;
   flex-shrink: 0;
   font-family: inherit;
 }
-.btn-volver:hover, .btn-volver:focus-visible { box-shadow: var(--mp-shadow); outline: none; }
+.btn-volver:hover, .btn-volver:focus-visible { box-shadow: var(--mp-shadow); }
 .toolbar-titulos { flex: 1; min-width: 0; }
+/* La etiqueta de sección de arriba («Panel de proyectos»): cobre y en frase */
 .kicker {
-  font-size: var(--fs-2);
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  font-weight: 650;
-  color: var(--mp-teal-text);
+  font-size: var(--fs-label);
+  font-weight: 800;
+  color: var(--cu-dark);
 }
 #titulo-vista {
-  font-size: clamp(1.15rem, 4vw, 1.5rem);
-  font-weight: 650;
-  letter-spacing: -0.03em;
+  font-size: clamp(24px, 6.4vw, var(--fs-h1));
+  font-weight: 800;
+  letter-spacing: -0.02em;
   color: var(--mp-ink);
-  line-height: 1.05;
+  line-height: 1.08;
   text-wrap: balance;
 }
+/* «+ Nuevo proyecto»: navy sólido (el Pulso se guarda para la acción de la pantalla) */
 .btn-nuevo {
-  background: var(--mp-grad);
-  background-size: 190% 100%;
-  color: #04202A;
+  min-height: var(--tap);
+  background: var(--mp-navy);
+  color: var(--mp-white);
   border: none;
-  border-radius: 11px;
-  padding: 0.55rem 1rem;
-  font-size: var(--fs-3);
-  font-weight: 650;
+  border-radius: var(--r-btn);
+  padding: 0 1rem;
+  font-size: var(--fs-4);
+  font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
   font-family: inherit;
-  box-shadow: 0 8px 26px -8px rgba(34,232,224,.7);
-  animation: grad-shift 7s ease infinite;
-  transition: transform .24s var(--mp-ease);
 }
-.btn-nuevo:hover, .btn-nuevo:focus-visible { transform: translateY(-2px); outline: none; }
-@keyframes grad-shift {
-  0%, 100% { background-position: 0% 0; }
-  50% { background-position: 100% 0; }
-}
+.btn-nuevo:hover { background: var(--night-3); }
+.btn-nuevo:active { transform: translateY(1px); }
 
 .container {
   max-width: 1120px;
@@ -369,47 +441,43 @@ body::after {
   display: flex;
   align-items: center;
   gap: 1rem;
+  min-height: var(--tap);
   background: var(--mp-card);
   border: 1px solid var(--mp-line);
-  border-radius: 16px;
+  border-radius: var(--r-card);
   box-shadow: var(--mp-shadow);
-  padding: 1.05rem 1.15rem 1.05rem 1.35rem;
+  padding: 1rem 1.15rem;
   cursor: pointer;
   text-align: left;
   font: inherit;
   color: var(--mp-ink);
   width: 100%;
   overflow: hidden;
-  transition: transform .24s var(--mp-ease), box-shadow .24s var(--mp-ease);
+  transition: border-color .2s var(--mp-ease), box-shadow .2s var(--mp-ease);
 }
-/* Barra de gradiente firma en el borde izquierdo */
-.categoria-card::before {
-  content: "";
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 4px;
-  background: var(--mp-grad);
-}
+/* Tarjeta blanca: sin barra de gradiente al lado. Al tocarla, el borde se ilumina. */
 .categoria-card:hover, .categoria-card:focus-visible {
-  transform: translateY(-3px);
-  box-shadow: var(--mp-shadow-lg), 0 0 22px rgba(34,232,224,.16);
-  outline: none;
+  border-color: var(--mp-blue);
+  box-shadow: var(--mp-shadow-lg), 0 0 0 3px rgba(34,232,224,.35);
 }
-.cat-icono { font-size: 1.8rem; flex-shrink: 0; display: flex; }
-.cat-icono svg {
-  width: 46px;
-  height: 46px;
-  filter: drop-shadow(0 0 7px rgba(34,232,224,.4));
-  transition: transform .24s var(--mp-ease), filter .24s var(--mp-ease);
+/* El icono en su caja blanca de 48 px, con trazo de cobre (el oficio) */
+.cat-icono {
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  background: var(--mp-card);
+  border: 1px solid var(--mp-line);
+  color: var(--cu-dark);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
-.categoria-card:hover .cat-icono svg,
-.categoria-card:focus-visible .cat-icono svg {
-  transform: scale(1.07);
-  filter: drop-shadow(0 0 12px rgba(34,232,224,.65));
-}
-.categoria-card:active { transform: translateY(1px) scale(.985); }
+.cat-icono svg { width: 32px; height: 32px; }
+.cat-icono svg g { stroke: var(--cu-dark); }
+.cat-icono svg [fill="#22E8E0"] { fill: var(--cu); }
+.categoria-card:active { transform: translateY(1px); }
 .cat-info { flex: 1; min-width: 0; }
-.cat-nombre { font-weight: 650; letter-spacing: -0.02em; font-size: var(--fs-6); }
+.cat-nombre { font-weight: 800; letter-spacing: -0.01em; font-size: var(--fs-h2); line-height: 1.2; }
 .cat-conteo { font-size: var(--fs-3); color: var(--mp-ink-2); margin-top: 3px; }
 .cat-dinero {
   font-size: var(--fs-3);
@@ -425,21 +493,19 @@ body::after {
   margin-top: 1.4rem;
   background: var(--mp-line);
   border: 1px solid var(--mp-line);
-  border-radius: 16px;
+  border-radius: var(--r-card);
   overflow: hidden;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1px;
 }
 .resumen-card { background: var(--mp-card); padding: 0.85rem 1rem; min-width: 0; }
+/* El número en navy sólido: el gradiente como letra terminaba en amarillo, y el amarillo nunca va de texto */
 .resumen-card .valor {
   font-size: 1.35rem;
-  font-weight: 650;
-  letter-spacing: -0.03em;
-  background: var(--mp-grad);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--mp-navy);
   font-variant-numeric: tabular-nums;
   width: fit-content;
   max-width: 100%;
@@ -454,10 +520,8 @@ body::after {
 .resumen-card.alerta { background: var(--mp-warn-bg); }
 .resumen-card .etiqueta {
   font-size: var(--fs-1);
-  color: var(--mp-ink-3);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-weight: 650;
+  color: var(--mp-ink-2);
+  font-weight: 700;
   margin-top: 0.25rem;
 }
 
@@ -467,9 +531,10 @@ body::after {
   display: flex;
   align-items: center;
   gap: 0.95rem;
+  min-height: var(--tap);
   background: var(--mp-card);
   border: 1px solid var(--mp-line);
-  border-radius: 14px;
+  border-radius: var(--r-card);
   box-shadow: var(--mp-shadow);
   padding: 0.85rem 1rem;
   cursor: pointer;
@@ -480,9 +545,8 @@ body::after {
   transition: transform .24s var(--mp-ease), box-shadow .24s var(--mp-ease);
 }
 .etapa-card:hover, .etapa-card:focus-visible {
-  transform: translateY(-3px);
+  border-color: var(--mp-blue);
   box-shadow: var(--mp-shadow-lg);
-  outline: none;
 }
 /* Cuadro numerado estilo web: fondo deep, número cyan */
 .etapa-num {
@@ -619,10 +683,12 @@ body::after {
 /* ---------- 💬 Chat del equipo ---------- */
 .btn-chat {
   position: relative;
+  min-width: var(--tap);
+  min-height: var(--tap);
   background: none;
   border: 1px dashed rgba(34, 232, 224, 0.5);
-  border-radius: 10px;
-  padding: 0.3rem 0.55rem;
+  border-radius: var(--r-btn);
+  padding: 0 0.3rem;
   font-size: var(--fs-5);
   cursor: pointer;
   line-height: 1;
@@ -742,12 +808,12 @@ body::after {
 }
 .chat-form input:focus { outline: 2px solid var(--mp-blue); border-color: var(--mp-blue); }
 .chat-enviar {
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   border: 0;
-  background: linear-gradient(135deg, var(--mp-blue), var(--mp-cyan));
-  color: #04222B;
+  background: var(--mp-navy);
+  color: var(--mp-white);
   font-size: var(--fs-6);
   font-weight: 650;
   cursor: pointer;
@@ -762,7 +828,7 @@ body::after {
 .chk-det {
   background: var(--mp-card);
   border: 1px solid var(--mp-line);
-  border-radius: 14px;
+  border-radius: var(--r-card);
   margin-bottom: 0.6rem;
   overflow: hidden;
 }
@@ -946,7 +1012,7 @@ body::after {
   position: relative;
   background: var(--mp-card);
   border: 1px solid var(--mp-line);
-  border-radius: 16px;
+  border-radius: var(--r-card);
   box-shadow: var(--mp-shadow);
   overflow: hidden;
   cursor: pointer;
@@ -989,11 +1055,9 @@ body::after {
   background: var(--mp-card);
   border: 1px solid var(--mp-line);
   font-size: var(--fs-1);
-  font-weight: 650;
+  font-weight: 700;
   padding: 0.3rem 0.7rem;
   white-space: nowrap;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--mp-ink-2);
 }
 /* Selector de estado del dueño: píldora con flechita */
@@ -1004,11 +1068,9 @@ body::after {
   background: var(--mp-card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%234D6A83' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 10px center;
   border: 1.5px solid var(--mp-line-2);
   font-size: var(--fs-1);
-  font-weight: 650;
+  font-weight: 700;
   font-family: inherit;
   padding: 0.32rem 1.6rem 0.32rem 0.7rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--mp-navy);
   cursor: pointer;
   max-width: 170px;
@@ -1049,10 +1111,8 @@ body::after {
 }
 .money-item .money-label {
   font-size: var(--fs-1);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-weight: 650;
-  color: var(--mp-ink-3);
+  font-weight: 700;
+  color: var(--mp-ink-2);
 }
 .money-item .money-num { font-size: var(--fs-5); font-weight: 650; letter-spacing: -0.01em; }
 .money-num.contrato { color: var(--mp-ink); }
@@ -1080,10 +1140,6 @@ body::after {
   to   { background-position: 220% 0; }
 }
 .accion:active, .aviso-linea:active, .etapa-card:active { transform: scale(.97); }
-@media (prefers-reduced-motion: reduce) {
-  .barra-relleno { animation: none; }
-  .btn-horas, .categoria-card, .cat-icono svg { transition: none; }
-}
 .barra-texto {
   font-size: var(--fs-2);
   color: var(--mp-ink-2);
@@ -1097,10 +1153,8 @@ body::after {
   justify-content: flex-end;
   gap: 0.35rem;
   padding: 0.5rem 1rem 0.6rem 1.15rem;
-  font-size: var(--fs-2);
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: var(--fs-3);
+  font-weight: 700;
   color: var(--mp-navy);
 }
 .abrir-ficha .cat-flecha { font-size: var(--fs-6); line-height: 1; }
@@ -1120,11 +1174,10 @@ body::after {
 
 .detalle-seccion { margin-bottom: 0.85rem; }
 .detalle-seccion h3 {
-  font-size: var(--fs-2);
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--mp-teal-text);
-  font-weight: 650;
+  /* etiqueta de sección («Cobre y luz»): cobre, en frase, sin mayúsculas ni espaciado */
+  font-size: var(--fs-label);
+  font-weight: 800;
+  color: var(--cu-dark);
   margin-bottom: 0.35rem;
 }
 .detalle-seccion p { font-size: var(--fs-4); line-height: 1.55; color: var(--mp-ink-2); }
@@ -1161,62 +1214,38 @@ body::after {
 
 /* Botones de acción */
 .acciones { display: flex; flex-wrap: wrap; gap: 0.45rem; }
-/* Botón de acción: tecla en relieve, estilo eléctrico.
-   Gradiente azul profundo, luz en el borde de arriba y un
-   resplandor cian muy leve — la misma familia que las losetas
-   del inicio, en pequeño. */
+/* Botón de acción («Cobre y luz»): navy sólido, sin gradiente de fondo.
+   El gradiente de la marca queda solo para el Pulso (uno por pantalla). */
 .accion {
   position: relative;
-  background: linear-gradient(180deg, #2E62E0 0%, var(--mp-navy) 100%);
-  color: var(--mp-sky-0);
-  border: 1px solid rgba(27,60,140,.55);
-  border-radius: 12px;
+  min-height: var(--tap);
+  background: var(--mp-navy);
+  color: var(--mp-white);
+  border: 1px solid var(--mp-navy);
+  border-radius: var(--r-btn);
   padding: 0.55rem 0.95rem;
   font-size: var(--fs-3);
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-weight: 700;
   cursor: pointer;
   font-family: inherit;
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.28),
-    inset 0 -1px 0 rgba(7,26,46,.25),
-    0 4px 10px rgba(27,60,140,.28),
-    0 1px 2px rgba(7,26,46,.18);
-  transition: transform .18s var(--mp-ease), box-shadow .18s var(--mp-ease);
+  transition: background-color .15s var(--mp-ease), box-shadow .15s var(--mp-ease);
 }
-.accion:hover, .accion:focus-visible {
-  transform: translateY(-1px);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.3),
-    0 6px 16px rgba(27,60,140,.34),
-    0 0 12px rgba(34,232,224,.28);
-  outline: none;
-}
-.accion:active {
-  transform: translateY(1px);
-  box-shadow: inset 0 2px 4px rgba(7,26,46,.3);
-}
+.accion:hover { background: var(--night-3); border-color: var(--night-3); }
+.accion:active { transform: translateY(1px); }
+/* Secundario: blanco con borde */
 .accion.secundaria {
-  background: linear-gradient(180deg, #FFFFFF 0%, #F2F9FD 100%);
+  background: var(--mp-card);
   color: var(--mp-navy);
-  border: 1px solid rgba(27,60,140,.18);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.9),
-    0 3px 8px rgba(7,26,46,.08),
-    0 1px 2px rgba(7,26,46,.08);
+  border: 1px solid var(--mp-line);
 }
-.accion.secundaria:hover, .accion.secundaria:focus-visible {
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.9),
-    0 5px 12px rgba(7,26,46,.12),
-    0 0 10px rgba(34,232,224,.18);
-}
+.accion.secundaria:hover { border-color: var(--mp-blue); background: var(--mp-card); }
+/* Borrar / anular: blanco con borde rojo (como .btn-danger) */
 .accion.peligro {
-  background: linear-gradient(180deg, #FFFFFF 0%, #FDF4F4 100%);
-  color: var(--mp-danger);
-  border: 1px solid rgba(179,56,59,.4);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 3px 8px rgba(7,26,46,.08);
+  background: var(--mp-card);
+  color: var(--bad);
+  border: 1px solid var(--bad-line);
 }
+.accion.peligro:hover { border-color: var(--bad); background: var(--mp-card); }
 
 /* Tabla de facturas */
 .tabla-envoltura { overflow-x: auto; }
@@ -1232,9 +1261,7 @@ table.facturas th {
   text-align: left;
   padding: 6px 10px;
   font-size: var(--fs-1);
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-  font-weight: 650;
+  font-weight: 700;
 }
 table.facturas th:first-child { border-radius: 8px 0 0 0; }
 table.facturas th:last-child { border-radius: 0 8px 0 0; }
@@ -1257,32 +1284,31 @@ table.facturas tr.total td {
 .f-estado.pendiente { color: var(--mp-warn-tx); }
 
 /* ---------- Mis horas ---------- */
-/* Losetas de acción: teclas con profundidad que dan ganas de apretar */
+/* Losetas de acción del inicio («Cobre y luz»): blancas con borde, el icono en cobre
+   y el filo fino de luz arriba. Nada de gradiente de fondo. */
 .btn-horas {
   position: relative;
   overflow: hidden;
   width: 100%;
+  min-height: var(--tap);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.35rem;
-  background: linear-gradient(160deg, #0E2A4C, var(--mp-deep) 60%);
-  color: var(--mp-cyan);
-  border: 1px solid rgba(34,232,224,.35);
-  border-radius: 18px;
+  background: var(--mp-card);
+  color: var(--cu-dark);
+  border: 1px solid var(--mp-line);
+  border-radius: var(--r-card);
   padding: 0.95rem 0.6rem 0.85rem;
   font-size: var(--fs-5);
-  font-weight: 650;
+  font-weight: 700;
   cursor: pointer;
   font-family: inherit;
   margin-bottom: 0.9rem;
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.08),
-    0 6px 16px rgba(7,26,46,.28),
-    0 2px 4px rgba(7,26,46,.22);
-  transition: transform .18s var(--mp-ease), box-shadow .18s var(--mp-ease);
+  box-shadow: var(--mp-shadow);
+  transition: border-color .18s var(--mp-ease), box-shadow .18s var(--mp-ease);
 }
-/* Filo de luz con el gradiente firma */
+/* Filo de luz con el gradiente firma (2.5 px: es filo, no fondo) */
 .btn-horas::after {
   content: "";
   position: absolute;
@@ -1292,41 +1318,37 @@ table.facturas tr.total td {
   border-radius: 99px;
   opacity: .95;
 }
-.tile-ico { line-height: 0; filter: drop-shadow(0 0 8px rgba(34,232,224,.55)); }
+.tile-ico { line-height: 0; }
 .tile-ico svg { width: 32px; height: 32px; }
 .tile-txt {
   font-size: var(--fs-5);
-  font-weight: 650;
-  letter-spacing: 0.015em;
-  color: var(--mp-cyan-bg);
-  text-shadow: 0 1px 2px rgba(0,0,0,.35);
+  font-weight: 700;
+  color: var(--mp-ink);
 }
 .btn-horas:hover, .btn-horas:focus-visible {
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.08),
-    0 10px 24px rgba(7,26,46,.32),
-    0 0 18px rgba(34,232,224,.22);
-  outline: none;
+  border-color: var(--mp-blue);
+  box-shadow: var(--mp-shadow-lg), 0 0 0 3px rgba(34,232,224,.35);
 }
-.btn-horas:active { transform: translateY(1px) scale(.97); box-shadow: 0 2px 6px rgba(7,26,46,.3); }
+.btn-horas:active { transform: translateY(1px); }
+/* «Reportar mis horas» es el de todos los días: navy sólido */
+#btn-horas { background: var(--mp-navy); border-color: var(--mp-navy); color: var(--mp-cyan); }
+#btn-horas .tile-txt { color: var(--mp-white); }
 .horas-form-card {
   background: var(--mp-card);
   border: 1px solid var(--mp-line);
-  border-radius: 16px;
+  border-radius: var(--r-card);
   box-shadow: var(--mp-shadow);
   padding: 1.1rem 1.2rem;
   max-width: 520px;
 }
 .horas-form-card form { display: grid; gap: 0.7rem; }
 .horas-form-card label {
+  /* etiqueta de campo: en frase, 15 px, se lee con el sol */
   display: grid;
-  gap: 0.28rem;
-  font-size: var(--fs-1);
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--mp-ink-3);
+  gap: 0.35rem;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--mp-ink);
 }
 .horas-form-card input, .horas-form-card select, .horas-form-card textarea {
   font: inherit;
@@ -1350,11 +1372,10 @@ table.facturas tr.total td {
   font-weight: 400;
 }
 .historial-titulo {
-  font-size: var(--fs-2);
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--mp-teal-text);
-  font-weight: 650;
+  /* etiqueta de sección («Cobre y luz»): cobre, en frase, sin mayúsculas ni espaciado */
+  font-size: var(--fs-label);
+  font-weight: 800;
+  color: var(--cu-dark);
   margin: 1.1rem 0 0.5rem;
   border-bottom: 1.5px solid var(--mp-line);
   padding-bottom: 4px;
@@ -1368,7 +1389,7 @@ table.facturas tr.total td {
 .cal-card {
   background: var(--mp-card);
   border: 1px solid var(--mp-line);
-  border-radius: 16px;
+  border-radius: var(--r-card);
   box-shadow: var(--mp-shadow);
   padding: 1rem;
 }
@@ -1379,10 +1400,8 @@ table.facturas tr.total td {
   grid-template-columns: repeat(7, 1fr);
   text-align: center;
   font-size: var(--fs-1);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: 650;
-  color: var(--mp-ink-3);
+  font-weight: 700;
+  color: var(--mp-ink-2);
   margin-bottom: 0.3rem;
 }
 .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
@@ -1419,15 +1438,16 @@ table.facturas tr.total td {
 }
 .cal-dia.seleccionado { box-shadow: 0 0 0 2px var(--mp-navy); }
 .cal-marca {
-  font-size: 8.5px;
+  font-size: var(--fs-small);
   font-weight: 650;
   color: var(--mp-white);
   background: var(--mp-blue);
   border-radius: 99px;
-  min-width: 14px;
-  line-height: 14px;
+  min-width: 18px;
+  line-height: 18px;
+  padding: 0 4px;
 }
-.cal-marca-roja { position: absolute; top: 1px; right: 3px; font-size: 9px; }
+.cal-marca-roja { position: absolute; top: 1px; right: 3px; font-size: var(--fs-small); }
 .cal-leyenda {
   display: flex;
   flex-wrap: wrap;
@@ -1446,7 +1466,7 @@ table.facturas tr.total td {
 .cal-panel-card {
   background: var(--mp-card);
   border: 1px solid var(--mp-line);
-  border-radius: 16px;
+  border-radius: var(--r-card);
   box-shadow: var(--mp-shadow);
   padding: 1rem 1.1rem;
   margin-top: 0.8rem;
@@ -1463,20 +1483,18 @@ table.facturas tr.total td {
 .cal-sin-eventos { font-size: var(--fs-3); color: var(--mp-ink-3); margin: 0.3rem 0 0.5rem; }
 .cal-form { display: grid; gap: 0.6rem; margin-top: 0.8rem; border-top: 1px dashed var(--mp-line); padding-top: 0.8rem; }
 .cal-form-titulo {
-  font-size: var(--fs-2);
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--mp-teal-text);
-  font-weight: 650;
+  /* etiqueta de sección («Cobre y luz»): cobre, en frase, sin mayúsculas ni espaciado */
+  font-size: var(--fs-label);
+  font-weight: 800;
+  color: var(--cu-dark);
 }
 .cal-form label {
+  /* etiqueta de campo: en frase, 15 px, se lee con el sol */
   display: grid;
-  gap: 0.28rem;
-  font-size: var(--fs-1);
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--mp-ink-3);
+  gap: 0.35rem;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--mp-ink);
 }
 .cal-form input, .cal-form select {
   font: inherit;
@@ -1519,7 +1537,7 @@ table.facturas tr.total td {
   position: relative;
   background: var(--mp-card);
   border: 1px solid var(--mp-line);
-  border-radius: 16px;
+  border-radius: var(--r-card);
   box-shadow: var(--mp-shadow);
   padding: 1rem 1.1rem 0.7rem 1.3rem;
   overflow: hidden;
@@ -1535,11 +1553,10 @@ table.facturas tr.total td {
 .agenda-semana { font-weight: 650; letter-spacing: -0.02em; font-size: var(--fs-6); }
 .agenda-dia { margin-bottom: 0.7rem; }
 .agenda-dia-nombre {
-  font-size: var(--fs-1);
-  text-transform: uppercase;
-  letter-spacing: 0.11em;
-  font-weight: 650;
-  color: var(--mp-teal-text);
+  /* etiqueta de sección («Cobre y luz»): cobre, en frase, sin mayúsculas ni espaciado */
+  font-size: var(--fs-label);
+  font-weight: 800;
+  color: var(--cu-dark);
   border-bottom: 1px solid var(--mp-line);
   padding-bottom: 3px;
   margin-bottom: 0.4rem;
@@ -1645,7 +1662,7 @@ table.facturas tr.total td {
 .hito-chip {
   background: var(--mp-deep);
   color: var(--mp-cyan);
-  font-size: 8.5px;
+  font-size: var(--fs-small);
   font-weight: 650;
   letter-spacing: 0.1em;
   border-radius: 5px;
@@ -1681,7 +1698,7 @@ table.desglose .neg { color: var(--mp-teal-text); font-weight: 650; }
   flex-shrink: 0;
   background: var(--mp-deep);
   color: var(--mp-cyan);
-  font-size: 9px;
+  font-size: var(--fs-small);
   font-weight: 650;
   letter-spacing: 0.08em;
   border-radius: 6px;
@@ -1749,9 +1766,7 @@ video.foto-mini { background: var(--mp-black); }
 }
 .insp-chip {
   font-size: var(--fs-1);
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-weight: 700;
   padding: 0.25rem 0.55rem;
   border-radius: 999px;
   border: 1px solid var(--mp-line);
@@ -1820,17 +1835,16 @@ video.foto-mini { background: var(--mp-black); }
 .inicio-card {
   background: var(--mp-card);
   border: 1px solid var(--mp-line);
-  border-radius: 16px;
+  border-radius: var(--r-card);
   box-shadow: var(--mp-shadow);
   padding: 0.85rem 1rem;
   margin-bottom: 0.9rem;
 }
 .inicio-card-titulo {
-  font-size: var(--fs-2);
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--mp-teal-text);
-  font-weight: 650;
+  /* etiqueta de sección («Cobre y luz»): cobre, en frase, sin mayúsculas ni espaciado */
+  font-size: var(--fs-label);
+  font-weight: 800;
+  color: var(--cu-dark);
   margin-bottom: 0.5rem;
 }
 .hoy-item {
@@ -1854,8 +1868,13 @@ video.foto-mini { background: var(--mp-black); }
 .hoy-chip.es-rojo { background: none; border: none; padding: 0.22rem 0.1rem; }
 .hoy-mas { font-size: var(--fs-2); color: var(--mp-ink-3); padding-top: 0.35rem; }
 
-.inicio-card.avisos { border-color: var(--mp-warn-bd); background: var(--mp-warn-bg); }
-.inicio-card.avisos .inicio-card-titulo { color: var(--mp-warn-tx); }
+/* «Lo urgente ahora» y los avisos: tarjeta volt (amarilla suave, texto oscuro) */
+.inicio-card.avisos {
+  border-color: #efdc7c;
+  background: linear-gradient(180deg, #fffce6 0%, #fff3b3 100%);
+  color: var(--warn-ink);
+}
+.inicio-card.avisos .inicio-card-titulo { color: var(--warn-ink); }
 .aviso-linea {
   display: flex;
   align-items: center;
@@ -1925,13 +1944,12 @@ video.foto-mini { background: var(--mp-black); }
 
 /* Filtro y recibos en Materiales */
 .mat-filtro label {
+  /* etiqueta de campo: en frase, 15 px, se lee con el sol */
   display: grid;
-  gap: 0.28rem;
-  font-size: var(--fs-1);
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--mp-ink-2);
+  gap: 0.35rem;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--mp-ink);
 }
 .mat-filtro select {
   font: inherit;
@@ -1943,7 +1961,7 @@ video.foto-mini { background: var(--mp-black); }
   background: var(--mp-card);
 }
 .recibo-chip {
-  font-size: 9px;
+  font-size: var(--fs-small);
   font-weight: 650;
   letter-spacing: 0.06em;
   border-radius: 999px;
@@ -2021,13 +2039,12 @@ video.foto-mini { background: var(--mp-black); }
 }
 .gasto-presu-fila label {
   flex: 1;
+  /* etiqueta de campo: en frase, 15 px, se lee con el sol */
   display: grid;
-  gap: 0.28rem;
-  font-size: var(--fs-1);
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--mp-ink-2);
+  gap: 0.35rem;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--mp-ink);
 }
 .gasto-presu-fila input {
   font: inherit;
@@ -2051,7 +2068,7 @@ video.foto-mini { background: var(--mp-black); }
   padding: 0.45rem 0.7rem;
   border-radius: 10px;
 }
-.doc-link:hover, .doc-link:focus-visible { box-shadow: var(--mp-shadow); outline: none; }
+.doc-link:hover, .doc-link:focus-visible { box-shadow: var(--mp-shadow); }
 .detalle-ref { font-size: var(--fs-2); color: var(--mp-ink-3); }
 
 .sin-resultados {
@@ -2064,7 +2081,7 @@ video.foto-mini { background: var(--mp-black); }
 /* ============ Ventana de proyecto nuevo ============ */
 .modal {
   border: 1px solid var(--mp-line);
-  border-radius: 16px;
+  border-radius: var(--r-card);
   padding: 0;
   width: min(480px, calc(100vw - 2rem));
   box-shadow: var(--mp-shadow-lg);
@@ -2083,13 +2100,12 @@ video.foto-mini { background: var(--mp-black); }
   border-bottom: 1px solid rgba(34,232,224,.28);
 }
 .modal label {
+  /* etiqueta de campo: en frase, 15 px, se lee con el sol */
   display: grid;
-  gap: 0.28rem;
-  font-size: var(--fs-1);
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--mp-ink-3);
+  gap: 0.35rem;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--mp-ink);
 }
 .modal input, .modal select, .modal textarea {
   font: inherit;
@@ -2216,9 +2232,13 @@ video.foto-mini { background: var(--mp-black); }
 }
 #toast.error { color: #FFB4B4; border-color: rgba(255,120,120,.5); }
 
+/* Sin animaciones para quien lo pide en el teléfono (accesibilidad): se apagan la chispa
+   del cable, la del Pulso, el anillo y todo lo que se mueve */
 @media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; animation: none !important; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+/* El foco del teclado se ve siempre: anillo cian de 3 px */
+:focus-visible { outline: 3px solid var(--mp-cyan); outline-offset: 2px; }
 
 /* 🤖 Asistente: botones de sugerencia para arrancar la conversación */
 .chat-sugerencias { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.4rem 0 0.1rem; }
@@ -2243,7 +2263,7 @@ video.foto-mini { background: var(--mp-black); }
 /* P82: la franja de «sin señal» cuando se entra con la copia del teléfono */
 .franja-sin-senal { display: flex; align-items: center; gap: .6rem; padding: .55rem .9rem; background: #FFF4D6; color: #6B4A00; border-bottom: 1px solid #F0D48A; font-size: var(--fs-4); line-height: 1.4; position: sticky; top: 0; z-index: 30; }
 .franja-sin-senal span { flex: 1; }
-.franja-sin-senal .accion { min-height: 36px; padding: .2rem .7rem; font-size: var(--fs-3); }
+.franja-sin-senal .accion { min-height: var(--tap); padding: .2rem .7rem; font-size: var(--fs-3); }
 .sin-senal-caja h3 { margin: .3rem 0 .4rem; color: var(--mp-ink); }
 .sin-senal-caja p { font-size: var(--fs-4); color: var(--mp-ink-2); margin: 0 0 .9rem; }
 
@@ -2299,16 +2319,17 @@ video.foto-mini { background: var(--mp-black); }
   padding: .7rem .8rem;
   margin-top: 1.2rem;
 }
-.zona-peligro h3 { color: #a32626; }
-.btn-eliminar-proyecto {
+.zona-peligro h3 { color: var(--bad); }
+/* Borrar la obra: blanco con borde rojo (.btn-danger); vive detrás de la hoja y pide confirmación */
+.btn-eliminar-proyecto, .accion.btn-eliminar-proyecto {
   background: var(--mp-white);
-  color: #a32626;
-  border: 1px solid #e0a0a0;
+  color: var(--bad);
+  border: 1px solid var(--bad-line);
 }
-.btn-eliminar-proyecto:hover { background: #fdecec; }
+.btn-eliminar-proyecto:hover, .accion.btn-eliminar-proyecto:hover { background: var(--mp-white); border-color: var(--bad); }
 
 /* ============ ⚡ Estimado rápido ============ */
-.rap-card .rap-sub { font-size: var(--fs-2); font-weight: 650; text-transform: uppercase; letter-spacing: .1em; color: var(--mp-ink-3); margin: .7rem 0 .35rem; display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+.rap-card .rap-sub { font-size: var(--fs-label); font-weight: 800; color: var(--cu-dark); margin: .7rem 0 .35rem; display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
 .rap-linea { display: flex; align-items: center; gap: .4rem; padding: .3rem 0; border-bottom: 1px dashed var(--mp-line); }
 .rap-linea .rap-desc { flex: 1; }
 .rap-linea .rap-monto { font-weight: 600; }
@@ -2382,7 +2403,7 @@ video.foto-mini { background: var(--mp-black); }
 }
 .lev-chip:active { transform: translateY(1px); }
 .lev-chip.puesto {
-  background: linear-gradient(180deg, #2E62E0 0%, var(--mp-navy) 100%);
+  background: var(--mp-navy);
   border-color: rgba(27,60,140,.55); color: var(--mp-sky-0); font-weight: 600;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 3px 9px rgba(27,60,140,.3), 0 0 10px rgba(34,232,224,.2);
 }
@@ -2418,16 +2439,16 @@ video.foto-mini { background: var(--mp-black); }
 .lev-cont-n i { font-style: normal; font-size: var(--fs-2); font-weight: 600; color: var(--mp-ink-3); display: block; margin-top: -3px; }
 
 /* Un contador con su acción debajo */
-.lev-conteo { position: relative; padding-right: 30px; }
+.lev-conteo { position: relative; padding-right: 46px; }
 .lev-acciones { display: flex; flex-wrap: wrap; gap: 0.3rem; padding: 0 0 0.5rem; }
 .lev-acc {
-  min-height: 34px; padding: 0.3rem 0.6rem; border-radius: 10px;
+  min-height: var(--tap); padding: 0.3rem 0.6rem; border-radius: 10px;
   border: 1.5px solid var(--mp-line); background: var(--mp-card);
   color: var(--mp-ink-2); font-size: var(--fs-2); font-weight: 650; cursor: pointer;
 }
 .lev-acc.puesto { background: var(--mp-blue); border-color: var(--mp-blue); color: var(--mp-white); }
 .lev-quitar-conteo {
-  position: absolute; top: 8px; right: 0; width: 28px; height: 28px;
+  position: absolute; top: 0; right: 0; width: 44px; height: 44px;
   border: none; background: transparent; color: var(--mp-ink-3);
   font-size: var(--fs-5); cursor: pointer;
 }
@@ -2531,14 +2552,14 @@ video.foto-mini { background: var(--mp-black); }
 .prop-item-sub { font-size: var(--fs-3); color: var(--mp-ink-3); }
 .prop-bloques { display: flex; gap: 4px; flex-shrink: 0; }
 .prop-bq {
-  width: 36px; height: 36px; border-radius: 10px;
+  width: 44px; height: 44px; border-radius: 10px;
   border: 1px solid rgba(27,60,140,.16);
   background: linear-gradient(180deg, #FFFFFF 0%, #F3F9FD 100%);
   color: var(--mp-ink-2); font-size: var(--fs-4); font-weight: 600; cursor: pointer;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 2px 4px rgba(7,26,46,.06);
 }
 .prop-bq.puesto {
-  background: linear-gradient(180deg, #2E62E0 0%, var(--mp-navy) 100%);
+  background: var(--mp-navy);
   border-color: rgba(27,60,140,.55); color: var(--mp-sky-0);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 3px 8px rgba(27,60,140,.28);
 }
@@ -2567,7 +2588,7 @@ video.foto-mini { background: var(--mp-black); }
   border: none; background: transparent; padding: 2px 0; min-height: 32px;
 }
 .prop-estrella {
-  width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
+  width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
   border: 1px solid var(--mp-line); background: var(--mp-card);
   color: var(--mp-ink-3); font-size: 1.1rem; cursor: pointer;
 }
@@ -2605,10 +2626,10 @@ video.foto-mini { background: var(--mp-black); }
 }
 .cl-sow.elegida { border-color: var(--mp-ok, var(--mp-ok)); box-shadow: 0 0 0 2px rgba(59,142,30,.25); }
 .cl-sow.apagada { opacity: .6; }
-.cl-sow-letra { font-size: var(--fs-2); font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--mp-blue); }
+.cl-sow-letra { font-size: var(--fs-label); font-weight: 800; color: var(--cu-dark); }
 .cl-adds { border-top: 1px solid var(--mp-line); padding-top: .65rem; margin-top: .15rem; }
-.cl-adds-tit { font-size: var(--fs-2); font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
-               color: var(--mp-ink-3); margin-bottom: .45rem; }
+.cl-adds-tit { font-size: var(--fs-label); font-weight: 700;
+               color: var(--mp-ink-2); margin-bottom: .45rem; }
 .cl-add { display: flex; align-items: center; gap: .6rem; padding: .55rem .65rem; border-radius: 11px;
           border: 1px solid var(--mp-line); background: var(--mp-white); margin-bottom: .4rem; cursor: pointer; min-height: 48px; }
 .cl-add.marcado { border-color: var(--mp-blue); background: #F2F8FF; }
@@ -2658,7 +2679,7 @@ video.foto-mini { background: var(--mp-black); }
 /* ---------------------------------------------------------------------------
    ESCRIBIR EL ALCANCE — la hoja, la revisión y el contrato
    --------------------------------------------------------------------------- */
-.alc-texto{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size: var(--fs-4);
+.alc-texto{width:100%;font-family:var(--mono);font-size: var(--fs-4);
   line-height:1.55;padding:.7rem .8rem;border:1px solid var(--mp-line);border-radius:12px;
   background:var(--mp-card);color:var(--mp-ink);resize:vertical}
 .alc-texto:focus{outline:none;border-color:var(--mp-blue);box-shadow:0 0 0 3px rgba(42,91,215,.12)}
@@ -2673,7 +2694,7 @@ video.foto-mini { background: var(--mp-black); }
   border-radius:5px;padding:.05rem .35rem;margin-right:.3rem}
 button.alc-linea{border:1px solid rgba(11,32,54,.18);color:var(--mp-navy);cursor:pointer;font-family:inherit;line-height:1.5}
 button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);color:var(--mp-white)}
-.alc-cita{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size: var(--fs-3);
+.alc-cita{font-family:var(--mono);font-size: var(--fs-3);
   background:rgba(255,255,255,.7);border:1px dashed rgba(11,32,54,.22);border-radius:8px;
   padding:.3rem .5rem;margin:.3rem 0 .15rem;color:var(--mp-ink);cursor:pointer;word-break:break-word}
 .alc-cita:hover{border-style:solid;border-color:var(--mp-blue)}
@@ -2681,17 +2702,17 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .alc-pregunta p{margin:0 0 .4rem;font-weight:600}
 .alc-op{border:1px solid var(--mp-line);background:var(--mp-card);border-radius:10px;
   padding:.45rem .8rem;margin:0 .35rem .35rem 0;font-size: var(--fs-4);font-weight:600;
-  color:var(--mp-ink);cursor:pointer;min-height:40px}
+  color:var(--mp-ink);cursor:pointer;min-height:44px}
 .alc-op:hover{border-color:var(--mp-blue);color:var(--mp-blue)}
 .alc-op.elegida{background:var(--mp-navy);border-color:var(--mp-navy);color:var(--mp-white)}
 .alc-libre{border:1px solid var(--mp-line);border-radius:10px;padding:.45rem .6rem;
-  font-size: var(--fs-6);min-height:40px;background:var(--mp-card);color:var(--mp-ink)}
+  font-size: var(--fs-6);min-height:44px;background:var(--mp-card);color:var(--mp-ink)}
 .alc-entendi{background:var(--mp-card);border:1px solid var(--mp-line);border-radius:14px;
   padding:.95rem 1rem;margin:.9rem 0;box-shadow:0 1px 2px rgba(11,32,54,.04)}
 .alc-entendi h3{margin:0 0 .7rem;font-size: var(--fs-6);font-weight:650;color:var(--mp-ink)}
 .alc-rejilla{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:.6rem .9rem}
 .alc-rejilla div{display:flex;flex-direction:column;min-width:0}
-.alc-rejilla span{font-size: var(--fs-2);letter-spacing:.04em;text-transform:uppercase;color:var(--mp-ink-3)}
+.alc-rejilla span{font-size: var(--fs-2);font-weight:700;color:var(--mp-ink-2)}
 .alc-rejilla b{font-weight:600;font-size: var(--fs-5);color:var(--mp-ink)}
 .alc-sub{margin:.85rem 0 .3rem;font-size: var(--fs-4);color:var(--mp-ink-2)}
 .alc-lista{margin:.2rem 0 0;padding-left:1.25rem;font-size: var(--fs-5);color:var(--mp-ink)}
@@ -2709,8 +2730,8 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .alc-par{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;padding:.65rem 0;
   border-bottom:1px solid var(--mp-line)}
 .alc-es{font-size: var(--fs-4);color:var(--mp-ink-2);line-height:1.5}
-.alc-es span{display:block;font-size: var(--fs-2);letter-spacing:.04em;text-transform:uppercase;
-  color:var(--mp-ink-3);font-weight:650;margin-bottom:.22rem}
+.alc-es span{display:block;font-size: var(--fs-2);
+  color:var(--mp-ink-2);font-weight:700;margin-bottom:.22rem}
 .alc-en textarea{width:100%;border:1px solid var(--mp-line);border-radius:10px;padding:.5rem .6rem;
   font-size: var(--fs-4);line-height:1.5;font-family:inherit;background:var(--mp-card);
   color:var(--mp-ink);resize:vertical}
@@ -2776,7 +2797,7 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .det-col { display: contents; }
 .alc-dos { display: block; }
 @media (min-width: 1024px) {
-  html { font-size: var(--fs-6); }
+  html { font-size: 16px; }   /* 1rem = 16 px, como siempre (la escala de letra va aparte) */
   #vista-app {
     display: grid;
     grid-template-columns: 256px minmax(0, 1fr);
@@ -2787,16 +2808,12 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
   #vista-app > .toolbar, #vista-app > main, #vista-app > .pie { grid-column: 2; }
 
   /* ---- el marco de arriba: marca a la izquierda del todo, acciones a la derecha del todo */
-  .membrete { border-bottom: 1px solid rgba(34,232,224,.16); }
-  .membrete-inner { max-width: none; margin: 0; padding: .55rem 24px .55rem 20px; gap: .9rem; min-height: 64px; }
-  .membrete-logo { width: 42px; height: 42px; border-radius: 11px; filter: none;
-                   box-shadow: 0 0 0 1px rgba(34,232,224,.35), 0 0 14px rgba(34,232,224,.18); }
-  .wordmark { font-size: var(--fs-7); letter-spacing: .01em; }
-  .wordmark-sub { font-size: var(--fs-1); letter-spacing: .16em; }
+  .membrete-inner { max-width: none; margin: 0; padding: 0 24px 0 20px; gap: .75rem; height: 60px; }
+  .membrete-logo { width: 36px; height: 36px; border-radius: 9px; }
   .membrete-der { margin-left: auto; gap: .55rem; }
-  .btn-chat, .btn-idioma { width: 40px; height: 40px; }
+  .btn-chat, .btn-idioma { width: 44px; height: 44px; }
   .usuario-chip { font-size: var(--fs-5); padding: .35rem .75rem; border: 1px solid rgba(255,255,255,.14); border-radius: 999px; }
-  .btn-salir { height: 38px; padding: 0 1rem; }
+  .btn-salir { height: 44px; padding: 0 1rem; }
 
   /* ---- el menú: las mismas losetas, en columna */
   .lateral {
@@ -2821,7 +2838,7 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 
   /* ---- la cabecera de cada pantalla: título a la izquierda, acciones a la derecha, de borde a borde */
   .toolbar { max-width: none; margin: 0; padding: 1.35rem 40px 1rem; border-bottom: 1px solid rgba(11,32,54,.07); }
-  .toolbar h1 { font-size: 1.75rem; }
+  .toolbar h1 { font-size: var(--fs-h1); }
   .btn-nuevo { margin-left: auto; }
 
   /* ---- el contenido: todo el ancho, con aire a los lados */
@@ -2844,7 +2861,7 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
   /* reportar mis horas: el formulario a la izquierda, los reportes a la derecha */
   .horas-dos { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 1.4rem; align-items: start; }
   .horas-lista-card {
-    background: var(--mp-card); border: 1px solid var(--mp-line); border-radius: 16px;
+    background: var(--mp-card); border: 1px solid var(--mp-line); border-radius: var(--r-card);
     box-shadow: var(--mp-shadow); padding: 1rem 1.15rem 1.2rem;
   }
   .horas-lista-card:empty { display: none; }
@@ -2902,7 +2919,7 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
   #vista-home { grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); }
 }
 @media (min-width: 1500px) {
-  html { font-size: var(--fs-6); }
+  html { font-size: 16px; }   /* 1rem = 16 px, como siempre (la escala de letra va aparte) */
   #vista-app { grid-template-columns: 272px minmax(0, 1fr); }
   .toolbar, .container { padding-left: 48px; padding-right: 48px; }
   #vista-home { grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: 0 2rem; }
@@ -2914,7 +2931,8 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .ico svg { width: 100%; height: 100%; }
 .ico:last-child { margin-right: 0; }
 button > .ico:only-child, .lev-btn-ico > .ico { margin-right: 0; width: 1.15em; height: 1.15em; }
-.inicio-card-titulo .ico, .cal-form-titulo .ico, h3 .ico, h4 .ico, summary .ico { color: var(--mp-blue); width: 1.15em; height: 1.15em; vertical-align: -0.22em; }
+/* los iconos de los títulos toman el color del título (cobre en las etiquetas de sección) */
+.inicio-card-titulo .ico, .cal-form-titulo .ico, h3 .ico, h4 .ico, summary .ico { color: currentColor; width: 1.15em; height: 1.15em; vertical-align: -0.22em; }
 .ico-rojo, .ico-ambar, .ico-verde, .ico-gris { width: .8em; height: .8em; vertical-align: -0.05em; margin-right: .35em; }
 .recibo-chip .ico, .chk-avance .ico, .alcance-estado .ico, .cl-chip-aprobado .ico { width: .95em; height: .95em; }
 
@@ -2976,14 +2994,10 @@ button.btn-ir { border: 0; cursor: pointer; font: inherit; font-weight: 700; fon
 .cal-semana-nombres { grid-template-columns: repeat(7, minmax(0, 1fr)); }
 
 @media (max-width: 480px) {
-  /* el marco de arriba: cuatro botones en 360px */
-  .membrete-inner { gap: 0.5rem; padding: 0.55rem 12px; }
-  .membrete-logo { width: 40px; height: 40px; }
-  .membrete-der { gap: 0.3rem; flex-shrink: 0; }
-  .btn-idioma::before { content: ""; }
-  .btn-idioma { padding: 0.35rem 0.45rem; }
-  .btn-salir { padding: 0.35rem 0.5rem; }
-  .wordmark { font-size: var(--fs-6); }
+  /* el marco de arriba: cuatro botones de 44 px en 360px */
+  .membrete-inner { gap: 8px; padding: 0 12px; }
+  .membrete-der { gap: 4px; flex-shrink: 0; }
+  .btn-salir { padding: 0 0.55rem; }
   .wordmark-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* la barra de título: "+ Nuevo proyecto" baja a su propia línea si no cabe */
   .toolbar { flex-wrap: wrap; row-gap: 0.5rem; }
@@ -3012,23 +3026,24 @@ button.btn-ir { border: 0; cursor: pointer; font: inherit; font-weight: 700; fon
 
 /* Pantalla que se toca con el dedo (o pantalla chica): ningún botón más bajo que 36px */
 @media (pointer: coarse), (max-width: 1023px) {
+  /* «Cobre y luz»: lo que se toca mide 44 px como mínimo (antes 36) */
   .tarea-check, .tarea-editar, .tarea-borrar, .insp-borrar, .chip-cobrar, .doc-cliente,
   .chip-select, .tarea-prio, .gasto-nombre, .asis-sug, .btn-salir, .btn-idioma, .btn-chat,
-  .chk-ficha, .cl-volver a, .insp-resultado { min-height: 36px; }
-  .chip-cobrar { min-height: 32px; vertical-align: middle; }   /* va dentro de un renglón de texto: un poco menos alto */
+  .chk-ficha, .cl-volver a, .insp-resultado { min-height: var(--tap); }
+  .chip-cobrar { vertical-align: middle; }
   .chip-cobrar, .doc-cliente { padding-top: 0.3rem; padding-bottom: 0.3rem; }
-  .accion.secundaria, .accion.chica, button.accion { min-height: 38px; }
-  a#agenda-ver-cal { display: inline-block; padding: 0.4rem 0; }
+  .accion.secundaria, .accion.chica, button.accion { min-height: var(--tap); }
+  a#agenda-ver-cal { display: inline-flex; align-items: center; min-height: var(--tap); }
   /* El chip «línea N» es el camino al renglón desde todos los avisos: al dedo
      medía 22 px. Y los desplegables «Más…» / «…ver los N restantes», 27 px. */
-  button.alc-linea { min-height: 36px; padding: 0.4rem 0.55rem; margin: 0.1rem 0.3rem 0.1rem 0; }
-  .alc-mas > summary, .alc-mas-avisos > summary { min-height: 36px; display: flex; align-items: center; }
+  button.alc-linea { min-height: var(--tap); padding: 0.4rem 0.55rem; margin: 0.1rem 0.3rem 0.1rem 0; }
+  .alc-mas > summary, .alc-mas-avisos > summary { min-height: var(--tap); display: flex; align-items: center; }
 }
 @media (max-width: 379px) { .wordmark-sub { display: none; } }
 
 /* La versión de la app: pequeña, discreta, en la portada y en el marco */
 .app-version { font-size: var(--fs-2); color: var(--mp-ink-3, #6b7c8f); opacity: 0.85; white-space: nowrap; cursor: pointer; margin-left: 0.35rem; }
-.login-nota .app-version { margin-left: 0; }
+.login-pie .app-version { margin-left: 0; }
 @media (max-width: 480px) { .membrete-der .app-version { display: none; } }
 
 /* E13c · El desglose de los beneficios dentro de un escenario */
@@ -3038,22 +3053,22 @@ button.btn-ir { border: 0; cursor: pointer; font: inherit; font-weight: 700; fon
 .esc-benef .rap-desc { font-size: var(--fs-3); }
 .esc-benef input { width: 5rem; text-align: right; }
 
-/* (24/09, P178) En el teléfono: las casillas con letra de 16 px para que el
-   iPhone no amplíe la pantalla al tocarlas, y los botones de acción a 44 px,
+/* (24/09, P178) En el teléfono: las casillas con letra de 17 px (16 o más para que el
+   iPhone no amplíe la pantalla al tocarlas), y los botones de acción a 44 px,
    que es lo que pide un dedo con guantes o con prisa en la obra. */
 @media (pointer: coarse), (max-width: 1023px) {
-  input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea { font-size: 16px !important; }
+  input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea { font-size: 17px !important; }
   button.accion, .accion, .btn-volver, .btn-nuevo, .btn-entrar, .btn-ir { min-height: 44px; }
   .btn-volver { display: inline-flex; align-items: center; }
 }
 
-/* (24/09, P181) «+ Nuevo proyecto» y «Entrar»: la letra oscura sobre el
-   degradado azul no se leía al sol (1.7:1). Letra blanca con sombra. */
-.btn-nuevo, .btn-entrar { color: var(--mp-white); text-shadow: 0 1px 2px rgba(4, 32, 42, .55); }
+/* (24/09, P181) La letra oscura sobre el degradado no se leía al sol donde el degradado
+   es azul. Con «Cobre y luz» «+ Nuevo proyecto» es navy sólido con letra blanca, y el
+   Pulso lleva la letra oscura (#04202A) en el centro del botón, que cae sobre el cian y la lima. */
 
 /* (24/09, P183) Tarjetas grises mientras carga: la app ya no parece colgada
    durante las ~30 lecturas del arranque. Se van solas al pintar el inicio. */
-.esqueleto { height: 5.5rem; border-radius: 16px; margin: .6rem 0;
+.esqueleto { height: 5.5rem; border-radius: var(--r-card); margin: .6rem 0;
   background: linear-gradient(90deg, rgba(11,32,54,.06) 25%, rgba(11,32,54,.12) 50%, rgba(11,32,54,.06) 75%);
   background-size: 200% 100%; animation: esqueleto-brillo 1.3s ease-in-out infinite; }
 .esqueleto.corto { height: 3rem; width: 70%; }
@@ -3066,9 +3081,10 @@ button.btn-ir { border: 0; cursor: pointer; font: inherit; font-weight: 700; fon
    oscura con filo de luz), .lev-chip.puesto (ficha encendida), .chk-det (plegable).
    Cian solo sobre fondo oscuro; en claro, el acento es --mp-teal-text. */
 :root {
-  --membrete-alto: 60px;
-  --mp-relieve-azul: linear-gradient(180deg, #2E62E0 0%, var(--mp-navy) 100%);
-  --mp-relieve-claro: linear-gradient(180deg, #FFFFFF 0%, #F2F9FD 100%);
+  --membrete-alto: 64px;   /* la barra (60) + el cable de cobre (4) */
+  /* «Cobre y luz»: sin gradientes de fondo en botones; navy sólido o blanco */
+  --mp-relieve-azul: var(--mp-navy);
+  --mp-relieve-claro: var(--mp-card);
   --mp-sombra-relieve: inset 0 1px 0 rgba(255,255,255,.9), 0 3px 8px rgba(7,26,46,.08), 0 1px 2px rgba(7,26,46,.08);
   --mp-sombra-encendido: inset 0 1px 0 rgba(255,255,255,.28), 0 3px 9px rgba(27,60,140,.3), 0 0 10px rgba(34,232,224,.2);
   --mp-glow-cian: 0 0 12px rgba(34,232,224,.28);
@@ -3079,38 +3095,43 @@ button.btn-ir { border: 0; cursor: pointer; font: inherit; font-weight: 700; fon
 .proyecto.ficha-v2 { overflow: visible; background: transparent; border: 0; box-shadow: none; }
 .proyecto.ficha-v2::before { display: none; }
 .proyecto.ficha-v2:hover { transform: none; box-shadow: none; }
-.proyecto.ficha-v2 .proyecto-detalle { border: 1px solid var(--mp-line); border-radius: 16px; box-shadow: var(--mp-shadow); padding: .9rem 1rem 1rem; }
+.proyecto.ficha-v2 .proyecto-detalle { border: 1px solid var(--mp-line); border-radius: var(--r-card); box-shadow: var(--mp-shadow); padding: .9rem 1rem 1rem; }
 .ficha-panel[hidden] { display: none !important; }
 .ficha-panel [id] { scroll-margin-top: calc(var(--membrete-alto) + 76px); }
 /* Los botones de siempre que las hojas activan: existen, pero no se ven */
 .herramientas, .doc-historia { display: none !important; }
 
-/* ---- TABLERO: loseta oscura con filo de luz y cuadrícula de plano ---- */
-.ficha-tablero { position: relative; overflow: hidden; border-radius: 18px; padding: .95rem 1rem 1rem; color: var(--mp-cyan-bg);
-  background: radial-gradient(120% 90% at 100% 0%, rgba(34,232,224,.16), transparent 55%),
-              linear-gradient(135deg, var(--mp-deep) 0%, var(--mp-deep-2) 55%, var(--mp-navy) 100%);
-  border: 1px solid rgba(34,232,224,.28); box-shadow: var(--mp-shadow-lg), inset 0 1px 0 rgba(255,255,255,.06); }
-.ficha-tablero::before { content: ""; position: absolute; inset: 0; pointer-events: none;
-  background-image: linear-gradient(rgba(34,232,224,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(34,232,224,.06) 1px, transparent 1px);
-  background-size: 64px 64px;
-  -webkit-mask-image: radial-gradient(80% 70% at 70% 20%, var(--mp-black), transparent); mask-image: radial-gradient(80% 70% at 70% 20%, var(--mp-black), transparent); }
-.ficha-tablero::after { content: ""; position: absolute; left: 12%; right: 12%; top: 0; height: 2.5px; background: var(--mp-grad); border-radius: 99px; opacity: .95; }
+/* ---- TABLERO («Cobre y luz»): la tarjeta noche de la ficha ----
+   Degradado noche con la textura de símbolos ANSI (ya viene al 26 % en el propio dibujo),
+   borde cian y el cable de cobre como filo de arriba, con su chispa. */
+.ficha-tablero { position: relative; overflow: hidden; border-radius: var(--r-card); padding: 1.15rem 1rem 1rem; color: var(--mp-cyan-bg);
+  background-color: var(--night-2);
+  background-image: url('../assets/symbols-tile.svg'), linear-gradient(160deg, #163B8F 0%, #0B1F47 55%, #071A2E 100%);
+  background-size: 260px 260px, auto;
+  border: 1px solid rgba(34,232,224,.32); box-shadow: var(--shadow-night); }
+/* el cable de cobre (4 px) pegado arriba */
+.ficha-tablero::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--wire); pointer-events: none; }
+/* la chispa que recorre el cable */
+.ficha-tablero::after { content: ""; position: absolute; top: 0; height: 4px; width: 90px; left: -100px; border-radius: 4px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--mp-cyan) 35%, #fff 50%, var(--mp-cyan) 65%, transparent);
+  box-shadow: 0 0 14px rgba(34,232,224,.9); animation: mp-spark 3.2s linear infinite; }
 .ficha-tablero > * { position: relative; }
 .tb-dir { display: flex; align-items: center; gap: .5rem; font-size: var(--fs-4); color: #CFE7F5; }
 .tb-dir > .ico { color: var(--mp-cyan); margin: 0; flex-shrink: 0; }
 .tb-dir-txt { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ficha-tablero .btn-ir { min-height: 44px; min-width: 44px; margin: 0; padding: 0 .8rem; border-radius: 12px; flex-shrink: 0; justify-content: center;
-  border: 1px solid rgba(34,232,224,.45); background: rgba(34,232,224,.08); color: var(--mp-cyan); }
-.ficha-tablero .btn-ir:hover, .ficha-tablero .btn-ir:focus-visible { box-shadow: 0 0 12px rgba(34,232,224,.35); outline: none; }
+/* «Ir», «Foto» y «Agregar» sobre la noche: blanco fantasma (.btn-ghost-dark) */
+.ficha-tablero .btn-ir { min-height: 44px; min-width: 44px; margin: 0; padding: 0 .8rem; border-radius: var(--r-btn); flex-shrink: 0; justify-content: center;
+  border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.06); color: #fff; }
+.ficha-tablero .btn-ir:hover, .ficha-tablero .btn-ir:focus-visible { border-color: rgba(34,232,224,.6); }
 .tb-cliente { font-size: var(--fs-3); color: #9FC3D9; margin: .25rem 0 .7rem; overflow-wrap: anywhere; line-height: 1.45; }
 .tb-cliente .ico { color: var(--mp-cyan); }
 .tb-via { color: #7FA6BF; }
-.tb-estado-fila { display: grid; grid-template-columns: minmax(0,1fr) 56px 56px; gap: .5rem; align-items: stretch; }
+.tb-estado-fila { display: grid; grid-template-columns: minmax(0,1fr) 62px 62px; gap: .5rem; align-items: stretch; }
 .tablero-estado { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: .6rem; min-height: 64px; width: 100%;
   padding: .55rem .7rem; border-radius: 14px; font: inherit; color: var(--mp-white); text-align: left; cursor: pointer;
   background: linear-gradient(160deg, rgba(255,255,255,.09), rgba(255,255,255,.02)); border: 1px solid rgba(34,232,224,.35);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.08); transition: transform .18s var(--mp-ease), box-shadow .18s var(--mp-ease); }
-.tablero-estado:hover, .tablero-estado:focus-visible { transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 0 18px rgba(34,232,224,.22); outline: none; }
+.tablero-estado:hover, .tablero-estado:focus-visible { transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 0 18px rgba(34,232,224,.22); }
 .tablero-estado:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0,0,0,.35); }
 .tablero-estado .dot { width: 9px; height: 9px; }
 /* Sobre el fondo oscuro el azul marino y el azul de los puntos no se verían */
@@ -3118,7 +3139,8 @@ button.btn-ir { border: 0; cursor: pointer; font: inherit; font-weight: 700; fon
 .ficha-tablero .dot.azul { background: #5B8CF5; box-shadow: 0 0 0 3px rgba(91,140,245,.3); }
 .tablero-estado.solo-ver .ico-chevron { display: none; }
 .te-textos { display: grid; gap: .1rem; min-width: 0; }
-.te-etq { font-size: var(--fs-2); font-weight: 650; letter-spacing: .16em; text-transform: uppercase; color: var(--mp-cyan); }
+/* sobre la noche, la etiqueta de cobre va en su tono claro */
+.te-etq { font-size: var(--fs-label); font-weight: 800; color: var(--cu-light); }
 .te-linea { display: flex; flex-wrap: wrap; gap: .1rem .45rem; align-items: baseline; }
 .te-fase { font-size: var(--fs-6); font-weight: 650; color: var(--mp-white); overflow-wrap: anywhere; }
 .te-num { font-size: var(--fs-2); color: #9FC3D9; }
@@ -3127,17 +3149,18 @@ button.btn-ir { border: 0; cursor: pointer; font: inherit; font-weight: 700; fon
 .te-paso.hecho { background: var(--mp-grad); }
 .te-paso.actual { background: var(--mp-cyan); box-shadow: 0 0 8px rgba(34,232,224,.6); }
 .tablero-estado .ico-chevron { width: 18px; height: 18px; color: var(--mp-cyan); margin: 0; }
-/* Cámara y Agregar: la loseta .btn-horas en pequeño */
+/* Cámara y Agregar: botones blanco fantasma sobre la noche (.btn-ghost-dark) */
 .btn-cuadro { position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .2rem;
-  min-height: 64px; width: 56px; padding: .35rem .2rem; border-radius: 14px; cursor: pointer; font: inherit;
-  background: linear-gradient(160deg, #0E2A4C, var(--mp-deep) 60%); color: var(--mp-cyan); border: 1px solid rgba(34,232,224,.35);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 6px 16px rgba(7,26,46,.28); transition: transform .18s var(--mp-ease), box-shadow .18s var(--mp-ease); }
-.btn-cuadro::after { content: ""; position: absolute; left: 14%; right: 14%; top: 0; height: 2px; background: var(--mp-grad); border-radius: 99px; }
-.btn-cuadro .ico { width: 24px; height: 24px; margin: 0; filter: drop-shadow(0 0 8px rgba(34,232,224,.55)); }
-.btn-cuadro > span:last-child:not(.ico) { font-size: var(--fs-1); font-weight: 650; color: var(--mp-cyan-bg); letter-spacing: .02em; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.btn-cuadro:hover, .btn-cuadro:focus-visible { transform: translateY(-2px); box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 0 18px rgba(34,232,224,.22); outline: none; }
+  min-height: 64px; width: 62px; padding: .35rem .15rem; border-radius: var(--r-btn); cursor: pointer; font: inherit;
+  background: rgba(255,255,255,.06); color: #fff; border: 1px solid rgba(255,255,255,.22); }
+.btn-cuadro .ico { width: 24px; height: 24px; margin: 0; }
+.btn-cuadro > span:last-child:not(.ico) { font-size: var(--fs-1); font-weight: 700; color: #fff; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn-cuadro:hover, .btn-cuadro:focus-visible { border-color: rgba(34,232,224,.6); }
 .btn-cuadro:active { transform: translateY(1px); }
 .tablero-principal { width: 100%; margin-top: .6rem; min-height: 48px; font-size: var(--fs-5); display: flex; align-items: center; justify-content: center; gap: .45rem; }
+/* El botón grande del tablero («Pasar a Rough-in»…) es el PULSO de la ficha: el gradiente
+   quieto y la chispa que lo recorre (las reglas del Pulso están en «Botones · Cobre y luz») */
+.ficha-tablero .accion.tablero-principal { min-height: var(--btn-h); border: 0; border-radius: var(--r-btn); font-size: var(--fs-body); font-weight: 800; }
 .tablero-principal > span:not(.ico) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .tablero-principal .ico, .fila-menu .ico, .accion.icono .ico { margin: 0; }
 .tablero-principal .ico { flex-shrink: 0; }
@@ -3145,7 +3168,7 @@ button.btn-ir { border: 0; cursor: pointer; font: inherit; font-weight: 700; fon
 .senales { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .65rem; }
 .senal { display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; margin: 0; padding: .3rem .8rem; border-radius: 99px; cursor: pointer; font: inherit;
   font-size: var(--fs-3); font-weight: 600; color: var(--mp-cyan-bg); background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14); max-width: 100%; }
-.senal:hover, .senal:focus-visible { box-shadow: 0 0 10px rgba(34,232,224,.25); outline: none; }
+.senal:hover, .senal:focus-visible { box-shadow: 0 0 10px rgba(34,232,224,.25); }
 .senal-punto { width: 8px; height: 8px; border-radius: 50%; background: #9FC3D9; flex-shrink: 0; }
 .senal-punto.rojo { background: var(--mp-punto-rojo); }
 .senal-punto.ambar { background: var(--mp-punto-ambar); }
@@ -3177,7 +3200,7 @@ button.btn-ir { border: 0; cursor: pointer; font: inherit; font-weight: 700; fon
 .ficha-plegable > summary { min-height: 44px; padding: .5rem .8rem; }
 /* en el teléfono .chk-det > summary baja de línea: aquí el ▾ se queda a la derecha y el título se parte */
 .chk-det.ficha-plegable > summary { flex-wrap: nowrap; }
-.pl-tit { font-size: var(--fs-2); text-transform: uppercase; letter-spacing: .16em; color: var(--mp-teal-text); font-weight: 650; min-width: 0; }
+.pl-tit { font-size: var(--fs-label); font-weight: 800; color: var(--cu-dark); min-width: 0; }
 .pl-dato { margin-left: auto; font-size: var(--fs-3); font-weight: 650; color: var(--mp-ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pl-dato.ok { color: var(--mp-ok); }
 .pl-dato.warn { color: var(--mp-warn-tx); }
@@ -3234,9 +3257,9 @@ button.btn-ir { border: 0; cursor: pointer; font: inherit; font-weight: 700; fon
 
 /* ---- Qué toca ahora, contratista y fichas del portal ---- */
 .ficha-ahora { background: var(--mp-sky-1); border: 1px solid var(--mp-line); border-radius: 14px; padding: .7rem .85rem; }
-.fa-etq, .ficha-ahora h4 { font-size: var(--fs-1); text-transform: uppercase; letter-spacing: .14em; color: var(--mp-ink-3); margin: .35rem 0 .1rem; font-weight: 650; }
+.fa-etq, .ficha-ahora h4 { font-size: var(--fs-label); color: var(--mp-ink-2); margin: .35rem 0 .1rem; font-weight: 700; }
 /* subtítulos dentro de una sección (Por cobrar, Próxima acción…): etiqueta pequeña, no un título grande */
-.ficha-v2 .detalle-seccion h4 { font-size: var(--fs-1); text-transform: uppercase; letter-spacing: .14em; color: var(--mp-ink-3); margin: .55rem 0 .2rem; font-weight: 650; }
+.ficha-v2 .detalle-seccion h4 { font-size: var(--fs-label); color: var(--mp-ink-2); margin: .55rem 0 .2rem; font-weight: 700; }
 .fa-ref { font-size: var(--fs-2); color: var(--mp-ink-3); margin-top: .5rem; }
 .gc-modos, .portal-ops { display: flex; flex-wrap: wrap; gap: .4rem; margin: .45rem 0; }
 .ficha-v2 .lev-chip .ico, .modal.hoja .lev-chip .ico { margin-right: .35rem; }
@@ -3247,14 +3270,14 @@ button.btn-ir { border: 0; cursor: pointer; font: inherit; font-weight: 700; fon
 .modal.hoja { padding: 0; max-height: 88vh; overflow-y: auto; overscroll-behavior: contain; }
 .modal.hoja form { gap: .55rem; }
 .hoja-asa { width: 36px; height: 4px; border-radius: 99px; background: var(--mp-line); margin: 0 auto .2rem; }
-.hoja-titulo { font-size: var(--fs-2); text-transform: uppercase; letter-spacing: .16em; color: var(--mp-teal-text); font-weight: 650; overflow-wrap: anywhere; }
+.hoja-titulo { font-size: var(--fs-label); font-weight: 800; color: var(--cu-dark); overflow-wrap: anywhere; }
 .hoja-sub { font-size: var(--fs-4); color: var(--mp-ink-2); margin-top: -.25rem; overflow-wrap: anywhere; }
 .hoja-info { list-style: none; display: grid; gap: .2rem; font-size: var(--fs-3); color: var(--mp-ink-3); }
 .hoja-grupo { display: grid; gap: .4rem; }
-.hoja-grupo h4 { font-size: var(--fs-2); text-transform: uppercase; letter-spacing: .16em; color: var(--mp-teal-text); font-weight: 650; margin-top: .3rem; }
+.hoja-grupo h4 { font-size: var(--fs-label); font-weight: 800; color: var(--cu-dark); margin-top: .3rem; }
 .hoja-op { display: flex; align-items: center; gap: .65rem; width: 100%; min-height: 52px; padding: .5rem .8rem; text-align: left; text-decoration: none; cursor: pointer; font: inherit;
   border-radius: 12px; background: var(--mp-relieve-claro); color: var(--mp-ink); border: 1px solid rgba(27,60,140,.18); box-shadow: var(--mp-sombra-relieve); }
-.hoja-op:hover, .hoja-op:focus-visible { box-shadow: var(--mp-sombra-relieve), 0 0 10px rgba(34,232,224,.18); outline: none; }
+.hoja-op:hover, .hoja-op:focus-visible { box-shadow: var(--mp-sombra-relieve), 0 0 10px rgba(34,232,224,.18); }
 .hoja-op:focus-visible { outline: 2px solid var(--mp-blue); outline-offset: 2px; }
 .hoja-op:active { transform: translateY(1px); }
 .hoja-op .ico { width: 22px; height: 22px; margin: 0; color: var(--mp-teal-text); flex-shrink: 0; }
@@ -3264,7 +3287,7 @@ button.btn-ir { border: 0; cursor: pointer; font: inherit; font-weight: 700; fon
 .hoja-op.principal { background: var(--mp-relieve-azul); color: var(--mp-sky-0); border-color: rgba(27,60,140,.55); box-shadow: var(--mp-sombra-encendido); }
 .hoja-op.principal .ico, .hoja-op.principal .hoja-s { color: #CFE7F5; }
 /* = .accion.peligro */
-.hoja-op.peligro { background: linear-gradient(180deg, #FFFFFF 0%, #FDF4F4 100%); color: var(--mp-danger); border-color: rgba(179,56,59,.4); }
+.hoja-op.peligro { background: var(--mp-card); color: var(--bad); border-color: var(--bad-line); }
 .hoja-op.peligro .ico { color: var(--mp-danger); }
 .hoja-op.puesto { border-color: var(--mp-blue); box-shadow: var(--mp-sombra-relieve), inset 0 0 0 1px var(--mp-blue); }
 .hoja-fichas { display: flex; flex-wrap: wrap; gap: .4rem; }
@@ -3321,7 +3344,7 @@ button.btn-ir { border: 0; cursor: pointer; font: inherit; font-weight: 700; fon
 @media (min-width: 1024px) {
   .ficha-tablero { display: grid; grid-template-columns: minmax(0,1.3fr) 320px auto; column-gap: 1.2rem; align-items: start; }
   .ficha-tablero .tb-dir, .ficha-tablero .tb-cliente { grid-column: 1; }
-  .ficha-tablero .tb-estado-fila { grid-column: 2 / 4; grid-row: 1 / 3; grid-template-columns: 320px 56px 56px; }
+  .ficha-tablero .tb-estado-fila { grid-column: 2 / 4; grid-row: 1 / 3; grid-template-columns: 320px 62px 62px; }
   .ficha-tablero .tablero-principal { grid-column: 2; }
   .ficha-tablero .senales { grid-column: 1 / -1; }
   .ficha-pestanas { display: flex; width: max-content; max-width: 100%; }
@@ -3334,13 +3357,13 @@ button.btn-ir { border: 0; cursor: pointer; font: inherit; font-weight: 700; fon
 /* ---- Arreglos de la revisión de la ficha (P179) ---- */
 /* La dirección en 2 renglones: el código postal no se corta (el campo lo copia al GPS) */
 .tb-dir-txt { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; }
-/* El botón principal: 48 px de alto y, si el nombre de la fase es largo, 2 renglones en vez de cortarse */
-.proyecto.ficha .accion.tablero-principal { min-height: 48px; }
+/* El botón principal: 56 px de alto (Pulso) y, si el nombre de la fase es largo, 2 renglones en vez de cortarse */
+.proyecto.ficha .accion.tablero-principal { min-height: var(--btn-h); }
 .tablero-principal > span:not(.ico) { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; text-align: center; line-height: 1.2; }
 @media (max-width: 380px) {
   .ficha-tab { font-size: var(--fs-1); }
   .ficha-tab > span:not(.ico) { text-overflow: clip; }
-  .te-etq { letter-spacing: .06em; font-size: var(--fs-1); white-space: nowrap; }
+  .te-etq { white-space: nowrap; }
   .tablero-estado { gap: .45rem; padding: .55rem .55rem; }
 }
 /* En el teléfono las señales van en una sola tira que se desliza por dentro
@@ -3386,10 +3409,177 @@ button.btn-ir { border: 0; cursor: pointer; font: inherit; font-weight: 700; fon
   .ficha-tablero .tb-dir { grid-column: 1; grid-row: 1; align-self: center; }
   .ficha-tablero .tb-cliente { grid-column: 1; grid-row: 2; }
   .ficha-tablero:not(:has(.tb-dir)) .tb-cliente { grid-row: 1 / 3; }
-  .ficha-tablero .tb-estado-fila { grid-column: 2; grid-row: 1; grid-template-columns: minmax(0,1fr) 56px 56px; }
+  .ficha-tablero .tb-estado-fila { grid-column: 2; grid-row: 1; grid-template-columns: minmax(0,1fr) 62px 62px; }
   .ficha-tablero .tablero-principal { grid-column: 2; grid-row: 2; align-self: start; }
   .ficha-tablero .senales { grid-column: 1 / -1; grid-row: 3; }
   /* Las hojas salen centradas (el «* { margin: 0 }» de arriba le quitaba el centrado al dialog) */
   .modal.hoja { margin: auto; max-height: 88vh; }
   .modal.hoja .hoja-asa { display: none; }
+}
+
+/* ===========================================================================
+   «COBRE Y LUZ» · tanda 1 (25-sep): botones, tarjetas, campos y toques.
+   Las clases genéricas son las del brief, copiadas tal cual, para esta y las
+   próximas tandas. Regla de oro: cada cosa está por lo que hace por quien usa
+   la pantalla (guantes, sol, claridad).
+   =========================================================================== */
+
+/* ---- Botones: un solo Pulso por pantalla (la acción que importa) ---- */
+.btn { height: var(--btn-h); padding: 0 20px; border: 0; border-radius: var(--r-btn); font: inherit; font-weight: 800; font-size: var(--fs-body);
+       display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; box-sizing: border-box; text-decoration: none; cursor: pointer; }
+.btn:active { transform: translateY(1px); }
+.btn.sm { height: var(--btn2-h); font-size: 16px; font-weight: 700; }
+.btn:disabled { opacity: .7; cursor: default; }
+
+/* A · Pulso: el gradiente quieto y una chispa que lo recorre (corriente por un cable).
+   La letra oscura va al centro, donde el gradiente es cian y lima. */
+/* El Pulso enseña el gradiente desde su parte clara (azul claro → cian → lima → amarillo): con la
+   parte marina a la izquierda, un texto largo como «Pasar a Inspección de rough» no se leía */
+.btn-pulse, .ficha-tablero .accion.tablero-principal { position: relative; overflow: hidden; background: var(--mp-grad); background-size: 165% 100%; background-position: 100% 0; color: #04202A;
+             box-shadow: 0 10px 24px -8px rgba(34,232,224,.55); transition: box-shadow .3s ease, transform .12s ease; }
+.btn-pulse::after, .ficha-tablero .accion.tablero-principal::after { content: ''; position: absolute; top: -10px; bottom: -10px; width: 70px; left: -120px;
+                    background: linear-gradient(90deg, transparent, rgba(255,255,255,.85), transparent);
+                    transform: skewX(-22deg); animation: mp-sweep 2.8s ease-in-out infinite; pointer-events: none; }
+.btn-pulse:hover, .ficha-tablero .accion.tablero-principal:hover { background: var(--mp-grad); background-size: 165% 100%; background-position: 100% 0; border-color: transparent; box-shadow: 0 16px 34px -8px rgba(34,232,224,.8); }
+.btn-pulse:hover::after, .ficha-tablero .accion.tablero-principal:hover::after { animation-duration: 1.1s; }
+@keyframes mp-sweep { 0% { left: -120px; } 55%, 100% { left: 115%; } }
+
+/* B · Anillo: navy con una chispa que recorre un anillo de cobre (la segunda acción) */
+@property --mpa { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.btn-ring { position: relative; isolation: isolate; background: transparent; color: #fff;
+            box-shadow: 0 10px 28px -10px rgba(34,232,224,.45); transition: transform .12s ease; }
+.btn-ring::before { content: ''; position: absolute; inset: -2px; border-radius: calc(var(--r-btn) + 2px); z-index: -2;
+                    background: conic-gradient(from var(--mpa), #8F4F1F 0deg, #B86A2E 230deg, #22E8E0 285deg, #EFE22E 330deg, #8F4F1F 360deg);
+                    animation: mp-spin 2.6s linear infinite; }
+.btn-ring::after  { content: ''; position: absolute; inset: 0; border-radius: var(--r-btn); z-index: -1;
+                    background: linear-gradient(180deg, #163B8F, #0B1F47); }
+.btn-ring:hover::before { animation-duration: .9s; }
+@keyframes mp-spin { to { --mpa: 360deg; } }
+
+/* Los demás: navy sólido o blanco */
+.btn-navy  { background: var(--mp-navy); color: #fff; }
+.btn-white { background: #fff; color: var(--mp-navy); border: 1px solid var(--mp-line); }
+.btn-cu    { background: #fff; color: var(--cu-dark); border: 1px solid var(--cu); }
+.btn-ghost-dark { background: rgba(255,255,255,.06); color: #fff; border: 1px solid rgba(255,255,255,.22); }
+.btn-danger{ background: #fff; color: var(--bad); border: 1px solid var(--bad-line); } /* solo dentro de "···" y con confirmación */
+.btn-done  { background: var(--ok); color: #fff; }
+
+/* «Entrar» y «Guardar mi reporte» llevan .btn .btn-pulse en index.html; aquí solo lo suyo */
+.btn-entrar { margin-top: 0.2rem; }
+
+/* ---- Tarjetas: mezcla (una noche por pantalla, blancas, tintadas, volt) ---- */
+.card { border-radius: var(--r-card); padding: 18px; }
+.card-night {
+  position: relative; overflow: hidden; color: #fff;
+  background-color: var(--night-2);
+  background-image: url('../assets/symbols-tile.svg'), linear-gradient(160deg, #163B8F 0%, #0B1F47 55%, #071A2E 100%);
+  background-size: 260px 260px, auto;
+  border: 1px solid rgba(34,232,224,.32);
+  box-shadow: var(--shadow-night);
+}
+.card-night .muted { color: #B8C7D9; }
+.card-night .label-cu { color: var(--cu-light); }
+.card-white { background: #fff; border: 1px solid var(--mp-line); box-shadow: var(--mp-shadow); }
+.card-tint  { background: linear-gradient(180deg, #fff 0%, #e9f3fb 100%); border: 1px solid var(--mp-line); box-shadow: var(--mp-shadow); }
+.card-volt  { background: linear-gradient(180deg, #fffce6 0%, #fff3b3 100%); border: 1px solid #efdc7c; box-shadow: var(--mp-shadow); color: var(--warn-ink); }
+.card-danger{ background: #fff; border: 1px solid var(--bad-line); }
+.card > .wire-cu { margin: -18px -18px 12px; } /* cable de cobre como filo superior de una tarjeta */
+.card-white { overflow: hidden; }   /* para que el cable de arriba siga la esquina redonda */
+
+/* ---- Inicio: «Los próximos días» es LA tarjeta noche de la pantalla ----
+   Mismo look que .card-night, y el cable de cobre arriba con su chispa (sin tocar app.js). */
+#inicio-hoy .inicio-card.agenda {
+  position: relative; overflow: hidden; color: #fff;
+  background-color: var(--night-2);
+  background-image: url('../assets/symbols-tile.svg'), linear-gradient(160deg, #163B8F 0%, #0B1F47 55%, #071A2E 100%);
+  background-size: 260px 260px, auto;
+  border: 1px solid rgba(34,232,224,.32);
+  box-shadow: var(--shadow-night);
+  padding-top: 1.15rem;
+}
+#inicio-hoy .inicio-card.agenda::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--wire); pointer-events: none; }
+#inicio-hoy .inicio-card.agenda::after { content: ""; position: absolute; top: 0; height: 4px; width: 90px; left: -100px; border-radius: 4px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--mp-cyan) 35%, #fff 50%, var(--mp-cyan) 65%, transparent);
+  box-shadow: 0 0 14px rgba(34,232,224,.9); animation: mp-spark 3.2s linear infinite; }
+#inicio-hoy .agenda .inicio-card-titulo { color: var(--cu-light); }
+#inicio-hoy .agenda .agenda-dia { border-top-color: rgba(255,255,255,.12); }
+#inicio-hoy .agenda .hoy-chip.es-hoy { background: var(--mp-cyan); color: #04202A; border: 0; }
+#inicio-hoy .agenda .hoy-chip.es-man { background: rgba(255,255,255,.1); color: #fff; border: 1px solid rgba(255,255,255,.22); }
+#inicio-hoy .agenda .hoy-chip.es-otro { background: rgba(255,255,255,.06); color: #B8C7D9; }
+#inicio-hoy .agenda .agenda-hora { color: var(--mp-cyan); }
+#inicio-hoy .agenda .agenda-hora.ambar { color: var(--cu-light); }
+#inicio-hoy .agenda .agenda-hora.rojo { color: #FFB1A8; }
+#inicio-hoy .agenda .agenda-que { color: #fff; }
+#inicio-hoy .agenda .agenda-ev.alerta .agenda-que { color: #FFB1A8; }
+#inicio-hoy .agenda .agenda-quien { color: #B8C7D9; }
+#inicio-hoy .agenda .agenda-ev.abre:hover { background: rgba(255,255,255,.06); }
+#inicio-hoy .agenda .agenda-nada { color: #9FB3C8; }
+#inicio-hoy .agenda .hoy-mas { color: #B8C7D9; }
+#inicio-hoy .agenda .hoy-mas a { color: var(--mp-cyan); }
+#inicio-hoy .agenda .btn-ir { background: rgba(255,255,255,.06); color: #fff; border: 1px solid rgba(255,255,255,.22); border-radius: var(--r-btn); }
+
+/* ---- Campos de escribir: 54 px, letra de 17, fondo cielo, foco azul ---- */
+/* Por defecto (sin peso: :where), para todo campo de una línea */
+:where(input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=color], [type=hidden], [type=button], [type=submit], [type=reset], [type=image]), select) {
+  min-height: var(--tap);
+  font-size: 17px;
+  border-radius: var(--r-field);
+}
+:where(textarea) { font-size: 17px; border-radius: var(--r-field); }
+/* Los formularios de verdad (entrar, reporte de horas, hojas y ventanas, calendario,
+   filtros, buscador, levantamiento): el campo entero de 54 px del brief */
+.login-form input, #buscador,
+.horas-form-card input:not([type=checkbox]), .horas-form-card select,
+.modal input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]), .modal select,
+.cal-form input:not([type=checkbox]), .cal-form select,
+.mat-filtro select, .gasto-presu-fila input,
+.lev-cuerpo input[type="text"], .lev-cuerpo input[type="number"], .lev-cuerpo select {
+  min-height: var(--field-h);
+  padding: 0 14px;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--mp-ink);
+  background: var(--mp-sky-1);
+  border: 1px solid var(--mp-line);
+  border-radius: var(--r-field);
+}
+.horas-form-card textarea, .modal textarea { font-size: 17px; font-weight: 500; background: var(--mp-sky-1); border: 1px solid var(--mp-line); border-radius: var(--r-field); padding: 12px 14px; }
+.login-form input:focus, #buscador:focus,
+.horas-form-card input:not([type=checkbox]):focus, .horas-form-card select:focus, .horas-form-card textarea:focus,
+.modal input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):focus, .modal select:focus, .modal textarea:focus,
+.cal-form input:not([type=checkbox]):focus, .cal-form select:focus,
+.mat-filtro select:focus, .gasto-presu-fila input:focus,
+.lev-cuerpo input[type="text"]:focus, .lev-cuerpo input[type="number"]:focus, .lev-cuerpo select:focus {
+  border-color: var(--mp-blue);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(42,91,215,.18);
+}
+#buscador { margin-bottom: 0.9rem; }
+.horas-form-card .chk-urg-label { font-size: var(--fs-4); }
+
+/* ---- Toques: todo lo que se toca mide 44 px como mínimo (con guantes) ---- */
+button, a.btn, a[class^="btn"], .btn-ir, .ficha-tab, .categoria-card, .etapa-card { min-height: var(--tap); }
+/* los botones cuadrados de icono, 44 × 44 */
+.tarea-check, .tarea-editar, .tarea-borrar, .insp-borrar, .lev-btn-ico, .punto-check,
+.prop-bq, .prop-estrella, .lev-quitar-conteo, .btn-formula, .accion.icono { min-width: var(--tap); }
+.lev-btn-ico, .btn-formula { display: inline-flex; align-items: center; justify-content: center; }
+
+/* <small> dentro de un texto de 15 px quedaba en 12.5: nunca por debajo de 13 */
+small { font-size: max(var(--fs-small), 0.8em); }
+/* Ajustes que pidió la letra más grande (tanda 1) */
+.btn-volver { display: inline-flex; align-items: center; justify-content: center; }
+/* la fecha con el calendarito no se come el año */
+.horas-form-card input[type=date], .modal input[type=date], .cal-form input[type=date] { padding: 0 8px; }
+.cal-marca-roja { top: 0; right: 2px; line-height: 1; }
+/* renglón de un día del calendario: los botones arriba, sin estirarse, y de 44 × 44 */
+.agenda-item { align-items: flex-start; }
+.agenda-item > button { align-self: flex-start; min-width: var(--tap); }
+.agenda-item { flex-wrap: wrap; }
+.agenda-item > .agenda-info { flex: 1 1 calc(100% - 6.5rem); }
+.agenda-item > .agenda-info + button { margin-left: auto; }
+/* En el teléfono, con el título de 26-30 px, «+ Nuevo proyecto» baja debajo del título */
+@media (max-width: 480px) {
+  .toolbar-titulos { flex: 1 1 calc(100% - 56px); }
+  .btn-nuevo { margin-left: 56px; }
 }
