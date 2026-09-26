@@ -95,3 +95,15 @@ conciliación de apertura (f06).
   cerrar el año, una vista que sume ene–sep de QuickBooks + oct–dic del libro
   para la declaración de 2026, contrato y presupuesto al lado o dentro de
   `v_obras_dinero`.
+- **En producción (26-sep):** c2, c3 y c4 pegados por Edgar en ese orden
+  (13:50–13:52 UTC), todos en `true`; c2-pruebas y c3-pruebas corridas en el
+  editor (sin error); c4-pruebas **110/110 en producción** (leídas de
+  `pruebas.c4_resultado`, corrida de las 14:40 UTC, 7 minutos: el SQL Editor
+  enseña «Failed to fetch» antes de que termine, y por eso las suites dejan
+  ahora su resultado en el esquema `pruebas`). Sin rastro: 0 asientos,
+  contadores en 0, ningún periodo cerrado, cadena 10/10, puentes 13/13,
+  estados con el único rojo esperado («apertura en el libro»). Pendiente:
+  que Edgar corra las versiones nuevas de c2-pruebas y c3-pruebas para que
+  su resultado quede registrado, y la apertura real cuando llegue la
+  balanza de QuickBooks al 30-sep.
+

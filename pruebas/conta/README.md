@@ -52,9 +52,15 @@ comprobando si algo ya estaba.
   `c3_resultado`, `c4_resultado`: la última corrida, con su hora), fuera de
   la API (PostgREST no expone ese esquema; anon, authenticated y
   service_role no pueden usarlo). Es para cuando el SQL Editor deja de
-  esperar (a los pocos minutos enseña un error de red) mientras la corrida
-  sigue en el servidor: pasó el 26-sep con c4-pruebas en producción (5 min
-  47 s; el banco tarda 40 s). No es parte del libro; se borra con
+  esperar mientras la corrida sigue en el servidor: enseña **«Error: Failed
+  to fetch (api.supabase.com)»** y 0 filas, y no es un error de la prueba.
+  Pasó el 26-sep con c4-pruebas en producción, dos veces: 5 min 47 s la
+  primera (sin la tabla: el resultado se perdió) y 7 min la segunda (14:40
+  UTC, 110/110 leídos de `pruebas.c4_resultado`); el banco tarda 40 s. El
+  proyecto está en el plan **Free** (instancia chica, CPU compartida, y ese
+  día con el cartel «Exceeding usage limits»): con la contabilidad dentro
+  hace falta el plan Pro, y las pruebas largas se corren igual, leyendo la
+  tabla al terminar. No es parte del libro; se borra con
   `drop schema pruebas cascade` cuando ya no haga falta.
 - **El orden importa**: c2 necesita c1; c3 necesita c1 y c2; c4 necesita
   los tres. Las pruebas (7, 8 y 9) van siempre después de los cuatro: c2 y
