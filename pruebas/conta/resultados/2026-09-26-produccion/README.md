@@ -12,7 +12,7 @@ en producción y pasó sus pruebas ahí, no solo en el banco.
 | `03-c4-estados.csv` | El pegado de `c4-estados.sql` (13:51): las 9 filas del resumen | 7 en `true`; `c4 · apertura` y `apertura en el libro` en `false`, lo esperado hasta la apertura real |
 | `04-c2-pruebas.csv` | `c2-pruebas.sql` (13:52) | 80 de 80 en `true` |
 | `05-c3-pruebas.csv` | `c3-pruebas.sql` (13:52) | 118 filas: 117 en `true`, la 45 «omitida» (Storage no se borra por SQL; se prueba en el banco) |
-| `pruebas.c4_resultado` (en producción) | `c4-pruebas.sql`, corrida de las 14:40 UTC, 7 minutos; el SQL Editor enseñó «Error: Failed to fetch (api.supabase.com)» antes de que terminara y el resultado se leyó de la tabla | 110 de 110 en `true`, 0 omitidas (la 109, MAINTAIN, corre en 17.6) |
+| `06-c4-pruebas-filas-1-100.csv` | `c4-pruebas.sql`, corrida de las 14:40 UTC, 7 minutos; el SQL Editor enseñó «Error: Failed to fetch (api.supabase.com)» antes de que terminara y el resultado quedó en `pruebas.c4_resultado`. El export de Edgar trae las filas 1 a 100 (el editor limita el resultado a 100 filas por defecto); las 101 a 110 se leyeron de la tabla por el conector | 110 de 110 en `true`, 0 omitidas (la 109, MAINTAIN, corre en 17.6) |
 
 Después de las corridas: 0 asientos, contadores en 0, ningún periodo cerrado,
 ninguna cuenta, proveedor ni balanza de prueba; cadena 10/10, puentes 13/13,
