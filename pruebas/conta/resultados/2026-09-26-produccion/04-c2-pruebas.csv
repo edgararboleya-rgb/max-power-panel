@@ -1,0 +1,81 @@
+n,prueba,esperado,obtenido,ok
+1,"descuadre por un centavo (dueño, fn_postear)",MX001,"MX001 Descuadrado: debe 100.00, haber 99.99, diferencia 0.01. No entra.",true
+2,mes cerrado desde fn_postear (dueño),MX002,MX002 El período 2026-10 está cerrado: nadie escribe ahí. Un documento tardí,true
+3,mes cerrado desde el SQL Editor (insert directo),MX002,MX002 El período 2026-10 está cerrado: nadie escribe ahí. Un documento tardí,true
+4,update a una línea (SQL Editor),MX003,MX003 El libro no se edita ni se borra (UPDATE sobre asiento_lineas). Un asi,true
+5,update a la cabecera: fecha a un mes cerrado (SQL Editor),MX003,MX003 El libro no se edita ni se borra (UPDATE sobre asientos). Un asiento s,true
+6,delete de líneas y de cabecera (SQL Editor),lineas=MX003 cabecera=MX003,lineas=MX003 cabecera=MX003,true
+7,truncate del libro (SQL Editor),MX003 (o 0A000 con c3 pegado),0A000 cannot truncate a table referenced in a foreign key constraint,true
+8,fecha 31-dic 19:00 Miami con la sesión en UTC,2026-12-31,2026-12-31,true
+9,el equipo lee 0 filas del libro,asientos=0 lineas=0 cuentas=0 historial=0 periodos=0 contadores=0,asientos=0 lineas=0 cuentas=0 historial=0 periodos=0 contadores=0,true
+10,el equipo no puede postear,42501,42501 Solo el dueño postea asientos.,true
+11,anon no puede nada,asientos=42501 cuentas=42501 postear=42501 estado=42501,asientos=42501 cuentas=42501 postear=42501 estado=42501,true
+12,reversar dos veces (dueño),MX007,MX007 2026-000001 ya se reversó.,true
+13,reversar un reverso (dueño),MX007,"MX007 2026-000002 es un reverso: un reverso no se reversa. La re-corrección ",true
+14,reverso de un asiento en período cerrado cae en el abierto,fecha=2026-11-01 periodo=2026-11,fecha=2026-11-01 periodo=2026-11,true
+15,"bueno, descuadrado, bueno: números sin hueco",descuadrado=MX001 salto=1,descuadrado=MX001 salto=1,true
+16,monto con tres decimales,MX005,MX005 Línea 1: 100.005 trae 3 decimales; el libro va en centavos (máximo 2).,true
+17,cuenta inactiva,MX004,"MX004 Línea 1: la cuenta 6990 (c2-pruebas: cuenta de prueba) está inactiva: ",true
+18,costo 5xxx sin obra,MX006,MX006 Línea 1: la cuenta 5100 (Material) exige obra (proyecto_id).,true
+19,gasto 6xxx con obra,MX006,MX006 Línea 1: la cuenta 6100 (Renta) no va por obra: quita proyecto_id.,true
+20,reversible genera su reverso el día 1,reverso=2026-11-01 camino=reverso_automatico,reverso=2026-11-01 camino=reverso_automatico,true
+21,cadena íntegra tras posteos normales,controles=10 fallan=0,controles=10 fallan=0,true
+22,"frontera: se delata al que edita sin recalcular; al dueño que recalcula, solo el hash exportado (f08)",apagados=f ingenuo=f reencadenado=t,apagados=f ingenuo=f reencadenado=t,true
+23,service_role no postea (la IA nunca postea),42501,42501 permission denied for function fn_postear,true
+24,un período cerrado no se reabre: update → MX002; ALTER TABLE … TYPE → se delata,"update=MX002 alter=periodos_antes:t,periodos_despues:f,huella_tabla:t","update=MX002 alter=periodos_antes:t,periodos_despues:f,huella_tabla:t",true
+25,"saltar números en el contador (SQL Editor): +5, +1 y on conflict do nothing",+5=MX003 +1=MX003 on_conflict=MX003,+5=MX003 +1=MX003 on_conflict=MX003,true
+26,línea nueva en un asiento sellado (SQL Editor),MX003,MX003 Ese asiento ya está sellado: no admite líneas nuevas. Se corrige con f,true
+27,asiento descuadrado insertado a mano (SQL Editor),MX001,"MX001 Descuadrado: debe 100.00, haber 99.99, diferencia 0.01. No entra.",true
+28,reverso fabricado que no es espejo (SQL Editor),MX007,MX007 Un reverso es el espejo exacto de su original (2026-000001): las misma,true
+29,cuenta con movimientos: ni se borra ni cambia de código,borrar=MX003 codigo=MX003,borrar=MX003 codigo=MX003,true
+30,clave mal escrita y camino dictado por el cliente,clave=22023 camino=22023,clave=22023 camino=22023,true
+31,"el sello (camino, usuario, rol) lo pone la base",camino=mano usuario=dueño rol=authenticated,camino=mano usuario=dueño rol=authenticated,true
+32,"fn_estado cuenta filas, suma el debe y cuadra",filas+2 debe+100.00 cuadra=t,filas+2 debe+100.00 cuadra=t,true
+33,la apertura solo admite la apertura,MX002,MX002 El período 2026-09-APERTURA solo admite el asiento de apertura y sus r,true
+34,el equipo no cierra un período,42501,42501 Solo el dueño cierra un período.,true
+35,cerrar un mes con el anterior abierto,MX002 (en orden),MX002 (en orden),true
+36,reversible sin su reverso no llega al commit,MX007,MX007 El asiento 2026-000001 es reversible y no trae su reverso automático d,true
+37,la apertura es balance únicamente,MX006,"MX006 El asiento de apertura es balance únicamente: solo cuentas de activo, ",true
+38,"un documento, un asiento (el puente corre dos veces)",23505,23505 El documento recibos c2-pruebas-1 ya tiene su asiento vivo (2026-00000,true
+39,una línea que llega tarde a un asiento sellado (otra sesión) no confirma,MX003,MX003 El asiento 2026-000001 ya estaba sellado cuando llegó la línea 3: no a,true
+40,costo con obra y sin cost code entra,entró,entró,true
+41,reversar y sustituir el asiento de un documento,vivo=23505 a_mano=MX007 sin_sustituye=MX007 sustituto_a_mano=MX007 sustituto=entró cadena=t,vivo=23505 a_mano=MX007 sin_sustituye=MX007 sustituto_a_mano=MX007 sustituto=entró cadena=t,true
+42,"la amortización de WC entra en el burden real, sin obra (Dr 5015 / Cr 1410)",entró,entró,true
+43,un asiento fechado muy lejos en el futuro no entra,MX002 (futuro),MX002 (futuro),true
+44,el plan aparta lo del 1120-S y tiene reembolsos por pagar,oficial=t intereses=t venta_activos=t donaciones=t multas=t reembolso=entró,oficial=t intereses=t venta_activos=t donaciones=t multas=t reembolso=entró,true
+45,una cuenta con saldo no se inactiva ni se vuelve de grupo,inactivar=MX003 grupo=MX003,inactivar=MX003 grupo=MX003,true
+46,renombrar una cuenta deja rastro en cuentas_historial,rastro=1 antes=Renta borrar=MX003,rastro=1 antes=Renta borrar=MX003,true
+47,"el calendario no tiene huecos (abrir saltado, borrar un mes)",hueco=MX002 borrar=MX002,hueco=MX002 borrar=MX002,true
+48,con la apertura abierta no se cierra el primer mes,MX002 (la apertura primero),MX002 (la apertura primero),true
+49,ajuste del CPA mal formado: 22023 y no 23514,afecta_sin_ajuste=22023 ajuste_sin_motivo=22023,afecta_sin_ajuste=22023 ajuste_sin_motivo=22023,true
+50,una subcuenta nueva cuelga sola de su cuenta de grupo,padre=2100,padre=2100,true
+51,cerrar un período que no existe,MX002,"MX002 No existe el período «2027-13»: revisa el nombre (AAAA-MM para un mes,",true
+52,una obra con asientos no se borra (el mensaje dice cuál y qué hacer),MX003 (la obra por su nombre y qué hacer),MX003 (la obra por su nombre y qué hacer),true
+53,una fecha anterior a la apertura: eso vive en QuickBooks,MX002 (QuickBooks),MX002 (QuickBooks),true
+54,una guarda vaciada con create or replace se detecta (huellas),triggers=f,triggers=f,true
+55,"permisos ve una policy editada, una ajena y una vista sin security_invoker",policy_editada=f policy_ajena=f vista=f,policy_editada=f policy_ajena=f vista=f,true
+56,permisos ve un privilegio de más (de tabla y de columna),tabla=f columna=f,tabla=f columna=f,true
+57,la conexión directa queda en la procedencia y en el cierre,editor=t app=f cierre=t,editor=t app=f cierre=t,true
+58,un insert directo queda marcado (sus montos no pasaron la escala),directo=insert_directo monto=245.37 fn_postear=-,directo=insert_directo monto=245.37 fn_postear=-,true
+59,lo que la app postea y reversa confirma (con el rol de la app),posteo_y_reverso=confirma devengo_corregido=confirma,posteo_y_reverso=confirma devengo_corregido=confirma,true
+60,un período no se cierra antes de terminar (ni se reabre con fn_abrir_periodo),adelantado=MX002 reabrir=MX002 verificar=lo_ve,adelantado=MX002 reabrir=MX002 verificar=lo_ve,true
+61,la apertura no se cierra sin su asiento de apertura,sin_asiento=MX002 con_asiento=cerrado,sin_asiento=MX002 con_asiento=cerrado,true
+62,un ajuste del CPA a la apertura es balance únicamente,resultados=MX006 balance=entró,resultados=MX006 balance=entró,true
+63,un devengo de un documento: el puente no lo duplica y se corrige en su mes,otra_vez=23505 sustituto_antes=23505 reversar_auto=MX007 corregir=entró sustituto=entró mes=120.00 siguiente=-120.00 reversos=t sin_anular=MX007,otra_vez=23505 sustituto_antes=23505 reversar_auto=MX007 corregir=entró sustituto=entró mes=120.00 siguiente=-120.00 reversos=t sin_anular=MX007,true
+64,"con saldo vivo, una regla de dimensión no se endurece si lo atrapa",obligatoria=MX003 prohibida=MX003,obligatoria=MX003 prohibida=MX003,true
+65,"una sola apertura, ni con su guarda apagada",segunda=23505 sin_indice=periodos:f,segunda=23505 sin_indice=periodos:f,true
+66,una cuenta reescrita con ALTER TABLE … TYPE se delata,cuentas=f huella_tabla=t,cuentas=f huella_tabla=t,true
+67,"cerrar dos veces: la hora del cierre, en Miami",MX002 (hora de Miami),MX002 (hora de Miami),true
+68,"permisos ve una función SECURITY DEFINER ajena que lee el libro, y la vista que la llama",anon_lee=si funcion=lo_ve vista=lo_ve puerta=lo_ve invoker=calla,anon_lee=si funcion=lo_ve vista=lo_ve puerta=lo_ve invoker=calla,true
+69,"volver a pegar e37 no enciende permisos; lo de verdad sí, con el archivo que lo arregla",e37=no_cambia puerta_interna=c2-libro.sql guarda_c1=c1-plan-de-cuentas.sql,e37=no_cambia puerta_interna=c2-libro.sql guarda_c1=c1-plan-de-cuentas.sql,true
+70,el reverso de un asiento de un ejercicio anterior es un ajuste de ese ejercicio,dic_cerrado=MX002 (ajuste) a_mano_normal=MX007 reverso=ajuste_cpa/2026-12 sustituto_normal=MX007 sustituto_ajuste=entró resultado_nuevo=0 reversos=t,dic_cerrado=MX002 (ajuste) a_mano_normal=MX007 reverso=ajuste_cpa/2026-12 sustituto_normal=MX007 sustituto_ajuste=entró resultado_nuevo=0 reversos=t,true
+71,la apertura cerrada no se reversa: se ajusta (y el verificador lo exige),normal=MX002 (ajuste) apertura=MX002 (ajuste) reversar=MX007 (ajuste) vaciada=lo_ve,normal=MX002 (ajuste) apertura=MX002 (ajuste) reversar=MX007 (ajuste) vaciada=lo_ve,true
+72,con saldo abierto por obra (total cero) no se inactiva ni se vuelve de grupo,inactivar=MX003 (por obra) grupo=MX003 (por obra) costo=MX003 (por obra),inactivar=MX003 (por obra) grupo=MX003 (por obra) costo=MX003 (por obra),true
+73,los años se cierran en orden (y el verificador lo ve),cerrar=MX002 (en orden) verificar=lo_ve,cerrar=MX002 (en orden) verificar=lo_ve,true
+74,el plan tiene dónde devengar sin factura (2050) y dónde poner el FUTA (2225),devengo=entró futa=entró,devengo=entró futa=entró,true
+75,las pruebas que cierran toman antes el candado de periodos,MXT09 (candado),MXT09 (candado),true
+76,el sustituto de un papel que pasó al año nuevo es un asiento normal de ese año,papel_de_2026=MX007 papel_de_2027=entró/normal/2027 reversos=t,papel_de_2026=MX007 papel_de_2027=entró/normal/2027 reversos=t,true
+77,el asiento de un puente no se reversa ni se sustituye a mano,reversar=MX007 (dice fn_recibo_anular) sustituir=MX007 vivo=t,reversar=MX007 (dice fn_recibo_anular) sustituir=MX007 vivo=t,true
+78,la policy del libro se evalúa una vez por consulta (select es_dueno()) y dice lo mismo,forma=4/4 permisos=t equipo=0 dueno>0 abierta=f,forma=4/4 permisos=t equipo=0 dueno>0 abierta=f,true
+79,"permisos ve lo escondido: join de coma, comentario en medio, función de ayuda",coma=lo_ve comentario=lo_ve anidada=lo_ve inocente=calla,coma=lo_ve comentario=lo_ve anidada=lo_ve inocente=calla,true
+80,"las pruebas no dejan rastro (libro, plan, historial, secuencias y huellas)",asientos=0 lineas=0 contadores=0 periodos=18 cerrados=0 inactivas=0 historial=88 secuencias=0 reloj=6ed3b9374d9c huellas=3c2e50a17e2d,asientos=0 lineas=0 contadores=0 periodos=18 cerrados=0 inactivas=0 historial=88 secuencias=0 reloj=6ed3b9374d9c huellas=3c2e50a17e2d,true

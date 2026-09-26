@@ -1,0 +1,10 @@
+control,ok,detalle
+c4 · vistas,true,"28 vistas, todas security_invoker, solo SELECT para authenticated"
+c4 · mapeo,true,88 cuentas con su fila; sin fila: ninguna
+c4 · apertura,false,"todavía no: carga la balanza (fn_apertura_balanza_cargar), mapea sus cuentas (fn_apertura_mapeo_qb) y select fn_apertura('2026-09-30', '<documento>');"
+c4 · jit,true,"el JIT está apagado para authenticated (la app, por PostgREST)"
+c4 · c2 y c3 al día,true,c2-libro.sql y c3-puentes.sql son de la versión que c4 necesita (su marca y sus policies)
+estados 2026-09-APERTURA · v_estados_mapeo,true,88 filas
+estados 2026-09-APERTURA · cuadre: mapeo completo,true,cuadra
+estados 2026-09-APERTURA · cuadre: protecciones de c4,true,cuadra
+estados 2026-09-APERTURA · cuadre: apertura en el libro,false,"No cuadra: no hay apertura en el libro: carga la balanza de QuickBooks (fn_apertura_balanza_cargar), mapea sus cuentas y postéala con fn_apertura."
