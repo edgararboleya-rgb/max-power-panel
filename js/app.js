@@ -1345,7 +1345,12 @@ function esFalloDeRed(err) {
     const t = x => esc(sinDinero(x));
     // Las visitas de hoy que son mías: sin nadie asignado o con mi nombre
     // (la misma regla del formulario de horas), en orden de hora
-    const esMia = e => !e.asignados || !e.asignados.length || e.asignados.includes(usuario.nombre);
+    // Una visita es «mía» si me la asignaron (por nombre o por id), o si es de una obra y no
+    // tiene a nadie asignado. Un evento sin obra y sin nadie (un viaje, algo personal del
+    // calendario de Edgar) no es una visita del equipo.
+    const esMia = e => (e.asignados && e.asignados.length)
+      ? (e.asignados.includes(usuario.nombre) || e.asignados.includes(usuario.id))
+      : !!e.proyecto;
     const visitas = eventos()
       .filter(e => e.fecha === hoy && e.estadoEv !== "cancelado" && esMia(e))
       .sort((a, b) => ordenHora(a.hora) - ordenHora(b.hora));
