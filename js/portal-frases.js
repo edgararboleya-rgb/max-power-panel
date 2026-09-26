@@ -108,3 +108,81 @@ window.MXP_FRASES = [
   [/^Trabajo terminado y facturado$/i, "Work completed and invoiced"],
   [/^Trabajo terminado y probado$/i, "Work completed and tested"]
 ];
+
+/* ============================================================================
+   Los textos nuevos del portal del cliente («Cobre y luz», tanda 3, 26-sep).
+   cliente.html los junta con los suyos según el idioma elegido (inglés por
+   defecto; el botón ES los cambia). {n}, {d}, {x} y {e} se rellenan allí.
+   ============================================================================ */
+window.MXP_PORTAL_TXT = {
+  en: {
+    aaEtiqueta: "Larger text",
+    tuObra: "Your project", etapaDe: "{e} stage", servicio: "Service call", propuestaEtapa: "Proposal",
+    enPausa: "On hold", enCurso: "In progress", terminada: "Completed", dondeT: "Where we are",
+    etapas: ["Permit", "Rough-in", "Inspection", "Trim", "Final"],
+    etapasT: "Job stages", etapaActual: "Current stage: ", todasListas: "All stages complete",
+    trabajosT: "Work items", hechosCuenta: "{d} / {n} done", panelAria: "{d} of {n} items done",
+    notaPanel: "Each breaker is one item of your scope.", verTodos: "Show all {n}", verMenos: "Show fewer",
+    ahora: "Now", grupoCuenta: "{d} of {n} done", soloInfo: "For your information", irAlPunto: "Go to item {n}: ",
+    visitaT: "Latest visit", verFotos: "See all photos ({n})", ocultarFotos: "Hide older photos",
+    cerrar: "Close", fotoAlt: "Job photo", videoAlt: "Job video", abrirFoto: "Open photo",
+    inspT: "Permit & inspections", paso: "Passed", fallo: "Needs corrections", programada: "Scheduled",
+    permisoAria: "Permit number", jurisAria: "Jurisdiction",
+    debeT: "Amount due", debeYa: "Due now", emitida: "issued {x}", verFactura: "View invoice",
+    notaPago: "Pay by check or ACH. Card payments are available on request.",
+    firmaT: "Needs your signature", aprobT: "Needs your approval",
+    revisarFirmar: "Review and sign", revisarAprobar: "Review and approve", valeHasta: "Valid until {x}",
+    pagadoT: "Paid to date", deContrato: "of {x} contract", proxT: "Next visit",
+    pagosT: "Payment schedule", hitosN: "{n} milestones", hito1: "1 milestone",
+    contratoT: "Contract total", facturadoT: "Invoiced", porFacturarT: "Not yet invoiced", saldoT: "Balance",
+    hPagado: "Paid", hFacturado: "Invoiced", hProximo: "Upcoming", facturasT: "Invoices",
+    fPagada: "Paid", fParcial: "Partly paid", fAbierta: "Open", fDetalleParcial: "Paid {x} · Balance {d}",
+    decT: "Decisions we need from you", necesita: "We need it by {x}", decidi: "I've decided", hecha: "Done",
+    diarioT: "Job log", verMas: "Show more", verMenosLog: "Show less",
+    docsT: "Documents", stFirmado: "Signed", stAprobado: "Approved", stPideFirma: "Needs signature",
+    stPideAprob: "Needs approval", stVencido: "Expired", stNoElegida: "Not selected",
+    firmadoPor: "Signed by {x} on {d}", yOtro: " and ", ambos: "Signed by both parties",
+    aprobadoEl: "Approved on {x}", codigoVer: "Verification code",
+    edgarRol: "Licensed Electrical Contractor", licT: "License & insurance",
+    llamar: "Call", mensaje: "Text", sitio: "mxpes.com",
+    garantiaT: "Your warranty", cubierta: "Covered until {x}", resena: "Leave us a Google review",
+    aprobarTit: "Approve this document", aprobarNota: "Open it and read it first. When it looks right, tap Approve.",
+    aprobarBtn: "Approve", abrirDoc: "Open the document", abiertoOk: "Opened. You can sign now.",
+    gcTodas: "All projects", gcPara: "For {x}"
+  },
+  es: {
+    aaEtiqueta: "Letra más grande",
+    tuObra: "Tu proyecto", etapaDe: "Etapa {e}", servicio: "Visita de servicio", propuestaEtapa: "Propuesta",
+    enPausa: "En pausa", enCurso: "En curso", terminada: "Terminado", dondeT: "Dónde vamos",
+    etapas: ["Permit", "Rough-in", "Inspection", "Trim", "Final"],
+    etapasT: "Etapas de la obra", etapaActual: "Etapa actual: ", todasListas: "Todas las etapas terminadas",
+    trabajosT: "Trabajos", hechosCuenta: "{d} / {n} hechos", panelAria: "{d} de {n} puntos hechos",
+    notaPanel: "Cada breaker es un punto de tu alcance.", verTodos: "Ver los {n}", verMenos: "Ver menos",
+    ahora: "Ahora", grupoCuenta: "{d} de {n} hechos", soloInfo: "Para que lo sepas", irAlPunto: "Ir al punto {n}: ",
+    visitaT: "Última visita", verFotos: "Ver todas las fotos ({n})", ocultarFotos: "Ocultar las fotos viejas",
+    cerrar: "Cerrar", fotoAlt: "Foto de la obra", videoAlt: "Video de la obra", abrirFoto: "Abrir la foto",
+    inspT: "Permiso e inspecciones", paso: "Pasó", fallo: "Necesita correcciones", programada: "Programada",
+    permisoAria: "Número de permiso", jurisAria: "Jurisdicción",
+    debeT: "Por pagar", debeYa: "Vence ya", emitida: "emitida el {x}", verFactura: "Ver la factura",
+    notaPago: "Pago con cheque o ACH. Con tarjeta, pídelo.",
+    firmaT: "Necesita tu firma", aprobT: "Necesita tu aprobación",
+    revisarFirmar: "Revisar y firmar", revisarAprobar: "Revisar y aprobar", valeHasta: "Vale hasta el {x}",
+    pagadoT: "Pagado a la fecha", deContrato: "de un contrato de {x}", proxT: "Próxima visita",
+    pagosT: "Calendario de pagos", hitosN: "{n} hitos", hito1: "1 hito",
+    contratoT: "Contrato total", facturadoT: "Facturado", porFacturarT: "Sin facturar", saldoT: "Saldo",
+    hPagado: "Pagado", hFacturado: "Facturado", hProximo: "Próximo", facturasT: "Facturas",
+    fPagada: "Pagada", fParcial: "Pago parcial", fAbierta: "Abierta", fDetalleParcial: "Pagado {x} · Saldo {d}",
+    decT: "Decisiones que necesitamos de ti", necesita: "La necesitamos antes del {x}", decidi: "Ya decidí", hecha: "Hecha",
+    diarioT: "Diario de la obra", verMas: "Ver más", verMenosLog: "Ver menos",
+    docsT: "Documentos", stFirmado: "Firmado", stAprobado: "Aprobado", stPideFirma: "Falta tu firma",
+    stPideAprob: "Falta tu aprobación", stVencido: "Vencido", stNoElegida: "No elegida",
+    firmadoPor: "Firmado por {x} el {d}", yOtro: " y ", ambos: "Firmado por las dos partes",
+    aprobadoEl: "Aprobado el {x}", codigoVer: "Código de verificación",
+    edgarRol: "Contratista eléctrico con licencia", licT: "Licencia y seguros",
+    llamar: "Llamar", mensaje: "Mensaje", sitio: "mxpes.com",
+    garantiaT: "Tu garantía", cubierta: "Cubierta hasta el {x}", resena: "Déjanos tu reseña en Google",
+    aprobarTit: "Aprobar este documento", aprobarNota: "Ábrelo y léelo primero. Si está bien, toca Aprobar.",
+    aprobarBtn: "Aprobar", abrirDoc: "Abrir el documento", abiertoOk: "Abierto. Ya puedes firmar.",
+    gcTodas: "Todas las obras", gcPara: "Para {x}"
+  }
+};

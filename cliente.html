@@ -7,161 +7,126 @@
   <title>Max Power — Your Project</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=221">
-  <link rel="stylesheet" href="css/portal.css?v=210">
-  <style>
-    #vista-app > main.container { min-width: 0; width: 100%; }
-    .cl-volver { padding: .3rem 0 0; font-size: .82rem; }
-    .cl-volver a { color: var(--mp-teal-text); font-weight: 700; text-decoration: none; display: inline-block; padding: 0.45rem 0; }
-    .cl-volver a:hover { text-decoration: underline; }
-    .cl-subt { font-size: 10.5px; text-transform: uppercase; letter-spacing: .14em;
-               color: var(--mp-teal-text); font-weight: 700; margin: .7rem 0 .2rem; }
-    .cl-item { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.4rem 0; border-top: 1px solid var(--mp-sky-2); font-size: 0.92rem; line-height: 1.45; color: var(--mp-ink); }
-    .cl-item:first-of-type { border-top: none; }
-    .cl-item.hecho { color: var(--mp-ink-3); }
-    .cl-item.hecho .cl-txt { text-decoration: line-through; }
-    .cl-check { flex-shrink: 0; }
-    .cl-wa {
-      display: block; text-align: center; margin: 1rem 0;
-      background: linear-gradient(135deg, #25D366, #128C7E); color: #fff;
-      font-weight: 800; padding: 0.8rem; border-radius: 12px; text-decoration: none;
-    }
-    .cl-doc { display: inline-block; padding: 0.5rem 0.75rem; font-size: 0.9rem; max-width: 100%; }
-    .cl-cargando { text-align: center; padding: 3rem 1rem; color: var(--mp-ink-3); }
-    /* width:0 + min-width:100% = el carrusel NUNCA empuja el ancho de la
-       página (con muchas fotos el teléfono abría en "modo computadora") */
-    .cl-fotos { display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.3rem; width: 0; min-width: 100%; }
-    .cl-foto { flex: 0 0 auto; width: 150px; }
-    .cl-foto img, .cl-foto video { width: 150px; height: 110px; object-fit: cover; border-radius: 10px; border: 1px solid var(--mp-line); }
-    .cl-foto video { background: #000; }
-    .cl-foto figcaption { font-size: 0.75rem; color: var(--mp-ink-2); margin-top: 2px; }
-    .cl-todo { border: 1px solid #EDDFAE; background: #FFFDF3; border-radius: 10px; padding: 0.5rem 0.6rem; margin-bottom: 0.4rem; display: flex; gap: 0.5rem; align-items: center; }
-    .cl-todo.hecha { border-color: var(--mp-line); background: var(--mp-card); opacity: 0.7; }
-    .cl-todo-txt { flex: 1; font-size: 0.92rem; line-height: 1.4; color: var(--mp-ink); }
-    .cl-todo-fecha { display: block; font-size: 0.78rem; color: #7A6200; font-weight: 800; }
-    .cl-boton { background: linear-gradient(135deg, var(--mp-blue), var(--mp-cyan)); color: #04222B; border: 0; border-radius: 999px; font: inherit; font-size: 0.82rem; font-weight: 800; padding: 0.5rem 0.85rem; cursor: pointer; flex-shrink: 0; }
-    .cl-aprobado { font-size: 0.8rem; font-weight: 800; color: #3E7A20; }
-    .cl-diario-fecha { font-size: 0.74rem; font-weight: 800; color: var(--mp-ink-2); flex-shrink: 0; }
-    .cl-tico { display: inline-block; vertical-align: -4px; margin-right: 7px; color: var(--mp-teal-text); }
-    .cl-tico svg { width: 19px; height: 19px; display: block; }
-    .cl-firma-fondo { position: fixed; inset: 0; background: rgba(4, 20, 35, 0.55); display: flex; align-items: center; justify-content: center; padding: 1rem; z-index: 50; }
-    .cl-firma-caja { background: var(--mp-card, #fff); border-radius: 14px; padding: 1rem; max-width: 420px; width: 100%; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
-    .cl-firma-caja h3 { margin: 0 0 0.3rem; font-size: 1.05rem; color: var(--mp-ink); }
-    .cl-firma-doc { font-size: 0.85rem; color: var(--mp-ink-2); margin-bottom: 0.6rem; overflow-wrap: anywhere; }
-    .cl-firma-caja input { width: 100%; font: inherit; padding: 0.55rem 0.6rem; border: 1px solid var(--mp-line); border-radius: 10px; margin-bottom: 0.6rem; }
-    .cl-firma-lienzo { width: 100%; height: 140px; border: 1.5px dashed var(--mp-line); border-radius: 10px; touch-action: none; background: #fff; display: block; }
-    .cl-firma-nota { font-size: 0.74rem; line-height: 1.4; color: var(--mp-ink-3); margin: 0.5rem 0; }
-    .cl-firma-botones { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-    .cl-firma-sub { font-size: 0.8rem; font-weight: 800; color: var(--mp-ink-2); margin: 0.2rem 0; }
-    .cl-boton.secundario { background: none; border: 1.5px solid var(--mp-line); color: var(--mp-ink-2); }
-    /* Los anchos, la cabecera oscura, las casillas y las tarjetas viven en
-       css/portal.css: es la misma cara para el cliente y para el contratista. */
-    .cl-firma-caja { max-width: 420px; }
-    @media (min-width: 1024px) { .cl-firma-caja { max-width: 560px; } }
-  </style>
+  <!-- styles.css en la MISMA versión que la app (v238): trae la letra, los tokens y los
+       botones y tarjetas de «Cobre y luz» (tandas 1 y 2). Con la v221 vieja, un teléfono
+       que la tuviera guardada abría el portal sin ellos. -->
+  <link rel="stylesheet" href="css/styles.css?v=238">
+  <link rel="stylesheet" href="css/portal.css?v=239">
+  <script>
+    // «Aa» (letra grande) se pone ANTES de pintar, para que la página no salte al abrir
+    (function () { try { if (localStorage.getItem("mp-text-large") === "1") document.documentElement.setAttribute("data-text", "large"); } catch (e) {} })();
+  </script>
 </head>
-<body>
+<body class="cl-portal">
   <div id="vista-app">
+    <!-- La barra noche con el logo, «Aa», el idioma y el cable de cobre -->
     <header class="membrete">
       <div class="membrete-inner">
-        <img id="logo" class="membrete-logo" alt="Max Power logo" src="">
-        <div>
-          <div class="wordmark">max power</div>
-          <div class="wordmark-sub">Electrical Solutions Inc.</div>
+        <img id="logo" class="membrete-logo" alt="Max Power logo" src="" width="36" height="36">
+        <div class="cl-marca">
+          <div class="wordmark grad-text-warm">max power</div>
+          <!-- 9 px a propósito: es parte de la marca (como en la app), no texto para leer -->
+          <div class="wordmark-sub" data-marca aria-hidden="true">Electrical Solutions Inc.</div>
         </div>
         <div class="membrete-der">
-          <button id="cl-idioma" class="btn-idioma" title="English / Español">ES</button>
+          <button type="button" class="aa-btn" data-aa aria-pressed="false" aria-label="Larger text" title="Larger text">Aa</button>
+          <button id="cl-idioma" type="button" class="btn-idioma" title="English / Español">ES</button>
         </div>
       </div>
+      <div class="wire-cu" aria-hidden="true"></div>
     </header>
     <main class="container">
-      <div id="cl-panel" class="pt-panel"><p class="cl-cargando">Loading your project…</p></div>
+      <div id="cl-panel" class="cl-pagina"><p class="cl-cargando">Loading your project…</p></div>
     </main>
     <footer class="pie">
-      <p>Max Power Electrical Solutions, Inc. · mxpes.com · (305) 967-9311</p>
-      <div class="licencia">FL EC LICENSE #EC13016045</div>
+      <p>Max Power Electrical Solutions, Inc. · <a class="cl-pie-web" href="https://mxpes.com" target="_blank" rel="noopener">mxpes.com</a></p>
+      <div class="licencia mono">FL EC13016045</div>
     </footer>
   </div>
 
-  <script src="js/portal-frases.js?v=228"></script>
+  <script src="js/portal-frases.js?v=239"></script>
   <script src="assets/logo.js?v=236"></script>
   <script>
   (function () {
     "use strict";
     var PORTAL = "https://zeogjvwcmstmkwxjvykz.supabase.co/functions/v1/portal";
-    var WHATSAPP = "https://wa.me/13059679311";
     // El link de Google Reviews del negocio (lo mandó Edgar el 22-sep). Sale en la
     // tarjeta de garantía, solo cuando la obra está TERMINADA.
     var RESENA = "https://search.google.com/local/writereview?placeid=ChIJnT65jEah7C4RYhQfIV31j64";
+    // El teléfono de los botones «Call» y «Text» de la tarjeta del contratista
+    // (el que pide el pliego de la tanda 3)
+    var TEL = "+13059679311";
 
     var logo = document.getElementById("logo");
     if (logo && window.MAXPOWER_LOGO) logo.src = window.MAXPOWER_LOGO;
 
+    // ---- «Aa»: la letra grande (copia de MP.largeText del brief) ----
+    // Todo ×1.25 y el texto secundario más oscuro. Se recuerda en ESTE teléfono.
+    var largeText = {
+      KEY: "mp-text-large",
+      marcar: function () {
+        var on = document.documentElement.getAttribute("data-text") === "large";
+        var bs = document.querySelectorAll("[data-aa]");
+        for (var i = 0; i < bs.length; i++) bs[i].setAttribute("aria-pressed", on ? "true" : "false");
+      },
+      init: function () {
+        try { if (localStorage.getItem(this.KEY) === "1") document.documentElement.setAttribute("data-text", "large"); } catch (e) {}
+        var btns = document.querySelectorAll("[data-aa]");
+        for (var i = 0; i < btns.length; i++) btns[i].addEventListener("click", largeText.toggle);
+        largeText.marcar();
+      },
+      toggle: function () {
+        var root = document.documentElement;
+        var on = root.getAttribute("data-text") === "large";
+        if (on) root.removeAttribute("data-text"); else root.setAttribute("data-text", "large");
+        try { localStorage.setItem(largeText.KEY, on ? "0" : "1"); } catch (e) {}
+        largeText.marcar();
+      }
+    };
+    largeText.init();
+
     // Idioma: inglés por defecto (el de los clientes); ES con el botoncito
-    var lang = localStorage.getItem("mxp_cl_idioma") || "en";
+    var lang = "en";
+    try { lang = localStorage.getItem("mxp_cl_idioma") || "en"; } catch (e) {}
+    if (lang !== "es") lang = "en";
+    document.documentElement.lang = lang;
     var btnIdioma = document.getElementById("cl-idioma");
     btnIdioma.textContent = lang === "en" ? "ES" : "EN";
     btnIdioma.addEventListener("click", function () {
-      localStorage.setItem("mxp_cl_idioma", lang === "en" ? "es" : "en");
+      try { localStorage.setItem("mxp_cl_idioma", lang === "en" ? "es" : "en"); } catch (e) {}
       location.reload();
     });
     var TXT = lang === "en" ? {
-      kicker: "YOUR PROJECT WITH MAX POWER", pasos: ["Approved", "In progress", "Inspections", "Completed"],
-      complete: "complete", de: "of", items: "items done",
-      todos: "Your to-dos — we need your input", necesita: "⏰ We need it by ", decidi: "I've decided ✓", done: "✓ Done",
-      fotosT: "Progress photos", alcance: "Scope of work", inspT: "Inspections",
-      proxT: "Upcoming work days", actividad: "Recent activity", docsT: "Documents",
-      aprobar: "Approve ✓", aprobado: "✓ Approved ", garantiaT: "Your warranty",
-      pagosT: "Payments", contratoT: "Contract total", cobradoT: "Paid to date", saldoT: "Balance",
-      pagadaF: "Paid ✓", pendienteF: "Pending",
-      firmar: "Review & sign 🖊", firmadoPor: "🖊 Signed by ", firmaTitulo: "Sign this document",
-      licT: "License & Insurance",
-      progresoT: "Progress", itemsCortos: "items", soloInfo: "for your information", proxVisitaT: "Next visit", sinVisita: "To be scheduled",
-      debeAhoraT: "Due now", sinFacturarT: "Not yet invoiced", pctPagado: "paid", deTotal: "of",
-      dondeT: "Where we are", contactoT: "Your contact", contactoRol: "Owner · Max Power Electrical Solutions",
-      abrirBtn: "Open", grupoListo: "✓ done", grupoDe: "done", planPagosT: "Payment schedule",
-      planPagosS: "what triggers each payment", hProximo: "Upcoming", facturadaEl: "Invoiced",
-      sinInsp: "None scheduled yet. We'll post each inspection here with its result.",
-      sinProx: "No work day scheduled right now. We'll post the next one here.",
-      unaFactura: "1 invoice open", variasFacturas: " invoices open", hitosDelante: " milestones ahead",
-      meses: ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"],
-      dias: ["SUN","MON","TUE","WED","THU","FRI","SAT"],
-      firmaNombre: "Your full legal name", firmaDibuja: "Draw your signature below (finger or mouse)",
-      firmaLimpiar: "Clear", firmaEnviar: "Sign ✓", firmaCancelar: "Cancel",
-      firmaLegal: "I have reviewed this document and agree to its terms. My name, signature, date, time and device will be recorded.",
-      modoEscribir: "Type your signature", modoDibujar: "Draw it instead",
-      firmaConsent: "Please check the consent box to sign.",
-      firmaFalta: "Please write your name and draw your signature.",
-      leerPrimero: "📖 Open and read the document first",
-      leerNota: "The sign button unlocks after you open the document.",
-      firmadoTit: "Document signed ✅",
-      firmadoTxt: "Thank you! Your signed copy, with its signature certificate, will appear in your document list in a few seconds.",
-      firmadoOk: "Done",
-      ambos: "✍️ Signed by both parties",
-      garantia: "All our workmanship is covered by a 1-year warranty from completion. Keep this link — it's your home's electrical file.",
-      resena: "⭐ Happy with our work? Leave us a Google review!",
-      wa: "💬 Questions? Message us on WhatsApp",
-      cargando: "Loading your project…",
-      gcVolver: "All my jobs", gcSoloMirar: "The property owner signs this job.",
-      hTitulo: "Milestones", fTitulo: "Invoices", hFactura: "Invoice",
-      hPorFacturar: "Not yet invoiced", hFacturado: "Invoiced", hPagado: "Paid",
-      errLink: "This link is incomplete — please ask Max Power for your project link.",
-      errAbrir: "We couldn't open this link. It may have been renewed — please ask Max Power for a fresh one.",
-      reintentar: "Try again",
-      res: { paso: "✅ Passed", fallo: "❌ Needs correction", programada: "🗓 Scheduled" },
+      opcNoInc: "Not included:", opcVence: "This proposal is valid through ",
       opcT: "Your proposal", opcT2: "Your proposals", opcSub: "Tap the one you want. You can change it until you sign.",
       opcSub2: "Two ways to do the work. Choose one; you can change it until you sign.",
       opcAddT: "Optional add-ons", opcTotal: "Total", opcHoy2: "Due today (deposit)",
       opcNoElegida: "Not selected — you can change your mind until you sign",
       opcElegidaSow: "This is the one you chose", opcFirmaAqui: "Sign this one below",
-      opcElegida: "Your choice ✓", opcElegir: "Choose this one",
-      opcRecom: "Recommended", opcHoy: "you put down today", opcAdemas: "plus everything above",
-      opcNoInc: "Not included:", opcVence: "This proposal is valid through ",
+      opcElegida: "Your choice", opcElegir: "Choose this one",
       opcVencida: "This proposal has expired. Message us and we'll send you an updated price.",
+      garantia: "All our workmanship is covered by a 1-year warranty from completion. Keep this link — it's your home's electrical file.",
+      cargando: "Loading your project…",
+      gcSoloMirar: "The property owner signs this job.",
+      errLink: "This link is incomplete — please ask Max Power for your project link.",
+      errAbrir: "We couldn't open this link. It may have been renewed — please ask Max Power for a fresh one.",
+      reintentar: "Try again",
+      firmaTitulo: "Sign this document",
+      firmaNombre: "Your full legal name", firmaDibuja: "Draw your signature below (finger or mouse)",
+      firmaLimpiar: "Clear", firmaEnviar: "Sign", firmaCancelar: "Cancel",
+      firmaLegal: "I have reviewed this document and agree to its terms. My name, signature, date, time and device will be recorded.",
+      modoEscribir: "Type your signature", modoDibujar: "Draw it instead",
+      firmaConsent: "Please check the consent box to sign.",
+      firmaFalta: "Please write your name and draw your signature.",
+      leerPrimero: "Open and read the document first",
+      leerNota: "The sign button unlocks after you open the document.",
+      firmadoTit: "Document signed",
+      firmadoTxt: "Thank you! Your signed copy, with its signature certificate, will appear in your document list in a few seconds.",
+      firmadoOk: "Done",
       cambioBtn: "Request a change instead",
       cambioTit: "What would you like to change?",
       cambioSub: "Tell us in your own words. Nothing is signed and nothing is charged. Edgar gets this right away.",
-      cambioEnviar: "Send", cambioOk: "Sent ✓ — Edgar will get back to you.",
+      cambioEnviar: "Send", cambioOk: "Sent — Edgar will get back to you.",
       consentTit: "Before you sign",
       consentSub: "Florida law asks us to give you these notices in writing, and to have your consent to sign electronically. Please read and check the box.",
       consentPuntos: [
@@ -176,61 +141,36 @@
       firma2Dibuja: "Second signer: draw your signature",
       firma2Falta: "The second signer needs their name and their signature."
     } : {
-      kicker: "TU PROYECTO CON MAX POWER", pasos: ["Aprobado", "En obra", "Inspecciones", "Terminado"],
-      complete: "completado", de: "de", items: "puntos hechos",
-      todos: "Te toca a ti — necesitamos tu decisión", necesita: "⏰ La necesitamos antes del ", decidi: "Ya decidí ✓", done: "✓ Hecha",
-      fotosT: "Fotos del avance", alcance: "Alcance del trabajo", inspT: "Inspecciones",
-      proxT: "Próximos días de trabajo", actividad: "Actividad reciente", docsT: "Documentos",
-      aprobar: "Aprobar ✓", aprobado: "✓ Aprobado ", garantiaT: "Tu garantía",
-      pagosT: "Pagos", contratoT: "Contrato total", cobradoT: "Pagado a la fecha", saldoT: "Saldo",
-      pagadaF: "Pagada ✓", pendienteF: "Pendiente",
-      progresoT: "Avance", itemsCortos: "puntos", soloInfo: "para que lo sepan", proxVisitaT: "Próxima visita", sinVisita: "Por programar",
-      debeAhoraT: "Debe ahora", sinFacturarT: "Sin facturar", pctPagado: "pagado", deTotal: "de",
-      dondeT: "Dónde vamos", contactoT: "Tu contacto", contactoRol: "Dueño · Max Power Electrical Solutions",
-      abrirBtn: "Abrir", grupoListo: "✓ listo", grupoDe: "hechos", planPagosT: "Calendario de pagos",
-      planPagosS: "qué dispara cada pago", hProximo: "Próximo", facturadaEl: "Facturada el",
-      sinInsp: "Ninguna programada todavía. Aquí va a salir cada inspección con su resultado.",
-      sinProx: "Ahora mismo no hay día de trabajo programado. Aquí va a salir el próximo.",
-      unaFactura: "1 factura abierta", variasFacturas: " facturas abiertas", hitosDelante: " hitos por delante",
-      meses: ["ENE","FEB","MAR","ABR","MAY","JUN","JUL","AGO","SEP","OCT","NOV","DIC"],
-      dias: ["DOM","LUN","MAR","MIÉ","JUE","VIE","SÁB"],
-      firmar: "Revisar y firmar 🖊", firmadoPor: "🖊 Firmado por ", firmaTitulo: "Firmar este documento",
-      firmaNombre: "Tu nombre legal completo", firmaDibuja: "Dibuja tu firma abajo (dedo o mouse)",
-      firmaLimpiar: "Borrar", firmaEnviar: "Firmar ✓", firmaCancelar: "Cancelar",
-      firmaLegal: "Revisé este documento y acepto sus términos. Se guardará mi nombre, mi firma, la fecha, la hora y el dispositivo.",
-      modoEscribir: "Escribe tu firma", modoDibujar: "Prefiero dibujarla",
-      firmaConsent: "Marca la casilla de consentimiento para firmar.",
-      firmaFalta: "Escribe tu nombre y dibuja tu firma, por favor.",
-      leerPrimero: "📖 Abre y lee el documento primero",
-      leerNota: "El botón de firmar se activa después de que abras el documento.",
-      firmadoTit: "Documento firmado ✅",
-      firmadoTxt: "¡Gracias! Tu copia firmada, con su certificado de firma, aparecerá en tu lista de documentos en unos segundos.",
-      firmadoOk: "Listo",
-      ambos: "✍️ Firmado por las dos partes",
-      garantia: "Toda nuestra mano de obra tiene garantía de 1 año desde la entrega. Guarda este link — es el expediente eléctrico de tu casa.",
-      resena: "⭐ ¿Quedaste contento? ¡Déjanos tu reseña en Google!",
-      wa: "💬 ¿Preguntas? Escríbenos por WhatsApp",
-      cargando: "Cargando tu proyecto…",
-      gcVolver: "Todas mis obras", gcSoloMirar: "Esta obra la firma el dueño de la propiedad.",
-      hTitulo: "Hitos", fTitulo: "Facturas", hFactura: "Factura",
-      hPorFacturar: "Por facturar", hFacturado: "Facturado", hPagado: "Cobrado",
-      errLink: "Este link está incompleto — pídele a Max Power el link de tu proyecto.",
-      errAbrir: "No pudimos abrir este link. Puede que se haya renovado — pídele a Max Power uno nuevo.",
-      reintentar: "Intentar otra vez",
-      res: { paso: "✅ Pasada", fallo: "❌ Necesita corrección", programada: "🗓 Programada" },
+      opcNoInc: "No incluye:", opcVence: "Esta propuesta vale hasta el ",
       opcT: "Tu propuesta", opcT2: "Tus propuestas", opcSub: "Toca la que quieras. Puedes cambiarla hasta que firmes.",
       opcSub2: "Dos formas de hacer el trabajo. Elige una; puedes cambiarla hasta que firmes.",
       opcAddT: "Extras opcionales", opcTotal: "Total", opcHoy2: "A pagar hoy (depósito)",
       opcNoElegida: "No elegida — puedes cambiar de idea hasta que firmes",
       opcElegidaSow: "Esta es la que elegiste", opcFirmaAqui: "Firma esta abajo",
-      opcElegida: "Tu elección ✓", opcElegir: "Elegir esta",
-      opcRecom: "Recomendada", opcHoy: "apartas hoy", opcAdemas: "además de todo lo anterior",
-      opcNoInc: "No incluye:", opcVence: "Esta propuesta vale hasta el ",
+      opcElegida: "Tu elección", opcElegir: "Elegir esta",
       opcVencida: "Esta propuesta venció. Escríbenos y te mandamos el precio al día.",
+      garantia: "Toda nuestra mano de obra tiene garantía de 1 año desde la entrega. Guarda este link — es el expediente eléctrico de tu casa.",
+      cargando: "Cargando tu proyecto…",
+      gcSoloMirar: "Esta obra la firma el dueño de la propiedad.",
+      errLink: "Este link está incompleto — pídele a Max Power el link de tu proyecto.",
+      errAbrir: "No pudimos abrir este link. Puede que se haya renovado — pídele a Max Power uno nuevo.",
+      reintentar: "Intentar otra vez",
+      firmaTitulo: "Firmar este documento",
+      firmaNombre: "Tu nombre legal completo", firmaDibuja: "Dibuja tu firma abajo (dedo o mouse)",
+      firmaLimpiar: "Borrar", firmaEnviar: "Firmar", firmaCancelar: "Cancelar",
+      firmaLegal: "Revisé este documento y acepto sus términos. Se guardará mi nombre, mi firma, la fecha, la hora y el dispositivo.",
+      modoEscribir: "Escribe tu firma", modoDibujar: "Prefiero dibujarla",
+      firmaConsent: "Marca la casilla de consentimiento para firmar.",
+      firmaFalta: "Escribe tu nombre y dibuja tu firma, por favor.",
+      leerPrimero: "Abre y lee el documento primero",
+      leerNota: "El botón de firmar se activa después de que abras el documento.",
+      firmadoTit: "Documento firmado",
+      firmadoTxt: "¡Gracias! Tu copia firmada, con su certificado de firma, aparecerá en tu lista de documentos en unos segundos.",
+      firmadoOk: "Listo",
       cambioBtn: "Pedir un cambio",
       cambioTit: "¿Qué te gustaría cambiar?",
       cambioSub: "Dínoslo con tus palabras. No se firma nada ni se cobra nada. A Edgar le llega al momento.",
-      cambioEnviar: "Enviar", cambioOk: "Enviado ✓ — Edgar te contesta enseguida.",
+      cambioEnviar: "Enviar", cambioOk: "Enviado — Edgar te contesta enseguida.",
       consentTit: "Antes de firmar",
       consentSub: "La ley de Florida nos pide darte estos avisos por escrito y tener tu permiso para firmar electrónicamente. Léelos y marca la casilla.",
       consentPuntos: [
@@ -245,22 +185,36 @@
       firma2Dibuja: "Segundo firmante: dibuja tu firma",
       firma2Falta: "Al segundo firmante le falta su nombre o su firma."
     };
+    // Los textos nuevos de la tanda 3 viven en js/portal-frases.js, en los dos idiomas
+    var NUEVOS = (window.MXP_PORTAL_TXT || {})[lang] || {};
+    for (var kN in NUEVOS) TXT[kN] = NUEVOS[kN];
+    // Rellena {n}, {d}, {x}, {e} de un texto
+    function F(plantilla, datos) {
+      return String(plantilla || "").replace(/\{(\w)\}/g, function (m, k) { return datos && datos[k] != null ? datos[k] : ""; });
+    }
+    var aaBtn = document.querySelector("[data-aa]");
+    if (aaBtn && TXT.aaEtiqueta) { aaBtn.setAttribute("aria-label", TXT.aaEtiqueta); aaBtn.title = TXT.aaEtiqueta; }
 
-    // Iconos de línea (mismo estilo moderno que los botones de la app)
+    // Iconos de línea del oficio: 24×24, trazo 1.7, del color del texto (cobre donde toca)
     var ICO = {
-      todos: '<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/>',
-      fotos: '<rect x="3" y="7" width="18" height="13" rx="3"/><path d="M9 7l1.5-2.5h3L15 7"/><circle cx="12" cy="13" r="3.5"/>',
-      alcance: '<rect x="3" y="4" width="18" height="17" rx="3"/><path d="m8 12 2.5 2.5L16 9"/>',
-      insp: '<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="m9 12 2 2 4-4"/>',
-      prox: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/>',
-      actividad: '<path d="M4 6h16M4 12h16M4 18h10"/>',
-      docs: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
-      pagos: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5h.01M18 14.5h.01"/>',
-      garantia: '<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/>',
-      opciones: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6l1 1 1.5-2M4.5 12l1 1 1.5-2M4.5 18l1 1 1.5-2"/>',
-      contacto: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
-      donde: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>'
+      doc: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
+      pin: '<path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>',
+      check: '<path d="M5 12l5 5L20 7"/>',
+      tel: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>',
+      sms: '<path d="M21 11.5a7.5 7.5 0 0 1-7.5 7.5H6.2L3 21.5l.9-4.6A7.5 7.5 0 1 1 21 11.5z"/>',
+      escudo: '<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="m9 12 2 2 4-4"/>',
+      web: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+      play: '<path d="M8 5v14l11-7z"/>',
+      cerrar: '<path d="M6 6l12 12M18 6L6 18"/>',
+      reloj: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+      bajar: '<path d="M6 9l6 6 6-6"/>',
+      estrella: '<path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/>'
     };
+    function svg(nombre, tam, grueso) {
+      return '<svg class="cl-ico" width="' + (tam || 24) + '" height="' + (tam || 24) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' +
+        (grueso || 1.7) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICO[nombre] + '</svg>';
+    }
+
     // Los hitos se escriben en español en la ficha; al cliente que lee en
     // inglés se le traducen por frase (js/portal-frases.js). Si no está en la
     // lista, sale tal cual: no se inventa nada.
@@ -271,9 +225,34 @@
       for (var i = 0; i < FRASES.length; i++) if (FRASES[i][0].test(t)) return t.replace(FRASES[i][0], FRASES[i][1]);
       return t;
     }
-    function tit(icono, texto) {
-      return '<span class="cl-tico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
-        ICO[icono] + '</svg></span>' + esc(texto);
+
+    // ---- Fechas y horas en llano, en el idioma elegido y con la hora de Florida ----
+    var LOCALE = lang === "en" ? "en-US" : "es-US";
+    var hoyFL = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+    // «2026-09-18» se lee al mediodía: así el día no se corre por la hora del teléfono
+    function fechaDe(iso) {
+      var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
+      return m ? new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12)) : null;
+    }
+    function fechaLlano(iso, opciones) {
+      var d = fechaDe(iso);
+      if (!d) return String(iso || "");
+      var o = { timeZone: "America/New_York" };
+      var base = opciones || { month: "short", day: "numeric" };
+      for (var k in base) o[k] = base[k];
+      try { return new Intl.DateTimeFormat(LOCALE, o).format(d); } catch (e) { return String(iso); }
+    }
+    // La hora llega como «13:00» o como «10:30 AM»: sale como la dice la gente
+    function horaLlano(h) {
+      var m = /^\s*(\d{1,2}):(\d{2})\s*(?:([AaPp])\.?\s*[Mm]\.?)?\s*$/.exec(String(h || ""));
+      if (!m) return String(h || "");
+      var hh = Number(m[1]), mm = Number(m[2]);
+      if (m[3]) { var pm = /p/i.test(m[3]); if (hh === 12) hh = pm ? 12 : 0; else if (pm) hh += 12; }
+      if (hh > 23 || mm > 59) return String(h);
+      try {
+        return new Intl.DateTimeFormat(LOCALE, { hour: "numeric", minute: "2-digit", timeZone: "UTC" })
+          .format(new Date(Date.UTC(2026, 0, 1, hh, mm)));
+      } catch (e) { return String(h); }
     }
 
     var qs = new URLSearchParams(location.search);
@@ -336,35 +315,84 @@
         caja.innerHTML = '<p class="cl-cargando">' + esc(TXT.errAbrir) + '</p>';
       });
 
+    // Las etapas de la obra como un circuito (copia de MP.renderStages del brief):
+    // las pasadas encendidas, la actual latiendo, las que faltan en cobre.
+    // En el teléfono las letras van una arriba y otra abajo del cable: a 14 px
+    // las cinco no caben en una sola fila sin pisarse.
+    function etapasHTML(nombres, actual) {
+      var palomita = svg("check", 14, 3);
+      var pista = '<div class="stages">', letreros = "";
+      nombres.forEach(function (nombre, i) {
+        var st = i < actual ? "on" : (i === actual ? "now" : "off");
+        pista += '<div class="node ' + st + '">' + (st === "on" ? palomita : "") + '</div>';
+        if (i < nombres.length - 1) {
+          var seg = i < actual - 1 ? "on" : (i === actual - 1 ? "half" : "");
+          pista += '<div class="seg ' + seg + '"></div>';
+        }
+        var lado = i === 0 ? "ini" : (i === nombres.length - 1 ? "fin" : "centro");
+        letreros += '<div class="cl-etapa-l ' + st + ' ' + lado + (i % 2 ? ' abajo' : ' arriba') + '" style="grid-column:' + (i + 1) + '">' + esc(nombre) + '</div>';
+      });
+      var aria = actual >= nombres.length ? TXT.todasListas : TXT.etapaActual + nombres[actual];
+      return '<div class="cl-etapas" role="img" aria-label="' + esc(aria) + '">' + pista + '</div>' + letreros + '</div>';
+    }
+
+    // El panel de breakers (copia de MP.renderPanel del brief): impares a la
+    // izquierda, pares a la derecha, barras de cobre y el MAIN arriba. Cada
+    // breaker es un botón de 44 px que baja a su punto en la lista de abajo.
+    function panelHTML(items) {
+      var n = items.length, filas = Math.ceil(n / 2), html = "";
+      html += '<div class="prow main"><div></div><div class="bkr main on"><div class="h"></div></div>' +
+              '<div class="plabel main">MAIN</div></div>';
+      function hueco(lado) {
+        return '<div class="pslot ' + lado + ' blank">' + (lado === "l" ? '<span class="plabel l"></span><span class="pnum"></span><span class="bkr blank"></span>'
+          : '<span class="bkr blank"></span><span class="pnum"></span><span class="plabel r"></span>') + '</div>';
+      }
+      function slot(item, idx, lado) {
+        if (!item) return hueco(lado);
+        var st = item.status === "done" ? "on" : (item.status === "now" ? "now" : "off");
+        var demora = st === "on" ? ' style="animation-delay:' + (idx * 0.05).toFixed(2) + 's"' : "";
+        var bkr = '<span class="bkr ' + st + '"><span class="h"' + demora + '></span></span>';
+        var num = '<span class="pnum">' + (idx + 1) + '</span>';
+        var lab = '<span class="plabel ' + lado + '">' + esc(item.name) + '</span>';
+        return '<button type="button" class="pslot ' + lado + '" data-bkr="' + idx + '" aria-label="' +
+          esc(F(TXT.irAlPunto, { n: idx + 1 }) + item.name) + '">' + (lado === "l" ? lab + num + bkr : bkr + num + lab) + '</button>';
+      }
+      for (var r = 0; r < filas; r++) {
+        html += '<div class="prow">' + slot(items[2 * r], 2 * r, "l") + '<div class="bus"></div>' + slot(items[2 * r + 1], 2 * r + 1, "r") + '</div>';
+      }
+      var hechos = items.filter(function (i) { return i.status === "done"; }).length;
+      return '<div class="panel" role="group" aria-label="' + esc(F(TXT.panelAria, { d: hechos, n: n })) + '">' + html + '</div>';
+    }
+
     var paqueteActual = null;   // el paquete de la obra, para saber si aplican los tres días
+    var fotosLista = [];        // las fotos de la obra, para abrirlas en grande
     function pintar(p) {
       paqueteActual = p;
-      // Un bloque «Opcional …» o «… (modificado)» es informativo: ni suma ni resta
-      // al avance de la obra. Si no, una obra terminada sale al 75 %.
+      var checklist = p.checklist || [];
       // Un bloque es INFORMATIVO cuando no es trabajo de esta obra: lo que se
       // aplazó, lo que se modificó, lo opcional y lo de una etapa futura. No
-      // lleva palomita ni cuenta para el avance — si no, una obra terminada
+      // lleva casilla ni cuenta para el avance — si no, una obra terminada
       // sale al 77 %. Se reconoce por cómo lo escribe Edgar, en los dos idiomas.
       function esInformativo(x) {
         var g = String((x.grupo_en || x.grupo || "")).trim();
         return /^(opcional|optional|etapa futura|future stage|m[aá]s adelante|later)\b/i.test(g) ||
                /\((modificad[oa]|modified|aplazad[oa]|deferred|pendiente|pending|no se hizo|not performed)[^)]*\)\s*$/i.test(g);
       }
-      var deObra = p.checklist.filter(function (x) { return !esInformativo(x); });
+      var deObra = checklist.filter(function (x) { return !esInformativo(x); });
       var hechas = deObra.filter(function (x) { return x.hecho; }).length;
       var total = deObra.length;
-      var pct = total ? Math.round(hechas / total * 100) : 0;
-
-      var pasos = TXT.pasos;
-      var idx = p.estado === "completado" ? 3
-        : (p.inspecciones || []).some(function (i) { return i.resultado === "paso"; }) ? 2
-        : p.estado === "ejecucion" ? 1 : 0;
-      var stepper = pasos.map(function (nombre, i) {
-        var clase = i < idx ? "h" : i === idx ? "a" : "";
-        return '<div class="pt-paso ' + clase + '"><b></b>' + nombre + '</div>';
-      }).join("");
 
       var usd = function (n) { return (Number(n) || 0).toLocaleString("en-US", { style: "currency", currency: "USD" }); };
+      var terminada = p.estado === "completado";
+      var esServicio = String(p.tipo || "") === "servicio";
+      var enPropuesta = ["estimando", "enviado", "no_aprobado"].indexOf(p.estado) >= 0;
+      var ETAPAS = TXT.etapas || ["Permit", "Rough-in", "Inspection", "Trim", "Final"];
+      var FASE_IDX = { mobilizacion: 0, rough: 1, "insp-rough": 2, trim: 3, "insp-final": 4 };
+      var etapaIdx = terminada ? ETAPAS.length : (FASE_IDX[p.fase] != null ? FASE_IDX[p.fase] : 0);
+      // Una obra en curso a la que nadie le marcó la fase: se dice «en curso», no «Permit»
+      var sinFase = !terminada && !esServicio && !enPropuesta && FASE_IDX[p.fase] == null;
+      var etapaTxt = terminada ? TXT.terminada : esServicio ? TXT.servicio : enPropuesta ? TXT.propuestaEtapa
+        : p.estado === "pausa" ? TXT.enPausa : sinFase ? TXT.enCurso : F(TXT.etapaDe, { e: ETAPAS[etapaIdx] });
 
       // ---- Los contratos del proyecto (v19) ----
       // Un proyecto puede tener varios SOW alternativos (A, B…). Cada uno con
@@ -414,340 +442,395 @@
               '<div class="cl-sow-fila"><span>' + esc(TXT.opcTotal) + '</span><strong data-total="' + s.id + '">' + usd(s.precio_base) + '</strong></div>' +
               '<div class="cl-sow-fila chico"><span>' + esc(TXT.opcHoy2) + '</span><strong data-dep="' + s.id + '">—</strong></div>' +
             '</div>' +
-            '<button type="button" class="cl-boton' + (s.elegida ? ' secundario' : '') + '" data-elegir="' + s.id + '"' +
+            '<button type="button" class="btn sm ' + (s.elegida ? 'btn-white' : 'btn-navy') + '" data-elegir="' + s.id + '"' +
               (s.vencida ? ' disabled style="opacity:.5"' : '') + '>' +
-              esc(s.elegida ? TXT.opcElegida : TXT.opcElegir) + '</button>' +
+              (s.elegida ? svg("check", 20, 2.4) : '') + esc(s.elegida ? TXT.opcElegida : TXT.opcElegir) + '</button>' +
             (s.elegida ? '<div class="cl-sow-nota ok">' + esc(TXT.opcFirmaAqui) + '</div>'
                        : (varios ? '<div class="cl-sow-nota">' + esc(TXT.opcNoElegida) + '</div>' : '')) +
           '</div>';
         }).join("");
         var algunaVencida = sows.some(function (s) { return s.vencida; });
         var vence1 = sows.length && sows[0].vence ? sows[0].vence : null;
-        opciones = '<div class="cal-panel-card"><div class="cal-form-titulo">' +
-          tit("opciones", sows.length > 1 ? TXT.opcT2 : TXT.opcT) + '</div>' +
-          '<p class="alcance-estado" style="margin-bottom:.6rem">' +
+        opciones = '<section class="card card-white cl-propuesta" style="order:4">' +
+          '<h2 class="label-cu cl-card-tit">' + esc(sows.length > 1 ? TXT.opcT2 : TXT.opcT) + '</h2>' +
+          '<p class="cl-nota">' +
             esc(algunaVencida ? TXT.opcVencida : (sows.length > 1 ? TXT.opcSub2 : TXT.opcSub)) +
-            (!algunaVencida && vence1 ? ' ' + esc(TXT.opcVence) + esc(vence1) + '.' : '') + '</p>' +
-          '<div class="cl-sows' + (sows.length > 1 ? ' dos' : '') + '">' + opciones + '</div></div>';
+            (!algunaVencida && vence1 ? ' ' + esc(TXT.opcVence) + esc(fechaLlano(vence1, { month: "long", day: "numeric", year: "numeric" })) + '.' : '') + '</p>' +
+          '<div class="cl-sows' + (sows.length > 1 ? ' dos' : '') + '">' + opciones + '</div></section>';
       }
 
-      var pendientesDec = (p.decisiones || []).filter(function (d) { return !d.hecha; });
-      var todos = (p.decisiones || []).map(function (d) {
-        return '<div class="cl-todo' + (d.hecha ? " hecha" : "") + '">' +
-          '<span class="cl-todo-txt">' + esc(d.texto) +
-          (d.fecha_limite && !d.hecha ? '<span class="cl-todo-fecha">' + esc(TXT.necesita) + esc(d.fecha_limite) + '</span>' : '') +
-          '</span>' +
-          (d.hecha ? '<span class="cl-aprobado">' + esc(TXT.done) + '</span>'
-            : '<button class="cl-boton" data-decision="' + d.id + '">' + esc(TXT.decidi) + '</button>') +
-          '</div>';
-      }).join("");
-
-      var fotos = (p.fotos || []).filter(function (f) { return urlSegura(f.url); }).map(function (f) {
-        var esVideo = /\.(mp4|mov|webm)(\?|$)/i.test(urlSegura(f.url));
-        return '<figure class="cl-foto">' +
-          (esVideo
-            ? '<video src="' + esc(urlSegura(f.url)) + '" controls preload="metadata" playsinline></video>'
-            : '<a href="' + esc(urlSegura(f.url)) + '" target="_blank" rel="noopener">' +
-              '<img src="' + esc(urlSegura(f.url)) + '" alt="' + esc(f.nota || "Job photo") + '" loading="lazy"></a>') +
-          (f.nota || f.fecha ? '<figcaption>' + esc(f.nota || "") + (f.fecha ? " · " + esc(f.fecha) : "") + '</figcaption>' : '') +
-          '</figure>';
-      }).join("");
-
-      // ---- 🧱 El alcance por bloques (v31) ----
-      // Cada punto puede traer su grupo (Fase 1, Generador…). Los bloques
-      // terminados salen plegados; los que van en camino, abiertos. Si ningún
-      // punto trae grupo, sale una sola lista como toda la vida.
-      var bloques = [];
-      p.checklist.forEach(function (x) {
-        var g = (lang === "en" ? (x.grupo_en || x.grupo) : (x.grupo || x.grupo_en)) || "";
-        var B = null;
-        for (var bi = 0; bi < bloques.length; bi++) if (bloques[bi].n === g) { B = bloques[bi]; break; }
-        if (!B) bloques.push(B = { n: g, items: [] });
-        B.items.push(x);
-      });
-      var hayGrupos = bloques.length > 1 || (bloques.length === 1 && bloques[0].n);
-      function puntoHTML(x) {
-        var texto = lang === "en" ? (x.texto_en || x.texto) : x.texto;
-        if (esInformativo(x)) {
-          return '<div class="pt-it info"><span class="pt-it-c">·</span><span>' + esc(texto) + '</span></div>';
-        }
-        return '<div class="pt-it' + (x.hecho ? " h" : "") + '">' +
-          '<span class="pt-it-c">' + (x.hecho ? "✓" : "") + '</span>' +
-          '<span>' + esc(texto) + '</span></div>';
-      }
-      function barraHTML(pc, cls) {
-        return '<div class="pt-bar"><div class="pt-bar-in ' + (cls || "") + '" style="width:' + pc + '%"></div></div>';
-      }
-      var lista = !hayGrupos
-        ? '<div class="pt-grp-items">' + p.checklist.map(puntoHTML).join("") + '</div>'
-        : bloques.map(function (B) {
-            if (B.items.length && esInformativo(B.items[0])) {
-              return '<details class="pt-grp info" open><summary>' +
-                '<span class="pt-grp-n">' + esc(B.n) + '</span>' +
-                '<span class="pt-grp-c">' + esc(TXT.soloInfo) + '</span></summary>' +
-                '<div class="pt-grp-items">' + B.items.map(puntoHTML).join("") + '</div></details>';
-            }
-            var hechosB = B.items.filter(function (x) { return x.hecho; }).length;
-            var todosB = hechosB === B.items.length;
-            var pctB = Math.round(hechosB / B.items.length * 100);
-            return '<details class="pt-grp"' + (todosB ? "" : " open") + '>' +
-              '<summary><span class="pt-grp-n">' + esc(B.n || TXT.alcance) + '</span>' +
-              '<span class="pt-grp-c' + (todosB ? " ok" : "") + '">' +
-                (todosB ? esc(TXT.grupoListo) : hechosB + " " + esc(TXT.deTotal) + " " + B.items.length + " " + esc(TXT.grupoDe)) +
-              '</span>' + barraHTML(pctB, todosB ? "ok" : "") + '</summary>' +
-              '<div class="pt-grp-items">' + B.items.map(puntoHTML).join("") + '</div></details>';
-          }).join("");
-
-      var RES = TXT.res;
-      var insp = (p.inspecciones || []).map(function (i) {
-        return '<div class="cl-item"><span class="cl-check">' + (RES[i.resultado] || "🗓") + '</span>' +
-          '<span class="cl-txt">' + esc(i.tipo) + (i.fecha ? " · " + esc(i.fecha) : "") + '</span></div>';
-      }).join("");
-
-      // ---- 📅 Las visitas, con su bloque de calendario ----
-      // La fecha llega como 2026-09-18: se parte a mano para que no se corra un
-      // día por la hora del teléfono.
-      function bloqueFecha(iso) {
-        var t = String(iso || "").split("-");
-        if (t.length !== 3) return "";
-        var d = new Date(Number(t[0]), Number(t[1]) - 1, Number(t[2]));
-        if (isNaN(d.getTime())) return "";
-        return '<div class="pt-fecha"><span>' + esc(TXT.meses[d.getMonth()]) + '</span>' +
-          '<b>' + Number(t[2]) + '</b><span>' + esc(TXT.dias[d.getDay()]) + '</span></div>';
-      }
-      // «2026-09-18» → «Thu, Sep 18» / «jue, 18 sep»
-      function fechaCorta(iso) {
-        var t = String(iso || "").split("-");
-        if (t.length !== 3) return esc(iso || "");
-        var d = new Date(Number(t[0]), Number(t[1]) - 1, Number(t[2]));
-        if (isNaN(d.getTime())) return esc(iso);
-        var linda = function (x) { return x.charAt(0) + x.slice(1).toLowerCase(); };
-        var dia = linda(TXT.dias[d.getDay()]), mes = linda(TXT.meses[d.getMonth()]);
-        return lang === "en" ? dia + ", " + mes + " " + Number(t[2]) : dia + " " + Number(t[2]) + " " + mes;
-      }
-      var prox = (p.proximos || []).map(function (e) {
-        var tituloEv = lang === "en" ? (e.titulo_en || e.titulo) : e.titulo;
-        return '<div class="pt-ev">' + bloqueFecha(e.fecha) +
-          '<div class="pt-ev-c"><div class="pt-ev-t">' + esc(tituloEv) + '</div>' +
-          '<div class="pt-ev-s">' + fechaCorta(e.fecha) + (e.hora ? " · " + esc(e.hora) : "") + '</div></div></div>';
-      }).join("");
-
-      var diario = (p.diario || []).map(function (d) {
-        return '<div class="cl-item"><span class="cl-diario-fecha">' + esc(d.fecha) + '</span>' +
-          '<span class="cl-txt">' + esc(d.texto) + '</span></div>';
-      }).join("");
-
-      // ---- 💵 Pagos — solo llega si Edgar autorizó el dinero de esta obra ----
-      // v31: el mismo detalle que lleva el estado de cuenta en papel — las
-      // cuatro cifras arriba y la tabla de hitos con qué dispara cada pago.
-      var pagos = "", debeAhora = 0, facturasAbiertas = 0;
-      if (p.dinero) {
-        debeAhora = Number(p.dinero.por_cobrar) || 0;
-        facturasAbiertas = (p.dinero.facturas || []).filter(function (f) { return (Number(f.saldo) || 0) > 0; }).length;
-        var contratoN = Number(p.dinero.contrato) || 0;
-        var cobradoN = Number(p.dinero.cobrado) || 0;
-        var pctPag = contratoN > 0 ? Math.round(cobradoN / contratoN * 1000) / 10 : 0;
-        var porFacturarN = Number(p.dinero.por_facturar) || 0;
-        var hitosPend = (p.dinero.hitos || []).filter(function (h) { return h.estado === "pendiente"; }).length;
-
-        var filasF = (p.dinero.facturas || []).map(function (f) {
-          // v22: con pago parcial se dice lo cobrado y lo que queda
-          var parcial = (typeof f.saldo === "number" && f.saldo > 0 && f.cobrado > 0);
-          var estadoF = f.pagada ? TXT.pagadaF
-            : parcial ? (TXT.cobradoT + " " + usd(f.cobrado) + " · " + TXT.saldoT + " " + usd(f.saldo))
-            : TXT.pendienteF;
-          return '<div class="cl-item"><span class="cl-check">' + (f.pagada ? "✅" : parcial ? "◐" : "🕓") + '</span>' +
-            '<span class="cl-txt">' + esc(f.fecha || "") + (f.num ? " · " + esc(f.num) : "") +
-            ' — <strong>' + esc(usd(f.monto)) + '</strong> · ' + esc(estadoF) + '</span></div>';
-        }).join("");
-
-        var filasH = (p.dinero.hitos || []).map(function (h) {
-          var etiqueta, pastilla;
-          if (h.estado === "cobrado") {
-            etiqueta = '<span class="pt-pill ok">' + esc(TXT.hPagado) + ' ✓</span>';
-            pastilla = (h.factura ? esc(TXT.hFactura) + " " + esc(h.factura) : "") +
-                       (h.pagada_el ? " · " + esc(String(h.pagada_el).slice(0, 10)) : "");
-          } else if (h.estado === "facturado") {
-            etiqueta = '<span class="pt-pill due">' + esc(TXT.debeAhoraT) + '</span>';
-            pastilla = esc(TXT.facturadaEl) + (h.fecha ? " " + esc(h.fecha) : "") +
-                       (h.factura ? " · " + esc(h.factura) : "");
-          } else {
-            etiqueta = '<span class="pt-pill">' + esc(TXT.hProximo) + '</span>';
-            pastilla = esc(TXT.hPorFacturar);
-          }
-          return '<div class="pt-row ' + esc(h.estado || "pendiente") + '">' +
-            '<div class="pt-row-t">' + esc(hitoEn(h.titulo || "")) +
-              (h.condicion ? '<div class="pt-row-c">' + esc(hitoEn(h.condicion)) + '</div>' : '') + '</div>' +
-            '<div class="pt-row-m">' + esc(usd(h.monto)) + '</div>' +
-            '<div class="pt-row-e">' + etiqueta + '<span class="pt-meta">' + pastilla + '</span></div></div>';
-        }).join("");
-
-        pagos =
-          '<div class="pt-sum">' +
-            '<div class="pt-tile"><div class="pt-tile-k">' + esc(TXT.contratoT) + '</div>' +
-              '<div class="pt-tile-v">' + esc(usd(contratoN)) + '</div></div>' +
-            '<div class="pt-tile ok"><div class="pt-tile-k">' + esc(TXT.cobradoT) + '</div>' +
-              '<div class="pt-tile-v">' + esc(usd(cobradoN)) + '</div>' +
-              '<div class="pt-tile-s">' + pctPag + '% ' + esc(TXT.pctPagado) + '</div>' + barraHTML(pctPag, "ok") + '</div>' +
-            '<div class="pt-tile' + (debeAhora > 0 ? ' due' : '') + '"><div class="pt-tile-k">' +
-              esc(debeAhora > 0 ? TXT.debeAhoraT : TXT.saldoT) + '</div>' +
-              '<div class="pt-tile-v">' + esc(usd(debeAhora > 0 ? debeAhora : (Number(p.dinero.falta) || 0))) + '</div>' +
-              (debeAhora > 0 ? '<div class="pt-tile-s">' +
-                (facturasAbiertas === 1 ? esc(TXT.unaFactura) : facturasAbiertas + esc(TXT.variasFacturas)) + '</div>' : '') + '</div>' +
-            '<div class="pt-tile"><div class="pt-tile-k">' + esc(TXT.sinFacturarT) + '</div>' +
-              '<div class="pt-tile-v">' + esc(usd(porFacturarN)) + '</div>' +
-              (hitosPend ? '<div class="pt-tile-s">' + hitosPend + esc(TXT.hitosDelante) + '</div>' : '') + '</div>' +
-          '</div>' +
-          (filasH ? '<div class="pt-h" style="margin-top:.4rem">' + esc(TXT.planPagosT) +
-                    '<span class="pt-hr">' + esc(TXT.planPagosS) + '</span></div>' + filasH : "") +
-          (filasF ? '<details class="pt-grp" style="margin-top:.6rem"><summary>' +
-                      '<span class="pt-grp-n">' + esc(TXT.fTitulo) + '</span>' +
-                      '<span class="pt-grp-c">' + (p.dinero.facturas || []).length + '</span></summary>' +
-                    '<div style="margin-top:.4rem">' + filasF + '</div></details>' : "");
-      }
-
+      // ---- Los papeles: qué pide firma o aprobación, y la lista entera ----
       // Quien solo coordina la obra mira, pero no firma ni aprueba: quien contrata
       // es el dueño de la propiedad. En vez de un botón que el guardián va a negar,
       // se le dice con todas las letras.
       var puedeFirmarYo = !p.gc || p.gc.puede_firmar;
-      var primerDoc = true;
-      var docs = (p.documentos || []).map(function (d) {
-        if (!urlSegura(d.url)) return '';
-        var acciones = "", detalle = "";
-        if (!puedeFirmarYo && (d.pide_firma || d.pide_aprobacion)) {
-          detalle = esc(TXT.gcSoloMirar);
-        } else if (d.pide_firma) {
-          // v19: solo se firma el contrato del SOW que el cliente eligió
-          var suSow = null;
-          for (var si = 0; si < sows.length; si++) if (sows[si].id === d.propuesta_id) suSow = sows[si];
-          var bloqueado = !!(d.propuesta_id && suSow && !suSow.elegida && sows.length > 1);
-          if (d.firmado_el) {
-            detalle = esc(TXT.firmadoPor) + esc(d.firma_nombre || "") + ' · ' + esc(String(d.firmado_el).slice(0, 10)) +
-              (d.contrafirma_el ? ' · ' + esc(TXT.ambos) : '');
-          } else if (bloqueado) {
-            detalle = esc(TXT.opcNoElegida);
-          } else {
-            acciones = '<button class="cl-boton" data-firmar="' + d.id + '" data-titulo="' + esc(d.titulo) + '"' +
+      var docsOk = (p.documentos || []).filter(function (d) { return urlSegura(d.url); });
+      function sowDe(d) {
+        for (var si = 0; si < sows.length; si++) if (sows[si].id === d.propuesta_id) return sows[si];
+        return null;
+      }
+      // v19: solo se firma el contrato del SOW que el cliente eligió
+      function bloqueado(d) { var s = sowDe(d); return !!(d.propuesta_id && s && !s.elegida && sows.length > 1); }
+      // Un contrato vencido ya no se puede firmar (el guardián lo niega): no se le pone el botón
+      function vencido(d) { return !!(d.pide_firma && !d.firmado_el && d.vence && String(d.vence).slice(0, 10) < hoyFL); }
+      var porFirmar = !puedeFirmarYo ? [] : docsOk.filter(function (d) {
+        if (d.pide_firma) return !d.firmado_el && !bloqueado(d) && !vencido(d);
+        if (d.pide_aprobacion) return !d.aprobado_el;
+        return false;
+      });
+      // Un solo Pulso por pantalla: el primero que pide algo; los demás llevan Anillo
+      var firmas = porFirmar.map(function (d, i) {
+        var clase = i === 0 ? "btn btn-pulse" : "btn btn-ring";
+        var boton = d.pide_firma
+          ? '<button type="button" class="' + clase + '" data-firmar="' + d.id + '" data-titulo="' + esc(d.titulo) + '"' +
               ' data-url="' + esc(urlSegura(d.url)) + '" data-visto="' + (d.visto_el ? 1 : 0) + '"' +
-              ' data-consentido="' + (d.consentido ? 1 : 0) + '">' + esc(TXT.firmar) + '</button>' +
-              '<button class="cl-boton secundario" data-cambio="' + d.id + '">' + esc(TXT.cambioBtn) + '</button>';
-          }
-          if (d.vence && !d.firmado_el) detalle = (detalle ? detalle + ' · ' : '') + esc(TXT.opcVence) + esc(d.vence);
-        } else if (d.pide_aprobacion) {
-          if (d.aprobado_el) detalle = esc(TXT.aprobado) + esc(String(d.aprobado_el).slice(0, 10));
-          else acciones = '<button class="cl-boton" data-aprobar="' + d.id + '">' + esc(TXT.aprobar) + '</button>';
-        }
-        var primero = primerDoc; primerDoc = false;
-        return '<div class="pt-doc"><div class="pt-doc-i">PDF</div>' +
-          '<div class="pt-doc-c">' +
-            '<a class="pt-doc-t" data-doc="' + d.id + '" target="_blank" rel="noopener" href="' +
-              esc(urlSegura(d.url)) + '">' + esc(d.titulo) + '</a>' +
-            (detalle ? '<div class="pt-doc-s">' + detalle + '</div>' : '') +
-          '</div>' +
-          '<div class="pt-doc-acc">' + acciones +
-            '<a class="cl-boton' + (primero ? '' : ' secundario') + '" data-doc="' + d.id +
-              '" target="_blank" rel="noopener" href="' + esc(urlSegura(d.url)) + '">' + esc(TXT.abrirBtn) + '</a>' +
-          '</div></div>';
+              ' data-consentido="' + (d.consentido ? 1 : 0) + '">' + esc(TXT.revisarFirmar) + '</button>' +
+            // Pedir un cambio: siempre a un toque, para que nadie firme por no tener salida
+            '<button type="button" class="btn sm btn-white" data-cambio="' + d.id + '">' + esc(TXT.cambioBtn) + '</button>'
+          : '<button type="button" class="' + clase + '" data-revisar-aprobar="' + d.id + '" data-titulo="' + esc(d.titulo) + '"' +
+              ' data-url="' + esc(urlSegura(d.url)) + '">' + esc(TXT.revisarAprobar) + '</button>';
+        return '<section class="card card-volt cl-firmar" style="order:4">' +
+          '<div class="cl-volt-cab"><i class="dot dot-warn"></i>' + esc(d.pide_firma ? TXT.firmaT : TXT.aprobT) + '</div>' +
+          '<h2 class="cl-volt-tit">' + esc(d.titulo) + '</h2>' +
+          (d.vence ? '<div class="cl-volt-vence">' + esc(F(TXT.valeHasta, { x: fechaLlano(d.vence, { month: "long", day: "numeric", year: "numeric" }) })) + '</div>' : '') +
+          '<div class="cl-volt-botones">' + boton + '</div></section>';
       }).join("");
 
+      // La lista de documentos: filas de 56 px con su estado en una etiqueta
+      var docs = docsOk.map(function (d) {
+        var chip = "", detalle = [], extraFila = "";
+        if (!puedeFirmarYo && (d.pide_firma || d.pide_aprobacion)) {
+          detalle.push(esc(TXT.gcSoloMirar));
+        } else if (d.pide_firma) {
+          if (d.firmado_el) {
+            chip = '<span class="chip chip-ok chip-pill">' + svg("check", 16, 2.4) + esc(TXT.stFirmado) + '</span>';
+            var quien = (d.firma_nombre || "") + (d.firma2_nombre ? TXT.yOtro + d.firma2_nombre : "");
+            detalle.push(esc(F(TXT.firmadoPor, { x: quien, d: fechaLlano(String(d.firmado_el).slice(0, 10), { month: "short", day: "numeric", year: "numeric" }) })));
+            if (d.contrafirma_el) detalle.push(esc(TXT.ambos));
+          } else if (vencido(d)) {
+            chip = '<span class="chip chip-pill cl-chip-gris">' + esc(TXT.stVencido) + '</span>';
+            detalle.push(esc(TXT.opcVencida));
+            // Como antes: el cliente puede pedir un precio al día sin salir del portal
+            if (puedeFirmarYo) extraFila = '<button type="button" class="btn sm btn-white cl-doc-cambio" data-cambio="' + d.id + '">' + esc(TXT.cambioBtn) + '</button>';
+          } else if (bloqueado(d)) {
+            chip = '<span class="chip chip-pill cl-chip-gris">' + esc(TXT.stNoElegida) + '</span>';
+            detalle.push(esc(TXT.opcNoElegida));
+          } else {
+            chip = '<span class="chip chip-warn chip-pill">' + esc(TXT.stPideFirma) + '</span>';
+            if (d.vence) detalle.push(esc(F(TXT.valeHasta, { x: fechaLlano(d.vence, { month: "short", day: "numeric", year: "numeric" }) })));
+          }
+        } else if (d.pide_aprobacion) {
+          if (d.aprobado_el) {
+            chip = '<span class="chip chip-ok chip-pill">' + svg("check", 16, 2.4) + esc(TXT.stAprobado) + '</span>';
+            detalle.push(esc(F(TXT.aprobadoEl, { x: fechaLlano(String(d.aprobado_el).slice(0, 10), { month: "short", day: "numeric", year: "numeric" }) })));
+          } else {
+            chip = '<span class="chip chip-warn chip-pill">' + esc(TXT.stPideAprob) + '</span>';
+          }
+        }
+        // El código con que se comprueba la copia firmada (verificar.html)
+        var codigo = d.codigo_verificacion
+          ? '<span class="cl-doc-codigo">' + esc(TXT.codigoVer) + ' <span class="chip chip-data">' + esc(d.codigo_verificacion) + '</span></span>' : '';
+        return '<a class="cl-doc" data-doc="' + d.id + '" target="_blank" rel="noopener" href="' + esc(urlSegura(d.url)) + '">' +
+          '<span class="cl-doc-i">' + svg("doc", 24) + '</span>' +
+          '<span class="cl-doc-c"><span class="cl-doc-t">' + esc(d.titulo) + '</span>' +
+            (chip ? '<span class="cl-doc-chips">' + chip + '</span>' : '') +
+            (detalle.length ? '<span class="cl-doc-s">' + detalle.join(" · ") + '</span>' : '') + codigo +
+          '</span><span class="cl-doc-flecha" aria-hidden="true">›</span></a>' +
+          (extraFila ? '<div class="cl-doc-extra">' + extraFila + '</div>' : '');
+      }).join("");
+
+      // ---- «Amount due»: solo con dinero y algo por cobrar ----
+      var deuda = "", pagado = "", pagos = "";
+      if (p.dinero) {
+        var facs = p.dinero.facturas || [];
+        var conSaldo = facs.filter(function (f) { return (Number(f.saldo) || 0) > 0; });
+        var saldoTotal = Math.round(conSaldo.reduce(function (s, f) { return s + (Number(f.saldo) || 0); }, 0) * 100) / 100;
+        if (saldoTotal > 0) {
+          var vieja = conSaldo[0];
+          // El botón «View invoice» solo si esa factura tiene su papel en el paquete
+          var docFac = null;
+          var num = String(vieja.num || "").trim();
+          if (num.length >= 3) {
+            var reNum = new RegExp("(^|[^0-9A-Za-z])" + num.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "($|[^0-9A-Za-z])", "i");
+            for (var di = 0; di < docsOk.length; di++) if (reNum.test(String(docsOk[di].titulo || ""))) { docFac = docsOk[di]; break; }
+          }
+          deuda = '<section class="card card-night cl-deuda" style="order:3">' +
+            '<div class="wire-cu" aria-hidden="true"></div>' +
+            '<div class="cl-fila-sep"><h2 class="label-cu cl-card-tit">' + esc(TXT.debeT) + '</h2>' +
+              '<span class="chip chip-warn chip-pill">' + esc(TXT.debeYa) + '</span></div>' +
+            '<div class="money cl-deuda-monto">' + esc(usd(saldoTotal)) + '</div>' +
+            '<div class="cl-deuda-fac mono">' + esc(num || "") + (vieja.fecha ? (num ? ' · ' : '') + esc(F(TXT.emitida, { x: fechaLlano(vieja.fecha) })) : '') + '</div>' +
+            (docFac ? '<a class="btn sm btn-ghost-dark" data-doc="' + docFac.id + '" target="_blank" rel="noopener" href="' +
+              esc(urlSegura(docFac.url)) + '">' + svg("doc", 20) + esc(TXT.verFactura) + '</a>' : '') +
+            '<p class="cl-deuda-nota">' + esc(TXT.notaPago) + '</p></section>';
+        }
+        var contratoN = Number(p.dinero.contrato) || 0;
+        var cobradoN = Number(p.dinero.cobrado) || 0;
+        var pctPag = contratoN > 0 ? Math.max(0, Math.min(100, Math.round(cobradoN / contratoN * 100))) : 0;
+        pagado = '<section class="card card-white cl-pagado">' +
+          '<h2 class="label-cu cl-card-tit">' + esc(TXT.pagadoT) + '</h2>' +
+          '<div class="cl-cifra">' + esc(usd(cobradoN)) + '</div>' +
+          (contratoN > 0 ? '<div class="cl-nota">' + esc(F(TXT.deContrato, { x: usd(contratoN) })) + '</div>' +
+            '<div class="bar ok" role="img" aria-label="' + pctPag + '%"><i style="width:' + pctPag + '%"></i></div>' : '') +
+          '</section>';
+
+        // La tabla de pagos de siempre, restilizada y plegada
+        var hitos = p.dinero.hitos || [];
+        var filasH = hitos.map(function (h) {
+          var chip, meta = "";
+          if (h.estado === "cobrado") {
+            chip = '<span class="chip chip-ok chip-pill">' + svg("check", 16, 2.4) + esc(TXT.hPagado) + '</span>';
+            meta = (h.factura ? h.factura : "") + (h.pagada_el ? (h.factura ? " · " : "") + fechaLlano(String(h.pagada_el).slice(0, 10)) : "");
+          } else if (h.estado === "facturado") {
+            chip = '<span class="chip chip-warn chip-pill">' + esc(TXT.hFacturado) + '</span>';
+            meta = (h.factura ? h.factura : "") + (h.fecha ? (h.factura ? " · " : "") + fechaLlano(h.fecha) : "");
+          } else {
+            chip = '<span class="chip chip-pill cl-chip-gris">' + esc(TXT.hProximo) + '</span>';
+          }
+          return '<div class="cl-hito ' + esc(h.estado || "pendiente") + '">' +
+            '<div class="cl-hito-t">' + esc(hitoEn(h.titulo || "")) +
+              (h.condicion ? '<div class="cl-hito-c">' + esc(hitoEn(h.condicion)) + '</div>' : '') + '</div>' +
+            '<div class="cl-hito-m mono">' + esc(usd(h.monto)) + '</div>' +
+            '<div class="cl-hito-e">' + chip + (meta ? '<span class="cl-hito-meta mono">' + esc(meta) + '</span>' : '') + '</div></div>';
+        }).join("");
+        var filasF = facs.map(function (f) {
+          var parcial = (typeof f.saldo === "number" && f.saldo > 0 && f.cobrado > 0);
+          var chip = f.pagada || (Number(f.saldo) <= 0 && Number(f.monto) > 0)
+            ? '<span class="chip chip-ok chip-pill">' + svg("check", 16, 2.4) + esc(TXT.fPagada) + '</span>'
+            : parcial ? '<span class="chip chip-warn chip-pill">' + esc(TXT.fParcial) + '</span>'
+            : '<span class="chip chip-warn chip-pill">' + esc(TXT.fAbierta) + '</span>';
+          return '<div class="cl-hito">' +
+            '<div class="cl-hito-t"><span class="mono">' + esc(f.num || "") + '</span>' +
+              (f.fecha ? '<div class="cl-hito-c">' + esc(fechaLlano(f.fecha, { month: "short", day: "numeric", year: "numeric" })) + '</div>' : '') + '</div>' +
+            '<div class="cl-hito-m mono">' + esc(usd(f.monto)) + '</div>' +
+            '<div class="cl-hito-e">' + chip +
+              (parcial ? '<span class="cl-hito-meta">' + esc(F(TXT.fDetalleParcial, { x: usd(f.cobrado), d: usd(f.saldo) })) + '</span>' : '') + '</div></div>';
+        }).join("");
+        var cuentas = [[TXT.contratoT, p.dinero.contrato], [TXT.facturadoT, p.dinero.facturado],
+          [TXT.porFacturarT, p.dinero.por_facturar], [TXT.saldoT, p.dinero.falta]]
+          .map(function (c) { return '<div class="cl-cuenta"><span>' + esc(c[0]) + '</span><b class="mono">' + esc(usd(c[1])) + '</b></div>'; }).join("");
+        if (filasH || filasF) {
+          pagos = '<section class="card card-white cl-pagos" style="order:10">' +
+            '<details class="cl-pliegue"><summary><h2 class="label-cu cl-card-tit">' + esc(TXT.pagosT) + '</h2>' +
+              '<span class="cl-pliegue-der">' + esc(hitos.length === 1 ? TXT.hito1 : F(TXT.hitosN, { n: hitos.length })) + svg("bajar", 22) + '</span></summary>' +
+              '<div class="cl-cuentas">' + cuentas + '</div>' + filasH +
+              (filasF ? '<details class="cl-pliegue cl-facturas"><summary><span class="cl-sub-tit">' + esc(TXT.facturasT) + '</span>' +
+                '<span class="cl-pliegue-der">' + facs.length + svg("bajar", 22) + '</span></summary>' + filasF + '</details>' : '') +
+            '</details></section>';
+        }
+      }
+
+      // ---- «Next visit»: la primera del calendario (en una obra terminada, ninguna) ----
+      var ev1 = !terminada ? (p.proximos || [])[0] || null : null;
+      var proxima = ev1 ? '<section class="card card-tint cl-proxima">' +
+          '<h2 class="label-cu cl-card-tit">' + esc(TXT.proxT) + '</h2>' +
+          '<div class="cl-cifra-txt">' + esc(fechaLlano(ev1.fecha, { weekday: "short", month: "short", day: "numeric" })) +
+            (ev1.hora ? ' · ' + esc(horaLlano(ev1.hora)) : '') + '</div>' +
+          '<div class="cl-nota">' + esc(lang === "en" ? (ev1.titulo_en || ev1.titulo) : (ev1.titulo || ev1.titulo_en)) + '</div></section>' : "";
+      var par = (pagado || proxima) ? '<div class="cl-par" style="order:9">' + pagado + proxima + '</div>' : "";
+
+      // ---- «Job stages»: el circuito (un servicio no lleva circuito) ----
+      var etapas = (enPropuesta || sinFase) ? "" : '<section class="card card-white cl-etapas-card" style="order:5">' +
+        '<h2 class="label-cu cl-card-tit">' + esc(TXT.etapasT) + '</h2>' +
+        (esServicio && !terminada
+          ? '<span class="chip chip-pill cl-chip-servicio"><i class="dot dot-live"></i>' + esc(TXT.servicio) + '</span>'
+          : etapasHTML(ETAPAS, etapaIdx)) + '</section>';
+
+      // ---- «Work items»: el panel de breakers + la lista completa (la verdad) ----
+      var trabajos = "";
+      if (checklist.length) {
+        var primeroSinHacer = -1;
+        for (var ai = 0; ai < deObra.length; ai++) if (!deObra[ai].hecho) { primeroSinHacer = ai; break; }
+        var textoDe = function (x) { return lang === "en" ? (x.texto_en || x.texto) : (x.texto || x.texto_en); };
+        var itemsPanel = deObra.map(function (x, i) {
+          return { name: textoDe(x) || "", status: x.hecho ? "done" : (i === primeroSinHacer ? "now" : "todo") };
+        });
+        // La lista por bloques (Fase 1, Generador…), en el orden en que aparecen
+        var bloques = [];
+        checklist.forEach(function (x) {
+          var gN = (lang === "en" ? (x.grupo_en || x.grupo) : (x.grupo || x.grupo_en)) || "";
+          var B = null;
+          for (var bi = 0; bi < bloques.length; bi++) if (bloques[bi].n === gN) { B = bloques[bi]; break; }
+          if (!B) bloques.push(B = { n: gN, items: [] });
+          B.items.push(x);
+        });
+        var hayGrupos = bloques.length > 1 || (bloques.length === 1 && bloques[0].n);
+        var PLEGAR = 8, visto = 0;
+        var lista = bloques.map(function (B) {
+          var info = B.items.length && esInformativo(B.items[0]);
+          var hechosB = B.items.filter(function (x) { return x.hecho; }).length;
+          var cab = hayGrupos ? '<div class="cl-grp' + (visto >= PLEGAR ? ' extra' : '') + '"><span class="cl-grp-n">' + esc(B.n || TXT.trabajosT) + '</span>' +
+            '<span class="cl-grp-c">' + esc(info ? TXT.soloInfo : F(TXT.grupoCuenta, { d: hechosB, n: B.items.length })) + '</span></div>' : "";
+          var filas = B.items.map(function (x) {
+            var extra = visto >= PLEGAR ? " extra" : "";
+            visto++;
+            if (esInformativo(x)) {
+              return '<div class="cl-punto info' + extra + '"><span class="cl-punto-bala" aria-hidden="true"></span><span class="cl-punto-txt">' + esc(textoDe(x)) + '</span></div>';
+            }
+            var i = deObra.indexOf(x);
+            return '<div class="cl-punto' + (x.hecho ? ' on' : '') + (i === primeroSinHacer ? ' ahora' : '') + extra + '" id="cl-punto-' + i + '" data-punto="' + i + '" tabindex="-1">' +
+              '<span class="chk' + (x.hecho ? ' on' : '') + '" aria-hidden="true">' + (x.hecho ? svg("check", 16, 3) : '') + '</span>' +
+              '<span class="cl-punto-txt">' + esc(textoDe(x)) +
+                (i === primeroSinHacer ? ' <span class="chip chip-pill cl-chip-ahora"><i class="dot dot-live"></i>' + esc(TXT.ahora) + '</span>' : '') +
+              '</span></div>';
+          }).join("");
+          return cab + filas;
+        }).join("");
+        trabajos = '<section class="card card-white cl-trabajos" style="order:6">' +
+          '<div class="cl-fila-sep"><h2 class="label-cu cl-card-tit">' + esc(TXT.trabajosT) + '</h2>' +
+            (total ? '<span class="mono cl-cuenta-mono">' + esc(F(TXT.hechosCuenta, { d: hechas, n: total })) + '</span>' : '') + '</div>' +
+          (itemsPanel.length ? panelHTML(itemsPanel) + '<p class="cl-nota cl-nota-panel">' + esc(TXT.notaPanel) + '</p>' : '') +
+          '<div class="cl-lista' + (checklist.length > PLEGAR ? ' plegada' : '') + '" id="cl-lista">' + lista + '</div>' +
+          (checklist.length > PLEGAR ? '<button type="button" class="btn sm btn-white cl-ver-todos" id="cl-ver-todos" aria-expanded="false">' +
+            esc(F(TXT.verTodos, { n: checklist.length })) + '</button>' : '') +
+          '</section>';
+      }
+
+      // ---- «Latest visit»: las fotos del día más reciente que tenga fotos ----
+      fotosLista = (p.fotos || []).filter(function (f) { return urlSegura(f.url); });
+      var visita = "";
+      if (fotosLista.length) {
+        var dias = [];
+        fotosLista.forEach(function (f, i) {
+          var dia = /^\d{4}-\d{2}-\d{2}/.test(String(f.fecha || "")) ? String(f.fecha).slice(0, 10) : "";
+          var D = null;
+          for (var q = 0; q < dias.length; q++) if (dias[q].dia === dia) { D = dias[q]; break; }
+          if (!D) dias.push(D = { dia: dia, fotos: [] });
+          D.fotos.push(i);
+        });
+        // Los días con fecha, del más nuevo al más viejo; las fotos sin fecha, al final
+        dias.sort(function (a, b) { return a.dia === b.dia ? 0 : !a.dia ? 1 : !b.dia ? -1 : (a.dia < b.dia ? 1 : -1); });
+        var fila = function (D) {
+          return (D.dia ? '<div class="cl-foto-dia">' + esc(fechaLlano(D.dia, { weekday: "long", month: "long", day: "numeric" })) + '</div>' : '') +
+            '<div class="cl-fotos">' + D.fotos.map(function (i) {
+              var f = fotosLista[i], u = urlSegura(f.url);
+              var esVideo = /\.(mp4|mov|webm)(\?|$)/i.test(u);
+              return '<figure class="cl-foto"><button type="button" class="cl-foto-btn" data-foto="' + i + '" aria-label="' +
+                  esc(f.nota || (esVideo ? TXT.videoAlt : TXT.abrirFoto)) + '">' +
+                (esVideo ? '<video src="' + esc(u) + '" preload="metadata" muted playsinline></video><span class="cl-foto-play">' + svg("play", 28) + '</span>'
+                         : '<img src="' + esc(u) + '" alt="' + esc(f.nota || TXT.fotoAlt) + '" loading="lazy">') +
+                '</button>' + (f.nota ? '<figcaption>' + esc(f.nota) + '</figcaption>' : '') + '</figure>';
+            }).join("") + '</div>';
+        };
+        visita = '<section class="card card-white cl-visita" style="order:7">' +
+          '<h2 class="label-cu cl-card-tit">' + esc(TXT.visitaT) + '</h2>' + fila(dias[0]) +
+          (dias.length > 1 ? '<div class="cl-fotos-mas" id="cl-fotos-mas" hidden>' + dias.slice(1).map(fila).join("") + '</div>' +
+            '<button type="button" class="btn sm btn-white" id="cl-ver-fotos" aria-expanded="false">' +
+              esc(F(TXT.verFotos, { n: fotosLista.length })) + '</button>' : '') + '</section>';
+      }
+
+      // ---- «Permit & inspections»: la próxima arriba ----
+      var insps = (p.inspecciones || []).slice();
+      var inspecciones = "";
+      if (insps.length) {
+        var esProx = function (i) { return i.resultado !== "paso" && i.resultado !== "fallo" && (!i.fecha || String(i.fecha) >= hoyFL); };
+        var prox = insps.filter(esProx).sort(function (a, b) { return String(a.fecha || "9") < String(b.fecha || "9") ? -1 : 1; });
+        var resto = insps.filter(function (i) { return !esProx(i); }).sort(function (a, b) { return String(a.fecha || "") < String(b.fecha || "") ? 1 : -1; });
+        inspecciones = '<section class="card card-tint cl-insp-card" style="order:8">' +
+          '<h2 class="label-cu cl-card-tit">' + esc(TXT.inspT) + '</h2>' +
+          prox.concat(resto).map(function (i) {
+            var chip = i.resultado === "paso" ? '<span class="chip chip-ok chip-pill">' + svg("check", 16, 2.4) + esc(TXT.paso) + '</span>'
+              : i.resultado === "fallo" ? '<span class="chip chip-warn chip-pill">' + esc(TXT.fallo) + '</span>'
+              : '<span class="chip chip-pill cl-chip-gris">' + svg("reloj", 16, 2) + esc(TXT.programada) + '</span>';
+            var datos = (i.permiso ? '<span class="chip chip-data" aria-label="' + esc(TXT.permisoAria) + '">' + esc(i.permiso) + '</span>' : '') +
+                        (i.jurisdiccion ? '<span class="chip chip-data" aria-label="' + esc(TXT.jurisAria) + '">' + esc(i.jurisdiccion) + '</span>' : '');
+            return '<div class="cl-insp"><div class="cl-insp-cab"><span class="cl-insp-t">' + esc(i.tipo || "") + '</span>' + chip + '</div>' +
+              (i.fecha ? '<div class="cl-insp-f">' + esc(fechaLlano(i.fecha, { weekday: "short", month: "short", day: "numeric", year: "numeric" })) + '</div>' : '') +
+              (datos ? '<div class="cl-insp-datos">' + datos + '</div>' : '') + '</div>';
+          }).join("") + '</section>';
+      }
+
+      // ---- «Decisions we need from you» y «Job log» ----
+      var pendientesDec = (p.decisiones || []).filter(function (d) { return !d.hecha; });
+      var decisiones = pendientesDec.length ? '<section class="card card-white cl-decisiones" style="order:11">' +
+        '<h2 class="label-cu cl-card-tit">' + esc(TXT.decT) + '</h2>' +
+        (p.decisiones || []).map(function (d) {
+          return '<div class="cl-dec' + (d.hecha ? ' hecha' : '') + '"><div class="cl-dec-txt">' + esc(d.texto) +
+            (d.fecha_limite && !d.hecha ? '<div class="cl-dec-fecha">' + svg("reloj", 18, 2) +
+              esc(F(TXT.necesita, { x: fechaLlano(d.fecha_limite, { month: "long", day: "numeric" }) })) + '</div>' : '') + '</div>' +
+            (d.hecha ? '<span class="chip chip-ok chip-pill">' + svg("check", 16, 2.4) + esc(TXT.hecha) + '</span>'
+              : '<button type="button" class="btn sm btn-navy cl-dec-btn" data-decision="' + d.id + '">' + esc(TXT.decidi) + '</button>') + '</div>';
+        }).join("") + '</section>' : "";
+      var diarioL = p.diario || [];
+      var diario = diarioL.length ? '<section class="card card-white cl-diario" style="order:12">' +
+        '<h2 class="label-cu cl-card-tit">' + esc(TXT.diarioT) + '</h2>' +
+        diarioL.map(function (d, i) {
+          return '<div class="cl-log' + (i >= 5 ? ' extra' : '') + '"><div class="cl-log-f">' +
+            esc(/^\d{4}-\d{2}-\d{2}/.test(String(d.fecha || "")) ? fechaLlano(d.fecha, { weekday: "short", month: "short", day: "numeric" }) : (d.fecha || "")) +
+            '</div><div class="cl-log-t">' + esc(d.texto) + '</div></div>';
+        }).join("") +
+        (diarioL.length > 5 ? '<button type="button" class="btn sm btn-white" id="cl-diario-mas" aria-expanded="false">' + esc(TXT.verMas) + '</button>' : '') +
+        '</section>' : "";
+
+      var documentos = docs ? '<section class="card card-white cl-docs" style="order:13">' +
+        '<h2 class="label-cu cl-card-tit">' + esc(TXT.docsT) + '</h2>' + docs + '</section>' : "";
+
+      // ---- La garantía: solo en la obra terminada ----
+      var garantia = "";
+      if (terminada) {
+        var hasta = "";
+        // v32 del portal manda completado_el: se dice hasta cuándo va (P75)
+        if (p.completado_el) {
+          var dG = fechaDe(String(p.completado_el).slice(0, 10));
+          if (dG) { dG.setUTCFullYear(dG.getUTCFullYear() + 1); hasta = dG.toISOString().slice(0, 10); }
+        }
+        garantia = '<section class="card card-white cl-garantia" style="order:14">' +
+          '<h2 class="label-cu cl-card-tit">' + esc(TXT.garantiaT) + '</h2>' +
+          '<p class="cl-texto">' + esc(TXT.garantia) + '</p>' +
+          (hasta ? '<p class="cl-texto"><b>' + esc(F(TXT.cubierta, { x: fechaLlano(hasta, { month: "long", day: "numeric", year: "numeric" }) })) + '</b></p>' : '') +
+          (RESENA ? '<a class="btn sm btn-white" target="_blank" rel="noopener" href="' + esc(RESENA) + '">' + svg("estrella", 20) + esc(TXT.resena) + '</a>' : '') +
+          '</section>';
+      }
+
+      // ---- La tarjeta del contratista ----
       var emp = (p.empresa || []).map(function (d) {
         var tt = lang === "en" ? (d.titulo_en || d.titulo) : d.titulo;
         if (!urlSegura(d.url)) return '';
-        return '<div class="pt-lic"><i>✓</i><a target="_blank" rel="noopener" href="' + esc(urlSegura(d.url)) + '">' +
-          esc(tt) + '</a></div>';
+        return '<a class="row-link cl-lic" target="_blank" rel="noopener" href="' + esc(urlSegura(d.url)) + '">' + svg("escudo", 24) +
+          '<span class="row-txt">' + esc(tt) + '</span><span class="row-flecha" aria-hidden="true">›</span></a>';
       }).join("");
+      var contratista = '<section class="card card-white cl-contratista" style="order:15">' +
+        '<div class="wire-cu" aria-hidden="true"></div>' +
+        '<img class="cl-lockup" src="assets/lockup.png" width="220" alt="Max Power Electrical Solutions Inc." decoding="async">' +
+        '<div class="cl-edgar">Edgar Arboleya</div>' +
+        '<div class="cl-nota">' + esc(TXT.edgarRol) + '</div>' +
+        '<div class="mono cl-licencia">FL EC13016045</div>' +
+        (emp ? '<h3 class="label-cu cl-sub-tit">' + esc(TXT.licT) + '</h3>' + emp : '') +
+        '<a class="row-link cl-lic" target="_blank" rel="noopener" href="https://mxpes.com">' + svg("web", 24) +
+          '<span class="row-txt">' + esc(TXT.sitio) + '</span><span class="row-flecha" aria-hidden="true">›</span></a>' +
+        '<div class="cl-dos">' +
+          '<a class="btn sm btn-navy" href="tel:' + TEL + '">' + svg("tel", 20) + esc(TXT.llamar) + '</a>' +
+          '<a class="btn sm btn-white" href="sms:' + TEL + '">' + svg("sms", 20) + esc(TXT.mensaje) + '</a>' +
+        '</div></section>';
 
-      // ---- 🏔 La cabecera: lo que hay que saber de un vistazo ----
-      var ev1 = (p.proximos || [])[0] || null;
-      var ev1Tit = ev1 ? (lang === "en" ? (ev1.titulo_en || ev1.titulo) : ev1.titulo) : "";
-      var casillas =
-        '<div class="pt-tile"><div class="pt-tile-k">' + esc(TXT.progresoT) + '</div>' +
-          '<div class="pt-tile-v">' + pct + '% <small>· ' + hechas + ' ' + esc(TXT.deTotal) + ' ' + total + ' ' + esc(TXT.itemsCortos) + '</small></div>' +
-          barraHTML(pct) + '</div>' +
-        // En una obra TERMINADA no se anuncia ninguna visita: ni una que quedo
-        // suelta en el calendario ni un «por programar» que no va a venir.
-        (p.estado !== "completado"
-          ? '<div class="pt-tile"><div class="pt-tile-k">' + esc(TXT.proxVisitaT) + '</div>' +
-            '<div class="pt-tile-v">' + (ev1 ? fechaCorta(ev1.fecha) + (ev1.hora ? ' · ' + esc(ev1.hora) : '') : esc(TXT.sinVisita)) + '</div>' +
-            (ev1 ? '<div class="pt-tile-s">' + esc(ev1Tit) + '</div>' : '') + '</div>'
-          : '') +
-        (p.dinero
-          ? '<div class="pt-tile' + (debeAhora > 0 ? ' due' : '') + '"><div class="pt-tile-k">' +
-              esc(debeAhora > 0 ? TXT.debeAhoraT : TXT.saldoT) + '</div>' +
-              '<div class="pt-tile-v">' + esc(usd(debeAhora > 0 ? debeAhora : (Number(p.dinero.falta) || 0))) + '</div>' +
-              (debeAhora > 0 ? '<div class="pt-tile-s">' +
-                (facturasAbiertas === 1 ? esc(TXT.unaFactura) : facturasAbiertas + esc(TXT.variasFacturas)) + '</div>' : '') + '</div>' +
-            '<div class="pt-tile"><div class="pt-tile-k">' + esc(TXT.cobradoT) + '</div>' +
-              '<div class="pt-tile-v">' + esc(usd(p.dinero.cobrado)) + '</div>' +
-              '<div class="pt-tile-s">' + ((Number(p.dinero.contrato) || 0) > 0
-                ? Math.round((Number(p.dinero.cobrado) || 0) / (Number(p.dinero.contrato) || 1) * 1000) / 10 + '% ' +
-                  esc(TXT.deTotal) + ' ' + esc(usd(p.dinero.contrato))
-                : '') + '</div>' +
-              barraHTML((Number(p.dinero.contrato) || 0) > 0
-                ? Math.round((Number(p.dinero.cobrado) || 0) / (Number(p.dinero.contrato) || 1) * 100) : 0, "ok") + '</div>'
-          : '');
-
+      // ---- La cabecera de la obra ----
       var resumenTxt = lang === "en" ? (p.resumen_en || p.resumen) : (p.resumen || p.resumen_en);
+      var cabecera = '<section class="cl-obra">' +
+        (p.gc && p.gc.empresa ? '<div class="cl-obra-gc">' + esc(F(TXT.gcPara, { x: p.gc.empresa })) + '</div>' : '') +
+        '<span class="chip chip-pill cl-etapa-chip"><i class="dot ' + (terminada ? 'dot-ok' : 'dot-live') + '"></i>' +
+          esc(TXT.tuObra) + ' · ' + esc(etapaTxt) + '</span>' +
+        '<h1 class="cl-obra-nombre">' + esc(p.nombre) + '</h1>' +
+        (p.direccion ? '<div class="cl-obra-dir">' + svg("pin", 18) + '<span>' + esc(p.direccion) + '</span></div>' : '') +
+        (resumenTxt ? '<div class="cl-obra-resumen"><h2 class="label-cu">' + esc(TXT.dondeT) + '</h2><p>' + esc(resumenTxt) + '</p></div>' : '') +
+        '</section>';
 
       caja.innerHTML =
-        (p.gc ? '<div class="cl-volver"><a href="gc.html?g=' + encodeURIComponent(g) + '">&larr; ' + esc(TXT.gcVolver) + '</a>' +
-                (p.gc.puede_firmar ? '' : ' <span class="cl-nota-gris">' + esc(TXT.gcSoloMirar) + '</span>') + '</div>' : '') +
-        '<section class="pt-hero">' +
-          '<div>' +
-            '<div class="pt-kicker">' + esc(p.gc ? p.gc.empresa : TXT.kicker) + '</div>' +
-            '<div class="pt-nombre">' + esc(p.nombre) + '</div>' +
-            (p.direccion ? '<div class="pt-dir">📍 ' + esc(p.direccion) + '</div>' : '') +
-            '<div class="pt-estado"><i></i>' + esc(pasos[idx]) + '</div>' +
-          '</div>' +
-          '<div class="pt-tiles' + (p.dinero ? '' : ' dos') + '">' + casillas + '</div>' +
-          '<div class="pt-pasos">' + stepper + '</div>' +
-        '</section>' +
-        '<div class="cl-col pt-col-main">' +
-        opciones +
-        (pendientesDec.length ? '<div class="pt-card"><div class="pt-h">' + tit("todos", TXT.todos) + '</div>' + todos + '</div>' : '') +
-        (resumenTxt ? '<div class="pt-card"><div class="pt-h">' + tit("donde", TXT.dondeT) + '</div>' +
-          '<p class="pt-lead">' + esc(resumenTxt) + '</p></div>' : '') +
-        (fotos ? '<div class="pt-card"><div class="pt-h">' + tit("fotos", TXT.fotosT) + '</div><div class="cl-fotos">' + fotos + '</div></div>' : '') +
-        (total ? '<div class="pt-card"><div class="pt-h">' + tit("alcance", TXT.alcance) +
-          '<span class="pt-hr">' + hechas + ' ' + esc(TXT.deTotal) + ' ' + total + ' ' + esc(TXT.grupoDe) + '</span></div>' + lista + '</div>' : '') +
-        (pagos ? '<div class="pt-card"><div class="pt-h">' + tit("pagos", TXT.pagosT) + '</div>' + pagos + '</div>' : '') +
-        (docs ? '<div class="pt-card"><div class="pt-h">' + tit("docs", TXT.docsT) + '</div>' + docs + '</div>' : '') +
-        (p.estado === "completado" ? '<div class="pt-card" style="text-align:center">' +
-          '<div class="pt-h">' + tit("garantia", TXT.garantiaT) + '</div>' +
-          '<p class="pt-lead chico">' + esc(TXT.garantia) + '</p>' +
-          // v32 del portal manda completado_el: se dice hasta cuándo va (P75)
-          (p.completado_el ? (function () {
-            var d = new Date(String(p.completado_el).slice(0, 10) + "T12:00:00");
-            d.setFullYear(d.getFullYear() + 1);
-            var f = d.toLocaleDateString(lang === "en" ? "en-US" : "es-US", { year: "numeric", month: "long", day: "numeric" });
-            return '<p class="pt-lead chico"><b>' + esc(lang === "en" ? "Covered until " + f : "Cubierta hasta el " + f) + '</b></p>';
-          })() : '') +
-          (RESENA ? '<a class="pt-resena" target="_blank" rel="noopener" href="' + esc(RESENA) + '">' + esc(TXT.resena) + '</a>' : '') +
-          '</div>' : '') +
-        '</div>' +
-        // En el escritorio esto va en la columna de la derecha; en el teléfono, debajo
-        '<div class="cl-col pt-col-side">' +
-        // En una obra TERMINADA no se anuncian días de trabajo: ni los que
-        // quedaron sueltos en el calendario ni un «por programar» que no va a venir.
-        (p.estado === "completado"
-          ? ''
-          : '<div class="pt-card"><div class="pt-h">' + tit("prox", TXT.proxT) + '</div>' +
-            (prox || '<div class="pt-vacio">' + esc(TXT.sinProx) + '</div>') + '</div>') +
-        (insp || p.estado === "ejecucion"
-          ? '<div class="pt-card"><div class="pt-h">' + tit("insp", TXT.inspT) + '</div>' +
-            (insp || '<div class="pt-vacio">' + esc(TXT.sinInsp) + '</div>') + '</div>' : '') +
-        (diario ? '<div class="pt-card"><div class="pt-h">' + tit("actividad", TXT.actividad) + '</div>' + diario + '</div>' : '') +
-        '<div class="pt-card"><div class="pt-h">' + tit("contacto", TXT.contactoT) + '</div>' +
-          '<div class="pt-contacto"><div class="pt-avatar">EA</div>' +
-            '<div><b>Edgar Arboleya</b><span>' + esc(TXT.contactoRol) + '</span>' +
-            '<span>(305) 967-9311 · info@mxpes.com</span></div></div>' +
-          '<a class="pt-wa" target="_blank" rel="noopener" href="' + WHATSAPP + '">' + esc(TXT.wa) + '</a>' +
-        '</div>' +
-        (emp ? '<div class="pt-card"><div class="pt-h">' + tit("docs", TXT.licT) + '</div>' + emp + '</div>' : '') +
+        // Modo contratista: vuelve a la lista de sus obras (gc.html)
+        (p.gc ? '<div class="cl-volver"><a href="gc.html?g=' + encodeURIComponent(g) + '"><span aria-hidden="true">‹</span> ' + esc(TXT.gcTodas) + '</a>' +
+                (p.gc.puede_firmar ? '' : '<span class="cl-volver-nota">' + esc(TXT.gcSoloMirar) + '</span>') + '</div>' : '') +
+        cabecera +
+        // En el teléfono todo va en una columna, en el orden del pliego (style="order");
+        // en la computadora, dos columnas: el trabajo a la izquierda, lo demás a la derecha
+        '<div class="cl-cuerpo">' +
+          '<div class="cl-col cl-col-a">' + opciones + firmas + etapas + trabajos + visita + decisiones + diario + '</div>' +
+          '<div class="cl-col cl-col-b">' + deuda + par + inspecciones + documentos + pagos + garantia + contratista + '</div>' +
         '</div>';
 
-      caja.querySelectorAll("[data-aprobar]").forEach(function (b) {
-        b.addEventListener("click", function () { mandar({ accion: "aprobar_doc", id: Number(b.dataset.aprobar) }, b); });
+      // ---- Los manejadores de siempre ----
+      caja.querySelectorAll("[data-revisar-aprobar]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          abrirAprobar(Number(b.dataset.revisarAprobar), b.dataset.titulo || "", b.dataset.url || "");
+        });
       });
       caja.querySelectorAll("[data-decision]").forEach(function (b) {
         b.addEventListener("click", function () { mandar({ accion: "decision_lista", id: Number(b.dataset.decision) }, b); });
@@ -769,7 +852,7 @@
                dejaba «− $12,500.00» en 12500 y el total del cliente SUMABA un
                descuento. Se lee el signo antes de tirar los símbolos. */
             var txt = (fila && fila.querySelector(".cl-add-precio") || {}).textContent || "";
-            var neg = /^\s*[-\u2212\u2013\u2014]/.test(String(txt));
+            var neg = /^\s*[-−–—]/.test(String(txt));
             var val = Number(String(txt).replace(/[^0-9.]/g, "")) || 0;
             suma += neg ? -val : val;
           }
@@ -795,16 +878,13 @@
           mandar({ accion: "elegir_propuesta", propuesta_id: idSow, addons: c.marcados }, b);
         });
       });
-      // Pedir un cambio en vez de firmar: mismo tamaño que firmar, siempre visible
+      // Pedir un cambio en vez de firmar: siempre visible junto a la firma
       caja.querySelectorAll("[data-cambio]").forEach(function (b) {
         b.addEventListener("click", function () { abrirCambio(Number(b.dataset.cambio) || null); });
       });
       // Cuando el cliente abre un documento queda constancia (mejor esfuerzo)
       caja.querySelectorAll("a[data-doc]").forEach(function (a) {
-        a.addEventListener("click", function () {
-          fetch(PORTAL, { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
-            body: JSON.stringify(conAccion({ accion: "visto_doc", id: Number(a.dataset.doc) })) }).catch(function () {});
-        });
+        a.addEventListener("click", function () { avisarVisto(Number(a.dataset.doc)); });
       });
       caja.querySelectorAll("[data-firmar]").forEach(function (b) {
         b.addEventListener("click", function () {
@@ -817,10 +897,124 @@
           else pedirConsentimiento(id, abrir);
         });
       });
+      // Tocar un breaker baja a su punto en la lista (y la despliega si hace falta)
+      var lista = caja.querySelector("#cl-lista");
+      var verTodos = caja.querySelector("#cl-ver-todos");
+      function desplegar(abrir) {
+        if (!lista) return;
+        lista.classList.toggle("plegada", !abrir);
+        if (verTodos) {
+          verTodos.setAttribute("aria-expanded", abrir ? "true" : "false");
+          verTodos.textContent = abrir ? TXT.verMenos : F(TXT.verTodos, { n: checklist.length });
+        }
+      }
+      if (verTodos) verTodos.addEventListener("click", function () { desplegar(lista.classList.contains("plegada")); });
+      var suave = !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+      caja.querySelectorAll("[data-bkr]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          var punto = caja.querySelector("#cl-punto-" + b.dataset.bkr);
+          if (!punto) return;
+          if (punto.classList.contains("extra")) desplegar(true);
+          caja.querySelectorAll(".cl-punto.marcado").forEach(function (x) { x.classList.remove("marcado"); });
+          punto.classList.add("marcado");
+          punto.scrollIntoView({ block: "center", behavior: suave ? "smooth" : "auto" });
+          try { punto.focus({ preventScroll: true }); } catch (e) { /* sin foco no pasa nada */ }
+          setTimeout(function () { punto.classList.remove("marcado"); }, 2400);
+        });
+      });
+      // Las fotos: tocar abre la grande; «See all photos» despliega los otros días
+      caja.querySelectorAll("[data-foto]").forEach(function (b) {
+        b.addEventListener("click", function () { abrirFoto(Number(b.dataset.foto)); });
+      });
+      var verFotos = caja.querySelector("#cl-ver-fotos");
+      if (verFotos) verFotos.addEventListener("click", function () {
+        var mas = caja.querySelector("#cl-fotos-mas");
+        var abrir = mas.hidden;
+        mas.hidden = !abrir;
+        verFotos.setAttribute("aria-expanded", abrir ? "true" : "false");
+        verFotos.textContent = abrir ? TXT.ocultarFotos : F(TXT.verFotos, { n: fotosLista.length });
+      });
+      var diarioMas = caja.querySelector("#cl-diario-mas");
+      if (diarioMas) diarioMas.addEventListener("click", function () {
+        var card = diarioMas.closest(".cl-diario");
+        var abrir = !card.classList.contains("abierta");
+        card.classList.toggle("abierta", abrir);
+        diarioMas.setAttribute("aria-expanded", abrir ? "true" : "false");
+        diarioMas.textContent = abrir ? TXT.verMenosLog : TXT.verMas;
+      });
       document.title = "Max Power — " + p.nombre;
     }
 
-    // ---- ✏️ Pedir un cambio en vez de firmar ----
+    // Abrir un documento deja constancia de que el cliente lo vio (mejor esfuerzo)
+    function avisarVisto(id) {
+      fetch(PORTAL, { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
+        body: JSON.stringify(conAccion({ accion: "visto_doc", id: id })) }).catch(function () {});
+    }
+
+    // ---- La foto en grande: un <dialog> sencillo con «Cerrar» de 44 px ----
+    function abrirFoto(i) {
+      var f = fotosLista[i];
+      if (!f) return;
+      var u = urlSegura(f.url);
+      var esVideo = /\.(mp4|mov|webm)(\?|$)/i.test(u);
+      var dlg = document.getElementById("cl-visor");
+      if (!dlg) {
+        dlg = document.createElement("dialog");
+        dlg.id = "cl-visor";
+        dlg.className = "cl-visor";
+        document.body.appendChild(dlg);
+        dlg.addEventListener("click", function (e) { if (e.target === dlg) dlg.close(); });
+        dlg.addEventListener("close", function () { dlg.innerHTML = ""; });
+      }
+      dlg.innerHTML = '<div class="cl-visor-caja">' +
+        '<button type="button" class="btn sm btn-white cl-visor-cerrar">' + svg("cerrar", 20, 2) + esc(TXT.cerrar) + '</button>' +
+        (esVideo ? '<video src="' + esc(u) + '" controls playsinline autoplay></video>'
+                 : '<img src="' + esc(u) + '" alt="' + esc(f.nota || TXT.fotoAlt) + '">') +
+        ((f.nota || f.fecha) ? '<p class="cl-visor-nota">' + esc(f.nota || "") +
+          (f.fecha ? (f.nota ? " · " : "") + esc(fechaLlano(String(f.fecha).slice(0, 10), { month: "long", day: "numeric", year: "numeric" })) : "") + '</p>' : '') +
+        '</div>';
+      dlg.querySelector(".cl-visor-cerrar").addEventListener("click", function () { dlg.close(); });
+      if (typeof dlg.showModal === "function") dlg.showModal(); else dlg.setAttribute("open", "");
+    }
+
+    // ---- Aprobar un documento: primero se abre y se lee, luego «Aprobar» ----
+    // La acción es la de siempre (aprobar_doc); la ventanita solo evita aprobar
+    // de un toque algo que no se leyó.
+    function abrirAprobar(docId, titulo, urlDoc) {
+      if (document.querySelector(".cl-firma-fondo")) return;
+      var fondo = document.createElement("div");
+      fondo.className = "cl-firma-fondo";
+      fondo.innerHTML =
+        '<div class="cl-firma-caja" role="dialog" aria-modal="true">' +
+          '<h3>' + esc(TXT.aprobarTit) + '</h3>' +
+          '<div class="cl-firma-doc">' + svg("doc", 20) + '<span>' + esc(titulo) + '</span></div>' +
+          '<p class="cl-firma-nota">' + esc(TXT.aprobarNota) + '</p>' +
+          (urlDoc ? '<a class="cl-boton secundario cl-boton-ancho" id="cl-aprobar-leer" target="_blank" rel="noopener" href="' + esc(urlDoc) + '">' +
+            esc(TXT.abrirDoc) + '</a>' : '') +
+          '<div class="cl-firma-botones">' +
+            '<button type="button" class="cl-boton" id="cl-aprobar-ok">' + esc(TXT.aprobarBtn) + '</button>' +
+            '<button type="button" class="cl-boton secundario" id="cl-aprobar-no">' + esc(TXT.firmaCancelar) + '</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(fondo);
+      var leer = fondo.querySelector("#cl-aprobar-leer");
+      if (leer) leer.addEventListener("click", function () { avisarVisto(docId); });
+      fondo.querySelector("#cl-aprobar-no").addEventListener("click", function () { fondo.remove(); });
+      fondo.querySelector("#cl-aprobar-ok").addEventListener("click", function () {
+        var b = fondo.querySelector("#cl-aprobar-ok");
+        b.disabled = true; b.textContent = "…";
+        fetch(PORTAL, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(conAccion({ accion: "aprobar_doc", id: docId }))
+        }).then(function (r) {
+          if (!r.ok) throw new Error("bad");
+          fondo.remove();
+          return cargar();
+        }).catch(function () { b.disabled = false; b.textContent = TXT.reintentar; });
+      });
+    }
+
+    // ---- Pedir un cambio en vez de firmar ----
     // Que nadie firme por no tener salida: está a un toque y del mismo
     // tamaño que el botón de firmar.
     // P180: un aviso en rojo dentro del formulario (antes era un cuadro gris del
@@ -843,11 +1037,10 @@
       var fondo = document.createElement("div");
       fondo.className = "cl-firma-fondo";
       fondo.innerHTML =
-        '<div class="cl-firma-caja">' +
+        '<div class="cl-firma-caja" role="dialog" aria-modal="true">' +
           '<h3>' + esc(TXT.cambioTit) + '</h3>' +
-          '<p class="cl-firma-nota" style="font-size:.9rem">' + esc(TXT.cambioSub) + '</p>' +
-          '<textarea id="cl-cambio-txt" rows="5" style="width:100%;font:inherit;font-size:16px;' +
-            'border:1px solid var(--mp-line);border-radius:10px;padding:.6rem"></textarea>' +
+          '<p class="cl-firma-nota">' + esc(TXT.cambioSub) + '</p>' +
+          '<textarea id="cl-cambio-txt" rows="5"></textarea>' +
           '<div class="cl-firma-botones">' +
             '<button type="button" class="cl-boton" id="cl-cambio-ok">' + esc(TXT.cambioEnviar) + '</button>' +
             '<button type="button" class="cl-boton secundario" id="cl-cambio-no">' + esc(TXT.firmaCancelar) + '</button>' +
@@ -865,7 +1058,7 @@
           body: JSON.stringify(conAccion({ accion: "pedir_cambio", id: docId, texto: txt }))
         }).then(function (r) {
           if (!r.ok) throw new Error("bad");
-          fondo.innerHTML = '<div class="cl-firma-caja" style="text-align:center">' +
+          fondo.innerHTML = '<div class="cl-firma-caja cl-firma-fin" role="dialog" aria-modal="true">' +
             '<h3>' + esc(TXT.cambioOk) + '</h3>' +
             '<button type="button" class="cl-boton" id="cl-cambio-fin">' + esc(TXT.firmadoOk) + '</button></div>';
           fondo.querySelector("#cl-cambio-fin").addEventListener("click", function () { fondo.remove(); });
@@ -874,24 +1067,24 @@
       });
     }
 
-    // ---- ✅ El consentimiento: va ANTES de abrir el contrato ----
+    // ---- El consentimiento: va ANTES de abrir el contrato ----
     // El aviso de gravámenes y el de cancelar se exigen "por escrito", y en
     // electrónico solo valen si el cliente consintió primero.
     function pedirConsentimiento(docId, seguir) {
       var fondo = document.createElement("div");
       fondo.className = "cl-firma-fondo";
       fondo.innerHTML =
-        '<div class="cl-firma-caja">' +
+        '<div class="cl-firma-caja" role="dialog" aria-modal="true">' +
           '<h3>' + esc(TXT.consentTit) + '</h3>' +
-          '<p class="cl-firma-nota" style="font-size:.9rem">' + esc(TXT.consentSub) + '</p>' +
-          '<ul class="cl-op-lista" style="font-size:.88rem">' +
+          '<p class="cl-firma-nota">' + esc(TXT.consentSub) + '</p>' +
+          '<ul class="cl-op-lista cl-consent-lista">' +
             // A una empresa o en propiedad comercial no se le promete el aviso de gravámenes
             // ni los tres días: solo queda el punto de la firma electrónica.
             ((paqueteActual && (paqueteActual.gc || paqueteActual.sin_tres_dias)) ? TXT.consentPuntos.slice(-1) : TXT.consentPuntos)
               .map(function (x) { return '<li>' + esc(x) + '</li>'; }).join("") +
           '</ul>' +
-          '<label class="cl-firma-nota" style="display:flex;gap:.5rem;align-items:flex-start;cursor:pointer">' +
-            '<input type="checkbox" id="cl-cons-ok" style="margin-top:.2rem;width:1.1rem;height:1.1rem"> ' +
+          '<label class="cl-firma-nota cl-casilla">' +
+            '<input type="checkbox" id="cl-cons-ok"> ' +
             '<span>' + esc(TXT.consentCaja) + '</span></label>' +
           '<div class="cl-firma-botones">' +
             '<button type="button" class="cl-boton" id="cl-cons-seguir">' + esc(TXT.consentSeguir) + '</button>' +
@@ -914,7 +1107,7 @@
       });
     }
 
-    // ---- 🖊 Panel de firma: nombre + firma dibujada ----
+    // ---- Panel de firma: nombre + firma dibujada ----
     // yaLeyo: el botón de firmar solo se activa cuando el cliente ya abrió
     // el documento (antes, o desde el enlace de este mismo panel).
     function abrirFirma(docId, titulo, urlDoc, yaLeyo) {
@@ -922,32 +1115,33 @@
       var fondo = document.createElement("div");
       fondo.className = "cl-firma-fondo";
       var puerta = !yaLeyo && urlDoc
-        ? '<a class="cl-boton secundario" id="cl-firma-leer" target="_blank" rel="noopener" href="' + esc(urlDoc) + '"' +
-          ' style="display:block;text-align:center;margin-bottom:.5rem">' + esc(TXT.leerPrimero) + '</a>' +
+        ? '<a class="cl-boton secundario cl-boton-ancho" id="cl-firma-leer" target="_blank" rel="noopener" href="' + esc(urlDoc) + '">' +
+          svg("doc", 20) + esc(TXT.leerPrimero) + '</a>' +
           '<div class="cl-firma-nota" id="cl-firma-leer-nota">' + esc(TXT.leerNota) + '</div>'
         : '';
       fondo.innerHTML =
-        '<div class="cl-firma-caja">' +
+        '<div class="cl-firma-caja" role="dialog" aria-modal="true">' +
           '<h3>' + esc(TXT.firmaTitulo) + '</h3>' +
-          '<div class="cl-firma-doc">📄 ' + esc(titulo) + '</div>' +
+          '<div class="cl-firma-doc">' + svg("doc", 20) + '<span>' + esc(titulo) + '</span></div>' +
           puerta +
           '<input type="text" id="cl-firma-nombre" placeholder="' + esc(TXT.firmaNombre) + '" autocomplete="name">' +
-          '<div class="cl-firma-tabs" style="display:flex;gap:.5rem;margin:.5rem 0">' +
-            '<button type="button" class="cl-boton cl-tab on" id="cl-tab-escribir">✒️ ' + esc(TXT.modoEscribir) + '</button>' +
-            '<button type="button" class="cl-boton secundario cl-tab" id="cl-tab-dibujar">🖊 ' + esc(TXT.modoDibujar) + '</button>' +
+          '<div class="cl-firma-tabs">' +
+            '<button type="button" class="cl-boton cl-tab on" id="cl-tab-escribir">' + esc(TXT.modoEscribir) + '</button>' +
+            '<button type="button" class="cl-boton secundario cl-tab" id="cl-tab-dibujar">' + esc(TXT.modoDibujar) + '</button>' +
           '</div>' +
-          '<div class="cl-firma-sub" id="cl-firma-sub">' + esc(TXT.firmaDibuja) + '</div>' +
+          // Empieza en «escribir»: la línea de «dibuja tu firma» sale al cambiar a dibujar
+          '<div class="cl-firma-sub" id="cl-firma-sub"></div>' +
           '<canvas class="cl-firma-lienzo" width="640" height="260" style="width:100%;height:auto;touch-action:none"></canvas>' +
-          '<label class="cl-firma-nota" style="display:flex;gap:.5rem;align-items:flex-start;cursor:pointer">' +
-            '<input type="checkbox" id="cl-firma-dos" style="margin-top:.2rem;width:1.1rem;height:1.1rem"> ' +
+          '<label class="cl-firma-nota cl-casilla">' +
+            '<input type="checkbox" id="cl-firma-dos"> ' +
             '<span>' + esc(TXT.dosFirmas) + '</span></label>' +
           '<div id="cl-firma2" hidden>' +
             '<input type="text" id="cl-firma2-nombre" placeholder="' + esc(TXT.firma2Nombre) + '" autocomplete="name">' +
             '<div class="cl-firma-sub">' + esc(TXT.firma2Dibuja) + '</div>' +
             '<canvas class="cl-firma-lienzo" id="cl-firma2-lienzo" width="640" height="200" style="width:100%;height:auto;touch-action:none"></canvas>' +
           '</div>' +
-          '<label class="cl-firma-nota" style="display:flex;gap:.5rem;align-items:flex-start;cursor:pointer">' +
-            '<input type="checkbox" id="cl-firma-acepto" style="margin-top:.2rem;width:1.1rem;height:1.1rem"> ' +
+          '<label class="cl-firma-nota cl-casilla">' +
+            '<input type="checkbox" id="cl-firma-acepto"> ' +
             '<span>' + esc(TXT.firmaLegal) + '</span></label>' +
           '<div class="cl-firma-botones">' +
             '<button type="button" class="cl-boton" id="cl-firma-ok"' + (!yaLeyo && urlDoc ? ' disabled style="opacity:.5"' : '') + '>' + esc(TXT.firmaEnviar) + '</button>' +
@@ -968,7 +1162,7 @@
           var ok = fondo.querySelector("#cl-firma-ok");
           ok.disabled = false; ok.style.opacity = "";
           var nota = fondo.querySelector("#cl-firma-leer-nota");
-          if (nota) nota.textContent = "✓";
+          if (nota) nota.textContent = TXT.abiertoOk;
         });
       }
 
@@ -1084,9 +1278,10 @@
           if (!r.ok) throw new Error("bad");
           // Pantalla de confirmación con su copia
           fondo.innerHTML =
-            '<div class="cl-firma-caja" style="text-align:center">' +
+            '<div class="cl-firma-caja cl-firma-fin" role="dialog" aria-modal="true">' +
+              '<div class="cl-firma-hecho">' + svg("check", 32, 2.6) + '</div>' +
               '<h3>' + esc(TXT.firmadoTit) + '</h3>' +
-              '<p class="cl-firma-nota" style="font-size:.9rem">' + esc(TXT.firmadoTxt) + '</p>' +
+              '<p class="cl-firma-nota">' + esc(TXT.firmadoTxt) + '</p>' +
               '<button type="button" class="cl-boton" id="cl-firma-fin">' + esc(TXT.firmadoOk) + '</button>' +
             '</div>';
           fondo.querySelector("#cl-firma-fin").addEventListener("click", function () { fondo.remove(); });

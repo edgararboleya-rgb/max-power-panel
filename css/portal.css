@@ -178,3 +178,307 @@ a.pt-doc-t:hover { text-decoration: underline; }
 
 /* P180: el aviso en rojo dentro del formulario de firma */
 .cl-aviso-rojo { background: #FDF1F0; color: #B3261E; border: 1px solid rgba(179,38,30,.35); border-radius: 10px; padding: .55rem .8rem; margin: .5rem 0; font-size: .92rem; line-height: 1.4; }
+
+/* ===========================================================================
+   «COBRE Y LUZ» · tanda 3 (26-sep): el portal del cliente (cliente.html).
+   Todo cuelga de body.cl-portal: la lista de obras del contratista (gc.html)
+   usa lo de arriba y no cambia. Los botones, tarjetas, etapas y casillas
+   vienen de css/styles.css (tandas 1 y 2); aquí va lo que es solo del portal.
+   Reglas del portal: nada por debajo de 14 px, todo lo que se toca de 44 px
+   o más, un solo Pulso por pantalla y cian nunca sobre claro.
+   =========================================================================== */
+
+/* ---- La letra: 14 px lo más chico; «Aa» lo sube todo ×1.25 (--k) ---- */
+.cl-portal { --k: 1; --fs-1: 14px; --fs-2: 14px; --fs-small: 14px; }
+html[data-text="large"] {
+  --fs-h1: 36px; --fs-h2: 22px; --fs-body: 20px; --fs-label: 17px; --fs-small: 17px; --fs-money: 54px;
+  --btn-h: 64px; --btn2-h: 58px; --mp-ink-2: #243a55; --mp-ink-3: #3a526b;
+}
+html[data-text="large"] .cl-portal { --k: 1.25; --fs-1: 17px; --fs-2: 17px; --fs-3: 17.5px; --fs-4: 19px; --fs-5: 20px; --fs-6: 21px; --fs-small: 17px; }
+
+/* ---- La barra noche: logo, marca, «Aa» y el idioma ---- */
+.cl-portal .membrete-inner { max-width: 1160px; padding: 0 10px 0 16px; }
+.cl-portal .cl-marca { min-width: 0; }
+.cl-portal .membrete-der { gap: 8px; }
+.cl-portal .aa-btn { height: var(--tap); min-width: 52px; padding: 0 10px; border: 0; border-radius: 10px; background: #fff; color: var(--mp-ink);
+                     font: inherit; font-size: 16px; font-weight: 800; cursor: pointer; }
+html[data-text="large"] .cl-portal .aa-btn { background: var(--mp-cyan); color: #04202A; }
+.cl-portal .btn-idioma { min-height: var(--tap); min-width: var(--tap); font-size: 14px; }
+
+/* ---- La página ---- */
+.cl-portal .container { max-width: 1160px; margin: 0 auto; padding: 20px 16px 32px; }
+.cl-portal .cl-cargando { text-align: center; padding: 48px 16px; color: var(--mp-ink-2); font-size: calc(17px * var(--k)); }
+.cl-portal .pie { margin-top: 24px; }
+.cl-portal .pie p { font-size: calc(14px * var(--k)); }
+.cl-portal .pie .licencia { font-family: var(--mono); font-size: calc(14px * var(--k)); letter-spacing: 0; }
+.cl-portal .cl-pie-web { display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 4px; color: var(--mp-cyan); font-weight: 700; }
+
+/* Modo contratista: «‹ All projects» vuelve a la lista de sus obras */
+.cl-volver { display: flex; flex-wrap: wrap; align-items: center; gap: 0 12px; margin: -6px 0 8px; }
+.cl-volver a { display: inline-flex; align-items: center; gap: 6px; min-height: var(--tap); padding-right: 12px; color: var(--mp-navy);
+               font-size: calc(16px * var(--k)); font-weight: 800; text-decoration: none; }
+.cl-volver a span { font-size: 26px; line-height: 1; }
+.cl-volver-nota { font-size: calc(14px * var(--k)); color: var(--mp-ink-2); }
+
+/* ---- La cabecera de la obra ---- */
+.cl-obra { margin: 0 0 20px; }
+.cl-obra-gc { font-size: calc(14px * var(--k)); font-weight: 700; color: var(--mp-ink-2); margin-bottom: 8px; overflow-wrap: anywhere; }
+.cl-obra-nombre { margin: 10px 0 6px; font-size: var(--fs-h1); font-weight: 800; line-height: 1.1; letter-spacing: -.02em; color: var(--mp-ink); overflow-wrap: anywhere; }
+.cl-obra-dir { display: flex; align-items: flex-start; gap: 6px; font-size: calc(14px * var(--k)); color: var(--mp-ink-2); overflow-wrap: anywhere; }
+.cl-obra-dir svg { flex: none; color: var(--cu-dark); margin-top: 1px; }
+.cl-obra-resumen { margin-top: 16px; max-width: 780px; }
+.cl-obra-resumen p { margin: 4px 0 0; font-size: var(--fs-body); line-height: 1.5; color: var(--mp-ink); }
+
+/* ---- Dos columnas en la computadora; una en el teléfono (con el orden del pliego) ---- */
+.cl-cuerpo { display: flex; flex-direction: column; gap: 16px; }
+.cl-col { display: contents; }
+@media (min-width: 1024px) {
+  .cl-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 24px; align-items: start; }
+  .cl-col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  .cl-obra { margin-bottom: 24px; }
+}
+
+/* ---- Tarjetas, títulos y notas ---- */
+.cl-portal .card { min-width: 0; }
+.cl-portal h2.label-cu, .cl-portal h3.label-cu { font-size: var(--fs-label); font-weight: 800; line-height: 1.3; letter-spacing: 0; color: var(--cu-dark); margin: 0; }
+.cl-portal .card-night h2.label-cu { color: var(--cu-light); }
+.cl-card-tit { margin: 0 0 12px !important; }
+.cl-fila-sep { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 12px; }
+.cl-fila-sep .cl-card-tit { margin: 0 !important; }
+.cl-nota { margin: 4px 0 0; font-size: calc(14px * var(--k)); line-height: 1.45; color: var(--mp-ink-2); }
+.cl-texto { margin: 0 0 10px; font-size: calc(16px * var(--k)); line-height: 1.5; color: var(--mp-ink); }
+.cl-sub-tit { font-size: calc(16px * var(--k)); font-weight: 800; color: var(--mp-ink); }
+.cl-ico { flex: none; }
+
+/* ---- Etiquetas (chips), puntos y barras del brief ---- */
+.cl-portal .chip { min-height: 30px; padding: 4px 10px; border: 0; border-radius: 8px; background: var(--mp-sky-2); color: var(--mp-ink);
+                   font-size: var(--fs-small); font-weight: 700; line-height: 1.25; white-space: normal; display: inline-flex; align-items: center; gap: 6px; }
+.cl-portal .chip-pill { border-radius: 999px; }
+.cl-portal .chip-data { font-family: var(--mono); font-weight: 600; background: var(--night-2); color: var(--mp-cyan); overflow-wrap: anywhere; }
+.cl-portal .chip-ok { background: var(--ok-bg); color: var(--ok-ink); font-weight: 800; }
+.cl-portal .chip-warn { background: var(--mp-yellow); color: var(--mp-ink); font-weight: 800; }
+.cl-portal .cl-chip-gris { background: #fff; border: 1px solid var(--mp-line); color: var(--mp-ink-2); }
+.cl-portal .cl-etapa-chip { background: #fff; border: 1px solid var(--mp-line); color: var(--cu-dark); font-weight: 800; }
+.cl-portal .card-night .chip-warn { text-shadow: none; }
+.cl-portal .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.cl-portal .dot-live { background: var(--mp-cyan); box-shadow: 0 0 0 2px rgba(11,32,54,.18); animation: mp-pulse 2s ease-out infinite; }
+.cl-portal .dot-ok { background: var(--ok); }
+.cl-portal .bar { position: relative; overflow: hidden; height: 8px; border-radius: 4px; background: #e3eef8; }
+.cl-portal .bar > i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--mp-blue), var(--mp-cyan)); }
+.cl-portal .bar.ok > i { background: linear-gradient(90deg, var(--mp-cyan), var(--mp-lime)); }
+
+/* ---- «Amount due»: la tarjeta noche ---- */
+.cl-deuda-monto { margin: 10px 0 6px; font-size: min(var(--fs-money), 12.5vw); font-weight: 800; line-height: 1.05; letter-spacing: -.02em; overflow-wrap: anywhere; }
+@media (min-width: 1024px) { .cl-deuda-monto { font-size: var(--fs-money); } }
+.cl-deuda-fac { margin-bottom: 14px; font-size: calc(14px * var(--k)); color: #DCE7F2; overflow-wrap: anywhere; }
+.cl-deuda-nota { margin: 12px 0 0; font-size: calc(14px * var(--k)); color: #DCE7F2; line-height: 1.45; }
+
+/* ---- «Needs your signature»: la tarjeta volt ---- */
+.cl-volt-cab { display: flex; align-items: center; gap: 8px; font-size: var(--fs-label); font-weight: 800; color: var(--warn-ink); }
+.cl-volt-tit { margin: 8px 0 4px; font-size: var(--fs-h2); font-weight: 800; line-height: 1.25; color: var(--mp-ink); overflow-wrap: anywhere; }
+.cl-volt-vence { font-size: calc(14px * var(--k)); font-weight: 700; color: var(--warn-ink); }
+.cl-volt-botones { display: grid; gap: 10px; margin-top: 14px; }
+.cl-portal .btn { line-height: 1.2; text-align: center; }
+.cl-portal .btn.sm { height: auto; min-height: var(--btn2-h); padding: 6px 16px; font-size: calc(16px * var(--k)); }
+.cl-portal .btn-pulse, .cl-portal .btn-ring { height: auto; min-height: var(--btn-h); }
+
+/* ---- «Job stages»: el circuito; las letras arriba y abajo en el teléfono (caben las cinco) ---- */
+.cl-etapas { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); row-gap: 6px; }
+.cl-etapas .stages { grid-column: 1 / -1; grid-row: 2; padding: 0; }
+.cl-etapa-l { display: flex; min-width: 0; white-space: nowrap; font-size: var(--fs-small); font-weight: 700; line-height: 1.2; }
+.cl-etapa-l.arriba { grid-row: 1; }
+.cl-etapa-l.abajo { grid-row: 3; }
+.cl-etapa-l.ini { justify-content: flex-start; }
+.cl-etapa-l.centro { justify-content: center; }
+.cl-etapa-l.fin { justify-content: flex-end; }
+.cl-etapa-l.on { color: var(--ok-ink); }
+.cl-etapa-l.now { color: var(--mp-blue); font-weight: 800; }
+.cl-etapa-l.off { color: var(--cu-dark); }
+@media (min-width: 600px) { .cl-etapa-l.arriba, .cl-etapa-l.abajo { grid-row: 3; } }
+
+/* ---- «Work items»: el panel de breakers (copia del brief, con toques de 44 px) ---- */
+.cl-portal .panel { background: linear-gradient(180deg, #18222E, #0F1720); border: 1px solid #2A3644; border-radius: 14px; padding: 6px 8px 8px;
+                    box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 14px 30px -14px rgba(0,0,0,.65); }
+.cl-portal .prow { display: grid; grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr); align-items: stretch; column-gap: 4px; min-height: 44px; }
+.cl-portal .prow.main { grid-template-columns: minmax(0, 1fr) 84px minmax(0, 1fr); align-items: center; margin-bottom: 2px; }
+.cl-portal .pslot { display: grid; align-items: center; gap: 4px; min-width: 0; min-height: 44px; margin: 0; padding: 0 2px;
+                    background: transparent; border: 0; border-radius: 8px; color: inherit; font: inherit; text-align: inherit; cursor: pointer; }
+.cl-portal .pslot.l { grid-template-columns: minmax(0, 1fr) calc(22px * var(--k)) 30px; }
+.cl-portal .pslot.r { grid-template-columns: 30px calc(22px * var(--k)) minmax(0, 1fr); }
+.cl-portal .pslot.blank { cursor: default; }
+.cl-portal button.pslot:hover { background: rgba(255,255,255,.05); }
+.cl-portal button.pslot:focus-visible { outline: 3px solid var(--mp-cyan); outline-offset: -2px; }
+.cl-portal .plabel { min-width: 0; font-size: calc(14px * var(--k)); font-weight: 600; line-height: 1.2; color: #C7D4E3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cl-portal .plabel.l { text-align: right; }
+.cl-portal .plabel.r { text-align: left; }
+.cl-portal .plabel.main { padding-left: 6px; font-family: var(--mono); font-size: calc(14px * var(--k)); color: var(--cu-light); }
+.cl-portal .pnum { font-family: var(--mono); font-size: calc(14px * var(--k)); color: #8FA6BF; text-align: center; }
+.cl-portal .bkr { position: relative; display: block; width: 30px; height: 24px; border-radius: 5px; box-sizing: border-box;
+                  background: linear-gradient(180deg, #3A4656, #242E3A); border: 1px solid #1A2330; box-shadow: inset 0 1px 0 rgba(255,255,255,.08); }
+.cl-portal .bkr .h { position: absolute; display: block; left: 8px; width: 12px; height: 9px; border-radius: 3px; background: #5C6B7D; top: 11px;
+                     transition: top .25s ease, background .25s ease; }
+.cl-portal .bkr.on { border-color: rgba(34,232,224,.55); }
+.cl-portal .bkr.on .h { top: 2px; background: linear-gradient(180deg, var(--mp-cyan), var(--mp-lime)); box-shadow: 0 0 8px rgba(34,232,224,.9); animation: mp-energize .7s ease-out both; }
+.cl-portal .bkr.now .h { top: 6px; background: var(--mp-cyan); animation: mp-pulse 1.2s ease-out infinite; }
+.cl-portal .bkr.blank { background: #141C26; border: 1px dashed #2A3644; }
+.cl-portal .bkr.main { width: 100%; height: 26px; border-radius: 6px; }
+.cl-portal .bkr.main .h { left: 50%; margin-left: -8px; width: 16px; height: 11px; }
+.cl-portal .bkr.main.on .h { top: 3px; }
+.cl-portal .bus { width: 22px; min-height: 44px;
+                  background: linear-gradient(90deg, transparent 0 5px, #8F4F1F 5px 7px, #E3A06A 7px 9px, #B86A2E 9px 10px, transparent 10px 12px, #8F4F1F 12px 14px, #E3A06A 14px 16px, #B86A2E 16px 17px, transparent 17px); }
+@keyframes mp-energize { 0% { box-shadow: 0 0 0 rgba(34,232,224,0); filter: brightness(.6); } 45% { box-shadow: 0 0 16px rgba(34,232,224,1); filter: brightness(1.4); } 100% { box-shadow: 0 0 8px rgba(34,232,224,.9); filter: brightness(1); } }
+@keyframes mp-pulse { 0% { box-shadow: 0 0 0 0 rgba(34,232,224,.65); } 70% { box-shadow: 0 0 0 9px rgba(34,232,224,0); } 100% { box-shadow: 0 0 0 0 rgba(34,232,224,0); } }
+.cl-cuenta-mono { font-size: calc(15px * var(--k)); color: var(--mp-ink); }
+.cl-nota-panel { margin-top: 8px; }
+
+/* La lista completa debajo del panel: la verdad, sin cortar nada */
+.cl-lista { margin-top: 14px; }
+.cl-grp { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding: 14px 0 6px; border-bottom: 1px solid var(--mp-line); }
+.cl-lista > .cl-grp:first-child { padding-top: 0; }
+.cl-grp-n { min-width: 0; font-size: calc(16px * var(--k)); font-weight: 800; color: var(--mp-ink); overflow-wrap: anywhere; }
+.cl-grp-c { font-size: calc(14px * var(--k)); font-weight: 700; color: var(--mp-ink-2); }
+.cl-punto { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid #e9f3fb; border-radius: 8px;
+            font-size: calc(16px * var(--k)); line-height: 1.4; color: var(--mp-ink); scroll-margin: 90px; transition: background .3s ease; }
+.cl-punto:focus { outline: none; }
+.cl-punto .chk { margin-top: -2px; }
+.cl-punto-txt { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.cl-punto.on .cl-punto-txt, .cl-punto.info .cl-punto-txt { color: var(--mp-ink-2); }
+.cl-punto-bala { flex: none; width: 26px; display: flex; justify-content: center; }
+.cl-punto-bala::before { content: ""; width: 8px; height: 8px; margin-top: 8px; border-radius: 50%; background: var(--cu); }
+.cl-punto.marcado { background: #FFF9D6; box-shadow: inset 4px 0 0 var(--cu); padding-left: 10px; }
+.cl-chip-ahora { margin-left: 6px; vertical-align: middle; }
+.cl-lista.plegada .extra { display: none; }
+.cl-ver-todos { margin-top: 12px; }
+
+/* ---- «Latest visit»: fila deslizable de fotos de 120 px ---- */
+.cl-foto-dia { margin: 0 0 10px; font-size: calc(16px * var(--k)); font-weight: 700; color: var(--mp-ink); }
+.cl-fotos-mas .cl-foto-dia { margin-top: 16px; }
+.cl-fotos { display: flex; gap: 10px; overflow-x: auto; width: 0; min-width: 100%; padding-bottom: 6px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+.cl-foto { flex: 0 0 120px; width: 120px; margin: 0; scroll-snap-align: start; }
+.cl-foto-btn { position: relative; display: block; width: 120px; height: 120px; padding: 0; border: 1px solid var(--mp-line); border-radius: 12px;
+               overflow: hidden; background: var(--mp-sky-2); cursor: pointer; }
+.cl-foto-btn img, .cl-foto-btn video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cl-foto-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; background: rgba(7,26,46,.35); }
+.cl-foto figcaption { margin-top: 6px; font-size: calc(14px * var(--k)); line-height: 1.35; color: var(--mp-ink-2); overflow-wrap: anywhere; }
+.cl-visita > .btn { margin-top: 12px; }
+/* La foto en grande */
+.cl-visor { width: 100%; max-width: min(960px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 0; border: 0; background: transparent; }
+.cl-visor::backdrop { background: rgba(4,20,35,.82); }
+.cl-visor-caja { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 16px; background: var(--night); }
+.cl-visor-caja img, .cl-visor-caja video { display: block; max-width: 100%; max-height: calc(100dvh - 170px); margin: 0 auto; object-fit: contain; border-radius: 10px; }
+.cl-visor-cerrar { align-self: flex-end; width: auto !important; }
+.cl-visor-nota { margin: 0; font-size: calc(15px * var(--k)); color: #DCE7F2; }
+
+/* ---- «Permit & inspections» ---- */
+.cl-insp { padding: 12px 0; border-top: 1px solid var(--mp-line); }
+.cl-insp:first-of-type { padding-top: 0; border-top: 0; }
+.cl-insp-cab { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.cl-insp-t { min-width: 0; font-size: calc(17px * var(--k)); font-weight: 700; color: var(--mp-ink); overflow-wrap: anywhere; }
+.cl-insp-f { margin-top: 2px; font-size: calc(14px * var(--k)); color: var(--mp-ink-2); }
+.cl-insp-datos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+/* ---- «Paid to date» y «Next visit» lado a lado (si falta una, la otra ocupa el ancho) ---- */
+.cl-par { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(165px * var(--k)), 1fr)); gap: 12px; }
+.cl-cifra { font-size: calc(22px * var(--k)); font-weight: 800; line-height: 1.15; letter-spacing: -.02em; color: var(--mp-ink); overflow-wrap: anywhere; }
+.cl-cifra-txt { font-size: calc(18px * var(--k)); font-weight: 800; line-height: 1.25; color: var(--mp-ink); }
+.cl-pagado .bar { margin-top: 10px; }
+
+/* ---- La tabla de pagos (plegada) ---- */
+.cl-pliegue > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--tap); list-style: none; cursor: pointer; }
+.cl-pliegue > summary::-webkit-details-marker { display: none; }
+.cl-pliegue > summary .cl-card-tit { margin: 0 !important; }
+.cl-pliegue-der { display: inline-flex; align-items: center; gap: 6px; font-size: calc(14px * var(--k)); font-weight: 700; color: var(--mp-ink-2); white-space: nowrap; }
+.cl-pliegue-der svg { color: var(--cu-dark); transition: transform .2s ease; }
+.cl-pliegue[open] > summary .cl-pliegue-der svg { transform: rotate(180deg); }
+.cl-cuentas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 12px 0 6px; }
+.cl-cuenta { min-width: 0; padding: 8px 10px; border: 1px solid var(--mp-line); border-radius: 10px; background: var(--mp-sky-1); }
+.cl-cuenta span { display: block; font-size: calc(14px * var(--k)); font-weight: 700; color: var(--mp-ink-2); }
+.cl-cuenta b { display: block; font-size: calc(16px * var(--k)); color: var(--mp-ink); overflow-wrap: anywhere; }
+.cl-hito { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: start; padding: 12px 0; border-top: 1px solid var(--mp-line); }
+.cl-hito.facturado { margin: 0 -10px; padding: 12px 10px; border-radius: 10px; background: #FFFBE6; }
+.cl-hito-t { font-size: calc(16px * var(--k)); font-weight: 700; color: var(--mp-ink); overflow-wrap: anywhere; }
+.cl-hito-c { margin-top: 2px; font-size: calc(14px * var(--k)); font-weight: 500; color: var(--mp-ink-2); }
+.cl-hito-m { font-size: calc(16px * var(--k)); text-align: right; white-space: nowrap; color: var(--mp-ink); }
+.cl-hito-e { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.cl-hito-meta { font-size: calc(14px * var(--k)); color: var(--mp-ink-2); overflow-wrap: anywhere; }
+.cl-facturas { margin-top: 8px; border-top: 1px solid var(--mp-line); }
+
+/* ---- «Decisions we need from you» y «Job log» ---- */
+.cl-dec { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px 0; border-top: 1px solid var(--mp-line); }
+.cl-dec:first-of-type { padding-top: 0; border-top: 0; }
+.cl-dec-txt { flex: 1 1 220px; min-width: 0; font-size: calc(17px * var(--k)); line-height: 1.4; color: var(--mp-ink); overflow-wrap: anywhere; }
+.cl-dec.hecha .cl-dec-txt { color: var(--mp-ink-2); }
+.cl-dec-fecha { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: calc(14px * var(--k)); font-weight: 800; color: var(--warn-ink); }
+.cl-portal .cl-dec-btn { width: auto; flex: 0 0 auto; }
+@media (max-width: 480px) { .cl-portal .cl-dec-btn { flex: 1 1 100%; } }
+.cl-log { padding: 10px 0; border-top: 1px solid var(--mp-line); }
+.cl-log:first-of-type { padding-top: 0; border-top: 0; }
+.cl-log-f { font-size: calc(14px * var(--k)); font-weight: 800; color: var(--mp-ink-2); }
+.cl-log-t { margin-top: 2px; font-size: calc(16px * var(--k)); line-height: 1.45; color: var(--mp-ink); overflow-wrap: anywhere; }
+.cl-diario:not(.abierta) .cl-log.extra { display: none; }
+.cl-diario > .btn { margin-top: 10px; }
+
+/* ---- «Documents»: filas de 56 px ---- */
+.cl-doc { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 0; border-top: 1px solid #e9f3fb; color: var(--mp-ink); text-decoration: none; }
+.cl-doc:first-of-type { border-top: 0; }
+.cl-doc:hover .cl-doc-t { text-decoration: underline; }
+.cl-doc-i { flex: none; width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--mp-line); background: #fff; color: var(--cu-dark);
+            display: flex; align-items: center; justify-content: center; }
+.cl-doc-c { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.cl-doc-t { font-size: calc(16px * var(--k)); font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.cl-doc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cl-doc-s { font-size: calc(14px * var(--k)); line-height: 1.4; color: var(--mp-ink-2); overflow-wrap: anywhere; }
+.cl-doc-codigo { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: calc(14px * var(--k)); color: var(--mp-ink-2); }
+.cl-doc-flecha { flex: none; font-size: 28px; font-weight: 700; line-height: 1; color: var(--cu-dark); }
+
+/* ---- La tarjeta del contratista ---- */
+.cl-lockup { display: block; width: 220px; max-width: 100%; height: auto; margin: 6px 0 14px; }
+.cl-edgar { font-size: var(--fs-h2); font-weight: 800; color: var(--mp-ink); }
+.cl-licencia { margin-top: 4px; font-size: calc(15px * var(--k)); color: var(--mp-ink); }
+.cl-contratista h3.cl-sub-tit { margin: 18px 0 2px; }
+.cl-portal .row-link { border-bottom: 1px solid #e9f3fb; font-size: calc(16px * var(--k)); }
+.cl-dos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+
+/* ---- La propuesta (SOW A/B y añadidos): sus estilos viven en styles.css; aquí lo del portal ---- */
+.cl-propuesta > .cl-nota { margin: 0 0 12px; }
+.cl-portal .cl-sow .btn { margin-top: 4px; }
+.cl-portal .cl-sow-nota { font-size: calc(14px * var(--k)); }
+
+/* ---- Las ventanas del flujo de firma (consentimiento, firma, cambio, aprobar) ---- */
+.cl-portal .cl-firma-fondo { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(4,20,35,.6); }
+.cl-portal .cl-firma-caja { width: 100%; max-width: 480px; max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; padding: 20px;
+                            border-radius: 18px; background: #fff; color: var(--mp-ink); box-shadow: 0 24px 60px -20px rgba(0,0,0,.5); }
+@media (min-width: 1024px) { .cl-portal .cl-firma-caja { max-width: 560px; } }
+.cl-portal .cl-firma-caja h3 { margin: 0 0 8px; font-size: var(--fs-h2); font-weight: 800; line-height: 1.25; color: var(--mp-ink); }
+.cl-portal .cl-firma-doc { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 12px; font-size: calc(15px * var(--k)); color: var(--mp-ink-2); overflow-wrap: anywhere; }
+.cl-portal .cl-firma-doc svg { color: var(--cu-dark); }
+.cl-portal .cl-firma-caja input[type=text], .cl-portal .cl-firma-caja textarea {
+  display: block; width: 100%; min-height: var(--field-h); margin: 0 0 12px; padding: 0 14px; font: inherit; font-size: calc(17px * var(--k)); color: var(--mp-ink);
+  background: var(--mp-sky-1); border: 1px solid var(--mp-line); border-radius: var(--r-field); }
+.cl-portal .cl-firma-caja textarea { min-height: 140px; padding: 12px 14px; resize: vertical; }
+.cl-portal .cl-firma-caja input[type=text]:focus, .cl-portal .cl-firma-caja textarea:focus { outline: none; border-color: var(--mp-blue); box-shadow: 0 0 0 3px rgba(42,91,215,.18); }
+.cl-portal .cl-firma-lienzo { display: block; width: 100%; border: 1.5px dashed var(--mp-line); border-radius: 10px; background: #fff; touch-action: none; }
+.cl-portal .cl-firma-nota { margin: 10px 0; font-size: calc(15px * var(--k)); line-height: 1.45; color: var(--mp-ink-2); }
+.cl-portal .cl-casilla { display: flex; align-items: center; gap: 12px; min-height: var(--tap); color: var(--mp-ink); cursor: pointer; }
+.cl-portal .cl-casilla input { flex: none; width: 24px; height: 24px; margin: 0; accent-color: var(--mp-navy); }
+.cl-portal .cl-firma-sub { margin: 6px 0; font-size: calc(15px * var(--k)); font-weight: 700; color: var(--mp-ink-2); }
+.cl-portal .cl-firma-sub:empty { display: none; }
+.cl-portal .cl-firma-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 0 8px; }
+.cl-portal .cl-firma-botones { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.cl-portal .cl-firma-botones > .cl-aviso-rojo { grid-column: 1 / -1; }
+.cl-portal .cl-aviso-rojo { font-size: calc(15px * var(--k)); }
+.cl-portal .cl-boton { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: var(--btn2-h); padding: 6px 14px;
+                       border: 0; border-radius: var(--r-btn); background: var(--mp-navy); color: #fff; font: inherit; font-size: calc(16px * var(--k));
+                       font-weight: 700; line-height: 1.2; text-align: center; text-decoration: none; cursor: pointer; }
+.cl-portal .cl-boton.secundario { background: #fff; color: var(--mp-navy); border: 1px solid var(--mp-line); }
+.cl-portal .cl-boton:disabled { cursor: default; }
+.cl-portal .cl-boton-ancho { display: flex; width: 100%; margin-bottom: 6px; }
+.cl-portal .cl-consent-lista { margin: 8px 0; padding-left: 20px; font-size: calc(15px * var(--k)); line-height: 1.5; color: var(--mp-ink); }
+.cl-portal .cl-consent-lista li { margin-bottom: 6px; }
+.cl-portal .cl-firma-fin { text-align: center; }
+.cl-portal .cl-firma-fin .cl-boton { width: 100%; }
+.cl-firma-hecho { display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; margin: 0 auto 10px; border-radius: 50%;
+                  background: linear-gradient(135deg, var(--mp-cyan), var(--mp-lime)); color: #04202A; }
+
+/* Contrato vencido: «pedir un cambio» debajo de su fila (fuera del enlace) */
+body.cl-portal .cl-doc-extra { padding: 0 0 12px 52px; }
