@@ -4009,3 +4009,22 @@ body:has(#toast:not([hidden])) .fab, body:has(#sin-senal:not([hidden])) .fab { d
 @media (min-width: 1024px) {
   #vista-proyectos-todos .categorias { grid-template-columns: minmax(0, 1fr); max-width: 1100px; }
 }
+
+/* ---- Computadora (≥ 1024 px): TODO el menú a la izquierda, títulos con subtítulos (Edgar, 26-sep) ----
+   Hoy, Proyectos y Más son los títulos; debajo, metidos hacia dentro, lo que hay en cada uno.
+   En el iPad (riel de 88 px) los subtítulos no se ven: quedan los tres títulos. */
+.lateral .lat-extra { display: none; }
+@media (min-width: 1024px) {
+  .lateral { overflow-y: auto; }
+  .lateral .lat-extra { display: flex; }
+  .lat-item.lat-sub span:first-of-type { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lat-item.lat-sub { min-height: 44px; padding-left: 30px; font-size: 15px; font-weight: 600; color: #B8C7D9; position: relative; }
+  .lat-item.lat-sub svg { width: 20px; height: 20px; flex: none; color: var(--cu-light, #E3A06A); filter: none; }
+  .lat-item.lat-sub.activo, .lat-item.lat-sub.activo:hover { color: var(--mp-cyan); font-weight: 800; }
+  .lat-item.lat-sub.activo svg { color: var(--mp-cyan); }
+  .lat-item:not(.lat-sub) { margin-top: 10px; }
+  .lat-item:not(.lat-sub):first-child { margin-top: 0; }
+  .lat-item .nav-badge { position: static; margin-left: auto; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px;
+    background: var(--mp-danger-3, #E5484D); color: #fff; font-size: 12px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+  .lat-item .nav-badge[hidden] { display: none; }
+}

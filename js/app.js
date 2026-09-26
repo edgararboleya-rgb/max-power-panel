@@ -530,13 +530,46 @@ function esFalloDeRed(err) {
   function armarLateral() {
     const nav = $("lateral");
     if (!nav) return;
+    // En la computadora (≥ 1024 px) Edgar quiere TODO a la vista a la izquierda (26-sep), como
+    // títulos con subtítulos: Hoy, Proyectos y Más, y debajo de cada uno lo que tiene dentro.
+    // En el iPad (riel de 88 px) los subtítulos («lat-extra») no se ven: quedan los tres títulos.
+    // Cada subtítulo dispara el botón de siempre (un solo camino de código).
+    const SVG_LAT = {
+      "btn-idioma": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+      "btn-salir": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M10 16l-4-4 4-4M6 12h10"/></svg>'
+    };
+    const svgDe = id => { if (SVG_LAT[id]) return SVG_LAT[id]; const b = $(id); const s = b && (b.querySelector(".tile-ico svg") || b.querySelector("svg")); return s ? s.outerHTML : ""; };
+    const sub = (lat, txt, dispara, extra = "") => `<button type="button" class="lat-item lat-sub lat-extra" data-lat="${lat}" data-dispara="${dispara}">${svgDe(dispara)}<span>${txt}</span>${extra}</button>`;
+    const dueno = !!(usuario && usuario.finanzas);
     nav.innerHTML = `
       <button type="button" class="lat-item" data-lat="hoy">${LATERAL_HOME_SVG}<span>Hoy</span></button>
+      ${sub("btn-horas", "Reportar mis horas", "btn-horas")}
       <button type="button" class="lat-item" data-lat="proyectos">${LATERAL_PROY_SVG}<span>Proyectos</span></button>
-      <button type="button" class="lat-item" data-lat="mas">${LATERAL_MAS_SVG}<span>Más</span></button>`;
-    nav.querySelectorAll(".lat-item").forEach(it => it.addEventListener("click", () => irPestana(it.dataset.lat)));
+      <button type="button" class="lat-item lat-sub lat-extra" data-lat="proyectos-todos" data-accion="todos">${LATERAL_PROY_SVG}<span>Todos los proyectos</span></button>
+      ${sub("btn-checklist", "Checklist", "btn-checklist")}
+      ${sub("btn-materiales", "Materiales", "btn-materiales")}
+      ${dueno ? sub("btn-levantamiento", "Levantamiento", "btn-levantamiento") + sub("btn-gastos", "Gastos", "btn-gastos") + sub("btn-estimador", "Estimador", "btn-estimador") : ""}
+      <button type="button" class="lat-item" data-lat="mas">${LATERAL_MAS_SVG}<span>Más</span></button>
+      ${sub("btn-calendario", "Calendario completo", "btn-calendario")}
+      ${sub("chat", "Chat del equipo", "btn-chat", `<span id="lat-chat-badge" class="nav-badge" hidden></span>`)}
+      ${sub("asistente", "Asistente", "btn-asistente")}
+      ${sub("idioma", "Idioma", "btn-idioma")}
+      ${sub("salir", "Salir", "btn-salir")}`;
+    nav.querySelectorAll(".lat-item").forEach(it => it.addEventListener("click", () => {
+      if (it.dataset.accion === "todos") irProyectosTodos();
+      else if (it.dataset.dispara) { const o = $(it.dataset.dispara); if (o) o.click(); }
+      else irPestana(it.dataset.lat);
+    }));
     pintarLateral();
+    if (typeof pintarChatBadge === "function" && usuario) pintarChatBadge();
   }
+  // La vista exacta que enciende una herramienta del lateral ancho
+  const LATERAL_EXACTA = { horas: "btn-horas", calendario: "btn-calendario", checklist: "btn-checklist",
+    "proyectos-todos": "proyectos-todos", etapas: "proyectos-todos", lista: "proyectos-todos",
+    materiales: "btn-materiales", levantamiento: "btn-levantamiento", gastos: "btn-gastos",
+    estimador: "btn-estimador", propuesta: "btn-estimador", cierre: "btn-estimador", chat: "chat", asistente: "asistente" };
+  const lateralAncho = window.matchMedia ? window.matchMedia("(min-width: 1024px)") : null;
+  if (lateralAncho && lateralAncho.addEventListener) lateralAncho.addEventListener("change", () => pintarLateral());
   // La entrada encendida (cian y aria-current), en el lateral y en la barra de abajo
   function marcarPestana(botones, clave, activa) {
     botones.forEach(b => {
@@ -547,7 +580,11 @@ function esFalloDeRed(err) {
   }
   function pintarLateral() {
     const nav = $("lateral"); if (!nav) return;
-    marcarPestana(nav.querySelectorAll(".lat-item"), "lat", menuDeVista(lateralVista));
+    // En el lateral ancho se enciende la herramienta exacta si está a la vista; si no, su pestaña
+    const exacta = LATERAL_EXACTA[lateralVista];
+    const ancho = lateralAncho && lateralAncho.matches;
+    const hay = exacta && nav.querySelector(`.lat-item[data-lat="${exacta}"]`);
+    marcarPestana(nav.querySelectorAll(".lat-item"), "lat", ancho && hay ? exacta : menuDeVista(lateralVista));
   }
   function pintarNavAbajo() {
     const nav = $("nav-abajo");
@@ -3511,7 +3548,7 @@ function esFalloDeRed(err) {
     const fb = $("fab-badge");
     if (fb) { fb.hidden = !total; fb.textContent = badge.textContent; }
     // La misma bolita en «Más» de la barra de abajo y en su fila «Chat del equipo»
-    for (const id of ["nav-chat-badge", "mas-chat-badge"]) {
+    for (const id of ["nav-chat-badge", "mas-chat-badge", "lat-chat-badge"]) {
       const nb = $(id);
       if (nb) { nb.hidden = !total; nb.textContent = badge.textContent; }
     }
