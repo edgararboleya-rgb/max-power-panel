@@ -384,7 +384,11 @@ export al CPA → hecho/f08/f17.
 tablero, pero quiere para Contabilidad una identidad **distinta de la web**,
 más original y con los colores y tendencias de las apps contables. Se decide
 en f05, después de los motores; el tablero de la vista previa es la
-estructura, no el acabado.
+estructura, no el acabado. **El acabado ya tiene guía (25-sep):** el lienzo
+«Cobre y luz» que Edgar hizo en Claude Design (dirección de todas las apps +
+tres pantallas de Contabilidad, variante Cobre), resumido con sus tokens y
+reglas en `docs/conta/fases/f05-pantalla.md`, «Guía de diseño». No se
+construye hasta que toque.
 
 ## 7. Cómo gastar poco crédito
 

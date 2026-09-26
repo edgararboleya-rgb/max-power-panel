@@ -76,3 +76,143 @@ paneles sin cambios: el tablero lee el mismo libro. Lo que hay que ordenar:
 Gráficas con la paleta validada para daltonismo (dos series: azul y verde;
 antigüedad en una rampa azul ordinal), tooltips al pasar, tablas para lo que
 es tabla.
+
+## Guía de diseño (25-sep): el lienzo «Cobre y luz» de Edgar
+Edgar hizo en Claude Design un lienzo con la dirección visual de **todas** las
+apps de Max Power y tres pantallas de Contabilidad. **No se construye ahora**:
+es la guía para cuando toque el acabado de esta fase (y la de f06, f08). El
+lienzo vive en https://claude.ai/artifact/7MJhSoqkucdRcRwuALGkQ4 (tipo Design;
+sus tableros son archivos `project/*.dc.html`, se leen con la herramienta
+Artifact, `action: read` + `path`). Tres páginas: «Propuesta: Cobre y luz»,
+«App de Contabilidad (Cuentas)» y «Proceso (versiones anteriores)».
+
+### La idea
+**«El cobre es el oficio; la luz es la tecnología.»** El cobre entra como los
+cables de la interfaz y como acento; la luz (el gradiente de 96° de la web)
+corre por esos cables. Los componentes salen del trabajo real de un
+electricista, no de una app genérica. Contabilidad es la **variante Cobre:
+misma familia, otro color de mando** (el botón que manda es cobre, no el
+gradiente de luz).
+
+### Tokens (los de mxpes.com + el cobre)
+| Nombre | Valor | Uso |
+|---|---|---|
+| ink / ink-2 | `#0b2036` / `#4d6a83` | texto y cifras / texto secundario |
+| navy / blue | `#1B3C8C` / `#2A5BD7` | botón sólido en claro / etiquetas, enlaces, foco, serie «entradas» |
+| cyan / lime / yellow | `#22E8E0` / `#8CF06A` / `#EFE22E` | solo sobre oscuro: barra, chispa, puntos / estado OK (texto OK `#1E8E4E`) / dinero y pendientes (relleno, texto ink) |
+| grad 96° | `#1B3C8C → #2A5BD7 → #22E8E0 → #8CF06A → #EFE22E` | la «luz»: filo de tarjetas, un botón por pantalla en la app operativa |
+| **cobre** | `#8F4F1F` (oscuro) · `#B86A2E` · `#C8783A` (medio) · `#E3A06A` (claro) · `#F2C27E` · `#FFE6B0` | cables (`linear-gradient(180deg,#E3A06A,#B86A2E 55%,#8F4F1F)`), etiquetas de sección (`#8F4F1F`, 12 px, 800, tracking .1em), iconos del oficio, anillo del botón secundario, **botón de mando de Contabilidad** (`linear-gradient(96deg,#8F4F1F,#C8783A 55%,#E3A06A)`, texto blanco), serie «salidas» |
+| noche | `#071A2E` barra · `#0B1F47`/`#163B8F` tarjeta noche | barra superior, menú lateral, «tarjeta noche» (una por pantalla, con los símbolos ANSI de MX Planos como textura casi invisible) |
+| fondo operativo | `#f4f9fd → #e3eef8` con tres auras (cian arriba-izq., azul der., lima abajo) | app de campo y portal |
+| **fondo Contabilidad** | `#fbf9f5 → #eee9e1` (papel cálido) con aura cobre; borde `#d9d2c7`; tarjeta blanca | la variante Cobre |
+| volt | `#fffce6 → #fff3b3`, borde `#efdc7c`, texto `#5A4300` | lo pendiente y las diferencias |
+| tinta / línea (web) | `#d6e7f1`, `#cfe0ee` | bordes y divisores en la operativa |
+
+Letra: **Manrope** (Google Fonts) para todo, `font-variant-numeric: tabular-nums`;
+**JetBrains Mono 500/600 para cifras de dinero, fechas, números de cuenta,
+permiso, factura y descripciones del banco** (se leen como dato y se copian sin
+errores). 800 solo en títulos de pantalla, 700 tarjetas, 600 etiquetas. Cuerpo
+17 px (interlínea 1,5), campos y botones 16–17 px con 52–56 px de alto, mínimo
+13 px; etiquetas en frase, no en mayúsculas salvo las de sección. Radios: 10
+botones, 16–18 tarjetas; sombra suave, nunca bordes duros.
+
+### Reglas para todas las pantallas
+- **Una acción principal por pantalla**, abajo y a lo ancho; el «botón vivo»:
+  A · Pulso (gradiente quieto con una chispa que lo recorre cada 3 s; al pasar
+  el dedo corre más rápido; al terminar se pone verde `#1E8E4E` con check y
+  texto nuevo) para la acción principal; B · Anillo (navy sólido con una
+  chispa cobre-cian-amarilla girando por el borde) para la secundaria. En
+  Contabilidad el Pulso es cobre.
+- **Estado = color + texto + icono, nunca solo color.** Solo el estado activo
+  late; los demás quietos. Tocar ≥ 44 px. Contraste 4,5:1.
+- **Oscuro solo en la barra, el menú lateral, la tarjeta noche y el modo
+  noche** (~20 % de la pantalla). Mezcla de tarjetas (noche, volt, blanca,
+  tintada): ni todo blanco ni todo oscuro.
+- **Hilo con chispa**: bajo la barra, un cable de cobre de 4–6 px con un pulso
+  de luz cada 3 s.
+- **Etapas como circuito**: nodos encendidos (cian→lima con halo) para lo
+  hecho, nodo blanco con borde cian latiendo para lo actual, nodo con borde
+  cobre para lo que falta; segmentos de cobre «sin corriente» entre medias.
+- **Avance como tablero de breakers** (impares a la izquierda, pares a la
+  derecha, barras de cobre al centro, MAIN arriba): en la operativa y el portal.
+- Iconos del oficio (breaker, panel, toma, conduit, generador, EV,
+  inspección), inline SVG de trazo, nunca emoji.
+- «El campo nunca ve dinero» (la app operativa); Contabilidad es «solo Edgar».
+- Menú de la app operativa: **3 pestañas abajo** (Hoy · Proyectos · Más),
+  recomendada sobre 4.
+
+### Las tres pantallas de Contabilidad
+**C1 · Inicio de Cuentas (computadora, 1440×1000)** — menú lateral de 220 px en
+`#071A2E` con **borde derecho de cobre de 6 px**, logo «max power» en gradiente
+cobre claro + «CUENTAS»; entradas: Inicio · Bancos y tarjetas · Flujo de caja ·
+Gastos y categorías · Facturas y cobros · Proyectos (económico) · Estados
+financieros · Plan de cuentas y asientos · Cierre de mes; pie «FY 2026 · solo
+Edgar». Arriba: etiqueta «INICIO · SEPTIEMBRE 2026», H1 **«Cómo está el
+dinero»**, chips Mes / Trimestre / Año, y el botón cobre «Clasificar N
+movimientos». Cuatro tarjetas KPI (banco operativo con borde izquierdo cobre,
+tarjeta de crédito, por cobrar, por pagar), cifras en mono de 26 px con una
+línea de contexto («Conciliado al 31 ago · 37 sin clasificar», «Corte 3 oct ·
+autopay activo», «7 facturas · 2 con más de 30 días», «próximo: 30 sep»).
+Flujo de caja de 6 meses en barras (entradas azul, salidas cobre) con tres
+lecturas debajo: neto de 6 meses, mes más flojo, **cobertura de caja en
+semanas de gasto promedio**. Estado de resultados del mes en mini
+(Ingresos, materiales, contract labor, utilidad bruta con %, gastos, seguros y
+fees, **utilidad neta con % sobre una regla cobre de 2 px**) y chips «P&L
+completo · Balance general · Exportar PDF». Gastos por categoría en barras
+horizontales con un párrafo de **análisis** en palabras. Proyectos, solo lo
+económico (contrato, cobrado, gastado, margen, estado) con «Margen bajo» en
+amarillo cuando cae bajo el escenario C del estimador.
+
+**C2 · Clasificar el banco (teléfono, 390×844)** — barra noche con contador
+«12 / 37» en mono, cable de cobre, barra de progreso azul→cian. «Una a la
+vez. Enter o el botón grande acepta la propuesta.» Tarjeta noche con la fecha
+y la cuenta en mono cobre, pastilla «Gasto», **el monto enorme (44 px)**, la
+descripción del banco en mono y la regla que aplicó («Regla: Home Depot →
+Materiales. Falta saber de qué proyecto.»). Tarjeta blanca «¿De qué proyecto?»
+con chips (la obra con visita ese día ya elegida, «Sin proyecto»); «si tomas
+foto del recibo, lo adjunta a la PO del proyecto». Abajo: botón cobre Pulso
+«Materiales · Barona» (58 px), «Otra cuenta» (anillo) y «Foto del recibo»
+(blanco), y el enlace «Saltar · lo veo en la computadora».
+
+**C3 · Cuadrar el mes (iPad, 1180×820)** — barra noche con Proyectos ·
+Calendario · **Dinero** · Planos y «AGOSTO 2026 · CHASE ····4412» en mono.
+H1 «Agosto: banco contra libros» y el circuito **Importar ✓ → Clasificar ✓ →
+Cuadrar · 3 por resolver (late) → Cerrar**. Dos tarjetas lado a lado: «Banco ·
+estado de cuenta» (N movimientos) y «Libros · lo que registraste» (N
+asientos); cada fila: fecha mono, descripción, monto mono, marcador (check
+cian-lima = casado, anillo cobre = sin pareja, amarillo = distinto); las
+diferencias en fila volt con su explicación («En el banco, no en libros: falta
+clasificar», «Monto distinto: banco −[A], libros −[B]», «Probable: recibo sin
+el tax o pago parcial», «Sin asiento · toca para clasificar y cuadra solo»).
+Abajo, tarjeta volt «Diferencia [MONTO] · 3 movimientos por resolver… Cuando
+la diferencia llega a $0.00 la etapa se enciende y se puede cerrar el mes. Lo
+cerrado queda bloqueado; reabrir deja rastro» y el botón cobre apagado «Cerrar
+agosto · faltan 3».
+
+### Cómo encaja con lo construido (para el que haga el acabado)
+- El lienzo es **acabado**, no estructura: la estructura sigue siendo el
+  tablero de la vista previa (arriba) y las vistas de c4. El menú de C1 y el
+  de la vista previa casi coinciden; se funden en f05 (C1 no tiene Bandeja ni
+  Contador IA; la vista previa no tiene «Plan de cuentas y asientos» aparte).
+- C3 es la conciliación de f06 (saldo del banco + partidas en tránsito = saldo
+  en libros; la diferencia a $0.00 enciende «Cerrar»); «lo cerrado queda
+  bloqueado; reabrir deja rastro» ya es el candado de periodos de c2. C2 es
+  la bandeja del banco de f06/f07: propone por regla (`mapeo_*`), propone la
+  obra con visita ese día, y la foto del recibo entra por el puente de recibos
+  de c3, no por otra vía.
+- Las cifras de las tres pantallas son **datos de ejemplo** del lienzo: las
+  tarjetas reales son Chase débito ····9420 (1010), Amex Business Gold
+  ····2013 y Blue ····2009 (2100-x); no hay Chase Ink. «Chase Chk 4392» es el
+  número de cuenta en QuickBooks.
+- «Margen = (cobrado − gastado) ÷ contrato» es una definición de caja para el
+  tablero; la de f09/f10 es (ingreso − costo) ÷ ingreso, y las dos pueden
+  convivir con nombre distinto. Se decide en f09, no en el acabado.
+- «Cobertura de caja en semanas» y «mes más flojo» salen de `v_saldos_dinero`
+  y `v_flujo_real_por_mes` (c4) más el gasto promedio: una vista o un cálculo
+  del esqueleto, con su «esperaba N filas». El chip «Trimestre» necesita que
+  `v_resultados` acepte un rango, no solo mes y acumulado (f04, chico).
+- Gráficas: la paleta validada de la vista previa (azul / verde, rampa azul
+  ordinal) se sustituye por la del lienzo (**entradas azul `#2A5BD7`, salidas
+  cobre `#C8783A`**; categorías: azul, cobre, teal `#0FA39A`, morado
+  `#8A6BD1`, oro `#B08A00`), validando contraste y daltonismo antes (dataviz).
+
