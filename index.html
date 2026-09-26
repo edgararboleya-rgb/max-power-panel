@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-title" content="Max Power">
   <link rel="apple-touch-icon" href="assets/icon-180.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=235">
+  <link rel="stylesheet" href="css/styles.css?v=236">
 </head>
 <body>
 
@@ -63,37 +63,49 @@
           <div class="wordmark grad-text-warm">max power</div>
           <div class="wordmark-sub">Electrical Solutions Inc.</div>
         </div>
+        <!-- «Cobre y luz»: en la barra solo queda el avatar. Abre la hoja «Perfil» -->
         <div class="membrete-der">
-          <button id="btn-asistente" class="btn-chat" title="Preguntarle al asistente" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.5c.5 3.4 2.1 5 5.5 5.5-3.4.5-5 2.1-5.5 5.5-.5-3.4-2.1-5-5.5-5.5 3.4-.5 5-2.1 5.5-5.5z"/><path d="M18 13.5c.3 1.9 1.1 2.7 3 3-1.9.3-2.7 1.1-3 3-.3-1.9-1.1-2.7-3-3 1.9-.3 2.7-1.1 3-3z"/></svg></button>
-          <button id="btn-chat" class="btn-chat" title="Mensajes del equipo" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a7.5 7.5 0 0 1-7.5 7.5H6.2L3 21.5l.9-4.6A7.5 7.5 0 1 1 21 11.5z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg><span id="chat-badge" class="chat-badge" hidden></span></button>
-          <button id="btn-idioma" class="btn-idioma" title="English / Español">EN</button>
-          <span id="usuario-chip" class="usuario-chip"></span>
-          <span class="app-version" data-version title="Versión de la app — toca para comprobarla"></span>
-          <button id="btn-salir" class="btn-salir" title="Cambiar de usuario">Salir</button>
+          <button id="btn-avatar" type="button" class="btn-avatar" aria-haspopup="dialog" aria-label="Perfil" title="Perfil"><span id="avatar-iniciales" class="avatar-iniciales" data-no-i18n aria-hidden="true"></span></button>
         </div>
+      </div>
+      <!-- Los botones de siempre NO se borran: viven aquí escondidos, con sus id y
+           manejadores, y el avatar y el botón flotante los tocan con .click()
+           (un solo camino de código). Nunca se ven. -->
+      <div class="membrete-guardado" hidden>
+        <button id="btn-asistente" class="btn-chat" title="Preguntarle al asistente" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.5c.5 3.4 2.1 5 5.5 5.5-3.4.5-5 2.1-5.5 5.5-.5-3.4-2.1-5-5.5-5.5 3.4-.5 5-2.1 5.5-5.5z"/><path d="M18 13.5c.3 1.9 1.1 2.7 3 3-1.9.3-2.7 1.1-3 3-.3-1.9-1.1-2.7-3-3 1.9-.3 2.7-1.1 3-3z"/></svg></button>
+        <button id="btn-chat" class="btn-chat" title="Mensajes del equipo" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a7.5 7.5 0 0 1-7.5 7.5H6.2L3 21.5l.9-4.6A7.5 7.5 0 1 1 21 11.5z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg><span id="chat-badge" class="chat-badge" hidden></span></button>
+        <button id="btn-idioma" class="btn-idioma" title="English / Español">EN</button>
+        <span id="usuario-chip" class="usuario-chip"></span>
+        <span class="app-version" data-version title="Versión de la app — toca para comprobarla"></span>
+        <button id="btn-salir" class="btn-salir" title="Cambiar de usuario">Salir</button>
       </div>
       <!-- El cable de cobre con su chispa: cuelga debajo de la barra y viaja con ella -->
       <div class="wire-cu" aria-hidden="true"></div>
     </header>
 
-    <!-- Menú lateral: solo en pantallas grandes. Son las mismas losetas del inicio. -->
+    <!-- Menú lateral: desde 768 px (iPad y computadora). Las mismas tres entradas de la
+         barra de abajo: Hoy, Proyectos y Más. -->
     <nav id="lateral" class="lateral" aria-label="Menú"></nav>
 
     <!-- Migas y acciones de la vista actual -->
     <div class="toolbar">
       <button id="btn-volver" class="btn-volver" hidden title="Volver">←</button>
       <div class="toolbar-titulos">
-        <div id="kicker" class="kicker">Panel de proyectos</div>
-        <h1 id="titulo-vista">Categorías</h1>
+        <div id="kicker" class="kicker"></div>
+        <h1 id="titulo-vista">Hoy</h1>
       </div>
       <button id="btn-nuevo" class="btn-nuevo" title="Crear un proyecto nuevo" hidden>+ Nuevo proyecto</button>
     </div>
 
     <main class="container">
 
-      <!-- NIVEL 1 · HOME: solo las tres categorías (+ resumen del dueño) -->
+      <!-- «HOY» (vista home): el día de quien entró. Las categorías viven ahora en
+           Proyectos › Todos los proyectos. -->
       <section id="vista-home">
-        <div class="botones-rapidos">
+        <!-- Las siete losetas de siempre: siguen aquí con sus id y manejadores (otras
+             partes de la app y las pruebas las tocan con .click()), pero no se ven nunca.
+             Cada una tiene ahora su sitio: Hoy, Proyectos o Más. -->
+        <div class="botones-rapidos" aria-hidden="true">
           <button id="btn-horas" class="btn-horas"><span class="tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/></svg></span><span class="tile-txt">Reportar mis horas</span></button>
           <button id="btn-calendario" class="btn-horas"><span class="tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/><path d="M8 15h.01M12 15h.01M16 15h.01"/></svg></span><span class="tile-txt">Calendario</span></button>
           <button id="btn-checklist" class="btn-horas"><span class="tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="m8 12 2.5 2.5L16 9"/></svg></span><span class="tile-txt">Checklist</span></button>
@@ -106,21 +118,50 @@
           <section id="inicio-hoy"><div class="esqueleto" aria-hidden="true"></div><div class="esqueleto corto" aria-hidden="true"></div></section>
           <section id="inicio-urgentes"></section>
           <section id="inicio-avisos"></section>
+          <section id="inicio-vence"></section>
+          <!-- «Horas» del dueño: el reporte del equipo y la semana en una sola tarjeta -->
+          <section id="inicio-horas" class="card card-white horas-card" hidden>
+            <div class="horas-cab">
+              <h2 class="label-cu horas-titulo">Horas</h2>
+              <button type="button" class="btn sm btn-navy horas-reportar" id="horas-reportar">Reportar mis horas</button>
+            </div>
+            <div id="inicio-equipo"></div>
+            <div id="inicio-semana"></div>
+          </section>
           <section id="inicio-inspecciones"></section>
         </div>
         <div class="home-col home-der">
-          <section id="categorias" class="categorias"><div class="esqueleto" aria-hidden="true"></div><div class="esqueleto" aria-hidden="true"></div></section>
           <section id="resumen" class="resumen"></section>
-          <section id="inicio-equipo"></section>
-          <section id="inicio-semana"></section>
           <section id="inicio-mes"></section>
           <section id="inicio-empresa"></section>
           <section id="inicio-notif"></section>
         </div>
       </section>
 
+      <!-- PROYECTOS: la obra elegida arriba (fila de chips) y sus herramientas -->
+      <section id="vista-proyectos" hidden>
+        <div id="proy-chips" class="proy-chips" aria-label="Elegir la obra"></div>
+        <div id="proy-obra"></div>
+      </section>
+
+      <!-- PROYECTOS › TODOS: el buscador de siempre (categoría → etapa → lista → ficha) -->
+      <section id="vista-proyectos-todos" hidden>
+        <section id="categorias" class="categorias"><div class="esqueleto" aria-hidden="true"></div><div class="esqueleto" aria-hidden="true"></div></section>
+      </section>
+
+      <!-- MÁS: calendario completo, chat, asistente, idioma, perfil y salir -->
+      <section id="vista-mas" hidden>
+        <div class="card card-white mas-marca">
+          <img class="mas-lockup" src="assets/lockup.png" width="220" alt="Max Power Electrical Solutions Inc." decoding="async">
+          <div class="mas-licencia" data-no-i18n>FL EC13016045</div>
+        </div>
+        <div id="mas-filas" class="card card-white mas-filas"></div>
+      </section>
+
       <!-- CALENDARIO: mes completo con eventos y pendientes -->
       <section id="vista-calendario" hidden>
+        <!-- Abierto desde una obra: solo sus eventos, con el chip para quitar el filtro -->
+        <div id="cal-filtro" class="filtro-fila" hidden></div>
         <div class="cal-card">
           <div class="cal-nav">
             <button id="cal-prev" class="btn-volver" title="Mes anterior">‹</button>
@@ -265,14 +306,18 @@
       <div class="licencia">FL EC LICENSE #EC13016045</div>
     </footer>
 
-    <!-- Barra de abajo del equipo de campo («Cobre y luz», tanda 2): solo en el teléfono.
-         La enciende app.js cuando entra alguien sin dinero. -->
-    <nav id="nav-campo" class="bottom-nav" aria-label="Menú de abajo" hidden>
-      <button type="button" data-nav="home"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg><span>Hoy</span></button>
-      <button type="button" data-nav="proyectos"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="8" height="7" rx="2"/><rect x="13" y="4" width="8" height="7" rx="2"/><rect x="3" y="13" width="8" height="7" rx="2"/><rect x="13" y="13" width="8" height="7" rx="2"/></svg><span>Proyectos</span></button>
-      <button type="button" data-nav="chat"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a7.5 7.5 0 0 1-7.5 7.5H6.2L3 21.5l.9-4.6A7.5 7.5 0 1 1 21 11.5z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg><span>Chat</span><span id="nav-chat-badge" class="nav-badge" hidden></span></button>
-      <button type="button" data-nav="horas"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/></svg><span>Horas</span></button>
+    <!-- La barra de abajo («Cobre y luz», opción A): Hoy · Proyectos · Más, para todos,
+         solo en el teléfono (desde 768 px está el menú lateral con las mismas tres).
+         La enciende app.js cuando alguien entra. -->
+    <nav id="nav-abajo" class="bottom-nav" aria-label="Menú de abajo" hidden>
+      <button type="button" data-nav="hoy"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg><span>Hoy</span></button>
+      <button type="button" data-nav="proyectos"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="8" height="7" rx="2"/><rect x="13" y="4" width="8" height="7" rx="2"/><rect x="3" y="13" width="8" height="7" rx="2"/><rect x="13" y="13" width="8" height="7" rx="2"/></svg><span>Proyectos</span></button>
+      <button type="button" data-nav="mas"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>Más</span><span id="nav-chat-badge" class="nav-badge" hidden></span></button>
     </nav>
+
+    <!-- Botón flotante («Cobre y luz»): el asistente y el chat del equipo desde cualquier
+         pantalla. Uno solo. No sale en el chat, en el asistente ni con una hoja o ventana abierta. -->
+    <button id="fab" type="button" class="fab" hidden aria-haspopup="dialog" aria-label="Asistente y chat" title="Asistente y chat"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a7.5 7.5 0 0 1-7.5 7.5H6.2L3 21.5l.9-4.6A7.5 7.5 0 1 1 21 11.5z"/><path d="M13.5 7.5c.3 2 1.5 3.2 3.5 3.5-2 .3-3.2 1.5-3.5 3.5-.3-2-1.5-3.2-3.5-3.5 2-.3 3.2-1.5 3.5-3.5z"/></svg><span id="fab-badge" class="fab-badge" hidden></span></button>
   </div>
 
   <!-- Ventana para crear un proyecto nuevo -->
@@ -333,12 +378,12 @@
     </form>
   </dialog>
 
-  <script src="assets/logo.js?v=209"></script>
+  <script src="assets/logo.js?v=236"></script>
   <script src="assets/config.js?v=209"></script>
   <script src="js/db.js?v=233"></script>
   <script src="js/alcance.js?v=211"></script>
-  <script src="js/app.js?v=235"></script>
-  <script src="js/i18n.js?v=235"></script>
+  <script src="js/app.js?v=236"></script>
+  <script src="js/i18n.js?v=236"></script>
   <script src="js/iconos.js?v=224"></script>
 </body>
 </html>

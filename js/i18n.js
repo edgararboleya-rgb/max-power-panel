@@ -97,6 +97,8 @@
     "📅 Hoy en Max Power": "📅 Today at Max Power",
     "HOY": "TODAY", "MAÑANA": "TOMORROW",
     "Nada programado para hoy ni mañana.": "Nothing scheduled for today or tomorrow.",
+    "Nada programado.": "Nothing scheduled.", "ver el calendario": "see the calendar",
+    "¿Eliminar esta tarea?": "Delete this task?",
     "⚠ Avisos": "⚠ Alerts",
     "⏱ Reporte de horas del equipo": "⏱ Team hours report",
     "reportó hoy ✓": "reported today ✓", "reportó ayer ✓": "reported yesterday ✓",
@@ -441,6 +443,71 @@
     [/^Después: (.+)$/, "Later: $1"],
     [/^La próxima: (.+)$/, "Next: $1"],
     [/^Panel del proyecto · (\d+)\/(\d+) encendidos$/, "Project panel · $1/$2 on"]
+  );
+  // ---------- Cabecera limpia, botón flotante y «Hoy» del dueño (25-sep) ----------
+  Object.assign(D, {
+    // El avatar y la hoja «Perfil»
+    "Perfil": "Profile", "Dueño": "Owner", "Equipo de campo": "Field crew", "Licencia": "License",
+    "Cambiar la app a español": "Switch the app to Spanish", "Cambiar la app a inglés": "Switch the app to English",
+    "Toca para comprobarla": "Tap to check it", "Cambiar de usuario": "Switch user",
+    // El botón flotante
+    "Asistente y chat": "Assistant and chat", "Preguntarle al asistente": "Ask the assistant",
+    "Te contesta y te anota lo que le digas": "It answers and writes down what you tell it",
+    "Chat del equipo": "Team chat", "Los mensajes del grupo y los privados": "Group and private messages",
+    // Los resúmenes del inicio
+    "urgentes": "urgent", "urgente": "urgent", "avisos": "alerts", "aviso": "alert",
+    "Ocultar": "Hide", "Nada urgente ahora": "Nothing urgent now",
+    "El más viejo es de hoy": "The oldest is from today",
+    "Abrir el checklist completo": "Open the full checklist",
+    // Las tareas
+    "vía Claude": "via Claude", "Tarea eliminada": "Task deleted", "La tarea volvió ✓": "The task is back ✓"
+  });
+  REGLAS.push(
+    [/^Chat del equipo — (\S+) sin leer$/, "Team chat — $1 unread"],
+    [/^Versión (\S+)$/, "Version $1"],
+    [/^El más viejo lleva (\d+) días?$/, s => { const n = parseInt(s.replace(/\D+/g, " ").trim(), 10); return `The oldest has been waiting ${n} ${n === 1 ? "day" : "days"}`; }],
+    // Los tipos de aviso, en palabras (el número va delante)
+    [/^(\d+) propuestas?$/, s => { const n = parseInt(s, 10); return n + (n === 1 ? " proposal" : " proposals"); }],
+    [/^(\d+) de labor$/, "$1 on labor"],
+    [/^(\d+) de materiales$/, "$1 on materials"],
+    [/^(\d+) facturas? viejas?$/, s => { const n = parseInt(s, 10); return n + (n === 1 ? " old invoice" : " old invoices"); }],
+    [/^(\d+) obras? sin cobrar$/, s => { const n = parseInt(s, 10); return n + (n === 1 ? " job not collected" : " jobs not collected"); }],
+    [/^(\d+) sin contrato$/, "$1 without a contract"],
+    [/^(\d+) para arrancar$/, "$1 to kick off"],
+    [/^No se pudo eliminar: (.+)$/, "Could not delete: $1"]
+  );
+  // ---------- Opción A: Hoy · Proyectos · Más (25-sep) ----------
+  Object.assign(D, {
+    // La barra de abajo y el lateral
+    "Más": "More",
+    // Hoy del dueño
+    "Vence esta semana": "Due this week", "Nada vence esta semana.": "Nothing is due this week.",
+    "hoy": "today", "Propuesta": "Proposal", "Licencia y seguros": "License and insurance",
+    "Reporte de horas del equipo": "Team hours report", "Horas de esta semana": "Hours this week",
+    // Proyectos
+    "Elegir la obra": "Choose the job", "Abrir la ficha completa": "Open the full job file",
+    "Levantamiento": "Site survey", "Estimador": "Estimator",
+    "Sin tareas todavía": "No tasks yet", "Nada por comprar": "Nothing to buy",
+    "próxima:": "next:", "Sin fecha programada": "Nothing scheduled",
+    "Contar en la casa": "Count on site", "Sus estimados": "Its estimates",
+    "Todas las obras": "All jobs",
+    "No hay obras en marcha ahora. En «Todos los proyectos» están todas.": "No jobs in progress right now. «All projects» has every one.",
+    "Solo:": "Only:", "Quitar el filtro": "Remove the filter",
+    "Esta obra todavía no tiene estimados.": "This job has no estimates yet.",
+    // Más
+    "Calendario completo": "Full calendar", "Asistente": "Assistant", "Idioma": "Language"
+  });
+  REGLAS.push(
+    [/^venció el (\d+)$/, "expired on the $1"],
+    [/^(\d+) de (\d+) hechos$/, "$1 of $2 done"],
+    [/^(\d+) por comprar$/, "$1 to buy"],
+    [/^(\d+) documentos?$/, s => { const n = parseInt(s, 10); return n + (n === 1 ? " document" : " documents"); }],
+    [/^(\d+) fotos?$/, s => { const n = parseInt(s, 10); return n + (n === 1 ? " photo" : " photos"); }],
+    [/^(\d+) en total$/, "$1 in total"],
+    [/^(\d+) levantamientos?$/, s => { const n = parseInt(s, 10); return n + (n === 1 ? " site survey" : " site surveys"); }],
+    [/^(\d+) recibos?$/, s => { const n = parseInt(s, 10); return n + (n === 1 ? " receipt" : " receipts"); }],
+    [/^(\d+) estimados?$/, s => { const n = parseInt(s, 10); return n + (n === 1 ? " estimate" : " estimates"); }],
+    [/^Estimados de esta obra \((\d+)\)$/, "Estimates for this job ($1)"]
   );
   function traducirTexto(t) {
     const limpio = t.trim();

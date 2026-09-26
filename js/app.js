@@ -128,9 +128,9 @@
 
   for (const id of ["logo", "logo-login", "logo-login-barra"]) {
     const el = $(id);
+    // El logo de assets/logo.js (320 px, fondo transparente) vale para todos los
+    // tamaños. Ya no se cambia por el icono de 512: ese lleva fondo noche cuadrado.
     if (el && window.MAXPOWER_LOGO) el.src = window.MAXPOWER_LOGO;
-    // En pantalla grande va el icono de 512 px (nítido); el de 200 px se ve blando
-    if (el && window.matchMedia && window.matchMedia("(min-width: 1024px)").matches) el.src = "assets/icon-512.png";
   }
 
   const dinero = new Intl.NumberFormat("en-US", {
@@ -280,6 +280,14 @@
     $login.hidden = true;
     $app.hidden = false;
     $usuarioChip.textContent = "Cargando…";
+    // La primera vez, mientras llegan los datos, la barra dice que está cargando
+    // (el chip de siempre ahora vive escondido)
+    if (!usuario) {
+      $("kicker").textContent = "";
+      $("titulo-vista").textContent = "Cargando…";
+      $("avatar-iniciales").textContent = "…";
+      $("btn-avatar").setAttribute("aria-busy", "true");
+    }
     try {
       state = await DB.cargarTodo();
       quitarSinSenal();
@@ -325,11 +333,17 @@
       editar: perfil.rol === "dueno"
     };
     $usuarioChip.textContent = usuario.nombre;
-    // El equipo de campo lleva la barra de abajo (Hoy · Proyectos · Chat · Horas)
+    // El equipo sin dinero lleva su «Hoy» (la clase rol-campo lo marca para el CSS)
     document.body.classList.toggle("rol-campo", !usuario.finanzas);
-    if ($("nav-campo")) $("nav-campo").hidden = !!usuario.finanzas;
+    // La barra de abajo (Hoy · Proyectos · Más) es para todos los que entran
+    document.body.classList.add("con-menu");
+    $("nav-abajo").hidden = false;
     $("btn-chat").hidden = false;
     $("btn-asistente").hidden = false;
+    // «Cobre y luz»: el avatar con las iniciales y el botón flotante
+    pintarAvatar();
+    $("fab").hidden = false;
+    armarLateral();
     arrancarChat();
     irHome();
   }
@@ -343,8 +357,18 @@
     usuario = null;
     $("btn-chat").hidden = true;
     $("btn-asistente").hidden = true;
-    document.body.classList.remove("rol-campo");
-    if ($("nav-campo")) $("nav-campo").hidden = true;
+    cerrarHoja();
+    $("fab").hidden = true;
+    pintarAvatar();
+    // Los resúmenes del inicio salen cerrados para el que entre después
+    urgentesAbierto = false;
+    avisosAbierto = false;
+    // Las tareas que esperaban su «Deshacer» se quedan sin borrar
+    tareasBorrando.forEach(reloj => clearTimeout(reloj));
+    tareasBorrando.clear();
+    document.body.classList.remove("rol-campo", "con-menu");
+    $("nav-abajo").hidden = true;
+    volverA = null;
     notaEdgarBorrador = "";
     if (chatTimer) { clearInterval(chatTimer); chatTimer = null; }
     $app.hidden = true;
@@ -407,6 +431,9 @@
     else if (!$("vista-gastos").hidden) pintarGastos();
     else if (!$("vista-chat").hidden) refrescarChat(false);
     else if (!$("vista-asistente").hidden) { /* la conversación no se toca al recargar */ }
+    else if (!$("vista-proyectos").hidden) pintarProyectos();
+    else if (!$("vista-proyectos-todos").hidden) pintarCategorias();
+    else if (!$("vista-mas").hidden) pintarMas();
     else { pintarInicio(); pintarCategorias(); pintarResumen(); }
   }
 
@@ -472,77 +499,195 @@ function esFalloDeRed(err) {
     });
   }
 
-  // ---------- Menú lateral (pantalla grande) ----------
-  // Copia las losetas del inicio a una columna fija a la izquierda. Tocar una
-  // entrada dispara la loseta original, así no hay dos caminos de código.
-  const LATERAL_HOME_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>';
-  const LATERAL_PROY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="8" height="7" rx="2"/><rect x="13" y="4" width="8" height="7" rx="2"/><rect x="3" y="13" width="8" height="7" rx="2"/><rect x="13" y="13" width="8" height="7" rx="2"/></svg>';
+  // ---------- El menú: Hoy · Proyectos · Más («Cobre y luz», opción A) ----------
+  // Las mismas tres entradas en dos sitios: la barra de abajo del teléfono
+  // (#nav-abajo, por debajo de 768 px) y el menú lateral fijo (#lateral, desde
+  // 768 px: riel estrecho hasta 1023, ancho desde 1024). Las siete losetas de
+  // antes ya no son el menú: cada una vive dentro de su pestaña.
+  const LATERAL_HOME_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>';
+  const LATERAL_PROY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="8" height="7" rx="2"/><rect x="13" y="4" width="8" height="7" rx="2"/><rect x="3" y="13" width="8" height="7" rx="2"/><rect x="13" y="13" width="8" height="7" rx="2"/></svg>';
+  const LATERAL_MAS_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
+  // La vista que está a la vista (la marca mostrar())
   let lateralVista = "home";
+  // ¿De qué pestaña se abrió la herramienta que está a la vista? «←» vuelve ahí.
+  // Lo ponen las losetas de Proyectos y las filas de Más; se borra al volver a
+  // una pestaña. Sin origen, «←» hace lo de siempre (el inicio).
+  let volverA = null;
+  // Qué pestaña se enciende con cada vista
+  const PESTANA_DE = {
+    home: "hoy", horas: "hoy",
+    proyectos: "proyectos", "proyectos-todos": "proyectos", etapas: "proyectos", lista: "proyectos",
+    detalle: "proyectos", alcance: "proyectos", checklist: "proyectos", materiales: "proyectos",
+    gastos: "proyectos", estimador: "proyectos", propuesta: "proyectos", cierre: "proyectos", levantamiento: "proyectos",
+    mas: "mas", calendario: "mas", chat: "mas", asistente: "mas"
+  };
+  const menuDeVista = vista => PESTANA_DE[vista] || "";
+  function irPestana(k) {
+    if (k === "hoy") irHome();
+    else if (k === "proyectos") irProyectos();
+    else if (k === "mas") irMas();
+  }
   function armarLateral() {
     const nav = $("lateral");
     if (!nav) return;
-    const losetas = [...document.querySelectorAll(".botones-rapidos .btn-horas")];
     nav.innerHTML = `
-      <button class="lat-item" data-lat="home">${LATERAL_HOME_SVG}<span>Inicio</span></button>
-      <button class="lat-item" data-lat="proyectos">${LATERAL_PROY_SVG}<span>Proyectos</span></button>
-      <div class="lat-sep"></div>` +
-      losetas.map(b => `<button class="lat-item" data-lat="${b.id}"${b.hidden ? " hidden" : ""}>${b.querySelector(".tile-ico").innerHTML}<span>${esc(b.querySelector(".tile-txt").textContent)}</span></button>`).join("");
-    nav.querySelectorAll(".lat-item").forEach(it => it.addEventListener("click", () => {
-      const k = it.dataset.lat;
-      if (k === "home") { irHome(); return; }
-      if (k === "proyectos") { irHome(); const c = document.querySelector("#categorias [data-tipo]"); if (c) c.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
-      const orig = $(k); if (orig) orig.click();
-    }));
+      <button type="button" class="lat-item" data-lat="hoy">${LATERAL_HOME_SVG}<span>Hoy</span></button>
+      <button type="button" class="lat-item" data-lat="proyectos">${LATERAL_PROY_SVG}<span>Proyectos</span></button>
+      <button type="button" class="lat-item" data-lat="mas">${LATERAL_MAS_SVG}<span>Más</span></button>`;
+    nav.querySelectorAll(".lat-item").forEach(it => it.addEventListener("click", () => irPestana(it.dataset.lat)));
     pintarLateral();
   }
-  function pintarLateral() {
-    const nav = $("lateral"); if (!nav) return;
-    const activo = { home: "home", etapas: "proyectos", lista: "proyectos", detalle: "proyectos",
-      horas: "btn-horas", calendario: "btn-calendario", checklist: "btn-checklist", materiales: "btn-materiales",
-      gastos: "btn-gastos", estimador: "btn-estimador", levantamiento: "btn-levantamiento",
-      propuesta: "btn-estimador", cierre: "btn-estimador", alcance: "proyectos" }[lateralVista] || "";
-    nav.querySelectorAll(".lat-item").forEach(it => {
-      it.classList.toggle("activo", it.dataset.lat === activo);
-      const orig = it.dataset.lat.startsWith("btn-") ? $(it.dataset.lat) : null;
-      if (orig) it.hidden = orig.hidden;   // el equipo no ve las losetas del dueño
-    });
-  }
-
-  // ---------- Barra de abajo del campo («Cobre y luz», tanda 2) ----------
-  // Solo el equipo sin dinero y solo en el teléfono (en la computadora está el
-  // menú lateral). Cuatro botones grandes para el pulgar: Hoy, Proyectos, Chat, Horas.
-  function pintarNavCampo() {
-    const nav = $("nav-campo");
-    if (!nav || nav.hidden) return;
-    const activo = { home: "home", etapas: "proyectos", lista: "proyectos", detalle: "proyectos",
-      alcance: "proyectos", chat: "chat", horas: "horas" }[lateralVista] || "";
-    nav.querySelectorAll("button[data-nav]").forEach(b => {
-      const on = b.dataset.nav === activo;
-      b.classList.toggle("active", on);
+  // La entrada encendida (cian y aria-current), en el lateral y en la barra de abajo
+  function marcarPestana(botones, clave, activa) {
+    botones.forEach(b => {
+      const on = b.dataset[clave] === activa;
+      b.classList.toggle(clave === "lat" ? "activo" : "active", on);
       if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
     });
   }
-  if ($("nav-campo")) $("nav-campo").querySelectorAll("button[data-nav]").forEach(b => b.addEventListener("click", () => {
-    const k = b.dataset.nav;
-    if (k === "home") irHome();
-    else if (k === "proyectos") {
-      // Lo mismo que «Proyectos» del menú lateral: el inicio, bajando a las categorías
-      irHome();
-      const c = $("categorias");
-      if (c) c.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-    else if (k === "chat") $("btn-chat").click();
-    else if (k === "horas") irHoras();
-  }));
+  function pintarLateral() {
+    const nav = $("lateral"); if (!nav) return;
+    marcarPestana(nav.querySelectorAll(".lat-item"), "lat", menuDeVista(lateralVista));
+  }
+  function pintarNavAbajo() {
+    const nav = $("nav-abajo");
+    if (!nav) return;
+    marcarPestana(nav.querySelectorAll("button[data-nav]"), "nav", menuDeVista(lateralVista));
+  }
+  $("nav-abajo").querySelectorAll("button[data-nav]").forEach(b => b.addEventListener("click", () => irPestana(b.dataset.nav)));
+
+  // ---------- La hoja de abajo («Cobre y luz», 25-sep) ----------
+  // Una sola hoja para todo lo que se abre desde un botón: el perfil del avatar,
+  // el botón flotante y, cuando Edgar lo decida, el menú de abajo.
+  //   abrirHoja({ titulo, cabeza, opciones: [{ icono, texto, detalle, alTocar, sinTraducir }], ancla })
+  // Es un <dialog> de la app: sube desde abajo, velo al 35 %, se cierra con
+  // Escape, tocando fuera o con «Cerrar». El foco va a la primera opción y al
+  // cerrar vuelve al botón que la abrió (ancla). Tocar una opción cierra la hoja
+  // y después hace lo suyo. «cabeza» es HTML ya escapado (va arriba, sin tocar).
+  let hojaAbierta = null;
+  function cerrarHoja() {
+    if (hojaAbierta && hojaAbierta.open) hojaAbierta.close("");
+  }
+  function abrirHoja({ titulo, cabeza, opciones, ancla }) {
+    cerrarHoja();
+    const ops = opciones || [];
+    const dlg = document.createElement("dialog");
+    dlg.className = "modal hoja hoja-app";
+    dlg.setAttribute("aria-label", titulo || "");
+    dlg.innerHTML = `<form method="dialog" class="modal-form">
+        <div class="hoja-asa" aria-hidden="true"></div>
+        <h2 class="hoja-app-titulo">${esc(titulo || "")}</h2>
+        ${cabeza || ""}
+        <div class="hoja-app-ops">${ops.map((o, i) => `
+          <button type="button" class="hoja-app-op" data-i="${i}">
+            <span class="hoja-app-ico" aria-hidden="true">${o.icono || ""}</span>
+            <span class="hoja-app-txt"><span class="hoja-app-t"${o.sinTraducir ? " data-no-i18n" : ""}>${esc(o.texto)}</span>${o.detalle ? `<span class="hoja-app-d">${esc(o.detalle)}</span>` : ""}</span>
+          </button>`).join("")}
+        </div>
+        <button type="submit" value="" class="btn btn-white hoja-app-cerrar">Cerrar</button>
+      </form>`;
+    document.body.appendChild(dlg);
+    let elegida = null;
+    dlg.querySelectorAll(".hoja-app-op").forEach(b => b.addEventListener("click", () => {
+      elegida = ops[Number(b.dataset.i)] || null;
+      dlg.close("");
+    }));
+    // Un toque en el velo (fuera de la hoja) la cierra sin hacer nada
+    dlg.addEventListener("click", ev => { if (ev.target === dlg) dlg.close(""); });
+    dlg.addEventListener("close", () => {
+      dlg.remove();
+      if (hojaAbierta === dlg) hojaAbierta = null;
+      document.body.classList.remove("hoja-abierta");
+      // Primero el foco vuelve al botón; si la opción abre otra vista, ella se lo lleva
+      if (ancla && document.contains(ancla) && !ancla.hidden) ancla.focus();
+      if (elegida && typeof elegida.alTocar === "function") elegida.alTocar();
+    });
+    hojaAbierta = dlg;
+    document.body.classList.add("hoja-abierta");
+    dlg.showModal();
+    const primera = dlg.querySelector(".hoja-app-op") || dlg.querySelector(".hoja-app-cerrar");
+    if (primera) primera.focus();
+    return dlg;
+  }
+
+  // ---------- El avatar de la barra y la hoja «Perfil» ----------
+  // Las iniciales del nombre («Edgar Arboleya» → «EA»)
+  const iniciales = nombre => String(nombre || "").trim().split(/\s+/).filter(Boolean)
+    .slice(0, 2).map(p => p[0]).join("").toUpperCase();
+  const ROL_LLANO = { dueno: "Dueño", campo: "Equipo de campo", license: "Licencia" };
+  const SVG_GLOBO = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg>';
+  const SVG_VERSION = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/><path d="M9.5 9.5 11.3 11.3 14.8 7.8"/></svg>';
+  const SVG_SALIR = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4H6.5A1.5 1.5 0 0 0 5 5.5v13A1.5 1.5 0 0 0 6.5 20H14"/><path d="M10 12h10"/><path d="m16.5 8.5 3.5 3.5-3.5 3.5"/></svg>';
+  const SVG_CHISPA = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.5c.5 3.4 2.1 5 5.5 5.5-3.4.5-5 2.1-5.5 5.5-.5-3.4-2.1-5-5.5-5.5 3.4-.5 5-2.1 5.5-5.5z"/><path d="M18 13.5c.3 1.9 1.1 2.7 3 3-1.9.3-2.7 1.1-3 3-.3-1.9-1.1-2.7-3-3 1.9-.3 2.7-1.1 3-3z"/></svg>';
+  const SVG_BURBUJA = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a7.5 7.5 0 0 1-7.5 7.5H6.2L3 21.5l.9-4.6A7.5 7.5 0 1 1 21 11.5z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg>';
+  function pintarAvatar() {
+    const el = $("avatar-iniciales");
+    if (el) el.textContent = usuario ? iniciales(usuario.nombre) : "";
+    if ($("btn-avatar")) $("btn-avatar").removeAttribute("aria-busy");
+  }
+  function abrirPerfil() {
+    if (!usuario) return;
+    const rol = state && state.perfil ? state.perfil.rol : "";
+    const version = document.querySelector(".membrete-guardado [data-version]");
+    abrirHoja({
+      titulo: "Perfil",
+      ancla: $("btn-avatar"),
+      cabeza: `<div class="hoja-perfil">
+          <span class="hoja-perfil-avatar" aria-hidden="true" data-no-i18n>${esc(iniciales(usuario.nombre))}</span>
+          <span class="hoja-perfil-txt"><span class="hoja-perfil-nombre" data-no-i18n>${esc(usuario.nombre)}</span><span class="hoja-perfil-rol">${esc(ROL_LLANO[rol] || usuario.rol || "")}</span></span>
+        </div>`,
+      opciones: [
+        // «English» / «Español»: el idioma AL QUE cambias (como el botón de siempre)
+        { icono: SVG_GLOBO, texto: EN_APP ? "Español" : "English", sinTraducir: true,
+          detalle: EN_APP ? "Cambiar la app a español" : "Cambiar la app a inglés",
+          alTocar: () => $("btn-idioma").click() },
+        { icono: SVG_VERSION, texto: `Versión ${APP_VERSION || "?"}`, detalle: "Toca para comprobarla",
+          alTocar: () => { if (version) version.click(); } },
+        { icono: SVG_SALIR, texto: "Salir", detalle: "Cambiar de usuario",
+          alTocar: () => $("btn-salir").click() }
+      ]
+    });
+  }
+  $("btn-avatar").addEventListener("click", abrirPerfil);
+
+  // ---------- El botón flotante: el asistente y el chat ----------
+  // Dos opciones en la hoja. Si para este usuario una de las dos está
+  // escondida, va directo a la otra. La bolita es la misma cuenta de #chat-badge.
+  function abrirFlotante() {
+    if (!usuario) return;
+    const asis = $("btn-asistente"), chat = $("btn-chat");
+    if (asis.hidden && chat.hidden) return;
+    if (asis.hidden) { chat.click(); return; }
+    if (chat.hidden) { asis.click(); return; }
+    const badge = $("chat-badge");
+    const sinLeer = badge && !badge.hidden ? badge.textContent : "";
+    abrirHoja({
+      titulo: "Asistente y chat",
+      ancla: $("fab"),
+      opciones: [
+        { icono: SVG_CHISPA, texto: "Preguntarle al asistente", detalle: "Te contesta y te anota lo que le digas", alTocar: () => asis.click() },
+        { icono: SVG_BURBUJA, texto: sinLeer ? `Chat del equipo — ${sinLeer} sin leer` : "Chat del equipo",
+          detalle: "Los mensajes del grupo y los privados", alTocar: () => chat.click() }
+      ]
+    });
+  }
+  $("fab").addEventListener("click", abrirFlotante);
 
   // ---------- Cambio de vista ----------
   function mostrar(vista, { kicker, titulo, volver, nuevo, mantenerScroll }) {
+    // Abrir otra vista cierra la hoja de abajo si quedó alguna abierta
+    cerrarHoja();
     lateralVista = vista;
+    // Volver a una pestaña borra el origen que recordaba «←»
+    if (["home", "proyectos", "proyectos-todos", "mas"].includes(vista)) volverA = null;
     // La vista a la vista del CSS: en la pantalla «Hoy» del campo la barra de títulos sobra
     document.body.dataset.vista = vista;
     pintarLateral();
-    pintarNavCampo();
+    pintarNavAbajo();
     $home.hidden = vista !== "home";
+    $("vista-proyectos").hidden = vista !== "proyectos";
+    $("vista-proyectos-todos").hidden = vista !== "proyectos-todos";
+    $("vista-mas").hidden = vista !== "mas";
     $vEtapas.hidden = vista !== "etapas";
     $vLista.hidden = vista !== "lista";
     $vHoras.hidden = vista !== "horas";
@@ -572,11 +717,16 @@ function esFalloDeRed(err) {
   function irHome() {
     tipoActivo = null;
     etapaActiva = null;
-    mostrar("home", { kicker: "Panel de proyectos", titulo: "Categorías", volver: false, nuevo: true });
+    // Los resúmenes de urgentes y avisos se abren en su sitio; al volver al
+    // inicio DESDE OTRA VISTA salen cerrados (un repintado no los cierra)
+    if (lateralVista !== "home") { urgentesAbierto = false; avisosAbierto = false; }
+    // «Hoy»: la fecha en llano (hora de Florida) y el saludo con el primer nombre
+    // «+ Nuevo proyecto» ya no sale en Hoy: vive en Proyectos
+    mostrar("home", { kicker: fechaHoyLlana(), titulo: `Hola, ${primerNombreDe(usuario.nombre)}`, volver: false, nuevo: false });
+    // Las losetas de siempre (escondidas) siguen diciendo qué ve cada quien
     $("btn-gastos").hidden = !usuario.finanzas;
     $("btn-estimador").hidden = !usuario.finanzas;
     $("btn-levantamiento").hidden = !usuario.finanzas;
-    armarLateral();   // después de decidir qué losetas ve este usuario
     pintarInicio();
     pintarCategorias();
     pintarResumen();
@@ -603,6 +753,18 @@ function esFalloDeRed(err) {
   }
 
   // ---------- El inicio inteligente ----------
+  // ¿Están abiertos los resúmenes del inicio del dueño? Viven aquí (no en la
+  // pantalla) para que un repintado después de marcar una tarea no los cierre.
+  let urgentesAbierto = false;
+  let avisosAbierto = false;
+  // El primer nombre («Edgar Arboleya» → «Edgar»)
+  const primerNombreDe = nombre => String(nombre || "").trim().split(/\s+/)[0] || "";
+  // «viernes 25 de septiembre» (en inglés «Friday, September 25»), siempre en hora
+  // de Florida. La usan el título del inicio del dueño y el «Hoy» del campo.
+  const fechaHoyLlana = () => {
+    const txt = new Date().toLocaleDateString(LOCALE, { timeZone: "America/New_York", weekday: "long", day: "numeric", month: "long" });
+    return EN_APP ? txt : txt.replace(",", "");
+  };
   const hoyISO = () => {
     const h = new Date();
     return fechaISO(h.getFullYear(), h.getMonth(), h.getDate());
@@ -621,13 +783,21 @@ function esFalloDeRed(err) {
   function pintarInicio() {
     // El equipo de campo (sin dinero) tiene su propia pantalla «Hoy».
     // El inicio del dueño sigue exactamente igual.
-    if (!usuario.finanzas) { pintarInicioCampo(); return; }
+    if (!usuario.finanzas) {
+      // «Vence esta semana» y «Horas» son del dueño
+      $("inicio-vence").innerHTML = "";
+      $("inicio-horas").hidden = true;
+      pintarInicioCampo();
+      return;
+    }
+    // El orden de la pantalla lo da index.html: próximos días, urgentes, avisos,
+    // vence esta semana, horas, inspecciones y después los resúmenes de siempre
     pintarInicioHoy();
     pintarInicioUrgentes();
     pintarInicioAvisos();
+    pintarInicioVence();
+    pintarInicioHoras();
     pintarInicioInspecciones();
-    pintarInicioEquipo();
-    pintarInicioSemana();
     pintarInicioMes();
     pintarInicioEmpresa();
     pintarInicioNotif();
@@ -1052,7 +1222,9 @@ function esFalloDeRed(err) {
     const etiqueta = (d, k) => {
       if (k === 0) return "HOY"; if (k === 1) return "MAÑANA";
       const t = new Date(Date.parse(d + "T12:00:00"));
-      return `${DIA_CORTO[t.getDay()].toUpperCase()} ${t.getDate()}`;
+      // En inglés el día corto sale en inglés («MON 28»)
+      const dia = EN_APP ? t.toLocaleDateString(LOCALE, { weekday: "short" }) : DIA_CORTO[t.getDay()];
+      return `${dia.toUpperCase()} ${t.getDate()}`;
     };
     const filas = dias.map((d, k) => {
       const lista = porDia[d].sort((a, b) => ordenHora(a.hora) - ordenHora(b.hora));
@@ -1126,7 +1298,23 @@ function esFalloDeRed(err) {
   const hablaDeDinero = t => /\$|factur|cobr|\bhitos?\b|precios?\b|invoice|payment|pag[oaó]d?[ao]?s?\b|dep[oó]sito|monto|dinero|saldo|deuda/i.test(String(t || ""));
   // Los pendientes que puede ver quien mira: al equipo de campo no le salen los
   // que hablan de dinero, en NINGUNA pantalla (inicio, checklist, calendario, ficha)
-  const pendientesVisibles = () => (state && state.pendientes ? state.pendientes : []).filter(x => (usuario && usuario.finanzas) || !hablaDeDinero(x.descripcion));
+  // Tareas que se acaban de eliminar y esperan sus 6 s de «Deshacer»: no salen
+  // en ninguna pantalla aunque la base todavía las tenga («pend:12», «punto:5»)
+  const tareasBorrando = new Map();
+  const pendientesVisibles = () => (state && state.pendientes ? state.pendientes : []).filter(x =>
+    ((usuario && usuario.finanzas) || !hablaDeDinero(x.descripcion)) && !tareasBorrando.has("pend:" + x.id));
+  // Las tareas que crea el asistente llevan «[via Claude]» (o «· [via Claude]»)
+  // dentro del texto. En pantalla la marca sale aparte, debajo y pequeña; lo
+  // guardado en la base no se toca.
+  const RE_VIA = /\s*(?:·\s*)?\[(?:corregido\s+)?via Claude\]/gi;
+  const partirVia = texto => {
+    const t = String(texto ?? "");
+    RE_VIA.lastIndex = 0;
+    if (!RE_VIA.test(t)) return { texto: t, via: false };
+    RE_VIA.lastIndex = 0;
+    return { texto: t.replace(RE_VIA, "").replace(/\s*·\s*$/, "").trim(), via: true };
+  };
+  const VIA_HTML = `<span class="tarea-via">vía Claude</span>`;
   // Lo que Jian lleva escrito para Edgar sobrevive a los repintados del inicio
   let notaEdgarBorrador = "";
 
@@ -1187,9 +1375,8 @@ function esFalloDeRed(err) {
     const hechos = puntos.filter(x => x.hecho).length;
 
     // ---- 1. Saludo y resumen ----
-    const primerNombre = String(usuario.nombre || "").trim().split(/\s+/)[0] || "";
-    const fechaTxt = new Date(Date.parse(hoy + "T12:00:00")).toLocaleDateString(LOCALE, { weekday: "long", day: "numeric", month: "long" });
-    const fechaLlana = EN_APP ? fechaTxt : fechaTxt.replace(",", "");
+    const primerNombre = primerNombreDe(usuario.nombre);
+    const fechaLlana = fechaHoyLlana();
     const chip = (n, una, varias) => `<span class="chip">${n} ${n === 1 ? una : varias}</span>`;
     const saludo = `
       <div class="hoy-saludo">
@@ -1273,7 +1460,8 @@ function esFalloDeRed(err) {
       <div class="chk-row" data-id="${esc(x.id)}">
         <button type="button" class="chk-toque" aria-label="Marcar hecha"><span class="chk">${SVG_PALOMITA}</span></button>
         <span class="chk-txt">
-          <span class="chk-linea">${prioDe(x.prioridad) === "urgente" ? `<span class="dot dot-warn" title="Urgente"></span>` : ""}<span>${t(x.descripcion)}</span></span>
+          <span class="chk-linea">${prioDe(x.prioridad) === "urgente" ? `<span class="dot dot-warn" title="Urgente"></span>` : ""}<span>${t(partirVia(x.descripcion).texto)}</span></span>
+          ${partirVia(x.descripcion).via ? VIA_HTML : ""}
           ${obra ? "" : `<span class="chk-obra">${t(nombreProyecto(x.proyecto) || "General")}</span>`}
         </span>
       </div>`;
@@ -1296,7 +1484,8 @@ function esFalloDeRed(err) {
       const fila = b.closest(".chk-row");
       marcarTarea("pend", fila.dataset.id, fila);
     }));
-    $("hoy-ver-checklist").addEventListener("click", () => irChecklist(pid || undefined));
+    // «Ver todo el checklist» es todo (con la obra de ahora abierta); el panel, solo esa obra
+    $("hoy-ver-checklist").addEventListener("click", () => { if (pid) chkAbiertos.add(pid); irChecklist(); });
     if ($("hoy-ver-panel")) $("hoy-ver-panel").addEventListener("click", () => irChecklist(pid));
 
     // ---- 5. La regla del día + 6. las fotos de hoy ----
@@ -1493,8 +1682,8 @@ function esFalloDeRed(err) {
       return `<tr><th>${esc(u.nombre.split(" ")[0])}</th>${celdas}<td class="tot">${Number.isInteger(total) ? total : total.toFixed(1)} h</td></tr>`;
     }).join("");
     caja.innerHTML = `
-      <div class="inicio-card">
-        <div class="inicio-card-titulo">⏱ Horas de esta semana</div>
+      <div class="horas-parte">
+        <h3 class="horas-sub">Horas de esta semana</h3>
         <table class="semana-tabla"><thead><tr><th></th>${dias.map((d, k) => `<th class="${d === hoy ? "hoy" : ""}">${DIA_CORTO[(k + 1) % 7]}<br><small>${Number(d.slice(8))}</small></th>`).join("")}<th></th></tr></thead>
         <tbody>${filas}</tbody></table>
         <p class="modal-nota" style="margin:.35rem 0 0">Un punto (·) es un día de semana ya pasado sin horas reportadas.</p>
@@ -1502,29 +1691,73 @@ function esFalloDeRed(err) {
   }
 
   // 🔴 URGENTES: lo que se categorizó urgente en cualquier checklist.
-  //    Lo ve TODO el equipo, y se palomea desde aquí mismo.
+  //    Solo el inicio del dueño (el campo tiene su «Hoy»). Sale RESUMIDO: una
+  //    tarjeta-botón con el número, el más viejo y las obras; al tocarla se abre
+  //    aquí mismo la lista de siempre, que se palomea desde aquí.
+  // El nombre corto de una obra para las líneas de resumen («Dicke — Subpanel y EV» → «Dicke»)
+  const obraCorta = nombre => recortarTitulo(String(nombre || "").split(/\s+[—–-]\s+/)[0], 26);
+  // «Mirabella, Calla Terrace, Dicke…»: hasta 3 obras distintas, en el orden en que llegan
+  const tresObras = nombres => {
+    const unicas = [...new Set(nombres.map(n => obraCorta(n || "General")))];
+    return unicas.slice(0, 3).join(", ") + (unicas.length > 3 ? "…" : "");
+  };
   function pintarInicioUrgentes() {
     const caja = $("inicio-urgentes");
     if (!caja) return;
     const urgentes = urgentesTodos();
     const pendientesTotal = pendientesAbiertos().length;
+    // Sin urgentes no hay lista que tener abierta
+    if (!urgentes.length) urgentesAbierto = false;
     if (!urgentes.length && !pendientesTotal) { caja.innerHTML = ""; return; }
 
-    caja.innerHTML = `
-      <div class="inicio-card${urgentes.length ? " avisos" : ""}">
-        <div class="inicio-card-titulo">${urgentes.length
-          ? `🔴 Lo urgente ahora (${urgentes.length})`
-          : "✅ Nada urgente ahora mismo"}</div>
-        ${urgentes.map(filaTarea).join("")}
-        <div class="hoy-mas">
-          <button type="button" class="accion secundaria" id="btn-ir-checklist-inicio">
-            ✅ Abrir el checklist completo
-          </button>
-        </div>
-      </div>`;
+    // Sin urgentes pero con pendientes: una línea tranquila que abre el checklist
+    if (!urgentes.length) {
+      caja.innerHTML = `
+        <button type="button" class="card card-white resumen-calmo" id="btn-ir-checklist-inicio">
+          <span class="resumen-calmo-txt"><span>Nada urgente ahora</span> · <span>${pendientesTotal} ${pendientesTotal === 1 ? "pendiente" : "pendientes"}</span></span>
+          <span class="resumen-ver" aria-hidden="true">›</span>
+        </button>`;
+      $("btn-ir-checklist-inicio").addEventListener("click", () => irChecklist());
+      return;
+    }
 
-    $("btn-ir-checklist-inicio").addEventListener("click", () => irChecklist());
-    engancharTareas(caja, pintarInicio);
+    // El más viejo: la fecha del pendiente más antiguo (los puntos del alcance no la tienen)
+    const fechaDe = t => t.fecha || (t.tipo === "pend"
+      ? ((state.pendientes || []).find(x => String(x.id) === String(t.id)) || {}).fecha || "" : "");
+    const fechas = urgentes.map(fechaDe).filter(Boolean).sort();
+    const viejo = fechas.length ? Math.max(0, diasDesde(fechas[0]) || 0) : null;
+    const viejoTxt = viejo === null ? "" : viejo === 0 ? "El más viejo es de hoy" : `El más viejo lleva ${plural(viejo, "día")}`;
+    const obras = tresObras(urgentes.map(t => t.proyectoNombre));
+    const n = urgentes.length;
+    caja.innerHTML = `
+      <button type="button" class="card card-volt resumen-btn resumen-urg" id="urgentes-resumen" aria-expanded="${urgentesAbierto}" aria-controls="urgentes-lista">
+        <span class="resumen-punto rojo" aria-hidden="true"></span>
+        <span class="resumen-cuerpo">
+          <span class="resumen-cifra"><span class="resumen-num" data-no-i18n>${n}</span> <span class="resumen-palabra">${n === 1 ? "urgente" : "urgentes"}</span></span>
+          <span class="resumen-linea">${viejoTxt ? `<span>${esc(viejoTxt)}</span> · ` : ""}<span data-no-i18n>${esc(sinMontos(obras))}</span></span>
+        </span>
+        <span class="resumen-ver"><span>${urgentesAbierto ? "Ocultar" : "Ver"}</span> <span class="resumen-flecha" aria-hidden="true">›</span></span>
+      </button>
+      ${urgentesAbierto ? `
+      <div class="resumen-lista" id="urgentes-lista">
+        ${urgentes.map(filaTarea).join("")}
+        <div class="resumen-botones">
+          <button type="button" class="btn sm btn-navy" id="btn-ir-checklist-inicio">Abrir el checklist completo</button>
+          <button type="button" class="btn sm btn-white" id="urgentes-cerrar">Cerrar</button>
+        </div>
+      </div>` : ""}`;
+
+    const alternar = abrir => {
+      urgentesAbierto = abrir;
+      pintarInicioUrgentes();
+      const r = $("urgentes-resumen"); if (r) r.focus();
+    };
+    $("urgentes-resumen").addEventListener("click", () => alternar(!urgentesAbierto));
+    if (urgentesAbierto) {
+      $("btn-ir-checklist-inicio").addEventListener("click", () => irChecklist());
+      $("urgentes-cerrar").addEventListener("click", () => alternar(false));
+      engancharTareas(caja, pintarInicio);
+    }
   }
 
   // Corregir el texto de un pendiente rojo (lo usan el inicio y el calendario)
@@ -1557,12 +1790,12 @@ function esFalloDeRed(err) {
       const partes = [];
       if (fa.materiales) partes.push(`${fa.materiales} material${fa.materiales > 1 ? "es" : ""}`);
       if (fa.gestiones) partes.push(`${fa.gestiones} gestión${fa.gestiones > 1 ? "es" : ""}`);
-      avisos.push({ accion: "arranque", id: p.id, icono: "🚀", texto: `${p.nombre} — ${partes.join(" y ")} para arrancar` });
+      avisos.push({ tipo: "arranque", accion: "arranque", id: p.id, icono: "🚀", texto: `${p.nombre} — ${partes.join(" y ")} para arrancar` });
     }
     // Materiales generales (sin proyecto) que siguen sin comprarse
     const porComprarGral = (state.materiales || []).filter(m => m.estado === "falta" && !m.proyecto).length;
     if (porComprarGral)
-      avisos.push({ accion: "materiales", icono: "🛒", texto: `${porComprarGral} material${porComprarGral > 1 ? "es" : ""} general${porComprarGral > 1 ? "es" : ""} por comprar` });
+      avisos.push({ tipo: "materiales", accion: "materiales", icono: "🛒", texto: `${porComprarGral} material${porComprarGral > 1 ? "es" : ""} general${porComprarGral > 1 ? "es" : ""} por comprar` });
     // 💵 Trabajo TERMINADO con dinero sin cobrar: si nunca se emitió factura,
     // ningún otro aviso lo ve. Es el dinero que se olvida para siempre.
     for (const p of proyectos()) {
@@ -1570,19 +1803,19 @@ function esFalloDeRed(err) {
       if (typeof p.contrato !== "number" || typeof p.cobrado !== "number") continue;
       const falta = p.contrato - p.cobrado;
       if (falta > 1)
-        avisos.push({ id: p.id, pestana: "dinero", icono: "💵", texto: `${p.nombre} está TERMINADO y quedan ${fmt(falta)} sin cobrar` });
+        avisos.push({ tipo: "cobro", id: p.id, pestana: "dinero", icono: "💵", texto: `${p.nombre} está TERMINADO y quedan ${fmt(falta)} sin cobrar` });
     }
     // 📋 Aprobado sin monto de contrato: no se puede facturar ni medir el margen
     for (const p of proyectos()) {
       if (p.estado !== "aprobado") continue;
       if (typeof p.contrato === "number" && p.contrato > 0) continue;
-      avisos.push({ id: p.id, pestana: "dinero", icono: "📋", texto: `${p.nombre} está aprobado SIN monto de contrato — ponle el precio para poder facturar` });
+      avisos.push({ tipo: "contrato", id: p.id, pestana: "dinero", icono: "📋", texto: `${p.nombre} está aprobado SIN monto de contrato — ponle el precio para poder facturar` });
     }
     for (const p of proyectos()) {
       for (const f of facturasPendientes(p)) {
         const dias = diasDesde(f.fechaISO);
         if (dias !== null && dias >= 30)
-          avisos.push({ id: p.id, pestana: "dinero", icono: "💵", texto: `Factura #${f.num} de ${p.nombre} lleva ${dias} días sin pagar (${fmt(saldoFactura(f))}${f.cobrado > 0 ? ` de ${fmt(f.monto)}` : ""})` });
+          avisos.push({ tipo: "factura", id: p.id, pestana: "dinero", icono: "💵", texto: `Factura #${f.num} de ${p.nombre} lleva ${dias} días sin pagar (${fmt(saldoFactura(f))}${f.cobrado > 0 ? ` de ${fmt(f.monto)}` : ""})` });
       }
       if (p.estado === "enviado") {
         // P09 (25-sep, Edgar lo pidió): la propuesta avisa cuando le quedan 5 días
@@ -1590,43 +1823,80 @@ function esFalloDeRed(err) {
         if (p.propuestaValidaHasta) {
           const pasados = diasDesde(p.propuestaValidaHasta);
           if (pasados > 0)
-            avisos.push({ id: p.id, pestana: "archivos", icono: "⏳", texto: `${p.nombre}: la propuesta VENCIÓ hace ${plural(pasados, "día")} (valía hasta ${p.propuestaValidaHasta}) — renuévala desde la ficha o márcala no aprobada` });
+            avisos.push({ tipo: "propuesta", id: p.id, pestana: "archivos", icono: "⏳", texto: `${p.nombre}: la propuesta VENCIÓ hace ${plural(pasados, "día")} (valía hasta ${p.propuestaValidaHasta}) — renuévala desde la ficha o márcala no aprobada` });
           else if (pasados >= -5)
-            avisos.push({ id: p.id, pestana: "archivos", icono: "⏳", texto: `${p.nombre}: la propuesta vence ${pasados === 0 ? "HOY" : `en ${plural(-pasados, "día")}`} (${p.propuestaValidaHasta}) — llama al cliente antes` });
+            avisos.push({ tipo: "propuesta", id: p.id, pestana: "archivos", icono: "⏳", texto: `${p.nombre}: la propuesta vence ${pasados === 0 ? "HOY" : `en ${plural(-pasados, "día")}`} (${p.propuestaValidaHasta}) — llama al cliente antes` });
         }
         const dias = diasDesde(p.propuestaArmadaEl || p.actualizado);
         if (dias !== null && dias >= 7)
-          avisos.push({ id: p.id, icono: "⏳", texto: `${p.nombre}: propuesta sin respuesta hace ${plural(dias, "día")} — llama o escribe al cliente, o márcala no aprobada` });
+          avisos.push({ tipo: "propuesta", id: p.id, icono: "⏳", texto: `${p.nombre}: propuesta sin respuesta hace ${plural(dias, "día")} — llama o escribe al cliente, o márcala no aprobada` });
       }
       if (p.estado === "ejecucion" && p.horas && p.horas.estimadas > 0) {
         const razon = p.horas.reales / p.horas.estimadas;
         if (razon > 1)
-          avisos.push({ id: p.id, pestana: "dinero", icono: "⏱", texto: `${p.nombre}: ${p.horas.reales}h trabajadas de ${p.horas.estimadas}h estimadas — se está comiendo el margen` });
+          avisos.push({ tipo: "labor", id: p.id, pestana: "dinero", icono: "⏱", texto: `${p.nombre}: ${p.horas.reales}h trabajadas de ${p.horas.estimadas}h estimadas — se está comiendo el margen` });
         else if (razon >= 0.8)
-          avisos.push({ id: p.id, pestana: "dinero", icono: "⏱", texto: `${p.nombre}: el labor va al ${Math.round(razon * 100)}% de lo estimado (${p.horas.reales}h de ${p.horas.estimadas}h) — vigílalo` });
+          avisos.push({ tipo: "labor", id: p.id, pestana: "dinero", icono: "⏱", texto: `${p.nombre}: el labor va al ${Math.round(razon * 100)}% de lo estimado (${p.horas.reales}h de ${p.horas.estimadas}h) — vigílalo` });
       }
       if (["ejecucion", "aprobado", "pausa"].includes(p.estado)
           && p.presupuestoMateriales > 0) {
         const gasto = gastoMateriales(p.id);
         const razon = gasto / p.presupuestoMateriales;
         if (razon > 1)
-          avisos.push({ id: p.id, pestana: "dinero", icono: "🛒", texto: `${p.nombre}: materiales PASADOS del presupuesto — ${fmt(gasto)} de ${fmt(p.presupuestoMateriales)}` });
+          avisos.push({ tipo: "materiales", id: p.id, pestana: "dinero", icono: "🛒", texto: `${p.nombre}: materiales PASADOS del presupuesto — ${fmt(gasto)} de ${fmt(p.presupuestoMateriales)}` });
         else if (razon >= 0.8)
-          avisos.push({ id: p.id, pestana: "dinero", icono: "🛒", texto: `${p.nombre}: materiales al ${Math.round(razon * 100)}% del presupuesto (${fmt(gasto)} de ${fmt(p.presupuestoMateriales)})` });
+          avisos.push({ tipo: "materiales", id: p.id, pestana: "dinero", icono: "🛒", texto: `${p.nombre}: materiales al ${Math.round(razon * 100)}% del presupuesto (${fmt(gasto)} de ${fmt(p.presupuestoMateriales)})` });
       }
     }
-    if (!avisos.length) { $("inicio-avisos").innerHTML = ""; return; }
-    $("inicio-avisos").innerHTML = `
-      <div class="inicio-card avisos">
-        <div class="inicio-card-titulo">⚠ Avisos</div>
+    const caja = $("inicio-avisos");
+    if (!avisos.length) { avisosAbierto = false; caja.innerHTML = ""; return; }
+    // Resumido: el número y, en palabras, los tres tipos que más salen. Sin montos.
+    const cuenta = {};
+    avisos.forEach(a => { cuenta[a.tipo] = (cuenta[a.tipo] || 0) + 1; });
+    const ORDEN = ["propuesta", "labor", "materiales", "factura", "cobro", "contrato", "arranque"];
+    const enPalabras = (tipo, k) => ({
+      propuesta: k === 1 ? "1 propuesta" : `${k} propuestas`,
+      labor: `${k} de labor`,
+      materiales: `${k} de materiales`,
+      factura: k === 1 ? "1 factura vieja" : `${k} facturas viejas`,
+      cobro: k === 1 ? "1 obra sin cobrar" : `${k} obras sin cobrar`,
+      contrato: `${k} sin contrato`,
+      arranque: `${k} para arrancar`
+    }[tipo] || `${k}`);
+    const tipos = Object.keys(cuenta)
+      .sort((x, y) => (cuenta[y] - cuenta[x]) || (ORDEN.indexOf(x) - ORDEN.indexOf(y)))
+      .slice(0, 3);
+    const n = avisos.length;
+    caja.innerHTML = `
+      <button type="button" class="card card-white resumen-btn resumen-avisos" id="avisos-resumen" aria-expanded="${avisosAbierto}" aria-controls="avisos-lista">
+        <span class="resumen-punto ambar" aria-hidden="true"></span>
+        <span class="resumen-cuerpo">
+          <span class="resumen-cifra"><span class="resumen-num" data-no-i18n>${n}</span> <span class="resumen-palabra">${n === 1 ? "aviso" : "avisos"}</span></span>
+          <span class="resumen-linea">${tipos.map(t => `<span>${esc(enPalabras(t, cuenta[t]))}</span>`).join(" · ")}</span>
+        </span>
+        <span class="resumen-ver"><span>${avisosAbierto ? "Ocultar" : "Ver"}</span> <span class="resumen-flecha" aria-hidden="true">›</span></span>
+      </button>
+      ${avisosAbierto ? `
+      <div class="inicio-card avisos resumen-lista" id="avisos-lista">
         ${avisos.map(a => `
-          <button class="aviso-linea" data-id="${esc(a.id || "")}" data-accion="${esc(a.accion || "")}" data-pestana="${esc(a.pestana || "")}">
+          <button class="aviso-linea" data-id="${esc(a.id || "")}" data-accion="${esc(a.accion || "")}" data-pestana="${esc(a.pestana || "")}" data-tipo="${esc(a.tipo || "")}">
             <span>${a.icono}</span>
             <span class="aviso-texto">${esc(a.texto)}</span>
             <span class="cat-flecha">›</span>
           </button>`).join("")}
-      </div>`;
-    $("inicio-avisos").querySelectorAll(".aviso-linea").forEach(btn => {
+        <div class="resumen-botones">
+          <button type="button" class="btn sm btn-white" id="avisos-cerrar">Cerrar</button>
+        </div>
+      </div>` : ""}`;
+    const alternar = abrir => {
+      avisosAbierto = abrir;
+      pintarInicioAvisos();
+      const r = $("avisos-resumen"); if (r) r.focus();
+    };
+    $("avisos-resumen").addEventListener("click", () => alternar(!avisosAbierto));
+    if (!avisosAbierto) return;
+    $("avisos-cerrar").addEventListener("click", () => alternar(false));
+    caja.querySelectorAll(".aviso-linea").forEach(btn => {
       btn.addEventListener("click", () => {
         if (btn.dataset.accion === "materiales") irMateriales();
         else if (btn.dataset.accion === "arranque") irMateriales(btn.dataset.id);
@@ -1729,7 +1999,7 @@ function esFalloDeRed(err) {
         .filter(x => x.autorId === u.id && !x.resuelto).slice(-5).reverse();
       const pendHTML = pendDe.length ? `
         <div class="eq-pend-titulo">Pendientes que reportó (se manejan en el ✅ Checklist):</div>
-        ${pendDe.map(x => `<div class="eq-pend">• ${esc(x.descripcion)} <span class="tarea-meta">${esc(nombreProyecto(x.proyecto) || "General")} · ${esc(x.fecha)}</span></div>`).join("")}` : "";
+        ${pendDe.map(x => `<div class="eq-pend">• ${esc(partirVia(x.descripcion).texto)} <span class="tarea-meta">${esc(nombreProyecto(x.proyecto) || "General")} · ${esc(x.fecha)}</span>${partirVia(x.descripcion).via ? VIA_HTML : ""}</div>`).join("")}` : "";
       return `<details class="equipo-det" data-uid="${esc(u.id)}">
           <summary class="equipo-item">
             <span class="equipo-dot ${clase}"></span>
@@ -1759,8 +2029,8 @@ function esFalloDeRed(err) {
         </details>`;
     }).join("");
     $("inicio-equipo").innerHTML = `
-      <div class="inicio-card">
-        <div class="inicio-card-titulo">⏱ Reporte de horas del equipo</div>
+      <div class="horas-parte">
+        <h3 class="horas-sub">Reporte de horas del equipo</h3>
         ${capacidad}
         ${filas}
       </div>`;
@@ -1922,13 +2192,339 @@ function esFalloDeRed(err) {
       </div>`;
   }
 
+  // ---------- «Horas» del dueño: una sola tarjeta ----------
+  // Las dos de siempre («Reporte de horas del equipo» y «Horas de esta semana»)
+  // van juntas dentro de la tarjeta «Horas» de index.html, con el mismo contenido.
+  function pintarInicioHoras() {
+    $("inicio-horas").hidden = false;
+    pintarInicioEquipo();
+    pintarInicioSemana();
+  }
+  // «Reportar mis horas» de la tarjeta: toca la loseta de siempre (un solo camino)
+  $("horas-reportar").addEventListener("click", () => $btnHoras.click());
+
+  // ---------- Fechas en llano para las filas cortas ----------
+  const DIA_CORTO_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const MES_CORTO_EN = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  // «2026-09-26» → «vie 26» (en inglés «Fri 26»). Más allá de una semana lleva
+  // también el mes («jue 15 oct»), para no confundir el día con el de este mes.
+  const diaLlano = iso => {
+    const [a, m, d] = String(iso || "").slice(0, 10).split("-").map(Number);
+    if (!a || !m || !d) return "";
+    const dia = `${(EN_APP ? DIA_CORTO_EN : DIA_CORTO)[new Date(a, m - 1, d).getDay()]} ${d}`;
+    const lejos = Math.abs(diasHasta(iso) || 0) > 7;
+    return lejos ? `${dia} ${(EN_APP ? MES_CORTO_EN : MES_CORTO)[m]}` : dia;
+  };
+  // Cuántos días faltan hasta esa fecha (0 = hoy; negativo = ya pasó)
+  const diasHasta = iso => { const d = diasDesde(iso); return d === null ? null : -d; };
+  // Lo que ve quien mira: el campo nunca un «$» (regla 3)
+  const nombreVis = x => (usuario && usuario.finanzas) ? String(x || "") : sinDinero(x);
+  // Sin cifras de dinero para NADIE, tampoco el dueño (donde el pliego dice «sin montos»)
+  const sinCifras = x => String(x ?? "").replace(/\$\s?\d[\d,.]*/g, "•••");
+
+  // ---------- 📅 VENCE ESTA SEMANA (solo dueño) ----------
+  // Lo que vence de hoy a 7 días (los papeles de la empresa, a 30), y arriba lo
+  // que venció hace 7 días o menos. Sin montos: qué es, de qué obra y cuándo.
+  function cosasQueVencen() {
+    const cosas = [];
+    const entra = (fecha, ventana) => { const f = diasHasta(fecha); return f !== null && f >= -7 && f <= ventana; };
+    for (const p of proyectos()) {
+      // La propuesta viva de cada obra enviada
+      if (p.estado === "enviado" && p.propuestaValidaHasta && entra(p.propuestaValidaHasta, 7))
+        cosas.push({ que: "Propuesta", obra: p.nombre, fecha: p.propuestaValidaHasta, id: p.id, pestana: "archivos" });
+      if (["completado", "no_aprobado"].includes(p.estado)) continue;
+      // Los contratos subidos a mano con fecha de validez (los de una propuesta
+      // ya van en su fila; uno firmado ya no vence)
+      for (const d of (p.docs || [])) {
+        if (!d.validaHasta || d.propuestaId || d.firmadoEl || !entra(d.validaHasta, 7)) continue;
+        cosas.push({ que: "Contrato", detalle: d.titulo, obra: p.nombre, fecha: d.validaHasta, id: p.id, pestana: "archivos" });
+      }
+    }
+    // Las decisiones del cliente con fecha límite
+    for (const d of (state.decisiones || [])) {
+      if (d.hecha || !d.fechaLimite || !entra(d.fechaLimite, 7)) continue;
+      cosas.push({ que: "Decisión del cliente", detalle: d.texto, obra: nombreProyecto(d.proyecto), fecha: d.fechaLimite, id: d.proyecto, pestana: "cliente" });
+    }
+    // Licencia y seguros: con un mes de margen
+    for (const d of (state.docsEmpresa || [])) {
+      if (!d.vence || !entra(d.vence, 30)) continue;
+      cosas.push({ que: EN_APP ? (d.tituloEn || d.titulo) : d.titulo, queEsDato: true, obraTraducible: "Licencia y seguros", fecha: d.vence, empresa: true });
+    }
+    return cosas.sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+  }
+  function pintarInicioVence() {
+    const caja = $("inicio-vence"); if (!caja) return;
+    if (!usuario.finanzas) { caja.innerHTML = ""; return; }
+    const cosas = cosasQueVencen();
+    const cuando = fecha => {
+      const f = diasHasta(fecha);
+      if (f < 0) return `<span>venció el ${Number(String(fecha).slice(8, 10))}</span>`;
+      if (f === 0) return `<span>hoy</span>`;
+      return `<span data-no-i18n>${esc(diaLlano(fecha))}</span>`;
+    };
+    const fila = (c, i) => {
+      const obra = c.obraTraducible ? `<span class="vence-obra">${esc(c.obraTraducible)}</span>`
+        : `<span class="vence-obra" data-no-i18n>${esc([sinCifras(c.detalle), c.obra ? obraCorta(sinCifras(c.obra)) : ""].filter(Boolean).join(" · "))}</span>`;
+      return `
+        <button type="button" class="vence-fila${diasHasta(c.fecha) < 0 ? " vencida" : ""}" data-i="${i}" data-fecha="${esc(c.fecha)}"${c.id ? ` data-pid="${esc(c.id)}"` : ""}>
+          <span class="vence-txt"><span class="vence-que"${c.queEsDato ? " data-no-i18n" : ""}>${esc(sinCifras(c.que))}</span>${obra}</span>
+          <span class="vence-fecha">${cuando(c.fecha)}</span>
+          <span class="row-flecha" aria-hidden="true">›</span>
+        </button>`;
+    };
+    caja.innerHTML = `
+      <div class="card card-white vence-card">
+        <h2 class="label-cu vence-titulo">Vence esta semana</h2>
+        ${cosas.length ? cosas.map(fila).join("") : `<p class="vence-nada">Nada vence esta semana.</p>`}
+      </div>`;
+    caja.querySelectorAll(".vence-fila").forEach(b => b.addEventListener("click", () => {
+      const c = cosas[Number(b.dataset.i)];
+      if (!c) return;
+      if (c.empresa) { const e = $("inicio-empresa"); if (e) e.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+      if (c.id) irDetalle(c.id, c.pestana);
+    }));
+  }
+
+  // ============================================================
+  // PROYECTOS (la pestaña): la obra elegida y sus herramientas
+  // ============================================================
+  // La obra elegida se recuerda en el teléfono. Si el teléfono no deja guardar
+  // (modo privado, memoria llena), no pasa nada: se elige otra vez.
+  const PROY_SEL_LLAVE = "mxp_proyecto_sel";
+  const leerProySel = () => { try { return localStorage.getItem(PROY_SEL_LLAVE) || ""; } catch { return ""; } };
+  const guardarProySel = id => { try { localStorage.setItem(PROY_SEL_LLAVE, id); } catch { /* sin memoria: no pasa nada */ } };
+  let proySel = "";
+  // Lo que ya se pidió a la nube para los datos de las losetas del dueño (una vez)
+  let proyPidioEst = false, proyPidioLev = false;
+  // La obra de la primera visita de hoy de quien mira (sin nadie asignado o con su nombre)
+  function obraDeHoyId() {
+    const hoy = hoyISO();
+    const esMia = e => !e.asignados || !e.asignados.length || e.asignados.includes(usuario.nombre);
+    const v = eventos()
+      .filter(e => e.fecha === hoy && e.estadoEv !== "cancelado" && esMia(e) && e.proyecto && proyectoPorId(e.proyecto))
+      .sort((a, b) => ordenHora(a.hora) - ordenHora(b.hora))[0];
+    return v ? v.proyecto : "";
+  }
+  // Las obras vivas del selector: la de hoy, la última elegida y después por
+  // actividad. Las propuestas enviadas solo para el dueño, al final.
+  function obrasDelSelector() {
+    const porActividad = (a, b) => String(b.actualizado || "").localeCompare(String(a.actualizado || ""));
+    const lista = proyectos().filter(p => ["ejecucion", "aprobado", "pausa"].includes(p.estado)).sort(porActividad);
+    const alFrente = id => { const i = lista.findIndex(p => p.id === id); if (i > 0) lista.unshift(lista.splice(i, 1)[0]); };
+    alFrente(leerProySel());
+    alFrente(obraDeHoyId());
+    if (usuario.finanzas) lista.push(...proyectos().filter(p => p.estado === "enviado").sort(porActividad));
+    return lista;
+  }
+  function irProyectos() {
+    tipoActivo = null;
+    etapaActiva = null;
+    proyectoActivo = null;
+    mostrar("proyectos", { kicker: "Proyectos", titulo: "Proyectos", volver: false, nuevo: true });
+    pintarProyectos();
+  }
+  function irProyectosTodos() {
+    tipoActivo = null;
+    etapaActiva = null;
+    mostrar("proyectos-todos", { kicker: "Proyectos", titulo: "Todos los proyectos", volver: true, nuevo: true });
+    pintarCategorias();
+  }
+  // El icono de «Documentos» (las demás losetas usan el de su loseta de siempre)
+  const SVG_DOCS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2.5h6.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/></svg>';
+  const icoLoseta = id => { const el = document.querySelector(`#${id} .tile-ico`); return el ? el.innerHTML : ""; };
+  const unoVarios = (n, una, varias) => `${n} ${n === 1 ? una : varias}`;
+  function pintarProyectos() {
+    const obras = obrasDelSelector();
+    if (!obras.some(p => p.id === proySel)) {
+      const guardada = leerProySel();
+      proySel = obras.some(p => p.id === guardada) ? guardada : (obras[0] ? obras[0].id : "");
+    }
+    const p = proySel ? proyectoPorId(proySel) : null;
+    $titulo.textContent = p ? nombreVis(p.nombre) : "Proyectos";
+
+    // ---- La fila de chips ----
+    $("proy-chips").innerHTML = obras.map(o => `
+      <button type="button" class="chipb${o.id === proySel ? " sel" : ""}" data-obra="${esc(o.id)}" aria-pressed="${o.id === proySel}"><span data-no-i18n>${esc(obraCorta(nombreVis(o.nombre)))}</span></button>`).join("") + `
+      <button type="button" class="chipb chipb-todos" id="proy-todos"><span>Todos los proyectos</span> <span aria-hidden="true">›</span></button>`;
+    $("proy-chips").querySelectorAll(".chipb[data-obra]").forEach(b => b.addEventListener("click", () => {
+      proySel = b.dataset.obra;
+      guardarProySel(proySel);
+      pintarProyectos();
+    }));
+    $("proy-todos").addEventListener("click", irProyectosTodos);
+    // El chip elegido se trae a la vista moviendo solo la fila de chips de lado.
+    // Nunca la página: cuando llega tarde una carga y se repinta, Edgar puede
+    // estar abajo a punto de tocar una loseta.
+    const fila = $("proy-chips");
+    const elegido = fila.querySelector(".chipb.sel");
+    if (elegido && elegido.getBoundingClientRect) {
+      const f = fila.getBoundingClientRect(), c = elegido.getBoundingClientRect();
+      if (c.left < f.left) fila.scrollLeft -= f.left - c.left + 8;
+      else if (c.right > f.right) fila.scrollLeft += c.right - f.right + 8;
+    }
+
+    // Las losetas y lo que hacen al tocarlas (con obra o sin ella)
+    const pintarLosetas = herramientas => {
+      const dato = partes => partes.map(x => typeof x === "string" ? `<span>${esc(x)}</span>` : `<span data-no-i18n>${esc(x.fecha)}</span>`)
+        .join(partes[0] === "próxima:" ? " " : " · ");
+      return `
+      <div class="proy-losetas">${herramientas.map(h => `
+        <button type="button" class="proy-loseta" data-herr="${h.k}">
+          <span class="proy-loseta-ico" aria-hidden="true">${h.ico}</span>
+          <span class="proy-loseta-txt"><span class="proy-loseta-t">${esc(h.t)}</span><span class="proy-loseta-d">${dato(h.dato)}</span></span>
+        </button>`).join("")}
+      </div>`;
+    };
+    const engancharLosetas = herramientas => $("proy-obra").querySelectorAll(".proy-loseta").forEach(b => b.addEventListener("click", () => {
+      const h = herramientas.find(x => x.k === b.dataset.herr);
+      if (!h) return;
+      volverA = "proyectos";
+      h.ir();
+    }));
+
+    if (!p) {
+      // Sin ninguna obra en marcha, las herramientas de todas las obras siguen a
+      // un toque (un estimado nuevo casi siempre va antes de que exista la obra).
+      // Regla 3: Levantamiento, Gastos y Estimador, solo para el dueño.
+      const todas = [
+        { k: "checklist", t: "Checklist", ico: icoLoseta("btn-checklist"), dato: ["Todas las obras"], ir: () => irChecklist() },
+        { k: "materiales", t: "Materiales", ico: icoLoseta("btn-materiales"), dato: ["Todas las obras"], ir: () => irMateriales() },
+        { k: "calendario", t: "Calendario", ico: icoLoseta("btn-calendario"), dato: ["Todas las obras"], ir: () => irCalendario() }
+      ];
+      if (usuario.finanzas) todas.push(
+        { k: "levantamiento", t: "Levantamiento", ico: icoLoseta("btn-levantamiento"), dato: ["Contar en la casa"], ir: () => irLevLista() },
+        { k: "gastos", t: "Gastos", ico: icoLoseta("btn-gastos"), dato: ["Todas las obras"], ir: () => irGastos() },
+        { k: "estimador", t: "Estimador", ico: icoLoseta("btn-estimador"), dato: ["Todas las obras"], ir: () => irEstimador(null, "") });
+      $("proy-obra").innerHTML = `<div class="card card-white proy-vacio"><p class="hoy-vacio">No hay obras en marcha ahora. En «Todos los proyectos» están todas.</p></div>` + pintarLosetas(todas);
+      engancharLosetas(todas);
+      return;
+    }
+    const id = p.id;
+    const hoy = hoyISO();
+    const dir = p.direccion && p.direccion !== "Por confirmar" ? nombreVis(p.direccion) : "";
+    const fase = p.tipo === "servicio" ? "Servicio" : ((fasesDe(p).find(f => f.clave === p.fase) || {}).etiqueta || "");
+    const estado = ESTADOS[p.estado] ? ESTADOS[p.estado].etiqueta : p.estado;
+
+    // ---- Los datos de cada loseta (sin dinero para nadie) ----
+    const tareas = tareasDe(id);
+    const hechas = tareas.filter(x => x.hecha).length;
+    const porComprar = (state.materiales || []).filter(m => m.proyecto === id && m.estado === "falta").length;
+    // Documentos: lo que este rol ve en Archivos (el campo, los planos y RFIs; el dueño, todo)
+    const nDocs = (usuario.finanzas ? (p.docs || []).length : 0) + (p.rfis || []).length;
+    const nFotos = (state.fotos || []).filter(f => f.proyecto === id).length;
+    const proxima = eventosCal()
+      .filter(e => e.proyecto === id && e.fecha >= hoy && e.estadoEv !== "cancelado")
+      .sort((a, b) => a.fecha.localeCompare(b.fecha))[0];
+    const herramientas = [
+      { k: "checklist", t: "Checklist", ico: icoLoseta("btn-checklist"),
+        dato: tareas.length ? [`${hechas} de ${tareas.length} hechos`] : ["Sin tareas todavía"], ir: () => irChecklist(id) },
+      { k: "materiales", t: "Materiales", ico: icoLoseta("btn-materiales"),
+        dato: [porComprar ? `${porComprar} por comprar` : "Nada por comprar"], ir: () => irMateriales(id) },
+      { k: "documentos", t: "Documentos", ico: SVG_DOCS,
+        dato: [unoVarios(nDocs, "documento", "documentos"), unoVarios(nFotos, "foto", "fotos")], ir: () => irDetalle(id, "archivos") },
+      { k: "calendario", t: "Calendario", ico: icoLoseta("btn-calendario"),
+        dato: proxima ? ["próxima:", proxima.fecha === hoy ? "hoy" : { fecha: diaLlano(proxima.fecha) }] : ["Sin fecha programada"], ir: () => irCalendario(id) }
+    ];
+    // Las del dueño. Regla 3: el campo no ve estas losetas ni sus rutas. El
+    // levantamiento también es solo del dueño: su pantalla enseña cifras de dinero.
+    if (usuario.finanzas) {
+      // Los datos de estimados y levantamientos viven en otra carga: se piden una vez
+      if (!estData && !proyPidioEst) {
+        proyPidioEst = true;
+        DB.cargarEstimador().then(d => { if (!estData) estData = d; if (!$("vista-proyectos").hidden) pintarProyectos(); }).catch(() => { /* sin señal: la loseta no dice el número */ });
+      }
+      if (!levData && !proyPidioLev) {
+        proyPidioLev = true;
+        DB.cargarLevantamientos().then(d => { if (!levData) levData = d; if (!$("vista-proyectos").hidden) pintarProyectos(); }).catch(() => { /* sin señal: igual */ });
+      }
+      const nRecibos = (state.recibos || []).filter(r => r.proyecto === id && r.estado !== "anulado").length;
+      const nEst = estData ? (estData.estimados || []).filter(e => e.proyecto_id === id).length : null;
+      // Los levantamientos todavía no van ligados a una obra: es el total de la empresa
+      const nLev = levData ? (levData.levantamientos || []).length : null;
+      herramientas.push(
+        { k: "levantamiento", t: "Levantamiento", ico: icoLoseta("btn-levantamiento"),
+          dato: [nLev === null ? "Contar en la casa" : `${nLev} en total`], ir: () => irLevLista() },
+        { k: "gastos", t: "Gastos", ico: icoLoseta("btn-gastos"),
+          dato: [unoVarios(nRecibos, "recibo", "recibos")], ir: () => irGastos(id) },
+        { k: "estimador", t: "Estimador", ico: icoLoseta("btn-estimador"),
+          dato: [nEst === null ? "Sus estimados" : unoVarios(nEst, "estimado", "estimados")], ir: () => irEstimador(null, id) });
+    }
+    $("proy-obra").innerHTML = `
+      <article class="card card-white proy-cab">
+        <h2 class="proy-nombre" data-no-i18n>${esc(nombreVis(p.nombre))}</h2>
+        ${dir ? `<div class="proy-dir">${SVG_PIN}<span class="proy-dir-txt" data-no-i18n>${esc(dir)}</span>
+          <a class="btn sm btn-navy proy-ir" href="${esc(urlMapa(dir))}" target="_blank" rel="noopener" title="Abrir en el mapa">Ir</a></div>` : ""}
+        <div class="proy-estado"><span class="chip"><span>${esc(estado)}</span>${fase ? ` · <span>${esc(fase)}</span>` : ""}</span></div>
+        <button type="button" class="row-link proy-ficha" id="proy-ficha"><span class="row-txt">Abrir la ficha completa</span><span class="row-flecha" aria-hidden="true">›</span></button>
+      </article>${pintarLosetas(herramientas)}`;
+    $("proy-ficha").addEventListener("click", () => { volverA = "proyectos"; irDetalle(id); });
+    engancharLosetas(herramientas);
+  }
+
+  // ---------- El chip «Solo: Dicke ✕» ----------
+  // Una herramienta abierta desde una obra enseña solo esa obra. Tocar el chip
+  // quita el filtro y vuelve a enseñarlo todo.
+  function chipSoloHTML(pid, idBoton) {
+    const p = proyectoPorId(pid);
+    return `<button type="button" class="chipb sel filtro-solo" id="${idBoton}" title="Quitar el filtro"><span>Solo:</span> <span data-no-i18n>${esc(obraCorta(p ? nombreVis(p.nombre) : pid))}</span> <span class="filtro-x" aria-hidden="true">✕</span></button>`;
+  }
+
+  // ============================================================
+  // MÁS (la pestaña): calendario, chat, asistente, idioma, perfil y salir
+  // ============================================================
+  const SVG_CAL_MAS = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>';
+  const SVG_PERSONA = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.2-4 4.3-6 8-6s6.8 2 8 6"/></svg>';
+  function irMas() {
+    mostrar("mas", { kicker: "Max Power", titulo: "Más", volver: false, nuevo: false });
+    pintarMas();
+  }
+  function pintarMas() {
+    const rol = state && state.perfil ? state.perfil.rol : "";
+    const badge = $("chat-badge");
+    const sinLeer = badge && !badge.hidden ? badge.textContent : "";
+    const filas = [
+      { k: "calendario", ico: SVG_CAL_MAS, t: "Calendario completo" },
+      { k: "chat", ico: SVG_BURBUJA, t: "Chat del equipo", badge: true, oculta: $("btn-chat").hidden },
+      { k: "asistente", ico: SVG_CHISPA, t: "Asistente", oculta: $("btn-asistente").hidden },
+      { k: "idioma", ico: SVG_GLOBO, t: "Idioma", valor: EN_APP ? "English" : "Español" },
+      { k: "perfil", ico: SVG_PERSONA, t: "Perfil",
+        detalle: `<span data-no-i18n>${esc(usuario.nombre)}</span> · <span>${esc(ROL_LLANO[rol] || usuario.rol || "")}</span> · <span>Versión ${esc(APP_VERSION || "?")}</span>` },
+      { k: "salir", ico: SVG_SALIR, t: "Salir", peligro: true }
+    ].filter(f => !f.oculta);
+    $("mas-filas").innerHTML = filas.map(f => `
+      <button type="button" class="row-link mas-fila${f.peligro ? " mas-salir" : ""}" data-mas="${f.k}">
+        <span class="mas-ico">${f.ico}</span>
+        <span class="row-txt"><span class="mas-t">${esc(f.t)}</span>${f.detalle ? `<span class="mas-d">${f.detalle}</span>` : ""}</span>
+        ${f.badge ? `<span id="mas-chat-badge" class="nav-badge mas-badge"${sinLeer ? "" : " hidden"}>${esc(sinLeer)}</span>` : ""}
+        ${f.valor ? `<span class="mas-valor" data-no-i18n>${esc(f.valor)}</span>` : ""}
+        <span class="row-flecha" aria-hidden="true">›</span>
+      </button>`).join("");
+    $("mas-filas").querySelectorAll(".mas-fila").forEach(b => b.addEventListener("click", () => {
+      const k = b.dataset.mas;
+      if (k === "calendario") { volverA = "mas"; irCalendario(); }
+      else if (k === "chat") { volverA = "mas"; $("btn-chat").click(); }
+      else if (k === "asistente") { volverA = "mas"; $("btn-asistente").click(); }
+      else if (k === "idioma") $("btn-idioma").click();
+      else if (k === "perfil") abrirPerfil();
+      else if (k === "salir") $("btn-salir").click();
+    }));
+  }
+  // «←» sin nada más que deshacer: a la pestaña de donde se vino (o a Hoy)
+  function volverAlOrigen() {
+    const a = volverA;
+    volverA = null;
+    if (a === "proyectos") irProyectos();
+    else if (a === "mas") irMas();
+    else irHome();
+  }
+
   // ============================================================
   // NIVEL 2 · ETAPAS
   // ============================================================
   function irEtapas(tipo) {
     tipoActivo = tipo;
     etapaActiva = null;
-    mostrar("etapas", { kicker: "Categorías", titulo: TIPOS[tipo].etiqueta, volver: true, nuevo: true });
+    mostrar("etapas", { kicker: "Todos los proyectos", titulo: TIPOS[tipo].etiqueta, volver: true, nuevo: true });
     pintarEtapas();
   }
 
@@ -1969,16 +2565,18 @@ function esFalloDeRed(err) {
     pintarLista();
   }
 
+  // Cuando ya no queda nada que deshacer dentro de la vista, «←» vuelve a la
+  // pestaña de donde se vino (volverAlOrigen: Proyectos, Más, o Hoy)
   $btnVolver.addEventListener("click", () => {
-    if (!$("vista-asistente").hidden) { irHome(); return; }
+    if (!$("vista-asistente").hidden) { volverAlOrigen(); return; }
     if (!$("vista-chat").hidden) {
       if (chatConv) { irChat(null); return; }
-      irHome();
+      volverAlOrigen();
       return;
     }
     if (!$("vista-estimador").hidden) {
       if (estimadoActivo) { estimadoActivo = null; pintarEstimador(); return; }
-      irHome();
+      volverAlOrigen();
       return;
     }
     if (!$("vista-alcance").hidden) {
@@ -1986,35 +2584,38 @@ function esFalloDeRed(err) {
       if (alcFicha > 0) { alcFicha -= 1; pintarAlcance(); return; }
       const proy = alcActivo ? alcActivo.proyecto.id : null;
       alcActivo = null;
-      if (proy) irDetalle(proy); else irHome();
+      if (proy) irDetalle(proy); else volverAlOrigen();
       return;
     }
     if (!$("vista-cierre").hidden) {
       const est = cierrePropuesta ? cierrePropuesta.propuesta.estimado_id : null;
       cierrePropuesta = null;
-      if (est) irEstimador(est); else irHome();
+      if (est) irEstimador(est); else volverAlOrigen();
       return;
     }
     if (!$("vista-propuesta").hidden) {
       const id = propActiva ? propActiva.estimado.id : null;
       propActiva = null;
-      if (id) irEstimador(id); else irHome();
+      if (id) irEstimador(id); else volverAlOrigen();
       return;
     }
     if (!$("vista-levantamiento").hidden) {
       if (levActivo && levCuartoAbierto) { levCuartoAbierto = null; pintarLevantamiento(); return; }
       if (levActivo) { levSubir(); levActivo = null; irLevLista(); return; }
-      irHome();
+      volverAlOrigen();
       return;
     }
     if (!$vDetalle.hidden) {
       proyectoActivo = null;
       if (tipoActivo && etapaActiva) { irLista(etapaActiva); return; }
-      irHome();
+      volverAlOrigen();
       return;
     }
     if (!$vLista.hidden) { irEtapas(tipoActivo); return; }
-    irHome();
+    // De las etapas a «Todos los proyectos», y de ahí a Proyectos
+    if (!$vEtapas.hidden) { irProyectosTodos(); return; }
+    if (!$("vista-proyectos-todos").hidden) { irProyectos(); return; }
+    volverAlOrigen();
   });
 
   const listaAbiertos = new Set(); // qué proyectos dejó abiertos (acordeón)
@@ -2490,8 +3091,10 @@ function esFalloDeRed(err) {
   let filtroChecklist = "";
   const chkAbiertos = new Set();
 
+  // Con una obra, el checklist enseña solo esa obra (abierta) y arriba el chip
+  // «Solo: … ✕» para ver todas. Sin obra, todas como siempre.
   function irChecklist(proyectoId) {
-    filtroChecklist = proyectoId || "";
+    filtroChecklist = typeof proyectoId === "string" && proyectoPorId(proyectoId) ? proyectoId : "";
     if (proyectoId) chkAbiertos.add(proyectoId);
     mostrar("checklist", { kicker: "Trabajo por hacer", titulo: "Checklist", volver: true, nuevo: false });
     pintarChecklist();
@@ -2506,7 +3109,7 @@ function esFalloDeRed(err) {
       return fechaISO(d.getFullYear(), d.getMonth(), d.getDate());
     })();
     const delAlcance = (state.puntos || [])
-      .filter(x => x.proyecto === pid)
+      .filter(x => x.proyecto === pid && !tareasBorrando.has("punto:" + x.id))
       .map(x => ({
         tipo: "punto", id: x.id, texto: x.texto, hecha: x.hecho,
         prioridad: prioDe(x.prioridad), origen: "alcance",
@@ -2545,6 +3148,8 @@ function esFalloDeRed(err) {
   function filaTarea(t, opc) {
     const ficha = !!(opc && opc.ficha === true);
     const p = prioDe(t.prioridad);
+    // «[via Claude]» sale del texto y va aparte, debajo
+    const pv = partirVia(t.texto);
     const meta = [t.proyectoNombre ? "🔧 " + t.proyectoNombre : "", t.autor || "", t.fecha || "",
                   !ficha && t.grupo ? "🏷 " + sinMontos(t.grupo) : ""]
       .filter(Boolean).join(" · ");
@@ -2559,11 +3164,12 @@ function esFalloDeRed(err) {
         <button type="button" class="tarea-borrar" title="Eliminar">Eliminar</button>` : "");
       const punto = p === "urgente" ? ico("rojo") : p === "espera" ? ico("gris") : "";
       return `
-      <div class="tarea ficha-fila prio-${p}${t.hecha ? " hecha" : ""}" data-tipo="${t.tipo}" data-id="${t.id}" data-fila="tarea" data-titulo="Renglón" data-sub="${esc(sinMontos(t.texto))}">
+      <div class="tarea ficha-fila prio-${p}${t.hecha ? " hecha" : ""}" data-tipo="${t.tipo}" data-id="${t.id}" data-fila="tarea" data-titulo="Renglón" data-sub="${esc(sinMontos(pv.texto))}">
         <button type="button" class="tarea-check" title="${t.hecha ? "Devolver a pendiente" : "Marcar completada"}">${t.hecha ? "✅" : "⬜"}</button>
         ${punto && !t.hecha ? `<span class="prio-punto" title="${esc(PRIO[p].etiqueta)}">${punto}</span>` : ""}
         <span class="tarea-info">
-          <span class="tarea-texto">${esc(sinMontos(t.texto))}</span>
+          <span class="tarea-texto">${esc(sinMontos(pv.texto))}</span>
+          ${pv.via ? VIA_HTML : ""}
           ${meta ? `<span class="tarea-meta">${esc(meta)}</span>` : ""}
         </span>
         ${escondidos.trim() ? `<button type="button" class="accion secundaria icono tarea-menu fila-menu" aria-label="Opciones del renglón" title="Opciones">${ico("puntos") || "⋯"}</button>
@@ -2574,20 +3180,25 @@ function esFalloDeRed(err) {
       <div class="tarea prio-${p}${t.hecha ? " hecha" : ""}" data-tipo="${t.tipo}" data-id="${t.id}">
         <button class="tarea-check" title="${t.hecha ? "Devolver a pendiente" : "Marcar completada"}">${t.hecha ? "✅" : "⬜"}</button>
         <span class="tarea-info">
-          <span class="tarea-texto">${esc(sinMontos(t.texto))}</span>
+          <span class="tarea-texto">${esc(sinMontos(pv.texto))}</span>
+          ${pv.via ? VIA_HTML : ""}
           ${meta ? `<span class="tarea-meta">${esc(meta)}</span>` : ""}
         </span>
+        <span class="tarea-controles">
         ${t.hecha ? "" : selector}
         ${usuario.editar ? `<button class="tarea-editar insp-borrar" title="Corregir el texto">✎</button>
         ${t.tipo === "punto" ? `<button class="tarea-grupo insp-borrar" title="Bloque en que sale en el portal del cliente">🏷</button>` : ""}
         <button class="tarea-borrar insp-borrar" title="Eliminar">🗑</button>` : ""}
+        </span>
       </div>`;
   }
 
   function pintarChecklist() {
     // Obras activas siempre (aunque estén vacías, para poder sembrarlas);
     // propuestas enviadas solo si ya tienen tareas — que no hagan ruido.
-    const fichas = proyectosConTrabajo(["enviado"])
+    const fichas = filtroChecklist && proyectoPorId(filtroChecklist)
+      ? [{ p: proyectoPorId(filtroChecklist), tareas: tareasDe(filtroChecklist) }]
+      : proyectosConTrabajo(["enviado"])
       .map(p => ({ p, tareas: tareasDe(p.id) }))
       .filter(x => x.tareas.length || ["ejecucion", "aprobado", "pausa"].includes(x.p.estado));
 
@@ -2639,11 +3250,14 @@ function esFalloDeRed(err) {
                    prioridad: prioDe(x.prioridad), autor: x.autor, fecha: x.fecha, orden: 0 }))
       .sort((a, b) => PRIO[a.prioridad].orden - PRIO[b.prioridad].orden);
 
-    $("checklist-panel").innerHTML = `
+    $("checklist-panel").innerHTML = filtroChecklist ? `
+      <div class="filtro-fila">${chipSoloHTML(filtroChecklist, "chk-quitar-filtro")}</div>
+      ${fichas.map(x => tarjeta(x.p.nombre, x.p.id, x.tareas)).join("")}` : `
       ${tarjeta("📌 Generales (sin proyecto)", "", generales)}
       ${fichas.map(x => tarjeta(x.p.nombre, x.p.id, x.tareas)).join("")
         || `<p class="cal-sin-eventos">Nada pendiente por aquí. 👌</p>`}`;
 
+    if (filtroChecklist) $("chk-quitar-filtro").addEventListener("click", () => { filtroChecklist = ""; pintarChecklist(); });
     // Recordar qué fichas quedaron abiertas entre repintadas
     $("checklist-panel").querySelectorAll(".chk-det").forEach(det => {
       det.addEventListener("toggle", () => {
@@ -2798,15 +3412,49 @@ function esFalloDeRed(err) {
     raiz.querySelectorAll(".tarea-borrar").forEach(btn => {
       btn.addEventListener("click", async () => {
         const { tipo, id } = dato(btn);
-        if (!await confirmar("¿Eliminar esta tarea?")) return;
-        try {
-          if (tipo === "punto") await DB.eliminarPunto(id);
-          else await DB.eliminarPendiente(id);
-          await recargar(undefined, "checklist");
-          avisar("Tarea eliminada ✓");
-        } catch (err) { avisar("No se pudo: " + err.message, true); }
+        if (!await confirmar("¿Eliminar esta tarea?", { si: "Eliminar", peligro: true })) return;
+        borrarTareaConDeshacer(tipo, id);
       });
     });
+  }
+
+  // Borrar una tarea se puede deshacer: se esconde YA en todas las pantallas y
+  // se borra de verdad a los 6 s si nadie tocó «Deshacer». Si la app se cierra
+  // en esos 6 s, la tarea sigue en la base (mejor eso que perderla). Sin señal
+  // pasa lo de siempre: no se borra y lo dice.
+  function borrarTareaConDeshacer(tipo, id) {
+    const clave = (tipo === "punto" ? "punto:" : "pend:") + id;
+    if (tareasBorrando.has(clave)) return;
+    const reloj = setTimeout(async () => {
+      if (!tareasBorrando.has(clave)) return;   // se deshizo justo a tiempo
+      // Si salió de la app en esos 6 s, la tarea se queda (como si cerrara la app)
+      if (!state || !usuario) { tareasBorrando.delete(clave); return; }
+      try {
+        if (tipo === "punto") await DB.eliminarPunto(id);
+        else await DB.eliminarPendiente(id);
+        // Ya no está en la base: fuera también de lo que hay en memoria, por si la recarga no llega
+        const lista = tipo === "punto" ? state.puntos : state.pendientes;
+        if (Array.isArray(lista)) { const i = lista.findIndex(x => String(x.id) === String(id)); if (i >= 0) lista.splice(i, 1); }
+        tareasBorrando.delete(clave);
+        await recargar(undefined, "checklist");
+      } catch (err) {
+        // No se borró: la tarea vuelve a salir donde estaba
+        tareasBorrando.delete(clave);
+        repintarVistaActiva();
+        avisar("No se pudo eliminar: " + err.message, true);
+      }
+    }, 6000);
+    tareasBorrando.set(clave, reloj);
+    repintarVistaActiva();
+    avisarDeshacer("Tarea eliminada", () => {
+      clearTimeout(tareasBorrando.get(clave));
+      tareasBorrando.delete(clave);
+      repintarVistaActiva();
+      avisar("La tarea volvió ✓");
+    });
+    // El aviso con «Deshacer» dura lo mismo que la espera (6 s)
+    const $t = $("toast");
+    if ($t) { clearTimeout($t._timer); $t._timer = setTimeout(() => { $t.hidden = true; }, 6000); }
   }
 
   // ============================================================
@@ -2854,9 +3502,14 @@ function esFalloDeRed(err) {
     convs.forEach(c => { total += noLeidos(c); });
     badge.hidden = !total;
     badge.textContent = total > 9 ? "9+" : String(total);
-    // La misma bolita en «Chat» de la barra de abajo del campo
-    const nb = $("nav-chat-badge");
-    if (nb) { nb.hidden = !total; nb.textContent = badge.textContent; }
+    // La misma bolita en el botón flotante
+    const fb = $("fab-badge");
+    if (fb) { fb.hidden = !total; fb.textContent = badge.textContent; }
+    // La misma bolita en «Más» de la barra de abajo y en su fila «Chat del equipo»
+    for (const id of ["nav-chat-badge", "mas-chat-badge"]) {
+      const nb = $(id);
+      if (nb) { nb.hidden = !total; nb.textContent = badge.textContent; }
+    }
   }
 
   // Al entrar: contar lo no leído para el numerito, y revisarlo cada minuto
@@ -3525,7 +4178,7 @@ function esFalloDeRed(err) {
     const urgPuntos = (state.puntos || []).filter(x =>
       x.proyecto === p.id && !x.hecho && prioDe(x.prioridad) === "urgente");
     const urg = urgPend.length + urgPuntos.length > 0;
-    const primerUrg = urgPend.length ? urgPend[0].descripcion : urgPuntos.length ? urgPuntos[0].texto : "";
+    const primerUrg = partirVia(urgPend.length ? urgPend[0].descripcion : urgPuntos.length ? urgPuntos[0].texto : "").texto;
     const resumen = av && p.estado !== "completado" ? `${av.pct}%` : "";
     const fases = fasesDe(p);
     const idx = Math.max(0, fases.findIndex(f => f.clave === p.fase));
@@ -3554,7 +4207,7 @@ function esFalloDeRed(err) {
         </summary>
         <div class="chk-cuerpo">
           <article class="proyecto tarjeta-v2" data-id="${esc(p.id)}">
-            ${p.direccion ? `<div class="tv2-dir">${ico("pin")}<span class="tb-dir-txt">${esc(p.direccion)}</span>${enlaceMapa(p.direccion)}</div>` : ""}
+            ${p.direccion ? `<div class="tv2-dir">${ico("pin")}<span class="tb-dir-txt">${esc(nombreVis(p.direccion))}</span>${enlaceMapa(p.direccion)}</div>` : ""}
             <div class="tv2-estado">${chipHTML(p.estado)}${fase ? `<span>${esc(fase.etiqueta)}</span>${fases.length > 1 ? `<span>${idx + 1}/${fases.length}</span>` : ""}` : ""}</div>
             ${senalesHTML(p, true)}
             ${primerUrg ? `<div class="tv2-urgente">${ico("alerta")}<span>${esc(sinMontos(primerUrg))}</span></div>` : ""}
@@ -3686,7 +4339,7 @@ function esFalloDeRed(err) {
     const acc = accionesObra(p);
     return `
       <section class="ficha-tablero">
-        ${p.direccion ? `<div class="tb-dir">${ico("pin")}<span class="tb-dir-txt">${esc(p.direccion)}</span>${enlaceMapa(p.direccion)}</div>` : ""}
+        ${p.direccion ? `<div class="tb-dir">${ico("pin")}<span class="tb-dir-txt">${esc(nombreVis(p.direccion))}</span>${enlaceMapa(p.direccion)}</div>` : ""}
         <div class="tb-cliente">
           <div><span>${esc(p.cliente || "")}</span>${p.via ? ` · <span class="tb-via">vía ${esc(p.via)}</span>` : ""}</div>
           ${gc ? `<div>${ico("grua")}<span>${esc(gc.nombre)}</span> · <span>${p.contratistaModo === "contrato" ? "le facturamos a ellos" : "solo coordinan"}</span></div>` : ""}
@@ -4240,10 +4893,15 @@ function esFalloDeRed(err) {
     if (nuevo.__faltan) Object.defineProperty(mapa, "__faltan", { value: nuevo.__faltan, enumerable: false });
     return mapa;
   }
-  // La barra de pestañas se pega justo debajo del membrete: aquí se mide su alto
+  // La barra de pestañas se pega justo debajo del membrete: aquí se mide su alto.
+  // Cuenta también el cable de cobre que cuelga debajo (la barra de 56 + el cable
+  // de 4 = 60, lo mismo que medía antes la barra sola), así nada queda tapado.
   function medirMembrete() {
     const m = document.querySelector(".membrete");
-    const alto = m ? Math.round(m.getBoundingClientRect().height) : 0;
+    const cable = m ? m.querySelector(":scope > .wire-cu") : null;
+    const caja = m ? m.getBoundingClientRect() : null;
+    const alto = !caja || !caja.height ? 0
+      : Math.round(Math.max(caja.bottom, cable ? cable.getBoundingClientRect().bottom : 0) - caja.top);
     document.documentElement.style.setProperty("--membrete-alto", alto + "px");
     $detalle.classList.toggle("sin-fijar", !alto);
     marcarTiraSenales();
@@ -4898,7 +5556,7 @@ function esFalloDeRed(err) {
     const forms = mismo ? recordarForms() : [];
     mostrar("detalle", {
       kicker: `${TIPOS[p.tipo] ? TIPOS[p.tipo].etiqueta : ""} · ${ESTADOS[p.estado] ? ESTADOS[p.estado].etiqueta : p.estado}`,
-      titulo: p.nombre,
+      titulo: nombreVis(p.nombre),
       volver: true,
       nuevo: false,
       mantenerScroll: mismo
@@ -6024,7 +6682,7 @@ function esFalloDeRed(err) {
     const mios = (state.registroHoras || []).filter(r => r.usuarioId === usuario.id);
     const ultimo = mios.length ? mios[mios.length - 1].proyecto : "";
     const lista = proyectosConTrabajo();
-    sel.innerHTML = lista.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join("");
+    sel.innerHTML = lista.map(p => `<option value="${esc(p.id)}">${esc(nombreVis(p.nombre))}</option>`).join("");
     // Si el calendario dice dónde trabaja esta persona ese día, esa obra va
     // primero (P85, 24-sep): antes proponía la del último reporte, que casi
     // siempre era la de ayer. Cuenta un evento de ese día con obra, asignado a
@@ -6449,7 +7107,7 @@ function esFalloDeRed(err) {
         ["ejecucion", "aprobado", "pausa"].includes(x.estado) || x.id === m.proyecto);
       return `<option value=""${!m.proyecto ? " selected" : ""}>— General —</option>` +
         activos.map(x =>
-          `<option value="${esc(x.id)}"${x.id === m.proyecto ? " selected" : ""}>${esc(x.nombre)}</option>`).join("");
+          `<option value="${esc(x.id)}"${x.id === m.proyecto ? " selected" : ""}>${esc(nombreVis(x.nombre))}</option>`).join("");
     };
 
     const filaMat = m => `
@@ -6495,10 +7153,10 @@ function esFalloDeRed(err) {
 
     const activosLista = proyectosConTrabajo();
     const opciones = activosLista
-      .map(x => `<option value="${esc(x.id)}">${esc(x.nombre)}</option>`).join("");
+      .map(x => `<option value="${esc(x.id)}">${esc(nombreVis(x.nombre))}</option>`).join("");
     const opcionesFiltro = `<option value=""${!filtroMateriales ? " selected" : ""}>Todos los proyectos</option>` +
       activosLista.map(x =>
-        `<option value="${esc(x.id)}"${x.id === filtroMateriales ? " selected" : ""}>${esc(x.nombre)}</option>`).join("");
+        `<option value="${esc(x.id)}"${x.id === filtroMateriales ? " selected" : ""}>${esc(nombreVis(x.nombre))}</option>`).join("");
 
     const RES_RECIBO = { por_leer: "POR LEER", leido: "LEÍDO", conciliado: "CONCILIADO ✓", sin_foto: "FALTA FOTO 📷", anulado: "ANULADO" };
     const esDevolucionRecibo = r =>
@@ -6651,7 +7309,8 @@ function esFalloDeRed(err) {
           <div class="pendiente-item">
             <span class="pendiente-icono">⚠</span>
             <span class="alcance-info">
-              <span class="alcance-titulo">${esc(sinMontos(s.descripcion))}</span>
+              <span class="alcance-titulo">${esc(sinMontos(partirVia(s.descripcion).texto))}</span>
+              ${partirVia(s.descripcion).via ? VIA_HTML : ""}
               <span class="alcance-estado">${esc(nombreProy(s.proyecto))} · ${esc(s.autor)} ${esc(s.fecha)}</span>
             </span>
             <button class="accion secundaria btn-mat-pasar" data-id="${s.id}">→ Pasar a la lista</button>
@@ -7229,15 +7888,20 @@ function esFalloDeRed(err) {
   // ============================================================
   // 📊 CONTROL DE GASTOS — solo el dueño
   // ============================================================
-  function irGastos() {
+  // Con una obra (desde Proyectos) se enseña solo su tarjeta, con el chip
+  // «Solo: … ✕» arriba; los costos del equipo y los ayudantes siguen debajo.
+  let filtroGastos = "";
+  function irGastos(proyectoId) {
     if (!usuario.finanzas) return;
+    filtroGastos = typeof proyectoId === "string" && proyectoPorId(proyectoId) ? proyectoId : "";
     mostrar("gastos", { kicker: "Solo dueño", titulo: "Control de gastos", volver: true, nuevo: false });
     pintarGastos();
   }
-  $("btn-gastos").addEventListener("click", irGastos);
+  $("btn-gastos").addEventListener("click", () => irGastos());
 
   function pintarGastos() {
-    const activos = proyectos()
+    // La obra del filtro sale aunque no esté en marcha (una propuesta enviada, por ejemplo)
+    const activos = filtroGastos ? proyectos().filter(p => p.id === filtroGastos) : proyectos()
       .filter(p => ["ejecucion", "aprobado", "pausa"].includes(p.estado));
     const tarjetas = activos.length === 0
       ? `<div class="inicio-card"><p class="cal-sin-eventos">No hay proyectos activos.</p></div>`
@@ -7351,7 +8015,8 @@ function esFalloDeRed(err) {
         </details>
       </div>`;
 
-    $("gastos-panel").innerHTML = tarjetas + gaveta;
+    $("gastos-panel").innerHTML = (filtroGastos ? `<div class="filtro-fila">${chipSoloHTML(filtroGastos, "gastos-quitar-filtro")}</div>` : "") + tarjetas + gaveta;
+    if (filtroGastos) $("gastos-quitar-filtro").addEventListener("click", () => { filtroGastos = ""; pintarGastos(); });
 
     $("form-costos").addEventListener("submit", async e => {
       e.preventDefault();
@@ -7444,8 +8109,14 @@ function esFalloDeRed(err) {
   let colaEnsambles = Promise.resolve(); // fila india de los clics +/- de ensambles
   let frecuentesExpandido = false;       // "Ver más" de ⭐ Lo que más usas
 
-  function irEstimador(abrirId) {
+  // Con obra (desde Proyectos: irEstimador(null, id)) arriba salen sus estimados y
+  // el chip «Solo: … ✕». Entrar sin nada lo enseña todo; volver de una propuesta
+  // (irEstimador(id)) deja el filtro como estaba.
+  let filtroEst = "";
+  function irEstimador(abrirId, proyectoId) {
     if (!usuario.finanzas) return;
+    if (proyectoId !== undefined) filtroEst = typeof proyectoId === "string" && proyectoPorId(proyectoId) ? proyectoId : "";
+    else if (!abrirId) filtroEst = "";
     mostrar("estimador", { kicker: "Solo dueño", titulo: "Estimador", volver: true, nuevo: false });
     estimadoActivo = abrirId || null;
     $("estimador-panel").innerHTML = `<div class="inicio-card"><p class="cal-sin-eventos">Cargando el estimador…</p></div>`;
@@ -9487,8 +10158,18 @@ function esFalloDeRed(err) {
     const todos = estData.estimados || [];
     const filas = todos.filter(e => !esMEP(e)).map(fila1).join("");
     const filasMep = todos.filter(esMEP).map(fila1).join("");
+    // Con el filtro de una obra: arriba el chip y sus estimados; la lista de todos
+    // vuelve al quitar el filtro. «Nuevo estimado» sigue siempre ahí.
+    const deObra = filtroEst ? todos.filter(e => e.proyecto_id === filtroEst) : [];
+    const arribaObra = filtroEst ? `
+      <div class="filtro-fila">${chipSoloHTML(filtroEst, "est-quitar-filtro")}</div>
+      <div class="cal-panel-card" id="est-de-obra">
+        <div class="cal-form-titulo">Estimados de esta obra (${deObra.length})</div>
+        ${deObra.map(fila1).join("") || `<p class="cal-sin-eventos">Esta obra todavía no tiene estimados.</p>`}
+      </div>` : "";
 
     $("estimador-panel").innerHTML = `
+      ${arribaObra}
       ${tarjetaHistorial()}
       ${tarjetaPrecios()}
       <div class="cal-panel-card lev-atajo">
@@ -9560,17 +10241,18 @@ function esFalloDeRed(err) {
           <button type="submit" class="accion">Crear estimado</button>
         </form>
       </div>
-      <div class="cal-panel-card">
+      ${filtroEst ? "" : `<div class="cal-panel-card">
         <div class="cal-form-titulo">Mis estimados (${todos.filter(e => !esMEP(e)).length})</div>
         ${filas || `<p class="cal-sin-eventos">Todavía no hay estimados. Crea el primero arriba.</p>`}
-      </div>
-      ${filasMep ? `<div class="cal-panel-card">
+      </div>`}
+      ${filasMep && !filtroEst ? `<div class="cal-panel-card">
         <div class="cal-form-titulo">MXP MEP — con Roger (${todos.filter(esMEP).length})</div>
         <p class="lev-nota">Estos no son tuyos: solo dan el número. No crean proyecto ni propuesta.</p>
         ${filasMep}
       </div>` : ""}
       ${usuario.finanzas ? escenariosHTML() : ""}`;
     if (usuario.finanzas) engancharEscenarios();
+    if (filtroEst) $("est-quitar-filtro").addEventListener("click", () => { filtroEst = ""; pintarEstimadorLista(); });
 
     $("form-nuevo-est").addEventListener("submit", async ev => {
       ev.preventDefault();
@@ -12371,14 +13053,19 @@ Power done right the first time. ⚡`;
     return `${a}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
   }
 
-  function irCalendario() {
+  // Con una obra (desde Proyectos) el calendario enseña solo lo suyo y arriba el
+  // chip «Solo: … ✕» para quitar el filtro. Sin obra (o con el clic de un botón), todo.
+  let filtroCal = "";
+  const pasaCal = x => !filtroCal || x.proyecto === filtroCal;
+  function irCalendario(proyectoId) {
+    filtroCal = typeof proyectoId === "string" && proyectoPorId(proyectoId) ? proyectoId : "";
     mostrar("calendario", { kicker: "Programación", titulo: "Calendario", volver: true, nuevo: false });
     const hoy = new Date();
     if (calAno === undefined) { calAno = hoy.getFullYear(); calMes = hoy.getMonth(); }
     if (!calDiaSel) calDiaSel = fechaISO(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
     pintarCalendario();
   }
-  $btnCal.addEventListener("click", irCalendario);
+  $btnCal.addEventListener("click", () => irCalendario());
   $("cal-prev").addEventListener("click", () => { calMes--; if (calMes < 0) { calMes = 11; calAno--; } pintarCalendario(); });
   $("cal-next").addEventListener("click", () => { calMes++; if (calMes > 11) { calMes = 0; calAno++; } pintarCalendario(); });
 
@@ -12390,8 +13077,13 @@ Power done right the first time. ⚡`;
     $("cal-mes").textContent = `${MESES[calMes]} ${calAno}`;
     const hoy = new Date();
     const hoyISO = fechaISO(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
-    const evs = eventosCal();
-    const pens = pendientesAbiertos();
+    const evs = eventosCal().filter(pasaCal);
+    const pens = pendientesAbiertos().filter(pasaCal);
+    // El chip del filtro (si llegó una obra)
+    const $f = $("cal-filtro");
+    $f.hidden = !filtroCal;
+    $f.innerHTML = filtroCal ? chipSoloHTML(filtroCal, "cal-quitar-filtro") : "";
+    if (filtroCal) $("cal-quitar-filtro").addEventListener("click", () => { filtroCal = ""; pintarCalendario(); });
 
     const primerDia = new Date(calAno, calMes, 1);
     const diasEnMes = new Date(calAno, calMes + 1, 0).getDate();
@@ -12418,8 +13110,10 @@ Power done right the first time. ⚡`;
       // En pantalla grande la celda enseña QUÉ hay ese día, no solo cuántos.
       const titulos = evsDia.slice(0, 3).map(e => {
         const quien = (e.asignados || []).map(x => String(x).split(" ")[0]).join(", ");
-        const corto = String(e.titulo || "").replace(/^[^—-]*[—-]\s*/, "").trim() || String(e.titulo || "");
-        return `<span class="cal-ev" title="${esc(e.titulo || "")}${quien ? " · " + esc(quien) : ""}">${esc(corto)}</span>`;
+        // Regla 3: el campo no ve cifras en el título del evento
+        const tit = sinMontos(e.titulo || "");
+        const corto = tit.replace(/^[^—-]*[—-]\s*/, "").trim() || tit;
+        return `<span class="cal-ev" title="${esc(tit)}${quien ? " · " + esc(quien) : ""}">${esc(corto)}</span>`;
       }).join("");
       const masEv = evsDia.length > 3 ? `<span class="cal-ev mas">+${evsDia.length - 3} más</span>` : "";
       const pensTxt = pensDia.length
@@ -12468,7 +13162,7 @@ Power done right the first time. ⚡`;
     const [a, m, d] = calDiaSel.split("-").map(Number);
     const nombreDia = new Date(a, m - 1, d).toLocaleDateString(LOCALE, { weekday: "long", day: "numeric", month: "long" });
 
-    const evsDia = eventosCal().filter(e => e.fecha === calDiaSel);
+    const evsDia = eventosCal().filter(e => e.fecha === calDiaSel && pasaCal(e));
     const listaEvs = evsDia.length
       ? evsDia.map(e => {
           const p = e.proyecto ? proyectos().find(x => x.id === e.proyecto) : null;
@@ -12476,7 +13170,7 @@ Power done right the first time. ⚡`;
               <span class="agenda-hora">${esc(e.hora || "")}</span>
               <span class="agenda-info">
                 <span class="agenda-titulo"${e.estadoEv === "cancelado" ? ' style="text-decoration:line-through;opacity:.6"' : ""}>${esc(sinMontos(e.titulo))}${e.estadoEv === "hecho" ? " ✓" : ""}${e.estadoEv === "cancelado" ? " (cancelado)" : ""}</span>
-                ${p ? `<span class="agenda-lugar">🔧 ${esc(p.nombre)}</span>` : ""}
+                ${p ? `<span class="agenda-lugar">🔧 ${esc(nombreVis(p.nombre))}</span>` : ""}
                 ${e.asignados && e.asignados.length ? `<span class="agenda-lugar">👤 ${esc(e.asignados.join(", "))}</span>` : ""}
                 ${e.ubicacion ? `<span class="agenda-lugar">📍 ${esc(e.ubicacion)}</span>` : ""}
                 ${e.nota ? `<span class="agenda-nota">${esc(sinMontos(e.nota))}</span>` : ""}
@@ -12491,13 +13185,14 @@ Power done right the first time. ⚡`;
         }).join("")
       : `<p class="cal-sin-eventos">Nada programado este día.</p>`;
 
-    const pensDia = pendientesAbiertos().filter(p => p.fecha === calDiaSel);
+    const pensDia = pendientesAbiertos().filter(p => p.fecha === calDiaSel && pasaCal(p));
     const listaPens = pensDia.map(p => {
       const pr = proyectos().find(x => x.id === p.proyecto);
       return `<div class="pendiente-item">
           <span class="pendiente-icono">⚠</span>
           <span class="alcance-info">
-            <span class="alcance-titulo">${esc(sinMontos(p.descripcion))}</span>
+            <span class="alcance-titulo">${esc(sinMontos(partirVia(p.descripcion).texto))}</span>
+            ${partirVia(p.descripcion).via ? VIA_HTML : ""}
             <span class="alcance-estado">${pr ? esc(pr.nombre) + " · " : ""}${esc(p.autor || "")}</span>
           </span>
           ${usuario.editar ? `<button class="insp-borrar btn-pen-editar" data-id="${p.id}" title="Corregir el texto">✎</button>
@@ -12506,7 +13201,7 @@ Power done right the first time. ⚡`;
     }).join("");
 
     const opciones = proyectosConTrabajo(["enviado"])
-      .map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join("");
+      .map(p => `<option value="${esc(p.id)}">${esc(nombreVis(p.nombre))}</option>`).join("");
 
     $("cal-dia-panel").innerHTML = `
       <div class="cal-panel-card">
@@ -12539,6 +13234,11 @@ Power done right the first time. ⚡`;
         </form>
       </div>`;
 
+    // Con el filtro de una obra, lo que se agregue va a esa obra (se puede cambiar)
+    if (filtroCal) {
+      const sel = $("form-evento").elements.proyecto;
+      if ([...sel.options].some(o => o.value === filtroCal)) sel.value = filtroCal;
+    }
     // ✓ / ✗ Cerrar el día. El calendario nunca se cerraba: 48 eventos ya
     // pasados seguían "programados" y nadie sabía qué se hizo de verdad.
     $("cal-dia-panel").querySelectorAll(".ev-cerrar").forEach(btn => {
