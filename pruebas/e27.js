@@ -23,6 +23,9 @@ const CAT = [
   { item: 'TERMINACIÓN DE CIRCUITO EN PANEL (por ckt)',                   unidad: 'E', precio: 0, horas_unidad: 0.50, codigo: '05-PANEL', cero_motivo: 'solo_labor', cero_revisado: '2026-09-18' },
   { item: 'ROTULADO DE CIRCUITO Y DIRECTORIO DE PANEL (por ckt)',         unidad: 'E', precio: 0, horas_unidad: 0.10, codigo: '05-PANEL', cero_motivo: 'solo_labor', cero_revisado: '2026-09-18' },
   { item: 'DEMOLICIÓN DE DISPOSITIVO O LUMINARIA EXISTENTE (por unidad)', unidad: 'E', precio: 0, horas_unidad: 0.35, codigo: '01-DEMO',  cero_motivo: 'solo_labor', cero_revisado: '2026-09-18' },
+  // (26/09) la familia de demolición que usa Planos: la que la tarjeta propone ahora
+  { item: 'DEMO - Receptacles',    unidad: 'EA', precio: 0, horas_unidad: 0.15, codigo: '01-DEMO' },
+  { item: 'DEMO - Light Fixtures', unidad: 'EA', precio: 0, horas_unidad: 0.30, codigo: '01-DEMO' },
   { item: 'PUESTA EN MARCHA DIMMER 0-10V / SENSOR (por unidad)',          unidad: 'E', precio: 0, horas_unidad: 0.25, codigo: '11-LIGHT', cero_motivo: 'solo_labor', cero_revisado: '2026-09-18' },
   { item: 'AS-BUILT, PRUEBAS Y CIERRE (por proyecto)',                    unidad: 'E', precio: 0, horas_unidad: 8.00, codigo: '20-MISC',  cero_motivo: 'solo_labor', cero_revisado: '2026-09-18' },
   { item: 'BARRERA ICRA / CONTENCIÓN DE POLVO (por barrera)',             unidad: 'E', precio: 0, horas_unidad: 4.00, codigo: '01-DEMO',  cero_motivo: 'tarifa', cero_revisado: '2026-09-18' },
@@ -91,10 +94,13 @@ const EST = { id: EST_ID, nombre: 'NCH', modo: 'remodelacion', escenario: 'A', f
   /* ===== 2 · la propuesta de horas ===== */
   const h = await p.evaluate(([i, e]) => window.MXP_PRUEBA.e0.horas(i, e, {}), [ITEMS, EST]);
   const f = id => h.filas.find(x => x.id === id);
-  ok('propone las nueve reglas, con su ítem del catálogo', h.filas.length === 9 && h.avisos.length === 0, h.filas.length + ' filas · ' + h.avisos.join(' | '));
+  ok('propone las diez reglas (26/09: la demolición va en dos, receptáculos y luminarias), con su ítem del catálogo', h.filas.length === 10 && h.avisos.length === 0, h.filas.length + ' filas · ' + h.avisos.join(' | '));
   ok('terminar y rotular circuitos: 47 y 47', f('terminacion').cantidad === 47 && f('rotulado').cantidad === 47, JSON.stringify([f('terminacion').cantidad, f('rotulado').cantidad]));
   ok('puesta en marcha 0-10V: 31', f('arranque').cantidad === 31, f('arranque').cantidad);
-  ok('demolición: 181 y marcada SUPUESTO (126 dispositivos + 55 luminarias)', f('demo').cantidad === 181 && f('demo').supuesto === true, JSON.stringify(f('demo')));
+  ok('demolición (26/09, una sola familia): 126 «DEMO - Receptacles» y 55 «DEMO - Light Fixtures», las dos SUPUESTO',
+    f('demo').cantidad === 126 && f('demo').item === 'DEMO - Receptacles' && f('demo').supuesto === true &&
+    f('demo_luz').cantidad === 55 && f('demo_luz').item === 'DEMO - Light Fixtures' && f('demo_luz').supuesto === true, JSON.stringify([f('demo'), f('demo_luz')]));
+  ok('ya no se propone el renglón viejo «DEMOLICIÓN DE DISPOSITIVO O LUMINARIA»', !h.filas.some(x => /DEMOLICI/.test(x.item)));
   ok('ICRA, lift, movilización: uno cada uno y también SUPUESTO', f('icra').cantidad === 1 && f('icra').supuesto && f('lift').supuesto && f('movilizacion').supuesto, '');
   ok('permiso y cierre: uno, y NO son supuesto (todo trabajo lleva uno)', f('permiso').cantidad === 1 && !f('permiso').supuesto && !f('cierre').supuesto, '');
   const horasSeguras = ['terminacion', 'rotulado', 'arranque', 'permiso', 'cierre'].reduce((s, id) => s + f(id).cantidad * f(id).horas, 0);
@@ -105,12 +111,20 @@ const EST = { id: EST_ID, nombre: 'NCH', modo: 'remodelacion', escenario: 'A', f
     i.concat([{ estimado_id: 'nch', item: 'AS-BUILT, PRUEBAS Y CIERRE (por proyecto)', unidad: 'E', precio: 0, horas: 8, cantidad: 1 }]), e, {}), [ITEMS, EST]);
   ok('si un renglón YA está en el estimado, lo dice (no lo duplica a ciegas)', conYa.filas.find(x => x.id === 'cierre').ya === 1, JSON.stringify(conYa.filas.find(x => x.id === 'cierre')));
   const enPlanos = await p.evaluate(([i, e]) => window.MXP_PRUEBA.e0.horas(i, Object.assign({}, e, { modo: 'planos' }), {}), [ITEMS, EST]);
-  ok('en un trabajo de obra nueva no se proponen demolición ni ICRA', !enPlanos.filas.find(x => x.id === 'demo') && !enPlanos.filas.find(x => x.id === 'icra') && enPlanos.filas.length === 7, enPlanos.filas.map(x => x.id).join(','));
+  ok('en un trabajo de obra nueva no se proponen demolición ni ICRA', !enPlanos.filas.find(x => /^demo/.test(x.id)) && !enPlanos.filas.find(x => x.id === 'icra') && enPlanos.filas.length === 7, enPlanos.filas.map(x => x.id).join(','));
   const ov = await p.evaluate(([i, e]) => window.MXP_PRUEBA.e0.horas(i, e, { horas_proyecto: '{"movilizacion":3,"demo":0.5}' }), [ITEMS, EST]);
-  ok('lo que Edgar corrija manda: 3 viajes y media pieza demolida por pieza nueva', ov.filas.find(x => x.id === 'movilizacion').cantidad === 3 && ov.filas.find(x => x.id === 'demo').cantidad === 91, JSON.stringify([ov.filas.find(x => x.id === 'movilizacion').cantidad, ov.filas.find(x => x.id === 'demo').cantidad]));
+  ok('lo que Edgar corrija manda: 3 viajes y media pieza demolida por pieza nueva', ov.filas.find(x => x.id === 'movilizacion').cantidad === 3 && ov.filas.find(x => x.id === 'demo').cantidad === 63, JSON.stringify([ov.filas.find(x => x.id === 'movilizacion').cantidad, ov.filas.find(x => x.id === 'demo').cantidad]));
+  // (26/09) una sola familia de demolición
+  const dem = await p.evaluate(([i, e]) => {
+    const conDemo = i.concat([{ estimado_id: 'nch', item: 'DEMO - Receptacles', unidad: 'EA', precio: 0, horas: 0.15, cantidad: 40 },
+                              { estimado_id: 'nch', item: 'DEMO - Switches', unidad: 'EA', precio: 0, horas: 0.15, cantidad: 20 }]);
+    return { cu: window.MXP_PRUEBA.e0.cuentas(conDemo), h: window.MXP_PRUEBA.e0.horas(conDemo, e, {}) };
+  }, [ITEMS, EST]);
+  ok('lo que se demuele no cuenta como pieza nueva: «DEMO - Switches» no es un switch', dem.cu.dispositivo === 126, dem.cu.dispositivo);
+  ok('con las dos familias juntas (80 del renglón viejo + 60 de «DEMO - …») AVISA de demolición doble', dem.h.avisos.some(a => /DEMOLICIÓN DOBLE/.test(a) && /80/.test(a) && /60/.test(a)), dem.h.avisos.join(' | ').slice(0, 160));
   await p.evaluate(([c, i]) => window.MXP_PRUEBA.e0.datos({ catalogo: c.filter(x => !/ICRA|LIFT|PERMISO|MOVILIZ/.test(x.item)), items: i, config: {}, escenarios: [] }), [CAT, ITEMS]);
   const sinCat = await p.evaluate(([i, e]) => window.MXP_PRUEBA.e0.horas(i, e, {}), [ITEMS, EST]);
-  ok('si falta el ítem en el catálogo la regla no corre pero AVISA y nombra el SQL', sinCat.filas.length === 5 && sinCat.avisos.length === 4 && /e27/.test(sinCat.avisos[0]), sinCat.avisos[0]);
+  ok('si falta el ítem en el catálogo la regla no corre pero AVISA y nombra el SQL', sinCat.filas.length === 6 && sinCat.avisos.length === 4 && /e27/.test(sinCat.avisos[0]), sinCat.avisos[0]);
   const sinBrk = await p.evaluate(([c, i, e]) => { window.MXP_PRUEBA.e0.datos({ catalogo: c, items: i, config: {}, escenarios: [] }); return window.MXP_PRUEBA.e0.horas(i.filter(x => !/BREAKER/.test(x.item)), e, {}); }, [CAT, ITEMS, EST]);
   ok('sin breakers en el estimado avisa en vez de poner 0 en silencio', /No encuentro breakers/.test(sinBrk.avisos.join(' ')), sinBrk.avisos.join(' | '));
 
@@ -392,7 +406,7 @@ CES MIAMI — QUOTE 55120
   }, EST);
   ok('las tres tarjetas se pintan sin lanzar', !pint.fallo && pint.largo > 3000, JSON.stringify([pint.fallo, pint.largo, pint.titulos]));
   ok('la tabla de consumibles trae sus 18 números editables', pint.consumibles === 18, pint.consumibles);
-  ok('la de horas trae una casilla por regla y la de luz sus 9 familias', pint.horas === 9 && pint.luz === 9, JSON.stringify([pint.horas, pint.luz]));
+  ok('la de horas trae una casilla por regla y la de luz sus 9 familias', pint.horas === 10 && pint.luz === 9, JSON.stringify([pint.horas, pint.luz]));
   ok('(B2) cada una de las 5 luminarias pendientes trae su selector de familia y su hueco de precio propio', pint.selFam === 5 && pint.propios === 5, JSON.stringify([pint.selFam, pint.propios]));
   ok('el selector ofrece automático + las 9 familias + un precio tuyo, y dice QUÉ reconoció solo', pint.opcFam === 11 && /Autom[áa]tico/.test(pint.autoDice) && /2x2/.test(pint.autoDice), JSON.stringify([pint.opcFam, pint.autoDice]));
   ok('y sin nada enseñado todos salen en «automático» (no se preselecciona una familia que Edgar no eligió)', pint.elegida.every(v => v === ''), JSON.stringify(pint.elegida));

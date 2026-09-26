@@ -8574,7 +8574,15 @@ function esFalloDeRed(err) {
   const HORAS_REGLAS = [
     { id: "terminacion",  item: "TERMINACIÓN DE CIRCUITO EN PANEL (por ckt)",                cuenta: "ckt",      por: 1 },
     { id: "rotulado",     item: "ROTULADO DE CIRCUITO Y DIRECTORIO DE PANEL (por ckt)",      cuenta: "ckt",      por: 1 },
-    { id: "demo",         item: "DEMOLICIÓN DE DISPOSITIVO O LUMINARIA EXISTENTE (por unidad)", cuenta: "demo",  por: 1, modos: ["remodelacion"], supuesto: true },
+    /* (26/09, Edgar) UNA SOLA FAMILIA DE DEMOLICIÓN: la de «DEMO - …», la
+       misma que cuenta Planos con las tools de Bluebeam. Antes esta tarjeta
+       proponía su propio renglón («DEMOLICIÓN DE DISPOSITIVO O LUMINARIA
+       EXISTENTE», 0,35 h) y un receptáculo contado en Planos y aceptado aquí
+       se cobraba DOS veces, con horas distintas. El renglón viejo sigue en el
+       catálogo para los estimados que ya lo llevan (Nicklaus), pero ya no se
+       propone, y si se junta con los nuevos, se avisa. */
+    { id: "demo",         item: "DEMO - Receptacles",                                         cuenta: "dispositivo", por: 1, modos: ["remodelacion"], supuesto: true },
+    { id: "demo_luz",     item: "DEMO - Light Fixtures",                                      cuenta: "luminaria",   por: 1, modos: ["remodelacion"], supuesto: true },
     { id: "arranque",     item: "PUESTA EN MARCHA DIMMER 0-10V / SENSOR (por unidad)",        cuenta: "dimmer",   por: 1 },
     { id: "icra",         item: "BARRERA ICRA / CONTENCIÓN DE POLVO (por barrera)",           cuenta: "fijo",     por: 1, modos: ["remodelacion", "planos"], supuesto: true },
     { id: "lift",         item: "LIFT O ANDAMIO — MONTAJE Y MOVIMIENTO (por día)",            cuenta: "fijo",     por: 1, supuesto: true },
@@ -8609,7 +8617,8 @@ function esFalloDeRed(err) {
      propia línea de demolición. Se reconocen por su nombre o por la forma
      «(por ckt)», «(por unidad)», «(por proyecto)» que llevan todos. */
   const ES_ITEM_DE_MANO = n => /\((POR|PER) (CKT|UNIDAD|PROYECTO|BARRERA|D[IÍ]A|VIAJE|UNIT|PROJECT)\)$/.test(n)
-    || HORAS_REGLAS.some(r => normTxt(r.item) === n);
+    || HORAS_REGLAS.some(r => normTxt(r.item) === n)
+    || /^DEMO\s*-/.test(n);   // (26/09) lo que se DEMUELE no es pieza nueva: «DEMO - Switches» no es un switch
   // Solo lo que se cuenta por PIEZAS: 1 MLF de cable de dimming no es un dimmer
   const ES_PIEZA = u => /^(E|EA|EACH|UNIT|U|PZ|PZA|C\/U)$/.test(normTxt(u || "E"));
   const ES_DISPOSITIVO = n => /RECEPTACLE|RECEPT\b|SWITCH|DIMMER|SENSOR|OUTLET/.test(n)
@@ -8666,7 +8675,8 @@ function esFalloDeRed(err) {
       const permisoDeOtro = r.id === "permiso" && !!((est || {}).contratista_id || esMEP(est || {}));
       const de = permisoDeOtro ? "el trato es con un contratista: si el permiso lo saca el GC, NO lo marques (regla de la casa)"
         : r.cuenta === "ckt" ? `${cuentas.ckt} breaker(s) LISTADOS en el estimado — si el trabajo tiene más circuitos que breakers comprados, cámbialo`
-        : r.cuenta === "demo" ? `SUPUESTO: ${cuentas.dispositivo} dispositivo(s) + ${cuentas.luminaria} luminaria(s) nuevas`
+        : r.id === "demo" ? `SUPUESTO: uno viejo por cada uno de los ${cuentas.dispositivo} dispositivo(s) nuevos (receptáculos y switches llevan las mismas horas)`
+        : r.id === "demo_luz" ? `SUPUESTO: una vieja por cada una de las ${cuentas.luminaria} luminaria(s) nuevas`
         : r.cuenta === "dimmer" ? `${cuentas.dimmer} dimmer(s) y sensor(es)`
         : "por proyecto — ponlo tú";
       filas.push({ id: r.id, item: cat.item, nom: r.item, cantidad: cant,
@@ -8676,6 +8686,11 @@ function esFalloDeRed(err) {
     }
     if (cuentas.ckt === 0 && filas.some(f => f.id === "terminacion"))
       avisos.push("No encuentro breakers en el estimado: las horas de terminar y rotular circuitos salen en 0 — pon tú el número de circuitos.");
+    // (26/09) las dos familias de demolición juntas cobran lo mismo dos veces
+    const viejaDemo = yaHay[normTxt("DEMOLICIÓN DE DISPOSITIVO O LUMINARIA EXISTENTE (por unidad)")] || 0;
+    const nuevaDemo = (yaHay[normTxt("DEMO - Receptacles")] || 0) + (yaHay[normTxt("DEMO - Switches")] || 0) + (yaHay[normTxt("DEMO - Light Fixtures")] || 0);
+    if (viejaDemo > 0 && nuevaDemo > 0)
+      avisos.push(`OJO, DEMOLICIÓN DOBLE: el estimado tiene ${Math.round(viejaDemo)} de «DEMOLICIÓN DE DISPOSITIVO O LUMINARIA» y además ${Math.round(nuevaDemo)} de «DEMO - …» (Receptacles / Switches / Light Fixtures). Son la misma demolición: quita una de las dos.`);
     return { filas, avisos, cuentas };
   }
 

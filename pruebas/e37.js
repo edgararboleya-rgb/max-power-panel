@@ -42,10 +42,14 @@ const cerca = (a, b) => Math.abs(a - b) < 0.011;
 
   /* === 1. los hitos === */
   const sin = await hitos(100000, 0);
-  ok('sin retención: los 3 hitos de siempre, 35/40/25', sin.length === 3 && sin[0].monto === 35000 && sin[1].monto === 40000 && sin[2].monto === 25000, sin.map(h => h.monto).join('/'));
+  // (26/09) el reparto ya no es 35/40/25 fijo: lo decide la IA según la obra (v228, la otra sesión).
+  // Lo que se comprueba aquí es lo de la retención, sea cual sea el reparto.
+  const suma = l => Math.round(l.reduce((s, h) => s + h.monto, 0) * 100) / 100;
+  ok('sin retención: los hitos suman el contrato y ninguno es retención', suma(sin) === 100000 && !sin.some(h => /Retainage/.test(h.titulo)), sin.map(h => h.monto).join('/'));
   const con = await hitos(100000, 0.10);
-  ok('con 10 % de retención: cada hito sale sin ella', con[0].monto === 31500 && con[1].monto === 36000 && con[2].monto === 22500, con.map(h => h.monto).join('/'));
-  ok('y la retención es un cuarto hito, al cierre', con.length === 4 && con[3].monto === 10000 && /cierre/.test(con[3].condicion) && /Retainage — 10%/.test(con[3].titulo), JSON.stringify(con[3]));
+  const ult = con[con.length - 1];
+  ok('con 10 % de retención: los pagos suman el 90 % y cada uno es el 90 % del de sin retención', suma(con.slice(0, -1)) === 90000 && con.length === sin.length + 1 && con.slice(0, -1).every((h, i) => Math.abs(h.monto - sin[i].monto * 0.9) < 0.02), con.map(h => h.monto).join('/'));
+  ok('y la retención es el último hito, al cierre', ult.monto === 10000 && /cierre/.test(ult.condicion) && /Retainage — 10%/.test(ult.titulo), JSON.stringify(ult));
   const raro = await hitos(123456.78, 0.075);
   ok('suman el contrato al centavo, con cualquier número', Math.abs(raro.reduce((s, h) => s + h.monto, 0) - 123456.78) < 0.005, raro.map(h => h.monto).join(' + '));
 
@@ -57,7 +61,7 @@ const cerca = (a, b) => Math.abs(a - b) < 0.011;
   ok('la propuesta dice la obra y el dueño', /Obra: 91500 Overseas Hwy/.test(prop) && /Dueño \/ Owner: Baptist Health/.test(prop));
   ok('y la retención en la forma de pago, con su monto', /Retención del contratante — 10% de cada pago, se libera al cierre/.test(prop), (prop.match(/Retención.*$/m) || [''])[0]);
   const sinRet = await p.evaluate(([e, c]) => window.MXP_PRUEBA.e0.propuesta(e, c), [{ ...EST, retencion_pct: null, dueno: null, direccion: null }, c]);
-  ok('sin esos datos, la propuesta sale como siempre', !/Retención|Dueño|Obra:/.test(sinRet) && /Milestone 1 — 35% a la aceptación/.test(sinRet));
+  ok('sin esos datos, la propuesta no dice retención, dueño ni obra', !/Retención|Dueño|Obra:/.test(sinRet) && /PRECIO TOTAL/.test(sinRet));
 
   /* === 3. el papel de MXP MEP === */
   const mep = await p.evaluate(([e, c]) => window.MXP_PRUEBA.e0.propMep(e, c), [{ ...EST, empresa: 'mep' }, c]);
