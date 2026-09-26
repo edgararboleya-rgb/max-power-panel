@@ -216,3 +216,95 @@ agosto · faltan 3».
   cobre `#C8783A`**; categorías: azul, cobre, teal `#0FA39A`, morado
   `#8A6BD1`, oro `#B08A00`), validando contraste y daltonismo antes (dataviz).
 
+### Aportes funcionales al lienzo (26-sep)
+Edgar: el lienzo es la dirección visual, no el 100 %; lo funcional se puede
+sumar. Estos son los aportes desde lo que ya hacen c2, c3 y c4 y lo que piden
+f06–f12 y f16–f17. Se deciden en el acabado; ninguno cambia los motores.
+
+**Inicio (C1)**
+1. **Cada cifra es una puerta.** Cifra → líneas del libro que la forman →
+   papel (foto del ticket, factura, línea del banco) → quién, cuándo y desde
+   qué puente entró. Y un indicador de integridad siempre visible («libro:
+   cadena íntegra · controles 10/10 · verificado el …»); si un control falla,
+   la pantalla lo dice en rojo en vez de pintar ceros (falla ruidosa).
+2. **Lo pendiente de todo tipo, no solo el banco:** banco sin clasificar,
+   papeles que no entraron al libro (`puentes_bandeja`), tickets sin foto,
+   facturas vencidas, diferencias con QuickBooks (en el paralelo), ajustes del
+   CPA por aprobar. Un solo lugar con contadores; el botón cobre lleva ahí.
+3. **Estado de los meses:** cuáles están cerrados (candado de c2), cuál está
+   abierto y qué le falta para cerrar (la lista del punto 15).
+4. **Por cobrar separa la retención (1120) y muestra los anticipos de
+   clientes como pasivo**, no como cobro; por pagar separa tarjetas (con su
+   fecha de corte) de proveedores (2010) con vencimientos.
+5. **Reserva de impuestos (1030):** saldo, lo que debería haber según el % del
+   CPA sobre la utilidad acumulada, el faltante y la próxima transferencia.
+   Y caja chica (1050) con su saldo y último arqueo.
+6. **Flujo de caja sin transferencias propias:** el pago de la Amex y el pase
+   a la reserva no son salidas. Y «próximos 30 días»: cobros por vencimiento,
+   tarjetas por pagar, proveedores, nómina, reserva → caja proyectada.
+7. **Proyectos, lo económico completo:** contrato (base + COs firmados),
+   **facturado**, cobrado, retención retenida, costo real contra el estimado
+   (escenario C), margen; y **«por facturar»: hitos cumplidos en la app
+   operativa sin factura emitida** (lo que QuickBooks no hace).
+8. **Durante oct–dic, «contra QuickBooks»** (`v_comparacion`): diferencias del
+   mes y las anotadas; desaparece al corte.
+9. **Inicio compacto en el teléfono** (Edgar quiere ver su P&L ahí), además
+   de la pantalla de clasificar.
+
+**Clasificar el banco (C2)**
+10. **Primero casar, después clasificar.** La línea del banco se cruza con lo
+    que ya está en el libro: el ticket con foto que entró por c3, el cobro de
+    una factura, el pago de la tarjeta (transferencia), la nómina de Gusto.
+    «HOME DEPOT −$312.40» → «casa con el ticket #123 de Barona (foto), 24-sep»
+    → botón **«Confirmar cruce»**. Clasificarlo otra vez como Materiales lo
+    mete dos veces. Solo sin ticket: «¿de qué es?» y pide la foto (que entra
+    por el puente de recibos, una sola vía).
+11. **Opciones por naturaleza, no por cuenta:** cruce con ticket · pago a
+    proveedor (cuenta abierta 2010) · pago de tarjeta o transferencia entre
+    cuentas · cobro de una factura (elegir cuál; **un depósito nunca va a
+    ingreso**) · anticipo de cliente · retiro para Edgar (3200) · caja chica
+    (1050) · contratista (1099, con W-9 en `proveedores`) · aporte de Edgar
+    (3100) · préstamo. La categoría de gasto solo aparece sin ticket.
+12. **Aceptar en bloque lo seguro:** «aceptar 24 cruces exactos» (monto,
+    tarjeta, fecha ±3 días); una a una solo las dudosas. Y **deshacer la
+    última** (reverso con rastro, `fn_reversar`).
+13. **Repartir una línea entre obras** (c3 ya lo permite por foto y obra) y
+    **crear regla al corregir** («¿siempre así para HOME DEPOT #6345?») con
+    quién y cuándo; las reglas visibles y editables, y nunca postean solas.
+14. **Solo con señal:** sin red, la pantalla lo dice y no encola (evita el
+    asiento doble). La fecha del banco y la del ticket pueden diferir: mostrar
+    las dos cuando no coinciden.
+
+**Cuadrar el mes (C3)**
+15. **Conciliación de verdad, no igualdad** (f06): saldo del statement +
+    depósitos en tránsito − cargos en circulación = saldo en libros. Hace
+    falta **«dejar en tránsito»** con motivo (cheque emitido y no cobrado,
+    depósito del 31); esas partidas pasan al mes siguiente y no impiden
+    cerrar. Sin esto no se cierra ningún mes con un cheque en la calle.
+16. **El statement como ancla:** Edgar escribe el saldo final del statement (o
+    adjunta el PDF) y la app lo cruza con lo importado por OFX/Plaid; quedan
+    cuenta, mes, saldo, archivo, quién y cuándo (`conciliaciones`). Las
+    tarjetas se concilian a su **fecha de corte**, no a fin de mes.
+17. **Tres grupos, no dos columnas paralelas:** casados (plegados), solo en el
+    banco, solo en libros. Con 112 contra 110 las columnas se desalinean.
+18. **«Cerrar el mes» con lista previa:** todas las cuentas conciliadas,
+    bandeja vacía o excepciones aceptadas, tickets sin foto resueltos,
+    depreciación, prepagados y nómina posteados, transferencia a la reserva
+    hecha o ajustada, cadena y controles en verde, comparación con QuickBooks
+    revisada. Al cerrar: candado, quién y cuándo, y **el paquete del mes en
+    PDF inmutable** (balanza, resultados, balance, conciliaciones) para el
+    CPA, el banco o la aseguradora. Reabrir con motivo deja rastro.
+
+**Transversal**
+19. **Acceso para el CPA:** solo lectura, proponer ajustes que Edgar aprueba,
+    exportar (libro mayor en CSV, balanza, paquete anual de f17), sin el
+    login de Edgar. Hoy todo es `es_dueno()`; pide un rol de lectura en las
+    policies (chico, en f16).
+20. **Avisos:** corte de tarjeta, factura con 30+ días (recordar al cliente
+    desde el portal), mes sin cerrar el día 10, estimado de impuestos
+    (15-ene), lo sin clasificar el viernes.
+21. **El texto de «análisis» (IA, f16) nunca es fuente de una cifra:** va
+    marcado como generado y cada frase enlaza a los números que la sostienen.
+22. **Pantalla «Acerca del libro»:** versiones pegadas de c1–c4 (sus marcas),
+    cadena, controles y últimas verificaciones: el certificado para el auditor.
+
