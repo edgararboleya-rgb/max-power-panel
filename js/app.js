@@ -3696,6 +3696,7 @@ function esFalloDeRed(err) {
   // ============================================================
   let asisMsgs = [];
   let asisPensando = false;
+  let asisAvance = "";   // (cerebro v30) por dónde va un trabajo largo del asistente
 
   function asisLlave() { return "mxp_asistente_" + (DB.uid() || "x"); }
   function asisCargar() {
@@ -3745,7 +3746,7 @@ function esFalloDeRed(err) {
         </p>
         <div class="chat-hilo" id="asis-hilo">
           ${burbujas || `<p class="cal-sin-eventos">Escríbele abajo. Está para ayudarte.</p>`}
-          ${asisPensando ? `<div class="burbuja"><span class="burbuja-texto">✍️ pensando…</span></div>` : ""}
+          ${asisPensando ? `<div class="burbuja"><span class="burbuja-texto">✍️ ${asisAvance ? esc(asisAvance) : "pensando… (con lo difícil puede tardar unos minutos)"}</span></div>` : ""}
         </div>
         ${!asisMsgs.length ? `<div class="chat-sugerencias">
           ${sugerencias.map(x => `<button type="button" class="asis-sug">${esc(x)}</button>`).join("")}
@@ -3784,7 +3785,13 @@ function esFalloDeRed(err) {
     asisGuardar();
     pintarAsistente();
     try {
-      const r = await DB.preguntarAsistente(asisMsgs);
+      asisAvance = "";
+      const r = await DB.preguntarAsistente(asisMsgs, av => {
+        // (cerebro v30) el trabajo largo sigue solo: se enseña por dónde va
+        asisAvance = "Sigo trabajando (" + (av.tanda || 2) + ")…" + (av.avance ? " " + String(av.avance).slice(0, 200) : "");
+        pintarAsistente();
+      });
+      asisAvance = "";
       if (r && r.respuesta) asisMsgs.push({ rol: "assistant", texto: r.respuesta });
       else if (r && r.error === "sin_llave") asisMsgs.push({ rol: "assistant", texto: "Todavía no me han conectado la llave del asistente. Edgar tiene que ponerla en Supabase (ANTHROPIC_API_KEY)." });
       else asisMsgs.push({ rol: "assistant", texto: "No pude contestar eso. Inténtalo otra vez en un momento." });

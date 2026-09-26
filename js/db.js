@@ -922,26 +922,36 @@
     // 🤖 El asistente: manda la conversación al cerebro con el token del
     // usuario. El cerebro mira ese token para saber quién pregunta y qué
     // puede ver (el equipo nunca recibe dinero).
-    async preguntarAsistente(mensajes) {
+    // (26/09, cerebro v30) Un trabajo largo sigue en varias llamadas: la
+    // plataforma corta cada una a los 150 s, así que el cerebro guarda por
+    // dónde va y contesta { sigue }. Aquí se vuelve a llamar sola, hasta 10
+    // veces (~15 min), y alAvanzar(r) le dice a la pantalla por dónde va.
+    async preguntarAsistente(mensajes, alAvanzar) {
       if (!sesion) throw new Error("Sin sesión");
-      const r = await fetch(`${SB.url}/functions/v1/cerebro?accion=asistente`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sesion.access_token}` },
-        body: JSON.stringify({ mensajes })
-      });
-      if (r.status === 401) {
-        // el token pudo haber caducado: se refresca y se reintenta una vez
-        await refrescar();
-        const r2 = await fetch(`${SB.url}/functions/v1/cerebro?accion=asistente`, {
+      const llamar = async cuerpo => {
+        const pide = () => fetch(`${SB.url}/functions/v1/cerebro?accion=asistente`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${sesion.access_token}` },
-          body: JSON.stringify({ mensajes })
+          body: JSON.stringify(cuerpo)
         });
-        if (!r2.ok) throw new Error("No se pudo conectar con el asistente");
-        return r2.json();
+        let r = await pide();
+        if (r.status === 401) {
+          // el token pudo haber caducado: se refresca y se reintenta una vez
+          await refrescar();
+          r = await pide();
+          if (!r.ok) throw new Error("No se pudo conectar con el asistente");
+          return r.json();
+        }
+        if (!r.ok) throw new Error("El asistente no respondió (" + r.status + ")");
+        return r.json();
+      };
+      let res = await llamar({ mensajes });
+      for (let i = 0; i < 10 && res && res.sigue; i++) {
+        if (typeof alAvanzar === "function") { try { alAvanzar(res); } catch (e) { /* la pantalla no frena el trabajo */ } }
+        res = await llamar({ trabajo: res.sigue });
       }
-      if (!r.ok) throw new Error("El asistente no respondió (" + r.status + ")");
-      return r.json();
+      if (res && res.sigue) return { respuesta: "Esto me está llevando demasiado. Lo que alcancé lo recuerdo: dime «sigue» y continúo, o pregúntamelo por partes." };
+      return res;
     },
     // 💵 La IA decide el reparto de los pagos de un estimado (función «reparto»).
     // Solo viajan porcentajes, horas, tamaño y el trabajo sin precios.
