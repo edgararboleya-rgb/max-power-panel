@@ -254,7 +254,7 @@
       return c && c.state && c.state.perfil && c.uid === DB.miUid() ? c : null;
     } catch { return null; }
   }
-  const horaCopia = iso => new Intl.DateTimeFormat("es-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" }).format(new Date(iso));
+  const horaCopia = iso => new Intl.DateTimeFormat(LOCALE, { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" }).format(new Date(iso));
   function franjaSinSenal(copia) {
     let f = document.getElementById("franja-sin-senal");
     if (!copia) { if (f) f.remove(); return; }
@@ -1239,7 +1239,7 @@ function esFalloDeRed(err) {
   // Franja "HOY": lo de hoy y mañana (los pendientes viven en 🔥 Urgentes)
   // 📅 LOS PRÓXIMOS DÍAS: hoy, mañana y los cinco siguientes, a modo de título.
   //    Cada renglón: hora · qué · quién va · proyecto. Se toca y abre el proyecto.
-  const DIA_CORTO = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+  const DIA_CORTO = EN_APP ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] : ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
   const EDGAR_ID = "7a8e1ac4-dd9e-4e27-a8e9-e94b313a74fb";
   // La hora de un evento como número para ordenar («8:00 AM» → 8, «1:30 PM» → 13.5).
   // La usan los próximos días del dueño y la pantalla «Hoy» del campo.
@@ -1260,7 +1260,7 @@ function esFalloDeRed(err) {
       if (k === 0) return "HOY"; if (k === 1) return "MAÑANA";
       const t = new Date(Date.parse(d + "T12:00:00"));
       // En inglés el día corto sale en inglés («MON 28»)
-      const dia = EN_APP ? t.toLocaleDateString(LOCALE, { weekday: "short" }) : DIA_CORTO[t.getDay()];
+      const dia = DIA_CORTO[t.getDay()];
       return `${dia.toUpperCase()} ${t.getDate()}`;
     };
     const filas = dias.map((d, k) => {
@@ -1645,7 +1645,8 @@ function esFalloDeRed(err) {
     const esteMes = hoy.slice(0, 7);
     const t = new Date(Date.parse(hoy + "T12:00:00")); t.setDate(1); t.setMonth(t.getMonth() - 1);
     const mesPasado = fechaISO(t.getFullYear(), t.getMonth(), 1).slice(0, 7);
-    const MESES = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+    const MESES = EN_APP ? ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+      : ["", "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
     const nombreMes = m => MESES[Number(m.slice(5, 7))];
     const facts = proyectos().flatMap(p => (p.facturas || []).map(f => ({ ...f, proyecto: p.id })));
     const cuenta = mes => {
@@ -2018,7 +2019,7 @@ function esFalloDeRed(err) {
         <div class="eq-reporte${r.correccion === "pedida" ? " eq-pide" : ""}" data-id="${r.id}">
           <span class="alcance-info">
             <span class="alcance-titulo">${esc(r.fecha)} · ${esc(nombreProyecto(r.proyecto) || "—")} · <strong>${esc(r.horas)} h</strong>${r.co ? " · 🧾 " + esc(r.co) : ""}</span>
-            <span class="alcance-estado">${esc(r.fase || "")}${r.notas ? " — " + esc(r.notas) : ""}</span>
+            <span class="alcance-estado"><span>${esc(r.fase || "")}</span>${r.notas ? ` — <span data-no-i18n>${esc(r.notas)}</span>` : ""}</span>
             ${r.correccion === "pedida" ? `<span class="alcance-estado">✏️ <strong>Pide permiso para corregir este reporte</strong></span>` : ""}
             ${r.correccion === "aprobada" ? `<span class="alcance-estado">✅ Permiso dado — esperando su corrección</span>` : ""}
           </span>
@@ -5064,7 +5065,7 @@ function esFalloDeRed(err) {
 
   // Fecha y hora cortas en hora de Florida, para las visitas del portal («9/9, 9:33 p. m.»)
   const fechaHoraCorta = iso => { const d = new Date(iso || ""); return isNaN(d.getTime()) ? "" :
-    d.toLocaleString("es-US", { timeZone: "America/New_York", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }); };
+    d.toLocaleString(LOCALE, { timeZone: "America/New_York", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }); };
   // La ficha: tablero + barra de pestañas + un panel por pestaña. Los paneles de
   // Dinero y Cliente NI SE GENERAN para el equipo de campo.
   function fichaProyectoHTML(p) {
@@ -5325,7 +5326,7 @@ function esFalloDeRed(err) {
     paso:       { etiqueta: "Pasó",       icono: "✓", clase: "insp-paso" },
     fallo:      { etiqueta: "Falló",      icono: "✗", clase: "insp-fallo" }
   };
-  const MES_CORTO = ["", "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+  const MES_CORTO = EN_APP ? ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] : ["", "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
   const fechaBonita = iso => {
     if (!iso) return "";
     const [a, m, d] = String(iso).split("-").map(Number);
@@ -10772,7 +10773,7 @@ function esFalloDeRed(err) {
   // número que Edgar le pasa a su socio. Mismo motor, otra hoja de papel.
   function textoResumenMEP(est, c) {
     const r2 = v => Math.round(v * 100) / 100;
-    const hoyTxt = new Date().toLocaleDateString(LOCALE, { day: "numeric", month: "long", year: "numeric" });
+    const hoyTxt = new Date().toLocaleDateString("es-US", { day: "numeric", month: "long", year: "numeric" }); // el texto va en español
     const l = [];
     l.push(`MXP MEP — ${est.nombre}`);
     if (est.cliente) l.push(`Obra: ${est.cliente}`);
@@ -10895,7 +10896,7 @@ function esFalloDeRed(err) {
         f.de = "precio de este estimado (catálogo " + n2(cat.precio) + ")";
     }
     filas.sort((a, b) => (a.cod || "zz").localeCompare(b.cod || "zz") || a.item.localeCompare(b.item));
-    const hoyTxt = new Date().toLocaleDateString(LOCALE, { day: "numeric", month: "long", year: "numeric" });
+    const hoyTxt = new Date().toLocaleDateString("es-US", { day: "numeric", month: "long", year: "numeric" }); // el texto va en español
     const l = [];
     l.push(`TAKEOFF — ${est.nombre}${est.cliente ? ` — ${est.cliente}` : ""} — ${hoyTxt}${est.escenario ? ` — escenario ${est.escenario}` : ""}${est.factor ? ` — factor ${est.factor}` : ""}`);
     l.push(["Partida", "Ítem", "De dónde sale", "Cantidad", "Unidad", "$ unitario", "h unitarias", "$ Material", "Horas"].join("\t"));
@@ -10945,7 +10946,7 @@ function esFalloDeRed(err) {
     // E0 · Sin exclusiones, la propuesta sale letra por letra igual que ayer.
     const exclE0 = lineasNoIncluye(est, c.items);
     const bid = r2(c.bid);
-    const hoyTxt = new Date().toLocaleDateString(LOCALE, { day: "numeric", month: "long", year: "numeric" });
+    const hoyTxt = new Date().toLocaleDateString("es-US", { day: "numeric", month: "long", year: "numeric" }); // el texto va en español
     const lineas = [];
     const ensDelEst = (estData.estEnsambles || []).filter(e => e.estimado_id === est.id && Number(e.cantidad) > 0);
     if (ensDelEst.length) {

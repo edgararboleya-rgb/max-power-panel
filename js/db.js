@@ -416,11 +416,14 @@
     const horPor = agrupar(horas, "proyecto_id");
     const docPor = agrupar(documentos, "proyecto_id");
 
-    const MES = ["", "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+    // La fecha corta de las facturas, en el idioma de la app («17 sep» / «Sep 17»)
+    const EN = (() => { try { return localStorage.getItem("mxp_idioma") === "en"; } catch { return false; } })();
+    const MES = EN ? ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+      : ["", "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
     const fechaCorta = iso => {
       if (!iso) return "";
       const [a, m, d] = String(iso).split("-").map(Number);
-      return `${d} ${MES[m] || ""}`;
+      return EN ? `${MES[m] || ""} ${d}` : `${d} ${MES[m] || ""}`;
     };
 
     // Si la base no devolvió proyectos (el equipo no puede leer la tabla
