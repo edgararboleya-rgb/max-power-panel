@@ -65,7 +65,9 @@
 -- 75 miran la apertura solo si pueden) salen «omitida»: una segunda
 -- apertura encima de la de verdad duplicaría los saldos, y fn_apertura no
 -- la pone. Las demás corren igual.
--- Tarda unos 40 s en el banco; con el libro lleno (10.000 asientos, un año
+-- Tarda unos 40 s en el banco (en producción, una instancia chica, 5 min
+-- 47 s: el SQL Editor se cansa antes, y el resultado queda en
+-- pruebas.c4_resultado, ver el final); con el libro lleno (10.000 asientos, un año
 -- largo) cerca de dos minutos (algo más en 17.6), y ninguna
 -- subtransacción tiene tomado el libro más de unos 3 s (la 25 y la 37 van
 -- por período, y la 25 además por grupo de vistas: antes, de 6 a 9 s, y
@@ -7026,5 +7028,28 @@ begin
 end $$;
 
 reset jit;
+
+-- =====================================================================
+-- EL RESULTADO TAMBIÉN QUEDA EN UNA TABLA DE VERDAD (26-sep-2026). El SQL
+-- Editor de Supabase deja de esperar a los pocos minutos y enseña un error
+-- de red, pero la corrida sigue en el servidor hasta el final (en
+-- producción, una instancia chica, c4-pruebas tardó 5 min 47 s; en el
+-- banco, 40 s). Por eso la tabla temporal _pruebas se copia aquí a
+-- pruebas.c4_resultado, fuera de la API: PostgREST no expone el esquema
+-- pruebas, y ni anon, ni authenticated ni service_role pueden usarlo. Si
+-- el editor se cansó, la corrida entera se lee después con
+--   select * from pruebas.c4_resultado order by n;
+-- Guarda solo la última corrida, con su hora. No es parte del libro (la
+-- foto de «no deja rastro» no la mira) y se borra, cuando ya no haga
+-- falta, con «drop schema pruebas cascade».
+-- =====================================================================
+create schema if not exists pruebas;
+revoke all on schema pruebas from public, anon, authenticated, service_role;
+create unlogged table if not exists pruebas.c4_resultado
+  (n int, prueba text, esperado text, obtenido text, ok boolean, corrida timestamptz not null default now());
+revoke all on pruebas.c4_resultado from public, anon, authenticated, service_role;
+truncate pruebas.c4_resultado;
+insert into pruebas.c4_resultado (n, prueba, esperado, obtenido, ok)
+select n, prueba, esperado, obtenido, ok from _pruebas;
 
 select * from _pruebas order by n;
