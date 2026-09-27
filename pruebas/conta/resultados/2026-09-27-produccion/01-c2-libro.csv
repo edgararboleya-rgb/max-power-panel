@@ -1,0 +1,11 @@
+control,ok,detalle
+hash,true,"{""asientos"":0,""alterados"":[]}"
+enlace,true,"{""rotos"":[]}"
+numeracion,true,"{""con_huecos"":[]}"
+contadores,true,"{""descuadrados"":[]}"
+cuadre,true,"{""descuadrados"":[],""lineas_sin_cabecera"":0}"
+reversos,true,"{""malos"":[]}"
+periodos,true,"{""tocados"":[],""apertura"":[],""cerrados"":0,""cerrados_antes_de_terminar"":[],""fuera_de_orden_o_con_hueco"":[]}"
+triggers,true,"{""fallan"":[],""huellas"":[]}"
+cuentas,true,"{""cuentas"":88,""sin_rastro"":[]}"
+permisos,true,"{""fallan"":[]}"

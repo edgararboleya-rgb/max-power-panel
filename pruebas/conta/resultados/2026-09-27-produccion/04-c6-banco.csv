@@ -1,0 +1,8 @@
+control,ok,detalle
+c6 · tablas,true,"13 tablas, con la RLS encendida y solo su policy de lectura del dueño"
+c6 · vistas,true,"8 vistas, todas security_invoker, solo SELECT para authenticated"
+c6 · funciones de la app,true,"21 funciones que llama conta.js (anon ninguna); el resto, sin grant a la API"
+c6 · en el reparto de c2,true,las SECURITY DEFINER que llama la app están en el reparto de c2 (c_fn_app_fases): su control permisos las conoce
+banco · v_banco_saldos,true,4 filas
+banco · cuadre: protecciones del banco,true,bien
+"banco · cuadre: c2, c3 y c4 al día",true,bien
