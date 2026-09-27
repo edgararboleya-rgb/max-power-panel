@@ -109,3 +109,59 @@ Importas el mismo archivo dos veces y no entra nada la segunda vez; **el pago
 de la tarjeta del mes no aparece en ninguna cuenta de gasto**; cada depósito
 casa con una fila de `cobros`; y septiembre concilia con sus partidas en
 tránsito, sin tocar 1010.
+
+## Lo construido (27-sep) — versión candidata, sin pegar
+- `docs/conta/c6-banco.sql` (marca 2026092704) y `docs/conta/c6-pruebas.sql`
+  (**100 pruebas**, resultado también en `pruebas.c6_resultado`). Trece
+  tablas, ocho vistas y veintiuna funciones para la app: los archivos del
+  banco enteros (texto y sha256) y cada movimiento como fila inmutable;
+  el lector de OFX/QFX 1.x (SGML) y 2.x (XML) de banco y de tarjeta, con
+  su saldo final; `fn_banco_importar_filas` para Plaid (solo lo posteado,
+  el signo volteado al entrar); el casado (`fn_banco_casar_todo`):
+  automático solo el cruce exacto y mutuo con lo que ya está en el libro
+  (ticket de c3, cobro, la otra mitad de una transferencia, cuota, partida
+  de la apertura) y dos reglas fijas (intereses 4910, cargos 6130); todo lo
+  demás con su propuesta y sus botones en `v_banco_bandeja`
+  (`fn_banco_casar_con`, `fn_banco_cobrar`, `fn_banco_pagar_proveedor`,
+  `fn_banco_transferencia`, `fn_banco_clasificar`, `fn_banco_ignorar`,
+  `fn_banco_duplicado`, `fn_banco_devolver`, `fn_banco_descasar`, todas con
+  rastro); la conciliación de verdad a la fecha de corte (`fn_conciliar`,
+  partidas en tránsito con motivo, se confirma solo con 0.00 y nada sin
+  casar, se reabre con motivo, la de apertura al 30-sep con
+  `fn_conciliacion_apertura`); préstamos (`prestamos`, `fn_prestamo_cuota`:
+  capital e interés, el statement manda sobre la fórmula) y prepagados
+  (`prepagados`, `fn_prepagados_amortizar`: seguros y fianzas al gasto día
+  por día, la prima de WC aparte); `fn_banco_control(periodo, p_vistas)` con
+  el contrato de c4 y `fn_banco_verificar()` desde el SQL Editor.
+- Bloque B del §6b: diseño + 3 rondas de ataque (33, 26 y 26 hallazgos; 79
+  confirmados, 74 corregidos, 8 partes rechazadas con motivo escrito en las
+  cabeceras y el README). Prueba final de cero en Postgres 16 y 17.6: c2
+  82/82, c3 120/120, c4 111/111 (110 + 1 omitida en 16), c6 100/100;
+  idempotente; sin rastro; pegado, concurrencia, volumen (10.000
+  movimientos en 36 archivos sobre 10.000 asientos: importar 0,7 s, casar
+  un mes 1,8 s, cada vista 0,13 s) y «en uso» (las cuatro suites con el
+  banco ya trabajando y con noviembre abierto encima de octubre) en verde.
+  Repetido a mano el 27-sep con el mismo resultado. La ronda 3 todavía
+  encontró 21 defectos reales (ninguno bloqueante): una cuarta ronda antes
+  del pegado es razonable si hay crédito.
+- **c2, c3 y c4 cambian (mínimo) y se vuelven a pegar antes de c6:** c2
+  reparte y sella las funciones del banco y solo él fija el candado de
+  `es_dueno()` (marca 2026092701); c3 deja soltar `cobros.movimiento_id` al
+  des-casar, con marca (2026092601); c4 aprende el papel de las fases de
+  después (`v_papel_fases`) y gana `fn_estados_version` (2026092601). Sus
+  suites suben a 82, 120 y 111. c6 para con MX000 si alguno es viejo.
+- Para conta.js: si `fn_banco_casar_todo` devuelve `completo: false`, la
+  pantalla vuelve a llamar (pasa solo con meses sin resolver); préstamos y
+  pólizas se registran desde el SQL Editor (`fn_prestamo_guardar`,
+  `fn_prepagado_guardar`) hasta que haya pantalla.
+- Dudas para Edgar (del diseñador): si Plaid entrará con la sesión de Edgar
+  o por una función del servidor (hoy `fn_banco_importar_filas` exige al
+  dueño); los statements al 30-sep de cada préstamo y las pólizas vigentes
+  (GL, WC, auto, fianzas) para registrarlos con su saldo; su nombre tal
+  como sale en Chase para el descriptor `zelle_edgar`; un QFX real de cada
+  Amex para confirmar el signo del saldo; cada cuánto cuenta la caja chica;
+  si la comisión de Gusto sale en un cargo aparte; si deposita varios
+  cheques juntos; qué día cierra cada Amex; y la conciliación de QuickBooks
+  de Chase al 30-sep (saldo del statement y partidas en tránsito) para la
+  conciliación de apertura.
+

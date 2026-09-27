@@ -46,6 +46,25 @@
 -- sus prepagados (una póliza de verdad de QuickBooks no la pone en rojo)
 -- y la 59, el casado que no rehace lo que no cambió. La 61 sigue siendo
 -- la última.
+--
+-- LA RONDA 3 (27-sep; piden la marca 2026092704): de la 83 a la 100, una
+-- por hallazgo: el ticket con otro total (antes y después de clasificar),
+-- el pago de la tarjeta que el banco cobra días después, el pago parcial
+-- que no va al costo, el cheque que rebota de un depósito de dos, la
+-- póliza sustituida y la cancelada, R3 fuera de la conciliación
+-- confirmada, el saldo de Plaid y la coma de miles, la regla ajena, el
+-- statement de la tarjeta cortado antes del corte, el proveedor a cuenta
+-- que no se traga la luz, el cobro con tarjeta neto de comisión, la
+-- conciliación con la fecha mal escrita, la obra del día de la compra,
+-- el re-pegado con vistas ajenas, «no es su ticket» con su motivo, el
+-- motivo de la partida de la apertura que se hereda y la firma por
+-- proveedor. La 10 lleva el día de la compra (DTUSER); la 22 y la 46
+-- salen «omitida» si Edgar ya amortizó un mes posterior al primero
+-- abierto (la marcha en paralelo), como la 88. Y para seguir en menos de
+-- 40 s con un año de banco: pg_temp.c6_cuadre pide el cuadre suelto, por
+-- su nombre (la 36 lo mira), la 79 hace una sola revisión con sus dos
+-- cuentas, y la 87 elige la opción de la bandeja con SUS dos facturas
+-- (con datos de verdad, otra factura abierta suma lo mismo).
 -- =====================================================================
 
 create temp table if not exists _pruebas(n int, prueba text, esperado text, obtenido text, ok boolean);
@@ -68,10 +87,10 @@ begin
   -- (Estas pruebas son las de ESTA versión del banco: con una c6-banco.sql
   -- anterior pegada, sus pruebas nuevas saldrían en rojo por lo que falta,
   -- no por un fallo del libro.)
-  if public.fn_banco_version() < 2026092703 then
+  if public.fn_banco_version() < 2026092704 then
     raise exception using
       errcode = 'MX000',
-      message = format('c6-pruebas NO se corrió: la c6-banco.sql pegada es anterior (marca %s; estas pruebas piden 2026092703 o '
+      message = format('c6-pruebas NO se corrió: la c6-banco.sql pegada es anterior (marca %s; estas pruebas piden 2026092704 o '
                        'más). Vuelve a pegar la c6-banco.sql de esta entrega.', public.fn_banco_version());
   end if;
 end $$;
@@ -509,6 +528,21 @@ as $$
 $$;
 revoke execute on function pg_temp.c6_est(text, text) from public, anon, authenticated, service_role;
 
+-- El mes ya amortizado (de verdad) POSTERIOR al mes abierto más antiguo, si
+-- lo hay: Edgar amortiza cada mes antes de cerrarlo, y en la marcha en
+-- paralelo octubre sigue abierto con noviembre ya amortizado. Amortizar
+-- octubre entonces se niega (MX008, la regla): las pruebas que lo
+-- amortizan salen «omitida» y lo dicen (la ronda 3 de c6).
+create or replace function pg_temp.c6_amortizado_despues() returns text
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select max(a.periodo) from prepagados_amortizaciones a
+   where a.vigente and a.periodo > coalesce(nullif(current_setting('mx6.mes', true), ''), '9999-99')
+$$;
+revoke execute on function pg_temp.c6_amortizado_despues() from public, anon, authenticated, service_role;
+
 -- El reloj fingido y los cierres (como en c4-pruebas): «hoy» en Miami
 -- pasa a ser ese día (fn_fecha_miami, dentro de la subtransacción: el
 -- MXT00 la devuelve como era), y cerrar hasta un mes cierra en orden la
@@ -568,16 +602,10 @@ create or replace function pg_temp.c6_cuadre(p_vista text, p_periodo text, p_qui
 language sql
 set search_path = public, pg_temp
 as $$
-  -- (Pide solo el grupo de vistas que calcula ese cuadre: el control
-  -- entero, con un año de banco, tarda el doble.)
+  -- (Pide solo ese cuadre, por su nombre: el grupo de vistas que lo
+  -- calcula, con un año de banco, tarda de 3 a 4 veces más.)
   select case when exists (select 1
-                             from fn_banco_control(p_periodo,
-                                    case when p_vista in ('cuadre: un movimiento, un casado', 'cuadre: depósitos nunca a ingreso',
-                                                          'cuadre: archivos intactos', 'cuadre: ningún ticket después de clasificar')
-                                           then array['v_banco_movimientos']
-                                         when p_vista = 'cuadre: conciliaciones confirmadas' then array['v_conciliacion']
-                                         when p_vista = 'cuadre: préstamos' then array['v_prestamos']
-                                         when p_vista = 'cuadre: prepagados' then array['v_prepagados'] end) c
+                             from fn_banco_control(p_periodo, array[p_vista]) c
                             where c.vista = p_vista and position(p_quien in coalesce(c.detalle, '')) > 0) then 'f' else 't' end
 $$;
 revoke execute on function pg_temp.c6_cuadre(text, text, text) from public, anon, authenticated, service_role;
@@ -1078,9 +1106,10 @@ begin
                                coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
 end $$;
 
--- 10. LA BANDEJA propone la obra: un cargo sin ticket el día que hubo
---     visita a UNA obra (eventos) sale en v_banco_bandeja con esa obra
+-- 10. LA BANDEJA propone la obra: un cargo sin ticket comprado el día que
+--     hubo visita a UNA obra (eventos) sale en v_banco_bandeja con esa obra
 --     propuesta; con visitas a dos obras ese día, no se adivina (sin obra).
+--     (El día de la COMPRA, el DTUSER del banco: la ronda 3.)
 do $$
 declare
   v_obt  text;
@@ -1113,9 +1142,13 @@ begin
     values (-660001, v_f1, 'c6-pruebas: visita', v_obra, 'programado'),
            (-660002, v_f2, 'c6-pruebas: visita', v_obra, 'programado'),
            (-660003, v_f2, 'c6-pruebas: otra visita', v_o2, 'programado');
+    -- (con el día de la compra, DTUSER: la obra es la de la visita de ESE
+    -- día; sin él se miran los días antes del banco, la 96)
     perform fn_banco_importar_ofx(pg_temp.c6_qfx('tarjeta', '372700000009996', d, d + 27, -100.00, jsonb_build_array(
-              jsonb_build_object('tipo', 'DEBIT', 'fecha', v_f1, 'monto', '-61.11', 'id', 'C6E1', 'nombre', 'C6 LOWES #1'),
-              jsonb_build_object('tipo', 'DEBIT', 'fecha', v_f2, 'monto', '-62.22', 'id', 'C6E2', 'nombre', 'C6 LOWES #2'))),
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', v_f1, 'fecha_usuario', v_f1, 'monto', '-61.11', 'id', 'C6E1',
+                                 'nombre', 'C6 LOWES #1'),
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', v_f2, 'fecha_usuario', v_f2, 'monto', '-62.22', 'id', 'C6E2',
+                                 'nombre', 'C6 LOWES #2'))),
               null, 'c6-pruebas-eventos.qfx');
     perform fn_banco_casar_todo('2100-9996');
     select format('uno=%s:%s dos=%s:%s bandeja=%s',
@@ -1671,6 +1704,15 @@ begin
   if d <> fn_puente_corte() or v_fin - v_ini + 1 <> 365 or extract(day from (d + interval '1 month')::date - 1) <> 31 then
     insert into _pruebas values (22, 'prepagados: por días, un asiento por mes (y WC aparte), idempotente, corregible', v_esp,
                                  'omitida: el mes abierto más antiguo no es el primero después del corte (octubre)', null);
+    return;
+  end if;
+  -- (Edgar ya amortizó un mes POSTERIOR, con este todavía abierto —la marcha
+  -- en paralelo—: amortizar este se niega, MX008, y es la regla. Antes la
+  -- 22 y la 46 salían en rojo.)
+  if pg_temp.c6_amortizado_despues() is not null then
+    insert into _pruebas values (22, 'prepagados: por días, un asiento por mes (y WC aparte), idempotente, corregible', v_esp,
+                                 format('omitida: ya está amortizado %s, posterior al mes abierto más antiguo (se amortiza el último)',
+                                        pg_temp.c6_amortizado_despues()), null);
     return;
   end if;
   begin
@@ -2375,11 +2417,12 @@ end $$;
 --     contrato de fn_estados_control): con todo bien, cada vista con las
 --     filas que dicen las tablas y los cuadres en verde; con una vista
 --     vacía («esperaba N»), con una que ya no está (falló), con una lista
---     vacía o un nombre que no conoce: en rojo, no se pinta.
+--     vacía o un nombre que no conoce: en rojo, no se pinta. Un cuadre
+--     pedido solo, por su nombre, sale solo (con las protecciones).
 do $$
 declare
   v_obt text;
-  v_esp text := 'bien=t vacia=f:esperaba rota=f:falló lista_vacia=f desconocida=f';
+  v_esp text := 'bien=t solo=53,90,91 vacia=f:esperaba rota=f:falló lista_vacia=f desconocida=f';
   v_ok  boolean;
   v_det text;
   v_mes text := current_setting('mx6.mes', true);
@@ -2395,8 +2438,10 @@ begin
     perform pg_temp.c6_como('dueno');
     select bool_and(c.ok) into v_ok from fn_banco_control(v_mes, array['v_banco_movimientos', 'v_banco_bandeja', 'v_banco_saldos']) c
      where c.vista not in ('cuadre: prepagados', 'cuadre: préstamos');
-    execute 'reset role';
     v_obt := 'bien=' || case when v_ok then 't' else 'f' end;
+    v_obt := v_obt || ' solo=' || (select string_agg(c.orden::text, ',' order by c.orden)
+                                     from fn_banco_control(v_mes, array['cuadre: archivos intactos']) c);
+    execute 'reset role';
     execute 'set local lock_timeout = ''2s''';
     execute format('create or replace view public.v_banco_bandeja with (security_invoker = true) as select * from (%s) x where false',
                    rtrim(pg_get_viewdef('public.v_banco_bandeja'::regclass), '; ' || chr(10)));
@@ -2955,6 +3000,12 @@ begin
     insert into _pruebas values (46, 'prepagados de antes del corte: se amortiza el saldo que dejó QuickBooks y 1410 queda en cero', v_esp,
                                  'omitida: el mes abierto más antiguo no es el primero después del corte, o no está abierto el siguiente',
                                  null);
+    return;
+  end if;
+  if pg_temp.c6_amortizado_despues() is not null then
+    insert into _pruebas values (46, 'prepagados de antes del corte: se amortiza el saldo que dejó QuickBooks y 1410 queda en cero', v_esp,
+                                 format('omitida: ya está amortizado %s, posterior al mes abierto más antiguo (se amortiza el último)',
+                                        pg_temp.c6_amortizado_despues()), null);
     return;
   end if;
   v_ini := (d - interval '10 months')::date;
@@ -4775,6 +4826,7 @@ declare
   v_obt text;
   v_esp text := 'casar=t conciliar=2100-9996 verificar=t:2100-9996 nada=f';
   v_c   jsonb;
+  v_det jsonb;
   d     date := nullif(current_setting('mx6.desde', true), '')::date;
 begin
   if d is null then
@@ -4790,11 +4842,15 @@ begin
     v_obt := 'casar=' || case when fn_banco_casar_todo('9996') ? 'completo' then 't' else 'f' end;
     v_c := fn_conciliar('9996', d + 27, '64.20');
     v_obt := v_obt || ' conciliar=' || (v_c->>'cuenta');
-    v_obt := v_obt || format(' verificar=%s nada=%s',
-                             (select case when v.ok then 't' else 'f' end || ':' || (v.detalle->'cuentas'->>0)
-                                from fn_banco_verificar(array['9996']) v where v.control = 'cuentas pedidas'),
-                             (select case when v.ok then 't' else 'f' end from fn_banco_verificar(array['nada']) v
-                               where v.control = 'cuentas pedidas'));
+    -- (una sola revisión con las dos: la tarjeta por su código corto entra
+    -- como su cuenta; la que no es de la empresa sale en rojo. Cada
+    -- revisión, con un año de banco, tarda casi medio segundo)
+    select v.detalle into v_det from fn_banco_verificar(array['9996', 'nada']) v where v.control = 'cuentas pedidas';
+    v_obt := v_obt || format(' verificar=%s:%s nada=%s',
+                             case when coalesce(v_det->'no_son_de_la_empresa' ? '9996', true) then 'f' else 't' end,
+                             (select string_agg(c.c, ',' order by c.c) from jsonb_array_elements_text(v_det->'cuentas') as c(c)
+                               where c.c <> 'nada'),
+                             case when coalesce(v_det->'no_son_de_la_empresa' ? 'nada', false) then 'f' else 't' end);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
@@ -4934,6 +4990,1021 @@ begin
     when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
   end;
   insert into _pruebas values (82, 'un ticket que no le cambia nada a la bandeja no rehace sus propuestas', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- =====================================================================
+-- La ronda 3 (27-sep): una por hallazgo, de la 83 a la 100.
+-- =====================================================================
+
+-- 83. EL TICKET CON OTRO TOTAL NO DEJA CLASIFICAR SU CARGO: el ticket de
+--     THE HOME DEPOT leído sin el tax (100.00) y el cargo de la tarjeta
+--     (107.00) no casan (el dinero no es el mismo), pero la bandeja dice
+--     «otro_total» con ese ticket; clasificarlo sin motivo es MX008 (el
+--     gasto entraría dos veces); corregido el total del recibo (lo que hace
+--     ✎: su asiento se rehace), el cargo casa solo con él; y con su motivo
+--     («es otra compra») sí se clasifica, y ese ticket ya no se le propone.
+--     Antes salía «sin ticket», se clasificaba sin decir nada y la obra
+--     quedaba con 207.00 de costo.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'bandeja=otro_total ticket=100.00 clasificar=MX008 corregido=casado:recibo con_motivo=casado:clasificado descartado=t';
+  v_m   uuid;
+  v_x   text;
+  d     date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  if d is null then
+    insert into _pruebas values (83, 'un ticket con otro total (sin el tax) se propone y no deja clasificar su cargo sin motivo', v_esp,
+                                 'omitida: falta mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    perform pg_temp.c6_recibo(jsonb_build_object('id', -660831, 'total', 100.00, 'fecha', d + 3, 'proveedor', 'THE HOME DEPOT'));
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('tarjeta', '372700000009996', d, d + 20, null, jsonb_build_array(
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 4, 'fecha_usuario', d + 3, 'monto', '-107.00', 'id', 'C6OT1',
+                                 'nombre', 'THE HOME DEPOT #6345 MIAMI FL'))),
+            null, 'c6-pruebas-otro-total.qfx');
+    perform fn_banco_casar_todo('2100-9996');
+    v_m := pg_temp.c6_mov('2100-9996', 'C6OT1');
+    v_obt := format('bandeja=%s ticket=%s', (select m.estado_motivo from movimientos_banco m where m.id = v_m),
+                    (select -(m.propuesta->'tickets'->0->>'monto')::numeric from movimientos_banco m where m.id = v_m));
+    begin
+      perform fn_banco_clasificar(v_m, jsonb_build_array(jsonb_build_object('cuenta', '5100', 'proyecto_id', current_setting('mx6.obra'))));
+      v_x := 'entró';
+    exception when others then v_x := sqlstate;
+    end;
+    v_obt := v_obt || ' clasificar=' || v_x;
+    -- (corregido el total del recibo, como con ✎ en la app; se deshace)
+    begin
+      update recibos set total = 107.00 where id = -660831;
+      perform fn_banco_casar_todo('2100-9996');
+      v_x := pg_temp.c6_est('2100-9996', 'C6OT1');
+      raise exception using errcode = 'MXT02';
+    exception when sqlstate 'MXT02' then null;
+    end;
+    v_obt := v_obt || ' corregido=' || v_x;
+    perform fn_banco_clasificar(v_m, jsonb_build_array(jsonb_build_object('cuenta', '5100', 'proyecto_id', current_setting('mx6.obra'))),
+                                'c6-pruebas: otra compra del mismo día; ese ticket es de otra');
+    v_obt := v_obt || format(' con_motivo=%s descartado=%s', pg_temp.c6_est('2100-9996', 'C6OT1'),
+                             case when (select jsonb_array_length(m.propuesta->'descartados') from movimientos_banco m where m.id = v_m) = 1
+                                   and not exists (select 1 from fn_banco_tickets_llegados(array['2100-9996'], v_m)) then 't' else 'f' end);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (83, 'un ticket con otro total (sin el tax) se propone y no deja clasificar su cargo sin motivo', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 84. EL TICKET DE OTRO TOTAL QUE LLEGA DESPUÉS DE CLASIFICAR SE DICE: el
+--     cargo de 107.00 se clasificó sin ticket y después sube su ticket de
+--     THE HOME DEPOT por 100.00: «llego_su_ticket» con el otro total y sin
+--     el botón de cambiarlo (el dinero no es el mismo: «es su ticket» es
+--     MX008 hasta corregir su total), el cuadre «ningún ticket después de
+--     clasificar» en rojo, y la conciliación de la tarjeta lo marca
+--     posible_duplicado y no se confirma. Antes solo miraba el mismo monto:
+--     el ticket quedaba «en circulación» y todo en verde.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'bandeja=llego_su_ticket otro_total=t boton=f es_el_mismo=MX008 control=f dif=0.00 conciliacion=posible_duplicado:MX008';
+  v_m   uuid;
+  v_x   text;
+  v_c   jsonb;
+  d     date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  if d is null then
+    insert into _pruebas values (84, 'el ticket con otro total que llega después de clasificar: se dice, frena el control y la conciliación',
+                                 v_esp, 'omitida: falta mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('tarjeta', '372700000009996', d, d + 20, -107.00, jsonb_build_array(
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 4, 'fecha_usuario', d + 3, 'monto', '-107.00', 'id', 'C6OT2',
+                                 'nombre', 'THE HOME DEPOT #6345 MIAMI FL'))),
+            null, 'c6-pruebas-otro-total-2.qfx');
+    perform fn_banco_casar_todo('2100-9996');
+    v_m := pg_temp.c6_mov('2100-9996', 'C6OT2');
+    perform fn_banco_clasificar(v_m, jsonb_build_array(jsonb_build_object('cuenta', '5100', 'proyecto_id', current_setting('mx6.obra'))));
+    perform pg_temp.c6_recibo(jsonb_build_object('id', -660841, 'total', 100.00, 'fecha', d + 3, 'proveedor', 'THE HOME DEPOT'));
+    perform fn_banco_casar_todo('2100-9996');
+    select format('bandeja=%s otro_total=%s boton=%s', m.propuesta->>'motivo',
+                  case when m.propuesta->>'texto' like '%OTRO total%' then 't' else 'f' end,
+                  case when exists (select 1 from jsonb_array_elements(m.propuesta->'opciones') o where o->>'llamar' = 'fn_banco_casar_con')
+                       then 't' else 'f' end)
+      into v_obt from movimientos_banco m where m.id = v_m;
+    begin
+      perform fn_banco_duplicado(v_m, true);
+      v_x := 'cambió';
+    exception when others then v_x := sqlstate;
+    end;
+    v_obt := v_obt || format(' es_el_mismo=%s control=%s', v_x,
+                             pg_temp.c6_cuadre('cuadre: ningún ticket después de clasificar', current_setting('mx6.mes'), v_m::text));
+    v_c := fn_conciliar('2100-9996', d + 20, '107.00');
+    v_obt := v_obt || ' dif=' || (v_c->>'diferencia');
+    begin
+      perform fn_conciliacion_confirmar((v_c->>'conciliacion')::uuid);
+      v_x := 'confirmada';
+    exception when others then v_x := sqlstate;
+    end;
+    v_obt := v_obt || ' conciliacion=' || coalesce((select string_agg(distinct p.clase, ',') from conciliacion_partidas p
+                                                      where p.conciliacion_id = (v_c->>'conciliacion')::uuid and p.lado = 'libro'), '-')
+             || ':' || v_x;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (84, 'el ticket con otro total que llega después de clasificar: se dice, frena el control y la conciliación',
+                               v_esp, coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 85. EL PAGO DE LA TARJETA QUE EL BANCO COBRA DÍAS DESPUÉS casa con la
+--     transferencia que ya lo espera: la tarjeta acredita el pago el día
+--     15 (Edgar lo confirmó «desde 1098») y el banco lo cobra el 19 (un
+--     fin de semana largo): casa solo con esa línea, un solo asiento y el
+--     banco cuadra. Y el que llega 9 días después (fuera de la ventana de
+--     casar solo) se propone como «el otro lado» y otra transferencia es
+--     MX008. Antes la ventana era de 3 días: la bandeja ofrecía otra
+--     transferencia y el pago entraba dos veces.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'banco=casado:transferencia asientos=1 dif=0.00 tarde=pendiente:transferencia_otro_lado otra=MX008';
+  v_x   text;
+  v_n0  bigint;
+  d     date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  if d is null then
+    insert into _pruebas values (85, 'el pago de la tarjeta que el banco cobra días después casa con su transferencia, sin otra', v_esp,
+                                 'omitida: falta mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    v_n0 := (select count(*) from asientos a where a.descripcion like 'Transferencia%');
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('tarjeta', '372700000009996', d, d + 18, 0.00, jsonb_build_array(
+              jsonb_build_object('tipo', 'CREDIT', 'fecha', d + 14, 'monto', '500.00', 'id', 'C6P1', 'nombre', 'ONLINE PAYMENT - THANK YOU'),
+              jsonb_build_object('tipo', 'CREDIT', 'fecha', d + 9, 'monto', '300.00', 'id', 'C6P2', 'nombre', 'ONLINE PAYMENT - THANK YOU'))),
+            null, 'c6-pruebas-pago-tarjeta.qfx');
+    perform fn_banco_casar_todo('2100-9996');
+    perform fn_banco_transferencia(pg_temp.c6_mov('2100-9996', 'C6P1'), '1098');
+    perform fn_banco_transferencia(pg_temp.c6_mov('2100-9996', 'C6P2'), '1098');
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 20, -800.00, jsonb_build_array(
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 18, 'monto', '-500.00', 'id', 'C6P3', 'nombre', 'AMERICAN EXPRESS ACH PMT'),
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 18, 'monto', '-300.00', 'id', 'C6P4', 'nombre', 'AMERICAN EXPRESS ACH PMT'))),
+            '1098', 'c6-pruebas-pago-banco.qfx');
+    perform fn_banco_casar_todo('1098');
+    begin
+      perform fn_banco_transferencia(pg_temp.c6_mov('1098', 'C6P4'), '2100-9996');
+      v_x := 'entró';
+    exception when others then v_x := sqlstate;
+    end;
+    v_obt := format('banco=%s asientos=%s dif=%s tarde=%s otra=%s', pg_temp.c6_est('1098', 'C6P3'),
+                    (select count(*) from asientos a where a.descripcion like 'Transferencia%'
+                        and exists (select 1 from asiento_lineas l where l.asiento_id = a.id and l.monto = -500.00)) ,
+                    '-', pg_temp.c6_est('1098', 'C6P4'), v_x);
+    v_obt := replace(v_obt, 'dif=-', 'dif=' || (select (fn_conciliar('1098', d + 20, '-800.00')->>'diferencia')));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (85, 'el pago de la tarjeta que el banco cobra días después casa con su transferencia, sin otra', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 86. UN PAGO PARCIAL DE UN CLIENTE NO SE CLASIFICA CONTRA EL COSTO SIN
+--     MOTIVO: la bandeja propone la parte de su factura (deposito_parcial);
+--     clasificarlo a la obra sin motivo es MX008 (la factura seguiría
+--     entera por cobrar y el dinero del cliente entraría dos veces); con su
+--     motivo escrito, sí. Y el control «depósitos nunca a ingreso» pone en
+--     rojo un asiento del banco que lleva a otra cuenta, sin motivo, un
+--     depósito cuya propuesta era su cobro (por la puerta interna, a
+--     propósito). Antes solo miraba 4xxx.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'bandeja=deposito_parcial sin_motivo=MX008 con_motivo=casado:clasificado control=t interno=f';
+  v_x   text;
+  v_m   uuid;
+  v_m2  uuid;
+  d     date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  if d is null then
+    insert into _pruebas values (86, 'un pago parcial de un cliente no se clasifica al costo sin motivo; el control lo vigila', v_esp,
+                                 'omitida: falta mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
+    values (-660861, current_setting('mx6.obra'), 'C6-86', d + 2, 8765.43, 0);
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 20, null, jsonb_build_array(
+              jsonb_build_object('tipo', 'CREDIT', 'fecha', d + 10, 'monto', '2345.67', 'id', 'C6PP1', 'nombre', 'ZELLE FROM C6 FAMILIA'),
+              jsonb_build_object('tipo', 'CREDIT', 'fecha', d + 11, 'monto', '1234.56', 'id', 'C6PP2', 'nombre', 'ZELLE FROM C6 FAMILIA'))),
+            '1098', 'c6-pruebas-parcial.qfx');
+    perform fn_banco_casar_todo('1098');
+    v_m := pg_temp.c6_mov('1098', 'C6PP1');
+    v_m2 := pg_temp.c6_mov('1098', 'C6PP2');
+    begin
+      perform fn_banco_clasificar(v_m, jsonb_build_array(jsonb_build_object('cuenta', '5100', 'proyecto_id', current_setting('mx6.obra'))));
+      v_x := 'entró';
+    exception when others then v_x := sqlstate;
+    end;
+    v_obt := format('bandeja=%s sin_motivo=%s', (select m.estado_motivo from movimientos_banco m where m.id = v_m), v_x);
+    perform fn_banco_clasificar(v_m, jsonb_build_array(jsonb_build_object('cuenta', '5100', 'proyecto_id', current_setting('mx6.obra'))),
+                                'c6-pruebas: el reembolso de una compra que el cliente pagó por la empresa');
+    v_obt := v_obt || format(' con_motivo=%s control=%s', pg_temp.c6_est('1098', 'C6PP1'),
+                             pg_temp.c6_cuadre('cuadre: depósitos nunca a ingreso', current_setting('mx6.mes'), v_m::text));
+    perform fn_postear_interno(jsonb_build_object(
+      'camino', 'puente', 'fecha', (d + 11)::text, 'descripcion', 'c6-pruebas: un depósito a la obra sin motivo (se deshace)',
+      'origen_tabla', 'movimientos_banco', 'origen_id', v_m2::text,
+      'procedencia', jsonb_build_object('funcion', 'fn_banco_clasificar', 'propuesta', 'deposito_parcial'),
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '1098', 'monto', '1234.56'),
+                                  jsonb_build_object('cuenta', '5100', 'monto', '-1234.56', 'proyecto_id', current_setting('mx6.obra')))));
+    v_obt := v_obt || ' interno=' || pg_temp.c6_cuadre('cuadre: depósitos nunca a ingreso', current_setting('mx6.mes'), v_m2::text);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (86, 'un pago parcial de un cliente no se clasifica al costo sin motivo; el control lo vigila', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 87. EL CHEQUE QUE REBOTA DE UN DEPÓSITO DE DOS CHEQUES tiene su camino:
+--     el depósito de 13,000.00 entró como UN cobro de las dos facturas
+--     (la opción de la bandeja) y rebota el de 8,000.00: la bandeja
+--     propone «rebotó el cheque de la factura…»; clasificarlo sin motivo es
+--     MX008 (no es un gasto); con su botón, el cobro se devuelve en esa
+--     fecha y lo que no rebotó (5,000.00) se registra otra vez ese día: la
+--     factura del cheque rebotado queda por cobrar, la otra cobrada, y el
+--     banco cuadra. Antes fn_banco_devolver pedía el cobro entero y lo
+--     único que entraba (sin motivo) era a gasto o contra el ingreso.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'bandeja=devolucion opcion=t clasificar=MX008 devuelto=casado:devolucion por_cobrar=0.00/8000.00 nuevo=5000.00 dif=0.00';
+  v_x   text;
+  v_m   uuid;
+  v_op  jsonb;
+  v_r   jsonb;
+  d     date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  if d is null then
+    insert into _pruebas values (87, 'el cheque que rebota de un depósito de dos: se devuelve y lo demás se registra otra vez', v_esp,
+                                 'omitida: falta mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
+    values (-660871, current_setting('mx6.obra'), 'C6-871', d + 1, 5000.00, 0),
+           (-660872, current_setting('mx6.obra'), 'C6-872', d + 2, 8000.00, 0);
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 20, 5000.00, jsonb_build_array(
+              jsonb_build_object('tipo', 'DEP', 'fecha', d + 5, 'monto', '13000.00', 'id', 'C6RB1', 'nombre', 'REMOTE ONLINE DEPOSIT'),
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 9, 'monto', '-8000.00', 'id', 'C6RB2', 'nombre', 'DEPOSITED ITEM RETURNED NSF'))),
+            '1098', 'c6-pruebas-rebote.qfx');
+    perform fn_banco_casar_todo('1098');
+    v_m := pg_temp.c6_mov('1098', 'C6RB1');
+    -- (la opción de la bandeja con SUS dos facturas: con datos de verdad,
+    -- otra factura abierta de 5,000.00 también suma 13,000.00 con la de
+    -- 8,000.00, y puede salir antes; si no está entre las opciones, las
+    -- mismas aplicaciones escritas aquí)
+    perform fn_banco_cobrar(v_m, coalesce(
+              (select o->'args'->'p_aplicaciones' from movimientos_banco m cross join jsonb_array_elements(m.propuesta->'opciones') o
+                where m.id = v_m and o->>'llamar' = 'fn_banco_cobrar' and jsonb_array_length(o->'args'->'p_aplicaciones') = 2
+                  and o->'args'->'p_aplicaciones' @> '[{"factura_id": -660871}]'
+                  and o->'args'->'p_aplicaciones' @> '[{"factura_id": -660872}]'
+                limit 1),
+              '[{"factura_id": -660872, "monto": "8000.00"}, {"factura_id": -660871, "monto": "5000.00"}]'::jsonb));
+    perform fn_banco_casar_todo('1098');
+    v_m := pg_temp.c6_mov('1098', 'C6RB2');
+    select o into v_op from movimientos_banco m cross join jsonb_array_elements(m.propuesta->'opciones') o
+     where m.id = v_m and o->>'llamar' = 'fn_banco_devolver' limit 1;
+    begin
+      perform fn_banco_clasificar(v_m, '[{"cuenta": "6130"}]'::jsonb);
+      v_x := 'entró';
+    exception when others then v_x := sqlstate;
+    end;
+    v_obt := format('bandeja=%s opcion=%s clasificar=%s', (select m.estado_motivo from movimientos_banco m where m.id = v_m),
+                    case when v_op->>'texto' like '%C6-872%' then 't' else 'f' end, v_x);
+    v_r := fn_banco_devolver((v_op->'args'->>'p_movimiento')::uuid, (v_op->'args'->>'p_cobro')::uuid, v_op->'args'->>'p_motivo');
+    v_obt := v_obt || format(' devuelto=%s por_cobrar=%s/%s nuevo=%s dif=%s', pg_temp.c6_est('1098', 'C6RB2'),
+                             (select coalesce(sum(l.monto), 0) from asiento_lineas l where l.partida_tabla = 'facturas' and l.partida_id = '-660871'
+                                 and l.cuenta = fn_puente_cuenta_de('cxc')),
+                             (select coalesce(sum(l.monto), 0) from asiento_lineas l where l.partida_tabla = 'facturas' and l.partida_id = '-660872'
+                                 and l.cuenta = fn_puente_cuenta_de('cxc')),
+                             (select c.monto from cobros c where c.id = (v_r->>'cobro_nuevo')::uuid),
+                             fn_conciliar('1098', d + 20, '5000.00')->>'diferencia');
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (87, 'el cheque que rebota de un depósito de dos: se devuelve y lo demás se registra otra vez', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 88. LA PÓLIZA QUE SE CORRIGE O SE CANCELA tiene su camino: con octubre
+--     amortizado a la cuenta equivocada (6200), cambiarle la cuenta es
+--     MX008 y el mensaje dice cómo sustituirla; cancelarla sin su fecha es
+--     22023. La que la SUSTITUYE (5015) devuelve en noviembre lo que la
+--     vieja llevaba (6200 queda en cero) y amortiza por acumulado desde su
+--     inicio (61 días: 2,005.48). Y CANCELADA de verdad el 15 de noviembre
+--     con 9,000.00 devueltos: noviembre lleva al gasto todo lo que queda
+--     menos lo devuelto (3,000.00 en total) y, con la devolución en su
+--     cuenta, 1410 queda en cero para ella. Antes «cancélalo y registra
+--     otro» amortizaba octubre dos veces y lo cancelado se quedaba en 1410.
+--     (Mide solo las líneas de SUS pólizas.)
+do $$
+declare
+  v_obt text;
+  v_esp text := 'cambiar=MX008:sustituye cancelar=22023 oct=1019.18 nov=-1019.18/2005.48 gasto=0.00/2005.48 cancelada=3000.00 '
+                'queda=0.00 control=igual';
+  v_a   uuid;
+  v_b   uuid;
+  v_x   text;
+  v_ok0 boolean;
+  d     date := nullif(current_setting('mx6.desde', true), '')::date;
+  v_sig text := nullif(current_setting('mx6.sig', true), '');
+begin
+  if d is null or d <> fn_puente_corte() or v_sig is null then
+    insert into _pruebas values (88, 'la póliza corregida se sustituye sin amortizar dos veces; la cancelada queda en cero', v_esp,
+                                 'omitida: el mes abierto más antiguo no es el primero después del corte, o no está abierto el siguiente',
+                                 null);
+    return;
+  end if;
+  if pg_temp.c6_amortizado_despues() is not null then
+    insert into _pruebas values (88, 'la póliza corregida se sustituye sin amortizar dos veces; la cancelada queda en cero', v_esp,
+                                 format('omitida: ya está amortizado %s, posterior al mes abierto más antiguo (se amortiza el último)',
+                                        pg_temp.c6_amortizado_despues()), null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    v_ok0 := (select c.ok from fn_banco_control(current_setting('mx6.mes'), array['v_prepagados']) c where c.vista = 'cuadre: prepagados');
+    v_a := (fn_prepagado_guardar(jsonb_build_object('descripcion', 'c6-pruebas WC 88', 'tipo', 'seguro', 'cuenta_gasto', '6200',
+              'monto', '12000.00', 'desde', d::text, 'hasta', (d + 364)::text))->>'id')::uuid;
+    perform fn_postear(jsonb_build_object('fecha', d::text, 'descripcion', 'c6-pruebas: la póliza pagada (se deshace)',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '1410', 'monto', '12000.00'),
+                                  jsonb_build_object('cuenta', '1098', 'monto', '-12000.00'))));
+    perform fn_prepagados_amortizar(current_setting('mx6.mes'));
+    begin
+      perform fn_prepagado_guardar(jsonb_build_object('id', v_a, 'cuenta_gasto', '5015'));
+      v_x := 'entró';
+    exception when others then v_x := sqlstate || case when sqlerrm like '%"sustituye"%' then ':sustituye' else '' end;
+    end;
+    v_obt := 'cambiar=' || v_x;
+    begin
+      perform fn_prepagado_guardar(jsonb_build_object('id', v_a, 'estado', 'cancelado'));
+      v_x := 'entró';
+    exception when others then v_x := sqlstate;
+    end;
+    v_obt := v_obt || ' cancelar=' || v_x
+             || ' oct=' || (select a.monto::text from prepagados_amortizaciones a where a.prepagado_id = v_a and a.vigente);
+    v_b := (fn_prepagado_guardar(jsonb_build_object('sustituye', v_a, 'cuenta_gasto', '5015'))->>'id')::uuid;
+    perform fn_prepagados_amortizar(v_sig);
+    v_obt := v_obt || format(' nov=%s/%s gasto=%s/%s',
+               (select a.monto from prepagados_amortizaciones a where a.prepagado_id = v_a and a.periodo = v_sig and a.vigente),
+               (select a.monto from prepagados_amortizaciones a where a.prepagado_id = v_b and a.periodo = v_sig and a.vigente),
+               (select coalesce(sum(l.monto), 0) from asiento_lineas l join asientos s on s.id = l.asiento_id
+                 where s.origen_tabla = 'prepagados' and l.cuenta = '6200' and l.memo like '%c6-pruebas WC 88%'
+                   and not exists (select 1 from asientos r where r.reversa_a = s.id and r.camino = 'reverso')),
+               (select coalesce(sum(l.monto), 0) from asiento_lineas l join asientos s on s.id = l.asiento_id
+                 where s.origen_tabla = 'prepagados' and l.cuenta = '5015' and l.memo like '%c6-pruebas WC 88%'
+                   and not exists (select 1 from asientos r where r.reversa_a = s.id and r.camino = 'reverso')));
+    -- La cancelación de verdad: el 15 de noviembre, con 9,000.00 devueltos
+    -- (el depósito de la aseguradora, a 1410).
+    perform fn_prepagado_guardar(jsonb_build_object('id', v_b, 'estado', 'cancelado', 'cancelado_al', (d + 45)::text,
+                                                    'devuelto', '9,000.00'));
+    perform fn_prepagados_amortizar(v_sig);
+    perform fn_postear(jsonb_build_object('fecha', (d + 50)::text, 'descripcion', 'c6-pruebas: la devolución de la aseguradora (se deshace)',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '1098', 'monto', '9000.00'),
+                                  jsonb_build_object('cuenta', '1410', 'monto', '-9000.00'))));
+    v_obt := v_obt || format(' cancelada=%s queda=%s control=%s',
+               (select sum(a.monto) from prepagados_amortizaciones a where a.prepagado_id in (v_a, v_b) and a.vigente),
+               12000.00 - 9000.00 - (select sum(a.monto) from prepagados_amortizaciones a where a.prepagado_id in (v_a, v_b) and a.vigente),
+               case when (select c.ok from fn_banco_control(v_sig, array['v_prepagados']) c where c.vista = 'cuadre: prepagados')
+                         is not distinct from v_ok0 then 'igual' else 'cambió' end);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (88, 'la póliza corregida se sustituye sin amortizar dos veces; la cancelada queda en cero', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 89. LA TRANSFERENCIA QUE CASA SOLA NO ENTRA EN UNA CONCILIACIÓN
+--     CONFIRMADA: el banco conciliado y confirmado al día 30; la tarjeta
+--     acredita el pago el 29 y el banco lo cobra el 32 (el 2 del mes
+--     siguiente): R3 los casa con UN asiento fechado el día siguiente al
+--     corte confirmado (con la nota que lo dice), y el saldo en libros de
+--     la confirmada no cambia. Antes el asiento iba el 29, dentro de la
+--     confirmada, y el control seguía en verde.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'banco=casado:transferencia tarjeta=casado:transferencia fecha=+31 nota=t libros=igual control=t';
+  v_c   jsonb;
+  v_l0  numeric;
+  v_a   asientos;
+  d     date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  if d is null or current_setting('mx6.sig', true) = '' then
+    insert into _pruebas values (89, 'R3 no mete una transferencia dentro de una conciliación confirmada', v_esp,
+                                 'omitida: falta el mes abierto o el siguiente', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 30, -15.00, jsonb_build_array(
+              jsonb_build_object('tipo', 'SRVCHG', 'fecha', d + 8, 'monto', '-15.00', 'id', 'C6R3A', 'nombre', 'MONTHLY SERVICE FEE'))),
+            '1098', 'c6-pruebas-r3-oct.qfx');
+    perform fn_banco_casar_todo('1098');
+    v_c := fn_conciliar('1098', d + 30, '-15.00');
+    perform fn_conciliacion_confirmar((v_c->>'conciliacion')::uuid);
+    v_l0 := fn_banco_saldo_libros('1098', d + 30);
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('tarjeta', '372700000009996', d + 10, d + 30, null, jsonb_build_array(
+              jsonb_build_object('tipo', 'CREDIT', 'fecha', d + 29, 'monto', '500.00', 'id', 'C6R3B', 'nombre', 'ONLINE PAYMENT - THANK YOU'))),
+            null, 'c6-pruebas-r3-tarjeta.qfx');
+    perform fn_banco_casar_todo('2100-9996');
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d + 31, d + 40, null, jsonb_build_array(
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 32, 'monto', '-500.00', 'id', 'C6R3C', 'nombre', 'AMERICAN EXPRESS ACH PMT'))),
+            '1098', 'c6-pruebas-r3-nov.qfx');
+    perform fn_banco_casar_todo('1098');
+    select a.* into v_a from asientos a join movimientos_banco m on m.asiento_id = a.id where m.id = pg_temp.c6_mov('1098', 'C6R3C');
+    v_obt := format('banco=%s tarjeta=%s fecha=+%s nota=%s libros=%s control=%s', pg_temp.c6_est('1098', 'C6R3C'),
+                    pg_temp.c6_est('2100-9996', 'C6R3B'), v_a.fecha_contable - d,
+                    case when v_a.procedencia ? 'fecha_nota' then 't' else 'f' end,
+                    case when fn_banco_saldo_libros('1098', d + 30) = v_l0 then 'igual' else 'cambió' end,
+                    pg_temp.c6_cuadre('cuadre: conciliaciones confirmadas', current_setting('mx6.mes'), '1098'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (89, 'R3 no mete una transferencia dentro de una conciliación confirmada', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 90. EL SALDO DE UN LOTE DE PLAID de una tarjeta entra con el signo del
+--     libro: Plaid da lo que se debe en positivo (plaid_saldo 1,173.26) y
+--     el archivo guarda -1,173.26 (como el LEDGERBAL de la Amex); un lote
+--     de Plaid con «saldo» (sin decir de qué signo) no entra (22023); y en
+--     un lote a mano, el saldo positivo de una tarjeta se avisa. Y los
+--     montos con coma de miles («-1,029.33», «54,172.37») entran, como en
+--     fn_conciliar. Antes el saldo de Plaid entraba sin voltear (la deuda
+--     como saldo a favor) y el lote rechazaba la coma de miles.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'plaid=-1173.26 saldo_en_plaid=22023 aviso=t coma=-1029.33/54172.37';
+  v_x   jsonb;
+  v_e   text;
+  d     date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  if d is null then
+    insert into _pruebas values (90, 'el saldo de Plaid de una tarjeta entra con el signo del libro; la coma de miles se lee', v_esp,
+                                 'omitida: falta mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    v_x := fn_banco_importar_filas(jsonb_build_object('origen', 'plaid', 'cuenta', '9996', 'nombre', 'c6-pruebas plaid',
+             'plaid_saldo', '1173.26', 'saldo_al', (d + 5)::text,
+             'filas', jsonb_build_array(jsonb_build_object('id', 'C6PL1', 'fecha', (d + 2)::text, 'plaid_monto', '45.10',
+                                                           'descripcion', 'C6 SHELL OIL'))));
+    v_obt := 'plaid=' || (select a.saldo::text from archivos_banco a where a.id = (v_x->>'archivo')::uuid);
+    begin
+      perform fn_banco_importar_filas(jsonb_build_object('origen', 'plaid', 'cuenta', '9996', 'nombre', 'c6-pruebas plaid 2',
+                'saldo', '1173.26', 'saldo_al', (d + 6)::text,
+                'filas', jsonb_build_array(jsonb_build_object('id', 'C6PL2', 'fecha', (d + 3)::text, 'plaid_monto', '12.00',
+                                                              'descripcion', 'C6 SHELL OIL'))));
+      v_e := 'entró';
+    exception when others then v_e := sqlstate;
+    end;
+    v_obt := v_obt || ' saldo_en_plaid=' || v_e;
+    v_x := fn_banco_importar_filas(jsonb_build_object('origen', 'mano', 'cuenta', '9996', 'nombre', 'c6-pruebas a mano',
+             'saldo', '200.00', 'saldo_al', (d + 7)::text,
+             'filas', jsonb_build_array(jsonb_build_object('id', 'C6PL3', 'fecha', (d + 4)::text, 'monto', '-20.00',
+                                                           'descripcion', 'C6 SHELL OIL'))));
+    v_obt := v_obt || ' aviso=' || case when v_x ? 'avisos' then 't' else 'f' end;
+    v_x := fn_banco_importar_filas(jsonb_build_object('origen', 'csv', 'cuenta', '1098', 'nombre', 'c6-pruebas coma.csv',
+             'saldo', '54,172.37', 'saldo_al', (d + 8)::text,
+             'filas', jsonb_build_array(jsonb_build_object('id', 'C6CM1', 'fecha', (d + 5)::text, 'monto', '-1,029.33',
+                                                           'descripcion', 'C6 CHECK 2001'))));
+    v_obt := v_obt || format(' coma=%s/%s', (select m.monto from movimientos_banco m where m.id = pg_temp.c6_mov('1098', 'C6CM1')),
+                             (select a.saldo from archivos_banco a where a.id = (v_x->>'archivo')::uuid));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (90, 'el saldo de Plaid de una tarjeta entra con el signo del libro; la coma de miles se lee', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 91. LAS PROTECCIONES VEN UNA REGLA AJENA QUE LEE EL BANCO: una regla
+--     (create rule) en una tabla donde la API escribe (horas), cuya acción
+--     lee las tablas del banco, pone «protecciones del banco» en rojo (se
+--     dispara con los permisos del dueño de horas y se salta la RLS del
+--     banco); sin la regla, ya no. Antes solo se miraban los triggers: la
+--     regla podía copiar el estado de cuenta a una tabla que el equipo lee,
+--     con el control en verde.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'con_regla=f sin_regla=t';
+begin
+  if to_regclass('public.horas') is null then
+    insert into _pruebas values (91, 'las protecciones ven una regla ajena (pg_rewrite) que lee el banco', v_esp,
+                                 'omitida: no hay tabla horas', null);
+    return;
+  end if;
+  begin
+    set local lock_timeout = '2s';
+    execute 'create rule c6_pruebas_regla as on insert to public.horas do also select count(*) from public.movimientos_banco m';
+    v_obt := 'con_regla=' || (select case when position('c6_pruebas_regla' in coalesce(c.detalle, '')) > 0 then 'f' else 't' end
+                                from fn_banco_control('hoy', array['v_banco_saldos']) c
+                               where c.vista = 'cuadre: protecciones del banco');
+    execute 'drop rule c6_pruebas_regla on public.horas';
+    v_obt := v_obt || ' sin_regla=' || (select case when position('c6_pruebas_regla' in coalesce(c.detalle, '')) > 0 then 'f' else 't' end
+                                          from fn_banco_control('hoy', array['v_banco_saldos']) c
+                                         where c.vista = 'cuadre: protecciones del banco');
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate '55P03' then v_obt := 'omitida: la app usa horas (lock_timeout)';
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (91, 'las protecciones ven una regla ajena (pg_rewrite) que lee el banco', v_esp,
+                               coalesce(v_obt, '-'), case when v_obt like 'omitida%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 92. EL STATEMENT DE LA TARJETA CORTADO ANTES DEL 30-SEP: el cargo que
+--     QuickBooks dejó sin conciliar (la partida de la apertura de la
+--     tarjeta) llega fechado antes del corte (ignorado: está en
+--     QuickBooks) y casa solo con su partida; la conciliación del mes se
+--     confirma; des-casarlo con ella confirmada no se puede, y reabierta
+--     vuelve a ignorado; casarlo a mano con su partida, sí. Antes se
+--     quedaba ignorado, la partida no llegaba nunca y la conciliación de
+--     la tarjeta no se confirmaba.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'shell=casado:apertura confirmada=confirmada descasar=MX008 reabierta=ignorado:- a_mano=casado:apertura';
+  v_c   jsonb;
+  v_id  uuid;
+  v_m   uuid;
+  v_x   text;
+  v_p   uuid;
+  d     date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  if d is null or d <> fn_puente_corte() or not exists (select 1 from periodos where tipo = 'apertura') then
+    insert into _pruebas values (92, 'la tarjeta con el statement cortado antes del corte: su cargo casa con la partida de la apertura',
+                                 v_esp, 'omitida: el mes abierto más antiguo no es el primero después del corte, o falta la apertura',
+                                 null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    perform pg_temp.c6_apertura_minima();
+    -- (la tarjeta de prueba no tiene saldo en la apertura: su último
+    -- statement, con 512.18 a favor, es lo que la partida compensa; el de
+    -- octubre, lo que se debe después del Shell y de Adobe)
+    v_c := fn_conciliacion_apertura('2100-9996', '-512.18', jsonb_build_array(
+             jsonb_build_object('fecha', (d - 7)::text, 'monto', '-512.18', 'descripcion', 'c6-pruebas: Shell sin conciliar en QuickBooks')));
+    perform fn_conciliacion_confirmar((v_c->>'conciliacion')::uuid);
+    v_p := (select p.id from conciliacion_partidas p where p.conciliacion_id = (v_c->>'conciliacion')::uuid and p.monto = -512.18);
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('tarjeta', '372700000009996', d - 8, d + 21, -129.99, jsonb_build_array(
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d - 6, 'fecha_usuario', d - 7, 'monto', '-512.18', 'id', 'C6SH1',
+                                 'nombre', 'SHELL OIL 57444221 TAMPA FL'),
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 17, 'fecha_usuario', d + 15, 'monto', '-129.99', 'id', 'C6SH2',
+                                 'nombre', 'ADOBE *ACROPRO SUBS'))),
+            null, 'c6-pruebas-cortado.qfx');
+    perform fn_banco_casar_todo('2100-9996');
+    v_m := pg_temp.c6_mov('2100-9996', 'C6SH1');
+    perform fn_banco_clasificar(pg_temp.c6_mov('2100-9996', 'C6SH2'), '[{"cuenta": "6500"}]'::jsonb);
+    v_c := fn_conciliar('2100-9996', d + 21, '129.99');
+    v_id := (v_c->>'conciliacion')::uuid;
+    v_obt := format('shell=%s confirmada=%s', pg_temp.c6_est('2100-9996', 'C6SH1'), fn_conciliacion_confirmar(v_id)->>'estado');
+    begin
+      perform fn_banco_descasar(v_m, 'c6-pruebas: des-casar con la conciliación confirmada');
+      v_x := 'entró';
+    exception when others then v_x := sqlstate;
+    end;
+    perform fn_conciliacion_reabrir(v_id, 'c6-pruebas: probar el des-casado');
+    perform fn_banco_descasar(v_m, 'c6-pruebas: des-casar reabierta');
+    v_obt := v_obt || format(' descasar=%s reabierta=%s:%s', v_x, (select m.estado from movimientos_banco m where m.id = v_m),
+                             case when (select m.casado_id from movimientos_banco m where m.id = v_m) is null then '-' else 'casado' end);
+    perform fn_banco_casar_con(v_m, jsonb_build_object('partida_apertura', v_p));
+    v_obt := v_obt || ' a_mano=' || pg_temp.c6_est('2100-9996', 'C6SH1');
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT01' then v_obt := 'omitida';
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (92, 'la tarjeta con el statement cortado antes del corte: su cargo casa con la partida de la apertura',
+                               v_esp, coalesce(v_obt, '-'), case when v_obt = 'omitida' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 93. CON UN PROVEEDOR A CUENTA, LO QUE NOMBRA A OTRO NO ES SU ABONO: con
+--     1,500.00 que se le deben al proveedor, la luz (el pago en línea a
+--     FPL y su domiciliación) y un Zelle a una persona salen «sin ticket»
+--     (clasificar la luz a 6110 entra sin motivo), y el cheque sin nombre
+--     sí se propone como abono al proveedor. Antes todo cargo con PAYMENT
+--     o DIRECTDEBIT salía «Abono a …» con un solo botón, y el retiro del
+--     dueño bajaba la deuda de un proveedor.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'fpl=sin_ticket/sin_ticket zelle=sin_ticket cheque=pago_proveedor:abono luz=casado:clasificado';
+  v_prov uuid;
+  d     date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  if d is null then
+    insert into _pruebas values (93, 'con un proveedor a cuenta, la luz y un Zelle a una persona no son su abono', v_esp,
+                                 'omitida: falta mes abierto', null);
+    return;
+  end if;
+  begin
+    v_prov := (pg_temp.c6_montar()->>'proveedor')::uuid;
+    perform pg_temp.c6_recibo(jsonb_build_object('id', -660931, 'total', 1500.00, 'fecha', d + 2, 'metodo_pago', 'cuenta_proveedor'));
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 27, null, jsonb_build_array(
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 23, 'monto', '-212.33', 'id', 'C6FP1',
+                                 'nombre', 'ONLINE PAYMENT 1234567 TO FLORIDA POWER &amp; LIGHT'),
+              jsonb_build_object('tipo', 'DIRECTDEBIT', 'fecha', d + 23, 'monto', '-189.40', 'id', 'C6FP2', 'nombre', 'FPL DIRECT DEBIT ELEC PYMT'),
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 25, 'monto', '-350.00', 'id', 'C6FP3',
+                                 'nombre', 'ZELLE PAYMENT TO MIGUEL SANCHEZ JPM99ABC'),
+              jsonb_build_object('tipo', 'CHECK', 'fecha', d + 26, 'monto', '-700.00', 'id', 'C6FP4', 'nombre', 'CHECK 1044',
+                                 'cheque', '1044'))),
+            '1098', 'c6-pruebas-luz.qfx');
+    perform fn_banco_casar_todo('1098');
+    v_obt := format('fpl=%s/%s zelle=%s cheque=%s:%s',
+                    (select m.estado_motivo from movimientos_banco m where m.id = pg_temp.c6_mov('1098', 'C6FP1')),
+                    (select m.estado_motivo from movimientos_banco m where m.id = pg_temp.c6_mov('1098', 'C6FP2')),
+                    (select m.estado_motivo from movimientos_banco m where m.id = pg_temp.c6_mov('1098', 'C6FP3')),
+                    (select m.estado_motivo from movimientos_banco m where m.id = pg_temp.c6_mov('1098', 'C6FP4')),
+                    case when exists (select 1 from movimientos_banco m cross join jsonb_array_elements(m.propuesta->'opciones') o
+                                       where m.id = pg_temp.c6_mov('1098', 'C6FP4') and o->'args'->>'p_proveedor' = v_prov::text)
+                         then 'abono' else '-' end);
+    perform fn_banco_clasificar(pg_temp.c6_mov('1098', 'C6FP2'), '[{"cuenta": "6110", "memo": "c6-pruebas: la luz"}]'::jsonb);
+    v_obt := v_obt || ' luz=' || pg_temp.c6_est('1098', 'C6FP2');
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (93, 'con un proveedor a cuenta, la luz y un Zelle a una persona no son su abono', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 94. EL COBRO CON TARJETA, DEPOSITADO NETO DE SU COMISIÓN: el procesador
+--     (INTUIT, QB PAYMENTS) deposita 970.70 por la factura de 1,000.00; la
+--     bandeja ofrece la factura con su comisión (29.30); con ella, el cobro
+--     es por el bruto (la factura queda en cero) y la comisión va a 6130
+--     en un asiento del banco casado junto al cobro. Des-casado, la
+--     comisión se reversa con él. Antes la factura quedaba abierta por la
+--     comisión para siempre, o había que postear a mano.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'opcion=29.30 cobrado=casado:cobro por_cobrar=0.00 comision=29.30 descasado=pendiente comision_despues=0.00';
+  v_m   uuid;
+  v_op  jsonb;
+  d     date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  if d is null then
+    insert into _pruebas values (94, 'el cobro con tarjeta neto de comisión: el cobro por el bruto y la comisión a 6130', v_esp,
+                                 'omitida: falta mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
+    values (-660941, current_setting('mx6.obra'), 'C6-94', d + 5, 1000.00, 0);
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 20, null, jsonb_build_array(
+              jsonb_build_object('tipo', 'CREDIT', 'fecha', d + 8, 'monto', '970.70', 'id', 'C6QB1', 'nombre', 'INTUIT 45001234 DEPOSIT',
+                                 'memo', 'QB PAYMENTS'))),
+            '1098', 'c6-pruebas-qbpayments.qfx');
+    perform fn_banco_casar_todo('1098');
+    v_m := pg_temp.c6_mov('1098', 'C6QB1');
+    select o into v_op from movimientos_banco m cross join jsonb_array_elements(m.propuesta->'opciones') o
+     where m.id = v_m and o->>'llamar' = 'fn_banco_cobrar' and o->'args'->'p_aplicaciones' @> '[{"factura_id": -660941}]'
+       and exists (select 1 from jsonb_array_elements(o->'args'->'p_aplicaciones') a where a ? 'comision')
+     limit 1;
+    v_obt := 'opcion=' || coalesce((select a->>'comision' from jsonb_array_elements(v_op->'args'->'p_aplicaciones') a where a ? 'comision'), '-');
+    perform fn_banco_cobrar(v_m, v_op->'args'->'p_aplicaciones');
+    v_obt := v_obt || format(' cobrado=%s por_cobrar=%s comision=%s', pg_temp.c6_est('1098', 'C6QB1'),
+                             (select coalesce(sum(l.monto), 0) from asiento_lineas l
+                               where l.partida_tabla = 'facturas' and l.partida_id = '-660941' and l.cuenta = fn_puente_cuenta_de('cxc')),
+                             (select coalesce(sum(l.monto), 0) from asiento_lineas l join asientos a on a.id = l.asiento_id
+                               where a.origen_tabla = 'movimientos_banco' and a.origen_id = v_m::text and l.cuenta = '6130'));
+    perform fn_banco_descasar(v_m, 'c6-pruebas: des-casar el cobro con comisión');
+    v_obt := v_obt || format(' descasado=%s comision_despues=%s', (select m.estado from movimientos_banco m where m.id = v_m),
+                             (select coalesce(sum(l.monto), 0) from asiento_lineas l join asientos a on a.id = l.asiento_id
+                               where l.cuenta = '6130'
+                                 and (a.origen_id = v_m::text or a.reversa_a in (select x.id from asientos x where x.origen_id = v_m::text))));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (94, 'el cobro con tarjeta neto de comisión: el cobro por el bruto y la comisión a 6130', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 95. UNA CONCILIACIÓN CON LA FECHA MAL ESCRITA NO SE LLEVA LA CONFIRMADA:
+--     con la reserva conciliada y confirmada al día 30 (sus tres intereses
+--     casados), conciliar al día 14 (un error de dedo) no crea nada
+--     (MX008: va detrás de la última confirmada) y la confirmada sigue con
+--     sus tres casados; y una abierta hecha por error DESPUÉS se anula
+--     desde el SQL Editor (fn_conciliacion_anular, con su motivo), con
+--     rastro. Antes se creaba, se llevaba los casados de la confirmada (el
+--     control en verde) y no había cómo quitarla.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'confirmada=confirmada antes=MX008 creada=0 casados=3 anulada=0 rastro=DELETE';
+  v_c   jsonb;
+  v_x   text;
+  d     date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  if d is null or current_setting('mx6.sig', true) = '' then
+    insert into _pruebas values (95, 'una conciliación con la fecha mal escrita no se crea ni se lleva los casados; la abierta se anula',
+                                 v_esp, 'omitida: falta el mes abierto o el siguiente', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    perform fn_banco_importar_ofx(pg_temp.c6_ofx_xml('banco', '1097', d, d + 30, 1.23, jsonb_build_array(
+              jsonb_build_object('tipo', 'INT', 'fecha', d + 4, 'monto', '0.40', 'id', 'C6F1', 'nombre', 'INTEREST PAYMENT'),
+              jsonb_build_object('tipo', 'INT', 'fecha', d + 14, 'monto', '0.41', 'id', 'C6F2', 'nombre', 'INTEREST PAYMENT'),
+              jsonb_build_object('tipo', 'INT', 'fecha', d + 24, 'monto', '0.42', 'id', 'C6F3', 'nombre', 'INTEREST PAYMENT'))),
+            '1097', 'c6-pruebas-fecha-mal.ofx');
+    perform fn_banco_casar_todo('1097');
+    v_c := fn_conciliar('1097', d + 30, '1.23');
+    v_obt := 'confirmada=' || (fn_conciliacion_confirmar((v_c->>'conciliacion')::uuid)->>'estado');
+    begin
+      perform fn_conciliar('1097', d + 14, null);
+      v_x := 'entró';
+    exception when others then v_x := sqlstate;
+    end;
+    v_obt := v_obt || format(' antes=%s creada=%s casados=%s', v_x,
+                             (select count(*) from conciliaciones c where c.cuenta = '1097' and c.fecha_corte = d + 14),
+                             (select count(*) from v_conciliacion_partidas p
+                               where p.cuenta = '1097' and p.fecha_corte = d + 30 and p.grupo = 'casado'));
+    v_c := fn_conciliar('1097', d + 43, null);
+    perform fn_conciliacion_anular((v_c->>'conciliacion')::uuid, 'c6-pruebas: la hice con la fecha equivocada');
+    v_obt := v_obt || format(' anulada=%s rastro=%s', (select count(*) from conciliaciones c where c.cuenta = '1097' and c.fecha_corte = d + 43),
+                             (select h.operacion from banco_historial h
+                               where h.tabla = 'conciliaciones' and h.clave = v_c->>'conciliacion'
+                               order by h.cambiado_el desc limit 1));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (95, 'una conciliación con la fecha mal escrita no se crea ni se lleva los casados; la abierta se anula',
+                               v_esp, coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 96. LA OBRA PROPUESTA ES LA DEL DÍA DE LA COMPRA, no la del día en que el
+--     banco la posteó: la compra con la débito (sin DTUSER) del día 1,
+--     posteada el día 3, con «MM/DD» en la nota, propone la obra con visita
+--     el día 1 (no la del 3); sin la fecha en la nota, con visitas a dos
+--     obras en esos días, no se adivina (y lo dice). Antes proponía la del
+--     día del banco.
+do $$
+declare
+  v_obt  text;
+  v_esp  text;
+  v_obra text := current_setting('mx6.obra', true);
+  v_o2   text := current_setting('mx6.obra2', true);
+  v_f1   date;
+  d      date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  v_esp := format('compra=%s sin_fecha=- dice=t', v_obra);
+  if d is null or to_regclass('public.eventos') is null or v_o2 = v_obra then
+    insert into _pruebas values (96, 'la obra propuesta es la de la visita del día de la compra, no la del banco', v_esp,
+                                 'omitida: falta mes abierto, la tabla eventos o una segunda obra', null);
+    return;
+  end if;
+  -- (un día del mes sin visitas de verdad, y el siguiente de ese: así las
+  -- de la prueba son las únicas del día de la compra)
+  select min(x.f) into v_f1 from generate_series(d + 1, d + 24, interval '1 day') g(t), lateral (select g.t::date as f) x
+   where not exists (select 1 from eventos e where e.fecha between x.f and x.f + 2);
+  if v_f1 is null then
+    insert into _pruebas values (96, 'la obra propuesta es la de la visita del día de la compra, no la del banco', v_esp,
+                                 'omitida: no hay tres días seguidos del mes sin visitas', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    insert into eventos (id, fecha, titulo, proyecto_id, estado) overriding system value
+    values (-660961, v_f1, 'c6-pruebas: visita', v_obra, 'programado'),
+           (-660962, v_f1 + 2, 'c6-pruebas: otra visita', v_o2, 'programado');
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 27, null, jsonb_build_array(
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', v_f1 + 2, 'monto', '-189.73', 'id', 'C6OB1', 'nombre', 'C6 LOWES #01234* TAMPA FL',
+                                 'memo', to_char(v_f1, 'MM/DD') || ' C6 LOWES #01234* TAMPA FL CARD 9420'),
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', v_f1 + 2, 'monto', '-77.10', 'id', 'C6OB2',
+                                 'nombre', 'C6 HOME DEPOT #6345 TAMPA FL'))),
+            '1098', 'c6-pruebas-obra.qfx');
+    perform fn_banco_casar_todo('1098');
+    select format('compra=%s sin_fecha=%s dice=%s',
+                  coalesce((select m.propuesta->'obra'->>'proyecto_id' from movimientos_banco m where m.id = pg_temp.c6_mov('1098', 'C6OB1')), '-'),
+                  coalesce((select m.propuesta->'obra'->>'proyecto_id' from movimientos_banco m where m.id = pg_temp.c6_mov('1098', 'C6OB2')), '-'),
+                  case when (select m.propuesta->>'texto' from movimientos_banco m where m.id = pg_temp.c6_mov('1098', 'C6OB2'))
+                            like '%elige la obra%' then 't' else 'f' end)
+      into v_obt;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (96, 'la obra propuesta es la de la visita del día de la compra, no la del banco', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 97. VOLVER A PEGAR c6 NO BORRA LO AJENO QUE DEPENDE DE SUS VISTAS: con una
+--     vista de Edgar (o del CPA) sobre v_banco_saldos, la sección 0 la ve
+--     (fn_banco_vistas_ajenas: el pegado para con MX000 sin tocar nada), y
+--     quitar la vista del banco sin cascade no puede (2BP01). Antes el
+--     pegado la borraba en silencio con «drop view … cascade».
+do $$
+declare
+  v_obt text;
+  v_esp text := 'ajenas=t drop=2BP01';
+  v_x   text;
+begin
+  begin
+    set local lock_timeout = '2s';
+    execute 'create view public.c6_pruebas_vista as select * from public.v_banco_saldos';
+    v_obt := 'ajenas=' || case when position('c6_pruebas_vista' in coalesce(fn_banco_vistas_ajenas(), '')) > 0 then 't' else 'f' end;
+    begin
+      execute 'drop view public.v_banco_saldos';
+      v_x := 'se borró';
+    exception when others then v_x := sqlstate;
+    end;
+    v_obt := v_obt || ' drop=' || v_x;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate '55P03' then v_obt := 'omitida: la app lee v_banco_saldos (lock_timeout)';
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (97, 'volver a pegar c6 no borra lo ajeno que depende de sus vistas', v_esp,
+                               coalesce(v_obt, '-'), case when v_obt like 'omitida%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 98. «NO ES SU TICKET» DICE QUE PIDE MOTIVO: en la propuesta de un cargo
+--     clasificado cuyo ticket llegó después, el botón lleva pide_motivo y
+--     el nombre del argumento (p_motivo), como las demás opciones que lo
+--     piden; pulsado con sus argumentos y el motivo, queda descartado.
+--     Antes no lo decía y, pulsado tal cual, fallaba.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'pide=true:p_motivo pulsado=descartado';
+  v_m   uuid;
+  v_op  jsonb;
+  d     date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  if d is null then
+    insert into _pruebas values (98, '«no es su ticket» dice que pide motivo, y con él se descarta', v_esp,
+                                 'omitida: falta mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('tarjeta', '372700000009996', d, d + 20, null, jsonb_build_array(
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 6, 'fecha_usuario', d + 5, 'monto', '-64.20', 'id', 'C6NT1',
+                                 'nombre', 'C6 FERRETERIA'))),
+            null, 'c6-pruebas-no-es.qfx');
+    perform fn_banco_casar_todo('2100-9996');
+    v_m := pg_temp.c6_mov('2100-9996', 'C6NT1');
+    perform fn_banco_clasificar(v_m, '[{"cuenta": "6400"}]'::jsonb);
+    perform pg_temp.c6_recibo(jsonb_build_object('id', -660981, 'total', 64.20, 'fecha', d + 5, 'proveedor', 'C6 FERRETERIA'));
+    perform fn_banco_casar_todo('2100-9996');
+    select o into v_op from movimientos_banco m cross join jsonb_array_elements(m.propuesta->'opciones') o
+     where m.id = v_m and o->>'llamar' = 'fn_banco_duplicado' limit 1;
+    v_obt := format('pide=%s:%s', coalesce(v_op->>'pide_motivo', 'f'), coalesce(v_op->'pide'->>0, '-'));
+    perform fn_banco_duplicado((v_op->'args'->>'p_movimiento')::uuid, (v_op->'args'->>'p_es_el_mismo')::boolean,
+                               'c6-pruebas: otra compra del mismo monto');
+    v_obt := v_obt || ' pulsado=' || case when (select m.propuesta ? 'descartados' from movimientos_banco m where m.id = v_m)
+                                          then 'descartado' else '-' end;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (98, '«no es su ticket» dice que pide motivo, y con él se descarta', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 99. EL MOTIVO DE UNA PARTIDA DE LA APERTURA QUE SIGUE EN TRÁNSITO PASA AL
+--     MES SIGUIENTE: el cheque viejo de QuickBooks que nadie cobra pide su
+--     motivo en octubre (se dice y se confirma); en noviembre la partida
+--     sigue ahí CON ese motivo (dice de dónde lo heredó) y la conciliación
+--     se confirma sin pedirlo otra vez. Antes cada mes lo volvía a pedir.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'octubre=1 confirmada=confirmada noviembre=0 heredado=t confirmada2=confirmada';
+  v_c   jsonb;
+  v_id  uuid;
+  d     date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  if d is null or d <> fn_puente_corte() or current_setting('mx6.sig', true) = ''
+     or not exists (select 1 from periodos where tipo = 'apertura') then
+    insert into _pruebas values (99, 'el motivo de una partida de la apertura que sigue en tránsito pasa al mes siguiente', v_esp,
+                                 'omitida: el mes abierto más antiguo no es el primero después del corte, o falta el siguiente o la apertura',
+                                 null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    perform pg_temp.c6_apertura_minima();
+    v_c := fn_conciliacion_apertura('1098', '150.00', jsonb_build_array(
+             jsonb_build_object('fecha', (d - 78)::text, 'monto', '-150.00', 'cheque', '988',
+                                'descripcion', 'c6-pruebas: cheque 988 que nadie cobra')));
+    perform fn_conciliacion_confirmar((v_c->>'conciliacion')::uuid);
+    v_c := fn_conciliar('1098', d + 30, '150.00');
+    v_id := (v_c->>'conciliacion')::uuid;
+    v_obt := 'octubre=' || coalesce(v_c->>'n_pide_motivo', '-');
+    perform fn_conciliacion_partida((select p.id from conciliacion_partidas p where p.conciliacion_id = v_id and p.monto = -150.00),
+                                    'cargo_en_circulacion', 'c6-pruebas: cheque viejo; se anula en diciembre si no aparece');
+    v_obt := v_obt || ' confirmada=' || (fn_conciliacion_confirmar(v_id)->>'estado');
+    v_c := fn_conciliar('1098', d + 60, '150.00');
+    v_id := (v_c->>'conciliacion')::uuid;
+    v_obt := v_obt || format(' noviembre=%s heredado=%s confirmada2=%s', coalesce(v_c->>'n_pide_motivo', '-'),
+                             case when (select p.motivo from conciliacion_partidas p where p.conciliacion_id = v_id and p.monto = -150.00)
+                                       like 'c6-pruebas: cheque viejo%' then 't' else 'f' end,
+                             fn_conciliacion_confirmar(v_id)->>'estado');
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT01' then v_obt := 'omitida';
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (99, 'el motivo de una partida de la apertura que sigue en tránsito pasa al mes siguiente', v_esp,
+                               coalesce(v_obt, '-'), case when v_obt = 'omitida' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 100. UN TICKET A CUENTA DE UN PROVEEDOR NO REHACE LAS PROPUESTAS QUE NO LO
+--      MIRAN: con 25 cargos de la tarjeta sin nombre de proveedor ya
+--      propuestos, un «Casar» sin nada nuevo no rehace ninguna, y tras un
+--      ticket a cuenta del proveedor (5100 / 2010) tampoco (su firma lleva
+--      lo que se les debe a los proveedores que nombra, no la 2010 entera);
+--      el cheque sin nombre (que sí lo mira: su abono) sí se rehace. Antes
+--      cada ticket a cuenta rehacía la propuesta de todos los cargos.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'primera=25 sin_nada=0 tras_el_ticket=0 cheque=1';
+  v_x   jsonb;
+  d     date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  if d is null then
+    insert into _pruebas values (100, 'un ticket a cuenta de un proveedor no rehace las propuestas que no lo miran', v_esp,
+                                 'omitida: falta mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('tarjeta', '372700000009996', d, d + 25, null,
+              (select jsonb_agg(jsonb_build_object('tipo', 'DEBIT', 'fecha', d + (g % 20), 'monto', to_char(-((g * 37) % 400 + 1) - 0.13, 'FM999990.00'),
+                                                   'id', 'C6FI' || g, 'nombre', 'C6 SHELL OIL ' || g) order by g)
+                 from generate_series(1, 25) g)),
+            null, 'c6-pruebas-firma.qfx');
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 25, null, jsonb_build_array(
+              jsonb_build_object('tipo', 'CHECK', 'fecha', d + 20, 'monto', '-4321.09', 'id', 'C6FICH', 'nombre', 'CHECK 7077',
+                                 'cheque', '7077'))),
+            '1098', 'c6-pruebas-firma-cheque.qfx');
+    v_x := fn_banco_casar_todo('2100-9996');
+    v_obt := 'primera=' || (v_x->>'propuestas');
+    v_x := fn_banco_casar_todo('2100-9996');
+    perform fn_banco_casar_todo('1098');
+    v_obt := v_obt || ' sin_nada=' || (v_x->>'propuestas');
+    perform pg_temp.c6_recibo(jsonb_build_object('id', -661001, 'total', 123.45, 'fecha', d + 4, 'metodo_pago', 'cuenta_proveedor'));
+    v_x := fn_banco_casar_todo('2100-9996');
+    v_obt := v_obt || ' tras_el_ticket=' || (v_x->>'propuestas');
+    v_x := fn_banco_casar_todo('1098');
+    v_obt := v_obt || ' cheque=' || (v_x->>'propuestas');
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (100, 'un ticket a cuenta de un proveedor no rehace las propuestas que no lo miran', v_esp,
                                coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
 end $$;
 

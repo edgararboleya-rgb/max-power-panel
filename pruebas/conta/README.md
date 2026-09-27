@@ -23,7 +23,7 @@ de que Edgar los pegue. **Nunca** se conecta a `*.supabase.co`.
 | `c3-volumen.sh` | Lo que pasa con MUCHOS papeles: 3.000 recibos en el libro (un año largo de la cuadrilla), 1.200 facturas, 1.100 cobros y 600 trabajos externos, y la app pidiendo «reintentar puente» (`fn_puentes_correr`) y los controles (`fn_puentes_verificar`) como `authenticated`, con el tope de la API de Supabase (`statement_timeout` de 8 s): terminan, y lo que no cambió (recibos, facturas, cobros, trabajos externos) no se vuelve a planear. Imprime cuánto tardó cada cosa. `./c3-volumen.sh [bd] [recibos]`. |
 | `c6-concurrencia.sh` | Lo que `c6-pruebas.sql` no puede probar en una sola sesión: el mismo archivo del banco subido en dos sesiones a la vez (la segunda espera y lo ve: «ya estaba»; sus movimientos entran una vez), dos archivos que se solapan a la vez (lo repetido entra una vez y el segundo lo cuenta), el mismo movimiento resuelto desde dos pestañas (uno casa; el otro espera y recibe MX008), dos «casar» a la vez (ninguna línea del libro casada dos veces), importar y casar mientras cuatro «teléfonos» suben tickets (nadie espera 8 s ni muere por 40P01; cada ticket con su asiento) y volver a pegar c6 con la bandeja leyendo (se rinde con 55P03 en menos de 3 s, o entra; nadie muere). Cada sesión como la app (el dueño, `authenticated` con los ajustes de ese rol, tope de 8 s). `./c6-concurrencia.sh [bd]`; con `CONSERVAR=1` deja la base. |
 | `c6-volumen.sh` | El banco con un año de verdad: el libro de `c4-volumen.sh` (≈ 10.000 asientos) y 12 meses de estados de cuenta de Chase y las dos Amex (≈ 10.000 movimientos, 36 archivos QFX, cada uno con su saldo). Mes por mes, como Edgar: importa, casa (como conta.js: otra vez si el motor dice `"completo": false`), resuelve la bandeja (una llamada por movimiento) y concilia y confirma las tres cuentas; los últimos tres meses se atrasa y la bandeja crece. Mide cada llamada con el tope de 8 s de la API, cada vista del banco con 2 s, `fn_banco_control` como cada pantalla, la conciliación con la bandeja atrasada, casar otra vez sin nada nuevo con la bandeja atrasada (tope 2 s: lo que no cambió no se rehace), el re-pegado de c6, `fn_banco_verificar` (dos veces) y `c6-pruebas.sql` entera sobre ese año de banco: sola, en menos de 40 s y en verde; y otra vez con cuatro «teléfonos» subiendo tickets (ninguna subida cortada ni de 8 s o más). Al final, los meses 13 y 14 importados sin casar: «Cuadrar» (`fn_conciliar`) con un mes y con dos, no más de 4 s cada una, y casar con ellos en tres llamadas o menos (cada una no más de 8 s). Imprime la tabla de tiempos (la de la cabecera de `c6-banco.sql`). `AL_DIA=0` = un año entero sin resolver nada (≈ 5.000 pendientes); `PLANTILLA=<bd>` copia el libro de una base que dejó `CONSERVAR=1 SOLO_MEDIR=1 ./c4-volumen.sh <bd> 666` (sin rehacerlo). Tarda unos 10 minutos (5 o 6 con plantilla). |
-| `c6-en-uso.sh` | Las cuatro suites con el banco YA EN USO, como en producción después de «Después de c6»: la póliza que venía de QuickBooks con su `saldo_corte`, la nómina de octubre del proveedor anterior con su journal (`fn_banco_nomina`) y un ticket de verdad de CED de la segunda obra, con la apertura todavía sin postear; después c2-, c3-, c4- y c6-pruebas, cada una en su sesión: ninguna en rojo (y las seis del devengo de c3 corren, en el primer mes sin journal). Antes de la ronda 2 de c6 salían en rojo seis de c3, la 39 y la 53 de c4 y la 46 de c6. `./c6-en-uso.sh [bd]`; con `CONSERVAR=1` deja la base. |
+| `c6-en-uso.sh` | Las cuatro suites con el banco YA EN USO, como en producción después de «Después de c6»: la póliza que venía de QuickBooks con su `saldo_corte`, la nómina de octubre del proveedor anterior con su journal (`fn_banco_nomina`) y un ticket de verdad de CED de la segunda obra, con la apertura todavía sin postear; después c2-, c3-, c4- y c6-pruebas, cada una en su sesión: ninguna en rojo (y las seis del devengo de c3 corren, en el primer mes sin journal). Y **noviembre en uso con octubre abierto** (la marcha en paralelo): la primera nómina semanal de noviembre con su journal, y octubre y noviembre amortizados; c3- y c6-pruebas otra vez: ninguna en rojo (las del devengo salen «omitida» por el tope de fecha de c2, y la 22, la 46 y la 88 de c6 porque noviembre ya está amortizado). Antes de la ronda 2 de c6 salían en rojo seis de c3, la 39 y la 53 de c4 y la 46 de c6; antes de la ronda 3, con noviembre en uso, seis de c3 (MX002) y la 22 y la 46 de c6 (MX008). `./c6-en-uso.sh [bd]`; con `CONSERVAR=1` deja la base. |
 | `generar-tablas.py`, `esquema-columnas-23sep.json` | Para regenerar las tablas de 01 si se vuelve a leer el esquema. |
 
 ## 0. Para Edgar: qué se pega en Supabase, en qué orden y qué debe salir
@@ -49,9 +49,9 @@ comprobando si algo ya estaba.
 | 6 | Una línea: `select fn_puentes_correr();` | Un solo valor (jsonb) con `"desde": "2026-10-01"`, cuántos papeles quedaron en cada estado (`contabilizado`, `pendiente`, `espera`, `no_aplica`…) y **`"errores": 0`**. |
 | 7 | Una línea: `select * from fn_puentes_verificar();` | Los **13 controles** de los puentes, **todos en `true`** (ahora también `sin_evaluar`). `bandeja` dice cuántos papeles esperan a Edgar; solo se pone en rojo si el libro rechazó alguno. |
 | 8 | `docs/conta/c2-pruebas.sql` | La tabla `_pruebas`: **82 filas**, todas con `ok = true` (también quedan en `pruebas.c2_resultado`). (Con la apertura de verdad ya en el libro, la **61** sale «omitida»: no es un fallo.) |
-| 9 | `docs/conta/c3-pruebas.sql` | La tabla `_pruebas`: **119 filas** (también en `pruebas.c3_resultado`), todas con `ok = true` salvo la **45**, que en producción sale «omitida» (Supabase no deja borrar de Storage por SQL; se prueba en el banco). Con la apertura de verdad ya en el libro, la **115** y la **117** (las que postean una apertura de prueba) también salen «omitida»: no es un fallo. Si no hay ningún perfil activo que no sea el dueño, las pruebas «del equipo» salen con `ok` vacío (`null`) y `obtenido` = «omitida…»: no es un fallo. Las seis del devengo (**28, 57, 67, 74, 77 y 99**) devengan en el primer mes abierto **sin journal de nómina**: con la nómina de octubre a diciembre ya en el libro (paso 3 de «Después de c6») corren en el primero que no lo tenga; si todos los meses abiertos ya lo tienen, salen «omitida» y lo dicen (con journal, el devengo estándar se niega: MX008, la regla de c3). No es un fallo. |
-| 10 | `docs/conta/c4-pruebas.sql` | La tabla `_pruebas`: **111 filas**, todas con `ok = true`. **Córrelas recién pegado c4 y ANTES de postear la apertura de verdad**: con ella ya en el libro, las **29 a 36, 50, 51, 53, 56, 61, 62, 69, 73, 76, 81, 84, 86, 91, 93, 94, 98, 102, 105 y 107** (las que postean una apertura de prueba) salen «omitida», y no es un fallo. Sin nadie del equipo activo, la **2** y la **38** salen «omitida»; la 38, 55, 56, 57, 58, 64, 77, 79, 80, 82, 89, 101, 103, 109 y 111 también si la app estaba usando justo lo que tocan (esperan 2 s y se saltan). La **109** (el privilegio MAINTAIN) es de Postgres 17: en producción corre; en el banco con 16 sale «omitida». La **88** en rojo = el JIT sigue encendido para la app (ver el paso 4). Con el banco de c6 ya en uso (asientos del banco en el mes, la caja chica fondeada con un retiro, la nómina de octubre, un ticket de la segunda obra con la apertura todavía sin postear) siguen en verde: la **17** cuenta la caja chica en el efectivo final, la **26** y la **53** miran solo lo de su escenario y la **39** le da fondos al banco antes de medir. Tardan unos 40 s en el banco; **en producción (instancia chica) 5 min 47 s, y el SQL Editor se cansa antes y enseña un error de red: la corrida sigue en el servidor hasta el final.** Espera unos 6 minutos y lee el resultado con `select * from pruebas.c4_resultado order by n;` (la misma tabla, con la hora de la corrida). |
-| 11 | `docs/conta/c6-pruebas.sql` | La tabla `_pruebas`: **82 filas**, todas con `ok = true` (también quedan en `pruebas.c6_resultado`, con la hora de la corrida). Usa cuentas de prueba propias (el banco 1098, la reserva 1097 y dos tarjetas ····9996 y ····9995) que se deshacen con cada prueba: ni tus movimientos ni tu apertura se cruzan con ellas, y con el banco ya en uso (lo casado y lo clasificado de verdad, la caja chica fondeada desde el banco, la póliza de QuickBooks con su `saldo_corte`) sigue en verde: cada prueba mide lo que hace su escenario. Pueden salir «omitida» (y no es un fallo): la **10** sin dos días del mes sin visitas en el calendario (o sin `eventos` o sin una segunda obra); la **22** y la **46** cuando octubre ya está cerrado (prueban la amortización del primer mes), y la **64** también (prueba la primera semana después del corte); la **30**, la **63** y la **64** si el período de la apertura está cerrado sin asiento de apertura; la **34** sin nadie del equipo activo; la **47** sin el mes siguiente abierto; la **72** sin la tabla `horas`; la **36**, la **37**, la **47**, la **48**, la **67**, la **71**, la **72** y la **73** si la app estaba usando lo que tocan (esperan 2 s y se saltan). La **61** (va la última) comprueba que nada quedó. Tardan unos 20 s en el banco (en producción, calcula dos o tres minutos); si el SQL Editor se cansa, `select * from pruebas.c6_resultado order by n;`. |
+| 9 | `docs/conta/c3-pruebas.sql` | La tabla `_pruebas`: **120 filas** (también en `pruebas.c3_resultado`), todas con `ok = true` salvo la **45**, que en producción sale «omitida» (Supabase no deja borrar de Storage por SQL; se prueba en el banco). Con la apertura de verdad ya en el libro, la **115** y la **117** (las que postean una apertura de prueba) también salen «omitida»: no es un fallo. Si no hay ningún perfil activo que no sea el dueño, las pruebas «del equipo» salen con `ok` vacío (`null`) y `obtenido` = «omitida…»: no es un fallo. Las seis del devengo (**28, 57, 67, 74, 77 y 99**) devengan en el primer mes abierto **sin journal de nómina**: con la nómina de octubre a diciembre ya en el libro (paso 3 de «Después de c6») corren en el primero que no lo tenga; si todos los meses abiertos ya lo tienen, salen «omitida» y lo dicen (con journal, el devengo estándar se niega: MX008, la regla de c3); y también si ese mes pasa del tope de fecha de c2 (con la nómina semanal, el mes en curso con su primer journal y el anterior todavía abierto: el mes del devengo sería el de después, y no se puede postear todavía), con la **120** diciendo el tope. No es un fallo. |
+| 10 | `docs/conta/c4-pruebas.sql` | La tabla `_pruebas`: **111 filas**, todas con `ok = true`. **Córrelas recién pegado c4 y ANTES de postear la apertura de verdad**: con ella ya en el libro, las **29 a 36, 50, 51, 53, 56, 61, 62, 69, 73, 76, 81, 84, 86, 91, 93, 94, 98, 102, 105 y 107** (las que postean una apertura de prueba) salen «omitida», y no es un fallo. Sin nadie del equipo activo, la **2** y la **38** salen «omitida»; la 38, 55, 56, 57, 58, 64, 77, 79, 80, 82, 89, 101, 103, 109 y 111 también si la app estaba usando justo lo que tocan (esperan 2 s y se saltan). La **109** (el privilegio MAINTAIN) es de Postgres 17: en producción corre; en el banco con 16 sale «omitida». La **88** en rojo = el JIT sigue encendido para la app (ver el paso 4). Con el banco de c6 ya en uso (asientos del banco en el mes, la caja chica fondeada con un retiro, la nómina de octubre, un ticket de la segunda obra con la apertura todavía sin postear) siguen en verde: la **17** cuenta la caja chica en el efectivo final, la **26** y la **53** miran solo lo de su escenario y la **39** le da fondos al banco antes de medir. Tardan entre 50 s y 80 s en el banco (27-sep; el 25-sep, 40 s: la máquina del banco varía); **en producción (instancia chica) 5 min 47 s, y el SQL Editor se cansa antes y enseña un error de red: la corrida sigue en el servidor hasta el final.** Espera unos 6 minutos y lee el resultado con `select * from pruebas.c4_resultado order by n;` (la misma tabla, con la hora de la corrida). |
+| 11 | `docs/conta/c6-pruebas.sql` | La tabla `_pruebas`: **100 filas**, todas con `ok = true` (también quedan en `pruebas.c6_resultado`, con la hora de la corrida). Usa cuentas de prueba propias (el banco 1098, la reserva 1097 y dos tarjetas ····9996 y ····9995) que se deshacen con cada prueba: ni tus movimientos ni tu apertura se cruzan con ellas, y con el banco ya en uso (lo casado y lo clasificado de verdad, la caja chica fondeada desde el banco, la póliza de QuickBooks con su `saldo_corte`) sigue en verde: cada prueba mide lo que hace su escenario. Pueden salir «omitida» (y no es un fallo): la **10** sin dos días del mes sin visitas en el calendario (o sin `eventos` o sin una segunda obra), y la **96** sin tres días seguidos sin visitas; la **22**, la **46** y la **88** cuando octubre ya está cerrado (prueban la amortización del primer mes) **o cuando ya amortizaste un mes posterior con octubre abierto** (la marcha en paralelo: amortizar octubre entonces se niega, MX008, y es la regla), y la **64**, la **92** y la **99** también (prueban la primera semana y el primer mes después del corte); la **30**, la **63**, la **64**, la **92** y la **99** si el período de la apertura está cerrado sin asiento de apertura; la **34** sin nadie del equipo activo; la **47**, la **88**, la **89**, la **95** y la **99** sin el mes siguiente abierto; la **72** y la **91** sin la tabla `horas`; la **36**, la **37**, la **47**, la **48**, la **67**, la **71**, la **72**, la **73**, la **91** y la **97** si la app estaba usando lo que tocan (esperan 2 s y se saltan). La **61** (va la última) comprueba que nada quedó. Tardan unos 20 s en el banco (16 s en 16.13 y 19 s en 17.6 el 27-sep; con un año de banco encima, 32 s y 38 s; en producción, calcula tres o cuatro minutos: c4-pruebas tarda allí diez veces lo del banco); si el SQL Editor se cansa, `select * from pruebas.c6_resultado order by n;`. |
 
 - **Las pruebas dejan su resultado en el esquema `pruebas`** (`c2_resultado`,
   `c3_resultado`, `c4_resultado`, `c6_resultado`: la última corrida, con su hora), fuera de
@@ -112,8 +112,8 @@ comprobando si algo ya estaba.
   contadores, cobros, aprobaciones, bandeja ni secuencias (usan ids
   negativos); lo único que queda es la tabla temporal `_pruebas` y unas
   funciones `pg_temp.*` de ayuda, que mueren al cerrarse la sesión del
-  editor. Tardan unos segundos (en el banco: c2 ≈ 3 s, c3 ≈ 5 s, c4 ≈
-  40 s, c6 ≈ 20 s; con el libro lleno, 10.000 asientos: c3 y c4 cerca de
+  editor. Tardan unos segundos (en el banco, el 27-sep: c2 5 a 15 s, c3 ≈
+  5 s, c4 50 a 80 s, c6 16 a 20 s; con el libro lleno, 10.000 asientos: c3 y c4 cerca de
   dos minutos cada una; c6, con un año de banco encima, unos 30 s:
   `c6-volumen.sh` la corre sola, en menos de 40 s, y otra vez con cuatro
   teléfonos subiendo tickets: ninguna subida espera más de unos 3 s). c6-pruebas pide primero el candado del casado
@@ -270,6 +270,16 @@ corto:
    `select fn_banco_nomina('<movimiento>', '[<las líneas del journal sin la del banco>]');`.
    Una tarjeta se puede decir por su código corto (`'2013'`) en importar,
    casar, conciliar y la apertura.
+   Un cargo que se parece a un ticket con OTRO total (el ticket leído sin
+   el tax) sale «otro_total»: se corrige el total del recibo en la app y
+   casa solo (clasificarlo pide motivo). Un depósito de QuickBooks
+   Payments o Stripe, neto de su comisión, se cobra por el bruto con
+   `{"comision": "29.30"}` en la lista de `fn_banco_cobrar` (la bandeja lo
+   propone). El cheque que rebota de un depósito de varios cheques tiene
+   su botón (`fn_banco_devolver` con la aplicación de la factura que
+   rebotó): el cobro se devuelve y lo demás se registra otra vez ese día.
+   Los lotes de Plaid traen su saldo en `plaid_saldo` (tal cual lo da
+   Plaid; la base lo voltea en una tarjeta).
    (Para conta.js: después de importar un archivo, `fn_banco_casar_todo`
    con su cuenta y su primera fecha — `p_cuenta`, `p_desde` — mira solo
    eso; sin ellos también vale: lo que no cambió no se rehace.)
@@ -287,16 +297,30 @@ corto:
    que lo respalda (desde el SQL Editor):
    `select fn_conciliacion_saldo('<id>', '<por qué>', '<el statement>');`.
    Lo mismo una partida de la apertura que no llegó: su motivo con
-   `fn_conciliacion_partida`.
+   `fn_conciliacion_partida` (pasa sola a los meses siguientes mientras
+   siga en tránsito). Una conciliación hecha con la fecha mal escrita no
+   se crea si va detrás de la última confirmada; una ABIERTA hecha por
+   error se quita desde el SQL Editor:
+   `select fn_conciliacion_anular('<id>', '<por qué>');`. Reabrir va en
+   orden: la última confirmada primero.
 
 5. **Antes de cerrar el mes**: las cuotas de los préstamos casan con su
    movimiento (`fn_prestamo_cuota`) y
-   `select fn_prepagados_amortizar('2026-10');` postea lo del mes.
+   `select fn_prepagados_amortizar('2026-10');` postea lo del mes. Una
+   póliza ya amortizada que hay que corregir (otra cuenta de gasto, otra
+   obra) se registra como la que la sustituye:
+   `select fn_prepagado_guardar('{"sustituye": "<id de la vieja>", "cuenta_gasto": "5015"}');`
+   (lo amortizado de la vieja vuelve en el mes abierto y la nueva lo
+   amortiza desde su inicio); una cancelada de verdad, con su fecha y lo
+   que devolvió la aseguradora:
+   `select fn_prepagado_guardar('{"id": "<id>", "estado": "cancelado", "cancelado_al": "2026-12-15", "devuelto": "9000.00"}');`
+   y el depósito de la aseguradora, clasificado a 1410.
 6. **El control**: `select * from fn_banco_control('hoy');` (todo en
-   `true`) y, de vez en cuando, `select * from fn_banco_verificar();`
-   (relee cada archivo fila por fila y recalcula las conciliaciones
-   confirmadas en las que algo pudo cambiar; de una cuenta:
-   `fn_banco_verificar(array['1010'])`).
+   `true`; un cuadre suelto, por su nombre:
+   `fn_banco_control('hoy', array['cuadre: prepagados'])`) y, de vez en
+   cuando, `select * from fn_banco_verificar();` (relee cada archivo fila
+   por fila y recalcula las conciliaciones confirmadas en las que algo pudo
+   cambiar; de una cuenta: `fn_banco_verificar(array['1010'])`).
 
 ### La ronda 2 de c6 (27-sep): lo que no se hizo, y por qué
 
@@ -329,6 +353,59 @@ salvo tres partes, a propósito:
   con su prueba propia: un cambio de alcance de c2, no uno mínimo.
   c4-estados.sql no se toca en esta ronda.
 
+### La ronda 3 de c6 (27-sep): lo que no se hizo, y por qué
+
+Los 21 hallazgos confirmados (el 7 y el 17 son el mismo: el saldo de
+Plaid) se arreglaron, cada uno con su prueba (la lista, en la cabecera de
+`c6-banco.sql`, «LA RONDA 3 DE CORRECCIONES»; las pruebas, de la 83 a la
+100 de c6-pruebas, la 120 de c3-pruebas y la segunda vuelta de
+`c6-en-uso.sh`). Lo que se hizo distinto de lo que sugería el hallazgo, a
+propósito:
+
+- **El cheque que rebota de un depósito de varios no es una devolución
+  PARCIAL en c3.** `fn_cobro_devolver` devuelve cobros enteros, y hacerla
+  parcial pedía cambiar su tabla (una devolución por cobro) y su puente:
+  no es un cambio mínimo. c6 lo resuelve con lo que c3 ya da: devuelve el
+  cobro entero en la fecha del banco y registra otra vez, ese mismo día,
+  lo que no rebotó (un cobro nuevo, con sus aplicaciones); el movimiento
+  casa con las dos líneas. El libro queda bien (la factura del cheque
+  rebotado por cobrar, la otra cobrada, el mes del depósito sin tocar); la
+  factura que no rebotó aparece cobrada otra vez el día de la devolución.
+  Un cobro que lleva un anticipo no se parte solo: lo dice y da el camino.
+- **La guarda de clasificar sigue para el cheque o el ACH SIN nombre** que
+  la bandeja propone como abono a un proveedor (la prueba 76 de la ronda
+  2: clasificado a la obra, el material contaba dos veces). Lo que nombra
+  a otro (la luz, el seguro, un Zelle a una persona) ya no sale como
+  abono y se clasifica sin motivo.
+- **La firma de las propuestas de los DEPÓSITOS sigue mirando todas las
+  facturas abiertas**, y la de los cargos del banco, todas las cuotas. Un
+  depósito puede ser una PARTE de cualquier factura abierta mayor que él
+  (y ahora una factura cobrada con tarjeta, neta de su comisión): una
+  factura nueva sí puede cambiar su propuesta. Los préstamos cambian una
+  vez al mes. Lo que rehacía todo con cada ticket (la 2010 en la firma de
+  todos los cargos) ya no.
+- **El ticket de otro total que llega DESPUÉS de clasificar** solo se
+  marca («llego_su_ticket», el cuadre 57, posible duplicado en la
+  conciliación) si el banco nombra su comercio; antes de clasificar
+  también basta con que el monto no se separe más de un 12 %. Después de
+  clasificar, lo que queda es un ticket libre: si no se le parece por el
+  nombre, la conciliación lo pide igual (un ticket de más de 10 días sin
+  su cargo pide su motivo).
+- **Un cargo con varios tickets de otro total propone los tres que más
+  se le parecen** (el monto más cercano primero), no todos: con 300
+  tickets libres de Home Depot, cada cargo de Home Depot sin ticket se
+  parecía a decenas, y la bandeja (y su firma) los llevaba todos. Con 1.500
+  cargos y 300 tickets libres en una tarjeta, «Casar» sin nada nuevo tarda
+  0,6 s en 17.6 (el primero, con las 1.500 propuestas, 2,5 s).
+- **La obra con visitas a varias obras esos días no se propone**: la
+  bandeja dice cuáles y qué día («elige la obra»).
+- **La póliza que sustituye a otra va en la misma cuenta del activo**
+  (1410 o 1420): el dinero de la póliza está ahí; moverlo de cuenta es un
+  asiento, no una sustitución.
+- **Las pruebas de prepagados (22, 46 y 88) salen «omitida»** cuando ya se
+  amortizó un mes posterior al primero abierto, en vez de amortizar el
+  último: sus cifras son las del primer mes después del corte.
+
 ## 0b. La prueba final en el banco, de cero
 
 Lo mismo que los pasos 1 a 11 de arriba, sin tocar producción. Tarda segundos:
@@ -340,15 +417,14 @@ D=../../docs/conta
 # De cero: las cinco entregas, los puentes corridos (como el paso 6) y las
 # cuatro suites (sin Storage: 45 y 90 de c3 salen «omitida»; con
 # 03-storage-simulacro.sql delante salen en verde).
-echo 'select fn_puentes_correr(); select * from fn_puentes_verificar();' > /tmp/puentes_mio.sql
 ./correr.sh final_mia 03-storage-simulacro.sql $D/c1-plan-de-cuentas.sql $D/c2-libro.sql \
-                      $D/c3-puentes.sql $D/c4-estados.sql $D/c6-banco.sql /tmp/puentes_mio.sql \
+                      $D/c3-puentes.sql $D/c4-estados.sql $D/c6-banco.sql 05-puentes-correr.sql \
                       $D/c2-pruebas.sql $D/c3-pruebas.sql $D/c4-pruebas.sql $D/c6-pruebas.sql
 #   → PRUEBAS total=82 ok=82 fallan=0 omitidas=0
-#   → PRUEBAS total=119 ok=119 fallan=0 omitidas=0
+#   → PRUEBAS total=120 ok=120 fallan=0 omitidas=0
 #   → PRUEBAS total=111 ok=111 fallan=0 omitidas=0   (en 17.6; en 16, ok=110
 #     omitidas=1: la 109, MAINTAIN, es de Postgres 17)
-#   → PRUEBAS total=82 ok=82 fallan=0 omitidas=0
+#   → PRUEBAS total=100 ok=100 fallan=0 omitidas=0
 
 # Idempotencia: sobre la MISMA base, volver a pegar c1, c2, c3, c4 y c6
 # (dos veces) y las pruebas otra vez; tiene que seguir todo en verde.
@@ -357,11 +433,28 @@ for i in 1 2; do for f in c1-plan-de-cuentas c2-libro c3-puentes c4-estados c6-b
     -v ON_ERROR_STOP=1 -1 -o /dev/null -f $D/$f.sql || echo "FALLÓ $f"
 done; done
 
+# El camino de producción: c1–c4 como están pegados HOY (los del 26-sep,
+# commit 43aa274, con sus suites de entonces: 80, 118 y 110) y encima c2,
+# c3 y c4 nuevos, c6 y el puente; las cuatro suites en verde.
+P=/tmp/prod_mia; mkdir -p $P
+for f in c1-plan-de-cuentas c2-libro c3-puentes c4-estados c2-pruebas c3-pruebas c4-pruebas; do
+  git show 43aa274:docs/conta/$f.sql > $P/$f.sql; done
+./correr.sh final_prod 03-storage-simulacro.sql $P/c1-plan-de-cuentas.sql $P/c2-libro.sql \
+            $P/c3-puentes.sql $P/c4-estados.sql 05-puentes-correr.sql \
+            $P/c2-pruebas.sql $P/c3-pruebas.sql $P/c4-pruebas.sql
+for f in $D/c2-libro.sql $D/c3-puentes.sql $D/c4-estados.sql $D/c6-banco.sql 05-puentes-correr.sql \
+         $D/c2-pruebas.sql $D/c3-pruebas.sql $D/c4-pruebas.sql $D/c6-pruebas.sql; do
+  PGPASSWORD=editor_sql psql -X -q -h 127.0.0.1 -U editor_sql -d final_prod \
+    -v ON_ERROR_STOP=1 -1 -o /dev/null -f $f || echo "FALLÓ $f"
+done   # (los resultados, en pruebas.c2_resultado … c6_resultado)
+# Y c6 pegado solo sobre c2, c3 y c4 de producción: para con MX000 y dice
+# qué volver a pegar (c2, c3 y c4), sin tocar nada.
+
 # Varias sesiones, volver a pegar con reglas tocadas, y volumen:
 ./c2-pegado.sh final_c2p; ./c3-pegado.sh final_c3p
 ./c2-concurrencia.sh final_c2c; ./c3-concurrencia.sh final_c3c; ./c4-concurrencia.sh final_c4c
 ./c6-concurrencia.sh final_c6c
-./c6-en-uso.sh final_c6u              # las cuatro suites con octubre en uso
+./c6-en-uso.sh final_c6u              # las cuatro suites con octubre en uso (y noviembre)
 ./c3-volumen.sh final_c3v 3000
 ./c4-volumen.sh final_c4v             # ≈ 10.000 asientos por los puentes (unos 10 minutos)
 ./c6-volumen.sh final_c6v             # y un año de estados de cuenta encima (unos 10 minutos)
@@ -690,6 +783,56 @@ tocar `docs/conta/c2-libro.sql`:
     lenta 5,4 s / 6,3 s mientras corre c3-pruebas y 3,2 s como mucho
     mientras corre c4-pruebas; nada en rojo). c0-banco-pruebas 18/18.
     Sin Storage, c3-pruebas da 116 + la 45 y la 90 omitidas.
+- **La prueba final de c6, de cero (27-sep, tarde)**, con los archivos de
+  la ronda 3 de c6 (c6-banco marca 2026092704; c2 2026092701; c3 y c4
+  2026092601), en 16.13 y en 17.6:
+  - Carga completa (`03-storage-simulacro`, c1, c2, c3, c4, c6,
+    `05-puentes-correr` y las cuatro suites): c2-pruebas 82/82, c3-pruebas
+    120/120, c4-pruebas 111/111 en 17.6 (110 + la 109 «omitida» en 16) y
+    c6-pruebas 100/100. El pegado de c6 enseña sus 7 filas, todas en true
+    («13 tablas», «8 vistas», «21 funciones», el reparto de c2, «2 filas»
+    en `v_banco_saldos`, y las dos protecciones «bien»); el de c4, sus 9
+    con `c4 · apertura` y «apertura en el libro» en false (lo esperado).
+    c6-pruebas sola: 15,9 s en 16 y 19,4 s en 17.6 (con un año de banco,
+    en `c6-volumen.sh`: 31,5 s y 38,0 s).
+  - Idempotencia: c1, c2, c3, c4 y c6 pegados dos veces más sobre la misma
+    base y las cuatro suites otra vez: iguales. La foto antes y después de
+    los dos pegados solo cambia la hora del sello en el comentario de
+    `fn_libro_huellas()`, `fn_estados_huellas()` y `fn_banco_huellas()`.
+    Y c6 de hoy encima del c6 del diseñador (marca 2026092601) y encima de
+    los de las rondas 2 y 3 (2026092701 y 2026092703): entra, sus 7 filas
+    en true y las suites en verde. Y el camino de producción (arriba, 0b):
+    c1–c4 del 26-sep con sus suites de entonces (80/80, 118/118, 110/110;
+    109 + 1 en 16), encima c2, c3, c4 nuevos, c6 y el puente, y las cuatro
+    suites de hoy: 82, 120, 111 (110 + 1) y 100, todas en verde. c6 pegado
+    directamente sobre c2–c4 de producción, sobre c1 solo, o sobre un c4
+    sin marca: para con MX000 y dice qué volver a pegar.
+  - Sin rastro: la foto de la base (filas y md5 de cada tabla de `public`,
+    `auth`, `storage`, `extensions` y `net`, secuencias, funciones con su
+    cuerpo, permisos y ajustes, triggers, policies, vistas, columnas,
+    restricciones, índices, comentarios, roles y sus ajustes, privilegios
+    por defecto) igual antes y después de cada una de las cuatro suites,
+    en 16 y en 17.6, en la base recargada y en la del camino de
+    producción. Lo único que queda es el esquema `pruebas` con
+    `c2_resultado` … `c6_resultado`.
+  - Scripts del banco, en los dos: c0-banco-pruebas 18/18, c2-pegado (18
+    ok), c3-pegado (14), c2-concurrencia (12), c3-concurrencia (34),
+    c4-concurrencia (17), c6-concurrencia (24; importar y casar dos veces
+    1,3 s, 29 subidas, la más lenta 0,38 s), c6-en-uso (las cuatro suites
+    con octubre en uso y otra vez con noviembre: nada en rojo),
+    c3-volumen con 3.000 recibos (reintentar 1,4 s / 1,8 s; controles
+    1,9 s / 2,1 s), c4-volumen con 10.333 asientos (ninguna vista por
+    encima de 0,72 s; el control del Panel 3,3 s en 16 y 4,0 s en 17.6;
+    con cuatro teléfonos, la subida más lenta 5,4 s / 7,5 s mientras corre
+    c3-pruebas —cerca del tope de 8 s en 17.6, con los dos clusters
+    midiendo a la vez— y 3,4 s / 4,2 s mientras corre c4-pruebas) y
+    c6-volumen (9.990 movimientos, 36 archivos: casar como mucho 2,4 s
+    por mes y 3,1 s con los meses 13 y 14 juntos, la bandeja 0,5 s,
+    conciliar 0,6 s, `fn_banco_control` 0,5 s, el
+    re-pegado de c6 2,0 s / 2,7 s, `fn_banco_verificar` 3,2 s / 3,6 s,
+    «Cuadrar» con dos meses sin casar 1,1 s; c6-pruebas con cuatro
+    teléfonos 38,1 s / 42,4 s, la subida más lenta 2,5 s / 3,0 s). Todos en
+    verde.
 - **JIT**: el Postgres del banco trae el compilador JIT encendido (lo de
   fábrica). Con consultas grandes compila más de lo que corre (una vista
   del tablero leída como el editor, 16 s con JIT y 0,15 s sin él; la

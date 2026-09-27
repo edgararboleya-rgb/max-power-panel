@@ -55,7 +55,12 @@
 -- en el libro (la del proveedor anterior, con fn_banco_nomina de c6) las
 -- seis salían en rojo sin que nada estuviera roto. Sin ningún mes así,
 -- salen «omitida» y lo dicen. (27-sep, la ronda 2 de c6; c3-puentes.sql
--- no cambia.)
+-- no cambia.) Y ese mes tiene que poder postearse: su último día no pasa
+-- del tope de fecha de c2 (hoy + 45 días, o el fin del mes siguiente al
+-- primer mes abierto). Con la nómina SEMANAL, en cuanto el mes en curso
+-- tenía su primer journal y el anterior seguía abierto, el mes elegido era
+-- el de después, pasado el tope, y las seis salían en rojo (MX002): ahora
+-- salen «omitida» con el tope (la 120 lo vigila; ronda 3 de c6).
 --
 -- LOS PUENTES SON DIFERIDOS: corren al confirmar la transacción. Una
 -- prueba que nunca confirma los pone en «immediate» (set constraints
@@ -481,6 +486,12 @@ set search_path = public, pg_temp
 as $$
   select case when nullif(current_setting('mx3.mes', true), '') is not null
                    and nullif(current_setting('mx3.mes_dev', true), '') is null
+                   and nullif(current_setting('mx3.mes_dev_tope', true), '') is not null
+              then format('omitida: el primer mes abierto sin journal de nómina (%s) pasa del tope de fecha de c2 (%s: no se '
+                          'postea todavía; con journal, el devengo estándar se niega, MX008)',
+                          current_setting('mx3.mes_dev_tope', true), current_setting('mx3.tope', true))
+              when nullif(current_setting('mx3.mes', true), '') is not null
+                   and nullif(current_setting('mx3.mes_dev', true), '') is null
               then 'omitida: todos los meses abiertos desde el corte ya tienen journal de nómina (con journal, '
                    || 'el devengo estándar se niega, MX008)'
               else 'omitida: ' || p_falta end
@@ -502,6 +513,9 @@ declare
   v_mdev    text;
   v_ddev    date;
   v_sdev    text;
+  v_tope    date;
+  v_mtope   text;
+  v_dentro  boolean;
   v_mat     text;
   v_veh     text;
   v_capital text;
@@ -525,7 +539,21 @@ begin
   -- rojo en producción desde la primera nómina (la del proveedor anterior,
   -- de octubre a diciembre, con fn_banco_nomina; y la de Gusto cada mes).
   -- Sin ninguno, salen «omitida» y lo dicen (c3_sin_mes_devengo).
-  select p.periodo, p.desde into v_mdev, v_ddev from periodos p
+  -- Y que se pueda postear: el devengo va el último día de su mes, y c2 no
+  -- deja nada después de su tope (hoy + 45 días, o el fin del mes siguiente
+  -- al primer mes abierto: el mismo cálculo de fn_asientos_al_insertar; la
+  -- 99 postea en el mes siguiente después de cerrar con el reloj
+  -- fingido, que mueve el tope). Con la nómina semanal, en
+  -- cuanto el mes en curso tenía su primer journal y el anterior seguía
+  -- abierto, el mes del devengo era el de después, pasaba del tope, y las
+  -- seis salían en rojo (MX002) en vez de «omitida». (27-sep, la ronda 3
+  -- de c6; c3-puentes.sql no cambia.)
+  v_tope := greatest(fn_fecha_miami(now()) + 45,
+                     coalesce((select (date_trunc('month', min(p.desde)::timestamp) + interval '2 month')::date - 1
+                                 from periodos p where p.tipo = 'mes' and p.estado = 'abierto'),
+                              fn_fecha_miami(now()) + 45));
+  select p.periodo, p.desde, p.hasta <= v_tope into v_mdev, v_ddev, v_dentro
+    from periodos p
    where p.tipo = 'mes' and p.estado = 'abierto' and p.desde >= fn_puente_corte()
      and not exists (select 1 from asientos a
                       where coalesce(a.origen_tabla, '') like 'nomina%'
@@ -533,6 +561,11 @@ begin
                         and a.camino not in ('reverso', 'reverso_automatico')
                         and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso'))
    order by p.desde limit 1;
+  if not coalesce(v_dentro, true) then
+    v_mtope := v_mdev;
+    v_mdev := null;
+    v_ddev := null;
+  end if;
   select periodo into v_sdev from periodos
    where tipo = 'mes' and estado = 'abierto' and desde = (v_ddev + interval '1 month')::date;
   select codigo into v_mat from cuentas
@@ -551,6 +584,8 @@ begin
   perform set_config('mx3.desde',    coalesce(v_desde::text, ''), false);
   perform set_config('mx3.sig',      coalesce(v_sig, ''), false);
   perform set_config('mx3.mes_dev',   coalesce(v_mdev, ''), false);
+  perform set_config('mx3.mes_dev_tope', coalesce(v_mtope, ''), false);
+  perform set_config('mx3.tope',      coalesce(v_tope::text, ''), false);
   perform set_config('mx3.desde_dev', coalesce(v_ddev::text, ''), false);
   perform set_config('mx3.sig_dev',   coalesce(v_sdev, ''), false);
   perform set_config('mx3.material', coalesce(v_mat, ''), false);
@@ -7752,6 +7787,35 @@ begin
     when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
   end;
   insert into _pruebas values (119, 'un cobro suelta su movimiento del banco solo con la marca de c6', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 120. EL MES DEL DEVENGO SE PUEDE POSTEAR (la ronda 3 de c6): el que eligió
+--      la preparación para la 28, 57, 67, 74, 77 y 99 no pasa del tope de
+--      fecha de c2 (su último día, el del devengo), o no hay ninguno y lo
+--      dicen. Antes, con la nómina semanal (el mes en curso
+--      con su primer journal y el anterior abierto), elegía el mes de
+--      después, pasado el tope: las seis salían en rojo con MX002.
+do $$
+declare
+  v_mes  text := nullif(current_setting('mx3.mes_dev', true), '');
+  v_tope date := nullif(current_setting('mx3.tope', true), '')::date;
+  v_obt  text;
+  v_esp  text := 'se_puede=t';
+begin
+  if nullif(current_setting('mx3.mes', true), '') is null then
+    insert into _pruebas values (120, 'el mes del devengo de las pruebas se puede postear (no pasa del tope de c2)', v_esp,
+                                 'omitida: falta mes abierto', null);
+    return;
+  end if;
+  if v_mes is null then
+    insert into _pruebas values (120, 'el mes del devengo de las pruebas se puede postear (no pasa del tope de c2)', v_esp,
+                                 pg_temp.c3_sin_mes_devengo('no hay mes del devengo'), null);
+    return;
+  end if;
+  select case when p.hasta <= v_tope then 'se_puede=t' else format('se_puede=f (%s pasa del %s)', p.hasta, v_tope) end
+    into v_obt from periodos p where p.periodo = v_mes;
+  insert into _pruebas values (120, 'el mes del devengo de las pruebas se puede postear (no pasa del tope de c2)', v_esp,
                                coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
 end $$;
 
