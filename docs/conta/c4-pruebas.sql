@@ -64,7 +64,12 @@
 -- del banco. La 17 compara el efectivo final del flujo con los bancos Y la
 -- caja chica (tipo 'caja' de v_saldos_dinero), y la 26 mira solo los
 -- asientos que postea su escenario (y lo prueba con un asiento «del
--- banco» ya en el mes, que no cuenta). c4-estados.sql no cambia.
+-- banco» ya en el mes, que no cuenta). c4-estados.sql no cambia. (Ronda 2
+-- de c6, con octubre en uso y la apertura todavía sin postear, como lo
+-- arma pruebas/conta/c6-en-uso.sh:) la 53 mira solo las tres filas de su
+-- escenario (un ticket de verdad de la segunda obra la ponía en rojo), y
+-- la 39 le da fondos al banco antes de medir (la nómina de octubre lo
+-- dejaba en rojo y su sobregiro se movía con la prueba).
 --
 -- CUÁNDO: recién pegado c4-estados.sql y ANTES de postear la apertura de
 -- verdad. Con la apertura ya en el libro (o la apertura cerrada), las
@@ -3144,7 +3149,11 @@ end $$;
 --     proveedor va al activo; y una cuenta de efectivo en rojo va al pasivo
 --     como sobregiro (el efectivo es la suma de las cuentas en positivo).
 --     Lo que cambia la prueba en cada renglón, y el balance cuadra. Antes
---     salía todo neteado en su cuenta.
+--     salía todo neteado en su cuenta. (El banco, con fondos antes de
+--     medir, como en la 40: con el banco ya en uso y la apertura todavía
+--     sin postear —la nómina de octubre sale del banco—, el banco está en
+--     rojo, y el anticipo y el pago de la prueba le movían también su
+--     sobregiro: salía «sobregiro=-550.00». La ronda 2 de c6.)
 do $$
 declare
   v_obt  text;
@@ -3156,6 +3165,7 @@ declare
   v_a1   numeric;
   v_a2   numeric;
   v_a3   numeric;
+  v_sb   numeric;
 begin
   if v_d is null or nullif(v_b, '') is null then
     insert into _pruebas values (39, 'el balance no netea: anticipos al pasivo, saldos a favor al activo, sobregiro al pasivo', v_esp,
@@ -3164,6 +3174,15 @@ begin
   end if;
   begin
     perform pg_temp.c4_montar();
+    -- El banco con fondos antes de medir (en rojo, lo de la prueba le
+    -- movería también su sobregiro): lo que le falta, y 100,000 más.
+    select coalesce(sum(l.monto), 0) into v_sb
+      from asiento_lineas l join asientos a on a.id = l.asiento_id
+     where l.cuenta = fn_puente_cuenta_de('banco')
+       and a.fecha_contable <= (select p.hasta from periodos p where p.periodo = v_mes);
+    perform fn_postear(jsonb_build_object('fecha', (v_d + 1)::text, 'descripcion', 'c4-pruebas: el banco con fondos',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', fn_puente_cuenta_de('banco'), 'monto', (100000.00 + greatest(-v_sb, 0))::text),
+                                  jsonb_build_object('cuenta', '3100', 'monto', (-(100000.00 + greatest(-v_sb, 0)))::text))));
     select coalesce(sum(b.cifra) filter (where b.linea = 'anticipos_clientes'), 0),
            coalesce(sum(b.cifra) filter (where b.linea = 'saldos_a_favor'), 0),
            coalesce(sum(b.cifra) filter (where b.linea = 'sobregiro_bancario'), 0)
@@ -4000,7 +4019,10 @@ end $$;
 --     obras, material de una); la balanza de QuickBooks del mes lo sigue
 --     teniendo en cada obra. Cada fila por obra le suma al libro lo de su
 --     obra en la apertura, y cuadra. Antes, cada cuenta de resultados por
---     obra salía en rojo por lo de enero a septiembre.
+--     obra salía en rojo por lo de enero a septiembre. Mira solo las tres
+--     filas de su escenario (4010 de A y de B, 5100 de A): un ticket de
+--     verdad de la obra B en octubre (5100 de B, que su balanza de prueba
+--     no trae) no la pone en rojo (la ronda 2 de c6).
 do $$
 declare
   v_obt  text;
@@ -4060,7 +4082,8 @@ begin
                              case when c.ok then 'ok' else 'mal' end), ' | ' order by c.cuenta, c.proyecto_id = v_b)
       into v_obt
       from v_comparacion_obra c
-     where c.periodo = v_mes and c.proyecto_id in (v_a, v_b) and c.cuenta in ('4010', '5100');
+     where c.periodo = v_mes
+       and (c.cuenta, c.proyecto_id) in (('4010', v_a), ('4010', v_b), ('5100', v_a));
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;

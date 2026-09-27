@@ -54,7 +54,7 @@
 --     pruebas (75), que prueba a estas mismas pruebas; y la del rastro
 --     (80);
 --   · unas pocas que usan piezas que solo existen en el bloque B
---     (fn_postear_interno en la 41, la 63, la 69, la 70, la 76, la 77 y la 81; la guarda de
+--     (fn_postear_interno en la 41, la 63, la 69, la 70, la 76, la 77 y la 81; las huellas en la 82; la guarda de
 --     periodos, que la 60, la 65, la 71 y la 73 apagan un momento; el
 --     verificador, que la 78 y la 79 miran), que fallan porque falta la
 --     pieza.
@@ -3962,6 +3962,55 @@ begin
   end;
   insert into _pruebas values (81, 'c2 conoce al banco: su marca, su reparto y fn_reversar sobre un asiento del banco', v_esp,
                                v_obt, v_obt = v_esp);
+end $$;
+
+
+-- 82. RESELLAR DESDE UNA FASE NO BENDICE UN es_dueno() CAMBIADO (la
+--     ronda 2 de c6): con es_dueno() cambiado, su huella «candado» (la que
+--     mira el control permisos) ya no es la sellada; resellar las huellas
+--     como lo hace el final de c3-puentes.sql o de c6-banco.sql
+--     (fn_libro_huellas_sellar('c3-puentes.sql')) la deja como estaba:
+--     sigue en rojo; solo el pegado de este archivo (fn_libro_huellas_sellar
+--     ('c2-libro.sql')) fija la nueva. Y la marca de c2 es la que pide c6
+--     (2026092701 o más). Antes volver a pegar c3 o c6 encima de un
+--     es_dueno() que dejaba entrar también al equipo lo resellaba como
+--     bueno: el control volvía a verde y el equipo leía el banco. (Se
+--     cambia un instante con lock_timeout de 2 s: con la app usándolo,
+--     «omitida». Va antes de la 80, que tiene que ser la última.)
+do $$
+declare
+  v_esp text := 'marca=t cambiado=f resellado_fase=f resellado_c2=t';
+  v_obt text;
+  v_src text;
+  v_q   text := 'select case when exists (select 1
+                                             from (select * from public.fn_libro_huellas() x where x.tipo = ''candado'') h
+                                             full join (select * from public.fn_libro_huellas_calcular() y where y.tipo = ''candado'') a
+                                               on a.objeto = h.objeto
+                                            where a.md5 is distinct from h.md5) then ''f'' else ''t'' end';
+  v_x   text;
+begin
+  begin
+    set local lock_timeout = '2s';
+    v_obt := 'marca=' || coalesce((select case when substring(p.prosrc from '([0-9]{10})')::bigint >= 2026092701 then 't' else 'f' end
+                                     from pg_proc p where p.oid = to_regprocedure('public.fn_libro_version()')), 'f');
+    v_src := pg_get_functiondef('public.es_dueno()'::regprocedure);
+    execute regexp_replace(v_src, '\$function\$', '$function$' || chr(10) || '  -- c2-pruebas: cambiado' || chr(10));
+    execute v_q into v_x;
+    v_obt := v_obt || ' cambiado=' || v_x;
+    perform public.fn_libro_huellas_sellar('c3-puentes.sql');
+    execute v_q into v_x;
+    v_obt := v_obt || ' resellado_fase=' || v_x;
+    perform public.fn_libro_huellas_sellar('c2-libro.sql');
+    execute v_q into v_x;
+    v_obt := v_obt || ' resellado_c2=' || v_x;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate '55P03' then v_obt := 'omitida: la app usa es_dueno() (lock_timeout)';
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
+  end;
+  insert into _pruebas values (82, 'resellar desde una fase no bendice un es_dueno() cambiado; solo el pegado de c2', v_esp,
+                               v_obt, case when v_obt like 'omitida%' then null else v_obt = v_esp end);
 end $$;
 
 

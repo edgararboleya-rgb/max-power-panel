@@ -48,7 +48,14 @@
 -- un control de todo el libro (la 28, la 40 y la 100) cuentan solo sus
 -- asientos (si el control ya estaba en rojo por lo que trae el libro,
 -- mientras la prueba no le cambie nada, no la pone en rojo); y la 86
--- retira una cuenta de ingreso de prueba (la 4098), no la de verdad.
+-- retira una cuenta de ingreso de prueba (la 4098), no la de verdad. Las
+-- del DEVENGO (la 28, 57, 67, 74, 77 y 99) devengan en el primer mes
+-- abierto SIN journal de nómina (mx3.mes_dev): en un mes con journal el
+-- devengo se niega (MX008, la regla de c3), y con la nómina de octubre ya
+-- en el libro (la del proveedor anterior, con fn_banco_nomina de c6) las
+-- seis salían en rojo sin que nada estuviera roto. Sin ningún mes así,
+-- salen «omitida» y lo dicen. (27-sep, la ronda 2 de c6; c3-puentes.sql
+-- no cambia.)
 --
 -- LOS PUENTES SON DIFERIDOS: corren al confirmar la transacción. Una
 -- prueba que nunca confirma los pone en «immediate» (set constraints
@@ -77,7 +84,8 @@
 --
 -- Los datos se buscan, no se inventan: el dueño, uno del equipo (si no
 -- hay, esas pruebas salen «omitidas»), una obra, el mes abierto más
--- antiguo desde el corte y las cuentas de puente_cuentas.
+-- antiguo desde el corte (y, para el devengo, el más antiguo sin journal
+-- de nómina) y las cuentas de puente_cuentas.
 -- =====================================================================
 
 create temp table if not exists _pruebas(n int, prueba text, esperado text, obtenido text, ok boolean);
@@ -463,6 +471,22 @@ begin
 end $$;
 revoke execute on function pg_temp.c3_apertura(text, text, text, numeric, text, text, text) from public, anon, authenticated, service_role;
 
+-- El motivo de «omitida» de una prueba del DEVENGO (28, 57, 67, 74, 77 y
+-- 99) sin su mes: todos los meses abiertos desde el corte ya tienen journal
+-- de nómina (y con journal el devengo estándar se niega, MX008: es la regla
+-- de c3, no un fallo), o falta lo que dice p_falta.
+create or replace function pg_temp.c3_sin_mes_devengo(p_falta text) returns text
+language sql stable
+set search_path = public, pg_temp
+as $$
+  select case when nullif(current_setting('mx3.mes', true), '') is not null
+                   and nullif(current_setting('mx3.mes_dev', true), '') is null
+              then 'omitida: todos los meses abiertos desde el corte ya tienen journal de nómina (con journal, '
+                   || 'el devengo estándar se niega, MX008)'
+              else 'omitida: ' || p_falta end
+$$;
+revoke execute on function pg_temp.c3_sin_mes_devengo(text) from public, anon, authenticated, service_role;
+
 -- ---------------------------------------------------------------------
 -- Preparación: solo lee. Lo que usan todas las pruebas, en ajustes de la
 -- sesión (mx3.*), que mueren con ella.
@@ -475,6 +499,9 @@ declare
   v_mes     text;
   v_desde   date;
   v_sig     text;
+  v_mdev    text;
+  v_ddev    date;
+  v_sdev    text;
   v_mat     text;
   v_veh     text;
   v_capital text;
@@ -491,6 +518,23 @@ begin
    where tipo = 'mes' and estado = 'abierto' and desde >= fn_puente_corte() order by desde limit 1;
   select periodo into v_sig from periodos
    where tipo = 'mes' and estado = 'abierto' and desde = (v_desde + interval '1 month')::date;
+  -- El mes del DEVENGO (las pruebas 28, 57, 67, 74, 77 y 99): el primer mes
+  -- abierto desde el corte SIN journal de nómina vivo, con la misma regla de
+  -- c3 (asientos vivos de origen «nomina…» fechados en el mes). En un mes
+  -- con journal el devengo estándar se niega (MX008) y esas seis salían en
+  -- rojo en producción desde la primera nómina (la del proveedor anterior,
+  -- de octubre a diciembre, con fn_banco_nomina; y la de Gusto cada mes).
+  -- Sin ninguno, salen «omitida» y lo dicen (c3_sin_mes_devengo).
+  select p.periodo, p.desde into v_mdev, v_ddev from periodos p
+   where p.tipo = 'mes' and p.estado = 'abierto' and p.desde >= fn_puente_corte()
+     and not exists (select 1 from asientos a
+                      where coalesce(a.origen_tabla, '') like 'nomina%'
+                        and a.fecha_contable between p.desde and p.hasta
+                        and a.camino not in ('reverso', 'reverso_automatico')
+                        and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso'))
+   order by p.desde limit 1;
+  select periodo into v_sdev from periodos
+   where tipo = 'mes' and estado = 'abierto' and desde = (v_ddev + interval '1 month')::date;
   select codigo into v_mat from cuentas
    where tipo = 'costo' and regla_obra = 'obligatoria' and regla_cost_code <> 'prohibida' and activa and imputable
    order by (codigo = '5100') desc, codigo limit 1;
@@ -506,6 +550,9 @@ begin
   perform set_config('mx3.mes',      coalesce(v_mes, ''), false);
   perform set_config('mx3.desde',    coalesce(v_desde::text, ''), false);
   perform set_config('mx3.sig',      coalesce(v_sig, ''), false);
+  perform set_config('mx3.mes_dev',   coalesce(v_mdev, ''), false);
+  perform set_config('mx3.desde_dev', coalesce(v_ddev::text, ''), false);
+  perform set_config('mx3.sig_dev',   coalesce(v_sdev, ''), false);
   perform set_config('mx3.material', coalesce(v_mat, ''), false);
   perform set_config('mx3.vehiculo', coalesce(v_veh, ''), false);
   perform set_config('mx3.capital',  coalesce(v_capital, ''), false);
@@ -1996,9 +2043,9 @@ declare
   v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
   v_equipo uuid := nullif(current_setting('mx3.equipo', true), '')::uuid;
   v_obra   text := nullif(current_setting('mx3.obra', true), '');
-  v_desde  date := nullif(current_setting('mx3.desde', true), '')::date;
-  v_mes    text := nullif(current_setting('mx3.mes', true), '');
-  v_sig    text := nullif(current_setting('mx3.sig', true), '');
+  v_desde  date := nullif(current_setting('mx3.desde_dev', true), '')::date;
+  v_mes    text := nullif(current_setting('mx3.mes_dev', true), '');
+  v_sig    text := nullif(current_setting('mx3.sig_dev', true), '');
   v_mo     text := fn_puente_cuenta_de('mano_obra');
   v_sd     text := fn_puente_cuenta_de('sueldos_devengados');
   v_sigd   date;
@@ -2014,7 +2061,7 @@ begin
                   v_mo, v_obra, v_sigd);
   if v_dueno is null or v_equipo is null or v_obra is null or v_desde is null or v_sig is null then
     insert into _pruebas values (28, 'devengo estándar: reversible, etiquetado, y no se duplica', v_esp,
-                                 'omitida: falta dueño, alguien del equipo, obra, o el mes abierto y el siguiente', null);
+                                 pg_temp.c3_sin_mes_devengo('falta dueño, alguien del equipo, obra, o el mes abierto y el siguiente'), null);
     return;
   end if;
   begin
@@ -3623,8 +3670,8 @@ declare
   v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
   v_equipo uuid := nullif(current_setting('mx3.equipo', true), '')::uuid;
   v_obra   text := nullif(current_setting('mx3.obra', true), '');
-  v_desde  date := nullif(current_setting('mx3.desde', true), '')::date;
-  v_mes    text := nullif(current_setting('mx3.mes', true), '');
+  v_desde  date := nullif(current_setting('mx3.desde_dev', true), '')::date;
+  v_mes    text := nullif(current_setting('mx3.mes_dev', true), '');
   v_obra2  text;
   v_costo  numeric;
   v_ctl    text;
@@ -3635,7 +3682,7 @@ begin
   select p.id into v_obra2 from proyectos p where p.id <> v_obra and nullif(btrim(p.tipo), '') is not null order by p.id limit 1;
   if v_dueno is null or v_equipo is null or v_obra is null or v_obra2 is null or v_desde is null or v_mes is null then
     insert into _pruebas values (57, 'devengo: si las horas cambian de obra, el control lo marca y se rehace', '-',
-                                 'omitida: falta dueño, alguien del equipo, dos obras o mes abierto', null);
+                                 pg_temp.c3_sin_mes_devengo('falta dueño, alguien del equipo, dos obras o mes abierto'), null);
     return;
   end if;
   begin
@@ -4166,15 +4213,15 @@ declare
   v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
   v_equipo uuid := nullif(current_setting('mx3.equipo', true), '')::uuid;
   v_obra   text := nullif(current_setting('mx3.obra', true), '');
-  v_desde  date := nullif(current_setting('mx3.desde', true), '')::date;
-  v_mes    text := nullif(current_setting('mx3.mes', true), '');
+  v_desde  date := nullif(current_setting('mx3.desde_dev', true), '')::date;
+  v_mes    text := nullif(current_setting('mx3.mes_dev', true), '');
   v_r      jsonb;
   v_obt    text;
   v_esp    text := 'accion=reversado mes=0.00/0.00 estado=no_aplica/sin_horas';
 begin
   if v_dueno is null or v_equipo is null or v_obra is null or v_desde is null or v_mes is null then
     insert into _pruebas values (67, 'devengo: sin horas aprobadas, se deshace', v_esp,
-                                 'omitida: falta dueño, alguien del equipo, obra o mes abierto', null);
+                                 pg_temp.c3_sin_mes_devengo('falta dueño, alguien del equipo, obra o mes abierto'), null);
     return;
   end if;
   begin
@@ -4614,9 +4661,9 @@ declare
   v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
   v_equipo uuid := nullif(current_setting('mx3.equipo', true), '')::uuid;
   v_obra   text := nullif(current_setting('mx3.obra', true), '');
-  v_desde  date := nullif(current_setting('mx3.desde', true), '')::date;
-  v_mes    text := nullif(current_setting('mx3.mes', true), '');
-  v_sig    text := nullif(current_setting('mx3.sig', true), '');
+  v_desde  date := nullif(current_setting('mx3.desde_dev', true), '')::date;
+  v_mes    text := nullif(current_setting('mx3.mes_dev', true), '');
+  v_sig    text := nullif(current_setting('mx3.sig_dev', true), '');
   v_mo     text := fn_puente_cuenta_de('mano_obra');
   v_r1     jsonb;
   v_c1     text;
@@ -4628,7 +4675,7 @@ declare
 begin
   if v_dueno is null or v_equipo is null or v_obra is null or v_desde is null or v_sig is null then
     insert into _pruebas values (74, 'el devengo estándar no cuenta dos veces lo que la nómina ya pagó', v_esp,
-                                 'omitida: falta dueño, alguien del equipo, obra, o el mes abierto y el siguiente', null);
+                                 pg_temp.c3_sin_mes_devengo('falta dueño, alguien del equipo, obra, o el mes abierto y el siguiente'), null);
     return;
   end if;
   begin
@@ -4848,8 +4895,8 @@ declare
   v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
   v_equipo uuid := nullif(current_setting('mx3.equipo', true), '')::uuid;
   v_obra   text := nullif(current_setting('mx3.obra', true), '');
-  v_desde  date := nullif(current_setting('mx3.desde', true), '')::date;
-  v_mes    text := nullif(current_setting('mx3.mes', true), '');
+  v_desde  date := nullif(current_setting('mx3.desde_dev', true), '')::date;
+  v_mes    text := nullif(current_setting('mx3.mes_dev', true), '');
   v_a1     text;
   v_a2     text;
   v_dev    text;
@@ -4860,7 +4907,7 @@ declare
 begin
   if v_dueno is null or v_equipo is null or v_obra is null or v_desde is null then
     insert into _pruebas values (77, 'mano de obra: un asiento a mano «reversible» no pasa por devengo', v_esp,
-                                 'omitida: falta dueño, alguien del equipo, obra o mes abierto', null);
+                                 pg_temp.c3_sin_mes_devengo('falta dueño, alguien del equipo, obra o mes abierto'), null);
     return;
   end if;
   begin
@@ -6352,9 +6399,9 @@ declare
   v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
   v_equipo uuid := nullif(current_setting('mx3.equipo', true), '')::uuid;
   v_obra   text := nullif(current_setting('mx3.obra', true), '');
-  v_desde  date := nullif(current_setting('mx3.desde', true), '')::date;
-  v_mes    text := nullif(current_setting('mx3.mes', true), '');
-  v_sig    text := nullif(current_setting('mx3.sig', true), '');
+  v_desde  date := nullif(current_setting('mx3.desde_dev', true), '')::date;
+  v_mes    text := nullif(current_setting('mx3.mes_dev', true), '');
+  v_sig    text := nullif(current_setting('mx3.sig_dev', true), '');
   v_mo     text := fn_puente_cuenta_de('mano_obra');
   v_dev    jsonb;
   v_a      text;
@@ -6367,7 +6414,7 @@ declare
 begin
   if v_dueno is null or v_equipo is null or v_obra is null or v_desde is null or v_sig is null then
     insert into _pruebas values (99, 'un mes no se cierra con devengo y journal juntos; el cerrado así sigue en rojo', v_esp,
-                                 'omitida: falta dueño, alguien del equipo, obra, o el mes abierto y el siguiente', null);
+                                 pg_temp.c3_sin_mes_devengo('falta dueño, alguien del equipo, obra, o el mes abierto y el siguiente'), null);
     return;
   end if;
   begin

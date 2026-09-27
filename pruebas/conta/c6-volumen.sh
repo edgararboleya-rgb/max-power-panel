@@ -61,7 +61,12 @@
 #     c4-pruebas): nada en rojo y ninguna subida cortada ni de 8 s o más
 #     (las pruebas tienen los candados de los recibos mientras corren: no
 #     pueden crecer con los datos de verdad); y otra vez, sola y con la
-#     base caliente: nada en rojo y en menos de 40 s.
+#     base caliente: nada en rojo y en menos de 40 s;
+#   · al final, los meses 13 y 14 (oct y nov de 2027) importados SIN
+#     casar, encima de la bandeja que haya: «Cuadrar» (fn_conciliar de
+#     Chase) con un mes y con dos, no más de 4 s cada una; y casar con
+#     ellos, como conta.js: cada llamada no más de 8 s y «completo» en
+#     tres llamadas o menos (con AL_DIA=0, la bandeja de un año entero).
 # Y guarda el EXPLAIN ANALYZE de cada vista en $TMP/explain.txt (lo
 # imprime al final con EXPLICAR=1).
 # Imprime la tabla de tiempos (la de la cabecera de c6-banco.sql).
@@ -439,6 +444,75 @@ revisa "c6-pruebas (sola) corrió entero" "0" "$rc"
 revisa "c6-pruebas (sola): nada en rojo" "0" "$(grep -o 'fallan=[0-9]*' "$TMP/pruebas0.out" | cut -d= -f2)"
 grep -E '^ *[0-9]+ *\| *FALLA' "$TMP/pruebas0.out" | cut -c1-400
 revisa "c6-pruebas: menos de 40 s con un año de banco" "si" "$(python3 -c "print('si' if $seg < 40 else 'no ($seg s)')")"
+
+echo "== Los meses 13 y 14 (oct y nov de 2027) recién importados y SIN casar: «Cuadrar» antes de «Casar» (tope 4 s), y casar con ellos (tope 8 s)"
+# (Lo que pasa si Edgar abre «Cuadrar» antes de casar, o vuelve de unas
+# semanas fuera con dos meses por importar, encima de la bandeja que ya
+# traía. Antes de la ronda 2 de c6: la pareja de fn_conciliacion_items
+# juntaba cada movimiento con cada línea y cada día —de 3 a 7 s con un mes
+# y 57014 con dos—, y con la bandeja atrasada un año casar se cortaba a
+# los 8 s en cada llamada, por el cruce de transferencias. Va al final:
+# no cambia lo medido arriba.)
+ed -v ON_ERROR_STOP=1 > "$TMP/mes13.out" 2>&1 <<'SQL' || { tail -n 5 "$TMP/mes13.out"; malos=1; }
+-- Los dos meses como los otros doce: una línea del banco por cada línea
+-- del libro (del 28-sep, lo que el archivo de septiembre ya no trajo) y
+-- los cargos que el libro no tiene.
+insert into vol_banco.movs
+select l.cuenta, a.fecha_contable + (abs(hashtext(a.numero || '-' || l.orden)) % 3), l.monto,
+       case when l.monto < 0 then (case when l.cuenta = '1010' and a.descripcion like 'vol: pago a %' then 'CHECK' else 'DEBIT' end)
+            else 'CREDIT' end,
+       'V' || a.numero || '-' || l.orden, upper(left(a.descripcion, 60)),
+       case when l.cuenta = '1010' and a.descripcion like 'vol: pago a %' then ((a.anio - 2026) * 20000 + 1000 + a.secuencia)::text end
+  from public.asiento_lineas l
+  join public.asientos a on a.id = l.asiento_id
+ where l.cuenta in ('1010', '2100-2013', '2100-2009') and a.fecha_contable between date '2027-09-28' and date '2027-11-30'
+   and a.tipo <> 'apertura' and a.camino not in ('reverso', 'reverso_automatico')
+   and coalesce(a.origen_tabla, '') <> 'movimientos_banco'
+   and not exists (select 1 from public.asientos r where r.reversa_a = a.id and r.camino = 'reverso')
+   and not exists (select 1 from vol_banco.movs v where v.fitid = 'V' || a.numero || '-' || l.orden);
+insert into vol_banco.movs
+select x.c, d0::date + (g % 27), -round((3 + (g * 37 % 5000) / 100.0)::numeric, 2), 'POS',
+       'N' || x.c || '-' || to_char(d0, 'YYMM') || '-' || g, 'VOL POS ' || x.c || ' ' || g, null
+  from (values ('1010'), ('2100-2013'), ('2100-2009')) x(c),
+       generate_series(date '2027-10-01', date '2027-11-01', interval '1 month') d0,
+       generate_series(1, 83) g;
+insert into vol_banco.movs
+select '1010', d0::date + (g % 30), -round((7 + (g * 53 % 4000) / 100.0)::numeric, 2), 'POS',
+       'X1010-' || to_char(d0, 'YYMM') || '-' || g, 'VOL POS EXTRA ' || g, null
+  from generate_series(date '2027-10-01', date '2027-11-01', interval '1 month') d0, generate_series(1, 125) g;
+analyze vol_banco.movs;
+SQL
+importa_mes() {  # importa_mes <d0> <d1>
+  for c in 1010 2100-2013 2100-2009; do
+    arg="null"; [ "$c" = "1010" ] && arg="'1010'"
+    mide "importar $c ${1:0:7}" 8000 \
+      "select 'nuevas=' || (fn_banco_importar_ofx(vol_banco.qfx('$c', '$1', '$2'), $arg, 'vol-$c-${1:0:7}.qfx')->>'filas_nuevas')" commit \
+      > "$TMP/linea.txt"
+    grep -q 'FALLA\|NO TERMINÓ' "$TMP/linea.txt" && cat "$TMP/linea.txt"
+  done
+}
+CONC="select 'diferencia ' || (x->>'diferencia') || ', sin casar ' || (x->>'n_sin_casar') || ', en tránsito ' || (x->>'n_transito') from (select fn_conciliar('1010', '%s') as x) y"
+importa_mes 2027-10-01 2027-10-31
+echo "     pendientes: $(ed -c "select count(*) from movimientos_banco where estado = 'pendiente'") (Chase: $(ed -c "select count(*) from movimientos_banco where estado = 'pendiente' and cuenta = '1010'"))"
+mide "fn_conciliar(1010, 2027-10-31), el mes 13 sin casar" 4000 "$(printf "$CONC" 2027-10-31)"
+importa_mes 2027-11-01 2027-11-30
+mide "fn_conciliar(1010, 2027-11-30), dos meses sin casar" 4000 "$(printf "$CONC" 2027-11-30)"
+llamadas=0
+while :; do
+  llamadas=$((llamadas + 1))
+  mide "casar con los meses 13 y 14 (llamada $llamadas)" 8000 \
+    "select x->>'casados' || ' casados, pendientes ' || (x->>'pendientes') || ', completo ' || (x->>'completo') from (select fn_banco_casar_todo(null, null) as x) y" commit \
+    > "$TMP/linea.txt"
+  cat "$TMP/linea.txt"
+  if grep -q 'FALLA\|NO TERMINÓ' "$TMP/linea.txt" || [ "$llamadas" -ge 3 ]; then
+    grep -q 'completo true' "$TMP/linea.txt" || { echo "FALLA: casar con los meses 13 y 14 no terminó en 3 llamadas"; malos=1; }
+    break
+  fi
+  grep -q 'completo true' "$TMP/linea.txt" && break
+done
+mide "fn_conciliar(1010, 2027-11-30), ya casados" 4000 "$(printf "$CONC" 2027-11-30)"
+revisa "ninguna línea del libro casada dos veces (con los meses 13 y 14)" "0" \
+  "$(ed -c "select count(*) from (select asiento_id, orden from banco_casado_lineas where vigente group by 1, 2 having count(*) > 1) x")"
 
 [ $malos -eq 0 ] && echo "VOLUMEN c6 ok" || echo "VOLUMEN c6 FALLA"
 exit $malos
