@@ -6,7 +6,7 @@ import json, sys
 d = json.load(open(sys.argv[1]))
 T = ('perfiles proyectos facturas recibos horas materiales trabajos_externos externos_equipo '
      'costos_equipo hitos finanzas_proyecto alcances codigos_partida contratistas asistente_uso '
-     'asistente_ajustes escenarios estimados catalogo_items pendientes gastos_generales').split()
+     'asistente_ajustes escenarios estimados catalogo_items pendientes gastos_generales eventos').split()
 PK = {'perfiles':'id','proyectos':'id','costos_equipo':'usuario_id','finanzas_proyecto':'proyecto_id',
       'codigos_partida':'codigo','contratistas':'id','asistente_ajustes':'clave','escenarios':'id'}
 def tipo(c):

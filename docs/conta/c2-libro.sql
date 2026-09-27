@@ -42,6 +42,31 @@
 --     control («c2 y c3 al día»): con un c2 anterior dice que hay que
 --     volver a pegar este archivo. No lee nada; nadie de la API la ejecuta,
 --     y va en las huellas.
+-- CAMBIOS PARA c6 (el banco, 26-sep-2026), mínimos (se vuelve a pegar
+-- encima, sin tocar el libro; y DESPUÉS c3, c4 y c6, que también cambian):
+--   · el reparto de B.20 (c_fn_app_fases) y las huellas de B.22 conocen
+--     las funciones de c6-banco.sql que llama la app (fn_banco_importar_ofx,
+--     fn_banco_casar…, fn_conciliar…, fn_prestamo_cuota,
+--     fn_prepagados_amortizar): son SECURITY DEFINER, miran es_dueno() por
+--     dentro, y el control «permisos» las acepta en verde (antes de este
+--     cambio salían como función ajena que lee el libro). Mientras c6 no
+--     esté pegado no existen y no dan fila;
+--   · fn_reversar, sobre el asiento de un papel del banco (un movimiento,
+--     la cuota de un préstamo, el mes de prepagados), dice el camino bueno:
+--     des-casar el movimiento (fn_banco_descasar) o volver a amortizar el
+--     mes (fn_prepagados_amortizar). Sigue sin reversarlo (MX007);
+--   · la marca de versión sube a 2026092601 (c6 la pide). Su prueba: la 81
+--     de c2-pruebas.sql;
+--   · (27-sep, la ronda 2 de c6) fn_libro_huellas_sellar ya no bendice un
+--     es_dueno() cambiado: la huella «candado» (es_dueno(), el que dice
+--     quién ve los libros) la fija SOLO el pegado de este archivo; cuando
+--     resella una fase (c3, c6…) se queda la que ya estaba. Antes volver a
+--     pegar c3 o c6 con un es_dueno() distinto (que dejara entrar también al
+--     equipo) lo resellaba como bueno: el control permisos volvía a verde y
+--     el equipo leía el banco entero, con el número de la cuenta. Ahora
+--     sigue en rojo hasta que alguien lo mira y vuelve a pegar c2 (y c6,
+--     además, no se pega encima de uno cambiado: MX000). La marca sube a
+--     2026092701 (c6 la pide). Su prueba: la 82 de c2-pruebas.sql.
 --
 -- EL ROJO SE CORRE SOLO EN EL BANCO DE PRUEBAS (pruebas/conta/correr.sh
 -- con «c2-libro.sql:A»). En Supabase este archivo se pega SIEMPRE entero:
@@ -2734,6 +2759,17 @@ begin
                                                    'la buena se emite de nuevo.'
                          when 'horas_devengo' then format('El devengo de un mes lo pone al día (o lo deshace): select '
                                                           'fn_horas_devengar(%L);.', v_o.origen_id)
+                         -- (c6, el banco)
+                         when 'movimientos_banco' then format('Es el asiento de un movimiento del banco: se deshace '
+                                                              'des-casándolo, con su motivo: select fn_banco_descasar(%L, '
+                                                              '''motivo'');, y el movimiento vuelve a la bandeja.', v_o.origen_id)
+                         when 'prestamo_cuotas' then 'Es la cuota de un préstamo: se anula des-casando su movimiento '
+                                                     '(fn_banco_descasar, con su motivo) y se registra la buena '
+                                                     '(fn_prestamo_cuota).'
+                         when 'prepagados' then format('Es la amortización de prepagados de %s: se corrige la póliza '
+                                                       '(fn_prepagado_guardar) y se vuelve a amortizar el mes: select '
+                                                       'fn_prepagados_amortizar(%L);.', split_part(v_o.origen_id, '|', 1),
+                                                       split_part(v_o.origen_id, '|', 1))
                          else 'Se corrige su papel y su puente lo rehace.' end,
                        v_o.origen_tabla, v_o.origen_id);
   end if;
@@ -2927,7 +2963,16 @@ declare
     'fn_mapeo_tipo_proyecto(text,text)', 'fn_mapeo_confirmar(text,text)', 'fn_tarjeta_alta(text,text,text,uuid)',
     'fn_proveedor_alta(text,text,text[],bigint)', 'fn_proveedor_alias(uuid,text)',
     'fn_puentes_antes_del_corte(text,bigint,text)', 'fn_puentes_confirmar(text,bigint,text,text)',
-    'fn_recibo_desanular(bigint,text)'];
+    'fn_recibo_desanular(bigint,text)',
+    -- f06 · c6-banco.sql
+    'fn_banco_importar_ofx(text,text,text)', 'fn_banco_importar_filas(jsonb)', 'fn_banco_casar(uuid)',
+    'fn_banco_casar_todo(text,date)', 'fn_banco_casar_con(uuid,jsonb,text)', 'fn_banco_cobrar(uuid,jsonb,text)',
+    'fn_banco_pagar_proveedor(uuid,uuid,jsonb)', 'fn_banco_transferencia(uuid,text,text)',
+    'fn_banco_clasificar(uuid,jsonb,text)', 'fn_banco_ignorar(uuid,text)', 'fn_banco_duplicado(uuid,boolean,text)',
+    'fn_banco_devolver(uuid,uuid,text)', 'fn_banco_descasar(uuid,text)', 'fn_conciliar(text,date,text)',
+    'fn_conciliacion_partida(uuid,text,text)', 'fn_conciliacion_confirmar(uuid)', 'fn_conciliacion_reabrir(uuid,text)',
+    'fn_conciliacion_apertura(text,text,jsonb,text)', 'fn_prestamo_cuota(uuid,uuid,date,text,text,text,text)',
+    'fn_prepagados_amortizar(text)'];
 begin
   if not (es_dueno() or fn_desde_editor()) then
     raise exception using errcode = '42501', message = 'Solo el dueño verifica la cadena.';
@@ -3529,14 +3574,16 @@ begin
            where to_regprocedure('public.' || f) is null
           union all
           select format('anon ejecuta %s (vuelve a pegar %s)', f,
-                        case when f = any (v_fases) then 'c3-puentes.sql'
+                        case when f ~ '^fn_(banco_|concilia|prestamo_|prepagado)' then 'c6-banco.sql'
+                             when f = any (v_fases) then 'c3-puentes.sql'
                              when f like 'fn_cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end)
             from unnest(v_app || v_int) f
            where to_regprocedure('public.' || f) is not null
              and has_function_privilege('anon', to_regprocedure('public.' || f)::oid, 'execute')
           union all
           select format('authenticated ejecuta %s (vuelve a pegar %s)', f,
-                        case when f = any (v_fases) then 'c3-puentes.sql'
+                        case when f ~ '^fn_(banco_|concilia|prestamo_|prepagado)' then 'c6-banco.sql'
+                             when f = any (v_fases) then 'c3-puentes.sql'
                              when f like 'fn_cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end)
             from unnest(v_int) f
            where to_regprocedure('public.' || f) is not null
@@ -3546,7 +3593,8 @@ begin
           -- puede llamar sueltas, y es lo que les da e37-seguridad.sql, que
           -- se puede volver a pegar (ver B.20).
           select format('service_role ejecuta %s (vuelve a pegar %s)', f,
-                        case when f = any (v_fases) then 'c3-puentes.sql'
+                        case when f ~ '^fn_(banco_|concilia|prestamo_|prepagado)' then 'c6-banco.sql'
+                             when f = any (v_fases) then 'c3-puentes.sql'
                              when f like 'fn_cuentas%' then 'c1-plan-de-cuentas.sql' else 'c2-libro.sql' end)
             from unnest(v_app || v_int) f
             join pg_proc p on p.oid = to_regprocedure('public.' || f)
@@ -3886,7 +3934,7 @@ returns bigint
 language sql
 immutable
 set search_path = public, pg_temp
-as $$ select 2026092504::bigint $$;
+as $$ select 2026092701::bigint $$;
 revoke execute on function public.fn_libro_version() from public, anon, authenticated, service_role;
 
 create or replace function public.fn_libro_huellas_calcular()
@@ -3923,7 +3971,14 @@ as $$
                            'fn_horas_aprobar', 'fn_horas_desaprobar', 'fn_horas_devengar', 'fn_recibo_anular',
                            'fn_externo_anular', 'fn_mapeo_categoria', 'fn_mapeo_metodo_pago', 'fn_mapeo_tipo_proyecto',
                            'fn_mapeo_confirmar', 'fn_tarjeta_alta', 'fn_proveedor_alta', 'fn_proveedor_alias',
-                           'fn_puentes_antes_del_corte', 'fn_puentes_confirmar', 'fn_recibo_desanular')
+                           'fn_puentes_antes_del_corte', 'fn_puentes_confirmar', 'fn_recibo_desanular',
+                           -- f06 · c6-banco.sql (las que llama la app)
+                           'fn_banco_importar_ofx', 'fn_banco_importar_filas', 'fn_banco_casar', 'fn_banco_casar_todo',
+                           'fn_banco_casar_con', 'fn_banco_cobrar', 'fn_banco_pagar_proveedor', 'fn_banco_transferencia',
+                           'fn_banco_clasificar', 'fn_banco_ignorar', 'fn_banco_duplicado', 'fn_banco_devolver',
+                           'fn_banco_descasar', 'fn_conciliar', 'fn_conciliacion_partida', 'fn_conciliacion_confirmar',
+                           'fn_conciliacion_reabrir', 'fn_conciliacion_apertura', 'fn_prestamo_cuota',
+                           'fn_prepagados_amortizar')
           or p.proname like 'fn\_puente\_%')
   union all
   select 'tabla'::text, c.relname,
@@ -3958,6 +4013,10 @@ revoke execute on function public.fn_libro_huellas_calcular() from public, anon,
 -- cuándo (hora de Miami). La llama este archivo al final, y la llaman al
 -- final los archivos de las fases (c3…) que ponen triggers o funciones que
 -- se vigilan desde aquí. Sin grant a nadie de la API: solo el SQL Editor.
+-- El CANDADO (es_dueno()) lo fija solo el pegado de este archivo: cuando
+-- sella una fase se queda la huella que ya estaba (si la había), y un
+-- es_dueno() cambiado sigue en rojo en el control permisos hasta que se
+-- vuelve a pegar c2 (ver «CAMBIOS PARA c6», 27-sep).
 create or replace function public.fn_libro_huellas_sellar(p_quien text default 'c2-libro.sql')
 returns int
 language plpgsql
@@ -3966,8 +4025,16 @@ as $$
 declare
   v_filas text;
   v_n     int;
+  v_viejo jsonb := '{}'::jsonb;
 begin
-  select string_agg(format('(%L, %L, %L)', h.tipo, h.objeto, h.md5), E',\n    ' order by h.tipo, h.objeto), count(*)
+  if coalesce(btrim(p_quien), '') <> 'c2-libro.sql' and to_regprocedure('public.fn_libro_huellas()') is not null then
+    execute 'select coalesce(jsonb_object_agg(h.objeto, h.md5), ''{}''::jsonb) from public.fn_libro_huellas() h
+              where h.tipo = ''candado'''
+      into v_viejo;
+  end if;
+  select string_agg(format('(%L, %L, %L)', h.tipo, h.objeto,
+                           case when h.tipo = 'candado' and v_viejo ? h.objeto then v_viejo->>h.objeto else h.md5 end),
+                    E',\n    ' order by h.tipo, h.objeto), count(*)
     into v_filas, v_n
     from public.fn_libro_huellas_calcular() h;
   execute format($f$

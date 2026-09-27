@@ -54,7 +54,7 @@
 --     pruebas (75), que prueba a estas mismas pruebas; y la del rastro
 --     (80);
 --   · unas pocas que usan piezas que solo existen en el bloque B
---     (fn_postear_interno en la 41, la 63, la 69, la 70, la 76 y la 77; la guarda de
+--     (fn_postear_interno en la 41, la 63, la 69, la 70, la 76, la 77 y la 81; la guarda de
 --     periodos, que la 60, la 65, la 71 y la 73 apagan un momento; el
 --     verificador, que la 78 y la 79 miran), que fallan porque falta la
 --     pieza.
@@ -3902,6 +3902,66 @@ begin
     v_obt := concat_ws(' ', nullif(v_obt, ''), v_k || '=' || coalesce(v_x, '-'));
   end loop;
   insert into _pruebas values (79, 'permisos ve lo escondido: join de coma, comentario en medio, función de ayuda', v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+
+-- 81. c2 CONOCE AL BANCO (c6): su marca es la de c6 (2026092601 o más);
+--     el reparto de B.20 lleva las funciones de c6-banco.sql que llama la
+--     app (si c6 no está pegado, no existen y no dan fila); y el asiento
+--     de un papel del banco (un movimiento) no se reversa a mano:
+--     fn_reversar dice cómo se deshace (des-casar el movimiento,
+--     fn_banco_descasar), MX007, y el asiento sigue vivo. (Va antes de la
+--     80, que tiene que ser la última.)
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx_pruebas.dueno', true), '')::uuid;
+  v_banco text := nullif(current_setting('mx_pruebas.banco', true), '');
+  v_gasto text := nullif(current_setting('mx_pruebas.gasto', true), '');
+  v_desde date := nullif(current_setting('mx_pruebas.desde', true), '')::date;
+  v_o     uuid;
+  v_rev   text;
+  v_obt   text;
+  v_esp   text := 'marca=t reparto=t reversar=MX007 (dice fn_banco_descasar) vivo=t';
+begin
+  if v_dueno is null or v_banco is null or v_gasto is null or v_desde is null then
+    insert into _pruebas values (81, 'c2 conoce al banco: su marca, su reparto y fn_reversar sobre un asiento del banco', v_esp,
+                                 'omitida: falta dueño, cuenta o mes abierto', null);
+    return;
+  end if;
+  begin
+    v_obt := format('marca=%s reparto=%s',
+                    coalesce((select substring(p.prosrc from '([0-9]{10})')::bigint >= 2026092601
+                                from pg_proc p where p.oid = to_regprocedure('public.fn_libro_version()')), false),
+                    (select position('fn_banco_importar_ofx(text,text,text)' in p.prosrc) > 0
+                            and position('fn_conciliacion_confirmar(uuid)' in p.prosrc) > 0
+                            and position('fn_prepagados_amortizar(text)' in p.prosrc) > 0
+                       from pg_proc p where p.oid = to_regprocedure('public.fn_verificar_cadena()')));
+    v_obt := replace(replace(v_obt, 'true', 't'), 'false', 'f');
+    v_o := (fn_postear_interno(jsonb_build_object(
+             'camino', 'puente', 'origen_tabla', 'movimientos_banco', 'origen_id', 'c2-pruebas-81',
+             'fecha', to_char(v_desde + 4, 'YYYY-MM-DD'), 'descripcion', 'c2-pruebas: cargo del banco por su puente (se deshace)',
+             'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_gasto, 'monto', '15.00'),
+                                         jsonb_build_object('cuenta', v_banco, 'monto', '-15.00')))) ->> 'id')::uuid;
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      perform fn_reversar(v_o, 'c2-pruebas: a mano');
+      v_rev := 'entró';
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+      when others then v_rev := sqlstate || case when sqlerrm like '%fn_banco_descasar%' then ' (dice fn_banco_descasar)' else '' end;
+    end;
+    execute 'reset role';
+    v_obt := v_obt || format(' reversar=%s vivo=%s', v_rev,
+                             case when not exists (select 1 from asientos r where r.reversa_a = v_o) then 't' else 'f' end);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 70);
+  end;
+  insert into _pruebas values (81, 'c2 conoce al banco: su marca, su reparto y fn_reversar sobre un asiento del banco', v_esp,
+                               v_obt, v_obt = v_esp);
 end $$;
 
 

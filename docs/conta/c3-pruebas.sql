@@ -7645,6 +7645,69 @@ begin
                                coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
 end $$;
 
+-- 119. EL COBRO SUELTA SU MOVIMIENTO SOLO CON LA MARCA DE c6: un cobro
+--      casado con su movimiento del banco (movimiento_id) no lo cambia a
+--      mano (MX003), ni con la marca a OTRO movimiento; con la marca que
+--      pone fn_banco_descasar («cobros_descasar:<id del cobro>») lo suelta
+--      (a nulo), y después se casa otra vez (de nulo a un valor, como
+--      siempre). Y la marca de versión de c3 es la que pide c6. (Va antes
+--      de la 118, que tiene que ser la última.)
+do $$
+declare
+  v_dueno uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra  text := nullif(current_setting('mx3.obra', true), '');
+  v_desde date := nullif(current_setting('mx3.desde', true), '')::date;
+  v_obt   text;
+  v_esp   text := 'marca=t sin_marca=MX003 a_otro=MX003 con_marca=suelto de_nuevo=casado';
+  v_cobro uuid;
+  v_x     text;
+begin
+  if v_dueno is null or v_obra is null or v_desde is null then
+    insert into _pruebas values (119, 'un cobro suelta su movimiento del banco solo con la marca de c6', v_esp,
+                                 'omitida: falta dueño, obra o mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_montar();
+    perform pg_temp.c3_inmediato();
+    insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
+    values (-3400190, v_obra, 'C3-4190', v_desde + 1, 2000.00, 0);
+    v_cobro := (fn_cobro_registrar(jsonb_build_object('duplicado_confirmado', 'c3-pruebas: dato de prueba',
+                  'fecha', (v_desde + 5)::text, 'monto', '1234.56', 'medio', 'cheque', 'movimiento_id', 'c3-pruebas-mov-119',
+                  'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -3400190, 'monto', '1234.56'))))->>'cobro')::uuid;
+    v_obt := 'marca=' || coalesce((select (substring(p.prosrc from '([0-9]{10})')::bigint >= 2026092601)::text
+                                     from pg_proc p where p.oid = to_regprocedure('public.fn_puente_version()')), 'false');
+    v_obt := replace(replace(v_obt, 'true', 't'), 'false', 'f');
+    begin
+      update cobros set movimiento_id = null where id = v_cobro;
+      v_x := 'entró';
+    exception when others then v_x := sqlstate;
+    end;
+    v_obt := v_obt || ' sin_marca=' || v_x;
+    begin
+      perform set_config('mx_puente.escribe', 'cobros_descasar:' || v_cobro, true);
+      update cobros set movimiento_id = 'c3-pruebas-otro' where id = v_cobro;
+      v_x := 'entró';
+    exception when others then v_x := sqlstate;
+    end;
+    v_obt := v_obt || ' a_otro=' || v_x;
+    perform set_config('mx_puente.escribe', 'cobros_descasar:' || v_cobro, true);
+    update cobros set movimiento_id = null where id = v_cobro;
+    perform set_config('mx_puente.escribe', '', true);
+    v_obt := v_obt || ' con_marca=' || (select case when c.movimiento_id is null then 'suelto' else c.movimiento_id end
+                                          from cobros c where c.id = v_cobro);
+    update cobros set movimiento_id = 'c3-pruebas-mov-119b' where id = v_cobro;
+    v_obt := v_obt || ' de_nuevo=' || (select case when c.movimiento_id = 'c3-pruebas-mov-119b' then 'casado' else coalesce(c.movimiento_id, '-') end
+                                         from cobros c where c.id = v_cobro);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (119, 'un cobro suelta su movimiento del banco solo con la marca de c6', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
 -- 118. NO DEJA RASTRO: todo lo de arriba se deshizo. El libro, los papeles,
 --      las reglas, los historiales, los contadores, las secuencias de la
 --      app y las huellas están como al empezar. Va la última.

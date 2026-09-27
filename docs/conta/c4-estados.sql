@@ -91,6 +91,20 @@
 --     c3 viejo sale en rojo, con qué volver a pegar (con las policies de la
 --     forma vieja, también).
 --
+-- CAMBIOS PARA c6 (el banco, 26-sep-2026), mínimos (se vuelve a pegar
+-- encima, sin tocar el libro):
+--   · v_asiento_papel (3.5) lleva una rama más: el papel de los asientos
+--     de las fases que vienen detrás, el que dice v_papel_fases
+--     (origen_tabla, origen_id, papel, ruta). Este archivo la crea VACÍA si
+--     no existe (esas cuatro columnas, sin filas) y nunca la pisa: c6 la
+--     rehace con los suyos (el movimiento del banco, la cuota de un
+--     préstamo, el mes de prepagados), y así el asiento de un papel del
+--     banco no sale «el papel ya no está». No es de c4: no va en sus
+--     huellas ni en sus 28 vistas;
+--   · fn_estados_version(): la MARCA de esta versión (2026092601), como las
+--     de c2 y c3; c6 la pide al pegarse. Su prueba: la 111 de
+--     c4-pruebas.sql.
+--
 -- =====================================================================
 -- CÓMO SE LEEN LAS CIFRAS (lo mismo en todas las vistas)
 -- =====================================================================
@@ -2445,6 +2459,21 @@ window w as (partition by v.cuenta, case when v.estado = 'resultados' then v.eje
 -- falta es un rastro roto, y se ve. Un reverso lleva el papel de su
 -- original.
 -- ---------------------------------------------------------------------
+-- El papel de los asientos de las fases de después (c6: el banco): vacía
+-- aquí, solo si no existe; cada fase la rehace con los suyos («create or
+-- replace view», con estas mismas cuatro columnas). Volver a pegar este
+-- archivo no la toca: v_asiento_papel la lee, y ella no lee nada de c4.
+do $$
+begin
+  if to_regclass('public.v_papel_fases') is null then
+    execute 'create view public.v_papel_fases with (security_invoker = true) as
+               select null::text as origen_tabla, null::text as origen_id, null::text as papel, null::text as ruta
+                where false';
+    execute 'revoke all on public.v_papel_fases from public, anon, authenticated, service_role';
+    execute 'grant select on public.v_papel_fases to authenticated';
+  end if;
+end $$;
+
 create view public.v_asiento_papel with (security_invoker = true) as
 -- (Cada papel por su llave, con una búsqueda por índice por asiento y solo
 -- en la tabla de su papel.)
@@ -2506,6 +2535,12 @@ select a.id                                   as asiento_id,
     select true, 'Devengo estándar de horas aprobadas de ' || p.periodo, null
       from public.periodos p
      where a.origen_tabla = 'horas_devengo' and p.periodo = a.origen_id and p.tipo = 'mes'
+    union all
+    -- El papel de las fases de después (c6: el movimiento del banco, la
+    -- cuota de un préstamo, el mes de prepagados), por su llave.
+    select true, vp.papel, vp.ruta
+      from public.v_papel_fases vp
+     where vp.origen_tabla = a.origen_tabla and vp.origen_id = a.origen_id
     union all
     -- La apertura de la balanza es la que posteó fn_apertura (lo dice su
     -- procedencia), o el reverso de esa. Un asiento de apertura hecho a mano
@@ -7967,6 +8002,18 @@ begin
 end $$;
 revoke execute on function public.fn_apertura(date, text, text) from public, anon, authenticated, service_role;
 
+
+-- La MARCA de esta versión (AAAAMMDDNN), como fn_libro_version (c2) y
+-- fn_puente_version (c3): sube cuando una fase necesita un c4 más nuevo
+-- (c6 la pide, y la lee de su texto). No lee nada, nadie de la API la
+-- ejecuta, y va en las huellas de c4 (su prefijo fn_estados_).
+create or replace function public.fn_estados_version()
+returns bigint
+language sql
+immutable
+set search_path = public, pg_temp
+as $$ select 2026092601::bigint $$;
+revoke execute on function public.fn_estados_version() from public, anon, authenticated, service_role;
 
 -- =====================================================================
 -- 7.7 · LAS HUELLAS DE c4 (las protege «protecciones de c4», en 8). Como

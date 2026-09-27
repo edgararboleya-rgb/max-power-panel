@@ -58,6 +58,14 @@
 -- honorarios, los tickets de Home Depot, una balanza de QuickBooks ya
 -- cargada) no la pone en rojo.
 --
+-- CAMBIOS PARA c6 (el banco): con el banco en uso, el mes abierto trae
+-- asientos de verdad de c6 (lo que Edgar casa o clasifica, una cuota de
+-- préstamo, un mes de prepagados) y la caja chica se llena con retiros
+-- del banco. La 17 compara el efectivo final del flujo con los bancos Y la
+-- caja chica (tipo 'caja' de v_saldos_dinero), y la 26 mira solo los
+-- asientos que postea su escenario (y lo prueba con un asiento «del
+-- banco» ya en el mes, que no cuenta). c4-estados.sql no cambia.
+--
 -- CUÁNDO: recién pegado c4-estados.sql y ANTES de postear la apertura de
 -- verdad. Con la apertura ya en el libro (o la apertura cerrada), las
 -- pruebas que postean una apertura de prueba (29 a 36, 50, 51, 53, 56, 61,
@@ -1927,7 +1935,10 @@ end $$;
 -- 17. EL DINERO DE CADA MES (la gráfica del Panel): entradas − salidas =
 --     neto = final − inicial = operación + inversión + financiamiento +
 --     ajustes; el final de un mes es el inicial del siguiente; y el final
---     es el saldo de los bancos en el libro.
+--     es el saldo del efectivo en el libro: los bancos Y la caja chica
+--     (tipo 'caja' en v_saldos_dinero: la 1050 es efectivo del flujo; un
+--     retiro de cajero para la caja chica, como lo propone la bandeja de
+--     c6, no puede poner esta prueba en rojo).
 do $$
 declare
   v_obt text;
@@ -1949,7 +1960,7 @@ begin
          from v_flujo_real_por_mes a, v_flujo_real_por_mes b
         where a.periodo = current_setting('mx4.mes') and b.periodo = current_setting('mx4.sig')),
       (select case when f.efectivo_final = (select sum(s.saldo) from v_saldos_dinero s
-                                             where s.periodo = f.periodo and s.tipo = 'banco') then 't' else 'f' end
+                                             where s.periodo = f.periodo and s.tipo in ('banco', 'caja')) then 't' else 'f' end
          from v_flujo_real_por_mes f where f.periodo = current_setting('mx4.mes')))
       into v_obt;
     raise exception using errcode = 'MXT00';
@@ -2398,18 +2409,35 @@ end $$;
 --     foto), la factura, el trabajo externo, el cobro, el anticipo
 --     aplicado, la nota de crédito, la devolución, la balanza de apertura
 --     y el asiento a mano (su propio papel); un reverso lleva el papel de
---     su original. Todos con papel_existe.
+--     su original. Todos con papel_existe. Solo los asientos que postea
+--     el escenario (los de después de la cadena de antes): los de verdad
+--     del mes (el banco de c6, una cuota, un prepagado…) traen sus propias
+--     clases y no son de esta prueba.
 do $$
 declare
   v_obt text;
   v_esp text := 'aplicaciones_cobro=t cobros=t cobros_devoluciones=t facturas=t mano=t notas_credito=t recibos=t:recibos/c4-pruebas/1.jpg '
                 'reverso=t trabajos_externos=t';
+  v_pos bigint;
 begin
   if nullif(current_setting('mx4.desde', true), '') is null then
     insert into _pruebas values (26, 'del asiento a su papel, en cada clase', v_esp, 'omitida: falta el mes abierto', null);
     return;
   end if;
   begin
+    -- Un asiento de verdad de otra fase ya en el mes, ANTES del escenario
+    -- (como el cargo del banco que Edgar ya clasificó en c6): su clase no
+    -- es de esta prueba y no la pone en rojo. (Los candados de los recibos
+    -- antes que el libro, como en la app.)
+    perform pg_temp.c4_candados_recibos();
+    perform fn_postear_interno(jsonb_build_object('camino', 'puente', 'fecha', (current_setting('mx4.desde')::date + 1)::text,
+      'descripcion', 'c4-pruebas: un cargo del banco ya clasificado', 'origen_tabla', 'movimientos_banco',
+      'origen_id', '00000000-0000-4000-a000-0000000c4026',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '6130', 'monto', '15.00'),
+                                  jsonb_build_object('cuenta', fn_puente_cuenta_de('banco'), 'monto', '-15.00'))));
+    -- Dónde va la cadena antes del escenario: la prueba mira solo los
+    -- asientos que vienen después (los que postea el escenario).
+    select coalesce(max(a.cadena_pos), 0) into v_pos from asientos a;
     perform pg_temp.c4_escenario();
     select string_agg(x.k || '=' || x.v, ' ' order by x.k) into v_obt
       from (select y.k,
@@ -2418,6 +2446,7 @@ begin
               from (select case when p.origen_tabla is null and p.reversa_a is not null then 'reverso'
                                 when p.origen_tabla is null then 'mano' else p.origen_tabla end as k, p.*
                       from v_asiento_papel p
+                      join asientos a on a.id = p.asiento_id and a.cadena_pos > v_pos
                      where p.periodo = current_setting('mx4.mes')
                        and (p.origen_tabla is null or p.origen_tabla <> 'recibos' or p.origen_id = '-4410001')) y
              group by y.k) x;
@@ -7012,6 +7041,66 @@ begin
   end;
   insert into _pruebas values (109, 'el privilegio MAINTAIN (Postgres 17) sobre una tabla de c4 sale en rojo', v_esp,
                                coalesce(v_obt, '-'), case when v_obt = 'omitida' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 111. EL PAPEL DE LAS FASES DE DESPUÉS (c6): v_asiento_papel lee el papel
+--      de un asiento que no es de c3 ni de la apertura en v_papel_fases
+--      (la que c6 llena con el movimiento del banco, la cuota, el mes de
+--      prepagados): con su fila, el papel está y dice lo que ella dice;
+--      sin ella, «el papel ya no está». v_papel_fases no es de c4 (no va
+--      en sus huellas) y la marca de c4 es la que pide c6. (La vista se
+--      rehace un instante dentro de la prueba, con lock_timeout de 2 s:
+--      con la app leyendo, «omitida». Va antes de la 110, la última.)
+do $$
+declare
+  v_banco text;
+  v_gasto text;
+  v_desde date := nullif(current_setting('mx4.desde', true), '')::date;
+  v_a     uuid;
+  v_b     uuid;
+  v_obt   text;
+  v_esp   text := 'marca=t no_es_de_c4=t con_fila=t:c4-pruebas: el papel de una fase sin_fila=f';
+begin
+  select codigo into v_banco from cuentas where codigo = '1010' and activa and imputable;
+  select codigo into v_gasto from cuentas where tipo = 'gasto' and regla_obra = 'prohibida' and activa and imputable
+   order by (codigo = '6130') desc, codigo limit 1;
+  if v_banco is null or v_gasto is null or v_desde is null or to_regclass('public.v_papel_fases') is null then
+    insert into _pruebas values (111, 'v_asiento_papel lee el papel de las fases de después (v_papel_fases)', v_esp,
+                                 'omitida: falta la cuenta del banco, un gasto, el mes abierto o v_papel_fases', null);
+    return;
+  end if;
+  begin
+    execute 'set local lock_timeout = ''2s''';
+    v_obt := format('marca=%s no_es_de_c4=%s',
+                    coalesce((select substring(p.prosrc from '([0-9]{10})')::bigint >= 2026092601
+                                from pg_proc p where p.oid = to_regprocedure('public.fn_estados_version()')), false),
+                    not exists (select 1 from fn_estados_huellas_calcular() h where h.objeto = 'v_papel_fases'));
+    v_obt := replace(replace(v_obt, 'true', 't'), 'false', 'f');
+    execute $v$create or replace view public.v_papel_fases with (security_invoker = true) as
+                 select 'c4_fase_prueba'::text as origen_tabla, 'c4-pruebas-111'::text as origen_id,
+                        'c4-pruebas: el papel de una fase'::text as papel, null::text as ruta$v$;
+    v_a := (fn_postear_interno(jsonb_build_object(
+             'camino', 'puente', 'origen_tabla', 'c4_fase_prueba', 'origen_id', 'c4-pruebas-111',
+             'fecha', to_char(v_desde + 4, 'YYYY-MM-DD'), 'descripcion', 'c4-pruebas: asiento de una fase (se deshace)',
+             'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_gasto, 'monto', '11.00'),
+                                         jsonb_build_object('cuenta', v_banco, 'monto', '-11.00')))) ->> 'id')::uuid;
+    v_b := (fn_postear_interno(jsonb_build_object(
+             'camino', 'puente', 'origen_tabla', 'c4_fase_prueba', 'origen_id', 'c4-pruebas-111b',
+             'fecha', to_char(v_desde + 4, 'YYYY-MM-DD'), 'descripcion', 'c4-pruebas: asiento sin papel (se deshace)',
+             'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_gasto, 'monto', '12.00'),
+                                         jsonb_build_object('cuenta', v_banco, 'monto', '-12.00')))) ->> 'id')::uuid;
+    select v_obt || format(' con_fila=%s:%s', case when a.papel_existe then 't' else 'f' end, a.papel)
+      into v_obt from v_asiento_papel a where a.asiento_id = v_a;
+    select v_obt || format(' sin_fila=%s', case when a.papel_existe then 't' else 'f' end)
+      into v_obt from v_asiento_papel a where a.asiento_id = v_b;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate '55P03' then v_obt := 'omitida';
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 120);
+  end;
+  insert into _pruebas values (111, 'v_asiento_papel lee el papel de las fases de después (v_papel_fases)', v_esp, coalesce(v_obt, '-'),
+                               case when v_obt = 'omitida' then null else coalesce(v_obt = v_esp, false) end);
 end $$;
 
 -- 110. NO DEJA RASTRO: todo lo de arriba se deshizo. El libro, los papeles,

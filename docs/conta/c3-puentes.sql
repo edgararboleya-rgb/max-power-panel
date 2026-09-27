@@ -61,6 +61,16 @@
 --     control («c2 y c3 al día»). No lee nada, nadie de la API la ejecuta,
 --     y la vigilan las huellas de c2 (su prefijo fn_puente_).
 --
+-- CAMBIOS PARA c6 (el banco, 26-sep-2026), mínimos y sin tocar el libro:
+--   · la guarda de los cobros (fn_puente_papeles_guarda) deja SOLTAR el
+--     movimiento del banco de un cobro (movimiento_id, de su valor a nulo)
+--     solo con la marca de c6 («cobros_descasar:<id del cobro>», la pone
+--     fn_banco_descasar cuando Edgar des-casa ese depósito, con su motivo y
+--     su rastro en el banco). Sin la marca sigue sin cambiar, y de un valor
+--     a OTRO nunca: el cobro se casa una vez con su movimiento;
+--   · la marca de versión sube a 2026092601 (c6 la pide). Su prueba: la 119
+--     de c3-pruebas.sql.
+--
 -- =====================================================================
 -- EL CONTRATO DE LOS PUENTES (lo siguen todos)
 -- =====================================================================
@@ -2804,8 +2814,9 @@ revoke execute on function public.fn_puente_reglas_historial() from public, anon
 -- Lo que solo se añade (los historiales) y los papeles de dinero que nacen
 -- aquí (cobros, aplicaciones, notas de crédito): no se editan ni se borran.
 -- Un cobro solo cambia para anularse (fn_cobro_anular) o para casarse con
--- su movimiento del banco (f06: movimiento_id, de nulo a su valor); y todos
--- dejan poner su asiento vivo al puente (contabilizado_en).
+-- su movimiento del banco (f06: movimiento_id, de nulo a su valor; y de su
+-- valor a nulo solo cuando c6 lo des-casa, con su marca); y todos dejan
+-- poner su asiento vivo al puente (contabilizado_en).
 create or replace function public.fn_puente_papeles_guarda()
 returns trigger
 language plpgsql
@@ -2840,9 +2851,11 @@ begin
        and not (old.estado = 'vigente' and new.estado = 'anulado' and v_marca = 'cobros_anular:' || old.id) then
       raise exception using errcode = 'MX003', message = 'Un cobro se anula solo con fn_cobro_anular, y no vuelve.';
     end if;
-    if new.movimiento_id is distinct from old.movimiento_id and old.movimiento_id is not null then
+    if new.movimiento_id is distinct from old.movimiento_id and old.movimiento_id is not null
+       and not (new.movimiento_id is null and v_marca = 'cobros_descasar:' || old.id) then
       raise exception using errcode = 'MX003',
-        message = 'El cobro ya está casado con su movimiento del banco: eso no cambia (se anula y se registra el bueno).';
+        message = 'El cobro ya está casado con su movimiento del banco: eso no cambia (si el casado estaba mal, se des-casa el '
+                  'movimiento con fn_banco_descasar, con su motivo; si el cobro estaba mal, se anula y se registra el bueno).';
     end if;
   elsif (to_jsonb(new) - 'contabilizado_en') is distinct from (to_jsonb(old) - 'contabilizado_en') then
     raise exception using errcode = 'MX003',
@@ -7970,7 +7983,7 @@ returns bigint
 language sql
 immutable
 set search_path = public, pg_temp
-as $$ select 2026092504::bigint $$;
+as $$ select 2026092601::bigint $$;
 revoke execute on function public.fn_puente_version() from public, anon, authenticated, service_role;
 
 
