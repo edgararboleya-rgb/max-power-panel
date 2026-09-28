@@ -164,4 +164,15 @@ tránsito, sin tocar 1010.
   cheques juntos; qué día cierra cada Amex; y la conciliación de QuickBooks
   de Chase al 30-sep (saldo del statement y partidas en tránsito) para la
   conciliación de apertura.
+- **En producción (27-sep):** c2, c3 y c4 nuevos y c6 pegados por Edgar
+  (23:2x–23:3x UTC), todos en `true`; c2-pruebas 82/82, c3-pruebas 119 +
+  la 45 omitida, c6-pruebas **100/100** y c4-pruebas **111/111** (las dos
+  últimas repetidas una a la vez: lanzadas juntas se cruzaron candados y
+  salieron tres en rojo por deadlock o lock timeout, no por defecto).
+  Sin rastro; cadena, puentes, banco y estados en verde. Evidencia en
+  `pruebas/conta/resultados/2026-09-27-produccion/`. Queda pendiente la
+  cuarta ronda de ataque si Edgar la aprueba, y lo suyo: préstamos y pólizas
+  con su saldo al 30-sep, la conciliación de QuickBooks de Chase al 30-sep,
+  el patrón de su Zelle, un QFX real de cada Amex, y el aviso de cuota de
+  Supabase (restricción desde el 26-oct).
 
