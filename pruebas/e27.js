@@ -121,7 +121,7 @@ const EST = { id: EST_ID, nombre: 'NCH', modo: 'remodelacion', escenario: 'A', f
     return { cu: window.MXP_PRUEBA.e0.cuentas(conDemo), h: window.MXP_PRUEBA.e0.horas(conDemo, e, {}) };
   }, [ITEMS, EST]);
   ok('lo que se demuele no cuenta como pieza nueva: «DEMO - Switches» no es un switch', dem.cu.dispositivo === 126, dem.cu.dispositivo);
-  ok('con las dos familias juntas (80 del renglón viejo + 60 de «DEMO - …») AVISA de demolición doble', dem.h.avisos.some(a => /DEMOLICIÓN DOBLE/.test(a) && /80/.test(a) && /60/.test(a)), dem.h.avisos.join(' | ').slice(0, 160));
+  ok('con las dos familias juntas (80 del renglón viejo + 60 de «DEMO - …») AVISA de demolición doble', dem.h.avisos.some(a => /DEMOLICIÓN DOBLE/i.test(a) && /80/.test(a) && /60/.test(a)), dem.h.avisos.join(' | ').slice(0, 160));
   await p.evaluate(([c, i]) => window.MXP_PRUEBA.e0.datos({ catalogo: c.filter(x => !/ICRA|LIFT|PERMISO|MOVILIZ/.test(x.item)), items: i, config: {}, escenarios: [] }), [CAT, ITEMS]);
   const sinCat = await p.evaluate(([i, e]) => window.MXP_PRUEBA.e0.horas(i, e, {}), [ITEMS, EST]);
   ok('si falta el ítem en el catálogo la regla no corre pero AVISA y nombra el SQL', sinCat.filas.length === 6 && sinCat.avisos.length === 4 && /e27/.test(sinCat.avisos[0]), sinCat.avisos[0]);
@@ -233,9 +233,9 @@ const EST = { id: EST_ID, nombre: 'NCH', modo: 'remodelacion', escenario: 'A', f
   await datos(cfg2);
   const salOn = await p.evaluate(([e, c]) => window.MXP_PRUEBA.e0.salida(Object.assign({}, e, { usa_luz_ref: true }), c), [EST, { items: ITEMS_RARO, autos: [] }]);
   const salOff = await p.evaluate(([e, c]) => window.MXP_PRUEBA.e0.salida(e, c), [EST, { items: ITEMS_RARO, autos: [] }]);
-  ok('al salir, las luminarias a precio de referencia se dicen APARTE: ese dinero SÍ está en el precio', /TU PRECIO DE REFERENCIA/.test(salOn) && /S[IÍ] est[aá] en el precio/.test(salOn), salOn.slice(0, 130));
+  ok('al salir, las luminarias a precio de referencia se dicen APARTE: ese dinero SÍ está en el precio', /TU PRECIO DE REFERENCIA/i.test(salOn) && /S[IÍ] est[aá] en el precio/i.test(salOn), salOn.slice(0, 130));
   ok('y avisa de lo que importa: si el supply viene más caro, la diferencia la pone Edgar', /la diferencia la pones t[uú]/i.test(salOn), '');
-  ok('sin la referencia encendida, el aviso sigue siendo el de siempre («el precio NO los incluye»)', !/PRECIO DE REFERENCIA/.test(salOff) && /NO los incluye/.test(salOff), salOff.slice(0, 90));
+  ok('sin la referencia encendida, el aviso sigue siendo el de siempre («el precio NO los incluye»)', !/PRECIO DE REFERENCIA/i.test(salOff) && /NO los incluye/i.test(salOff), salOff.slice(0, 90));
   await datos();
   // la segunda cuota, la más cara, gana aunque llegue otro día
   const yaCotizado = ITEMS.map(x => x.id === 'c1' ? Object.assign({}, x, { precio: 168.40, origen: 'cotizacion-cuota' }) : x);
@@ -348,8 +348,8 @@ const EST = { id: EST_ID, nombre: 'NCH', modo: 'remodelacion', escenario: 'A', f
   const LC1 = ITEMS.find(x => x.id === 'c1');   // la STAK 2x2 de 5000 lm, por índice no: el fixture creció
   const chipOff = await p.evaluate(([l, e]) => window.MXP_PRUEBA.e0.cero(l, e), [LC1, EST]);
   const chipOn = await p.evaluate(([l, e]) => window.MXP_PRUEBA.e0.cero(l, Object.assign({}, e, { usa_luz_ref: true })), [LC1, EST]);
-  ok('sin referencia el renglón sigue diciendo POR COTIZAR', chipOff.est === 'suministro' && /POR COTIZAR/.test(chipOff.chip), chipOff.chip);
-  ok('con referencia dice REFERENCIA y ENSEÑA el precio que se usó', chipOn.est === 'referencia' && /REFERENCIA/.test(chipOn.chip) && /150/.test(chipOn.chip), chipOn.chip);
+  ok('sin referencia el renglón sigue diciendo POR COTIZAR', chipOff.est === 'suministro' && /POR COTIZAR/i.test(chipOff.chip), chipOff.chip);
+  ok('con referencia dice REFERENCIA y ENSEÑA el precio que se usó', chipOn.est === 'referencia' && /REFERENCIA/i.test(chipOn.chip) && /150/.test(chipOn.chip), chipOn.chip);
   ok('y sigue alertando: la cuota de verdad no ha llegado', chipOn.alerta === true && /cuota/.test(chipOn.motivo), chipOn.motivo);
 
   /* ===== 8 · leer la cuota del supply ===== */
@@ -418,9 +418,10 @@ CES MIAMI — QUOTE 55120
     const d = document.createElement('div'); d.innerHTML = window.MXP_PRUEBA.e0.tarjetas(est, c);
     return { sel: [...d.querySelectorAll('select.luz-fam')].map(x => x.value).filter(Boolean),
              olvidar: d.querySelectorAll('.luz-fam-olvida').length,
+             lapiz: !!d.querySelector('.ico-lapiz'),
              texto: d.textContent.replace(/\s+/g, ' ') };
   }, EST);
-  ok('lo enseñado sale ya elegido en su fila, con su ✎, y se puede olvidar desde la lista', pintEns.sel.join() === 'highbay' && pintEns.olvidar === 1 && /✎/.test(pintEns.texto) && /Lo que me enseñaste \(1/.test(pintEns.texto), JSON.stringify([pintEns.sel, pintEns.olvidar]));
+  ok('lo enseñado sale ya elegido en su fila, con su ✎, y se puede olvidar desde la lista', pintEns.sel.join() === 'highbay' && pintEns.olvidar === 1 && pintEns.lapiz && /Lo que me enseñaste \(1/.test(pintEns.texto), JSON.stringify([pintEns.sel, pintEns.olvidar]));
   await datos();
   const flojo = await p.evaluate(e => window.MXP_PRUEBA.e0.tarjetas(e, { items: null, autos: null }), EST);
   ok('un cálculo a medias (sin ítems ni automáticos) no rompe ninguna tarjeta', !/Una tarjeta nueva falló/.test(flojo), flojo.slice(0, 60));
@@ -449,7 +450,7 @@ CES MIAMI — QUOTE 55120
     window.MXP_PRUEBA.e0.datos({ catalogo: cv, items: [{ id: 'z', item: '6" GRS CONDUIT', cantidad: 100, precio: 0, horas: 0.09, unidad: 'LF' }], config: {}, estimados: [] });
     const h = window.MXP_PRUEBA.e0.tarjetas(e, { items: [{ id: 'z', item: '6" GRS CONDUIT', cantidad: 100, precio: 0, horas: 0.09, unidad: 'LF' }], autos: [] });
     const d = document.createElement('div'); d.innerHTML = h;
-    return { sale: /La auditor[ií]a del cat[aá]logo/.test(h), enBid: /EN ESTE BID/.test(h), sql: (d.querySelector('#aud-sql') || {}).value || '' };
+    return { sale: /La auditor[ií]a del cat[aá]logo/.test(h), enBid: /EN ESTE BID/i.test(h), sql: (d.querySelector('#aud-sql') || {}).value || '' };
   }, [CAT_VIEJO, EST]);
   ok('la tarjeta sale en el estimador y marca las que están en ESTE bid', tarj.sale && tarj.enBid && /GRS CONDUIT/.test(tarj.sql), JSON.stringify([tarj.sale, tarj.enBid]));
   await datos();

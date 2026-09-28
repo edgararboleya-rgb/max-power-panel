@@ -121,7 +121,12 @@
     "🔗": "enlace", "🧩": "pieza", "🎯": "diana", "🔌": "enchufe", "🔥": "fuego", "🚗": "coche", "🌍": "tierra",
     "⛏": "pala", "🔲": "toma", "🗄": "archivo", "🧵": "hilo",
     // Ficha v2 (P179)
-    "🧭": "navegar", "🏗": "grua", "🏷": "etiqueta", "📣": "megafono", "⏰": "reloj", "⏳": "reloj", "📬": "correo"
+    "🧭": "navegar", "🏗": "grua", "🏷": "etiqueta", "📣": "megafono", "⏰": "reloj", "⏳": "reloj", "📬": "correo",
+    // Tanda 4 (Cobre y luz): los emojis que el observador no conocía. El código ya no los usa;
+    // esto es la red de seguridad. Un valor vacío quiere decir «quitar»: se borra el emoji
+    // (y el espacio que lo sigue) sin poner icono.
+    "⏱": "reloj", "📈": "grafica", "📨": "correo", "↺": "deshacer", "📑": "doc",
+    "📎": "", "🚚": "", "🔕": "", "🧮": "", "🔩": "", "↪": "", "⚇": "", "🔦": "", "🆕": ""
   };
   // Para que la app pinte un icono directamente, sin pasar por un emoji:
   // window.MXP_ICONO("camara") devuelve el mismo <span class="ico ico-camara"> que
@@ -146,6 +151,11 @@
     RE.lastIndex = 0;
     while ((m = RE.exec(txt))) {
       if (m.index > ultimo) frag.appendChild(document.createTextNode(txt.slice(ultimo, m.index)));
+      if (!MAPA[m[1]]) {                       // «quitar»: fuera el emoji y el espacio que lo sigue
+        ultimo = m.index + m[0].length;
+        if (txt[ultimo] === " ") ultimo++;
+        continue;
+      }
       const s = document.createElement("span");
       s.className = "ico ico-" + MAPA[m[1]];
       s.setAttribute("aria-hidden", "true");

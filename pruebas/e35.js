@@ -125,7 +125,7 @@ const cerca = (a, b) => Math.abs(a - b) < 0.011;
   /* === 9. el panel de líneas a mano se pinta con el tipo de cada una === */
   const html = await p.evaluate(([e, c]) => window.MXP_PRUEBA.e0.mano(e, c), [ESTT, cT]);
   ok('cada línea trae su selector con el tipo elegido', (html.match(/rap-mat-tipo/g) || []).length === 8 && /value="log" selected/.test(html) && /value="allow" selected/.test(html) && /value="cot" selected/.test(html));
-  ok('y su chip: LOGÍSTICA, ALLOWANCE, COTIZACIÓN', /LOGÍSTICA<\/span>/.test(html) && /ALLOWANCE<\/span>/.test(html) && /COTIZACIÓN<\/span>/.test(html));
+  ok('y su chip: LOGÍSTICA, ALLOWANCE, COTIZACIÓN', /LOGÍSTICA<\/span>/i.test(html) && /ALLOWANCE<\/span>/i.test(html) && /COTIZACIÓN<\/span>/i.test(html));
   ok('el total de material a mano no mete la logística', /Material a mano — \$22,000\.00/.test(html) && /\$15,031\.00 en logística/.test(html));
 
   ok('sin errores de consola', errs.length === 0, errs.join(' // ').slice(0, 200));

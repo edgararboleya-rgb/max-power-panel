@@ -43,7 +43,7 @@ const L = (item, cantidad, precio, horas) => ({ item, cantidad, precio, horas })
   /* === 1. cada $0 dice POR QUÉ, y solo algunos alertan === */
   const z1 = await cero(L('400A SWITCHGEAR', 2, 0, 14));
   ok('switchgear a $0 → POR COTIZAR, alerta, y con «?» porque lo supuso la regla',
-    z1.est === 'suministro' && z1.alerta && /POR COTIZAR \?/.test(z1.chip), JSON.stringify(z1.chip) + ' alerta=' + z1.alerta);
+    z1.est === 'suministro' && z1.alerta && /POR COTIZAR \?/i.test(z1.chip), JSON.stringify(z1.chip) + ' alerta=' + z1.alerta);
   const z2 = await cero(L('CEILING FAN - INSTALL ONLY', 4, 0, 1));
   ok('el que pone el cliente → BY OWNER confirmado y NO alerta', z2.est === 'by_owner' && z2.conf && !z2.alerta, z2.chip);
   const z3 = await cero(L('5" GRS CONDUIT', 10, 0, 0.2));

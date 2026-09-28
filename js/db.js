@@ -136,7 +136,7 @@
     // Un candado de la base rechazó el valor
     if (cod === "23514") {
       if (/modo/i.test(txt)) {
-        return "El modo ⚡ Rápido todavía no está dado de alta en la base. " + falta;
+        return "El modo Rápido todavía no está dado de alta en la base. " + falta;
       }
       if (/horas_horas_check/i.test(txt)) return "Un reporte de horas va de más de 0 hasta 16 horas.";
       if (/facturas_retencion/i.test(txt)) return "La retención no puede ser negativa ni llevar más de dos decimales.";
@@ -740,12 +740,12 @@
     // ¿Este teléfono sigue apuntado a mi nombre? (solo leo los míos: la tabla no deja más)
     miSuscripcion: endpoint => leer(`push_suscripciones?select=id&endpoint=eq.${encodeURIComponent(endpoint)}`)
       .then(f => f.length > 0),
-    // 🔔 Cuántos teléfonos tiene apuntados cada persona (solo el dueño; sin las llaves).
+    // Cuántos teléfonos tiene apuntados cada persona (solo el dueño; sin las llaves).
     // { uid: { telefonos, ultimo } } — o null si la base no contesta.
     avisosPorPersona: () => api("rpc/fn_avisos_por_persona", { metodo: "POST", cuerpo: {} })
       .then(filas => Object.fromEntries((filas || []).map(f => [f.usuario_id, { telefonos: Number(f.telefonos) || 0, ultimo: f.ultimo || "" }])))
       .catch(() => null),
-    // 💬 Chat del equipo
+    // Chat del equipo
     miUid: () => uid(),
     leerMensajes: () => leer("mensajes?select=*&order=creado"),
     enviarMensaje: (texto, destinatarioId) =>
@@ -922,7 +922,7 @@
     rutaMini,
     subirMiniatura,
     tokenSesion: () => (sesion ? sesion.access_token : null),
-    // 🤖 El asistente: manda la conversación al cerebro con el token del
+    // El asistente: manda la conversación al cerebro con el token del
     // usuario. El cerebro mira ese token para saber quién pregunta y qué
     // puede ver (el equipo nunca recibe dinero).
     // (26/09, cerebro v30) Un trabajo largo sigue en varias llamadas: la
@@ -956,7 +956,7 @@
       if (res && res.sigue) return { respuesta: "Esto me está llevando demasiado. Lo que alcancé lo recuerdo: dime «sigue» y continúo, o pregúntamelo por partes." };
       return res;
     },
-    // 💵 La IA decide el reparto de los pagos de un estimado (función «reparto»).
+    // La IA decide el reparto de los pagos de un estimado (función «reparto»).
     // Solo viajan porcentajes, horas, tamaño y el trabajo sin precios.
     async decidirReparto(cuerpo) {
       if (!sesion) throw new Error("Sin sesión");

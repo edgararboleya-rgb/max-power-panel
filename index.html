@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-title" content="Max Power">
   <link rel="apple-touch-icon" href="assets/icon-180.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=238">
+  <link rel="stylesheet" href="css/styles.css?v=242">
 </head>
 <body>
 
@@ -217,14 +217,14 @@
             </label>
             <label>¿Fue trabajo de un Change Order? (toca la flechita y elígelo)
               <select name="co">
-                <option value="">📄 Contrato base</option>
+                <option value="">Contrato base</option>
               </select>
             </label>
-            <label>⚠ ¿Quedó algún pendiente? (faltó material, circuito sin tirar…)
+            <label>¿Quedó algún pendiente? (faltó material, circuito sin tirar…)
               <textarea name="pendiente" rows="2" placeholder="Ej: faltó cable 14/2 — circuito del pasillo sin tirar" autocomplete="off"></textarea>
             </label>
             <label class="chk-urg-label">
-              <input name="urgente" type="checkbox"> 🔴 Es urgente — frena el trabajo
+              <input name="urgente" type="checkbox"> <span class="ico ico-rojo" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.5" fill="#E5484D"/></svg></span>Es urgente — frena el trabajo
             </label>
             <p class="modal-nota">Tu reporte se guarda directo en el sistema y Edgar lo ve al instante.</p>
             <button type="submit" class="btn btn-pulse btn-entrar">✓ Guardar mi reporte</button>
@@ -244,12 +244,12 @@
         <div id="materiales-panel"></div>
       </section>
 
-      <!-- 💬 CHAT: mensajes del equipo (grupo y privados) -->
+      <!-- CHAT: mensajes del equipo (grupo y privados) -->
       <section id="vista-chat" hidden>
         <div id="chat-panel"></div>
       </section>
 
-      <!-- 🤖 EL ASISTENTE: el chat con el cerebro. Lo ve todo el mundo;
+      <!-- EL ASISTENTE: el chat con el cerebro. Lo ve todo el mundo;
            el equipo tiene su propia versión sin nada de dinero. -->
       <section id="vista-asistente" hidden>
         <div id="asistente-panel"></div>
@@ -303,7 +303,7 @@
     <footer class="pie">
       <p><strong>Datos en vivo</strong> — base de datos en la nube · finanzas conciliadas con QuickBooks</p>
       <p>Max Power Electrical Solutions, Inc. · mxpes.com</p>
-      <div class="licencia">FL EC LICENSE #EC13016045</div>
+      <div class="licencia">FL Electrical Contractor License <span class="mono">EC13016045</span></div>
     </footer>
 
     <!-- La barra de abajo («Cobre y luz», opción A): Hoy · Proyectos · Más, para todos,
@@ -380,10 +380,10 @@
 
   <script src="assets/logo.js?v=236"></script>
   <script src="assets/config.js?v=209"></script>
-  <script src="js/db.js?v=241"></script>
+  <script src="js/db.js?v=242"></script>
   <script src="js/alcance.js?v=211"></script>
-  <script src="js/app.js?v=241"></script>
-  <script src="js/i18n.js?v=241"></script>
-  <script src="js/iconos.js?v=224"></script>
+  <script src="js/app.js?v=242"></script>
+  <script src="js/i18n.js?v=242"></script>
+  <script src="js/iconos.js?v=242"></script>
 </body>
 </html>

@@ -156,7 +156,7 @@
   const EN_APP = localStorage.getItem("mxp_idioma") === "en";
   const LOCALE = EN_APP ? "en-US" : "es-US";
   const proyectos = () => (state ? state.proyectos : []);
-  // La usan el 💵 del hito y el ✓ cobrada: desde el 13-sep se llamaba sin existir
+  // La usan el botón de cobrar del hito y el ✓ cobrada: desde el 13-sep se llamaba sin existir
   // y los dos botones se rompían sin guardar nada (arreglado el 24-sep).
   const proyectoPorId = id => proyectos().find(x => x.id === id) || null;
   const eventos = () => (state ? state.eventos : []);
@@ -168,7 +168,7 @@
       .filter(i => i.fecha && i.resultado === "programada" && !i.eventoId)
       .map(i => ({
         id: "insp-" + i.id, fecha: i.fecha, hora: "",
-        titulo: `🏛 Inspección ${i.tipo}`, proyecto: i.proyecto,
+        titulo: `Inspección ${i.tipo}`, proyecto: i.proyecto,
         nota: i.jurisdiccion ? "Jurisdicción: " + i.jurisdiccion : "",
         alerta: true
       })));
@@ -259,7 +259,7 @@
     let f = document.getElementById("franja-sin-senal");
     if (!copia) { if (f) f.remove(); return; }
     if (!f) { f = document.createElement("div"); f.id = "franja-sin-senal"; f.className = "franja-sin-senal"; $app.prepend(f); }
-    f.innerHTML = `<span>📶 Sin señal — estás viendo los datos de <b>${esc(horaCopia(copia.el))}</b>${copia.recorte && copia.recorte.length ? " (sin fotos)" : ""}. Lo que apuntes se manda cuando vuelva.</span><button type="button" class="accion secundaria" id="franja-reintentar">Reintentar</button>`;
+    f.innerHTML = `<span>${ico("senal")} Sin señal — estás viendo los datos de <b>${esc(horaCopia(copia.el))}</b>${copia.recorte && copia.recorte.length ? " (sin fotos)" : ""}. Lo que apuntes se manda cuando vuelva.</span><button type="button" class="accion secundaria" id="franja-reintentar">Reintentar</button>`;
     f.querySelector("#franja-reintentar").addEventListener("click", () => arrancarApp());
   }
   // Entra con la copia del teléfono. Devuelve false si no hay copia de este usuario.
@@ -414,7 +414,7 @@
       guardarCopia(nuevo);
       if (modoSinSenal) { modoSinSenal = false; franjaSinSenal(null); }
     } catch (err) {
-      avisar(modoSinSenal || esFalloDeRed(err) ? "📶 Sin señal: sigues viendo la copia del teléfono." : "Error actualizando: " + err.message, true);
+      avisar(modoSinSenal || esFalloDeRed(err) ? "Sin señal: sigues viendo la copia del teléfono." : "Error actualizando: " + err.message, true);
       return;
     }
     repintarVistaActiva(abrirId);
@@ -472,7 +472,7 @@ function esFalloDeRed(err) {
     }
     caja.innerHTML = `
       <div class="sin-senal-caja">
-        <div class="sin-senal-icono">📶</div>
+        <div class="sin-senal-icono">${ico("senal")}</div>
         <h3>Sin señal</h3>
         <p>No se pudo conectar. Tu sesión sigue guardada — no hace falta volver a entrar.</p>
         <button type="button" class="accion" id="sin-senal-btn">Reintentar</button>
@@ -841,44 +841,44 @@ function esFalloDeRed(err) {
   }
 
 
-  // ---------- 📋 Licencia y seguros + 📖 guía rápida del código ----------
+  // ---------- Licencia y seguros + guía rápida del código ----------
   // Guía de CAMPO: los números que se usan en la obra, con su artículo.
   // Base: NEC 2023 (FBC 8ª ed). Para casos raros, confirmar en NFPA LiNK.
   const NEC_SECCIONES = [
-    { t: "🔌 Cable Romex (NM) — amperaje máximo", art: "310.16 (col. 60°C)", filas: [
+    { t: "Cable Romex (NM) — amperaje máximo", art: "310.16 (col. 60°C)", filas: [
       ["#14", "15 A"], ["#12", "20 A"], ["#10", "30 A"], ["#8", "40 A"], ["#6", "55 A"]] },
-    { t: "🧵 THHN en tubería — amperaje (75°C)", art: "310.16", filas: [
+    { t: "THHN en tubería — amperaje (75°C)", art: "310.16", filas: [
       ["#12", "25 A"], ["#10", "35 A"], ["#8", "50 A"], ["#6", "65 A"], ["#4", "85 A"],
       ["#2", "115 A"], ["#1/0", "150 A"], ["#2/0", "175 A"], ["#4/0", "230 A"]] },
-    { t: "🏠 Servicio o feeder de vivienda — calibre", art: "310.12", filas: [
+    { t: "Servicio o feeder de vivienda — calibre", art: "310.12", filas: [
       ["100 A", "#4 cobre · #2 aluminio"], ["125 A", "#2 cobre · #1/0 aluminio"],
       ["150 A", "#1 cobre · #2/0 aluminio"], ["200 A", "#2/0 cobre · #4/0 aluminio"]] },
-    { t: "⛏ Zanjas — profundidad mínima", art: "300.5 (tabla)", filas: [
+    { t: "Zanjas — profundidad mínima", art: "300.5 (tabla)", filas: [
       ["PVC", '18"'], ["Cable directo (UF)", '24"'], ["Tubería metálica rígida", '6"'],
       ["Bajo driveway de vivienda", '18"'], ["Circuito 120V 20A con GFCI", '12"']] },
-    { t: "🌍 Tierra — varillas y calibres", art: "250.53 · 250.66 · 250.122", filas: [
-      ["Varillas", "2 de 8 ft (salvo que UNA mida <25Ω) · sepáralas 6 ft o más"],
+    { t: "Tierra — varillas y calibres", art: "250.53 · 250.66 · 250.122", filas: [
+      ["Varillas", "2 de 8 ft (salvo que una mida <25Ω) · sepáralas 6 ft o más"],
       ["Cable a las varillas (GEC)", "nunca se exige más grueso que #6 cobre"],
       ["Tierra del equipo (EGC)", "breaker 15A→#14 · 20A→#12 · 30-60A→#10 · 100A→#8 · 200A→#6"]] },
-    { t: "🚗 Cargadores EV — breaker y cable", art: "Art. 625 (carga continua ×125%)", filas: [
+    { t: "Cargadores EV — breaker y cable", art: "Art. 625 (carga continua ×125%)", filas: [
       ["Cargador de 32 A", "breaker 40 A · #8"],
       ["Cargador de 40 A", "breaker 50 A · #6"],
       ["Cargador de 48 A", "breaker 60 A · #6 THHN en tubería (Romex #6 NO llega)"],
       ["Receptáculo 14-50R", "lleva GFCI (NEC 2023)"]] },
-    { t: "⚡ GFCI en vivienda (NEC 2023)", art: "210.8(A)", filas: [
-      ["Va en", "baños · TODA la cocina · garaje · exterior · sótano · laundry · a 6 ft de cualquier fregadero"]] },
-    { t: "🔥 AFCI", art: "210.12", filas: [
+    { t: "GFCI en vivienda (NEC 2023)", art: "210.8(A)", filas: [
+      ["Va en", "baños · toda la cocina · garaje · exterior · sótano · laundry · a 6 ft de cualquier fregadero"]] },
+    { t: "AFCI", art: "210.12", filas: [
       ["Va en", "casi todos los circuitos 120V 15/20A de vivienda (cuartos, salas, cocina, laundry)"]] },
-    { t: "🔲 Tomacorrientes — distancias", art: "210.52", filas: [
+    { t: "Tomacorrientes — distancias", art: "210.52", filas: [
       ["Paredes", "ninguna a más de 6 ft de una toma (cada 12 ft)"],
       ["Countertop", 'todo tramo de 12" o más lleva toma · ninguna a más de 24" '],
       ["Baño", "a máximo 3 ft del lavamanos · circuito de 20 A dedicado"]] },
-    { t: "🗄 Frente al panel — espacio libre", art: "110.26 · 240.24", filas: [
+    { t: "Frente al panel — espacio libre", art: "110.26 · 240.24", filas: [
       ["Fondo", '36"'], ["Ancho", '30"'], ["Alto libre", "6.5 ft"],
       ["Breaker más alto", "máx 6 ft 7 in del piso"]] },
-    { t: "📦 Box fill — pulgadas cúbicas por cable", art: "314.16", filas: [
+    { t: "Box fill — pulgadas cúbicas por cable", art: "314.16", filas: [
       ["#14", "2.0 in³"], ["#12", "2.25 in³"], ["#10", "2.5 in³"],
-      ["Dispositivo (toma/switch)", "cuenta DOBLE"], ["Tierras", "todas juntas = 1 (la mayor)"],
+      ["Dispositivo (toma/switch)", "cuenta doble"], ["Tierras", "todas juntas = 1 (la mayor)"],
       ['Caja 4" sq × 2-1/8"', "30.3 in³"]] },
   ];
   function pintarInicioEmpresa() {
@@ -888,21 +888,21 @@ function esFalloDeRed(err) {
       let chip = "";
       if (d.vence) {
         const dias = Math.round((Date.parse(d.vence) - Date.parse(hoy)) / 86400000);
-        chip = dias < 0 ? `<span class="recibo-chip devolucion">VENCIDO ${esc(d.vence)}</span>`
+        chip = dias < 0 ? `<span class="recibo-chip devolucion">Vencido ${esc(d.vence)}</span>`
           : dias <= 30 ? `<span class="recibo-chip devolucion">vence en ${dias} días</span>`
           : `<span class="recibo-chip leido">vence ${esc(d.vence)}</span>`;
       }
       const enlace = d.ruta
-        ? `<a class="doc-link emp-ver" data-ruta="${esc(d.ruta)}" target="_blank" rel="noopener">📄 Ver</a>`
-        : d.url ? `<a class="doc-link" href="${esc(d.url)}" target="_blank" rel="noopener">📄 Ver</a>`
+        ? `<a class="doc-link emp-ver" data-ruta="${esc(d.ruta)}" target="_blank" rel="noopener">Ver</a>`
+        : d.url ? `<a class="doc-link" href="${esc(d.url)}" target="_blank" rel="noopener">Ver</a>`
         : `<span class="alcance-estado">sin archivo todavía</span>`;
       return `<div class="mat-item">
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(EN_APP ? (d.tituloEn || d.titulo) : d.titulo)}</span>
         </span>
         ${chip} ${enlace}
-        ${usuario.editar ? `<button class="insp-borrar emp-editar" data-id="${d.id}" title="Cambiar el PDF o la fecha">✎</button>
-        <button class="insp-borrar emp-borrar" data-id="${d.id}" title="Eliminar">🗑</button>` : ""}
+        ${usuario.editar ? `<span class="emp-botones" style="display:inline-flex;gap:.5rem;flex:none"><button class="insp-borrar emp-editar" data-id="${d.id}" title="Cambiar el PDF o la fecha" aria-label="Cambiar el PDF o la fecha">${ico("lapiz")}</button>
+        <button class="insp-borrar emp-borrar" data-id="${d.id}" title="Eliminar" aria-label="Eliminar">${ico("basura")}</button></span>` : ""}
       </div>
       ${usuario.editar ? `<form class="cal-form emp-form" id="emp-form-${d.id}" hidden>
         <div class="modal-fila">
@@ -925,13 +925,13 @@ function esFalloDeRed(err) {
       ? `<p class="modal-nota">Falta alguno de los tres papeles de la empresa (licencia, Workers' Comp, Liability). Dímelo y lo vuelvo a poner.</p>` : "";
     $("inicio-empresa").innerHTML = `
       <div class="inicio-card">
-        <div class="inicio-card-titulo">📋 Licencia y seguros</div>
+        <div class="inicio-card-titulo">Licencia y seguros</div>
         ${docs.map(filaDoc).join("") || `<p class="cal-sin-eventos">Sin documentos todavía.</p>`}
         ${formDueno}
       </div>
       <div class="inicio-card">
         <details class="chk-det">
-          <summary class="inicio-card-titulo" style="cursor:pointer">📖 Código eléctrico — guía de campo (NEC 2023)</summary>
+          <summary class="inicio-card-titulo" style="cursor:pointer">Código eléctrico — guía de campo (NEC 2023)</summary>
           <p class="modal-nota">Los números que se usan en la obra, con su artículo al lado.
           El texto oficial se confirma en <a class="doc-link" href="https://link.nfpa.org" target="_blank" rel="noopener">NFPA LiNK</a>
           (Florida: FBC 8ª edición, base NEC 2023). Detectores de humo: FBC-R R314 / NFPA 72, no NEC.
@@ -948,7 +948,7 @@ function esFalloDeRed(err) {
       </div>
       ${usuario.finanzas && (state.contratistas || []).length ? `
       <div class="inicio-card">
-        <div class="inicio-card-titulo">🏗 Contratistas (GC) y su portal</div>
+        <div class="inicio-card-titulo">Contratistas (GC) y su portal</div>
         <p class="modal-nota">Cada empresa tiene <strong>una sola llave</strong> para todas sus obras contigo.
         Con el enlace ven calendario, inspecciones, fotos, documentos, y la licencia y los seguros de Max Power.
         La facturación solo la ven en las obras donde el contrato es con ellos.</p>
@@ -959,27 +959,27 @@ function esFalloDeRed(err) {
             <span class="alcance-info">
               <span class="alcance-titulo">${esc(c.nombre)}${c.activo ? "" : " · (apagado)"}</span>
               <span class="alcance-estado">${suyas.length} obra${suyas.length === 1 ? "" : "s"}${conContrato ? ` · ${conContrato} con contrato` : ""}${c.contacto ? ` · ${esc(c.contacto)}` : ""}</span>
-              <span class="alcance-estado">${c.email ? `✉️ ${esc(c.email)}` : "✉️ sin email — ponlo antes de invitar"}${c.invitadoEl ? ` · invitado el ${esc(c.invitadoEl)}` : ""}${c.vistoEl ? ` · 👀 entró el ${esc(c.vistoEl)}` : ""}</span>
+              <span class="alcance-estado">${c.email ? esc(c.email) : "sin email — ponlo antes de invitar"}${c.invitadoEl ? ` · invitado el ${esc(c.invitadoEl)}` : ""}${c.vistoEl ? ` · entró el ${esc(c.vistoEl)}` : ""}</span>
             </span>
-            <button type="button" class="insp-borrar gc-copiar" data-llave="${esc(c.token)}" title="Copiar el enlace de su portal">🔗</button>
-            <button type="button" class="insp-borrar gc-email" data-id="${esc(c.id)}" data-email="${esc(c.email)}" title="Anotar o corregir el email">✎</button>
-            <button type="button" class="insp-borrar gc-invitar" data-id="${esc(c.id)}" title="Mandarle la invitación a su portal">✉️</button>
-            <button type="button" class="insp-borrar gc-llave" data-id="${esc(c.id)}" title="Regenerar la llave (el enlace viejo deja de servir)">♻</button>
+            <button type="button" class="insp-borrar gc-copiar" data-llave="${esc(c.token)}" title="Copiar el enlace de su portal" aria-label="Copiar el enlace de su portal">${ico("enlace")}</button>
+            <button type="button" class="insp-borrar gc-email" data-id="${esc(c.id)}" data-email="${esc(c.email)}" title="Anotar o corregir el email" aria-label="Anotar o corregir el email">${ico("lapiz")}</button>
+            <button type="button" class="insp-borrar gc-invitar" data-id="${esc(c.id)}" title="Mandarle la invitación a su portal" aria-label="Mandarle la invitación a su portal">${ico("correo")}</button>
+            <button type="button" class="insp-borrar gc-llave" data-id="${esc(c.id)}" title="Regenerar la llave (el enlace viejo deja de servir)" aria-label="Regenerar la llave (el enlace viejo deja de servir)">${ico("ciclo")}</button>
           </div>`;
         }).join("")}
       </div>` : ""}
       ${(state.jurisdicciones || []).length ? `
       <div class="inicio-card">
         <details class="chk-det">
-          <summary class="inicio-card-titulo" style="cursor:pointer">🏛 Permisos por jurisdicción</summary>
+          <summary class="inicio-card-titulo" style="cursor:pointer">Permisos por jurisdicción</summary>
           <p class="modal-nota">Cómo se saca el permiso en cada condado donde trabajamos. Dime lo que aprendas en cada uno y lo voy anotando.</p>
           ${state.jurisdicciones.map(j => `<div class="mat-item">
             <span class="alcance-info">
               <span class="alcance-titulo">${esc(j.condado)}</span>
               ${j.notas ? `<span class="alcance-estado">${esc(j.notas)}</span>` : ""}
-              ${j.contacto ? `<span class="alcance-estado">☎ ${esc(j.contacto)}</span>` : ""}
+              ${j.contacto ? `<span class="alcance-estado">${esc(j.contacto)}</span>` : ""}
             </span>
-            ${j.portalUrl ? `<a class="doc-link" href="${esc(j.portalUrl)}" target="_blank" rel="noopener">🌐 Portal</a>` : ""}
+            ${j.portalUrl ? `<a class="doc-link" href="${esc(j.portalUrl)}" target="_blank" rel="noopener">Portal</a>` : ""}
           </div>`).join("")}
         </details>
       </div>` : ""}`;
@@ -992,7 +992,7 @@ function esFalloDeRed(err) {
         });
       }).catch(() => avisar("No se pudieron cargar los documentos de la empresa — revisa la señal.", true));
     }
-    // ── 🏗 Contratistas: enlace, email, invitación y llave nueva ──────
+    // ── Contratistas: enlace, email, invitación y llave nueva ──────
     $("inicio-empresa").querySelectorAll(".gc-copiar").forEach(btn => {
       btn.addEventListener("click", async () => {
         const url = enlaceGC(btn.dataset.llave);
@@ -1014,7 +1014,7 @@ function esFalloDeRed(err) {
       btn.addEventListener("click", async () => {
         const c = (state.contratistas || []).find(x => x.id === btn.dataset.id);
         if (!c) return;
-        if (!c.email) { avisar("Primero ponle el email con el lapicito ✎", true); return; }
+        if (!c.email) { avisar("Primero ponle el email con el lapicito", true); return; }
         if (!await confirmar(`¿Mandarle a ${c.nombre} (${c.email}) la invitación a su portal?`)) return;
         btn.disabled = true;
         try {
@@ -1079,7 +1079,7 @@ function esFalloDeRed(err) {
     return Uint8Array.from(raw, c => c.charCodeAt(0));
   };
 
-  // 🔔 Teléfonos con avisos por persona, para el semáforo del dueño (P86).
+  // Teléfonos con avisos por persona, para el semáforo del dueño (P86).
   // undefined = no se ha preguntado · "pidiendo" · objeto · null = no se pudo saber
   let avisosEquipo;
   // ¿La base ya tiene el candado que le quita los montos a los avisos?
@@ -1094,7 +1094,7 @@ function esFalloDeRed(err) {
     // salía y nadie le decía a Jian u Osbel que faltaba ese paso (P86).
     const iphoneSinInstalar = esIphone() && !appInstalada();
     // Los avisos son para TODOS, no solo para el dueño: Jian y Osbel también
-    // tienen que enterarse de un 🔴 urgente o de un mensaje del chat.
+    // tienen que enterarse de un urgente o de un mensaje del chat.
     if (!soporta && !iphoneSinInstalar) { caja.innerHTML = ""; return; }
     if (soporta && window.Notification && Notification.permission === "granted") {
       caja.innerHTML = "";
@@ -1103,7 +1103,7 @@ function esFalloDeRed(err) {
     }
     // CANDADO: al equipo NO se le ofrece encender los avisos hasta que la
     // base tenga puesto el filtro que le quita los montos al aviso. Si no,
-    // un 🔴 urgente o un mensaje del chat con un precio adentro se les
+    // un urgente o un mensaje del chat con un precio adentro se les
     // pinta en la pantalla de bloqueo, saltándose todo el filtro de la app.
     if (!usuario.finanzas) {
       if (avisosSeguros === false) { caja.innerHTML = ""; return; }
@@ -1118,7 +1118,7 @@ function esFalloDeRed(err) {
     }
     caja.innerHTML = `
       <div class="inicio-card">
-        <div class="aviso-texto" style="padding:.2rem 0">🔔 Este teléfono todavía no recibe avisos de la app.
+        <div class="aviso-texto" style="padding:.2rem 0">Este teléfono todavía no recibe avisos de la app.
           <button class="accion secundaria" id="btn-notif-activar">Activar notificaciones</button>
         </div>
       </div>`;
@@ -1133,7 +1133,7 @@ function esFalloDeRed(err) {
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   const appInstalada = () => !!(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
 
-  // 🔔 PANTALLA «ENCIENDE LOS AVISOS» (P86). Al equipo se le enseña al entrar,
+  // PANTALLA «ENCIENDE LOS AVISOS» (P86). Al equipo se le enseña al entrar,
   // una vez al día, hasta que su teléfono reciba avisos. Con los pasos que tocan
   // a ese teléfono: en iPhone primero la pantalla de inicio; si los bloqueó,
   // dónde se desbloquean. «Ahora no» la calla hasta mañana.
@@ -1146,7 +1146,7 @@ function esFalloDeRed(err) {
     }
     const bloqueados = window.Notification && Notification.permission === "denied";
     const iphone = esIphone();
-    const porque = `<p style="margin:0">Aquí te llegan los 🔴 urgentes, los mensajes del chat y el permiso para corregir tus horas.</p>`;
+    const porque = `<p style="margin:0">Aquí te llegan los urgentes, los mensajes del chat y el permiso para corregir tus horas.</p>`;
     let pasos, boton;
     if (iphone && !appInstalada()) {
       pasos = `<p style="margin:0"><b>En iPhone, primero pon la app en la pantalla de inicio:</b></p>
@@ -1167,13 +1167,13 @@ function esFalloDeRed(err) {
       boton = "";
     } else {
       pasos = `<p style="margin:0">Toca el botón y, cuando el teléfono pregunte, di <b>Permitir</b>.</p>`;
-      boton = `<button type="button" class="accion" id="pa-encender" style="min-height:56px;font-size:1.05rem">🔔 Encender los avisos</button>`;
+      boton = `<button type="button" class="accion" id="pa-encender" style="min-height:56px;font-size:1.05rem">Encender los avisos</button>`;
     }
     const dlg = document.createElement("dialog");
     dlg.className = "modal pantalla-avisos";
     dlg.style.cssText = "width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;margin:0;border-radius:0;border:0";
     dlg.innerHTML = `<form method="dialog" class="modal-form" style="min-height:100%;align-content:center;max-width:30rem;margin:0 auto;gap:1rem;font-size:1rem;line-height:1.45">
-        <div style="font-size:3rem;text-align:center">🔔</div>
+        <div style="font-size:3rem;text-align:center">${ico("campana")}</div>
         <h3 class="modal-titulo" style="text-align:center">Enciende los avisos en este teléfono</h3>
         ${porque}
         ${pasos}
@@ -1229,15 +1229,15 @@ function esFalloDeRed(err) {
       });
       const j = sub.toJSON();
       await DB.guardarSuscripcion({ endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth });
-      avisar("🔔 Notificaciones activadas en este teléfono ✓");
+      avisar("Notificaciones activadas en este teléfono ✓");
       suscripcionRevisada = true;
       pintarInicioNotif();
       return true;
     } catch (err) { avisar("No se pudo activar: " + err.message, true); return false; }
   }
 
-  // Franja "HOY": lo de hoy y mañana (los pendientes viven en 🔥 Urgentes)
-  // 📅 LOS PRÓXIMOS DÍAS: hoy, mañana y los cinco siguientes, a modo de título.
+  // Franja "HOY": lo de hoy y mañana (los pendientes viven en Urgentes)
+  // LOS PRÓXIMOS DÍAS: hoy, mañana y los cinco siguientes, a modo de título.
   //    Cada renglón: hora · qué · quién va · proyecto. Se toca y abre el proyecto.
   const DIA_CORTO = EN_APP ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] : ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
   const EDGAR_ID = "7a8e1ac4-dd9e-4e27-a8e9-e94b313a74fb";
@@ -1257,11 +1257,11 @@ function esFalloDeRed(err) {
     const porDia = Object.fromEntries(dias.map(d => [d, []]));
     evs.forEach(e => porDia[e.fecha].push(e));
     const etiqueta = (d, k) => {
-      if (k === 0) return "HOY"; if (k === 1) return "MAÑANA";
+      if (k === 0) return "Hoy"; if (k === 1) return "Mañana";
       const t = new Date(Date.parse(d + "T12:00:00"));
       // En inglés el día corto sale en inglés («MON 28»)
       const dia = DIA_CORTO[t.getDay()];
-      return `${dia.toUpperCase()} ${t.getDate()}`;
+      return `${dia.charAt(0).toUpperCase() + dia.slice(1)} ${t.getDate()}`;
     };
     const filas = dias.map((d, k) => {
       const lista = porDia[d].sort((a, b) => ordenHora(a.hora) - ordenHora(b.hora));
@@ -1271,7 +1271,7 @@ function esFalloDeRed(err) {
           <span class="agenda-hora">${esc(e.hora || "—")}</span>
           <span class="agenda-que">${esc(sinMontos(e.titulo))}</span>
           <span class="agenda-quien">${(e.asignados || []).length ? esc(e.asignados.map(n => n.split(" ")[0]).join(" + ")) : ""}${e.proyecto ? `${(e.asignados || []).length ? " · " : ""}${esc(nombreProyecto(e.proyecto))}` : ""}</span>
-          ${k < 2 ? `<span class="agenda-botones">${enlaceMapa(e.ubicacion || ((proyectos().find(x => x.id === e.proyecto) || {}).direccion))}${k === 0 && e.proyecto ? `<button type="button" class="btn-ir btn-foto-rapida" data-proy="${esc(e.proyecto)}" title="Tomar una foto de esta obra">📸 Foto</button>` : ""}</span>` : ""}
+          ${k < 2 ? `<span class="agenda-botones">${enlaceMapa(e.ubicacion || ((proyectos().find(x => x.id === e.proyecto) || {}).direccion))}${k === 0 && e.proyecto ? `<button type="button" class="btn-ir btn-foto-rapida" data-proy="${esc(e.proyecto)}" title="Tomar una foto de esta obra">${ico("camara")}Foto</button>` : ""}</span>` : ""}
         </div>`).join("") : `<div class="agenda-nada">Nada programado.</div>`;
       return `<div class="agenda-dia${k === 0 ? " es-hoy" : ""}">
         <span class="hoy-chip ${k === 0 ? "es-hoy" : k === 1 ? "es-man" : "es-otro"}">${etiqueta(d, k)}</span>
@@ -1281,7 +1281,7 @@ function esFalloDeRed(err) {
     const masAlla = eventosCal().filter(e => e.fecha > dias[6] && e.estadoEv !== "cancelado").length;
     $("inicio-hoy").innerHTML = `
       <div class="inicio-card agenda">
-        <div class="inicio-card-titulo">📅 Los próximos días</div>
+        <div class="inicio-card-titulo">Los próximos días</div>
         ${filas}
         <div class="hoy-mas">${masAlla ? `${masAlla} más después del ${etiqueta(dias[6], 6).toLowerCase()} · ` : ""}<a href="#" id="agenda-ver-cal">ver el calendario</a></div>
       </div>`;
@@ -1469,7 +1469,7 @@ function esFalloDeRed(err) {
       let proximaTxt = "";
       if (proxima) {
         const d = new Date(Date.parse(proxima.fecha + "T12:00:00"));
-        const dia = d.toLocaleDateString(LOCALE, { weekday: "short" }).replace(".", "").toUpperCase() + " " + d.getDate();
+        const dia = d.toLocaleDateString(LOCALE, { weekday: "short" }).replace(".", "").replace(/^./, c => c.toUpperCase()) + " " + d.getDate();
         const donde = proxima.proyecto ? nombreProyecto(proxima.proyecto) : proxima.titulo;
         proximaTxt = [dia, proxima.hora, donde].filter(Boolean).join(" · ");
       }
@@ -1602,7 +1602,7 @@ function esFalloDeRed(err) {
     pintarInicioNotif();
   }
 
-  // 🏛 INSPECCIONES DE LA SEMANA (todos): las de esta semana y la que viene, con su
+  // INSPECCIONES DE LA SEMANA (todos): las de esta semana y la que viene, con su
   //    resultado; y las de la semana pasada que ya pasaron o fallaron.
   function pintarInicioInspecciones() {
     const caja = $("inicio-inspecciones"); if (!caja) return;
@@ -1620,13 +1620,13 @@ function esFalloDeRed(err) {
     if (!lista.length) { caja.innerHTML = ""; return; }
     const chip = i => i.resultado === "paso" ? `<span class="recibo-chip leido">✓ pasó</span>`
       : i.resultado === "fallo" ? `<span class="recibo-chip devolucion">✗ falló</span>`
-      : i.fecha === hoy ? `<span class="hoy-chip es-hoy">HOY</span>`
+      : i.fecha === hoy ? `<span class="hoy-chip es-hoy">Hoy</span>`
       : i.fecha < hoy ? `<span class="recibo-chip">sin resultado</span>`
       : `<span class="recibo-chip">programada</span>`;
     const fecha = i => { const t = new Date(Date.parse(i.fecha + "T12:00:00")); return `${DIA_CORTO[t.getDay()]} ${t.getDate()}`; };
     caja.innerHTML = `
       <div class="inicio-card">
-        <div class="inicio-card-titulo">🏛 Inspecciones de la semana</div>
+        <div class="inicio-card-titulo">Inspecciones de la semana</div>
         ${lista.map(i => `
           <div class="agenda-ev${i.proyecto ? " abre" : ""}" ${i.proyecto ? `data-proy="${esc(i.proyecto)}"` : ""}>
             <span class="agenda-hora">${esc(fecha(i))}</span>
@@ -1637,7 +1637,7 @@ function esFalloDeRed(err) {
     caja.querySelectorAll(".agenda-ev.abre").forEach(el => el.addEventListener("click", () => irDetalle(el.dataset.proy)));
   }
 
-  // 📈 RESUMEN DEL MES (solo dueño): este mes contra el pasado.
+  // RESUMEN DEL MES (solo dueño): este mes contra el pasado.
   function pintarInicioMes() {
     const caja = $("inicio-mes"); if (!caja) return;
     if (!usuario.finanzas) { caja.innerHTML = ""; return; }
@@ -1662,7 +1662,7 @@ function esFalloDeRed(err) {
     const fila = (et, a, b, esDinero) => `<tr><th>${et}</th><td>${esDinero ? fmt(a) : a}</td><td class="pasado">${esDinero ? fmt(b) : b}</td></tr>`;
     caja.innerHTML = `
       <div class="inicio-card">
-        <div class="inicio-card-titulo">📈 Resumen del mes</div>
+        <div class="inicio-card-titulo">Resumen del mes</div>
         <table class="mes-tabla"><thead><tr><th></th><th>${esc(nombreMes(esteMes))}</th><th class="pasado">${esc(nombreMes(mesPasado))}</th></tr></thead><tbody>
           ${fila("Cobrado", A.cobrado, B.cobrado, true)}
           ${fila("Facturado", A.facturado, B.facturado, true)}
@@ -1675,7 +1675,7 @@ function esFalloDeRed(err) {
       </div>`;
   }
 
-  // 📨 PROPUESTAS ESPERANDO RESPUESTA — Edgar prefirió no repetirlas: ya salen en Avisos.
+  // PROPUESTAS ESPERANDO RESPUESTA — Edgar prefirió no repetirlas: ya salen en Avisos.
   //    Se deja la función por si algún día la quiere de vuelta (no se llama).
   function pintarInicioPropuestas() {
     const caja = $("inicio-propuestas"); if (!caja) return;
@@ -1687,7 +1687,7 @@ function esFalloDeRed(err) {
     if (!lista.length) { caja.innerHTML = ""; return; }
     caja.innerHTML = `
       <div class="inicio-card">
-        <div class="inicio-card-titulo">📨 Propuestas esperando respuesta (${lista.length})</div>
+        <div class="inicio-card-titulo">Propuestas esperando respuesta (${lista.length})</div>
         ${lista.slice(0, 8).map(({ p, dias }) => `
           <div class="agenda-ev abre" data-proy="${esc(p.id)}">
             <span class="agenda-hora ${dias !== null && dias >= 14 ? "rojo" : dias !== null && dias >= 7 ? "ambar" : ""}">${dias === null ? "—" : dias + " d"}</span>
@@ -1699,7 +1699,7 @@ function esFalloDeRed(err) {
     caja.querySelectorAll(".agenda-ev.abre").forEach(el => el.addEventListener("click", () => irDetalle(el.dataset.proy)));
   }
 
-  // ⏱ HORAS DE LA SEMANA (solo dueño): por persona, lunes a domingo, con los días
+  // HORAS DE LA SEMANA (solo dueño): por persona, lunes a domingo, con los días
   //    de semana sin reporte marcados. Así lo del jueves de Jian salta a la vista.
   function pintarInicioSemana() {
     const caja = $("inicio-semana"); if (!caja) return;
@@ -1733,7 +1733,7 @@ function esFalloDeRed(err) {
       </div>`;
   }
 
-  // 🔴 URGENTES: lo que se categorizó urgente en cualquier checklist.
+  // URGENTES: lo que se categorizó urgente en cualquier checklist.
   //    Solo el inicio del dueño (el campo tiene su «Hoy»). Sale RESUMIDO: una
   //    tarjeta-botón con el número, el más viejo y las obras; al tocarla se abre
   //    aquí mismo la lista de siempre, que se palomea desde aquí.
@@ -1825,7 +1825,7 @@ function esFalloDeRed(err) {
   function pintarInicioAvisos() {
     if (!usuario.finanzas) { $("inicio-avisos").innerHTML = ""; return; }
     const avisos = [];
-    // 🚀 Proyectos con cosas pendientes para arrancar (materiales + gestiones)
+    // Proyectos con cosas pendientes para arrancar (materiales + gestiones)
     for (const p of proyectos()) {
       if (!["aprobado", "ejecucion"].includes(p.estado)) continue;
       const fa = faltaArranque(p.id);
@@ -1833,32 +1833,32 @@ function esFalloDeRed(err) {
       const partes = [];
       if (fa.materiales) partes.push(`${fa.materiales} material${fa.materiales > 1 ? "es" : ""}`);
       if (fa.gestiones) partes.push(`${fa.gestiones} gestión${fa.gestiones > 1 ? "es" : ""}`);
-      avisos.push({ tipo: "arranque", accion: "arranque", id: p.id, icono: "🚀", texto: `${p.nombre} — ${partes.join(" y ")} para arrancar` });
+      avisos.push({ tipo: "arranque", accion: "arranque", id: p.id, icono: "cohete", texto: `${p.nombre} — ${partes.join(" y ")} para arrancar` });
     }
     // Materiales generales (sin proyecto) que siguen sin comprarse
     const porComprarGral = (state.materiales || []).filter(m => m.estado === "falta" && !m.proyecto).length;
     if (porComprarGral)
-      avisos.push({ tipo: "materiales", accion: "materiales", icono: "🛒", texto: `${porComprarGral} material${porComprarGral > 1 ? "es" : ""} general${porComprarGral > 1 ? "es" : ""} por comprar` });
-    // 💵 Trabajo TERMINADO con dinero sin cobrar: si nunca se emitió factura,
+      avisos.push({ tipo: "materiales", accion: "materiales", icono: "carrito", texto: `${porComprarGral} material${porComprarGral > 1 ? "es" : ""} general${porComprarGral > 1 ? "es" : ""} por comprar` });
+    // Trabajo TERMINADO con dinero sin cobrar: si nunca se emitió factura,
     // ningún otro aviso lo ve. Es el dinero que se olvida para siempre.
     for (const p of proyectos()) {
       if (p.estado !== "completado") continue;
       if (typeof p.contrato !== "number" || typeof p.cobrado !== "number") continue;
       const falta = p.contrato - p.cobrado;
       if (falta > 1)
-        avisos.push({ tipo: "cobro", id: p.id, pestana: "dinero", icono: "💵", texto: `${p.nombre} está TERMINADO y quedan ${fmt(falta)} sin cobrar` });
+        avisos.push({ tipo: "cobro", id: p.id, pestana: "dinero", icono: "dolar", texto: `${p.nombre} está terminado y quedan ${fmt(falta)} sin cobrar` });
     }
-    // 📋 Aprobado sin monto de contrato: no se puede facturar ni medir el margen
+    // Aprobado sin monto de contrato: no se puede facturar ni medir el margen
     for (const p of proyectos()) {
       if (p.estado !== "aprobado") continue;
       if (typeof p.contrato === "number" && p.contrato > 0) continue;
-      avisos.push({ tipo: "contrato", id: p.id, pestana: "dinero", icono: "📋", texto: `${p.nombre} está aprobado SIN monto de contrato — ponle el precio para poder facturar` });
+      avisos.push({ tipo: "contrato", id: p.id, pestana: "dinero", icono: "lista", texto: `${p.nombre} está aprobado sin monto de contrato — ponle el precio para poder facturar` });
     }
     for (const p of proyectos()) {
       for (const f of facturasPendientes(p)) {
         const dias = diasDesde(f.fechaISO);
         if (dias !== null && dias >= 30)
-          avisos.push({ tipo: "factura", id: p.id, pestana: "dinero", icono: "💵", texto: `Factura #${f.num} de ${p.nombre} lleva ${dias} días sin pagar (${fmt(saldoFactura(f))}${f.cobrado > 0 ? ` de ${fmt(f.monto)}` : ""})` });
+          avisos.push({ tipo: "factura", id: p.id, pestana: "dinero", icono: "dolar", texto: `Factura #${f.num} de ${p.nombre} lleva ${dias} días sin pagar (${fmt(saldoFactura(f))}${f.cobrado > 0 ? ` de ${fmt(f.monto)}` : ""})` });
       }
       if (p.estado === "enviado") {
         // P09 (25-sep, Edgar lo pidió): la propuesta avisa cuando le quedan 5 días
@@ -1866,29 +1866,29 @@ function esFalloDeRed(err) {
         if (p.propuestaValidaHasta) {
           const pasados = diasDesde(p.propuestaValidaHasta);
           if (pasados > 0)
-            avisos.push({ tipo: "propuesta", id: p.id, pestana: "archivos", icono: "⏳", texto: `${p.nombre}: la propuesta VENCIÓ hace ${plural(pasados, "día")} (valía hasta ${p.propuestaValidaHasta}) — renuévala desde la ficha o márcala no aprobada` });
+            avisos.push({ tipo: "propuesta", id: p.id, pestana: "archivos", icono: "reloj", texto: `${p.nombre}: la propuesta venció hace ${plural(pasados, "día")} (valía hasta ${p.propuestaValidaHasta}) — renuévala desde la ficha o márcala no aprobada` });
           else if (pasados >= -5)
-            avisos.push({ tipo: "propuesta", id: p.id, pestana: "archivos", icono: "⏳", texto: `${p.nombre}: la propuesta vence ${pasados === 0 ? "HOY" : `en ${plural(-pasados, "día")}`} (${p.propuestaValidaHasta}) — llama al cliente antes` });
+            avisos.push({ tipo: "propuesta", id: p.id, pestana: "archivos", icono: "reloj", texto: `${p.nombre}: la propuesta vence ${pasados === 0 ? "hoy" : `en ${plural(-pasados, "día")}`} (${p.propuestaValidaHasta}) — llama al cliente antes` });
         }
         const dias = diasDesde(p.propuestaArmadaEl || p.actualizado);
         if (dias !== null && dias >= 7)
-          avisos.push({ tipo: "propuesta", id: p.id, icono: "⏳", texto: `${p.nombre}: propuesta sin respuesta hace ${plural(dias, "día")} — llama o escribe al cliente, o márcala no aprobada` });
+          avisos.push({ tipo: "propuesta", id: p.id, icono: "reloj", texto: `${p.nombre}: propuesta sin respuesta hace ${plural(dias, "día")} — llama o escribe al cliente, o márcala no aprobada` });
       }
       if (p.estado === "ejecucion" && p.horas && p.horas.estimadas > 0) {
         const razon = p.horas.reales / p.horas.estimadas;
         if (razon > 1)
-          avisos.push({ tipo: "labor", id: p.id, pestana: "dinero", icono: "⏱", texto: `${p.nombre}: ${p.horas.reales}h trabajadas de ${p.horas.estimadas}h estimadas — se está comiendo el margen` });
+          avisos.push({ tipo: "labor", id: p.id, pestana: "dinero", icono: "reloj", texto: `${p.nombre}: ${p.horas.reales}h trabajadas de ${p.horas.estimadas}h estimadas — se está comiendo el margen` });
         else if (razon >= 0.8)
-          avisos.push({ tipo: "labor", id: p.id, pestana: "dinero", icono: "⏱", texto: `${p.nombre}: el labor va al ${Math.round(razon * 100)}% de lo estimado (${p.horas.reales}h de ${p.horas.estimadas}h) — vigílalo` });
+          avisos.push({ tipo: "labor", id: p.id, pestana: "dinero", icono: "reloj", texto: `${p.nombre}: el labor va al ${Math.round(razon * 100)}% de lo estimado (${p.horas.reales}h de ${p.horas.estimadas}h) — vigílalo` });
       }
       if (["ejecucion", "aprobado", "pausa"].includes(p.estado)
           && p.presupuestoMateriales > 0) {
         const gasto = gastoMateriales(p.id);
         const razon = gasto / p.presupuestoMateriales;
         if (razon > 1)
-          avisos.push({ tipo: "materiales", id: p.id, pestana: "dinero", icono: "🛒", texto: `${p.nombre}: materiales PASADOS del presupuesto — ${fmt(gasto)} de ${fmt(p.presupuestoMateriales)}` });
+          avisos.push({ tipo: "materiales", id: p.id, pestana: "dinero", icono: "carrito", texto: `${p.nombre}: materiales pasados del presupuesto — ${fmt(gasto)} de ${fmt(p.presupuestoMateriales)}` });
         else if (razon >= 0.8)
-          avisos.push({ tipo: "materiales", id: p.id, pestana: "dinero", icono: "🛒", texto: `${p.nombre}: materiales al ${Math.round(razon * 100)}% del presupuesto (${fmt(gasto)} de ${fmt(p.presupuestoMateriales)})` });
+          avisos.push({ tipo: "materiales", id: p.id, pestana: "dinero", icono: "carrito", texto: `${p.nombre}: materiales al ${Math.round(razon * 100)}% del presupuesto (${fmt(gasto)} de ${fmt(p.presupuestoMateriales)})` });
       }
     }
     const caja = $("inicio-avisos");
@@ -1923,7 +1923,7 @@ function esFalloDeRed(err) {
       <div class="inicio-card avisos resumen-lista" id="avisos-lista">
         ${avisos.map(a => `
           <button class="aviso-linea" data-id="${esc(a.id || "")}" data-accion="${esc(a.accion || "")}" data-pestana="${esc(a.pestana || "")}" data-tipo="${esc(a.tipo || "")}">
-            <span>${a.icono}</span>
+            <span>${ico(a.icono)}</span>
             <span class="aviso-texto">${esc(a.texto)}</span>
             <span class="cat-flecha">›</span>
           </button>`).join("")}
@@ -1959,11 +1959,11 @@ function esFalloDeRed(err) {
         .some(r => r.usuarioId === usuario.id && r.fecha === hoy);
       $("inicio-equipo").innerHTML = yaReporto ? `
         <div class="inicio-card">
-          <div class="inicio-card-titulo">⏱ Tus horas de hoy</div>
-          <p class="modal-nota" style="margin:.2rem 0">✅ Ya reportaste hoy. Gracias.</p>
+          <div class="inicio-card-titulo">Tus horas de hoy</div>
+          <p class="modal-nota" style="margin:.2rem 0">${ico("okCirc")} Ya reportaste hoy. Gracias.</p>
         </div>` : `
         <div class="inicio-card falta-horas">
-          <div class="inicio-card-titulo">⏱ Todavía no reportaste tus horas de hoy</div>
+          <div class="inicio-card-titulo">Todavía no reportaste tus horas de hoy</div>
           <p class="modal-nota" style="margin:.2rem 0 .5rem">Repórtalas antes de irte — después se olvidan.</p>
           <button type="button" class="accion" id="btn-reportar-ya">Reportar mis horas</button>
         </div>`;
@@ -1974,7 +1974,7 @@ function esFalloDeRed(err) {
     // Solo los de campo ACTIVOS: Gustavo (license) no reporta horas de obra
     const equipo = (state.equipo || []).filter(u => u.rol === "campo" && u.activo);
     if (!equipo.length) { $("inicio-equipo").innerHTML = ""; return; }
-    // 🔔 ¿Le llegan los avisos a cada uno? Se pregunta a la base una vez por
+    // ¿Le llegan los avisos a cada uno? Se pregunta a la base una vez por
     // sesión (fn_avisos_por_persona: solo conteos, nunca las llaves del teléfono).
     if (avisosEquipo === undefined) {
       avisosEquipo = "pidiendo";
@@ -1983,7 +1983,7 @@ function esFalloDeRed(err) {
         if (avisosEquipo) pintarInicioEquipo();
       });
     }
-    // 📊 Capacidad: cuántos días de los próximos 7 tiene cada quien agendados
+    // Capacidad: cuántos días de los próximos 7 tiene cada quien agendados
     const hoy = hoyISO();
     const tope = new Date(Date.parse(hoy) + 7 * 86400000).toISOString().slice(0, 10);
     const diasPersona = {};
@@ -1997,7 +1997,7 @@ function esFalloDeRed(err) {
       }
     }
     const capacidad = Object.keys(diasPersona).length || sinAsignar
-      ? `<p class="modal-nota" style="margin:.2rem 0 .5rem">📊 Próximos 7 días: ${
+      ? `<p class="modal-nota" style="margin:.2rem 0 .5rem">Próximos 7 días: ${
           Object.entries(diasPersona).map(([n, s]) => `${esc(n)} ${s.size} día${s.size === 1 ? "" : "s"}`).join(" · ") || "nadie agendado"
         }${sinAsignar ? ` · ${sinAsignar} evento${sinAsignar === 1 ? "" : "s"} sin asignar` : ""}</p>`
       : "";
@@ -2018,14 +2018,14 @@ function esFalloDeRed(err) {
       const reportes = recientes.map(r => `
         <div class="eq-reporte${r.correccion === "pedida" ? " eq-pide" : ""}" data-id="${r.id}">
           <span class="alcance-info">
-            <span class="alcance-titulo">${esc(r.fecha)} · ${esc(nombreProyecto(r.proyecto) || "—")} · <strong>${esc(r.horas)} h</strong>${r.co ? " · 🧾 " + esc(r.co) : ""}</span>
+            <span class="alcance-titulo">${esc(r.fecha)} · ${esc(nombreProyecto(r.proyecto) || "—")} · <strong>${esc(r.horas)} h</strong>${r.co ? " · " + esc(r.co) : ""}</span>
             <span class="alcance-estado"><span>${esc(r.fase || "")}</span>${r.notas ? ` — <span data-no-i18n>${esc(r.notas)}</span>` : ""}</span>
-            ${r.correccion === "pedida" ? `<span class="alcance-estado">✏️ <strong>Pide permiso para corregir este reporte</strong></span>` : ""}
-            ${r.correccion === "aprobada" ? `<span class="alcance-estado">✅ Permiso dado — esperando su corrección</span>` : ""}
+            ${r.correccion === "pedida" ? `<span class="alcance-estado"><strong>Pide permiso para corregir este reporte</strong></span>` : ""}
+            ${r.correccion === "aprobada" ? `<span class="alcance-estado">${ico("okCirc")} Permiso dado — esperando su corrección</span>` : ""}
           </span>
           ${r.correccion === "pedida" ? `<button class="accion eq-rep-permiso" title="Darle permiso">✓ Dar permiso</button>` : ""}
-          <button class="eq-rep-editar insp-borrar" title="Corregir horas o notas">✎</button>
-          <button class="eq-rep-borrar insp-borrar" title="Eliminar reporte">🗑</button>
+          <button class="eq-rep-editar insp-borrar" title="Corregir horas o notas" aria-label="Corregir horas o notas">${ico("lapiz")}</button>
+          <button class="eq-rep-borrar insp-borrar" title="Eliminar reporte" aria-label="Eliminar reporte">${ico("basura")}</button>
         </div>`).join("");
       // Totales de la semana, para pagar sin ir contando reporte por reporte
       const lunesDe = d => { const x = new Date(d); const dia = (x.getDay() + 6) % 7; x.setDate(x.getDate() - dia); return fechaISO(x.getFullYear(), x.getMonth(), x.getDate()); };
@@ -2041,7 +2041,7 @@ function esFalloDeRed(err) {
       const pendDe = pendientesVisibles()
         .filter(x => x.autorId === u.id && !x.resuelto).slice(-5).reverse();
       const pendHTML = pendDe.length ? `
-        <div class="eq-pend-titulo">Pendientes que reportó (se manejan en el ✅ Checklist):</div>
+        <div class="eq-pend-titulo">Pendientes que reportó (se manejan en el Checklist):</div>
         ${pendDe.map(x => `<div class="eq-pend">• ${esc(partirVia(x.descripcion).texto)} <span class="tarea-meta">${esc(nombreProyecto(x.proyecto) || "General")} · ${esc(x.fecha)}</span>${partirVia(x.descripcion).via ? VIA_HTML : ""}</div>`).join("")}` : "";
       return `<details class="equipo-det" data-uid="${esc(u.id)}">
           <summary class="equipo-item">
@@ -2051,16 +2051,16 @@ function esFalloDeRed(err) {
               <span class="alcance-estado">${texto}${(() => {
                 // P86 (24-sep): quién NO abre la app salta a la vista — si no la
                 // abre, no le llegan ni los avisos ni lo que se le asigna.
-                if (!u.ultimaVista) return ` · <b style="color:#B3261E">📱 nunca ha abierto la app</b>`;
+                if (!u.ultimaVista) return ` · <b style="color:#B3261E">nunca ha abierto la app</b>`;
                 const d = diasDesde(String(u.ultimaVista).slice(0, 10));
                 const f = esc(String(u.ultimaVista).slice(0, 10));
-                return d !== null && d >= 3 ? ` · <b style="color:#B3261E">📱 no abre la app hace ${d} días (${f})</b>` : ` · 📱 en la app: ${f}`;
+                return d !== null && d >= 3 ? ` · <b style="color:#B3261E">no abre la app hace ${d} días (${f})</b>` : ` · en la app: ${f}`;
               })()}${(() => {
-                // P86: sin teléfono apuntado no le llega ni un 🔴 urgente ni el chat
+                // P86: sin teléfono apuntado no le llega ni un urgente ni el chat
                 if (!avisosEquipo || typeof avisosEquipo !== "object") return "";
                 const n = (avisosEquipo[u.id] || {}).telefonos || 0;
-                return n ? ` · 🔔 avisos en ${n === 1 ? "su teléfono" : n + " teléfonos"}`
-                  : ` · <b style="color:#B3261E">🔕 no le llegan los avisos</b>`;
+                return n ? ` · avisos en ${n === 1 ? "su teléfono" : n + " teléfonos"}`
+                  : ` · <b style="color:#B3261E">no le llegan los avisos</b>`;
               })()} · toca para ver sus reportes</span>
               ${semanas}
             </span>
@@ -2108,7 +2108,7 @@ function esFalloDeRed(err) {
         if (notas === null) return;
         const cambios = { horas: horasNum, notas: notas.trim() };
         // Si el trabajador se equivocó de proyecto, aquí se mueve (queda constancia)
-        if (await confirmar("¿Quieres MOVER este reporte a OTRO proyecto?\n\nAceptar = elegir el proyecto correcto.\nCancelar = dejarlo donde está.")) {
+        if (await confirmar("¿Quieres mover este reporte a otro proyecto?\n\nAceptar = elegir el proyecto correcto.\nCancelar = dejarlo donde está.")) {
           const lista = proyectosConTrabajo();
           const idElegido = await elegirDeLista("¿A qué proyecto va este reporte?",
             lista.map(x => ({ valor: x.id, texto: x.nombre })));
@@ -2128,8 +2128,8 @@ function esFalloDeRed(err) {
         const cos = changeOrdersDe(pidFinal);
         const numsCO = Object.keys(cos).map(Number).sort((x, y) => x - y);
         if (numsCO.length || rep.co) {
-          const opciones = [{ valor: "__contrato__", texto: (rep.co ? "" : "✓ ") + "📄 Contrato (sin change order)" }]
-            .concat(numsCO.map(n => ({ valor: "CO #" + n, texto: (rep.co === "CO #" + n ? "✓ " : "") + `🧾 CO #${n} — ${sinMontos(cos[n])}` })));
+          const opciones = [{ valor: "__contrato__", texto: (rep.co ? "" : "✓ ") + "Contrato (sin change order)" }]
+            .concat(numsCO.map(n => ({ valor: "CO #" + n, texto: (rep.co === "CO #" + n ? "✓ " : "") + `CO #${n} — ${sinMontos(cos[n])}` })));
           const co = await elegirDeLista("¿Estas horas van al contrato o a un change order?", opciones);
           if (co !== null) {
             const nuevo = co === "__contrato__" ? null : co;
@@ -2265,7 +2265,7 @@ function esFalloDeRed(err) {
   // Sin cifras de dinero para NADIE, tampoco el dueño (donde el pliego dice «sin montos»)
   const sinCifras = x => String(x ?? "").replace(/\$\s?\d[\d,.]*/g, "•••");
 
-  // ---------- 📅 VENCE ESTA SEMANA (solo dueño) ----------
+  // ---------- VENCE ESTA SEMANA (solo dueño) ----------
   // Lo que vence de hoy a 7 días (los papeles de la empresa, a 30), y arriba lo
   // que venció hace 7 días o menos. Sin montos: qué es, de qué obra y cuándo.
   function cosasQueVencen() {
@@ -2815,7 +2815,7 @@ function esFalloDeRed(err) {
       return `
         <div class="detalle-seccion" id="ficha-hitos">
           <h3>Hitos de pago</h3>
-          <div class="rent-humo">⚠ Este proyecto tiene contrato de ${fmt(p.contrato)} pero
+          <div class="rent-humo">${ico("alerta")} Este proyecto tiene contrato de ${fmt(p.contrato)} pero
           <strong>ningún hito de pago</strong>. Así no se puede facturar con el botón Facturar ni
           avisa cuando toca cobrar. Cópialos del SOW (normalmente 35/45/20 o 50/50).</div>
         </div>`;
@@ -2835,7 +2835,7 @@ function esFalloDeRed(err) {
     // la hoja del renglón los activa y así cada uno conserva sus preguntas.
     const filaHito = h => {
       const esSiguiente = h === siguiente;
-      const icono = h.estado === "cobrado" ? "✓" : h.estado === "facturado" ? "⚠" : "○";
+      const icono = h.estado === "cobrado" ? "✓" : h.estado === "facturado" ? ico("alerta") : "○";
       const claseFila = h.estado === "cobrado" ? "hito-cobrado" : esSiguiente ? "hito-siguiente" : "hito-pendiente";
       const sub = [fmt(h.monto), h.condicion || ""].filter(Boolean).join(" · ");
       // Mientras se factura o se cobra: un botón apagado y ninguna herramienta
@@ -2851,7 +2851,7 @@ function esFalloDeRed(err) {
         /* El cobrar lleva su propia clase: antes compartía «hito-cobrado» con la
            FILA de un hito cobrado, y tocar esa fila preguntaba por "undefined". */
         h.estado !== "cobrado" && usuario.editar ? `<button type="button" class="hito-cobrar" data-hito="${esc(h.id)}" data-titulo="${esc(h.titulo)}" data-monto="${h.monto}"
-            title="Ya entró el dinero de este hito — marcarlo COBRADO">Ya cobré</button>` : ""
+            title="Ya entró el dinero de este hito — marcarlo cobrado">Ya cobré</button>` : ""
       ].join("");
       // El botón visible: «Facturar ▾» (pendiente), «Ya cobré» (facturado) o «Release» (cobrado)
       const visible = !usuario.editar ? ""
@@ -2868,7 +2868,7 @@ function esFalloDeRed(err) {
       return `<div class="hito ${claseFila}" data-fila="hito" data-titulo="${esc(h.titulo)}" data-sub="${esc(sub)}">
           <span class="hito-icono">${icono}</span>
           <span class="hito-info">
-            <span class="hito-titulo">${esc(h.titulo)}${esSiguiente ? ' <span class="hito-chip">PRÓXIMO</span>' : ""}</span>
+            <span class="hito-titulo">${esc(h.titulo)}${esSiguiente ? ' <span class="hito-chip">Próximo</span>' : ""}</span>
             <span class="hito-cond">${esc(h.condicion || "")}${h.estado === "facturado" ? " · facturado, sin pagar" : ""}</span>
           </span>
           <span class="hito-monto">${fmt(h.monto)}</span>
@@ -2885,7 +2885,7 @@ function esFalloDeRed(err) {
     const desfase = (typeof p.contrato === "number" && p.contrato > 0)
       ? Math.round((p.contrato - sumaHitos) * 100) / 100 : 0;
     const avisoDesfase = Math.abs(desfase) >= 0.02
-      ? `<div class="rent-humo">⚠ Los hitos suman ${fmt(sumaHitos)} y el contrato dice ${fmt(p.contrato)} —
+      ? `<div class="rent-humo">${ico("alerta")} Los hitos suman ${fmt(sumaHitos)} y el contrato dice ${fmt(p.contrato)} —
          ${desfase > 0 ? `faltan ${fmt(desfase)} por repartir` : `sobran ${fmt(-desfase)}`}.
          Compáralo con el SOW firmado: manda el SOW.</div>`
       : "";
@@ -2904,7 +2904,7 @@ function esFalloDeRed(err) {
       </div>`;
   }
 
-  // ── 📄 Waiver and Release of Lien (F.S. 713.20) ────────────────────
+  // ── Waiver and Release of Lien (F.S. 713.20) ────────────────────
   // Dos formularios: por pago parcial (713.20(4)) y por pago final (713.20(5)).
   // La app los rellena y los imprime; el release se hace SIEMPRE después de que
   // el pago esté cobrado, nunca antes.
@@ -2970,7 +2970,7 @@ function esFalloDeRed(err) {
     // Es el final cuando ya no queda ningún hito por cobrar
     const quedan = (p.hitos || []).filter(h => h.estado !== "cobrado").length;
     const esFinal = quedan === 0 && (p.hitos || []).length > 0 &&
-      await confirmar("¿Es el ÚLTIMO pago de la obra?\n\nAceptar = release FINAL (713.20(5)).\nCancelar = release de pago parcial (713.20(4)).");
+      await confirmar("¿Es el último pago de la obra?\n\nAceptar = release final (713.20(5)).\nCancelar = release de pago parcial (713.20(4)).");
     // El formulario de la ley pide el nombre del dueño de la propiedad. Si el
     // contrato es con una empresa, ese nombre no está en ningún sitio de la app.
     const gc0 = gcDeProyecto(p);
@@ -2990,7 +2990,7 @@ function esFalloDeRed(err) {
     avisar("Elige «Guardar como PDF»; después súbelo a los documentos de la obra");
   }
 
-  // ---------- Ayudantes de gastos (los usan la ficha, el inicio y 📊 Gastos) ----------
+  // ---------- Ayudantes de gastos (los usan la ficha, el inicio y Gastos) ----------
   // Mano de obra real de un proyecto: horas reportadas × costo de cada
   // trabajador (las horas de antes de la app van al costo promedio)
   function costoManoDeObra(p) {
@@ -3054,7 +3054,7 @@ function esFalloDeRed(err) {
     }
     if (mo && mo.horas <= 0) faltas.push("no hay horas reportadas");
     if (!faltas.length) return "";
-    return `<div class="rent-humo">⚠ Este margen todavía no es real: ${faltas.join(" y ")}.
+    return `<div class="rent-humo">${ico("alerta")} Este margen todavía no es real: ${faltas.join(" y ")}.
       Mientras falten compras por cargar, el margen sale más alto de lo que es.</div>`;
   }
 
@@ -3080,7 +3080,7 @@ function esFalloDeRed(err) {
     const h3 = opc.sinTitulo ? "" : "<h3>Rentabilidad y gastos</h3>";
     if (!costoManoDeObra(p)) {
       return `<div class="detalle-seccion">${h3}
-        <p>Define el costo por hora del equipo en <strong>📊 Gastos → 💲 Costos del equipo</strong>
+        <p>Define el costo por hora del equipo en <strong>Gastos → Costos del equipo</strong>
         y aquí verás la ganancia real de este proyecto.</p></div>`;
     }
     const m = margenObra(p);
@@ -3103,7 +3103,7 @@ function esFalloDeRed(err) {
         <div class="barra horas-barra"><div class="barra-relleno ${clase}" style="width:${Math.max(0, Math.min(100, pct))}%"></div></div>
         ${avisoMargenFlojo(p, matGasto, matPresu, mo)}
         <p class="rent-nota">Sale de las horas reportadas × el costo de cada trabajador, más los
-        materiales comprados con precio. El presupuesto de materiales se define en 📊 Gastos.</p>
+        materiales comprados con precio. El presupuesto de materiales se define en Gastos.</p>
       </div>`;
   }
 
@@ -3121,13 +3121,13 @@ function esFalloDeRed(err) {
   // ============================================================
   // CHECKLIST — UNA lista de tareas por proyecto, la ve todo el equipo.
   // Nace del alcance del trabajo y crece con lo que sale en la obra.
-  // Cada tarea lleva su categoría: 🔴 Urgente · 🟡 Intermedio · ⚪ Puede esperar.
+  // Cada tarea lleva su categoría: Urgente · Intermedio · Puede esperar.
   // Lo urgente sale en el inicio de todos y avisa al teléfono.
   // ============================================================
   const PRIO = {
-    urgente: { etiqueta: "Urgente",       icono: "🔴", orden: 0 },
-    normal:  { etiqueta: "Intermedio",    icono: "🟡", orden: 1 },
-    espera:  { etiqueta: "Puede esperar", icono: "⚪", orden: 2 }
+    urgente: { etiqueta: "Urgente",       icono: "rojo", orden: 0 },
+    normal:  { etiqueta: "Intermedio",    icono: "ambar", orden: 1 },
+    espera:  { etiqueta: "Puede esperar", icono: "gris", orden: 2 }
   };
   const prioDe = v => (PRIO[v] ? v : "normal");
 
@@ -3183,9 +3183,9 @@ function esFalloDeRed(err) {
     return dePro.concat(generales);
   }
 
-  // Una fila del checklist: palomita · texto · categoría · ✎ · 🗑
+  // Una fila del checklist: palomita · texto · categoría · lápiz · papelera
   // opc.ficha (solo en la ficha de la obra): la fila enseña la palomita y el
-  // texto; la categoría, ✎, 🏷 y 🗑 van escondidos y los abre el ⋯ («Corregir»).
+  // texto; la categoría, el lápiz, la etiqueta y la papelera van escondidos y los abre el ⋯ («Corregir»).
   // OJO: .map(filaTarea) le pasa el ÍNDICE como segundo argumento; por eso se
   // pregunta por opc.ficha === true y no por opc a secas. Sin ficha pinta igual que siempre.
   function filaTarea(t, opc) {
@@ -3193,13 +3193,13 @@ function esFalloDeRed(err) {
     const p = prioDe(t.prioridad);
     // «[via Claude]» sale del texto y va aparte, debajo
     const pv = partirVia(t.texto);
-    const meta = [t.proyectoNombre ? "🔧 " + t.proyectoNombre : "", t.autor || "", t.fecha || "",
-                  !ficha && t.grupo ? "🏷 " + sinMontos(t.grupo) : ""]
+    const meta = [t.proyectoNombre || "", t.autor || "", t.fecha || "",
+                  !ficha && t.grupo ? sinMontos(t.grupo) : ""]
       .filter(Boolean).join(" · ");
     const selector = `
       <select class="tarea-prio ${p}" title="Categoría de la tarea">
         ${Object.entries(PRIO).map(([v, c]) =>
-          `<option value="${v}"${v === p ? " selected" : ""}>${c.icono} ${c.etiqueta}</option>`).join("")}
+          `<option value="${v}"${v === p ? " selected" : ""}>${c.etiqueta}</option>`).join("")}
       </select>`;
     if (ficha) {
       const escondidos = (t.hecha ? "" : selector) + (usuario.editar ? `<button type="button" class="tarea-editar" title="Corregir el texto">Corregir el texto</button>
@@ -3208,7 +3208,7 @@ function esFalloDeRed(err) {
       const punto = p === "urgente" ? ico("rojo") : p === "espera" ? ico("gris") : "";
       return `
       <div class="tarea ficha-fila prio-${p}${t.hecha ? " hecha" : ""}" data-tipo="${t.tipo}" data-id="${t.id}" data-fila="tarea" data-titulo="Renglón" data-sub="${esc(sinMontos(pv.texto))}">
-        <button type="button" class="tarea-check" title="${t.hecha ? "Devolver a pendiente" : "Marcar completada"}">${t.hecha ? "✅" : "⬜"}</button>
+        <button type="button" class="tarea-check" title="${t.hecha ? "Devolver a pendiente" : "Marcar completada"}" aria-label="${t.hecha ? "Devolver a pendiente" : "Marcar completada"}">${t.hecha ? (ico("okCirc") || "✓") : ico("cuadro")}</button>
         ${punto && !t.hecha ? `<span class="prio-punto" title="${esc(PRIO[p].etiqueta)}">${punto}</span>` : ""}
         <span class="tarea-info">
           <span class="tarea-texto">${esc(sinMontos(pv.texto))}</span>
@@ -3221,7 +3221,7 @@ function esFalloDeRed(err) {
     }
     return `
       <div class="tarea prio-${p}${t.hecha ? " hecha" : ""}" data-tipo="${t.tipo}" data-id="${t.id}">
-        <button class="tarea-check" title="${t.hecha ? "Devolver a pendiente" : "Marcar completada"}">${t.hecha ? "✅" : "⬜"}</button>
+        <button class="tarea-check" title="${t.hecha ? "Devolver a pendiente" : "Marcar completada"}" aria-label="${t.hecha ? "Devolver a pendiente" : "Marcar completada"}">${t.hecha ? (ico("okCirc") || "✓") : ico("cuadro")}</button>
         <span class="tarea-info">
           <span class="tarea-texto">${esc(sinMontos(pv.texto))}</span>
           ${pv.via ? VIA_HTML : ""}
@@ -3229,9 +3229,9 @@ function esFalloDeRed(err) {
         </span>
         <span class="tarea-controles">
         ${t.hecha ? "" : selector}
-        ${usuario.editar ? `<button class="tarea-editar insp-borrar" title="Corregir el texto">✎</button>
-        ${t.tipo === "punto" ? `<button class="tarea-grupo insp-borrar" title="Bloque en que sale en el portal del cliente">🏷</button>` : ""}
-        <button class="tarea-borrar insp-borrar" title="Eliminar">🗑</button>` : ""}
+        ${usuario.editar ? `<button class="tarea-editar insp-borrar" title="Corregir el texto" aria-label="Corregir el texto">${ico("lapiz")}</button>
+        ${t.tipo === "punto" ? `<button class="tarea-grupo insp-borrar" title="Bloque en que sale en el portal del cliente" aria-label="Bloque en que sale en el portal del cliente">${ico("etiqueta")}</button>` : ""}
+        <button class="tarea-borrar insp-borrar" title="Eliminar" aria-label="Eliminar">${ico("basura")}</button>` : ""}
         </span>
       </div>`;
   }
@@ -3254,9 +3254,9 @@ function esFalloDeRed(err) {
         </label>
         <label>Categoría
           <select name="prioridad">
-            <option value="normal">🟡 Intermedio</option>
-            <option value="urgente">🔴 Urgente</option>
-            <option value="espera">⚪ Puede esperar</option>
+            <option value="normal">Intermedio</option>
+            <option value="urgente">Urgente</option>
+            <option value="espera">Puede esperar</option>
           </select>
         </label>
         <button type="submit" class="accion">Agregar ✓</button>
@@ -3270,8 +3270,8 @@ function esFalloDeRed(err) {
       const urg = faltan.filter(t => t.prioridad === "urgente").length;
       const pct = tareas.length ? Math.round(((tareas.length - faltan.length) / tareas.length) * 100) : 0;
       const chip = !tareas.length ? "sin tareas"
-        : !faltan.length ? "✅ al día"
-        : `${faltan.length} por hacer${urg ? ` · ${urg} 🔴` : ""}`;
+        : !faltan.length ? ico("okCirc") + " al día"
+        : `${faltan.length} por hacer${urg ? ` · ${urg} ${ico("rojo")}` : ""}`;
       return `
         <details class="chk-det${urg ? " con-urgentes" : ""}" data-id="${esc(clave)}"${chkAbiertos.has(clave) ? " open" : ""}>
           <summary>
@@ -3282,7 +3282,7 @@ function esFalloDeRed(err) {
             ${tareas.length ? `<div class="barra horas-barra"><div class="barra-relleno ${pct >= 100 ? "ok" : ""}" style="width:${pct}%"></div></div>` : ""}
             ${tareas.map(filaTarea).join("") || `<p class="cal-sin-eventos">Sin tareas todavía — agrega la primera.</p>`}
             ${formNueva(pid)}
-            ${pid ? `<button type="button" class="chk-ficha" data-id="${esc(pid)}">📂 Ver la ficha del proyecto</button>` : ""}
+            ${pid ? `<button type="button" class="chk-ficha" data-id="${esc(pid)}">Ver la ficha del proyecto</button>` : ""}
           </div>
         </details>`;
     };
@@ -3296,9 +3296,9 @@ function esFalloDeRed(err) {
     $("checklist-panel").innerHTML = filtroChecklist ? `
       <div class="filtro-fila">${chipSoloHTML(filtroChecklist, "chk-quitar-filtro")}</div>
       ${fichas.map(x => tarjeta(x.p.nombre, x.p.id, x.tareas)).join("")}` : `
-      ${tarjeta("📌 Generales (sin proyecto)", "", generales)}
+      ${tarjeta("Generales (sin proyecto)", "", generales)}
       ${fichas.map(x => tarjeta(x.p.nombre, x.p.id, x.tareas)).join("")
-        || `<p class="cal-sin-eventos">Nada pendiente por aquí. 👌</p>`}`;
+        || `<p class="cal-sin-eventos">Nada pendiente por aquí.</p>`}`;
 
     if (filtroChecklist) $("chk-quitar-filtro").addEventListener("click", () => { filtroChecklist = ""; pintarChecklist(); });
     // Recordar qué fichas quedaron abiertas entre repintadas
@@ -3396,8 +3396,8 @@ function esFalloDeRed(err) {
           if (enEstado) enEstado.prioridad = nueva;
           recargar(undefined, "checklist");
           avisar(nueva === "urgente"
-            ? "🔴 Urgente — sale en el inicio y avisa al equipo"
-            : `Categoría: ${PRIO[nueva].icono} ${PRIO[nueva].etiqueta}`);
+            ? "Urgente — sale en el inicio y avisa al equipo"
+            : `Categoría: ${PRIO[nueva].etiqueta}`);
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
@@ -3425,7 +3425,7 @@ function esFalloDeRed(err) {
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
-    // 🏷 El bloque del portal: los puntos de una obra se agrupan en el portal
+    // El bloque del portal: los puntos de una obra se agrupan en el portal
     // del cliente (Fase 1, Generador…), cada bloque con su propia barra. Se
     // sugieren los bloques que ya usa esa obra para no escribirlos dos veces.
     raiz.querySelectorAll(".tarea-grupo").forEach(btn => {
@@ -3448,7 +3448,7 @@ function esFalloDeRed(err) {
           await DB.cambiarPunto(id, { grupo: limpio || null, grupo_en: null });
           punto.grupo = limpio;
           await recargar(undefined, "checklist");
-          avisar(limpio ? "🏷 Bloque: " + limpio : "El punto vuelve a la lista de siempre");
+          avisar(limpio ? "Bloque: " + limpio : "El punto vuelve a la lista de siempre");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
@@ -3501,7 +3501,7 @@ function esFalloDeRed(err) {
   }
 
   // ============================================================
-  // 💬 CHAT DEL EQUIPO — grupo y mensajes privados, dentro de la app.
+  // CHAT DEL EQUIPO — grupo y mensajes privados, dentro de la app.
   // Grupo: lo ven todos. Privado: solo tú y esa persona (lo garantiza
   // la base de datos, no la pantalla). Cada mensaje avisa al teléfono.
   // ============================================================
@@ -3567,7 +3567,7 @@ function esFalloDeRed(err) {
 
   async function irChat(conv) {
     chatConv = conv || null;
-    mostrar("chat", { kicker: "Equipo Max Power", titulo: "💬 Mensajes", volver: true, nuevo: false });
+    mostrar("chat", { kicker: "Equipo Max Power", titulo: "Mensajes", volver: true, nuevo: false });
     $("chat-panel").innerHTML = '<p class="cal-sin-eventos">Cargando…</p>';
     try {
       await refrescarChat(true);
@@ -3651,8 +3651,8 @@ function esFalloDeRed(err) {
           + '</button>';
       };
       panel.innerHTML = '<div class="cal-panel-card chat-lista">'
-        + (enGrupo ? fila("grupo", "👥", "Grupo Max Power", "Mensajes para el equipo de obra") : "")
-        + equipo.map(u => fila(u.id, "👤", u.nombre, "Mensaje privado — solo lo ven ustedes dos")).join("")
+        + (enGrupo ? fila("grupo", ico("personas"), "Grupo Max Power", "Mensajes para el equipo de obra") : "")
+        + equipo.map(u => fila(u.id, ico("persona"), u.nombre, "Mensaje privado — solo lo ven ustedes dos")).join("")
         + '</div>';
       panel.querySelectorAll(".chat-conv").forEach(b =>
         b.addEventListener("click", () => irChat(b.dataset.conv)));
@@ -3660,17 +3660,17 @@ function esFalloDeRed(err) {
     }
 
     // ---- Una conversación abierta ----
-    const nombre = chatConv === "grupo" ? "👥 Grupo Max Power"
-      : "👤 " + (state.nombrePorId[chatConv] || "Privado");
+    const nombre = chatConv === "grupo" ? "Grupo Max Power"
+      : (state.nombrePorId[chatConv] || "Privado");
     panel.innerHTML = '<div class="cal-panel-card chat-caja">'
       + '<div class="chat-cabeza"><button id="chat-atras" class="btn-volver" title="Conversaciones">‹</button>'
       + '<span class="chat-titulo">' + esc(nombre) + '</span>'
-      + (chatConv !== "grupo" ? '<span class="chat-priv">🔒 privado</span>' : "")
+      + (chatConv !== "grupo" ? '<span class="chat-priv">' + ico("candado") + ' privado</span>' : "")
       + '</div>'
       + '<div id="chat-hilo" class="chat-hilo" data-no-i18n>' + burbujasHTML() + '</div>'
       + '<form id="chat-form" class="chat-form">'
       + '<input name="texto" type="text" placeholder="Escribe un mensaje…" autocomplete="off" maxlength="500">'
-      + '<button type="submit" class="chat-enviar" title="Enviar">➤</button>'
+      + '<button type="submit" class="chat-enviar" title="Enviar" aria-label="Enviar">' + ico("enviar") + '</button>'
       + '</form></div>';
 
     const hilo = $("chat-hilo");
@@ -3691,7 +3691,7 @@ function esFalloDeRed(err) {
   }
 
   // ============================================================
-  // 🤖 EL ASISTENTE — el chat con el cerebro de la compañía
+  // EL ASISTENTE — el chat con el cerebro de la compañía
   // Cada persona tiene su propia conversación. El servidor decide qué
   // puede ver cada quien según su token: el equipo nunca recibe dinero.
   // ============================================================
@@ -3721,7 +3721,7 @@ function esFalloDeRed(err) {
   ];
 
   function irAsistente() {
-    mostrar("asistente", { kicker: "Max Power", titulo: "🤖 Asistente", volver: true, nuevo: false });
+    mostrar("asistente", { kicker: "Max Power", titulo: "Asistente", volver: true, nuevo: false });
     if (!asisMsgs.length) asisCargar();
     pintarAsistente();
   }
@@ -3730,14 +3730,14 @@ function esFalloDeRed(err) {
     const sugerencias = usuario.finanzas ? ASIS_SUGERENCIAS_DUENO : ASIS_SUGERENCIAS_EQUIPO;
     const burbujas = asisMsgs.map(m => `
       <div class="burbuja${m.rol === "user" ? " mia" : ""}">
-        <span class="burbuja-quien">${m.rol === "user" ? esc(usuario.nombre.split(" ")[0]) : "🤖 Asistente"}</span>
+        <span class="burbuja-quien">${m.rol === "user" ? esc(usuario.nombre.split(" ")[0]) : ico("chispa") + " Asistente"}</span>
         <span class="burbuja-texto">${esc(m.texto)}</span>
       </div>`).join("");
 
     $("asistente-panel").innerHTML = `
       <div class="cal-panel-card chat-caja">
         <div class="chat-cabeza">
-          <span class="chat-titulo">🤖 Asistente de Max Power</span>
+          <span class="chat-titulo">Asistente de Max Power</span>
           <span class="chat-priv">${usuario.finanzas ? "ve todo" : "sin dinero"}</span>
         </div>
         <p class="modal-nota" style="margin:.1rem 0 .4rem">
@@ -3747,16 +3747,16 @@ function esFalloDeRed(err) {
         </p>
         <div class="chat-hilo" id="asis-hilo">
           ${burbujas || `<p class="cal-sin-eventos">Escríbele abajo. Está para ayudarte.</p>`}
-          ${asisPensando ? `<div class="burbuja"><span class="burbuja-texto">✍️ ${asisAvance ? esc(asisAvance) : "pensando… (con lo difícil puede tardar unos minutos)"}</span></div>` : ""}
+          ${asisPensando ? `<div class="burbuja"><span class="burbuja-texto">${asisAvance ? esc(asisAvance) : "pensando… (con lo difícil puede tardar unos minutos)"}</span></div>` : ""}
         </div>
         ${!asisMsgs.length ? `<div class="chat-sugerencias">
           ${sugerencias.map(x => `<button type="button" class="asis-sug">${esc(x)}</button>`).join("")}
         </div>` : ""}
         <form class="chat-form" id="asis-form" autocomplete="off">
           <input id="asis-texto" type="text" placeholder="Escribe tu pregunta…" ${asisPensando ? "disabled" : ""}>
-          <button type="submit" class="chat-enviar" title="Enviar" ${asisPensando ? "disabled" : ""}>➤</button>
+          <button type="submit" class="chat-enviar" title="Enviar" aria-label="Enviar" ${asisPensando ? "disabled" : ""}>${ico("enviar")}</button>
         </form>
-        ${asisMsgs.length ? `<button type="button" class="accion secundaria" id="asis-limpiar" style="margin-top:.4rem">🧹 Empezar de nuevo</button>` : ""}
+        ${asisMsgs.length ? `<button type="button" class="accion secundaria" id="asis-limpiar" style="margin-top:.4rem">Empezar de nuevo</button>` : ""}
       </div>`;
 
     const hilo = $("asis-hilo");
@@ -3807,7 +3807,7 @@ function esFalloDeRed(err) {
   $("btn-asistente").addEventListener("click", irAsistente);
   $("btn-chat").addEventListener("click", () => irChat(chatConv));
 
-  // 🚀 Arranque: las gestiones que faltan para empezar. Los materiales por comprar
+  // Arranque: las gestiones que faltan para empezar. Los materiales por comprar
   // ya no se listan aquí: los lleva la señal «N por comprar» del tablero.
   function arranqueHTML(p) {
     if (!["enviado", "aprobado", "ejecucion", "pausa"].includes(p.estado)) return "";
@@ -3815,7 +3815,7 @@ function esFalloDeRed(err) {
     if (!gests.length) return "";
     const filasG = gests.map(g => `
       <div class="mat-item falta">
-        <span class="mat-icono">📌</span>
+        <span class="mat-icono">${ico("chincheta")}</span>
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(sinMontos(g.descripcion))}</span>
           <span class="alcance-estado">gestión pendiente · ${esc(g.autor)}</span>
@@ -3824,7 +3824,7 @@ function esFalloDeRed(err) {
       </div>`).join("");
     return `
       <div class="detalle-seccion" id="ficha-arranque">
-        <h3>🚀 Arranque — lo que falta para empezar</h3>
+        <h3>Arranque — lo que falta para empezar</h3>
         ${filasG}
         <button type="button" class="accion secundaria btn-ir-materiales" data-id="${esc(p.id)}">Ver en Materiales ›</button>
       </div>`;
@@ -3837,7 +3837,7 @@ function esFalloDeRed(err) {
     const lista = (state.externos || []).filter(x => x.proyecto === p.id);
     const filas = lista.map(x => `
       <div class="alcance-item">
-        <span class="alcance-tipo">${x.tipo === "horas" && x.horas ? esc(x.horas) + "h" : "AJUSTE"}</span>
+        <span class="alcance-tipo">${x.tipo === "horas" && x.horas ? esc(x.horas) + "h" : "Ajuste"}</span>
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(x.descripcion)}</span>
           <span class="alcance-estado">${x.fecha ? fechaBonita(x.fecha) : ""}</span>
@@ -3882,7 +3882,7 @@ function esFalloDeRed(err) {
             </label>
           </div>
           <p class="modal-nota">Esto entra como gasto del proyecto y se resta del margen.
-          El trabajador NO necesita cuenta en la app.</p>
+          El trabajador no necesita cuenta en la app.</p>
           <div class="modal-botones">
             <button type="button" class="accion secundaria form-cerrar">Cancelar</button>
             <button type="submit" class="accion">Guardar</button>
@@ -3900,8 +3900,8 @@ function esFalloDeRed(err) {
           <span class="alcance-titulo">${esc(sinMontos(r.titulo))}</span>
           <span class="alcance-estado">${esc(r.estado || "")}</span>
         </span>
-        ${r.ruta ? `<a class="doc-link" href="#" data-docruta="${esc(r.ruta)}" target="_blank" rel="noopener">📄 Ver</a>`
-          : urlSegura(r.url) ? `<a class="doc-link" href="${esc(urlSegura(r.url))}" target="_blank" rel="noopener">📄 Ver</a>` : ""}
+        ${r.ruta ? `<a class="doc-link" href="#" data-docruta="${esc(r.ruta)}" target="_blank" rel="noopener">Ver</a>`
+          : urlSegura(r.url) ? `<a class="doc-link" href="${esc(urlSegura(r.url))}" target="_blank" rel="noopener">Ver</a>` : ""}
       </div>`).join("");
     return `<div class="detalle-seccion"><h3>RFIs</h3>${items}</div>`;
   }
@@ -3924,13 +3924,13 @@ function esFalloDeRed(err) {
           ${f.estado === "borrador" ? `<span class="alcance-estado">borrador: todavía no se emitió</span>` : ""}
         </span>
         ${f.id && usuario.editar ? `<button type="button" class="accion secundaria chica factura-pagada" data-id="${f.id}" data-num="${esc(f.num)}" data-monto="${saldoFactura(f)}" data-proyecto="${esc(p.id)}"${personal(f) ? ' data-personal="1"' : ""}${cobrandoFacturas.has(String(f.id)) ? " disabled" : ""}
-          title="${personal(f) ? "Marcarla como COBRADA — es dinero personal: no se suma a lo cobrado de la obra" : "Marcarla como COBRADA — es lo que cuadra el dinero de la app con el banco"}">Marcar cobrada</button>` : ""}
+          title="${personal(f) ? "Marcarla como cobrada — es dinero personal: no se suma a lo cobrado de la obra" : "Marcarla como cobrada — es lo que cuadra el dinero de la app con el banco"}">Marcar cobrada</button>` : ""}
       </div>`;
     const filasCobradas = cobradas.map(f => `<tr>
         <td>#${esc(f.num)}</td>
         <td>${esc(f.fecha)}</td>
         <td class="r">${fmt(f.monto)}</td>
-        <td class="r"><span class="f-estado pagada">PAGADA</span></td>
+        <td class="r"><span class="f-estado pagada">Pagada</span></td>
       </tr>`).join("");
     const sumaCobradas = cobradas.filter(f => !personal(f)).reduce((s, f) => s + (Number(f.monto) || 0), 0);
     const total = p.facturas.filter(f => !personal(f)).reduce((s, f) => s + (Number(f.monto) || 0), 0);
@@ -3982,7 +3982,7 @@ function esFalloDeRed(err) {
     if (valor !== p.estado) {
       const etq = ESTADOS[valor] ? ESTADOS[valor].etiqueta : valor;
       const pregunta = valor === "completado"
-        ? `¿Marcar «${p.nombre}» como COMPLETADA?\n\nSale de las obras en ejecución. Si fue sin querer, se reabre desde el estado.`
+        ? `¿Marcar «${p.nombre}» como completada?\n\nSale de las obras en ejecución. Si fue sin querer, se reabre desde el estado.`
         : `¿Pasar «${p.nombre}» a ${etq}?`;
       if (!await confirmar(pregunta)) { if (selectEl) selectEl.value = p.estado; return; }
     }
@@ -4074,7 +4074,7 @@ function esFalloDeRed(err) {
       ? `cliente.html?g=${encodeURIComponent(llave)}&p=${encodeURIComponent(proyectoId)}`
       : `gc.html?g=${encodeURIComponent(llave)}`);
 
-  // ── 🏗 Portal del contratista (GC) ────────────────────────────────
+  // ── Portal del contratista (GC) ────────────────────────────────
   // Una obra puede ser de un contratista. Si el contrato es CON él, ve la
   // facturación de SU obra; si la paga el dueño de la casa, no ve un centavo.
   function portalGCHTML(p) {
@@ -4125,8 +4125,8 @@ function esFalloDeRed(err) {
             </label>
             <label>¿Cómo participan?
               <select name="modo">
-                <option value="referido"${contrato ? "" : " selected"}>Solo coordinan — la paga el dueño (NO ven dinero)</option>
-                <option value="contrato"${contrato ? " selected" : ""}>Es el cliente — le facturamos a ellos (SÍ ven el dinero)</option>
+                <option value="referido"${contrato ? "" : " selected"}>Solo coordinan — la paga el dueño (no ven dinero)</option>
+                <option value="contrato"${contrato ? " selected" : ""}>Es el cliente — le facturamos a ellos (sí ven el dinero)</option>
               </select>
             </label>
           </div>
@@ -4161,7 +4161,7 @@ function esFalloDeRed(err) {
     if (!await confirmar(
       `¿Le sumo ${fmt(monto)} de ${deQue} a lo cobrado del proyecto?\n\n` +
       `Cobrado ahora: ${fmt(antes)}\nQuedaría en: ${fmt(despues)}\n\n` +
-      `(Si ese dinero ya estaba contado, dile que NO.)`)) return;
+      `(Si ese dinero ya estaba contado, dile que no.)`)) return;
     await DB.cambiarFinanzas(p.id, { cobrado: despues });
   }
 
@@ -4186,11 +4186,11 @@ function esFalloDeRed(err) {
     const cob = typeof p.cobrado === "number" ? p.cobrado : null;
     if (cob === null || !p.facturas || !p.facturas.length) return "";
     if (cob < pagadas - 0.02) {
-      return `<div class="rent-humo">⚠ "Cobrado" dice ${fmt(cob)} pero las facturas ya marcadas cobradas suman ${fmt(pagadas)} —
+      return `<div class="rent-humo">${ico("alerta")} "Cobrado" dice ${fmt(cob)} pero las facturas ya marcadas cobradas suman ${fmt(pagadas)} —
           faltan ${fmt(Math.round((pagadas - cob) * 100) / 100)} por contar.</div>`;
     }
     if (cob > todas + 0.02) {
-      return `<div class="rent-humo">⚠ "Cobrado" dice ${fmt(cob)} y todas las facturas de este proyecto juntas suman ${fmt(todas)} —
+      return `<div class="rent-humo">${ico("alerta")} "Cobrado" dice ${fmt(cob)} y todas las facturas de este proyecto juntas suman ${fmt(todas)} —
           sobran ${fmt(Math.round((cob - todas) * 100) / 100)} sin ninguna factura detrás.</div>`;
     }
     return "";
@@ -4245,7 +4245,7 @@ function esFalloDeRed(err) {
           <div class="tv2-factura">
             <span>Factura #${esc(f.num)} sin cobrar · ${fmt(saldoFactura(f))}</span>
             ${f.id && usuario.editar ? `<button type="button" class="accion secundaria chica factura-pagada" data-id="${f.id}" data-num="${esc(f.num)}" data-monto="${saldoFactura(f)}" data-proyecto="${esc(p.id)}"${cobrandoFacturas.has(String(f.id)) ? " disabled" : ""}
-              title="Marcarla como COBRADA — es lo que cuadra el dinero de la app con el banco">Marcar cobrada</button>` : ""}
+              title="Marcarla como cobrada — es lo que cuadra el dinero de la app con el banco">Marcar cobrada</button>` : ""}
           </div>`).join("");
       dineroHTML = cobrado + facturas;
     }
@@ -4253,7 +4253,7 @@ function esFalloDeRed(err) {
       <details class="chk-det proy-det${urg ? " con-urgentes" : ""}" data-id="${esc(p.id)}"${listaAbiertos.has(p.id) ? " open" : ""}>
         <summary>
           <span class="chk-nombre">${esc(p.nombre)}</span>
-          <span class="chk-avance">${urg ? `${ico("rojo") || "🔴"} ` : ""}${resumen}</span>
+          <span class="chk-avance">${urg ? `${ico("rojo")} ` : ""}${resumen}</span>
         </summary>
         <div class="chk-cuerpo">
           <article class="proyecto tarjeta-v2" data-id="${esc(p.id)}">
@@ -5076,7 +5076,7 @@ function esFalloDeRed(err) {
     const panel = ([k, c]) => `
         <section class="ficha-panel${k === "obra" ? " panel-obra" + (fichaVista.editando.has(p.id) ? " editando" : "") : ""}" id="panel-${k}" role="tabpanel" aria-labelledby="tab-${k}" data-pestana="${k}"${k === activa ? "" : " hidden"}>
           ${k === "archivos" && usuario.finanzas && p.portalCompleto
-            ? `<div class="aviso-luzverde">${ico("verde") || "🟢"}<span>Luz verde encendida: el cliente ve todos los documentos, fotos y videos de esta obra.</span></div>` : ""}
+            ? `<div class="aviso-luzverde">${ico("verde")}<span>Luz verde encendida: el cliente ve todos los documentos, fotos y videos de esta obra.</span></div>` : ""}
           <div class="proyecto-detalle">
             <div class="det-col det-izq">${c ? c.izq : ""}</div>
             <div class="det-col det-der">${c ? c.der : ""}</div>
@@ -5123,13 +5123,13 @@ function esFalloDeRed(err) {
       const historia = [];
       const escondidos = [];
       if (!p.portalCompleto) escondidos.push(`<button type="button" class="doc-portal" data-id="${d.id}" data-portal="${d.portal ? 1 : 0}"
-          title="${d.portal ? "El cliente SÍ ve este documento — toca para ocultarlo" : "El cliente NO lo ve — toca para mostrárselo"}">${d.portal ? "Ocultar al cliente" : "Enseñar al cliente"}</button>`);
+          title="${d.portal ? "El cliente sí ve este documento — toca para ocultarlo" : "El cliente no lo ve — toca para mostrárselo"}">${d.portal ? "Ocultar al cliente" : "Enseñar al cliente"}</button>`);
       if (firmable) {
         if (d.visitas) historia.push(`${d.visitas.quien === "contratista" ? "El contratista" : "El cliente"} lo abrió ${d.visitas.n === 1 ? "1 vez" : d.visitas.n + " veces"} · última ${fechaHoraFlorida(d.visitas.ultima)} (hora de Florida)`);
         else if (!d.firmadoEl && d.vistoEl) historia.push(`Visto ${d.vistoEl}`);
         if (d.firmadoEl) historia.push(`Firmó ${d.firmaNombre || ""} · ${d.firmadoEl}`);
         else escondidos.push(`<button type="button" class="doc-firma" data-id="${d.id}" data-pide="${d.pideFirma ? 1 : 0}"
-          title="${d.pideFirma ? "Le está pidiendo FIRMA al cliente (nombre + firma con el dedo) — toca para quitarla" : "Pedirle al cliente que lo FIRME (nombre + firma con el dedo, queda de respaldo)"}">${d.pideFirma ? "Quitar la firma pedida" : "Pedir firma"}</button>`);
+          title="${d.pideFirma ? "Le está pidiendo firma al cliente (nombre + firma con el dedo) — toca para quitarla" : "Pedirle al cliente que lo firme (nombre + firma con el dedo, queda de respaldo)"}">${d.pideFirma ? "Quitar la firma pedida" : "Pedir firma"}</button>`);
         // P48: hasta cuándo vale. Un contrato subido a mano lleva su fecha desde que
         // se pide la firma; después de esa fecha el portal no deja firmar con precios viejos.
         if (d.pideFirma && !d.firmadoEl) {
@@ -5196,18 +5196,18 @@ function esFalloDeRed(err) {
       ? `<p class="modal-nota">${ico("ojo")}<span>Última visita:</span> <strong>${esc(fechaHoraFlorida(visita))}</strong> <span>(hora de Florida)</span></p>`
       : `<p class="modal-nota">El cliente todavía no ha abierto su portal.</p>`;
     const notaQueVe = p.portalCompleto
-      ? `<strong>Luz verde encendida:</strong> el cliente ve TODOS los documentos —contratos y Change Orders incluidos—,
+      ? `<strong>Luz verde encendida:</strong> el cliente ve todos los documentos —contratos y Change Orders incluidos—,
          todas las fotos y todos los videos, estén marcados o no. Lo que subas a este proyecto se le publica solo.`
       : `El cliente ve: etapa, checklist con su %, inspecciones, próximos días de trabajo y los documentos que le enseñes.
-         Los RFI salen siempre; los CONTRATOS nunca salen (tienen precios) a menos que tú los marques.`;
+         Los RFI salen siempre; los contratos nunca salen (tienen precios) a menos que tú los marques.`;
     const queVe = p.portalToken ? `
       <div class="detalle-seccion" id="ficha-que-ve">
         <h3>Qué ve el cliente</h3>
         <div class="portal-ops">
           <button type="button" class="lev-chip portal-op${p.portalDinero ? " puesto" : ""}" id="btn-portal-dinero" aria-pressed="${!!p.portalDinero}"
-            title="${p.portalDinero ? "El cliente SÍ ve su contrato, pagos y facturas — toca para ocultarlos" : "El cliente NO ve dinero — toca para mostrarle su contrato, pagos y facturas"}">${ico("dolar")}<span>Ve el dinero:</span> <b>${p.portalDinero ? "SÍ" : "NO"}</b></button>
+            title="${p.portalDinero ? "El cliente sí ve su contrato, pagos y facturas — toca para ocultarlos" : "El cliente no ve dinero — toca para mostrarle su contrato, pagos y facturas"}">${ico("dolar")}<span>Ve el dinero:</span> <b>${p.portalDinero ? "Sí" : "No"}</b></button>
           <button type="button" class="lev-chip portal-op${p.portalCompleto ? " puesto" : ""}" id="btn-portal-completo" aria-pressed="${!!p.portalCompleto}"
-            title="${p.portalCompleto ? "Luz verde: el cliente ve TODOS los documentos, fotos y videos — toca para volver al modo uno-a-uno" : "Toca para darle luz verde: verá TODOS los documentos (contratos y CO), fotos y videos sin marcarlos uno a uno"}">${ico("globo")}<span>Acceso completo:</span> <b>${p.portalCompleto ? "SÍ" : "NO"}</b></button>
+            title="${p.portalCompleto ? "Luz verde: el cliente ve todos los documentos, fotos y videos — toca para volver al modo uno-a-uno" : "Toca para darle luz verde: verá todos los documentos (contratos y CO), fotos y videos sin marcarlos uno a uno"}">${ico("globo")}<span>Acceso completo:</span> <b>${p.portalCompleto ? "Sí" : "No"}</b></button>
         </div>
         <p class="modal-nota"><span>Email del cliente:</span> <strong>${esc(p.clienteEmail || "sin anotar")}</strong></p>
         ${lineaVisita}
@@ -5267,7 +5267,7 @@ function esFalloDeRed(err) {
     const p = proyectos().find(x => x.id === id);
     if (!p) return;
     const escrito = await pedirDato(
-      `⚠️ Vas a ELIMINAR "${p.nombre}" para siempre.\n\n` +
+      `Vas a eliminar "${p.nombre}" para siempre.\n\n` +
       `Se borran también sus finanzas, hitos, facturas, horas del equipo, fotos, ` +
       `documentos y pendientes. Esto NO se puede deshacer.\n\n` +
       `Si es lo que quieres, escribe ELIMINAR (en mayúsculas):`);
@@ -5426,7 +5426,7 @@ function esFalloDeRed(err) {
       // y el campo nunca recibe dinero ni escondido)
       const escondidos = usuario.finanzas ? `${p.portalCompleto ? "" : `
           <button type="button" class="foto-cliente${f.portal ? " on" : ""}" data-id="${f.id}" data-portal="${f.portal ? 1 : 0}"
-            title="${f.portal ? "El cliente SÍ ve esta foto" : "El cliente NO la ve"}">${f.portal ? "El cliente la ve · ocultársela" : "Enseñársela al cliente"}</button>`}
+            title="${f.portal ? "El cliente sí ve esta foto" : "El cliente no la ve"}">${f.portal ? "El cliente la ve · ocultársela" : "Enseñársela al cliente"}</button>`}
           <button type="button" class="foto-nota" data-id="${f.id}" data-nota="${esc(f.nota || "")}"
             title="Corregir la descripción de la foto">Corregir la nota</button>` : (f.autorId === usuario.id && sinMontos(f.nota || "") === (f.nota || "") ? `
           <button type="button" class="foto-nota" data-id="${f.id}" data-nota="${esc(f.nota || "")}"
@@ -5462,7 +5462,7 @@ function esFalloDeRed(err) {
           </label>
           <div class="modal-botones">
             <button type="button" class="accion secundaria form-cerrar">Cancelar</button>
-            <button type="submit" class="accion">⬆ Subir foto</button>
+            <button type="submit" class="accion">Subir foto</button>
           </div>
         </form>
       </div>`;
@@ -5634,7 +5634,7 @@ function esFalloDeRed(err) {
     });
 
     // "+ Agregar documento" (solo aparece para el dueño)
-    // Portal del cliente: copiar link, regenerar llave, y el 👁 por documento
+    // Portal del cliente: copiar link, regenerar llave, y el ojo por documento
     const btnEmailCli = $detalle.querySelector("#btn-cliente-email");
     if (btnEmailCli) btnEmailCli.addEventListener("click", async () => {
       const nuevo = await pedirDato("Email del cliente (para mandarle su copia firmada y avisos):", btnEmailCli.dataset.email || "");
@@ -5642,10 +5642,10 @@ function esFalloDeRed(err) {
       try {
         await DB.cambiarProyecto(btnEmailCli.dataset.id, { cliente_email: nuevo.trim() || null });
         await recargar(btnEmailCli.dataset.id, "proyecto");
-        avisar("✉️ Email del cliente guardado");
+        avisar("Email del cliente guardado");
       } catch (err) { avisar("No se pudo: " + err.message, true); }
     });
-    // 📣 El párrafo «dónde vamos» del portal. Se escribe en español; la rutina
+    // El párrafo «dónde vamos» del portal. Se escribe en español; la rutina
     // del inglés lo traduce sola para los clientes que leen en inglés.
     const btnPortalResumen = $detalle.querySelector("#btn-portal-resumen");
     if (btnPortalResumen) btnPortalResumen.addEventListener("click", async () => {
@@ -5660,7 +5660,7 @@ function esFalloDeRed(err) {
       try {
         await DB.cambiarProyecto(proyectoActivo, { portal_resumen: limpio || null, portal_resumen_en: null });
         await recargar(undefined, "proyecto");
-        avisar(limpio ? "📣 El cliente ya ve en qué va la obra" : "Se quitó el resumen del portal");
+        avisar(limpio ? "El cliente ya ve en qué va la obra" : "Se quitó el resumen del portal");
       } catch (e) { avisar("No se pudo guardar: " + (e.message || e), true); }
     });
 
@@ -5680,15 +5680,15 @@ function esFalloDeRed(err) {
       const p = proyectos().find(x => x.id === proyectoActivo);
       if (!p) return;
       if (!p.portalCompleto && !await confirmar(
-        "🟢 ¿Darle a este cliente ACCESO COMPLETO a su proyecto?\n\n" +
-        "Verá TODOS los documentos (contratos y change orders incluidos, con sus precios) " +
-        "y TODAS las fotos y videos — sin tener que marcarlos uno a uno.\n\n" +
-        "Las horas del equipo y las compras de materiales NUNCA salen en el portal.\n" +
+        "¿Darle a este cliente acceso completo a su proyecto?\n\n" +
+        "Verá todos los documentos (contratos y change orders incluidos, con sus precios) " +
+        "y todas las fotos y videos — sin tener que marcarlos uno a uno.\n\n" +
+        "Las horas del equipo y las compras de materiales nunca salen en el portal.\n" +
         "Solo para clientes directos.")) return;
       try {
         await DB.cambiarProyecto(proyectoActivo, { portal_completo: !p.portalCompleto });
         await recargar(undefined, "proyecto");
-        avisar(!p.portalCompleto ? "🟢 Luz verde — el cliente ve todo su proyecto" : "De vuelta al modo uno-a-uno (solo lo marcado con 👁)");
+        avisar(!p.portalCompleto ? "Luz verde — el cliente ve todo su proyecto" : "De vuelta al modo uno-a-uno (solo lo marcado con el ojo)");
       } catch (err) { avisar("No se pudo: " + err.message, true); }
     });
     const btnPortalDinero = $detalle.querySelector("#btn-portal-dinero");
@@ -5697,15 +5697,15 @@ function esFalloDeRed(err) {
       if (!p) return;
       if (!p.portalDinero && !await confirmar(
         "¿Mostrarle a este cliente su contrato, pagos y facturas en el portal?\n\n" +
-        "Solo para proyectos donde tratas DIRECTO con el cliente. " +
+        "Solo para proyectos donde tratas directo con el cliente. " +
         "Si el trabajo va a través de un contratista (Wisdom u otro), déjalo apagado.")) return;
       try {
         await DB.cambiarProyecto(proyectoActivo, { portal_dinero: !p.portalDinero });
         await recargar(undefined, "proyecto");
-        avisar(!p.portalDinero ? "💵 El cliente ahora VE su contrato y pagos" : "El dinero quedó oculto para el cliente");
+        avisar(!p.portalDinero ? "El cliente ahora ve su contrato y pagos" : "El dinero quedó oculto para el cliente");
       } catch (err) { avisar("No se pudo: " + err.message, true); }
     });
-    // ── 🏗 Portal del contratista ──────────────────────────────────
+    // ── Portal del contratista ──────────────────────────────────
     const copiar = async (url, bien) => {
       try { await navigator.clipboard.writeText(url); avisar(bien); }
       catch { await pedirDato("Copia el enlace:", url); }
@@ -5725,7 +5725,7 @@ function esFalloDeRed(err) {
       const p0 = proyectos().find(x => x.id === proyectoActivo);
       const gc0 = gcDeProyecto(p0);
       if (!gc0) return;
-      if (!gc0.email) { avisar("El contratista no tiene email. Ponlo en Licencia y seguros ✎", true); return; }
+      if (!gc0.email) { avisar("El contratista no tiene email. Ponlo en Licencia y seguros", true); return; }
       const conDinero = p0.contratistaModo === "contrato";
       // Una lista para tocar, en vez de escribir un número (las de dinero solo en modo contrato)
       const opciones = [{ valor: "inspeccion", texto: "Pasó la inspección" }];
@@ -5793,16 +5793,16 @@ function esFalloDeRed(err) {
       } catch (err) { avisar("No se pudo: " + err.message, true); }
     });
     // OJO (arreglado 31-ago): antes este selector era ".doc-cliente:not(...)" y
-    // agarraba TAMBIÉN el ✎ de la nota de las fotos. Como la foto y el documento
+    // agarraba TAMBIÉN el lápiz de la nota de las fotos. Como la foto y el documento
     // pueden compartir el mismo id, corregir la nota de una foto publicaba un
-    // contrato en el portal del cliente. Ahora solo engancha el botón del 👁.
+    // contrato en el portal del cliente. Ahora solo engancha el botón del ojo.
     $detalle.querySelectorAll(".doc-portal").forEach(btn => {
       btn.addEventListener("click", async () => {
         const visible = btn.dataset.portal === "1";
         try {
           await DB.cambiarDocumento(btn.dataset.id, { portal: !visible });
           await recargar(undefined, "documentos");
-          avisar(!visible ? "👁 El cliente ahora VE este documento — OJO: en Drive debe estar compartido como 'cualquiera con el enlace' para que pueda abrirlo" : "🚫 Documento oculto para el cliente");
+          avisar(!visible ? "El cliente ahora ve este documento — ojo: en Drive debe estar compartido como 'cualquiera con el enlace' para que pueda abrirlo" : "Documento oculto para el cliente");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
@@ -5822,7 +5822,7 @@ function esFalloDeRed(err) {
         try {
           await DB.cambiarDocumento(btn.dataset.id, cambios);
           await recargar(undefined, "documentos");
-          avisar(!pide ? "🖊 El cliente verá 'Revisar y firmar' en su portal" + (cambios.valida_hasta ? ` (vale hasta ${cambios.valida_hasta})` : "") : "Petición de firma quitada");
+          avisar(!pide ? "El cliente verá 'Revisar y firmar' en su portal" + (cambios.valida_hasta ? ` (vale hasta ${cambios.valida_hasta})` : "") : "Petición de firma quitada");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
@@ -5841,7 +5841,7 @@ function esFalloDeRed(err) {
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
-    // ✒️ La contrafirma de Edgar: queda registrada y el certificado del PDF
+    // La contrafirma de Edgar: queda registrada y el certificado del PDF
     // sellado muestra las dos firmas (si el cliente firma después, sale ya;
     // el documento queda "firmado por las dos partes" en el portal)
     $detalle.querySelectorAll(".doc-contrafirma").forEach(btn => {
@@ -5854,7 +5854,7 @@ function esFalloDeRed(err) {
             contrafirma_el: new Date().toISOString()
           });
           await recargar();
-          avisar("✒️ Contrafirmado — tu firma saldrá en el certificado");
+          avisar("Contrafirmado — tu firma saldrá en el certificado");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
@@ -5864,11 +5864,11 @@ function esFalloDeRed(err) {
         try {
           await DB.cambiarDocumento(btn.dataset.id, { pide_aprobacion: !pide });
           await recargar(undefined, "documentos");
-          avisar(!pide ? "✍️ El cliente verá el botón de aprobar" : "Aprobación quitada");
+          avisar(!pide ? "El cliente verá el botón de aprobar" : "Aprobación quitada");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
-    // 🧾 Facturar un hito: crea la factura DIRECTO en QuickBooks.
+    // Facturar un hito: crea la factura DIRECTO en QuickBooks.
     // Si la conexión API aún no está montada, plan B: copia el texto y abre QB.
     $detalle.querySelectorAll(".hito-release").forEach(btn => {
       btn.addEventListener("click", async () => {
@@ -5894,8 +5894,8 @@ function esFalloDeRed(err) {
         const destino = (gcF && gcF.email) || (pF && (pF.clienteEmail || pF.cliente_email)) || "";
         const quien = gcF && gcF.email ? `${gcF.nombre} (${gcF.email})` : destino;
         const pregunta = destino
-          ? `¿Crear esta factura en QuickBooks y MANDARLA ahora a ${quien}?`
-          : "Este proyecto no tiene email de cobro. ¿Crear la factura en QuickBooks SIN mandarla? (después la mandas desde QuickBooks)";
+          ? `¿Crear esta factura en QuickBooks y mandarla ahora a ${quien}?`
+          : "Este proyecto no tiene email de cobro. ¿Crear la factura en QuickBooks sin mandarla? (después la mandas desde QuickBooks)";
         // Candado que no depende del botón: si la ficha se repintó mientras se
         // facturaba, el botón nuevo no sabe nada; este apunte sí (P03)
         const clave = String(btn.dataset.hito);
@@ -5966,7 +5966,7 @@ function esFalloDeRed(err) {
         devolver();
       });
     });
-    // 💵 Marcar un HITO como cobrado — y ofrecer sumarlo a "cobrado" del
+    // Marcar un HITO como cobrado — y ofrecer sumarlo a "cobrado" del
     // proyecto, que es la casilla que hace cuadrar la app con el banco.
     // Se pregunta a propósito: la casilla la lleva Edgar a mano y no se
     // le pisa sin permiso.
@@ -5988,7 +5988,7 @@ function esFalloDeRed(err) {
           await sumarACobrado(p, monto, `el hito "${btn.dataset.titulo}"`);
           cobrandoHitos.delete(clave);
           await recargar(undefined, "dinero");
-          avisar("💵 Hito marcado cobrado ✓");
+          avisar("Hito marcado cobrado ✓");
         } catch (err) {
           cobrandoHitos.delete(clave);
           avisar("No se pudo: " + err.message, true);
@@ -6021,7 +6021,7 @@ function esFalloDeRed(err) {
         try {
           await DB.cambiarFoto(btn.dataset.id, { portal: !visible });
           await recargar(undefined, "fotos");
-          avisar(!visible ? "👁 El cliente ahora VE esta foto" : "🚫 Foto oculta para el cliente");
+          avisar(!visible ? "El cliente ahora ve esta foto" : "Foto oculta para el cliente");
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
@@ -6154,7 +6154,7 @@ function esFalloDeRed(err) {
       });
     });
 
-    // 🗑 Eliminar inspección (solo dueño, con confirmación)
+    // Eliminar inspección (solo dueño, con confirmación)
     $detalle.querySelectorAll(".btn-insp-borrar").forEach(btn => {
       btn.addEventListener("click", async () => {
         if (!await confirmar(`¿Eliminar la inspección ${btn.dataset.tipo}?\n\nÚsalo solo si se anotó por error. Esto no se puede deshacer.`)) return;
@@ -6168,7 +6168,7 @@ function esFalloDeRed(err) {
       });
     });
 
-    // 🚀 Arranque: marcar gestión hecha o saltar a Materiales
+    // Arranque: marcar gestión hecha o saltar a Materiales
     $detalle.querySelectorAll(".btn-gestion-hecha-ficha").forEach(btn => {
       btn.addEventListener("click", async () => {
         try {
@@ -6243,7 +6243,7 @@ function esFalloDeRed(err) {
       });
     });
 
-    // "📸 Agregar foto" (todo el equipo puede)
+    // "Agregar foto" (todo el equipo puede)
     const btnFoto = $detalle.querySelector(".btn-agregar-foto");
     if (btnFoto) {
       const formFoto = $detalle.querySelector(".form-foto");
@@ -6252,7 +6252,7 @@ function esFalloDeRed(err) {
       const botonSubir = formFoto.querySelector('button[type="submit"]');
       const textoSubir = () => {
         const a = formFoto.elements.archivo.files[0];
-        return a && (a.type || "").startsWith("video/") ? "⬆ Subir video" : "⬆ Subir foto";
+        return a && (a.type || "").startsWith("video/") ? "Subir video" : "Subir foto";
       };
       formFoto.elements.archivo.addEventListener("change", () => { botonSubir.textContent = textoSubir(); });
       formFoto.addEventListener("submit", async e => {
@@ -6273,7 +6273,7 @@ function esFalloDeRed(err) {
             // Algunos teléfonos mandan el video sin tipo: también se mira la extensión
             const esVid = (archivo.type || "").startsWith("video/") || /\.(mp4|mov|webm)$/i.test(archivo.name || "");
             if (esVid && archivo.size > 25 * 1024 * 1024) {
-              avisar("Ese video es muy grande. Grábalo CORTO, como una inspección virtual (30-45 segundos, máx. 25 MB).", true);
+              avisar("Ese video es muy grande. Grábalo corto, como una inspección virtual (30-45 segundos, máx. 25 MB).", true);
               break;
             }
             // Foto: se achica antes de subir. Video: sube tal cual.
@@ -6301,7 +6301,7 @@ function esFalloDeRed(err) {
         // se pierda en el siguiente repintado
         if (!subidas) formFoto.dataset.enviado = "";
         // Una sola recarga al final, no una por foto
-        if (esperando) { avisar(esperando === 1 ? "📶 Sin señal — la foto quedó guardada en el teléfono y se sube sola cuando vuelva la señal." : `📶 Sin señal — ${esperando} fotos quedaron guardadas en el teléfono y se suben solas cuando vuelva la señal.`); formFoto.reset(); formFoto.dataset.enviado = ""; }
+        if (esperando) { avisar(esperando === 1 ? "Sin señal — la foto quedó guardada en el teléfono y se sube sola cuando vuelva la señal." : `Sin señal — ${esperando} fotos quedaron guardadas en el teléfono y se suben solas cuando vuelva la señal.`); formFoto.reset(); formFoto.dataset.enviado = ""; }
         else if (subidas) {
           await recargar(undefined, "fotos");
           avisar(subidas === archivos.length
@@ -6360,7 +6360,7 @@ function esFalloDeRed(err) {
     if (!p) return;
     if (accion === "alcance") { irAlcance(id); return; }
     // Completar puede poner la fecha de terminada: se pregunta antes
-    if (accion === "completar" && !await confirmar(`¿Marcar «${p.nombre}» como COMPLETADA?\n\nSale de las obras en ejecución. Si fue sin querer, se reabre desde el estado.`)) return;
+    if (accion === "completar" && !await confirmar(`¿Marcar «${p.nombre}» como completada?\n\nSale de las obras en ejecución. Si fue sin querer, se reabre desde el estado.`)) return;
     const faseAntes = p.fase;
     const fases = fasesDe(p);
     const idx = Math.max(0, fases.findIndex(f => f.clave === p.fase));
@@ -6402,7 +6402,7 @@ function esFalloDeRed(err) {
     }
   }
 
-  // 🧭 Un enlace que abre el mapa del teléfono en esa dirección (P84, 24-sep).
+  // Un enlace que abre el mapa del teléfono en esa dirección (P84, 24-sep).
   // Google Maps con «search» funciona igual en iPhone y Android.
   // La dirección del mapa sola (la usa también «Cómo llegar» de la pantalla Hoy del campo)
   const urlMapa = dir => {
@@ -6413,10 +6413,10 @@ function esFalloDeRed(err) {
     const url = urlMapa(dir);
     if (!url) return "";
     return `<a class="btn-ir" target="_blank" rel="noopener" onclick="event.stopPropagation()"
-      href="${url}" title="Abrir en el mapa">🧭 Ir</a>`;
+      href="${url}" title="Abrir en el mapa">${ico("navegar")}Ir</a>`;
   }
 
-  // 📸 Foto rápida (P87, 24-sep): desde el día de hoy del inicio, un toque abre
+  // Foto rápida (P87, 24-sep): desde el día de hoy del inicio, un toque abre
   // la cámara y la foto sube sola a la obra de ese evento. Antes eran 8 toques.
   function fotoRapida(pid) {
     const inp = document.createElement("input");
@@ -6442,8 +6442,8 @@ function esFalloDeRed(err) {
           avisar("No se pudo subir: " + err.message, true); break;
         }
       }
-      if (esperando) avisar(`📶 Sin señal — ${esperando > 1 ? esperando + " fotos quedaron guardadas" : "la foto quedó guardada"} en el teléfono y se sube${esperando > 1 ? "n solas" : " sola"} cuando vuelva la señal.`);
-      if (subidas) { await recargar(undefined, "fotos"); avisar(`📸 ${subidas > 1 ? subidas + " fotos subidas" : "Foto subida"} a ${nombreProyecto(pid)} ✓`); }
+      if (esperando) avisar(`Sin señal — ${esperando > 1 ? esperando + " fotos quedaron guardadas" : "la foto quedó guardada"} en el teléfono y se sube${esperando > 1 ? "n solas" : " sola"} cuando vuelva la señal.`);
+      if (subidas) { await recargar(undefined, "fotos"); avisar(`${subidas > 1 ? subidas + " fotos subidas" : "Foto subida"} a ${nombreProyecto(pid)} ✓`); }
     }, { once: true });
     inp.click();
   }
@@ -6679,7 +6679,7 @@ function esFalloDeRed(err) {
   // Change Order con el suyo ("Change Order #1 — Cat6 data pathway
   // (MXP-CO-2026-0816-DICKE-01)"). Nada de "contrato normal" a secas.
   // Los change orders de una obra, sacados de sus documentos: {n: título}.
-  // Lo usan el formulario de horas y el ✎ del dueño (P79).
+  // Lo usan el formulario de horas y el lápiz del dueño (P79).
   function changeOrdersDe(pid) {
     const porCO = {};
     for (const t of (state.titulosDocs || []).filter(t => t.proyecto === pid && !esDocAparte(t.titulo))) {
@@ -6714,12 +6714,12 @@ function esFalloDeRed(err) {
       }
     }
     const opcionesBase = contratos.length
-      ? contratos.map(t => `<option value="">📄 Contrato — ${esc(t.titulo)}</option>`).join("")
-      : `<option value="">📄 Contrato base (sin SOW subido aún)</option>`;
+      ? contratos.map(t => `<option value="">Contrato — ${esc(t.titulo)}</option>`).join("")
+      : `<option value="">Contrato base (sin SOW subido aún)</option>`;
     const opcionesCO = Object.keys(porCO).map(Number).sort((a, b) => a - b)
-      .map(n => `<option value="${esc("CO #" + n)}">🧾 CO #${n} — ${esc(sinMontos(porCO[n]))}</option>`).join("");
+      .map(n => `<option value="${esc("CO #" + n)}">CO #${n} — ${esc(sinMontos(porCO[n]))}</option>`).join("");
     sel.innerHTML = opcionesBase + opcionesCO +
-      `<option value="__otro__">✍️ Otro (escribirlo)</option>`;
+      `<option value="__otro__">Otro (escribirlo)</option>`;
   }
   function prepararHoras() {
     const f = $formHoras.elements.fecha;
@@ -6768,16 +6768,16 @@ function esFalloDeRed(err) {
     };
 
     $("horas-historial").innerHTML =
-      `<h3 class="historial-titulo">Mis reportes (toca ✎ para corregir)</h3>` +
+      `<h3 class="historial-titulo">Mis reportes (toca ${ico("lapiz")} para corregir)</h3>` +
       mios.slice(-10).reverse().map(r => {
         const p = proyectos().find(x => x.id === r.proyecto);
         return `<div class="alcance-item">
             <span class="alcance-tipo">${esc(r.horas)}h</span>
             <span class="alcance-info">
               <span class="alcance-titulo">${esc(p ? p.nombre : r.proyecto)}</span>
-              <span class="alcance-estado">${esc(r.fecha)}${r.fase ? " · " + esc(r.fase) : ""}${r.co ? " · 🧾 " + esc(r.co) : ""}${r.notas ? " · " + esc(r.notas) : ""}</span>
+              <span class="alcance-estado">${esc(r.fecha)}${r.fase ? " · " + esc(r.fase) : ""}${r.co ? " · " + esc(r.co) : ""}${r.notas ? " · " + esc(r.notas) : ""}</span>
             </span>
-            <button type="button" class="insp-borrar btn-horas-editar" data-id="${r.id}" title="Corregir o eliminar">✎</button>
+            <button type="button" class="insp-borrar btn-horas-editar" data-id="${r.id}" title="Corregir o eliminar" aria-label="Corregir o eliminar">${ico("lapiz")}</button>
           </div>
           <form class="cal-form form-horas-editar" data-id="${r.id}" data-fase="${esc(r.fase)}" hidden>
             <div class="modal-fila">
@@ -6801,7 +6801,7 @@ function esFalloDeRed(err) {
               <textarea name="notas" rows="3" autocomplete="off">${esc(r.notas || "")}</textarea>
             </label>
             <div class="modal-botones">
-              <button type="button" class="accion secundaria btn-horas-borrar" data-id="${r.id}">🗑 Eliminar</button>
+              <button type="button" class="accion secundaria btn-horas-borrar" data-id="${r.id}">Eliminar</button>
               <button type="submit" class="accion">Guardar cambios</button>
             </div>
           </form>`;
@@ -6827,7 +6827,7 @@ function esFalloDeRed(err) {
         // El equipo necesita el permiso de Edgar antes de corregir
         if (!usuario.editar && rep) {
           if (rep.correccion === "pedida") {
-            avisar("⏳ Ya le pediste permiso a Edgar — te avisamos al teléfono cuando apruebe");
+            avisar("Ya le pediste permiso a Edgar — te avisamos al teléfono cuando apruebe");
             return;
           }
           if (rep.correccion !== "aprobada") {
@@ -6938,7 +6938,7 @@ function esFalloDeRed(err) {
         $formHoras.elements.notas.value = "";
         $formHoras.elements.co.value = "";
         $formHoras.elements.pendiente.value = "";
-        avisar("📶 Sin señal — tu reporte quedó guardado en el teléfono y se manda solo cuando vuelva la señal.");
+        avisar("Sin señal — tu reporte quedó guardado en el teléfono y se manda solo cuando vuelva la señal.");
         return;
       }
       if (err && err.status === 409) {
@@ -7032,7 +7032,7 @@ function esFalloDeRed(err) {
     cola.push({ ...item, creado: new Date().toISOString() });
     escribirCola(cola);
   }
-  const AVISO_COLA = "📶 Sin señal — quedó guardado en el teléfono y se manda solo cuando vuelva la señal.";
+  const AVISO_COLA = "Sin señal — quedó guardado en el teléfono y se manda solo cuando vuelva la señal.";
   // El almacén grande, solo para las fotos que esperan
   function almacenFotos() {
     return new Promise((res, rej) => {
@@ -7162,14 +7162,14 @@ function esFalloDeRed(err) {
 
     const filaMat = m => `
       <div class="mat-item ${m.estado}">
-        <span class="mat-icono">${m.estado === "falta" ? "🔴" : "✓"}</span>
+        <span class="mat-icono">${m.estado === "falta" ? ico("rojo") : "✓"}</span>
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(sinMontos(m.descripcion))}${m.cantidad ? ` <span class="mat-cant">— ${esc(sinMontos(m.cantidad))}</span>` : ""}</span>
           <span class="alcance-estado">${esc(nombreProy(m.proyecto))} · ${esc(m.autor)} ${esc(m.fecha)}</span>
         </span>
         ${usuario.finanzas && m.estado === "comprado" && typeof m.precio === "number" ? `<span class="mat-precio">${fmt(m.precio)}</span>` : ""}
         ${usuario.editar && m.estado === "falta" ? `<button class="accion btn-mat-comprado" data-id="${m.id}">✓ Comprado</button>` : ""}
-        ${usuario.editar ? `<button class="insp-borrar btn-mat-editar" data-id="${m.id}" title="Modificar o eliminar">✎</button>` : ""}
+        ${usuario.editar ? `<button class="insp-borrar btn-mat-editar" data-id="${m.id}" title="Modificar o eliminar" aria-label="Modificar o eliminar">${ico("lapiz")}</button>` : ""}
       </div>
       ${usuario.editar ? `
       <form class="cal-form form-mat-editar" data-id="${m.id}" hidden>
@@ -7190,7 +7190,7 @@ function esFalloDeRed(err) {
             value="${typeof m.precio === "number" ? m.precio : ""}" placeholder="Ej: 45.99">
         </label>` : ""}
         <div class="modal-botones">
-          <button type="button" class="accion secundaria btn-mat-eliminar" data-id="${m.id}">🗑 Eliminar</button>
+          <button type="button" class="accion secundaria btn-mat-eliminar" data-id="${m.id}">Eliminar</button>
           <button type="submit" class="accion">Guardar cambios</button>
         </div>
       </form>` : ""}`;
@@ -7208,29 +7208,29 @@ function esFalloDeRed(err) {
       activosLista.map(x =>
         `<option value="${esc(x.id)}"${x.id === filtroMateriales ? " selected" : ""}>${esc(nombreVis(x.nombre))}</option>`).join("");
 
-    const RES_RECIBO = { por_leer: "POR LEER", leido: "LEÍDO", conciliado: "CONCILIADO ✓", sin_foto: "FALTA FOTO 📷", anulado: "ANULADO" };
+    const RES_RECIBO = { por_leer: "Por leer", leido: "Leído", conciliado: "Conciliado ✓", sin_foto: "Falta foto", anulado: "Anulado" };
     const esDevolucionRecibo = r =>
       (typeof r.total === "number" && r.total < 0) || /DEVOLUCI/i.test(r.notas || "");
     const filaRecibo = r => `
       <div class="mat-item recibo-${esc(r.estado)}">
-        <span class="recibo-chip ${esc(r.estado)}">${esc(RES_RECIBO[r.estado] || r.estado)}</span>
-        ${esDevolucionRecibo(r) ? `<span class="recibo-chip devolucion">↩ DEVOLUCIÓN</span>` : ""}
-        ${r.co ? `<span class="recibo-chip leido">🧾 ${esc(r.co)}</span>` : ""}
+        <span class="recibo-chip ${esc(r.estado)}">${esc(RES_RECIBO[r.estado] || r.estado)}${r.estado === "sin_foto" ? " " + ico("camara") : ""}</span>
+        ${esDevolucionRecibo(r) ? `<span class="recibo-chip devolucion">Devolución</span>` : ""}
+        ${r.co ? `<span class="recibo-chip leido">${esc(r.co)}</span>` : ""}
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(r.proveedor || "Recibo")}${r.notas ? ` <span class="mat-cant">— ${esc(sinMontos(r.notas))}</span>` : ""}</span>
-          <span class="alcance-estado">${r.proyecto ? esc(nombreProy(r.proyecto)) : "⚠ Sin proyecto"} · ${esc(r.autor)} ${esc(r.fecha)}</span>
+          <span class="alcance-estado">${r.proyecto ? esc(nombreProy(r.proyecto)) : ico("alerta") + " Sin proyecto"} · ${esc(r.autor)} ${esc(r.fecha)}</span>
         </span>
         ${!r.proyecto && usuario.editar ? `<button class="insp-borrar btn-recibo-asignar" data-id="${r.id}"
-          title="Asignarle proyecto a esta compra">📌</button>` : ""}
+          title="Asignarle proyecto a esta compra" aria-label="Asignarle proyecto a esta compra">${ico("pin")}</button>` : ""}
         ${usuario.finanzas && typeof r.total === "number" ? `<span class="mat-precio">${fmt(r.total)}</span>` : ""}
-        ${r.ruta ? `<a class="doc-link recibo-ver" data-ruta="${esc(r.ruta)}" target="_blank" rel="noopener">📄 Ver</a>` : ""}
+        ${r.ruta ? `<a class="doc-link recibo-ver" data-ruta="${esc(r.ruta)}" target="_blank" rel="noopener">Ver</a>` : ""}
         ${usuario.finanzas ? `<button class="insp-borrar btn-recibo-total" data-id="${r.id}"
           data-total="${typeof r.total === "number" ? r.total : ""}" data-proveedor="${esc(r.proveedor || "")}" data-notas="${esc(r.notas || "")}"
-          title="Corregir total, proveedor o descripción">✎</button>` : ""}
+          title="Corregir total, proveedor o descripción" aria-label="Corregir total, proveedor o descripción">${ico("lapiz")}</button>` : ""}
         ${usuario.editar ? `<button class="insp-borrar btn-recibo-foto" data-id="${r.id}" data-proyecto="${esc(r.proyecto || "general")}" data-estado="${esc(r.estado)}"
-          title="${r.ruta ? "Cambiar la foto del recibo" : "Ponerle la foto del recibo"}">📷</button>` : ""}
+          title="${r.ruta ? "Cambiar la foto del recibo" : "Ponerle la foto del recibo"}" aria-label="${r.ruta ? "Cambiar la foto del recibo" : "Ponerle la foto del recibo"}">${ico("camara")}</button>` : ""}
         ${!usuario.editar ? "" : r.estado === "anulado"
-          ? `<button class="insp-borrar btn-recibo-desanular" data-id="${r.id}" title="Volver a contarlo (dice por qué)" aria-label="Volver a contar">${ico("deshacer") || "↺"}</button>`
+          ? `<button class="insp-borrar btn-recibo-desanular" data-id="${r.id}" title="Volver a contarlo (dice por qué)" aria-label="Volver a contar">${ico("deshacer")}</button>`
           : `<button class="insp-borrar btn-recibo-borrar" data-id="${r.id}" title="Anular (dice por qué): no se borra, sale de las cuentas" aria-label="Anular">${ico("equis") || "✕"}</button>`}
       </div>`;
 
@@ -7242,21 +7242,21 @@ function esFalloDeRed(err) {
       </div>
       <div class="cal-panel-card">
         <div class="cal-form-titulo">Por comprar (${faltan.length})
-          ${faltan.length ? `<button type="button" class="accion secundaria" id="btn-mat-supply" style="margin-left:.4rem">📤 Enviar al supply</button>` : ""}
+          ${faltan.length ? `<button type="button" class="accion secundaria" id="btn-mat-supply" style="margin-left:.4rem">Enviar al supply</button>` : ""}
         </div>
-        ${faltan.map(filaMat).join("") || `<p class="cal-sin-eventos">Nada pendiente de comprar. 👌</p>`}
+        ${faltan.map(filaMat).join("") || `<p class="cal-sin-eventos">Nada pendiente de comprar.</p>`}
       </div>
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">🚀 Gestiones de arranque (${gestAbiertas.length})</div>
+        <div class="cal-form-titulo">Gestiones de arranque (${gestAbiertas.length})</div>
         ${gestAbiertas.map(g => `
           <div class="mat-item falta">
-            <span class="mat-icono">📌</span>
+            <span class="mat-icono">${ico("chincheta")}</span>
             <span class="alcance-info">
               <span class="alcance-titulo">${esc(sinMontos(g.descripcion))}</span>
               <span class="alcance-estado">${esc(nombreProy(g.proyecto))} · ${esc(g.autor)} ${esc(g.fecha)}</span>
             </span>
             ${usuario.editar ? `<button class="accion btn-gestion-hecha" data-id="${g.id}">✓ Hecha</button>
-            <button class="insp-borrar btn-gestion-borrar" data-id="${g.id}" title="Eliminar">🗑</button>` : ""}
+            <button class="insp-borrar btn-gestion-borrar" data-id="${g.id}" title="Eliminar" aria-label="Eliminar">${ico("basura")}</button>` : ""}
           </div>`).join("") || `<p class="cal-sin-eventos">Sin gestiones pendientes.</p>`}
         <form id="form-gestion" class="cal-form">
           <div class="modal-fila">
@@ -7274,11 +7274,11 @@ function esFalloDeRed(err) {
         </form>
       </div>
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">🧾 Compras y recibos</div>
-        <button type="button" class="accion secundaria btn-importar-recibo">🛒 Registrar compra</button>
+        <div class="cal-form-titulo">Compras y recibos</div>
+        <button type="button" class="accion secundaria btn-importar-recibo">Registrar compra</button>
         <div id="compra-modos" class="modal-fila" hidden style="margin-top:.45rem">
-          <button type="button" class="accion secundaria btn-compra-foto">📷 Con foto del recibo</button>
-          <button type="button" class="accion secundaria btn-compra-mano">✍️ Sin recibo — anotar a mano</button>
+          <button type="button" class="accion secundaria btn-compra-foto">Con foto del recibo</button>
+          <button type="button" class="accion secundaria btn-compra-mano">Sin recibo — anotar a mano</button>
         </div>
         <form id="form-compra-mano" class="cal-form" hidden>
           <div class="modal-fila">
@@ -7290,8 +7290,8 @@ function esFalloDeRed(err) {
             </label>
             <label>Tipo
               <select name="tipo">
-                <option value="compra">🛒 Compra</option>
-                <option value="devolucion">↩ Devolución (resta del gasto)</option>
+                <option value="compra">Compra</option>
+                <option value="devolucion">Devolución (resta del gasto)</option>
               </select>
             </label>
           </div>
@@ -7304,7 +7304,7 @@ function esFalloDeRed(err) {
           ${usuario.finanzas ? `
           <label>Total ($)
             <input name="total" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Ej: 128.40">
-          </label>` : `<p class="modal-nota">Edgar le pone el total después con el ✎.</p>`}
+          </label>` : `<p class="modal-nota">Edgar le pone el total después con el ${ico("lapiz")}.</p>`}
           <label>¿Es de un Change Order? (opcional)
             <input name="co" type="text" placeholder="Ej: CO #1" autocomplete="off">
           </label>
@@ -7323,8 +7323,8 @@ function esFalloDeRed(err) {
             </label>
             <label>Tipo de ticket
               <select name="tipo">
-                <option value="compra">🛒 Compra</option>
-                <option value="devolucion">↩ Devolución (resta del gasto)</option>
+                <option value="compra">Compra</option>
+                <option value="devolucion">Devolución (resta del gasto)</option>
               </select>
             </label>
           </div>
@@ -7343,21 +7343,21 @@ function esFalloDeRed(err) {
           <label>¿Es de un Change Order? (opcional)
             <input name="co" type="text" placeholder="Ej: CO #1" autocomplete="off">
           </label>
-          <button type="submit" class="accion">⬆ Subir recibo</button>
+          <button type="submit" class="accion">Subir recibo</button>
         </form>
         ${recibosPendientes.length ? `
-        <div class="cal-form-titulo" style="margin-top:10px">📥 Por completar (${recibosPendientes.length}) — compras dictadas por voz</div>
-        <p class="cal-sin-eventos" style="margin:2px 0 6px">Ponles la foto del recibo con 📷 o el proyecto con 📌.</p>
+        <div class="cal-form-titulo" style="margin-top:10px">Por completar (${recibosPendientes.length}) — compras dictadas por voz</div>
+        <p class="cal-sin-eventos" style="margin:2px 0 6px">Ponles la foto del recibo con ${ico("camara")} o el proyecto con ${ico("pin")}.</p>
         ${recibosPendientes.map(filaRecibo).join("")}
         <div class="cal-form-titulo" style="margin-top:10px">Últimas compras</div>` : ""}
         ${recibosVista.map(filaRecibo).join("") || `<p class="cal-sin-eventos">Sin recibos todavía.</p>`}
       </div>
       ${sugeridos.length ? `
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">🔴 Pendientes de obra que suenan a material</div>
+        <div class="cal-form-titulo">Pendientes de obra que suenan a material</div>
         ${sugeridos.map(s => `
           <div class="pendiente-item">
-            <span class="pendiente-icono">⚠</span>
+            <span class="pendiente-icono">${ico("alerta")}</span>
             <span class="alcance-info">
               <span class="alcance-titulo">${esc(sinMontos(partirVia(s.descripcion).texto))}</span>
               ${partirVia(s.descripcion).via ? VIA_HTML : ""}
@@ -7368,7 +7368,7 @@ function esFalloDeRed(err) {
       </div>` : ""}
       <div class="cal-panel-card">
         <div class="cal-form-titulo">Agregar material
-          <button type="button" class="accion secundaria" id="btn-mat-modo" style="margin-left:.4rem">📝 Lista rápida — varios de un golpe</button>
+          <button type="button" class="accion secundaria" id="btn-mat-modo" style="margin-left:.4rem">Lista rápida — varios de un golpe</button>
         </div>
         <form id="form-material" class="cal-form">
           <label>Proyecto
@@ -7400,7 +7400,7 @@ function esFalloDeRed(err) {
               style="width:100%;font:inherit;font-size:.85rem;padding:.55rem .7rem;border:1px solid var(--mp-line);border-radius:10px"></textarea>
           </label>
           <div class="modal-fila">
-            <button type="button" class="accion secundaria" id="btn-mat-importar">📄 Importar nota (.txt)</button>
+            <button type="button" class="accion secundaria" id="btn-mat-importar">Importar nota (.txt)</button>
             <button type="submit" class="accion">✓ Agregar toda la lista</button>
           </div>
           <input id="mat-archivo" type="file" accept=".txt,text/plain" hidden>
@@ -7436,7 +7436,7 @@ function esFalloDeRed(err) {
       const aLista = $("form-mat-lista").hidden;
       $("form-mat-lista").hidden = !aLista;
       $("form-material").hidden = aLista;
-      $("btn-mat-modo").textContent = aLista ? "✏ Mejor de uno en uno" : "📝 Lista rápida — varios de un golpe";
+      $("btn-mat-modo").textContent = aLista ? "Mejor de uno en uno" : "Lista rápida — varios de un golpe";
     });
 
     // Desglosa una línea de texto libre en { material, cantidad }.
@@ -7608,7 +7608,7 @@ function esFalloDeRed(err) {
         + `${String(hoy.getMonth() + 1).padStart(2, "0")}/${String(hoy.getDate()).padStart(2, "0")}/${hoy.getFullYear()} · FL EC #EC13016045\n`;
       for (const [pid, items] of Object.entries(porProy)) {
         texto += `\n${pid ? "JOB: " + nombreProy(pid).toUpperCase() : "GENERAL / SHOP"}\n`;
-        // sinMontos también aquí: la pantalla 🛒 Materiales la abre todo el
+        // sinMontos también aquí: la pantalla Materiales la abre todo el
         // equipo y este botón arma un texto que se manda por WhatsApp. Era
         // el último sitio por donde un precio escrito en la cantidad
         // ("1 día (~$280)") se le podía escapar a Jian o a Osbel.
@@ -7632,7 +7632,7 @@ function esFalloDeRed(err) {
     $("materiales-panel").querySelectorAll(".btn-mat-comprado").forEach(btn => {
       btn.addEventListener("click", async () => {
         // Al comprar, se anota el precio para el control de gastos
-        const respuesta = await pedirDato("¿Cuánto costó? (solo el número, ej: 45.99)\n\nDéjalo vacío si no quieres anotar el precio ahora — lo puedes poner después con el ✎.");
+        const respuesta = await pedirDato("¿Cuánto costó? (solo el número, ej: 45.99)\n\nDéjalo vacío si no quieres anotar el precio ahora — lo puedes poner después con el lápiz.");
         if (respuesta === null) return; // canceló
         const limpio = respuesta.replace(/[$,\s]/g, "");
         const precio = limpio ? Number(limpio) : null;
@@ -7644,7 +7644,7 @@ function esFalloDeRed(err) {
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
-    // ✎ abre/cierra el formulario de corrección de ese material
+    // El lápiz abre/cierra el formulario de corrección de ese material
     $("materiales-panel").querySelectorAll(".btn-mat-editar").forEach(btn => {
       btn.addEventListener("click", () => {
         const form = $("materiales-panel")
@@ -7776,7 +7776,7 @@ function esFalloDeRed(err) {
         await recargar(undefined, "recibos");
         avisar(fila.total !== undefined
           ? `Compra registrada ✓ — ${fmt(fila.total)} anotado al proyecto`
-          : "Compra registrada ✓ — Edgar le pone el total con el ✎");
+          : "Compra registrada ✓ — Edgar le pone el total con el lápiz");
       } catch (err) { avisar("No se pudo registrar: " + err.message, true); }
     });
     formRecibo.addEventListener("submit", async e => {
@@ -7819,13 +7819,13 @@ function esFalloDeRed(err) {
       } catch (err) {
         avisar("No se pudo subir el recibo: " + err.message, true);
         $btn.disabled = false;
-        $btn.textContent = "⬆ Subir recibo";
+        $btn.textContent = "Subir recibo";
       }
     });
     $("materiales-panel").querySelectorAll(".btn-recibo-total").forEach(btn => {
       btn.addEventListener("click", async () => {
         // Se corrigen las tres cosas, una por una (cancelar en cualquiera = no cambia nada)
-        const respuesta = await pedirDato("Total del recibo (solo el número, ej: 342.18).\nDEVOLUCIÓN va con signo menos (ej: -45.99).\nDéjalo igual para no cambiarlo:", btn.dataset.total || "");
+        const respuesta = await pedirDato("Total del recibo (solo el número, ej: 342.18).\nUna devolución va con signo menos (ej: -45.99).\nDéjalo igual para no cambiarlo:", btn.dataset.total || "");
         if (respuesta === null) return;
         const proveedor = await pedirDato("¿Dónde se compró? (proveedor):", btn.dataset.proveedor || "");
         if (proveedor === null) return;
@@ -7846,7 +7846,7 @@ function esFalloDeRed(err) {
         } catch (err) { avisar("No se pudo: " + err.message, true); }
       });
     });
-    // 📷 Ponerle (o cambiarle) la foto a un recibo ya anotado — el respaldo
+    // Ponerle (o cambiarle) la foto a un recibo ya anotado — el respaldo
     $("materiales-panel").querySelectorAll(".btn-recibo-foto").forEach(btn => {
       btn.addEventListener("click", () => {
         const input = document.createElement("input");
@@ -7856,7 +7856,7 @@ function esFalloDeRed(err) {
           const archivo = input.files[0];
           if (!archivo) return;
           btn.disabled = true;
-          btn.textContent = "⏳";
+          btn.innerHTML = ico("reloj");
           try {
             const blob = await reducirImagen(archivo).catch(() => archivo);
             const ruta = await DB.subirFoto(btn.dataset.proyecto || "general", blob, blob.type || archivo.type, "recibos");
@@ -7868,13 +7868,13 @@ function esFalloDeRed(err) {
           } catch (err) {
             avisar("No se pudo subir la foto: " + err.message, true);
             btn.disabled = false;
-            btn.textContent = "📷";
+            btn.innerHTML = ico("camara");
           }
         });
         input.click();
       });
     });
-    // 📌 Asignarle proyecto a una compra dictada por voz que quedó "sin proyecto"
+    // Asignarle proyecto a una compra dictada por voz que quedó "sin proyecto"
     $("materiales-panel").querySelectorAll(".btn-recibo-asignar").forEach(btn => {
       btn.addEventListener("click", async () => {
         const opciones = proyectos().filter(x => ["ejecucion", "aprobado", "pausa"].includes(x.estado));
@@ -7936,7 +7936,7 @@ function esFalloDeRed(err) {
   }
 
   // ============================================================
-  // 📊 CONTROL DE GASTOS — solo el dueño
+  // CONTROL DE GASTOS — solo el dueño
   // ============================================================
   // Con una obra (desde Proyectos) se enseña solo su tarjeta, con el chip
   // «Solo: … ✕» arriba; los costos del equipo y los ayudantes siguen debajo.
@@ -7962,7 +7962,7 @@ function esFalloDeRed(err) {
       const lineaMO = mo && mo.horas > 0
         ? `<div class="rent-fila"><span>Mano de obra (${mo.horas} h)</span><span>${fmt(mo.costo)}</span></div>
            ${barraGasto(mo.costo, mo.presupuesto) || `<div class="gasto-sub">sin horas estimadas para comparar</div>`}`
-        : `<div class="gasto-sub">sin horas registradas${mo ? "" : " · define 💲 Costos del equipo"}</div>`;
+        : `<div class="gasto-sub">sin horas registradas${mo ? "" : " · define Costos del equipo"}</div>`;
       const extGasto = gastoExternos(p.id);
       const lineaMat = `
         <div class="rent-fila"><span>Materiales comprados</span><span>${fmt(matGasto)}</span></div>
@@ -7979,12 +7979,12 @@ function esFalloDeRed(err) {
               <input class="inp-presu" data-id="${esc(p.id)}" type="number" min="0" step="1"
                 inputmode="decimal" value="${matPresu != null ? matPresu : ""}" placeholder="Ej: 2500">
             </label>
-            <button class="accion secundaria btn-presu" data-id="${esc(p.id)}">💾 Guardar</button>
+            <button class="accion secundaria btn-presu" data-id="${esc(p.id)}">Guardar</button>
           </div>
         </div>`;
     }).join("");
 
-    // 💲 Costos del equipo: gaveta plegada al fondo (se toca 2 veces al año).
+    // Costos del equipo: gaveta plegada al fondo (se toca 2 veces al año).
     // Gustavo (license holder) NO aparece: su pago es gasto general, no de obra.
     const costos = state.costos || {};
     const equipoCostos = (state.equipo || []).filter(u => u.rol !== "license" && u.activo);
@@ -8001,7 +8001,7 @@ function esFalloDeRed(err) {
           <span class="equipo-dot ${u.activo ? "verde" : "gris"}"></span>
           <span class="alcance-info">
             <span class="alcance-titulo">${esc(u.nombre)}</span>
-            <span class="alcance-estado">${u.rol === "license" ? "License Holder" : "Campo"}${u.activo ? "" : " · INACTIVO"}</span>
+            <span class="alcance-estado">${u.rol === "license" ? "License Holder" : "Campo"}${u.activo ? "" : " · Inactivo"}</span>
           </span>
           <button class="accion secundaria btn-perfil-activo" data-id="${esc(u.id)}" data-activo="${u.activo ? "1" : ""}">
             ${u.activo ? "Marcar inactivo" : "Reactivar"}
@@ -8010,7 +8010,7 @@ function esFalloDeRed(err) {
     const gaveta = `
       <div class="inicio-card">
         <details class="costos-gaveta">
-          <summary>💲 Costos del equipo <span class="gaveta-nota">(toca para abrir — solo se ajusta cuando cambia un salario)</span></summary>
+          <summary>Costos del equipo <span class="gaveta-nota">(toca para abrir — solo se ajusta cuando cambia un salario)</span></summary>
           <form id="form-costos" class="cal-form">
             <p class="modal-nota">El costo completo por hora para la empresa (salario + taxes + seguro).
             Con esto cada proyecto calcula su rentabilidad solo.</p>
@@ -8021,7 +8021,7 @@ function esFalloDeRed(err) {
       </div>
       <div class="inicio-card">
         <details class="costos-gaveta">
-          <summary>🧰 Ayudantes externos <span class="gaveta-nota">(gente puntual con tarifa — sin cuenta en la app, solo tú los ves)</span></summary>
+          <summary>Ayudantes externos <span class="gaveta-nota">(gente puntual con tarifa — sin cuenta en la app, solo tú los ves)</span></summary>
           ${(state.ayudantes || []).map(a => {
             const gastado = (state.externos || [])
               .filter(x => x.ayudante === a.id)
@@ -8031,9 +8031,9 @@ function esFalloDeRed(err) {
               <span class="equipo-dot ${a.activo ? "verde" : "gris"}"></span>
               <span class="alcance-info">
                 <span class="alcance-titulo">${esc(a.nombre)} — ${fmt(a.costoHora)}/h</span>
-                <span class="alcance-estado">${gastado ? `lleva ${fmt(gastado)} pagado en proyectos` : "sin trabajos anotados todavía"}${a.activo ? "" : " · INACTIVO"}</span>
+                <span class="alcance-estado">${gastado ? `lleva ${fmt(gastado)} pagado en proyectos` : "sin trabajos anotados todavía"}${a.activo ? "" : " · Inactivo"}</span>
               </span>
-              <button class="insp-borrar btn-ayud-tarifa" data-id="${a.id}" data-nombre="${esc(a.nombre)}" data-tarifa="${a.costoHora}" title="Cambiar tarifa">✎</button>
+              <button class="insp-borrar btn-ayud-tarifa" data-id="${a.id}" data-nombre="${esc(a.nombre)}" data-tarifa="${a.costoHora}" title="Cambiar tarifa" aria-label="Cambiar tarifa">${ico("lapiz")}</button>
               <button class="accion secundaria btn-ayud-activo" data-id="${a.id}" data-activo="${a.activo ? "1" : ""}">
                 ${a.activo ? "Inactivo" : "Reactivar"}
               </button>
@@ -8056,12 +8056,12 @@ function esFalloDeRed(err) {
       </div>
       <div class="inicio-card">
         <details class="costos-gaveta">
-          <summary>👥 Equipo <span class="gaveta-nota">(marcar inactivo al que se va — su historia queda)</span></summary>
+          <summary>Equipo <span class="gaveta-nota">(marcar inactivo al que se va — su historia queda)</span></summary>
           ${filasEquipo}
           <p class="modal-nota" style="margin-top:0.5rem">Para <strong>agregar</strong> un trabajador nuevo con acceso a la app,
           pídeselo a Claude — te da los 3 pasos del panel de Supabase (2 minutos).
           Si es alguien puntual sin acceso, usa "Ayuda externa" en el proyecto o la
-          nómina de <strong>🧰 Ayudantes externos</strong> aquí arriba.</p>
+          nómina de <strong>Ayudantes externos</strong> aquí arriba.</p>
         </details>
       </div>`;
 
@@ -8094,7 +8094,7 @@ function esFalloDeRed(err) {
       });
     });
 
-    // 🧰 Nómina de ayudantes externos (solo etiqueta + tarifa, sin cuenta)
+    // Nómina de ayudantes externos (solo etiqueta + tarifa, sin cuenta)
     const formAyud = $("form-ayudante");
     if (formAyud) formAyud.addEventListener("submit", async e => {
       e.preventDefault();
@@ -8150,14 +8150,14 @@ function esFalloDeRed(err) {
   }
 
   // ============================================================
-  // 🧮 EL ESTIMADOR — solo el dueño (la receta secreta de Edgar)
+  // EL ESTIMADOR — solo el dueño (la receta secreta de Edgar)
   // Réplica exacta de la fórmula del Excel: catálogo maestro,
   // escenarios A/B/C, benefits, tax, overhead por hora-hombre y profit.
   // ============================================================
   let estData = null;        // { catalogo, escenarios, estimados, items }
   let estimadoActivo = null; // id del estimado abierto
   let colaEnsambles = Promise.resolve(); // fila india de los clics +/- de ensambles
-  let frecuentesExpandido = false;       // "Ver más" de ⭐ Lo que más usas
+  let frecuentesExpandido = false;       // "Ver más" de Lo que más usas
 
   // Con obra (desde Proyectos: irEstimador(null, id)) arriba salen sus estimados y
   // el chip «Solo: … ✕». Entrar sin nada lo enseña todo; volver de una propuesta
@@ -8265,15 +8265,15 @@ function esFalloDeRed(err) {
   const CERO_NEUTRO = { est: "normal", chip: "", clase: "", fila: "", motivo: "", alerta: false, cat: null, conf: true };
   const CERO_CHIP = {
     //             chip               clase del chip   clase de la fila     motivo en palabras
-    suministro:   ["POR COTIZAR",     "por_leer",   "recibo-por_leer", "material por cotizar"],
-    cotizado:     ["COTIZADO",        "conciliado", "",                "la cotización ya está en el precio"],
-    by_owner:     ["BY OWNER",        "devolucion", "",                "material del cliente"],
-    solo_labor:   ["SOLO LABOR",      "leido",      "",                "no lleva material"],
-    tarifa:       ["TARIFA",          "leido",      "",                "la tecleas por trabajo"],
-    falta_precio: ["FALTA PRECIO",    "sin_foto",   "falta",           "sin precio en el catálogo"],
-    revisar:      ["¿QUIÉN LO PONE?", "por_leer",   "recibo-por_leer", "nadie ha dicho por qué va en cero"],
-    huerfano:     ["SIN CATÁLOGO",    "sin_foto",   "falta",           "este nombre no está en el catálogo"],
-    referencia:   ["REFERENCIA",      "leido",      "",                "precio de referencia TUYO: la cuota del supply sigue pendiente"]
+    suministro:   ["Por cotizar",     "por_leer",   "recibo-por_leer", "material por cotizar"],
+    cotizado:     ["Cotizado",        "conciliado", "",                "la cotización ya está en el precio"],
+    by_owner:     ["By owner",        "devolucion", "",                "material del cliente"],
+    solo_labor:   ["Solo labor",      "leido",      "",                "no lleva material"],
+    tarifa:       ["Tarifa",          "leido",      "",                "la tecleas por trabajo"],
+    falta_precio: ["Falta precio",    "sin_foto",   "falta",           "sin precio en el catálogo"],
+    revisar:      ["¿Quién lo pone?", "por_leer",   "recibo-por_leer", "nadie ha dicho por qué va en cero"],
+    huerfano:     ["Sin catálogo",    "sin_foto",   "falta",           "este nombre no está en el catálogo"],
+    referencia:   ["Referencia",      "leido",      "",                "precio de referencia tuyo: la cuota del supply sigue pendiente"]
   };
   // Los que ALERTAN (banner y aviso de salida). El resto se ve y se calla.
   // «referencia» alerta a propósito: el bid ya trae una cifra, pero la cuota
@@ -8557,7 +8557,7 @@ function esFalloDeRed(err) {
            trabajo sin grapas, y eso no se nota en un total. */
         const cerca = r.evita ? buscaCat(...r.busca) : null;
         avisos.push(`${r.nom}: no encuentro «${r.busca.join(" ")}» en el catálogo — esa regla no corrió`
-          + (cerca ? `. Lo más parecido es «${String(cerca.item).replace(/\s+/g, " ").trim()}», que NO es lo que pide esta regla: o das de alta la pieza buena, o cambia arriba cómo va sujeto el tubo` : ""));
+          + (cerca ? `. Lo más parecido es «${String(cerca.item).replace(/\s+/g, " ").trim()}», que no es lo que pide esta regla: o das de alta la pieza buena, o cambia arriba cómo va sujeto el tubo` : ""));
       }
     }
     return { autos: Object.values(autos).filter(a => a.cantidad > 0), avisos, cubiertos };
@@ -8681,10 +8681,10 @@ function esFalloDeRed(err) {
          tú y sale marcado como siempre; con un contratista o en un trabajo de
          MXP MEP casi siempre lo saca él, así que sale SIN marcar y lo dice. */
       const permisoDeOtro = r.id === "permiso" && !!((est || {}).contratista_id || esMEP(est || {}));
-      const de = permisoDeOtro ? "el trato es con un contratista: si el permiso lo saca el GC, NO lo marques (regla de la casa)"
-        : r.cuenta === "ckt" ? `${cuentas.ckt} breaker(s) LISTADOS en el estimado — si el trabajo tiene más circuitos que breakers comprados, cámbialo`
-        : r.id === "demo" ? `SUPUESTO: uno viejo por cada uno de los ${cuentas.dispositivo} dispositivo(s) nuevos (receptáculos y switches llevan las mismas horas)`
-        : r.id === "demo_luz" ? `SUPUESTO: una vieja por cada una de las ${cuentas.luminaria} luminaria(s) nuevas`
+      const de = permisoDeOtro ? "el trato es con un contratista: si el permiso lo saca el GC, no lo marques (regla de la casa)"
+        : r.cuenta === "ckt" ? `${cuentas.ckt} breaker(s) listados en el estimado — si el trabajo tiene más circuitos que breakers comprados, cámbialo`
+        : r.id === "demo" ? `Supuesto: uno viejo por cada uno de los ${cuentas.dispositivo} dispositivo(s) nuevos (receptáculos y switches llevan las mismas horas)`
+        : r.id === "demo_luz" ? `Supuesto: una vieja por cada una de las ${cuentas.luminaria} luminaria(s) nuevas`
         : r.cuenta === "dimmer" ? `${cuentas.dimmer} dimmer(s) y sensor(es)`
         : "por proyecto — ponlo tú";
       filas.push({ id: r.id, item: cat.item, nom: r.item, cantidad: cant,
@@ -8698,7 +8698,7 @@ function esFalloDeRed(err) {
     const viejaDemo = yaHay[normTxt("DEMOLICIÓN DE DISPOSITIVO O LUMINARIA EXISTENTE (por unidad)")] || 0;
     const nuevaDemo = (yaHay[normTxt("DEMO - Receptacles")] || 0) + (yaHay[normTxt("DEMO - Switches")] || 0) + (yaHay[normTxt("DEMO - Light Fixtures")] || 0);
     if (viejaDemo > 0 && nuevaDemo > 0)
-      avisos.push(`OJO, DEMOLICIÓN DOBLE: el estimado tiene ${Math.round(viejaDemo)} de «DEMOLICIÓN DE DISPOSITIVO O LUMINARIA» y además ${Math.round(nuevaDemo)} de «DEMO - …» (Receptacles / Switches / Light Fixtures). Son la misma demolición: quita una de las dos.`);
+      avisos.push(`Ojo, demolición doble: el estimado tiene ${Math.round(viejaDemo)} de «DEMOLICIÓN DE DISPOSITIVO O LUMINARIA» y además ${Math.round(nuevaDemo)} de «DEMO - …» (Receptacles / Switches / Light Fixtures). Son la misma demolición: quita una de las dos.`);
     return { filas, avisos, cuentas };
   }
 
@@ -9060,10 +9060,10 @@ function esFalloDeRed(err) {
   const DIAS_VALIDEZ = 15;
   const diasValidez = est => { const d = Number(est && est.valida_dias); return Number.isInteger(d) && d > 0 ? d : DIAS_VALIDEZ; };
   // (23/09) Los tipos de una línea a mano. Sin tipo = material tuyo, como siempre.
-  const TIPOS_COSTO = { log: "LOGÍSTICA", allow: "ALLOWANCE", sub: "SUBCONTRATO" };
+  const TIPOS_COSTO = { log: "Logística", allow: "Allowance", sub: "Subcontrato" };
   const TIPOS_LINEA = [["", "Material tuyo"], ["cot", "Cotización del proveedor"],
     ["log", "Logística — viajes, hotel, per diem"], ["allow", "Allowance — precio provisional"], ["sub", "Subcontrato"]];
-  const chipLinea = l => l.tipo === "cot" ? ` <span class="recibo-chip devolucion">COTIZACIÓN</span>`
+  const chipLinea = l => l.tipo === "cot" ? ` <span class="recibo-chip devolucion">Cotización</span>`
     : TIPOS_COSTO[l.tipo] ? ` <span class="recibo-chip por_leer">${TIPOS_COSTO[l.tipo]}</span>` : "";
   const selTipoLinea = (l, i) => `<select class="chip-select rap-mat-tipo" data-i="${i}" title="¿Qué es esta línea? Cambia cómo paga en la fórmula">
       ${TIPOS_LINEA.map(([v, t]) => `<option value="${v}"${(l.tipo || "") === v ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
@@ -9143,7 +9143,7 @@ function esFalloDeRed(err) {
     const profitPct = nn(est.profit_pct) ?? n(esc.profit);
     const markupPct = nn(est.markup_pct) ?? 0;
 
-    // Modo ⚡ Rápido: el material son las líneas que Edgar escribió (o un
+    // Modo Rápido: el material son las líneas que Edgar escribió (o un
     // total), no los ítems del catálogo
     // En los demás modos (servicio, remodelación, planos) las líneas a mano se SUMAN a los ítems
     const lineasMat = Array.isArray(est.lineas_material) ? est.lineas_material : [];
@@ -9183,7 +9183,7 @@ function esFalloDeRed(err) {
     const markup = (baseProp * (1 + taxPct)) * markupPct + (matCot * (1 + taxPct)) * mkCot;
     const totalMaterial = matSubtotal + tax + markup;
 
-    // Modo ⚡ Rápido: las horas son las que Edgar decidió, punto
+    // Modo Rápido: las horas son las que Edgar decidió, punto
     const horasBase = rapido
       ? n(est.horas_directas)
       : base.reduce((s, i) => s + n(i.cantidad) * n(i.horas), 0)
@@ -9650,7 +9650,7 @@ function esFalloDeRed(err) {
     const rango = fueraDeRango(est, (estData.estimados || []));
     const avisoRango = (!rango || rango.pocos || (!rango.alto && !rango.bajo)) ? "" : `
       <div class="aviso-texto" style="padding:.2rem 0">
-        <strong>${rango.alto ? "⚠ Vas por encima de lo que sueles cobrar" : "⚠ Vas por debajo de lo que sueles cobrar"}</strong><br>
+        <strong>${rango.alto ? ico("alerta") + " Vas por encima de lo que sueles cobrar" : ico("alerta") + " Vas por debajo de lo que sueles cobrar"}</strong><br>
         Este sale a <strong>${fmt(rango.mio)}/sqft</strong>; tus ${rango.n} ganados de ${esc(rango.tramo)}
         van a <strong>${fmt(rango.mediana)}/sqft</strong> de mediana (de ${fmt(rango.min)} a ${fmt(rango.max)}).
         Eso es un <strong>${(rango.dif * 100).toFixed(0)} %</strong> de diferencia.<br>
@@ -9658,7 +9658,7 @@ function esFalloDeRed(err) {
       </div>`;
     return `
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">📊 ¿Cómo acabó?</div>
+        <div class="cal-form-titulo">¿Cómo acabó?</div>
         ${avisoRango}
         <div class="cal-form">
           <label>Pies cuadrados del trabajo
@@ -9843,7 +9843,7 @@ function esFalloDeRed(err) {
     if (ret) out.push({ titulo: `Retainage — ${Math.round(ret * 1000) / 10}% retenido`, condicion: "Lo libera el contratante al cierre (final pay application)", monto: r2(bid - neto), orden: out.length + 1 });
     return out;
   }
-  // 💵 Cómo se cobra: lo que decidió la IA (o la propuesta, o el respaldo), con montos
+  // Cómo se cobra: lo que decidió la IA (o la propuesta, o el respaldo), con montos
   function tarjetaPagos(est, c) {
     if (!usuario.finanzas) return "";
     const f = fotoDe(est, c), pl = planDePagos(est, f);
@@ -9851,7 +9851,7 @@ function esFalloDeRed(err) {
     const quien = pl.dePropuesta ? "el de la propuesta que ya se armó" : pl.deIA ? "lo decidió la IA" : "regla de respaldo: la IA todavía no lo decidió";
     return `
       <div class="cal-panel-card" id="est-pagos">
-        <div class="cal-form-titulo">💵 Pagos del contrato · ${esc(pl.pcts.join(" / "))}</div>
+        <div class="cal-form-titulo">Pagos del contrato · ${esc(pl.pcts.join(" / "))}</div>
         <p class="lev-nota"><b>${esc(quien)}</b>${pl.porque && !pl.respaldo ? " — " + esc(pl.porque) : ""}</p>
         <ul class="lev-noincluye">${hitos.map(h => `<li>${esc(h.titulo)} · ${esc(h.condicion)}: <b>${fmt(h.monto)}</b></li>`).join("")}</ul>
         ${est.estado !== "convertido" && !pl.dePropuesta ? `<button type="button" class="accion secundaria" id="btn-est-reparto-ia">${pl.deIA ? "Que la IA lo vuelva a decidir" : "Que la IA decida el reparto"}</button>` : ""}
@@ -9878,7 +9878,7 @@ function esFalloDeRed(err) {
     const campo = (id, lab, val, ph, extra) => `<label>${lab}<input id="${id}" value="${esc(val == null ? "" : String(val))}" placeholder="${esc(ph)}"${extra || ""}${dis}></label>`;
     return `
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">📋 Datos del trabajo</div>
+        <div class="cal-form-titulo">Datos del trabajo</div>
         <div class="cal-form">
           ${campo("est-dat-cliente", "Quién nos contrata (cliente / contratante)", est.cliente, "p. ej. Integrated Systems, el GC")}
           ${campo("est-dat-dueno", "Dueño final de la obra", est.dueno, "p. ej. Baptist Health")}
@@ -9918,7 +9918,7 @@ function esFalloDeRed(err) {
     const adj = adjuntosDe(est);
     return `
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">📎 Adjuntos del estimado (${adj.length})</div>
+        <div class="cal-form-titulo">Adjuntos del estimado (${adj.length})</div>
         ${adj.length ? adj.map((a, i) => `
           <div class="mat-item">
             <span class="alcance-info">
@@ -9926,7 +9926,7 @@ function esFalloDeRed(err) {
                 : `<a href="#" class="adj-abrir" data-ruta="${esc(a.ruta)}">${esc(a.titulo || "Documento")}</a>`}</span>
               <span class="alcance-estado">${a.url ? "enlace" : "PDF"}${a.fecha ? " · " + esc(a.fecha) : ""}</span>
             </span>
-            ${!soloLectura ? `<button class="insp-borrar adj-quitar" data-i="${i}" title="Quitar">🗑</button>` : ""}
+            ${!soloLectura ? `<button class="insp-borrar adj-quitar" data-i="${i}" title="Quitar" aria-label="Quitar">${ico("basura")}</button>` : ""}
           </div>`).join("") : `<p class="cal-sin-eventos">Sin adjuntos: el set de planos, las cuotas del supply, el estimado de Claude…</p>`}
         ${!soloLectura ? `
         <div class="cal-form">
@@ -9934,7 +9934,7 @@ function esFalloDeRed(err) {
           <label>PDF <input id="adj-archivo" type="file" accept="application/pdf"></label>
           <label>o enlace de Drive <input id="adj-url" placeholder="https://drive.google.com/…"></label>
         </div>
-        <button type="button" class="accion secundaria" id="adj-subir">📎 Adjuntar</button>
+        <button type="button" class="accion secundaria" id="adj-subir">Adjuntar</button>
         <p class="modal-nota">Al convertir en proyecto pasan solos a los documentos del proyecto.</p>` : ""}
       </div>`;
   }
@@ -9968,7 +9968,7 @@ function esFalloDeRed(err) {
         const ruta = archivo ? await DB.subirDocumento("est-" + est.id, archivo, "docs") : null;
         const arr = adjuntosDe(est).concat([{ titulo: titulo || (archivo ? archivo.name : "Enlace"), ruta, url: archivo ? null : url, fecha: new Date().toISOString().slice(0, 10) }]);
         await guarda(arr, "Adjuntado ✓");
-      } catch (e) { avisar("No se pudo subir: " + e.message + " — prueba con el enlace de Drive", true); bt.disabled = false; bt.textContent = "📎 Adjuntar"; }
+      } catch (e) { avisar("No se pudo subir: " + e.message + " — prueba con el enlace de Drive", true); bt.disabled = false; bt.textContent = "Adjuntar"; }
     });
   }
   // al convertir: los adjuntos pasan a los documentos del proyecto
@@ -10048,11 +10048,11 @@ function esFalloDeRed(err) {
         <td class="r">${t.decididos >= 3 ? pct(t.tasa) : "—"}</td></tr>`;
     return `
       <details class="cal-panel-card" id="est-historial">
-        <summary class="cal-form-titulo" style="cursor:pointer">📈 Historial — ${b.total} ${b.total === 1 ? "estimado" : "estimados"}${
+        <summary class="cal-form-titulo" style="cursor:pointer">Historial — ${b.total} ${b.total === 1 ? "estimado" : "estimados"}${
           b.todo.decididos ? ` · ganas ${pct(b.todo.tasa)} de los ${b.todo.decididos} que se decidieron` : ""}</summary>
         <div style="padding:.4rem 0">
-          ${b.todo.recalculados ? `<p class="lev-nota" style="margin:0 0 .5rem">⚠ <strong>${b.todo.recalculados} de ${b.total}</strong> no tienen guardado el número con que se ofertaron, así que salen <strong>recalculados con los precios de hoy</strong>. Márcalos como ganado o perdido y se les guarda el suyo.</p>` : ""}
-          ${(b.todo.psfN === 0 && b.total) ? `<p class="lev-nota" style="margin:0 0 .5rem">⚠ <strong>Ninguno tiene pies cuadrados</strong>, así que todavía no hay $/sqft que comparar — que es para lo que sirve esto. Ábrelos y ponlos en «¿Cómo acabó?»: vale aunque el trabajo sea de hace meses.</p>` : ""}
+          ${b.todo.recalculados ? `<p class="lev-nota" style="margin:0 0 .5rem">${ico("alerta")} <strong>${b.todo.recalculados} de ${b.total}</strong> no tienen guardado el número con que se ofertaron, así que salen <strong>recalculados con los precios de hoy</strong>. Márcalos como ganado o perdido y se les guarda el suyo.</p>` : ""}
+          ${(b.todo.psfN === 0 && b.total) ? `<p class="lev-nota" style="margin:0 0 .5rem">${ico("alerta")} <strong>Ninguno tiene pies cuadrados</strong>, así que todavía no hay $/sqft que comparar — que es para lo que sirve esto. Ábrelos y ponlos en «¿Cómo acabó?»: vale aunque el trabajo sea de hace meses.</p>` : ""}
           <p style="margin:.2rem 0">
             <strong>Ganados:</strong> ${g ? `${g.n} · ${psf(g)}` : "todavía ninguno"}<br>
             <strong>Perdidos:</strong> ${pr ? `${pr.n} · ${psf(pr)}` : "todavía ninguno"}<br>
@@ -10081,7 +10081,7 @@ function esFalloDeRed(err) {
     const vs = tuyoVsReferencia(cat, 0.15);
     return `
       <details class="cal-panel-card" id="est-precios">
-        <summary class="cal-form-titulo" style="cursor:pointer">🏷️ Precios del catálogo — ${cat.length} ítems${conRef ? ` · ${conRef} con referencia` : ""}</summary>
+        <summary class="cal-form-titulo" style="cursor:pointer">Precios del catálogo — ${cat.length} ítems${conRef ? ` · ${conRef} con referencia` : ""}</summary>
         <div style="padding:.4rem 0">
           <p class="modal-nota">Pega aquí el CSV del proveedor (Descripción y Precio; también vale Horas). Se casa contra tu catálogo y te enseño qué cambiaría: <strong>no se escribe nada hasta que lo apruebes</strong>.</p>
           <textarea id="precio-csv" rows="4" placeholder="Item,Unit,Price&#10;20A DUPLEX RECEPTACLE,E,4.10&#10;…"
@@ -10089,13 +10089,13 @@ function esFalloDeRed(err) {
           <div class="cal-form">
             <label>¿Adónde van estos precios?
               <select id="precio-destino">
-                <option value="tuyo">A MIS precios — es lo que yo pago (cotiza con ellos)</option>
+                <option value="tuyo">A mis precios — es lo que yo pago (cotiza con ellos)</option>
                 <option value="referencia">Solo de referencia — RSMeans, NECA, una lista ajena</option>
               </select>
             </label>
             <label>¿De dónde salen? <input id="precio-fuente" placeholder="City Electric 15/09 · RSMeans 2026…"></label>
           </div>
-          <button type="button" class="accion secundaria" id="btn-precio-ver" style="margin-top:.45rem">🔎 Ver qué cambiaría</button>
+          <button type="button" class="accion secundaria" id="btn-precio-ver" style="margin-top:.45rem">Ver qué cambiaría</button>
           <div id="precio-preview"></div>
           ${viejos ? `<p class="lev-nota" style="margin:.6rem 0 0">${viejos} ${viejos === 1 ? "ítem no tiene" : "ítems no tienen"} fecha de precio: no hay forma de saber si son de este año o de hace tres. Al importar se les pone.</p>` : ""}
           ${vs.length ? `
@@ -10125,7 +10125,7 @@ function esFalloDeRed(err) {
           <input type="checkbox" class="precio-chk" data-i="${i}"${marcadas[i] ? " checked" : ""}>
           <span>${esc(c.item.item)}${c.via !== "nombre" ? ` <span class="chk-avance">por ${esc(c.via)}</span>` : ""}${
             c.repetido ? ` <span class="chk-avance">repetido en el CSV</span>` : ""}${
-            c.eraCero ? `<br><span class="chk-avance">⚠ estaba a $0 <strong>a propósito</strong> (${esc(c.ceroMotivo)}): ponerle precio fijo cambia cómo se cotiza</span>` : ""}</span>
+            c.eraCero ? `<br><span class="chk-avance">${ico("alerta")} estaba a $0 <strong>a propósito</strong> (${esc(c.ceroMotivo)}): ponerle precio fijo cambia cómo se cotiza</span>` : ""}</span>
         </label></td>
         <td class="r">${c.antesP === null ? "—" : fmt(c.antesP)}</td>
         <td class="r">${c.nuevoP === null ? "—" : fmt(c.nuevoP)}</td>
@@ -10148,7 +10148,7 @@ function esFalloDeRed(err) {
       </div>` : `<p class="lev-nota">Nada que cambiar: lo que llegó ya estaba igual.</p>`}
       ${P.sinPareja.length ? `
       <div class="cal-form-titulo" style="margin-top:.7rem">Sin pareja en tu catálogo (${P.sinPareja.length})</div>
-      <p class="lev-nota" style="margin:.2rem 0">Estos NO se tocan. Si alguno es tuyo con otro nombre, créale un alias o el ítem y vuelve a importar.</p>
+      <p class="lev-nota" style="margin:.2rem 0">Estos no se tocan. Si alguno es tuyo con otro nombre, créale un alias o el ítem y vuelve a importar.</p>
       <p class="modal-nota">${P.sinPareja.slice(0, 20).map(x => `<span>· ${esc(x.nombre)}${x.precio !== null ? ` — ${fmt(x.precio)}` : ""}${
         x.sugerencias && x.sugerencias.length ? ` <span class="chk-avance">¿${esc(x.sugerencias[0].item || x.sugerencias[0])}?</span>` : ""}</span>`).join("<br>")}${
         P.sinPareja.length > 20 ? `<br>…y ${P.sinPareja.length - 20} más.` : ""}</p>` : ""}`;
@@ -10166,8 +10166,8 @@ function esFalloDeRed(err) {
     const lista = cambiosDePrecio(P, precioMarcadas);
     if (!lista.length) return;
     const ceros = P.cambios.filter((c, i) => precioMarcadas[i] && c.eraCero);
-    let aviso = `¿Aplicar ${lista.length} ${lista.length === 1 ? "cambio" : "cambios"} ${P.ref ? "a los precios de REFERENCIA" : "a TUS precios"}?`;
-    if (ceros.length) aviso += `\n\nOJO: ${ceros.length} ${ceros.length === 1 ? "estaba" : "estaban"} a $0 a propósito (${[...new Set(ceros.map(c => c.ceroMotivo))].join(", ")}). Ponerles precio fijo cambia cómo se cotizan.`;
+    let aviso = `¿Aplicar ${lista.length} ${lista.length === 1 ? "cambio" : "cambios"} ${P.ref ? "a los precios de referencia" : "a tus precios"}?`;
+    if (ceros.length) aviso += `\n\nOjo: ${ceros.length} ${ceros.length === 1 ? "estaba" : "estaban"} a $0 a propósito (${[...new Set(ceros.map(c => c.ceroMotivo))].join(", ")}). Ponerles precio fijo cambia cómo se cotizan.`;
     if (!await confirmar(aviso)) return;
     const btn = $("btn-precio-aplicar"); if (btn) { btn.disabled = true; btn.textContent = "Aplicando…"; }
     let hechos = 0; const fallos = [];
@@ -10205,18 +10205,18 @@ function esFalloDeRed(err) {
       const f = fotoDe(e, c);
       const movido = !f.recalculado && Math.abs(c.bid - f.bid) > 0.5;
       const chip = e.estado === "convertido" ? "insp-paso" : e.estado === "congelado" ? "leido" : "por_leer";
-      const etiqueta = e.estado === "convertido" ? "CONVERTIDO ✓" : e.estado === "congelado" ? "CONGELADO" : "BORRADOR";
+      const etiqueta = e.estado === "convertido" ? "Convertido ✓" : e.estado === "congelado" ? "Congelado" : "Borrador";
       return `
         <div class="mat-item">
           <span class="recibo-chip ${chip}">${etiqueta}</span>
-          ${e.resultado && RESULTADOS[e.resultado] ? `<span class="recibo-chip ${RESULTADOS[e.resultado].chip}">${RESULTADOS[e.resultado].nom.toUpperCase()}</span>` : ""}
+          ${e.resultado && RESULTADOS[e.resultado] ? `<span class="recibo-chip ${RESULTADOS[e.resultado].chip}">${RESULTADOS[e.resultado].nom}</span>` : ""}
           ${esMEP(e) ? `<span class="recibo-chip devolucion">MXP MEP</span>` : ""}
           <span class="alcance-info est-abrir" data-id="${e.id}" style="cursor:pointer">
             <span class="alcance-titulo">${esc(e.nombre)}</span>
             <span class="alcance-estado">${esc(e.cliente || "")}${e.contratista_id ? ` · ${esc(tratoTexto(e.contratista_id, e.contratista_modo))}` : ""}${e.sqft ? ` · ${esc(e.sqft)} sqft` : ""} · escenario ${esc(e.escenario)}${e.proyecto_id ? ` · <b>añadido a ${esc((proyectos().find(x => x.id === e.proyecto_id) || {}).nombre || e.proyecto_id)}</b>` : ""}</span>
           </span>
           <span class="mat-precio">${fmt(Math.round(f.bid * 100) / 100)}${movido ? `<br><span class="chk-avance" title="Lo que daría hoy con los precios vivos">hoy ${fmt(Math.round(c.bid * 100) / 100)}</span>` : ""}</span>
-          ${e.estado !== "convertido" ? `<button class="insp-borrar btn-est-borrar" data-id="${e.id}" title="Eliminar">🗑</button>` : ""}
+          ${e.estado !== "convertido" ? `<button class="insp-borrar btn-est-borrar" data-id="${e.id}" title="Eliminar" aria-label="Eliminar">${ico("basura")}</button>` : ""}
         </div>`;
     };
     // Los de la otra empresa van en su propia tarjeta, no mezclados con los tuyos
@@ -10243,13 +10243,13 @@ function esFalloDeRed(err) {
       </div>
       <div class="cal-panel-card">
         <form id="form-nuevo-est" class="cal-form">
-          <div class="cal-form-titulo">➕ Nuevo estimado</div>
+          <div class="cal-form-titulo">Nuevo estimado</div>
           <label>¿Cómo vas a estimar este trabajo?
             <select name="modo">
-              <option value="rapido">⚡ Rápido — horas y material, como el Excel</option>
-              <option value="planos">📐 Por planos (takeoff de Bluebeam)</option>
-              <option value="remodelacion">🏠 Remodelación (levantamiento, por ensambles)</option>
-              <option value="servicio">🔧 Servicio (rápido, plantillas)</option>
+              <option value="rapido">Rápido — horas y material, como el Excel</option>
+              <option value="planos">Por planos (takeoff de Bluebeam)</option>
+              <option value="remodelacion">Remodelación (levantamiento, por ensambles)</option>
+              <option value="servicio">Servicio (rápido, plantillas)</option>
             </select>
           </label>
           <label>¿De quién es este trabajo?
@@ -10544,9 +10544,9 @@ function esFalloDeRed(err) {
     { item: "6\" GRS CONDUIT", viejo: {"horas_unidad": 0.09}, nuevo: {"horas_unidad": 0.25}, nota: "Las horas están arrastradas del PVC de 6\" (0,09): la escalera GRS va 4\"=0,15 y 5\"=0,20, así que el 6\" sigue con +0,05." },
     { item: "1/2\" LOCKNUT", viejo: {"horas_unidad": 0.05}, nuevo: {"horas_unidad": 0.02}, nota: "Único peldaño al revés de la escalera de locknuts (el de 3/4\" pide 0,02 y este 0,05)." },
     { item: "1 1/2\" LIQUIDTIGHT CONDUIT", viejo: {"horas_unidad": 0.1}, nuevo: {"horas_unidad": 0.065}, nota: "Horas por pie rotas: restaura el 1,3× sobre el flex metálico que la familia respeta hasta 1-1/4\" (flex 1-1/2\" = 0,05)." },
-    { item: "2\" LIQUIDTIGHT CONDUIT", viejo: {"horas_unidad": 0.25}, nuevo: {"horas_unidad": 0.08}, nota: "Horas por pie rotas: el 0,25 es exactamente la hora del CONECTOR de flex de 2\" (por pieza) pegada en la fila del tubo (por pie); flex 2\" = 0,06/ft." },
-    { item: "2 1/2\" LIQUIDTIGHT CONDUIT", viejo: {"horas_unidad": 0.3}, nuevo: {"horas_unidad": 0.1}, nota: "Horas por pie rotas: el 0,30 es la hora del CONECTOR de flex de 2-1/2\" copiada en el tubo; flex 2-1/2\" = 0,08/ft." },
-    { item: "3\" LIQUIDTIGHT CONDUIT", viejo: {"horas_unidad": 0.35}, nuevo: {"horas_unidad": 0.13}, nota: "Horas por pie rotas: el 0,35 es la hora del CONECTOR de flex de 3\" copiada en el tubo; flex 3\" = 0,10/ft." },
+    { item: "2\" LIQUIDTIGHT CONDUIT", viejo: {"horas_unidad": 0.25}, nuevo: {"horas_unidad": 0.08}, nota: "Horas por pie rotas: el 0,25 es exactamente la hora del conector de flex de 2\" (por pieza) pegada en la fila del tubo (por pie); flex 2\" = 0,06/ft." },
+    { item: "2 1/2\" LIQUIDTIGHT CONDUIT", viejo: {"horas_unidad": 0.3}, nuevo: {"horas_unidad": 0.1}, nota: "Horas por pie rotas: el 0,30 es la hora del conector de flex de 2-1/2\" copiada en el tubo; flex 2-1/2\" = 0,08/ft." },
+    { item: "3\" LIQUIDTIGHT CONDUIT", viejo: {"horas_unidad": 0.35}, nuevo: {"horas_unidad": 0.13}, nota: "Horas por pie rotas: el 0,35 es la hora del conector de flex de 3\" copiada en el tubo; flex 3\" = 0,10/ft." },
     { item: "3 1/2\" LIQUIDTIGHT CONDUIT", viejo: {"horas_unidad": 0.5}, nuevo: {"horas_unidad": 0.16}, nota: "Horas por pie rotas: 0,5 h por pie es más que instalar un pie de cualquier cosa del catálogo; 0,16 continúa la curva 0,065 / 0,08 / 0,10 / 0,13." },
     { item: "4\"x 4\" BELL BOX-BOX AND DEVICE COVER", viejo: {"precio": 0.0}, nuevo: {"precio": 27.45}, nota: "Fila combo (caja + tapa de dispositivo, dos piezas de fundición) a $0." },
     { item: "2\"x 4\" BELL BOX-BOX AND DEVICE COVER", viejo: {"precio": 0.0}, nuevo: {"precio": 13.598}, nota: "Combo a $0 cuando sus piezas suman $7,088 + $6,51 = $13,598, y ese precio exacto está en la obra de Stuart (GUIA-3-PROYECTOS línea 125)." },
@@ -10554,9 +10554,9 @@ function esFalloDeRed(err) {
     { item: "G 4000 WIREMOLD COVER", viejo: {"unidad": "E"}, nuevo: {"unidad": "LF"}, nota: "La tapa del G4000 es lineal como su base (que está en LF): el precio $1,932 y las 0,03 h ya están por pie (58% de la base, proporción normal)." },
     { item: "G 4000 WIREMOLD DIVIDER", viejo: {"unidad": "E"}, nuevo: {"unidad": "LF"}, nota: "Mismo caso que la tapa: el separador va la misma longitud que la base y su precio ($0,84) es por pie." },
     { item: "START/STOP PUSH BUTTON", viejo: {"horas_unidad": 0.5}, nuevo: {"horas_unidad": 2.0}, nota: "El Excel original de Edgar traía 'PUSH BUTTON Start/Stop' a 2 h; al recargar se renombró y quedó a 0,5 h (solo colgar la caja)." },
-    { item: "# 500 MCM THW CU.", viejo: {"precio": 9222.05}, nuevo: {"precio": 15804.7}, nota: "TU COTIZACIÓN UM (oct-2025)." },
-    { item: "# 600 MCM THW CU.", viejo: {"precio": 11839.44}, nuevo: {"precio": 19957.7}, nota: "TU COTIZACIÓN UM (oct-2025)." },
-    { item: "14/4 FPL WET LOC. AQ-246", viejo: {"unidad": "EA"}, nuevo: {"unidad": "MLF"}, nota: "TU EXCEL: MLF." },
+    { item: "# 500 MCM THW CU.", viejo: {"precio": 9222.05}, nuevo: {"precio": 15804.7}, nota: "Tu cotización UM (oct-2025)." },
+    { item: "# 600 MCM THW CU.", viejo: {"precio": 11839.44}, nuevo: {"precio": 19957.7}, nota: "Tu cotización UM (oct-2025)." },
+    { item: "14/4 FPL WET LOC. AQ-246", viejo: {"unidad": "EA"}, nuevo: {"unidad": "MLF"}, nota: "Tu Excel: MLF." },
     { item: "STROBE LIGHT W/BACKBOX", viejo: {"precio": 59.0}, nuevo: {"precio": 99.99}, nota: "Edgar pagó $99,99 la unidad en Stuart (8 unidades, GUIA-3-PROYECTOS línea 167) y el catálogo dice $59: precio de hace años." },
     { item: "HORN/STROBE LIGHT W/BACKBOX", viejo: {"precio": 88.0}, nuevo: {"precio": 137.99}, nota: "Edgar pagó $137,99 en Stuart y el catálogo dice $88." },
     { item: "WP DEVICES COVERS", viejo: {"horas_unidad": 0.008}, nuevo: {"horas_unidad": 0.08}, nota: "0,008 h son 29 segundos por tapa: decimal corrido." },
@@ -10565,11 +10565,11 @@ function esFalloDeRed(err) {
     { item: "FOUR WAY SWITCH", viejo: {"horas_unidad": 1.25}, nuevo: {"horas_unidad": 0.25}, nota: "Va con el THREE POLE: mismo +1,00 h de contaminación (1,25 = 0,25 + 1,00)." },
     { item: "15A DUPLEX TAMPER RESISTANT", viejo: {"horas_unidad": 0.5}, nuevo: {"horas_unidad": 0.3}, nota: "Un TR se instala igual que el dúplex normal (0,3 h): mismos tornillos, mismos hilos, el obturador va dentro." },
     { item: "20A SINGLE RECEPTACLE USB", viejo: {"horas_unidad": 0.3}, nuevo: {"horas_unidad": 0.5}, nota: "Horas: 0,5 como el resto de USB." },
-    { item: "3\" CONDUIT GROUNDING CLAMP", viejo: {"precio": 24.0, "horas_unidad": 0.4}, nuevo: {"precio": 32.06, "horas_unidad": 0.6}, nota: "TU EXCEL: E · $32,06 · 0,6 h; al cargar quedó EA · $24 · 0,4." },
+    { item: "3\" CONDUIT GROUNDING CLAMP", viejo: {"precio": 24.0, "horas_unidad": 0.4}, nuevo: {"precio": 32.06, "horas_unidad": 0.6}, nota: "Tu Excel: E · $32,06 · 0,6 h; al cargar quedó EA · $24 · 0,4." },
     { item: "RG6 TV CABLE", viejo: {"precio": 0.15, "horas_unidad": 0.15}, nuevo: {"precio": 150.0, "horas_unidad": 8.0}, nota: "Etiqueta MLF con precio y horas por pie ($0,15 / 0,15 h): las únicas dos MLF sub-dólar del catálogo son esta y CAT6." },
-    { item: "CAT6 CABLE", viejo: {"precio": 0.18, "horas_unidad": 0.02}, nuevo: {"precio": 450.0, "horas_unidad": 25.0}, nota: "TU EXCEL: CAT6 CABLE · FT · $0,45 · 0,025 h/ft = $450 y 25 h por MLF." },
+    { item: "CAT6 CABLE", viejo: {"precio": 0.18, "horas_unidad": 0.02}, nuevo: {"precio": 450.0, "horas_unidad": 25.0}, nota: "Tu Excel: CAT6 CABLE · FT · $0,45 · 0,025 h/ft = $450 y 25 h por MLF." },
     { item: "CAT6A CABLE", viejo: {"horas_unidad": 0.05}, nuevo: {"horas_unidad": 0.02}, nota: "0,05 h/ft son 50 h por mil pies, casi el doble del MC armado." },
-    { item: "2\" CABLE TO STRUT SUPPORT", viejo: {"unidad": "FT", "horas_unidad": 0.25}, nuevo: {"unidad": "E", "horas_unidad": 0.2}, nota: "TU EXCEL: E · 0,2 h." },
+    { item: "2\" CABLE TO STRUT SUPPORT", viejo: {"unidad": "FT", "horas_unidad": 0.25}, nuevo: {"unidad": "E", "horas_unidad": 0.2}, nota: "Tu Excel: E · 0,2 h." },
     { item: "DEMO - Wire Removal (per LF)", viejo: {"horas_unidad": 0.03}, nuevo: {"horas_unidad": 0.004}, nota: "Arrancar cable a 0,03 h/ft son 30 h/MLF, cinco veces lo que cuesta instalarlo." },
     { item: "DEMO - Conduit Run (per LF)", viejo: {"horas_unidad": 0.05}, nuevo: {"horas_unidad": 0.02}, nota: "Demoler tubo a 0,05 h/ft cuesta más que instalar EMT de 1-1/4\" nuevo." },
     { item: "MAIN CONDUCTOR", viejo: {"horas_unidad": 0.1}, nuevo: {"horas_unidad": 0.02}, nota: "Tu Excel lo tiene en MLF a 20 h por mil pies, o sea 0,02 h/ft." },
@@ -10749,8 +10749,8 @@ function esFalloDeRed(err) {
       const secs = Object.entries(porSec).sort((a, b) => b[1].h - a[1].h).slice(0, 8);
       const r2b = v => Math.round(v * 100) / 100;
       const avisoRef = nRef
-        ? nRef + (nRef === 1 ? " luminaria va" : " luminarias van") + " a TU PRECIO DE REFERENCIA (" + fmt(r2b(totRef)) +
-          "), no a cuota del supply: ese dinero SÍ está en el precio, pero la cuota de verdad todavía no ha llegado.\n" +
+        ? nRef + (nRef === 1 ? " luminaria va" : " luminarias van") + " a tu precio de referencia (" + fmt(r2b(totRef)) +
+          "), no a cuota del supply: ese dinero sí está en el precio, pero la cuota de verdad todavía no ha llegado.\n" +
           "Si el supply viene más caro, la diferencia la pones tú.\n\n"
         : "";
       if (!secs.length) {
@@ -10760,9 +10760,9 @@ function esFalloDeRed(err) {
       const tot = secs.reduce((t, [, g]) => t + g.n, 0);
       return avisoRef +
         "Este estimado lleva " + tot + (tot === 1 ? " renglón" : " renglones") + " sin material.\n" +
-        "El precio NO los incluye:\n\n" +
+        "El precio no los incluye:\n\n" +
         secs.map(([sec, g]) => " • " + sec + " — " + g.n + (g.n === 1 ? " renglón, " : " renglones, ") + r2b(g.h) + " h").join("\n") +
-        (sinConfirmar ? "\n\nY " + sinConfirmar + ' dice(n) "by owner" porque lo supuso la app: mientras no lo confirmes, NO sale en la propuesta.' : "") +
+        (sinConfirmar ? "\n\nY " + sinConfirmar + ' dice(n) "by owner" porque lo supuso la app: mientras no lo confirmes, no sale en la propuesta.' : "") +
         "\n\nEl cliente va a leer que incluye materiales y estos renglones no lo llevan.\n\n" +
         "Aceptar = seguir así.\nCancelar = volver y revisarlos.";
     } catch { return ""; }
@@ -11016,15 +11016,15 @@ FORMA DE PAGO:
 ${lineasPago}${retTxt}
 
 Propuesta válida por ${diasValidez(est)} días. Gracias por la oportunidad.
-Power done right the first time. ⚡`;
+Power done right the first time. ⚡`;  // emoji: sale fuera
   }
 
   // ============================================================
-  // ⚡ ESTIMADO RÁPIDO — horas + material, como la hoja de Excel de Edgar
+  // ESTIMADO RÁPIDO — horas + material, como la hoja de Excel de Edgar
   // Tres casillas y un resultado. Escenario A/B/C o uno propio (Custom):
   // cuadrilla, beneficios, profit y markup se pueden tocar aquí mismo.
   // ============================================================
-  // ✍️ Horas y material a mano, para los modos que cuentan por ítems: lo que se
+  // Horas y material a mano, para los modos que cuentan por ítems: lo que se
   //    ponga aquí SE SUMA a los ensambles e ítems (no los sustituye).
   function panelManoHTML(est, c, soloLectura) {
     const r2 = v => Math.round(v * 100) / 100;
@@ -11034,15 +11034,15 @@ Power done right the first time. ⚡`;
         <span class="rap-desc">${esc(l.desc || "Material")}${chipLinea(l)}</span>
         <span class="rap-monto">${fmt(r2(Number(l.monto) || 0))}</span>
         ${!soloLectura ? `${selTipoLinea(l, i)}
-        <button type="button" class="insp-borrar rap-mat-editar" data-i="${i}" title="Editar">✎</button>
-        <button type="button" class="insp-borrar rap-mat-borrar" data-i="${i}" title="Quitar">🗑</button>` : ""}
+        <button type="button" class="insp-borrar rap-mat-editar" data-i="${i}" title="Editar" aria-label="Editar">${ico("lapiz")}</button>
+        <button type="button" class="insp-borrar rap-mat-borrar" data-i="${i}" title="Quitar" aria-label="Quitar">${ico("basura")}</button>` : ""}
       </div>`).join("");
     const totalCot = r2(lineas.reduce((t, l) => t + (l.tipo === "cot" ? (Number(l.monto) || 0) : 0), 0));
     const totalCostos = r2(lineas.reduce((t, l) => t + (TIPOS_COSTO[l.tipo] ? (Number(l.monto) || 0) : 0), 0));
     const totalMano = r2(lineas.reduce((t, l) => t + (TIPOS_COSTO[l.tipo] ? 0 : (Number(l.monto) || 0)), 0));
     return `
       <div class="cal-panel-card rap-card">
-        <div class="cal-form-titulo">✍️ Horas y material a mano</div>
+        <div class="cal-form-titulo">Horas y material a mano</div>
         <p class="rent-nota" style="margin-top:0">Lo que pongas aquí <b>se suma</b> a los ensambles e ítems de arriba. Sirve para un service: las horas que calculas tú y el material como lo compras.</p>
         <div class="modal-fila">
           <label class="mat-filtro-label">Horas a mano
@@ -11058,8 +11058,8 @@ Power done right the first time. ⚡`;
         <div class="rap-sub">Material a mano — ${fmt(totalMano)}${totalCot ? ` · ${fmt(totalCot)} en cotizaciones` : ""}${totalCostos ? ` · ${fmt(totalCostos)} en logística, allowances y subs` : ""}
           ${!soloLectura ? `<button type="button" class="accion secundaria rap-mat-agregar">+ Agregar línea</button>` : ""}</div>
         ${filasMat || `<p class="cal-sin-eventos">Sin líneas todavía: un total, o varias (breaker, caja, cable…).</p>`}
-        ${totalCot ? `<p class="rent-nota">Lo marcado como COTIZACIÓN no paga el ${Math.round((c.miscPct || 0.03) * 100)} % de misceláneas: ese porcentaje es tape, wirenuts y fijación, y un switchgear que llega en camión no los consume.</p>` : ""}
-        ${totalCostos ? `<p class="rent-nota">LOGÍSTICA, ALLOWANCE y SUBCONTRATO no son material: no pagan sales tax, ni misceláneas, ni markup, ni escalación, y no inflan la hora cargada. Sí llevan overhead y profit.</p>` : ""}
+        ${totalCot ? `<p class="rent-nota">Lo marcado como «Cotización» no paga el ${Math.round((c.miscPct || 0.03) * 100)} % de misceláneas: ese porcentaje es tape, wirenuts y fijación, y un switchgear que llega en camión no los consume.</p>` : ""}
+        ${totalCostos ? `<p class="rent-nota">Logística, Allowance y Subcontrato no son material: no pagan sales tax, ni misceláneas, ni markup, ni escalación, y no inflan la hora cargada. Sí llevan overhead y profit.</p>` : ""}
       </div>`;
   }
 
@@ -11081,8 +11081,8 @@ Power done right the first time. ⚡`;
         <span class="rap-desc">${esc(l.desc || "Material")}${chipLinea(l)}</span>
         <span class="rap-monto">${fmt(r2(Number(l.monto) || 0))}</span>
         ${!soloLectura ? `${selTipoLinea(l, i)}
-        <button type="button" class="insp-borrar rap-mat-editar" data-i="${i}" title="Editar">✎</button>
-        <button type="button" class="insp-borrar rap-mat-borrar" data-i="${i}" title="Quitar">🗑</button>` : ""}
+        <button type="button" class="insp-borrar rap-mat-editar" data-i="${i}" title="Editar" aria-label="Editar">${ico("lapiz")}</button>
+        <button type="button" class="insp-borrar rap-mat-borrar" data-i="${i}" title="Quitar" aria-label="Quitar">${ico("basura")}</button>` : ""}
       </div>`).join("");
     const totalCot = r2(lineas.reduce((t, l) => t + (l.tipo === "cot" ? (Number(l.monto) || 0) : 0), 0));
 
@@ -11094,13 +11094,13 @@ Power done right the first time. ⚡`;
         <span class="rap-signo">/h ·</span>
         <input class="rap-rol-pct" data-i="${i}" type="number" min="0" max="100" step="1" inputmode="numeric" value="${esc(pct(m.pct))}" ${soloLectura ? "disabled" : ""}>
         <span class="rap-signo">%</span>
-        ${!soloLectura && c.mezcla.length > 1 ? `<button type="button" class="insp-borrar rap-rol-quitar" data-i="${i}" title="Quitar rol">🗑</button>` : ""}
+        ${!soloLectura && c.mezcla.length > 1 ? `<button type="button" class="insp-borrar rap-rol-quitar" data-i="${i}" title="Quitar rol" aria-label="Quitar rol">${ico("basura")}</button>` : ""}
       </div>`).join("");
     const sumaPct = Math.round(c.mezcla.reduce((t, m) => t + (Number(m.pct) || 0), 0) * 1000) / 10;
 
     return `
       <div class="cal-panel-card rap-card">
-        <div class="cal-form-titulo">⚡ Horas y material</div>
+        <div class="cal-form-titulo">Horas y material</div>
         <div class="modal-fila">
           <label class="mat-filtro-label">Horas de todo el trabajo
             <input id="rap-horas" type="number" min="0" step="0.5" inputmode="decimal" value="${esc(est.horas_directas ?? "")}" placeholder="Ej: 90" ${soloLectura ? "disabled" : ""}>
@@ -11120,13 +11120,13 @@ Power done right the first time. ⚡`;
 
       <div class="cal-panel-card rap-card">
         <div class="cal-form-titulo">Escenario
-          ${custom ? `<span class="recibo-chip por_leer">CUSTOM ✏</span>` : `<span class="recibo-chip leido">${esc(est.escenario)} — ${esc((escs.find(e => e.id === est.escenario) || {}).nombre || "")}</span>`}
+          ${custom ? `<span class="recibo-chip por_leer">Custom</span>` : `<span class="recibo-chip leido">${esc(est.escenario)} — ${esc((escs.find(e => e.id === est.escenario) || {}).nombre || "")}</span>`}
         </div>
         <div class="rap-tabs">
           ${escenariosDe(est.empresa).map(e => `<button type="button" class="rap-tab${!custom && est.escenario === e.id ? " on" : ""}" data-esc="${esc(e.id)}" ${soloLectura ? "disabled" : ""}>${esc(e.id)} · ${esc(e.nombre || "")}</button>`).join("")}
           ${custom ? `<button type="button" class="rap-tab on" disabled>Custom</button>` : ""}
         </div>
-        <p class="rent-nota">${esMEP(est) ? "Este trabajo usa las tarifas de MXP MEP, no las tuyas. Se cambian en ⚙ Escenarios, en la lista de estimados." : "Toca A, B o C para usar ese escenario tal cual."} Si cambias cualquier número de abajo, este estimado pasa a <strong>Custom</strong> (los escenarios no se tocan; para eso está ⚙ Escenarios en la lista).</p>
+        <p class="rent-nota">${esMEP(est) ? "Este trabajo usa las tarifas de MXP MEP, no las tuyas. Se cambian en Escenarios, en la lista de estimados." : "Toca A, B o C para usar ese escenario tal cual."} Si cambias cualquier número de abajo, este estimado pasa a <strong>Custom</strong> (los escenarios no se tocan; para eso está Escenarios en la lista).</p>
 
         <div class="rap-sub">Cuadrilla — quién trabaja y qué parte de las horas</div>
         ${filasCuadrilla}
@@ -11268,7 +11268,7 @@ Power done right the first time. ⚡`;
     pctCampo("rap-markup", "markup_pct");
   }
 
-  // ⚙ Escenarios A/B/C: tarifas, cuadrilla, beneficios y profit se editan
+  // Escenarios A/B/C: tarifas, cuadrilla, beneficios y profit se editan
   // aquí y valen para TODOS los estimados nuevos (cuando entra un cuarto
   // trabajador, por ejemplo). El overhead se toca desde el aviso de overhead
   // real, no aquí.
@@ -11277,7 +11277,7 @@ Power done right the first time. ⚡`;
     const pct = v => Math.round((Number(v) || 0) * 1000) / 10;
     return `
       <details class="cal-panel-card">
-        <summary class="cal-form-titulo" style="cursor:pointer">⚙ Escenarios — tarifas y cuadrilla</summary>
+        <summary class="cal-form-titulo" style="cursor:pointer">Escenarios — tarifas y cuadrilla</summary>
         <p class="rent-nota">Estos números son los de la casa: cada estimado nuevo arranca con ellos. Cámbialos cuando cambie tu gente o tus costos.</p>
         ${escs.map(e => {
           const mep = e.id === ESC_MEP;
@@ -11291,7 +11291,7 @@ Power done right the first time. ⚡`;
               <input class="esc-rol-nombre" data-i="${i}" type="text" value="${esc(m.rol)}">
               <span class="rap-signo">$</span><input class="esc-rol-tarifa" data-i="${i}" type="number" min="0" step="0.5" inputmode="decimal" value="${esc(m.tarifa)}">
               <span class="rap-signo">/h ·</span><input class="esc-rol-pct" data-i="${i}" type="number" min="0" max="100" step="1" inputmode="numeric" value="${esc(pct(m.pct))}"><span class="rap-signo">%</span>
-              ${cu.length > 1 ? `<button type="button" class="insp-borrar esc-rol-quitar" data-i="${i}" title="Quitar rol">🗑</button>` : ""}
+              ${cu.length > 1 ? `<button type="button" class="insp-borrar esc-rol-quitar" data-i="${i}" title="Quitar rol" aria-label="Quitar rol">${ico("basura")}</button>` : ""}
             </div>`).join("")}
             <div class="modal-fila">
               <label class="mat-filtro-label">Beneficios (%)<input class="esc-benefits" type="number" min="0" max="100" step="0.5" value="${esc(pct(e.benefits))}" readonly title="Sale de sumar el desglose de abajo"></label>
@@ -11307,7 +11307,7 @@ Power done right the first time. ⚡`;
               : `Overhead por <b>hora-hombre</b>: tus gastos generales repartidos entre tus horas. Si quieres el otro método, escribe un % aquí al lado y este se apaga.`}</p>
             <details class="esc-benef">
               <summary class="chk-avance" style="cursor:pointer">¿De qué se compone ese ${pct(e.benefits)} % de beneficios?</summary>
-              <p class="rent-nota" style="margin:.3rem 0">Lo que te cuesta un empleado POR ENCIMA de su salario. El total de arriba sale de sumar esto, así que se puede auditar: o cubre, o te lo estás comiendo en cada hora.</p>
+              <p class="rent-nota" style="margin:.3rem 0">Lo que te cuesta un empleado por encima de su salario. El total de arriba sale de sumar esto, así que se puede auditar: o cubre, o te lo estás comiendo en cada hora.</p>
               ${benefDetalle(e).map(b => `
               <div class="rap-rol">
                 <span class="rap-desc" style="flex:1">${esc(b.n)}${b.fijo ? " <b>· ley</b>" : ""}</span>
@@ -11317,7 +11317,7 @@ Power done right the first time. ⚡`;
             </details>
             <div class="modal-botones">
               <button type="button" class="accion secundaria esc-rol-agregar">+ Agregar rol</button>
-              <button type="button" class="accion esc-guardar">💾 Guardar ${esc(e.id)}</button>
+              <button type="button" class="accion esc-guardar">Guardar ${esc(e.id)}</button>
             </div>
           </div>`;
         }).join("")}
@@ -11397,7 +11397,7 @@ Power done right the first time. ⚡`;
       const vencida = vence && vence < new Date().toISOString().slice(0, 10);
       return `
         <div class="mat-item">
-          <span class="recibo-chip ${p.estado === "firmada" ? "insp-paso" : vencida ? "por_leer" : "leido"}">${p.estado === "firmada" ? "FIRMADA ✓" : vencida ? "VENCIDA" : "PROPUESTA"}</span>
+          <span class="recibo-chip ${p.estado === "firmada" ? "insp-paso" : vencida ? "por_leer" : "leido"}">${p.estado === "firmada" ? "Firmada ✓" : vencida ? "Vencida" : "Propuesta"}</span>
           <span class="alcance-info">
             <span class="alcance-titulo">${ops.length} ${ops.length === 1 ? "opción" : "opciones"}${ops.length ? " · " + ops.map(o => o.letra).join("/") : ""}</span>
             <span class="alcance-estado">${vence ? "vale hasta " + esc(vence) : "sin fecha de validez"}</span>
@@ -11417,7 +11417,7 @@ Power done right the first time. ⚡`;
   const tarjetaSegura = (fn, ...args) => {
     try { return fn(...args) || ""; }
     catch (e) {
-      return `<div class="cal-panel-card"><div class="cal-form-titulo">⚠ Una tarjeta nueva falló</div>
+      return `<div class="cal-panel-card"><div class="cal-form-titulo">${ico("alerta")} Una tarjeta nueva falló</div>
         <p class="modal-nota">${esc((e && e.message) || e)} — el resto del estimado sigue bien. Dímelo y lo arreglo.</p></div>`;
     }
   };
@@ -11461,7 +11461,7 @@ Power done right the first time. ⚡`;
       return `
       <div class="mat-item${fuera ? "" : ""}" style="${fuera ? "opacity:.5" : ""}">
         <span class="alcance-info">
-          <span class="alcance-titulo">${esc(r.nom)}${tocada ? ` <span class="recibo-chip leido">TUYO</span>` : ""}</span>
+          <span class="alcance-titulo">${esc(r.nom)}${tocada ? ` <span class="recibo-chip leido">Tuyo</span>` : ""}</span>
           <span class="alcance-estado">${esc(CONS_CUENTA_TXT[r.cuenta] || r.cuenta)}${r.talla ? ", por talla de tubo" : ""} · ${esc(cond)}${
             fuera ? " — no entra en este trabajo"
             : h ? ` · aquí puso <strong>${r2(h.cant)}</strong> = ${fmt(r2(h.monto))}`
@@ -11481,12 +11481,12 @@ Power done right the first time. ⚡`;
     const totalAuto = (c.autos || []).reduce((s, a) => s + (Number(a.cantidad) || 0) * (Number(a.precio) || 0), 0);
     return `
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">🔩 Consumibles automáticos — la tabla que manda</div>
-        ${(c.consAvisos || []).length ? `<div class="lev-nota" style="margin:.2rem 0 .5rem">⚠ ${c.consAvisos.map(a => esc(a)).join("<br>⚠ ")}</div>` : ""}
+        <div class="cal-form-titulo">Consumibles automáticos — la tabla que manda</div>
+        ${(c.consAvisos || []).length ? `<div class="lev-nota" style="margin:.2rem 0 .5rem">${ico("alerta")} ${c.consAvisos.map(a => esc(a)).join("<br>" + ico("alerta") + " ")}</div>` : ""}
         <p class="modal-nota">Los ${reglas.length} números que convierten lo que mediste en fittings.
           Este trabajo va <strong>${esc(sopNom)}</strong>${Number(est.pct_rack) > 0 ? ` con el <strong>${Math.round(Number(est.pct_rack) * 100)} %</strong> del tubo en trapecio` : ""}
           (se cambia arriba). Las reglas que no entran con ese soporte salen en gris.
-          ${totalAuto > 0 ? `Ahora mismo generan <strong>${fmt(r2(totalAuto))}</strong> en ${c.autos.length} renglón(es) AUTO.` : ""}</p>
+          ${totalAuto > 0 ? `Ahora mismo generan <strong>${fmt(r2(totalAuto))}</strong> en ${c.autos.length} renglón(es) «Auto».` : ""}</p>
         <details${soloLectura ? "" : ""}>
           <summary class="mat-filtro-label" style="cursor:pointer">Ver y cambiar los ${reglas.length} números</summary>
           ${filas}
@@ -11554,14 +11554,14 @@ Power done right the first time. ⚡`;
     const filas = h.filas.map(f => {
       const marca = !f.supuesto && f.cantidad > 0 && f.ya === 0;
       const est2 = f.ya > 0
-        ? (f.ya === f.cantidad ? `<span class="recibo-chip conciliado">YA ESTÁ · ${r2(f.ya)}</span>`
-                               : `<span class="recibo-chip por_leer">YA ESTÁ CON ${r2(f.ya)}</span>`)
+        ? (f.ya === f.cantidad ? `<span class="recibo-chip conciliado">Ya está · ${r2(f.ya)}</span>`
+                               : `<span class="recibo-chip por_leer">Ya está con ${r2(f.ya)}</span>`)
         : "";
       return `
       <div class="mat-item">
         <input type="checkbox" class="horas-chk" data-id="${esc(f.id)}"${marca ? " checked" : ""}
           title="Marca lo que quieras añadir al estimado">
-        ${f.supuesto ? `<span class="recibo-chip por_leer">SUPUESTO</span>` : ""}${est2}
+        ${f.supuesto ? `<span class="recibo-chip por_leer">Supuesto</span>` : ""}${est2}
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(f.nom)}</span>
           <span class="alcance-estado">${esc(f.de)} · ${r2(f.horas)} h cada uno</span>
@@ -11574,15 +11574,15 @@ Power done right the first time. ⚡`;
     const totalH = h.filas.reduce((s, f) => s + (!f.supuesto && f.cantidad > 0 && f.ya === 0 ? f.cantidad * f.horas : 0), 0);
     return `
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">⏱ Horas del proyecto — lo que no es instalar una pieza</div>
+        <div class="cal-form-titulo">Horas del proyecto — lo que no es instalar una pieza</div>
         <p class="modal-nota">Terminar circuitos en el panel, demoler, rotular, poner en marcha los 0-10V, cerrar.
           En Nicklaus esto eran <strong>70 horas</strong> que no estaban en el borrador. Los números salen de lo que ya tiene
-          el estimado; los <strong>SUPUESTOS</strong> son de arranque — cámbialos y entonces márcalos.</p>
-        ${h.avisos.length ? `<div class="lev-nota" style="margin:.2rem 0 .5rem">⚠ ${h.avisos.map(a => esc(a)).join("<br>⚠ ")}</div>` : ""}
+          el estimado; los <strong>supuestos</strong> son de arranque — cámbialos y entonces márcalos.</p>
+        ${h.avisos.length ? `<div class="lev-nota" style="margin:.2rem 0 .5rem">${ico("alerta")} ${h.avisos.map(a => esc(a)).join("<br>" + ico("alerta") + " ")}</div>` : ""}
         <div id="horas-lista">${filas}</div>
         ${h.filas.length ? `
         <button type="button" class="accion secundaria" id="btn-horas-aplicar" style="margin-top:.45rem">
-          ➕ Añadir al estimado lo marcado${totalH > 0 ? ` (${r2(totalH)} h)` : ""}</button>
+          Añadir al estimado lo marcado${totalH > 0 ? ` (${r2(totalH)} h)` : ""}</button>
         <p class="modal-nota">Se añaden como renglones normales: después se cambian o se borran como cualquier otro.</p>` : ""}
       </div>`;
   }
@@ -11631,9 +11631,9 @@ Power done right the first time. ⚡`;
     return `
       <div class="cal-panel-card">
         ${tapan.length ? `
-        <div class="cal-form-titulo">↪ ${tapan.length} alias que TAPA(N) una fila de tu catálogo</div>
+        <div class="cal-form-titulo">${tapan.length} alias que tapa(n) una fila de tu catálogo</div>
         <p class="modal-nota">Al emparejar el takeoff, la app mira <b>código → alias → nombre</b>: el alias va
-          ANTES que el nombre exacto. Estos se llaman igual que una fila tuya pero mandan a otra pieza, así que esa
+          antes que el nombre exacto. Estos se llaman igual que una fila tuya pero mandan a otra pieza, así que esa
           otra es la que entra al estimado y tu fila no llega a mirarse. Si lo pusiste a propósito, déjalo; si no,
           bórralo en Materiales → Alias.</p>
         ${tapan.slice(0, 10).map(t => `
@@ -11647,7 +11647,7 @@ Power done right the first time. ⚡`;
           </div>`).join("")}
         ${(dobles.length || a.pendientes.length || cortos.length) ? "<hr style='border:0;border-top:1px solid var(--mp-line);margin:.7rem 0'>" : ""}` : ""}
         ${dobles.length ? `
-        <div class="cal-form-titulo">⚇ ${dobles.length} fila(s) del catálogo con el MISMO nombre</div>
+        <div class="cal-form-titulo">${dobles.length} fila(s) del catálogo con el mismo nombre</div>
         <p class="modal-nota">Cuando una receta busca una pieza se queda con <b>la primera</b> que encuentra, y el
           orden en que llegan del servidor no está garantizado. Mientras las gemelas valgan lo mismo da igual.
           <b>El día que corrijas una con el precio del supply, la receta puede seguir cobrando la otra</b> y no te
@@ -11658,13 +11658,13 @@ Power done right the first time. ⚡`;
             <span class="alcance-info">
               <span class="alcance-titulo">${esc(d.item)}</span>
               <span class="alcance-estado">${d.difiere
-                ? `<b>y NO valen lo mismo</b>: ${d.precios.map(v => fmt(v)).join(" / ")}${d.horas.length > 1 ? ` · ${d.horas.join(" / ")} h` : ""} — el número cambia según cuál coja`
+                ? `<b>y no valen lo mismo</b>: ${d.precios.map(v => fmt(v)).join(" / ")}${d.horas.length > 1 ? ` · ${d.horas.join(" / ")} h` : ""} — el número cambia según cuál coja`
                 : `las ${d.n} valen ${fmt(d.precios[0])}${d.horas.length ? ` y ${d.horas[0]} h` : ""}: hoy da igual cuál coja, pero deja una sola`}</span>
             </span>
           </div>`).join("")}
         ${(a.pendientes.length || cortos.length) ? "<hr style='border:0;border-top:1px solid var(--mp-line);margin:.7rem 0'>" : ""}` : ""}
         ${cortos.length ? `
-        <div class="cal-form-titulo">🔌 ${cortos.length} receta(s) con un conector que no le cabe al cable</div>
+        <div class="cal-form-titulo">${cortos.length} receta(s) con un conector que no le cabe al cable</div>
         <p class="modal-nota">El conector NM de ½" es de 14/2 y 12/2: por ahí no pasa un cable más grueso.
           En la obra hay que ir a buscar el bueno y en el bid está el barato.</p>
         ${cortos.slice(0, 10).map(x => `
@@ -11676,16 +11676,16 @@ Power done right the first time. ⚡`;
             </span>
           </div>`).join("")}
         ${a.pendientes.length ? "<hr style='border:0;border-top:1px solid var(--mp-line);margin:.7rem 0'>" : ""}` : ""}
-        ${a.pendientes.length ? `<div class="cal-form-titulo">🧾 La auditoría del catálogo: faltan ${a.pendientes.length} de ${a.total}</div>` : ""}
+        ${a.pendientes.length ? `<div class="cal-form-titulo">La auditoría del catálogo: faltan ${a.pendientes.length} de ${a.total}</div>` : ""}
         ${a.pendientes.length ? `
         <p class="modal-nota">La auditoría del 16/09 encontró horas copiadas de otra familia, unidades rotas y precios
           de tus propias facturas. <strong>${a.hechos.length}</strong> ya están en tu catálogo${a.cambiados.length ? `, y <strong>${a.cambiados.length}</strong> los cambiaste tú a otro número (esos no se tocan)` : ""}.
-          Estas <strong>${a.pendientes.length}</strong> siguen con el valor viejo${tocan.length ? ` — y <strong>${tocan.length}</strong> ${tocan.length === 1 ? "está" : "están"} en ESTE estimado` : ""}.</p>
+          Estas <strong>${a.pendientes.length}</strong> siguen con el valor viejo${tocan.length ? ` — y <strong>${tocan.length}</strong> ${tocan.length === 1 ? "está" : "están"} en este estimado` : ""}.</p>
         ${a.pendientes.slice(0, 40).map(r => {
           const usa = enUso.has(normTxt(r.item));
           return `
           <div class="mat-item${usa ? " recibo-por_leer" : ""}">
-            <span class="recibo-chip ${usa ? "por_leer" : "leido"}">${usa ? "EN ESTE BID" : "catálogo"}</span>
+            <span class="recibo-chip ${usa ? "por_leer" : "leido"}">${usa ? "En este bid" : "catálogo"}</span>
             <span class="alcance-info">
               <span class="alcance-titulo">${esc(r.item)}</span>
               <span class="alcance-estado">${Object.keys(r.nuevo).map(k => `${esc(k.replace("horas_unidad", "horas").replace("_", " "))}: ${esc(String(r.viejo[k]))} → <b>${esc(String(r.nuevo[k]))}</b>`).join(" · ")}${r.nota ? ` <span class="muted">· ${esc(r.nota)}</span>` : ""}</span>
@@ -11695,7 +11695,7 @@ Power done right the first time. ⚡`;
         ${a.pendientes.length > 40 ? `<div class="lev-nota">…y ${a.pendientes.length - 40} más.</div>` : ""}
         <p class="modal-nota">Esto se arregla en la base, no aquí: copia el SQL y pégalo en Supabase.
           Cada sentencia lleva el valor de hoy como condición, así que si ya lo cambiaste no hace nada.</p>
-        <button type="button" class="accion secundaria" id="btn-aud-copia">📋 Copiar el SQL de las ${a.pendientes.length} que faltan</button>
+        <button type="button" class="accion secundaria" id="btn-aud-copia">Copiar el SQL de las ${a.pendientes.length} que faltan</button>
         <details style="margin-top:.5rem">
           <summary class="mat-filtro-label" style="cursor:pointer">Ver el SQL</summary>
           <textarea id="aud-sql" rows="8" readonly style="width:100%;font-family:ui-monospace,monospace;font-size:.72rem;padding:.55rem;border:1px solid var(--mp-line);border-radius:10px">${esc(auditoriaSql(a.pendientes))}</textarea>
@@ -11734,11 +11734,11 @@ Power done right the first time. ⚡`;
           placeholder="$ por unidad" style="width:7rem;font:inherit;font-size:.78rem;padding:.2rem .3rem;border:1px solid var(--mp-line);border-radius:8px;text-align:right;${rf.fuente === "precio" ? "" : "display:none"}">`;
       return `
       <div class="mat-item" style="flex-wrap:wrap">
-        <span class="recibo-chip ${chipDe(rf)}">${rf.fuente === "sin" ? "SIN FAMILIA" : esc(rf.nom) + (tuya ? " ✎" : "") + (rf.fuente === "tuya_sin_precio" ? " · $0" : "") + (rf.flojo ? " · ¿" + fmt(rf.precio) + "?" : "")}</span>
+        <span class="recibo-chip ${chipDe(rf)}">${rf.fuente === "sin" ? "Sin familia" : esc(rf.nom) + (tuya ? " " + ico("lapiz") : "") + (rf.fuente === "tuya_sin_precio" ? " · $0" : "") + (rf.flojo ? " · ¿" + fmt(rf.precio) + "?" : "")}</span>
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(mod)}</span>
           <span class="alcance-estado">${r2(q)} ${esc(p.unidad || "E")}${rf.flojo
-            ? ` · ⚠ ${fmt(rf.precio)} por unidad no es el precio de una luminaria: revísalo, este renglón NO entra al bid`
+            ? ` · ${ico("alerta")} ${fmt(rf.precio)} por unidad no es el precio de una luminaria: revísalo, este renglón no entra al bid`
             : rf.precio > 0
             ? ` × ${fmt(rf.precio)} ${rf.fuente === "precio" ? "tuyos" : rf.fuente === "tuya" ? "de la familia que elegiste" : "de referencia"}`
             : rf.fuente === "tuya_sin_precio"
@@ -11761,13 +11761,13 @@ Power done right the first time. ⚡`;
       </label>`).join("");
     return `
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">🔦 Luminarias que cotiza el supply (${pend.length})</div>
+        <div class="cal-form-titulo">Luminarias que cotiza el supply (${pend.length})</div>
         ${soloLectura ? `<p class="modal-nota" style="color:#a33">Este estimado ya no es un borrador, pero lo que ves aquí se vuelve a calcular con los precios de <strong>hoy</strong>: si cambias un precio de referencia o le enseñas una familia a un modelo, esta pantalla se mueve. El número que se mandó quedó guardado aparte al cerrarlo.</p>` : ""}
         <p class="modal-nota">Tú no pones la luz: pones la mano. Mientras llega la cuota estos renglones valen <strong>$0</strong> y
           el bid sale corto. Aquí eliges: usar un <strong>precio de referencia tuyo</strong> para tener una cifra, o pegar la
           <strong>cuota de verdad</strong> cuando llegue. Nunca salen precios de internet.</p>
         ${filasPend}
-        ${ref.sinFamilia.length ? `<div class="lev-nota" style="margin:.4rem 0">⚠ ${ref.sinFamilia.length} renglón(es) sin precio de referencia: <strong>elige su familia</strong> en el desplegable de su fila (o dale un precio tuyo). Lo que elijas me lo aprendo para todos tus estimados.</div>` : ""}
+        ${ref.sinFamilia.length ? `<div class="lev-nota" style="margin:.4rem 0">${ico("alerta")} ${ref.sinFamilia.length} renglón(es) sin precio de referencia: <strong>elige su familia</strong> en el desplegable de su fila (o dale un precio tuyo). Lo que elijas me lo aprendo para todos tus estimados.</div>` : ""}
         ${soloLectura ? "" : `
         <label class="mat-filtro-label" style="display:flex;align-items:center;gap:.5rem;margin:.6rem 0 .2rem">
           <input type="checkbox" id="luz-ref-on"${usando ? " checked" : ""}>
@@ -11775,7 +11775,7 @@ Power done right the first time. ⚡`;
             ${ref.total > 0 ? `— <strong>${fmt(r2(ref.total))}</strong>` : ""}</span>
         </label>
         <p class="modal-nota">${usando
-          ? `Está <strong>encendido</strong>: esos ${fmt(r2(ref.total))} entran al bid por donde entran las cotizaciones (con su markup, sin misceláneas) y cada renglón se ve marcado <strong>REFERENCIA</strong>. La cuota sigue pendiente y el aviso de salida lo va a decir.`
+          ? `Está <strong>encendido</strong>: esos ${fmt(r2(ref.total))} entran al bid por donde entran las cotizaciones (con su markup, sin misceláneas) y cada renglón se ve marcado <strong>Referencia</strong>. La cuota sigue pendiente y el aviso de salida lo va a decir.`
           : `Está <strong>apagado</strong>: los renglones valen $0 y el bid no incluye la luminaria.`}</p>
         ${aprendidas.length ? `
         <details style="margin-top:.5rem">
@@ -11800,7 +11800,7 @@ Power done right the first time. ⚡`;
             Si pegas las dos cuotas, <strong>me quedo con la más cara</strong>.</p>
           <textarea id="luz-cuota" rows="4" placeholder="12  LITHONIA STAK 2X2 5000LM 80CRI 35K   $168.40   $2,020.80"
             style="width:100%;font:inherit;font-size:.8rem;padding:.55rem .7rem;border:1px solid var(--mp-line);border-radius:10px">${esc(luzCuotaTxt)}</textarea>
-          <button type="button" class="accion secundaria" id="btn-luz-leer" style="margin-top:.4rem">🔎 Leer la cuota</button>
+          <button type="button" class="accion secundaria" id="btn-luz-leer" style="margin-top:.4rem">Leer la cuota</button>
           <div id="luz-cuota-preview"></div>
         </details>`}
       </div>`;
@@ -11820,8 +11820,8 @@ Power done right the first time. ⚡`;
     luzFlete = r.flete.length ? r.flete.reduce((a, b) => (b.monto > a.monto ? b : a)) : null;
     const yaFlete = luzFlete && (Array.isArray(est.lineas_material) ? est.lineas_material : [])
       .some(l => Math.abs((Number(l.monto) || 0) - luzFlete.monto) < 0.005 && /FREIGHT|FLETE|DELIVERY|SHIPPING/i.test(l.desc || ""));
-    const htmlFlete = luzFlete ? `<div class="lev-nota" style="margin:.4rem 0">🚚 La cuota trae flete: <b>${fmt(luzFlete.monto)}</b> (${esc(luzFlete.desc)}).
-      ${yaFlete ? " Ya está en el estimado." : `<button type="button" class="accion secundaria" id="btn-luz-flete">➕ Añadirlo al estimado</button>`}</div>` : "";
+    const htmlFlete = luzFlete ? `<div class="lev-nota" style="margin:.4rem 0">La cuota trae flete: <b>${fmt(luzFlete.monto)}</b> (${esc(luzFlete.desc)}).
+      ${yaFlete ? " Ya está en el estimado." : `<button type="button" class="accion secundaria" id="btn-luz-flete">Añadirlo al estimado</button>`}</div>` : "";
     if (!r.casadas.length) {
       caja.innerHTML = `<div class="lev-nota" style="margin-top:.5rem">No reconocí ningún modelo de los que esperan cuota.
         ${r.sinPareja.length ? `Leí ${r.sinPareja.length} línea(s) con precio pero ninguna se parece a los modelos del estimado.` : "No encontré líneas con precio: revisa que se copiaran los números."}</div>${htmlFlete}`;
@@ -11837,8 +11837,8 @@ Power done right the first time. ⚡`;
           <span class="alcance-estado">cuota: ${esc(x.desc.slice(0, 70))}${x.antes ? ` · había otra a ${fmt(x.antes)}: me quedo con la más cara` : ""}${
             x.yaTenia ? (x.gana
               ? ` · <b>sube</b> desde la cuota que ya tenías (${fmt(x.yaTenia)}): la más cara manda`
-              : ` · ya tenías una a ${fmt(x.yaTenia)}, MÁS CARA: esta no se pone`) : ""}${
-            x.unImporte ? ` · ⚠ <b>la línea trae UN solo importe</b>: lo tomo como precio de CADA UNA. Si es el total, cada una sale a ${fmt(x.siTotal)} — corrígelo con el lápiz de precio del renglón` : ""}${x.id ? "" : " · ⚠ este renglón no se puede editar (viene de una receta)"}</span>
+              : ` · ya tenías una a ${fmt(x.yaTenia)}, más cara: esta no se pone`) : ""}${
+            x.unImporte ? ` · ${ico("alerta")} <b>la línea trae un solo importe</b>: lo tomo como precio de cada una. Si es el total, cada una sale a ${fmt(x.siTotal)} — corrígelo con el lápiz de precio del renglón` : ""}${x.id ? "" : " · " + ico("alerta") + " este renglón no se puede editar (viene de una receta)"}</span>
         </span>
         <span class="mat-precio">${fmt(x.precio)} × ${r2(x.cantidad)} = ${fmt(r2(x.precio * x.cantidad))}</span>
       </div>`).join("")}
@@ -11863,7 +11863,7 @@ Power done right the first time. ⚡`;
       try {
         await DB.cambiarEstimado(est.id, { lineas_material: arr });
         await recargarEstimador();
-        avisar(`🚚 Flete de ${fmt(luzFlete.monto)} añadido al estimado ✓`);
+        avisar(`Flete de ${fmt(luzFlete.monto)} añadido al estimado ✓`);
       } catch (err) { avisar("No se pudo: " + (err.message || err), true); }
     });
   }
@@ -11960,7 +11960,7 @@ Power done right the first time. ⚡`;
     const c = calcularEstimado(est);
     const soloLectura = est.estado !== "borrador";
     const r2 = v => Math.round(v * 100) / 100;
-    const MODO_ETIQ = { planos: "📐 Por planos", remodelacion: "🏠 Remodelación", servicio: "🔧 Servicio", rapido: "⚡ Rápido" };
+    const MODO_ETIQ = { planos: "Por planos", remodelacion: "Remodelación", servicio: "Servicio", rapido: "Rápido" };
     const esRapido = est.modo === "rapido";
 
     // E0 · una sola pasada por repintado. Si algo fallara, zs queda vacío y la
@@ -11998,9 +11998,9 @@ Power done right the first time. ⚡`;
         </span>
         <span class="mat-precio">${cero ? "—" : fmt(r2(Number(i.cantidad) * Number(i.precio)))}</span>
         ${selCero(z, i.item)}
-        ${!soloLectura && i.id ? `<button class="insp-borrar btn-item-qty" data-id="${i.id}" data-qty="${esc(i.cantidad)}" title="Cambiar cantidad">✎</button>
-        <button class="insp-borrar btn-item-precio" data-id="${i.id}" data-precio="${esc(i.precio)}" data-item="${esc(i.item)}" title="Cambiar el precio en ESTE estimado (el catálogo no se toca)">$✎</button>
-        <button class="insp-borrar btn-item-borrar" data-id="${i.id}" title="Quitar">🗑</button>` : ""}
+        ${!soloLectura && i.id ? `<button class="insp-borrar btn-item-qty" data-id="${i.id}" data-qty="${esc(i.cantidad)}" title="Cambiar cantidad" aria-label="Cambiar cantidad">${ico("lapiz")}</button>
+        <button class="insp-borrar btn-item-precio" data-id="${i.id}" data-precio="${esc(i.precio)}" data-item="${esc(i.item)}" title="Cambiar el precio en este estimado (el catálogo no se toca)" aria-label="Cambiar el precio en este estimado (el catálogo no se toca)">$${ico("lapiz")}</button>
+        <button class="insp-borrar btn-item-borrar" data-id="${i.id}" title="Quitar" aria-label="Quitar">${ico("basura")}</button>` : ""}
       </div>`;
     }).join("");
 
@@ -12011,7 +12011,7 @@ Power done right the first time. ⚡`;
       const z = zsAuto[n] || CERO_NEUTRO, cero = (Number(a.precio) || 0) === 0;
       return `
       <div class="mat-item auto-item${z.fila ? " " + z.fila : ""}">
-        <span class="recibo-chip leido">AUTO</span>
+        <span class="recibo-chip leido">Auto</span>
         ${z.chip ? `<span class="recibo-chip ${z.clase}">${esc(z.chip)}</span>` : ""}
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(a.item)}</span>
@@ -12043,12 +12043,12 @@ Power done right the first time. ⚡`;
       const lineaPrecio = precioUnit
         ? `<span class="alcance-estado">≈ <strong>${fmt(Math.round(precioUnit * 100) / 100)}</strong> por unidad (escenario ${esc(est.escenario)})</span>` : "";
       const lineaSinLin = sinLin && qty > 0
-        ? `<span class="alcance-estado">🔌 punto completo <strong>sin tubo ni cable</strong> — esos los mediste tú en el plano y entran por su lado</span>` : "";
+        ? `<span class="alcance-estado">punto completo <strong>sin tubo ni cable</strong> — esos los mediste tú en el plano y entran por su lado</span>` : "";
       const piesLinea = ens.pies_editable && qty > 0
-        ? `<span class="alcance-estado">📏 ${enEst && Number(enEst.pies) > 0
+        ? `<span class="alcance-estado">${enEst && Number(enEst.pies) > 0
             ? `<strong>${Number(enEst.pies)} ft medidos</strong>`
             : `${prom || "?"} ft (de la receta)`} por circuito${!soloLectura
-            ? ` <button class="accion secundaria btn-ens-pies" data-eid="${enEst.id}" data-prom="${prom || ""}" style="padding:.05rem .45rem">✎ pies</button>` : ""}</span>`
+            ? ` <button class="accion secundaria btn-ens-pies" data-eid="${enEst.id}" data-prom="${prom || ""}" style="padding:.05rem .45rem">Cambiar pies</button>` : ""}</span>`
         : "";
       return `
         <div class="mat-item${qty > 0 ? "" : " ens-cero"}">
@@ -12069,7 +12069,7 @@ Power done right the first time. ⚡`;
         </div>`;
     }).join("");
 
-    // ⭐ Lo que más usas: historial real de todos tus estimados.
+    // Lo que más usas: historial real de todos tus estimados.
     // Cada vez que agregas un ítem (buscado, takeoff o creado), cuenta aquí.
     const usoPorItem = {};
     (estData.items || []).forEach(it => {
@@ -12094,7 +12094,7 @@ Power done right the first time. ⚡`;
     const topFrec = frecuentes.slice(0, frecuentesExpandido ? 40 : 6);
     const cardFrecuentes = !soloLectura && frecuentes.length ? `
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">⭐ Lo que más usas <span class="chk-avance">se llena solo con tu historial</span></div>
+        <div class="cal-form-titulo">Lo que más usas <span class="chk-avance">se llena solo con tu historial</span></div>
         ${topFrec.map(filaFrecuente).join("")}
         ${frecuentes.length > 6 ? `
           <button type="button" class="accion secundaria" id="btn-frec-mas" style="margin-top:.45rem">
@@ -12106,7 +12106,7 @@ Power done right the first time. ⚡`;
     const pctTxt = v => (Math.round(v * 1000) / 10) + "%";
     const nnDist = v => !(v === null || v === undefined || v === "");
     const lapiz = (campo, tipo, actual, nombre) => soloLectura ? "" :
-      `<button type="button" class="btn-formula insp-borrar" title="Editar" data-campo="${campo}" data-tipo="${tipo}" data-actual="${actual}" data-nombre="${esc(nombre)}">✎</button>`;
+      `<button type="button" class="btn-formula insp-borrar" title="Editar" aria-label="Editar" data-campo="${campo}" data-tipo="${tipo}" data-actual="${actual}" data-nombre="${esc(nombre)}">${ico("lapiz")}</button>`;
 
     // Aviso del overhead: SIEMPRE enseña la división entera (cuánto se gasta al
     // mes ÷ cuántas horas al mes), nunca solo el resultado. Y el botón de
@@ -12136,8 +12136,8 @@ Power done right the first time. ⚡`;
         const totH = r2(secs.reduce((t, [, g]) => t + g.h, 0));
         return `<div class="inicio-card avisos">
          <div class="aviso-texto" style="padding:.2rem 0">
-           <strong>📦 ${zAlerta.length} ${zAlerta.length === 1 ? "renglón entra" : "renglones entran"} sin material</strong>
-           — ${totH} h SÍ están en el precio<br>
+           <strong>${zAlerta.length} ${zAlerta.length === 1 ? "renglón entra" : "renglones entran"} sin material</strong>
+           — ${totH} h sí están en el precio<br>
            ${secs.map(([sec, g]) => `· ${esc(sec)} — ${g.n} ${g.n === 1 ? "renglón" : "renglones"}, ${r2(g.h)} h${
              g.rojo ? ` · <strong>${g.rojo} sin precio de verdad</strong>` : ""}`).join("<br>")}<br>
            <span class="chk-avance">El labor cuenta; el material no. Dilo en el selector de cada renglón.</span>
@@ -12149,7 +12149,7 @@ Power done right the first time. ⚡`;
     const bannerOverhead = !(usuario.finanzas && oReal && difiere) ? "" :
       `<div class="inicio-card avisos">
          <div class="aviso-texto" style="padding:.2rem 0">
-           <strong>⚙ El overhead por hora</strong><br>
+           <strong>El overhead por hora</strong><br>
            Tus gastos generales son <strong>${fmt(oReal.gastos)} al mes</strong>.
            ${oReal.fuente === "puestas"
              ? `Repartidos entre las <strong>${oReal.horasMes} horas al mes</strong> que pusiste,
@@ -12159,7 +12159,7 @@ Power done right the first time. ⚡`;
                 saldrían <strong>${fmt(oReal.valor)} por hora</strong>.`}
            Los escenarios usan <strong>${fmt(ohEsc)}</strong>, que supone
            <strong>${horasAhora} horas facturables al mes</strong>.
-           ${oReal.fiable ? "" : `<br><br>⚠ <strong>Este número todavía no es de fiar.</strong>
+           ${oReal.fiable ? "" : `<br><br>${ico("alerta")} <strong>Este número todavía no es de fiar.</strong>
              ${oReal.meses < 3
                ? `Solo hay ${oReal.meses} ${oReal.meses === 1 ? "mes cerrado" : "meses cerrados"} con horas apuntadas.`
                : "Se apuntan menos horas de las que se trabajan."}
@@ -12181,7 +12181,7 @@ Power done right the first time. ⚡`;
     $("estimador-panel").innerHTML = `
       <div class="cal-panel-card">
         <div class="cal-form-titulo">${esc(est.nombre)}
-          <span class="recibo-chip ${est.estado === "convertido" ? "insp-paso" : est.estado === "congelado" ? "leido" : "por_leer"}">${esc(est.estado.toUpperCase())}</span>
+          <span class="recibo-chip ${est.estado === "convertido" ? "insp-paso" : est.estado === "congelado" ? "leido" : "por_leer"}">${esc({ convertido: "Convertido ✓", congelado: "Congelado", borrador: "Borrador" }[est.estado] || est.estado)}</span>
           <span class="recibo-chip leido">${MODO_ETIQ[est.modo]}</span>
         </div>
         <div class="alcance-estado">${esc(est.cliente || "")}${est.contratista_id ? ` · ${esc(tratoTexto(est.contratista_id, est.contratista_modo))}` : ""}${est.sqft ? ` · ${esc(est.sqft)} sqft` : ""}</div>
@@ -12200,9 +12200,9 @@ Power done right the first time. ⚡`;
           const d = c.bid - bf;
           if (Math.abs(d) < bf * 0.005) return "";
           return `<div class="aviso-texto" style="padding:.2rem 0">
-            <strong>⚠ Este número se ha movido desde que lo congelaste.</strong>
+            <strong>${ico("alerta")} Este número se ha movido desde que lo congelaste.</strong>
             Congelado el ${esc(String(est.cerrado_en || "").slice(0, 10))}: <strong>${fmt(bf)}</strong>.
-            Con los precios y las familias de HOY sale <strong>${fmt(rr(c.bid))}</strong>
+            Con los precios y las familias de hoy sale <strong>${fmt(rr(c.bid))}</strong>
             (${d > 0 ? "+" : "−"}${fmt(Math.abs(rr(d)))}).<br>
             <span class="chk-avance">El que ofertaste es el congelado: eso es lo que usa el historial y la propuesta guardada. Si vas a comparar número a número, compara contra el congelado.</span>
           </div>`;
@@ -12243,31 +12243,31 @@ Power done right the first time. ⚡`;
       ${esRapido ? panelRapidoHTML(est, c, soloLectura) : panelManoHTML(est, c, soloLectura)}
       ${est.modo === "planos" && !soloLectura ? `
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">📥 Takeoff de Bluebeam</div>
+        <div class="cal-form-titulo">Takeoff de Bluebeam</div>
         <p class="modal-nota">En Bluebeam: Markups List → Export → CSV. Abre el archivo, copia todo y pégalo aquí.</p>
         <textarea id="takeoff-texto" rows="4" placeholder="Pega aquí el export…"
           style="width:100%;font:inherit;font-size:.8rem;padding:.55rem .7rem;border:1px solid var(--mp-line);border-radius:10px"></textarea>
-        <button type="button" class="accion secundaria" id="btn-takeoff-analizar" style="margin-top:.45rem">🔎 Analizar</button>
+        <button type="button" class="accion secundaria" id="btn-takeoff-analizar" style="margin-top:.45rem">Analizar</button>
         <div id="takeoff-preview"></div>
       </div>` : ""}
       ${!esRapido && est.modo !== "planos" && (ensDisponibles.length || !soloLectura) ? `
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">🧩 Ensambles — cuenta como piensas</div>
+        <div class="cal-form-titulo">Ensambles — cuenta como piensas</div>
         ${filasEnsambles || `<p class="cal-sin-eventos">Los ensambles se siembran al correr el SQL v2.</p>`}
       </div>` : ""}
       ${esRapido ? "" : cardFrecuentes}
       ${!soloLectura && !esRapido ? `
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">🔎 Buscar en el catálogo (${(estData.catalogo || []).length})</div>
+        <div class="cal-form-titulo">Buscar en el catálogo (${(estData.catalogo || []).length})</div>
         <input id="est-buscar" type="text" placeholder="Ej: recessed, breaker gfci, 12/2…" autocomplete="off"
           style="width:100%;font:inherit;padding:.55rem .7rem;border:1px solid var(--mp-line);border-radius:10px">
         <div id="est-resultados"></div>
-        <button type="button" class="accion secundaria" id="btn-cat-nuevo" style="margin-top:.45rem">➕ Crear ítem nuevo en el catálogo</button>
+        <button type="button" class="accion secundaria" id="btn-cat-nuevo" style="margin-top:.45rem">Crear ítem nuevo en el catálogo</button>
       </div>` : ""}
       ${esRapido ? "" : `
       <div class="cal-panel-card">
         <div class="cal-form-titulo">Ítems (${c.items.length}${c.autos.length ? ` + ${c.autos.length} automáticos` : ""})</div>
-        ${(c.consAvisos || []).length ? `<div class="lev-nota" style="margin:.2rem 0 .5rem">⚠ Reglas de consumibles que no corrieron:<br>${c.consAvisos.map(a => "• " + esc(a)).join("<br>")}<br><span class="muted">Da de alta esos ítems en el catálogo (docs/sql/e25) y saldrán solos.</span></div>` : ""}
+        ${(c.consAvisos || []).length ? `<div class="lev-nota" style="margin:.2rem 0 .5rem">${ico("alerta")} Reglas de consumibles que no corrieron:<br>${c.consAvisos.map(a => "• " + esc(a)).join("<br>")}<br><span class="muted">Da de alta esos ítems en el catálogo (docs/sql/e25) y saldrán solos.</span></div>` : ""}
         ${filasItems || `<p class="cal-sin-eventos">Agrega ensambles, pega el takeoff o busca en el catálogo.</p>`}
         ${filasAutos}
       </div>`}
@@ -12276,8 +12276,8 @@ Power done right the first time. ⚡`;
       ${tarjetaSegura(cardAuditoriaHTML, est, c, soloLectura)}
       ${tarjetaSegura(cardLuzHTML, est, c, soloLectura)}
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">💵 Resumen — fórmula Max Power
-          ${!soloLectura ? `<span class="chk-avance">toca ✎ para jugar con los números</span>` : ""}</div>
+        <div class="cal-form-titulo">Resumen — fórmula Max Power
+          ${!soloLectura ? `<span class="chk-avance">toca ${ico("lapiz")} para jugar con los números</span>` : ""}</div>
         ${!soloLectura ? `
         <div class="modal-fila" style="margin-bottom:.4rem">
           <label class="mat-filtro-label">Escenario
@@ -12292,21 +12292,21 @@ Power done right the first time. ⚡`;
         </div>` : ""}
         <div class="rent-fila"><span>${esRapido ? `Material (${c.lineasMat.length} línea${c.lineasMat.length === 1 ? "" : "s"})` : `Material (ítems${c.autos.length ? " + automáticos" : ""})`}</span><span>${fmt(r2(c.matSubtotal - c.misc - c.mermaMat))}</span></div>
         ${c.mermaMat > 0 ? `<div class="rent-fila"><span>+ Merma (cables ${Math.round((estData.config.merma_cable ?? .1) * 100)}% · tubería ${Math.round((estData.config.merma_tuberia ?? .05) * 100)}%)</span><span>${fmt(r2(c.mermaMat))}</span></div>` : ""}
-        <div class="rent-fila"><span>+ Misceláneas (${pctTxt(c.miscPct)}${nnDist(est.misc_pct) ? " ✏" : " — tape, wirenuts, fijación"})${lapiz("misc_pct", "pct", c.miscPct, "Misceláneas — % del material")}</span><span>${fmt(r2(c.misc))}</span></div>
-        <div class="rent-fila"><span>+ Sales tax (${pctTxt(c.taxPct)}${nnDist(est.tax_pct) ? " ✏" : ""})${lapiz("tax_pct", "pct", c.taxPct, "Sales tax — % del material")}</span><span>${fmt(r2(c.tax))}</span></div>
-        ${c.markupPct > 0 ? `<div class="rent-fila"><span>+ Markup de materiales (${pctTxt(c.markupPct)}) ✏${lapiz("markup_pct", "pct", c.markupPct, "Markup de materiales — % sobre el material con tax")}</span><span>${fmt(r2(c.markup))}</span></div>`
+        <div class="rent-fila"><span>+ Misceláneas (${pctTxt(c.miscPct)}${nnDist(est.misc_pct) ? " " + ico("lapiz") : " — tape, wirenuts, fijación"})${lapiz("misc_pct", "pct", c.miscPct, "Misceláneas — % del material")}</span><span>${fmt(r2(c.misc))}</span></div>
+        <div class="rent-fila"><span>+ Sales tax (${pctTxt(c.taxPct)}${nnDist(est.tax_pct) ? " " + ico("lapiz") : ""})${lapiz("tax_pct", "pct", c.taxPct, "Sales tax — % del material")}</span><span>${fmt(r2(c.tax))}</span></div>
+        ${c.markupPct > 0 ? `<div class="rent-fila"><span>+ Markup de materiales (${pctTxt(c.markupPct)}) ${ico("lapiz")}${lapiz("markup_pct", "pct", c.markupPct, "Markup de materiales — % sobre el material con tax")}</span><span>${fmt(r2(c.markup))}</span></div>`
           : !soloLectura ? `<div class="rent-fila"><span><button type="button" class="btn-formula insp-borrar" data-campo="markup_pct" data-tipo="pct" data-actual="0" data-nombre="Markup de materiales — % sobre el material con tax">+ Agregar markup de materiales</button></span><span></span></div>` : ""}
-        <div class="rent-fila"><span>Horas de TODO el trabajo (${r2(c.horasBase)} × factor ${est.factor || 1})</span><span>${r2(c.horas)} h</span></div>
+        <div class="rent-fila"><span>Horas de todo el trabajo (${r2(c.horasBase)} × factor ${est.factor || 1})</span><span>${r2(c.horas)} h</span></div>
         <div class="rent-fila"><span>Labor (${r2(c.horas)} h × ${fmt(r2(c.tarifaMezclada))} cuadrilla)</span><span>${fmt(r2(c.laborBase))}</span></div>
-        <div class="rent-fila"><span>+ Beneficios sobre el labor (${pctTxt(c.benefitsPct)}${nnDist(est.benefits_pct) ? " ✏" : ""})${lapiz("benefits_pct", "pct", c.benefitsPct, "Beneficios — % sobre el labor")}</span><span>${fmt(r2(c.benefits))}</span></div>
+        <div class="rent-fila"><span>+ Beneficios sobre el labor (${pctTxt(c.benefitsPct)}${nnDist(est.benefits_pct) ? " " + ico("lapiz") : ""})${lapiz("benefits_pct", "pct", c.benefitsPct, "Beneficios — % sobre el labor")}</span><span>${fmt(r2(c.benefits))}</span></div>
         ${c.escalacion > 0.5 ? `<div class="rent-fila"><span>+ Escalación (${r2(c.mesesObra)} meses de obra · ${pctTxt(c.escAnual)} al año)${lapiz("escalacion_pct", "pct", c.escAnual, "Escalación — subida anual de salarios y material")}</span><span>${fmt(r2(c.escalacion))}</span></div>` : ""}
         ${c.costos > 0.005 ? `<div class="rent-fila"><span>+ Logística, allowances y subcontratos (sin tax ni escalación)</span><span>${fmt(r2(c.costos))}</span></div>` : ""}
         <div class="rent-fila"><span>+ Overhead ${c.ohPct !== null && c.ohPct !== undefined
-          ? `(${pctTxt(c.ohPct)} del costo directo${c.cotEnPrime > 0.5 ? ", sin las cotizaciones" : ""}${nnDist(est.overhead_pct) ? " ✏" : ""})${lapiz("overhead_pct", "pct", c.ohPct, "Overhead — % sobre mano de obra + material, sin lo que llega cotizado")}`
-          : `(${r2(c.horas)} h × ${fmt(c.ohHH)}${nnDist(est.overhead_hh) ? " ✏" : ""})${lapiz("overhead_hh", "monto", c.ohHH, "Overhead — $ por hora-hombre")}`}</span><span>${fmt(r2(c.overhead))}</span></div>
-        <div class="rent-fila"><span>+ Profit (${pctTxt(c.profitPct)}${nnDist(est.profit_pct) ? " ✏" : ""})${lapiz("profit_pct", "pct", c.profitPct, "Profit — % sobre costo + overhead")}</span><span>${fmt(r2(c.profit))}</span></div>
-        <div class="rent-fila rent-total ok"><span>🎯 PRECIO DE LA PROPUESTA</span><span>${fmt(r2(c.bid))}</span></div>
-        <div class="rent-fila"><span>Propuesta válida por ${diasValidez(est)} días${nnDist(est.valida_dias) ? " ✏" : ""}${lapiz("valida_dias", "dias", diasValidez(est), "Validez de la propuesta — días (con el cobre moviéndose, que sea corta)")}</span><span></span></div>
+          ? `(${pctTxt(c.ohPct)} del costo directo${c.cotEnPrime > 0.5 ? ", sin las cotizaciones" : ""}${nnDist(est.overhead_pct) ? " " + ico("lapiz") : ""})${lapiz("overhead_pct", "pct", c.ohPct, "Overhead — % sobre mano de obra + material, sin lo que llega cotizado")}`
+          : `(${r2(c.horas)} h × ${fmt(c.ohHH)}${nnDist(est.overhead_hh) ? " " + ico("lapiz") : ""})${lapiz("overhead_hh", "monto", c.ohHH, "Overhead — $ por hora-hombre")}`}</span><span>${fmt(r2(c.overhead))}</span></div>
+        <div class="rent-fila"><span>+ Profit (${pctTxt(c.profitPct)}${nnDist(est.profit_pct) ? " " + ico("lapiz") : ""})${lapiz("profit_pct", "pct", c.profitPct, "Profit — % sobre costo + overhead")}</span><span>${fmt(r2(c.profit))}</span></div>
+        <div class="rent-fila rent-total ok"><span>Precio de la propuesta</span><span>${fmt(r2(c.bid))}</span></div>
+        <div class="rent-fila"><span>Propuesta válida por ${diasValidez(est)} días${nnDist(est.valida_dias) ? " " + ico("lapiz") : ""}${lapiz("valida_dias", "dias", diasValidez(est), "Validez de la propuesta — días (con el cobre moviéndose, que sea corta)")}</span><span></span></div>
         ${est.sqft ? `<p class="rent-nota">${fmt(r2(c.bid / est.sqft))} por sq ft</p>` : ""}
       </div>
       <div class="cal-panel-card acciones">
@@ -12314,20 +12314,20 @@ Power done right the first time. ⚡`;
         <p class="lev-nota" style="margin:0 0 .5rem">Trabajo <strong>MXP MEP</strong> (con Roger): usa las tarifas de MXP MEP.
           Al cliente va la <b>propuesta lump sum</b> a nombre de <b>${esc(emisorMEP())}</b> (sin overhead, profit ni hora cargada). <b>Congélalo</b> antes de mandarla:
           así el número que ofertaste queda guardado aunque cambien los escenarios.</p>
-        <button class="accion" id="btn-est-prop-mep">📄 Propuesta lump sum para el cliente</button>
-        <button class="accion secundaria" id="btn-est-propuesta">🔒 Resumen interno (con overhead y profit — NO se manda)</button>
-        <button class="accion secundaria" id="btn-est-takeoff">📋 Ver el takeoff para copiar</button>
-        ${est.estado === "borrador" ? `<button class="accion secundaria" id="btn-est-congelar">🔒 Congelar</button>` : ""}
-        ${est.estado === "congelado" ? `<button class="accion secundaria" id="btn-est-descongelar">🔓 Volver a borrador</button>` : ""}
-        ${est.estado !== "convertido" ? `<button class="accion" id="btn-est-convertir">🚀 Convertir en proyecto (si se gana)</button>` : ""}
+        <button class="accion" id="btn-est-prop-mep">Propuesta lump sum para el cliente</button>
+        <button class="accion secundaria" id="btn-est-propuesta">Resumen interno (con overhead y profit — no se manda)</button>
+        <button class="accion secundaria" id="btn-est-takeoff">Ver el takeoff para copiar</button>
+        ${est.estado === "borrador" ? `<button class="accion secundaria" id="btn-est-congelar">Congelar</button>` : ""}
+        ${est.estado === "congelado" ? `<button class="accion secundaria" id="btn-est-descongelar">Volver a borrador</button>` : ""}
+        ${est.estado !== "convertido" ? `<button class="accion" id="btn-est-convertir">Convertir en proyecto (si se gana)</button>` : ""}
         <button class="accion secundaria" id="btn-est-mio">Pasarlo a Max Power</button>
         ` : `
-        <button class="accion secundaria" id="btn-est-propuesta">📄 Generar propuesta</button>
-        <button class="accion secundaria" id="btn-est-takeoff">📋 Ver el takeoff para copiar</button>
-        ${est.estado === "borrador" ? `<button class="accion secundaria" id="btn-est-congelar">🔒 Congelar</button>` : ""}
-        ${est.estado === "congelado" ? `<button class="accion secundaria" id="btn-est-descongelar">🔓 Volver a borrador</button>` : ""}
-        ${est.estado !== "convertido" ? `<button class="accion" id="btn-est-convertir">${est.proyecto_id && proyectos().find(x => x.id === est.proyecto_id) ? `➕ Incluir al proyecto` : `🚀 Convertir en proyecto`}</button>` : ""}
-        <button class="accion secundaria" id="btn-est-armar">🧾 Armar propuesta para el cliente</button>
+        <button class="accion secundaria" id="btn-est-propuesta">Generar propuesta</button>
+        <button class="accion secundaria" id="btn-est-takeoff">Ver el takeoff para copiar</button>
+        ${est.estado === "borrador" ? `<button class="accion secundaria" id="btn-est-congelar">Congelar</button>` : ""}
+        ${est.estado === "congelado" ? `<button class="accion secundaria" id="btn-est-descongelar">Volver a borrador</button>` : ""}
+        ${est.estado !== "convertido" ? `<button class="accion" id="btn-est-convertir">${est.proyecto_id && proyectos().find(x => x.id === est.proyecto_id) ? `Incluir al proyecto` : `Convertir en proyecto`}</button>` : ""}
+        <button class="accion secundaria" id="btn-est-armar">Armar propuesta para el cliente</button>
         <button class="accion secundaria" id="btn-est-mep">Pasarlo a MXP MEP</button>
         ${propuestasDelEstimado(est.id)}`}
       </div>
@@ -12349,12 +12349,12 @@ Power done right the first time. ⚡`;
         return `<div class="cal-panel-card est-listo">
           <div class="cal-form-titulo">✓ Este estimado ya está ${est.proyecto_id ? "incluido en su proyecto" : "convertido en proyecto"}</div>
           ${sinFoto ? `<div class="aviso-texto" style="padding:.2rem 0">
-            <strong>⚠ Este número no está congelado.</strong> Se convirtió antes de que se guardara la foto, así que
+            <strong>${ico("alerta")} Este número no está congelado.</strong> Se convirtió antes de que se guardara la foto, así que
             hoy se vuelve a calcular con los precios vivos: si mañana cambia un precio o unas horas del catálogo,
             el número de este trabajo — que ya vendiste — cambia solo, y el historial compara peras con manzanas.<br>
             <span class="chk-avance">Congélalo con el número de hoy: ${fmt(Math.round(c.bid * 100) / 100)} · ${Math.round(c.horas)} h · ${fmt(Math.round(c.totalMaterial * 100) / 100)} de material.</span>
           </div>
-          <div class="alc-botones"><button class="accion" id="btn-est-foto">📸 Congelar este número</button></div>` : `
+          <div class="alc-botones"><button class="accion" id="btn-est-foto">Congelar este número</button></div>` : `
           <div class="chk-avance">Número congelado el ${esc(String(est.cerrado_en || "").slice(0, 10))}: <strong>${fmt(Number(est.bid_final))}</strong> · ${Math.round(Number(est.horas_final) || 0)} h</div>`}
           <div class="alc-botones">
             <button class="accion" id="btn-est-terminado">Terminado — ir al inicio</button>
@@ -12525,7 +12525,7 @@ Power done right the first time. ⚡`;
       const ok = await confirmar(
         `Esto cambia el overhead de ${fmt(ohEsc)} a ${fmt(oReal.valor)} por hora en los tres escenarios.\n\n` +
         `Este estimado pasaría de ${fmt(Math.round(antes * 100) / 100)} a ${fmt(Math.round(despues * 100) / 100)}.\n\n` +
-        `Afecta a TODAS las ofertas nuevas. ¿Seguro?`);
+        `Afecta a todas las ofertas nuevas. ¿Seguro?`);
       if (!ok) return;
       try {
         await DB.actualizarOverhead(oReal.valor);
@@ -12676,7 +12676,7 @@ Power done right the first time. ⚡`;
         });
       });
     });
-    // --- ⭐ frecuentes: agregar con un toque + "Ver más" ---
+    // --- frecuentes: agregar con un toque + "Ver más" ---
     document.querySelectorAll(".est-frec").forEach(el => {
       el.addEventListener("click", () => {
         const nombre = el.dataset.item;
@@ -12729,7 +12729,7 @@ Power done right the first time. ⚡`;
        el precio es de este estimado y cuál es el del catálogo. */
     $("estimador-panel").querySelectorAll(".btn-item-precio").forEach(btn => {
       btn.addEventListener("click", async () => {
-        const resp = await pedirDato(`Precio unitario de «${btn.dataset.item}» en ESTE estimado (sin tax).\nEl catálogo no cambia.`, btn.dataset.precio);
+        const resp = await pedirDato(`Precio unitario de «${btn.dataset.item}» en este estimado (sin tax).\nEl catálogo no cambia.`, btn.dataset.precio);
         if (resp === null) return;
         const precio = Number(String(resp).replace(/[,$\s]/g, ""));
         if (!Number.isFinite(precio) || precio < 0) { avisar("Precio no válido", true); return; }
@@ -12781,7 +12781,7 @@ Power done right the first time. ⚡`;
               // poner un precio aquí puede mover un bid ya emitido.
               const enEns = (estData.ensambleItems || []).some(ei => normTxt(ei.item) === normTxt(sel.dataset.item));
               if (enEns && !await confirmar("Vas a poner " + fmt(n) + ' a "' + sel.dataset.item + '" en el catálogo.\n\n' +
-                  "Este ítem vive dentro de un ENSAMBLE, y los ensambles leen el precio vivo: los estimados congelados o convertidos que lo usen SE VAN A MOVER.\n\n" +
+                  "Este ítem vive dentro de un ensamble, y los ensambles leen el precio vivo: los estimados congelados o convertidos que lo usen se van a mover.\n\n" +
                   "Aceptar = ponerlo igual.")) return;
               cambios.precio = n;
             }
@@ -12789,7 +12789,7 @@ Power done right the first time. ⚡`;
           await DB.cambiarItemCatalogo(id, cambios);
           await recargarEstimador();
           avisar(v === "by_owner"
-            ? "BY OWNER ✓ — va escrito en el «no incluye» de la propuesta"
+            ? "By owner ✓ — va escrito en el «no incluye» de la propuesta"
             : "Anotado en el catálogo ✓ — no te vuelve a preguntar");
         } catch (err) { avisar("No se pudo guardar: " + err.message, true); }
       });
@@ -12826,10 +12826,10 @@ Power done right the first time. ⚡`;
       if (!await ceroDejaPasar()) return;
       $("propuesta-caja").innerHTML = `
         <div class="cal-panel-card">
-          <div class="cal-form-titulo">${esMEP(est) ? "🔒 Resumen INTERNO de MXP MEP — lleva el margen: no se manda al cliente" : "📄 Propuesta lista para copiar"}</div>
+          <div class="cal-form-titulo">${esMEP(est) ? "Resumen interno de MXP MEP — lleva el margen: no se manda al cliente" : "Propuesta lista para copiar"}</div>
           <textarea id="propuesta-texto" rows="16" readonly
             style="width:100%;font-family:ui-monospace,monospace;font-size:.78rem;padding:.6rem;border:1px solid var(--mp-line);border-radius:10px">${esc(esMEP(est) ? textoResumenMEP(est, c) : textoPropuesta(est, c))}</textarea>
-          <button class="accion" id="btn-copiar-propuesta" style="margin-top:.45rem">📋 Copiar</button>
+          <button class="accion" id="btn-copiar-propuesta" style="margin-top:.45rem">Copiar</button>
         </div>`;
       $("btn-copiar-propuesta").addEventListener("click", async () => {
         try { await navigator.clipboard.writeText($("propuesta-texto").value); avisar("Propuesta copiada ✓"); }
@@ -12843,12 +12843,12 @@ Power done right the first time. ⚡`;
       if (!await ceroDejaPasar()) return;
       $("propuesta-caja").innerHTML = `
         <div class="cal-panel-card">
-          <div class="cal-form-titulo">📄 Propuesta de ${esc(emisorMEP())} para el cliente — lump sum, sin desglose${est.estado === "borrador" ? ` <span class="recibo-chip por_leer">SIN CONGELAR</span>` : ""}</div>
-          ${est.estado === "borrador" ? `<p class="lev-nota" style="margin:0 0 .4rem">⚠ Todavía es un borrador: si la mandas, congélalo para que el número quede guardado.</p>` : ""}
+          <div class="cal-form-titulo">Propuesta de ${esc(emisorMEP())} para el cliente — lump sum, sin desglose${est.estado === "borrador" ? ` <span class="recibo-chip por_leer">Sin congelar</span>` : ""}</div>
+          ${est.estado === "borrador" ? `<p class="lev-nota" style="margin:0 0 .4rem">${ico("alerta")} Todavía es un borrador: si la mandas, congélalo para que el número quede guardado.</p>` : ""}
           <textarea id="propuesta-texto" rows="18"
             style="width:100%;font-family:ui-monospace,monospace;font-size:.78rem;padding:.6rem;border:1px solid var(--mp-line);border-radius:10px">${esc(textoPropuestaMEP(est, c))}</textarea>
           <p class="modal-nota">Se puede editar aquí antes de copiar (el alcance sobre todo). Lo que cambies aquí no se guarda.</p>
-          <button class="accion" id="btn-copiar-propuesta" style="margin-top:.45rem">📋 Copiar</button>
+          <button class="accion" id="btn-copiar-propuesta" style="margin-top:.45rem">Copiar</button>
         </div>`;
       $("btn-copiar-propuesta").addEventListener("click", async () => {
         try { await navigator.clipboard.writeText($("propuesta-texto").value); avisar("Propuesta copiada ✓"); }
@@ -12860,10 +12860,10 @@ Power done right the first time. ⚡`;
     if (btnTk) btnTk.addEventListener("click", () => {
       $("propuesta-caja").innerHTML = `
         <div class="cal-panel-card">
-          <div class="cal-form-titulo">📋 Takeoff para copiar — ${c.items.length + (c.autos || []).length} renglones (pégalo en Excel: cada columna cae en su celda)</div>
+          <div class="cal-form-titulo">Takeoff para copiar — ${c.items.length + (c.autos || []).length} renglones (pégalo en Excel: cada columna cae en su celda)</div>
           <textarea id="takeoff-texto" rows="18" readonly wrap="off"
             style="width:100%;font-family:ui-monospace,monospace;font-size:.74rem;padding:.6rem;border:1px solid var(--mp-line);border-radius:10px;white-space:pre">${esc(textoTakeoff(est, c))}</textarea>
-          <button class="accion" id="btn-copiar-takeoff" style="margin-top:.45rem">📋 Copiar</button>
+          <button class="accion" id="btn-copiar-takeoff" style="margin-top:.45rem">Copiar</button>
         </div>`;
       $("btn-copiar-takeoff").addEventListener("click", async () => {
         try { await navigator.clipboard.writeText($("takeoff-texto").value); avisar("Takeoff copiado ✓ — pégalo en Excel"); }
@@ -12900,8 +12900,8 @@ Power done right the first time. ⚡`;
       }
       await recargarEstimador();
       avisar(conFoto
-        ? `Estimado congelado 🔒 — ${fmt(foto.bid_final)} guardado; si los precios cambian, te digo cuánto se movió`
-        : `⚠ Congelado a cambios de renglón, pero el NÚMERO no quedó guardado: a la base le faltan las columnas de la foto. Corre max-power-panel/docs/sql/e11-resultado.sql y vuelve a congelar.`, !conFoto);
+        ? `Estimado congelado — ${fmt(foto.bid_final)} guardado; si los precios cambian, te digo cuánto se movió`
+        : `Congelado a cambios de renglón, pero el número no quedó guardado: a la base le faltan las columnas de la foto. Corre max-power-panel/docs/sql/e11-resultado.sql y vuelve a congelar.`, !conFoto);
     });
     if (btnDesc) btnDesc.addEventListener("click", async () => {
       await DB.cambiarEstimado(est.id, { estado: "borrador" }).catch(() => {});
@@ -13003,7 +13003,7 @@ Power done right the first time. ⚡`;
         });
         await DB.crearFinanzas({ proyecto_id: idNuevo, contrato: bid, cobrado: 0, presupuesto_materiales: r2(fo.material) });
         const nAdj = await adjuntosAlProyecto(est, idNuevo);
-        if (adjuntosDe(est).length && nAdj < adjuntosDe(est).length) avisar(`⚠ ${adjuntosDe(est).length - nAdj} adjunto(s) no pasaron al proyecto: súbelos allí a mano`, true);
+        if (adjuntosDe(est).length && nAdj < adjuntosDe(est).length) avisar(`${adjuntosDe(est).length - nAdj} adjunto(s) no pasaron al proyecto: súbelos allí a mano`, true);
         for (const h of hitosN) await DB.crearHito(Object.assign({ proyecto_id: idNuevo, estado: "pendiente" }, h));
         // El alcance por puntos nace de los ensambles (o secciones)
         const ensDelEst2 = (estData.estEnsambles || []).filter(e => e.estimado_id === est.id && Number(e.cantidad) > 0);
@@ -13049,13 +13049,13 @@ Power done right the first time. ⚡`;
       }
       const sugs = sugerenciasCatalogo(f.size ? `${f.size} ${f.subject}` : f.subject, 5);
       return `<div class="mat-item recibo-por_leer">
-        <span class="recibo-chip por_leer">SIN MAPEO</span>
+        <span class="recibo-chip por_leer">Sin mapeo</span>
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(f.subject)}${f.size ? " · " + esc(f.size) : ""} — cant. ${esc(f.qty)}</span>
           <select class="takeoff-decision" data-ix="${ix}" style="font:inherit;font-size:.78rem;margin-top:.25rem;max-width:100%">
             <option value="">— elige qué hacer —</option>
             ${sugs.map(s => `<option value="cat:${s.id}">≈ ${esc(s.item)}</option>`).join("")}
-            <option value="nuevo">➕ Crear como ítem nuevo</option>
+            <option value="nuevo">Crear como ítem nuevo</option>
             <option value="omitir">Omitir esta línea</option>
           </select>
         </span>
@@ -13186,7 +13186,7 @@ Power done right the first time. ⚡`;
       celdas += `<button class="${clases}" data-fecha="${iso}">
           <span class="cal-num">${d}</span>
           ${evsDia.length ? `<span class="cal-marca">${evsDia.length}</span>` : ""}
-          ${pensDia.length ? `<span class="cal-marca-roja">⚠</span>` : ""}
+          ${pensDia.length ? `<span class="cal-marca-roja">${ico("alerta")}</span>` : ""}
           <span class="cal-dia-lista">${titulos}${masEv}${pensTxt}</span>
         </button>`;
     }
@@ -13197,7 +13197,7 @@ Power done right the first time. ⚡`;
     pintarDiaPanel();
   }
 
-  // 📅 Los próximos días de trabajo de ESTE proyecto, dentro de su ficha
+  // Los próximos días de trabajo de ESTE proyecto, dentro de su ficha
   function eventosProyectoHTML(p) {
     const hoy = hoyISO();
     const evs = eventosCal()
@@ -13210,14 +13210,14 @@ Power done right the first time. ⚡`;
           <span class="agenda-hora">${esc(e.fecha.slice(5))} ${esc(e.hora || "")}</span>
           <span class="agenda-info">
             <span class="agenda-titulo">${esc(sinMontos(e.titulo))}</span>
-            ${e.asignados && e.asignados.length ? `<span class="agenda-lugar">👤 ${esc(e.asignados.join(", "))}</span>` : ""}
-            ${e.ubicacion ? `<span class="agenda-lugar">📍 ${esc(e.ubicacion)}</span>` : ""}
+            ${e.asignados && e.asignados.length ? `<span class="agenda-lugar">${ico("persona")} ${esc(e.asignados.join(", "))}</span>` : ""}
+            ${e.ubicacion ? `<span class="agenda-lugar">${ico("pin")} ${esc(e.ubicacion)}</span>` : ""}
           </span>
         </div>`;
     const mas = evs.slice(3);
     return `
       <div class="detalle-seccion" id="ficha-eventos">
-        <h3>📅 Próximos días de trabajo</h3>
+        <h3>Próximos días de trabajo</h3>
         ${evs.slice(0, 3).map(fila).join("")}
         ${mas.length ? plegableHTML(p, "eventos-mas", `Ver ${mas.length} más`, "", mas.map(fila).join(""), false) : ""}
       </div>`;
@@ -13235,17 +13235,17 @@ Power done right the first time. ⚡`;
               <span class="agenda-hora">${esc(e.hora || "")}</span>
               <span class="agenda-info">
                 <span class="agenda-titulo"${e.estadoEv === "cancelado" ? ' style="text-decoration:line-through;opacity:.6"' : ""}>${esc(sinMontos(e.titulo))}${e.estadoEv === "hecho" ? " ✓" : ""}${e.estadoEv === "cancelado" ? " (cancelado)" : ""}</span>
-                ${p ? `<span class="agenda-lugar">🔧 ${esc(nombreVis(p.nombre))}</span>` : ""}
-                ${e.asignados && e.asignados.length ? `<span class="agenda-lugar">👤 ${esc(e.asignados.join(", "))}</span>` : ""}
-                ${e.ubicacion ? `<span class="agenda-lugar">📍 ${esc(e.ubicacion)}</span>` : ""}
+                ${p ? `<span class="agenda-lugar">${ico("llave")} ${esc(nombreVis(p.nombre))}</span>` : ""}
+                ${e.asignados && e.asignados.length ? `<span class="agenda-lugar">${ico("persona")} ${esc(e.asignados.join(", "))}</span>` : ""}
+                ${e.ubicacion ? `<span class="agenda-lugar">${ico("pin")} ${esc(e.ubicacion)}</span>` : ""}
                 ${e.nota ? `<span class="agenda-nota">${esc(sinMontos(e.nota))}</span>` : ""}
               </span>
               ${usuario.editar && e.estadoEv === "programado" && !String(e.id).startsWith("insp-") ? `
               <button type="button" class="chip-cobrar ev-cerrar" data-id="${e.id}" data-estado="hecho" title="Se hizo — cerrar este día">✓</button>
               <button type="button" class="insp-borrar ev-cerrar" data-id="${e.id}" data-estado="cancelado" title="No se hizo — cancelarlo">✗</button>` : ""}
               ${usuario.editar && e.estadoEv !== "programado" && !String(e.id).startsWith("insp-") ? `
-              <button type="button" class="insp-borrar ev-cerrar" data-id="${e.id}" data-estado="programado" title="Volver a dejarlo abierto">↩</button>` : ""}
-              ${usuario.finanzas && !String(e.id).startsWith("insp-") ? `<button type="button" class="insp-borrar ev-borrar" data-id="${e.id}" title="Eliminar este evento">🗑</button>` : ""}
+              <button type="button" class="insp-borrar ev-cerrar" data-id="${e.id}" data-estado="programado" title="Volver a dejarlo abierto" aria-label="Volver a dejarlo abierto">${ico("deshacer")}</button>` : ""}
+              ${usuario.finanzas && !String(e.id).startsWith("insp-") ? `<button type="button" class="insp-borrar ev-borrar" data-id="${e.id}" title="Eliminar este evento" aria-label="Eliminar este evento">${ico("basura")}</button>` : ""}
             </div>`;
         }).join("")
       : `<p class="cal-sin-eventos">Nada programado este día.</p>`;
@@ -13254,13 +13254,13 @@ Power done right the first time. ⚡`;
     const listaPens = pensDia.map(p => {
       const pr = proyectos().find(x => x.id === p.proyecto);
       return `<div class="pendiente-item">
-          <span class="pendiente-icono">⚠</span>
+          <span class="pendiente-icono">${ico("alerta")}</span>
           <span class="alcance-info">
             <span class="alcance-titulo">${esc(sinMontos(partirVia(p.descripcion).texto))}</span>
             ${partirVia(p.descripcion).via ? VIA_HTML : ""}
             <span class="alcance-estado">${pr ? esc(pr.nombre) + " · " : ""}${esc(p.autor || "")}</span>
           </span>
-          ${usuario.editar ? `<button class="insp-borrar btn-pen-editar" data-id="${p.id}" title="Corregir el texto">✎</button>
+          ${usuario.editar ? `<button class="insp-borrar btn-pen-editar" data-id="${p.id}" title="Corregir el texto" aria-label="Corregir el texto">${ico("lapiz")}</button>
           <button class="accion secundaria btn-resolver" data-id="${p.id}">✓ Resuelto</button>` : ""}
         </div>`;
     }).join("");
@@ -13288,7 +13288,7 @@ Power done right the first time. ⚡`;
             <label>Tipo
               <select name="tipoEntrada">
                 <option value="evento">Evento / visita</option>
-                <option value="pendiente">⚠ Pendiente / bloqueo</option>
+                <option value="pendiente">Pendiente / bloqueo</option>
               </select>
             </label>
           </div>
@@ -13308,7 +13308,7 @@ Power done right the first time. ⚡`;
     // pasados seguían "programados" y nadie sabía qué se hizo de verdad.
     $("cal-dia-panel").querySelectorAll(".ev-cerrar").forEach(btn => {
       btn.addEventListener("click", async () => {
-        const dice = { hecho: "✓ Día cerrado como HECHO", cancelado: "✗ Día marcado como que NO se hizo", programado: "↩ Vuelve a estar abierto" };
+        const dice = { hecho: "✓ Día cerrado como hecho", cancelado: "✗ Día marcado como que no se hizo", programado: "Vuelve a estar abierto" };
         try {
           await DB.cambiarEvento(btn.dataset.id, { estado: btn.dataset.estado });
           await recargar(undefined, "eventos");
@@ -13379,7 +13379,7 @@ Power done right the first time. ⚡`;
 
 
   // ============================================================
-  // 📄 ARMAR PROPUESTA — el cierre en la mesa de la cocina (solo dueño)
+  // ARMAR PROPUESTA — el cierre en la mesa de la cocina (solo dueño)
   //
   // De un estimado salen hasta tres OPCIONES DE ALCANCE (qué trabajo se
   // hace), nunca opciones de margen: el precio de las tres se calcula con
@@ -13523,14 +13523,14 @@ Power done right the first time. ⚡`;
         <div class="prop-tarjeta${p.recomendada === l ? " recomendada" : ""}">
           <div class="prop-tarjeta-cab">
             <input class="prop-titulo" data-l="${l}" type="text" value="${esc(p.titulos[l] || "")}">
-            <button type="button" class="prop-estrella${p.recomendada === l ? " puesto" : ""}" data-l="${l}" title="La que recomiendas">★</button>
+            <button type="button" class="prop-estrella${p.recomendada === l ? " puesto" : ""}" data-l="${l}" title="La que recomiendas" aria-label="La que recomiendas">${ico("estrella")}</button>
           </div>
           <div class="prop-precio">${fmt(precio)}</div>
           <div class="prop-hoy">hoy aparta ${fmt(montos[0])}</div>
           <div class="prop-hitos">
             ${montos.map((m, i) => `<span>${p.pcts[i]}% · ${fmt(m)}${i === 0 ? " (depósito)" : ""}</span>`).join("")}
           </div>
-          <div class="prop-cuadra ${cuadra ? "ok" : "mal"}">${cuadra ? "cuadra al centavo ✓" : "⚠ no cuadra"}</div>
+          <div class="prop-cuadra ${cuadra ? "ok" : "mal"}">${cuadra ? "cuadra al centavo ✓" : ico("alerta") + " no cuadra"}</div>
           <div class="prop-cuenta">${propItemsDe(l).length} partidas${l !== "A" ? " · además de lo anterior" : ""}</div>
         </div>`;
     }).join("");
@@ -13735,7 +13735,7 @@ Power done right the first time. ⚡`;
 
 
   // ============================================================
-  // 📑 PREPARAR CIERRE — llenar la plantilla del SOW (solo dueño)
+  // PREPARAR CIERRE — llenar la plantilla del SOW (solo dueño)
   //
   // La plantilla de Edgar manda. Aquí NO se escribe el contrato: se
   // rellenan los huecos numéricos que hoy saca a mano (cliente, fechas,
@@ -13846,7 +13846,7 @@ Power done right the first time. ⚡`;
           <label>Atención / contacto
             <input class="cierre-in" data-c="contactos" type="text" value="${esc(d.contactos)}">
           </label>
-          <label>Dueño de la casa <i>— solo si NO es el cliente</i>
+          <label>Dueño de la casa <i>— solo si no es el cliente</i>
             <input class="cierre-in" data-c="homeowner" type="text" value="${esc(d.homeowner)}">
           </label>
         </div>
@@ -14112,7 +14112,7 @@ Power done right the first time. ⚡`;
     if (base && base.titulo) return String(base.titulo);
     return "Sin nombre todavía";
   }
-  const ALC_ESTADOS = { borrador: "borrador", enviada: "enviada", firmada: "FIRMADA",
+  const ALC_ESTADOS = { borrador: "borrador", enviada: "enviada", firmada: "firmada",
                         vencida: "vencida", cambio_pedido: "cambio pedido",
                         no_elegida: "no elegida" };
 
@@ -14240,7 +14240,7 @@ Power done right the first time. ⚡`;
     };
     const tarjetas = porEdad.map(p => {
       let est = ALC_ESTADOS[p.estado] || p.estado || "";
-      if (p.opcion_elegida_id && p.estado !== "firmada") est = "ELEGIDA por el cliente";
+      if (p.opcion_elegida_id && p.estado !== "firmada") est = "elegida por el cliente";
       const firmada = p.estado === "firmada";
       return `<button class="alc-var${String(p.id) === abierta ? " abierta" : ""}${firmada ? " firmada" : ""}" data-variante="${p.id}">
         <span class="alc-var-letra">SOW ${letraDe(p.id)}</span>
@@ -14799,12 +14799,12 @@ Power done right the first time. ⚡`;
         </table>
         ${cta.addons.length ? `<p class="lev-nota">El cliente puede tomar los añadidos que quiera, sueltos o juntos. Los pagos se recalculan sobre lo que acepte.</p>` : ""}
         ${!dec.esGC && dec.esComercial ? `<div class="alc-gris"><b>Ojo — propiedad comercial:</b> sale
-          <b>SIN</b> el aviso de la ley de gravámenes (713.015 es solo para viviendas de hasta 4 unidades),
-          <b>SIN</b> los tres días para cancelar (501.021 es solo para consumidores) y <b>SIN</b> la 9.16 del
+          <b>sin</b> el aviso de la ley de gravámenes (713.015 es solo para viviendas de hasta 4 unidades),
+          <b>sin</b> los tres días para cancelar (501.021 es solo para consumidores) y <b>sin</b> la 9.16 del
           depósito (489.126 es solo residencial). El cliente puede cancelar por escrito pagando lo hecho.
           Si en realidad es una casa, pon «Property: residential» en la hoja.</div>` : ""}
         ${dec.esGC ? `<div class="alc-gris"><b>Ojo — este contrato es entre dos empresas:</b> sale
-          <b>SIN</b> el aviso de la ley de gravámenes y <b>SIN</b> los tres días para cancelar (esos dos
+          <b>sin</b> el aviso de la ley de gravámenes y <b>sin</b> los tres días para cancelar (esos dos
           son solo de un dueño de casa), y con la retención, el Notice to Owner y las liberaciones de
           gravamen. Si quien va a firmar es el dueño de la casa, cambia la obra a «Solo coordinan»
           en la ficha del proyecto antes de armar el contrato.</div>` : ""}
@@ -14947,7 +14947,7 @@ Power done right the first time. ⚡`;
         ${(() => {
           const pAct = proyectos().find(x => x.id === A.proyecto.id);
           const gcF = pAct && pAct.contratistaModo === "contrato" ? gcDeProyecto(pAct) : null;
-          if (gcF) return `<p class="lev-nota">🏗 Esta obra la firma <b>${esc(gcF.nombre)}</b>, no un dueño de casa:
+          if (gcF) return `<p class="lev-nota">Esta obra la firma <b>${esc(gcF.nombre)}</b>, no un dueño de casa:
             el enlace y la invitación van a su portal de contratista.
             ${gcF.email ? `Email: <b>${esc(gcF.email)}</b>.` : "No tiene email anotado: al tocar «Mandar por email» te lo pido y lo guardo."}</p>`;
           return `<p class="lev-nota">${A.proyecto.cliente_email ? `Email del cliente: <b>${esc(A.proyecto.cliente_email)}</b>.` : "El proyecto no tiene email del cliente: al tocar «Mandar por email» te lo pido y lo guardo."}
@@ -15605,7 +15605,7 @@ Power done right the first time. ⚡`;
   }
 
   // ============================================================
-  // 🤖 EL LECTOR CON INTELIGENCIA — el segundo tiempo de «Leer»
+  // EL LECTOR CON INTELIGENCIA — el segundo tiempo de «Leer»
   //
   // Regla de la casa: la nube nunca frena. La lectura de reglas ya corrió y
   // está pintada; esto llega después y solo AÑADE. Nada de lo que diga el
@@ -16430,12 +16430,12 @@ Power done right the first time. ⚡`;
       // y aquí se le puede avisar por correo con el enlace directo a la obra.
       const pSub = proyectos().find(x => x.id === A.proyecto.id);
       const gcSub = pSub && pSub.contratistaModo === "contrato" ? gcDeProyecto(pSub) : null;
-      if (gcSub && gcSub.email && await confirmar(`¿Le aviso a ${gcSub.nombre} por correo (${gcSub.email}) que hay un contrato nuevo esperando su firma?\n\nEn su portal ya sale primero, marcado NUEVO.`)) {
+      if (gcSub && gcSub.email && await confirmar(`¿Le aviso a ${gcSub.nombre} por correo (${gcSub.email}) que hay un contrato nuevo esperando su firma?\n\nEn su portal ya sale primero, marcado «Nuevo».`)) {
         try {
           const r = await DB.pedirCorreo("avisar_gc", { contratista_id: gcSub.id, proyecto_id: pSub.id, tipo: "contrato" });
           avisar(`Aviso enviado a ${r.para} ✓`);
         } catch (e) {
-          if (/tipo_desconocido/.test(String(e.message))) avisar("Falta subir el correo v6 en la nube para este aviso; el contrato ya está en su portal, marcado NUEVO", true);
+          if (/tipo_desconocido/.test(String(e.message))) avisar("Falta subir el correo v6 en la nube para este aviso; el contrato ya está en su portal, marcado «Nuevo»", true);
           else avisar("No salió el aviso: " + e.message, true);
         }
       }
@@ -16549,7 +16549,7 @@ Power done right the first time. ⚡`;
   }
 
   // ============================================================
-  // 📋 EL LEVANTAMIENTO EN SITIO — solo el dueño
+  // EL LEVANTAMIENTO EN SITIO — solo el dueño
   //
   // Seis fichas: la casa · el panel · los cuartos · las condiciones ·
   // las medidas · el resumen. Se puede salir y volver: lo escrito se
@@ -16663,10 +16663,10 @@ Power done right the first time. ⚡`;
   };
 
   const LEV_ACCIONES = {
-    nueva:   { etiqueta: "NUEVA",    ayuda: "no existe, se pone desde cero" },
-    cambiar: { etiqueta: "CAMBIAR",  ayuda: "existe y se reemplaza (la demolición va dentro)" },
-    queda:   { etiqueta: "SE QUEDA", ayuda: "existe y no se toca — cero horas, pero queda apuntado" },
-    quitar:  { etiqueta: "QUITAR",   ayuda: "se retira y no se repone" }
+    nueva:   { etiqueta: "Nueva",    ayuda: "no existe, se pone desde cero" },
+    cambiar: { etiqueta: "Cambiar",  ayuda: "existe y se reemplaza (la demolición va dentro)" },
+    queda:   { etiqueta: "Se queda", ayuda: "existe y no se toca — cero horas, pero queda apuntado" },
+    quitar:  { etiqueta: "Quitar",   ayuda: "se retira y no se repone" }
   };
 
   // Las marcas de panel para las que no se consiguen breakers.
@@ -17244,7 +17244,7 @@ Power done right the first time. ⚡`;
         (clave, v) => {
           const t = c.conteos.find(x => x.clave === clave);
           if (t) t.n = v;
-          if (c.estado === "contado") c.estado = "empezado";  // si se retoca, vuelve a 🟡
+          if (c.estado === "contado") c.estado = "empezado";  // si se retoca, vuelve a amarillo
         });
       $("levantamiento-panel").querySelectorAll(".lev-acciones").forEach(caja => {
         caja.querySelectorAll(".lev-acc").forEach(b => {
@@ -17618,7 +17618,7 @@ Power done right the first time. ⚡`;
         || (x.cuartos || []).length;
       return `
         <div class="mat-item">
-          <span class="recibo-chip ${x.estado === "convertido" ? "insp-paso" : "por_leer"}">${x.estado === "convertido" ? "CONVERTIDO ✓" : "ABIERTO"}</span>
+          <span class="recibo-chip ${x.estado === "convertido" ? "insp-paso" : "por_leer"}">${x.estado === "convertido" ? "Convertido ✓" : "Abierto"}</span>
           <span class="alcance-info lev-abrir" data-k="${esc(x.llave_cliente)}" style="cursor:pointer">
             <span class="alcance-titulo">${esc(x.nombre)}</span>
             <span class="alcance-estado">${esc(x.cliente || "sin cliente")} · ${cuartos} cuarto${cuartos === 1 ? "" : "s"}</span>

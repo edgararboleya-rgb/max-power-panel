@@ -45,47 +45,47 @@
     "No aprobado": "Not approved",
     "Checklist": "Checklist",
     "Trabajo por hacer": "Work to do",
-    "✅ Abrir el checklist": "✅ Open the checklist",
-    "✅ Abrir el checklist completo": "✅ Open the full checklist",
-    "✅ Nada urgente ahora mismo": "✅ Nothing urgent right now",
-    "🔴 Es urgente — frena el trabajo": "🔴 It's urgent — blocks the work",
+    "Abrir el checklist": "Open the checklist",
+    "Abrir el checklist completo": "Open the full checklist",
+    "Nada urgente ahora mismo": "Nothing urgent right now",
+    "Es urgente — frena el trabajo": "It's urgent — blocks the work",
     "Urgente": "Urgent",
     "Intermedio": "In between",
     "Puede esperar": "Can wait",
-    "🟡 Intermedio": "🟡 In between",
-    "🔴 Urgente": "🔴 Urgent",
-    "⚪ Puede esperar": "⚪ Can wait",
+    "Intermedio": "In between",
+    "Urgente": "Urgent",
+    "Puede esperar": "Can wait",
     "Categoría": "Category",
     "Categoría de la tarea": "Task category",
     "Descripción": "Description",
     "+ Agregar una nueva": "+ Add a new one",
     "Agregar ✓": "Add ✓",
     "por hacer": "to do",
-    "✅ al día": "✅ all caught up",
+    "al día": "all caught up",
     "sin tareas": "no tasks",
-    "📂 Ver la ficha del proyecto": "📂 Open the project file",
+    "Ver la ficha del proyecto": "Open the project file",
     "Marcar completada": "Mark completed",
     "Devolver a pendiente": "Reopen",
     "Corregir el texto": "Fix the text",
-    "📌 Generales (sin proyecto)": "📌 General (no project)",
-    "💬 Mensajes": "💬 Messages",
+    "Generales (sin proyecto)": "General (no project)",
+    "Mensajes": "Messages",
     "Mensajes para el equipo de obra": "Messages for the field crew",
     "Corregir horas o notas": "Fix hours or notes",
     "Eliminar reporte": "Delete report",
     "✓ Dar permiso": "✓ Grant permission",
     "Darle permiso": "Grant permission",
     "Sin reportes en los últimos 14 días.": "No reports in the last 14 days.",
-    "Pendientes que reportó (se manejan en el ✅ Checklist):": "Issues they reported (managed in the ✅ Checklist):",
+    "Pendientes que reportó (se manejan en el Checklist):": "Issues they reported (managed in the Checklist):",
     "Mensajes del equipo": "Team messages",
     "Equipo Max Power": "Max Power team",
     "Mensajes para todo el equipo": "Messages for the whole team",
     "Mensaje privado — solo lo ven ustedes dos": "Private message — only you two can see it",
     "Escribe un mensaje…": "Type a message…",
-    "🔒 privado": "🔒 private",
+    "privado": "private",
     "Todavía no hay mensajes — escribe el primero.": "No messages yet — write the first one.",
     "Conversaciones": "Conversations",
     "Cargando…": "Loading…",
-    "Nada pendiente por aquí. 👌": "Nothing pending here. 👌",
+    "Nada pendiente por aquí.": "Nothing pending here.",
     "Sin tareas todavía — agrega la primera.": "No tasks yet — add the first one.",
     "No salieron — fuera de las estadísticas": "Didn't land — excluded from the stats",
     "Obras activas con fases en curso": "Active jobs with phases underway",
@@ -94,13 +94,13 @@
     "Detenidos temporalmente": "Temporarily on hold",
     "Terminados y cerrados": "Finished and closed",
     // Inicio
-    "📅 Hoy en Max Power": "📅 Today at Max Power",
+    "Hoy en Max Power": "Today at Max Power",
     "HOY": "TODAY", "MAÑANA": "TOMORROW",
     "Nada programado para hoy ni mañana.": "Nothing scheduled for today or tomorrow.",
     "Nada programado.": "Nothing scheduled.", "ver el calendario": "see the calendar",
     "¿Eliminar esta tarea?": "Delete this task?",
-    "⚠ Avisos": "⚠ Alerts",
-    "⏱ Reporte de horas del equipo": "⏱ Team hours report",
+    "Avisos": "Alerts",
+    "Reporte de horas del equipo": "Team hours report",
     "reportó hoy ✓": "reported today ✓", "reportó ayer ✓": "reported yesterday ✓",
     "sin reportes todavía": "no reports yet",
     "Ver calendario →": "See calendar →", "✓ Resuelto": "✓ Resolved",
@@ -120,37 +120,37 @@
     "Documentos en Drive": "Documents in Drive", "Facturas (QuickBooks)": "Invoices (QuickBooks)",
     "Acciones": "Actions", "Contrato": "Contract", "Cobrado": "Collected", "Falta": "Remaining",
     "Alcance del trabajo — ¿qué se dijo que se iba a hacer?": "Scope of work — what was promised?",
-    "🚀 Arranque — lo que falta para empezar": "🚀 Kickoff — what's missing to start",
+    "Arranque — lo que falta para empezar": "Kickoff — what's missing to start",
     "Ver en Materiales ›": "See in Materials ›",
     "Margen real": "Real margin", "Mano de obra": "Labor", "Materiales comprados": "Materials purchased",
     "Ayuda externa": "Outside help", "completado ·": "complete ·",
     "✓ Marcar aprobado": "✓ Mark approved", "▶ Iniciar ejecución": "▶ Start work",
     "Fase siguiente ▶": "Next phase ▶", "◀ Fase anterior": "◀ Previous phase",
-    "⏸ Pausar": "⏸ Pause", "✓ Marcar completado": "✓ Mark completed",
-    "▶ Reanudar ejecución": "▶ Resume work", "↩ Reabrir (a ejecución)": "↩ Reopen (to in-progress)",
-    "🗑 Eliminar proyecto…": "🗑 Delete project…",
+    "Pausar": "Pause", "✓ Marcar completado": "✓ Mark completed",
+    "▶ Reanudar ejecución": "▶ Resume work", "Reabrir (a ejecución)": "Reopen (to in-progress)",
+    "Eliminar proyecto…": "Delete project…",
     // Materiales
     "Todos los proyectos": "All projects", "Ver": "View",
-    "Nada pendiente de comprar. 👌": "Nothing left to buy. 👌",
+    "Nada pendiente de comprar.": "Nothing left to buy.",
     "Sin gestiones pendientes.": "No pending tasks.",
     "Sin recibos todavía.": "No receipts yet.", "Sin fotos todavía.": "No photos yet.",
-    "🧾 Compras y recibos": "🧾 Purchases & receipts", "🛒 Registrar compra": "🛒 Log a purchase",
-    "📷 Con foto del recibo": "📷 With receipt photo", "✍️ Sin recibo — anotar a mano": "✍️ No receipt — enter by hand",
+    "Compras y recibos": "Purchases & receipts", "Registrar compra": "Log a purchase",
+    "Con foto del recibo": "With receipt photo", "Sin recibo — anotar a mano": "No receipt — enter by hand",
     "¿Dónde se compró?": "Where was it bought?", "¿Qué se compró? (los materiales)": "What was bought? (the materials)",
     "✓ Registrar la compra": "✓ Log the purchase", "Edgar le pone el total después con el ✎.": "Edgar adds the total later with ✎.",
-    "⬆ Subir recibo": "⬆ Upload receipt", "POR LEER": "TO READ", "LEÍDO": "READ", "CONCILIADO ✓": "RECONCILED ✓",
+    "Subir recibo": "Upload receipt", "POR LEER": "TO READ", "LEÍDO": "READ", "CONCILIADO ✓": "RECONCILED ✓",
     "+ Agregar gestión": "+ Add task", "+ Agregar material": "+ Add material",
     "Agregar material": "Add material", "Agregar a la lista": "Add to list",
     "Comprados recientes": "Recently purchased", "✓ Comprado": "✓ Purchased", "✓ Hecha": "✓ Done",
     "Proyecto": "Project", "Cantidad (opcional)": "Quantity (optional)", "Cantidad": "Quantity",
-    "🔴 Pendientes de obra que suenan a material": "🔴 Site issues that sound like materials",
+    "Pendientes de obra que suenan a material": "Site issues that sound like materials",
     "→ Pasar a la lista": "→ Move to list",
     "Gestión (qué hay que hacer)": "Task (what needs doing)",
     "Foto del recibo (cámara o galería)": "Receipt photo (camera or gallery)",
-    "📸 Agregar foto o video": "📸 Add photo or video", "Foto o video corto (cámara o galería)": "Photo or short video (camera or gallery)",
-    "⬆ Subir foto": "⬆ Upload photo", "⬆ Subir video": "⬆ Upload video",
+    "Agregar foto o video": "Add photo or video", "Foto o video corto (cámara o galería)": "Photo or short video (camera or gallery)",
+    "Subir foto": "Upload photo", "Subir video": "Upload video",
     "Nota (opcional)": "Note (optional)", "Proveedor (opcional)": "Vendor (optional)",
-    "Guardar cambios": "Save changes", "🗑 Eliminar": "🗑 Delete", "Guardar": "Save",
+    "Guardar cambios": "Save changes", "Eliminar": "Delete", "Guardar": "Save",
     // Horas
     "Fecha": "Date", "Horas trabajadas": "Hours worked", "Horas": "Hours",
     "Fase / tipo de trabajo": "Phase / type of work", "Notas (qué se hizo)": "Notes (what was done)",
@@ -161,14 +161,14 @@
     "Lun": "Mon", "Mar": "Tue", "Mié": "Wed", "Jue": "Thu", "Vie": "Fri", "Sáb": "Sat", "Dom": "Sun",
     "Agregar a este día": "Add to this day", "Hora (opcional)": "Time (optional)",
     "Tipo": "Type", "Descripción": "Description", "Evento / visita": "Event / visit",
-    "⚠ Pendiente / bloqueo": "⚠ Issue / blocker",
+    "Pendiente / bloqueo": "Issue / blocker",
     "Nada programado este día.": "Nothing scheduled this day.",
     "Hoy": "Today", "Con trabajo": "Has work", "Sin programar": "Unscheduled",
     "Pendiente sin resolver": "Unresolved issue",
     // Gastos
-    "💲 Costos del equipo": "💲 Team costs", "Guardar costos": "Save costs",
-    "👥 Equipo": "👥 Team", "Marcar inactivo": "Mark inactive", "Reactivar": "Reactivate",
-    "Presupuesto de materiales ($)": "Materials budget ($)", "💾 Guardar": "💾 Save",
+    "Costos del equipo": "Team costs", "Guardar costos": "Save costs",
+    "Equipo": "Team", "Marcar inactivo": "Mark inactive", "Reactivar": "Reactivate",
+    "Presupuesto de materiales ($)": "Materials budget ($)", "Guardar": "Save",
     "No hay proyectos activos.": "No active projects.",
     "Total por cobrar": "Total outstanding", "Precio total del contrato": "Total contract price",
     // Pie
@@ -178,14 +178,14 @@
   // Frases con números o partes variables
   const REGLAS = [
     [/^Por comprar \((\d+)\)$/, "To buy ($1)"],
-    [/^🚀 Gestiones de arranque \((\d+)\)$/, "🚀 Kickoff tasks ($1)"],
+    [/^Gestiones de arranque \((\d+)\)$/, "Kickoff tasks ($1)"],
     [/^(\d+) activos · (\d+) en ejecución$/, "$1 active · $2 in progress"],
     [/^(.+) contratado activo$/, "$1 active contracted"],
     [/^quedan ([\d.]+) h$/, "$1 h left"],
     [/^de ([\d.]+) h estimadas$/, "of $1 estimated h"],
     [/^(\d+)% cobrado$/, "$1% collected"],
     [/^(\d+) de (\d+) puntos$/, "$1 of $2 items"],
-    [/^🔧 Avance de obra:$/, "🔧 Job progress:"],
+    [/^Avance de obra:$/, "Job progress:"],
     [/^hace (\d+) días$/, "$1 days ago"],
     [/^Vale hasta (\d{4}-\d{2}-\d{2})$/, "Valid until $1"],
     [/^Venció el (\d{4}-\d{2}-\d{2})$/, "Expired on $1"],
@@ -199,9 +199,9 @@
       const m = s.match(/^(.+) — ((?:\d+ material(?:es)?)?(?: y )?(?:\d+ gesti(?:ón|ones))?) para arrancar$/);
       return m[1] + " — " + m[2].replace(/materiales/, "materials").replace(/gestiones/, "tasks").replace(/gestión/, "task").replace(" y ", " and ") + " to start";
     }],
-    [/^➡ Próximo cobro:$/, "➡ Next collection:"],
+    [/^Próximo cobro:$/, "Next collection:"],
     [/^(\d+) por hacer/, "$1 to do"],
-    [/^🔴 Lo urgente ahora \((\d+)\)$/, "🔴 Urgent right now ($1)"]
+    [/^Lo urgente ahora \((\d+)\)$/, "Urgent right now ($1)"]
   ];
 
   Object.assign(D, {
@@ -218,7 +218,7 @@
   Object.assign(D, {
     // Pestañas y tablero
     "Resumen": "Summary", "Obra": "Job", "Dinero": "Money", "Cliente": "Client", "Archivos": "Files",
-    "Foto": "Photo", "Agregar": "Add", "Ir": "Go", "🧭 Ir": "🧭 Go", "Abrir en el mapa": "Open in maps",
+    "Foto": "Photo", "Agregar": "Add", "Ir": "Go", "Ir": "Go", "Abrir en el mapa": "Open in maps",
     "Secciones de la obra": "Job sections",
     "Marcar aprobado": "Mark approved", "Iniciar ejecución": "Start work",
     "Marcar completado": "Mark completed", "Reanudar ejecución": "Resume work",
@@ -232,7 +232,7 @@
     "Inspección final": "Final inspection",
     // Resumen
     "Qué toca ahora": "What's next", "Próximos días de trabajo": "Upcoming work days",
-    "📅 Próximos días de trabajo": "📅 Upcoming work days", "Arranque": "Kickoff",
+    "Próximos días de trabajo": "Upcoming work days", "Arranque": "Kickoff",
     // Obra
     "Alcance del trabajo": "Scope of work", "Corregir": "Edit", "Sin bloque": "No block",
     "no cuenta para el avance": "not counted in progress",
@@ -260,7 +260,7 @@
     "Última visita:": "Last visit:", "(hora de Florida)": "(Florida time)",
     "¿Qué ve exactamente?": "What exactly do they see?", "Compartir y avisar": "Share and notify",
     "Email del cliente:": "Client email:", "sin anotar": "not set",
-    "Dónde vamos": "Where we are", "📣 Dónde vamos": "📣 Where we are",
+    "Dónde vamos": "Where we are", "Dónde vamos": "Where we are",
     "Cambiar el resumen": "Edit the summary", "Escribir el resumen": "Write the summary",
     "Decisiones del cliente": "Client decisions", "Decisión del cliente": "Client decision",
     "Sin decisiones pendientes del cliente.": "No pending client decisions.",
@@ -513,19 +513,19 @@
   // ---------- Trozo I (26-sep): index.html · db.js · alcance.js (pantalla) · repaso del diccionario viejo ----------
     Object.assign(D, {
       // ===== Correcciones a lo viejo (mismas claves, traducción arreglada) =====
-      "Intermedio": "Medium", "🟡 Intermedio": "🟡 Medium",
+      "Intermedio": "Medium", "Intermedio": "Medium",
       "Corregir horas o notas": "Edit hours or notes",
       "Mis reportes (toca ✎ para corregir)": "My reports (tap ✎ to edit)",
       "Salir": "Sign out",
       "Proyectos Comerciales": "Commercial projects", "Proyectos Residenciales": "Residential projects",
-      "Pendientes que reportó (se manejan en el ✅ Checklist):": "Open items they reported (handled in the ✅ Checklist):",
-      "📂 Ver la ficha del proyecto": "📂 Open the job file",
+      "Pendientes que reportó (se manejan en el Checklist):": "Open items they reported (handled in the Checklist):",
+      "Ver la ficha del proyecto": "Open the job file",
       "No salieron — fuera de las estadísticas": "Not won — left out of the stats",
       "Contratado activo": "Active contract value",
       "Margen real": "Actual margin",
-      "↩ Reabrir (a ejecución)": "↩ Reopen (back to in progress)", "Reabrir (a ejecución)": "Reopen (back to in progress)",
-      "🔴 Pendientes de obra que suenan a material": "🔴 Open job items that sound like materials",
-      "⚠ Pendiente / bloqueo": "⚠ Open item / blocker",
+      "Reabrir (a ejecución)": "Reopen (back to in progress)", "Reabrir (a ejecución)": "Reopen (back to in progress)",
+      "Pendientes de obra que suenan a material": "Open job items that sound like materials",
+      "Pendiente / bloqueo": "Open item / blocker",
       "Con trabajo": "Work scheduled", "Pendiente sin resolver": "Unresolved open item",
       "Pendientes de obra": "Open job items", "Sin pendientes de obra.": "No open job items.",
       "Pendiente de obra": "Open job item",
@@ -599,8 +599,8 @@
       "Error de autenticación": "Sign-in error", "Sin sesión": "Not signed in",
       "A la base todavía le falta el último SQL. Pégalo en Supabase (SQL Editor → pegar → Run) y vuelve a intentarlo.":
         "The database is still missing the latest SQL. Paste it in Supabase (SQL Editor → paste → Run) and try again.",
-      "El modo ⚡ Rápido todavía no está dado de alta en la base. A la base todavía le falta el último SQL. Pégalo en Supabase (SQL Editor → pegar → Run) y vuelve a intentarlo.":
-        "The ⚡ Quick mode isn't set up in the database yet. The database is still missing the latest SQL. Paste it in Supabase (SQL Editor → paste → Run) and try again.",
+      "El modo Rápido todavía no está dado de alta en la base. A la base todavía le falta el último SQL. Pégalo en Supabase (SQL Editor → pegar → Run) y vuelve a intentarlo.":
+        "The Quick mode isn't set up in the database yet. The database is still missing the latest SQL. Paste it in Supabase (SQL Editor → paste → Run) and try again.",
       "Un reporte de horas va de más de 0 hasta 16 horas.": "An hours report must be more than 0 and no more than 16 hours.",
       "La retención no puede ser negativa ni llevar más de dos decimales.": "The retainage can't be negative or have more than two decimals.",
       "La base no aceptó uno de los datos porque se sale de lo permitido. A la base todavía le falta el último SQL. Pégalo en Supabase (SQL Editor → pegar → Run) y vuelve a intentarlo.":
@@ -982,14 +982,14 @@
       // Roles y versión
       "Campo": "Field",
       // Sin señal (franja de arriba y pantalla entera)
-      "📶 Sin señal — estás viendo los datos de": "📶 No signal — you're seeing the data from",
+      "Sin señal — estás viendo los datos de": "No signal — you're seeing the data from",
       "Sin señal — estás viendo los datos de": "No signal — you're seeing the data from",
       "(sin fotos). Lo que apuntes se manda cuando vuelva.": "(without photos). Whatever you log is sent when the signal comes back.",
       ". Lo que apuntes se manda cuando vuelva.": ". Whatever you log is sent when the signal comes back.",
       "Reintentar": "Retry", "Sin señal": "No signal",
       "No se pudo conectar. Tu sesión sigue guardada — no hace falta volver a entrar.":
         "Couldn't connect. You're still signed in — no need to sign in again.",
-      "📶 Sin señal: sigues viendo la copia del teléfono.": "📶 No signal: you're still seeing the copy saved on the phone.",
+      "Sin señal: sigues viendo la copia del teléfono.": "No signal: you're still seeing the copy saved on the phone.",
       "Tu cuenta no tiene perfil asignado. Avísale a Edgar.": "Your account has no profile assigned. Let Edgar know.",
       // Licencia y seguros de la empresa
       "sin archivo todavía": "no file yet", "Cambiar el PDF o la fecha": "Change the PDF or the date",
@@ -1090,7 +1090,7 @@
       "Enciende los avisos en este teléfono": "Turn on notifications on this phone",
       "Ahora no": "Not now", "Entendido": "Got it",
       "Sin permiso — se puede activar después desde Ajustes del teléfono": "No permission — you can turn it on later in the phone's Settings",
-      "🔔 Notificaciones activadas en este teléfono ✓": "🔔 Notifications turned on for this phone ✓",
+      "Notificaciones activadas en este teléfono ✓": "Notifications turned on for this phone ✓",
       // Los próximos días (inicio del dueño)
       "Los próximos días": "The next few days", "Tomar una foto de esta obra": "Take a photo of this job",
       // Inspecciones de la semana
@@ -1160,13 +1160,13 @@
         const n = Number(m[1]);
         return `${n} ${n === 1 ? "job" : "jobs"}${m[2] ? ` · ${m[2]} with a contract` : ""}${m[3] ? ` · ${m[3]}` : ""}`;
       }],
-      [/^(?:✉️? )?(\S+@\S+|sin email — ponlo antes de invitar)(?: · invitado el (\S+))?(?: · (?:👀 )?entró el ([^·]+?))?(?: ·)?$/, s => {
-        const m = s.match(/^(✉️? )?(\S+@\S+|sin email — ponlo antes de invitar)(?: · invitado el (\S+))?(?: · (?:👀 )?entró el ([^·]+?))?( ·)?$/);
-        if (!m[3] && !m[4] && !/^sin email/.test(m[2])) return s;
-        return (m[1] || "") + (/^sin email/.test(m[2]) ? "no email — add it before inviting" : m[2]) +
-          (m[3] ? ` · invited on ${m[3]}` : "") + (m[4] ? ` · 👀 opened it on ${m[4]}` : "") + (m[5] || "");
+      [/^(\S+@\S+|sin email — ponlo antes de invitar)(?: · invitado el (\S+))?(?: · entró el ([^·]+?))?(?: ·)?$/, s => {
+        const m = s.match(/^(\S+@\S+|sin email — ponlo antes de invitar)(?: · invitado el (\S+))?(?: · entró el ([^·]+?))?( ·)?$/);
+        if (!m[2] && !m[3] && !/^sin email/.test(m[1])) return s;
+        return (/^sin email/.test(m[1]) ? "no email — add it before inviting" : m[1]) +
+          (m[2] ? ` · invited on ${m[2]}` : "") + (m[3] ? ` · opened it on ${m[3]}` : "") + (m[4] || "");
       }],
-      [/^(?:👀 )?entró el (\d{4}-\d{2}-\d{2}(?: \d{1,2}:\d{2})?)$/, s => s.replace(/entró el /, "opened it on ")],
+      [/^entró el (\d{4}-\d{2}-\d{2}(?: \d{1,2}:\d{2})?)$/, s => s.replace(/entró el /, "opened it on ")],
       // Los próximos días: «2 más después del fri 2 ·»
       [/^(\d+) más después del (\S+ \d+)(?: ·)?$/, s => {
         const m = s.match(/^(\d+) más después del (\S+) (\d+)( ·)?$/);
@@ -1213,7 +1213,7 @@
         return s.slice(0, i) + "Next 7 days: " + partes.join(" · ");
       }],
       // La línea de cada persona en «Reporte de horas del equipo» (todas sus piezas, en cualquier orden)
-      [/^(?:· )?(?:sin reportes todavía|reportó hoy ✓|reportó ayer ✓|hace \d+ días(?: sin reportar)?|📱 en la app: \S+|📱 nunca ha abierto la app|📱 no abre la app hace \d+ días \(\S+\)|🔔 avisos en (?:su teléfono|\d+ teléfonos)|🔕 no le llegan los avisos|toca para ver sus reportes)(?: · (?:sin reportes todavía|reportó hoy ✓|reportó ayer ✓|hace \d+ días(?: sin reportar)?|📱 en la app: \S+|📱 nunca ha abierto la app|📱 no abre la app hace \d+ días \(\S+\)|🔔 avisos en (?:su teléfono|\d+ teléfonos)|🔕 no le llegan los avisos|toca para ver sus reportes))*(?: ·)?$/, s => {
+      [/^(?:· )?(?:sin reportes todavía|reportó hoy ✓|reportó ayer ✓|hace \d+ días(?: sin reportar)?|en la app: \S+|nunca ha abierto la app|no abre la app hace \d+ días \(\S+\)|avisos en (?:su teléfono|\d+ teléfonos)|no le llegan los avisos|toca para ver sus reportes)(?: · (?:sin reportes todavía|reportó hoy ✓|reportó ayer ✓|hace \d+ días(?: sin reportar)?|en la app: \S+|nunca ha abierto la app|no abre la app hace \d+ días \(\S+\)|avisos en (?:su teléfono|\d+ teléfonos)|no le llegan los avisos|toca para ver sus reportes))*(?: ·)?$/, s => {
         const ini = s.startsWith("· ") ? "· " : "", fin = / ·$/.test(s) ? " ·" : "";
         const cuerpo = s.slice(ini.length, s.length - fin.length);
         const pieza = p => {
@@ -1223,18 +1223,18 @@
           if (p === "reportó ayer ✓") return "reported yesterday ✓";
           if ((m = p.match(/^hace (\d+) días sin reportar$/))) return `${m[1]} days without reporting`;
           if ((m = p.match(/^hace (\d+) días$/))) return `${m[1]} days ago`;
-          if ((m = p.match(/^📱 en la app: (\S+)$/))) return `📱 last opened: ${m[1]}`;
-          if (p === "📱 nunca ha abierto la app") return "📱 has never opened the app";
-          if ((m = p.match(/^📱 no abre la app hace (\d+) días \((\S+)\)$/))) return `📱 hasn't opened the app in ${m[1]} days (${m[2]})`;
-          if (p === "🔔 avisos en su teléfono") return "🔔 notifications on their phone";
-          if ((m = p.match(/^🔔 avisos en (\d+) teléfonos$/))) return `🔔 notifications on ${m[1]} phones`;
-          if (p === "🔕 no le llegan los avisos") return "🔕 not getting notifications";
+          if ((m = p.match(/^en la app: (\S+)$/))) return `last opened: ${m[1]}`;
+          if (p === "nunca ha abierto la app") return "has never opened the app";
+          if ((m = p.match(/^no abre la app hace (\d+) días \((\S+)\)$/))) return `hasn't opened the app in ${m[1]} days (${m[2]})`;
+          if (p === "avisos en su teléfono") return "notifications on their phone";
+          if ((m = p.match(/^avisos en (\d+) teléfonos$/))) return `notifications on ${m[1]} phones`;
+          if (p === "no le llegan los avisos") return "not getting notifications";
           if (p === "toca para ver sus reportes") return "tap to see their reports";
           return p;
         };
         return ini + cuerpo.split(" · ").map(pieza).join(" · ") + fin;
       }],
-      [/^(?:📱 )?no abre la app hace (\d+) días \((\S+)\)$/, s => s.replace(/no abre la app hace (\d+) días \((\S+)\)/, "hasn't opened the app in $1 days ($2)")],
+      [/^no abre la app hace (\d+) días \((\S+)\)$/, s => s.replace(/no abre la app hace (\d+) días \((\S+)\)/, "hasn't opened the app in $1 days ($2)")],
       // Categorías y resumen del dueño (el campo ve $•••)
       [/^(\$[\d,.]+|\$•••|—) firmado$/, "$1 signed"],
       [/^(\$[\d,.]+|\$•••|—) propuesto$/, "$1 proposed"],
@@ -1273,18 +1273,18 @@
         "Choose “Save as PDF”; then upload it to the job's documents",
       // Rentabilidad
       "Define el costo por hora del equipo en": "Set the team's hourly cost in",
-      "📊 Gastos → 💲 Costos del equipo": "📊 Expenses → 💲 Team costs",
+      "Gastos → Costos del equipo": "Expenses → Team costs",
       "y aquí verás la ganancia real de este proyecto.": "and you'll see this project's real profit here.",
       "Todavía no hay horas ni compras registradas en este proyecto.": "No hours or purchases logged on this project yet.",
-      "Sale de las horas reportadas × el costo de cada trabajador, más los materiales comprados con precio. El presupuesto de materiales se define en 📊 Gastos.":
-        "It comes from reported hours × each worker's cost, plus materials bought with a price. The materials budget is set in 📊 Expenses.",
+      "Sale de las horas reportadas × el costo de cada trabajador, más los materiales comprados con precio. El presupuesto de materiales se define en Gastos.":
+        "It comes from reported hours × each worker's cost, plus materials bought with a price. The materials budget is set in Expenses.",
       // Checklist (corrige «In between»)
-      "Intermedio": "Medium", "🟡 Intermedio": "🟡 Medium",
+      "Intermedio": "Medium", "Intermedio": "Medium",
       "Bloque en que sale en el portal del cliente": "Block it shows under in the client portal",
       "Ej: arreglar el layout de las luces": "E.g.: fix the lighting layout",
       "Tarea agregada ✓": "Task added ✓", "Tarea completada ✓": "Task completed ✓",
       "Tarea devuelta a pendiente": "Task reopened", "Tarea corregida ✓": "Task fixed ✓",
-      "🔴 Urgente — sale en el inicio y avisa al equipo": "🔴 Urgent — shows on the home screen and alerts the team",
+      "Urgente — sale en el inicio y avisa al equipo": "Urgent — shows on the home screen and alerts the team",
       "Corrige el texto de la tarea": "Fix the task text",
       "¿En qué bloque sale este punto en el portal del cliente?": "Which block should this item show under in the client portal?",
       "(Déjalo vacío para que salga en la lista de siempre.)": "(Leave it empty to show it in the regular list.)",
@@ -1386,11 +1386,11 @@
       }],
       // Checklist
       [/^No se pudo: (.+)$/, s => "Couldn't do it: " + trB(s.replace(/^No se pudo: /, ""))],
-      [/^Categoría: (🔴|🟡|⚪) (Urgente|Intermedio|Puede esperar)$/, s => {
-        const m = s.match(/^Categoría: (\S+) (.+)$/);
-        return `Category: ${m[1]} ${{ "Urgente": "Urgent", "Intermedio": "Medium", "Puede esperar": "Can wait" }[m[2]]}`; }],
+      [/^Categoría: (Urgente|Intermedio|Puede esperar)$/, s => {
+        const m = s.match(/^Categoría: (.+)$/);
+        return `Category: ${{ "Urgente": "Urgent", "Intermedio": "Medium", "Puede esperar": "Can wait" }[m[1]]}`; }],
       [/^Bloques de esta obra: (.+)$/, "Blocks on this job: $1"],
-      [/^🏷 Bloque: (.+)$/, "🏷 Block: $1"],
+      [/^Bloque: (.+)$/, "Block: $1"],
       // Chat
       [/^Tú: (.+)$/, "You: $1"],
       [/^No se pudo enviar: (.+)$/, s => "Couldn't send: " + trB(s.replace(/^No se pudo enviar: /, ""))],
@@ -1436,7 +1436,7 @@
     // inspecciones, fotos), sus botones y avisos, ventanas de la app, proyecto nuevo ----------
     Object.assign(D, {
       // Correcciones a traducciones viejas (la prioridad del checklist sale en la hoja de la ficha)
-      "Intermedio": "Medium", "🟡 Intermedio": "🟡 Medium",
+      "Intermedio": "Medium", "Intermedio": "Medium",
       // Señales y hojas
       "Inspección Servicio / Panel": "Service / panel inspection", "Inspección Otra": "Other inspection",
       // Documentos
@@ -1483,34 +1483,34 @@
       "Foto de obra": "Job photo", "Ej: rough del segundo piso terminado": "E.g.: second-floor rough finished",
       "No se pudo procesar": "Couldn't process it",
       "Descripción de la foto (o video):": "Photo (or video) description:", "Descripción corregida ✓": "Description updated ✓",
-      "👁 El cliente ahora VE esta foto": "👁 The client now SEES this photo", "🚫 Foto oculta para el cliente": "🚫 Photo hidden from the client",
+      "El cliente ahora VE esta foto": "The client now SEES this photo", "Foto oculta para el cliente": "Photo hidden from the client",
       "Subiendo…": "Uploading…", "Subiendo la foto…": "Uploading the photo…", "Subido ✓": "Uploaded ✓",
       "Ese video es muy grande. Grábalo CORTO, como una inspección virtual (30-45 segundos, máx. 25 MB).":
         "That video is too big. Record it SHORT, like a virtual inspection (30-45 seconds, max. 25 MB).",
-      "📶 Sin señal — la foto quedó guardada en el teléfono y se sube sola cuando vuelva la señal.":
-        "📶 No signal — the photo was saved on the phone and uploads by itself when the signal comes back.",
+      "Sin señal — la foto quedó guardada en el teléfono y se sube sola cuando vuelva la señal.":
+        "No signal — the photo was saved on the phone and uploads by itself when the signal comes back.",
       "No se pudieron cargar las fotos — revisa la señal y vuelve a entrar al proyecto.": "Couldn't load the photos — check the signal and open the project again.",
       "No se pudieron cargar los documentos — revisa la señal.": "Couldn't load the documents — check the signal.",
       // Botones de la ficha: email, resumen, portal, contratista
       "Email del cliente (para mandarle su copia firmada y avisos):": "Client email (to send them their signed copy and notices):",
-      "✉️ Email del cliente guardado": "✉️ Client email saved",
+      "Email del cliente guardado": "Client email saved",
       "En dos o tres frases, ¿en qué va la obra y qué falta del lado del cliente?": "In two or three sentences, where does the job stand and what's still needed from the client?",
       "(Sin montos: esto lo lee el cliente arriba de todo. Déjalo vacío para quitar la tarjeta.)": "(No amounts: the client reads this at the very top. Leave it empty to remove the card.)",
-      "📣 El cliente ya ve en qué va la obra": "📣 The client now sees where the job stands",
+      "El cliente ya ve en qué va la obra": "The client now sees where the job stands",
       "Se quitó el resumen del portal": "The portal summary was removed",
       "Link del cliente copiado ✓ — pégalo en WhatsApp": "Client link copied ✓ — paste it in WhatsApp",
       "Copia el link del cliente:": "Copy the client link:", "Copia el enlace:": "Copy the link:",
-      "🟢 ¿Darle a este cliente ACCESO COMPLETO a su proyecto?": "🟢 Give this client FULL ACCESS to their project?",
+      "¿Darle a este cliente ACCESO COMPLETO a su proyecto?": "Give this client FULL ACCESS to their project?",
       "Verá TODOS los documentos (contratos y change orders incluidos, con sus precios) y TODAS las fotos y videos — sin tener que marcarlos uno a uno.":
         "They'll see ALL documents (contracts and change orders included, with their prices) and ALL photos and videos — without marking them one by one.",
-      "Las horas del equipo y las compras de materiales NUNCA salen en el portal.": "Crew hours and material purchases NEVER show in the portal.",
+      "Las horas del equipo y las compras de materiales nunca salen en el portal.": "Crew hours and material purchases never show in the portal.",
       "Solo para clientes directos.": "Only for direct clients.",
-      "🟢 Luz verde — el cliente ve todo su proyecto": "🟢 Green light — the client sees their whole project",
+      "Luz verde — el cliente ve todo su proyecto": "Green light — the client sees their whole project",
       "De vuelta al modo uno-a-uno (solo lo marcado con 👁)": "Back to one-by-one mode (only what's marked with 👁)",
       "¿Mostrarle a este cliente su contrato, pagos y facturas en el portal?": "Show this client their contract, payments and invoices in the portal?",
       "Solo para proyectos donde tratas DIRECTO con el cliente. Si el trabajo va a través de un contratista (Wisdom u otro), déjalo apagado.":
         "Only for projects where you deal DIRECTLY with the client. If the work goes through a contractor (Wisdom or another), leave it off.",
-      "💵 El cliente ahora VE su contrato y pagos": "💵 The client now SEES their contract and payments",
+      "El cliente ahora VE su contrato y pagos": "The client now SEES their contract and payments",
       "El dinero quedó oculto para el cliente": "Money is now hidden from the client",
       "Enlace del contratista copiado ✓ — ve todas sus obras": "Contractor link copied ✓ — it shows all their jobs",
       "El contratista no tiene email. Ponlo en Licencia y seguros ✎": "The contractor has no email. Add it in License and insurance ✎",
@@ -1527,13 +1527,13 @@
         "Regenerate the key? The old link will stop working and you'll have to send the new one to the client.",
       "Llave nueva ✓ — copia el link otra vez": "New key ✓ — copy the link again",
       // Documentos: enseñar, firma, aprobación, contrafirma
-      "👁 El cliente ahora VE este documento — OJO: en Drive debe estar compartido como 'cualquiera con el enlace' para que pueda abrirlo":
-        "👁 The client now SEES this document — HEADS UP: in Drive it must be shared as 'anyone with the link' so they can open it",
-      "🚫 Documento oculto para el cliente": "🚫 Document hidden from the client",
+      "El cliente ahora VE este documento — OJO: en Drive debe estar compartido como 'cualquiera con el enlace' para que pueda abrirlo":
+        "The client now SEES this document — HEADS UP: in Drive it must be shared as 'anyone with the link' so they can open it",
+      "Documento oculto para el cliente": "Document hidden from the client",
       "Petición de firma quitada": "Signature request removed",
       "Tu firma saldrá en el certificado junto a la del cliente. ¿Firmar?": "Your signature will appear on the certificate next to the client's. Sign?",
-      "✒️ Contrafirmado — tu firma saldrá en el certificado": "✒️ Countersigned — your signature will appear on the certificate",
-      "✍️ El cliente verá el botón de aprobar": "✍️ The client will see the approve button",
+      "Contrafirmado — tu firma saldrá en el certificado": "Countersigned — your signature will appear on the certificate",
+      "El cliente verá el botón de aprobar": "The client will see the approve button",
       "Aprobación quitada": "Approval removed",
       "Ponle el archivo PDF o pega el enlace de Drive.": "Attach the PDF file or paste the Drive link.",
       "Ese PDF pasa de 20 MB — comprímelo o usa el enlace de Drive.": "That PDF is over 20 MB — compress it or use the Drive link.",
@@ -1548,7 +1548,7 @@
       "QuickBooks no encontró el cliente de esta obra: créalo primero en QuickBooks y vuelve a tocar Facturar.":
         "QuickBooks didn't find this job's client: create it first in QuickBooks and tap Invoice again.",
       "¿Cuál de estos clientes de QuickBooks es el de esta obra?": "Which of these QuickBooks customers is this job's client?",
-      "💵 Hito marcado cobrado ✓": "💵 Milestone marked collected ✓",
+      "Hito marcado cobrado ✓": "Milestone marked collected ✓",
       // Arranque y trabajo externo
       "Gestión hecha ✓": "Task done ✓",
       "Trabajo externo anotado ✓ — ya cuenta como gasto del proyecto": "Outside work logged ✓ — it now counts as a project expense",
@@ -1652,8 +1652,8 @@
     "Movilización": "Mobilization", "Demolición": "Demolition",
     "Panel / Servicio": "Panel / Service", "Inspección / Correcciones": "Inspection / Corrections",
     // Avisos de horas
-    "⏳ Ya le pediste permiso a Edgar — te avisamos al teléfono cuando apruebe":
-      "⏳ You already asked Edgar for permission — we'll notify your phone when he approves",
+    "Ya le pediste permiso a Edgar — te avisamos al teléfono cuando apruebe":
+      "You already asked Edgar for permission — we'll notify your phone when he approves",
     "Para corregir este reporte necesitas el permiso de Edgar. ¿Se lo pedimos ahora?":
       "To edit this report you need Edgar's permission. Should we ask him now?",
     "Permiso pedido ✓ — a Edgar le llegó el aviso al teléfono": "Permission requested ✓ — Edgar got the alert on his phone",
@@ -1664,13 +1664,13 @@
     "¿De cuál Change Order fue el trabajo? (Ej: CO #2)": "Which change order was the work for? (E.g.: CO #2)",
     "Horas y pendiente guardados ✓ (el pendiente queda en rojo)": "Hours and open item saved ✓ (the open item stays red)",
     "Horas guardadas ✓": "Hours saved ✓",
-    "📶 Sin señal — tu reporte quedó guardado en el teléfono y se manda solo cuando vuelva la señal.":
-      "📶 No signal — your report was saved on the phone and sends itself when the signal comes back.",
+    "Sin señal — tu reporte quedó guardado en el teléfono y se manda solo cuando vuelva la señal.":
+      "No signal — your report was saved on the phone and sends itself when the signal comes back.",
     "Ese reporte ya estaba guardado ✓": "That report was already saved ✓",
     "Se mandó el reporte que estaba esperando señal ✓": "Sent the report that was waiting for signal ✓",
     // La cola general sin señal
-    "📶 Sin señal — quedó guardado en el teléfono y se manda solo cuando vuelva la señal.":
-      "📶 No signal — it was saved on the phone and sends itself when the signal comes back.",
+    "Sin señal — quedó guardado en el teléfono y se manda solo cuando vuelva la señal.":
+      "No signal — it was saved on the phone and sends itself when the signal comes back.",
     "Se mandó 1 cosa que estaba esperando señal ✓": "Sent 1 item that was waiting for signal ✓",
   
     // Materiales
@@ -1680,11 +1680,11 @@
     "Proyecto (cámbialo si era de otro)": "Project (change it if it belonged to another one)",
     "Precio pagado ($) — para el control de gastos": "Price paid ($) — for expense control",
     "Ej: 45.99": "E.g.: 45.99",
-    "📤 Enviar al supply": "📤 Send to the supply house",
+    "Enviar al supply": "Send to the supply house",
     "Ej: rentar la zanjadora": "E.g.: rent the trencher",
-    "Compra": "Purchase", "🛒 Compra": "🛒 Purchase",
+    "Compra": "Purchase", "Compra": "Purchase",
     "Devolución (resta del gasto)": "Return (subtracts from the expense)",
-    "↩ Devolución (resta del gasto)": "↩ Return (subtracts from the expense)",
+    "Devolución (resta del gasto)": "Return (subtracts from the expense)",
     "Ej: Home Depot, CES, Ferguson…": "E.g.: Home Depot, CES, Ferguson…",
     "Ej: 3 rollos 12/2, caja de breakers, 10 straps": "E.g.: 3 rolls of 12/2, box of breakers, 10 straps",
     "Ej: 128.40": "E.g.: 128.40",
@@ -1697,8 +1697,8 @@
     "Ponles la foto del recibo con": "Add the receipt photo with", "o el proyecto con": "or the project with",
     "Últimas compras": "Latest purchases",
     "Lista rápida — varios de un golpe": "Quick list — several at once",
-    "📝 Lista rápida — varios de un golpe": "📝 Quick list — several at once",
-    "Mejor de uno en uno": "One at a time instead", "✏ Mejor de uno en uno": "✏ One at a time instead",
+    "Lista rápida — varios de un golpe": "Quick list — several at once",
+    "Mejor de uno en uno": "One at a time instead", "Mejor de uno en uno": "One at a time instead",
     "Ej: cable 14/2": "E.g.: 14/2 cable", "Ej: 2 rollos": "E.g.: 2 rolls",
     "Proyecto (para toda la lista)": "Project (for the whole list)",
     "Un material por línea — la cantidad va al final, después de una coma":
@@ -1707,8 +1707,8 @@
     "Agregar toda la lista": "Add the whole list",
     // Recibos: estados, botones y títulos
     "FALTA FOTO 📷": "NO PHOTO 📷", "FALTA FOTO": "NO PHOTO", "ANULADO": "VOIDED",
-    "↩ DEVOLUCIÓN": "↩ RETURN", "DEVOLUCIÓN": "RETURN",
-    "Recibo": "Receipt", "⚠ Sin proyecto": "⚠ No project", "Sin proyecto": "No project",
+    "DEVOLUCIÓN": "RETURN", "DEVOLUCIÓN": "RETURN",
+    "Recibo": "Receipt", "Sin proyecto": "No project", "Sin proyecto": "No project",
     "Asignarle proyecto a esta compra": "Assign a project to this purchase",
     "Corregir total, proveedor o descripción": "Edit total, vendor or description",
     "Cambiar la foto del recibo": "Change the receipt photo",
@@ -1761,14 +1761,14 @@
     // Control de gastos
     "sin horas estimadas para comparar": "no estimated hours to compare",
     "sin horas registradas": "no hours logged",
-    "sin horas registradas · define 💲 Costos del equipo": "no hours logged · set up 💲 Team costs",
+    "sin horas registradas · define Costos del equipo": "no hours logged · set up Team costs",
     "sin presupuesto de materiales — ponlo aquí abajo": "no materials budget — enter it below",
     "Ej: 2500": "E.g.: 2500", "Ej: 35": "E.g.: 35", "Ej: Pedro": "E.g.: Pedro", "Ej: 50": "E.g.: 50",
     "Campo": "Field crew",
     "(toca para abrir — solo se ajusta cuando cambia un salario)": "(tap to open — only changes when a wage changes)",
     "El costo completo por hora para la empresa (salario + taxes + seguro). Con esto cada proyecto calcula su rentabilidad solo.":
       "The full hourly cost to the company (wage + taxes + insurance). With this, each project works out its own profitability.",
-    "Ayudantes externos": "Outside helpers", "🧰 Ayudantes externos": "🧰 Outside helpers",
+    "Ayudantes externos": "Outside helpers", "Ayudantes externos": "Outside helpers",
     "(gente puntual con tarifa — sin cuenta en la app, solo tú los ves)": "(occasional people with a rate — no app account, only you see them)",
     "sin trabajos anotados todavía": "no work logged yet",
     "Cambiar tarifa": "Change rate", "Inactivo": "Deactivate",
@@ -1856,7 +1856,7 @@
   
   REGLAS.push(
     // La flechita de Change Order del reporte de horas
-    [/^📄 Contrato — (.+)$/, "📄 Contract — $1"],
+    [/^Contrato — (.+)$/, "Contract — $1"],
     // Historial de horas: «fecha · fase · notas» — solo se traduce la fase; las notas son de la gente
     [/^(\d{4}-\d{2}-\d{2}) · (Movilización|Demolición|Panel \/ Servicio|Inspección \/ Correcciones)( · [\s\S]*)?$/, s => {
       const m = s.match(/^(\d{4}-\d{2}-\d{2}) · (Movilización|Demolición|Panel \/ Servicio|Inspección \/ Correcciones)( · [\s\S]*)?$/);
@@ -2117,11 +2117,11 @@
       "LOGISTICS, ALLOWANCE and SUBCONTRACT aren't material: they don't pay sales tax, misc., markup or escalation, and they don't inflate the loaded hour. They do carry overhead and profit.",
     "Horas y material": "Hours and material", "Horas de todo el trabajo": "Hours for the whole job", "Ej: 90": "E.g. 90",
     "Pon el material: un total, o varias líneas (breakers, cable, luminarias…).": "Enter the material: one total, or several lines (breakers, wire, fixtures…).",
-    "Este trabajo usa las tarifas de MXP MEP, no las tuyas. Se cambian en ⚙ Escenarios, en la lista de estimados. Si cambias cualquier número de abajo, este estimado pasa a":
-      "This job uses MXP MEP's rates, not yours. They're changed in ⚙ Scenarios, in the estimate list. If you change any number below, this estimate becomes",
+    "Este trabajo usa las tarifas de MXP MEP, no las tuyas. Se cambian en Escenarios, en la lista de estimados. Si cambias cualquier número de abajo, este estimado pasa a":
+      "This job uses MXP MEP's rates, not yours. They're changed in Scenarios, in the estimate list. If you change any number below, this estimate becomes",
     "Toca A, B o C para usar ese escenario tal cual. Si cambias cualquier número de abajo, este estimado pasa a":
       "Tap A, B or C to use that scenario as is. If you change any number below, this estimate becomes",
-    "(los escenarios no se tocan; para eso está ⚙ Escenarios en la lista).": "(the scenarios aren't touched; that's what ⚙ Scenarios in the list is for).",
+    "(los escenarios no se tocan; para eso está Escenarios en la lista).": "(the scenarios aren't touched; that's what Scenarios in the list is for).",
     "Cuadrilla — quién trabaja y qué parte de las horas": "Crew — who works and what share of the hours",
     "Rol": "Role", "Quitar rol": "Remove role", "Agregar rol": "Add role", "Tarifa mezclada": "Blended rate",
     "Beneficios sobre el labor (%)": "Benefits on labor (%)",
@@ -2264,9 +2264,9 @@
       const m = s.match(/^¿Aplicar (\d+) cambios? (a los precios de REFERENCIA|a TUS precios)\?$/);
       return `Apply ${m[1]} ${m[1] === "1" ? "change" : "changes"} ${m[2] === "a TUS precios" ? "to YOUR prices" : "to the REFERENCE prices"}?`;
     }],
-    [/^OJO: (\d+) estaban? a \$0 a propósito \((.+)\)\. Ponerles precio fijo cambia cómo se cotizan\.$/, s => {
-      const m = s.match(/^OJO: (\d+) estaban? a \$0 a propósito \((.+)\)\. Ponerles precio fijo cambia cómo se cotizan\.$/);
-      return `CAREFUL: ${m[1]} ${m[1] === "1" ? "was" : "were"} at $0 on purpose (${m[2]}). A fixed price changes how they're quoted.`;
+    [/^Ojo: (\d+) estaban? a \$0 a propósito \((.+)\)\. Ponerles precio fijo cambia cómo se cotizan\.$/, s => {
+      const m = s.match(/^Ojo: (\d+) estaban? a \$0 a propósito \((.+)\)\. Ponerles precio fijo cambia cómo se cotizan\.$/);
+      return `Careful: ${m[1]} ${m[1] === "1" ? "was" : "were"} at $0 on purpose (${m[2]}). A fixed price changes how they're quoted.`;
     }],
     [/^(\d+) aplicados · (\d+) fallaron — (.+)$/, "$1 applied · $2 failed — $3"],
     [/^(\d+) precios? actualizados? ✓$/, s => { const n = parseInt(s, 10); return `${n} ${n === 1 ? "price" : "prices"} updated ✓`; }],
@@ -2326,12 +2326,12 @@
       "Pon el material: un total, o varias líneas (breakers, cable, luminarias…).":
         "Enter the material: one total, or several lines (breakers, wire, light fixtures…).",
       "Escenario": "Scenario",
-      "Este trabajo usa las tarifas de MXP MEP, no las tuyas. Se cambian en ⚙ Escenarios, en la lista de estimados. Si cambias cualquier número de abajo, este estimado pasa a":
-        "This job uses MXP MEP's rates, not yours. They're changed in ⚙ Scenarios, in the estimates list. If you change any number below, this estimate becomes",
+      "Este trabajo usa las tarifas de MXP MEP, no las tuyas. Se cambian en Escenarios, en la lista de estimados. Si cambias cualquier número de abajo, este estimado pasa a":
+        "This job uses MXP MEP's rates, not yours. They're changed in Scenarios, in the estimates list. If you change any number below, this estimate becomes",
       "Toca A, B o C para usar ese escenario tal cual. Si cambias cualquier número de abajo, este estimado pasa a":
         "Tap A, B or C to use that scenario as is. If you change any number below, this estimate becomes",
-      "(los escenarios no se tocan; para eso está ⚙ Escenarios en la lista).":
-        "(the scenarios aren't touched; that's what ⚙ Scenarios in the list is for).",
+      "(los escenarios no se tocan; para eso está Escenarios en la lista).":
+        "(the scenarios aren't touched; that's what Scenarios in the list is for).",
       "Cuadrilla — quién trabaja y qué parte de las horas": "Crew — who works and what share of the hours",
       "+ Agregar rol": "+ Add role",
       "Tarifa mezclada": "Blended rate",
@@ -2392,7 +2392,7 @@
       "sin fecha de validez": "no validity date",
       "Preparar cierre": "Prepare closing",
       // Tarjeta que falla
-      "⚠ Una tarjeta nueva falló": "⚠ A new card failed"
+      "Una tarjeta nueva falló": "A new card failed"
     });
     REGLAS.push(
       [/^Al material se le suma el (\S+) de misceláneas y el (\S+) de tax\. El markup es opcional, abajo\.$/,
@@ -2411,7 +2411,7 @@
       [/^: ([\d.]+) % sobre mano de obra \+ material\. Es el método del Excel de Miami y el que sirve cuando la oficina y los camiones no los pones tú\. NECA sitúa el 14–16 % en operaciones bien llevadas; el Excel usaba 10 %\.$/,
         ": $1% on labor + material. It's the Miami Excel method, and the one that works when the office and the trucks aren't on you. NECA puts well-run operations at 14–16%; the Excel used 10%."],
       [/^¿De qué se compone ese ([\d.,]+) % de beneficios\?$/, "What makes up that $1% of benefits?"],
-      [/^💾 Guardar ([A-Z]|MEP)$/, "💾 Save $1"],
+      [/^Guardar ([A-Z]|MEP)$/, "Save $1"],
       [/^Guardar ([A-Z]|MEP)$/, "Save $1"],
       [/^Los % de la cuadrilla suman (-?[\d.]+)% — tienen que dar 100%$/, "The crew % add up to $1% — they have to be 100%"],
       [/^Escenario ([A-Z]|MEP) guardado ✓ — vale para los estimados nuevos$/, "Scenario $1 saved ✓ — applies to new estimates"],
@@ -2557,36 +2557,42 @@
           .replace(/^(\d+) breaker\(s\) LISTADOS en el estimado — si el trabajo tiene más circuitos que breakers comprados, cámbialo$/,
             "$1 breaker(s) LISTED in the estimate — if the job has more circuits than breakers bought, change it")
           .replace(/^SUPUESTO: (\d+) dispositivo\(s\) \+ (\d+) luminaria\(s\) nuevas$/, "ASSUMPTION: $1 new device(s) + $2 fixture(s)")
+          // «Cobre y luz», tanda 4: los mismos textos en frase
+          .replace(/^el trato es con un contratista: si el permiso lo saca el GC, no lo marques \(regla de la casa\)$/,
+            "the deal is with a contractor: if the GC pulls the permit, don't check it (house rule)")
+          .replace(/^(\d+) breaker\(s\) listados en el estimado — si el trabajo tiene más circuitos que breakers comprados, cámbialo$/,
+            "$1 breaker(s) listed in the estimate — if the job has more circuits than breakers bought, change it")
+          .replace(/^Supuesto: (\d+) dispositivo\(s\) \+ (\d+) luminaria\(s\) nuevas$/, "Assumption: $1 new device(s) + $2 new fixture(s)")
           .replace(/^(\d+) dimmer\(s\) y sensor\(es\)$/, "$1 dimmer(s) and sensor(s)")
           .replace(/^por proyecto — ponlo tú$/, "per project — you set it");
         return `${de} · ${m[2]} h each`; }],
-      [/^➕ Añadir al estimado lo marcado( \(([\d.]+) h\))?$/, s => "➕ Add the checked ones to the estimate" + (s.match(/ \([\d.]+ h\)$/) || [""])[0]],
+      [/^Añadir al estimado lo marcado( \(([\d.]+) h\))?$/, s => "Add the checked ones to the estimate" + (s.match(/ \([\d.]+ h\)$/) || [""])[0]],
       [/^✓ (\d+) renglón\(es\) de horas añadido\(s\)( y (\d+) actualizado\(s\))?$/, s => {
         const m = s.match(/^✓ (\d+) renglón\(es\) de horas añadido\(s\)(?: y (\d+) actualizado\(s\))?$/);
         return `✓ ${m[1]} hour ${m[1] === "1" ? "line" : "lines"} added` + (m[2] ? ` and ${m[2]} updated` : ""); }],
       [/^«(.+)» no está en el catálogo — corre docs\/sql\/e27\.sql$/, "«$1» isn't in the catalog — run docs/sql/e27.sql"],
       // Auditoría del catálogo
-      [/^↪ (\d+) alias que TAPA\(N\) una fila de tu catálogo$/, s => {
-        const n = s.match(/\d+/)[0]; return n === "1" ? "↪ 1 alias HIDES a row of your catalog" : `↪ ${n} aliases HIDE a row of your catalog`; }],
+      [/^(\d+) alias que TAPA\(N\) una fila de tu catálogo$/, s => {
+        const n = s.match(/\d+/)[0]; return n === "1" ? "1 alias HIDES a row of your catalog" : `${n} aliases HIDE a row of your catalog`; }],
       [/^\((\S+) · ([\d.]+) h · (\$[\d,.]+|\$•••)\) y entra$/, "($1 · $2 h · $3) but in goes"],
-      [/^⚇ (\d+) fila\(s\) del catálogo con el MISMO nombre$/, s => {
-        const n = s.match(/\d+/)[0]; return `⚇ ${n} catalog ${n === "1" ? "row" : "rows"} with the SAME name`; }],
+      [/^(\d+) fila\(s\) del catálogo con el MISMO nombre$/, s => {
+        const n = s.match(/\d+/)[0]; return `${n} catalog ${n === "1" ? "row" : "rows"} with the SAME name`; }],
       [/^(\d+) veces$/, "$1 times"],
       [/^: (.+) — el número cambia según cuál coja$/, ": $1 — the number changes depending on which one it picks"],
       [/^las (\d+) valen (\S+)( y ([\d.]+) h)?: hoy da igual cuál coja, pero deja una sola$/, s => {
         const m = s.match(/^las (\d+) valen (\S+)(?: y ([\d.]+) h)?:/);
         return `${m[1] === "2" ? "both" : "all " + m[1]} cost ${m[2]}${m[3] ? ` and ${m[3]} h` : ""}: today it doesn't matter which one it picks, but keep only one`; }],
-      [/^🔌 (\d+) receta\(s\) con un conector que no le cabe al cable$/, s => {
-        const n = s.match(/\d+/)[0]; return `🔌 ${n} ${n === "1" ? "recipe" : "recipes"} with a connector the cable doesn't fit`; }],
+      [/^(\d+) receta\(s\) con un conector que no le cabe al cable$/, s => {
+        const n = s.match(/\d+/)[0]; return `${n} ${n === "1" ? "recipe" : "recipes"} with a connector the cable doesn't fit`; }],
       [/^lleva (.+) con cable #(\S+) · hace falta$/, "uses $1 with #$2 cable · needs"],
-      [/^🧾 La auditoría del catálogo: faltan (\d+) de (\d+)$/, "🧾 Catalog audit: $1 of $2 missing"],
+      [/^La auditoría del catálogo: faltan (\d+) de (\d+)$/, "Catalog audit: $1 of $2 missing"],
       // «horas: 0.5 →» / «· precio: 12 →» (lo viejo → lo nuevo de la auditoría)
       [/^(· )?(horas|precio|unidad|código|codigo): (.*) →$/, s => {
         const m = s.match(/^(· )?(horas|precio|unidad|código|codigo): (.*) →$/);
         const k = { horas: "hours", precio: "price", unidad: "unit", "código": "code", codigo: "code" }[m[2]];
         return `${m[1] || ""}${k}: ${m[3]} →`; }],
       [/^…y (\d+) más\.$/, "…and $1 more."],
-      [/^📋 Copiar el SQL de las (\d+) que faltan$/, "📋 Copy the SQL for the $1 missing"],
+      [/^Copiar el SQL de las (\d+) que faltan$/, "Copy the SQL for the $1 missing"],
       [/^No se pudo guardar: (.+)$/, "Couldn't save: $1"],
       [/^No se pudo: (.+)$/, "It didn't work: $1"]
     );
@@ -2656,14 +2662,14 @@
         const m = s.match(/^([\d.]+) (\S+) × (\S+) (.+)$/);
         const t = { "tuyos": "yours", "de la familia que elegiste": "from the family you picked", "de referencia": "reference" }[m[4]];
         return `${m[1]} ${m[2]} × ${m[3]} ${t}`; }],
-      [/^([\d.]+) (\S+) · ⚠ (\$[\d,.]+|\$•••) por unidad no es el precio de una luminaria: revísalo, este renglón NO entra al bid$/,
-        "$1 $2 · ⚠ $3 per unit isn't the price of a light fixture: check it, this line is NOT in the bid"],
+      [/^([\d.]+) (\S+) · (\$[\d,.]+|\$•••) por unidad no es el precio de una luminaria: revísalo, este renglón NO entra al bid$/,
+        "$1 $2 · $3 per unit isn't the price of a light fixture: check it, this line is NOT in the bid"],
       [/^([\d.]+) (\S+) · esa familia está a \$0 aquí abajo: ponle precio o dale uno propio a este modelo$/,
         "$1 $2 · that family is at $0 down below: give it a price or give this model its own"],
       [/^([\d.]+) (\S+) · elige su familia aquí abajo, o pega la cuota$/, "$1 $2 · pick its family below, or paste the quote"],
-      [/^🔦 Luminarias que cotiza el supply \((\d+)\)$/, "🔦 Fixtures quoted by the supply house ($1)"],
-      [/^⚠ (\d+) renglón\(es\) sin precio de referencia:?$/, s => {
-        const n = s.match(/\d+/)[0]; return `⚠ ${n} ${n === "1" ? "line" : "lines"} without a reference price:`; }],
+      [/^Luminarias que cotiza el supply \((\d+)\)$/, "Fixtures quoted by the supply house ($1)"],
+      [/^(\d+) renglón\(es\) sin precio de referencia:?$/, s => {
+        const n = s.match(/\d+/)[0]; return `${n} ${n === "1" ? "line" : "lines"} without a reference price` + (s.endsWith(":") ? ":" : ""); }],
       [/^: esos (\S+) entran al bid por donde entran las cotizaciones \(con su markup, sin misceláneas\) y cada renglón se ve marcado$/,
         ": those $1 go into the bid the same way quotes do (with their markup, no misc.) and each line shows marked"],
       [/^Lo que me enseñaste \((\d+) modelo\(s\)\)$/, s => {
@@ -2675,21 +2681,22 @@
       [/^cuota: /, s => s.replace(/^cuota: /, "quote: ")
         .replace(/ · había otra a (\$[\d,.]+|\$•••): me quedo con la más cara/, " · there was another one at $1: I keep the more expensive one")
         .replace(/ · ya tenías una a (\$[\d,.]+|\$•••), MÁS CARA: esta no se pone/, " · you already had one at $1, MORE EXPENSIVE: this one isn't used")
-        .replace(/ · ⚠ este renglón no se puede editar \(viene de una receta\)$/, " · ⚠ this line can't be edited (it comes from a recipe)")],
+        .replace(/ · ya tenías una a (\$[\d,.]+|\$•••), más cara: esta no se pone/, " · you already had one at $1, more expensive: this one isn't used")
+        .replace(/ · (?:⚠ )?este renglón no se puede editar \(viene de una receta\)$/, " · this line can't be edited (it comes from a recipe)")],
       [/^desde la cuota que ya tenías \((\$[\d,.]+|\$•••)\): la más cara manda/, s => s
         .replace(/^desde la cuota que ya tenías \((\S+)\): la más cara manda/, "from the quote you already had ($1): the more expensive one rules")
-        .replace(/ · ⚠ este renglón no se puede editar \(viene de una receta\)$/, " · ⚠ this line can't be edited (it comes from a recipe)")],
+        .replace(/ · (?:⚠ )?este renglón no se puede editar \(viene de una receta\)$/, " · this line can't be edited (it comes from a recipe)")],
       [/^: lo tomo como precio de CADA UNA\. Si es el total, cada una sale a (\$[\d,.]+|\$•••) — corrígelo con el lápiz de precio del renglón/, s => s
         .replace(/^: lo tomo como precio de CADA UNA\. Si es el total, cada una sale a (\S+) — corrígelo con el lápiz de precio del renglón/,
           ": I take it as the price of EACH ONE. If it's the total, each one comes to $1 — fix it with the line's price pencil")
-        .replace(/ · ⚠ este renglón no se puede editar \(viene de una receta\)$/, " · ⚠ this line can't be edited (it comes from a recipe)")],
+        .replace(/ · (?:⚠ )?este renglón no se puede editar \(viene de una receta\)$/, " · this line can't be edited (it comes from a recipe)")],
       [/^Sin cuota todavía: (.+)$/, "No quote yet: $1"],
       [/^(\d+) línea\(s\) de la cuota no casan con nada del estimado \(otro material, o el modelo está escrito distinto\)\.$/, s => {
         const n = s.match(/\d+/)[0];
         return `${n} quote ${n === "1" ? "line doesn't" : "lines don't"} match anything in the estimate (other material, or the model is written differently).`; }],
       [/^✓ Poner esos (\d+) precio\(s\) en el estimado$/, s => {
         const n = s.match(/\d+/)[0]; return `✓ Put ${n === "1" ? "that price" : `those ${n} prices`} in the estimate`; }],
-      [/^🚚 Flete de (\$[\d,.]+|\$•••) añadido al estimado ✓$/, "🚚 Freight of $1 added to the estimate ✓"],
+      [/^Flete de (\$[\d,.]+|\$•••) añadido al estimado ✓$/, "Freight of $1 added to the estimate ✓"],
       [/^✓ (\d+) precio\(s\) de la cuota puestos en el estimado$/, s => {
         const n = s.match(/\d+/)[0]; return `✓ ${n} quote ${n === "1" ? "price" : "prices"} put in the estimate`; }],
       // «✓ «MODELO» vale $X de referencia — me lo aprendo · ojo: 2 estimado(s) más usan referencia…»
@@ -2714,7 +2721,7 @@
       "sin tubo ni cable": "without conduit or wire",
       "— esos los mediste tú en el plano y entran por su lado": "— you measured those on the plan and they go in separately",
       "por circuito": "per circuit",
-      "✎ pies": "✎ ft",
+      "pies": "ft",
       "Escribe la cantidad directa": "Type the quantity directly",
       "Lo que más usas": "What you use most",
       "se llena solo con tu historial": "fills in on its own from your history",
@@ -2806,14 +2813,14 @@
       [/^— de: (.+)$/, "— from: $1"],
       [/^por unidad \(escenario ([A-Z]|MEP)\)$/, "per unit (scenario $1)"],
       [/^([\d.]+) ft medidos$/, "$1 ft measured"],
-      [/^📏 (\S+) ft \(de la receta\) por circuito$/, "📏 $1 ft (from the recipe) per circuit"],
+      [/^(\S+) ft \(de la receta\) por circuito$/, "$1 ft (from the recipe) per circuit"],
       [/^usado (\d+) (vez|veces) · (.*) · (\$[\d,.]+|\$•••)$/, s => {
         const m = s.match(/^usado (\d+) (?:vez|veces) · (.*) · (\S+)$/);
         return `used ${m[1]} ${m[1] === "1" ? "time" : "times"} · ${m[2]} · ${m[3]}`; }],
       [/^Ver más \((\d+) más\)$/, "See more ($1 more)"],
       // Aviso de renglones sin material
-      [/^📦 (\d+) (renglón entra|renglones entran) sin material$/, s => {
-        const n = s.match(/\d+/)[0]; return `📦 ${n} ${n === "1" ? "line goes in" : "lines go in"} without material`; }],
+      [/^(\d+) (renglón entra|renglones entran) sin material$/, s => {
+        const n = s.match(/\d+/)[0]; return `${n} ${n === "1" ? "line goes in" : "lines go in"} without material`; }],
       [/^— ([\d.]+) h SÍ están en el precio$/, "— $1 h ARE in the price"],
       [/^· (.+) — (\d+) (renglón|renglones), ([\d.]+) h( ·)?$/, s => {
         const m = s.match(/^· (.+) — (\d+) (?:renglón|renglones), ([\d.]+) h( ·)?$/);
@@ -2837,17 +2844,17 @@
         const m = s.match(/^(.*)· vía (.+) \((contrato con ellos|referido)\)((?: · [\d.,]+ sqft)?)$/);
         return `${m[1]}· via ${m[2]} (${m[3] === "referido" ? "referral" : "contract with them"})${m[4]}`; }],
       [/^Congelado el (\S*):$/, "Frozen on $1:"],
-      [/^🔎 Buscar en el catálogo \((\d+)\)$/, "🔎 Search the catalog ($1)"],
+      [/^Buscar en el catálogo \((\d+)\)$/, "Search the catalog ($1)"],
       [/^Ítems \((\d+)( \+ (\d+) automáticos)?\)$/, s => {
         const m = s.match(/^Ítems \((\d+)(?: \+ (\d+) automáticos)?\)$/);
         return `Items (${m[1]}${m[2] ? ` + ${m[2]} automatic` : ""})`; }],
       // Filas del resumen
       [/^Material \((\d+) líneas?\)$/, s => { const n = s.match(/\d+/)[0]; return `Material (${n} ${n === "1" ? "line" : "lines"})`; }],
       [/^\+ Merma \(cables ([\d.]+)% · tubería ([\d.]+)%\)$/, "+ Waste (wire $1% · conduit $2%)"],
-      [/^\+ Misceláneas \(([\d.]+)%( ✏| — tape, wirenuts, fijación)\)$/, s => {
-        const m = s.match(/\(([\d.]+)%( ✏| — tape, wirenuts, fijación)\)$/);
-        return `+ Misc. (${m[1]}%${m[2] === " ✏" ? " ✏" : " — tape, wire nuts, fastening"})`; }],
-      [/^\+ Markup de materiales \(([\d.]+)%\) ✏$/, "+ Materials markup ($1%) ✏"],
+      [/^\+ Misceláneas \(([\d.]+)%( ✏| — tape, wirenuts, fijación)?\)$/, s => {
+        const m = s.match(/\(([\d.]+)%( ✏| — tape, wirenuts, fijación)?\)$/);
+        return `+ Misc. (${m[1]}%${m[2] === " — tape, wirenuts, fijación" ? " — tape, wire nuts, fastening" : ""})`; }],
+      [/^\+ Markup de materiales \(([\d.]+)%\)$/, "+ Materials markup ($1%)"],
       [/^Horas de TODO el trabajo \(([\d.]+) × factor ([\d.]+)\)$/, "Hours for the WHOLE job ($1 × factor $2)"],
       [/^Labor \(([\d.]+) h × (\$[\d,.]+|\$•••) cuadrilla\)$/, "Labor ($1 h × $2 crew)"],
       [/^\+ Beneficios sobre el labor \(([\d.]+)%( ✏)?\)$/, "+ Benefits on labor ($1%$2)"],
@@ -2855,7 +2862,7 @@
       [/^\+ Overhead \(([\d.]+)% del costo directo(, sin las cotizaciones)?( ✏)?\)$/, s => {
         const m = s.match(/\(([\d.]+)% del costo directo(, sin las cotizaciones)?( ✏)?\)$/);
         return `+ Overhead (${m[1]}% of direct cost${m[2] ? ", excluding quotes" : ""}${m[3] || ""})`; }],
-      [/^Propuesta válida por (\d+) días( ✏| ✓)?$/, "Proposal valid for $1 days$2"],
+      [/^Propuesta válida por (\d+) días( ✓)?$/, "Proposal valid for $1 days$2"],
       [/^(\$[\d,.]+|\$•••) por sq ft$/, "$1 per sq ft"]
     );
   
@@ -2971,12 +2978,12 @@
       [/^Precio por unidad de (.+) \(\$\)\.$/, "Price per unit of $1 ($)."],
       [/^Vas a poner (\$[\d,.]+|\$•••) a "(.*)" en el catálogo\.$/, 'You\'re going to set "$2" to $1 in the catalog.'],
       [/^¿Pasar "(.*)" a MXP MEP\?$/, 'Move "$1" to MXP MEP?'],
-      [/^📄 Propuesta de (.+) para el cliente — lump sum, sin desglose$/, "📄 $1 proposal for the client — lump sum, no breakdown"],
-      [/^📋 Takeoff para copiar — (\d+) renglones \(pégalo en Excel: cada columna cae en su celda\)$/, s => {
+      [/^Propuesta de (.+) para el cliente — lump sum, sin desglose$/, "$1 proposal for the client — lump sum, no breakdown"],
+      [/^Takeoff para copiar — (\d+) renglones \(pégalo en Excel: cada columna cae en su celda\)$/, s => {
         const n = s.match(/— (\d+)/)[1];
-        return `📋 Takeoff to copy — ${n} ${n === "1" ? "line" : "lines"} (paste it in Excel: each column lands in its cell)`; }],
-      [/^Estimado congelado 🔒 — (\$[\d,.]+|\$•••) guardado; si los precios cambian, te digo cuánto se movió$/,
-        "Estimate frozen 🔒 — $1 saved; if prices change, I'll tell you how much it moved"],
+        return `Takeoff to copy — ${n} ${n === "1" ? "line" : "lines"} (paste it in Excel: each column lands in its cell)`; }],
+      [/^Estimado congelado — (\$[\d,.]+|\$•••) guardado; si los precios cambian, te digo cuánto se movió$/,
+        "Estimate frozen — $1 saved; if prices change, I'll tell you how much it moved"],
       [/^¿Añadir "(.*)" al proyecto "(.*)"\?$/, 'Add "$1" to the project "$2"?'],
       [/^Sube el contrato en (\$[\d,.]+|\$•••)( \(el número congelado\))?, suma ([\d.]+) h y el material, y crea un hito de pago único por el añadido\.$/, s => {
         const m = s.match(/en (\S+)( \(el número congelado\))?, suma ([\d.]+) h/);
@@ -2988,9 +2995,9 @@
         const m = s.match(/^Se crea con contrato (\S+)( \(el número congelado\))?, horas estimadas, presupuesto de materiales, (un pago único al terminar|(\d+) pagos \(([\d. /]+)\))( \+ la retención del ([\d.]+) % al cierre)? y su alcance/);
         const pagos = m[4] ? `${m[4]} payments (${m[5]})` : "a single payment at the end";
         return `It's created with the contract at ${m[1]}${m[2] ? " (the frozen number)" : ""}, estimated hours, materials budget, ${pagos}${m[6] ? ` + the ${m[7]}% retainage at close-out` : ""} and its scope by items.`; }],
-      [/^⚠ (\d+) adjunto\(s\) no pasaron al proyecto: súbelos allí a mano$/, s => {
+      [/^(\d+) adjunto\(s\) no pasaron al proyecto: súbelos allí a mano$/, s => {
         const n = s.match(/\d+/)[0];
-        return `⚠ ${n} ${n === "1" ? "attachment didn't" : "attachments didn't"} carry over to the project: upload ${n === "1" ? "it" : "them"} there by hand`; }],
+        return `${n} ${n === "1" ? "attachment didn't" : "attachments didn't"} carry over to the project: upload ${n === "1" ? "it" : "them"} there by hand`; }],
       [/^Proyecto creado ✓ — contrato (\$[\d,.]+|\$•••) con hitos, presupuestos y alcance$/, "Project created ✓ — contract $1 with milestones, budgets and scope"]
     );
   
@@ -3028,7 +3035,7 @@
       "Ej: inspección de rough / faltó cable 14/2": "E.g.: rough inspection / short on 14/2 wire",
       "✓ Día cerrado como HECHO": "✓ Day closed as DONE",
       "✗ Día marcado como que NO se hizo": "✗ Day marked as NOT done",
-      "↩ Vuelve a estar abierto": "↩ It's open again",
+      "Vuelve a estar abierto": "It's open again",
       "¿Eliminar este evento del calendario?": "Delete this event from the calendar?",
       "Evento eliminado ✓": "Event deleted ✓",
       "Pendiente resuelto ✓": "Open item resolved ✓",
@@ -3052,7 +3059,7 @@
     "Ej: inspección de rough / faltó cable 14/2": "E.g.: rough inspection / short on 14/2 wire",
     "✓ Día cerrado como HECHO": "✓ Day closed as DONE",
     "✗ Día marcado como que NO se hizo": "✗ Day marked as NOT done",
-    "↩ Vuelve a estar abierto": "↩ Open again",
+    "Vuelve a estar abierto": "Open again",
     "Listo ✓": "Done ✓",
     "¿Eliminar este evento del calendario?": "Delete this event from the calendar?",
     "Evento eliminado ✓": "Event deleted ✓",
@@ -3907,6 +3914,211 @@
       "WATCH OUT, DOUBLE DEMOLITION: the estimate has $1 of “DEMOLICIÓN DE DISPOSITIVO O LUMINARIA” and also $2 of “DEMO - …” (Receptacles / Switches / Light Fixtures). It's the same demolition: remove one of the two."]
   );
   Object.assign(D, { "pensando… (con lo difícil puede tardar unos minutos)": "thinking… (hard questions can take a few minutes)" });
+  // ---------- «Cobre y luz», tanda 4: las etiquetas que pasan de MAYÚSCULAS a frase (pliego §2 y §4) ----------
+  // Las claves viejas en mayúsculas se quedan (no molestan y cubren la versión publicada hasta que suba la nueva).
+  Object.assign(D, {
+    // Los próximos días e inspecciones («Hoy» ya estaba: "Today")
+    "Mañana": "Tomorrow", "Próximo": "Next", "Vencido": "Expired",
+    // Facturas y recibos (RES_RECIBO, f-estado)
+    "Pagada": "Paid", "Por leer": "Unread", "Leído": "Read", "Conciliado ✓": "Reconciled ✓",
+    "Falta foto": "No photo", "Anulado": "Voided", "Devolución": "Return",
+    // Alcance y estimador (chips; «Referencia», «Tuyo», «Propuesta», «Subcontrato» y «Quitar» ya estaban)
+    "Ajuste": "Lump sum", "Por cotizar": "To be quoted", "Cotizado": "Quoted", "Solo labor": "Labor only",
+    "Tarifa": "Rate", "Falta precio": "No price", "¿Quién lo pone?": "Who supplies it?", "Sin catálogo": "Not in catalog",
+    "Cotización": "Quote", "Logística": "Logistics",
+    "Convertido ✓": "Converted ✓", "Convertido": "Converted", "Congelado": "Frozen", "Borrador": "Draft",
+    "Firmada ✓": "Signed ✓", "Vencida": "Expired", "Abierto": "Open",
+    "Supuesto": "Assumption", "Supuestos": "Assumptions", "En este bid": "In this bid", "Sin familia": "No family",
+    "Precio de la propuesta": "Proposal price", "Sin congelar": "Not frozen", "Sin mapeo": "Not mapped",
+    // Remodelación: estado de cada aparato («Quitar» ya estaba: "Remove"; «Cambiar» se queda "Change", ver el plan)
+    "Nueva": "New", "Se queda": "Stays"
+    // La licencia del pie («FL Electrical Contractor License EC13016045», brief §5) ya está en inglés: no lleva clave
+  });
+  REGLAS.push(
+    [/^Vencido (\d{4}-\d{2}-\d{2})$/, "Expired $1"],
+    [/^Referencia (\$[\d,.]+|\$•••)$/, "Reference $1"],
+    [/^Ya está · ([\d.]+)$/, "Already in · $1"],
+    [/^Ya está con ([\d.]+)$/, "Already in with $1"],
+    // Chip del $0 sin confirmar, ya en frase
+    [/^(Por cotizar|Cotizado|By owner|BY OWNER|Solo labor|Tarifa|Falta precio|¿Quién lo pone\?|Sin catálogo) \?$/, s => {
+      const k = s.slice(0, -2); return (D[k] !== undefined ? D[k] : k) + " ?";
+    }],
+    [/^Marcado como (Logística|Allowance|Subcontrato) ✓ — sin tax, misceláneas ni escalación$/, s => {
+      const t = { "Logística": "Logistics", "Allowance": "Allowance", "Subcontrato": "Subcontract" }[s.match(/^Marcado como (\S+) ✓/)[1]];
+      return `Marked as ${t} ✓ — no sales tax, misc. or escalation`; }],
+    // «Campo · Inactivo»: el estado va en frase; «Inactivo» solo (el botón) sigue siendo "Deactivate"
+    [/^(Campo|License Holder|sin trabajos anotados todavía|lleva (\S+) pagado en proyectos) · Inactivo$/, s => {
+      const p = s.slice(0, -" · Inactivo".length);
+      const m = p.match(/^lleva (\S+) pagado en proyectos$/);
+      return (m ? m[1] + " paid on projects so far" : (D[p] !== undefined ? D[p] : p)) + " · Inactive";
+    }],
+    [/^(borrador|enviada|firmada|vencida|cambio pedido|no elegida|elegida por el cliente)( · -?\$[\d,.]+)?$/, s => {
+      const m = s.match(/^(borrador|enviada|firmada|vencida|cambio pedido|no elegida|elegida por el cliente)( · -?\$[\d,.]+)?$/);
+      const T = { "borrador": "draft", "enviada": "sent", "firmada": "signed", "vencida": "expired", "cambio pedido": "change requested",
+                  "no elegida": "not chosen", "elegida por el cliente": "chosen by the client" };
+      return T[m[1]] + (m[2] || "");
+    }],
+    // «SUPUESTO: …» del estimador de remodelación, en frase
+    [/^Supuesto: (\d+) dispositivo\(s\) \+ (\d+) luminaria\(s\) nuevas( · [\d.]+ h cada uno)?$/, s => s
+      .replace(/^Supuesto: (\d+) dispositivo\(s\) \+ (\d+) luminaria\(s\) nuevas/, "Assumption: $1 new device(s) + $2 new fixture(s)")
+      .replace(/ · ([\d.]+) h cada uno$/, " · $1 h each")],
+    [/^Supuesto: uno viejo por cada uno de los (\d+) dispositivo\(s\) nuevos \(receptáculos y switches llevan las mismas horas\)$/,
+      "Assumption: one old one for each of the $1 new device(s) (receptacles and switches take the same hours)"],
+    [/^Supuesto: una vieja por cada una de las (\d+) luminaria\(s\) nuevas$/, "Assumption: one old one for each of the $1 new fixture(s)"]
+  );
+  // ---------- «Cobre y luz», tanda 4: los textos que el purgador de app.js cambió (sin emoji, énfasis en frase) ----------
+  // Cada texto nuevo lleva aquí su traducción, sacada de la vieja con el énfasis en minúscula. Las claves viejas
+  // (con emoji o con la palabra en MAYÚSCULAS) se quedan: cubren la versión publicada hasta que suba la nueva.
+  Object.assign(D, {
+    // Donde el emoji hacía de palabra: ahora se nombra el botón («el lápiz», «el ojo»)
+    "Aquí te llegan los urgentes, los mensajes del chat y el permiso para corregir tus horas.": "This is how you get the urgent items, chat messages and the OK to fix your hours.",
+    "Compra registrada ✓ — Edgar le pone el total con el lápiz": "Purchase logged ✓ — Edgar adds the total with the pencil",
+    "De vuelta al modo uno-a-uno (solo lo marcado con el ojo)": "Back to one-by-one mode (only what's marked with the eye)",
+    "Déjalo vacío si no quieres anotar el precio ahora — lo puedes poner después con el lápiz.": "Leave it blank if you don't want to enter the price now — you can add it later with the pencil.",
+    "El contratista no tiene email. Ponlo en Licencia y seguros": "The contractor has no email. Add it in License and insurance",
+    "Primero ponle el email con el lapicito": "First add the email with the pencil",
+    "Cambiar pies": "Change feet",
+    // Frases que el icono del lápiz parte en dos (app.js pone ico("lapiz") en medio): cada trozo por su lado
+    "Mis reportes (toca": "My reports (tap", "para corregir)": "to edit)",
+    "toca": "tap", "para jugar con los números": "to play with the numbers",
+    "Edgar le pone el total después con el": "Edgar adds the total later with the",
+    "este renglón no se puede editar (viene de una receta)": "this line can't be edited (it comes from a recipe)",
+    // Palabras de énfasis que pasan a frase
+    "(Si ese dinero ya estaba contado, dile que no.)": "(If that money was already counted, answer no.)",
+    ". Con los precios y las familias de hoy sale": ". With today's prices and families it comes to",
+    "2 de 8 ft (salvo que una mida <25Ω) · sepáralas 6 ft o más": "2 × 8 ft (unless one measures <25Ω) · space them 6 ft or more apart",
+    ": el alias va antes que el nombre exacto. Estos se llaman igual que una fila tuya pero mandan a otra pieza, así que esa otra es la que entra al estimado y tu fila no llega a mirarse. Si lo pusiste a propósito, déjalo; si no, bórralo en Materiales → Alias.": ": the alias comes before the exact name. These have the same name as one of your rows but point to another part, so that other part is what goes into the estimate and your row never gets looked at. If you did it on purpose, leave it; if not, delete it in Materials → Alias.",
+    "A mis precios — es lo que yo pago (cotiza con ellos)": "To my prices — what I pay (quotes use them)",
+    "Aceptar = release final (713.20(5)).": "OK = final release (713.20(5)).",
+    "Afecta a todas las ofertas nuevas. ¿Seguro?": "It affects all new bids. Are you sure?",
+    "By owner ✓ — va escrito en el «no incluye» de la propuesta": "By owner ✓ — it's written in the proposal's «not included»",
+    "Cambiar el precio en este estimado (el catálogo no se toca)": "Change the price on this estimate (the catalog isn't touched)",
+    "Congelado a cambios de renglón, pero el número no quedó guardado: a la base le faltan las columnas de la foto. Corre max-power-panel/docs/sql/e11-resultado.sql y vuelve a congelar.": "Frozen to line changes, but the number wasn't saved: the database is missing the snapshot columns. Run max-power-panel/docs/sql/e11-resultado.sql and freeze again.",
+    "Una devolución va con signo menos (ej: -45.99).": "A return goes with a minus sign (e.g.: -45.99).",
+    "El cliente no ve dinero — toca para mostrarle su contrato, pagos y facturas": "The client does not see money — tap to show them their contract, payments and invoices",
+    "El cliente sí ve su contrato, pagos y facturas — toca para ocultarlos": "The client does see their contract, payments and invoices — tap to hide them",
+    "El cliente ve: etapa, checklist con su %, inspecciones, próximos días de trabajo y los documentos que le enseñes. Los RFI salen siempre; los contratos nunca salen (tienen precios) a menos que tú los marques. El dinero solo sale si prendes «Ve el dinero» — pensado para clientes directos, no para trabajos vía contratista.": "The client sees: stage, checklist with its %, inspections, upcoming work days and the documents you show them. RFIs always show; contracts never show (they have prices) unless you mark them. Money only shows if you turn on «Sees money» — meant for direct clients, not for jobs through a contractor.",
+    "El precio no los incluye": "The price does not include them",
+    "En su portal ya sale primero, marcado «Nuevo».": "It already shows first in their portal, marked «New».",
+    "Es el cliente — le facturamos a ellos (sí ven el dinero)": "They're the client — we bill them (they do see the money)",
+    "Ese video es muy grande. Grábalo corto, como una inspección virtual (30-45 segundos, máx. 25 MB).": "That video is too big. Record it short, like a virtual inspection (30-45 seconds, max. 25 MB).",
+    "Este proyecto no tiene email de cobro. ¿Crear la factura en QuickBooks sin mandarla? (después la mandas desde QuickBooks)": "This project has no billing email. Create the invoice in QuickBooks without sending it? (you can send it later from QuickBooks)",
+    "Este ítem vive dentro de un ensamble, y los ensambles leen el precio vivo: los estimados congelados o convertidos que lo usen se van a mover.": "This item lives inside an assembly, and assemblies read the live price: frozen or converted estimates that use it will move.",
+    "Esto entra como gasto del proyecto y se resta del margen. El trabajador no necesita cuenta en la app.": "This goes in as a project expense and comes off the margin. The worker does not need an account in the app.",
+    "Estos no se tocan. Si alguno es tuyo con otro nombre, créale un alias o el ítem y vuelve a importar.": "These are not touched. If one is yours under another name, create an alias or the item and import again.",
+    "Falta subir el correo v6 en la nube para este aviso; el contrato ya está en su portal, marcado «Nuevo»": "Email v6 still has to be uploaded to the cloud for this notice; the contract is already in their portal, marked «New»",
+    "Logística, Allowance y Subcontrato no son material: no pagan sales tax, ni misceláneas, ni markup, ni escalación, y no inflan la hora cargada. Sí llevan overhead y profit.": "Logistics, Allowance and Subcontract aren't material: they don't pay sales tax, misc., markup or escalation, and they don't inflate the loaded hour. They do carry overhead and profit.",
+    "Lo que te cuesta un empleado por encima de su salario. El total de arriba sale de sumar esto, así que se puede auditar: o cubre, o te lo estás comiendo en cada hora.": "What an employee costs you on top of their wage. The total above is the sum of these, so it can be audited: either it covers it, or you're eating it on every hour.",
+    "Luz verde: el cliente ve todos los documentos, fotos y videos — toca para volver al modo uno-a-uno": "Green light: the client sees all documents, photos and videos — tap to go back to one-by-one mode",
+    "Marcarla como cobrada — es dinero personal: no se suma a lo cobrado de la obra": "Mark it paid — it's personal money: not added to the job's collected amount",
+    "Marcarla como cobrada — es lo que cuadra el dinero de la app con el banco": "Mark it paid — this is what keeps the app's money matched with the bank",
+    "Resumen interno de MXP MEP — lleva el margen: no se manda al cliente": "Internal MXP MEP summary — it shows the margin: not sent to the client",
+    "Resumen interno (con overhead y profit — no se manda)": "Internal summary (with overhead and profit — not sent)",
+    "sin": "without", "supuestos": "assumptions",
+    "Solo coordinan — la paga el dueño (no ven dinero)": "Coordination only — the owner pays (they do not see money)",
+    "Solo para proyectos donde tratas directo con el cliente. Si el trabajo va a través de un contratista (Wisdom u otro), déjalo apagado.": "Only for projects where you deal directly with the client. If the work goes through a contractor (Wisdom or another), leave it off.",
+    "Toca para darle luz verde: verá todos los documentos (contratos y CO), fotos y videos sin marcarlos uno a uno": "Tap to give them the green light: they'll see all documents (contracts and COs), photos and videos without marking them one by one",
+    "Verá todos los documentos (contratos y change orders incluidos, con sus precios) y todas las fotos y videos — sin tener que marcarlos uno a uno.": "They'll see all documents (contracts and change orders included, with their prices) and all photos and videos — without marking them one by one.",
+    "Ya entró el dinero de este hito — marcarlo cobrado": "The money for this milestone came in — mark it collected",
+    "baños · toda la cocina · garaje · exterior · sótano · laundry · a 6 ft de cualquier fregadero": "bathrooms · the whole kitchen · garage · outdoors · basement · laundry · within 6 ft of any sink",
+    "cuenta doble": "counts double",
+    "el cliente ve todos los documentos —contratos y Change Orders incluidos—, todas las fotos y todos los videos, estén marcados o no. Lo que subas a este proyecto se le publica solo. El dinero solo sale si prendes «Ve el dinero» — pensado para clientes directos, no para trabajos vía contratista.": "the client sees all documents —contracts and change orders included—, all photos and all videos, marked or not. Anything you upload to this project is published to them automatically. Money only shows if you turn on «Sees money» — meant for direct clients, not for jobs through a contractor.",
+    "el trato es con un contratista: si el permiso lo saca el GC, no lo marques (regla de la casa)": "the deal is with a contractor: if the GC pulls the permit, don't check it (house rule)",
+    "está en este estimado.": "is in this estimate.", "están en este estimado.": "are in this estimate.",
+    "la línea trae un solo importe": "the line has only one amount",
+    "precio de referencia tuyo: la cuota del supply sigue pendiente": "your reference price: the supply house quote is still pending",
+    "y no valen lo mismo": "and they don't cost the same",
+    "Tu cotización UM (oct-2025).": "Your UM quote (Oct-2025).",
+    "¿Es el último pago de la obra?": "Is this the last payment on the job?",
+    "¿Quieres mover este reporte a otro proyecto?": "Do you want to move this report to another project?",
+    "solo si no es el cliente": "only if not the client",
+    "✓ Día cerrado como hecho": "✓ Day closed as done",
+    "✗ Día marcado como que no se hizo": "✗ Day marked as not done",
+    "El cliente ahora ve esta foto": "The client now sees this photo",
+    "El cliente ahora ve este documento — ojo: en Drive debe estar compartido como 'cualquiera con el enlace' para que pueda abrirlo": "The client now sees this document — heads up: in Drive it must be shared as 'anyone with the link' so they can open it",
+    "El cliente ahora ve su contrato y pagos": "The client now sees their contract and payments",
+    "¿Darle a este cliente acceso completo a su proyecto?": "Give this client full access to their project?",
+    // Los «title» de los botones del documento y de la foto
+    "El cliente sí ve este documento — toca para ocultarlo": "The client does see this document — tap to hide it",
+    "El cliente no lo ve — toca para mostrárselo": "The client doesn't see it — tap to show it to them",
+    "Le está pidiendo firma al cliente (nombre + firma con el dedo) — toca para quitarla": "It's asking the client for a signature (name + finger signature) — tap to remove it",
+    "Pedirle al cliente que lo firme (nombre + firma con el dedo, queda de respaldo)": "Ask the client to sign it (name + finger signature, kept as backup)",
+    "El cliente sí ve esta foto": "The client does see this photo",
+    "El cliente no la ve": "The client doesn't see it",
+    // Notas de la auditoría del catálogo, en frase
+    "Tu Excel: MLF.": "Your Excel: MLF.",
+    "Tu Excel: E · $32,06 · 0,6 h; al cargar quedó EA · $24 · 0,4.": "Your Excel: E · $32.06 · 0.6 h; on load it ended up EA · $24 · 0.4.",
+    "Tu Excel: CAT6 CABLE · FT · $0,45 · 0,025 h/ft = $450 y 25 h por MLF.": "Your Excel: CAT6 CABLE · FT · $0.45 · 0.025 h/ft = $450 and 25 h per MLF.",
+    "Tu Excel: E · 0,2 h.": "Your Excel: E · 0.2 h.",
+    "Horas por pie rotas: el 0,25 es exactamente la hora del conector de flex de 2\" (por pieza) pegada en la fila del tubo (por pie); flex 2\" = 0,06/ft.": "Broken hours per foot: 0.25 is exactly the hour of the 2\" flex connector (per piece) pasted into the conduit row (per foot); flex 2\" = 0.06/ft.",
+    "Horas por pie rotas: el 0,30 es la hora del conector de flex de 2-1/2\" copiada en el tubo; flex 2-1/2\" = 0,08/ft.": "Broken hours per foot: 0.30 is the hour of the 2-1/2\" flex connector copied into the conduit; flex 2-1/2\" = 0.08/ft.",
+    "Horas por pie rotas: el 0,35 es la hora del conector de flex de 3\" copiada en el tubo; flex 3\" = 0,10/ft.": "Broken hours per foot: 0.35 is the hour of the 3\" flex connector copied into the conduit; flex 3\" = 0.10/ft.",
+    // js/db.js (el candado del modo): el rayo se fue del texto
+    "El modo Rápido todavía no está dado de alta en la base. A la base todavía le falta el último SQL. Pégalo en Supabase (SQL Editor → pegar → Run) y vuelve a intentarlo.": "The Quick mode isn't set up in the database yet. The database is still missing the latest SQL. Paste it in Supabase (SQL Editor → paste → Run) and try again."
+  });
+  // Las reglas van delante de todas: su patrón solo casa con el texto nuevo, y así ninguna regla general
+  // («… · 0.5 h cada uno», «cuota: …») se lo lleva a medio traducir.
+  REGLAS.unshift(
+    [/^(.+) está terminado y quedan (\S+) sin cobrar$/, "$1 is finished and $2 is still not collected"],
+    [/^(.+) está aprobado sin monto de contrato — ponle el precio para poder facturar$/, "$1 is approved without a contract amount — add the price so you can invoice"],
+    [/^(.+): la propuesta venció hace (\d+) días? \(valía hasta (\S+)\) — renuévala desde la ficha o márcala no aprobada$/, s => {
+      const m = s.match(/^(.+): la propuesta venció hace (\d+) días? \(valía hasta (\S+)\) — /);
+      return `${m[1]}: the proposal expired ${m[2]} ${m[2] === "1" ? "day" : "days"} ago (valid until ${m[3]}) — renew it from the job file or mark it not approved`;
+    }],
+    [/^(.+): la propuesta vence (hoy|en \d+ días?) \((\S+)\) — llama al cliente antes$/, s => {
+      const m = s.match(/^(.+): la propuesta vence (hoy|en (\d+) días?) \((\S+)\) — /);
+      const cuando = m[2] === "hoy" ? "today" : `in ${m[3]} ${m[3] === "1" ? "day" : "days"}`;
+      return `${m[1]}: the proposal expires ${cuando} (${m[4]}) — call the client first`;
+    }],
+    [/^(.+): materiales pasados del presupuesto — (\S+) de (\S+)$/, "$1: materials over budget — $2 of $3"],
+    [/^¿Marcar «(.+)» como completada\?$/, "Mark «$1» as completed?"],
+    [/^¿Crear esta factura en QuickBooks y mandarla ahora a (.+)\?$/, "Create this invoice in QuickBooks and send it now to $1?"],
+    [/^Vas a eliminar "(.+)" para siempre\.$/, "You are about to delete \"$1\" forever."],
+    [/^(.+): no encuentro «(.+?)» en el catálogo — esa regla no corrió\. Lo más parecido es «(.+)», que no es lo que pide esta regla: o das de alta la pieza buena, o cambia arriba cómo va sujeto el tubo$/, s => {
+      const m = s.match(/^(.+): no encuentro «(.+?)» en el catálogo — esa regla no corrió\. Lo más parecido es «(.+)», que no es/);
+      const nom = D[m[1]] !== undefined ? D[m[1]] : m[1];
+      return `${nom}: I can't find «${m[2]}» in the catalog — that rule didn't run. The closest is «${m[3]}», which is not what this rule asks for: either add the right part, or change above how the conduit is supported`;
+    }],
+    [/^(\d+) breaker\(s\) listados en el estimado — si el trabajo tiene más circuitos que breakers comprados, cámbialo( · [\d.]+ h cada uno)?$/, s => s
+      .replace(/ breaker\(s\) listados en el estimado — si el trabajo tiene más circuitos que breakers comprados, cámbialo/, " breaker(s) listed in the estimate — if the job has more circuits than breakers purchased, change it")
+      .replace(/ h cada uno$/, " h each")],
+    [/^¿Aplicar (\d+) cambios? (a los precios de referencia|a tus precios)\?$/, s => {
+      const m = s.match(/^¿Aplicar (\d+) cambios? (a los precios de referencia|a tus precios)\?$/);
+      return `Apply ${m[1]} ${m[1] === "1" ? "change" : "changes"} ${m[2] === "a tus precios" ? "to your prices" : "to the reference prices"}?`;
+    }],
+    [/^(\d+) (luminaria va|luminarias van) a tu precio de referencia \((\S+)\), no a cuota del supply: ese dinero sí está en el precio, pero la cuota de verdad todavía no ha llegado\.$/, s => {
+      const m = s.match(/^(\d+) (luminaria va|luminarias van) a tu precio de referencia \((\S+)\)/);
+      return `${m[1]} ${m[1] === "1" ? "fixture goes" : "fixtures go"} at your reference price (${m[3]}), not a supplier quote: that money is in the price, but the real quote hasn't come in yet.`;
+    }],
+    [/^Y (\d+) dice\(n\) "by owner" porque lo supuso la app: mientras no lo confirmes, no sale en la propuesta\.$/,
+      "And $1 say \"by owner\" because the app assumed it: until you confirm it, it does not go on the proposal."],
+    [/^Lo marcado como «Cotización» no paga el (\d+) % de misceláneas: ese porcentaje es tape, wirenuts y fijación, y un switchgear que llega en camión no los consume\.$/,
+      "Lines marked «Quote» don't pay the $1 % misc.: that percentage is tape, wirenuts and fastening, and a switchgear that arrives on a truck doesn't use any."],
+    [/^en (\d+) renglón\(es\) «Auto»\.$/, s => { const n = s.match(/\d+/)[0]; return `in ${n} «Auto» ${n === "1" ? "line" : "lines"}.`; }],
+    [/^(\d+) alias que tapa\(n\) una fila de tu catálogo$/, s => {
+      const n = s.match(/\d+/)[0]; return n === "1" ? "1 alias hides a row of your catalog" : `${n} aliases hide a row of your catalog`; }],
+    [/^(\d+) fila\(s\) del catálogo con el mismo nombre$/, s => {
+      const n = s.match(/\d+/)[0]; return `${n} catalog ${n === "1" ? "row" : "rows"} with the same name`; }],
+    [/^([\d.]+) (\S+) · (\$[\d,.]+|\$•••) por unidad no es el precio de una luminaria: revísalo, este renglón no entra al bid$/,
+      "$1 $2 · $3 per unit isn't the price of a light fixture: check it, this line is not in the bid"],
+    [/^: lo tomo como precio de cada una\. Si es el total, cada una sale a (\$[\d,.]+|\$•••) — corrígelo con el lápiz de precio del renglón$/,
+      ": I take it as the price of each one. If it's the total, each one comes to $1 — fix it with the line's price pencil"],
+    [/^— ([\d.]+) h sí están en el precio$/, "— $1 h are in the price"],
+    [/^Horas de todo el trabajo \(([\d.]+) × factor ([\d.]+)\)$/, "Hours for the whole job ($1 × factor $2)"],
+    [/^Precio unitario de «(.*)» en este estimado \(sin tax\)\.$/, "Unit price of «$1» on this estimate (before tax)."],
+    [/^Propuestas esperando respuesta \((\d+)\)$/, "Proposals awaiting response ($1)"],
+    [/^Ojo, demolición doble: el estimado tiene (\d+) de «DEMOLICIÓN DE DISPOSITIVO O LUMINARIA» y además (\d+) de «DEMO - …» \(Receptacles \/ Switches \/ Light Fixtures\)\. Son la misma demolición: quita una de las dos\.$/,
+      "Watch out, double demolition: the estimate has $1 of “DEMOLICIÓN DE DISPOSITIVO O LUMINARIA” and also $2 of “DEMO - …” (Receptacles / Switches / Light Fixtures). It's the same demolition: remove one of the two."]
+  );
+  // Tanda 4: cuando Edgar cambió el porcentaje de una línea del desglose, el lápiz es un dibujo metido dentro
+  // del paréntesis y parte el texto en dos trozos («+ Misceláneas (5% » [lápiz] «)»). Se traduce el primer trozo.
+  REGLAS.unshift(
+    [/^\+ Misceláneas \(([\d.]+)%$/, "+ Misc. ($1%"],
+    [/^\+ Beneficios sobre el labor \(([\d.]+)%$/, "+ Benefits on labor ($1%"],
+    [/^\+ Overhead \(([\d.]+)% del costo directo(, sin las cotizaciones)?$/, s => {
+      const m = s.match(/\(([\d.]+)% del costo directo(, sin las cotizaciones)?$/);
+      return `+ Overhead (${m[1]}% of direct cost${m[2] ? ", excluding quotes" : ""}`; }]
+  );
   // ---------- El motor ----------
   // Cada texto de la pantalla se busca en el diccionario tal como se ve: con los
   // espacios y saltos de línea juntados en uno solo. Si no está, se prueba sin el
@@ -3915,14 +4127,43 @@
   const normal = s => s.replace(/\s+/g, " ").trim();
   const ADORNO_INI = /^[\s -⯿⸀-⹿　-〿️‍\u{1F000}-\u{1FAFF}•·—–\-+*#…→←↑↓✓✔✕✗×]+/u;
   const ADORNO_FIN = /[\s:·—–…]+$/u;
+  // «Cobre y luz», tanda 4: la app pierde los emojis. Pictograma = los mismos rangos que cuenta el freno
+  // (pruebas/cobre-y-luz.mjs), sin la tipografía que se queda (✓ ✗ ✕ → ← ↑ ↓ ⌘).
+  const PICTO = "(?![✓✗✕→←↑↓⌘])[\\u{1F000}-\\u{1FAFF}\\u{2600}-\\u{27BF}\\u{2B00}-\\u{2BFF}\\u{2190}-\\u{21FF}\\u{2300}-\\u{23FF}][\\uFE0F\\u200D\\u20E3]*";
+  const PICTO_INI = new RegExp("^(?:" + PICTO + "\\s*)+", "u");
+  const PICTO_FIN = new RegExp("(?:\\s*" + PICTO + ")+$", "u");
+  // Red de seguridad 1: cada clave con adorno delante o detrás («🚀 Gestiones», «Total:») queda registrada
+  // también sin él, con su traducción sin adorno. Va aparte (no dentro de D) y se mira DESPUÉS de las reglas,
+  // para no tapar ninguna regla que ya traduzca ese texto. Las comillas de delante no son adorno.
+  const SIN_ADORNO = new Map();
+  const quitarBordes = s => {
+    const ini = (s.match(ADORNO_INI) || [""])[0];
+    if (/[“”‘’"'«»]/.test(ini)) return s;
+    const resto = s.slice(ini.length);
+    return resto.slice(0, resto.length - (resto.match(ADORNO_FIN) || [""])[0].length);
+  };
+  for (const k of Object.keys(D)) {
+    const n = quitarBordes(k);
+    if (n === k || !/[a-záéíóúñ]/i.test(n) || Object.prototype.hasOwnProperty.call(D, n) || SIN_ADORNO.has(n)) continue;
+    if (typeof D[k] === "string" && quitarBordes(D[k]).trim()) SIN_ADORNO.set(n, quitarBordes(D[k]));
+  }
+  // Red de seguridad 2: si el texto de la pantalla no trae emoji delante (o detrás) y la traducción sí, se le
+  // quita: la pantalla no gana emojis por traducirla.
+  const sinPictoDeMas = (s, r) => {
+    if (typeof r !== "string") return r;
+    if (!PICTO_INI.test(s)) r = r.replace(PICTO_INI, "");
+    if (!PICTO_FIN.test(s)) r = r.replace(PICTO_FIN, "");
+    return r;
+  };
   function buscar(s) {
-    if (Object.prototype.hasOwnProperty.call(D, s)) return D[s];
+    if (Object.prototype.hasOwnProperty.call(D, s)) return sinPictoDeMas(s, D[s]);
     // Una regla que casa pero no sabe traducir (devuelve null o el mismo texto) deja paso a la siguiente
     for (const [re, out] of REGLAS) {
       if (!re.test(s)) continue;
       const r = typeof out === "function" ? out(s) : s.replace(re, out);
-      if (r !== null && r !== undefined && r !== s) return r;
+      if (r !== null && r !== undefined && r !== s) return sinPictoDeMas(s, r);
     }
+    if (SIN_ADORNO.has(s)) return SIN_ADORNO.get(s);
     return null;
   }
   const memoria = new Map();

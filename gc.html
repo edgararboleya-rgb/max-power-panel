@@ -7,7 +7,7 @@
   <title>Max Power — Contractor Portal</title>
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=221">
+  <link rel="stylesheet" href="css/styles.css?v=242">
   <link rel="stylesheet" href="css/portal.css?v=210">
   <style>
     /* ── El portal del contratista: un estado de cuenta, no una galería ── */
@@ -113,6 +113,7 @@
     .gc-ok, .gc-aviso { margin-top: auto; padding-top: 0.45rem; font-size: 0.78rem; font-weight: 650; }
     .gc-ok { color: var(--mp-ok); }
     .gc-aviso { color: #9A5B00; }
+    .gc-ico { display: inline-block; width: 1.05em; height: 1.05em; vertical-align: -0.18em; margin-right: .3em; }
 
     /* Lateral */
     .gc-card { background: var(--mp-card); border: 1px solid var(--mp-line); border-radius: 14px; box-shadow: var(--mp-shadow); padding: 0.85rem 1rem; margin-top: 0.9rem; }
@@ -187,7 +188,7 @@
     </main>
     <footer class="pie">
       <p>Max Power Electrical Solutions, Inc. · mxpes.com · (305) 967-9311</p>
-      <div class="licencia">FL EC LICENSE #EC13016045</div>
+      <div class="licencia">FL Electrical Contractor License <span class="mono">EC13016045</span></div>
     </footer>
   </div>
 
@@ -198,6 +199,8 @@
     "use strict";
     var PORTAL = "https://zeogjvwcmstmkwxjvykz.supabase.co/functions/v1/portal";
     var WHATSAPP = "https://wa.me/13059679311";
+    // El triángulo de aviso, en línea (esta página no carga iconos.js): el mismo dibujo de «alerta».
+    var ICO_ALERTA = '<svg class="gc-ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 21 19H3z"/><path d="M12 9.5v4.5M12 17h.01"/></svg>';
 
     var logo = document.getElementById("logo");
     if (logo && window.MAXPOWER_LOGO) logo.src = window.MAXPOWER_LOGO;
@@ -335,13 +338,13 @@
       var paraFirmar = (p.te_toca || []).filter(function (x) { return x.tipo === "firmar"; });
       var porFirmarN = paraFirmar.length;
       var nuevo = porFirmarN
-        ? '<div class="gc-nuevo"><div class="gc-sec-tit"><span>🆕 ' + esc(TXT.nuevoT) + '</span></div>' +
+        ? '<div class="gc-nuevo"><div class="gc-sec-tit"><span>' + esc(TXT.nuevoT) + '</span></div>' +
           '<p class="gc-nuevo-sub">' + esc(TXT.nuevoS) + '</p>' +
           paraFirmar.map(function (x) {
             var o = porObra[x.obra] || {};
             return '<a class="gc-nuevo-card" href="' + enlaceObra(x.obra) + '">' +
               '<span class="que"><b>' + esc(x.obra_nombre || o.nombre || "") + '</b>' +
-                '<span>🖊 ' + esc(x.que || "") + (o.direccion ? ' · 📍 ' + esc(o.direccion) : "") +
+                '<span>' + esc(x.que || "") + (o.direccion ? ' · ' + esc(o.direccion) : "") +
                 (x.desde ? ' · ' + esc(TXT.nuevoDesde) + ' ' + esc(fechaCorta(x.desde)) : "") + '</span></span>' +
               '<span class="gc-btn">' + esc(TXT.nuevoBtn) + '</span></a>';
           }).join("") + '</div>'
@@ -397,8 +400,8 @@
       // ── Lo que le toca ──
       var toca = (p.te_toca || []).filter(function (x) { return x.tipo !== "firmar"; }).map(function (x) {
         var linea = x.tipo === "firmar"
-          ? "🖊 " + TXT.tocaFirmar + ": " + x.que + " — " + x.obra_nombre
-          : "💵 " + (lang === "en" ? "Invoice " : "Factura ") + x.num + " · " + usd(x.monto) + " · " + TXT.dias(x.dias) + " " + TXT.tocaPagar + " — " + x.obra_nombre;
+          ? TXT.tocaFirmar + ": " + x.que + " — " + x.obra_nombre
+          : (lang === "en" ? "Invoice " : "Factura ") + x.num + " · " + usd(x.monto) + " · " + TXT.dias(x.dias) + " " + TXT.tocaPagar + " — " + x.obra_nombre;
         return '<a href="' + enlaceObra(x.obra) + '">' + esc(linea) + '</a>';
       }).join("");
 
@@ -474,7 +477,7 @@
                 esc(TXT.insps[o.ultima_inspeccion.resultado] || o.ultima_inspeccion.resultado || "") + '</span>'
               : ""));
         var prox = o.proximo
-          ? '<div class="gc-obra-dir">📅 ' + esc(TXT.proximo) + ": " + esc(fechaCorta(o.proximo.fecha)) +
+          ? '<div class="gc-obra-dir">' + esc(TXT.proximo) + ": " + esc(fechaCorta(o.proximo.fecha)) +
             (o.proximo.hora ? " · " + esc(String(o.proximo.hora).slice(0, 5)) : "") + '</div>'
           : "";
         var avance = o.avance && o.avance.total
@@ -487,9 +490,9 @@
         else if (typeof o.aviso === "string") aviso = o.aviso;
         return '<a class="gc-obra' + (esNueva ? " es-nueva" : "") + '" href="' + enlaceObra(o.id) + '">' +
           '<div class="gc-obra-tit">' + esc(o.nombre) + '</div>' +
-          (o.direccion ? '<div class="gc-obra-dir">📍 ' + esc(o.direccion) + '</div>' : "") + prox +
+          (o.direccion ? '<div class="gc-obra-dir">' + esc(o.direccion) + '</div>' : "") + prox +
           '<div class="gc-obra-pie">' + etiquetas + '</div>' + avance +
-          (aviso ? '<span class="gc-aviso">⚠️ ' + esc(aviso) + '</span>' : '<span class="gc-ok">✓ ' + esc(TXT.todoBien) + '</span>') +
+          (aviso ? '<span class="gc-aviso">' + ICO_ALERTA + esc(aviso) + '</span>' : '<span class="gc-ok">✓ ' + esc(TXT.todoBien) + '</span>') +
           '</a>';
       };
       var GRUPOS = [
@@ -519,7 +522,7 @@
       caja.innerHTML = cab +
         '<div class="gc-col gc-col-main">' +
           nuevo + resumen +
-          (toca ? '<div class="gc-toca"><div class="gc-sec-tit"><span>⚠️ ' + esc(TXT.tocaT) + '</span></div>' + toca + '</div>' : "") +
+          (toca ? '<div class="gc-toca"><div class="gc-sec-tit"><span>' + esc(TXT.tocaT) + '</span></div>' + toca + '</div>' : "") +
           cuenta + facturas +
           (n ? grupos : '<div class="gc-card"><p class="gc-item">' + esc(TXT.vacio) + '</p></div>') +
         '</div>' +
@@ -529,7 +532,7 @@
               '<div><b>Edgar Arboleya</b><span>' + esc(TXT.contactoRol) + '</span>' +
               '<span>(305) 967-9311 · info@mxpes.com</span></div></div>' +
             '<p class="pt-lead chico" style="margin-top:.6rem">' + esc(TXT.ayuda) + '</p>' +
-            '<a class="pt-wa" target="_blank" rel="noopener" href="' + WHATSAPP + '">💬 ' + esc(TXT.wa) + '</a>' +
+            '<a class="pt-wa" target="_blank" rel="noopener" href="' + WHATSAPP + '">' + esc(TXT.wa) + '</a>' +
           '</div>' +
           (lic ? '<div class="pt-card"><div class="pt-h">' + esc(TXT.licT) + '</div>' + lic + '</div>' : "") +
           (R ? '<div class="pt-card"><p class="pt-lead chico" style="margin:0">' + esc(TXT.nota) + '</p></div>' : "") +
