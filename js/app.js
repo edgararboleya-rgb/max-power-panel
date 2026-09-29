@@ -12308,7 +12308,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       ${tarjetaSegura(cardHorasHTML, est, c, soloLectura)}
       ${tarjetaSegura(cardAuditoriaHTML, est, c, soloLectura)}
       ${tarjetaSegura(cardLuzHTML, est, c, soloLectura)}
-      <div class="cal-panel-card">
+      <div class="cal-panel-card resumen-formula">
         <div class="cal-form-titulo">Resumen — fórmula Max Power
           ${!soloLectura ? `<span class="chk-avance">toca ${ico("lapiz")} para jugar con los números</span>` : ""}</div>
         ${!soloLectura ? `
@@ -12323,17 +12323,20 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
             <input id="res-factor" type="number" min="0.5" max="2" step="0.05" value="${esc(est.factor || 1)}">
           </label>
         </div>` : ""}
+        <div class="rent-sec">Material</div>
         <div class="rent-fila"><span>${esRapido ? `Material (${c.lineasMat.length} línea${c.lineasMat.length === 1 ? "" : "s"})` : `Material (ítems${c.autos.length ? " + automáticos" : ""})`}</span><span>${fmt(r2(c.matSubtotal - c.misc - c.mermaMat))}</span></div>
         ${c.mermaMat > 0 ? `<div class="rent-fila"><span>+ Merma (cables ${Math.round((estData.config.merma_cable ?? .1) * 100)}% · tubería ${Math.round((estData.config.merma_tuberia ?? .05) * 100)}%)</span><span>${fmt(r2(c.mermaMat))}</span></div>` : ""}
         <div class="rent-fila"><span>+ Misceláneas (${pctTxt(c.miscPct)}${nnDist(est.misc_pct) ? " " + ico("lapiz") : " — tape, wirenuts, fijación"})${lapiz("misc_pct", "pct", c.miscPct, "Misceláneas — % del material")}</span><span>${fmt(r2(c.misc))}</span></div>
         <div class="rent-fila"><span>+ Sales tax (${pctTxt(c.taxPct)}${nnDist(est.tax_pct) ? " " + ico("lapiz") : ""})${lapiz("tax_pct", "pct", c.taxPct, "Sales tax — % del material")}</span><span>${fmt(r2(c.tax))}</span></div>
         ${c.markupPct > 0 ? `<div class="rent-fila"><span>+ Markup de materiales (${pctTxt(c.markupPct)}) ${ico("lapiz")}${lapiz("markup_pct", "pct", c.markupPct, "Markup de materiales — % sobre el material con tax")}</span><span>${fmt(r2(c.markup))}</span></div>`
           : !soloLectura ? `<div class="rent-fila"><span><button type="button" class="btn-formula insp-borrar" data-campo="markup_pct" data-tipo="pct" data-actual="0" data-nombre="Markup de materiales — % sobre el material con tax">+ Agregar markup de materiales</button></span><span></span></div>` : ""}
+        <div class="rent-sec">Mano de obra</div>
         <div class="rent-fila"><span>Horas de todo el trabajo (${r2(c.horasBase)} × factor ${est.factor || 1})</span><span>${r2(c.horas)} h</span></div>
         <div class="rent-fila"><span>Labor (${r2(c.horas)} h × ${fmt(r2(c.tarifaMezclada))} cuadrilla)</span><span>${fmt(r2(c.laborBase))}</span></div>
         <div class="rent-fila"><span>+ Beneficios sobre el labor (${pctTxt(c.benefitsPct)}${nnDist(est.benefits_pct) ? " " + ico("lapiz") : ""})${lapiz("benefits_pct", "pct", c.benefitsPct, "Beneficios — % sobre el labor")}</span><span>${fmt(r2(c.benefits))}</span></div>
         ${c.escalacion > 0.5 ? `<div class="rent-fila"><span>+ Escalación (${r2(c.mesesObra)} meses de obra · ${pctTxt(c.escAnual)} al año)${lapiz("escalacion_pct", "pct", c.escAnual, "Escalación — subida anual de salarios y material")}</span><span>${fmt(r2(c.escalacion))}</span></div>` : ""}
         ${c.costos > 0.005 ? `<div class="rent-fila"><span>+ Logística, allowances y subcontratos (sin tax ni escalación)</span><span>${fmt(r2(c.costos))}</span></div>` : ""}
+        <div class="rent-sec">Overhead y ganancia</div>
         <div class="rent-fila"><span>+ Overhead ${c.ohPct !== null && c.ohPct !== undefined
           ? `(${pctTxt(c.ohPct)} del costo directo${c.cotEnPrime > 0.5 ? ", sin las cotizaciones" : ""}${nnDist(est.overhead_pct) ? " " + ico("lapiz") : ""})${lapiz("overhead_pct", "pct", c.ohPct, "Overhead — % sobre mano de obra + material, sin lo que llega cotizado")}`
           : `(${r2(c.horas)} h × ${fmt(c.ohHH)}${nnDist(est.overhead_hh) ? " " + ico("lapiz") : ""})${lapiz("overhead_hh", "monto", c.ohHH, "Overhead — $ por hora-hombre")}`}</span><span>${fmt(r2(c.overhead))}</span></div>
