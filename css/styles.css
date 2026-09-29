@@ -4088,10 +4088,10 @@ body:has(#toast:not([hidden])) .fab, body:has(#sin-senal:not([hidden])) .fab { d
 
 /* (29/09, Edgar: «a veces quiero leer y me pierdo y no sé de qué fila es el
    número») Resumen de la fórmula: cada fila con su fondo, una línea de puntos
-   que lleva del concepto a su número, el lápiz pequeño y en línea, y el bloque
-   más angosto para que el número no quede lejos de su concepto. */
-.resumen-formula .rent-sec { max-width: 760px; margin: 0.7rem 0 0.15rem; font-size: var(--fs-2); font-weight: 650; color: var(--mp-teal-text); letter-spacing: .02em; }
-.resumen-formula .rent-fila { max-width: 760px; align-items: center; gap: 0.5rem; padding: 0.38rem 0.6rem; border-radius: 6px; }
+   que lleva del concepto a su número y el lápiz pequeño y en línea. Los números
+   van al borde derecho del cuadro, en línea con el total (Edgar, 29/09). */
+.resumen-formula .rent-sec { margin: 0.7rem 0 0.15rem; font-size: var(--fs-2); font-weight: 650; color: var(--mp-teal-text); letter-spacing: .02em; }
+.resumen-formula .rent-fila { align-items: center; gap: 0.5rem; padding: 0.38rem 0.6rem; border-radius: 6px; }
 .resumen-formula .rent-fila:nth-of-type(odd) { background: var(--mp-sky-1); }
 .resumen-formula .rent-fila:hover { background: var(--mp-sky-3, #DCEEF7); }
 .resumen-formula .rent-fila > span:first-child { display: flex; align-items: center; gap: 0.3rem; flex: 1 1 auto; min-width: 0; }
