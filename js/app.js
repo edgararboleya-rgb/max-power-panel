@@ -9068,6 +9068,26 @@ function esFalloDeRed(err) {
   const selTipoLinea = (l, i) => `<select class="chip-select rap-mat-tipo" data-i="${i}" title="¿Qué es esta línea? Cambia cómo paga en la fórmula">
       ${TIPOS_LINEA.map(([v, t]) => `<option value="${v}"${(l.tipo || "") === v ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
 
+  /* (29/09) La MISMA pieza —mismo item, mismo precio, mismas horas— en UN
+     renglón aunque venga de varias recetas y de lo contado suelto. PURA:
+     entra la lista de renglones del estimado, salen los grupos en el orden de
+     su primera aparición, con cuánto viene de cada sitio. */
+  function agrupaMateriales(items) {
+    const gruposMat = [], idxMat = new Map();
+    (items || []).forEach((i, pos) => {
+      const kG = normTxt(i.item) + "|" + (Number(i.precio) || 0) + "|" + (Number(i.horas) || 0);
+      let g = idxMat.get(kG);
+      if (!g) { g = { i: Object.assign({}, i, { cantidad: 0 }), pos, partes: {}, orden: [], conId: [], filas: 0 }; idxMat.set(kG, g); gruposMat.push(g); }
+      g.i.cantidad = (Number(g.i.cantidad) || 0) + (Number(i.cantidad) || 0);
+      g.filas++;
+      const de = i.deEnsamble ? "de " + i.deEnsamble : (i.origen === "cotizacion" ? "de cotización" : "contadas aparte" + (i.codigo ? " (" + i.codigo + ")" : ""));
+      if (!(de in g.partes)) { g.partes[de] = 0; g.orden.push(de); }
+      g.partes[de] += Number(i.cantidad) || 0;
+      if (i.id) g.conId.push(i);
+    });
+    return gruposMat;
+  }
+
   // La fórmula Max Power (motor del Excel) + automáticos del v2
   function calcularEstimado(est, itemsOverride) {
     const cfg = estData.config || {};
@@ -11986,21 +12006,34 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           ${CERO_OPC.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join("")}
         </select>`;
 
-    const filasItems = c.items.map((i, n) => {
-      const z = zAt(n), cero = (Number(i.precio) || 0) === 0;
+    /* (29/09, Edgar: «me pone dos veces caja JB 1900… igual que los ground pigtail…
+       los conectores no me los agrupa en un solo conteo») La MISMA pieza —mismo
+       item, mismo precio, mismas horas— sale en UN renglón aunque venga de varias
+       recetas y de lo contado suelto; debajo dice de dónde sale cada parte. Solo
+       cambia la VISTA: el cálculo, los totales y el «Ver takeoff» siguen igual. */
+    const gruposMat = agrupaMateriales(c.items);
+    const filasItems = gruposMat.map(g => {
+      const i = g.i, z = zAt(g.pos), cero = (Number(i.precio) || 0) === 0;
+      const junta = g.filas > 1;
+      // los botones editan el renglón suelto (el que tiene id); si hay uno solo, se ofrecen
+      const idRow = g.conId.length === 1 ? g.conId[0] : null;
+      if (!junta) i.id = g.conId.length ? g.conId[0].id : undefined;
+      const deTxt = junta
+        ? ` <span class="mat-cant">— junta ${g.filas}: ${esc(g.orden.map(d => r2(g.partes[d]) + " " + d).join(" · "))}</span>`
+        : (i.deEnsamble ? ` <span class="mat-cant">— de: ${esc(i.deEnsamble)}</span>` : "");
       return `
       <div class="mat-item${z.fila ? " " + z.fila : ""}">
         ${z.chip ? `<span class="recibo-chip ${z.clase}">${esc(z.chip)}</span>` : ""}
         <span class="alcance-info">
-          <span class="alcance-titulo">${esc(i.item)}${i.deEnsamble ? ` <span class="mat-cant">— de: ${esc(i.deEnsamble)}</span>` : ""}</span>
+          <span class="alcance-titulo">${esc(i.item)}${deTxt}</span>
           <span class="alcance-estado">${esc(r2(Number(i.cantidad)))} ${esc(i.unidad || "")} ${
             cero && z.motivo ? esc(z.motivo) : `× ${fmt(i.precio)}`} · ${r2(Number(i.cantidad) * Number(i.horas))} h</span>
         </span>
         <span class="mat-precio">${cero ? "—" : fmt(r2(Number(i.cantidad) * Number(i.precio)))}</span>
         ${selCero(z, i.item)}
-        ${!soloLectura && i.id ? `<button class="insp-borrar btn-item-qty" data-id="${i.id}" data-qty="${esc(i.cantidad)}" title="Cambiar cantidad" aria-label="Cambiar cantidad">${ico("lapiz")}</button>
-        <button class="insp-borrar btn-item-precio" data-id="${i.id}" data-precio="${esc(i.precio)}" data-item="${esc(i.item)}" title="Cambiar el precio en este estimado (el catálogo no se toca)" aria-label="Cambiar el precio en este estimado (el catálogo no se toca)">$${ico("lapiz")}</button>
-        <button class="insp-borrar btn-item-borrar" data-id="${i.id}" title="Quitar" aria-label="Quitar">${ico("basura")}</button>` : ""}
+        ${!soloLectura && (junta ? idRow : i.id) ? (() => { const r = junta ? idRow : i; const nota = junta ? " (solo las " + r2(Number(r.cantidad)) + " contadas aparte; lo de las recetas sale de sus recetas)" : ""; return `<button class="insp-borrar btn-item-qty" data-id="${r.id}" data-qty="${esc(r.cantidad)}" title="Cambiar cantidad${esc(nota)}" aria-label="Cambiar cantidad">${ico("lapiz")}</button>
+        <button class="insp-borrar btn-item-precio" data-id="${r.id}" data-precio="${esc(r.precio)}" data-item="${esc(r.item)}" title="Cambiar el precio en este estimado (el catálogo no se toca)${esc(nota)}" aria-label="Cambiar el precio en este estimado (el catálogo no se toca)">$${ico("lapiz")}</button>
+        <button class="insp-borrar btn-item-borrar" data-id="${r.id}" title="Quitar${esc(nota)}" aria-label="Quitar">${ico("basura")}</button>`; })() : ""}
       </div>`;
     }).join("");
 
@@ -15936,6 +15969,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   // La puerta de la prueba del navegador: inyecta una lectura de verdad (la que
   // devolvió el asistente en vivo) sin llamar a la nube ni gastar un centavo.
   window.MXP_PRUEBA = {
+    agrupaMateriales,
     // E0 · La lógica del $0 es pura, así que se prueba sin nube y sin sesión:
     // se le pone un catálogo de mentira y se le pregunta. Ver pruebas/e0.js.
     e0: {
