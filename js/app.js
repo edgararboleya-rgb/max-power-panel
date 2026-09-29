@@ -11564,6 +11564,25 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   /* Se propone, no se mete sola: una hora son ~$100 puestos en el bid. Lo que
      sale de una cuenta del propio estimado (breakers, dimmers) viene marcado;
      lo que es un SUPUESTO viene sin marcar, para que se decida y no se cuele. */
+  /* (29/09, Edgar: «no queda claro la cantidad… que al uno le pongas el
+     apellido: 1 día, 1 proyecto») Cada regla dice en qué se cuenta. */
+  const HORAS_UNIDAD = {
+    terminacion: ["circuito", "circuitos"], rotulado: ["circuito", "circuitos"],
+    demo: ["dispositivo", "dispositivos"], demo_luz: ["luminaria", "luminarias"],
+    arranque: ["sensor o dimmer", "sensores y dimmers"], icra: ["barrera", "barreras"],
+    lift: ["día", "días"], permiso: ["proyecto", "proyectos"],
+    movilizacion: ["viaje", "viajes"], cierre: ["proyecto", "proyectos"]
+  };
+  const horasUni = (id, n) => { const u = HORAS_UNIDAD[id] || ["unidad", "unidades"]; return Number(n) === 1 ? u[0] : u[1]; };
+  // la cajita cambia y la fila se relee sola: «10 días = 10 h»
+  document.addEventListener("input", ev => {
+    const q = ev.target && ev.target.closest && ev.target.closest(".horas-qty");
+    if (!q) return;
+    const fila = q.closest(".mat-item"); if (!fila) return;
+    const n = Number(q.value) || 0, hpu = Number(q.dataset.hpu) || 0;
+    const u = fila.querySelector(".horas-uni"); if (u) u.textContent = horasUni(q.dataset.id, n);
+    const t = fila.querySelector(".horas-tot"); if (t) t.textContent = "= " + (Math.round(n * hpu * 100) / 100) + " h";
+  });
   function cardHorasHTML(est, c, soloLectura) {
     const r2 = r2e27;
     if (soloLectura || est.modo === "rapido") return "";
@@ -11584,11 +11603,13 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         ${f.supuesto ? `<span class="recibo-chip por_leer">Supuesto</span>` : ""}${est2}
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(f.nom)}</span>
-          <span class="alcance-estado">${esc(f.de)} · ${r2(f.horas)} h cada uno</span>
+          <span class="alcance-estado">${esc(f.de)} · ${r2(f.horas)} h por ${esc(horasUni(f.id, 1))}</span>
         </span>
-        <input type="number" class="horas-qty" data-id="${esc(f.id)}" min="0" step="1" value="${esc(f.cantidad)}"
-          style="width:4.5rem;font:inherit;padding:.25rem .4rem;border:1px solid var(--mp-line);border-radius:8px;text-align:right">
-        <span class="mat-precio">${r2(f.cantidad * f.horas)} h</span>
+        <input type="number" class="horas-qty" data-id="${esc(f.id)}" data-hpu="${esc(f.horas)}" min="0" step="1" value="${esc(f.cantidad)}"
+          style="width:4.5rem;font:inherit;padding:.25rem .4rem;border:1px solid var(--mp-line);border-radius:8px;text-align:right"
+          aria-label="Cuántos ${esc(horasUni(f.id, 2))}">
+        <span class="horas-uni" style="min-width:8.5rem;color:var(--mp-ink-2)">${esc(horasUni(f.id, f.cantidad))}</span>
+        <span class="mat-precio horas-tot">= ${r2(f.cantidad * f.horas)} h</span>
       </div>`;
     }).join("");
     const totalH = h.filas.reduce((s, f) => s + (!f.supuesto && f.cantidad > 0 && f.ya === 0 ? f.cantidad * f.horas : 0), 0);
