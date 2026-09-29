@@ -15269,6 +15269,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         ${C.problemas.length
           ? `<div class="alc-rojo"><b>No lo bajé: hay algo que revisar.</b><ul>${C.problemas.map(p => `<li>${esc(p.texto)}</li>`).join("")}</ul></div>`
           : `<p class="lev-nota">Pasó el repaso: no quedó ningún hueco y cada monto del papel es uno de los que calculé yo.</p>`}
+        ${(C.avisos || []).length ? `<div class="alc-ambar"><b>Lo llené yo (no te frena):</b><ul>${C.avisos.map(t => `<li>${esc(t)}</li>`).join("")}</ul></div>` : ""}
         <p class="alc-sub">La sección 9 quedó así:</p>
         <div class="alc-chips">${nums.map(([k, n]) => `<span class="alc-chip">9.${n} ${esc(NOMBRE_CLAUSULA[k] || k.replace(/_/g, " "))}</span>`).join("")}</div>
         ${A.decision && A.decision.esGC
@@ -16707,7 +16708,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       if (!Alcance.marcasEmparejadas(alcPlantilla)) throw new Error("La plantilla de la app tiene una marca coja");
       const T = Alcance.armarTodo(A.leido, A.salida, {
         fecha: hoyFlorida(), proyecto_id: A.proyecto.id,
-        direccion: A.proyecto.direccion, nec: A.leido.codigo });
+        direccion: A.proyecto.direccion, nombre: A.proyecto.nombre, nec: A.leido.codigo });
       const out = Alcance.rellenarPlantilla(alcPlantilla, {
         bloques: T.decision.bloques, clausulas: T.decision.clausulas, huecos: T.huecos,
         items: T.items, no_incluye: T.no_incluye, addons: T.addons, hitos: T.hitos,
@@ -16719,7 +16720,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       const perdonados = (A.perdonadas || []).flatMap(x => (String((x && x.texto) || x || "").match(/\$\s?\d[\d,]*(?:\.\d{2})?/g) || []).map(m => m.replace(/[$\s]/g, "")));
       const B = Alcance.barridoFinal(out.html, [...T.montosPermitidos, ...perdonados]);
       A.contrato = { html: out.html, numeroClausulas: out.numeroClausulas,
-                     archivo: T.archivo, problemas: B.problemas, cuenta: T.cuenta };
+                     archivo: T.archivo, problemas: B.problemas, avisos: T.avisos || [], cuenta: T.cuenta };
       alcFicha = 2;
       pintarAlcance();
       if (B.problemas.length) avisar("Armado, pero hay algo que revisar", true);

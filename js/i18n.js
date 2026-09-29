@@ -4119,6 +4119,12 @@
       const m = s.match(/\(([\d.]+)% del costo directo(, sin las cotizaciones)?$/);
       return `+ Overhead (${m[1]}% of direct cost${m[2] ? ", excluding quotes" : ""}`; }]
   );
+  // ---------- El contrato se llena solo cuando la hoja no trae Proyecto o Código (29-sep) ----------
+  Object.assign(D, { "Lo llené yo (no te frena):": "I filled this in myself (it won't stop you):" });
+  REGLAS.push(
+    [/^La hoja no trae artículos del código: en la sección 4 va una frase general\. Si quieres artículos concretos, ponlos en «Código:» de la hoja\.$/, "The sheet lists no code articles: Section 4 gets a general sentence. If you want specific articles, put them under “Código:” on the sheet."],
+    [/^La hoja no dice «Proyecto:»: usé el nombre de la obra en la app( \(«.+»\))?\.$/, "The sheet has no “Proyecto:” line: I used the job's name from the app$1."]
+  );
   // ---------- El motor ----------
   // Cada texto de la pantalla se busca en el diccionario tal como se ve: con los
   // espacios y saltos de línea juntados en uno solo. Si no está, se prueba sin el

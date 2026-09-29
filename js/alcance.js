@@ -2041,8 +2041,16 @@
   // ============================================ JUNTARLO TODO PARA LA PLANTILLA
   // L = lo leído · S = lo que redactó el asistente (ya revisado por Edgar)
   // admin = { fecha (Date), proyecto_id, direccion, ciudad }
+  // Cuando la hoja no trae artículos del código, la sección 4 no puede quedar con hueco:
+  // va esta frase general (y se le avisa a Edgar para que los ponga si los quiere)
+  const NEC_GENERICO = "the Articles and Sections of NFPA 70 that apply to the work described in Section 1 (general requirements, branch circuits, grounding and bonding, wiring methods and boxes)";
   function armarTodo(L, S, admin) {
     const d = L.datos, C = L.condiciones;
+    const avisosArmado = [];
+    // un número entero es un artículo (Article 210); con punto es una sección (Section 680.22)
+    const articulosNEC = (admin.nec || L.codigo || []).map(a => (/\./.test(a) ? "Section " : "Article ") + a);
+    if (!articulosNEC.length) avisosArmado.push("La hoja no trae artículos del código: en la sección 4 va una frase general. Si quieres artículos concretos, ponlos en «Código:» de la hoja.");
+    if (!((S.proyecto_en && S.proyecto_en.en) || d.proyecto)) avisosArmado.push("La hoja no dice «Proyecto:»: usé el nombre de la obra en la app" + (admin.nombre ? ` («${admin.nombre}»)` : "") + ".");
     const cta = cuentas(L);
     const dec = decidirInterruptores(L, cta);
     const hoy = admin.fecha || new Date();
@@ -2104,7 +2112,8 @@
       L_D: dec.bloques.CONSUMIDOR ? "d" : "c", L_E: dec.bloques.CONSUMIDOR ? "e" : "d",
       L_F: dec.bloques.CONSUMIDOR ? "f" : "e", L_G: dec.bloques.CONSUMIDOR ? "g" : "f",
       TITULO_DEPOSITO: dec.bloques.PERMISO_MXP ? ", permits" : "",
-      PROYECTO_EN_INGLES: (S.proyecto_en && S.proyecto_en.en) || d.proyecto || "",
+      // Sin «Proyecto:» en la hoja, va el nombre de la obra en la app (siempre en inglés)
+      PROYECTO_EN_INGLES: (S.proyecto_en && S.proyecto_en.en) || d.proyecto || admin.nombre || "",
       DIRECCION: admin.direccion || d.direccion || "",
       CIUDAD: d.ciudad_corta || d.ciudad || admin.ciudad || "",
       FECHA: fechaLarga(hoy), AAAA: mNum ? mNum[1] : String(hoy.getFullYear()),
@@ -2143,7 +2152,7 @@
       AREAS_INCLUIDAS: (S.areas_incluidas && S.areas_incluidas.en) || "the areas",
       LO_QUE_NO_TOCAS: (S.lo_que_no_tocas && S.lo_que_no_tocas.en) || "any room, structure or equipment not listed there",
       // un número entero es un artículo (Article 210); con punto es una sección (Section 680.22)
-      ARTICULOS_NEC_QUE_APLICAN: (admin.nec || L.codigo).map(a => (/\./.test(a) ? "Section " : "Article ") + a).join(", "),
+      ARTICULOS_NEC_QUE_APLICAN: articulosNEC.length ? articulosNEC.join(", ") : NEC_GENERICO,
       RESUMEN_CORRIDO_DE_TODO_EL_ALCANCE: (S.resumen_corrido && S.resumen_corrido.en) || "",
       TOTAL: dinero(cta.base),
       N_ULTIMO: String(nHitos), FIN_OBRA: finObra,
@@ -2266,7 +2275,7 @@
     const montosPermitidos = [dinero(cta.base), ...cta.addons.map(a => dinero(a.centavos)),
                               ...cta.hitos.map(h => dinero(h.centavos))];
     return { cuenta: cta, decision: dec, huecos, items, no_incluye, addons, hitos, montosPermitidos,
-             propias, programa, pre, pagos, numero, codigo_grupos,
+             propias, programa, pre, pagos, numero, codigo_grupos, avisos: avisosArmado,
              archivo: `MXP-${huecos.AAAA}-${huecos.MMDD}-${nombreCorto}.html` };
   }
 

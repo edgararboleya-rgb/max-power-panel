@@ -4093,12 +4093,12 @@ body:has(#toast:not([hidden])) .fab, body:has(#sin-senal:not([hidden])) .fab { d
 .resumen-formula .rent-sec { margin: 0.7rem 0 0.15rem; font-size: var(--fs-2); font-weight: 650; color: var(--mp-teal-text); letter-spacing: .02em; }
 .resumen-formula .rent-fila { align-items: center; gap: 0.5rem; padding: 0.38rem 0.6rem; border-radius: 6px; }
 .resumen-formula .rent-fila:nth-of-type(odd) { background: var(--mp-sky-1); }
-.resumen-formula .rent-fila:hover { background: var(--mp-sky-3, #DCEEF7); }
+.resumen-formula .rent-fila:hover { background: var(--mp-sky-3); }
 .resumen-formula .rent-fila > span:first-child { display: flex; align-items: center; gap: 0.3rem; flex: 1 1 auto; min-width: 0; }
 .resumen-formula .rent-fila > span:first-child::after { content: ""; flex: 1 1 2rem; border-bottom: 1px dotted var(--mp-ink-3); margin: 0 0.2rem 0 0.4rem; transform: translateY(0.3em); opacity: .7; }
 .resumen-formula .rent-fila > span:last-child { flex: none; min-width: 8.5ch; text-align: right; font-weight: 600; color: var(--mp-ink); }
 .resumen-formula .rent-fila .btn-formula { min-width: 28px; min-height: 28px; padding: 0 0.2rem; border-radius: 6px; }
-.resumen-formula .rent-fila .btn-formula:hover { background: #fff; text-decoration: none; }
+.resumen-formula .rent-fila .btn-formula:hover { background: var(--mp-white); text-decoration: none; }
 .resumen-formula .rent-total { background: none !important; font-size: var(--fs-5, 1.05rem); }
 .resumen-formula .rent-total > span:first-child::after { border-bottom-style: solid; }
 .resumen-formula .rent-total.ok > span:last-child { color: var(--mp-ok-2); }
@@ -4111,7 +4111,7 @@ body:has(#toast:not([hidden])) .fab, body:has(#sin-senal:not([hidden])) .fab { d
    resumen, cada bloque cierra con su total y los tres dan el costo directo. */
 .resumen-formula .rent-sub { font-weight: 650; border-top: 1px solid var(--mp-line); margin-top: 0.3rem; border-radius: 0 0 6px 6px; }
 .resumen-formula .rent-sub > span { color: var(--mp-ink) !important; }
-.resumen-formula .rent-directo { margin-top: 0.7rem; border-top: 2px solid var(--mp-ink-3); background: var(--mp-sky-2, #E6F2F8) !important; }
+.resumen-formula .rent-directo { margin-top: 0.7rem; border-top: 2px solid var(--mp-ink-3); background: var(--mp-sky-2) !important; }
 .gen-lista { margin-top: 0.3rem; }
 .gen-renglon { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.2rem; border-bottom: 1px solid var(--mp-line); }
 .gen-renglon.con .gen-nom { color: var(--mp-ink); }
@@ -4126,7 +4126,7 @@ body:has(#toast:not([hidden])) .fab, body:has(#sin-senal:not([hidden])) .fab { d
 /* (29/09, Edgar) La lista de ítems del estimado por secciones, como en
    Bluebeam y en su Excel: cada sección con su encabezado y su total. */
 .tk-sec { display: flex; align-items: baseline; gap: 0.6rem; margin: 1rem 0 0.45rem; padding: 0.45rem 0.65rem;
-  border-radius: 8px; background: var(--mp-sky-2, #E6F2F8); border-left: 4px solid var(--mp-teal-text); font-variant-numeric: tabular-nums; }
+  border-radius: 8px; background: var(--mp-sky-2); border-left: 4px solid var(--mp-teal-text); font-variant-numeric: tabular-nums; }
 .tk-sec:first-of-type { margin-top: 0.4rem; }
 .tk-sec-nom { font-weight: 700; color: var(--mp-ink); }
 .tk-sec-dat { flex: 1 1 auto; color: var(--mp-ink-2); font-size: var(--fs-3, .82rem); }
