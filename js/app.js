@@ -9058,64 +9058,84 @@ function esFalloDeRed(err) {
   // (23/09) Validez de la propuesta: la del estimado, o los 15 días de siempre
   const DIAS_VALIDEZ = 15;
   const diasValidez = est => { const d = Number(est && est.valida_dias); return Number.isInteger(d) && d > 0 ? d : DIAS_VALIDEZ; };
-  /* (29/09, Peninsula) LOS GENERALES DEL PROYECTO, FUERA DEL TAKEOFF. Edgar
+  /* (29/09, Peninsula) OTROS GASTOS DEL PROYECTO, FUERA DEL TAKEOFF. Edgar
      cuadró el número con la otra cuenta: la diferencia no era la mano de obra
      ni las luminarias, eran los generales —viajes Ocala–Broward, permiso, su PM,
      lift, overtime en los apagones— que el estimado no tenía dónde poner, y
      cuando se ponían entraban como renglones del takeoff. «Quisiera sacar eso
      del take off completo… que me salga aparte, con sus números y totales, y
      que lo pueda subir un poquito.»
-     Cada renglón es cantidad × costo, en su categoría. Entran como COSTO
-     DIRECTO, igual que la logística de las líneas a mano: llevan overhead y
-     profit, pero no tax, ni misceláneas, ni markup de material, ni escalación,
-     y no cuentan en la hora cargada. El colchón sube la lista entera un %.
-     Sin renglones no hay nada: ningún estimado de ayer se mueve un centavo. */
-  const GEN_CATS = [
-    { id: "viajes",   nom: "Viajes y traslado",          uni: "viaje", pista: "millas, peajes, gasolina, tiempo de manejo" },
-    { id: "estadia",  nom: "Hotel y per diem",           uni: "noche", pista: "hotel, comidas por trabajador y día" },
-    { id: "permiso",  nom: "Permiso e inspecciones",     uni: "lote",  pista: "el permiso y las reinspecciones; si lo saca el GC, no va" },
-    { id: "pm",       nom: "PM y supervisión",           uni: "h",     pista: "tus horas de PM, visitas y reuniones de obra" },
-    { id: "equipo",   nom: "Equipo y rentas",            uni: "día",   pista: "lift, andamio, contenedor, entrega y recogida" },
-    { id: "dispo",    nom: "Disposición y limpieza",     uni: "lote",  pista: "lámparas viejas, dumpster, limpieza final" },
-    { id: "overtime", nom: "Overtime y fuera de horario", uni: "h",    pista: "apagones de noche, fines de semana (solo la prima)" },
-    { id: "otros",    nom: "Otros generales",            uni: "lote",  pista: "lo que no cabe arriba" }
+     (29/09, segunda vuelta) «Preferiría renglones predeterminados… y nosotros
+     lo que tuviéramos que hacer es poner en cada renglón un número». El lift no
+     es por hora: es la RENTA, por semana — «10 días son 5 de una semana más 5
+     de otra, 2 semanas, $1.000». El hotel y lo demás, un monto estimado.
+     Así que: renglones fijos, un número cada uno; el lift, días × su precio
+     por semana (5 días de obra = 1 semana).
+     Entran como COSTO DIRECTO, igual que la logística de las líneas a mano:
+     llevan overhead y profit, pero no tax, ni misceláneas, ni markup de
+     material, ni escalación, y no cuentan en la hora cargada. El colchón sube
+     la lista entera un %. Vacío = nada: ningún estimado de ayer se mueve. */
+  const LIFT_SEMANA = 500;   // 19' eléctrico en Florida: ~$290–$625 a la semana (29/09); Edgar: «pongamos 500»
+  const GEN_RENGLONES = [
+    { id: "lift",     nom: "Renta de lift",                          ayuda: "días de obra con lift × precio por semana (5 días = 1 semana)", lift: true },
+    { id: "equipo",   nom: "Otro equipo (andamio, contenedor, entrega)", ayuda: "monto estimado" },
+    { id: "hotel",    nom: "Hotel",                                  ayuda: "monto estimado de toda la obra" },
+    { id: "comida",   nom: "Comidas / per diem",                     ayuda: "monto estimado de toda la obra" },
+    { id: "viajes",   nom: "Viajes (millas, gasolina, peajes)",      ayuda: "monto estimado de toda la obra" },
+    { id: "permiso",  nom: "Permiso e inspecciones",                 ayuda: "el permiso y las reinspecciones; si lo saca el GC, no va" },
+    { id: "pm",       nom: "PM y supervisión",                       ayuda: "tus horas de PM, visitas y reuniones, en dinero" },
+    { id: "dispo",    nom: "Disposición (lámparas, dumpster)",       ayuda: "monto estimado" },
+    { id: "overtime", nom: "Overtime / trabajo de noche",            ayuda: "solo la prima: apagones, noches, fines de semana" },
+    { id: "otros",    nom: "Otros gastos",                           ayuda: "lo que no cabe arriba" }
   ];
-  const genCat = id => GEN_CATS.find(x => x.id === id) || GEN_CATS[GEN_CATS.length - 1];
-  // Un renglón del catálogo de «PROJECT GENERAL» (o de las horas de proyecto
-  // de antes) → su categoría. Por nombre, porque el código de partida junta
-  // cosas distintas (el dumpster y el lift son los dos 19-EQUIP).
-  function genCatDeItem(nombre, codigo) {
+  const genRenglon = id => GEN_RENGLONES.find(x => x.id === id) || GEN_RENGLONES[GEN_RENGLONES.length - 1];
+  // Un renglón del catálogo («PROJECT GENERAL», o los de horas de antes) → su renglón fijo.
+  function genRenglonDeItem(nombre) {
     const t = normTxt(nombre);
+    if (/LIFT|ANDAMIO/.test(t) && !/SCAFFOLD/.test(t)) return "lift";
     if (/PERMI|INSPECT/.test(t)) return "permiso";
     if (/DUMPSTER|DISPOS|GARBAGE|CLEANUP|LIMPIEZA/.test(t)) return "dispo";
-    if (/LIFT|SCAFFOLD|ANDAMIO|RENTAL|CONTAINER|DELIVERY|TRUCK|TOILET/.test(t)) return "equipo";
-    if (/PER DIEM|LODGING|HOTEL/.test(t)) return "estadia";
+    if (/SCAFFOLD|RENTAL|CONTAINER|DELIVERY|TRUCK|TOILET|EQUIP/.test(t)) return "equipo";
+    if (/LODGING|HOTEL/.test(t)) return "hotel";
+    if (/PER DIEM|MEAL|COMIDA/.test(t)) return "comida";
     if (/OVERTIME|WEEKEND|AFTER-HOURS|SHUTDOWN/.test(t)) return "overtime";
     if (/PROJECT MANAGEMENT|SUPERVIS|\bPM\b/.test(t)) return "pm";
     if (/TRAVEL|MILEAGE|FUEL|TOLL|PARKING|MOBILIZ|MOVILIZ|ACARREO|VIAJE/.test(t)) return "viajes";
-    return codigo === "18-PERM" || codigo === "17-INSP" ? "permiso" : codigo === "19-EQUIP" ? "equipo" : "otros";
+    return "otros";
   }
-  // PURA. Entra el estimado, salen los renglones con su total, las categorías
-  // en su orden (con las vacías, para que se vean como lista de chequeo), el
-  // subtotal, el colchón y el total que entra al costo directo.
-  function generalesDe(est) {
-    const n = v => Number(v) || 0;
+  // Lo guardado, siempre como {lift_dias, lift_semana, hotel, …}. La primera
+  // versión (v246, unas horas) guardaba una lista de renglones: se lee igual,
+  // sumando por renglón, y el día de lift contado pasa a días de renta.
+  const GEN_VIEJA_CAT = { viajes: "viajes", estadia: "hotel", permiso: "permiso", pm: "pm", equipo: "equipo", dispo: "dispo", overtime: "overtime", otros: "otros" };
+  function generalesGuardados(est) {
     const crudo = est && est.gastos_generales;
-    const lista = Array.isArray(crudo) ? crudo : [];
-    const filas = lista.map((g, i) => {
-      const cant = Math.max(0, n(g && g.cant)), costo = Math.max(0, n(g && g.costo));
-      return { i, cat: genCat(g && g.cat).id, desc: String((g && g.desc) || "").slice(0, 120),
-               cant, uni: String((g && g.uni) || "").slice(0, 20), costo, total: cant * costo };
+    if (crudo && !Array.isArray(crudo) && typeof crudo === "object") return { ...crudo };
+    const o = {};
+    (Array.isArray(crudo) ? crudo : []).forEach(g => {
+      if (!g) return;
+      const cant = Math.max(0, Number(g.cant) || 0), costo = Math.max(0, Number(g.costo) || 0);
+      if (/LIFT/i.test(String(g.desc || ""))) { o.lift_dias = (o.lift_dias || 0) + cant; return; }
+      const id = GEN_VIEJA_CAT[g.cat] || "otros";
+      o[id] = Math.round(((o[id] || 0) + cant * costo) * 100) / 100;
     });
-    const porCat = GEN_CATS.map(k => {
-      const f = filas.filter(x => x.cat === k.id);
-      return { id: k.id, nom: k.nom, pista: k.pista, uni: k.uni, filas: f, total: f.reduce((s, x) => s + x.total, 0) };
-    });
-    const subtotal = filas.reduce((s, x) => s + x.total, 0);
+    return o;
+  }
+  // PURA. Entra el estimado, salen los renglones fijos con su total, el
+  // subtotal, el colchón y el total que entra al costo directo.
+  function generalesDe(est, cfg) {
+    const n = v => { const x = Number(v); return Number.isFinite(x) && x > 0 ? x : 0; };
+    const o = generalesGuardados(est);
+    const precioSemana = n(o.lift_semana) || n((cfg || {}).lift_semana) || LIFT_SEMANA;
+    const dias = n(o.lift_dias);
+    const semanas = Math.ceil(dias / 5);
+    const renglones = GEN_RENGLONES.map(r => r.lift
+      ? { ...r, dias, semanas, precioSemana, total: semanas * precioSemana }
+      : { ...r, monto: n(o[r.id]), total: n(o[r.id]) });
+    const subtotal = renglones.reduce((s, r) => s + r.total, 0);
     const pc = Number(est && est.generales_colchon_pct);
     const colchonPct = Number.isFinite(pc) && pc > 0 ? pc : 0;
     const colchon = subtotal * colchonPct;
-    return { filas, porCat, subtotal, colchonPct, colchon, total: subtotal + colchon };
+    return { renglones, guardado: o, subtotal, colchonPct, colchon, total: subtotal + colchon };
   }
 
   // (23/09) Los tipos de una línea a mano. Sin tipo = material tuyo, como siempre.
@@ -9278,7 +9298,7 @@ function esFalloDeRed(err) {
     // La escalación es un costo, así que entra antes del overhead y del profit
     const escalacion = (totalLabor + totalMaterial) * (escFactor - 1);
     // (29/09) los generales del proyecto: costo directo, como la logística
-    const gen = generalesDe(est);
+    const gen = generalesDe(est, cfg);
     const generales = gen.total;
     const prime = totalLabor + totalMaterial + escalacion + costos + generales;
     // El overhead por PORCENTAJE no se cobra sobre lo que llega cotizado.
@@ -10866,8 +10886,8 @@ function esFalloDeRed(err) {
     if (c.misc) l.push(`Misceláneas:                     ${fmt(r2(c.misc))}`);
     if (c.escalacion > 0.005) l.push(`Escalación:                      ${fmt(r2(c.escalacion))}`);
     if (c.generales > 0.005) {
-      l.push(`Generales del proyecto:          ${fmt(r2(c.generales))}`);
-      c.gen.porCat.filter(k => k.filas.length).forEach(k => l.push(`   · ${k.nom}: ${fmt(r2(k.total))}`));
+      l.push(`Otros gastos del proyecto:       ${fmt(r2(c.generales))}`);
+      c.gen.renglones.filter(k => k.total > 0.005).forEach(k => l.push(`   · ${k.nom}${k.lift ? ` (${k.dias} días = ${k.semanas} sem × ${fmt(k.precioSemana)})` : ""}: ${fmt(r2(k.total))}`));
       if (c.gen.colchon > 0.005) l.push(`   · Colchón ${Math.round(c.gen.colchonPct * 1000) / 10}%: ${fmt(r2(c.gen.colchon))}`);
     }
     if (c.costos > 0.005) l.push(`Logística / allowances / subs:   ${fmt(r2(c.costos))}`);
@@ -11025,10 +11045,12 @@ function esFalloDeRed(err) {
     // (29/09) los generales del proyecto, aparte del material contado
     if (c.generales > 0.005) {
       l.push("");
-      l.push(["", "GENERALES DEL PROYECTO — fuera del takeoff: sin tax, misceláneas ni markup"].join("\t"));
-      c.gen.filas.forEach(g => l.push(["", g.desc || genCat(g.cat).nom, "generales · " + genCat(g.cat).nom.toLowerCase(), n2(g.cant), g.uni || "", n2(g.costo), "0", n2(g.total), "0"].join("\t")));
-      if (c.gen.colchon > 0.005) l.push(["", "Colchón de generales " + (Math.round(c.gen.colchonPct * 1000) / 10) + "%", "generales", "1", "LOT", n2(c.gen.colchon), "0", n2(c.gen.colchon), "0"].join("\t"));
-      T("= GENERALES", c.generales);
+      l.push(["", "OTROS GASTOS DEL PROYECTO — fuera del takeoff: sin tax, misceláneas ni markup"].join("\t"));
+      c.gen.renglones.filter(k => k.total > 0.005).forEach(k => l.push(k.lift
+        ? ["", k.nom, "otros gastos · " + k.dias + " días de obra", n2(k.semanas), "semana", n2(k.precioSemana), "0", n2(k.total), "0"].join("\t")
+        : ["", k.nom, "otros gastos · monto estimado", "1", "LOT", n2(k.total), "0", n2(k.total), "0"].join("\t")));
+      if (c.gen.colchon > 0.005) l.push(["", "Colchón de otros gastos " + (Math.round(c.gen.colchonPct * 1000) / 10) + "%", "otros gastos", "1", "LOT", n2(c.gen.colchon), "0", n2(c.gen.colchon), "0"].join("\t"));
+      T("= OTROS GASTOS", c.generales);
     }
     T("= COSTO DIRECTO", c.prime);
     T("Overhead", c.overhead);
@@ -11734,8 +11756,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     avisar(`✓ ${puestas} renglón(es) de horas añadido(s)${cambiadas ? ` y ${cambiadas} actualizado(s)` : ""}`);
   }
 
-  /* ---------- (29/09) GENERALES DEL PROYECTO — la tarjeta ---------- */
-  // Los renglones del TAKEOFF que en realidad son generales: los del catálogo
+  /* ---------- (29/09) OTROS GASTOS DEL PROYECTO — la tarjeta ---------- */
+  // Los renglones del TAKEOFF que en realidad son otros gastos: los del catálogo
   // «PROJECT GENERAL» y los tres que antes proponía la tarjeta de horas. Se
   // enseñan para pasarlos a su sitio; solo los contados sueltos (los de una
   // receta salen de su receta).
@@ -11748,64 +11770,47 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       return (fc && String(fc.seccion || "").toUpperCase() === "PROJECT GENERAL") || GEN_DE_HORAS.test(k);
     });
   }
+  // Un renglón fijo por concepto y UN número cada uno (Edgar, 29/09). El lift
+  // son días de obra → semanas de renta × su precio por semana.
   function cardGeneralesHTML(est, c, soloLectura) {
     const r2 = r2e27;
-    const g = c.gen || generalesDe(est);
-    if (soloLectura && !g.filas.length) return "";
+    const g = c.gen || generalesDe(est, estData.config || {});
+    if (soloLectura && !(g.total > 0)) return "";
     const mueve = soloLectura ? [] : generalesEnTakeoff(est);
-    const inp = (cls, i, v, w, lbl) => `<input type="number" class="${cls}" data-i="${i}" min="0" step="any" value="${esc(v)}"
-          style="width:${w};font:inherit;padding:.25rem .4rem;border:1px solid var(--mp-line);border-radius:8px;text-align:right" aria-label="${esc(lbl)}">`;
-    const fila = f => `
-          <div class="mat-item gen-fila">
-            <span class="alcance-info"><span class="alcance-titulo">${esc(f.desc || genCat(f.cat).nom)}</span></span>
-            ${soloLectura ? `<span class="gen-cuenta">${r2(f.cant)} ${esc(f.uni)} × ${fmt(r2(f.costo))}</span>`
-              : `${inp("gen-cant", f.i, f.cant, "4.5rem", "Cantidad")}<span class="gen-uni">${esc(f.uni)} ×</span>${inp("gen-costo", f.i, f.costo, "6rem", "Costo por unidad")}`}
-            <span class="mat-precio">${fmt(r2(f.total))}</span>
-            ${soloLectura ? "" : `<button type="button" class="insp-borrar gen-editar" data-i="${f.i}" title="Cambiar el nombre, la categoría o la unidad" aria-label="Editar">${ico("lapiz")}</button>
-            <button type="button" class="insp-borrar gen-borrar" data-i="${f.i}" title="Quitar" aria-label="Quitar">${ico("basura")}</button>`}
-          </div>`;
-    const cats = g.porCat.filter(k => !soloLectura || k.filas.length).map(k => `
-        <div class="gen-cat">
-          <div class="gen-cat-tit"><span>${esc(k.nom)}</span><span>${k.filas.length ? fmt(r2(k.total)) : "—"}</span></div>
-          ${k.id === "permiso" && !soloLectura && (est.contratista_id || esMEP(est)) ? `<div class="gen-pista">${ico("alerta")} El trato es con un contratista: si el permiso lo saca el GC, no lo pongas (regla de la casa).</div>` : ""}
-          ${k.filas.length ? k.filas.map(fila).join("") : `<div class="gen-pista">${esc(k.pista)}${soloLectura ? "" : ` · <button type="button" class="enlace gen-poner" data-cat="${k.id}">poner</button>`}</div>`}
+    const inp = (cls, id, v, w, lbl) => `<input type="number" class="${cls}" data-id="${id}" min="0" step="any" value="${v > 0 ? esc(v) : ""}" placeholder="0"
+          style="width:${w};font:inherit;padding:.3rem .45rem;border:1px solid var(--mp-line);border-radius:8px;text-align:right" aria-label="${esc(lbl)}">`;
+    const gc = !soloLectura && (est.contratista_id || esMEP(est));
+    const filas = g.renglones.filter(r => !soloLectura || r.total > 0).map(r => `
+        <div class="gen-renglon${r.total > 0 ? " con" : ""}">
+          <span class="gen-nom">${esc(r.nom)}<small>${r.id === "permiso" && gc ? `${ico("alerta")} El trato es con un contratista: si el permiso lo saca el GC, no lo pongas (regla de la casa).` : esc(r.ayuda)}</small></span>
+          <span class="gen-in">${r.lift
+            ? (soloLectura ? `${r.dias} días → ${r.semanas} sem. × ${fmt(r.precioSemana)}`
+              : `${inp("gen-lift-dias", "lift_dias", r.dias, "4.2rem", "Días de obra con lift")} días → <b>${r.semanas} ${r.semanas === 1 ? "semana" : "semanas"}</b> × $${inp("gen-lift-semana", "lift_semana", r.precioSemana, "5.2rem", "Precio del lift por semana")} /sem.`)
+            : (soloLectura ? "" : `$ ${inp("gen-monto", r.id, r.monto, "7rem", r.nom)}`)}</span>
+          <span class="gen-tot">${r.total > 0 ? fmt(r2(r.total)) : "—"}</span>
         </div>`).join("");
-    const lista = (estData.catalogo || []).filter(x => String(x.seccion || "").toUpperCase() === "PROJECT GENERAL");
     return `
       <div class="cal-panel-card gen-card">
-        <div class="cal-form-titulo">Generales del proyecto — fuera del takeoff
+        <div class="cal-form-titulo">Otros gastos del proyecto — fuera del takeoff
           ${g.total > 0 ? `<span class="chk-avance">${fmt(r2(g.total))}</span>` : ""}</div>
-        <p class="modal-nota">Lo que cuesta hacer la obra y no es material ni instalar una pieza. Va aparte del takeoff y entra al
-          <strong>costo directo</strong>: lleva overhead y profit, pero no tax, ni misceláneas, ni markup de material.</p>
-        ${mueve.length ? `<div class="lev-nota" style="margin:.2rem 0 .6rem">${ico("alerta")} Hay ${mueve.length} renglón(es) en el takeoff que son generales:
+        <p class="modal-nota">Un número por renglón. No es material ni mano de obra: va aparte y se suma al
+          <strong>costo directo</strong> — lleva overhead y profit, pero no tax, ni misceláneas, ni markup de material.</p>
+        ${mueve.length ? `<div class="lev-nota" style="margin:.2rem 0 .6rem">${ico("alerta")} Hay ${mueve.length} renglón(es) en el takeoff que son otros gastos:
           ${mueve.map(i => `<b>${esc(String(i.item).replace(/\s+/g, " "))}</b>`).join(", ")}.
           <button type="button" class="accion secundaria" id="btn-gen-mover" style="margin-top:.4rem">Pasarlos aquí</button></div>` : ""}
-        ${cats}
-        ${soloLectura ? "" : `
-        <div class="gen-nuevo">
-          <select id="gen-n-cat" aria-label="Categoría">${GEN_CATS.map(k => `<option value="${k.id}">${esc(k.nom)}</option>`).join("")}</select>
-          <input id="gen-n-desc" type="text" placeholder="Qué es (ej: viajes Ocala–Broward)" maxlength="120">
-          <input id="gen-n-cant" type="number" min="0" step="any" placeholder="Cant." aria-label="Cantidad">
-          <input id="gen-n-uni" type="text" placeholder="unidad" maxlength="20" value="${esc(GEN_CATS[0].uni)}" aria-label="Unidad">
-          <input id="gen-n-costo" type="number" min="0" step="any" placeholder="$ c/u" aria-label="Costo por unidad">
-          <button type="button" class="accion secundaria" id="btn-gen-poner">Añadir</button>
-        </div>
-        ${lista.length ? `<label class="mat-filtro-label" style="display:block;margin-top:.4rem">O de la lista de generales del catálogo
-          <select id="gen-lista"><option value="">— escoge —</option>${lista.map(x =>
-            `<option value="${esc(x.id)}">${esc(String(x.item).replace(/\s+/g, " "))} · ${fmt(Number(x.precio) || 0)}/${esc(x.unidad || "")}</option>`).join("")}</select></label>` : ""}`}
+        <div class="gen-lista">${filas}</div>
         <div class="gen-pie">
-          <div class="rent-fila"><span>Subtotal de generales</span><span>${fmt(r2(g.subtotal))}</span></div>
+          <div class="rent-fila"><span>Subtotal</span><span>${fmt(r2(g.subtotal))}</span></div>
           <div class="rent-fila"><span>+ Colchón ${soloLectura ? `(${Math.round(g.colchonPct * 1000) / 10}%)`
             : `<input type="number" id="gen-colchon" min="0" max="100" step="1" value="${esc(Math.round(g.colchonPct * 1000) / 10)}"
               style="width:4rem;font:inherit;padding:.15rem .35rem;border:1px solid var(--mp-line);border-radius:8px;text-align:right" aria-label="Colchón en %"> %
               <span class="chk-avance">para subirlo un poco si te quedas bajo</span>`}</span><span>${fmt(r2(g.colchon))}</span></div>
-          <div class="rent-fila rent-total"><span>Total de generales</span><span>${fmt(r2(g.total))}</span></div>
+          <div class="rent-fila rent-total"><span>Total de otros gastos</span><span>${fmt(r2(g.total))}</span></div>
         </div>
       </div>`;
   }
   function engancharGenerales(est) {
     if (!document.querySelector(".gen-card")) return;
-    const arr = () => (Array.isArray(est.gastos_generales) ? est.gastos_generales : []).map(x => ({ ...x }));
     const num = v => { const x = Number(String(v).replace(/[,$%\s]/g, "")); return Number.isFinite(x) && x >= 0 ? x : null; };
     const guarda = async (campos, txt) => {
       try { await DB.cambiarEstimado(est.id, campos); await recargarEstimador(); avisar(txt); }
@@ -11814,74 +11819,39 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           ? "Falta pegar docs/sql/e39-generales.sql en Supabase" : "No se pudo guardar: " + (err.message || err), true);
       }
     };
-    const guardaLista = (a, txt) => guarda({ gastos_generales: a.length ? a : null }, txt);
-    document.querySelectorAll(".gen-cant, .gen-costo").forEach(el => el.addEventListener("change", () => {
-      const a = arr(), i = Number(el.dataset.i), v = num(el.value);
-      if (!a[i] || v === null) { avisar("Número no válido", true); return; }
-      a[i][el.classList.contains("gen-cant") ? "cant" : "costo"] = v;
-      guardaLista(a, "Generales ✓");
+    // lo que se guarda es siempre el objeto de renglones fijos, sin ceros
+    const limpio = o => { const x = {}; Object.keys(o).forEach(k => { if (Number(o[k]) > 0) x[k] = Number(o[k]); }); return Object.keys(x).length ? x : null; };
+    document.querySelectorAll(".gen-monto, .gen-lift-dias, .gen-lift-semana").forEach(el => el.addEventListener("change", () => {
+      const v = String(el.value).trim() === "" ? 0 : num(el.value);
+      if (v === null) { avisar("Número no válido", true); return; }
+      const o = generalesGuardados(est);
+      o[el.dataset.id] = el.classList.contains("gen-lift-dias") ? Math.round(v) : Math.round(v * 100) / 100;
+      guarda({ gastos_generales: limpio(o) }, "Otros gastos ✓");
     }));
-    document.querySelectorAll(".gen-borrar").forEach(b => b.addEventListener("click", () => {
-      const a = arr(); a.splice(Number(b.dataset.i), 1); guardaLista(a, "Renglón quitado ✓");
-    }));
-    document.querySelectorAll(".gen-editar").forEach(b => b.addEventListener("click", async () => {
-      const a = arr(), i = Number(b.dataset.i), f = a[i]; if (!f) return;
-      const desc = await pedirDato("¿Qué es?", f.desc || ""); if (desc === null) return;
-      const uni = await pedirDato("Unidad (viaje, noche, h, día, lote…):", f.uni || genCat(f.cat).uni); if (uni === null) return;
-      const cats = GEN_CATS.map((k, j) => `${j + 1} = ${k.nom}`).join("\n");
-      const cj = await pedirDato(`Categoría:\n${cats}`, String(GEN_CATS.findIndex(k => k.id === genCat(f.cat).id) + 1)); if (cj === null) return;
-      const k = GEN_CATS[Math.round(Number(cj)) - 1];
-      a[i] = { ...f, desc: desc.trim().slice(0, 120), uni: uni.trim().slice(0, 20), cat: k ? k.id : f.cat };
-      guardaLista(a, "Generales ✓");
-    }));
-    const selCat = $("gen-n-cat"), inUni = $("gen-n-uni");
-    if (selCat && inUni) selCat.addEventListener("change", () => { inUni.value = genCat(selCat.value).uni; });
-    document.querySelectorAll(".gen-poner").forEach(b => b.addEventListener("click", () => {
-      if (selCat) { selCat.value = b.dataset.cat; selCat.dispatchEvent(new Event("change")); }
-      const d = $("gen-n-desc"); if (d) { d.scrollIntoView({ block: "center" }); d.focus(); }
-    }));
-    const bPoner = $("btn-gen-poner");
-    if (bPoner) bPoner.addEventListener("click", () => {
-      const desc = ($("gen-n-desc").value || "").trim(), cant = num($("gen-n-cant").value), costo = num($("gen-n-costo").value);
-      if (!desc) { avisar("Escribe qué es", true); return; }
-      if (cant === null || costo === null) { avisar("Pon la cantidad y el costo por unidad", true); return; }
-      guardaLista([...arr(), { cat: selCat.value, desc: desc.slice(0, 120), cant, uni: (inUni.value || "").trim().slice(0, 20), costo }], "Añadido a generales ✓");
-    });
-    const selL = $("gen-lista");
-    if (selL) selL.addEventListener("change", () => {
-      const x = (estData.catalogo || []).find(y => String(y.id) === selL.value); if (!x) return;
-      if (selCat) selCat.value = genCatDeItem(x.item, x.codigo);
-      $("gen-n-desc").value = String(x.item).replace(/\s+/g, " ");
-      $("gen-n-cant").value = 1;
-      inUni.value = String(x.unidad || "").toLowerCase();
-      $("gen-n-costo").value = Number(x.precio) || 0;
-      $("gen-n-cant").focus();
-      avisar("Revisa la cantidad y el costo, y dale a Añadir");
-    });
     const inC = $("gen-colchon");
     if (inC) inC.addEventListener("change", () => {
       const v = String(inC.value).trim() === "" ? 0 : num(inC.value);
       if (v === null || v > 100) { avisar("El colchón va de 0 a 100 %", true); return; }
-      guarda({ generales_colchon_pct: v > 0 ? v / 100 : null }, v > 0 ? `Colchón de ${v}% en los generales ✓` : "Sin colchón ✓");
+      guarda({ generales_colchon_pct: v > 0 ? v / 100 : null }, v > 0 ? `Colchón de ${v}% en otros gastos ✓` : "Sin colchón ✓");
     });
     const bMover = $("btn-gen-mover");
     if (bMover) bMover.addEventListener("click", async () => {
       const filas = generalesEnTakeoff(est); if (!filas.length) return;
-      // lo que tenían de mano pasa a dinero, a la hora de la cuadrilla con beneficios: así el total no se pierde
+      // el lift pasa como días de renta; lo demás como dinero, con sus horas a la hora de la cuadrilla con beneficios
       const c = calcularEstimado(est), hora = (Number(c.tarifaMezclada) || 0) * (1 + (Number(c.benefitsPct) || 0));
-      if (!await confirmar(`Pasar ${filas.length} renglón(es) del takeoff a Generales.\n\nLas horas que traían se pasan a dinero a ${fmt(Math.round(hora * 100) / 100)} la hora (la cuadrilla con beneficios).`)) return;
-      const nuevos = filas.map(i => {
-        const h = Number(i.horas) || 0, precio = Number(i.precio) || 0;
-        const nombre = String(i.item).replace(/\s+/g, " ");
-        return { cat: genCatDeItem(i.item, i.codigo), desc: h > 0 ? `${nombre} (incluye ${h} h de mano)` : nombre,
-                 cant: Number(i.cantidad) || 0, uni: String(i.unidad || "").toLowerCase(), costo: Math.round((precio + h * hora) * 100) / 100 };
+      if (!await confirmar(`Pasar ${filas.length} renglón(es) del takeoff a Otros gastos del proyecto.\n\nEl lift pasa como días de renta (a ${fmt(c.gen.renglones[0].precioSemana)} la semana). Lo demás pasa como dinero; las horas que traía, a ${fmt(Math.round(hora * 100) / 100)} la hora (la cuadrilla con beneficios).`)) return;
+      const o = generalesGuardados(est);
+      filas.forEach(i => {
+        const id = genRenglonDeItem(i.item), q = Number(i.cantidad) || 0;
+        if (id === "lift") o.lift_dias = (Number(o.lift_dias) || 0) + Math.round(q);
+        else o[id] = Math.round(((Number(o[id]) || 0) + q * ((Number(i.precio) || 0) + (Number(i.horas) || 0) * hora)) * 100) / 100;
       });
       try {
-        await DB.cambiarEstimado(est.id, { gastos_generales: [...arr(), ...nuevos] });
+        await DB.cambiarEstimado(est.id, { gastos_generales: limpio(o) });
         for (const i of filas) await DB.eliminarItemEstimado(i.id);
       } catch (err) { avisar("No se pudo: " + (err.message || err), true); await recargarEstimador(); return; }
       await recargarEstimador();
-      avisar(`✓ ${filas.length} renglón(es) pasados a Generales`);
+      avisar(`✓ ${filas.length} renglón(es) pasados a Otros gastos`);
     });
   }
 
@@ -12574,24 +12544,27 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
             <input id="res-factor" type="number" min="0.5" max="2" step="0.05" value="${esc(est.factor || 1)}">
           </label>
         </div>` : ""}
-        <div class="rent-sec">Material</div>
+        <div class="rent-sec">Materiales</div>
         <div class="rent-fila"><span>${esRapido ? `Material (${c.lineasMat.length} línea${c.lineasMat.length === 1 ? "" : "s"})` : `Material (ítems${c.autos.length ? " + automáticos" : ""})`}</span><span>${fmt(r2(c.matSubtotal - c.misc - c.mermaMat))}</span></div>
         ${c.mermaMat > 0 ? `<div class="rent-fila"><span>+ Merma (cables ${Math.round((estData.config.merma_cable ?? .1) * 100)}% · tubería ${Math.round((estData.config.merma_tuberia ?? .05) * 100)}%)</span><span>${fmt(r2(c.mermaMat))}</span></div>` : ""}
         <div class="rent-fila"><span>+ Misceláneas (${pctTxt(c.miscPct)}${nnDist(est.misc_pct) ? " " + ico("lapiz") : " — tape, wirenuts, fijación"})${lapiz("misc_pct", "pct", c.miscPct, "Misceláneas — % del material")}</span><span>${fmt(r2(c.misc))}</span></div>
         <div class="rent-fila"><span>+ Sales tax (${pctTxt(c.taxPct)}${nnDist(est.tax_pct) ? " " + ico("lapiz") : ""})${lapiz("tax_pct", "pct", c.taxPct, "Sales tax — % del material")}</span><span>${fmt(r2(c.tax))}</span></div>
         ${c.markupPct > 0 ? `<div class="rent-fila"><span>+ Markup de materiales (${pctTxt(c.markupPct)}) ${ico("lapiz")}${lapiz("markup_pct", "pct", c.markupPct, "Markup de materiales — % sobre el material con tax")}</span><span>${fmt(r2(c.markup))}</span></div>`
           : !soloLectura ? `<div class="rent-fila"><span><button type="button" class="btn-formula insp-borrar" data-campo="markup_pct" data-tipo="pct" data-actual="0" data-nombre="Markup de materiales — % sobre el material con tax">+ Agregar markup de materiales</button></span><span></span></div>` : ""}
+        <div class="rent-fila rent-sub"><span>= Total de materiales</span><span>${fmt(r2(c.totalMaterial))}</span></div>
         <div class="rent-sec">Mano de obra</div>
         <div class="rent-fila"><span>Horas de todo el trabajo (${r2(c.horasBase)} × factor ${est.factor || 1})</span><span>${r2(c.horas)} h</span></div>
         <div class="rent-fila"><span>Labor (${r2(c.horas)} h × ${fmt(r2(c.tarifaMezclada))} cuadrilla)</span><span>${fmt(r2(c.laborBase))}</span></div>
         <div class="rent-fila"><span>+ Beneficios sobre el labor (${pctTxt(c.benefitsPct)}${nnDist(est.benefits_pct) ? " " + ico("lapiz") : ""})${lapiz("benefits_pct", "pct", c.benefitsPct, "Beneficios — % sobre el labor")}</span><span>${fmt(r2(c.benefits))}</span></div>
-        ${c.escalacion > 0.5 ? `<div class="rent-fila"><span>+ Escalación (${r2(c.mesesObra)} meses de obra · ${pctTxt(c.escAnual)} al año)${lapiz("escalacion_pct", "pct", c.escAnual, "Escalación — subida anual de salarios y material")}</span><span>${fmt(r2(c.escalacion))}</span></div>` : ""}
-        ${c.generales > 0.005 || c.costos > 0.005 ? `
-        <div class="rent-sec">Generales del proyecto</div>
-        ${c.gen.porCat.filter(k => k.filas.length).map(k => `<div class="rent-fila"><span>+ ${esc(k.nom)}</span><span>${fmt(r2(k.total))}</span></div>`).join("")}
-        ${c.gen.colchon > 0.005 ? `<div class="rent-fila"><span>+ Colchón de generales (${pctTxt(c.gen.colchonPct)})${lapiz("generales_colchon_pct", "pct", c.gen.colchonPct, "Colchón de los generales — % sobre la lista")}</span><span>${fmt(r2(c.gen.colchon))}</span></div>` : ""}
-        ${c.costos > 0.005 ? `<div class="rent-fila"><span>+ Logística, allowances y subcontratos (líneas a mano)</span><span>${fmt(r2(c.costos))}</span></div>` : ""}` : ""}
-        <div class="rent-fila rent-sub"><span>= Costo directo (material + mano de obra${c.escalacion > 0.5 ? " + escalación" : ""}${c.generales > 0.005 || c.costos > 0.005 ? " + generales" : ""})</span><span>${fmt(r2(c.prime))}</span></div>
+        <div class="rent-fila rent-sub"><span>= Total de mano de obra</span><span>${fmt(r2(c.totalLabor))}</span></div>
+        <div class="rent-sec">Otros gastos del proyecto</div>
+        ${c.gen.renglones.filter(k => k.total > 0.005).map(k => `<div class="rent-fila"><span>+ ${esc(k.nom)}${k.lift ? ` (${k.dias} días = ${k.semanas} sem. × ${fmt(k.precioSemana)})` : ""}</span><span>${fmt(r2(k.total))}</span></div>`).join("")}
+        ${c.gen.colchon > 0.005 ? `<div class="rent-fila"><span>+ Colchón (${pctTxt(c.gen.colchonPct)})${lapiz("generales_colchon_pct", "pct", c.gen.colchonPct, "Colchón de otros gastos — % sobre la lista")}</span><span>${fmt(r2(c.gen.colchon))}</span></div>` : ""}
+        ${c.costos > 0.005 ? `<div class="rent-fila"><span>+ Logística, allowances y subcontratos (líneas a mano)</span><span>${fmt(r2(c.costos))}</span></div>` : ""}
+        ${c.generales > 0.005 || c.costos > 0.005 ? "" : `<div class="rent-fila"><span>Nada puesto todavía — llénalo en «Otros gastos del proyecto»</span><span></span></div>`}
+        <div class="rent-fila rent-sub"><span>= Total de otros gastos</span><span>${fmt(r2(c.generales + c.costos))}</span></div>
+        ${c.escalacion > 0.5 ? `<div class="rent-fila"><span>+ Escalación sobre materiales y mano de obra (${r2(c.mesesObra)} meses de obra · ${pctTxt(c.escAnual)} al año)${lapiz("escalacion_pct", "pct", c.escAnual, "Escalación — subida anual de salarios y material")}</span><span>${fmt(r2(c.escalacion))}</span></div>` : ""}
+        <div class="rent-fila rent-sub rent-directo"><span>= Costo directo (materiales + mano de obra + otros gastos${c.escalacion > 0.5 ? " + escalación" : ""})</span><span>${fmt(r2(c.prime))}</span></div>
         <div class="rent-sec">Overhead y ganancia</div>
         <div class="rent-fila"><span>+ Overhead ${c.ohPct !== null && c.ohPct !== undefined
           ? `(${pctTxt(c.ohPct)} del costo directo${c.cotEnPrime > 0.5 ? ", sin las cotizaciones" : ""}${nnDist(est.overhead_pct) ? " " + ico("lapiz") : ""})${lapiz("overhead_pct", "pct", c.ohPct, "Overhead — % sobre mano de obra + material, sin lo que llega cotizado")}`
@@ -16246,9 +16219,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       auditoriaSql(p) { return auditoriaSql(p || []); },
       conectorCorto(ens, items) { return recetasConectorCorto(ens || [], items || []); },
       // (29/09) los generales del proyecto: la cuenta pura y la tarjeta pintada
-      generales(est) { return generalesDe(est || {}); },
-      generalesCard(est, c, soloLectura) { return cardGeneralesHTML(est || {}, c || { gen: generalesDe(est || {}) }, !!soloLectura); },
-      generalesCatDe(nombre, codigo) { return genCatDeItem(nombre, codigo); },
+      generales(est, cfg) { return generalesDe(est || {}, cfg || {}); },
+      generalesCard(est, c, soloLectura) { return cardGeneralesHTML(est || {}, c || { gen: generalesDe(est || {}, {}) }, !!soloLectura); },
+      generalesRenglonDe(nombre) { return genRenglonDeItem(nombre); },
       mep(est, c) { return textoResumenMEP(est, c); },
       propMep(est, c) { return textoPropuestaMEP(est, c); },   // el papel para el cliente de MXP MEP (23/09)
       hitos(bid, ret) { return hitosDePago(bid, ret); },
