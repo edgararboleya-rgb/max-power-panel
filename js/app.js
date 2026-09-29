@@ -15341,6 +15341,14 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       b.addEventListener("click", () => { alcRecoger(); alcFicha = Number(b.dataset.alcficha); pintarAlcance(); }));
 
     const caja = $("alc-texto");
+    // Al pegar, las líneas partidas por el ancho de un PDF o un correo se juntan en párrafos
+    if (caja) caja.addEventListener("paste", () => setTimeout(() => {
+      if ($("alc-texto") !== caja) return;
+      const des = Alcance.desenvolver(caja.value);
+      if (!des.unidas) return;
+      caja.value = des.texto; alcActivo.texto = des.texto; alcGuardarLocal(alcActivo.proyecto.id, des.texto);
+      avisar(`Uní ${des.unidas} línea${des.unidas === 1 ? "" : "s"} que venían partidas`);
+    }, 0));
     if (caja) caja.addEventListener("input", () => {
       alcActivo.texto = caja.value;
       alcGuardarLocal(alcActivo.proyecto.id, caja.value);
@@ -15623,8 +15631,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (f.size > 400000) { avisar("Ese archivo es muy grande para una hoja de alcance", true); return; }
     const lector = new FileReader();
     lector.onload = async () => {
-      const txt = String(lector.result || "").replace(/\r/g, "");
-      if (!txt.trim()) { avisar("El archivo está vacío", true); return; }
+      const crudo = String(lector.result || "").replace(/\r/g, "");
+      if (!crudo.trim()) { avisar("El archivo está vacío", true); return; }
+      // las líneas partidas por el ancho de un PDF o un correo se juntan en párrafos
+      const des = Alcance.desenvolver(crudo); const txt = des.texto;
       const caja = $("alc-texto");
       const habia = caja && caja.value.trim();
       if (habia && !await confirmar("Ya hay algo escrito en el cuadro. ¿Lo reemplazo con el archivo?")) return;
@@ -15635,7 +15645,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       alcGuardarLocal(alcActivo.proyecto.id, txt);
       alcActivo.leido = null; alcActivo.respuestas = {};
       pintarAlcance();
-      avisar(`Cargado «${nombre}» ✓ — ahora toca Leer`);
+      avisar(`Cargado «${nombre}» ✓${des.unidas ? ` — uní ${des.unidas} línea${des.unidas === 1 ? "" : "s"} que venían partidas` : ""} — ahora toca Leer`);
     };
     lector.onerror = () => avisar("No pude abrir ese archivo", true);
     lector.readAsText(f, "utf-8");

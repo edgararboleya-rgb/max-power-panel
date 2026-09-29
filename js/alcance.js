@@ -331,6 +331,8 @@
         v = v.replace(/[\s,;—–-]+$/, "").replace(/\s{2,}/g, " ").trim();
         R.datos.ciudad_corta = v.split(/\s+[—–-]\s+|\s*\(/)[0].replace(/,?\s*(?:FL|Florida)\.?\s*$/i, "").replace(/,\s*$/, "").trim();
       }
+      // «"New Port Richey"» con comillas: el dato es lo de adentro
+      v = String(v || "").replace(/^\s*["“”'«]+\s*/, "").replace(/\s*["“”'»]+\s*$/, "");
       if (k === "contratista" && /max power|arboleya|EC13016045/i.test(v)) v = "";
       if (v) { R.datos[k] = v; R.datos_linea[k] = i + 1; }
     };
@@ -2026,6 +2028,9 @@
     if (quedan.length) problemas.push({ tipo: "hueco", texto: "Quedaron huecos sin llenar: " + quedan.join(", ") });
     if (/<!--@/.test(html)) problemas.push({ tipo: "marca", texto: "Quedó una marca de la plantilla sin resolver." });
     if (/FALTA:/.test(visible)) problemas.push({ tipo: "falta", texto: "Quedó algo marcado como FALTA." });
+    // Un «[STREET ADDRESS PENDING]», «[TBD]» o «TBD» escrito en la hoja no puede llegar al cliente
+    const pendientes = [...new Set((visible.replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " ").match(/\[[^\]\n]{2,60}\]|\bTBD\b|\bPENDING\b|\bPOR CONFIRMAR\b/g) || []).filter(x => !/^\[\s*[xX ]\s*\]$/.test(x)))];
+    if (pendientes.length) problemas.push({ tipo: "pendiente", texto: "En el papel queda algo por confirmar: " + pendientes.join(", ") + ". Escríbelo en la hoja (o quítalo) y vuelve a armar." });
 
     const permitidos = new Set([...(montosPermitidos || []), ...FIJOS]);
     const texto = visible.replace(/<style[\s\S]*?<\/style>/g, "").replace(/<[^>]+>/g, " ")
@@ -2343,6 +2348,30 @@
     return { limpia: out.join(""), mapa };
   }
   // La hoja como la ve el modelo: cada línea limpia y tapada, numerada desde 1
+  // ---- Unir las líneas que vienen partidas (29-sep, Metro NPR) ----
+  // Un texto copiado de un PDF o de un correo llega con cada renglón cortado por el
+  // ancho de la hoja; el lector tomaba cada trozo como un renglón del alcance.
+  // Regla prudente: una línea se pega a la de arriba SOLO si empieza en minúscula
+  // (o con «y», «o», «and», «or»…) y no es una viñeta ni un título; o si la de arriba
+  // quedó a medias (termina en coma o en una palabra de enlace). Las líneas en blanco
+  // separan párrafos y nunca se tocan. Devuelve { texto, unidas }.
+  const RE_INICIO = /^\s*(?:[-*•▪◦]|\d{1,3}[.)]|[a-zA-Z][.)]|\(\d{1,3}\)|#{1,4}\s|[A-Za-zÁ-ú][\wÁ-ú /&'-]{1,40}:)/;
+  const RE_ENLACE = /(?:,|;|\b(?:and|or|the|of|to|a|an|with|for|in|on|at|by|from|per|y|o|de|del|la|el|los|las|con|para|por|en|al|un|una)|\(|—|–|-)\s*$/i;
+  function desenvolver(texto) {
+    const lineas = String(texto || "").replace(/\r/g, "").split("\n");
+    const salida = []; let unidas = 0;
+    for (const l of lineas) {
+      const ant = salida.length ? salida[salida.length - 1] : null;
+      const sinBlanco = l.trim();
+      if (ant === null || ant.trim() === "" || sinBlanco === "" || RE_INICIO.test(l)) { salida.push(l); continue; }
+      const empiezaMinuscula = /^[a-záéíóúñ]/.test(sinBlanco) && !/^(?:e\.g\.|i\.e\.)/i.test(sinBlanco);
+      const arribaAMedias = RE_ENLACE.test(ant) && !/[.:;!?]\s*$/.test(ant);
+      if (empiezaMinuscula || arribaAMedias) { salida[salida.length - 1] = ant.replace(/\s+$/, "") + " " + sinBlanco; unidas++; }
+      else salida.push(l);
+    }
+    return { texto: salida.join("\n"), unidas };
+  }
+
   function hojaParaElLector(texto, L) {
     const dineroEn = new Set();
     if (L && typeof L === "object") {
@@ -2995,7 +3024,7 @@
                 barridoFinal, marcasEmparejadas, armarTodo, aplicarArreglo, arreglarTodo, leerPermiso, leerFirma, leerVence, DISPARADORES, ORDEN_9, dinero, centavos, norma,
                 numerarClausulas, clasificarPropias, renumerarRefs, partirFases, juntarNombres,
                 // v3.7: el juez y las pistas
-                RX_DINERO_TAPAR, esMontoTapable, taparDinero, traeDineroEstricto, limpiarLinea, hojaParaElLector, citaEnLinea,
+                RX_DINERO_TAPAR, esMontoTapable, taparDinero, traeDineroEstricto, limpiarLinea, desenvolver, hojaParaElLector, citaEnLinea,
                 verificarLectura, pistasDe, guardarPistas, alinearLectura, rareza, lecturaDeReglas, claveDeLinea, TIPOS_AVISO, paraLaNube,
                 // tanda 1: los avisos del lector para la pantalla y las reglas nuevas
                 avisosDeLectura, esSobranteConfirmada, siNo, minus, normalizarTipoTrabajo, CLAVES_COND, CLAVES_DATOS, MATRIZ_LEGAL, SEC_DE_ROL,
