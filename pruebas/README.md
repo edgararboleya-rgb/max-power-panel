@@ -20,6 +20,8 @@ NODE_PATH=/opt/node22/lib/node_modules node pruebas/e0.js
 
 | `e14.js` | E14 · El takeoff pegado, pies contra MLF: el catálogo vende el THHN por MIL pies y una fila casada por nombre entraba con factor 1 (500 ft de 4/0 → 500 MLF, medio millón de pies). Comprueba que lo que vino de Length o con Unit FT se divide por 1000 solo si el ítem es MLF, que piezas y LF no se tocan, que el alias sigue mandando con su factor, y que un `2-1/2" EMT` sin entrecomillar no se trague la fila. |
 
+| `e39.js` | E39 · Generales del proyecto, fuera del takeoff (Peninsula, 29/09): viajes, hotel y per diem, permiso, PM, equipo y rentas, disposición, overtime y otros, por categoría y con un colchón en %. Entran al costo directo con overhead y profit, sin tax, misceláneas, markup ni escalación, y no inflan la hora cargada; salen en el resumen, en el papel de MEP y en el takeoff para copiar, nunca entre el material. La tarjeta avisa de los renglones del takeoff que son generales, y las horas del proyecto ya no proponen lift, permiso ni viajes. |
+
 | `e38.js` | E38 · Una pieza, un renglón: la misma pieza (mismo item, precio y horas) que viene de varias recetas y de lo contado suelto sale en UN renglón con el desglose de dónde sale; el dinero y las horas no se mueven. |
 
 | `e9.js` | E9 · Las recetas por dentro y el escalado por pies medidos. Dos fugas encontradas el 16/09: el conductor se **sustituía** por `pies/1000`, así que una receta de 3 hilos (0,075 MLF para 25 ft de corrida) con 25 ft medidos dejaba 0,025 — un tercio del cable; y el **tubo no se tocaba**, 50 ft medidos seguían comprando 25 LF de EMT. Ahora hay un solo factor (pies medidos ÷ pies de corrida) que multiplica cable, tubo y lo que va cada tantos pies (grapas, straps, acoples), y no toca lo que es por salida (conectores, caja, dispositivo). Comprueba además que las recetas Romex de hoy dan **exactamente lo mismo que antes**. |
@@ -29,7 +31,7 @@ que el cliente vaya a firmar.
 
 | `e34.js` | E34 · el signo del dinero en la hoja de alcance: que un deduct «-$12,500», «− $12,500» o «($12,500)» se lea como descuento, y que un guion SEPARADOR («ADD - extra - $3,400») no convierta un añadido en descuento. Corre en Node, sin navegador. |
 
-| `e35.js` | E35 · tanda 1 de Mariners: una línea de LOGÍSTICA / ALLOWANCE / SUBCONTRATO no paga tax, misceláneas, markup ni escalación y no infla la hora cargada (sí overhead y profit); que una línea sin marcar dé el bid de siempre; que el takeoff cuadre de arriba abajo; que el allowance salga en la propuesta y la logística no; la validez por estimado; el flete de la cuota; el aviso del importe único; el permiso sin marcar con contratista o MXP MEP; ICRA en modo planos. |
+| `e35.js` | E35 · tanda 1 de Mariners: una línea de LOGÍSTICA / ALLOWANCE / SUBCONTRATO no paga tax, misceláneas, markup ni escalación y no infla la hora cargada (sí overhead y profit); que una línea sin marcar dé el bid de siempre; que el takeoff cuadre de arriba abajo; que el allowance salga en la propuesta y la logística no; la validez por estimado; el flete de la cuota; el aviso del importe único; el aviso del permiso con contratista o MXP MEP (desde el 29/09, en Generales); ICRA en modo planos. |
 
 | `e36.js` | E36 · tanda 2 de Mariners: la merma automática solo en modo planos (un congelado no se mueve), el papel de MXP MEP para el cliente en lump sum y en inglés sin overhead, profit, horas ni membrete de Max Power, el resumen interno con su margen, y el resultado de un estimado de MXP MEP sin mezclarse con el historial de Max Power. |
 

@@ -109,15 +109,17 @@ const cerca = (a, b) => Math.abs(a - b) < 0.011;
   ok('una línea con unitario y extendido no se marca', lu && !lu.unImporte && lu.precio === 168.4);
   ok('el subtotal sigue sin colarse como renglón', !cuota.filas.some(f => /SUBTOTAL/.test(f.desc)));
 
-  /* === 8. el permiso lo saca quien lo saca; ICRA en modo planos === */
+  /* === 8. el permiso lo saca quien lo saca; ICRA en modo planos ===
+     (29/09) El permiso ya no es un renglón de horas del takeoff: vive en
+     Generales del proyecto, y la regla de la casa se dice allí. */
   const h = est => p.evaluate(e => window.MXP_PRUEBA.e0.horas([], e, {}), est);
-  const permiso = r => r.filas.find(f => f.id === 'permiso');
+  const tarjeta = est => p.evaluate(e => window.MXP_PRUEBA.e0.generalesCard(e), est);
   const directo = await h({ ...BASE });
-  const conGC = await h({ ...BASE, contratista_id: 'wisdom' });
-  const deMEP = await h({ ...BASE, empresa: 'mep' });
-  ok('trato directo: el permiso sale marcado como siempre', permiso(directo) && !permiso(directo).supuesto);
-  ok('con un contratista: el permiso sale SIN marcar y lo dice', permiso(conGC) && permiso(conGC).supuesto && /GC/.test(permiso(conGC).de));
-  ok('en un trabajo de MXP MEP: tampoco se marca', permiso(deMEP) && permiso(deMEP).supuesto);
+  ok('el permiso ya no sale en las horas del proyecto (pasó a Generales)', !directo.filas.some(f => f.id === 'permiso'));
+  const aviso = /si el permiso lo saca el GC, no lo pongas/;
+  ok('trato directo: Generales no avisa del GC', !aviso.test(await tarjeta({ ...BASE })));
+  ok('con un contratista: Generales avisa que si el permiso lo saca el GC no va', aviso.test(await tarjeta({ ...BASE, contratista_id: 'wisdom' })));
+  ok('en un trabajo de MXP MEP: también avisa', aviso.test(await tarjeta({ ...BASE, empresa: 'mep' })));
   ok('en modo planos, en un hospital, ya se propone la barrera ICRA', directo.filas.some(f => f.id === 'icra'));
   const obraNueva = await h({ ...BASE, nombre: 'Wimauma Ball Field — 480V Panel' });
   ok('en modo planos, en una obra que no es de salud, no', !obraNueva.filas.some(f => f.id === 'icra'));

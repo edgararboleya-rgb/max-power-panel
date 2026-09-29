@@ -4105,3 +4105,23 @@ body:has(#toast:not([hidden])) .fab, body:has(#sin-senal:not([hidden])) .fab { d
 .resumen-formula .rent-total.warn > span:last-child { color: var(--mp-warn-tx); }
 .resumen-formula .rent-total.bad > span:last-child { color: var(--mp-danger-2); }
 .resumen-formula .rent-fila:has(> span:last-child:empty) > span:first-child::after { display: none; }
+
+/* (29/09, Peninsula) Generales del proyecto: aparte del takeoff. Cada categoría
+   es un renglón de la lista de chequeo; las vacías dicen qué va ahí. */
+.resumen-formula .rent-sub { font-weight: 650; border-top: 1px solid var(--mp-line); margin-top: 0.3rem; border-radius: 0 0 6px 6px; }
+.resumen-formula .rent-sub > span { color: var(--mp-ink) !important; }
+.gen-cat { margin: 0.55rem 0 0.2rem; }
+.gen-cat-tit { display: flex; justify-content: space-between; font-weight: 650; color: var(--mp-ink); font-size: var(--fs-4);
+  padding: 0.15rem 0.1rem; border-bottom: 1px solid var(--mp-line); margin-bottom: 0.35rem; font-variant-numeric: tabular-nums; }
+.gen-pista { font-size: var(--fs-3, .82rem); color: var(--mp-ink-3); padding: 0 0.1rem 0.2rem; }
+.gen-poner { background: none; border: 0; padding: 0; font: inherit; color: var(--mp-teal-text); text-decoration: underline; cursor: pointer; }
+.gen-uni, .gen-cuenta { color: var(--mp-ink-2); white-space: nowrap; }
+.gen-fila .mat-precio { min-width: 7ch; text-align: right; font-variant-numeric: tabular-nums; }
+.gen-nuevo { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.8rem; padding-top: 0.6rem; border-top: 1px dashed var(--mp-line); }
+.gen-nuevo select, .gen-nuevo input { font: inherit; padding: 0.35rem 0.5rem; border: 1px solid var(--mp-line); border-radius: 8px; }
+.gen-nuevo #gen-n-desc { flex: 1 1 14rem; min-width: 0; }
+.gen-nuevo #gen-n-cant { width: 5rem; }
+.gen-nuevo #gen-n-uni { width: 5.5rem; }
+.gen-nuevo #gen-n-costo { width: 6.5rem; }
+.gen-pie { margin-top: 0.7rem; }
+.gen-pie .rent-fila { align-items: center; }
