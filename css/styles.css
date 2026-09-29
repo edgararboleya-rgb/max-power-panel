@@ -4122,3 +4122,12 @@ body:has(#toast:not([hidden])) .fab, body:has(#sin-senal:not([hidden])) .fab { d
 .gen-pie { margin-top: 0.7rem; }
 .gen-pie .rent-fila { align-items: center; }
 @media (max-width: 600px) { .gen-renglon { flex-wrap: wrap; } .gen-in { flex: 1 1 auto; justify-content: flex-start; } }
+
+/* (29/09, Edgar) La lista de ítems del estimado por secciones, como en
+   Bluebeam y en su Excel: cada sección con su encabezado y su total. */
+.tk-sec { display: flex; align-items: baseline; gap: 0.6rem; margin: 1rem 0 0.45rem; padding: 0.45rem 0.65rem;
+  border-radius: 8px; background: var(--mp-sky-2, #E6F2F8); border-left: 4px solid var(--mp-teal-text); font-variant-numeric: tabular-nums; }
+.tk-sec:first-of-type { margin-top: 0.4rem; }
+.tk-sec-nom { font-weight: 700; color: var(--mp-ink); }
+.tk-sec-dat { flex: 1 1 auto; color: var(--mp-ink-2); font-size: var(--fs-3, .82rem); }
+.tk-sec-tot { font-weight: 700; color: var(--mp-ink); }

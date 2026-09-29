@@ -9147,6 +9147,68 @@ function esFalloDeRed(err) {
   const selTipoLinea = (l, i) => `<select class="chip-select rap-mat-tipo" data-i="${i}" title="¿Qué es esta línea? Cambia cómo paga en la fórmula">
       ${TIPOS_LINEA.map(([v, t]) => `<option value="${v}"${(l.tipo || "") === v ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
 
+  /* (29/09, Edgar) EL TAKEOFF POR SECCIONES. «Todo está regado: lo mismo te
+     aparece una luz en la primera fila que una tubería en la veintitrés.» Como
+     en Bluebeam y en su Excel: primero tubería, cableado, cajas; después
+     dispositivos, iluminación, paneles, bajo voltaje… y en cada sección, sus
+     automáticos. Manda la SECCIÓN DEL CATÁLOGO (la del Excel de Edgar) y el
+     NOMBRE de la pieza —no el código de partida, que dice DÓNDE se contó: un
+     conector de 1/2" abierto de la receta de una luz sale con 11-LIGHT, pero es
+     tubería—. El código de partida solo decide cuando no hay otra cosa. PURA. */
+  const SECCIONES_TK = [
+    { id: "tuberia",  nom: "Tubería y fittings" },
+    { id: "cable",    nom: "Cableado" },
+    { id: "cajas",    nom: "Cajas y anillos" },
+    { id: "disp",     nom: "Dispositivos" },
+    { id: "luz",      nom: "Iluminación" },
+    { id: "panel",    nom: "Paneles y breakers" },
+    { id: "tierra",   nom: "Tierra" },
+    { id: "lv",       nom: "Bajo voltaje y fire alarm" },
+    { id: "ug",       nom: "Subterráneo" },
+    { id: "gen",      nom: "Generador y EV" },
+    { id: "demo",     nom: "Demolición" },
+    { id: "mano",     nom: "Mano de obra del proyecto" },
+    { id: "otros",    nom: "Otros" }
+  ];
+  const SEC_LV = /FIRE ALARM|SECURITY|ACCESS|CLOCK|INTERCOM|SOUND|CATV|TELECOM/;
+  const RX_CAJA = /\bBOX\b|\bRING\b|BLANK COVER|BOX HANGER|BOX EXTENSION|MUD RING|CONDULET/;
+  const RX_CABLE = /PIGTAIL|WIRE ?NUTS?\b|WIRENUTS|SPLICE|ELECTRICAL TAPE|LUBRICANT|WIRE MARKER|\bWIRE\b|\bCABLE\b|THHN|ROMEX|\bMC\b|STAPLE/;
+  function seccionTakeoff(it) {
+    const nom = normTxt(it && it.item);
+    const cat = catPorNombre(nom) || {};
+    const sec = normTxt(cat.seccion);
+    const cod = String((it && it.codigo) || cat.codigo || "").toUpperCase();
+    if (/^DEMO\s*-/.test(nom) || sec === "DEMOLITION") return "demo";
+    if (sec === "LABOR" || /\((POR|PER) (CKT|UNIDAD|PROYECTO|BARRERA|D[IÍ]A|VIAJE|UNIT|PROJECT)\)$/.test(nom)) return "mano";
+    if (sec === "UNDERGROUND") return "ug";
+    // los empalmes son cableado aunque el catálogo los tenga con la luz (W.P SPLICES)
+    if (/SPLICE|WIRE ?NUTS?\b|WIRENUTS|PIGTAIL/.test(nom)) return "cable";
+    // 1) la sección del catálogo, que es la del Excel de Edgar
+    if (SEC_LV.test(sec)) return "lv";
+    if (/GENERATOR|\bATS\b|\bUPS\b/.test(sec)) return "gen";
+    if (/GROUNDING/.test(sec)) return "tierra";
+    if (/SWITCHGEAR|BREAKERS|SERVICE/.test(sec)) return "panel";
+    if (/LIGHTING|LUTRON/.test(sec)) return "luz";
+    if (sec === "WIRING DEVICES") return RX_CAJA.test(nom) ? "cajas" : "disp";
+    if (sec === "WIRING") return "cable";
+    if (sec === "RACEWAY") return RX_CAJA.test(nom) ? "cajas" : RX_CABLE.test(nom) ? "cable" : "tuberia";
+    // 2) sin sección (o «misceláneos»): por el nombre
+    if (/FIRE ALARM|SMOKE DET|HORN|STROBE|PULL STATION|\bCAT ?[56]|DATA OUTLET|TV OUTLET|CARD READER|CAMERA|SPEAKER/.test(nom)) return "lv";
+    if (/\bEV\b|CHARGER|GENERATOR/.test(nom)) return "gen";
+    if (/GROUND ROD|GROUND(ING)? CLAMP|GROUND BAR/.test(nom)) return "tierra";
+    if (/LIGHT|FIXTURE|TROFFER|\bLED\b|PENDANT|SCONCE|CHANDELIER|LUMINAR|EXIT SIGN/.test(nom)) return "luz";
+    if (/BREAKER|PANELBOARD|LOAD CENTER|DISCONNECT|TRANSFORMER|\bMETER\b/.test(nom)) return "panel";
+    if (RX_CAJA.test(nom)) return "cajas";
+    if (/RECEPTACLE|\bSWITCH\b|DIMMER|SENSOR|WALLPLATE|WALL PLATE|POWER PACK|\bGFCI\b/.test(nom)) return "disp";
+    if (ES_LINEAL_CABLE(nom) || RX_CABLE.test(nom)) return "cable";
+    if (ES_TUBERIA(nom) || /EMT|CONNECTOR|COUPLING|STRAP|FLEX|UNISTRUT|ALL-THREAD|TAPCON|ANCHOR|HEX NUT|WASHER|SCREW|\bPVC\b|\bRMC\b|\bIMC\b/.test(nom)) return "tuberia";
+    // 3) y si no, el código de partida
+    const PORCOD = { "01": "demo", "03": "ug", "04": "panel", "05": "panel", "06": "cable", "07": "tierra", "08": "tuberia",
+                     "09": "tuberia", "10": "disp", "11": "luz", "12": "disp", "13": "lv", "14": "gen", "15": "gen" };
+    return PORCOD[cod.slice(0, 2)] || "otros";
+  }
+  const seccionNom = id => (SECCIONES_TK.find(x => x.id === id) || SECCIONES_TK[SECCIONES_TK.length - 1]).nom;
+
   /* (29/09) La MISMA pieza —mismo item, mismo precio, mismas horas— en UN
      renglón aunque venga de varias recetas y de lo contado suelto. PURA:
      entra la lista de renglones del estimado, salen los grupos en el orden de
@@ -11004,15 +11066,27 @@ function esFalloDeRed(err) {
       if (cat && Number(cat.precio) > 0 && Math.abs(Number(cat.precio) - Number(f.p)) > 0.005)
         f.de = "precio de este estimado (catálogo " + n2(cat.precio) + ")";
     }
-    filas.sort((a, b) => (a.cod || "zz").localeCompare(b.cod || "zz") || a.item.localeCompare(b.item));
+    // (29/09, Edgar) por secciones, en el orden de la obra —tubería, cableado,
+    // cajas, dispositivos, iluminación…—, y dentro de cada una por partida y nombre
+    const ordSec = id => SECCIONES_TK.findIndex(x => x.id === id);
+    filas.forEach(f => { f.sec = seccionTakeoff({ item: f.item, codigo: f.cod }); });
+    filas.sort((a, b) => ordSec(a.sec) - ordSec(b.sec) || (a.cod || "zz").localeCompare(b.cod || "zz") || a.item.localeCompare(b.item));
     const hoyTxt = new Date().toLocaleDateString("es-US", { day: "numeric", month: "long", year: "numeric" }); // el texto va en español
     const l = [];
     l.push(`TAKEOFF — ${est.nombre}${est.cliente ? ` — ${est.cliente}` : ""} — ${hoyTxt}${est.escenario ? ` — escenario ${est.escenario}` : ""}${est.factor ? ` — factor ${est.factor}` : ""}`);
     l.push(["Partida", "Ítem", "De dónde sale", "Cantidad", "Unidad", "$ unitario", "h unitarias", "$ Material", "Horas"].join("\t"));
-    let mat = 0, hrs = 0;
+    let mat = 0, hrs = 0, secAhora = null;
     for (const f of filas) {
       const m = r2(Number(f.q) * Number(f.p)), h = r2(Number(f.q) * Number(f.h));
       mat += m; hrs += h;
+      // el encabezado de la sección lleva su total en el TEXTO, no en la columna
+      // de dinero: así la columna sigue sumando de arriba abajo sin contar doble
+      if (f.sec !== secAhora) {
+        secAhora = f.sec;
+        const de = filas.filter(x => x.sec === secAhora);
+        const sm = de.reduce((t, x) => t + r2(Number(x.q) * Number(x.p)), 0), sh = de.reduce((t, x) => t + r2(Number(x.q) * Number(x.h)), 0);
+        l.push(["", "── " + seccionNom(secAhora).toUpperCase() + " ── " + de.length + (de.length === 1 ? " renglón · " : " renglones · ") + fmt(r2(sm)) + " · " + n1(sh) + " h", "", "", "", "", "", "", ""].join("\t"));
+      }
       l.push([f.cod, f.item, f.de, n1(f.q), f.u, n2(f.p), n1(f.h), n2(m), n1(h)].join("\t"));
     }
     l.push("");
@@ -12241,7 +12315,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       const deTxt = junta
         ? ` <span class="mat-cant">— junta ${g.filas}: ${esc(g.orden.map(d => r2(g.partes[d]) + " " + d).join(" · "))}</span>`
         : (i.deEnsamble ? ` <span class="mat-cant">— de: ${esc(i.deEnsamble)}</span>` : "");
-      return `
+      return { sec: seccionTakeoff(i), m: Number(i.cantidad) * Number(i.precio) || 0, h: Number(i.cantidad) * Number(i.horas) || 0, html: `
       <div class="mat-item${z.fila ? " " + z.fila : ""}">
         ${z.chip ? `<span class="recibo-chip ${z.clase}">${esc(z.chip)}</span>` : ""}
         <span class="alcance-info">
@@ -12254,15 +12328,15 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         ${!soloLectura && (junta ? idRow : i.id) ? (() => { const r = junta ? idRow : i; const nota = junta ? " (solo las " + r2(Number(r.cantidad)) + " contadas aparte; lo de las recetas sale de sus recetas)" : ""; return `<button class="insp-borrar btn-item-qty" data-id="${r.id}" data-qty="${esc(r.cantidad)}" title="Cambiar cantidad${esc(nota)}" aria-label="Cambiar cantidad">${ico("lapiz")}</button>
         <button class="insp-borrar btn-item-precio" data-id="${r.id}" data-precio="${esc(r.precio)}" data-item="${esc(r.item)}" title="Cambiar el precio en este estimado (el catálogo no se toca)${esc(nota)}" aria-label="Cambiar el precio en este estimado (el catálogo no se toca)">$${ico("lapiz")}</button>
         <button class="insp-borrar btn-item-borrar" data-id="${r.id}" title="Quitar${esc(nota)}" aria-label="Quitar">${ico("basura")}</button>`; })() : ""}
-      </div>`;
-    }).join("");
+      </div>` };
+    });
 
     // Los automáticos dejan de ser mudos: autosPlanos lee el precio vivo del
     // catálogo con un .includes difuso, así que puede caer en un connector sin
     // precio y colarse a $0.00 con su chip AUTO y aire de normalidad.
     const filasAutos = c.autos.map((a, n) => {
       const z = zsAuto[n] || CERO_NEUTRO, cero = (Number(a.precio) || 0) === 0;
-      return `
+      return { sec: seccionTakeoff(a), m: Number(a.cantidad) * Number(a.precio) || 0, h: Number(a.cantidad) * Number(a.horas) || 0, html: `
       <div class="mat-item auto-item${z.fila ? " " + z.fila : ""}">
         <span class="recibo-chip leido">Auto</span>
         ${z.chip ? `<span class="recibo-chip ${z.clase}">${esc(z.chip)}</span>` : ""}
@@ -12272,7 +12346,23 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         </span>
         <span class="mat-precio">${cero ? "—" : fmt(r2(a.cantidad * a.precio))}</span>
         ${selCero(z, a.item)}
-      </div>`;
+      </div>` };
+    });
+    /* (29/09, Edgar: «organízame mejor el take-off… por categorías, como en
+       Bluebeam y en el Excel… y en cada sección, los automáticos que se
+       incluyen») La lista de ítems por secciones, en el orden de la obra, cada
+       una con sus renglones, sus automáticos y su total. Solo cambia la VISTA. */
+    const filasPorSeccion = SECCIONES_TK.map(S => {
+      const its = filasItems.filter(x => x.sec === S.id), aus = filasAutos.filter(x => x.sec === S.id);
+      if (!its.length && !aus.length) return "";
+      const m = its.concat(aus).reduce((t, x) => t + x.m, 0), h = its.concat(aus).reduce((t, x) => t + x.h, 0);
+      return `
+      <div class="tk-sec" data-sec="${S.id}">
+        <span class="tk-sec-nom">${esc(S.nom)}</span>
+        <span class="tk-sec-dat">${its.length} ${its.length === 1 ? "renglón" : "renglones"}${aus.length ? ` + ${aus.length} automático${aus.length === 1 ? "" : "s"}` : ""} · ${r2(h)} h</span>
+        <span class="tk-sec-tot">${m > 0 ? fmt(r2(m)) : "—"}</span>
+      </div>
+      ${its.map(x => x.html).join("")}${aus.map(x => x.html).join("")}`;
     }).join("");
 
     // Ensambles del estimado (modos remodelación / servicio)
@@ -12521,8 +12611,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       <div class="cal-panel-card">
         <div class="cal-form-titulo">Ítems (${c.items.length}${c.autos.length ? ` + ${c.autos.length} automáticos` : ""})</div>
         ${(c.consAvisos || []).length ? `<div class="lev-nota" style="margin:.2rem 0 .5rem">${ico("alerta")} Reglas de consumibles que no corrieron:<br>${c.consAvisos.map(a => "• " + esc(a)).join("<br>")}<br><span class="muted">Da de alta esos ítems en el catálogo (docs/sql/e25) y saldrán solos.</span></div>` : ""}
-        ${filasItems || `<p class="cal-sin-eventos">Agrega ensambles, pega el takeoff o busca en el catálogo.</p>`}
-        ${filasAutos}
+        ${filasPorSeccion || `<p class="cal-sin-eventos">Agrega ensambles, pega el takeoff o busca en el catálogo.</p>`}
       </div>`}
       ${tarjetaSegura(cardConsumiblesHTML, est, c, soloLectura)}
       ${tarjetaSegura(cardHorasHTML, est, c, soloLectura)}
@@ -16203,6 +16292,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   // devolvió el asistente en vivo) sin llamar a la nube ni gastar un centavo.
   window.MXP_PRUEBA = {
     agrupaMateriales,
+    seccionTakeoff: it => seccionTakeoff(it),
     // E0 · La lógica del $0 es pura, así que se prueba sin nube y sin sesión:
     // se le pone un catálogo de mentira y se le pregunta. Ver pruebas/e0.js.
     e0: {
