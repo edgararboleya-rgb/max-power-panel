@@ -31,7 +31,9 @@
     datos:      ["datos", "trabajo"],
     hoy:        ["hoy", "lo que hay", "existente", "existing", "existing conditions", "today", "what exists",
                  "project objective and background", "project objective", "objective and background", "background",
-                 "project background", "site conditions", "existing site conditions", "overview", "project overview", "general"],
+                 "project background", "site conditions", "existing site conditions", "overview", "project overview", "general",
+                 // v251 (Metro NPR): «1. PROJECT UNDERSTANDING» es lo que se entendió del trabajo: va a la sección 1
+                 "project understanding", "understanding of the project", "understanding", "project description"],
     cambia:     ["cambia", "que cambia", "nuevo", "new layout", "changes", "what changes", "new", "proposed layout", "proposed work", "new work"],
     falta:      ["falta", "lo que falta", "sin datos", "falta informacion", "basis", "basis of information", "missing", "unknowns", "not verified"],
     alcance:    ["alcance", "incluye", "scope", "included", "scope of work", "work included", "scope of work included", "work to be performed", "description of work"],
@@ -72,7 +74,7 @@
     if (/\bpayment/.test(n)) return "pagos_detalle";
     if (/\b(pric(e|ing)|lump sum|investment)\b/.test(n)) return "precio_detalle";
     if (/\bscope of work\b/.test(n)) return "alcance";
-    if (/\b(background|objective|existing conditions?)\b/.test(n)) return "hoy";
+    if (/\b(background|objective|existing conditions?|project understanding)\b/.test(n)) return "hoy";
     if (/\b(pre construction|layout approval|circuit identification|verification before)/.test(n)) return "pre";
     if (/\b(schedule|timeline|coordination)\b/.test(n)) return "programa";
     if (/\b(warranty|terms|legal protections|general conditions)\b/.test(n) && !/\b(acceptance|signature)\b/.test(n)) return "terminos";
@@ -111,14 +113,18 @@
     flood_zona:         ["flood zone", "fema zone", "fema flood zone", "zona de inundacion", "zona fema", "flood"],
     flood_bfe:          ["bfe", "base flood elevation", "design flood elevation"],
     flood_ec:           ["elevation certificate", "ec date", "elevation certificate date", "certificado de elevacion"],
-    flood_lag:          ["lag", "lowest adjacent grade"]
+    flood_lag:          ["lag", "lowest adjacent grade"],
+    // v252 (29-sep, Metro NPR): la base del precio (lo que sale debajo del total) y el inquilino (fila Tenant)
+    base_precio:        ["base del precio", "base de precio", "pricing basis", "price basis", "basis of pricing"],
+    inquilino:          ["inquilino", "tenant", "occupant", "arrendatario", "tenant name"]
   };
   // Datos de la cabecera del chat que no hacen falta (la plantilla los pone sola)
   const CLAVES_IGNORAR = ["prepared by", "preparado por", "proposal", "date", "proposal date",
                           "license", "licencia", "contractor", "company", "field", "value", "item",
                           "description", "milestone", "amount", "trigger", "no", "#", "rev", "revision", "version", "page"];
   // Líneas del membrete del chat: se saltan sin decir nada
-  const MEMBRETE = /max power electrical|EC13016045|967-9311|mxpes\.com|licensed\s*[•·|]\s*insured|^scope of work\s*(&|and)\s*proposal$|^proposal$|^electrical proposal$/i;
+  // (v251: «mxpes.com» suelto es el membrete; un correo «…@mxpes.com» dentro de una frase de pagos, no)
+  const MEMBRETE = /max power electrical|EC13016045|967-9311|(?<!@)\bmxpes\.com|licensed\s*[•·|]\s*insured|^scope of work\s*(&|and)\s*proposal$|^proposal$|^electrical proposal$/i;
   // Claves de dinero, que van en su propia sección
   const CLAVES_DINERO = { precio: ["precio", "total", "precio base", "price", "contract price", "base price", "lump sum"],
                           pagos:  ["pagos", "hitos", "milestones", "cobros", "payments", "payment schedule", "payment"] };
@@ -269,6 +275,11 @@
   }
 
   // ================================================================ EL LECTOR
+  // v251: «Ref. MXP-2026-0929-METRONPR · September 29, 2026» → «MXP-2026-0929-METRONPR» (el número de la casa)
+  function numeroDeRef(linea) {
+    const m = String(linea || "").match(/^\s*(?:ref(?:erence)?\.?|reference\s+no\.?|document\s+no\.?|no\.)\s*[:#]?\s*(MXP-[A-Z0-9][A-Z0-9-]*[A-Z0-9])\b/i);
+    return m ? m[1].toUpperCase() : "";
+  }
   function leerAlcance(texto, opciones) {
     const lineas = String(texto || "").replace(/\r/g, "").split("\n");
     // Líneas donde Edgar ya dijo "eso no es dinero" (se guardan por su texto,
@@ -322,7 +333,8 @@
     R.ignoradas = [];
     // Un dato de la cabecera («Clave: valor» que la app reconoce), con sus limpiezas de siempre
     const ponDato = (k, valor, i) => {
-      let v = valor;
+      // «"New Port Richey"» con comillas: el dato es lo de adentro (v251: antes de sacar la forma corta de la ciudad)
+      let v = String(valor || "").replace(/^\s*["“”'«]+\s*/, "").replace(/\s*["“”'»]+\s*$/, "");
       if (k === "ciudad") {
         // "Pinellas County, Florida — permit held by General Contractor" → la ciudad limpia y el permiso lo saca el GC
         const mPerm = v.match(/\s*[—–\-(,;]*\s*(?:the\s+)?(?:electrical\s+|building\s+)?permit\b[^)]*?(?:held|pulled|obtained|secured|issued|applied)\s+(?:by|to|under)\s+[^)]*$/i);
@@ -395,7 +407,11 @@
         R.pre_titulo = tt === tt.toUpperCase() ? tt.toLowerCase().replace(/(^|[\s—–-])([a-z])/g, (m, a, b) => a + b.toUpperCase()) : tt;
       }
       // v3.6 r2: en «1 PROJECT OBJECTIVE & BACKGROUND» el primer párrafo suelto es el overview (regla B4)
-      if (posible === "hoy") R._objetivo = /\b(objective|background|overview|summary|purpose)\b/.test(normaTitulo(linea));
+      if (posible === "hoy") R._objetivo = /\b(objective|background|overview|summary|purpose|understanding|description)\b/.test(normaTitulo(linea));
+      // v251 (Metro NPR): «SCOPE OF WORK» suelto arriba es el TÍTULO del documento, no la sección 2: lo que va
+      // debajo (el nombre del trabajo, «Ref. MXP-…», «Client:», «Job site:», «Jurisdiction:», «Contractor:») es la
+      // cabecera. Se lee como datos, ninguna línea de ahí es un renglón y nada de ahí pisa un dato ya escrito arriba.
+      R._cabecera = posible === "datos" && /^scope of work\b/.test(normaTitulo(linea));
       R.titulos.push({ linea: i + 1, seccion: posible });
       sec = posible; itemActual = null; opcionActual = null;
     };
@@ -408,6 +424,13 @@
       if (p.rol === "dato" || p.rol === "precio") return null;
       return SEC_DE_ROL[p.rol] || null;
     };
+
+    // v251: ¿la hoja trae más abajo la sección del alcance NUMERADA («2. SCOPE OF WORK — INCLUDED»)? Entonces un
+    // «SCOPE OF WORK» suelto y sin número al principio es el título del documento (la cabecera), no el alcance.
+    const alcanceNumerado = lineasLeer.some(l => { const t = String(l || "").replace(/\*\*|__|`/g, "").replace(/^#+\s*/, "").trim();
+      return /^(?:section\s+)?\d+[.)]?\s+\S/i.test(t) && t.length <= 90 && seccionDe(t) === "alcance"; });
+    const esTituloDelDocumento = (linea, posible) => posible === "alcance" && sec === "datos" && alcanceNumerado
+      && /^scope of work$/.test(normaTitulo(linea)) && !/^(?:#+\s*)?(?:section\s+)?\d/i.test(String(linea).trim());
 
     lineasLeer.forEach((cruda, i) => {
       // un .md del chat puede traer **negritas**, `código`, tablas y rayas: se lee como texto llano
@@ -439,13 +462,15 @@
       }
       if (!activa) {
         // ¿es un título de sección? ("## 2. Scope of Work", "Hoy", "3) Not included:")
-        const posible = seccionDe(linea);
+        let posible = seccionDe(linea);
         const pareceTitulo = esTitulo || /^(?:\d+[.)]\s+)?[^.:,]{2,45}:?$/.test(linea);
+        if (esTituloDelDocumento(linea, posible)) posible = "datos";
         if (posible && (pareceTitulo || esTitulo)) { entrarSeccion(posible, linea, i); return; }
       } else if (!pista) {
         // sin pista, una línea que es EXACTAMENTE un título de sección conocido («Not included», «## Scope of Work»)
         // sigue siendo título: el lector no la reclamó para nada y las reglas la conocen letra por letra
-        const exacto = /^[-*•]/.test(linea) ? null : (TITULO_DE[normaTitulo(linea)] || (esTitulo ? seccionDe(linea) : null));
+        let exacto = /^[-*•]/.test(linea) ? null : (TITULO_DE[normaTitulo(linea)] || (esTitulo ? seccionDe(linea) : null));
+        if (esTituloDelDocumento(linea, exacto)) exacto = "datos";
         if (exacto) { entrarSeccion(exacto, linea, i); return; }
       } else if (pista) {
         // el papel de la línea lo pone la pista: si su sección no es la vigente, se entra en ella sin adivinar
@@ -465,6 +490,14 @@
       const valor  = mNV ? mNV[2].trim() : null;
       // datos del membrete que no hacen falta (Prepared By, Proposal #, Date…)
       if (mNV && (sec === "datos" || sec === "ignorar") && CLAVES_IGNORAR.includes(norma(mNV[1].replace(/\s*#\s*$/, "")))) return;
+      // v252: «Project reference: Metro Healthy Communities (tenant)» nombra al inquilino (la fila Tenant de la cabecera)
+      // (v252, revisión: solo «(tenant)» / «[tenant]» exactos, o «tenant: Nombre» / «tenant — Nombre»; nunca «tenant
+      // improvement» ni «tenant build-out», que en comercial son el tipo de obra, no el nombre del inquilino)
+      if (mNV && nombre === "project reference" && /[([]\s*tenant\s*[)\]]|\btenant\s*[:—–-]\s*(?!build|improve|fit)\S/i.test(valor)) {
+        const v = valor.replace(/\s*[([]\s*tenant\s*[)\]]\s*/i, " ").replace(/\btenant\s*[:—–-]\s*/i, "").replace(/\s{2,}/g, " ").trim();
+        if (v && !Object.prototype.hasOwnProperty.call(R.datos, "inquilino")) { R.datos.inquilino = v; R.datos_linea.inquilino = i + 1; }
+        return;
+      }
 
       // --- Con pista «precio» sobre una línea que no es «Precio: valor» (la fila «TOTAL — LUMP SUM | $…» de la
       // tabla de Price): la línea ya pasó el juez (un monto seguro y palabra de precio); el número lo lee la app
@@ -484,7 +517,8 @@
         const k = mNV ? buscaClave(CLAVES_DATOS, nombre) : null;
         if (k) { ponDato(k, valor, i); return; }
         if (Object.prototype.hasOwnProperty.call(CLAVES_DATOS, String(pista.clave)) && !MATRIZ_LEGAL.includes(pista.clave) && !Object.prototype.hasOwnProperty.call(R.datos, pista.clave)) {
-          const v = String(pista.cita || linea).trim();
+          let v = String(pista.cita || linea).trim();
+          if (pista.clave === "numero_propuesta" && numeroDeRef(v)) v = numeroDeRef(v);   // «Ref. MXP-…· fecha» → el número
           if (v && !esMontoTapable(v)) { R.datos[pista.clave] = v; R.datos_linea[pista.clave] = i + 1; return; }
           if (v) return;   // un dato con un monto dentro no vale: la línea la leen las reglas de su sección
         }
@@ -528,11 +562,48 @@
         if (d && R.precio && leerMonto(d.trozo) && leerMonto(d.trozo).centavos !== R.precio.centavos)
           R.avisos.push({ linea: i + 1, perdonable: true, texto: `En Price hay otro monto (${d.trozo}) además del precio. Lo dejo fuera del contrato.`,
                                             arreglos: [{ tipo: "quitar_linea", etiqueta: "Quitar esta línea", linea: i + 1 }] });
+        // v251 (revisión): «Nonprofit consideration applied: this price carries no commercial productivity factor.» es una
+        // frase de Edgar con su título: va al contrato con las condiciones de pago (no se pierde en silencio)
+        const mTitP = !d && linea.replace(/^[-*•]\s*/, "").match(/^([A-Z][^.:$]{2,50}?):\s+(.{15,})$/);
+        if (mTitP && !/^(?:includes?|including|pricing|price|total|lump sum|labor|materials?|all labor|payment|pagos?)\b/i.test(mTitP[1])) {
+          R.pagos_propios.push({ titulo: mTitP[1].trim(), texto: mTitP[2].trim().replace(/^[a-z]/, c => c.toUpperCase()), linea: i + 1 });
+          return;
+        }
         return;   // el resto de Price ("includes labor, materials…") ya lo dice la plantilla
       }
 
       switch (sec) {
         case "datos": {
+          // v251: dentro de la cabecera de un SOW («SCOPE OF WORK» y lo que va debajo hasta la sección 1)
+          if (R._cabecera) {
+            if (!mNV) {
+              const ref = numeroDeRef(linea);
+              if (ref) { if (!R.datos.numero_propuesta) { R.datos.numero_propuesta = ref; R.datos_linea.numero_propuesta = i + 1; } return; }
+              // la primera línea suelta es el nombre del trabajo («Metro New Port Richey Pharmacy — Electrical Build-Out»)
+              if (!R.datos.proyecto && !R._cabeceraTitulo && linea.length <= 120 && !hayDinero(linea) && !/^\d/.test(linea)) {
+                R._cabeceraTitulo = true; R.datos.proyecto = linea.replace(/[.:]$/, "").trim(); R.datos_linea.proyecto = i + 1;
+              }
+              return;   // el resto de la cabecera (fecha, subtítulo) ya lo pone la plantilla
+            }
+            const kc = buscaClave(CLAVES_DATOS, nombre);
+            if (kc === "cliente") {
+              // v251 (revisión): «Client: Wisdom Renovation LLC (Roberto Prata) — admin@wisdomrenovation.com» → el nombre
+              // legal es lo de antes del paréntesis o de la raya; la persona va a «atención» y el correo a «email» si faltan
+              const mail = (valor.match(/[^\s<>()]+@[^\s<>()]+\.[a-z]{2,}/i) || [""])[0];
+              const par = (valor.match(/\(([^)]*)\)/) || ["", ""])[1].trim();
+              const legal = valor.split(/\s+[—–]\s+|\s*\(/)[0].replace(/[\s,;·|-]+$/, "").trim();
+              const tiene = k => Object.prototype.hasOwnProperty.call(R.datos, k) && String(R.datos[k] || "").trim();
+              if (legal && !tiene("cliente")) ponDato("cliente", legal, i);
+              // «Cliente: Wisdom» escrito arriba es el principio de «Wisdom Renovation LLC»: se queda el nombre largo
+              else if (legal && esLaEmpresa([R.datos.cliente], legal) && norma(legal).length > norma(R.datos.cliente).length) R.datos.cliente = legal;
+              if (par && !/@/.test(par) && !tiene("atencion")) ponDato("atencion", par, i);
+              if (mail && !tiene("email")) ponDato("email", mail, i);
+              return;
+            }
+            // lo escrito arriba (en español, o lo que puso la app desde la ficha) manda sobre la cabecera en inglés
+            if (kc && !Object.prototype.hasOwnProperty.call(R.datos, kc)) ponDato(kc, valor, i);
+            return;   // «Project reference:», «Prepared by:»… de la cabecera: sin aviso
+          }
           if (!mNV) { const s = sugerir(SECCIONES, linea);
             if (estaPerdonada(linea)) break;
             R.avisos.push({ linea: i + 1, perdonable: true, texto: s ? `"${linea}" no es un título que conozca. ¿Querías decir "${s}"?`
@@ -571,8 +642,15 @@
               break;
             }
             // v3.6: el párrafo entero es el «overview» y va al contrato tal cual (no se rearma con los títulos)
-            R.datos.overview = texto.trim(); R.prosa_lineas.hoy.push(i + 1);
+            R.datos.overview = texto.trim(); R.prosa_lineas.hoy.push(i + 1); R._overviewFin = i;
             if (mRes) R.datos.resumen = mRes[1].trim().replace(/\s+at\s+\d{2,}[^]*$/i, "").replace(/[.,]$/, "");
+            break;
+          }
+          // v251 (revisión): en «PROJECT UNDERSTANDING», la línea que sigue al párrafo sin línea en blanco en medio
+          // («All quantities below are taken from that floor plan.») es del mismo párrafo, no de «lo que hay hoy»
+          if (sec === "hoy" && R._objetivo && R.datos.overview && R._overviewFin === i - 1 && !/^[-*•]/.test(linea)
+              && !/^(existing conditions?|site conditions?|basis of information|information basis|new layout|proposed layout|changes)[.:]\s/i.test(texto)) {
+            R.datos.overview = (R.datos.overview.replace(/\s+$/, "") + " " + texto.trim()).trim(); R.prosa_lineas.hoy.push(i + 1); R._overviewFin = i;
             break;
           }
           // "Existing conditions. …" / "Basis of information. …" / "New layout. …" delante del párrafo
@@ -634,6 +712,9 @@
               itemActual = { fantasma: true, detalles: [], lineas: [i + 1] }; R.cierre_fantasmas.push(itemActual); return;
             }
             itemActual = { n: R.items.length + 1, escrito, grupo: R._grupo || null, serie, titulo: titulo.replace(/[.:]$/, "").trim(), detalles: [], lineas: [i + 1] };
+            // v251: «Electrical demolition at the wall being removed: removal of three (3)…» → el detalle empieza con
+            // mayúscula (en el papel va detrás de «Título.»); las siglas y las palabras con mayúscula por dentro no se tocan
+            if (resto && /^[a-záéíóúñ][a-záéíóúñ]/.test(resto) && !/^(?:e\.g\.|i\.e\.|etc\b)/i.test(resto)) resto = resto.charAt(0).toUpperCase() + resto.slice(1);
             if (resto) itemActual.detalles.push(resto);
             R.items.push(itemActual);
           };
@@ -792,7 +873,43 @@
           // acabaron los pagos y lo que sigue son Condiciones sin título. Se sale con break (H13: antes caía al caso de
           // abajo, donde R.condiciones no es una lista, y el lector reventaba). v165: también con lectura activa (las
           // filas con pista de pago se leen por su pista, no por la sección; una fila SIN pista se lee como sin lectura).
-          if (!hayDinero(sinVineta) && !/\bpayment|\binvoice|\bdue\b/i.test(sinVineta)) { sec = "condiciones"; break; }
+          // v251 (revisión, Metro NPR): lo que va debajo de «Pagos:» sin porcentaje ya no se pierde en silencio
+          //   · «Proposal valid 15 days…» es la vigencia (si arriba no la dijeron);
+          //   · un trozo de una o dos palabras («inspection.») es lo que quedó de una línea cortada: se avisa;
+          //   · «Payment by check or ACH — Zelle: … Payment due on receipt…, independent of…» es una condición de pago propia
+          //     (sin lo que la plantilla ya trae: late payment, invoices are due);
+          //   · una línea con dinero que no es un hito: si es la movilización de la plantilla ($350) se dice que ya va; si no, se avisa.
+          const mVal = sinVineta.match(/^(?:this\s+)?proposal\s+(?:is\s+)?valid\s+(?:for\s+)?(\d{1,3})\s+days?\b/i);
+          if (mVal) { if (!R.datos.vence) { R.datos.vence = mVal[1]; R.datos_linea.vence = i + 1; } break; }
+          if (!hayDinero(sinVineta) && (sinVineta.replace(/[.,;:]+$/, "").trim().split(/\s+/).length <= 2 || /^[a-záéíóúñ]/.test(sinVineta))) {
+            R.avisos.push({ linea: i + 1, perdonable: true, texto: `Debajo de Pagos quedó un trozo suelto: «${sinVineta.slice(0, 40)}». Parece lo que sobró de una línea cortada; no lo pongo en el contrato.`,
+                            arreglos: [{ tipo: "quitar_linea", etiqueta: "Quitar esta línea", linea: i + 1, auto: false }] });
+            break;
+          }
+          if (!hayDinero(sinVineta) && /\b(?:payments?|payable|invoices?|due|zelle|ach|checks?|cheque|wire)\b/i.test(sinVineta)) {
+            // fuera lo que la plantilla ya dice: el recargo por mora, «due on receipt» y QuickBooks, «ACH / check preferred»
+            // y, con contratista, «Payment not contingent on Owner payment» (regardless of / independent of the Owner…)
+            const yaLoDice = f => /^(?:late payments?|any amount not paid|invoices? (?:are|is) (?:due|issued)|invoicing and payment)\b/i.test(f)
+              || /\bquickbooks\b|regardless of|not contingent|independent of|pay-(?:if|when)-paid|payment flow/i.test(f)
+              || (/^(?:preferred payment|payment (?:by|via)|ach|checks?)\b/i.test(f) && /\b(?:ach|checks?)\b/i.test(f) && !/zelle|wire|card|cash|venmo|@/i.test(f));
+            const frases = sinVineta.split(/(?<=\.)\s+(?=[A-Z])/).map(f => f.trim()).filter(f => f && !yaLoDice(f));
+            if (frases.length) {
+              const mT = frases[0].match(/^(.{3,40}?)\s+[—–]\s+(.+)$/) || frases[0].match(/^([^:@]{3,40}?):\s+(.+)$/);
+              const titulo = mT ? mT[1].trim() : "Payment method";
+              const texto = (mT ? [mT[2], ...frases.slice(1)] : frases).join(" ").trim();
+              R.pagos_propios.push({ titulo: titulo.replace(/[.:]$/, ""), texto: texto.replace(/^[a-z]/, c => c.toUpperCase()), linea: i + 1 });
+            }
+            break;
+          }
+          if (hayDinero(sinVineta)) {
+            if (/mobiliz/i.test(sinVineta) && /\$\s?350(?:\.00)?\b/.test(sinVineta))
+              R.avisos.push({ linea: i + 1, informativo: true, texto: `«${sinVineta.slice(0, 40)}…» ya lo trae la plantilla (7.4, movilizaciones a $350.00, y 9.6, órdenes de cambio); no lo repito.` });
+            else if (!estaPerdonada(linea))
+              R.avisos.push({ linea: i + 1, perdonable: true, texto: `En Pagos hay una línea con un monto que no es un pago: «${sinVineta.slice(0, 50)}». La dejo fuera del contrato.`,
+                              arreglos: [{ tipo: "quitar_linea", etiqueta: "Quitar esta línea", linea: i + 1 }] });
+            break;
+          }
+          if (!/\bpayment|\binvoice|\bdue\b/i.test(sinVineta)) { sec = "condiciones"; break; }
           break;
         }
         case "programa": case "pre": case "terminos": {
@@ -871,7 +988,10 @@
           // el grupo en el que estamos (título corto de arriba); sin título, un grupo sin nombre
           const grupoActual = () => { if (!R._codGrupo) { R._codGrupo = { grupo: "", articulos: [], otros: [] }; R.codigo_detalle.push(R._codGrupo); } return R._codGrupo; };
           const agregar = a => { if (!a) return; if (!R.codigo.includes(a)) R.codigo.push(a); const g = grupoActual(); if (!g.articulos.includes(a)) g.articulos.push(a); };
-          const articulosDe = txt => (txt.match(/\d+(?:\.\d+)?(?:\([A-Za-z0-9]+\))*/g) || [])
+          // v251: los números de OTRAS normas no son artículos del NEC («NFPA 101», «UL 924», «Chapter 489»)
+          const articulosDe = txt => (txt.replace(/\b(?:NFPA|UL|IEEE|ANSI|ASTM|ASCE|IBC|IRC|IECC|FFPC|NFPA\s*70E)\s*[-#]?\s*\d+(?:[-–.]\d+)*(?:\([A-Za-z0-9]+\))*/g, " ")
+                                             .replace(/\bchapter\s+\d+(?:\.\d+)*/gi, " ")
+                                             .match(/\d+(?:\.\d+)?(?:\([A-Za-z0-9]+\))*/g) || [])
             .filter(t => /^\d{3}(?:\D|$)/.test(t));               // tres cifras enteras: 210, 250.24(C); no 2023 ni 70
           const rxArt = new RegExp("articles?\\s+((?:" + ART + "(?:\\s*\\([^)]*\\))?(?:\\s*,\\s*|\\s+and\\s+|\\s*&\\s*)?)+)", "gi");
           let mArt, hayArt = false;
@@ -880,7 +1000,10 @@
           if (/\b(nec|nfpa\s*70)\b/i.test(linea)) {
             const arts = articulosDe(linea.replace(/\b(nfpa\s*70|20\d\d)\b/gi, " "));
             if (!arts.length && /all work|in accordance with|as adopted|performed under/i.test(linea)) break;   // la frase general: la plantilla ya la trae
-            const esNota = linea.replace(/^[-*•]\s*/, "").length > 90 || /\bnote\b|assum|limits|requires|this proposal/i.test(linea);
+            // v251 (revisión): «NEC Art. 220: added load verified against the existing panel capacity» también es nota: los
+            // artículos seguidos de «: texto» de 15 letras o más son un compromiso de Edgar y van con su frase
+            const esNota = linea.replace(/^[-*•]\s*/, "").length > 90 || /\bnote\b|assum|limits|requires|this proposal/i.test(linea)
+              || /:\s*[A-Za-z][^:]{14,}$/.test(linea.replace(/^[-*•]\s*/, ""));
             if (esNota) { const otro = linea.replace(/^[-*•]\s*/, ""); R.codigo_otros.push(otro); grupoActual().otros.push(otro); arts.forEach(a => { if (!R.codigo.includes(a)) R.codigo.push(a); }); break; }
             if (arts.length) { hayArt = true; arts.forEach(agregar); } else break;
           }
@@ -1088,6 +1211,27 @@
   const minus = t => { t = String(t || ""); return (SIGLAS.test(t) || !(/^[A-Z][a-z]/.test(t) || /^[A-Z]\s+[a-z]/.test(t))) ? t : t.charAt(0).toLowerCase() + t.slice(1); };
 
   // ============================================================ LA VALIDACIÓN
+  // v252: para qué sirve cada respuesta de Condiciones (sale debajo de la pregunta, en una línea)
+  const PARA_QUE = {
+    fotos_panel: "Si dices que no, el contrato añade que el precio se hizo sin ver el panel y que cualquier arreglo del panel va aparte.",
+    circuitos_exist: "Si dices que sí, el contrato deja claro que los AFCI que pida el código en esos circuitos van aparte."
+  };
+  // ¿Cambia el contrato la respuesta? (si no, no se pregunta)
+  function condicionesQueImportan(L) {
+    const d = L.datos || {}, C = L.condiciones || {};
+    const esComercial = /comercial|commercial/.test(norma(d.propiedad || d.property || ""));
+    const sinAfci = esComercial || String((C.tipo_trabajo || {}).valor || "") === "service";
+    // (v252, revisión: también «Qué cambia», y las palabras en español: tablero, acometida, medidor, interruptores…)
+    const textoAlcance = norma([d.proyecto || "", L.cambia || "", ...(L.items || []).map(it => it.titulo + " " + (it.detalles || []).join(" "))].join(" "));
+    const tocaPanel = /\b(panels?|panelboards?|sub-?panels?|load centers?|breakers?|home ?runs?|service entrance|service equipment|main disconnect|meter|tableros?|sub-?tableros?|acometidas?|medidor(es)?|interruptor(es)?|breakers?|centros? de carga|desconectivos? principal(es)?|desconectador(es)? principal(es)?)\b/.test(textoAlcance);
+    const pv = L.panel_visto && typeof L.panel_visto === "object" ? L.panel_visto : null;
+    const visto = pv && (String(pv.marca || "").trim() || String(pv.amperaje || "").trim())
+      ? [String(pv.marca || "").trim(), String(pv.amperaje || "").trim() ? String(pv.amperaje).trim().replace(/^(\d+)$/, "$1A") : ""].filter(Boolean).join(", ") : "";
+    return {
+      circuitos_exist: { preguntar: !sinAfci, motivo: sinAfci ? "AFCI no aplica en comercial ni en servicio exterior" : "" },
+      fotos_panel: { preguntar: tocaPanel && !visto, toca: tocaPanel, visto }
+    };
+  }
   function validarAlcance(L) {
     const errores = L.errores.slice(), preguntas = L.preguntas.slice();
     const D = L.datos, conFirma = leerFirma(D.firma);
@@ -1107,6 +1251,11 @@
           texto: zona ? `La obra está en zona ${zona} pero no encuentro el BFE del certificado de elevación. Escríbelo así: ${zona}, BFE 11.0 / 12.0 ft NAVD 88, EC 12/23/2014, LAG 6.7 ft`
                       : "La obra está en zona de inundación (la hoja habla del certificado de elevación / FBC 1612). ¿Qué zona FEMA y qué BFE dice el certificado? Escríbelo así: AE, BFE 11.0 / 12.0 ft NAVD 88, EC 12/23/2014, LAG 6.7 ft" });
     }
+    // v252 (revisión): «Base del precio: …» que habla de cantidades y de planos a la vez no se toma; se avisa
+    if (baseDudosa(D.base_precio)) {
+      const tx = `«Base del precio: ${String(D.base_precio).trim().slice(0, 60)}» habla de cantidades y de planos a la vez: no la tomo. Escribe solo «cantidades» o «planos», o elígela en la ficha.`;
+      if (!(L.avisos || []).some(a => a && a.texto === tx)) (L.avisos = L.avisos || []).push({ linea: (L.datos_linea || {}).base_precio ? L.datos_linea.base_precio : 0, informativo: true, texto: tx });
+    }
     // Cada {{FALTA: pregunta}} que dejó el chat es una pregunta para Edgar
     (L.faltas || []).forEach(f => preguntas.push({
       clave: "falta_" + f.linea, linea: f.linea, texto: f.pregunta, libre: true,
@@ -1123,7 +1272,7 @@
     // v3.5: con contratista, en el papel el cliente es el contratista y la persona pasa a dueño
     const gcN = String(D.contratista || D.gc_nombre || "").trim();
     if (gcN && D.cliente && norma(D.cliente) !== norma(gcN) && !norma(D.cliente).includes(norma(gcN).split(" ")[0]))
-      L.avisos.push({ informativo: true, texto: `Contrato con ${gcN}: en el papel el cliente es ${gcN} (paga y firma) y ${D.cliente} queda como dueño de la propiedad (Homeowner).` });
+      L.avisos.push({ informativo: true, texto: `Contrato con ${gcN}: en el papel el cliente es ${gcN} (paga y firma) y ${D.cliente} queda como dueño (Owner) de la propiedad.` });
     // v3.5: una fase bajo tierra semanas antes del rough-in y el segundo pago al terminar el rough-in: es dinero en la calle
     {
       const fases = partirFases(((L.condiciones || {}).fases || {}).valor || "");
@@ -1142,7 +1291,7 @@
     }
     // contrato con el contratista sin el nombre del dueño: no frena; firma solo el contratista
     if ((norma(D.contrato_con || "") === "gc" || gcN) && !L.avisos.some(a => /firma solo el contratista/.test(a.texto)))
-      L.avisos.push({ informativo: true, texto: "Contrato con el contratista: firma solo el contratista (representante autorizado). El dueño de la propiedad queda como referencia (Homeowner) y firma el Layout Approval de la sección 8, no el SOW." });
+      L.avisos.push({ informativo: true, texto: "Contrato con el contratista: firma solo el contratista (representante autorizado). El dueño (Owner) de la propiedad queda como referencia y firma el Layout Approval de la sección 8, no el SOW." });
     // dos firmantes
     if (D.cliente && !D.segundo_firmante && /\s(y|&|and)\s/i.test(D.cliente))
       preguntas.push({ clave: "dos_firmas", texto: `"${D.cliente}" ¿son dos personas que firman las dos?`,
@@ -1173,13 +1322,22 @@
     }
 
     // las dos condiciones que más protegen
+    // v252 (Edgar, 29-sep): solo se pregunta lo que cambia el contrato, y cada pregunta dice para qué sirve.
+    //   · «Circuitos existentes» solo enciende la cláusula de AFCI, que no va en comercial ni en servicio exterior;
+    //   · «Fotos del panel» solo importa si el alcance toca un panel existente (panel, breakers, home runs…), y si
+    //     el levantamiento de la obra ya vio el panel (marca o amperaje: L.panel_visto, lo pone la app) se contesta sola.
     const C = L.condiciones;
     const si_no = siNo;
-    if (si_no(C.fotos_panel) === null)
-      preguntas.push({ clave: "fotos_panel", texto: "¿Tienes fotos o documentación del panel?",
+    const cond = condicionesQueImportan(L);
+    if (si_no(C.fotos_panel) === null && cond.fotos_panel.preguntar)
+      preguntas.push({ clave: "fotos_panel", texto: "¿Tienes fotos o documentación del panel?", para_que: PARA_QUE.fotos_panel,
         opciones: [{ etiqueta: "Sí las tengo", valor: "si" }, { etiqueta: "No las tengo", valor: "no" }] });
-    if (si_no(C.circuitos_exist) === null)
-      preguntas.push({ clave: "circuitos_exist", texto: "¿Este trabajo extiende o modifica circuitos que ya existen?",
+    // contestada sola: se dice en «Lo que entendí» de dónde salió (no frena ni enciende nada: el panel se vio)
+    const contestadas = [];
+    if (si_no(C.fotos_panel) === null && cond.fotos_panel.toca && cond.fotos_panel.visto)
+      contestadas.push({ clave: "fotos_panel", valor: "si", texto: `Fotos del panel: sí, lo dice el levantamiento de la obra (${cond.fotos_panel.visto}).` });
+    if (si_no(C.circuitos_exist) === null && cond.circuitos_exist.preguntar)
+      preguntas.push({ clave: "circuitos_exist", texto: "¿Este trabajo extiende o modifica circuitos que ya existen?", para_que: PARA_QUE.circuitos_exist,
         opciones: [{ etiqueta: "Sí", valor: "si" }, { etiqueta: "No", valor: "no" }] });
 
     if (si_no(C.fotos_panel) === false && !L.falta)
@@ -1217,7 +1375,7 @@
           opciones: [{ etiqueta: "Sí, quítala", valor: clave }, { etiqueta: "No, déjala", valor: null }] });
     });
 
-    return { errores, preguntas, puedeSeguir: errores.length === 0 };
+    return { errores, preguntas, contestadas, puedeSeguir: errores.length === 0 };
   }
 
   // ============================================================ LOS ARREGLOS
@@ -1505,17 +1663,25 @@
     1: ["Upon completion of the work"]
   };
 
+  // v252 (Edgar): con el permiso del CLIENTE, el hito 2 de tres pagos no puede esperar a una inspección que pide
+  // otro: se cobra con el rough-in terminado y listo para inspección. Solo cuando la hoja no trae su propio disparador.
+  const HITO2_PERMISO_CLIENTE = "Rough-in complete and ready for inspection";
   function cuentas(L) {
     const base = L.precio ? L.precio.centavos : 0;
     const pcts = (L.pagos && L.pagos.pcts.length) ? L.pagos.pcts.slice() : [];
     const montos = pcts.length ? repartir(base, pcts) : [];
+    let permisoCliente = false;
+    if (pcts.length === 3 && !((L.pagos || {}).disparadores || [])[1]) {
+      try { permisoCliente = inferirPermiso(L) === "cliente"; } catch { permisoCliente = false; }
+    }
+    const porDefecto = (n, k) => (n === 3 && k === 1 && permisoCliente) ? HITO2_PERMISO_CLIENTE : ((DISPARADORES[n] || [])[k] || null);
     const addons = L.opciones.map((o, k) => ({
       letra: String.fromCharCode(66 + k), titulo: o.titulo, centavos: o.centavos }));
     return {
       base, pcts, montos,
       hitos: pcts.map((p, k) => ({
         n: k + 1, pct: p, centavos: montos[k], es_deposito: k === 0,
-        disparador: (L.pagos.disparadores[k]) || (DISPARADORES[pcts.length] || [])[k] || null })),
+        disparador: (L.pagos.disparadores[k]) || porDefecto(pcts.length, k), hito2_permiso_cliente: k === 1 && permisoCliente || undefined })),
       addons,
       total_con_todo: base + addons.reduce((a, b) => a + b.centavos, 0),
       pct_deposito: pcts.length ? pcts[0] : null,
@@ -1570,14 +1736,88 @@
       const k = norma(n); if (!vistos.has(k)) { vistos.add(k); salida.push(n); } }));
     return salida.join(" / ");
   }
+  // ---- v251: las reglas de la casa por contratista (Edgar, 29-sep) ----
+  // «El permiso cuando es con Wisdom el proyecto siempre lo sacan ellos como contratistas.»
+  // La llave es el id del contratista en la app (contratistas.id); «nombre» sirve para reconocerlo
+  // cuando solo viene el nombre (gc_nombre, «Contractor:», el cliente de la hoja). La regla MANDA sobre
+  // lo que diga la hoja; si la hoja decía otra cosa, se le avisa a Edgar en ámbar (nunca en silencio).
+  const REGLAS_CONTRATISTA = {
+    // patron: para gc_nombre, gc_obra y «Contractor:»; patronCliente: para el cliente de la hoja, que puede ser una persona
+    // que se llame Wisdom de nombre: ahí solo cuenta el nombre de la empresa entero
+    wisdom: { nombre: "Wisdom", patron: /\bwisdom\b/i, patronCliente: /\bwisdom\s+renovation\b/i, permiso: "cliente",
+              motivo: "Con Wisdom el permiso lo saca Wisdom (regla de la casa)" }
+  };
+  // ¿Esta obra es de un contratista con regla? Mira el id que pasa la app (gc_id), y si no, los nombres.
+  // Devuelve { id, nombre, permiso, motivo } o null.
+  function reglaDeContratista(d) {
+    d = d || {};
+    const id = norma(String(d.gc_id || "")).replace(/\s+/g, "-");
+    if (id && Object.prototype.hasOwnProperty.call(REGLAS_CONTRATISTA, id)) return Object.assign({ id }, REGLAS_CONTRATISTA[id]);
+    const nombres = [d.gc_nombre, d.gc_obra, d.contratista].map(v => String(v || "")).filter(v => v.trim());
+    const cliente = String(d.cliente || "");
+    for (const [k, r] of Object.entries(REGLAS_CONTRATISTA)) {
+      if (nombres.some(n => r.patron.test(n))) return Object.assign({ id: k }, r);
+      if (cliente.trim() && (r.patronCliente ? r.patronCliente.test(cliente) : r.patron.test(cliente))) return Object.assign({ id: k }, r);
+    }
+    return null;
+  }
+  // ¿Alguno de estos nombres de cliente ES la empresa? («Wisdom», «Wisdom Renovation LLC (Roberto Prata)» contra
+  // «Wisdom Renovation LLC»). Sin paréntesis ni correo; «Wisdom» cuenta por ser el principio del nombre de la empresa.
+  function esLaEmpresa(nombres, empresa) {
+    const e = norma(String(empresa || "")).trim();
+    if (!e) return false;
+    return (nombres || []).some(n => {
+      const c = norma(String(n || "").replace(/\([^)]*\)/g, " ").replace(/\S+@\S+/g, " ").split(/\s+[—–]\s+/)[0]).replace(/[.,]+$/, "").trim();
+      return c.length >= 4 && (c === e || c.includes(e) || e.startsWith(c + " "));
+    });
+  }
+  // v251: el contratista de la obra, para el motor (antes vivía solo en la app; aquí para poder probarlo).
+  // obra = { modo: "contrato" | "referido" | "", id, nombre, contacto, cliente (el cliente de la ficha) }.
+  //   · modo «contrato»: el papel sale en modo GC (gc_nombre), como siempre.
+  //   · el id y el nombre viajan SIEMPRE (las reglas de la casa por contratista los miran).
+  //   · modo «referido» con regla de la casa (Wisdom) y el cliente de la hoja o de la ficha ES esa empresa: también
+  //     sale en modo GC. Ahí la otra parte del contrato es un contratista, no el dueño: entran «Parties», «Payment not
+  //     contingent on Owner payment» y el Notice to Owner. Con un referido de verdad (el cliente es el dueño), nada cambia.
+  // Devuelve "contrato", "regla" o "" (cómo quedó el trato).
+  function ponerContratista(L, obra) {
+    if (!L || !L.datos || !obra) return "";
+    const d = L.datos, nombre = String(obra.nombre || "").trim();
+    let trato = "";
+    if (obra.modo === "contrato") {
+      d.contrato_con = "GC"; trato = "contrato";
+      if (nombre) { d.gc_nombre = nombre; d.gc_contacto = obra.contacto || ""; }
+    }
+    if (obra.id) d.gc_id = String(obra.id);
+    if (nombre) d.gc_obra = nombre;
+    if (!trato && nombre && reglaDeContratista(d) && esLaEmpresa([d.cliente, obra.cliente], nombre)) {
+      d.contrato_con = "GC"; d.gc_nombre = nombre; d.gc_contacto = obra.contacto || ""; d.gc_por_regla = true; trato = "regla";
+    }
+    return trato;
+  }
+  // Lo que decía la hoja del permiso ANTES de la regla («Permiso: nosotros» o una frase en exclusiones/cronograma)
+  function permisoDeLaHoja(L) {
+    const d = L.datos || {};
+    if (d.permiso) return { quien: leerPermiso(d.permiso), texto: String(d.permiso), linea: (L.datos_linea || {}).permiso || 0 };
+    const q = inferirPermisoDelTexto(L);
+    return q ? { quien: q, texto: "", linea: 0 } : null;
+  }
   // v3.5: si la hoja no dice «Permiso:», se lee de lo que sí dice (jurisdicción, exclusiones, cronograma)
   function inferirPermiso(L, esGC) {
     const d = L.datos || {};
+    const regla = reglaDeContratista(d);
+    // v251: la regla del contratista manda en QUIÉN saca el permiso, no en SI hace falta: «Permiso: no hace falta» se respeta
+    const hoja = regla && regla.permiso ? permisoDeLaHoja(L) : null;
+    if (regla && regla.permiso && !(hoja && hoja.quien === "ninguno")) return regla.permiso;
     if (d.permiso) return leerPermiso(d.permiso);
+    return inferirPermisoDelTexto(L) || "nosotros";
+  }
+  // lo que la hoja dice del permiso con sus frases (sin «Permiso:»); null si no dice nada
+  function inferirPermisoDelTexto(L) {
+    const d = L.datos || {};
     const txt = norma([d.ciudad || "", ...(L.no_incluye || []).map(x => x.texto), ...(L.programa || []).map(t => t.titulo + " " + t.texto), L.hoy || ""].join(" "));
     if (/permit[^.]{0,60}(held|pulled|obtained|secured|issued|applied)\s+(by|to|under)\s+(the\s+)?(general contractor|gc|client|owner|others)|under\s+(the\s+)?(general\s+)?(contractor|gc)\s*.?s\s+(building\s+|master\s+)?permit|(general contractor|gc)\s*.?s\s+(building\s+|master\s+|electrical\s+)?permit|permit[^.]{0,30}by the (general contractor|gc|client|owner)/.test(txt)) return "cliente";
     if (/no permit (is )?(required|needed)|does not require a permit|permit not required/.test(txt)) return "ninguno";
-    return "nosotros";
+    return null;
   }
   const leerFirma = v => !/^(no|sin firma|alcance|ligero|scope of work)$/.test(norma(v || "si")) && !/^no\b/.test(norma(v || "si"));
   function leerVence(v, hoy) {
@@ -1594,7 +1834,80 @@
     return 15;
   }
 
-  function decidirInterruptores(L, D) {
+  // v252: la base del precio que sale debajo del total. Manda la hoja («Base del precio: planos|cantidades»,
+  // «Pricing basis: plans|quantities»); luego lo que viene de la app (propuestas.pricing_basis, que Edgar elige en la
+  // ficha del contrato); luego «plans» si la hoja trae «Planos:» con algo o si la obra tiene un documento con título de
+  // plano de ingeniería (admin.documento_plano, lo busca la app con esTituloDePlano); si no, «quantities».
+  // v252 (revisión 30-sep): primero las palabras de CANTIDADES («Base del precio: quantities per floor plan», «cantidades
+  // según el plano del inquilino» son cantidades); si trae las dos familias («por conteo del plano», «section 2 counts,
+  // see drawings») se devuelve null y decide la regla o el selector (la app avisa).
+  const RE_BASE_CANTIDADES = /\b(quantit(y|ies)|cantidad(es)?|conteo|contad[oa]s?|count(s|ed)?|seccion 2|section 2)\b/;
+  const RE_BASE_PLANOS = /\b(plans?|planos?|drawings?|ingenieria|engineering)\b/;
+  function leerBasePrecio(v) {
+    const n = norma(v || "");
+    if (!n) return null;
+    if (RE_BASE_CANTIDADES.test(n)) return RE_BASE_PLANOS.test(n) && !/^(quantit(y|ies)|cantidad(es)?)\b/.test(n) ? null : "quantities";
+    if (RE_BASE_PLANOS.test(n)) return "plans";
+    return null;
+  }
+  // ¿La base de la hoja trae las dos familias de palabras? (para avisar: decide la regla o el selector)
+  function baseDudosa(v) {
+    const n = norma(v || "");
+    return !!n && leerBasePrecio(n) === null && RE_BASE_CANTIDADES.test(n) && RE_BASE_PLANOS.test(n);
+  }
+  // Un valor que dice «no hay» («no», «ninguno», «N/A», «none», «no hay», «sin planos», «pendiente», «—»…) es como vacío
+  function vacioDicho(v) {
+    const n = norma(v || "").replace(/[.\s]+$/, "");
+    return !n || /^(no|n\/?a|na|none|ninguno|ninguna|no hay|no aplica|not applicable|sin planos?|no plans?|pendiente|tbd|tba|[-—–]+)$/.test(n);
+  }
+  // ¿El título de un documento de la obra parece un plano de INGENIERÍA ELÉCTRICA? (v252, revisión 30-sep)
+  // Hace falta una señal eléctrica o de ingeniería: «Electrical plan», «E-1», «Sheet E2», «one-line / riser», «power /
+  // lighting plan», «signed and sealed», «planos eléctricos / de ingeniería», «MEP». No cuentan: un plano de planta del
+  // inquilino o un croquis (ahí el precio sale de contar, Metro NPR), los planos del arquitecto, de plomería, mecánicos
+  // o estructurales, ni facturas, recibos, estimados, RFI, cartas o cálculos, ni un «plan» de cocina, baño o remodelación.
+  function esTituloDePlano(titulo) {
+    const t = norma(titulo || "");
+    if (!t) return false;
+    if (/\b(floor ?plans?|plano de planta|layout|sketch|croquis|site plan|plot plan|survey|plan de pagos?|payment plan|plan de trabajo|work plan|safety plan|invoices?|receipts?|facturas?|recibos?|estimates?|estimados?|presupuestos?|quotes?|cotizacion(es)?|rfis?|letters?|cartas?|calcs?|calculations?|calculos?|architect\w*|arquitect\w*|plumbing|plomeria|mechanical|mecanic\w*|structural|estructural\w*|kitchen|cocina|bath\w*|banos?|remodel\w*|remodelacion|shop drawings?|tenant|inquilino|fotos?|photos?|pictures?)\b/.test(t)) return false;
+    return /\b(electrical|electric|electricos?|electricas?)\b.*\b(plans?|drawings?|sheets?|sets?|diagrams?|planos?|documents?)\b/.test(t)
+      || /\b(planos?|plans?|drawings?|diagramas?)\b.*\b(electricos?|electricas?|electrical|de ingenieria|engineering)\b/.test(t)
+      || /\b(engineering|engineered|ingenieria)\b.*\b(plans?|drawings?|sets?|planos?)\b/.test(t)
+      || /\b(power|lighting|panel schedule|riser|one ?-?line|single ?-?line|unifilar)\b.*\b(plans?|drawings?|diagrams?|diagramas?|sheets?)\b/.test(t)
+      || /\b(riser diagram|one ?-?line diagram|single ?-?line diagram|diagrama unifilar)\b/.test(t)
+      || /\b(signed and sealed|sealed (plans?|drawings?)|firmados? y sellados?|mep( plans?| drawings?| set)?)\b/.test(t)
+      || /\bsheets? e ?-?\d+/.test(t)
+      || /(^|[^a-z0-9])e ?-\d{1,2}(\.\d{1,2})?([^a-z0-9]|$)/.test(t);
+  }
+  // «Planos:» de la hoja cuenta como planos de INGENIERÍA solo con una señal de ingeniería («E-1», «Sheet E2»,
+  // «sealed», «engineering», «planos eléctricos»…). «Planos: diagrama unifilar (riser) para el permiso» es lo que
+  // entregas con la propuesta, no la base del precio (heather-panel): ahí el unifilar y el riser no cuentan.
+  function planosDeIngenieria(v) {
+    if (vacioDicho(v)) return false;
+    const n = norma(v);
+    if (/\b(architect\w*|arquitect\w*|plumbing|plomeria|mechanical|mecanic\w*|structural|estructural\w*|floor ?plans?|plano de planta|layout|sketch|croquis|tenant|inquilino)\b/.test(n)
+        && !/\b(electric\w*|ingenier\w*|engineer\w*|sealed|sellad\w*)\b/.test(n)) return false;
+    return /\b(ingenier\w*|engineer\w*|sealed|sellad\w*|mep)\b/.test(n)
+      || /\b(electrical|electricos?|electricas?)\b.*\b(plans?|drawings?|sheets?|sets?|planos?)\b|\b(planos?|plans?|drawings?)\b.*\b(electrical|electricos?|electricas?)\b/.test(n)
+      || /\bsheets? e ?-?\d+/.test(n) || /(^|[^a-z0-9])e ?-\d{1,2}(\.\d{1,2})?([^a-z0-9]|$)/.test(n) || /^e\d{1,2}(\.\d{1,2})?\b/.test(n);
+  }
+  function decidirBasePrecio(L, admin) {
+    const d = (L && L.datos) || {};
+    const hoja = leerBasePrecio(d.base_precio);
+    if (hoja) return { valor: hoja, origen: "hoja", motivo: hoja === "plans" ? "porque la hoja dice «Base del precio: planos»" : "porque la hoja dice «Base del precio: cantidades»" };
+    const app = admin && ["plans", "quantities"].includes(admin.pricing_basis) ? admin.pricing_basis : null;
+    if (app) return { valor: app, origen: "app", motivo: app === "plans" ? "porque lo elegiste tú (planos de ingeniería)" : "porque lo elegiste tú (cantidades de la sección 2)" };
+    // v252 (revisión): la propuesta viene de un estimado hecho con planos en el estimador
+    if (admin && admin.estimado_modo === "planos") return { valor: "plans", origen: "estimado", motivo: "porque el estimado se hizo con planos" };
+    if (!vacioDicho(d.planos)) {
+      if (planosDeIngenieria(d.planos)) return { valor: "plans", origen: "planos", motivo: "porque la hoja trae «Planos:» (" + String(d.planos).slice(0, 60) + ")" };
+    }
+    // la app mira los documentos de la obra: uno con título de plano de ingeniería («E-1», «Electrical plan»…)
+    const doc = admin && admin.documento_plano ? String(admin.documento_plano).trim() : "";
+    if (doc) return { valor: "plans", origen: "documento", motivo: "porque la obra tiene el documento «" + doc.slice(0, 60) + "»" };
+    if (!vacioDicho(d.planos)) return { valor: "quantities", origen: "defecto", motivo: "porque «Planos:» es lo que entregas; el precio sigue siendo por conteo" };
+    return { valor: "quantities", origen: "defecto", motivo: "porque el alcance está contado en la sección 2 (lo normal)" };
+  }
+  function decidirInterruptores(L, D, admin) {
     const d = L.datos, C = L.condiciones, cuenta = D || cuentas(L);
     const hay = v => !!(v && String(v).trim() && norma(v) !== "no");
     const si_no = siNo;
@@ -1621,6 +1934,18 @@
     const esComercial = /comercial|commercial/.test(norma(d.propiedad || d.property || ""));
     const esConsumidor = !esGC && !esComercial;
     const permiso = inferirPermiso(L, esGC);   // regla de la casa: si nadie dice nada, lo sacamos nosotros
+    // v251: la regla del contratista (Wisdom → el permiso lo saca el contratista) y lo que decía la hoja, para avisar
+    const reglaGC = reglaDeContratista(d);
+    let reglaPermiso = null;
+    if (reglaGC && reglaGC.permiso && permiso === reglaGC.permiso) {
+      // choca solo cuando la hoja dice que lo sacamos NOSOTROS («no hace falta» no choca: ahí manda la hoja)
+      const hoja = permisoDeLaHoja(L);
+      const choca = !!(hoja && hoja.quien === "nosotros" && hoja.quien !== reglaGC.permiso && hoja.texto);
+      reglaPermiso = { contratista: reglaGC.nombre, id: reglaGC.id, permiso: reglaGC.permiso, motivo: reglaGC.motivo,
+                       hoja_decia: choca ? (hoja.texto || (hoja.quien === "ninguno" ? "no hace falta permiso" : "lo sacamos nosotros")) : "",
+                       linea: choca ? hoja.linea : 0,
+                       aviso: choca ? `${reglaGC.motivo}: no tomé «${hoja.texto || (hoja.quien === "ninguno" ? "no hace falta permiso" : "lo sacamos nosotros")}» de la hoja.` : "" };
+    }
     const noExcluir = norma((C.no_excluir || {}).valor || "");
     // v3.4: el contrato se ajusta a lo que DICE el alcance, no a una cocina genérica.
     const textoAlcance = norma([d.proyecto || "", ...L.items.map(it => it.titulo + " " + it.detalles.join(" "))].join(" "));
@@ -1647,7 +1972,9 @@
     const sinAfci = esComercial || tipoTrabajo === "service";
     const yaExcluye = re => re.test(textoExcl);
     const hayItemPermiso = /\bpermit/.test(textoAlcance);
-    const hayCierre = L.items.some(it => /^(testing|startup|closeout|commissioning)\b|\b(closeout|close-out|commissioning)\b/i.test(it.titulo));
+    // v251 (revisión): «Complete trim-out (…), testing, and coordination of the required inspections» ya es el cierre
+    const hayCierre = L.items.some(it => /^(testing|startup|closeout|commissioning)\b|\b(closeout|close-out|commissioning)\b/i.test(it.titulo)
+      || (/\btesting\b/i.test(it.titulo) && /\binspections?\b|\btrim-?\s?out\b/i.test(it.titulo)));
     const propio = clasificarPropias(L);
     const preProprio = propio.pre.length > 0;
     // v3.5: las fases (movilizaciones) — las de la hoja; si no las dice, se deducen del alcance:
@@ -1666,14 +1993,25 @@
     // trae su propia frase de flood, clasificarPropias la quita para no repetir y sus números se leen igual.
     const flood = !!mZona || !!(L.flood || {}).senales;
     const layout = !preProprio && norma(d.layout || "si") !== "no";
+    // v252: la base del precio (debajo del total) y las filas Owner / Tenant de la cabecera
+    const basePrecio = decidirBasePrecio(L, admin);
+    const nombreDueno = hay(duenoEfectivo) && !/^the property owner$/i.test(String(duenoEfectivo).trim()) ? String(duenoEfectivo).trim() : "";
+    // (v252, revisión: «Inquilino: N/A», «pendiente», «TBD», «—» son como vacío; y el inquilino no se repite si es el
+    // mismo cliente escrito con o sin «Inc.», «LLC» o comas)
+    const sinSociedad = v => norma(v || "").replace(/[.,]/g, " ").replace(/\b(inc|llc|l l c|corp|corporation|co|ltd|pa|pllc|lp|llp)\b/g, " ").replace(/\s+/g, " ").trim();
+    const inquilino = !vacioDicho(d.inquilino) && !/^the (property )?(owner|tenant)$/i.test(String(d.inquilino).trim())
+      && sinSociedad(d.inquilino) !== sinSociedad(clienteEfectivo || "") ? String(d.inquilino).trim() : "";
 
     const bloques = {
       VARIANTE_B: conFirma, VARIANTE_A: !conFirma,
       ATTENTION: hay(d.atencion), HOMEOWNER: esGC, GC: esGC,
+      // v252: la fila Owner solo con el NOMBRE del dueño (nunca «the property owner»); la fila Tenant si la hoja lo nombra
+      FILA_OWNER: esGC && !!nombreDueno, FILA_TENANT: !!inquilino,
+      BASE_PLANOS: basePrecio.valor === "plans", BASE_CANTIDADES: basePrecio.valor !== "plans",
       // v3.2: CONSUMIDOR enciende todo lo que solo vale en un contrato directo con el
       // dueño de una casa: el aviso de gravámenes (713.015) y los tres días para cancelar.
       CONSUMIDOR: esConsumidor,
-      PLANOS: hay(d.planos),
+      PLANOS: !vacioDicho(d.planos),
       QUE_HAY_HOY: !!L.hoy, QUE_CAMBIA: !!L.cambia, FALTA: !!L.falta,
       INGENIERIA: hay(d.ingenieria),
       FIXTURES_CLIENTE: hay((C.fixtures_cliente || {}).valor),
@@ -1753,9 +2091,10 @@
         : "porque la propiedad es comercial: no es una venta a un consumidor (F.S. 501.021), no corren los tres días"
     };
     motivos.propias = "porque la hoja trae condiciones propias de este trabajo: " + propio.propias.map(p => p.titulo).join(" · ");
-    return { bloques, clausulas, motivos, permiso, esGC, esComercial, esConsumidor, conFirma,
+    return { bloques, clausulas, motivos, permiso, reglaPermiso, esGC, esComercial, esConsumidor, conFirma,
              perfil: { hayPanel, interior, exteriorServicio, residencialInterior, venueExterior, tipo_trabajo: tipoTrabajo || null }, propio,
-             gcNombre, clienteEfectivo, duenoEfectivo, permiso, fases, fasesDeducidas, flood, zona: mZona ? mZona[1].toUpperCase() : "" };
+             gcNombre, clienteEfectivo, duenoEfectivo, permiso, fases, fasesDeducidas, flood, zona: mZona ? mZona[1].toUpperCase() : "",
+             pricing_basis: basePrecio.valor, base_precio: basePrecio, inquilino };
   }
 
   // =============================================== EL ENCARGO PARA EL ASISTENTE
@@ -2057,7 +2396,7 @@
     if (!articulosNEC.length) avisosArmado.push("La hoja no trae artículos del código: en la sección 4 va una frase general. Si quieres artículos concretos, ponlos en «Código:» de la hoja.");
     if (!((S.proyecto_en && S.proyecto_en.en) || d.proyecto)) avisosArmado.push("La hoja no dice «Proyecto:»: usé el nombre de la obra en la app" + (admin.nombre ? ` («${admin.nombre}»)` : "") + ".");
     const cta = cuentas(L);
-    const dec = decidirInterruptores(L, cta);
+    const dec = decidirInterruptores(L, cta, admin);
     const hoy = admin.fecha || new Date();
     const dosDig = n => String(n).padStart(2, "0");
     const fechaLarga = f => f.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
@@ -2065,7 +2404,11 @@
     vence.setDate(vence.getDate() + leerVence(d.vence, hoy));
     // v3.5: el número de propuesta que trae la hoja manda; si no, el nombre corto sale del proyecto
     // sin el prefijo MXP-AAAA-MMDD- ni la cola aleatoria (antes salía «MXP20260909W»)
-    const mNum = String(d.numero_propuesta || "").trim().match(/^MXP-(\d{4})-(\d{4})-([A-Z0-9][A-Z0-9-]*)$/i);
+    // v251 (Metro NPR): el «Ref. MXP-…» de la cabecera de la hoja cuenta como número; sin número en la hoja, el
+    // de la ficha (proyectos.ref). Antes salía MXP-2026-0929-WISDOM (el cliente) con la hoja diciendo METRONPR.
+    const RX_NUM = /^MXP-(\d{4})-(\d{4})-([A-Z0-9][A-Z0-9-]*)$/i;
+    const mNum = String(numeroDeRef("Ref. " + String(d.numero_propuesta || "").trim()) || String(d.numero_propuesta || "").trim()).match(RX_NUM)
+      || String(admin.ref || "").trim().match(RX_NUM);
     // regla B5 del revisor: MXP-AAAA-MMDD-CLIENTE, con el apellido (persona) o la primera palabra (empresa); nunca el id interno
     const esEmpresa = t => /\b(llc|inc|corp|co\.|company|construction|renovation|renovations|services|builders?|group|contracting|design|homes)\b/i.test(t);
     const corto = t => { const pal = String(t || "").replace(/[(),.]/g, " ").trim().split(/\s+/).filter(Boolean); if (!pal.length) return "";
@@ -2105,10 +2448,15 @@
                                                                      : "completion of the work";
     const dueno = dec.duenoEfectivo || "";
     const huecos = {
-      CLIENT: dec.clienteEfectivo || d.cliente || "", CLIENT_2: d.segundo_firmante || (dec.esGC ? dueno : ""),
+      // v251 (revisión): «Wisdom» (el principio del nombre de la empresa de la obra) sale con el nombre legal entero
+      CLIENT: dec.clienteEfectivo && !(!dec.esGC && d.gc_obra && esLaEmpresa([dec.clienteEfectivo], d.gc_obra))
+        ? dec.clienteEfectivo : (d.gc_obra && esLaEmpresa([d.cliente], d.gc_obra) ? d.gc_obra : (d.cliente || "")),
+      CLIENT_2: d.segundo_firmante || (dec.esGC ? dueno : ""),
       // con contratista: su contacto de siempre y el coordinador de esta obra, los dos ("Roberto Prata / Kevin Haseney")
       CONTACTOS: juntarNombres(d.gc_contacto, d.atencion),
       HOMEOWNER: dec.esGC ? (dueno || "the property owner") : (d.cliente || ""),
+      // v252: el inquilino que nombra la hoja (fila Tenant; sin nombre la fila no sale)
+      TENANT: dec.inquilino || "",
       ETIQUETA_FIRMA_2: "Client Signature",
       FIRMA_REP: dec.esGC ? " (Authorized Representative)" : "",
       // v3.6: la jurisdicción tal cual en la cabecera; la forma corta en la prosa
@@ -2173,7 +2521,10 @@
         ? "access to the pole, the equipment locations and the existing raceways"
         : dec.perfil && !dec.perfil.interior
           ? "access to the work areas, the trench routes and the equipment locations"
-          : "access to the attic, crawl space and wall cavities from the accessible side"),
+          // v251 (revisión): en un local comercial (farmacia, oficina) no hay ático ni crawl space: es el cielo raso
+          : dec.esComercial || /commercial|comercial/i.test(String(d.propiedad || ""))
+            ? "access to the ceiling space above the work areas and to wall cavities from the accessible side"
+            : "access to the attic, crawl space and wall cavities from the accessible side"),
       EQUIPO_240: equipoEn("v240"), ITEM_240: renglon("v240"), CALIBRE: calibre(),
       EQUIPO_REUBICAR: equipoEn("reubicar"), ITEM_REUBICAR: renglon("reubicar"),
       ITEM_ISLA: renglon("isla"), ITEMS_ABRIR: renglon("abrir"),
@@ -2191,8 +2542,12 @@
                                         : "$" + dinero(cta.base)
     };
 
-    const items = (S.items || []).map((it, k) => ({
-      N_ITEM: k + 1, TITULO: (it.titulo && it.titulo.en) || "", DESCRIPCION: (it.descripcion && it.descripcion.en) || "" }));
+    // v251: un renglón sin detalle («2.5 Seven (7) new home runs…») no repite el título como descripción
+    const igualTexto = (a, b) => norma(String(a || "").replace(/[.:;]\s*$/, "")) === norma(String(b || "").replace(/[.:;]\s*$/, ""));
+    const items = (S.items || []).map((it, k) => {
+      const TITULO = (it.titulo && it.titulo.en) || "", DESC = (it.descripcion && it.descripcion.en) || "";
+      return { N_ITEM: k + 1, TITULO, DESCRIPCION: TITULO && igualTexto(TITULO, DESC) ? "" : DESC };
+    });
     // Un añadido con detalles (un rewire, un subpanel) merece su propio párrafo en la
     // sección 2, marcado como opcional, y no solo una línea en la tabla de precios.
     cta.addons.forEach((a, k) => {
@@ -2351,22 +2706,118 @@
   // ---- Unir las líneas que vienen partidas (29-sep, Metro NPR) ----
   // Un texto copiado de un PDF o de un correo llega con cada renglón cortado por el
   // ancho de la hoja; el lector tomaba cada trozo como un renglón del alcance.
-  // Regla prudente: una línea se pega a la de arriba SOLO si empieza en minúscula
-  // (o con «y», «o», «and», «or»…) y no es una viñeta ni un título; o si la de arriba
-  // quedó a medias (termina en coma o en una palabra de enlace). Las líneas en blanco
-  // separan párrafos y nunca se tocan. Devuelve { texto, unidas }.
+  // Reglas (prudentes: ante la duda, no se pega):
+  //   1. se pega a la de arriba la línea que empieza en minúscula (o con «y», «o», «and»…),
+  //      o cuando la de arriba quedó a medias (termina en coma o en una palabra de enlace);
+  //   2. v251: la línea CON SANGRÍA (2 espacios o más, o un tabulador) que sigue a una línea
+  //      con texto (de 40 letras o más) que no es un título se pega aunque empiece en mayúscula: así escribe un SOW
+  //      envuelto («2.1 Layout walkthrough. … documented on a Layout Approval\n    Form and…»);
+  //   3. v251: la línea que sigue a una línea LARGA (60 letras o más) cortada a media frase
+  //      (sin punto ni dos puntos al final) se pega aunque empiece en mayúscula o comillas.
+  // Nunca se pegan: las viñetas y los números (con sangría o sin ella), los «Clave: valor»,
+  // las filas de tabla, los títulos, lo que va después de una línea en blanco, ni nada
+  // a una línea de dinero («Pagos: 40/40/20», «Precio: …»). Devuelve { texto, unidas }.
   const RE_INICIO = /^\s*(?:[-*•▪◦]|\d{1,3}[.)]|[a-zA-Z][.)]|\(\d{1,3}\)|#{1,4}\s|[A-Za-zÁ-ú][\wÁ-ú /&'-]{1,40}:)/;
-  const RE_ENLACE = /(?:,|;|\b(?:and|or|the|of|to|a|an|with|for|in|on|at|by|from|per|y|o|de|del|la|el|los|las|con|para|por|en|al|un|una)|\(|—|–|-)\s*$/i;
+  // v251 (revisión): la palabra de enlace va suelta, con un espacio delante: «rough-in», «plug-in» o «add-on» no la cuentan.
+  // La «a» sola solo cuenta en minúscula (el artículo): «Panel A» o «Exhibit A» no son una frase a medias.
+  const RE_ENLACE = /(?:,|;|(?:^|\s)(?:and|or|the|of|to|an|with|for|in|on|at|by|from|per|y|o|de|del|la|el|los|las|con|para|por|en|al|un|una)|\(|—|–|\s-)\s*$/i;
+  const RE_ENLACE_A = /(?:^|\s)a\s*$/;
+  // v252: dentro de una lista, además, las palabras que tampoco pueden cerrar una frase («Relocate the existing» /
+  // «Owner-furnished fixtures», «Install two new» / «LED fixtures»): la línea de abajo es la misma frase
+  const RE_ENLACE_LISTA = /(?:^|\s)(?:existing|new|each|every|any|both|this|these|those|its|their|our|your|such|nuevos?|nuevas?|existentes?|cada|sus?|estos?|estas?)\s*$/i;
+  // una viñeta o un número al principio (con sangría o sin ella): «- x», «2.1 x», «a) x», «(3) x»
+  const RE_VINETA = /^\s*(?:[-*•▪◦]\s|\d{1,3}(?:\.\d{1,3})*[.)]?\s|[a-zA-Z][.)]\s|\(\d{1,3}\)\s|#{1,6}\s|\|)/;
+  // ¿la línea es un título? (una sección que el lector conoce, todo en mayúsculas, o termina en «:»)
+  const esTituloSuelto = l => {
+    const t = String(l || "").replace(/\*\*|__|`/g, "").trim();
+    if (!t) return false;
+    if (/:$/.test(t)) return true;
+    if (/[A-Za-z]/.test(t) && !/[a-záéíóúñ]/.test(t)) return true;
+    return !!seccionDe(t) && t.length <= 60 && !/[.;]\s/.test(t);
+  };
+  // ¿la línea es de dinero? («Pagos: 40/40/20», «Precio: $…», «Lump sum: …»): a esa no se le pega nada
+  const esLineaDinero = l => {
+    const m = String(l || "").replace(/\*\*|__|`/g, "").trim().match(/^([^:]{2,42}):\s*(.*)$/);
+    return !!(m && buscaClave(CLAVES_DINERO, norma(m[1])));
+  };
+  // v252 (regla de Edgar del 29-sep, Metro NPR): dentro de una sección de LISTA (Alcance / Scope / No incluye /
+  // Exclusions / Not included, o los renglones numerados 2.x / 3.x de un SOW en inglés) un renglón nuevo empieza
+  // SOLO tras una línea en blanco o con número / viñeta. Lo demás es la misma frase envuelta y se pega a la de
+  // arriba. Nunca se pegan los títulos, las líneas «Clave: valor», las filas de tabla ni las líneas de dinero.
+  const RE_RENGLON_SOW = /^\s*[23]\.\d{1,2}[.)]?\s/;
+  const seccionDeTitulo = l => {
+    const t = String(l || "").replace(/\*\*|__|`/g, "").trim();
+    const conAlmohadilla = /^#{1,6}\s/.test(t);
+    const limpio = t.replace(/^#+\s*/, "");
+    if (!limpio || /^[-*•]/.test(limpio)) return null;
+    const pareceTitulo = conAlmohadilla || /^(?:\d+[.)]\s+)?[^.:,]{2,45}:?$/.test(limpio);
+    return pareceTitulo ? seccionDe(limpio) : null;
+  };
   function desenvolver(texto) {
     const lineas = String(texto || "").replace(/\r/g, "").split("\n");
     const salida = []; let unidas = 0;
+    // «SCOPE OF WORK» suelto arriba, con la sección 2 numerada más abajo, es el título del documento (la cabecera)
+    const alcanceNumerado = lineas.some(l => { const t = String(l || "").replace(/\*\*|__|`/g, "").replace(/^#+\s*/, "").trim();
+      return /^(?:section\s+)?\d+[.)]?\s+\S/i.test(t) && t.length <= 90 && seccionDe(t) === "alcance"; });
+    let enLista = false;
     for (const l of lineas) {
       const ant = salida.length ? salida[salida.length - 1] : null;
       const sinBlanco = l.trim();
-      if (ant === null || ant.trim() === "" || sinBlanco === "" || RE_INICIO.test(l)) { salida.push(l); continue; }
+      // ¿cambia la sección? (un título conocido). Un título nunca se pega, ni se le pega nada por la regla de la lista.
+      const secT = sinBlanco ? seccionDeTitulo(l) : null;
+      if (secT) {
+        const tituloDoc = secT === "alcance" && alcanceNumerado && /^scope of work$/.test(normaTitulo(sinBlanco.replace(/^#+\s*/, "")));
+        enLista = !tituloDoc && (secT === "alcance" || secT === "no_incluye");
+      } else if (RE_RENGLON_SOW.test(l)) enLista = true;
+      if (ant === null || ant.trim() === "" || sinBlanco === "" || RE_INICIO.test(l) || RE_VINETA.test(l)
+          || /^\s*\|/.test(ant) || esLineaDinero(ant)) { salida.push(l); continue; }
+      // Si la de arriba ya cerró su frase (punto, dos puntos…) y esta no va con sangría colgante, es una nota del mismo
+      // renglón en su propia línea («- Switch locations… with Contractor.\nAll boxes, covers…»): no es un renglón nuevo
+      // y el lector ya la cuelga del renglón de arriba, así que no se toca.
+      const cerrada = /[.!?:;]["'”’)\]]?\s*$/.test(ant);
+      const sangriaMayor = (l.match(/^[ \t]*/)[0].replace(/\t/g, "    ").length) > (ant.match(/^[ \t]*/)[0].replace(/\t/g, "    ").length);
+      // Una línea envuelta viene de una línea LLENA: si la de arriba es corta (menos de 40 letras) y esta empieza en
+      // mayúscula, es otra cosa (un subtítulo, una lista corta), no la misma frase cortada por el ancho de la hoja.
+      const larga = ant.trim().length >= 40;
+      // v252 (30-sep, revisión del punto A de Edgar): dentro de la lista, una línea que empieza en MAYÚSCULA solo se
+      // pega cuando de verdad es la misma frase cortada:
+      //   · la de arriba termina en una palabra de enlace o en un signo que deja la frase abierta («…fed through the» /
+      //     «Owner-provided battery backup», «…receptacles per» / «NEC 210.8(B)…»), sea larga o corta;
+      //   · o la de arriba es un RENGLÓN con número o viñeta (o su continuación) y la frase quedó a medias en una línea
+      //     llena (40 letras o más), o la frase ya cerró y el renglón va numerado («2.1 … locations.» / «Includes boxes…»):
+      //     sin número ni viñeta no es un renglón nuevo (regla de Edgar), va pegado al renglón de arriba.
+      // Una lista dictada SIN guion ni número («Drywall patching … completed» / «Low voltage wiring…») no se pega:
+      // cada línea es un renglón (o una exclusión) aparte.
+      const abiertaArriba = (RE_ENLACE.test(ant) || RE_ENLACE_A.test(ant) || RE_ENLACE_LISTA.test(ant)) && !/[.:;!?]["'”’)\]]?\s*$/.test(ant);
+      const enMayuscula = !/^[a-záéíóúñ]/.test(sinBlanco);
+      const renglonArriba = RE_VINETA.test(ant) && !/^\s*\|/.test(ant);
+      const numeradoArriba = /^\s*\d{1,3}(?:\.\d{1,3})*[.)]?\s/.test(ant);
+      // (a un renglón numerado corto —«2.3 Outdoor kitchen. Branch circuits and rough-in»— no se le pega el detalle
+      // de debajo en mayúscula: es el título del renglón y su detalle, que el lector ya junta en el mismo renglón)
+      const numeradoCorto = numeradoArriba && ant.trim().length < 60;
+      const pegaLista = !enMayuscula
+        ? (larga && (!cerrada || sangriaMayor)) || abiertaArriba
+        : abiertaArriba
+          || (renglonArriba && !numeradoCorto && ((larga && (!cerrada || sangriaMayor)) || (numeradoArriba && cerrada && !/:["'”’)\]]?\s*$/.test(ant))));
+      if (enLista && !secT && pegaLista && !esTituloSuelto(l) && !esTituloSuelto(ant) && !esLineaDinero(l)
+          && !(!RE_VINETA.test(ant) && claveDeLinea(ant.trim()))) {
+        salida[salida.length - 1] = ant.replace(/\s+$/, "") + " " + sinBlanco; unidas++; continue;
+      }
       const empiezaMinuscula = /^[a-záéíóúñ]/.test(sinBlanco) && !/^(?:e\.g\.|i\.e\.)/i.test(sinBlanco);
-      const arribaAMedias = RE_ENLACE.test(ant) && !/[.:;!?]\s*$/.test(ant);
-      if (empiezaMinuscula || arribaAMedias) { salida[salida.length - 1] = ant.replace(/\s+$/, "") + " " + sinBlanco; unidas++; }
+      const arribaAMedias = (RE_ENLACE.test(ant) || RE_ENLACE_A.test(ant)) && !/[.:;!?]\s*$/.test(ant);
+      const titulo = esTituloSuelto(ant);
+      // v251 (revisión): la sangría y el corte a media frase solo pegan la continuación de un RENGLÓN con viñeta o
+      // número (sangría colgante: «2.1 Layout walkthrough… with the\n    Owner and marks…»). Renglones sueltos en
+      // mayúscula sin punto final, una lista con tabulador o los hitos con sangría («  Milestone 2 — …») no se pegan.
+      const sang = x => x.match(/^[ \t]*/)[0].replace(/\t/g, "    ").length;
+      const enRenglon = RE_VINETA.test(ant) && !/^\s*\|/.test(ant);
+      // (una línea corta de arriba, sin punto, es un encabezado: «Receptacles and branch circuits»; lo envuelto es largo)
+      const conSangria = /^(?: {2,}|\t)/.test(l) && !titulo && ant.trim().length >= 40 && enRenglon && sang(l) > sang(ant);
+      const cortadaLarga = !titulo && (enRenglon || /^["“'‘(]/.test(sinBlanco)) && ant.trim().length >= 60
+        && !/[.:;!?]["'”’)\]]?\s*$/.test(ant) && /^["“'‘(A-ZÁÉÍÓÚÑ0-9]/.test(sinBlanco);
+      // a un renglón numerado corto («2.3 Outdoor kitchen. Branch circuits and rough-in») solo se le pega lo que empieza en minúscula
+      const renglonCorto = /^\s*\d{1,3}(?:\.\d{1,3})*[.)]?\s/.test(ant) && ant.trim().length < 60;
+      if (empiezaMinuscula || (!renglonCorto && (arribaAMedias || conSangria || cortadaLarga))) { salida[salida.length - 1] = ant.replace(/\s+$/, "") + " " + sinBlanco; unidas++; }
       else salida.push(l);
     }
     return { texto: salida.join("\n"), unidas };
@@ -3018,7 +3469,519 @@
       texto: `… y ${resto} avisos más del lector que no caben aquí. Las líneas están todas en la hoja, tal como las leen las reglas.`, arreglos: [] }]);
   }
 
-  const API = { leerAlcance, validarAlcance, cuentas, repartir, leerMonto, pareceDinero, hayDinero, pareceIngles, redactarDirecto,
+  // ============================================================================
+  // v3.8 (29-sep, pliego «el cerebro trabaja como aquí»): la jurisdicción sale de
+  // la dirección, y el revisor del contrato armado («Revisar con IA antes de
+  // enviar»). Todo puro, como el resto del archivo: se prueba en Node.
+  // ============================================================================
+
+  // ---- B.6 · La jurisdicción sale de la dirección ----
+  // LA MISMA TABLA que usa el cerebro (jurisdiccionDe en supabase/functions/cerebro):
+  // si se cambia aquí, se cambia allí. ZIP → condado; la ciudad dice si el permiso
+  // lo da la ciudad (municipio con su propio departamento) o el condado.
+  const ZIP_CONDADO = [
+    [33701, 33716, "Pinellas"], [33730, 33786, "Pinellas"],
+    [33601, 33637, "Hillsborough"], [33647, 33647, "Hillsborough"],
+    [34652, 34655, "Pasco"], [34667, 34669, "Pasco"], [34690, 34691, "Pasco"],
+    [33523, 33523, "Pasco"], [33525, 33525, "Pasco"], [33540, 33545, "Pasco"], [33559, 33559, "Pasco"], [33576, 33576, "Pasco"],
+    [34470, 34482, "Marion"], [34491, 34491, "Marion"],
+    [34266, 34266, "DeSoto"], [34269, 34269, "DeSoto"],
+    [34201, 34222, "Manatee"],
+    [33801, 33898, "Polk"],
+    [34601, 34614, "Hernando"]
+  ];
+  // Municipios con su propio departamento de permisos: [nombre, condado]
+  const CIUDADES_MUNICIPIO = {
+    "st petersburg": ["St. Petersburg", "Pinellas"], "saint petersburg": ["St. Petersburg", "Pinellas"],
+    "st pete beach": ["St. Pete Beach", "Pinellas"], "clearwater": ["Clearwater", "Pinellas"], "largo": ["Largo", "Pinellas"],
+    "pinellas park": ["Pinellas Park", "Pinellas"], "dunedin": ["Dunedin", "Pinellas"], "tarpon springs": ["Tarpon Springs", "Pinellas"],
+    "tampa": ["Tampa", "Hillsborough"], "plant city": ["Plant City", "Hillsborough"], "temple terrace": ["Temple Terrace", "Hillsborough"],
+    "new port richey": ["New Port Richey", "Pasco"], "port richey": ["Port Richey", "Pasco"], "zephyrhills": ["Zephyrhills", "Pasco"],
+    "dade city": ["Dade City", "Pasco"], "ocala": ["Ocala", "Marion"], "arcadia": ["Arcadia", "DeSoto"], "lakeland": ["Lakeland", "Polk"]
+  };
+  // Nombres postales (no son municipio: el permiso lo da el condado). null = se reparte entre dos condados
+  const CIUDADES_POSTALES = {
+    "wesley chapel": ["Wesley Chapel", "Pasco"], "land o lakes": ["Land O' Lakes", "Pasco"], "lutz": ["Lutz", null],
+    "brandon": ["Brandon", "Hillsborough"], "riverview": ["Riverview", "Hillsborough"], "odessa": ["Odessa", null],
+    "trinity": ["Trinity", "Pasco"], "hudson": ["Hudson", "Pasco"], "holiday": ["Holiday", "Pasco"]
+  };
+  const normaCiudad = s => sinAcentos(String(s || "").toLowerCase())
+    .replace(/\bsaint\b/g, "st").replace(/[.'’`]/g, "").replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+  function condadoDeZip(zip) {
+    const n = Number(zip);
+    const f = ZIP_CONDADO.find(([a, b]) => n >= a && n <= b);
+    return f ? f[2] : null;
+  }
+  function sacarZip(dir) {
+    const s = String(dir || "");
+    const m = s.match(/\b(?:FL|Fla\.?|Florida)\.?,?\s*(\d{5})(?:-\d{4})?\b/i);
+    if (m) return m[1];
+    const todos = s.match(/\b\d{5}(?:-\d{4})?\b/g);
+    // sin «FL» delante, solo vale un número de cinco cifras al FINAL (el de delante es el número de la calle)
+    if (todos && /\b\d{5}(?:-\d{4})?\s*$/.test(s)) return todos[todos.length - 1].slice(0, 5);
+    return null;
+  }
+  function ciudadDe(dir) {
+    const tablas = [["municipio", CIUDADES_MUNICIPIO], ["postal", CIUDADES_POSTALES]];
+    const buscaExacta = clave => { for (const [tipo, t] of tablas) if (t[clave]) return { tipo, nombre: t[clave][0], condado: t[clave][1] }; return null; };
+    // 1) por trozos entre comas, de atrás hacia delante: «…, New Port Richey, FL 34652»
+    const trozos = String(dir || "").split(",").map(t => normaCiudad(t.replace(/\b(?:FL|Fla|Florida)\b\.?\s*\d{0,5}(?:-\d{4})?\s*$/i, "")));
+    for (let i = trozos.length - 1; i >= 0; i--) { const c = trozos[i] && buscaExacta(trozos[i]); if (c) return c; }
+    // 2) dentro del texto: gana la que sale MÁS AL FINAL (la ciudad va después de la calle), y a igualdad la más larga.
+    // v251: la ciudad se busca DESPUÉS de la primera coma (en «3050 Tampa Rd, Palm Harbor, FL 34684» la calle
+    // se llama Tampa, pero la ciudad no es Tampa), igual que el cerebro. Sin comas, en todo el texto.
+    const partesDir = String(dir || "").split(",").map(t => t.trim()).filter(Boolean);
+    const n = " " + normaCiudad(partesDir.length > 1 ? partesDir.slice(1).join(" ") : dir) + " ";
+    let mejor = null;
+    for (const [tipo, t] of tablas) for (const clave of Object.keys(t)) {
+      let desde = 0, pos;
+      while ((pos = n.indexOf(" " + clave + " ", desde)) >= 0) {
+        const fin = pos + clave.length;
+        // «port richey» dentro de «new port richey» no cuenta
+        if (!(clave === "port richey" && n.slice(Math.max(0, pos - 4), pos) === " new")) {
+          if (!mejor || fin > mejor.fin || (fin === mejor.fin && clave.length > mejor.largo))
+            mejor = { tipo, nombre: t[clave][0], condado: t[clave][1], fin, largo: clave.length };
+        }
+        desde = pos + 1;
+      }
+    }
+    if (mejor) return { tipo: mejor.tipo, nombre: mejor.nombre, condado: mejor.condado };
+    // 3) una ciudad que no está en las tablas: el trozo de antes del estado, tal cual
+    const crudos = String(dir || "").split(",").map(t => t.trim());
+    const iEstado = crudos.findIndex(t => /^(?:FL|Fla\.?|Florida)\b/i.test(t));
+    const cand = iEstado > 0 ? crudos[iEstado - 1] : (crudos.length >= 3 ? crudos[crudos.length - 2] : "");
+    if (cand && !/\d/.test(cand) && cand.length <= 40) return { tipo: null, nombre: cand, condado: null };
+    return null;
+  }
+  // Devuelve { condado, ciudad, jurisdiccion_probable, seguridad (alta/media/baja), nota }
+  function jurisdiccionDe(direccion) {
+    const dir = String(direccion || "").replace(/\s+/g, " ").trim();
+    const vacio = { condado: null, ciudad: "", jurisdiccion_probable: "", seguridad: "baja", nota: "Sin dirección: no puedo sacar la jurisdicción." };
+    if (!dir || /^(por confirmar|tbd|pendiente|pending|\[[^\]]*\])$/i.test(dir)) return vacio;
+    const zip = sacarZip(dir);
+    const cz = zip ? condadoDeZip(zip) : null;
+    const c = ciudadDe(dir);
+    let condado = cz || (c && c.condado) || null;
+    let jurisdiccion_probable = "", seguridad = "baja";
+    const notas = [];
+    if (c && c.tipo === "municipio") {
+      jurisdiccion_probable = "City of " + c.nombre; seguridad = "media";
+      notas.push("Si la parcela cae fuera del límite de la ciudad, es el condado: verificar por parcel.");
+    } else if (c && c.tipo === "postal") {
+      jurisdiccion_probable = condado ? condado + " County" : ""; seguridad = condado ? "alta" : "baja";
+      notas.push(c.nombre + " no es municipio: el permiso lo da el condado.");
+      if (!condado) notas.push(c.nombre + " se reparte entre dos condados: verificar por parcel.");
+    } else {
+      jurisdiccion_probable = condado ? condado + " County" : "";
+      notas.push(c ? "No conozco la ciudad " + c.nombre + ": puede tener su propio departamento de permisos; verificar por parcel."
+                   : "No reconozco la ciudad en la dirección: verificar por parcel.");
+    }
+    if (!cz) {
+      seguridad = "baja";
+      notas.push(zip ? "El ZIP " + zip + " no está en la tabla." : "La dirección no trae ZIP.");
+    } else if (c && c.condado && c.condado !== cz) {
+      seguridad = "baja"; condado = cz;
+      if (c.tipo === "postal") jurisdiccion_probable = cz + " County";
+      notas.push("Ojo: " + c.nombre + " es de " + c.condado + " y el ZIP es de " + cz + ".");
+    }
+    return { condado, ciudad: c ? c.nombre : "", jurisdiccion_probable, seguridad, nota: notas.join(" ") };
+  }
+
+  // ---- v251 · La hoja se nutre de la ficha, y LA FICHA MANDA EN LA DIRECCIÓN (Edgar, 29-sep: «esto es lo que
+  // quiero evitar, la dirección es 4761») ----
+  // Antes vivía en js/app.js (alcNutrir); aquí es una función pura para poder probarla sin navegador.
+  //   · Un valor de la hoja que es un marcador ([STREET ADDRESS PENDING], [PENDING…], TBD, «por confirmar»,
+  //     «to be confirmed», corchetes) cuenta como VACÍO y se rellena con el de la ficha.
+  //   · Si la hoja trae una dirección DISTINTA de la de la ficha (número de la calle y nombre de la calle,
+  //     «U.S. Hwy 19 N» = «US Hwy 19»), gana la ficha: la línea se reescribe y se avisa en ámbar. Vale para
+  //     «Dirección:» y para las líneas de la cabecera de un SOW en inglés («Job site:», «Project address:», «Site:»…).
+  //   · La ficha solo manda si tiene dirección; si no tiene, se queda la de la hoja.
+  //   · La ciudad: sin comillas, y un marcador cuenta como vacío.
+  // conocidos = { cliente, dueno, atencion, email, telefono, direccion, ciudad } (lo que se RELLENA si falta);
+  // opciones.manda = { direccion } (lo que la ficha IMPONE aunque la hoja diga otra cosa).
+  // Devuelve { texto, tomados, escritas, avisos: [{ linea, texto }] }.
+  const DATOS_FICHA = [["cliente", "Cliente"], ["dueno", "Homeowner"], ["atencion", "Atención"], ["email", "Email"],
+                       ["telefono", "Teléfono"], ["direccion", "Dirección"], ["ciudad", "Ciudad"]];
+  const RE_DATO_FICHA = {
+    cliente: "cliente|client|customer|owner", dueno: "homeowner|due[nñ]o(?: de la casa)?|propietario|property owner",
+    atencion: "atenci[oó]n|attention|attn|contacto|contact", email: "e-?mail|correo",
+    telefono: "tel[eé]fono|tel|phone|cell|celular|mobile",
+    direccion: "direcci[oó]n|address|job address|site address|property address|project address|service address|job site|project site|work site|site|job location|project location|location",
+    ciudad: "ciudad|city|jurisdicci[oó]n|jurisdiction|permit jurisdiction|ahj"
+  };
+  // Un hueco que se escribe como dato: todo el valor es un marcador
+  const esVacioFicha = v => { const t = String(v || "").trim();
+    return !t || /^(por confirmar|por definir|por decidir|tbd|tbc|tba|pendiente|pending|to be (confirmed|determined|decided|announced)|n\/a|na|none|unknown|-+|\?+|\[[^\]]*\]|<[^>]*>|_{3,}|\.{3,}|x{3,})$/i.test(t); };
+  // …o lo lleva DENTRO («[STREET ADDRESS PENDING], New Port Richey, FL»): para la dirección y la ciudad también es vacío
+  const llevaMarcador = v => esVacioFicha(v) || /\[[^\]]*\]|\{\{[^}]*\}\}|\b(?:tbd|tbc|tba)\b|por confirmar|por definir|to be (?:confirmed|determined)|\bpending\b|\bpendiente\b/i.test(String(v || ""));
+  const sinComillas = v => String(v || "").replace(/^\s*\*+|\*+\s*$/g, "").trim().replace(/^["“”'«]+\s*/, "").replace(/\s*["“”'»]+$/, "").trim();
+  // «4761 U.S. Hwy 19 N, New Port Richey, FL 34652» → { numero: "4761", calle: "us 19", pre: "", post: "n" }
+  // v251 (revisión): el punto cardinal NO se tira: «7th Ave N» y «7th Ave S» son calles distintas en St. Petersburg.
+  // Se guarda aparte, en corto (north → n), delante (pre: «100 N Main St») o detrás (post: «7th Ave N»).
+  const CALLE_CORTA = { highway: "hwy", hwy: "hwy", street: "st", st: "st", avenue: "ave", ave: "ave", av: "ave", road: "rd", rd: "rd",
+    boulevard: "blvd", blvd: "blvd", drive: "dr", dr: "dr", lane: "ln", ln: "ln", court: "ct", ct: "ct", place: "pl", pl: "pl",
+    parkway: "pkwy", pkwy: "pkwy", circle: "cir", cir: "cir", terrace: "ter", ter: "ter", trail: "trl", trl: "trl", way: "way",
+    route: "rte", rte: "rte", "state road": "sr", sr: "sr", "us": "us", "u s": "us", usa: "us" };
+  const PUNTOS = /^(?:n|s|e|w|ne|nw|se|sw|north|south|east|west|northeast|northwest|southeast|southwest)$/;
+  const PUNTO_CORTO = { north: "n", south: "s", east: "e", west: "w", northeast: "ne", northwest: "nw", southeast: "se", southwest: "sw" };
+  function partesDireccion(dir) {
+    const calle = String(dir || "").split(",")[0];
+    let t = sinAcentos(calle.toLowerCase()).replace(/\bu\.\s*s\.?/g, "us").replace(/[.#'’]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+    t = t.replace(/\bstate road\b/g, "sr").replace(/\bu s\b/g, "us");
+    // «US Hwy 19», «US Highway 19», «US-19», «Hwy 19», «US Route 19» → «us 19»; «SR 54», «State Road 54», «State Hwy 54» → «sr 54»
+    t = t.replace(/\b(?:us\s+)?(?:hwy|highway|route|rte)\s+(\d+[a-z]?)\b/g, (m, n) => /^\s*(?:state|sr)\b/.test(m) ? m : "us " + n)
+         .replace(/\bus\s+us\s+/g, "us ").replace(/\bstate\s+us\s+(\d+)/g, "sr $1").replace(/\bstate\s+(?:hwy|highway)\s+(\d+)/g, "sr $1");
+    const pal = t.split(" ").filter(Boolean);
+    const m = pal.length && /^\d+[a-z]?$/.test(pal[0]) ? pal.shift() : "";
+    // la suite y lo que va detrás no cambian la dirección («Suite 4», «Unit B»)
+    const kSuite = pal.findIndex(w => /^(?:suite|ste|unit|apt|bldg|building)$/.test(w));
+    const resto = (kSuite >= 0 ? pal.slice(0, kSuite) : pal).map(w => CALLE_CORTA[w] || w);
+    let pre = "", post = "";
+    if (resto.length > 1 && PUNTOS.test(resto[0])) { const w = resto.shift(); pre = PUNTO_CORTO[w] || w; }
+    if (resto.length > 1 && PUNTOS.test(resto[resto.length - 1])) { const w = resto.pop(); post = PUNTO_CORTO[w] || w; }
+    return { numero: m, calle: resto.join(" "), pre, post };
+  }
+  // ¿Dos direcciones son la misma? Mismo número y la MISMA calle (después de quitar la suite). El punto cardinal
+  // cuenta cuando los dos lados lo traen («7th Ave N» contra «7th Ave S»: distintas); si solo uno lo trae
+  // («US Hwy 19» y «US Hwy 19 N»), valen como iguales. Sin número en ninguno de los dos lados: la calle entera.
+  function mismaDireccion(a, b) {
+    const A = partesDireccion(a), B = partesDireccion(b);
+    if (!A.numero && !B.numero) {
+      // sin número («Lot 7, Riverview Dr, Riverview»): todo menos el estado y el ZIP; lo corto puede ser el principio de lo largo
+      const todo = x => String(x || "").split(",").filter(p => !/\b(?:fl|fla|florida)\b|\b\d{5}\b/i.test(p))
+        .map(p => partesDireccion(p)).map(q => [q.pre, q.numero, q.calle, q.post].filter(Boolean).join(" ")).join(" ").trim();
+      const ta = todo(a), tb = todo(b);
+      return !!ta && !!tb && (ta === tb || ta.startsWith(tb + " ") || tb.startsWith(ta + " "));
+    }
+    if (!A.numero || !B.numero) return false;
+    if (A.numero !== B.numero) return false;
+    if (A.pre && B.pre && A.pre !== B.pre) return false;
+    if (A.post && B.post && A.post !== B.post) return false;
+    return !!A.calle && A.calle === B.calle;
+  }
+  // El texto de dos direcciones, igualado (minúsculas, sin puntos ni espacios de más): si da lo mismo, no hay nada que avisar
+  const direccionIgual = (a, b) => { const f = x => sinAcentos(String(x || "").toLowerCase()).replace(/[.,#'’]/g, " ").replace(/\s+/g, " ").trim(); return f(a) === f(b); };
+  // ¿El valor tiene pinta de dirección? v251 (revisión): número de calle + una palabra de calle (St, Ave, Rd, Hwy, US 19…),
+  // o «FL 34652». Nunca cuando lo que va detrás del número es una medida o una cantidad («30 ft», «200A», «2 subpanels»).
+  const RE_CALLE = /\b(?:st|street|ave|avenue|av|rd|road|blvd|boulevard|dr|drive|ln|lane|ct|court|hwy|highway|us|u\.\s*s\.?|sr|state road|pkwy|parkway|way|pl|place|cir|circle|ter|terrace|trl|trail|rte|route|loop|run|pike|row|sq|square|xing|crossing|pt|point)\b/i;
+  const RE_MEDIDA = /^\s*\d[\d,./-]*\s*(?:ft|feet|foot|'|"|in|inch(?:es)?|a|amps?|amperes?|v|volts?|kva|kw|w|watts?|hp|awg|mm|m|sq|lf|circuits?|receptacles?|outlets?|subpanels?|panels?|breakers?|devices?|fixtures?|units?|lights?|trenches?|runs?|switch(?:es)?|boxes?|locations?|exit|pcs?|x)\b/i;
+  const pareceDireccion = v => {
+    const t = String(v || "");
+    if (/\b(?:FL|Fla\.?|Florida)\b\.?,?\s*3\d{4}\b/i.test(t)) return true;
+    if (RE_MEDIDA.test(t)) return false;
+    const m = t.match(/^\s*\d{1,6}[a-z]?\s+(.*)$/i);
+    return !!m && RE_CALLE.test(m[1].split(",")[0]);
+  };
+  // Las etiquetas que SIEMPRE son la dirección; las demás («Site:», «Job site:», «Location:») solo si el valor lo parece
+  const RE_DIR_SEGURA = /^(?:direcci[oó]n|address|job address|site address|property address|project address|service address)$/i;
+  // Las que dicen de la OBRA (no de una oficina): con una de estas en la hoja, un «Address:» debajo de «Client:» es la del cliente
+  const RE_DIR_DE_OBRA = /^(?:direcci[oó]n|job address|site address|property address|project address|service address|job site|project site|work site|job location|project location)$/i;
+  const RE_PARTE = /^[ \t]*(?:[-*•][ \t]+)?[#*]*[ \t]*(?:client|cliente|customer|contractor|contratista|general contractor|gc|bill to|billing|owner|homeowner)[ \t]*\**[ \t]*:/i;
+  function nutrirHoja(texto, conocidos, opciones) {
+    conocidos = conocidos || {}; opciones = opciones || {};
+    const manda = opciones.manda || {};
+    const lineas = String(texto || "").replace(/\r/g, "").split("\n");
+    const tomados = [], escritas = [], avisos = [];
+    // «Clave: valor» (con viñeta, # o negritas delante); con conTabla, también la fila «| Address | valor |»
+    const leerLinea = (l, alias, conTabla) => {
+      const kv = String(l).match(new RegExp("^([ \\t]*(?:[-*•][ \\t]+)?[#*]*[ \\t]*(" + alias + ")[ \\t]*\\**[ \\t]*:[ \\t]*\\**[ \\t]*)(.*?)[ \\t]*$", "i"));
+      if (kv) return { pre: kv[1], clave: kv[2], valor: kv[3], post: "" };
+      if (!conTabla) return null;
+      const tb = String(l).match(new RegExp("^([ \\t]*\\|[ \\t]*\\**(" + alias + ")\\**[ \\t]*:?[ \\t]*\\|[ \\t]*)([^|]*?)([ \\t]*\\|[ \\t]*)$", "i"));
+      if (tb) return { pre: tb[1], clave: tb[2], valor: tb[3], post: tb[4] };
+      return null;
+    };
+    const poner = (i, m, v) => { lineas[i] = m.pre + v + m.post; };
+    DATOS_FICHA.forEach(([clave, etiqueta]) => {
+      const alias = RE_DATO_FICHA[clave];
+      const primeraI = lineas.findIndex(l => leerLinea(l, alias, false));
+      const primera = primeraI >= 0 ? { i: primeraI, m: leerLinea(lineas[primeraI], alias, false) } : null;
+      const enHoja = primera ? sinComillas(primera.m.valor) : "";
+      const sabido = String(conocidos[clave] || "").trim();
+      if (clave === "atencion" && !esVacioFicha(enHoja) && !esVacioFicha(sabido)) {
+        // la hoja trae «Roberto Prata» y la app sabe «Roberto Prata / Kevin Haseney»: se completa, no se pisa
+        const juntos = juntarNombres(enHoja, sabido);
+        if (juntos !== enHoja) { lineas[primera.i] = etiqueta + ": " + juntos; tomados.push("atención (" + juntos + ")"); escritas.push(etiqueta + ": " + juntos); }
+        return;
+      }
+      if (clave === "direccion") {
+        const ficha = String(manda.direccion || "").trim();
+        const fichaVale = !!ficha && !llevaMarcador(ficha) && !esMontoTapable(ficha);
+        // v251 (revisión): la ficha solo MANDA si trae número de calle; «Lot 12 Bexley Ranch» no pisa «4521 Bexley Village Dr»
+        const fichaManda = fichaVale && !!partesDireccion(ficha).numero;
+        const relleno = fichaVale ? ficha : (!llevaMarcador(sabido) ? sabido : "");
+        // v251 (revisión): solo se tocan las líneas de la CABECERA (antes del primer título de sección que el lector
+        // reconoce): «- Location: 30 ft from panel…» o «Site: 2 subpanels in the garage» dentro del alcance son trabajo.
+        let finCabecera = lineas.length;
+        try {
+          const t0 = (leerAlcance(lineas.join("\n")).titulos || []).find(t => t && t.seccion && t.seccion !== "datos");
+          if (t0 && Number.isInteger(t0.linea)) finCabecera = t0.linea - 1;
+        } catch { /* si el lector no puede, toda la hoja cuenta como cabecera (con las reglas de abajo) */ }
+        // ¿la hoja dice cuál es la dirección de la OBRA? Entonces un «Address:» debajo de «Client:» es la oficina del cliente
+        const hayDeObra = lineas.some((l, i) => { const m = i < finCabecera && leerLinea(l, alias, true); return !!m && RE_DIR_DE_OBRA.test(String(m.clave).trim()); });
+        const debajoDeParte = i => { for (let k = i - 1; k >= 0 && k >= i - 3; k--) { if (!lineas[k].trim()) return false; if (RE_PARTE.test(lineas[k])) return true; } return false; };
+        // todas las líneas de la dirección (la de Edgar, la cabecera en inglés, una fila de tabla)…
+        const todas = [];
+        lineas.forEach((l, i) => {
+          if (i >= finCabecera) return;
+          const m = leerLinea(l, alias, true);
+          if (!m) return;
+          const v = sinComillas(m.valor);
+          const segura = RE_DIR_SEGURA.test(String(m.clave).trim());
+          if (segura) {
+            if (hayDeObra && /^address$/i.test(String(m.clave).trim()) && debajoDeParte(i)) return;   // la oficina del GC o del cliente
+            todas.push({ i, m }); return;
+          }
+          // «Site:», «Location:», «Job site:»…: sin viñeta delante, y con un marcador o con forma de dirección de verdad
+          if (/^[ \t]*[-*•]/.test(l)) return;
+          if (llevaMarcador(v) || pareceDireccion(v)) todas.push({ i, m });
+        });
+        // …y la línea donde el lector de siempre leyó la dirección, si ninguna regla de aquí la reconoció
+        const nLeida = Number(opciones.lineaLeida && opciones.lineaLeida.direccion);
+        if (Number.isInteger(nLeida) && nLeida >= 1 && nLeida <= lineas.length && !todas.some(x => x.i === nLeida - 1)) {
+          const l = lineas[nLeida - 1];
+          const m = l.match(/^([ \t]*\|[^|]*\|[ \t]*)([^|]*?)([ \t]*\|[ \t]*)$/) || l.match(/^([^:]{2,42}:[ \t]*)(.*?)()[ \t]*$/);
+          if (m) todas.push({ i: nLeida - 1, m: { pre: m[1], valor: m[2], post: m[3] || "" } });
+        }
+        todas.forEach(({ i, m }) => {
+          const v = sinComillas(m.valor);
+          if (llevaMarcador(v)) {
+            if (!relleno) return;   // sin dato en la ficha: el marcador se queda y el candado lo frena
+            poner(i, m, relleno);
+            tomados.push("dirección (" + relleno + ")"); escritas.push(lineas[i].trim());
+          } else if (fichaVale && !mismaDireccion(v, ficha) && !direccionIgual(v, ficha)) {
+            if (!fichaManda) {
+              // la ficha no trae número de calle: no se pisa la de la hoja, solo se dice
+              if (v && v !== String(m.valor).trim()) poner(i, m, v);
+              avisos.push({ linea: i + 1, clave, antes: v, despues: "", texto: `La hoja dice «${v}» y la ficha «${ficha}». No la cambié: la de la ficha no trae número de calle` });
+              return;
+            }
+            poner(i, m, ficha); escritas.push(lineas[i].trim());
+            avisos.push({ linea: i + 1, clave, antes: v, despues: ficha, texto: `La hoja decía «${v}»; puse la de la ficha: ${ficha}` });
+          } else if (v && v !== String(m.valor).trim()) poner(i, m, v);   // sin comillas
+        });
+        if (!todas.length && relleno) {
+          lineas.unshift(etiqueta + ": " + relleno);
+          avisos.forEach(a => { a.linea++; });
+          tomados.push("dirección (" + relleno + ")"); escritas.push(etiqueta + ": " + relleno);
+        }
+        return;
+      }
+      if (clave === "ciudad") {
+        // las comillas fuera («"New Port Richey"» → New Port Richey), en todas las líneas de la ciudad
+        lineas.forEach((l, i) => { const m = leerLinea(l, alias, false); if (!m) return; const v = sinComillas(m.valor);
+          if (v && v !== String(m.valor).trim() && !llevaMarcador(v)) poner(i, m, v); });
+        // v251 (revisión): se rellena solo cuando TODO el valor es un marcador («TBD», «[CITY]»). Si trae algo más
+        // («Pasco County / City of New Port Richey (to be confirmed by parcel)») no se toca: la duda la pregunta el
+        // candado. Una línea con contenido no se borra nunca; la que es SOLO un marcador sin dato que poner se vacía
+        // para que el lector pregunte la jurisdicción (no se pierde nada: «TBD» no es un dato).
+        if (!primera || !esVacioFicha(enHoja)) return;
+        if (!sabido || llevaMarcador(sabido)) { lineas[primera.i] = ""; return; }
+        poner(primera.i, primera.m, sabido);
+        tomados.push("ciudad (" + sabido + ")"); escritas.push(lineas[primera.i].trim());
+        return;
+      }
+      if (!esVacioFicha(enHoja)) return;                       // la hoja ya lo trae
+      if (esVacioFicha(sabido)) { if (primera) lineas[primera.i] = ""; return; }   // ni la hoja ni la app: que pregunte
+      if (primera) lineas[primera.i] = etiqueta + ": " + sabido;
+      else { lineas.unshift(etiqueta + ": " + sabido); avisos.forEach(a => { a.linea++; }); }
+      tomados.push(etiqueta.toLowerCase() + " (" + sabido + ")");
+      escritas.push(etiqueta + ": " + sabido);
+    });
+    return { texto: lineas.join("\n"), tomados, escritas, avisos };
+  }
+
+  // ---- A · El revisor del contrato armado ----
+  // Los montos de lo que viaja al revisor van como [MONTO] (así lo espera su prompt)
+  // v252: en el papel armado el dinero siempre lleva «$» (o miles con coma: 12,828.84). Un número pelado con dos
+  // decimales es un artículo del código (NEC 210.23, 330.30, 300.15, 314.16, 404.22, 700.16; NFPA 101 7.10): no se tapa.
+  const esDineroDeVerdad = t => /\$|dollars|usd|d[oó]lares/i.test(t) || /\d{1,3}(?:,\d{3})+/.test(t);
+  const conMontoTapado = s => {
+    let t = String(s || "");
+    const tramos = tramosDinero(t).filter(([a, b]) => esDineroDeVerdad(t.slice(a, b)));
+    for (let k = tramos.length - 1; k >= 0; k--) { const [a, b] = tramos[k]; t = t.slice(0, a) + "[MONTO]" + t.slice(b); }
+    return t;
+  };
+  const ENTIDADES = { amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'", nbsp: " ", mdash: "—", ndash: "–", rsquo: "’", lsquo: "‘",
+                      rdquo: "”", ldquo: "“", hellip: "…", sect: "§", middot: "·", bull: "•", copy: "©", reg: "®", trade: "™",
+                      frac12: "½", deg: "°", times: "×", rarr: "→", check: "✓", ensp: " ", emsp: " ", thinsp: " " };
+  const desentidades = s => String(s || "").replace(/&(#x[0-9a-f]+|#\d+|[a-z0-9]+);/gi, (m, e) => {
+    if (e[0] === "#") { const n = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10); return Number.isFinite(n) ? String.fromCodePoint(n) : m; }
+    return Object.prototype.hasOwnProperty.call(ENTIDADES, e.toLowerCase()) ? ENTIDADES[e.toLowerCase()] : m;
+  });
+  const sinEtiquetas = s => desentidades(String(s || "").replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
+  // El contrato armado (el HTML de la plantilla ya rellena) en texto plano para el revisor:
+  // una línea por párrafo, las celdas separadas por « | », cada sección con su marca «[N] Título»
+  // y los montos como [MONTO]. Devuelve { texto, secciones: ["1", …, "L", "A"], titulos: { "1": "…" } }.
+  function textoParaRevisar(html) {
+    let h = String(html || "");
+    h = h.replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|head|title|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, " ");
+    const secciones = [], titulos = {};
+    h = h.replace(/<h2\b[^>]*class\s*=\s*["'][^"']*\bsection\b[^"']*["'][^>]*>([\s\S]*?)<\/h2>/gi, (m, dentro) => {
+      const mNum = dentro.match(/<span\b[^>]*class\s*=\s*["'][^"']*\bnum\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i);
+      const num = mNum ? sinEtiquetas(mNum[1]).slice(0, 12) : "";
+      const titulo = sinEtiquetas(mNum ? dentro.replace(mNum[0], " ") : dentro);
+      if (!num) return "\n\n" + titulo + "\n";
+      if (!secciones.includes(num)) { secciones.push(num); titulos[num] = titulo; }
+      return "\n\n[" + num + "] " + titulo + "\n";
+    });
+    h = h.replace(/<br\s*\/?>/gi, "\n")
+         .replace(/<\/(p|div|li|tr|h[1-6]|table|thead|tbody|ul|ol|section|article|header|footer|blockquote|dt|dd|pre)>/gi, "\n")
+         .replace(/<(li)\b[^>]*>/gi, "\n- ")
+         .replace(/<\/t[dh]>\s*<t[dh]\b[^>]*>/gi, " | ")
+         .replace(/<[^>]+>/g, "");
+    const lineas = desentidades(h).replace(/\r/g, "").split("\n")
+      .map(l => conMontoTapado(l.replace(/[ \t    ]+/g, " ").trim()).replace(/^\|\s*|\s*\|$/g, "").trim());
+    const out = [];
+    for (const l of lineas) { if (!l && (!out.length || out[out.length - 1] === "")) continue; out.push(l === "-" ? "" : l); }
+    while (out.length && !out[out.length - 1]) out.pop();
+    return { texto: out.join("\n"), secciones, titulos };
+  }
+
+  // ¿En qué línea de la hoja está la cita del revisor? (la cita sale del CONTRATO, en inglés; la hoja es la de Edgar).
+  // La misma regla del lector: la subcadena común más larga cubre ≥ 80 % de la cita. Además, como el contrato
+  // envuelve lo de la hoja con frases de la plantilla, vale también que la línea entera (o el valor de un
+  // «Clave: valor») esté dentro de la cita en un 80 %. Devuelve el número de línea (desde 1), o 0 si es de la plantilla.
+  function lineaDeCita(texto, cita) {
+    const c = limpiarLinea(String(cita || "")).limpia.toLowerCase();
+    if (c.replace(/\[monto\]/g, "").trim().length < 6) return 0;
+    const lineas = String(texto || "").replace(/\r/g, "").split("\n");
+    let mejor = 0, puntos = 0;
+    lineas.forEach((l, i) => {
+      const t = conMontoTapado(limpiarLinea(l).limpia).toLowerCase()
+        .replace(/^\|\s*|\s*\|$/g, "").replace(/^(?:[-*•▪◦]\s+|\d{1,3}(?:\.\d{1,3})*[.)]?\s+|#+\s*)/, "").trim();
+      if (t.length < 4) return;
+      let p = 0;
+      if (t.includes(c)) p = 3;
+      else {
+        const comun = subcadenaComun(t, c);
+        if (comun >= Math.ceil(c.length * 0.8)) p = 2 + comun / 1000;
+        else if (t.length >= 16 && comun >= Math.ceil(t.length * 0.8)) p = 1 + comun / 1000;
+        else {
+          // «Dirección: 4761 U.S. Hwy 19 N…» — el valor del dato dentro de la cita
+          const kv = t.match(/^[^:|]{2,42}[:|]\s*(.+)$/);
+          const v = kv ? kv[1].replace(/\s*\|\s*$/, "").trim() : "";
+          if (v.length >= 8) { const cv = subcadenaComun(v, c); if (cv >= Math.ceil(v.length * 0.8)) p = 0.5 + cv / 1000; }
+        }
+      }
+      if (p > puntos) { puntos = p; mejor = i + 1; }
+    });
+    return mejor;
+  }
+
+  // Los tipos de hallazgo que entiende la pantalla (los del pliego y los del molde de antes)
+  const TIPOS_HALLAZGO = ["dato_ficha", "contradiccion", "placeholder", "frase_en_contra", "formato", "jurisdiccion_probable", "perfil", "otro",
+    "seccion_repetida", "parrafo_repetido", "exclusion_contradice_alcance", "permiso_excluido", "fases_no_cuadran", "remision_rota",
+    "texto_de_otro_tipo_de_obra", "aviso_consumidor_en_comercial", "hueco_mal_llenado", "dato_pendiente_impreso", "numero_inconsistente",
+    "clausula_no_cuadra_con_hechos", "ingles_roto"];
+  // El dato de la ficha que se escribe en la hoja: campo del revisor → clave del lector y la etiqueta de la línea
+  const CAMPOS_ARREGLO = {
+    direccion: { clave: "direccion", etiqueta: "Dirección" },
+    ciudad:    { clave: "ciudad", etiqueta: "Ciudad" },
+    cliente:   { clave: "cliente", etiqueta: "Cliente" },
+    dueno:     { clave: "dueno", etiqueta: "Homeowner" },
+    numero:    { clave: "numero_propuesta", etiqueta: "Número de propuesta" },
+    proyecto:  { clave: "proyecto", etiqueta: "Proyecto" }
+  };
+  const esHueco = v => { const t = String(v || "").trim();
+    return !t || /^(por confirmar|por definir|tbd|tbc|pendiente|pending|n\/a|\[[^\]]*\]|<[^>]*>|-+|\?+)$/i.test(t); };
+  const normaDato = s => sinAcentos(String(s || "").toLowerCase()).replace(/[^a-z0-9]+/g, " ").trim();
+  const normaCita = s => limpiarLinea(String(s || "")).limpia.toLowerCase();
+  // Lo que la ficha dice de ese campo (nunca lo que diga el modelo): si el modelo propone uno de
+  // los valores de la ficha, ese; si no, el primero. Sin dato en la ficha, no hay arreglo.
+  function valorDeFicha(ficha, campo, pedido) {
+    const f = ficha || {};
+    const sug = f.jurisdiccion_sugerida && typeof f.jurisdiccion_sugerida === "object" ? f.jurisdiccion_sugerida.jurisdiccion_probable : "";
+    const cand = ({ direccion: [f.direccion], ciudad: [f.ciudad, sug], cliente: [f.cliente], dueno: [f.dueno],
+                    numero: [f.numero], proyecto: [f.nombre] }[campo] || [])
+      .map(v => String(v || "").replace(/\s+/g, " ").trim()).filter(v => !esHueco(v) && !esMontoTapable(v) && v.length <= 200);
+    if (!cand.length) return "";
+    const p = normaDato(pedido);
+    return cand.find(v => p && normaDato(v) === p) || cand[0];
+  }
+  // Los perdonados del revisor viven en A.perdonadas como { texto: "revisor: <cita>", revisor: true, cita, tipo }
+  const PREFIJO_PERDON = "revisor: ";
+  function perdonDeHallazgo(h) {
+    const cita = String((h && h.cita) || "").slice(0, 200);
+    return { texto: PREFIJO_PERDON + cita, revisor: true, cita, tipo: String((h && h.tipo) || "otro") };
+  }
+  // El juez de la app para lo que devuelve el revisor. ctx = { texto (el que se mandó), secciones, ficha, perdonadas }.
+  // Se tira: la cita que no está TAL CUAL en el texto, lo que traiga dinero, lo que no tenga motivo.
+  // Se ordena: rojos primero. Como mucho 12. Lo perdonado antes (misma cita) no vuelve a salir.
+  function comprobarHallazgos(lectura, ctx) {
+    ctx = ctx || {};
+    const texto = String(ctx.texto || "");
+    const vivas = Array.isArray(ctx.secciones) ? ctx.secciones.map(String) : [];
+    const perdonadas = new Set((ctx.perdonadas || []).filter(x => x && x.revisor).map(x => normaCita(x.cita)));
+    const L = lectura && typeof lectura === "object" && !Array.isArray(lectura) ? lectura : {};
+    const crudos = Array.isArray(L.hallazgos) ? L.hallazgos : [];
+    let tiradas = 0, perdonados = 0;
+    const vistos = new Set(), out = [];
+    for (const h of crudos) {
+      if (!h || typeof h !== "object") { tiradas++; continue; }
+      let cita = String(h.cita || "").trim();
+      if (cita.length > 160) cita = cita.slice(0, 160);
+      const motivo = String(h.motivo || "").replace(/\s+/g, " ").trim().slice(0, 300);
+      if (!cita || !motivo || (texto && texto.indexOf(cita) < 0)) { tiradas++; continue; }
+      if (traeDineroEstricto(cita) || traeDineroEstricto(motivo)) { tiradas++; continue; }
+      const k = normaCita(cita);
+      if (perdonadas.has(k)) { perdonados++; continue; }
+      const tipo = TIPOS_HALLAZGO.includes(h.tipo) ? h.tipo : "otro";
+      if (vistos.has(k + "|" + tipo)) continue;
+      vistos.add(k + "|" + tipo);
+      let donde = String(h.donde || "").trim().slice(0, 12);
+      if (vivas.length && !vivas.includes(donde)) donde = "";
+      let arreglo = null;
+      const ca = h.arreglo && typeof h.arreglo === "object" ? CAMPOS_ARREGLO[h.arreglo.campo] : null;
+      if (ca) {
+        const valor = valorDeFicha(ctx.ficha, h.arreglo.campo, h.arreglo.valor);
+        if (valor) arreglo = { campo: h.arreglo.campo, valor, etiqueta: ca.etiqueta };
+      }
+      out.push({ donde, cita, motivo, gravedad: h.gravedad === "rojo" ? "rojo" : "ambar", tipo, arreglo });
+    }
+    const orden = out.map((h, i) => [h, i]).sort((a, b) => (a[0].gravedad === b[0].gravedad ? a[1] - b[1] : a[0].gravedad === "rojo" ? -1 : 1)).map(x => x[0]);
+    const resumen = String(L.resumen || "").replace(/\s+/g, " ").trim().slice(0, 600);
+    return { hallazgos: orden.slice(0, 12), resumen: traeDineroEstricto(resumen) ? "" : resumen,
+             tiradas: tiradas + (Number(L.citas_tiradas) || 0), perdonados };
+  }
+  // «Usar el dato de la ficha»: escribe (o corrige) en la hoja la línea del dato. Si la hoja ya trae esa línea
+  // («Address:», «| ADDRESS | … |», «Dirección:»), se cambia su valor y se deja su etiqueta; si no, se pone arriba.
+  // opciones.linea: la línea en la que las reglas leyeron ese dato (A.leido.datos_linea), si se sabe.
+  // Devuelve { texto, linea, etiqueta, explicacion } o { error }.
+  function ponerDatoDeFicha(texto, campo, valor, opciones) {
+    const ca = CAMPOS_ARREGLO[campo];
+    if (!ca) return { error: "Ese dato no se puede escribir en la hoja" };
+    const v = String(valor || "").replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+    if (!v || v.length > 200) return { error: "La ficha no tiene ese dato" };
+    if (esMontoTapable(v)) return { error: "Ese dato lleva un monto: no lo escribo en la hoja" };
+    const lineas = String(texto || "").replace(/\r/g, "").split("\n");
+    const esDelDato = i => { const k = claveDeLinea(limpiarLinea(lineas[i] || "").limpia); return !!k && k.clave === ca.clave; };
+    const dada = Number((opciones || {}).linea);
+    let idx = Number.isInteger(dada) && dada >= 1 && esDelDato(dada - 1) ? dada - 1 : -1;
+    if (idx < 0) idx = lineas.findIndex((l, i) => esDelDato(i));
+    if (idx >= 0) {
+      const l = lineas[idx];
+      const tabla = l.match(/^(\s*\|[^|]*\|\s*)[^|]*?(\s*\|\s*)$/);
+      const kv = l.match(/^(\s*[^:]{2,42}:\s*)/);
+      lineas[idx] = tabla ? tabla[1] + v + tabla[2] : kv ? kv[1] + v : ca.etiqueta + ": " + v;
+    } else { lineas.unshift(ca.etiqueta + ": " + v); idx = 0; }
+    return { texto: lineas.join("\n"), linea: idx + 1, etiqueta: ca.etiqueta,
+             explicacion: `escribí «${ca.etiqueta}: ${v}» en la hoja` };
+  }
+  // Lo que la app sabe de la obra y viaja al revisor: nada con dinero (con un monto dentro, ese dato no sale del teléfono)
+  function fichaSinDinero(ficha) {
+    const out = {};
+    Object.entries(ficha || {}).forEach(([k, v]) => {
+      if (v === null || v === undefined || v === "") return;
+      if (typeof v === "boolean") { out[k] = v; return; }
+      const t = typeof v === "object" ? JSON.stringify(v) : String(v);
+      if (!t || t === "{}" || esMontoTapable(t) || /\$/.test(t)) return;
+      out[k] = typeof v === "object" ? v : t.slice(0, 200);
+    });
+    return out;
+  }
+
+  const API = { leerAlcance, validarAlcance, cuentas, repartir, decidirBasePrecio, leerBasePrecio, esTituloDePlano, HITO2_PERMISO_CLIENTE, condicionesQueImportan, PARA_QUE, leerMonto, pareceDinero, hayDinero, pareceIngles, redactarDirecto,
                 decidirInterruptores, prepararEncargo, validarSalida,
                 rellenarPlantilla, aplicarSi, repetirFila, aplicarClausulas,
                 barridoFinal, marcasEmparejadas, armarTodo, aplicarArreglo, arreglarTodo, leerPermiso, leerFirma, leerVence, DISPARADORES, ORDEN_9, dinero, centavos, norma,
@@ -3029,7 +3992,13 @@
                 // tanda 1: los avisos del lector para la pantalla y las reglas nuevas
                 avisosDeLectura, esSobranteConfirmada, siNo, minus, normalizarTipoTrabajo, CLAVES_COND, CLAVES_DATOS, MATRIZ_LEGAL, SEC_DE_ROL,
                 // tanda 2: lo que la prueba del molde del cerebro necesita mirar
-                SECCIONES_VALIDAS, NOMBRES_PLANTILLA };
+                SECCIONES_VALIDAS, NOMBRES_PLANTILLA,
+                // v3.8 (29-sep): la jurisdicción por la dirección y el revisor del contrato armado
+                jurisdiccionDe, textoParaRevisar, lineaDeCita, comprobarHallazgos, ponerDatoDeFicha, fichaSinDinero,
+                perdonDeHallazgo, conMontoTapado, subcadenaComun, TIPOS_HALLAZGO, CAMPOS_ARREGLO,
+                // v251 (29-sep, Metro NPR): la ficha manda en la dirección, las reglas por contratista y la cabecera del SOW
+                nutrirHoja, mismaDireccion, partesDireccion, llevaMarcador, DATOS_FICHA, RE_DATO_FICHA, REGLAS_CONTRATISTA, reglaDeContratista,
+                numeroDeRef, ponerContratista, esLaEmpresa };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   raiz.Alcance = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);

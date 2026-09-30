@@ -2759,6 +2759,11 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .alc-cita:hover{border-style:solid;border-color:var(--mp-blue)}
 .alc-pregunta{margin:.7rem 0}
 .alc-pregunta p{margin:0 0 .4rem;font-weight:600}
+/* v252: debajo de la pregunta, para qué sirve la respuesta; y el selector de la base del precio */
+.alc-pregunta p.alc-para-que{font-weight:400;color:var(--mp-ink-2);font-size: var(--fs-4);margin:-.2rem 0 .45rem}
+.alc-base{display:flex;flex-direction:column;gap:.35rem;margin:1rem 0;padding:.7rem .85rem;border-radius:12px;background:var(--mp-sky-1);border-left:3px solid var(--mp-blue)}
+.alc-base select{max-width:100%;font-size: var(--fs-5);padding:.4rem .5rem;border-radius:8px}
+.alc-base-porque{margin:0;color:var(--mp-ink-2);font-size: var(--fs-4)}
 .alc-op{border:1px solid var(--mp-line);background:var(--mp-card);border-radius:10px;
   padding:.45rem .8rem;margin:0 .35rem .35rem 0;font-size: var(--fs-4);font-weight:600;
   color:var(--mp-ink);cursor:pointer;min-height:44px}
@@ -2771,7 +2776,8 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .alc-entendi h3{margin:0 0 .7rem;font-size: var(--fs-6);font-weight:650;color:var(--mp-ink)}
 .alc-rejilla{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:.6rem .9rem}
 .alc-rejilla div{display:flex;flex-direction:column;min-width:0}
-.alc-rejilla span{font-size: var(--fs-2);font-weight:700;color:var(--mp-ink-2)}
+/* solo la etiqueta («Cliente», «Permiso»…); un <span> dentro del valor <b> no se pinta como etiqueta */
+.alc-rejilla > div > span{font-size: var(--fs-2);font-weight:700;color:var(--mp-ink-2)}
 .alc-rejilla b{font-weight:600;font-size: var(--fs-5);color:var(--mp-ink)}
 .alc-sub{margin:.85rem 0 .3rem;font-size: var(--fs-4);color:var(--mp-ink-2)}
 .alc-lista{margin:.2rem 0 0;padding-left:1.25rem;font-size: var(--fs-5);color:var(--mp-ink)}
@@ -2823,6 +2829,8 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .alc-var.nueva .alc-var-letra{font-size: var(--fs-6);line-height:1}
 .alc-gris{background:var(--mp-sky-1);border-left:3px solid var(--mp-gris-bd);color:var(--mp-ink-2);border-radius:12px;padding:.7rem .85rem;margin:.8rem 0;font-size: var(--fs-4)}
 .alc-gris ul{margin:.35rem 0 0;padding-left:1.1rem}.alc-gris li{margin:.2rem 0}
+/* «(1 detalle)» al lado del renglón de «Lo que entendí»: una pastilla en su línea, sin partirse ni tapar la de al lado */
+.alc-lista .alc-gris{display:inline-block;white-space:nowrap;vertical-align:baseline;margin:0;padding:0 .45rem;border-left:0;border-radius:999px;line-height:1.35;font-size: var(--fs-2)}
 .alc-verde{background:var(--ok-bg-2);border-left:3px solid var(--ok);color:var(--ok-ink);border-radius:12px;padding:.7rem .85rem;margin:.8rem 0;font-size: var(--fs-5)}
 .alc-verde ul{margin:.35rem 0 0;padding-left:1.1rem}.alc-verde li{margin:.2rem 0}
 .alc-fixes{display:flex;flex-wrap:wrap;gap:.3rem;margin:.35rem 0 .2rem}
@@ -2838,6 +2846,21 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
   border:2px solid var(--tinta-18);border-top-color:var(--mp-blue);animation:alc-gira 1s linear infinite}
 @keyframes alc-gira{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.alc-espera::before{animation:none}}
+/* «Revisar con IA antes de enviar» (29-sep): el Anillo con su costo al lado, y cada hallazgo
+   con su sección, su cita, su motivo y sus tres botones. Colores y letra por token. */
+.alc-revisor{margin:.9rem 0 .2rem;padding-top:.8rem;border-top:1px solid var(--mp-line)}
+.alc-rev-cabeza{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem .8rem}
+.alc-rev-cabeza .btn{width:auto;flex:1 1 240px;min-height:44px}
+.alc-rev-costo{font-size: var(--fs-3);color:var(--mp-ink-2);font-variant-numeric:tabular-nums}
+.alc-rev-resumen{margin:.7rem 0 .2rem;font-size: var(--fs-5);font-weight:600;color:var(--mp-ink)}
+.alc-hallazgo{margin:.55rem 0 .7rem}
+.alc-rev-donde{display:block;font-size: var(--fs-3);font-weight:650;color:var(--mp-ink-2)}
+.alc-rev-motivo{margin:.25rem 0 .1rem;font-size: var(--fs-4);line-height:1.45}
+.alc-rev-hecho{margin:.25rem 0 .1rem;font-size: var(--fs-4);color:var(--ok-ink);font-weight:600}
+.alc-hallazgo .alc-op{font-family:inherit;text-align:left}
+.alc-hallazgo .alc-op:disabled{opacity:.7;cursor:default}
+.alc-rev-en-hoja p{margin:0 0 .35rem}
+.alc-rev-en-hoja .alc-botones{margin:.4rem 0 0}
 .alc-mas{margin:.5rem 0 0;font-size: var(--fs-4);color:var(--mp-ink-2)}
 .alc-mas>summary{cursor:pointer;padding:.35rem 0;font-weight:600;color:var(--mp-ink-2)}
 .alc-mas .alc-libre{margin-left:.35rem}

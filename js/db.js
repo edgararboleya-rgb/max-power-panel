@@ -201,6 +201,19 @@
   };
   const insertar = (tabla, fila) => api(tabla, { metodo: "POST", cuerpo: fila });
   const actualizar = (ruta, cambios) => api(ruta, { metodo: "PATCH", cuerpo: cambios });
+  // v252: si la base todavía no tiene la columna pricing_basis (el SQL está pendiente), se guarda igual sin ella
+  const COLUMNAS_NUEVAS = ["pricing_basis"];
+  async function sinColumnaNueva(hacer, datos) {
+    try { return await hacer(datos); }
+    catch (e) {
+      const txt = String((e && e.crudo) || "");
+      const nueva = COLUMNAS_NUEVAS.find(k => datos && Object.prototype.hasOwnProperty.call(datos, k) && txt.includes(k));
+      const faltaColumna = e && (e.codigo === "PGRST204" || e.codigo === "42703" || /column/i.test(txt));
+      if (!nueva || !faltaColumna) throw e;
+      const resto = Object.assign({}, datos); delete resto[nueva];
+      return hacer(resto);
+    }
+  }
 
   // ---------- Fotos (Supabase Storage, almacén privado) ----------
   // carpeta opcional: "recibos" guarda la foto en recibos/<proyecto>/...
@@ -452,6 +465,8 @@
         contratistaId: p.contratista_id || null,
         contratistaModo: p.contratista_modo || "",
         contratistaContacto: p.contratista_contacto || "",
+        // (29-sep) la clase de obra (new_construction, remodel, service_call): la usa el revisor del contrato
+        workSubtype: p.work_subtype || "",
         ntoEnviadoEl: p.nto_enviado_el ? String(p.nto_enviado_el).slice(0, 10) : "",
         origen: p.origen || "",
         clienteEmail: p.cliente_email || "",
@@ -799,7 +814,10 @@
       ]);
       return { propuestas, opciones, textos, pendientes };
     },
-    crearPropuesta: fila => insertar("propuestas", fila),
+    // v252: la base del precio (pricing_basis) es una columna nueva (etapa6/PRICING-BASIS.sql). Si todavía no está
+    // puesta en la base, el guardado NO falla: se reintenta sin ese campo (la elección queda también en
+    // alcance_decisiones, que ya existe).
+    crearPropuesta: fila => sinColumnaNueva(f => insertar("propuestas", f), fila),
     cambiarPropuesta: (id, cambios) => actualizar(`propuestas?id=eq.${id}`, cambios),
     eliminarPropuesta: id => api(`propuestas?id=eq.${id}`, { metodo: "DELETE" }),
     // Las opciones van en una sola petición, no una por una
@@ -807,13 +825,13 @@
     borrarOpciones: propuestaId => api(`propuesta_opciones?propuesta_id=eq.${propuestaId}`, { metodo: "DELETE" }),
     // ---------- La hoja de alcance ----------
     // Todo lo del alcance vive dentro de la propuesta, así que hereda su candado.
-    guardarAlcance: (id, campos) => actualizar(`propuestas?id=eq.${id}`, campos),
+    guardarAlcance: (id, campos) => sinColumnaNueva(c => actualizar(`propuestas?id=eq.${id}`, c), campos),
 
     // La plantilla oficial vive en el almacén de la app, no en el teléfono:
     // así Edgar no tiene que elegir ningún archivo y todos usan la misma.
     plantillaSOW: async () => {
-      const firma = await firmarFotos(["plantillas/SOW_Template_v3.7.html"]);
-      const url = firma["plantillas/SOW_Template_v3.7.html"];
+      const firma = await firmarFotos(["plantillas/SOW_Template_v3.8.html"]);
+      const url = firma["plantillas/SOW_Template_v3.8.html"];
       if (!url) throw new Error("No encuentro la plantilla oficial en la app");
       const r = await fetch(url);
       if (!r.ok) throw new Error("No se pudo bajar la plantilla (" + r.status + ")");
@@ -929,7 +947,10 @@
     // plataforma corta cada una a los 150 s, así que el cerebro guarda por
     // dónde va y contesta { sigue }. Aquí se vuelve a llamar sola, hasta 10
     // veces (~15 min), y alAvanzar(r) le dice a la pantalla por dónde va.
-    async preguntarAsistente(mensajes, alAvanzar) {
+    // (29-sep, B.3) contexto: { pantalla, proyecto_id, propuesta_id, idioma } —
+    // en qué pantalla está y qué obra tiene abierta. Viaja con la pregunta (y con
+    // cada «sigue», por si el cerebro lo necesita al retomar).
+    async preguntarAsistente(mensajes, alAvanzar, contexto) {
       if (!sesion) throw new Error("Sin sesión");
       const llamar = async cuerpo => {
         const pide = () => fetch(`${SB.url}/functions/v1/cerebro?accion=asistente`, {
@@ -948,10 +969,16 @@
         if (!r.ok) throw new Error("El asistente no respondió (" + r.status + ")");
         return r.json();
       };
-      let res = await llamar({ mensajes });
+      const ctx = contexto && typeof contexto === "object" ? {
+        pantalla: String(contexto.pantalla || "").slice(0, 40) || null,
+        proyecto_id: contexto.proyecto_id ? String(contexto.proyecto_id).slice(0, 80) : null,
+        propuesta_id: Number.isInteger(contexto.propuesta_id) ? contexto.propuesta_id : null,
+        idioma: contexto.idioma === "en" ? "en" : "es"
+      } : null;
+      let res = await llamar(ctx ? { mensajes, contexto: ctx } : { mensajes });
       for (let i = 0; i < 10 && res && res.sigue; i++) {
         if (typeof alAvanzar === "function") { try { alAvanzar(res); } catch (e) { /* la pantalla no frena el trabajo */ } }
-        res = await llamar({ trabajo: res.sigue });
+        res = await llamar(ctx ? { trabajo: res.sigue, contexto: ctx } : { trabajo: res.sigue });
       }
       if (res && res.sigue) return { respuesta: "Esto me está llevando demasiado. Lo que alcancé lo recuerdo: dime «sigue» y continúo, o pregúntamelo por partes." };
       return res;

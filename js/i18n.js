@@ -646,8 +646,28 @@
       "Falta el precio base en Precio.": "The base price is missing in Price.",
       "Escribir el precio": "Write the price",
       "Poner ese disparador en el hito 2": "Use that trigger on milestone 2",
-      "Contrato con el contratista: firma solo el contratista (representante autorizado). El dueño de la propiedad queda como referencia (Homeowner) y firma el Layout Approval de la sección 8, no el SOW.":
-        "Contract with the contractor: only the contractor signs (authorized representative). The property owner stays as a reference (Homeowner) and signs the Layout Approval in section 8, not the SOW.",
+      "Contrato con el contratista: firma solo el contratista (representante autorizado). El dueño (Owner) de la propiedad queda como referencia y firma el Layout Approval de la sección 8, no el SOW.":
+        "Contract with the contractor: only the contractor signs (authorized representative). The property owner (Owner) stays as a reference and signs the Layout Approval in section 8, not the SOW.",
+      // v252: para qué sirve cada respuesta de Condiciones, y la base del precio
+      "Si dices que no, el contrato añade que el precio se hizo sin ver el panel y que cualquier arreglo del panel va aparte.":
+        "If you say no, the contract adds that the price was made without seeing the panel and that any panel repair is extra.",
+      "Si dices que sí, el contrato deja claro que los AFCI que pida el código en esos circuitos van aparte.":
+        "If you say yes, the contract makes clear that any AFCI protection the code requires on those circuits is extra.",
+      "Base del precio": "Pricing basis", "Por qué": "Why",
+      "Cantidades de la sección 2": "Quantities in Section 2", "Planos de ingeniería": "Engineering plans",
+      "cantidades de la sección 2": "quantities in Section 2", "planos de ingeniería": "engineering plans",
+      "Debajo del total sale que las cantidades son aproximadas y no sirven para volver a medir.":
+        "Under the total, the contract says quantities are approximate and are not a basis for re-measurement.",
+      "Debajo del total sale que el precio se basa en las cantidades de la sección 2 y que lo que pase de ahí va por change order.":
+        "Under the total, the contract says the price is based on the quantities in Section 2 and anything beyond them goes by change order.",
+      "porque la hoja dice «Base del precio: planos»": "because the sheet says “Pricing basis: plans”",
+      "porque la hoja dice «Base del precio: cantidades»": "because the sheet says “Pricing basis: quantities”",
+      "porque lo elegiste tú (planos de ingeniería)": "because you chose it (engineering plans)",
+      "porque lo elegiste tú (cantidades de la sección 2)": "because you chose it (quantities in Section 2)",
+      "porque el alcance está contado en la sección 2 (lo normal)": "because the scope is counted in Section 2 (the usual case)",
+      "porque el estimado se hizo con planos": "because the estimate was made from plans",
+      "porque «Planos:» es lo que entregas; el precio sigue siendo por conteo": "because “Planos:” is what you deliver; the price is still by count",
+      "Lo manda la hoja: bórralo de la hoja para elegir aquí.": "The sheet sets it: delete it from the sheet to choose here.",
       "Sí, firman las dos": "Yes, both sign", "No, es un solo firmante": "No, there's only one signer",
       "Sí": "Yes", "Otra": "Other",
       "¿Cómo se cobra?": "How do we bill it?",
@@ -858,8 +878,14 @@
         // ----- alcance.js: preguntas y avisos con partes variables -----
         [/^La obra está en zona (\S+) pero no encuentro el BFE del certificado de elevación\. Escríbelo así: (.+)$/,
           "The job is in zone $1 but I can't find the BFE on the elevation certificate. Write it like this: $2"],
-        [/^Contrato con (.+): en el papel el cliente es (.+) \(paga y firma\) y (.+) queda como dueño de la propiedad \(Homeowner\)\.$/,
-          "Contract with $1: on paper the client is $2 (pays and signs) and $3 stays as the property owner (Homeowner)."],
+        [/^Contrato con (.+): en el papel el cliente es (.+) \(paga y firma\) y (.+) queda como dueño \(Owner\) de la propiedad\.$/,
+          "Contract with $1: on paper the client is $2 (pays and signs) and $3 stays as the property owner (Owner)."],
+        // v252: el porqué de la base del precio y lo que se contestó solo con el levantamiento
+        [/^porque la hoja trae «Planos:» \((.+)\)$/, "because the sheet has “Planos:” ($1)"],
+        [/^porque la obra tiene el documento «(.+)»$/, "because the job has the document “$1”"],
+        [/^«Base del precio: (.+)» habla de cantidades y de planos a la vez: no la tomo\. Escribe solo «cantidades» o «planos», o elígela en la ficha\.$/,
+          "“Pricing basis: $1” talks about quantities and plans at the same time: I'm not using it. Write only “quantities” or “plans”, or choose it on the card."],
+        [/^Fotos del panel: sí, lo dice el levantamiento de la obra \((.+)\)\.$/, "Panel photos: yes, the job's site survey says so ($1)."],
         [/^Esto no es un rough-in de interior: hay trabajo bajo tierra \/ bonding antes\. El pago 2 dice «(.*)»; lo natural es «(.+)» \(los montos no cambian\)\. Si prefieres un hito aparte al aprobar el bonding \(40\/30\/20\/10\), escríbelo en Pagos\.$/,
           "This isn't an interior rough-in: there's underground / bonding work first. Payment 2 says “$1”; the natural trigger is “$2” (the amounts don't change). If you'd rather have a separate milestone when the bonding is approved (40/30/20/10), write it in Payments."],
         [/^"(.+)" ¿son dos personas que firman las dos\?$/, "\"$1\" — are these two people who both sign?"],
@@ -3184,8 +3210,8 @@
     "¿Este trabajo es dentro de una vivienda o servicio exterior? Si es dentro de una vivienda, se quedan las exclusiones de gabinetes, drywall y aparatos, y la cláusula de los breakers AFCI.":
       "Is this job inside a home or an exterior service? If it's inside a home, the cabinet, drywall and appliance exclusions stay, along with the AFCI breaker clause.",
     "Exterior (servicio)": "Exterior (service)", "Vivienda interior": "Home interior", "Las dos cosas": "Both",
-    "¿El dueño de la propiedad es este? Hace falta para el Notice to Owner y para la fila Homeowner del contrato.":
-      "Is this the property owner? It's needed for the Notice to Owner and for the Homeowner row of the contract.",
+    "¿El dueño de la propiedad es este? Hace falta para el Notice to Owner y para la fila Owner del contrato.":
+      "Is this the property owner? It's needed for the Notice to Owner and for the Owner row of the contract.",
     "Sí, ese es el dueño": "Yes, that's the owner",
     "¿Firma también esta segunda persona? Si firma, sale en el contrato y en el portal como segundo firmante.":
       "Does this second person sign too? If so, they appear in the contract and in the portal as second signer.",
@@ -3226,7 +3252,7 @@
     "Lo que entendí": "What I understood",
     "contrato con una empresa (GC)": "contract with a company (GC)", "directo con el dueño": "direct with the owner",
     "Documento": "Document", "propuesta con firma": "proposal with signature", "alcance ligero": "light scope",
-    "Permiso": "Permit", "lo sacamos nosotros": "we pull it", "lo saca el cliente": "the client pulls it", "no hace falta": "not needed",
+    "Permiso": "Permit", "lo sacamos nosotros": "we pull it", "lo saca el cliente": "the client pulls it", "lo saca el contratista": "the contractor pulls it", "no hace falta": "not needed",
     "Ciudad": "City", "Vale": "Valid",
     "Tipo de trabajo": "Type of work",
     "servicio exterior": "exterior service", "dentro de una vivienda": "inside a home", "obra nueva": "new construction",
@@ -3248,6 +3274,12 @@
     "el aviso de la ley de gravámenes y": "the lien-law notice and",
     "los tres días para cancelar (esos dos son solo de un dueño de casa), y con la retención, el Notice to Owner y las liberaciones de gravamen. Si quien va a firmar es el dueño de la casa, cambia la obra a «Solo coordinan» en la ficha del proyecto antes de armar el contrato.":
       "the three-day right to cancel (those two only apply to a homeowner), and with retainage, the Notice to Owner and lien releases. If the person signing is the homeowner, switch the job to «Coordination only» in the job file before building the contract.",
+    "los tres días para cancelar (esos dos son solo de un dueño de casa), y con la retención, el Notice to Owner y las liberaciones de gravamen.":
+      "the three-day right to cancel (those two only apply to a homeowner), and with retainage, the Notice to Owner and lien releases.",
+    "Si quien va a firmar es el dueño de la casa, cambia la obra a «Solo coordinan» en la ficha del proyecto antes de armar el contrato.":
+      "If the person signing is the homeowner, switch the job to «Coordination only» in the job file before building the contract.",
+    "La obra dice «Solo coordinan», pero el cliente de la hoja es el propio contratista: por eso el contrato es con él.":
+      "The job says «Coordination only», but the client on the sheet is the contractor itself: that's why the contract is with them.",
     "Ajustado a este trabajo": "Tailored to this job",
     "Cláusulas que van a salir": "Clauses that will be included",
     "va siempre": "always included",
@@ -3506,6 +3538,10 @@
     [/^Invitación enviada a (\S+) ✓$/, "Invitation sent to $1 ✓"],
     [/^El enlace del cliente: (https?:\/\/\S+)$/, "The client link: $1"],
     [/^Cargado «(.+)» ✓ — ahora toca Leer$/, "Loaded «$1» ✓ — now tap Read"],
+    [/^Cargado «(.+)» ✓ — uní (\d+) (?:línea que venía partida|líneas que venían partidas) — ahora toca Leer$/, s => {
+      const m = s.match(/^Cargado «(.+)» ✓ — uní (\d+) /);
+      return `Loaded «${m[1]}» ✓ — I joined ${m[2]} ${m[2] === "1" ? "line" : "lines"} that came split — now tap Read`;
+    }],
     [/^Guardé en el proyecto: ((?:dirección|email|teléfono|cliente)(?:, (?:dirección|email|teléfono|cliente))*) ✓$/, s => {
       const T = { "dirección": "address", "email": "email", "teléfono": "phone", "cliente": "client" };
       const l = s.match(/^Guardé en el proyecto: (.+) ✓$/)[1].split(", ").map(x => T[x]);
@@ -3807,7 +3843,7 @@
     const trFalta = s => s.split(" y ").map(x => FALTA[x] || x).join(" and ");
   
     // «Tomé del proyecto: dirección (…) · email (…)»
-    const TOME = { "cliente": "client", "homeowner": "homeowner", "atención": "attention", "email": "email", "teléfono": "phone", "dirección": "address" };
+    const TOME = { "cliente": "client", "homeowner": "homeowner", "atención": "attention", "email": "email", "teléfono": "phone", "dirección": "address", "ciudad": "city" };
   
     return [
       // --- El alcance ---
@@ -3832,7 +3868,16 @@
       [/^Se me escapó un monto en la línea (\d+) sin tapar; no lo mandé\. Leí con las reglas de siempre$/, "An amount on line $1 slipped through uncovered; I didn't send it. I read it with the usual rules"],
       [/^El asistente ya gastó lo del mes \((\S+) de (\S+)\); sigo con las reglas$/, "The assistant already used up this month's budget ($1 of $2); I'm going on with the rules"],
       [/^Tomé del proyecto: (.+)$/, s => "Taken from the project: " + s.slice("Tomé del proyecto: ".length).split(" · ")
-        .map(p => p.replace(/^(cliente|homeowner|atención|email|teléfono|dirección) \(/, (m, k) => TOME[k] + " (")).join(" · ")],
+        .map(p => p.replace(/^(cliente|homeowner|atención|email|teléfono|dirección|ciudad) \(/, (m, k) => TOME[k] + " (")).join(" · ")],
+      // v251: la ficha manda en la dirección, las líneas partidas y la regla de la casa del permiso por contratista
+      [/^La hoja decía «(.+)»; puse la de la ficha: (.+)$/, "The sheet said “$1”; I used the one on the job file: $2"],
+      [/^Uní (\d+) (?:línea que venía partida|líneas que venían partidas)$/, s => { const n = s.match(/\d+/)[0]; return `I joined ${n} ${pl(n, "line", "lines")} that came split`; }],
+      [/^Hay (\d+) (?:línea partida|líneas partidas): toca Leer para unirlas$/, s => { const n = s.match(/\d+/)[0]; return `There ${pl(n, "is", "are")} ${n} split ${pl(n, "line", "lines")}: tap Read to join them`; }],
+      [/^La hoja dice «(.+)» y la ficha «(.+)»\. No la cambié: la de la ficha no trae número de calle$/, "The sheet says “$1” and the job file “$2”. I didn't change it: the one on the job file has no street number"],
+      [/^Debajo de Pagos quedó un trozo suelto: «(.+)»\. Parece lo que sobró de una línea cortada; no lo pongo en el contrato\.$/, "A loose piece was left under Payments: “$1”. It looks like what was left of a cut line; I'm not putting it in the contract."],
+      [/^«(.+)» ya lo trae la plantilla \(7\.4, movilizaciones a \$350\.00, y 9\.6, órdenes de cambio\); no lo repito\.$/, "“$1” is already in the template (7.4, mobilizations at $350.00, and 9.6, change orders); I'm not repeating it."],
+      [/^En Pagos hay una línea con un monto que no es un pago: «(.+)»\. La dejo fuera del contrato\.$/, "Under Payments there's a line with an amount that isn't a payment: “$1”. I'm leaving it out of the contract."],
+      [/^Con (.+) el permiso lo saca (.+) \(regla de la casa\): no tomé «(.+)» de la hoja\.$/, "With $1, $2 pulls the permit (house rule): I didn't take “$3” from the sheet."],
       [/^(.+) \(los montos no cambian\)$/, s => cola(s.slice(0, -" (los montos no cambian)".length)) + " (the amounts don't change)"],
       [/^Ojo: la ficha tiene (\d+) hitos? ya facturado o cobrado; no los toqué\. Revisa que cuadren con el contrato\.$/, s => {
         const n = s.match(/\d+/)[0];
@@ -4124,6 +4169,67 @@
   REGLAS.push(
     [/^La hoja no trae artículos del código: en la sección 4 va una frase general\. Si quieres artículos concretos, ponlos en «Código:» de la hoja\.$/, "The sheet lists no code articles: Section 4 gets a general sentence. If you want specific articles, put them under “Código:” on the sheet."],
     [/^La hoja no dice «Proyecto:»: usé el nombre de la obra en la app( \(«.+»\))?\.$/, "The sheet has no “Proyecto:” line: I used the job's name from the app$1."]
+  );
+  // ---------- «Revisar con IA antes de enviar» y el contexto del asistente (29-sep) ----------
+  Object.assign(D, {
+    "Revisar con IA antes de enviar": "Review with AI before sending",
+    "Revisar otra vez con IA": "Review again with AI",
+    "≈ 20 ¢, un minuto": "≈ 20 ¢, about a minute",
+    "La IA lee el contrato entero y lo compara con la ficha de la obra. Solo te señala lo que no cuadra; lo arreglas tú con un toque.":
+      "The AI reads the whole contract and compares it with the job's file. It only points out what doesn't match; you fix it with one tap.",
+    "La IA está revisando el contrato… (suele tardar un minuto; puedes seguir)": "The AI is reviewing the contract… (usually about a minute; you can keep working)",
+    "La IA no vio nada que arreglar.": "The AI found nothing to fix.",
+    "Sección": "Section",
+    "Arreglado en la hoja; vuelve a armar para verlo en el papel:": "Fixed on the sheet; build it again to see it on the paper:",
+    "Ir a la línea": "Go to the line",
+    "Es de la plantilla": "It's from the template",
+    "La cita no está en tu hoja: sale de la plantilla": "The quote isn't on your sheet: it comes from the template",
+    "Usar el dato de la ficha:": "Use the job file's data:",
+    "Lo dejo así": "Leave it as is",
+    "Esto quedaría mal firmado:": "This would be signed wrong:",
+    "Esto es una duda:": "This is a doubt:",
+    "Volver a armar": "Build it again",
+    "Lo de la IA no frena la descarga (la frena el repaso de siempre). Se queda a la vista hasta que vuelvas a armar.":
+      "The AI's findings don't block the download (the usual check does). They stay visible until you build it again.",
+    "La IA dice de esta línea:": "The AI says about this line:",
+    "Queda 1 cosa de la revisión con IA por mirar.": "1 thing from the AI review is left to check.",
+    "Lo de la revisión con IA está atendido: vuelve a armar.": "The AI review is taken care of: build it again.",
+    "Volver al contrato": "Back to the contract",
+    "Sin señal: la revisión con IA necesita internet. Cuando vuelva, toca otra vez": "No signal: the AI review needs internet. When it's back, tap again",
+    "Modo de prueba: no llamo a la IA": "Test mode: I'm not calling the AI",
+    "La IA ya está revisando este contrato": "The AI is already reviewing this contract",
+    "La IA terminó de revisar el contrato": "The AI finished reviewing the contract",
+    "La IA revisó el contrato: no vio nada que arreglar": "The AI reviewed the contract: nothing to fix",
+    "No pude hablar con la IA": "I couldn't reach the AI",
+    "Se me escapó un monto sin tapar en el contrato; no lo mandé a la IA": "An unmasked amount slipped into the contract; I didn't send it to the AI",
+    "La IA ya gastó lo del mes: esta revisión no se hizo": "The AI already used this month's budget: this review wasn't done",
+    "Un dato de la ficha de la obra llevaba un monto: la IA no lo aceptó": "A field in the job's file had an amount in it: the AI didn't accept it",
+    "El contrato es muy largo para la IA": "The contract is too long for the AI",
+    "Falta pegar el SQL del lector en la base": "The reader's SQL still needs to be pasted into the database",
+    "La IA tardó demasiado; vuelve a intentarlo": "The AI took too long; try again",
+    "La IA está ocupada; prueba en un minuto": "The AI is busy; try in a minute",
+    "La IA no quiso revisar este contrato": "The AI declined to review this contract",
+    "La revisión salió cortada; vuelve a intentarlo": "The review came back cut off; try again",
+    "No encuentro esa revisión; vuelve a intentarlo": "I can't find that review; try again",
+    "Arma el contrato primero": "Build the contract first",
+    "La IA devolvió algo que no cuadra; vuelve a intentarlo": "The AI returned something that doesn't add up; try again",
+    "La IA falló; vuelve a intentarlo en un minuto": "The AI failed; try again in a minute",
+    "Eso es texto de la plantilla, no de tu hoja": "That's template text, not from your sheet",
+    "Lo dejo así: no te lo vuelvo a marcar": "Left as is: I won't flag it again",
+    "La hoja no se deja leer así: mírala y vuelve a armar": "The sheet can't be read like this: check it and build again",
+    "La hoja tiene algo en rojo: arréglalo y vuelve a armar": "The sheet has something in red: fix it and build again",
+    "La hoja cambió y el inglés era de la de antes: toca «Pasarlo a inglés» otra vez y arma": "The sheet changed and the English was for the old one: tap “Pasarlo a inglés” again and build",
+    "La hoja no se deja armar así": "The sheet can't be built like this",
+    "No pude volver a armar": "I couldn't build it again",
+    "Ese dato no se puede escribir en la hoja": "That data can't be written on the sheet",
+    "La ficha no tiene ese dato": "The job file doesn't have that data",
+    "Ese dato lleva un monto: no lo escribo en la hoja": "That data has an amount in it: I won't write it on the sheet"
+  });
+  REGLAS.push(
+    [/^Quedan (\d+) cosas de la revisión con IA por mirar\.$/, "$1 things from the AI review are left to check."],
+    [/^Costó (\d+) ¢$/, "Cost $1 ¢"],
+    [/^Línea (\d+) de la hoja$/, "Line $1 of the sheet"],
+    [/^Escribí «(.+)» en la hoja\. Vuelve a armar para verlo en el papel$/, "I wrote “$1” on the sheet. Build it again to see it on the paper"]
   );
   // ---------- El motor ----------
   // Cada texto de la pantalla se busca en el diccionario tal como se ve: con los

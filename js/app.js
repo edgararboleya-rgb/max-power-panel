@@ -3720,7 +3720,29 @@ function esFalloDeRed(err) {
     "¿Qué calibre lleva un breaker de 50 amperes?",
   ];
 
+  // (29-sep, pliego «el cerebro trabaja como aquí» B.3) En qué pantalla está quien
+  // pregunta y qué obra tiene abierta: el asistente lo usa para «esta obra», «la
+  // propuesta que tengo abierta», sin preguntarlo. Se toma AL ENTRAR al asistente
+  // (la pantalla de antes), y viaja en cada pregunta.
+  let asisContexto = null;
+  const ASIS_PANTALLA = { home: "hoy", proyectos: "proyectos", "proyectos-todos": "proyectos", etapas: "proyectos", lista: "proyectos",
+    detalle: "ficha", alcance: "alcance", checklist: "checklist", materiales: "materiales", calendario: "calendario",
+    horas: "horas", estimador: "estimador", gastos: "gastos", levantamiento: "levantamiento", propuesta: "propuesta",
+    cierre: "cierre", chat: "chat", mas: "mas" };
+  function asisContextoDeLaApp(vista) {
+    const pantalla = ASIS_PANTALLA[vista] || String(vista || "hoy");
+    let proyecto_id = null, propuesta_id = null;
+    if (pantalla === "alcance" && alcActivo && alcActivo.proyecto) {
+      proyecto_id = alcActivo.proyecto.id;
+      if (alcActivo.propuesta && Number.isInteger(alcActivo.propuesta.id)) propuesta_id = alcActivo.propuesta.id;
+    } else if (pantalla === "ficha" && proyectoActivo) proyecto_id = proyectoActivo;
+    else if (["proyectos", "checklist", "materiales"].includes(pantalla) && proySel) proyecto_id = proySel;
+    return { pantalla, proyecto_id: proyecto_id ? String(proyecto_id) : null, propuesta_id, idioma: EN_APP ? "en" : "es" };
+  }
+
   function irAsistente() {
+    // la pantalla de la que viene (mostrar() la cambia a «asistente»)
+    if (lateralVista !== "asistente") asisContexto = asisContextoDeLaApp(lateralVista);
     mostrar("asistente", { kicker: "Max Power", titulo: "Asistente", volver: true, nuevo: false });
     if (!asisMsgs.length) asisCargar();
     pintarAsistente();
@@ -3791,7 +3813,7 @@ function esFalloDeRed(err) {
         // (cerebro v30) el trabajo largo sigue solo: se enseña por dónde va
         asisAvance = "Sigo trabajando (" + (av.tanda || 2) + ")…" + (av.avance ? " " + String(av.avance).slice(0, 200) : "");
         pintarAsistente();
-      });
+      }, asisContexto || asisContextoDeLaApp("asistente"));
       asisAvance = "";
       if (r && r.respuesta) asisMsgs.push({ rol: "assistant", texto: r.respuesta });
       else if (r && r.error === "sin_llave") asisMsgs.push({ rol: "assistant", texto: "Todavía no me han conectado la llave del asistente. Edgar tiene que ponerla en Supabase (ANTHROPIC_API_KEY)." });
@@ -14452,9 +14474,20 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       huella: (prop && prop.alcance_huella) || null,
       // lo que Edgar ya explicó ("eso no es un precio, es el año"): se respeta
       perdonadas: (prop && prop.alcance_decisiones && prop.alcance_decisiones.perdonadas) || (prop ? [] : alcPerdonLocal(proy.id)),
+      // v252: la base del precio que Edgar ELIGIÓ para esta propuesta (null = la decide la regla)
+      pricing_basis: alcBaseGuardada(prop),
       respuestas: {}, contrato: null
     };
+    alcCargarLevantamientos();
     alcFicha = 0;
+    // v251 (revisión): una hoja guardada con líneas partidas (Metro NPR) NO se reescribe al abrirla: se abre tal cual
+    // (con su lectura del asistente y su inglés, si los tenía) y solo se dice. Se juntan al tocar Leer, a la vista.
+    if (alcActivo.texto.trim() && (!prop || !prop.estado || prop.estado === "borrador")) {
+      try {
+        const des = Alcance.desenvolver(alcActivo.texto);
+        if (des.unidas) setTimeout(() => avisar(`${alcUniTexto(des.unidas, true)}: toca Leer para unirlas`), 0);
+      } catch { /* si no se puede, se abre tal cual */ }
+    }
     if (alcActivo.texto.trim()) { try { alcCalcular(); } catch { /* la hoja vieja puede estar a medias */ } }
   }
 
@@ -14793,7 +14826,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       const quien = citaDe(H.dueno);
       if (quien) out.push({
         clave: "dueno", linea: H.dueno.l, cita: quien,
-        texto: "¿El dueño de la propiedad es este? Hace falta para el Notice to Owner y para la fila Homeowner del contrato.",
+        texto: "¿El dueño de la propiedad es este? Hace falta para el Notice to Owner y para la fila Owner del contrato.",
         botones: [{ etiqueta: "Sí, ese es el dueño", dato: { etiqueta: "Homeowner", valor: quien.slice(0, 80), clave: "dueno" } }]
       });
     }
@@ -14935,6 +14968,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
 
     // La espera y lo que haya pasado con el asistente van arriba del todo, en gris: nunca frenan
     salida += alcLineaDelAsistente();
+    // Lo que quede de la revisión con IA del contrato (y el camino de vuelta a él)
+    salida += alcRevisionEnHoja();
 
     if (!L) return salida + `<p class="lev-nota">Cuando toques «Leer», aquí sale lo que la app entendió.</p></div></div>`;
 
@@ -15068,7 +15103,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
             <div class="alc-fix"><input class="alc-libre alc-fix-in" data-fix-in="${id}" placeholder="tu respuesta">
             <button class="alc-op" data-fix="${id}">Poner la respuesta</button>${alts}</div></div>`;
         }
-        return `<div class="alc-pregunta"><p>${chip(p.linea)}${esc(p.texto)}</p>${cita(p.linea)}
+        // v252: debajo de la pregunta, en una línea, qué cláusula enciende la respuesta
+        return `<div class="alc-pregunta"><p>${chip(p.linea)}${esc(p.texto)}</p>${p.para_que ? `<p class="alc-para-que">${esc(p.para_que)}</p>` : ""}${cita(p.linea)}
           <div>${botones}${p.libre || (p.opciones || []).some(o => o.libre) ? `<input class="alc-libre" data-preg="${p.clave}" value="${esc(ya && ya[0] !== "[" && ya[0] !== '"' ? ya : "")}" placeholder="escríbelo">` : ""}</div></div>`;
       }).join("")
       // Las preguntas de hechos del asistente: cada una con su cita y con lo que
@@ -15112,11 +15148,14 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       <div class="alc-entendi">
         <h3>Lo que entendí</h3>
         <div class="alc-rejilla">
-          <div><span>Cliente</span><b>${esc(d.cliente || "—")}</b></div>
+          <div><span>Cliente</span><b>${esc(dec.clienteEfectivo || d.cliente || "—")}</b></div>
           <div><span>Tipo</span><b>${dec.esGC ? "contrato con una empresa (GC)" : "directo con el dueño"}</b></div>
           <div><span>Documento</span><b>${dec.conFirma ? "propuesta con firma" : "alcance ligero"}</b></div>
-          <div><span>Permiso</span><b>${dec.bloques.PERMISO_MXP ? "lo sacamos nosotros" : dec.bloques.PERMISO_CLIENTE ? "lo saca el cliente" : "no hace falta"}</b></div>
+          <div><span>Permiso</span><b>${dec.bloques.PERMISO_MXP ? "lo sacamos nosotros"
+            : dec.bloques.PERMISO_CLIENTE ? (dec.reglaPermiso ? `<span>lo saca el contratista</span> <span data-no-i18n>(${esc(dec.reglaPermiso.contratista)})</span>` : "lo saca el cliente")
+            : "no hace falta"}</b></div>
           <div><span>Ciudad</span><b>${esc(d.ciudad || "—")}</b></div>
+          <div><span>Base del precio</span><b>${dec.pricing_basis === "plans" ? "planos de ingeniería" : "cantidades de la sección 2"}</b></div>
           <div><span>Vale</span><b>${(() => { const n = Alcance.leerVence(d.vence, hoyFlorida()); const f = new Date(hoyFlorida().getTime()); f.setDate(f.getDate() + n);
             return `${n} días (hasta ${esc(f.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }))})`; })()}</b></div>
         </div>
@@ -15144,6 +15183,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           return `<p class="alc-sub">Asistente: ${esc(partes.join(" · "))}` +
             (pasado ? ` <span class="alc-chip">ojo, ya vas por el ${alcGastoMes.aviso_pct} % del mes</span>` : "") + `</p>`;
         })()}
+        ${((A.validado && A.validado.contestadas) || []).map(c => `<p class="alc-sub">${esc(c.texto)}</p>`).join("")}
         <p class="alc-sub"><b>${L.items.length}</b> ${L.items.length === 1 ? "renglón" : "renglones"} · <b>${L.no_incluye.length}</b> ${L.no_incluye.length === 1 ? "exclusión propia" : "exclusiones propias"}</p>
         <ol class="alc-lista">${L.items.map(i => `<li>${esc(i.titulo)} <span class="alc-gris">(${i.detalles.length} ${i.detalles.length === 1 ? "detalle" : "detalles"})</span></li>`).join("")}</ol>
         <table class="alc-dinero">
@@ -15161,8 +15201,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         ${dec.esGC ? `<div class="alc-gris"><b>Ojo — este contrato es entre dos empresas:</b> sale
           <b>sin</b> el aviso de la ley de gravámenes y <b>sin</b> los tres días para cancelar (esos dos
           son solo de un dueño de casa), y con la retención, el Notice to Owner y las liberaciones de
-          gravamen. Si quien va a firmar es el dueño de la casa, cambia la obra a «Solo coordinan»
-          en la ficha del proyecto antes de armar el contrato.</div>` : ""}
+          gravamen. <span>${L.datos.gc_por_regla
+            ? "La obra dice «Solo coordinan», pero el cliente de la hoja es el propio contratista: por eso el contrato es con él."
+            : "Si quien va a firmar es el dueño de la casa, cambia la obra a «Solo coordinan» en la ficha del proyecto antes de armar el contrato."}</span></div>` : ""}
         ${(() => {
           const pr = dec.propio || {}; const pf = dec.perfil || {};
           const fuera = ["EXCL_PANEL","EXCL_AFCI","EXCL_GABINETES","EXCL_DRYWALL","EXCL_LOWVOLT","EXCL_APARATOS","EXCL_AHJ","EXCL_FUERA_AREAS"].filter(k => !dec.bloques[k]);
@@ -15250,10 +15291,27 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       s += `<div class="alc-ambar"><b>Te avisa de esto:</b><ul>` +
         S.sugerencias.map(x => `<li>${esc(x.motivo || "")}</li>`).join("") + `</ul></div>`;
 
+    s += alcSelectorBase(A);
     s += `<div class="alc-botones">
       ${directo ? `<button class="accion secundaria" data-alcficha="0">Volver a la hoja</button>` : `<button class="accion secundaria" id="alc-reredactar">Redactar de nuevo</button>`}
       <button class="accion" id="alc-a-contrato">Armar el contrato</button></div>`;
     return s;
+  }
+
+  // v252: la base del precio (lo que sale debajo del total en la sección 5), con el porqué en una línea
+  function alcSelectorBase(A) {
+    const b = (A.decision && A.decision.base_precio) || { valor: "quantities", motivo: "" };
+    const op = (v, t) => `<option value="${v}"${b.valor === v ? " selected" : ""}>${t}</option>`;
+    // v252 (revisión): si lo dice la hoja («Base del precio: …»), manda la hoja: el selector no se puede mover
+    const deHoja = b.origen === "hoja";
+    return `<div class="alc-base">
+      <label for="alc-base-precio"><b>Base del precio</b></label>
+      <select id="alc-base-precio"${deHoja ? " disabled" : ""}>${op("quantities", "Cantidades de la sección 2")}${op("plans", "Planos de ingeniería")}</select>
+      ${b.motivo ? `<p class="alc-base-porque"><span>Por qué:</span> <span>${esc(b.motivo)}</span></p>` : ""}
+      ${deHoja ? `<p class="lev-nota">Lo manda la hoja: bórralo de la hoja para elegir aquí.</p>` : ""}
+      <p class="lev-nota">${b.valor === "plans" ? "Debajo del total sale que las cantidades son aproximadas y no sirven para volver a medir."
+        : "Debajo del total sale que el precio se basa en las cantidades de la sección 2 y que lo que pase de ahí va por change order."}</p>
+    </div>`;
   }
 
   // ------------------------------------------------------ FICHA 3: el contrato
@@ -15270,6 +15328,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           ? `<div class="alc-rojo"><b>No lo bajé: hay algo que revisar.</b><ul>${C.problemas.map(p => `<li>${esc(p.texto)}</li>`).join("")}</ul></div>`
           : `<p class="lev-nota">Pasó el repaso: no quedó ningún hueco y cada monto del papel es uno de los que calculé yo.</p>`}
         ${(C.avisos || []).length ? `<div class="alc-ambar"><b>Lo llené yo (no te frena):</b><ul>${C.avisos.map(t => `<li>${esc(t)}</li>`).join("")}</ul></div>` : ""}
+        ${alcCajaRevision()}
         <p class="alc-sub">La sección 9 quedó así:</p>
         <div class="alc-chips">${nums.map(([k, n]) => `<span class="alc-chip">9.${n} ${esc(NOMBRE_CLAUSULA[k] || k.replace(/_/g, " "))}</span>`).join("")}</div>
         ${A.decision && A.decision.esGC
@@ -15347,7 +15406,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       const des = Alcance.desenvolver(caja.value);
       if (!des.unidas) return;
       caja.value = des.texto; alcActivo.texto = des.texto; alcGuardarLocal(alcActivo.proyecto.id, des.texto);
-      avisar(`Uní ${des.unidas} línea${des.unidas === 1 ? "" : "s"} que venían partidas`);
+      avisar(alcUniTexto(des.unidas));
     }, 0));
     if (caja) caja.addEventListener("input", () => {
       alcActivo.texto = caja.value;
@@ -15481,6 +15540,15 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (bRe) bRe.addEventListener("click", async () => { if (await confirmar("Se pierden las correcciones que hiciste a mano. ¿Sigo?")) alcRedactar(); });
     const bArmar = $("alc-a-contrato");
     if (bArmar) bArmar.addEventListener("click", alcArmar);
+    // v252: Edgar elige la base del precio; se recalcula y se guarda con «Guardar»
+    const selBase = $("alc-base-precio");
+    if (selBase) selBase.addEventListener("change", () => {
+      const A = alcActivo; if (!A) return;
+      alcRecoger();
+      A.pricing_basis = selBase.value === "plans" ? "plans" : "quantities";
+      A.contrato = null;   // el papel armado ya no dice lo mismo: hay que volver a armarlo
+      alcCalcularSeguro(); pintarAlcance();
+    });
     const bBajar = $("alc-bajar");
     if (bBajar) bBajar.addEventListener("click", alcBajar);
     const bImpr = $("alc-imprimir");
@@ -15591,6 +15659,17 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (bPortal) bPortal.addEventListener("click", () => $("alc-pdf").click());
     const inPdf = $("alc-pdf");
     if (inPdf) inPdf.addEventListener("change", () => { if (inPdf.files[0]) alcSubirAlPortal(inPdf.files[0]); });
+    // La revisión con IA del contrato armado y sus tres botones por hallazgo
+    const bRevIA = $("alc-revisar-ia");
+    if (bRevIA) bRevIA.addEventListener("click", () => { alcRevisarIA().catch(() => { /* la nube nunca frena */ }); });
+    document.querySelectorAll("[data-rev-ir]").forEach(b => b.addEventListener("click", () => alcRevIrALinea(Number(b.dataset.revIr))));
+    document.querySelectorAll("[data-rev-dato]").forEach(b => b.addEventListener("click", () => alcRevUsarDato(Number(b.dataset.revDato))));
+    document.querySelectorAll("[data-rev-dejar]").forEach(b => b.addEventListener("click", () => alcRevDejar(Number(b.dataset.revDejar))));
+    document.querySelectorAll("[data-rev-rearmar]").forEach(b => b.addEventListener("click", () => {
+      b.disabled = true;
+      alcVolverAArmar().catch(e => avisar((e && e.message) || "No pude volver a armar", true))
+        .finally(() => { if (document.body.contains(b)) b.disabled = false; });
+    }));
   }
 
   // Lleva el cuadro al renglón N y lo deja seleccionado, para que Edgar vea
@@ -15645,7 +15724,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       alcGuardarLocal(alcActivo.proyecto.id, txt);
       alcActivo.leido = null; alcActivo.respuestas = {};
       pintarAlcance();
-      avisar(`Cargado «${nombre}» ✓${des.unidas ? ` — uní ${des.unidas} línea${des.unidas === 1 ? "" : "s"} que venían partidas` : ""} — ahora toca Leer`);
+      avisar(`Cargado «${nombre}» ✓${des.unidas ? ` — ${alcUniTexto(des.unidas).replace(/^U/, "u")}` : ""} — ahora toca Leer`);
     };
     lector.onerror = () => avisar("No pude abrir ese archivo", true);
     lector.readAsText(f, "utf-8");
@@ -15783,35 +15862,20 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       email:     primero(gc && gc.email, p.cliente_email),
       telefono:  primero(gc && gc.telefono, p.cliente_tel),
       direccion: primero(p.direccion, est.direccion),
+      // v251: la ciudad (jurisdicción) solo rellena un «Ciudad:» que la hoja trae vacío o que es SOLO un marcador:
+      // sale de la dirección de la ficha, con la misma tabla que usa el cerebro, y solo cuando es segura («alta»).
+      // Con seguridad media («verificar por parcel») no se escribe: la duda la pregunta el candado.
+      ciudad: (() => { const j = !alcVacio(p.direccion) ? Alcance.jurisdiccionDe(p.direccion) : null;
+                       return j && j.seguridad === "alta" ? (j.jurisdiccion_probable || "") : ""; })(),
     };
   }
-  // Rellena en la hoja los datos que falten (o digan "Por confirmar") con los conocidos.
-  // Devuelve la hoja nueva y la lista de lo que tomó, para decírselo a Edgar.
-  const ALC_DATOS = [["cliente", "Cliente"], ["dueno", "Homeowner"], ["atencion", "Atención"], ["email", "Email"], ["telefono", "Teléfono"], ["direccion", "Dirección"]];
-  const ALC_RE = { cliente: "cliente|client|customer|owner", dueno: "homeowner|due[nñ]o(?: de la casa)?|propietario|property owner", atencion: "atenci[oó]n|attention|attn|contacto|contact",
-                   email: "e-?mail|correo", telefono: "tel[eé]fono|tel|phone|cell|celular|mobile", direccion: "direcci[oó]n|address|job address|site address|property address|project address|job site" };
-  function alcNutrir(texto, conocidos) {
-    let txt = String(texto || "");
-    const tomados = [], escritas = [];   // «escritas» = las líneas que puso la app, tal cual
-    ALC_DATOS.forEach(([clave, etiqueta]) => {
-      const re = new RegExp("^[ \\t#*]*(?:" + ALC_RE[clave] + ")\\s*:[ \\t]*(.*)$", "im");
-      const m = txt.match(re);
-      const enHoja = m ? m[1].replace(/^\*+|\*+$/g, "").trim() : "";
-      if (clave === "atencion" && !alcVacio(enHoja) && !alcVacio(conocidos.atencion)) {
-        // la hoja trae «Roberto Prata» y la app sabe «Roberto Prata / Kevin Haseney»: se completa, no se pisa
-        const juntos = Alcance.juntarNombres(enHoja, conocidos.atencion);
-        if (juntos !== enHoja) { txt = txt.replace(re, etiqueta + ": " + juntos); tomados.push("atención (" + juntos + ")"); escritas.push(etiqueta + ": " + juntos); }
-        return;
-      }
-      if (!alcVacio(enHoja)) return;                       // la hoja ya lo trae
-      const sabido = conocidos[clave];
-      if (alcVacio(sabido)) { if (m) txt = txt.replace(re, ""); return; }   // ni la hoja ni la app: que pregunte
-      if (m) txt = txt.replace(re, etiqueta + ": " + sabido);
-      else txt = etiqueta + ": " + sabido + "\n" + txt;
-      tomados.push(etiqueta.toLowerCase() + " (" + sabido + ")");
-      escritas.push(etiqueta + ": " + sabido);
-    });
-    return { texto: txt, tomados, escritas };
+  // Rellena en la hoja los datos que falten (o digan "Por confirmar", o traigan un marcador como
+  // «[STREET ADDRESS PENDING]») con los conocidos. v251: LA FICHA MANDA EN LA DIRECCIÓN: si la hoja trae
+  // otra, se reescribe con la de la ficha y se avisa en ámbar (Alcance.nutrirHoja, función pura con su prueba).
+  // Devuelve la hoja nueva, la lista de lo que tomó y los avisos, para decírselo a Edgar.
+  const ALC_DATOS = Alcance.DATOS_FICHA;
+  function alcNutrir(texto, conocidos, opciones) {
+    return Alcance.nutrirHoja(texto, conocidos, opciones);
   }
   // Lo contrario: lo que la hoja dice y al proyecto le falta, se guarda en el proyecto
   async function alcDevolver() {
@@ -15820,7 +15884,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const p = proyectos().find(x => x.id === A.proyecto.id);
     if (!p) return;
     const cambios = {}, dichos = [];
-    if (!alcVacio(D.direccion) && alcVacio(p.direccion)) { cambios.direccion = String(D.direccion).trim(); dichos.push("dirección"); }
+    if (!alcVacio(D.direccion) && !Alcance.llevaMarcador(D.direccion) && alcVacio(p.direccion)) { cambios.direccion = String(D.direccion).trim(); dichos.push("dirección"); }
     if (!alcVacio(D.email) && alcVacio(p.cliente_email) && /@/.test(D.email)) { cambios.cliente_email = String(D.email).trim(); dichos.push("email"); }
     if (!alcVacio(D.telefono) && alcVacio(p.cliente_tel)) { cambios.cliente_tel = String(D.telefono).trim(); dichos.push("teléfono"); }
     if (!alcVacio(D.cliente) && alcVacio(p.cliente) && p.contratistaModo !== "contrato") { cambios.cliente = String(D.cliente).trim(); dichos.push("cliente"); }
@@ -15830,6 +15894,97 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       Object.assign(p, cambios); Object.assign(A.proyecto, cambios);
       avisar("Guardé en el proyecto: " + dichos.join(", ") + " ✓");
     } catch (err) { avisar("No pude guardar en el proyecto: " + err.message, true); }
+  }
+
+  // El contratista de la obra, para el motor. Con contrato_modo «contrato» el papel sale en modo GC (como
+  // siempre: gc_nombre). v251: el id del contratista viaja SIEMPRE (también con «referido»), porque las reglas
+  // de la casa por contratista lo necesitan (con Wisdom el permiso lo saca Wisdom). Con «referido» NO se pone
+  // gc_nombre: eso volvería la obra un contrato con GC y cambiaría el trato consumidor/contratista de obras
+  // que ya existen. El nombre va aparte (gc_obra), y solo lo miran las reglas por contratista.
+  // v251 (revisión): con una regla de la casa (Wisdom) y el cliente de la hoja o de la ficha que ES esa empresa, el
+  // papel sale con GC aunque la ficha diga «referido»: la otra parte es un contratista, no el dueño (Alcance.ponerContratista).
+  function alcPonerContratista(L, pAct) {
+    if (!pAct || !L || !L.datos) return;
+    const gcAct = gcDeProyecto(pAct);
+    // v3.5: con «contrato», en el papel el cliente es el contratista (paga y firma); la persona de la hoja pasa a
+    // dueño de la propiedad. Lo decide el motor con gc_nombre.
+    Alcance.ponerContratista(L, { modo: pAct.contratistaModo || "", id: pAct.contratistaId || "",
+      nombre: (gcAct && gcAct.nombre) || "", contacto: (gcAct && gcAct.contacto) || "", cliente: pAct.cliente || "" });
+  }
+  // «Uní 1 línea que venía partida» / «Uní 3 líneas que venían partidas» (con porUnir: «Hay 3 líneas partidas»)
+  function alcUniTexto(n, porUnir) {
+    if (porUnir) return n === 1 ? "Hay 1 línea partida" : `Hay ${n} líneas partidas`;
+    return n === 1 ? "Uní 1 línea que venía partida" : `Uní ${n} líneas que venían partidas`;
+  }
+  // Lo que la ficha le corrigió a la hoja (la dirección) y lo que manda una regla de la casa sobre lo que decía
+  // la hoja (el permiso con Wisdom): en ámbar, arriba de las dudas. No frena nada: ya está hecho.
+  // v251 (revisión): el aviso de la dirección sale solo mientras la línea siga con la dirección de la ficha; si Edgar
+  // la cambió a mano después, el aviso ya no es verdad y se va.
+  function alcAvisosDeLaFicha() {
+    const A = alcActivo;
+    if (!A || !A.leido || !Array.isArray(A.leido.avisos)) return;
+    if (Array.isArray(A.avisos_ficha) && A.avisos_ficha.length) {
+      const lineas = String(A.texto || "").replace(/\r/g, "").split("\n");
+      A.avisos_ficha = A.avisos_ficha.filter(a => !a || !a.despues || String(lineas[(a.linea || 0) - 1] || "").includes(a.despues));
+    }
+    const extra = [...(A.avisos_ficha || [])];
+    const rp = A.decision && A.decision.reglaPermiso;
+    if (rp && rp.aviso) extra.push({ linea: rp.linea || 0, texto: rp.aviso, ficha: true, arreglos: [] });
+    extra.forEach(a => { if (!A.leido.avisos.some(x => x && x.texto === a.texto)) A.leido.avisos.unshift(Object.assign({}, a)); });
+  }
+
+  // ---------- v252: la base del precio y lo que la app sabe de la obra ----------
+  // Lo que Edgar eligió a mano (queda en alcance_decisiones.pricing_basis_elegida; la columna pricing_basis guarda
+  // la que salió, elegida o no). Sin elección, la regla: hoja > «Planos:» > documento con título de plano > cantidades.
+  function alcBaseGuardada(prop) {
+    const dec = (prop && prop.alcance_decisiones) || {};
+    return dec.pricing_basis_elegida && ["plans", "quantities"].includes(dec.pricing_basis) ? dec.pricing_basis : null;
+  }
+  // El primer documento de la obra con título de plano de ingeniería («E-1», «Electrical plan»…), o ""
+  // (v252, revisión: una RFI nunca es un plano, aunque hable de planos)
+  function alcDocumentoPlano(proyectoId) {
+    const p = proyectos().find(x => x.id === proyectoId);
+    const doc = ((p && p.docs) || []).find(d => d && d.clase !== "rfi" && Alcance.esTituloDePlano(d.titulo));
+    return doc ? String(doc.titulo || "") : "";
+  }
+  // v252 (revisión): el modo del estimado del que sale la propuesta («planos» = se estimó con planos en el estimador).
+  // Los estimados se bajan una vez en segundo plano (solo dueño); mientras no estén, no cuenta.
+  function alcModoEstimado(A) {
+    const id = A && A.propuesta && A.propuesta.estimado_id;
+    if (!id) return "";
+    if (!estData) {
+      if (usuario.finanzas && !alcPidioEst) {
+        alcPidioEst = true;
+        DB.cargarEstimador().then(d => {
+          if (!estData) estData = d;
+          // solo se vuelve a pintar si de verdad cambia algo (el estimado se hizo con planos y nadie eligió a mano)
+          const est = ((estData && estData.estimados) || []).find(e => e && e.id === id);
+          if (alcActivo === A && est && est.modo === "planos" && !A.pricing_basis) { alcRecoger(); alcCalcularSeguro(); pintarAlcance(); }
+        })
+          .catch(() => { /* sin estimados, decide la regla de siempre */ });
+      }
+      return "";
+    }
+    const est = (estData.estimados || []).find(e => e && e.id === id);
+    return est ? String(est.modo || "") : "";
+  }
+  let alcPidioEst = false;
+  // Lo que la regla necesita de la app para decidir la base del precio
+  function alcAdminBase(A) {
+    return { pricing_basis: A.pricing_basis || null, documento_plano: alcDocumentoPlano(A.proyecto.id), estimado_modo: alcModoEstimado(A) };
+  }
+  // El levantamiento de la obra (solo dueño): se baja una vez en segundo plano al abrir el alcance
+  function alcCargarLevantamientos() {
+    if (levData || !usuario.finanzas) return;
+    DB.cargarLevantamientos().then(r => { if (!levData) levData = r; }).catch(() => { /* sin levantamiento se pregunta como siempre */ });
+  }
+  // ¿El levantamiento de esta obra vio el panel? (marca o amperaje apuntados) → { marca, amperaje } o null
+  function alcPanelVisto(proyectoId) {
+    const noSe = v => !String(v || "").trim() || /no se sabe|^—$/i.test(String(v));
+    const lev = ((levData && levData.levantamientos) || []).find(l => l && l.proyecto_id === proyectoId && l.panel
+      && (!noSe(l.panel.marca) || !noSe(l.panel.amperaje)));
+    if (!lev) return null;
+    return { marca: noSe(lev.panel.marca) ? "" : String(lev.panel.marca), amperaje: noSe(lev.panel.amperaje) ? "" : String(lev.panel.amperaje) };
   }
 
   function alcCalcular() {
@@ -15844,21 +15999,19 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     // contrato sale en modo GC aunque la hoja no lo diga: sin el aviso de gravámenes
     // ni los tres días para cancelar, y con las cláusulas del subcontrato.
     const pAct = proyectos().find(x => x.id === A.proyecto.id);
-    if (pAct && pAct.contratistaModo === "contrato" && A.leido && A.leido.datos) {
-      A.leido.datos.contrato_con = "GC";
-      // v3.5: y CON QUIÉN: en el papel el cliente es el contratista (paga y firma); la persona de la
-      // hoja pasa a dueño de la propiedad. Lo decide el motor con gc_nombre.
-      const gcAct = gcDeProyecto(pAct);
-      if (gcAct) { A.leido.datos.gc_nombre = gcAct.nombre; A.leido.datos.gc_contacto = gcAct.contacto || ""; }
-    }
+    alcPonerContratista(A.leido, pAct);
     // Y si el proyecto es comercial, el contrato lo sabe aunque la hoja no lo diga:
     // sin el aviso 713.015 (solo viviendas) ni los tres días (solo consumidores).
     if (pAct && pAct.tipo === "comercial" && A.leido && A.leido.datos && !A.leido.datos.propiedad) {
       A.leido.datos.propiedad = "commercial";
     }
+    // v252: si el levantamiento de la obra vio el panel, la pregunta «Fotos del panel» se contesta sola
+    const panelVisto = alcPanelVisto(A.proyecto.id);
+    if (panelVisto && A.leido) A.leido.panel_visto = panelVisto;
     A.validado = Alcance.validarAlcance(A.leido);
     A.cuenta = Alcance.cuentas(A.leido);
-    A.decision = Alcance.decidirInterruptores(A.leido, A.cuenta);
+    A.decision = Alcance.decidirInterruptores(A.leido, A.cuenta, alcAdminBase(A));
+    alcAvisosDeLaFicha();
     // Los avisos del asistente se recalculan contra la lectura de reglas de ahora
     // mismo: ninguno frena, ninguno se aplica solo.
     if (A.lectura) {
@@ -15927,25 +16080,44 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     // Si el gris decía «Sin señal: … cuando vuelva, toca Leer otra vez» y ya hay
     // señal, la frase se va: Edgar hizo lo que le pedía
     if (navigator.onLine !== false && /^Sin señal/.test(A.lectura_aviso || "")) alcAvisoLector("");
-    A.respuestas = {}; A.arreglados = [];
+    A.respuestas = {}; A.arreglados = []; A.avisos_ficha = [];
     A.perdonadas = A.perdonadas || [];
+    // v251: las líneas partidas (por el ancho de un PDF o de un correo) se juntan también al tocar Leer,
+    // antes de nutrir y de leer: una hoja guardada antes de la v250 no pasó por el pegado ni por el importador
+    const des = Alcance.desenvolver(A.texto);
+    if (des.unidas) {
+      A.texto = des.texto; $("alc-texto").value = A.texto;
+      alcRealinear(); alcGuardarLocal(A.proyecto.id, A.texto);
+      A.arreglados.push(alcUniTexto(des.unidas));
+    }
     // Lo que la app ya sabe (dirección, email, teléfono, cliente) entra solo en la hoja.
     // OJO: antes se mira lo que el MOTOR ya lee de la hoja. Hay hojas que traen la
     // dirección en una fila de tabla («| **ADDRESS** | 15308 …|»): el motor la lee y
     // la regla de aquí no, así que la app la escribía otra vez arriba, la hoja cambiaba
     // sola al segundo Leer y se pagaba una lectura nueva por nada.
     const conocidos = alcDatosConocidos(A.proyecto.id);
+    // v251: LA FICHA MANDA EN LA DIRECCIÓN (Edgar, 29-sep: «la dirección es 4761»). Si la ficha de la obra
+    // tiene dirección y la hoja trae otra (o un marcador), la hoja se corrige con la de la ficha y se avisa.
+    const pFicha = proyectos().find(x => x.id === A.proyecto.id) || A.proyecto || {};
+    const opcionesNutrir = { manda: { direccion: alcVacio(pFicha.direccion) ? "" : String(pFicha.direccion).trim() }, lineaLeida: {} };
     try {
       const L0 = Alcance.leerAlcance(A.texto, { perdonadas: A.perdonadas });
-      ALC_DATOS.forEach(([clave]) => { if (L0 && L0.datos && !alcVacio(L0.datos[clave])) delete conocidos[clave]; });
+      // un marcador («[STREET ADDRESS PENDING], New Port Richey») en la dirección o la ciudad cuenta como vacío
+      ALC_DATOS.forEach(([clave]) => {
+        const vacio = (clave === "direccion" || clave === "ciudad") ? Alcance.llevaMarcador : alcVacio;
+        if (L0 && L0.datos && !vacio(L0.datos[clave])) delete conocidos[clave];
+      });
+      if (L0 && L0.datos_linea && L0.datos_linea.direccion) opcionesNutrir.lineaLeida.direccion = L0.datos_linea.direccion;
     } catch { /* si el motor no puede leerla, se nutre como siempre */ }
-    const nut = alcNutrir(A.texto, conocidos);
-    if (nut.tomados.length) {
+    const nut = alcNutrir(A.texto, conocidos, opcionesNutrir);
+    if (nut.texto !== A.texto) {
       A.texto = nut.texto; $("alc-texto").value = A.texto;
       (nut.escritas || []).forEach(alcApuntarPropia);   // las escribió la app: no son líneas nuevas de la hoja
       alcRealinear(); alcGuardarLocal(A.proyecto.id, A.texto);
-      A.arreglados = ["Tomé del proyecto: " + nut.tomados.join(" · ")];
+      if (nut.tomados.length) A.arreglados.push("Tomé del proyecto: " + nut.tomados.join(" · "));
     }
+    // lo que la ficha le corrigió a la hoja se dice en ámbar, con su línea (se pinta en alcCalcular)
+    A.avisos_ficha = (nut.avisos || []).map(a => ({ linea: a.linea, texto: a.texto, despues: a.despues || "", ficha: true, arreglos: [] }));
     if (!alcCalcularSeguro()) { avisar("No pude leer esta hoja; revísala y vuelve a tocar Leer", true); return; }
     // v3.7: lo que el motor decide solo y no toca dinero (el disparador del hito 2 cuando hay trabajo bajo tierra)
     // se escribe en la hoja a la vista de Edgar, para que la hoja y el contrato digan lo mismo
@@ -16580,11 +16752,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     try { L = Alcance.leerAlcance(A.texto, { perdonadas: A.perdonadas || [] }); } catch { return no; }
     // los mismos pisados de ficha que hace alcCalcular (contratista y comercial)
     const pAct = proyectos().find(x => x.id === A.proyecto.id);
-    if (pAct && pAct.contratistaModo === "contrato" && L && L.datos) {
-      L.datos.contrato_con = "GC";
-      const gcAct = gcDeProyecto(pAct);
-      if (gcAct) { L.datos.gc_nombre = gcAct.nombre; L.datos.gc_contacto = gcAct.contacto || ""; }
-    }
+    alcPonerContratista(L, pAct);
     if (pAct && pAct.tipo === "comercial" && L && L.datos && !L.datos.propiedad) L.datos.propiedad = "commercial";
     let S, rev;
     try {
@@ -16594,9 +16762,13 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (!rev || !rev.sirve) return no;
     // la hoja pasa a leerse con las reglas, para que el contrato se arme con lo mismo
     A.leido = L;
+    // v252 (revisión): lo mismo que alcCalcular: el panel que vio el levantamiento y la base del precio elegida
+    const panelVisto = alcPanelVisto(A.proyecto.id);
+    if (panelVisto) L.panel_visto = panelVisto;
     A.validado = Alcance.validarAlcance(L);
     A.cuenta = Alcance.cuentas(L);
-    A.decision = Alcance.decidirInterruptores(L, A.cuenta);
+    A.decision = Alcance.decidirInterruptores(L, A.cuenta, alcAdminBase(A));
+    alcAvisosDeLaFicha();
     alcAvisoLector("La lectura del asistente arrastraba una línea que no va en el contrato; para este paso usé las reglas");
     return { sirve: true, rojos: [], salida: S };
   }
@@ -16714,11 +16886,18 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       }
     }
     try {
-      if (!alcPlantilla) { avisar("Bajando la plantilla…"); alcPlantilla = await DB.plantillaSOW(); }
+      // La plantilla se baja CADA VEZ que se arma (30-sep): si se cambia en el almacén, el siguiente
+      // contrato ya sale con la nueva sin cerrar la app. Sin señal, se usa la última que se bajó.
+      try { alcPlantilla = await DB.plantillaSOW(); }
+      catch (e) { if (!alcPlantilla) throw e; }
       if (!Alcance.marcasEmparejadas(alcPlantilla)) throw new Error("La plantilla de la app tiene una marca coja");
       const T = Alcance.armarTodo(A.leido, A.salida, {
         fecha: hoyFlorida(), proyecto_id: A.proyecto.id,
-        direccion: A.proyecto.direccion, nombre: A.proyecto.nombre, nec: A.leido.codigo });
+        direccion: A.proyecto.direccion, nombre: A.proyecto.nombre, nec: A.leido.codigo,
+        // v251: sin «Ref.» ni «Proposal #» en la hoja, el número es el de la ficha (MXP-2026-0929-METRONPR), no el del cliente
+        ref: A.proyecto.ref,
+        // v252: la base del precio (debajo del total): la elegida por Edgar o la del documento de planos de la obra
+        ...alcAdminBase(A) });
       const out = Alcance.rellenarPlantilla(alcPlantilla, {
         bloques: T.decision.bloques, clausulas: T.decision.clausulas, huecos: T.huecos,
         items: T.items, no_incluye: T.no_incluye, addons: T.addons, hitos: T.hitos,
@@ -16731,11 +16910,328 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       const B = Alcance.barridoFinal(out.html, [...T.montosPermitidos, ...perdonados]);
       A.contrato = { html: out.html, numeroClausulas: out.numeroClausulas,
                      archivo: T.archivo, problemas: B.problemas, avisos: T.avisos || [], cuenta: T.cuenta };
+      // lo que dijo la IA era del papel de antes: al rearmar se va (se puede volver a pedir)
+      A.revision = null;
       alcFicha = 2;
       pintarAlcance();
       if (B.problemas.length) avisar("Armado, pero hay algo que revisar", true);
       else avisar("Contrato armado ✓");
     } catch (e) { avisar(e.message, true); }
+  }
+
+  // ============================================================
+  // «REVISAR CON IA ANTES DE ENVIAR» (29-sep, pliego «el cerebro trabaja como aquí» §2)
+  //
+  // En la ficha 3, con el contrato ya armado: la IA (el revisor del cerebro,
+  // accion=revisar) lee el papel entero y lo coteja con lo que la app sabe de la
+  // obra (la «ficha»). Solo SEÑALA, con la cita copiada del papel; lo que se
+  // arregla lo arregla Edgar con un toque, en la hoja, a la vista:
+  //   · «Ir a la línea»: la cita se busca en la hoja (subcadena común ≥ 80 %,
+  //     como el lector) y se abre la hoja con esa línea marcada;
+  //   · «Usar el dato de la ficha: …»: escribe la línea del dato con el valor
+  //     de la ficha (nunca con lo que diga la IA);
+  //   · «Lo dejo así»: perdona el hallazgo (A.perdonadas y, con la propuesta,
+  //     alcance_decisiones); no vuelve a salir para esa cita.
+  // Y «Volver a armar» rearma con la hoja corregida. Los rojos de la IA NO frenan
+  // la descarga (frena el candado de siempre): se quedan a la vista hasta rearmar.
+  // A la nube viaja el papel con los montos como [MONTO] y la ficha sin dinero.
+  // ============================================================
+
+  // Qué método de pago dice la hoja («check/ACH», «tarjeta»…), si lo dice
+  function alcMetodoDePago(texto) {
+    const METODOS = [[/\bach\b/i, "ACH"], [/\b(?:checks?|cheques?)\b/i, "check"], [/\bzelle\b/i, "Zelle"],
+                     [/\b(?:credit card|debit card|cards?|tarjetas?)\b/i, "tarjeta"], [/\b(?:wire|transferencia)\b/i, "transferencia"],
+                     [/\b(?:cash|efectivo)\b/i, "efectivo"]];
+    const vistos = [];
+    String(texto || "").replace(/\r/g, "").split("\n").forEach(l => {
+      if (!/\b(pagos?|payments?|pay|m[eé]todo|method|forma de pago)\b/i.test(l)) return;
+      METODOS.forEach(([re, nombre]) => { if (re.test(l) && !vistos.includes(nombre)) vistos.push(nombre); });
+    });
+    return vistos.join("/");
+  }
+
+  // Todo lo que viaja al revisor. Devuelve { cuerpo, rev } o { error }.
+  function alcPaqueteRevisar() {
+    const A = alcActivo, C = A.contrato;
+    if (!C || !C.html) return { error: "sin_contrato" };
+    const L = A.leido || {}, d = L.datos || {}, dec = A.decision || {};
+    const R = Alcance.textoParaRevisar(C.html);
+    if (!R.texto.trim()) return { error: "sin_texto" };
+    // Candado de ida: ni un monto sin tapar (la nube también lo mira, pero aquí no sale)
+    if (R.texto.split("\n").some(l => Alcance.traeDineroEstricto(l))) return { error: "dinero_en_el_contrato" };
+    const pAct = proyectos().find(x => x.id === A.proyecto.id) || A.proyecto;
+    const c = alcDatosConocidos(A.proyecto.id);
+    const gc = gcDeProyecto(pAct);
+    const direccionFicha = !alcVacio(pAct.direccion) ? pAct.direccion : c.direccion;
+    const jur = Alcance.jurisdiccionDe(direccionFicha);
+    const bl = dec.bloques || {};
+    const permisoDe = v => { const t = String(v || "").toLowerCase();
+      if (!t.trim()) return "";
+      if (/nosotros|max ?power|mxp|contractor|contratista|we\b|us\b/.test(t)) return "max_power";
+      if (/cliente|client|owner|due[nñ]o|gc\b/.test(t)) return "cliente";
+      if (/^no\b|no hace falta|not required|none/.test(t)) return "no_hace_falta";
+      return ""; };
+    const planosSi = Alcance.siNo({ valor: d.planos }) === true
+      || (!!String(d.planos || "").trim() && Alcance.siNo({ valor: d.planos }) === null)
+      || (L.condiciones && L.condiciones.tipo_trabajo && L.condiciones.tipo_trabajo.valor === "planos");
+    const ficha = Alcance.fichaSinDinero({
+      nombre: pAct.nombre || A.proyecto.nombre || "",
+      direccion: alcVacio(direccionFicha) ? "" : direccionFicha,
+      ciudad: jur.ciudad || "",
+      cliente: c.cliente, dueno: c.dueno, atencion: c.atencion,
+      contratista: gc ? { nombre: gc.nombre || "", modo: pAct.contratistaModo || "" } : null,
+      tipo: pAct.tipo || "",
+      work_subtype: pAct.workSubtype || "",
+      // v251: con la regla de la casa por contratista (Wisdom) el permiso es del cliente/contratista, diga lo que diga la hoja
+      permiso: dec.reglaPermiso ? "cliente (" + dec.reglaPermiso.contratista + ")"
+             : (permisoDe(d.permiso) || (bl.PERMISO_MXP ? "max_power" : bl.PERMISO_CLIENTE ? "cliente" : "")),
+      ...(dec.reglaPermiso ? { permiso_regla: dec.reglaPermiso.motivo } : {}),
+      numero: String(C.archivo || "").replace(/\.html?$/i, ""),
+      planos: planosSi ? "sí" : "no",
+      pagos_metodo: alcMetodoDePago(A.texto),
+      jurisdiccion_sugerida: (jur.jurisdiccion_probable || jur.condado) ? jur : null
+    });
+    const perfil = {
+      trato: dec.esGC ? "contratista" : dec.esComercial ? "comercial" : "consumidor",
+      propiedad: dec.esComercial ? "comercial" : "residencial",
+      con_firma: !!dec.conFirma,
+      permiso: bl.PERMISO_MXP ? "max_power" : bl.PERMISO_CLIENTE ? "cliente" : "no_hace_falta",
+      tipo_obra: (dec.perfil && dec.perfil.tipo_trabajo) || pAct.tipo || ""
+    };
+    const limpio = v => { const t = String(v || "").trim(); return t && !Alcance.esMontoTapable(t) ? t.slice(0, 200) : ""; };
+    const cuerpo = {
+      texto: R.texto, secciones: R.secciones, perfil,
+      direccion: limpio(d.direccion || pAct.direccion),
+      jurisdiccion: limpio(d.ciudad_corta || d.ciudad),
+      ficha
+    };
+    if (A.proyecto && A.proyecto.id) cuerpo.proyecto_id = String(A.proyecto.id);
+    if (A.propuesta && Number.isInteger(A.propuesta.id)) cuerpo.propuesta_id = A.propuesta.id;
+    return { cuerpo, rev: R };
+  }
+
+  // Lo que devuelve el cerebro cuando la revisión no sale, en llano
+  function alcErrorRevisor(r) {
+    const e = String((r && (r.error || r.estado)) || "");
+    if (e === "no_autorizado" || e === "sin_llave") return alcErrorEnLlano({ error: e });
+    if (e === "dinero_en_el_contrato") return "Se me escapó un monto sin tapar en el contrato; no lo mandé a la IA";
+    if (e === "dinero_en_la_ficha") return "Un dato de la ficha de la obra llevaba un monto: la IA no lo aceptó";
+    if (e === "tope_mes") return "La IA ya gastó lo del mes: esta revisión no se hizo";
+    if (e === "hoja_larga") return "El contrato es muy largo para la IA";
+    if (e === "sin_tabla") return "Falta pegar el SQL del lector en la base";
+    if (e === "tiempo") return "La IA tardó demasiado; vuelve a intentarlo";
+    if (e === "ocupado") return "La IA está ocupada; prueba en un minuto";
+    if (e === "no_quiso") return "La IA no quiso revisar este contrato";
+    if (e === "salida_cortada") return "La revisión salió cortada; vuelve a intentarlo";
+    if (e === "no_existe") return "No encuentro esa revisión; vuelve a intentarlo";
+    if (e === "sin_contrato" || e === "sin_texto") return "Arma el contrato primero";
+    if (e === "molde_rechazado" || e === "lectura_invalida" || e === "dinero_en_la_lectura")
+      return "La IA devolvió algo que no cuadra; vuelve a intentarlo";
+    try { console.warn("cerebro (revisar):", e || "(sin código)", r && r.detalle ? String(r.detalle).slice(0, 200) : ""); } catch { /* nada */ }
+    return "La IA falló; vuelve a intentarlo en un minuto";
+  }
+
+  // Pide y recoge, igual que el lector
+  async function alcRevisarIA() {
+    const A = alcActivo;
+    if (!A || !A.contrato || !(usuario && usuario.finanzas)) return;
+    if (A.revision && A.revision.en_marcha) { avisar("La IA ya está revisando este contrato"); return; }
+    const repintar = () => { if (alcActivo === A && alcFicha === 2) pintarAlcance(); };
+    if (navigator.onLine === false) {
+      A.revision = { error: "Sin señal: la revisión con IA necesita internet. Cuando vuelva, toca otra vez" };
+      repintar(); return;
+    }
+    const p = alcPaqueteRevisar();
+    if (p.error) { A.revision = { error: alcErrorRevisor({ error: p.error }) }; repintar(); return; }
+    if (alcModoPrueba()) { A.revision = { error: "Modo de prueba: no llamo a la IA" }; repintar(); return; }
+    const marca = { en_marcha: true, desde: Date.now(), rev: p.rev, ficha: p.cuerpo.ficha };
+    A.revision = marca;
+    repintar();
+    const sigueViva = () => alcActivo === A && A.revision === marca;
+    try {
+      let r = await DB.pedirAlCerebro("revisar", p.cuerpo, { ms: 30000 });
+      const huella = r && r.huella;
+      let tropiezos = 0;
+      const hasta = Date.now() + 4 * 60 * 1000;
+      while (r && r.estado === "en_curso" && huella && Date.now() < hasta) {
+        await new Promise(z => setTimeout(z, 4000));
+        if (!sigueViva()) return;                         // se rearmó o se cambió de alcance: se descarta
+        let v = null;
+        try { v = await DB.leerLectura(huella); } catch { v = null; }
+        if (!v || !v.estado || v.estado === "no_existe") {
+          if (++tropiezos <= 3) continue;
+          r = { estado: "error", error: (v && (v.error || v.estado)) || "falla" };
+          break;
+        }
+        tropiezos = 0; r = v;
+      }
+      if (!sigueViva()) return;
+      if (r && r.estado === "en_curso") r = { estado: "tiempo", error: "tiempo" };
+      if (r && r.estado === "ok" && r.lectura) {
+        const V = Alcance.comprobarHallazgos(r.lectura, { texto: p.cuerpo.texto, secciones: p.rev.secciones,
+                                                         ficha: p.cuerpo.ficha, perdonadas: A.perdonadas || [] });
+        A.revision = { hallazgos: V.hallazgos, resumen: V.resumen, tiradas: V.tiradas, perdonados: V.perdonados,
+                       rev: p.rev, ficha: p.cuerpo.ficha, costo_centavos: r.costo_centavos ?? null, cuando: new Date().toISOString() };
+        avisar(V.hallazgos.length ? "La IA terminó de revisar el contrato" : "La IA revisó el contrato: no vio nada que arreglar");
+      } else {
+        A.revision = { error: alcErrorRevisor(r || {}) };
+      }
+    } catch (e) {
+      if (!sigueViva()) return;
+      const m = String((e && e.message) || "");
+      A.revision = { error: /^(Sin señal|El asistente|Esta parte)/.test(m) ? m : "No pude hablar con la IA" };
+    }
+    repintar();
+  }
+
+  // Cómo se nombra una sección del papel: «Sección 2 · Scope of Work — Included»
+  function alcRevDonde(R, donde) {
+    if (!donde) return "";
+    const t = R && R.rev && R.rev.titulos ? R.rev.titulos[donde] : "";
+    return `<span class="alc-rev-donde"><span>Sección</span> <span data-no-i18n>${esc(donde)}${t ? " · " + esc(t) : ""}</span></span>`;
+  }
+
+  // La caja de la ficha 3: el botón, la espera, el resumen y los hallazgos con sus botones
+  function alcCajaRevision() {
+    const A = alcActivo, R = A.revision || null;
+    const enMarcha = !!(R && R.en_marcha);
+    const hay = !!(R && Array.isArray(R.hallazgos));
+    let s = `<div class="alc-revisor" id="alc-revisor">
+      <div class="alc-rev-cabeza">
+        <button type="button" class="btn sm btn-ring alc-revisar-ia" id="alc-revisar-ia"${enMarcha ? " disabled" : ""}>${hay ? "Revisar otra vez con IA" : "Revisar con IA antes de enviar"}</button>
+        <span class="alc-rev-costo">≈ 20 ¢, un minuto</span>
+      </div>`;
+    if (!R) s += `<p class="lev-nota">La IA lee el contrato entero y lo compara con la ficha de la obra. Solo te señala lo que no cuadra; lo arreglas tú con un toque.</p>`;
+    if (enMarcha) s += `<div class="alc-gris alc-espera">La IA está revisando el contrato… (suele tardar un minuto; puedes seguir)</div>`;
+    if (R && R.error) s += `<div class="alc-gris">${esc(R.error)}</div>`;
+    if (hay) {
+      if (R.resumen) s += `<p class="alc-rev-resumen" data-no-i18n>${esc(R.resumen)}</p>`;
+      if (Number.isFinite(R.costo_centavos) && R.costo_centavos > 0) s += `<p class="alc-sub">Costó ${Math.round(R.costo_centavos)} ¢</p>`;
+      if (!R.hallazgos.length) s += `<div class="alc-verde">La IA no vio nada que arreglar.</div>`;
+      const li = (h, i) => {
+        const n = Alcance.lineaDeCita(A.texto, h.cita);
+        return `<li class="alc-hallazgo" data-hallazgo="${i}">
+          ${alcRevDonde(R, h.donde)}
+          <div class="alc-cita" data-no-i18n>${esc(h.cita)}</div>
+          <p class="alc-rev-motivo" data-no-i18n>${esc(h.motivo)}</p>
+          ${h.hecho ? `<p class="alc-rev-hecho"><span>Arreglado en la hoja; vuelve a armar para verlo en el papel:</span> <span data-no-i18n>«${esc(h.hecho)}»</span></p>` : ""}
+          <div class="alc-fixes">
+            ${n ? `<button type="button" class="alc-op" data-rev-ir="${i}" title="Línea ${n} de la hoja">Ir a la línea</button>`
+                : `<button type="button" class="alc-op" disabled title="La cita no está en tu hoja: sale de la plantilla">Es de la plantilla</button>`}
+            ${h.arreglo && !h.hecho ? `<button type="button" class="alc-op alc-auto" data-rev-dato="${i}"><span>Usar el dato de la ficha:</span> <span data-no-i18n>${esc(h.arreglo.valor)}</span></button>` : ""}
+            <button type="button" class="alc-op" data-rev-dejar="${i}">Lo dejo así</button>
+          </div>
+        </li>`;
+      };
+      const rojos = R.hallazgos.map((h, i) => [h, i]).filter(([h]) => h.gravedad === "rojo");
+      const ambar = R.hallazgos.map((h, i) => [h, i]).filter(([h]) => h.gravedad !== "rojo");
+      if (rojos.length) s += `<div class="alc-rojo"><b>Esto quedaría mal firmado:</b><ul>${rojos.map(([h, i]) => li(h, i)).join("")}</ul></div>`;
+      if (ambar.length) s += `<div class="alc-ambar"><b>Esto es una duda:</b><ul>${ambar.map(([h, i]) => li(h, i)).join("")}</ul></div>`;
+      if (R.hallazgos.length || R.tocado) s += `<div class="alc-botones"><button type="button" class="accion" data-rev-rearmar="1">Volver a armar</button></div>
+        <p class="lev-nota">Lo de la IA no frena la descarga (la frena el repaso de siempre). Se queda a la vista hasta que vuelvas a armar.</p>`;
+    }
+    return s + `</div>`;
+  }
+
+  // En la hoja (ficha 1), mientras quede algo de la revisión por mirar: de qué línea se habla y el camino de vuelta
+  function alcRevisionEnHoja() {
+    const A = alcActivo, R = A.revision;
+    if (!R || !Array.isArray(R.hallazgos) || !(R.hallazgos.length || R.tocado) || !A.contrato) return "";
+    const foco = Number.isInteger(R.foco) ? R.hallazgos[R.foco] : null;
+    const quedan = R.hallazgos.filter(h => !h.hecho).length;
+    return `<div class="alc-gris alc-rev-en-hoja">
+      ${foco ? `<p><span>La IA dice de esta línea:</span> <span data-no-i18n>${esc(foco.motivo)}</span></p>` : ""}
+      <p>${quedan === 1 ? "Queda 1 cosa de la revisión con IA por mirar." : quedan ? `Quedan ${quedan} cosas de la revisión con IA por mirar.` : "Lo de la revisión con IA está atendido: vuelve a armar."}</p>
+      <div class="alc-botones">
+        <button type="button" class="accion secundaria" data-alcficha="2">Volver al contrato</button>
+        <button type="button" class="accion" data-rev-rearmar="1">Volver a armar</button>
+      </div>
+    </div>`;
+  }
+
+  // «Ir a la línea»: abre la hoja con la línea de la cita marcada y el cursor ahí
+  function alcRevIrALinea(i) {
+    const A = alcActivo, R = A && A.revision;
+    const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
+    if (!h) return;
+    const n = Alcance.lineaDeCita(A.texto, h.cita);
+    if (!n) { avisar("Eso es texto de la plantilla, no de tu hoja"); return; }
+    alcRecoger();
+    R.foco = i;
+    alcFicha = 0;
+    pintarAlcance();
+    alcIrALinea(n);
+  }
+
+  // «Usar el dato de la ficha: …»: la línea del dato se escribe en la hoja con el valor de la ficha
+  function alcRevUsarDato(i) {
+    const A = alcActivo, R = A && A.revision;
+    const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
+    if (!h || !h.arreglo) return;
+    const ca = Alcance.CAMPOS_ARREGLO[h.arreglo.campo];
+    const n0 = ca && A.leido && A.leido.datos_linea ? A.leido.datos_linea[ca.clave] : 0;
+    const r = Alcance.ponerDatoDeFicha(A.texto, h.arreglo.campo, h.arreglo.valor, { linea: n0 });
+    if (r.error) { avisar(r.error, true); return; }
+    A.texto = r.texto;
+    if ($("alc-texto")) $("alc-texto").value = A.texto;
+    // la escribió la app por un toque de Edgar: no es una línea nueva de la hoja
+    alcApuntarPropia(alcLineaCruda(r.linea));
+    alcRealinear();
+    alcGuardarLocal(A.proyecto.id, A.texto);
+    A.arreglados = [...(A.arreglados || []), r.explicacion];
+    h.hecho = `${r.etiqueta}: ${h.arreglo.valor}`;
+    R.tocado = true;
+    alcCalcularSeguro();
+    pintarAlcance();
+    avisar(`Escribí «${h.hecho}» en la hoja. Vuelve a armar para verlo en el papel`);
+  }
+
+  // «Lo dejo así»: se perdona (no vuelve a salir para esa cita) y se quita de la lista
+  function alcRevDejar(i) {
+    const A = alcActivo, R = A && A.revision;
+    const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
+    if (!h) return;
+    A.perdonadas = [...(A.perdonadas || []), Alcance.perdonDeHallazgo(h)];
+    alcPerdonLocal(A.proyecto.id, A.perdonadas);
+    R.hallazgos.splice(i, 1);
+    if (R.foco === i) R.foco = null; else if (Number.isInteger(R.foco) && R.foco > i) R.foco--;
+    R.tocado = true;
+    // Con la propuesta guardada, el perdón se guarda también en ella (alcance_decisiones), como al tocar «Guardar»
+    if (A.propuesta && A.propuesta.id) {
+      const dec = Object.assign({}, A.propuesta.alcance_decisiones || {}, { perdonadas: A.perdonadas });
+      A.propuesta.alcance_decisiones = dec;
+      DB.guardarAlcance(A.propuesta.id, { alcance_decisiones: dec }).catch(() => { /* se guarda con «Guardar en la propuesta» */ });
+    }
+    pintarAlcance();
+    avisar("Lo dejo así: no te lo vuelvo a marcar");
+  }
+
+  // «Volver a armar»: con la hoja corregida, se vuelve a pasar por el camino corto y se arma
+  async function alcVolverAArmar() {
+    const A = alcActivo;
+    if (!A) return;
+    alcRecoger();
+    if ($("alc-texto")) A.texto = $("alc-texto").value;
+    if (!alcCalcularSeguro()) { alcFicha = 0; pintarAlcance(); avisar("La hoja no se deja leer así: mírala y vuelve a armar", true); return; }
+    if (A.validado && A.validado.errores.length) { alcFicha = 0; pintarAlcance(); avisar("La hoja tiene algo en rojo: arréglalo y vuelve a armar", true); return; }
+    const h = await alcHuella(A.texto);
+    if (!A.salida || (A.huella && h && h !== A.huella)) {
+      if (A.salida && !A.salida.directo) {
+        // el inglés lo escribió el asistente para la hoja de antes: hay que pasarla otra vez
+        alcFicha = 0; pintarAlcance();
+        avisar("La hoja cambió y el inglés era de la de antes: toca «Pasarlo a inglés» otra vez y arma", true);
+        return;
+      }
+      let S = Alcance.redactarDirecto(A.leido);
+      let rev = Alcance.validarSalida(A.leido, S);
+      if (!rev.sirve) {
+        const otra = alcReintentarSinPistas(null);
+        if (otra.sirve && otra.salida) { S = otra.salida; rev = otra; }
+        else { alcFicha = 0; pintarAlcance(); avisar((rev.rojos[0] || {}).texto || "La hoja no se deja armar así", true); return; }
+      }
+      A.salida = S; A.uso = null; A.huella = h;
+    }
+    await alcArmar();
   }
 
   // Abre el contrato en una pestaña y lanza la ventana de imprimir: con «Guardar
@@ -16836,7 +17332,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
                          condiciones: L.condiciones, codigo: L.codigo,
                          precio: cta.base, pcts: cta.pcts },
         alcance_en: A.salida || null,
-        alcance_decisiones: { bloques: dec.bloques, clausulas: dec.clausulas, nec: L.codigo, perdonadas: A.perdonadas || [] },
+        alcance_decisiones: { bloques: dec.bloques, clausulas: dec.clausulas, nec: L.codigo, perdonadas: A.perdonadas || [],
+                              pricing_basis: dec.pricing_basis || "quantities", pricing_basis_elegida: !!A.pricing_basis },
+        // v252: la base del precio de esta propuesta (si la columna aún no existe en la base, db.js guarda sin ella)
+        pricing_basis: dec.pricing_basis || "quantities",
         alcance_estado: A.contrato ? "armado" : (A.salida ? "redactado" : "leido"),
         reparto_pct: cta.pcts,
         // La lectura del asistente viaja entera (es pequeña: pistas + lo leído):
