@@ -8360,6 +8360,12 @@ function esFalloDeRed(err) {
   ];
   const ES_LINEAL_CABLE = n => /ROMEX|MC\b|THHN|THW|MCM|SPEAKER WIRE|CAT ?[56]/.test(n) && !/CONNECTOR|STAPLE|SNAP/.test(n);
   const ES_TUBERIA = n => /CONDUIT/.test(n);
+  /* (02/10, Peninsula) El whip de flex (3/8" FLEX. METAL CONDUIT, 6 ft por
+     luminaria) es parte del PUNTO, no una corrida que se mida en el plano:
+     «sin lineales» lo quitaba por llamarse CONDUIT y en Peninsula se perdían
+     546 ft de flex en 91 luminarias. Lineal = lo que Edgar mide: tubo y cable. */
+  const ES_FLEX = n => /FLEX/.test(n);
+  const ES_LINEAL_MEDIDO = n => ES_LINEAL_CABLE(n) || (ES_TUBERIA(n) && !ES_FLEX(n));
 
   /* ══════════ CONSUMIBLES AUTOMÁTICOS (v189, 18/09) ══════════
      Edgar: «cuando yo te dé 12.000 pies de cable y 30 cajas, esas cajas tienen
@@ -9031,7 +9037,8 @@ function esFalloDeRed(err) {
       const cat = catalogoExacto(cmp.item) || {};
       return normTxt(cat.unidad) === "MLF" ? Number(cmp.cantidad) * 1000 : Number(cmp.cantidad);
     };
-    const tubo = comps.find(x => ES_TUBERIA(normTxt(x.item)));
+    // la corrida es el tubo que se mide, no el whip de flex (02/10)
+    const tubo = comps.find(x => { const n = normTxt(x.item); return ES_TUBERIA(n) && !ES_FLEX(n); });
     if (tubo) return pies(tubo);
     const cable = comps.find(x => ES_LINEAL_CABLE(normTxt(x.item)));
     return cable ? pies(cable) : null;
@@ -9059,15 +9066,14 @@ function esFalloDeRed(err) {
     return (estData.ensambleItems || [])
       .filter(x => x.ensamble_id === ensambleId)
       .filter(cmp => { if (!sinLineales) return true;
-        const nom = normTxt(cmp.item);
-        return !(ES_LINEAL_CABLE(nom) || ES_TUBERIA(nom)); })
+        return !ES_LINEAL_MEDIDO(normTxt(cmp.item)); })
       .map(cmp => {
         const cat = catalogoExacto(cmp.item) || {};
         let porUnidad = Number(cmp.cantidad);
         if (factor) {
           const nom = normTxt(cmp.item);
           // el cable y el tubo crecen con la corrida, con sus hilos y todo
-          if (ES_LINEAL_CABLE(nom) || ES_TUBERIA(nom)) porUnidad = porUnidad * factor;
+          if (ES_LINEAL_MEDIDO(nom)) porUnidad = porUnidad * factor;   // el flex del whip no crece con la corrida
           // lo que se pone cada tantos pies crece también, redondeando arriba
           else if (ES_POR_LARGO(nom)) porUnidad = Math.ceil(porUnidad * factor);
         }
