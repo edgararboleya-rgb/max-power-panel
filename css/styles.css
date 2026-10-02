@@ -4227,3 +4227,8 @@ body:has(#toast:not([hidden])) .fab, body:has(#sin-senal:not([hidden])) .fab { d
 .modal-fila:has(> label[hidden]) { grid-template-columns: 1fr; }
 .est-stat-sub { font-size: var(--fs-small); font-weight: 600; color: var(--night-ink-3); }
 .est-stat.principal .est-stat-sub { color: var(--mp-cyan-bg); }
+/* el candado del contrato (2-oct): hasta pasar la revisión con IA no se guarda ni se manda */
+.alc-candado { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .45rem; margin: .4rem 0 0; font-size: var(--fs-3); color: var(--warn-ink); line-height: 1.45; }
+.alc-candado > span:nth-child(2) { font-weight: 800; }
+.alc-candado-punto { width: 9px; height: 9px; border-radius: 50%; background: var(--mp-amber); flex-shrink: 0; }
+.alc-botones .accion:disabled { opacity: .45; cursor: not-allowed; transform: none; }

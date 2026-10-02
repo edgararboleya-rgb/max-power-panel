@@ -2101,6 +2101,17 @@
     "Levantamiento, por ensambles": "Site survey, by assemblies", "Rápido, con plantillas": "Quick, with templates",
     "Por decidir": "To decide", "Por decidir antes de ofertar": "To decide before you bid",
     "Precio ofertado (congelado)": "Price as bid (frozen)",
+    // El candado del contrato (2-oct)
+    "Candado:": "Lock:", "Arma el contrato primero": "Build the contract first",
+    "Falta pasar «Revisar con IA antes de enviar»": "You still need to run «Review with AI before sending»",
+    "La IA está revisando el contrato: espera a que termine": "The AI is reviewing the contract: wait for it to finish",
+    "Arreglaste 1 cosa en la hoja: vuelve a armar y revisa otra vez": "You fixed 1 thing on the sheet: build again and review again",
+    "Queda 1 cosa de la revisión por mirar: arréglala o toca «Lo dejo así»": "1 item from the review is still open: fix it or tap «Leave it»",
+    "Seguir sin la IA": "Continue without the AI", "Sigues sin la revisión con IA:": "You are continuing without the AI review:",
+    "Este papel ya pasó la revisión con IA y no cambió desde entonces.": "This document already passed the AI review and hasn't changed since.",
+    "Hasta que atiendas cada punto, el contrato no se guarda ni se manda. Se queda a la vista hasta que vuelvas a armar.": "Until you deal with every item, the contract can't be saved or sent. It stays in view until you build again.",
+    "Primero pasa la revisión con IA de arriba.": "First run the AI review above.",
+    "Sigues sin la revisión con IA: queda apuntado": "Continuing without the AI review: it's noted",
     "demolición: solo mano de obra": "demolition: labor only",
     "ninguno toca este estimado": "none touches this estimate",
     "La app revisa el catálogo sola en cada estimado. Lo que no toca este trabajo no cambia su número: arréglalo cuando puedas en Materiales.":
@@ -4150,6 +4161,8 @@
       "Lines marked «Quote» don't pay the $1 % misc.: that percentage is tape, wirenuts and fastening, and a switchgear that arrives on a truck doesn't use any."],
     [/^en (\d+) renglón\(es\) «Auto»\.$/, s => { const n = s.match(/\d+/)[0]; return `in ${n} «Auto» ${n === "1" ? "line" : "lines"}.`; }],
     [/^hoy (\$[\d,.]+|\$•••)$/, "today $1"],
+    [/^Arreglaste (\d+) cosas en la hoja: vuelve a armar y revisa otra vez$/, "You fixed $1 things on the sheet: build again and review again"],
+    [/^Quedan (\d+) cosas de la revisión por mirar: arréglalas o toca «Lo dejo así»$/, "$1 items from the review are still open: fix them or tap «Leave it»"],
     [/^Salud del catálogo — (\d+) (aviso|avisos)$/, s => { const n = s.match(/\d+/)[0]; return `Catalog health — ${n} ${n === "1" ? "warning" : "warnings"}`; }],
     [/^(\d+) (toca|tocan) este estimado$/, s => { const n = s.match(/\d+/)[0]; return `${n} ${n === "1" ? "touches" : "touch"} this estimate`; }],
     [/^(\d+) alias que tapa\(n\) una fila de tu catálogo$/, s => {

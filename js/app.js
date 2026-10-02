@@ -15386,11 +15386,14 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
              <b>${esc(fechaLarga(tresDiasHabiles(hoyFlorida())))}</b> (tres días hábiles, contando el sábado).
              El formulario con la fecha exacta lo genera el portal al firmar.</p>`}
       </div>
+      ${(() => { const K = alcCandadoRevision(); const dis = K.ok ? "" : " disabled"; return `
       <div class="alc-botones">
-        ${C.problemas.length ? "" : `<button class="accion" id="alc-imprimir">Imprimir a PDF</button>
-        <button class="accion secundaria" id="alc-bajar">Bajar el contrato (.html)</button>`}
-        <button class="accion secundaria" id="alc-guardar">Guardar en la propuesta</button>
+        ${C.problemas.length ? "" : `<button class="accion" id="alc-imprimir"${dis}>Imprimir a PDF</button>
+        <button class="accion secundaria" id="alc-bajar"${dis}>Bajar el contrato (.html)</button>`}
+        <button class="accion secundaria" id="alc-guardar"${dis}>Guardar en la propuesta</button>
       </div>
+      ${!K.ok ? `<p class="alc-candado" id="alc-candado"><span class="alc-candado-punto"></span><span>Candado:</span> <span>${esc(K.motivo)}</span>${
+        K.puedeSaltar ? ` <button type="button" class="alc-op" id="alc-sin-ia">Seguir sin la IA</button>` : ""}</p>` : ""}`; })()}
       ${C.problemas.length ? "" : (() => {
         // ¿este alcance ya tiene su contrato en el portal esperando firma?
         const enPortal = A.subido || ((A.proyecto.docs || []).find(d => A.propuesta && d.propuestaId === A.propuesta.id && d.pideFirma && !d.firmadoEl) || null);
@@ -15428,9 +15431,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           y le sale al cliente en su portal para elegirlo y firmarlo.</p>
         <div class="alc-botones">
           <input type="file" id="alc-pdf" accept="application/pdf" style="display:none">
-          <button class="accion" id="alc-al-portal"${A.propuesta ? "" : " disabled"}>Subir el PDF al portal</button>
+          <button class="accion" id="alc-al-portal"${A.propuesta && alcCandadoRevision().ok ? "" : " disabled"}>Subir el PDF al portal</button>
         </div>
         ${A.propuesta ? "" : `<p class="lev-nota">Guarda primero el alcance.</p>`}
+        ${A.propuesta && !alcCandadoRevision().ok ? `<p class="lev-nota">Primero pasa la revisión con IA de arriba.</p>` : ""}
       </div>`; })()}`;
   }
 
@@ -15700,6 +15704,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     });
     const bGuardar = $("alc-guardar");
     if (bGuardar) bGuardar.addEventListener("click", alcGuardarNube);
+    const bSinIA = $("alc-sin-ia");
+    if (bSinIA) bSinIA.addEventListener("click", alcSeguirSinIA);
     const bPortal = $("alc-al-portal");
     if (bPortal) bPortal.addEventListener("click", () => $("alc-pdf").click());
     const inPdf = $("alc-pdf");
@@ -16957,6 +16963,14 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
                      archivo: T.archivo, problemas: B.problemas, avisos: T.avisos || [], cuenta: T.cuenta };
       // lo que dijo la IA era del papel de antes: al rearmar se va (se puede volver a pedir)
       A.revision = null;
+      // …salvo que el papel salga IDÉNTICO al que ya pasó la revisión guardada en la propuesta: entonces se reutiliza
+      try {
+        const prev = A.propuesta && A.propuesta.alcance_decisiones && A.propuesta.alcance_decisiones.revision;
+        if (prev && prev.huella && !prev.saltada) {
+          const hu = await alcHuellaRevision();
+          if (hu && hu === prev.huella) A.revision = { hallazgos: [], reutilizada: true, cuando: prev.cuando || null };
+        }
+      } catch { /* sin reutilizar: se pide otra vez */ }
       alcFicha = 2;
       pintarAlcance();
       if (B.problemas.length) avisar("Armado, pero hay algo que revisar", true);
@@ -17129,6 +17143,42 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     repintar();
   }
 
+  // (2-oct, Edgar: «la app no te deja guardar ni mandar el contrato hasta pasar “Revisar con IA”»)
+  // EL CANDADO. Con el contrato armado, ni se guarda, ni se imprime, ni se baja, ni se sube al portal
+  // hasta que la IA lo revisó y cada punto quedó atendido (arreglado y rearmado, o «Lo dejo así»).
+  // Si la IA no contesta (sin señal, tope del mes), se puede seguir sin ella, a propósito y dejando dicho.
+  function alcCandadoRevision() {
+    const A = alcActivo, R = A && A.revision;
+    if (!A || !A.contrato) return { ok: false, motivo: "Arma el contrato primero" };
+    if (!R) return { ok: false, motivo: "Falta pasar «Revisar con IA antes de enviar»" };
+    if (R.en_marcha) return { ok: false, motivo: "La IA está revisando el contrato: espera a que termine" };
+    if (R.saltada) return { ok: true, saltada: true };
+    if (R.error) return { ok: false, motivo: R.error, puedeSaltar: true };
+    const hs = Array.isArray(R.hallazgos) ? R.hallazgos : [];
+    const hechos = hs.filter(h => h.hecho).length;
+    if (hechos) return { ok: false, motivo: hechos === 1 ? "Arreglaste 1 cosa en la hoja: vuelve a armar y revisa otra vez"
+                                                         : `Arreglaste ${hechos} cosas en la hoja: vuelve a armar y revisa otra vez` };
+    if (hs.length) return { ok: false, motivo: hs.length === 1 ? "Queda 1 cosa de la revisión por mirar: arréglala o toca «Lo dejo así»"
+                                                             : `Quedan ${hs.length} cosas de la revisión por mirar: arréglalas o toca «Lo dejo así»` };
+    return { ok: true };
+  }
+  // La huella del papel que la IA revisó: el mismo texto y la misma ficha que viajan a la nube.
+  // Si el papel se vuelve a armar y sale idéntico, la revisión buena se reutiliza (no se vuelve a cobrar).
+  async function alcHuellaRevision() {
+    const p = alcPaqueteRevisar();
+    if (p.error) return null;
+    return alcHuella(p.cuerpo.texto + "|ficha:" + JSON.stringify(p.cuerpo.ficha || {}));
+  }
+  // «Seguir sin la IA»: solo cuando la revisión falló (sin señal, tope del mes). Queda dicho en la propuesta.
+  async function alcSeguirSinIA() {
+    const A = alcActivo, R = A && A.revision;
+    if (!A || !A.contrato || !R || !R.error) return;
+    if (!await confirmar("La IA no pudo revisar este contrato (" + R.error + ").\n\n¿Lo mandas sin esa revisión? Quedará apuntado en la propuesta.")) return;
+    A.revision = { saltada: R.error, hallazgos: [], cuando: new Date().toISOString() };
+    pintarAlcance();
+    avisar("Sigues sin la revisión con IA: queda apuntado");
+  }
+
   // Cómo se nombra una sección del papel: «Sección 2 · Scope of Work — Included»
   function alcRevDonde(R, donde) {
     if (!donde) return "";
@@ -17149,7 +17199,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (!R) s += `<p class="lev-nota">La IA lee el contrato entero y lo compara con la ficha de la obra. Solo te señala lo que no cuadra; lo arreglas tú con un toque.</p>`;
     if (enMarcha) s += `<div class="alc-gris alc-espera">La IA está revisando el contrato… (suele tardar un minuto; puedes seguir)</div>`;
     if (R && R.error) s += `<div class="alc-gris">${esc(R.error)}</div>`;
-    if (hay) {
+    if (R && R.saltada) s += `<div class="alc-gris"><span>Sigues sin la revisión con IA:</span> <span data-no-i18n>${esc(String(R.saltada))}</span></div>`;
+    if (R && R.reutilizada) s += `<div class="alc-verde">Este papel ya pasó la revisión con IA y no cambió desde entonces.</div>`;
+    if (hay && !R.reutilizada) {
       if (R.resumen) s += `<p class="alc-rev-resumen" data-no-i18n>${esc(R.resumen)}</p>`;
       if (Number.isFinite(R.costo_centavos) && R.costo_centavos > 0) s += `<p class="alc-sub">Costó ${Math.round(R.costo_centavos)} ¢</p>`;
       if (!R.hallazgos.length) s += `<div class="alc-verde">La IA no vio nada que arreglar.</div>`;
@@ -17173,7 +17225,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       if (rojos.length) s += `<div class="alc-rojo"><b>Esto quedaría mal firmado:</b><ul>${rojos.map(([h, i]) => li(h, i)).join("")}</ul></div>`;
       if (ambar.length) s += `<div class="alc-ambar"><b>Esto es una duda:</b><ul>${ambar.map(([h, i]) => li(h, i)).join("")}</ul></div>`;
       if (R.hallazgos.length || R.tocado) s += `<div class="alc-botones"><button type="button" class="accion" data-rev-rearmar="1">Volver a armar</button></div>
-        <p class="lev-nota">Lo de la IA no frena la descarga (la frena el repaso de siempre). Se queda a la vista hasta que vuelvas a armar.</p>`;
+        <p class="lev-nota">Hasta que atiendas cada punto, el contrato no se guarda ni se manda. Se queda a la vista hasta que vuelvas a armar.</p>`;
     }
     return s + `</div>`;
   }
@@ -17314,6 +17366,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   async function alcSubirAlPortal(archivo) {
     const A = alcActivo;
     if (!A.propuesta) { avisar("Guarda primero el alcance", true); return; }
+    { const K = alcCandadoRevision(); if (!K.ok) { avisar("Candado: " + K.motivo, true); return; } }
     const btn = $("alc-al-portal");
     btn.disabled = true; btn.textContent = "Subiendo…";
     try {
@@ -17365,6 +17418,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   async function alcGuardarNube() {
     const A = alcActivo;
     const btn = $("alc-guardar");
+    { const K = alcCandadoRevision(); if (A.contrato && !K.ok) { avisar("Candado: " + K.motivo, true); return; } }
     btn.disabled = true; btn.textContent = "Guardando…";
     try {
       alcRecoger();
@@ -17392,6 +17446,12 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         }
       };
       if (A.contrato) { campos.armado_el = new Date().toISOString(); campos.archivo = A.contrato.archivo; }
+      // (2-oct) con el candado abierto se apunta qué papel pasó la revisión con IA (o que se siguió sin ella)
+      if (A.contrato) {
+        const K = alcCandadoRevision();
+        if (K.ok) campos.alcance_decisiones.revision = { huella: await alcHuellaRevision(), cuando: new Date().toISOString(),
+                                                        saltada: A.revision && A.revision.saltada ? String(A.revision.saltada) : null };
+      }
 
       // El email y el teléfono del cliente, si vienen en la hoja, se guardan en el
       // proyecto desde el principio (sirven para mandarle el portal y su copia firmada)
