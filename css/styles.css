@@ -4154,3 +4154,76 @@ body:has(#toast:not([hidden])) .fab, body:has(#sin-senal:not([hidden])) .fab { d
 .tk-sec-nom { font-weight: 700; color: var(--mp-ink); }
 .tk-sec-dat { flex: 1 1 auto; color: var(--mp-ink-2); font-size: var(--fs-3, .82rem); }
 .tk-sec-tot { font-weight: 700; color: var(--mp-ink); }
+
+/* ======================================================================
+   ESTIMADOR («Cobre y luz», 2-oct-2026). Edgar: «la parte de estimados la siento muy
+   básica… los cuadrados pequeños parecen una app antigua». Los campos del estimador
+   pasan al campo de 54 px del brief, con su etiqueta en frase; arriba va un tablero
+   con el precio, las horas y lo que falta por decidir; los avisos del catálogo quedan
+   plegados y el «Nuevo estimado» elige el modo con tarjetas, no con un select.
+   ====================================================================== */
+#estimador-panel .mat-filtro-label { display: grid; gap: .35rem; font-size: var(--fs-4); font-weight: 700; color: var(--mp-ink); margin: 0; }
+#estimador-panel .mat-filtro-label input:not([type=checkbox]):not([type=radio]),
+#estimador-panel .mat-filtro-label select,
+#estimador-panel .rap-card .modal-fila input,
+#estimador-panel #est-buscar {
+  width: 100%; min-height: var(--field-h); padding: 0 14px; font: inherit; font-size: var(--fs-body); font-weight: 500;
+  color: var(--mp-ink); background: var(--mp-sky-1); border: 1px solid var(--mp-line); border-radius: var(--r-field);
+}
+#estimador-panel .mat-filtro-label input:focus, #estimador-panel .mat-filtro-label select:focus,
+#estimador-panel .rap-card .modal-fila input:focus, #estimador-panel #est-buscar:focus,
+#estimador-panel .cal-form input:not([type=checkbox]):not([type=radio]):focus, #estimador-panel .cal-form select:focus {
+  border-color: var(--mp-blue); outline: none; box-shadow: 0 0 0 3px rgba(42,91,215,.18);
+}
+#estimador-panel .mat-filtro-label input:disabled, #estimador-panel .mat-filtro-label select:disabled,
+#estimador-panel .rap-card .modal-fila input:disabled { color: var(--mp-ink-2); background: var(--mp-sky-2); }
+/* los selects con la flecha de la casa, no la del navegador */
+#estimador-panel select:not(.chip-select) {
+  appearance: none; -webkit-appearance: none; padding-right: 38px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%234D6A83' stroke-width='1.8' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 14px center;
+}
+#estimador-panel input[type=number] { font-variant-numeric: tabular-nums; }
+/* las ayudas debajo de un campo: en frase, sin cursiva */
+.cal-form label > i { font-style: normal; font-weight: 500; font-size: var(--fs-2); color: var(--mp-ink-3); line-height: 1.4; }
+.cal-form-etq { font-size: var(--fs-4); font-weight: 700; color: var(--mp-ink); }
+
+/* el modo del estimado: cuatro tarjetas, una elegida */
+.est-modos { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+.cal-form .est-modo { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto; gap: .1rem .6rem; align-items: center;
+  padding: .55rem .7rem; min-height: var(--field-h); border: 1px solid var(--mp-line); border-radius: 14px; background: var(--mp-sky-1); cursor: pointer; }
+.est-modo input { grid-row: 1 / span 2; margin: 0; width: 20px; height: 20px; accent-color: var(--mp-blue); }
+.est-modo-t { font-size: var(--fs-4); font-weight: 800; color: var(--mp-ink); }
+.est-modo-d { font-size: var(--fs-small); font-weight: 500; color: var(--mp-ink-3); line-height: 1.3; }
+.est-modo:has(input:checked) { border-color: var(--mp-blue); background: var(--mp-card); box-shadow: 0 0 0 3px rgba(42,91,215,.14); }
+
+/* la cabecera del estimado: el tablero y los ajustes */
+.est-cab-titulo { font-size: var(--fs-h2); color: var(--mp-ink); line-height: 1.25; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .45rem; }
+.est-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: .5rem; margin: .75rem 0 .2rem; }
+.est-stat { display: grid; gap: .1rem; padding: .6rem .75rem; border-radius: 14px; background: var(--mp-sky-1); border: 1px solid var(--mp-line); min-width: 0; }
+.est-stat-etq { font-size: var(--fs-small); font-weight: 700; color: var(--cu-dark); }
+.est-stat-num { font-size: var(--fs-7); font-weight: 800; color: var(--mp-ink); letter-spacing: -.02em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.est-stat.principal { background: var(--night-2); border-color: var(--cian-32); box-shadow: var(--mp-sombra-encendido); }
+.est-stat.principal .est-stat-etq { color: var(--cu-light); }
+.est-stat.principal .est-stat-num { color: var(--mp-white); }
+.est-stat.pendiente { border-color: var(--mp-warn-bd); background: var(--mp-warn-bg); }
+.est-stat.pendiente .est-stat-etq, .est-stat.pendiente .est-stat-num { color: var(--warn-ink); }
+.est-ajustes { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem .7rem; margin-top: .85rem; }
+.est-ajustes .est-ancho { grid-column: 1 / -1; }
+@media (min-width: 760px) { .est-ajustes { grid-template-columns: repeat(4, minmax(0, 1fr)); } .est-ajustes .est-ancho { grid-column: span 2; } }
+
+/* «Por decidir antes de ofertar»: una tarjeta como las demás, con el filo ámbar */
+.est-decidir { border-left: 4px solid var(--mp-amber); }
+.est-decidir .aviso-texto { line-height: 1.55; color: var(--mp-ink); }
+.est-decidir .cal-form-titulo { margin-bottom: .35rem; }
+
+/* «Salud del catálogo»: plegada; abierta solo si algo toca este estimado */
+.est-salud > summary { cursor: pointer; line-height: 1.6; }
+.est-salud-toca { display: inline-block; font-size: var(--fs-small); font-weight: 700; color: var(--warn-ink); background: var(--mp-warn-bg);
+  border: 1px solid var(--mp-warn-bd); border-radius: 999px; padding: .12rem .55rem; vertical-align: middle; }
+.est-salud-cuerpo { padding-top: .2rem; }
+.est-salud-cuerpo .cal-form-titulo { margin-top: .6rem; }
+/* en un par de campos, si el segundo está escondido («Cómo es el trato» sin contratista), el primero ocupa todo el ancho */
+.modal-fila:has(> label[hidden]) { grid-template-columns: 1fr; }
+.est-stat-sub { font-size: var(--fs-small); font-weight: 600; color: var(--night-ink-3); }
+.est-stat.principal .est-stat-sub { color: var(--mp-cyan-bg); }

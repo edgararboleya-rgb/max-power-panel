@@ -8285,6 +8285,14 @@ function esFalloDeRed(err) {
   // ceroDe es PURA: sin red, sin await, no toca calcularEstimado, y nunca
   // lanza. Si fallara, la pantalla se pinta exactamente como antes.
   const CERO_NEUTRO = { est: "normal", chip: "", clase: "", fila: "", motivo: "", alerta: false, cat: null, conf: true };
+  // (2-oct, Edgar: «en la demo no hay que poner quién la pone: la demo es solo labor, no es
+  // material») Lo que por naturaleza es solo mano de obra entra como «Solo labor» confirmado,
+  // sin preguntar y sin alertar. Hoy: la sección DEMOLITION. Si la fila del catálogo tiene precio
+  // (un empalme de $15 que llega a $0 por el takeoff), SÍ lleva material y se sigue preguntando.
+  const esSoloLaborPorNaturaleza = cat => {
+    if (!cat || (Number(cat.precio) || 0) > 0) return false;
+    return /^DEMOLI[CT]I[OÓ]N\b/.test(normTxt(cat.seccion || ""));
+  };
   const CERO_CHIP = {
     //             chip               clase del chip   clase de la fila     motivo en palabras
     suministro:   ["Por cotizar",     "por_leer",   "recibo-por_leer", "material por cotizar"],
@@ -8311,7 +8319,7 @@ function esFalloDeRed(err) {
       // espera de la cuota) no es un huérfano del catálogo: es material POR COTIZAR.
       if (!cat) e = (linea.origen === "cotizacion" || /^COTIZACI[OÓ]N PENDIENTE/i.test(linea.item || "")) ? "suministro" : "huerfano";
       else {
-        e = cat.cero_motivo || "revisar";
+        e = cat.cero_motivo || (esSoloLaborPorNaturaleza(cat) ? "solo_labor" : "revisar");
         // La cotización del supply llega por SECCIÓN entera, que es como la
         // manda el proveedor: un gesto apaga los 78 renglones de switchgear.
         if (e === "suministro") {
@@ -8330,9 +8338,11 @@ function esFalloDeRed(err) {
       const c = CERO_CHIP[e] || CERO_CHIP.revisar;
       // Sin confirmar = lo supuso la regla de la siembra, no Edgar. Sale con «?»
       // y, si es by_owner, NO llega al papel que firma el cliente.
-      const conf = !cat ? false : !!cat.cero_revisado;
+      const porRegla = !!cat && !cat.cero_motivo && e === "solo_labor";   // lo decidió la regla de la casa: no hace falta confirmarlo
+      const conf = !cat ? false : (!!cat.cero_revisado || porRegla);
       return { est: e, chip: c[0] + (e === "referencia" ? refTxt : (conf ? "" : " ?")), clase: c[1], fila: c[2],
-               motivo: c[3], alerta: CERO_ALERTA.indexOf(e) >= 0, cat, conf: e === "referencia" ? true : conf };
+               motivo: porRegla ? "demolición: solo mano de obra" : c[3], alerta: CERO_ALERTA.indexOf(e) >= 0, cat,
+               conf: e === "referencia" ? true : conf, porRegla };
     } catch {
       return { est: "revisar", chip: "¿$0?", clase: "por_leer", fila: "recibo-por_leer",
                motivo: "revísalo", alerta: true, cat: null, conf: false };
@@ -10430,14 +10440,13 @@ function esFalloDeRed(err) {
       <div class="cal-panel-card">
         <form id="form-nuevo-est" class="cal-form">
           <div class="cal-form-titulo">Nuevo estimado</div>
-          <label>¿Cómo vas a estimar este trabajo?
-            <select name="modo">
-              <option value="rapido">Rápido — horas y material, como el Excel</option>
-              <option value="planos">Por planos (takeoff de Bluebeam)</option>
-              <option value="remodelacion">Remodelación (levantamiento, por ensambles)</option>
-              <option value="servicio">Servicio (rápido, plantillas)</option>
-            </select>
-          </label>
+          <div class="cal-form-etq">¿Cómo vas a estimar este trabajo?</div>
+          <div class="est-modos" role="radiogroup">
+            ${[["rapido", "Rápido", "Horas y material, como el Excel"], ["planos", "Por planos", "Takeoff de Bluebeam"],
+               ["remodelacion", "Remodelación", "Levantamiento, por ensambles"], ["servicio", "Servicio", "Rápido, con plantillas"]].map(([v, tt, dd], k) => `
+            <label class="est-modo"><input type="radio" name="modo" value="${v}"${k === 0 ? " checked" : ""}>
+              <span class="est-modo-t">${tt}</span><span class="est-modo-d">${dd}</span></label>`).join("")}
+          </div>
           <label>¿De quién es este trabajo?
             <select name="empresa" id="est-empresa">
               ${EMPRESAS.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join("")}
@@ -10549,7 +10558,10 @@ function esFalloDeRed(err) {
       nombre.value = `${op.dataset.nombre} — trabajo añadido`; nombre.dataset.auto = "1";
       if (cliente && !cliente.value) cliente.value = String(op.dataset.cliente || "").split(/\s*[·(]/)[0].trim();
       if (tipo) tipo.value = op.dataset.tipo === "comercial" ? "Commercial" : "Residential";
-      if (modo && op.dataset.tipo === "servicio") modo.value = "servicio";
+      if (op.dataset.tipo === "servicio") {
+        const r = form.querySelector('[name=modo][value="servicio"]');
+        if (r && r.type === "radio") r.checked = true; else if (modo) modo.value = "servicio";
+      }
       // El trato y el contacto se heredan del proyecto: no se vuelven a escribir
       ponerTrato(form, op.dataset.contratista || "", op.dataset.modo || "");
       const co = form.querySelector("[name=contratista_contacto]"); if (co && !co.value) co.value = op.dataset.coord || "";
@@ -11961,11 +11973,25 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const r2c = v => Math.round((Number(v) || 0) * 100) / 100;
     const tapan = aliasQueTapan((estData && estData.alias) || [], (estData && estData.catalogo) || []);
     if (!a.pendientes.length && !cortos.length && !dobles.length && !tapan.length) return "";
-    const enUso = new Set();
-    (c && c.items || []).forEach(l => enUso.add(normTxt(l.item)));
+    const enUso = new Set(), recetasEnUso = new Set();
+    (c && c.items || []).concat(c && c.autos || []).forEach(l => { enUso.add(normTxt(l.item)); if (l.deEnsamble) recetasEnUso.add(normTxt(l.deEnsamble)); });
     const tocan = a.pendientes.filter(r => enUso.has(normTxt(r.item)));
+    /* (2-oct, Edgar: «no sé qué objetivo cumple; si no aplica a todos los trabajos, automatízalo»)
+       La app revisa el catálogo sola y SEPARA lo que toca este estimado de lo que no. Lo que no
+       lo toca queda plegado: es salud del catálogo, no de este trabajo, y no mueve su número. */
+    const tocaTapan = tapan.filter(x => enUso.has(normTxt(x.item)) || enUso.has(normTxt(x.tapada.item)));
+    const tocaCortos = cortos.filter(x => recetasEnUso.has(normTxt(x.receta)));
+    const tocaDobles = dobles.filter(x => enUso.has(normTxt(x.item)));
+    const nAvisos = tapan.length + dobles.length + cortos.length + (a.pendientes.length ? 1 : 0);
+    const nTocan = tocaTapan.length + tocaCortos.length + tocaDobles.length + tocan.length;
+    const resumenToca = nTocan
+      ? `<span class="est-salud-toca">${nTocan} ${nTocan === 1 ? "toca este estimado" : "tocan este estimado"}</span>`
+      : `<span class="chk-avance">ninguno toca este estimado</span>`;
     return `
-      <div class="cal-panel-card">
+      <details class="cal-panel-card est-salud"${nTocan ? " open" : ""}>
+        <summary class="cal-form-titulo">Salud del catálogo — ${nAvisos} ${nAvisos === 1 ? "aviso" : "avisos"} ${resumenToca}</summary>
+        <p class="modal-nota">La app revisa el catálogo sola en cada estimado. Lo que no toca este trabajo no cambia su número: arréglalo cuando puedas en Materiales.</p>
+        <div class="est-salud-cuerpo">
         ${tapan.length ? `
         <div class="cal-form-titulo">${tapan.length} alias que tapa(n) una fila de tu catálogo</div>
         <p class="modal-nota">Al emparejar el takeoff, la app mira <b>código → alias → nombre</b>: el alias va
@@ -12036,7 +12062,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           <summary class="mat-filtro-label" style="cursor:pointer">Ver el SQL</summary>
           <textarea id="aud-sql" rows="8" readonly style="width:100%;font-family:ui-monospace,monospace;font-size:.72rem;padding:.55rem;border:1px solid var(--mp-line);border-radius:10px">${esc(auditoriaSql(a.pendientes))}</textarea>
         </details>` : ""}
-      </div>`;
+        </div>
+      </details>`;
   }
   function cardLuzHTML(est, c, soloLectura) {
     const r2 = r2e27;
@@ -12315,6 +12342,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     // Anotar un estimado CONGELADO no mueve un centavo, y es justo cuando
     // llega la cotización del supply house. Solo se cierra al convertirlo.
     const editableCero = est.estado !== "convertido" && ceroAviso > 0 && !esRapido;
+    // (el selector se queda también en la demolición: es la única pantalla que escribe el motivo del $0)
     const selCero = (z, item) => (!editableCero || !z.chip) ? "" : `
         <select class="chip-select sel-cero" data-item="${esc(item)}"
                 data-cat="${esc(z.cat ? z.cat.id : "")}" data-sec="${esc(z.cat ? (z.cat.seccion || "") : "")}"
@@ -12499,8 +12527,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         c.autos.forEach((a, n) => anota(a, zsAuto[n] || CERO_NEUTRO, true));
         const secs = Object.entries(porSec).sort((a, b) => b[1].h - a[1].h);
         const totH = r2(secs.reduce((t, [, g]) => t + g.h, 0));
-        return `<div class="inicio-card avisos">
-         <div class="aviso-texto" style="padding:.2rem 0">
+        return `<div class="cal-panel-card est-decidir">
+         <div class="cal-form-titulo">Por decidir antes de ofertar</div>
+         <div class="aviso-texto">
            <strong>${zAlerta.length} ${zAlerta.length === 1 ? "renglón entra" : "renglones entran"} sin material</strong>
            — ${totH} h sí están en el precio<br>
            ${secs.map(([sec, g]) => `· ${esc(sec)} — ${g.n} ${g.n === 1 ? "renglón" : "renglones"}, ${r2(g.h)} h${
@@ -12544,12 +12573,28 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
        </div>`;
 
     $("estimador-panel").innerHTML = `
-      <div class="cal-panel-card">
-        <div class="cal-form-titulo">${esc(est.nombre)}
+      <div class="cal-panel-card est-cabecera">
+        <div class="cal-form-titulo est-cab-titulo">${esc(est.nombre)}
           <span class="recibo-chip ${est.estado === "convertido" ? "insp-paso" : est.estado === "congelado" ? "leido" : "por_leer"}">${esc({ convertido: "Convertido ✓", congelado: "Congelado", borrador: "Borrador" }[est.estado] || est.estado)}</span>
           <span class="recibo-chip leido">${MODO_ETIQ[est.modo]}</span>
         </div>
         <div class="alcance-estado">${esc(est.cliente || "")}${est.contratista_id ? ` · ${esc(tratoTexto(est.contratista_id, est.contratista_modo))}` : ""}${est.sqft ? ` · ${esc(est.sqft)} sqft` : ""}</div>
+        ${/* (2-oct) El tablero: lo que Edgar mira primero, arriba y de un vistazo. Solo lee la cuenta; no la toca. */ ""}
+        <div class="est-stats">
+          ${(() => {
+            // Congelado o convertido: manda el número con que se ofertó (bid_final); si hoy sale otro, se dice debajo
+            const bf = Number(est.bid_final) || 0, cerrado = est.estado === "congelado" || est.estado === "convertido";
+            if (cerrado && bf > 0) {
+              const hoy = r2(c.bid), difiere = Math.abs(hoy - bf) >= 0.01;
+              return `<div class="est-stat principal"><span class="est-stat-etq">Precio ofertado (congelado)</span><span class="est-stat-num">${fmt(r2(bf))}</span>${
+                difiere ? `<span class="est-stat-sub">hoy ${fmt(hoy)}</span>` : ""}</div>`;
+            }
+            return `<div class="est-stat principal"><span class="est-stat-etq">Precio de la propuesta</span><span class="est-stat-num">${fmt(r2(c.bid))}</span></div>`;
+          })()}
+          <div class="est-stat"><span class="est-stat-etq">Horas</span><span class="est-stat-num">${r2(c.horas)} h</span></div>
+          <div class="est-stat"><span class="est-stat-etq">Materiales</span><span class="est-stat-num">${fmt(r2(c.totalMaterial))}</span></div>
+          ${zAlerta.length ? `<div class="est-stat pendiente"><span class="est-stat-etq">Por decidir</span><span class="est-stat-num">${zAlerta.length}</span></div>` : ""}
+        </div>
         ${(() => {
           /* (21/09, verificación) SI EL NÚMERO CONGELADO SE HA MOVIDO, SE DICE.
              calcularEstimado recalcula siempre desde el catálogo y la
@@ -12572,7 +12617,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
             <span class="chk-avance">El que ofertaste es el congelado: eso es lo que usa el historial y la propuesta guardada. Si vas a comparar número a número, compara contra el congelado.</span>
           </div>`;
         })()}
-        <div class="modal-fila" style="margin-top:.6rem">
+        <div class="est-ajustes">
           <label class="mat-filtro-label">Escenario
             <select id="est-escenario" ${soloLectura ? "disabled" : ""}>
               ${(estData.escenarios || []).map(x =>
@@ -12580,11 +12625,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
             </select>
           </label>
           <label class="mat-filtro-label">Factor de productividad
-            <input id="est-factor" type="number" min="0.5" max="2" step="0.05" value="${esc(est.factor || 1)}" ${soloLectura ? "disabled" : ""}>
+            <input id="est-factor" type="number" min="0.5" max="2" step="0.05" inputmode="decimal" value="${esc(est.factor || 1)}" ${soloLectura ? "disabled" : ""}>
           </label>
-        </div>
         ${est.modo === "planos" ? `
-        <label class="mat-filtro-label" style="margin-top:.5rem;display:block">Cableado del trabajo (para los conectores automáticos)
+        <label class="mat-filtro-label est-ancho">Cableado del trabajo (para los conectores automáticos)
           <select id="est-cable" ${soloLectura ? "disabled" : ""}>
             <option value="romex"${est.cable === "romex" ? " selected" : ""}>Romex (NM)</option>
             <option value="mc"${est.cable === "mc" ? " selected" : ""}>MC</option>
@@ -12593,15 +12637,16 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           </select>
         </label>` : ""}
         ${est.modo === "rapido" ? "" : `
-        <label class="mat-filtro-label" style="margin-top:.5rem;display:block">Cómo va sujeto el tubo (decide la fijación automática)
+        <label class="mat-filtro-label est-ancho">Cómo va sujeto el tubo (decide la fijación automática)
           <select id="est-soporte" ${soloLectura ? "disabled" : ""}>
             ${SOPORTES.map(([k, txt]) => `<option value="${k}"${(est.soporte || "pared") === k ? " selected" : ""}>${txt}</option>`).join("")}
           </select>
         </label>
-        <label class="mat-filtro-label" style="margin-top:.35rem;display:block">Parte del tubo que va en trapecio (%)
-          <input id="est-pct-rack" type="number" min="0" max="100" step="5" ${soloLectura ? "disabled" : ""}
-            value="${est.pct_rack ? Math.round(Number(est.pct_rack) * 100) : 0}" style="width:5rem">
+        <label class="mat-filtro-label">Parte del tubo que va en trapecio (%)
+          <input id="est-pct-rack" type="number" min="0" max="100" step="5" inputmode="numeric" ${soloLectura ? "disabled" : ""}
+            value="${est.pct_rack ? Math.round(Number(est.pct_rack) * 100) : 0}">
         </label>`}
+        </div>
       </div>
       ${ceroBanner}
       ${bannerOverhead}

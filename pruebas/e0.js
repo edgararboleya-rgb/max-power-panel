@@ -26,7 +26,11 @@ const CAT = [
   { id: 5, item: 'SERVICE LABOR (HOUR)', seccion: 'SERVICE', precio: 0, horas_unidad: 1, cero_motivo: 'solo_labor', cero_revisado: '2026-09-14' },
   { id: 6, item: 'Parking Fee (downtown)', seccion: 'PROJECT GENERAL', precio: 0, horas_unidad: 0, cero_motivo: 'tarifa', cero_revisado: '2026-09-14' },
   { id: 7, item: 'DEMO - Panels', seccion: 'DEMOLITION', precio: 0, horas_unidad: 1.5, cero_motivo: null, cero_revisado: null },
-  { id: 8, item: '20A DUPLEX RECEPTACLE', seccion: 'WIRING DEVICES', precio: 3.4, horas_unidad: 0.3, cero_motivo: null, cero_revisado: null }
+  { id: 8, item: '20A DUPLEX RECEPTACLE', seccion: 'WIRING DEVICES', precio: 3.4, horas_unidad: 0.3, cero_motivo: null, cero_revisado: null },
+  // (2-oct) un $0 sin clasificar que NO es demolición: la demolición entra sola como «Solo labor» (regla de la casa de Edgar)
+  { id: 9, item: 'LIGHTNING ROD AIR TERMINAL', seccion: 'LIGHTNING PROTECTION & GROUNDING', precio: 0, horas_unidad: 0.5, cero_motivo: null, cero_revisado: null },
+  // una demolición CON precio en el catálogo (el empalme): lleva material, así que si llega a $0 se sigue preguntando
+  { id: 10, item: 'Demo Old Wiring/Splice (per location)', seccion: 'DEMOLITION', precio: 15, horas_unidad: 0.5, cero_motivo: null, cero_revisado: null }
 ];
 const L = (item, cantidad, precio, horas) => ({ item, cantidad, precio, horas });
 
@@ -52,8 +56,13 @@ const L = (item, cantidad, precio, horas) => ({ item, cantidad, precio, horas })
   ok('mano de obra pura → SOLO LABOR y se calla', z4.est === 'solo_labor' && !z4.alerta, z4.chip);
   const z5 = await cero(L('Parking Fee (downtown)', 1, 0, 0));
   ok('una tarifa → TARIFA y se calla', z5.est === 'tarifa' && !z5.alerta, z5.chip);
-  const z6 = await cero(L('DEMO - Panels', 3, 0, 1.5));
+  const z6 = await cero(L('LIGHTNING ROD AIR TERMINAL', 3, 0, 0.5));
   ok('sin clasificar → pregunta «¿QUIÉN LO PONE?» (NULL falla hacia preguntar)', z6.est === 'revisar' && z6.alerta, z6.chip);
+  const z6d = await cero(L('DEMO - Panels', 3, 0, 1.5));
+  ok('(2-oct, Edgar) la demolición sin clasificar entra como SOLO LABOR confirmado, sin «?», sin selector y sin alertar',
+    z6d.est === 'solo_labor' && z6d.conf && !z6d.alerta && !/\?/.test(z6d.chip) && z6d.porRegla === true, z6d.chip);
+  const z6p = await cero(L('Demo Old Wiring/Splice (per location)', 4, 0, 0.5));
+  ok('pero una demolición que en el catálogo SÍ tiene precio y llega a $0 sigue preguntando (lleva material)', z6p.est === 'revisar' && z6p.alerta, z6p.chip);
   const z7 = await cero(L('UN NOMBRE QUE NO EXISTE', 1, 0, 0.5));
   ok('un nombre que no está en el catálogo → SIN CATÁLOGO y alerta', z7.est === 'huerfano' && z7.alerta, z7.chip);
   const z8 = await cero(L('20A DUPLEX RECEPTACLE', 20, 3.4, 0.3));
@@ -69,7 +78,7 @@ const L = (item, cantidad, precio, horas) => ({ item, cantidad, precio, horas })
   /* === 3. al cliente SOLO llega lo que Edgar confirmó === */
   const items = [L('400A SWITCHGEAR', 2, 0, 14), L('CEILING FAN - INSTALL ONLY', 4, 0, 1),
                  L('WALL SCONCE - INSTALL ONLY', 2, 0, 0.5), L('5" GRS CONDUIT', 10, 0, 0.2),
-                 L('DEMO - Panels', 3, 0, 1.5), L('20A DUPLEX RECEPTACLE', 20, 3.4, 0.3)];
+                 L('DEMO - Panels', 3, 0, 1.5), L('LIGHTNING ROD AIR TERMINAL', 3, 0, 0.5), L('20A DUPLEX RECEPTACLE', 20, 3.4, 0.3)];
   const ex = await p.evaluate(i => window.MXP_PRUEBA.e0.excluye({}, i), items);
   ok('una sola línea de exclusión: la luminaria confirmada (no 78 líneas)',
     ex.length === 2 && /Lighting fixtures/.test(ex[0]) && /\(4\)/.test(ex[0]), JSON.stringify(ex[0] || '').slice(0, 110));
@@ -78,7 +87,7 @@ const L = (item, cantidad, precio, horas) => ({ item, cantidad, precio, horas })
   ok('el by_owner SIN confirmar tampoco sale (lo supuso la app, no Edgar)',
     !ex.join(' ').match(/sconce/i));
   ok('lo que no se sabe (falta precio, sin clasificar) jamás va al contrato',
-    !ex.join(' ').match(/GRS|DEMO/i));
+    !ex.join(' ').match(/GRS|DEMO|AIR TERMINAL/i));
   ok('cierra con la cláusula de garantía y retrasos', /not warranted by Max Power/.test(ex[ex.length - 1] || ''));
 
   /* === 4. la propuesta cambia solo si hay exclusiones === */

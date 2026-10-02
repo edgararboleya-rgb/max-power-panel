@@ -2096,6 +2096,15 @@
     "CONVERTIDO ✓": "CONVERTED ✓", "CONGELADO": "FROZEN", "BORRADOR": "DRAFT",
     "Lo que daría hoy con los precios vivos": "What it would come to today with live prices",
     "Levantamiento en sitio": "On-site survey",
+    // Estimador (2-oct): el modo con tarjetas, el tablero, «Por decidir» y la salud del catálogo
+    "Horas y material, como el Excel": "Hours and material, like the Excel", "Takeoff de Bluebeam": "Bluebeam takeoff",
+    "Levantamiento, por ensambles": "Site survey, by assemblies", "Rápido, con plantillas": "Quick, with templates",
+    "Por decidir": "To decide", "Por decidir antes de ofertar": "To decide before you bid",
+    "Precio ofertado (congelado)": "Price as bid (frozen)",
+    "demolición: solo mano de obra": "demolition: labor only",
+    "ninguno toca este estimado": "none touches this estimate",
+    "La app revisa el catálogo sola en cada estimado. Lo que no toca este trabajo no cambia su número: arréglalo cuando puedas en Materiales.":
+      "The app checks the catalog by itself on every estimate. What doesn't touch this job doesn't change its number: fix it when you can in Materials.",
     "Estás en la casa: cuenta lo que ves y la app arma el estimado sola.": "You're at the house: count what you see and the app builds the estimate for you.",
     "Nuevo estimado": "New estimate", "¿Cómo vas a estimar este trabajo?": "How will you estimate this job?",
     "Rápido — horas y material, como el Excel": "Quick — hours and material, like the Excel",
@@ -4140,6 +4149,9 @@
     [/^Lo marcado como «Cotización» no paga el (\d+) % de misceláneas: ese porcentaje es tape, wirenuts y fijación, y un switchgear que llega en camión no los consume\.$/,
       "Lines marked «Quote» don't pay the $1 % misc.: that percentage is tape, wirenuts and fastening, and a switchgear that arrives on a truck doesn't use any."],
     [/^en (\d+) renglón\(es\) «Auto»\.$/, s => { const n = s.match(/\d+/)[0]; return `in ${n} «Auto» ${n === "1" ? "line" : "lines"}.`; }],
+    [/^hoy (\$[\d,.]+|\$•••)$/, "today $1"],
+    [/^Salud del catálogo — (\d+) (aviso|avisos)$/, s => { const n = s.match(/\d+/)[0]; return `Catalog health — ${n} ${n === "1" ? "warning" : "warnings"}`; }],
+    [/^(\d+) (toca|tocan) este estimado$/, s => { const n = s.match(/\d+/)[0]; return `${n} ${n === "1" ? "touches" : "touch"} this estimate`; }],
     [/^(\d+) alias que tapa\(n\) una fila de tu catálogo$/, s => {
       const n = s.match(/\d+/)[0]; return n === "1" ? "1 alias hides a row of your catalog" : `${n} aliases hide a row of your catalog`; }],
     [/^(\d+) fila\(s\) del catálogo con el mismo nombre$/, s => {
