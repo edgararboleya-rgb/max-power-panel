@@ -51,7 +51,7 @@ comprobando si algo ya estaba.
 | 8 | `docs/conta/c2-pruebas.sql` | La tabla `_pruebas`: **83 filas**, todas con `ok = true` (también quedan en `pruebas.c2_resultado`). (La **83**, de la ronda 4 de c6, mide con una función de prueba de unos 4 MB que el control «permisos» ya no relee lo que c4 y c6 sellaron: unos segundos más; sin c6 sale «omitida».) (Con la apertura de verdad ya en el libro, la **61** sale «omitida»; y en cuanto se **cierre el período de la apertura** (`2026-09-APERTURA`, antes que octubre), también la **37** y la **48**, que prueban lo de la apertura abierta. No es un fallo.) |
 | 9 | `docs/conta/c3-pruebas.sql` | La tabla `_pruebas`: **120 filas** (también en `pruebas.c3_resultado`), todas con `ok = true` salvo la **45**, que en producción sale «omitida» (Supabase no deja borrar de Storage por SQL; se prueba en el banco). Con la apertura de verdad ya en el libro, la **115** y la **117** (las que postean una apertura de prueba) también salen «omitida»: no es un fallo. Si no hay ningún perfil activo que no sea el dueño, las pruebas «del equipo» salen con `ok` vacío (`null`) y `obtenido` = «omitida…»: no es un fallo. Las seis del devengo (**28, 57, 67, 74, 77 y 99**) devengan en el primer mes abierto **sin journal de nómina**: con la nómina de octubre a diciembre ya en el libro (paso 3 de «Después de c6») corren en el primero que no lo tenga; si todos los meses abiertos ya lo tienen, salen «omitida» y lo dicen (con journal, el devengo estándar se niega: MX008, la regla de c3); y también si ese mes pasa del tope de fecha de c2 (con la nómina semanal, el mes en curso con su primer journal y el anterior todavía abierto: el mes del devengo sería el de después, y no se puede postear todavía), con la **120** diciendo el tope. No es un fallo. |
 | 10 | `docs/conta/c4-pruebas.sql` | La tabla `_pruebas`: **113 filas**, todas con `ok = true` (la **112** y la **113** son las de la ronda 4 de c6: el tope por reloj del control y lo que c6 selló; corren sin el tope por reloj, `c4.control_tope = 0` al empezar, y se devuelve al final). **Córrelas recién pegado c4 y ANTES de postear la apertura de verdad**: con ella ya en el libro, las **29 a 36, 50, 51, 53, 56, 61, 62, 69, 73, 76, 81, 84, 86, 91, 93, 94, 98, 102, 105 y 107** (las que postean una apertura de prueba) salen «omitida», y no es un fallo. Sin nadie del equipo activo, la **2** y la **38** salen «omitida»; la 38, 55, 56, 57, 58, 64, 77, 79, 80, 82, 89, 101, 103, 109, 111 y 113 también si la app estaba usando justo lo que tocan (esperan 2 s y se saltan), y la **113** sin c6. La **109** (el privilegio MAINTAIN) es de Postgres 17: en producción corre; en el banco con 16 sale «omitida». La **88** en rojo = el JIT sigue encendido para la app (ver el paso 4). La **45** finge «hoy» a mitad de mes (el reloj fingido solo va hacia adelante): corre en el primer mes abierto cuyo día 15 no ha pasado, y sale «omitida» solo si no hay ninguno (antes salía «omitida» del día 16 hasta cerrar el primer mes abierto). Con el banco de c6 ya en uso (asientos del banco en el mes, la caja chica fondeada con un retiro, la nómina de octubre, un ticket de la segunda obra con la apertura todavía sin postear) siguen en verde: la **17** cuenta la caja chica en el efectivo final, la **26** y la **53** miran solo lo de su escenario y la **39** le da fondos al banco antes de medir. Tardan entre 50 s y 80 s en el banco (27-sep; el 25-sep, 40 s; el 3-oct, con las 113, 35 s en 16 y 38 s en 17.6: la máquina del banco varía); **en producción (instancia chica) 5 min 47 s, y el SQL Editor se cansa antes y enseña un error de red: la corrida sigue en el servidor hasta el final.** Espera unos 6 minutos y lee el resultado con `select * from pruebas.c4_resultado order by n;` (la misma tabla, con la hora de la corrida). |
-| 11 | `docs/conta/c6-pruebas.sql` | La tabla `_pruebas`: **153 filas** (la 101 a la 134 son las de la ronda 4: de la 101 a la 117, el casado y la bandeja; de la 118 a la 128, la entrada —el importador y los lotes— y la seguridad; de la 129 a la 133, la apertura y el primer mes; la 134, el tiempo en producción; de la 135 a la 142, las de la ronda 4b: el dinero al patrimonio del accionista y tu cuenta personal, la reserva y la tarjeta nuevas antes de su primer estado de cuenta, la conciliación del mes sin la de apertura y el anticipo de una obra; de la 143 a la 153, las de la ronda 4c: quién es el otro lado de una transferencia —R3 y lo que se junta a mano, «Desde …» con tu cuenta personal dada de alta, el depósito que nombra una cuenta de la empresa, la transferencia que nombra a alguien sin número, la línea de crédito dada de alta por su número, el orden de los botones, el pase a tu cuenta personal con tu aportación ya clasificada, la baja de la personal—, «TO CHK ...7781», que no es un cheque, y la marca de la versión en la firma de cada propuesta), todas con `ok = true` (también quedan en `pruebas.c6_resultado`, con la hora de la corrida). Usa cuentas de prueba propias (el banco 1098, la reserva 1097 y dos tarjetas ····9996 y ····9995) que se deshacen con cada prueba: ni tus movimientos ni tu apertura se cruzan con ellas, y con el banco ya en uso (lo casado y lo clasificado de verdad, la caja chica fondeada desde el banco, la póliza de QuickBooks con su `saldo_corte`) sigue en verde: cada prueba mide lo que hace su escenario. Si de verdad diste de alta uno de los números que usan las pruebas (tu cuenta personal ····7781, el número de la reserva ····1097 con su lote vacío, o ····1098, ····8896, ····5555), cada prueba lo aparta dentro de ella y vuelve como estaba al deshacerse (ronda 4c; antes salían 38 en rojo, MX004); solo un estado de cuenta de verdad de una cuenta de la empresa que termine como una de prueba las pondría en rojo (MX004: avisa). Pueden salir «omitida» (y no es un fallo): la **10** sin dos días del mes sin visitas en el calendario (o sin `eventos` o sin una segunda obra), y la **96** sin tres días seguidos sin visitas; la **22**, la **46** y la **88** cuando octubre ya está cerrado (prueban la amortización del primer mes) **o cuando ya amortizaste un mes posterior con octubre abierto** (la marcha en paralelo: amortizar octubre entonces se niega, MX008, y es la regla), y la **64**, la **92** y la **99** también (prueban la primera semana y el primer mes después del corte); la **30**, la **63**, la **64**, la **92**, la **99**, la **107**, la **109**, la **110**, la **116**, la **120**, la **140**, la **144**, la **145**, la **146** y la **148** si el período de la apertura está cerrado sin asiento de apertura; la **107**, la **109**, la **110**, la **116** y la **140** cuando el mes abierto más antiguo ya no es el primero después del corte (como la 99), y la **109** y la **140** también **en cuanto la apertura de verdad esté posteada** (prueban lo de antes de conciliarla, con una apertura de prueba que lleva el banco 1098); la **129** y la **130** (los Undeposited Funds y los préstamos contra la apertura: postean una apertura de prueba con `fn_apertura`) en cuanto la apertura de verdad esté posteada o con la apertura cerrada; la **34** sin nadie del equipo activo; la **47**, la **88**, la **89**, la **95**, la **99**, la **101** y la **133** sin el mes siguiente abierto; la **72** y la **91** sin la tabla `horas`; la **36**, la **37**, la **47**, la **48**, la **67**, la **71**, la **72**, la **73**, la **91**, la **97**, la **118**, la **121**, la **126**, la **131** y la **133** si la app estaba usando lo que tocan (esperan 2 s y se saltan), y la **153** si alguien cambiaba a la vez la función de la marca del banco (cambia `fn_banco_version` un instante y se deshace). La **61** (va la última) comprueba que nada quedó. Tardan unos 18 s en el banco (17 s en 16.13 y 18,5 s en 17.6 el 3-oct, con las 142 de la ronda 4b —con las 134, 19 s y 20 s; con las 128, 17 s y 18 s—; con el año de Edgar encima —`c6-volumen.sh` con 200 por mes y 2.500 movimientos—, 27 s en 17.6; con un año de banco encima —666 por mes y 9.990 movimientos—, 32 s en 16 y 35,5 s en 17.6 el 3-oct con la 4b —ese día la de la ronda 4 tardaba de 41 a 42 s en 17.6: el banco de pruebas iba más lento que cuando la midió la ronda 4 (38 s), y la 4b le quitó a c6 lo que más pesaba en cada «Casar» y en cada control—; el 2-oct, con 117, 35 s; el 27-sep, con 100, 32 s y 38 s; en producción, calcula tres o cuatro minutos: c4-pruebas tarda allí diez veces lo del banco); si el SQL Editor se cansa, `select * from pruebas.c6_resultado order by n;`. |
+| 11 | `docs/conta/c6-pruebas.sql` | La tabla `_pruebas`: **153 filas** (la 101 a la 134 son las de la ronda 4: de la 101 a la 117, el casado y la bandeja; de la 118 a la 128, la entrada —el importador y los lotes— y la seguridad; de la 129 a la 133, la apertura y el primer mes; la 134, el tiempo en producción; de la 135 a la 142, las de la ronda 4b: el dinero al patrimonio del accionista y tu cuenta personal, la reserva y la tarjeta nuevas antes de su primer estado de cuenta, la conciliación del mes sin la de apertura y el anticipo de una obra; de la 143 a la 153, las de la ronda 4c: quién es el otro lado de una transferencia —R3 y lo que se junta a mano, «Desde …» con tu cuenta personal dada de alta, el depósito que nombra una cuenta de la empresa, la transferencia que nombra a alguien sin número, la línea de crédito dada de alta por su número, el orden de los botones, el pase a tu cuenta personal con tu aportación ya clasificada, la baja de la personal—, «TO CHK ...7781», que no es un cheque, y la marca de la versión en la firma de cada propuesta), todas con `ok = true` (también quedan en `pruebas.c6_resultado`, con la hora de la corrida). Usa cuentas de prueba propias (el banco 1098, la reserva 1097 y dos tarjetas ····9996 y ····9995) que se deshacen con cada prueba: ni tus movimientos ni tu apertura se cruzan con ellas, y con el banco ya en uso (lo casado y lo clasificado de verdad, la caja chica fondeada desde el banco, la póliza de QuickBooks con su `saldo_corte`) sigue en verde: cada prueba mide lo que hace su escenario. Si de verdad diste de alta uno de los números que usan las pruebas (tu cuenta personal ····7781, el número de la reserva ····1097 con su lote vacío, o ····1098, ····8896, ····5555), cada prueba lo aparta dentro de ella y vuelve como estaba al deshacerse (ronda 4c; antes salían 38 en rojo, MX004); solo un estado de cuenta de verdad de una cuenta de la empresa que termine como una de prueba las pondría en rojo (MX004: avisa). Pueden salir «omitida» (y no es un fallo): la **10** sin dos días del mes sin visitas en el calendario (o sin `eventos` o sin una segunda obra), y la **96** sin tres días seguidos sin visitas; la **22**, la **46** y la **88** cuando octubre ya está cerrado (prueban la amortización del primer mes) **o cuando ya amortizaste un mes posterior con octubre abierto** (la marcha en paralelo: amortizar octubre entonces se niega, MX008, y es la regla), y la **64**, la **92** y la **99** también (prueban la primera semana y el primer mes después del corte); la **30**, la **63**, la **64**, la **92**, la **99**, la **107**, la **109**, la **110**, la **116**, la **120**, la **140**, la **144**, la **145**, la **146** y la **148** si el período de la apertura está cerrado sin asiento de apertura; la **107**, la **109**, la **110**, la **116** y la **140** cuando el mes abierto más antiguo ya no es el primero después del corte (como la 99), y la **109** y la **140** también **en cuanto la apertura de verdad esté posteada** (prueban lo de antes de conciliarla, con una apertura de prueba que lleva el banco 1098); la **129** y la **130** (los Undeposited Funds y los préstamos contra la apertura: postean una apertura de prueba con `fn_apertura`) en cuanto la apertura de verdad esté posteada o con la apertura cerrada; la **34** sin nadie del equipo activo; la **47**, la **88**, la **89**, la **95**, la **99**, la **101** y la **133** sin el mes siguiente abierto; la **72** y la **91** sin la tabla `horas`; la **36**, la **37**, la **47**, la **48**, la **67**, la **71**, la **72**, la **73**, la **91**, la **97**, la **118**, la **121**, la **126**, la **131** y la **133** si la app estaba usando lo que tocan (esperan 2 s y se saltan), y la **153** si alguien cambiaba a la vez la función de la marca del banco (cambia `fn_banco_version` un instante y se deshace). La **61** (va la última) comprueba que nada quedó. Tardan unos 20 s en el banco (19,4 s en 16.13 y 19,9 s en 17.6 el 3-oct, con las 153 de la ronda 4c; con las 142 de la 4b, 17 s y 18,5 s —con las 134, 19 s y 20 s; con las 128, 17 s y 18 s—; con el año de Edgar encima —`c6-volumen.sh` con 200 por mes y 2.500 movimientos—, 27 s en 17.6 con la 4b; con un año de banco encima —666 por mes y 9.990 movimientos—, 34,5 s en 16 y 37,5 s en 17.6 el 3-oct con la 4c —con la 4b, 32 s y 35,5 s; ese día, sobre la misma base del año, la de la 4b tardaba de 36,4 a 38,1 s en 17.6 y la de la 4c de 38,7 a 41,2 s en copias hechas aparte: el banco de pruebas varía de una corrida a otra; lo que añade la 4c son sus 11 pruebas, unos 2 s—; el día de la 4b, la de la ronda 4 tardaba de 41 a 42 s en 17.6: el banco de pruebas iba más lento que cuando la midió la ronda 4 (38 s), y la 4b le quitó a c6 lo que más pesaba en cada «Casar» y en cada control; el 2-oct, con 117, 35 s; el 27-sep, con 100, 32 s y 38 s; en producción, calcula tres o cuatro minutos: c4-pruebas tarda allí diez veces lo del banco); si el SQL Editor se cansa, `select * from pruebas.c6_resultado order by n;`. |
 
 - **Esta entrega (la ronda 4, la 4b y la 4c de c6, 3-oct).** **Encima de
   lo de producción (d80c9de): vuelve a pegar c2 (paso 2), c4 (paso 4) y c6
@@ -81,11 +81,16 @@ comprobando si algo ya estaba.
   Ninguno toca el libro ni lo que Edgar configuró; c6 pegado sin los c2 y
   c4 de la ronda 4 para con MX000 y dice qué volver a pegar (c2-libro.sql y
   c4-estados.sql), sin tocar nada. Después, las cuatro suites (pasos 8 a
-  11), cada una sola: **83, 120, 113 y 153 filas**. El primer «Casar»
-  después del pegado rehace las propuestas de todo lo pendiente (la marca
-  de la versión va en su firma: ningún botón de antes se queda en la
-  bandeja; con mucho pendiente dice `"completo": false` y se corre otra
-  vez). **Si vienes de la 4b**, después de ese «Casar», una vez: la
+  11), cada una sola: **83, 120, 113 y 153 filas**. Y en seguida, **antes
+  de tocar la bandeja, «Casar»** (`select fn_banco_casar_todo();`): el
+  primer «Casar» después del pegado rehace las propuestas de todo lo
+  pendiente (la marca de la versión va en su firma: ningún botón de antes
+  se queda en la bandeja; con mucho pendiente dice `"completo": false` y se
+  corre otra vez). Hasta ese «Casar» la bandeja enseña los botones de
+  antes, y uno que ya no vale (encima de la 4b, su «Desde 1010» sin motivo;
+  encima de d80c9de, sus «A 1030» y «A 2100-…» sin motivo) dice MX008 al
+  pulsarlo, sin tocar nada (lo vio la prueba final de la 4c, §6).
+  **Si vienes de la 4b**, después de ese «Casar», una vez: la
   consulta de «Lo ya casado por la 4b» (paso 1 de «Después de c6») dice si
   R3 juntó solo algo que ahora se contradice. Después, lo fijo del banco
   (paso 1 de «Después de c6»): da de alta tu cuenta personal (`select
@@ -94,7 +99,17 @@ comprobando si algo ya estaba.
   préstamo, también por su número. La prueba final de la ronda 4 (3-oct;
   en §6) encontró dos cosas de la bandeja del banco, que arregló la 4b; la
   prueba final de la 4b (en §6), siete más, que arregla la 4c (y su
-  prueba, en §6).
+  prueba, en §6). **La prueba final de la 4c** (3-oct, en §6) encontró dos
+  caminos que todavía juntan solos dos lados que se contradicen, sin mirar
+  EL CRITERIO: la línea de un **asiento escrito a mano** en una cuenta del
+  banco (R1: un pase, un pago de tarjeta o una aportación anotados con
+  `fn_postear` casan solos con el movimiento de ese monto aunque el banco
+  diga tu cuenta personal, un número que no se conoce u otra cuenta de la
+  empresa) y el **cobro registrado con su movimiento** desde c3
+  (`fn_cobro_registrar` con `"movimiento_id"`, aunque el depósito diga
+  que viene de Chase); y unas cosas menores. Quedan para c6. Mientras, no
+  anotes a mano en el SQL Editor lo que el banco va a traer (pases, pagos
+  de tarjeta, aportaciones): deja que la bandeja lo proponga.
 - **Una suite a la vez.** Dos suites corriendo a la vez en la misma base se
   cruzan sus candados: el 27-sep, con c4-pruebas y c6-pruebas lanzadas con
   tres minutos de diferencia, salieron en rojo la 92 de c4 y la 49 de c6
@@ -331,12 +346,16 @@ corto:
    una vez, desde el SQL Editor, antes de subir el estado de cuenta de
    Chase que traiga el primer pase a ella:
    `select fn_banco_importar_filas('{"origen": "mano", "cuenta": "1030", "ultimos4": "<sus 4 últimos>", "confirmo_cuenta": true, "nombre": "1030: su número", "filas": []}');`
-   (no pone nada en rojo). Con el número dado de alta, el pase sale «A
-   1030», sin motivo, y casa solo con su otro lado cuando se suba el de la
-   reserva. Sin darlo de alta, la bandeja no lo supone tuyo ni de la
-   empresa: «cuenta_desconocida», todo con su motivo, y el texto dice
-   cómo darlo de alta (la reserva, o una tarjeta nueva con
-   `fn_tarjeta_alta`). (Hasta la ronda 4b, ese número se tomaba por tu
+   (no pone nada en rojo). Si ya había pendiente algo que nombra ese número
+   (un estado de cuenta subido antes), corre «Casar» después: el lote vacío
+   no rehace lo pendiente (la cuenta personal sí), y hasta ese «Casar» un
+   botón viejo («Factura #…» de un depósito que viene de ella) dice MX008
+   al pulsarlo, sin tocar nada (la prueba final de la 4c, §6). Con el
+   número dado de alta, el pase sale «A 1030», sin motivo, y casa solo con
+   su otro lado cuando se suba el de la reserva. Sin darlo de alta, la
+   bandeja no lo supone tuyo ni de la empresa: «cuenta_desconocida», todo
+   con su motivo, y el texto dice cómo darlo de alta (la reserva, o una
+   tarjeta nueva con `fn_tarjeta_alta`). (Hasta la ronda 4b, ese número se tomaba por tu
    cuenta personal y el primer botón del pase era «Para Edgar (su cuenta
    ····…): distribución · 3200», sin motivo.) Si un pase se tomó por otra
    cosa antes de llegar la reserva, al llegar su estado de cuenta la
@@ -349,9 +368,13 @@ corto:
    con el número dado de alta el pase de Chase a o desde ella sale
    «deuda_propia» —un pago a la línea, o su desembolso—, sin motivo (sus
    intereses o un cargo, aparte, a su gasto), y la cuota de un préstamo
-   registrado sale como siempre. Sin darlo de alta, «cuenta_desconocida»,
-   todo con su motivo. Un número que ya es de otra cuenta, de una tarjeta
-   o de tu cuenta personal no se da de alta otra vez (MX004).
+   registrado sale como siempre. Un desembolso por lo mismo que una
+   factura tiene abierto pide su motivo (la regla de un depósito que
+   explica una factura), aunque su texto diga primero «sin motivo». Sin
+   darlo de alta, «cuenta_desconocida», todo con su motivo. Un número que
+   ya es de otra cuenta, de una tarjeta o de tu cuenta personal no se da
+   de alta otra vez (MX004). Como con la reserva, «Casar» después de darlo
+   de alta si ya había algo pendiente que lo nombra.
    **Lo ya casado por la 4b (una vez, si vienes de 594054b, después del
    primer «Casar»):** la 4b dejaba que R3 juntara solo un pase que nombra
    un número que no se conoce con otra cuenta propia de número distinto, y
@@ -374,8 +397,13 @@ corto:
 
    Sin filas, nada que hacer. Con alguna: si de verdad no era ese dinero,
    des-cásala con su motivo (`select fn_banco_descasar('<id>', '<por
-   qué>');`) y vuelve a correr la consulta (des-casar un lado de un pase
-   que R3 juntó suelta los dos). Después de «Casar», la bandeja propone
+   qué>');`) y vuelve a correr la consulta. De un pase o un pago que R3
+   juntó salen las dos mitades: **des-casa primero el retiro** (el lado
+   que sale, el que puso el asiento), que suelta las dos; si des-casas
+   antes el depósito, se suelta solo él, y el retiro queda «en_transito»
+   —ya no sale en la consulta, que mira lo casado— con su asiento:
+   des-cásalo también (la bandeja del depósito lo propone, «Des-casar el
+   retiro …», con su motivo). Después de «Casar», la bandeja propone
    cada uno como lo que es (tu distribución, tu aportación, el pago de tu
    tarjeta, el pase de verdad); y si la fila era «R3 la otra mitad de la
    transferencia» (la línea de un «Desde …» o un «A …» que pulsaste), su
@@ -385,7 +413,11 @@ corto:
    depósito de la reserva «FROM EDGAR M MARTINEZ», y el pago a una tarjeta
    ····5555 casado por R3 con el pago recibido de la Gold, salen en la
    consulta; el pase de Chase a la reserva por su número, no. Des-casados
-   y resueltos con los botones de la bandeja, el control sigue igual.)
+   y resueltos con los botones de la bandeja, el control sigue igual. Y
+   en la prueba final de la 4c, con un pago recibido en la Gold un día
+   antes que el pago de Chase a ····5555: la consulta lo enseña primero
+   por la fecha, y des-casado el depósito, el retiro se quedó «en_transito»
+   hasta des-casarlo a él.)
 2. **La conciliación de apertura (30-sep)**, con la conciliación de
    QuickBooks de esa fecha, una por cuenta:
    `select fn_conciliacion_apertura('1010', '<saldo del statement>', '[<cheques y depósitos en tránsito>]');`
@@ -1109,11 +1141,37 @@ contradicen y las dos lo confirman.
   de la 4b se habrían quedado sus botones («Desde 1010» sin motivo), que
   pulsados ya fallan. Prueba: la **153**.
 
+**El tiempo**: EL CRITERIO se pide solo donde hace falta (lo que puede ser
+dinero entre cuentas) y va en plpgsql: 0,15 ms por movimiento. c6-pruebas,
+con las 153: 19,9 s en 17.6 y 19,4 s en 16; con un año de banco
+(`c6-volumen.sh`, 9.990 movimientos), 37,5 s en 17.6 y 34,5 s en 16, bajo
+su tope de 40 s. Las 11 nuevas suman unos 2 s; por llamada, «Casar», el
+contexto y la firma tardan lo mismo que en la 4b (medido el 3-oct sobre la
+misma base del año).
+
 **Lo que no se hizo, y por qué**: que un banco que nunca trajo su estado de
 cuenta pida motivo también en el pago recibido en una tarjeta («Desde
 1030» en la Gold con la reserva sin abrir). Rompía lo bueno del primer
 mes: la Amex llega antes que Chase y «Desde 1010» es la respuesta, sin
 motivo (la 85). Se queda como en la 4b: solo entre dos bancos.
+
+**Lo que encontró su prueba final** (3-oct, §6): todo lo de la 4b y de
+la ronda 4 ya no se reproduce, y los dos caminos de actualización entran
+limpios; pero EL CRITERIO no llega a dos caminos que juntan solos dos
+lados que se contradicen (importante): la línea de un **asiento escrito a
+mano** en una cuenta del banco (R1, clase «asiento»: un pase a la reserva
+anotado con `fn_postear` casa solo con el depósito que viene de tu cuenta
+personal dada de alta, o con el retiro de Chase a ella; dos aportaciones
+anotadas a mano, con el pase desde la reserva por su número y con un
+depósito por lo que una factura tiene abierto) y el **cobro que c3
+registra con su movimiento** («R2 el cobro dice este movimiento» con el
+depósito de la reserva que viene de Chase; y al llegar Chase, «A 1030»
+sin motivo deja la reserva con el doble en libros, en tránsito, sin nada
+en rojo). Y menores (los 4 últimos sueltos de tu tarjeta personal, el
+pago de una tarjeta de otro emisor, un cheque como «la otra mitad», la
+partida en tránsito de la apertura, Plaid y el QFX del mismo movimiento,
+el nombre «1007» de QuickBooks, el lote vacío que no rehace lo pendiente,
+los botones de antes hasta el primer «Casar»). Quedan para c6.
 
 ## 0b. La prueba final en el banco, de cero
 
@@ -1164,6 +1222,11 @@ for f in $D/c2-libro.sql $D/c4-estados.sql $D/c6-banco.sql $D/c6-banco.sql \
 done   # (los resultados, en pruebas.c2_resultado … c6_resultado)
 # Y el c6 nuevo pegado solo sobre c2 y c4 de producción: para con MX000 y
 # dice qué volver a pegar (c2-libro.sql y c4-estados.sql), sin tocar nada.
+# Encima de la 4b (594054b: c2 y c4 ya son los de la ronda 4), lo mismo con
+# git show 594054b:… y solo el c6 nuevo (dos veces) y las cuatro suites;
+# después, «Casar» y la consulta de «Lo ya casado por la 4b» (paso 1 de
+# «Después de c6»). Con la cuenta personal y la reserva dadas de alta antes
+# de las suites, c6-pruebas sigue en verde (ronda 4c).
 
 # Varias sesiones, volver a pegar con reglas tocadas, y volumen:
 ./c2-pegado.sh final_c2p; ./c3-pegado.sh final_c3p
@@ -1663,8 +1726,8 @@ tocar `docs/conta/c2-libro.sql`:
     es lo que lo hace caber, y conta.js tiene que volver a pedir lo que
     sale «Sigue».
   - Encontró dos cosas nuevas, las dos de la bandeja del banco, que no
-    tocan nada de lo ya guardado (quedan para c6; mientras, lo que hay que
-    hacer está en los pasos 1 y 3 de «Después de c6»): (a) un depósito de
+    tocan nada de lo ya guardado (quedaron para c6 y las arregló la 4b:
+    §0, «La ronda 4b de c6»): (a) un depósito de
     la cuenta personal de Edgar del mismo monto que una factura abierta:
     sus botones «préstamo del accionista · 2900» y «Aportación · 3100»
     (grupo 1) no piden motivo, y después el cuadre «depósitos nunca a
@@ -1881,8 +1944,8 @@ tocar `docs/conta/c2-libro.sql`:
     de baja la cuenta personal, la bandeja enseña sus botones viejos sin
     motivo hasta el siguiente «Casar»; pulsados, MX008 (el principio se mira
     en vivo). Ninguno toca lo guardado ni pone el control en rojo;
-    quedan para c6 y mientras, lo que hay que hacer está en los pasos 1 y 3
-    de «Después de c6».
+    quedaron para c6 y los arregla la 4c (§0, «La ronda 4c de c6»; los
+    remedios de mientras ya no están en «Después de c6»).
   - Idempotencia: c1, c2, c3, c4 y c6 pegados dos veces más sobre la misma
     base (0,1 a 0,6 s cada uno) y las cuatro suites otra vez, cada una sola
     (17.6: 3,9 s, 4,6 s, 37,8 s y 19,6 s; 16: 3,4 s, 3,8 s, 34,7 s y
@@ -1933,6 +1996,281 @@ tocar `docs/conta/c2-libro.sql`:
     en 17.6 con la base recién pegada, sin c6 y con c6: el Panel, de 400 a
     494 ms y de 432 a 504 ms; 'hoy', de 190 a 196 ms y de 217 a 221 ms;
     `fn_verificar_cadena`, de 69 a 76 ms y de 88 a 97 ms.
+- **La ronda 4c de c6 (3-oct)**, con c6-banco marca 2026100302 (c2 y c4,
+  2026100201; c3, 2026092601; sin commit, encima de 594054b), en 16.13 y
+  en 17.6:
+  - De cero (la carga completa de §0b), con los archivos de la entrega:
+    c2-pruebas 83/83, c3-pruebas 120/120 (4,4 s en 17.6 y 4,1 s en 16),
+    c4-pruebas 113/113 en 17.6 (37,3 s; en 16, 112 y la 109 «omitida»,
+    38,6 s) y c6-pruebas 153/153 (19,9 s en 17.6 y 19,4 s en 16). Los resúmenes del pegado, como dice §0 (c6: 7 filas en
+    true, «14 tablas»). Contra el c6 de la 4b (594054b) salen en rojo las
+    11 nuevas (143 a 153) y las 142 de antes siguen en verde.
+  - **El arnés de la prueba final de la 4b, como puerta**
+    (`scratchpad/ronda4/final-4b/atq`, con sus plantillas rehechas con la
+    carga de hoy, y siete escenarios nuevos, K1 a K7, uno por camino
+    tocado: «Desde 1010» con su motivo y la personal dada de alta; la
+    línea de crédito 2510 dada de alta y su «Casar»; un préstamo 2520 por
+    su número; la tarjeta personal; R2 con un cobro anotado y el depósito
+    de una cuenta propia; R3 con «DEPOSIT» y con «TO SAVINGS» / «FROM
+    CHECKING»; el cheque que no es cheque y el aviso de la apertura): en
+    los 28 escenarios, ningún botón ofrecido sin «pide_motivo», pulsado
+    tal cual, falla, pone un cuadre en rojo o lleva dinero al patrimonio
+    sin motivo (al patrimonio, solo con la cuenta personal dada de alta:
+    9 botones en A, 6 en I y 3 en K1); R3 solo junta lo que los dos lados
+    confirman (el pase a ····1097 con el depósito que nombra ····4392,
+    «DEPOSIT» con el pase que lo nombra, «TO SAVINGS» con «FROM
+    CHECKING»). Lo que encontró la prueba final de la 4b ya no se
+    reproduce: C, C3 y C4 (R3 no los junta: pendientes, y juntarlos a mano
+    pide motivo); C2 (MX008 sin motivo, con él entra); C2t, C2u y C3s
+    («Desde 1010» pide motivo, y con él, el pase a la personal no casa
+    solo: la bandeja propone juntarlos con su motivo o des-casar); H y H2
+    (el depósito «FROM CHK ...4392» es su transferencia: «Desde 1010»
+    primero, la factura con motivo; cobrarlo tal cual, MX008; al llegar
+    Chase, R3 casa los dos); F («otro_lado_nombrado», sin botones que
+    fallen); E (la línea de crédito se da de alta por su número:
+    «deuda_propia»); C2v («transferencia_personal», con su 3200 tal cual);
+    G (la baja rehace las propuestas). Salidas iguales en 16 y en 17.6.
+  - Los repros de la ronda 4 (h01–h17, e01–e12, p01–p06), sus extras
+    (x01–x16) y lo que encontró la prueba final de la 4b ((1) x13b y x13c
+    —que pulsan «el botón 1» por su lugar, y el primero es ahora «Desde
+    1030» con su motivo: x13d los busca por su cuenta: el 2900 tal cual,
+    MX008, y con su motivo entra y el control sigue en verde—, (2) x14 a
+    x16, (3) la «falta» de octubre, (4) el anticipo de la H08): ninguno
+    reproduce, en 16 y en 17.6. Contra la 4b cambia solo lo buscado: «Lo
+    que falta: …», el orden de un depósito de un número que no se conoce
+    («Desde 1030» primero), un pase que no es el pago de una tarjeta ya no
+    ofrece «A 2100-…», y la firma de las propuestas.
+  - Idempotencia: c1–c6 pegados dos veces más sobre la base de cero (0,1 a
+    0,6 s cada uno) y las cuatro suites otra vez, cada una sola (17.6: 4,0
+    s, 4,1 s, 39,1 s y 20,9 s; 16: 3,4 s, 4,0 s, 34,4 s y 17,7 s), en
+    verde; la foto cambia solo lo de siempre (el comentario de las tres
+    huellas y el cuerpo de `fn_estados_huellas()`) y ninguna suite la
+    cambia.
+  - **El camino de producción desde d80c9de** (§0b), en los dos: c1–c6 de
+    d80c9de con el banco en uso (lo de la 4b). El c6 nuevo antes que c2 y
+    c4 para con MX000 sin tocar nada (foto y catálogo iguales); después c2
+    (0,2 a 0,3 s), c4 (0,5 a 0,6 s) y c6 (0,5 a 0,6 s; sus 7 filas en
+    true, «14 tablas»), y c6 otra vez; las marcas, 2026100201, 2026092601,
+    2026100201 y 2026100302; la foto de lo guardado, igual; el primer
+    «Casar» rehace solo las propuestas de lo pendiente; las cuatro suites,
+    cada una sola y en verde (17.6: 4,0 s, 5,6 s, 40,4 s y 21,8 s; 16: 3,6
+    s, 4,0 s, 35,2 s y 18,7 s), con la foto igual después de cada una.
+    Después, lo de «Después de c6»: la cuenta personal («Rehecha la
+    propuesta de 2 movimiento(s) pendiente(s) que la nombran»: sus dos
+    pases, «transferencia_personal») y el número de la reserva («A 1030»
+    sin motivo). La consulta de «Lo ya casado por la 4b», sin filas. El
+    control, sin la apertura, en rojo solo por «prepagados» (como en la 4b).
+  - **Encima de la 4b (594054b), con el banco en uso** (en los dos): lo de
+    arriba más la cuenta personal ····7781 y el número de la reserva
+    ····1097 dados de alta como decía su README, la reserva de noviembre
+    (el pase de Chase por su número, que R3 casa; dos depósitos «FROM
+    EDGAR M MARTINEZ»), «Desde 1010» pulsado en uno —y, al llegar Chase,
+    su pase a la personal casado solo, «R3 la otra mitad»— y el pago a una
+    tarjeta ····5555 que R3 casó con el pago recibido de la Gold; las
+    conciliaciones de octubre de 1010 y de la Gold, confirmadas. Solo c6
+    (0,5 s; sus 7 filas en true); la foto de lo guardado, igual; el primer
+    «Casar» rehace las 4 propuestas pendientes (el otro depósito «FROM EDGAR
+    M MARTINEZ», «otro_lado_nombrado», todo con su motivo); la consulta de
+    «Lo ya casado por la 4b» da 3 filas (el pase a la personal y las dos
+    mitades del pago a ····5555; el pase por su número, no); las cuatro
+    suites en verde (17.6: 3,9 s, 4,3 s, 38,5 s y 21,3 s; 16: 3,5 s, 4,1 s,
+    34,8 s y 20,8 s) con la foto igual; c6 otra vez, igual. Y el remedio
+    del README: des-casar las filas una a una (dos llamadas: la otra mitad
+    del pago se suelta con ella), el botón «Des-casar el depósito …: no es
+    el otro lado de este» que la bandeja da al pase, su 3100 con motivo y
+    el 3200 del pase tal cual: la consulta, sin filas, y el control como
+    antes. **Lo encontró esta prueba** (y se arregló en c6-pruebas): con
+    la personal ····7781 y la reserva ····1097 dadas de alta, 38 pruebas
+    salían en rojo (MX004: son números de las pruebas); `c6_montar` los
+    aparta ahora dentro de cada prueba. Y que la firma no llevaba la marca
+    de la versión (la 153).
+  - Sin rastro: la foto de la base igual antes y después de cada suite, en
+    la base de cero y en las de los dos caminos de actualización.
+  - Scripts, en 16 y en 17.6, en verde: c6-en-uso (21 ok; octubre: 4,2 s,
+    4,6 s, 42,7 s y 20,7 s en 17.6 y 3,4 s, 5,1 s, 34,4 s y 18,5 s en 16;
+    noviembre, 113 + 7 y 150 + 3 «omitidas»), c6-concurrencia (24 ok;
+    importar y casar dos veces 1,0 s y 1,2 s, la subida más lenta 0,17 s y
+    0,22 s) y c6-volumen con la plantilla del libro (9.990 movimientos):
+    casar 2,2 s y 2,5 s por mes como mucho, la bandeja 0,41 s, conciliar
+    0,43 s y 0,34 s, `fn_banco_verificar` 3,1 s y 2,9 s, volver a pegar
+    c6 1,9 s y 1,6 s, **c6-pruebas sola 37,5 s en 17.6 y 34,5 s en 16
+    (bajo su tope de 40 s)** y con cuatro teléfonos 44,5 s y 39,7 s (la
+    subida más lenta 2,4 s y 2,1 s). Ese día la de la 4b, sobre la misma
+    base del año en 17.6, tardaba de 36,4 a 38,1 s: lo que añade la 4c son
+    sus 11 pruebas (2,1 s, medidas una a una); por llamada, «Casar», el
+    contexto y la firma tardan lo mismo que en la 4b. El banco de pruebas
+    varía de una corrida a otra: en copias de esa base hechas aparte
+    (frías, o calientes después de otra corrida), la de la 4c dio de 38,7
+    a 41,2 s en 17.6, y la de la 4b de 36,4 a 38,1 s; la medida de
+    `c6-volumen.sh` es la de la base caliente y asentada (37,5 s; la
+    primera vez, con la 144 de antes, 38,0 s).
+- **La prueba final de la ronda 4c de c6, entera (3-oct)**, de cero, con
+  los archivos de la entrega (c6-banco.sql, marca 2026100302, y
+  c6-pruebas.sql de la 4c; c2 y c4 2026100201; c3 2026092601; sin commit,
+  encima de 74ad44f), en 16.13 y en 17.6:
+  - De cero (la carga completa de §0b): c2-pruebas 83/83 (4,3 s en 17.6 y
+    3,5 s en 16), c3-pruebas 120/120 (4,5 s y 3,9 s), c4-pruebas 113/113
+    en 17.6 (38,7 s; en 16, 112 y la 109 «omitida», 34,2 s) y c6-pruebas
+    153/153 (20,3 s y 18,3 s). Los resúmenes del pegado, como dice §0 (c6:
+    7 filas en true, «14 tablas»).
+  - Los repros de la ronda 4 (h01–h17, e01–e12, p01–p06), sus extras
+    (x01–x16; x13b y x13c pulsan «el botón 1» por su lugar, y x13d los
+    busca por su cuenta), lo que encontró la prueba final de la 4b (de la
+    (1) a la (4)) y el arnés de la 4b, con sus 21 escenarios y los K1 a K7
+    del corrector: ninguno reproduce, en 16 y en 17.6. Salidas iguales a
+    las del corrector salvo la hora del aviso «Este archivo ya entró el
+    …», el orden de las partidas de la falta de la apertura (la H09: sin
+    orden fijo, ya dicho) y una huella. En el arnés, ningún botón ofrecido
+    sin «pide_motivo», pulsado tal cual, falla, pone un cuadre en rojo o
+    lleva dinero al patrimonio sin motivo (al patrimonio, solo con la
+    cuenta personal dada de alta: 9 botones en A, 6 en I y 3 en K1). La
+    del primer QFX en la cuenta equivocada del grupo sigue rechazada (es la
+    H11), y lo que rechazó el corrector sigue igual: en el pago recibido de
+    la Gold, «Desde 1030» sin motivo y el primero con la reserva sin abrir
+    (pulsado, 1030, sin estado de cuenta, queda en negativo y nada lo dice
+    hasta que la reserva traiga el suyo), y en un depósito que nombra a una
+    persona sin número, sus facturas sin motivo.
+  - **El ataque a EL CRITERIO** (en `scratchpad/ronda4/final-4c/atq`, de
+    L01 a L17 y L02b: el arnés de la 4b y un auditor que mira EL CRITERIO
+    en cada transferencia casada que queda guardada y busca dinero del
+    banco al patrimonio sin motivo ni cuenta personal). **Aguanta**: R3 no
+    junta nada que se contradiga —montos redondos repetidos el mismo día a
+    la reserva y a tu cuenta personal, el orden al revés, el otro lado
+    bueno y uno que lo contradice llegando juntos (empate: se propone)—, y
+    el «DEPOSIT» a secas, solo con el pase que lo nombra; juntar a mano lo
+    que se contradice pide motivo, y des-casado, «Casar» no lo vuelve a
+    juntar; tu cuenta personal dada de alta, de baja y de alta otra vez
+    rehace sus botones en cada paso, con el control en verde; la tarjeta
+    personal del mismo emisor que las de la empresa, nombrada «CARD ENDING
+    …», es personal; la línea de crédito y un préstamo por su número
+    («deuda_propia»; un número repetido, MX004 en los tres sentidos); un
+    depósito desde una cuenta propia por su número con facturas abiertas o
+    cobros que lo suman: «Desde …» primero, lo demás con motivo, y R2 no lo
+    junta con los cobros. **Encontró** (iguales en 16 y en 17.6; ninguno
+    pone el control en rojo):
+    (1) **importante**: R1 casa sola la línea de un **asiento escrito a
+    mano** (`fn_postear` desde el SQL Editor: clase «asiento») sin mirar
+    EL CRITERIO. Un pase a la reserva anotado a mano (Dr 1030 / Cr 1010,
+    2,000.00) casa solo con el depósito de la reserva que el banco dice
+    que viene de tu cuenta personal dada de alta («ONLINE TRANSFER FROM
+    CHK ...7781»), y con el retiro de Chase a ella («TO CHK ...7781»); un
+    pago de la Gold anotado a mano, con el pago de Chase a una tarjeta
+    ····5555 que no se conoce; dos aportaciones tuyas anotadas a mano (Dr
+    1010 / Cr 3100), con el pase desde la reserva por su número («FROM SAV
+    ...1097»: el dinero de la reserva, como tu aportación) y con un
+    depósito por lo que la factura #1101 tiene abierto (la factura sigue
+    abierta). Todos «R1 cruce exacto con el libro», solos; y sin el número
+    dado de alta, el botón «Confirmar cruce con asiento …» no pide motivo
+    (L02, L02b, L16).
+    (2) **importante**: el **cobro que c3 registra con su movimiento**
+    (`fn_cobro_registrar` con `"movimiento_id"`, con grant a la app) casa
+    solo, «R2 el cobro dice este movimiento», aunque el depósito de la
+    reserva diga que viene de Chase por su número (lo que la 4c frena en
+    `fn_banco_cobrar` y en `fn_banco_casar_con`); al llegar Chase, su
+    pase sale «A 1030» sin motivo y es su único botón, y pulsado, 1030
+    queda con 4,000.00 en libros y 2,000.00 en el banco (el pase, «en
+    tránsito»), con el control en verde: la (c) de la 4b por otro camino
+    (L03). La consulta de «Lo ya casado por la 4b» lo enseña.
+    (3) **menores**: (3a) tu tarjeta personal dada de alta, nombrada por
+    sus 4 últimos sueltos («AMEX EPAYMENT ACH PMT 1006»), no cuenta (los
+    sueltos solo se leen de las tarjetas de la empresa) y R3 junta ese
+    pago con el pago recibido de la Gold por lo mismo (L06); (3b) el pago
+    de una tarjeta de otro emisor («CHASE CREDIT CRD AUTOPAY», «BANK OF
+    AMERICA CREDIT CARD BILL PAYMENT»; las de la empresa son Amex) sale
+    «entre cuentas propias» y R3 lo junta con un pago recibido de la Gold
+    del mismo monto en su ventana (L13); (3c) con «Desde 1010» en la
+    reserva («FROM CHK ...4392»), un cheque de Chase por lo mismo tres días
+    antes casa solo como «R3 la otra mitad» (la regla del «DEPOSIT» a
+    secas vale también para un cheque; L14); (3d) la partida en tránsito
+    de la conciliación de apertura (el cheque de un cliente) casa sola, la
+    primera semana, con un depósito que el banco dice que viene de tu
+    cuenta personal dada de alta (L17); (3e) Plaid con el nombre corto
+    («Online Transfer to CHK», sin número) da «A 1030» sin motivo, y el
+    QFX del mismo movimiento, con el número de tu cuenta personal, entra
+    como «posible_duplicado» y «Es el mismo (no entra)» lo descarta sin
+    decir que contradice lo casado (L10); (3f) el nombre de QuickBooks de
+    la Gold («1007») hace de ····1007 un número de la Gold: una cuenta
+    ····1007 de otro sale «propia», y una personal ····1007 no se podría
+    dar de alta (MX004; L15); (3g) dar de alta un número con el lote vacío
+    (la reserva, la línea de crédito) no rehace lo pendiente que lo nombra
+    —la cuenta personal sí—: hasta el siguiente «Casar», sus botones
+    viejos («Factura #…», sin motivo) dicen MX008 (L01); (3h) el
+    desembolso de la línea de crédito por lo que una factura tiene abierto
+    pide motivo (bien), pero su texto dice primero «sin motivo» (L01b), y
+    clasificado a un gasto entra sin motivo (L12); (3i) a un depósito del
+    3-nov se le ofrece «Es la transferencia con 1010 del 9-nov», un retiro
+    posterior (L08); (3j) después del pegado, hasta el primer «Casar», la
+    bandeja enseña los botones de antes, y pulsados dicen MX008 sin tocar
+    nada (encima de 594054b, el «Desde 1010» sin motivo de la 4b; encima
+    de d80c9de, sus «A 1030» y «A 2100-…»); (3k) en «Lo ya casado por la
+    4b», des-casar primero el depósito de un par que R3 juntó suelta solo
+    ese: el retiro (el que puso el asiento) queda «en_transito» y sale de
+    la consulta, y el README decía que se soltaban los dos. (3j) y (3k), y
+    el «Casar» después del lote vacío, ya los dicen §0 y «Después de c6»;
+    lo demás queda para c6.
+  - Idempotencia: c1–c6 pegados dos veces más sobre la base de cero (0,1 a
+    0,6 s cada uno) y las cuatro suites otra vez, cada una sola (17.6: 3,7
+    s, 4,3 s, 37,5 s y 20,8 s; 16: 3,5 s, 3,9 s, 34,6 s y 18,4 s), en
+    verde; la foto cambia solo lo de siempre (el comentario de las tres
+    huellas y el cuerpo de `fn_estados_huellas()`), y ninguna suite la
+    cambia.
+  - **El camino de producción desde d80c9de** (§0b), en los dos: c1–c6 de
+    d80c9de con el banco en uso (lo de la 4b: octubre de Chase y de la
+    Gold casado, clasificado y conciliado, la póliza, la nómina, un ticket
+    de CED, y noviembre con pases a tu cuenta personal sin dar de alta y a
+    la reserva sin su número). El c6 nuevo antes que c2 y c4 para con
+    MX000 (nombra c2-libro.sql y c4-estados.sql) sin tocar nada (foto y
+    catálogo iguales); después c2 (0,2 s; sus 10 en true), c4 (0,5 a 0,6
+    s; 9, en false solo las dos de la apertura) y c6 (0,5 s; 7 en true,
+    «14 tablas»), y c6 otra vez; las marcas, 2026100201, 2026092601,
+    2026100201 y 2026100302; la foto de lo guardado, igual; el primer
+    «Casar» rehace solo las propuestas de los 4 pendientes; las cuatro
+    suites, cada una sola y en verde (17.6: 4,0 s, 4,3 s, 38,6 s y 20,1 s;
+    16: 3,5 s, 4,0 s, 34,6 s y 18,1 s), con la foto igual después de cada
+    una. Después, lo de «Después de c6»: la cuenta personal (sus dos pases,
+    «transferencia_personal») y el número de la reserva («A 1030» sin
+    motivo). La consulta de «Lo ya casado por la 4b», sin filas. El
+    control, sin la apertura, en rojo solo por «prepagados» (el escenario,
+    como en la 4b).
+  - **Encima de la 4b (594054b), con el banco en uso** (en los dos): lo de
+    arriba, la cuenta personal ····7781 y el número de la reserva ····1097
+    dados de alta como decía su README, lo que la 4b casaba solo y se
+    contradice (el pase a la personal con el «Desde 1010» de la reserva; el
+    pago a ····5555 con el pago recibido de la Gold) y otro pago a ····5555
+    de 720 que la Gold trae un día antes que Chase. Solo c6 (0,5 s; 7 en
+    true); la foto de lo guardado, igual; antes del primer «Casar», el
+    «Desde 1010» sin motivo de la 4b dice MX008 (3j); «Casar» rehace las 4
+    propuestas pendientes; la consulta de «Lo ya casado por la 4b» da 5
+    filas (el pase a la personal y las dos mitades de los dos pagos a
+    ····5555); las cuatro suites en verde (17.6: 3,9 s, 4,4 s, 36,7 s y
+    21,0 s; 16: 3,5 s, 3,8 s, 33,0 s y 18,5 s) con la foto igual; c6 otra
+    vez, igual. El remedio, una fila cada vez: el pase a la personal y el
+    pago de 640 (su retiro suelta las dos mitades), bien; del de 720 la
+    primera fila es el depósito de la Gold, y des-casarlo soltó solo ese
+    (3k); des-casado después el retiro, los dos pendientes. El control,
+    solo «prepagados».
+  - Sin rastro: la foto de la base igual antes y después de cada suite, en
+    la base de cero y en las de los dos caminos de actualización.
+  - Scripts, en 16 y en 17.6, en verde: c6-en-uso (21 ok; octubre: 3,9 s,
+    5,1 s, 37,8 s y 19,3 s en 17.6 y 3,5 s, 4,9 s, 34,6 s y 17,9 s en 16;
+    noviembre, 113 + 7 y 150 + 3 «omitidas»), c6-concurrencia (24 ok;
+    importar y casar dos veces 1,0 s y 0,9 s, la subida más lenta 0,14 s
+    y 0,16 s), c2-pegado (18 ok) y c4-concurrencia (17 ok). En 17.6,
+    c3-volumen con 3.000 recibos (reintentar 1,3 s, controles 1,6 s) y
+    c4-volumen con 10.333 asientos (las vistas, 0,51 s como mucho; el
+    Panel en una llamada 2,0 s; como en producción —se informa— el Panel
+    no terminó en 9 llamadas, y 'hoy', los estados y el año llegan a
+    llamadas de 0,97 s, 0,92 s y 0,95 s; c4-pruebas 77,0 s con 2026
+    abierto y 88,0 s cerrado, c3-pruebas 96,5 s; con cuatro teléfonos, la
+    subida más lenta 2,2 s, 5,0 s y 2,4 s). c6-volumen con la plantilla
+    del libro (9.990 movimientos), 17.6 y 16: casar 2,9 s y 2,0 s por mes
+    como mucho, la llamada más lenta de la bandeja 0,37 s y 0,32 s,
+    conciliar 0,39 s y 0,38 s, el control 0,55 s y 0,45 s,
+    `fn_banco_verificar` 3,2 s y 2,8 s, volver a pegar c6 2,0 s y 1,5 s,
+    **c6-pruebas sola 37,5 s y 32,8 s (bajo su tope de 40 s)** y con
+    cuatro teléfonos 42,6 s y 36,7 s (la subida más lenta 2,4 s y 2,1 s);
+    los meses 13 y 14 sin casar, «Cuadrar» de 0,6 a 0,9 s y casar 2,8 s y
+    2,6 s.
 - **JIT**: el Postgres del banco trae el compilador JIT encendido (lo de
   fábrica). Con consultas grandes compila más de lo que corre (una vista
   del tablero leída como el editor, 16 s con JIT y 0,15 s sin él; la

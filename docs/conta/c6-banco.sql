@@ -1117,7 +1117,11 @@
 --     dinero entre cuentas; un cobro de R1 o R2 solo si el depósito dice
 --     transferencia) y va en plpgsql (fn_banco_nombrado, palabra por palabra:
 --     0,02 ms; EL CRITERIO entero, 0,15 ms). c6-pruebas, con las once
---     nuevas: 18,1 s en 16 y 19,4 s en 17.6 (con la 4b, 17 y 18,5 s).
+--     nuevas: 19,4 s en 16 y 19,9 s en 17.6 (con la 4b, 17 y 18,5 s); con
+--     un año de banco (c6-volumen.sh, 9.990 movimientos), 34,5 s en 16 y
+--     37,5 s en 17.6, bajo su tope de 40 s (con la 4b, 32,3 y 35,5 s: las
+--     once nuevas suman unos 2 s; por llamada, «Casar», el contexto y la
+--     firma tardan lo mismo que en la 4b, medido sobre la misma base).
 --   · EL PEGADO. Encima de 594054b (la 4b): solo este archivo (c2 y c4 no
 --     cambian, 2026100201; c3 2026092601). Encima de d80c9de (producción
 --     hoy): c2, c4 y este. No cambia ninguna tabla ni vista (las mismas 14 y
