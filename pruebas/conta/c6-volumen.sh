@@ -109,6 +109,15 @@ else
 fi
 
 ed() { PGPASSWORD=editor_sql psql -X -q -At -v VERBOSITY=verbose -h "${PGHOST:-127.0.0.1}" -p "${PGPORT:-5432}" -U editor_sql -d "$BD" "$@"; }
+# ultima <salida>: lo que respondió la última sentencia, o el ERROR si lo
+# hubo. (Con VERBOSITY=verbose la última línea de un error es «LOCATION:
+# …»: mirando solo esa, un error —el MX008 de una conciliación ya
+# confirmada, el 57014 del tope— pasaba por una respuesta. Ronda 4 de c6,
+# grupo 4.)
+ultima() {
+  if grep -qE '^(ERROR|FATAL):' <<< "$1"; then grep -E '^(ERROR|FATAL):' <<< "$1" | head -n 1
+  else grep -vE '^LOCATION:|^[0-9]*$' <<< "$1" | tail -n 1; fi
+}
 
 malos=0
 revisa() {  # revisa <descripción> <esperado> <obtenido>
@@ -205,10 +214,11 @@ grep 'movimientos a generar' "$TMP/gen.out" | sed 's/^/     /'
 
 # mide <nombre> <tope_ms> <sql> [commit]: como la app, con el tope de la API (8 s).
 mide() {
-  local t0 t1 ms r fin="${4:-rollback}"
+  local t0 t1 ms r out fin="${4:-rollback}"
   t0=$(date +%s%N)
-  r="$(ed -c "begin; $APP $3; $fin;" 2>&1 | grep -v '^[0-9]*$' | tail -n 1)"
+  out="$(ed -c "begin; $APP $3; $fin;" 2>&1)"
   t1=$(date +%s%N)
+  r="$(ultima "$out")"
   ms=$(( (t1 - t0) / 1000000 ))
   echo "$ms" > "$TMP/ultimo.ms"
   if grep -qiE 'error|cancel' <<< "$r"; then
@@ -350,9 +360,17 @@ vista "v_prepagados" "v_prepagados"
 vista "v_asiento_papel (c4, $P)" "v_asiento_papel where periodo = '$P'"
 
 echo "== Conciliar a fin del último mes, con la bandeja atrasada (como la app, tope 8 s), y sus vistas"
-mide "fn_conciliar(1010, 2027-09-30), con la bandeja atrasada" 8000 "select 'diferencia ' || (x->>'diferencia') || ', sin casar ' || (x->>'n_sin_casar') || ', en tránsito ' || (x->>'n_transito') from (select fn_conciliar('1010', '2027-09-30') as x) y" commit
-mide "otra vez (lo igual no se reescribe)" 8000 "select 'diferencia ' || (x->>'diferencia') || ', sin casar ' || (x->>'n_sin_casar') from (select fn_conciliar('1010', '2027-09-30') as x) y" commit
-mide "fn_conciliar(2100-2013, 2027-09-30)" 8000 "select 'diferencia ' || (x->>'diferencia') || ', sin casar ' || (x->>'n_sin_casar') from (select fn_conciliar('2100-2013', '2027-09-30') as x) y" commit
+if [ "$AL_DIA" -ge 12 ]; then
+  # (Con los 12 meses al día, la del último mes ya está confirmada: no se
+  # recalcula —MX008, la regla—; su tiempo es el de «la conciliación que
+  # más tardó», arriba. Antes se medía igual y el error salía como un
+  # resultado.)
+  echo "     (los 12 meses al día: la conciliación del último mes ya está confirmada y no se recalcula; ver arriba)"
+else
+  mide "fn_conciliar(1010, 2027-09-30), con la bandeja atrasada" 8000 "select 'diferencia ' || (x->>'diferencia') || ', sin casar ' || (x->>'n_sin_casar') || ', en tránsito ' || (x->>'n_transito') from (select fn_conciliar('1010', '2027-09-30') as x) y" commit
+  mide "otra vez (lo igual no se reescribe)" 8000 "select 'diferencia ' || (x->>'diferencia') || ', sin casar ' || (x->>'n_sin_casar') from (select fn_conciliar('1010', '2027-09-30') as x) y" commit
+  mide "fn_conciliar(2100-2013, 2027-09-30)" 8000 "select 'diferencia ' || (x->>'diferencia') || ', sin casar ' || (x->>'n_sin_casar') from (select fn_conciliar('2100-2013', '2027-09-30') as x) y" commit
+fi
 vista "v_conciliacion" "v_conciliacion"
 vista "v_conciliacion_partidas (1010, 2027-09-30)" "v_conciliacion_partidas where cuenta = '1010' and fecha_corte = '2027-09-30'"
 
@@ -365,7 +383,7 @@ ctl "la conciliación ($P)" "$P" "array['v_conciliacion', 'v_conciliacion_partid
 ctl "todo ($P)" "$P" "null"
 ctl "hoy" "hoy" "null"
 revisa "fn_banco_control($P): nada en rojo" "ninguna" \
-  "$(ed -c "begin; $APP select coalesce(string_agg(vista, ', ') filter (where not ok), 'ninguna') from fn_banco_control('$P', null); rollback;" 2>&1 | tail -n 1)"
+  "$(ultima "$(ed -c "begin; $APP select coalesce(string_agg(vista, ', ') filter (where not ok), 'ninguna') from fn_banco_control('$P', null); rollback;" 2>&1)")"
 
 # (Ronda 4 de c6) COMO EN PRODUCCIÓN: la instancia de Supabase es unas diez
 # veces más lenta que este banco y la API corta cada llamada a los 8 s. A
@@ -386,7 +404,7 @@ pantalla() {
   while [ -n "$lista" ] && [ $n -lt 9 ]; do
     n=$((n + 1))
     t0=$(date +%s%N)
-    r="$(ed -c "begin; $APP set local c4.control_tope = '$PROD_RELOJ_MS'; select coalesce(string_agg(quote_literal(vista), ', ' order by orden) filter (where ok is null and detalle like 'Sigue:%'), '') || '|' || coalesce(string_agg(vista, '; ') filter (where ok is not true and not (ok is null and coalesce(detalle, '') like 'Sigue:%')), '') from fn_estados_control('$2', $lista); rollback;" 2>&1 | grep -v '^[0-9]*$' | tail -n 1)"
+    r="$(ultima "$(ed -c "begin; $APP set local c4.control_tope = '$PROD_RELOJ_MS'; select coalesce(string_agg(quote_literal(vista), ', ' order by orden) filter (where ok is null and detalle like 'Sigue:%'), '') || '|' || coalesce(string_agg(vista, '; ') filter (where ok is not true and not (ok is null and coalesce(detalle, '') like 'Sigue:%')), '') from fn_estados_control('$2', $lista); rollback;" 2>&1)")"
     t1=$(date +%s%N)
     ms=$(( (t1 - t0) / 1000000 ))
     if grep -qiE 'error|cancel' <<< "$r"; then

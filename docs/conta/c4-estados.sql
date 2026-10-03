@@ -661,40 +661,62 @@
 --   repartidos entre obras, gastos del banco y tres depósitos de verdad
 --   que se parecen a los cobros de las pruebas: 10.333 asientos, 23.206
 --   líneas. Se lee el último mes (2027-12) y 'hoy', en ms (el banco es un
---   contenedor: en Supabase las cifras serán otras, del mismo orden):
+--   contenedor: en Supabase las cifras serán otras, unas diez veces más;
+--   medido el 3-oct, con la marca 2026100201; entre paréntesis, lo de
+--   antes de la ronda 4 de c6, la marca 2026092601, en PG16/PG17.6):
 --                                                  PG16    PG17.6
---     v_balanza                                     211       260
---     v_balanza_obra                                249       307
---     v_balance_general (el mes / hoy)          422/461   497/580
---     v_resultados                                  194       208
---     v_flujo_caja                                  358       405
---     v_flujo_real_por_mes (todos los meses)        586       787
---     v_saldos_dinero (hoy)                         152       159
---     v_cxc_antiguedad (hoy)                        193       251
---     v_cxp_antiguedad (hoy)                        284       373
---     v_gasto_por_categoria                         427       488
---     v_gasto_por_proveedor                         473       683
---     v_costo_por_obra                              339       416
---     v_obras_dinero (hoy)                          559       699
---     v_comparacion_resumen                         217       265
---     v_libro (el mes)                              123       140
---     v_mayor (1010, el mes)                        139       177
---     v_asiento_papel (el mes)                       83       108
---     fn_estados_control, el Panel (9 vistas)      3196      3911
---     fn_estados_control('hoy')                    2097      2360
---     fn_estados_control, los estados (4)          1688      2118
---     fn_estados_control, el año (4)               2127      2375
---     fn_estados_control, todas las vistas         5316      5862
---       (solo desde el SQL Editor, sin el tope de 8 s de la API)
---     este archivo, pegado otra vez                 776       883
---       su resumen del final                        307       372
---       el Panel pedido mientras se pega           3560      4426
---     c4-pruebas.sql entero, sobre ese libro     100,9 s   117,1 s
---       (y con 2026 cerrado, 115,6 s y 132,2 s; las dos veces con cuatro
---       teléfonos subiendo un ticket cada 0,25 s: ninguna subida cortada
---       ni sin su asiento; la que más esperó, de 2,6 s a 3,4 s)
+--     v_balanza                                     179       189
+--     v_balanza_obra                                221       224
+--     v_balance_general (el mes / hoy)          377/387   406/406
+--     v_resultados                                  164       183
+--     v_flujo_caja                                  223       250
+--     v_flujo_real_por_mes (todos los meses)        438       433
+--     v_saldos_dinero (hoy)                         144       162
+--     v_cxc_antiguedad (hoy)                        161       167
+--     v_cxp_antiguedad (hoy)                        245       319
+--     v_gasto_por_categoria                         313       451
+--     v_gasto_por_proveedor                         376       458
+--     v_costo_por_obra                              285       306
+--     v_obras_dinero (hoy)                          264       252
+--     v_comparacion_resumen                         184       198
+--     v_libro (el mes)                              103       112
+--     v_mayor (1010, el mes)                        134       122
+--     v_asiento_papel (el mes)                       94        85
+--     fn_estados_control, en UNA llamada (sin el tope por reloj):
+--       el Panel (9 vistas)    (3196/3911)         1641      1894
+--       'hoy'                  (2097/2360)         1219      1377
+--       los estados (4)        (1688/2118)          988      1170
+--       el año (4)             (2127/2375)         1364      1647
+--       todas las vistas       (5316/5862)         2784      3149
+--         (todas, solo desde el SQL Editor)
+--     fn_estados_control como en producción (el tope por reloj en 300 ms,
+--     los 3 s de la API a la velocidad del banco, pidiendo otra vez lo que
+--     sale «Sigue»): la llamada más lenta y cuántas llamadas
+--       el Panel (9 vistas)                     593 (7)   595 (9 y sigue)
+--       'hoy'                                   750 (6)   824 (6)
+--       los estados (4)                         763 (3)   862 (3)
+--       el año (4)                              857 (3)   911 (3)
+--     este archivo, pegado otra vez                 565       568
+--       su resumen del final                        161       185
+--       el Panel pedido mientras se pega           1849      2065
+--     c4-pruebas.sql entero, sobre ese libro      68,4 s    76,4 s
+--       (y con 2026 cerrado, 77,0 s y 91,2 s; las dos veces con cuatro
+--       teléfonos subiendo un ticket cada 0,25 s y el Panel leyendo cada
+--       segundo: ninguna subida ni lectura cortada, ninguna subida sin su
+--       asiento; la que más esperó, de 1,7 s a 2,5 s)
+--   Ese libro (666 papeles por mes) es tres veces el de Edgar: con 200 por
+--   mes (c4-volumen.sh … 200: 3.167 asientos en 15 meses; y con un año de
+--   banco encima, 3.995), en 17.6, ninguna vista pasa de 0,26 s, y con el
+--   tope por reloj el Panel sale en tres o cuatro llamadas, la más lenta
+--   de 0,46 a 0,51 s; 'hoy', los estados y el año, en dos, de 0,45 a
+--   0,55 s: en producción, de 5 a 6 s cada llamada, dentro de los 8 s.
+--   Con el libro de 10.333 asientos ya no siempre: una llamada de 0,82 a
+--   0,91 s (lo que corría al llegar el tope —el balance con sus
+--   resultados van juntos—, más los cuadres y las protecciones) pasa de
+--   los 8 s en producción. Ver «LO QUE QUEDA ABIERTO».
 --   Con el doble (c4-volumen.sh con 1332 por mes y SOLO_MEDIR=1: 20.553
---   asientos, 45.401 líneas, unos dos años y medio a ese ritmo), en 17.6:
+--   asientos, 45.401 líneas, unos dos años y medio a ese ritmo; medido con
+--   la marca 2026092601, antes de la ronda 4 de c6), en 17.6:
 --   cada vista bajo 1,3 s (la más lenta, v_gasto_por_proveedor, 1.257
 --   ms); el control del Panel 6.677 ms (7.449 ms pedido mientras se pega
 --   este archivo), 'hoy' 4.126, los estados 3.081, el año 4.325, y el de
@@ -774,17 +796,27 @@
 --     mes se corre aparte, en otra pestaña.
 --   · El volumen: todo recorre el libro entero en cada lectura (los saldos
 --     de balance necesitan toda su historia), y el tiempo crece con toda la
---     historia, no con el período pedido. Con 10.000 asientos, todo bajo
---     su tope; con 20.553 (dos años y medio al ritmo de c4-volumen.sh;
---     medido en 17.6, ver «ÍNDICES Y TIEMPOS»), el control de TODAS las
---     vistas tarda 10 s y ya no cabe en los 8 s de la API (en el SQL
---     Editor sí), y el del Panel 6,7 s: cerca. Por eso conta.js pide
---     siempre la lista de su pantalla (nunca el control sin lista), y el
---     pegado solo el control corto. Antes de llegar ahí (≈ 2029) se decide
---     entre el índice por fecha en asientos (toca las huellas de c2) y los
---     saldos por mes precalculados de todo lo cerrado (f08, con el
---     cierre): «SOLO_MEDIR=1 ./c4-volumen.sh bd 1332» mide ese volumen, y
---     el de siempre (666 por mes) sigue en c4-volumen.sh.
+--     historia, no con el período pedido. Medido como en producción (unas
+--     diez veces más lenta que el banco, y la API corta a los 8 s), con el
+--     tope por reloj (ronda 4 de c6, ver «ÍNDICES Y TIEMPOS»): con el año
+--     de Edgar (unos 3.400 asientos por año, con el banco) cada llamada de
+--     las pantallas de cifras queda en 0,45-0,55 s del banco (unos 5 s
+--     allí); con 10.333 asientos, la más lenta llega a 0,82-0,91 s (de 8 a
+--     9 s allí: ya no cabe) y el Panel pide de siete a nueve llamadas. Por
+--     la recta entre los dos libros medidos, eso llega hacia los 8.000
+--     asientos (al ritmo de Edgar, a principios de 2029). Se decide ANTES,
+--     hacia los 6.000 (mediados de 2028), entre los saldos por mes
+--     precalculados de todo lo cerrado (f08, con el cierre: el balance y
+--     los resultados ya no recorrerían la historia entera) y el índice por
+--     fecha en asientos (toca las huellas de c2). c4-volumen.sh lo mide:
+--     con 250 papeles por mes o menos lo exige (cada llamada 0,8 s o
+--     menos y la pantalla en seis llamadas o menos), con más lo informa.
+--     Y con 20.553 asientos (medido antes de la ronda 4 de c6) el control
+--     de TODAS las vistas tardaba 10 s en una llamada y no cabía en los
+--     8 s de la API (en el SQL Editor sí): por eso conta.js pide siempre
+--     la lista de su pantalla (nunca el control sin lista), y el pegado
+--     solo el control corto. «SOLO_MEDIR=1 ./c4-volumen.sh bd 1332» mide
+--     ese volumen, y el de siempre (666 por mes) sigue en c4-volumen.sh.
 --
 -- LOS ERRORES CON NOMBRE de este archivo (los de c2 y c3 siguen igual):
 --   MX000 falta lo que el archivo da por hecho (no se aplica nada)

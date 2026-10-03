@@ -97,6 +97,14 @@ else
 fi
 
 ed() { PGPASSWORD=editor_sql psql -X -q -At -v VERBOSITY=verbose -h "${PGHOST:-127.0.0.1}" -p "${PGPORT:-5432}" -U editor_sql -d "$BD" "$@"; }
+# ultima <salida>: lo que respondió la última sentencia, o el ERROR si lo
+# hubo. (Con VERBOSITY=verbose la última línea de un error es «LOCATION:
+# …»: mirando solo esa, un error —el 57014 del tope— pasaba por una
+# respuesta. Ronda 4 de c6, grupo 4.)
+ultima() {
+  if grep -qE '^(ERROR|FATAL):' <<< "$1"; then grep -E '^(ERROR|FATAL):' <<< "$1" | head -n 1
+  else grep -v '^LOCATION:' <<< "$1" | tail -n 1; fi
+}
 
 malos=0
 revisa() {  # revisa <descripción> <esperado> <obtenido>
@@ -352,7 +360,7 @@ if [ "$K" -le 250 ]; then EXIGE=1; TOPE_VISTA=800; AVISO_VISTA=200; else EXIGE=0
 mide() {
   local t0 t1 ms r nota=""
   t0=$(date +%s%N)
-  r="$(ed -c "begin; $APP $3; rollback;" 2>&1 | tail -n 1)"
+  r="$(ultima "$(ed -c "begin; $APP $3; rollback;" 2>&1)")"
   t1=$(date +%s%N)
   ms=$(( (t1 - t0) / 1000000 ))
   if grep -qiE 'error|cancel' <<< "$r"; then
@@ -393,7 +401,7 @@ ctl "el año ($A, estados)" "$A" "array['v_balanza', 'v_balance_general', 'v_res
 mide "todas las vistas ($P, SQL Editor, tope 60 s)" 60000 "set local statement_timeout = '60s'; set local c4.control_tope = '0'; select count(*) || ' filas, en rojo: ' || coalesce(string_agg(vista || coalesce(' (' || left(detalle, 80) || ')', ''), '; ') filter (where ok is not true), 'ninguna') from fn_estados_control('$P', null)"
 for x in "$P|null" "hoy|null" "$A|array['v_balanza', 'v_balance_general', 'v_resultados', 'v_flujo_caja']"; do
   revisa "fn_estados_control(${x%%|*}): nada en rojo" "ninguna" \
-    "$(ed -c "begin; $APP set local statement_timeout = '60s'; set local c4.control_tope = '0'; select coalesce(string_agg(vista, ', ') filter (where ok is not true), 'ninguna') from fn_estados_control('${x%%|*}', ${x#*|}); rollback;" 2>&1 | tail -n 1)"
+    "$(ultima "$(ed -c "begin; $APP set local statement_timeout = '60s'; set local c4.control_tope = '0'; select coalesce(string_agg(vista, ', ') filter (where ok is not true), 'ninguna') from fn_estados_control('${x%%|*}', ${x#*|}); rollback;" 2>&1)")"
 done
 
 echo "== Cada pantalla como en producción (ronda 4 de c6): el tope por reloj en $PROD_RELOJ_MS ms y la API en $PROD_LLAMADA_MS ms (el banco es unas diez veces más rápido); conta.js pide otra vez lo que sale «Sigue»"
@@ -407,7 +415,7 @@ pantalla() {
   while [ -n "$lista" ] && [ $n -lt 9 ]; do
     n=$((n + 1))
     t0=$(date +%s%N)
-    r="$(ed -c "begin; $APP set local c4.control_tope = '$PROD_RELOJ_MS'; select coalesce(string_agg(quote_literal(vista), ', ' order by orden) filter (where ok is null and detalle like 'Sigue:%'), '') || '|' || coalesce(string_agg(vista, '; ') filter (where ok is not true and not (ok is null and coalesce(detalle, '') like 'Sigue:%')), '') from fn_estados_control('$2', $lista); rollback;" 2>&1 | tail -n 1)"
+    r="$(ultima "$(ed -c "begin; $APP set local c4.control_tope = '$PROD_RELOJ_MS'; select coalesce(string_agg(quote_literal(vista), ', ' order by orden) filter (where ok is null and detalle like 'Sigue:%'), '') || '|' || coalesce(string_agg(vista, '; ') filter (where ok is not true and not (ok is null and coalesce(detalle, '') like 'Sigue:%')), '') from fn_estados_control('$2', $lista); rollback;" 2>&1)")"
     t1=$(date +%s%N)
     ms=$(( (t1 - t0) / 1000000 ))
     if grep -qiE 'error|cancel' <<< "$r"; then
@@ -550,7 +558,7 @@ ed -v ON_ERROR_STOP=1 -c "select count(fn_cerrar_periodo(p)) from unnest(array['
   > "$TMP/cierre.out" 2>&1 || { cat "$TMP/cierre.out"; echo "FALLÓ el cierre de 2026" >&2; malos=1; }
 con_telefonos "$DOCS/c4-pruebas.sql" "c4-pruebas (2026 cerrado)"
 revisa "fn_estados_control(hoy) con 2026 cerrado: nada en rojo" "ninguna" \
-  "$(ed -c "begin; $APP set local c4.control_tope = '0'; select coalesce(string_agg(vista, ', ') filter (where ok is not true), 'ninguna') from fn_estados_control('hoy', null); rollback;" 2>&1 | tail -n 1)"
+  "$(ultima "$(ed -c "begin; $APP set local c4.control_tope = '0'; select coalesce(string_agg(vista, ', ') filter (where ok is not true), 'ninguna') from fn_estados_control('hoy', null); rollback;" 2>&1)")"
 
 [ $malos -eq 0 ] && echo "VOLUMEN c4 ok" || echo "VOLUMEN c4 FALLA"
 exit $malos

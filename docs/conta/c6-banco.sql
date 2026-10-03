@@ -739,7 +739,25 @@
 --   · c6-volumen.sh mide también las pantallas de cifras de c4 con el
 --     banco en uso, como en producción (el tope por reloj en 300 ms y
 --     0,8 s por llamada, pidiendo otra vez lo que sale «Sigue»), y acepta
---     MOVS (el año de Edgar: «MOVS=2500 … c6-volumen.sh bd 200»).
+--     MOVS (el año de Edgar: «MOVS=2500 … c6-volumen.sh bd 200»);
+--   · LO FIJO DE CADA «CASAR». Con un año de banco (c6-volumen.sh con 666
+--     por mes, 17.6), c6-pruebas sola tardaba de 41,9 a 42,2 s y su tope
+--     es 40 s (con el c2 y el c4 de antes, lo mismo: no lo traía este
+--     grupo; la suite casa más de doscientas veces). Ahora
+--     fn_banco_contexto_facturas lee las dos cuentas de cobro UNA vez (sin
+--     «materialized», Postgres metía esa consulta dentro de la de las
+--     facturas y llamaba a fn_puente_cuenta_de cuatro veces por línea: de
+--     35 a 40 ms por «Casar» en vez de 15); fn_banco_firma y
+--     fn_banco_apertura_estado buscan el asiento de apertura en el período
+--     de la apertura, el único donde c2 lo deja vivir (lo encuentra el
+--     índice de períodos; antes recorrían el libro: 5 ms por «Casar» cada
+--     una); y fn_banco_casar_interno busca los cargos a los que «llegó su
+--     ticket» por su cuenta y su fecha (antes, con un «or», leía cada
+--     movimiento del banco y su propuesta: de 3 a 4 ms por «Casar» de una
+--     cuenta). Las mismas respuestas: la firma de las propuestas sale
+--     igual (pegado encima del de antes, con 2.313 pendientes, «Casar» no
+--     rehízo ninguna). c6-pruebas sola, ahora, 38,1 s en 17.6 y 32,4 s en
+--     16 (ver EL TIEMPO, abajo).
 --   · EL PEGADO ENCIMA DEL DE PRODUCCIÓN (2026092704, con datos): añade
 --     las columnas conciliaciones.falta y archivos_banco.retirado_el,
 --     _por, _rol y _motivo (solo si faltan), cambia el sha256 único de
@@ -763,9 +781,12 @@
 --     filas); nada de lo guardado cambia. Las propuestas de los cargos con
 --     un ticket esperando en c3 se rehacen en el siguiente «Casar» (su
 --     firma cambia), y las conciliaciones confirmadas no se tocan. Del
---     grupo 4: solo cambian los textos de fn_banco_control y lo que pide
---     la precondición (c2 y c4 2026100201, que se pegan antes); nada de lo
---     guardado.
+--     grupo 4: cambian los textos de fn_banco_control, lo que pide la
+--     precondición (c2 y c4 2026100201, que se pegan antes) y cuatro
+--     consultas de «Casar» (fn_banco_contexto_facturas, fn_banco_firma,
+--     fn_banco_apertura_estado y fn_banco_casar_interno: la misma
+--     respuesta, más barata; la firma de las propuestas sale igual y no se
+--     rehace ninguna); nada de lo guardado.
 --   · EL TIEMPO: c6-pruebas, con las 17 nuevas (117), tarda 16 s en PG16
 --     y 17 s en PG17.6 en el banco limpio. Con un año de banco
 --     (c6-volumen.sh, PG17.6, 2-oct): casar el mes, 2,8 s como mucho (con
@@ -792,8 +813,24 @@
 --     60) y el archivo de 3.000 movimientos (la 53). Casar el mes, de 2,1 a
 --     2,9 s como mucho; la bandeja 0,38 s; conciliar 0,40 s y confirmar
 --     0,41 s; el control entero de un mes 0,59 s (con el cuadre 58);
---     volver a pegar este archivo 2,1 s; fn_banco_verificar 3,2 s. La tabla
---     de abajo es la de la ronda 3 (PG16 y PG17.6).
+--     volver a pegar este archivo 2,1 s; fn_banco_verificar 3,2 s. Con el
+--     grupo 4 (3-oct, las 134; en PG16 y en PG17.6): c6-pruebas tarda 19 s
+--     y 20 s en el banco limpio; con un año de banco, sola 32,4 s y 38,1 s
+--     (antes de lo fijo de «Casar», arriba, de 41,9 a 42,2 s en 17.6) y
+--     con cuatro teléfonos 37,1 s y 43,2 s (la subida más lenta, 2,1 s y
+--     2,5 s). Casar el mes, 2,2 s y 2,0 s como mucho; la bandeja 0,34 s y
+--     0,41 s; conciliar 0,33 s y 0,43 s, y confirmar 0,32 s y 0,33 s; el
+--     control entero de un mes 0,45 s y 0,56 s; volver a pegar este
+--     archivo 1,5 s y 2,0 s; fn_banco_verificar 2,8 s y 3,2 s; con los
+--     meses 13 y 14 sin casar, «Cuadrar» 0,58 s y 0,67 s con uno, 0,85 s y
+--     0,90 s con los dos, y casarlos 2,7 s y 3,1 s. Con el año de Edgar
+--     (200 papeles por mes y 2.473 movimientos, en 17.6): casar el mes
+--     0,8 s como mucho, la bandeja 0,14 s, conciliar 0,18 s, el control
+--     0,29 s, fn_banco_verificar 1,0 s, c6-pruebas sola 26 s; y las
+--     pantallas de cifras de c4 con el banco en uso, como en producción
+--     (el tope por reloj en 300 ms): el Panel en cuatro llamadas (la más
+--     lenta, de 0,49 a 0,52 s), 'hoy' y los estados en dos (de 0,47 a
+--     0,60 s). La tabla de abajo es la de la ronda 3 (PG16 y PG17.6).
 --
 -- EL TIEMPO (banco de pruebas, pruebas/conta/c6-volumen.sh, 27-sep, con
 -- la ronda 3: el libro de c4-volumen, 10.333 asientos, con 2026 ya
@@ -5359,7 +5396,12 @@ language sql
 stable
 set search_path = public, pg_temp
 as $$
-  with k as (select fn_puente_cuenta_de('cxc') as cxc, fn_puente_cuenta_de('retencion_cxc') as ret)
+  -- (k, materializada: las dos cuentas se leen UNA vez. Sin «materialized»,
+  -- Postgres metía la consulta de k dentro de la de abajo y llamaba a
+  -- fn_puente_cuenta_de cuatro veces por cada línea de las facturas: con
+  -- un año de banco, de 35 a 40 ms por «Casar» en vez de 15. Ronda 4,
+  -- grupo 4.)
+  with k as materialized (select fn_puente_cuenta_de('cxc') as cxc, fn_puente_cuenta_de('retencion_cxc') as ret)
   select coalesce(jsonb_agg(jsonb_build_object('id', f.id, 'num', fa.num, 'proyecto_id', fa.proyecto_id,
                                                'fecha', fa.fecha, 's1', f.s1, 's2', f.s2,
                                                -- (ronda 4: la que la app o QuickBooks ya dan por
@@ -5558,8 +5600,13 @@ as $$
               (select count(*) || ':' || coalesce(max(t.ultimos4), '') || ':' || count(*) filter (where t.activa) from tarjetas t),
               (select count(*) filter (where c.activa) from cuentas c),
               -- (ronda 4: la apertura posteada y sus conciliaciones
-              -- confirmadas: el aviso de los primeros días cambia con ellas)
-              (select count(*) from asientos a where a.tipo = 'apertura'),
+              -- confirmadas: el aviso de los primeros días cambia con ellas.
+              -- El asiento de apertura solo vive en el período de la
+              -- apertura —c2 no lo deja en otro—: buscado por él, el índice
+              -- de períodos lo encuentra sin recorrer el libro entero, que
+              -- con un año de banco eran 5 ms de cada «Casar». Grupo 4.)
+              (select count(*) from asientos a
+                where a.tipo = 'apertura' and a.periodo in (select p.periodo from periodos p where p.tipo = 'apertura')),
               (select count(*) from conciliaciones c where c.tipo = 'apertura' and c.estado = 'confirmada'))),
     'cobros', md5(concat_ws('|',
               (select count(*) || ':' || count(c.movimiento_id) || ':' || count(*) filter (where c.estado = 'vigente') from cobros c),
@@ -5802,12 +5849,17 @@ as $$
            when fn_banco_tipo_cuenta(p_cuenta) is distinct from 'banco' then null
            when exists (select 1 from conciliaciones c where c.cuenta = p_cuenta and c.tipo = 'apertura' and c.estado = 'confirmada')
            then null
+           -- (El asiento de apertura, por el período de la apertura, el único
+           -- donde c2 lo deja vivir: lo encuentra el índice de períodos, sin
+           -- recorrer el libro entero en cada «Casar». Grupo 4.)
            when not exists (select 1 from asientos a
                              where a.tipo = 'apertura' and a.camino not in ('reverso', 'reverso_automatico')
+                               and a.periodo in (select p.periodo from periodos p where p.tipo = 'apertura')
                                and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso'))
            then 'sin_apertura'
            when exists (select 1 from asientos a join asiento_lineas l on l.asiento_id = a.id
                          where a.tipo = 'apertura' and l.cuenta = p_cuenta and a.camino not in ('reverso', 'reverso_automatico')
+                           and a.periodo in (select p.periodo from periodos p where p.tipo = 'apertura')
                            and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso'))
            then 'sin_conciliar' end
 $$;
@@ -8361,11 +8413,21 @@ begin
               from fn_banco_tickets_llegados(case when p_cuenta is not null then array[p_cuenta] end, p_mov) t
              where p_desde is null or t.fecha >= p_desde
              group by t.movimiento_id) t;
+    -- (Los de la lista, por su id; y los que ya decían «llegó su ticket»,
+    -- por su cuenta y su fecha, sin repetir los de la lista. Con un «or»
+    -- entre los dos, Postgres leía cada movimiento del banco y su propuesta
+    -- en cada «Casar»: con un año de banco, de 3 a 4 ms por llamada; así,
+    -- con la cuenta pedida, va por su índice. Los mismos movimientos.
+    -- Ronda 4, grupo 4.)
     for m in select * from movimientos_banco x
               where x.id in (select k::uuid from jsonb_object_keys(v_llego) k)
-                 or (x.propuesta->>'motivo' = 'llego_su_ticket' and x.fecha >= v_corte
-                     and (p_mov is null or x.id = p_mov) and (p_cuenta is null or x.cuenta = p_cuenta)
-                     and (p_desde is null or x.fecha >= p_desde)) loop
+             union all
+             select * from movimientos_banco x
+              where x.fecha >= v_corte
+                and (p_mov is null or x.id = p_mov) and (p_cuenta is null or x.cuenta = p_cuenta)
+                and (p_desde is null or x.fecha >= p_desde)
+                and x.propuesta->>'motivo' = 'llego_su_ticket'
+                and not (x.id in (select k::uuid from jsonb_object_keys(v_llego) k)) loop
       if v_llego ? m.id::text then
         -- (Ronda 4: el ticket REPARTIDO entre obras —la misma foto en varios
         -- recibos— cuyas partes suman el cargo se dice como tal, y su botón
