@@ -45,31 +45,40 @@ comprobando si algo ya estaba.
 | 2 | `docs/conta/c2-libro.sql` | Los **10 controles** del libro (`fn_verificar_cadena`), **todos con `ok = true`**: `hash`, `enlace`, `numeracion`, `contadores`, `cuadre`, `reversos`, `periodos`, `triggers`, `cuentas` (dice `"cuentas": 88`) y `permisos`. Uno en `false` = parar y avisar. |
 | 3 | `docs/conta/c3-puentes.sql` | **23 filas**: los 10 `libro · …` y 13 `puentes · …`. Todas en `true` **salvo `puentes · sin_evaluar`**, que la primera vez sale en `false` con la lista de papeles que el puente todavía no miró y `"arreglo": "select fn_puentes_correr();"`. Es lo esperado. `puentes · reglas` sale en `true` y dice cuántas reglas siguen en borrador (`en_borrador`): esas no postean hasta que Edgar las confirme. `puentes · papel` en producción sí mira Storage (en el banco dice «no aplica»). |
 | 4 | `docs/conta/c4-estados.sql` | **9 filas**, cortas a propósito. Cinco `c4 · …`: `vistas` («28 vistas, todas security_invoker…»), `mapeo` («88 cuentas con su fila; sin fila: ninguna»), `apertura`, `jit` («el JIT está apagado para authenticated…») y `c2 y c3 al día` («c2-libro.sql y c3-puentes.sql son de la versión que c4 necesita…»). Y cuatro `estados <período> · …` (el último mes con asientos, o la apertura si no hay): `v_estados_mapeo` («88 filas») y los tres cuadres que mira siempre: `mapeo completo`, `protecciones de c4` y `apertura en el libro`. Todas en `true` **salvo `c4 · apertura` y «apertura en el libro»**, que salen en `false` («todavía no: carga la balanza…», «no hay apertura en el libro…») hasta que se postee la apertura (abajo, «Después de c4: la apertura y lo que se ve»). Es lo esperado. (`c4 · jit` en `false`: el pegado no pudo apagar el JIT para la app; su detalle trae la sentencia, que se pega como dueño. `c4 · c2 y c3 al día` en `false`: dice qué volver a pegar, c2 y después c3.) Una en `false` fuera de esas = parar y avisar. Si al pegarlo sale **MX000** con una lista de «vistas o funciones ajenas»: hay algo construido encima de las vistas de c4 que el pegado borraría; no se pegó nada, avisa. Si sale **55P03** («canceling statement due to lock timeout»): el tablero estaba leyendo; no se pegó nada: **cierra el tablero y vuelve a pegarlo**. Después, en otra pestaña, el control entero: `select * from fn_verificar_cadena();` (los 10 en `true`: c4 no toca el libro) y `select * from fn_estados_control('<el último mes>');` (todo en `true`, salvo «apertura en el libro» hasta la apertura). |
-| 5 | `docs/conta/c6-banco.sql` | **7 filas, todas en `true`**: cuatro `c6 · …` —`tablas` («13 tablas, con la RLS encendida y solo su policy de lectura del dueño»), `vistas` («8 vistas, todas security_invoker, solo SELECT para authenticated»), `funciones de la app` («21 funciones que llama conta.js (anon ninguna); el resto, sin grant a la API») y `en el reparto de c2`— y tres del control del banco a hoy: `banco · v_banco_saldos` («N filas»: una por banco y tarjeta), `banco · cuadre: protecciones del banco` y `banco · cuadre: c2, c3 y c4 al día` (las dos, «bien»). Una en `false` = parar y avisar. Si sale **MX000** («c6-banco NO se aplicó, no se tocó nada…»): falta c2, c3 o c4, o alguno es de antes de esta entrega (c2 o c4 con su marca por debajo de 2026100201, c3 por debajo de 2026092601), y dice cuál volver a pegar; o las huellas del libro no son las del último pegado (el control `triggers` de c2 en rojo); o `es_dueno()` cambió desde que se pegó c2 (el candado que dice quién ve los libros y el banco: el control `permisos` en rojo): se mira eso antes, y si el cambio es bueno se vuelve a pegar c2 y después c6. Si sale **55P03** («lock timeout»): la pantalla del banco estaba leyendo; no se pegó nada: ciérrala y vuelve a pegarlo. |
+| 5 | `docs/conta/c6-banco.sql` | **7 filas, todas en `true`**: cuatro `c6 · …` —`tablas` («14 tablas, con la RLS encendida y solo su policy de lectura del dueño»: desde la ronda 4b, también `banco_cuentas_personales`, las cuentas personales de Edgar dadas de alta), `vistas` («8 vistas, todas security_invoker, solo SELECT para authenticated»), `funciones de la app` («21 funciones que llama conta.js (anon ninguna); el resto, sin grant a la API») y `en el reparto de c2`— y tres del control del banco a hoy: `banco · v_banco_saldos` («N filas»: una por banco y tarjeta), `banco · cuadre: protecciones del banco` y `banco · cuadre: c2, c3 y c4 al día` (las dos, «bien»). Una en `false` = parar y avisar. Si sale **MX000** («c6-banco NO se aplicó, no se tocó nada…»): falta c2, c3 o c4, o alguno es de antes de esta entrega (c2 o c4 con su marca por debajo de 2026100201, c3 por debajo de 2026092601), y dice cuál volver a pegar; o las huellas del libro no son las del último pegado (el control `triggers` de c2 en rojo); o `es_dueno()` cambió desde que se pegó c2 (el candado que dice quién ve los libros y el banco: el control `permisos` en rojo): se mira eso antes, y si el cambio es bueno se vuelve a pegar c2 y después c6. Si sale **55P03** («lock timeout»): la pantalla del banco estaba leyendo; no se pegó nada: ciérrala y vuelve a pegarlo. |
 | 6 | Una línea: `select fn_puentes_correr();` | Un solo valor (jsonb) con `"desde": "2026-10-01"`, cuántos papeles quedaron en cada estado (`contabilizado`, `pendiente`, `espera`, `no_aplica`…) y **`"errores": 0`**. |
 | 7 | Una línea: `select * from fn_puentes_verificar();` | Los **13 controles** de los puentes, **todos en `true`** (ahora también `sin_evaluar`). `bandeja` dice cuántos papeles esperan a Edgar; solo se pone en rojo si el libro rechazó alguno. |
 | 8 | `docs/conta/c2-pruebas.sql` | La tabla `_pruebas`: **83 filas**, todas con `ok = true` (también quedan en `pruebas.c2_resultado`). (La **83**, de la ronda 4 de c6, mide con una función de prueba de unos 4 MB que el control «permisos» ya no relee lo que c4 y c6 sellaron: unos segundos más; sin c6 sale «omitida».) (Con la apertura de verdad ya en el libro, la **61** sale «omitida»; y en cuanto se **cierre el período de la apertura** (`2026-09-APERTURA`, antes que octubre), también la **37** y la **48**, que prueban lo de la apertura abierta. No es un fallo.) |
 | 9 | `docs/conta/c3-pruebas.sql` | La tabla `_pruebas`: **120 filas** (también en `pruebas.c3_resultado`), todas con `ok = true` salvo la **45**, que en producción sale «omitida» (Supabase no deja borrar de Storage por SQL; se prueba en el banco). Con la apertura de verdad ya en el libro, la **115** y la **117** (las que postean una apertura de prueba) también salen «omitida»: no es un fallo. Si no hay ningún perfil activo que no sea el dueño, las pruebas «del equipo» salen con `ok` vacío (`null`) y `obtenido` = «omitida…»: no es un fallo. Las seis del devengo (**28, 57, 67, 74, 77 y 99**) devengan en el primer mes abierto **sin journal de nómina**: con la nómina de octubre a diciembre ya en el libro (paso 3 de «Después de c6») corren en el primero que no lo tenga; si todos los meses abiertos ya lo tienen, salen «omitida» y lo dicen (con journal, el devengo estándar se niega: MX008, la regla de c3); y también si ese mes pasa del tope de fecha de c2 (con la nómina semanal, el mes en curso con su primer journal y el anterior todavía abierto: el mes del devengo sería el de después, y no se puede postear todavía), con la **120** diciendo el tope. No es un fallo. |
 | 10 | `docs/conta/c4-pruebas.sql` | La tabla `_pruebas`: **113 filas**, todas con `ok = true` (la **112** y la **113** son las de la ronda 4 de c6: el tope por reloj del control y lo que c6 selló; corren sin el tope por reloj, `c4.control_tope = 0` al empezar, y se devuelve al final). **Córrelas recién pegado c4 y ANTES de postear la apertura de verdad**: con ella ya en el libro, las **29 a 36, 50, 51, 53, 56, 61, 62, 69, 73, 76, 81, 84, 86, 91, 93, 94, 98, 102, 105 y 107** (las que postean una apertura de prueba) salen «omitida», y no es un fallo. Sin nadie del equipo activo, la **2** y la **38** salen «omitida»; la 38, 55, 56, 57, 58, 64, 77, 79, 80, 82, 89, 101, 103, 109, 111 y 113 también si la app estaba usando justo lo que tocan (esperan 2 s y se saltan), y la **113** sin c6. La **109** (el privilegio MAINTAIN) es de Postgres 17: en producción corre; en el banco con 16 sale «omitida». La **88** en rojo = el JIT sigue encendido para la app (ver el paso 4). La **45** finge «hoy» a mitad de mes (el reloj fingido solo va hacia adelante): corre en el primer mes abierto cuyo día 15 no ha pasado, y sale «omitida» solo si no hay ninguno (antes salía «omitida» del día 16 hasta cerrar el primer mes abierto). Con el banco de c6 ya en uso (asientos del banco en el mes, la caja chica fondeada con un retiro, la nómina de octubre, un ticket de la segunda obra con la apertura todavía sin postear) siguen en verde: la **17** cuenta la caja chica en el efectivo final, la **26** y la **53** miran solo lo de su escenario y la **39** le da fondos al banco antes de medir. Tardan entre 50 s y 80 s en el banco (27-sep; el 25-sep, 40 s; el 3-oct, con las 113, 35 s en 16 y 38 s en 17.6: la máquina del banco varía); **en producción (instancia chica) 5 min 47 s, y el SQL Editor se cansa antes y enseña un error de red: la corrida sigue en el servidor hasta el final.** Espera unos 6 minutos y lee el resultado con `select * from pruebas.c4_resultado order by n;` (la misma tabla, con la hora de la corrida). |
-| 11 | `docs/conta/c6-pruebas.sql` | La tabla `_pruebas`: **134 filas** (la 101 a la 134 son las de la ronda 4: de la 101 a la 117, el casado y la bandeja; de la 118 a la 128, la entrada —el importador y los lotes— y la seguridad; de la 129 a la 133, la apertura y el primer mes; la 134, el tiempo en producción), todas con `ok = true` (también quedan en `pruebas.c6_resultado`, con la hora de la corrida). Usa cuentas de prueba propias (el banco 1098, la reserva 1097 y dos tarjetas ····9996 y ····9995) que se deshacen con cada prueba: ni tus movimientos ni tu apertura se cruzan con ellas, y con el banco ya en uso (lo casado y lo clasificado de verdad, la caja chica fondeada desde el banco, la póliza de QuickBooks con su `saldo_corte`) sigue en verde: cada prueba mide lo que hace su escenario. Pueden salir «omitida» (y no es un fallo): la **10** sin dos días del mes sin visitas en el calendario (o sin `eventos` o sin una segunda obra), y la **96** sin tres días seguidos sin visitas; la **22**, la **46** y la **88** cuando octubre ya está cerrado (prueban la amortización del primer mes) **o cuando ya amortizaste un mes posterior con octubre abierto** (la marcha en paralelo: amortizar octubre entonces se niega, MX008, y es la regla), y la **64**, la **92** y la **99** también (prueban la primera semana y el primer mes después del corte); la **30**, la **63**, la **64**, la **92**, la **99**, la **107**, la **109**, la **110**, la **116** y la **120** si el período de la apertura está cerrado sin asiento de apertura; la **107**, la **109**, la **110** y la **116** cuando el mes abierto más antiguo ya no es el primero después del corte (como la 99), y la **109** también **en cuanto la apertura de verdad esté posteada** (prueba lo de antes de conciliarla, con una apertura de prueba que lleva el banco 1098); la **129** y la **130** (los Undeposited Funds y los préstamos contra la apertura: postean una apertura de prueba con `fn_apertura`) en cuanto la apertura de verdad esté posteada o con la apertura cerrada; la **34** sin nadie del equipo activo; la **47**, la **88**, la **89**, la **95**, la **99**, la **101** y la **133** sin el mes siguiente abierto; la **72** y la **91** sin la tabla `horas`; la **36**, la **37**, la **47**, la **48**, la **67**, la **71**, la **72**, la **73**, la **91**, la **97**, la **118**, la **121**, la **126**, la **131** y la **133** si la app estaba usando lo que tocan (esperan 2 s y se saltan). La **61** (va la última) comprueba que nada quedó. Tardan unos 20 s en el banco (19 s en 16.13 y 20 s en 17.6 el 3-oct, con las 134 —con las 128, 17 s y 18 s—; con el año de Edgar encima —`c6-volumen.sh` con 200 por mes y 2.500 movimientos—, 26 s; con un año de banco encima —666 por mes y 9.990 movimientos—, 32 s en 16 y 38 s en 17.6 el 3-oct, después de lo fijo de cada «Casar» del grupo 4 —antes, de 39 a 42 s según la corrida—; el 2-oct, con 117, 35 s; el 27-sep, con 100, 32 s y 38 s; en producción, calcula tres o cuatro minutos: c4-pruebas tarda allí diez veces lo del banco); si el SQL Editor se cansa, `select * from pruebas.c6_resultado order by n;`. |
+| 11 | `docs/conta/c6-pruebas.sql` | La tabla `_pruebas`: **142 filas** (la 101 a la 134 son las de la ronda 4: de la 101 a la 117, el casado y la bandeja; de la 118 a la 128, la entrada —el importador y los lotes— y la seguridad; de la 129 a la 133, la apertura y el primer mes; la 134, el tiempo en producción; de la 135 a la 142, las de la ronda 4b: el dinero al patrimonio del accionista y tu cuenta personal, la reserva y la tarjeta nuevas antes de su primer estado de cuenta, la conciliación del mes sin la de apertura y el anticipo de una obra), todas con `ok = true` (también quedan en `pruebas.c6_resultado`, con la hora de la corrida). Usa cuentas de prueba propias (el banco 1098, la reserva 1097 y dos tarjetas ····9996 y ····9995) que se deshacen con cada prueba: ni tus movimientos ni tu apertura se cruzan con ellas, y con el banco ya en uso (lo casado y lo clasificado de verdad, la caja chica fondeada desde el banco, la póliza de QuickBooks con su `saldo_corte`) sigue en verde: cada prueba mide lo que hace su escenario. Pueden salir «omitida» (y no es un fallo): la **10** sin dos días del mes sin visitas en el calendario (o sin `eventos` o sin una segunda obra), y la **96** sin tres días seguidos sin visitas; la **22**, la **46** y la **88** cuando octubre ya está cerrado (prueban la amortización del primer mes) **o cuando ya amortizaste un mes posterior con octubre abierto** (la marcha en paralelo: amortizar octubre entonces se niega, MX008, y es la regla), y la **64**, la **92** y la **99** también (prueban la primera semana y el primer mes después del corte); la **30**, la **63**, la **64**, la **92**, la **99**, la **107**, la **109**, la **110**, la **116**, la **120** y la **140** si el período de la apertura está cerrado sin asiento de apertura; la **107**, la **109**, la **110**, la **116** y la **140** cuando el mes abierto más antiguo ya no es el primero después del corte (como la 99), y la **109** y la **140** también **en cuanto la apertura de verdad esté posteada** (prueban lo de antes de conciliarla, con una apertura de prueba que lleva el banco 1098); la **129** y la **130** (los Undeposited Funds y los préstamos contra la apertura: postean una apertura de prueba con `fn_apertura`) en cuanto la apertura de verdad esté posteada o con la apertura cerrada; la **34** sin nadie del equipo activo; la **47**, la **88**, la **89**, la **95**, la **99**, la **101** y la **133** sin el mes siguiente abierto; la **72** y la **91** sin la tabla `horas`; la **36**, la **37**, la **47**, la **48**, la **67**, la **71**, la **72**, la **73**, la **91**, la **97**, la **118**, la **121**, la **126**, la **131** y la **133** si la app estaba usando lo que tocan (esperan 2 s y se saltan). La **61** (va la última) comprueba que nada quedó. Tardan unos 20 s en el banco (19 s en 16.13 y 20 s en 17.6 el 3-oct, con las 134 —con las 128, 17 s y 18 s—; con el año de Edgar encima —`c6-volumen.sh` con 200 por mes y 2.500 movimientos—, 26 s; con un año de banco encima —666 por mes y 9.990 movimientos—, 32 s en 16 y 38 s en 17.6 el 3-oct, después de lo fijo de cada «Casar» del grupo 4 —antes, de 39 a 42 s según la corrida—; el 2-oct, con 117, 35 s; el 27-sep, con 100, 32 s y 38 s; en producción, calcula tres o cuatro minutos: c4-pruebas tarda allí diez veces lo del banco); si el SQL Editor se cansa, `select * from pruebas.c6_resultado order by n;`. |
 
-- **Esta entrega (la ronda 4 de c6, 3-oct): vuelve a pegar c2 (paso 2) y
-  c4 (paso 4), en ese orden, ANTES de c6 (paso 5); c1 y c3 no cambian.**
-  c2 y c4 traen su marca nueva (2026100201) y lo del tiempo en producción
-  (abajo, «La ronda 4 de c6, grupo 4»): el control de cada pantalla de
-  cifras con un tope por reloj (lo que no cabe sale «Sigue» y conta.js lo
-  vuelve a pedir) y sin releer en cada pantalla lo que c6 sella. No tocan
-  el libro ni lo que Edgar configuró; c2 enseña sus 10 controles en
-  `true` y c4 sus 9 filas, como siempre. c6 pegado sin ellos para con
-  MX000 y dice qué volver a pegar (c2-libro.sql y c4-estados.sql), sin
-  tocar nada. Después, las cuatro suites (pasos 8 a 11), cada una sola:
-  83, 120, 113 y 134 filas. La prueba final de la ronda 4 (3-oct; en §6)
-  lo comprobó de cero, con todo pegado dos veces más y encima de lo de
-  producción (d80c9de) con el banco en uso: sin error, nada de lo
-  guardado cambia y las cuatro suites en verde. Encontró dos cosas de la
-  bandeja del banco que quedan por arreglar en c6 (no tocan nada de lo ya
-  guardado): ver los «lo encontró la prueba final» de los pasos 1 y 3 de
-  «Después de c6».
+- **Esta entrega (la ronda 4 y la 4b de c6, 3-oct): encima de lo de
+  producción (d80c9de), vuelve a pegar c2 (paso 2), c4 (paso 4) y c6
+  (paso 5), en ese orden; c1 y c3 no cambian.** c2 y c4 son los de la
+  ronda 4 (su marca 2026100201: lo del tiempo en producción, abajo, «La
+  ronda 4 de c6, grupo 4»: el control de cada pantalla de cifras con un
+  tope por reloj —lo que no cabe sale «Sigue» y conta.js lo vuelve a
+  pedir— y sin releer en cada pantalla lo que c6 sella); la 4b no los
+  cambia. c6 trae la ronda 4 entera y la 4b (marca 2026100301, abajo, «La
+  ronda 4b de c6»): el dinero del banco no va al patrimonio del accionista
+  (2900, 3100, 3200, 1130) sin su motivo escrito, salvo de o a una cuenta
+  personal de Edgar que él dé de alta (`fn_banco_cuenta_personal`, desde
+  el SQL Editor), y ningún botón de la bandeja pulsado tal cual deja el
+  control en rojo. Lo que debe verse: c2, sus 10 controles en `true`; c4,
+  sus 9 filas (en `false` solo «c4 · apertura» y «apertura en el libro»
+  mientras no esté la apertura); c6, sus **7 filas en `true`** (`c6 ·
+  tablas` dice ahora «14 tablas»). Ninguno toca el libro ni lo que Edgar
+  configuró; c6 pegado sin c2 y c4 para con MX000 y dice qué volver a
+  pegar (c2-libro.sql y c4-estados.sql), sin tocar nada. Después, las
+  cuatro suites (pasos 8 a 11), cada una sola: **83, 120, 113 y 142
+  filas**. El primer «Casar» después del pegado rehace las propuestas de
+  lo pendiente (su firma cambia: ningún botón viejo sin motivo se queda en
+  la bandeja). Después, lo fijo del banco (paso 1 de «Después de c6»):
+  da de alta tu cuenta personal (`select fn_banco_cuenta_personal('<sus 4
+  últimos>', 'Chase personal');`) y, cuando se abra la reserva, su número.
+  La prueba final de la ronda 4 (3-oct; en §6) encontró dos cosas de la
+  bandeja del banco; las arregla la 4b (y su prueba, en §6).
 - **Una suite a la vez.** Dos suites corriendo a la vez en la misma base se
   cruzan sus candados: el 27-sep, con c4-pruebas y c6-pruebas lanzadas con
   tres minutos de diferencia, salieron en rojo la 92 de c4 y la 49 de c6
@@ -284,18 +293,36 @@ corto:
    `ajuste_cpa`, `afecta_periodo` `2026-09-APERTURA` y su motivo, contra
    3900)—. Sin la apertura posteada todavía, el cuadre sale en rojo y lo
    dice: los préstamos de antes del corte entran con ella.
-   **La reserva (1030), cuando se abra** (lo encontró la prueba final del
-   3-oct; vale hasta que c6 lo arregle): antes de subir el estado de
-   cuenta de Chase que traiga el primer pase a ella, se da de alta su
-   número una vez, desde el SQL Editor:
-   `select fn_banco_importar_filas('{"origen": "mano", "cuenta": "1030", "ultimos4": "<sus 4 últimos>", "confirmo_cuenta": true, "nombre": "1030: su número", "filas": []}');`.
-   Sin eso, Chase nombra un número que ningún estado de cuenta de la
-   empresa trae todavía, el banco lo toma por una cuenta personal de
-   Edgar y el primer botón del pase es «Para Edgar (su cuenta ····…):
-   distribución · 3200», sin pedir motivo: pulsado, el pase a la reserva
-   queda como distribución y ningún control lo ve. Con el número dado de
-   alta, el pase sale «A 1030» y casa solo con su otro lado cuando se
-   suba el de la reserva (probado el 3-oct).
+   **Tu cuenta personal** (la de Chase u otra a la que pasas dinero de la
+   empresa, o desde la que le metes), una vez, desde el SQL Editor:
+   `select fn_banco_cuenta_personal('<sus 4 últimos>', 'Chase personal de Edgar');`
+   (los 4 últimos como los nombra el banco: «ONLINE TRANSFER TO CHK
+   ...7781» es `'7781'`; se da de baja con
+   `select fn_banco_cuenta_personal('7781', null, false, '<por qué>');`).
+   Con ella dada de alta, el dinero a o desde ella se propone como lo que
+   es —una distribución (3200), un préstamo al accionista (1130) o lo que
+   la empresa te devuelve (2900); al revés, un préstamo tuyo (2900), una
+   aportación (3100)— y sus botones entran sin motivo. Sin darla de alta,
+   la bandeja no la supone tuya: sale «cuenta_desconocida» y cada botón
+   pide su motivo escrito. (Tu tarjeta personal dada de alta en 2900 para
+   tus tickets ya cuenta como personal.) Un número de la empresa no se da
+   de alta como personal (MX004).
+   **La reserva (1030), cuando se abra**, y cualquier cuenta nueva de la
+   empresa antes de su primer estado de cuenta: se da de alta su número
+   una vez, desde el SQL Editor, antes de subir el estado de cuenta de
+   Chase que traiga el primer pase a ella:
+   `select fn_banco_importar_filas('{"origen": "mano", "cuenta": "1030", "ultimos4": "<sus 4 últimos>", "confirmo_cuenta": true, "nombre": "1030: su número", "filas": []}');`
+   (no pone nada en rojo). Con el número dado de alta, el pase sale «A
+   1030», sin motivo, y casa solo con su otro lado cuando se suba el de la
+   reserva. Sin darlo de alta, la bandeja no lo supone tuyo ni de la
+   empresa: «cuenta_desconocida», todo con su motivo, y el texto dice
+   cómo darlo de alta (la reserva, o una tarjeta nueva con
+   `fn_tarjeta_alta`). (Hasta la ronda 4b, ese número se tomaba por tu
+   cuenta personal y el primer botón del pase era «Para Edgar (su cuenta
+   ····…): distribución · 3200», sin motivo.) Si un pase se tomó por otra
+   cosa antes de llegar la reserva, al llegar su estado de cuenta la
+   bandeja lo dice («otro_lado_clasificado»): se des-casa aquel, con su
+   motivo, y los dos casan solos.
 2. **La conciliación de apertura (30-sep)**, con la conciliación de
    QuickBooks de esa fecha, una por cuenta:
    `select fn_conciliacion_apertura('1010', '<saldo del statement>', '[<cheques y depósitos en tránsito>]');`
@@ -311,6 +338,10 @@ corto:
    del banco en QuickBooks y lo demás que la apertura puso en esa cuenta.
    Uno que no se va a depositar nunca (un saldo viejo): su partida con
    `"clase": "error"` y su motivo, y un ajuste a la apertura.
+   Sin ella confirmada, la conciliación del mes (paso 4) no cuadra por lo
+   que QuickBooks tenía en tránsito, y su `falta` lo dice: «falta la
+   conciliación de apertura de 1010…» (o «no está confirmada», con lo que
+   le falta), no «algo del banco no está» (ronda 4b).
 3. **Cada mes, cada cuenta**: el QFX entero entre `$ofx$` y `$ofx$`, y casar:
 
    ```sql
@@ -364,16 +395,17 @@ corto:
    registrada que el banco cobra por otro monto, también («es ella»: la
    diferencia a capital o a interés); el ticket repartido entre obras que
    llega después de clasificar, «Es su ticket (repartido)». El dinero a o
-   desde la cuenta personal de Edgar (el banco nombra «CHK ...7781») sale
-   como distribución o préstamo del accionista; una transferencia a una
-   cuenta propia, ahí, pide su motivo. (Lo encontró la prueba final del
-   3-oct; vale hasta que c6 lo arregle: si ese depósito de la cuenta
-   personal es del mismo monto que una factura abierta, sus botones
-   «préstamo del accionista · 2900» y «Aportación · 3100» entran sin pedir
-   motivo, pero después «cuadre: depósitos nunca a ingreso» sale en rojo
-   —«lo explica la factura #…»—. Al clasificarlo se escribe el motivo,
-   `fn_banco_clasificar(<movimiento>, <sus líneas>, '<por qué es dinero
-   de Edgar>')`, y queda en verde.) Mientras la apertura de un banco no
+   desde tu cuenta personal dada de alta (paso 1; el banco nombra «CHK
+   ...7781») sale como distribución o préstamo del accionista, sin
+   motivo, y el control sigue en verde aunque haya una factura abierta del
+   mismo monto (el asiento dice de qué cuenta personal viene); una
+   transferencia a una cuenta propia, ahí, pide su motivo. (Ronda 4b) Lo
+   que va al patrimonio del accionista sin esa cuenta dada de alta (el
+   «para mí» del cajero, el Zelle de Edgar, un número que no se conoce)
+   pide su motivo escrito: `fn_banco_clasificar(<movimiento>, <sus
+   líneas>, '<por qué>')`. Un depósito que explica una factura abierta o
+   un cobro anotado de su monto no se clasifica ni entra como anticipo de
+   una obra sin su porqué. Mientras la apertura de un banco no
    esté conciliada, un cheque o un depósito de los primeros 30 días lo
    avisa en su propuesta: con la apertura ya posteada, clasificarlo o
    cobrarlo pide motivo (puede ser de septiembre).
@@ -787,6 +819,99 @@ Lo que se hizo distinto de lo que sugería el hallazgo, a propósito:
   producción), y crece con el libro. Con el ritmo de Edgar, se mira antes
   de unos 7.000 asientos (un verificado por mes cerrado, f08).
 
+### La ronda 4b de c6 (3-oct): lo que encontró la prueba final
+
+**Qué se pega**, en este orden, encima de lo de producción (d80c9de):
+`c2-libro.sql` (paso 2: sus **10 controles en `true`**), `c4-estados.sql`
+(paso 4: sus **9 filas**, en `false` solo «c4 · apertura» y «apertura en el
+libro» mientras no esté la apertura) y `c6-banco.sql` (paso 5: sus **7
+filas en `true`**, con «14 tablas»). c2 y c4 son los de la ronda 4 (marca
+2026100201); la 4b solo cambia c6 (marca 2026100301) y c6-pruebas. c1 y c3
+no cambian. Después las cuatro suites, cada una sola: **83, 120, 113 y 142
+filas** en verde. Nada de lo guardado cambia de cifra (probado encima de
+producción con el banco en uso, en 16 y en 17.6: ver §6).
+
+La prueba final de la ronda 4 encontró dos cosas importantes de la bandeja
+del banco, una menor y una observación. Las cuatro se arreglaron con un
+mismo **principio**, en todos los caminos: el dinero del banco que va al
+**patrimonio del accionista** (1130 préstamo al accionista, 2900 préstamo
+del accionista, 3100 aportación, 3200 distribución, el capital) **nunca
+entra con un botón sin su motivo escrito ni casa solo**, salvo cuando el
+otro lado es una cuenta personal de Edgar que él dio de alta a propósito;
+**un número que no se conoce no es personal** (la reserva recién abierta,
+una tarjeta nueva, la línea de crédito, un préstamo, una cuenta de ahorro
+en otro banco): se reconoce como de la empresa o se pregunta; y **ningún
+botón de la bandeja pulsado tal cual deja el control en rojo**: si el
+control lo marcaría, el botón pide su motivo o no se ofrece.
+
+- **El depósito desde la cuenta personal del mismo monto que una factura
+  (importante).** El depósito «ONLINE TRANSFER FROM CHK ...7781» por lo
+  mismo que una factura abierta salía «transferencia_personal» con «De
+  Edgar…: préstamo del accionista · 2900» y «Aportación · 3100» sin pedir
+  motivo; pulsado tal cual, «cuadre: depósitos nunca a ingreso» salía en
+  rojo («lo explica la factura #1101»). Ahora la cuenta personal se da de
+  alta (`fn_banco_cuenta_personal`, desde el SQL Editor; la tabla nueva
+  `banco_cuentas_personales`, con su guarda, su historial y el cuadre 53
+  vigilándola): dada de alta, sus botones entran sin motivo y el control
+  sigue en verde (su asiento lo dice); sin darla de alta, sale
+  «cuenta_desconocida» y todo pide su motivo (el 2900 tal cual es MX008;
+  con su motivo, entra en verde). Pruebas: la **135** (x13b y x13c de la
+  prueba final), la **136** (el registro) y la **113** (ahora con la
+  cuenta dada de alta).
+- **El primer pase a la reserva recién abierta (importante).** Antes de su
+  primer estado de cuenta, su número no era de nadie y se tomaba por la
+  cuenta personal: el primer botón era «Para Edgar (su cuenta ····1097):
+  distribución · 3200», sin motivo, el control en verde, y cuando llegaba
+  la reserva su +5,000 proponía «Desde 1010» sin decir que el pase se
+  había tomado por una distribución. Ahora es «cuenta_desconocida» (las
+  cuentas propias primero, todo con su motivo, y el texto dice cómo dar de
+  alta el número); el número dado de alta antes con un lote vacío
+  (`"confirmo_cuenta": true`, paso 1 de «Después de c6»: ya no es un
+  remedio provisional, es el camino) hace del pase «A 1030», sin motivo,
+  y casa solo al llegar la reserva; y si el pase se clasificó antes (con su
+  motivo), la reserva sale «otro_lado_clasificado»: su primer botón
+  des-casa aquel y los dos casan solos. `fn_banco_numero_de` reconoce
+  también el número con que QuickBooks trae la cuenta en el mapeo de la
+  apertura. Pruebas: la **137** (x14, x15 y x16), la **138** (la cola de
+  x14) y la **16** (espera ahora «cuenta_desconocida»).
+- **La conciliación del mes sin la de apertura (menor).** Octubre sin la
+  conciliación de apertura confirmada decía «la diferencia es 1950.00: algo
+  del banco no está (…)»; ahora dice que falta la de apertura (o que no
+  está confirmada, y qué le falta). Prueba: la **140**.
+- **El anticipo de una obra (observación H08).** `fn_banco_cobrar` no
+  registra un anticipo sin su porqué en las notas si el depósito lo
+  explica un cobro anotado o una factura de su monto, o el lote de un
+  procesador (dos o tres facturas por su bruto que caben en sus
+  comisiones). Prueba: la **141**.
+- **Los demás caminos del principio** (la **139**, la **142** y la **121**):
+  la tarjeta nueva antes de su primer statement («CARD ENDING IN 5555»)
+  se pregunta, y dada de alta (`fn_tarjeta_alta`) se propone sin motivo;
+  tu tarjeta personal en 2900 es patrimonio (2900 ya no es una «tarjeta
+  propia»: ni «A 2900» como transferencia ni clasificar a 2900 rechazado);
+  «Para mí · 3200» del cajero y el Zelle de Edgar piden su motivo;
+  clasificar al patrimonio sin motivo es MX008 salvo desde o hacia la
+  personal dada de alta; la devolución con la débito (o cualquier
+  clasificación) de un depósito que explica una factura pide su motivo;
+  R3 no junta solo lo de una personal dada de alta, ni dos lados que
+  nombran el mismo número; R7 y los descriptores no llevan nada solo al
+  patrimonio; un préstamo no vive en 2900; y la 121 pone una cuenta
+  personal por fuera de su función (el cuadre 53 la dice). La **119**
+  clasifica ahora su depósito al desembolso de la línea de crédito (2510).
+
+**De paso, el tiempo**: la duda de cada cuenta en la bandeja
+(`fn_banco_transferencia_dudosa`) se calculaba tres veces por cuenta, en
+sql, planeada en cada llamada: la propuesta del pago de una tarjeta tardaba
+100 ms. Ahora el otro lado se lee una vez (`fn_banco_otro_lado`, en
+plpgsql) y la propuesta tarda 3 ms; «Casar» de un pago de tarjeta, 51 ms
+(antes 75). c6-pruebas, con las 8 nuevas: ⟨TIEMPO_LIMPIO⟩; con un año de
+banco encima (`c6-volumen.sh`): ⟨TIEMPO_VOLUMEN⟩.
+
+**Lo que se vio y no se tocó**: `fn_banco_cheque_num` lee «TO CHK
+...7781» como el cheque 7781 (CHK también es «checking»); en los primeros
+30 días, con la apertura sin conciliar, esa transferencia lleva el aviso
+de la apertura como un cheque. No pone nada al patrimonio ni en rojo;
+cambiarlo cambia cómo se leen los cheques, y queda para otra ronda.
+
 ## 0b. La prueba final en el banco, de cero
 
 Lo mismo que los pasos 1 a 11 de arriba, sin tocar producción. Tarda segundos:
@@ -805,7 +930,7 @@ D=../../docs/conta
 #   → PRUEBAS total=120 ok=120 fallan=0 omitidas=0
 #   → PRUEBAS total=113 ok=113 fallan=0 omitidas=0   (en 17.6; en 16, ok=112
 #     omitidas=1: la 109, MAINTAIN, es de Postgres 17)
-#   → PRUEBAS total=134 ok=134 fallan=0 omitidas=0
+#   → PRUEBAS total=142 ok=142 fallan=0 omitidas=0
 
 # Idempotencia: sobre la MISMA base, volver a pegar c1, c2, c3, c4 y c6
 # (dos veces) y las pruebas otra vez; tiene que seguir todo en verde.
@@ -818,7 +943,8 @@ done; done
 # su marca 2026092704), con el banco en uso (un mes de Chase importado,
 # casado, clasificado y su conciliación confirmada, la póliza, la nómina,
 # un ticket de CED), y encima, como Edgar, c2 y c4 nuevos y el c6 nuevo
-# dos veces (en la ronda 4 cambian c2 y c4, grupo 4; c1 y c3 no); las
+# dos veces (en la ronda 4 cambian c2 y c4, grupo 4; en la 4b solo c6; c1
+# y c3 no); las
 # cuatro suites en verde, cada una sola. La foto de los movimientos, los
 # casados, las conciliaciones, el historial, los saldos, el mapeo de c4,
 # los períodos y los puentes, igual antes y después del pegado.
@@ -860,8 +986,8 @@ verde: c2 con la 61 «omitida» (y, con la apertura ya cerrada, la 37 y la
 48), c3 con la 115 y la 117 «omitidas» (más la
 45 en producción), c4 con la 29 a la 36, 50, 51, 53, 56, 61,
 62, 69, 73, 76, 81, 84, 86, 91, 93, 94, 98, 102, 105 y 107 «omitidas»,
-c6 con la 109, la 129 y la 130 «omitidas» (postean una apertura de
-prueba; su prueba 30 usa entonces la apertura de verdad), nada en
+c6 con la 109, la 129, la 130 y la 140 «omitidas» (postean una apertura
+de prueba; su prueba 30 usa entonces la apertura de verdad), nada en
 rojo. Y con el reloj del servidor después del día 15 del primer mes
 abierto (3-oct: un cluster 17.6 bajo libfaketime, `FAKETIME=+17d`), las
 cuatro suites también en verde: la 45 de c4 corre en noviembre (antes
