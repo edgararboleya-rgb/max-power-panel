@@ -90,8 +90,10 @@ comprobando si algo ya estaba.
   los tres; c6 (el banco) necesita los cuatro. Las pruebas (8 a 11) van
   siempre después de los cinco: c2, c3 y c4 tienen que seguir en verde con
   c6 pegado (lo están).
-- **c2, c3 y c4 ya están pegados en producción: vuelve a pegarlos (pasos 2,
-  3 y 4) antes de c6.** Traen, cada uno, un cambio pequeño para el banco
+- *(Historia: la primera entrega de c6, ya pegada en producción el 27-sep;
+  lo que se pega HOY es el punto de arriba, «Esta entrega».)* **c2, c3 y c4
+  ya estaban pegados en producción: se volvieron a pegar (pasos 2, 3 y 4)
+  antes de c6.** Traían, cada uno, un cambio pequeño para el banco
   («CAMBIOS PARA c6» en su cabecera) y su marca nueva (c2 2026092701, c3
   y c4 2026092601): c2 conoce las funciones del banco en su reparto y en
   sus huellas (su control `permisos` las vigila), `fn_reversar` sobre un
@@ -107,8 +109,9 @@ comprobando si algo ya estaba.
   un candado como mucho medio segundo; si alguien está leyendo el banco,
   para con **55P03** sin pegar nada y sin cortar a nadie
   (`c6-concurrencia.sh`, vuelta 6). Se cierra y se vuelve a pegar.
-- **c2 y c3 ya están pegados en producción: vuelve a pegarlos (pasos 2 y
-  3) antes de c4.** Cambió la forma de sus policies de lectura del dueño
+- *(Historia: la entrega de c4, ya pegada en producción el 26-sep.)* **c2 y
+  c3 ya estaban pegados en producción: se volvieron a pegar (pasos 2 y 3)
+  antes de c4.** Cambió la forma de sus policies de lectura del dueño
   (`using ((select es_dueno()))`: Postgres pregunta una vez por consulta
   quién es, no una por fila). No tocan el libro ni lo que Edgar configuró;
   con 10.000 asientos el control del Panel baja de 6.4 s a 2.4 s. Y traen
@@ -488,9 +491,11 @@ propósito:
 
 ### La ronda 4 de c6, grupo 1 (2-oct): el casado y la bandeja
 
-**Qué se pega**: solo `c6-banco.sql` (paso 5) y después `c6-pruebas.sql`
-(paso 11). c2, c3 y c4 no cambian (siguen sus marcas: c2 2026092701, c3 y
-c4 2026092601): no hay que volver a pegarlos ni correr sus suites por esto.
+**Qué se pega** *(esto era así ANTES del grupo 4, que cambió c2 y c4: lo
+que se pega de la ronda 4 entera es lo del grupo 4, más abajo —c2, c4 y
+c6, en ese orden— y lo que dice «Esta entrega» en §0)*: solo
+`c6-banco.sql` (paso 5) y después `c6-pruebas.sql` (paso 11). c2, c3 y c4
+no cambiaban (sus marcas eran c2 2026092701, c3 y c4 2026092601).
 El pegado de c6 enseña sus **7 filas en `true`** (las de siempre) y su
 marca pasa a **2026100201**; c6-pruebas, **117 filas en verde** (con las
 «omitidas» de la lista del paso 11). Encima del c6 de producción
@@ -532,9 +537,10 @@ de lo que sugería el hallazgo, a propósito:
 
 ### La ronda 4 de c6, grupo 2 (3-oct): la entrada (el importador y los lotes) y la seguridad
 
-**Qué se pega**: lo mismo que el grupo 1 (es la misma entrega y la misma
+**Qué se pega** *(antes del grupo 4; para la ronda entera, ver el grupo
+4)*: lo mismo que el grupo 1 (es la misma entrega y la misma
 marca, **2026100201**): solo `c6-banco.sql` (paso 5) y después
-`c6-pruebas.sql` (paso 11); c2, c3 y c4 no cambian. c6-pruebas, **128
+`c6-pruebas.sql` (paso 11); c2, c3 y c4 no cambiaban. c6-pruebas, **128
 filas en verde** (con las «omitidas» de la lista del paso 11). Encima del
 c6 de producción (2026092704) con el banco en uso entra sin tocar nada de
 lo guardado: añade un índice (las marcas «quitada:») y tres funciones
@@ -586,11 +592,12 @@ de lo que sugería el hallazgo, a propósito:
 
 ### La ronda 4 de c6, grupo 3 (3-oct): la apertura y el primer mes
 
-**Qué se pega**: lo mismo que los grupos 1 y 2 (es la misma entrega y la
+**Qué se pega** *(antes del grupo 4; para la ronda entera, ver el grupo
+4)*: lo mismo que los grupos 1 y 2 (es la misma entrega y la
 misma marca, **2026100201**): `c6-banco.sql` (paso 5; enseña sus **7 filas
 en `true`**, las de siempre) y después `c6-pruebas.sql` (paso 11): **133
 filas en verde**, con las «omitidas» de la lista del paso 11. c2, c3 y c4
-no cambian (no se vuelven a pegar). De las pruebas cambió también
+no cambiaban (hasta el grupo 4). De las pruebas cambió también
 `c4-pruebas.sql` (solo su prueba 45): conviene correrla otra vez (paso
 10, **111 filas**), ya sin la 45 «omitida» después del día 15. Encima del
 c6 de producción (2026092704) con el banco en uso entra sin tocar nada de
@@ -856,11 +863,15 @@ La del 26-sep (con c6) también, en 16 y en 17.6: c6-pruebas termina con
 su propia foto (la 61: el libro, los papeles, el banco y su historial, las
 reglas, los contadores, las secuencias, los eventos y las huellas de c2 y
 del banco), igual a la del principio.
-Al VOLVER a pegar c1–c4 encima, lo único que cambia es lo que tiene que
-cambiar: la hora del sello en el comentario de `fn_libro_huellas()` y de
-`fn_estados_huellas()` («selladas por el último pegado, el … (Miami)») y
-los oid de las vistas de c4 (el pegado las rehace); filas, secuencias,
-definiciones y permisos, iguales.
+Al VOLVER a pegar c1–c4 (y c6) encima, lo único que cambia es lo que tiene
+que cambiar: la hora del sello en el comentario de `fn_libro_huellas()`,
+de `fn_estados_huellas()` y de `fn_banco_huellas()` («selladas por el
+último pegado, el … (Miami)») y los oid de las vistas de c4 (el pegado las
+rehace). Desde la ronda 4 de c6 (grupo 4) cambia también el CUERPO de
+`fn_estados_huellas()`: las huellas de las vistas se toman de su árbol
+guardado (`pg_rewrite`), que lleva esos oid, y el pegado las vuelve a
+sellar (comprobado el 3-oct: es la única definición que cambia). Filas,
+secuencias, las demás definiciones y los permisos, iguales.
 
 ## 1. Arrancar el cluster
 
