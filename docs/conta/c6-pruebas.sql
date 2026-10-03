@@ -87,10 +87,10 @@ begin
   -- (Estas pruebas son las de ESTA versión del banco: con una c6-banco.sql
   -- anterior pegada, sus pruebas nuevas saldrían en rojo por lo que falta,
   -- no por un fallo del libro.)
-  if public.fn_banco_version() < 2026092704 then
+  if public.fn_banco_version() < 2026100201 then
     raise exception using
       errcode = 'MX000',
-      message = format('c6-pruebas NO se corrió: la c6-banco.sql pegada es anterior (marca %s; estas pruebas piden 2026092704 o '
+      message = format('c6-pruebas NO se corrió: la c6-banco.sql pegada es anterior (marca %s; estas pruebas piden 2026100201 o '
                        'más). Vuelve a pegar la c6-banco.sql de esta entrega.', public.fn_banco_version());
   end if;
 end $$;
@@ -1387,11 +1387,14 @@ end $$;
 --     (fn_banco_transferencia): se postea con su contrapartida y el
 --     movimiento queda «en tránsito»; cuando llega la reserva, su lado
 --     casa SOLO con ESE asiento (R1) y los dos quedan casados. Nunca dos
---     asientos.
+--     asientos. (Ronda 4: el banco nombra «SAV ····1097» y esa reserva
+--     todavía no trajo su estado de cuenta: no se sabe que el número es de
+--     la empresa, y se propone primero como dinero a una cuenta personal
+--     —«transferencia_personal»—; la transferencia, con su motivo.)
 do $$
 declare
   v_obt text;
-  v_esp text := 'propuesta=transferencia_un_lado antes=en_transito:transferencia despues=casado:transferencia '
+  v_esp text := 'propuesta=transferencia_personal antes=en_transito:transferencia despues=casado:transferencia '
                 'reserva=casado:transferencia mismo_asiento=t asientos_del_pase=1';
   v_m   uuid;
 begin
@@ -5407,7 +5410,10 @@ end $$;
 --     siguiente): R3 los casa con UN asiento fechado el día siguiente al
 --     corte confirmado (con la nota que lo dice), y el saldo en libros de
 --     la confirmada no cambia. Antes el asiento iba el 29, dentro de la
---     confirmada, y el control seguía en verde.
+--     confirmada, y el control seguía en verde. (Ronda 4: el estado de
+--     cuenta de la tarjeta llega hasta el 40, más allá del día 31: si
+--     cortara antes, ese asiento lo dejaría partido y R3 no lo casa solo
+--     —la 102—.)
 do $$
 declare
   v_obt text;
@@ -5431,7 +5437,7 @@ begin
     v_c := fn_conciliar('1098', d + 30, '-15.00');
     perform fn_conciliacion_confirmar((v_c->>'conciliacion')::uuid);
     v_l0 := fn_banco_saldo_libros('1098', d + 30);
-    perform fn_banco_importar_ofx(pg_temp.c6_qfx('tarjeta', '372700000009996', d + 10, d + 30, null, jsonb_build_array(
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('tarjeta', '372700000009996', d + 10, d + 40, null, jsonb_build_array(
               jsonb_build_object('tipo', 'CREDIT', 'fecha', d + 29, 'monto', '500.00', 'id', 'C6R3B', 'nombre', 'ONLINE PAYMENT - THANK YOU'))),
             null, 'c6-pruebas-r3-tarjeta.qfx');
     perform fn_banco_casar_todo('2100-9996');
