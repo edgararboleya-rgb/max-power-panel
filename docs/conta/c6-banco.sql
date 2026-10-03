@@ -5,7 +5,7 @@
 -- Supabase → SQL Editor. Se pega ENTERO, después de c1-plan-de-cuentas.sql,
 -- c2-libro.sql, c3-puentes.sql y c4-estados.sql, DE LA VERSIÓN QUE TRAE
 -- ESTA MISMA ENTREGA (sus marcas: c2 2026092701, c3 y c4 2026092601; ver
--- «CAMBIOS A c2, c3 Y c4», abajo). La marca de este archivo es 2026092704
+-- «CAMBIOS A c2, c3 Y c4», abajo). La marca de este archivo es 2026100201
 -- (fn_banco_version). Si falta alguno o es anterior, para con MX000 y dice qué volver
 -- a pegar, sin tocar nada. Se puede volver a pegar encima de sí mismo las
 -- veces que haga falta: no duplica nada, no pisa lo que Edgar ajustó (un
@@ -66,7 +66,9 @@
 -- (2100-2009); la caja chica 1050 (el efectivo: su «conciliación» es
 -- contarlo). Un archivo dice sus 4 últimos (ACCTID) y va a su cuenta sola:
 -- las tarjetas por la tabla tarjetas de c3, los bancos por el último
--- archivo con esos 4 últimos; el primero, diciéndola (p_cuenta).
+-- archivo con esos 4 últimos; el primero, diciéndola (p_cuenta), con su
+-- aviso; si entró a la que no era, se retira (fn_banco_archivo_retirar,
+-- desde el SQL Editor) y se vuelve a subir a la suya (ronda 4).
 --
 -- =====================================================================
 -- LO QUE LLAMA conta.js (todas con es_dueno() por dentro: el equipo y anon
@@ -119,8 +121,14 @@
 --       {"partida_apertura": "…"} | {"movimiento": "…"} (el otro lado de
 --       una transferencia). Sobre un cargo CLASIFICADO cuyo ticket llegó
 --       después (la bandeja: «llego_su_ticket»), con su ticket ({"recibo"},
---       o su asiento o sus líneas) cambia la clasificación por él (la
---       reversa y casa).
+--       o su asiento o sus líneas; el repartido entre obras, las de todas
+--       sus partes) cambia la clasificación por él (la reversa y casa).
+--       (Ronda 4) {"cobro": "…", "comision": "29.30"}: el cobro con tarjeta
+--       anotado por el bruto y depositado neto; {"cobro": "…", "corrige":
+--       true} con su motivo: el cobro anotado por otro monto se anula y se
+--       registra el bueno con este depósito; {"cuota": "…", "diferencia":
+--       "capital" | "interes"}: la cuota ya registrada, cobrada por otro
+--       monto.
 --   fn_banco_cobrar(p_movimiento uuid, p_aplicaciones jsonb, p_notas text default null)
 --       Un depósito sin cobro: registra su cobro (fn_cobro_registrar de c3)
 --       con este movimiento; p_aplicaciones como en c3 ([{"factura_id",
@@ -137,18 +145,24 @@
 --   fn_banco_clasificar(p_movimiento uuid, p_lineas jsonb, p_motivo text default null)
 --       Lo que no casó con nada: [{"cuenta", "monto"?, "proyecto_id"?,
 --       "cost_code"?, "memo"? …}]. Nunca a ingreso un depósito, ni a una
---       cuenta propia, ni a 2010, 1110, 1120 ni a mano de obra.
+--       cuenta propia, ni a 2010, 1110, 1120 ni a mano de obra. (Ronda 4)
+--       Salvo el cheque devuelto de una factura de QuickBooks (cobrada antes
+--       del corte): {"cuenta": "1110", "factura_id": …}, con su motivo.
+--       Los errores de una línea dicen su número (el de Edgar).
 --   fn_banco_ignorar(p_movimiento uuid, p_motivo text)
 --   fn_banco_duplicado(p_movimiento uuid, p_es_el_mismo boolean, p_motivo text default null)
 --       Un «posible duplicado»: si es el mismo, ignorado. Un cargo
 --       clasificado cuyo ticket llegó: true, es su ticket (como arriba; uno
---       de otro total, no hasta corregir su total); false, otra compra
---       (con su motivo).
+--       de otro total, no hasta corregir su total; el repartido entre
+--       obras, con todas sus partes); false, otra compra (con su motivo).
+--       (Ronda 4) Un movimiento casado que puede ser una partida de la
+--       apertura: false, con su motivo, no lo es.
 --   fn_banco_devolver(p_movimiento uuid, p_cobro uuid, p_motivo text)
 --       Un cheque devuelto: fn_cobro_devolver (c3) con este movimiento. El
 --       cheque de un depósito de varios (su cobro los junta): p_cobro es la
 --       aplicación de la factura que rebotó; se devuelve el cobro y lo que
---       no rebotó se registra otra vez ese día.
+--       no rebotó se registra otra vez ese día (ronda 4: también uno de los
+--       dos cheques de la MISMA factura: la aplicación se parte).
 --   fn_banco_descasar(p_movimiento uuid, p_motivo text)
 --       Deshace un casado (el asiento que puso, lo reversa) y el movimiento
 --       vuelve a la bandeja con su propuesta. Dentro de una conciliación
@@ -182,7 +196,10 @@
 -- motivo, documento) (por qué el saldo escrito del statement no es el que
 -- trae el archivo del banco ese día, con el documento que lo respalda) y
 -- fn_banco_verificar(p_cuentas text[] default null) (la revisión entera;
--- de unas cuentas, si se dicen).
+-- de unas cuentas, si se dicen), y (ronda 4) fn_banco_archivo_retirar(
+-- archivo, motivo) (el estado de cuenta subido a la cuenta que no era:
+-- sus movimientos, ignorados; sus casados, deshechos; y se vuelve a subir a
+-- la suya).
 --
 -- LAS VISTAS (security_invoker: el dueño ve, el equipo lee 0 filas, anon
 -- no las abre; cada cifra con su movimiento_id, su asiento_id/numero y su
@@ -409,6 +426,141 @@
 --     no se vuelve a leer buscando lo ajeno. c6-pruebas, con las 18
 --     pruebas nuevas, sigue en menos de 40 s.
 --
+-- LA RONDA 4 DE CORRECCIONES (2-oct; marca 2026100201): el casado y la
+-- bandeja. Cada arreglo con su prueba en c6-pruebas.sql (entre paréntesis):
+--   · LA TRANSFERENCIA DE FIN DE MES (101). La segunda rama de la decisión
+--     de la ronda 3 (89): fn_banco_tr_fecha (ahora con el monto) ya no
+--     fecha el asiento al día siguiente de la conciliación confirmada de
+--     una cuenta si así deja PARTIDO el estado de cuenta de la otra (su
+--     conciliación de ese mes la trae; una tarjeta sin conciliaciones, el
+--     «hasta» de su archivo: fn_banco_corte_entre). Entonces «Desde …» y
+--     «Hacia …» son MX008 y dicen qué reabrir, R3 no lo casa solo, la
+--     propuesta lo dice («bloqueo») y la conciliación (la explicación y
+--     «falta») nombra la conciliación que hay que reabrir y a quién
+--     des-casar. Antes la Blue del 31-oct cuadraba en 0.00 sin poder
+--     confirmarse nunca, con un «cásalos o clasifícalos» de algo casado.
+--     El asiento empujado guarda por qué (procedencia.fecha_por).
+--   · EL COBRO ANOTADO POR OTRO MONTO (102). El paso 11 propone primero los
+--     cobros libres (con su línea sin casar) de otro monto, de 30 días
+--     antes a 3 después, si ninguno ni varios suman exacto: «neto de su
+--     comisión» (fn_banco_casar_con {cobro, comision}, con el tope de 3.5 %
+--     más 0.30 y su anexo a 6130, como fn_banco_cobrar) o «corrígelo»
+--     ({cobro, corrige}, con su motivo: se anula y se registra el bueno con
+--     este depósito). Registrar otro cobro mientras haya uno así pide su
+--     porqué en las notas (MX008); el MX008 de c3 que mandaba a «update
+--     cobros» dice fn_banco_casar_con. Y en la conciliación, un cobro de
+--     más de 10 días sin su depósito pide su motivo (el cuadre 54 lo
+--     cuenta). Antes salía «sin cobro registrado» y el cobro quedaba en
+--     tránsito para siempre.
+--   · EL REBOTE DE UN DEPÓSITO DE DOS CHEQUES DE LA MISMA FACTURA (103):
+--     fn_banco_devolver parte la aplicación más grande que lo que rebotó
+--     (la elegida o la única): devuelve el cobro y registra otra vez lo que
+--     no rebotó a la misma factura; R9 propone ese botón. Antes no había
+--     camino.
+--   · LA CUOTA DE OTRO MONTO (104): la cuota ya registrada antes que el
+--     banco, cobrada por otro monto (±10 días: redondeada, con un recargo),
+--     se propone «es ella»: fn_banco_casar_con {cuota, diferencia: capital
+--     o interes} anula la registrada y la registra con el cargo. Otra cuota
+--     o clasificarlo con una así libre pide motivo; en la conciliación, la
+--     cuota de más de 10 días sin su cargo pide el suyo.
+--   · LA CUOTA CON UN EXTRA A CAPITAL (105): fn_prestamo_particion pide el
+--     statement solo a menos de 25 días de la anterior o por menos que la
+--     cuota; la cuota más un extra va por la fórmula (el interés del mes y
+--     lo demás a capital), y la propuesta lo dice primero. Antes se tomaba
+--     por un abono y quedaba sin el interés del mes.
+--   · EL TICKET REPARTIDO QUE LLEGA DESPUÉS DE CLASIFICAR (106):
+--     fn_banco_tickets_llegados junta las partes de la misma foto (la
+--     ruta, como R1) que suman el cargo: «Llegó su ticket, repartido entre
+--     N obras», su botón «Es su ticket (repartido)» va primero (con todas
+--     sus partes), fn_banco_duplicado(true) lo acepta y el casado nombra
+--     todos sus recibos (110,111). El cuadre 57 y la conciliación lo dicen;
+--     la de más de 10 días nombra el cargo aunque se haya dicho que no era
+--     (p_todos). Antes cada parte era un ticket de «OTRO total» y el único
+--     botón dejaba el gasto dos veces. (Y la frase «con OTRO total: (el
+--     banco dice …)» ya no sale vacía en el ticket del mismo monto.)
+--   · EL CHEQUE DE QUICKBOOKS QUE REBOTA (107): sin cobro en la app, R9
+--     propone la factura de antes del corte (la que nombra una partida de
+--     la apertura, o la del mismo monto): fn_banco_clasificar admite {la
+--     cuenta por cobrar, factura_id} solo para un depósito devuelto, con
+--     motivo (Dr 1110 con su partida y su obra). Antes solo entraba contra
+--     el ingreso, con la factura cobrada.
+--   · EL LOTE DEL PROCESADOR (108): con el procesador nombrado (QuickBooks
+--     Payments, Stripe, Square), el paso 11 prueba pares y tríos de
+--     facturas con su comisión dentro del tope (primero las que la app ya
+--     da por cobradas).
+--   · LO TRABAJADO ANTES DE LA APERTURA (109): mientras la apertura de un
+--     banco no esté conciliada, la propuesta de un cheque o un depósito de
+--     los primeros 30 días lo avisa (fn_banco_apertura_aviso); con la
+--     apertura posteada y la cuenta en ella, clasificarlo o cobrarlo pide
+--     motivo. La conciliación de apertura y las del mes cuentan como
+--     dudosas (frenan) las partidas que el banco ya trajo y se casaron con
+--     otra cosa, y las nombran (fn_banco_apertura_casadas);
+--     fn_banco_duplicado(false, motivo) dice que no lo es, por la clave de
+--     la partida (fecha, monto y cheque: fn_banco_partida_clave), que no
+--     cambia cuando la conciliación de apertura se vuelve a calcular. Sin
+--     la apertura posteada todavía (hoy), solo se avisa: no frena.
+--   · R7 (110) no vuelve a casar lo que Edgar des-casó (como R1, R2 y R3) y
+--     cede ante una partida fuerte de la apertura (la comisión del wire
+--     del 30-sep): antes cada des-casar dejaba otro asiento y su reverso.
+--   · EL PRIMER ESTADO DE CUENTA EN LA CUENTA EQUIVOCADA (111; es el mismo
+--     hallazgo que el del grupo del importador, arreglado aquí una vez): el
+--     primero de un banco entra con su aviso (el número y el banco que dice
+--     el archivo); el mismo archivo pedido a otra cuenta dice «ya entró …
+--     pero a 1030, no a 1010» y cómo retirarlo; un número que entró una
+--     sola vez no se da por cierto; y fn_banco_archivo_retirar(archivo,
+--     motivo), desde el SQL Editor, lo retira: sus movimientos quedan
+--     ignorados (con rastro), sus casados se deshacen (sus asientos, por su
+--     reverso), su saldo y su número dejan de contar, y el archivo vuelve
+--     a entrar en la suya (el sha256 es único solo entre los vivos).
+--   · LA DEVOLUCIÓN EN LA DÉBITO (112): el abono que nombra el comercio de
+--     un ticket pagado desde esa cuenta propone ir contra la cuenta y la
+--     obra de ese ticket («devolucion_compra»), antes que las facturas, y
+--     entra sin motivo. Antes era el «pago parcial» de una factura.
+--   · LA CUENTA PERSONAL DE EDGAR (113): el número del otro lado que nombra
+--     el banco («TO CHK ...7781», en NAME o en la nota: fn_banco_
+--     otra_cuenta) que no es de ningún estado de cuenta ni tarjeta de la
+--     empresa (fn_banco_numero_de) es «transferencia_personal»: 3200 o 1130
+--     (un retiro), 2900 o 3100 (un depósito, antes que las facturas). Las
+--     cuentas propias van con su motivo, que fn_banco_transferencia exige
+--     (fn_banco_transferencia_dudosa: el banco nombra otra cuenta, o, entre
+--     dos bancos, uno que nunca trajo su estado de cuenta), y R3 no junta
+--     lados cuyo número es de otra cuenta. (Por eso la 16 espera ahora
+--     «transferencia_personal»: la reserva que no trajo su estado de cuenta
+--     no se da por de la empresa.)
+--   · LOS NOMBRES DE DOS LETRAS (114): fn_banco_nombra_alguien cuenta AT&T
+--     (ATT), US o JC, y BANK o MOBILE detrás de un nombre; las de dos
+--     letras del banco (TO, ID, CO, NO…) siguen sin contar.
+--   · «CUADRAR EL MES» (115): v_conciliacion trae n_pide_motivo y «falta»
+--     (la columna nueva conciliaciones.falta, guardada al recalcular), y
+--     con un motivo por dar no está lista y su identidad lo dice.
+--   · LOS BOTONES (116): las opciones de siempre que van detrás de una
+--     partida de la apertura piden su motivo (fn_banco_opcion_motivo, con
+--     el nombre del argumento), y la guarda de 4910 en fn_banco_clasificar
+--     mira NAME y MEMO, como la propuesta. pg_temp.c6_pulsar (c6-pruebas)
+--     pulsa cada opción que no pide nada, con sus argumentos tal cual.
+--   · «LÍNEA 1» (117): lo que c2 rechaza al postear las líneas que escribió
+--     Edgar (fn_banco_clasificar, fn_banco_nomina) dice su número, no el
+--     del asiento (fn_banco_asiento_edgar), con el mismo código.
+--   · LA 89 sube el estado de cuenta de la tarjeta hasta el día 40: cortado
+--     el día 30, su asiento del 31 la dejaría partida y R3 ya no lo casa
+--     solo (la 101).
+--   · EL PEGADO ENCIMA DEL DE PRODUCCIÓN (2026092704, con datos): añade
+--     las columnas conciliaciones.falta y archivos_banco.retirado_el,
+--     _por, _rol y _motivo (solo si faltan), cambia el sha256 único de
+--     archivos_banco por un índice único de los vivos (el mismo dato: hoy
+--     ninguno está retirado), y rehace fn_banco_tickets_llegados y
+--     fn_banco_tr_fecha (con otra firma; internas). Nada de lo guardado
+--     cambia de cifra; las conciliaciones confirmadas no se tocan (su
+--     «falta» se llena al recalcular la siguiente).
+--   · EL TIEMPO: c6-pruebas, con las 17 nuevas (117), tarda 16 s en PG16
+--     y 17 s en PG17.6 en el banco limpio. Con un año de banco
+--     (c6-volumen.sh, PG17.6, 2-oct): casar el mes, 2,8 s como mucho (con
+--     la ronda 3, 2,4 s); la bandeja 0,35 s; conciliar 0,39 s y confirmar
+--     0,37 s; el control 0,43 s; volver a pegar este archivo 2,0 s;
+--     fn_banco_verificar 2,9 s; c6-pruebas sola 34,7 s y con cuatro
+--     teléfonos 39,0 s (la subida más lenta, 2,3 s); con los meses 13 y 14
+--     sin casar, «Cuadrar» 0,65 s y 0,92 s, y casarlos 2,7 s. Todo bajo su
+--     tope. La tabla de abajo es la de la ronda 3 (PG16 y PG17.6).--
 -- EL TIEMPO (banco de pruebas, pruebas/conta/c6-volumen.sh, 27-sep, con
 -- la ronda 3: el libro de c4-volumen, 10.333 asientos, con 2026 ya
 -- cerrado —así lo deja: las pruebas corren en enero de 2027—, y 12 meses
@@ -5053,6 +5205,18 @@ begin
 end $$;
 revoke execute on function public.fn_banco_apertura_aviso(public.movimientos_banco) from public, anon, authenticated, service_role;
 
+-- (Ronda 4) LA CLAVE DE UNA PARTIDA DE LA APERTURA para lo que Edgar dijo
+-- que no es (propuesta.apertura_no): su fecha, su monto y su cheque. No su
+-- id: fn_conciliacion_apertura rehace las partidas cada vez que se llama, y
+-- con el id lo dicho se perdía al volver a calcularla.
+create or replace function public.fn_banco_partida_clave(p_fecha date, p_monto numeric, p_cheque text)
+returns text
+language sql
+immutable
+set search_path = public, pg_temp
+as $$ select format('%s|%s|%s', p_fecha, p_monto, coalesce(nullif(ltrim(btrim(p_cheque), '0'), ''), '')) $$;
+revoke execute on function public.fn_banco_partida_clave(date, numeric, text) from public, anon, authenticated, service_role;
+
 -- (Ronda 4) LAS PARTIDAS DE LA APERTURA QUE EL BANCO YA TRAJO Y SE CASARON
 -- CON OTRA COSA: el banco de octubre se trabajó antes de conciliar la
 -- apertura (la balanza llega días después) y el cheque 1038 se clasificó al
@@ -5074,6 +5238,7 @@ set search_path = public, pg_temp
 as $$
   with pa as (
     select pa.id, pa.fecha, pa.descripcion, nullif(ltrim(pa.cheque, '0'), '') as cheque,
+           fn_banco_partida_clave(pa.fecha, pa.monto, pa.cheque) as clave,
            (pa.monto - coalesce((select sum(mm.monto) from banco_casados bc join movimientos_banco mm on mm.id = bc.movimiento_id
                                   where bc.clase = 'apertura' and bc.deshecho_el is null and bc.referencia = pa.id::text), 0)) as resto
       from conciliacion_partidas pa
@@ -5091,7 +5256,7 @@ as $$
      where pa.resto <> 0
        and ((pa.cheque is not null and fn_banco_cheque_num(m.cheque, m.descripcion) = pa.cheque)
             or (pa.cheque is null and fn_banco_cheque_num(m.cheque, m.descripcion) is null and m.fecha <= fn_puente_corte() + 15))
-       and not coalesce(m.propuesta->'apertura_no' ? pa.id::text, false)),
+       and not coalesce(m.propuesta->'apertura_no' ? pa.clave, false)),
   una as (select distinct on (cand.partida) cand.* from cand order by cand.partida, (cand.chq is not null) desc, cand.fecha, cand.mov)
   select distinct on (una.mov) una.partida, una.mov,
          format('%s del %s por %s («%s») ya está casado (%s%s) y puede ser la partida «%s» del %s: si lo es, %s. Si es otro dinero, '
@@ -9116,9 +9281,12 @@ begin
   -- se casa con ella (se dice cómo); false, con su motivo: no lo es, queda
   -- escrito y ya no se le junta (la conciliación deja de frenar por eso).
   if found and m.estado in ('casado', 'en_transito') then
-    select jsonb_agg(x.partida), min(x.texto) into v_t, v_ap
+    -- (lo dicho va por la clave de la partida —fecha, monto y cheque—: vale
+    -- aunque la conciliación de apertura se vuelva a calcular)
+    select jsonb_agg(distinct fn_banco_partida_clave(p.fecha, p.monto, p.cheque)), min(x.texto) into v_t, v_ap
       from conciliaciones c
       cross join lateral fn_banco_apertura_casadas(c.cuenta, c.id) x
+      join conciliacion_partidas p on p.id = x.partida
      where c.cuenta = m.cuenta and c.tipo = 'apertura' and x.movimiento = m.id;
     if v_t is not null then
       if p_es_el_mismo then
