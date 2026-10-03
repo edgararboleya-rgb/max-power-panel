@@ -953,7 +953,25 @@
 --     fn_banco_deposito_explicado van en plpgsql (sus planes se guardan), y
 --     la bandeja pide la duda de cada cuenta propia UNA vez: escrita en sql
 --     y pedida tres veces por cuenta, la propuesta del pago de una tarjeta
---     tardaba 100 ms (ahora 3 ms; con la de la ronda 4, 4 ms).
+--     tardaba 100 ms (ahora 3 ms; con la de la ronda 4, 4 ms). Y para que
+--     c6-pruebas, con las 8 nuevas, siga bajo sus 40 s con un año de banco
+--     (c6-volumen.sh; ese día este banco de pruebas iba un 8 % más lento
+--     que cuando midió la ronda 4: la suite de la ronda 4 ya tardaba de
+--     41,3 a 41,5 s): una función «language sql» de este archivo no se
+--     mete en la consulta que la llama (todas llevan su search_path) y se
+--     vuelve a leer y a planear cada vez, el 17 % del tiempo de la suite.
+--     Van en plpgsql, con las mismas respuestas, las que más se llaman:
+--     fn_banco_caja, fn_banco_es_propia y fn_banco_tipo_cuenta (el tipo de
+--     cada cuenta propia, en cada «Casar» y en cada contexto),
+--     fn_banco_contexto, fn_banco_contexto_facturas, fn_banco_firma y
+--     fn_banco_pool. El contexto deja fuera las partidas de 2010 ya
+--     saldadas. Y fn_banco_control busca lo ajeno mirando el esquema antes
+--     que el texto de cada función, y sus listas en una tabla hash: su
+--     base, de 54 a 32 ms con un año de banco. Antes y después, en esa
+--     base, dan lo mismo el tipo de cada cuenta, el contexto, la firma, el
+--     pool y el control entero. c6-pruebas en 17.6: 18,5 s (antes 22,2);
+--     con un año de banco, 35,5 s sola y 40,3 s con cuatro teléfonos
+--     (antes, de 41,7 a 42,0 s sola).
 --   · EL PEGADO ENCIMA DEL DE PRODUCCIÓN (d80c9de, con datos, después de c2
 --     y c4 de la ronda 4): crea banco_cuentas_personales (vacía) y las
 --     funciones nuevas (internas y fn_banco_cuenta_personal, del SQL
@@ -968,7 +986,11 @@
 --     cheque 7781 (CHK es también «checking»): en los primeros 30 días, con
 --     la apertura sin conciliar, esa transferencia lleva el aviso de la
 --     apertura como un cheque. No pone nada al patrimonio ni en rojo; queda
---     para otra ronda (cambia cómo se leen los cheques).
+--     para otra ronda (cambia cómo se leen los cheques). Y la «falta» de la
+--     conciliación de apertura con dos o más partidas que el banco trajo y
+--     se casaron con otra cosa las nombra en el orden en que salen
+--     (fn_banco_apertura_casadas no las ordena): dos corridas iguales
+--     pueden decirlas en otro orden. No cambia qué frena ni qué dice.
 --
 -- EL TIEMPO (banco de pruebas, pruebas/conta/c6-volumen.sh, 27-sep, con
 -- la ronda 3: el libro de c4-volumen, 10.333 asientos, con 2026 ya
@@ -10051,10 +10073,15 @@ begin
         into v_expl;
     end if;
     if v_expl is not null then
+      -- (el verbo y el pronombre con lo que lo explica: un cobro, una
+      -- factura o las facturas de un lote)
       raise exception using errcode = 'MX008',
-        message = format('Este depósito lo explica %s: regístralo con ellas (lo que propone la bandeja: fn_banco_cobrar con sus '
-                         'facturas, y la comisión aparte si la hay). Un anticipo de la obra dejaría las facturas abiertas y al cliente '
-                         'con un saldo a favor que no es. Si de verdad es un anticipo, dilo en las notas (p_notas).', v_expl);
+        message = format('Este depósito lo %s %s: regístralo con %s (lo que propone la bandeja: fn_banco_cobrar con sus '
+                         'facturas, o fn_banco_casar_con con su cobro, y la comisión aparte si la hay). Un anticipo de la obra '
+                         'dejaría las facturas abiertas y al cliente con un saldo a favor que no es. Si de verdad es un anticipo, '
+                         'dilo en las notas (p_notas).',
+                         case when v_expl like 'las %' then 'explican' else 'explica' end, v_expl,
+                         case when v_expl like 'las %' then 'ellas' when v_expl like 'la %' then 'ella' else 'él' end);
     end if;
   end if;
   -- (Ronda 4) UN COBRO YA ANOTADO, sin su depósito, de OTRO monto (no más

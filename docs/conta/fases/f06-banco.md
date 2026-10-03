@@ -176,3 +176,24 @@ tránsito, sin tocar 1010.
   el patrón de su Zelle, un QFX real de cada Amex, y el aviso de cuota de
   Supabase (restricción desde el 26-oct).
 
+- **Cuarta ronda (2 y 3-oct), en Opus azul.** Seis lentes (contable,
+  seguridad, operación, rendimiento y dos nuevas: el importador con lo que
+  mandan de verdad Chase, Amex y Plaid, y el primer mes real sobre una copia
+  de producción): 41 hallazgos, **37 confirmados** (17 importantes, 20
+  menores, ninguno bloqueante), corregidos por cuatro correctores en grupos
+  con una prueba por hallazgo. La prueba final de cero encontró dos defectos
+  nuevos en el camino de las transferencias con la cuenta personal (dinero
+  del banco al patrimonio sin pedir motivo), que la **ronda 4b** corrigió con
+  un principio general: el dinero del banco a 2900, 3100 o 3200 nunca entra
+  sin motivo ni se casa solo, salvo desde una cuenta personal que Edgar dio
+  de alta (`banco_cuentas_personales`, `fn_banco_cuenta_personal`).
+  Resultado en el banco de pruebas, en 16 y 17.6: c2-pruebas 83, c3-pruebas
+  120, c4-pruebas 113 y c6-pruebas **142**, todas en verde; idempotente;
+  pegado encima de producción con el banco en uso sin cambiar una cifra.
+  Marcas: c2 y c4 2026100201, c3 2026092601, c6 2026100301. Se pegan c2, c4 y
+  c6 (en ese orden) y las cuatro suites, una a la vez. El ataque final de la
+  4b dejó anotados tres casos importantes y cuatro menores en el mismo
+  terreno (R3 y «Desde …» con números de cuenta desconocidos o personales; un
+  pase de Chase a la reserva propuesto como cobro de una factura), dos de
+  ellos ya presentes antes de la ronda 4; con sus remedios en el README
+  («Después de c6», pasos 1 y 3) mientras llega su arreglo.

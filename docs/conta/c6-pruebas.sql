@@ -141,7 +141,11 @@
 -- también una cuenta personal por fuera de su función (el cuadre 53 la
 -- dice). Los botones de un depósito de los primeros 30 días los marca
 -- además el aviso de la apertura sin conciliar: esas pruebas los pulsan
--- tal cual (pg_temp.c6_pulsar) en vez de mirar solo su marca.
+-- tal cual (pg_temp.c6_pulsar) en vez de mirar solo su marca. Y
+-- pg_temp.c6_montar ya no reescribe los diez descriptores cuando ya están
+-- como vienen en c6-banco.sql (fn_banco_descriptor los escribía igual, con
+-- su historial, en cada prueba: con un año de banco, más de un segundo de
+-- la suite; con lo que la 4b le quitó a c6, la suite sigue bajo sus 40 s).
 -- =====================================================================
 
 create temp table if not exists _pruebas(n int, prueba text, esperado text, obtenido text, ok boolean);
