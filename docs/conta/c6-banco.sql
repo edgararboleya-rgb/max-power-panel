@@ -2,7 +2,10 @@
 -- C6 · El banco — Max Power Electrical Solutions, Inc. (Fase 6, bloque B
 -- de f06: los archivos del banco, el casado, la conciliación, los
 -- préstamos y los prepagados)
--- Supabase → SQL Editor. Se pega ENTERO, después de c1-plan-de-cuentas.sql,
+-- Supabase → SQL Editor. Se pega ENTERO (o en sus dos partes,
+-- c6-banco-parte1.sql y después c6-banco-parte2.sql, que genera
+-- pruebas/conta/partir-c6.py desde este: ver «EL ARCHIVO PARTIDO» en la
+-- ronda 4d), después de c1-plan-de-cuentas.sql,
 -- c2-libro.sql, c3-puentes.sql y c4-estados.sql, DE LA VERSIÓN QUE TRAE
 -- ESTA MISMA ENTREGA (sus marcas: c2 2026100201, c3 2026092601 y c4
 -- 2026100201; ver «CAMBIOS A c2, c3 Y c4», abajo: en la ronda 4 cambiaron
@@ -1142,6 +1145,143 @@
 --     Gold, con la reserva sin abrir). Rompía lo bueno del primer mes: la
 --     Amex llega antes que Chase y «Desde 1010» es la respuesta, sin motivo
 --     (la 85). Se queda como en la 4b: solo entre dos bancos.
+--
+-- LA RONDA 4d DE CORRECCIONES (3-oct; marca 2026100303): EL CONTROL. La
+-- prueba final de la 4c atacó EL CRITERIO por los caminos que no pasan por
+-- fn_banco_lados (sus escenarios L01 a L17 y L02b) y lo encontró: un
+-- asiento escrito a mano, el cobro que c3 registra con su movimiento, una
+-- partida de la apertura, un duplicado dicho «es el mismo»… cada camino
+-- casaba a su manera, y lo que se colaba quedaba casado y EN VERDE. Ahora,
+-- además del freno de cada camino, hay UN control que lo mira todo
+-- después, y la conciliación no se confirma con algo así dentro. Cada
+-- arreglo con su prueba en c6-pruebas.sql (entre paréntesis) y su porqué:
+--   · EL CRITERIO CONTRA EL LIBRO (fn_banco_libro_lado, fn_banco_criterio,
+--     con su contrato en su comentario). Frente a la línea del movimiento,
+--     lo que hay enfrente en su asiento es otra cuenta PROPIA (una
+--     transferencia, el pago de una tarjeta), una DEUDA, el PATRIMONIO del
+--     accionista, el COBRO de un cliente, una partida de la APERTURA, u
+--     OTRA cosa (un gasto, un proveedor). Con lo que dice el banco
+--     (fn_banco_otro_lado) se CONTRADICEN si el libro dice una cuenta propia
+--     o una deuda y el banco nombra otra cuenta de la empresa, la personal
+--     de Edgar, un número que no se conoce, alguien sin número, la tarjeta
+--     de otro emisor o un cheque; si el libro dice un cobro o una partida de
+--     QuickBooks y el banco nombra una cuenta de la empresa o la personal; si
+--     el libro dice el patrimonio y el banco no nombra la personal dada de
+--     alta (EL PRINCIPIO de la 4b); o si el libro dice otra cosa y el banco
+--     nombra una cuenta de la empresa (salvo los intereses de una deuda que
+--     se le paga). Lo coherente no: la personal contra 2900, 3100, 3200 o
+--     1130; un tercero contra su cobro (el «REMOTE ONLINE DEPOSIT» es el
+--     cheque de un cliente); el prestamista contra su deuda.
+--   · EL CONTROL (154). Cualquier casado vivo cuyo banco y cuyo libro se
+--     contradicen sin su motivo escrito —lo casara quien lo casara: R1, R2,
+--     R3, R7, la apertura, la bandeja, un botón de antes, fn_banco_casar_con,
+--     el cobro de c3— sale en ROJO en fn_banco_control (el cuadre 59, «el
+--     otro lado de cada casado», con v_banco_movimientos o v_banco_bandeja:
+--     filas, cuántos; esperadas, 0; «esperaba 0» y cuáles, con cómo
+--     arreglarlo) y en fn_banco_verificar (con su referencia,
+--     fn_banco_criterio_casados: en la revisión entera, además, que la copia
+--     escrita en el control —la app no ejecuta las funciones internas—
+--     cuente lo mismo); y la conciliación de su mes NO SE CONFIRMA (cuenta en
+--     n_pide_motivo, y «falta» dice cuál y cómo). Se arregla des-casándolo
+--     (fn_banco_descasar, con su motivo) o, si es correcto, escribiendo su
+--     motivo UNA vez: fn_banco_casar_con con {"casado": …} (nuevo; sin
+--     motivo 22023, dos veces MX008, con su rastro: la guarda deja cambiar
+--     solo eso, con su marca). Lo casado con la personal cuando lo era no se
+--     pone en rojo si después se da de baja: el casado guarda lo que decía
+--     el banco al casarlo (banco_casados.otro_lado, columna nueva, vacía en
+--     lo de antes). Antes, con el estado final de esos nueve escenarios (y un
+--     pago recibido en una tarjeta casado a mano con una distribución), el
+--     control entero de la 9849564 estaba en verde y la conciliación se
+--     confirmaba (lo comprueba la 154 contra la versión anterior).
+--   · R1 CON UN ASIENTO ESCRITO A MANO (155; L02, L02b, L16). El cruce
+--     exacto casaba solo cualquier asiento del libro: el pase a mano 1010 →
+--     1030 con el dinero que el banco decía venir de la personal de Edgar, el
+--     pago a mano de la Gold con el pago a una ····5555 que nadie conocía, la
+--     aportación a mano con el cheque de un cliente. Ahora casa solo si EL
+--     CRITERIO contra ese asiento no se contradice y el banco lo confirma; si
+--     no, se propone y su «Confirmar cruce con …» pide el motivo (también
+--     fn_banco_casar_con con esas líneas o ese asiento). Un cobro, una cuota,
+--     un ticket o una devolución casan como antes.
+--   · EL COBRO QUE c3 REGISTRA CON SU MOVIMIENTO (156; L03).
+--     fn_cobro_registrar con "movimiento_id" casaba solo («R2 el cobro dice
+--     este movimiento») aunque el banco dijera que el dinero venía de una
+--     cuenta de la empresa: el pase de Chase quedaba como el cobro de la
+--     #1103. Ahora R- mira EL CRITERIO; si se contradice, se propone
+--     («cobro_que_lo_nombra»: es su cobro, con su motivo; o no lo es: anular
+--     ese cobro, con su motivo). Mientras ese cobro siga vigente, su asiento
+--     ya tiene ese dinero: el depósito no se postea otra vez (transferencia,
+--     clasificado o casado con otra cosa: MX008, con motivo o sin él) ni lo
+--     junta ninguna otra regla (R1, R3, los grupos, la apertura); el otro
+--     lado del pase propone anular ese cobro y no ofrece «A …» (fallaría
+--     siempre), y «otro_lado_clasificado» mira también lo casado como cobro.
+--   · LO QUE EL CRITERIO NO LEÍA (157; L06, L13, L14, L15): los 4 últimos
+--     sueltos de la tarjeta personal de Edgar dada de alta en 2900 («AMEX
+--     EPAYMENT ACH PMT 1006»: su cuenta personal); el EMISOR de la tarjeta
+--     que se paga (fn_banco_emisor: si ninguna tarjeta de la empresa es de
+--     ese emisor —las de Edgar son Amex—, es un tercero que el banco nombra,
+--     y R3 no junta el pago a CHASE con el pago recibido en la Gold); un
+--     CHEQUE, que nunca es la otra mitad de una transferencia (no casa con
+--     la línea que puso «Desde 1010», ni la ventana de un cheque vale para
+--     una transferencia); y el nombre de QuickBooks que es solo cifras
+--     («1007», la Gold) no es el número de esa cuenta (fn_banco_numero_de).
+--   · EL DUPLICADO QUE TRAE EL NÚMERO (158; L10). Lo que trae el QFX con el
+--     nombre entero vale para el movimiento que Plaid trajo cortado
+--     («por_duplicado»); «Es el mismo» contra un original casado con otra
+--     cosa pide su motivo (y lo escribe también en su casado); con el
+--     original pendiente, rehace ya su propuesta. La bandeja lo avisa, con
+--     des-casar aquel primero.
+--   · LA PARTIDA DE LA APERTURA Y LA PERSONAL (159; L17). La regla de la
+--     apertura no casa sola una partida en tránsito (un cheque de un
+--     cliente) con lo que llega de una cuenta de la empresa o de la
+--     personal; sus botones van al final y piden el motivo (no son
+--     «fuertes»: no tapan lo que es), y casarla a mano también.
+--   · LA LÍNEA DE CRÉDITO DADA DE ALTA DESPUÉS (160; L01, L01b, L12). El
+--     lote con "confirmo_cuenta" rehace YA las propuestas de lo pendiente de
+--     otras cuentas que nombra ese número (con el candado del casado antes
+--     que el de la cuenta, como fn_banco_archivo_retirar); el desembolso que
+--     una factura abierta explica dice «con su motivo» y su botón lo pide;
+--     y un desembolso va entero a su deuda (a un gasto, con su motivo: los
+--     intereses van en lo que se le paga).
+--   · LOS BOTONES DE ANTES, LA DIRECCIÓN Y EL ORDEN (161; L08, H09). Cada
+--     propuesta lleva la marca de la versión que la hizo, y v_banco_bandeja
+--     no enseña los botones de una de otra versión (lo dice su texto) hasta
+--     el siguiente «Casar»; «Es la transferencia con …» solo en su
+--     dirección (el dinero no llega antes de salir); lo que falta en la
+--     conciliación de apertura, en un orden fijo.
+--   · EL ARCHIVO PARTIDO. Este archivo pasa del 1,2 MB y el SQL Editor de
+--     Supabase puede no dejar pegarlo: pruebas/conta/partir-c6.py lo parte
+--     en docs/conta/c6-banco-parte1.sql y c6-banco-parte2.sql (menos de
+--     650.000 bytes cada una; cortadas entre dos sentencias, al empezar la
+--     sección 5; sin esta cabecera, que es historia). La parte 2 sin la
+--     parte 1 de la misma marca para con MX000 sin tocar nada; las dos
+--     juntas dejan la base igual que el archivo entero (la foto del
+--     catálogo: pruebas/conta/c6-partes.sh), y cada una se puede pegar otra
+--     vez. Este archivo sigue siendo la fuente: las partes se generan.
+--   · EL TIEMPO. EL CONTROL solo mira lo que PUEDE contradecirse (lo que
+--     el banco da por transferencia o por el pago de una tarjeta, lo casado
+--     con la personal, o un asiento con otra cuenta propia o el patrimonio
+--     enfrente) y su consulta no tiene parámetros (guarda su plan); «Casar»
+--     busca lo que reclama un cobro por sus índices. c6-pruebas, con las ocho nuevas (161): unos 21 s en
+--     17.6 de cero; con un año de banco (c6-volumen.sh, 9.990
+--     movimientos), {VOL} (con la 4c, 37,5 s: las ocho nuevas suman unos
+--     2,5 s, y lo demás tarda un poco menos que en la 4c). El control de
+--     cada pantalla del banco, con ese año: {CTL}.
+--   · EL PEGADO. Encima de 9849564 (la 4c): solo este archivo (o sus dos
+--     partes). Encima de d80c9de (producción hoy): c2, c4 y este (c2 y c4
+--     siguen en 2026100201; c3 en 2026092601). Una columna nueva al final de
+--     banco_casados (otro_lado); las mismas 14 tablas, 8 vistas y 21
+--     funciones de la app (v_banco_bandeja cambia por dentro, no sus
+--     columnas); las nuevas, internas. Lo ya casado no se toca ni se
+--     des-casa solo, pero EL CONTROL lo mira: lo que una versión anterior
+--     dejó casado y se contradice sale en rojo, y el README dice qué hacer.
+--   · RECHAZADO: añadir REMOTE a las palabras del banco (fn_banco_nombrado)
+--     para que «REMOTE ONLINE DEPOSIT» no «nombre» a nadie. R3 juntaría ese
+--     depósito con una transferencia como si dijera «entre cuentas propias»;
+--     y no hace falta: contra el libro es un tercero (el cheque de un
+--     cliente), coherente con su cobro y contradictorio con el patrimonio.
+--     Tampoco se des-casa solo, al pegar, lo que una versión anterior casó y
+--     ahora se contradice: lo decide Edgar (EL CONTROL lo dice, con su
+--     arreglo).
 --
 -- EL TIEMPO (banco de pruebas, pruebas/conta/c6-volumen.sh, 27-sep, con
 -- la ronda 3: el libro de c4-volumen, 10.333 asientos, con 2026 ya
@@ -4186,7 +4326,7 @@ begin
     end if;
     v_s := v_c is null;
   else
-    if b = 'propia' and not (p_ol->>'tipo' = 'deuda' and p_monto < 0 and coalesce((p_libro->>'solo_gasto')::boolean, false)) then
+    if b = 'propia' and not (coalesce(p_ol->>'tipo', '') = 'deuda' and p_monto < 0 and coalesce((p_libro->>'solo_gasto')::boolean, false)) then
       v_c := 'contradice';
     end if;
     v_s := v_c is null;
@@ -4273,6 +4413,14 @@ revoke execute on function public.fn_banco_criterio_casado(uuid) from public, an
 -- uno en su tramo), fn_banco_verificar (y comprueba que el cuadre 59 de
 -- fn_banco_control cuenta lo mismo) y las pruebas. Por el índice del
 -- casado vivo; un ticket, una devolución o una regla fija no se miran.
+-- (Solo pasa por EL CRITERIO entero lo que PUEDE contradecirse, sin su
+-- motivo: lo que el banco da por transferencia o por el pago de una
+-- tarjeta —solo ahí nombra un número, a alguien sin número o un emisor—,
+-- lo casado con la cuenta personal de Edgar cuando lo era, o un asiento
+-- que tiene enfrente otra cuenta propia o el patrimonio del accionista
+-- —ahí también cuenta el cheque, o un tercero—. Lo demás —el cobro de un
+-- cliente, un gasto, un proveedor, sin nada de eso— nunca se contradice.
+-- Así, con un año de banco, la revisión entera no tarda 4 s más.)
 create or replace function public.fn_banco_criterio_casados(p_cuenta text default null, p_desde date default null,
                                                             p_hasta date default null)
 returns table (movimiento_id uuid, casado_id uuid, cuenta text, fecha date, monto numeric, descripcion text, clase text,
@@ -4282,16 +4430,46 @@ stable
 set search_path = public, pg_temp
 as $$
 declare
-  r   record;
-  v_c jsonb;
+  r     record;
+  v_c   jsonb;
+  v_ptr text := (select d.patron from banco_descriptores d where d.clave = 'transferencia');
+  v_ppt text := (select d.patron from banco_descriptores d where d.clave = 'pago_tarjeta');
+  -- (los bancos, y las cuentas propias y las del patrimonio, una vez y
+  -- escritas en una consulta —las de fn_banco_tipo_cuenta, fn_banco_es_propia
+  -- y fn_banco_es_accionista—: preguntarlo fila por fila eran 0,35 s con un
+  -- año de banco, y cuenta por cuenta, con sus funciones, 7 ms por llamada,
+  -- y la conciliación la llama en cada cálculo)
+  v_caja text := fn_banco_caja();
+  v_ban text[] := array(select c.codigo from cuentas c
+                         where left(c.codigo, 2) = '10' and c.tipo = 'activo' and c.saldo_normal = 'debe'
+                           and c.regla_obra = 'prohibida' and c.codigo <> v_caja);
+  v_esp text[] := v_ban || array(select c.codigo from cuentas c
+                                  where (left(c.codigo, 5) = '2100-' and c.tipo = 'pasivo' and c.saldo_normal = 'haber'
+                                         and exists (select 1 from tarjetas t where t.cuenta = c.codigo))
+                                     or c.tipo = 'capital' or c.etiqueta_fiscal in ('accionista', 'distribucion'));
+  v_rxt text := (select '(^| )(' || string_agg(t.ultimos4, '|') || ')( |$)' from tarjetas t
+                  where t.activa and t.ultimos4 ~ '^[0-9]{4}$');
 begin
   for r in select m.id, m.cuenta, m.fecha, m.monto, m.descripcion, bc.id as cid, bc.clase, bc.regla
              from banco_casados bc
              join movimientos_banco m on m.id = bc.movimiento_id
+             left join asientos a on a.id = bc.asiento_id
             where bc.deshecho_el is null and bc.clase not in ('recibo', 'devolucion', 'regla')
               and m.estado in ('casado', 'en_transito')
               and (p_cuenta is null or m.cuenta = p_cuenta)
               and (p_desde is null or m.fecha >= p_desde) and (p_hasta is null or m.fecha <= p_hasta)
+              and nullif(btrim(bc.motivo, E' \t\r\n\f' || chr(11)), '') is null
+              and not (a.origen_tabla = 'movimientos_banco' and a.origen_id = m.id::text
+                       and nullif(btrim(a.procedencia->>'motivo_edgar', E' \t\r\n\f' || chr(11)), '') is not null)
+              and (coalesce(m.tipo_banco, '') = 'XFER'
+                   or coalesce(coalesce(m.desc_norm, '') ~* v_ptr, false)
+                   or (m.monto < 0 and m.cuenta = any (v_ban)
+                       and (coalesce(coalesce(m.desc_norm, '') ~* v_ppt, false)
+                            or coalesce(coalesce(m.desc_norm, '') ~ v_rxt, false)))
+                   or bc.otro_lado->>'clase' = 'personal'
+                   or (a.origen_tabla = 'movimientos_banco' and a.origen_id = m.id::text and a.procedencia ? 'cuenta_personal')
+                   or exists (select 1 from asiento_lineas l
+                               where l.asiento_id = bc.asiento_id and l.cuenta <> m.cuenta and l.cuenta = any (v_esp)))
             order by m.cuenta, m.fecha, m.id loop
     v_c := fn_banco_criterio_casado(r.cid);
     if v_c->>'contradice' is not null and v_c->>'motivo' is null then
@@ -5619,6 +5797,8 @@ declare
   v_avisos jsonb := '[]'::jsonb;
   v_registro boolean := false;
   v_res    jsonb;
+  v_mid    uuid;
+  v_nreh   int := 0;
 begin
   perform fn_banco_exigir_dueno();
   if p_lote is null or jsonb_typeof(p_lote) <> 'object' then
@@ -5759,6 +5939,10 @@ begin
   end if;
   if v_conf then
     v_avisos := v_avisos || to_jsonb(format('Edgar confirmó que la cuenta ····%s es de %s.', v_u4, v_cta));
+    -- (ronda 4d: abajo se rehacen las propuestas que nombran ese número, con
+    -- el candado del casado, que va antes que el de la cuenta: el mismo
+    -- orden que fn_banco_archivo_retirar)
+    perform pg_advisory_xact_lock(820261001, hashtext('casar'));
   end if;
   perform pg_advisory_xact_lock(820261001, hashtext('cuenta:' || v_cta));
   v_res := fn_banco_importar_interno(v_cta, v_origen, v_origen, p_lote->>'nombre', v_texto, v_sha,
@@ -5783,6 +5967,28 @@ begin
   -- todo)
   if v_registro then
     v_res := v_res || jsonb_build_object('deuda', v_cta, 'siguiente', 'select fn_banco_casar_todo();');
+  end if;
+  -- (Ronda 4d) EL NÚMERO RECIÉN DADO DE ALTA: las propuestas de lo pendiente
+  -- de OTRAS cuentas que lo nombra (en su descripción o su nota) se rehacen
+  -- ya, como al dar de alta una cuenta personal (fn_banco_cuenta_personal):
+  -- antes la bandeja seguía enseñando hasta el siguiente «Casar» los botones
+  -- de cuando ese número no se conocía (y pulsados fallaban, o lo dejaban
+  -- como otra cosa) (L01). Lo de esta cuenta lo casa su «Casar», como
+  -- siempre.
+  if v_conf and v_u4 ~ '^[0-9]{4}$' then
+    for v_mid in select x.id from movimientos_banco x
+                  where x.estado = 'pendiente' and x.fecha >= fn_puente_corte() and x.cuenta <> v_cta
+                    and (x.desc_norm ~ ('(^| )X*' || v_u4 || '( |$)')
+                         or fn_banco_norm(x.memo) ~ ('(^| )X*' || v_u4 || '( |$)'))
+                  order by x.fecha, x.id loop
+      perform fn_banco_casar_interno(null, null, v_mid, true);
+      v_nreh := v_nreh + 1;
+    end loop;
+    if v_nreh > 0 then
+      v_res := v_res || jsonb_build_object('rehechas', v_nreh,
+                                           'aviso_rehechas', format('Rehecha la propuesta de %s movimiento(s) pendiente(s) de otras '
+                                                                    'cuentas que nombran ····%s.', v_nreh, v_u4));
+    end if;
   end if;
   return v_res;
 end $$;
@@ -7281,11 +7487,21 @@ declare
   v_ops   jsonb := '[]'::jsonb;
   v_part  jsonb := '[]'::jsonb;
   v_n     int := 0;
+  v_crit  text;
   r       record;
   s       record;
 begin
   if m.estado <> 'pendiente' or m.fecha < v_corte or m.fecha > v_corte + 180 or m.monto = 0 then
     return null;
+  end if;
+  -- (Ronda 4d) EL CRITERIO: si el banco dice que este dinero viene de (o va
+  -- a) una cuenta de la empresa o la personal de Edgar, no es la partida de
+  -- QuickBooks (el cheque de un cliente, el cheque a un proveedor): sus
+  -- opciones piden su motivo y no cuentan como «fuertes» (no frenan lo
+  -- demás: lo que es, su préstamo o su pase, va delante).
+  if coalesce(m.tipo_banco, '') = 'XFER' or fn_banco_dice('transferencia', m.desc_norm)
+     or (m.monto < 0 and fn_banco_dice('pago_tarjeta', m.desc_norm)) then
+    v_crit := fn_banco_criterio_libro(m, null, 'apertura')->>'contradice';
   end if;
   for r in
     select pa.id, pa.fecha, (pa.monto - coalesce(x.llego, 0))::numeric(14,2) as resto, pa.monto as total,
@@ -7351,6 +7567,14 @@ begin
   end loop;
   if v_n = 0 then
     v_ops := v_part;
+  end if;
+  if v_crit is not null and jsonb_array_length(v_ops) > 0 then
+    select jsonb_agg(o || jsonb_build_object('pide_motivo', true, 'pide', jsonb_build_array('p_motivo'),
+                                             'texto', (o->>'texto') || case when o->>'texto' like '%(con su motivo)' then ''
+                                                                            else ' (con su motivo)' end) order by n)
+      into v_ops
+      from jsonb_array_elements(v_ops) with ordinality as x(o, n);
+    return jsonb_build_object('opciones', v_ops, 'fuertes', 0, 'contradice', v_crit);
   end if;
   return case when jsonb_array_length(v_ops) > 0 then jsonb_build_object('opciones', v_ops, 'fuertes', v_n) end;
 end $$;
@@ -7619,6 +7843,7 @@ declare
   v_alta   text;
   v_clasif jsonb;
   v_clasif_txt text;
+  v_clasif_recl text[];
   v_nombrado boolean := false;
   v_deuda  jsonb;
   v_deuda_cta text;
@@ -8359,6 +8584,16 @@ begin
              where x.estado = 'pendiente' and x.monto = -m.monto and x.fecha between m.fecha - 10 and m.fecha + 10
                and x.cuenta = any (array(select jsonb_object_keys(k->'tipos'))) and x.cuenta <> m.cuenta
                and (x.posible_duplicado_de is null or x.duplicado = 'no_es_el_mismo')
+               -- (ronda 4d: no el que la app registró como un cobro: abajo, d)
+               and not exists (select 1 from cobros c where c.movimiento_id = x.id::text and c.estado = 'vigente')
+               -- (ronda 4d: en su DIRECCIÓN, como R3: el lado que entra, del día
+               -- en que sale a 10 días después; en una tarjeta, desde 7 días
+               -- antes. Antes, ±10 días: a un depósito de la reserva del 3-nov
+               -- se le ofrecía «la transferencia con 1010 del 9-nov», un retiro
+               -- posterior)
+               and case when m.monto < 0
+                        then x.fecha between m.fecha - (case when k->'tipos'->>x.cuenta = 'tarjeta' then 7 else 0 end) and m.fecha + 10
+                        else x.fecha between m.fecha - 10 and m.fecha + (case when v_tipo = 'tarjeta' then 7 else 0 end) end
                -- (ronda 4: si nombra la otra cuenta y su número es de otra)
                and (v_otra_cta is null or x.cuenta = v_otra_cta)
                -- (el otro lado, con su señal: el abono de la tarjeta que dice
@@ -8453,36 +8688,61 @@ begin
     -- de Chase: se des-casa aquel y se anula su cobro. Antes solo se miraba
     -- lo clasificado: «A 1030» salía sin motivo y 1030 quedaba con el mismo
     -- dinero dos veces.
-    select jsonb_agg(jsonb_build_object(
-                       'texto', format('Des-casar %s de %s del %s por %s («%s», %s): es el otro lado de esta transferencia%s',
-                                       case when x.monto < 0 then 'el retiro' else 'el depósito' end, x.cuenta,
-                                       x.fecha, x.monto, coalesce(x.descripcion, ''),
-                                       case when x.casado_clase = 'cobro' then 'casado como el cobro de un cliente'
-                                            else 'clasificado a ' || x.ctas end,
-                                       case when x.casado_clase = 'cobro' then ' (después anula su cobro: fn_cobro_anular)' else '' end),
-                       'llamar', 'fn_banco_descasar', 'pide_motivo', true, 'pide', jsonb_build_array('p_motivo'),
-                       'args', jsonb_build_object('p_movimiento', x.id))
+    -- (y el que todavía está PENDIENTE porque la app lo registró como el
+    -- cobro de un cliente y EL CRITERIO no lo casó: se anula ese cobro, y los
+    -- dos casan solos)
+    select jsonb_agg(case when x.cobro is not null
+                          then jsonb_build_object(
+                                 'texto', format('Anular el cobro del %s por %s que la app registró con %s de %s del %s («%s»): es el otro '
+                                                 'lado de esta transferencia (con su motivo)', x.cfecha, x.cmonto,
+                                                 case when x.monto < 0 then 'el retiro' else 'el depósito' end, x.cuenta, x.fecha,
+                                                 coalesce(x.descripcion, '')),
+                                 'llamar', 'fn_cobro_anular', 'pide_motivo', true, 'pide', jsonb_build_array('p_motivo'),
+                                 'args', jsonb_build_object('p_cobro', x.cobro))
+                          else jsonb_build_object(
+                                 'texto', format('Des-casar %s de %s del %s por %s («%s», %s): es el otro lado de esta transferencia%s',
+                                                 case when x.monto < 0 then 'el retiro' else 'el depósito' end, x.cuenta,
+                                                 x.fecha, x.monto, coalesce(x.descripcion, ''),
+                                                 case when x.casado_clase = 'cobro' then 'casado como el cobro de un cliente'
+                                                      else 'clasificado a ' || x.ctas end,
+                                                 case when x.casado_clase = 'cobro' then ' (después anula su cobro: fn_cobro_anular)'
+                                                      else '' end),
+                                 'llamar', 'fn_banco_descasar', 'pide_motivo', true, 'pide', jsonb_build_array('p_motivo'),
+                                 'args', jsonb_build_object('p_movimiento', x.id)) end
                      order by abs(x.fecha - m.fecha), x.fecha),
-           string_agg(format('%s de %s del %s por %s («%s») %s (%s)',
+           string_agg(format('%s de %s del %s por %s («%s») %s%s',
                              case when x.monto < 0 then 'el retiro' else 'el depósito' end, x.cuenta, x.fecha, x.monto,
                              coalesce(x.descripcion, ''),
-                             case when x.casado_clase = 'cobro' then 'se casó como el cobro de un cliente'
-                                  else 'se clasificó a ' || x.ctas end, x.numero), '; ' order by abs(x.fecha - m.fecha), x.fecha)
-      into v_clasif, v_clasif_txt
-      from (select x.id, x.cuenta, x.fecha, x.monto, x.descripcion, a.numero, x.casado_clase,
-                   (select string_agg(distinct l.cuenta, ', ') from asiento_lineas l
-                     where l.asiento_id = x.asiento_id and l.cuenta <> x.cuenta) as ctas
-              from movimientos_banco x
-              join asientos a on a.id = x.asiento_id
-             where x.estado = 'casado' and x.casado_clase in ('clasificado', 'cobro') and x.monto = -m.monto
-               and x.fecha between m.fecha - 10 and m.fecha + 10 and x.cuenta <> m.cuenta
-               and x.cuenta = any (array(select jsonb_object_keys(k->'tipos')))
-               and (v_otra_cta is null or x.cuenta = v_otra_cta)
-               and (coalesce(x.tipo_banco, '') = 'XFER' or coalesce(x.desc_norm ~* (k->'pat'->>'transferencia'), false)
-                    or coalesce(x.desc_norm ~* (k->'pat'->>'pago_tarjeta'), false)
-                    or coalesce(x.desc_norm ~* (k->'pat'->>'pago_recibido'), false))
-               and fn_banco_lados(v_ol, m.cuenta, fn_banco_otro_lado(x), x.cuenta)->>'contradice' is null
-             order by abs(x.fecha - m.fecha), x.fecha
+                             case when x.cobro is not null then format('la registró la app como el cobro del %s por %s', x.cfecha, x.cmonto)
+                                  when x.casado_clase = 'cobro' then 'se casó como el cobro de un cliente'
+                                  else 'se clasificó a ' || x.ctas end,
+                             coalesce(' (' || x.numero || ')', '')), '; ' order by abs(x.fecha - m.fecha), x.fecha),
+           array_agg(x.cuenta) filter (where x.cobro is not null)
+      into v_clasif, v_clasif_txt, v_clasif_recl
+      from (select y.* from (
+              select x.id, x.cuenta, x.fecha, x.monto, x.descripcion, a.numero, x.casado_clase,
+                     (select string_agg(distinct l.cuenta, ', ') from asiento_lineas l
+                       where l.asiento_id = x.asiento_id and l.cuenta <> x.cuenta) as ctas,
+                     null::uuid as cobro, null::date as cfecha, null::numeric as cmonto, x.tipo_banco, x.desc_norm, x.estado
+                from movimientos_banco x
+                join asientos a on a.id = x.asiento_id
+               where x.estado = 'casado' and x.casado_clase in ('clasificado', 'cobro') and x.monto = -m.monto
+                 and x.fecha between m.fecha - 10 and m.fecha + 10 and x.cuenta <> m.cuenta
+              union all
+              select x.id, x.cuenta, x.fecha, x.monto, x.descripcion, null, null, null, c.id, c.fecha, c.monto, x.tipo_banco,
+                     x.desc_norm, x.estado
+                from movimientos_banco x
+                join cobros c on c.movimiento_id = x.id::text and c.estado = 'vigente'
+               where x.estado = 'pendiente' and x.monto = -m.monto
+                 and x.fecha between m.fecha - 10 and m.fecha + 10 and x.cuenta <> m.cuenta) y
+             where y.cuenta = any (array(select jsonb_object_keys(k->'tipos')))
+               and (v_otra_cta is null or y.cuenta = v_otra_cta)
+               and (coalesce(y.tipo_banco, '') = 'XFER' or coalesce(y.desc_norm ~* (k->'pat'->>'transferencia'), false)
+                    or coalesce(y.desc_norm ~* (k->'pat'->>'pago_tarjeta'), false)
+                    or coalesce(y.desc_norm ~* (k->'pat'->>'pago_recibido'), false))
+               and fn_banco_lados(v_ol, m.cuenta, fn_banco_otro_lado((select z from movimientos_banco z where z.id = y.id)), y.cuenta)
+                   ->>'contradice' is null
+             order by abs(y.fecha - m.fecha), y.fecha
              limit 3) x;
     if v_clasif is not null then
       return jsonb_build_object(
@@ -8493,11 +8753,16 @@ begin
                         'clasificar este, dejaría el mismo dinero dos veces o un cargo en circulación que el banco no va a traer '
                         'nunca: solo con su motivo. Si de verdad es otro dinero (el cobro de un cliente), dilo con su motivo.',
                         v_clasif_txt),
+        -- (ronda 4d: sin la transferencia a la cuenta cuyo depósito o retiro
+        -- reclama un cobro de la app: fn_banco_transferencia la frena hasta
+        -- que se anule ese cobro, con o sin motivo; sería un botón que falla
+        -- siempre)
         'opciones', v_clasif
                     || coalesce((select jsonb_agg(fn_banco_opcion_motivo(o) || jsonb_build_object(
                                                     'texto', (o->>'texto') || case when o->>'texto' like '%(con su motivo)' then ''
                                                                                    else ' (con su motivo)' end) order by n)
-                                   from jsonb_array_elements(coalesce(v_dest, '[]'::jsonb)) with ordinality as x(o, n)), '[]'::jsonb));
+                                   from jsonb_array_elements(coalesce(v_dest, '[]'::jsonb)) with ordinality as x(o, n)
+                                  where not coalesce(o->'args'->>'p_cuenta' = any (v_clasif_recl), false)), '[]'::jsonb));
     end if;
     v_tr := case when v_contra is not null or v_dest is not null then coalesce(v_contra, '[]'::jsonb) || coalesce(v_dest, '[]'::jsonb) end;
     -- (Ronda 4c) EL PAGO DE UNA DEUDA PROPIA (la línea de crédito, un
@@ -9362,8 +9627,14 @@ begin
   end if;
   if coalesce((v_ap->>'fuertes')::int, 0) = 0 then
     return fn_banco_opciones_principio(m, v_base || jsonb_build_object(
-      'texto', coalesce(v_base->>'texto', '') || ' O una parte de una partida en tránsito de la conciliación de apertura (el banco '
-               'la trajo en partes): si lo es, cásalo con ella con su motivo.',
+      'texto', coalesce(v_base->>'texto', '')
+               || case when v_ap ? 'contradice'
+                       -- (ronda 4d: lo que el banco dice que es de una cuenta de la
+                       -- empresa o de la personal de Edgar)
+                       then format(' O la partida en tránsito de la conciliación de apertura del mismo monto, aunque %s: si de verdad '
+                                   'es ella, cásalo con ella con su motivo.', v_ap->>'contradice')
+                       else ' O una parte de una partida en tránsito de la conciliación de apertura (el banco la trajo en partes): si '
+                            'lo es, cásalo con ella con su motivo.' end,
       'opciones', coalesce(v_base->'opciones', '[]'::jsonb) || (v_ap->'opciones')), p_ctx);
   end if;
   return fn_banco_opciones_principio(m, jsonb_strip_nulls(v_base || jsonb_build_object(
@@ -9658,7 +9929,6 @@ declare
   v_fuerza  boolean;
   v_trf     jsonb;
   v_conc    text;
-  v_recl    uuid[] := '{}';
 begin
   -- Un casado a la vez en todo el banco (ver arriba, los candados).
   perform pg_advisory_xact_lock(820261001, hashtext('casar'));
@@ -9686,12 +9956,10 @@ begin
     -- devolución que la app registró con su movimiento): solo R- lo casa,
     -- con su papel, y si EL CRITERIO lo frena, se propone. Ninguna otra
     -- regla lo junta con otra cosa: el asiento de ese papel ya tiene su
-    -- dinero en el libro (casarlo con un pase lo pondría dos veces).
-    select coalesce(array_agg(distinct mm.id), '{}') into v_recl
-      from (select c.movimiento_id as mid from cobros c where c.movimiento_id is not null and c.estado = 'vigente'
-            union all
-            select d.movimiento_id from cobros_devoluciones d where d.movimiento_id is not null) x
-      join movimientos_banco mm on mm.id::text = x.mid and mm.estado = 'pendiente';
+    -- dinero en el libro (casarlo con un pase lo pondría dos veces). Se
+    -- pregunta en cada regla, movimiento por movimiento, por los índices de
+    -- movimiento_id de cobros y devoluciones (sacarlo antes de todo lo
+    -- pendiente costaba de 2 a 3 ms en cada «Casar» con un año de banco).
     -- Lo que casa con líneas del libro (R1, R2, los grupos, la apertura y
     -- las propuestas) mira solo las cuentas del alcance: una línea de una
     -- cuenta solo casa con un movimiento de esa misma cuenta, y lo mutuo de
@@ -9840,7 +10108,9 @@ begin
         v_clase := fn_banco_clase_de(r.asiento_id);
         -- (ronda 4d: lo que un cobro o una devolución de c3 ya nombra, solo
         -- con su papel: ver arriba)
-        continue when r.mov = any (v_recl) and v_clase not in ('cobro', 'devolucion');
+        continue when v_clase not in ('cobro', 'devolucion')
+                      and (exists (select 1 from cobros c where c.movimiento_id = r.mov::text and c.estado = 'vigente')
+                           or exists (select 1 from cobros_devoluciones d where d.movimiento_id = r.mov::text));
         -- (Ronda 4c) EL CRITERIO: la línea de una transferencia ya posteada
         -- casa sola solo si este movimiento y el que la posteó no se
         -- contradicen y los dos lo confirman (fn_banco_lados_linea); y un
@@ -10010,7 +10280,8 @@ begin
                      where l.origen_tabla = 'cobros' and l.monto > 0 and co.estado = 'vigente' and co.movimiento_id is null
                        and not exists (select 1 from unnest(v_lcand) as u(k) where u.k = l.asiento_id::text || ':' || l.orden)),
              dep as (select p.* from pool p where not exists (select 1 from unnest(v_uno) as u(id) where u.id = p.id)
-                       and not (p.id = any (v_recl))
+                       and not exists (select 1 from cobros c where c.movimiento_id = p.id::text and c.estado = 'vigente')
+                       and not exists (select 1 from cobros_devoluciones d where d.movimiento_id = p.id::text)
                        and not exists (select 1 from banco_casados bc
                                         where bc.movimiento_id = p.id and bc.deshecho_el is not null and bc.clase = 'cobro')),
              combos as (
@@ -10108,7 +10379,8 @@ begin
                          from pool p
                          join ap on ap.cuenta = p.cuenta and ap.monto = p.monto
                         where not exists (select 1 from unnest(v_uno) as u(id) where u.id = p.id)
-                          and not (p.id = any (v_recl))
+                          and not exists (select 1 from cobros c where c.movimiento_id = p.id::text and c.estado = 'vigente')
+                          and not exists (select 1 from cobros_devoluciones d where d.movimiento_id = p.id::text)
                           and not exists (select 1 from banco_casados bc
                                            where bc.movimiento_id = p.id and bc.deshecho_el is not null and bc.clase = 'apertura'
                                              and bc.referencia = ap.id::text)
@@ -10187,7 +10459,8 @@ begin
                   and (mb.posible_duplicado_de is null or mb.duplicado = 'no_es_el_mismo')
                   and abs(mb.monto) in (select alc.x from alc)
                   and not exists (select 1 from uno where uno.id = mb.id)
-                  and not (mb.id = any (v_recl))),
+                  and not exists (select 1 from cobros c where c.movimiento_id = mb.id::text and c.estado = 'vigente')
+                  and not exists (select 1 from cobros_devoluciones d where d.movimiento_id = mb.id::text)),
              sale as (select * from pool where pool.monto < 0 and pool.tipo = 'banco'),
              entra as (select * from pool where pool.monto > 0 and pool.tipo in ('banco', 'tarjeta')),
              tp as (select a.id as mov1, b.id as mov2, a.cuenta as c1, b.cuenta as c2, a.monto as monto1, b.monto as monto2,
@@ -12133,6 +12406,28 @@ begin
                        'transferencia dejaría a %s con una línea que su banco no va a traer nunca. Si de verdad es otro dinero, dilo '
                        'en el motivo.', p_cuenta, v_otro, p_cuenta);
   end if;
+  -- (Ronda 4d) Y SU OTRO LADO, PENDIENTE, LO REGISTRÓ LA APP COMO EL COBRO
+  -- DE UN CLIENTE (c3 con su movimiento; EL CRITERIO no lo dejó casar solo):
+  -- se anula ese cobro y los dos casan solos. Antes «A 1030» entraba sin
+  -- motivo y 1030 tenía el mismo dinero dos veces (el cobro y el pase).
+  v_otro := null;
+  select string_agg(format('%s del %s por %s («%s»), que la app registró como el cobro del %s por %s (%s)', x.id, x.fecha, x.monto,
+                           coalesce(x.descripcion, ''), c.fecha, c.monto, c.id), '; ' order by abs(x.fecha - m.fecha), x.fecha)
+    into v_otro
+    from movimientos_banco x
+    join cobros c on c.movimiento_id = x.id::text and c.estado = 'vigente'
+   where x.cuenta = p_cuenta and x.estado = 'pendiente' and x.monto = -m.monto
+     and x.fecha between m.fecha - 10 and m.fecha + 10
+     and (coalesce(x.tipo_banco, '') = 'XFER' or fn_banco_dice('transferencia', x.desc_norm) or fn_banco_dice('pago_tarjeta', x.desc_norm)
+          or fn_banco_dice('pago_recibido', x.desc_norm))
+     and fn_banco_lados(v_ol, m.cuenta, fn_banco_otro_lado(x), x.cuenta)->>'contradice' is null;
+  if v_otro is not null and fn_banco_limpio(p_motivo) is null then
+    raise exception using errcode = 'MX008',
+      message = format('En %s, su otro lado lo registró la app como el cobro de un cliente: el movimiento %s. Si es este mismo dinero, '
+                       'anula ese cobro (fn_cobro_anular, con su motivo) y los dos casan solos como una transferencia. Otra '
+                       'transferencia dejaría a %s con el mismo dinero dos veces (el cobro y el pase). Si de verdad es otro dinero, '
+                       'dilo en el motivo.', p_cuenta, v_otro, p_cuenta);
+  end if;
   v_otro := null;
   select string_agg(format('%s del %s', l.numero, l.fdoc), ', ' order by l.fdoc, l.numero), min(l.asiento_id::text)
     into v_otro, v_otro_as
@@ -12654,13 +12949,25 @@ begin
   v_ol := fn_banco_otro_lado(m);
   if v_motivo is null and v_ol->>'clase' = 'propia' then
     if v_ol->>'tipo' = 'deuda' then
+      -- (Ronda 4d: sus intereses o un cargo, a su gasto, solo en lo que se le
+      -- PAGA —un retiro—; lo que llega de ella —un depósito— es su
+      -- desembolso, entero a su cuenta. Antes el desembolso de la línea de
+      -- crédito se clasificaba a un gasto sin motivo: la deuda no subía y el
+      -- gasto sí, L12.)
       if exists (select 1 from jsonb_array_elements(p_lineas) x join cuentas c on c.codigo = x->>'cuenta'
-                  where c.codigo <> v_ol->>'cuenta' and c.tipo not in ('gasto', 'otro_gasto')) then
+                  where c.codigo <> v_ol->>'cuenta' and (m.monto > 0 or c.tipo not in ('gasto', 'otro_gasto'))) then
         raise exception using errcode = 'MX008',
-          message = format('El banco dice que el otro lado es ····%s, %s (%s): una deuda de la empresa, dada de alta por su número. Va a '
-                           '%s (y sus intereses o un cargo, a su gasto). Si de verdad es otra cosa, dilo en el motivo.',
-                           v_ol->>'ultimos4', v_ol->>'cuenta',
-                           coalesce((select c.nombre from cuentas c where c.codigo = v_ol->>'cuenta'), 'sin nombre'), v_ol->>'cuenta');
+          message = case when m.monto > 0
+                         then format('El banco dice que este dinero viene de ····%s, %s (%s): una deuda de la empresa, dada de alta '
+                                     'por su número. Es su desembolso: va entero a %s. Si de verdad es otra cosa, dilo en el motivo.',
+                                     v_ol->>'ultimos4', v_ol->>'cuenta',
+                                     coalesce((select c.nombre from cuentas c where c.codigo = v_ol->>'cuenta'), 'sin nombre'),
+                                     v_ol->>'cuenta')
+                         else format('El banco dice que el otro lado es ····%s, %s (%s): una deuda de la empresa, dada de alta por su '
+                                     'número. Va a %s (y sus intereses o un cargo, a su gasto). Si de verdad es otra cosa, dilo en el '
+                                     'motivo.', v_ol->>'ultimos4', v_ol->>'cuenta',
+                                     coalesce((select c.nombre from cuentas c where c.codigo = v_ol->>'cuenta'), 'sin nombre'),
+                                     v_ol->>'cuenta') end;
       end if;
     else
       raise exception using errcode = 'MX008',
@@ -12819,6 +13126,7 @@ declare
   o    movimientos_banco;
   v_t  jsonb;
   v_ap text;
+  v_cr jsonb;
 begin
   perform fn_banco_exigir_dueno();
   if p_es_el_mismo is null then
@@ -12910,7 +13218,7 @@ begin
   if m.posible_duplicado_de is null or m.duplicado is not null then
     raise exception using errcode = 'MX008', message = 'Ese movimiento no está marcado como posible duplicado (o ya se dijo).';
   end if;
-  select * into o from movimientos_banco where id = m.posible_duplicado_de;
+  select * into o from movimientos_banco where id = m.posible_duplicado_de for update;
   perform fn_banco_marca('movimiento:' || m.id);
   if p_es_el_mismo then
     update movimientos_banco
@@ -12919,6 +13227,32 @@ begin
                                   o.monto, o.origen, o.id, coalesce(' ' || fn_banco_limpio(p_motivo), ''))
      where id = m.id;
     perform fn_banco_marca(null);
+    -- (Ronda 4d) LO QUE DICE EL DUPLICADO VALE PARA EL ORIGINAL: EL CRITERIO
+    -- lee el número que trae el QFX con el nombre entero de lo que Plaid
+    -- trajo cortado («por_duplicado»). Si el original ya está casado y eso
+    -- contradice su casado (el pase a ····7781, que es 1030, casado como el
+    -- cheque de un proveedor), no se dice «es el mismo» sin su motivo: se
+    -- des-casa aquel antes, o el motivo dice por qué su casado es correcto y
+    -- queda escrito también en él. Si el original espera en la bandeja, se
+    -- vuelve a mirar con lo que ahora se sabe. Antes el número quedaba en el
+    -- ignorado y el original seguía casado como si nada (L10).
+    if o.estado in ('casado', 'en_transito') and o.casado_id is not null then
+      v_cr := fn_banco_criterio_casado(o.casado_id);
+      if v_cr->>'contradice' is not null and v_cr->>'motivo' is null then
+        if fn_banco_limpio(p_motivo) is null then
+          raise exception using errcode = 'MX008',
+            message = format('Si es el mismo movimiento, lo que dice de su otro lado vale para el del %s por %s (%s), que está casado '
+                             '(%s): %s. Des-casa aquel antes (fn_banco_descasar, con su motivo) y dilo otra vez; o, si su casado es '
+                             'correcto, dilo con su motivo (queda escrito también en su casado).', o.fecha, o.monto, o.id,
+                             o.casado_clase, v_cr->>'contradice');
+        end if;
+        perform fn_banco_marca('motivo:' || o.casado_id);
+        update banco_casados set motivo = fn_banco_limpio(p_motivo) where id = o.casado_id;
+        perform fn_banco_marca(null);
+      end if;
+    elsif o.estado = 'pendiente' then
+      perform fn_banco_casar_interno(null, null, o.id, true);
+    end if;
   else
     update movimientos_banco set duplicado = 'no_es_el_mismo', propuesta = null, estado_motivo = null where id = m.id;
     perform fn_banco_marca(null);
@@ -14170,6 +14504,8 @@ declare
   v_apest  text;
   v_apfal  text;
   v_apsin  text;
+  v_ncri   int := 0;
+  v_critxt text;
 begin
   select * into c from conciliaciones where id = p_conciliacion for update;
   v_tipo := fn_banco_tipo_cuenta(c.cuenta);
@@ -14345,7 +14681,11 @@ begin
   -- las de cada mes, las que fn_conciliacion_items marcó como posible
   -- duplicado. Frenan, como n_dudosas, y «falta» dice cuáles.)
   if c.tipo = 'apertura' then
-    select count(*), string_agg(x.texto, '; ') into v_ndap, v_aptxt from fn_banco_apertura_casadas(c.cuenta, c.id) x;
+    -- (ronda 4d: en un orden fijo —el texto—, como el de las del mes: antes
+    -- salían en el orden en que las leía la consulta y «falta» cambiaba de
+    -- una vez a otra sin que nada cambiara)
+    select count(*), string_agg(x.texto, '; ' order by x.texto, x.partida, x.movimiento) into v_ndap, v_aptxt
+      from fn_banco_apertura_casadas(c.cuenta, c.id) x;
     v_ndu := v_ndu + v_ndap;
   else
     select count(*), string_agg(x.texto, '; ' order by p.fecha)
@@ -14379,7 +14719,24 @@ begin
     into v_npa, v_npt
     from conciliacion_partidas p
    where p.conciliacion_id = c.id and p.lado = 'libro' and nullif(btrim(coalesce(p.motivo, '')), '') is null;
-  v_npm := (case when v_sdif then 1 else 0 end) + v_npa + v_npt;
+  -- (Ronda 4d) EL CONTROL: lo casado de su tramo (desde el corte de la
+  -- última confirmada de la cuenta, o desde el corte de la apertura) cuyo
+  -- lado del banco y cuyo lado del libro se contradicen sin su motivo
+  -- escrito (fn_banco_criterio_casados; fn_banco_control lo pone en rojo):
+  -- no se confirma con eso dentro. Se des-casa (con su motivo) o, si es
+  -- correcto, se escribe su motivo (fn_banco_casar_con con {"casado": …}).
+  if c.tipo = 'normal' then
+    select count(*),
+           string_agg(format('el del %s por %s «%s» (movimiento %s, casado %s): %s', x.fecha, x.monto, coalesce(x.descripcion, ''),
+                             x.movimiento_id, x.casado_id, x.contradice), '; ' order by x.fecha, x.movimiento_id)
+      into v_ncri, v_critxt
+      from fn_banco_criterio_casados(c.cuenta,
+                                     coalesce((select max(cc.fecha_corte) + 1 from conciliaciones cc
+                                                where cc.cuenta = c.cuenta and cc.tipo = 'normal' and cc.estado = 'confirmada'
+                                                  and cc.fecha_corte < c.fecha_corte), fn_puente_corte()),
+                                     c.fecha_corte) x;
+  end if;
+  v_npm := (case when v_sdif then 1 else 0 end) + v_npa + v_npt + v_ncri;
   -- (La partida de la apertura que sigue en tránsito y que el banco sí trajo
   -- ANTES del corte —el statement de la tarjeta cortó antes del 30-sep y lo
   -- de entre su corte y el 30 llega fechado en septiembre, ignorado—: se
@@ -14609,7 +14966,14 @@ begin
                                           'otro total que se clasificó (el gasto dos veces), un cobro o una cuota que llegó por otro '
                                           'monto, una transferencia puesta dos veces? '
                                           'Corrígelo, o di por qué sigue en tránsito (fn_conciliacion_partida, con su motivo)',
-                                          v_npt) end) end;
+                                          v_npt) end,
+                         -- (ronda 4d: EL CONTROL)
+                         case when v_ncri > 0
+                              then format('%s movimiento(s) casado(s) donde lo que dice el banco del otro lado y lo que dice el libro '
+                                          'se contradicen, sin su motivo escrito: %s. Si está mal casado, des-cásalo '
+                                          '(fn_banco_descasar, con su motivo) y cásalo con lo que es; si es correcto, escribe su '
+                                          'motivo: select fn_banco_casar_con(''<movimiento>'', ''{"casado": "<su casado>"}'', '
+                                          '''<por qué es correcto>'')', v_ncri, v_critxt) end) end;
   perform fn_banco_marca('conciliacion:' || c.id);
   update conciliaciones
      set saldo_libros = v_libros, saldo_banco = v_banco, archivo_id = v_arch.id,
@@ -16988,6 +17352,14 @@ revoke execute on function public.fn_banco_huellas_sellar() from public, anon, a
 --                              con todo (p_vistas nulo) o por su nombre:
 --                              ninguna pantalla lo pide y no frena nada;
 --                              es lo de ANTES de cerrar el mes
+--   el otro lado de cada casado  (ronda 4d, EL CONTROL) ningún casado vivo
+--                              cuyo lado del banco (EL CRITERIO) y cuyo
+--                              lado del libro se contradicen sin su motivo
+--                              escrito, lo casara quien lo casara; filas =
+--                              cuántos, esperadas = 0 (con
+--                              v_banco_movimientos o v_banco_bandeja; la
+--                              conciliación de su mes no se confirma y lo
+--                              dice en «falta»)
 -- y SIEMPRE dos más: 'cuadre: protecciones del banco' (sus triggers
 -- encendidos y con su función, la RLS y la policy de cada tabla, los
 -- permisos de tablas, vistas y funciones, sus huellas, y ninguna función
@@ -17017,7 +17389,8 @@ declare
   -- menos)
   v_cuadres text[] := array['cuadre: un movimiento, un casado', 'cuadre: depósitos nunca a ingreso', 'cuadre: archivos intactos',
                             'cuadre: ningún ticket después de clasificar', 'cuadre: conciliaciones confirmadas',
-                            'cuadre: préstamos', 'cuadre: prepagados', 'cuadre: cada cuenta hasta el fin del mes'];
+                            'cuadre: préstamos', 'cuadre: prepagados', 'cuadre: cada cuenta hasta el fin del mes',
+                            'cuadre: el otro lado de cada casado'];
   v_solos   text[] := '{}';
   v_conoce  text[] := array['v_banco_movimientos', 'v_banco_bandeja', 'v_banco_saldos', 'v_conciliacion',
                             'v_conciliacion_partidas', 'v_prestamos', 'v_prepagados'];
@@ -17571,6 +17944,328 @@ begin
     orden := 57; vista := 'cuadre: ningún ticket después de clasificar'; filas := null; esperadas := null;
     ok := cardinality(v_malos) = 0;
     detalle := case when not ok then array_to_string(v_malos, '; ') end;
+    return next;
+  end if;
+
+  -- (Ronda 4d) EL CONTROL: EL OTRO LADO DE CADA CASADO. Ningún casado vivo,
+  -- lo case quien lo case («Casar» con cualquiera de sus reglas, un botón de
+  -- la bandeja —también uno de antes del último pegado—, fn_banco_casar_con,
+  -- un asiento escrito a mano, el cobro que c3 registró con su movimiento,
+  -- una partida de la apertura), cuyo lado del banco (EL CRITERIO: la cuenta
+  -- que nombra, la personal de Edgar, a quién nombra, el emisor de la
+  -- tarjeta que paga, el cheque, lo que dice su duplicado) y cuyo lado del
+  -- libro (lo que hay enfrente en su asiento: otra cuenta propia, una deuda,
+  -- el patrimonio del accionista, el cobro de un cliente, una partida de
+  -- QuickBooks, otra cosa) se contradicen sin su motivo escrito: la regla
+  -- de fn_banco_criterio, con lo coherente fuera (la personal dada de alta
+  -- contra 2900, 3100, 3200 o 1130; un tercero contra su cobro; el
+  -- prestamista contra su deuda). Antes cada camino frenaba lo suyo, y lo
+  -- que se colaba por otro quedaba casado y en verde. Es una COPIA escrita
+  -- de las funciones internas (la app no las ejecuta; ver arriba):
+  -- fn_banco_verificar comprueba que cuenta lo mismo que la referencia
+  -- (fn_banco_criterio_casados), y la conciliación de su mes no se confirma
+  -- con uno así. filas: cuántos hay; esperadas: 0. (Solo pasa por la regla
+  -- entera lo que PUEDE contradecirse —lo mismo que la referencia—, y las
+  -- expresiones regulares van escritas tal cual —las de
+  -- fn_banco_otra_cuenta, fn_banco_otra_tarjeta y las palabras de
+  -- fn_banco_nombrado—: una consulta sin parámetros guarda su plan en la
+  -- sesión. Con un año de banco, mirarlo todo y planearla en cada llamada
+  -- costaba 0,2 s en cada pantalla; así, unos 80 ms. Cada paso, MATERIALIZED:
+  -- planeada entera, como un solo árbol de joins, se llevaba 65 ms en
+  -- planearse; así, 12.)
+  if v_pedidas && array['v_banco_movimientos', 'v_banco_bandeja'] or 'cuadre: el otro lado de cada casado' = any (v_solos) then
+    select count(*), coalesce((array_agg(z.x order by z.cuenta, z.fecha, z.id))[1:20], '{}')
+      into v_cnt, v_malos
+      from (
+        with k as (
+               select (select d.patron from banco_descriptores d where d.clave = 'transferencia') as p_tr,
+                      (select d.patron from banco_descriptores d where d.clave = 'pago_tarjeta') as p_pt,
+                      (select d.patron from banco_descriptores d where d.clave = 'pago_recibido') as p_pr,
+                      coalesce((select mp.cuenta from mapeo_metodo_pago mp where mp.forma = 'efectivo' and mp.cuenta is not null
+                                 order by mp.confirmado_el desc nulls last limit 1), '1050') as caja,
+                      (select pc.cuenta from puente_cuentas pc where pc.rol = 'cxc') as cxc,
+                      (select pc.cuenta from puente_cuentas pc where pc.rol = 'retencion_cxc') as ret,
+                      -- (los 4 últimos de cualquier tarjeta activa, en una sola
+                      -- expresión: el filtro de abajo, sin una consulta por fila)
+                      (select '(^| )(' || string_agg(t.ultimos4, '|') || ')( |$)' from tarjetas t
+                        where t.activa and t.ultimos4 ~ '^[0-9]{4}$') as rx_t),
+             -- (las cuentas propias con estado de cuenta, y su tipo:
+             -- fn_banco_es_propia y fn_banco_tipo_cuenta)
+             pro as materialized (
+               select c.codigo,
+                      case when left(c.codigo, 2) = '10' and c.tipo = 'activo' and c.saldo_normal = 'debe' and c.regla_obra = 'prohibida'
+                           then 'banco' else 'tarjeta' end as tipo
+                 from cuentas c cross join k
+                where (left(c.codigo, 2) = '10' and c.tipo = 'activo' and c.saldo_normal = 'debe' and c.regla_obra = 'prohibida'
+                       and c.codigo <> k.caja)
+                   or (left(c.codigo, 5) = '2100-' and c.tipo = 'pasivo' and c.saldo_normal = 'haber'
+                       and exists (select 1 from tarjetas t where t.cuenta = c.codigo))),
+             -- (y con las del patrimonio del accionista, las que hacen que un
+             -- asiento PUEDA contradecir al banco: ver abajo)
+             esp as materialized (
+               select array(select p.codigo from pro p
+                            union
+                            select c.codigo from cuentas c
+                             where c.tipo = 'capital' or c.etiqueta_fiscal in ('accionista', 'distribucion')) as e),
+             -- (las tarjetas de crédito cuyos 4 últimos sueltos lee el pago
+             -- desde el banco: las de la empresa y la personal en 2900)
+             tcr as materialized (
+               select t.ultimos4 from tarjetas t join cuentas c on c.codigo = t.cuenta
+                where t.activa and t.ultimos4 ~ '^[0-9]{4}$'
+                  and (left(t.cuenta, 5) = '2100-' or (c.tipo = 'pasivo' and c.etiqueta_fiscal = 'accionista'))),
+             -- (las palabras del banco y de una transferencia entre cuentas, de
+             -- fn_banco_nombrado: lo que queda es a quién nombra)
+             pal(rx) as (
+               values ('^(' || 'CHECK|CHK|CHEQUE|ACH|DEBIT|DEBITO|CREDIT|PAYMENT|PAYMENTS|PMT|PYMT|PMNT|ONLINE|BILL|BILLPAY|PAY|WEB|'
+                       || 'PPD|CCD|TEL|IND|INDN|DES|ENTRY|DESCR|DESC|SEC|FROM|FOR|THE|DIRECT|DEP|DEPOSIT|EPAY|EPAYMENT|WIRE|'
+                       || 'TRANSFER|XFER|OUTGOING|INCOMING|OUT|WITHDRAWAL|WITHDRAW|POS|PURCHASE|CARD|RECURRING|AUTOPAY|AUTO|'
+                       || 'ELECTRONIC|ORIG|TRN|REF|CONF|CONFIRMATION|TRACE|EFT|ZELLE|NAME|DATE|EED|NUM|NUMBER|TRANSACTION|ITEM|'
+                       || 'FEE|SERVICE|BANK|ORDER|MOBILE|EXTERNAL|INTERNAL|SENT|ACCOUNT|ACCT|SAVINGS|CHECKING|PAID|BUSINESS|'
+                       || 'COMPANY|AND|TO|ID|CO|NO|NR|OF|ON|IN|AT|BY|DR|CR|AM|PM|XX|SAV|SAVING|MMA|MMK|DDA|BOOK|MONEY|MARKET|'
+                       || 'SHARE|DRAFT|REALTIME|SCHEDULED|DOMESTIC|VIA|BANKING|REFERENCE|SAME|DAY' || ')$')),
+             -- (los emisores que se conocen, en el orden de fn_banco_emisor;
+             -- y los de las tarjetas de la empresa: fn_banco_emisores_propios)
+             emi(e, rx, o) as (
+               values ('AMERICAN EXPRESS', '(^| )(AMEX|AMERICAN EXPRESS)( |$)', 1),
+                      ('BANK OF AMERICA', '(^| )(BANK OF AMERICA|BK OF AMER|BK OF AMERICA|BOFA)( |$)', 2),
+                      ('CAPITAL ONE', '(^| )(CAPITAL ONE|CAPITALONE|CAP ONE)( |$)', 3),
+                      ('CITI', '(^| )(CITI|CITIBANK|CITICARD|CITICARDS|CITI CARD)( |$)', 4),
+                      ('DISCOVER', '(^| )DISCOVER( |$)', 5),
+                      ('WELLS FARGO', '(^| )WELLS FARGO( |$)', 6),
+                      ('BARCLAYS', '(^| )(BARCLAYS|BARCLAYCARD|BARCLAY)( |$)', 7),
+                      ('US BANK', '(^| )(US BANK|U S BANK|USBANK)( |$)', 8),
+                      ('SYNCHRONY', '(^| )(SYNCHRONY|SYNCB)( |$)', 9),
+                      ('APPLE CARD', '(^| )(APPLE CARD|APPLECARD|GOLDMAN SACHS|GS BANK)( |$)', 10),
+                      ('NAVY FEDERAL', '(^| )(NAVY FEDERAL|NAVY FCU|NAVY FED)( |$)', 11),
+                      ('CHASE', '(^| )(CHASE|JPMORGAN CHASE)( |$)', 12)),
+             emp as materialized (
+               select coalesce(array_agg(distinct x.e), '{}'::text[]) as e
+                 from tarjetas t
+                 join cuentas c on c.codigo = t.cuenta
+                 cross join lateral (select e.e from emi e
+                                      where coalesce(btrim(regexp_replace(upper(concat_ws(' ', c.nombre, c.nombre_en, t.titular, t.notas)),
+                                                                          '[^[:alnum:]#&]+', ' ', 'g')), '') ~ e.rx
+                                      order by e.o limit 1) x
+                where t.activa and left(t.cuenta, 5) = '2100-' and c.tipo = 'pasivo' and c.saldo_normal = 'haber'),
+             -- LOS CASADOS VIVOS sin su motivo escrito (el del casado, o el que
+             -- Edgar escribió en el asiento que puso ESTE movimiento); un
+             -- ticket, la devolución de un cobro o una regla fija no se miran
+             cas as materialized (
+               select bc.id as cid, bc.clase, bc.otro_lado as ol0, bc.asiento_id, m.id, m.cuenta, m.fecha, m.monto, m.descripcion,
+                      m.cheque, m.memo, coalesce(m.desc_norm, '') as dn, coalesce(p.tipo, '') as tipo,
+                      a.origen_tabla, a.origen_id, a.procedencia,
+                      coalesce(m.tipo_banco, '') = 'XFER' or coalesce(coalesce(m.desc_norm, '') ~* k.p_tr, false) as tr,
+                      coalesce(p.tipo, '') = 'banco' and m.monto < 0
+                        and (coalesce(coalesce(m.desc_norm, '') ~* k.p_pt, false)
+                             or exists (select 1 from tcr where coalesce(m.desc_norm, '') ~ ('(^| )' || tcr.ultimos4 || '( |$)'))) as pt,
+                      coalesce(p.tipo, '') = 'tarjeta' and m.monto > 0 and coalesce(coalesce(m.desc_norm, '') ~* k.p_pr, false) as pr
+                 from banco_casados bc
+                 join movimientos_banco m on m.id = bc.movimiento_id
+                 cross join k
+                 left join pro p on p.codigo = m.cuenta
+                 left join asientos a on a.id = bc.asiento_id
+                where bc.deshecho_el is null and bc.clase not in ('recibo', 'devolucion', 'regla')
+                  and m.estado in ('casado', 'en_transito')
+                  and nullif(btrim(bc.motivo, E' \t\r\n\f' || chr(11)), '') is null
+                  and not (a.origen_tabla = 'movimientos_banco' and a.origen_id = m.id::text
+                           and nullif(btrim(a.procedencia->>'motivo_edgar', E' \t\r\n\f' || chr(11)), '') is not null)
+                  -- (solo lo que PUEDE contradecirse, como la referencia: lo
+                  -- que el banco da por transferencia o por el pago de una
+                  -- tarjeta, lo casado con la personal de Edgar, o un asiento
+                  -- con otra cuenta propia o el patrimonio enfrente. Lo demás
+                  -- —el cobro de un cliente, un gasto— no: con un año de
+                  -- banco, mirarlo todo costaba 0,2 s en cada pantalla)
+                  and (coalesce(m.tipo_banco, '') = 'XFER'
+                       or coalesce(coalesce(m.desc_norm, '') ~* k.p_tr, false)
+                       or (m.monto < 0 and coalesce(p.tipo, '') = 'banco'
+                           and (coalesce(coalesce(m.desc_norm, '') ~* k.p_pt, false)
+                                or coalesce(coalesce(m.desc_norm, '') ~ k.rx_t, false)))
+                       or bc.otro_lado->>'clase' = 'personal'
+                       or (a.origen_tabla = 'movimientos_banco' and a.origen_id = m.id::text and a.procedencia ? 'cuenta_personal')
+                       or exists (select 1 from asiento_lineas l
+                                   where l.asiento_id = bc.asiento_id and l.cuenta <> m.cuenta
+                                     and l.cuenta = any ((select esp.e from esp)::text[])))),
+             -- LO QUE DICE EL LIBRO enfrente (fn_banco_libro_lado): las otras
+             -- cuentas del asiento
+             lib as materialized (
+               select c.cid,
+                      array_agg(distinct l.cuenta order by l.cuenta) as ctas,
+                      min(l.cuenta) filter (where p.codigo is not null) as pro,
+                      min(l.cuenta) filter (where left(l.cuenta, 2) = '25' and cu.tipo = 'pasivo' and cu.imputable
+                                              and coalesce(cu.etiqueta_fiscal, '') not in ('accionista', 'distribucion')) as deu,
+                      min(l.cuenta) filter (where cu.tipo = 'capital' or cu.etiqueta_fiscal in ('accionista', 'distribucion')) as acc,
+                      coalesce(bool_or(l.cuenta in (k.cxc, k.ret)), false) as cxc,
+                      coalesce(bool_and(cu.tipo in ('gasto', 'otro_gasto')), false) as gas
+                 from cas c
+                 cross join k
+                 join asiento_lineas l on l.asiento_id = c.asiento_id and l.cuenta is distinct from c.cuenta
+                 left join cuentas cu on cu.codigo = l.cuenta
+                 left join pro p on p.codigo = l.cuenta
+                where c.clase <> 'apertura' and c.clase <> 'cobro' and c.origen_tabla is distinct from 'cobros'
+                group by c.cid),
+             cl as materialized (
+               select c.*, lb.ctas,
+                      case when c.clase = 'apertura' then 'apertura'
+                           when c.clase = 'cobro' or c.origen_tabla = 'cobros' then 'cobro'
+                           when lb.pro is not null then 'propia'
+                           when lb.deu is not null then 'deuda'
+                           when lb.acc is not null then 'patrimonio'
+                           when lb.cxc then 'cobro'
+                           else 'otro' end as l,
+                      coalesce(lb.pro, lb.deu, lb.acc) as lcta,
+                      coalesce(lb.gas, false) and cardinality(lb.ctas) > 0 as solo_gasto
+                 from cas c left join lib lb on lb.cid = c.cid),
+             -- EL NÚMERO que nombra (fn_banco_otro_lado): el de una cuenta en
+             -- una transferencia; si no, en el pago de una tarjeta desde el
+             -- banco, el de la tarjeta (o sus 4 últimos sueltos); en NAME o en
+             -- la nota. Sin número, el que trae su duplicado «es el mismo».
+             nu as materialized (
+               select c.*, coalesce(n1.u4, n2.u4) as u4, n1.u4 is null and n2.u4 is not null as dup
+                 from cl c
+                 cross join lateral (
+                   select case when c.tr or c.pt then coalesce(btrim(regexp_replace(upper(coalesce(c.memo, '')), '[^[:alnum:]#&]+', ' ', 'g')), '')
+                               else '' end as mn) mm
+                 cross join lateral (
+                   select coalesce(
+                            case when c.tr
+                                 then coalesce(right(substring(c.dn from '(?:^| )(?:CHK|CHECKING|SAV|SAVINGS|ACCT|ACCOUNT|DDA|MMA) X*([0-9]{4,})(?: |$)'), 4), right(substring(mm.mn from '(?:^| )(?:CHK|CHECKING|SAV|SAVINGS|ACCT|ACCOUNT|DDA|MMA) X*([0-9]{4,})(?: |$)'), 4)) end,
+                            case when c.tipo = 'banco' and c.monto < 0 and (c.tr or c.pt)
+                                 then coalesce(right(coalesce(substring(c.dn from '(?:^| )(?:CARD|CRD)(?: ENDING(?: IN)?| NO| #)? X*([0-9]{4,})(?: |$)'), substring(c.dn from '(?:^| )ENDING(?: IN)? X*([0-9]{4})(?: |$)')), 4),
+                                               right(coalesce(substring(mm.mn from '(?:^| )(?:CARD|CRD)(?: ENDING(?: IN)?| NO| #)? X*([0-9]{4,})(?: |$)'), substring(mm.mn from '(?:^| )ENDING(?: IN)? X*([0-9]{4})(?: |$)')), 4),
+                                               (select t.ultimos4 from tcr t where c.dn ~ ('(^| )' || t.ultimos4 || '( |$)')
+                                                 order by t.ultimos4 limit 1)) end) as u4) n1
+                 left join lateral (
+                   select y.u4
+                     from movimientos_banco x
+                     cross join lateral (
+                       select coalesce(btrim(regexp_replace(upper(coalesce(x.memo, '')), '[^[:alnum:]#&]+', ' ', 'g')), '') as xm,
+                              coalesce(x.desc_norm, '') as xd) w
+                     cross join lateral (
+                       select coalesce(right(substring(w.xd from '(?:^| )(?:CHK|CHECKING|SAV|SAVINGS|ACCT|ACCOUNT|DDA|MMA) X*([0-9]{4,})(?: |$)'), 4), right(substring(w.xm from '(?:^| )(?:CHK|CHECKING|SAV|SAVINGS|ACCT|ACCOUNT|DDA|MMA) X*([0-9]{4,})(?: |$)'), 4),
+                                       case when c.tipo = 'banco' and c.monto < 0
+                                            then coalesce(right(coalesce(substring(w.xd from '(?:^| )(?:CARD|CRD)(?: ENDING(?: IN)?| NO| #)? X*([0-9]{4,})(?: |$)'), substring(w.xd from '(?:^| )ENDING(?: IN)? X*([0-9]{4})(?: |$)')), 4),
+                                                          right(coalesce(substring(w.xm from '(?:^| )(?:CARD|CRD)(?: ENDING(?: IN)?| NO| #)? X*([0-9]{4,})(?: |$)'), substring(w.xm from '(?:^| )ENDING(?: IN)? X*([0-9]{4})(?: |$)')), 4))
+                                       end) as u4) y
+                    where (c.tr or c.pt) and n1.u4 is null
+                      and x.posible_duplicado_de = c.id and x.duplicado = 'es_el_mismo' and x.cuenta = c.cuenta
+                      and y.u4 is not null
+                    order by x.importado_el, x.id
+                    limit 1) n2 on true),
+             -- DE QUIÉN ES ESE NÚMERO: de la empresa (fn_banco_numero_de), una
+             -- cuenta personal de Edgar dada de alta (fn_banco_personal_de), o
+             -- uno que no se conoce
+             ol as materialized (
+               select n.*, q.cta, q.per,
+                      coalesce((select p.tipo from pro p where p.codigo = q.cta),
+                               case when exists (select 1 from cuentas cu
+                                                  where cu.codigo = q.cta and left(cu.codigo, 2) = '25' and cu.tipo = 'pasivo' and cu.imputable
+                                                    and coalesce(cu.etiqueta_fiscal, '') not in ('accionista', 'distribucion'))
+                                    then 'deuda' end) as btipo,
+                      -- (a quién nombra sin número: fn_banco_nombrado, solo donde
+                      -- cuenta —una transferencia, o el libro a una cuenta propia—)
+                      case when n.u4 is null and not n.pt and (n.tr or (not n.pr and n.l = 'propia'))
+                           then (select string_agg(w.p, ' ' order by w.i)
+                                   from (select u.p, u.i, lag(u.p) over (order by u.i) as prev
+                                           from unnest(regexp_split_to_array(regexp_replace(n.dn, '[&#]', '', 'g'), ' '))
+                                                with ordinality as u(p, i)) w
+                                  cross join pal
+                                  where w.p ~ '^[[:alpha:]]{2,}$'
+                                    and (w.p !~ pal.rx
+                                         or (w.p in ('BANK', 'MOBILE') and w.i > 1 and w.prev ~ '^[[:alpha:]]+$' and w.prev !~ pal.rx)))
+                      end as nom,
+                      -- (el emisor de la tarjeta que paga: fn_banco_emisor)
+                      case when n.u4 is null and n.pt
+                           then (select e.e from emi e
+                                  where coalesce(btrim(regexp_replace(upper(n.dn), '[^[:alnum:]#&]+', ' ', 'g')), '') ~ e.rx
+                                  order by e.o limit 1) end as em,
+                      -- (el número de un cheque: fn_banco_cheque_num)
+                      case when n.u4 is null and not n.tr and not n.pt and not n.pr and n.l = 'propia'
+                           then coalesce(nullif(ltrim(nullif(btrim(n.cheque, E' \t\r\n\f' || chr(11)), ''), '0'), ''),
+                                         substring(regexp_replace(coalesce(btrim(regexp_replace(upper(coalesce(n.descripcion, '')),
+                                                                                                 '[^[:alnum:]#&]+', ' ', 'g')), ''),
+                                                                  '(^| )(TO|FROM) (CHK|CK) ', ' ', 'g')
+                                                   from '(?:^| )(?:CHECK|CHK|CHEQUE|CK)(?: NO)? ?#? ?0*([1-9][0-9]{0,9})(?: |$)')) end as chq
+                 from nu n
+                 cross join lateral (
+                   select case when n.u4 ~ '^[0-9]{4}$'
+                               then coalesce((select t.cuenta from tarjetas t join pro p on p.codigo = t.cuenta
+                                               where t.ultimos4 = n.u4 and t.activa order by t.cuenta limit 1),
+                                             (select a.cuenta from archivos_banco a
+                                               where a.ultimos4 = n.u4 and a.retirado_el is null
+                                                 and (a.formato in ('ofx_sgml', 'ofx_xml') or a.cuenta_confirmada)
+                                               order by a.importado_el desc limit 1),
+                                             (select qb.cuenta from apertura_mapeo_qb qb join pro p on p.codigo = qb.cuenta
+                                               where qb.tipo = 'cuenta' and qb.nombre_qb ~ ('(^|[^0-9])' || n.u4 || '([^0-9]|$)')
+                                                 and qb.nombre_qb !~ '^[[:space:][:punct:]]*[0-9]+[[:space:][:punct:]]*$'
+                                               order by qb.cuenta limit 1)) end as cta) q0
+                 cross join lateral (
+                   select q0.cta,
+                          case when n.u4 ~ '^[0-9]{4}$' and q0.cta is null
+                               then coalesce((select bp.nombre from banco_cuentas_personales bp where bp.ultimos4 = n.u4 and bp.activa),
+                                             (select format('%s (su tarjeta personal, dada de alta en %s)', t.titular, t.cuenta)
+                                                from tarjetas t join cuentas cu on cu.codigo = t.cuenta
+                                               where t.ultimos4 = n.u4 and t.activa and cu.tipo = 'pasivo' and cu.etiqueta_fiscal = 'accionista'
+                                               order by t.cuenta limit 1)) end as per) q),
+             -- LO QUE DICE EL BANCO (la clase de EL CRITERIO)
+             b0 as materialized (
+               select o.*,
+                      case when o.u4 is not null
+                           then case when o.cta is not null then 'propia' when o.per is not null then 'personal' else 'desconocida' end
+                           when o.tr and not o.pt and o.nom is not null then 'tercero_tr'
+                           when o.pt and o.em is not null and cardinality(emp.e) > 0 and not (o.em = any (emp.e)) then 'tercero_emisor'
+                           when o.tr or o.pt or o.pr then 'propia_sin_numero'
+                           else 'tercero' end as b0
+                 from ol o cross join emp),
+             -- (con la cuenta personal que lo era al casarlo: darla de baja
+             -- después —la cerró— no pone en rojo lo que entonces era suyo)
+             bl as materialized (
+               select x.*,
+                      case when x.b0 <> 'personal'
+                                and (x.ol0->>'clase' = 'personal'
+                                     or (x.origen_tabla = 'movimientos_banco' and x.origen_id = x.id::text
+                                         and x.procedencia ? 'cuenta_personal'))
+                           then 'personal_al_casarlo' else x.b0 end as b
+                 from b0 x)
+        select b.cuenta, b.fecha, b.id,
+               format('%s %s %s «%s» (movimiento %s, casado %s, %s): el banco dice %s, y el libro dice %s', b.cuenta, b.fecha, b.monto,
+                      coalesce(b.descripcion, ''), b.id, b.cid, b.clase,
+                      case b.b when 'propia' then format('la cuenta ····%s, que es %s', b.u4, b.cta)
+                               when 'personal' then format('la cuenta ····%s, tu cuenta personal (%s)', b.u4, b.per)
+                               when 'personal_al_casarlo'
+                               then format('tu cuenta personal ····%s (lo era al casarlo)',
+                                           coalesce(b.ol0->>'ultimos4', b.procedencia->>'cuenta_personal'))
+                               when 'desconocida' then format('la cuenta ····%s, que no conozco', b.u4)
+                               when 'tercero_tr' then format('«%s», sin número de cuenta', b.nom)
+                               when 'tercero_emisor' then format('el pago de una tarjeta de %s (ninguna de la empresa lo es)', b.em)
+                               when 'propia_sin_numero' then 'dinero entre cuentas propias'
+                               else case when b.chq is not null then format('el cheque %s, el pago a un tercero', b.chq)
+                                         when b.nom is not null then format('«%s», un tercero', b.nom)
+                                         else 'un tercero' end end
+                      || case when b.dup then ' (lo dice su duplicado)' else '' end,
+                      case b.l when 'propia' then format('una transferencia o el pago de una tarjeta con %s', b.lcta)
+                               when 'deuda' then format('dinero de o a la deuda %s', b.lcta)
+                               when 'patrimonio' then format('el patrimonio del accionista (%s)', b.lcta)
+                               when 'cobro' then 'el cobro de un cliente'
+                               when 'apertura' then 'una partida en tránsito de QuickBooks (la conciliación de apertura)'
+                               else format('otra cosa (%s)', coalesce(array_to_string(b.ctas, ', '), 'sin cuenta')) end) as x
+          from bl b
+         where case when b.l in ('propia', 'deuda')
+                    then (b.b = 'propia' and not coalesce(b.cta = any (b.ctas), false))
+                         or b.b in ('personal', 'personal_al_casarlo', 'desconocida', 'tercero_tr', 'tercero_emisor')
+                         or (b.b = 'tercero' and b.l = 'propia' and (b.chq is not null or b.nom is not null))
+                    when b.l in ('cobro', 'apertura') then b.b in ('propia', 'personal', 'personal_al_casarlo')
+                    when b.l = 'patrimonio' then b.b not in ('personal', 'personal_al_casarlo')
+                    else b.b = 'propia' and not (coalesce(b.btipo, '') = 'deuda' and b.monto < 0 and b.solo_gasto) end
+      ) z;
+    orden := 59; vista := 'cuadre: el otro lado de cada casado'; filas := v_cnt; esperadas := 0;
+    ok := v_cnt = 0;
+    detalle := case when not ok
+                    then format('Esperaba 0 casados cuyo lado del banco y cuyo lado del libro se contradicen sin su motivo escrito, y hay '
+                                '%s%s: %s. Cada uno: si está mal casado, des-cásalo (fn_banco_descasar, con su motivo) y cásalo con lo '
+                                'que es; si es correcto así, escribe su motivo: select fn_banco_casar_con(''<movimiento>'', '
+                                '''{"casado": "<su casado>"}'', ''<por qué es correcto>''). La conciliación de su mes no se confirma '
+                                'hasta entonces.', v_cnt, case when v_cnt > 20 then ' (los 20 primeros)' else '' end,
+                                array_to_string(v_malos, '; ')) end;
     return next;
   end if;
 
@@ -18309,6 +19004,8 @@ declare
   v_lsal_al date;
   v_ndup   int;
   v_qmal   text;
+  v_n59    bigint;
+  v_ncri   bigint;
 begin
   if not (es_dueno() or fn_desde_editor()) then
     raise exception using errcode = '42501', message = 'El banco lo revisa solo Edgar (el dueño), desde el SQL Editor.';
@@ -18331,12 +19028,59 @@ begin
   end if;
   -- (los cuadres, pedidos por su nombre: sin contar las filas de las vistas,
   -- que aquí no se miran)
-  return query
-    select 'control · ' || x.vista, x.ok, to_jsonb(coalesce(x.detalle, 'bien'))
-      from fn_banco_control('hoy', array['cuadre: un movimiento, un casado', 'cuadre: depósitos nunca a ingreso',
-                                         'cuadre: archivos intactos', 'cuadre: ningún ticket después de clasificar',
-                                         'cuadre: conciliaciones confirmadas', 'cuadre: préstamos', 'cuadre: prepagados']) x
-     where x.vista like 'cuadre:%';
+  -- (ronda 4d: el cuadre 59, «el otro lado de cada casado», en la revisión
+  -- entera, con su referencia abajo; con cuentas pedidas, la referencia de
+  -- esas cuentas lo dice de ellas)
+  for c in select x.vista, x.ok, x.filas, x.detalle
+             from fn_banco_control('hoy', array['cuadre: un movimiento, un casado', 'cuadre: depósitos nunca a ingreso',
+                                                'cuadre: archivos intactos', 'cuadre: ningún ticket después de clasificar',
+                                                'cuadre: conciliaciones confirmadas', 'cuadre: préstamos', 'cuadre: prepagados']
+                                          || case when p_cuentas is null then array['cuadre: el otro lado de cada casado']
+                                                  else '{}'::text[] end) x
+            where x.vista like 'cuadre:%' loop
+    if c.vista = 'cuadre: el otro lado de cada casado' then
+      v_n59 := c.filas;
+    end if;
+    control := 'control · ' || c.vista; ok := c.ok; detalle := to_jsonb(coalesce(c.detalle, 'bien'));
+    return next;
+  end loop;
+
+  -- (Ronda 4d) EL CONTROL, con su referencia (fn_banco_criterio_casados: las
+  -- funciones internas de EL CRITERIO): los casados vivos cuyo lado del
+  -- banco y cuyo lado del libro se contradicen sin su motivo escrito (de las
+  -- cuentas pedidas, o de todas); y, en la revisión entera, que la copia
+  -- escrita en fn_banco_control (el cuadre de arriba) cuente lo mismo que
+  -- ella: si un día no dicen lo mismo, una de las dos se quedó atrás y sale
+  -- aquí. (Con cuentas pedidas, la referencia es solo de ellas: la de todo
+  -- el banco tarda; c6-pruebas compara la copia en su prueba 154.)
+  select coalesce(jsonb_agg(jsonb_build_object('movimiento', x.movimiento_id, 'casado', x.casado_id, 'cuenta', x.cuenta,
+                                               'fecha', x.fecha, 'monto', x.monto, 'descripcion', x.descripcion, 'clase', x.clase,
+                                               'regla', x.regla, 'contradice', x.contradice)
+                            order by x.cuenta, x.fecha, x.movimiento_id), '[]'::jsonb),
+         count(*)
+    into v_malos, v_ncri
+    from (select y.* from fn_banco_criterio_casados() y where p_cuentas is null
+          union all
+          select y.* from unnest(p_cuentas) as pc(cuenta) cross join lateral fn_banco_criterio_casados(pc.cuenta) y
+           where p_cuentas is not null) x;
+  if p_cuentas is not null then
+    v_ncri := null;
+  end if;
+  control := 'el otro lado de cada casado';
+  ok := jsonb_array_length(v_malos) = 0 and (p_cuentas is not null or v_ncri = coalesce(v_n59, -1));
+  detalle := jsonb_build_object('casados', v_malos,
+                                'nota', case when jsonb_array_length(v_malos) > 0
+                                             then 'Lo que dice el banco del otro lado y lo que dice el libro se contradicen, sin su motivo: '
+                                                  'si está mal casado, des-cásalo (fn_banco_descasar, con su motivo) y cásalo con lo '
+                                                  'que es; si es correcto, escribe su motivo (fn_banco_casar_con con {"casado": …} y '
+                                                  'el motivo). La conciliación de su mes no se confirma hasta entonces.' end,
+                                'copia_del_control', case when p_cuentas is null and v_ncri is distinct from v_n59
+                                                          then format('el cuadre 59 de fn_banco_control cuenta %s y la referencia %s: '
+                                                                      'la copia escrita del control y las funciones de EL CRITERIO '
+                                                                      'ya no dicen lo mismo (una se quedó atrás)',
+                                                                      coalesce(v_n59::text, 'nada'), v_ncri) end);
+  return next;
+  v_malos := '[]'::jsonb;
 
   -- Cada asiento que puso el banco, con su PAPEL (el movimiento, la nómina
   -- del proveedor anterior, la cuota, el mes de prepagados), de todos los
