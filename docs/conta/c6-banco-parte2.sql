@@ -7912,8 +7912,9 @@ grant  execute on function public.fn_banco_control(text, text[]) to authenticate
 
 -- ---------------------------------------------------------------------
 -- 12 · fn_banco_verificar(cuentas) — la revisión entera, desde el SQL
--- Editor (no es de la API): los cuadres del control con todo, y lo que el
--- control no puede hacer sin las funciones internas:
+-- Editor (no es de la API): los cuadres del control con todo (sin cuentas
+-- pedidas: ronda 4d), y lo que el control no puede hacer sin las funciones
+-- internas:
 --   · cada conciliación confirmada que PUDO cambiar desde que se confirmó
 --     (algo posteado después con fecha hasta su corte, un movimiento de su
 --     tramo que cambió de estado o de casado, o que entró después),
@@ -7983,21 +7984,25 @@ begin
   -- (los cuadres, pedidos por su nombre: sin contar las filas de las vistas,
   -- que aquí no se miran)
   -- (ronda 4d: el cuadre 59, «el otro lado de cada casado», en la revisión
-  -- entera, con su referencia abajo; con cuentas pedidas, la referencia de
-  -- esas cuentas lo dice de ellas)
-  for c in select x.vista, x.ok, x.filas, x.detalle
-             from fn_banco_control('hoy', array['cuadre: un movimiento, un casado', 'cuadre: depósitos nunca a ingreso',
-                                                'cuadre: archivos intactos', 'cuadre: ningún ticket después de clasificar',
-                                                'cuadre: conciliaciones confirmadas', 'cuadre: préstamos', 'cuadre: prepagados']
-                                          || case when p_cuentas is null then array['cuadre: el otro lado de cada casado']
-                                                  else '{}'::text[] end) x
-            where x.vista like 'cuadre:%' loop
-    if c.vista = 'cuadre: el otro lado de cada casado' then
-      v_n59 := c.filas;
-    end if;
-    control := 'control · ' || c.vista; ok := c.ok; detalle := to_jsonb(coalesce(c.detalle, 'bien'));
-    return next;
-  end loop;
+  -- entera, con su referencia abajo. Y los cuadres del control, solo en la
+  -- revisión entera: miran todo el banco, y con cuentas pedidas —«de una
+  -- cuenta»— no decían nada de ellas y costaban lo mismo, un cuarto de
+  -- segundo con un año de banco en cada llamada; c6-pruebas la llama nueve
+  -- veces. Los mismos cuadres, cuando se quiera, en fn_banco_control.)
+  if p_cuentas is null then
+    for c in select x.vista, x.ok, x.filas, x.detalle
+               from fn_banco_control('hoy', array['cuadre: un movimiento, un casado', 'cuadre: depósitos nunca a ingreso',
+                                                  'cuadre: archivos intactos', 'cuadre: ningún ticket después de clasificar',
+                                                  'cuadre: conciliaciones confirmadas', 'cuadre: préstamos', 'cuadre: prepagados',
+                                                  'cuadre: el otro lado de cada casado']) x
+              where x.vista like 'cuadre:%' loop
+      if c.vista = 'cuadre: el otro lado de cada casado' then
+        v_n59 := c.filas;
+      end if;
+      control := 'control · ' || c.vista; ok := c.ok; detalle := to_jsonb(coalesce(c.detalle, 'bien'));
+      return next;
+    end loop;
+  end if;
 
   -- (Ronda 4d) EL CONTROL, con su referencia (fn_banco_criterio_casados: las
   -- funciones internas de EL CRITERIO): los casados vivos cuyo lado del

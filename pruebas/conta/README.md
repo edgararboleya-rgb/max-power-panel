@@ -424,9 +424,19 @@ corto:
      dos; si des-casas antes el depósito, se suelta solo él, y el retiro
      queda «en_transito» con su asiento: des-cásalo también (la bandeja
      del depósito lo propone, «Des-casar el retiro …», con su motivo). Si
-     su mes ya tiene la conciliación confirmada, des-casarlo dice cuál
-     reabrir antes (`fn_conciliacion_reabrir`, con su motivo; la última
-     primero), y después se vuelve a conciliar;
+     era el cobro de una factura que la app registró con ese depósito (su
+     `clase` dice `cobro`) y no lo es, des-casarlo suelta el depósito pero
+     el cobro sigue vigente, con su asiento: anúlalo con su motivo
+     (`select fn_cobro_anular('<cobro>', '<por qué>');`; el cobro, en la
+     pantalla de cobros o con `select id, fecha, monto, referencia from
+     cobros where estado = 'vigente' order by fecha desc;`), y después
+     «Casar»; si no, la conciliación lo dice (un cobro en libros sin su
+     movimiento del banco). Si un asiento escrito a mano no fue (el pase
+     que el banco dice que vino de otro lado), revérsalo con su motivo
+     (`select fn_reversar('<asiento>', '<por qué>');`). Si su mes ya tiene
+     la conciliación confirmada, des-casarlo dice cuál reabrir antes
+     (`fn_conciliacion_reabrir`, con su motivo; la última primero), y
+     después se vuelve a conciliar;
    - **si es correcto así** (lo sabes tú: el cliente te pagó a ti y lo
      pasaste a la empresa, la tarjeta se pagó desde tu cuenta a sabiendas…),
      **escribe su motivo**, una vez:
@@ -594,7 +604,8 @@ corto:
    `fn_banco_control('hoy', array['cuadre: prepagados'])`) y, de vez en
    cuando, `select * from fn_banco_verificar();` (relee cada archivo fila
    por fila y recalcula las conciliaciones confirmadas en las que algo pudo
-   cambiar; de una cuenta: `fn_banco_verificar(array['1010'])`).
+   cambiar; de una cuenta: `fn_banco_verificar(array['1010'])`, sin los
+   cuadres del control, que miran todo el banco: ronda 4d).
 
 ### La ronda 2 de c6 (27-sep): lo que no se hizo, y por qué
 

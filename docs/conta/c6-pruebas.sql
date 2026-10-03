@@ -2864,12 +2864,19 @@ begin
     -- (Solo las cuentas de la prueba: con un año de banco de verdad, la
     -- revisión entera tarda y la prueba tendría tomados los candados de los
     -- recibos todo ese tiempo.)
-    -- (ronda 4d: con cuentas pedidas, la revisión no pide el cuadre 59 —mira
-    -- todo el banco, y con datos de verdad puede venir en rojo por lo suyo—:
-    -- lo de las cuentas de la prueba lo dice su fila «el otro lado de cada
-    -- casado», con la referencia de esas cuentas)
-    select bool_and(v.ok) into v_ok from fn_banco_verificar(array['1098', '1097', '2100-9996', '2100-9995']) v
-     where v.control not in ('control · cuadre: préstamos', 'control · cuadre: prepagados');
+    -- (ronda 4d: con cuentas pedidas, la revisión ya no trae los cuadres del
+    -- control —miran todo el banco y costaban un cuarto de segundo por
+    -- llamada con un año de banco—: los de siempre se piden aquí, al control,
+    -- sin préstamos ni prepagados, como antes; y sin el 59, «el otro lado de
+    -- cada casado», que con datos de verdad puede venir en rojo por lo suyo:
+    -- lo de las cuentas de la prueba lo dice su fila en la revisión, con la
+    -- referencia de esas cuentas)
+    select bool_and(v.ok) into v_ok from fn_banco_verificar(array['1098', '1097', '2100-9996', '2100-9995']) v;
+    v_ok := v_ok and (select bool_and(c.ok)
+                        from fn_banco_control('hoy', array['cuadre: un movimiento, un casado', 'cuadre: depósitos nunca a ingreso',
+                                                           'cuadre: archivos intactos', 'cuadre: ningún ticket después de clasificar',
+                                                           'cuadre: conciliaciones confirmadas']) c
+                       where c.vista like 'cuadre:%');
     select bool_and(p.ok
                     or not (exists (select 1 from asientos a where a.cadena_pos > v_pos and position(a.numero in p.detalle::text) > 0)
                             or p.detalle::text ~ '(-66[0-9]{4}|C6-|1098|1097|2100-999[56]|c6-pruebas)'))
