@@ -63,7 +63,13 @@ comprobando si algo ya estaba.
   `true` y c4 sus 9 filas, como siempre. c6 pegado sin ellos para con
   MX000 y dice qué volver a pegar (c2-libro.sql y c4-estados.sql), sin
   tocar nada. Después, las cuatro suites (pasos 8 a 11), cada una sola:
-  83, 120, 113 y 134 filas.
+  83, 120, 113 y 134 filas. La prueba final de la ronda 4 (3-oct; en §6)
+  lo comprobó de cero, con todo pegado dos veces más y encima de lo de
+  producción (d80c9de) con el banco en uso: sin error, nada de lo
+  guardado cambia y las cuatro suites en verde. Encontró dos cosas de la
+  bandeja del banco que quedan por arreglar en c6 (no tocan nada de lo ya
+  guardado): ver los «lo encontró la prueba final» de los pasos 1 y 3 de
+  «Después de c6».
 - **Una suite a la vez.** Dos suites corriendo a la vez en la misma base se
   cruzan sus candados: el 27-sep, con c4-pruebas y c6-pruebas lanzadas con
   tres minutos de diferencia, salieron en rojo la 92 de c4 y la 49 de c6
@@ -278,6 +284,18 @@ corto:
    `ajuste_cpa`, `afecta_periodo` `2026-09-APERTURA` y su motivo, contra
    3900)—. Sin la apertura posteada todavía, el cuadre sale en rojo y lo
    dice: los préstamos de antes del corte entran con ella.
+   **La reserva (1030), cuando se abra** (lo encontró la prueba final del
+   3-oct; vale hasta que c6 lo arregle): antes de subir el estado de
+   cuenta de Chase que traiga el primer pase a ella, se da de alta su
+   número una vez, desde el SQL Editor:
+   `select fn_banco_importar_filas('{"origen": "mano", "cuenta": "1030", "ultimos4": "<sus 4 últimos>", "confirmo_cuenta": true, "nombre": "1030: su número", "filas": []}');`.
+   Sin eso, Chase nombra un número que ningún estado de cuenta de la
+   empresa trae todavía, el banco lo toma por una cuenta personal de
+   Edgar y el primer botón del pase es «Para Edgar (su cuenta ····…):
+   distribución · 3200», sin pedir motivo: pulsado, el pase a la reserva
+   queda como distribución y ningún control lo ve. Con el número dado de
+   alta, el pase sale «A 1030» y casa solo con su otro lado cuando se
+   suba el de la reserva (probado el 3-oct).
 2. **La conciliación de apertura (30-sep)**, con la conciliación de
    QuickBooks de esa fecha, una por cuenta:
    `select fn_conciliacion_apertura('1010', '<saldo del statement>', '[<cheques y depósitos en tránsito>]');`
@@ -348,7 +366,14 @@ corto:
    llega después de clasificar, «Es su ticket (repartido)». El dinero a o
    desde la cuenta personal de Edgar (el banco nombra «CHK ...7781») sale
    como distribución o préstamo del accionista; una transferencia a una
-   cuenta propia, ahí, pide su motivo. Mientras la apertura de un banco no
+   cuenta propia, ahí, pide su motivo. (Lo encontró la prueba final del
+   3-oct; vale hasta que c6 lo arregle: si ese depósito de la cuenta
+   personal es del mismo monto que una factura abierta, sus botones
+   «préstamo del accionista · 2900» y «Aportación · 3100» entran sin pedir
+   motivo, pero después «cuadre: depósitos nunca a ingreso» sale en rojo
+   —«lo explica la factura #…»—. Al clasificarlo se escribe el motivo,
+   `fn_banco_clasificar(<movimiento>, <sus líneas>, '<por qué es dinero
+   de Edgar>')`, y queda en verde.) Mientras la apertura de un banco no
    esté conciliada, un cheque o un depósito de los primeros 30 días lo
    avisa en su propuesta: con la apertura ya posteada, clasificarlo o
    cobrarlo pide motivo (puede ser de septiembre).
@@ -1285,6 +1310,101 @@ tocar `docs/conta/c2-libro.sql`:
   mes y 2.473 movimientos, en 17.6), c4-volumen y c6-volumen exigiendo lo
   de producción: cada pantalla de cifras en llamadas de 0,6 s o menos
   (el Panel en cuatro, 'hoy' y los estados en dos). Todos en verde.
+- **La prueba final de la ronda 4 de c6, entera (3-oct)**, después de los
+  cuatro grupos de correctores, con los archivos del commit 9669f18 (c2 y
+  c4 marca 2026100201, c3 2026092601, c6 2026100201), en 16.13 y en 17.6:
+  - De cero (la carga completa de §0b): c2-pruebas 83/83 (3,8 s en 17.6 y
+    3,3 s en 16), c3-pruebas 120/120 (4,0 s y 3,7 s), c4-pruebas 113/113
+    en 17.6 (36,5 s; en 16, 112 y la 109 «omitida», 33,2 s) y c6-pruebas
+    134/134 (21,6 s y 17,3 s). Con el reloj del servidor al 20-oct (un
+    cluster 17.6 bajo libfaketime, `FAKETIME=+17d`): 83, 120, 113 (la 45
+    corre) y 134, en verde.
+  - Los 37 hallazgos de la ronda, cada repro tal cual contra los archivos
+    de hoy (en 16 y en 17.6 salen iguales, salvo los ids): en 36 el defecto
+    ya no sale y su prueba nueva está en verde. El del primer QFX subido a
+    la cuenta equivocada del grupo del importador se rechazó por ser el
+    mismo que el del grupo 1 (la 111): su camino de vuelta
+    (`fn_banco_archivo_retirar` y otra vez a la suya) se probó de punta a
+    punta. Las partes rechazadas a propósito siguen como dicen sus
+    secciones (el mensaje de c2 sobre el ajuste a la apertura abierta,
+    ningún «puente» anotado solo, el aviso de 0,2 s por vista). El Panel
+    con un año real, medido como en producción: de 3 a 4 llamadas, la más
+    lenta de 0,47 a 0,52 s; una sola llamada sin el tope por reloj tarda
+    todavía de 0,84 a 0,90 s en el banco (unos 9 s allí): el tope por reloj
+    es lo que lo hace caber, y conta.js tiene que volver a pedir lo que
+    sale «Sigue».
+  - Encontró dos cosas nuevas, las dos de la bandeja del banco, que no
+    tocan nada de lo ya guardado (quedan para c6; mientras, lo que hay que
+    hacer está en los pasos 1 y 3 de «Después de c6»): (a) un depósito de
+    la cuenta personal de Edgar del mismo monto que una factura abierta:
+    sus botones «préstamo del accionista · 2900» y «Aportación · 3100»
+    (grupo 1) no piden motivo, y después el cuadre «depósitos nunca a
+    ingreso» (grupo 2) sale en rojo diciendo que lo explica la factura;
+    con el motivo escrito, en verde. (b) El primer pase de Chase a la
+    reserva antes de subir el primer estado de cuenta de la reserva: su
+    número no es todavía de la empresa, sale como dinero a la cuenta
+    personal de Edgar y su primer botón es «distribución · 3200», sin
+    motivo; pulsado, ningún control lo ve, y el abono de la reserva queda
+    después «transferencia de un lado». Con el número de la reserva dado
+    de alta antes (un lote vacío con `confirmo_cuenta`), el pase sale
+    «A 1030» y casa solo con su otro lado; ese alta no pone nada en rojo.
+  - Idempotencia: c1, c2, c3, c4 y c6 pegados dos veces más sobre la misma
+    base y las cuatro suites otra vez, cada una sola (17.6: 3,7 s, 4,3 s,
+    37,2 s y 19,7 s; 16: 3,5 s, 3,9 s, 34,0 s y 17,3 s), en verde. La foto
+    antes y después de los dos pegados solo cambia el comentario de
+    `fn_libro_huellas()`, `fn_estados_huellas()` y `fn_banco_huellas()` y
+    el cuerpo de `fn_estados_huellas()` (ver §0b).
+  - El camino de producción (§0b), en los dos: c1–c6 de d80c9de (marcas
+    2026092701, 2026092601, 2026092601 y 2026092704) con el banco en uso:
+    la póliza de QuickBooks, la nómina de octubre con su journal, un ticket
+    de CED, las dos Amex, el Chase de octubre con seis movimientos y la
+    Gold de octubre, la bandeja resuelta, un des-casado con la comisión de
+    R7, las conciliaciones de 1010 y de la Gold confirmadas y un pendiente
+    de noviembre. El c6 nuevo pegado antes que c2 y c4 para con MX000
+    nombrando c2-libro.sql y c4-estados.sql, y la foto y el catálogo
+    quedan iguales. Después, como Edgar: c2 (sus 10 controles en true),
+    c4 (sus 9 filas; en false solo las dos de la apertura, que no está) y
+    c6 (sus 7 filas en true), de 0,2 a 0,6 s cada uno, y c6 otra vez; las
+    marcas, 2026100201, 2026092601, 2026100201 y 2026100201. La foto de lo
+    guardado, igual después del pegado; al casar otra vez solo cambia la
+    propuesta del pendiente (se rehace una vez); las cuatro suites, cada
+    una sola y en verde (17.6: 3,9 s, 4,7 s, 38,3 s y 20,4 s; 16: 3,3 s,
+    4,0 s, 33,7 s y 18,2 s), con la foto igual después de cada una.
+  - Sin rastro: la foto de la base (arriba) igual antes y después de cada
+    suite, en la base recargada y en la del camino de producción; lo único
+    que queda es el esquema `pruebas`. Las 21 funciones del banco que
+    llama la app, solo para el dueño (el equipo lee 0 filas; anon no
+    entra); las tablas con su RLS y solo su policy de lectura; las vistas,
+    security_invoker.
+  - Scripts del banco, en 16 y en 17.6, todos en verde: c0-banco-pruebas
+    18/18, c2-pegado (18 ok), c3-pegado (14), c2-concurrencia (12),
+    c3-concurrencia (34), c4-concurrencia (17), c6-concurrencia (24;
+    importar y casar dos veces 1,0 s; 33 y 34 subidas, la más lenta 0,2 s),
+    c6-en-uso (las cuatro suites con octubre en uso, y c3- y c6-pruebas
+    otra vez con noviembre: 113 + 7 y 131 + 3 «omitidas», nada en rojo),
+    c3-volumen con 3.000 recibos (reintentar 1,3 s y 1,1 s; controles
+    1,5 s y 1,4 s), c4-volumen con 10.333 asientos (las vistas, 0,54 s y
+    0,46 s como mucho; el Panel en una llamada, 1,8 s y 1,7 s; como en
+    producción —se informa: es tres veces lo de Edgar— el Panel no terminó
+    en 9 llamadas en 17.6 y tardó 7 en 16, y 'hoy' y los estados llegan a
+    llamadas de 0,85 s y 0,92 s; con cuatro teléfonos, la subida más lenta
+    2,3 s y 2,0 s mientras corre c4-pruebas y 4,9 s y 4,3 s mientras corre
+    c3-pruebas) y c6-volumen con 9.990 movimientos (casar como mucho 2,1 s
+    y 2,0 s por mes, la bandeja 0,38 s, `fn_banco_verificar` 3,0 s y
+    2,7 s, c6-pruebas sola 38,5 s y 32,1 s —bajo su tope de 40 s— y con
+    cuatro teléfonos 43,0 s y 38,1 s, la subida más lenta 2,5 s y 2,1 s;
+    los meses 13 y 14 sin casar, «Cuadrar» 0,85 s y casar 2,9 s como
+    mucho). Con el año de Edgar en 17.6 (200 papeles por mes y 2.473
+    movimientos), lo de producción exigido: c4-volumen (3.167 asientos; el
+    Panel en 4 llamadas, la más lenta 0,56 s; 'hoy' en 3 y los estados y el
+    año en 2, 0,58 s como mucho) y c6-volumen (casar 0,73 s por mes como
+    mucho, la bandeja 0,16 s, el Panel con el banco en uso en 4 llamadas
+    de 0,53 s como mucho, c6-pruebas sola 25,7 s y con cuatro teléfonos
+    31,1 s).
+  - Lo ajeno (R1), en 17.6 con la base recién pegada: el Panel, 431-451 ms
+    sin c6 y 445-489 ms con c6; 'hoy', 190-196 ms y 200-212 ms;
+    `fn_verificar_cadena`, 70 ms y 85-95 ms; c4-pruebas con cuatro
+    teléfonos a 800 ms: ninguna subida cortada (antes de la ronda, 11).
 - **JIT**: el Postgres del banco trae el compilador JIT encendido (lo de
   fábrica). Con consultas grandes compila más de lo que corre (una vista
   del tablero leída como el editor, 16 s con JIT y 0,15 s sin él; la
