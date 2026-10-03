@@ -67,6 +67,24 @@
 --     sigue en rojo hasta que alguien lo mira y vuelve a pegar c2 (y c6,
 --     además, no se pega encima de uno cambiado: MX000). La marca sube a
 --     2026092701 (c6 la pide). Su prueba: la 82 de c2-pruebas.sql.
+-- CAMBIOS PARA c6 (ronda 4, 3-oct-2026: el tiempo en producción), mínimos
+-- (se vuelve a pegar encima, sin tocar el libro; ANTES que c6-banco.sql,
+-- que pide esta marca y para con MX000 si no la ve):
+--   · el control «permisos» de fn_verificar_cadena ya no relee en cada
+--     llamada lo que c4 y c6 SELLARON (sus huellas, fn_estados_huellas y
+--     fn_banco_huellas, leídas por su texto, como c4 lee las de este
+--     archivo) y sigue sin cambios: con c6 pegado leía el texto de sus cien
+--     funciones internas (1,2 MB) y el de c4, vuelta tras vuelta, y con el
+--     catálogo analizado limpiaba también el de las funciones del sistema:
+--     de 190 a 340 ms por llamada con un año de libro, ahora unos 50. Las
+--     candidatas se juntan UNA vez, con su texto ya sin comentarios, y
+--     cada vuelta busca solo los nombres nuevos. No se pierde la cadena:
+--     las selladas cuentan desde el principio como funciones que leen o
+--     escriben el libro, y una SECURITY DEFINER ajena que las llama sale en
+--     rojo igual; una sellada que cambió (o que se volvió SECURITY DEFINER)
+--     ya no es la sellada y se lee como cualquiera. Su prueba: la 83 de
+--     c2-pruebas.sql (sale «omitida» sin c6);
+--   · la marca sube a 2026100201 (c6 la pide).
 --
 -- EL ROJO SE CORRE SOLO EN EL BANCO DE PRUEBAS (pruebas/conta/correr.sh
 -- con «c2-libro.sql:A»). En Supabase este archivo se pega SIEMPRE entero:
@@ -2928,6 +2946,15 @@ declare
   v_app        text[];
   v_int        text[];
   v_fases      text[];
+  -- (ronda 4 de c6: lo sellado por c4 y por el banco, y las candidatas una
+  -- vez)
+  v_sello      text;
+  v_c6sel      text;
+  v_c6ok       oid[] := '{}';
+  v_cand       oid[] := '{}';
+  v_csrc       text[] := '{}';
+  v_nombres_ya text[] := '{}';
+  v_fn_ya      text[] := '{}';
   c_tablas constant text[] := array['cuentas', 'cuentas_historial', 'periodos', 'contadores', 'asientos', 'asiento_lineas'];
   -- Las que llama conta.js (grant a authenticated) y las de dentro (sin
   -- grant a nadie de la API). Ver B.20. Una fase que añada una función
@@ -3374,6 +3401,21 @@ begin
   --   del sistema, sin las funciones de las extensiones. Por el texto se
   --   caza el error honesto (el revoke que se olvidó en un pegado); un SQL
   --   dinámico armado a propósito para esconderse no se ve.
+  -- · (Ronda 4 de c6) Lo que los estados y el banco SELLARON (c4 y c6: sus
+  --   huellas, fn_estados_huellas y fn_banco_huellas, su texto, como c4 lee
+  --   el de c2) y sigue sin cambios no se vuelve a leer: con c6 pegado,
+  --   este control leía en cada llamada el texto de sus cien funciones
+  --   internas (1,2 MB), y el de c4 (el de su control, 90 KB). Para no
+  --   perder la cadena (una DEFINER ajena que llama a una función del banco
+  --   que postea), las selladas cuentan desde el principio como funciones
+  --   que leen el libro: quien las llama se mira; y entre las peligrosas
+  --   solo no cuentan las del reparto (una sellada que se volvió SECURITY
+  --   DEFINER ya no es la sellada: se lee y se mira como cualquiera). Y las candidatas se
+  --   juntan UNA vez, con su texto ya sin comentarios, antes de buscar
+  --   (antes cada vuelta limpiaba el de todas, y con el catálogo analizado
+  --   Postgres limpiaba también el de las del sistema: de 190 a 340 ms por
+  --   llamada con un año de libro); cada vuelta busca solo los nombres que
+  --   aparecieron en la anterior: lo demás ya se miró.
   select coalesce(array_agg(c.oid), '{}') into v_tablas
     from pg_class c
    where c.relnamespace = 'public'::regnamespace and c.relname = any (c_tablas);
@@ -3396,6 +3438,41 @@ begin
     from unnest(array['fn_postear_interno(jsonb)', 'fn_reversar_interno(uuid,text,text,jsonb)',
                       'fn_asiento_canonico(asientos)', 'fn_estado(text)']) f
    where to_regprocedure('public.' || f) is not null;
+  -- (lo sellado por los estados y por el banco y sin cambios —c4 y c6:
+  -- sus huellas, fn_estados_huellas y fn_banco_huellas—; lo que no está
+  -- pegado, nada. El nombre va partido para que este texto no parezca una
+  -- llamada a esa función)
+  foreach v_sello in array array['fn_estados_huellas', 'fn_banco_huellas'] loop
+    v_c6sel := null;
+    select p.prosrc into v_c6sel from pg_proc p where p.oid = to_regprocedure('public.' || v_sello || '()');
+    if v_c6sel is not null then
+      begin
+        execute 'select coalesce(array_agg(p.oid), ''{}'') from (' || v_c6sel || ') h(tipo, objeto, md5)
+                   join pg_proc p on p.oid = to_regprocedure(''public.'' || h.objeto)
+                  where h.tipo = ''funcion'' and md5(pg_get_functiondef(p.oid)) = h.md5'
+          into v_nuevas;
+        v_c6ok := v_c6ok || v_nuevas;
+      exception when others then
+        null;
+      end;
+    end if;
+  end loop;
+  -- Las candidatas, una vez, con su texto sin comentarios (el «offset 0»
+  -- deja el filtro barato antes que limpiar el texto).
+  select coalesce(array_agg(x.oid order by x.oid), '{}'),
+         coalesce(array_agg(regexp_replace(regexp_replace(x.prosrc, '/\*.*?\*/', ' ', 'g'), '--[^\n]*', ' ', 'g')
+                            order by x.oid), '{}')
+    into v_cand, v_csrc
+    from (select p.oid, p.prosrc
+            from pg_proc p
+            join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname !~ '^pg_' and n.nspname <> 'information_schema'
+             and p.prokind in ('f', 'p')
+             and not (p.oid = any (v_conocidas) or p.oid = any (v_semillas) or p.oid = any (v_c6ok))
+             and not exists (select 1 from pg_depend e
+                              where e.classid = 'pg_proc'::regclass and e.objid = p.oid and e.deptype = 'e')
+          offset 0) x;
+  v_lee := v_c6ok;
   loop
     with recursive dep(oid) as (
            select x.oid
@@ -3415,12 +3492,17 @@ begin
             where rw.ev_class <> dep.oid
          )
     select coalesce(array_agg(distinct dep.oid), '{}') into v_rel from dep;
+    -- (Solo los nombres NUEVOS de esta vuelta: una candidata que no casó
+    -- con los de antes no va a casar ahora con ellos.)
     select coalesce(array_agg(distinct c.relname::text), '{}') into v_nombres
       from pg_class c
-     where c.oid = any (v_rel) and c.relname ~ '^[[:alnum:]_]+$';
+     where c.oid = any (v_rel) and c.relname ~ '^[[:alnum:]_]+$' and not (c.relname::text = any (v_nombres_ya));
     select coalesce(array_agg(distinct p.proname::text), '{}') into v_fn_nombres
       from pg_proc p
-     where (p.oid = any (v_semillas) or p.oid = any (v_lee)) and p.proname ~ '^[[:alnum:]_]+$';
+     where (p.oid = any (v_semillas) or p.oid = any (v_lee)) and p.proname ~ '^[[:alnum:]_]+$'
+       and not (p.proname::text = any (v_fn_ya));
+    v_nombres_ya := v_nombres_ya || v_nombres;
+    v_fn_ya := v_fn_ya || v_fn_nombres;
     -- (En el texto SIN comentarios: «from/**/asientos» ya no se esconde. Un
     -- nombre compuesto —asiento_lineas, v_libro— cuenta como palabra
     -- dondequiera que esté; uno simple —asientos, cuentas—, detrás de
@@ -3434,34 +3516,31 @@ begin
     v_rx_coma := case when v_simples <> ''
                       then '[,(][[:space:]]*(([[:alnum:]_]+|"[^"]+")[[:space:]]*[.][[:space:]]*)?"?(' || v_simples || ')"?[[:>:]]' end;
     v_rx_comp := case when v_compues <> '' then '[[:<:]](' || v_compues || ')[[:>:]]' end;
-    v_rx_fn   := '[[:<:]](' || array_to_string(v_fn_nombres, '|') || ')[[:space:]]*[(]';
+    v_rx_fn   := case when cardinality(v_fn_nombres) > 0
+                      then '[[:<:]](' || array_to_string(v_fn_nombres, '|') || ')[[:space:]]*[(]' end;
     select coalesce(array_agg(x.oid), '{}') into v_nuevas
-      from (select p.oid, regexp_replace(regexp_replace(p.prosrc, '/\*.*?\*/', ' ', 'g'), '--[^\n]*', ' ', 'g') as src
-              from pg_proc p
-              join pg_namespace n on n.oid = p.pronamespace
-             where n.nspname !~ '^pg_' and n.nspname <> 'information_schema'
-               and p.prokind in ('f', 'p')
-               and not (p.oid = any (v_lee) or p.oid = any (v_conocidas) or p.oid = any (v_semillas))
-               and not exists (select 1 from pg_depend e
-                                where e.classid = 'pg_proc'::regclass and e.objid = p.oid and e.deptype = 'e')) x
-     where (v_rx_rel is not null and x.src ~* v_rx_rel)
-        or (v_rx_coma is not null and regexp_replace(x.src, '''([^'']|'''')*''', ' ', 'g') ~* v_rx_coma)
-        or (v_rx_comp is not null and x.src ~* v_rx_comp)
-        or (cardinality(v_fn_nombres) > 0 and x.src ~* v_rx_fn)
-        or exists (select 1 from pg_depend d
-                    where d.classid = 'pg_proc'::regclass and d.objid = x.oid
-                      and (   (d.refclassid = 'pg_class'::regclass and d.refobjid = any (v_rel))
-                           or (d.refclassid = 'pg_proc'::regclass
-                               and (d.refobjid = any (v_semillas) or d.refobjid = any (v_lee)))));
+      from unnest(v_cand, v_csrc) as x(oid, src)
+     where not (x.oid = any (v_lee))
+       and (   (v_rx_rel is not null and x.src ~* v_rx_rel)
+            or (v_rx_coma is not null and regexp_replace(x.src, '''([^'']|'''')*''', ' ', 'g') ~* v_rx_coma)
+            or (v_rx_comp is not null and x.src ~* v_rx_comp)
+            or (v_rx_fn is not null and x.src ~* v_rx_fn)
+            or exists (select 1 from pg_depend d
+                        where d.classid = 'pg_proc'::regclass and d.objid = x.oid
+                          and (   (d.refclassid = 'pg_class'::regclass and d.refobjid = any (v_rel))
+                               or (d.refclassid = 'pg_proc'::regclass
+                                   and (d.refobjid = any (v_semillas) or d.refobjid = any (v_lee))))));
     exit when cardinality(v_nuevas) = 0;
     v_lee := v_lee || v_nuevas;
   end loop;
   -- · De esas funciones, las que son peligro: SECURITY DEFINER (corren con
   --   los permisos de su dueño, que se salta la policy), no de trigger
-  --   (esas no se pueden llamar sueltas), y que la API puede ejecutar.
+  --   (esas no se pueden llamar sueltas), y que la API puede ejecutar. (Las
+  --   del reparto no: las de la app del banco, selladas por c6, entran en
+  --   v_lee desde el principio y son SECURITY DEFINER a propósito.)
   select coalesce(array_agg(p.oid), '{}') into v_sospechosas
     from pg_proc p
-   where p.oid = any (v_lee) and p.prosecdef and p.prokind = 'f'
+   where p.oid = any (v_lee) and not (p.oid = any (v_conocidas)) and p.prosecdef and p.prokind = 'f'
      and p.prorettype not in ('trigger'::regtype, 'event_trigger'::regtype)
      and exists (select 1 from unnest(array['anon', 'authenticated', 'service_role']) r
                   where has_schema_privilege(r, p.pronamespace, 'USAGE')
@@ -3929,12 +4008,14 @@ comment on function public.fn_proyectos_con_libro()   is 'Una obra con asientos 
 -- ---------------------------------------------------------------------
 -- La MARCA de esta versión (ver la cabecera, ronda 4 de c4): AAAAMMDDNN.
 -- Sube cuando una fase necesita un c2 más nuevo; c4 la lee de su texto.
+-- 2026100201 (ronda 4 de c6): el control permisos no relee en cada llamada
+-- lo que el banco selló, y junta sus candidatas una vez (c6 la pide).
 create or replace function public.fn_libro_version()
 returns bigint
 language sql
 immutable
 set search_path = public, pg_temp
-as $$ select 2026092701::bigint $$;
+as $$ select 2026100201::bigint $$;
 revoke execute on function public.fn_libro_version() from public, anon, authenticated, service_role;
 
 create or replace function public.fn_libro_huellas_calcular()

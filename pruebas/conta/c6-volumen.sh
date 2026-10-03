@@ -8,6 +8,8 @@
 #
 #   ./c6-volumen.sh [nombre_bd] [por_mes]     (por defecto c6_volumen 666)
 #   AL_DIA=9 ./c6-volumen.sh …               (los meses que Edgar lleva al día)
+#   MOVS=2500 ./c6-volumen.sh … 200          (cuántos movimientos, unos; por
+#       defecto 10.000. Con 200 por mes y 2.500, el año de Edgar: ronda 4)
 #   PLANTILLA=<bd> ./c6-volumen.sh …         (el libro copiado de una base
 #       que dejó «CONSERVAR=1 SOLO_MEDIR=1 ./c4-volumen.sh <bd> 666»: sin
 #       rehacerlo, segundos en vez de 4 minutos)
@@ -45,6 +47,14 @@
 #   · fn_banco_control como la pide cada pantalla: no más de 8 s y nada en
 #     rojo (salvo lo que el escenario no tiene: préstamos y prepagados sin
 #     registrar dan verde igual);
+#   · (ronda 4 de c6) las pantallas de cifras de c4 CON EL BANCO EN USO,
+#     como en producción (unas diez veces más lenta que este banco):
+#     fn_estados_control con su tope por reloj a la velocidad del banco
+#     (los 3 s de la API, en 300 ms), pidiendo otra vez lo que sale
+#     «Sigue», como conta.js: cada llamada no más de 0,8 s (los 8 s de la
+#     API), la pantalla entera en seis llamadas o menos, y nada en rojo.
+#     Con el volumen de Edgar (por_mes 250 o menos) falla si no; con más,
+#     el tiempo solo se informa (lo rojo falla siempre);
 #   · conciliar la cuenta del banco a fin del último mes con la bandeja
 #     atrasada (fn_conciliar): no más de 8 s, y otra vez (lo que no cambió
 #     no se reescribe);
@@ -84,6 +94,10 @@ K="${2:-666}"
 # conciliación); después se atrasa (con AL_DIA=0, un año entero sin
 # resolver nada: miles de pendientes).
 AL_DIA="${AL_DIA:-9}"
+# Cuántos movimientos, más o menos (los del libro y, hasta llegar, cargos
+# que el libro no tiene).
+MOVS="${MOVS:-10000}"
+[[ "$MOVS" =~ ^[0-9]+$ ]] || { echo "MOVS va en dígitos (llegó «$MOVS»)." >&2; exit 64; }
 [[ "$K" =~ ^[0-9]+$ ]] && [ "$K" -ge 20 ] || { echo "por_mes va en dígitos, 20 o más (llegó «$K»)." >&2; exit 64; }
 TMP="$(mktemp -d)"
 chmod 755 "$TMP"
@@ -131,7 +145,7 @@ DUENO="$(ed -c "select id from perfiles where rol = 'dueno' order by creado limi
 APP="select set_config('request.jwt.claims', '{\"sub\":\"$DUENO\",\"role\":\"authenticated\"}', true); select count(set_config(k.k, k.v, true)) from (select split_part(c, '=', 1) as k, lower(substr(c, strpos(c, '=') + 1)) as v from pg_roles r, unnest(r.rolconfig) c where r.rolname = 'authenticated') k join pg_settings ps on ps.name = k.k and ps.context = 'user'; set local role authenticated; set local statement_timeout = '8s';"
 
 echo "== Los estados de cuenta: 12 meses de tres cuentas, desde las líneas del libro y con cargos que el libro no tiene"
-ed -v ON_ERROR_STOP=1 > "$TMP/gen.out" 2>&1 <<'SQL' || { tail -n 20 "$TMP/gen.out"; echo "FALLÓ la generación" >&2; exit 2; }
+ed -v ON_ERROR_STOP=1 -v movs="$MOVS" > "$TMP/gen.out" 2>&1 <<'SQL' || { tail -n 20 "$TMP/gen.out"; echo "FALLÓ la generación" >&2; exit 2; }
 drop schema if exists vol_banco cascade;
 create schema vol_banco;
 grant usage on schema vol_banco to authenticated;
@@ -153,13 +167,14 @@ select l.cuenta, a.fecha_contable + (abs(hashtext(a.numero || '-' || l.orden)) %
  where l.cuenta in ('1010', '2100-2013', '2100-2009') and a.fecha_contable between date '2026-10-01' and date '2027-09-27'
    and a.tipo <> 'apertura' and a.camino not in ('reverso', 'reverso_automatico')
    and not exists (select 1 from public.asientos r where r.reversa_a = a.id and r.camino = 'reverso');
--- Cargos que el libro no tiene (a la bandeja), hasta unos 10.000 movimientos.
+-- Cargos que el libro no tiene (a la bandeja), hasta unos 10.000
+-- movimientos (MOVS: con 200 por mes y 2.500, el año de Edgar).
 insert into vol_banco.movs
 select x.c, d0::date + (g % 27), -round((3 + (g * 37 % 5000) / 100.0)::numeric, 2), 'POS',
        'N' || x.c || '-' || to_char(d0, 'YYMM') || '-' || g, 'VOL POS ' || x.c || ' ' || g, null
   from (values ('1010'), ('2100-2013'), ('2100-2009')) x(c),
        generate_series(date '2026-10-01', date '2027-09-01', interval '1 month') d0,
-       generate_series(1, greatest(0, (10000 - (select count(*) from vol_banco.movs)) / 36)::int) g;
+       generate_series(1, greatest(0, (:movs - (select count(*) from vol_banco.movs)) / 36)::int) g;
 create index on vol_banco.movs (cuenta, fecha);
 analyze vol_banco.movs;
 -- El estado de cuenta de una cuenta y un mes, en OFX 1.x, con su saldo
@@ -351,6 +366,49 @@ ctl "todo ($P)" "$P" "null"
 ctl "hoy" "hoy" "null"
 revisa "fn_banco_control($P): nada en rojo" "ninguna" \
   "$(ed -c "begin; $APP select coalesce(string_agg(vista, ', ') filter (where not ok), 'ninguna') from fn_banco_control('$P', null); rollback;" 2>&1 | tail -n 1)"
+
+# (Ronda 4 de c6) COMO EN PRODUCCIÓN: la instancia de Supabase es unas diez
+# veces más lenta que este banco y la API corta cada llamada a los 8 s. A
+# la velocidad del banco: 0,8 s por llamada, y el tope por reloj de
+# fn_estados_control (3 s desde la API) en 300 ms. Con el volumen de Edgar
+# (unos 200 papeles por mes) se exige; con más, se informa.
+PROD_LLAMADA_MS=800
+PROD_RELOJ_MS=300
+if [ "$K" -le 250 ]; then EXIGE=1; else EXIGE=0; fi
+echo "== Las pantallas de cifras de c4 con el banco en uso, como en producción: el tope por reloj en $PROD_RELOJ_MS ms y la API en $PROD_LLAMADA_MS ms; conta.js pide otra vez lo que sale «Sigue»"
+[ "$EXIGE" = "1" ] || echo "     (con $K por mes, más que el volumen de Edgar: el tiempo solo se informa; lo rojo falla igual)"
+# pantalla <nombre> <periodo> <vistas>: como en c4-volumen.sh. Pide el
+# control de su lista y, mientras salga algo «Sigue», otra vez con lo que
+# falta. Cada llamada no más de 0,8 s, la pantalla en 6 llamadas o menos y
+# nada en rojo (ok falso, o nulo sin ser «Sigue»).
+pantalla() {
+  local lista="$3" n=0 max=0 tot=0 t0 t1 ms r sigue rojo="" falla=""
+  while [ -n "$lista" ] && [ $n -lt 9 ]; do
+    n=$((n + 1))
+    t0=$(date +%s%N)
+    r="$(ed -c "begin; $APP set local c4.control_tope = '$PROD_RELOJ_MS'; select coalesce(string_agg(quote_literal(vista), ', ' order by orden) filter (where ok is null and detalle like 'Sigue:%'), '') || '|' || coalesce(string_agg(vista, '; ') filter (where ok is not true and not (ok is null and coalesce(detalle, '') like 'Sigue:%')), '') from fn_estados_control('$2', $lista); rollback;" 2>&1 | grep -v '^[0-9]*$' | tail -n 1)"
+    t1=$(date +%s%N)
+    ms=$(( (t1 - t0) / 1000000 ))
+    if grep -qiE 'error|cancel' <<< "$r"; then
+      printf '  %-52s NO TERMINÓ (llamada %d): %s\n' "$1" "$n" "$(cut -c1-120 <<< "$r")"; malos=1; return
+    fi
+    tot=$((tot + ms)); [ "$ms" -gt "$max" ] && max=$ms
+    sigue="${r%%|*}"
+    [ -n "${r#*|}" ] && rojo="${rojo:+$rojo; }${r#*|}"
+    if [ -n "$sigue" ]; then lista="array[$sigue]"; else lista=""; fi
+  done
+  [ "$max" -gt "$PROD_LLAMADA_MS" ] && falla="${falla} una llamada de $max ms (tope $PROD_LLAMADA_MS)"
+  [ -n "$lista" ] || [ "$n" -gt 6 ] && falla="${falla} $n llamadas$( [ -n "$lista" ] && echo ' y todavía «Sigue»')"
+  printf '  %-52s %6d ms  la más lenta de %d llamadas (en total %d ms), en rojo: %s' "$1" "$max" "$n" "$tot" "${rojo:-ninguna}"
+  if [ -n "$rojo" ]; then malos=1; fi
+  if [ -n "$falla" ]; then
+    if [ "$EXIGE" = "1" ]; then printf '  (FALLA:%s)' "$falla"; malos=1; else printf '  (se informa:%s)' "$falla"; fi
+  fi
+  printf '\n'
+}
+pantalla "el Panel ($P, 9 vistas)" "$P" "array['v_saldos_dinero', 'v_flujo_real_por_mes', 'v_cxc_antiguedad', 'v_cxp_antiguedad', 'v_resultados', 'v_comparacion_resumen', 'v_gasto_por_categoria', 'v_gasto_por_proveedor', 'v_obras_dinero']"
+pantalla "el Panel a hoy" "hoy" "null"
+pantalla "los estados ($P, 4 vistas)" "$P" "array['v_balanza', 'v_balance_general', 'v_resultados', 'v_flujo_caja']"
 
 echo "== EXPLAIN ANALYZE de cada vista (como la app) → $TMP/explain.txt"
 : > "$TMP/explain.txt"

@@ -40,8 +40,10 @@
 -- un instante los triggers del libro, como la 22 de c2; la 101 pone una
 -- función ajena que lee las tablas de c4; la 103 rehace la marca de c2 y
 -- la policy de cobros a la forma vieja; la 109 da MAINTAIN sobre una
--- tabla de c4) van con lock_timeout de 2 s: si la app las está usando,
--- salen «omitida» en vez de hacerla esperar.
+-- tabla de c4; la 113 resella las huellas del banco con una función de
+-- prueba y vuelve SECURITY DEFINER una del banco) van con lock_timeout de
+-- 2 s: si la app las está usando, salen «omitida» en vez de hacerla
+-- esperar. (La 113 también sin c6: mide lo que c6 selló.)
 --
 -- TODA CIFRA BAJA (la 25): copia, en tablas temporales que mueren con su
 -- subtransacción, las vistas a las que se baja (v_libro, v_flujo_lineas,
@@ -104,6 +106,12 @@ truncate _pruebas;
 -- correr (con 10.000 asientos, segundos por consulta), y cada segundo es
 -- un segundo con el libro tomado.
 set jit = off;
+-- Y sin el tope por reloj de fn_estados_control (ronda 4 de c6; se
+-- devuelve al final): las pruebas lo llaman como el dueño desde la API
+-- (authenticated), que tiene 3 s, y en producción, unas diez veces más
+-- lenta que el banco, una llamada larga saldría a medias («Sigue…») y la
+-- prueba en rojo sin serlo. La 112 prueba el tope.
+set c4.control_tope = '0';
 
 -- ---------------------------------------------------------------------
 -- Antes de nada: lo que estas pruebas dan por hecho.
@@ -5506,12 +5514,16 @@ end $$;
 --     nombre, mismo oid), un trigger de historial rehecho solo para INSERT,
 --     un trigger ajeno que se traga las altas del historial y una regla
 --     «do instead nothing» salen, cada uno, en rojo con su nombre. Antes,
---     los cuatro en verde. (lock_timeout de 2 s.)
+--     los cuatro en verde. Y una vista de c4 rehecha con otra definición
+--     (las mismas columnas), también: desde la ronda 4 de c6 sus huellas se
+--     toman de su árbol guardado (pg_rewrite), no de su texto. (lock_timeout
+--     de 2 s.)
 do $$
 declare
   v_obt  text;
   v_esp  text := 'guarda=f:fn_estados_inmutable() trigger=f:estados_mapeo.trg_estados_mapeo_historial '
-                 'ajeno=f:estados_historial.c4_pruebas_tragar regla=f:estados_historial.c4_pruebas_nada';
+                 'ajeno=f:estados_historial.c4_pruebas_tragar regla=f:estados_historial.c4_pruebas_nada '
+                 'vista=f:v_comparacion_resumen';
   v_mes  text := current_setting('mx4.mes', true);
   v_r    text;
   v_x    text;
@@ -5557,7 +5569,16 @@ begin
            || case when c.detalle like '%regla estados_historial.c4_pruebas_nada es nuevo: no es de c4%'
                    then 'estados_historial.c4_pruebas_nada' else c.detalle end
       into v_x from fn_estados_control(v_mes, array['v_balanza']) c where c.vista = 'cuadre: protecciones de c4';
-    v_obt := v_r || ' regla=' || v_x;
+    v_r := v_r || ' regla=' || v_x;
+    drop rule c4_pruebas_nada on public.estados_historial;
+    -- (5) una vista de c4 rehecha con otra definición y las mismas columnas
+    execute format('create or replace view public.v_comparacion_resumen with (security_invoker = true) as select x.* from (%s) x',
+                   rtrim(pg_get_viewdef('public.v_comparacion_resumen'::regclass), E'; \n'));
+    select (case when c.ok then 't' else 'f' end) || ':'
+           || case when c.detalle like '%vista v_comparacion_resumen cambió desde que se pegó c4%'
+                   then 'v_comparacion_resumen' else c.detalle end
+      into v_x from fn_estados_control(v_mes, array['v_balanza']) c where c.vista = 'cuadre: protecciones de c4';
+    v_obt := v_r || ' vista=' || v_x;
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
@@ -5986,21 +6007,33 @@ declare
   v_s0    numeric;
   v_norm  text;
   v_omite text;
+  v_i     int;
+  v_lock  boolean := false;
 begin
   if v_d is null or v_obra is null then
     insert into _pruebas values (89, 'lo sin repartir que no se explica sale en rojo', v_esp, 'omitida: falta el mes abierto o una obra', null);
     return;
   end if;
   begin
-    execute 'set local lock_timeout = ''2s''';
-    begin
-      -- (antes que el candado de la cadena: c2, prueba 24)
-      lock table public.asientos, public.asiento_lineas in access exclusive mode;
-    exception when lock_not_available then
+    -- (antes que el candado de la cadena: c2, prueba 24). Los dos juntos y
+    -- SIN ESPERAR con uno ya tomado (nowait; si alguno está en uso se
+    -- suelta todo y se reintenta cada 0,1 s, hasta unos 2 s): una lectura
+    -- del Panel toma asiento_lineas y después asientos, y con la espera
+    -- cruzada Postgres cortaba la lectura de la app (40P01; lo vio
+    -- c4-volumen.sh el 3-oct, en la ronda 4 de c6).
+    for v_i in 1 .. 20 loop
+      begin
+        lock table public.asientos, public.asiento_lineas in access exclusive mode nowait;
+        v_lock := true;
+        exit;
+      exception when lock_not_available then
+        perform pg_sleep(0.1);
+      end;
+    end loop;
+    if not v_lock then
       v_omite := 'el libro estaba en uso (se prueba en el banco)';
       raise exception using errcode = 'MXT00';
-    end;
-    execute 'set local lock_timeout = 0';
+    end if;
     select coalesce(sum(c.sin_repartir), 0) into v_s0
       from v_costo_por_obra c where c.periodo = v_mes and c.nivel = 'control' and c.cuenta = '5100';
     v_id := (fn_postear(jsonb_build_object('fecha', (v_d + 9)::text, 'descripcion', 'c4-pruebas: material que pierde su obra por debajo',
@@ -7143,6 +7176,178 @@ begin
                                case when v_obt = 'omitida' then null else coalesce(v_obt = v_esp, false) end);
 end $$;
 
+-- =====================================================================
+-- RONDA 4 DE c6, EL TIEMPO EN PRODUCCIÓN (112 y 113): una prueba por
+-- hallazgo. Cada una falla con la versión anterior de c4-estados.sql.
+-- Además, de esa ronda: la 80 mira también una vista de c4 cambiada (sus
+-- huellas se toman ahora de su árbol guardado), y la 89 pide sus dos
+-- candados del libro juntos y sin esperar con uno tomado (con el Panel
+-- leyendo a la vez, Postgres cortaba la lectura de la app: 40P01, lo vio
+-- c4-volumen.sh).
+-- =====================================================================
+
+-- 112. EL TOPE POR RELOJ DEL CONTROL: la API corta cada llamada a los 8 s
+--      y producción es unas diez veces más lenta que el banco; con un año
+--      de libro y el banco en uso, el control del Panel entero tardaba de
+--      1,1 a 1,8 s en el banco (de 11 a 18 s allí: 57014, y la pantalla sin
+--      pintar). Ahora, pasado su tope (3 s desde la API; c4.control_tope lo
+--      cambia), lo que falta sale con ok nulo y «Sigue: …», con la llamada
+--      que lo pide, y no se pinta. Con un tope de 1 ms, como el dueño desde
+--      la app: el balance (la primera vista: cada llamada avanza) y el
+--      estado de resultados (va con el balance: su cuadre los compara) se
+--      controlan, con su cuadre y las protecciones; el flujo y el gasto
+--      salen «Sigue», y la llamada que traen, con esas dos, las controla.
+--      Sin tope (0), ninguna «Sigue». Un tope que no se entiende es 22023.
+--      Antes no había tope: las cuatro en una llamada, siempre.
+do $$
+declare
+  v_obt  text;
+  v_esp  text := 'balance=controlada resultados=controlada flujo=sigue gasto=sigue cuadre56=t protecciones=t '
+                  'pide=v_flujo_caja,v_gasto_por_categoria despues=2/2 sin_tope=sigue:0 malo=22023';
+  v_mes  text := nullif(current_setting('mx4.mes', true), '');
+  v_ver  text[] := array['v_balance_general', 'v_resultados', 'v_flujo_caja', 'v_gasto_por_categoria'];
+  v_pide text;
+  v_x    text;
+  v_n    bigint;
+  v_m    bigint;
+begin
+  if v_mes is null or nullif(current_setting('mx4.dueno', true), '') is null then
+    insert into _pruebas values (112, 'el tope por reloj del control: «Sigue» con lo que falta, sin partir balance y resultados',
+                                 v_esp, 'omitida: faltan el mes abierto o el dueño', null);
+    return;
+  end if;
+  begin
+    perform set_config('c4.control_tope', '1', true);
+    perform pg_temp.c4_como('dueno');
+    with c as (select * from fn_estados_control(v_mes, v_ver))
+    select concat_ws(' ',
+             (select string_agg(x.k || '=' || x.e, ' ' order by x.o)
+                from (select c.orden as o,
+                             case c.vista when 'v_balance_general' then 'balance' when 'v_resultados' then 'resultados'
+                                          when 'v_flujo_caja' then 'flujo' else 'gasto' end as k,
+                             case when c.ok is null and c.detalle like 'Sigue:%' then 'sigue'
+                                  when c.ok is not null then 'controlada' else 'nula' end as e
+                        from c where c.vista = any (v_ver)) x),
+             'cuadre56=' || case when exists (select 1 from c where c.vista like 'cuadre: resultado del estado%' and c.ok is not null)
+                                 then 't' else 'f' end,
+             'protecciones=' || case when exists (select 1 from c where c.vista = 'cuadre: protecciones de c4' and c.ok is not null)
+                                     then 't' else 'f' end),
+           (select replace(replace(substring(min(c.detalle) from 'array\[([^]]*)\]'), '''', ''), ' ', '')
+              from c where c.ok is null and c.detalle like 'Sigue:%')
+      into v_obt, v_pide;
+    v_obt := v_obt || ' pide=' || coalesce(v_pide, '-');
+    -- La llamada que trae el «Sigue», sin tope: controla lo que faltaba.
+    perform set_config('c4.control_tope', '0', true);
+    if v_pide is not null then
+      select count(*) filter (where c.ok is not null), count(*) into v_n, v_m
+        from fn_estados_control(v_mes, string_to_array(v_pide, ',')) c
+       where c.vista = any (string_to_array(v_pide, ','));
+      v_obt := v_obt || format(' despues=%s/%s', v_n, v_m);
+    else
+      v_obt := v_obt || ' despues=-';
+    end if;
+    select count(*) into v_n from fn_estados_control(v_mes, v_ver) c where c.ok is null and c.detalle like 'Sigue:%';
+    v_obt := v_obt || ' sin_tope=sigue:' || v_n;
+    perform set_config('c4.control_tope', 'tres segundos', true);
+    begin
+      perform * from fn_estados_control(v_mes, array['v_estados_mapeo']);
+      v_x := 'sin_error';
+    exception when others then
+      v_x := sqlstate;
+    end;
+    v_obt := v_obt || ' malo=' || v_x;
+    execute 'reset role';
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 120);
+  end;
+  execute 'reset role';
+  insert into _pruebas values (112, 'el tope por reloj del control: «Sigue» con lo que falta, sin partir balance y resultados',
+                               v_esp, coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 113. LO QUE c6 SELLÓ NO SE RELEE EN CADA PANTALLA, Y LA CADENA SIGUE:
+--      «protecciones de c4» leía en cada llamada el texto de las cien
+--      funciones internas del banco (1,2 MB), en cuatro vueltas: de 50 a
+--      250 ms más por pantalla. Ahora lo que c6 selló (fn_banco_huellas) y
+--      no cambió no se lee. Una función «del banco» de prueba con mucho
+--      texto (fn_banco_c4p_lastre, unos 4 MB): sin sellar, el control la
+--      lee; sellada (fn_banco_huellas_sellar, dentro de la prueba: se
+--      deshace), no, y tarda menos de dos tercios (se mide la proporción, la
+--      más rápida de dos y alternando: en Supabase todo tarda más). Y no se
+--      pierde la cadena: una SECURITY DEFINER que la API puede ejecutar y
+--      que llama a fn_banco_apertura_filas (sellada; lee la balanza y el
+--      mapeo de la apertura, de c4) sale en rojo con su nombre; y una del
+--      banco que se volvió SECURITY DEFINER (ya no es la sellada), también.
+--      Sin c6, «omitida». Va con lock_timeout de 2 s, como las otras que
+--      tocan lo de c4.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'lastre=no_se_relee cadena=f definer=f';
+  v_mes text := nullif(current_setting('mx4.mes', true), '');
+  v_t   timestamptz;
+  v_sin numeric;
+  v_con numeric;
+  v_i   int;
+  v_x   text;
+begin
+  if v_mes is null or to_regprocedure('public.fn_banco_huellas_sellar()') is null
+     or to_regprocedure('public.fn_banco_apertura_filas(text)') is null then
+    insert into _pruebas values (113, 'lo que c6 selló no se relee en cada pantalla; la cadena sigue', v_esp,
+                                 'omitida: sin c6 (el banco) o sin el mes abierto', null);
+    return;
+  end if;
+  begin
+    perform set_config('lock_timeout', '2s', true);
+    execute format('create function public.fn_banco_c4p_lastre() returns int language sql immutable '
+                   'set search_path = public, pg_temp as %L',
+                   'select length(' || quote_literal(repeat('c4-pruebas, el lastre: from estados_x e, v_balanza_y l join fn_estados_z(1) ',
+                                                            60000)) || ')');
+    -- Sin sellar y sellada, alternando (lo sellado, en una subtransacción
+    -- que se deshace), hasta tres veces: la más rápida de cada una.
+    for v_i in 1 .. 3 loop
+      v_t := clock_timestamp();
+      perform * from fn_estados_control(v_mes, array['v_estados_mapeo']);
+      v_sin := least(coalesce(v_sin, 1e9), extract(epoch from clock_timestamp() - v_t));
+      begin
+        perform fn_banco_huellas_sellar();
+        v_t := clock_timestamp();
+        perform * from fn_estados_control(v_mes, array['v_estados_mapeo']);
+        v_con := least(coalesce(v_con, 1e9), extract(epoch from clock_timestamp() - v_t));
+        raise exception using errcode = 'MXT01';
+      exception when sqlstate 'MXT01' then null;
+      end;
+      exit when v_i >= 2 and v_con < 0.67 * v_sin;
+    end loop;
+    v_obt := 'lastre=' || case when v_con < 0.67 * v_sin then 'no_se_relee'
+                               else format('se_relee:%s/%s_ms', round(v_sin * 1000), round(v_con * 1000)) end;
+    -- La cadena: una DEFINER ajena que llama a una función sellada del banco
+    -- que lee las tablas de c4.
+    execute $f$create function public.fn_c4p_ajena() returns bigint language sql security definer set search_path = public
+               as 'select count(*) from fn_banco_apertura_filas(''1010'')'$f$;
+    execute 'grant execute on function public.fn_c4p_ajena() to anon, authenticated, service_role';
+    select case when c.ok then 't' when c.detalle like '%fn_c4p_ajena()%' then 'f' else 'f:' || left(c.detalle, 120) end
+      into v_x from fn_estados_control(v_mes, array['v_estados_mapeo']) c where c.vista = 'cuadre: protecciones de c4';
+    v_obt := v_obt || ' cadena=' || coalesce(v_x, '-');
+    execute 'drop function public.fn_c4p_ajena()';
+    -- Y la del banco que se vuelve SECURITY DEFINER y la API puede llamar.
+    execute 'alter function public.fn_banco_apertura_filas(text) security definer';
+    execute 'grant execute on function public.fn_banco_apertura_filas(text) to anon';
+    select case when c.ok then 't' when c.detalle like '%fn_banco_apertura_filas(text)%' then 'f' else 'f:' || left(c.detalle, 120) end
+      into v_x from fn_estados_control(v_mes, array['v_estados_mapeo']) c where c.vista = 'cuadre: protecciones de c4';
+    v_obt := v_obt || ' definer=' || coalesce(v_x, '-');
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when lock_not_available then v_obt := 'omitida: la app usaba lo del banco (lock_timeout)';
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 120);
+  end;
+  insert into _pruebas values (113, 'lo que c6 selló no se relee en cada pantalla; la cadena sigue', v_esp, coalesce(v_obt, '-'),
+                               case when v_obt like 'omitida%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
 -- 110. NO DEJA RASTRO: todo lo de arriba se deshizo. El libro, los papeles,
 --      las tablas de c4 y su historial, las reglas, los contadores, las
 --      secuencias de la app, las huellas y la definición de cada vista y
@@ -7157,6 +7362,7 @@ begin
 end $$;
 
 reset jit;
+reset c4.control_tope;
 
 -- =====================================================================
 -- EL RESULTADO TAMBIÉN QUEDA EN UNA TABLA DE VERDAD (26-sep-2026). El SQL

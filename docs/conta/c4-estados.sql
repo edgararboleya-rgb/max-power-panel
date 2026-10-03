@@ -105,6 +105,53 @@
 --     de c2 y c3; c6 la pide al pegarse. Su prueba: la 111 de
 --     c4-pruebas.sql.
 --
+-- CAMBIOS PARA c6 (ronda 4, 3-oct-2026: el tiempo en producción). Se
+-- vuelve a pegar encima (no toca el libro ni lo que Edgar ajustó) y ANTES
+-- que c6-banco.sql, que pide esta marca y para con MX000 si no la ve. Con
+-- un año de libro y el banco en uso, el control del Panel (9 vistas)
+-- tardaba de 1,1 a 1,8 s en el banco de pruebas: de 11 a 18 s en
+-- producción, que es unas diez veces más lenta, y la API corta a los 8 s
+-- (57014: la pantalla no se pintaba). Ahora:
+--   · fn_estados_control tiene un TOPE POR RELOJ: desde la API, 3 s
+--     (c4.control_tope lo cambia; 0, sin tope; desde el SQL Editor no
+--     hay). Pasado el tope, lo que falta sale con ok nulo y «Sigue: …», con
+--     la llamada que lo pide, y conta.js lo vuelve a pedir (ver su
+--     cabecera, en 8). Con un año de libro, el Panel en dos a cuatro
+--     llamadas, cada una lejos de los 8 s. Su prueba: la 112 de
+--     c4-pruebas.sql (las pruebas corren sin tope: c4.control_tope = 0);
+--   · «protecciones de c4» ya no relee en cada pantalla lo que c6 SELLÓ
+--     (fn_banco_huellas, leída por su texto, como las de c2) y sigue sin
+--     cambios: leía el texto de sus cien funciones internas (1,2 MB) y daba
+--     cuatro vueltas (dos leen tablas de c4 a propósito; y fn_banco_control
+--     nombraba funciones de c4 en sus mensajes): de 50 a 250 ms más por
+--     pantalla; ahora, con c6, de 20 a 35 ms. Las candidatas se juntan UNA
+--     vez, con su texto ya sin comentarios (antes cada vuelta limpiaba el
+--     de todas, y con el catálogo analizado también el de las del
+--     sistema). No se pierde la cadena: las selladas por c6 cuentan como
+--     funciones que pueden leer las tablas de c4, y una SECURITY DEFINER
+--     ajena que las llama sale en rojo igual. Su prueba: la 113;
+--   · las huellas de sus vistas se toman de su árbol guardado (pg_rewrite)
+--     y no de su texto reconstruido: de 33-77 ms a 14-17 ms por llamada
+--     (c6 ya lo hacía así con las suyas). Una vista cambiada sigue saliendo
+--     en rojo con su nombre (la 80 de c4-pruebas.sql lo prueba ahora);
+--   · lo que el libro espera (las «esperadas» del control), sin dos
+--     subconsultas por cada línea del libro hasta el corte; v_gasto_por_
+--     proveedor se cuenta en la misma lectura de v_gasto_lineas que la
+--     controla (antes, otra lectura del año: 80 a 90 ms); y las tres de
+--     gasto se cuentan sin «nested loop» (Postgres no sabe al planear
+--     cuántas líneas trae el período y casaba cada cuenta con todas);
+--   · v_flujo_real_por_mes agrupa cada mes por su período (el filtro de
+--     la pantalla baja hasta el libro), v_obras_dinero toma lo cobrado y
+--     lo demás del libro por asiento (v_libro) y no de v_flujo_lineas, y
+--     v_flujo_lineas junta los cargos de inversión y financiamiento por
+--     cuenta (antes, una búsqueda por cada cargo). Mismas filas y cifras:
+--     las 27 vistas, comparadas (md5 de su contenido) contra las de antes,
+--     con un año de banco encima;
+--   · la marca: fn_estados_version() = 2026100201.
+--   El control del Panel pasó (en el banco, 17.6, con un año de libro y de
+--   banco) de 1,4-1,5 s a 0,7-0,8 s en una llamada; 'hoy', de 0,9-1,0 s a
+--   0,5 s; los estados, de 0,8-0,9 s a 0,5 s. Ver «ÍNDICES Y TIEMPOS».
+--
 -- =====================================================================
 -- CÓMO SE LEEN LAS CIFRAS (lo mismo en todas las vistas)
 -- =====================================================================
@@ -3717,18 +3764,30 @@ with el as materialized (
             from tl t
             join ta on ta.asiento_id = t.asiento_id and ta.toca and ta.dinero > 0
            where t.monto < 0 and t.tipo <> 'apertura') q
+), cl as materialized (
+  -- Lo que compró la tarjeta que es de inversión o de financiamiento: las
+  -- líneas al debe de esas cuentas de balance (cl), y de ellas las de los
+  -- asientos de la tarjeta SIN dinero (ci). Se buscan desde esas pocas
+  -- cuentas, aparte, no desde cada cargo de la tarjeta (antes, una
+  -- búsqueda en el libro por cada cargo —15.000 con un año de banco—, 45 ms
+  -- de cada lectura del flujo para casi nunca encontrar nada). Ronda 4 de
+  -- c6; los mismos pares que antes.
+  select al.asiento_id, al.monto, mp.flujo_directo as fd, mp.flujo_indirecto as fi
+    from mp
+    join public.asiento_lineas al on al.cuenta = mp.cuenta and al.monto > 0
+   where mp.estado = 'balance' and not mp.efectivo and mp.flujo_indirecto_seccion in ('inversion', 'financiamiento')
+), ci as materialized (
+  select cl.asiento_id, cl.monto, ta.debe, cl.fd, cl.fi
+    from cl
+    join ta on ta.asiento_id = cl.asiento_id and not ta.toca and ta.debe > 0
 ), cg as materialized (
   -- Los cargos a tarjeta de un asiento SIN dinero que compró algo de
   -- inversión o de financiamiento: por cada renglón de lo comprado, su
   -- parte del cargo (w). Y los adelantos de efectivo: la parte del cargo
   -- que fue adelanto va a préstamos (su pago es financiamiento).
-  select t.cuenta, t.cc, -t.monto as a, al.monto / ta.debe as w, mp.flujo_directo as fd, mp.flujo_indirecto as fi
-    from tl t
-    join ta on ta.asiento_id = t.asiento_id and not ta.toca and ta.debe > 0
-    join public.asiento_lineas al on al.asiento_id = t.asiento_id and al.monto > 0
-    join mp on mp.cuenta = al.cuenta and mp.estado = 'balance' and not mp.efectivo
-           and mp.flujo_indirecto_seccion in ('inversion', 'financiamiento')
-   where t.monto < 0
+  select t.cuenta, t.cc, -t.monto as a, ci.monto / ci.debe as w, ci.fd, ci.fi
+    from ci
+    join tl t on t.asiento_id = ci.asiento_id and t.monto < 0
   union all
   select av.cuenta, av.cc, av.a0, av.x / av.a0, 'prestamos', 'fin_prestamos'
     from av
@@ -4180,33 +4239,22 @@ having sum(v.monto) <> 0;
 -- ---------------------------------------------------------------------
 drop view if exists public.v_flujo_real_por_mes cascade;
 create view public.v_flujo_real_por_mes with (security_invoker = true) as
-with ef as materialized (
-  select date_trunc('month', v.fecha::timestamp)::date as mes, sum(v.monto) as neto, count(distinct v.asiento_id) as asientos
-    from public.v_libro v
-   where v.efectivo
-   group by 1
-), efc as materialized (
+-- (Ronda 4 de c6) Lo de cada mes —el neto del efectivo, las entradas y
+-- salidas, y las piezas del flujo por sección— se agrupa por el PERÍODO
+-- de sus asientos (el mes que c2 les pone por su fecha: el mismo que su
+-- mes), y no se materializa: pedida la vista con su mes (where periodo =
+-- '2026-10', como el control del Panel), Postgres lleva ese filtro hasta
+-- los asientos del mes y no arma el flujo de todo el libro para quedarse
+-- con un renglón (230 ms con un año de banco; lo mismo leída entera). El
+-- efectivo de cada cuenta al empezar y al terminar el mes sí necesita toda
+-- la historia (efc).
+with efc as materialized (
   -- Lo mismo por cuenta de efectivo (para saber cuáles están en rojo, y si
   -- son la caja).
   select v.cuenta, date_trunc('month', v.fecha::timestamp)::date as mes, sum(v.monto) as neto, bool_or(v.caja) as caja
     from public.v_libro v
    where v.efectivo
    group by 1, 2
-), mv as materialized (
-  select date_trunc('month', m.fecha::timestamp)::date as mes,
-         coalesce(sum(m.neto) filter (where m.neto > 0 and not m.par_en_el_mes), 0)  as entradas,
-         coalesce(-sum(m.neto) filter (where m.neto < 0 and not m.par_en_el_mes), 0) as salidas
-    from public.v_efectivo_movimientos m
-   group by 1
-), fl as materialized (
-  select date_trunc('month', f.fecha::timestamp)::date as mes,
-         coalesce(sum(f.importe) filter (where f.seccion_directo = 'operacion'), 0)      as operacion,
-         coalesce(sum(f.importe) filter (where f.seccion_directo = 'inversion'), 0)      as inversion,
-         coalesce(sum(f.importe) filter (where f.seccion_directo = 'financiamiento'), 0) as financiamiento,
-         coalesce(sum(f.importe) filter (where f.seccion_directo = 'ajustes'), 0)        as ajustes
-    from public.v_flujo_lineas f
-   where f.linea_directo is not null
-   group by 1
 ), h as materialized (
   select greatest(public.fn_fecha_miami(now()), (select max(a.fecha_contable) from public.asientos a)) as hasta_mes
 )
@@ -4251,9 +4299,23 @@ select p.periodo, p.desde, p.hasta,
                                'desde', p.desde::text, 'hasta', p.hasta::text))) as bajar
   from public.periodos p
   cross join h
-  left join ef on ef.mes = p.desde
-  left join mv on mv.mes = p.desde
-  left join fl on fl.mes = p.desde
+  left join (select v.periodo, sum(v.monto) as neto, count(distinct v.asiento_id) as asientos
+               from public.v_libro v
+              where v.efectivo
+              group by v.periodo) ef on ef.periodo = p.periodo
+  left join (select m.periodo,
+                    coalesce(sum(m.neto) filter (where m.neto > 0 and not m.par_en_el_mes), 0)  as entradas,
+                    coalesce(-sum(m.neto) filter (where m.neto < 0 and not m.par_en_el_mes), 0) as salidas
+               from public.v_efectivo_movimientos m
+              group by m.periodo) mv on mv.periodo = p.periodo
+  left join (select f.periodo,
+                    coalesce(sum(f.importe) filter (where f.seccion_directo = 'operacion'), 0)      as operacion,
+                    coalesce(sum(f.importe) filter (where f.seccion_directo = 'inversion'), 0)      as inversion,
+                    coalesce(sum(f.importe) filter (where f.seccion_directo = 'financiamiento'), 0) as financiamiento,
+                    coalesce(sum(f.importe) filter (where f.seccion_directo = 'ajustes'), 0)        as ajustes
+               from public.v_flujo_lineas f
+              where f.linea_directo is not null
+              group by f.periodo) fl on fl.periodo = p.periodo
   cross join lateral (
     -- Cada cuenta de efectivo al empezar (s0) y al terminar (s1) el mes: el
     -- efectivo del balance (las que están en negro), el cambio del
@@ -5411,14 +5473,23 @@ select c.periodo, c.tipo as periodo_tipo, c.corte, x.*
        where v.proyecto_id is not null and v.fecha <= c.corte
     ), fl as materialized (
       -- Lo de sus cuentas por cobrar y sus ingresos, con dinero y sin él
-      -- (sin la apertura).
-      select f.proyecto_id,
-             coalesce(sum(f.importe) filter (where f.toca_efectivo), 0)      as cobrado,
-             coalesce(-sum(f.importe) filter (where not f.toca_efectivo), 0) as otros
-        from public.v_flujo_lineas f, k
-       where f.proyecto_id is not null and f.fecha <= c.corte and f.pieza = 'linea' and f.tipo <> 'apertura'
-         and (f.cuenta in (k.cxc, k.ret) or f.seccion = 'ingresos')
-       group by f.proyecto_id
+      -- (sin la apertura). Es lo de las piezas 'linea' de v_flujo_lineas (a
+      -- donde baja: cada línea que no es dinero, su importe −monto, y si su
+      -- asiento toca dinero), leído del libro con ese mismo «toca dinero»
+      -- por asiento, sin armar el flujo entero (la cola de las tarjetas, lo
+      -- cubierto sin dinero, las demás piezas no cambian estas dos cifras):
+      -- el control del Panel tardaba aquí de 140 a 180 ms con un año de
+      -- libro (ronda 4 de c6). Las mismas cifras.
+      select x.proyecto_id,
+             coalesce(sum(-x.monto) filter (where x.toca_efectivo), 0)     as cobrado,
+             coalesce(sum(x.monto) filter (where not x.toca_efectivo), 0)  as otros
+        from (select v.proyecto_id, v.cuenta, v.seccion, v.monto, v.tipo, v.efectivo,
+                     bool_or(v.efectivo) over (partition by v.periodo, v.fecha, v.asiento_id) as toca_efectivo
+                from public.v_libro v
+               where v.fecha <= c.corte) x, k
+       where x.proyecto_id is not null and not x.efectivo and x.tipo <> 'apertura'
+         and (x.cuenta in (k.cxc, k.ret) or x.seccion = 'ingresos')
+       group by x.proyecto_id
     ), g as materialized (
       select l.proyecto_id,
              coalesce(sum(l.monto) filter (where l.tipo = 'apertura' and l.cuenta in (k.cxc, k.ret)), 0) as por_cobrar_apertura,
@@ -8007,12 +8078,16 @@ revoke execute on function public.fn_apertura(date, text, text) from public, ano
 -- fn_puente_version (c3): sube cuando una fase necesita un c4 más nuevo
 -- (c6 la pide, y la lee de su texto). No lee nada, nadie de la API la
 -- ejecuta, y va en las huellas de c4 (su prefijo fn_estados_).
+-- 2026092601: v_asiento_papel con v_papel_fases (c6). 2026100201 (ronda 4
+-- de c6): fn_estados_control con su tope por reloj, lo ajeno sin releer lo
+-- que c6 selló y las huellas de las vistas por su árbol (ver la cabecera,
+-- «CAMBIOS PARA c6 (ronda 4)»).
 create or replace function public.fn_estados_version()
 returns bigint
 language sql
 immutable
 set search_path = public, pg_temp
-as $$ select 2026092601::bigint $$;
+as $$ select 2026100201::bigint $$;
 revoke execute on function public.fn_estados_version() from public, anon, authenticated, service_role;
 
 -- =====================================================================
@@ -8056,8 +8131,14 @@ as $$
      and c.relname in ('estados_historial', 'estados_lineas', 'estados_mapeo', 'estados_config', 'apertura_mapeo_qb',
                        'apertura_balanza_qb', 'comparacion_qb', 'diferencias')
   union all
-  select 'vista'::text, c.relname, md5(pg_get_viewdef(c.oid) || coalesce(array_to_string(c.reloptions, ','), ''))
+  -- (Cada vista por su árbol guardado —la regla _RETURN de pg_rewrite— y
+  -- sus opciones, como las del banco en c6: cualquier cambio de su
+  -- definición lo cambia, sin reconstruir su texto. Con pg_get_viewdef las
+  -- 28 tardaban de 30 a 70 ms en CADA llamada al control, que las
+  -- recalcula; así, unos 10 ms. Ronda 4 de c6.)
+  select 'vista'::text, c.relname, md5(r.ev_action::text || coalesce(array_to_string(c.reloptions, ','), ''))
     from pg_class c
+    join pg_rewrite r on r.ev_class = c.oid and r.rulename = '_RETURN'
    where c.relnamespace = 'public'::regnamespace and c.relkind = 'v'
      and c.relname in ('v_estados_mapeo_propuesto', 'v_estados_mapeo', 'v_cortes', 'v_ejercicios', 'v_libro', 'v_mayor',
                        'v_asiento_papel', 'v_qb_balanzas', 'v_balanza_base', 'v_balanza', 'v_balanza_obra',
@@ -8138,6 +8219,20 @@ revoke execute on function public.fn_estados_huellas_sellar() from public, anon,
 --   v_gasto_por_proveedor controla también v_gasto_lineas (cuenta sus
 --   proveedores sobre ella). conta.js:
 --   _rpc('fn_estados_control', { p_periodo: '2026-10', p_vistas: ['v_balanza', 'v_resultados'] })
+--   EL TOPE POR RELOJ (ronda 4 de c6): la API corta cada llamada a los 8 s
+--   (57014) y producción es unas diez veces más lenta que el banco de
+--   pruebas; con un año de libro el control del Panel entero (9 vistas)
+--   ya no cabía. Desde la API cada llamada se da 3 s (c4.control_tope,
+--   abajo): pasado el tope, cada vista que falta sale en su fila con ok
+--   NULO, filas nulas, sus esperadas y el detalle «Sigue: …», que trae la
+--   llamada para lo que falta. conta.js no la pinta (nulo no es verde) y
+--   vuelve a pedir esa lista, hasta que no quede ninguna «Sigue» (con un
+--   año de libro, dos o tres llamadas para el Panel, cada una lejos de los
+--   8 s). La primera vista de cada llamada se controla siempre (cada
+--   llamada avanza); el estado de resultados va con el balance si se
+--   piden los dos (su cuadre los compara en la misma llamada); los cuadres
+--   entre vistas, con las controladas en esa llamada; y las protecciones,
+--   en todas. Desde el SQL Editor, sin tope.
 -- Corre con los permisos de quien llama (no es SECURITY DEFINER): el
 -- equipo no la ejecuta (42501).
 -- Va con jit = off (solo mientras corre): sus consultas son grandes y el
@@ -8222,8 +8317,47 @@ declare
   v_rx_f    text;
   v_c2sel   text;
   v_ajenas  text[] := '{}';
+  -- (lo sellado por c6 y sin cambios, y las candidatas de lo ajeno con su
+  -- texto sin comentarios, calculadas una vez: ver las protecciones, en 3)
+  v_c6sel   text;
+  v_c6ok    oid[] := '{}';
+  v_cand    oid[] := '{}';
+  v_csrc    text[] := '{}';
+  v_prev    oid[];
+  v_vuelta  int := 0;
+  -- EL TOPE POR RELOJ (ronda 4 de c6): la API de Supabase corta cada llamada
+  -- a los 8 s (57014) y la instancia de producción es unas diez veces más
+  -- lenta que el banco de pruebas. Pasado el tope, las vistas que faltan
+  -- salen con ok nulo y «Sigue…»: conta.js las vuelve a pedir en otra
+  -- llamada (ver la cabecera de la función).
+  v_t0      timestamptz := clock_timestamp();
+  v_tope    interval;
+  v_sigue   text[] := '{}';
+  v_hechos  text[] := '{}';
+  v_sql_gl  text;
+  v_err_gp  text;
+  v_nl      text;
 begin
   perform set_config('c4.comparar_documento', '', true);
+  -- El tope: 3 s desde la API (authenticated o anon: lo que conta.js
+  -- llama), sin tope desde el SQL Editor; c4.control_tope lo cambia
+  -- (milisegundos, o un intervalo; 0 = sin tope): las pruebas y
+  -- c4-volumen.sh lo fijan, la API no puede (PostgREST no deja poner un
+  -- ajuste a quien llama). ¿Por qué 3 y no 7? Pasado el tope todavía
+  -- termina la vista que estaba corriendo (y el estado de resultados si
+  -- el balance ya se controló), y después los cuadres y las protecciones:
+  -- con un año de libro, en el banco, hasta 0,3 s más (unos 3 s en
+  -- producción). 3 + 3 + medio segundo de red caben en los 8 s.
+  v_x := nullif(btrim(current_setting('c4.control_tope', true)), '');
+  begin
+    v_tope := case when v_x is null then case when current_user in ('authenticated', 'anon') then interval '3 s' end
+                   when v_x ~ '^[0-9]{1,9}$' then nullif(v_x::bigint, 0) * interval '1 millisecond'
+                   else nullif(v_x::interval, interval '0') end;
+  exception when others then
+    raise exception using errcode = '22023',
+      message = format('c4.control_tope no se entiende («%s»): milisegundos (300) o un intervalo (''3 s''); 0 es sin tope.', v_x);
+  end;
+  v_x := null;
   -- (Solo es_dueno(): fn_desde_editor no es de la API, y Postgres pide
   -- permiso sobre cada función de la expresión aunque no la llegue a
   -- evaluar. Desde el SQL Editor el usuario no es authenticated.)
@@ -8297,21 +8431,23 @@ begin
     apx as materialized (select pa.periodo, pa.anio, pa.hasta from periodos pa where pa.tipo = 'apertura' order by pa.desde limit 1),
     lb as materialized (select coalesce((select apx.hasta + 1 from apx), (select min(pm.desde) from periodos pm where pm.tipo = 'mes'))
                                  as libro_desde),
+    -- (Las líneas del libro con su mapeo, una vez. El año de su ejercicio y
+    -- el último día de su período efectivo salen de periodos por un join:
+    -- antes, una subconsulta por línea —7.644 con un año de libro— que
+    -- costaba 20 ms en cada control; y sin las columnas que aquí nadie lee,
+    -- como la procedencia de cada asiento. Ronda 4 de c6.)
     l as materialized (
-      select al.cuenta, al.monto, al.orden, al.proyecto_id, al.cost_code, al.partida_tabla, al.partida_id, al.tercero_tipo,
-             al.tercero_id, a.id as asiento_id, a.fecha_contable as fecha, a.periodo, a.tipo, a.anio, a.camino,
-             a.procedencia, a.documento_ruta, a.origen_tabla,
-             case when a.afecta_periodo is null then a.anio
-                  else coalesce((select pa.anio from periodos pa where pa.periodo = a.afecta_periodo), a.anio) end as ejercicio,
-             case when a.tipo = 'ajuste_cpa' then a.afecta_periodo else a.periodo end as periodo_efectivo,
-             (select pe.hasta from periodos pe
-               where pe.periodo = case when a.tipo = 'ajuste_cpa' then a.afecta_periodo else a.periodo end) as efectivo_hasta,
-             a.afecta_periodo, m.estado, m.seccion, m.linea, m.efectivo, m.flujo_directo, m.flujo_indirecto,
-             m.flujo_directo_seccion, m.flujo_indirecto_seccion, m.contra, c.regla_obra, m.caja
+      select al.cuenta, al.monto, al.proyecto_id, al.cost_code, al.partida_tabla, al.partida_id, al.tercero_tipo,
+             al.tercero_id, a.id as asiento_id, a.fecha_contable as fecha, a.periodo, a.tipo, a.anio,
+             case when a.afecta_periodo is null then a.anio else coalesce(pa.anio, a.anio) end as ejercicio,
+             pe.hasta as efectivo_hasta,
+             m.estado, m.seccion, m.linea, m.efectivo, m.contra, c.regla_obra, m.caja
         from asiento_lineas al
         join asientos a on a.id = al.asiento_id
         join m on m.cuenta = al.cuenta
         join cuentas c on c.codigo = al.cuenta
+        left join periodos pa on pa.periodo = a.afecta_periodo
+        left join periodos pe on pe.periodo = case when a.tipo = 'ajuste_cpa' then a.afecta_periodo else a.periodo end
     ),
     lp as materialized (select l.* from l, p
                          where (p.tipo = 'anio' and l.anio = p.anio) or (p.tipo not in ('anio', 'hoy') and l.periodo = p.periodo)),
@@ -8741,13 +8877,11 @@ begin
                         (select count(*) from lp where lp.estado = 'resultados' and lp.seccion in ('costo', 'gastos', 'otros_gastos')) end,
       'v_gasto_por_categoria', case when 'v_gasto_por_categoria' = any (v_pedidas) then
                                (select count(*) from gc) + (select case when exists (select 1 from gc) then 1 else 0 end) end,
-      -- (El proveedor de cada línea lo resuelve v_gasto_lineas, que se
-      -- controla con ella: aquí se cuentan sus proveedores.)
-      'v_gasto_por_proveedor', case when 'v_gasto_por_proveedor' = any (v_pedidas) then
-                               (select count(distinct gl.proveedor_clave)
-                                         + case when count(*) > 0 then 1 else 0 end
-                                    from v_gasto_lineas gl, p
-                                   where gl.ejercicio = p.anio and gl.fecha between p.ene and p.hasta) end,
+      -- (v_gasto_por_proveedor: el proveedor de cada línea lo resuelve
+      -- v_gasto_lineas, que se controla con ella; sus proveedores los cuenta
+      -- la MISMA lectura de v_gasto_lineas que la controla, en 2: antes se
+      -- leía aquí aparte, del primero del año al corte, 80 o 90 ms más en
+      -- cada control del Panel. Ronda 4 de c6.)
       -- (obra y cuenta + 4 renglones por obra + un control por cuenta —las
       -- del auxiliar y las de ingresos y costo del mayor— + 2 por sección)
       'v_costo_por_obra', case when 'v_costo_por_obra' = any (v_pedidas) then
@@ -8783,6 +8917,16 @@ begin
 
   -- 2. Cada vista, para el período: cuántas filas, y lo que cuadra en ella.
   v_en := case when v_tipo = 'anio' then format('anio = %s', v_anio) else format('periodo = %L', v_pid) end;
+  -- (Con v_gasto_por_proveedor pedida, v_gasto_lineas se lee del primero
+  -- del año al corte —donde caen también las del período— y la misma
+  -- lectura cuenta sus filas del período y los proveedores que espera
+  -- v_gasto_por_proveedor, en su tercera columna. Ronda 4 de c6.)
+  v_sql_gl := format('select count(*) filter (where %s), null::boolean, '
+                     || '(count(distinct proveedor_clave) filter (where ejercicio = %s) '
+                     || '+ case when count(*) filter (where ejercicio = %s) > 0 then 1 else 0 end)::numeric, null::text '
+                     || 'from public.v_gasto_lineas where fecha between %L::date and %L::date',
+                     v_en, v_anio, v_anio, make_date(v_anio, 1, 1), v_hasta);
+  v_nl := current_setting('enable_nestloop');
   for r in
     select * from (values
       (1,  'v_estados_mapeo', 'select count(*), not coalesce(bool_or(sin_fila), false), null::numeric, '
@@ -8861,18 +9005,61 @@ begin
   loop
     orden := r.orden;
     vista := r.vista;
+    -- EL TOPE POR RELOJ: pasado el tope (y con al menos una vista ya
+    -- controlada en esta llamada: así cada llamada avanza), lo que falta no
+    -- se corre: sale con ok nulo y «Sigue…», y la pantalla no lo pinta
+    -- hasta que otra llamada lo controle. El estado de resultados va
+    -- siempre detrás del balance si se piden los dos (su cuadre los
+    -- compara en la misma llamada).
+    if cardinality(v_sigue) = 0 and v_tope is not null and cardinality(v_hechos) > 0
+       and clock_timestamp() - v_t0 > v_tope
+       and not (r.vista = 'v_resultados' and 'v_balance_general' = any (v_hechos)) then
+      v_sigue := array(select x.v from unnest(v_pedidas) as x(v) where not (x.v = any (v_hechos)) order by x.v);
+    end if;
+    if cardinality(v_sigue) > 0 then
+      filas := null;
+      esperadas := (v_esp->>r.vista)::bigint;
+      ok := null;
+      detalle := format('Sigue: esta llamada ya llevaba %s ms (su tope por reloj es de %s ms: la API corta a los 8 s) y %s no se '
+                        'controló todavía; no se pinta hasta que se controle. Pide otra vez las que faltan: '
+                        'fn_estados_control(%L, array[%s]).',
+                        round(extract(epoch from clock_timestamp() - v_t0) * 1000), round(extract(epoch from v_tope) * 1000),
+                        r.vista, v_pid, (select string_agg(quote_literal(x.v), ', ') from unnest(v_sigue) as x(v)));
+      return next;
+      continue;
+    end if;
+    v_hechos := v_hechos || r.vista;
     v_err := null;
     v_n := null; v_cuadra := null; v_valor := null; v_det := null;
     begin
-      execute r.sql using v_pid into v_n, v_cuadra, v_valor, v_det;
+      -- (Las tres de gasto se leen sin «nested loop»: van por período con
+      -- las fechas de su fila de periodos, que Postgres no conoce al
+      -- planear, y creía leer diez líneas del libro donde hay miles: casaba
+      -- cada cuenta del mapeo con todas ellas, de 40 a 50 ms de más en cada
+      -- una. Solo mientras se cuentan; las mismas filas. Ronda 4 de c6.)
+      if r.vista in ('v_gasto_lineas', 'v_gasto_por_categoria', 'v_gasto_por_proveedor') then
+        perform set_config('enable_nestloop', 'off', true);
+      end if;
+      execute case when r.vista = 'v_gasto_lineas' and 'v_gasto_por_proveedor' = any (v_pedidas) then v_sql_gl else r.sql end
+        using v_pid into v_n, v_cuadra, v_valor, v_det;
+      perform set_config('enable_nestloop', v_nl, true);
     exception when others then
       v_err := format('%s: %s', sqlstate, sqlerrm);
     end;
+    if r.vista = 'v_gasto_lineas' and 'v_gasto_por_proveedor' = any (v_pedidas) then
+      v_esp := v_esp || jsonb_build_object('v_gasto_por_proveedor', v_valor);
+      v_err_gp := v_err;
+      v_valor := null;
+    end if;
     filas := v_n;
     esperadas := (v_esp->>r.vista)::bigint;
-    ok := v_err is null and v_err_e is null and filas is not distinct from esperadas;
+    ok := v_err is null and v_err_e is null and filas is not distinct from esperadas
+          and not (r.vista = 'v_gasto_por_proveedor' and v_err_gp is not null);
     detalle := case when v_err is not null then format('La vista %s falló: %s. No se pinta.', r.vista, v_err)
                     when v_err_e is not null then format('No se pudo calcular lo que el libro espera (%s): no se pinta.', v_err_e)
+                    when r.vista = 'v_gasto_por_proveedor' and v_err_gp is not null
+                      then format('No se pudo calcular lo que el libro espera (sus proveedores los cuenta v_gasto_lineas, que '
+                                  'falló: %s): no se pinta.', v_err_gp)
                     when not ok then format('La vista %s devolvió %s filas y el libro dice %s: no se pinta.', r.vista, filas,
                                             esperadas) end;
     return next;
@@ -8928,7 +9115,9 @@ begin
                                              'ok', v_cuadra, 'detalle', coalesce(v_det, 'la vista no dio filas'));
     end if;
   end loop;
-  if 'v_resultados' = any (v_pedidas) and 'v_balance_general' = any (v_pedidas) then
+  -- (Los cuadres que comparan vistas, con las controladas en ESTA llamada:
+  -- lo que siguió para otra llamada se compara en ella.)
+  if 'v_resultados' = any (v_hechos) and 'v_balance_general' = any (v_hechos) then
     v_cuad := v_cuad || jsonb_build_object('orden', 56, 'vista', 'cuadre: resultado del estado = resultado del balance',
                                            'ok', v_res is not null and v_bal is not null and v_res = v_bal,
                                            'detalle', format('estado de resultados %s, balance %s', coalesce(v_res::text, '(no dio)'),
@@ -8943,12 +9132,15 @@ begin
     v_valor := (v_esp->>'efectivo_balance')::numeric;
     v_cuad := v_cuad || jsonb_build_object('orden', 62, 'vista', 'cuadre: efectivo del flujo = efectivo del balance',
       'ok', v_valor is not null
-            and ('v_flujo_caja' <> all (v_pedidas) or v_ef_fl = v_valor)
-            and ('v_flujo_real_por_mes' <> all (v_pedidas) or v_tipo <> 'mes' or v_ef_re = v_valor),
+            and ('v_flujo_caja' <> all (v_hechos) or v_ef_fl = v_valor)
+            and ('v_flujo_real_por_mes' <> all (v_hechos) or v_tipo <> 'mes' or v_ef_re = v_valor),
       'detalle', format('balance (renglón efectivo) %s; flujo de caja %s; flujo del Panel %s', coalesce(v_valor::text, '(no se pudo)'),
-                        case when 'v_flujo_caja' = any (v_pedidas) then coalesce(v_ef_fl::text, '(no dio)') else '(no se pidió)' end,
-                        case when 'v_flujo_real_por_mes' = any (v_pedidas) and v_tipo = 'mes'
-                             then coalesce(v_ef_re::text, '(no dio)') else '(no se pidió)' end));
+                        case when 'v_flujo_caja' = any (v_hechos) then coalesce(v_ef_fl::text, '(no dio)')
+                             when 'v_flujo_caja' = any (v_sigue) then '(sigue: en otra llamada)' else '(no se pidió)' end,
+                        case when 'v_flujo_real_por_mes' = any (v_hechos) and v_tipo = 'mes'
+                             then coalesce(v_ef_re::text, '(no dio)')
+                             when 'v_flujo_real_por_mes' = any (v_sigue) and v_tipo = 'mes' then '(sigue: en otra llamada)'
+                             else '(no se pidió)' end));
   end if;
 
   -- LA CAJA CHICA NO QUEDA EN ROJO (con el balance, el flujo o los saldos):
@@ -9123,6 +9315,24 @@ begin
   --     hecha en el SQL Editor sobre la balanza de QuickBooks, sin
   --     security_invoker, se la daba a la llave pública; un SQL dinámico
   --     armado a propósito para esconderse no se ve.)
+  --     (Ronda 4 de c6) Lo del banco sellado por c6 (fn_banco_huellas, su
+  --     TEXTO, como el de c2) y sin cambios tampoco se vuelve a leer: con c6
+  --     pegado, este control leía en CADA pantalla el texto de sus cien
+  --     funciones internas (1,2 MB) y daba cuatro vueltas (dos leen tablas
+  --     de c4 a propósito: la cuenta de una tarjeta en el mapeo de
+  --     QuickBooks y las filas de la balanza de la apertura; y una nombraba
+  --     funciones de c4 en sus mensajes): de 50 a 250 ms más por pantalla,
+  --     sin cambiar nada. Para no perder la cadena (una DEFINER ajena que
+  --     llama a una función del banco que lee las tablas de c4), las
+  --     selladas por c6 cuentan como funciones que pueden leerlas: quien las
+  --     llama se mira. Las suyas que la app llama son SECURITY DEFINER a
+  --     propósito, con es_dueno() dentro, y van en el reparto de c2 (sus
+  --     huellas): esas no salen como ajenas; una sellada por c6 que se
+  --     volvió SECURITY DEFINER ya no es la sellada y se mira como
+  --     cualquiera. Y las candidatas se juntan UNA vez, con su texto
+  --     ya sin comentarios, antes de buscar: las vueltas solo miran lo que
+  --     queda (antes cada vuelta limpiaba y miraba todas las funciones, y
+  --     con el catálogo analizado, también las del sistema).
   with recursive dep(oid) as (
          select c.oid from pg_class c where c.relnamespace = 'public'::regnamespace and c.relname = any (v_tablas)
          union
@@ -9155,33 +9365,63 @@ begin
       v_c2ok := '{}';
     end;
   end if;
-  v_lee := v_fn_c4;
+  -- (y lo sellado por c6 y sin cambios, igual; sin c6, nada. El nombre va
+  -- partido para que este texto no parezca una llamada a esa función)
+  select p.prosrc into v_c6sel from pg_proc p where p.oid = to_regprocedure('public.fn_banco_huellas' || '()');
+  if v_c6sel is not null then
+    begin
+      execute 'select coalesce(array_agg(p.oid), ''{}'') from (' || v_c6sel || ') h(tipo, objeto, md5)
+                 join pg_proc p on p.oid = to_regprocedure(''public.'' || h.objeto)
+                where h.tipo = ''funcion'' and md5(pg_get_functiondef(p.oid)) = h.md5'
+        into v_c6ok;
+    exception when others then
+      v_c6ok := '{}';
+    end;
+  end if;
+  -- Las candidatas, una vez: lo que no es del sistema ni de una extensión,
+  -- ni de c4, ni sellado por c2 o por c6, con su texto sin comentarios.
+  -- (El «offset 0» deja el filtro barato antes que limpiar el texto: sin
+  -- él, con el catálogo analizado, Postgres limpiaba el de cada función.)
+  select coalesce(array_agg(x.oid order by x.oid), '{}'),
+         coalesce(array_agg(regexp_replace(regexp_replace(x.prosrc, '/\*.*?\*/', ' ', 'g'), '--[^\n]*', ' ', 'g')
+                            order by x.oid), '{}')
+    into v_cand, v_csrc
+    from (select f.oid, f.prosrc
+            from pg_proc f
+            join pg_namespace n on n.oid = f.pronamespace
+           where n.nspname !~ '^pg_' and n.nspname <> 'information_schema'
+             and f.prokind in ('f', 'p')
+             and not (f.oid = any (v_fn_c4)) and not (f.oid = any (v_c2ok)) and not (f.oid = any (v_c6ok))
+             and not exists (select 1 from pg_depend e
+                              where e.classid = 'pg_proc'::regclass and e.objid = f.oid and e.deptype = 'e')
+          offset 0) x;
+  v_lee := v_fn_c4 || v_c6ok;
   v_rx_c := case when v_compues is not null then '[[:<:]](' || v_compues || ')[[:>:]]' end;
   v_rx_k := case when v_simples is not null
                  then '[[:<:]](from|join|into|update|table|only|truncate|using)[[:space:]]+'
                       || '(([[:alnum:]_]+|"[^"]+")[[:space:]]*[.][[:space:]]*)?"?(' || v_simples || ')"?[[:>:]]' end;
   v_rx_s := case when v_simples is not null
                  then '[,(][[:space:]]*(([[:alnum:]_]+|"[^"]+")[[:space:]]*[.][[:space:]]*)?"?(' || v_simples || ')"?[[:>:]]' end;
+  -- (La primera vuelta busca los nombres de las tablas y vistas y las
+  -- llamadas a todo lo de v_lee; las siguientes, solo las llamadas a lo
+  -- que se acaba de encontrar: lo demás ya se miró.)
+  v_nuevas := v_lee;
   loop
-    select string_agg(distinct f.proname::text, '|') into v_fnn from pg_proc f where f.oid = any (v_lee) and f.proname ~ '^[[:alnum:]_]+$';
+    v_vuelta := v_vuelta + 1;
+    select string_agg(distinct f.proname::text, '|') into v_fnn from pg_proc f where f.oid = any (v_nuevas) and f.proname ~ '^[[:alnum:]_]+$';
     v_rx_f := case when v_fnn is not null then '[[:<:]](' || v_fnn || ')[[:space:]]*[(]' end;
+    v_prev := v_nuevas;
     select coalesce(array_agg(x.oid), '{}') into v_nuevas
-      from (select f.oid, regexp_replace(regexp_replace(f.prosrc, '/\*.*?\*/', ' ', 'g'), '--[^\n]*', ' ', 'g') as src
-              from pg_proc f
-              join pg_namespace n on n.oid = f.pronamespace
-             where n.nspname !~ '^pg_' and n.nspname <> 'information_schema'
-               and f.prokind in ('f', 'p')
-               and not (f.oid = any (v_lee)) and not (f.oid = any (v_c2ok))
-               and not exists (select 1 from pg_depend e
-                                where e.classid = 'pg_proc'::regclass and e.objid = f.oid and e.deptype = 'e')) x
-     where (v_rx_c is not null and x.src ~* v_rx_c)
-        or (v_rx_k is not null and x.src ~* v_rx_k)
-        or (v_rx_s is not null and regexp_replace(x.src, '''([^'']|'''')*''', ' ', 'g') ~* v_rx_s)
-        or (v_rx_f is not null and x.src ~* v_rx_f)
-        or exists (select 1 from pg_depend d
-                    where d.classid = 'pg_proc'::regclass and d.objid = x.oid
-                      and ((d.refclassid = 'pg_class'::regclass and d.refobjid = any (v_rel))
-                           or (d.refclassid = 'pg_proc'::regclass and d.refobjid = any (v_lee))));
+      from unnest(v_cand, v_csrc) as x(oid, src)
+     where not (x.oid = any (v_lee))
+       and (   (v_vuelta = 1 and v_rx_c is not null and x.src ~* v_rx_c)
+            or (v_vuelta = 1 and v_rx_k is not null and x.src ~* v_rx_k)
+            or (v_vuelta = 1 and v_rx_s is not null and regexp_replace(x.src, '''([^'']|'''')*''', ' ', 'g') ~* v_rx_s)
+            or (v_rx_f is not null and x.src ~* v_rx_f)
+            or exists (select 1 from pg_depend d
+                        where d.classid = 'pg_proc'::regclass and d.objid = x.oid
+                          and ((v_vuelta = 1 and d.refclassid = 'pg_class'::regclass and d.refobjid = any (v_rel))
+                               or (d.refclassid = 'pg_proc'::regclass and d.refobjid = any (v_prev)))));
     exit when cardinality(v_nuevas) = 0;
     v_lee := v_lee || v_nuevas;
   end loop;
@@ -9202,13 +9442,13 @@ begin
                   or has_table_privilege('service_role', c.oid, 'SELECT'))
           union all
           select format('la función %s es SECURITY DEFINER, lee tablas o vistas de c4 (directo, o llamando a otra función que '
-                        'las lee) y la puede ejecutar %s', f.oid::regprocedure,
+                        'las lee o que puede leerlas: una de c4 o una del banco) y la puede ejecutar %s', f.oid::regprocedure,
                         (select string_agg(g, ', ' order by g)
                            from unnest(array['anon', 'authenticated', 'service_role']) g
                           where has_schema_privilege(g, f.pronamespace, 'USAGE')
                             and has_function_privilege(g, f.oid, 'EXECUTE')))
             from pg_proc f
-           where f.oid = any (v_lee) and not (f.oid = any (v_fn_c4))
+           where f.oid = any (v_lee) and not (f.oid = any (v_fn_c4)) and not (f.oid = any (v_c2ok))
              and f.prosecdef and f.prokind = 'f'
              and f.prorettype not in ('trigger'::regtype, 'event_trigger'::regtype)
              and exists (select 1 from unnest(array['anon', 'authenticated', 'service_role']) g

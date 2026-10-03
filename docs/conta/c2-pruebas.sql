@@ -58,7 +58,8 @@
 --     periodos, que la 60, la 65, la 71 y la 73 apagan un momento; el
 --     verificador, que la 78 y la 79 miran), que fallan porque falta la
 --     pieza.
--- Con el bloque B, todas en true.
+-- Con el bloque B, todas en true. (La 83 sale «omitida» sin c6, el banco:
+-- mide que el control permisos no relee lo que c6 selló; ronda 4 de c6.)
 --
 -- Los datos que usan se buscan, no se inventan: el dueño (rol 'dueno',
 -- activo), uno del equipo (activo, no dueño), una obra, un cost code, las
@@ -4011,6 +4012,94 @@ begin
   end;
   insert into _pruebas values (82, 'resellar desde una fase no bendice un es_dueno() cambiado; solo el pegado de c2', v_esp,
                                v_obt, case when v_obt like 'omitida%' then null else v_obt = v_esp end);
+end $$;
+
+
+-- 83. EL CONTROL permisos NO RELEE LO QUE c4 Y c6 SELLARON, Y LA CADENA
+--     SIGUE (ronda 4 de c6): leía en cada llamada el texto de todas las
+--     funciones que no son del reparto (con c4 y c6 pegados, más de cien:
+--     1,3 MB) y daba vueltas sobre ellas. Ahora lo que c4 (fn_estados_huellas)
+--     y c6 (fn_banco_huellas) sellaron y no cambió no se lee. Una función
+--     «del banco» de prueba con mucho texto (fn_banco_c2p_lastre, unos
+--     4 MB): sin sellar, fn_verificar_cadena la lee; sellada
+--     (fn_banco_huellas_sellar, dentro de la prueba: se deshace), no, y
+--     tarda menos: al menos lo que cuesta solo limpiarle los comentarios
+--     (medido aparte; leerla de verdad cuesta unas tres veces eso). Se
+--     mide alternando, la más rápida de cada una, hasta tres veces: la
+--     cadena del libro se recorre entera en cada llamada y su tiempo varía.
+--     Y la cadena sigue: una SECURITY DEFINER que la API puede ejecutar y
+--     que llama a fn_banco_asiento (sellada; postea en el libro) sale en
+--     rojo con su nombre. Sin c6, «omitida». (Va antes de la 80.)
+do $$
+declare
+  v_esp text := 'lastre=no_se_relee cadena=lo_ve';
+  v_obt text;
+  v_t   timestamptz;
+  v_sin numeric;
+  v_con numeric;
+  v_ref numeric;
+  v_i   int;
+  v_ok  boolean;
+  v_det text;
+begin
+  if to_regprocedure('public.fn_banco_huellas_sellar()') is null or to_regprocedure('public.fn_banco_huellas()') is null then
+    insert into _pruebas values (83, 'permisos no relee lo que c4 y c6 sellaron; la cadena sigue', v_esp,
+                                 'omitida: sin c6 (el banco)', null);
+    return;
+  end if;
+  begin
+    set local lock_timeout = '2s';
+    execute format('create function public.fn_banco_c2p_lastre() returns int language sql immutable '
+                   'set search_path = public, pg_temp as %L',
+                   'select length(' || quote_literal(repeat('c2-pruebas, el lastre: from asientosx e, periodosy l join fn_libro_z(1) ',
+                                                            60000)) || ')');
+    -- Lo que cuesta solo limpiarle los comentarios (lo primero que hace
+    -- permisos con cada candidata), la vez más rápida de dos.
+    for v_i in 1 .. 2 loop
+      v_t := clock_timestamp();
+      perform length(regexp_replace(regexp_replace(p.prosrc, '/\*.*?\*/', ' ', 'g'), '--[^\n]*', ' ', 'g'))
+        from pg_proc p where p.oid = 'public.fn_banco_c2p_lastre()'::regprocedure;
+      v_ref := least(coalesce(v_ref, 1e9), extract(epoch from clock_timestamp() - v_t));
+    end loop;
+    for v_i in 1 .. 3 loop
+      v_t := clock_timestamp();
+      perform * from fn_verificar_cadena();
+      v_sin := least(coalesce(v_sin, 1e9), extract(epoch from clock_timestamp() - v_t));
+      begin
+        perform fn_banco_huellas_sellar();
+        v_t := clock_timestamp();
+        perform * from fn_verificar_cadena();
+        v_con := least(coalesce(v_con, 1e9), extract(epoch from clock_timestamp() - v_t));
+        raise exception using errcode = 'MXT01';
+      exception when sqlstate 'MXT01' then null;
+      end;
+      exit when v_i >= 2 and v_sin - v_con >= v_ref;
+    end loop;
+    v_obt := 'lastre=' || case when v_sin - v_con >= v_ref then 'no_se_relee'
+                               else format('se_relee:%s/%s_ms(limpiar:%s)', round(v_sin * 1000), round(v_con * 1000), round(v_ref * 1000))
+                          end;
+    -- La cadena: una DEFINER ajena que llama a una función sellada del banco
+    -- que postea en el libro.
+    create function public.c2_pruebas_ajena() returns void
+      language plpgsql security definer set search_path = public, pg_temp
+      as $f$
+      begin
+        perform fn_banco_asiento(null, null, null, null, null, null);
+      end $f$;
+    -- Lo que Supabase da a toda función nueva.
+    grant execute on function public.c2_pruebas_ajena() to anon, authenticated, service_role;
+    select v.ok, v.detalle::text into v_ok, v_det from fn_verificar_cadena() v where v.control = 'permisos';
+    v_obt := v_obt || ' cadena=' || case when not v_ok and strpos(v_det, 'c2_pruebas_ajena()') > 0 then 'lo_ve'
+                                         when strpos(coalesce(v_det, ''), 'c2_pruebas_ajena()') = 0 then 'calla'
+                                         else 'raro' end;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate '55P03' then v_obt := 'omitida: la app usaba lo del banco (lock_timeout)';
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 100);
+  end;
+  insert into _pruebas values (83, 'permisos no relee lo que c4 y c6 sellaron; la cadena sigue', v_esp, coalesce(v_obt, '-'),
+                               case when v_obt like 'omitida%' then null else coalesce(v_obt = v_esp, false) end);
 end $$;
 
 

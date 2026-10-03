@@ -108,6 +108,15 @@
 -- cerrado (se cambia sin reabrir y sin el «cargo en circulación»
 -- fantasma; sale «omitida» sin el mes siguiente). pg_temp.c6_candados no
 -- vuelve a pedir lo que ya tiene (la 133 postea y después cierra el mes).
+-- La 49 pide el cuadre 51 por su nombre, una vez (antes, también el
+-- control entero: con un año de banco, medio segundo, lo que cuestan las
+-- cinco nuevas).
+-- Y la 134 (grupo 4, 3-oct: el tiempo en producción): ninguna función del
+-- banco nombra una de c4 con su paréntesis sin llamarla (fn_banco_control
+-- las nombraba en sus mensajes, y «protecciones de c4» daba una vuelta más
+-- en cada pantalla). Lo demás de ese grupo lo prueban c2-pruebas (la 83) y
+-- c4-pruebas (la 112 y la 113); c6-banco.sql pide ahora c2 y c4 con la
+-- marca 2026100201 (y su control, «c2, c3 y c4 al día»).
 -- =====================================================================
 
 create temp table if not exists _pruebas(n int, prueba text, esperado text, obtenido text, ok boolean);
@@ -3307,11 +3316,14 @@ begin
     v_m := pg_temp.c6_mov('2100-9996', 'C6A1');
     perform fn_recibo_anular(-660001, 'c6-pruebas: el ticket estaba mal');
     perform fn_banco_casar_todo('2100-9996');
-    v_obt := v_obt || ' sigue=' || pg_temp.c6_est('2100-9996', 'C6A1')
-             || ' control51=' || pg_temp.c6_cuadre('cuadre: un movimiento, un casado', current_setting('mx6.mes'), v_m::text)
-             || case when exists (select 1 from fn_banco_control(current_setting('mx6.mes'), null) c
-                                   where c.vista = 'cuadre: un movimiento, un casado' and c.detalle like '%reábrela%') then ':reabrir'
-                     else '' end;
+    -- (el cuadre 51 pedido por su nombre, una vez: antes, además, el control
+    -- entero —con un año de banco, medio segundo— para leer lo mismo)
+    select v_obt || ' sigue=' || pg_temp.c6_est('2100-9996', 'C6A1') || ' control51='
+           || case when position(v_m::text in coalesce(c.detalle, '')) > 0 then 'f' else 't' end
+           || case when c.detalle like '%reábrela%' then ':reabrir' else '' end
+      into v_obt
+      from fn_banco_control(current_setting('mx6.mes'), array['cuadre: un movimiento, un casado']) c
+     where c.vista = 'cuadre: un movimiento, un casado';
     perform fn_banco_importar_filas(jsonb_build_object('origen', 'plaid', 'cuenta', '2100-9996', 'filas', jsonb_build_array(
               jsonb_build_object('id', 'c6-plaid-tarde', 'fecha', d + 10, 'plaid_monto', '19.99', 'descripcion', 'C6 LLEGA TARDE'))));
     v_p := pg_temp.c6_mov('2100-9996', 'c6-plaid-tarde');
@@ -8151,9 +8163,10 @@ begin
               jsonb_build_object('tipo', 'DEBIT', 'fecha', v_fin, 'monto', '-233.10', 'id', 'C6TT1',
                                  'nombre', 'C6 FERRETERIA #12 MIAMI FL CARD 0001'))),
             '1098', 'c6-pruebas-ticket-tardio-clasificado.qfx');
-    perform fn_banco_casar_todo('1098');
     v_m := pg_temp.c6_mov('1098', 'C6TT1');
-    perform fn_banco_clasificar(v_m, jsonb_build_array(jsonb_build_object('cuenta', '5100', 'proyecto_id', current_setting('mx6.obra'))));
+    -- (con su motivo: no mira la propuesta, y no hace falta «Casar» antes)
+    perform fn_banco_clasificar(v_m, jsonb_build_array(jsonb_build_object('cuenta', '5100', 'proyecto_id', current_setting('mx6.obra'))),
+                                'c6-pruebas: material de la obra, el ticket todavía no ha llegado');
     v_c := fn_conciliar('1098', v_fin, '-233.10');
     v_id := (v_c->>'conciliacion')::uuid;
     perform fn_conciliacion_confirmar(v_id);
@@ -8194,6 +8207,46 @@ begin
   end;
   insert into _pruebas values (133, 'el ticket de un cargo clasificado con el mes cerrado: se cambia sin reabrir y sin fantasma', v_esp,
                                coalesce(v_obt, '-'), case when v_obt like 'omitida%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 134. NINGUNA FUNCIÓN DEL BANCO NOMBRA UNA DE c4 CON SU PARÉNTESIS SIN
+--      LLAMARLA (ronda 4, el tiempo en producción): «protecciones de c4»
+--      (en cada pantalla de cifras) y el control «permisos» de c2 buscan en
+--      el texto de cada función las llamadas a las suyas: un nombre y «(».
+--      fn_banco_control nombraba 'public.fn_estados_huellas()' y
+--      'fn_estados_version()' dentro de sus cadenas, y c4 creía que las
+--      llamaba: una vuelta más de lo ajeno en cada pantalla, si el banco no
+--      está sellado o cambió (sellado y sin cambios, c4 ya no lo lee). Ahora
+--      el nombre va partido ('…_huellas' || '()'). En el texto de cada
+--      función de c6 (sin sus comentarios), ningún nombre de una función de
+--      c4 seguido de «(» (si un día una la llama de verdad, va en la lista
+--      de abajo). Antes salía fn_banco_control. Sin c4, «omitida».
+do $$
+declare
+  v_esp   text := 'ninguna';
+  v_obt   text;
+  v_rx    text;
+  v_llama text[] := '{}';   -- las de c6 que llaman de verdad a una de c4
+begin
+  select '[[:<:]](' || string_agg(distinct p.proname::text, '|') || ')[[:space:]]*[(]' into v_rx
+    from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and p.proname ~ '^[[:alnum:]_]+$'
+     and (p.proname like 'fn\_estados\_%' or p.proname like 'fn\_apertura%' or p.proname like 'fn\_comparacion\_%'
+          or p.proname like 'fn\_diferencia\_%');
+  if v_rx is null then
+    insert into _pruebas values (134, 'ninguna función del banco nombra una de c4 con su paréntesis sin llamarla', v_esp,
+                                 'omitida: sin c4', null);
+    return;
+  end if;
+  select coalesce(string_agg(p.oid::regprocedure::text, ', ' order by p.oid::regprocedure::text), 'ninguna') into v_obt
+    from pg_proc p
+   where p.pronamespace = 'public'::regnamespace and p.prokind = 'f'
+     and (p.proname like 'fn\_banco\_%' or p.proname like 'fn\_conciliacion\_%' or p.proname = 'fn_conciliar'
+          or p.proname like 'fn\_prestamo\_%' or p.proname like 'fn\_prepagado%')
+     and not (p.oid::regprocedure::text = any (v_llama))
+     and regexp_replace(regexp_replace(p.prosrc, '/\*.*?\*/', ' ', 'g'), '--[^\n]*', ' ', 'g') ~* v_rx;
+  insert into _pruebas values (134, 'ninguna función del banco nombra una de c4 con su paréntesis sin llamarla', v_esp, v_obt,
+                               v_obt = v_esp);
 end $$;
 
 -- 61. NO DEJA RASTRO: todo lo de arriba se deshizo. El libro, los papeles,

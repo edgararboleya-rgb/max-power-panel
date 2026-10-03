@@ -4,8 +4,9 @@
 -- préstamos y los prepagados)
 -- Supabase → SQL Editor. Se pega ENTERO, después de c1-plan-de-cuentas.sql,
 -- c2-libro.sql, c3-puentes.sql y c4-estados.sql, DE LA VERSIÓN QUE TRAE
--- ESTA MISMA ENTREGA (sus marcas: c2 2026092701, c3 y c4 2026092601; ver
--- «CAMBIOS A c2, c3 Y c4», abajo). La marca de este archivo es 2026100201
+-- ESTA MISMA ENTREGA (sus marcas: c2 2026100201, c3 2026092601 y c4
+-- 2026100201; ver «CAMBIOS A c2, c3 Y c4», abajo: en la ronda 4 cambiaron
+-- c2 y c4, y se vuelven a pegar ANTES que este). La marca de este archivo es 2026100201
 -- (fn_banco_version). Si falta alguno o es anterior, para con MX000 y dice qué volver
 -- a pegar, sin tocar nada. Se puede volver a pegar encima de sí mismo las
 -- veces que haga falta: no duplica nada, no pisa lo que Edgar ajustó (un
@@ -251,7 +252,10 @@
 --     Prueba: la 81 de c2-pruebas.sql. Y (ronda 2) fn_libro_huellas_sellar
 --     ya no bendice un es_dueno() cambiado cuando resella una fase (c3,
 --     c6): el candado lo fija solo el pegado de c2; marca 2026092701.
---     Prueba: la 82 de c2-pruebas.sql;
+--     Prueba: la 82 de c2-pruebas.sql. Y (ronda 4, grupo 4: el tiempo) su
+--     control «permisos» ya no relee en cada llamada lo que c4 y este
+--     archivo sellaron y no cambió (con c6, de 190-340 ms a unos 50 por
+--     llamada); marca 2026100201. Prueba: la 83 de c2-pruebas.sql;
 --   · c3: la guarda de los cobros deja soltar el movimiento de un cobro
 --     (de su valor a nulo) solo con la marca de fn_banco_descasar; marca
 --     2026092601. Prueba: la 119 de c3-pruebas.sql;
@@ -262,7 +266,14 @@
 --     c4-estados.sql): la 17 cuenta la caja chica en el efectivo final y
 --     la 26 mira solo los asientos de su escenario; (ronda 2) la 53 mira
 --     solo las filas de su escenario y la 39 le da fondos al banco antes de
---     medir (octubre en uso con la apertura sin postear);
+--     medir (octubre en uso con la apertura sin postear). Y (ronda 4,
+--     grupo 4: el tiempo en producción) fn_estados_control tiene un tope
+--     por reloj (3 s desde la API: lo que falta sale «Sigue» y conta.js lo
+--     vuelve a pedir), no relee lo que este archivo sella y no cambió, y
+--     sus esperadas, sus huellas y tres vistas del Panel cuestan la mitad;
+--     marca 2026100201. Pruebas: la 112 y la 113 de c4-pruebas.sql (que
+--     corre ahora sin el tope: c4.control_tope = 0), y la 80 mira también
+--     una vista cambiada;
 --   · c3-pruebas.sql (ronda 2; c3-puentes.sql no cambia): las seis del
 --     devengo (28, 57, 67, 74, 77 y 99) devengan en el primer mes abierto
 --     SIN journal de nómina; con la nómina de octubre ya en el libro
@@ -712,6 +723,23 @@
 --     texto; c6 ya dice el camino bueno (el cuadre 55 y el aviso de
 --     fn_prestamo_guardar), y la verificación dijo que puede esperar al
 --     próximo cambio de c2.
+--   Y EL TIEMPO EN PRODUCCIÓN (el grupo 4 de la ronda 4, 3-oct, la misma
+--   marca). Producción es unas diez veces más lenta que el banco de
+--   pruebas y la API corta cada llamada a los 8 s: con un año de libro y de
+--   banco, el control del Panel tardaba de 1,1 a 1,8 s aquí (de 11 a 18 s
+--   allí, 57014: el Panel sin pintar). Los arreglos van en c2 y c4 (ver
+--   «CAMBIOS A c2, c3 Y c4»: c4 con un tope por reloj y sin releer lo que
+--   este archivo sella; c2, su control «permisos», igual). Aquí:
+--   · fn_banco_control ya no nombra funciones de c4 con su paréntesis en
+--     sus mensajes ('public.fn_estados_huellas()', 'fn_estados_version()'):
+--     «protecciones de c4» creía que las llamaba y daba una vuelta más en
+--     cada pantalla de cifras. Ahora el nombre va partido (134);
+--   · este archivo pide c2 y c4 con la marca 2026100201: MX000 si no, y el
+--     cuadre 91 («c2, c3 y c4 al día») en rojo con qué volver a pegar;
+--   · c6-volumen.sh mide también las pantallas de cifras de c4 con el
+--     banco en uso, como en producción (el tope por reloj en 300 ms y
+--     0,8 s por llamada, pidiendo otra vez lo que sale «Sigue»), y acepta
+--     MOVS (el año de Edgar: «MOVS=2500 … c6-volumen.sh bd 200»).
 --   · EL PEGADO ENCIMA DEL DE PRODUCCIÓN (2026092704, con datos): añade
 --     las columnas conciliaciones.falta y archivos_banco.retirado_el,
 --     _por, _rol y _motivo (solo si faltan), cambia el sha256 único de
@@ -734,7 +762,10 @@
 --     nota del casado de entonces (se rehacen, como siempre: las mismas
 --     filas); nada de lo guardado cambia. Las propuestas de los cargos con
 --     un ticket esperando en c3 se rehacen en el siguiente «Casar» (su
---     firma cambia), y las conciliaciones confirmadas no se tocan.
+--     firma cambia), y las conciliaciones confirmadas no se tocan. Del
+--     grupo 4: solo cambian los textos de fn_banco_control y lo que pide
+--     la precondición (c2 y c4 2026100201, que se pegan antes); nada de lo
+--     guardado.
 --   · EL TIEMPO: c6-pruebas, con las 17 nuevas (117), tarda 16 s en PG16
 --     y 17 s en PG17.6 en el banco limpio. Con un año de banco
 --     (c6-volumen.sh, PG17.6, 2-oct): casar el mes, 2,8 s como mucho (con
@@ -749,8 +780,20 @@
 --     llamada media de la bandeja, de 0,05 a 0,07 s (clasificar sin motivo
 --     con la propuesta al día, 0,03 s; si la rehace, 0,22 s);
 --     fn_banco_verificar 3,0 s; casar el mes, de 1,9 a 2,8 s como mucho
---     según la corrida; lo demás, como con el grupo 1. La tabla de abajo es
---     la de la ronda 3 (PG16 y PG17.6).
+--     según la corrida; lo demás, como con el grupo 1. Con el grupo 3
+--     (3-oct, las 133): c6-pruebas tarda 18 s en PG16 y 20 s en PG17.6 en
+--     el banco limpio; con un año de banco, sola de 39,3 a 39,9 s y con
+--     cuatro teléfonos de 44 a 46 s (la subida más lenta, 2,5 s). Las cinco
+--     nuevas cuestan unos 0,5 s y la 49 dejó de pedir el control entero
+--     (medio segundo) para leer un cuadre: en la misma base y la misma
+--     máquina, la c6-pruebas de antes (las 128) y la de ahora tardan lo
+--     mismo (40 a 41 s con los meses 13 y 14 encima). El tope de 40 s queda
+--     cerca: lo que más pesa son las revisiones enteras (la 39, la 38, la
+--     60) y el archivo de 3.000 movimientos (la 53). Casar el mes, de 2,1 a
+--     2,9 s como mucho; la bandeja 0,38 s; conciliar 0,40 s y confirmar
+--     0,41 s; el control entero de un mes 0,59 s (con el cuadre 58);
+--     volver a pegar este archivo 2,1 s; fn_banco_verificar 3,2 s. La tabla
+--     de abajo es la de la ronda 3 (PG16 y PG17.6).
 --
 -- EL TIEMPO (banco de pruebas, pruebas/conta/c6-volumen.sh, 27-sep, con
 -- la ronda 3: el libro de c4-volumen, 10.333 asientos, con 2026 ya
@@ -819,12 +862,15 @@ set local lock_timeout = '500ms';
 --   · c1 y c2 (el libro), c3 (los puentes: cobros, devoluciones,
 --     proveedores, tarjetas) y c4 (v_asiento_papel con su rama para los
 --     papeles de las fases de después, v_papel_fases), DE LA VERSIÓN QUE
---     ESTE ARCHIVO NECESITA: sus marcas (fn_libro_version al menos
---     2026092701; fn_puente_version y fn_estados_version al menos
---     2026092601). Con uno anterior faltan cosas de verdad (el reparto de
---     c2 que conoce las funciones de aquí y su sellador que no bendice un
---     candado cambiado, la guarda de c3 que deja des-casar un cobro, el
---     papel de los asientos del banco en c4): se dice qué volver a pegar.
+--     ESTE ARCHIVO NECESITA: sus marcas (fn_libro_version y
+--     fn_estados_version al menos 2026100201, las de la ronda 4;
+--     fn_puente_version al menos 2026092601). Con uno anterior faltan cosas
+--     de verdad (el reparto de c2 que conoce las funciones de aquí y su
+--     sellador que no bendice un candado cambiado, la guarda de c3 que deja
+--     des-casar un cobro, el papel de los asientos del banco en c4, y los
+--     controles de c2 y c4 que no releen en cada llamada lo que este
+--     archivo selló, y el de c4 que para por reloj antes del tope de la
+--     API): se dice qué volver a pegar.
 --   · El libro SANO en sus huellas (el control «triggers» de c2 en verde)
 --     y es_dueno(), el candado, como lo selló c2 (su huella «candado», la
 --     que mira el control «permisos»): este archivo termina resellando las
@@ -917,9 +963,9 @@ begin
   for r in select q.fn, q.minimo, q.archivo,
                   (select substring(pp.prosrc from '([0-9]{10})')::bigint
                      from pg_proc pp where pp.oid = to_regprocedure('public.' || q.fn)) as v
-             from (values ('fn_libro_version()', 2026092701::bigint, 'c2-libro.sql'),
+             from (values ('fn_libro_version()', 2026100201::bigint, 'c2-libro.sql'),
                           ('fn_puente_version()', 2026092601::bigint, 'c3-puentes.sql'),
-                          ('fn_estados_version()', 2026092601::bigint, 'c4-estados.sql')) as q(fn, minimo, archivo) loop
+                          ('fn_estados_version()', 2026100201::bigint, 'c4-estados.sql')) as q(fn, minimo, archivo) loop
     if r.v is null or r.v < r.minimo then
       v_falta := v_falta || format(' · %s es de una versión anterior (%s; hace falta %s o más): vuelve a pegar %s', r.fn,
                                    coalesce(r.v::text, 'sin su marca'), r.minimo, r.archivo);
@@ -15189,7 +15235,11 @@ begin
       v_c2ok := '{}';
     end;
   end if;
-  select p.prosrc into v_c4sel from pg_proc p where p.oid = to_regprocedure('public.fn_estados_huellas()');
+  -- (El nombre va partido —«fn_estados_huellas» || '()'—, y en las marcas de
+  -- abajo igual: escrito con su paréntesis, la búsqueda de lo ajeno de c4
+  -- tomaba esta función por una que llama a c4 y daba cuatro vueltas en
+  -- cada pantalla de c4. Ronda 4.)
+  select p.prosrc into v_c4sel from pg_proc p where p.oid = to_regprocedure('public.fn_estados_huellas' || '()');
   if v_c4sel is not null then
     begin
       execute 'select coalesce(array_agg(p.oid), ''{}'') from (' || v_c4sel || ') h(tipo, objeto, md5)
@@ -15370,11 +15420,12 @@ begin
   select coalesce(array_agg(format('%s dice %s y el banco necesita %s o más (vuelve a pegar %s)', q.fn, coalesce(q.v::text, 'que no existe'),
                                    q.minimo, q.archivo) order by q.fn), '{}')
     into v_malos
-    from (select q0.*, (select substring(pp.prosrc from '([0-9]{10})')::bigint
-                          from pg_proc pp where pp.oid = to_regprocedure('public.' || q0.fn)) as v
-            from (values ('fn_libro_version()', 2026092701::bigint, 'c2-libro.sql'),
-                         ('fn_puente_version()', 2026092601::bigint, 'c3-puentes.sql'),
-                         ('fn_estados_version()', 2026092601::bigint, 'c4-estados.sql')) as q0(fn, minimo, archivo)) q
+    from (select q0.fn || '()' as fn, q0.minimo, q0.archivo,
+                 (select substring(pp.prosrc from '([0-9]{10})')::bigint
+                    from pg_proc pp where pp.oid = to_regprocedure('public.' || q0.fn || '()')) as v
+            from (values ('fn_libro_version', 2026100201::bigint, 'c2-libro.sql'),
+                         ('fn_puente_version', 2026092601::bigint, 'c3-puentes.sql'),
+                         ('fn_estados_version', 2026100201::bigint, 'c4-estados.sql')) as q0(fn, minimo, archivo)) q
    where coalesce(q.v, 0) < q.minimo;
   orden := 91; vista := 'cuadre: c2, c3 y c4 al día'; filas := null; esperadas := null;
   ok := cardinality(v_malos) = 0;

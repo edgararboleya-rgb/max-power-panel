@@ -32,14 +32,26 @@
 #     mes y en 'hoy', leída como la lee PostgREST (json_agg de «select *»,
 #     con los ajustes del rol authenticated que PostgREST aplica en cada
 #     consulta —los de pg_roles.rolconfig, como él—: el tope de 8 s y el
-#     jit = off que pone c4; el JIT del servidor, encendido de fábrica): no
-#     más de 2 s cada una;
+#     jit = off que pone c4; el JIT del servidor, encendido de fábrica): con
+#     el volumen de Edgar (por_mes 250 o menos) no más de 0,8 s cada una
+#     (los 8 s de la API de producción, que es unas diez veces más lenta
+#     que este banco), y avisa —sin fallar— de las que pasan de 0,2 s; con
+#     más (el libro de esfuerzo, 666 por mes), no más de 2 s, y avisa de
+#     las que pasan de 0,8 s;
 #   · fn_estados_control como la pide cada pantalla, con su lista (el
-#     Panel, los estados, 'hoy', el año): no más de 8 s (el tope de la
-#     API), y nada en rojo; y con todas las vistas juntas (sin lista: solo
+#     Panel, los estados, 'hoy', el año), EN UNA LLAMADA (sin su tope por
+#     reloj: c4.control_tope = 0): no más de 8 s y nada en rojo (es la
+#     tabla de tiempos); y con todas las vistas juntas (sin lista: solo
 #     desde el SQL Editor, que no tiene el tope de la API) no más de 60 s:
 #     con unos 20.000 asientos ya no cabría en los 8 s, y por eso conta.js
 #     pide siempre la lista de su pantalla;
+#   · (ronda 4 de c6) CADA PANTALLA COMO EN PRODUCCIÓN: fn_estados_control
+#     con su tope por reloj a la velocidad del banco (los 3 s de la API, en
+#     300 ms) y pidiendo otra vez lo que sale «Sigue», como conta.js: cada
+#     llamada no más de 0,8 s (los 8 s de la API), la pantalla entera en
+#     seis llamadas o menos, y nada en rojo. Con el volumen de Edgar
+#     (por_mes 250 o menos) falla si no; con más, el tiempo solo se
+#     informa (lo rojo falla siempre);
 #   · VOLVER A PEGAR c4-estados.sql sobre el libro lleno: lo que tarda, lo
 #     que tarda su resumen del final (el control corto: mapeo,
 #     protecciones y la apertura), que es lo que el pegado tiene tomadas
@@ -324,9 +336,21 @@ P="$(ed -c "select periodo from periodos where tipo = 'mes' and desde <= fn_fech
 A="$(ed -c "select periodo from periodos where tipo = 'anio' and anio = extract(year from fn_fecha_miami(now()))::int")"
 [ -n "$P" ] && [ -n "$A" ] || { echo "No encontré el último mes o su año en el calendario" >&2; exit 2; }
 
-# mide <nombre> <tope_ms> <sql>: como la app, con el tope de la API (8 s).
+# (Ronda 4 de c6) COMO EN PRODUCCIÓN: la instancia de Supabase es unas diez
+# veces más lenta que este banco (c4-pruebas: 5 min 47 s allí, 40 s aquí) y
+# la API corta cada llamada a los 8 s (57014). A la velocidad del banco:
+# 0,8 s por llamada, y el tope por reloj de fn_estados_control (3 s desde
+# la API) en 300 ms. Con el volumen de Edgar (unos 200 papeles por mes) se
+# exige; con el libro de esfuerzo (666 por mes, tres veces lo suyo), se
+# informa.
+PROD_LLAMADA_MS=800
+PROD_RELOJ_MS=300
+if [ "$K" -le 250 ]; then EXIGE=1; TOPE_VISTA=800; AVISO_VISTA=200; else EXIGE=0; TOPE_VISTA=2000; AVISO_VISTA=800; fi
+
+# mide <nombre> <tope_ms> <sql> [aviso_ms]: como la app, con el tope de la
+# API (8 s); pasado el aviso, lo dice sin fallar.
 mide() {
-  local t0 t1 ms r
+  local t0 t1 ms r nota=""
   t0=$(date +%s%N)
   r="$(ed -c "begin; $APP $3; rollback;" 2>&1 | tail -n 1)"
   t1=$(date +%s%N)
@@ -336,13 +360,14 @@ mide() {
   elif [ "$ms" -gt "$2" ]; then
     printf '  %-44s %6d ms  (tope %d ms: FALLA)  %s\n' "$1" "$ms" "$2" "$r"; malos=1
   else
-    printf '  %-44s %6d ms  %s\n' "$1" "$ms" "$r"
+    if [ -n "${4:-}" ] && [ "$ms" -gt "$4" ]; then nota="  (más de $4 ms: aviso)"; fi
+    printf '  %-44s %6d ms  %s%s\n' "$1" "$ms" "$r" "$nota"
   fi
 }
 
-echo "== Cada vista como la lee la app por PostgREST (json_agg de select *, dueño, ajustes del rol, 8 s), en $P y en 'hoy' (tope 2 s)"
+echo "== Cada vista como la lee la app por PostgREST (json_agg de select *, dueño, ajustes del rol, 8 s), en $P y en 'hoy' (tope $TOPE_VISTA ms, aviso $AVISO_VISTA ms)"
 # vista <nombre> <filtro>: como PostgREST, todas las columnas en JSON.
-vista() { mide "$1" 2000 "select coalesce(json_array_length(json_agg(t)), 0) || ' filas' from (select * from $2) t"; }
+vista() { mide "$1" "$TOPE_VISTA" "select coalesce(json_array_length(json_agg(t)), 0) || ' filas' from (select * from $2) t" "$AVISO_VISTA"; }
 for v in v_balanza v_balanza_obra v_balance_general v_resultados v_flujo_caja v_gasto_por_categoria v_gasto_por_proveedor \
          v_costo_por_obra v_comparacion v_comparacion_obra; do
   vista "$v ($P)" "$v where periodo = '$P'"
@@ -356,20 +381,56 @@ vista "v_libro ($P)" "v_libro where periodo = '$P'"
 vista "v_mayor (1010, $P)" "v_mayor where cuenta = '1010' and periodo = '$P'"
 vista "v_asiento_papel ($P)" "v_asiento_papel where periodo = '$P'"
 
-echo "== fn_estados_control como la pide cada pantalla (tope 8 s, nada en rojo)"
+echo "== fn_estados_control como la pide cada pantalla, en una llamada (sin su tope por reloj; tope 8 s, nada en rojo)"
 ctl() {  # ctl <nombre> <periodo> <vistas o null>
-  mide "$1" 8000 "select count(*) || ' filas, en rojo: ' || coalesce(string_agg(vista || coalesce(' (' || left(detalle, 80) || ')', ''), '; ') filter (where not ok), 'ninguna') from fn_estados_control('$2', $3)"
+  mide "$1" 8000 "set local c4.control_tope = '0'; select count(*) || ' filas, en rojo: ' || coalesce(string_agg(vista || coalesce(' (' || left(detalle, 80) || ')', ''), '; ') filter (where ok is not true), 'ninguna') from fn_estados_control('$2', $3)"
 }
 ctl "el Panel ($P, 9 vistas)" "$P" "array['v_saldos_dinero', 'v_flujo_real_por_mes', 'v_cxc_antiguedad', 'v_cxp_antiguedad', 'v_resultados', 'v_comparacion_resumen', 'v_gasto_por_categoria', 'v_gasto_por_proveedor', 'v_obras_dinero']"
 ctl "el Panel a hoy" "hoy" "null"
 ctl "los estados ($P, 4 vistas)" "$P" "array['v_balanza', 'v_balance_general', 'v_resultados', 'v_flujo_caja']"
 ctl "el año ($A, estados)" "$A" "array['v_balanza', 'v_balance_general', 'v_resultados', 'v_flujo_caja']"
 # (Sin lista, todas las vistas: el SQL Editor, sin el tope de 8 s de la API.)
-mide "todas las vistas ($P, SQL Editor, tope 60 s)" 60000 "set local statement_timeout = '60s'; select count(*) || ' filas, en rojo: ' || coalesce(string_agg(vista || coalesce(' (' || left(detalle, 80) || ')', ''), '; ') filter (where not ok), 'ninguna') from fn_estados_control('$P', null)"
+mide "todas las vistas ($P, SQL Editor, tope 60 s)" 60000 "set local statement_timeout = '60s'; set local c4.control_tope = '0'; select count(*) || ' filas, en rojo: ' || coalesce(string_agg(vista || coalesce(' (' || left(detalle, 80) || ')', ''), '; ') filter (where ok is not true), 'ninguna') from fn_estados_control('$P', null)"
 for x in "$P|null" "hoy|null" "$A|array['v_balanza', 'v_balance_general', 'v_resultados', 'v_flujo_caja']"; do
   revisa "fn_estados_control(${x%%|*}): nada en rojo" "ninguna" \
-    "$(ed -c "begin; $APP set local statement_timeout = '60s'; select coalesce(string_agg(vista, ', ') filter (where not ok), 'ninguna') from fn_estados_control('${x%%|*}', ${x#*|}); rollback;" 2>&1 | tail -n 1)"
+    "$(ed -c "begin; $APP set local statement_timeout = '60s'; set local c4.control_tope = '0'; select coalesce(string_agg(vista, ', ') filter (where ok is not true), 'ninguna') from fn_estados_control('${x%%|*}', ${x#*|}); rollback;" 2>&1 | tail -n 1)"
 done
+
+echo "== Cada pantalla como en producción (ronda 4 de c6): el tope por reloj en $PROD_RELOJ_MS ms y la API en $PROD_LLAMADA_MS ms (el banco es unas diez veces más rápido); conta.js pide otra vez lo que sale «Sigue»"
+[ "$EXIGE" = "1" ] || echo "     (con $K por mes, más que el volumen de Edgar: el tiempo solo se informa; lo rojo falla igual)"
+# pantalla <nombre> <periodo> <vistas>: pide el control de su lista y,
+# mientras salga algo «Sigue», otra vez con lo que falta (la lista que trae
+# su detalle). Cada llamada no más de 0,8 s, la pantalla en 6 llamadas o
+# menos y nada en rojo (ok falso, o nulo sin ser «Sigue»).
+pantalla() {
+  local lista="$3" n=0 max=0 tot=0 t0 t1 ms r sigue rojo="" falla=""
+  while [ -n "$lista" ] && [ $n -lt 9 ]; do
+    n=$((n + 1))
+    t0=$(date +%s%N)
+    r="$(ed -c "begin; $APP set local c4.control_tope = '$PROD_RELOJ_MS'; select coalesce(string_agg(quote_literal(vista), ', ' order by orden) filter (where ok is null and detalle like 'Sigue:%'), '') || '|' || coalesce(string_agg(vista, '; ') filter (where ok is not true and not (ok is null and coalesce(detalle, '') like 'Sigue:%')), '') from fn_estados_control('$2', $lista); rollback;" 2>&1 | tail -n 1)"
+    t1=$(date +%s%N)
+    ms=$(( (t1 - t0) / 1000000 ))
+    if grep -qiE 'error|cancel' <<< "$r"; then
+      printf '  %-44s NO TERMINÓ (llamada %d): %s\n' "$1" "$n" "$(cut -c1-120 <<< "$r")"; malos=1; return
+    fi
+    tot=$((tot + ms)); [ "$ms" -gt "$max" ] && max=$ms
+    sigue="${r%%|*}"
+    [ -n "${r#*|}" ] && rojo="${rojo:+$rojo; }${r#*|}"
+    if [ -n "$sigue" ]; then lista="array[$sigue]"; else lista=""; fi
+  done
+  [ "$max" -gt "$PROD_LLAMADA_MS" ] && falla="${falla} una llamada de $max ms (tope $PROD_LLAMADA_MS)"
+  [ -n "$lista" ] || [ "$n" -gt 6 ] && falla="${falla} $n llamadas$( [ -n "$lista" ] && echo ' y todavía «Sigue»')"
+  printf '  %-44s %6d ms  la más lenta de %d llamadas (en total %d ms), en rojo: %s' "$1" "$max" "$n" "$tot" "${rojo:-ninguna}"
+  if [ -n "$rojo" ]; then malos=1; fi
+  if [ -n "$falla" ]; then
+    if [ "$EXIGE" = "1" ]; then printf '  (FALLA:%s)' "$falla"; malos=1; else printf '  (se informa:%s)' "$falla"; fi
+  fi
+  printf '\n'
+}
+pantalla "el Panel ($P, 9 vistas)" "$P" "array['v_saldos_dinero', 'v_flujo_real_por_mes', 'v_cxc_antiguedad', 'v_cxp_antiguedad', 'v_resultados', 'v_comparacion_resumen', 'v_gasto_por_categoria', 'v_gasto_por_proveedor', 'v_obras_dinero']"
+pantalla "el Panel a hoy" "hoy" "null"
+pantalla "los estados ($P, 4 vistas)" "$P" "array['v_balanza', 'v_balance_general', 'v_resultados', 'v_flujo_caja']"
+pantalla "el año ($A, estados)" "$A" "array['v_balanza', 'v_balance_general', 'v_resultados', 'v_flujo_caja']"
 echo "== Volver a pegar c4-estados.sql sobre este libro, con el Panel pidiendo su control mientras (como la app, tope 8 s)"
 # El pegado tiene tomadas las vistas hasta que termina: el Panel pedido
 # mientras tanto espera y después corre lo suyo; con el resumen corto del
@@ -392,7 +453,7 @@ fi
 revisa "el pegado entra" "0" "$rc"
 printf '  %-44s %6d ms\n' "el pegado entero" "$ms"
 # (el resumen del final: lo que el pegado tiene tomadas las vistas al terminar)
-mide "su resumen del final (tope 2 s)" 2000 "set local statement_timeout = '60s'; select count(*) || ' filas, en rojo: ' || coalesce(string_agg(vista, '; ') filter (where not ok), 'ninguna') from fn_estados_control('$P', array['v_estados_mapeo'])"
+mide "su resumen del final (tope 2 s)" 2000 "set local statement_timeout = '60s'; select count(*) || ' filas, en rojo: ' || coalesce(string_agg(vista, '; ') filter (where ok is not true), 'ninguna') from fn_estados_control('$P', array['v_estados_mapeo'])"
 revisa "el libro sigue sano (fn_verificar_cadena)" "ninguno" "$(ed -c "select coalesce(string_agg(control, ', '), 'ninguno') from fn_verificar_cadena() where not ok")"
 if [ "${SOLO_MEDIR:-0}" = "1" ]; then
   # (Para medir cómo crece con el libro, p. ej. SOLO_MEDIR=1 ./c4-volumen.sh bd 1332:
@@ -489,7 +550,7 @@ ed -v ON_ERROR_STOP=1 -c "select count(fn_cerrar_periodo(p)) from unnest(array['
   > "$TMP/cierre.out" 2>&1 || { cat "$TMP/cierre.out"; echo "FALLÓ el cierre de 2026" >&2; malos=1; }
 con_telefonos "$DOCS/c4-pruebas.sql" "c4-pruebas (2026 cerrado)"
 revisa "fn_estados_control(hoy) con 2026 cerrado: nada en rojo" "ninguna" \
-  "$(ed -c "begin; $APP select coalesce(string_agg(vista, ', ') filter (where not ok), 'ninguna') from fn_estados_control('hoy', null); rollback;" 2>&1 | tail -n 1)"
+  "$(ed -c "begin; $APP set local c4.control_tope = '0'; select coalesce(string_agg(vista, ', ') filter (where ok is not true), 'ninguna') from fn_estados_control('hoy', null); rollback;" 2>&1 | tail -n 1)"
 
 [ $malos -eq 0 ] && echo "VOLUMEN c4 ok" || echo "VOLUMEN c4 FALLA"
 exit $malos
