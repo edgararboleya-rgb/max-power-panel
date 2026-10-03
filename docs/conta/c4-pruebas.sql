@@ -3537,6 +3537,11 @@ end $$;
 --     en el libro y la caja chica que no queda en rojo); y una vista
 --     por período pedida con 'hoy' sale sola en rojo.
 --     Antes: 22023, «No existe el período hoy».
+--     (Ronda 4 de c6: el reloj fingido solo va hacia adelante, y con el día
+--     15 del primer mes abierto ya pasado —del 16-oct hasta que se cierre
+--     octubre— la prueba salía «omitida». Ahora va en el primer mes abierto
+--     cuyo día 15 no ha pasado, con su escenario en ese mes: mx4.desde y
+--     mx4.mes, solo dentro de la prueba, que se deshace entera.)
 do $$
 declare
   v_obt  text;
@@ -3549,7 +3554,19 @@ begin
     insert into _pruebas values (45, 'el corte ''hoy'' del Panel tiene su control', v_esp, 'omitida: falta el mes abierto', null);
     return;
   end if;
+  select p.periodo, p.desde into v_mes, v_d
+    from periodos p
+   where p.tipo = 'mes' and p.estado = 'abierto' and p.desde >= v_d and p.desde + 14 >= fn_fecha_miami(now())
+   order by p.desde limit 1;
+  if v_d is null then
+    insert into _pruebas values (45, 'el corte ''hoy'' del Panel tiene su control', v_esp,
+                                 'omitida: ningún mes abierto con su día 15 por delante', null);
+    return;
+  end if;
   begin
+    -- (el escenario va en ese mes; se deshace con la prueba)
+    perform set_config('mx4.desde', v_d::text, true);
+    perform set_config('mx4.mes', v_mes, true);
     perform pg_temp.c4_escenario();
     perform pg_temp.c4_fingir_hoy(v_d + 14);
     v_hoy := fn_fecha_miami(now());
