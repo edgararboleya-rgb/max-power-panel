@@ -1248,6 +1248,12 @@
 --     el siguiente «Casar»; «Es la transferencia con …» solo en su
 --     dirección (el dinero no llega antes de salir); lo que falta en la
 --     conciliación de apertura, en un orden fijo.
+--   · UN «OJO» VACÍO (158; lo encontró la verificación de esta ronda, con
+--     los repros de la ronda 4). format() con un argumento nulo da '' y no
+--     nulo: el aviso del duplicado nuevo («Ojo: si es el mismo, aquel está
+--     mal casado: .») y el de fn_banco_clasificar cuando la transferencia
+--     que lo espera no dice otra cosa («Ojo: . Si no es este dinero…», de la
+--     4c) salían siempre, vacíos. Ahora solo cuando se contradicen.
 --   · EL ARCHIVO PARTIDO. Este archivo pasa del 1,2 MB y el SQL Editor de
 --     Supabase puede no dejar pegarlo: pruebas/conta/partir-c6.py lo parte
 --     en docs/conta/c6-banco-parte1.sql y c6-banco-parte2.sql (menos de
@@ -1265,11 +1271,15 @@
 --     con cuentas pedidas ya no pide los cuadres del control (miran todo el
 --     banco: un cuarto de segundo por llamada con un año de banco, y
 --     c6-pruebas la llama nueve veces; siguen en la revisión entera y en
---     fn_banco_control). c6-pruebas, con las ocho nuevas (161): unos 21 s en
---     17.6 de cero; con un año de banco (c6-volumen.sh, 9.990
---     movimientos), {VOL} (con la 4c, 37,5 s: las ocho nuevas suman unos
---     2,5 s, y lo demás tarda un poco menos que en la 4c). El control de
---     cada pantalla del banco, con ese año: {CTL}.
+--     fn_banco_control). c6-pruebas, con las ocho nuevas (161): unos 22 s en
+--     17.6 y 20 s en 16 de cero; con un año de banco (c6-volumen.sh, 9.990
+--     movimientos), 36,8 s en 17.6 y 33,7 s en 16, bajo su tope de 40 s (en
+--     otra corrida ese día, 38,4 s y 36,0 s; la de la 4c, ese día en la misma
+--     máquina, 38,5 s en 17.6: las ocho nuevas suman unos 2,5 s, y la
+--     revisión con cuentas los devuelve). El control de cada pantalla del
+--     banco, con ese año (17.6 y 16): la bandeja 0,42 s y 0,36 s, la
+--     conciliación 0,32 s y 0,26 s, todo 0,59 s y 0,50 s, «hoy» 0,50 s y
+--     0,44 s; la revisión entera 3,1 s y 2,9 s.
 --   · EL PEGADO. Encima de 9849564 (la 4c): solo este archivo (o sus dos
 --     partes). Encima de d80c9de (producción hoy): c2, c4 y este (c2 y c4
 --     siguen en 2026100201; c3 en 2026092601). Una columna nueva al final de
@@ -7909,8 +7919,12 @@ begin
       'motivo', 'posible_duplicado', 'regla', 'importación',
       'texto', format('¿Es el mismo movimiento que el del %s por %s «%s» (entró por %s)? El mismo dinero no entra dos veces: '
                       'dilo y sigue.', v_dup.fecha, v_dup.monto, coalesce(v_dup.descripcion, ''), v_dup.origen)
-               || coalesce(format(' Ojo: si es el mismo, aquel está mal casado: %s. Des-cásalo antes (con su motivo) y di después '
-                                  'que este es el mismo: aquel se propondrá por lo que es.', v_contr), ''),
+               -- (format con un argumento nulo da '' y no nulo: el «Ojo», solo
+               -- si de verdad se contradicen)
+               || case when v_contr is not null
+                       then format(' Ojo: si es el mismo, aquel está mal casado: %s. Des-cásalo antes (con su motivo) y di después '
+                                   'que este es el mismo: aquel se propondrá por lo que es.', v_contr)
+                       else '' end,
       'duplicado_de', v_dup.id,
       'opciones', case when v_contr is not null
                        then jsonb_build_array(
@@ -12635,10 +12649,14 @@ begin
     raise exception using errcode = 'MX008',
       message = format('Esto ya está en el libro: casa con %s. Cásalo (fn_banco_casar_con): clasificarlo lo metería dos veces.%s',
                        v_cand,
-                       -- (ronda 4c: y si la transferencia que lo espera dice otra cosa)
-                       coalesce(format(' Ojo: %s. Si no es este dinero, des-casa el movimiento que puso esa transferencia '
-                                       '(fn_banco_descasar, con su motivo: su asiento se reversa) y clasifica cada uno por lo que es; '
-                                       'si sí lo es, cásalo con su motivo.', v_contr), ''));
+                       -- (ronda 4c: y si la transferencia que lo espera dice otra cosa;
+                       -- ronda 4d: solo entonces —format con un argumento nulo da '' y
+                       -- no nulo, y el «Ojo: .» salía siempre—)
+                       case when v_contr is not null
+                            then format(' Ojo: %s. Si no es este dinero, des-casa el movimiento que puso esa transferencia '
+                                        '(fn_banco_descasar, con su motivo: su asiento se reversa) y clasifica cada uno por lo que '
+                                        'es; si sí lo es, cásalo con su motivo.', v_contr)
+                            else '' end);
   end if;
   if v_debil is not null and v_motivo is null then
     raise exception using errcode = 'MX008',

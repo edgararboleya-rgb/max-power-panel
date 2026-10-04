@@ -6581,8 +6581,12 @@ begin
       'motivo', 'posible_duplicado', 'regla', 'importación',
       'texto', format('¿Es el mismo movimiento que el del %s por %s «%s» (entró por %s)? El mismo dinero no entra dos veces: '
                       'dilo y sigue.', v_dup.fecha, v_dup.monto, coalesce(v_dup.descripcion, ''), v_dup.origen)
-               || coalesce(format(' Ojo: si es el mismo, aquel está mal casado: %s. Des-cásalo antes (con su motivo) y di después '
-                                  'que este es el mismo: aquel se propondrá por lo que es.', v_contr), ''),
+               -- (format con un argumento nulo da '' y no nulo: el «Ojo», solo
+               -- si de verdad se contradicen)
+               || case when v_contr is not null
+                       then format(' Ojo: si es el mismo, aquel está mal casado: %s. Des-cásalo antes (con su motivo) y di después '
+                                   'que este es el mismo: aquel se propondrá por lo que es.', v_contr)
+                       else '' end,
       'duplicado_de', v_dup.id,
       'opciones', case when v_contr is not null
                        then jsonb_build_array(

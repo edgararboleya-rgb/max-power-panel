@@ -189,15 +189,21 @@
 -- que trae el número (158), la partida de la apertura y lo que llega de la
 -- personal (159), la línea de crédito dada de alta después y su desembolso
 -- (160), y los botones de antes, la dirección de «Es la transferencia con
--- …» y el orden de lo que falta (161). Las ocho habrían fallado con la 4c
--- (9849564). La 23 y la 27 ponen ahora su depósito del libro contra 1600
--- (un depósito en garantía devuelto) y no contra 3100: el dinero del banco
+-- …» y el orden de lo que falta (161). La 158 mira también que, sin nada
+-- que se contradiga, no salga un «Ojo» vacío (lo encontró la
+-- verificación). Las ocho habrían fallado con la 4c (9849564). La 23 y
+-- la 27 ponen ahora su depósito del libro contra 1600 (un depósito en
+-- garantía devuelto) y no contra 3100: el dinero del banco
 -- al patrimonio sin la cuenta personal de Edgar ya no casa solo con un
 -- «DEPOSIT» (EL CRITERIO contra el libro), y no era lo que miraban. La 36
 -- y la 39 miran del cuadre 59 solo lo suyo (con datos de verdad puede
 -- venir en rojo por lo que Edgar casó antes de la 4d: es lo que tiene que
 -- revisar); la 154 mira además que la copia del control cuente lo mismo
--- que la referencia.
+-- que la referencia. Y fn_banco_verificar con cuentas pedidas ya no trae
+-- los cuadres del control (miran todo el banco): la 39 se los pide al
+-- control, como antes. Con un año de banco, las ocho nuevas suman unos
+-- 2,5 s, y la revisión con cuentas, un cuarto de segundo menos en cada una
+-- de sus nueve llamadas.
 -- =====================================================================
 
 create temp table if not exists _pruebas(n int, prueba text, esperado text, obtenido text, ok boolean);
@@ -10118,12 +10124,16 @@ end $$;
 --      Y con el original todavía pendiente, «es el mismo» rehace ya su
 --      propuesta con el número (la de la cuenta personal). Antes el número
 --      se quedaba en el ignorado y el pase a Edgar seguía como un pase a la
---      reserva, en verde.
+--      reserva, en verde. Y (lo encontró la verificación de la 4d) sin nada
+--      que se contradiga, ni el texto del duplicado ni el MX008 de
+--      fn_banco_clasificar («Esto ya está en el libro») llevan un «Ojo»
+--      vacío: format() con un argumento nulo da '' y no nulo, y salían
+--      siempre («aquel está mal casado: .», «Ojo: . Si no es este dinero…»).
 do $$
 declare
   v_obt text;
   v_esp text := 'bandeja=posible_duplicado:fn_banco_descasar:t:t:t mismo=MX008 con_motivo=ignorado:t control=t '
-                'pendiente=transferencia_personal';
+                'sin_ojo=posible_duplicado:t pendiente=transferencia_personal clasificar=MX008:t';
   v_mes text := current_setting('mx6.mes', true);
   d     date := nullif(current_setting('mx6.desde', true), '')::date;
   v_p   uuid;
@@ -10179,10 +10189,29 @@ begin
              || ' control=' -- (EL CONTROL, con su referencia: la 154 y la 39 miran que la copia del control cuente lo mismo)
              || case when exists (select 1 from fn_banco_criterio_casados((select m.cuenta from movimientos_banco m where m.id = v_p)) x
                                    where x.movimiento_id = v_p) then 'f' else 't' end;
+    -- (sin nada que se contradiga —el original está pendiente—, su texto sin «Ojo»)
+    v_obt := v_obt || ' sin_ojo=' || (select format('%s:%s', m.propuesta->>'motivo',
+                                                    case when position('Ojo' in coalesce(m.propuesta->>'texto', '')) = 0 then 't' else 'f' end)
+                                        from movimientos_banco m where m.id = pg_temp.c6_mov('1098', 'C6KJQ2'));
     -- El original pendiente: «es el mismo» rehace su propuesta con el número del QFX.
     perform fn_banco_duplicado(pg_temp.c6_mov('1098', 'C6KJQ2'), true);
     v_obt := v_obt || ' pendiente=' || coalesce((select m.propuesta->>'motivo' from movimientos_banco m
                                                   where m.id = pg_temp.c6_mov('1098', 'C6KJP2')), '-');
+    -- Un cargo que ya está en el libro (escrito a mano: no es una transferencia): clasificarlo, aunque sea con su motivo, es
+    -- MX008 «Esto ya está en el libro», sin un «Ojo» vacío.
+    perform fn_postear(jsonb_build_object('fecha', (d + 2)::text, 'descripcion', 'c6-pruebas 4d: cargo a mano (se deshace)',
+              'lineas', jsonb_build_array(jsonb_build_object('cuenta', '6130', 'monto', '333.00'),
+                                          jsonb_build_object('cuenta', '1098', 'monto', '-333.00'))));
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 9, null, jsonb_build_array(
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 3, 'monto', '-333.00', 'id', 'C6KJR1', 'nombre', 'C6 PRUEBAS SUPPLY 333'))),
+            '1098', 'c6-pruebas-4d-dup-c.qfx');
+    begin
+      perform fn_banco_clasificar(pg_temp.c6_mov('1098', 'C6KJR1'), '[{"cuenta": "6130"}]'::jsonb, 'c6-pruebas: con su motivo');
+      v_x := 'entró';
+    exception when others then
+      v_x := sqlstate || ':' || case when sqlerrm like '%ya está en el libro%' and sqlerrm not like '%Ojo%' then 't' else 'f' end;
+    end;
+    v_obt := v_obt || ' clasificar=' || v_x;
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;

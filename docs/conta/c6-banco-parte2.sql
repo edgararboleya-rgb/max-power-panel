@@ -1585,10 +1585,14 @@ begin
     raise exception using errcode = 'MX008',
       message = format('Esto ya está en el libro: casa con %s. Cásalo (fn_banco_casar_con): clasificarlo lo metería dos veces.%s',
                        v_cand,
-                       -- (ronda 4c: y si la transferencia que lo espera dice otra cosa)
-                       coalesce(format(' Ojo: %s. Si no es este dinero, des-casa el movimiento que puso esa transferencia '
-                                       '(fn_banco_descasar, con su motivo: su asiento se reversa) y clasifica cada uno por lo que es; '
-                                       'si sí lo es, cásalo con su motivo.', v_contr), ''));
+                       -- (ronda 4c: y si la transferencia que lo espera dice otra cosa;
+                       -- ronda 4d: solo entonces —format con un argumento nulo da '' y
+                       -- no nulo, y el «Ojo: .» salía siempre—)
+                       case when v_contr is not null
+                            then format(' Ojo: %s. Si no es este dinero, des-casa el movimiento que puso esa transferencia '
+                                        '(fn_banco_descasar, con su motivo: su asiento se reversa) y clasifica cada uno por lo que '
+                                        'es; si sí lo es, cásalo con su motivo.', v_contr)
+                            else '' end);
   end if;
   if v_debil is not null and v_motivo is null then
     raise exception using errcode = 'MX008',
