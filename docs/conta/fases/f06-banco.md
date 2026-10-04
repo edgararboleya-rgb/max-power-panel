@@ -176,24 +176,35 @@ tránsito, sin tocar 1010.
   el patrón de su Zelle, un QFX real de cada Amex, y el aviso de cuota de
   Supabase (restricción desde el 26-oct).
 
-- **Cuarta ronda (2 y 3-oct), en Opus azul.** Seis lentes (contable,
+- **Cuarta ronda (2 al 4-oct), en Opus azul.** Seis lentes (contable,
   seguridad, operación, rendimiento y dos nuevas: el importador con lo que
   mandan de verdad Chase, Amex y Plaid, y el primer mes real sobre una copia
   de producción): 41 hallazgos, **37 confirmados** (17 importantes, 20
-  menores, ninguno bloqueante), corregidos por cuatro correctores en grupos
-  con una prueba por hallazgo. La prueba final de cero encontró dos defectos
-  nuevos en el camino de las transferencias con la cuenta personal (dinero
-  del banco al patrimonio sin pedir motivo), que la **ronda 4b** corrigió con
-  un principio general: el dinero del banco a 2900, 3100 o 3200 nunca entra
-  sin motivo ni se casa solo, salvo desde una cuenta personal que Edgar dio
-  de alta (`banco_cuentas_personales`, `fn_banco_cuenta_personal`).
+  menores, ninguno bloqueante), corregidos por cuatro correctores con una
+  prueba por hallazgo. Cada prueba final atacó lo nuevo y abrió una vuelta
+  más, todas sobre lo mismo (el dinero entre las cuentas de la empresa, la
+  personal de Edgar y la reserva):
+  - **4b**: EL PRINCIPIO — el dinero del banco a 2900, 3100 o 3200 nunca
+    entra sin motivo ni se casa solo, salvo desde una cuenta personal que
+    Edgar dio de alta (`banco_cuentas_personales`, `fn_banco_cuenta_personal`).
+  - **4c**: EL CRITERIO DEL OTRO LADO — una sola respuesta a «¿quién es el
+    otro lado?» (cuenta propia por número o sin él, personal dada de alta,
+    desconocida o tercero) para R3, «Desde/A», transferencias, cobros y la
+    bandeja; la línea de crédito y los préstamos se dan de alta por número.
+  - **4d**: EL CONTROL — el cuadre 59 («el otro lado de cada casado») pone en
+    rojo cualquier casado que contradiga el criterio y frena la conciliación
+    hasta des-casarlo o escribir su motivo; R1 con asientos a mano y el cobro
+    de c3 miran el criterio; y c6 se entrega también en dos partes
+    (`c6-banco-parte1.sql` y `-parte2.sql`, por si el SQL Editor no aguanta
+    los 1,2 MB del entero), probadas iguales al entero.
   Resultado en el banco de pruebas, en 16 y 17.6: c2-pruebas 83, c3-pruebas
-  120, c4-pruebas 113 y c6-pruebas **142**, todas en verde; idempotente;
-  pegado encima de producción con el banco en uso sin cambiar una cifra.
-  Marcas: c2 y c4 2026100201, c3 2026092601, c6 2026100301. Se pegan c2, c4 y
-  c6 (en ese orden) y las cuatro suites, una a la vez. El ataque final de la
-  4b dejó anotados tres casos importantes y cuatro menores en el mismo
-  terreno (R3 y «Desde …» con números de cuenta desconocidos o personales; un
-  pase de Chase a la reserva propuesto como cobro de una factura), dos de
-  ellos ya presentes antes de la ronda 4; con sus remedios en el README
-  («Después de c6», pasos 1 y 3) mientras llega su arreglo.
+  120, c4-pruebas 113 y c6-pruebas **161**, todas en verde; idempotente;
+  pegado encima de producción (d80c9de) con el banco en uso sin cambiar una
+  cifra. Marcas: c2 y c4 2026100201, c3 2026092601, c6 2026100303. Se pegan
+  c2, c4 y c6 (o sus dos partes), en ese orden, y las cuatro suites, una a
+  la vez. El ataque de la 4d dejó anotados caminos que el control todavía no
+  mira (la cuota registrada antes que el banco, el cheque devuelto registrado
+  desde cobros, R1 de la débito con un pase por número, el motivo automático
+  de rehacer una transferencia) con su remedio en el README del banco de
+  pruebas (§0); sus escenarios quedan en `pruebas/conta/ataques/`. El banco
+  se da por cerrado hasta que lleguen los archivos reales de Edgar.

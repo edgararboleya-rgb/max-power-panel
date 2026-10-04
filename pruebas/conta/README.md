@@ -144,7 +144,11 @@ comprobando si algo ya estaba.
   - **Un ticket de la débito** casa solo con un pase de Chase del mismo
     monto que llegue ANTES que la compra (con Plaid, o con un QFX bajado a
     mitad de mes) aunque el pase nombre la reserva por su número, y EL
-    CONTROL no mira los tickets. Mientras: el QFX de Chase del mes entero.
+    CONTROL no mira los tickets. Con el QFX del mes entero no casa solo,
+    pero el único botón de ese pase es «Confirmar cruce con recibo …», sin
+    pedir motivo. Mientras: el QFX de Chase del mes entero, y un ticket
+    solo con la compra de su comercio («HOME DEPOT …»), nunca con un pase
+    («ONLINE TRANSFER …»).
   - Menores: el número de un préstamo de vehículo dado de alta a 2520 con
     el saldo en 2530 (como lo trae QuickBooks) pone cada cuota en rojo en
     EL CONTROL (es el mismo préstamo): dalo de alta a la cuenta que tiene
@@ -1418,26 +1422,28 @@ motivo escrito solo lo apaga (importante):
   línea del banco») casa solo el primer retiro de ese monto, también un
   pase a tu cuenta personal. La factura vuelve a quedar por cobrar, tu
   distribución no está, y el control y la conciliación del mes en verde
-  (R- y R1 solo miran EL CRITERIO en un cobro; el control no mira
-  «devolucion»). Es la variante del cobro con su movimiento (L03) que el
-  arreglo no cubrió.
+  (R- mira EL CRITERIO solo en un cobro, R1 no lo mira en una devolución
+  ni en un ticket, y el control no mira «devolucion»). Es la variante del
+  cobro con su movimiento (L03) que el arreglo no cubrió.
 - **La cuota de otro monto** (la propuesta de la ronda 4, prueba 104): con
   una cuota registrada antes que el banco, todo retiro de su banco a 10
-  días o menos (≥ su interés) sale «cuota_prestamo» con sus dos botones
-  («la diferencia a capital» y «a interés») como ÚNICAS opciones y sin
-  «pide_motivo» —el pago de la Amex, el pase a la reserva por su número,
-  un cheque, una compra, el pase a tu cuenta personal: el paso de la cuota
-  va antes que el de las transferencias— y `fn_banco_casar_con` con
-  `{"cuota", "diferencia"}` escribe en el casado un motivo automático («La
-  cuota del … con el cargo del banco: la diferencia … a capital»), que EL
-  CONTROL toma por el tuyo: el pase a tu cuenta personal queda como la
-  cuota de la F-150 (2530 y 7100), en verde.
+  días o menos (≥ su interés) sale «cuota_prestamo» con sus botones («la
+  diferencia a capital» y, si cobró más que la cuota, «a interés») como
+  ÚNICAS opciones y sin «pide_motivo» —el pago de la Amex, el pase a la
+  reserva por su número, un cheque, una compra, el pase a tu cuenta
+  personal: el paso de la cuota va antes que el de las transferencias— y
+  `fn_banco_casar_con` con `{"cuota", "diferencia"}` escribe en el casado
+  un motivo automático («La cuota del … con el cargo del banco: la
+  diferencia … a capital»), que EL CONTROL toma por el tuyo: el pase a tu
+  cuenta personal queda como la cuota de la F-150 (2530 y 7100), en verde.
 - **Los tickets** (R1 «tarjeta o débito = recibo»): con Plaid, o un QFX
   bajado a mitad de mes, un pase de Chase a la reserva (por su número) que
   llega antes que la compra con la débito casa solo con el ticket del
   mismo monto (EL CRITERIO contra el libro dice que se contradicen), y el
   control no mira los tickets; la compra de verdad llega después «sin
-  ticket» (clasificada, el gasto dos veces).
+  ticket» (clasificada, el gasto dos veces). Con el QFX del mes entero (el
+  pase y la compra juntos) no casa solo, pero el único botón del pase es
+  «Confirmar cruce con recibo …», sin «pide_motivo», y pulsado queda igual.
 - **Un motivo automático** también en `fn_banco_transferencia_rehacer`: el
   lado que ya estaba casado (un «Desde 1010» en la reserva) se vuelve a
   casar con «La otra mitad de la transferencia llegó con fecha …» como su
@@ -2684,6 +2690,37 @@ tocar `docs/conta/c2-libro.sql`:
     pedía los cuadres del control, que miran todo el banco (un cuarto de
     segundo por llamada; c6-pruebas la llama nueve veces); ya no, y la 39
     se los pide al control.
+- **La prueba final de la 4d (4-oct)**, con c6-banco marca 2026100303 (c2 y
+  c4, 2026100201; c3, 2026092601), en 16.13 y en 17.6, con el archivo entero
+  y con sus dos partes. El contenedor se reinició cuando le quedaban los
+  scripts de las partes y el resumen; esos los terminó la sesión a mano.
+  - De cero: c2-pruebas 83/83, c3-pruebas 120/120, c4-pruebas 113/113 (en
+    16, 112 y la 109 «omitida») y c6-pruebas 161/161; con las dos partes de
+    c6, lo mismo. La parte 2 sola para con MX000 y no toca nada.
+  - Los repros de la ronda 4, sus extras, los (1)-(4) de la 4b y los
+    escenarios A–I, K1–K7, L01–L17 y L02b (`ataques/`): ninguno reproduce;
+    al final de cada uno el cuadre 59 y `fn_banco_verificar` en verde.
+  - Idempotente (c1–c6 dos veces más y las suites otra vez) y sin rastro.
+  - La actualización con el banco en uso, desde d80c9de (c2, c4 y c6, el
+    entero y las partes) y desde 9849564 (solo c6): foto igual, resúmenes
+    en true, suites en verde. EL CONTROL ve exactamente los tres casados
+    que la 4c dejaba casar solos y se contradicen, y el remedio de §0 los
+    limpia; uno dentro de una conciliación confirmada se arregla
+    escribiendo su motivo.
+  - Scripts, en verde en los dos: c6-en-uso, c6-concurrencia, c2-pegado,
+    c4-concurrencia, c6-volumen (c6-pruebas sola con un año de banco:
+    37,4 s en 17.6 y 32,6 s en 16; con cuatro teléfonos, 40,7 s y 37,9 s)
+    y `c6-partes.sh` (las partes dejan la base igual que el entero;
+    c6-pruebas encima, 161/161); en 17.6, c3-volumen y c4-volumen (666 por
+    mes: nada en rojo).
+  - El ataque a EL CONTROL (escenarios M de `ataques/`) encontró caminos que
+    el control todavía no mira: la cuota de un préstamo registrada antes que
+    el banco (M02, M03), el cheque devuelto registrado desde cobros con un
+    movimiento ajeno o sin movimiento (M01, M01b), un pase por número casado
+    solo con el ticket de una compra de la débito cuando llega antes que
+    ella (M05; con Plaid o un QFX a media semana) y el motivo automático de
+    rehacer una transferencia (M10); y tres menores (M04, M06, M08). Lo de
+    mientras, en §0 («Lo que encontró la prueba final de la 4d»).
 - **JIT**: el Postgres del banco trae el compilador JIT encendido (lo de
   fábrica). Con consultas grandes compila más de lo que corre (una vista
   del tablero leída como el editor, 16 s con JIT y 0,15 s sin él; la
