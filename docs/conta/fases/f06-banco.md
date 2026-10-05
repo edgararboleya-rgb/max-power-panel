@@ -208,3 +208,11 @@ tránsito, sin tocar 1010.
   de rehacer una transferencia) con su remedio en el README del banco de
   pruebas (§0); sus escenarios quedan en `pruebas/conta/ataques/`. El banco
   se da por cerrado hasta que lleguen los archivos reales de Edgar.
+- **En producción (5-oct):** c2, c4 y c6 (en sus dos partes) pegados por
+  Edgar entre las 16:04 y las 16:07 de Miami, todos en `true`; c2-pruebas
+  83/83, c3-pruebas 119 + la 45 omitida, c6-pruebas **161/161** y
+  c4-pruebas **113/113** (sola; el editor dio su error de red y la corrida
+  siguió en el servidor). Marcas: c2 y c4 2026100201, c3 2026092601, c6
+  2026100303. Sin rastro; cadena, puentes y banco en verde, y en los estados
+  solo el rojo esperado de la apertura. Evidencia en
+  `pruebas/conta/resultados/2026-10-05-produccion/`.
