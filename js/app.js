@@ -11087,6 +11087,14 @@ function esFalloDeRed(err) {
   // cada cosa en su columna. Renglón por renglón: la partida, el ítem, de qué
   // receta o regla salió, cantidad, unidad, $ unitario, h unitarias, material
   // y horas. Abajo, los totales del mismo cálculo que ve en pantalla.
+  /* (06/10, Edgar: «le doy a Copiar y no se copia; no me da la opción de
+     pegarlo en Excel») El texto del takeoff va con TABULADORES; esto lo pasa a
+     CSV de verdad —comillas, UTF-8 con BOM— para que Excel lo abra con un doble
+     clic, cada columna en su celda, sin pasar por el portapapeles. PURA. */
+  function csvDeTakeoff(txt) {
+    const celda = v => { const t = String(v == null ? "" : v); return /[",\n\r]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+    return "\ufeff" + String(txt || "").split(/\r?\n/).map(l => l.split("\t").map(celda).join(",")).join("\r\n");
+  }
   function textoTakeoff(est, c) {
     const r2 = v => Math.round((Number(v) || 0) * 100) / 100;
     const n2 = v => r2(v).toFixed(2), n1 = v => (Math.round((Number(v) || 0) * 100) / 100).toString();
@@ -13310,13 +13318,44 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       $("propuesta-caja").innerHTML = `
         <div class="cal-panel-card">
           <div class="cal-form-titulo">Takeoff para copiar — ${c.items.length + (c.autos || []).length} renglones (pégalo en Excel: cada columna cae en su celda)</div>
-          <textarea id="takeoff-texto" rows="18" readonly wrap="off"
+          <textarea id="takeoff-copia" rows="18" readonly wrap="off"
             style="width:100%;font-family:ui-monospace,monospace;font-size:.74rem;padding:.6rem;border:1px solid var(--mp-line);border-radius:10px;white-space:pre">${esc(textoTakeoff(est, c))}</textarea>
-          <button class="accion" id="btn-copiar-takeoff" style="margin-top:.45rem">Copiar</button>
+          <div class="alc-botones" style="margin-top:.45rem">
+            <button class="accion" id="btn-bajar-takeoff">Descargar para Excel (.csv)</button>
+            <button class="accion secundaria" id="btn-copiar-takeoff">Copiar</button>
+          </div>
+          <p class="modal-nota">El .csv se abre en Excel con doble clic, cada columna en su celda. «Copiar» usa el portapapeles del aparato; en el iPad a veces no lo permite.</p>
         </div>`;
+      /* (06/10) EL FALLO DE VERDAD: la caja del takeoff para copiar se llamaba
+         «takeoff-texto», igual que la caja donde se PEGA el takeoff de Bluebeam
+         (modo planos). $() devolvía la primera —la vacía— y «Copiar» copiaba
+         nada: por eso Excel no daba la opción de pegar. Ahora es takeoff-copia.
+         Y el archivo es el camino seguro: no depende del portapapeles. */
+      $("btn-bajar-takeoff").addEventListener("click", () => {
+        const nom = "Takeoff-" + String(est.nombre || "estimado").replace(/[^\w\-. ]+/g, "").trim().slice(0, 60) + "-" + hoyISO() + ".csv";
+        const blob = new Blob([csvDeTakeoff($("takeoff-copia").value)], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); a.href = url; a.download = nom;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        avisar("✓ " + nom + " — ábrelo en Excel");
+      });
+      /* (06/10) Antes decía «copiado ✓» aunque el portapapeles hubiera dicho que
+         no: el aviso salía igual en los dos caminos. Ahora se comprueba cada uno
+         y, si ninguno puede, se deja el texto SELECCIONADO y se dice la verdad. */
       $("btn-copiar-takeoff").addEventListener("click", async () => {
-        try { await navigator.clipboard.writeText($("takeoff-texto").value); avisar("Takeoff copiado ✓ — pégalo en Excel"); }
-        catch { $("takeoff-texto").select(); document.execCommand("copy"); avisar("Takeoff copiado ✓ — pégalo en Excel"); }
+        const ta = $("takeoff-copia"), txt = ta.value;
+        let ok = false;
+        try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(txt); ok = true; } } catch { ok = false; }
+        if (!ok) {
+          try {
+            ta.readOnly = false; ta.contentEditable = "true"; ta.focus(); ta.setSelectionRange(0, txt.length);
+            ok = document.execCommand("copy") === true;
+            ta.contentEditable = "false"; ta.readOnly = true;
+          } catch { ok = false; }
+        }
+        if (ok) avisar("Takeoff copiado ✓ — pégalo en Excel");
+        else { try { ta.focus(); ta.setSelectionRange(0, txt.length); } catch {} avisar("El aparato no dejó copiar: el texto quedó seleccionado (Ctrl+C / mantén pulsado → Copiar), o usa «Descargar para Excel»", true); }
       });
       $("propuesta-caja").scrollIntoView({ behavior: "smooth" });
     });
@@ -16597,6 +16636,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       },
       resultado(est) { return bloqueResultado(est, calcularEstimado(est)); },
       takeoff(est, c) { return textoTakeoff(est, c); },
+      csvTakeoff(txt) { return csvDeTakeoff(txt); },   // (06/10) el .csv que se descarga para Excel
       mano(est, c) { return panelManoHTML(est, c, false) + panelRapidoHTML(est, c, false); },   // las filas con su tipo (23/09)
       consumibles(base, est, cfg) { return autosConsumibles(base || [], est || {}, cfg || {}); },
       reglas(cfg) { return consReglas(cfg || {}); },
