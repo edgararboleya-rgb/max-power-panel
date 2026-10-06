@@ -8322,7 +8322,9 @@ function esFalloDeRed(err) {
         e = cat.cero_motivo || (esSoloLaborPorNaturaleza(cat) ? "solo_labor" : "revisar");
         // La cotización del supply llega por SECCIÓN entera, que es como la
         // manda el proveedor: un gesto apaga los 78 renglones de switchgear.
-        if (e === "suministro") {
+        // (06/10) También el renglón que SÍ tiene precio en el catálogo pero
+        // va a $0 en este estimado porque entró en la cuota (el SPD, los lugs).
+        if (e === "suministro" || e === "revisar") {
           const k = "S:" + normTxt(cat.seccion || "");
           if (notas[k] && notas[k].d === "cotizado") e = "cotizado";
         }
@@ -10985,6 +10987,7 @@ function esFalloDeRed(err) {
     l.push("");
     l.push(`Mano de obra:      ${r2(c.horas)} h   ${fmt(r2(c.totalLabor))}`);
     l.push(`Material + tax:                  ${fmt(r2(c.totalMaterial))}`);
+    if (c.matCot > 0.005) l.push(`   · de ello, cotizaciones del supply: ${fmt(r2(c.matCot))} (sin tax)`);
     if (c.misc) l.push(`Misceláneas:                     ${fmt(r2(c.misc))}`);
     if (c.escalacion > 0.005) l.push(`Escalación:                      ${fmt(r2(c.escalacion))}`);
     if (c.generales > 0.005) {
@@ -12707,7 +12710,25 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           </label>
         </div>` : ""}
         <div class="rent-sec">Materiales</div>
-        <div class="rent-fila"><span>${esRapido ? `Material (${c.lineasMat.length} línea${c.lineasMat.length === 1 ? "" : "s"})` : `Material (ítems${c.autos.length ? " + automáticos" : ""})`}</span><span>${fmt(r2(c.matSubtotal - c.misc - c.mermaMat))}</span></div>
+        ${(() => {
+          /* (06/10, Edgar con Mariners: «¿dónde está ese material? no lo veo en el
+             resumen») La cotización del supply iba sumada DENTRO de «Material
+             (ítems)» sin nombre. Ahora cada cosa en su fila: lo contado, lo puesto
+             a mano, cada cotización del proveedor y las luminarias de referencia. */
+          const n = v => Number(v) || 0;
+          const lin = c.lineasMat || [];
+          const esCotL = l => l && l.tipo === "cot", esCostoL = l => !!(l && TIPOS_COSTO[l.tipo]);
+          const matMano = lin.reduce((s, l) => s + (esCotL(l) || esCostoL(l) ? 0 : n(l.monto)), 0);
+          const contado = esRapido ? 0 : c.items.reduce((s, i) => s + n(i.cantidad) * n(i.precio), 0) + c.autos.reduce((s, i) => s + n(i.cantidad) * n(i.precio), 0);
+          const refTot = c.refLuz ? n(c.refLuz.total) : 0;
+          const cots = lin.filter(esCotL);
+          let h = "";
+          if (!esRapido) h += `<div class="rent-fila"><span>Material contado (ítems${c.autos.length ? " + automáticos" : ""})</span><span>${fmt(r2(contado))}</span></div>`;
+          if (esRapido || matMano > 0.005) h += `<div class="rent-fila"><span>${esRapido ? "Material" : "+ Material a mano"} (${lin.filter(l => !esCotL(l) && !esCostoL(l)).length} línea${lin.filter(l => !esCotL(l) && !esCostoL(l)).length === 1 ? "" : "s"})</span><span>${fmt(r2(matMano))}</span></div>`;
+          cots.forEach(l => { h += `<div class="rent-fila"><span title="${esc(l.desc || "")}">+ Cotización del supply: ${esc(String(l.desc || "proveedor").split(/[—:(]/)[0].trim().slice(0, 48))}</span><span>${fmt(r2(n(l.monto)))}</span></div>`; });
+          if (refTot > 0.005) h += `<div class="rent-fila"><span>+ Luminarias a precio de referencia (cuota pendiente)</span><span>${fmt(r2(refTot))}</span></div>`;
+          return h;
+        })()}
         ${c.mermaMat > 0 ? `<div class="rent-fila"><span>+ Merma (cables ${Math.round((estData.config.merma_cable ?? .1) * 100)}% · tubería ${Math.round((estData.config.merma_tuberia ?? .05) * 100)}%)</span><span>${fmt(r2(c.mermaMat))}</span></div>` : ""}
         <div class="rent-fila"><span>+ Misceláneas (${pctTxt(c.miscPct)}${nnDist(est.misc_pct) ? " " + ico("lapiz") : " — tape, wirenuts, fijación"})${lapiz("misc_pct", "pct", c.miscPct, "Misceláneas — % del material")}</span><span>${fmt(r2(c.misc))}</span></div>
         <div class="rent-fila"><span>+ Sales tax (${pctTxt(c.taxPct)}${nnDist(est.tax_pct) ? " " + ico("lapiz") : ""})${lapiz("tax_pct", "pct", c.taxPct, "Sales tax — % del material")}</span><span>${fmt(r2(c.tax))}</span></div>
