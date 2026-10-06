@@ -4232,3 +4232,7 @@ body:has(#toast:not([hidden])) .fab, body:has(#sin-senal:not([hidden])) .fab { d
 .alc-candado > span:nth-child(2) { font-weight: 800; }
 .alc-candado-punto { width: 9px; height: 9px; border-radius: 50%; background: var(--mp-amber); flex-shrink: 0; }
 .alc-botones .accion:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+/* v257 · cuadrilla por composición: filas por rol en el resumen y el tipo de rol */
+.rent-rol { font-size: var(--fs-3); color: var(--mp-ink-2); padding-left: .6rem; }
+.rap-rol select.rap-rol-tipo, .rap-rol select.esc-rol-tipo { font: inherit; font-size: var(--fs-3); padding: .3rem .35rem; border: 1px solid var(--mp-line); border-radius: 8px; background: var(--mp-card); color: var(--mp-ink); }

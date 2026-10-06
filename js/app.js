@@ -9392,8 +9392,12 @@ function esFalloDeRed(err) {
     const horas = horasBase * (n(est.factor) || 1);
     // La cuadrilla: la propia del estimado (Custom) > la del escenario > las 3 de siempre
     const mezcla = cuadrillaDe(est, esc);
-    const tarifaMezclada = mezcla.reduce((s, m) => s + n(m.pct) * n(m.tarifa), 0);
-    const laborBase = horas * tarifaMezclada;
+    // (06/10) la mano de obra sale de la COMPOSICIÓN de la cuadrilla: los
+    // roles productivos se reparten las horas del estimado; la supervisión
+    // va encima, como % adicional. Las horas por tarea no se tocan.
+    const lab = laborPorRol(horas, mezcla);
+    const tarifaMezclada = lab.tarifaMezclada;
+    const laborBase = lab.total;
     const benefitsPct = nn(est.benefits_pct) ?? n(esc.benefits);
     const benefits = laborBase * benefitsPct;
     const totalLabor = laborBase + benefits;
@@ -9422,25 +9426,56 @@ function esFalloDeRed(err) {
              miscPct, taxPct, ohHH, ohPct: (ohPct ?? null), profitPct, markupPct,
              escalacion, escFactor, mesesObra, escAnual, cotEnPrime,
              matPropio, matCot, markupCotPct: mkCot,
-             mezcla, tarifaMezclada, benefitsPct, lineasMat, costos, costosCargados, generales, gen,
+             mezcla, lab, tarifaMezclada, benefitsPct, lineasMat, costos, costosCargados, generales, gen,
              // $ por hora cargado: el precio final entre las horas, sin los
              // costos directos (viajes, allowances, subs), que no son horas tuyas
              tarifaCargada: horas > 0 ? (bid - costosCargados) / horas : 0 };
   }
 
-  // La cuadrilla de un estimado, siempre como lista [{rol, tarifa, pct}]
-  // pct va en fracción (0.2 = 20%)
+  // La cuadrilla de un estimado, siempre como lista [{rol, tarifa, pct, tipo}]
+  // pct va en fracción (0.2 = 20%). tipo: "prod" (se reparten las horas del
+  // estimado; sus % suman 100) o "sup" (supervisión: % ADICIONAL encima de
+  // las horas productivas). Lo guardado sin tipo es productivo, como siempre.
+  const ES_SUP = m => m && m.tipo === "sup";
   function cuadrillaDe(est, esc) {
     const limpia = arr => (Array.isArray(arr) ? arr : [])
       .filter(m => m && (Number(m.tarifa) || Number(m.pct)))
-      .map(m => ({ rol: String(m.rol || "").slice(0, 30), tarifa: Number(m.tarifa) || 0, pct: Number(m.pct) || 0 }));
+      .map(m => ({ rol: String(m.rol || "").slice(0, 30), tarifa: Number(m.tarifa) || 0, pct: Number(m.pct) || 0,
+                   tipo: m.tipo === "sup" ? "sup" : "prod" }));
     if (est && Array.isArray(est.mezcla) && limpia(est.mezcla).length) return limpia(est.mezcla);
     if (esc && Array.isArray(esc.mezcla) && limpia(esc.mezcla).length) return limpia(esc.mezcla);
     return [
-      { rol: "Foreman",    tarifa: Number(esc.foreman) || 0,    pct: Number(esc.pct_foreman) || 0 },
-      { rol: "Journeyman", tarifa: Number(esc.journeyman) || 0, pct: Number(esc.pct_journeyman) || 0 },
-      { rol: "Helper",     tarifa: Number(esc.helper) || 0,     pct: Number(esc.pct_helper) || 0 },
+      { rol: "Foreman",    tarifa: Number(esc.foreman) || 0,    pct: Number(esc.pct_foreman) || 0,    tipo: "prod" },
+      { rol: "Journeyman", tarifa: Number(esc.journeyman) || 0, pct: Number(esc.pct_journeyman) || 0, tipo: "prod" },
+      { rol: "Helper",     tarifa: Number(esc.helper) || 0,     pct: Number(esc.pct_helper) || 0,     tipo: "prod" },
     ];
+  }
+  // Mano de obra por composición de cuadrilla. horas = las productivas (las
+  // del estimado, por tarea, nunca por hombre). Cada rol productivo se lleva
+  // su % de esas horas; cada rol de supervisión suma su % ENCIMA.
+  // Mano de obra $ = Σ horas del rol × $/h del rol. La tarifa mezclada es
+  // solo informativa: $ ÷ horas productivas.
+  function laborPorRol(horas, mezcla) {
+    const h = Number(horas) || 0;
+    const filas = (mezcla || []).map(m => {
+      const pct = Number(m.pct) || 0, tarifa = Number(m.tarifa) || 0, hRol = h * pct;
+      return { rol: m.rol, tipo: ES_SUP(m) ? "sup" : "prod", pct, tarifa, horas: hRol, total: hRol * tarifa };
+    });
+    const total = filas.reduce((t, f) => t + f.total, 0);
+    const horasSup = filas.filter(f => f.tipo === "sup").reduce((t, f) => t + f.horas, 0);
+    const pctProd = filas.filter(f => f.tipo === "prod").reduce((t, f) => t + f.pct, 0);
+    return { filas, total, horasProd: h, horasSup, horasTotal: h + horasSup, pctProd,
+             tarifaMezclada: h > 0 ? total / h : filas.reduce((t, f) => t + f.pct * f.tarifa, 0) };
+  }
+  // Los % de los roles productivos tienen que dar 100; los de supervisión no cuentan
+  const sumaPctProd = mezcla => Math.round((mezcla || []).filter(m => !ES_SUP(m)).reduce((t, m) => t + (Number(m.pct) || 0), 0) * 1000) / 10;
+  const selTipoRol = (cls, i, tipo, dis) => `<select class="${cls}" data-i="${i}" title="Productivo: se reparte las horas del estimado. Supervisión: % adicional encima de las horas productivas" ${dis ? "disabled" : ""}>
+        <option value="prod"${tipo !== "sup" ? " selected" : ""}>productivo</option><option value="sup"${tipo === "sup" ? " selected" : ""}>supervisión +</option></select>`;
+  // La tabla por rol: horas, $/h y total — para el resumen y para el texto
+  function filasRolHTML(lab) {
+    const r2 = v => Math.round(v * 100) / 100;
+    const pctT = v => Math.round(v * 1000) / 10;
+    return lab.filas.map(f => `<div class="rent-fila rent-rol"><span>${f.tipo === "sup" ? "+ " : "· "}${esc(f.rol)} (${f.tipo === "sup" ? "supervisión +" : ""}${pctT(f.pct)} % · ${r2(f.horas)} h × ${fmt(f.tarifa)})</span><span>${fmt(r2(f.total))}</span></div>`).join("");
   }
   // ¿Este estimado tiene algo personalizado por encima de su escenario?
   function esCustom(est) {
@@ -10986,6 +11021,7 @@ function esFalloDeRed(err) {
     l.push(`Fecha: ${hoyTxt}${est.sqft ? ` · ${est.sqft} sq ft` : ""}`);
     l.push("");
     l.push(`Mano de obra:      ${r2(c.horas)} h   ${fmt(r2(c.totalLabor))}`);
+    (c.lab && c.lab.filas || []).forEach(f => l.push(`   ${f.tipo === "sup" ? "+" : "·"} ${f.rol}: ${r2(f.horas)} h × ${fmt(f.tarifa)} = ${fmt(r2(f.total))}`));
     l.push(`Material + tax:                  ${fmt(r2(c.totalMaterial))}`);
     if (c.matCot > 0.005) l.push(`   · de ello, cotizaciones del supply: ${fmt(r2(c.matCot))} (sin tax)`);
     if (c.misc) l.push(`Misceláneas:                     ${fmt(r2(c.misc))}`);
@@ -11339,9 +11375,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         <span class="rap-signo">/h ·</span>
         <input class="rap-rol-pct" data-i="${i}" type="number" min="0" max="100" step="1" inputmode="numeric" value="${esc(pct(m.pct))}" ${soloLectura ? "disabled" : ""}>
         <span class="rap-signo">%</span>
+        ${selTipoRol("rap-rol-tipo", i, m.tipo, soloLectura)}
         ${!soloLectura && c.mezcla.length > 1 ? `<button type="button" class="insp-borrar rap-rol-quitar" data-i="${i}" title="Quitar rol" aria-label="Quitar rol">${ico("basura")}</button>` : ""}
       </div>`).join("");
-    const sumaPct = Math.round(c.mezcla.reduce((t, m) => t + (Number(m.pct) || 0), 0) * 1000) / 10;
+    const sumaPct = sumaPctProd(c.mezcla);
 
     return `
       <div class="cal-panel-card rap-card">
@@ -11374,10 +11411,12 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         <p class="rent-nota">${esMEP(est) ? "Este trabajo usa las tarifas de MXP MEP, no las tuyas. Se cambian en Escenarios, en la lista de estimados." : "Toca A, B o C para usar ese escenario tal cual."} Si cambias cualquier número de abajo, este estimado pasa a <strong>Custom</strong> (los escenarios no se tocan; para eso está Escenarios en la lista).</p>
 
         <div class="rap-sub">Cuadrilla — quién trabaja y qué parte de las horas</div>
+        <p class="rent-nota" style="margin-top:0">Los <b>productivos</b> se reparten el 100 % de las horas del estimado. La <b>supervisión</b> va encima, como % adicional: no toca las horas por tarea. El $/h es lo que te cuesta ese rol (salario con cargas, o lo que factura el sub).</p>
         ${filasCuadrilla}
-        <div class="rap-suma ${Math.abs(sumaPct - 100) < 0.6 ? "ok" : "mal"}">Suma: ${sumaPct}% ${Math.abs(sumaPct - 100) < 0.6 ? "✓" : "— tiene que dar 100%"}
+        <div class="rap-suma ${Math.abs(sumaPct - 100) < 0.6 ? "ok" : "mal"}">Productivos: ${sumaPct}% ${Math.abs(sumaPct - 100) < 0.6 ? "✓" : "— tienen que dar 100%"}${c.lab.horasSup > 0.005 ? ` · supervisión +${Math.round(c.lab.horasSup / Math.max(c.lab.horasProd, 1e-9) * 1000) / 10}%` : ""}
           ${!soloLectura ? `<button type="button" class="accion secundaria rap-rol-agregar">+ Agregar rol</button>` : ""}</div>
-        <div class="rent-fila"><span>Tarifa mezclada</span><span>${fmt(r2(c.tarifaMezclada))} / h</span></div>
+        ${filasRolHTML(c.lab)}
+        <div class="rent-fila"><span>Tarifa mezclada (${fmt(r2(c.laborBase))} ÷ ${r2(c.horas)} h productivas)</span><span>${fmt(r2(c.tarifaMezclada))} / h</span></div>
 
         <div class="modal-fila" style="margin-top:.5rem">
           <label class="mat-filtro-label">Beneficios sobre el labor (%)
@@ -11488,16 +11527,17 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         rol: (n.value || "").trim().slice(0, 30) || `Rol ${i + 1}`,
         tarifa: Number(document.querySelector(`.rap-rol-tarifa[data-i="${i}"]`).value) || 0,
         pct: (Number(document.querySelector(`.rap-rol-pct[data-i="${i}"]`).value) || 0) / 100,
+        tipo: (document.querySelector(`.rap-rol-tipo[data-i="${i}"]`) || {}).value === "sup" ? "sup" : "prod",
       }));
     };
-    document.querySelectorAll(".rap-rol-nombre, .rap-rol-tarifa, .rap-rol-pct").forEach(el =>
+    document.querySelectorAll(".rap-rol-nombre, .rap-rol-tarifa, .rap-rol-pct, .rap-rol-tipo").forEach(el =>
       el.addEventListener("change", () => guardar({ mezcla: leerCuadrilla() })));
     document.querySelectorAll(".rap-rol-agregar").forEach(b => b.addEventListener("click", async () => {
       const rol = await pedirDato("Nombre del rol nuevo (Ej: Apprentice):", "Apprentice"); if (rol === null) return;
       const t = await pedirDato(`Tarifa por hora de ${rol} ($):`, "20"); if (t === null) return;
       const arr = cuadrillaDe(est, escAct);
-      arr.push({ rol: rol.trim().slice(0, 30) || "Rol", tarifa: Number(t) || 0, pct: 0 });
-      guardar({ mezcla: arr }, "Rol agregado — ahora reparte los % para que sumen 100");
+      arr.push({ rol: rol.trim().slice(0, 30) || "Rol", tarifa: Number(t) || 0, pct: 0, tipo: "prod" });
+      guardar({ mezcla: arr }, "Rol agregado — ahora reparte los % (los productivos suman 100)");
     }));
     document.querySelectorAll(".rap-rol-quitar").forEach(b => b.addEventListener("click", () => {
       const arr = cuadrillaDe(est, escAct); arr.splice(Number(b.dataset.i), 1);
@@ -11531,11 +11571,13 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           <div class="esc-card" data-esc="${esc(e.id)}">
             <div class="esc-titulo">${mep ? `<span class="recibo-chip devolucion">MXP MEP</span> ` : ""}${esc(e.id)} — <input class="esc-nombre" type="text" value="${esc(e.nombre || "")}" placeholder="Nombre"></div>
             ${mep ? `<p class="rent-nota" style="margin-top:0">Los trabajos con Roger. Cuadrilla más grande, otro overhead y el sales tax de su condado: Orange es 6.5 %, Hillsborough 7.5 %.</p>` : ""}
+            <p class="rent-nota" style="margin-top:0">Los <b>productivos</b> se reparten el 100 % de las horas; la <b>supervisión</b> es un % adicional encima. El $/h es el costo del rol: salario con cargas, o lo que factura el sub (y entonces los beneficios de abajo van en 0).</p>
             ${cu.map((m, i) => `
             <div class="rap-rol">
               <input class="esc-rol-nombre" data-i="${i}" type="text" value="${esc(m.rol)}">
               <span class="rap-signo">$</span><input class="esc-rol-tarifa" data-i="${i}" type="number" min="0" step="0.5" inputmode="decimal" value="${esc(m.tarifa)}">
               <span class="rap-signo">/h ·</span><input class="esc-rol-pct" data-i="${i}" type="number" min="0" max="100" step="1" inputmode="numeric" value="${esc(pct(m.pct))}"><span class="rap-signo">%</span>
+              ${selTipoRol("esc-rol-tipo", i, m.tipo, false)}
               ${cu.length > 1 ? `<button type="button" class="insp-borrar esc-rol-quitar" data-i="${i}" title="Quitar rol" aria-label="Quitar rol">${ico("basura")}</button>` : ""}
             </div>`).join("")}
             <div class="modal-fila">
@@ -11578,6 +11620,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           rol: (n.value || "").trim().slice(0, 30) || `Rol ${i + 1}`,
           tarifa: Number(card.querySelector(`.esc-rol-tarifa[data-i="${i}"]`).value) || 0,
           pct: (Number(card.querySelector(`.esc-rol-pct[data-i="${i}"]`).value) || 0) / 100,
+          tipo: (card.querySelector(`.esc-rol-tipo[data-i="${i}"]`) || {}).value === "sup" ? "sup" : "prod",
         }));
         return {
           nombre: (card.querySelector(".esc-nombre").value || "").trim().slice(0, 40),
@@ -11607,8 +11650,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       };
       card.querySelector(".esc-guardar").addEventListener("click", async () => {
         const datos = leer();
-        const suma = Math.round(datos.mezcla.reduce((t, m) => t + m.pct, 0) * 1000) / 10;
-        if (Math.abs(suma - 100) >= 0.6) { avisar(`Los % de la cuadrilla suman ${suma}% — tienen que dar 100%`, true); return; }
+        const suma = sumaPctProd(datos.mezcla);
+        if (Math.abs(suma - 100) >= 0.6) { avisar(`Los % de los roles productivos suman ${suma}% — tienen que dar 100% (la supervisión va aparte)`, true); return; }
         try {
           await DB.cambiarEscenario(id, datos);
           await recargarEstimador();
@@ -11621,13 +11664,14 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         const i = card.querySelectorAll(".esc-rol-nombre").length;
         fila.innerHTML = `<input class="esc-rol-nombre" data-i="${i}" type="text" value="" placeholder="Rol nuevo">
           <span class="rap-signo">$</span><input class="esc-rol-tarifa" data-i="${i}" type="number" min="0" step="0.5" value="20">
-          <span class="rap-signo">/h ·</span><input class="esc-rol-pct" data-i="${i}" type="number" min="0" max="100" step="1" value="0"><span class="rap-signo">%</span>`;
+          <span class="rap-signo">/h ·</span><input class="esc-rol-pct" data-i="${i}" type="number" min="0" max="100" step="1" value="0"><span class="rap-signo">%</span>
+          ${selTipoRol("esc-rol-tipo", i, "prod", false)}`;
         card.querySelector(".modal-fila").before(fila);
       });
       card.querySelectorAll(".esc-rol-quitar").forEach(b => b.addEventListener("click", () => {
         b.closest(".rap-rol").remove();
         // reindexar
-        card.querySelectorAll(".rap-rol").forEach((fila, i) => fila.querySelectorAll("input").forEach(inp => inp.dataset.i = i));
+        card.querySelectorAll(".rap-rol").forEach((fila, i) => fila.querySelectorAll("input, select").forEach(inp => inp.dataset.i = i));
       }));
     });
   }
@@ -12745,7 +12789,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         <div class="rent-fila rent-sub"><span>= Total de materiales</span><span>${fmt(r2(c.totalMaterial))}</span></div>
         <div class="rent-sec">Mano de obra</div>
         <div class="rent-fila"><span>Horas de todo el trabajo (${r2(c.horasBase)} × factor ${est.factor || 1})</span><span>${r2(c.horas)} h</span></div>
-        <div class="rent-fila"><span>Labor (${r2(c.horas)} h × ${fmt(r2(c.tarifaMezclada))} cuadrilla)</span><span>${fmt(r2(c.laborBase))}</span></div>
+        ${filasRolHTML(c.lab)}
+        <div class="rent-fila"><span>Labor (${c.lab.horasSup > 0.005 ? `${r2(c.lab.horasTotal)} h con supervisión · ` : ""}${fmt(r2(c.tarifaMezclada))} / h productiva mezclada)</span><span>${fmt(r2(c.laborBase))}</span></div>
         <div class="rent-fila"><span>+ Beneficios sobre el labor (${pctTxt(c.benefitsPct)}${nnDist(est.benefits_pct) ? " " + ico("lapiz") : ""})${lapiz("benefits_pct", "pct", c.benefitsPct, "Beneficios — % sobre el labor")}</span><span>${fmt(r2(c.benefits))}</span></div>
         <div class="rent-fila rent-sub"><span>= Total de mano de obra</span><span>${fmt(r2(c.totalLabor))}</span></div>
         <div class="rent-sec">Otros gastos del proyecto</div>
@@ -16669,6 +16714,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       foto(est) { return fotoParaGuardar(est); },   // lo que congelar guarda (21/09)
       escenarios(empresa) { return escenariosDe(empresa).map(e => e.id); },
       escToca(empresa, actual) { return escenarioQueToca(empresa, actual); },
+      laborPorRol(h, m) { return laborPorRol(h, m); },
       modoEns(modo) { return modo === "servicio" ? "servicio" : modo === "planos" ? "comercial" : "remodelacion"; },
       esMep(est) { return esMEP(est); }
     },
