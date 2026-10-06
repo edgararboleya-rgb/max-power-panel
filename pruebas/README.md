@@ -22,6 +22,7 @@ NODE_PATH=/opt/node22/lib/node_modules node pruebas/e0.js
 
 | `e42.js` | E42 · El takeoff se baja para Excel (06/10): en modo planos había dos cajas con el mismo id «takeoff-texto» (la de pegar el takeoff de Bluebeam y la de copiar) y «Copiar» copiaba la vacía. La caja de copiar es «takeoff-copia»; hay «Descargar para Excel (.csv)» (comillas, BOM, cada columna en su celda) y «Copiar» dice la verdad cuando el aparato no deja. |
 | `e43.js` | E43 · Mano de obra por composición de cuadrilla (06/10): cada rol es «productivo» (se reparten el 100 % de las horas del estimado) o «supervisión» (% adicional encima). Mano de obra $ = Σ horas del rol × $/h; la tarifa mezclada es informativa. Las horas por tarea no se tocan. Las cuadrillas viejas sin tipo dan lo mismo que antes. |
+| `e44.js` | E44 · Supervisión por tiempo (06/10): el renglón «Supervisión / superintendent» de Otros gastos es horas a la semana × semanas × $/h con cargas, no un % del labor. Lo guardado antes como «pm» en dinero se suma. Sale en la tarjeta, el resumen, el texto MEP y el takeoff. |
 
 | `e41.js` | E41 · La cotización del supply se ve en el resumen (06/10, Mariners): «Material contado», «+ Material a mano» y una fila por cada «+ Cotización del supply», en vez de todo sumado dentro de «Material (ítems)». «Toda esta sección está en el precio» cubre también el renglón con precio de catálogo que va a $0 por estar en la cuota (SPD, lugs). El papel de MEP dice cuánto del material es cotización. |
 

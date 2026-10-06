@@ -9116,6 +9116,14 @@ function esFalloDeRed(err) {
      material, ni escalación, y no cuentan en la hora cargada. El colchón sube
      la lista entera un %. Vacío = nada: ningún estimado de ayer se mueve. */
   const LIFT_SEMANA = 500;   // 19' eléctrico en Florida: ~$290–$625 a la semana (29/09); Edgar: «pongamos 500»
+  /* (06/10) La supervisión NO es un % del labor: es TIEMPO. Horas a la semana
+     × semanas de obra × $/h del superintendent (con sus cargas). Un % esconde
+     la duración: 500 h en 3 semanas son 3 visitas; en 8 semanas por las
+     ventanas del hospital, 8. Esto se ve y se defiende: «6 visitas × 10 h ×
+     $75». El superintendent de oficina que atiende varias obras va en el
+     overhead; el que viaja a ESTA obra, aquí. Si Edgar es el superintendent,
+     aquí van sus horas y en Viajes su gasolina. */
+  const SUP_HORA = 75;       // superintendent $60 + 25 % de cargas
   const GEN_RENGLONES = [
     { id: "lift",     nom: "Renta de lift",                          ayuda: "días de obra con lift × precio por semana (5 días = 1 semana)", lift: true },
     { id: "equipo",   nom: "Otro equipo (andamio, contenedor, entrega)", ayuda: "monto estimado" },
@@ -9123,7 +9131,7 @@ function esFalloDeRed(err) {
     { id: "comida",   nom: "Comidas / per diem",                     ayuda: "monto estimado de toda la obra" },
     { id: "viajes",   nom: "Viajes (millas, gasolina, peajes)",      ayuda: "monto estimado de toda la obra" },
     { id: "permiso",  nom: "Permiso e inspecciones",                 ayuda: "el permiso y las reinspecciones; si lo saca el GC, no va" },
-    { id: "pm",       nom: "PM y supervisión",                       ayuda: "tus horas de PM, visitas y reuniones, en dinero" },
+    { id: "pm",       nom: "Supervisión / superintendent",           ayuda: "horas a la semana × semanas de obra × $/h con cargas (visitas, inspecciones, reuniones)", sup: true },
     { id: "dispo",    nom: "Disposición (lámparas, dumpster)",       ayuda: "monto estimado" },
     { id: "overtime", nom: "Overtime / trabajo de noche",            ayuda: "solo la prima: apagones, noches, fines de semana" },
     { id: "otros",    nom: "Otros gastos",                           ayuda: "lo que no cabe arriba" }
@@ -9168,9 +9176,15 @@ function esFalloDeRed(err) {
     const precioSemana = n(o.lift_semana) || n((cfg || {}).lift_semana) || LIFT_SEMANA;
     const dias = n(o.lift_dias);
     const semanas = Math.ceil(dias / 5);
+    // supervisión: horas/semana × semanas × $/h; lo que se guardó antes como
+    // monto («pm» en dinero) se suma, para que ningún estimado se mueva
+    const supHsem = n(o.sup_hsem), supSem = n(o.sup_sem);
+    const supHora = n(o.sup_hora) || n((cfg || {}).sup_hora) || SUP_HORA;
     const renglones = GEN_RENGLONES.map(r => r.lift
       ? { ...r, dias, semanas, precioSemana, total: semanas * precioSemana }
-      : { ...r, monto: n(o[r.id]), total: n(o[r.id]) });
+      : r.sup
+        ? { ...r, hsem: supHsem, sem: supSem, hora: supHora, horas: supHsem * supSem, monto: n(o.pm), total: supHsem * supSem * supHora + n(o.pm) }
+        : { ...r, monto: n(o[r.id]), total: n(o[r.id]) });
     const subtotal = renglones.reduce((s, r) => s + r.total, 0);
     const pc = Number(est && est.generales_colchon_pct);
     const colchonPct = Number.isFinite(pc) && pc > 0 ? pc : 0;
@@ -11028,7 +11042,7 @@ function esFalloDeRed(err) {
     if (c.escalacion > 0.005) l.push(`Escalación:                      ${fmt(r2(c.escalacion))}`);
     if (c.generales > 0.005) {
       l.push(`Otros gastos del proyecto:       ${fmt(r2(c.generales))}`);
-      c.gen.renglones.filter(k => k.total > 0.005).forEach(k => l.push(`   · ${k.nom}${k.lift ? ` (${k.dias} días = ${k.semanas} sem × ${fmt(k.precioSemana)})` : ""}: ${fmt(r2(k.total))}`));
+      c.gen.renglones.filter(k => k.total > 0.005).forEach(k => l.push(`   · ${k.nom}${k.lift ? ` (${k.dias} días = ${k.semanas} sem × ${fmt(k.precioSemana)})` : k.sup && k.horas > 0 ? ` (${r2(k.hsem)} h/sem × ${r2(k.sem)} sem = ${r2(k.horas)} h × ${fmt(k.hora)})` : ""}: ${fmt(r2(k.total))}`));
       if (c.gen.colchon > 0.005) l.push(`   · Colchón ${Math.round(c.gen.colchonPct * 1000) / 10}%: ${fmt(r2(c.gen.colchon))}`);
     }
     if (c.costos > 0.005) l.push(`Logística / allowances / subs:   ${fmt(r2(c.costos))}`);
@@ -11209,6 +11223,8 @@ function esFalloDeRed(err) {
       l.push(["", "OTROS GASTOS DEL PROYECTO — fuera del takeoff: sin tax, misceláneas ni markup"].join("\t"));
       c.gen.renglones.filter(k => k.total > 0.005).forEach(k => l.push(k.lift
         ? ["", k.nom, "otros gastos · " + k.dias + " días de obra", n2(k.semanas), "semana", n2(k.precioSemana), "0", n2(k.total), "0"].join("\t")
+        : k.sup && k.horas > 0
+        ? ["", k.nom, "otros gastos · " + n2(k.hsem) + " h/sem × " + n2(k.sem) + " sem" + (k.monto > 0 ? " + " + n2(k.monto) + " a mano" : ""), n2(k.horas), "HR", n2(k.hora), "0", n2(k.total), "0"].join("\t")
         : ["", k.nom, "otros gastos · monto estimado", "1", "LOT", n2(k.total), "0", n2(k.total), "0"].join("\t")));
       if (c.gen.colchon > 0.005) l.push(["", "Colchón de otros gastos " + (Math.round(c.gen.colchonPct * 1000) / 10) + "%", "otros gastos", "1", "LOT", n2(c.gen.colchon), "0", n2(c.gen.colchon), "0"].join("\t"));
       T("= OTROS GASTOS", c.generales);
@@ -11955,6 +11971,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           <span class="gen-in">${r.lift
             ? (soloLectura ? `${r.dias} días → ${r.semanas} sem. × ${fmt(r.precioSemana)}`
               : `${inp("gen-lift-dias", "lift_dias", r.dias, "4.2rem", "Días de obra con lift")} días → <b>${r.semanas} ${r.semanas === 1 ? "semana" : "semanas"}</b> × $${inp("gen-lift-semana", "lift_semana", r.precioSemana, "5.2rem", "Precio del lift por semana")} /sem.`)
+            : r.sup
+            ? (soloLectura ? `${r2(r.hsem)} h/sem × ${r2(r.sem)} sem. = ${r2(r.horas)} h × ${fmt(r.hora)}${r.monto > 0 ? ` + ${fmt(r.monto)}` : ""}`
+              : `${inp("gen-sup", "sup_hsem", r.hsem, "4.2rem", "Horas de supervisión a la semana")} h/sem × ${inp("gen-sup", "sup_sem", r.sem, "4.2rem", "Semanas de obra")} sem. = <b>${r2(r.horas)} h</b> × $${inp("gen-sup", "sup_hora", r.hora, "4.6rem", "$ por hora del superintendent, con cargas")}${r.monto > 0 ? ` + $${inp("gen-monto", "pm", r.monto, "5.5rem", "Monto a mano de PM (lo de antes)")}` : ""}`)
             : (soloLectura ? "" : `$ ${inp("gen-monto", r.id, r.monto, "7rem", r.nom)}`)}</span>
           <span class="gen-tot">${r.total > 0 ? fmt(r2(r.total)) : "—"}</span>
         </div>`).join("");
@@ -11990,7 +12009,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     };
     // lo que se guarda es siempre el objeto de renglones fijos, sin ceros
     const limpio = o => { const x = {}; Object.keys(o).forEach(k => { if (Number(o[k]) > 0) x[k] = Number(o[k]); }); return Object.keys(x).length ? x : null; };
-    document.querySelectorAll(".gen-monto, .gen-lift-dias, .gen-lift-semana").forEach(el => el.addEventListener("change", () => {
+    document.querySelectorAll(".gen-monto, .gen-lift-dias, .gen-lift-semana, .gen-sup").forEach(el => el.addEventListener("change", () => {
       const v = String(el.value).trim() === "" ? 0 : num(el.value);
       if (v === null) { avisar("Número no válido", true); return; }
       const o = generalesGuardados(est);
@@ -12794,7 +12813,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         <div class="rent-fila"><span>+ Beneficios sobre el labor (${pctTxt(c.benefitsPct)}${nnDist(est.benefits_pct) ? " " + ico("lapiz") : ""})${lapiz("benefits_pct", "pct", c.benefitsPct, "Beneficios — % sobre el labor")}</span><span>${fmt(r2(c.benefits))}</span></div>
         <div class="rent-fila rent-sub"><span>= Total de mano de obra</span><span>${fmt(r2(c.totalLabor))}</span></div>
         <div class="rent-sec">Otros gastos del proyecto</div>
-        ${c.gen.renglones.filter(k => k.total > 0.005).map(k => `<div class="rent-fila"><span>+ ${esc(k.nom)}${k.lift ? ` (${k.dias} días = ${k.semanas} sem. × ${fmt(k.precioSemana)})` : ""}</span><span>${fmt(r2(k.total))}</span></div>`).join("")}
+        ${c.gen.renglones.filter(k => k.total > 0.005).map(k => `<div class="rent-fila"><span>+ ${esc(k.nom)}${k.lift ? ` (${k.dias} días = ${k.semanas} sem. × ${fmt(k.precioSemana)})` : k.sup && k.horas > 0 ? ` (${r2(k.hsem)} h/sem × ${r2(k.sem)} sem. = ${r2(k.horas)} h × ${fmt(k.hora)})` : ""}</span><span>${fmt(r2(k.total))}</span></div>`).join("")}
         ${c.gen.colchon > 0.005 ? `<div class="rent-fila"><span>+ Colchón (${pctTxt(c.gen.colchonPct)})${lapiz("generales_colchon_pct", "pct", c.gen.colchonPct, "Colchón de otros gastos — % sobre la lista")}</span><span>${fmt(r2(c.gen.colchon))}</span></div>` : ""}
         ${c.costos > 0.005 ? `<div class="rent-fila"><span>+ Logística, allowances y subcontratos (líneas a mano)</span><span>${fmt(r2(c.costos))}</span></div>` : ""}
         ${c.generales > 0.005 || c.costos > 0.005 ? "" : `<div class="rent-fila"><span>Nada puesto todavía — llénalo en «Otros gastos del proyecto»</span><span></span></div>`}
