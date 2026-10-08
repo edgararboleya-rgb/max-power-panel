@@ -4256,6 +4256,108 @@
     [/^Línea (\d+) de la hoja$/, "Line $1 of the sheet"],
     [/^Escribí «(.+)» en la hoja\. Vuelve a armar para verlo en el papel$/, "I wrote “$1” on the sheet. Build it again to see it on the paper"]
   );
+  // 7-oct · «Armar el contrato con IA» (pliego docs/PLIEGO-CONTRATO-IA.md, tanda 3): el botón, el progreso, las
+  // preguntas, la tarjeta «Lo que la IA entendió», «Enséñale» y sus avisos. Lo que escribe la IA o Edgar va con data-no-i18n.
+  Object.assign(D, {
+    "Armar el contrato con IA": "Build the contract with AI",
+    "Volver a armar con IA": "Build again with AI",
+    "Pega aquí el alcance como te salga: dictado, un SOW viejo, o la hoja con sus títulos, en español o en inglés. Toca «Armar el contrato con IA»: el dinero y los textos de la ley los pone la app.":
+      "Paste the scope here however it comes: dictated, an old SOW, or the sheet with its headings, in Spanish or English. Tap “Build the contract with AI”: the app puts in the money and the legal text.",
+    "La IA lee la hoja y la ficha de la obra, escribe el contrato y otra IA lo revisa antes de que lo mandes. Tarda 1–2 minutos.":
+      "The AI reads the sheet and the job file, writes the contract, and a second AI reviews it before you send it. It takes 1–2 minutes.",
+    "Leer con las reglas (sin IA)": "Read with the rules (no AI)",
+    "«Leer con las reglas» es el camino de siempre, sin IA: sirve sin señal o cuando la IA falla.":
+      "“Read with the rules” is the usual path, without AI: it works with no signal or when the AI fails.",
+    "La IA está leyendo la hoja y la ficha…": "The AI is reading the sheet and the job file…",
+    "Escribiendo el contrato…": "Writing the contract…",
+    "Comprobando el papel…": "Checking the paper…",
+    "Pidiendo la segunda revisión…": "Asking for the second review…",
+    "Puedes seguir mirando la hoja mientras tanto; no cambies nada hasta que termine.": "You can keep looking at the sheet meanwhile; don't change anything until it finishes.",
+    "Intentar otra vez": "Try again",
+    "Cuando toques «Armar el contrato con IA», aquí sale lo que la IA entendió y la app pasa sola al contrato.":
+      "When you tap “Build the contract with AI”, what the AI understood shows up here and the app moves on to the contract by itself.",
+    "Cambiaste la hoja después de armar: toca «Volver a armar con IA» para que la IA la lea otra vez. Sin la IA: «Más…» › «Leer con las reglas (sin IA)».":
+      "You changed the sheet after building: tap “Build again with AI” so the AI reads it again. Without the AI: “More…” › “Read with the rules (no AI)”.",
+    "Cambiaste la hoja después de armar: esto es de la hoja de antes. Toca «Volver a armar con IA».":
+      "You changed the sheet after building: this is from the old sheet. Tap “Build again with AI”.",
+    "Esto frena el contrato": "This stops the contract",
+    "Armar el papel": "Build the paper",
+    "Escribe el precio en la hoja («Precio: …») y vuelve a armar con IA, o léela con las reglas.":
+      "Write the price on the sheet (“Precio: …”) and build again with AI, or read it with the rules.",
+    "Lo que la IA entendió": "What the AI understood",
+    "de la ficha": "from the job file", "de la hoja": "from the sheet", "regla de la casa": "house rule",
+    "por defecto": "by default", "lo contestaste tú": "you answered it",
+    "Lo que la IA te dice": "What the AI tells you",
+    "Armado": "Build",
+    "Ver y editar los textos": "See and edit the texts",
+    "Enséñale": "Teach it",
+    "Lo que la IA tiene que saber la próxima vez": "What the AI needs to know next time",
+    "Por ejemplo: con Wisdom, el permiso lo saca Wisdom": "For example: with Wisdom, Wisdom pulls the permit",
+    "Solo para esta obra": "Only for this job",
+    "Para todas las obras": "For all jobs",
+    "Guardado. La próxima vez la IA lo sabe.": "Saved. Next time the AI knows it.",
+    "Eso ya lo sabía.": "It already knew that.",
+    "Escribe primero lo que la IA tiene que saber": "First write what the AI needs to know",
+    "Sin señal: la lección se guarda en la nube. Vuelve a tocar cuando tengas señal": "No signal: the lesson is saved in the cloud. Tap again when you have signal",
+    "No pude guardar la lección": "I couldn't save the lesson",
+    "De qué va (sección 1)": "What it's about (section 1)",
+    "A la izquierda lo que tú escribiste, a la derecha el inglés que escribió la IA y sale al cliente. Cámbialo si hace falta: al tocar «Armar el contrato» se rearma con tus cambios, sin volver a llamar a la IA.":
+      "On the left what you wrote, on the right the English the AI wrote that goes to the client. Change it if needed: tapping “Armar el contrato” builds it again with your changes, without calling the AI again.",
+    "Sin señal: armar con IA necesita internet. Léela con las reglas (sin IA) o vuelve a tocar cuando tengas señal.":
+      "No signal: building with AI needs internet. Read it with the rules (no AI) or tap again when you have signal.",
+    "La IA ya está armando este contrato": "The AI is already building this contract",
+    "La hoja llegó vacía a la IA": "The sheet reached the AI empty",
+    "Falta pegar el SQL de «Armar con IA» en la base": "The “Build with AI” SQL still has to be pasted into the database",
+    "La IA tardó demasiado": "The AI took too long",
+    "El contrato le salió cortado a la IA: la hoja es muy larga para una sola vez": "The AI's contract came out cut off: the sheet is too long for one go",
+    "La IA no quiso armar este contrato": "The AI wouldn't build this contract",
+    "La hoja cambió mientras la mandaba; vuelve a tocar": "The sheet changed while I was sending it; tap again",
+    "No encuentro ese armado; vuelve a intentarlo": "I can't find that build; try again",
+    "Se me escapó un monto sin tapar; no mandé la hoja a la IA": "An amount slipped through uncovered; I didn't send the sheet to the AI",
+    "La IA devolvió el contrato en un formato que no entiendo; vuelve a intentarlo": "The AI returned the contract in a format I don't understand; try again",
+    "La IA escribió un monto y por seguridad se tiró todo; vuelve a intentarlo": "The AI wrote an amount, so for safety everything was thrown out; try again",
+    "Una lección no puede llevar montos": "A lesson can't have amounts in it",
+    "La IA dejó sin usar demasiadas líneas del alcance; vuelve a armar con IA o léela con las reglas": "The AI left too many scope lines unused; build again with AI or read it with the rules",
+    "No encuentro el precio en la hoja": "I can't find the price on the sheet",
+    "Falta pegar el SQL de las lecciones en la base": "The lessons SQL still has to be pasted into the database",
+    "Esta obra todavía no está en la nube; guárdala para todas las obras": "This job isn't in the cloud yet; save it for all jobs",
+    "La IA armó la hoja de antes: cambiaste algo mientras trabajaba. Toca «Volver a armar con IA»": "The AI built the old sheet: you changed something while it worked. Tap “Build again with AI”",
+    "La IA armó la hoja: contéstame lo de arriba y sigo": "The AI built the sheet: answer what's above and I'll go on",
+    "No pude rehacer el contrato con esa respuesta": "I couldn't redo the contract with that answer",
+    "No pude rehacer el contrato": "I couldn't redo the contract",
+    "No pude armar el papel": "I couldn't build the paper",
+    "La hoja cambió después de armar con IA: toca «Volver a armar con IA»": "The sheet changed after building with AI: tap “Build again with AI”",
+    "Contéstame primero lo de la hoja": "Answer what's on the sheet first"
+  });
+  // 7-oct · tanda 4 (revisión adversaria): «Corregir» un hecho de la tarjeta, el origen nuevo de los hechos y el candado
+  // del armado viejo. Lo que escribe la IA o Edgar sigue con data-no-i18n.
+  Object.assign(D, {
+    "Corregir": "Correct",
+    "¿Cómo tiene que ser?": "How should it be?",
+    "Lo saca el cliente": "The client pulls it",
+    "Lo sacamos nosotros": "We pull it",
+    "No hace falta permiso": "No permit needed",
+    "Con firma": "With signature",
+    "Sin firma (solo el alcance)": "No signature (scope only)",
+    "Con contratista": "With a contractor",
+    "Directo con el dueño": "Direct with the owner",
+    "Para todas las obras de": "For all jobs of",
+    "lo dedujo la IA": "the AI inferred it",
+    "tu lección": "your lesson",
+    "Elige primero cómo tiene que ser": "First choose how it should be",
+    "Esto solo se puede guardar para esta obra": "This can only be saved for this job",
+    "No entendí qué valor querías guardar": "I didn't understand which value you wanted to save",
+    "Cambiaste la hoja después de armar: vuelve a armar con IA": "You changed the sheet after building: build again with AI"
+  });
+  REGLAS.push(
+    [/^Este mes el asistente lleva (\d+) ¢ de (\d+) \$\.$/, s => s.replace(/^Este mes el asistente lleva (\d+) ¢ de (\d+) \$\.$/, (m, a, b) => `This month the assistant has used ${a} ¢ of ${b} $.`)],
+    [/^(\d+) cosas? por mirar$/, s => { const n = Number(s.match(/^\d+/)[0]); return n === 1 ? "1 thing to check" : `${n} things to check`; }],
+    [/^Línea (\d+):$/, "Line $1:"],
+    [/^La IA ya gastó lo del mes \((\$[\d,.]+) de (\$[\d,.]+)\): esta vez léela con las reglas \(sin IA\)$/,
+      s => s.replace(/^La IA ya gastó lo del mes \((\$[\d,.]+) de (\$[\d,.]+)\): esta vez léela con las reglas \(sin IA\)$/, (m, a, b) => `The AI already used up this month's budget (${a} of ${b}): this time read it with the rules (no AI)`)],
+    [/^Se me escapó un monto sin tapar en la línea (\d+); no mandé la hoja a la IA$/, "An amount slipped through uncovered on line $1; I didn't send the sheet to the AI"],
+    [/^La hoja es muy larga para armarla con IA(?: \((\d+) líneas\))?$/, s => { const m = s.match(/\((\d+) líneas\)/); return "The sheet is too long to build with AI" + (m ? ` (${m[1]} lines)` : ""); }]
+  );
   // ---------- El motor ----------
   // Cada texto de la pantalla se busca en el diccionario tal como se ve: con los
   // espacios y saltos de línea juntados en uno solo. Si no está, se prueba sin el

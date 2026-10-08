@@ -2869,6 +2869,23 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .alc-mas-avisos>summary{cursor:pointer;font-weight:600;padding:.35rem 0}
 .alc-mas-avisos>ul{margin:.35rem 0 0;padding-left:1.1rem}
 .alc-mas-avisos>ul>li{margin:.2rem 0}
+/* «Armar el contrato con IA» (7-oct): el botón grande, la línea de progreso con un punto que late,
+   la tarjeta plegable «Lo que la IA entendió» y la cajita de «Enséñale». Colores y letra por token. */
+.accion.principal{width:100%;font-size: var(--fs-4)}
+.alc-armar-nota{margin:.35rem 0 .2rem}
+.alc-progreso{display:flex;align-items:center;gap:.55rem;margin:.6rem 0 .3rem;color:var(--mp-ink-2);font-size: var(--fs-4)}
+.alc-progreso::before{content:"";width:.6rem;height:.6rem;flex:0 0 auto;border-radius:50%;background:var(--mp-blue);animation:alc-late 1.2s ease-in-out infinite}
+@keyframes alc-late{0%,100%{opacity:.35;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.alc-progreso::before{animation:none}}
+.alc-armado{margin:.8rem 0}
+.alc-armado>summary{cursor:pointer}
+.alc-armado-cuenta{font-weight:600;color:var(--warn-ink)}
+.alc-armado-hechos{margin:.5rem 0 .3rem;padding-left:1.1rem;font-size: var(--fs-4)}
+.alc-armado-hechos li{margin:.2rem 0}
+.alc-origen{color:var(--mp-ink-3);font-size: var(--fs-3)}
+.alc-leccion{margin:.5rem 0;padding:.6rem .7rem;border:1px dashed var(--mp-line);border-radius:10px;background:var(--mp-card)}
+.alc-leccion-etq{display:block;margin:0 0 .3rem;font-size: var(--fs-3);font-weight:650;color:var(--mp-ink-2)}
+.alc-leccion textarea{width:100%;box-sizing:border-box;font:inherit;font-size: var(--fs-4);padding:.45rem .55rem;border:1px solid var(--mp-line);border-radius:8px;background:var(--mp-card);color:var(--mp-ink)}
 
 /* ===========================================================================
    ESCRITORIO (pantallas anchas): marco de borde a borde, menú fijo a la

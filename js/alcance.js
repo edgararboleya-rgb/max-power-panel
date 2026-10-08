@@ -13,6 +13,8 @@
      decidirInterruptores(leido)     → qué bloques y qué cláusulas van
      rellenarPlantilla(...)          → el HTML final
      barridoFinal(html, montos)      → el último candado antes de bajarlo
+   Con IA (7-oct): paqueteParaArmar → (la IA arma) → verificarArmado → armadoAHoja,
+   que entrega la misma hoja leída y los mismos textos que el camino de arriba.
    ============================================================================ */
 (function (raiz) {
   "use strict";
@@ -279,6 +281,20 @@
   function numeroDeRef(linea) {
     const m = String(linea || "").match(/^\s*(?:ref(?:erence)?\.?|reference\s+no\.?|document\s+no\.?|no\.)\s*[:#]?\s*(MXP-[A-Z0-9][A-Z0-9-]*[A-Z0-9])\b/i);
     return m ? m[1].toUpperCase() : "";
+  }
+  // Las exclusiones que la plantilla YA trae (no se repiten en la §3): el lector de reglas y el armado con IA usan esta
+  // misma regla. «Any work outside …» y «Decorative light fixtures … furnished by the Owner» dejan además un dato.
+  // v3.4: low-voltage y correcciones del inspector NO se quitan: si la hoja trae su versión (más específica: telemetría,
+  // flotadores…), manda la de la hoja y la genérica se apaga sola.
+  function exclusionFija(tx) {
+    tx = String(tx || "");
+    const mFuera = tx.match(/^any work outside\s+(.+?)\s+expressly described in section 2(?:\s*[—–-]+\s*including\s+(.+?)\s*[—–-]+)?/i);
+    if (mFuera) return { tipo: "fuera", areas: String(mFuera[1]).trim().replace(/[.,;]$/, ""), no_tocamos: mFuera[2] ? String(mFuera[2]).trim().replace(/[.,;]$/, "") : "" };
+    const mFix = tx.match(/^decorative light fixtures?[.:]\s+(.+?)\s+(?:are|is) furnished by the owner/i);
+    if (mFix) return { tipo: "fixtures", fixtures: mFix[1].charAt(0).toUpperCase() + mFix[1].slice(1) };
+    const fija = tx.match(/^(permit(?:s|ting)?\b[^.:]{0,80}[.:]|permit application|electrical panel work|arc-fault|cabinet and under-cabinet|drywall, ceiling patching|appliances, gas piping)/i);
+    if (fija) return { tipo: "fija", vista: norma(fija[1]).split(/[ ,.:]/)[0] };
+    return null;
   }
   function leerAlcance(texto, opciones) {
     const lineas = String(texto || "").replace(/\r/g, "").split("\n");
@@ -775,19 +791,16 @@
           const tx = linea.replace(/^[-*•]\s*/, "").replace(/^\d+(?:\.\d+)*[.)]?\s+/, "");
           // Las exclusiones que la plantilla ya trae (permiso, fixtures, drywall, low-voltage, aparatos,
           // fuera de áreas, correcciones del inspector) no se repiten; de algunas se pesca un dato.
-          const mFuera = tx.match(/^any work outside\s+(.+?)\s+expressly described in section 2(?:\s*[—–-]+\s*including\s+(.+?)\s*[—–-]+)?/i);
-          if (mFuera) {
-            if (!C_set("areas", mFuera[1], i)) {} if (mFuera[2]) C_set("no_tocamos", mFuera[2], i);
+          // (tanda 4: la regla vive en exclusionFija, que usa también el armado con IA)
+          const fx = exclusionFija(tx);
+          if (fx && fx.tipo === "fuera") {
+            if (!C_set("areas", fx.areas, i)) {} if (fx.no_tocamos) C_set("no_tocamos", fx.no_tocamos, i);
             R.fijasQuitadas = (R.fijasQuitadas || 0) + 1; R.fijas_lineas.push(i + 1); return;
           }
-          const mFix = tx.match(/^decorative light fixtures?[.:]\s+(.+?)\s+(?:are|is) furnished by the owner/i);
-          if (mFix) { C_set("fixtures_cliente", mFix[1].charAt(0).toUpperCase() + mFix[1].slice(1), i); R.fijasQuitadas = (R.fijasQuitadas || 0) + 1; R.fijas_lineas.push(i + 1); return; }
-          // v3.4: low-voltage y correcciones del inspector NO se quitan: si la hoja trae su versión
-          // (más específica: telemetría, flotadores…), manda la de la hoja y la genérica se apaga sola.
-          const fija = tx.match(/^(permit(?:s|ting)?\b[^.:]{0,80}[.:]|permit application|electrical panel work|arc-fault|cabinet and under-cabinet|drywall, ceiling patching|appliances, gas piping)/i);
-          if (fija) {
+          if (fx && fx.tipo === "fixtures") { C_set("fixtures_cliente", fx.fixtures, i); R.fijasQuitadas = (R.fijasQuitadas || 0) + 1; R.fijas_lineas.push(i + 1); return; }
+          if (fx && fx.tipo === "fija") {
             R.fijasQuitadas = (R.fijasQuitadas || 0) + 1; R.fijas_lineas.push(i + 1);
-            R.fijasVistas = R.fijasVistas || new Set(); R.fijasVistas.add(norma(fija[1]).split(/[ ,.:]/)[0]);
+            R.fijasVistas = R.fijasVistas || new Set(); R.fijasVistas.add(fx.vista);
             return;
           }
           const mNeg = cruda.match(/^\s*[-*•]?\s*\*\*(.+?)\*\*[.:]?\s*(.*)$/);
@@ -1133,11 +1146,17 @@
   ];
   // Los nombres de lo que la plantilla ya trae, sin repetir y en orden. El molde
   // del cerebro (tanda 2) usa esta misma lista: una prueba compara las dos.
+  const esTxt = v => !!v && typeof v === "object" && !Array.isArray(v) && typeof v.en === "string";
+  const comoTexto = v => esTxt(v) ? v.en : v;
   const NOMBRES_PLANTILLA = {
     terminos: [...new Set(PLANTILLA_9.map(p => p[1]))],
     programa: [...new Set(PLANTILLA_7.map(p => p[1]))]
   };
   function clasificarPropias(L) {
+    // 7-oct: lo propio que llega del armado con IA ya viene en inglés y puede traer sus textos como {en, de}: se aceptan
+    // tal cual (se quedan con el texto). Lo que llega del lector, con textos sueltos, no cambia en nada.
+    const enTexto = t => (t && (esTxt(t.titulo) || esTxt(t.texto))) ? Object.assign({}, t, { titulo: comoTexto(t.titulo), texto: comoTexto(t.texto) }) : t;
+    L = Object.assign({}, L, { terminos: (L.terminos || []).map(enTexto), programa: (L.programa || []).map(enTexto), pre: (L.pre || []).map(enTexto) });
     const propias = [], programa = [], pre = (L.pre || []).slice(), mapa = {}, quitadas = [];
     // un punto sin título propio se reconoce por su primera frase; uno con título, por el título
     const cara = t => t.titulo + (t.sinTitulo ? " " + String(t.texto || "").slice(0, 160) : "");
@@ -2200,7 +2219,9 @@
   const PROHIBIDAS_DIRECTO = /\$|\{\{/;
   function validarSalida(L, S) {
     const rojos = [], amarillos = [];
-    const rx = S && S.directo ? PROHIBIDAS_DIRECTO : PROHIBIDAS;
+    // 7-oct: los textos del armado con IA (S.ia) ya pasaron su juez (verificarArmado: un «%» o un «NEC» solo quedan si su
+    // línea de la hoja los trae); aquí, como en el modo directo, solo se mira el $ y las marcas de plantilla
+    const rx = S && (S.directo || S.ia) ? PROHIBIDAS_DIRECTO : PROHIBIDAS;
     const mira = (clave, obj) => {
       if (!obj || !obj.en) return;
       if (rx.test(obj.en)) rojos.push({ clave, texto: S && S.directo ? `En «${obj.en.slice(0, 50)}» hay un $ o una marca que no puede ir en el contrato.`
@@ -2477,7 +2498,8 @@
       // v3.6 (regla B4): el primer párrafo de la sección 1 es el de la hoja tal cual; si no hay, una frase simple
       // Sin párrafo de objetivo en la hoja, la app lo arma con lo que sabe: el proyecto, la dirección, con quién se
       // contrata y los renglones del §2 (Edgar, 10-sep: «la sección uno se refiere a todo menos a los objetivos»)
-      OVERVIEW: d.overview || (() => {
+      // 7-oct: el párrafo que escribió la IA al armar (S.overview) va antes que el de la hoja y que la frase de la casa
+      OVERVIEW: (S.overview && (typeof S.overview === "string" ? S.overview : S.overview.en)) || d.overview || (() => {
         const proy = String(d.proyecto || "").split(/\s+[—–]\s+/)[0].trim();
         const que = proy ? `the ${proy}` : "this project";
         const donde = admin.direccion || d.direccion || "the Property";
@@ -2662,7 +2684,8 @@
     return out;
   }
   const esMontoTapable = s => tramosDinero(String(s || "")).length > 0;
-  const taparTramo = t => t.replace(/\d/g, "#");
+  // (tanda 4: un monto escrito con letras se tapa entero, letra por letra)
+  const taparTramo = t => /\d/.test(t) ? t.replace(/\d/g, "#") : t.replace(/[A-Za-zÀ-ÿ]/g, "#");
   // Tapa el dinero de la hoja entera, conservando $ y comas y el largo. lineasDinero: números de línea que las reglas
   // ya saben que son Precio / Pagos / Opciones: ahí se tapa además todo número de tres cifras o con decimales (no los %).
   function taparDinero(texto, lineasDinero) {
@@ -2683,6 +2706,110 @@
   }
   // Lo que el modelo escribe (motivos) pasa la MISMA regla estricta; si hay dinero, la lectura entera se tira
   const traeDineroEstricto = s => tramosDinero(String(s || "")).some(([a, b]) => /^\$|\d{1,3}(?:,\d{3})+|dollars|usd|d[oó]lares/i.test(String(s).slice(a, b)));
+
+  // ---- 7-oct (tanda 4, revisión adversaria): EL DINERO DEL ARMADO CON IA ----
+  // Esta parte se copia en el cerebro con los mismos nombres y la misma lógica (cerebro-puro.mjs las coteja con una
+  // batería de casos). Es más FINA que la de `leer` (una medida, un artículo del código o el número de un renglón no se
+  // tapan: la IA los tiene que copiar tal cual) y más ANCHA (junto a una palabra de dinero, una cifra sin $ ni comas
+  // también es un monto: «Precio 12828», «Base bid — 12828», «Depósito 50% = 6414»). La de `leer` no cambia.
+  // Lo que va detrás de una cifra y la hace medida, no dinero («1.25" PVC», «1,300 square feet», «250.24 V», «200A»)
+  const RX_UNIDAD_ARMAR = /^\s*(?:["”″]|'|-?\s*(?:inch(?:es)?|in\.|ft|feet|foot|sq\.?\s*(?:ft|feet|in)|square[\s-]+(?:feet|foot|ft|meters?)|sqft|sf|lf|linear\s+(?:feet|ft)|yd|yards?|mm|cm|volts?|amps?|amperes?|watts?|kcmil|lbs?|psi|gallons?|btu|degrees?|receptacles?|outlets?|circuits?|fixtures?|lights?|devices?|spaces?|poles?|breakers?|units?|days?|hours?|hrs|years?|months?|weeks?|phases?|stories|floors?|editions?|pies|pulgadas?|metros?|voltios?|amperios?|circuitos?|tomas?|luces|l[aá]mparas?|d[ií]as?|horas?|a[nñ]os?|meses|semanas?)\b|%|°|\s*por\s*ciento|\s*percent)/i;
+  const RX_UNIDAD_ARMAR_MAY = /^\s*-?\s*(?:(?:V|VAC|VDC|A|kV|kA|AIC|KAIC|W|kW|KW|kVA|KVA|VA|HP|Hz|AWG|MCM|CU|AL|NEC|NFPA|FBC)\b|Y\/\d)/;
+  // Las palabras que, en la misma línea, hacen de una cifra suelta un monto
+  const PALABRAS_DINERO_ARMAR = "precio|price|priced|pricing|total|subtotal|bid|sum|lump|monto|amount|cost|costs|costo|cuesta|cobr\\w*|charges?|fee|fees|dep[oó]sito|deposit|pago|pagos|payment|payments|balance|saldo|opci[oó]n|option|add-?on|añadido|adicional|additional|extra|allowance|credit|discount|descuento|invoice|factura|dollars?|d[oó]lares|usd|retainage|retenci[oó]n|budget|presupuesto|investment|inversi[oó]n|quoted?|quotes|cotizaci[oó]n";
+  const RX_PALABRA_DINERO_ARMAR = new RegExp("\\b(?:" + PALABRAS_DINERO_ARMAR + ")\\b", "i");
+  // la palabra de dinero justo antes de la cifra (con dos palabras de por medio como mucho): «Price: 2026», «Total of 1950»
+  const RX_DINERO_CERCA = new RegExp("\\b(?:" + PALABRAS_DINERO_ARMAR + ")\\b[^A-Za-z0-9]*(?:[A-Za-zÀ-ÿ]+[^A-Za-z0-9]+){0,2}$", "i");
+  // una línea del código (artículos sueltos dentro de una frase: «NEC 225.30 limits … and 225.31 through 225.33»)
+  const RX_LINEA_CODIGO = /\b(?:NEC|NFPA|Articles?|Art\.|Code)\b/;
+  // un año dentro de una fecha («August 20, 2026», «dated 2014», «the 2014 certificate») no es un monto
+  const RX_ANTES_ANO = /(?:\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|ene|abr|ago|dic)[a-z]*\.?\s+\d{1,2},?\s*|\b(?:dated|fecha|the|of|de|del|in|en|since|desde|year|a[nñ]o)\s+)$/i;
+  // Un artículo del código («NEC 680.26», «210.19(A), 210.20(A) and 210.23», «Art. 330 (MC cable), 330.30», «Section 2.10»)
+  const RX_ANTES_ARTICULO = /(?:\bNEC|\bNFPA|\bArt(?:icle)?s?\.?|\bSections?|\bSec\.|§)\s*(?:\d{1,4}(?:\.\d{1,3})?(?:\([A-Za-z0-9]{1,3}\))*(?:\s*(?:,|;|\/|and|or|y|through|thru|to|including|incl\.|Part\s+[IVXLC]+|\(|\)|\([^)]{0,30}\)))*\s*)*$/i;
+  function noEsDineroArmar(s, a, b) {
+    const t = s.slice(a, b), antes = s.slice(0, a), despues = s.slice(b);
+    if (/\$|dollars|usd|d[oó]lares/i.test(t) || /\$\s*$/.test(antes)) return false;
+    if (RX_UNIDAD_ARMAR.test(despues) || RX_UNIDAD_ARMAR_MAY.test(despues)) return true;
+    // tres decimales o más no es dinero: un artículo de la ley o del código («713.015», «489.126», «501.031»)
+    if (/^\d+\.\d{3,}$/.test(t)) return true;
+    if (/^\d{1,4}(?:\.\d{1,3})?$/.test(t) && RX_ANTES_ARTICULO.test(antes)) return true;
+    // en una línea del código, un número con forma de artículo («225.31», «110.24») que no va junto a una palabra de dinero
+    if (/^\d{2,3}\.\d{1,3}$/.test(t) && RX_LINEA_CODIGO.test(antes) && !RX_DINERO_CERCA.test(antes)) return true;
+    // el número de un renglón de un SOW: «2.10 Pump feeder», «- 9.10 Code edition», «| 2.10 | Pump feeder |», «2.13 120-volt»
+    if (/^\d{1,2}\.\d{1,2}$/.test(t) && /^\s*(?:[-*•|>#]+\s*)*(?:\*\*|__)?\s*$/.test(antes) && /^\s*\|?\s*(?:\*\*|__)?\s*(?:[A-Za-z(]|\d+[- ]?[A-Za-z])/.test(despues)) return true;
+    // un año dentro de una fecha, lejos de una palabra de dinero
+    if (/^(?:19|20)\d\d$/.test(t) && RX_ANTES_ANO.test(antes) && !RX_DINERO_CERCA.test(antes)) return true;
+    return false;
+  }
+  // Los tramos de dinero de una línea, con la regla del armado (posiciones [desde, hasta) en la cadena)
+  // un monto escrito con letras («twelve thousand eight hundred twenty-eight dollars») también se tapa
+  const RX_MONTO_EN_PALABRAS = /\b(?:(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|and)[\s-]+)+(?:dollars?|d[oó]lares)\b/gi;
+  function tramosArmar(s) {
+    s = String(s || "");
+    const out = tramosDinero(s).filter(([a, b]) => !noEsDineroArmar(s, a, b));
+    for (const m of s.matchAll(RX_MONTO_EN_PALABRAS)) out.push([Number(m.index), Number(m.index) + m[0].length]);
+    if (RX_PALABRA_DINERO_ARMAR.test(s)) {
+      const rx = /\d{1,3}(?:[ \u00a0]\d{3})+(?:[.,]\d{1,2})?(?!\d)|\d{1,3}(?:\.\d{3})+,\d{1,2}(?!\d)|\d(?:[\d,]*\d)?(?:\.\d+)?/g; let m;
+      while ((m = rx.exec(s))) {
+        const t = m[0], a = m.index, b = a + t.length, antes = s.slice(0, a), despues = s.slice(b);
+        if (out.some(([x, y]) => a < y && b > x)) continue;
+        if (t.replace(/\D/g, "").length < 3 && !/\.\d/.test(t)) continue;
+        if (/[A-Za-z#\/.]$/.test(antes) || (/-$/.test(antes) && !/(?:^|[\s(:=])-$/.test(antes))) continue;   // L60, #6, 12/2, MXP-2026
+        if (/^\d/.test(despues) || /^\s*[\/]\s*\d/.test(despues) || /^-\d/.test(despues) || /^\s*%/.test(despues) || /^\.\d/.test(despues)) continue;   // 40/40/20, 50 %
+        if (noEsDineroArmar(s, a, b)) continue;
+        out.push([a, b]);
+      }
+    }
+    return out.sort((x, y) => x[0] - y[0]);
+  }
+  const esMontoArmar = s => tramosArmar(String(s || "")).length > 0;
+  // Las cifras que la IA vio (la hoja tapada y la ficha sin dinero): con ellas, y solo con ellas, puede escribir una cifra
+  const cifrasDe = s => new Set((String(s || "").match(/\d+(?:,\d{3})*(?:\.\d+)?/g) || []).map(x => x.replace(/,/g, "")));
+  // ¿Trae dinero un texto que escribió la IA? (pliego §1.1, endurecido en la tanda 4). `base` = lo que la IA vio.
+  // Dinero seguro ($ con cifra, «dollars», coma de miles) nunca vale; una cifra suelta con forma de monto («12828.84»,
+  // «Deposit 5131», «(1500.00)», un entero de 4 o más cifras) solo vale si la IA la vio tal cual (una calle, un código postal).
+  // Las almohadillas («$###.##») no se miran aquí: ese texto se tira solo, con su aviso (verificarArmado).
+  function dineroEnTextoArmar(s, base) {
+    s = String(s || "");
+    if (/\$\s*\d/.test(s) || /\$(?!\s*[#\d])/.test(s)) return true;
+    if (/\b(?:dollars?|d[oó]lares|dlls?|usd|bucks|cents|centavos)\b/i.test(s)) return true;
+    if (/\b(?:thousand|grand|mil(?:es)?)\b/i.test(s) && RX_PALABRA_DINERO_ARMAR.test(s)) return true;
+    if (/\d\s?k\b/i.test(s) && RX_PALABRA_DINERO_ARMAR.test(s)) return true;
+    const vistas = cifrasDe(base);
+    for (const [a, b] of tramosArmar(s)) {
+      const t = s.slice(a, b);
+      if (/^\$|dollars|usd|d[oó]lares/i.test(t) || /\d{1,3}(?:,\d{3})+/.test(t)) return true;
+      if (!vistas.has(t.replace(/,/g, ""))) return true;
+    }
+    const rx = /\d+(?:,\d{3})*(?:\.\d+)?/g; let m;
+    while ((m = rx.exec(s))) {
+      const t = m[0], a = m.index, b = a + t.length, antes = s.slice(0, a), despues = s.slice(b);
+      const decimal = /^\d+\.\d{2}$/.test(t), largo = /^\d{4,}$/.test(t);
+      if (!decimal && !largo) continue;
+      if (/[A-Za-z#\/.:]$/.test(antes) || /[A-Za-z0-9]-$/.test(antes) || /^\d|^[\-\/]\d|^[.:]\d/.test(despues)) continue;   // L1234, MXP-2026-0929, 813-555-1234, 9/29/2026
+      if (largo && /^(?:19|20)\d\d$/.test(t)) continue;                                   // un año
+      if (noEsDineroArmar(s, a, b)) continue;
+      if (!vistas.has(t)) return true;
+    }
+    return false;
+  }
+  // Una lección de Edgar con un monto (la MISMA regla al guardarla y al pasársela a la IA: lo que se guarda, llega)
+  const RX_LECCION_PALABRA = /\$|cobr|pag[oaóu]|contrat(?!ist)|precio|price|markup|profit|margen|ganancia|tarifa|\brate\b|overhead|dep[oó]sit|\bbid\b|presupuesto|cost|cuest|\bval[eií]|mano de obra|\blabor\b|monto|saldo|factur|invoice|d[oó]lar|dollar|total|\bsum\b|lump|\bsale en\b|\bsali[oó] en\b|\bqued[oó] en\b|\bhora\b|hourly|\bfee\b/i;
+  function leccionConMonto(t) {
+    const s = String(t || "");
+    if (esMontoArmar(s) || traeDineroEstricto(s) || /\b(?:dollars?|d[oó]lares|usd|bucks)\b/i.test(s)) return true;
+    if (!RX_LECCION_PALABRA.test(s)) return false;
+    const rx = /\d+(?:,\d{3})*(?:\.\d+)?/g; let m;
+    while ((m = rx.exec(s))) {
+      const n = m[0], a = m.index, antes = s.slice(0, a), despues = s.slice(a + n.length);
+      if (n.replace(/\D/g, "").length < 2) continue;
+      if (/^\s*(?:%|por\s*ciento|percent)/i.test(despues) || /^\s*\/\s*\d/.test(despues) || /\/\s*$/.test(antes)) continue;   // 50 %, 40/40/20
+      if (/(?:\bl[ií]neas?|\blines?|\bL|\bhitos?|\bmilestones?|\bpagos?|\bpayments?|\brengl[oó]n(?:es)?|\bitems?|\bsecci[oó]n|\bsections?|\bNEC|\bart[ií]culos?|\barticles?|\bart\.|#|\bno\.)\s*$/i.test(antes)) continue;
+      if (/[A-Za-z\-.]$/.test(antes) || /^[\-.]\d/.test(despues)) continue;
+      return true;
+    }
+    return false;
+  }
 
   // ---- Una sola limpieza, con tabla de posiciones (lo que ve el modelo ↔ la línea original) ----
   function limpiarLinea(cruda) {
@@ -3873,7 +4000,9 @@
   const TIPOS_HALLAZGO = ["dato_ficha", "contradiccion", "placeholder", "frase_en_contra", "formato", "jurisdiccion_probable", "perfil", "otro",
     "seccion_repetida", "parrafo_repetido", "exclusion_contradice_alcance", "permiso_excluido", "fases_no_cuadran", "remision_rota",
     "texto_de_otro_tipo_de_obra", "aviso_consumidor_en_comercial", "hueco_mal_llenado", "dato_pendiente_impreso", "numero_inconsistente",
-    "clausula_no_cuadra_con_hechos", "ingles_roto"];
+    "clausula_no_cuadra_con_hechos", "ingles_roto",
+    // 7-oct: el revisor mira además que el contrato armado por la IA no diga ni pierda alcance de la hoja
+    "alcance"];
   // El dato de la ficha que se escribe en la hoja: campo del revisor → clave del lector y la etiqueta de la línea
   const CAMPOS_ARREGLO = {
     direccion: { clave: "direccion", etiqueta: "Dirección" },
@@ -3981,6 +4110,1764 @@
     return out;
   }
 
+  // ============================================================ 7-oct · ARMAR EL CONTRATO CON IA (tanda 1 del pliego)
+  // docs/PLIEGO-CONTRATO-IA.md. Una sola llamada a la IA devuelve «el armado»: qué dice cada dato y en qué línea,
+  // los hechos, las condiciones, DÓNDE está el dinero (solo números de línea) y los textos en inglés con sus líneas.
+  // Aquí, todo puro: el paquete que viaja (paqueteParaArmar), el juez del teléfono (verificarArmado) y el paso del
+  // armado a la hoja leída de siempre (armadoAHoja). Desde ahí el camino es el de hoy: cuentas → decidirInterruptores →
+  // armarTodo → rellenarPlantilla → barridoFinal. La IA NUNCA escribe dinero: los montos se leen aquí de las líneas
+  // ORIGINALES de Edgar (leerMonto / leerPagos), y la ficha manda en los datos.
+
+  // Las claves de primer nivel del molde (el cerebro tiene que hablar de lo mismo: una prueba compara las dos listas)
+  const MOLDE_ARMADO_CLAVES = ["v", "lineas_total", "idioma_hoja", "formato", "datos", "hechos", "condiciones", "dinero",
+    "textos", "propias", "codigo", "preguntas", "avisos", "sobrantes"];
+  // Las tres reglas de oro de las preguntas (pliego §4.6): solo estas claves se le preguntan a Edgar
+  const PREGUNTAS_QUE_VALEN = ["contrato_con", "propiedad", "firma", "permiso", "segundo_firmante", "base_precio",
+    "fotos_panel", "circuitos_exist", "acceso", "fases", "fixtures", "pagos"];
+  const TIPOS_AVISO_ARMADO = ["linea_dudosa", "contradiccion", "dato_dudoso", "formato", "otro"];
+  const DATOS_ARMADO = ["cliente", "atencion", "email", "telefono", "dueno", "inquilino", "direccion", "ciudad", "proyecto",
+    "numero_propuesta", "segundo_firmante", "planos", "ingenieria", "utility", "vence", "flood_zona", "flood_bfe", "flood_ec",
+    "flood_lag", "base_precio"];
+  const HECHOS_ARMADO = { contrato_con: ["GC", "directo", "no_se"], propiedad: ["commercial", "residential", "no_se"],
+    tipo_trabajo: ["service", "remodel", "new", "planos", "no_se"], firma: ["si", "no", "no_se"], permiso: ["cliente", "nosotros", "ninguno", "no_se"] };
+  // condición del molde → clave de Condiciones de la app («layout» es un dato: L.datos.layout)
+  const CONDICIONES_ARMADO = { fixtures_cliente: "fixtures_cliente", fixtures_mxp: "fixtures_mxp", acceso: "acceso", fases: "fases",
+    abrir: "abrir", v240: "v240", reubicar: "reubicar", isla: "isla", excavacion: "excavacion", layout: "layout",
+    fotos_panel: "fotos_panel", circuitos_exist: "circuitos_exist", listo_para_rough: "listo_rough", no_excluir: "no_excluir" };
+  const TEXTOS_SIMPLES = ["proyecto_en", "overview", "que_hay_hoy", "que_cambia", "que_faltaba", "load_calc_y_planos", "planos",
+    "resumen_corrido", "areas_incluidas", "lo_que_no_tocas", "que_tiene_que_estar_listo", "lista_de_fases", "acceso",
+    "cuales_fixtures", "fixtures_mxp", "aberturas"];
+  const TEXTOS_LISTA = { items: ["titulo", "descripcion"], no_incluye: ["titulo", "texto"], opciones: ["titulo", "descripcion"] };
+  const PROPIAS_LISTA = ["programa", "pre", "terminos", "pagos_propios"];
+  // Lo que la IA no puede escribir en un texto salvo que ya venga en sus líneas «de» (pliego §4.3, paso 3)
+  const esObjeto = x => !!x && typeof x === "object" && !Array.isArray(x);
+  // No basta con la marca: la CIFRA también tiene que estar. «50%» con la línea en «40%» se tira, y «NEC 999.99» con la
+  // línea en «NEC 210.8» también (revisión de la tanda 1). Cada regla dice qué tiene que aparecer en las líneas, ya
+  // normalizadas con normaParaProhibidas: una palabra entera ({p}) o una cifra que no sea parte de otra más larga ({c}).
+  const RX_ARTICULO = /\b\d{2,4}\.\d{1,3}(?:\([A-Za-z0-9]{1,3}\))*/g;
+  const PROHIBIDAS_ARMADO = [
+    { rx: /(\d+(?:\.\d+)?)\s*(?:%|percent\b|per\s+cent\b)|%|\bpercent\b/gi, pide: m => [m[1] ? { c: m[1] + "%" } : { p: "%" }] },
+    { rx: /\b(NEC|NFPA)\b(?:\s*(?:Art(?:icle|\.)?\s*)?(\d{2,4}(?:\.\d{1,3})?(?:\([A-Za-z0-9]{1,3}\))*))?/g, pide: m => [{ p: m[1] }, ...(m[2] ? [{ c: m[2] }] : [])] },
+    { rx: /\bArt(?:icle|\.)\s*(\d+(?:\.\d+)*(?:\([A-Za-z0-9]{1,3}\))*)/gi, pide: m => [{ p: "art" }, { c: m[1] }] },
+    { rx: /\bStatutes?\b/gi, pide: () => [{ p: "statute" }] },
+    { rx: /\bSection\s+9\b/gi, pide: () => [{ p: "section 9" }] },
+    { rx: /\{\{/g, pide: () => [{ p: "{{" }] }
+  ];
+  // los porcentajes se escriben de una sola forma («50 %», «50 percent», «50 por ciento» → «50%») y todo en minúscula
+  const normaParaProhibidas = s => sinAcentos(String(s || "").toLowerCase())
+    .replace(/(\d)\s*(?:%|percent\b|per\s+cent\b|por\s+ciento\b)/g, "$1%").replace(/\s+/g, " ");
+  const escRx = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // ¿Está lo pedido en las líneas? Una palabra, entera («NEC» no vale dentro de «connect»); una cifra, entera («50%» no
+  // vale dentro de «150%», «210.8» no vale dentro de «210.81»; sí dentro de «210.8(B)»).
+  const estaEnLineas = (base, x) => {
+    if (x.p === "%" || x.p === "{{") return base.includes(x.p);
+    if (x.p === "art") return /\bart(?:icle\b|\.|\b)/.test(base);
+    if (x.p === "statute") return /\bstatutes?\b/.test(base);
+    if (x.p) return new RegExp("(^|[^a-z0-9])" + escRx(normaParaProhibidas(x.p)) + "(?![a-z0-9])").test(base);
+    return new RegExp("(^|[^0-9.,])" + escRx(normaParaProhibidas(x.c)) + "(?![0-9]|[.,][0-9])").test(base);
+  };
+  // Lo que un texto trae y sus líneas no: devuelve el primer trozo malo, o "".
+  function prohibidaQueNoEsta(texto, base) {
+    const t = String(texto || "");
+    for (const r of PROHIBIDAS_ARMADO)
+      for (const m of t.matchAll(r.rx)) if (r.pide(m).some(x => !estaEnLineas(base, x))) return m[0].trim();
+    // con NEC / NFPA / Article en el texto, todo número con forma de artículo («210.12», «406.4(D)») tiene que venir de la línea
+    if (/\b(?:NEC|NFPA|Art(?:icle|\.))/i.test(t))
+      for (const m of t.matchAll(RX_ARTICULO)) if (!estaEnLineas(base, { c: m[0] })) return m[0];
+    return "";
+  }
+
+  // Tanda 4: una cifra que la IA copió TAPADA («#.##"», «$###.##», «NEC ###.##», «#,### sq ft»): ese texto se tira
+  const RX_MASCARA = /#{2,}|#[.,]#|\$\s*#/;
+  // Tanda 4: el vocabulario de ley. Ni la IA ni el programa escriben texto legal (pliego §1.2): una palabra de estas solo
+  // entra en un texto si su línea de la hoja ya la trae (en inglés o en español: «garantía» vale por «warranty»)
+  const PROHIBIDAS_LEY = [
+    [/\bwaiv(?:e|es|ed|er|ers|ing)\b/i, ["waiv", "renunc"]],
+    [/\bliens?\b/i, ["lien", "grava"]],
+    [/\b(?:non-?refundable|refund(?:able|ed|s)?)\b/i, ["refund", "reembols", "devol"]],
+    [/\binterest\b/i, ["interest", "interes"]],
+    [/\blate\s+(?:payments?|fees?|charges?)\b|\bmora\b/i, ["late", "tard", "atras", "mora"]],
+    [/\b(?:cancel(?:s|led|ed|ling|lation|lations)?|rescin(?:d|ds|ded|ding|sion))\b/i, ["cancel", "rescin", "anul"]],
+    [/\bbinding\b/i, ["binding", "vincul", "oblig"]],
+    [/\be-?sign\b|\belectronic(?:ally)?\s+(?:sign\w*|records?|cop(?:y|ies))/i, ["e-sign", "esign", "electronic", "electron"]],
+    [/\bsignatures?\b|\bsigned\b/i, ["sign", "firm"]],
+    [/\bwarrant(?:y|ies|ed|s)?\b|\bguarantee[ds]?\b/i, ["warrant", "guarant", "garant"]],
+    [/\bindemn\w*/i, ["indemn"]],
+    [/\bchapter\s+\d+|\bF\.\s?S\.|\bFlorida\s+(?:law|statutes?)\b|\bCFR\b|\b(?:713|501|489|558)\.\d+/i, ["chapter", "f.s", "florida law", "florida statute", "cfr", "713.", "501.", "489.", "558."]],
+    [/\b(?:penalt(?:y|ies)|liquidated damages)\b/i, ["penal", "multa", "liquidated"]],
+    [/\b(?:attorneys?|arbitrat\w*|litigat\w*)\b/i, ["attorney", "abogad", "arbitra", "litig"]]
+  ];
+  function leyQueNoEsta(texto, base) {
+    const t = String(texto || "");
+    for (const [rx, raices] of PROHIBIDAS_LEY) { const m = t.match(rx); if (m && !raices.some(r => base.includes(r))) return m[0].trim(); }
+    return "";
+  }
+  // ¿Está en inglés un texto suelto? (la misma cuenta de palabras que pareceIngles, sobre una cadena)
+  const textoEnIngles = t => { t = String(t || ""); if (t.trim().length < 20) return false;
+    return (t.match(EN_PALABRAS) || []).length >= (t.match(ES_PALABRAS) || []).length * 1.5; };
+  // ¿Se parece un texto a sus líneas? (las palabras de 4 letras o más del texto que están en las líneas: 60 % o más)
+  function seParece(texto, lineas) {
+    const pal = s => norma(s).match(/[a-z0-9]{4,}/g) || [];
+    const de = new Set(pal(lineas)), suyas = pal(texto);
+    if (!suyas.length) return true;
+    return suyas.filter(w => de.has(w)).length / suyas.length >= 0.6;
+  }
+  // Tanda 4: en las preguntas de un HECHO, los botones son siempre los de la casa (el valor exacto que la app escribe):
+  // así lo que Edgar ve es lo que se escribe («Sí, con firma» no puede escribir «no»)
+  // Tanda 4: los temas que la plantilla v3.8 ya escribe en la §6 y la §9 (lo propio de la hoja que hable de esto, sobra)
+  // Tanda 6 (Whitlock en vivo, l. 114): «Payments are due per this schedule regardless of the Contractor's payment status
+  // with the Owner… Preferred payment: check or ACH.» repite dos párrafos fijos de la §6 (el pago no depende de lo que
+  // pague el dueño; ACH / cheque): también se reconocen sin la palabra «pay-if-paid», y el medio de pago y la base del
+  // precio de la §5 («Pricing is lump sum and is not itemized…», Wimauma l. 105) no se repiten en la §6.
+  const PLANTILLA_PAGOS = [
+    [/\blate\s+(?:payments?|fees?|charges?)\b|\binterest\b|\bper\s+month\b|\bmora\b|\b1\.5\s*%/i, "mora"],
+    [/\b2\.99\s*%|\bsurcharge\b|\bcredit\s+cards?\b|\brecargo\b|\btarjeta\b/i, "recargo"],
+    [/\bdue\s+(?:up)?on\s+receipt\b|\bquickbooks\b|\binvoices?\s+(?:are|is)\s+(?:due|issued)\b/i, "factura"],
+    [/\bpay[- ](?:if|when)[- ]paid\b|\bregardless\s+of\s+(?:the\s+)?(?:contractor|client|gc|general\s+contractor)['’]?s?\s+payment\s+status\b|\bnot\s+contingent\s+(?:up)?on\b|\bcontingent\s+(?:up)?on\s+(?:the\s+)?(?:owner|client|gc)['’]?s?\s+(?:payment|paying|being\s+paid)\b|\bcontingent\s+(?:up)?on\s+(?:receipt\s+of\s+)?payment\s+(?:from|by)\s+the\s+owner\b|\b(?:contractor|client)[-–\s]+owner\s+payment\b/i, "pay_if_paid"],
+    [/\bACH\b|\b(?:checks?|cheques?)\s+or\s+(?:ACH|wire|card)\b|\bpreferred\s+(?:form\s+of\s+)?payment\b|\bwire\s+transfers?\b|\bzelle\b|\btransferencia\b/i, "medio"],
+    [/\bpricing\s+is\s+lump\s+sum\b|\bnot\s+itemized\s+by\b/i, "base"],
+    [/\b713\.\d+|\b489\.126\b|\b501\.0\d+|\bCFR\b|\be-?sign\b|\belectronic\s+(?:signatures?|records?)\b|\bright\s+to\s+cancel\b|\bcancel(?:lation)?\b|\bliens?\b|\bnotice\s+to\s+owner\b/i, "ley"],
+    [/\bwarrant(?:y|ies)\b|\bguarantee\b|\bgarant[ií]a\b/i, "garantia"]
+  ];
+  // Tanda 6 (Whitlock en vivo, 8-oct): los TÉRMINOS propios de la hoja que repiten una cláusula que la plantilla ya trae
+  // (la IA copió siete de la hoja de Whitlock: su garantía, sus cambios, su código…). Se miran el título (el de la IA o el
+  // de la línea) y, con frases que solo usan esas cláusulas, el texto (un «Code compliance» que habla de la «8th
+  // Edition» es la 9.x Code edition). Un término que solo nombra la palabra de pasada («it does not warrant the motor»,
+  // «cancelled activities», «by Change Order») NO se tira. [título, texto, clave]
+  const PLANTILLA_TERMINOS = [
+    [/\bwarrant(?:y|ies)\b|\bguarantee\b|\bgarant[ií]a\b/i, /\bwarrants?\s+(?:all\s+)?(?:its\s+)?workmanship\b|\bworkmanship\s+warranty\b|\byear\s+(?:workmanship\s+)?warranty\b/i, "garantia"],
+    [/\bchange\s+orders?\b|\bentire\s+agreement\b|\b[oó]rdenes\s+de\s+cambio\b/i, /\bentire\s+agreement\b|^any\s+work\s+outside\s+this\s+scope\s+of\s+work\s+requires\s+a\s+written\s+change\s+order\b/i, "cambios"],
+    [/\blimitation\s+of\s+liability\b|\bl[ií]mite\s+de\s+responsabilidad\b/i, /\btotal\s+liability\b[^.]{0,80}\bshall\s+not\s+exceed\b/i, "limite"],
+    [/\binsurance\b|\bseguros?\b/i, /\bgeneral\s+liability\b[^.]{0,80}\bworkers['’]?\s+comp/i, "seguro"],
+    [/\bcancel(?:l?ation)?\b|\bcancelaci[oó]n\b/i, /\bmay\s+cancel\s+this\s+(?:agreement|contract|proposal)\b/i, "cancelacion"],
+    [/\bretainage\b|\bretenci[oó]n\b/i, /\bretainage\s+(?:is|of|shall)\b/i, "retainage"],
+    [/\bnotice\s+to\s+owner\b|\breleases?\s+of\s+liens?\b|\blien\s+(?:releases?|waivers?|rights)\b/i, /\bnotice\s+to\s+owner\b|\brelease\s+of\s+lien\b|\bretains?\s+all\s+lien\s+rights\b/i, "nto_releases"],
+    [/\bexisting\s+and\s+concealed\b|\bconcealed\s+conditions?\b|\bexisting\s+conditions?\b|\bcondiciones\s+(?:ocultas|existentes)\b/i, /^concealed\s+conditions?\b/i, "existentes"],
+    [/\bcode\s+upgrades?\b|\bahj\s+requirements?\b/i, /\bcorrections?\s+or\s+upgrades?\s+to\s+the\s+\*?existing\*?\s+electrical\s+system\b/i, "ahj_upgrades"],
+    [/\bcode\s+edition\b|\bedici[oó]n\s+del\s+c[oó]digo\b/i, /\bcode\s+edition\b|\b\d{1,2}(?:st|nd|rd|th)\s+edition\b|\bnew\s+edition\s+of\s+the\b/i, "edicion"],
+    [/^\s*materials?\s*$|^\s*materiales\s*$/i, /^all\s+materials\b[^.]{0,200}\bfurnished\s+by\s+max\s+power\s+unless\s+(?:expressly\s+)?(?:noted|stated)\s+otherwise\b/i, "materiales"]
+  ];
+  // …y en la 7 (programa), el manejo de materiales de otros (la 7.5 de la plantilla), aunque la IA le ponga otro título
+  // («Removal and reinstallation», Whitlock l. 98: «Materials that must be removed, stored and reinstalled… at cost plus 15%»)
+  const PLANTILLA_PROGRAMA = [
+    [null, /\bmaterials?\s+(?:that\s+must\s+be|furnished\s+by\s+others)\b[^.]{0,80}\b(?:handl|salvag|stor|reinstall)/i, "manejo"]
+  ];
+  // Tanda 6: lo propio de la sección 8 que habla del LAYOUT (recorrido, ubicación de aparatos, formulario de aprobación)
+  const RX_LAYOUT_PROPIO = /\blayout\b|\bwalk-?\s?through\b|\bdevice\s+locations?\b|\bapproval\s+form\b|\blocations?\s+(?:will\s+be|are|is)\s+marked\b|\brecorrido\b|\bubicaci[oó]n\s+de\s+(?:los\s+)?(?:aparatos|tomas|dispositivos)\b/i;
+  // Tanda 6: el tipo de trabajo de la IA solo vale si su línea de evidencia trae la PALABRA que lo justifica
+  const PALABRA_TIPO_TRABAJO = {
+    remodel: /\b(?:remodel\w*|renovat\w*|retrofit\w*|remodelaci\w*|renovaci\w*)\b/i,
+    service: /\bservice\s+calls?\b|\bservices?\b|\brepair\w*|\breplac\w*|\bservicio\b|\breparaci\w*|\breemplaz\w*/i,
+    new: /\bnew\s+construction\b|\bnew\s+build\w*|\badditions?\b|\bobra\s+nueva\b|\bconstrucci[oó]n\s+nueva\b|\bampliaci[oó]n\b/i,
+    planos: /\bplans\b|\bdrawings?\b|\bengineered\b|\bplanos\b/i
+  };
+  // …y «remodel» (que en decidirInterruptores es «dentro de una vivienda») no vale si la misma línea habla de una obra de
+  // fuera: Whitlock l. 19 dice «pool deck renovation», pero de una cocina EXTERIOR con su pabellón
+  const RX_OBRA_EXTERIOR = /\b(?:outdoor|exterior|outside|pavilion|lanai|patio|pool|deck|dock|pergola|gazebo|landscape|yard|seawall|pole|wellhead|irrigation)\b/i;
+  // Tanda 4: las lecciones de Edgar que tocan un HECHO (las guarda «Enséñale» con su valor exacto; las aplica el programa)
+  const LECCION_HECHOS = { permiso: ["cliente", "nosotros", "ninguno"], firma: ["si", "no"], trato: ["GC", "directo"] };
+  const OPCIONES_FIJAS_ARMADO = {
+    firma: [{ etiqueta: "Sí, con firma", valor: "si" }, { etiqueta: "No, solo el alcance", valor: "no" }],
+    propiedad: [{ etiqueta: "Comercial", valor: "commercial" }, { etiqueta: "Vivienda", valor: "residential" }],
+    contrato_con: [{ etiqueta: "Con un contratista (GC)", valor: "GC" }, { etiqueta: "Directo con el dueño", valor: "directo" }],
+    permiso: [{ etiqueta: "Lo saca el cliente", valor: "cliente" }, { etiqueta: "Lo sacamos nosotros", valor: "nosotros" }, { etiqueta: "No hace falta", valor: "ninguno" }],
+    base_precio: [{ etiqueta: "Por los planos", valor: "plans" }, { etiqueta: "Por las cantidades", valor: "quantities" }],
+    fotos_panel: [{ etiqueta: "Sí", valor: "si" }, { etiqueta: "No", valor: "no" }],
+    circuitos_exist: [{ etiqueta: "Sí", valor: "si" }, { etiqueta: "No", valor: "no" }]
+  };
+
+  // Tanda 5 (prueba en vivo del 7-oct): CONDICIONES CON JUICIO. Una condición enciende una cláusula del contrato, así que
+  // su cita tiene que hablar de lo que esa cláusula cubre (si no, se tira con aviso y la cláusula no sale):
+  //   · reubicar: mover un APARATO o equipo con su circuito (range, oven, cooktop, dryer, washer, dishwasher, water heater,
+  //     AC, condenser, heat pump, mini split, EV, disposal, microwave, refrigerator, pump, motor, equipment, appliance; o
+  //     «circuit» sin luminarias). Mover troffers o luminarias NO es reubicar (Metro l. 42, «Relocation of three (3)
+  //     existing troffers»: se tira; la 9.x saldría con «Section 2.{{ITEM_REUBICAR}}» y un circuito dedicado que no hay).
+  //   · fixtures_cliente: habla de fixtures / lights / fans / luminaires Y de quién los pone (furnished / provided /
+  //     supplied, «by the owner | client | tenant | others | GC»). Metro l. 53 («… furnished by the tenant») vale.
+  //   · fixtures_mxp: los pone Max Power / el Contractor, o los nombra como suministro propio («furnish and install»,
+  //     «with listed combination units and their supply circuit», Metro l. 46), y no dice que los pone otro.
+  //   · excavacion: trench / excavat / dig / underground / buried / bore (Heather l. 24, «buried»: vale → subsuelo).
+  // Devuelve el motivo (para Edgar) o "" si vale. Las demás condiciones no se juzgan aquí.
+  const RX_APARATO = /\b(?:ranges?|ovens?|cooktops?|dryers?|washers?|dishwashers?|water\s+heaters?|a\/c|ac|air\s+condition\w*|condens(?:er|ers|ing)|heat\s+pumps?|mini[-\s]?splits?|ev|ev\s+chargers?|disposals?|microwaves?|refrigerators?|fridges?|freezers?|pumps?|motors?|equipment|appliances?|compressors?|air\s+handlers?|estufas?|hornos?|secadoras?|lavadoras?|lavavajillas|calentador(?:es)?|aires?\s+acondicionados?|bombas?|motor(?:es)?|equipos?|electrodom\w*|neveras?|refrigeradores?)\b/i;
+  const RX_CIRCUITO = /\b(?:circuits?|circuitos?)\b/i;
+  const RX_LUZ = /\b(?:troffers?|fixtures?|luminaires?|lights?|lighting|lamps?|downlights?|recessed|sconces?|pendants?|chandeliers?|fans?|l[aá]mparas?|luminarias?|focos?|plaf[oó]n(?:es)?|ventiladores?|abanicos?)\b/i;
+  const RX_QUIEN_PONE = /\b(?:furnish\w*|provid\w*|suppl(?:y|ies|ied)|pone|ponen|compra|compran|suministr\w*|aport\w*)\b|\bby\s+(?:the\s+)?(?:owner|client|customer|tenant|homeowner|others|gc|general\s+contractor)\b|\b(?:owner|client|customer|tenant|homeowner|gc)[-\s](?:furnished|provided|supplied)\b|\b(?:del|por\s+el)\s+(?:cliente|due[nñ]o|inquilino)\b/i;
+  const RX_LOS_PONE_OTRO = /\bby\s+(?:the\s+)?(?:owner|client|customer|tenant|homeowner|others|gc|general\s+contractor)\b|\b(?:owner|client|customer|tenant|homeowner|gc)[-\s](?:furnished|provided|supplied)\b|\b(?:del|por\s+el|los\s+pone\s+el|las\s+pone\s+el)\s+(?:cliente|due[nñ]o|inquilino)\b/i;
+  const RX_LOS_PONE_MXP = /\b(?:max\s+power|mxp)\b[^.;]{0,60}\b(?:furnish|provid|suppl|install|pone|suministr)\w*|(?<!general\s)\bcontractor\b[^.;]{0,60}\b(?:furnish|provid|suppl)\w*|\bfurnish(?:es|ed)?\s+and\s+install\w*|\bsuministr\w*\s+e\s+instal\w*|\bwith\s+(?:[\w/-]+\s+){0,3}(?:units?|fixtures?|luminaires?|lights?|fans?)\b|\bnew\s+(?:[\w/-]+\s+){0,2}(?:fixtures?|luminaires?|units?|lights?)\b/i;
+  const RX_ZANJA = /\b(?:trench\w*|excavat\w*|dig|digging|dug|underground|buried|bury|bor(?:e|ed|es|ing)|zanjas?|excava\w*|enterrad\w*|subterr[aá]ne\w*|perfora\w*)\b/i;
+  function condicionSinJuicio(clave, cita) {
+    const t = String(cita || "");
+    if (clave === "reubicar")
+      return RX_APARATO.test(t) || (RX_CIRCUITO.test(t) && !RX_LUZ.test(t)) ? "" : "eso no es mover un aparato o un equipo con su circuito (mover luminarias no cuenta)";
+    if (clave === "fixtures_cliente")
+      return RX_LUZ.test(t) && RX_QUIEN_PONE.test(t) && !(RX_LOS_PONE_MXP.test(t) && !RX_LOS_PONE_OTRO.test(t)) ? "" : "no dice qué fixtures pone el cliente (o quién los pone)";
+    if (clave === "fixtures_mxp")
+      return (RX_LUZ.test(t) || /\bunits?\b/i.test(t)) && RX_LOS_PONE_MXP.test(t) && !RX_LOS_PONE_OTRO.test(t) ? "" : "no dice que esos fixtures los pone Max Power";
+    if (clave === "excavacion")
+      return RX_ZANJA.test(t) ? "" : "no habla de zanjas, de excavar ni de nada enterrado";
+    return "";
+  }
+
+  // El paquete que viaja a la nube: la hoja limpia y TAPADA, numerada desde 1. L0 es la lectura con las reglas, solo para
+  // saber qué líneas son de precio, pagos y opciones (ahí se tapa además todo número de 3 cifras o con decimales).
+  // huellaBase es lo que el cerebro pasa por sha256 en la primera parte de la huella (pliego §3.3).
+  // Las líneas «Precio: …» / «Pagos: …» se tapan enteras aunque las reglas no hayan entendido el monto («Precio: 2,40»
+  // es una coma dudosa: el lector lo pregunta y no lo toma, pero tampoco puede viajar sin tapar).
+  // Tanda 4: se tapa con la regla del ARMADO (tramosArmar): las medidas, los artículos del código y los números de
+  // renglón viajan tal cual (la IA los copia), y una cifra suelta junto a una palabra de dinero se tapa («Precio 12828»).
+  const kvDinero = l => { const kv = String(l || "").replace(/\*\*|__|`/g, "").match(/^\s*\|?\s*([^:|]{2,42})\s*[:|]\s*(.*)$/);
+    return !!(kv && buscaClave(CLAVES_DINERO, norma(kv[1])) && /\d/.test(kv[2])); };
+  function hojaParaArmar(texto, dineroEn) {
+    const set = new Set(dineroEn || []);
+    let tapados = 0;
+    const tapa = (s, tramos) => { for (let k = tramos.length - 1; k >= 0; k--) { const [a, b] = tramos[k]; s = s.slice(0, a) + taparTramo(s.slice(a, b)) + s.slice(b); tapados++; } return s; };
+    const lineas = String(texto || "").replace(/\r/g, "").split("\n").map((original, i) => {
+      let s = tapa(original, tramosArmar(original));
+      if (set.has(i + 1)) s = s.replace(/\d(?:[\d,]*\d)?(?:\.\d+)?/g, (n, off) => {
+        if (/^\s*%/.test(s.slice(off + n.length)) || /[#$]$/.test(s.slice(0, off))) return n;
+        if ((/[A-Za-z\/]$/.test(s.slice(0, off)) && !/(?:usd|us|dlls?)$/i.test(s.slice(0, off))) || noEsDineroArmar(s, off, off + n.length)) return n;   // 100A, 480Y/277V, L60
+        if (n.replace(/\D/g, "").length >= 3 || /\./.test(n)) { tapados++; return taparTramo(n); }
+        return n;
+      });
+      const c = limpiarLinea(s);
+      // lo que viaja se mira otra vez ya limpio (la limpieza cambia rayas y comillas): lo que quede, se tapa ahí también
+      const t = tapa(c.limpia, tramosArmar(c.limpia));
+      return { n: i + 1, t, mapa: c.mapa, tapada: s, original };
+    });
+    return { lineas, tapados };
+  }
+  function paqueteParaArmar(texto, L0, ficha) {
+    const dineroEn = new Set();
+    String(texto || "").replace(/\r/g, "").split("\n").forEach((l, i) => { if (kvDinero(l)) dineroEn.add(i + 1); });
+    if (esObjeto(L0)) {
+      if (esObjeto(L0.precio) && Number.isInteger(L0.precio.linea)) dineroEn.add(L0.precio.linea);
+      (esObjeto(L0.pagos) && Array.isArray(L0.pagos.lineas) ? L0.pagos.lineas : []).forEach(n => { if (Number.isInteger(n)) dineroEn.add(n); });
+      (Array.isArray(L0.opciones) ? L0.opciones : []).forEach(o => { if (o && Number.isInteger(o.linea)) dineroEn.add(o.linea); });
+    }
+    const hoja = hojaParaArmar(texto, [...dineroEn]);
+    const lineas = paraLaNube(hoja);
+    return { lineas, hoja, huellaBase: lineas.map(l => l.t).join("\n"), ficha: fichaSinDinero(ficha || {}),
+             limpio: !lineas.some(l => esMontoArmar(l.t)), con_contenido: lineas.filter(l => l.t.trim()).length };
+  }
+
+  // ¿Tiene el armado la forma del molde? (solo las cajas; las piezas sueltas las juzga verificarArmado una por una)
+  function comprobarMoldeArmado(a) {
+    const mal = motivo => ({ ok: false, motivo });
+    if (!esObjeto(a)) return mal("no es un molde");
+    if (a.v !== 1) return mal("la versión del molde no es la 1");
+    if (!Number.isInteger(a.lineas_total) || a.lineas_total < 1) return mal("no dice cuántas líneas tiene la hoja");
+    for (const k of ["datos", "hechos", "condiciones", "dinero", "textos", "propias", "codigo"])
+      if (a[k] !== undefined && a[k] !== null && !esObjeto(a[k])) return mal(`«${k}» no tiene la forma del molde`);
+    for (const k of ["preguntas", "avisos", "sobrantes"])
+      if (a[k] !== undefined && a[k] !== null && !Array.isArray(a[k])) return mal(`«${k}» tiene que ser una lista`);
+    const T = a.textos || {};
+    for (const k of [...Object.keys(TEXTOS_LISTA), "disparadores"])
+      if (T[k] !== undefined && T[k] !== null && !Array.isArray(T[k])) return mal(`«textos.${k}» tiene que ser una lista`);
+    if (!Array.isArray(T.items) || !T.items.length) return mal("no trae los renglones del alcance");
+    const P = a.propias || {};
+    for (const k of PROPIAS_LISTA) if (P[k] !== undefined && P[k] !== null && !Array.isArray(P[k])) return mal(`«propias.${k}» tiene que ser una lista`);
+    const D = a.dinero || {};
+    if (D.precio_l !== undefined && D.precio_l !== null && !Number.isInteger(D.precio_l)) return mal("«dinero.precio_l» tiene que ser un número de línea");
+    for (const k of ["pagos_l", "opciones_l"]) if (D[k] !== undefined && D[k] !== null && !Array.isArray(D[k])) return mal(`«dinero.${k}» tiene que ser una lista de líneas`);
+    return { ok: true };
+  }
+
+  // Busca dinero en cualquier texto del armado (un `.en`, un valor, un motivo, un porqué…). Devuelve dónde, o "".
+  // Tanda 4: con la regla del armado (dineroEnTextoArmar) y lo que la IA vio (`base`: la hoja tapada y la ficha).
+  // La MISMA función vive en el cerebro (limpiarArmado): las dos se cotejan en cerebro-puro.mjs.
+  function dineroEnElArmado(x, ruta, base) {
+    if (typeof x === "string") return dineroEnTextoArmar(x, base) ? (ruta || "(raíz)") : "";
+    if (Array.isArray(x)) { for (let i = 0; i < x.length; i++) { const r = dineroEnElArmado(x[i], ruta + "." + i, base); if (r) return r; } return ""; }
+    if (esObjeto(x)) { for (const k of Object.keys(x)) { const r = dineroEnElArmado(x[k], ruta ? ruta + "." + k : k, base); if (r) return r; } }
+    return "";
+  }
+
+  // Una línea original sin marcas de formato ni viñeta/número delante: «   - **Detalle**» → «Detalle»
+  const sinMarcas = s => String(s || "").replace(/\*\*|__|`/g, "").replace(/^\s*\|\s*/, "").replace(/\s*\|\s*$/, "")
+    .replace(/^\s*(?:[-*•▪◦]\s+|#{1,6}\s*|\(\d{1,3}\)\s+|\d{1,3}(?:\.\d{1,3})*[.)]?\s+)/, "").replace(/\s+/g, " ").trim();
+  // Tanda 6: el número de sección de la hoja delante de un título («9.7 Service interruption», «8.4 Effect on scope»): la
+  // plantilla numera sola. Solo la forma «N.n» o «N.» / «N)» («3 phases» o «120-volt…» no se tocan). Y nunca cuando lo que
+  // sigue es una unidad: «1.5 HP pool pump», «2.5 kW generator», «1.5 ton mini split» son cantidades de Edgar, no números
+  // de sección (una cantidad no se toca nunca).
+  const UNIDAD_TRAS_NUMERO = /^(?:k?VA|kva|kW|KW|kA|HP|hp|AWG|MCM|kcmil|tons?|ft|in|mm|amps?|Amps?|AMPS?|volts?|Volts?|VOLTS?|watts?|phase|Phase|PHASE|ph|PH|gal|lbs?|sq)\b|^["'”″×%]|^x\s/;
+  const sinNumeroDeHoja = s => {
+    const t = String(s || ""), m = t.match(/^\s*(?:\d{1,3}(?:\.\d{1,3})+\.?|\d{1,3}[.)])\s+(?=\S)/);
+    return m && !UNIDAD_TRAS_NUMERO.test(t.slice(m[0].length)) ? t.slice(m[0].length) : t;
+  };
+  // ¿Es la línea un título de sección que el lector conoce? (no lleva contenido: no hace falta que tenga casa)
+  const esTituloDeSeccion = l => { try { return !!seccionDeTitulo(l); } catch { return false; } };
+
+  // ---- El juez del teléfono (pliego §4.3). Nunca revienta: un armado roto se rechaza entero con «armado_invalido».
+  function verificarArmado(lineas, armado, ficha, perfilApp) {
+    try { return verificarArmadoCrudo(lineas, armado, ficha || {}, perfilApp || {}); }
+    catch (e) { return { error: "armado_invalido", motivo: "no se pudo leer el armado: " + String((e && e.message) || e).slice(0, 80) }; }
+  }
+  function verificarArmadoCrudo(lineas, armado, ficha, perfil) {
+    lineas = Array.isArray(lineas) ? lineas : [];
+    const N = lineas.length;
+    const txt = n => String((lineas[n - 1] || {}).t || "");
+    const orig = n => { const l = lineas[n - 1] || {}; return String(typeof l.original === "string" ? l.original : (l.t || "")); };
+    const lineaOk = n => Number.isInteger(n) && n >= 1 && n <= N;
+    const tiradas = [], avisos_app = [];
+    const tirar = (que, motivo) => { tiradas.push({ que, motivo }); return false; };
+    const ambar = (tipo, lns, texto) => avisos_app.push({ tipo, gravedad: "ambar", lineas: lns, texto });
+    const corto = s => String(s || "").replace(/\s+/g, " ").trim().slice(0, 80);
+
+    // 1) la forma del molde y el número de líneas
+    const forma = comprobarMoldeArmado(armado);
+    if (!forma.ok) return { error: "armado_invalido", motivo: forma.motivo };
+    if (armado.lineas_total !== N) return { error: "armado_invalido", motivo: `dice ${armado.lineas_total} líneas y la hoja tiene ${N}` };
+    // 2) dinero en cualquier texto: el armado ENTERO se tira (como una lectura con dinero). Tanda 4: también una cifra
+    //    sin $ ni comas que la IA no vio en la hoja tapada ni en la ficha («12828.84», «Deposit 5131», «-500.00»)
+    const base = lineas.map(l => String((l || {}).t || "")).join("\n") + "\n" + JSON.stringify(ficha || {});
+    const donde = dineroEnElArmado(armado, "", base);
+    if (donde) return { error: "dinero_en_el_armado", donde };
+
+    const a = JSON.parse(JSON.stringify(armado));
+    ["datos", "hechos", "condiciones", "dinero", "textos", "propias", "codigo"].forEach(k => { if (!esObjeto(a[k])) a[k] = {}; });
+    ["preguntas", "avisos", "sobrantes"].forEach(k => { if (!Array.isArray(a[k])) a[k] = []; });
+    Object.keys(a).forEach(k => { if (!MOLDE_ARMADO_CLAVES.includes(k)) { delete a[k]; tirar(k, "no es del molde"); } });
+    const T = a.textos, P = a.propias, Di = a.dinero;
+
+    // Tanda 4: lo que la hoja ORIGINAL dice, leído con las reglas de siempre (solo para cotejar: dónde está el dinero,
+    // cuántos renglones, exclusiones y opciones trae). Si las reglas no pueden con la hoja, no se coteja.
+    const Lr = (() => { try { return leerAlcance(lineas.map((_, i) => orig(i + 1)).join("\n")); } catch { return null; } })() || {};
+    // las líneas que caen bajo un título «Notas» (lo que Edgar se escribe a sí mismo no va al contrato del cliente)
+    const notas = new Set(), seccion = {};
+    { let sec = null; for (let n = 1; n <= N; n++) { let s = null; try { s = seccionDeTitulo(orig(n)); } catch { s = null; }
+        if (s) { sec = s; continue; } seccion[n] = sec; if (sec === "notas" && orig(n).trim()) notas.add(n); } }
+    // las líneas de dinero: las que leen las reglas (precio, pagos, opciones) y las que traen un monto
+    const lrDinero = new Set([...(esObjeto(Lr.precio) && Number.isInteger(Lr.precio.linea) ? [Lr.precio.linea] : []),
+      ...((esObjeto(Lr.pagos) && Array.isArray(Lr.pagos.lineas)) ? Lr.pagos.lineas : []), ...(Array.isArray(Lr.opciones) ? Lr.opciones.map(o => o && o.linea) : [])].filter(lineaOk));
+    const esLineaDinero = n => lrDinero.has(n) || esMontoArmar(orig(n)) || pareceDinero(orig(n)) || kvDinero(orig(n));
+
+    // las líneas «de» de un texto: enteros dentro de la hoja, sin repetir
+    const lineasDe = de => [...new Set((Array.isArray(de) ? de : []).filter(lineaOk))];
+    // 3 y 4) cada texto: forma, líneas «de» válidas, y nada prohibido que no venga ya en sus líneas
+    const directo = de => { const t = de.map(n => sinMarcas(orig(n)).replace(/^[^:]{2,42}:\s+/, "")).filter(Boolean).join(" ");
+      return traeDineroEstricto(t) || esMontoArmar(t) || pareceDinero(t) || /[<>]/.test(t) || RX_MASCARA.test(t) ? "" : t; };
+    const rellenar = (out, ruta, de, motivo, dicho, opc) => {
+      tirar(ruta, motivo);
+      // el texto de un pago no se rellena con la línea entera (llevaría los porcentajes): lo pone el programa (armadoAHoja)
+      if (opc && opc.sinRelleno) { ambar("texto_rellenado", de, `${dicho}: usé el texto de la hoja.`); return null; }
+      out.en = directo(de);
+      ambar("texto_rellenado", de, out.en ? `${dicho}: puse el texto de la hoja (línea ${de.join(", ")}).` : `${dicho}: quité ese texto (${ruta}).`);
+      return out.en ? out : null;
+    };
+    // palabras de una nota que no salen en las otras líneas del texto (un correo, un nombre, una frase suya)
+    const contaminado = (en, deNotas, resto) => {
+      const otras = norma(resto.map(orig).join(" ")), t = norma(en);
+      const suyas = [...new Set(deNotas.flatMap(n => norma(orig(n)).match(/[a-z0-9@._-]{5,}/g) || []))].filter(w => !otras.includes(w));
+      return suyas.filter(w => t.includes(w)).length >= 2 || suyas.some(w => /@/.test(w) && t.includes(w));
+    };
+    // Tanda 5 (prueba en vivo del 7-oct): TEXTO POR REFERENCIA. Un texto con solo «de» (sin «en», o con «en» vacío) es la
+    // orden «copia estas líneas tal cual»: armadoAHoja lo rellena con las líneas ORIGINALES de Edgar, limpias de viñetas y
+    // números. Aquí solo se juzgan sus líneas: de la hoja, sin notas tuyas, sin «<» ni «>», y NINGUNA con dinero (si una lo
+    // lleva, ese texto se tira con aviso y nunca se copia). Una opción puede citar su propia línea de precio: de ahí se lee
+    // el monto, y su título sale de esa línea SIN el monto. Así un SOW que ya está en inglés no se reescribe (la IA tardaba
+    // más de 150 s en Whitlock y Wimauma reescribiendo lo que ya estaba bien).
+    const sinEn = o => esObjeto(o) && (o.en === undefined || o.en === null || (typeof o.en === "string" && !o.en.trim())) && Array.isArray(o.de) && o.de.length > 0;
+    const lineaConDinero = n => esLineaDinero(n) || traeDineroEstricto(orig(n)) || RX_MASCARA.test(txt(n));
+    const porReferencia = (o, ruta, opc) => {
+      if (opc.sinRef) return null;            // el texto de un pago: sin «en», lo pone el programa con su línea
+      let de = lineasDe(o.de);
+      const deNotas = de.filter(n => notas.has(n));
+      if (deNotas.length) {
+        de = de.filter(n => !notas.has(n));
+        tirar(ruta, `sale de una nota tuya (línea ${deNotas.join(", ")})`);
+        ambar("nota_en_contrato", deNotas, `La IA pidió copiar una nota tuya en el contrato (línea ${deNotas.join(", ")}): la quité.`);
+      }
+      if (!de.length) { if (!deNotas.length) tirar(ruta, "solo dice «de» y sus líneas no son de la hoja"); return null; }
+      const conDinero = de.filter(n => lineaConDinero(n) && !(opc.permitidas || []).includes(n));
+      if (conDinero.length) {
+        tirar(ruta, `pide copiar la línea ${conDinero.join(", ")}, que lleva dinero`);
+        ambar("copia_con_dinero", conDinero, `La IA pidió copiar tal cual la línea ${conDinero.join(", ")}, que lleva dinero: no la copié.`);
+        return opc.lista ? { solo_dinero: true, de: [] } : null;
+      }
+      const conCodigo = de.filter(n => /[<>]/.test(orig(n)));
+      if (conCodigo.length) {
+        tirar(ruta, `pide copiar la línea ${conCodigo.join(", ")}, que trae «<» o «>»`);
+        ambar("texto_rellenado", conCodigo, `La línea ${conCodigo.join(", ")} trae «<» o «>»: no la copié tal cual al contrato.`);
+        return null;
+      }
+      return { de, ref: true };
+    };
+    // opc.dinero: "dejar" para los textos de los pagos (citan su línea de pagos); opc.permitidas: líneas de dinero que valen
+    const textoBueno = (o, ruta, opc) => {
+      opc = opc || {};
+      if (o === undefined || o === null) return null;
+      if (sinEn(o)) return porReferencia(o, ruta, opc);
+      if (!esObjeto(o) || typeof o.en !== "string") { tirar(ruta, "no es un texto del molde"); return null; }
+      if (o.en.length > 2000) {
+        tirar(ruta, "texto de más de 2.000 letras");
+        ambar("texto_largo", lineasDe(o.de), `La IA escribió un texto demasiado largo (${ruta}): no lo puse.`);
+        return null;
+      }
+      let de = lineasDe(o.de);
+      const out = Object.assign({}, o, { en: o.en.trim(), de });
+      if (!out.en) return null;
+      // las notas de Edgar no van al contrato: la línea se quita del texto y, si el texto la copió, se tira
+      const deNotas = de.filter(n => notas.has(n));
+      if (deNotas.length) {
+        de = de.filter(n => !notas.has(n)); out.de = de;
+        tirar(ruta, `sale de una nota tuya (línea ${deNotas.join(", ")})`);
+        ambar("nota_en_contrato", deNotas, `La IA puso en el contrato una nota tuya (línea ${deNotas.join(", ")}): la quité.`);
+        if (!de.length) return null;
+        if (contaminado(out.en, deNotas, de)) { out.en = directo(de); if (!out.en) return null; }
+      }
+      // las líneas de dinero no son de un renglón, de una exclusión ni de un párrafo (el monto saldría de ahí)
+      if (opc.dinero !== "dejar") {
+        const dd = de.filter(n => esLineaDinero(n) && !(opc.permitidas || []).includes(n));
+        if (dd.length) {
+          de = de.filter(n => !dd.includes(n)); out.de = de;
+          tirar(ruta, `apunta a la línea del dinero (${dd.join(", ")})`);
+          ambar("linea_de_dinero", dd, `La IA puso la línea del dinero (línea ${dd.join(", ")}) en un texto del contrato: la quité de ahí.`);
+          if (!de.length) { out.solo_dinero = true; return opc.lista ? out : null; }
+        }
+      }
+      if (/[<>]/.test(out.en)) return rellenar(out, ruta, de, "trae «<» o «>»", "La IA escribió algo que parece código («<» o «>»)", opc);
+      if (RX_MASCARA.test(out.en)) return rellenar(out, ruta, de, "trae una cifra tapada", "La IA copió una cifra tapada («#»)", opc);
+      const baseDe = normaParaProhibidas(de.map(orig).join(" | "));
+      const mala = prohibidaQueNoEsta(out.en, baseDe);
+      if (mala) return rellenar(out, ruta, de, `trae «${mala}» y sus líneas no lo dicen`, `La IA escribió «${mala}» y la hoja no lo dice`, opc);
+      const ley = leyQueNoEsta(out.en, baseDe);
+      if (ley) return rellenar(out, ruta, de, `trae «${ley}» (texto de ley) y sus líneas no lo dicen`, `La IA escribió «${ley}», que es texto de ley, y la hoja no lo dice`, opc);
+      if (!de.length) ambar("sin_linea", [], `Este texto de la IA no dice de qué línea sale: «${corto(out.en)}»`);
+      return out;
+    };
+    TEXTOS_SIMPLES.forEach(k => { const t = textoBueno(T[k], "textos." + k); if (t) T[k] = t; else delete T[k]; });
+    if (T.utility !== undefined) {
+      if (esObjeto(T.utility)) {
+        const q = textoBueno(T.utility.quien, "textos.utility.quien"), h = textoBueno(T.utility.que_hace, "textos.utility.que_hace");
+        if (q || h) T.utility = Object.assign({}, q ? { quien: q } : {}, h ? { que_hace: h } : {}); else delete T.utility;
+      } else { tirar("textos.utility", "no tiene la forma del molde"); delete T.utility; }
+    }
+    // las listas: cada pieza TIENE que decir de qué línea sale (si no, es un renglón inventado y se quita)
+    const opcionesL = Array.isArray(Di.opciones_l) ? Di.opciones_l.slice() : [];
+    Object.entries(TEXTOS_LISTA).forEach(([k, campos]) => {
+      const vistas = new Set(), nuevas = [], nuevasL = [];
+      (Array.isArray(T[k]) ? T[k] : []).forEach((pieza, i) => {
+        const ruta = `textos.${k}.${i}`;
+        if (!esObjeto(pieza)) { tirar(ruta, "no tiene la forma del molde"); return; }
+        const limpia = {};
+        // una opción puede citar SU línea de precio (de ahí sale su monto); nada más puede citar una línea de dinero
+        const permitidas = k === "opciones" && lineaOk(opcionesL[i]) ? [opcionesL[i]] : [];
+        let soloDinero = false;
+        campos.forEach(c => { const t = textoBueno(pieza[c], ruta + "." + c, { lista: true, permitidas });
+          if (t && t.solo_dinero) { soloDinero = true; return; } if (t) limpia[c] = t; });
+        const de = [...new Set(campos.flatMap(c => (limpia[c] || {}).de || []))].sort((x, y) => x - y);
+        // (tanda 5: un texto por referencia no trae «en»: se enseña su primera línea, tal como la vio la IA)
+        const muestra = campos.map(c => (limpia[c] || {}).en || (esObjeto(pieza[c]) ? String(pieza[c].en || "")
+          || (Array.isArray(pieza[c].de) && lineaOk(pieza[c].de[0]) ? txt(pieza[c].de[0]) : "") : "")).filter(Boolean).join(" — ");
+        if (!de.length) {
+          tirar(ruta, soloDinero ? "solo apunta a líneas de dinero" : "no dice de qué línea de la hoja sale");
+          if (soloDinero) ambar("renglon_de_dinero", [], `La IA hizo un renglón con la línea del dinero: «${corto(muestra)}». No lo puse.`);
+          else ambar("renglon_inventado", [], `La IA escribió un renglón que no está en la hoja: «${corto(muestra)}». No lo puse.`);
+          return;
+        }
+        if (!campos.some(c => limpia[c])) { tirar(ruta, "sin texto"); return; }
+        const llave = de.join(",");
+        if (k === "items" && vistas.has(llave)) { tirar(ruta, `renglón repetido (las mismas líneas ${llave})`); ambar("renglon_repetido", de, `La IA repitió un renglón (líneas ${llave}): dejé solo el primero.`); return; }
+        vistas.add(llave);
+        nuevas.push(limpia);
+        if (k === "opciones") nuevasL.push(opcionesL[i] === undefined ? null : opcionesL[i]);
+      });
+      T[k] = nuevas;
+      if (k === "opciones") Di.opciones_l = nuevasL;
+    });
+    // los disparadores de los pagos: {n, en, de}
+    T.disparadores = (Array.isArray(T.disparadores) ? T.disparadores : []).map((d, i) => {
+      if (!esObjeto(d) || !Number.isInteger(d.n) || d.n < 1 || d.n > 12) { tirar(`textos.disparadores.${i}`, "no tiene la forma del molde"); return null; }
+      // el texto de un pago va SIN su porcentaje (pliego §4.1): el porcentaje lo lee el programa de la línea. Uno que lo
+      // trae se tira aunque la línea lo diga, y el programa pone el texto que queda en la línea de pagos. Tanda 4: tampoco
+      // una cifra de tres dígitos o con decimales (eso es un monto, aunque no lleve $)
+      if (typeof d.en === "string" && (/%|\bpercent\b|\bpor\s+ciento\b/i.test(d.en) || /\d{3}|\d\.\d/.test(d.en))) {
+        tirar(`textos.disparadores.${i}`, /%|percent|ciento/i.test(d.en) ? "trae un porcentaje" : "trae una cifra");
+        ambar("texto_rellenado", lineasDe(d.de), `La IA puso ${/%|percent|ciento/i.test(d.en) ? "un porcentaje" : "una cifra"} en el texto del pago ${d.n} («${corto(d.en)}»): usé el texto de la hoja.`);
+        return null;
+      }
+      const t = textoBueno({ en: d.en, de: d.de }, `textos.disparadores.${i}`, { dinero: "dejar", sinRelleno: true, sinRef: true });
+      return t ? Object.assign({ n: d.n }, t) : null;
+    }).filter(Boolean);
+    // lo propio de la hoja (7.x, 8.x, 9.x, párrafos de pago): también tiene que tener línea
+    PROPIAS_LISTA.forEach(k => {
+      P[k] = (Array.isArray(P[k]) ? P[k] : []).map((p, i) => {
+        const ruta = `propias.${k}.${i}`;
+        if (!esObjeto(p)) { tirar(ruta, "no tiene la forma del molde"); return null; }
+        const opc = k === "pagos_propios" ? { dinero: "dejar" } : {};
+        const ti = textoBueno(p.titulo, ruta + ".titulo", opc), te = textoBueno(p.texto, ruta + ".texto", opc);
+        const de = [...new Set([...((ti || {}).de || []), ...((te || {}).de || [])])];
+        if (!de.length || !te) { tirar(ruta, de.length ? "sin texto" : "no dice de qué línea sale");
+          if (!de.length && (ti || te)) ambar("renglon_inventado", [], `La IA escribió una cláusula que no está en la hoja: «${corto((te || ti || {}).en || "")}». No la puse.`);
+          return null; }
+        // Tanda 4: con la hoja en inglés, una cláusula propia es la de la hoja (recortada), no una nueva: tiene que parecerse
+        const enLinea = de.map(orig).join(" ");
+        if (!te.ref && textoEnIngles(enLinea) && !seParece(te.en, enLinea)) {
+          tirar(ruta, "no se parece a sus líneas");
+          const d2 = directo(de);
+          ambar("texto_rellenado", de, d2 ? `La IA reescribió una cláusula de la hoja (línea ${de.join(", ")}): puse la de la hoja.` : `La IA escribió una cláusula que la hoja no dice así (línea ${de.join(", ")}): no la puse.`);
+          if (!d2) return null;
+          return Object.assign({}, ti ? { titulo: ti } : {}, { texto: Object.assign({}, te, { en: d2 }) });
+        }
+        return Object.assign({}, ti ? { titulo: ti } : {}, { texto: te });
+      }).filter(Boolean);
+    });
+    if (P.pre_titulo !== undefined) { const t = textoBueno(P.pre_titulo, "propias.pre_titulo"); if (t) P.pre_titulo = t; else delete P.pre_titulo; }
+    // Tanda 6 (Whitlock en vivo, 8-oct): UN RENGLÓN DEL ALCANCE COPIADO COMO CLÁUSULA PROPIA. La hoja trae «3. MATERIALS» con
+    // «3.1 Furnished by Max Power: …» y «3.2 Furnished by Owner / Contractor: …» dentro de la zona del alcance; las reglas
+    // los leen como renglones (el aprobado los lleva como 2.7 y 2.8) y la IA los copió como términos de la sección 9, sin
+    // título. Un término o un programa propio cuyas líneas son las de un renglón que leen las reglas (empieza donde empieza
+    // ese renglón y no se sale de él), y que ningún renglón de la IA cubre, vuelve a la sección 2 en su sitio, con aviso.
+    if (Array.isArray(Lr.items) && Lr.items.length) {
+      const deItem = p => [...new Set(TEXTOS_LISTA.items.flatMap(c => (p[c] || {}).de || []))].sort((x, y) => x - y);
+      const enItemsIA = new Set(T.items.flatMap(deItem));
+      const deLr = Lr.items.map(it => (it && Array.isArray(it.lineas) ? it.lineas.filter(lineaOk) : [])).filter(x => x.length);
+      ["terminos", "programa"].forEach(k => {
+        P[k] = P[k].filter(p => {
+          const de = [...new Set([...((p.titulo || {}).de || []), ...((p.texto || {}).de || [])])].sort((x, y) => x - y);
+          if (!de.length) return true;
+          const suyo = deLr.find(ls => Math.min(...ls) === de[0] && de.every(n => ls.includes(n)) && !ls.some(n => enItemsIA.has(n)));
+          if (!suyo) return true;
+          const item = { titulo: esObjeto(p.titulo) && p.titulo.en ? p.titulo : { de: [de[0]], ref: true }, descripcion: p.texto };
+          const i = T.items.findIndex(it => (deItem(it)[0] || 0) > de[0]);
+          if (i < 0) T.items.push(item); else T.items.splice(i, 0, item);
+          suyo.forEach(n => enItemsIA.add(n));
+          ambar("renglon_recuperado", de, `La IA puso como cláusula propia lo que la hoja trae como renglón del alcance (línea ${de.join(", ")}): lo puse en la sección 2.`);
+          return false;
+        });
+      });
+    }
+
+    // 5) los datos: el valor tiene que estar en su línea (o ser el «Clave: valor» de la línea) o ser el de la ficha
+    const DE_FICHA = { cliente: ficha.cliente, atencion: ficha.atencion, email: ficha.email, telefono: ficha.telefono, dueno: ficha.dueno,
+      inquilino: ficha.inquilino, direccion: ficha.direccion, ciudad: ficha.ciudad || (ficha.jurisdiccion_sugerida || {}).jurisdiccion_probable,
+      proyecto: ficha.nombre, numero_propuesta: ficha.ref || ficha.numero, planos: ficha.documento_plano };
+    const igual = (x, y) => !!String(x || "").trim() && norma(x) === norma(y);
+    // Tanda 4: los datos que deciden la ley (quién es el cliente, el dueño, el inquilino, quién firma, la base del precio)
+    // solo valen de una línea «Clave: valor» con SU clave («Owner:» es el cliente en la casa, no el dueño)
+    const CLAVE_DEL_DATO = { cliente: ["cliente", "contratista"], dueno: ["dueno"], inquilino: ["inquilino"], segundo_firmante: ["segundo_firmante"], base_precio: ["base_precio"] };
+    const TENANT = /\b(?:tenant|inquilino|occupant|arrendatario)\b/i;
+    Object.keys(a.datos).forEach(k => {
+      const d = a.datos[k], ruta = "datos." + k;
+      if (!DATOS_ARMADO.includes(k)) { delete a.datos[k]; return tirar(ruta, "no es un dato del molde"); }
+      if (!esObjeto(d) || typeof d.valor !== "string" || !d.valor.trim() || d.valor.length > 200) { delete a.datos[k]; return tirar(ruta, "no tiene la forma del molde"); }
+      d.valor = d.valor.trim();
+      if (/[<>]/.test(d.valor) || RX_MASCARA.test(d.valor)) { delete a.datos[k]; return tirar(ruta, "trae «<», «>» o una cifra tapada"); }
+      const kv = lineaOk(d.l) ? claveDeLinea(txt(d.l)) : null;
+      const enLinea = lineaOk(d.l) && (citaEnLinea(txt(d.l), d.valor).ok || igual((kv || {}).valor, d.valor));
+      const deFicha = igual(DE_FICHA[k], d.valor);
+      if (!enLinea && !deFicha) { delete a.datos[k]; return tirar(ruta, lineaOk(d.l) ? `«${corto(d.valor)}» no está en la línea ${d.l}` : "la línea no es de la hoja"); }
+      if (CLAVE_DEL_DATO[k] && enLinea && !deFicha) {
+        const suya = kv && (CLAVE_DEL_DATO[k].includes(kv.clave) || (k === "inquilino" && kv.clave === "dueno" && TENANT.test(txt(d.l))));
+        const prosa = !kv && k !== "dueno" && k !== "base_precio";
+        // «Dueño: X (tenant)»: es el inquilino (fila Tenant), no el dueño
+        if (k === "dueno" && suya && TENANT.test(txt(d.l))) {
+          if (!a.datos.inquilino) a.datos.inquilino = { valor: d.valor.replace(/\s*\((?:tenant|inquilino|occupant|arrendatario)\)\s*/i, " ").trim(), l: d.l };
+          delete a.datos[k];
+          ambar("dato_de_otra_clave", [d.l], `La línea ${d.l} dice que «${corto(d.valor)}» es el inquilino: lo tomé como inquilino (fila Tenant), no como dueño.`);
+          return tirar(ruta, `la línea ${d.l} nombra al inquilino`);
+        }
+        if (!suya && !prosa) {
+          delete a.datos[k];
+          ambar("dato_de_otra_clave", [d.l], `La IA tomó «${corto(d.valor)}» como ${({ cliente: "el cliente", dueno: "el dueño", inquilino: "el inquilino", segundo_firmante: "el segundo firmante", base_precio: "la base del precio" })[k]}, pero la línea ${d.l} no lo dice así: no lo tomé.`);
+          return tirar(ruta, kv ? `la línea ${d.l} es «${kv.clave}», no «${k}»` : `la línea ${d.l} no dice «${k}:»`);
+        }
+      }
+      // una dirección tiene número y calle (una letra suelta o un número no son una dirección)
+      if (k === "direccion" && !deFicha && !(d.valor.length >= 8 && partesDireccion(d.valor).numero)) { delete a.datos[k]; return tirar(ruta, "no es una dirección con número y calle"); }
+      if (!lineaOk(d.l)) delete d.l;
+    });
+    if (esObjeto(a.datos.base_precio) && perfil.base_precio && norma(leerBasePrecio(a.datos.base_precio.valor) || "") !== norma(perfil.base_precio))
+      ambar("base_precio", [a.datos.base_precio.l].filter(lineaOk), `La hoja dice la base del precio «${corto(a.datos.base_precio.valor)}» y en la app elegiste «${perfil.base_precio}»: manda la de la hoja.`);
+    // los hechos: de la lista cerrada; si no, «no_se». La evidencia, líneas de la hoja.
+    Object.keys(a.hechos).forEach(k => {
+      if (k === "evidencia") return;
+      if (!HECHOS_ARMADO[k]) { delete a.hechos[k]; return tirar("hechos." + k, "no es un hecho del molde"); }
+      if (!HECHOS_ARMADO[k].includes(a.hechos[k])) { tirar("hechos." + k, `valor desconocido «${corto(a.hechos[k])}»`); a.hechos[k] = "no_se"; }
+    });
+    const ev = esObjeto(a.hechos.evidencia) ? a.hechos.evidencia : {};
+    a.hechos.evidencia = {};
+    Object.keys(ev).forEach(k => { if (HECHOS_ARMADO[k] && lineaOk(ev[k])) a.hechos.evidencia[k] = ev[k]; });
+    // Tanda 4: un hecho que quita protección (sin firma, comercial, con contratista, el permiso de otro o sin permiso) solo
+    // vale con una línea que lo diga; y si su línea es «Firma: …» / «Permiso: …» / «Propiedad: …», manda lo que ella dice
+    {
+      const PROTEGE = { firma: "si", propiedad: "residential", contrato_con: "directo", permiso: "nosotros" };
+      const NOMBRE = { firma: "firma", propiedad: "propiedad", contrato_con: "trato", permiso: "permiso" };
+      const VALOR = { si: "sí", no: "no", commercial: "comercial", residential: "vivienda", GC: "con contratista", directo: "directo", cliente: "lo saca el cliente", nosotros: "lo sacamos nosotros", ninguno: "no hace falta" };
+      const lee = (k, v) => {
+        const n = norma(v || "");
+        if (k === "firma") return leerFirma(v) ? "si" : "no";
+        if (k === "permiso") { const q = leerPermiso(v); return q === "cliente" ? "cliente" : q === "ninguno" ? "ninguno" : "nosotros"; }
+        if (k === "propiedad") return /\b(?:no comercial|non-?commercial)\b/.test(n) ? "residential" : /comercial|commercial/.test(n) ? "commercial" : /resid|vivienda|casa|home|house/.test(n) ? "residential" : null;
+        return /\b(?:directo|direct|sin contratista|no gc)\b/.test(n) ? "directo" : /\b(?:gc|contratista|contractor)\b/.test(n) ? "GC" : null;
+      };
+      // la línea de una deducción (sin «Clave:») tiene que hablar de eso
+      const PISTA = { firma: /signature|firma|solo alcance|scope only/i, permiso: /permit|permiso/i,
+        propiedad: /commercial|comercial|suite|shop|store|pharmacy|office|church|school|restaurant|retail|warehouse|business|tienda|oficina|iglesia|escuela|farmacia|negocio|local\b|plaza|park|field|academy|clinic/i,
+        contrato_con: /subcontract|general contractor|\bgc\b|contratista|prepared for|contractor/i };
+      Object.keys(PROTEGE).forEach(k => {
+        const v = a.hechos[k];
+        if (!v || v === "no_se") return;
+        const n = a.hechos.evidencia[k];
+        const kv = lineaOk(n) ? claveDeLinea(txt(n)) : null;
+        if (kv && kv.clave === k) {
+          const dice = lee(k, kv.valor);
+          if (dice && dice !== v) {
+            tirar("hechos." + k, `la línea ${n} dice otra cosa`);
+            ambar("contradiccion", [n], `La IA leyó «${NOMBRE[k]}: ${VALOR[v] || v}» y la línea ${n} dice «${corto(kv.valor)}»: tomé lo que dice la hoja.`);
+            a.hechos[k] = dice;
+          }
+          return;
+        }
+        if (v === PROTEGE[k]) return;
+        if (lineaOk(n) && PISTA[k].test(txt(n))) return;
+        tirar("hechos." + k, lineaOk(n) ? `la línea ${n} no habla de eso` : "sin línea que lo diga");
+        ambar("hecho_sin_linea", lineaOk(n) ? [n] : [], `La IA dedujo «${NOMBRE[k]}: ${VALOR[v] || v}» sin una línea de la hoja que lo diga: no lo tomé.`);
+        a.hechos[k] = "no_se";
+        delete a.hechos.evidencia[k];
+      });
+    }
+    // las condiciones: solo las del molde, citadas de su línea
+    Object.keys(a.condiciones).forEach(k => {
+      const c = a.condiciones[k], ruta = "condiciones." + k;
+      if (!CONDICIONES_ARMADO[k]) { delete a.condiciones[k]; return tirar(ruta, "no es una condición del molde"); }
+      if (!esObjeto(c) || typeof c.valor !== "string" || !c.valor.trim() || !lineaOk(c.l)) { delete a.condiciones[k]; return tirar(ruta, "no tiene la forma del molde"); }
+      if (/[<>]/.test(c.valor) || RX_MASCARA.test(c.valor) || notas.has(c.l)) { delete a.condiciones[k]; return tirar(ruta, "trae «<», «>», una cifra tapada o es una nota"); }
+      if (!citaEnLinea(txt(c.l), c.valor.trim()).ok) { delete a.condiciones[k]; return tirar(ruta, `«${corto(c.valor)}» no está en la línea ${c.l}`); }
+      c.valor = c.valor.trim();
+      // Tanda 5: la cita tiene que hablar de lo que cubre la cláusula que enciende (condicionSinJuicio)
+      const sinJuicio = condicionSinJuicio(k, c.valor);
+      if (sinJuicio) {
+        delete a.condiciones[k];
+        ambar("condicion_sin_juicio", [c.l], `La IA leyó «${k}» en la línea ${c.l} («${corto(c.valor)}»), pero ${sinJuicio}: no puse esa cláusula.`);
+        return tirar(ruta, sinJuicio);
+      }
+    });
+    // el código: artículos como texto y sus líneas
+    {
+      const C0 = a.codigo;
+      a.codigo = { articulos: (Array.isArray(C0.articulos) ? C0.articulos : []).filter(x => typeof x === "string" && x.trim() && x.length <= 40),
+                   grupos: (Array.isArray(C0.grupos) ? C0.grupos : []).filter(esObjeto).map(g => ({ grupo: typeof g.grupo === "string" ? g.grupo.slice(0, 120) : "",
+                     articulos: (Array.isArray(g.articulos) ? g.articulos : []).filter(x => typeof x === "string" && x.length <= 40) })),
+                   de: lineasDe(C0.de).filter(n => !notas.has(n)) };
+    }
+
+    // 6) el dinero por línea, mirado en la línea ORIGINAL (la que la IA vio tapada)
+    // un precio: un monto seguro, o la clave «Precio:» con su número (una coma dudosa se pregunta después, no se tira)
+    const formaPrecio = n => { const o = orig(n); if (/\d{1,3}\s*%/.test(o)) return false;
+      const kv = o.replace(/\*\*|__|`/g, "").match(/^\s*\|?\s*([^:|]{2,42})\s*[:|]\s*(.*)$/);
+      return pareceDinero(o) || !!(kv && buscaClave(CLAVES_DINERO, norma(kv[1])) === "precio" && /\d/.test(kv[2])); };
+    // un pago: porcentajes, o «Pagos: 40/40/20», o (tanda 4) «Pagos: 100», que es un solo pago
+    const formaPago = n => { const o = orig(n); if (/\d{1,3}\s*%/.test(o)) return true;
+      const kv = o.replace(/\*\*|__|`/g, "").match(/^\s*\|?\s*([^:|]{2,42})\s*[:|]\s*(.*)$/);
+      return !!(kv && buscaClave(CLAVES_DINERO, norma(kv[1])) === "pagos" && (/\b\d{1,3}\s*\/\s*\d{1,3}\b/.test(kv[2]) || /^\s*100\s*$/.test(kv[2]))); };
+    if (Di.precio_l !== undefined && Di.precio_l !== null && !(lineaOk(Di.precio_l) && formaPrecio(Di.precio_l))) {
+      tirar("dinero.precio_l", `la línea ${Di.precio_l} no tiene un precio`);
+      Di.precio_l = null;
+    }
+    if (!lineaOk(Di.precio_l)) {
+      Di.precio_l = null;
+      avisos_app.push({ tipo: "sin_precio", gravedad: "rojo", frena: true, lineas: [], texto: "No encuentro el precio en la hoja", boton: "Marcar la línea del precio" });
+    }
+    const pagosRechazadas = [];
+    Di.pagos_l = (Array.isArray(Di.pagos_l) ? Di.pagos_l : []).filter((n, i) => {
+      if (lineaOk(n) && formaPago(n)) return true;
+      if (lineaOk(n)) pagosRechazadas.push(n);
+      ambar("pago_sin_forma", lineaOk(n) ? [n] : [], `La IA dijo que la línea ${n} es un pago, pero no trae porcentajes: no la tomé.`);
+      return tirar(`dinero.pagos_l.${i}`, "la línea no tiene forma de pago");
+    });
+    if (pagosRechazadas.length) Di.pagos_rechazadas = pagosRechazadas;
+    // Tanda 4: la línea de una opción no puede ser la del precio ni la de un pago, ni repetirse, y tiene que estar en (o
+    // al lado de) las líneas de su opción. Vale con un monto sin $ («— 1,201.92») si las reglas leen ahí una opción.
+    {
+      const vistas = new Set();
+      Di.opciones_l = (Array.isArray(Di.opciones_l) ? Di.opciones_l : []).map((n, i) => {
+        if (n === null || n === undefined) return null;
+        const ruta = `dinero.opciones_l.${i}`;
+        if (!lineaOk(n)) { tirar(ruta, "la línea no es de la hoja"); return null; }
+        const op = T.opciones[i] || {};
+        const deOp = [...new Set(TEXTOS_LISTA.opciones.flatMap(c => (op[c] || {}).de || []))];
+        let malo = "";
+        if (n === Di.precio_l || Di.pagos_l.includes(n)) malo = "es la línea del precio o de los pagos";
+        else if (vistas.has(n)) malo = "otra opción ya usa esa línea";
+        else if (deOp.length && !deOp.some(x => Math.abs(x - n) <= 1)) malo = "está lejos de las líneas de su opción";
+        if (malo) {
+          tirar(ruta, malo);
+          ambar("opcion_mal_senalada", [n], `La IA señaló la línea ${n} como el precio de la opción ${i + 1}, pero ${malo}: no la tomé.`);
+          return null;
+        }
+        const enLr = (Array.isArray(Lr.opciones) ? Lr.opciones : []).some(o => o && o.linea === n);
+        if (pareceDinero(orig(n)) || enLr || (hayDinero(orig(n)) && seccion[n] === "opciones")) { vistas.add(n); return n; }
+        tirar(ruta, "la línea no trae un precio");
+        return null;
+      });
+    }
+    while (Di.opciones_l.length < T.opciones.length) Di.opciones_l.push(null);
+    Di.opciones_l = Di.opciones_l.slice(0, T.opciones.length);
+
+    // 8) las preguntas: solo las que valen, con su porqué, y no las que la app ya sabe
+    // (regla de oro 2 del §4.6: no se pregunta lo que la ficha, perfil_app o la hoja ya dicen claro). La hoja lo dice
+    // claro cuando la IA trae el hecho con su línea de evidencia, o el dato con su línea. «con_firma_defecto» NO cuenta:
+    // es lo que va si nadie dice nada, no algo que se sepa.
+    const tiene = v => v !== undefined && v !== null && v !== "" && v !== "no_se";
+    const hojaLoDice = k => tiene(a.hechos[k]) && lineaOk(a.hechos.evidencia[k]);
+    // una lección de Edgar sobre ese hecho (tanda 4) también lo contesta
+    const deLeccion = k => (Array.isArray(perfil.lecciones) ? perfil.lecciones : []).some(x => esObjeto(x) && x.clave === k && LECCION_HECHOS[k] && LECCION_HECHOS[k].includes(x.valor));
+    const yaLoSabe = clave => {
+      if (clave === "propiedad") return tiene(perfil.propiedad) || /comercial|commercial|residencial|residential/i.test(String(ficha.tipo || "")) || hojaLoDice("propiedad");
+      if (clave === "contrato_con") return tiene(perfil.trato) || (esObjeto(ficha.contratista) && ficha.contratista.modo === "contrato") || hojaLoDice("contrato_con") || deLeccion("trato");
+      if (clave === "permiso") return tiene(perfil.permiso) || !!perfil.permiso_regla || tiene(String(ficha.permiso || "").trim()) || !!ficha.permiso_regla || hojaLoDice("permiso") || deLeccion("permiso");
+      if (clave === "base_precio") return tiene(perfil.base_precio) || (esObjeto(a.datos.base_precio) && lineaOk(a.datos.base_precio.l));
+      if (clave === "firma") return hojaLoDice("firma") || deLeccion("firma");
+      if (clave === "segundo_firmante") return esObjeto(a.datos.segundo_firmante) && lineaOk(a.datos.segundo_firmante.l);
+      return false;
+    };
+    // Tanda 4: Edgar ve la ETIQUETA del botón y la app escribe el VALOR. En las preguntas de un hecho las opciones son
+    // siempre las de la casa (valores exactos); en las de texto, el valor ES la etiqueta y tiene que salir de la hoja.
+    const libre = (o, clave) => {
+      const et = String(o.etiqueta || "").trim(), va = o.valor === undefined || o.valor === null ? et : String(o.valor).trim();
+      if (!et || et.length > 200 || va !== et) return null;
+      if (/[<>]/.test(et) || RX_MASCARA.test(et) || dineroEnTextoArmar(et, base) || prohibidaQueNoEsta(et, normaParaProhibidas(lineas.map((_, i) => orig(i + 1)).join(" | ")))) return null;
+      if (clave === "segundo_firmante" && !/^(?:no|nadie|ninguno|none|no hay)\b/i.test(et)
+          && !lineas.some((_, i) => citaEnLinea(txt(i + 1), et).ok) && !["dueno", "cliente", "atencion"].some(c => igual(ficha[c], et))) return null;
+      return { etiqueta: et, valor: et };
+    };
+    // Tanda 5: «¿Quién firma?». La casa entiende en «segundo_firmante» un NOMBRE (el segundo firmante) o «no» (firma uno
+    // solo). La IA escribe botones de texto como «Solo Roberto Prata» / «Roberto Prata y Kevin Haseney» (valor = etiqueta)
+    // y el juez los tiraba («sus botones no dicen lo que escriben»): ahora Edgar sigue viendo la etiqueta de la IA y el
+    // botón escribe lo que entiende la casa («no» / «Kevin Haseney»). Cada nombre del botón tiene que salir en la hoja o
+    // en la ficha (no se inventa un firmante); el principal es el de Atención, el contacto o el cliente.
+    const firmantes = ops => {
+      const hojaN = norma(lineas.map((_, i) => orig(i + 1)).join(" | "));
+      const C = esObjeto(ficha.contratista) ? ficha.contratista : {};
+      const deFicha = [ficha.atencion, ficha.cliente, ficha.dueno, ficha.inquilino, C.contacto].filter(x => typeof x === "string" && x.trim());
+      // el nombre entero, con bordes de palabra («Lee» no vale dentro de «sleeve»)
+      const enTexto = (hay, n) => new RegExp("(^|[^a-z0-9])" + escRx(n) + "(?![a-z0-9])").test(hay);
+      const conocido = nm => { const n = norma(nm).trim(); return n.length >= 3 && (enTexto(hojaN, n) || deFicha.some(f => enTexto(norma(f), n))); };
+      const atencionHoja = esObjeto(a.datos.atencion) ? String(a.datos.atencion.valor || "").split(/\s*(?:\/|,|&|\by\b|\band\b)\s*/i)[0] : "";
+      const principales = [ficha.atencion, C.contacto, atencionHoja, ficha.cliente, esObjeto(a.datos.cliente) ? a.datos.cliente.valor : ""]
+        .filter(x => typeof x === "string" && x.trim()).map(x => norma(x.replace(/\([^)]*\)/g, " ")).trim());
+      const esPrincipal = nm => { const y = norma(nm).trim(); return principales.some(x => x === y || (y.length >= 5 && x.includes(y))); };
+      const vistos = new Set();
+      return ops.map(o => {
+        const et = String(o.etiqueta || "").trim();
+        if (!et || et.length > 200 || /[<>]/.test(et) || RX_MASCARA.test(et) || dineroEnTextoArmar(et, base)) return null;
+        let valor;
+        if (/^(?:no\b|nadie\b|ninguno\b|none\b|solo\b|s[oó]lo\b|only\b|just\b|un solo\b|una sola\b|uno solo\b|one signer\b)/i.test(et)) valor = "no";
+        else {
+          const nombres = et.replace(/^(?:firman|firma|signs?|signers?|both|los dos|las dos|ambos)\s*:?\s+/i, "")
+            .split(/\s*(?:,|\/|&|\by\b|\band\b)\s*/i).map(s => s.trim()).filter(Boolean);
+          if (!nombres.length || nombres.some(nm => !conocido(nm))) return null;
+          if (nombres.length === 1) valor = nombres[0];       // un nombre solo es ese segundo firmante («Solo X» ya es «no»)
+          else {
+            let otros = nombres.filter(nm => !esPrincipal(nm));
+            if (otros.length === nombres.length) otros = nombres.slice(1);
+            if (otros.length !== 1) return null;            // una sola casilla para el segundo firmante
+            valor = otros[0];
+          }
+        }
+        if (vistos.has(norma(valor))) return null;
+        vistos.add(norma(valor));
+        return { etiqueta: et, valor };
+      }).filter(Boolean);
+    };
+    a.preguntas = a.preguntas.filter((p, i) => {
+      const ruta = "preguntas." + i;
+      if (!esObjeto(p) || !PREGUNTAS_QUE_VALEN.includes(p.clave)) return tirar(ruta, `clave que no vale «${corto(esObjeto(p) ? p.clave : p)}»`);
+      if (typeof p.texto !== "string" || !p.texto.trim()) return tirar(ruta, "sin texto");
+      if (typeof p.porque !== "string" || !p.porque.trim()) return tirar(ruta, "sin porqué");
+      let ops = (Array.isArray(p.opciones) ? p.opciones : []).filter(o => esObjeto(o) && typeof o.etiqueta === "string" && o.etiqueta.trim());
+      if (ops.length < 2) return tirar(ruta, "no se contesta con un botón");
+      if (yaLoSabe(p.clave)) return tirar(ruta, "la ficha o la app ya lo saben");
+      if (OPCIONES_FIJAS_ARMADO[p.clave]) ops = OPCIONES_FIJAS_ARMADO[p.clave].map(o => Object.assign({}, o));
+      else if (p.clave === "pagos") {
+        ops = ops.map(o => { const s = String(o.valor !== undefined && o.valor !== null ? (Array.isArray(o.valor) ? o.valor.join("/") : o.valor) : o.etiqueta).replace(/\s+/g, "");
+          const m = s.match(/^\d{1,3}(?:\/\d{1,3})+$/); if (!m) return null;
+          const ps = s.split("/").map(Number); return ps.reduce((x, y) => x + y, 0) === 100 ? { etiqueta: ps.join("/"), valor: ps } : null; }).filter(Boolean);
+      } else if (p.clave === "segundo_firmante") ops = firmantes(ops);
+      else ops = ops.map(o => libre(o, p.clave)).filter(Boolean);
+      if (ops.length < 2) return tirar(ruta, "sus botones no dicen lo que escriben");
+      p.opciones = ops.slice(0, 3);
+      p.lineas = lineasDe(p.lineas || (Number.isInteger(p.l) ? [p.l] : []));
+      return true;
+    });
+    if (a.preguntas.length > 4) { a.preguntas.slice(4).forEach((p, i) => tirar("preguntas." + (4 + i), "más de cuatro preguntas")); a.preguntas = a.preguntas.slice(0, 4); }
+    // 9) los avisos de la IA: como mucho doce, de la lista cerrada, con sus líneas
+    a.avisos = a.avisos.filter((x, i) => {
+      if (!esObjeto(x) || typeof x.motivo !== "string" || !x.motivo.trim()) return tirar("avisos." + i, "sin motivo");
+      if (!TIPOS_AVISO_ARMADO.includes(x.tipo)) x.tipo = "otro";
+      x.lineas = lineasDe(x.lineas);
+      x.motivo = x.motivo.trim().slice(0, 400);
+      return true;
+    });
+    if (a.avisos.length > 12) { tirar("avisos", `${a.avisos.length} avisos: me quedo con doce`); a.avisos = a.avisos.slice(0, 12); }
+    a.sobrantes = lineasDe(a.sobrantes);
+
+    // 7) la cobertura: ninguna línea con contenido se pierde en silencio
+    // «casa» = lo que la IA usó en el contrato (textos, datos, condiciones, dinero, código). Lo que solo sale en un aviso,
+    // una pregunta o la evidencia de un hecho no cuenta para la zona del alcance (tanda 4: un aviso que cite todas las
+    // líneas no tapa nada); las sobrantes van aparte y nunca en silencio.
+    const casa = new Set(), blanda = new Set(), sobra = new Set(a.sobrantes);
+    const pon = (de, en) => (Array.isArray(de) ? de : []).forEach(n => { if (lineaOk(n)) (en || casa).add(n); });
+    const ponTexto = t => { if (esObjeto(t)) pon(t.de); };
+    TEXTOS_SIMPLES.forEach(k => ponTexto(T[k]));
+    if (T.utility) { ponTexto(T.utility.quien); ponTexto(T.utility.que_hace); }
+    Object.entries(TEXTOS_LISTA).forEach(([k, campos]) => T[k].forEach(p => campos.forEach(c => ponTexto(p[c]))));
+    T.disparadores.forEach(ponTexto);
+    PROPIAS_LISTA.forEach(k => P[k].forEach(p => { ponTexto(p.titulo); ponTexto(p.texto); }));
+    ponTexto(P.pre_titulo);
+    Object.values(a.datos).forEach(d => pon([d.l]));
+    Object.values(a.condiciones).forEach(c => pon([c.l]));
+    pon([Di.precio_l]); pon(Di.pagos_l); pon(Di.opciones_l);
+    pon(a.codigo.de);
+    Object.values(a.hechos.evidencia).forEach(n => pon([n], blanda));
+    a.preguntas.forEach(p => pon(p.lineas, blanda));
+    a.avisos.forEach(x => pon(x.lineas, blanda));
+    const conContenido = n => { const o = orig(n); return !!o.trim() && !esSobranteConfirmada(o) && !esTituloDeSeccion(o) && !notas.has(n); };
+    const sin_casa = [];
+    for (let n = 1; n <= N; n++) if (conContenido(n) && !casa.has(n) && !blanda.has(n) && !sobra.has(n)) {
+      sin_casa.push(n);
+      ambar("linea_sin_casa", [n], `La IA no usó la línea ${n}: «${corto(txt(n))}»`);
+    }
+    // la zona del alcance: del primer renglón a la última exclusión u opción, según lo que leen las REGLAS en la hoja y lo
+    // que usó la IA (lo más ancho de los dos: si la IA se deja la cola, la zona no encoge)
+    const deLista = k => T[k].flatMap(p => TEXTOS_LISTA[k].flatMap(c => (p[c] || {}).de || []));
+    const deItems = deLista("items"), deResto = [...deItems, ...deLista("no_incluye"), ...deLista("opciones")];
+    const lrItems = (Array.isArray(Lr.items) ? Lr.items : []).flatMap(it => (it && Array.isArray(it.lineas)) ? it.lineas : []).filter(lineaOk);
+    const lrResto = [...lrItems, ...(Array.isArray(Lr.no_incluye) ? Lr.no_incluye.map(x => x && x.linea) : []),
+      ...(Array.isArray(Lr.opciones) ? Lr.opciones.flatMap(o => o ? [o.linea, ...(Array.isArray(o.lineas) ? o.lineas : [])] : []) : []),
+      ...(Array.isArray(Lr.fijas_lineas) ? Lr.fijas_lineas : [])].filter(lineaOk);
+    const inicios = [...deItems, ...lrItems], finales = [...deResto, ...lrResto];
+    const desde = inicios.length ? Math.min(...inicios) : 1, hasta = finales.length ? Math.max(...finales) : N;
+    let enZona = 0;
+    const fueraZona = [];
+    for (let n = desde; n <= hasta; n++) if (conContenido(n)) { enZona++; if (!casa.has(n)) fueraZona.push(n); }
+    // una línea que la IA mandó a «sobrantes» y la app no confirma: se dice (nunca en silencio), dentro o fuera de la zona
+    a.sobrantes.forEach(n => { if (conContenido(n) && !casa.has(n))
+      ambar(n >= desde && n <= hasta ? "sobrante_en_alcance" : "sobrante", [n], `La IA dejó fuera del contrato la línea ${n}: «${corto(txt(n))}»`); });
+    if (enZona && fueraZona.length / enZona > 0.2)
+      avisos_app.push({ tipo: "alcance_incompleto", gravedad: "rojo", frena: true, lineas: fueraZona,
+        texto: `La IA dejó sin usar ${fueraZona.length} de ${enZona} líneas del alcance. Vuelve a armar con IA o léela con las reglas.` });
+    // Tanda 4: renglones pegados o partidos (la hoja leída con las reglas dice cuántos son y dónde empieza cada uno)
+    if (Array.isArray(Lr.items) && Lr.items.length) {
+      const empieza = new Set(Lr.items.map(it => (it && Array.isArray(it.lineas) && it.lineas.length) ? Math.min(...it.lineas) : 0).filter(lineaOk));
+      T.items.forEach(p => {
+        const de = [...new Set(TEXTOS_LISTA.items.flatMap(c => (p[c] || {}).de || []))].sort((x, y) => x - y);
+        const tragadas = de.slice(1).filter(n => empieza.has(n));
+        if (tragadas.length) ambar("renglones_pegados", [de[0], ...tragadas], `La IA juntó en un renglón lo que la hoja trae como ${tragadas.length + 1} (líneas ${[de[0], ...tragadas].join(", ")}): revisa la sección 2.`);
+      });
+      if (T.items.length !== Lr.items.length)
+        ambar("renglones_distintos", [], `La hoja trae ${Lr.items.length} renglones y la IA escribió ${T.items.length}: revisa la sección 2.`);
+    }
+
+    return { armado_limpio: a, tiradas, avisos_app, sin_casa };
+  }
+
+  // ---- Del armado a la hoja leída de siempre (pliego §4.4): L y S con la MISMA forma que leerAlcance y redactarDirecto
+  // lineasOriginales: las líneas de Edgar SIN tapar (texto o {original}); el dinero se lee de ahí, nunca de la IA.
+  // respuestas: lo que Edgar contestó a las preguntas (clave → valor), sin volver a llamar a la IA.
+  function armadoAHoja(armado, lineasOriginales, ficha, perfilApp, respuestas, admin) {
+    const a = esObjeto(armado) ? armado : {};
+    ficha = esObjeto(ficha) ? ficha : {};
+    const perfil = esObjeto(perfilApp) ? perfilApp : {}, R = esObjeto(respuestas) ? respuestas : {};
+    admin = esObjeto(admin) ? admin : {};
+    const orig = (Array.isArray(lineasOriginales) ? lineasOriginales : []).map(x => typeof x === "string" ? x
+      : String((x && (typeof x.original === "string" ? x.original : x.t)) || ""));
+    const N = orig.length, lineaOk = n => Number.isInteger(n) && n >= 1 && n <= N;
+    const o = n => orig[n - 1] || "";
+    const limpio = n => sinMarcas(o(n));
+    const D = esObjeto(a.datos) ? a.datos : {}, H = esObjeto(a.hechos) ? a.hechos : {}, Ev = esObjeto(H.evidencia) ? H.evidencia : {};
+    const Cn = esObjeto(a.condiciones) ? a.condiciones : {}, Di = esObjeto(a.dinero) ? a.dinero : {};
+    const T = esObjeto(a.textos) ? a.textos : {}, P = esObjeto(a.propias) ? a.propias : {}, Co = esObjeto(a.codigo) ? a.codigo : {};
+    const avisos = [], preguntas = [], resumen = [];
+    const aviso = (texto, linea, extra) => { if (!avisos.some(x => x.texto === texto)) avisos.push(Object.assign({ linea: linea || 0, texto }, extra || {})); };
+    const tiene = v => v !== undefined && v !== null && String(v).trim() !== "";
+    const deDe = t => (esObjeto(t) && Array.isArray(t.de) ? t.de.filter(lineaOk) : []);
+    const unir2 = (...ts) => [...new Set(ts.flatMap(deDe))].sort((x, y) => x - y);
+
+    const L = { datos: {}, datos_linea: {}, hoy: "", cambia: "", falta: "", notas: "", prosa_lineas: { hoy: [], cambia: [], falta: [], notas: [] },
+      items: [], no_incluye: [], opciones: [], precio: null, pagos: null, pagos_propios: [], programa: [], pre: [], terminos: [],
+      pre_intro: "", pre_titulo: "", condiciones: {}, codigo: [], codigo_grupos: [], codigo_otros: [], codigo_detalle: [],
+      flood: { senales: false }, errores: [], avisos, preguntas: [], faltas: [], lineas: orig.slice(), titulos: [], con_pistas: false,
+      grupos_lineas: [], codigo_lineas: [], ignoradas_lineas: [], fijas_lineas: [], pre_intro_lineas: [], cierre_fantasmas: [],
+      extra_lineas: {}, ignoradas: [], fijasQuitadas: 0, fijasVistas: new Set(), armado_ia: true };
+    const d = L.datos;
+
+    // ---- los datos: el valor de la IA, recuperado de la línea ORIGINAL (con sus rayas «—» y sin marcas)
+    const deVuelta = (n, v) => {
+      const s = String(v || "").trim(), sl = limpiarLinea(s).limpia, c = limpiarLinea(o(n)), i = sl ? c.limpia.toLowerCase().indexOf(sl.toLowerCase()) : -1;
+      if (s && i >= 0 && c.mapa.length) return o(n).slice(c.mapa[i], c.mapa[i + sl.length - 1] + 1).replace(/\*\*|__|`/g, "").trim() || s;
+      // tanda 5: la IA copió el valor casi igual (citaEnLinea) de una línea «Clave: valor»: manda el valor de la línea
+      const kv = s ? claveDeLinea(limpio(n)) : null;
+      if (kv && tiene(kv.valor) && citaEnLinea(limpiarLinea(kv.valor).limpia, sl).ok) return kv.valor.replace(/\s+/g, " ").trim();
+      return s;
+    };
+    DATOS_ARMADO.forEach(k => {
+      const x = D[k];
+      if (!esObjeto(x) || !tiene(x.valor)) return;
+      d[k] = lineaOk(x.l) ? deVuelta(x.l, x.valor) : String(x.valor).trim();
+      if (lineaOk(x.l)) L.datos_linea[k] = x.l;
+    });
+    // tanda 5: «Metro Healthy Communities (tenant)» → la fila Tenant sin la marca «(tenant)»
+    if (tiene(d.inquilino)) d.inquilino = String(d.inquilino).replace(/\s*\((?:tenant|inquilino|occupant|arrendatario)\)\s*/ig, " ").replace(/\s+/g, " ").trim();
+    // «Ciudad: "New Port Richey"» sin comillas (como el lector)
+    if (d.ciudad) d.ciudad = sinComillas(d.ciudad);
+    const S = JSON.parse(JSON.stringify(T));
+
+    // ---- Tanda 5: TEXTO POR REFERENCIA. Un texto con solo «de» (el juez ya miró sus líneas: de la hoja, sin dinero, sin
+    // notas, sin «<» ni «>») se rellena aquí con las líneas ORIGINALES de Edgar (nunca las tapadas), limpias de viñetas y
+    // de números de renglón («2.3», «1.», «- », «##»), pero no de las cifras («18 new receptacles» se queda entero), y sin
+    // la clave de un «Clave: valor» («Acceso: access to…» → «access to…»). Los renglones, exclusiones, opciones y lo propio
+    // se rellenan más abajo, en su sitio (necesitan sus líneas sin dinero); aquí, los textos sueltos.
+    const esRef = t => esObjeto(t) && (t.ref === true || (!tiene(t.en) && deDe(t).length > 0));
+    const limpioRef = n => String(o(n) || "").replace(/\*\*|__|`/g, "").replace(/^\s*\|\s*/, "").replace(/\s*\|\s*$/, "")
+      .replace(/^\s*(?:[-*•▪◦]\s+|#{1,6}\s*|\(\d{1,3}\)\s+|\d{1,3}(?:\.\d{1,3})+\.?\s+|\d{1,3}[.)]\s+)/, "").replace(/\s+/g, " ").trim();
+    const valorRef = n => { const s = limpioRef(n), kv = claveDeLinea(s); return kv && tiene(kv.valor) ? kv.valor.trim() : s; };
+    const fraseRef = t => { t = String(t || "").trim(); return t && !/[.!?:;]$/.test(t) ? t + "." : t; };
+    const listaRef = arr => arr.length <= 1 ? arr.join("") : arr.slice(0, -1).join(", ") + " and " + arr[arr.length - 1];
+    // «**Título.** texto» · «Título — texto» · «Título: texto» · «Título. Texto» (como redactarDirecto); si no se parte, todo
+    // es el título. Tanda 6: «como» dice cómo se partió; el número de la hoja dentro de la negrita no va al título
+    // («**2.1 Permit and drawings.**» → «Permit and drawings»: antes salía «2.1 2.1 Permit…» y «9.11 9.7 Service…»), y el
+    // texto detrás de la negrita empieza en mayúscula («**Trenching…** of any kind.» → «Of any kind.»)
+    const mayus1 = t => t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+    const partirRef = n => {
+      const crudo = String(o(n) || "").replace(/^\s*(?:[-*•▪◦]\s+|\d{1,3}(?:\.\d{1,3})*[.)]?\s+(?=\*\*|__))/, "");
+      const mB = crudo.match(/^\s*(?:\*\*|__)(.+?)(?:\*\*|__)\s*[:.—–]?\s*(.*)$/);
+      if (mB && mB[1].trim()) return { titulo: sinNumeroDeHoja(mB[1].replace(/\s+/g, " ").trim()).replace(/[.:]\s*$/, "").trim(),
+                                      texto: mayus1(mB[2].replace(/\*\*|__|`/g, "").replace(/\s+/g, " ").trim()), como: "negrita" };
+      const t = limpioRef(n);
+      const formas = [[/^(.{3,140}?)\s+[—–]\s+(.+)$/, "raya"], [/^([^:]{3,140}?):\s+(.+)$/, "dos_puntos"], [/^(.{3,220}?[^.\s]\.)\s+([A-Z(].*)$/, "frase"]];
+      for (const [rx, como] of formas) { const m = t.match(rx); if (m) return { titulo: m[1].replace(/\.$/, "").trim(), texto: mayus1(m[2]), como }; }
+      return { titulo: t.replace(/[.;]$/, ""), texto: "", como: null };
+    };
+    // un par {titulo, texto} (exclusión, lo propio). Tanda 6 (lo que se vio en los papeles de Whitlock y Wimauma):
+    //  · el título por referencia: el de la primera línea partida; el texto (por referencia, o el que falte), el resto. Un
+    //    título solo por referencia ya no pierde lo que la línea dice detrás («**Trenching…** of any kind.»);
+    //  · sin título: si la primera línea trae uno de verdad (negrita, «Título: …», «Título — …» cortos, o una primera frase
+    //    corta), sale de ahí («**9.7 Service interruption.** …» → «Service interruption»; antes, «9.x . Irrigation…»);
+    //  · con el título escrito por la IA: el texto copia SUS líneas («Warranty» de la l. 116 + el texto de la l. 118: antes
+    //    salía «Warranty. WARRANTY. One (1) year…»); y si su primera línea es la del título y se parte, el título es el de la
+    //    línea (el de la IA era un resumen y el texto perdía la primera frase: «Pool lighting (niche fixtures, replacement or
+    //    new), pool heater, salt chlorine generator and any power to them.» se quedaba fuera del papel).
+    const llenarPar = (par, kT, kX, de) => {
+      const rT = esRef(par[kT]), rX = esRef(par[kX]);
+      if ((!rT && !rX) || !de.length) return;
+      const vacio = v => v === undefined || v === null;
+      const resto = ls => ls.slice(1).map(limpioRef).filter(Boolean).map(fraseRef);
+      const entero = ls => ls.map(limpioRef).filter(Boolean).map(fraseRef).join(" ");
+      if (rT) {
+        const p = partirRef(de[0]);
+        par[kT] = { en: p.titulo || limpioRef(de[0]), de: de.slice(0, 1), ref: true };
+        if (rX || vacio(par[kX])) {
+          const en = [p.texto ? fraseRef(p.texto) : "", ...resto(de)].filter(Boolean).join(" ");
+          if (rX || en) par[kX] = { en, de, ref: true };
+        }
+        return;
+      }
+      const suyas = deDe(par[kX]).filter(n => de.includes(n)), ls = suyas.length ? suyas : de;
+      const p = partirRef(ls[0]);
+      if (vacio(par[kT])) {
+        const deVerdad = p.texto && (p.como === "negrita" || ((p.como === "raya" || p.como === "dos_puntos") && p.titulo.length <= 60)
+          || (p.como === "frase" && p.titulo.length <= 60 && p.titulo.split(/\s+/).length <= 8));
+        if (deVerdad) { par[kT] = { en: p.titulo, de: ls.slice(0, 1), ref: true }; par[kX] = { en: [fraseRef(p.texto), ...resto(ls)].join(" "), de: ls, ref: true }; }
+        else par[kX] = { en: entero(ls), de: ls, ref: true };
+        return;
+      }
+      if (deDe(par[kT]).includes(ls[0]) && p.texto) {
+        if (norma(p.titulo) !== norma(String((par[kT] || {}).en || ""))) par[kT] = { en: p.titulo, de: ls.slice(0, 1), ref: true };
+        par[kX] = { en: [fraseRef(p.texto), ...resto(ls)].join(" "), de: ls, ref: true };
+      } else par[kX] = { en: entero(ls), de: ls, ref: true };
+    };
+    // el último candado de lo copiado por referencia: si (por lo que sea) trae un monto o «<» / «>», no va, y se dice
+    const guardiaRef = (t, donde) => {
+      if (!esObjeto(t) || !t.ref || typeof t.en !== "string" || !t.en) return true;
+      if (!(traeDineroEstricto(t.en) || esMontoArmar(t.en) || pareceDinero(t.en) || /[<>]/.test(t.en) || RX_MASCARA.test(t.en))) return true;
+      aviso(`No copié ${donde} de la hoja (línea ${(t.de || []).join(", ") || "?"}): llevaba un monto o algo que no puede ir en el contrato.`, (t.de || [])[0] || 0);
+      return false;
+    };
+    {
+      const MODO_REF = { resumen_corrido: "lista", overview: "parrafo", que_hay_hoy: "parrafo", que_cambia: "parrafo", que_faltaba: "parrafo", load_calc_y_planos: "parrafo" };
+      const deRenglones = new Set((Array.isArray(T.items) ? T.items : []).flatMap(it => unir2(it.titulo, it.descripcion)));
+      const conDineroRef = n => esMontoArmar(o(n)) || pareceDinero(o(n)) || kvDinero(o(n)) || traeDineroEstricto(o(n));
+      const llenar = (t, k) => {
+        if (!esRef(t)) return t;
+        const de = deDe(t).filter(n => !conDineroRef(n));
+        if (!de.length) return null;
+        // el párrafo de la sección 1 por referencia solo vale si la hoja lo trae escrito (prosa): copiar datos o títulos
+        // de renglones sueltos no es un párrafo; sin él va la frase de la casa
+        if (k === "overview" && de.some(n => claveDeLinea(limpioRef(n)) || deRenglones.has(n))) {
+          aviso("La IA pidió copiar como párrafo de la sección 1 líneas sueltas de la hoja (datos o renglones): puse la frase de la casa.", de[0], { informativo: true });
+          return null;
+        }
+        // tanda 6: el párrafo copiado empieza sin su rótulo en negrita: la plantilla ya pone el suyo delante («**Existing
+        // conditions.** The property…» salía «Existing conditions. Existing conditions. The property…»)
+        const sinRotulo = n => { const m = String(o(n) || "").match(/^\s*(?:\*\*|__)([^*_]{2,60}?)(?:\*\*|__)\s*(\S.*)$/);
+          return m && /[.:]\s*$/.test(m[1]) ? m[2].replace(/\*\*|__|`/g, "").replace(/\s+/g, " ").trim() : valorRef(n); };
+        const ls = de.map((n, i) => i === 0 && MODO_REF[k] === "parrafo" && k !== "overview" ? sinRotulo(n) : valorRef(n)).filter(Boolean);
+        const en = MODO_REF[k] === "lista" ? listaRef(ls.map(x => minus(x.replace(/[.:;]$/, ""))))
+                 : MODO_REF[k] === "parrafo" ? ls.map(fraseRef).join(" ") : ls.join(" ");
+        return en ? { en, de, ref: true } : null;
+      };
+      TEXTOS_SIMPLES.forEach(k => { if (S[k] === undefined) return; const t = llenar(S[k], k); if (t) S[k] = t; else delete S[k]; });
+      if (esObjeto(S.utility)) ["quien", "que_hace"].forEach(k => { if (S.utility[k] === undefined) return; const t = llenar(S.utility[k], "utility"); if (t) S.utility[k] = t; else delete S.utility[k]; });
+    }
+    // si la ficha cambia un dato que la IA copió en sus textos (la dirección vieja), se cambia también ahí
+    // (tanda 4: solo una dirección entera, con número y calle, y con bordes de palabra: «e» o «747» sueltos no se tocan)
+    const cambiarEnTextos = (viejo, nuevo) => {
+      if (!tiene(viejo) || !tiene(nuevo) || viejo === nuevo) return;
+      viejo = String(viejo).trim();
+      if (viejo.length < 8 || !partesDireccion(viejo).numero) return;
+      const rx = new RegExp("(^|[^A-Za-z0-9])" + escRx(viejo) + "(?![A-Za-z0-9])", "g");
+      const anda = x => { if (Array.isArray(x)) x.forEach(anda); else if (esObjeto(x)) Object.keys(x).forEach(k => {
+        if (k === "en" && typeof x[k] === "string") x[k] = x[k].replace(rx, (m, pre) => pre + nuevo); else anda(x[k]); }); };
+      anda(S);
+    };
+    const cambiosDir = [];   // tanda 5: se vuelven a aplicar al final, sobre lo copiado por referencia
+    const pisa = (clave, valorFicha, comoSeDice) => {
+      const antes = d[clave];
+      if (tiene(antes) && norma(antes) !== norma(valorFicha))
+        aviso(`La hoja decía «${antes}»; puse ${comoSeDice || "el dato de la ficha"}: ${valorFicha}`, L.datos_linea[clave], { clave, antes, despues: valorFicha });
+      d[clave] = valorFicha;
+    };
+    const R_ = (clave, texto, origen, linea) => resumen.push(Object.assign({ clave, texto, origen }, linea ? { linea } : {}));
+
+    // dirección: la ficha manda si trae número de calle
+    {
+      const fd = String(ficha.direccion || "").trim();
+      const fichaManda = !!fd && !llevaMarcador(fd) && !esMontoTapable(fd) && !!partesDireccion(fd).numero;
+      if (fichaManda) {
+        const antes = d.direccion;
+        if (tiene(antes) && !mismaDireccion(antes, fd)) { pisa("direccion", fd, "la de la ficha"); cambiarEnTextos(antes, fd); cambiosDir.push([antes, fd]); }
+        else d.direccion = fd;
+        R_("direccion", `Dirección: ${fd}`, "ficha");
+      } else if (tiene(d.direccion)) R_("direccion", `Dirección: ${d.direccion}`, "hoja", L.datos_linea.direccion);
+      else if (fd && !llevaMarcador(fd)) { d.direccion = fd; R_("direccion", `Dirección: ${fd}`, "ficha"); }
+    }
+    // cliente: la ficha manda (la misma empresa escrita de otra forma no se toca)
+    {
+      const fc = String(ficha.cliente || "").trim();
+      const misma = (x, y) => norma(String(x).replace(/\([^)]*\)/g, " ")) === norma(String(y).replace(/\([^)]*\)/g, " ")) || esLaEmpresa([x], y) || esLaEmpresa([y], x);
+      let origen = "hoja";
+      // (tanda 4: con un contratista «contrato», la hoja que nombra al contratista como cliente dice bien; ponerContratista
+      //  lo deja así, y avisar «puse el cliente de la ficha» sería contar un cambio que no pasa)
+      const fcon = esObjeto(ficha.contratista) && ficha.contratista.modo === "contrato" ? String(ficha.contratista.nombre || "").trim() : "";
+      const esElContratista = !!fcon && tiene(d.cliente) && (esLaEmpresa([d.cliente], fcon) || esLaEmpresa([fcon], d.cliente));
+      if (fc && !esMontoTapable(fc) && !esElContratista) { if (!tiene(d.cliente)) { d.cliente = fc; origen = "ficha"; } else if (!misma(d.cliente, fc)) { pisa("cliente", fc, "el cliente de la ficha"); origen = "ficha"; } }
+      if (tiene(d.cliente)) R_("cliente", `Cliente: ${d.cliente}`, origen, origen === "hoja" ? L.datos_linea.cliente : undefined);
+    }
+    // Tanda 5: el dueño de la ficha que es el CONTRATISTA (o el mismo cliente) no es un dueño. En una obra «contrato»
+    // proyectos.cliente es el contratista y la ficha lo traía como dueño (Metro, prueba en vivo: fila Owner «Wisdom
+    // Renovation LLC», y un dueño encendería además el trato con contratista). Se ignora con aviso y manda lo que diga la
+    // hoja (el inquilino de «Dueño: X (tenant)» lo resuelve la tanda 4, más abajo).
+    let duenoFicha = String(ficha.dueno || "").trim();
+    if (duenoFicha) {
+      const sinP = x => norma(String(x || "").replace(/\([^)]*\)/g, " ")).trim();
+      const igualA = x => tiene(x) && (sinP(x) === sinP(duenoFicha) || esLaEmpresa([x], duenoFicha) || esLaEmpresa([duenoFicha], x));
+      const fcon = esObjeto(ficha.contratista) ? ficha.contratista.nombre : "";
+      if (igualA(fcon) || igualA(d.gc_nombre)) { aviso(`La ficha pone como dueño al contratista («${duenoFicha}»); lo dejé sin dueño.`, 0, { clave: "dueno" }); duenoFicha = ""; }
+      else if (igualA(ficha.cliente) || igualA(d.cliente)) { aviso(`La ficha pone como dueño al mismo cliente («${duenoFicha}»): no hay un dueño aparte; lo dejé sin dueño.`, 0, { clave: "dueno" }); duenoFicha = ""; }
+    }
+    ["dueno", "inquilino", "email", "telefono"].forEach(k => {
+      const f = k === "dueno" ? duenoFicha : String(ficha[k] || "").trim();
+      if (f && !esMontoTapable(f) && !llevaMarcador(f)) { if (tiene(d[k])) pisa(k, f); else d[k] = f; }
+    });
+    if (tiene(ficha.atencion) || tiene(d.atencion)) d.atencion = juntarNombres(d.atencion, ficha.atencion);
+    // el número de propuesta: el de la hoja (Ref. / Document No.) > el de la ficha > lo arma armarTodo
+    {
+      const ref = String(ficha.ref || "").trim(), refMXP = /^MXP-\d{4}-\d{4}-[A-Z0-9][A-Z0-9-]*$/i.test(ref);
+      if (!tiene(d.numero_propuesta) && refMXP) d.numero_propuesta = ref;
+      // la hoja gana (pliego §4.4), pero si la ficha ya tiene OTRO número MXP, Edgar lo tiene que ver
+      else if (refMXP && tiene(d.numero_propuesta) && norma(d.numero_propuesta) !== norma(ref))
+        aviso(`La hoja decía el número «${d.numero_propuesta}»; la ficha dice «${ref}». Dejé el de la hoja.`, L.datos_linea.numero_propuesta, { clave: "numero_propuesta", antes: d.numero_propuesta, ficha: ref });
+    }
+    if (tiene(d.numero_propuesta)) R_("numero", `Número: ${d.numero_propuesta}`, L.datos_linea.numero_propuesta ? "hoja" : "ficha", L.datos_linea.numero_propuesta);
+    // la jurisdicción: la de la ficha si es segura; si no, la de la hoja; si no, la que sale de la dirección
+    {
+      const js = esObjeto(ficha.jurisdiccion_sugerida) ? ficha.jurisdiccion_sugerida : null;
+      const segura = js && js.seguridad === "alta" ? String(ficha.ciudad || js.jurisdiccion_probable || "").trim() : "";
+      if (segura) { if (tiene(d.ciudad) && norma(d.ciudad) !== norma(segura)) pisa("ciudad", segura, "la jurisdicción de la ficha"); else d.ciudad = segura; }
+      else if (!tiene(d.ciudad)) {
+        const f = String(ficha.ciudad || "").trim();
+        if (f) d.ciudad = f;
+        else if (tiene(d.direccion)) { const j = jurisdiccionDe(d.direccion); if (j && j.jurisdiccion_probable) d.ciudad = j.jurisdiccion_probable; }
+      }
+      if (tiene(d.ciudad)) d.ciudad_corta = d.ciudad;
+    }
+    if (!tiene(d.vence)) d.vence = "15";
+    if (!tiene(d.planos) && tiene(ficha.documento_plano) && esTituloDePlano(ficha.documento_plano)) d.planos = String(ficha.documento_plano).trim();
+    if (!tiene(d.segundo_firmante) && tiene(R.segundo_firmante)) d.segundo_firmante = String(R.segundo_firmante).trim();
+    if (tiene(R.base_precio) && !tiene(d.base_precio)) d.base_precio = String(R.base_precio).trim();
+
+    // ---- Tanda 4: el dueño que dice la IA. «Dueño: X (tenant)» es el inquilino; un dueño que es el mismo cliente no es un
+    // dueño aparte (encendería el trato con contratista: sin 713.015 ni los tres días para cancelar); y con el trato de
+    // consumidor que sabe la app (vivienda sin contratista), la IA no pone un dueño aparte.
+    if (tiene(d.dueno) && !tiene(duenoFicha)) {
+      const lin = L.datos_linea.dueno, txtLin = lin ? o(lin) : "";
+      const sinP = x => norma(String(x || "").replace(/\([^)]*\)/g, " "));
+      const mismo = x => tiene(x) && (sinP(x) === sinP(d.dueno) || esLaEmpresa([x], d.dueno) || esLaEmpresa([d.dueno], x));
+      const quita = texto => { aviso(texto, lin || 0, { clave: "dueno" }); delete d.dueno; delete L.datos_linea.dueno; };
+      if (/\b(?:tenant|inquilino|occupant|arrendatario)\b/i.test(txtLin + " " + d.dueno) || mismo(d.inquilino)) {
+        if (!tiene(d.inquilino)) { d.inquilino = String(d.dueno).replace(/\s*\((?:tenant|inquilino|occupant|arrendatario)\)\s*/i, " ").trim(); if (lin) L.datos_linea.inquilino = lin; }
+        quita(`La hoja dice que «${d.dueno}» es el inquilino: lo puse como inquilino (fila Tenant), no como dueño.`);
+      } else if (mismo(d.cliente)) quita(`La IA puso a «${d.dueno}» como dueño, pero es el mismo cliente: no hay un dueño aparte.`);
+      else if (perfil.trato === "consumidor" && !(esObjeto(ficha.contratista) && ficha.contratista.modo === "contrato"))
+        quita(`La app sabe que el trato es directo con el dueño (vivienda sin contratista): no tomé a «${d.dueno}» como un dueño aparte.`);
+    }
+
+    // ---- los hechos que deciden el papel (cada uno con su origen, para «Lo que la IA entendió»)
+    // Tanda 4: las respuestas de Edgar llegan con los valores EXACTOS de la casa (los botones fijos del juez); lo que no
+    // encaje se resuelve a lo más protector (con firma, vivienda, directo, el permiso lo sacamos nosotros). Las lecciones de
+    // Edgar sobre un hecho (permiso, firma, trato) las aplica el PROGRAMA aunque la IA no las haya seguido (pliego §1.4).
+    // Un hecho de la IA sin línea que lo diga sale como «lo dedujo la IA», no como «de la hoja».
+    const siR = v => v === true || /^(s[ií]|yes)$/i.test(String(v).trim());
+    const lecciones = (Array.isArray(perfil.lecciones) ? perfil.lecciones : []).filter(x => esObjeto(x) && LECCION_HECHOS[x.clave] && LECCION_HECHOS[x.clave].includes(x.valor));
+    const leccion = clave => lecciones.find(x => x.clave === clave) || null;
+    const deLeccion = x => `tu lección${x.texto ? ` («${String(x.texto).replace(/\s+/g, " ").trim().slice(0, 80)}»)` : ""}`;
+    const origenHecho = k => lineaOk(Ev[k]) ? "hoja" : "ia";
+    // firma: la respuesta > la lección > el hecho de la hoja > «sí» (lo más protector)
+    {
+      const lf = leccion("firma");
+      if (tiene(R.firma)) { d.firma = String(R.firma).trim() === "no" ? "no" : "sí"; R_("firma", `Firma: ${d.firma}`, "respuesta"); }
+      else if (lf) {
+        d.firma = lf.valor === "no" ? "no" : "sí"; R_("firma", `Firma: ${d.firma}`, "leccion");
+        if ((H.firma === "si" || H.firma === "no") && H.firma !== lf.valor) aviso(`De ${deLeccion(lf)}: no tomé «firma: ${H.firma === "no" ? "no" : "sí"}» de la hoja.`, Ev.firma || 0, { clave: "firma" });
+      }
+      else if (H.firma === "si" || H.firma === "no") { d.firma = H.firma === "si" ? "sí" : "no"; R_("firma", `Firma: ${d.firma}`, origenHecho("firma"), Ev.firma); }
+      else { d.firma = "sí"; R_("firma", "Firma: sí, por defecto", "defecto"); }
+    }
+    // con quién es el trato: la ficha (contrato con el contratista) > la respuesta > la lección > lo que la app sabe > el hecho > directo
+    const fc = esObjeto(ficha.contratista) ? ficha.contratista : null;
+    let origenTrato;
+    {
+      const lt = leccion("trato");
+      if (fc && fc.modo === "contrato") { d.contrato_con = "GC"; origenTrato = "ficha"; }
+      else if (tiene(R.contrato_con)) { d.contrato_con = String(R.contrato_con).trim() === "GC" ? "GC" : "directo"; origenTrato = "respuesta"; }
+      else if (lt) {
+        d.contrato_con = lt.valor; origenTrato = "leccion";
+        if ((H.contrato_con === "GC" || H.contrato_con === "directo") && H.contrato_con !== lt.valor) aviso(`De ${deLeccion(lt)}: no tomé «${H.contrato_con === "GC" ? "con contratista" : "directo"}» de la hoja.`, Ev.contrato_con || 0, { clave: "trato" });
+      }
+      else if (perfil.trato === "contratista") { d.contrato_con = "GC"; origenTrato = "ficha"; }
+      else if (perfil.trato === "consumidor" || perfil.trato === "comercial") { d.contrato_con = "directo"; origenTrato = "ficha"; }
+      else if (H.contrato_con === "GC" || H.contrato_con === "directo") { d.contrato_con = H.contrato_con; origenTrato = origenHecho("contrato_con"); }
+      else { d.contrato_con = "directo"; origenTrato = "defecto"; }
+    }
+    // la propiedad: la ficha > la app > la respuesta > el hecho > vivienda (lo más protector: consumidor)
+    let origenProp;
+    if (/comercial|commercial/i.test(String(ficha.tipo || ""))) { d.propiedad = "commercial"; origenProp = "ficha"; }
+    else if (/residencial|residential/i.test(String(ficha.tipo || ""))) { d.propiedad = "residential"; origenProp = "ficha"; }
+    else if (perfil.propiedad === "comercial" || perfil.propiedad === "residencial") { d.propiedad = perfil.propiedad === "comercial" ? "commercial" : "residential"; origenProp = "ficha"; }
+    else if (tiene(R.propiedad)) { d.propiedad = String(R.propiedad).trim() === "commercial" ? "commercial" : "residential"; origenProp = "respuesta"; }
+    else if (H.propiedad === "commercial" || H.propiedad === "residential") { d.propiedad = H.propiedad; origenProp = origenHecho("propiedad"); }
+    else { d.propiedad = "residential"; origenProp = "defecto"; }
+    // el contratista de la obra, como hoy (Wisdom en «referido» con el cliente que ES Wisdom → GC por la regla)
+    if (fc) {
+      const trato = ponerContratista(L, { modo: fc.modo || "", id: fc.id || "", nombre: fc.nombre || "", contacto: fc.contacto || "", cliente: ficha.cliente || "" });
+      if (trato === "regla") origenTrato = "regla";
+    }
+    {
+      const esGC = norma(d.contrato_con || "") === "gc";
+      const gc = d.gc_nombre || (fc && fc.nombre) || "";
+      R_("trato", esGC ? `Trato: con contratista${gc ? ` (${gc})` : ""}` : "Trato: directo con el dueño", origenTrato, origenTrato === "hoja" ? Ev.contrato_con : undefined);
+      R_("propiedad", `Propiedad: ${d.propiedad === "commercial" ? "comercial" : "vivienda"}`, origenProp, origenProp === "hoja" ? Ev.propiedad : undefined);
+    }
+    // el permiso: la lección (si choca con una regla de la casa, se pregunta) > la regla de la casa por contratista > lo que
+    // la app sabe > la respuesta > el hecho > nosotros
+    {
+      const DE_HECHO = { cliente: "cliente", nosotros: "nosotros", ninguno: "no hace falta" };
+      const DE_PERFIL = { cliente: "cliente", max_power: "nosotros", no_hace_falta: "no hace falta" };
+      const DICHO = { cliente: "lo saca el cliente", nosotros: "lo sacamos nosotros", ninguno: "no hace falta" };
+      const regla = reglaDeContratista(d);
+      const lp = leccion("permiso");
+      const hojaNinguno = H.permiso === "ninguno" || perfil.permiso === "no_hace_falta";
+      let origenPerm, motivoRegla = "";
+      const enumDe = v => { const q = leerPermiso(v); return q === "ninguno" ? "ninguno" : q === "cliente" ? "cliente" : "nosotros"; };
+      if (lp && regla && regla.permiso && !hojaNinguno && enumDe(regla.permiso) !== lp.valor) {
+        // la lección choca con una regla de la casa (Wisdom): la regla manda en el papel (decidirInterruptores la aplica
+        // siempre), pero no en silencio: se le dice a Edgar, con su lección
+        d.permiso = regla.permiso; origenPerm = "regla"; motivoRegla = regla.motivo;
+        aviso(`${deLeccion(lp).charAt(0).toUpperCase() + deLeccion(lp).slice(1)} dice que el permiso ${DICHO[lp.valor]}, pero la regla de la casa dice: «${regla.motivo}». Manda la regla; si en esta obra es distinto, cámbialo en la ficha de la obra.`,
+              Ev.permiso || 0, { clave: "permiso" });
+      } else if (lp) {
+        d.permiso = DE_HECHO[lp.valor]; origenPerm = "leccion";
+        if (DE_HECHO[H.permiso] && H.permiso !== lp.valor) aviso(`De ${deLeccion(lp)}: no tomé «${DICHO[H.permiso]}» de la hoja.`, Ev.permiso || 0, { clave: "permiso" });
+      } else if (regla && regla.permiso && !hojaNinguno) {
+        d.permiso = regla.permiso; origenPerm = "regla"; motivoRegla = regla.motivo;
+        if (H.permiso === "nosotros" || perfil.permiso === "max_power")
+          aviso(`${regla.motivo}: no tomé «lo sacamos nosotros» de la hoja.`, Ev.permiso || 0, { clave: "permiso" });
+      } else if (DE_PERFIL[perfil.permiso]) {
+        d.permiso = DE_PERFIL[perfil.permiso]; origenPerm = perfil.permiso_regla ? "regla" : "ficha"; motivoRegla = perfil.permiso_regla || "";
+        // la hoja (o lo que la IA leyó en ella) dice otra cosa: manda la app, y se dice (pliego §9.2)
+        if (DE_HECHO[H.permiso] && leerPermiso(DE_HECHO[H.permiso]) !== leerPermiso(d.permiso)) {
+          const dijo = DICHO[H.permiso];
+          aviso(perfil.permiso_regla ? `${String(perfil.permiso_regla).trim()}: no tomé «${dijo}» de la hoja.`
+                                     : `La app dice que el permiso ${({ cliente: "lo saca el cliente", nosotros: "lo sacamos nosotros", "no hace falta": "no hace falta" })[d.permiso]}; la hoja decía «${dijo}». Puse el de la app.`,
+                Ev.permiso || 0, { clave: "permiso" });
+        }
+      }
+      else if (tiene(R.permiso)) { d.permiso = DE_HECHO[String(R.permiso).trim()] || "nosotros"; origenPerm = "respuesta"; }
+      else if (DE_HECHO[H.permiso]) { d.permiso = DE_HECHO[H.permiso]; origenPerm = origenHecho("permiso"); }
+      else { d.permiso = "nosotros"; origenPerm = "defecto"; }
+      const quien = leerPermiso(d.permiso);
+      const nombreGC = regla ? regla.nombre : "el cliente";
+      R_("permiso", quien === "cliente" ? `Permiso: lo saca ${origenPerm === "regla" ? nombreGC : "el cliente"}${motivoRegla ? ", " + motivoRegla.charAt(0).toLowerCase() + motivoRegla.slice(1) : ""}`
+        : quien === "ninguno" ? "Permiso: no hace falta" : "Permiso: lo saca Max Power", origenPerm, origenPerm === "hoja" ? Ev.permiso : undefined);
+    }
+
+    // ---- la prosa de la sección 1 (interruptores de QUE_HAY_HOY / QUE_CAMBIA / FALTA): el texto ORIGINAL de sus líneas
+    [["que_hay_hoy", "hoy"], ["que_cambia", "cambia"], ["que_faltaba", "falta"]].forEach(([k, campo]) => {
+      const t = T[k]; if (!esObjeto(t)) return;
+      const de = deDe(t);
+      L[campo] = de.length ? de.map(limpio).filter(Boolean).join(" ") : String(t.en || "").trim();
+      L.prosa_lineas[campo] = de;
+    });
+
+    // ---- Tanda 4: lo que leen las reglas en la misma hoja ORIGINAL (para cotejar el dinero, las opciones y los pagos) y
+    // qué líneas son de dinero: el título o un detalle de un renglón nunca salen de ahí (irían al papel y a la lista de
+    // tareas de la obra, que ve el equipo).
+    const Lr = (() => { try { return leerAlcance(orig.join("\n")); } catch { return null; } })() || {};
+    const lrDinero = new Set([...(esObjeto(Lr.precio) && Number.isInteger(Lr.precio.linea) ? [Lr.precio.linea] : []),
+      ...((esObjeto(Lr.pagos) && Array.isArray(Lr.pagos.lineas)) ? Lr.pagos.lineas : []), ...(Array.isArray(Lr.opciones) ? Lr.opciones.map(x => x && x.linea) : []),
+      ...(lineaOk(Di.precio_l) ? [Di.precio_l] : []), ...(Array.isArray(Di.pagos_l) ? Di.pagos_l : []), ...(Array.isArray(Di.opciones_l) ? Di.opciones_l : [])].filter(lineaOk));
+    const conDinero = n => lrDinero.has(n) || esMontoArmar(o(n)) || pareceDinero(o(n)) || kvDinero(o(n)) || traeDineroEstricto(o(n));
+    const sinDineroDe = de => de.filter(n => !conDinero(n));
+    // ---- los renglones: el título es la primera línea de «de» (sin viñeta ni número), los detalles, el resto
+    const SOW_NUM = /^\s*(?:\*\*)?\s*(\d{1,2})(?:\.(\d{1,2}))?[.)]?\s+/;
+    (Array.isArray(T.items) ? T.items : []).forEach((it, k) => {
+      const de = sinDineroDe(unir2(it.titulo, it.descripcion));
+      const primera = de.length ? o(de[0]) : "";
+      const mNum = primera.match(SOW_NUM);
+      let titulo = de.length ? limpio(de[0]) : String((it.titulo || {}).en || "").trim();
+      let detalles = de.slice(1).map(limpio).filter(Boolean);
+      // «2.1 Power distribution. Field verification of…» en una sola línea: el título hasta el primer punto
+      // tanda 6: y «3.1 Furnished by Max Power: subpanel, …» (un renglón de una sola línea), hasta los dos puntos
+      if (mNum && mNum[2] !== undefined) { const p = titulo.match(/^(.{3,120}?[^.\s])\.\s+(\S.*)$/) || (de.length === 1 ? titulo.match(/^([^:]{3,60}?):\s+(\S.*)$/) : null);
+        if (p) { titulo = p[1]; detalles = [mayus1(p[2]), ...detalles]; } }
+      if (!titulo) titulo = String((it.titulo || {}).en || "").trim();
+      if (traeDineroEstricto(titulo) || esMontoArmar(titulo) || pareceDinero(titulo)) titulo = String((it.titulo || {}).en || "").trim();
+      detalles = detalles.filter(x => !traeDineroEstricto(x) && !esMontoArmar(x) && !pareceDinero(x));
+      L.items.push({ n: k + 1, escrito: mNum ? Number(mNum[2] !== undefined ? mNum[2] : mNum[1]) : null, grupo: null,
+                     serie: mNum && mNum[2] !== undefined ? mNum[1] : null, titulo, detalles, lineas: de });
+      // tanda 5: por referencia, el título es la primera línea (sin su «2.3» / «1.») y la descripción, el resto
+      const Si = S.items[k];
+      if (de.length && (esRef(Si.titulo) || esRef(Si.descripcion))) {
+        const crudo0 = o(de[0]);
+        let tituloR, extra = "";
+        if (/\*\*|__/.test(crudo0)) { const p = partirRef(de[0]); tituloR = p.titulo; extra = p.texto; }
+        else {
+          tituloR = limpioRef(de[0]);
+          const solo = de.length === 1 && esRef(Si.descripcion);
+          const p = tituloR.match(/^(.{3,120}?[^.\s])\.\s+(\S.*)$/) || (solo ? tituloR.match(/^([^:]{3,60}?):\s+(\S.*)$/) : null);
+          if (p && (/^\s*\d{1,2}\.\d{1,2}\b/.test(crudo0) || solo)) { tituloR = p[1]; extra = mayus1(p[2]); }
+        }
+        tituloR = tituloR.replace(/[.:]$/, "").trim();
+        if (esRef(Si.titulo)) Si.titulo = { en: tituloR, de: de.slice(0, 1), ref: true };
+        if (esRef(Si.descripcion)) Si.descripcion = { en: [extra, ...de.slice(1).map(limpioRef)].filter(Boolean).map(fraseRef).join(" "), de: de.length > 1 ? de.slice(1) : de.slice(0, 1), ref: true };
+      }
+      if (!esObjeto(S.items[k].titulo) || !S.items[k].titulo.en) S.items[k].titulo = { en: titulo, de: de.slice(0, 1) };
+      S.items[k].titulo.en = sinNumeroDeHoja(S.items[k].titulo.en);   // tanda 6: «2.1 Permit…» de la IA → «Permit…»
+    });
+    // ---- las exclusiones de la hoja: el texto original de sus líneas. Tanda 4: las que la plantilla YA trae (permiso,
+    // arc-fault, panel, drywall, gabinetes, aparatos, «Any work outside…», fixtures decorativos) se quitan con la MISMA regla
+    // del lector, para que no salgan dos veces (o una «incluida» y otra «no incluida»)
+    {
+      const quedan = [];
+      (Array.isArray(T.no_incluye) ? T.no_incluye : []).forEach((x, k) => {
+        const de = sinDineroDe(unir2(x.titulo, x.texto));
+        const tx = de.length ? limpio(de[0]).replace(/^[-*•]\s*/, "").replace(/^\d+(?:\.\d+)*[.)]?\s+/, "") : "";
+        const ia = [String((x.titulo || {}).en || "").trim(), String((x.texto || {}).en || "").trim()].filter(Boolean).join(". ");
+        const fija = exclusionFija(tx) || exclusionFija(ia);
+        if (fija) {
+          L.fijasQuitadas++; de.forEach(n => L.fijas_lineas.push(n));
+          if (fija.vista) L.fijasVistas.add(fija.vista);
+          if (fija.areas && !L.condiciones.areas) L.condiciones.areas = { valor: fija.areas, linea: de[0] || 0 };
+          if (fija.no_tocamos && !L.condiciones.no_tocamos) L.condiciones.no_tocamos = { valor: fija.no_tocamos, linea: de[0] || 0 };
+          if (fija.fixtures && !L.condiciones.fixtures_cliente) L.condiciones.fixtures_cliente = { valor: fija.fixtures, linea: de[0] || 0 };
+          return;
+        }
+        // (tanda 5: la copia de S, que es la que va al papel, rellena lo que venga por referencia)
+        const xs = S.no_incluye[k];
+        llenarPar(xs, "titulo", "texto", de);
+        quedan.push(xs);
+        L.no_incluye.push({ texto: de.map(limpio).filter(Boolean).join(" "), linea: de[0] || 0, titulo: null, cuerpo: null });
+      });
+      if (L.fijasQuitadas)
+        aviso(`En «No incluye» venían ${L.fijasQuitadas} exclusiones que la plantilla ya trae (permiso, fixtures, drywall…); las quité para no repetirlas.`, 0, { informativo: true });
+      if (Array.isArray(S.no_incluye)) S.no_incluye = quedan;
+    }
+
+    // ---- el DINERO, leído aquí de las líneas originales (la IA solo dijo dónde está)
+    const montoDe = n => { const hd = hayDinero(o(n)); return hd ? leerMonto(hd.trozo) : leerMonto(o(n).replace(/^[^:]*:\s*/, "")); };
+    // Las reglas de siempre leen la misma hoja ORIGINAL: sirven para cotejar la línea de dinero que eligió la IA (la IA
+    // no escribe montos, pero puede señalar la línea equivocada: la de una opción en vez de la del precio, o ninguna de
+    // pagos cuando la hoja sí los trae). Si las reglas no pueden leer la hoja, no se coteja.
+    const fmt = c => "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    {
+      const pl = lineaOk(R.precio_l) ? R.precio_l : Di.precio_l;
+      const m = lineaOk(pl) && (pareceDinero(o(pl)) || kvDinero(o(pl))) ? montoDe(pl) : null;
+      const pr = esObjeto(Lr.precio) && Number.isInteger(Lr.precio.centavos) && lineaOk(Lr.precio.linea) ? Lr.precio : null;
+      if (Number.isInteger(R.precio) && lineaOk(pl)) L.precio = { centavos: R.precio, linea: pr && pr.centavos === R.precio ? pr.linea : pl };
+      // Edgar no marcó la línea, la IA señaló una y las reglas leen OTRO precio en otra línea: se pregunta (frena)
+      else if (!lineaOk(R.precio_l) && m && Number.isInteger(m.centavos) && pr && pr.linea !== pl && pr.centavos !== m.centavos) {
+        preguntas.push({ clave: "precio", linea: pl, lineas: [pr.linea, pl], frena: true,
+          texto: `¿Cuál es el precio base del contrato: ${fmt(pr.centavos)} (línea ${pr.linea}) o ${fmt(m.centavos)} (línea ${pl})?`,
+          porque: "La IA señaló una línea de precio y las reglas leen otra: del precio salen el total, los pagos y el depósito, así que no se adivina.",
+          opciones: [{ etiqueta: `${fmt(pr.centavos)} (línea ${pr.linea})`, valor: pr.centavos }, { etiqueta: `${fmt(m.centavos)} (línea ${pl})`, valor: m.centavos }] });
+        aviso(`La IA señaló el precio en la línea ${pl} y las reglas lo leen en la línea ${pr.linea}: elige cuál vale.`, pl, { clave: "precio", gravedad: "rojo" });
+      }
+      else if (m && m.pregunta) {
+        preguntas.push({ clave: "precio", linea: pl, texto: `¿El precio es $${m.opciones[0].toLocaleString("en-US")} o $${m.opciones[1].toFixed(2)}?`,
+          porque: "Del precio salen el total, los pagos y el depósito: no se adivina.", frena: true,
+          opciones: m.opciones.map(v => ({ etiqueta: "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2 }), valor: centavos(v) })) });
+      } else if (m && Number.isInteger(m.centavos)) L.precio = { centavos: m.centavos, linea: pl };
+      else preguntas.push({ clave: "sin_precio", linea: 0, frena: true, texto: "No encuentro el precio en la hoja. Toca la línea del precio.",
+          porque: "Sin precio no hay contrato: el total, los pagos y el depósito salen de esa línea.", opciones: [], pide: "linea" });
+    }
+    // las opciones: el precio de su línea; sin precio pasan a «No incluye» como «quoted separately».
+    // Tanda 4: cada opción se coteja con lo que leen las REGLAS en la hoja (como el precio). Si la IA no señaló la línea
+    // (o el juez la tiró) y las reglas leen un precio dentro de la opción, manda el de las reglas; si señaló OTRA línea
+    // que las reglas, se pregunta (frena). Un monto sin $ («— 1,201.92») vale si las reglas leen ahí una opción.
+    {
+      const opS = [], nuevasExS = [];
+      const lrOps = (Array.isArray(Lr.opciones) ? Lr.opciones : []).filter(x => x && lineaOk(x.linea) && Number.isInteger(x.centavos));
+      const usadas = new Set();
+      (Array.isArray(T.opciones) ? T.opciones : []).forEach((op, k) => {
+        const de = unir2(op.titulo, op.descripcion);
+        const ol = (Array.isArray(Di.opciones_l) ? Di.opciones_l : [])[k];
+        const clave = "opcion_" + (k + 1);
+        const centavosR = Number.isInteger(R[clave]) ? R[clave] : null;
+        // lo que leen las reglas: en la línea señalada, o (sin línea) dentro de las líneas de la opción
+        const lrEn = lineaOk(ol) ? lrOps.find(x => x.linea === ol) : null;
+        const lrDentro = lrOps.find(x => !usadas.has(x.linea) && (de.includes(x.linea) || (Array.isArray(x.lineas) && x.lineas.some(n => de.includes(n)))));
+        const hd = lineaOk(ol) ? hayDinero(o(ol)) : null;
+        const m0 = hd ? leerMonto(hd.trozo) : null;
+        let m = m0 && m0.pregunta ? m0 : lrEn ? { centavos: lrEn.centavos } : hd && hd.seguro ? m0 : null;
+        let linea = ol;
+        if (centavosR === null && lineaOk(ol) && !lrEn && lrDentro && lrDentro.linea !== ol) {
+          const mIA = m && Number.isInteger(m.centavos) ? m.centavos : null;
+          if (mIA === null || mIA !== lrDentro.centavos) {
+            preguntas.push({ clave, linea: ol, lineas: [lrDentro.linea, ol], frena: true,
+              texto: `¿Cuánto cuesta la opción «${String((op.titulo || {}).en || "").trim() || k + 1}»: ${fmt(lrDentro.centavos)} (línea ${lrDentro.linea})${mIA !== null ? ` o ${fmt(mIA)} (línea ${ol})` : ""}?`,
+              porque: "La IA señaló una línea de precio para la opción y las reglas leen otra: el precio de la opción sale tal cual en la sección 5.",
+              opciones: [{ etiqueta: `${fmt(lrDentro.centavos)} (línea ${lrDentro.linea})`, valor: lrDentro.centavos }, ...(mIA !== null ? [{ etiqueta: `${fmt(mIA)} (línea ${ol})`, valor: mIA }] : [])] });
+            aviso(`La IA señaló el precio de la opción ${k + 1} en la línea ${ol} y las reglas lo leen en la línea ${lrDentro.linea}: elige cuál vale.`, ol, { clave, gravedad: "rojo" });
+            return;
+          }
+        }
+        if (!lineaOk(ol) && lrDentro && centavosR === null) {
+          m = { centavos: lrDentro.centavos }; linea = lrDentro.linea;
+          aviso(`La IA no señaló el precio de la opción ${k + 1}: lo leí de la hoja (línea ${lrDentro.linea}).`, lrDentro.linea, { clave });
+        }
+        if (lineaOk(linea)) usadas.add(linea);
+        if (!m && hd && !hd.seguro && lineaOk(ol)) m = m0;
+        if (m && m.pregunta && centavosR === null) {
+          preguntas.push({ clave, linea: ol, texto: `¿La opción cuesta $${m.opciones[0].toLocaleString("en-US")} o $${m.opciones[1].toFixed(2)}?`,
+            porque: "El precio de la opción sale tal cual en la sección 5.", frena: true,
+            opciones: m.opciones.map(v => ({ etiqueta: "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2 }), valor: centavos(v) })) });
+          return;
+        }
+        if ((m && Number.isInteger(m.centavos)) || centavosR !== null) {
+          const hdL = lineaOk(linea) ? hayDinero(o(linea)) : null;
+          const tituloL = lineaOk(linea) ? limpio(linea).replace(hdL ? hdL.trozo : "\u0000", "").replace(/\s*[—–:\-]\s*$/, "").replace(/\s*[—–:\-]\s*$/, "").trim() : "";
+          L.opciones.push({ n: L.opciones.length + 1, titulo: (tituloL && !esMontoArmar(tituloL) && !pareceDinero(tituloL) ? tituloL : "") || String((op.titulo || {}).en || "").trim(),
+            centavos: centavosR !== null ? centavosR : m.centavos, detalles: de.filter(n => n !== linea && !conDinero(n)).map(limpio).filter(Boolean), linea, lineas: de });
+          // tanda 5: la copia de S (la que va al papel) rellena lo que venga por referencia: el título, de su línea (sin el
+          // monto: si su línea es la del precio, sale como lo leyó el programa); la descripción, de las demás líneas
+          const os = Array.isArray(S.opciones) && esObjeto(S.opciones[k]) ? S.opciones[k] : op;
+          if (esRef(os.titulo)) {
+            const deT = deDe(os.titulo).filter(n => n !== linea && !conDinero(n));
+            os.titulo = { en: (deT.length ? limpioRef(deT[0]).replace(/[.:]$/, "") : "") || L.opciones[L.opciones.length - 1].titulo || "Optional work", de: deDe(os.titulo), ref: true };
+          }
+          if (esRef(os.descripcion))
+            os.descripcion = { en: de.filter(n => n !== linea && !conDinero(n) && !deDe(os.titulo).includes(n)).map(limpioRef).filter(Boolean).map(fraseRef).join(" "), de: deDe(os.descripcion), ref: true };
+          opS.push(os);
+          return;
+        }
+        // sin precio en la hoja: no es una opción, es algo que no va incluido y se cotiza aparte
+        const titulo = (esRef(op.titulo) && de.length ? partirRef(de[0]).titulo : "") || String((op.titulo || {}).en || "").trim() || (de.length ? limpio(de[0]) : "Optional work");
+        const desc = esRef(op.descripcion) ? sinDineroDe(de.slice(1)).map(limpioRef).filter(Boolean).map(fraseRef).join(" ") : String((op.descripcion || {}).en || "").trim();
+        L.no_incluye.push({ texto: sinDineroDe(de).map(limpio).filter(Boolean).join(" "), linea: de[0] || 0, titulo: null, cuerpo: null });
+        nuevasExS.push({ titulo: { en: titulo, de: de.slice(0, 1) }, texto: { en: (desc ? desc.replace(/\.?\s*$/, ". ") : "") + "Quoted separately.", de } });
+        aviso(`La opción «${titulo}» no trae precio en la hoja: la pasé a «No incluye» como «quoted separately».`, de[0] || 0);
+      });
+      S.opciones = opS;
+      S.no_incluye = [...(Array.isArray(S.no_incluye) ? S.no_incluye : []), ...nuevasExS];
+    }
+    // los pagos: una línea («Pagos: 40/40/20» o «40% …; 40% …; 20% …») o una fila por hito
+    {
+      const pls = (Array.isArray(Di.pagos_l) ? Di.pagos_l : []).filter(lineaOk);
+      // Tanda 4: el texto de un pago que escribió la IA vale solo si es el de su línea (con la hoja en inglés, el mismo
+      // trozo, ≥ 80 %) y no trae texto de ley que la línea no diga; si no, va el texto de la hoja (y se avisa)
+      const dispCrudo = n => { const x = (Array.isArray(T.disparadores) ? T.disparadores : []).find(t => t && t.n === n); return x && x.en ? String(x.en).trim() : null; };
+      const disp = (n, linea) => {
+        const x = dispCrudo(n); if (!x) return null;
+        const lin = limpiarLinea(String(linea || "")).limpia;
+        const ley = leyQueNoEsta(x, normaParaProhibidas(lin));
+        const copia = !textoEnIngles(lin) || citaEnLinea(lin.toLowerCase(), limpiarLinea(x).limpia.toLowerCase()).ok;
+        if (!ley && copia) return x;
+        aviso(ley ? `La IA escribió «${ley}» en el texto del pago ${n} y la hoja no lo dice: usé el texto de la hoja.`
+                  : `La IA reescribió el texto del pago ${n} («${x.slice(0, 60)}»): usé el de la hoja.`, (Array.isArray(Di.pagos_l) ? Di.pagos_l : [])[0] || 0, { clave: "pagos" });
+        return null;
+      };
+      let Pg = null;
+      const propios = [];   // el texto de cada pago tal como lo trae la línea de la hoja (antes de poner el de la IA)
+      if (Array.isArray(R.pagos) && R.pagos.length && R.pagos.every(Number.isInteger)) {
+        Pg = { pcts: R.pagos.slice(), disparadores: R.pagos.map(() => null), lineas: pls };
+        R_("pagos", `Pagos: ${Pg.pcts.join("/")}`, "respuesta");
+      } else if (pls.length === 1) {
+        const kv = o(pls[0]).replace(/\*\*|__|`/g, "").match(/^\s*\|?\s*([^:|]{2,42})\s*[:|]\s*(.*)$/);
+        const valor = kv && buscaClave(CLAVES_DINERO, norma(kv[1])) === "pagos" ? kv[2] : limpio(pls[0]);
+        Pg = leerPagos(valor, pls[0]);
+        // «Pagos: 100» es un solo pago (tanda 4: antes salía 40/40/20 de la casa)
+        if (!Pg.pcts.length && /^\s*100\s*%?\s*$/.test(String(valor))) Pg = { pcts: [100], disparadores: [null], lineas: [pls[0]], corto: true };
+        // la hoja que solo dice «40/40/20» no trae disparadores: no se inventan (los pone la casa)
+        propios.push(...Pg.disparadores);
+        if (!Pg.corto) Pg.disparadores = Pg.disparadores.map((x, k) => disp(k + 1, o(pls[0])) || x);
+      } else if (pls.length > 1) {
+        Pg = { pcts: [], disparadores: [], lineas: pls };
+        pls.forEach(n => {
+          const m = o(n).match(/(\d{1,3})\s*%/); if (!m) return;
+          const hd = hayDinero(o(n));
+          const resto = limpio(n).replace(hd ? hd.trozo : "\u0000", "").replace(/^(?:milestone|hito|pago|payment)\s*\d*\s*[—–:\-]?\s*/i, "")
+            .replace(/\d{1,3}\s*%\s*/, "").replace(/\s*\|\s*/g, " ").replace(/^\s*[—–:\-]\s*|\s*[—–:\-]\s*$/g, "").trim();
+          Pg.pcts.push(Number(m[1])); propios.push(resto || null); Pg.disparadores.push(disp(Pg.pcts.length, o(n)) || resto || null);
+        });
+      }
+      // lo que leen las reglas en la misma hoja (para cotejar; «Pagos: 40/40/20» de la casa también cuenta)
+      const pr = esObjeto(Lr.pagos) && Array.isArray(Lr.pagos.pcts) && Lr.pagos.pcts.length && !Lr.pagos.por_defecto ? Lr.pagos : null;
+      const lnR = pr ? (Array.isArray(pr.lineas) ? pr.lineas.filter(lineaOk) : []) : [];
+      const deRespuesta = Array.isArray(R.pagos) && R.pagos.length && R.pagos.every(Number.isInteger);
+      if ((!Pg || !Pg.pcts.length) && pr) {
+        // la IA no señaló los pagos, pero la hoja sí los trae: los pone el programa leyendo esa línea (nunca el 40/40/20)
+        Pg = { pcts: pr.pcts.slice(), disparadores: (pr.disparadores || []).slice(0, pr.pcts.length), lineas: lnR };
+        while (Pg.disparadores.length < Pg.pcts.length) Pg.disparadores.push(null);
+        propios.length = 0; propios.push(...Pg.disparadores);
+        aviso(`La IA no señaló los pagos: los leí de la hoja${lnR.length ? ` (línea ${lnR.join(", ")})` : ""}, ${Pg.pcts.join("/")}.`, lnR[0] || 0, { clave: "pagos" });
+      } else if (Pg && Pg.pcts.length && pr && !deRespuesta && Pg.pcts.join("/") !== pr.pcts.join("/")) {
+        // la IA señaló unas líneas y las reglas leen otro reparto: se pregunta (frena), no se adivina
+        preguntas.push({ clave: "pagos", linea: pls[0] || 0, lineas: [...new Set([...lnR, ...pls])], frena: true,
+          texto: `¿Cómo se reparten los pagos: ${pr.pcts.join("/")} (línea ${lnR.join(", ") || "?"}) o ${Pg.pcts.join("/")} (línea ${pls.join(", ")})?`,
+          porque: "La IA señaló unas líneas de pagos y las reglas leen otro reparto: de ahí salen el depósito y cada hito.",
+          opciones: [{ etiqueta: `${pr.pcts.join("/")} (línea ${lnR.join(", ") || "?"})`, valor: pr.pcts.slice() }, { etiqueta: `${Pg.pcts.join("/")} (línea ${pls.join(", ")})`, valor: Pg.pcts.slice() }] });
+        aviso(`La IA señaló los pagos ${Pg.pcts.join("/")} y las reglas leen ${pr.pcts.join("/")} en la hoja: elige cuál vale.`, pls[0] || 0, { clave: "pagos", gravedad: "rojo" });
+      }
+      // Tanda 4: la IA señaló una línea de pagos que no se puede leer («Payments: as agreed»): no se pone 40/40/20 en
+      // silencio, se pregunta (frena). Y unas filas que no suman 100 tampoco se adivinan.
+      const rechazadas = Array.isArray(Di.pagos_rechazadas) ? Di.pagos_rechazadas.filter(lineaOk) : [];
+      if ((!Pg || !Pg.pcts.length) && rechazadas.length && !deRespuesta && !pr) {
+        preguntas.push({ clave: "pagos", linea: rechazadas[0], lineas: rechazadas, frena: true,
+          texto: `La IA dice que la línea ${rechazadas.join(", ")} son los pagos, pero no leo los porcentajes. ¿Cómo se reparten?`,
+          porque: "De los pagos salen el depósito y cada hito: no se adivinan.",
+          opciones: [{ etiqueta: "Un solo pago (100%)", valor: [100] }, { etiqueta: "40/40/20", valor: [40, 40, 20] }, { etiqueta: "50/50", valor: [50, 50] }] });
+      } else if (Pg && Pg.pcts.length > 1 && !deRespuesta && Pg.pcts.reduce((x, y) => x + y, 0) !== 100 && !preguntas.some(p => p.clave === "pagos")) {
+        const suma = Pg.pcts.reduce((x, y) => x + y, 0);
+        const desde = Math.max(1, Math.min(...pls) - 3), hasta = Math.min(N, Math.max(...pls) + 3);
+        const filas = [];
+        for (let n = desde; n <= hasta; n++) { const mm = o(n).match(/(?:^|[^\d.])(\d{1,3})\s*%/); if (mm && (pls.includes(n) || !conDinero(n) || lrDinero.has(n))) filas.push(Number(mm[1])); }
+        const todas = filas.reduce((x, y) => x + y, 0) === 100 && filas.length !== Pg.pcts.length ? filas : null;
+        preguntas.push({ clave: "pagos", linea: pls[0] || 0, lineas: pls, frena: true,
+          texto: `Los pagos que señaló la IA (${Pg.pcts.join("/")}) suman ${suma}%. ¿Cómo se reparten?`,
+          porque: "De los pagos salen el depósito y cada hito: tienen que sumar 100 %.",
+          opciones: [...(todas ? [{ etiqueta: `${todas.join("/")} (todas las filas de la hoja)`, valor: todas }] : []), { etiqueta: "40/40/20", valor: [40, 40, 20] }, { etiqueta: "50/50", valor: [50, 50] }] });
+      }
+      if (!Pg || !Pg.pcts.length) {
+        Pg = { pcts: [40, 40, 20], disparadores: [null, null, null], lineas: [], por_defecto: true };
+        aviso("La hoja no dice los pagos: puse 40/40/20.", 0, { clave: "pagos" });
+        R_("pagos", "Pagos: 40/40/20, por defecto", "defecto");
+      } else if (!resumen.some(x => x.clave === "pagos"))
+        R_("pagos", `Pagos: ${Pg.pcts.join("/")}${pls.length ? `, línea${pls.length > 1 ? "s" : ""} ${pls.length > 1 ? pls[0] + "–" + pls[pls.length - 1] : pls[0]}` : ""}`, "hoja", pls[0]);
+      // Regla de la casa (pliego §1.4): con el permiso del CLIENTE y tres pagos, el hito 2 se cobra con el rough-in listo
+      // para inspección. Si el texto del hito 2 lo puso la IA y no habla de inspección, manda el de la línea si lo dice
+      // (Metro: «… and ready for inspection»); si no, el de la casa. Lo que la hoja escribió tal cual no se toca (como hoy).
+      if (!Pg.por_defecto && Pg.pcts.length === 3 && leerPermiso(d.permiso) === "cliente") {
+        const ia = Pg.disparadores[1], suyo = propios[1];
+        if (ia && !/inspec/i.test(ia) && !(suyo && norma(suyo) === norma(ia))) {
+          const nuevo = suyo && /inspec/i.test(suyo) ? suyo : HITO2_PERMISO_CLIENTE;
+          Pg.disparadores[1] = nuevo;
+          aviso(`El permiso lo saca el cliente: el pago 2 se cobra con «${nuevo}», no con «${ia}» (regla de la casa).`, pls[0] || 0, { clave: "pagos" });
+        }
+      }
+      L.pagos = Pg;
+    }
+
+    // ---- lo propio de la hoja, ya en inglés (clasificarPropias lo acepta tal cual)
+    const propia = p => ({ n: "", titulo: String((p.titulo || {}).en || "").trim(), texto: String((p.texto || {}).en || "").trim(),
+                           linea: unir2(p.titulo, p.texto)[0] || 0, sinTitulo: !(p.titulo && p.titulo.en) });
+    // Tanda 4: lo que la plantilla YA trae como texto de ley o de pago (la mora del 1.5 %, el recargo del 2.99 %, las
+    // facturas al recibirse, el «pay-if-paid», el E-SIGN, el aviso de gravámenes, el derecho a cancelar, el depósito de la
+    // 489.126, la garantía) no se repite con las palabras de la hoja: manda el de la plantilla, y se dice.
+    const yaEnPlantilla = (p, lista) => { const t = String((p.titulo || {}).en || "") + ". " + String((p.texto || {}).en || "");
+      const x = PLANTILLA_PAGOS.find(([rx, k]) => lista.includes(k) && rx.test(t)); return x ? x[1] : null; };
+    const filtrar = (lista, k, cuales) => (Array.isArray(lista) ? lista : []).filter(p => {
+      const ya = yaEnPlantilla(p, cuales); if (!ya) return true;
+      const de = unir2(p.titulo, p.texto);
+      aviso(`La hoja trae su propia cláusula de ${NOMBRE_DE_PLANTILLA[ya] || ya} (línea ${de.join(", ") || "?"}): la plantilla ya la trae, así que va la de la plantilla.`, de[0] || 0, { informativo: true, clave: k });
+      return false;
+    });
+    const NOMBRE_DE_PLANTILLA = { mora: "mora", recargo: "recargo con tarjeta", factura: "facturas", pay_if_paid: "pagos del contratista (no dependen de lo que pague el dueño)",
+      medio: "medio de pago (ACH / cheque)", base: "base del precio (la sección 5)", ley: "ley", garantia: "garantía", cambios: "cambios (change orders)",
+      limite: "límite de responsabilidad", seguro: "seguro", cancelacion: "cancelación", retainage: "retención", nto_releases: "Notice to Owner y releases",
+      existentes: "condiciones existentes y ocultas", ahj_upgrades: "mejoras que pida el inspector (AHJ)", edicion: "edición del código",
+      materiales: "materiales (la frase de la sección 2)", manejo: "manejo de materiales (la 7.5)" };
+    // Tanda 6: lo propio que repite una cláusula de la plantilla por su título o por una frase que solo usa esa cláusula
+    const repiteLaPlantilla = (lista, k, reglas) => (Array.isArray(lista) ? lista : []).filter(p => {
+      const ti = String((p.titulo || {}).en || "").trim(), te = String((p.texto || {}).en || "").trim();
+      const x = reglas.find(([rT, rX]) => (rT && ti && rT.test(ti)) || (rX && rX.test(te)));
+      if (!x) return true;
+      const de = unir2(p.titulo, p.texto);
+      aviso(`La hoja trae su propia cláusula de ${NOMBRE_DE_PLANTILLA[x[2]] || x[2]} (línea ${de.join(", ") || "?"}): la plantilla ya la trae, así que va la de la plantilla.`, de[0] || 0, { informativo: true, clave: k });
+      return false;
+    });
+    // tanda 5: lo propio que venga por referencia se rellena en una copia (el armado de la IA no se toca)
+    const Pf = JSON.parse(JSON.stringify(P));
+    PROPIAS_LISTA.forEach(k => (Array.isArray(Pf[k]) ? Pf[k] : []).forEach(p => { if (esObjeto(p)) llenarPar(p, "titulo", "texto", sinDineroDe(unir2(p.titulo, p.texto))); }));
+    if (esRef(Pf.pre_titulo)) { const de = sinDineroDe(deDe(Pf.pre_titulo)); if (de.length) Pf.pre_titulo = { en: valorRef(de[0]).replace(/[.:]$/, ""), de, ref: true }; else delete Pf.pre_titulo; }
+    // (el último candado de lo copiado: ni un monto ni «<» / «>»; el juez ya miró las líneas, esto es por si acaso)
+    PROPIAS_LISTA.forEach(k => { if (Array.isArray(Pf[k])) Pf[k] = Pf[k].filter(p => guardiaRef(p && p.titulo, "lo propio") && guardiaRef(p && p.texto, "lo propio")); });
+    // tanda 6: el número de la hoja delante de un título escrito por la IA («8.4 Effect on scope», «9.7 Service…»)
+    PROPIAS_LISTA.forEach(k => (Array.isArray(Pf[k]) ? Pf[k] : []).forEach(p => { if (esObjeto(p) && esObjeto(p.titulo) && typeof p.titulo.en === "string") p.titulo.en = sinNumeroDeHoja(p.titulo.en); }));
+    if (esObjeto(Pf.pre_titulo) && typeof Pf.pre_titulo.en === "string") Pf.pre_titulo.en = sinNumeroDeHoja(Pf.pre_titulo.en);
+    // Tanda 6 (Whitlock en vivo, l. 85–87): la aprobación del layout que la hoja escribe como su propia sección 8 («No
+    // rough-in begins until the form is approved») la trae la plantilla entera y más fuerte (8 LAYOUT: recorrido,
+    // formulario, firma, cambios). Si TODO lo propio de la sección 8 habla del layout, se tira con aviso y manda la de la
+    // plantilla (LAYOUT encendido; «listo_para_rough» se queda como condición). Si la hoja trae además otra cosa en su
+    // sección 8 (Wimauma: la identificación de circuitos, con su «8.2 Device locations»), se queda entera: sin ella se
+    // perdería, porque con PRE_PROPIO la 8 de la plantilla no sale.
+    {
+      const lista = Array.isArray(Pf.pre) ? Pf.pre : [];
+      const deLayout = p => RX_LAYOUT_PROPIO.test(String((p.titulo || {}).en || "") + " " + String((p.texto || {}).en || ""));
+      if (lista.length && lista.every(deLayout)) {
+        const de = [...new Set(lista.flatMap(p => unir2(p.titulo, p.texto)))].sort((x, y) => x - y);
+        aviso(`La hoja trae su propia aprobación del layout (línea ${de.join(", ")}): la plantilla ya trae la sección 8 entera (recorrido, formulario y firma), así que va la de la plantilla.`, de[0] || 0, { informativo: true, clave: "pre" });
+        Pf.pre = []; delete Pf.pre_titulo;
+      }
+    }
+    // Tanda 6 (Wimauma l. 145): el párrafo que abre la sección 8 propia de la hoja, sin número ni título («This requirement
+    // is mandatory and non-negotiable. No demolition … begins until …»), es su entrada (pre_intro), no un 8.1: antes salía
+    // la frase de la casa y debajo «8.1 Mandatory requirement. No demolition…». Va con las palabras de la hoja.
+    {
+      const lista = Array.isArray(Pf.pre) ? Pf.pre : [], tl = deDe(Pf.pre_titulo)[0] || 0;
+      const primeras = lista.map(p => unir2(p.titulo, p.texto)[0] || 0);
+      const n = primeras.filter(Boolean).length ? Math.min(...primeras.filter(Boolean)) : 0, i = primeras.indexOf(n);
+      const soloBlancas = (a, b) => { for (let x = a + 1; x < b; x++) if (o(x).trim()) return false; return true; };
+      if (tl && n > tl && soloBlancas(tl, n) && !/^\s*(?:[-*•▪◦]\s+)?(?:\*\*|__|\d{1,2}\.\d{1,2}\b)/.test(o(n))) {
+        const de = unir2(lista[i].titulo, lista[i].texto);
+        if (de.length && !de.some(conDinero)) {
+          L.pre_intro = de.map(limpioRef).filter(Boolean).map(fraseRef).join(" ");
+          L.pre_intro_lineas = de.slice();
+          lista.splice(i, 1);
+        }
+      }
+    }
+    // Tanda 6: lo propio que repite una cláusula de la plantilla (términos de la 9; el manejo de materiales de la 7)
+    Pf.terminos = repiteLaPlantilla(Pf.terminos, "terminos", PLANTILLA_TERMINOS);
+    Pf.programa = repiteLaPlantilla(Pf.programa, "programa", PLANTILLA_PROGRAMA);
+    ["programa", "pre", "terminos"].forEach(k => { L[k] = filtrar(Pf[k], k, ["mora", "recargo", "ley"]).map(propia); });
+    // Tanda 6: también el pago que no depende de lo que pague el dueño, el medio de pago y la base del precio
+    L.pagos_propios = filtrar(Pf.pagos_propios, "pagos_propios", ["mora", "recargo", "factura", "pay_if_paid", "medio", "base", "ley", "garantia"]).map(p => { const x = propia(p); return { titulo: x.titulo, texto: x.texto, linea: x.linea }; });
+    if (esObjeto(Pf.pre_titulo) && Pf.pre_titulo.en) L.pre_titulo = String(Pf.pre_titulo.en).trim();
+
+    // ---- las condiciones: el valor de la línea «Clave: valor» si lo es; si no, la cita de la IA
+    Object.keys(Cn).forEach(k => {
+      const c = Cn[k], clave = CONDICIONES_ARMADO[k];
+      if (!clave || !esObjeto(c) || !tiene(c.valor)) return;
+      const kv = lineaOk(c.l) ? claveDeLinea(limpio(c.l)) : null;
+      const valor = kv && kv.clave === clave && tiene(kv.valor) ? kv.valor : String(c.valor).trim();
+      if (clave === "layout") { if (/^(no|sin)\b/i.test(norma(valor)) || /\bno\b.*\b(walkthrough|layout)\b/i.test(valor)) { d.layout = "no"; L.datos_linea.layout = c.l; } return; }
+      L.condiciones[clave] = { valor, linea: lineaOk(c.l) ? c.l : 0 };
+    });
+    // Tanda 6 (Whitlock en vivo, l. 40): las cláusulas de la isla, de las aberturas, de reubicar y del 240 V citan su renglón
+    // («The island receptacles in Section 2.{{ITEM_ISLA}}…»). En la hoja de la casa Edgar lo escribe («Isla: renglón 3»);
+    // con la IA la condición trae la LÍNEA: el renglón es el de la sección 2 que tiene esa línea, y se le añade al valor
+    // como lo escribiría Edgar. Si la línea no está en ningún renglón, la cláusula no sale (se dice): un hueco frena el papel.
+    ["isla", "abrir", "reubicar", "v240"].forEach(k => {
+      const c = L.condiciones[k];
+      if (!c || !tiene(c.valor) || /rengl[oó]n(?:es)?\s+\d/i.test(String(c.valor))) return;
+      const i = c.linea ? L.items.findIndex(it => (it.lineas || []).includes(c.linea)) : -1;
+      if (i >= 0) { c.valor = `${String(c.valor).replace(/[.;,]\s*$/, "")}, renglón ${i + 1}`; return; }
+      delete L.condiciones[k];
+      aviso(`La IA leyó «${k}» en la línea ${c.linea || "?"} («${String(c.valor).slice(0, 60)}»), pero esa línea no está en ningún renglón de la sección 2: no puse esa cláusula.`, c.linea || 0, { clave: k });
+    });
+    // lo que Edgar contestó sin IA
+    if (tiene(R.fotos_panel) && !L.condiciones.fotos_panel) L.condiciones.fotos_panel = { valor: siR(R.fotos_panel) ? "sí" : "no", linea: 0 };
+    if (tiene(R.circuitos_exist) && !L.condiciones.circuitos_exist) L.condiciones.circuitos_exist = { valor: siR(R.circuitos_exist) ? "sí" : "no", linea: 0 };
+    if (tiene(R.acceso) && !L.condiciones.acceso) L.condiciones.acceso = { valor: String(R.acceso), linea: 0 };
+    if (tiene(R.fases) && !L.condiciones.fases) L.condiciones.fases = { valor: String(R.fases), linea: 0 };
+    if (tiene(R.fixtures) && !L.condiciones.fixtures_cliente && /cliente|client|owner|dueno|tenant/i.test(String(R.fixtures))) L.condiciones.fixtures_cliente = { valor: String(R.fixtures), linea: 0 };
+    // Tanda 4: las fases son una LISTA («safe-off / rough-in / trim-out»), no una cita cualquiera de la línea: de ellas sale
+    // cuántas movilizaciones van incluidas (7.4). Si la cita no es una lista, se busca la lista entre paréntesis; si no, no
+    // se ponen (el contrato lleva las de la casa) y se dice.
+    {
+      const buenas = v => { const ps = partirFases(v); return ps.length >= 2 && ps.length <= 5 && ps.every(x => x.length <= 45 && !/\b(?:mobiliz\w*|movilizaci\w*|phases?|fases?|per|each|cada|includ\w*|incluid\w*)\b/i.test(x)) ? ps : null; };
+      const fasesDe = v => buenas(v) || (() => { const m = String(v || "").match(/\(([^()]{5,120})\)/); return m ? buenas(m[1]) : null; })();
+      const Cf = L.condiciones.fases;
+      if (Cf && Cf.valor) {
+        const ps = fasesDe(Cf.valor);
+        if (ps) Cf.valor = ps.join(" / ");
+        else { delete L.condiciones.fases; aviso(`No entendí las fases de la línea ${Cf.linea || "?"} («${String(Cf.valor).slice(0, 60)}»): no las puse; el contrato lleva las de la casa.`, Cf.linea || 0, { clave: "fases" }); }
+      }
+      if (esObjeto(S.lista_de_fases) && S.lista_de_fases.en && !fasesDe(S.lista_de_fases.en)) {
+        aviso(`La IA escribió las fases como «${String(S.lista_de_fases.en).slice(0, 60)}» y no es una lista: no las puse.`, (S.lista_de_fases.de || [])[0] || 0, { clave: "fases" });
+        delete S.lista_de_fases;
+      }
+    }
+    // Tanda 6 (Whitlock en vivo): el tipo de trabajo de la IA manda sobre las palabras del alcance en decidirInterruptores
+    // («remodel» = dentro de una vivienda: drywall, gabinetes y aparatos excluidos). Solo pasa si su línea de evidencia trae
+    // la PALABRA que lo justifica (remodel / renovat / retrofit; service / repair / replace; new construction / new build /
+    // addition; plans / drawings / engineered), y «remodel» no si esa línea habla de una obra de fuera (outdoor, pavilion,
+    // pool, deck…). Si no pasa, se dice y decide el motor por las palabras de la obra, como antes (Whitlock: la cocina
+    // exterior → sin drywall, gabinetes ni aparatos, como el aprobado).
+    if (H.tipo_trabajo && H.tipo_trabajo !== "no_se") {
+      const nt = Ev.tipo_trabajo, lin = lineaOk(nt) ? o(nt) : "", rx = PALABRA_TIPO_TRABAJO[H.tipo_trabajo];
+      const exterior = H.tipo_trabajo === "remodel" && RX_OBRA_EXTERIOR.test(lin);
+      if (rx && rx.test(lin) && !exterior) L.condiciones.tipo_trabajo = { valor: normalizarTipoTrabajo(H.tipo_trabajo), crudo: H.tipo_trabajo, linea: nt };
+      else aviso(`La IA dijo que es un trabajo «${H.tipo_trabajo}»${lineaOk(nt) ? ` por la línea ${nt}, pero ${exterior ? "esa línea habla de una obra de fuera" : "esa línea no lo dice"}` : " sin una línea que lo diga"}: decidí por lo que dice el alcance.`,
+                 lineaOk(nt) ? nt : 0, { informativo: true, clave: "tipo_trabajo" });
+    }
+    if (esObjeto(admin.panel_visto)) L.panel_visto = admin.panel_visto;
+
+    // ---- el código: las líneas que la IA señaló, leídas con las mismas reglas de siempre (grupos y notas)
+    {
+      const de = (Array.isArray(Co.de) ? Co.de : []).filter(lineaOk).sort((x, y) => x - y);
+      if (de.length) {
+        const Lc = leerAlcance("Código\n" + de.map(o).join("\n"));
+        L.codigo = Lc.codigo; L.codigo_grupos = Lc.codigo_grupos; L.codigo_otros = Lc.codigo_otros; L.codigo_detalle = Lc.codigo_detalle;
+        L.codigo_lineas = de;
+      } else if (Array.isArray(Co.articulos) && Co.articulos.length)
+        aviso("La IA listó artículos del código sin decir de qué línea salen: no los puse (va la frase general).", 0);
+    }
+    // ---- la zona de inundación: de toda la hoja menos lo que la IA dejó fuera (como el lector, que salta las Notas)
+    {
+      const fuera = new Set(Array.isArray(a.sobrantes) ? a.sobrantes : []);
+      L.flood = extraerFlood(orig.filter((_, i) => !fuera.has(i + 1)).join("\n"));
+    }
+    // los {{FALTA: …}} que traiga la hoja son preguntas, como hoy
+    orig.forEach((l, i) => { const m = l.match(/\{\{\s*FALTA\s*:\s*([^}]*)\}\}/i); if (m) L.faltas.push({ linea: i + 1, pregunta: m[1].trim(), soloMarca: !l.replace(m[0], "").trim() }); });
+
+    // ---- la base del precio, para la tarjeta (la decide decidirBasePrecio con lo que la app eligió)
+    {
+      const bp = decidirBasePrecio(L, Object.assign({}, admin, { pricing_basis: admin.pricing_basis || perfil.base_precio || undefined }));
+      R_("base_precio", `Base del precio: ${bp.valor}`, bp.origen === "hoja" ? "hoja" : bp.origen === "defecto" ? "defecto" : "ficha", bp.origen === "hoja" ? L.datos_linea.base_precio : undefined);
+    }
+
+    // ---- las preguntas de la IA que pasaron el juez: fuera las contestadas y las que no cambian el papel
+    {
+      const cond = condicionesQueImportan(L);
+      (Array.isArray(a.preguntas) ? a.preguntas : []).forEach(p => {
+        if (!esObjeto(p) || tiene(R[p.clave])) return;
+        if ((p.clave === "fotos_panel" || p.clave === "circuitos_exist") && (!cond[p.clave].preguntar || L.condiciones[p.clave])) return;
+        const porque = PARA_QUE[p.clave] || p.porque;
+        preguntas.unshift({ clave: p.clave, texto: p.texto, porque, para_que: porque, opciones: p.opciones, lineas: p.lineas || [], ia: true });
+      });
+    }
+    L.preguntas = preguntas.slice();
+
+    // ---- Tanda 4: lo que la plantilla necesita y el molde deja como opcional (como hace redactarDirecto): el resumen de la
+    // tabla de precio, cuáles fixtures pone el cliente y la compañía eléctrica. Lo que no se pueda escribir, no enciende
+    // su bloque (y se dice), en vez de dejar un hueco que frene el papel.
+    {
+      const listaY = arr => arr.length <= 1 ? arr.join("") : arr.slice(0, -1).join(", ") + " and " + arr[arr.length - 1];
+      if (!esObjeto(S.resumen_corrido) || !String(S.resumen_corrido.en || "").trim()) {
+        const ts = (Array.isArray(S.items) ? S.items : []).map(it => String(((it || {}).titulo || {}).en || "").trim().replace(/[.:]$/, "")).filter(Boolean);
+        if (ts.length) S.resumen_corrido = { en: listaY(ts.map(minus)), de: [] };
+      }
+      const pareceEn = v => { v = String(v || ""); return !/[áéíóúñ¿¡]/i.test(v) && (v.match(EN_PALABRAS) || []).length >= (v.match(ES_PALABRAS) || []).length; };
+      const Cfx = L.condiciones.fixtures_cliente;
+      if (Cfx && Cfx.valor && (!esObjeto(S.cuales_fixtures) || !String(S.cuales_fixtures.en || "").trim())) {
+        const cuales = String(Cfx.valor).trim().replace(/\s+(?:are|is|will be)\s+(?:furnished|provided|supplied)\b.*$/i, "").replace(/[.,;:]$/, "").trim();
+        if (cuales && pareceEn(cuales)) S.cuales_fixtures = { en: cuales, de: Cfx.linea ? [Cfx.linea] : [] };
+        else { delete L.condiciones.fixtures_cliente; aviso(`La hoja dice que el cliente pone fixtures («${String(Cfx.valor).slice(0, 60)}»), pero la IA no escribió cuáles en inglés: no lo puse.`, Cfx.linea || 0, { clave: "fixtures" }); }
+      }
+      if (tiene(d.utility)) {
+        const U = esObjeto(S.utility) ? S.utility : {};
+        if (!(U.quien && U.quien.en && U.que_hace && U.que_hace.en)) {
+          const partes = String(d.utility).split(/\s+(?:to|para|:)\s+/);
+          const quien = (U.quien && U.quien.en) || partes[0], que = (U.que_hace && U.que_hace.en) || partes.slice(1).join(" ");
+          if (tiene(quien) && tiene(que) && pareceEn(quien + " " + que)) S.utility = { quien: { en: String(quien).trim(), de: (U.quien || {}).de || [] }, que_hace: { en: String(que).trim(), de: (U.que_hace || {}).de || [] } };
+          else { aviso(`La hoja nombra la compañía eléctrica («${String(d.utility).slice(0, 60)}»), pero no dice qué hace: no puse el bloque de coordinación con ella.`, L.datos_linea.utility || 0, { clave: "utility" }); delete d.utility; delete S.utility; }
+        }
+      }
+    }
+
+    // ---- Tanda 5: fixtures que pone Max Power sin texto de la IA: el de la cita de la hoja (como «cuáles» del cliente)
+    {
+      const Cmx = L.condiciones.fixtures_mxp;
+      if (Cmx && Cmx.valor && (!esObjeto(S.fixtures_mxp) || !String(S.fixtures_mxp.en || "").trim())) {
+        const v = String(Cmx.valor).trim();
+        if (!/[áéíóúñ¿¡]/i.test(v) && (v.match(EN_PALABRAS) || []).length >= (v.match(ES_PALABRAS) || []).length) S.fixtures_mxp = { en: v, de: Cmx.linea ? [Cmx.linea] : [] };
+        else { delete L.condiciones.fixtures_mxp; aviso(`La hoja dice que Max Power pone fixtures («${v.slice(0, 60)}»), pero la IA no escribió cuáles en inglés: no puse esa cláusula.`, Cmx.linea || 0, { clave: "fixtures" }); }
+      }
+    }
+    // ---- Tanda 5: lo que la IA copió de una línea con «—» o comillas tipográficas (las vio limpias: «—» → «-», «“”» →
+    // «"») vuelve a salir como lo escribió Edgar: el título del proyecto con su raya larga, el plano entre sus comillas…
+    {
+      const restaurar = t => {
+        if (!esObjeto(t) || t.ref || typeof t.en !== "string") return;
+        const e = limpiarLinea(t.en).limpia;
+        if (e.length < 8) return;
+        for (const n of deDe(t)) {
+          const c = limpiarLinea(o(n)), i = c.limpia.indexOf(e);
+          if (i < 0 || !c.mapa.length) continue;
+          const r = o(n).slice(c.mapa[i], c.mapa[i + e.length - 1] + 1).replace(/\*\*|__|`/g, "").replace(/\s+/g, " ").trim();
+          if (r && limpiarLinea(r).limpia === e) { t.en = r; return; }
+        }
+      };
+      TEXTOS_SIMPLES.forEach(k => restaurar(S[k]));
+      if (esObjeto(S.utility)) { restaurar(S.utility.quien); restaurar(S.utility.que_hace); }
+      Object.entries(TEXTOS_LISTA).forEach(([k, campos]) => (Array.isArray(S[k]) ? S[k] : []).forEach(p => esObjeto(p) && campos.forEach(c => restaurar(p[c]))));
+      // y los datos que vuelven con su forma de la hoja («… — Electrical Build-Out»), también dentro de los textos de la IA
+      const formas = ["proyecto", "cliente", "inquilino", "dueno", "atencion"].map(k => d[k]).filter(v => tiene(v))
+        .map(v => [limpiarLinea(String(v)).limpia, String(v)]).filter(([l, v]) => l !== v && l.length >= 8);
+      if (formas.length) {
+        const anda = x => { if (Array.isArray(x)) x.forEach(anda); else if (esObjeto(x)) Object.keys(x).forEach(k => {
+          if (k === "en" && typeof x[k] === "string" && !x.ref) formas.forEach(([l, v]) => { x[k] = x[k].split(l).join(v); }); else anda(x[k]); }); };
+        anda(S);
+      }
+    }
+    // ---- Tanda 5: los textos que van DENTRO de una frase de la plantilla («Pricing assumes {{ACCESO}} is available»,
+    // «The {{FIXTURES}} included…», «Any work outside {{AREAS_INCLUIDAS}}…», «Pricing assumes {{…LISTO}} when…») van sin
+    // punto final y con minúscula (las siglas se quedan); «The {{FIXTURES}}» no lleva otro «the»; «{{CUALES}} are furnished
+    // by the Owner» no repite «furnished by…». El acceso tiene que ser un acceso («access to…»): una frase entera («The shed
+    // circuit is routed beneath…») no cabe ahí, y va el de la casa (con aviso).
+    {
+      const FRAGMENTOS = { acceso: true, que_tiene_que_estar_listo: true, areas_incluidas: true, lo_que_no_tocas: true, aberturas: true, fixtures_mxp: true, cuales_fixtures: false };
+      Object.entries(FRAGMENTOS).forEach(([k, baja]) => {
+        const t = S[k];
+        if (!esObjeto(t) || typeof t.en !== "string") return;
+        let en = t.en.replace(/\s+/g, " ").trim().replace(/[.;:,]+$/, "").trim();
+        if (k === "fixtures_mxp") en = en.replace(/^the\s+/i, "");
+        // (tanda 6: «{{CUALES}} are furnished by the Owner» abre la frase de la viñeta: empieza en mayúscula — Whitlock salía
+        //  «Decorative light fixtures. light fixtures (recessed…) are furnished…»)
+        if (k === "cuales_fixtures") en = mayus1(en.replace(/(?:\s*[:—–]\s*|\s+-\s+|\s+(?:are|is|will\s+be)\s+)(?:furnished|provided|supplied)\b.*$/i, "").replace(/[.;:,]+$/, "").trim());
+        if (baja) en = minus(en);
+        if (k === "acceso" && en && !(/\baccess\b/i.test(en) && !/\b(?:is|are|was|were|will|shall)\b/i.test(en))) {
+          aviso(`La IA escribió el acceso como una frase («${t.en.slice(0, 60)}»): en la cláusula del sitio va el acceso de la casa.`, (t.de || [])[0] || 0, { clave: "acceso", informativo: true });
+          delete S[k];
+          return;
+        }
+        if (en) t.en = en; else delete S[k];
+      });
+    }
+    // ---- Tanda 5: la dirección que puso la ficha, también en lo copiado por referencia; y el último candado
+    cambiosDir.forEach(([v, n]) => cambiarEnTextos(v, n));
+    TEXTOS_SIMPLES.forEach(k => { if (!guardiaRef(S[k], "un texto")) delete S[k]; });
+    if (esObjeto(S.utility)) ["quien", "que_hace"].forEach(k => { if (!guardiaRef(S.utility[k], "un texto")) delete S.utility[k]; });
+    (Array.isArray(S.items) ? S.items : []).forEach((it, k) => {
+      if (!guardiaRef(it.titulo, `el título del renglón ${k + 1}`)) it.titulo = { en: (L.items[k] || {}).titulo || "", de: [] };
+      if (!guardiaRef(it.descripcion, `el renglón ${k + 1}`)) it.descripcion = { en: "", de: [] };
+    });
+    ["no_incluye", "opciones"].forEach(k => (Array.isArray(S[k]) ? S[k] : []).forEach((x, i) => TEXTOS_LISTA[k].forEach(c => {
+      if (!guardiaRef(x[c], k === "opciones" ? `la opción ${i + 1}` : `la exclusión ${i + 1}`)) x[c] = { en: c === "titulo" && k === "opciones" ? ((L.opciones[i] || {}).titulo || "") : "", de: [] };
+    })));
+
+    // ---- S: los textos de la IA tal cual, con la marca de que los escribió la IA
+    delete S.disparadores;
+    S.ia = true; S.directo = false;
+    if (!Array.isArray(S.items)) S.items = [];
+    if (!Array.isArray(S.no_incluye)) S.no_incluye = [];
+    S.dudas = []; S.sugerencias = [];
+    return { L, S, avisos, preguntas, resumen };
+  }
+
   const API = { leerAlcance, validarAlcance, cuentas, repartir, decidirBasePrecio, leerBasePrecio, esTituloDePlano, HITO2_PERMISO_CLIENTE, condicionesQueImportan, PARA_QUE, leerMonto, pareceDinero, hayDinero, pareceIngles, redactarDirecto,
                 decidirInterruptores, prepararEncargo, validarSalida,
                 rellenarPlantilla, aplicarSi, repetirFila, aplicarClausulas,
@@ -3998,7 +5885,20 @@
                 perdonDeHallazgo, conMontoTapado, subcadenaComun, TIPOS_HALLAZGO, CAMPOS_ARREGLO,
                 // v251 (29-sep, Metro NPR): la ficha manda en la dirección, las reglas por contratista y la cabecera del SOW
                 nutrirHoja, mismaDireccion, partesDireccion, llevaMarcador, DATOS_FICHA, RE_DATO_FICHA, REGLAS_CONTRATISTA, reglaDeContratista,
-                numeroDeRef, ponerContratista, esLaEmpresa };
+                numeroDeRef, ponerContratista, esLaEmpresa,
+                // 7-oct (pliego «Armar el contrato con IA», tanda 1): el paquete, el juez del armado y el paso a la hoja leída
+                paqueteParaArmar, comprobarMoldeArmado, verificarArmado, armadoAHoja, extraerFlood,
+                PREGUNTAS_QUE_VALEN, TIPOS_AVISO_ARMADO, MOLDE_ARMADO_CLAVES,
+                // tanda 4 (revisión adversaria): el dinero del armado (la misma regla que el cerebro), las lecciones con monto,
+                // las exclusiones que la plantilla ya trae, los botones fijos de las preguntas y las lecciones de un hecho
+                tramosArmar, esMontoArmar, dineroEnTextoArmar, dineroEnElArmado, leccionConMonto, noEsDineroArmar, exclusionFija, leyQueNoEsta,
+                RX_UNIDAD_ARMAR, RX_UNIDAD_ARMAR_MAY, RX_PALABRA_DINERO_ARMAR, RX_ANTES_ARTICULO, RX_LECCION_PALABRA, RX_MASCARA,
+                RX_DINERO_CERCA, RX_LINEA_CODIGO, RX_ANTES_ANO, RX_MONTO_EN_PALABRAS,
+                OPCIONES_FIJAS_ARMADO, LECCION_HECHOS, PLANTILLA_PAGOS,
+                // tanda 5 (tras la prueba en vivo): las condiciones con juicio
+                condicionSinJuicio,
+                // tanda 6 (Whitlock y Wimauma en vivo): lo propio que repite la plantilla, el layout propio y el tipo de trabajo
+                PLANTILLA_TERMINOS, PLANTILLA_PROGRAMA, RX_LAYOUT_PROPIO, PALABRA_TIPO_TRABAJO, RX_OBRA_EXTERIOR, sinNumeroDeHoja };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   raiz.Alcance = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);
