@@ -1,5 +1,5 @@
 -- =====================================================================
--- C6 · EL BANCO — c6-banco.sql, PARTE 1 DE 2 (marca 2026100303).
+-- C6 · EL BANCO — c6-banco.sql, PARTE 1 DE 2 (marca 2026100901).
 -- GENERADA por pruebas/conta/partir-c6.py desde docs/conta/c6-banco.sql:
 -- no se edita a mano. Es lo mismo que el archivo entero, en dos pegados,
 -- para cuando el SQL Editor de Supabase no deja pegarlo de una vez. La
@@ -214,7 +214,7 @@ returns bigint
 language sql
 immutable
 set search_path = public, pg_temp
-as $$ select 2026100303::bigint $$;
+as $$ select 2026100901::bigint $$;
 revoke execute on function public.fn_banco_version() from public, anon, authenticated, service_role;
 -- =====================================================================
 -- 1 · LAS TABLAS
@@ -836,6 +836,12 @@ create index if not exists conciliacion_partidas_ap_idx    on public.conciliacio
 --                (el statement al 30-sep; o el principal, si el préstamo
 --                es posterior)
 --   descriptor   expresión regular para reconocer su pago en el banco
+--   cuotas_al_anio  (ronda 5) cuántas cuotas tiene el año: 12 mensual, 52
+--                semanal, 26 quincenal, 24 dos al mes, 6, 4, 2, 1. La
+--                fórmula parte el interés por período (tasa /
+--                cuotas_al_anio), la porción corriente es el capital de las
+--                próximas cuotas_al_anio cuotas y «a días de la cuota
+--                anterior» se mide con el período. Las de antes: 12.
 -- Cada cuota es un papel (prestamo_cuotas): su fecha, lo pagado, la
 -- partición capital/interés y de dónde salió (la fórmula, o el statement
 -- del prestamista, que manda), el saldo antes y después, y su asiento. Una
@@ -865,6 +871,8 @@ create table if not exists public.prestamos (
   creado_rol       text,
   creado_el        timestamptz   not null default now(),
   cambiado_el      timestamptz,
+  cuotas_al_anio   int           not null default 12,
+  constraint prestamos_cuotas_al_anio check (cuotas_al_anio in (1, 2, 4, 6, 12, 24, 26, 52)),
   constraint prestamos_prestamista check (btrim(prestamista) <> ''),
   constraint prestamos_montos      check (principal > 0 and cuota > 0 and saldo_inicial >= 0 and saldo_inicial <= principal
                                           and tasa_anual >= 0 and tasa_anual < 100),
@@ -872,6 +880,19 @@ create table if not exists public.prestamos (
   constraint prestamos_plazo       check (plazo_meses is null or plazo_meses > 0),
   constraint prestamos_estado      check (estado in ('vigente', 'pagado', 'cancelado'))
 );
+
+-- (Ronda 5) La columna nueva en una base que ya tenía la tabla: las de
+-- antes quedan en 12 (mensuales, como se calculaban).
+do $$
+begin
+  if not exists (select 1 from information_schema.columns c
+                  where c.table_schema = 'public' and c.table_name = 'prestamos' and c.column_name = 'cuotas_al_anio') then
+    alter table public.prestamos add column cuotas_al_anio int not null default 12;
+  end if;
+  if not exists (select 1 from pg_constraint k where k.conname = 'prestamos_cuotas_al_anio' and k.conrelid = 'public.prestamos'::regclass) then
+    alter table public.prestamos add constraint prestamos_cuotas_al_anio check (cuotas_al_anio in (1, 2, 4, 6, 12, 24, 26, 52));
+  end if;
+end $$;
 
 create table if not exists public.prestamo_cuotas (
   id             uuid          primary key default gen_random_uuid(),
@@ -7062,9 +7083,9 @@ begin
       if v_part ? 'extra' then
         return jsonb_build_object(
           'motivo', 'cuota_prestamo', 'regla', 'R8',
-          'texto', format('Cuota del préstamo de %s con %s de más a capital (%s): la fórmula pone el interés del mes y lo demás a '
+          'texto', format('Cuota del préstamo de %s con %s de más a capital (%s): la fórmula pone el interés %s y lo demás a '
                           'capital. Si tienes el statement del prestamista, manda él.', v_p.prestamista, v_part->>'extra',
-                          v_part->>'aviso'),
+                          v_part->>'aviso', fn_prestamo_periodo(v_p.cuotas_al_anio, 'del')),
           'particion', v_part,
           'opciones', jsonb_build_array(
             jsonb_build_object('texto', format('Cuota de %s más %s a capital', v_p.prestamista, v_part->>'extra'),
@@ -9763,6 +9784,6 @@ grant  execute on function public.fn_banco_casar_todo(text, date) to authenticat
 
 
 -- (Fin de la parte 1 de 2.)
-select 'c6 · parte 1 de 2' as control, public.fn_banco_version() = 2026100303 as ok,
-       to_jsonb('Pegada la parte 1 de c6-banco.sql (marca 2026100303). Ahora pega c6-banco-parte2.sql: hasta entonces el banco '
+select 'c6 · parte 1 de 2' as control, public.fn_banco_version() = 2026100901 as ok,
+       to_jsonb('Pegada la parte 1 de c6-banco.sql (marca 2026100901). Ahora pega c6-banco-parte2.sql: hasta entonces el banco '
                 'está a medias y su control lo dice en rojo.'::text) as detalle;

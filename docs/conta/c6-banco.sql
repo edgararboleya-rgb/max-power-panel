@@ -8,8 +8,9 @@
 -- ronda 4d), después de c1-plan-de-cuentas.sql,
 -- c2-libro.sql, c3-puentes.sql y c4-estados.sql, DE LA VERSIÓN QUE TRAE
 -- ESTA MISMA ENTREGA (sus marcas: c2 2026100201, c3 2026092601 y c4
--- 2026100201; ver «CAMBIOS A c2, c3 Y c4», abajo: en la ronda 4 cambiaron
--- c2 y c4, y se vuelven a pegar ANTES que este). La marca de este archivo es 2026100303
+-- 2026100901; ver «CAMBIOS A c2, c3 Y c4», abajo: en la ronda 4 cambiaron
+-- c2 y c4, y en la ronda 5 c4 —la 2540 corriente—; se pegan ANTES que este,
+-- que pide c2 y c4 con 2026100201 al menos). La marca de este archivo es 2026100901
 -- (fn_banco_version). Si falta alguno o es anterior, para con MX000 y dice qué volver
 -- a pegar, sin tocar nada. Se puede volver a pegar encima de sí mismo las
 -- veces que haga falta: no duplica nada, no pisa lo que Edgar ajustó (un
@@ -1297,6 +1298,38 @@
 --     ahora se contradice: lo decide Edgar (EL CONTROL lo dice, con su
 --     arreglo).
 --
+-- LA RONDA 5 (9-oct; marca 2026100901): LOS PRÉSTAMOS DE CUOTA SEMANAL. La
+-- apertura real trajo un préstamo a plazo que se paga CADA SEMANA (el de
+-- 2026, en 2540/2550 desde el c1 del 9-oct), y todo préstamo aquí era
+-- mensual: la fórmula partía el interés por mes (tasa / 12: 243.90 de
+-- interés en una cuota semanal de 334.51, cuando el prestamista cobra
+-- 56.28), la porción corriente era el capital de las próximas 12 cuotas
+-- (1,347.41 de un préstamo que vence entero dentro del año) y la regla de
+-- «a menos de 25 días de la cuota anterior» pedía el statement en cada
+-- cuota (una semana son 7 días). Ahora cada préstamo dice cuántas cuotas
+-- tiene el año (prestamos.cuotas_al_anio: 12 mensual, 52 semanal, 26
+-- quincenal, 24 dos al mes, 6, 4, 2, 1; en fn_prestamo_guardar,
+-- «frecuencia» en palabras o cuotas_al_anio en número; las de antes y lo
+-- que no lo diga, 12, como se calculaban), y los tres sitios lo usan: la
+-- fórmula parte el interés por período (fn_prestamo_particion: tasa /
+-- cuotas_al_anio, y lo que da es lo del portal del prestamista al
+-- centavo), la porción corriente es el capital de las próximas
+-- cuotas_al_anio cuotas (v_prestamos, con cuotas_al_anio al final), y la
+-- regla de los días se mide con el período (25 × 12 / cuotas_al_anio: 25 en
+-- una mensual, 5 en una semanal), con su texto («otra semana de interés»,
+-- no «otro mes»; fn_prestamo_periodo da la palabra). La cuota ya
+-- registrada con el statement que espera su cargo, si hay varias por el
+-- mismo monto (una semanal registrada varias semanas antes que el banco),
+-- se casa con la más cercana en fecha, no con una cualquiera. Cambiar la
+-- frecuencia de un préstamo con cuotas sí se puede: no mueve su saldo
+-- (solo las cuotas que vengan y la porción corriente). Prueba: la 162 de
+-- c6-pruebas.sql. c4 2026100901 propone la 2540 en pasivo circulante (la
+-- 2550 ya iba a largo plazo): este archivo sigue pidiendo c4 2026100201 al
+-- menos. Encima de 809d07c (producción, la 4d): c1 (90 cuentas), c4 y este
+-- (entero o sus dos partes), en ese orden; c2 y c3 no cambian. Una columna
+-- nueva al final de prestamos (cuotas_al_anio) y de v_prestamos; las mismas
+-- 14 tablas, 8 vistas y 21 funciones de la app.
+--
 -- EL TIEMPO (banco de pruebas, pruebas/conta/c6-volumen.sh, 27-sep, con
 -- la ronda 3: el libro de c4-volumen, 10.333 asientos, con 2026 ya
 -- cerrado —así lo deja: las pruebas corren en enero de 2027—, y 12 meses
@@ -1552,7 +1585,7 @@ returns bigint
 language sql
 immutable
 set search_path = public, pg_temp
-as $$ select 2026100303::bigint $$;
+as $$ select 2026100901::bigint $$;
 revoke execute on function public.fn_banco_version() from public, anon, authenticated, service_role;
 -- =====================================================================
 -- 1 · LAS TABLAS
@@ -2174,6 +2207,12 @@ create index if not exists conciliacion_partidas_ap_idx    on public.conciliacio
 --                (el statement al 30-sep; o el principal, si el préstamo
 --                es posterior)
 --   descriptor   expresión regular para reconocer su pago en el banco
+--   cuotas_al_anio  (ronda 5) cuántas cuotas tiene el año: 12 mensual, 52
+--                semanal, 26 quincenal, 24 dos al mes, 6, 4, 2, 1. La
+--                fórmula parte el interés por período (tasa /
+--                cuotas_al_anio), la porción corriente es el capital de las
+--                próximas cuotas_al_anio cuotas y «a días de la cuota
+--                anterior» se mide con el período. Las de antes: 12.
 -- Cada cuota es un papel (prestamo_cuotas): su fecha, lo pagado, la
 -- partición capital/interés y de dónde salió (la fórmula, o el statement
 -- del prestamista, que manda), el saldo antes y después, y su asiento. Una
@@ -2203,6 +2242,8 @@ create table if not exists public.prestamos (
   creado_rol       text,
   creado_el        timestamptz   not null default now(),
   cambiado_el      timestamptz,
+  cuotas_al_anio   int           not null default 12,
+  constraint prestamos_cuotas_al_anio check (cuotas_al_anio in (1, 2, 4, 6, 12, 24, 26, 52)),
   constraint prestamos_prestamista check (btrim(prestamista) <> ''),
   constraint prestamos_montos      check (principal > 0 and cuota > 0 and saldo_inicial >= 0 and saldo_inicial <= principal
                                           and tasa_anual >= 0 and tasa_anual < 100),
@@ -2210,6 +2251,19 @@ create table if not exists public.prestamos (
   constraint prestamos_plazo       check (plazo_meses is null or plazo_meses > 0),
   constraint prestamos_estado      check (estado in ('vigente', 'pagado', 'cancelado'))
 );
+
+-- (Ronda 5) La columna nueva en una base que ya tenía la tabla: las de
+-- antes quedan en 12 (mensuales, como se calculaban).
+do $$
+begin
+  if not exists (select 1 from information_schema.columns c
+                  where c.table_schema = 'public' and c.table_name = 'prestamos' and c.column_name = 'cuotas_al_anio') then
+    alter table public.prestamos add column cuotas_al_anio int not null default 12;
+  end if;
+  if not exists (select 1 from pg_constraint k where k.conname = 'prestamos_cuotas_al_anio' and k.conrelid = 'public.prestamos'::regclass) then
+    alter table public.prestamos add constraint prestamos_cuotas_al_anio check (cuotas_al_anio in (1, 2, 4, 6, 12, 24, 26, 52));
+  end if;
+end $$;
 
 create table if not exists public.prestamo_cuotas (
   id             uuid          primary key default gen_random_uuid(),
@@ -8400,9 +8454,9 @@ begin
       if v_part ? 'extra' then
         return jsonb_build_object(
           'motivo', 'cuota_prestamo', 'regla', 'R8',
-          'texto', format('Cuota del préstamo de %s con %s de más a capital (%s): la fórmula pone el interés del mes y lo demás a '
+          'texto', format('Cuota del préstamo de %s con %s de más a capital (%s): la fórmula pone el interés %s y lo demás a '
                           'capital. Si tienes el statement del prestamista, manda él.', v_p.prestamista, v_part->>'extra',
-                          v_part->>'aviso'),
+                          v_part->>'aviso', fn_prestamo_periodo(v_p.cuotas_al_anio, 'del')),
           'particion', v_part,
           'opciones', jsonb_build_array(
             jsonb_build_object('texto', format('Cuota de %s más %s a capital', v_p.prestamista, v_part->>'extra'),
@@ -15584,17 +15638,41 @@ as $$
 $$;
 revoke execute on function public.fn_prestamo_saldo(uuid, date) from public, anon, authenticated, service_role;
 
+-- (Ronda 5) EL PERÍODO de un préstamo, en palabras, por sus cuotas al año:
+-- p_forma 'nombre' («mes», «semana», «quincena»…), 'otro' («otro mes», «otra
+-- semana»…) o 'del' («del mes», «de la semana»…). Para los textos de la
+-- fórmula y de la bandeja.
+create or replace function public.fn_prestamo_periodo(p_cuotas int, p_forma text default 'nombre')
+returns text
+language sql
+immutable
+set search_path = public, pg_temp
+as $$
+  select case p_forma
+           when 'otro' then case p_cuotas when 52 then 'otra semana' when 26 then 'otra quincena' when 24 then 'otro medio mes'
+                                          when 6 then 'otro bimestre' when 4 then 'otro trimestre' when 2 then 'otro semestre'
+                                          when 1 then 'otro año' else 'otro mes' end
+           when 'del'  then case p_cuotas when 52 then 'de la semana' when 26 then 'de la quincena' when 24 then 'del medio mes'
+                                          when 6 then 'del bimestre' when 4 then 'del trimestre' when 2 then 'del semestre'
+                                          when 1 then 'del año' else 'del mes' end
+           else case p_cuotas when 52 then 'semana' when 26 then 'quincena' when 24 then 'medio mes' when 6 then 'bimestre'
+                              when 4 then 'trimestre' when 2 then 'semestre' when 1 then 'año' else 'mes' end
+         end
+$$;
+revoke execute on function public.fn_prestamo_periodo(int, text) from public, anon, authenticated, service_role;
+
 -- La partición que da la FÓRMULA para un pago de p_monto en p_fecha: el
--- interés del mes sobre lo que se debe (round(saldo × tasa / 100 / 12, 2))
--- y el resto a capital. Si el pago no alcanza el interés, todo es interés
--- (y se dice); si el capital pasa de lo que se debe, no cuadra: manda el
--- statement. La fórmula es la de la CUOTA DEL MES: un pago que no es la
--- cuota (otro monto, o a menos de 25 días de la cuota anterior: un abono
--- extra a capital, dos cuotas juntas) no se parte por ella, que le cobraría
--- otro mes entero de interés (154.51 sobre un abono de 5,000 cinco días
--- después de la cuota): pide_statement, y manda el statement del
--- prestamista (p_capital y p_interes; un abono solo a capital, todo a
--- capital).
+-- interés del PERÍODO sobre lo que se debe (round(saldo × tasa / 100 /
+-- cuotas_al_anio, 2): por mes en una mensual, por semana en una semanal;
+-- ronda 5) y el resto a capital. Si el pago no alcanza el interés, todo es
+-- interés (y se dice); si el capital pasa de lo que se debe, no cuadra:
+-- manda el statement. La fórmula es la de LA CUOTA DEL PERÍODO: un pago que
+-- no es la cuota (otro monto, o a menos de un período de la cuota anterior
+-- —25 días en una mensual, 5 en una semanal—: un abono extra a capital, dos
+-- cuotas juntas) no se parte por ella, que le cobraría otro período entero
+-- de interés (154.51 sobre un abono de 5,000 cinco días después de la cuota
+-- mensual): pide_statement, y manda el statement del prestamista
+-- (p_capital y p_interes; un abono solo a capital, todo a capital).
 create or replace function public.fn_prestamo_particion(p_prestamo uuid, p_fecha date, p_monto numeric)
 returns jsonb
 language plpgsql
@@ -15608,42 +15686,50 @@ declare
   v_cap   numeric;
   v_ult   date;
   v_otro  text;
+  v_dias  int;
 begin
   select * into p from prestamos where id = p_prestamo;
   if not found then
     return null;
   end if;
   v_saldo := fn_prestamo_saldo(p.id, p_fecha);
-  v_int := round(v_saldo * p.tasa_anual / 100 / 12, 2);
+  v_int := round(v_saldo * p.tasa_anual / 100 / p.cuotas_al_anio, 2);
   v_cap := p_monto - v_int;
   select max(q.fecha) into v_ult from prestamo_cuotas q where q.prestamo_id = p.id and q.anulada_el is null and q.fecha <= p_fecha;
-  -- (Ronda 4) Lo que la fórmula no sabe repartir: un pago a menos de 25
-  -- días de la cuota anterior (un abono aparte: la fórmula le cobraría
-  -- otro mes de interés), o MENOR que la cuota (cómo lo repartió el
-  -- prestamista lo dice su statement). La cuota del mes con un EXTRA en el
-  -- mismo cargo (1,529.33 = 1,029.33 + 500.00), a 25 días o más de la
-  -- anterior, sí va por la fórmula: el interés del mes y el resto a
+  -- (Ronda 4) Lo que la fórmula no sabe repartir: un pago a menos de un
+  -- período de la cuota anterior (un abono aparte: la fórmula le cobraría
+  -- otro período de interés), o MENOR que la cuota (cómo lo repartió el
+  -- prestamista lo dice su statement). La cuota del período con un EXTRA en
+  -- el mismo cargo (1,529.33 = 1,029.33 + 500.00), a un período o más de la
+  -- anterior, sí va por la fórmula: el interés del período y el resto a
   -- capital, que es lo que hace el prestamista. Antes todo pago distinto
   -- de la cuota pedía el statement «porque le cobraría otro mes de
   -- interés», y la primera opción lo mandaba todo a capital, sin el
-  -- interés del mes.
-  v_otro := case when v_ult is not null and p_fecha - v_ult < 25
-                 then format('a %s días de la cuota del %s: la fórmula le cobraría otro mes de interés', p_fecha - v_ult, v_ult)
+  -- interés del mes. (Ronda 5: el período son 25 días en una mensual y
+  -- 25 × 12 / cuotas_al_anio en las demás: 5 en una semanal, 11 en una
+  -- quincenal; antes la cuota semanal siguiente, a 7 días, pedía el
+  -- statement.)
+  v_dias := greatest(3, 25 * 12 / p.cuotas_al_anio);
+  v_otro := case when v_ult is not null and p_fecha - v_ult < v_dias
+                 then format('a %s días de la cuota del %s: la fórmula le cobraría %s de interés', p_fecha - v_ult, v_ult,
+                             fn_prestamo_periodo(p.cuotas_al_anio, 'otro'))
                  when p_monto < p.cuota
                  then format('%s, menos que la cuota (%s): cómo lo repartió el prestamista lo dice su statement', p_monto, p.cuota) end;
   return jsonb_strip_nulls(jsonb_build_object(
-    'saldo_antes', v_saldo, 'tasa_anual', p.tasa_anual,
+    'saldo_antes', v_saldo, 'tasa_anual', p.tasa_anual, 'cuotas_al_anio', p.cuotas_al_anio,
     'interes', least(v_int, p_monto), 'capital', greatest(v_cap, 0),
     'saldo_despues', v_saldo - greatest(v_cap, 0),
-    'formula', format('interés = round(%s × %s %% / 12, 2) = %s; capital = %s − %s = %s', v_saldo, p.tasa_anual, v_int, p_monto,
-                      least(v_int, p_monto), greatest(v_cap, 0)),
+    'formula', format('interés = round(%s × %s %% / %s, 2) = %s; capital = %s − %s = %s', v_saldo, p.tasa_anual, p.cuotas_al_anio,
+                      v_int, p_monto, least(v_int, p_monto), greatest(v_cap, 0)),
     'extra', case when v_otro is null and p_monto > p.cuota then p_monto - p.cuota end,
     'aviso', case when v_otro is not null then v_otro
-                  when v_cap < 0 then 'El pago no alcanza el interés del mes: todo va a interés. Mira el statement.'
+                  when v_cap < 0 then format('El pago no alcanza el interés %s: todo va a interés. Mira el statement.',
+                                             fn_prestamo_periodo(p.cuotas_al_anio, 'del'))
                   when v_cap > v_saldo then format('El capital (%s) pasa de lo que se debe (%s): no cuadra; usa el statement.',
                                                    v_cap, v_saldo)
                   when p_monto > p.cuota
-                  then format('la cuota del mes (%s) más %s a capital', p.cuota, p_monto - p.cuota) end,
+                  then format('la cuota %s (%s) más %s a capital', fn_prestamo_periodo(p.cuotas_al_anio, 'del'), p.cuota,
+                              p_monto - p.cuota) end,
     'pide_statement', case when v_otro is not null then true end,
     'no_cuadra', case when v_cap > v_saldo then true end));
 end $$;
@@ -15657,7 +15743,12 @@ revoke execute on function public.fn_prestamo_particion(uuid, date, numeric) fro
 --     "dia_pago": 15, "plazo_meses": 60, "saldo_inicial": "31415.26", "saldo_inicial_al": "2026-09-30",
 --     "descriptor": "FORD CREDIT|FORD MOTOR CR"}');
 -- cuenta (2520), cuenta_largo (2530), cuenta_interes (7100) y cuenta_banco
--- (1010) tienen esos valores si no se dicen. saldo_inicial: lo que se
+-- (1010) tienen esos valores si no se dicen. (Ronda 5) «frecuencia»: cada
+-- cuánto se paga la cuota —mensual (lo de siempre, si no se dice), semanal,
+-- quincenal (o «cada dos semanas»), dos al mes, bimestral, trimestral,
+-- semestral, anual—, o cuotas_al_anio en número (12, 52, 26, 24, 6, 4, 2,
+-- 1); un préstamo de negocio que se paga cada semana va con "frecuencia":
+-- "semanal" y sus cuentas 2540/2550. saldo_inicial: lo que se
 -- debía al empezar el libro (el statement al 30-sep, que la apertura ya
 -- trae en 2520/2530); en un préstamo nuevo, el principal (y el depósito
 -- del préstamo se clasifica a 2520/2530). (Ronda 4) Si la apertura
@@ -15693,7 +15784,7 @@ begin
   select string_agg(k, ', ' order by k) into v_sobra from jsonb_object_keys(p_prestamo) k
    where k not in ('id', 'prestamista', 'descripcion', 'principal', 'tasa_anual', 'cuota', 'primer_pago', 'dia_pago',
                    'plazo_meses', 'cuenta', 'cuenta_largo', 'cuenta_interes', 'cuenta_banco', 'saldo_inicial',
-                   'saldo_inicial_al', 'descriptor', 'estado', 'notas');
+                   'saldo_inicial_al', 'descriptor', 'estado', 'notas', 'frecuencia', 'cuotas_al_anio');
   if v_sobra is not null then
     raise exception using errcode = '22023', message = format('Clave desconocida en el préstamo: %s.', v_sobra);
   end if;
@@ -15708,7 +15799,38 @@ begin
     v_new.cuenta := '2520'; v_new.cuenta_largo := '2530'; v_new.cuenta_interes := '7100';
     v_new.cuenta_banco := coalesce(fn_puente_cuenta_de('banco'), '1010');
     v_new.estado := 'vigente';
+    v_new.cuotas_al_anio := 12;
   end if;
+  -- (Ronda 5) Cuántas cuotas tiene el año: «frecuencia» en palabras o
+  -- cuotas_al_anio en número; las de antes y lo que no lo diga, 12. Se
+  -- puede cambiar con cuotas registradas (no mueve el saldo: solo las
+  -- cuotas que vengan y la porción corriente).
+  v_t := lower(fn_banco_limpio(p_prestamo->>'frecuencia'));
+  if v_t is not null then
+    v_new.cuotas_al_anio := case v_t when 'mensual' then 12 when 'semanal' then 52 when 'quincenal' then 26
+                                     when 'cada dos semanas' then 26 when 'dos al mes' then 24 when 'bimestral' then 6
+                                     when 'trimestral' then 4 when 'semestral' then 2 when 'anual' then 1 end;
+    if v_new.cuotas_al_anio is null then
+      raise exception using errcode = '22023',
+        message = format('frecuencia es cada cuánto se paga la cuota: mensual, semanal, quincenal (o «cada dos semanas»), dos al mes, '
+                         'bimestral, trimestral, semestral o anual; llegó «%s». (O cuotas_al_anio en número: 12, 52, 26, 24, 6, 4, 2 '
+                         'o 1.)', p_prestamo->>'frecuencia');
+    end if;
+  end if;
+  v_t := fn_banco_limpio(p_prestamo->>'cuotas_al_anio');
+  if v_t is not null then
+    if v_t !~ '^[0-9]{1,2}$' or v_t::int not in (1, 2, 4, 6, 12, 24, 26, 52) then
+      raise exception using errcode = '22023',
+        message = format('cuotas_al_anio es cuántas cuotas tiene el año: 12 (mensual), 52 (semanal), 26 (quincenal), 24 (dos al mes), '
+                         '6, 4, 2 o 1; llegó «%s».', v_t);
+    end if;
+    if fn_banco_limpio(p_prestamo->>'frecuencia') is not null and v_new.cuotas_al_anio <> v_t::int then
+      raise exception using errcode = '22023',
+        message = format('frecuencia («%s») y cuotas_al_anio (%s) no dicen lo mismo: di una de las dos.', p_prestamo->>'frecuencia', v_t);
+    end if;
+    v_new.cuotas_al_anio := v_t::int;
+  end if;
+  v_new.cuotas_al_anio := coalesce(v_new.cuotas_al_anio, 12);
   v_new.prestamista    := coalesce(fn_banco_limpio(p_prestamo->>'prestamista'), v_new.prestamista);
   v_new.descripcion    := case when p_prestamo ? 'descripcion' then fn_banco_limpio(p_prestamo->>'descripcion') else v_new.descripcion end;
   v_new.principal      := coalesce(fn_banco_saldo_texto(p_prestamo->>'principal', 'El principal'), v_new.principal);
@@ -15811,10 +15933,11 @@ begin
   perform fn_banco_marca('prestamo:' || v_new.id);
   if v_old.id is null then
     insert into prestamos (id, prestamista, descripcion, principal, tasa_anual, cuota, primer_pago, dia_pago, plazo_meses, cuenta,
-                           cuenta_largo, cuenta_interes, cuenta_banco, saldo_inicial, saldo_inicial_al, descriptor, estado, notas)
+                           cuenta_largo, cuenta_interes, cuenta_banco, saldo_inicial, saldo_inicial_al, descriptor, estado, notas,
+                           cuotas_al_anio)
     values (v_new.id, v_new.prestamista, v_new.descripcion, v_new.principal, v_new.tasa_anual, v_new.cuota, v_new.primer_pago,
             v_new.dia_pago, v_new.plazo_meses, v_new.cuenta, v_new.cuenta_largo, v_new.cuenta_interes, v_new.cuenta_banco,
-            v_new.saldo_inicial, v_new.saldo_inicial_al, v_new.descriptor, v_new.estado, v_new.notas)
+            v_new.saldo_inicial, v_new.saldo_inicial_al, v_new.descriptor, v_new.estado, v_new.notas, v_new.cuotas_al_anio)
     returning * into v_new;
   else
     update prestamos
@@ -15822,7 +15945,8 @@ begin
            tasa_anual = v_new.tasa_anual, cuota = v_new.cuota, primer_pago = v_new.primer_pago, dia_pago = v_new.dia_pago,
            plazo_meses = v_new.plazo_meses, cuenta = v_new.cuenta, cuenta_largo = v_new.cuenta_largo,
            cuenta_interes = v_new.cuenta_interes, cuenta_banco = v_new.cuenta_banco, saldo_inicial = v_new.saldo_inicial,
-           saldo_inicial_al = v_new.saldo_inicial_al, descriptor = v_new.descriptor, estado = v_new.estado, notas = v_new.notas
+           saldo_inicial_al = v_new.saldo_inicial_al, descriptor = v_new.descriptor, estado = v_new.estado, notas = v_new.notas,
+           cuotas_al_anio = v_new.cuotas_al_anio
      where id = v_new.id
     returning * into v_new;
   end if;
@@ -15959,7 +16083,10 @@ begin
     raise exception using errcode = 'MX008', message = format('El préstamo de %s está %s.', p.prestamista, p.estado);
   end if;
   if m.id is not null and v_motivo is null then
-    select string_agg(format('del %s por %s (%s)', q.fecha, q.monto, a.numero), ', ' order by q.fecha), min(q.asiento_id::text)
+    select string_agg(format('del %s por %s (%s)', q.fecha, q.monto, a.numero), ', ' order by q.fecha),
+           -- (ronda 5: la más cercana en fecha, no una cualquiera: una semanal
+           -- puede tener varias registradas por el mismo monto)
+           (array_agg(q.asiento_id::text order by abs(q.fecha - v_fecha), q.fecha))[1]
       into v_ya, v_ya_as
       from prestamo_cuotas q
       join asientos a on a.id = q.asiento_id
@@ -15977,7 +16104,8 @@ begin
     end if;
     -- (Ronda 4) La registrada por OTRO monto a 10 días o menos: es ella (la
     -- cuota redondeada, un recargo). Registrar otra, solo con su motivo.
-    select string_agg(format('del %s por %s', q.fecha, q.monto), ', ' order by q.fecha), min(q.id::text)
+    select string_agg(format('del %s por %s', q.fecha, q.monto), ', ' order by q.fecha),
+           (array_agg(q.id::text order by abs(q.fecha - v_fecha), q.fecha))[1]
       into v_ya, v_ya_as
       from prestamo_cuotas q
      where q.prestamo_id = p.id and q.anulada_el is null and q.movimiento_id is null and q.monto <> v_monto
@@ -17055,9 +17183,11 @@ select c.id, c.cuenta, c.fecha_corte, c.estado, 'casado', null::uuid, m.casado_c
 
 -- ---------------------------------------------------------------------
 -- 9.7 · v_prestamos — uno por préstamo: lo pagado (capital e interés), lo
--- que se debe, la porción corriente (el capital de las próximas 12 cuotas
--- por la fórmula: lo que va en 2520; el resto, a largo plazo en 2530, lo
--- reclasifica el cierre, f08) y cada cuota con su asiento.
+-- que se debe, la porción corriente (el capital de las próximas
+-- cuotas_al_anio cuotas —un año— por la fórmula: lo que va en 2520 o 2540;
+-- el resto, a largo plazo en 2530 o 2550, lo reclasifica el cierre, f08) y
+-- cada cuota con su asiento. (Ronda 5: cuotas_al_anio, al final; antes
+-- siempre 12 cuotas mensuales.)
 -- ---------------------------------------------------------------------
 create view public.v_prestamos with (security_invoker = true) as
 select p.id                         as prestamo_id,
@@ -17088,7 +17218,8 @@ select p.id                         as prestamo_id,
        q.ultimo_asiento_numero,
        q.detalle                    as cuotas_detalle,
        p.descriptor,
-       p.notas
+       p.notas,
+       p.cuotas_al_anio
   from public.prestamos p
   left join lateral (
     select count(*) as n, sum(x.capital) as capital, sum(x.interes) as interes, max(x.fecha) as ultima_fecha,
@@ -17102,15 +17233,16 @@ select p.id                         as prestamo_id,
       left join public.asientos a on a.id = x.asiento_id
      where x.prestamo_id = p.id and x.anulada_el is null) q on true
   left join lateral (
-    -- el capital de las próximas 12 cuotas, mes a mes (interés sobre el
-    -- saldo que queda, como la fórmula)
+    -- el capital de las próximas cuotas_al_anio cuotas (un año), período a
+    -- período (interés sobre el saldo que queda, como la fórmula; ronda 5:
+    -- antes 12 cuotas mensuales para todo préstamo)
     with recursive s(n, saldo, cap) as (
       select 0, (p.saldo_inicial - coalesce(q.capital, 0))::numeric, 0::numeric
       union all
       select s.n + 1,
-             s.saldo - least(s.saldo, greatest(p.cuota - round(s.saldo * p.tasa_anual / 100 / 12, 2), 0)),
-             least(s.saldo, greatest(p.cuota - round(s.saldo * p.tasa_anual / 100 / 12, 2), 0))
-        from s where s.n < 12 and s.saldo > 0)
+             s.saldo - least(s.saldo, greatest(p.cuota - round(s.saldo * p.tasa_anual / 100 / p.cuotas_al_anio, 2), 0)),
+             least(s.saldo, greatest(p.cuota - round(s.saldo * p.tasa_anual / 100 / p.cuotas_al_anio, 2), 0))
+        from s where s.n < p.cuotas_al_anio and s.saldo > 0)
     select coalesce(sum(s.cap), 0) as corriente from s) f on true;
 
 -- ---------------------------------------------------------------------

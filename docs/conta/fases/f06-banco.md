@@ -217,13 +217,12 @@ tránsito, sin tocar 1010.
   solo el rojo esperado de la apertura. Evidencia en
   `pruebas/conta/resultados/2026-10-05-produccion/`.
 
-## Pendiente (9-oct): préstamos de cuota semanal
-- El préstamo de negocio (2540/2550) se paga cada semana. `v_prestamos` calcula
-  la porción corriente con la cuota mensual (sale una parte; es entero),
-  `fn_prestamo_particion` parte el interés por mes (tasa/12) y la regla de «a
-  menos de 25 días de la cuota anterior» pediría el statement en cada cuota.
-  Hace falta decir en el préstamo cuántas cuotas tiene el año (12 o 52) y usar
-  eso en los tres sitios. Mientras tanto: cada cuota con `p_capital` y
-  `p_interes` del portal del prestamista, y la porción corriente se lee como
-  entera. Antes del primer cierre (f08), que reclasifica con esa cifra. Con el
-  sí de Edgar.
+## La ronda 5 (9-oct): préstamos de cuota semanal
+- El préstamo de negocio (2540/2550) se paga cada semana, y todo préstamo de
+  c6 era mensual. Ahora cada préstamo dice cuántas cuotas tiene el año
+  (`cuotas_al_anio`; `"frecuencia": "semanal"` en `fn_prestamo_guardar`): la
+  fórmula parte el interés por período (lo del portal del prestamista al
+  centavo), la porción corriente es el capital de un año de cuotas y la regla
+  de «a días de la cuota anterior» se mide con el período. Marca 2026100901;
+  prueba 162. Los pasos y la verificación, en `pruebas/conta/README.md`, «La
+  ronda 5 de c6 (9-oct)».

@@ -152,6 +152,21 @@
 --   banco) de 1,4-1,5 s a 0,7-0,8 s en una llamada; 'hoy', de 0,9-1,0 s a
 --   0,5 s; los estados, de 0,8-0,9 s a 0,5 s. Ver «ÍNDICES Y TIEMPOS».
 --
+-- CAMBIO DEL 9-oct (marca 2026100901): LA 2540 CORRIENTE. El plan (c1 del
+-- 9-oct, 90 cuentas) suma la pareja 2540/2550, préstamos de negocio
+-- corriente y a largo plazo, para el préstamo a plazo que no es de
+-- vehículo. v_estados_mapeo_propuesto proponía toda 25xx que no fuera 2510
+-- o 2520 a largo plazo; ahora la 2540 va a pasivo circulante, «Préstamos,
+-- porción corriente», como la 2520 (la 2550, a largo plazo, como antes).
+-- La propuesta solo decide la fila que no existe todavía: en una base donde
+-- la 2540 ya tiene su fila (dada de alta con un c4 anterior y
+-- fn_estados_mapeo_derivar), la fila guardada manda, y su renglón se
+-- corrige con select fn_estados_mapeo('2540', '{"seccion":
+-- "pasivo_circulante", "linea": "prestamos_corto"}'); (el bloque 1 de la
+-- apertura lo trae, por si acaso). Se vuelve a pegar encima, antes que c6;
+-- c6 sigue pidiendo 2026100201 al menos: pegar c6 sin volver a pegar c4
+-- también vale.
+--
 -- =====================================================================
 -- CÓMO SE LEEN LAS CIFRAS (lo mismo en todas las vistas)
 -- =====================================================================
@@ -2067,6 +2082,8 @@ select c.codigo as cuenta,
                     when left(c.codigo, 4) = '2410' then array['pasivo_circulante', 'provision_perdidas', 'otros_operacion', 'op_wip']
                     when left(c.codigo, 4) = '2510' then array['pasivo_circulante', 'linea_credito', 'prestamos', 'fin_prestamos']
                     when left(c.codigo, 4) = '2520' then array['pasivo_circulante', 'prestamos_corto', 'prestamos', 'fin_prestamos']
+                    -- (9-oct) la 2540, préstamos de negocio corriente, como la 2520
+                    when left(c.codigo, 4) = '2540' then array['pasivo_circulante', 'prestamos_corto', 'prestamos', 'fin_prestamos']
                     when left(c.codigo, 2) = '25' then array['pasivo_largo_plazo', 'prestamos_largo', 'prestamos', 'fin_prestamos']
                     when left(c.codigo, 4) = '2900' then array['pasivo_largo_plazo', 'prestamo_accionista', 'dueno', 'fin_accionista']
                     else array['pasivo_circulante', 'otros_pasivos', 'otros_operacion', 'op_otros'] end
@@ -8113,13 +8130,15 @@ revoke execute on function public.fn_apertura(date, text, text) from public, ano
 -- 2026092601: v_asiento_papel con v_papel_fases (c6). 2026100201 (ronda 4
 -- de c6): fn_estados_control con su tope por reloj, lo ajeno sin releer lo
 -- que c6 selló y las huellas de las vistas por su árbol (ver la cabecera,
--- «CAMBIOS PARA c6 (ronda 4)»).
+-- «CAMBIOS PARA c6 (ronda 4)»). 2026100901 (9-oct): la 2540 (préstamos de
+-- negocio, corriente) se propone en pasivo circulante, como la 2520; c6
+-- sigue pidiendo 2026100201 al menos.
 create or replace function public.fn_estados_version()
 returns bigint
 language sql
 immutable
 set search_path = public, pg_temp
-as $$ select 2026100201::bigint $$;
+as $$ select 2026100901::bigint $$;
 revoke execute on function public.fn_estados_version() from public, anon, authenticated, service_role;
 
 -- =====================================================================

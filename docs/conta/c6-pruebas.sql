@@ -176,6 +176,10 @@
 -- prueba mira; con la apertura cerrada y sin su asiento, la prueba sale
 -- «omitida».
 --
+-- LA RONDA 5 (9-oct; piden la marca 2026100901): la 162, los préstamos de
+-- cuota semanal (cuotas_al_anio: la partición por período, la porción
+-- corriente de un año de cuotas, la regla de los días por período).
+--
 -- LA RONDA 4d (3-oct; piden la marca 2026100303): de la 154 a la 161. La
 -- 154 es EL CONTROL (el cuadre 59 de fn_banco_control, «el otro lado de
 -- cada casado», su fila en fn_banco_verificar y el freno de
@@ -226,10 +230,10 @@ begin
   -- (Estas pruebas son las de ESTA versión del banco: con una c6-banco.sql
   -- anterior pegada, sus pruebas nuevas saldrían en rojo por lo que falta,
   -- no por un fallo del libro.)
-  if public.fn_banco_version() < 2026100303 then
+  if public.fn_banco_version() < 2026100901 then
     raise exception using
       errcode = 'MX000',
-      message = format('c6-pruebas NO se corrió: la c6-banco.sql pegada es anterior (marca %s; estas pruebas piden 2026100303 o '
+      message = format('c6-pruebas NO se corrió: la c6-banco.sql pegada es anterior (marca %s; estas pruebas piden 2026100901 o '
                        'más). Vuelve a pegar la c6-banco.sql de esta entrega (entera, o sus dos partes).', public.fn_banco_version());
   end if;
 end $$;
@@ -10440,6 +10444,117 @@ begin
   end;
   insert into _pruebas values (161, 'los botones de antes no se enseñan; la transferencia en su dirección; lo que falta en orden fijo', v_esp,
                                coalesce(v_obt, '-'), case when v_obt like 'omitida%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 162. LOS PRÉSTAMOS DE CUOTA SEMANAL (ronda 5, 9-oct): un préstamo que se
+--      paga cada semana se da de alta con «frecuencia: semanal» (52 cuotas
+--      al año; antes todo préstamo era mensual). La porción corriente es el
+--      capital de las próximas 52 cuotas (aquí el préstamo entero: vence
+--      dentro del año); la fórmula parte el interés por semana (tasa / 52)
+--      y lo que da es lo del portal del prestamista al centavo (56.28 y
+--      278.23; a la semana, 53.83 y 280.68); la cuota de la semana
+--      siguiente no es «un abono a días de la anterior» (la regla de los 25
+--      días se mide con el período: 5 en una semanal), y un pago a 3 días
+--      sí pide el statement, con «otra semana de interés». Una frecuencia
+--      que no existe, un número que no es de la lista, o los dos en
+--      desacuerdo, paran con su mensaje (22023). Cambiar la frecuencia de un
+--      préstamo con cuotas sí se puede (no mueve su saldo). Las cuentas son
+--      las de los préstamos de negocio (2540/2550, c1 del 9-oct); sin ellas
+--      la prueba sale «omitida».
+do $$
+declare
+  v_nom  text := 'préstamos de cuota semanal: 52 al año, el interés por semana, la porción corriente entera, los días por período';
+  v_obt  text;
+  v_esp  text := 'alta=52 corriente=6387.54/0.00 particion=56.28/278.23/52 propuesta=cuota_prestamo:sin_statement '
+                 'cuota1=1098:-334.51|2540:278.23|7100:56.28 cuota2=formula:280.68/53.83 saldo=5828.63 tres_dias=pide:otra semana '
+                 'mal=22023,22023,22023 cambio=12/1664.77 control=igual';
+  v_p    uuid;
+  v_m    uuid;
+  v_ok0  boolean;
+  v_part jsonb;
+  v_mal  text := '';
+  d      date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  if d is null then
+    insert into _pruebas values (162, v_nom, v_esp, 'omitida: falta mes abierto', null);
+    return;
+  end if;
+  if not exists (select 1 from cuentas c where c.codigo = '2540' and c.imputable and c.activa)
+     or not exists (select 1 from cuentas c where c.codigo = '2550' and c.imputable and c.activa) then
+    insert into _pruebas values (162, v_nom, v_esp, 'omitida: faltan las cuentas 2540 y 2550 (c1 del 9-oct)', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    v_ok0 := (select c.ok from fn_banco_control(current_setting('mx6.mes'), array['v_prestamos']) c where c.vista = 'cuadre: préstamos');
+    v_p := (fn_prestamo_guardar(jsonb_build_object('prestamista', 'C6 PRUEBAS ONDECK', 'descripcion', 'term loan de prueba, semanal',
+             'principal', '11000.00', 'tasa_anual', '45.82', 'cuota', '334.51', 'primer_pago', (d - 120)::text, 'frecuencia', 'semanal',
+             'cuenta', '2540', 'cuenta_largo', '2550', 'saldo_inicial', '6387.54', 'saldo_inicial_al', (d - 1)::text,
+             'cuenta_banco', '1098', 'descriptor', 'C6 PRUEBAS ONDECK'))->>'id')::uuid;
+    v_obt := 'alta=' || (select x.cuotas_al_anio from v_prestamos x where x.prestamo_id = v_p);
+    -- El saldo del préstamo en el libro (la apertura lo traerá de QuickBooks; aquí, a mano en el mes).
+    perform fn_postear(jsonb_build_object('fecha', d::text, 'descripcion', 'c6-pruebas: el préstamo semanal (se deshace)',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '1098', 'monto', '6387.54'),
+                                  jsonb_build_object('cuenta', '2540', 'monto', '-6387.54'))));
+    v_obt := v_obt || (select format(' corriente=%s/%s', x.porcion_corriente, x.porcion_largo_plazo) from v_prestamos x
+                        where x.prestamo_id = v_p);
+    v_part := fn_prestamo_particion(v_p, d + 7, 334.51);
+    v_obt := v_obt || format(' particion=%s/%s/%s', v_part->>'interes', v_part->>'capital',
+                             case when v_part->>'formula' like '%/ 52,%' then '52' else v_part->>'formula' end);
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 27, null, jsonb_build_array(
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 7,  'monto', '-334.51', 'id', 'C6W1', 'nombre', 'C6 PRUEBAS ONDECK PMT'),
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 14, 'monto', '-334.51', 'id', 'C6W2', 'nombre', 'C6 PRUEBAS ONDECK PMT'))),
+            '1098', 'c6-pruebas-semanal.qfx');
+    perform fn_banco_casar_todo('1098');
+    v_m := pg_temp.c6_mov('1098', 'C6W1');
+    v_obt := v_obt || (select format(' propuesta=%s:%s', m.propuesta->>'motivo',
+                                     case when coalesce((m.propuesta->'particion'->>'pide_statement')::boolean, false)
+                                          then 'pide_statement' else 'sin_statement' end)
+                         from movimientos_banco m where m.id = v_m);
+    perform pg_temp.c6_como('dueno');
+    perform fn_prestamo_cuota(v_p, v_m);
+    execute 'reset role';
+    v_obt := v_obt || ' cuota1=' || (select string_agg(l.cuenta || ':' || l.monto, '|' order by l.cuenta)
+                                       from asiento_lineas l join movimientos_banco m on m.asiento_id = l.asiento_id
+                                      where m.id = v_m);
+    -- La de la semana siguiente (a 7 días): la fórmula otra vez, sobre el saldo que queda.
+    perform fn_prestamo_cuota(v_p, pg_temp.c6_mov('1098', 'C6W2'));
+    v_obt := v_obt || ' cuota2=' || (select q.fuente || ':' || q.capital || '/' || q.interes from prestamo_cuotas q
+                                      where q.movimiento_id = pg_temp.c6_mov('1098', 'C6W2') and q.anulada_el is null)
+                   || ' saldo=' || (select x.saldo from v_prestamos x where x.prestamo_id = v_p);
+    -- Un pago a 3 días de la última cuota: pide el statement (otra SEMANA de interés, no otro mes).
+    v_part := fn_prestamo_particion(v_p, d + 17, 334.51);
+    v_obt := v_obt || ' tres_dias=' || case when coalesce((v_part->>'pide_statement')::boolean, false)
+                                                 and v_part->>'aviso' like '%otra semana de interés%'
+                                            then 'pide:otra semana' else coalesce(v_part->>'aviso', '-') end;
+    -- Lo que no se entiende para y lo dice.
+    begin
+      perform fn_prestamo_guardar(jsonb_build_object('id', v_p, 'frecuencia', 'cada mes'));
+      v_mal := v_mal || 'paso,';
+    exception when others then v_mal := v_mal || sqlstate || ',';
+    end;
+    begin
+      perform fn_prestamo_guardar(jsonb_build_object('id', v_p, 'cuotas_al_anio', 13));
+      v_mal := v_mal || 'paso,';
+    exception when others then v_mal := v_mal || sqlstate || ',';
+    end;
+    begin
+      perform fn_prestamo_guardar(jsonb_build_object('id', v_p, 'frecuencia', 'semanal', 'cuotas_al_anio', 12));
+      v_mal := v_mal || 'paso';
+    exception when others then v_mal := v_mal || sqlstate;
+    end;
+    v_obt := v_obt || ' mal=' || v_mal;
+    -- La frecuencia se cambia con cuotas registradas (no mueve el saldo): la porción corriente, por mes otra vez.
+    perform fn_prestamo_guardar(jsonb_build_object('id', v_p, 'frecuencia', 'mensual'));
+    v_obt := v_obt || (select format(' cambio=%s/%s', x.cuotas_al_anio, x.porcion_corriente) from v_prestamos x where x.prestamo_id = v_p);
+    v_obt := v_obt || ' control=' || case when (select c.ok from fn_banco_control(current_setting('mx6.mes'), array['v_prestamos']) c
+                                                  where c.vista = 'cuadre: préstamos') is not distinct from v_ok0 then 'igual' else 'cambió' end;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 300);
+  end;
+  insert into _pruebas values (162, v_nom, v_esp, coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
 end $$;
 
 -- 61. NO DEJA RASTRO: todo lo de arriba se deshizo. El libro, los papeles,
