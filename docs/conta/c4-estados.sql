@@ -9826,11 +9826,23 @@ comment on function public.fn_diferencia_retirar(uuid, text)  is 'c4: retira una
 -- Si el que pega no puede cambiar el rol, lo dice (WARNING) y la fila
 -- «c4 · jit» del final sale en false, con qué hacer.
 -- =====================================================================
+-- (9-oct) Si ya está apagado, no se toca: dos pegados a la vez en el mismo
+-- cluster (el banco de pruebas, con varias bases) chocaban en la fila del
+-- rol («canceling statement due to lock timeout» en pg_db_role_setting, o
+-- «tuple concurrently updated») y uno se deshacía entero. Y si aun así no
+-- se puede, lo dice (WARNING) y sigue: la fila «c4 · jit» del final dice
+-- cómo quedó.
 do $$
 begin
+  if exists (select 1 from pg_roles r where r.rolname = 'authenticated' and 'jit=off' = any (coalesce(r.rolconfig, '{}'))) then
+    return;
+  end if;
   execute 'alter role authenticated set jit = off';
 exception when insufficient_privilege then
   raise warning 'c4: no se pudo apagar el JIT para authenticated (%). Pégalo como dueño de la base: alter role authenticated set jit = off; notify pgrst, ''reload config'';',
+    sqlerrm;
+when others then
+  raise warning 'c4: no se pudo apagar el JIT para authenticated ahora (%; otro pegado lo estaba cambiando a la vez). Vuelve a pegar c4, o como dueño de la base: alter role authenticated set jit = off; notify pgrst, ''reload config'';',
     sqlerrm;
 end $$;
 notify pgrst, 'reload config';
@@ -9866,9 +9878,18 @@ select 'c4 · ' || x.que as control, x.ok, to_jsonb(x.detalle) as detalle
                                       'v_costo_por_obra', 'v_obras_dinero', 'v_qb_balanzas', 'v_comparacion',
                                       'v_comparacion_obra', 'v_comparacion_resumen')),
      '28 vistas, todas security_invoker, solo SELECT para authenticated'),
+    -- (9-oct: y, para saberlo, las filas guardadas que difieren de lo que
+    -- este c4 propone —la 2540 guardada a largo plazo por un c4 anterior—;
+    -- lo guardado manda, y no es un error)
     ('mapeo', not exists (select 1 from public.v_estados_mapeo m where m.sin_fila),
-     (select format('%s cuentas con su fila; sin fila: %s', count(*) filter (where not m.sin_fila),
-                    coalesce(string_agg(m.cuenta, ', ') filter (where m.sin_fila), 'ninguna'))
+     (select format('%s cuentas con su fila; sin fila: %s; guardadas distintas de lo que c4 propone (manda lo guardado): %s',
+                    count(*) filter (where not m.sin_fila),
+                    coalesce(string_agg(m.cuenta, ', ') filter (where m.sin_fila), 'ninguna'),
+                    coalesce((select string_agg(format('%s (%s/%s; propuesta %s/%s)', e.cuenta, e.seccion, e.linea, p.seccion, p.linea),
+                                                ', ' order by e.cuenta)
+                                from public.estados_mapeo e
+                                join public.v_estados_mapeo_propuesto p on p.cuenta = e.cuenta
+                               where (e.seccion, e.linea) is distinct from (p.seccion, p.linea)), 'ninguna'))
         from public.v_estados_mapeo m)),
     -- (La apertura cuenta si la posteó fn_apertura con su balanza: una
     -- hecha a mano, aunque herede el origen, sale en false y lo dice.)

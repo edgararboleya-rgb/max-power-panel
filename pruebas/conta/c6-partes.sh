@@ -119,7 +119,8 @@ base() {  # base <bd>
     su_psql -d postgres -c "alter database \"$1\" set search_path = \"\$user\", public, extensions" >/dev/null || return 2
   else
     "$DIR/correr.sh" "$1" "$DIR/03-storage-simulacro.sql" "$DOCS/c1-plan-de-cuentas.sql" "$DOCS/c2-libro.sql" "$DOCS/c3-puentes.sql" \
-      "$DOCS/c4-estados.sql" > "$TMP/base_$1.log" 2>&1 || return 2
+      "$DOCS/c4-estados.sql" > "$TMP/base_$1.log" 2>&1 \
+      || { echo "   (la causa, el final de lo que dijo correr.sh:)" >&2; tail -n 8 "$TMP/base_$1.log" >&2; return 2; }
   fi
 }
 pegar() {  # pegar <bd> <archivo> → su salida en $TMP/<bd>.<n>.log; rc de psql

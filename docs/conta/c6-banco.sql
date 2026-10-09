@@ -133,7 +133,9 @@
 --       true} con su motivo: el cobro anotado por otro monto se anula y se
 --       registra el bueno con este depósito; {"cuota": "…", "diferencia":
 --       "capital" | "interes"}: la cuota ya registrada, cobrada por otro
---       monto.
+--       monto (ronda 5: con una cuota posterior ya registrada, solo a
+--       interés; a capital, se anula antes la posterior con
+--       fn_prestamo_cuota_anular, desde el SQL Editor).
 --   fn_banco_cobrar(p_movimiento uuid, p_aplicaciones jsonb, p_notas text default null)
 --       Un depósito sin cobro: registra su cobro (fn_cobro_registrar de c3)
 --       con este movimiento; p_aplicaciones como en c3 ([{"factura_id",
@@ -196,7 +198,11 @@
 -- saldo_corte: lo que dejó QuickBooks en 1410; la que corrige a otra ya
 -- amortizada, "sustituye"; una cancelada, "cancelado_al" y "devuelto"),
 -- fn_conciliacion_anular(conciliacion, motivo) (una conciliación ABIERTA
--- hecha por error: se quita, con rastro), fn_banco_descriptor(clave,
+-- hecha por error: se quita, con rastro), fn_prestamo_cuota_anular(cuota,
+-- motivo) (ronda 5: la última cuota de un préstamo registrada sin su cargo
+-- del banco —con el statement, antes que el banco— que no debió entrar: su
+-- asiento se reversa, con rastro; la que ya tiene su cargo se anula
+-- des-casándolo), fn_banco_descriptor(clave,
 -- patron, cuenta, notas), fn_banco_nomina(movimiento, lineas, motivo) (el
 -- journal de la nómina del proveedor anterior, antes de f11; también la
 -- nómina solo del oficial, 6000/6005), fn_conciliacion_saldo(conciliacion,
@@ -481,7 +487,11 @@
 --     se propone «es ella»: fn_banco_casar_con {cuota, diferencia: capital
 --     o interes} anula la registrada y la registra con el cargo. Otra cuota
 --     o clasificarlo con una así libre pide motivo; en la conciliación, la
---     cuota de más de 10 días sin su cargo pide el suyo.
+--     cuota de más de 10 días sin su cargo pide el suyo. (Ronda 5) Con una
+--     cuota posterior ya registrada, la diferencia a interés entra (el
+--     capital no cambia: el saldo de las que siguen tampoco); a capital, se
+--     anula antes la posterior (fn_prestamo_cuota_anular) y la bandeja no
+--     ofrece ese botón.
 --   · LA CUOTA CON UN EXTRA A CAPITAL (105): fn_prestamo_particion pide el
 --     statement solo a menos de 25 días de la anterior o por menos que la
 --     cuota; la cuota más un extra va por la fórmula (el interés del mes y
@@ -1301,14 +1311,15 @@
 -- LA RONDA 5 (9-oct; marca 2026100901): LOS PRÉSTAMOS DE CUOTA SEMANAL. La
 -- apertura real trajo un préstamo a plazo que se paga CADA SEMANA (el de
 -- 2026, en 2540/2550 desde el c1 del 9-oct), y todo préstamo aquí era
--- mensual: la fórmula partía el interés por mes (tasa / 12: 243.90 de
--- interés en una cuota semanal de 334.51, cuando el prestamista cobra
--- 56.28), la porción corriente era el capital de las próximas 12 cuotas
--- (1,347.41 de un préstamo que vence entero dentro del año) y la regla de
+-- mensual: la fórmula partía el interés por mes (tasa / 12: 162.50 de
+-- interés en una cuota semanal de 300.00 sobre 5,000.00 al 39 %, cuando el
+-- prestamista cobra 37.50), la porción corriente era el capital de las
+-- próximas 12 cuotas (1,979.35 de un préstamo que vence entero dentro del
+-- año) y la regla de
 -- «a menos de 25 días de la cuota anterior» pedía el statement en cada
 -- cuota (una semana son 7 días). Ahora cada préstamo dice cuántas cuotas
 -- tiene el año (prestamos.cuotas_al_anio: 12 mensual, 52 semanal, 26
--- quincenal, 24 dos al mes, 6, 4, 2, 1; en fn_prestamo_guardar,
+-- cada dos semanas, 24 quincenal —dos al mes—, 6, 4, 2, 1; en fn_prestamo_guardar,
 -- «frecuencia» en palabras o cuotas_al_anio en número; las de antes y lo
 -- que no lo diga, 12, como se calculaban), y los tres sitios lo usan: la
 -- fórmula parte el interés por período (fn_prestamo_particion: tasa /
@@ -1329,6 +1340,65 @@
 -- (entero o sus dos partes), en ese orden; c2 y c3 no cambian. Una columna
 -- nueva al final de prestamos (cuotas_al_anio) y de v_prestamos; las mismas
 -- 14 tablas, 8 vistas y 21 funciones de la app.
+--
+-- LO QUE ENCONTRÓ LA VERIFICACIÓN DE LA RONDA 5 (9-oct, tarde; seis agentes
+-- sobre el banco de pruebas, en 16 y 17.6: de cero, encima de producción
+-- con el banco en uso, en uso, concurrencia, volumen, y atacando los
+-- préstamos semanales y la 2540 de c4), y se corrigió aquí mismo:
+--   · VARIAS CUOTAS SEMANALES REGISTRADAS ANTES QUE EL BANCO (con el
+--     statement, por el mismo monto, a 7 días): ningún cargo casaba solo
+--     (la ventana de cada uno abarcaba dos cuotas: nm, nl ≠ 1) y la bandeja
+--     salía R1 «elige cuál» con la más vieja primero. Ahora, de las cuotas
+--     de un mismo préstamo, cada movimiento mira solo su cuota más cercana
+--     en fecha y cada cuota su cargo más cercano (el casado solo y la lista
+--     de candidatos), y lo que casaría solo con cuotas va a R8 «la cuota ya
+--     registrada», con la de su fecha primero.
+--   · LA CUOTA REGISTRADA ANTES Y CASADA DESPUÉS con su cargo
+--     (fn_banco_casar_con {asiento}, o R8 solo) se quedaba con movimiento_id
+--     nulo: v_prestamos la decía «sin cargo» con el cargo casado. Ahora lo
+--     toma al casarla y lo suelta al des-casarla (la guarda de la tabla deja
+--     ese cambio, con la marca).
+--   · EL RECARGO (O REDONDEO) DEL BANCO sobre una cuota registrada antes con
+--     otra registrada después no entraba («las cuotas van en orden») y la
+--     posterior no se podía anular por ningún camino. Ahora la diferencia a
+--     INTERÉS entra (el capital no cambia: el saldo de las posteriores
+--     tampoco; fn_prestamo_cuota lo comprueba con una marca de la
+--     transacción) y la diferencia a capital pide anular antes la posterior
+--     con fn_prestamo_cuota_anular (nueva, SQL Editor: de la última hacia
+--     atrás, solo sin su cargo; su asiento se reversa con rastro); la
+--     bandeja no ofrece «a capital» cuando hay una posterior y dice qué
+--     hacer.
+--   · LA PARTICIÓN PROPUESTA DE LAS CUOTAS SIGUIENTES se quedaba con el
+--     saldo viejo hasta el siguiente «Casar» (con cuatro cargos semanales
+--     en el mismo archivo, en tres): ahora registrar o anular una cuota
+--     rehace las propuestas pendientes de ese préstamo
+--     (fn_prestamo_propuestas_rehacer; «rehechas» en la respuesta).
+--   · UN PAGO QUE NO CUBRE EL INTERÉS DEL PERÍODO (una tasa o una cuota mal
+--     tecleadas: 150 de cuota con 209.42 de interés a la semana) entraba
+--     entero a interés por la fórmula, callado: ahora pide el statement
+--     (MX008) y dice que se revisen la tasa y la cuota.
+--   · UN EXTRA CHICO EN LA CUOTA (menos del 10 %: 36.68 sobre 733.56, 25.00
+--     sobre 300.00) es casi siempre un recargo por pagar tarde, no un abono
+--     a capital: la bandeja lo ofrece primero como recargo (a interés, un
+--     gasto; con su motivo) y a capital solo con motivo; un extra grande
+--     sigue yendo a capital con un botón sin motivo, y el recargo como
+--     tercera opción.
+--   · frecuencia: «quincenal» es dos al mes (24: los días 15 y 30), «cada
+--     dos semanas» (también «cada 2 semanas», «bisemanal») 26; los textos
+--     del período dicen «de la quincena» y «de las dos semanas» (antes
+--     «del medio mes»); se leen los espacios de más y «cada semana», «cada
+--     mes». plazo_meses es el número de cuotas (en un semanal, sus semanas)
+--     y dia_pago, en uno que no es mensual, solo se guarda: la doc de 1.9 y
+--     sus mensajes lo dicen.
+--   · La prueba 162 compara la DIFERENCIA libro − préstamos antes y después
+--     (el libro puede traer saldo en 2540/2550 sin préstamo registrado: la
+--     apertura antes de su bloque de préstamos), y la 130 sale «omitida»
+--     con préstamos de antes del corte ya registrados. Prueba nueva: la 163
+--     (todo lo de arriba, con un préstamo semanal de cifras inventadas).
+--   Lo que no cambió: el orden de las filas de fn_banco_control (por bloques,
+--   no por «orden»: conta.js ordena), y los tiempos de c6-volumen (46 s en la
+--   suite con un año de banco, contra 40 s de tope, también con el c6 de
+--   producción ese día: la máquina del banco, no esta ronda).
 --
 -- EL TIEMPO (banco de pruebas, pruebas/conta/c6-volumen.sh, 27-sep, con
 -- la ronda 3: el libro de c4-volumen, 10.333 asientos, con 2026 ya
@@ -2208,16 +2278,24 @@ create index if not exists conciliacion_partidas_ap_idx    on public.conciliacio
 --                es posterior)
 --   descriptor   expresión regular para reconocer su pago en el banco
 --   cuotas_al_anio  (ronda 5) cuántas cuotas tiene el año: 12 mensual, 52
---                semanal, 26 quincenal, 24 dos al mes, 6, 4, 2, 1. La
---                fórmula parte el interés por período (tasa /
+--                semanal, 26 cada dos semanas, 24 quincenal (dos al mes), 6,
+--                4, 2, 1. La fórmula parte el interés por período (tasa /
 --                cuotas_al_anio), la porción corriente es el capital de las
 --                próximas cuotas_al_anio cuotas y «a días de la cuota
 --                anterior» se mide con el período. Las de antes: 12.
+--   plazo_meses  el número de cuotas del préstamo (el nombre viene de los
+--                mensuales: 84 en uno de siete años; en uno semanal, sus
+--                semanas). dia_pago, el día del mes de la cuota en uno
+--                mensual; en los demás, el del primer pago, y solo se
+--                guarda. Ninguno de los dos entra en una cifra.
 -- Cada cuota es un papel (prestamo_cuotas): su fecha, lo pagado, la
 -- partición capital/interés y de dónde salió (la fórmula, o el statement
--- del prestamista, que manda), el saldo antes y después, y su asiento. Una
--- cuota no se edita: se anula (des-casando su movimiento) y se registra
--- la buena.
+-- del prestamista, que manda), el saldo antes y después, su asiento y su
+-- movimiento del banco (movimiento_id: la registrada antes que el banco lo
+-- toma al casarla y lo suelta al des-casarla; ronda 5). Una cuota no se
+-- edita: se anula (des-casando su movimiento; sin él, con
+-- fn_prestamo_cuota_anular, de la última hacia atrás) y se registra la
+-- buena.
 -- ---------------------------------------------------------------------
 create table if not exists public.prestamos (
   id               uuid          primary key default gen_random_uuid(),
@@ -2717,8 +2795,19 @@ begin
       new.anulada_por := auth.uid();
       return new;
     end if;
+    -- (Ronda 5) La cuota registrada antes que el banco toma su cargo al
+    -- casarla (fn_banco_casar_lineas) y lo suelta al des-casarla
+    -- (fn_banco_descasar_interno): solo movimiento_id, con la marca y la
+    -- cuota viva. Antes se quedaba sin él, y v_prestamos la decía «sin
+    -- cargo» con el cargo casado.
+    if v_marca = 'cuota:' || old.id and old.anulada_el is null and new.anulada_el is null
+       and new.movimiento_id is distinct from old.movimiento_id
+       and (to_jsonb(new) - 'movimiento_id') = (to_jsonb(old) - 'movimiento_id') then
+      return new;
+    end if;
     raise exception using errcode = 'MX003',
-      message = 'Una cuota no se edita: se anula des-casando su movimiento (fn_banco_descasar) y se registra la buena.';
+      message = 'Una cuota no se edita: se anula des-casando su movimiento (fn_banco_descasar) o, sin él, con '
+                'fn_prestamo_cuota_anular (SQL Editor), y se registra la buena.';
 
   when 'prepagados' then
     if v_marca = 'prepagado:' || new.id then
@@ -6727,6 +6816,13 @@ begin
   if p_clase = 'cobro' then
     -- (c3 deja casar un cobro con su movimiento: de nulo a su valor.)
     update cobros set movimiento_id = p_mov::text where id = p_ref::uuid and movimiento_id is null;
+  elsif p_clase = 'cuota_prestamo' then
+    -- (Ronda 5) La cuota registrada antes que el banco (con el statement)
+    -- toma su cargo; la que entró con él (fn_prestamo_cuota) ya lo tiene.
+    perform fn_banco_marca('cuota:' || p_ref);
+    update prestamo_cuotas set movimiento_id = p_mov
+     where id = (case when p_ref ~ '^[0-9a-fA-F-]{36}$' then p_ref::uuid end) and movimiento_id is null and anulada_el is null;
+    perform fn_banco_marca(null);
   elsif p_clase = 'apertura' then
     perform fn_banco_apertura_resolver(p_ref::uuid);
   elsif p_clase = 'transferencia' then
@@ -7889,6 +7985,12 @@ declare
   v_varias text;
   v_proc   boolean := false;
   v_cuota  jsonb;
+  v_post   boolean;
+  v_extra  numeric;
+  v_chico  boolean;
+  v_o_cap  jsonb;
+  v_o_rec  jsonb;
+  v_o_st   jsonb;
   v_senal  boolean;
   v_sin_nombre boolean := false;
   v_cobros jsonb;
@@ -8056,6 +8158,20 @@ begin
   if v_n > 0 and m.monto > 0 and v_ol->>'clase' in ('propia', 'personal')
      and not exists (select 1 from jsonb_array_elements(p_cands) c
                       where coalesce((c->>'tr')::boolean, false) or c->>'origen_tabla' is distinct from 'cobros') then
+    v_n := 0;
+  end if;
+  -- (Ronda 5) Lo que casaría son solo CUOTAS de un préstamo registradas
+  -- antes que el banco (una semanal: varias por el mismo monto): no es
+  -- «elige cuál» por fecha, es R8 «la cuota ya registrada» (8, abajo), con
+  -- la de su fecha primero. Antes salía R1 con la más vieja primero. (Lo
+  -- que Edgar des-casó sigue aquí, con su «lo des-casaste».)
+  if v_n > 0 and v_tipo = 'banco' and m.monto < 0
+     and not exists (select 1 from jsonb_array_elements(p_cands) c
+                      where coalesce((c->>'tr')::boolean, false) or c->>'origen_tabla' is distinct from 'prestamo_cuotas'
+                         or c->>'descasado' is not null)
+     and exists (select 1 from prestamo_cuotas q join prestamos p on p.id = q.prestamo_id
+                  where q.anulada_el is null and q.movimiento_id is null and q.monto = -m.monto and p.cuenta_banco = m.cuenta
+                    and q.fecha between m.fecha - 60 and m.fecha + 3) then
     v_n := 0;
   end if;
   if v_n > 0 then
@@ -8381,7 +8497,9 @@ begin
       return jsonb_build_object(
         'motivo', 'cuota_prestamo', 'regla', 'R8',
         'texto', 'La cuota de este préstamo ya está registrada (con el statement del prestamista) y espera su cargo del banco: '
-                 'cásalo con ella. Registrar otra la pondría dos veces (capital e interés).',
+                 'cásalo con ella. Registrar otra la pondría dos veces (capital e interés).'
+                 || case when jsonb_array_length(v_cuota) > 1
+                         then ' Hay varias por ese monto esperando su cargo: la de su fecha va primero.' else '' end,
         'opciones', v_cuota);
     end if;
     -- (Ronda 4) LA CUOTA YA REGISTRADA POR OTRO MONTO (a 10 días o menos): el
@@ -8392,8 +8510,10 @@ begin
     -- bandeja no la nombraba y sus botones registraban OTRA cuota: el
     -- capital bajaba dos veces y la primera quedaba «en circulación» para
     -- siempre.
-    select jsonb_agg(x.o order by x.d, x.fecha, x.n) into v_cuota
+    select jsonb_agg(x.o order by x.d, x.fecha, x.n), bool_or(x.post) into v_cuota, v_post
       from (select abs(q.fecha - m.fecha) as d, q.fecha, n.n,
+                   exists (select 1 from prestamo_cuotas q2
+                            where q2.prestamo_id = q.prestamo_id and q2.anulada_el is null and q2.fecha > q.fecha) as post,
                    jsonb_build_object(
                      'texto', format('Es la cuota de %s del %s (registrada por %s; el banco cobró %s): %s', p.prestamista, q.fecha,
                                      q.monto, -m.monto,
@@ -8411,6 +8531,10 @@ begin
                and q.fecha between m.fecha - 10 and m.fecha + 10
                and q.capital + (-m.monto - q.monto) * (case n.n when 1 then 1 else 0 end) >= 0
                and q.interes + (-m.monto - q.monto) * (case n.n when 2 then 1 else 0 end) >= 0
+               -- (ronda 5: a capital solo sin cuotas posteriores —su saldo las
+               -- movería—; a interés, siempre)
+               and (n.n = 2 or not exists (select 1 from prestamo_cuotas q2
+                                            where q2.prestamo_id = q.prestamo_id and q2.anulada_el is null and q2.fecha > q.fecha))
                and exists (select 1 from asiento_lineas l
                             where l.asiento_id = q.asiento_id and l.cuenta = m.cuenta
                               and not exists (select 1 from banco_casado_lineas cl
@@ -8420,7 +8544,12 @@ begin
         'motivo', 'cuota_prestamo', 'regla', 'R8',
         'texto', 'La cuota de este préstamo ya está registrada, por otro monto, y espera su cargo del banco: es ella (la cuota '
                  'redondeada, o con un recargo). Cásalo con ella: la diferencia va a capital o a interés, según el statement '
-                 'del prestamista. Registrar otra la pondría dos veces.',
+                 'del prestamista. Registrar otra la pondría dos veces.'
+                 || case when coalesce(v_post, false)
+                         then ' Con una cuota posterior ya registrada, la diferencia solo puede ir a interés (a capital movería el '
+                              'saldo de las que siguen): si va a capital, anula antes la posterior desde el SQL Editor '
+                              '(fn_prestamo_cuota_anular, con su motivo; de la última hacia atrás), pulsa, y vuelve a registrarla.'
+                         else '' end,
         'opciones', v_cuota);
     end if;
     if v_n = 1 then
@@ -8452,19 +8581,41 @@ begin
       -- (Ronda 4) La cuota del mes con un extra a capital en el mismo cargo:
       -- la fórmula (el interés del mes; el resto, con el extra, a capital).
       if v_part ? 'extra' then
+        -- (Ronda 5) Un extra CHICO (menos del 10 % de la cuota: 36.68 sobre
+        -- 733.56, 25.00 sobre 300.00) es casi siempre un recargo por pagar
+        -- tarde, no un abono a capital: va primero como recargo (a interés,
+        -- un gasto) y los dos botones piden su motivo; a capital sin motivo,
+        -- solo un extra grande (y el recargo, tercero). Antes 25.00 de más
+        -- bajaban el capital con un botón sin motivo y ningún cuadre lo veía.
+        v_extra := (v_part->>'extra')::numeric;
+        v_chico := v_extra < round(v_p.cuota * 0.10, 2);
+        v_o_cap := jsonb_build_object('texto', format('Cuota de %s más %s a capital (un abono extra)', v_p.prestamista, v_part->>'extra'),
+                                      'llamar', 'fn_prestamo_cuota',
+                                      'args', jsonb_build_object('p_prestamo', v_p.id, 'p_movimiento', m.id));
+        v_o_st  := jsonb_build_object('texto', format('Con el capital y el interés del statement de %s', v_p.prestamista),
+                                      'llamar', 'fn_prestamo_cuota', 'pide', jsonb_build_array('p_capital', 'p_interes'),
+                                      'args', jsonb_build_object('p_prestamo', v_p.id, 'p_movimiento', m.id));
+        v_o_rec := case when v_p.cuota - (v_part->>'interes')::numeric >= 0
+                        then jsonb_build_object('texto', format('Cuota de %s con un recargo de %s (a interés, un gasto; con su motivo)',
+                                                                v_p.prestamista, v_part->>'extra'),
+                                                'llamar', 'fn_prestamo_cuota', 'pide_motivo', true, 'pide', jsonb_build_array('p_motivo'),
+                                                'args', jsonb_build_object('p_prestamo', v_p.id, 'p_movimiento', m.id,
+                                                                           'p_capital', (v_p.cuota - (v_part->>'interes')::numeric)::text,
+                                                                           'p_interes', ((v_part->>'interes')::numeric + v_extra)::text)) end;
+        v_chico := v_chico and v_o_rec is not null;
         return jsonb_build_object(
           'motivo', 'cuota_prestamo', 'regla', 'R8',
-          'texto', format('Cuota del préstamo de %s con %s de más a capital (%s): la fórmula pone el interés %s y lo demás a '
-                          'capital. Si tienes el statement del prestamista, manda él.', v_p.prestamista, v_part->>'extra',
-                          v_part->>'aviso', fn_prestamo_periodo(v_p.cuotas_al_anio, 'del')),
+          'texto', format('Cuota del préstamo de %s con %s de más (%s): %s. Si tienes el statement del prestamista, manda él.',
+                          v_p.prestamista, v_part->>'extra', v_part->>'aviso',
+                          case when v_chico
+                               then 'tan poco es casi siempre un recargo por pagar tarde (a interés, un gasto), no un abono a capital: '
+                                    'di cuál es, con su motivo'
+                               else format('la fórmula pone el interés %s y lo demás a capital',
+                                           fn_prestamo_periodo(v_p.cuotas_al_anio, 'del')) end),
           'particion', v_part,
-          'opciones', jsonb_build_array(
-            jsonb_build_object('texto', format('Cuota de %s más %s a capital', v_p.prestamista, v_part->>'extra'),
-                               'llamar', 'fn_prestamo_cuota',
-                               'args', jsonb_build_object('p_prestamo', v_p.id, 'p_movimiento', m.id)),
-            jsonb_build_object('texto', format('Con el capital y el interés del statement de %s', v_p.prestamista),
-                               'llamar', 'fn_prestamo_cuota', 'pide', jsonb_build_array('p_capital', 'p_interes'),
-                               'args', jsonb_build_object('p_prestamo', v_p.id, 'p_movimiento', m.id))));
+          'opciones', case when v_chico then jsonb_build_array(v_o_rec, fn_banco_opcion_motivo(v_o_cap), v_o_st)
+                           else jsonb_build_array(v_o_cap, v_o_st)
+                                || case when v_o_rec is not null then jsonb_build_array(v_o_rec) else '[]'::jsonb end end);
       end if;
       return jsonb_build_object(
         'motivo', 'cuota_prestamo', 'regla', 'R8',
@@ -10138,7 +10289,7 @@ begin
                         from fn_banco_pool(v_cuentas_l) f),
              lin as (select * from fn_banco_lineas_libres(v_cuentas_l, (select min(least(x.fecha, coalesce(x.ftx, x.fecha))) - 60
                                                                           from pool x))),
-             cand as (select p.id as mov, p.fecha, p.al, l.asiento_id, l.orden, l.origen_tabla, l.origen_id, l.tr,
+             cand as (select p.id as mov, p.fecha, p.al, l.asiento_id, l.orden, l.origen_tabla, l.origen_id, l.tr, l.fdoc,
                              fn_banco_ventana(p.fecha, p.ftx, p.cheque, l.fdoc, l.monto, l.tr, p.tipo, v_tipos->>l.tr_otra, l.texto) as v,
                              coalesce(p.cheque ~ '^[0-9]+$' and ltrim(p.cheque, '0') <> ''
                                       and coalesce(l.texto, '') ~* ('(^|[^0-9])0*' || ltrim(p.cheque, '0') || '([^0-9]|$)'), false) as num
@@ -10160,7 +10311,27 @@ begin
                          and not exists (select 1 from banco_casados bc join banco_casado_lineas bl on bl.casado_id = bc.id
                                           where bc.movimiento_id = p.id and bc.deshecho_el is not null
                                             and bl.asiento_id = l.asiento_id and bl.orden = l.orden)),
-             cv as (select * from cand where cand.v is not null),
+             -- (Ronda 5) Las CUOTAS DE UN MISMO PRÉSTAMO registradas antes
+             -- que el banco (una semanal: varias por el mismo monto a 7
+             -- días, y la ventana fuerte de cada cargo, de 7 días antes a 3
+             -- después, abarca dos): de cada movimiento, su cuota más
+             -- cercana en fecha; de cada cuota, su cargo más cercano. Así el
+             -- cargo del 19 casa solo con la cuota del 19. Antes ninguno
+             -- casaba (dos candidatas cada uno: nm, nl ≠ 1) y la bandeja
+             -- ofrecía primero la del 12.
+             cvq as (select c.*,
+                            case when c.origen_tabla = 'prestamo_cuotas'
+                                 then (select q.prestamo_id from prestamo_cuotas q
+                                        where q.id = (case when c.origen_id ~ '^[0-9a-fA-F-]{36}$' then c.origen_id::uuid end)) end
+                              as prestamo
+                       from cand c where c.v is not null),
+             cv as (select x.* from (select c.*,
+                                            row_number() over (partition by c.mov, c.prestamo
+                                                               order by abs(c.fdoc - c.fecha), c.fdoc, c.asiento_id, c.orden) as rq_m,
+                                            row_number() over (partition by c.asiento_id, c.orden
+                                                               order by abs(c.fdoc - c.fecha), c.fecha, c.mov) as rq_l
+                                       from cvq c) x
+                     where x.prestamo is null or (x.rq_m = 1 and x.rq_l = 1)),
              cc as (select c.*, count(*) over (partition by c.mov) as nm, count(*) filter (where c.num) over (partition by c.mov) as nmn,
                            count(*) over (partition by c.asiento_id, c.orden) as nl,
                            count(*) filter (where c.num) over (partition by c.asiento_id, c.orden) as nln
@@ -10696,9 +10867,25 @@ begin
          -- Edgar ya la des-casó de este movimiento, con su motivo: la bandeja
          -- no dice «otro movimiento también podría» cuando no hay otro, y dice
          -- lo que Edgar deshizo)
-         cv as (select cand.*, count(*) over (partition by cand.asiento_id, cand.orden) - 1 as otros, p.al
-                  from cand join pool p on p.id = cand.mov
-                 where cand.v is not null),
+         -- (ronda 5: de las cuotas de un mismo préstamo, solo la más cercana
+         -- de cada movimiento y el movimiento más cercano de cada cuota,
+         -- como en el casado solo de arriba)
+         cvq as (select cand.*, p.al, p.fecha,
+                        case when cand.origen_tabla = 'prestamo_cuotas'
+                             then (select q.prestamo_id from prestamo_cuotas q
+                                    where q.id = (case when cand.origen_id ~ '^[0-9a-fA-F-]{36}$' then cand.origen_id::uuid end)) end
+                          as prestamo
+                   from cand join pool p on p.id = cand.mov
+                  where cand.v is not null),
+         cv as (select x.mov, x.asiento_id, x.orden, x.numero, x.origen_tabla, x.origen_id, x.fdoc, x.tr, x.v, x.num, x.al,
+                       count(*) over (partition by x.asiento_id, x.orden) - 1 as otros
+                  from (select c.*,
+                               row_number() over (partition by c.mov, c.prestamo
+                                                  order by abs(c.fdoc - c.fecha), c.fdoc, c.asiento_id, c.orden) as rq_m,
+                               row_number() over (partition by c.asiento_id, c.orden
+                                                  order by abs(c.fdoc - c.fecha), c.fecha, c.mov) as rq_l
+                          from cvq c) x
+                 where x.prestamo is null or (x.rq_m = 1 and x.rq_l = 1)),
          -- (los TICKETS CON OTRO TOTAL de cada cargo sin nada que case: la
          -- línea libre de un recibo en su cuenta, en la ventana de la compra,
          -- que se le parece —la regla de fn_banco_otro_total, escrita aquí
@@ -11497,6 +11684,19 @@ begin
                          '"capital" (lo pagado de más) o "interes" (un recargo), según el statement del prestamista. Si el statement '
                          'reparte otra cosa, des-cásala y regístrala con sus cifras.', -m.monto, v_q.monto, v_com);
     end if;
+    -- (Ronda 5) Si la cuota registrada está DENTRO de una conciliación
+    -- confirmada de su banco (su línea era un cargo en circulación al
+    -- corte), rehacerla la cambiaría: se reabre antes, como con un casado.
+    select format('La cuota del %s está dentro de la conciliación de %s al %s, confirmada (su cargo estaba en circulación al corte): '
+                  'reábrela antes (fn_conciliacion_reabrir, con su motivo), vuelve a pulsar, y concíliala otra vez.',
+                  v_q.fecha, cc.cuenta, cc.fecha_corte)
+      into v_x
+      from conciliaciones cc
+     where cc.cuenta = v_p.cuenta_banco and cc.estado = 'confirmada' and cc.tipo = 'normal' and cc.fecha_corte >= v_q.fecha
+     order by cc.fecha_corte limit 1;
+    if v_x is not null then
+      raise exception using errcode = 'MX008', message = v_x;
+    end if;
     perform fn_reversar_interno(v_q.asiento_id,
                                 format('El banco cobró %s y no %s: la cuota se registra otra vez con su cargo (la diferencia a %s)',
                                        -m.monto, v_q.monto, p_con->>'diferencia'),
@@ -11506,13 +11706,21 @@ begin
        set anulada_motivo = format('El banco cobró %s (no %s) el %s: se registra otra vez con su cargo', -m.monto, v_q.monto, m.fecha)
      where id = v_q.id;
     perform fn_banco_marca(null);
-    return fn_prestamo_cuota(v_p.id, m.id, null, null,
-                             (v_q.capital + case when p_con->>'diferencia' = 'capital' then v_com else 0 end)::text,
-                             (v_q.interes + case when p_con->>'diferencia' = 'interes' then v_com else 0 end)::text,
-                             coalesce(fn_banco_limpio(p_motivo),
-                                      format('La cuota del %s (registrada por %s), con el cargo del banco: la diferencia (%s) a %s',
-                                             v_q.fecha, v_q.monto, v_com, p_con->>'diferencia')))
-           || jsonb_build_object('anulada', v_q.id);
+    -- (Ronda 5) La que la sustituye entra aunque haya cuotas posteriores si
+    -- el capital no cambia (la diferencia a interés: el saldo de las que
+    -- siguen no se mueve); fn_prestamo_cuota lo comprueba con esta marca de
+    -- la transacción. A capital con cuotas posteriores, no (MX008, y nada
+    -- queda a medias): se anula antes la posterior (fn_prestamo_cuota_anular).
+    perform set_config('mx_banco.cuota_sustituye', v_q.id::text, true);
+    v_res := fn_prestamo_cuota(v_p.id, m.id, null, null,
+                               (v_q.capital + case when p_con->>'diferencia' = 'capital' then v_com else 0 end)::text,
+                               (v_q.interes + case when p_con->>'diferencia' = 'interes' then v_com else 0 end)::text,
+                               coalesce(fn_banco_limpio(p_motivo),
+                                        format('La cuota del %s (registrada por %s), con el cargo del banco: la diferencia (%s) a %s',
+                                               v_q.fecha, v_q.monto, v_com, p_con->>'diferencia')))
+             || jsonb_build_object('anulada', v_q.id);
+    perform set_config('mx_banco.cuota_sustituye', '', true);
+    return v_res;
   end if;
 
   if p_con ? 'movimiento' then
@@ -13730,6 +13938,14 @@ begin
       perform fn_banco_apertura_resolver(c.referencia::uuid);
     elsif c.clase = 'transferencia' then
       perform fn_banco_transferencia_estado(c.asiento_id);
+    elsif c.clase = 'cuota_prestamo' then
+      -- (Ronda 5) la cuota registrada antes que el banco suelta su cargo:
+      -- vuelve a esperar uno (sigue viva, con su asiento)
+      perform fn_banco_marca('cuota:' || c.referencia);
+      update prestamo_cuotas set movimiento_id = null
+       where id = (case when c.referencia ~ '^[0-9a-fA-F-]{36}$' then c.referencia::uuid end) and movimiento_id = m.id
+         and anulada_el is null;
+      perform fn_banco_marca(null);
     end if;
   end if;
   return jsonb_strip_nulls(jsonb_build_object('deshecho', c.clase, 'reverso', v_rev->>'numero', 'reverso_id', v_rev->>'id'));
@@ -15649,13 +15865,15 @@ immutable
 set search_path = public, pg_temp
 as $$
   select case p_forma
-           when 'otro' then case p_cuotas when 52 then 'otra semana' when 26 then 'otra quincena' when 24 then 'otro medio mes'
+           -- (26 son dos semanas; 24, la quincena del calendario —los días 15
+           -- y 30—: antes 24 decía «medio mes», que no se lee)
+           when 'otro' then case p_cuotas when 52 then 'otra semana' when 26 then 'otras dos semanas' when 24 then 'otra quincena'
                                           when 6 then 'otro bimestre' when 4 then 'otro trimestre' when 2 then 'otro semestre'
                                           when 1 then 'otro año' else 'otro mes' end
-           when 'del'  then case p_cuotas when 52 then 'de la semana' when 26 then 'de la quincena' when 24 then 'del medio mes'
+           when 'del'  then case p_cuotas when 52 then 'de la semana' when 26 then 'de las dos semanas' when 24 then 'de la quincena'
                                           when 6 then 'del bimestre' when 4 then 'del trimestre' when 2 then 'del semestre'
                                           when 1 then 'del año' else 'del mes' end
-           else case p_cuotas when 52 then 'semana' when 26 then 'quincena' when 24 then 'medio mes' when 6 then 'bimestre'
+           else case p_cuotas when 52 then 'semana' when 26 then 'dos semanas' when 24 then 'quincena' when 6 then 'bimestre'
                               when 4 then 'trimestre' when 2 then 'semestre' when 1 then 'año' else 'mes' end
          end
 $$;
@@ -15664,9 +15882,11 @@ revoke execute on function public.fn_prestamo_periodo(int, text) from public, an
 -- La partición que da la FÓRMULA para un pago de p_monto en p_fecha: el
 -- interés del PERÍODO sobre lo que se debe (round(saldo × tasa / 100 /
 -- cuotas_al_anio, 2): por mes en una mensual, por semana en una semanal;
--- ronda 5) y el resto a capital. Si el pago no alcanza el interés, todo es
--- interés (y se dice); si el capital pasa de lo que se debe, no cuadra:
--- manda el statement. La fórmula es la de LA CUOTA DEL PERÍODO: un pago que
+-- ronda 5) y el resto a capital. Si el pago no alcanza el interés del
+-- período (una tasa o una cuota mal tecleadas), pide el statement (ronda 5;
+-- antes entraba todo a interés, callado); si el capital pasa de lo que se
+-- debe, no cuadra: manda el statement. La fórmula es la de LA CUOTA DEL
+-- PERÍODO: un pago que
 -- no es la cuota (otro monto, o a menos de un período de la cuota anterior
 -- —25 días en una mensual, 5 en una semanal—: un abono extra a capital, dos
 -- cuotas juntas) no se parte por ella, que le cobraría otro período entero
@@ -15723,14 +15943,16 @@ begin
                       v_int, p_monto, least(v_int, p_monto), greatest(v_cap, 0)),
     'extra', case when v_otro is null and p_monto > p.cuota then p_monto - p.cuota end,
     'aviso', case when v_otro is not null then v_otro
-                  when v_cap < 0 then format('El pago no alcanza el interés %s: todo va a interés. Mira el statement.',
-                                             fn_prestamo_periodo(p.cuotas_al_anio, 'del'))
+                  when v_cap < 0 then format('El pago (%s) no alcanza el interés %s (%s sobre %s): la fórmula no lo reparte. Manda el '
+                                             'statement; si la tasa o la cuota del préstamo están mal, corrígelas (fn_prestamo_guardar).',
+                                             p_monto, fn_prestamo_periodo(p.cuotas_al_anio, 'del'), v_int, v_saldo)
                   when v_cap > v_saldo then format('El capital (%s) pasa de lo que se debe (%s): no cuadra; usa el statement.',
                                                    v_cap, v_saldo)
                   when p_monto > p.cuota
                   then format('la cuota %s (%s) más %s a capital', fn_prestamo_periodo(p.cuotas_al_anio, 'del'), p.cuota,
                               p_monto - p.cuota) end,
-    'pide_statement', case when v_otro is not null then true end,
+    -- (ronda 5: y el pago que no cubre el interés del período)
+    'pide_statement', case when v_otro is not null or v_cap < 0 then true end,
     'no_cuadra', case when v_cap > v_saldo then true end));
 end $$;
 revoke execute on function public.fn_prestamo_particion(uuid, date, numeric) from public, anon, authenticated, service_role;
@@ -15745,9 +15967,11 @@ revoke execute on function public.fn_prestamo_particion(uuid, date, numeric) fro
 -- cuenta (2520), cuenta_largo (2530), cuenta_interes (7100) y cuenta_banco
 -- (1010) tienen esos valores si no se dicen. (Ronda 5) «frecuencia»: cada
 -- cuánto se paga la cuota —mensual (lo de siempre, si no se dice), semanal,
--- quincenal (o «cada dos semanas»), dos al mes, bimestral, trimestral,
--- semestral, anual—, o cuotas_al_anio en número (12, 52, 26, 24, 6, 4, 2,
--- 1); un préstamo de negocio que se paga cada semana va con "frecuencia":
+-- cada dos semanas (26 al año; también «cada 2 semanas», «bisemanal»),
+-- quincenal (dos al mes, 24: los días 15 y 30), bimestral, trimestral,
+-- semestral, anual; también «cada semana», «cada mes»…—, o cuotas_al_anio en
+-- número (12, 52, 26, 24, 6, 4, 2, 1); un préstamo de negocio que se paga
+-- cada semana va con "frecuencia":
 -- "semanal" y sus cuentas 2540/2550. saldo_inicial: lo que se
 -- debía al empezar el libro (el statement al 30-sep, que la apertura ya
 -- trae en 2520/2530); en un préstamo nuevo, el principal (y el depósito
@@ -15805,24 +16029,35 @@ begin
   -- cuotas_al_anio en número; las de antes y lo que no lo diga, 12. Se
   -- puede cambiar con cuotas registradas (no mueve el saldo: solo las
   -- cuotas que vengan y la porción corriente).
-  v_t := lower(fn_banco_limpio(p_prestamo->>'frecuencia'));
+  -- (Lo que Edgar escribe, leído como lo escribe: mayúsculas, espacios de
+  -- más, «cada 2 semanas», «cada semana», «cada mes». Quincenal es dos al
+  -- mes, 24 —los días 15 y 30—; cada dos semanas, 26.)
+  v_t := regexp_replace(lower(fn_banco_limpio(p_prestamo->>'frecuencia')), '\s+', ' ', 'g');
   if v_t is not null then
-    v_new.cuotas_al_anio := case v_t when 'mensual' then 12 when 'semanal' then 52 when 'quincenal' then 26
-                                     when 'cada dos semanas' then 26 when 'dos al mes' then 24 when 'bimestral' then 6
-                                     when 'trimestral' then 4 when 'semestral' then 2 when 'anual' then 1 end;
+    v_new.cuotas_al_anio := case
+      when v_t in ('mensual', 'cada mes', 'al mes', 'por mes', 'mes', 'una al mes') then 12
+      when v_t in ('semanal', 'cada semana', 'a la semana', 'por semana', 'semana', 'una a la semana') then 52
+      when v_t in ('cada dos semanas', 'cada 2 semanas', 'bisemanal', 'dos semanas', 'cada catorce dias', 'cada catorce días',
+                   'cada 14 dias', 'cada 14 días') then 26
+      when v_t in ('quincenal', 'dos al mes', 'dos veces al mes', 'cada quincena', 'por quincena', 'quincena', 'cada quince dias',
+                   'cada quince días', 'cada 15 dias', 'cada 15 días') then 24
+      when v_t in ('bimestral', 'cada dos meses', 'cada 2 meses') then 6
+      when v_t in ('trimestral', 'cada tres meses', 'cada 3 meses') then 4
+      when v_t in ('semestral', 'cada seis meses', 'cada 6 meses') then 2
+      when v_t in ('anual', 'cada año', 'al año', 'por año', 'año', 'una al año') then 1 end;
     if v_new.cuotas_al_anio is null then
       raise exception using errcode = '22023',
-        message = format('frecuencia es cada cuánto se paga la cuota: mensual, semanal, quincenal (o «cada dos semanas»), dos al mes, '
-                         'bimestral, trimestral, semestral o anual; llegó «%s». (O cuotas_al_anio en número: 12, 52, 26, 24, 6, 4, 2 '
-                         'o 1.)', p_prestamo->>'frecuencia');
+        message = format('frecuencia es cada cuánto se paga la cuota: mensual, semanal, cada dos semanas (26 al año), quincenal (dos al '
+                         'mes, 24), bimestral, trimestral, semestral o anual; llegó «%s». (O cuotas_al_anio en número: 12, 52, 26, '
+                         '24, 6, 4, 2 o 1.)', p_prestamo->>'frecuencia');
     end if;
   end if;
   v_t := fn_banco_limpio(p_prestamo->>'cuotas_al_anio');
   if v_t is not null then
     if v_t !~ '^[0-9]{1,2}$' or v_t::int not in (1, 2, 4, 6, 12, 24, 26, 52) then
       raise exception using errcode = '22023',
-        message = format('cuotas_al_anio es cuántas cuotas tiene el año: 12 (mensual), 52 (semanal), 26 (quincenal), 24 (dos al mes), '
-                         '6, 4, 2 o 1; llegó «%s».', v_t);
+        message = format('cuotas_al_anio es cuántas cuotas tiene el año: 12 (mensual), 52 (semanal), 26 (cada dos semanas), 24 (quincenal, '
+                         'dos al mes), 6, 4, 2 o 1; llegó «%s».', v_t);
     end if;
     if fn_banco_limpio(p_prestamo->>'frecuencia') is not null and v_new.cuotas_al_anio <> v_t::int then
       raise exception using errcode = '22023',
@@ -15853,13 +16088,15 @@ begin
   v_t := fn_banco_limpio(p_prestamo->>'dia_pago');
   if v_t is not null and (case when v_t !~ '^[0-9]{1,2}$' then true else v_t::int not between 1 and 31 end) then
     raise exception using errcode = '22023',
-      message = format('dia_pago es el día del mes en que se paga la cuota, un número de 1 a 31: llegó «%s».', v_t);
+      message = format('dia_pago es el día del mes en que se paga la cuota, un número de 1 a 31 (en un préstamo que no es mensual solo '
+                       'se guarda: el día del primer pago): llegó «%s».', v_t);
   end if;
   v_new.dia_pago       := coalesce(v_t::int, v_new.dia_pago, extract(day from v_new.primer_pago)::int);
   v_t := fn_banco_limpio(p_prestamo->>'plazo_meses');
   if v_t is not null and (case when v_t !~ '^[0-9]{1,3}$' then true else v_t::int = 0 end) then
     raise exception using errcode = '22023',
-      message = format('plazo_meses es el número de cuotas del préstamo (60 para cinco años), un número entero: llegó «%s».', v_t);
+      message = format('plazo_meses es el número de cuotas del préstamo (60 en uno mensual de cinco años; en uno semanal, sus semanas), '
+                       'un número entero: llegó «%s».', v_t);
   end if;
   v_new.plazo_meses    := case when p_prestamo ? 'plazo_meses' then v_t::int else v_new.plazo_meses end;
   v_new.cuenta         := coalesce(fn_banco_limpio(p_prestamo->>'cuenta'), v_new.cuenta);
@@ -15996,6 +16233,45 @@ begin
 end $$;
 revoke execute on function public.fn_prestamo_guardar(jsonb) from public, anon, authenticated, service_role;
 
+-- (Ronda 5) LAS PROPUESTAS PENDIENTES QUE MIRAN UN PRÉSTAMO se rehacen en
+-- cuanto cambia —una cuota registrada o anulada: su saldo, y con él la
+-- partición de la cuota siguiente; una cuota «ya registrada» que ya tiene
+-- su cargo—: lo pendiente de su banco desde el corte cuya propuesta es la
+-- cuota de un préstamo (o nombra una de sus cuotas), como al dar de alta
+-- una cuenta personal (fn_banco_cuenta_personal). Antes la bandeja enseñaba
+-- hasta el siguiente «Casar» la partición sobre el saldo viejo (con cuatro
+-- cargos semanales en el mismo archivo, en tres de ellos); el botón sí
+-- registraba lo correcto. Como mucho 12 (los más viejos primero; los demás
+-- los rehace «Casar»). Devuelve cuántas.
+create or replace function public.fn_prestamo_propuestas_rehacer(p_prestamo uuid)
+returns int
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  p   prestamos;
+  v_m uuid;
+  v_n int := 0;
+begin
+  select * into p from prestamos where id = p_prestamo;
+  if not found then
+    return 0;
+  end if;
+  for v_m in select x.id from movimientos_banco x
+              where x.estado = 'pendiente' and x.cuenta = p.cuenta_banco and x.fecha >= fn_puente_corte() and x.monto < 0
+                and (x.estado_motivo = 'cuota_prestamo' or x.propuesta->>'motivo' = 'cuota_prestamo'
+                     or exists (select 1 from jsonb_array_elements(case when jsonb_typeof(x.propuesta->'candidatos') = 'array'
+                                                                        then x.propuesta->'candidatos' else '[]'::jsonb end) c
+                                 where c->>'origen_tabla' = 'prestamo_cuotas'))
+              order by x.fecha, x.id
+              limit 12 loop
+    perform fn_banco_casar_interno(null, null, v_m, true);
+    v_n := v_n + 1;
+  end loop;
+  return v_n;
+end $$;
+revoke execute on function public.fn_prestamo_propuestas_rehacer(uuid) from public, anon, authenticated, service_role;
+
 -- ---------------------------------------------------------------------
 -- fn_prestamo_cuota(prestamo, movimiento, fecha, monto, capital, interes,
 -- motivo) — «Cuota del préstamo»: el cargo del banco (p_movimiento) se
@@ -16005,7 +16281,12 @@ revoke execute on function public.fn_prestamo_guardar(jsonb) from public, anon, 
 -- uno, el otro es el resto). Sin movimiento (el banco todavía no llegó):
 -- p_fecha y p_monto, y el cargo, cuando llegue, casa solo con su línea.
 -- Las cuotas van en orden: una anterior a la última viva no entra (se
--- anula la posterior antes, des-casándola). Con movimiento, si la cuota de
+-- anula la posterior antes: des-casando su cargo, o sin él con
+-- fn_prestamo_cuota_anular; ronda 5: salvo la que SUSTITUYE a la anulada
+-- de su misma fecha con el mismo capital, fn_banco_casar_con {cuota,
+-- diferencia: interes}, que no mueve el saldo de las posteriores). Al
+-- terminar, las propuestas pendientes de ese préstamo se rehacen (la
+-- partición de la siguiente cambia con el saldo). Con movimiento, si la cuota de
 -- ese monto ya está registrada sin él (con el statement, antes que el
 -- banco; hasta 60 días antes), no se registra otra (MX008): el cargo se
 -- casa con ella (fn_banco_casar_con), salvo que Edgar diga en el motivo que
@@ -16042,6 +16323,8 @@ declare
   v_ya_as  text;
   v_cap1   numeric;
   v_cap2   numeric;
+  v_sust   prestamo_cuotas;
+  v_reh    int;
 begin
   perform fn_banco_exigir_dueno();
   if p_movimiento is not null then
@@ -16130,10 +16413,20 @@ begin
                        p.saldo_inicial_al);
   end if;
   select max(q.fecha) into v_ult from prestamo_cuotas q where q.prestamo_id = p.id and q.anulada_el is null;
-  if v_ult > v_fecha then
+  -- (Ronda 5) La que SUSTITUYE a una anulada de esta misma fecha con el
+  -- mismo capital (fn_banco_casar_con {cuota, diferencia: interes}: el
+  -- recargo va a interés) entra aunque haya cuotas posteriores: su saldo no
+  -- se mueve. El capital se comprueba abajo, ya repartido.
+  select q.* into v_sust from prestamo_cuotas q
+   where q.id = (case when current_setting('mx_banco.cuota_sustituye', true) ~ '^[0-9a-fA-F-]{36}$'
+                      then current_setting('mx_banco.cuota_sustituye', true)::uuid end)
+     and q.prestamo_id = p.id and q.anulada_el is not null and q.fecha = v_fecha;
+  if v_ult > v_fecha and v_sust.id is null then
     raise exception using errcode = 'MX008',
       message = format('El préstamo ya tiene una cuota del %s, posterior a esta (%s): las cuotas van en orden (su saldo es el de '
-                       'la anterior). Des-casa la posterior, registra esta y vuelve a registrar aquella.', v_ult, v_fecha);
+                       'la anterior). Anula la posterior (con su cargo del banco, des-casándolo: fn_banco_descasar; sin él, '
+                       'fn_prestamo_cuota_anular desde el SQL Editor, con su motivo), registra esta y vuelve a registrar aquella.',
+                       v_ult, v_fecha);
   end if;
   v_saldo := fn_prestamo_saldo(p.id, v_fecha);
   if fn_banco_limpio(p_capital) is not null or fn_banco_limpio(p_interes) is not null then
@@ -16166,6 +16459,12 @@ begin
     end if;
     v_cap := (v_part->>'capital')::numeric;
     v_int := (v_part->>'interes')::numeric;
+  end if;
+  if v_ult > v_fecha and v_sust.id is not null and v_cap <> v_sust.capital then
+    raise exception using errcode = 'MX008',
+      message = format('El préstamo tiene una cuota del %s, posterior a esta (%s), y el capital cambiaría (%s por %s): las cuotas van '
+                       'en orden (su saldo es el de la anterior). Anula antes la posterior (fn_prestamo_cuota_anular, con su motivo), '
+                       'registra esta y vuelve a registrar aquella.', v_ult, v_fecha, v_cap, v_sust.capital);
   end if;
   if v_cap > v_saldo then
     raise exception using errcode = 'MX008',
@@ -16222,15 +16521,109 @@ begin
                                   jsonb_build_array(jsonb_build_object('asiento_id', (v_res->>'id')::uuid, 'orden', 1)),
                                   'R8 cuota del préstamo (' || v_fuente || ')', false, true, v_motivo);
   end if;
+  -- (ronda 5: la bandeja, al día: la partición de la cuota siguiente va
+  -- sobre el saldo que queda)
+  v_reh := fn_prestamo_propuestas_rehacer(p.id);
   return jsonb_strip_nulls(jsonb_build_object(
     'cuota', v_id, 'prestamo', p.id, 'prestamista', p.prestamista, 'fecha', v_fecha, 'monto', v_monto, 'capital', v_cap,
     'interes', v_int, 'fuente', v_fuente, 'saldo_antes', v_saldo, 'saldo_despues', v_saldo - v_cap,
     'asiento_id', v_res->>'id', 'numero', v_res->>'numero', 'movimiento', m.id,
-    'tardio', v_res->>'tardio',
+    'tardio', v_res->>'tardio', 'rehechas', nullif(v_reh, 0),
     'aviso', case when m.id is null then 'Cuando llegue el cargo del banco, casa solo con esta cuota.' end));
 end $$;
 revoke execute on function public.fn_prestamo_cuota(uuid, uuid, date, text, text, text, text) from public, anon, authenticated, service_role;
 grant  execute on function public.fn_prestamo_cuota(uuid, uuid, date, text, text, text, text) to authenticated;
+
+-- ---------------------------------------------------------------------
+-- fn_prestamo_cuota_anular(cuota, motivo) — SQL Editor (sin grant a la
+-- API; ronda 5). Anula una cuota registrada SIN su cargo del banco (con el
+-- statement, antes que el banco: fn_prestamo_cuota con fecha y monto) que
+-- no debió entrar, o que estorba: su asiento se reversa (con rastro) y la
+-- cuota queda anulada con su motivo. De la última hacia atrás (las cuotas
+-- van en orden: su saldo es el de la anterior), y solo sin su cargo: la
+-- que ya tiene su movimiento se anula des-casándolo (fn_banco_descasar).
+-- Las propuestas pendientes de ese préstamo se rehacen. Antes no había
+-- camino: ni fn_reversar (el asiento de un puente no se reversa a mano) ni
+-- editar la cuota (la guarda), y el recargo del banco sobre una cuota con
+-- otra registrada después («las cuotas van en orden») no entraba.
+--   select fn_prestamo_cuota_anular('<cuota>', 'La registré con el statement y el banco cobró otra cosa');
+-- ---------------------------------------------------------------------
+create or replace function public.fn_prestamo_cuota_anular(p_cuota uuid, p_motivo text)
+returns jsonb
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  q        prestamo_cuotas;
+  p        prestamos;
+  v_motivo text := fn_banco_limpio(p_motivo);
+  v_ult    date;
+  v_cas    text;
+  v_conc   text;
+  v_rev    jsonb;
+  v_reh    int;
+begin
+  perform fn_banco_exigir_dueno();
+  if v_motivo is null then
+    raise exception using errcode = '22023', message = 'Anular una cuota dice por qué (motivo).';
+  end if;
+  perform pg_advisory_xact_lock(820261001, hashtext('casar'));
+  select * into q from prestamo_cuotas where id = p_cuota for update;
+  if not found then
+    raise exception using errcode = '22023', message = 'No existe esa cuota.';
+  end if;
+  select * into p from prestamos where id = q.prestamo_id for update;
+  if q.anulada_el is not null then
+    raise exception using errcode = 'MX008',
+      message = format('La cuota del %s de %s ya está anulada (%s): %s.', q.fecha, p.prestamista, q.anulada_el::date, q.anulada_motivo);
+  end if;
+  if q.movimiento_id is not null then
+    raise exception using errcode = 'MX008',
+      message = format('La cuota del %s de %s tiene su cargo del banco: se anula des-casándolo (fn_banco_descasar(%L, ''motivo'')), '
+                       'y el cargo vuelve a la bandeja.', q.fecha, p.prestamista, q.movimiento_id);
+  end if;
+  -- (la casada después con su cargo por una versión anterior, sin él en la
+  -- cuota: también por des-casar)
+  select string_agg(bc.movimiento_id::text, ', ') into v_cas
+    from banco_casados bc join banco_casado_lineas bl on bl.casado_id = bc.id
+   where bl.asiento_id = q.asiento_id and bl.vigente and bc.deshecho_el is null;
+  if v_cas is not null then
+    raise exception using errcode = 'MX008',
+      message = format('La cuota del %s de %s está casada con el movimiento %s: des-cásalo antes (fn_banco_descasar, con su motivo).',
+                       q.fecha, p.prestamista, v_cas);
+  end if;
+  select max(x.fecha) into v_ult from prestamo_cuotas x where x.prestamo_id = p.id and x.anulada_el is null;
+  if v_ult > q.fecha then
+    raise exception using errcode = 'MX008',
+      message = format('El préstamo de %s tiene una cuota del %s, posterior a esta (%s): las cuotas se anulan de la última hacia atrás '
+                       '(su saldo es el de la anterior). Anula antes la del %s.', p.prestamista, v_ult, q.fecha, v_ult);
+  end if;
+  -- (Dentro de una conciliación confirmada de su banco —su línea era un
+  -- cargo en circulación al corte— no se toca: se reabre antes, como con
+  -- un casado.)
+  select format('La cuota del %s está dentro de la conciliación de %s al %s, confirmada (su cargo estaba en circulación al corte): '
+                'reábrela antes (fn_conciliacion_reabrir, con su motivo), anula la cuota y concíliala otra vez.',
+                q.fecha, cc.cuenta, cc.fecha_corte)
+    into v_conc
+    from conciliaciones cc
+   where cc.cuenta = p.cuenta_banco and cc.estado = 'confirmada' and cc.tipo = 'normal' and cc.fecha_corte >= q.fecha
+   order by cc.fecha_corte limit 1;
+  if v_conc is not null then
+    raise exception using errcode = 'MX008', message = v_conc;
+  end if;
+  v_rev := fn_reversar_interno(q.asiento_id, format('Cuota del %s de %s anulada: %s', q.fecha, p.prestamista, v_motivo), 'reverso',
+                               jsonb_build_object('funcion', 'fn_prestamo_cuota_anular', 'cuota', q.id, 'prestamo', p.id));
+  perform fn_banco_marca('cuota:' || q.id);
+  update prestamo_cuotas set anulada_motivo = v_motivo where id = q.id;
+  perform fn_banco_marca(null);
+  v_reh := fn_prestamo_propuestas_rehacer(p.id);
+  return jsonb_strip_nulls(jsonb_build_object(
+    'anulada', q.id, 'prestamo', p.id, 'prestamista', p.prestamista, 'fecha', q.fecha, 'monto', q.monto, 'capital', q.capital,
+    'interes', q.interes, 'reverso', v_rev->>'numero', 'reverso_id', v_rev->>'id', 'saldo', fn_prestamo_saldo(p.id),
+    'rehechas', nullif(v_reh, 0),
+    'aviso', format('Se debe %s. Si hace falta, registra la cuota buena (fn_prestamo_cuota).', fn_prestamo_saldo(p.id))));
+end $$;
+revoke execute on function public.fn_prestamo_cuota_anular(uuid, text) from public, anon, authenticated, service_role;
 -- =====================================================================
 -- 8 · LOS PREPAGADOS (f06): el seguro y la fianza pagados por adelantado
 --     se van al gasto día por día de su cobertura.
@@ -19538,6 +19931,7 @@ comment on function public.fn_banco_verificar(text[])               is 'c6: la r
 comment on function public.fn_prestamo_guardar(jsonb)               is 'c6: alta o cambio de un préstamo (SQL Editor).';
 comment on function public.fn_prepagado_guardar(jsonb)              is 'c6: alta o cambio de una póliza pagada por adelantado (SQL Editor); la de antes del corte dice su saldo_corte (lo que dejó QuickBooks); la que corrige a otra ya amortizada, «sustituye»; la cancelada, su fecha y lo devuelto.';
 comment on function public.fn_conciliacion_anular(uuid, text)       is 'c6: quita una conciliación ABIERTA hecha por error (la fecha mal escrita), con su motivo y su rastro (SQL Editor).';
+comment on function public.fn_prestamo_cuota_anular(uuid, text)     is 'c6: anula la última cuota de un préstamo registrada sin su cargo del banco (reversa su asiento), con su motivo y su rastro (SQL Editor).';
 comment on function public.fn_banco_nomina(uuid, jsonb, text)       is 'c6: el journal de la nómina del proveedor anterior (antes de f11), casado con su débito del banco (SQL Editor).';
 comment on function public.fn_banco_descriptor(text, text, text, text) is 'c6: cambia lo que se reconoce en la descripción de un movimiento (SQL Editor).';
 comment on function public.fn_banco_cuenta_personal(text, text, boolean, text) is 'c6: da de alta una cuenta personal de Edgar por sus 4 últimos, o la da de baja con su motivo (SQL Editor). Solo con ella el dinero de o a esa cuenta va al patrimonio del accionista sin motivo.';

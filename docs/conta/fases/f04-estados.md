@@ -117,8 +117,15 @@ conciliación de apertura (f06).
   c4 y c6 en `true`. Los pasos y lo que debe verse, en
   `pruebas/conta/README.md`, «La apertura del 30-sep (9-oct)».
 - El plan pasa a **90 cuentas**: 2540 y 2550 (préstamos de negocio, corriente
-  y largo plazo) para el préstamo a plazo que no es de vehículo. c4 propone
-  toda 25xx que no sea 2510/2520 a largo plazo: el renglón de la 2540 se fija
-  al darla de alta (`fn_estados_mapeo`); la derivación en c4 queda para la
-  próxima ronda de c4 (volver a pegar c4 obliga a volver a pegar c6).
-- ▶ Pendiente: pegar en producción (c1 del 9-oct y los cinco bloques privados).
+  y largo plazo) para el préstamo a plazo que no es de vehículo. El c4 del
+  9-oct (marca 2026100901) propone la 2540 en pasivo circulante
+  («prestamos_corto») y la 2550 a largo plazo, y las siembra al pegarse; el
+  bloque 1 de la apertura repite el renglón de la 2540 (`fn_estados_mapeo`)
+  por si la fila se guardó antes con el c4 anterior, que la ponía a largo
+  plazo (lo guardado manda, y la fila `c4 · mapeo` del pegado dice qué
+  guardado difiere de lo propuesto). Volver a pegar c4 no obliga a volver a
+  pegar c6 (c6 pide c4 2026100201 al menos). También del 9-oct: el `alter
+  role … jit = off` del pegado no se repite si ya está apagado (dos pegados
+  a la vez en el mismo cluster chocaban) y, si no puede, avisa y sigue.
+- ▶ Pendiente: pegar en producción (c1 del 9-oct, c4, c6 y los cinco bloques
+  privados).

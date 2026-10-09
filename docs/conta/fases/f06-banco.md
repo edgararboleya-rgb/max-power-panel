@@ -226,3 +226,17 @@ tránsito, sin tocar 1010.
   de «a días de la cuota anterior» se mide con el período. Marca 2026100901;
   prueba 162. Los pasos y la verificación, en `pruebas/conta/README.md`, «La
   ronda 5 de c6 (9-oct)».
+- Lo que encontró su verificación (seis agentes sobre el banco, 9-oct tarde) y
+  se corrigió en la misma entrega (prueba 163): varias cuotas semanales
+  registradas antes que el banco no casaban solas (cada cargo mira ahora su
+  cuota más cercana en fecha, y la bandeja va a R8 «ya registrada»); la cuota
+  registrada antes y casada después no tomaba su cargo (`movimiento_id`); el
+  recargo del banco sobre una cuota con otra registrada después no entraba y
+  la posterior no se podía anular (a interés entra; `fn_prestamo_cuota_anular`,
+  SQL Editor, de la última hacia atrás); la partición propuesta de la cuota
+  siguiente se quedaba vieja hasta el siguiente «Casar» (se rehace al
+  registrar o anular); un pago que no cubre el interés del período entraba
+  entero a interés (pide el statement); un extra chico (< 10 %) se ofrece
+  primero como recargo con su motivo; «quincenal» es dos al mes (24) y «cada
+  dos semanas» 26, con sus textos. Las cifras del préstamo real salieron del
+  repo (es público): la prueba usa un préstamo inventado.
