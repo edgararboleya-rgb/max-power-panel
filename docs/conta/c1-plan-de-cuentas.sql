@@ -761,6 +761,11 @@ select v.codigo, v.nombre, v.nombre_en, v.tipo,
   ('2510', 'Línea de crédito',                          'Line of credit',                                      'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           null),
   ('2520', 'Préstamos de vehículo — corriente',         'Vehicle loans — current portion',                     'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           null),
   ('2530', 'Préstamos de vehículo — largo plazo',       'Vehicle loans — long-term portion',                   'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           null),
+  -- (9-oct) Un préstamo a plazo que no es de vehículo (el de 2026, a un
+  -- año). Misma pareja que 2520/2530; cada préstamo, con su saldo y sus
+  -- cuotas, vive en prestamos (c6).
+  ('2540', 'Préstamos de negocio — corriente',          'Business loans — current portion',                    'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           'Un préstamo a plazo que no es de vehículo (el de 2026, a un año; 9-oct): lo que vence en los próximos 12 meses; el resto, en 2550. Cada préstamo vive en prestamos (c6: fn_prestamo_guardar con cuenta 2540 y cuenta_largo 2550), como los del camión en 2520/2530. OJO (c4 2026100201): c4 propone toda 25xx que no sea 2510 o 2520 como pasivo a largo plazo; al darla de alta se le dice su renglón: select fn_estados_mapeo(''2540'', ''{"seccion": "pasivo_circulante", "linea": "prestamos_corto"}'');'),
+  ('2550', 'Préstamos de negocio — largo plazo',        'Business loans — long-term portion',                  'pasivo',  'haber', true,  'prohibida',   'prohibida',   null,           'La parte de un préstamo de negocio (2540) que vence después de 12 meses. En el balance, «Préstamos a largo plazo» (c4 la propone así sola).'),
   ('2900', 'Préstamo del accionista',                   'Loan from shareholder',                               'pasivo',  'haber', true,  'prohibida',   'prohibida',   'accionista',   'Lo que Edgar paga de su bolsillo por la empresa (f03). Lo de un empleado va a 2250.'),
 
   -- 3000 · Capital
@@ -848,8 +853,9 @@ where (c.nombre, c.nombre_en, c.tipo, c.padre, c.saldo_normal, c.imputable,
 
 -- =====================================================================
 -- Lo que enseña el SQL Editor al terminar: el plan, para reconocerlo.
--- Esperado: 88 cuentas (87 imputables; 2100 es de grupo, con las dos
--- Amex: 2100-2009 la Blue y 2100-2013 la Gold; 1050 la caja chica).
+-- Esperado: 90 cuentas (89 imputables; 2100 es de grupo, con las dos
+-- Amex: 2100-2009 la Blue y 2100-2013 la Gold; 1050 la caja chica; 2540 y
+-- 2550 los préstamos de negocio, 9-oct).
 -- =====================================================================
 select codigo, nombre, tipo, saldo_normal as saldo, imputable, activa,
        regla_obra as obra, regla_cost_code as cost_code, etiqueta_fiscal

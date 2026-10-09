@@ -107,3 +107,18 @@ conciliación de apertura (f06).
   su resultado quede registrado, y la apertura real cuando llegue la
   balanza de QuickBooks al 30-sep.
 
+
+## La apertura real (9-oct)
+- La balanza al 30-sep se revisó entera contra los reportes de QuickBooks y
+  traía once errores que se arreglaron en QuickBooks antes de abrir (los
+  detalles y las cifras, fuera del repo: es público). Con la balanza
+  arreglada, la apertura se probó en el banco (16 y 17.6): entra en 16 líneas,
+  la comparación contra QuickBooks sale toda en `ok`, los controles de c2, c3,
+  c4 y c6 en `true`. Los pasos y lo que debe verse, en
+  `pruebas/conta/README.md`, «La apertura del 30-sep (9-oct)».
+- El plan pasa a **90 cuentas**: 2540 y 2550 (préstamos de negocio, corriente
+  y largo plazo) para el préstamo a plazo que no es de vehículo. c4 propone
+  toda 25xx que no sea 2510/2520 a largo plazo: el renglón de la 2540 se fija
+  al darla de alta (`fn_estados_mapeo`); la derivación en c4 queda para la
+  próxima ronda de c4 (volver a pegar c4 obliga a volver a pegar c6).
+- ▶ Pendiente: pegar en producción (c1 del 9-oct y los cinco bloques privados).

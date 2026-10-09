@@ -216,3 +216,14 @@ tránsito, sin tocar 1010.
   2026100303. Sin rastro; cadena, puentes y banco en verde, y en los estados
   solo el rojo esperado de la apertura. Evidencia en
   `pruebas/conta/resultados/2026-10-05-produccion/`.
+
+## Pendiente (9-oct): préstamos de cuota semanal
+- El préstamo de negocio (2540/2550) se paga cada semana. `v_prestamos` calcula
+  la porción corriente con la cuota mensual (sale una parte; es entero),
+  `fn_prestamo_particion` parte el interés por mes (tasa/12) y la regla de «a
+  menos de 25 días de la cuota anterior» pediría el statement en cada cuota.
+  Hace falta decir en el préstamo cuántas cuotas tiene el año (12 o 52) y usar
+  eso en los tres sitios. Mientras tanto: cada cuota con `p_capital` y
+  `p_interes` del portal del prestamista, y la porción corriente se lee como
+  entera. Antes del primer cierre (f08), que reclasifica con esa cifra. Con el
+  sí de Edgar.

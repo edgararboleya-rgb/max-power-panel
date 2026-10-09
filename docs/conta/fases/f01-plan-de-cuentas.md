@@ -187,7 +187,7 @@ centavos vive solo en `asiento_lineas.monto`.
 Fase 2 (el libro) y, sobre todo, Fase 9 (estimado contra real).
 
 ## Lo construido (24-sep) — versión candidata, sin pegar
-- `docs/conta/c1-plan-de-cuentas.sql`: **88 cuentas** (87 imputables; 2100 es
+- `docs/conta/c1-plan-de-cuentas.sql`: **90 cuentas** (89 imputables; 2540 y 2550, los préstamos de negocio, desde el 9-oct; 2100 es
   de grupo y cada tarjeta cuelga como `2100-XXXX`: 2100-2009 la Amex Blue y
   2100-2013 la Amex Gold; 1050 Efectivo (caja chica), 24-sep). 1020 salió (no hay cuenta de
   nómina); 1030 (reserva de impuestos) se queda.

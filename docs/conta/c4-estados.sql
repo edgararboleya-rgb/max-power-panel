@@ -2441,7 +2441,7 @@ select p.anio, f.estado = 'cerrado' as cerrado, f.cerrado_el
 -- Es la vista a la que baja toda cifra (la llave «bajar» de las demás).
 -- ---------------------------------------------------------------------
 create view public.v_libro with (security_invoker = true) as
--- (El mapeo se lee UNA vez por consulta —88 cuentas— y se casa con las
+-- (El mapeo se lee UNA vez por consulta —90 cuentas— y se casa con las
 -- líneas en memoria: con la policy del libro, cada fila leída de una tabla
 -- cuesta una llamada a es_dueno(), y buscarlo línea por línea la hacía
 -- miles de veces.)

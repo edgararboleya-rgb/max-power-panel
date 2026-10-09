@@ -41,10 +41,10 @@ comprobando si algo ya estaba.
 
 | Paso | Qué se pega | Qué debe verse al final |
 |---|---|---|
-| 1 | `docs/conta/c1-plan-de-cuentas.sql` | Una tabla con el plan de cuentas: **88 filas** (`codigo`, `nombre`, `tipo`, `saldo`, `imputable`, `activa`, `obra`, `cost_code`, `etiqueta_fiscal`), de la 1000 a la 9000. |
-| 2 | `docs/conta/c2-libro.sql` | Los **10 controles** del libro (`fn_verificar_cadena`), **todos con `ok = true`**: `hash`, `enlace`, `numeracion`, `contadores`, `cuadre`, `reversos`, `periodos`, `triggers`, `cuentas` (dice `"cuentas": 88`) y `permisos`. Uno en `false` = parar y avisar. |
+| 1 | `docs/conta/c1-plan-de-cuentas.sql` | Una tabla con el plan de cuentas: **90 filas** (desde el 9-oct: 2540 y 2550, los préstamos de negocio) (`codigo`, `nombre`, `tipo`, `saldo`, `imputable`, `activa`, `obra`, `cost_code`, `etiqueta_fiscal`), de la 1000 a la 9000. |
+| 2 | `docs/conta/c2-libro.sql` | Los **10 controles** del libro (`fn_verificar_cadena`), **todos con `ok = true`**: `hash`, `enlace`, `numeracion`, `contadores`, `cuadre`, `reversos`, `periodos`, `triggers`, `cuentas` (dice `"cuentas": 90`) y `permisos`. Uno en `false` = parar y avisar. |
 | 3 | `docs/conta/c3-puentes.sql` | **23 filas**: los 10 `libro · …` y 13 `puentes · …`. Todas en `true` **salvo `puentes · sin_evaluar`**, que la primera vez sale en `false` con la lista de papeles que el puente todavía no miró y `"arreglo": "select fn_puentes_correr();"`. Es lo esperado. `puentes · reglas` sale en `true` y dice cuántas reglas siguen en borrador (`en_borrador`): esas no postean hasta que Edgar las confirme. `puentes · papel` en producción sí mira Storage (en el banco dice «no aplica»). |
-| 4 | `docs/conta/c4-estados.sql` | **9 filas**, cortas a propósito. Cinco `c4 · …`: `vistas` («28 vistas, todas security_invoker…»), `mapeo` («88 cuentas con su fila; sin fila: ninguna»), `apertura`, `jit` («el JIT está apagado para authenticated…») y `c2 y c3 al día` («c2-libro.sql y c3-puentes.sql son de la versión que c4 necesita…»). Y cuatro `estados <período> · …` (el último mes con asientos, o la apertura si no hay): `v_estados_mapeo` («88 filas») y los tres cuadres que mira siempre: `mapeo completo`, `protecciones de c4` y `apertura en el libro`. Todas en `true` **salvo `c4 · apertura` y «apertura en el libro»**, que salen en `false` («todavía no: carga la balanza…», «no hay apertura en el libro…») hasta que se postee la apertura (abajo, «Después de c4: la apertura y lo que se ve»). Es lo esperado. (`c4 · jit` en `false`: el pegado no pudo apagar el JIT para la app; su detalle trae la sentencia, que se pega como dueño. `c4 · c2 y c3 al día` en `false`: dice qué volver a pegar, c2 y después c3.) Una en `false` fuera de esas = parar y avisar. Si al pegarlo sale **MX000** con una lista de «vistas o funciones ajenas»: hay algo construido encima de las vistas de c4 que el pegado borraría; no se pegó nada, avisa. Si sale **55P03** («canceling statement due to lock timeout»): el tablero estaba leyendo; no se pegó nada: **cierra el tablero y vuelve a pegarlo**. Después, en otra pestaña, el control entero: `select * from fn_verificar_cadena();` (los 10 en `true`: c4 no toca el libro) y `select * from fn_estados_control('<el último mes>');` (todo en `true`, salvo «apertura en el libro» hasta la apertura). |
+| 4 | `docs/conta/c4-estados.sql` | **9 filas**, cortas a propósito. Cinco `c4 · …`: `vistas` («28 vistas, todas security_invoker…»), `mapeo` («90 cuentas con su fila; sin fila: ninguna»; con el c1 del 9-oct encima de un c4 ya pegado, «sin fila: 2540, 2550» hasta `select fn_estados_mapeo_derivar();`, abajo, «La apertura del 30-sep»), `apertura`, `jit` («el JIT está apagado para authenticated…») y `c2 y c3 al día` («c2-libro.sql y c3-puentes.sql son de la versión que c4 necesita…»). Y cuatro `estados <período> · …` (el último mes con asientos, o la apertura si no hay): `v_estados_mapeo` («90 filas») y los tres cuadres que mira siempre: `mapeo completo`, `protecciones de c4` y `apertura en el libro`. Todas en `true` **salvo `c4 · apertura` y «apertura en el libro»**, que salen en `false` («todavía no: carga la balanza…», «no hay apertura en el libro…») hasta que se postee la apertura (abajo, «Después de c4: la apertura y lo que se ve»). Es lo esperado. (`c4 · jit` en `false`: el pegado no pudo apagar el JIT para la app; su detalle trae la sentencia, que se pega como dueño. `c4 · c2 y c3 al día` en `false`: dice qué volver a pegar, c2 y después c3.) Una en `false` fuera de esas = parar y avisar. Si al pegarlo sale **MX000** con una lista de «vistas o funciones ajenas»: hay algo construido encima de las vistas de c4 que el pegado borraría; no se pegó nada, avisa. Si sale **55P03** («canceling statement due to lock timeout»): el tablero estaba leyendo; no se pegó nada: **cierra el tablero y vuelve a pegarlo**. Después, en otra pestaña, el control entero: `select * from fn_verificar_cadena();` (los 10 en `true`: c4 no toca el libro) y `select * from fn_estados_control('<el último mes>');` (todo en `true`, salvo «apertura en el libro» hasta la apertura). |
 | 5 | `docs/conta/c6-banco.sql` (≈ 1,3 MB). **Si el editor no lo deja pegar entero, sus dos partes**, cada una en su pestaña y con su Run: primero `docs/conta/c6-banco-parte1.sql` y después `docs/conta/c6-banco-parte2.sql` (ronda 4d; abajo, «Si el editor no acepta un archivo tan grande») | **Con las dos partes**: la parte 1 enseña **una fila**, `c6 · parte 1 de 2`, en `true` («Pegada la parte 1 de c6-banco.sql (marca 2026100303). Ahora pega c6-banco-parte2.sql…»), y la parte 2, las 7 filas de abajo: lo mismo que el archivo entero. La parte 2 sin la parte 1 de esta misma versión para con **MX000** («c6-banco (parte 2 de 2) NO se aplicó, no se tocó nada: antes va la parte 1 de esta misma versión…»): pega la 1 y después la 2. Entre las dos el banco queda a medias (su control lo dice en rojo): no uses la app del banco hasta pegar la 2. Cada parte se puede pegar otra vez, como el archivo entero. **Entero, o con la parte 2: 7 filas, todas en `true`**: cuatro `c6 · …` —`tablas` («14 tablas, con la RLS encendida y solo su policy de lectura del dueño»: desde la ronda 4b, también `banco_cuentas_personales`, las cuentas personales de Edgar dadas de alta), `vistas` («8 vistas, todas security_invoker, solo SELECT para authenticated»), `funciones de la app` («21 funciones que llama conta.js (anon ninguna); el resto, sin grant a la API») y `en el reparto de c2`— y tres del control del banco a hoy: `banco · v_banco_saldos` («N filas»: una por banco y tarjeta), `banco · cuadre: protecciones del banco` y `banco · cuadre: c2, c3 y c4 al día` (las dos, «bien»). Una en `false` = parar y avisar. Si sale **MX000** («c6-banco NO se aplicó, no se tocó nada…»; con las dos partes lo dice la parte 1): falta c2, c3 o c4, o alguno es de antes de esta entrega (c2 o c4 con su marca por debajo de 2026100201, c3 por debajo de 2026092601), y dice cuál volver a pegar; o las huellas del libro no son las del último pegado (el control `triggers` de c2 en rojo); o `es_dueno()` cambió desde que se pegó c2 (el candado que dice quién ve los libros y el banco: el control `permisos` en rojo): se mira eso antes, y si el cambio es bueno se vuelve a pegar c2 y después c6. Si sale **55P03** («lock timeout»): la pantalla del banco estaba leyendo; no se pegó nada: ciérrala y vuelve a pegarlo (con las dos partes, la que paró: si fue la 2, la 1 ya está y basta la 2). |
 | 6 | Una línea: `select fn_puentes_correr();` | Un solo valor (jsonb) con `"desde": "2026-10-01"`, cuántos papeles quedaron en cada estado (`contabilizado`, `pendiente`, `espera`, `no_aplica`…) y **`"errores": 0`**. |
 | 7 | Una línea: `select * from fn_puentes_verificar();` | Los **13 controles** de los puentes, **todos en `true`** (ahora también `sin_evaluar`). `bandeja` dice cuántos papeles esperan a Edgar; solo se pone en rojo si el libro rechazó alguno. |
@@ -355,6 +355,57 @@ select fn_comparacion_qb_cargar('2026-10', 'docs/qb/balanza-2026-10.csv', '[…]
 select fn_comparacion_qb_cargar('2026-10', 'docs/qb/pl-por-obra-2026-10.csv', '[…]', false, null, 'por_obra');
 select fn_comparacion_qb_retirar('2026-10', 'docs/qb/pl-por-obra-2026-10.csv', 'Es el P&L por obra, no la balanza');
 ```
+
+### La apertura del 30-sep (9-oct): lo que se pega, en orden
+
+La balanza real al 30-sep llegó el 7-oct (Cowork, desde QuickBooks) y se
+revisó contra sus propios reportes (A/R y A/P Aging, las conciliaciones de
+Chase y de las Amex, los préstamos, los activos fijos): QuickBooks traía
+once errores que había que arreglar ANTES de abrir (una cuenta por cobrar
+sin cliente ni factura, cobros de 2025 contados otra vez como ingreso de
+2026, un anticipo facturado dos veces, un cargo del banco duplicado, dos
+préstamos con todo el pago a capital —el interés del año sin partir—, una
+factura incobrable, dos personales y un «préstamo del accionista» que no lo
+era). Los arreglos los hizo Edgar en QuickBooks con Cowork (8 y 9-oct) y
+cada bloque trae sus cifras de control; los reportes de después quedan en
+su Drive (`QuickBooks-apertura-2026-09-30/arreglos-N`), no en este repo
+(es público: ninguna cifra ni nombre de cliente entra aquí). Con esos
+reportes, un programa privado genera los bloques de abajo (el mapeo, la
+balanza con su cédula y su control) y la apertura entera se probó en el
+banco, en 16 y en 17.6, con las dos variantes que quedaban abiertas: entra,
+la comparación con QuickBooks sale toda en `ok`, los controles de c2, c3,
+c4 y c6 en `true`, y volver a pegar cualquier bloque no duplica nada.
+
+Antes de pegar: el CSV y el PDF de la balanza al 30-sep, subidos a Storage
+(almacén `fotos`, carpeta `docs/apertura/`; el documento de la apertura es
+`docs/apertura/balanza-2026-09-30.csv`, el nombre que llevan los bloques).
+
+| Paso | Qué se pega | Qué debe verse |
+|---|---|---|
+| 1 | `docs/conta/c1-plan-de-cuentas.sql` **del 9-oct** (90 cuentas: 2540 y 2550, los préstamos de negocio, para el préstamo a plazo que no es de vehículo; c2, c3, c4 y c6 no cambian) | **90 filas**. Después, `fn_verificar_cadena()` sigue en `true` (`"cuentas": 90`) y `c4 · mapeo` dice **«sin fila: 2540, 2550»** hasta el bloque 1: es lo esperado. |
+| 2 | **Bloque 1 · el mapeo** (`apertura-1-mapeo.sql`): `fn_estados_mapeo_derivar()`, el renglón de la 2540 (`fn_estados_mapeo('2540', '{"seccion": "pasivo_circulante", "linea": "prestamos_corto"}')`: c4 propone toda 25xx que no sea 2510 o 2520 a largo plazo), el proveedor de la única cuenta por pagar si no está, y un `fn_apertura_mapeo_qb` por cada nombre de QuickBooks (65) | `{"anadidas": [2540, 2550]}` (en una base de cero, `[]`: c4 ya las derivó), la fila de la 2540 con `"seccion": "pasivo_circulante"`, y 65 filas de mapeo. Pegarlo dos veces no hace daño. `c4 · mapeo` vuelve a «sin fila: ninguna». |
+| 3 | **Bloque 2 · la balanza** (`apertura-2-balanza.sql`): `fn_apertura_balanza_cargar` con TODAS las filas de la balanza (las cuentas por cobrar factura por factura, con su número de QuickBooks y su obra; las por pagar por proveedor, con la fecha de su factura), el control del Balance Sheet (Net Income, TOTAL ASSETS, Total Liabilities, Total Equity, TOTAL LIABILITIES AND EQUITY) y la fila TOTAL | Un solo valor: `"cuadra": true`, `"sin_mapeo": []`, `"trabajos_sin_mapeo": []`, `"fila_total": {… "coincide": true}` y `"control"` con las cinco cifras del Balance Sheet. Si para con **MX008** «la factura #… no está en la app»: esa factura tiene que existir en `facturas` con ese número y su obra. Si una cuenta sale en `sin_mapeo`: QuickBooks trae una cuenta nueva; su línea va al bloque 1. Ya posteada (bloque 4), volver a pegar este bloque para con **MX003** («sus filas son el papel de ese asiento») y no toca nada. |
+| 4 | **Bloque 3 · mirarla** (`apertura-3-revisar.sql`): `fn_apertura_revisar` | Una tabla: cada fila de la balanza con su cuenta del plan y su tipo (`que = balanza`), las cinco de control (`control`) y las **16 líneas** del asiento que saldría (`asiento`); **ninguna `problema`**. Las cuentas de resultados de enero a septiembre van en una sola línea a 3900. |
+| 5 | **Bloque 4 · postearla** (`apertura-4-postear.sql`): `fn_apertura('2026-09-30', …)`, `v_comparacion`, `fn_estados_control('2026-09-APERTURA')`, `fn_verificar_cadena()` | `"accion": "posteada"`, `"lineas": 16`, `"asiento": "2026-000001"` (el primero del libro), y en `puentes` la factura abierta de septiembre «ya está en la apertura» (`no_aplica`, `en_apertura`: c3 no la vuelve a postear). `v_comparacion`: **14 filas, todas `ok = true`**. `fn_estados_control`: **40 filas en `true`** (también «apertura en el libro»). La cadena: 10 en `true`. Pegarlo otra vez: `"accion": "sin_cambios"`. |
+| 6 | **Bloque 5 · los préstamos** (`apertura-5-prestamos.sql`): `fn_prestamo_guardar` ×2 con el saldo del prestamista al 30-sep (el del camión en 2520/2530; el de negocio en 2540/2550), con guardas | `v_prestamos`: 2 filas; `fn_banco_control('hoy', array['cuadre: préstamos'])` en `true` («2 préstamo(s): se deben …, lo mismo que dice el libro»). Pegarlo dos veces no duplica. |
+
+Después: `c4 · apertura` sale en `true` al volver a pegar c4 (no hace falta
+pegarlo por eso); con la apertura en el libro, `c4-pruebas.sql` salta las
+que postean una apertura de prueba (la lista del paso 10 de §0) y c2 la 61:
+no es un fallo. Lo que sigue es el banco (abajo, «Después de c6»): la
+conciliación de apertura de Chase con su estado de cuenta de septiembre
+(al 30-sep solo hay un cargo en tránsito), las dos Amex al corte de su
+statement, y los estados de cuenta de octubre.
+
+Lo que queda pendiente de c6 (con el sí de Edgar, una ronda corta): **los
+préstamos de cuota semanal**. El préstamo de negocio se paga cada semana y
+`v_prestamos` calcula la porción corriente con la fórmula mensual (sale una
+parte; es entero, vence dentro de los próximos 12 meses), `fn_prestamo_particion`
+parte el interés por mes (tasa/12) y la regla de «a menos de 25 días de la
+cuota anterior» pediría el statement en cada cuota. Hasta entonces: cada
+cuota con `p_capital` y `p_interes` del portal del prestamista (el statement
+manda), y la porción corriente de ese préstamo se lee como entera. Arreglarlo
+antes del primer cierre (f08), que reclasifica 2550 ↔ 2540 con esa cifra.
 
 ### Después de c6: el banco, mes por mes
 
