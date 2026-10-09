@@ -203,12 +203,25 @@
      «2020-2024» o un «12/2-#12» siguen siendo lo que eran. */
   function leerMonto(texto) {
     const s = String(texto || "").trim();
-    const paren = /^\(\s*\$?\s*\d[\d,]*(?:\.\d+)?\s*\)$/.test(s);
+    // (09/10) «(2.5k)» también es un deduct: la «k» cabe dentro del paréntesis
+    const paren = /^\(\s*\$?\s*\d[\d,]*(?:\.\d+)?\s*[kK]?\s*\)$/.test(s);
     const mSig = s.match(/^\s*([-−–—])\s*\$?\s*\d/);
     const neg = paren || !!mSig;
     const m = s.match(/\$?\s*(\d[\d,]*(?:\.\d+)?)/);
     if (!m) return null;
     const crudo = m[1];
+    // (09/10) «2.5k», «12K», «$2.5k», «2.5 k» son miles (2,500.00 / 12,000.00). Pero «2.5kW», «12 kV», «45 kVA»
+    // son una medida, no dinero: no se leen como monto. Con coma («12,500k») la «k» no se toca.
+    const tras = s.slice(m.index + m[0].length);
+    if (/^\s*k[a-z]/i.test(tras)) return null;
+    const mK = tras.match(/^\s*k(?![a-z0-9])/i);
+    if (mK && !/,/.test(crudo)) {
+      // «5k ohm», «5kΩ», «3k sq ft»: la «k» es de una medida, no son miles de dólares
+      const resto = tras.slice(mK[0].length);
+      if (UNIDAD_TRAS.test(resto) || /^\s*(?:ohms?\b|Ω|Ω)/i.test(resto)) return null;
+      const nk = Number(crudo) * 1000 * (neg ? -1 : 1);
+      return isFinite(nk) ? { centavos: centavos(nk) } : null;
+    }
     // coma seguida de 1 o 2 dígitos: no se adivina, se pregunta
     const dudosa = crudo.match(/,(\d{1,2})(?!\d)/);
     if (dudosa) {
@@ -239,7 +252,7 @@
     const s = String(linea);
     /* (22/09) el trozo se lleva el MENOS si lo tiene: si no, leerMonto nunca lo
        ve y un «-$12,500» entra como cargo. También la forma contable ($12,500). */
-    const conParen = s.match(/\(\s*\$\s*\d[\d,]*(?:\.\d{1,2})?\s*\)/);
+    const conParen = s.match(/\(\s*\$\s*\d[\d,]*(?:\.\d{1,2})?(?:\s?[kK])?\s*\)/);   // (09/10) «($2.5k)» también
     if (conParen) return { trozo: conParen[0].replace(/\s+/g, ""), seguro: true };
     /* el signo tiene que ir PEGADO al $: «-$12,500» es un descuento, pero
        «ADD - extra receptacles - $3,400» lleva un guion SEPARADOR con espacios
@@ -247,7 +260,8 @@
        convertía en descuento, que es peor que el fallo que vine a arreglar. */
     /* el MENOS tipográfico (−, U+2212) sí puede llevar espacio: nadie lo usa
        de separador, y el portal del cliente escribe los deducts así, «− $» */
-    const conSigno = s.match(/(?:−\s*|[-–—])?\$\s*\d[\d,]*(?:\.\d{1,2})?/);
+    // (09/10) «$2.5k» se lleva su «k» (son miles); «$2.5kW» no (la k es de la unidad)
+    const conSigno = s.match(/(?:−\s*|[-–—])?\$\s*\d[\d,]*(?:\.\d{1,2})?(?: ?[kK](?![A-Za-z0-9]))?/);
     if (conSigno) return { trozo: conSigno[0].replace(/\s+/g, ""), seguro: true };
     const conPalabra = /\b(dolares|dollars|usd)\b/i.test(sinAcentos(s));
     const rx = /\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\d+\.\d{2}(?!\d)/g;
@@ -2445,15 +2459,48 @@
       const nums = m[1].split(/[,\sy]+/).filter(Boolean);
       return nums.length > 1 ? nums.slice(0, -1).join(", ") + " and 2." + nums[nums.length - 1] : nums[0];
     };
-    const EQUIPOS = { estufa: "range", horno: "oven", secadora: "dryer", "a/c": "A/C", ac: "A/C",
-                      fridge: "refrigerator", refrigerador: "refrigerator", nevera: "refrigerator",
-                      lavaplatos: "dishwasher", microondas: "microwave", disposal: "disposal",
-                      calentador: "water heater" };
-    const equipoEn = clave => {
-      const v = C[clave]; if (!v || !v.valor) return "";
-      const primera = norma(String(v.valor).split(",")[0]);
-      for (const [es, en] of Object.entries(EQUIPOS)) if (primera.includes(es)) return en;
-      return primera;
+    // (09/10) El equipo de las cláusulas de 240 V y de reubicar, en inglés. Edgar escribe «estufa, renglón 2, hasta #8»;
+    // el armado con IA trae una CITA larga («Relocate the existing range circuit to the new island…, renglón 3») y la
+    // cláusula imprimía la frase entera. Ahora se busca en el valor el PRIMER aparato que nombra (por palabra entera:
+    // antes «ac» se encontraba dentro de «space») y sale su nombre en inglés. Si no nombra ninguno: lo que escribió
+    // Edgar si es corto («pool heater»), y si es una cita, «equipment» (la plantilla dice «the existing equipment»).
+    const EQUIPOS = [
+      [/\brange\s+hoods?\b|\bcampanas?\b/, "range hood"], [/\branges?\b|\bestufas?\b|\bstoves?\b/, "range"],
+      [/\bwall\s+ovens?\b|\bovens?\b|\bhornos?\b/, "oven"], [/\bcooktops?\b|\bcook\s+tops?\b|\banafes?\b/, "cooktop"],
+      [/\bdryers?\b|\bsecadoras?\b/, "dryer"], [/\bwashers?\b|\bwashing\s+machines?\b|\blavadoras?\b/, "washer"],
+      [/\bwater\s+heaters?\b|\bcalentador(?:es)?\b|\bheater\s+de\s+agua\b/, "water heater"],
+      [/\bheat\s+pumps?\b|\bbombas?\s+de\s+calor\b/, "heat pump"], [/\bmini[-\s]?splits?\b/, "mini-split"],
+      [/\bcondens(?:er|ers|ing\s+units?)\b|\bcondensadoras?\b/, "A/C condenser"], [/\bair\s+handlers?\b|\bmanejadoras?\b/, "air handler"],
+      [/\ba\/c\b|\bac\b|\bair\s+condition\w*|\baires?\s+acondicionados?\b/, "A/C"],
+      [/\bev\s+chargers?\b|\bev\b|\bcargador(?:es)?\b/, "EV charger"], [/\bdisposals?\b|\btrituradora?s?\b/, "disposal"],
+      [/\bdishwashers?\b|\blavaplatos\b|\blavavajillas\b/, "dishwasher"], [/\bmicrowaves?\b|\bmicroondas\b/, "microwave"],
+      [/\brefrigerators?\b|\bfridges?\b|\bneveras?\b|\brefrigerador(?:es)?\b/, "refrigerator"], [/\bfreezers?\b|\bcongelador(?:es)?\b/, "freezer"],
+      [/\bpool\s+pumps?\b|\bpumps?\b|\bbombas?\b/, "pump"], [/\bspas?\b|\bhot\s+tubs?\b|\bjacuzzis?\b/, "spa"],
+      [/\bgenerators?\b|\bgenerador(?:es)?\b/, "generator"]
+    ];
+    const equipoDe = valor => {
+      const t = norma(String(valor || "").replace(/,?\s*rengl[oó]n(?:es)?\s+[\d,\sy]+.*$/i, ""));
+      let mejor = null;
+      for (const [rx, en] of EQUIPOS) { const m = t.match(rx); if (m && (!mejor || m.index < mejor.i)) mejor = { i: m.index, en }; }
+      if (mejor) return mejor.en;
+      const primera = norma(String(valor || "").split(",")[0]).trim();
+      return primera && primera.split(/\s+/).length <= 3 && !/\d/.test(primera) ? primera : "equipment";
+    };
+    const equipoEn = clave => { const v = C[clave]; return v && v.valor ? equipoDe(v.valor) : ""; };
+    // Lo mismo para las aberturas: «leaves openings in the existing {{ABERTURAS}}» quiere superficies («drywall ceiling»),
+    // no la cita («Open the kitchen ceiling to fish the new home runs»). Si el valor es largo, se sacan las superficies
+    // que nombra; si no nombra ninguna, «finishes».
+    const SUPERFICIES = [[/\bdrywall\b|\bsheetrock\b|\btablaroca\b/, "drywall"], [/\bplaster\b|\byeso\b/, "plaster"],
+      [/\bwalls?\b|\bparede?s?\b/, "walls"], [/\bceilings?\b|\btechos?\b|\bplafon(?:es)?\b|\bcielo\s*rasos?\b/, "ceilings"],
+      [/\bsoffits?\b|\bplafones?\s+exteriores\b/, "soffits"], [/\bfloors?\b|\bpisos?\b/, "floors"],
+      [/\bcabinets?\b|\bcabinetry\b|\bgabinetes?\b/, "cabinets"], [/\bstucco\b|\bestuco\b/, "stucco"], [/\bsiding\b/, "siding"]];
+    const aberturasEn = texto => {
+      const t = String(texto || "").trim();
+      if (!t || (t.split(/\s+/).length <= 4 && !/\d/.test(t))) return t;
+      const n = norma(t), hay = [];
+      SUPERFICIES.map(([rx, en]) => { const m = n.match(rx); return m ? { i: m.index, en } : null; }).filter(Boolean)
+        .sort((a, b) => a.i - b.i).forEach(x => { if (!hay.includes(x.en)) hay.push(x.en); });
+      return !hay.length ? "finishes" : hay.length === 1 ? hay[0] : hay.slice(0, -1).join(", ") + " and " + hay[hay.length - 1];
     };
     const calibre = () => {
       const v = C.v240; if (!v || !v.valor) return "";
@@ -2550,7 +2597,8 @@
       EQUIPO_240: equipoEn("v240"), ITEM_240: renglon("v240"), CALIBRE: calibre(),
       EQUIPO_REUBICAR: equipoEn("reubicar"), ITEM_REUBICAR: renglon("reubicar"),
       ITEM_ISLA: renglon("isla"), ITEMS_ABRIR: renglon("abrir"),
-      ABERTURAS: (S.aberturas && S.aberturas.en) || "",
+      // con la IA, si no escribió el texto de las aberturas, sale de la cita de la condición (sus superficies)
+      ABERTURAS: aberturasEn((S.aberturas && S.aberturas.en) || String((C.abrir || {}).valor || "").replace(/,?\s*rengl[oó]n(?:es)?\s+[\d,\sy]+.*$/i, "").trim()),
       FIXTURES: (S.fixtures_mxp && S.fixtures_mxp.en) || "",
       M_DEPOSITO: cta.montos.length ? dinero(cta.montos[0]) : "",
       PCT_DEPOSITO: cta.pct_deposito === null ? "" : String(cta.pct_deposito),
@@ -3606,31 +3654,248 @@
   // LA MISMA TABLA que usa el cerebro (jurisdiccionDe en supabase/functions/cerebro):
   // si se cambia aquí, se cambia allí. ZIP → condado; la ciudad dice si el permiso
   // lo da la ciudad (municipio con su propio departamento) o el condado.
+  // ZIP → condado: rangos cerrados [desde, hasta, condado], ORDENADOS y sin solaparse (la prueba de
+  // pruebas/cerebro-puro.mjs lo comprueba). Un ZIP que pisa dos condados lleva aquí el que más
+  // casas tiene, y además va en ZIP_A_CABALLO. «(dudoso)» = sacado de memoria, sin poder mirarlo
+  // en la tabla del correo: si una obra cae ahí, se verifica por parcel.
   const ZIP_CONDADO = [
-    [33701, 33716, "Pinellas"], [33730, 33786, "Pinellas"],
-    [33601, 33637, "Hillsborough"], [33647, 33647, "Hillsborough"],
-    [34652, 34655, "Pasco"], [34667, 34669, "Pasco"], [34690, 34691, "Pasco"],
-    [33523, 33523, "Pasco"], [33525, 33525, "Pasco"], [33540, 33545, "Pasco"], [33559, 33559, "Pasco"], [33576, 33576, "Pasco"],
-    [34470, 34482, "Marion"], [34491, 34491, "Marion"],
-    [34266, 34266, "DeSoto"], [34269, 34269, "DeSoto"],
-    [34201, 34222, "Manatee"],
-    [33801, 33898, "Polk"],
-    [34601, 34614, "Hernando"]
+    [32159, 32159, "Lake"],          // Lady Lake (dudoso: The Villages)
+    [32162, 32163, "Sumter"],        // The Villages
+    [32726, 32726, "Lake"],          // Eustis
+    [32735, 32736, "Lake"],          // Grand Island, Eustis (dudoso)
+    [32757, 32757, "Lake"],          // Mount Dora
+    [32778, 32778, "Lake"],          // Tavares
+    [33503, 33503, "Hillsborough"],  // Balm
+    [33508, 33511, "Hillsborough"],  // Brandon
+    [33513, 33514, "Sumter"],        // Bushnell, Center Hill
+    [33521, 33521, "Sumter"],        // Coleman
+    [33523, 33526, "Pasco"],         // Dade City, Crystal Springs (33523 llega a Ridge Manor, Hernando)
+    [33527, 33527, "Hillsborough"],  // Dover
+    [33530, 33530, "Hillsborough"],  // Durant
+    [33534, 33534, "Hillsborough"],  // Gibsonton
+    [33537, 33537, "Pasco"],         // Lacoochee
+    [33538, 33538, "Sumter"],        // Lake Panasoffkee
+    [33539, 33545, "Pasco"],         // Zephyrhills, Wesley Chapel
+    [33547, 33550, "Hillsborough"],  // Lithia, Lutz, Mango
+    [33556, 33556, "Hillsborough"],  // Odessa (a caballo con Pasco)
+    [33558, 33558, "Hillsborough"],  // Lutz
+    [33559, 33559, "Pasco"],         // Lutz (a caballo con Hillsborough)
+    [33563, 33573, "Hillsborough"],  // Plant City, Riverview, Ruskin, Sun City Center, Apollo Beach
+    [33574, 33574, "Pasco"],         // Saint Leo
+    [33575, 33575, "Hillsborough"],  // Ruskin
+    [33576, 33576, "Pasco"],         // San Antonio
+    [33578, 33584, "Hillsborough"],  // Riverview, Seffner
+    [33585, 33585, "Sumter"],        // Sumterville
+    [33586, 33592, "Hillsborough"],  // Sun City, Sydney, Thonotosassa
+    [33593, 33593, "Pasco"],         // Trilby
+    [33594, 33596, "Hillsborough"],  // Valrico
+    [33597, 33597, "Sumter"],        // Webster
+    [33598, 33598, "Hillsborough"],  // Wimauma
+    [33601, 33694, "Hillsborough"],  // Tampa (con Temple Terrace y lo de fuera de la ciudad)
+    [33701, 33786, "Pinellas"],      // St. Petersburg, Clearwater, Largo, Seminole, Pinellas Park, playas
+    [33801, 33824, "Polk"],          // Lakeland, Auburndale, Alturas
+    [33825, 33826, "Highlands"],     // Avon Park (33826 dudoso)
+    [33827, 33833, "Polk"],          // Babson Park, Bartow
+    [33834, 33834, "Hardee"],        // Bowling Green
+    [33835, 33847, "Polk"],          // Bradley, Davenport, Dundee, Eagle Lake, Fort Meade, Frostproof, Haines City, Homeland
+    [33848, 33848, "Osceola"],       // Intercession City (dudoso)
+    [33849, 33851, "Polk"],          // Kathleen, Lake Alfred, Lake Hamilton
+    [33852, 33852, "Highlands"],     // Lake Placid
+    [33853, 33856, "Polk"],          // Lake Wales
+    [33857, 33857, "Highlands"],     // Lorida
+    [33858, 33861, "Polk"],          // Loughman, Lake Wales, Mulberry
+    [33862, 33862, "Highlands"],     // Lake Placid
+    [33863, 33864, "Polk"],          // Nichols (33864 dudoso)
+    [33865, 33865, "Hardee"],        // Ona
+    [33866, 33869, "Polk"],          // River Ranch, Polk City (dudoso)
+    [33870, 33872, "Highlands"],     // Sebring
+    [33873, 33873, "Hardee"],        // Wauchula
+    [33875, 33876, "Highlands"],     // Sebring
+    [33877, 33889, "Polk"],          // Waverly, Winter Haven
+    [33890, 33890, "Hardee"],        // Zolfo Springs
+    [33891, 33898, "Polk"],          // Davenport, Lake Wales (33896 y 33897 a caballo con Osceola)
+    [33938, 33938, "Charlotte"],     // Murdock
+    [33946, 33955, "Charlotte"],     // Placida, Rotonda West, Port Charlotte, Punta Gorda
+    [33960, 33960, "Highlands"],     // Venus
+    [33980, 33983, "Charlotte"],     // Punta Gorda, Port Charlotte
+    [34201, 34222, "Manatee"],       // Bradenton, Lakewood Ranch, Anna Maria, Parrish, Palmetto, Ellenton
+    [34223, 34223, "Sarasota"],      // Englewood (a caballo con Charlotte)
+    [34224, 34224, "Charlotte"],     // Englewood
+    [34228, 34242, "Sarasota"],      // Longboat Key (a caballo con Manatee), Osprey, Sarasota
+    [34243, 34243, "Manatee"],       // «Sarasota» postal en Manatee (dudoso; a caballo)
+    [34250, 34251, "Manatee"],       // Myakka City
+    [34260, 34260, "Sarasota"],      // Laurel
+    [34264, 34264, "Manatee"],       // Oneco
+    [34265, 34269, "DeSoto"],        // Arcadia, Fort Ogden, Nocatee
+    [34270, 34270, "Manatee"],       // Tallevast
+    [34272, 34278, "Sarasota"],      // Laurel, Nokomis, Sarasota
+    [34280, 34282, "Manatee"],       // Bradenton
+    [34284, 34295, "Sarasota"],      // Venice, North Port, Englewood (34287 y 34288 a caballo con Charlotte)
+    [34420, 34421, "Marion"],        // Belleview
+    [34423, 34423, "Citrus"],        // Crystal River
+    [34428, 34429, "Citrus"],        // Crystal River
+    [34430, 34432, "Marion"],        // Dunnellon
+    [34433, 34434, "Citrus"],        // Dunnellon, Citrus Springs
+    [34436, 34436, "Citrus"],        // Floral City
+    [34442, 34442, "Citrus"],        // Hernando (el pueblo)
+    [34445, 34448, "Citrus"],        // Holder, Homosassa
+    [34450, 34453, "Citrus"],        // Inverness
+    [34460, 34461, "Citrus"],        // Lecanto
+    [34464, 34465, "Citrus"],        // Beverly Hills
+    [34470, 34483, "Marion"],        // Ocala
+    [34484, 34484, "Sumter"],        // Oxford
+    [34487, 34487, "Citrus"],        // Homosassa Springs
+    [34488, 34489, "Marion"],        // Silver Springs
+    [34491, 34492, "Marion"],        // Summerfield
+    [34601, 34609, "Hernando"],      // Brooksville, Spring Hill
+    [34610, 34610, "Pasco"],         // «Spring Hill» postal en Pasco (Shady Hills; a caballo con Hernando)
+    [34611, 34614, "Hernando"],      // Spring Hill, Brooksville, Weeki Wachee
+    [34636, 34636, "Hernando"],      // Istachatta
+    [34637, 34639, "Pasco"],         // Land O' Lakes
+    [34652, 34656, "Pasco"],         // New Port Richey
+    [34660, 34660, "Pinellas"],      // Ozona
+    [34661, 34661, "Hernando"],      // Nobleton
+    [34667, 34669, "Pasco"],         // Hudson, Port Richey
+    [34673, 34674, "Pasco"],         // Port Richey, Hudson (apartados)
+    [34677, 34677, "Pinellas"],      // Oldsmar
+    [34679, 34679, "Hernando"],      // Aripeka (dudoso; a caballo con Pasco)
+    [34681, 34685, "Pinellas"],      // Crystal Beach, Palm Harbor
+    [34688, 34689, "Pinellas"],      // Tarpon Springs
+    [34690, 34692, "Pasco"],         // Holiday
+    [34695, 34695, "Pinellas"],      // Safety Harbor
+    [34697, 34698, "Pinellas"],      // Dunedin
+    [34705, 34705, "Lake"],          // Astatula
+    [34711, 34715, "Lake"],          // Clermont
+    [34729, 34729, "Lake"],          // Ferndale
+    [34731, 34731, "Lake"],          // Fruitland Park
+    [34736, 34737, "Lake"],          // Groveland, Howey-in-the-Hills
+    [34748, 34749, "Lake"],          // Leesburg
+    [34753, 34753, "Lake"],          // Mascotte
+    [34755, 34756, "Lake"],          // Minneola, Montverde
+    [34759, 34759, "Polk"],          // Kissimmee postal: Poinciana (dudoso; a caballo con Osceola)
+    [34762, 34762, "Lake"],          // Okahumpka
+    [34785, 34785, "Sumter"],        // Wildwood
+    [34788, 34789, "Lake"],          // Leesburg
+    [34797, 34797, "Lake"]           // Yalaha
   ];
-  // Municipios con su propio departamento de permisos: [nombre, condado]
+  // ZIP que pisan dos sitios: [zip, el de ZIP_CONDADO, el otro]. Para estos la jurisdicción sale con
+  // seguridad «baja» y la nota «ZIP a caballo entre A y B: verificar por parcel». Casi todos son dos
+  // condados (unos pocos, tres: el cuarto hueco es opcional); 33617 y 33637 son dos ciudades del mismo
+  // condado (Tampa y Temple Terrace).
+  const ZIP_A_CABALLO = [
+    [32159, "Lake", "Sumter"],              // Lady Lake / The Villages (dudoso)
+    [32162, "Sumter", "Lake", "Marion"],    // The Villages (la parte de Marion, dudoso)
+    [33523, "Pasco", "Hernando"],           // Dade City / Ridge Manor
+    [33549, "Hillsborough", "Pasco"],       // Lutz (dudoso)
+    [33556, "Hillsborough", "Pasco"],       // Odessa
+    [33559, "Pasco", "Hillsborough"],       // Lutz
+    [33565, "Hillsborough", "Polk", "Pasco"],// Plant City norte, rural en la raya (dudoso)
+    [33597, "Sumter", "Hernando"],          // Webster (dudoso)
+    [33617, "City of Tampa", "City of Temple Terrace"],
+    [33637, "City of Tampa", "City of Temple Terrace"],
+    [33843, "Polk", "Highlands"],           // Frostproof: el sur entra en Highlands (dudoso)
+    [33896, "Polk", "Osceola"],             // Davenport / ChampionsGate
+    [33897, "Polk", "Osceola", "Lake"],     // Davenport, Four Corners (dudoso)
+    [33955, "Charlotte", "Lee"],            // Punta Gorda / Burnt Store Marina
+    [34201, "Manatee", "Sarasota"],         // University Park, junto a University Pkwy (dudoso)
+    [34223, "Sarasota", "Charlotte"],       // Englewood
+    [34228, "Sarasota", "Manatee"],         // Longboat Key
+    [34240, "Sarasota", "Manatee"],         // Lakewood Ranch sur (dudoso)
+    [34243, "Manatee", "Sarasota"],         // «Sarasota» en Manatee (dudoso)
+    [34251, "Manatee", "Sarasota"],         // Myakka City, rural y muy grande (dudoso)
+    [34287, "Sarasota", "Charlotte"],       // North Port (dudoso)
+    [34288, "Sarasota", "Charlotte"],       // North Port este (dudoso)
+    [34431, "Marion", "Levy"],              // Dunnellon: el oeste cruza a Levy
+    [34491, "Marion", "Lake", "Sumter"],    // Summerfield, al borde de The Villages (dudoso)
+    [34610, "Pasco", "Hernando"],           // Spring Hill / Shady Hills
+    [34613, "Hernando", "Pasco"],           // Brooksville (dudoso)
+    [34677, "Pinellas", "Hillsborough"],    // Oldsmar (dudoso)
+    [34679, "Hernando", "Pasco"],           // Aripeka (dudoso)
+    [34714, "Lake", "Polk"],                // Clermont sur, Four Corners (dudoso)
+    [34759, "Polk", "Osceola"]              // Kissimmee postal: Poinciana
+  ];
+  // Municipios con su propio departamento de permisos: clave normalizada (normaCiudad en la app, normLugar en el cerebro) → [nombre, condado]
   const CIUDADES_MUNICIPIO = {
     "st petersburg": ["St. Petersburg", "Pinellas"], "saint petersburg": ["St. Petersburg", "Pinellas"],
     "st pete beach": ["St. Pete Beach", "Pinellas"], "clearwater": ["Clearwater", "Pinellas"], "largo": ["Largo", "Pinellas"],
     "pinellas park": ["Pinellas Park", "Pinellas"], "dunedin": ["Dunedin", "Pinellas"], "tarpon springs": ["Tarpon Springs", "Pinellas"],
+    "oldsmar": ["Oldsmar", "Pinellas"], "safety harbor": ["Safety Harbor", "Pinellas"], "seminole": ["Seminole", "Pinellas"],
+    "treasure island": ["Treasure Island", "Pinellas"], "madeira beach": ["Madeira Beach", "Pinellas"],
+    "indian rocks beach": ["Indian Rocks Beach", "Pinellas"], "indian shores": ["Indian Shores", "Pinellas"],
+    "redington beach": ["Redington Beach", "Pinellas"], "north redington beach": ["North Redington Beach", "Pinellas"],
+    "redington shores": ["Redington Shores", "Pinellas"], "belleair": ["Belleair", "Pinellas"],
+    "belleair bluffs": ["Belleair Bluffs", "Pinellas"], "belleair beach": ["Belleair Beach", "Pinellas"],
+    "belleair shore": ["Belleair Shore", "Pinellas"], "gulfport": ["Gulfport", "Pinellas"],
+    "kenneth city": ["Kenneth City", "Pinellas"], "south pasadena": ["South Pasadena", "Pinellas"],
     "tampa": ["Tampa", "Hillsborough"], "plant city": ["Plant City", "Hillsborough"], "temple terrace": ["Temple Terrace", "Hillsborough"],
     "new port richey": ["New Port Richey", "Pasco"], "port richey": ["Port Richey", "Pasco"], "zephyrhills": ["Zephyrhills", "Pasco"],
-    "dade city": ["Dade City", "Pasco"], "ocala": ["Ocala", "Marion"], "arcadia": ["Arcadia", "DeSoto"], "lakeland": ["Lakeland", "Polk"]
+    "dade city": ["Dade City", "Pasco"], "san antonio": ["San Antonio", "Pasco"], "st leo": ["St. Leo", "Pasco"],
+    "brooksville": ["Brooksville", "Hernando"],
+    "ocala": ["Ocala", "Marion"], "arcadia": ["Arcadia", "DeSoto"], "lakeland": ["Lakeland", "Polk"]
   };
-  // Nombres postales (no son municipio: el permiso lo da el condado). null = se reparte entre dos condados
+  // (09/10, consenso de los verificadores) ZIP cuyo nombre del correo es el de un municipio, pero que cubre mucha
+  // zona SIN ciudad (el permiso lo da el condado). [zip, ciudad, «condado» | «repartido»]:
+  //   «condado»   = casi todo es zona sin ciudad: sale «X County», seguridad baja.
+  //   «repartido» = mitad y mitad: sigue «City of X», pero con seguridad baja.
+  // Sacado de memoria, sin la tabla del correo: en todos se verifica por parcel.
+  const ZIP_NOMBRE_SIN_CIUDAD = [
+    ["33610", "Tampa", "repartido"],        // East Tampa / Orient Park
+    ["33612", "Tampa", "repartido"],        // Sulphur Springs / zona de la universidad
+    ["33613", "Tampa", "repartido"],        // Lake Magdalene
+    ["33614", "Tampa", "repartido"],        // Egypt Lake
+    ["33615", "Tampa", "condado"],          // Town 'n' Country
+    ["33618", "Tampa", "condado"],          // Carrollwood
+    ["33619", "Tampa", "repartido"],        // Palm River / Clair-Mel
+    ["33624", "Tampa", "condado"],          // Northdale
+    ["33625", "Tampa", "condado"],          // Citrus Park
+    ["33626", "Tampa", "condado"],          // Westchase
+    ["33634", "Tampa", "repartido"],        // Town 'n' Country / aeropuerto
+    ["33635", "Tampa", "condado"],          // Town 'n' Country
+    ["33709", "St. Petersburg", "repartido"],// Lealman / Kenneth City
+    ["33714", "St. Petersburg", "condado"], // Lealman
+    ["33760", "Clearwater", "repartido"],
+    ["33762", "Clearwater", "repartido"],   // Feather Sound
+    ["33764", "Clearwater", "repartido"],
+    ["33771", "Largo", "repartido"],
+    ["33772", "Seminole", "condado"],       // Whitlock: Pinellas County Building Services
+    ["33773", "Largo", "repartido"],
+    ["33774", "Largo", "repartido"],
+    ["33776", "Seminole", "condado"],
+    ["33777", "Seminole", "condado"],
+    ["33778", "Largo", "repartido"],
+    ["33809", "Lakeland", "repartido"],
+    ["33810", "Lakeland", "repartido"],
+    ["33811", "Lakeland", "repartido"],
+    ["33813", "Lakeland", "repartido"],
+    ["34472", "Ocala", "repartido"],        // Silver Springs Shores
+    ["34473", "Ocala", "repartido"],        // Marion Oaks
+    ["34476", "Ocala", "repartido"],
+    ["34480", "Ocala", "repartido"],
+    ["34481", "Ocala", "repartido"],
+    ["34601", "Brooksville", "repartido"],  // el centro de la ciudad
+    ["34602", "Brooksville", "condado"],
+    ["34604", "Brooksville", "condado"],
+    ["34613", "Brooksville", "condado"],
+    ["34614", "Brooksville", "condado"],
+    ["34653", "New Port Richey", "condado"],
+    ["34654", "New Port Richey", "condado"],
+    ["34655", "New Port Richey", "condado"],// Trinity
+    ["34668", "Port Richey", "repartido"],  // la ciudad es solo el núcleo
+    ["34688", "Tarpon Springs", "condado"]  // East Lake
+  ];
+  // Municipios pequeños que quizá le pasan los permisos al condado por acuerdo (sin comprobar): «City of X»,
+  // pero con seguridad baja y la nota de que puede ser el condado. Por el nombre, igual que arriba.
+  const MUNICIPIO_PERMISO_DUDOSO = ["Seminole", "Kenneth City", "Belleair Shore", "Belleair Bluffs", "Redington Beach", "North Redington Beach", "Indian Shores", "South Pasadena", "San Antonio", "St. Leo", "Brooksville"];
+  // Nombres postales (no son municipio: el permiso lo da el condado). null = se reparte entre dos condados (manda el ZIP)
   const CIUDADES_POSTALES = {
+    "palm harbor": ["Palm Harbor", "Pinellas"], "east lake": ["East Lake", null],
     "wesley chapel": ["Wesley Chapel", "Pasco"], "land o lakes": ["Land O' Lakes", "Pasco"], "lutz": ["Lutz", null],
-    "brandon": ["Brandon", "Hillsborough"], "riverview": ["Riverview", "Hillsborough"], "odessa": ["Odessa", null],
-    "trinity": ["Trinity", "Pasco"], "hudson": ["Hudson", "Pasco"], "holiday": ["Holiday", "Pasco"]
+    "odessa": ["Odessa", null], "trinity": ["Trinity", "Pasco"], "hudson": ["Hudson", "Pasco"], "holiday": ["Holiday", "Pasco"],
+    "brandon": ["Brandon", "Hillsborough"], "riverview": ["Riverview", "Hillsborough"], "valrico": ["Valrico", "Hillsborough"],
+    "lithia": ["Lithia", "Hillsborough"], "ruskin": ["Ruskin", "Hillsborough"], "apollo beach": ["Apollo Beach", "Hillsborough"],
+    "gibsonton": ["Gibsonton", "Hillsborough"], "seffner": ["Seffner", "Hillsborough"], "thonotosassa": ["Thonotosassa", "Hillsborough"],
+    "dover": ["Dover", "Hillsborough"], "wimauma": ["Wimauma", "Hillsborough"], "sun city center": ["Sun City Center", "Hillsborough"],
+    "spring hill": ["Spring Hill", null], "weeki wachee": ["Weeki Wachee", "Hernando"]
   };
   const normaCiudad = s => sinAcentos(String(s || "").toLowerCase())
     .replace(/\bsaint\b/g, "st").replace(/[.'’`]/g, "").replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
@@ -3686,14 +3951,28 @@
     const vacio = { condado: null, ciudad: "", jurisdiccion_probable: "", seguridad: "baja", nota: "Sin dirección: no puedo sacar la jurisdicción." };
     if (!dir || /^(por confirmar|tbd|pendiente|pending|\[[^\]]*\])$/i.test(dir)) return vacio;
     const zip = sacarZip(dir);
-    const cz = zip ? condadoDeZip(zip) : null;
     const c = ciudadDe(dir);
+    // ZIP a caballo entre dos condados (o dos ciudades): si la ciudad dice uno de los dos, manda la ciudad
+    const caballo = zip ? ZIP_A_CABALLO.find(z => String(z[0]) === zip) || null : null;
+    const cz = !zip ? null : (caballo && c && c.condado && caballo.includes(c.condado) ? c.condado : condadoDeZip(zip));
     let condado = cz || (c && c.condado) || null;
     let jurisdiccion_probable = "", seguridad = "baja";
     const notas = [];
     if (c && c.tipo === "municipio") {
-      jurisdiccion_probable = "City of " + c.nombre; seguridad = "media";
-      notas.push("Si la parcela cae fuera del límite de la ciudad, es el condado: verificar por parcel.");
+      // (09/10) el nombre del correo no es el municipio: en ciertos ZIP casi todo es condado, o está repartido
+      const g = zip ? ZIP_NOMBRE_SIN_CIUDAD.find(z => z[0] === zip && z[1] === c.nombre) || null : null;
+      const delCondado = condado ? condado + " County" : "el condado";
+      if (g && g[2] === "condado") {
+        jurisdiccion_probable = condado ? condado + " County" : ""; seguridad = "baja";
+        notas.push("El ZIP " + zip + " lleva el nombre " + c.nombre + ", pero casi todo es zona sin ciudad: lo más probable es " + delCondado +
+          ". Si la parcela cae dentro de la ciudad, es City of " + c.nombre + ": verificar por parcel.");
+      } else {
+        const dudoso = MUNICIPIO_PERMISO_DUDOSO.includes(c.nombre);
+        jurisdiccion_probable = "City of " + c.nombre; seguridad = g || dudoso ? "baja" : "media";
+        notas.push(g ? "El ZIP " + zip + " está repartido entre City of " + c.nombre + " y zona sin ciudad (" + delCondado + "): verificar por parcel."
+          : "Si la parcela cae fuera del límite de la ciudad, es el condado: verificar por parcel.");
+        if (dudoso) notas.push(c.nombre + " es municipio, pero puede que sus permisos los tramite " + delCondado + " por acuerdo (sin comprobar): verificar.");
+      }
     } else if (c && c.tipo === "postal") {
       jurisdiccion_probable = condado ? condado + " County" : ""; seguridad = condado ? "alta" : "baja";
       notas.push(c.nombre + " no es municipio: el permiso lo da el condado.");
@@ -3710,6 +3989,10 @@
       seguridad = "baja"; condado = cz;
       if (c.tipo === "postal") jurisdiccion_probable = cz + " County";
       notas.push("Ojo: " + c.nombre + " es de " + c.condado + " y el ZIP es de " + cz + ".");
+    }
+    if (caballo) {
+      const otros = caballo.slice(1);   // dos sitios, o tres: «entre Sumter, Lake y Marion»
+      seguridad = "baja"; notas.push("ZIP a caballo entre " + otros.slice(0, -1).join(", ") + " y " + otros[otros.length - 1] + ": verificar por parcel.");
     }
     return { condado, ciudad: c ? c.nombre : "", jurisdiccion_probable, seguridad, nota: notas.join(" ") };
   }
@@ -5881,7 +6164,7 @@
                 // tanda 2: lo que la prueba del molde del cerebro necesita mirar
                 SECCIONES_VALIDAS, NOMBRES_PLANTILLA,
                 // v3.8 (29-sep): la jurisdicción por la dirección y el revisor del contrato armado
-                jurisdiccionDe, textoParaRevisar, lineaDeCita, comprobarHallazgos, ponerDatoDeFicha, fichaSinDinero,
+                jurisdiccionDe, ZIP_CONDADO, ZIP_A_CABALLO, CIUDADES_MUNICIPIO, CIUDADES_POSTALES, ZIP_NOMBRE_SIN_CIUDAD, MUNICIPIO_PERMISO_DUDOSO, textoParaRevisar, lineaDeCita, comprobarHallazgos, ponerDatoDeFicha, fichaSinDinero,
                 perdonDeHallazgo, conMontoTapado, subcadenaComun, TIPOS_HALLAZGO, CAMPOS_ARREGLO,
                 // v251 (29-sep, Metro NPR): la ficha manda en la dirección, las reglas por contratista y la cabecera del SOW
                 nutrirHoja, mismaDireccion, partesDireccion, llevaMarcador, DATOS_FICHA, RE_DATO_FICHA, REGLAS_CONTRATISTA, reglaDeContratista,
