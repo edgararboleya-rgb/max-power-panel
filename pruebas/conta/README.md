@@ -501,6 +501,10 @@ corto:
    seguro o fianza pagados por adelantado (`fn_prepagado_guardar`; la
    póliza que ya venía de QuickBooks dice su `saldo_corte`: lo que tenía
    en 1410 al 30-sep, el número de la balanza, no un cálculo).
+   Una cuota registrada antes que el banco (con el statement) que no debió
+   entrar se anula desde el SQL Editor con
+   `select fn_prestamo_cuota_anular('<cuota>', '<por qué>');` (de la última
+   hacia atrás; la que ya tiene su cargo, des-casándolo: `fn_banco_descasar`).
    El `saldo_inicial` de un préstamo es el del statement del prestamista,
    no el de QuickBooks (que parte las cuotas con su propia tabla). Si la
    apertura trae otra cosa en las cuentas de los préstamos (2520/2530),
