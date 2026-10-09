@@ -44,3 +44,8 @@ que el cliente vaya a firmar.
 | `e36.js` | E36 · tanda 2 de Mariners: la merma automática solo en modo planos (un congelado no se mueve), el papel de MXP MEP para el cliente en lump sum y en inglés sin overhead, profit, horas ni membrete de Max Power, el resumen interno con su margen, y el resultado de un estimado de MXP MEP sin mezclarse con el historial de Max Power. |
 
 | `e37.js` | E37 · tanda 3 de Mariners: los hitos con la retención aparte y al cierre (suman el contrato al centavo); la propuesta con obra, dueño y retención (y sin ellos, igual que siempre); el papel de MXP MEP con owner, obra y retainage; la tarjeta de datos del trabajo; los adjuntos del estimado; y las líneas a mano repartidas entre las opciones A/B/C de la propuesta. |
+
+## Notas de App Operativa (la otra sesión que publica aquí)
+
+- **2-oct-2026 (v252):** `e0.js` usaba «DEMO - Panels» como ejemplo de renglón «sin clasificar». Desde la v252 la app trata toda la DEMOLICIÓN con precio 0 como «solo mano de obra» (regla de Edgar), así que ese ejemplo dejó de valer: se cambió a «LIGHTNING ROD AIR TERMINAL» (id 9) y se añadió «Demo Old Wiring/Splice» con precio (id 10) para probar que la regla solo aplica con precio 0. Son 34 pruebas y siguen en verde. Si cambiáis ese fixture, mantened esos dos casos.
+- **8-oct-2026 (v259/v260):** se publicó «Armar el contrato con IA» (js/app.js, js/alcance.js, js/i18n.js, css/styles.css, db.js) mezclado encima de la v258. Las pruebas de los contratos viven en el repo de desarrollo (`pruebas/probar-alcance.mjs`, `armar-ia.mjs`…), no aquí. La plantilla del contrato pasó a `plantillas/SOW_Template_v3.9.html`.
