@@ -4621,8 +4621,8 @@ begin
   -- de la cuota pedía el statement «porque le cobraría otro mes de
   -- interés», y la primera opción lo mandaba todo a capital, sin el
   -- interés del mes. (Ronda 5: el período son 25 días en una mensual y
-  -- 25 × 12 / cuotas_al_anio en las demás: 5 en una semanal, 11 en una
-  -- quincenal; antes la cuota semanal siguiente, a 7 días, pedía el
+  -- 25 × 12 / cuotas_al_anio en las demás: 5 en una semanal, 12 en una
+  -- quincenal, 11 cada dos semanas; antes la cuota semanal siguiente, a 7 días, pedía el
   -- statement.)
   v_dias := greatest(3, 25 * 12 / p.cuotas_al_anio);
   v_otro := case when v_ult is not null and p_fecha - v_ult < v_dias
@@ -4638,13 +4638,14 @@ begin
                       v_int, p_monto, least(v_int, p_monto), greatest(v_cap, 0)),
     'extra', case when v_otro is null and p_monto > p.cuota then p_monto - p.cuota end,
     'aviso', case when v_otro is not null then v_otro
-                  when v_cap < 0 then format('El pago (%s) no alcanza el interés %s (%s sobre %s): la fórmula no lo reparte. Manda el '
-                                             'statement; si la tasa o la cuota del préstamo están mal, corrígelas (fn_prestamo_guardar).',
+                  when v_cap < 0 then format('el pago (%s) no alcanza el interés %s (%s sobre %s): la fórmula no lo reparte; si la tasa o '
+                                             'la cuota del préstamo están mal, corrígelas (fn_prestamo_guardar)',
                                              p_monto, fn_prestamo_periodo(p.cuotas_al_anio, 'del'), v_int, v_saldo)
                   when v_cap > v_saldo then format('El capital (%s) pasa de lo que se debe (%s): no cuadra; usa el statement.',
                                                    v_cap, v_saldo)
                   when p_monto > p.cuota
-                  then format('la cuota %s (%s) más %s a capital', fn_prestamo_periodo(p.cuotas_al_anio, 'del'), p.cuota,
+                  -- (ronda 5b: sin «a capital»: lo de más puede ser un recargo)
+                  then format('la cuota %s (%s) más %s', fn_prestamo_periodo(p.cuotas_al_anio, 'del'), p.cuota,
                               p_monto - p.cuota) end,
     -- (ronda 5: y el pago que no cubre el interés del período)
     'pide_statement', case when v_otro is not null or v_cap < 0 then true end,
@@ -4936,17 +4937,21 @@ revoke execute on function public.fn_prestamo_guardar(jsonb) from public, anon, 
 -- una cuenta personal (fn_banco_cuenta_personal). Antes la bandeja enseñaba
 -- hasta el siguiente «Casar» la partición sobre el saldo viejo (con cuatro
 -- cargos semanales en el mismo archivo, en tres de ellos); el botón sí
--- registraba lo correcto. Como mucho 12 (los más viejos primero; los demás
--- los rehace «Casar»). Devuelve cuántas.
+-- registraba lo correcto. Como mucho 12 y 1,5 segundos (los más viejos
+-- primero; los demás los rehace «Casar», o abrir el movimiento): es un botón
+-- de la bandeja, con el tope de 8 s de la API encima, y cada pasada del
+-- motor con un año de banco y 700 pendientes tarda 0,35 s en el banco de
+-- pruebas (ronda 5b). Devuelve cuántas.
 create or replace function public.fn_prestamo_propuestas_rehacer(p_prestamo uuid)
 returns int
 language plpgsql
 set search_path = public, pg_temp
 as $$
 declare
-  p   prestamos;
-  v_m uuid;
-  v_n int := 0;
+  p        prestamos;
+  v_m      uuid;
+  v_n      int := 0;
+  v_inicio timestamptz := clock_timestamp();
 begin
   select * into p from prestamos where id = p_prestamo;
   if not found then
@@ -4960,6 +4965,7 @@ begin
                                  where c->>'origen_tabla' = 'prestamo_cuotas'))
               order by x.fecha, x.id
               limit 12 loop
+    exit when v_n > 0 and clock_timestamp() - v_inicio > interval '1.5 seconds';
     perform fn_banco_casar_interno(null, null, v_m, true);
     v_n := v_n + 1;
   end loop;
@@ -4978,15 +4984,18 @@ revoke execute on function public.fn_prestamo_propuestas_rehacer(uuid) from publ
 -- Las cuotas van en orden: una anterior a la última viva no entra (se
 -- anula la posterior antes: des-casando su cargo, o sin él con
 -- fn_prestamo_cuota_anular; ronda 5: salvo la que SUSTITUYE a la anulada
--- de su misma fecha con el mismo capital, fn_banco_casar_con {cuota,
+-- de su fecha —a 10 días o menos: el banco cobra uno o dos días después
+-- del statement— con el mismo capital, fn_banco_casar_con {cuota,
 -- diferencia: interes}, que no mueve el saldo de las posteriores). Al
 -- terminar, las propuestas pendientes de ese préstamo se rehacen (la
 -- partición de la siguiente cambia con el saldo). Con movimiento, si la cuota de
 -- ese monto ya está registrada sin él (con el statement, antes que el
 -- banco; hasta 60 días antes), no se registra otra (MX008): el cargo se
--- casa con ella (fn_banco_casar_con), salvo que Edgar diga en el motivo que
--- de verdad es otra cuota. Antes se registraba otra y el mes quedaba con
--- dos cuotas (capital e interés dos veces).
+-- casa con ella (fn_banco_casar_con), salvo que el motivo diga «otra cuota»
+-- (ronda 5b: un motivo cualquiera —el del botón del recargo, que lo pide por
+-- otra razón— no basta; antes cualquier motivo saltaba la guarda y un botón
+-- viejo registraba la cuota dos veces). Antes se registraba otra y el mes
+-- quedaba con dos cuotas (capital e interés dos veces).
 --   _rpc('fn_prestamo_cuota', { p_prestamo: '…', p_movimiento: '…' })
 --   _rpc('fn_prestamo_cuota', { p_prestamo: '…', p_movimiento: '…', p_capital: '842.10', p_interes: '187.23' })
 -- ---------------------------------------------------------------------
@@ -5019,6 +5028,10 @@ declare
   v_cap1   numeric;
   v_cap2   numeric;
   v_sust   prestamo_cuotas;
+  -- (la cuota anulada a la que esta sustituye: fn_banco_casar_con {cuota,
+  -- diferencia}, con su marca de transacción)
+  v_sust_id uuid := (case when current_setting('mx_banco.cuota_sustituye', true) ~ '^[0-9a-fA-F-]{36}$'
+                          then current_setting('mx_banco.cuota_sustituye', true)::uuid end);
   v_reh    int;
 begin
   perform fn_banco_exigir_dueno();
@@ -5060,7 +5073,10 @@ begin
   if p.estado <> 'vigente' then
     raise exception using errcode = 'MX008', message = format('El préstamo de %s está %s.', p.prestamista, p.estado);
   end if;
-  if m.id is not null and v_motivo is null then
+  -- (ronda 5b: la guarda cede solo si el motivo dice «otra cuota», o en la
+  -- sustitución de una anulada —la anulada ya no cuenta, pero la vecina de
+  -- una semanal sí estaría a 10 días—)
+  if m.id is not null and v_sust_id is null and not coalesce(v_motivo ~* 'otra cuota', false) then
     select string_agg(format('del %s por %s (%s)', q.fecha, q.monto, a.numero), ', ' order by q.fecha),
            -- (ronda 5: la más cercana en fecha, no una cualquiera: una semanal
            -- puede tener varias registradas por el mismo monto)
@@ -5078,7 +5094,8 @@ begin
       raise exception using errcode = 'MX008',
         message = format('La cuota %s de %s ya está registrada (con el statement del prestamista) y espera su cargo del banco: '
                          'cásalo con ella (fn_banco_casar_con con {"asiento": "%s"}). Registrar otra la pondría dos veces '
-                         '(capital e interés). Si de verdad es otra cuota, dilo en el motivo.', v_ya, p.prestamista, v_ya_as);
+                         '(capital e interés). Si de verdad es otra cuota, escribe «otra cuota» en el motivo.', v_ya, p.prestamista,
+                         v_ya_as);
     end if;
     -- (Ronda 4) La registrada por OTRO monto a 10 días o menos: es ella (la
     -- cuota redondeada, un recargo). Registrar otra, solo con su motivo.
@@ -5093,7 +5110,7 @@ begin
         message = format('La cuota %s de %s ya está registrada y espera su cargo del banco, que cobró %s: es ella (redondeada, o con '
                          'un recargo). Cásalo con ella y di a dónde va la diferencia (fn_banco_casar_con con {"cuota": "%s", '
                          '"diferencia": "capital"} o "interes"). Registrar otra la pondría dos veces. Si de verdad es otra cuota, '
-                         'dilo en el motivo.', v_ya, p.prestamista, v_monto, v_ya_as);
+                         'escribe «otra cuota» en el motivo.', v_ya, p.prestamista, v_monto, v_ya_as);
     end if;
   end if;
   if v_banco is null then
@@ -5108,14 +5125,15 @@ begin
                        p.saldo_inicial_al);
   end if;
   select max(q.fecha) into v_ult from prestamo_cuotas q where q.prestamo_id = p.id and q.anulada_el is null;
-  -- (Ronda 5) La que SUSTITUYE a una anulada de esta misma fecha con el
-  -- mismo capital (fn_banco_casar_con {cuota, diferencia: interes}: el
-  -- recargo va a interés) entra aunque haya cuotas posteriores: su saldo no
-  -- se mueve. El capital se comprueba abajo, ya repartido.
+  -- (Ronda 5) La que SUSTITUYE a una anulada de su fecha (a 10 días o menos:
+  -- el banco cobra uno o dos días después del statement; ronda 5b, antes
+  -- pedía el mismo día) con el mismo capital (fn_banco_casar_con {cuota,
+  -- diferencia: interes}: el recargo va a interés) entra aunque haya cuotas
+  -- posteriores: su saldo no se mueve. El capital se comprueba abajo, ya
+  -- repartido.
   select q.* into v_sust from prestamo_cuotas q
-   where q.id = (case when current_setting('mx_banco.cuota_sustituye', true) ~ '^[0-9a-fA-F-]{36}$'
-                      then current_setting('mx_banco.cuota_sustituye', true)::uuid end)
-     and q.prestamo_id = p.id and q.anulada_el is not null and q.fecha = v_fecha;
+   where q.id = v_sust_id and q.prestamo_id = p.id and q.anulada_el is not null
+     and q.fecha between v_fecha - 10 and v_fecha + 10;
   if v_ult > v_fecha and v_sust.id is null then
     raise exception using errcode = 'MX008',
       message = format('El préstamo ya tiene una cuota del %s, posterior a esta (%s): las cuotas van en orden (su saldo es el de '

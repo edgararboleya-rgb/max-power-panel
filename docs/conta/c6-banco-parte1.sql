@@ -1361,7 +1361,17 @@ begin
     -- cargo» con el cargo casado.
     if v_marca = 'cuota:' || old.id and old.anulada_el is null and new.anulada_el is null
        and new.movimiento_id is distinct from old.movimiento_id
-       and (to_jsonb(new) - 'movimiento_id') = (to_jsonb(old) - 'movimiento_id') then
+       and (to_jsonb(new) - 'movimiento_id') = (to_jsonb(old) - 'movimiento_id')
+       -- (ronda 5b: solo de nulo al movimiento que acaba de casar su línea, o
+       -- de él a nulo con su línea ya suelta; nunca de un movimiento a otro)
+       and ((old.movimiento_id is null
+             and exists (select 1 from banco_casados bc join banco_casado_lineas bl on bl.casado_id = bc.id
+                          where bc.movimiento_id = new.movimiento_id and bc.deshecho_el is null and bl.vigente
+                            and bl.asiento_id = new.asiento_id))
+            or (new.movimiento_id is null
+                and not exists (select 1 from banco_casados bc join banco_casado_lineas bl on bl.casado_id = bc.id
+                                 where bc.movimiento_id = old.movimiento_id and bc.deshecho_el is null and bl.vigente
+                                   and bl.asiento_id = old.asiento_id))) then
       return new;
     end if;
     raise exception using errcode = 'MX003',
@@ -7034,7 +7044,9 @@ begin
                                         'llamar', 'fn_banco_casar_con',
                                         'args', jsonb_build_object('p_movimiento', m.id,
                                                                    'p_con', jsonb_build_object('asiento', q.asiento_id)))
-                     order by abs(q.fecha - m.fecha), q.fecha)
+                     -- (ronda 5b: la de su fecha primero, con el coste del casado
+                     -- solo: un día de retraso del banco cuesta 1, uno de adelanto 3)
+                     order by (case when q.fecha <= m.fecha then m.fecha - q.fecha else 3 * (q.fecha - m.fecha) end), q.fecha)
       into v_cuota
       from prestamo_cuotas q
       join prestamos p on p.id = q.prestamo_id
@@ -7088,6 +7100,15 @@ begin
               cross join (values (1), (2)) as n(n)
              where q.anulada_el is null and q.movimiento_id is null and q.monto <> -m.monto and p.cuenta_banco = m.cuenta
                and q.fecha between m.fecha - 10 and m.fecha + 10
+               -- (ronda 5b: de cada préstamo, solo su cuota más cercana en
+               -- fecha: en una semanal, ±10 días son también la cuota anterior
+               -- y la siguiente, y el botón de la vecina la anulaba y la
+               -- registraba otra vez con la fecha del cargo)
+               and not exists (select 1 from prestamo_cuotas q2
+                                where q2.prestamo_id = q.prestamo_id and q2.anulada_el is null and q2.movimiento_id is null
+                                  and q2.monto <> -m.monto and q2.fecha between m.fecha - 10 and m.fecha + 10
+                                  and (case when q2.fecha <= m.fecha then m.fecha - q2.fecha else 3 * (q2.fecha - m.fecha) end)
+                                      < (case when q.fecha <= m.fecha then m.fecha - q.fecha else 3 * (q.fecha - m.fecha) end))
                and q.capital + (-m.monto - q.monto) * (case n.n when 1 then 1 else 0 end) >= 0
                and q.interes + (-m.monto - q.monto) * (case n.n when 2 then 1 else 0 end) >= 0
                -- (ronda 5: a capital solo sin cuotas posteriores —su saldo las
@@ -8878,19 +8899,29 @@ begin
              -- cargo del 19 casa solo con la cuota del 19. Antes ninguno
              -- casaba (dos candidatas cada uno: nm, nl ≠ 1) y la bandeja
              -- ofrecía primero la del 12.
-             cvq as (select c.*,
-                            case when c.origen_tabla = 'prestamo_cuotas'
-                                 then (select q.prestamo_id from prestamo_cuotas q
-                                        where q.id = (case when c.origen_id ~ '^[0-9a-fA-F-]{36}$' then c.origen_id::uuid end)) end
-                              as prestamo
-                       from cand c where c.v is not null),
+             -- (Ronda 5b) La cercanía es un COSTE: un día de retraso del
+             -- banco cuesta 1 (el prestamista cobra el día que toca y el
+             -- banco lo postea después) y un día de adelanto 3 (raro: el
+             -- vencimiento en fin de semana); un EMPATE (dos cargos a lo
+             -- mismo de una cuota, dos cuotas de un cargo: rank, no
+             -- row_number) no casa solo —los dos se quedan y nm o nl ≠ 1—; y
+             -- a un período o más de la cuota (5 días en una semanal) no
+             -- casa solo: es igual de probable que sea la cuota siguiente,
+             -- todavía sin registrar. Antes el empate lo decidía el uuid y
+             -- el cargo del día 7 casaba con la cuota del 9 y no con la del 2.
+             cvq as (select c.*, q.prestamo_id as prestamo,
+                            greatest(3, 25 * 12 / p.cuotas_al_anio) as dias,
+                            case when c.fdoc <= c.fecha then (c.fecha - c.fdoc) else 3 * (c.fdoc - c.fecha) end as coste
+                       from cand c
+                       left join prestamo_cuotas q on c.origen_tabla = 'prestamo_cuotas'
+                                                  and q.id = (case when c.origen_id ~ '^[0-9a-fA-F-]{36}$' then c.origen_id::uuid end)
+                       left join prestamos p on p.id = q.prestamo_id
+                      where c.v is not null),
              cv as (select x.* from (select c.*,
-                                            row_number() over (partition by c.mov, c.prestamo
-                                                               order by abs(c.fdoc - c.fecha), c.fdoc, c.asiento_id, c.orden) as rq_m,
-                                            row_number() over (partition by c.asiento_id, c.orden
-                                                               order by abs(c.fdoc - c.fecha), c.fecha, c.mov) as rq_l
+                                            rank() over (partition by c.mov, c.prestamo order by c.coste) as rq_m,
+                                            rank() over (partition by c.asiento_id, c.orden order by c.coste) as rq_l
                                        from cvq c) x
-                     where x.prestamo is null or (x.rq_m = 1 and x.rq_l = 1)),
+                     where x.prestamo is null or (x.rq_m = 1 and x.rq_l = 1 and x.fecha - x.fdoc < x.dias)),
              cc as (select c.*, count(*) over (partition by c.mov) as nm, count(*) filter (where c.num) over (partition by c.mov) as nmn,
                            count(*) over (partition by c.asiento_id, c.orden) as nl,
                            count(*) filter (where c.num) over (partition by c.asiento_id, c.orden) as nln
@@ -8932,6 +8963,18 @@ begin
           if coalesce(m.tipo_banco, '') = 'XFER' or coalesce(m.desc_norm ~* v_pat_tr, false) then
             continue when fn_banco_criterio_libro(m, r.asiento_id, 'cobro')->>'contradice' is not null;
           end if;
+        elsif v_clase = 'cuota_prestamo' then
+          -- (Ronda 5b) La cuota registrada antes que el banco casa sola solo
+          -- con el cargo de SU prestamista (el descriptor del préstamo, si lo
+          -- tiene) y con EL CRITERIO (como lo demás del libro): un cargo de
+          -- otro por el mismo monto en su ventana se propone, no casa. Antes
+          -- casaba (un tercero contra una deuda no se contradice).
+          select * into m from movimientos_banco where id = r.mov;
+          continue when exists (select 1 from prestamo_cuotas qq join prestamos pp on pp.id = qq.prestamo_id
+                                 where qq.id = (case when r.origen_id ~ '^[0-9a-fA-F-]{36}$' then r.origen_id::uuid end)
+                                   and pp.descriptor is not null
+                                   and not (btrim(coalesce(m.desc_norm, '') || ' ' || coalesce(fn_banco_norm(m.memo), '')) ~* pp.descriptor));
+          continue when not coalesce((fn_banco_criterio_libro(m, r.asiento_id, v_clase)->>'solas')::boolean, false);
         elsif v_clase not in ('recibo', 'devolucion') then
           -- (Ronda 4d) UN ASIENTO ESCRITO A MANO (fn_postear desde el SQL
           -- Editor), la cuota ya registrada, lo que sea que ya estaba en el
@@ -9429,22 +9472,21 @@ begin
          -- (ronda 5: de las cuotas de un mismo préstamo, solo la más cercana
          -- de cada movimiento y el movimiento más cercano de cada cuota,
          -- como en el casado solo de arriba)
-         cvq as (select cand.*, p.al, p.fecha,
-                        case when cand.origen_tabla = 'prestamo_cuotas'
-                             then (select q.prestamo_id from prestamo_cuotas q
-                                    where q.id = (case when cand.origen_id ~ '^[0-9a-fA-F-]{36}$' then cand.origen_id::uuid end)) end
-                          as prestamo
+         cvq as (select cand.*, p.al, p.fecha, q.prestamo_id as prestamo,
+                        greatest(3, 25 * 12 / pr.cuotas_al_anio) as dias,
+                        case when cand.fdoc <= p.fecha then (p.fecha - cand.fdoc) else 3 * (cand.fdoc - p.fecha) end as coste
                    from cand join pool p on p.id = cand.mov
+                   left join prestamo_cuotas q on cand.origen_tabla = 'prestamo_cuotas'
+                                              and q.id = (case when cand.origen_id ~ '^[0-9a-fA-F-]{36}$' then cand.origen_id::uuid end)
+                   left join prestamos pr on pr.id = q.prestamo_id
                   where cand.v is not null),
          cv as (select x.mov, x.asiento_id, x.orden, x.numero, x.origen_tabla, x.origen_id, x.fdoc, x.tr, x.v, x.num, x.al,
                        count(*) over (partition by x.asiento_id, x.orden) - 1 as otros
                   from (select c.*,
-                               row_number() over (partition by c.mov, c.prestamo
-                                                  order by abs(c.fdoc - c.fecha), c.fdoc, c.asiento_id, c.orden) as rq_m,
-                               row_number() over (partition by c.asiento_id, c.orden
-                                                  order by abs(c.fdoc - c.fecha), c.fecha, c.mov) as rq_l
+                               rank() over (partition by c.mov, c.prestamo order by c.coste) as rq_m,
+                               rank() over (partition by c.asiento_id, c.orden order by c.coste) as rq_l
                           from cvq c) x
-                 where x.prestamo is null or (x.rq_m = 1 and x.rq_l = 1)),
+                 where x.prestamo is null or (x.rq_m = 1 and x.rq_l = 1 and x.fecha - x.fdoc < x.dias)),
          -- (los TICKETS CON OTRO TOTAL de cada cargo sin nada que case: la
          -- línea libre de un recibo en su cuenta, en la ventana de la compra,
          -- que se le parece —la regla de fn_banco_otro_total, escrita aquí

@@ -10603,10 +10603,13 @@ end $$;
 --      registrada») y la cuota toma su cargo (movimiento_id); des-casar uno
 --      lo suelta y casarlo a mano (fn_banco_casar_con {asiento}) lo retoma.
 --      Antes ninguno casaba (la ventana de cada cargo abarcaba dos cuotas) y
---      la bandeja era R1 con la más vieja primero. (b) El banco cobra 325.00
---      (un recargo de 25.00) por una cuota registrada antes que tiene otra
---      registrada después: la bandeja ofrece solo «la diferencia a interés»
---      y dice cómo ir a capital; a capital es MX008 (nombra
+--      la bandeja era R1 con la más vieja primero. Un cargo AJENO por el
+--      mismo monto al día siguiente de una cuota registrada no casa con ella
+--      (el descriptor del prestamista) y la cuota sigue libre. (b) El banco
+--      cobra 325.00 (un recargo de 25.00) dos días después por una cuota
+--      registrada antes que tiene otra registrada después: la bandeja
+--      ofrece solo «la diferencia a interés» de ESA cuota (no la de la
+--      vecina) y dice cómo ir a capital; a capital es MX008 (nombra
 --      fn_prestamo_cuota_anular) y nada queda a medias; a interés entra con
 --      el mismo capital y el saldo no se mueve. (c) fn_prestamo_cuota_anular:
 --      la última sin cargo se anula (su asiento se reversa, el saldo vuelve);
@@ -10624,7 +10627,8 @@ declare
   v_nom  text := 'la verificación de la ronda 5: cuotas registradas antes a 7 días, el recargo con una posterior, anular, el extra chico, '
                  'la frecuencia';
   v_obt  text;
-  v_esp  text := 'casados=3 pares=3 suelta=t retoma=t propuesta=cuota_prestamo:interes sin_capital=t aviso=t capital=MX008:anular '
+  v_esp  text := 'casados=3 pares=3 suelta=t retoma=t ajeno=pendiente:cuota_prestamo d_libre=t propuesta=cuota_prestamo:interes '
+                 'sin_capital=t solo_cercana=t aviso=t capital=MX008:anular '
                  'sustituye=casado:cuota_prestamo 268.45/56.55 saldo=3667.67 anular=ok:3938.13 con_cargo=MX008 repetida=MX008 '
                  'orden=MX008 anular2=ok:3938.13 recargo=270.46/54.54:motivo grande=capital:sin_motivo rehecha=3667.67 '
                  'usura=pide:no alcanza usura_cuota=MX008 frec=26/24/12 textos=de la quincena/otras dos semanas control=igual';
@@ -10683,22 +10687,27 @@ begin
     v_obt := v_obt || ' suelta=' || case when (select q.movimiento_id from prestamo_cuotas q where q.id = v_q.id) is null then 't' else 'f' end;
     perform fn_banco_casar_con(v_m, jsonb_build_object('asiento', v_q.asiento_id));
     v_obt := v_obt || ' retoma=' || case when (select q.movimiento_id from prestamo_cuotas q where q.id = v_q.id) = v_m then 't' else 'f' end;
-    -- (b) el recargo del banco sobre una cuota registrada antes, con otra registrada después
-    perform fn_prestamo_cuota(v_p, null, d + 22, '300.00', '268.45', '31.55', 'c6-pruebas: del statement');
-    perform fn_prestamo_cuota(v_p, null, d + 27, '300.00', '270.46', '29.54', 'c6-pruebas: del statement');
+    -- (b) el recargo del banco, dos días después, sobre una cuota registrada antes con otra registrada después;
+    -- y un cargo ajeno por el mismo monto al día siguiente de la cuota, que no es suyo
+    perform fn_prestamo_cuota(v_p, null, d + 20, '300.00', '268.45', '31.55', 'c6-pruebas: del statement');
+    perform fn_prestamo_cuota(v_p, null, d + 26, '300.00', '270.46', '29.54', 'c6-pruebas: del statement');
     perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d + 21, d + 23, null, jsonb_build_array(
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 21, 'monto', '-300.00', 'id', 'C6Y4A', 'nombre', 'C6 PRUEBAS FERRETERIA'),
               jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 22, 'monto', '-325.00', 'id', 'C6Y4', 'nombre', 'C6 PRUEBAS SEMANAL PMT'))),
             '1098', 'c6-pruebas-semanal-recargo.qfx');
     perform fn_banco_casar_todo('1098');
     v_m4 := pg_temp.c6_mov('1098', 'C6Y4');
-    select q.* into v_q from prestamo_cuotas q where q.prestamo_id = v_p and q.fecha = d + 22 and q.anulada_el is null;
+    select q.* into v_q from prestamo_cuotas q where q.prestamo_id = v_p and q.fecha = d + 20 and q.anulada_el is null;
+    v_obt := v_obt || format(' ajeno=%s d_libre=%s', pg_temp.c6_est('1098', 'C6Y4A'), case when v_q.movimiento_id is null then 't' else 'f' end);
     select m.propuesta into v_r from movimientos_banco m where m.id = v_m4;
-    v_obt := v_obt || format(' propuesta=%s:%s sin_capital=%s aviso=%s', v_r->>'motivo',
+    v_obt := v_obt || format(' propuesta=%s:%s sin_capital=%s solo_cercana=%s aviso=%s', v_r->>'motivo',
                              case when v_r->'opciones'->0->'args'->'p_con'->>'cuota' = v_q.id::text
                                   then v_r->'opciones'->0->'args'->'p_con'->>'diferencia' else '-' end,
                              case when exists (select 1 from jsonb_array_elements(v_r->'opciones') o
                                                 where o->'args'->'p_con'->>'cuota' = v_q.id::text
                                                   and o->'args'->'p_con'->>'diferencia' = 'capital') then 'f' else 't' end,
+                             case when exists (select 1 from jsonb_array_elements(v_r->'opciones') o
+                                                where o->'args'->'p_con'->>'cuota' <> v_q.id::text) then 'f' else 't' end,
                              case when v_r->>'texto' like '%fn_prestamo_cuota_anular%' then 't' else 'f' end);
     begin
       perform fn_banco_casar_con(v_m4, jsonb_build_object('cuota', v_q.id, 'diferencia', 'capital'));
@@ -10711,7 +10720,7 @@ begin
                              (select q.capital || '/' || q.interes from prestamo_cuotas q where q.movimiento_id = v_m4 and q.anulada_el is null),
                              (select x.saldo from v_prestamos x where x.prestamo_id = v_p));
     -- (c) anular: la última sin cargo sí; con cargo, ya anulada o no la última, no
-    select q.* into v_q from prestamo_cuotas q where q.prestamo_id = v_p and q.fecha = d + 27 and q.anulada_el is null;
+    select q.* into v_q from prestamo_cuotas q where q.prestamo_id = v_p and q.fecha = d + 26 and q.anulada_el is null;
     v_r := fn_prestamo_cuota_anular(v_q.id, 'c6-pruebas: la registré de más');
     v_obt := v_obt || format(' anular=%s:%s',
                              case when (select q.anulada_el from prestamo_cuotas q where q.id = v_q.id) is not null
@@ -10731,18 +10740,18 @@ begin
     exception when others then v_x := sqlstate;
     end;
     v_obt := v_obt || ' repetida=' || v_x;
-    perform fn_prestamo_cuota(v_p, null, d + 24, '300.00', '270.46', '29.54', 'c6-pruebas: del statement');
-    perform fn_prestamo_cuota(v_p, null, d + 26, '300.00', '272.49', '27.51', 'c6-pruebas: del statement');
+    perform fn_prestamo_cuota(v_p, null, d + 23, '300.00', '270.46', '29.54', 'c6-pruebas: del statement');
+    perform fn_prestamo_cuota(v_p, null, d + 25, '300.00', '272.49', '27.51', 'c6-pruebas: del statement');
     begin
-      perform fn_prestamo_cuota_anular((select q.id from prestamo_cuotas q where q.prestamo_id = v_p and q.fecha = d + 24 and q.anulada_el is null),
+      perform fn_prestamo_cuota_anular((select q.id from prestamo_cuotas q where q.prestamo_id = v_p and q.fecha = d + 23 and q.anulada_el is null),
                                        'c6-pruebas: no es la última');
       v_x := 'entró';
     exception when others then v_x := sqlstate;
     end;
     v_obt := v_obt || ' orden=' || v_x;
-    perform fn_prestamo_cuota_anular((select q.id from prestamo_cuotas q where q.prestamo_id = v_p and q.fecha = d + 26 and q.anulada_el is null),
+    perform fn_prestamo_cuota_anular((select q.id from prestamo_cuotas q where q.prestamo_id = v_p and q.fecha = d + 25 and q.anulada_el is null),
                                      'c6-pruebas: de la última hacia atrás');
-    perform fn_prestamo_cuota_anular((select q.id from prestamo_cuotas q where q.prestamo_id = v_p and q.fecha = d + 24 and q.anulada_el is null),
+    perform fn_prestamo_cuota_anular((select q.id from prestamo_cuotas q where q.prestamo_id = v_p and q.fecha = d + 23 and q.anulada_el is null),
                                      'c6-pruebas: de la última hacia atrás');
     v_obt := v_obt || format(' anular2=%s:%s',
                              case when (select count(*) from prestamo_cuotas q where q.prestamo_id = v_p and q.anulada_el is null) = 4
