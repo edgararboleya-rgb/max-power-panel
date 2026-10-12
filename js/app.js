@@ -14610,7 +14610,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (!lista.length) return null;
     const est = lista.find(e => e.estado === "convertido") || lista.find(e => e.estado === "congelado") || lista[0];
     try {
-      const bid = Math.round(calcularEstimado(est).bid * 100) / 100;
+      // (12-oct, CCB chandelier) el precio que se ofrece es el que se OFERTÓ (bid_final, la foto del estimado
+      // convertido o congelado), no la cuenta de hoy: con un precio pactado por encima del cálculo (935 frente a
+      // 890.07) el botón «usar el del estimado» ofrecía el número equivocado. fotoDe recalcula solo si no hay foto.
+      const bid = Math.round(fotoDe(est).bid * 100) / 100;
       if (!(bid > 0)) return null;
       return { monto: bid, texto: bid.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }), ref: `EST-${est.id}`, nombre: est.nombre || "" };
     } catch { return null; }
