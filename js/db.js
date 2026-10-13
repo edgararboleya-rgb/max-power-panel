@@ -829,10 +829,10 @@
 
     // La plantilla oficial vive en el almacén de la app, no en el teléfono:
     // así Edgar no tiene que elegir ningún archivo y todos usan la misma.
-    // 13-oct (pliego §9.3): v3.10, con el modo servicio (la v3.9 se queda en el almacén para los teléfonos viejos)
+    // 13-oct (pliego §9.3): v3.10, con el modo servicio; 13-oct (tarde) v3.11 con el SOW ligero (las viejas se quedan en el almacén)
     plantillaSOW: async () => {
-      const firma = await firmarFotos(["plantillas/SOW_Template_v3.10.html"]);
-      const url = firma["plantillas/SOW_Template_v3.10.html"];
+      const firma = await firmarFotos(["plantillas/SOW_Template_v3.11.html"]);
+      const url = firma["plantillas/SOW_Template_v3.11.html"];
       if (!url) throw new Error("No encuentro la plantilla oficial en la app");
       const r = await fetch(url);
       if (!r.ok) throw new Error("No se pudo bajar la plantilla (" + r.status + ")");

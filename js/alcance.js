@@ -1863,9 +1863,22 @@
   function leerPermiso(v) {
     const n = norma(v || "");
     if (!n) return "nosotros";
+    // 13-oct (tarde, CCB): «Permiso: no incluido — <texto>»: no se saca y no está en el precio, sin afirmar que no hace falta;
+    // el texto de la hoja sale tal cual en la viñeta «Permit.» (PERMISO_TEXTO)
+    if (/^(?:no incluido|not included|no se incluye|no esta incluido|not in the price|excluded|excluido)\b/.test(n)) return "no_incluido";
     if (/no hace falta|no permit|not required|ninguno|sin permiso|no aplica/.test(n)) return "ninguno";
     if (/\b(cliente|client|gc|owner|dueno|contratista)\b/.test(n) && !/max power|nosotros/.test(n)) return "cliente";
     return "nosotros";
+  }
+  // ninguno o no incluido: el papel no habla de la solicitud del permiso
+  const sinPermisoQuien = q => q === "ninguno" || q === "no_incluido";
+  // el texto en inglés que sigue a «no incluido —» (con su punto); vacío si no lo hay o viene en español
+  function textoPermisoNoIncluido(valor) {
+    const v = String(valor || "").trim();
+    const m = v.match(/^(?:permiso:\s*)?(?:no incluido|not included|no se incluye|no esta incluido|not in the price|excluded|excluido)\b[^A-Za-z0-9]*(.*)$/i);
+    let t = m ? m[1].trim().replace(/^[—–\-:,;.\s]+/, "").replace(/[\s]+$/, "") : "";
+    if (!t || RX_ESPANOL.test(t)) return "";
+    return /[.!?]$/.test(t) ? t : t + ".";
   }
   // v3.6: la zona de inundación y sus números se leen de cualquier parte de la hoja (sección 1, 4, 7 o 9),
   // no solo de la cabecera: "Zone AE", "BFE 11.0 / 12.0 ft NAVD 88", "Elevation Certificate dated 12/23/2014",
@@ -1975,7 +1988,7 @@
     const regla = reglaDeContratista(d);
     // v251: la regla del contratista manda en QUIÉN saca el permiso, no en SI hace falta: «Permiso: no hace falta» se respeta
     const hoja = regla && regla.permiso ? permisoDeLaHoja(L) : null;
-    if (regla && regla.permiso && !(hoja && hoja.quien === "ninguno")) return regla.permiso;
+    if (regla && regla.permiso && !(hoja && sinPermisoQuien(hoja.quien))) return regla.permiso;
     if (d.permiso) return leerPermiso(d.permiso);
     return inferirPermisoDelTexto(L) || "nosotros";
   }
@@ -2121,6 +2134,13 @@
     // 13-oct (CCB, revisión con IA): si la hoja excluye el material («…and any other material (Max Power furnishes installation
     // labor… only)»), el arranque de la §2 no puede decir que Max Power pone cajas, soportes y cableado: va SOLO_LABOR
     const soloLabor = /\b(?:any other material|all other material|all materials? (?:is|are) (?:furnished|provided|supplied) by (?:the )?(?:owner|client|others)|labor only|installation labor[^.]{0,90}\bonly\b)\b/.test(textoExcl);
+    // 13-oct (tarde, CCB): «…and any material other than the chandelier box and minor connection hardware» → Max Power pone solo el
+    // material que la hoja nombra (MATERIAL_LIMITADO): el arranque de la §2 no dice que pone cajas, soportes y cableado
+    const materialLimitado = !soloLabor && /\b(?:any (?:other )?material(?:s)? (?:other than|except|beyond)|material(?:s)? not (?:expressly )?(?:listed|stated))\b/.test(textoExcl);
+    // 13-oct (tarde, CCB): «Firma: sí — ligero» (SOW ligero CON firma: SCOPE OF WORK, §1-§5 y aceptación corta; pagos y términos en
+    // el subcontrato aparte), o admin.formato = "ligero" desde la app. «Firma: ligero» a secas sigue siendo el SOW sin firma de siempre.
+    // (va en la línea «Firma:» y no en una clave nueva para no tocar el molde del cerebro: sus claves son las de CLAVES_DATOS)
+    const ligero = /\b(?:ligero|ligera|light|scope of work)\b/.test(norma(d.firma || "")) || norma((admin || {}).formato || "") === "ligero";
     const hayPanel = /\b(panel|panelboard|sub-?panel|load center|service entrance|service equipment|main breaker|main disconnect|meter)\b/.test(textoAlcance);
     // Interior de una casa (cocina, cuartos, ático…) contra servicio exterior (poste, pozo, bomba…).
     // "control cabinet" no es "cabinet lighting": las palabras se miran con cuidado.
@@ -2210,7 +2230,9 @@
       && sinSociedad(d.inquilino) !== sinSociedad(clienteEfectivo || "") ? String(d.inquilino).trim() : "";
 
     const bloques = {
-      VARIANTE_B: conFirma, VARIANTE_A: !conFirma,
+      // 13-oct (tarde, CCB): «Formato: ligero» → SCOPE OF WORK (§1-§5); con firma, lleva el bloque corto de aceptación
+      VARIANTE_B: conFirma && !ligero, VARIANTE_A: !conFirma || ligero, FIRMA_LIGERA: ligero && conFirma,
+      DEFINICIONES: (ligero || !conFirma) && esGC,
       ATTENTION: hay(d.atencion), HOMEOWNER: esGC, GC: esGC,
       // v252: la fila Owner solo con el NOMBRE del dueño (nunca «the property owner»); la fila Tenant si la hoja lo nombra
       FILA_OWNER: esGC && !!nombreDueno, FILA_TENANT: !!inquilino,
@@ -2225,7 +2247,9 @@
       PERMISO_CLIENTE: permiso === "cliente",
       PERMISO_MXP: permiso === "nosotros",
       PERMISO_NINGUNO: permiso === "ninguno",
-      CON_PERMISO: permiso !== "ninguno",   // 13-oct: la §4 y la 9.x «Code edition» hablan de la solicitud del permiso solo si hay permiso
+      PERMISO_NO_INCLUIDO: permiso === "no_incluido",   // 13-oct (tarde): no se saca y no va en el precio, sin afirmar que no hace falta
+      SIN_PERMISO: sinPermisoQuien(permiso),
+      CON_PERMISO: !sinPermisoQuien(permiso),   // 13-oct: la §4 y la 9.x «Code edition» hablan de la solicitud del permiso solo si hay permiso
       ADDONS: L.opciones.length > 0,
       UTILITY: hay(d.utility),
       LAYOUT: layout, NO_LAYOUT: !layout && !preProprio,
@@ -2256,7 +2280,7 @@
       SERVICIO: esServicio, OBRA: !esServicio,
       // 13-oct (CCB, revisión con IA): solo mano de obra (la hoja excluye el material) · sin contratista, la 9.x de los upgrades
       // puede decir «(or the Owner)»; con contratista solo decide el Client (el Owner no firma)
-      SOLO_LABOR: soloLabor, CON_MATERIAL: !soloLabor, SIN_GC: !esGC,
+      SOLO_LABOR: soloLabor, MATERIAL_LIMITADO: materialLimitado, CON_MATERIAL: !soloLabor && !materialLimitado, HAY_MATERIAL: !soloLabor, SIN_GC: !esGC,
       DEPOSITO: !!cuenta.hay_deposito, SIN_DEPOSITO: !cuenta.hay_deposito,
       // la 7.x de las salidas: «una sola visita» en servicio; las movilizaciones por fase en obra, o en servicio si la
       // hoja escribe sus fases («Fases: …»: mandan)
@@ -2294,8 +2318,8 @@
       // residencial; en un subcontrato sobre propiedad comercial, no.
       deposito: conFirma && cuenta.deposito_mayor_10 && !esComercial
     };
-    // con SOW ligero no hay sección 9
-    if (!conFirma) Object.keys(clausulas).forEach(k => { clausulas[k] = false; });
+    // con SOW ligero no hay sección 9 (ni «See Section 9.x» en la §2 y la §3)
+    if (!conFirma || ligero) Object.keys(clausulas).forEach(k => { clausulas[k] = false; });
 
     const motivos = {
       panel_sin_fotos: "porque pusiste «Fotos del panel: no»",
@@ -2744,6 +2768,8 @@
       // 13-oct (CCB): «Permiso: no hace falta — fixture replacement with no circuit or panel changes…»: el porqué de la hoja sale
       // en la viñeta del permiso de la §3, y si la hoja no dice qué pasa si el AHJ lo pide, lo dice la casa (por Change Order)
       PERMISO_MOTIVO: motivoSinPermiso(d.permiso, dec),
+      // 13-oct (tarde, CCB): «Permiso: no incluido — <texto en inglés>» sale tal cual; si no trae texto, la frase de la casa
+      PERMISO_TEXTO: dec.bloques.PERMISO_NO_INCLUIDO ? (textoPermisoNoIncluido(d.permiso) || "No permit is included in the lump sum. Should the Authority Having Jurisdiction require a permit for this work, the permit, its fee and any inspection trips are added by written Change Order.") : "",
       FECHA: fechaLarga(hoy), AAAA: mNum ? mNum[1] : String(hoy.getFullYear()),
       MMDD: mNum ? mNum[2] : dosDig(hoy.getMonth() + 1) + dosDig(hoy.getDate()),
       NOMBRE: nombreCorto, VENCE_30_DIAS: fechaLarga(vence),
@@ -5276,7 +5302,7 @@
       const lee = (k, v) => {
         const n = norma(v || "");
         if (k === "firma") return leerFirma(v) ? "si" : "no";
-        if (k === "permiso") { const q = leerPermiso(v); return q === "cliente" ? "cliente" : q === "ninguno" ? "ninguno" : "nosotros"; }
+        if (k === "permiso") { const q = leerPermiso(v); return q === "cliente" ? "cliente" : sinPermisoQuien(q) ? "ninguno" : "nosotros"; }
         if (k === "propiedad") return /\b(?:no comercial|non-?commercial)\b/.test(n) ? "residential" : /comercial|commercial/.test(n) ? "commercial" : /resid|vivienda|casa|home|house/.test(n) ? "residential" : null;
         return /\b(?:directo|direct|sin contratista|no gc)\b/.test(n) ? "directo" : /\b(?:gc|contratista|contractor)\b/.test(n) ? "GC" : null;
       };
@@ -5859,7 +5885,7 @@
       const lp = leccion("permiso");
       const hojaNinguno = H.permiso === "ninguno" || perfil.permiso === "no_hace_falta";
       let origenPerm, motivoRegla = "";
-      const enumDe = v => { const q = leerPermiso(v); return q === "ninguno" ? "ninguno" : q === "cliente" ? "cliente" : "nosotros"; };
+      const enumDe = v => { const q = leerPermiso(v); return sinPermisoQuien(q) ? "ninguno" : q === "cliente" ? "cliente" : "nosotros"; };
       if (lp && regla && regla.permiso && !hojaNinguno && enumDe(regla.permiso) !== lp.valor) {
         // la lección choca con una regla de la casa (Wisdom): la regla manda en el papel (decidirInterruptores la aplica
         // siempre), pero no en silencio: se le dice a Edgar, con su lección
