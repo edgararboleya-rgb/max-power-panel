@@ -4452,6 +4452,44 @@
     [/^Escribí «(.+)» en la hoja\. Se verá en el papel al tocar «Arreglar el contrato»$/,
       "I wrote «$1» on the sheet. You'll see it on the paper when you tap «Fix the contract»"]
   );
+  // 13-oct, versión 3 (pliego §8): la IA pone el texto en el papel ella misma
+  Object.assign(D, {
+    "Cambiado en el papel:": "Changed on the paper:",
+    "Puesto en el papel.": "Put on the paper.",
+    "La IA lo cambió en el papel": "The AI changed it on the paper",
+    "Ese texto trae un monto: el dinero lo pone el programa. Pídele a la IA el texto sin cifras":
+      "That text has an amount: the program puts in the money. Ask the AI for the text without figures",
+    "No encontré esa frase en el papel; la IA guardó la orden y entrará al arreglar el contrato":
+      "I didn't find that sentence on the paper; the AI saved the instruction and it will go in when you fix the contract",
+    "1 cambio tuyo ya no encontró su frase:": "1 change of yours no longer found its sentence:",
+    "Los pagos los pone el programa: usa los botones de aquí arriba. El papel no lo toqué":
+      "The program puts in the payments: use the buttons up here. I didn't touch the paper",
+    "Esa frase del papel lleva un monto que pone el programa: no la cambio aquí":
+      "That sentence on the paper carries an amount the program puts in: I don't change it here",
+    "Ese cambio dejaría algo mal en el papel; no lo puse:": "That change would leave something wrong on the paper; I didn't put it in:",
+    "Cuando la IA te dé el texto, lo pongo en el papel en el acto; si no te gusta, díselo y lo cambia. «Decidido» apunta el punto sin tocar el papel. Al final, «Arreglar el contrato» lo revisa todo una sola vez.":
+      "When the AI gives you the text, I put it on the paper right away; if you don't like it, tell it and it changes it. «Decided» notes the point without touching the paper. At the end, «Fix the contract» reviews everything only once."
+  });
+  // (revisión de la versión 3) lo que la charla no pone en el papel, y por qué
+  Object.assign(D, {
+    "La IA mandó el texto vacío: desde aquí no quito frases del papel. Si la IA guardó la orden, entrará al arreglar el contrato":
+      "The AI sent an empty text: I don't remove sentences from the paper from here. If the AI saved the instruction, it will go in when you fix the contract",
+    "El permiso lo pone el programa: usa los botones de aquí arriba. El papel no lo toqué":
+      "The program puts in the permit: use the buttons up here. I didn't touch the paper",
+    "No encontré esa frase en el papel. Dile a la IA que guarde la orden para que entre al arreglar el contrato":
+      "I didn't find that sentence on the paper. Tell the AI to save the instruction so it goes in when you fix the contract",
+    "Esa frase sale varias veces en el papel y no sé cuál cambiar: no toqué el papel. Si la IA guardó la orden, entrará al arreglar el contrato":
+      "That sentence appears several times on the paper and I don't know which one to change: I didn't touch the paper. If the AI saved the instruction, it will go in when you fix the contract",
+    "1 cambio tuyo no se volvió a poner porque llevaba un monto o dejaba algo mal en el papel:":
+      "1 change of yours wasn't put back because it had an amount or left something wrong on the paper:",
+    "La IA cambió el papel: toca «Arreglar el contrato» para que lo revise":
+      "The AI changed the paper: tap «Fix the contract» so it gets reviewed"
+  });
+  REGLAS.push(
+    [/^(\d+) cambios tuyos ya no encontraron su frase:$/, "$1 changes of yours no longer found their sentence:"],
+    [/^(\d+) cambios tuyos no se volvieron a poner porque llevaban un monto o dejaban algo mal en el papel:$/,
+      "$1 changes of yours weren't put back because they had an amount or left something wrong on the paper:"]
+  );
   // ---------- El motor ----------
   // Cada texto de la pantalla se busca en el diccionario tal como se ve: con los
   // espacios y saltos de línea juntados en uno solo. Si no está, se prueba sin el
