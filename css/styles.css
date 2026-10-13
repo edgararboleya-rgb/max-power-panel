@@ -2886,6 +2886,20 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .alc-leccion{margin:.5rem 0;padding:.6rem .7rem;border:1px dashed var(--mp-line);border-radius:10px;background:var(--mp-card)}
 .alc-leccion-etq{display:block;margin:0 0 .3rem;font-size: var(--fs-3);font-weight:650;color:var(--mp-ink-2)}
 .alc-leccion textarea{width:100%;box-sizing:border-box;font:inherit;font-size: var(--fs-4);padding:.45rem .55rem;border:1px solid var(--mp-line);border-radius:8px;background:var(--mp-card);color:var(--mp-ink)}
+/* 13-oct · «Hablar con la IA» por hallazgo: el hilo (las burbujas del asistente), los botones de pagos y permiso y el
+   campo corto. Colores y letra por token. */
+.alc-charla{border-style:solid}
+.alc-charla-hilo{display:flex;flex-direction:column;gap:.3rem;margin:0 0 .5rem}
+.alc-charla-hilo:empty{display:none}
+.alc-charla-hilo .burbuja{max-width:92%}
+.alc-charla-pensando .burbuja-texto{color:var(--mp-ink-2)}
+.alc-charla-chips{margin:.2rem 0 .5rem}
+.alc-charla-chips .lev-nota{margin:.2rem 0}
+.alc-charla-campo{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;margin:.2rem 0}
+.alc-charla-campo input{flex:1 1 9rem;min-width:0;min-height:44px;box-sizing:border-box;font:inherit;font-size: var(--fs-4);padding:.4rem .55rem;border:1px solid var(--mp-line);border-radius:8px;background:var(--mp-card);color:var(--mp-ink)}
+.alc-charla-campo .alc-op{margin:0}
+.alc-charla .alc-botones{margin:.4rem 0 .1rem}
+.alc-charla .alc-verde{margin:.3rem 0}
 
 /* ===========================================================================
    ESCRITORIO (pantallas anchas): marco de borde a borde, menú fijo a la

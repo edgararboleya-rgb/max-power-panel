@@ -1218,9 +1218,29 @@
   }
   const unir = arr => arr.length <= 1 ? arr.join("") : arr.slice(0, -1).join(", ") + " and " + arr[arr.length - 1];
 
+  // 13-oct (pliego «Hablar con la IA»): un solo pago. Paga por adelantado si el disparador habla de firmar, de aceptar o
+  // de un depósito; habla de terminar si dice completion / terminar / final / due on receipt. Con un solo pago, solo el
+  // que paga por adelantado es depósito (y lleva la 9.x del depósito); el que paga al terminar, no.
+  const RX_PAGO_ADELANTADO = /\b(?:upon|on|at)\s+(?:the\s+)?(?:signing|signature|acceptance|execution|contract\s+signing)\b|\bal\s+(?:firmar|aceptar)\b|\b(?:a\s+la|con\s+la)\s+firma\b|\bpor\s+adelantado\b|\bin\s+advance\b|\bup-?front\b|\bprepa(?:y|id|gado)\b|\bdeposit\b|\bdeposito\b|\bantes\s+de\s+empezar\b|\bbefore\s+(?:the\s+)?work\s+(?:starts|begins)\b/;
+  const RX_PAGO_AL_TERMINAR = /completion|complet|terminar|termine|terminado|final|due on receipt|al acabar|fin de (?:la )?obra/;
+  const pagoAdelantado = d => { const n = norma(d || ""); return !!n && RX_PAGO_ADELANTADO.test(n) && !RX_PAGO_AL_TERMINAR.test(n); };
+  // El texto del pago único que paga al firmar (va al papel en inglés; el que paga al terminar usa DISPARADORES[1])
+  const PAGO_UNICO_AL_FIRMAR = "Payment in full upon signing";
+
   // "40/40/20" o "40% al firmar, 40% rough, 20% final"
+  // 13-oct: «Pagos: 100», «Pagos: 100%» y «Pagos: pago único (al terminar)» son UN pago (pcts [100]); sin disparador propio
+  // va el de la casa, «Upon completion of the work». «Pago único al firmar» paga por adelantado.
   function leerPagos(valor, linea, err) {
     const P = { pcts: [], disparadores: [], lineas: [linea] };
+    if (/^\s*100\s*%?\s*$/.test(String(valor || ""))) { P.pcts.push(100); P.disparadores.push(null); P.corto = true; return P; }
+    {
+      const n = norma(String(valor || "").replace(/["'«»“”‘’]/g, "")).trim();
+      const unico = n.match(/^(?:(?:un|1)\s+)?(?:pago\s+unico|unico\s+pago|solo\s+pago|solo\s+un\s+pago|pago\s+completo|pago\s+total|single\s+payment|one\s+(?:single\s+)?payment|one-time\s+payment|payment\s+in\s+full|full\s+payment|pay\s+in\s+full)\b(.*)$/);
+      if (unico && !/\d/.test(unico[1])) {
+        P.pcts.push(100); P.disparadores.push(pagoAdelantado(unico[1]) ? PAGO_UNICO_AL_FIRMAR : null); P.corto = true; P.unico = true;
+        return P;
+      }
+    }
     const corto = String(valor || "").match(/^\s*(\d{1,3})\s*[\/\-\s]\s*(\d{1,3})(?:\s*[\/\-\s]\s*(\d{1,3}))?(?:\s*[\/\-\s]\s*(\d{1,3}))?\s*$/);
     if (corto) { for (let k = 1; k < corto.length; k++) if (corto[k] !== undefined) { P.pcts.push(Number(corto[k])); P.disparadores.push(null); } P.corto = true; return P; }
     String(valor || "").split(/[,;]| y /).forEach(t => {
@@ -1532,15 +1552,45 @@
         break;
       }
       case "poner_pagos": {
-        const k = lineas.findIndex(l => /^\s*(pagos|hitos|milestones|cobros)\s*:/i.test(l));
+        // 13-oct: también las etiquetas en inglés que leen las reglas («Payments:», «Payment:», «Payment schedule:»);
+        // antes se añadía otro «Pagos:» al final y la línea vieja quedaba en la hoja
+        // 13-oct (revisión): las líneas que el lector USÓ como pagos (filas de una tabla de hitos, viñetas «- Milestone 1 —
+        // 40% …», «40% …») también se van; si no, el reparto viejo se seguía leyendo o la IA lo veía debajo del nuevo.
+        let usadas = [];
+        try {
+          const Lp = leerAlcance(lineas.join("\n"));
+          usadas = ((Lp.pagos && Array.isArray(Lp.pagos.lineas)) ? Lp.pagos.lineas : [])
+            .filter(n => Number.isInteger(n) && n >= 1 && n <= lineas.length).map(n => n - 1);
+        } catch { usadas = []; }
+        const k = lineas.findIndex(l => /^\s*(pagos|hitos|milestones|cobros|payments?|payment\s+schedule)\s*:/i.test(l));
+        const quitar = new Set(usadas.filter(x => x !== k && /\d{1,3}\s*%/.test(lineas[x])));
+        // una tabla de hitos se va entera (cabecera, separador y TOTAL) si solo quedaban en ella los hitos
+        const enTabla = x => /^\s*\|/.test(lineas[x] || "");
+        let enLugarDe = -1;
+        [...quitar].filter(enTabla).forEach(x => {
+          let a0 = x, a1 = x;
+          while (a0 - 1 >= 0 && enTabla(a0 - 1)) a0--;
+          while (a1 + 1 < lineas.length && enTabla(a1 + 1)) a1++;
+          const resto = [];
+          for (let y = a0; y <= a1; y++) if (!quitar.has(y)) resto.push(y);
+          const sobra = y => /^\s*\|[\s|:-]*\|\s*$/.test(lineas[y]) || /\btotal\b/i.test(lineas[y])
+            || (y === a0 && !/\d/.test(lineas[y]) && /milestone|hito|pago|payment|trigger|amount|monto/i.test(lineas[y]));
+          if (resto.every(sobra)) { resto.forEach(y => quitar.add(y)); if (enLugarDe < 0 || a0 < enLugarDe) enLugarDe = a0; }
+        });
         if (k >= 0) {
           lineas[k] = "Pagos: " + v;
           // las líneas sueltas de "40% …" que había debajo se van
-          while (k + 1 < lineas.length && /^\s*\d{1,3}\s*%/.test(lineas[k + 1])) lineas.splice(k + 1, 1);
+          for (let y = k + 1; y < lineas.length && /^\s*\d{1,3}\s*%/.test(lineas[y]); y++) quitar.add(y);
+        } else if (quitar.size) {
+          // sin etiqueta: «Pagos: v» va donde estaba el primer hito (o la tabla entera)
+          const primero = enLugarDe >= 0 ? enLugarDe : Math.min(...quitar);
+          quitar.delete(primero);
+          lineas[primero] = "Pagos: " + v;
         } else {
           const j = lineas.findIndex(l => /^\s*(opciones|condiciones)\s*:?\s*$/i.test(l));
           lineas.splice(j >= 0 ? j : lineas.length, 0, "Pagos: " + v, "");
         }
+        [...quitar].sort((a, b) => b - a).forEach(y => lineas.splice(y, 1));
         explicacion = `Pagos: ${v}`;
         break;
       }
@@ -1710,15 +1760,22 @@
     const porDefecto = (n, k) => (n === 3 && k === 1 && permisoCliente) ? HITO2_PERMISO_CLIENTE : ((DISPARADORES[n] || [])[k] || null);
     const addons = L.opciones.map((o, k) => ({
       letra: String.fromCharCode(66 + k), titulo: o.titulo, centavos: o.centavos }));
+    // 13-oct (pliego «Hablar con la IA», §2): con dos o tres pagos el primero es el depósito, como siempre. Con UN solo pago
+    // solo hay depósito si su disparador propio habla de pagar por adelantado («upon signing», «al firmar», «upon
+    // acceptance»); si habla de terminar, o no trae disparador propio (va el de la casa: «Upon completion of the work»),
+    // no hay depósito: ni 9.x del depósito ni «deposit» en el papel.
+    const propio1 = ((L.pagos || {}).disparadores || [])[0];
+    const hayDeposito = pcts.length > 1 || (pcts.length === 1 && pagoAdelantado(propio1));
     return {
       base, pcts, montos,
       hitos: pcts.map((p, k) => ({
-        n: k + 1, pct: p, centavos: montos[k], es_deposito: k === 0,
+        n: k + 1, pct: p, centavos: montos[k], es_deposito: k === 0 && hayDeposito,
         disparador: (L.pagos.disparadores[k]) || porDefecto(pcts.length, k), hito2_permiso_cliente: k === 1 && permisoCliente || undefined })),
       addons,
       total_con_todo: base + addons.reduce((a, b) => a + b.centavos, 0),
-      pct_deposito: pcts.length ? pcts[0] : null,
-      deposito_mayor_10: pcts.length ? (montos[0] * 10 > base) : false
+      hay_deposito: hayDeposito,
+      pct_deposito: hayDeposito ? pcts[0] : null,
+      deposito_mayor_10: hayDeposito ? (montos[0] * 10 > base) : false
     };
   }
 
@@ -2600,7 +2657,8 @@
       // con la IA, si no escribió el texto de las aberturas, sale de la cita de la condición (sus superficies)
       ABERTURAS: aberturasEn((S.aberturas && S.aberturas.en) || String((C.abrir || {}).valor || "").replace(/,?\s*rengl[oó]n(?:es)?\s+[\d,\sy]+.*$/i, "").trim()),
       FIXTURES: (S.fixtures_mxp && S.fixtures_mxp.en) || "",
-      M_DEPOSITO: cta.montos.length ? dinero(cta.montos[0]) : "",
+      // 13-oct: sin depósito (un solo pago al terminar) no hay monto del depósito; la 9.x del depósito tampoco sale
+      M_DEPOSITO: cta.hay_deposito !== false && cta.montos.length ? dinero(cta.montos[0]) : "",
       PCT_DEPOSITO: cta.pct_deposito === null ? "" : String(cta.pct_deposito),
       // Un PDF no se puede editar por dentro: el portal NO puede escribir en el
       // contrato qué eligió el cliente. Así que el cuerpo remite al certificado
@@ -4379,6 +4437,60 @@
     } else { lineas.unshift(ca.etiqueta + ": " + v); idx = 0; }
     return { texto: lineas.join("\n"), linea: idx + 1, etiqueta: ca.etiqueta,
              explicacion: `escribí «${ca.etiqueta}: ${v}» en la hoja` };
+  }
+  // 13-oct (pliego «Hablar con la IA», §1.3): escribe o reemplaza una línea «Clave: valor» de la cabecera de la hoja,
+  // pensado para «Permiso: no hace falta | cliente | nosotros» (lo que pone el programa con la plantilla, no la IA).
+  // · Si la hoja ya trae la línea de ese dato (con cualquier etiqueta que la app reconozca: «Permiso:», «Permit:», la fila
+  //   «| PERMIT | … |»), se cambia su valor y se deja su etiqueta; se prefiere la línea de la que las reglas leen el dato.
+  // · Si no la trae, se añade después de la última línea «Clave: valor» de la cabecera (lo de arriba, antes de la primera
+  //   línea que no es un dato); sin cabecera, arriba del todo.
+  // El valor va en una línea, sin montos. Devuelve { texto, linea, etiqueta, nueva, explicacion } o { error }.
+  function ponerLineaDato(texto, clave, valor, opciones) {
+    const etiqueta = String(clave || "").replace(/[\r\n]+/g, " ").trim();
+    if (!/^[^:|]{2,42}$/.test(etiqueta)) return { error: "No sé qué dato es ese" };
+    const v = String(valor || "").replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+    if (!v) return { error: "Escribe el dato" };
+    if (v.length > 200) return { error: "Ese dato es demasiado largo para una línea" };
+    if (esMontoTapable(v) || /\$\s?\d/.test(v)) return { error: "Ese dato lleva un monto: no lo escribo en la hoja" };
+    const lineas = String(texto || "").replace(/\r/g, "").split("\n");
+    // la clave del lector para esa etiqueta («Permiso» y «Permit» son la misma: permiso); si no la reconoce, la etiqueta tal cual
+    const kLector = buscaClave(CLAVES_DATOS, norma(etiqueta)) || buscaClave(CLAVES_COND, norma(etiqueta)) || null;
+    const claveDe = l => { const lim = limpiarLinea(l || "").limpia; const k = claveDeLinea(lim); if (k) return k.clave;
+      const kv = lim.match(/^([^:|]{2,42}):\s*/); return kv ? "=" + norma(kv[1]) : null; };
+    const buscada = kLector || "=" + norma(etiqueta);
+    const esDelDato = i => i >= 0 && i < lineas.length && claveDe(lineas[i]) === buscada;
+    // la cabecera: desde arriba, saltando blancos, comentarios y membretes; acaba en la primera línea que no es un dato
+    // después de haber visto alguno (las de antes del primer dato, como un título, se saltan)
+    let ultimoDato = -1;
+    for (let i = 0; i < lineas.length && i < 80; i++) {
+      const l = lineas[i];
+      if (!l.trim() || esSobranteConfirmada(l)) continue;
+      const lim = limpiarLinea(l).limpia;
+      const esDato = !!claveDeLinea(lim) || /^[^:|]{2,42}:\s*\S/.test(lim);
+      if (esDato) { ultimoDato = i; continue; }
+      if (ultimoDato >= 0) break;
+    }
+    let idx = -1;
+    const dada = Number((opciones || {}).linea);
+    if (Number.isInteger(dada) && esDelDato(dada - 1)) idx = dada - 1;
+    if (idx < 0 && kLector) {
+      // la línea de la que las reglas leen ese dato (si hay dos, la que manda)
+      try { const n = (leerAlcance(lineas.join("\n")).datos_linea || {})[kLector]; if (Number.isInteger(n) && esDelDato(n - 1)) idx = n - 1; } catch { idx = -1; }
+    }
+    if (idx < 0) for (let i = 0; i <= ultimoDato; i++) if (esDelDato(i)) { idx = i; break; }
+    let nueva = false;
+    if (idx >= 0) {
+      const l = lineas[idx];
+      const tabla = l.match(/^(\s*\|[^|]*\|\s*)[^|]*?(\s*\|\s*)$/);
+      const kv = l.match(/^(\s*[^:]{2,42}:\s*)/);
+      lineas[idx] = tabla ? tabla[1] + v + tabla[2] : kv ? kv[1].replace(/\s*$/, " ") + v : etiqueta + ": " + v;
+    } else {
+      idx = ultimoDato >= 0 ? ultimoDato + 1 : 0;
+      lineas.splice(idx, 0, etiqueta + ": " + v);
+      nueva = true;
+    }
+    return { texto: lineas.join("\n"), linea: idx + 1, etiqueta, nueva,
+             explicacion: `escribí «${etiqueta}: ${v}» en la hoja` };
   }
   // Lo que la app sabe de la obra y viaja al revisor: nada con dinero (con un monto dentro, ese dato no sale del teléfono)
   function fichaSinDinero(ficha) {
@@ -6164,7 +6276,7 @@
                 // tanda 2: lo que la prueba del molde del cerebro necesita mirar
                 SECCIONES_VALIDAS, NOMBRES_PLANTILLA,
                 // v3.8 (29-sep): la jurisdicción por la dirección y el revisor del contrato armado
-                jurisdiccionDe, ZIP_CONDADO, ZIP_A_CABALLO, CIUDADES_MUNICIPIO, CIUDADES_POSTALES, ZIP_NOMBRE_SIN_CIUDAD, MUNICIPIO_PERMISO_DUDOSO, textoParaRevisar, lineaDeCita, comprobarHallazgos, ponerDatoDeFicha, fichaSinDinero,
+                jurisdiccionDe, ZIP_CONDADO, ZIP_A_CABALLO, CIUDADES_MUNICIPIO, CIUDADES_POSTALES, ZIP_NOMBRE_SIN_CIUDAD, MUNICIPIO_PERMISO_DUDOSO, textoParaRevisar, lineaDeCita, comprobarHallazgos, ponerDatoDeFicha, ponerLineaDato, fichaSinDinero,
                 perdonDeHallazgo, conMontoTapado, subcadenaComun, TIPOS_HALLAZGO, CAMPOS_ARREGLO,
                 // v251 (29-sep, Metro NPR): la ficha manda en la dirección, las reglas por contratista y la cabecera del SOW
                 nutrirHoja, mismaDireccion, partesDireccion, llevaMarcador, DATOS_FICHA, RE_DATO_FICHA, REGLAS_CONTRATISTA, reglaDeContratista,
@@ -6181,7 +6293,9 @@
                 // tanda 5 (tras la prueba en vivo): las condiciones con juicio
                 condicionSinJuicio,
                 // tanda 6 (Whitlock y Wimauma en vivo): lo propio que repite la plantilla, el layout propio y el tipo de trabajo
-                PLANTILLA_TERMINOS, PLANTILLA_PROGRAMA, RX_LAYOUT_PROPIO, PALABRA_TIPO_TRABAJO, RX_OBRA_EXTERIOR, sinNumeroDeHoja };
+                PLANTILLA_TERMINOS, PLANTILLA_PROGRAMA, RX_LAYOUT_PROPIO, PALABRA_TIPO_TRABAJO, RX_OBRA_EXTERIOR, sinNumeroDeHoja,
+                // 13-oct (pliego «Hablar con la IA»): el pago único sin depósito
+                pagoAdelantado, PAGO_UNICO_AL_FIRMAR };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   raiz.Alcance = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -4358,6 +4358,45 @@
     [/^Se me escapó un monto sin tapar en la línea (\d+); no mandé la hoja a la IA$/, "An amount slipped through uncovered on line $1; I didn't send the sheet to the AI"],
     [/^La hoja es muy larga para armarla con IA(?: \((\d+) líneas\))?$/, s => { const m = s.match(/\((\d+) líneas\)/); return "The sheet is too long to build with AI" + (m ? ` (${m[1]} lines)` : ""); }]
   );
+  // 13-oct · «Hablar con la IA» en cada hallazgo de la revisión (docs/PLIEGO-CORREGIR-CON-IA.md). Lo que escriben la IA
+  // y Edgar en la charla va con data-no-i18n: aquí solo los botones, las notas y los avisos de la app.
+  Object.assign(D, {
+    "Hablar con la IA": "Talk to the AI",
+    "Volver a armar y revisar": "Rebuild and review",
+    "Pago único al terminar": "Single payment on completion",
+    "Dos pagos 50/50": "Two payments 50/50",
+    "Tres pagos 40/40/20": "Three payments 40/40/20",
+    "Otro reparto…": "Another split…",
+    "Usar este reparto": "Use this split",
+    "Los porcentajes, que sumen 100": "The percentages, adding up to 100",
+    "Esto lo pone el programa con el reparto de pagos; la IA solo te aconseja.": "The program sets this from the payment split; the AI only advises you.",
+    "Lo saca el cliente / contratista": "The client / contractor pulls it",
+    "Lo saca Max Power": "Max Power pulls it",
+    "La plantilla no sabe decir “no incluido, y si la AHJ lo pide va por Change Order”: lo más cercano es “lo saca el cliente”; la exclusión del permiso ya va en la sección 3 si la hoja la trae.":
+      "The template can't say “not included, and if the AHJ requires it, it goes by Change Order”: the closest is “the client pulls it”; the permit exclusion already goes in Section 3 if the sheet has it.",
+    "Escribe el dato:": "Write the data:",
+    "Escribe el dato": "Write the data",
+    "Escribir en la hoja": "Write it on the sheet",
+    "El dato queda en la hoja; la ficha de la obra la arreglas en su pantalla.": "The data stays on the sheet; fix the job's file on its own screen.",
+    "Lo que le dices a la IA": "What you tell the AI",
+    "Dile qué quieres que diga ahí, o pregúntale qué recomienda": "Tell it what you want it to say there, or ask it what it recommends",
+    "Tú": "You",
+    "La IA": "The AI",
+    "La IA está pensando…": "The AI is thinking…",
+    "Sigo trabajando…": "Still working…",
+    "La IA dice que guardó tu orden para esta obra.": "The AI says it saved your instruction for this job.",
+    "Cuando la IA te diga que lo guardó, toca aquí: se arma otra vez con tu orden y se revisa sola.":
+      "When the AI tells you it saved it, tap here: it builds again with your instruction and reviews itself.",
+    "Orden dada a la IA. Volviendo a armar…": "Instruction given to the AI. Building again…",
+    "Sin señal: hablar con la IA necesita internet. Cuando vuelva, toca otra vez": "No signal: talking to the AI needs internet. When it's back, tap again",
+    "Se me escapó un monto sin tapar; no lo mandé a la IA": "An amount slipped through uncovered; I didn't send it to the AI",
+    "Escribe primero qué quieres que diga": "First write what you want it to say",
+    "Los porcentajes tienen que sumar 100 (por ejemplo 35/40/25)": "The percentages have to add up to 100 (for example 35/40/25)",
+    "Como mucho tres pagos; para más, escríbelos en la hoja con su disparador": "Three payments at most; for more, write them on the sheet with their trigger",
+    "No pude escribir los pagos en la hoja": "I couldn't write the payments on the sheet",
+    "No pude escribir el permiso en la hoja": "I couldn't write the permit on the sheet",
+    "Escribe el dato primero": "Write the data first"
+  });
   // ---------- El motor ----------
   // Cada texto de la pantalla se busca en el diccionario tal como se ve: con los
   // espacios y saltos de línea juntados en uno solo. Si no está, se prueba sin el

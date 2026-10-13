@@ -15953,6 +15953,36 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       alcVolverAArmar().catch(e => avisar((e && e.message) || "No pude volver a armar", true))
         .finally(() => { if (document.body.contains(b)) b.disabled = false; });
     }));
+    // 13-oct · «Hablar con la IA» por hallazgo: la conversación, los botones de pagos y permiso, el dato y el rearmado
+    const nCharla = (b, k) => Number(b.dataset[k]);
+    document.querySelectorAll("[data-rev-hablar]").forEach(b => b.addEventListener("click", () => alcCharlaAbrir(nCharla(b, "revHablar"))));
+    document.querySelectorAll("[data-charla-texto]").forEach(t => {
+      t.addEventListener("input", () => { const C = alcCharla(nCharla(t, "charlaTexto")); if (C) C.borrador = t.value; });
+      // Ctrl/Cmd + Enter manda; Enter solo hace otra línea
+      t.addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); alcCharlaEnviar(nCharla(t, "charlaTexto")).catch(() => { /* la nube nunca frena */ }); } });
+    });
+    document.querySelectorAll("[data-charla-enviar]").forEach(b => b.addEventListener("click", () => alcCharlaEnviar(nCharla(b, "charlaEnviar")).catch(() => { /* la nube nunca frena */ })));
+    document.querySelectorAll("[data-charla-cerrar]").forEach(b => b.addEventListener("click", () => {
+      const C = alcCharla(nCharla(b, "charlaCerrar")); if (C) C.abierta = false; pintarAlcance();
+    }));
+    document.querySelectorAll("[data-charla-rearmar]").forEach(b => b.addEventListener("click", () => {
+      b.disabled = true;
+      alcCharlaRearmar(nCharla(b, "charlaRearmar")).catch(e => avisar((e && e.message) || "No pude volver a armar", true));
+    }));
+    document.querySelectorAll("[data-charla-pagos]").forEach(b => b.addEventListener("click", () => alcCharlaPagos(nCharla(b, "charlaPagos"), b.dataset.valor)));
+    document.querySelectorAll("[data-charla-otro]").forEach(b => b.addEventListener("click", () => {
+      const i = nCharla(b, "charlaOtro"), C = alcCharla(i); if (!C) return;
+      C.otro = !C.otro; pintarAlcance();
+      const x = document.querySelector(`[data-charla-otro-in="${i}"]`); if (x) { try { x.focus({ preventScroll: true }); } catch { /* nada */ } }
+    }));
+    document.querySelectorAll("[data-charla-otro-in]").forEach(x => x.addEventListener("input", () => { const C = alcCharla(nCharla(x, "charlaOtroIn")); if (C) C.otro_valor = x.value; }));
+    document.querySelectorAll("[data-charla-otro-usar]").forEach(b => b.addEventListener("click", () => {
+      const i = nCharla(b, "charlaOtroUsar"), x = document.querySelector(`[data-charla-otro-in="${i}"]`);
+      alcCharlaPagos(i, x ? x.value : "");
+    }));
+    document.querySelectorAll("[data-charla-permiso]").forEach(b => b.addEventListener("click", () => alcCharlaPermiso(nCharla(b, "charlaPermiso"), b.dataset.valor)));
+    document.querySelectorAll("[data-charla-dato-in]").forEach(x => x.addEventListener("input", () => { const C = alcCharla(nCharla(x, "charlaDatoIn")); if (C) C.dato = x.value; }));
+    document.querySelectorAll("[data-charla-dato]").forEach(b => b.addEventListener("click", () => alcCharlaDato(nCharla(b, "charlaDato"))));
   }
 
   // Lleva el cuadro al renglón N y lo deja seleccionado, para que Edgar vea
@@ -17510,6 +17540,26 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     // «Armar el contrato con IA» la app deja el pedido preparado y aquí se le da el paquete como si volviera.
     // (tanda 4) el papel que se imprime o se baja, sin nada que se pueda ejecutar
     papelSinCodigo(html) { return alcPapelSinCodigo(html); },
+    // 13-oct: lo que la prueba de «Hablar con la IA» mira por dentro (sin hoja y sin dinero): si se está armando,
+    // lo que quedó apuntado en cada hallazgo y cuántas charlas hay
+    // 13-oct: el primer mensaje de la charla del hallazgo i, con otro nombre de obra (solo en la prueba; no manda nada)
+    contextoCharla(i, nombre) {
+      const A = alcActivo, R = A && A.revision;
+      // no manda nada: solo devuelve el texto (sin dinero) que viajaría; nunca para el equipo de campo
+      if (!A || !R || !Array.isArray(R.hallazgos) || !R.hallazgos[i] || !(usuario && usuario.finanzas)) return null;
+      const pAct = proyectos().find(x => x.id === A.proyecto.id);
+      const antes = [A.proyecto.nombre, pAct ? pAct.nombre : undefined];
+      try {
+        if (nombre !== undefined) { A.proyecto.nombre = nombre; if (pAct) pAct.nombre = nombre; }
+        return alcContextoCharla(R.hallazgos[i]);
+      } finally { A.proyecto.nombre = antes[0]; if (pAct) pAct.nombre = antes[1]; }
+    },
+    estadoRevision() {
+      const A = alcActivo, R = A && A.revision;
+      return { armado_en_marcha: !!(A && A.armado_en_marcha), revision: !!R,
+               hechos: R && Array.isArray(R.hallazgos) ? R.hallazgos.map(h => h.hecho || null) : [],
+               charlas: alcCharlas().filter(Boolean).length };
+    },
     async aplicarArmado(paquete, leccionesHecho) {
       const A = alcActivo;
       if (!A || !alcModoPrueba()) return false;
@@ -17752,9 +17802,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     }
     const nuevos = cta.hitos.map((h, k) => ({
       proyecto_id: proyectoId,
-      titulo: `Milestone ${h.n} — ${h.pct}%${k === 0 ? " deposit" : (k === cta.hitos.length - 1 ? " final" : "")}`,
-      condicion: String(h.disparador || (k === 0 ? "Deposit upon acceptance" : (k === cta.hitos.length - 1 ? "Final inspection passed" : "Rough-in complete and inspection passed"))).slice(0, 200),
-      monto: Math.round(h.centavos) / 100, estado: "pendiente", orden: k + 1, es_deposito: k === 0
+      // 13-oct: el depósito lo dice la cuenta (un pago único al terminar NO es depósito); con 2 o 3 pagos es el primero
+      titulo: `Milestone ${h.n} — ${h.pct}%${h.es_deposito ? " deposit" : (k === cta.hitos.length - 1 ? " final" : "")}`,
+      condicion: String(h.disparador || (h.es_deposito ? "Deposit upon acceptance" : (k === cta.hitos.length - 1 ? "Final inspection passed" : "Rough-in complete and inspection passed"))).slice(0, 200),
+      monto: Math.round(h.centavos) / 100, estado: "pendiente", orden: k + 1, es_deposito: !!h.es_deposito
     }));
     // ¿ya está igual? entonces no hay nada que escribir
     const igual = actuales.length === nuevos.length && actuales.every((h, k) =>
@@ -18015,6 +18066,15 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       if (r && r.estado === "ok" && r.lectura) {
         const V = Alcance.comprobarHallazgos(r.lectura, { texto: p.cuerpo.texto, secciones: p.rev.secciones,
                                                          ficha: p.cuerpo.ficha, perdonadas: A.perdonadas || [] });
+        // (13-oct) el dato que la IA pidió y la ficha NO tiene (el juez le quita el arreglo): se apunta el campo para
+        // que «Hablar con la IA» ofrezca «Escribe el dato»
+        const crudos = Array.isArray(r.lectura.hallazgos) ? r.lectura.hallazgos : [];
+        V.hallazgos.forEach(h => {
+          if (h.arreglo) return;
+          const c = crudos.find(x => x && x.arreglo && typeof x.arreglo === "object" && Alcance.CAMPOS_ARREGLO[x.arreglo.campo]
+            && String(x.cita || "").trim().slice(0, 160) === h.cita);
+          if (c) h.falta_dato = c.arreglo.campo;
+        });
         A.revision = { hallazgos: V.hallazgos, resumen: V.resumen, tiradas: V.tiradas, perdonados: V.perdonados,
                        rev: p.rev, ficha: p.cuerpo.ficha, costo_centavos: r.costo_centavos ?? null, cuando: new Date().toISOString() };
         avisar(V.hallazgos.length ? "La IA terminó de revisar el contrato" : "La IA revisó el contrato: no vio nada que arreglar");
@@ -18099,15 +18159,18 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           ${alcRevDonde(R, h.donde)}
           <div class="alc-cita" data-no-i18n>${esc(h.cita)}</div>
           <p class="alc-rev-motivo" data-no-i18n>${esc(h.motivo)}</p>
-          ${h.hecho ? `<p class="alc-rev-hecho"><span>Arreglado en la hoja; vuelve a armar para verlo en el papel:</span> <span data-no-i18n>«${esc(h.hecho)}»</span></p>` : ""}
+          ${h.hecho === ALC_CHARLA_HECHO ? `<p class="alc-rev-hecho">${esc(ALC_CHARLA_HECHO)}</p>`
+            : h.hecho ? `<p class="alc-rev-hecho"><span>Arreglado en la hoja; vuelve a armar para verlo en el papel:</span> <span data-no-i18n>«${esc(h.hecho)}»</span></p>` : ""}
           <div class="alc-fixes">
             ${n ? `<button type="button" class="alc-op" data-rev-ir="${i}" title="Línea ${n} de la hoja">Ir a la línea</button>`
                 : `<button type="button" class="alc-op" disabled title="La cita no está en tu hoja: sale de la plantilla">Es de la plantilla</button>`}
             ${h.arreglo && !h.hecho ? `<button type="button" class="alc-op alc-auto" data-rev-dato="${i}"><span>Usar el dato de la ficha:</span> <span data-no-i18n>${esc(h.arreglo.valor)}</span></button>` : ""}
+            <button type="button" class="alc-op alc-hablar" data-rev-hablar="${i}" aria-expanded="${alcCharlaAbierta(i) ? "true" : "false"}">Hablar con la IA</button>
             <button type="button" class="alc-op" data-rev-dejar="${i}">Lo dejo así</button>
             <button type="button" class="alc-op" data-ensenale="${i}">Enséñale</button>
           </div>
           ${alcCajaLeccion(h.motivo, "h" + i)}
+          ${alcCajaCharla(h, i)}
         </li>`;
       };
       const rojos = R.hallazgos.map((h, i) => [h, i]).filter(([h]) => h.gravedad === "rojo");
@@ -18155,17 +18218,26 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const A = alcActivo, R = A && A.revision;
     const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
     if (!h || !h.arreglo) return;
-    const ca = Alcance.CAMPOS_ARREGLO[h.arreglo.campo];
+    if (!alcRevEscribirDato(i, h.arreglo.campo, h.arreglo.valor)) return;
+    pintarAlcance();
+    avisar(`Escribí «${h.hecho}» en la hoja. Vuelve a armar para verlo en el papel`);
+  }
+  // Escribe en la hoja la línea de un dato (el de la ficha, o el que Edgar escribió en «Hablar con la IA»). Sin pintar.
+  function alcRevEscribirDato(i, campo, valor) {
+    const A = alcActivo, R = A && A.revision;
+    const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
+    if (!h) return false;
+    const ca = Alcance.CAMPOS_ARREGLO[campo];
     let n0 = ca && A.leido && A.leido.datos_linea ? A.leido.datos_linea[ca.clave] : 0;
     // con el armado de la IA, la línea del dato va en la numeración con la que leyó la IA: se busca en la hoja de ahora
     const conArmado = !!(A.armado && !A.armado.vieja && A.salida && A.salida.ia);
     if (conArmado && n0) n0 = alcLineaDeArmado(n0);
-    const r = Alcance.ponerDatoDeFicha(A.texto, h.arreglo.campo, h.arreglo.valor, { linea: n0 });
-    if (r.error) { avisar(r.error, true); return; }
+    const r = Alcance.ponerDatoDeFicha(A.texto, campo, valor, { linea: n0 });
+    if (r.error) { avisar(r.error, true); return false; }
     A.texto = r.texto;
     // …y el dato entra también en el paquete (es de la ficha, no de la IA): al volver a armar sale sin llamar a nadie
     if (conArmado && ca) {
-      A.armado.paquete.datos = Object.assign({}, A.armado.paquete.datos || {}, { [ca.clave]: { valor: String(h.arreglo.valor) } });
+      A.armado.paquete.datos = Object.assign({}, A.armado.paquete.datos || {}, { [ca.clave]: { valor: String(valor) } });
       A.armado.texto = A.texto;
     }
     if ($("alc-texto")) $("alc-texto").value = A.texto;
@@ -18174,11 +18246,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     alcRealinear();
     alcGuardarLocal(A.proyecto.id, A.texto);
     A.arreglados = [...(A.arreglados || []), r.explicacion];
-    h.hecho = `${r.etiqueta}: ${h.arreglo.valor}`;
+    h.hecho = `${r.etiqueta}: ${String(valor).replace(/\s+/g, " ").trim()}`;
     R.tocado = true;
     alcCalcularSeguro();
-    pintarAlcance();
-    avisar(`Escribí «${h.hecho}» en la hoja. Vuelve a armar para verlo en el papel`);
+    return true;
   }
 
   // «Lo dejo así»: se perdona (no vuelve a salir para esa cita) y se quita de la lista
@@ -18188,6 +18259,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (!h) return;
     A.perdonadas = [...(A.perdonadas || []), Alcance.perdonDeHallazgo(h)];
     alcPerdonLocal(A.proyecto.id, A.perdonadas);
+    alcCharlas().splice(i, 1);          // (13-oct) la conversación de ese punto se va con él
     R.hallazgos.splice(i, 1);
     if (R.foco === i) R.foco = null; else if (Number.isInteger(R.foco) && R.foco > i) R.foco--;
     R.tocado = true;
@@ -18199,6 +18271,385 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     }
     pintarAlcance();
     avisar("Lo dejo así: no te lo vuelvo a marcar");
+  }
+
+  // ============================================================
+  // 13-oct · «Hablar con la IA» en cada hallazgo (docs/PLIEGO-CORREGIR-CON-IA.md §1)
+  // Una conversación con el asistente de siempre (DB.preguntarAsistente, el de la pantalla «Asistente»), con el
+  // hallazgo contado en el primer mensaje. Edgar dice lo que quiere, la IA lo evalúa y recomienda, y cuando él
+  // confirma la IA guarda la orden para esta obra (herramienta recordar). «Volver a armar y revisar» arma otra vez
+  // con esa orden y la revisión sale sola. Lo que pone el programa (pagos, permiso, un dato que falta) va con
+  // botones que escriben la hoja. Al cerebro no viaja ningún monto desde aquí. La charla no se guarda en la base.
+  // ============================================================
+  const ALC_CHARLA_HECHO = "Orden dada a la IA. Volviendo a armar…";
+  // Las charlas viven con la revisión: A.charlas[i] va con A.revision.hallazgos[i]. Una revisión nueva, charlas nuevas.
+  function alcCharlas() {
+    const A = alcActivo;
+    if (!A) return [];
+    if (A.charlas_de !== A.revision || !Array.isArray(A.charlas)) { A.charlas = []; A.charlas_de = A.revision; }
+    return A.charlas;
+  }
+  function alcCharla(i, crear) {
+    const cs = alcCharlas();
+    if (!cs[i] && crear && alcActivo) cs[i] = { mensajes: [], en_marcha: false, error: null, lecciones: 0, abierta: false, borrador: "", avance: null, otro: false, otro_valor: "", dato: "" };
+    return cs[i] || null;
+  }
+  function alcCharlaAbierta(i) { const C = alcCharla(i); return !!(C && C.abierta); }
+
+  // ¿De qué habla el hallazgo? Los pagos y el permiso los escribe el programa con la plantilla, no la IA
+  function alcTituloDeHallazgo(h) {
+    const R = alcActivo && alcActivo.revision;
+    return R && R.rev && R.rev.titulos && h && h.donde ? String(R.rev.titulos[h.donde] || "") : "";
+  }
+  function alcCharlaDePagos(h) {
+    if (!h) return false;
+    const t = alcTituloDeHallazgo(h), d = String(h.donde || "");
+    return (t ? /payment|pagos?\b/i.test(t) : d === "6") || /payment|pagos?\b/i.test(d)
+      || /milestone|deposit|dep[oó]sito|start of work|\b9\.14\b/i.test(String(h.cita || ""));
+  }
+  function alcCharlaDePermiso(h) {
+    if (!h) return false;
+    return /permit|permiso/i.test([h.donde, alcTituloDeHallazgo(h), h.cita].join(" ")) || String(h.donde || "") === "7.1"
+      || /\b7\.1\b/.test(String(h.cita || ""));
+  }
+  // El dato que la IA pidió y la ficha no tiene: «Escribe el dato»
+  function alcCharlaCampoSinDato(h) {
+    const c = (h && h.arreglo && !String(h.arreglo.valor || "").trim() && h.arreglo.campo) || (h && h.falta_dato) || "";
+    return c && Alcance.CAMPOS_ARREGLO[c] ? c : "";
+  }
+
+  // Las líneas de la hoja que tocan este punto, TAPADAS (las mismas que viajaron con «armar»; sin armado de la IA, se
+  // tapan aquí con el mismo paquete). nHoja = la línea de la hoja de ahora donde está la cita (0 si no está).
+  function alcLineasDeCharla(h, nHoja) {
+    const A = alcActivo;
+    let nube = null, armado = null;
+    if (A.armado && !A.armado.vieja && Array.isArray(A.armado.nube) && A.armado.nube.length) { nube = A.armado.nube; armado = A.armado; }
+    else {
+      try {
+        const L0 = A.leido || Alcance.leerAlcance(A.texto, { perdonadas: A.perdonadas || [] });
+        nube = Alcance.paqueteParaArmar(A.texto, L0, {}).lineas;
+      } catch { nube = null; }
+    }
+    const vale = l => l && Number.isInteger(l.n) && String(l.t || "").trim()
+      && !Alcance.traeDineroEstricto(l.t) && !Alcance.esMontoArmar(l.t) && !Alcance.leccionConMonto(l.t);
+    const lineas = (nube || []).filter(vale).map(l => ({ n: l.n, t: String(l.t).replace(/\s+/g, " ").trim().slice(0, 300) }));
+    if (!lineas.length) return { lineas: [], n: 0, linea: "" };
+    // la línea de la cita, en la numeración de la nube (con armado, se busca por su texto original)
+    let n = 0;
+    if (nHoja) {
+      if (armado && Array.isArray(armado.lineas)) {
+        const orig = String(A.texto || "").replace(/\r/g, "").split("\n")[nHoja - 1];
+        armado.lineas.forEach(l => { if (l && l.original === orig && (!n || Math.abs(l.n - nHoja) < Math.abs(n - nHoja))) n = l.n; });
+      } else n = nHoja;
+    }
+    const propia = n ? lineas.find(l => l.n === n) : null;
+    let elegidas;
+    if (n) elegidas = lineas.slice().sort((a, b) => Math.abs(a.n - n) - Math.abs(b.n - n) || a.n - b.n).slice(0, 12);
+    else {
+      // sin la cita en la hoja: las líneas que más palabras comparten con la cita, el motivo y la sección
+      const extra = alcCharlaDePagos(h) ? " pagos payment deposit milestone hito" : alcCharlaDePermiso(h) ? " permiso permit" : "";
+      const palabras = s => new Set((String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").match(/[a-z]{4,}/g) || []));
+      const clave = palabras([h.cita, h.motivo, alcTituloDeHallazgo(h), extra].join(" "));
+      elegidas = lineas.map(l => { let k = 0; palabras(l.t).forEach(p => { if (clave.has(p)) k++; }); return [l, k]; })
+        .filter(x => x[1] > 0).sort((a, b) => b[1] - a[1] || a[0].n - b[0].n).slice(0, 12).map(x => x[0]);
+    }
+    return { lineas: elegidas.sort((a, b) => a.n - b.n), n: propia ? n : 0, linea: propia ? propia.t : "" };
+  }
+
+  // La ficha sin dinero, en una línea: «nombre: … · direccion: … · contratista: Wisdom, referido»
+  function alcFichaEnUnaLinea(f) {
+    const val = x => x && typeof x === "object"
+      ? Object.values(x).filter(y => y !== null && y !== undefined && typeof y !== "object" && String(y).trim()).join(", ")
+      : String(x === null || x === undefined ? "" : x);
+    return Object.entries(f || {}).map(([k, x]) => [k, val(x).replace(/\s+/g, " ").trim()]).filter(([, v]) => v)
+      .map(([k, v]) => k + ": " + v).join(" · ");
+  }
+
+  // El PRIMER mensaje de la charla: lo escribe la app, la IA lo ve y la cajita no lo pinta (pliego §1.1).
+  // Devuelve "" si, aun quitando la ficha y las líneas, quedara algo con dinero (entonces no se manda nada).
+  function alcContextoCharla(h) {
+    const A = alcActivo, R = A && A.revision;
+    if (!A || !h) return "";
+    let ficha = {};
+    try { ficha = alcFichaParaArmar() || {}; } catch { ficha = {}; }
+    // el nombre y el número de la obra también pasan el candado: «Cocina Rachel 8893.48» no viaja (13-oct, revisión)
+    const sinMonto = x => { const t = String(x || "").replace(/\s+/g, " ").trim();
+      return t && !Alcance.esMontoTapable(t) && !Alcance.traeDineroEstricto(t) && !Alcance.leccionConMonto(t) ? t : ""; };
+    const numero0 = sinMonto(R && R.ficha && R.ficha.numero ? String(R.ficha.numero) : "");
+    ficha = Alcance.fichaSinDinero(Object.assign({}, ficha, numero0 ? { numero: numero0 } : {}));
+    const numero = sinMonto(ficha.numero);
+    if (!sinMonto(ficha.nombre)) delete ficha.nombre;
+    const pid = A.proyecto && A.proyecto.id ? sinMonto(String(A.proyecto.id)) : "";
+    const nombre = sinMonto(ficha.nombre || (A.proyecto && A.proyecto.nombre));
+    const titulo = alcTituloDeHallazgo(h);
+    const nHoja = Alcance.lineaDeCita(A.texto, h.cita) || 0;
+    const L = alcLineasDeCharla(h, nHoja);
+    const limpio = t => alcSinCifrasDeDinero(String(t || "").replace(/\s+/g, " ").trim());
+    const delPrograma = alcCharlaDePagos(h) ? "«Pagos:»" : alcCharlaDePermiso(h) ? "«Permiso:»" : "";
+    const armar = (conFicha, conLineas) => [
+      `Estoy en «Escribir el alcance», revisando el contrato${numero ? " " + numero : ""} de la obra ${pid}${nombre ? " (" + nombre + ")" : ""}.`,
+      "La revisión con IA marcó esto:",
+      `· Sección: ${h.donde ? h.donde + (titulo ? " · " + titulo : "") : "(sin sección)"}`,
+      `· Dice el papel: «${limpio(h.cita)}»`,
+      `· Por qué lo marcó: ${limpio(h.motivo)}`,
+      ...(conLineas && L.n ? [`· Viene de la línea ${L.n} de mi hoja: «${L.linea}»`] : []),
+      ...(delPrograma ? [`· Esto lo escribe el programa con la plantilla, no la IA: se cambia en la hoja con la línea ${delPrograma} (yo tengo botones para eso). Aconséjame qué conviene.`] : []),
+      ...(conFicha ? [`Lo que la app sabe de la obra (sin dinero): ${alcFichaEnUnaLinea(ficha) || "(nada)"}`] : []),
+      ...(conLineas && L.lineas.length ? ["Las líneas de mi hoja que tocan este punto (tapadas, sin montos):", ...L.lineas.map(l => `  ${l.n}: ${l.t}`)] : []),
+      "",
+      "Cómo quiero que trabajes: evalúa lo que te diga, dime si tiene sentido con la hoja, la ficha, el código y la ley de " +
+      "Florida, y recomiéndame; si procede, propón el texto exacto en inglés para el papel (sin montos: el dinero lo pone " +
+      `el programa). Cuando yo te confirme («dale», «así», «guárdalo»), guarda la orden para esta obra con la herramienta ` +
+      `recordar (sobre = ${pid || "la obra"}), una frase clara de cómo tiene que quedar ese punto, y dime que toque «Volver a ` +
+      "armar y revisar». No guardes nada hasta que yo confirme. Si te dicto un monto, recuérdame que el dinero lo pone el programa."
+    ].join("\n").slice(0, 11000);
+    // el candado del dinero, por si acaso: primero se quitan las líneas, luego la ficha
+    if ([nombre, numero, pid].some(x => x && (Alcance.esMontoTapable(x) || Alcance.traeDineroEstricto(x)))) return "";
+    for (const [f, l] of [[true, true], [true, false], [false, false]]) {
+      const t = armar(f, l);
+      if (!Alcance.traeDineroEstricto(t)) return t;
+    }
+    return "";
+  }
+
+  // La cajita de la conversación, debajo del hallazgo. Lo de la IA y lo de Edgar, con esc() y data-no-i18n.
+  function alcCajaCharla(h, i) {
+    const C = alcCharla(i);
+    if (!C || !C.abierta) return "";
+    const dis = C.en_marcha ? " disabled" : "";
+    const quien = m => m.rol === "user" ? `<span class="burbuja-quien">Tú</span>` : `<span class="burbuja-quien">La IA</span>`;
+    const hilo = C.mensajes.filter(m => !m.contexto).map(m =>
+      `<div class="burbuja${m.rol === "user" ? " mia" : ""}">${quien(m)}<span class="burbuja-texto" data-no-i18n>${esc(m.texto)}</span></div>`).join("");
+    const pensando = C.en_marcha ? `<div class="burbuja alc-charla-pensando"><span class="burbuja-texto">${C.avance
+      ? `<span>Sigo trabajando…</span> <span data-no-i18n>${esc(C.avance)}</span>` : "La IA está pensando…"}</span></div>` : "";
+    const pagos = alcCharlaDePagos(h) ? `<div class="alc-charla-chips">
+        <p class="lev-nota">Esto lo pone el programa con el reparto de pagos; la IA solo te aconseja.</p>
+        <div class="alc-fixes">
+          <button type="button" class="alc-op" data-charla-pagos="${i}" data-valor="100"${dis}>Pago único al terminar</button>
+          <button type="button" class="alc-op" data-charla-pagos="${i}" data-valor="50/50"${dis}>Dos pagos 50/50</button>
+          <button type="button" class="alc-op" data-charla-pagos="${i}" data-valor="40/40/20"${dis}>Tres pagos 40/40/20</button>
+          <button type="button" class="alc-op${C.otro ? " elegida" : ""}" data-charla-otro="${i}" aria-pressed="${C.otro ? "true" : "false"}"${dis}>Otro reparto…</button>
+        </div>
+        ${C.otro ? `<div class="alc-charla-campo">
+          <input type="text" inputmode="numeric" maxlength="24" data-charla-otro-in="${i}" placeholder="35/40/25" aria-label="Los porcentajes, que sumen 100" value="${esc(C.otro_valor || "")}"${dis}>
+          <button type="button" class="alc-op" data-charla-otro-usar="${i}"${dis}>Usar este reparto</button>
+        </div>` : ""}
+      </div>` : "";
+    const permiso = alcCharlaDePermiso(h) ? `<div class="alc-charla-chips">
+        <div class="alc-fixes">
+          <button type="button" class="alc-op" data-charla-permiso="${i}" data-valor="no hace falta"${dis}>No hace falta permiso</button>
+          <button type="button" class="alc-op" data-charla-permiso="${i}" data-valor="cliente"${dis}>Lo saca el cliente / contratista</button>
+          <button type="button" class="alc-op" data-charla-permiso="${i}" data-valor="nosotros"${dis}>Lo saca Max Power</button>
+        </div>
+        <p class="lev-nota">La plantilla no sabe decir “no incluido, y si la AHJ lo pide va por Change Order”: lo más cercano es “lo saca el cliente”; la exclusión del permiso ya va en la sección 3 si la hoja la trae.</p>
+      </div>` : "";
+    const campo = alcCharlaCampoSinDato(h);
+    const dato = campo && !h.hecho ? `<div class="alc-charla-chips">
+        <label class="alc-leccion-etq" for="alc-charla-dato-${i}"><span>Escribe el dato:</span> <span data-no-i18n>${esc(Alcance.CAMPOS_ARREGLO[campo].etiqueta)}</span></label>
+        <div class="alc-charla-campo">
+          <input type="text" id="alc-charla-dato-${i}" maxlength="200" data-charla-dato-in="${i}" placeholder="Escribe el dato" value="${esc(C.dato || "")}"${dis}>
+          <button type="button" class="alc-op" data-charla-dato="${i}"${dis}>Escribir en la hoja</button>
+        </div>
+        <p class="lev-nota">El dato queda en la hoja; la ficha de la obra la arreglas en su pantalla.</p>
+      </div>` : "";
+    return `<div class="alc-leccion alc-charla" data-charla="${i}">
+      <div class="alc-charla-hilo" aria-live="polite">${hilo}${pensando}</div>
+      ${C.error ? `<div class="alc-gris">${esc(C.error)}</div>` : ""}
+      ${pagos}${permiso}${dato}
+      <label class="alc-leccion-etq" for="alc-charla-texto-${i}">Lo que le dices a la IA</label>
+      <textarea id="alc-charla-texto-${i}" data-charla-texto="${i}" rows="3" maxlength="4000" placeholder="Dile qué quieres que diga ahí, o pregúntale qué recomienda"${dis}>${esc(C.borrador || "")}</textarea>
+      <div class="alc-fixes">
+        <button type="button" class="alc-op elegida" data-charla-enviar="${i}"${dis}>Enviar</button>
+        <button type="button" class="alc-op" data-charla-cerrar="${i}">Cerrar</button>
+      </div>
+      ${C.lecciones ? `<p class="alc-verde">La IA dice que guardó tu orden para esta obra.</p>` : ""}
+      <div class="alc-botones"><button type="button" class="accion${C.lecciones ? "" : " secundaria"}" data-charla-rearmar="${i}"${dis}>Volver a armar y revisar</button></div>
+      <p class="lev-nota">Cuando la IA te diga que lo guardó, toca aquí: se arma otra vez con tu orden y se revisa sola.</p>
+    </div>`;
+  }
+
+  // Repinta el alcance y, si Edgar estaba escribiendo en una charla, le devuelve el cursor ahí
+  function alcPintarCharla(i) {
+    if (alcFicha !== 2) return;
+    const a = document.activeElement;
+    const foco = a && a.dataset && a.dataset.charlaTexto !== undefined ? a.dataset.charlaTexto : (Number.isInteger(i) ? String(i) : null);
+    pintarAlcance();
+    const t = foco !== null ? document.querySelector(`[data-charla-texto="${foco}"]`) : null;
+    if (t && !t.disabled) { try { t.focus({ preventScroll: true }); } catch { /* nada */ } }
+  }
+  function alcCharlaAbrir(i) {
+    const C = alcCharla(i, true);
+    if (!C) return;
+    C.abierta = !C.abierta;
+    pintarAlcance();
+    const t = C.abierta ? document.querySelector(`[data-charla-texto="${i}"]`) : null;
+    if (t) { try { t.focus({ preventScroll: true }); } catch { /* nada */ } t.scrollIntoView({ block: "center" }); }
+  }
+
+  // ¿Dice la IA que guardó la orden? (el asistente no cuenta qué herramientas usó: se mira su respuesta)
+  // (\b no sirve detrás de una letra con tilde: «guardé» se mira con «no sigue otra letra»)
+  // 13-oct (revisión): solo el pasado. «¿Quieres que lo guarde?» (el subjuntivo, la pregunta del primer turno) no cuenta:
+  // se mira frase a frase y una frase con «¿»/«?», «quieres que» o «que lo guarde» no vale.
+  const ALC_RX_GUARDADO = /(?:^|[^a-záéíóúñ])(?:guardé|(?:lo |la |te lo )?he guardado|ha quedado guardad[ao]|qued[óo] guardad[ao]|ya est[áa] guardad[ao]|I(?: have|'ve)? saved|saved it|has been saved)(?![a-záéíóúñ])/i;
+  const ALC_RX_NO_GUARDADO = /(?:^|[^a-záéíóúñ])no (?:lo |la |te lo )?(?:he )?(?:guardé|guardad[ao])(?![a-záéíóúñ])|\b(?:not|haven't|didn't) (?:yet )?saved?\b/i;
+  function alcDiceQueGuardo(resp) {
+    return String(resp || "").replace(/([.!?…])\s+/g, "$1\n").split(/\n+/).some(f => ALC_RX_GUARDADO.test(f) && !ALC_RX_NO_GUARDADO.test(f)
+      && !/[¿?]/.test(f) && !/quieres que|que (?:lo |la |te lo )?guarde|want me to|shall I|should I/i.test(f));
+  }
+
+  // Manda la conversación entera (el contexto + todo lo hablado), como la pantalla del asistente
+  async function alcCharlaEnviar(i) {
+    if (!(usuario && usuario.finanzas)) return;
+    const A = alcActivo, R = A && A.revision;
+    const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
+    const C = h ? alcCharla(i, true) : null;
+    if (!C || C.en_marcha) return;
+    const caja = document.querySelector(`[data-charla-texto="${i}"]`);
+    const texto = String(caja ? caja.value : (C.borrador || "")).trim();
+    if (!texto) { avisar("Escribe primero qué quieres que diga", true); return; }
+    if (navigator.onLine === false) { C.borrador = texto; C.error = "Sin señal: hablar con la IA necesita internet. Cuando vuelva, toca otra vez"; alcPintarCharla(i); return; }
+    const nuevos = [];
+    if (!C.mensajes.length) {
+      const ctx = alcContextoCharla(h);
+      if (!ctx) { C.borrador = texto; C.error = "Se me escapó un monto sin tapar; no lo mandé a la IA"; alcPintarCharla(i); return; }
+      nuevos.push({ rol: "user", texto: ctx, contexto: true });
+    }
+    nuevos.push({ rol: "user", texto: texto.slice(0, 4000) });
+    C.mensajes.push(...nuevos);
+    C.borrador = ""; C.en_marcha = true; C.error = null; C.avance = null;
+    alcPintarCharla(i);
+    const sigueViva = () => alcActivo === A && A.revision === R;
+    const contexto = { pantalla: "alcance", proyecto_id: A.proyecto && A.proyecto.id ? String(A.proyecto.id) : null,
+                       propuesta_id: A.propuesta && Number.isInteger(A.propuesta.id) ? A.propuesta.id : null, idioma: EN_APP ? "en" : "es" };
+    // si no hubo respuesta, lo que escribió Edgar vuelve a la caja para mandarlo otra vez
+    const devolver = () => { nuevos.forEach(() => C.mensajes.pop()); C.borrador = texto; };
+    try {
+      // el cerebro se queda con los 40 últimos: en una charla larga el contexto (el primero) no se puede caer
+      const enviar = C.mensajes.length > 40 ? [C.mensajes[0], ...C.mensajes.slice(-39)] : C.mensajes;
+      const r = await DB.preguntarAsistente(enviar.map(m => ({ rol: m.rol, texto: m.texto })), av => {
+        // el trabajo largo sigue solo: se enseña por dónde va
+        C.avance = "(" + (av && av.tanda ? av.tanda : 2) + ")" + (av && av.avance ? " " + String(av.avance).slice(0, 200) : "");
+        if (sigueViva()) alcPintarCharla();
+      }, contexto);
+      if (!sigueViva()) return;                      // se rearmó o se cambió de obra: la respuesta se descarta
+      if (r && r.respuesta) {
+        const resp = String(r.respuesta);
+        C.mensajes.push({ rol: "assistant", texto: resp });
+        if (alcDiceQueGuardo(resp)) C.lecciones++;
+      } else if (r && r.error === "sin_llave") { devolver(); C.error = "Todavía no me han conectado la llave del asistente. Edgar tiene que ponerla en Supabase (ANTHROPIC_API_KEY)."; }
+      else { devolver(); C.error = "No pude contestar eso. Inténtalo otra vez en un momento."; }
+    } catch (err) {
+      if (!sigueViva()) return;
+      devolver();
+      // nunca el mensaje crudo de JavaScript: solo las frases que ya vienen en llano
+      const m = String((err && err.message) || "");
+      C.error = "No hay conexión con el asistente ahora mismo." + (/^(Sin sesión|No se pudo conectar|El asistente)/.test(m) ? " " + m : "");
+    } finally {
+      C.en_marcha = false; C.avance = null;
+    }
+    alcPintarCharla(i);
+  }
+
+  // «Volver a armar y revisar»: la orden nueva cambia la huella, la IA arma otra vez, el papel sale y se revisa solo
+  async function alcCharlaRearmar(i, hecho) {
+    const A = alcActivo, R = A && A.revision;
+    const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
+    if (!A || !h) return;
+    if (A.armado_en_marcha) { avisar("La IA ya está armando este contrato"); return; }
+    h.hecho = hecho || ALC_CHARLA_HECHO;
+    R.tocado = true;
+    const esfuerzo = (A.armado && A.armado.esfuerzo) || "high";
+    await alcArmarConIA(esfuerzo);
+  }
+
+  // Lo que la charla escribe en la hoja (pagos, permiso): a la vista, como un arreglo; la app la apunta como suya
+  // n = el número de la línea escrita, si se sabe: se apunta la línea tal como quedó («Permit: no hace falta»)
+  function alcEscribirDesdeCharla(texto, linea, n) {
+    const A = alcActivo;
+    A.texto = texto;
+    if (Number.isInteger(n) && n >= 1) linea = alcLineaCruda(n) || linea;
+    if ($("alc-texto")) $("alc-texto").value = A.texto;
+    alcApuntarPropia(linea);
+    alcRealinear();
+    alcGuardarLocal(A.proyecto.id, A.texto);
+    A.arreglados = [...(A.arreglados || []), `escribí «${linea}» en la hoja`];
+    alcCalcularSeguro();
+    return linea;
+  }
+  // Pagos: «100», «50/50», «40/40/20» u otro reparto que sume 100 → la línea «Pagos:» (el camino de poner_pagos)
+  function alcCharlaPagos(i, valor) {
+    if (!(usuario && usuario.finanzas)) return;
+    const A = alcActivo, R = A && A.revision;
+    const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
+    if (!h) return;
+    const v = String(valor || "").replace(/\s+/g, "").replace(/%/g, "");
+    const ps = v.split("/").map(Number);
+    // 13-oct (revisión): como mucho tres pagos. El programa solo sabe escribir el disparador de 1, 2 o 3 hitos, y el
+    // lector corto no pasa de cuatro: con más, la hoja diría una cosa y el contrato otra.
+    if (/^\d{1,3}(?:\/\d{1,3}){3,}$/.test(v)) { avisar("Como mucho tres pagos; para más, escríbelos en la hoja con su disparador", true); return; }
+    if (!/^\d{1,3}(?:\/\d{1,3}){0,2}$/.test(v) || ps.some(p => !(p > 0)) || ps.reduce((s, p) => s + p, 0) !== 100) {
+      avisar("Los porcentajes tienen que sumar 100 (por ejemplo 35/40/25)", true); return;
+    }
+    if (A.armado_en_marcha) { avisar("La IA ya está armando este contrato"); return; }
+    if ($("alc-texto")) A.texto = $("alc-texto").value;
+    const r = Alcance.aplicarArreglo(A.texto, { tipo: "poner_pagos" }, v);
+    if (!r || r.error) { avisar((r && r.error) || "No pude escribir los pagos en la hoja", true); return; }
+    alcEscribirDesdeCharla(r.texto, "Pagos: " + v);
+    alcCharlaRearmar(i, "Pagos: " + v).catch(() => { /* la nube nunca frena */ });
+  }
+  // La línea «Permiso:» de la hoja: se reemplaza si está; si no, va en la cabecera (después de la última «Clave: valor»)
+  function alcPonerPermisoEnHoja(texto, valor) {
+    if (typeof Alcance.ponerLineaDato === "function") {
+      try {
+        const r = Alcance.ponerLineaDato(texto, "Permiso", valor);
+        if (typeof r === "string") return { texto: r };
+        if (r && (typeof r.texto === "string" || r.error)) return r;
+      } catch { /* el camino de aquí abajo */ }
+    }
+    const lineas = String(texto || "").replace(/\r/g, "").split("\n");
+    const nueva = "Permiso: " + valor;
+    // la línea del permiso, la diga en español o en inglés («Permiso:», «Permit:»): se cambia entera, no se duplica
+    const k = lineas.findIndex(l => /^\s*(?:permisos?|permits?)\s*:/i.test(l));
+    if (k >= 0) { lineas[k] = nueva; return { texto: lineas.join("\n"), linea: k + 1 }; }
+    const esClave = l => /^\s*[A-Za-zÁÉÍÓÚÑÜáéíóúñü][A-Za-zÁÉÍÓÚÑÜáéíóúñü .#/()&'-]{1,40}:\s*\S/.test(l) && !/^\s*[-*•]/.test(l);
+    let ultima = -1;
+    for (let j = 0; j < Math.min(lineas.length, 40); j++) {
+      if (esClave(lineas[j])) ultima = j;
+      else if (ultima >= 0 && lineas[j].trim()) break;
+    }
+    lineas.splice(ultima + 1, 0, nueva);
+    return { texto: lineas.join("\n"), linea: ultima + 2 };
+  }
+  function alcCharlaPermiso(i, valor) {
+    if (!(usuario && usuario.finanzas)) return;
+    const A = alcActivo, R = A && A.revision;
+    const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
+    const v = String(valor || "").trim();
+    if (!h || !["no hace falta", "cliente", "nosotros"].includes(v)) return;
+    if (A.armado_en_marcha) { avisar("La IA ya está armando este contrato"); return; }
+    if ($("alc-texto")) A.texto = $("alc-texto").value;
+    const r = alcPonerPermisoEnHoja(A.texto, v);
+    if (!r || r.error || typeof r.texto !== "string") { avisar((r && r.error) || "No pude escribir el permiso en la hoja", true); return; }
+    const escrita = alcEscribirDesdeCharla(r.texto, "Permiso: " + v, Number(r.linea));
+    alcCharlaRearmar(i, String(escrita || "Permiso: " + v).trim()).catch(() => { /* la nube nunca frena */ });
+  }
+  // «Escribe el dato»: lo de «Usar el dato de la ficha», con lo que escribió Edgar (sin montos), y se rearma
+  function alcCharlaDato(i) {
+    if (!(usuario && usuario.finanzas)) return;
+    const A = alcActivo, R = A && A.revision;
+    const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
+    const C = alcCharla(i);
+    const campo = alcCharlaCampoSinDato(h);
+    if (!h || !C || !campo) return;
+    const caja = document.querySelector(`[data-charla-dato-in="${i}"]`);
+    const v = String(caja ? caja.value : (C.dato || "")).replace(/\s+/g, " ").trim();
+    C.dato = v;
+    if (!v) { avisar("Escribe el dato primero", true); return; }
+    if (Alcance.traeDineroEstricto(v) || Alcance.esMontoTapable(v)) { avisar("Ese dato lleva un monto: no lo escribo en la hoja", true); return; }
+    if (A.armado_en_marcha) { avisar("La IA ya está armando este contrato"); return; }
+    if ($("alc-texto")) A.texto = $("alc-texto").value;
+    if (!alcRevEscribirDato(i, campo, v)) return;
+    alcCharlaRearmar(i, h.hecho).catch(() => { /* la nube nunca frena */ });
   }
 
   // «Volver a armar»: con la hoja corregida, se vuelve a pasar por el camino corto y se arma
