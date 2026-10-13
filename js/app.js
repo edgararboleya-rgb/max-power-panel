@@ -2626,6 +2626,7 @@ function esFalloDeRed(err) {
       alcRecoger();
       if (alcFicha > 0) { alcFicha -= 1; pintarAlcance(); return; }
       const proy = alcActivo ? alcActivo.proyecto.id : null;
+      alcAvisarArregloPendiente(alcActivo);
       alcActivo = null;
       if (proy) irDetalle(proy); else volverAlOrigen();
       return;
@@ -14628,6 +14629,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
 
   // Deja lista una variante en memoria (sin repintar)
   function alcAbrir(proy, prop, variantes) {
+    alcAvisarArregloPendiente(alcActivo);
     const local = alcGuardadaLocal(proy.id, prop ? prop.id : null);
     const texto = (prop && prop.alcance_md) || local.texto || "";
     // La lectura del asistente vuelve del teléfono o de la propuesta guardada,
@@ -14656,6 +14658,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       huella: (prop && prop.alcance_huella) || null,
       // lo que Edgar ya explicó ("eso no es un precio, es el año"): se respeta
       perdonadas: (prop && prop.alcance_decisiones && prop.alcance_decisiones.perdonadas) || (prop ? [] : alcPerdonLocal(proy.id)),
+      // 13-oct (pliego §7.2): lo que Edgar decidió en revisiones anteriores ({donde, cita, como, cuando}), tope 60
+      // (sin propuesta todavía, viven en el teléfono, como el perdón)
+      decididos: ((prop && prop.alcance_decisiones && Array.isArray(prop.alcance_decisiones.decididos)) ? prop.alcance_decisiones.decididos
+                  : (prop ? [] : alcDecididosLocal(proy.id))).slice(-60),
       // v252: la base del precio que Edgar ELIGIÓ para esta propuesta (null = la decide la regla)
       pricing_basis: alcBaseGuardada(prop),
       respuestas: {}, contrato: null
@@ -14760,6 +14766,21 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       if (lista) { localStorage.setItem(alcLlaveLocal(id) + "_perdon", JSON.stringify(lista)); return lista; }
       return JSON.parse(localStorage.getItem(alcLlaveLocal(id) + "_perdon") || "[]");
     } catch { return lista || []; }
+  }
+  // 13-oct (pliego §7.2): lo decidido punto por punto, en el teléfono, mientras la obra no tiene propuesta
+  function alcDecididosLocal(id, lista) {
+    try {
+      if (lista) { localStorage.setItem(alcLlaveLocal(id) + "_decididos", JSON.stringify(lista.slice(-60))); return lista; }
+      const j = JSON.parse(localStorage.getItem(alcLlaveLocal(id) + "_decididos") || "[]");
+      return Array.isArray(j) ? j : [];
+    } catch { return lista || []; }
+  }
+  // Si se sale de la pantalla (o se cambia de obra o de SOW) antes de que el arreglo se guarde, se dice en llano.
+  // Lo decidido ya quedó apuntado al empezar el arreglo; el papel nuevo, no.
+  function alcAvisarArregloPendiente(A) {
+    if (!A || !(A.guardar_al_revisar || A.guardado_pendiente)) return;
+    A.guardar_al_revisar = false; A.arreglando = null;
+    avisar("Saliste antes de guardar lo arreglado: lo decidido quedó apuntado, pero el papel nuevo no. Vuelve y toca «Arreglar el contrato»", true);
   }
 
   function pintarAlcance() {
@@ -15948,11 +15969,14 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     document.querySelectorAll("[data-rev-ir]").forEach(b => b.addEventListener("click", () => alcRevIrALinea(Number(b.dataset.revIr))));
     document.querySelectorAll("[data-rev-dato]").forEach(b => b.addEventListener("click", () => alcRevUsarDato(Number(b.dataset.revDato))));
     document.querySelectorAll("[data-rev-dejar]").forEach(b => b.addEventListener("click", () => alcRevDejar(Number(b.dataset.revDejar))));
+    // (pliego §7.2) «Arreglar el contrato»: un solo armado con todo lo decidido, la revisión sola y se guarda solo
     document.querySelectorAll("[data-rev-rearmar]").forEach(b => b.addEventListener("click", () => {
       b.disabled = true;
-      alcVolverAArmar().catch(e => avisar((e && e.message) || "No pude volver a armar", true))
+      alcArreglarContrato().catch(e => avisar((e && e.message) || "No pude volver a armar", true))
         .finally(() => { if (document.body.contains(b)) b.disabled = false; });
     }));
+    // (revisión) el guardado solo no salió: «Guardar lo arreglado» lo intenta otra vez, sin candado
+    document.querySelectorAll("[data-rev-guardar-arreglo]").forEach(b => b.addEventListener("click", () => { b.disabled = true; alcGuardarArregloOtraVez(); }));
     // 13-oct · «Hablar con la IA» por hallazgo: la conversación, los botones de pagos y permiso, el dato y el rearmado
     const nCharla = (b, k) => Number(b.dataset[k]);
     document.querySelectorAll("[data-rev-hablar]").forEach(b => b.addEventListener("click", () => alcCharlaAbrir(nCharla(b, "revHablar"))));
@@ -15965,10 +15989,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     document.querySelectorAll("[data-charla-cerrar]").forEach(b => b.addEventListener("click", () => {
       const C = alcCharla(nCharla(b, "charlaCerrar")); if (C) C.abierta = false; pintarAlcance();
     }));
-    document.querySelectorAll("[data-charla-rearmar]").forEach(b => b.addEventListener("click", () => {
-      b.disabled = true;
-      alcCharlaRearmar(nCharla(b, "charlaRearmar")).catch(e => avisar((e && e.message) || "No pude volver a armar", true));
-    }));
+    // (pliego §7.1) «Decidido» pliega el punto; «Abrir» lo vuelve a abrir para hablar otra vez
+    document.querySelectorAll("[data-charla-decidido]").forEach(b => b.addEventListener("click", () => alcCharlaDecidido(nCharla(b, "charlaDecidido"))));
+    document.querySelectorAll("[data-charla-abrir]").forEach(b => b.addEventListener("click", () => alcCharlaAbrir(nCharla(b, "charlaAbrir"))));
     document.querySelectorAll("[data-charla-pagos]").forEach(b => b.addEventListener("click", () => alcCharlaPagos(nCharla(b, "charlaPagos"), b.dataset.valor)));
     document.querySelectorAll("[data-charla-otro]").forEach(b => b.addEventListener("click", () => {
       const i = nCharla(b, "charlaOtro"), C = alcCharla(i); if (!C) return;
@@ -17122,6 +17145,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (alcActivo !== A || !A.contrato) return false;
     // Sin rojos en el papel, la segunda IA lo revisa sola (pliego §6.1). Una revisión reutilizada no se repite.
     if (!A.contrato.problemas.length && !A.revision) alcRevisarIA().catch(() => { /* la nube nunca frena */ });
+    alcGuardarSiArreglo(A);
     return true;
   }
 
@@ -17345,6 +17369,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   function alcPanelArmado() {
     const A = alcActivo, M = A.armado;
     let s = "";
+    // (pliego §7.2) mientras «Arreglar el contrato» arma: con cuántas decisiones, y debajo el progreso de siempre
+    if (A.armado_en_marcha && A.arreglando) s += `<p class="alc-gris alc-arreglando">${esc(alcTextoArreglando(A.arreglando))}</p>`;
     if (A.armado_en_marcha && A.armado_en_marcha.prueba) s += `<div class="alc-gris">Modo de prueba: no llamo a la IA</div>`;
     else if (A.armado_en_marcha) s += `<p class="alc-progreso" id="alc-progreso" role="status">${esc(alcTextoProgreso(A.armado_en_marcha))}</p>
       <p class="lev-nota">Puedes seguir mirando la hoja mientras tanto; no cambies nada hasta que termine.</p>`;
@@ -17558,7 +17584,13 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       const A = alcActivo, R = A && A.revision;
       return { armado_en_marcha: !!(A && A.armado_en_marcha), revision: !!R,
                hechos: R && Array.isArray(R.hallazgos) ? R.hallazgos.map(h => h.hecho || null) : [],
-               charlas: alcCharlas().filter(Boolean).length };
+               charlas: alcCharlas().filter(Boolean).length,
+               // 13-oct, versión 2: lo decidido en cada punto, las decisiones de la obra y si falta guardar al revisar
+               decididos: R && Array.isArray(R.hallazgos) ? R.hallazgos.map(h => h.decidido ? { como: h.decidido.como, de: h.decidido.de } : null) : [],
+               decididos_obra: A && Array.isArray(A.decididos) ? A.decididos.length : 0,
+               guardar_al_revisar: !!(A && A.guardar_al_revisar), arreglando: !!(A && A.arreglando),
+               guardado_pendiente: !!(A && A.guardado_pendiente), guardado_solo: A && A.guardado_solo ? A.guardado_solo.donde : null,
+               en_marcha: !!(R && R.en_marcha), error: R && R.error ? String(R.error) : null };
     },
     async aplicarArmado(paquete, leccionesHecho) {
       const A = alcActivo;
@@ -18027,8 +18059,13 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     return "La IA falló; vuelve a intentarlo en un minuto";
   }
 
-  // Pide y recoge, igual que el lector
+  // Pide y recoge, igual que el lector. Al terminar (bien o mal), si venía de «Arreglar el contrato», se guarda solo.
   async function alcRevisarIA() {
+    const A = alcActivo;
+    try { await alcRevisarIA0(); }
+    finally { alcGuardarSiArreglo(A); }
+  }
+  async function alcRevisarIA0() {
     const A = alcActivo;
     if (!A || !A.contrato || !(usuario && usuario.finanzas)) return;
     if (A.revision && A.revision.en_marcha) { avisar("La IA ya está revisando este contrato"); return; }
@@ -18103,11 +18140,14 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (R.saltada) return { ok: true, saltada: true };
     if (R.error) return { ok: false, motivo: R.error, puedeSaltar: true };
     const hs = Array.isArray(R.hallazgos) ? R.hallazgos : [];
+    // (pliego §7) lo decidido (con la charla, con «Decidido» o escrito en la hoja) se arregla con «Arreglar el contrato»
+    const quedan = hs.filter(h => !h.hecho && !h.decidido).length;
+    if (hs.length && !quedan) return { ok: false, motivo: "Ya decidiste todo: toca «Arreglar el contrato»" };
     const hechos = hs.filter(h => h.hecho).length;
-    if (hechos) return { ok: false, motivo: hechos === 1 ? "Arreglaste 1 cosa en la hoja: vuelve a armar y revisa otra vez"
-                                                         : `Arreglaste ${hechos} cosas en la hoja: vuelve a armar y revisa otra vez` };
-    if (hs.length) return { ok: false, motivo: hs.length === 1 ? "Queda 1 cosa de la revisión por mirar: arréglala o toca «Lo dejo así»"
-                                                             : `Quedan ${hs.length} cosas de la revisión por mirar: arréglalas o toca «Lo dejo así»` };
+    if (hechos) return { ok: false, motivo: hechos === 1 ? "Arreglaste 1 cosa en la hoja: toca «Arreglar el contrato»"
+                                                         : `Arreglaste ${hechos} cosas en la hoja: toca «Arreglar el contrato»` };
+    if (quedan) return { ok: false, motivo: quedan === 1 ? "Queda 1 cosa de la revisión por mirar: arréglala o toca «Lo dejo así»"
+                                                         : `Quedan ${quedan} cosas de la revisión por mirar: arréglalas o toca «Lo dejo así»` };
     return { ok: true };
   }
   // La huella del papel que la IA revisó: el mismo texto y la misma ficha que viajan a la nube.
@@ -18149,18 +18189,28 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (R && R.error) s += `<div class="alc-gris">${esc(R.error)}</div>`;
     if (R && R.saltada) s += `<div class="alc-gris"><span>Sigues sin la revisión con IA:</span> <span data-no-i18n>${esc(String(R.saltada))}</span></div>`;
     if (R && R.reutilizada) s += `<div class="alc-verde">Este papel ya pasó la revisión con IA y no cambió desde entonces.</div>`;
-    if (hay && !R.reutilizada) {
+    // (pliego §7.2, revisión) mientras se arregla, los puntos viejos se pliegan: lo que se decidiera ahora no entraría
+    if (hay && !R.reutilizada && A.arreglando) s += `<div class="alc-gris alc-espera">${esc(alcTextoArreglando(A.arreglando))}</div>`;
+    else if (hay && !R.reutilizada) {
       if (R.resumen) s += `<p class="alc-rev-resumen" data-no-i18n>${esc(R.resumen)}</p>`;
       if (Number.isFinite(R.costo_centavos) && R.costo_centavos > 0) s += `<p class="alc-sub">Costó ${Math.round(R.costo_centavos)} ¢</p>`;
       if (!R.hallazgos.length) s += `<div class="alc-verde">La IA no vio nada que arreglar.</div>`;
       const li = (h, i) => {
         const n = Alcance.lineaDeCita(A.texto, h.cita);
-        return `<li class="alc-hallazgo" data-hallazgo="${i}">
-          ${alcRevDonde(R, h.donde)}
+        // (pliego §7.1) decidido y con la charla cerrada: el punto se pliega a una línea verde con «Abrir»
+        const plegado = !!(h.decidido && !alcCharlaAbierta(i));
+        const ya = !h.decidido ? alcYaDecidido(h) : null;
+        const cabeza = `${alcRevDonde(R, h.donde)}
           <div class="alc-cita" data-no-i18n>${esc(h.cita)}</div>
-          <p class="alc-rev-motivo" data-no-i18n>${esc(h.motivo)}</p>
-          ${h.hecho === ALC_CHARLA_HECHO ? `<p class="alc-rev-hecho">${esc(ALC_CHARLA_HECHO)}</p>`
-            : h.hecho ? `<p class="alc-rev-hecho"><span>Arreglado en la hoja; vuelve a armar para verlo en el papel:</span> <span data-no-i18n>«${esc(h.hecho)}»</span></p>` : ""}
+          <p class="alc-rev-motivo" data-no-i18n>${esc(h.motivo)}</p>`;
+        const lineaDecidido = h.decidido ? `<div class="alc-verde alc-decidido"><span>Decidido:</span> <span data-no-i18n>${esc(h.decidido.como || "")}</span>
+            ${plegado ? `<div class="alc-fixes"><button type="button" class="alc-op" data-charla-abrir="${i}">Abrir</button></div>` : ""}</div>` : "";
+        if (plegado) return `<li class="alc-hallazgo alc-hallazgo-decidido" data-hallazgo="${i}">${cabeza}${lineaDecidido}</li>`;
+        return `<li class="alc-hallazgo${h.decidido ? " alc-hallazgo-decidido" : ""}" data-hallazgo="${i}">
+          ${cabeza}
+          ${lineaDecidido}
+          ${h.hecho ? `<p class="alc-rev-hecho"><span>Escrito en la hoja; se verá en el papel al tocar «Arreglar el contrato»:</span> <span data-no-i18n>«${esc(h.hecho)}»</span></p>` : ""}
+          ${ya ? `<p class="alc-gris alc-ya-decidido"><span>${esc(alcTextoYaDecidido(ya))}</span> <span data-no-i18n>${esc(ya.como || "")}</span></p>` : ""}
           <div class="alc-fixes">
             ${n ? `<button type="button" class="alc-op" data-rev-ir="${i}" title="Línea ${n} de la hoja">Ir a la línea</button>`
                 : `<button type="button" class="alc-op" disabled title="La cita no está en tu hoja: sale de la plantilla">Es de la plantilla</button>`}
@@ -18177,9 +18227,17 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       const ambar = R.hallazgos.map((h, i) => [h, i]).filter(([h]) => h.gravedad !== "rojo");
       if (rojos.length) s += `<div class="alc-rojo"><b>Esto quedaría mal firmado:</b><ul>${rojos.map(([h, i]) => li(h, i)).join("")}</ul></div>`;
       if (ambar.length) s += `<div class="alc-ambar"><b>Esto es una duda:</b><ul>${ambar.map(([h, i]) => li(h, i)).join("")}</ul></div>`;
-      if (R.hallazgos.length || R.tocado) s += `<div class="alc-botones"><button type="button" class="accion" data-rev-rearmar="1">Volver a armar</button></div>
-        <p class="lev-nota">Hasta que atiendas cada punto, el contrato no se guarda ni se manda. Se queda a la vista hasta que vuelvas a armar.</p>`;
+      if (R.hallazgos.length || R.tocado) s += alcPieArreglar(R) + `
+        <p class="lev-nota">Hasta que atiendas cada punto, el contrato no se manda. Decide cada punto (o «Lo dejo así») y toca «Arreglar el contrato» una sola vez: se arma con todo lo decidido, se revisa y se guarda solo en la propuesta.</p>`;
     }
+    if (A.arreglando && !(hay && !R.reutilizada)) s += `<div class="alc-gris alc-espera">${esc(alcTextoArreglando(A.arreglando))}</div>`;
+    // lo que pasó con el guardado solo: en la propuesta, en el teléfono, o pendiente (con su botón, sin candado)
+    const G = A.guardado_solo;
+    if (G && !enMarcha && (G.R === R || (!G.R && !R))) s += G.donde === "telefono"
+      ? `<div class="alc-gris alc-guardado-solo">Lo arreglado quedó en este teléfono. La propuesta se guarda cuando la revisión salga limpia y toques «Guardar en la propuesta».</div>`
+      : `<div class="alc-verde alc-guardado-solo">Lo arreglado quedó guardado en la propuesta.</div>`;
+    if (A.guardado_pendiente && !A.arreglando) s += `<div class="alc-gris alc-guardar-pendiente"><p>Lo arreglado todavía no está guardado en la propuesta.</p>
+      <div class="alc-botones"><button type="button" class="accion" data-rev-guardar-arreglo="1"${A.guardando_propuesta ? " disabled" : ""}>Guardar lo arreglado</button></div></div>`;
     return s + `</div>`;
   }
 
@@ -18188,13 +18246,15 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const A = alcActivo, R = A.revision;
     if (!R || !Array.isArray(R.hallazgos) || !(R.hallazgos.length || R.tocado) || !A.contrato) return "";
     const foco = Number.isInteger(R.foco) ? R.hallazgos[R.foco] : null;
-    const quedan = R.hallazgos.filter(h => !h.hecho).length;
+    const quedan = R.hallazgos.filter(h => !h.hecho && !h.decidido).length;
+    const enMarcha = !!(A.armado_en_marcha || R.en_marcha || A.arreglando || alcCharlaPensando());
     return `<div class="alc-gris alc-rev-en-hoja">
       ${foco ? `<p><span>La IA dice de esta línea:</span> <span data-no-i18n>${esc(foco.motivo)}</span></p>` : ""}
-      <p>${quedan === 1 ? "Queda 1 cosa de la revisión con IA por mirar." : quedan ? `Quedan ${quedan} cosas de la revisión con IA por mirar.` : "Lo de la revisión con IA está atendido: vuelve a armar."}</p>
+      <p>${quedan === 1 ? "Queda 1 cosa de la revisión con IA por mirar." : quedan ? `Quedan ${quedan} cosas de la revisión con IA por mirar.` : "Lo de la revisión con IA está atendido: toca «Arreglar el contrato»."}</p>
+      <p class="alc-cuenta-decisiones">${esc(alcTextoCuenta(alcCuentaDecisiones(R)))}</p>
       <div class="alc-botones">
         <button type="button" class="accion secundaria" data-alcficha="2">Volver al contrato</button>
-        <button type="button" class="accion" data-rev-rearmar="1">Volver a armar</button>
+        <button type="button" class="accion" data-rev-rearmar="1"${enMarcha ? " disabled" : ""}>Arreglar el contrato</button>
       </div>
     </div>`;
   }
@@ -18218,9 +18278,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const A = alcActivo, R = A && A.revision;
     const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
     if (!h || !h.arreglo) return;
+    if (alcQuietoPorArreglo()) return;     // (revisión) como los botones de la charla: con el armado en marcha, quieto
     if (!alcRevEscribirDato(i, h.arreglo.campo, h.arreglo.valor)) return;
     pintarAlcance();
-    avisar(`Escribí «${h.hecho}» en la hoja. Vuelve a armar para verlo en el papel`);
+    avisar(`Escribí «${h.hecho}» en la hoja. Se verá en el papel al tocar «Arreglar el contrato»`);
   }
   // Escribe en la hoja la línea de un dato (el de la ficha, o el que Edgar escribió en «Hablar con la IA»). Sin pintar.
   function alcRevEscribirDato(i, campo, valor) {
@@ -18248,6 +18309,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     A.arreglados = [...(A.arreglados || []), r.explicacion];
     h.hecho = `${r.etiqueta}: ${String(valor).replace(/\s+/g, " ").trim()}`;
     R.tocado = true;
+    // (pliego §7.1) escrito en la hoja = decidido; el contrato se arregla después, una sola vez, con todo lo decidido
+    alcDecidir(i, h.hecho, "hoja");
     alcCalcularSeguro();
     return true;
   }
@@ -18257,12 +18320,14 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const A = alcActivo, R = A && A.revision;
     const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
     if (!h) return;
+    if (alcQuietoPorArreglo()) return;
     A.perdonadas = [...(A.perdonadas || []), Alcance.perdonDeHallazgo(h)];
     alcPerdonLocal(A.proyecto.id, A.perdonadas);
     alcCharlas().splice(i, 1);          // (13-oct) la conversación de ese punto se va con él
     R.hallazgos.splice(i, 1);
     if (R.foco === i) R.foco = null; else if (Number.isInteger(R.foco) && R.foco > i) R.foco--;
     R.tocado = true;
+    R.dejados = (Number(R.dejados) || 0) + 1;      // (pliego §7.2) «K dejados así» en el pie
     // Con la propuesta guardada, el perdón se guarda también en ella (alcance_decisiones), como al tocar «Guardar»
     if (A.propuesta && A.propuesta.id) {
       const dec = Object.assign({}, A.propuesta.alcance_decisiones || {}, { perdonadas: A.perdonadas });
@@ -18274,14 +18339,177 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   }
 
   // ============================================================
+  // 13-oct, versión 2 (docs/PLIEGO-CORREGIR-CON-IA.md §7): decidir punto por punto, arreglar UNA sola vez, guardar solo
+  // ============================================================
+  // La cuenta del pie: decididos (con la charla, con «Decidido» o escritos en la hoja) · sin decidir · dejados así
+  function alcCuentaDecisiones(R) {
+    const hs = R && Array.isArray(R.hallazgos) ? R.hallazgos : [];
+    const n = hs.filter(h => h.decidido || h.hecho).length;
+    return { n, m: hs.length - n, k: Number(R && R.dejados) || 0 };
+  }
+  function alcTextoCuenta(c) {
+    return `${c.n} ${c.n === 1 ? "decidido" : "decididos"} · ${c.m} sin decidir · ${c.k} ${c.k === 1 ? "dejado así" : "dejados así"}`;
+  }
+  function alcTextoArreglando(x) {
+    const n = Number(x && x.n) || 0;
+    return !n ? "Arreglando el contrato…" : n === 1 ? "Arreglando el contrato con tu decisión…" : `Arreglando el contrato con tus ${n} decisiones…`;
+  }
+  // ¿Hay una charla esperando a la IA? Mientras tanto no se arregla (faltaría su respuesta)
+  function alcCharlaPensando() { return alcCharlas().some(C => C && C.en_marcha); }
+  // ¿Se está arreglando o armando? Los botones de cada punto se quedan quietos y se dice por qué
+  function alcQuietoPorArreglo() {
+    const A = alcActivo;
+    if (A && A.arreglando) { avisar("Ya estoy arreglando el contrato"); return true; }
+    if (A && A.armado_en_marcha) { avisar("La IA ya está armando este contrato"); return true; }
+    return false;
+  }
+  // El pie de la caja de revisión: la cuenta y un solo «Arreglar el contrato»
+  function alcPieArreglar(R) {
+    const A = alcActivo;
+    const quieto = !!(A.armado_en_marcha || (R && R.en_marcha) || A.arreglando || alcCharlaPensando());
+    return `<p class="alc-cuenta-decisiones">${esc(alcTextoCuenta(alcCuentaDecisiones(R)))}</p>
+      <div class="alc-botones"><button type="button" class="accion" data-rev-rearmar="1"${quieto ? " disabled" : ""}>Arreglar el contrato</button></div>`;
+  }
+  // Lo que se apunta de un punto decidido: en una línea, sin cifras de dinero, cortado a n letras
+  function alcLimpioCorto(t, n) { return alcSinCifrasDeDinero(String(t || "").replace(/\s+/g, " ").trim()).slice(0, n); }
+  // La clave de un punto: la cita como la compara el juez de la revisión (Alcance.perdonDeHallazgo / comprobarHallazgos),
+  // en 80 letras. Primero se limpia y se juntan los espacios, y DESPUÉS se corta (si no, un salto de línea cambia la clave).
+  function alcClaveCita(c) {
+    let t = String(c || "");
+    try { t = Alcance.limpiarLinea(t).limpia; } catch { /* tal cual */ }
+    return t.replace(/\s+/g, " ").trim().toLowerCase().slice(0, 80);
+  }
+  const alcPalabras = t => new Set((String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").match(/[a-z0-9]{4,}/g) || []));
+  // ¿Ya se decidió este punto en un arreglo anterior? (la misma cita, o la misma sección con un motivo muy parecido)
+  function alcYaDecidido(h) {
+    const ds = (alcActivo && Array.isArray(alcActivo.decididos)) ? alcActivo.decididos : [];
+    if (!h || !ds.length) return null;
+    // la cita de ahora pasa por la MISMA receta con la que se guardó la de antes (alcLimpioCorto), y luego la clave
+    const k = alcClaveCita(alcLimpioCorto(h.cita, 80));
+    const pm = alcPalabras(h.motivo);
+    for (let j = ds.length - 1; j >= 0; j--) {
+      const d = ds[j];
+      if (!d) continue;
+      if (k && alcClaveCita(d.cita) === k) return d;
+      if (d.donde && h.donde && String(d.donde) === String(h.donde) && d.motivo && pm.size >= 3) {
+        const pd = alcPalabras(d.motivo);
+        let comun = 0; pm.forEach(x => { if (pd.has(x)) comun++; });
+        if (comun / Math.max(pm.size, pd.size) >= 0.7) return d;
+      }
+    }
+    return null;
+  }
+  function alcTextoYaDecidido(d) {
+    let f = "";
+    try { f = new Date(d.cuando).toLocaleDateString(LOCALE, { timeZone: "America/New_York", day: "numeric", month: "short" }); } catch { f = ""; }
+    return f && f !== "Invalid Date" ? `Ya lo decidiste el ${f}:` : "Ya lo decidiste:";
+  }
+
+  // «Arreglar el contrato» (pliego §7.2): UN solo armado con todo lo decidido → el papel → la revisión sola → se guarda
+  async function alcArreglarContrato() {
+    const A = alcActivo, R = A && A.revision;
+    if (!A || !A.contrato || !(usuario && usuario.finanzas)) return;
+    if (A.arreglando) { avisar("Ya estoy arreglando el contrato"); return; }
+    if (A.armado_en_marcha) { avisar("La IA ya está armando este contrato"); return; }
+    if (R && R.en_marcha) { avisar("La IA ya está revisando este contrato"); return; }
+    // una charla que espera respuesta: sin ella, ese punto quedaría a medias
+    if (alcCharlaPensando()) { avisar("Espera a que la IA te conteste en la charla y luego arregla el contrato"); return; }
+    alcRecoger();
+    if ($("alc-texto")) A.texto = $("alc-texto").value;
+    const hs = R && Array.isArray(R.hallazgos) ? R.hallazgos : [];
+    const c = alcCuentaDecisiones(R);
+    const conIA = !!(A.armado && A.salida && A.salida.ia);
+    let hojaCambio = false;
+    if (conIA) hojaCambio = !!(A.armado.vieja || A.armado.texto !== A.texto);
+    else if (A.huella) { try { hojaCambio = (await alcHuella(A.texto)) !== A.huella; } catch { hojaCambio = false; } }
+    if (!c.n && !c.k && !hojaCambio) { avisar("Decide primero algún punto", true); return; }
+    if (c.m > 0 && !await confirmar(c.m === 1
+        ? "Hay 1 punto sin decidir. ¿Arreglo el contrato con lo decidido y dejo ese para la próxima revisión?"
+        : `Hay ${c.m} puntos sin decidir. ¿Arreglo el contrato con lo decidido y dejo esos para la próxima revisión?`)) return;
+    if (alcActivo !== A || A.revision !== R || A.armado_en_marcha || A.arreglando || alcCharlaPensando()) return;
+    // Las decisiones se apuntan YA (la revisión nueva se lleva las charlas): se añaden a las de antes, tope 60
+    const nuevos = hs.filter(h => h.decidido || h.hecho).map(h => ({
+      donde: alcLimpioCorto(h.donde, 20), cita: alcLimpioCorto(h.cita, 80), motivo: alcLimpioCorto(h.motivo, 160),
+      como: alcComoLimpio(h.decidido ? h.decidido.como : h.hecho).slice(0, 160), cuando: (h.decidido && h.decidido.cuando) || new Date().toISOString() }));
+    const viejos = (Array.isArray(A.decididos) ? A.decididos : []).filter(d => d && !nuevos.some(x => alcClaveCita(x.cita) === alcClaveCita(d.cita)));
+    A.decididos = [...viejos, ...nuevos].slice(-60);
+    // …y se guardan YA, aparte del papel: si Edgar sale de la pantalla mientras se arregla, lo decidido no se pierde
+    if (nuevos.length) alcApuntarDecididos(A);
+    // Con IA: si alguna orden se dio a la IA (su lección cambia la huella) o la hoja cambió después del armado de la IA.
+    // Sin IA (lo de la hoja y los perdones): el camino corto de siempre.
+    const deCharla = hs.some(h => h.decidido && h.decidido.de === "charla");
+    const c0 = A.contrato;
+    A.arreglando = { n: c.n, desde: Date.now() };
+    A.guardar_al_revisar = true;       // se consume UNA vez, cuando la revisión del papel nuevo vuelve (o falla)
+    A.guardado_solo = null; A.guardado_pendiente = false;
+    pintarAlcance();
+    const soltar = () => { A.guardar_al_revisar = false; A.arreglando = null; if (alcActivo === A) pintarAlcance(); };
+    try {
+      if (deCharla || (conIA && hojaCambio)) {
+        await alcArmarConIA((A.armado && A.armado.esfuerzo) || "high");
+        if (alcActivo !== A) return;
+        if (A.armado_error) { soltar(); return; }
+        // (revisión) sin papel nuevo y sin nada en marcha: la IA preguntó algo, o la hoja cambió mientras armaba.
+        // Se suelta todo y se dice qué hacer (el modo de prueba deja el armado en marcha: ahí no se toca nada).
+        if (!A.armado_en_marcha && (!A.contrato || A.contrato === c0)) {
+          soltar();
+          avisar("No terminé de arreglar el contrato: mira la hoja, contesta lo que pida y vuelve a tocar «Arreglar el contrato»", true);
+          return;
+        }
+        alcGuardarSiArreglo(A);
+      } else {
+        await alcVolverAArmar();
+        if (alcActivo !== A) return;
+        if (!A.contrato || A.contrato === c0) { soltar(); return; }
+        if (!A.revision && !A.contrato.problemas.length) alcRevisarIA().catch(() => { /* la nube nunca frena */ });
+        alcGuardarSiArreglo(A);
+      }
+    } catch (e) { soltar(); throw e; }
+  }
+  // Lo decidido se guarda solo en la propuesta (alcance_decisiones, como el perdón de «Lo dejo así»); sin propuesta,
+  // en el teléfono
+  function alcApuntarDecididos(A) {
+    const lista = (Array.isArray(A.decididos) ? A.decididos : []).slice(-60);
+    if (A.propuesta && A.propuesta.id) {
+      const dec = Object.assign({}, A.propuesta.alcance_decisiones || {}, { decididos: lista });
+      A.propuesta.alcance_decisiones = dec;
+      DB.guardarAlcance(A.propuesta.id, { alcance_decisiones: dec }).catch(() => { /* va también con el guardado del papel */ });
+    } else if (A.proyecto && A.proyecto.id) alcDecididosLocal(A.proyecto.id, lista);
+  }
+  // Cuando el papel nuevo está armado y su revisión volvió (o falló, o no hizo falta): se guarda solo, una vez
+  function alcGuardarSiArreglo(A) {
+    if (!A || alcActivo !== A || !A.guardar_al_revisar) return;
+    if (A.armado_en_marcha || !A.contrato) return;
+    if (A.revision && A.revision.en_marcha) return;
+    A.guardar_al_revisar = false;
+    A.arreglando = null;
+    alcGuardarPropuestaAhora({ silencioso: true }).catch(() => { /* queda el botón «Guardar lo arreglado» */ });
+  }
+  // «Guardar lo arreglado»: el guardado solo que no salió (sin señal). No pasa por el candado: guarda el trabajo con las
+  // mismas reglas del guardado solo (ni el reparto ni una propuesta nueva mientras la revisión tenga puntos).
+  function alcGuardarArregloOtraVez() {
+    const A = alcActivo;
+    if (!A || !A.guardado_pendiente) return;
+    alcGuardarPropuestaAhora({ silencioso: true }).catch(() => { /* sigue el botón */ });
+  }
+  // Al volver la señal, se intenta otra vez solo
+  window.addEventListener("online", () => {
+    const A = alcActivo;
+    if (A && A.guardado_pendiente && !A.guardando_propuesta && !A.arreglando) alcGuardarArregloOtraVez();
+  });
+
+  // ============================================================
   // 13-oct · «Hablar con la IA» en cada hallazgo (docs/PLIEGO-CORREGIR-CON-IA.md §1)
   // Una conversación con el asistente de siempre (DB.preguntarAsistente, el de la pantalla «Asistente»), con el
   // hallazgo contado en el primer mensaje. Edgar dice lo que quiere, la IA lo evalúa y recomienda, y cuando él
-  // confirma la IA guarda la orden para esta obra (herramienta recordar). «Volver a armar y revisar» arma otra vez
-  // con esa orden y la revisión sale sola. Lo que pone el programa (pagos, permiso, un dato que falta) va con
-  // botones que escriben la hoja. Al cerebro no viaja ningún monto desde aquí. La charla no se guarda en la base.
+  // confirma la IA guarda la orden para esta obra (herramienta recordar). Lo que pone el programa (pagos, permiso,
+  // un dato que falta) va con botones que escriben la hoja. Al cerebro no viaja ningún monto desde aquí. La charla
+  // no se guarda en la base.
+  // Versión 2 (13-oct, pliego §7): la charla DECIDE y no arma. Un punto queda decidido cuando la IA dice que guardó
+  // la orden, cuando Edgar toca «Decidido» o cuando un botón del programa escribe la hoja. Al final, un solo
+  // «Arreglar el contrato» arma con todo lo decidido, la revisión sale sola y, cuando vuelve, se guarda solo en la
+  // propuesta (con las decisiones en alcance_decisiones.decididos, para la revisión siguiente).
   // ============================================================
-  const ALC_CHARLA_HECHO = "Orden dada a la IA. Volviendo a armar…";
   // Las charlas viven con la revisión: A.charlas[i] va con A.revision.hallazgos[i]. Una revisión nueva, charlas nuevas.
   function alcCharlas() {
     const A = alcActivo;
@@ -18400,8 +18628,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       "Cómo quiero que trabajes: evalúa lo que te diga, dime si tiene sentido con la hoja, la ficha, el código y la ley de " +
       "Florida, y recomiéndame; si procede, propón el texto exacto en inglés para el papel (sin montos: el dinero lo pone " +
       `el programa). Cuando yo te confirme («dale», «así», «guárdalo»), guarda la orden para esta obra con la herramienta ` +
-      `recordar (sobre = ${pid || "la obra"}), una frase clara de cómo tiene que quedar ese punto, y dime que toque «Volver a ` +
-      "armar y revisar». No guardes nada hasta que yo confirme. Si te dicto un monto, recuérdame que el dinero lo pone el programa."
+      `recordar (sobre = ${pid || "la obra"}), una frase clara de cómo tiene que quedar ese punto, y dime que lo guardaste: ` +
+      "el contrato lo arreglo yo al final, una sola vez, con todo lo decidido. No guardes nada hasta que yo confirme. Si te " +
+      "dicto un monto, recuérdame que el dinero lo pone el programa."
     ].join("\n").slice(0, 11000);
     // el candado del dinero, por si acaso: primero se quitan las líneas, luego la ficha
     if ([nombre, numero, pid].some(x => x && (Alcance.esMontoTapable(x) || Alcance.traeDineroEstricto(x)))) return "";
@@ -18455,16 +18684,17 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     return `<div class="alc-leccion alc-charla" data-charla="${i}">
       <div class="alc-charla-hilo" aria-live="polite">${hilo}${pensando}</div>
       ${C.error ? `<div class="alc-gris">${esc(C.error)}</div>` : ""}
+      ${C.nota ? `<div class="alc-gris alc-charla-nota">${esc(C.nota)}</div>` : ""}
       ${pagos}${permiso}${dato}
       <label class="alc-leccion-etq" for="alc-charla-texto-${i}">Lo que le dices a la IA</label>
       <textarea id="alc-charla-texto-${i}" data-charla-texto="${i}" rows="3" maxlength="4000" placeholder="Dile qué quieres que diga ahí, o pregúntale qué recomienda"${dis}>${esc(C.borrador || "")}</textarea>
       <div class="alc-fixes">
         <button type="button" class="alc-op elegida" data-charla-enviar="${i}"${dis}>Enviar</button>
+        <button type="button" class="alc-op" data-charla-decidido="${i}"${dis}>Decidido</button>
         <button type="button" class="alc-op" data-charla-cerrar="${i}">Cerrar</button>
       </div>
       ${C.lecciones ? `<p class="alc-verde">La IA dice que guardó tu orden para esta obra.</p>` : ""}
-      <div class="alc-botones"><button type="button" class="accion${C.lecciones ? "" : " secundaria"}" data-charla-rearmar="${i}"${dis}>Volver a armar y revisar</button></div>
-      <p class="lev-nota">Cuando la IA te diga que lo guardó, toca aquí: se arma otra vez con tu orden y se revisa sola.</p>
+      <p class="lev-nota">Cuando lo tengas claro, toca «Decidido» (si la IA dice que lo guardó, se marca solo). El contrato se arregla al final, una sola vez, con «Arreglar el contrato».</p>
     </div>`;
   }
 
@@ -18498,25 +18728,27 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   }
 
   // Manda la conversación entera (el contexto + todo lo hablado), como la pantalla del asistente
-  async function alcCharlaEnviar(i) {
+  // `forzado`: el texto que manda la app sola (al tocar «Decidido» sin que la IA haya guardado la orden)
+  async function alcCharlaEnviar(i, forzado) {
     if (!(usuario && usuario.finanzas)) return;
     const A = alcActivo, R = A && A.revision;
     const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
     const C = h ? alcCharla(i, true) : null;
     if (!C || C.en_marcha) return;
+    if (!forzado && A.arreglando) { avisar("Ya estoy arreglando el contrato"); return; }
     const caja = document.querySelector(`[data-charla-texto="${i}"]`);
-    const texto = String(caja ? caja.value : (C.borrador || "")).trim();
+    const texto = String(forzado || (caja ? caja.value : (C.borrador || ""))).trim();
     if (!texto) { avisar("Escribe primero qué quieres que diga", true); return; }
-    if (navigator.onLine === false) { C.borrador = texto; C.error = "Sin señal: hablar con la IA necesita internet. Cuando vuelva, toca otra vez"; alcPintarCharla(i); return; }
+    if (navigator.onLine === false) { C.borrador = texto; C.decidir_al_contestar = false; C.error = "Sin señal: hablar con la IA necesita internet. Cuando vuelva, toca otra vez"; alcPintarCharla(i); return; }
     const nuevos = [];
     if (!C.mensajes.length) {
       const ctx = alcContextoCharla(h);
-      if (!ctx) { C.borrador = texto; C.error = "Se me escapó un monto sin tapar; no lo mandé a la IA"; alcPintarCharla(i); return; }
+      if (!ctx) { C.borrador = texto; C.decidir_al_contestar = false; C.error = "Se me escapó un monto sin tapar; no lo mandé a la IA"; alcPintarCharla(i); return; }
       nuevos.push({ rol: "user", texto: ctx, contexto: true });
     }
     nuevos.push({ rol: "user", texto: texto.slice(0, 4000) });
     C.mensajes.push(...nuevos);
-    C.borrador = ""; C.en_marcha = true; C.error = null; C.avance = null;
+    C.borrador = ""; C.en_marcha = true; C.error = null; C.nota = null; C.avance = null;
     alcPintarCharla(i);
     const sigueViva = () => alcActivo === A && A.revision === R;
     const contexto = { pantalla: "alcance", proyecto_id: A.proyecto && A.proyecto.id ? String(A.proyecto.id) : null,
@@ -18532,10 +18764,13 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         if (sigueViva()) alcPintarCharla();
       }, contexto);
       if (!sigueViva()) return;                      // se rearmó o se cambió de obra: la respuesta se descarta
+      // (revisión) mientras la IA pensaba, «Lo dejo así» en un punto de arriba corre la lista: el índice se busca otra vez
+      const j = R.hallazgos.indexOf(h);
       if (r && r.respuesta) {
         const resp = String(r.respuesta);
         C.mensajes.push({ rol: "assistant", texto: resp });
-        if (alcDiceQueGuardo(resp)) C.lecciones++;
+        if (alcDiceQueGuardo(resp)) { C.lecciones++; if (j >= 0 && alcCharlas()[j] === C) alcDecidir(j, resp, "charla"); }
+        else if (C.decidir_al_contestar) C.nota = "La IA todavía no guardó la orden: dile «dale» (o «guárdalo así») para que el contrato cambie en este punto.";
       } else if (r && r.error === "sin_llave") { devolver(); C.error = "Todavía no me han conectado la llave del asistente. Edgar tiene que ponerla en Supabase (ANTHROPIC_API_KEY)."; }
       else { devolver(); C.error = "No pude contestar eso. Inténtalo otra vez en un momento."; }
     } catch (err) {
@@ -18545,21 +18780,60 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       const m = String((err && err.message) || "");
       C.error = "No hay conexión con el asistente ahora mismo." + (/^(Sin sesión|No se pudo conectar|El asistente)/.test(m) ? " " + m : "");
     } finally {
-      C.en_marcha = false; C.avance = null;
+      C.en_marcha = false; C.avance = null; C.decidir_al_contestar = false;
     }
-    alcPintarCharla(i);
+    const j = R.hallazgos.indexOf(h);
+    if (sigueViva()) alcPintarCharla(j >= 0 ? j : undefined);
   }
 
-  // «Volver a armar y revisar»: la orden nueva cambia la huella, la IA arma otra vez, el papel sale y se revisa solo
-  async function alcCharlaRearmar(i, hecho) {
+  // (pliego §7.1) Un punto decidido: h.decidido = { como, cuando, de }. «como» es lo que quedó (la última respuesta de
+  // la IA, lo que escribió Edgar, o la línea que el programa escribió en la hoja), en 160 letras y sin cifras de dinero.
+  // «de» dice de dónde salió: "charla" (la IA guardó una orden: hace falta armar con IA), "boton" o "hoja".
+  // La cajita se pliega; NO se arma nada aquí.
+  function alcDecidir(i, como, de) {
     const A = alcActivo, R = A && A.revision;
     const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
-    if (!A || !h) return;
-    if (A.armado_en_marcha) { avisar("La IA ya está armando este contrato"); return; }
-    h.hecho = hecho || ALC_CHARLA_HECHO;
+    if (!h) return false;
+    const t = alcComoLimpio(como);
+    h.decidido = { como: t.length > 160 ? t.slice(0, 159).trimEnd() + "…" : t, cuando: new Date().toISOString(), de: de || "boton" };
     R.tocado = true;
-    const esfuerzo = (A.armado && A.armado.esfuerzo) || "high";
-    await alcArmarConIA(esfuerzo);
+    const C = alcCharla(i);
+    if (C) { C.abierta = false; C.otro = false; }
+    return true;
+  }
+  // Lo que quedó decidido, sin cifras de dinero. La línea de pagos que escribe el programa («Pagos: 100», «Pagos: 40/40/20»)
+  // son porcentajes y se queda tal cual.
+  function alcComoLimpio(como) {
+    const t = String(como || "").replace(/\s+/g, " ").trim();
+    return /^Pagos: \d{1,3}(?:\/\d{1,3}){0,2}$/.test(t) ? t : alcSinCifrasDeDinero(t);
+  }
+  // «Decidido» a mano: lo último que dijo la IA o, si no contestó, lo último que escribió Edgar
+  // (revisión) Si ya se habló con la IA pero todavía no guardó la orden (propuso un texto, o preguntó «¿lo guardo?»), la
+  // orden no llegaría a ningún sitio: la app le manda sola «guárdalo» (o lo que Edgar dejó escrito) y el punto se decide
+  // cuando la IA dice que lo guardó. Sin hablar con la IA, se apunta tal cual y se dice que el papel no cambia ahí.
+  function alcCharlaDecidido(i) {
+    const A = alcActivo, R = A && A.revision;
+    const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
+    const C = alcCharla(i);
+    if (!h || (C && C.en_marcha)) return;
+    if (alcQuietoPorArreglo()) return;
+    const caja = document.querySelector(`[data-charla-texto="${i}"]`);
+    if (C && caja) C.borrador = caja.value;
+    const ms = C ? C.mensajes.filter(m => !m.contexto) : [];
+    const ia = ms.filter(m => m.rol === "assistant").pop();
+    const suyo = ms.filter(m => m.rol === "user").pop();
+    const borrador = C ? String(C.borrador || "").trim() : "";
+    if (ia && C && !C.lecciones) {
+      C.decidir_al_contestar = true;
+      alcCharlaEnviar(i, borrador ? borrador + "\n\nEsto ya está decidido: guárdalo así para esta obra." : "Sí, guárdalo así para esta obra.")
+        .catch(() => { /* el error se pinta en la charla */ });
+      return;
+    }
+    const como = ia ? ia.texto : suyo ? suyo.texto : borrador || h.hecho || "";
+    alcDecidir(i, como, ia ? "charla" : (h.hecho ? "hoja" : "boton"));
+    if (C) C.borrador = "";
+    pintarAlcance();
+    if (!ia && !h.hecho) avisar("Apuntado como decidido. Ojo: no se lo dijiste a la IA, así que el papel no cambia en este punto. Si quieres que cambie, ábrelo y díselo.");
   }
 
   // Lo que la charla escribe en la hoja (pagos, permiso): a la vista, como un arreglo; la app la apunta como suya
@@ -18595,7 +18869,18 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const r = Alcance.aplicarArreglo(A.texto, { tipo: "poner_pagos" }, v);
     if (!r || r.error) { avisar((r && r.error) || "No pude escribir los pagos en la hoja", true); return; }
     alcEscribirDesdeCharla(r.texto, "Pagos: " + v);
-    alcCharlaRearmar(i, "Pagos: " + v).catch(() => { /* la nube nunca frena */ });
+    alcCharlaEscrita(i, "Pagos: " + v);
+  }
+  // (pliego §7.1) lo que un botón del programa escribió en la hoja: el punto queda apuntado y decidido, sin armar
+  function alcCharlaEscrita(i, hecho) {
+    const R = alcActivo && alcActivo.revision;
+    const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
+    if (!h) return;
+    h.hecho = String(hecho || "").trim();
+    R.tocado = true;
+    alcDecidir(i, h.hecho, "hoja");
+    pintarAlcance();
+    avisar(`Escribí «${h.hecho}» en la hoja. Se verá en el papel al tocar «Arreglar el contrato»`);
   }
   // La línea «Permiso:» de la hoja: se reemplaza si está; si no, va en la cabecera (después de la última «Clave: valor»)
   function alcPonerPermisoEnHoja(texto, valor) {
@@ -18631,9 +18916,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const r = alcPonerPermisoEnHoja(A.texto, v);
     if (!r || r.error || typeof r.texto !== "string") { avisar((r && r.error) || "No pude escribir el permiso en la hoja", true); return; }
     const escrita = alcEscribirDesdeCharla(r.texto, "Permiso: " + v, Number(r.linea));
-    alcCharlaRearmar(i, String(escrita || "Permiso: " + v).trim()).catch(() => { /* la nube nunca frena */ });
+    alcCharlaEscrita(i, String(escrita || "Permiso: " + v).trim());
   }
-  // «Escribe el dato»: lo de «Usar el dato de la ficha», con lo que escribió Edgar (sin montos), y se rearma
+  // «Escribe el dato»: lo de «Usar el dato de la ficha», con lo que escribió Edgar (sin montos); queda decidido
   function alcCharlaDato(i) {
     if (!(usuario && usuario.finanzas)) return;
     const A = alcActivo, R = A && A.revision;
@@ -18649,7 +18934,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (A.armado_en_marcha) { avisar("La IA ya está armando este contrato"); return; }
     if ($("alc-texto")) A.texto = $("alc-texto").value;
     if (!alcRevEscribirDato(i, campo, v)) return;
-    alcCharlaRearmar(i, h.hecho).catch(() => { /* la nube nunca frena */ });
+    alcCharlaEscrita(i, h.hecho);
   }
 
   // «Volver a armar»: con la hoja corregida, se vuelve a pasar por el camino corto y se arma
@@ -18792,12 +19077,49 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     }
   }
 
-  async function alcGuardarNube() {
+  // El botón «Guardar en la propuesta»
+  function alcGuardarNube() { return alcGuardarPropuestaAhora({ silencioso: false }); }
+  // Guardar en la propuesta: desde el botón, o solo (silencioso) cuando «Arreglar el contrato» termina (pliego §7.2).
+  // Silencioso = guardar el trabajo (la hoja, el armado, el papel y las decisiones) aunque la revisión siga con puntos:
+  // el candado del papel no se toca (no se baja ni se manda), y la ficha de la obra (número, hitos, puntos) solo se
+  // cuadra con el contrato cuando el candado está abierto, como con el botón. Devuelve true si guardó.
+  async function alcGuardarPropuestaAhora(opciones) {
+    const silencioso = !!(opciones && opciones.silencioso);
     const A = alcActivo;
+    if (!A) return false;
     const btn = $("alc-guardar");
-    { const K = alcCandadoRevision(); if (A.contrato && !K.ok) { avisar("Candado: " + K.motivo, true); return; } }
-    if (A.armado && A.armado.vieja) { avisar("Candado: Cambiaste la hoja después de armar: vuelve a armar con IA", true); return; }
-    btn.disabled = true; btn.textContent = "Guardando…";
+    if (!silencioso) { const K = alcCandadoRevision(); if (A.contrato && !K.ok) { avisar("Candado: " + K.motivo, true); return false; } }
+    if (A.armado && A.armado.vieja) {
+      if (!silencioso) avisar("Candado: Cambiaste la hoja después de armar: vuelve a armar con IA", true);
+      else { A.guardado_pendiente = false; avisar("Cambiaste la hoja mientras se arreglaba el contrato: no lo guardé. Vuelve a tocar «Arreglar el contrato»", true); }
+      return false;
+    }
+    if (A.guardando_propuesta) {
+      if (!silencioso) avisar("Ya lo estoy guardando");
+      else { A.guardado_pendiente = true; if (alcActivo === A) pintarAlcance(); }
+      return false;
+    }
+    // (revisión) Guardar solo NO cambia una propuesta que ya se mandó (o firmó): eso lo decide Edgar con el botón.
+    // Lo decidido ya quedó apuntado en ella al empezar el arreglo.
+    if (silencioso && A.propuesta && A.propuesta.estado && A.propuesta.estado !== "borrador") {
+      A.guardado_pendiente = false;
+      avisar("Esta propuesta ya se mandó: no la cambié sola. Toca «Guardar en la propuesta» si quieres cambiarla", true);
+      return false;
+    }
+    // (revisión) Mientras la revisión tenga puntos, el cliente no puede ver nada nuevo: el portal enseña las propuestas en
+    // borrador con su reparto. Así que guardar solo no cambia el reparto y no crea la propuesta: la hoja y lo decidido
+    // quedan en el teléfono y la propuesta se crea con el botón cuando la revisión salga limpia.
+    const abierto = !A.contrato || alcCandadoRevision().ok;
+    if (silencioso && !abierto && !A.propuesta) {
+      alcGuardarLocal(A.proyecto.id, A.texto);
+      alcDecididosLocal(A.proyecto.id, Array.isArray(A.decididos) ? A.decididos : []);
+      A.guardado_pendiente = false;
+      A.guardado_solo = { R: A.revision || null, donde: "telefono" };
+      if (alcActivo === A) pintarAlcance();
+      return false;
+    }
+    A.guardando_propuesta = true;
+    if (btn) { btn.disabled = true; btn.textContent = "Guardando…"; }
     try {
       alcRecoger();
       alcCalcularSeguro();
@@ -18810,11 +19132,13 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
                          precio: cta.base, pcts: cta.pcts },
         alcance_en: A.salida || null,
         alcance_decisiones: { bloques: dec.bloques, clausulas: dec.clausulas, nec: L.codigo, perdonadas: A.perdonadas || [],
-                              pricing_basis: dec.pricing_basis || "quantities", pricing_basis_elegida: !!A.pricing_basis },
+                              pricing_basis: dec.pricing_basis || "quantities", pricing_basis_elegida: !!A.pricing_basis,
+                              // 13-oct (pliego §7.2): lo decidido punto por punto, para la revisión siguiente
+                              decididos: (Array.isArray(A.decididos) ? A.decididos : []).slice(-60) },
         // v252: la base del precio de esta propuesta (si la columna aún no existe en la base, db.js guarda sin ella)
         pricing_basis: dec.pricing_basis || "quantities",
         alcance_estado: A.contrato ? "armado" : (A.salida ? "redactado" : "leido"),
-        reparto_pct: cta.pcts,
+        reparto_pct: cta.pcts,     // (guardando solo con la revisión con puntos, se quita abajo: el portal lo enseña)
         // La lectura del asistente viaja entera (es pequeña: pistas + lo leído):
         // así vuelve alineada al abrir la propuesta en otro teléfono.
         alcance_lectura: alcLecturaParaGuardar(A.lectura),
@@ -18830,6 +19154,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           tiradas: (A.armado.tiradas || []).length, lineas_sin_casa: (A.armado.sin_casa || []).slice(0, 60) };
         campos.uso_modelo.armar = { uso: A.armado.uso || null, costo_centavos: A.armado.costo_centavos ?? null, cuando: A.armado.cuando || null };
       }
+      if (silencioso && !abierto) delete campos.reparto_pct;
       if (A.contrato) { campos.armado_el = new Date().toISOString(); campos.archivo = A.contrato.archivo; }
       // (2-oct) con el candado abierto se apunta qué papel pasó la revisión con IA (o que se siguió sin ella)
       if (A.contrato) {
@@ -18880,7 +19205,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       // El contrato armado MANDA sobre la ficha del proyecto: número de propuesta,
       // valor del contrato e hitos de pago (porcentajes, montos y disparadores).
       // Así la ficha, el portal y las facturas hablan el mismo idioma que el papel.
-      try {
+      // (13-oct) Al guardar solo, con la revisión todavía con puntos, la ficha NO se toca: se cuadra al guardar con el
+      // candado abierto.
+      const cuadrarFicha = !silencioso || abierto;
+      if (cuadrarFicha) try {
         if (A.contrato) {
           const ref = A.contrato.archivo.replace(/\.html$/i, "");
           if (A.proyecto.ref !== ref) { await DB.cambiarProyecto(A.proyecto.id, { ref }); A.proyecto.ref = ref; }
@@ -18899,13 +19227,29 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         const fresca = A.variantes.find(p => p.id === A.propuesta.id);
         if (fresca) A.propuesta = fresca;
       }
+      A.guardado_pendiente = false;
+      if (silencioso) {
+        A.guardado_solo = { R: A.revision || null, donde: "propuesta" };
+        if (alcActivo === A) pintarAlcance();
+        avisar("Lo arreglado quedó guardado en la propuesta.");
+        return true;
+      }
       pintarAlcance();
       avisar(A.variantes.length > 1
         ? `Guardado ✓ — este proyecto tiene ${A.variantes.length} alcances`
         : "Guardado en la propuesta ✓");
+      return true;
     } catch (err) {
-      avisar("No se pudo guardar: " + err.message, true);
-      btn.disabled = false; btn.textContent = "Guardar en la propuesta";
+      // (revisión) el botón «Guardar en la propuesta» puede estar con candado: el guardado solo tiene el suyo
+      if (silencioso) { A.guardado_pendiente = true; avisar("No pude guardar lo arreglado en la propuesta: toca «Guardar lo arreglado» cuando tengas señal", true); }
+      else avisar("No se pudo guardar: " + err.message, true);
+      const b = $("alc-guardar");
+      if (b) { b.disabled = false; b.textContent = "Guardar en la propuesta"; }
+      A.guardando_propuesta = false;
+      if (silencioso && alcActivo === A) pintarAlcance();
+      return false;
+    } finally {
+      A.guardando_propuesta = false;
     }
   }
 

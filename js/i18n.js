@@ -4397,6 +4397,61 @@
     "No pude escribir el permiso en la hoja": "I couldn't write the permit on the sheet",
     "Escribe el dato primero": "Write the data first"
   });
+  // 13-oct, versión 2 (pliego §7): decidir punto por punto y «Arreglar el contrato» una sola vez
+  Object.assign(D, {
+    "Decidido": "Decided",
+    "Decidido:": "Decided:",
+    "Abrir": "Open",
+    "Arreglar el contrato": "Fix the contract",
+    "Decide primero algún punto": "Decide on a point first",
+    "Ya lo decidiste:": "You already decided it:",
+    "Arreglando el contrato con tu decisión…": "Fixing the contract with your decision…",
+    "Hay 1 punto sin decidir. ¿Arreglo el contrato con lo decidido y dejo ese para la próxima revisión?":
+      "There is 1 point not decided. Do I fix the contract with what's decided and leave that one for the next review?",
+    "Cuando lo tengas claro, toca «Decidido» (si la IA dice que lo guardó, se marca solo). El contrato se arregla al final, una sola vez, con «Arreglar el contrato».":
+      "When it's clear, tap «Decided» (if the AI says it saved it, it's marked by itself). The contract is fixed at the end, only once, with «Fix the contract».",
+    "Hasta que atiendas cada punto, el contrato no se manda. Decide cada punto (o «Lo dejo así») y toca «Arreglar el contrato» una sola vez: se arma con todo lo decidido, se revisa y se guarda solo en la propuesta.":
+      "Until you handle each point, the contract isn't sent. Decide each point (or «Leave it») and tap «Fix the contract» only once: it's built with everything decided, reviewed, and saved to the proposal by itself.",
+    "Lo arreglado quedó guardado en la propuesta.": "The fixes were saved to the proposal.",
+    "No pude guardar lo arreglado en la propuesta: toca «Guardar lo arreglado» cuando tengas señal":
+      "I couldn't save the fixes to the proposal: tap «Save the fixes» when you have signal",
+    // (revisión de la versión 2)
+    "Ya decidiste todo: toca «Arreglar el contrato»": "You decided everything: tap «Fix the contract»",
+    "Arreglaste 1 cosa en la hoja: toca «Arreglar el contrato»": "You fixed 1 thing on the sheet: tap «Fix the contract»",
+    "Escrito en la hoja; se verá en el papel al tocar «Arreglar el contrato»:": "Written on the sheet; you'll see it on the paper when you tap «Fix the contract»:",
+    "Lo de la revisión con IA está atendido: toca «Arreglar el contrato».": "The AI review items are handled: tap «Fix the contract».",
+    "Arreglando el contrato…": "Fixing the contract…",
+    "Ya estoy arreglando el contrato": "I'm already fixing the contract",
+    "Espera a que la IA te conteste en la charla y luego arregla el contrato": "Wait for the AI to answer in the chat, then fix the contract",
+    "No terminé de arreglar el contrato: mira la hoja, contesta lo que pida y vuelve a tocar «Arreglar el contrato»":
+      "I didn't finish fixing the contract: look at the sheet, answer what it asks and tap «Fix the contract» again",
+    "Saliste antes de guardar lo arreglado: lo decidido quedó apuntado, pero el papel nuevo no. Vuelve y toca «Arreglar el contrato»":
+      "You left before the fixes were saved: what you decided is noted, but the new paper isn't. Come back and tap «Fix the contract»",
+    "Cambiaste la hoja mientras se arreglaba el contrato: no lo guardé. Vuelve a tocar «Arreglar el contrato»":
+      "You changed the sheet while the contract was being fixed: I didn't save it. Tap «Fix the contract» again",
+    "Esta propuesta ya se mandó: no la cambié sola. Toca «Guardar en la propuesta» si quieres cambiarla":
+      "This proposal was already sent: I didn't change it by myself. Tap «Save to the proposal» if you want to change it",
+    "Lo arreglado quedó en este teléfono. La propuesta se guarda cuando la revisión salga limpia y toques «Guardar en la propuesta».":
+      "The fixes stayed on this phone. The proposal is saved when the review comes back clean and you tap «Save to the proposal».",
+    "Lo arreglado todavía no está guardado en la propuesta.": "The fixes aren't saved to the proposal yet.",
+    "Guardar lo arreglado": "Save the fixes",
+    "La IA todavía no guardó la orden: dile «dale» (o «guárdalo así») para que el contrato cambie en este punto.":
+      "The AI hasn't saved the instruction yet: tell it «go ahead» (or «save it like that») so the contract changes on this point.",
+    "Apuntado como decidido. Ojo: no se lo dijiste a la IA, así que el papel no cambia en este punto. Si quieres que cambie, ábrelo y díselo.":
+      "Marked as decided. Note: you didn't tell the AI, so the paper doesn't change on this point. If you want it to change, open it and tell it.",
+    "Ya lo estoy guardando": "I'm already saving it",
+    "La IA ya está revisando este contrato": "The AI is already reviewing this contract"
+  });
+  REGLAS.push(
+    [/^(\d+) decididos? · (\d+) sin decidir · (\d+) dejados? así$/, "$1 decided · $2 not decided · $3 left as is"],
+    [/^Arreglando el contrato con tus (\d+) decisiones…$/, "Fixing the contract with your $1 decisions…"],
+    [/^Hay (\d+) puntos sin decidir\. ¿Arreglo el contrato con lo decidido y dejo esos para la próxima revisión\?$/,
+      "There are $1 points not decided. Do I fix the contract with what's decided and leave those for the next review?"],
+    [/^Ya lo decidiste el ([^:]{1,30}):$/, "You already decided it on $1:"],
+    [/^Arreglaste (\d+) cosas en la hoja: toca «Arreglar el contrato»$/, "You fixed $1 things on the sheet: tap «Fix the contract»"],
+    [/^Escribí «(.+)» en la hoja\. Se verá en el papel al tocar «Arreglar el contrato»$/,
+      "I wrote «$1» on the sheet. You'll see it on the paper when you tap «Fix the contract»"]
+  );
   // ---------- El motor ----------
   // Cada texto de la pantalla se busca en el diccionario tal como se ve: con los
   // espacios y saltos de línea juntados en uno solo. Si no está, se prueba sin el
