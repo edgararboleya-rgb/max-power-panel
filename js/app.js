@@ -15432,6 +15432,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           const NOM = { EXCL_PANEL: "trabajo de panel", EXCL_AFCI: "arc-fault", EXCL_GABINETES: "luces de gabinete", EXCL_DRYWALL: "drywall y parches",
                         EXCL_LOWVOLT: "low-voltage", EXCL_APARATOS: "aparatos y gas", EXCL_AHJ: "correcciones del inspector", EXCL_FUERA_AREAS: "fuera de las áreas" };
           const partes = [];
+          // 13-oct (pliego §9): servicio u obra, y lo que la hoja excluye y vuelve con el texto de la plantilla
+          if (dec.servicio) partes.push(`Va como servicio: una sola visita, sin fases, sin rough-in ni trim-out y sin aprobación de layout.`);
+          if (dec.servicio_negado) partes.push(esc(dec.servicio_negado));
+          if ((dec.encendidas_por_hoja || []).length) partes.push(`Tu hoja excluye ${dec.encendidas_por_hoja.map(k => NOM[k] || k).join(", ")}: va con el texto de la plantilla.`);
           if (fuera.length) partes.push(`No van estas exclusiones genéricas porque no cuadran con este alcance: ${fuera.map(k => NOM[k]).join(", ")}.`);
           if ((pr.propias || []).length) partes.push(`De la hoja entran a la sección 9 sus condiciones propias: ${pr.propias.map(x => esc(x.titulo)).join(" · ")}.`);
           if ((pr.programa || []).length) partes.push(`Al cronograma (sección 7) entran: ${pr.programa.map(x => esc(x.titulo)).join(" · ")}.`);
@@ -16315,7 +16319,14 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   let alcPidioEst = false;
   // Lo que la regla necesita de la app para decidir la base del precio
   function alcAdminBase(A) {
-    return { pricing_basis: A.pricing_basis || null, documento_plano: alcDocumentoPlano(A.proyecto.id), estimado_modo: alcModoEstimado(A) };
+    return { pricing_basis: A.pricing_basis || null, documento_plano: alcDocumentoPlano(A.proyecto.id), estimado_modo: alcModoEstimado(A),
+             tipo_obra: alcTipoObra(A.proyecto) };
+  }
+  // 13-oct (pliego §9.3): ¿la ficha dice que es un servicio? (proyecto de tipo servicio, o la clase de obra service_call).
+  // Con «servicio», si la hoja no dice «Tipo de trabajo», el contrato va en modo servicio (una visita, sin fases ni layout).
+  function alcTipoObra(p) {
+    if (!p) return "";
+    return p.tipo === "servicio" || p.workSubtype === "service_call" || p.work_subtype === "service_call" ? "servicio" : "obra";
   }
   // El levantamiento de la obra (solo dueño): se baja una vez en segundo plano al abrir el alcance
   function alcCargarLevantamientos() {
@@ -17846,7 +17857,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
 
   // Cuadra los hitos y el valor del contrato de la ficha con lo que dice el contrato
   // armado. Si ya hay un hito facturado o cobrado, no se toca nada y se avisa.
-  async function alcSincronizarHitos(proyectoId, cta) {
+  // 13-oct (revisión): hitosPapel = los hitos del contrato armado (con su DISPARADOR): la condición de cobro de la ficha es
+  // la del papel (en un servicio 50/50, «Upon completion of the work», no la «final inspection» de la casa)
+  async function alcSincronizarHitos(proyectoId, cta, hitosPapel) {
     const p = proyectos().find(x => x.id === proyectoId);
     const actuales = (p && p.hitos) || [];
     const tocados = actuales.filter(h => h.estado === "facturado" || h.estado === "cobrado");
@@ -17854,11 +17867,12 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       avisar(`Ojo: la ficha tiene ${tocados.length} hito${tocados.length > 1 ? "s" : ""} ya facturado o cobrado; no los toqué. Revisa que cuadren con el contrato.`, true);
       return false;
     }
+    const condiciones = Alcance.condicionesFicha(cta, hitosPapel);
     const nuevos = cta.hitos.map((h, k) => ({
       proyecto_id: proyectoId,
       // 13-oct: el depósito lo dice la cuenta (un pago único al terminar NO es depósito); con 2 o 3 pagos es el primero
       titulo: `Milestone ${h.n} — ${h.pct}%${h.es_deposito ? " deposit" : (k === cta.hitos.length - 1 ? " final" : "")}`,
-      condicion: String(h.disparador || (h.es_deposito ? "Deposit upon acceptance" : (k === cta.hitos.length - 1 ? "Final inspection passed" : "Rough-in complete and inspection passed"))).slice(0, 200),
+      condicion: condiciones[k],
       monto: Math.round(h.centavos) / 100, estado: "pendiente", orden: k + 1, es_deposito: !!h.es_deposito
     }));
     // ¿ya está igual? entonces no hay nada que escribir
@@ -17937,6 +17951,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         // v251: sin «Ref.» ni «Proposal #» en la hoja, el número es el de la ficha (MXP-2026-0929-METRONPR), no el del cliente
         ref: A.proyecto.ref,
         // v252: la base del precio (debajo del total): la elegida por Edgar o la del documento de planos de la obra
+        // 13-oct (pliego §9.3): alcAdminBase lleva también tipo_obra (servicio u obra, de la ficha)
+        // 13-oct (CCB): la plantilla viaja al armado: una condición propia sin título solo se quita si la cláusula ya la dice
+        plantilla: alcPlantilla,
         ...alcAdminBase(A) });
       const out = Alcance.rellenarPlantilla(alcPlantilla, {
         bloques: T.decision.bloques, clausulas: T.decision.clausulas, huecos: T.huecos,
@@ -17954,6 +17971,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       const B = Alcance.barridoFinal(RP.html, permitidos);
       A.contrato = { html: RP.html, numeroClausulas: out.numeroClausulas,
                      archivo: T.archivo, problemas: B.problemas, avisos: T.avisos || [], cuenta: T.cuenta,
+                     // 13-oct (revisión): los hitos tal como salen en el papel (DISPARADOR): la ficha se cuadra con ellos
+                     hitos: T.hitos,
                      // los montos que puede llevar el papel: los usa la charla para volver a pasar el barrido
                      permitidos };
       // lo que dijo la IA era del papel de antes: al rearmar se va (se puede volver a pedir)
@@ -19648,7 +19667,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         if (A.contrato) {
           const ref = A.contrato.archivo.replace(/\.html$/i, "");
           if (A.proyecto.ref !== ref) { await DB.cambiarProyecto(A.proyecto.id, { ref }); A.proyecto.ref = ref; }
-          await alcSincronizarHitos(A.proyecto.id, cta);
+          await alcSincronizarHitos(A.proyecto.id, cta, A.contrato.hitos);
           await alcSincronizarPuntos(A.proyecto.id, L.items);
           try { await recargar(A.proyecto.id); } catch { /* se cuadra en la próxima recarga */ }
         } else if (!(Number(A.proyecto.contrato) > 0)) {

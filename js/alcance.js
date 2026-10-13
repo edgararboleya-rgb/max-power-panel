@@ -809,6 +809,7 @@
           const fx = exclusionFija(tx);
           if (fx && fx.tipo === "fuera") {
             if (!C_set("areas", fx.areas, i)) {} if (fx.no_tocamos) C_set("no_tocamos", fx.no_tocamos, i);
+            R.fuera_vista = true;   // 13-oct (§9.1): la hoja lo excluye → «Any work outside…» sale sí o sí
             R.fijasQuitadas = (R.fijasQuitadas || 0) + 1; R.fijas_lineas.push(i + 1); return;
           }
           if (fx && fx.tipo === "fixtures") { C_set("fixtures_cliente", fx.fixtures, i); R.fijasQuitadas = (R.fijasQuitadas || 0) + 1; R.fijas_lineas.push(i + 1); return; }
@@ -1109,7 +1110,10 @@
       ...(R.no_incluye || []).map(x => x.texto), Object.values(R.datos).filter(v => typeof v === "string").join(" ")].join(" "));
     // v3.7: lo que la hoja trae en 7 / 9 y la plantilla ya pone (movilizaciones, flood, garantía, validez…) se quita sin ruido, una vez
     {
-      const q = clasificarPropias(R).quitadas || [];
+      // 13-oct (revisión): las frases sueltas no se dan por quitadas aquí (el lector no tiene la plantilla; al armar se
+      // comparan con la cláusula y, si se quitan, se avisa entonces). En CCB este aviso decía «quité «Only the new work…»» y
+      // el papel la llevaba.
+      const cp = clasificarPropias(R), q = (cp.quitadas || []).filter(x => !(cp.porParecido || []).includes(x));
       if (q.length) R.avisos.push({ linea: 0, informativo: true,
         texto: `De las secciones 7 y 9 de la hoja quité ${q.length} ${q.length === 1 ? "punto que la plantilla ya trae" : "puntos que la plantilla ya trae"} (${q.map(x => "«" + x.slice(0, 40) + "»").join(", ")}); lo demás va al contrato tal cual.` });
     }
@@ -1166,20 +1170,42 @@
     terminos: [...new Set(PLANTILLA_9.map(p => p[1]))],
     programa: [...new Set(PLANTILLA_7.map(p => p[1]))]
   };
-  function clasificarPropias(L) {
+  // 13-oct (CCB): las raíces de las palabras de un texto (sin las vacías, cinco letras), para ver si una frase de la hoja
+  // dice lo mismo que una cláusula de la plantilla o añade cosa suya
+  const PALABRAS_VACIAS = new Set(("the a an and or of to in on at by for with from as is are be been not any all this that these those its it their there " +
+    "under over into than then such each per will shall may must does do no nor if so also only same other others which who whom whose where when " +
+    "while after before during without within upon has have had was were can could would should").split(" "));
+  const raicesDe = txt => new Set(String(txt || "").toLowerCase().replace(/<[^>]+>/g, " ").replace(/&[a-z#0-9]+;/g, " ").replace(/[^a-z0-9]+/g, " ")
+    .split(" ").filter(w => w.length >= 4 && !PALABRAS_VACIAS.has(w)).map(w => w.slice(0, 5)));
+  function clasificarPropias(L, plantilla) {
     // 7-oct: lo propio que llega del armado con IA ya viene en inglés y puede traer sus textos como {en, de}: se aceptan
     // tal cual (se quedan con el texto). Lo que llega del lector, con textos sueltos, no cambia en nada.
     const enTexto = t => (t && (esTxt(t.titulo) || esTxt(t.texto))) ? Object.assign({}, t, { titulo: comoTexto(t.titulo), texto: comoTexto(t.texto) }) : t;
     L = Object.assign({}, L, { terminos: (L.terminos || []).map(enTexto), programa: (L.programa || []).map(enTexto), pre: (L.pre || []).map(enTexto) });
-    const propias = [], programa = [], pre = (L.pre || []).slice(), mapa = {}, quitadas = [];
-    // un punto sin título propio se reconoce por su primera frase; uno con título, por el título
-    const cara = t => t.titulo + (t.sinTitulo ? " " + String(t.texto || "").slice(0, 160) : "");
+    const propias = [], programa = [], pre = (L.pre || []).slice(), mapa = {}, quitadas = [], conservadas = [], porParecido = [];
+    // un punto con título se reconoce por el título. Uno sin título (una frase suelta de Edgar), por el ARRANQUE de la frase:
+    // lo que trata. 13-oct (CCB): «…beyond standard blocking is by others or by written Change Order» hablaba de la estructura
+    // del chandelier, no de los Change Orders, y se perdía del papel por una palabra de dentro.
+    const primeraFrase = txt => String(txt || "").trim().split(/(?<=[.;])\s+/)[0] || "";
+    const cara = t => t.sinTitulo ? primeraFrase(String(t.titulo || "") + " " + String(t.texto || "")).slice(0, 160) : String(t.titulo || "");
     const busca = (lista, t) => lista.find(([re]) => re.test(cara(t)));
+    // 13-oct: y aunque arranque igual, una frase suelta solo sobra si la cláusula de la plantilla ya dice lo mismo: se comparan
+    // las raíces de sus palabras con el texto de esa cláusula (cuando nos dan la plantilla). Con menos de la mitad cubierta, la
+    // frase es de Edgar y se queda («Only the new work installed under this scope is warranted. Existing wiring… remain as-is»);
+    // «Max Power retains all lien rights under Florida Statutes Chapter 713» sí sobra (la 9.x de la Notice to Owner lo dice).
+    const cubierta = (t, clave) => {
+      const m = plantilla && String(plantilla).match(new RegExp("<!--@clausula " + (clave === "cancelacion" ? "cancelacion_gc" : clave) + "-->([\\s\\S]*?)<!--@/clausula-->"));
+      if (!m) return true;
+      const mias = raicesDe(String(t.titulo || "") + " " + String(t.texto || "")), suyas = raicesDe(m[1]);
+      if (!mias.size) return true;
+      let n = 0; mias.forEach(r => { if (suyas.has(r)) n++; });
+      return n / mias.size >= 0.5;
+    };
     (L.terminos || []).forEach(t => {
       // en la 9 solo se compara con la 9 («Permit type and sealed plans» no es la 7.1 Permit)
       const f9 = busca(PLANTILLA_9, t);
-      if (f9) { mapa[t.n] = { clave: f9[1] }; quitadas.push(t.titulo); }
-      else { mapa[t.n] = { propia: propias.length }; propias.push(t); }
+      if (f9 && (!t.sinTitulo || cubierta(t, f9[1]))) { mapa[t.n] = { clave: f9[1] }; quitadas.push(t.titulo); if (t.sinTitulo) porParecido.push(t.titulo); }
+      else { if (f9) conservadas.push(t.titulo); mapa[t.n] = { propia: propias.length }; propias.push(t); }
     });
     (L.programa || []).forEach(t => {
       const f7 = busca(PLANTILLA_7, t), f9 = f7 ? null : busca(PLANTILLA_9, t);
@@ -1187,7 +1213,9 @@
       else if (f9) { mapa[t.n] = { clave: f9[1] }; quitadas.push(t.titulo); }
       else { mapa[t.n] = { extra7: programa.length }; programa.push(t); }
     });
-    return { propias, programa, pre, mapa, quitadas };
+    // porParecido: las frases sueltas (sin título) que se quitaron por parecerse a una cláusula: con la plantilla a mano se
+    // avisa al armar; sin ella (el lector) no se dan por quitadas, porque al armar se vuelven a mirar
+    return { propias, programa, pre, mapa, quitadas, conservadas, porParecido, conPlantilla: !!plantilla };
   }
   // Cambia "See Sections 8 and 9.3" por los números que tienen en el contrato armado; lo
   // que no existe en el contrato se quita con su frase entera, no se deja colgando.
@@ -1211,9 +1239,13 @@
       (m, g) => { const r = resolver(g); return r ? " \u2014 " + frase(r).replace(/^See/, "see") : ""; });
     t = t.replace(new RegExp("(^|[.;]\\s+)see\\s+sections?\\s+" + NUMS + "([^.;]*[.;]?)", "gi"),
       (m, pre, g, resto) => { const r = resolver(g); return r ? pre + frase(r) + resto : pre; });
-    // 2) menciones sueltas ("described in Section 7.4"): se renumeran; si no existe, se deja como está
+    // 2) menciones sueltas ("described in Section 7.4"): se renumeran; si no existe, se deja como está.
+    //    13-oct (CCB): «Section 2» a secas es la sección 2 del contrato, no el renglón 2 de la hoja (salía «Section 2.2»):
+    //    los números sin punto se quedan como están; solo se traducen los de la forma N.M
     t = t.replace(new RegExp("\\b(sections?)\\s+" + NUMS, "gi"),
-      (m, pal, g) => { const r = resolver(g); return r ? pal + " " + unir(marca(r)) : m; });
+      (m, pal, g) => { const nums = g.match(/\d+(?:\.\d+)?/g) || [];
+                       const r = nums.map(n => n.includes(".") ? traducir(n) : n);
+                       return r.some(x => x === null) ? m : pal + " " + unir(marca(r)); });
     return t.replace(/\u0001/g, "").replace(/\s{2,}/g, " ").replace(/\s+([.;,])/g, "$1").replace(/\.\s*\./g, ".").trim();
   }
   const unir = arr => arr.length <= 1 ? arr.join("") : arr.slice(0, -1).join(", ") + " and " + arr[arr.length - 1];
@@ -1345,8 +1377,9 @@
     // contrato con el contratista sin el nombre del dueño: no frena; firma solo el contratista
     if ((norma(D.contrato_con || "") === "gc" || gcN) && !L.avisos.some(a => /firma solo el contratista/.test(a.texto)))
       L.avisos.push({ informativo: true, texto: "Contrato con el contratista: firma solo el contratista (representante autorizado). El dueño (Owner) de la propiedad queda como referencia y firma el Layout Approval de la sección 8, no el SOW." });
-    // dos firmantes
-    if (D.cliente && !D.segundo_firmante && /\s(y|&|and)\s/i.test(D.cliente))
+    // dos firmantes. 13-oct (CCB): «CCB Construction & Design, LLC» es una empresa, no dos personas que firman
+    const esEmpresaCliente = /\b(llc|l\.l\.c|inc|corp|corporation|co|company|ltd|llp|pllc|p\.a|construction|design|builders?|group|services|contracting|renovations?|homes|enterprises|associates|partners)\b\.?/i.test(String(D.cliente || ""));
+    if (D.cliente && !D.segundo_firmante && !esEmpresaCliente && /\s(y|&|and)\s/i.test(D.cliente))
       preguntas.push({ clave: "dos_firmas", texto: `"${D.cliente}" ¿son dos personas que firman las dos?`,
         opciones: [{ etiqueta: "Sí, firman las dos" }, { etiqueta: "No, es un solo firmante" }] });
 
@@ -1779,7 +1812,52 @@
     };
   }
 
+  // 13-oct (pliego §9): en un SERVICIO (una visita) los pagos sin disparador propio no hablan de inspecciones: con dos pagos,
+  // el segundo es «Upon completion of the work» (el de la casa dice «final inspection passed»). Con tres pagos van los de la
+  // casa (son de obra: rough-in y trim-out) y entonces el contrato no puede ser de una visita. El disparador propio manda.
+  // Devuelve el disparador tal como sale en el papel de un servicio.
+  // 13-oct (revisión): lo que Edgar escribe en «Tipo de trabajo» para decir que es de fuera, y las palabras de una línea
+  // del alcance que hacen de fuera un servicio que vio la IA (en la línea no vale «site» ni «outside»: «on site» es de dentro)
+  const RX_TIPO_FUERA = /\b(exterior|outdoor|outside|poste|pole|bomba|pump|pozo|well|riego|irrigation|site)\b/;
+  const RX_LINEA_FUERA = /\b(exterior|outdoor|poste|pole|bomba|pump|pozo|well|wellhead|riego|irrigation|meter can|service mast|weatherhead)\b/;
+  const RX_PAGO_DE_OBRA = /\brough\b|\brough-?\s?in\b|\btrim\b|\btrim-?\s?out\b|\binspec\w*|\bphases?\b|\bfases?\b/;
+  function disparadorServicio(L, n, k) {
+    const propio = (((L || {}).pagos || {}).disparadores || [])[k];
+    if (propio) return propio;
+    if (n === 1) return DISPARADORES[1][0];
+    if (n === 2) return k === 0 ? DISPARADORES[2][0] : DISPARADORES[1][0];
+    return null;   // tres pagos o más: los de la casa (de obra)
+  }
+
+  // 13-oct (revisión): la condición de cobro de cada hito de la FICHA es la del papel (el DISPARADOR que salió en el
+  // contrato armado: en un servicio de dos pagos «Upon completion of the work», y «{{, permit submittal}}» ya resuelto),
+  // para que la ficha, el portal y las facturas digan lo mismo que lo firmado. Sin papel, la de la cuenta.
+  function condicionesFicha(cta, hitosPapel) {
+    const hs = (cta && cta.hitos) || [], n = hs.length;
+    return hs.map((h, k) => {
+      const delPapel = String(((hitosPapel || [])[k] || {}).DISPARADOR || "").trim();
+      const c = delPapel || h.disparador || (h.es_deposito ? "Deposit upon acceptance" : (k === n - 1 ? "Final inspection passed" : "Rough-in complete and inspection passed"));
+      return String(c).replace("{{, permit submittal}}", "").slice(0, 200);
+    });
+  }
+
   // ================================================== QUÉ VA Y QUÉ NO (la tabla)
+  // 13-oct (CCB): «no hace falta — <porqué>» / «no permit required: <why>» → lo que sigue a la viñeta «Permit.» de la §3:
+  // «: <porqué>.» (si viene en inglés) y, si la hoja no dice qué pasa cuando el AHJ sí lo pide, la salida de la casa.
+  const RX_ESPANOL = /[áéíóúñ¿¡]|\b(?:el|la|los|las|del|que|por|para|con|sin|se|es|son|solo|un|una|cambia|cambian|hace|falta|porque)\b.*\b(?:el|la|los|las|del|que|por|para|con|sin|se|es|son|solo|un|una|cambia|cambian|hace|falta|porque)\b/i;
+  function motivoSinPermiso(valor, dec) {
+    if (!dec || !dec.bloques || !dec.bloques.PERMISO_NINGUNO) return "";
+    const v = String(valor || "").trim();
+    const m = v.match(/^(?:permiso:\s*)?(?:no hace falta|no permit(?: is)?(?: required| needed)?|not required|ninguno|sin permiso|no aplica)\b[^A-Za-z0-9]*(.*)$/i);
+    let motivo = m ? m[1].trim().replace(/^[—–\-:,;.\s]+/, "").replace(/[.\s]+$/, "") : "";
+    if (motivo && RX_ESPANOL.test(motivo)) motivo = "";
+    const salida = "Should the Authority Having Jurisdiction require a permit for this work, the permit, its fee and any inspection trips are added by written Change Order.";
+    const yaDice = /change order|requires? a permit|permit is required|if a permit/i.test(motivo);
+    // 13-oct (revisión): si la hoja excluye el permiso en «No incluye» («Permit and permit fees if required by the AHJ.», que
+    // el lector poda porque la plantilla trae su viñeta) y su frase no habla de las tasas, se dice que no van en el precio
+    const tasas = yaDice && dec.permiso_excluido_hoja && !/\bfees?\b/i.test(motivo) ? " Permit fees, if any, are not included in the lump sum." : "";
+    return (motivo ? ": " + minus(motivo) + "." : ".") + (yaDice ? tasas : " " + salida);
+  }
   // "Permiso: nosotros" · "Permiso: cliente" · "Permiso: no hace falta" — y también lo
   // que escriba Ordenar o Edgar a su manera ("lo saca Max Power", "by the Client"…)
   function leerPermiso(v) {
@@ -2040,6 +2118,9 @@
     // v3.4: el contrato se ajusta a lo que DICE el alcance, no a una cocina genérica.
     const textoAlcance = norma([d.proyecto || "", ...L.items.map(it => it.titulo + " " + it.detalles.join(" "))].join(" "));
     const textoExcl = norma((L.no_incluye || []).map(x => x.texto).join(" "));
+    // 13-oct (CCB, revisión con IA): si la hoja excluye el material («…and any other material (Max Power furnishes installation
+    // labor… only)»), el arranque de la §2 no puede decir que Max Power pone cajas, soportes y cableado: va SOLO_LABOR
+    const soloLabor = /\b(?:any other material|all other material|all materials? (?:is|are) (?:furnished|provided|supplied) by (?:the )?(?:owner|client|others)|labor only|installation labor[^.]{0,90}\bonly\b)\b/.test(textoExcl);
     const hayPanel = /\b(panel|panelboard|sub-?panel|load center|service entrance|service equipment|main breaker|main disconnect|meter)\b/.test(textoAlcance);
     // Interior de una casa (cocina, cuartos, ático…) contra servicio exterior (poste, pozo, bomba…).
     // "control cabinet" no es "cabinet lighting": las palabras se miran con cuidado.
@@ -2051,27 +2132,52 @@
     let interior = interiorFuerte || (interiorSuave && !venueExterior);
     let exterior = venueExterior || /\b(pole|service entrance|well|pump|irrigation|parking lot|site lighting|transformer|feeder|wellhead|underground|trench)\b/.test(textoAlcance);
     // v3.7 (tanda 1): «Tipo de trabajo: …» escrito a mano en Condiciones manda sobre las listas de palabras:
-    //   service → servicio exterior aunque el alcance diga «garage»: sin gabinetes, drywall, aparatos ni AFCI
     //   remodel → dentro de una vivienda: las exclusiones de casa se quedan
     //   mezcla  → las dos cosas: no se apaga ninguna exclusión
+    // 13-oct (pliego §9.1): «service» YA NO quiere decir «exterior» (un chandelier en una escalera es un servicio y es
+    // de dentro): dentro y fuera salen de las palabras del alcance. «service» enciende el modo SERVICIO (abajo).
     const tipoTrabajo = String((C.tipo_trabajo || {}).valor || "");
-    if (tipoTrabajo === "service") { interior = false; exterior = true; }
-    else if (tipoTrabajo === "remodel" || tipoTrabajo === "mezcla") { interior = true; }
+    if (tipoTrabajo === "remodel" || tipoTrabajo === "mezcla") { interior = true; }
+    // ---- 13-oct (pliego §9.1): ¿es un SERVICIO (una visita, sin fases, sin rough-in ni trim-out)?
+    // Lo dice la hoja («Tipo de trabajo: service», o la IA con su línea) y, si la hoja no dice tipo, la ficha de la obra
+    // (admin.tipo_obra = "servicio": proyecto de tipo servicio o work_subtype service_call). La hoja manda: «Tipo de trabajo:
+    // remodel / new / planos» apaga el servicio aunque la ficha diga servicio.
+    // Un candado: si los pagos se cobran por fases de obra (rough-in, trim-out, inspección), el papel no puede decir «una
+    // sola visita»: se queda en OBRA y se dice por qué (Wimauma: la IA dijo «service» por el equipo de servicio del pozo,
+    // y sus hitos son «rough inspection passed» y «final inspection passed»).
+    const tipoObraApp = norma((admin || {}).tipo_obra || "");
+    const pideServicio = tipoTrabajo === "service" || (!tipoTrabajo && /^(servicio|service|service_call)$/.test(tipoObraApp));
+    const pagosDeObra = pideServicio ? (cuenta.hitos || []).some((h, k) => RX_PAGO_DE_OBRA.test(norma(disparadorServicio(L, cuenta.hitos.length, k) || h.disparador || ""))) : false;
+    const esServicio = pideServicio && !pagosDeObra;
+    const servicioNegado = pideServicio && pagosDeObra
+      ? `La obra se marcó como servicio${tipoTrabajo === "service" ? " (tipo de trabajo «service»)" : " (en la ficha)"}, pero sus pagos se cobran por fases de obra (rough-in, trim-out o inspección): el contrato va como obra, con sus fases.`
+      : "";
+    // 13-oct (revisión): «service» a secas (o el de la ficha) NUNCA hace la obra exterior: dentro y fuera salen de las
+    // palabras (el chandelier de CCB es un servicio de dentro). Pero si Edgar escribió con sus palabras que es de FUERA
+    // («Tipo de trabajo: exterior (poste y bomba)»: normalizarTipoTrabajo lo guarda como «service»), o la línea del alcance
+    // en la que la IA vio el servicio habla de poste/pozo/bomba, la obra es exterior como antes: sin drywall, gabinetes ni
+    // aparatos aunque diga «garage» o «kitchen panel».
+    if (tipoTrabajo === "service") {
+      const dichoFuera = RX_TIPO_FUERA.test(norma((C.tipo_trabajo || {}).crudo || "")) || RX_LINEA_FUERA.test(norma((C.tipo_trabajo || {}).texto_linea || ""));
+      if (dichoFuera) { interior = false; exterior = true; }
+    }
     const exteriorServicio = exterior && !interior;
     const residencialInterior = !esComercial && interior;
-    const sinAfci = esComercial || tipoTrabajo === "service";
+    // en servicio no se tocan circuitos nuevos: sin AFCI (exclusión ni cláusula)
+    const sinAfci = esComercial || tipoTrabajo === "service" || esServicio;
     const yaExcluye = re => re.test(textoExcl);
     const hayItemPermiso = /\bpermit/.test(textoAlcance);
     // v251 (revisión): «Complete trim-out (…), testing, and coordination of the required inspections» ya es el cierre
     const hayCierre = L.items.some(it => /^(testing|startup|closeout|commissioning)\b|\b(closeout|close-out|commissioning)\b/i.test(it.titulo)
       || (/\btesting\b/i.test(it.titulo) && /\binspections?\b|\btrim-?\s?out\b/i.test(it.titulo)));
-    const propio = clasificarPropias(L);
+    const propio = clasificarPropias(L, (admin || {}).plantilla);   // 13-oct: con la plantilla, lo propio sin título solo sobra si la cláusula ya lo dice
     const preProprio = propio.pre.length > 0;
     // v3.5: las fases (movilizaciones) — las de la hoja; si no las dice, se deducen del alcance:
     // trabajo bajo tierra / bonding antes de la losa = una salida aparte antes del rough-in
     const fasesHoja = partirFases((C.fases || {}).valor || "");
     const hayBajoTierra = /\b(underground|trench|trenching|bonding grid|equipotential|under the slab|slab|pool)\b/.test(textoAlcance);
-    const fases = fasesHoja.length ? fasesHoja : (hayBajoTierra ? ["underground raceways and bonding", "rough-in", "trim-out"] : []);
+    // 13-oct (pliego §9.1): en un servicio las fases NO se deducen (una visita); si la hoja las escribe, mandan
+    const fases = fasesHoja.length ? fasesHoja : (hayBajoTierra && !esServicio ? ["underground raceways and bonding", "rough-in", "trim-out"] : []);
     const fasesDeducidas = !fasesHoja.length && fases.length > 0;
     // v3.5: la sección 4 por grupos (como la trae la hoja) o la línea genérica
     const codigoPropio = (L.codigo_detalle || []).some(g => g.grupo || g.otros.length);
@@ -2082,7 +2188,18 @@
     // elevación) sale la 7.x Flood de la plantilla, que lleva los datos del certificado (regla B9 del revisor). Si la hoja
     // trae su propia frase de flood, clasificarPropias la quita para no repetir y sus números se leen igual.
     const flood = !!mZona || !!(L.flood || {}).senales;
-    const layout = !preProprio && norma(d.layout || "si") !== "no";
+    // 13-oct (pliego §9.1): en un servicio no hay layout que aprobar: la sección 8 sale como NO_LAYOUT (o la propia de la hoja)
+    const layout = !preProprio && !esServicio && norma(d.layout || "si") !== "no";
+    // 13-oct (pliego §9.1): lo que la HOJA excluye sale sí o sí. El lector (y el armado con IA) quita de «No incluye» las
+    // exclusiones que la plantilla ya trae, para no repetirlas; si el interruptor de la plantilla está apagado (en CCB el
+    // drywall: una escalera no es «interior» por las palabras), la exclusión se perdía del papel. Aquí se enciende.
+    // (El permiso no tiene interruptor: su viñeta de la §3 sale siempre según quién lo saca.)
+    const vistas = L.fijasVistas instanceof Set ? L.fijasVistas : new Set(Array.isArray(L.fijasVistas) ? L.fijasVistas : []);
+    const vio = re => [...vistas].some(v => re.test(String(v || "")));
+    const hojaExcluye = {
+      EXCL_PANEL: vio(/^electrical$/), EXCL_AFCI: vio(/^arc/), EXCL_GABINETES: vio(/^cabinet/),
+      EXCL_DRYWALL: vio(/^drywall/), EXCL_APARATOS: vio(/^appliance/), EXCL_LOWVOLT: vio(/^low/), EXCL_FUERA_AREAS: !!L.fuera_vista
+    };
     // v252: la base del precio (debajo del total) y las filas Owner / Tenant de la cabecera
     const basePrecio = decidirBasePrecio(L, admin);
     const nombreDueno = hay(duenoEfectivo) && !/^the property owner$/i.test(String(duenoEfectivo).trim()) ? String(duenoEfectivo).trim() : "";
@@ -2108,6 +2225,7 @@
       PERMISO_CLIENTE: permiso === "cliente",
       PERMISO_MXP: permiso === "nosotros",
       PERMISO_NINGUNO: permiso === "ninguno",
+      CON_PERMISO: permiso !== "ninguno",   // 13-oct: la §4 y la 9.x «Code edition» hablan de la solicitud del permiso solo si hay permiso
       ADDONS: L.opciones.length > 0,
       UTILITY: hay(d.utility),
       LAYOUT: layout, NO_LAYOUT: !layout && !preProprio,
@@ -2132,8 +2250,23 @@
       EXCL_LOWVOLT: !noExcluir.includes("low-voltage") && !noExcluir.includes("low voltage") && !yaExcluye(/low.?voltage|data|telemetry/),
       EXCL_APARATOS: !noExcluir.includes("aparato") && residencialInterior,
       EXCL_FUERA_AREAS: !noExcluir.includes("fuera-de-area") && !noExcluir.includes("fuera de area") && !yaExcluye(/outside the areas|any work outside/),
-      EXCL_AHJ: !noExcluir.includes("inspector") && !noExcluir.includes("ahj") && !yaExcluye(/authority having jurisdiction|\bahj\b/)
+      EXCL_AHJ: !noExcluir.includes("inspector") && !noExcluir.includes("ahj") && !yaExcluye(/authority having jurisdiction|\bahj\b/),
+      // 13-oct (pliego §9.1, plantilla v3.10): servicio (una visita) u obra (fases, rough-in, trim-out); y si hay depósito
+      // (sin depósito, el papel no habla de él: el permiso se pide al firmar, la cancelación no descuenta de un depósito)
+      SERVICIO: esServicio, OBRA: !esServicio,
+      // 13-oct (CCB, revisión con IA): solo mano de obra (la hoja excluye el material) · sin contratista, la 9.x de los upgrades
+      // puede decir «(or the Owner)»; con contratista solo decide el Client (el Owner no firma)
+      SOLO_LABOR: soloLabor, CON_MATERIAL: !soloLabor, SIN_GC: !esGC,
+      DEPOSITO: !!cuenta.hay_deposito, SIN_DEPOSITO: !cuenta.hay_deposito,
+      // la 7.x de las salidas: «una sola visita» en servicio; las movilizaciones por fase en obra, o en servicio si la
+      // hoja escribe sus fases («Fases: …»: mandan)
+      VISITA_UNICA: esServicio && !fasesHoja.length, MOVILIZACIONES: !esServicio || fasesHoja.length > 0
     };
+    // lo que la hoja excluye sale sí o sí (arriba): se enciende y se apunta por qué
+    const encendidasPorHoja = [];
+    Object.keys(hojaExcluye).forEach(k => { if (hojaExcluye[k] && !bloques[k]) { bloques[k] = true; encendidasPorHoja.push(k); } });
+    // en servicio, gabinetes, aparatos y el cableado de baja tensión son ruido de obra (salvo que la hoja los excluya ella misma)
+    if (esServicio) ["EXCL_GABINETES", "EXCL_APARATOS", "EXCL_LOWVOLT"].forEach(k => { if (!hojaExcluye[k]) bloques[k] = false; });
 
     const clausulas = {
       garantia: true, existentes: true, sitio: true, edicion: true,
@@ -2183,6 +2316,8 @@
     motivos.propias = "porque la hoja trae condiciones propias de este trabajo: " + propio.propias.map(p => p.titulo).join(" · ");
     return { bloques, clausulas, motivos, permiso, reglaPermiso, esGC, esComercial, esConsumidor, conFirma,
              perfil: { hayPanel, interior, exteriorServicio, residencialInterior, venueExterior, tipo_trabajo: tipoTrabajo || null }, propio,
+             servicio: esServicio, servicio_negado: servicioNegado, fases_hoja: fasesHoja, encendidas_por_hoja: encendidasPorHoja,
+             permiso_excluido_hoja: vio(/^permit/),   // 13-oct (revisión): la hoja excluye el permiso (la viñeta dice lo de las tasas)
              gcNombre, clienteEfectivo, duenoEfectivo, permiso, fases, fasesDeducidas, flood, zona: mZona ? mZona[1].toUpperCase() : "",
              pricing_basis: basePrecio.valor, base_precio: basePrecio, inquilino };
   }
@@ -2566,6 +2701,18 @@
     };
 
     const nHitos = cta.hitos.length;
+    // 13-oct (pliego §9.2): ¿servicio (una visita) u obra? Lo decide decidirInterruptores (bloques SERVICIO / OBRA)
+    const SERV = !!dec.bloques.SERVICIO;
+    // 13-oct (CCB): quién pone los fixtures, según la hoja (QUIEN_FIXTURES / FIXTURES_DE)
+    const textoFx = norma([L.hoy || "", ...(L.items || []).map(it => it.titulo + " " + (it.detalles || []).join(" ")), ...(L.no_incluye || []).map(x => x.texto || "")].join(" "));
+    const quienFx = /client[- ]?supplied|(?:supplied|furnished|provided) by the client|\(by client\)|the client supplies/.test(textoFx) ? "cliente"
+                  : /owner[- ]?furnished|furnished by the owner|owner[- ]?supplied|supplied by the owner|the owner furnishes|the owner supplies/.test(textoFx) ? "dueno" : "";
+    // «furnished by the Owner, delivered through the Client» (CCB): la viñeta lo dice así
+    const fxPorElCliente = quienFx === "dueno" && /through the client/.test(textoFx);
+    // 13-oct (revisión): la hoja dice que el cliente pone las luminarias pero no hay «Fixtures del cliente:»: la viñeta de la §3
+    // y la 9.x de los fixtures del cliente no salen (la 7.2 de servicio sí lo dice). Se avisa, no se inventa cuáles son.
+    if (quienFx === "cliente" && !dec.bloques.FIXTURES_CLIENTE)
+      avisosArmado.push("Tu hoja dice que el cliente pone las luminarias, pero no hay «Fixtures del cliente:» en Condiciones: la cláusula de los fixtures del cliente (que deben estar en sitio, y que no respondemos de sus defectos) no sale. Si la quieres, escribe «Fixtures del cliente: …» con cuáles son.");
     // v3.4: las fases tal como las diga la hoja ("(1) …; and (2) …") o Edgar ("rough / trim")
     const fases = partirFases((S.lista_de_fases && S.lista_de_fases.en) || (C.fases || {}).valor || "").length
       ? partirFases((S.lista_de_fases && S.lista_de_fases.en) || (C.fases || {}).valor || "") : (dec.fases || []);
@@ -2594,6 +2741,9 @@
       PROYECTO_EN_INGLES: (S.proyecto_en && S.proyecto_en.en) || d.proyecto || admin.nombre || "",
       DIRECCION: admin.direccion || d.direccion || "",
       CIUDAD: d.ciudad_corta || d.ciudad || admin.ciudad || "",
+      // 13-oct (CCB): «Permiso: no hace falta — fixture replacement with no circuit or panel changes…»: el porqué de la hoja sale
+      // en la viñeta del permiso de la §3, y si la hoja no dice qué pasa si el AHJ lo pide, lo dice la casa (por Change Order)
+      PERMISO_MOTIVO: motivoSinPermiso(d.permiso, dec),
       FECHA: fechaLarga(hoy), AAAA: mNum ? mNum[1] : String(hoy.getFullYear()),
       MMDD: mNum ? mNum[2] : dosDig(hoy.getMonth() + 1) + dosDig(hoy.getDate()),
       NOMBRE: nombreCorto, VENCE_30_DIAS: fechaLarga(vence),
@@ -2604,7 +2754,11 @@
       // contrata y los renglones del §2 (Edgar, 10-sep: «la sección uno se refiere a todo menos a los objetivos»)
       // 7-oct: el párrafo que escribió la IA al armar (S.overview) va antes que el de la hoja y que la frase de la casa
       OVERVIEW: (S.overview && (typeof S.overview === "string" ? S.overview : S.overview.en)) || d.overview || (() => {
-        const proy = String(d.proyecto || "").split(/\s+[—–]\s+/)[0].trim();
+        // 13-oct (CCB): «CCB – Stairwell Chandelier & Pendant Installation»: lo de antes de la raya es la clave del cliente (una
+        // o dos palabras, o el nombre del cliente mismo); lo que describe el trabajo va después de la raya. Antes salía «the CCB».
+        const partesProy = String(d.proyecto || "").split(/\s+[—–]\s+/).map(x => x.trim()).filter(Boolean);
+        const clavePrimera = partesProy.length > 1 && (partesProy[0].split(/\s+/).length <= 2 || norma(d.cliente || "").includes(norma(partesProy[0])));
+        const proy = clavePrimera ? partesProy.slice(1).join(" — ") : (partesProy[0] || "");
         const que = proy ? `the ${proy}` : "this project";
         const donde = admin.direccion || d.direccion || "the Property";
         const conQuien = dec.esGC && dec.gcNombre ? `, performed by Max Power as electrical subcontractor to ${dec.gcNombre}`
@@ -2626,6 +2780,13 @@
       N_CIERRE: String(L.items.length + 1 + cta.addons.filter((a, k) =>
         (S.opciones || [])[k] && S.opciones[k].descripcion && S.opciones[k].descripcion.en).length),
       CUALES: (S.cuales_fixtures && S.cuales_fixtures.en) || "",
+      // 13-oct (CCB): si la hoja dice que los fixtures los pone el CLIENTE («client-supplied», «by Client», «the Client supplies»),
+      // el papel lo dice así («the Client», «Client-furnished»). Si no, sigue «the Owner or tenant» (Metro: el inquilino; Whitlock
+      // y los demás no cambian ni una letra).
+      // («the Owner or tenant» sigue siendo la frase de la casa cuando la hoja solo dice «owner-furnished»: Whitlock no cambia)
+      QUIEN_FIXTURES: quienFx === "cliente" ? "the Client" : fxPorElCliente ? "the Owner and delivered through the Client" : "the Owner or tenant",
+      FIXTURES_DE: quienFx === "cliente" ? "Client-furnished" : "Owner-furnished",
+      FIXTURES_DE_MIN: quienFx === "cliente" ? "client-furnished" : "owner-furnished",
       // Si Edgar no marcó Áreas / No tocamos / Listo / Fases / Acceso, van los textos
       // de siempre: la plantilla no puede quedar con huecos.
       AREAS_INCLUIDAS: (S.areas_incluidas && S.areas_incluidas.en) || "the areas",
@@ -2635,9 +2796,16 @@
       RESUMEN_CORRIDO_DE_TODO_EL_ALCANCE: (S.resumen_corrido && S.resumen_corrido.en) || "",
       TOTAL: dinero(cta.base),
       N_ULTIMO: String(nHitos), FIN_OBRA: finObra,
-      QUE_TIENE_QUE_ESTAR_LISTO: (S.que_tiene_que_estar_listo && S.que_tiene_que_estar_listo.en) || "the work areas are accessible and ready for electrical rough-in",
+      // 13-oct (pliego §9.2): en un servicio la 7.2 «Site readiness» dice qué tiene que estar listo cuando se llega a la visita
+      QUE_TIENE_QUE_ESTAR_LISTO: (S.que_tiene_que_estar_listo && S.que_tiene_que_estar_listo.en)
+        || (!SERV ? "the work areas are accessible and ready for electrical rough-in"
+            // 13-oct (revisión): también cuando la hoja dice que el cliente pone las luminarias («(by Client)», «the Client supplies»)
+            // 13-oct (CCB): «Owner-furnished items» cuando las pone el dueño (entregadas por el Client), «Client-furnished» cuando las pone el cliente
+            : dec.bloques.FIXTURES_CLIENTE || quienFx === "cliente" ? `the work area is accessible and the ${quienFx === "cliente" ? "Client" : "Owner"}-furnished items are on site, complete and undamaged`
+            : "the work area is accessible and clear for the work"),
       N_FASES: String(fases.length || 2),
-      LISTA_INSPECCIONES: fases.some(f => /underground|bonding|trench|slab/i.test(f)) ? "underground, bonding, rough-in and final" : "rough-in and final",
+      // en un servicio no hay rough-in: el registro en el permiso del cliente habla de «the required electrical inspections»
+      LISTA_INSPECCIONES: SERV ? "required" : fases.some(f => /underground|bonding|trench|slab/i.test(f)) ? "underground, bonding, rough-in and final" : "rough-in and final",
       LISTA_DE_FASES: fases.length ? (fases.length > 2 || fases.some(f => f.includes(","))
         ? fases.map((f, k) => `(${k + 1}) ${f}`).join("; ").replace(/; (\(\d+\) [^;]+)$/, "; and $1")
         : fases.join(" and ")) : "rough-in and trim-out",
@@ -2645,6 +2813,9 @@
       QUE_HACE: (S.utility && S.utility.que_hace && S.utility.que_hace.en) || "",
       ACCESO: (S.acceso && S.acceso.en) || (dec.perfil && dec.perfil.exteriorServicio && !dec.perfil.venueExterior
         ? "access to the pole, the equipment locations and the existing raceways"
+        // 13-oct (§9): un servicio que no es de fuera ni de un interior reconocible (una escalera): sin zanjas
+        : SERV && dec.perfil && !dec.perfil.interior && !dec.perfil.venueExterior
+          ? "access to the work area and to the existing boxes and wiring"
         : dec.perfil && !dec.perfil.interior
           ? "access to the work areas, the trench routes and the equipment locations"
           // v251 (revisión): en un local comercial (farmacia, oficina) no hay ático ni crawl space: es el cielo raso
@@ -2693,16 +2864,29 @@
     const addons = cta.addons.map((a, k) => ({
       LETRA: a.letra, MONTO: dinero(a.centavos),
       ADDON: ((S.opciones || [])[k] && S.opciones[k].titulo && S.opciones[k].titulo.en) || a.titulo }));
-    const hitos = cta.hitos.map(h => ({
+    // 13-oct (§9): en un servicio, el disparador que no escribió la hoja no habla de inspecciones (disparadorServicio)
+    const hitos = cta.hitos.map((h, k) => ({
       N_HITO: h.n, PCT: h.pct, MONTO: dinero(h.centavos),
-      DISPARADOR: String(h.disparador || "").replace("{{, permit submittal}}",
+      DISPARADOR: String((SERV && disparadorServicio(L, cta.hitos.length, k)) || h.disparador || "").replace("{{, permit submittal}}",
         dec.bloques.PERMISO_MXP ? ", permit submittal" : "") }));
 
     // ── v3.4: lo propio de la hoja, numerado como queda en el contrato ──
-    const propio = dec.propio || clasificarPropias(L);
+    const propio = dec.propio || clasificarPropias(L, admin.plantilla);
+    // 13-oct (revisión): una frase suelta de la hoja que se quita porque la plantilla ya lo dice, se avisa (nunca en silencio)
+    if (propio.conPlantilla && (propio.porParecido || []).length)
+      avisosArmado.push(`De la sección 9 de tu hoja quité ${propio.porParecido.length === 1 ? "una frase que la plantilla ya dice" : propio.porParecido.length + " frases que la plantilla ya dice"} con su texto revisado (${propio.porParecido.map(x => "«" + String(x).slice(0, 50) + "»").join(", ")}). Si dice algo más, ponle un título propio en la hoja y entra tal cual.`);
     const numero = numerarClausulas(dec.clausulas, propio.propias.length);
-    const base7 = (dec.bloques.UTILITY ? 6 : 5) + (dec.bloques.FLOOD ? 1 : 0);
-    huecos.N_FLOOD = String(dec.bloques.UTILITY ? 7 : 6);
+    // 13-oct (pliego §9.2): la sección 7 se numera distinto en servicio y en obra.
+    //   OBRA:     7.1 permiso · 7.2 layout · 7.3 sitio (rough-in) · 7.4 movilizaciones · 7.5 material · 7.6 utility · flood · propias
+    //   SERVICIO: 7.1 permiso · 7.2 sitio (visita) · 7.3 visitas (o movilizaciones si la hoja trae fases) · 7.4 material ·
+    //             7.5 utility · flood · propias
+    // N7 dice qué número tiene en el contrato cada párrafo fijo (por su número de obra); null = no está.
+    const N7 = SERV ? { "7.1": "7.1", "7.2": null, "7.3": "7.2", "7.4": "7.3", "7.5": "7.4", "7.6": "7.5" }
+                    : { "7.1": "7.1", "7.2": "7.2", "7.3": "7.3", "7.4": "7.4", "7.5": "7.5", "7.6": "7.6" };
+    const fijos7 = SERV ? 4 : 5;
+    huecos.N_SITIO = N7["7.3"]; huecos.N_MOVIL = N7["7.4"]; huecos.N_MATERIAL = N7["7.5"]; huecos.N_UTILITY = N7["7.6"];
+    const base7 = fijos7 + (dec.bloques.UTILITY ? 1 : 0) + (dec.bloques.FLOOD ? 1 : 0);
+    huecos.N_FLOOD = String(fijos7 + (dec.bloques.UTILITY ? 1 : 0) + 1);
     {
       const F = L.flood || {};
       const ecV = d.flood_ec || F.ec, bfeV = d.flood_bfe || F.bfe, lagV = d.flood_lag || F.lag;
@@ -2729,7 +2913,7 @@
       if (m.clave) { const k = m.clave === "cancelacion" ? (dec.clausulas.cancelacion_gc ? "cancelacion_gc" : "cancelacion_tardia") : m.clave;
                      return numero[k] ? "9." + numero[k] : null; }
       if (m.propia !== undefined) return "9." + (numero.propias + m.propia);
-      if (m.fija7) return m.fija7 === "7.6" && !dec.bloques.UTILITY ? null : m.fija7;
+      if (m.fija7) return m.fija7 === "7.6" && !dec.bloques.UTILITY ? null : (N7[m.fija7] || null);
       if (m.extra7 !== undefined) return "7." + (base7 + 1 + m.extra7);
       return null;
     };
@@ -5774,6 +5958,7 @@
         if (fija) {
           L.fijasQuitadas++; de.forEach(n => L.fijas_lineas.push(n));
           if (fija.vista) L.fijasVistas.add(fija.vista);
+          if (fija.tipo === "fuera") L.fuera_vista = true;   // 13-oct (§9.1): la hoja lo excluye → sale sí o sí
           if (fija.areas && !L.condiciones.areas) L.condiciones.areas = { valor: fija.areas, linea: de[0] || 0 };
           if (fija.no_tocamos && !L.condiciones.no_tocamos) L.condiciones.no_tocamos = { valor: fija.no_tocamos, linea: de[0] || 0 };
           if (fija.fixtures && !L.condiciones.fixtures_cliente) L.condiciones.fixtures_cliente = { valor: fija.fixtures, linea: de[0] || 0 };
@@ -6114,7 +6299,7 @@
     if (H.tipo_trabajo && H.tipo_trabajo !== "no_se") {
       const nt = Ev.tipo_trabajo, lin = lineaOk(nt) ? o(nt) : "", rx = PALABRA_TIPO_TRABAJO[H.tipo_trabajo];
       const exterior = H.tipo_trabajo === "remodel" && RX_OBRA_EXTERIOR.test(lin);
-      if (rx && rx.test(lin) && !exterior) L.condiciones.tipo_trabajo = { valor: normalizarTipoTrabajo(H.tipo_trabajo), crudo: H.tipo_trabajo, linea: nt };
+      if (rx && rx.test(lin) && !exterior) L.condiciones.tipo_trabajo = { valor: normalizarTipoTrabajo(H.tipo_trabajo), crudo: H.tipo_trabajo, linea: nt, texto_linea: lin };
       else aviso(`La IA dijo que es un trabajo «${H.tipo_trabajo}»${lineaOk(nt) ? ` por la línea ${nt}, pero ${exterior ? "esa línea habla de una obra de fuera" : "esa línea no lo dice"}` : " sin una línea que lo diga"}: decidí por lo que dice el alcance.`,
                  lineaOk(nt) ? nt : 0, { informativo: true, clave: "tipo_trabajo" });
     }
@@ -6267,7 +6452,7 @@
                 decidirInterruptores, prepararEncargo, validarSalida,
                 rellenarPlantilla, aplicarSi, repetirFila, aplicarClausulas,
                 barridoFinal, marcasEmparejadas, armarTodo, aplicarArreglo, arreglarTodo, leerPermiso, leerFirma, leerVence, DISPARADORES, ORDEN_9, dinero, centavos, norma,
-                numerarClausulas, clasificarPropias, renumerarRefs, partirFases, juntarNombres,
+                numerarClausulas, clasificarPropias, renumerarRefs, partirFases, juntarNombres, condicionesFicha,
                 // v3.7: el juez y las pistas
                 RX_DINERO_TAPAR, esMontoTapable, taparDinero, traeDineroEstricto, limpiarLinea, desenvolver, hojaParaElLector, citaEnLinea,
                 verificarLectura, pistasDe, guardarPistas, alinearLectura, rareza, lecturaDeReglas, claveDeLinea, TIPOS_AVISO, paraLaNube,
