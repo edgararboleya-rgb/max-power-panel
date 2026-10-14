@@ -2114,9 +2114,47 @@
     //   · 489.126 (9.16 del depósito) habla de propiedad RESIDENCIAL.
     const esComercial = /comercial|commercial/.test(norma(d.propiedad || d.property || ""));
     const esConsumidor = !esGC && !esComercial;
-    const permiso = inferirPermiso(L, esGC);   // regla de la casa: si nadie dice nada, lo sacamos nosotros
+    let permiso = inferirPermiso(L, esGC);   // regla de la casa: si nadie dice nada, lo sacamos nosotros
     // v251: la regla del contratista (Wisdom → el permiso lo saca el contratista) y lo que decía la hoja, para avisar
     const reglaGC = reglaDeContratista(d);
+    // v3.4: el contrato se ajusta a lo que DICE el alcance, no a una cocina genérica. (14-oct, corrección: se leen aquí arriba,
+    // antes del juicio, porque los candados del permiso y del tipo de trabajo los necesitan)
+    const textoAlcance = norma([d.proyecto || "", ...L.items.map(it => it.titulo + " " + it.detalles.join(" "))].join(" "));
+    const hayPanel = /\b(panel|panelboard|sub-?panel|load center|service entrance|service equipment|main breaker|main disconnect|meter)\b/.test(textoAlcance);
+    // 14-oct (corrección): un circuito nuevo, un alimentador o un cargador de carro también piden permiso (regla 18 del armado)
+    const circuitoNuevo = /\b(?:new|dedicated)\s+(?:(?:\d+\s*a|\d+\s*v|\d+\s*-?\s*amps?|branch|individual)\s+)*circuits?\b|\bhome[- ]?runs?\b|\bfeeders?\b|\b(?:ev|car|vehicle)\s+charg|\bcharging station\b/.test(textoAlcance);
+    // ---- 14-oct (pliego §10.4): EL JUICIO DE LA IA manda sobre las reglas de palabras. Cada decisión que se aplica (o no) queda
+    // en dec.juicio con su porqué; lo que las reglas decían y la IA cambió, en «cambios». Sin L.juicio, nada de esto corre.
+    const J = L.juicio && typeof L.juicio === "object" && !Array.isArray(L.juicio) ? L.juicio : null;
+    const JE = L.juicio_edgar && typeof L.juicio_edgar === "object" ? L.juicio_edgar : {};
+    const juicio = J ? {} : null, juicioIgnorado = [], cambiosJuicio = [];
+    const decideJ = k => !!(J && J[k] && typeof J[k] === "object" && (JUICIO_VALORES[k] || []).includes(J[k].valor));
+    const ponJ = (k, antes, aplicado, nota) => {
+      juicio[k] = Object.assign({}, J[k], { aplicado, antes }, nota ? { nota } : {});
+      if (aplicado && antes !== J[k].valor)
+        cambiosJuicio.push(`${NOMBRE_DECISION[k]}: las reglas decían «${(VALOR_DECISION[k] || {})[antes] || antes}»; la IA decidió «${(VALOR_DECISION[k] || {})[J[k].valor] || J[k].valor}» porque ${minus(String(J[k].porque || "").replace(/\.\s*$/, ""))}.`);
+    };
+    if (decideJ("permiso")) {
+      // la IA decide SI hace falta (ninguno / no incluido) solo cuando nadie lo dijo; QUIÉN lo saca lo dicen la regla del
+      // contratista, la ficha de la obra, la lección de Edgar o lo que él contestó (como hoy). Lo que Edgar dijo (respuesta o
+      // lección) manda en todo.
+      // 14-oct (corrección tras la revisión adversaria): tampoco pisa la línea «Permit:» de la hoja ni la ficha ni la regla de
+      // Wisdom, ni para bajar a «ninguno» / «no incluido» (antes se aplicaba y el papel decía «No permit is required» en un
+      // local de Wisdom o en un cambio de panel, o cobraba a Max Power una tasa que Edgar no puso). Lo único que puede es
+      // ablandar «no hace falta» a «no incluido» (no afirma nada y protege más). Y con panel, acometida o un circuito nuevo,
+      // nunca «ninguno».
+      const jp = J.permiso.valor, antes = permiso, o = String(L.permiso_origen || "");
+      const sinA = sinPermisoQuien(antes);
+      let nota = "";
+      if (JE.permiso || o === "respuesta" || o === "leccion") { if (jp !== antes) nota = o === "leccion" ? "manda tu lección" : "lo contestaste tú"; }
+      else if (jp === antes || (antes === "ninguno" && jp === "no_incluido")) nota = "";
+      else if (reglaGC && reglaGC.permiso && jp !== reglaGC.permiso) nota = reglaGC.motivo;
+      else if (jp === "ninguno" && (hayPanel || circuitoNuevo)) nota = "hay panel, acometida o un circuito nuevo: el permiso hace falta";
+      else if (o === "hoja") nota = sinA ? "tu hoja dice que no hace falta" : "tu hoja dice quién lo saca";
+      else if (o === "ficha" || o === "regla") nota = sinA ? "la ficha de la obra dice que no hace falta" : "la ficha de la obra dice quién lo saca";
+      if (nota) ponJ("permiso", antes, false, nota);
+      else { permiso = jp; ponJ("permiso", antes, true); }
+    }
     let reglaPermiso = null;
     if (reglaGC && reglaGC.permiso && permiso === reglaGC.permiso) {
       // choca solo cuando la hoja dice que lo sacamos NOSOTROS («no hace falta» no choca: ahí manda la hoja)
@@ -2128,20 +2166,28 @@
                        aviso: choca ? `${reglaGC.motivo}: no tomé «${hoja.texto || (hoja.quien === "ninguno" ? "no hace falta permiso" : "lo sacamos nosotros")}» de la hoja.` : "" };
     }
     const noExcluir = norma((C.no_excluir || {}).valor || "");
-    // v3.4: el contrato se ajusta a lo que DICE el alcance, no a una cocina genérica.
-    const textoAlcance = norma([d.proyecto || "", ...L.items.map(it => it.titulo + " " + it.detalles.join(" "))].join(" "));
     const textoExcl = norma((L.no_incluye || []).map(x => x.texto).join(" "));
     // 13-oct (CCB, revisión con IA): si la hoja excluye el material («…and any other material (Max Power furnishes installation
     // labor… only)»), el arranque de la §2 no puede decir que Max Power pone cajas, soportes y cableado: va SOLO_LABOR
-    const soloLabor = /\b(?:any other material|all other material|all materials? (?:is|are) (?:furnished|provided|supplied) by (?:the )?(?:owner|client|others)|labor only|installation labor[^.]{0,90}\bonly\b)\b/.test(textoExcl);
+    let soloLabor = /\b(?:any other material|all other material|all materials? (?:is|are) (?:furnished|provided|supplied) by (?:the )?(?:owner|client|others)|labor only|installation labor[^.]{0,90}\bonly\b)\b/.test(textoExcl);
     // 13-oct (tarde, CCB): «…and any material other than the chandelier box and minor connection hardware» → Max Power pone solo el
     // material que la hoja nombra (MATERIAL_LIMITADO): el arranque de la §2 no dice que pone cajas, soportes y cableado
-    const materialLimitado = !soloLabor && /\b(?:any (?:other )?material(?:s)? (?:other than|except|beyond)|material(?:s)? not (?:expressly )?(?:listed|stated))\b/.test(textoExcl);
+    let materialLimitado = !soloLabor && /\b(?:any (?:other )?material(?:s)? (?:other than|except|beyond)|material(?:s)? not (?:expressly )?(?:listed|stated))\b/.test(textoExcl);
+    // 14-oct (pliego §10.4): el material lo decide la IA (todo / limitado / solo mano de obra)
+    if (decideJ("material")) {
+      const antes = soloLabor ? "solo_labor" : materialLimitado ? "limitado" : "todo";
+      // 14-oct (corrección): si la hoja excluye el material, la IA no puede decir «todo» (la §2 prometería todo el material
+      // mientras la §3 lo excluye: una promesa que no está en el precio). Bajar de «todo» a lo que la hoja nombra, sí.
+      if (J.material.valor === "todo" && antes !== "todo") ponJ("material", antes, false, "tu hoja excluye el material");
+      else {
+        soloLabor = J.material.valor === "solo_labor"; materialLimitado = J.material.valor === "limitado";
+        ponJ("material", antes, true);
+      }
+    }
     // 13-oct (tarde, CCB): «Firma: sí — ligero» (SOW ligero CON firma: SCOPE OF WORK, §1-§5 y aceptación corta; pagos y términos en
     // el subcontrato aparte), o admin.formato = "ligero" desde la app. «Firma: ligero» a secas sigue siendo el SOW sin firma de siempre.
     // (va en la línea «Firma:» y no en una clave nueva para no tocar el molde del cerebro: sus claves son las de CLAVES_DATOS)
     const ligero = /\b(?:ligero|ligera|light|scope of work)\b/.test(norma(d.firma || "")) || norma((admin || {}).formato || "") === "ligero";
-    const hayPanel = /\b(panel|panelboard|sub-?panel|load center|service entrance|service equipment|main breaker|main disconnect|meter)\b/.test(textoAlcance);
     // Interior de una casa (cocina, cuartos, ático…) contra servicio exterior (poste, pozo, bomba…).
     // "control cabinet" no es "cabinet lighting": las palabras se miran con cuidado.
     // v3.5: una cocina EXTERIOR (outdoor kitchen, pavilion, lanai, pool deck) no es el interior de una casa:
@@ -2166,12 +2212,32 @@
     // sola visita»: se queda en OBRA y se dice por qué (Wimauma: la IA dijo «service» por el equipo de servicio del pozo,
     // y sus hitos son «rough inspection passed» y «final inspection passed»).
     const tipoObraApp = norma((admin || {}).tipo_obra || "");
-    const pideServicio = tipoTrabajo === "service" || (!tipoTrabajo && /^(servicio|service|service_call)$/.test(tipoObraApp));
+    let pideServicio = tipoTrabajo === "service" || (!tipoTrabajo && /^(servicio|service|service_call)$/.test(tipoObraApp));
+    // 14-oct (pliego §10.4): servicio u obra lo decide la IA (o Edgar con el chip de «Ajustado a este trabajo»); el candado de
+    // los pagos de obra sigue: con pagos por fases (rough-in, trim-out, inspección) el papel no puede decir «una sola visita»
+    const tipoAntes = pideServicio ? "servicio" : "obra";
+    let tipoDe = "", tipoNota = "";
+    if (JE.tipo) { pideServicio = JE.tipo === "servicio"; tipoDe = " (lo contestaste tú)"; }
+    // 14-oct (corrección): con panel o acometida, la IA no pasa una obra a servicio (se perdían el hito «final inspection
+    // passed», el «Inspection delay» de la §6 y la aprobación del layout de un cambio de panel)
+    else if (decideJ("tipo") && J.tipo.valor === "servicio" && !pideServicio && hayPanel) tipoNota = "hay panel o acometida: va como obra";
+    else if (decideJ("tipo")) { pideServicio = J.tipo.valor === "servicio"; tipoDe = " (lo decidió la IA)"; }
     const pagosDeObra = pideServicio ? (cuenta.hitos || []).some((h, k) => RX_PAGO_DE_OBRA.test(norma(disparadorServicio(L, cuenta.hitos.length, k) || h.disparador || ""))) : false;
     const esServicio = pideServicio && !pagosDeObra;
     const servicioNegado = pideServicio && pagosDeObra
-      ? `La obra se marcó como servicio${tipoTrabajo === "service" ? " (tipo de trabajo «service»)" : " (en la ficha)"}, pero sus pagos se cobran por fases de obra (rough-in, trim-out o inspección): el contrato va como obra, con sus fases.`
+      ? `La obra se marcó como servicio${tipoDe || (tipoTrabajo === "service" ? " (tipo de trabajo «service»)" : " (en la ficha)")}, pero sus pagos se cobran por fases de obra (rough-in, trim-out o inspección): el contrato va como obra, con sus fases.`
       : "";
+    if (decideJ("tipo")) {
+      // 14-oct (corrección): «aplicado» = el papel salió como dijo la IA (se mira el resultado, no quién lo pidió). Si Edgar
+      // tocó «Es un servicio» y los pagos van por fases, se dice así (antes la pantalla decía «no lo apliqué: lo contestaste
+      // tú» y el papel era obra, como dijo la IA)
+      const final = esServicio ? "servicio" : "obra", iaV = J.tipo.valor, aplicado = final === iaV;
+      if (JE.tipo) {
+        const nota = JE.tipo === "servicio" && !esServicio ? "lo contestaste tú, pero los pagos van por fases: va como obra" : aplicado ? "" : "lo contestaste tú";
+        juicio.tipo = Object.assign({}, J.tipo, { aplicado, antes: tipoAntes }, nota ? { nota } : {});
+      } else if (tipoNota) ponJ("tipo", tipoAntes, false, tipoNota);
+      else ponJ("tipo", tipoAntes, aplicado, aplicado ? "" : "los pagos se cobran por fases de obra: va como obra");
+    }
     // 13-oct (revisión): «service» a secas (o el de la ficha) NUNCA hace la obra exterior: dentro y fuera salen de las
     // palabras (el chandelier de CCB es un servicio de dentro). Pero si Edgar escribió con sus palabras que es de FUERA
     // («Tipo de trabajo: exterior (poste y bomba)»: normalizarTipoTrabajo lo guarda como «service»), o la línea del alcance
@@ -2190,7 +2256,15 @@
     // v251 (revisión): «Complete trim-out (…), testing, and coordination of the required inspections» ya es el cierre
     const hayCierre = L.items.some(it => /^(testing|startup|closeout|commissioning)\b|\b(closeout|close-out|commissioning)\b/i.test(it.titulo)
       || (/\btesting\b/i.test(it.titulo) && /\binspections?\b|\btrim-?\s?out\b/i.test(it.titulo)));
-    const propio = clasificarPropias(L, (admin || {}).plantilla);   // 13-oct: con la plantilla, lo propio sin título solo sobra si la cláusula ya lo dice
+    // 14-oct (pliego §10.4): las protecciones que añade la IA van a la §9 detrás de las de la hoja y pasan por clasificarPropias
+    // igual que ellas (si repiten una cláusula de la casa, se quitan como hoy)
+    const extrasJ = J && Array.isArray(J.clausulas_extra) ? J.clausulas_extra.filter(c => c && typeof c === "object" && String(c.titulo_en || "").trim() && String(c.texto_en || "").trim()).slice(0, 4) : [];
+    const Lprop = extrasJ.length ? Object.assign({}, L, { terminos: [...(L.terminos || []), ...extrasJ.map((c, i) => ({ n: "ia" + (i + 1), titulo: String(c.titulo_en).trim(), texto: String(c.texto_en).trim(), linea: 0, juicio: true }))] }) : L;
+    const propio = clasificarPropias(Lprop, (admin || {}).plantilla);   // 13-oct: con la plantilla, lo propio sin título solo sobra si la cláusula ya lo dice
+    if (extrasJ.length) juicio.clausulas_extra = extrasJ.map((c, i) => {
+      const entra = propio.propias.some(p => p.n === "ia" + (i + 1));
+      return Object.assign({}, c, { aplicado: entra }, entra ? {} : { nota: "la plantilla ya trae esa cláusula" });
+    });
     const preProprio = propio.pre.length > 0;
     // v3.5: las fases (movilizaciones) — las de la hoja; si no las dice, se deducen del alcance:
     // trabajo bajo tierra / bonding antes de la losa = una salida aparte antes del rough-in
@@ -2209,7 +2283,15 @@
     // trae su propia frase de flood, clasificarPropias la quita para no repetir y sus números se leen igual.
     const flood = !!mZona || !!(L.flood || {}).senales;
     // 13-oct (pliego §9.1): en un servicio no hay layout que aprobar: la sección 8 sale como NO_LAYOUT (o la propia de la hoja)
-    const layout = !preProprio && !esServicio && norma(d.layout || "si") !== "no";
+    let layout = !preProprio && !esServicio && norma(d.layout || "si") !== "no";
+    // 14-oct (pliego §10.4): el layout lo decide la IA, salvo que la hoja traiga su propia sección 8 (manda la hoja)
+    if (decideJ("layout")) {
+      const antes = layout ? "si" : "no";
+      if (preProprio && J.layout.valor === "si") ponJ("layout", antes, false, "la hoja trae su propia sección 8");
+      // 14-oct (corrección): en una obra, la aprobación del layout (que protege a Max Power) solo se quita si la hoja lo dice
+      else if (J.layout.valor === "no" && layout) ponJ("layout", antes, false, "es una obra: la aprobación del layout solo se quita si tu hoja dice «Layout: no»");
+      else { layout = J.layout.valor === "si" && !preProprio; ponJ("layout", antes, true); }
+    }
     // 13-oct (pliego §9.1): lo que la HOJA excluye sale sí o sí. El lector (y el armado con IA) quita de «No incluye» las
     // exclusiones que la plantilla ya trae, para no repetirlas; si el interruptor de la plantilla está apagado (en CCB el
     // drywall: una escalera no es «interior» por las palabras), la exclusión se perdía del papel. Aquí se enciende.
@@ -2291,6 +2373,40 @@
     Object.keys(hojaExcluye).forEach(k => { if (hojaExcluye[k] && !bloques[k]) { bloques[k] = true; encendidasPorHoja.push(k); } });
     // en servicio, gabinetes, aparatos y el cableado de baja tensión son ruido de obra (salvo que la hoja los excluya ella misma)
     if (esServicio) ["EXCL_GABINETES", "EXCL_APARATOS", "EXCL_LOWVOLT"].forEach(k => { if (!hojaExcluye[k]) bloques[k] = false; });
+    // 14-oct (pliego §10.4): quién pone las luminarias (lo usa armarTodo: QUIEN_FIXTURES / FIXTURES_DE). Con «mxp» no sale la
+    // viñeta de los fixtures del cliente. Lo que Edgar contestó («Fixtures del cliente») manda.
+    let fixturesJ = null;
+    if (decideJ("fixtures")) {
+      if (JE.fixtures) ponJ("fixtures", "", false, "lo contestaste tú");
+      else {
+        const v = J.fixtures.valor;
+        fixturesJ = { quien: v === "client" ? "cliente" : v === "owner" || v === "owner_via_client" ? "dueno" : "", porCliente: v === "owner_via_client" };
+        if (v === "mxp") bloques.FIXTURES_CLIENTE = false;
+        ponJ("fixtures", "", true);
+      }
+    }
+    // el AFCI: incluido = cláusula sí y exclusión no; excluido = exclusión sí y cláusula no; no aplica = ninguna de las dos. Lo
+    // que la hoja excluye sale sí o sí (§9.1), y «Circuitos existentes» contestado por Edgar manda.
+    // 14-oct (corrección): «antes» mira lo que el papel de las reglas YA hacía: si excluía el AFCI (la viñeta de la §3, la de
+    // la hoja o la 9.x, que también dice que va excluido) es «excluido»; antes salía «incluido» al revés
+    const afciReglas = noExcluir.includes("afci") ? "incluido"
+      : bloques.EXCL_AFCI || (si_no(C.circuitos_exist) === true && !sinAfci) || yaExcluye(/\bafci\b|arc[- ]?fault/) ? "excluido" : "no_aplica";
+    let afciJ = null;
+    if (decideJ("afci")) {
+      if (JE.afci) ponJ("afci", afciReglas, false, "lo contestaste tú");
+      else if (J.afci.valor === "incluido" && hojaExcluye.EXCL_AFCI) ponJ("afci", afciReglas, false, "tu hoja excluye el arc-fault");
+      // 14-oct (corrección): «no aplica» es de comercial y exterior; en una vivienda se quitaban a la vez la viñeta y la 9.x
+      else if (J.afci.valor === "no_aplica" && afciReglas !== "no_aplica" && !esComercial && !exteriorServicio) ponJ("afci", afciReglas, false, "es una vivienda: el AFCI se incluye o se excluye, no deja de aplicar");
+      // «excluido = la exclusión de la plantilla, o la de la hoja»: si una exclusión propia de la hoja ya nombra el AFCI (CCB:
+      // «AFCI/GFCI on existing circuits… by written Change Order»), no se repite con la de la plantilla
+      else {
+        afciJ = J.afci.valor; bloques.EXCL_AFCI = !!hojaExcluye.EXCL_AFCI || (afciJ === "excluido" && !yaExcluye(/\bafci\b|arc[- ]?fault/));
+        // 14-oct (pliego §10.9, Edgar: «corrige 10.4»): con «incluido», la 9.x de la casa no vale (dice «excluded»); va esta como
+        // propia, que dice que el AFCI de los circuitos del §2 va incluido y guarda la protección del panel viejo
+        if (afciJ === "incluido" && conFirma && !ligero) propio.propias.push({ n: "afci_incluido", linea: 0, titulo: "Arc-fault protection",
+          texto: "AFCI protection required by NEC 210.12 for the circuits modified or extended under Section 2 is included. Should the existing panel be of a make or vintage for which listed AFCI or dual-function breakers are not available, or be found damaged, obsolete, or without available spaces, the corrective work is quoted by written change order." });
+      }
+    }
 
     const clausulas = {
       garantia: true, existentes: true, sitio: true, edicion: true,
@@ -2318,8 +2434,37 @@
       // residencial; en un subcontrato sobre propiedad comercial, no.
       deposito: conFirma && cuenta.deposito_mayor_10 && !esComercial
     };
+    // 14-oct (pliego §10.4): el AFCI de la IA y las cláusulas que le sobran a este trabajo (solo las de JUICIO_FUERA: las de
+    // protección base se ignoran y se apuntan en juicio_ignorado)
+    // 14-oct (corrección tras la revisión adversaria): la 9.x «Arc-fault protection» de la plantilla NO incluye el AFCI: dice
+    // que va excluido y por Change Order, y protege si el panel es viejo. Así que «incluido» = sin viñeta y sin la 9.x de la
+    // casa (va la propia de arriba, §10.9); «excluido» = la viñeta (o la de la hoja) y la 9.x como la pongan las reglas (antes
+    // se quitaba con su protección); «no aplica» = ninguna de las dos. (El pliego §10.4 decía lo contrario: lo corrigen §10.9
+    // y §10.12.)
+    if (afciJ) {
+      if (afciJ !== "excluido") clausulas.afci = false;
+      ponJ("afci", afciReglas, true);
+    }
+    if (J && J.clausulas_fuera !== undefined) {
+      const fuera = [];
+      (Array.isArray(J.clausulas_fuera) ? J.clausulas_fuera : []).forEach(c => {
+        const clave = c && typeof c === "object" ? String(c.clave || "") : String(c || "");
+        const porque = c && typeof c === "object" ? String(c.porque || "") : "";
+        if (!JUICIO_FUERA.includes(clave)) { juicioIgnorado.push({ clave, porque, motivo: "es una cláusula de protección base (o no existe): no se quita" }); return; }
+        fuera.push({ clave, porque, aplicado: true, antes: !!clausulas[clave] });
+        clausulas[clave] = false;
+      });
+      if (fuera.length) juicio.clausulas_fuera = fuera;
+    }
     // con SOW ligero no hay sección 9 (ni «See Section 9.x» en la §2 y la §3)
-    if (!conFirma || ligero) Object.keys(clausulas).forEach(k => { clausulas[k] = false; });
+    if (!conFirma || ligero) {
+      Object.keys(clausulas).forEach(k => { clausulas[k] = false; });
+      // 14-oct (corrección): «Ajustado a este trabajo» no da por puestas las protecciones ni las cláusulas quitadas: el papel
+      // no lleva sección 9 (el AFCI sí cuenta: su viñeta va en la §3)
+      const nota = "el SOW ligero no lleva sección 9";
+      if (juicio && juicio.clausulas_extra) juicio.clausulas_extra = juicio.clausulas_extra.map(c => Object.assign({}, c, { aplicado: false, nota }));
+      if (juicio && juicio.clausulas_fuera) juicio.clausulas_fuera = juicio.clausulas_fuera.map(c => Object.assign({}, c, { aplicado: false, nota }));
+    }
 
     const motivos = {
       panel_sin_fotos: "porque pusiste «Fotos del panel: no»",
@@ -2338,7 +2483,15 @@
         : "porque la propiedad es comercial: no es una venta a un consumidor (F.S. 501.021), no corren los tres días"
     };
     motivos.propias = "porque la hoja trae condiciones propias de este trabajo: " + propio.propias.map(p => p.titulo).join(" · ");
+    // 14-oct (pliego §10.4): lo que decidió la IA, con su porqué, en líneas para la pantalla («Ajustado a este trabajo»)
+    if (juicio) {
+      if (J.resumen) juicio.resumen = String(J.resumen);
+      if (juicioIgnorado.length) juicio.ignorado = juicioIgnorado.slice();
+      juicio.cambios = cambiosJuicio.slice();
+      motivos.juicio = lineasDelJuicio(juicio);
+    }
     return { bloques, clausulas, motivos, permiso, reglaPermiso, esGC, esComercial, esConsumidor, conFirma,
+             juicio, juicio_ignorado: juicioIgnorado, fixtures_juicio: fixturesJ,
              perfil: { hayPanel, interior, exteriorServicio, residencialInterior, venueExterior, tipo_trabajo: tipoTrabajo || null }, propio,
              servicio: esServicio, servicio_negado: servicioNegado, fases_hoja: fasesHoja, encendidas_por_hoja: encendidasPorHoja,
              permiso_excluido_hoja: vio(/^permit/),   // 13-oct (revisión): la hoja excluye el permiso (la viñeta dice lo de las tasas)
@@ -2729,10 +2882,13 @@
     const SERV = !!dec.bloques.SERVICIO;
     // 13-oct (CCB): quién pone los fixtures, según la hoja (QUIEN_FIXTURES / FIXTURES_DE)
     const textoFx = norma([L.hoy || "", ...(L.items || []).map(it => it.titulo + " " + (it.detalles || []).join(" ")), ...(L.no_incluye || []).map(x => x.texto || "")].join(" "));
-    const quienFx = /client[- ]?supplied|(?:supplied|furnished|provided) by the client|\(by client\)|the client supplies/.test(textoFx) ? "cliente"
+    // 14-oct (pliego §10.4): si la IA decidió quién pone las luminarias (juicio), manda ella; si no, las palabras de la hoja
+    const fxJ = dec.fixtures_juicio;
+    const quienFx = fxJ ? fxJ.quien
+                  : /client[- ]?supplied|(?:supplied|furnished|provided) by the client|\(by client\)|the client supplies/.test(textoFx) ? "cliente"
                   : /owner[- ]?furnished|furnished by the owner|owner[- ]?supplied|supplied by the owner|the owner furnishes|the owner supplies/.test(textoFx) ? "dueno" : "";
     // «furnished by the Owner, delivered through the Client» (CCB): la viñeta lo dice así
-    const fxPorElCliente = quienFx === "dueno" && /through the client/.test(textoFx);
+    const fxPorElCliente = fxJ ? !!fxJ.porCliente : quienFx === "dueno" && /through the client/.test(textoFx);
     // 13-oct (revisión): la hoja dice que el cliente pone las luminarias pero no hay «Fixtures del cliente:»: la viñeta de la §3
     // y la 9.x de los fixtures del cliente no salen (la 7.2 de servicio sí lo dice). Se avisa, no se inventa cuáles son.
     if (quienFx === "cliente" && !dec.bloques.FIXTURES_CLIENTE)
@@ -2770,7 +2926,11 @@
       // en la viñeta del permiso de la §3, y si la hoja no dice qué pasa si el AHJ lo pide, lo dice la casa (por Change Order)
       PERMISO_MOTIVO: motivoSinPermiso(d.permiso, dec),
       // 13-oct (tarde, CCB): «Permiso: no incluido — <texto en inglés>» sale tal cual; si no trae texto, la frase de la casa
-      PERMISO_TEXTO: dec.bloques.PERMISO_NO_INCLUIDO ? (textoPermisoNoIncluido(d.permiso) || "No permit is included in the lump sum. Should the Authority Having Jurisdiction require a permit for this work, the permit, its fee and any inspection trips are added by written Change Order.") : "",
+      // 14-oct (pliego §10.4): con el permiso «no incluido» decidido por la IA, su frase (ya pasó los filtros del dinero y de la ley)
+      // (14-oct, corrección: la frase de la IA se vuelve a mirar aquí; si dijera que va incluido o que no hace falta, va la de la casa)
+      PERMISO_TEXTO: dec.bloques.PERMISO_NO_INCLUIDO ? ((dec.juicio && dec.juicio.permiso && dec.juicio.permiso.aplicado && dec.juicio.permiso.valor === "no_incluido" && dec.juicio.permiso.texto_en
+          && !maloEnJuicio(dec.juicio.permiso.texto_en, "", "permiso") && dec.juicio.permiso.texto_en)
+        || textoPermisoNoIncluido(d.permiso) || "No permit is included in the lump sum. Should the Authority Having Jurisdiction require a permit for this work, the permit, its fee and any inspection trips are added by written Change Order.") : "",
       FECHA: fechaLarga(hoy), AAAA: mNum ? mNum[1] : String(hoy.getFullYear()),
       MMDD: mNum ? mNum[2] : dosDig(hoy.getMonth() + 1) + dosDig(hoy.getDate()),
       NOMBRE: nombreCorto, VENCE_30_DIAS: fechaLarga(vence),
@@ -4725,8 +4885,163 @@
   // ORIGINALES de Edgar (leerMonto / leerPagos), y la ficha manda en los datos.
 
   // Las claves de primer nivel del molde (el cerebro tiene que hablar de lo mismo: una prueba compara las dos listas)
+  // 14-oct (pliego §10.2): «juicio», las decisiones de la IA con su porqué (opcional: un armado viejo no lo trae)
   const MOLDE_ARMADO_CLAVES = ["v", "lineas_total", "idioma_hoja", "formato", "datos", "hechos", "condiciones", "dinero",
-    "textos", "propias", "codigo", "preguntas", "avisos", "sobrantes"];
+    "textos", "propias", "codigo", "juicio", "preguntas", "avisos", "sobrantes"];
+  // ---- 14-oct (pliego §10, Edgar: «la IA es la que determina, la que manda»): EL JUICIO DEL ARMADO ----
+  // La IA decide servicio u obra, el permiso, el AFCI, el layout, el material, quién pone las luminarias, qué cláusulas sobran
+  // y qué protecciones añade, cada cosa con su porqué. La limpieza es la MISMA que la del cerebro (limpiarJuicio en
+  // supabase/functions/cerebro/index.ts; cerebro-puro.mjs coteja las dos): una pieza mala se tira con un aviso «otro» y el
+  // armado sigue. Solo se pueden quitar las cláusulas de JUICIO_FUERA: las de protección base no están y no se tocan.
+  const JUICIO_VALORES = {
+    tipo: ["servicio", "obra"], permiso: ["nosotros", "cliente", "ninguno", "no_incluido"], afci: ["incluido", "excluido", "no_aplica"],
+    layout: ["si", "no"], material: ["todo", "limitado", "solo_labor"], fixtures: ["no_aplica", "owner", "owner_via_client", "client", "mxp"]
+  };
+  // 14-oct (corrección tras la revisión adversaria): «retainage» (dinero: «no retainage… does not exceed 10 %»), «sitio» (los
+  // circuitos existentes no son de Max Power) y «edicion» (la plantilla la marca «SIEMPRE») protegen a Max Power: ya no se
+  // pueden quitar por el juicio de la IA (pendiente de confirmar con Edgar; si quiere quitarlas, con su chip o su lección)
+  const JUICIO_FUERA = ["afci", "reuso_240", "reubicar", "isla", "aberturas", "fixtures_cliente", "fixtures_mxp", "subsuelo",
+    "panel_sin_fotos", "planos_permiso"];
+  // Cómo se dice cada decisión en la pantalla (en español llano, para Edgar)
+  const NOMBRE_DECISION = { tipo: "Tipo de trabajo", permiso: "Permiso", afci: "AFCI", layout: "Layout", material: "Material", fixtures: "Luminarias" };
+  const VALOR_DECISION = {
+    tipo: { servicio: "servicio (una visita)", obra: "obra (con fases)" },
+    permiso: { nosotros: "lo sacamos nosotros", cliente: "lo saca el cliente", ninguno: "no hace falta", no_incluido: "no incluido" },
+    afci: { incluido: "incluido", excluido: "excluido por Change Order", no_aplica: "no aplica" },
+    layout: { si: "con aprobación de layout", no: "sin aprobación de layout" },
+    material: { todo: "Max Power pone el material", limitado: "solo el material que nombra la hoja", solo_labor: "solo mano de obra" },
+    fixtures: { no_aplica: "no hay luminarias", owner: "las pone el dueño", owner_via_client: "las pone el dueño y las entrega el cliente", client: "las pone el cliente", mxp: "las pone Max Power" }
+  };
+  // Las líneas de «Ajustado a este trabajo»: una por decisión, con su porqué; lo que no se aplicó dice por qué
+  function lineasDelJuicio(j) {
+    if (!j || typeof j !== "object") return [];
+    const out = [], porque = p => String(p || "").trim() ? " — porque " + minus(String(p).trim().replace(/\.\s*$/, "")) + "." : ".";
+    // (14-oct, corrección: una nota también se enseña cuando la decisión sí salió, p. ej. «lo contestaste tú, pero los pagos
+    // van por fases: va como obra»)
+    const no = x => x && x.nota ? (x.aplicado === false ? ` (no lo apliqué: ${x.nota})` : ` (${x.nota})`) : "";
+    Object.keys(JUICIO_VALORES).forEach(k => {
+      const x = j[k]; if (!x || typeof x !== "object" || !x.valor) return;
+      const v = (VALOR_DECISION[k] || {})[x.valor] || x.valor;
+      const cab = k === "tipo" ? v.charAt(0).toUpperCase() + v.slice(1) : NOMBRE_DECISION[k] + ": " + v;
+      out.push({ clave: k, valor: x.valor, aplicado: x.aplicado !== false, texto: cab + no(x) + porque(x.porque) });
+    });
+    (j.clausulas_fuera || []).forEach(c => out.push({ clave: "clausulas_fuera", valor: c.clave, aplicado: c.aplicado !== false, texto: "Cláusulas que sobran: " + c.clave.replace(/_/g, " ") + no(c) + porque(c.porque) }));
+    (j.clausulas_extra || []).forEach(c => out.push({ clave: "clausulas_extra", valor: c.titulo_en, aplicado: c.aplicado !== false, texto: "Protecciones añadidas: " + c.titulo_en + no(c) + porque(c.porque) }));
+    (j.ignorado || []).forEach(c => out.push({ clave: "ignorado", valor: c.clave, aplicado: false, texto: `La IA pidió quitar «${String(c.clave).replace(/_/g, " ")}»: ${c.motivo}.` }));
+    return out;
+  }
+  // 14-oct (corrección tras la revisión adversaria): lo que añade el juicio tampoco puede OBLIGAR a Max Power, tocar los pagos
+  // ni prometer el permiso. Una protección añadida solo pone cargas al Cliente o límites a Max Power; si promete algo de Max
+  // Power («assumes full responsibility», «hold harmless», «included in the lump sum», «without a written Change Order»…) o
+  // habla de pagos, se tira: la IA no puede quitar la cláusula de la casa, pero tampoco escribir al lado otra que la deshaga.
+  // (Las mismas listas que el cerebro; cerebro-puro.mjs las coteja.)
+  const JUICIO_NUM_LETRA = "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred";
+  const JUICIO_PROMESA = [/\b(?:Max Power|(?<!\bgeneral |'s |’s )Contractor)(?:'s)? (?:also |additionally )?(?:assumes|accepts|absorbs|pays|installs|furnishes|provides|supplies|replaces|adds|warrants|guarantees|agrees|covers|bears)\b/i,
+    /\b(?:Max Power|(?<!\bgeneral |'s |’s )Contractor) (?:shall|will|must)\b(?!\s+(?:not|have no|be entitled|stop|suspend)\b)/i, /\b(?:Max Power|(?<!\bgeneral |'s |’s )Contractor) (?:is|remains|shall be|will be) (?:solely |fully |entirely )?(?:responsible|liable)\b/i,
+    /\bharmless\b/i, /\bliabilit\w*/i, /\bresponsib\w+ for (?:all|any and all)\b/i, /\bat no (?:additional |extra )?(?:cost|charge)\b/i, /\bfree of charge\b/i,
+    /(?<!\bnot )\bincluded in the (?:lump sum|price|contract)\b/i, /\bwithout (?:a )?(?:written )?change orders?\b/i, /\btime is of the essence\b/i,
+    /\bnotwithstanding\b/i, /\b(?:Max Power|(?<!\bgeneral |'s |’s )Contractor)'s (?:sole )?(?:cost|expense)\b/i];
+  const JUICIO_PAGO = /\b(?:pays?|paid|payments?|deposits?|retainage|invoices?|markup|percent|per cent)\b|\bdue\b(?!\s+to\b)/i;
+  // ¿Qué tiene de malo un texto en inglés que añade el juicio? "" si nada. Las palabras de ley, sin excepción (lo que añade el
+  // juicio no sale de una línea de la hoja que las traiga). `base` = lo que la IA vio (la hoja tapada y la ficha).
+  // `cual` (14-oct, corrección): "extra" = una protección añadida; "permiso" = la frase del permiso «no incluido»
+  function maloEnJuicio(s, base, cual) {
+    const t = String(s || ""), b = String(base || "");
+    if (dineroEnTextoArmar(t, base)) return "trae dinero";
+    if (/[<>]|\{\{/.test(t) || /#{2,}|#[.,]#|\$\s*#/.test(t)) return "trae «<», «{{» o una cifra tapada";
+    // (corrección: también «Sec. 9.4», «§9.4», «clause 9.4», «paragraph 9.7»)
+    if (/(?:\b(?:sections?|sec\.?|clauses?|paragraphs?)|§)\s*9\b/i.test(t)) return "remite a la sección 9";
+    const ley = PROHIBIDAS_LEY.map(p => t.match(p[0])).find(Boolean) || t.match(/\bguarant(?:y|ies)\b/i);
+    if (ley) return "trae texto de ley («" + String(ley[0]).trim() + "»)";
+    const vistos = b.replace(/\s*(?:%|percent\b|por\s+ciento\b)/gi, "%");
+    for (const m of t.matchAll(/(\d+(?:\.\d+)?)\s*(?:%|percent\b|per\s+cent\b)/gi)) if (!vistos.includes(m[1] + "%")) return "trae un porcentaje que la hoja no dice";
+    // (corrección: los porcentajes en letra, «fifteen percent», y los artículos del NEC que la hoja no trae)
+    const letra = new RegExp("\\b(?:" + JUICIO_NUM_LETRA + ")(?:[\\s-]+(?:" + JUICIO_NUM_LETRA + "))*\\s+(?:percent|per\\s+cent)\\b", "gi");
+    for (const m of t.matchAll(letra)) if (!b.toLowerCase().includes(m[0].toLowerCase())) return "trae un porcentaje que la hoja no dice";
+    for (const m of t.matchAll(/\bNEC\s*(?:art(?:icle|\.)?\s*)?(\d{3}(?:\.\d+)?)/gi)) if (!b.includes(m[1])) return "cita un artículo del NEC que la hoja no trae";
+    if (cual === "extra") {
+      const promesa = JUICIO_PROMESA.map(rx => t.match(rx)).find(Boolean);
+      if (promesa) return "obliga o promete algo a Max Power («" + String(promesa[0]).trim() + "»)";
+      // (pliego §10.9 C: el derecho de Max Power a parar la obra si un pago no llega SÍ vale; nada que cambie cuándo o cuánto se paga)
+      const suspende = /\b(?:Max Power|(?<!\bgeneral |'s |’s )Contractor) (?:may|can|has the right to|is entitled to) (?:suspend|stop)\b/i.test(t)
+        && !/\b(?:deposits?|retainage|markup|percent|per cent|nothing|due|completion|acceptance)\b/i.test(t);
+      const pago = suspende ? null : t.match(JUICIO_PAGO);
+      if (pago) return "habla de pagos («" + String(pago[0]).trim() + "»)";
+    }
+    if (cual === "permiso") {
+      // la frase del permiso «no incluido» tiene que decir eso: que no va incluido y que, si el AHJ lo pide, sale por Change Order;
+      // nunca que va incluido, que lo paga o lo saca Max Power, ni que no hace falta
+      const sinNegar = t.replace(/\b(?:no permit is|(?:is|are) not|not) included in the (?:lump sum|price|contract)\b/gi, "");
+      if (/\bincluded in the (?:lump sum|price|contract)\b|\bat no (?:additional |extra )?(?:cost|charge)\b|\babsorb\w*|\bpaid (?:for )?by Max Power\b|\bMax Power (?:obtains|pulls|applies|pays|secures|will (?:obtain|pull|apply|pay))\b|\bnot (?:required|needed)\b|\bno permit is (?:required|needed)\b/i.test(sinNegar))
+        return "dice que el permiso va incluido, que lo paga o lo saca Max Power, o que no hace falta";
+      if (!/\bno permit is included\b|\bnot included\b/i.test(t) || !/\bchange orders?\b/i.test(t)) return "no dice que el permiso no va incluido y que sale por Change Order";
+    }
+    return "";
+  }
+  // Limpia el juicio. Devuelve {juicio (o null si no queda nada), avisos [{tipo: "otro", lineas, motivo}]}.
+  function limpiarJuicio(j, base) {
+    const avisos = [];
+    const avisa = (motivo, lineas) => avisos.push({ tipo: "otro", lineas: Array.isArray(lineas) ? lineas.filter(n => Number.isInteger(n)) : [], motivo });
+    if (j === undefined || j === null) return { juicio: null, avisos };
+    if (typeof j !== "object" || Array.isArray(j)) { avisa("El juicio de la IA no tenía la forma del molde: lo tiré y decidieron las reglas."); return { juicio: null, avisos }; }
+    const out = {};
+    const lineas = de => Array.isArray(de) ? [...new Set(de.filter(n => Number.isInteger(n) && n >= 1))] : [];
+    const porque = p => String(p === undefined || p === null ? "" : p).replace(/\s+/g, " ").trim().slice(0, 400);
+    for (const k of Object.keys(JUICIO_VALORES)) {
+      const x = j[k];
+      if (x === undefined || x === null) continue;
+      if (typeof x !== "object" || Array.isArray(x) || JUICIO_VALORES[k].indexOf(x.valor) < 0) { avisa("La IA decidió «" + k + "» con un valor que no vale: lo tiré y decidieron las reglas."); continue; }
+      const p = porque(x.porque);
+      if (!p) { avisa("La IA decidió «" + k + ": " + x.valor + "» sin decir por qué: lo tiré y decidieron las reglas.", x.de); continue; }
+      if (dineroEnTextoArmar(p, base)) { avisa("El porqué de «" + k + "» traía dinero: lo tiré y decidieron las reglas.", x.de); continue; }
+      const d = { valor: x.valor, porque: p, de: lineas(x.de) };
+      if (k === "permiso" && typeof x.texto_en === "string" && x.texto_en.trim()) {
+        const te = x.texto_en.replace(/\s+/g, " ").trim();
+        const malo = x.valor !== "no_incluido" ? "solo vale con «no incluido»" : te.length > 600 ? "es demasiado largo" : maloEnJuicio(te, base, "permiso");
+        if (malo) avisa("El texto del permiso que escribió la IA " + malo + ": va la frase de la casa.", x.de);
+        else d.texto_en = /[.!?]$/.test(te) ? te : te + ".";
+      }
+      out[k] = d;
+    }
+    if (j.clausulas_fuera !== undefined && j.clausulas_fuera !== null) {
+      const fuera = [];
+      for (const c of Array.isArray(j.clausulas_fuera) ? j.clausulas_fuera : []) {
+        const clave = c && typeof c === "object" ? String(c.clave || "") : String(c || "");
+        // (corrección 14-oct: el aviso no repite lo que no es una clave de verdad: podría traer dinero y tumbar el armado)
+        if (JUICIO_FUERA.indexOf(clave) < 0) { avisa("La IA pidió quitar la cláusula " + (/^[a-z_]{1,40}$/i.test(clave) ? "«" + clave + "»" : "que nombró") + ", que no se puede quitar (protección base o no existe): se queda."); continue; }
+        const p = porque(c && c.porque);
+        if (!p || dineroEnTextoArmar(p, base)) { avisa("La IA pidió quitar «" + clave + "» " + (p ? "con dinero en el porqué" : "sin decir por qué") + ": se queda como dicen las reglas."); continue; }
+        if (!fuera.some(y => y.clave === clave)) fuera.push({ clave, porque: p });
+      }
+      if (fuera.length) out.clausulas_fuera = fuera;
+    }
+    if (j.clausulas_extra !== undefined && j.clausulas_extra !== null) {
+      const extra = [];
+      let nExtra = 0;
+      for (const c of Array.isArray(j.clausulas_extra) ? j.clausulas_extra : []) {
+        nExtra++;
+        const ti = c && typeof c === "object" ? String(c.titulo_en || "").replace(/\s+/g, " ").trim().replace(/[.:]\s*$/, "") : "";
+        const te = c && typeof c === "object" ? String(c.texto_en || "").replace(/\s+/g, " ").trim() : "";
+        const p = porque(c && c.porque), de = lineas(c && c.de);
+        // 14-oct (corrección): el aviso no cita un título con cifras, «$» o «#» (ni con dinero): el aviso viaja en el armado y el
+        // candado del teléfono lo tumbaría entero por el dinero que la IA puso y aquí se tiró
+        const m50 = (ti || te).slice(0, 50);
+        const muestra = /[\d$#]/.test(m50) || dineroEnTextoArmar(m50, base) ? "n.º " + nExtra : "«" + m50 + "»";
+        if (!ti || !te || !p) { avisa("La IA añadió una protección sin título, texto o porqué (" + muestra + "): no la puse.", de); continue; }
+        if (extra.length >= 4) { avisa("La IA añadió más de cuatro protecciones: no puse " + muestra + ".", de); continue; }
+        const malo = ti.length > 120 || te.length > 1200 ? "es demasiado larga" : maloEnJuicio(ti + ". " + te, base, "extra") || (dineroEnTextoArmar(p, base) ? "trae dinero en el porqué" : "");
+        if (malo) { avisa("La protección que añadió la IA " + muestra + " " + malo + ": no la puse.", de); continue; }
+        extra.push({ titulo_en: ti, texto_en: /[.!?]$/.test(te) ? te : te + ".", porque: p, de });
+      }
+      if (extra.length) out.clausulas_extra = extra;
+    }
+    if (j.resumen !== undefined && j.resumen !== null) {
+      const r = String(j.resumen).replace(/\s+/g, " ").trim().slice(0, 1500);
+      if (r && dineroEnTextoArmar(r, base)) avisa("El resumen de la IA traía dinero: no lo puse.");
+      else if (r) out.resumen = r;
+    }
+    return { juicio: Object.keys(out).length ? out : null, avisos };
+  }
   // Las tres reglas de oro de las preguntas (pliego §4.6): solo estas claves se le preguntan a Edgar
   const PREGUNTAS_QUE_VALEN = ["contrato_con", "propiedad", "firma", "permiso", "segundo_firmante", "base_precio",
     "fotos_panel", "circuitos_exist", "acceso", "fases", "fixtures", "pagos"];
@@ -5026,10 +5341,21 @@
     // 2) dinero en cualquier texto: el armado ENTERO se tira (como una lectura con dinero). Tanda 4: también una cifra
     //    sin $ ni comas que la IA no vio en la hoja tapada ni en la ficha («12828.84», «Deposit 5131», «-500.00»)
     const base = lineas.map(l => String((l || {}).t || "")).join("\n") + "\n" + JSON.stringify(ficha || {});
-    const donde = dineroEnElArmado(armado, "", base);
+    // 14-oct (pliego §10.4): el juicio se limpia aparte y ANTES del candado: una pieza suya mala se tira con aviso y el armado
+    // sigue (lo que queda no trae dinero). Sus líneas «de», solo las de la hoja.
+    const lj = limpiarJuicio(armado.juicio, base);
+    const sinJuicio = Object.assign({}, armado); delete sinJuicio.juicio;
+    const donde = dineroEnElArmado(sinJuicio, "", base);
     if (donde) return { error: "dinero_en_el_armado", donde };
 
-    const a = JSON.parse(JSON.stringify(armado));
+    const a = JSON.parse(JSON.stringify(sinJuicio));
+    if (lj.juicio) {
+      const J = JSON.parse(JSON.stringify(lj.juicio));
+      Object.keys(JUICIO_VALORES).forEach(k => { if (J[k]) J[k].de = J[k].de.filter(lineaOk); });
+      (J.clausulas_extra || []).forEach(c => { c.de = c.de.filter(lineaOk); });
+      a.juicio = J;
+    }
+    lj.avisos.forEach(x => { tirar("juicio", x.motivo); ambar("otro", x.lineas.filter(lineaOk), x.motivo); });
     ["datos", "hechos", "condiciones", "dinero", "textos", "propias", "codigo"].forEach(k => { if (!esObjeto(a[k])) a[k] = {}; });
     ["preguntas", "avisos", "sobrantes"].forEach(k => { if (!Array.isArray(a[k])) a[k] = []; });
     Object.keys(a).forEach(k => { if (!MOLDE_ARMADO_CLAVES.includes(k)) { delete a[k]; tirar(k, "no es del molde"); } });
@@ -5506,7 +5832,13 @@
       x.motivo = x.motivo.trim().slice(0, 400);
       return true;
     });
-    if (a.avisos.length > 12) { tirar("avisos", `${a.avisos.length} avisos: me quedo con doce`); a.avisos = a.avisos.slice(0, 12); }
+    // 14-oct (corrección): los avisos del juicio que añadió la nube (origen «juicio», detrás de los de la IA) no cuentan para
+    // los doce: si la IA ya mandó doce, se perdían justo los que dicen lo que se tiró del juicio
+    {
+      const deJuicio = a.avisos.filter(x => x.origen === "juicio"), deIA = a.avisos.filter(x => x.origen !== "juicio");
+      if (deIA.length > 12) tirar("avisos", `${deIA.length} avisos: me quedo con doce`);
+      a.avisos = [...deIA.slice(0, 12), ...deJuicio.slice(0, 24)];
+    }
     a.sobrantes = lineasDe(a.sobrantes);
 
     // 7) la cobertura: ninguna línea con contenido se pierde en silencio
@@ -5838,7 +6170,14 @@
         d.firma = lf.valor === "no" ? "no" : "sí"; R_("firma", `Firma: ${d.firma}`, "leccion");
         if ((H.firma === "si" || H.firma === "no") && H.firma !== lf.valor) aviso(`De ${deLeccion(lf)}: no tomé «firma: ${H.firma === "no" ? "no" : "sí"}» de la hoja.`, Ev.firma || 0, { clave: "firma" });
       }
-      else if (H.firma === "si" || H.firma === "no") { d.firma = H.firma === "si" ? "sí" : "no"; R_("firma", `Firma: ${d.firma}`, origenHecho("firma"), Ev.firma); }
+      else if (H.firma === "si" || H.firma === "no") {
+        d.firma = H.firma === "si" ? "sí" : "no";
+        // 14-oct (pliego §10.1): «Firma: sí — ligero» en la hoja es el SOW ligero con firma (v3.11). El hecho de la IA solo dice
+        // «si», así que la palabra «ligero» se toma de SU línea (la IA no decide el formato; lo dice la hoja con esas palabras)
+        const kvF = lineaOk(Ev.firma) ? claveDeLinea(limpio(Ev.firma)) : null;
+        if (d.firma === "sí" && kvF && kvF.clave === "firma" && /\b(?:ligero|ligera|light|scope of work)\b/.test(norma(kvF.valor || ""))) d.firma = "sí — ligero";
+        R_("firma", `Firma: ${d.firma}`, origenHecho("firma"), Ev.firma);
+      }
       else { d.firma = "sí"; R_("firma", "Firma: sí, por defecto", "defecto"); }
     }
     // con quién es el trato: la ficha (contrato con el contratista) > la respuesta > la lección > lo que la app sabe > el hecho > directo
@@ -5913,10 +6252,21 @@
       else if (tiene(R.permiso)) { d.permiso = DE_HECHO[String(R.permiso).trim()] || "nosotros"; origenPerm = "respuesta"; }
       else if (DE_HECHO[H.permiso]) { d.permiso = DE_HECHO[H.permiso]; origenPerm = origenHecho("permiso"); }
       else { d.permiso = "nosotros"; origenPerm = "defecto"; }
+      // 14-oct (pliego §10.4): de dónde salió el permiso, para que el juicio de la IA no pise lo que dijo Edgar (su respuesta o
+      // su lección) ni quién lo saca según la ficha o la regla de la casa (decidirInterruptores)
+      if (esObjeto(a.juicio)) L.permiso_origen = origenPerm;
+      // 14-oct (CCB): la IA solo tiene «ninguno» para el permiso; si la línea «Permiso:» / «Permit:» de la hoja dice «no incluido —
+      // …», manda la hoja: no se afirma que no hace falta, y su texto en inglés sale tal cual (PERMISO_TEXTO). Solo cuando el permiso
+      // quedó en «no hace falta» por la hoja, la ficha o el hecho (una lección o la regla de la casa siguen mandando)
+      if (leerPermiso(d.permiso) === "ninguno" && origenPerm !== "leccion" && origenPerm !== "regla") {
+        const lineaPerm = orig.map(x => String(x || "")).find(x => /^\s*(?:[-*•]\s*)?(?:permiso|permit)\s*:/i.test(x));
+        const valorPerm = lineaPerm ? lineaPerm.replace(/^\s*(?:[-*•]\s*)?(?:permiso|permit)\s*:\s*/i, "").trim() : "";
+        if (valorPerm && leerPermiso(valorPerm) === "no_incluido") { d.permiso = valorPerm; if (origenPerm !== "hoja") origenPerm = "hoja"; }
+      }
       const quien = leerPermiso(d.permiso);
       const nombreGC = regla ? regla.nombre : "el cliente";
       R_("permiso", quien === "cliente" ? `Permiso: lo saca ${origenPerm === "regla" ? nombreGC : "el cliente"}${motivoRegla ? ", " + motivoRegla.charAt(0).toLowerCase() + motivoRegla.slice(1) : ""}`
-        : quien === "ninguno" ? "Permiso: no hace falta" : "Permiso: lo saca Max Power", origenPerm, origenPerm === "hoja" ? Ev.permiso : undefined);
+        : quien === "ninguno" ? "Permiso: no hace falta" : quien === "no_incluido" ? "Permiso: no incluido (si el AHJ lo pide, por Change Order)" : "Permiso: lo saca Max Power", origenPerm, origenPerm === "hoja" ? Ev.permiso : undefined);
     }
 
     // ---- la prosa de la sección 1 (interruptores de QUE_HAY_HOY / QUE_CAMBIA / FALTA): el texto ORIGINAL de sus líneas
@@ -6466,6 +6816,19 @@
       if (!guardiaRef(x[c], k === "opciones" ? `la opción ${i + 1}` : `la exclusión ${i + 1}`)) x[c] = { en: c === "titulo" && k === "opciones" ? ((L.opciones[i] || {}).titulo || "") : "", de: [] };
     })));
 
+    // ---- 14-oct (pliego §10.4): el JUICIO de la IA pasa a la hoja leída tal cual (decidirInterruptores lo obedece). Sin juicio
+    // (un armado viejo), L.juicio no existe y todo sale como antes. Lo que Edgar contestó con los chips de «Ajustado a este
+    // trabajo» (tipo, permiso, circuitos existentes, fixtures) manda sobre esa decisión de la IA: L.juicio_edgar.
+    if (esObjeto(a.juicio) && Object.keys(a.juicio).length) {
+      L.juicio = JSON.parse(JSON.stringify(a.juicio));
+      const ed = {};
+      if (tiene(R.tipo_trabajo)) ed.tipo = String(R.tipo_trabajo).trim() === "servicio" ? "servicio" : "obra";
+      if (tiene(R.permiso)) ed.permiso = true;
+      if (tiene(R.circuitos_exist)) ed.afci = true;
+      if (tiene(R.fixtures)) ed.fixtures = true;
+      if (Object.keys(ed).length) L.juicio_edgar = ed;
+    }
+
     // ---- S: los textos de la IA tal cual, con la marca de que los escribió la IA
     delete S.disparadores;
     S.ia = true; S.directo = false;
@@ -6507,7 +6870,9 @@
                 // tanda 6 (Whitlock y Wimauma en vivo): lo propio que repite la plantilla, el layout propio y el tipo de trabajo
                 PLANTILLA_TERMINOS, PLANTILLA_PROGRAMA, RX_LAYOUT_PROPIO, PALABRA_TIPO_TRABAJO, RX_OBRA_EXTERIOR, sinNumeroDeHoja,
                 // 13-oct (pliego «Hablar con la IA»): el pago único sin depósito
-                pagoAdelantado, PAGO_UNICO_AL_FIRMAR };
+                pagoAdelantado, PAGO_UNICO_AL_FIRMAR,
+                // 14-oct (pliego §10): el juicio de la IA del armado (la misma limpieza que el cerebro) y sus líneas para la pantalla
+                limpiarJuicio, maloEnJuicio, lineasDelJuicio, JUICIO_VALORES, JUICIO_FUERA };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   raiz.Alcance = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);

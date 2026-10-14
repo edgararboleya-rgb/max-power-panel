@@ -15441,7 +15441,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           if ((pr.programa || []).length) partes.push(`Al cronograma (sección 7) entran: ${pr.programa.map(x => esc(x.titulo)).join(" · ")}.`);
           if ((pr.pre || []).length) partes.push(`La sección 8 es la de la hoja (${pr.pre.length} puntos), no la de aprobación de layout.`);
           if ((A.leido.pagos_propios || []).length) partes.push(`A los pagos (sección 6) entran: ${A.leido.pagos_propios.map(x => esc(x.titulo)).join(" · ")}.`);
-          return partes.length ? `<div class="alc-gris"><b>Ajustado a este trabajo:</b> ${partes.join(" ")}</div>` : "";
+          // 14-oct (pliego §10.6): con el juicio de la IA, primero su resumen y sus decisiones con su porqué
+          return alcAjustadoJuicio(dec) + (partes.length ? `<div class="alc-gris"><b>${dec.juicio ? "Además" : "Ajustado a este trabajo"}:</b> ${partes.join(" ")}</div>` : "");
         })()}
         <p class="alc-sub">Cláusulas que van a salir:</p>
         <div class="alc-chips">${encendidas.map(k => `<span class="alc-chip" title="${esc(dec.motivos[k] || "va siempre")}">${esc(NOMBRE_CLAUSULA[k] || k.replace(/_/g, " "))}</span>`).join("")}</div>
@@ -15764,6 +15765,11 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     document.querySelectorAll("[data-armado-precio]").forEach(b => b.addEventListener("click", () => {
       b.disabled = true;
       alcContestarArmado("precio_l", Number(b.dataset.armadoPrecio)).catch(e => avisar((e && e.message) || "No pude rehacer el contrato", true));
+    }));
+    // 14-oct (pliego §10.6): Edgar no está de acuerdo con una decisión de la IA: su respuesta manda y el contrato se rehace
+    document.querySelectorAll("[data-juicio-resp]").forEach(b => b.addEventListener("click", () => {
+      b.disabled = true;
+      alcContestarArmado(b.dataset.juicioResp, b.dataset.valor).catch(e => avisar((e && e.message) || "No pude rehacer el contrato", true));
     }));
     const bPapel = $("alc-armado-papel");
     if (bPapel) bPapel.addEventListener("click", () => {
@@ -17238,6 +17244,31 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   };
   const ALC_HECHO_FRASE = { permiso: { cliente: "el permiso lo saca el cliente", nosotros: "el permiso lo sacamos nosotros", ninguno: "no hace falta permiso" },
     firma: { si: "el contrato va con firma", no: "el contrato va sin firma (solo el alcance)" }, trato: { GC: "el trato es con el contratista", directo: "el trato es directo con el dueño" } };
+  // 14-oct (pliego §10.6): «Ajustado a este trabajo» con el JUICIO de la IA: primero su resumen («Así lo entendí») y después
+  // una línea por decisión con su porqué. Donde la app ya sabe contestar (tipo de trabajo, permiso, circuitos existentes),
+  // un chip para discrepar: contesta como las preguntas del armado (alcContestarArmado) y el contrato se rehace sin volver a
+  // pagar a la IA; lo que Edgar contesta manda sobre la decisión de la IA. Todo lo de la IA con esc() y sin traducir.
+  const ALC_JUICIO_CHIPS = {
+    tipo: { resp: "tipo_trabajo", ops: [["servicio", "Es un servicio (una visita)"], ["obra", "Es una obra (con fases)"]] },
+    permiso: { resp: "permiso", ops: [["nosotros", "Lo saca Max Power"], ["cliente", "Lo saca el cliente"], ["ninguno", "No hace falta permiso"]] },
+    afci: { resp: "circuitos_exist", ops: [["sí", "Toca circuitos existentes"], ["no", "No toca circuitos existentes"]] }
+  };
+  function alcAjustadoJuicio(dec) {
+    const j = dec && dec.juicio;
+    if (!j) return "";
+    const lineas = dec.motivos && Array.isArray(dec.motivos.juicio) ? dec.motivos.juicio : [];
+    const conChips = !!(alcActivo && alcActivo.armado && !alcActivo.armado.vieja);
+    const chips = x => {
+      const c = ALC_JUICIO_CHIPS[x.clave];
+      if (!c || !conChips) return "";
+      const ops = c.ops.filter(([v]) => !(x.clave === "tipo" && v === x.valor) && !(x.clave === "permiso" && v === x.valor));
+      return ops.length ? `<div class="alc-fixes">${ops.map(([v, et]) => `<button type="button" class="alc-op" data-juicio-resp="${esc(c.resp)}" data-valor="${esc(v)}">${esc(et)}</button>`).join("")}</div>` : "";
+    };
+    return `<div class="alc-gris alc-juicio"><b>Ajustado a este trabajo:</b>
+      ${j.resumen ? `<p class="alc-juicio-resumen" data-no-i18n>${esc(j.resumen)}</p>` : ""}
+      ${lineas.length ? `<ul class="alc-juicio-lista">${lineas.map(x => `<li${x.aplicado === false ? ` class="alc-juicio-no"` : ""}><span data-no-i18n>${esc(x.texto)}</span>${chips(x)}</li>`).join("")}</ul>` : ""}
+    </div>`;
+  }
   function alcCajaArmado() {
     const A = alcActivo, M = A && A.armado;
     if (!M) return "";
@@ -17266,6 +17297,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     return `<details class="cal-panel-card alc-armado" id="alc-armado"${abierta ? " open" : ""}>
       <summary class="cal-form-titulo">Lo que la IA entendió${ambar.length ? ` <span class="alc-armado-cuenta">· ${ambar.length} ${ambar.length === 1 ? "cosa por mirar" : "cosas por mirar"}</span>` : ""}</summary>
       ${M.vieja ? `<p class="lev-nota">Cambiaste la hoja después de armar: esto es de la hoja de antes. Toca «Volver a armar con IA».</p>` : ""}
+      ${A.decision && A.decision.juicio ? alcAjustadoJuicio(A.decision) : ""}
       <ul class="alc-armado-hechos">${hechos}</ul>
       ${ambar.length ? `<div class="alc-ambar"><b>Esto no me cuadra del todo (no te frena):</b><ul>${ambar.map(x =>
         `<li><span data-no-i18n>${esc(x.texto)}</span><div class="alc-fixes">${ir(x.lineas)}</div></li>`).join("")}</ul></div>` : ""}
@@ -17634,6 +17666,12 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       A.armado_en_marcha = null;
       return alcAplicarArmado({ huella: M0.huella, lectura: paquete, uso: null, costo_centavos: 0, costo_original: null,
                                 de_cache: false, ms: null }, M0);
+    },
+    // 14-oct (pliego §10.7): lo que viajaría al revisor (solo en modo de prueba), para mirar que lleve decisiones_ia sin dinero
+    paqueteRevisar() {
+      if (!alcActivo || !alcModoPrueba()) return null;
+      const p = alcPaqueteRevisar();
+      return p && p.cuerpo ? JSON.parse(JSON.stringify(p.cuerpo)) : p;
     }
   };
 
@@ -18024,6 +18062,30 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   }
 
   // Todo lo que viaja al revisor. Devuelve { cuerpo, rev } o { error }.
+  // 14-oct (pliego §10.5): lo que viaja al revisor de las decisiones de la IA: el valor y el porqué de cada una (y el título
+  // de las protecciones añadidas), nunca un texto con un monto. Sin juicio, nada.
+  function alcDecisionesParaRevisar(j) {
+    if (!j || typeof j !== "object") return null;
+    const sinPlata = (t, n) => { t = String(t || "").replace(/\s+/g, " ").trim(); return t && !Alcance.esMontoTapable(t) && !/\$/.test(t) && !Alcance.traeDineroEstricto(t) ? t.slice(0, n || 300) : ""; };
+    const out = {};
+    Object.keys(Alcance.JUICIO_VALORES || {}).forEach(k => {
+      const x = j[k];
+      if (!x || !x.valor || x.aplicado === false) return;
+      const d = { valor: x.valor, porque: sinPlata(x.porque) };
+      if (k === "permiso" && x.texto_en && sinPlata(x.texto_en, 600)) d.texto_en = sinPlata(x.texto_en, 600);
+      out[k] = d;
+    });
+    const fuera = (j.clausulas_fuera || []).filter(c => c && c.aplicado !== false).map(c => ({ clave: c.clave, porque: sinPlata(c.porque) }));
+    if (fuera.length) out.clausulas_fuera = fuera;
+    // 14-oct (corrección): con lo que DICE la protección (sin dinero, hasta 1.200 letras), para que el revisor vea si contradice
+    // otra cláusula del papel; antes solo le llegaban el título y el porqué
+    const extra = (j.clausulas_extra || []).filter(c => c && c.aplicado !== false && sinPlata(c.titulo_en))
+      .map(c => Object.assign({ titulo_en: sinPlata(c.titulo_en) }, sinPlata(c.texto_en, 1200) ? { texto_en: sinPlata(c.texto_en, 1200) } : {}, { porque: sinPlata(c.porque) }));
+    if (extra.length) out.clausulas_extra = extra;
+    if (sinPlata(j.resumen, 1500)) out.resumen = sinPlata(j.resumen, 1500);
+    return Object.keys(out).length ? out : null;
+  }
+
   function alcPaqueteRevisar() {
     const A = alcActivo, C = A.contrato;
     if (!C || !C.html) return { error: "sin_contrato" };
@@ -18084,6 +18146,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     // (las mismas líneas que viajaron con «armar»), para mirar que no sobre ni falte alcance
     if (A.armado && !A.armado.vieja && A.salida && A.salida.ia && Array.isArray(A.armado.nube) && A.armado.nube.length)
       cuerpo.hoja_origen = A.armado.nube.map(l => ({ n: l.n, t: l.t }));
+    // 14-oct (pliego §10.5): las decisiones que tomó la IA del armado (valor y porqué de cada una), para que el revisor no las
+    // discuta como hallazgos. Sin dinero: lo que lleve un monto no sale del teléfono (la nube lo vuelve a mirar)
+    const dj = alcDecisionesParaRevisar(dec.juicio);
+    if (dj) cuerpo.decisiones_ia = dj;
     return { cuerpo, rev: R };
   }
 

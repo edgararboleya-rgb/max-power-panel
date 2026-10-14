@@ -2882,6 +2882,11 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .alc-armado-cuenta{font-weight:600;color:var(--warn-ink)}
 .alc-armado-hechos{margin:.5rem 0 .3rem;padding-left:1.1rem;font-size: var(--fs-4)}
 .alc-armado-hechos li{margin:.2rem 0}
+/* 14-oct (pliego §10.6): «Ajustado a este trabajo» con el juicio de la IA: el resumen y una línea por decisión */
+.alc-juicio-resumen{margin:.35rem 0 .2rem}
+.alc-juicio-lista li{margin:.35rem 0}
+.alc-juicio-lista .alc-fixes{margin-top:.25rem}
+.alc-juicio-no{color:var(--mp-ink-3)}
 .alc-origen{color:var(--mp-ink-3);font-size: var(--fs-3)}
 .alc-leccion{margin:.5rem 0;padding:.6rem .7rem;border:1px dashed var(--mp-line);border-radius:10px;background:var(--mp-card)}
 .alc-leccion-etq{display:block;margin:0 0 .3rem;font-size: var(--fs-3);font-weight:650;color:var(--mp-ink-2)}

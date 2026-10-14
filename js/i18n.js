@@ -4347,7 +4347,13 @@
     "Elige primero cómo tiene que ser": "First choose how it should be",
     "Esto solo se puede guardar para esta obra": "This can only be saved for this job",
     "No entendí qué valor querías guardar": "I didn't understand which value you wanted to save",
-    "Cambiaste la hoja después de armar: vuelve a armar con IA": "You changed the sheet after building: build again with AI"
+    "Cambiaste la hoja después de armar: vuelve a armar con IA": "You changed the sheet after building: build again with AI",
+    // 14-oct (pliego §10.6): los chips para discrepar del juicio de la IA en «Ajustado a este trabajo»
+    "Es un servicio (una visita)": "It's a service call (one visit)",
+    "Es una obra (con fases)": "It's a project (with phases)",
+    "Toca circuitos existentes": "It touches existing circuits",
+    "No toca circuitos existentes": "It doesn't touch existing circuits",
+    "Además": "Also"
   });
   REGLAS.push(
     [/^Este mes el asistente lleva (\d+) ¢ de (\d+) \$\.$/, s => s.replace(/^Este mes el asistente lleva (\d+) ¢ de (\d+) \$\.$/, (m, a, b) => `This month the assistant has used ${a} ¢ of ${b} $.`)],
