@@ -19496,6 +19496,12 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       });
       if (A.propuesta.estado === "borrador")
         await DB.cambiarPropuesta(A.propuesta.id, { estado: "enviada" });
+      // 13-oct (noche, CCB): con el SOW en el portal la obra ya no está «cotizándose»: pasa a enviado (antes se quedaba en
+      // estimando y la ficha seguía diciendo «Escribir el alcance» y «todavía sin precio enviado»)
+      try {
+        const pEnv = proyectos().find(x => x.id === A.proyecto.id);
+        if (pEnv && pEnv.estado === "estimando") { await DB.cambiarProyecto(A.proyecto.id, { estado: "enviado" }); pEnv.estado = "enviado"; if (A.proyecto) A.proyecto.estado = "enviado"; }
+      } catch { /* la obra se marca a mano desde su ficha */ }
       const llave = await DB.llavePortal(A.proyecto.id);
       try { propData = await DB.cargarPropuestas(); } catch { /* se queda la de antes */ }
       A.variantes = alcVariantesDe(A.proyecto.id);

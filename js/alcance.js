@@ -2754,7 +2754,8 @@
       // v252: el inquilino que nombra la hoja (fila Tenant; sin nombre la fila no sale)
       TENANT: dec.inquilino || "",
       ETIQUETA_FIRMA_2: "Client Signature",
-      FIRMA_REP: dec.esGC ? " (Authorized Representative)" : "",
+      // 13-oct (noche, Edgar): el Client firma sin «(Authorized Representative)» (el párrafo de aceptación ya dice que quien firma puede obligar al Client)
+      FIRMA_REP: "",
       // v3.6: la jurisdicción tal cual en la cabecera; la forma corta en la prosa
       JURISDICCION: d.ciudad || admin.ciudad || "",
       // v3.6: las letras de la cláusula del depósito van seguidas (la (c) del consumidor solo si es consumidor)
