@@ -127,5 +127,6 @@ conciliación de apertura (f06).
   pegar c6 (c6 pide c4 2026100201 al menos). También del 9-oct: el `alter
   role … jit = off` del pegado no se repite si ya está apagado (dos pegados
   a la vez en el mismo cluster chocaban) y, si no puede, avisa y sigue.
-- ▶ Pendiente: pegar en producción (c1 del 9-oct, c4, c6 y los cinco bloques
-  privados).
+- c1, c4 y c6 pegados en producción el 15-oct (c4 y c6 en la marca
+  2026100901; `pruebas/conta/resultados/2026-10-15-produccion/`).
+- ▶ Pendiente: pegar los cinco bloques privados de la apertura.
