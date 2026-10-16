@@ -224,6 +224,30 @@ tránsito, sin tocar 1010.
   Lo que sigue es importar los archivos de octubre (`qfx2sql.py` mientras no
   hay pantalla) y la pantalla del banco. Evidencia en
   `pruebas/conta/resultados/2026-10-15-produccion/`.
+- **La pantalla del banco (16-oct): `js/conta.js` y `css/conta.css`, en la
+  rama de contabilidad, sin publicar todavía.** La entrada «Contabilidad»
+  (loseta, lateral y «Más»), solo para el dueño, abre cuatro pestañas:
+  **Bancos y tarjetas** (`v_banco_saldos`; el importador de archivo, general
+  y por cuenta: `fn_banco_importar_ofx` y después `fn_banco_casar_todo`
+  hasta `completo`), **Bandeja** (`v_banco_bandeja`: un botón por cada opción
+  de la propuesta, con el campo del motivo cuando la opción lo pide, y
+  «Otra cosa…»: clasificar a una cuenta con su obra, dinero entre cuentas
+  propias, la partida en tránsito del 30-sep a mano, casar con un asiento,
+  ignorar), **Conciliar** (`fn_conciliar` con el saldo como texto,
+  `v_conciliacion` y sus partidas en tres grupos; confirmar, recalcular,
+  cambiar el saldo, reabrir) y **Movimientos** (`v_banco_movimientos` por
+  cuenta y estado). Antes de pintar, `fn_banco_control('hoy', las vistas de
+  la página)`: si algo no cuadra, o la pantalla trajo distinto de lo que el
+  control contó, un rojo con el detalle y ningún cero (f05, falla ruidosa).
+  Solo con señal; nada se guarda en el teléfono. Los montos van a la base
+  como texto. Pruebas: `pruebas/conta/pantalla.js` (47 comprobaciones con la
+  base simulada: quién ve la entrada, el control, el importador, cada botón
+  de la bandeja con sus argumentos, conciliar, «←», sin señal) y las del
+  panel (e0, e13). Lo que falta de pantalla: aplicar un cobro a varias
+  facturas (`fn_banco_cobrar` con sus aplicaciones: hoy solo por el botón
+  que la base propone), elegir las partidas de un pago a proveedor, cambiar
+  la clase de una partida de la conciliación (`fn_conciliacion_partida`) y
+  el panel con los estados (f05).
 
 ## La ronda 5 (9-oct): préstamos de cuota semanal
 - El préstamo de negocio (2540/2550) se paga cada semana, y todo préstamo de

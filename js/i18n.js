@@ -34,7 +34,7 @@
     "Salir": "Log out", "Panel de proyectos": "Projects panel", "Categorías": "Categories",
     "+ Nuevo proyecto": "+ New project", "Cargando…": "Loading…",
     "Reportar mis horas": "Report my hours", "Calendario": "Calendar",
-    "Materiales": "Materials", "Gastos": "Expenses",
+    "Materiales": "Materials", "Gastos": "Expenses", "Contabilidad": "Accounting",
     "Proyectos Comerciales": "Commercial Projects", "Proyectos Residenciales": "Residential Projects",
     "Servicios": "Services", "Compras y arranque": "Purchases & kickoff",
     "Solo dueño": "Owner only", "Control de gastos": "Expense control",

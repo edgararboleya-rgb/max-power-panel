@@ -1,0 +1,126 @@
+/* ===========================================================================
+   Contabilidad (f05/f06): la pantalla del banco. Solo Edgar la ve.
+   Tokens de styles.css («Cobre y luz»): el cobre como acento, la noche para
+   el botón principal (.accion, de styles.css), Manrope y JetBrains Mono para
+   los números. Todo va dentro de #conta-raiz para no tocar el resto.
+   =========================================================================== */
+#conta-raiz { display: grid; gap: .8rem; }
+/* El botón flotante de la app tapa la esquina de las tarjetas: en la contabilidad no hace falta */
+body[data-vista="conta"] .fab { display: none; }
+#conta-raiz .ct-num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* ---- pestañas ---- */
+#conta-raiz .ct-tabs { display: flex; gap: .4rem; overflow-x: auto; padding-bottom: .15rem; scrollbar-width: none; }
+#conta-raiz .ct-tabs::-webkit-scrollbar { display: none; }
+#conta-raiz .ct-tab { flex: none; display: inline-flex; align-items: center; gap: .45rem; min-height: var(--tap); padding: .45rem 1rem;
+  border-radius: 999px; border: 1.5px solid var(--mp-line); background: var(--mp-card); color: var(--mp-ink-2);
+  font: inherit; font-weight: 700; font-size: .92rem; cursor: pointer; }
+#conta-raiz .ct-tab[aria-current="page"] { background: var(--night); color: #fff; border-color: var(--night); }
+#conta-raiz .ct-n { min-width: 20px; height: 20px; border-radius: 999px; background: #EFE22E; color: #3B3300;
+  font-size: .75rem; font-weight: 800; display: inline-grid; place-items: center; padding: 0 6px; }
+#conta-raiz .ct-n[hidden] { display: none; }
+
+/* ---- tarjetas y rejilla ---- */
+#conta-raiz .ct-main { display: grid; gap: .8rem; }
+#conta-raiz .ct-card { background: var(--mp-card); border: 1px solid var(--mp-line); border-radius: var(--r-card);
+  box-shadow: var(--mp-shadow); padding: .9rem 1rem; min-width: 0; }
+#conta-raiz .ct-card h2 { margin: 0 0 .4rem; font-size: 1.02rem; font-weight: 800; letter-spacing: -.01em; }
+#conta-raiz .ct-cab { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem; margin-bottom: .4rem; }
+#conta-raiz .ct-cab h2 { margin: 0; flex: 1 1 auto; }
+#conta-raiz .ct-x { margin-left: auto; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--mp-line); background: var(--mp-card); font-size: 1.1rem; line-height: 1; cursor: pointer; color: var(--mp-ink-2); }
+#conta-raiz .ct-rejilla { display: grid; grid-template-columns: 1fr; gap: .8rem; }
+@media (min-width: 900px) { #conta-raiz .ct-rejilla { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+#conta-raiz .ct-cuenta.alarma { border-left: 4px solid var(--bad); }
+#conta-raiz .ct-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; margin: .3rem 0 .6rem; }
+#conta-raiz .ct-kpis.cuatro { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 700px) { #conta-raiz .ct-kpis.cuatro { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+#conta-raiz .ct-kpi { display: grid; gap: .1rem; align-content: start; padding: .55rem .7rem; border-radius: 12px; background: var(--mp-sky-1, #F6FCFF); border: 1px solid var(--mp-line); }
+#conta-raiz .ct-lbl { font-size: .78rem; color: var(--mp-ink-2); font-weight: 700; letter-spacing: .02em; }
+#conta-raiz .ct-val { font-size: 1.3rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.15; }
+#conta-raiz .ct-sub { font-size: .78rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-datos { margin: 0 0 .4rem; padding-left: 1.1rem; font-size: .9rem; line-height: 1.55; color: var(--mp-ink-2); }
+#conta-raiz .ct-datos b, #conta-raiz .ct-datos .ct-num { color: var(--mp-ink); }
+#conta-raiz .ct-nota { font-size: .88rem; color: var(--mp-ink-2); line-height: 1.5; margin: .2rem 0 .5rem; }
+#conta-raiz .ct-ok-txt, #conta-raiz .ok-txt { color: var(--ok-ink); font-weight: 700; }
+#conta-raiz .bad-txt { color: var(--bad); font-weight: 700; }
+#conta-raiz .ct-vacio, #conta-raiz .ct-cargando { text-align: center; color: var(--mp-ink-2); padding: 1.3rem 1rem; }
+
+/* ---- píldoras y avisos (estado = color + texto) ---- */
+#conta-raiz .ct-pill { display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .03em; border-radius: 999px;
+  padding: .15rem .55rem; border: 1px solid var(--mp-line); color: var(--mp-ink-2); white-space: nowrap; vertical-align: middle; }
+#conta-raiz .ct-pill.ok { color: var(--ok-ink); background: var(--ok-bg); border-color: transparent; }
+#conta-raiz .ct-pill.warn { color: var(--warn-ink); background: var(--warn-bg); border-color: var(--mp-warn-bd); }
+#conta-raiz .ct-pill.bad { color: var(--bad); background: #FBE9E9; border-color: var(--bad-line); }
+#conta-raiz .ct-aviso { margin: .4rem 0; padding: .55rem .75rem; border-radius: 10px; font-size: .88rem; line-height: 1.45;
+  background: var(--mp-sky-1, #F6FCFF); border: 1px solid var(--mp-line); color: var(--mp-ink); }
+#conta-raiz .ct-aviso.ok { background: var(--ok-bg); border-color: transparent; color: var(--ok-ink); }
+#conta-raiz .ct-aviso.warn { background: var(--warn-bg); border-color: var(--mp-warn-bd); color: var(--warn-ink); }
+#conta-raiz .ct-aviso.bad { background: #FBE9E9; border-color: var(--bad-line); color: var(--bad); }
+#conta-raiz .ct-ok-box { border-left: 4px solid var(--ok); }
+#conta-raiz .ct-avisos { margin: .3rem 0 .4rem; padding-left: 1.1rem; font-size: .88rem; color: var(--mp-ink-2); }
+
+/* ---- el rojo de la falla ruidosa ---- */
+#conta-raiz .ct-rojo { border: 2px solid var(--bad); background: #FFF6F5; }
+#conta-raiz .ct-rojo h2 { color: var(--bad); }
+#conta-raiz .ct-rojo p { margin: .3rem 0 .6rem; line-height: 1.5; }
+#conta-raiz .ct-crudo { font-family: var(--mono); font-size: .78rem; color: var(--mp-ink-3); word-break: break-word; }
+
+/* ---- importador y formularios ---- */
+#conta-raiz .ct-fila { display: grid; grid-template-columns: 1fr; gap: .6rem; align-items: end; }
+@media (min-width: 700px) { #conta-raiz .ct-fila { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); } }
+#conta-raiz .ct-campo { display: grid; gap: .25rem; font-size: .82rem; font-weight: 700; color: var(--mp-ink-2); min-width: 0; }
+#conta-raiz .ct-campo select, #conta-raiz .ct-campo input, #conta-raiz .ct-campo textarea {
+  font: inherit; font-size: .95rem; font-weight: 500; color: var(--mp-ink); background: var(--mp-card);
+  border: 1.5px solid var(--mp-line); border-radius: var(--r-field); padding: .55rem .7rem; min-height: var(--tap); width: 100%; box-sizing: border-box; }
+#conta-raiz .ct-campo textarea { min-height: 72px; resize: vertical; }
+#conta-raiz .ct-campo input[type=file] { padding: .45rem .6rem; }
+#conta-raiz .ct-campo :focus-visible { outline: 3px solid var(--mp-blue); outline-offset: 1px; }
+#conta-raiz .ct-pide { display: grid; gap: .6rem; margin-top: .4rem; }
+#conta-raiz .ct-form { margin-top: .6rem; padding: .7rem .8rem; border-radius: 12px; background: var(--mp-sky-1, #F6FCFF); border: 1px dashed var(--cu-light); }
+#conta-raiz .ct-form[hidden] { display: none; }
+#conta-raiz .ct-form-t { margin: 0 0 .2rem; font-weight: 700; font-size: .92rem; color: var(--cu-dark); }
+#conta-raiz .ct-acciones { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .55rem; }
+#conta-raiz .ct-acciones .accion { min-height: var(--btn2-h); font-size: .9rem; padding: .5rem .9rem; text-align: left; line-height: 1.25; }
+#conta-raiz .ct-acciones .accion.chica { min-height: 36px; padding: .3rem .7rem; font-size: .82rem; }
+#conta-raiz .ct-subir { display: inline-flex; align-items: center; cursor: pointer; }
+#conta-raiz .ocupado { opacity: .6; pointer-events: none; }
+
+/* ---- la bandeja ---- */
+#conta-raiz .ct-barra-txt { font-size: .95rem; line-height: 1.5; }
+#conta-raiz .ct-chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .6rem; }
+#conta-raiz .ct-chip { font: inherit; font-size: .82rem; font-weight: 700; padding: .35rem .75rem; min-height: 36px; border-radius: 999px;
+  border: 1.5px solid var(--mp-line); background: var(--mp-card); color: var(--mp-ink-2); cursor: pointer; }
+#conta-raiz .ct-chip[aria-pressed="true"] { background: var(--cu-dark); border-color: var(--cu-dark); color: #fff; }
+#conta-raiz .ct-lista { display: grid; gap: .7rem; }
+#conta-raiz .ct-mov { border-left: 4px solid var(--mp-blue); }
+#conta-raiz .ct-mov.alarma { border-left-color: var(--bad); }
+#conta-raiz .ct-mov-cab { display: flex; align-items: baseline; gap: .6rem; }
+#conta-raiz .ct-mov-quien { flex: 1; min-width: 0; font-size: .98rem; }
+#conta-raiz .ct-mov-quien small { display: block; color: var(--mp-ink-3); font-size: .8rem; }
+#conta-raiz .ct-monto { font-weight: 800; font-size: 1.05rem; white-space: nowrap; }
+#conta-raiz .ct-monto.neg, #conta-raiz td.neg { color: var(--mp-ink); }
+#conta-raiz .ct-monto.pos, #conta-raiz td.pos { color: var(--ok-ink); }
+#conta-raiz .ct-meta { display: flex; flex-wrap: wrap; gap: .3rem .6rem; align-items: center; margin-top: .25rem; font-size: .8rem; color: var(--mp-ink-2); }
+#conta-raiz .ct-texto { margin: .55rem 0 0; font-size: .92rem; line-height: 1.5; }
+#conta-raiz .ct-otra-menu .ct-acciones { flex-direction: column; align-items: stretch; }
+
+/* ---- tablas ---- */
+#conta-raiz .ct-tabla-env { overflow-x: auto; margin: 0 -1rem; padding: 0 1rem; }
+#conta-raiz .ct-tabla { width: 100%; border-collapse: collapse; font-size: .86rem; min-width: 560px; }
+#conta-raiz .ct-tabla th { text-align: left; font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: var(--cu-dark);
+  font-weight: 800; padding: .4rem .5rem; border-bottom: 1px solid var(--mp-line); white-space: nowrap; }
+#conta-raiz .ct-tabla td { padding: .5rem .5rem; border-bottom: 1px solid var(--mp-line); vertical-align: top; }
+#conta-raiz .ct-tabla tr:last-child td { border-bottom: 0; }
+#conta-raiz .ct-tabla .r { text-align: right; }
+#conta-raiz .ct-tabla small { color: var(--mp-ink-3); }
+
+/* ---- conciliación ---- */
+#conta-raiz .ct-partidas { list-style: none; margin: .3rem 0 0; padding: 0; }
+#conta-raiz .ct-partida { display: grid; grid-template-columns: auto 1fr auto; gap: .2rem .7rem; padding: .5rem 0; border-top: 1px solid var(--mp-line); font-size: .88rem; align-items: baseline; }
+#conta-raiz .ct-partida:first-child { border-top: 0; }
+#conta-raiz .ct-partida.alarma { border-left: 3px solid var(--bad); padding-left: .5rem; }
+#conta-raiz .ct-partida-f { color: var(--mp-ink-2); white-space: nowrap; }
+#conta-raiz .ct-partida-d { min-width: 0; }
+#conta-raiz .ct-partida-d small { display: block; color: var(--mp-ink-3); font-size: .78rem; }
+#conta-raiz .ct-partida-m { font-weight: 700; white-space: nowrap; }
+#conta-raiz .ct-detalles summary { cursor: pointer; font-weight: 800; font-size: 1.02rem; }

@@ -699,6 +699,10 @@
     refrescar,
     salir,
     cargarTodo,
+    // Contabilidad (js/conta.js): la base tal cual, con la sesión y los errores en cristiano.
+    // _leer pagina de 1,000 en 1,000; _rpc llama a una función SQL (POST /rest/v1/rpc/…).
+    _api: api, _leer: leer,
+    _rpc: (fn, args) => api("rpc/" + fn, { metodo: "POST", cuerpo: args || {} }),
     // Escrituras
     cambiarProyecto: (id, cambios) => {
       // P75 (24-sep): al pasar una obra a TERMINADA se apunta el día (hora de

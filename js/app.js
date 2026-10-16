@@ -434,6 +434,7 @@
     else if (!$("vista-proyectos").hidden) pintarProyectos();
     else if (!$("vista-proyectos-todos").hidden) pintarCategorias();
     else if (!$("vista-mas").hidden) pintarMas();
+    else if (!$("vista-conta").hidden) { /* la contabilidad (js/conta.js) se refresca sola */ }
     else { pintarInicio(); pintarCategorias(); pintarResumen(); }
   }
 
@@ -519,7 +520,7 @@ function esFalloDeRed(err) {
     proyectos: "proyectos", "proyectos-todos": "proyectos", etapas: "proyectos", lista: "proyectos",
     detalle: "proyectos", alcance: "proyectos", checklist: "proyectos", materiales: "proyectos",
     gastos: "proyectos", estimador: "proyectos", propuesta: "proyectos", cierre: "proyectos", levantamiento: "proyectos",
-    mas: "mas", calendario: "mas", chat: "mas", asistente: "mas"
+    mas: "mas", calendario: "mas", chat: "mas", asistente: "mas", conta: "mas"
   };
   const menuDeVista = vista => PESTANA_DE[vista] || "";
   function irPestana(k) {
@@ -548,7 +549,7 @@ function esFalloDeRed(err) {
       <button type="button" class="lat-item lat-sub lat-extra" data-lat="proyectos-todos" data-accion="todos">${LATERAL_PROY_SVG}<span>Todos los proyectos</span></button>
       ${sub("btn-checklist", "Checklist", "btn-checklist")}
       ${sub("btn-materiales", "Materiales", "btn-materiales")}
-      ${dueno ? sub("btn-levantamiento", "Levantamiento", "btn-levantamiento") + sub("btn-gastos", "Gastos", "btn-gastos") + sub("btn-estimador", "Estimador", "btn-estimador") : ""}
+      ${dueno ? sub("btn-levantamiento", "Levantamiento", "btn-levantamiento") + sub("btn-gastos", "Gastos", "btn-gastos") + sub("btn-estimador", "Estimador", "btn-estimador") + sub("btn-conta", "Contabilidad", "btn-conta") : ""}
       <button type="button" class="lat-item" data-lat="mas">${LATERAL_MAS_SVG}<span>Más</span></button>
       ${sub("btn-calendario", "Calendario completo", "btn-calendario")}
       ${sub("chat", "Chat del equipo", "btn-chat", `<span id="lat-chat-badge" class="nav-badge" hidden></span>`)}
@@ -567,7 +568,7 @@ function esFalloDeRed(err) {
   const LATERAL_EXACTA = { horas: "btn-horas", calendario: "btn-calendario", checklist: "btn-checklist",
     "proyectos-todos": "proyectos-todos", etapas: "proyectos-todos", lista: "proyectos-todos",
     materiales: "btn-materiales", levantamiento: "btn-levantamiento", gastos: "btn-gastos",
-    estimador: "btn-estimador", propuesta: "btn-estimador", cierre: "btn-estimador", chat: "chat", asistente: "asistente" };
+    estimador: "btn-estimador", propuesta: "btn-estimador", cierre: "btn-estimador", conta: "btn-conta", chat: "chat", asistente: "asistente" };
   const lateralAncho = window.matchMedia ? window.matchMedia("(min-width: 1024px)") : null;
   if (lateralAncho && lateralAncho.addEventListener) lateralAncho.addEventListener("change", () => pintarLateral());
   // La entrada encendida (cian y aria-current), en el lateral y en la barra de abajo
@@ -740,6 +741,7 @@ function esFalloDeRed(err) {
     $("vista-alcance").hidden = vista !== "alcance";
     $("vista-chat").hidden = vista !== "chat";
     $("vista-asistente").hidden = vista !== "asistente";
+    $("vista-conta").hidden = vista !== "conta";
     $kicker.textContent = kicker;
     $titulo.textContent = titulo;
     $btnVolver.hidden = !volver;
@@ -764,6 +766,7 @@ function esFalloDeRed(err) {
     $("btn-gastos").hidden = !usuario.finanzas;
     $("btn-estimador").hidden = !usuario.finanzas;
     $("btn-levantamiento").hidden = !usuario.finanzas;
+    $("btn-conta").hidden = !usuario.finanzas;
     pintarInicio();
     pintarCategorias();
     pintarResumen();
@@ -2529,6 +2532,7 @@ function esFalloDeRed(err) {
       { k: "calendario", ico: SVG_CAL_MAS, t: "Calendario completo" },
       { k: "chat", ico: SVG_BURBUJA, t: "Chat del equipo", badge: true, oculta: $("btn-chat").hidden },
       { k: "asistente", ico: SVG_CHISPA, t: "Asistente", oculta: $("btn-asistente").hidden },
+      { k: "conta", ico: SVG_CONTA, t: "Contabilidad", detalle: "Bancos, tarjetas y la bandeja del banco", oculta: !(usuario && usuario.finanzas) },
       { k: "idioma", ico: SVG_GLOBO, t: "Idioma", valor: EN_APP ? "English" : "Español" },
       { k: "perfil", ico: SVG_PERSONA, t: "Perfil",
         detalle: `<span data-no-i18n>${esc(usuario.nombre)}</span> · <span>${esc(ROL_LLANO[rol] || usuario.rol || "")}</span> · <span>Versión ${esc(APP_VERSION || "?")}</span>` },
@@ -2547,6 +2551,7 @@ function esFalloDeRed(err) {
       if (k === "calendario") { volverA = "mas"; irCalendario(); }
       else if (k === "chat") { volverA = "mas"; $("btn-chat").click(); }
       else if (k === "asistente") { volverA = "mas"; $("btn-asistente").click(); }
+      else if (k === "conta") { volverA = "mas"; $("btn-conta").click(); }
       else if (k === "idioma") $("btn-idioma").click();
       else if (k === "perfil") abrirPerfil();
       else if (k === "salir") $("btn-salir").click();
@@ -2611,6 +2616,12 @@ function esFalloDeRed(err) {
   // Cuando ya no queda nada que deshacer dentro de la vista, «←» vuelve a la
   // pestaña de donde se vino (volverAlOrigen: Proyectos, Más, o Hoy)
   $btnVolver.addEventListener("click", () => {
+    if (!$("vista-conta").hidden) {
+      // La contabilidad cierra lo suyo (una conciliación abierta); si no tenía nada, al origen
+      if (window.MXP_CONTA && window.MXP_CONTA.atras()) return;
+      volverAlOrigen();
+      return;
+    }
     if (!$("vista-asistente").hidden) { volverAlOrigen(); return; }
     if (!$("vista-chat").hidden) {
       if (chatConv) { irChat(null); return; }
@@ -7971,6 +7982,20 @@ function esFalloDeRed(err) {
     pintarGastos();
   }
   $("btn-gastos").addEventListener("click", () => irGastos());
+
+  // ---------- Contabilidad (js/conta.js): solo dueño, solo con señal ----------
+  // La pantalla vive en js/conta.js (f05/f06); aquí solo la entrada y el título.
+  const SVG_CONTA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10 12 4l9 6"/><path d="M5 10v9M10 10v9M14 10v9M19 10v9M3 20h18"/></svg>';
+  function irConta() {
+    if (!usuario || !usuario.finanzas) return;
+    mostrar("conta", { kicker: "Contabilidad · solo dueño", titulo: "Bancos y tarjetas", volver: true, nuevo: false });
+    if (window.MXP_CONTA) {
+      window.MXP_CONTA.abrir({ titulo: (k, t) => { $kicker.textContent = k; $titulo.textContent = t; }, avisar });
+    } else {
+      $("conta-raiz").innerHTML = '<div class="inicio-card"><p class="cal-sin-eventos">La contabilidad no cargó (js/conta.js). Recarga la app.</p></div>';
+    }
+  }
+  $("btn-conta").addEventListener("click", () => irConta());
 
   function pintarGastos() {
     // La obra del filtro sale aunque no esté en marcha (una propuesta enviada, por ejemplo)
