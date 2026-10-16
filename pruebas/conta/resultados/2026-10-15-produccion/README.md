@@ -61,6 +61,16 @@ no está dada de alta: `fn_tarjeta_alta`) y la factura #MXP-METRONPR-M1 a un
 contratista (sin decir cuánto retiene el cliente: `update facturas set
 retencion = … where id = 67`).
 
-Pendiente en producción: c6-pruebas otra vez con el archivo corregido
-(163), c4-pruebas (opcional) y los bloques 2 a 5 de la apertura del 30-sep
-(con la balanza de arreglos-5).
+`c6-pruebas.sql` otra vez, con el archivo corregido, a las 21:41: **162 de
+163**, con la 83, la 84 y la 106 ya en `true`; en rojo la **157** (L15), y
+otra vez por un dato de verdad, no por c6: el bloque 1 de la apertura
+(20:0x) mapeó «Business Gold Card (1007)» a la Gold (2100-2013), y desde
+entonces ····1007 SÍ se conoce (la regla de la 4c: el número entre
+paréntesis del nombre de QuickBooks), así que `fn_banco_numero_de('1007')`
+da la Gold y darla de alta como personal es MX004, con razón. La prueba
+suponía que ····1007 no se conocía; usa desde hoy «1066» (y sale «omitida»
+si alguna cuenta real lo tuviera). A las 19:51 la 157 había salido en
+`true`: el bloque 1 aún no estaba.
+
+Pendiente en producción: c6-pruebas otra vez (163), c4-pruebas (opcional) y
+los bloques 2 a 5 de la apertura del 30-sep (con la balanza de arreglos-5).

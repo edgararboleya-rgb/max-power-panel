@@ -10125,15 +10125,21 @@ end $$;
 --      tercero que nombra a CHASE, y R3 no lo junta con el pago recibido en
 --      la tarjeta de la empresa); un CHEQUE no es la otra mitad del pase que
 --      ya puso «Desde 1098» (no casa con su línea); y el nombre de
---      QuickBooks que es solo cifras («1007», como trae QuickBooks la Gold)
---      no es el número de esa cuenta (····1007 no se conoce, y se puede dar
---      de alta como personal). Antes: «propia_sin_numero» las dos primeras
---      (R3 casaba el pago a CHASE con el de la Gold), el cheque casaba con
---      el pase, y ····1007 era la Gold (MX004 al darla de alta).
+--      QuickBooks que es solo cifras (como «1007», que es como QuickBooks
+--      nombraba la Gold; aquí «1066») no es el número de esa cuenta
+--      (····1066 no se conoce, y se puede dar de alta como personal).
+--      Antes: «propia_sin_numero» las dos primeras (R3 casaba el pago a
+--      CHASE con el de la Gold), el cheque casaba con el pase, y ····1007
+--      era la Gold (MX004 al darla de alta). (15-oct) Con «1007» la prueba
+--      salía en rojo en producción, con razón: la apertura real mapea
+--      «Business Gold Card (1007)» a la Gold y ····1007 SÍ se conoce desde
+--      entonces (la regla de la 4c: el número entre paréntesis del nombre
+--      de QuickBooks). Por eso un número que ninguna cuenta real tiene, y
+--      si alguna lo tuviera, «omitida».
 do $$
 declare
   v_obt text;
-  v_esp text := 'sueltos=personal emisor=tercero:CHASE r3=pendiente,pendiente cheque=pendiente qb_1007=- personal_1007=t';
+  v_esp text := 'sueltos=personal emisor=tercero:CHASE r3=pendiente,pendiente cheque=pendiente qb_1066=- personal_1066=t';
   d     date := nullif(current_setting('mx6.desde', true), '')::date;
   v_x   text;
 begin
@@ -10175,19 +10181,23 @@ begin
                     (select fn_banco_otro_lado(m)->>'emisor' from movimientos_banco m where m.id = pg_temp.c6_mov('1098', 'C6KI3')));
     v_obt := v_obt || format(' r3=%s,%s cheque=%s', split_part(pg_temp.c6_est('1098', 'C6KI3'), ':', 1),
                              split_part(pg_temp.c6_est('2100-9996', 'C6KI5'), ':', 1), split_part(pg_temp.c6_est('1098', 'C6KI4'), ':', 1));
-    -- (L15) «1007» en QuickBooks es la Gold (2100-9996): no es su número.
-    perform fn_apertura_mapeo_qb('1007', '2100-9996', 'c6-pruebas: así nombra QuickBooks la tarjeta');
-    v_obt := v_obt || ' qb_1007=' || coalesce(fn_banco_numero_de('1007'), '-');
+    -- (L15) Un nombre de QuickBooks que es solo cifras («1066»; como «1007», la Gold) no es el número de esa cuenta.
+    if fn_banco_numero_de('1066') is not null then
+      raise exception using errcode = 'MXT02';
+    end if;
+    perform fn_apertura_mapeo_qb('1066', '2100-9996', 'c6-pruebas: así nombra QuickBooks la tarjeta');
+    v_obt := v_obt || ' qb_1066=' || coalesce(fn_banco_numero_de('1066'), '-');
     begin
-      perform fn_banco_cuenta_personal('1007', 'c6-pruebas: una cuenta personal ····1007');
+      perform fn_banco_cuenta_personal('1066', 'c6-pruebas: una cuenta personal ····1066');
       v_x := 't';
     exception when others then v_x := sqlstate;
     end;
-    v_obt := v_obt || ' personal_1007=' || v_x;
+    v_obt := v_obt || ' personal_1066=' || v_x;
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when sqlstate 'MXT01' then v_obt := 'omitida: la apertura está cerrada y sin su asiento';
+    when sqlstate 'MXT02' then v_obt := 'omitida: ····1066 es de verdad una cuenta conocida (' || fn_banco_numero_de('1066') || ')';
     when others then v_obt := sqlstate || ' ' || left(sqlerrm, 300);
   end;
   insert into _pruebas values (157, 'el criterio lee los 4 últimos sueltos, el emisor, el cheque y no un nombre de QuickBooks', v_esp,
