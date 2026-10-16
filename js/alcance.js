@@ -130,6 +130,30 @@
   // Claves de dinero, que van en su propia sección
   const CLAVES_DINERO = { precio: ["precio", "total", "precio base", "price", "contract price", "base price", "lump sum"],
                           pagos:  ["pagos", "hitos", "milestones", "cobros", "payments", "payment schedule", "payment"] };
+  // 16-oct: «Total: nine (9) mini-splits» cuenta cosas. La clave «total» (solo esa) es el precio si su valor EMPIEZA por
+  // un monto («Total: 16,500.00», «Total: 16500», «Total: (16,500.00)», «Total: USD 4,100»), o si lleva «$». «Total: 1,250 ft» no.
+  // (revisión) …y también si lleva un monto en cualquier parte («Total: 16,500 including permit», «Total: Lump sum 16,500.00»,
+  // «Total: approx. 16,500.00»): solo no es el precio cuando no tiene forma de monto o su primera cifra es una medida fuerte
+  const RX_TOTAL_MONTO = /^\s*[-−–(]?\s*(?:\$|usd|us\$|dlls?\.?)?\s*(?:\d{1,3}(?:,\d{3})+|\d+)(?![\d,]\d)(?:\.\d{1,2})?\s*[kK]?\s*\)?\s*(?:$|[;,.—–(+-]|usd\b|dollars?\b|d[oó]lares\b|lump\b)/i;
+  const RX_TOTAL_FORMA = /\$\s*\d|\b(?:usd|us\$|dlls?|dollars?|d[oó]lares|lump|thousand|grand)\b|\d{1,3}(?:,\d{3})+|\d{1,3}(?:[ \u00a0]\d{3})+(?!\d)|\d+\.\d{2}(?!\d)|(?<![\d.,])\d{4,}(?![\d,])|\d(?:[.,]\d+)?\s?k\b/i;
+  const totalQueNoEsPrecio = (clave, valor) => {
+    if (norma(String(clave || "").replace(/\*\*|__|`/g, "").trim()) !== "total") return false;
+    const v = String(valor || "").replace(/\*\*|__|`/g, ""), m = v.match(/\d[\d,]*(?:\.\d+)?/);
+    if (m && !/\$\s*$/.test(v.slice(0, m.index))) {
+      const tras = v.slice(m.index + m[0].length);
+      // (revisión 3) …salvo que detrás de la medida venga un monto («Total: 2,446 sq ft, 18500»): esa línea es de dinero (y se pregunta)
+      if (RX_UNIDAD_FUERTE.test(tras) || RX_UNIDAD_FUERTE_MAY.test(tras)) return !totalConMedidaYMonto(clave, valor);
+    }
+    return !RX_TOTAL_MONTO.test(v) && !RX_TOTAL_FORMA.test(v);
+  };
+  // «Total: <medida fuerte> … <monto>»: la primera cifra es una medida, pero la línea lleva además un monto
+  function totalConMedidaYMonto(clave, valor) {
+    if (norma(String(clave || "").replace(/\*\*|__|`/g, "").trim()) !== "total") return false;
+    const v = String(valor || "").replace(/\*\*|__|`/g, ""), m = v.match(/\d[\d,]*(?:\.\d+)?/);
+    if (!m || /\$\s*$/.test(v.slice(0, m.index))) return false;
+    const tras = v.slice(m.index + m[0].length);
+    return (RX_UNIDAD_FUERTE.test(tras) || RX_UNIDAD_FUERTE_MAY.test(tras)) && tramosArmar("Total: " + v).length > 0;
+  }
 
   // Claves de Condiciones
   const CLAVES_COND = {
@@ -158,6 +182,10 @@
     const n = norma(v);
     if (!n) return "";
     if (/\b(mezcla|mixed|both|las dos|ambos|ambas)\b/.test(n)) return "mezcla";
+    // (revisión 2) la obra nueva dicha entera («casa nueva», «new home», «new construction», «obra nueva») es «new», salvo que
+    // la misma línea diga remodelación o servicio («remodelación del baño nuevo», «remodel (new kitchen)», «servicio (panel nuevo)»)
+    if (/\b(new construction|obra nueva|construccion nueva|casa nueva|vivienda nueva|new (?:home|house|residence|build(?:ing)?)|ground up)\b/.test(n)
+        && !/\b(remodel\w*|remodelacion|renovation|renovacion|interior|indoor|inside|service|servicio|exterior)\b/.test(n)) return "new";
     if (/\b(service|servicio|exterior|outdoor|outside|poste|pole|bomba|pump|pozo|well|riego|irrigation|site)\b/.test(n)) return "service";
     if (/\b(remodel|remodelacion|remodelling|remodeling|interior|vivienda|casa|house|home|residential interior|indoor|inside)\b/.test(n)) return "remodel";
     if (/\b(new|nuevo|nueva|new construction|obra nueva|ground up)\b/.test(n)) return "new";
@@ -203,6 +231,12 @@
      «2020-2024» o un «12/2-#12» siguen siendo lo que eran. */
   function leerMonto(texto) {
     const s = String(texto || "").trim();
+    // (revisión 2) los miles con espacio («12 500», «12 828,84», «15 000 $») son miles: antes salía $12.00
+    const mEsp = s.match(/^([-−–—]\s*)?\$?\s*(\d{1,3}(?:[ \u00a0]\d{3})+)(?:[.,](\d{1,2}))?\s*\$?$/);
+    if (mEsp) {
+      const ne = (Number(mEsp[2].replace(/\D/g, "")) + (mEsp[3] ? Number("0." + mEsp[3]) : 0)) * (mEsp[1] ? -1 : 1);
+      return isFinite(ne) ? { centavos: centavos(ne) } : null;
+    }
     // (09/10) «(2.5k)» también es un deduct: la «k» cabe dentro del paréntesis
     const paren = /^\(\s*\$?\s*\d[\d,]*(?:\.\d+)?\s*[kK]?\s*\)$/.test(s);
     const mSig = s.match(/^\s*([-−–—])\s*\$?\s*\d/);
@@ -221,6 +255,17 @@
       if (UNIDAD_TRAS.test(resto) || /^\s*(?:ohms?\b|Ω|Ω)/i.test(resto)) return null;
       const nk = Number(crudo) * 1000 * (neg ? -1 : 1);
       return isFinite(nk) ? { centavos: centavos(nk) } : null;
+    }
+    // (revisión 2) «15 mil», «15 thousand», «16 grand», «15 mil 500» (lo que llega por voz) son miles, no $15.00
+    const mMil = tras.match(/^\s*(?:mil|thousand|grand)\b(?:\s*(?:y\s+|and\s+)?(\d{1,3})(?![\d.,]))?/i);
+    if (mMil && !/,/.test(crudo)) {
+      const nm = (Number(crudo) * 1000 + (mMil[1] ? Number(mMil[1]) : 0)) * (neg ? -1 : 1);
+      return isFinite(nm) ? { centavos: centavos(nm) } : null;
+    }
+    // (revisión 2) «12.500» o «15.000» con punto de miles (sin centavos): no se adivina, se pregunta (antes salía $12.50)
+    if (/^\d{1,3}(?:\.\d{3})+$/.test(crudo)) {
+      const sg = neg ? -1 : 1;
+      return { pregunta: true, crudo, neg: neg, opciones: [Number(crudo.replace(/\./g, "")) * sg, Number(crudo.split(".").slice(0, 2).join(".")) * sg] };
     }
     // coma seguida de 1 o 2 dígitos: no se adivina, se pregunta
     const dudosa = crudo.match(/,(\d{1,2})(?!\d)/);
@@ -263,21 +308,59 @@
     // (09/10) «$2.5k» se lleva su «k» (son miles); «$2.5kW» no (la k es de la unidad)
     const conSigno = s.match(/(?:−\s*|[-–—])?\$\s*\d[\d,]*(?:\.\d{1,2})?(?: ?[kK](?![A-Za-z0-9]))?/);
     if (conSigno) return { trozo: conSigno[0].replace(/\s+/g, ""), seguro: true };
-    const conPalabra = /\b(dolares|dollars|usd)\b/i.test(sinAcentos(s));
+    // (revisión 3) el «$» detrás de la cifra, a la manera hispana («4500$», «4 500 $», «4.500,00 $»)
+    const conSignoTras = s.match(/(?<![\d.,])(?:\d{1,3}(?:[ \u00a0.,]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)\s?\$(?!\s?\d)/);
+    if (conSignoTras) return { trozo: conSignoTras[0].trim(), seguro: true };
+    const conPalabra = /\b(dolares|dollars|usd|dlls?|bucks)\b/i.test(sinAcentos(s));
     const rx = /\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\d+\.\d{2}(?!\d)/g;
     let m;
     while ((m = rx.exec(s))) {
       const antes = s.slice(0, m.index), despues = s.slice(m.index + m[0].length);
       if (/[#\/\-\d.]$/.test(antes)) continue;              // #2/0, 12/2, 210.8
+      if (/[A-Za-z]$/.test(antes) && !/(?:usd|us|dlls?)$/i.test(antes) && !/,\d{3}/.test(m[0])) continue;   // 16-oct: sheet E2.01, CH1007701 (un código); «x12,500» no
       if (/^\(/.test(despues)) continue;                    // 680.26(B)(2): artículo del código
       if (/^\d{3}\.\d{1,3}$/.test(m[0]) && (/\b(nec|nfpa|section|sections|sec|art|article|articles|and|or|to|through|§)\.?\s*$/i.test(antes)
           || /^\s*(,|and|or|through|to)\s+\d{3}\.\d/.test(despues))) continue;   // NEC 680.26, 250.24 and 408.36
-      if (UNIDAD_TRAS.test(despues)) continue;             // 1,300 sq ft
+      // 1,300 sq ft; (revisión) una de contar con espacio junto al dinero no («Option A 4,800 units 1-3»)
+      if (UNIDAD_TRAS.test(despues) && !(!RX_UNIDAD_FUERTE.test(despues) && !RX_UNIDAD_FUERTE_MAY.test(despues)
+            && ((cercaDeDinero(antes, m[0]) && /^\s/.test(despues)) || /\d,\d{3}\.\d{2}$/.test(m[0]) || (/\.\d{2}$/.test(m[0]) && RX_UNIDAD_CONTAR.test(despues))))
+          && !(/,\d{3}|\.\d{2}$/.test(m[0]) && /^\s*-?\s*(?:CU|AL|NEC|NFPA|FBC|HP)\b/.test(despues))) continue;   // «ADD 1,850 HP» no es una medida
+      if (medidaTras(antes, despues, m[0])) continue;           // 16-oct: 28,800 VA · 1,200A · 4,500 W · 22,000 AIC · 15,000 gal (la lista del armado)
       if (/^\s*[\/\-]\s*\d/.test(despues)) continue;        // 1,000-2,000 de rango raro
       return { trozo: m[0], seguro: conPalabra || PALABRA_DINERO.test(s) };
     }
     if (conPalabra) { const n = s.match(/\d[\d,]*(?:\.\d+)?/); if (n) return { trozo: n[0], seguro: true }; }
+    // (revisión) «Total 12k», «Extra 1,5k por el cargador»: miles con «k» junto a una palabra de dinero
+    if (RX_PALABRA_DINERO_ARMAR.test(s)) { const k = s.match(new RegExp(RX_MILES_K.source)); if (k) return { trozo: k[0], seguro: PALABRA_DINERO.test(s) }; }
     return null;
+  }
+  /* (revisión 2) Un ENTERO pelado junto a una palabra de dinero («deposit 4800», «engineering fee 450», «Duke charges 950»,
+     «Precio 12828 por el panel», «add 4500 for the rough», «Owner pays 1200»). hayDinero solo ve comas, centavos y $; la regla
+     del armado (tramosArmar) ya lo tapaba para la nube, pero el lector de reglas lo dejaba entrar en el papel y en las tareas del
+     equipo. Aquí frena con la MISMA regla: rojo si la palabra va pegada a la cifra, ámbar si no. Con una unidad detrás (fuerte o
+     débil) no cuenta: «Option A: 200 amp», «Extra 120 receptacles», «Add 240 V» siguen siendo medidas; un año suelto tampoco. */
+  // (revisión 3) frena TODO lo que el armado tapa para la nube (tramosArmar): la cifra con una unidad débil o una comilla detrás
+  // junto a la palabra de dinero («Deposit 6414 phase one», «Allowance 1500 fixtures», «"deposit 6414"»), «4500 dlls», «6.414,00»,
+  // «15 mil», «add 2k», el monto con letras, «Deposit-6414», «125/hr», «+1850», y la cifra de las líneas «Ingeniería:» / «Utility:».
+  // Rojo si lleva $, dlls, usd, bucks o dollars, o si va pegado a la palabra de dinero; ámbar si no. Una cantidad de tres cifras con
+  // una unidad de contar o eléctrica detrás («Extra 120 receptacles», «Option A: 200 amp») sigue sin frenar (la nube la ve tapada).
+  function montoPelado(linea) {
+    const s = String(linea || "");
+    const RX_PEGADA = new RegExp("(?:\\b(?:" + PALABRAS_DINERO_ARMAR + "|add|adds|añade|añadir|plus|minus|less|menos|eur|draw|milestone|hito)\\b\\s*(?:#?\\d{1,2}\\s*)?(?:(?:of|is|es|de|by|at|en|por|was|are|fue|son|será|sera)\\s+){0,2}[:=—–\\/-]?\\s*|@\\s*|€\\s*|\\d\\s?%\\s?[-–—\\/]|[+=]\\s?|:\\s*[-−]\\s?)$", "i");
+    let suave = null;
+    for (const [a, b] of tramosArmar(s)) {
+      const t = s.slice(a, b), antes = s.slice(0, a), despues = s.slice(b);
+      if (/\$|dollars?|usd|dlls?|bucks|d[oó]lares/i.test(t)) return { trozo: t.trim(), seguro: true };
+      const pegada = RX_PEGADA.test(antes);
+      if (/^\d+$/.test(t)) {
+        if (/^(?:19|20)\d\d$/.test(t) && !pegada) continue;
+        // una cantidad de tres cifras con unidad detrás no frena; con cuatro o más, o con comilla, sí
+        if (t.length <= 3 && !/^\s*["”″'’]/.test(despues) && (UNIDAD_TRAS.test(despues) || RX_UNIDAD_ARMAR.test(despues) || RX_UNIDAD_ARMAR_MAY.test(despues))) continue;
+      }
+      if (pegada) return { trozo: t.trim(), seguro: true };
+      if (!suave) suave = { trozo: t.trim(), seguro: false };
+    }
+    return suave;
   }
   // Sí/no, para donde solo hace falta saber si hay dinero de verdad
   function pareceDinero(linea) { const d = hayDinero(linea); return !!(d && d.seguro); }
@@ -377,6 +460,8 @@
       v = String(v || "").replace(/^\s*["“”'«]+\s*/, "").replace(/\s*["“”'»]+\s*$/, "");
       if (k === "contratista" && /max power|arboleya|EC13016045/i.test(v)) v = "";
       if (v) { R.datos[k] = v; R.datos_linea[k] = i + 1; }
+      // (revisión) un monto en «Ingeniería:», «Planos:» o «Utility:» (su texto sale tal cual en el papel): rojo o ámbar, como en el Alcance
+      if (v && (k === "ingenieria" || k === "planos" || k === "utility")) avisaDinero(i, lineas[i], "los datos («" + String(lineas[i]).split(":")[0].replace(/^[-*•\s]+/, "").trim() + ":»)");
     };
     // Pone una condición si Edgar no la escribió a mano (lo escrito a mano manda)
     const C_set = (k, valor, i) => { if (R.condiciones[k] || !valor) return false; R.condiciones[k] = { valor: String(valor).trim().replace(/[.,;]$/, ""), linea: i + 1, pescada: true }; return true; };
@@ -400,7 +485,9 @@
     // parece (podría ser una medida o un año) es un aviso ámbar que no bloquea
     // y trae el botón "eso no es dinero".
     const avisaDinero = (i, linea, donde) => {
-      const d = hayDinero(linea);
+      // (revisión 3) manda el más grave de los dos (hayDinero puede dar ámbar donde la regla del armado ya ve el monto pegado)
+      const dH = hayDinero(linea), dP = montoPelado(linea), dM = (dH || dP) ? null : medidaConMonto(linea);   // (revisión 5) «22,000 W hookup 2400»
+      const d = (dH && dH.seguro) ? dH : (dP && dP.seguro) ? dP : (dH || dP || (dM ? { trozo: dM, seguro: false } : null));
       if (!d || perdonadas.has(norma(linea))) return false;
       // v3.7 (tanda 1): quitar un monto NUNCA es automático, ni con $ («$500 allowance» lo decide Edgar con un toque)
       const arreglos = [{ tipo: "quitar_dinero", etiqueta: `Quitar ${d.trozo} y dejar el texto`, linea: i + 1, valor: d.trozo, auto: false },
@@ -563,7 +650,13 @@
       // …pero «Precio: $3,030.16» (la clave de precio con un monto de verdad) es el precio diga lo que diga la pista
       const precioConMonto = mNV && buscaClave(CLAVES_DINERO, nombre) === "precio"
         && ((hayDinero(valor) || {}).seguro || /^\$?\s*\d{1,3}(,\d{3})+(\.\d{2})?$|^\$?\s*\d+\.\d{2}$/.test(valor.trim()));
-      if (mNV && buscaClave(CLAVES_DINERO, nombre) === "precio" && (precioConMonto || !(pista && pista.rol !== "precio"))) {
+      if (mNV && buscaClave(CLAVES_DINERO, nombre) === "precio" && !totalQueNoEsPrecio(nombre, valor) && (precioConMonto || !(pista && pista.rol !== "precio"))) {
+        // (revisión 3) «Total: 2,446 sq ft, 18500»: leerMonto tomaría la medida por el precio; se pregunta en rojo
+        if (totalConMedidaYMonto(nombre, valor)) {
+          err(i, "Esta línea «Total:» trae una medida y un monto. Escribe el precio solo («Precio: 16,498.24») y la medida en el alcance.",
+              { arreglos: [{ tipo: "poner_precio_base", etiqueta: "Escribir el precio", pide: "monto" }, { tipo: "quitar_linea", etiqueta: "Quitar la línea", linea: i + 1, auto: false }] });
+          return;
+        }
         const m = leerMonto(valor);
         if (!m) err(i, "No entiendo el precio. Escríbelo así: 16,498.24",
                     { arreglos: [{ tipo: "poner_precio_base", etiqueta: "Escribir el precio", pide: "monto" }] });
@@ -1301,23 +1394,125 @@
     fotos_panel: "Si dices que no, el contrato añade que el precio se hizo sin ver el panel y que cualquier arreglo del panel va aparte.",
     circuitos_exist: "Si dices que sí, el contrato deja claro que los AFCI que pida el código en esos circuitos van aparte."
   };
-  // ¿Cambia el contrato la respuesta? (si no, no se pregunta)
-  function condicionesQueImportan(L) {
+  // 16-oct (revisión «la app entiende el tipo de trabajo»): qué queda de lo EXISTENTE en esta obra. Una sola lectura para la
+  // pregunta de las fotos del panel, la de los circuitos existentes, la exclusión del AFCI y las condiciones de la IA:
+  //   · obra nueva (lote vacío, «no existing service or wiring», «new construction», «Tipo de trabajo: new»): no hay panel ni
+  //     circuitos existentes;
+  //   · rewire completo + servicio nuevo que reemplaza el existente (Gong): no queda panel viejo que fotografiar (los circuitos
+  //     sí se preguntan: Heather es un rewire y Edgar contestó «Existing circuits: yes»);
+  //   · lo que dice que algo existente SE QUEDA o se toca («from the existing panel», «the meter and disconnect remain»,
+  //     «reconnect the existing…», «del tablero existente») manda: ahí se sigue preguntando.
+  // (revisión) obra nueva FUERTE (lote vacío, «no existing service or wiring», «new construction» de la obra —no «new construction
+  // cans/boxes» ni «new construction addition»—, «Tipo de trabajo: new») y DÉBIL («new home / house / residence / building» como la
+  // vivienda entera: no «new home office», «new home theater» ni «new home runs»). La débil no vale si algo sale del panel principal.
+  const RX_OBRA_NUEVA = /\bvacant lot\b(?!-)|\bno existing (?:electrical )?(?:service|wiring)\b|(?<!\b(?:addition|additions|remodel|extension|expansion|conversion|kitchen|bath|bathroom|is|are|like|as if|as in)\s*\(?\s*)\bnew construction\b(?![\s-]+(?:cans?|boxes|box|housings?|rough-?\s?in|style|trims?|recessed|downlights?|lights?|fixtures?|addition|remodel|old work|wiring|wire|tenant|build-?outs?|fit-?outs?|interior|suite|ti|led|wafers?|type|ic|rated|slim|canless)\b)|\bnew[- ]build\b|\bobra nueva\b|\bconstruccion nueva\b|(?<!\b(?:su|sus|mi|tu|nuestra)\s+)\bcasa nueva\b(?!\s+(?:de|del)\s+(?!(?:una?|dos|tres|cuatro|cinco|\d+|planta|pisos?|bloque|madera|concreto)\b)[a-z]+)/;   // (revisión 5) «6" new construction LED», «like new construction», «la casa nueva de Maria»
+  const RX_OBRA_NUEVA_DEBIL = /\bnew (?:(?:single-family|two-story|one-story|custom|[\w-]+-bedroom)\s+){0,2}(?:home|house|residence|dwelling|building)\b(?=\s*(?:[.,;:()—–-]|$)|\s+(?:construction|build|electrical|wiring|of|under|for|on|at|with|per|is|will)\b)/;
+  const RX_OBRA_NUEVA_DEBIL_HOY = /\bnew (?:(?:single-family|two-story|one-story|custom|[\w-]+-bedroom)\s+){0,2}(?:home|house|residence|dwelling|building)\s+(?:is\s+|being\s+)?(?:under construction|being built|construction|build|to be built)\b/;
+  // «their new home», «bought a new house», «moving into the new home»: habla de los dueños, no de la obra
+  const RX_DUENOS_ANTES = /(?:\b(?:their|his|her|our|my|your|owners?'s?|owners')|\b(?:bought|buy|buying|purchased|purchase|moving into|moved into|move into|moves into|relocating to))\s+(?:a\s+|an\s+|the\s+|this\s+)?$/;
+  const RX_DESDE_EL_PANEL = /\b(?:from|off|at|in|into)\s+the\s+panel\b/;
+  const RX_PANEL_PRINCIPAL_NUEVO = /\bnew\s+(?:[\w,-]+\s+){0,3}?(?:main\s+)?(?:panel|panelboard|load center|service)\b|\bmeter-?main\b|\bmain panel\b[^.;]{0,30}\bnew\b(?!\s+(?:[\w-]+\s+){0,3}?(?:breakers?|circuits?|feeders?|sub-?panels?|disconnects?|conduits?|wires?|wiring)\b)/;   // (revisión 3) «main panel with a new 100A breaker» no es un panel nuevo
+  // (revisión) el rewire es TOTAL solo si es de la casa o de las unidades («complete rewire of the three units»), no de un cuarto
+  const RX_REWIRE_TOTAL = /\b(?:complete|full|whole[- ]house|whole|total)[- ](?:house |home |building |unit |units )?re-?wir(?:e|es|ed|ing)?\b(?!\s+(?:of|in|for|at)\s+(?:the\s+|this\s+|that\s+)?(?!(?:entire\s+|whole\s+)?(?:house|home|residence|building|units?|(?:two|three|four|five|six|\d+)\s+units|dwelling|property|triplex|duplex|structure|apartments?)\b)[a-z])|\brecablead\w* (?:completo|total)\b|\bexisting wiring\b[^.;]{0,80}\b(?:removed|replaced)\b|\bremoval of (?:all )?(?:the )?existing wiring\b/;
+  const RX_SERVICIO_NUEVO = /\bexisting service\b[^.;]{0,40}\breplaced\b|\bnew\s+(?:[\w-]+\s+){0,2}service\b|\bservice (?:upgrade|change|replacement)\b|\b(?:acometida nueva|nueva acometida)\b/;
+  const RX_QUEDA_EXISTENTE = /(?<!\b(?:no|not|replace|replaces|replacing|remove|removes|removing|demolish|of)\s+(?:the\s+|all\s+)?)\bexisting\s+(?:\d+\s?a\s+|[\w-]+\s+){0,2}?(?:panel|panelboard|load center|switchboard|main breaker panel|pedestal|meter (?:can|base|socket)|mdp)\b(?![^.;]{0,50}\b(?:removed|replaced|demolished|abandoned|to be replaced|will be replaced)\b)|\b(?:from|at|in|into|to|off|on)\s+(?:the\s+)?(?:[\w-]+'s\s+)?(?:existing|house)\s+(?:[\w-]+\s+){0,2}?(?:panel|panelboard|service|load center|sub-?panel|switchboard|pedestal|meter|mdp)\b|\breconnect\w*\s+(?:the\s+|all\s+)?existing\b|\bre-?land\w*\b|\b(?:meters?|disconnects?|panels?|services?|switchboards?|pedestals?|meter (?:cans?|bases?|sockets?)|mdp)\b[^.;]{0,40}\b(?:stays?|remains?|to remain)\b|\b(?:del|al|en el|desde el)\s+tablero (?:existente|de la casa)\b|\b(?:extend\w*|modif\w*|tap\w*|splic\w*|reus\w*|intercept\w*)\s+(?:the\s+|an?\s+|all\s+)?existing\b|(?<!\bno )(?<!\bnot )\bexisting\s+(?:[\w-]+\s+){0,2}circuits?\b|(?<!\bno )\bexisting\s+(?:[\w-]+\s+){0,2}?(?:home|house|residence|dwelling)\b|\bfed\s+(?:from|off)\s+the\s+(?:main\s+)?(?:house|home|existing)\b|\b(?:extend\w*|tap\w*|fed)\s+(?:from|off)\s+(?:the|an?)\s+(?:[\w-]+\s+){0,2}?circuits?\b|\b(?:move|moves|moving|transfer\w*|relocat\w*)\s+(?:all\s+)?(?:of\s+)?(?:the\s+)?(?:existing\s+)?(?:branch\s+)?circuits\b|\bse\s+queda(?:n)?\s+(?:el|los|la|las)\s+(?:panel|paneles|tablero|tableros|breakers?|medidor|servicio|circuitos)\b/;   // (revisión 5) «fed from the house», «extended from the receptacle circuit», «move all branch circuits», «se queda el panel»
+  // (revisión 3) el panel con nombre de lugar también se queda («breaker in the garage panel», «from the main house panel», «in the MDP»)
+  const RX_QUEDA_MAIN = /\b(?:from|at|in|into|to|off|on)\s+the\s+main\s+(?:panel|panelboard|service|load center)\b|\bbreakers?\s+(?:in|into|at|on)\s+the\s+(?!new\b)(?:[\w-]+\s+){0,2}?(?:panel|panelboard|load center|mdp|switchboard)\b|\b(?:from|at|in|into|to|off|on)\s+the\s+(?:main house|house|garage|laundry|hall|hallway|utility|kitchen|exterior|outside|outdoor)\s+(?:panel|panelboard|load center)\b|\b(?:from|at|in|into|off|on)\s+the\s+(?:existing\s+)?(?:mdp|main distribution panel)\b|\b(?:del|al|en el|desde el)\s+tablero principal\b/;
+  // (revisión 3) la obra nueva FUERTE dicha de UNA PARTE («the detached shed has no existing service», «Detached ADU, new construction»,
+  // «new construction pool») o de la HISTORIA de la casa («built as new construction in 2019», «New-build home from 2023») no hace
+  // de toda la obra una obra nueva
+  const RX_PARTE_OBRA = /\b(?:adu|accessory dwelling(?: unit)?|casita|in-law(?: suite)?|guest (?:house|suite|cottage)|pool(?: house)?|spa|shed|garage|carport|workshop|shop|barn|studio|addition|extension|conversion|attic|bonus room|lanai|cabana|outbuilding|detached|dock|boathouse|gazebo|pergola|patio|porch)\b/;
+  function obraNuevaDeUnaParte(todo, i, trozo) {
+    const antes = todo.slice(0, i), despues = todo.slice(i + trozo.length);
+    const frase = antes.slice(Math.max(antes.search(/[^.;!?—–]*$/), 0));
+    if (/^no existing/.test(trozo)) return RX_PARTE_OBRA.test(frase) || /^\s*(?:except|other than|besides|aside from|apart from|but)\b/.test(despues);
+    if (/^(?:new construction|new[- ]build)/.test(trozo)) {
+      if (RX_PARTE_OBRA.test(frase.slice(-30)) || /^[\s,-]*(?:(?:in-?ground|inground|outdoor|concrete)\s+)?(?:adu|pool|spa|shed|garage|carport|workshop|shop|barn|studio|addition|extension|casita|guest house|cabana|outbuilding|lanai)\b/.test(despues)) return true;
+      // (revisión 5) «New construction master suite addition»: la parte viene dos o tres palabras detrás, en la misma frase
+      if (/^[\s,-]*(?:[a-z0-9'-]+\s+){1,3}?(?:addition|additions|extension|adu|casita|guest house|in-law suite)\b/.test(despues.split(/[.;!?—–]/)[0])) return true;
+      if (/\b(?:built|constructed|was|were|been)\s+(?:as\s+)?(?:an?\s+)?$/.test(frase) || /\b(?:19|20)\d\d\s+$/.test(frase) || /^\s*(?:(?:single-family\s+|custom\s+)?(?:home|house|residence|dwelling)\s+)?(?:built\s+)?(?:in|from|since|of)\s+(?:19|20)\d\d\b/.test(despues)) return true;
+    }
+    return false;
+  }
+  function perfilObra(L, admin) {
     const d = L.datos || {}, C = L.condiciones || {};
+    const tipo = String((C.tipo_trabajo || {}).valor || "");
     const esComercial = /comercial|commercial/.test(norma(d.propiedad || d.property || ""));
-    const sinAfci = esComercial || String((C.tipo_trabajo || {}).valor || "") === "service";
+    // el servicio: el de la hoja o, si la hoja no dice tipo, el de la ficha (lo mismo que decidirInterruptores)
+    // (revisión) con el mismo candado que decidirInterruptores: si los pagos van por fases de obra, no es un servicio
+    let servicio = tipo === "service" || (!tipo && /^(servicio|service|service_call)$/.test(norma((admin || {}).tipo_obra || "")));
+    if (servicio) { try { const cta = cuentas(L); if ((cta.hitos || []).some((h, k) => RX_PAGO_DE_OBRA.test(norma(disparadorServicio(L, cta.hitos.length, k) || h.disparador || "")))) servicio = false; } catch { /* sin pagos: se queda */ } }
+    const todo = norma([d.proyecto || "", L.hoy || "", L.cambia || "", ...(L.items || []).map(it => it.titulo + " " + (it.detalles || []).join(" "))].join(" "));
+    const quedaExistente = RX_QUEDA_EXISTENTE.test(todo);
+    // (revisión 2) «from the panel» (cualquier panel) cuenta como el panel que se queda, salvo que la obra ponga un panel o un
+    // servicio nuevo de casa (ahí «the panel» puede ser el nuevo)
+    const quedaMain = RX_QUEDA_MAIN.test(todo) || (RX_DESDE_EL_PANEL.test(todo) && !RX_PANEL_PRINCIPAL_NUEVO.test(todo));
+    // (revisión) «Tipo de trabajo: remodel / service» manda: no es obra nueva aunque diga «new construction cans»
+    // (revisión 2) manda el valor de la línea ya entendido (normalizarTipoTrabajo): «remodelación del baño nuevo», «remodel (new
+    // kitchen)» o «servicio (panel nuevo)» NO son obra nueva por llevar «nuevo» dentro; «casa nueva» o «new home» sí lo son
+    const tipoNuevo = tipo === "new";
+    const tipoNoNuevo = (tipo === "remodel" || tipo === "service" || tipo === "mezcla") && !tipoNuevo;
+    // la señal DÉBIL («new home», «new building») vale en el título y en los renglones; en la prosa de «Hoy» solo si habla de la
+    // obra («New single-family home under construction»), no de los dueños («before moving into their new home»)
+    const tituloYRenglones = norma([d.proyecto || "", ...(L.items || []).flatMap(it => [it.titulo, ...(it.detalles || [])])].join(" . "));
+    const prosa = norma([L.hoy || "", L.cambia || ""].join(" . "));
+    // (revisión 3) en el título y los renglones tampoco cuenta la casa de los dueños («Kitchen remodel at her new house»), ni la débil
+    // cuando el título es una remodelación; y en ninguna parte la que habla de una parte («detached workshop, new building»)
+    const tituloRemodel = /\b(?:remodel\w*|renovat\w*|remodelacion|renovacion|redo|gut)\b/.test(norma(d.proyecto || ""));
+    const debilVale = (texto, m) => !RX_DUENOS_ANTES.test(texto.slice(Math.max(0, m.index - 40), m.index))
+      && !RX_PARTE_OBRA.test(texto.slice(0, m.index).slice(Math.max(texto.slice(0, m.index).search(/[^.;!?—–]*$/), 0)).slice(-40));
+    const debil = !tituloRemodel && ([...tituloYRenglones.matchAll(new RegExp(RX_OBRA_NUEVA_DEBIL.source, "g"))].some(m => debilVale(tituloYRenglones, m))
+      || [...prosa.matchAll(new RegExp(RX_OBRA_NUEVA_DEBIL_HOY.source, "g"))].some(m => debilVale(prosa, m))
+      || [...prosa.matchAll(new RegExp(RX_OBRA_NUEVA_DEBIL.source, "g"))].some(m => debilVale(prosa, m)));
+    const fuertes = [...todo.matchAll(new RegExp(RX_OBRA_NUEVA.source, "g"))].filter(m => !obraNuevaDeUnaParte(todo, m.index, m[0]));
+    const fuerte = fuertes.length > 0;
+    // 16-oct (candado final): lo FIRME es lo que Edgar escribe («Tipo de trabajo: new») o lo que la hoja dice sin rodeos (lote vacío,
+    // «no existing service / wiring»). «New construction» o «new home» sueltos en la prosa solo cuentan si además la obra pone panel
+    // o servicio nuevo de casa: hacen falta dos señales para quitar una protección; con una sola se sigue preguntando
+    const firme = !tipoNoNuevo && (tipoNuevo || fuertes.some(m => /^(?:vacant lot|no existing)/.test(m[0])));
+    const obraNuevaTexto = !tipoNoNuevo && !firme && (fuerte || (debil && !quedaMain && !quedaExistente));
+    const obraNueva = firme || (obraNuevaTexto && (RX_PANEL_PRINCIPAL_NUEVO.test(todo) || RX_SERVICIO_NUEVO.test(todo)));
+    // (revisión 3) un panel que se queda («breaker in the main panel») cuando la obra no pone un panel ni un servicio nuevo de casa:
+    // hay panel y circuitos existentes aunque una parte sea nueva (salvo que Edgar haya escrito «Tipo de trabajo: new»)
+    // (una «Tipo de trabajo: new construction addition», «ADU nueva» o «garage conversion» cuelga de una casa que existe: ahí sí cuenta)
+    const tipoAdicion = /\b(?:addition|additions|extension|expansion|conversion|adu|accessory dwelling|guest house|in-law|casita|ampliacion|adicion|anexo)\b/.test(norma((C.tipo_trabajo || {}).crudo || ""));
+    const quedaMainViejo = quedaMain && (!tipoNuevo || tipoAdicion) && !RX_PANEL_PRINCIPAL_NUEVO.test(todo);
+    const rewire = RX_REWIRE_TOTAL.test(todo), servicioNuevo = RX_SERVICIO_NUEVO.test(todo);
+    // en obra nueva «the main panel» es el panel nuevo; en un rewire con servicio nuevo, no se sabe: cuenta como que se queda
+    const sinPanelExistente = (obraNueva && !quedaExistente && !quedaMainViejo) || (rewire && servicioNuevo && !quedaExistente && !quedaMain);
+    // (revisión) «Circuitos existentes: sí» de Edgar manda sobre la lectura de la obra
+    const sinCircuitosExistentes = obraNueva && !quedaExistente && !quedaMainViejo && siNo(C.circuitos_exist) !== true;
+    return { esComercial, servicio, sinAfci: esComercial || servicio, obraNueva, obraNuevaTexto, rewire, servicioNuevo, quedaExistente, quedaMain,
+             sinPanelExistente, sinCircuitosExistentes, noExcluirAfci: norma((C.no_excluir || {}).valor || "").includes("afci") };
+  }
+  // ¿Cambia el contrato la respuesta? (si no, no se pregunta)
+  // 16-oct: recibe admin (el servicio de la ficha) y mira el perfil de la obra (perfilObra)
+  function condicionesQueImportan(L, admin) {
+    const d = L.datos || {};
+    const P = perfilObra(L, admin);
+    const sinAfci = P.sinAfci;
     // (v252, revisión: también «Qué cambia», y las palabras en español: tablero, acometida, medidor, interruptores…)
     const textoAlcance = norma([d.proyecto || "", L.cambia || "", ...(L.items || []).map(it => it.titulo + " " + (it.detalles || []).join(" "))].join(" "));
-    const tocaPanel = /\b(panels?|panelboards?|sub-?panels?|load centers?|breakers?|home ?runs?|service entrance|service equipment|main disconnect|meter|tableros?|sub-?tableros?|acometidas?|medidor(es)?|interruptor(es)?|breakers?|centros? de carga|desconectivos? principal(es)?|desconectador(es)? principal(es)?)\b/.test(textoAlcance);
+    // 16-oct: no cuentan «no panel work», los paneles que no son eléctricos (decorativo, solar, de pared…) ni el «interruptor»
+    // de la luz (el apagador); sí el interruptor de circuito, el automático o el del tablero
+    const textoPanel = textoAlcance
+      .replace(/\bno\s+(?:[\w-]+\s+){0,2}?(?:panels?|panel work|panelboards?|breakers?)\b/g, " ")
+      .replace(/\b(?:decorative|wall|solar|acoustic|access|led|glass|wood|privacy)\s+panels?\b/g, " ")
+      .replace(/\binterruptor(?:es)?\b(?!\s+(?:de circuito|automatic|termomagnetic|del tablero|principal))/g, " ");
+    const tocaPanel = !P.sinPanelExistente && /\b(panels?|panelboards?|sub-?panels?|load centers?|breakers?|home ?runs?|service entrance|service equipment|main disconnect|meter|tableros?|sub-?tableros?|acometidas?|medidor(es)?|interruptor(es)?|breakers?|centros? de carga|desconectivos? principal(es)?|desconectador(es)? principal(es)?)\b/.test(textoPanel);
     const pv = L.panel_visto && typeof L.panel_visto === "object" ? L.panel_visto : null;
     const visto = pv && (String(pv.marca || "").trim() || String(pv.amperaje || "").trim())
       ? [String(pv.marca || "").trim(), String(pv.amperaje || "").trim() ? String(pv.amperaje).trim().replace(/^(\d+)$/, "$1A") : ""].filter(Boolean).join(", ") : "";
+    // 16-oct: «Circuitos existentes» tampoco en obra nueva, ni con «No excluir: afci» cuando no queda panel viejo (Gong: el AFCI
+    // va incluido y todo es nuevo); con un panel que se queda sí, porque su «sí» pone la 9.x del AFCI incluido con su protección
+    const sinCirc = P.sinCircuitosExistentes || (P.noExcluirAfci && P.sinPanelExistente);
     return {
-      circuitos_exist: { preguntar: !sinAfci, motivo: sinAfci ? "AFCI no aplica en comercial ni en servicio exterior" : "" },
-      fotos_panel: { preguntar: tocaPanel && !visto, toca: tocaPanel, visto }
+      circuitos_exist: { preguntar: !sinAfci && !sinCirc, motivo: sinAfci ? "AFCI no aplica en comercial ni en servicio exterior" : sinCirc ? "no hay circuitos existentes que se queden (obra nueva) o el AFCI va incluido" : "" },
+      fotos_panel: { preguntar: tocaPanel && !visto, toca: tocaPanel, visto },
+      sinAfci, perfil: P
     };
   }
-  function validarAlcance(L) {
+  function validarAlcance(L, admin) {
     const errores = L.errores.slice(), preguntas = L.preguntas.slice();
     const D = L.datos, conFirma = leerFirma(D.firma);
 
@@ -1378,8 +1573,9 @@
     if ((norma(D.contrato_con || "") === "gc" || gcN) && !L.avisos.some(a => /firma solo el contratista/.test(a.texto)))
       L.avisos.push({ informativo: true, texto: "Contrato con el contratista: firma solo el contratista (representante autorizado). El dueño (Owner) de la propiedad queda como referencia y firma el Layout Approval de la sección 8, no el SOW." });
     // dos firmantes. 13-oct (CCB): «CCB Construction & Design, LLC» es una empresa, no dos personas que firman
-    const esEmpresaCliente = /\b(llc|l\.l\.c|inc|corp|corporation|co|company|ltd|llp|pllc|p\.a|construction|design|builders?|group|services|contracting|renovations?|homes|enterprises|associates|partners)\b\.?/i.test(String(D.cliente || ""));
-    if (D.cliente && !D.segundo_firmante && !esEmpresaCliente && /\s(y|&|and)\s/i.test(D.cliente))
+    const esEmpresaCliente = /\b(llc|l\.l\.c|inc|corp|corporation|co|company|ltd|llp|pllc|p\.a|construction|design|builders?|group|services|contracting|renovations?|homes|enterprises|associates|partners|contractors?|constructors?|electric(?:al)?|plumbing|roofing|hvac|dba|usa|holdings|properties|realty|management)\b\.?/i.test(String(D.cliente || ""));
+    // 16-oct: con contratista firma solo el contratista (lo dice el aviso de arriba): no se preguntan dos firmas
+    if (D.cliente && !D.segundo_firmante && !esEmpresaCliente && !(norma(D.contrato_con || "") === "gc" || gcN) && /\s(y|&|and)\s/i.test(D.cliente))
       preguntas.push({ clave: "dos_firmas", texto: `"${D.cliente}" ¿son dos personas que firman las dos?`,
         opciones: [{ etiqueta: "Sí, firman las dos" }, { etiqueta: "No, es un solo firmante" }] });
 
@@ -1394,7 +1590,9 @@
     if (conFirma) {
       if (!L.pagos || !L.pagos.pcts.length)
         preguntas.push({ clave: "pagos", texto: "¿Cómo se cobra?",
-          opciones: [{ etiqueta: "40/40/20", valor: [40,40,20] }, { etiqueta: "50/50", valor: [50,50] },
+          // 16-oct: en un servicio, primero un solo pago al terminar
+          opciones: [...(perfilObra(L, admin).servicio ? [{ etiqueta: "Un solo pago al terminar (100%)", valor: [100] }] : []),
+                     { etiqueta: "40/40/20", valor: [40,40,20] }, { etiqueta: "50/50", valor: [50,50] },
                      { etiqueta: "35/40/25", valor: [35,40,25] }] });
       else {
         const suma = L.pagos.pcts.reduce((a, b) => a + b, 0);
@@ -1414,7 +1612,7 @@
     //     el levantamiento de la obra ya vio el panel (marca o amperaje: L.panel_visto, lo pone la app) se contesta sola.
     const C = L.condiciones;
     const si_no = siNo;
-    const cond = condicionesQueImportan(L);
+    const cond = condicionesQueImportan(L, admin);
     if (si_no(C.fotos_panel) === null && cond.fotos_panel.preguntar)
       preguntas.push({ clave: "fotos_panel", texto: "¿Tienes fotos o documentación del panel?", para_que: PARA_QUE.fotos_panel,
         opciones: [{ etiqueta: "Sí las tengo", valor: "si" }, { etiqueta: "No las tengo", valor: "no" }] });
@@ -1429,7 +1627,7 @@
     if (si_no(C.fotos_panel) === false && !L.falta)
       errores.push({ texto: "Dijiste que no tienes fotos del panel: escribe en «Falta» qué te faltó al cotizar.",
         arreglos: [{ tipo: "poner_falta", etiqueta: "Escribirlo", pide: "texto" },
-                   { tipo: "poner_falta", etiqueta: "Poner «sin fotos ni documentación del panel»", valor: "Sin fotos ni documentación del panel al cotizar", auto: true }] });
+                   { tipo: "poner_falta", etiqueta: "Poner «sin fotos ni documentación del panel»", valor: "No panel documentation or panel photographs were available when this proposal was prepared", auto: true }] });
 
     // opciones
     if (L.opciones.length > 4) errores.push({ texto: "Caben hasta cuatro opciones." });
@@ -1454,8 +1652,10 @@
     const noExcluir = norma((C.no_excluir || {}).valor || "");
     const textoAlcance = norma(L.items.map(i => i.titulo + " " + i.detalles.join(" ")).join(" "));
     // (el panel ya no se pregunta: si el alcance habla de panel, la exclusión se apaga sola desde la v3.4)
+    // 16-oct: solo cuando la exclusión de verdad sale (no en comercial, servicio ni obra nueva), con la palabra entera, y
+    // también con «arc-fault» / «dual-function»
     [["afci", "afci"]].forEach(([palabra, clave]) => {
-      if (textoAlcance.includes(palabra) && !noExcluir.includes(clave))
+      if (/\bafci\b|arc[- ]?fault|dual[- ]function/.test(textoAlcance) && !noExcluir.includes(clave) && !cond.sinAfci && !cond.perfil.sinCircuitosExistentes)
         preguntas.push({ clave: "no_excluir_" + clave,
           texto: `Tu alcance habla de ${palabra} y la sección 3 lo sigue excluyendo. ¿Quito esa exclusión?`,
           opciones: [{ etiqueta: "Sí, quítala", valor: clave }, { etiqueta: "No, déjala", valor: null }] });
@@ -1867,7 +2067,16 @@
     // el texto de la hoja sale tal cual en la viñeta «Permit.» (PERMISO_TEXTO)
     if (/^(?:no incluido|not included|no se incluye|no esta incluido|not in the price|excluded|excluido)\b/.test(n)) return "no_incluido";
     if (/no hace falta|no permit|not required|ninguno|sin permiso|no aplica/.test(n)) return "ninguno";
-    if (/\b(cliente|client|gc|owner|dueno|contratista)\b/.test(n) && !/max power|nosotros/.test(n)) return "cliente";
+    // 16-oct: «by the general contractor», «by GC; Max Power registers as electrical sub», «by others»: lo saca el cliente
+    // (el «max power» que solo se registra en el permiso no es quien lo saca; «Max Power pulls…, fees by the owner» sí)
+    // (revisión) …salvo que Max Power además lo saque («registers and pulls the electrical permit»), y el «by the GC» de OTRO permiso
+    // («building / master / roofing permit by the GC») no cuenta para el eléctrico
+    const saca = /\b(?:max power|mxp)\b[^.;]{0,60}\b(?:pulls?|obtains?|applies|apply|saca|tramita)\b|\b(?:pulled|obtained) by us\b|\bwe (?:pull|obtain|apply)\b/.test(n);
+    const soloSeRegistra = /\b(?:max power|mxp)\s+(?:registers?|is registered|will register|se registra)\b/.test(n) && !saca;
+    const nElec = n.replace(/\b(?:the\s+)?(?:building|master|roofing|roof|plumbing|mechanical|hvac|structural|demolition|demo|pool|fence|gas)\s+(?:sub-?)?permits?\b[^.;,]*/g, " ");
+    if (/\bby\s+(?:the\s+)?(?:gc|general contractor|owner|client|cliente|dueno|others|builder)\b/.test(nElec) && !/\b(?:nosotros|lo saco|lo sacamos)\b/.test(n) && !saca
+        && (!/\b(?:max power|mxp)\b/.test(n) || soloSeRegistra)) return "cliente";
+    if (/\b(cliente|client|gc|general contractor|owner|dueno|contratista|builder)\b/.test(n) && !/\b(?:max power|mxp|nosotros)\b/.test(n) && !saca) return "cliente";
     return "nosotros";
   }
   // ninguno o no incluido: el papel no habla de la solicitud del permiso
@@ -1907,7 +2116,12 @@
     const g = t.match(/lowest adjacent grade\b\s*(?:\(LAG\))?[^\d]{0,12}(\d+(?:\.\d+)?)\s*(?:ft|feet|')?/i) || t.match(/\bLAG\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|')?/);
     if (g) F.lag = g[1] + " ft";
     // señales de que la propiedad está en zona de inundación aunque nadie diga la zona
-    F.senales = /\b(floodplain|flood zone|flood-zone|elevation certificate|fbc 1612|asce 24|base flood elevation|design flood elevation|\bbfe\b|firm panel|nfip)\b/i.test(t);
+    // 16-oct: «not in a flood zone», «outside the floodplain» no cuentan, y la zona X / B / C es fuera de zona (si no hay AE/VE)
+    const tSin = t.replace(/\b(?:not|no|outside(?:\s+of)?|out of)\s+(?:in\s+|within\s+)?(?:a|an|the|any)?\s*(?:special\s+)?(?:flood[\s-]?zone|floodplain|flood hazard area|sfha)\b/gi, " ")
+      // (revisión) y «no elevation certificate required», «Elevation certificate not required», «FBC 1612 does not apply»
+      .replace(/\b(?:no|not)\s+(?:an?\s+)?elevation certificate\b[^.;]{0,20}|\belevation certificate\s+(?:is\s+)?(?:not|n[o']t)\s+(?:required|needed)\b|\b(?:fbc 1612|asce 24)\b[^.;]{0,25}\b(?:does not|doesn't|n\/a|not)\s+appl\w*/gi, " ");
+    const fueraX = /\bzone\s*[:\-]?\s*(?:X500|X|B|C)\b(?![a-z])/i.test(t) && !F.zona;
+    F.senales = !fueraX && /\b(floodplain|flood zone|flood-zone|elevation certificate|fbc 1612|asce 24|base flood elevation|design flood elevation|\bbfe\b|firm panel|nfip)\b/i.test(tSin);
     return F;
   }
   // Junta nombres de contacto sin repetir: «Roberto Prata / Kevin Haseney» + «Roberto Prata» → los dos, una vez
@@ -2179,6 +2393,11 @@
       // 14-oct (corrección): si la hoja excluye el material, la IA no puede decir «todo» (la §2 prometería todo el material
       // mientras la §3 lo excluye: una promesa que no está en el precio). Bajar de «todo» a lo que la hoja nombra, sí.
       if (J.material.valor === "todo" && antes !== "todo") ponJ("material", antes, false, "tu hoja excluye el material");
+      // (revisión 2) bajar de «todo» a «limitado» solo si la hoja excluye material ELÉCTRICO: luminarias decorativas, equipos de
+      // HVAC o el cableado de datos / TV / baja tensión no lo hacen (Gong: la §2 de un rewire a todo material decía «only the material…»)
+      else if ((J.material.valor === "limitado" || J.material.valor === "solo_labor") && antes === "todo"
+               && !/\b(?:materials?|wire|wiring|conduits?|boxes|devices|breakers?|cables?|panels?|receptacles?|switches)\b/.test(textoExcl.replace(/\b(?:data|tv|telephone|phone|security|alarm|low-?voltage|cctv|audio|network)\b[^.;]*/g, " ")))
+        ponJ("material", antes, false, "tu hoja no excluye material eléctrico: Max Power pone todo salvo lo excluido");
       else {
         soloLabor = J.material.valor === "solo_labor"; materialLimitado = J.material.valor === "limitado";
         ponJ("material", antes, true);
@@ -2194,8 +2413,12 @@
     // sin gabinetes, sin drywall, sin ático. Solo cuenta como interior si además hay cuartos de verdad.
     const venueExterior = /\b(outdoor kitchen|summer kitchen|pavilion|lanai|patio|pool deck|pool shell|pool equipment|dock|pergola|gazebo|screen enclosure)\b/.test(textoAlcance);
     const interiorFuerte = /\b(bath|bathroom|bedrooms?|living room|family room|dining room|closet|garage|laundry|hallway|attic|crawl space)\b/.test(textoAlcance);
+    // 16-oct: un tenant improvement de oficina o local (suite, build-out, fit-out) también es de dentro (drywall y techo)
+    // (revisión) …pero no en una obra de fuera que solo nombra una oficina («Office building — parking lot lighting»)
     const interiorSuave = /\b(kitchen|dining|recessed|drywall|under-cabinet|cabinet lighting|kitchen cabinets?|island)\b/.test(textoAlcance);
-    let interior = interiorFuerte || (interiorSuave && !venueExterior);
+    const interiorTI = /\b(office|suite|tenant improvement|build-?out|fit-?out)\b/.test(textoAlcance);
+    const exteriorFuerte = /\b(parking lot|site lighting|poles?|pole bases?|trench\w*|underground|light poles?)\b/.test(textoAlcance);
+    let interior = interiorFuerte || (interiorSuave && !venueExterior) || (interiorTI && !venueExterior && !exteriorFuerte);
     let exterior = venueExterior || /\b(pole|service entrance|well|pump|irrigation|parking lot|site lighting|transformer|feeder|wellhead|underground|trench)\b/.test(textoAlcance);
     // v3.7 (tanda 1): «Tipo de trabajo: …» escrito a mano en Condiciones manda sobre las listas de palabras:
     //   remodel → dentro de una vivienda: las exclusiones de casa se quedan
@@ -2248,9 +2471,14 @@
       if (dichoFuera) { interior = false; exterior = true; }
     }
     const exteriorServicio = exterior && !interior;
-    const residencialInterior = !esComercial && interior;
+    // (revisión 2) un TI de oficina o local (solo «office / suite / build-out») es de dentro para el drywall, pero no es una casa:
+    // sin las exclusiones de gabinetes y aparatos aunque la hoja no diga «Propiedad: commercial»
+    const soloTI = interiorTI && !interiorFuerte && !(interiorSuave && !venueExterior) && tipoTrabajo !== "remodel" && tipoTrabajo !== "mezcla";
+    const residencialInterior = !esComercial && interior && !soloTI;
     // en servicio no se tocan circuitos nuevos: sin AFCI (exclusión ni cláusula)
     const sinAfci = esComercial || tipoTrabajo === "service" || esServicio;
+    // 16-oct: lo que queda de lo existente (obra nueva: sin circuitos existentes que modificar ni AFCI que excluir)
+    const PO = perfilObra(L, admin);
     const yaExcluye = re => re.test(textoExcl);
     const hayItemPermiso = /\bpermit/.test(textoAlcance);
     // v251 (revisión): «Complete trim-out (…), testing, and coordination of the required inspections» ya es el cierre
@@ -2350,8 +2578,14 @@
       FLOOD: flood,
       // Exclusiones: solo las que tienen sentido en ESTE trabajo
       EXCL_PANEL: !noExcluir.includes("panel") && !hayPanel,
-      EXCL_AFCI: !noExcluir.includes("afci") && !sinAfci,
-      EXCL_GABINETES: !noExcluir.includes("gabinete") && residencialInterior,
+      EXCL_AFCI: !noExcluir.includes("afci") && !sinAfci && !PO.sinCircuitosExistentes,
+      // 16-oct: la luz bajo gabinete que va en el alcance no se excluye
+      // (revisión) solo la LUZ: un circuito para el microondas «under-cabinet» no es luz bajo gabinete; se mira en los renglones y en
+      // «Fixtures nuestros», no en el nombre del proyecto
+      // (revisión 5) renglón por renglón: la caja para las luces FUTURAS del dueño, puestas por otros, no es poner la luz
+      EXCL_GABINETES: !noExcluir.includes("gabinete") && residencialInterior && ![...L.items.map(it => it.titulo + " " + it.detalles.join(" ")), (C.fixtures_mxp || {}).valor || ""].some(t => {
+        t = norma(t); return /\bunder-?\s?cabinet\s+(?:led\s+)?(?:lighting|lights?|light bars?|strips?|tape|pucks?)\b|\bcabinet (?:lighting|lights?)\b/.test(t)
+          && !/\b(?:future|by others|installed by (?:the )?(?:owner|others|client)|(?:prep|box|boxes|rough-?in|stub-?out) only|(?:lights?|fixtures?) (?:and (?:their )?installation )?by others)\b/.test(t); }),
       EXCL_DRYWALL: !noExcluir.includes("drywall") && interior,
       EXCL_LOWVOLT: !noExcluir.includes("low-voltage") && !noExcluir.includes("low voltage") && !yaExcluye(/low.?voltage|data|telemetry/),
       EXCL_APARATOS: !noExcluir.includes("aparato") && residencialInterior,
@@ -2395,6 +2629,8 @@
     if (decideJ("afci")) {
       if (JE.afci) ponJ("afci", afciReglas, false, "lo contestaste tú");
       else if (J.afci.valor === "incluido" && hojaExcluye.EXCL_AFCI) ponJ("afci", afciReglas, false, "tu hoja excluye el arc-fault");
+      // (revisión 2) la línea clave de Edgar «No excluir: afci» manda: la IA no puede volver a poner la viñeta de la exclusión
+      else if (J.afci.valor !== "incluido" && noExcluir.includes("afci")) ponJ("afci", afciReglas, false, "tu hoja dice «No excluir: afci»");
       // 14-oct (corrección): «no aplica» es de comercial y exterior; en una vivienda se quitaban a la vez la viñeta y la 9.x
       else if (J.afci.valor === "no_aplica" && afciReglas !== "no_aplica" && !esComercial && !exteriorServicio) ponJ("afci", afciReglas, false, "es una vivienda: el AFCI se incluye o se excluye, no deja de aplicar");
       // «excluido = la exclusión de la plantilla, o la de la hoja»: si una exclusión propia de la hoja ya nombra el AFCI (CCB:
@@ -2403,11 +2639,18 @@
         afciJ = J.afci.valor; bloques.EXCL_AFCI = !!hojaExcluye.EXCL_AFCI || (afciJ === "excluido" && !yaExcluye(/\bafci\b|arc[- ]?fault/));
         // 14-oct (pliego §10.9, Edgar: «corrige 10.4»): con «incluido», la 9.x de la casa no vale (dice «excluded»); va esta como
         // propia, que dice que el AFCI de los circuitos del §2 va incluido y guarda la protección del panel viejo
-        if (afciJ === "incluido" && conFirma && !ligero) propio.propias.push({ n: "afci_incluido", linea: 0, titulo: "Arc-fault protection",
+        // (revisión 2) …salvo que no quede panel viejo (obra nueva, rewire con servicio nuevo como Gong) y Edgar no diga que hay
+        // circuitos existentes: su frase del «existing panel» no aplica, y el camino de las reglas tampoco la pone
+        if (afciJ === "incluido" && conFirma && !ligero && !(PO.sinPanelExistente && si_no(C.circuitos_exist) !== true)) propio.propias.push({ n: "afci_incluido", linea: 0, titulo: "Arc-fault protection",
           texto: "AFCI protection required by NEC 210.12 for the circuits modified or extended under Section 2 is included. Should the existing panel be of a make or vintage for which listed AFCI or dual-function breakers are not available, or be found damaged, obsolete, or without available spaces, the corrective work is quoted by written change order." });
       }
     }
 
+    // 16-oct: «No excluir: afci» + «Circuitos existentes: sí»: la 9.x de la casa dice «excluded» y contradice la §2; va la del
+    // AFCI incluido (la misma del juicio), que guarda la protección del panel viejo
+    if (!afciJ && noExcluir.includes("afci") && si_no(C.circuitos_exist) === true && !sinAfci && !PO.sinCircuitosExistentes && conFirma && !ligero && !propio.propias.some(p => p.n === "afci_incluido"))
+      propio.propias.push({ n: "afci_incluido", linea: 0, titulo: "Arc-fault protection",
+        texto: "AFCI protection required by NEC 210.12 for the circuits modified or extended under Section 2 is included. Should the existing panel be of a make or vintage for which listed AFCI or dual-function breakers are not available, or be found damaged, obsolete, or without available spaces, the corrective work is quoted by written change order." });
     const clausulas = {
       garantia: true, existentes: true, sitio: true, edicion: true,
       cambios: true, limite: true, seguro: true,
@@ -2419,7 +2662,7 @@
       retainage: esGC,
       nto_releases: esGC,
       panel_sin_fotos: si_no(C.fotos_panel) === false,
-      afci: si_no(C.circuitos_exist) === true && !sinAfci,   // AFCI es de vivienda (NEC 210.12); no en comercial ni en servicio exterior
+      afci: si_no(C.circuitos_exist) === true && !sinAfci && !PO.sinCircuitosExistentes && !noExcluir.includes("afci"),   // AFCI es de vivienda (NEC 210.12); no en comercial ni en servicio exterior
       reuso_240: hay((C.v240 || {}).valor),
       reubicar: hay((C.reubicar || {}).valor),
       isla: hay((C.isla || {}).valor),
@@ -2427,7 +2670,13 @@
       fixtures_cliente: bloques.FIXTURES_CLIENTE,
       fixtures_mxp: hay((C.fixtures_mxp || {}).valor),
       subsuelo: hay((C.excavacion || {}).valor),
-      planos_permiso: bloques.PLANOS,
+      // 16-oct: «prepared by Contractor» solo si los planos son de Max Power (no los sellados de otro ingeniero o del GC)
+      // (revisión) «Planos:» son los que entrega Edgar: la cláusula solo se quita si la línea nombra los planos de OTRO («by Gulf Coast
+      // Engineering», «provided by the general contractor», «del cliente»); «sealed», «PE» o «engineer» solos no la quitan
+      // (revisión 5) «furnished / provided / supplied / issued» solos no son de otro («E-1 and E-2, issued for permit», «furnished with this
+      // proposal»): solo con «by <otro>» o «Owner-furnished»; Gustavo Fundora (la licencia de la casa) es de Max Power
+      planos_permiso: bloques.PLANOS && (/\b(?:by|from)\s+(?:us|our|max power|mxp|edgar|gustavo|fundora|g\.?\s*fundora)\b|\b(?:our|ours|we|in[- ]house|nosotros|nuestros?|nuestras?|max power|mxp)\b/i.test(String(d.planos || ""))
+        || !/\bby\s+(?!(?:us|our|ourselves|max power|mxp|edgar)\b)\S|\b(?:owner|client|tenant|gc|builder|architect|engineer)['’]s\b|\b(?:owner|client|customer|tenant|gc|builder|architect|engineer)[- ](?:furnished|provided|supplied|issued)\b|\b(?:general contractor|the gc)\b|\bdel (?:cliente|gc|arquitecto|dueño|dueno|contratista)\b|\bingeniero del\b/i.test(String(d.planos || ""))),
       // v3.4: las cláusulas propias de la hoja (las que la plantilla no trae)
       propias: propio.propias.length > 0,
       // 9.16 (F.S. 489.126): la ley mira la PROPIEDAD, no quién paga. Va siempre en
@@ -2772,13 +3021,21 @@
     if (/<!--@/.test(html)) problemas.push({ tipo: "marca", texto: "Quedó una marca de la plantilla sin resolver." });
     if (/FALTA:/.test(visible)) problemas.push({ tipo: "falta", texto: "Quedó algo marcado como FALTA." });
     // Un «[STREET ADDRESS PENDING]», «[TBD]» o «TBD» escrito en la hoja no puede llegar al cliente
-    const pendientes = [...new Set((visible.replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " ").match(/\[[^\]\n]{2,60}\]|\bTBD\b|\bPENDING\b|\bPOR CONFIRMAR\b/g) || []).filter(x => !/^\[\s*[xX ]\s*\]$/.test(x)))];
+    const pendientes = [...new Set((visible.replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " ").match(/\[[^\]\n]{2,60}\]|\bTBD\b|\bPENDING\b|\bPOR CONFIRMAR\b/g) || []).filter(x => !/^\[\s*[xX ]\s*\]$/.test(x))
+      // 16-oct: un corchete que cita los planos o el código («[sheets E-1 to E-4]», «[see E-2]», «[NEC 210.8]») no está pendiente
+      // (revisión) solo si detrás va un número o una hoja («[details to follow]» o «[Notes from the Owner]» siguen pendientes)
+      .filter(x => !/^\[\s*(?:see\s+)?(?:(?:sheets?|dwgs?|drawings?|plans?|pages?|pp?\.|details?|notes?|fig(?:ure)?\.?|sections?|sec\.|art(?:icle)?\.?|nec)\s*[A-Z]{0,2}-?\d|[A-Z]{1,2}-?\d)/i.test(x) || /pending|tbd|confirm|insert|xx|falta|pendiente/i.test(x)))];
     if (pendientes.length) problemas.push({ tipo: "pendiente", texto: "En el papel queda algo por confirmar: " + pendientes.join(", ") + ". Escríbelo en la hoja (o quítalo) y vuelve a armar." });
 
     const permitidos = new Set([...(montosPermitidos || []), ...FIJOS]);
     const texto = visible.replace(/<style[\s\S]*?<\/style>/g, "").replace(/<[^>]+>/g, " ")
                          .replace(/data:[^\s"']+/g, " ");
     const montos = texto.match(/\$\s?\d{1,3}(?:,\d{3})*(?:\.\d{2})?/g) || [];
+    // (revisión) un monto sin $ junto a una palabra de dinero («sealed set 850.00 extra», «a credit of 1,200.00»)
+    (texto.match(/\b\d{1,3}(?:,\d{3})*\.\d{2}(?=\s+(?:extra|additional|add|added|credit|deduct|fee|charge|allowance|lump sum)\b)|\b(?:extra|additional|add|credit|deduct|fee|charge|allowance|cost|costs|priced at)\s+(?:of\s+)?\d{1,3}(?:,\d{3})*\.\d{2}\b/gi) || []).forEach(m => {
+      const n = (m.match(/\d[\d,]*\.\d{2}/) || [""])[0];
+      if (n && !permitidos.has(n)) problemas.push({ tipo: "monto", texto: `El contrato tiene ${n}, que no lo calculé yo.` });
+    });
     montos.forEach(m => {
       const limpio = m.replace(/[$\s]/g, "");
       if (!permitidos.has(limpio)) problemas.push({ tipo: "monto", texto: `El contrato tiene ${m}, que no lo calculé yo.` });
@@ -2885,7 +3142,9 @@
     // 14-oct (pliego §10.4): si la IA decidió quién pone las luminarias (juicio), manda ella; si no, las palabras de la hoja
     const fxJ = dec.fixtures_juicio;
     const quienFx = fxJ ? fxJ.quien
-                  : /client[- ]?supplied|(?:supplied|furnished|provided) by the client|\(by client\)|the client supplies/.test(textoFx) ? "cliente"
+                  : /client[- ]?supplied|(?:supplied|furnished|provided) by the client|\(by client\)|the client supplies/.test(textoFx)
+                    // 16-oct: con contratista, lo que pone el GC o el builder lo pone el Client (el que firma)
+                    || (dec.esGC && /(?:supplied|furnished|provided) by (?:the )?(?:gc|general contractor|builder)\b|\b(?:gc|builder)[- ](?:supplied|furnished|provided)\b/.test(textoFx)) ? "cliente"
                   : /owner[- ]?furnished|furnished by the owner|owner[- ]?supplied|supplied by the owner|the owner furnishes|the owner supplies/.test(textoFx) ? "dueno" : "";
     // «furnished by the Owner, delivered through the Client» (CCB): la viñeta lo dice así
     const fxPorElCliente = fxJ ? !!fxJ.porCliente : quienFx === "dueno" && /through the client/.test(textoFx);
@@ -3112,7 +3371,10 @@
     // "Basis of information": la frase de entrada solo si la hoja no la trae, y la remisión a 9.x con número
     if (huecos.QUE_FALTABA) {
       if (!/^this proposal is prepared/i.test(huecos.QUE_FALTABA))
-        huecos.QUE_FALTABA = "This proposal is prepared from the on-site walkthrough and the direction provided by the Client. " + huecos.QUE_FALTABA;
+        huecos.QUE_FALTABA = (dec.bloques.BASE_PLANOS   // 16-oct: por planos no hubo recorrido
+          ? (dec.bloques.PLANOS ? "This proposal is prepared from the drawings listed in this proposal and the direction provided by the Client. "
+                                : "This proposal is prepared from the drawings and the direction provided by the Client. ")
+          : "This proposal is prepared from the on-site walkthrough and the direction provided by the Client. ") + huecos.QUE_FALTABA;
       if (!/see section/i.test(huecos.QUE_FALTABA) && numero.existentes)
         huecos.QUE_FALTABA = huecos.QUE_FALTABA.replace(/\.?$/, "") + " \u2014 see Section 9." + numero.existentes + ".";
     }
@@ -3146,11 +3408,13 @@
   // en pistas (pistasDe) y leerAlcance las consume. Sin pistas, leerAlcance es idéntico al de siempre.
 
   // ---- El dinero se tapa con UNA regla (esta cadena se copia letra por letra en el cerebro) ----
-  const RX_DINERO_TAPAR = "\\$\\s?\\d[\\d,]*(?:\\.\\d{1,2})?|\\b(?:dollars|usd|d[oó]lares)\\b\\s*\\d[\\d,]*(?:\\.\\d+)?|\\d[\\d,]*(?:\\.\\d+)?\\s*\\b(?:dollars|usd|d[oó]lares)\\b|\\d{1,3}(?:,\\d{3})+(?:\\.\\d{2})?|\\d+\\.\\d{2}";
+  const RX_DINERO_TAPAR = "\\$\\s?\\d[\\d,]*(?:\\.\\d{1,2})?|\\b(?:dollars|d[oó]lares)\\b\\s*\\d[\\d,]*(?:\\.\\d+)?|\\b(?:usd|dlls?)\\s*\\d[\\d,]*(?:\\.\\d+)?|\\d[\\d,]*(?:\\.\\d+)?\\s*(?:dollars|usd|dlls?|bucks|d[oó]lares)\\b|\\d{1,3}(?:[ \\u00a0.]\\d{3})+(?:,\\d{1,2})?\\s?\\$(?!\\s?\\d)|\\d[\\d,]*(?:\\.\\d+)?\\s?\\$(?!\\s?\\d)|\\d{1,3}(?:,\\d{3})+(?:\\.\\d{2})?|\\d+\\.\\d{2}";
   // Un candidato es dinero salvo por su contexto: 250.24(C), #2/0, 12/2, 1.5 %, 210.8 y 2.10 se quedan
   function contextoDinero(s, ini, fin) {
     const t = s.slice(ini, fin), antes = s.slice(0, ini), despues = s.slice(fin);
-    if (/^\$/.test(t) || /dollars|usd|d[oó]lares/i.test(t)) return true;
+    if (/^\$|\$$/.test(t) || /dollars|usd|dlls?|bucks|d[oó]lares/i.test(t)) return true;   // (revisión 3) «4500$», «4 500 $»
+    // (revisión 2) la forma contable «(1,200.00)», «(-6,414)», «Pay 50% (6,414.00)» es dinero: el «)» de detrás no la salva
+    if (/^\)/.test(despues) && /\(\s*[-−–]?\s*$/.test(antes) && (/\d,\d{3}/.test(t) || /^\d{4,}\.\d{2}$/.test(t))) return true;
     if (/[\d.#\/\-]$/.test(antes)) return false;
     if (/^[)%\d(]/.test(despues) || /^\.\d/.test(despues) || /^\s*%/.test(despues)) return false;
     return true;
@@ -3165,15 +3429,27 @@
   const taparTramo = t => /\d/.test(t) ? t.replace(/\d/g, "#") : t.replace(/[A-Za-zÀ-ÿ]/g, "#");
   // Tapa el dinero de la hoja entera, conservando $ y comas y el largo. lineasDinero: números de línea que las reglas
   // ya saben que son Precio / Pagos / Opciones: ahí se tapa además todo número de tres cifras o con decimales (no los %).
-  function taparDinero(texto, lineasDinero) {
-    const set = new Set(lineasDinero || []);
+  function taparDinero(texto, lineasDinero, lineasSuaves) {
+    const set = new Set(lineasDinero || []), suaves = new Set(lineasSuaves || []);
     let tapados = 0;
     const lineas = String(texto || "").replace(/\r/g, "").split("\n").map((l, i) => {
       let s = l;
-      const tramos = tramosDinero(s);
-      for (let k = tramos.length - 1; k >= 0; k--) { const [a, b] = tramos[k]; s = s.slice(0, a) + taparTramo(s.slice(a, b)) + s.slice(b); tapados++; }
+      // (revisión 2) lo que tapa el armado también se tapa para el lector («Precio: 12k», «add 1250», «engineering fee 450»)
+      for (let vuelta = 0; vuelta < 3; vuelta++) {
+        const tramos = [...tramosDinero(s), ...tramosArmar(s)].sort((x, y) => x[0] - y[0])
+          .filter((x, k, todos) => !todos.slice(0, k).some(y => x[0] < y[1] && x[1] > y[0]));
+        if (!tramos.length) break;
+        for (let k = tramos.length - 1; k >= 0; k--) { const [a, b] = tramos[k]; s = s.slice(0, a) + taparTramo(s.slice(a, b)) + s.slice(b); tapados++; }
+      }
       if (set.has(i + 1)) s = s.replace(/\d[\d,]*(?:\.\d+)?/g, (n, off) => {
         if (/^\s*%/.test(s.slice(off + n.length)) || /[#$]$/.test(s.slice(0, off))) return n;
+        if (n.replace(/\D/g, "").length >= 3 || /\./.test(n) || /^\s*(?:mil|thousand|grand|k)\b/i.test(s.slice(off + n.length))) { tapados++; return taparTramo(n); }
+        return n;
+      });
+      // (revisión 3) las filas de la tabla de pagos y las viñetas bajo «Pagos:»: toda cifra de 3 o más que no sea una medida ni un código
+      else if (suaves.has(i + 1)) s = s.replace(/\d(?:[\d,]*\d)?(?:\.\d+)?/g, (n, off) => {
+        if (/^\s*%/.test(s.slice(off + n.length)) || /[#$]$/.test(s.slice(0, off))) return n;
+        if ((/[A-Za-z\/]$/.test(s.slice(0, off)) && !/(?:usd|us|dlls?)$/i.test(s.slice(0, off))) || noEsDineroArmar(s, off, off + n.length)) return n;
         if (n.replace(/\D/g, "").length >= 3 || /\./.test(n)) { tapados++; return taparTramo(n); }
         return n;
       });
@@ -3182,7 +3458,8 @@
     return { texto: lineas.join("\n"), tapados };
   }
   // Lo que el modelo escribe (motivos) pasa la MISMA regla estricta; si hay dinero, la lectura entera se tira
-  const traeDineroEstricto = s => tramosDinero(String(s || "")).some(([a, b]) => /^\$|\d{1,3}(?:,\d{3})+|dollars|usd|d[oó]lares/i.test(String(s).slice(a, b)));
+  // 16-oct: una medida («2,446 sq ft», «1,250 ft», «22,000 AIC») no cuenta: la IA la vio sin tapar y se tiene que poder copiar
+  const traeDineroEstricto = s => { s = String(s || ""); return tramosDinero(s).some(([a, b]) => /^\$|\d{1,3}(?:,\d{3})+|dollars|usd|d[oó]lares/i.test(s.slice(a, b)) && !noEsDineroArmar(s, a, b)); };
 
   // ---- 7-oct (tanda 4, revisión adversaria): EL DINERO DEL ARMADO CON IA ----
   // Esta parte se copia en el cerebro con los mismos nombres y la misma lógica (cerebro-puro.mjs las coteja con una
@@ -3190,25 +3467,81 @@
   // tapan: la IA los tiene que copiar tal cual) y más ANCHA (junto a una palabra de dinero, una cifra sin $ ni comas
   // también es un monto: «Precio 12828», «Base bid — 12828», «Depósito 50% = 6414»). La de `leer` no cambia.
   // Lo que va detrás de una cifra y la hace medida, no dinero («1.25" PVC», «1,300 square feet», «250.24 V», «200A»)
-  const RX_UNIDAD_ARMAR = /^\s*(?:["”″]|'|-?\s*(?:inch(?:es)?|in\.|ft|feet|foot|sq\.?\s*(?:ft|feet|in)|square[\s-]+(?:feet|foot|ft|meters?)|sqft|sf|lf|linear\s+(?:feet|ft)|yd|yards?|mm|cm|volts?|amps?|amperes?|watts?|kcmil|lbs?|psi|gallons?|btu|degrees?|receptacles?|outlets?|circuits?|fixtures?|lights?|devices?|spaces?|poles?|breakers?|units?|days?|hours?|hrs|years?|months?|weeks?|phases?|stories|floors?|editions?|pies|pulgadas?|metros?|voltios?|amperios?|circuitos?|tomas?|luces|l[aá]mparas?|d[ií]as?|horas?|a[nñ]os?|meses|semanas?)\b|%|°|\s*por\s*ciento|\s*percent)/i;
-  const RX_UNIDAD_ARMAR_MAY = /^\s*-?\s*(?:(?:V|VAC|VDC|A|kV|kA|AIC|KAIC|W|kW|KW|kVA|KVA|VA|HP|Hz|AWG|MCM|CU|AL|NEC|NFPA|FBC)\b|Y\/\d)/;
+  const RX_UNIDAD_ARMAR = /^\s*(?:["”″]|'|-?\s*(?:inch(?:es)?|in\.|ft|feet|foot|(?:(?:heated|living|conditioned|under[\s-]air|gross|usable|total)\s+)?(?:sq\.?[\s-]*(?:ft|feet|in)|square[\s-]+(?:feet|foot|ft|meters?)|sqft|sf|s\.f(?=\.|\b))|ft²|lf|gal|gals|linear\s+(?:feet|ft)|yd|yards?|mm|cm|volts?|amps?|amperes?|watts?|kcmil|lbs?|psi|gallons?|btu|degrees?|receptacles?|outlets?|circuits?|fixtures?|lights?|devices?|spaces?|poles?|breakers?|units?|days?|hours?|hrs|years?|months?|weeks?|phases?|stories|floors?|editions?|pies|pulgadas?|metros?|voltios?|amperios?|circuitos?|tomas?|luces|l[aá]mparas?|d[ií]as?|horas?|a[nñ]os?|meses|semanas?)\b|%|°|\s*por\s*ciento|\s*percent)/i;
+  const RX_UNIDAD_ARMAR_MAY = /^\s*-?\s*(?:(?:V|VAC|VDC|A|kV|kA|AIC|KAIC|W|kW|KW|kVA|KVA|VA|HP|Hz|AWG|MCM|CU|AL|NEC|NFPA|FBC)\b(?![\/&])|Y\/\d)/;
+  // 16-oct (revisión): las unidades FUERTES hacen la cifra medida siempre («28,800 VA», «1,250 ft», «2,446 sq ft», «22,000 AIC»,
+  // «15,000 gal», «50 %»); las demás (comillas, A, V, W, HP, CU, AL, NEC, phase, floors, units, circuits…) son DÉBILES: junto a
+  // una palabra de dinero no valen («Deposit 6,414 phase one», «PRICE 2,400 V-TECH»). «W/», «A/C» y «W/O» nunca son unidad.
+  const RX_UNIDAD_FUERTE = /^\s*(?:-?\s*(?:inch(?:es)?|in\.|ft|feet|foot|(?:(?:heated|living|conditioned|under[\s-]air|gross|usable)\s+)?(?:sq\.?[\s-]*(?:ft|feet|in)|square[\s-]+(?:feet|foot|ft|meters?)|sqft|sf|s\.f(?=\.|\b))|ft²|lf|gal|gals|linear\s+(?:feet|ft)|yd|yards?|mm|cm|kcmil|lbs?|psi|gallons?|btu|degrees?|pies|pulgadas?|metros?)\b|%|°|por\s*ciento|percent\b)/i;
+  const RX_UNIDAD_FUERTE_MAY = /^\s*-?\s*(?:kVA|KVA|VA|AIC|KAIC|kA|AWG|MCM|BTU)\b(?![\/&])/;
   // Las palabras que, en la misma línea, hacen de una cifra suelta un monto
-  const PALABRAS_DINERO_ARMAR = "precio|price|priced|pricing|total|subtotal|bid|sum|lump|monto|amount|cost|costs|costo|cuesta|cobr\\w*|charges?|fee|fees|dep[oó]sito|deposit|pago|pagos|payment|payments|balance|saldo|opci[oó]n|option|add-?on|añadido|adicional|additional|extra|allowance|credit|discount|descuento|invoice|factura|dollars?|d[oó]lares|usd|retainage|retenci[oó]n|budget|presupuesto|investment|inversi[oó]n|quoted?|quotes|cotizaci[oó]n";
+  const PALABRAS_DINERO_ARMAR = "precio|price|priced|pricing|total|subtotal|bid|sum|lump|monto|amount|cost|costs|costo|cuesta|cobr\\w*|charges?|fee|fees|dep[oó]sito|deposit|pago|pagos|payment|payments|balance|saldo|opci[oó]n|option|add-?on|añadido|adicional|additional|extra|allowance|credit|discount|descuento|invoice|factura|dollars?|d[oó]lares|usd|retainage|retenci[oó]n|budget|presupuesto|investment|inversi[oó]n|quoted?|quotes|cotizaci[oó]n|deduct\\w*|deducci[oó]n|rebaja\\w*|descontar|pays?|paid|paga|pagan|pagar[aá]?|alternates?|alterno|bucks|labou?r(?![\\s-]+(?:only|to|for|and|crew|hours?|includes?|incl|of)\\b)|rates?|hourly|alt|nte|milestones?|hitos?|draw\\s*#\\s*\\d{1,2}|not\\s+to\\s+exceed|due(?!\\s+to\\b)|backcharges?|cents|centavos|vale|sale\\s+en|sali[oó]\\s+en|qued[oó]\\s+en|queda\\s+en";
   const RX_PALABRA_DINERO_ARMAR = new RegExp("\\b(?:" + PALABRAS_DINERO_ARMAR + ")\\b", "i");
   // la palabra de dinero justo antes de la cifra (con dos palabras de por medio como mucho): «Price: 2026», «Total of 1950»
   const RX_DINERO_CERCA = new RegExp("\\b(?:" + PALABRAS_DINERO_ARMAR + ")\\b[^A-Za-z0-9]*(?:[A-Za-zÀ-ÿ]+[^A-Za-z0-9]+){0,2}$", "i");
+  // (revisión 2) con cifras de por medio, para un monto con coma o centavos: «Deposit 50% 6,414», «Payment 2: 5,131.20», «Pay 50% (6,414.00)»
+  const RX_DINERO_CERCA_CIFRAS = new RegExp("\\b(?:" + PALABRAS_DINERO_ARMAR + ")\\b[^A-Za-z0-9]*(?:(?:[A-Za-zÀ-ÿ]+|#?\\d{1,2}|\\d{1,3}(?:\\.\\d+)?\\s*%)[^A-Za-z0-9]+){0,3}$", "i");
+  // las unidades de CONTAR: una cifra con centavos delante no es una cantidad («640.50 phase 2», «1.50 units»)
+  // (revisión 3) la tarifa por hora, aunque sea de dos cifras («95/hr», «85 la hora», «125 per hour»)
+  const RX_POR_HORA = /^\s*(?:\/\s*(?:hr|hour|h|hora)\b|(?:per|an?|la|por|the)\s+(?:hour|hora)\b)/i;
+  // (revisión 3) la palabra de dinero o un porcentaje pegados a la cifra con guion o barra («Deposit-6414», «Deposit 50%-6414», «50%/6414»)
+  const RX_DINERO_PEGADO = new RegExp("(?:\\b(?:" + PALABRAS_DINERO_ARMAR + ")|\\d\\s?%)\\s?[-–—\\/]$", "i");
+  // (revisión 3) un monto con letras sin «dollars», en inglés o en español («Price: twelve thousand five hundred», «Precio: quince mil»)
+  const NUM_LETRA = "zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieci\\w+|veinte|veinti\\w+|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|\\w+cient[oa]s|quinient[oa]s|mil|mill[oó]n|millones";
+  const RX_MONTO_LETRAS = new RegExp("\\b(?:" + NUM_LETRA + ")(?:[\\s-]+(?:(?:and|y)[\\s-]+)?(?:" + NUM_LETRA + "))+\\b", "gi");
+  const RX_MAGNITUD_LETRAS = /hundred|thousand|million|\bmil\b|mill[oó]n|millones|\bcien|cient[oa]s/i;
+  const RX_UNIDAD_CONTAR = /^\s*-?\s*(?:receptacles?|outlets?|circuits?|fixtures?|lights?|devices?|spaces?|poles?|breakers?|units?|phases?|stories|floors?|editions?|circuitos?|tomas?|luces|l[aá]mparas?)\b/i;
+  // (revisión 2) «add 4500», «12 @ 125 ea», «125 c/u»: sin palabra de la lista, pero la cifra es un precio
+  const RX_DINERO_SUELTO = /\b(?:add|adds|añade|añadir|sumar?)\s+(?:of\s+)?\d|@\s*\d|\d\s*(?:ea|c\/u)\b|\d\s*\/\s*(?:hr|hour|h|hora)\b|\d\s+(?:per|an?|la|por)\s+(?:hour|hora)\b|(?:^|[\s:(])[+=]\s?\d{3,6}(?!\d)|:\s*[-−]\s?\d{3,6}(?!\d)|\b(?:plus|minus|less|menos)\s+\d{3,6}(?![\d,.])|\d{3,6}\s+flat\b|\bflat\s+(?:rate\s+|fee\s+)?\d{2,6}(?![\d,.])|\beur\s*\d|\d\s*eur\b|€|\b(?:co|change order|draw)\s*#\s*\d+\s*[:=—–-]\s*\d{3,6}(?![\d,.])|\bfinal\s*[:=—–-]?\s*\d{3,6}(?![\d,.])|^\s*(?:[-*•]\s*)?(?:\*\*)?(?:ingenier[ií]a|engineering|planos|plans|utility|optional|opcional)(?:\*\*)?\s*:/i;
+  // (revisión 5) en una línea clave («Utility:», «Ingeniería:») sin otra señal de dinero, una dirección, un código postal o el número de
+  // una orden, una cuenta, un ticket o un PE no son el monto («Utility: Duke to reconnect at 1216 Franklin Cir NE», «TECO work order 4471»)
+  const RX_LINEA_CLAVE_ARMAR = /^\s*(?:[-*•]\s*)?(?:\*\*)?(?:ingenier[ií]a|engineering|planos|plans|utility|optional|opcional)(?:\*\*)?\s*:/i;
+  const RX_CALLE_TRAS = /^\s+(?:[NSEW]\.?\s+)?(?:[A-Z][a-z]+\s+){1,3}(?:St|Street|Ave|Avenue|Rd|Road|Dr|Drive|Blvd|Hwy|Highway|Ln|Lane|Ct|Court|Way|Pl|Place|Cir|Circle|Pkwy|Ter|Trl)\b|^\s+(?:U\.?S\.?|SR|CR)\s+(?:Hwy|Highway|\d)/;
+  const RX_REFERENCIA_ANTES = /\b(?:order|account|acct|ticket|case|request|job|permit|license|lic|pe|p\.e|no|number|ref|reference|id|meter|pole|transformer|orden|cuenta|n[uú]mero|licencia|fl|florida)\s*[#:.]?\s*(?:\d+[ -])*$/i;
   // una línea del código (artículos sueltos dentro de una frase: «NEC 225.30 limits … and 225.31 through 225.33»)
   const RX_LINEA_CODIGO = /\b(?:NEC|NFPA|Articles?|Art\.|Code)\b/;
   // un año dentro de una fecha («August 20, 2026», «dated 2014», «the 2014 certificate») no es un monto
-  const RX_ANTES_ANO = /(?:\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|ene|abr|ago|dic)[a-z]*\.?\s+\d{1,2},?\s*|\b(?:dated|fecha|the|of|de|del|in|en|since|desde|year|a[nñ]o)\s+)$/i;
+  const RX_ANTES_ANO = /(?:\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|ene|abr|ago|dic)[a-z]*\.?\s+(?:\d{1,2},?\s*)?|\b(?:dated|fecha|the|of|de|del|in|en|since|desde|year|a[nñ]o)\s+)$/i;
   // Un artículo del código («NEC 680.26», «210.19(A), 210.20(A) and 210.23», «Art. 330 (MC cable), 330.30», «Section 2.10»)
-  const RX_ANTES_ARTICULO = /(?:\bNEC|\bNFPA|\bArt(?:icle)?s?\.?|\bSections?|\bSec\.|§)\s*(?:\d{1,4}(?:\.\d{1,3})?(?:\([A-Za-z0-9]{1,3}\))*(?:\s*(?:,|;|\/|and|or|y|through|thru|to|including|incl\.|Part\s+[IVXLC]+|\(|\)|\([^)]{0,30}\)))*\s*)*$/i;
+  const RX_ANTES_ARTICULO = /(?:\bNEC|\bNFPA|\bArt(?:icle)?s?\.?|\bSections?|\bSec\.|\bChapters?|\bCap[ií]tulos?|§)\s*(?:\d{1,4}(?!\d)(?:\.\d{1,3}(?!\d))?(?:\([A-Za-z0-9]{1,3}\))*(?:\s*(?:,|;|\/|and|or|y|through|thru|to|including|incl\.|Part\s+[IVXLC]+|\(|\)|\([^)]{0,30}\)))*\s*)*$/i;
+  // 16-oct: una unidad detrás hace la cifra medida; pero una cifra ENTRE comillas («cost "1,500" each») es una cita, no pulgadas
+  // (revisión): ¿la última comilla de antes abre una cita? («approved "base bid 12,500"», «Per email: 'deposit 6,414'»)
+  const citaAbierta = antes => {
+    const m = antes.match(/["“”'‘’](?=[^"“”'‘’]*$)/);
+    return !!m && (/[“‘]/.test(m[0]) || (/["']/.test(m[0]) && /(?:^|[\s(\[:=,;—–-])$/.test(antes.slice(0, m.index))));
+  };
+  // la palabra de dinero cerca de la cifra («Deposit 6,414 …»); «total load 12,000 W» o «total connected load» es una medida
+  const cercaDeDinero = (antes, t) => (RX_DINERO_CERCA.test(antes) || (!!t && /\d,\d{3}|\.\d{2}$|^\d{4,}$/.test(t) && RX_DINERO_CERCA_CIFRAS.test(antes))) && !/\b(?:load|demand|connected|calculated|capacity|rated|rating|fault|available)[^A-Za-z0-9]*$/i.test(antes);
+  function medidaTras(antes, despues, t) {
+    if (RX_UNIDAD_FUERTE.test(despues) || RX_UNIDAD_FUERTE_MAY.test(despues)) return true;
+    const cerca = cercaDeDinero(antes, t);
+    // comillas: pulgadas o pies solo pegadas a la cifra, fuera de una cita y lejos del dinero («1,200' of #10», «1.25" PVC»)
+    if (/^\s*["”″'’]/.test(despues)) return /^["”″'’]/.test(despues) && !citaAbierta(antes) && !cerca;
+    // una unidad débil con espacio junto a una palabra de dinero es dinero («total price 1,200 A month», «Rough-in payment 8,500 floors»)
+    if (cerca && /^\s/.test(despues)) return false;
+    // (revisión 2) coma de miles Y centavos nunca es una medida débil («Milestone 2 — 40% — 5,131.20 Phase 2», «TECO — 2,400.00 phase 2»);
+    // centavos delante de una unidad de contar tampoco («640.50 phase 2»)
+    if (!!t && (/\d,\d{3}\.\d{2}$/.test(t) || (/\.\d{2}$/.test(t) && RX_UNIDAD_CONTAR.test(despues)))) return false;
+    // un monto con coma de miles o centavos seguido de un material o un código no es una medida («ADD 1,850 HP», «16,500 AL»)
+    const conForma = !!t && /\d,\d{3}|\.\d{2}$/.test(t);
+    if (conForma && /^\s*-?\s*(?:CU|AL|NEC|NFPA|FBC|HP)\b/.test(despues)) return false;
+    if (conForma && /^\s+[AVW]\s+(?:plus|lump|total|tax(?:es)?|credit|deposit|allowance|due|month|monthly|year|week|piece)\b/i.test(despues)) return false;   // «2,400 A plus tax»
+    return RX_UNIDAD_ARMAR.test(despues) || RX_UNIDAD_ARMAR_MAY.test(despues);
+  }
   function noEsDineroArmar(s, a, b) {
     const t = s.slice(a, b), antes = s.slice(0, a), despues = s.slice(b);
     if (/\$|dollars|usd|d[oó]lares/i.test(t) || /\$\s*$/.test(antes)) return false;
-    if (RX_UNIDAD_ARMAR.test(despues) || RX_UNIDAD_ARMAR_MAY.test(despues)) return true;
+    if (medidaTras(antes, despues, t)) return true;
+    // 16-oct: una cifra pegada a letras es un código (sheet E2.01, Eaton 1007701CH, model 2070-VACA), salvo usd, «ea» y «k» de miles.
+    // (revisión) una cifra con coma de miles nunca es un código («x12,500», «12,500LS»); con centavos tampoco si las letras van
+    // detrás («1,200.00CR», «12,500.00net»), ni «1,500-dollar», «LS», «W/O», «ea», «per», ni junto a una palabra de dinero
+    if (/[A-Za-z]-?$/.test(antes) && !/(?:usd|us|dlls?)$/i.test(antes) && !/\d,\d{3}/.test(t) && !RX_DINERO_PEGADO.test(antes)) return true;
+    if (/^-?[A-Za-z]/.test(despues) && !/^-?(?:usd|dlls?|dollars?|d[oó]lares|bucks|ea|each)\b/i.test(despues) && !/^[kK](?![A-Za-z0-9])/.test(despues)
+        && !/\d,\d{3}|\.\d{2}$/.test(t) && !/^(?:ls\b|l\.s\.|w\/o?|ea\b|each\b|per\b|pp\b)/i.test(despues) && !RX_DINERO_CERCA.test(antes)) return true;
+    if (/^\d{4,}$/.test(t) && /^\s?[kK]\b/.test(despues) && !RX_DINERO_CERCA.test(antes)) return true;   // 3000K es la luz (kelvin); «Precio: 2500K» no
     // tres decimales o más no es dinero: un artículo de la ley o del código («713.015», «489.126», «501.031»)
-    if (/^\d+\.\d{3,}$/.test(t)) return true;
+    // (revisión 2) salvo el punto de miles junto a una palabra de dinero («Monto: 2.000», «Precio de venta: 4.500»)
+    if (/^\d+\.\d{3,}$/.test(t) && !(/^\d{1,3}(?:\.\d{3})+$/.test(t) && cercaDeDinero(antes))) return true;
     if (/^\d{1,4}(?:\.\d{1,3})?$/.test(t) && RX_ANTES_ARTICULO.test(antes)) return true;
     // en una línea del código, un número con forma de artículo («225.31», «110.24») que no va junto a una palabra de dinero
     if (/^\d{2,3}\.\d{1,3}$/.test(t) && RX_LINEA_CODIGO.test(antes) && !RX_DINERO_CERCA.test(antes)) return true;
@@ -3216,24 +3549,38 @@
     if (/^\d{1,2}\.\d{1,2}$/.test(t) && /^\s*(?:[-*•|>#]+\s*)*(?:\*\*|__)?\s*$/.test(antes) && /^\s*\|?\s*(?:\*\*|__)?\s*(?:[A-Za-z(]|\d+[- ]?[A-Za-z])/.test(despues)) return true;
     // un año dentro de una fecha, lejos de una palabra de dinero
     if (/^(?:19|20)\d\d$/.test(t) && RX_ANTES_ANO.test(antes) && !RX_DINERO_CERCA.test(antes)) return true;
+    // (revisión 2) el año de la casa («1962 single-story home», «a 1978 house», «2020 NEC») y el 811 de Sunshine, lejos del dinero
+    if (/^(?:19|20)\d\d$/.test(t) && !RX_DINERO_CERCA.test(antes) && /^\s+(?:[a-z]+-story|single|two|one|split|ranch|home|house|residence|building|built|construction|edition|nec|nfpa|fbc|code|florida)\b/i.test(despues)) return true;
+    if (t === "811" && /\b(?:sunshine|call|dial|llam\w*)\s+$/i.test(antes)) return true;
     return false;
   }
   // Los tramos de dinero de una línea, con la regla del armado (posiciones [desde, hasta) en la cadena)
   // un monto escrito con letras («twelve thousand eight hundred twenty-eight dollars») también se tapa
   const RX_MONTO_EN_PALABRAS = /\b(?:(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|and)[\s-]+)+(?:dollars?|d[oó]lares)\b/gi;
+  const RX_MILES_K = /(?<![\d.,])\d{1,3}(?:[.,]\d+)?\s?[kK]\b(?!\s*(?:[Aa][Ii][Cc]|[Ss][Cc][Cc][Rr]|Ω|[Oo]hms?|[Bb][Tt][Uu]|W\b(?![\/&])|[Vv][Aa]\b(?![\/&])|[Kk][Vv][Aa]))/g;   // (revisión 3) solo la «W» mayúscula es vatios: «12k w permit» (w = with) son miles
+  // (revisión 2) los miles con palabra, junto a una palabra de dinero («Precio: 15 mil», «15 thousand», «16 grand»); «10 mil PVC tape» no
+  const RX_MILES_PALABRA = /(?<![\d.,])\d{1,3}(?:[.,]\d+)?\s*(?:thousand|grand|mil(?!\s*(?:pvc|vinyl|poly\w*|plastic|tape|film|vapor|thick\w*|sheet\w*|barrier|liner|wrap)))\b/gi;
   function tramosArmar(s) {
     s = String(s || "");
     const out = tramosDinero(s).filter(([a, b]) => !noEsDineroArmar(s, a, b));
     for (const m of s.matchAll(RX_MONTO_EN_PALABRAS)) out.push([Number(m.index), Number(m.index) + m[0].length]);
-    if (RX_PALABRA_DINERO_ARMAR.test(s)) {
+    if (RX_PALABRA_DINERO_ARMAR.test(s) || RX_DINERO_SUELTO.test(s)) {
+      for (const m of s.matchAll(RX_MILES_PALABRA)) { const a = Number(m.index), b = a + m[0].length; if (!out.some(([x, y]) => a < y && b > x)) out.push([a, b]); }
+      // (revisión) los miles con «k» junto a una palabra de dinero («Total 12k», «Extra 1,5k», «Credit 5K A/C»); no «10K AIC» ni «3000K»
+      for (const m of s.matchAll(RX_MILES_K)) { const a = Number(m.index), b = a + m[0].length; if (!out.some(([x, y]) => a < y && b > x)) out.push([a, b]); }
+      // (revisión 3) el monto con letras («twelve thousand five hundred», «quince mil», «doce mil quinientos»), no una medida («one hundred feet»)
+      for (const m of s.matchAll(RX_MONTO_LETRAS)) { const a = Number(m.index), b = a + m[0].length;
+        if (!RX_MAGNITUD_LETRAS.test(m[0]) || out.some(([x, y]) => a < y && b > x) || medidaTras(s.slice(0, a), s.slice(b), "")) continue; out.push([a, b]); }
+      const soloPorClave = !RX_PALABRA_DINERO_ARMAR.test(s) && RX_LINEA_CLAVE_ARMAR.test(s) && !RX_DINERO_SUELTO.test(s.replace(RX_LINEA_CLAVE_ARMAR, ""));   // (revisión 5)
       const rx = /\d{1,3}(?:[ \u00a0]\d{3})+(?:[.,]\d{1,2})?(?!\d)|\d{1,3}(?:\.\d{3})+,\d{1,2}(?!\d)|\d(?:[\d,]*\d)?(?:\.\d+)?/g; let m;
       while ((m = rx.exec(s))) {
         const t = m[0], a = m.index, b = a + t.length, antes = s.slice(0, a), despues = s.slice(b);
         if (out.some(([x, y]) => a < y && b > x)) continue;
-        if (t.replace(/\D/g, "").length < 3 && !/\.\d/.test(t)) continue;
-        if (/[A-Za-z#\/.]$/.test(antes) || (/-$/.test(antes) && !/(?:^|[\s(:=])-$/.test(antes))) continue;   // L60, #6, 12/2, MXP-2026
+        if (t.replace(/\D/g, "").length < 3 && !/\.\d/.test(t) && !(/^\d{2}$/.test(t) && RX_POR_HORA.test(despues))) continue;
+        if ((/[A-Za-z#\/.]$/.test(antes) || (/-$/.test(antes) && !/(?:^|[\s(:=])-$/.test(antes))) && !RX_DINERO_PEGADO.test(antes)) continue;   // L60, #6, 12/2, MXP-2026
         if (/^\d/.test(despues) || /^\s*[\/]\s*\d/.test(despues) || /^-\d/.test(despues) || /^\s*%/.test(despues) || /^\.\d/.test(despues)) continue;   // 40/40/20, 50 %
         if (noEsDineroArmar(s, a, b)) continue;
+        if (soloPorClave && (RX_CALLE_TRAS.test(despues) || RX_REFERENCIA_ANTES.test(antes))) continue;
         out.push([a, b]);
       }
     }
@@ -3250,8 +3597,9 @@
     s = String(s || "");
     if (/\$\s*\d/.test(s) || /\$(?!\s*[#\d])/.test(s)) return true;
     if (/\b(?:dollars?|d[oó]lares|dlls?|usd|bucks|cents|centavos)\b/i.test(s)) return true;
-    if (/\b(?:thousand|grand|mil(?:es)?)\b/i.test(s) && RX_PALABRA_DINERO_ARMAR.test(s)) return true;
-    if (/\d\s?k\b/i.test(s) && RX_PALABRA_DINERO_ARMAR.test(s)) return true;
+    // 16-oct: «10 mil PVC tape» es el espesor y «10K AIC» o «3000K» no son miles
+    if (/\b(?:thousand|grand|miles|mil(?!\s*(?:pvc|vinyl|poly\w*|plastic|tape|film|vapor|thick\w*|sheet\w*|barrier|liner|wrap)))\b/i.test(s) && RX_PALABRA_DINERO_ARMAR.test(s)) return true;
+    if (/(?<![\d.])\d{1,3}(?:[.,]\d+)?\s?k\b(?!\s*(?:AIC|SCCR|Ω|ohm))/i.test(s) && RX_PALABRA_DINERO_ARMAR.test(s)) return true;   // (revisión) «12k A/C», «1,5k»
     const vistas = cifrasDe(base);
     for (const [a, b] of tramosArmar(s)) {
       const t = s.slice(a, b);
@@ -3271,10 +3619,46 @@
     return false;
   }
   // Una lección de Edgar con un monto (la MISMA regla al guardarla y al pasársela a la IA: lo que se guarda, llega)
+  const RX_LECCION_POR_UNIDAD = /\b(?:at|@|a)\s*\d+\.\d{2}\s*(?:\/\s*)?(?:sq\.?\s*ft|sf|lf|ft|foot|feet|pies?)\b|@\s*\d+(?:\.\d{2})?\s*(?:\/|per|por|a)\s*(?:sq\.?\s*ft|sf|lf|ft|foot|pies?|hr|hour|hora)\b|(?<![\d.,\/])\d{2,}(?:\.\d{2})?\s*(?:\/|per|por)\s*(?:sq\.?\s*ft|square\s+f(?:oo|ee)t|sf|lf|linear\s+f(?:oo|ee)t|pie\s+cuadrado|hr|hour|hora)\b/i;
+  const RX_LECCION_DISPARO = /\b(?:for|por|add|adds|came to|comes? to|ended(?: up)? at|ends? at|lands?(?: near| at)?|landed(?: near| at)?|near|about|around|approx\.?|approximately|roughly|wants?|asks?(?: for)?|asked(?: for)?|pide|piden|pidi[oó]|queda(?:ba|r[aá])?\s+en(?:\s+unos)?|qued[oó]\s+en(?:\s+unos)?|sale\s+en|sali[oó]\s+en|unos|alrededor\s+de|cerca\s+de)\s+~?(\d{3,}(?:\.\d{2})?)(?![\d,.]*\d)|[:=~≈]\s*(\d{3,}(?:\.\d{2})?)\s*[.!]?\s*$/gi;
+  // una cifra de tres o más de una lección que no es una medida, un código, un año, una línea, una calle ni un código postal
+  function cifraPeladaLeccion(s, a, n) {
+    const antes = s.slice(0, a), despues = s.slice(a + n.length);
+    if (/^(?:19|20)\d\d$/.test(n) || noEsDineroArmar(s, a, a + n.length)) return false;
+    if (/^\s*(?:%|por\s*ciento|percent)/i.test(despues) || /^\s*[\/\-]\s*\d/.test(despues) || /\S[\/\-]$/.test(antes) || /(?<!#\d*)\d\s*[\/\-–]\s*$/.test(antes)) return false;   // (revisión 5) «12/2», «1,000 - 2,000»; «sq ft - 18500» y «rewire -18500» sí son monto
+    if (/(?:\bl[ií]neas?|\blines?|\bL|\bhitos?|\bmilestones?|\brengl[oó]n(?:es)?|\bitems?|\bsecci[oó]n|\bsections?|\bNEC|\bart[ií]culos?|\barticles?|\bart\.|#|\bno\.|\bFL|\bFlorida|\bzip|\bsuite|\bunit|\blot|\bpermit|\bpermiso)\s*$/i.test(antes)) return false;
+    if (/^\s+(?:[NSEW]\.?\s+)?(?:[A-Z][a-z]+\s+){1,3}(?:St|Street|Ave|Avenue|Rd|Road|Dr|Drive|Blvd|Hwy|Highway|Ln|Lane|Ct|Court|Way|Pl|Place|Cir|Circle|Pkwy|Ter|Trl)\b|^\s+(?:U\.?S\.?|SR|CR)\s+(?:Hwy|Highway|\d)/.test(despues)) return false;
+    return true;
+  }
+  // (revisión 5) con una medida en la lección, «Pool bonding 15,000 gal - 1950»: una cifra con forma de año sola al final tras « - » es lo que costó
+  const anioComoMonto = (s, a, n) => /^(?:19|20)\d\d$/.test(n) && /\s[-–—]\s*$/.test(s.slice(0, a)) && /^\s*(?:[.!]\s*)?$|^\s*(?:with|con|lump|incl)/i.test(s.slice(a + n.length));
+  // (revisión 5) una línea con una medida con coma («22,000 W», «2,446 sq ft», «1,200A») y OTRA cifra de tres o más suelta que no es
+  // medida, código, año, línea, calle ni código postal («Generator 22,000 W hookup 2400», «Rewire of 2,446 sq ft - 18500»): esa cifra
+  // es lo que cuesta. Antes la medida con coma ya hacía «dinero» toda la línea y no se copiaba; la medida sola se sigue copiando.
+  // Devuelve la cifra (para el aviso ámbar) o null.
+  function medidaConMonto(t) {
+    const s = String(t || "");
+    if (!/\d,\d{3}/.test(s)) return null;
+    const conMedida = [...s.matchAll(/\d{1,3}(?:,\d{3})+(?:\.\d+)?/g)].some(m => { const d = s.slice(Number(m.index) + m[0].length); return RX_UNIDAD_FUERTE.test(d) || RX_UNIDAD_FUERTE_MAY.test(d) || RX_UNIDAD_ARMAR.test(d) || RX_UNIDAD_ARMAR_MAY.test(d); });
+    if (!conMedida) return null;
+    for (const m of s.matchAll(/\d+(?:\.\d{2})?/g)) if (/^\d{3,}/.test(m[0]) && !/[\d,.]$/.test(s.slice(0, Number(m.index))) && !/^[\d,]/.test(s.slice(Number(m.index) + m[0].length)) && (cifraPeladaLeccion(s, Number(m.index), m[0]) || anioComoMonto(s, Number(m.index), m[0]))) return m[0];
+    return null;
+  }
   const RX_LECCION_PALABRA = /\$|cobr|pag[oaóu]|contrat(?!ist)|precio|price|markup|profit|margen|ganancia|tarifa|\brate\b|overhead|dep[oó]sit|\bbid\b|presupuesto|cost|cuest|\bval[eií]|mano de obra|\blabor\b|monto|saldo|factur|invoice|d[oó]lar|dollar|total|\bsum\b|lump|\bsale en\b|\bsali[oó] en\b|\bqued[oó] en\b|\bhora\b|hourly|\bfee\b/i;
   function leccionConMonto(t) {
     const s = String(t || "");
     if (esMontoArmar(s) || traeDineroEstricto(s) || /\b(?:dollars?|d[oó]lares|usd|bucks)\b/i.test(s)) return true;
+    // (revisión 2) «… for 4800», «add 4500 for the rough», «por 1200»: una cifra de tres o más tras for/por/add, sin unidad ni código detrás
+    // (revisión 3) también tras «came to», «lands near», «wants», «pide», «queda en unos», «sale en»… o sola al final tras «:» o «=»
+    if (RX_LECCION_POR_UNIDAD.test(s)) return true;   // (revisión 3) «at 6.50 sq ft», «6.50 per sq ft», «95/hr»
+    for (const m of s.matchAll(RX_LECCION_DISPARO)) {
+      const n = m[1] || m[2], a = Number(m.index) + m[0].lastIndexOf(n);
+      if (cifraPeladaLeccion(s, a, n)) return true;
+    }
+    // (revisión 3) con una MEDIDA en la lección («15,000 gal», «2,446 sq ft», «28,800 VA»), otra cifra de tres o más sin unidad ni
+    // código detrás es lo que costó («A 1,200 sq ft addition lands near 9800», «Con 28,800 VA el ingeniero pide 450»)
+    const conMedida = [...s.matchAll(/\d[\d,]*(?:\.\d+)?/g)].some(m => { const d = s.slice(Number(m.index) + m[0].length); return RX_UNIDAD_FUERTE.test(d) || RX_UNIDAD_FUERTE_MAY.test(d) || (/\d,\d{3}/.test(m[0]) && (RX_UNIDAD_ARMAR.test(d) || RX_UNIDAD_ARMAR_MAY.test(d))); });   // (revisión 5) «22,000 W», «1,200A»
+    if (conMedida) for (const m of s.matchAll(/\d+(?:\.\d{2})?/g)) if (/^\d{3,}/.test(m[0]) && !/[\d,.]$/.test(s.slice(0, Number(m.index))) && !/^[\d,]/.test(s.slice(Number(m.index) + m[0].length)) && (cifraPeladaLeccion(s, Number(m.index), m[0]) || anioComoMonto(s, Number(m.index), m[0]))) return true;
     if (!RX_LECCION_PALABRA.test(s)) return false;
     const rx = /\d+(?:,\d{3})*(?:\.\d+)?/g; let m;
     while ((m = rx.exec(s))) {
@@ -3433,8 +3817,12 @@
       if (L.precio && Number.isInteger(L.precio.linea)) dineroEn.add(L.precio.linea);
       (Array.isArray((L.pagos || {}).lineas) ? L.pagos.lineas : []).forEach(n => { if (Number.isInteger(n)) dineroEn.add(n); });
       (Array.isArray(L.opciones) ? L.opciones : []).forEach(o => { if (o && Number.isInteger(o.linea)) dineroEn.add(o.linea); });
+      // (revisión 2) un precio o una opción que se PREGUNTA («Precio: 12.500») no queda en L.precio, pero su línea es de dinero
+      (Array.isArray(L.preguntas) ? L.preguntas : []).forEach(p => { if (p && /^(?:precio|opcion_)/.test(String(p.clave || "")) && Number.isInteger(p.linea)) dineroEn.add(p.linea); });
     }
-    const tapada = taparDinero(texto, [...dineroEn]);
+    // (revisión 2) la misma regla que el armado: toda línea «Precio: … / Pagos: … / Total: …» con cifras es de dinero
+    String(texto || "").replace(/\r/g, "").split("\n").forEach((l, i) => { if (kvDinero(l)) dineroEn.add(i + 1); });
+    const tapada = taparDinero(texto, [...dineroEn], lineasBloqueDinero(texto));   // (revisión 3) la tabla y las viñetas de los pagos
     const originales = String(texto || "").replace(/\r/g, "").split("\n");
     // t = lo que ve el modelo (limpia y tapada); tapada = la línea tapada sin limpiar; original = la línea de Edgar tal cual
     // (el juez mira el dinero de verdad en la original: la tapada no tiene cifras)
@@ -3542,7 +3930,10 @@
     if (L.precio && typeof L.precio === "object") {
       const orig = (lineas[L.precio.l - 1] || {}).original || "";
       const d = hayDinero(orig);
-      const formaPrecio = lineaOk(L.precio.l) && d && d.seguro && !/\d{1,3}\s*%/.test(orig)
+      // 16-oct: «Precio: 4,100.00 (includes the 7% sales tax)» es el precio; «Precio: 40% deposit» no (sin monto fuera del %)
+      const kvP = orig.replace(/\*\*|__|`/g, "").match(/^\s*\|?\s*([^:|]{2,42})\s*[:|]\s*(.*)$/);
+      const precioConPct = !!(kvP && buscaClave(CLAVES_DINERO, norma(kvP[1])) === "precio" && !totalQueNoEsPrecio(kvP[1], kvP[2]) && /\d/.test(kvP[2].replace(/\d{1,3}\s*%/g, "")));
+      const formaPrecio = lineaOk(L.precio.l) && d && d.seguro && (precioConPct || !/\d{1,3}\s*%/.test(orig))
         // «9.15 Limitation of liability… total contract price» no es un precio: hace falta «$» o la clave «Precio:» delante
         && (/\$\s?\d/.test(orig) || !!claveDeLinea(txt(L.precio.l)) || (() => { const kv = orig.match(/^\s*([^:]{2,42}):\s*(.*)$/); return !!(kv && buscaClave(CLAVES_DINERO, norma(kv[1])) === "precio"); })())
         && (PALABRA_DINERO.test(orig) || /\b(lump sum|contract price|base price|investment)\b/i.test(orig) || !!claveDeLinea(txt(L.precio.l)))
@@ -4637,7 +5028,8 @@
   const esDineroDeVerdad = t => /\$|dollars|usd|d[oó]lares/i.test(t) || /\d{1,3}(?:,\d{3})+/.test(t);
   const conMontoTapado = s => {
     let t = String(s || "");
-    const tramos = tramosDinero(t).filter(([a, b]) => esDineroDeVerdad(t.slice(a, b)));
+    // 16-oct: una medida («1,250 ft», «beyond 1,000 ft») va tal cual: el revisor tiene que poder citarla
+    const tramos = tramosDinero(t).filter(([a, b]) => esDineroDeVerdad(t.slice(a, b)) && !noEsDineroArmar(t, a, b));
     for (let k = tramos.length - 1; k >= 0; k--) { const [a, b] = tramos[k]; t = t.slice(0, a) + "[MONTO]" + t.slice(b); }
     return t;
   };
@@ -4870,6 +5262,9 @@
       if (v === null || v === undefined || v === "") return;
       if (typeof v === "boolean") { out[k] = v; return; }
       const t = typeof v === "object" ? JSON.stringify(v) : String(v);
+      // 16-oct: el título de un plano («E1.01 Electrical Plan») lleva números de hoja, no dinero: vale sin $, sin miles con coma
+      // y sin palabra de dinero
+      if (k === "documento_plano" && typeof v === "string" && esTituloDePlano(t) && !/\$/.test(t) && !traeDineroEstricto(t) && !esMontoArmar(t) && !RX_PALABRA_DINERO_ARMAR.test(t)) { out[k] = t.slice(0, 200); return; }
       if (!t || t === "{}" || esMontoTapable(t) || /\$/.test(t)) return;
       out[k] = typeof v === "object" ? v : t.slice(0, 200);
     });
@@ -5177,7 +5572,7 @@
   const RX_LAYOUT_PROPIO = /\blayout\b|\bwalk-?\s?through\b|\bdevice\s+locations?\b|\bapproval\s+form\b|\blocations?\s+(?:will\s+be|are|is)\s+marked\b|\brecorrido\b|\bubicaci[oó]n\s+de\s+(?:los\s+)?(?:aparatos|tomas|dispositivos)\b/i;
   // Tanda 6: el tipo de trabajo de la IA solo vale si su línea de evidencia trae la PALABRA que lo justifica
   const PALABRA_TIPO_TRABAJO = {
-    remodel: /\b(?:remodel\w*|renovat\w*|retrofit\w*|remodelaci\w*|renovaci\w*)\b/i,
+    remodel: /\b(?:remodel\w*|renovat\w*|retrofit\w*|remodelaci\w*|renovaci\w*|tenant\s+improvements?|build-?outs?|fit-?outs?|re-?wir\w*|recablead\w*)\b|\bexisting\b[^.;]{0,80}\b(?:removed|replaced)\b/i,   // (revisión 2) el rewire   // 16-oct: el TI
     service: /\bservice\s+calls?\b|\bservices?\b|\brepair\w*|\breplac\w*|\bservicio\b|\breparaci\w*|\breemplaz\w*/i,
     new: /\bnew\s+construction\b|\bnew\s+build\w*|\badditions?\b|\bobra\s+nueva\b|\bconstrucci[oó]n\s+nueva\b|\bampliaci[oó]n\b/i,
     planos: /\bplans\b|\bdrawings?\b|\bengineered\b|\bplanos\b/i
@@ -5208,14 +5603,21 @@
   //   · fixtures_mxp: los pone Max Power / el Contractor, o los nombra como suministro propio («furnish and install»,
   //     «with listed combination units and their supply circuit», Metro l. 46), y no dice que los pone otro.
   //   · excavacion: trench / excavat / dig / underground / buried / bore (Heather l. 24, «buried»: vale → subsuelo).
+  //   · 16-oct: también «supply / provide and install(ation)», «furnish & install», «F&I», «furnished by Max Power»; el cliente
+  //     que «buys / purchases»; «below grade», «in-ground», «under the slab». v240: solo si vuelve a usar un circuito existente.
+  //     La cita que sale de la línea «Clave: valor» de esa condición no se juzga (verificarArmado).
   // Devuelve el motivo (para Edgar) o "" si vale. Las demás condiciones no se juzgan aquí.
   const RX_APARATO = /\b(?:ranges?|ovens?|cooktops?|dryers?|washers?|dishwashers?|water\s+heaters?|a\/c|ac|air\s+condition\w*|condens(?:er|ers|ing)|heat\s+pumps?|mini[-\s]?splits?|ev|ev\s+chargers?|disposals?|microwaves?|refrigerators?|fridges?|freezers?|pumps?|motors?|equipment|appliances?|compressors?|air\s+handlers?|estufas?|hornos?|secadoras?|lavadoras?|lavavajillas|calentador(?:es)?|aires?\s+acondicionados?|bombas?|motor(?:es)?|equipos?|electrodom\w*|neveras?|refrigeradores?)\b/i;
   const RX_CIRCUITO = /\b(?:circuits?|circuitos?)\b/i;
   const RX_LUZ = /\b(?:troffers?|fixtures?|luminaires?|lights?|lighting|lamps?|downlights?|recessed|sconces?|pendants?|chandeliers?|fans?|l[aá]mparas?|luminarias?|focos?|plaf[oó]n(?:es)?|ventiladores?|abanicos?)\b/i;
-  const RX_QUIEN_PONE = /\b(?:furnish\w*|provid\w*|suppl(?:y|ies|ied)|pone|ponen|compra|compran|suministr\w*|aport\w*)\b|\bby\s+(?:the\s+)?(?:owner|client|customer|tenant|homeowner|others|gc|general\s+contractor)\b|\b(?:owner|client|customer|tenant|homeowner|gc)[-\s](?:furnished|provided|supplied)\b|\b(?:del|por\s+el)\s+(?:cliente|due[nñ]o|inquilino)\b/i;
+  const RX_QUIEN_PONE = /\b(?:furnish\w*|provid\w*|suppl(?:y|ies|ied)|buys?|bought|purchas\w*|pone|ponen|compra|compran|suministr\w*|aport\w*)\b|\bby\s+(?:the\s+)?(?:owner|client|customer|tenant|homeowner|others|gc|general\s+contractor)\b|\b(?:owner|client|customer|tenant|homeowner|gc)[-\s](?:furnished|provided|supplied)\b|\b(?:del|por\s+el)\s+(?:cliente|due[nñ]o|inquilino)\b/i;
   const RX_LOS_PONE_OTRO = /\bby\s+(?:the\s+)?(?:owner|client|customer|tenant|homeowner|others|gc|general\s+contractor)\b|\b(?:owner|client|customer|tenant|homeowner|gc)[-\s](?:furnished|provided|supplied)\b|\b(?:del|por\s+el|los\s+pone\s+el|las\s+pone\s+el)\s+(?:cliente|due[nñ]o|inquilino)\b/i;
-  const RX_LOS_PONE_MXP = /\b(?:max\s+power|mxp)\b[^.;]{0,60}\b(?:furnish|provid|suppl|install|pone|suministr)\w*|(?<!general\s)\bcontractor\b[^.;]{0,60}\b(?:furnish|provid|suppl)\w*|\bfurnish(?:es|ed)?\s+and\s+install\w*|\bsuministr\w*\s+e\s+instal\w*|\bwith\s+(?:[\w/-]+\s+){0,3}(?:units?|fixtures?|luminaires?|lights?|fans?)\b|\bnew\s+(?:[\w/-]+\s+){0,2}(?:fixtures?|luminaires?|units?|lights?)\b/i;
-  const RX_ZANJA = /\b(?:trench\w*|excavat\w*|dig|digging|dug|underground|buried|bury|bor(?:e|ed|es|ing)|zanjas?|excava\w*|enterrad\w*|subterr[aá]ne\w*|perfora\w*)\b/i;
+  const RX_LOS_PONE_MXP = /\b(?:max\s+power|mxp)\b[^.;]{0,60}\b(?:furnish|provid|suppl|install|pone|suministr)\w*|(?<!general\s)\bcontractor\b[^.;]{0,60}\b(?:furnish|provid|suppl)\w*|\bfurnish(?:es|ed)?\s*(?:and|&)\s*install\w*|\bsuppl(?:y|ies|ied)\s*(?:and|&)\s*install\w*|\bprovid(?:e|es|ed)\s*(?:and|&)\s*install\w*|\bF\s*&\s*I\b|\b(?:furnish|suppl|provid)\w*(?:\s+and\s+install\w*)?\s+by\s+(?:max\s+power|mxp|(?:the\s+)?contractor)\b|\bsuministr\w*\s+e\s+instal\w*|\bwith\s+(?:[\w/-]+\s+){0,3}(?:units?|fixtures?|luminaires?|lights?|fans?)\b|\bnew\s+(?:[\w/-]+\s+){0,2}(?:fixtures?|luminaires?|units?|lights?)\b/i;
+  const RX_ZANJA = /\b(?:trench\w*|excavat\w*|dig|digging|dug|underground|buried|bury|bor(?:e|ed|es|ing)|zanjas?|excava\w*|enterrad\w*|subterr[aá]ne\w*|perfora\w*)\b|\bbelow\s+grade\b|\bin-?ground\b|\b(?:under|beneath|below)\s+(?:the\s+)?slab\b|\bbajo\s+(?:la\s+)?losa\b/i;
+  // 16-oct: de qué tiene que hablar la línea de la IA para las fotos del panel y los circuitos existentes (sin su clave)
+  const RX_HABLA_CONDICION = {
+    fotos_panel: /\b(?:photos?|photographs?|pictures?|pics?|images?|fotos?|fotograf\w*|im[aá]gen(?:es)?|documentation|documentaci[oó]n|documentos?)\b/i,
+    circuitos_exist: /\b(?:existing|existentes?)\b[^.;]{0,50}\b(?:circuits?|circuitos?|wiring|cableado)\b|\b(?:circuits?|circuitos?)\b[^.;]{0,50}\b(?:existing|existentes?|ya existen)\b|\b(?:extend\w*|modif\w*|extien\w*)\b[^.;]{0,40}\b(?:circuits?|circuitos?)\b/i };
   function condicionSinJuicio(clave, cita) {
     const t = String(cita || "");
     if (clave === "reubicar")
@@ -5226,6 +5628,9 @@
       return (RX_LUZ.test(t) || /\bunits?\b/i.test(t)) && RX_LOS_PONE_MXP.test(t) && !RX_LOS_PONE_OTRO.test(t) ? "" : "no dice que esos fixtures los pone Max Power";
     if (clave === "excavacion")
       return RX_ZANJA.test(t) ? "" : "no habla de zanjas, de excavar ni de nada enterrado";
+    // 16-oct: la 9.x del 240 V es para volver a usar un circuito que YA existe (estufa, secadora); un circuito nuevo no
+    if (clave === "v240")
+      return /\b(?:re-?us\w*|re-?extend\w*|reutiliz\w*|reus\w*|extend\w*)\b|\bexisting\s+(?:[\w/-]+\s+){0,3}(?:circuits?|conductors?|feeders?|wiring|receptacles?|outlets?)\b|\b(?:circuitos?|conductor(?:es)?|tomas?)\s+(?:[\w/-]+\s+){0,3}existentes?\b/i.test(t) ? "" : "no dice que se vuelve a usar un circuito de 240 V que ya existe";
     return "";
   }
 
@@ -5237,7 +5642,33 @@
   // Tanda 4: se tapa con la regla del ARMADO (tramosArmar): las medidas, los artículos del código y los números de
   // renglón viajan tal cual (la IA los copia), y una cifra suelta junto a una palabra de dinero se tapa («Precio 12828»).
   const kvDinero = l => { const kv = String(l || "").replace(/\*\*|__|`/g, "").match(/^\s*\|?\s*([^:|]{2,42})\s*[:|]\s*(.*)$/);
-    return !!(kv && buscaClave(CLAVES_DINERO, norma(kv[1])) && /\d/.test(kv[2])); };
+    return !!(kv && buscaClave(CLAVES_DINERO, norma(kv[1])) && /\d/.test(kv[2]) && !totalQueNoEsPrecio(kv[1], kv[2])); };
+  // (revisión 3) las filas de una tabla de pagos y las viñetas bajo «Pagos:» son de dinero («| Final | 20% | 2566 |», «- 6414 at signing»),
+  // y también las filas de una tabla cuya cabecera dice Amount, Monto, Price, Precio, Cost o Total
+  const RX_CABECERA_MONTO = /\|\s*(?:amount|monto|importe|price|precio|cost|costo|total|valor|value|due|\$)\s*(?:\(\s*\$?\s*\)|\$|usd)?\s*(?=\||$)/i;
+  const RX_TITULO_PAGOS = /^(?:payment schedule|schedule of payments|payment terms|terms of payment|calendario de pagos|forma de pago|formas de pago|plan de pagos)$/i;
+  function lineasBloqueDinero(texto) {
+    const out = []; let enPagos = false, empezado = false, enTabla = false;
+    String(texto || "").replace(/\r/g, "").split("\n").forEach((l, i) => {
+      const t = l.replace(/\*\*|__|`/g, "").trim();
+      if (/^\|/.test(t)) {
+        if (!enTabla && RX_CABECERA_MONTO.test(t)) enTabla = true;
+        else if (enTabla || enPagos) out.push(i + 1);
+        if (enPagos) empezado = true;
+        return;
+      }
+      enTabla = false;
+      if (!t) { if (empezado) enPagos = empezado = false; return; }
+      const kv = t.match(/^#*\s*([^:|]{2,42}?)\s*:\s*(.*)$/), titulo = norma(t.replace(/^#+\s*/, "").replace(/^\d+[.)]?\s+/, "").replace(/[:.]\s*$/, ""));
+      if ((kv && buscaClave(CLAVES_DINERO, norma(kv[1])) === "pagos") || buscaClave(CLAVES_DINERO, titulo) === "pagos" || RX_TITULO_PAGOS.test(titulo)) {
+        if (kv && kv[2].trim()) out.push(i + 1);
+        enPagos = true; empezado = false; return;
+      }
+      if (enPagos && RE_VINETA.test(l)) { out.push(i + 1); empezado = true; return; }
+      enPagos = empezado = false;
+    });
+    return out;
+  }
   function hojaParaArmar(texto, dineroEn) {
     const set = new Set(dineroEn || []);
     let tapados = 0;
@@ -5246,8 +5677,10 @@
       let s = tapa(original, tramosArmar(original));
       if (set.has(i + 1)) s = s.replace(/\d(?:[\d,]*\d)?(?:\.\d+)?/g, (n, off) => {
         if (/^\s*%/.test(s.slice(off + n.length)) || /[#$]$/.test(s.slice(0, off))) return n;
-        if ((/[A-Za-z\/]$/.test(s.slice(0, off)) && !/(?:usd|us|dlls?)$/i.test(s.slice(0, off))) || noEsDineroArmar(s, off, off + n.length)) return n;   // 100A, 480Y/277V, L60
-        if (n.replace(/\D/g, "").length >= 3 || /\./.test(n)) { tapados++; return taparTramo(n); }
+        // (revisión 2) «Precio: 15 mil» / «15 thousand» / «12.500» (punto de miles) se tapan aunque parezcan medida o artículo
+        const miles = /^\s*(?:mil|thousand|grand|k)\b/i.test(s.slice(off + n.length)) || /^\d{1,3}(?:\.\d{3})+$/.test(n);
+        if (!miles && ((/[A-Za-z\/]$/.test(s.slice(0, off)) && !/(?:usd|us|dlls?)$/i.test(s.slice(0, off))) || noEsDineroArmar(s, off, off + n.length))) return n;   // 100A, 480Y/277V, L60
+        if (miles || n.replace(/\D/g, "").length >= 3 || /\./.test(n)) { tapados++; return taparTramo(n); }
         return n;
       });
       const c = limpiarLinea(s);
@@ -5260,6 +5693,7 @@
   function paqueteParaArmar(texto, L0, ficha) {
     const dineroEn = new Set();
     String(texto || "").replace(/\r/g, "").split("\n").forEach((l, i) => { if (kvDinero(l)) dineroEn.add(i + 1); });
+    lineasBloqueDinero(texto).forEach(n => dineroEn.add(n));
     if (esObjeto(L0)) {
       if (esObjeto(L0.precio) && Number.isInteger(L0.precio.linea)) dineroEn.add(L0.precio.linea);
       (esObjeto(L0.pagos) && Array.isArray(L0.pagos.lineas) ? L0.pagos.lineas : []).forEach(n => { if (Number.isInteger(n)) dineroEn.add(n); });
@@ -5319,6 +5753,8 @@
   const esTituloDeSeccion = l => { try { return !!seccionDeTitulo(l); } catch { return false; } };
 
   // ---- El juez del teléfono (pliego §4.3). Nunca revienta: un armado roto se rechaza entero con «armado_invalido».
+  // la línea de una deducción «con contratista» (sin «Contrato con:») tiene que hablar de eso (16-oct: builders, construction…)
+  const PISTA_GC = /subcontract|general contractor|\bgc\b|contratista|prepared for|contractor|builders?|(?<!new\s)construction(?!\s+(?:drawings?|plans?|documents?|sets?))|constructors|contracting|developers?/i;
   function verificarArmado(lineas, armado, ficha, perfilApp) {
     try { return verificarArmadoCrudo(lineas, armado, ficha || {}, perfilApp || {}); }
     catch (e) { return { error: "armado_invalido", motivo: "no se pudo leer el armado: " + String((e && e.message) || e).slice(0, 80) }; }
@@ -5399,7 +5835,7 @@
     // el monto, y su título sale de esa línea SIN el monto. Así un SOW que ya está en inglés no se reescribe (la IA tardaba
     // más de 150 s en Whitlock y Wimauma reescribiendo lo que ya estaba bien).
     const sinEn = o => esObjeto(o) && (o.en === undefined || o.en === null || (typeof o.en === "string" && !o.en.trim())) && Array.isArray(o.de) && o.de.length > 0;
-    const lineaConDinero = n => esLineaDinero(n) || traeDineroEstricto(orig(n)) || RX_MASCARA.test(txt(n));
+    const lineaConDinero = n => esLineaDinero(n) || traeDineroEstricto(orig(n)) || !!medidaConMonto(orig(n)) || RX_MASCARA.test(txt(n));
     const porReferencia = (o, ruta, opc) => {
       if (opc.sinRef) return null;            // el texto de un pago: sin «en», lo pone el programa con su línea
       let de = lineasDe(o.de);
@@ -5414,7 +5850,9 @@
       if (conDinero.length) {
         tirar(ruta, `pide copiar la línea ${conDinero.join(", ")}, que lleva dinero`);
         ambar("copia_con_dinero", conDinero, `La IA pidió copiar tal cual la línea ${conDinero.join(", ")}, que lleva dinero: no la copié.`);
-        return opc.lista ? { solo_dinero: true, de: [] } : null;
+        // 16-oct: se quita solo esa línea (como con «en»); las demás del texto se copian
+        de = de.filter(n => !conDinero.includes(n));
+        if (!de.length) return opc.lista ? { solo_dinero: true, de: [] } : null;
       }
       const conCodigo = de.filter(n => /[<>]/.test(orig(n)));
       if (conCodigo.length) {
@@ -5579,6 +6017,18 @@
     // solo valen de una línea «Clave: valor» con SU clave («Owner:» es el cliente en la casa, no el dueño)
     const CLAVE_DEL_DATO = { cliente: ["cliente", "contratista"], dueno: ["dueno"], inquilino: ["inquilino"], segundo_firmante: ["segundo_firmante"], base_precio: ["base_precio"] };
     const TENANT = /\b(?:tenant|inquilino|occupant|arrendatario)\b/i;
+    // 16-oct: el dueño de la prosa («…three (3) units, owned by Juan Gong») vale solo si su línea lo dice junto al nombre Y el
+    // trato ya es con contratista por otro lado (la ficha, el perfil o el hecho con su línea): un nombre suelto en una obra
+    // directa no puede encender el trato con GC ni quitar las protecciones del consumidor
+    const H0 = esObjeto(a.hechos) ? a.hechos : {}, ev0 = esObjeto(H0.evidencia) ? H0.evidencia.contrato_con : null;
+    const kvGC = lineaOk(ev0) ? claveDeLinea(txt(ev0)) : null;
+    const gcPorOtroLado = (esObjeto(ficha.contratista) && ficha.contratista.modo === "contrato") || perfil.trato === "contratista"
+      || (!perfil.trato && H0.contrato_con === "GC" && lineaOk(ev0) && (kvGC && kvGC.clave === "contrato_con" ? /\b(?:gc|contratista|contractor)\b/i.test(kvGC.valor) && !/\b(?:directo|direct|sin contratista|no gc)\b/i.test(kvGC.valor) : PISTA_GC.test(txt(ev0))));
+    const duenoEnProsa = (l, v) => { const t = txt(l), i = t.toLowerCase().indexOf(String(v).toLowerCase());
+      return i >= 0 && /\b(?:owned by|owner|property of|propietari[oa]|due[nñ][oa] de)\b/i.test(t.slice(Math.max(0, i - 40), i + String(v).length + 25)); };
+    // 16-oct: la base del precio de la prosa («Pricing is based on the sealed construction drawings…») vale si la línea habla
+    // de la base del precio y se lee sin duda (plans o quantities)
+    const baseEnProsa = (l, v) => /\b(?:pric\w*|bid|quot\w*|proposal|estimate)\b[^.]{0,40}\b(?:based|basis)\b/i.test(txt(l)) && !!leerBasePrecio(v);
     Object.keys(a.datos).forEach(k => {
       const d = a.datos[k], ruta = "datos." + k;
       if (!DATOS_ARMADO.includes(k)) { delete a.datos[k]; return tirar(ruta, "no es un dato del molde"); }
@@ -5591,7 +6041,7 @@
       if (!enLinea && !deFicha) { delete a.datos[k]; return tirar(ruta, lineaOk(d.l) ? `«${corto(d.valor)}» no está en la línea ${d.l}` : "la línea no es de la hoja"); }
       if (CLAVE_DEL_DATO[k] && enLinea && !deFicha) {
         const suya = kv && (CLAVE_DEL_DATO[k].includes(kv.clave) || (k === "inquilino" && kv.clave === "dueno" && TENANT.test(txt(d.l))));
-        const prosa = !kv && k !== "dueno" && k !== "base_precio";
+        const prosa = !kv && (k === "dueno" ? gcPorOtroLado && duenoEnProsa(d.l, d.valor) : k === "base_precio" ? baseEnProsa(d.l, d.valor) : true);
         // «Dueño: X (tenant)»: es el inquilino (fila Tenant), no el dueño
         if (k === "dueno" && suya && TENANT.test(txt(d.l))) {
           if (!a.datos.inquilino) a.datos.inquilino = { valor: d.valor.replace(/\s*\((?:tenant|inquilino|occupant|arrendatario)\)\s*/i, " ").trim(), l: d.l };
@@ -5629,18 +6079,34 @@
       const lee = (k, v) => {
         const n = norma(v || "");
         if (k === "firma") return leerFirma(v) ? "si" : "no";
-        if (k === "permiso") { const q = leerPermiso(v); return q === "cliente" ? "cliente" : sinPermisoQuien(q) ? "ninguno" : "nosotros"; }
+        // 16-oct: el «nosotros» por defecto de leerPermiso (la línea no nombra a nadie) no pisa la lectura de la IA
+        if (k === "permiso") { const q = leerPermiso(v); if (q === "nosotros" && n && !/\b(?:max power|mxp|nosotros|lo saco|lo sacamos|we|our)\b/.test(n)) return null;
+          return q === "cliente" ? "cliente" : sinPermisoQuien(q) ? "ninguno" : "nosotros"; }
         if (k === "propiedad") return /\b(?:no comercial|non-?commercial)\b/.test(n) ? "residential" : /comercial|commercial/.test(n) ? "commercial" : /resid|vivienda|casa|home|house/.test(n) ? "residential" : null;
         return /\b(?:directo|direct|sin contratista|no gc)\b/.test(n) ? "directo" : /\b(?:gc|contratista|contractor)\b/.test(n) ? "GC" : null;
       };
       // la línea de una deducción (sin «Clave:») tiene que hablar de eso
       const PISTA = { firma: /signature|firma|solo alcance|scope only/i, permiso: /permit|permiso/i,
-        propiedad: /commercial|comercial|suite|shop|store|pharmacy|office|church|school|restaurant|retail|warehouse|business|tienda|oficina|iglesia|escuela|farmacia|negocio|local\b|plaza|park|field|academy|clinic/i,
-        contrato_con: /subcontract|general contractor|\bgc\b|contratista|prepared for|contractor/i };
+        propiedad: /commercial|comercial|suite|shop|store|pharmacy|office|church|school|restaurant|retail|warehouse|business|tienda|oficina|iglesia|escuela|farmacia|negocio|local\b|plaza|park|field|academy|clinic|dental|medical|hospital|bank|gym|fitness|hotel|salon|daycare|factory|dealership|build-?out|showroom|tenant\s+improvement/i,
+        contrato_con: PISTA_GC };
       Object.keys(PROTEGE).forEach(k => {
         const v = a.hechos[k];
         if (!v || v === "no_se") return;
         const n = a.hechos.evidencia[k];
+        // (revisión) la línea «Permiso: / Firma: / Contrato con: / Propiedad:» de Edgar manda aunque la IA cite otra línea
+        const nK = lineas.findIndex((_, i) => { const x = claveDeLinea(txt(i + 1).replace(/^[-*•\s]+/, "").replace(/\*\*|__/g, "")); return !!(x && x.clave === k && String(x.valor || "").trim()); }) + 1;
+        if (nK && nK !== n) {
+          const dK = lee(k, claveDeLinea(txt(nK).replace(/^[-*•\s]+/, "").replace(/\*\*|__/g, "")).valor);
+          if (dK) {
+            if (dK !== v) {
+              tirar("hechos." + k, `la línea ${nK} de la hoja dice otra cosa`);
+              ambar("contradiccion", [nK], `La IA leyó «${NOMBRE[k]}: ${VALOR[v] || v}» en la línea ${lineaOk(n) ? n : "?"}, pero tu línea ${nK} dice «${corto(claveDeLinea(txt(nK).replace(/^[-*•\s]+/, "").replace(/\*\*|__/g, "")).valor)}»: tomé tu línea ${nK}.`);
+              a.hechos[k] = dK;
+            }
+            a.hechos.evidencia[k] = nK;
+            return;
+          }
+        }
         const kv = lineaOk(n) ? claveDeLinea(txt(n)) : null;
         if (kv && kv.clave === k) {
           const dice = lee(k, kv.valor);
@@ -5660,6 +6126,7 @@
       });
     }
     // las condiciones: solo las del molde, citadas de su línea
+    const noAplicaEnObra = (() => { try { return { fotos_panel: !!Lr.datos && !!condicionesQueImportan(Lr).perfil.sinPanelExistente }; } catch { return {}; } })();
     Object.keys(a.condiciones).forEach(k => {
       const c = a.condiciones[k], ruta = "condiciones." + k;
       if (!CONDICIONES_ARMADO[k]) { delete a.condiciones[k]; return tirar(ruta, "no es una condición del molde"); }
@@ -5667,8 +6134,29 @@
       if (/[<>]/.test(c.valor) || RX_MASCARA.test(c.valor) || notas.has(c.l)) { delete a.condiciones[k]; return tirar(ruta, "trae «<», «>», una cifra tapada o es una nota"); }
       if (!citaEnLinea(txt(c.l), c.valor.trim()).ok) { delete a.condiciones[k]; return tirar(ruta, `«${corto(c.valor)}» no está en la línea ${c.l}`); }
       c.valor = c.valor.trim();
+      // 16-oct: un «no» o un «sí» sueltos se encuentran dentro de cualquier palabra («nosotros», «residential»). Las fotos del
+      // panel y los circuitos existentes valen con su línea «Clave: valor» o con una línea que hable de eso
+      const kvC = claveDeLinea(txt(c.l).replace(/^[-*•\s]+/, "").replace(/\*\*|__/g, ""));
+      if (k === "fotos_panel" || k === "circuitos_exist") {
+        if (!(kvC && kvC.clave === CONDICIONES_ARMADO[k]) && !RX_HABLA_CONDICION[k].test(txt(c.l))) {
+          delete a.condiciones[k];
+          // 16-oct: las fotos del panel en una obra sin panel que se quede (obra nueva, rewire con servicio nuevo) no aplican: se
+          // tiran sin aviso (no es algo que Edgar tenga que mirar)
+          if (k === "fotos_panel" && noAplicaEnObra.fotos_panel) return tirar(ruta, "la línea no habla de eso y en esta obra no aplica");
+          ambar("condicion_sin_juicio", [c.l], `La IA leyó «${k}: ${corto(c.valor)}» en la línea ${c.l}, pero esa línea no habla de eso: no lo tomé.`);
+          return tirar(ruta, "la línea no habla de eso");
+        }
+      }
       // Tanda 5: la cita tiene que hablar de lo que cubre la cláusula que enciende (condicionSinJuicio)
-      const sinJuicio = condicionSinJuicio(k, c.valor);
+      // 16-oct: si la cita sale de la línea «Clave: valor» de Edgar para esa condición, la clave ya dice lo que es («Fixtures
+      // nuestros» = los pone Max Power, «Bajo losa», «240V: estufa…»): no se juzga. Un «none» / «N/A» no vale, y unos
+      // «Fixtures nuestros: … by the owner» siguen sin ser de Max Power
+      const porClave = !!(kvC && kvC.clave === CONDICIONES_ARMADO[k] && citaEnLinea(String(kvC.valor || ""), c.valor).ok && !vacioDicho(kvC.valor)
+        && !(k === "fixtures_mxp" && RX_LOS_PONE_OTRO.test(c.valor)));
+      // (revisión 2) una zanja que la hoja EXCLUYE («No incluye: Trenching or excavation, if Duke requires…») no es una condición
+      // de esta obra: no enciende la 9.x del subsuelo
+      const enNoIncluye = k === "excavacion" && (Lr.no_incluye || []).some(x => x && x.linea === c.l);
+      const sinJuicio = enNoIncluye ? "esa línea está en «No incluye» (la zanja queda fuera del precio)" : porClave ? "" : condicionSinJuicio(k, c.valor);
       if (sinJuicio) {
         delete a.condiciones[k];
         ambar("condicion_sin_juicio", [c.l], `La IA leyó «${k}» en la línea ${c.l} («${corto(c.valor)}»), pero ${sinJuicio}: no puse esa cláusula.`);
@@ -5686,8 +6174,12 @@
 
     // 6) el dinero por línea, mirado en la línea ORIGINAL (la que la IA vio tapada)
     // un precio: un monto seguro, o la clave «Precio:» con su número (una coma dudosa se pregunta después, no se tira)
-    const formaPrecio = n => { const o = orig(n); if (/\d{1,3}\s*%/.test(o)) return false;
+    // 16-oct: «Precio: 4,100.00 (includes the 7% sales tax)» es el precio; «Precio: 40% deposit…» (solo porcentajes) no
+    const formaPrecio = n => { const o = orig(n);
       const kv = o.replace(/\*\*|__|`/g, "").match(/^\s*\|?\s*([^:|]{2,42})\s*[:|]\s*(.*)$/);
+      if (kv && totalQueNoEsPrecio(kv[1], kv[2])) return false;
+      if (kv && buscaClave(CLAVES_DINERO, norma(kv[1])) === "precio" && /\d/.test(kv[2].replace(/\d{1,3}\s*%/g, ""))) return true;
+      if (/\d{1,3}\s*%/.test(o)) return false;
       return pareceDinero(o) || !!(kv && buscaClave(CLAVES_DINERO, norma(kv[1])) === "precio" && /\d/.test(kv[2])); };
     // un pago: porcentajes, o «Pagos: 40/40/20», o (tanda 4) «Pagos: 100», que es un solo pago
     const formaPago = n => { const o = orig(n); if (/\d{1,3}\s*%/.test(o)) return true;
@@ -6026,7 +6518,7 @@
     {
       const MODO_REF = { resumen_corrido: "lista", overview: "parrafo", que_hay_hoy: "parrafo", que_cambia: "parrafo", que_faltaba: "parrafo", load_calc_y_planos: "parrafo" };
       const deRenglones = new Set((Array.isArray(T.items) ? T.items : []).flatMap(it => unir2(it.titulo, it.descripcion)));
-      const conDineroRef = n => esMontoArmar(o(n)) || pareceDinero(o(n)) || kvDinero(o(n)) || traeDineroEstricto(o(n));
+      const conDineroRef = n => esMontoArmar(o(n)) || pareceDinero(o(n)) || kvDinero(o(n)) || traeDineroEstricto(o(n)) || !!medidaConMonto(o(n));
       const llenar = (t, k) => {
         if (!esRef(t)) return t;
         const de = deDe(t).filter(n => !conDineroRef(n));
@@ -6048,6 +6540,14 @@
       };
       TEXTOS_SIMPLES.forEach(k => { if (S[k] === undefined) return; const t = llenar(S[k], k); if (t) S[k] = t; else delete S[k]; });
       if (esObjeto(S.utility)) ["quien", "que_hace"].forEach(k => { if (S.utility[k] === undefined) return; const t = llenar(S.utility[k], "utility"); if (t) S.utility[k] = t; else delete S.utility[k]; });
+      // 16-oct: «Utility: Duke Energy to set the meters…» copiada en los dos: se parte por « to » (quién / qué hace), como
+      // redactarDirecto; sin « to » y los dos iguales, «qué hace» se quita y lo rellena (o lo apaga) el bloque de la utility
+      if (esObjeto(S.utility)) {
+        const U = S.utility;
+        ["quien", "que_hace"].forEach(k => { const t = U[k]; if (!esObjeto(t) || !t.ref) return;
+          const m = String(t.en || "").match(/^(.+?)\s+(?:to|para|:)\s+(.+)$/i); if (m) t.en = k === "quien" ? m[1].trim() : m[2].trim(); });
+        if (esObjeto(U.quien) && esObjeto(U.que_hace) && U.quien.ref && U.que_hace.ref && norma(U.quien.en) === norma(U.que_hace.en)) delete U.que_hace;
+      }
     }
     // si la ficha cambia un dato que la IA copió en sus textos (la dirección vieja), se cambia también ahí
     // (tanda 4: solo una dirección entera, con número y calle, y con bordes de palabra: «e» o «747» sueltos no se tocan)
@@ -6224,6 +6724,11 @@
       const regla = reglaDeContratista(d);
       const lp = leccion("permiso");
       const hojaNinguno = H.permiso === "ninguno" || perfil.permiso === "no_hace_falta";
+      const permisoDeEdgar = (() => {
+        const n = orig.findIndex((_, i) => { const kv = claveDeLinea(limpio(i + 1)); return !!(kv && kv.clave === "permiso" && tiene(kv.valor)); }) + 1;
+        if (!n || esMontoArmar(o(n)) || pareceDinero(o(n)) || traeDineroEstricto(o(n))) return null;
+        return { valor: claveDeLinea(limpio(n)).valor, linea: n };
+      })();
       let origenPerm, motivoRegla = "";
       const enumDe = v => { const q = leerPermiso(v); return sinPermisoQuien(q) ? "ninguno" : q === "cliente" ? "cliente" : "nosotros"; };
       if (lp && regla && regla.permiso && !hojaNinguno && enumDe(regla.permiso) !== lp.valor) {
@@ -6251,6 +6756,9 @@
       }
       else if (tiene(R.permiso)) { d.permiso = DE_HECHO[String(R.permiso).trim()] || "nosotros"; origenPerm = "respuesta"; }
       else if (DE_HECHO[H.permiso]) { d.permiso = DE_HECHO[H.permiso]; origenPerm = origenHecho("permiso"); }
+      // (revisión 2) la IA no dijo nada del permiso (el molde lo deja opcional): manda la línea «Permiso: …» de Edgar, como en
+      // el camino de las reglas, antes que el «nosotros» por defecto (Gong: «Permiso: cliente» salía «Max Power applies…»)
+      else if (permisoDeEdgar) { d.permiso = permisoDeEdgar.valor; origenPerm = "hoja"; }
       else { d.permiso = "nosotros"; origenPerm = "defecto"; }
       // 14-oct (pliego §10.4): de dónde salió el permiso, para que el juicio de la IA no pise lo que dijo Edgar (su respuesta o
       // su lección) ni quién lo saca según la ficha o la regla de la casa (decidirInterruptores)
@@ -6266,7 +6774,7 @@
       const quien = leerPermiso(d.permiso);
       const nombreGC = regla ? regla.nombre : "el cliente";
       R_("permiso", quien === "cliente" ? `Permiso: lo saca ${origenPerm === "regla" ? nombreGC : "el cliente"}${motivoRegla ? ", " + motivoRegla.charAt(0).toLowerCase() + motivoRegla.slice(1) : ""}`
-        : quien === "ninguno" ? "Permiso: no hace falta" : quien === "no_incluido" ? "Permiso: no incluido (si el AHJ lo pide, por Change Order)" : "Permiso: lo saca Max Power", origenPerm, origenPerm === "hoja" ? Ev.permiso : undefined);
+        : quien === "ninguno" ? "Permiso: no hace falta" : quien === "no_incluido" ? "Permiso: no incluido (si el AHJ lo pide, por Change Order)" : "Permiso: lo saca Max Power", origenPerm, origenPerm === "hoja" ? (Ev.permiso || (permisoDeEdgar || {}).linea) : undefined);
     }
 
     // ---- la prosa de la sección 1 (interruptores de QUE_HAY_HOY / QUE_CAMBIA / FALTA): el texto ORIGINAL de sus líneas
@@ -6284,7 +6792,7 @@
     const lrDinero = new Set([...(esObjeto(Lr.precio) && Number.isInteger(Lr.precio.linea) ? [Lr.precio.linea] : []),
       ...((esObjeto(Lr.pagos) && Array.isArray(Lr.pagos.lineas)) ? Lr.pagos.lineas : []), ...(Array.isArray(Lr.opciones) ? Lr.opciones.map(x => x && x.linea) : []),
       ...(lineaOk(Di.precio_l) ? [Di.precio_l] : []), ...(Array.isArray(Di.pagos_l) ? Di.pagos_l : []), ...(Array.isArray(Di.opciones_l) ? Di.opciones_l : [])].filter(lineaOk));
-    const conDinero = n => lrDinero.has(n) || esMontoArmar(o(n)) || pareceDinero(o(n)) || kvDinero(o(n)) || traeDineroEstricto(o(n));
+    const conDinero = n => lrDinero.has(n) || esMontoArmar(o(n)) || pareceDinero(o(n)) || kvDinero(o(n)) || traeDineroEstricto(o(n)) || !!medidaConMonto(o(n));
     const sinDineroDe = de => de.filter(n => !conDinero(n));
     // ---- los renglones: el título es la primera línea de «de» (sin viñeta ni número), los detalles, el resto
     const SOW_NUM = /^\s*(?:\*\*)?\s*(\d{1,2})(?:\.(\d{1,2}))?[.)]?\s+/;
@@ -6526,7 +7034,15 @@
           porque: "De los pagos salen el depósito y cada hito: tienen que sumar 100 %.",
           opciones: [...(todas ? [{ etiqueta: `${todas.join("/")} (todas las filas de la hoja)`, valor: todas }] : []), { etiqueta: "40/40/20", valor: [40, 40, 20] }, { etiqueta: "50/50", valor: [50, 50] }] });
       }
-      if (!Pg || !Pg.pcts.length) {
+      // 16-oct: un servicio (por la línea de la IA o, si no la hay, por la ficha) sin «Pagos:» se cobra en un solo pago al
+      // terminar: el 40/40/20 trae fases e inspecciones que un servicio no tiene y lo volvía obra
+      const tipoIA = H.tipo_trabajo && H.tipo_trabajo !== "no_se" && PALABRA_TIPO_TRABAJO[H.tipo_trabajo] && lineaOk(Ev.tipo_trabajo) && PALABRA_TIPO_TRABAJO[H.tipo_trabajo].test(o(Ev.tipo_trabajo)) ? H.tipo_trabajo : "";
+      const esServicio = tipoIA ? tipoIA === "service" : /^(servicio|service|service_call)$/.test(norma(admin.tipo_obra || ""));
+      if ((!Pg || !Pg.pcts.length) && esServicio) {
+        Pg = { pcts: [100], disparadores: ["upon completion"], lineas: [], por_defecto: true };
+        aviso("La hoja no dice los pagos y es un servicio: puse un solo pago al terminar (100%).", 0, { clave: "pagos" });
+        R_("pagos", "Pagos: 100, por defecto (servicio)", "defecto");
+      } else if (!Pg || !Pg.pcts.length) {
         Pg = { pcts: [40, 40, 20], disparadores: [null, null, null], lineas: [], por_defecto: true };
         aviso("La hoja no dice los pagos: puse 40/40/20.", 0, { clave: "pagos" });
         R_("pagos", "Pagos: 40/40/20, por defecto", "defecto");
@@ -6624,13 +7140,23 @@
     if (esObjeto(Pf.pre_titulo) && Pf.pre_titulo.en) L.pre_titulo = String(Pf.pre_titulo.en).trim();
 
     // ---- las condiciones: el valor de la línea «Clave: valor» si lo es; si no, la cita de la IA
+    // 16-oct: si esa línea lleva dinero, la cita de la IA (que salió de la línea tapada): el monto no viaja a los textos que
+    // salen de la condición (fixtures, lo que tiene que estar listo, el acceso)
     Object.keys(Cn).forEach(k => {
       const c = Cn[k], clave = CONDICIONES_ARMADO[k];
       if (!clave || !esObjeto(c) || !tiene(c.valor)) return;
       const kv = lineaOk(c.l) ? claveDeLinea(limpio(c.l)) : null;
-      const valor = kv && kv.clave === clave && tiene(kv.valor) ? kv.valor : String(c.valor).trim();
+      const valor = kv && kv.clave === clave && tiene(kv.valor) && !conDinero(c.l) ? kv.valor : String(c.valor).trim();
       if (clave === "layout") { if (/^(no|sin)\b/i.test(norma(valor)) || /\bno\b.*\b(walkthrough|layout)\b/i.test(valor)) { d.layout = "no"; L.datos_linea.layout = c.l; } return; }
       L.condiciones[clave] = { valor, linea: lineaOk(c.l) ? c.l : 0 };
+    });
+    // (revisión 2) las líneas clave de Edgar mandan aunque la IA no las traiga: «Fotos del panel: no», «Circuitos existentes: sí» y
+    // «No excluir: afci» se leen de su línea «Clave: valor» (sin dinero), como en el camino de las reglas; si no, se perdían en
+    // silencio (y el perfil de la obra ya no las preguntaba)
+    ["fotos_panel", "circuitos_exist", "no_excluir"].forEach(k => {
+      if (L.condiciones[k]) return;
+      const n = orig.findIndex((_, i) => { const kv = claveDeLinea(limpio(i + 1)); return !!(kv && kv.clave === k && tiene(kv.valor)); }) + 1;
+      if (n && !conDinero(n)) L.condiciones[k] = { valor: claveDeLinea(limpio(n)).valor, linea: n };
     });
     // Tanda 6 (Whitlock en vivo, l. 40): las cláusulas de la isla, de las aberturas, de reubicar y del 240 V citan su renglón
     // («The island receptacles in Section 2.{{ITEM_ISLA}}…»). En la hoja de la casa Edgar lo escribe («Isla: renglón 3»);
@@ -6708,7 +7234,25 @@
 
     // ---- las preguntas de la IA que pasaron el juez: fuera las contestadas y las que no cambian el papel
     {
-      const cond = condicionesQueImportan(L);
+      const cond = condicionesQueImportan(L, admin);
+      // 16-oct: las fotos del panel y los circuitos existentes que leyó la IA no valen en una obra que no tiene panel o circuitos
+      // existentes (obra nueva, rewire con servicio nuevo): no frenan ni ponen cláusulas. La línea «Clave: valor» de Edgar manda.
+      // (revisión) se decide por el PERFIL de la obra (no por si el alcance nombra el panel: un circuito nuevo en el panel de la
+      // casa sí tiene panel existente), y la línea de Edgar manda esté donde esté (aunque la IA cite otra)
+      ["fotos_panel", "circuitos_exist"].forEach(k => {
+        const c = L.condiciones[k];
+        if (!c || !c.linea) return;
+        const nK = orig.findIndex((_, i) => { const kv = claveDeLinea(limpio(i + 1)); return !!(kv && kv.clave === k && tiene(kv.valor)); }) + 1;
+        if (nK) { if (nK !== c.linea && !conDinero(nK)) L.condiciones[k] = { valor: claveDeLinea(limpio(nK)).valor, linea: nK }; return; }
+        const sinK = Object.assign({}, L.condiciones); delete sinK[k];
+        const PO = perfilObra(Object.assign({}, L, { condiciones: sinK }), admin);
+        const noAplica = k === "fotos_panel" ? PO.sinPanelExistente : (PO.sinCircuitosExistentes || (PO.noExcluirAfci && PO.sinPanelExistente));
+        if (!noAplica) return;
+        delete L.condiciones[k];
+        // un «no» de los circuitos no cambia el papel: se quita sin aviso
+        if (k === "circuitos_exist" && siNo(c) !== true) return;
+        aviso(`La IA leyó «${k === "fotos_panel" ? "Fotos del panel" : "Circuitos existentes"}: ${String(c.valor).slice(0, 40)}» en la línea ${c.linea}, pero en esta obra no hay ${k === "fotos_panel" ? "un panel existente que se quede" : "circuitos existentes"}: no lo tomé.`, c.linea, { informativo: true, clave: k });
+      });
       (Array.isArray(a.preguntas) ? a.preguntas : []).forEach(p => {
         if (!esObjeto(p) || tiene(R[p.clave])) return;
         if ((p.clave === "fotos_panel" || p.clave === "circuitos_exist") && (!cond[p.clave].preguntar || L.condiciones[p.clave])) return;
@@ -6730,9 +7274,17 @@
       const pareceEn = v => { v = String(v || ""); return !/[áéíóúñ¿¡]/i.test(v) && (v.match(EN_PALABRAS) || []).length >= (v.match(ES_PALABRAS) || []).length; };
       const Cfx = L.condiciones.fixtures_cliente;
       if (Cfx && Cfx.valor && (!esObjeto(S.cuales_fixtures) || !String(S.cuales_fixtures.en || "").trim())) {
-        const cuales = String(Cfx.valor).trim().replace(/\s+(?:are|is|will be)\s+(?:furnished|provided|supplied)\b.*$/i, "").replace(/[.,;:]$/, "").trim();
+        const cuales = String(Cfx.valor).trim().replace(/\s+(?:are|is|will be)\s+(?:furnished|provided|supplied)\b.*$/i, "")
+          .replace(/,?\s+(?:furnished|provided|supplied)\s+by\b.*$/i, "").replace(/\s*\b(?:client|owner|gc|tenant|builder)-(?:furnished|supplied|provided)\b\s*/gi, " ").replace(/\s{2,}/g, " ").replace(/[.,;:]$/, "").trim();
         if (cuales && pareceEn(cuales)) S.cuales_fixtures = { en: cuales, de: Cfx.linea ? [Cfx.linea] : [] };
         else { delete L.condiciones.fixtures_cliente; aviso(`La hoja dice que el cliente pone fixtures («${String(Cfx.valor).slice(0, 60)}»), pero la IA no escribió cuáles en inglés: no lo puse.`, Cfx.linea || 0, { clave: "fixtures" }); }
+      }
+      // 16-oct: la ingeniería de la hoja sin texto de la IA: la línea «Ingeniería:» de Edgar (en inglés y sin dinero), como
+      // redactarDirecto; si no se puede, el bloque no se enciende (antes quedaba el hueco {{LOAD_CALC_Y_PLANOS}})
+      if (tiene(d.ingenieria) && !(esObjeto(S.load_calc_y_planos) && String(S.load_calc_y_planos.en || "").trim())) {
+        const v = String(d.ingenieria).trim(), li = L.datos_linea.ingenieria;
+        if (pareceEn(v) && !(li && conDinero(li))) S.load_calc_y_planos = { en: /[.!?]$/.test(v) ? v : v + ".", de: li ? [li] : [] };
+        else { aviso(`La hoja dice quién hace la ingeniería («${v.slice(0, 60)}»), pero la IA no lo escribió en inglés: no puse ese bloque.`, li || 0, { clave: "ingenieria" }); delete d.ingenieria; }
       }
       if (tiene(d.utility)) {
         const U = esObjeto(S.utility) ? S.utility : {};
@@ -6752,6 +7304,15 @@
         const v = String(Cmx.valor).trim();
         if (!/[áéíóúñ¿¡]/i.test(v) && (v.match(EN_PALABRAS) || []).length >= (v.match(ES_PALABRAS) || []).length) S.fixtures_mxp = { en: v, de: Cmx.linea ? [Cmx.linea] : [] };
         else { delete L.condiciones.fixtures_mxp; aviso(`La hoja dice que Max Power pone fixtures («${v.slice(0, 60)}»), pero la IA no escribió cuáles en inglés: no puse esa cláusula.`, Cmx.linea || 0, { clave: "fixtures" }); }
+      }
+    }
+    // ---- 16-oct: el acceso y lo que tiene que estar listo antes del rough, sin texto de la IA: el de la línea «Acceso:» /
+    // «Listo antes del rough:» de Edgar (solo de su clave, nunca de la prosa, en inglés y sin dinero), como redactarDirecto
+    for (const [cK, sK] of [["acceso", "acceso"], ["listo_rough", "que_tiene_que_estar_listo"]]) {
+      const Cc = L.condiciones[cK];
+      if (Cc && Cc.valor && lineaOk(Cc.linea) && !conDinero(Cc.linea) && (claveDeLinea(limpioRef(Cc.linea)) || {}).clave === cK && (!esObjeto(S[sK]) || !String(S[sK].en || "").trim())) {
+        const v = String(Cc.valor).trim();
+        if (!/[áéíóúñ¿¡]/i.test(v) && (v.match(EN_PALABRAS) || []).length >= (v.match(ES_PALABRAS) || []).length) S[sK] = { en: v, de: [Cc.linea] };
       }
     }
     // ---- Tanda 5: lo que la IA copió de una línea con «—» o comillas tipográficas (las vio limpias: «—» → «-», «“”» →
@@ -6791,12 +7352,18 @@
         const t = S[k];
         if (!esObjeto(t) || typeof t.en !== "string") return;
         let en = t.en.replace(/\s+/g, " ").trim().replace(/[.;:,]+$/, "").trim();
-        if (k === "fixtures_mxp") en = en.replace(/^the\s+/i, "");
+        // 16-oct: «Supply and installation of 6" LED…» → «6" LED…» (la frase de la plantilla ya dice que van incluidos)
+        if (k === "fixtures_mxp") en = en.replace(/^(?:the\s+)?(?:(?:suppl\w*|furnish\w*|provid\w*)\s*(?:and|&)\s*install\w*|F\s*&\s*I)\s+(?:of\s+)?/i, "").replace(/^the\s+/i, "");
         // (tanda 6: «{{CUALES}} are furnished by the Owner» abre la frase de la viñeta: empieza en mayúscula — Whitlock salía
         //  «Decorative light fixtures. light fixtures (recessed…) are furnished…»)
-        if (k === "cuales_fixtures") en = mayus1(en.replace(/(?:\s*[:—–]\s*|\s+-\s+|\s+(?:are|is|will\s+be)\s+)(?:furnished|provided|supplied)\b.*$/i, "").replace(/[.;:,]+$/, "").trim());
+        if (k === "cuales_fixtures") en = mayus1(en.replace(/(?:\s*[:—–]\s*|\s+-\s+|\s+(?:are|is|will\s+be)\s+)(?:furnished|provided|supplied)\b.*$/i, "")
+          // (revisión 2) «… supplied by the Client (GC)» sin verbo: la viñeta ya dice «are furnished by the Client»
+          .replace(/,?\s+(?:furnished|provided|supplied)\s+by\b.*$/i, "").replace(/\s*\b(?:client|owner|gc|tenant|builder)-(?:furnished|supplied|provided)\b\s*/gi, " ").replace(/\s{2,}/g, " ")
+          .replace(/[.;:,]+$/, "").trim());
         if (baja) en = minus(en);
-        if (k === "acceso" && en && !(/\baccess\b/i.test(en) && !/\b(?:is|are|was|were|will|shall)\b/i.test(en))) {
+        // 16-oct: el acceso que sale de la línea «Acceso:» de Edgar vale aunque no diga «access»
+        const deClaveAcceso = (t.de || []).some(n => (claveDeLinea(limpioRef(n)) || {}).clave === "acceso");
+        if (k === "acceso" && en && (!(deClaveAcceso || /\baccess\b/i.test(en)) || /\b(?:is|are|was|were|will|shall)\b/i.test(en))) {
           aviso(`La IA escribió el acceso como una frase («${t.en.slice(0, 60)}»): en la cláusula del sitio va el acceso de la casa.`, (t.de || [])[0] || 0, { clave: "acceso", informativo: true });
           delete S[k];
           return;
@@ -6861,9 +7428,9 @@
                 PREGUNTAS_QUE_VALEN, TIPOS_AVISO_ARMADO, MOLDE_ARMADO_CLAVES,
                 // tanda 4 (revisión adversaria): el dinero del armado (la misma regla que el cerebro), las lecciones con monto,
                 // las exclusiones que la plantilla ya trae, los botones fijos de las preguntas y las lecciones de un hecho
-                tramosArmar, esMontoArmar, dineroEnTextoArmar, dineroEnElArmado, leccionConMonto, noEsDineroArmar, exclusionFija, leyQueNoEsta,
-                RX_UNIDAD_ARMAR, RX_UNIDAD_ARMAR_MAY, RX_PALABRA_DINERO_ARMAR, RX_ANTES_ARTICULO, RX_LECCION_PALABRA, RX_MASCARA,
-                RX_DINERO_CERCA, RX_LINEA_CODIGO, RX_ANTES_ANO, RX_MONTO_EN_PALABRAS,
+                tramosArmar, esMontoArmar, dineroEnTextoArmar, dineroEnElArmado, leccionConMonto, medidaConMonto, noEsDineroArmar, exclusionFija, leyQueNoEsta,
+                RX_UNIDAD_ARMAR, RX_UNIDAD_ARMAR_MAY, RX_UNIDAD_FUERTE, RX_UNIDAD_FUERTE_MAY, RX_MILES_K, RX_MILES_PALABRA, RX_DINERO_CERCA_CIFRAS, RX_UNIDAD_CONTAR, RX_DINERO_SUELTO, montoPelado, RX_PALABRA_DINERO_ARMAR, RX_ANTES_ARTICULO, RX_LECCION_PALABRA, RX_MASCARA,
+                RX_DINERO_CERCA, RX_LINEA_CODIGO, RX_ANTES_ANO, RX_MONTO_EN_PALABRAS, RX_DINERO_PEGADO, RX_MONTO_LETRAS, RX_MAGNITUD_LETRAS, RX_POR_HORA, RX_LECCION_DISPARO, RX_LECCION_POR_UNIDAD,
                 OPCIONES_FIJAS_ARMADO, LECCION_HECHOS, PLANTILLA_PAGOS,
                 // tanda 5 (tras la prueba en vivo): las condiciones con juicio
                 condicionSinJuicio,
@@ -6872,7 +7439,9 @@
                 // 13-oct (pliego «Hablar con la IA»): el pago único sin depósito
                 pagoAdelantado, PAGO_UNICO_AL_FIRMAR,
                 // 14-oct (pliego §10): el juicio de la IA del armado (la misma limpieza que el cerebro) y sus líneas para la pantalla
-                limpiarJuicio, maloEnJuicio, lineasDelJuicio, JUICIO_VALORES, JUICIO_FUERA };
+                limpiarJuicio, maloEnJuicio, lineasDelJuicio, JUICIO_VALORES, JUICIO_FUERA,
+                // 16-oct: las medidas no son dinero, y «Total: 9 mini-splits» no es el precio
+                medidaTras, totalQueNoEsPrecio, RX_TOTAL_MONTO, totalConMedidaYMonto, lineasBloqueDinero };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   raiz.Alcance = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);

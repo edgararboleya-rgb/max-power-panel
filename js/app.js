@@ -15150,6 +15150,29 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   }
 
   // ---------------------------------------------------------- FICHA 1: la hoja
+  // Los botones de arreglar de un error: los usan la vista de las reglas y (16-oct) la de la IA
+  function alcBotonesDe(arreglos, sufijo, L, precioEst) {
+    return (arreglos || []).map((a, k) => {
+      const id = `${sufijo}-${k}`;
+      alcArreglos[id] = a;
+      if (a.pide === "monto" || a.pide === "texto") {
+        // Si falta el precio y el proyecto tiene estimado, se le ofrece ese precio:
+        // Edgar lo aprueba con un toque, o escribe otro en la casilla.
+        let ofrecido = "";
+        if (a.tipo === "poner_precio_base" && precioEst) {
+          const oid = `${id}-est`;
+          alcArreglos[oid] = { tipo: "poner_precio_base", valor: precioEst.texto };
+          ofrecido = `<button class="alc-op alc-auto" data-fix="${oid}" title="${esc(precioEst.nombre)}">✓ Sí, usar el del estimado ${esc(precioEst.ref)}: $${precioEst.texto}</button>`;
+        }
+        return `<span class="alc-fix">${ofrecido}<input class="alc-libre alc-fix-in" data-fix-in="${id}" placeholder="${a.pide === "monto" ? "1,850.00" : "escríbelo"}" inputmode="${a.pide === "monto" ? "decimal" : "text"}">
+                <button class="alc-op" data-fix="${id}">${esc(ofrecido ? "No, escribir otro precio" : a.etiqueta)}</button></span>`;
+      }
+      if (a.pide === "renglon")
+        return `<span class="alc-fix"><select class="alc-libre alc-fix-in" data-fix-in="${id}">${L.items.map(it => `<option value="${it.n}">${it.n}. ${esc(it.titulo.slice(0, 40))}</option>`).join("")}</select>
+                <button class="alc-op" data-fix="${id}">${esc(a.etiqueta)}</button></span>`;
+      return `<button class="alc-op${a.auto ? " alc-auto" : ""}" data-fix="${id}">${esc(a.etiqueta)}</button>`;
+    }).join("");
+  }
   function alcFichaHoja() {
     const A = alcActivo;
     const L = A.leido;
@@ -15204,26 +15227,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       return t ? `<div class="alc-cita" data-ira="${n}">${esc(t.length > 120 ? t.slice(0, 120) + "…" : t)}</div>` : ""; };
     // Los botones de arreglar: uno por cada arreglo que trae el error
     const precioEst = alcPrecioEstimado(A.proyecto.id);
-    const botonesDe = (arreglos, sufijo) => (arreglos || []).map((a, k) => {
-      const id = `${sufijo}-${k}`;
-      alcArreglos[id] = a;
-      if (a.pide === "monto" || a.pide === "texto") {
-        // Si falta el precio y el proyecto tiene estimado, se le ofrece ese precio:
-        // Edgar lo aprueba con un toque, o escribe otro en la casilla.
-        let ofrecido = "";
-        if (a.tipo === "poner_precio_base" && precioEst) {
-          const oid = `${id}-est`;
-          alcArreglos[oid] = { tipo: "poner_precio_base", valor: precioEst.texto };
-          ofrecido = `<button class="alc-op alc-auto" data-fix="${oid}" title="${esc(precioEst.nombre)}">✓ Sí, usar el del estimado ${esc(precioEst.ref)}: $${precioEst.texto}</button>`;
-        }
-        return `<span class="alc-fix">${ofrecido}<input class="alc-libre alc-fix-in" data-fix-in="${id}" placeholder="${a.pide === "monto" ? "1,850.00" : "escríbelo"}" inputmode="${a.pide === "monto" ? "decimal" : "text"}">
-                <button class="alc-op" data-fix="${id}">${esc(ofrecido ? "No, escribir otro precio" : a.etiqueta)}</button></span>`;
-      }
-      if (a.pide === "renglon")
-        return `<span class="alc-fix"><select class="alc-libre alc-fix-in" data-fix-in="${id}">${L.items.map(it => `<option value="${it.n}">${it.n}. ${esc(it.titulo.slice(0, 40))}</option>`).join("")}</select>
-                <button class="alc-op" data-fix="${id}">${esc(a.etiqueta)}</button></span>`;
-      return `<button class="alc-op${a.auto ? " alc-auto" : ""}" data-fix="${id}">${esc(a.etiqueta)}</button>`;
-    }).join("");
+    const botonesDe = (arreglos, sufijo) => alcBotonesDe(arreglos, sufijo, L, precioEst);
     // Debajo de lo que se puede dejar como está: Edgar explica en una línea por qué
     // está bien así, la app lo apunta y no lo vuelve a marcar.
     const explicame = (e, sufijo) => {
@@ -16377,7 +16381,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     // v252: si el levantamiento de la obra vio el panel, la pregunta «Fotos del panel» se contesta sola
     const panelVisto = alcPanelVisto(A.proyecto.id);
     if (panelVisto && A.leido) A.leido.panel_visto = panelVisto;
-    A.validado = Alcance.validarAlcance(A.leido);
+    A.validado = Alcance.validarAlcance(A.leido, alcAdminBase(A));   // 16-oct: con la ficha (servicio o no)
     A.cuenta = Alcance.cuentas(A.leido);
     A.decision = Alcance.decidirInterruptores(A.leido, A.cuenta, alcAdminBase(A));
     alcAvisosDeLaFicha();
@@ -16956,7 +16960,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const H = Alcance.armadoAHoja(M.paquete, M.lineas, M.ficha, M.perfil, A.respuestas || {}, alcAdminArmado(A));
     const L = H.L;
     A.leido = L;
-    A.validado = Alcance.validarAlcance(L);
+    A.validado = Alcance.validarAlcance(L, alcAdminBase(A));
     A.cuenta = Alcance.cuentas(L);
     A.decision = Alcance.decidirInterruptores(L, A.cuenta, alcAdminBase(A));
     M.resumen = H.resumen; M.avisos = H.avisos; M.preguntas = H.preguntas; M.S = H.S;
@@ -17450,7 +17454,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           <div class="alc-fixes"><button type="button" class="alc-op" data-armado-otra="1">Volver a armar con IA</button>
           <button type="button" class="alc-op" data-armado-reglas="1">Leer con las reglas (sin IA)</button></div></li>` : "") +
         rojos.map(x => `<li>${ir(x.linea)}<span data-no-i18n>${esc(x.texto)}</span></li>`).join("") +
-        errores.map(e => `<li>${ir(e.linea)}<span data-no-i18n>${esc(e.texto)}</span></li>`).join("") +
+        errores.map((e, i) => `<li>${ir(e.linea)}<span data-no-i18n>${esc(e.texto)}</span>${(e.arreglos || []).length ? `<div class="alc-fixes">${alcBotonesDe(e.arreglos, "ae" + i, A.leido, alcPrecioEstimado(A.proyecto.id))}</div>` : ""}</li>`).join("") +
         `</ul></div>`;
     }
     s += alcPreguntasArmado();
@@ -17834,7 +17838,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     // v252 (revisión): lo mismo que alcCalcular: el panel que vio el levantamiento y la base del precio elegida
     const panelVisto = alcPanelVisto(A.proyecto.id);
     if (panelVisto) L.panel_visto = panelVisto;
-    A.validado = Alcance.validarAlcance(L);
+    A.validado = Alcance.validarAlcance(L, alcAdminBase(A));
     A.cuenta = Alcance.cuentas(L);
     A.decision = Alcance.decidirInterruptores(L, A.cuenta, alcAdminBase(A));
     alcAvisosDeLaFicha();
