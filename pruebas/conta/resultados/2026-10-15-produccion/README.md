@@ -118,7 +118,43 @@ donde además se volvió a pegar sin daño). Después: `fn_banco_control('hoy')`
 18 de 18, `fn_banco_verificar()` 15 de 15, `v_banco_saldos` con la última
 conciliación de las tres al 30-sep, `fn_estados_control('hoy')` 15 de 15.
 
-Pendiente en producción: los archivos del banco de octubre (el QFX de la
-Gold al 8-oct, la Blue al 21, Chase al 31: `qfx2sql.py` los envuelve en el
-SQL que se pega), y c6-pruebas otra vez (163) y c4-pruebas, los dos
-opcionales.
+## 16-oct, 13:40 de Miami: las Amex de octubre entran
+
+Edgar no tenía el QFX: mandó el **statement de la Gold en PDF** (cierre 8-oct)
+y los dos **exports de actividad de Amex en xlsx** (Gold y Blue, 16-sep a
+16-oct, con la referencia única de Amex por fila, que sirve de id). Se
+convirtieron en lotes para `fn_banco_importar_filas` (origen `csv`; Amex pone
+los cargos en positivo y el banco los lleva en negativo, como el QFX). El
+export de la Gold empezaba el 16-sep y el statement el 9: las 6 filas que
+faltaban (5 cargos del 7 al 12-sep, exactamente lo que faltaba de los 23
+cargos en tránsito de la apertura, y un pago del 9) salieron del PDF. El
+saldo del statement (New Balance al 8-oct) va en el lote de la Gold.
+
+`banco-2-amex-octubre.sql` (privado): Gold 42 filas nuevas, 27 de antes del
+corte, 25 casadas con la apertura, 15 en la bandeja; Blue 46 nuevas, 20 de
+antes del corte, 7 casadas con la apertura, 26 en la bandeja. Igual que en
+el banco de pruebas (17.6, base reconstruida como producción).
+
+**Hallazgo para la ronda 6 de c6:** siete partidas en tránsito del 30-sep
+tenían un gemelo (dos pagos de 500 en días seguidos en la Gold; en la Blue
+dos pagos de 500 y tres SunPass de 20). El casado automático no las casa y,
+como son de antes del corte, las deja **ignoradas**; la conciliación de la
+Gold al 8-oct daba diferencia −1000. La regla de apertura debería preferir
+la candidata de **fecha exacta** cuando es única. Mientras,
+`banco-3-amex-partidas.sql` (privado) las casó a mano con
+`fn_banco_casar_con(…, {partida_apertura}, motivo)`, que acepta el ignorado
+de antes del corte (regla «Edgar casó la partida…»), y calculó
+`fn_conciliar('2100-2013', '2026-10-08', saldo del PDF)`: **diferencia 0.00**,
+0 en tránsito, abierta con 13 movimientos de octubre sin casar (la bandeja).
+Verificado en producción: `fn_banco_control('hoy')` 18 de 18,
+`fn_banco_verificar()` 15 de 15, las 7 casadas a mano, una sola partida del
+30-sep en tránsito (Chase, −13.67), bandeja 41 (32 sin ticket, 6 con la
+propuesta de partida de apertura que NO aplica —SunPass de octubre—, 2 pagos
+desde Chase de un solo lado, 1 interés de la Gold). `v_banco_saldos` trae
+ahora también 2250 (la Mastercard personal de Jian, para reembolsarle) y 2900
+(la Amex personal), que Edgar dio de alta como tarjetas el 16-oct.
+
+Pendiente en producción: resolver la bandeja (41) desde la pantalla del
+banco cuando se publique; la Blue se concilia con su statement del 21-oct;
+Chase a fin de mes (y con su archivo casan solos los pagos a las Amex); y
+c6-pruebas otra vez (163) y c4-pruebas, los dos opcionales.

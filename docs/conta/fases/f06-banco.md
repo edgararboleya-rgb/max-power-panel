@@ -248,6 +248,16 @@ tránsito, sin tocar 1010.
   que la base propone), elegir las partidas de un pago a proveedor, cambiar
   la clase de una partida de la conciliación (`fn_conciliacion_partida`) y
   el panel con los estados (f05).
+- **Las Amex de octubre en producción (16-oct, tarde).** Sin QFX: el
+  statement de la Gold en PDF y los exports de actividad en xlsx de las dos
+  Amex, convertidos en lotes `csv` para `fn_banco_importar_filas` (la
+  referencia de Amex como id; cargos en negativo). La Gold concilia al 8-oct
+  con diferencia 0.00 y 13 movimientos de octubre en la bandeja; la Blue, 26.
+  **Hallazgo para la ronda 6:** las partidas de apertura con un gemelo (mismo
+  monto en días seguidos) no casan solas y quedan ignoradas por ser de antes
+  del corte; la regla debería preferir la de fecha exacta cuando es única.
+  Se casaron a mano con `fn_banco_casar_con`. Evidencia en
+  `pruebas/conta/resultados/2026-10-15-produccion/`.
 
 ## La ronda 5 (9-oct): préstamos de cuota semanal
 - El préstamo de negocio (2540/2550) se paga cada semana, y todo préstamo de
