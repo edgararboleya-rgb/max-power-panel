@@ -1,3 +1,12 @@
+-- =========================================================================
+-- OJO (21/09): `on conflict do nothing` NO PROTEGE AQUÍ TODAVÍA.
+-- Esos inserts solo evitan el duplicado si catalogo_items tiene un índice
+-- ÚNICO en `item`. Sin índice, `on conflict do nothing` no hace nada: inserta
+-- y calla. Este fichero corrió dos veces y dejó 11 filas repetidas (ids
+-- 1085-1095 y 1100-1110). Antes de volver a correrlo, mira
+-- docs/sql/e30-filas-repetidas.sql: limpia las repetidas y crea el índice.
+-- Con el índice puesto, este fichero SÍ es idempotente.
+-- =========================================================================
 -- =====================================================================
 -- E16 · Precios contra la cotizacion de CED (Mike Jarot, 15/09)
 --       Quote Q1009347 · trabajo: NICKLAUS CHILDREN'S · vence 06/10/26

@@ -20,7 +20,32 @@ NODE_PATH=/opt/node22/lib/node_modules node pruebas/e0.js
 
 | `e14.js` | E14 · El takeoff pegado, pies contra MLF: el catálogo vende el THHN por MIL pies y una fila casada por nombre entraba con factor 1 (500 ft de 4/0 → 500 MLF, medio millón de pies). Comprueba que lo que vino de Length o con Unit FT se divide por 1000 solo si el ítem es MLF, que piezas y LF no se tocan, que el alias sigue mandando con su factor, y que un `2-1/2" EMT` sin entrecomillar no se trague la fila. |
 
+| `e42.js` | E42 · El takeoff se baja para Excel (06/10): en modo planos había dos cajas con el mismo id «takeoff-texto» (la de pegar el takeoff de Bluebeam y la de copiar) y «Copiar» copiaba la vacía. La caja de copiar es «takeoff-copia»; hay «Descargar para Excel (.csv)» (comillas, BOM, cada columna en su celda) y «Copiar» dice la verdad cuando el aparato no deja. |
+| `e43.js` | E43 · Mano de obra por composición de cuadrilla (06/10): cada rol es «productivo» (se reparten el 100 % de las horas del estimado) o «supervisión» (% adicional encima). Mano de obra $ = Σ horas del rol × $/h; la tarifa mezclada es informativa. Las horas por tarea no se tocan. Las cuadrillas viejas sin tipo dan lo mismo que antes. |
+| `e44.js` | E44 · Supervisión por tiempo (06/10): el renglón «Supervisión / superintendent» de Otros gastos es horas a la semana × semanas × $/h con cargas, no un % del labor. Lo guardado antes como «pm» en dinero se suma. Sale en la tarjeta, el resumen, el texto MEP y el takeoff. |
+
+| `e41.js` | E41 · La cotización del supply se ve en el resumen (06/10, Mariners): «Material contado», «+ Material a mano» y una fila por cada «+ Cotización del supply», en vez de todo sumado dentro de «Material (ítems)». «Toda esta sección está en el precio» cubre también el renglón con precio de catálogo que va a $0 por estar en la cuota (SPD, lugs). El papel de MEP dice cuánto del material es cotización. |
+
+| `e40.js` | E40 · El takeoff por secciones (29/09): la lista de ítems del estimado y el «Ver el takeoff para copiar» van en el orden de la obra —tubería y fittings, cableado, cajas y anillos, dispositivos, iluminación, paneles y breakers, tierra, bajo voltaje y fire alarm, subterráneo, generador y EV, demolición, mano de obra, otros—, cada sección con sus renglones, sus automáticos, sus horas y su total. Manda la sección del catálogo y el nombre (un conector abierto de la receta de una luz es tubería), no el código de partida. El dinero no se mueve y la columna del takeoff sigue sumando de arriba abajo. |
+
+| `e39.js` | E39 · Otros gastos del proyecto, fuera del takeoff (Peninsula, 29/09): renglones fijos con un número cada uno (hotel, comidas, viajes, permiso, PM, disposición, overtime, otro equipo, otros) y el lift como renta — días de obra → semanas (5 días = 1) × precio por semana ($500 por defecto). Colchón en %. Entran al costo directo con overhead y profit, sin tax, misceláneas, markup ni escalación, y no inflan la hora cargada. El resumen va en tres bloques con su total (materiales, mano de obra, otros gastos) → costo directo → precio. Lee lo guardado por la primera versión. Las horas del proyecto ya no proponen lift, permiso ni viajes. |
+
+| `e38.js` | E38 · Una pieza, un renglón: la misma pieza (mismo item, precio y horas) que viene de varias recetas y de lo contado suelto sale en UN renglón con el desglose de dónde sale; el dinero y las horas no se mueven. |
+
 | `e9.js` | E9 · Las recetas por dentro y el escalado por pies medidos. Dos fugas encontradas el 16/09: el conductor se **sustituía** por `pies/1000`, así que una receta de 3 hilos (0,075 MLF para 25 ft de corrida) con 25 ft medidos dejaba 0,025 — un tercio del cable; y el **tubo no se tocaba**, 50 ft medidos seguían comprando 25 LF de EMT. Ahora hay un solo factor (pies medidos ÷ pies de corrida) que multiplica cable, tubo y lo que va cada tantos pies (grapas, straps, acoples), y no toca lo que es por salida (conectores, caja, dispositivo). Comprueba además que las recetas Romex de hoy dan **exactamente lo mismo que antes**. |
 
 Regla: una prueba nueva por cada función que toque dinero o que escriba algo
 que el cliente vaya a firmar.
+
+| `e34.js` | E34 · el signo del dinero en la hoja de alcance: que un deduct «-$12,500», «− $12,500» o «($12,500)» se lea como descuento, y que un guion SEPARADOR («ADD - extra - $3,400») no convierta un añadido en descuento. Corre en Node, sin navegador. |
+
+| `e35.js` | E35 · tanda 1 de Mariners: una línea de LOGÍSTICA / ALLOWANCE / SUBCONTRATO no paga tax, misceláneas, markup ni escalación y no infla la hora cargada (sí overhead y profit); que una línea sin marcar dé el bid de siempre; que el takeoff cuadre de arriba abajo; que el allowance salga en la propuesta y la logística no; la validez por estimado; el flete de la cuota; el aviso del importe único; el aviso del permiso con contratista o MXP MEP (desde el 29/09, en Generales); ICRA en modo planos. |
+
+| `e36.js` | E36 · tanda 2 de Mariners: la merma automática solo en modo planos (un congelado no se mueve), el papel de MXP MEP para el cliente en lump sum y en inglés sin overhead, profit, horas ni membrete de Max Power, el resumen interno con su margen, y el resultado de un estimado de MXP MEP sin mezclarse con el historial de Max Power. |
+
+| `e37.js` | E37 · tanda 3 de Mariners: los hitos con la retención aparte y al cierre (suman el contrato al centavo); la propuesta con obra, dueño y retención (y sin ellos, igual que siempre); el papel de MXP MEP con owner, obra y retainage; la tarjeta de datos del trabajo; los adjuntos del estimado; y las líneas a mano repartidas entre las opciones A/B/C de la propuesta. |
+
+## Notas de App Operativa (la otra sesión que publica aquí)
+
+- **2-oct-2026 (v252):** `e0.js` usaba «DEMO - Panels» como ejemplo de renglón «sin clasificar». Desde la v252 la app trata toda la DEMOLICIÓN con precio 0 como «solo mano de obra» (regla de Edgar), así que ese ejemplo dejó de valer: se cambió a «LIGHTNING ROD AIR TERMINAL» (id 9) y se añadió «Demo Old Wiring/Splice» con precio (id 10) para probar que la regla solo aplica con precio 0. Son 34 pruebas y siguen en verde. Si cambiáis ese fixture, mantened esos dos casos.
+- **8-oct-2026 (v259/v260):** se publicó «Armar el contrato con IA» (js/app.js, js/alcance.js, js/i18n.js, css/styles.css, db.js) mezclado encima de la v258. Las pruebas de los contratos viven en el repo de desarrollo (`pruebas/probar-alcance.mjs`, `armar-ia.mjs`…), no aquí. La plantilla del contrato pasó a `plantillas/SOW_Template_v3.9.html`.

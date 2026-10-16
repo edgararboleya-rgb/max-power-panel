@@ -11,18 +11,27 @@
   <meta name="apple-mobile-web-app-title" content="Max Power">
   <link rel="apple-touch-icon" href="assets/icon-180.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-  <link rel="stylesheet" href="css/styles.css?v=181">
+  <link rel="stylesheet" href="css/styles.css?v=269">
 </head>
 <body>
 
   <!-- ============ PORTADA: usuario y contraseña ============ -->
   <section id="vista-login" class="login" hidden>
+    <!-- La misma barra noche de la app, con el cable de cobre -->
+    <header class="login-barra">
+      <img id="logo-login-barra" class="login-barra-logo" src="" alt="" width="36" height="36">
+      <div>
+        <div class="wordmark grad-text-warm">max power</div>
+        <div class="wordmark-sub">Electrical Solutions Inc.</div>
+      </div>
+      <div class="wire-cu" aria-hidden="true"></div>
+    </header>
     <div class="login-caja">
       <img id="logo-login" class="login-logo" alt="Logo Max Power" src="">
-      <div class="wordmark grande">max power</div>
-      <div class="wordmark-sub grande">Electrical Solutions Inc.</div>
-      <div class="login-tagline">Power done right the first time.</div>
-      <form id="form-login" class="login-form">
+      <h1 class="login-titulo">Power done <span class="grad-text">right the first time.</span></h1>
+      <p class="login-empresa">Max Power Electrical Solutions Inc.</p>
+      <form id="form-login" class="login-form card card-white">
+        <div class="wire-cu" aria-hidden="true"></div>
         <label>Usuario
           <input name="usuario" type="text" autocomplete="username" autocapitalize="none" required>
         </label>
@@ -30,9 +39,16 @@
           <input name="clave" type="password" autocomplete="current-password" required>
         </label>
         <div id="login-error" class="login-error" hidden>Usuario o contraseña incorrectos.</div>
-        <button type="submit" class="btn-entrar">Entrar</button>
+        <button type="submit" class="btn btn-pulse btn-entrar">Entrar</button>
+        <details class="login-ayuda">
+          <summary>¿No puedes entrar?</summary>
+          <p>Pídele a Edgar que te cambie la contraseña.</p>
+        </details>
       </form>
-      <p class="login-nota">FL Electrical Contractor License EC13016045 · mxpes.com · <span class="app-version" data-version title="Versión de la app"></span></p>
+      <div class="login-pie">
+        <div class="mono">FL Electrical Contractor License EC13016045</div>
+        <div>mxpes.com · <span class="app-version" data-version title="Versión de la app"></span></div>
+      </div>
     </div>
   </section>
 
@@ -44,38 +60,52 @@
       <div class="membrete-inner">
         <img id="logo" class="membrete-logo" alt="Logo Max Power" src="">
         <div>
-          <div class="wordmark">max power</div>
+          <div class="wordmark grad-text-warm">max power</div>
           <div class="wordmark-sub">Electrical Solutions Inc.</div>
         </div>
+        <!-- «Cobre y luz»: en la barra solo queda el avatar. Abre la hoja «Perfil» -->
         <div class="membrete-der">
-          <button id="btn-asistente" class="btn-chat" title="Preguntarle al asistente" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.5c.5 3.4 2.1 5 5.5 5.5-3.4.5-5 2.1-5.5 5.5-.5-3.4-2.1-5-5.5-5.5 3.4-.5 5-2.1 5.5-5.5z"/><path d="M18 13.5c.3 1.9 1.1 2.7 3 3-1.9.3-2.7 1.1-3 3-.3-1.9-1.1-2.7-3-3 1.9-.3 2.7-1.1 3-3z"/></svg></button>
-          <button id="btn-chat" class="btn-chat" title="Mensajes del equipo" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a7.5 7.5 0 0 1-7.5 7.5H6.2L3 21.5l.9-4.6A7.5 7.5 0 1 1 21 11.5z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg><span id="chat-badge" class="chat-badge" hidden></span></button>
-          <button id="btn-idioma" class="btn-idioma" title="English / Español">EN</button>
-          <span id="usuario-chip" class="usuario-chip"></span>
-          <span class="app-version" data-version title="Versión de la app — toca para comprobarla"></span>
-          <button id="btn-salir" class="btn-salir" title="Cambiar de usuario">Salir</button>
+          <button id="btn-avatar" type="button" class="btn-avatar" aria-haspopup="dialog" aria-label="Perfil" title="Perfil"><span id="avatar-iniciales" class="avatar-iniciales" data-no-i18n aria-hidden="true"></span></button>
         </div>
       </div>
+      <!-- Los botones de siempre NO se borran: viven aquí escondidos, con sus id y
+           manejadores, y el avatar y el botón flotante los tocan con .click()
+           (un solo camino de código). Nunca se ven. -->
+      <div class="membrete-guardado" hidden>
+        <button id="btn-asistente" class="btn-chat" title="Preguntarle al asistente" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.5c.5 3.4 2.1 5 5.5 5.5-3.4.5-5 2.1-5.5 5.5-.5-3.4-2.1-5-5.5-5.5 3.4-.5 5-2.1 5.5-5.5z"/><path d="M18 13.5c.3 1.9 1.1 2.7 3 3-1.9.3-2.7 1.1-3 3-.3-1.9-1.1-2.7-3-3 1.9-.3 2.7-1.1 3-3z"/></svg></button>
+        <button id="btn-chat" class="btn-chat" title="Mensajes del equipo" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a7.5 7.5 0 0 1-7.5 7.5H6.2L3 21.5l.9-4.6A7.5 7.5 0 1 1 21 11.5z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg><span id="chat-badge" class="chat-badge" hidden></span></button>
+        <button id="btn-idioma" class="btn-idioma" title="English / Español">EN</button>
+        <span id="usuario-chip" class="usuario-chip"></span>
+        <span class="app-version" data-version title="Versión de la app — toca para comprobarla"></span>
+        <button id="btn-salir" class="btn-salir" title="Cambiar de usuario">Salir</button>
+      </div>
+      <!-- El cable de cobre con su chispa: cuelga debajo de la barra y viaja con ella -->
+      <div class="wire-cu" aria-hidden="true"></div>
     </header>
 
-    <!-- Menú lateral: solo en pantallas grandes. Son las mismas losetas del inicio. -->
+    <!-- Menú lateral: desde 768 px (iPad y computadora). Las mismas tres entradas de la
+         barra de abajo: Hoy, Proyectos y Más. -->
     <nav id="lateral" class="lateral" aria-label="Menú"></nav>
 
     <!-- Migas y acciones de la vista actual -->
     <div class="toolbar">
       <button id="btn-volver" class="btn-volver" hidden title="Volver">←</button>
       <div class="toolbar-titulos">
-        <div id="kicker" class="kicker">Panel de proyectos</div>
-        <h1 id="titulo-vista">Categorías</h1>
+        <div id="kicker" class="kicker"></div>
+        <h1 id="titulo-vista">Hoy</h1>
       </div>
       <button id="btn-nuevo" class="btn-nuevo" title="Crear un proyecto nuevo" hidden>+ Nuevo proyecto</button>
     </div>
 
     <main class="container">
 
-      <!-- NIVEL 1 · HOME: solo las tres categorías (+ resumen del dueño) -->
+      <!-- «HOY» (vista home): el día de quien entró. Las categorías viven ahora en
+           Proyectos › Todos los proyectos. -->
       <section id="vista-home">
-        <div class="botones-rapidos">
+        <!-- Las siete losetas de siempre: siguen aquí con sus id y manejadores (otras
+             partes de la app y las pruebas las tocan con .click()), pero no se ven nunca.
+             Cada una tiene ahora su sitio: Hoy, Proyectos o Más. -->
+        <div class="botones-rapidos" aria-hidden="true">
           <button id="btn-horas" class="btn-horas"><span class="tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/></svg></span><span class="tile-txt">Reportar mis horas</span></button>
           <button id="btn-calendario" class="btn-horas"><span class="tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/><path d="M8 15h.01M12 15h.01M16 15h.01"/></svg></span><span class="tile-txt">Calendario</span></button>
           <button id="btn-checklist" class="btn-horas"><span class="tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="m8 12 2.5 2.5L16 9"/></svg></span><span class="tile-txt">Checklist</span></button>
@@ -85,24 +115,53 @@
           <button id="btn-levantamiento" class="btn-horas" hidden><span class="tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/><path d="M9.5 20v-5h5v5"/><circle cx="12" cy="11.5" r="1.1"/></svg></span><span class="tile-txt">Levantamiento</span></button>
         </div>
         <div class="home-col home-izq">
-          <section id="inicio-hoy"></section>
+          <section id="inicio-hoy"><div class="esqueleto" aria-hidden="true"></div><div class="esqueleto corto" aria-hidden="true"></div></section>
           <section id="inicio-urgentes"></section>
           <section id="inicio-avisos"></section>
+          <section id="inicio-vence"></section>
+          <!-- «Horas» del dueño: el reporte del equipo y la semana en una sola tarjeta -->
+          <section id="inicio-horas" class="card card-white horas-card" hidden>
+            <div class="horas-cab">
+              <h2 class="label-cu horas-titulo">Horas</h2>
+              <button type="button" class="btn sm btn-navy horas-reportar" id="horas-reportar">Reportar mis horas</button>
+            </div>
+            <div id="inicio-equipo"></div>
+            <div id="inicio-semana"></div>
+          </section>
           <section id="inicio-inspecciones"></section>
         </div>
         <div class="home-col home-der">
-          <section id="categorias" class="categorias"></section>
           <section id="resumen" class="resumen"></section>
-          <section id="inicio-equipo"></section>
-          <section id="inicio-semana"></section>
           <section id="inicio-mes"></section>
           <section id="inicio-empresa"></section>
           <section id="inicio-notif"></section>
         </div>
       </section>
 
+      <!-- PROYECTOS: la obra elegida arriba (fila de chips) y sus herramientas -->
+      <section id="vista-proyectos" hidden>
+        <div id="proy-chips" class="proy-chips" aria-label="Elegir la obra"></div>
+        <div id="proy-obra"></div>
+      </section>
+
+      <!-- PROYECTOS › TODOS: el buscador de siempre (categoría → etapa → lista → ficha) -->
+      <section id="vista-proyectos-todos" hidden>
+        <section id="categorias" class="categorias"><div class="esqueleto" aria-hidden="true"></div><div class="esqueleto" aria-hidden="true"></div></section>
+      </section>
+
+      <!-- MÁS: calendario completo, chat, asistente, idioma, perfil y salir -->
+      <section id="vista-mas" hidden>
+        <div class="card card-white mas-marca">
+          <img class="mas-lockup" src="assets/lockup.png" width="220" alt="Max Power Electrical Solutions Inc." decoding="async">
+          <div class="mas-licencia" data-no-i18n>FL EC13016045</div>
+        </div>
+        <div id="mas-filas" class="card card-white mas-filas"></div>
+      </section>
+
       <!-- CALENDARIO: mes completo con eventos y pendientes -->
       <section id="vista-calendario" hidden>
+        <!-- Abierto desde una obra: solo sus eventos, con el chip para quitar el filtro -->
+        <div id="cal-filtro" class="filtro-fila" hidden></div>
         <div class="cal-card">
           <div class="cal-nav">
             <button id="cal-prev" class="btn-volver" title="Mes anterior">‹</button>
@@ -158,17 +217,17 @@
             </label>
             <label>¿Fue trabajo de un Change Order? (toca la flechita y elígelo)
               <select name="co">
-                <option value="">📄 Contrato base</option>
+                <option value="">Contrato base</option>
               </select>
             </label>
-            <label>⚠ ¿Quedó algún pendiente? (faltó material, circuito sin tirar…)
+            <label>¿Quedó algún pendiente? (faltó material, circuito sin tirar…)
               <textarea name="pendiente" rows="2" placeholder="Ej: faltó cable 14/2 — circuito del pasillo sin tirar" autocomplete="off"></textarea>
             </label>
             <label class="chk-urg-label">
-              <input name="urgente" type="checkbox"> 🔴 Es urgente — frena el trabajo
+              <input name="urgente" type="checkbox"> <span class="ico ico-rojo" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.5" fill="#E5484D"/></svg></span>Es urgente — frena el trabajo
             </label>
             <p class="modal-nota">Tu reporte se guarda directo en el sistema y Edgar lo ve al instante.</p>
-            <button type="submit" class="btn-entrar">✓ Guardar mi reporte</button>
+            <button type="submit" class="btn btn-pulse btn-entrar">✓ Guardar mi reporte</button>
           </form>
         </div>
         <div class="horas-lista-card" id="horas-historial"></div>
@@ -185,12 +244,12 @@
         <div id="materiales-panel"></div>
       </section>
 
-      <!-- 💬 CHAT: mensajes del equipo (grupo y privados) -->
+      <!-- CHAT: mensajes del equipo (grupo y privados) -->
       <section id="vista-chat" hidden>
         <div id="chat-panel"></div>
       </section>
 
-      <!-- 🤖 EL ASISTENTE: el chat con el cerebro. Lo ve todo el mundo;
+      <!-- EL ASISTENTE: el chat con el cerebro. Lo ve todo el mundo;
            el equipo tiene su propia versión sin nada de dinero. -->
       <section id="vista-asistente" hidden>
         <div id="asistente-panel"></div>
@@ -244,8 +303,21 @@
     <footer class="pie">
       <p><strong>Datos en vivo</strong> — base de datos en la nube · finanzas conciliadas con QuickBooks</p>
       <p>Max Power Electrical Solutions, Inc. · mxpes.com</p>
-      <div class="licencia">FL EC LICENSE #EC13016045</div>
+      <div class="licencia">FL Electrical Contractor License <span class="mono">EC13016045</span></div>
     </footer>
+
+    <!-- La barra de abajo («Cobre y luz», opción A): Hoy · Proyectos · Más, para todos,
+         solo en el teléfono (desde 768 px está el menú lateral con las mismas tres).
+         La enciende app.js cuando alguien entra. -->
+    <nav id="nav-abajo" class="bottom-nav" aria-label="Menú de abajo" hidden>
+      <button type="button" data-nav="hoy"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg><span>Hoy</span></button>
+      <button type="button" data-nav="proyectos"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="8" height="7" rx="2"/><rect x="13" y="4" width="8" height="7" rx="2"/><rect x="3" y="13" width="8" height="7" rx="2"/><rect x="13" y="13" width="8" height="7" rx="2"/></svg><span>Proyectos</span></button>
+      <button type="button" data-nav="mas"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>Más</span><span id="nav-chat-badge" class="nav-badge" hidden></span></button>
+    </nav>
+
+    <!-- Botón flotante («Cobre y luz»): el asistente y el chat del equipo desde cualquier
+         pantalla. Uno solo. No sale en el chat, en el asistente ni con una hoja o ventana abierta. -->
+    <button id="fab" type="button" class="fab" hidden aria-haspopup="dialog" aria-label="Asistente y chat" title="Asistente y chat"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a7.5 7.5 0 0 1-7.5 7.5H6.2L3 21.5l.9-4.6A7.5 7.5 0 1 1 21 11.5z"/><path d="M13.5 7.5c.3 2 1.5 3.2 3.5 3.5-2 .3-3.2 1.5-3.5 3.5-.3-2-1.5-3.2-3.5-3.5 2-.3 3.2-1.5 3.5-3.5z"/></svg><span id="fab-badge" class="fab-badge" hidden></span></button>
   </div>
 
   <!-- Ventana para crear un proyecto nuevo -->
@@ -306,12 +378,12 @@
     </form>
   </dialog>
 
-  <script src="assets/logo.js?v=181"></script>
-  <script src="assets/config.js?v=181"></script>
-  <script src="js/db.js?v=182"></script>
-  <script src="js/alcance.js?v=181"></script>
-  <script src="js/app.js?v=197"></script>
-  <script src="js/i18n.js?v=181"></script>
-  <script src="js/iconos.js?v=181"></script>
+  <script src="assets/logo.js?v=236"></script>
+  <script src="assets/config.js?v=209"></script>
+  <script src="js/db.js?v=268"></script>
+  <script src="js/alcance.js?v=269"></script>
+  <script src="js/app.js?v=269"></script>
+  <script src="js/i18n.js?v=269"></script>
+  <script src="js/iconos.js?v=242"></script>
 </body>
 </html>

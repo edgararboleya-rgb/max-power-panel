@@ -34,11 +34,15 @@ const CAT = [
   { id: 10, item: 'NM STAPLE', seccion: 'RACEWAY', unidad: 'E', precio: 0.06, horas_unidad: 0.01 },
   { id: 11, item: '1 GANG PLASTIC BOX', seccion: 'RACEWAY', unidad: 'E', precio: 0.55, horas_unidad: 0.2 },
   { id: 12, item: 'YELLOW WIRENUTS', seccion: 'MISCELLANEOUS', unidad: 'E', precio: 0.26, horas_unidad: 0.01 },
+  { id: 13, item: '3/8"      FLEX. METAL CONDUIT', seccion: 'RACEWAY', unidad: 'LF', precio: 0.904, horas_unidad: 0.025 },
+  { id: 14, item: '4" RECESSED CAN LIGHT', seccion: 'LIGHTING FIXTURES', unidad: 'E', precio: 172, horas_unidad: 0.75 },
 ];
 /* dos recetas: una en EMT con 3 hilos (25 ft de corrida) y una Romex de las de hoy */
 const ENS = [
   { id: 100, nombre: 'RECEPTÁCULO 20A — EMT', modo: 'comercial', pies_editable: true, orden: 1 },
   { id: 200, nombre: 'NEW OUTLET (EXISTING CIRCUIT)', modo: 'remodelacion', pies_editable: true, orden: 2 },
+  // (02/10, Peninsula) una luz con su whip de flex: el flex va con el punto, el EMT es la corrida
+  { id: 400, nombre: 'RECESSED CAN 4" — EMT', modo: 'comercial', pies_editable: true, orden: 3 },
 ];
 const EI = [
   { id: 1, ensamble_id: 100, item: '20A DUPLEX  RECEPTACLE', cantidad: 1 },
@@ -55,6 +59,11 @@ const EI = [
   { id: 12, ensamble_id: 200, item: '12/2   ROMEX', cantidad: 0.025 },
   { id: 13, ensamble_id: 200, item: 'NM STAPLE', cantidad: 4 },
   { id: 14, ensamble_id: 200, item: 'YELLOW WIRENUTS', cantidad: 3 },
+  { id: 15, ensamble_id: 400, item: '3/8"      FLEX. METAL CONDUIT', cantidad: 6 },
+  { id: 16, ensamble_id: 400, item: '4" RECESSED CAN LIGHT', cantidad: 1 },
+  { id: 17, ensamble_id: 400, item: '4-11/16 BOX', cantidad: 1 },
+  { id: 18, ensamble_id: 400, item: '1/2"     EMT CONDUIT', cantidad: 8 },
+  { id: 19, ensamble_id: 400, item: '# 12      THHN STRANDED CU.', cantidad: 0.042 },
 ];
 const r3 = v => Math.round(v * 1000) / 1000;
 
@@ -195,6 +204,21 @@ const r3 = v => Math.round(v * 1000) / 1000;
   ok('en la receta de Romex el punto completo quita el cable pero deja caja, receptaculo y grapas',
     !rxSin.some(c => /ROMEX/.test(c.item)) && rxSin.some(c => c.item === 'NM STAPLE') && rxSin.length === 4,
     rxSin.map(c => c.item).join(' | '));
+
+  /* (02/10, Peninsula) EL WHIP DE FLEX VA CON EL PUNTO. «Sin lineales» quitaba
+     el 3/8" FLEX por llamarse CONDUIT: 91 luminarias perdían 546 ft de flex. */
+  const flex = await p.evaluate(() => {
+    const sin = window.MXP_PRUEBA.e9.explota(400, 91, null, true);
+    const con = window.MXP_PRUEBA.e9.explota(400, 1);
+    const medido = window.MXP_PRUEBA.e9.explota(400, 1, 16);   // la corrida medida al doble (8 → 16 ft)
+    const g = (a, re) => a.find(c => re.test(c.item));
+    return { sinFlex: g(sin, /FLEX/) ? g(sin, /FLEX/).cantidad : null, sinEmt: !!g(sin, /EMT CONDUIT/), sinThhn: !!g(sin, /THHN/), sinCan: !!g(sin, /RECESSED/),
+      conFlex: g(con, /FLEX/) ? g(con, /FLEX/).cantidad : null, medFlex: g(medido, /FLEX/) ? g(medido, /FLEX/).cantidad : null, medEmt: g(medido, /EMT CONDUIT/) ? g(medido, /EMT CONDUIT/).cantidad : null,
+      corrida: window.MXP_PRUEBA.e9.piesCorrida(400) };
+  });
+  ok('punto completo de 91 luminarias: SIN el EMT ni el THHN, pero CON sus 546 ft de flex (6 por luz) y la luz', flex.sinFlex === 546 && !flex.sinEmt && !flex.sinThhn && flex.sinCan, JSON.stringify(flex));
+  ok('la corrida de la receta es el EMT (8 ft), no el flex', flex.corrida === 8, flex.corrida);
+  ok('medir la corrida al doble dobla el EMT (16) y NO el flex (sigue en 6)', flex.medEmt === 16 && flex.medFlex === 6 && flex.conFlex === 6, JSON.stringify(flex));
 
   ok('cero errores de página', errs.length === 0, errs.join(' | ').slice(0, 200));
   console.log('\n' + R.join('\n'));

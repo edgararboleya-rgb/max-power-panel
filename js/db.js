@@ -25,10 +25,24 @@
   function programarRefresco() {
     if (temporizadorRefresco) clearTimeout(temporizadorRefresco);
     if (!sesion || !sesion.expires_in) return;
-    // Refrescar 2 minutos antes de que caduque el token
-    const ms = Math.max(30, (sesion.expires_in - 120)) * 1000;
+    // Refrescar 2 minutos antes de que caduque el token. Con expires_at (la
+    // hora exacta en que caduca) sirve también para una sesión que llegó de
+    // otra pestaña, que ya lleva un rato corriendo.
+    const ms = sesion.expires_at
+      ? Math.max(30000, sesion.expires_at * 1000 - Date.now() - 120000)
+      : Math.max(30, (sesion.expires_in - 120)) * 1000;
     temporizadorRefresco = setTimeout(() => { refrescar().catch(() => {}); }, ms);
   }
+
+  // DOS PESTAÑAS (P121, 24-sep): cada pestaña refrescaba con su propia copia
+  // del refresh_token; la segunda usaba uno que la primera ya había gastado y
+  // Supabase cerraba la sesión entera. Ahora, cuando una pestaña refresca, las
+  // demás toman la sesión nueva al vuelo en vez de refrescar ellas.
+  window.addEventListener("storage", e => {
+    if (e.key !== "mxp_sesion") return;
+    const g = sesionGuardada();
+    if (g && g.access_token) { sesion = g; programarRefresco(); }
+  });
 
   async function autenticar(cuerpo, tipo) {
     const r = await fetch(`${SB.url}/auth/v1/token?grant_type=${tipo}`, {
@@ -60,15 +74,26 @@
   let refrescoEnVuelo = null; // 20 lecturas a la vez = UN solo refresco
   function refrescar() {
     if (!refrescoEnVuelo) {
-      refrescoEnVuelo = (async () => {
+      const hacer = async () => {
+        // Dentro del candado: si otra pestaña ya refrescó mientras esperábamos,
+        // se usa su sesión y no se gasta un refresh_token viejo.
+        const g = sesionGuardada();
+        if (g && g.access_token && sesion && g.refresh_token !== sesion.refresh_token) {
+          sesion = g; programarRefresco(); return sesion;
+        }
         if (!sesion || !sesion.refresh_token) throw new Error("Sin sesión");
         return autenticar({ refresh_token: sesion.refresh_token }, "refresh_token");
-      })().finally(() => { refrescoEnVuelo = null; });
+      };
+      const conCandado = (navigator.locks && navigator.locks.request)
+        ? navigator.locks.request("mxp-refresco", hacer)
+        : hacer();
+      refrescoEnVuelo = conCandado.finally(() => { refrescoEnVuelo = null; });
     }
     return refrescoEnVuelo;
   }
 
   function salir() {
+    crudo = null;
     sesion = null;
     guardarSesion(null);
     if (temporizadorRefresco) clearTimeout(temporizadorRefresco);
@@ -76,6 +101,15 @@
 
   function uid() {
     return sesion && sesion.user ? sesion.user.id : null;
+  }
+
+  // El change order de las horas se escribe siempre igual: «co#1», «CO-1»,
+  // «co 1» y «CO # 1» son «CO #1» (P93, 24-sep). Si no, al agrupar por CO
+  // salían dos distintos. Lo que no parece un número de CO se deja tal cual.
+  function conCO(fila) {
+    if (!fila || typeof fila.co !== "string") return fila;
+    const m = /^\s*c\.?\s*o\.?\s*[#\-\s]*\s*(\d+)\s*$/i.exec(fila.co);
+    return m ? { ...fila, co: "CO #" + Number(m[1]) } : fila;
   }
 
   // ---------- Traducir los errores de la base a español de taller ----------
@@ -88,14 +122,24 @@
     const falta = "A la base todavía le falta el último SQL. Pégalo en Supabase " +
                   "(SQL Editor → pegar → Run) y vuelve a intentarlo.";
 
+    // La contabilidad (24-sep) contesta con su propio código (MX001…MX008) y
+    // una frase en español que ya dice qué pasó y cómo se arregla: va tal cual.
+    if (/^MX\d/i.test(cod)) return crudo;
+    // Sus candados también usan 42501 (permiso) y 22023 (dato inválido) con
+    // frase en español. Esa se enseña tal cual; la de Postgres (en inglés) no.
+    const ingles = /\b(permission denied|row-level security|violates|invalid input|does not exist|null value|duplicate key|constraint|function)\b/i;
+    if ((cod === "42501" || cod === "22023" || cod === "P0001") && txt && !ingles.test(txt)) return crudo;
+
     // Falta una columna o una tabla que la app ya usa = SQL sin pegar
     if (cod === "42703" || cod === "42P01" || cod === "PGRST204" || cod === "PGRST205") return falta;
 
     // Un candado de la base rechazó el valor
     if (cod === "23514") {
       if (/modo/i.test(txt)) {
-        return "El modo ⚡ Rápido todavía no está dado de alta en la base. " + falta;
+        return "El modo Rápido todavía no está dado de alta en la base. " + falta;
       }
+      if (/horas_horas_check/i.test(txt)) return "Un reporte de horas va de más de 0 hasta 16 horas.";
+      if (/facturas_retencion/i.test(txt)) return "La retención no puede ser negativa ni llevar más de dos decimales.";
       return "La base no aceptó uno de los datos porque se sale de lo permitido. " + falta;
     }
     if (cod === "23505") return "Eso ya estaba guardado; no se apuntó dos veces.";
@@ -157,6 +201,19 @@
   };
   const insertar = (tabla, fila) => api(tabla, { metodo: "POST", cuerpo: fila });
   const actualizar = (ruta, cambios) => api(ruta, { metodo: "PATCH", cuerpo: cambios });
+  // v252: si la base todavía no tiene la columna pricing_basis (el SQL está pendiente), se guarda igual sin ella
+  const COLUMNAS_NUEVAS = ["pricing_basis"];
+  async function sinColumnaNueva(hacer, datos) {
+    try { return await hacer(datos); }
+    catch (e) {
+      const txt = String((e && e.crudo) || "");
+      const nueva = COLUMNAS_NUEVAS.find(k => datos && Object.prototype.hasOwnProperty.call(datos, k) && txt.includes(k));
+      const faltaColumna = e && (e.codigo === "PGRST204" || e.codigo === "42703" || /column/i.test(txt));
+      if (!nueva || !faltaColumna) throw e;
+      const resto = Object.assign({}, datos); delete resto[nueva];
+      return hacer(resto);
+    }
+  }
 
   // ---------- Fotos (Supabase Storage, almacén privado) ----------
   // carpeta opcional: "recibos" guarda la foto en recibos/<proyecto>/...
@@ -209,6 +266,23 @@
     return ruta;
   }
 
+  // P184: la miniatura de una foto va al lado de la grande, con el mismo nombre
+  // y «-mini» antes de la extensión. La galería la pide primero y solo baja la
+  // grande al abrirla. Las fotos viejas no tienen miniatura: sale la grande.
+  const rutaMini = ruta => String(ruta || "").replace(/\.(jpe?g|png|webp)$/i, "-mini.jpg");
+  async function subirMiniatura(ruta, blob, reintento = true) {
+    const destino = rutaMini(ruta);
+    if (destino === ruta) return null;
+    const r = await fetch(`${SB.url}/storage/v1/object/fotos/${destino}`, {
+      method: "POST",
+      headers: { apikey: SB.key, Authorization: `Bearer ${sesion ? sesion.access_token : SB.key}`, "Content-Type": "image/jpeg" },
+      body: blob
+    });
+    if (r.status === 401 && reintento && sesion) { await refrescar(); return subirMiniatura(ruta, blob, false); }
+    if (!r.ok) throw new Error(`No se pudo subir la miniatura (${r.status})`);
+    return destino;
+  }
+
   // Convierte las rutas guardadas en enlaces temporales (1 hora)
   async function firmarFotos(rutas, reintento = true) {
     if (!rutas || !rutas.length) return {};
@@ -243,61 +317,86 @@
   }
 
   // ---------- Carga completa según el rol ----------
-  async function cargarTodo() {
+  // ---------- Las fuentes de la carga (P186) ----------
+  // Cada fuente: [nombre, consulta, suave]. «suave» = si falla, sigue con [] (la
+  // tabla puede no existir o el equipo no tiene permiso). El orden es el de la
+  // lista de variables de más abajo: no se cambia uno sin el otro.
+  const FUENTES = [
+    ["perfiles", "perfiles?select=*", false],
+    // El dueño lee la tabla completa; al equipo la base le devuelve vacío
+    // y usa la vista sin montos (misma regla que materiales y alcances)
+    ["proyectos", "proyectos?select=*&order=nombre", true],
+    ["proyectos_equipo", "proyectos_equipo?select=*&order=nombre", true],
+    ["finanzas_proyecto", "finanzas_proyecto?select=*", true],
+    ["alcances", "alcances?select=*&order=orden", true],
+    ["alcances_equipo", "alcances_equipo?select=*&order=orden", true],
+    ["hitos", "hitos?select=*&order=orden", true],
+    ["facturas", "facturas?select=*&order=fecha", true],
+    ["horas", "horas?select=*&order=fecha", false],
+    ["eventos", "eventos?select=*&order=fecha", false],
+    ["pendientes", "pendientes?select=*&order=fecha", false],
+    ["documentos", "documentos?select=*", true],
+    // Estas tablas pueden no existir todavía: la app sigue andando
+    ["fotos", "fotos?select=*&order=creado", true],
+    ["inspecciones", "inspecciones?select=*&order=fecha", true],
+    ["materiales", "materiales?select=*&order=creado", true],
+    ["materiales_equipo", "materiales_equipo?select=*&order=creado", true],
+    ["costos_equipo", "costos_equipo?select=*", true],
+    ["trabajos_externos", "trabajos_externos?select=*&order=fecha", true],
+    ["gestiones", "gestiones?select=*&order=creado", true],
+    ["recibos", "recibos?select=*&order=creado", true],
+    ["recibos_equipo", "recibos_equipo?select=*&order=creado", true],
+    ["alcance_puntos", "alcance_puntos?select=*&order=orden", true],
+    ["externos_equipo", "externos_equipo?select=*&order=nombre", true],
+    ["decisiones_cliente", "decisiones_cliente?select=*&order=creado", true],
+    // Llaves del portal: solo el dueño recibe filas (RLS)
+    ["portal_llaves", "portal_llaves?select=*", true],
+    // Visitas del portal (solo el dueño recibe filas)
+    ["portal_visitas", "portal_visitas?select=proyecto_id,cuando&order=cuando.desc&limit=300", true],
+    // Documentos de la empresa (licencia y seguros) — todos los ven
+    ["documentos_empresa", "documentos_empresa?select=*&order=orden,id", true],
+    // Solo títulos de documentos (para elegir el CO en el reporte de horas)
+    ["documentos_equipo", "documentos_equipo?select=proyecto_id,titulo", true],
+    // Permisos por jurisdicción (todos leen; el dueño edita)
+    ["jurisdicciones", "jurisdicciones?select=*&order=condado", true],
+    // Contratistas (GC): solo el dueño recibe filas (RLS)
+    ["contratistas", "contratistas?select=*&order=nombre", true],
+    // Las llaves de los contratistas viven aparte (nunca van al respaldo)
+    ["contratista_llaves", "contratista_llaves?select=*", true],
+    // v159: cada vez que alguien abre un documento desde el portal (solo el dueño recibe filas)
+    ["documento_visitas", "documento_visitas?select=documento_id,quien,cuando&order=cuando.desc&limit=1000", true],
+    // P09 (25-sep): solo la vigencia de cada propuesta, para avisar cuando vence o
+    // lleva días sin respuesta (el equipo no recibe filas: la lista queda vacía)
+    ["propuestas_vigencia", "propuestas?select=id,proyecto_id,estado,valida_hasta,armado_el,creado&order=creado.desc", true]
+  ];
+  // Lo último que bajó cada fuente: con esto la recarga parcial vuelve a armar
+  // el estado entero bajando solo las tablas que se tocaron.
+  let crudo = null;
+
+  // cargarTodo()          → baja las 33 fuentes
+  // cargarTodo(["horas"]) → baja solo esas (si ya hubo una carga completa) y
+  //                          rearma todo con lo demás que ya estaba
+  async function cargarTodo(soloEstas) {
+    const parcial = Array.isArray(soloEstas) && soloEstas.length > 0 && crudo !== null;
+    const pedir = parcial ? FUENTES.filter(f => soloEstas.includes(f[0])) : FUENTES;
+    const bajado = await Promise.all(pedir.map(([, consulta, suave]) => suave ? leer(consulta).catch(() => []) : leer(consulta)));
+    const nuevo = parcial ? { ...crudo } : {};
+    pedir.forEach(([nombre], k) => { nuevo[nombre] = bajado[k]; });
+    crudo = nuevo;
     const [perfiles, proyectos, proyectosEquipo, finanzas, alcances, alcancesEquipo,
            hitos, facturas, horas, eventos, pendientes, documentos, fotos,
            inspecciones, materiales, materialesEquipo, costos, externos,
            gestiones, recibos, recibosEquipo, alcancePuntos, ayudantes, decisiones,
            llavesPortal, visitasPortal, docsEmpresa, titulosDocs, jurisdicciones,
-           contratistas, llavesGC, visitasDocs] =
-      await Promise.all([
-        leer("perfiles?select=*"),
-        // El dueño lee la tabla completa; al equipo la base le devuelve vacío
-        // y usa la vista sin montos (misma regla que materiales y alcances)
-        leer("proyectos?select=*&order=nombre").catch(() => []),
-        leer("proyectos_equipo?select=*&order=nombre").catch(() => []),
-        leer("finanzas_proyecto?select=*").catch(() => []),
-        leer("alcances?select=*&order=orden").catch(() => []),
-        leer("alcances_equipo?select=*&order=orden").catch(() => []),
-        leer("hitos?select=*&order=orden").catch(() => []),
-        leer("facturas?select=*&order=fecha").catch(() => []),
-        leer("horas?select=*&order=fecha"),
-        leer("eventos?select=*&order=fecha"),
-        leer("pendientes?select=*&order=fecha"),
-        leer("documentos?select=*").catch(() => []),
-        // Estas tablas pueden no existir todavía: la app sigue andando
-        leer("fotos?select=*&order=creado").catch(() => []),
-        leer("inspecciones?select=*&order=fecha").catch(() => []),
-        leer("materiales?select=*&order=creado").catch(() => []),
-        leer("materiales_equipo?select=*&order=creado").catch(() => []),
-        leer("costos_equipo?select=*").catch(() => []),
-        leer("trabajos_externos?select=*&order=fecha").catch(() => []),
-        leer("gestiones?select=*&order=creado").catch(() => []),
-        leer("recibos?select=*&order=creado").catch(() => []),
-        leer("recibos_equipo?select=*&order=creado").catch(() => []),
-        leer("alcance_puntos?select=*&order=orden").catch(() => []),
-        leer("externos_equipo?select=*&order=nombre").catch(() => []),
-        leer("decisiones_cliente?select=*&order=creado").catch(() => []),
-        // Llaves del portal: solo el dueño recibe filas (RLS); si la tabla
-        // no existe todavía, la app sigue andando
-        leer("portal_llaves?select=*").catch(() => []),
-        // Visitas del portal (solo el dueño recibe filas)
-        leer("portal_visitas?select=proyecto_id,cuando&order=cuando.desc&limit=300").catch(() => []),
-        // Documentos de la empresa (licencia y seguros) — todos los ven
-        leer("documentos_empresa?select=*&order=orden,id").catch(() => []),
-        // Solo títulos de documentos (para elegir el CO en el reporte de horas)
-        leer("documentos_equipo?select=proyecto_id,titulo").catch(() => []),
-        // Permisos por jurisdicción (todos leen; el dueño edita)
-        leer("jurisdicciones?select=*&order=condado").catch(() => []),
-        // Contratistas (GC): llevan las llaves de su portal — solo el dueño
-        // recibe filas (RLS). Si el SQL no está pegado, la app sigue andando.
-        leer("contratistas?select=*&order=nombre").catch(() => []),
-        // Las llaves de los contratistas viven aparte (nunca van al respaldo)
-        leer("contratista_llaves?select=*").catch(() => []),
-        // v159: cada vez que alguien abre un documento desde el portal (solo el dueño recibe filas;
-        // si el SQL VISITAS-CONTRATO no está pegado, la app sigue andando)
-        leer("documento_visitas?select=documento_id,quien,cuando&order=cuando.desc&limit=1000").catch(() => [])
-      ]);
+           contratistas, llavesGC, visitasDocs, propuestasVigencia] = FUENTES.map(f => crudo[f[0]] || []);
+    // La propuesta viva más nueva de cada obra (las archivadas no cuentan)
+    const propPorProyecto = {};
+    // (manda la 'enviada' más nueva; si no hay ninguna enviada, la viva más nueva)
+    for (const x of propuestasVigencia) {
+      if (!x.proyecto_id || x.estado === "archivada") continue;
+      const y = propPorProyecto[x.proyecto_id];
+      if (!y || (x.estado === "enviada" && y.estado !== "enviada")) propPorProyecto[x.proyecto_id] = x;
+    }
     // Visitas por documento: cuántas y la última (vienen de la más nueva a la más vieja)
     const visitasPorDoc = {};
     (visitasDocs || []).forEach(v => {
@@ -330,11 +429,14 @@
     const horPor = agrupar(horas, "proyecto_id");
     const docPor = agrupar(documentos, "proyecto_id");
 
-    const MES = ["", "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+    // La fecha corta de las facturas, en el idioma de la app («17 sep» / «Sep 17»)
+    const EN = (() => { try { return localStorage.getItem("mxp_idioma") === "en"; } catch { return false; } })();
+    const MES = EN ? ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+      : ["", "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
     const fechaCorta = iso => {
       if (!iso) return "";
       const [a, m, d] = String(iso).split("-").map(Number);
-      return `${d} ${MES[m] || ""}`;
+      return EN ? `${MES[m] || ""} ${d}` : `${d} ${MES[m] || ""}`;
     };
 
     // Si la base no devolvió proyectos (el equipo no puede leer la tabla
@@ -357,11 +459,14 @@
         portalCompleto: p.portal_completo === true,
         // v168: el párrafo «dónde vamos» que sale en el portal del cliente
         portalResumen: p.portal_resumen || "",
+        completadoEl: p.completado_el || "",
         cliente: p.cliente || "Por confirmar",
         via: p.via || "—",
         contratistaId: p.contratista_id || null,
         contratistaModo: p.contratista_modo || "",
         contratistaContacto: p.contratista_contacto || "",
+        // (29-sep) la clase de obra (new_construction, remodel, service_call): la usa el revisor del contrato
+        workSubtype: p.work_subtype || "",
         ntoEnviadoEl: p.nto_enviado_el ? String(p.nto_enviado_el).slice(0, 10) : "",
         origen: p.origen || "",
         clienteEmail: p.cliente_email || "",
@@ -372,6 +477,9 @@
         proximaAccion: p.proxima_accion || "",
         ref: p.ref || "—",
         actualizado: p.actualizado ? String(p.actualizado).slice(0, 10) : "",
+        // P09: hasta cuándo vale la propuesta viva y cuándo se armó
+        propuestaValidaHasta: propPorProyecto[p.id] ? (propPorProyecto[p.id].valida_hasta || "") : "",
+        propuestaArmadaEl: propPorProyecto[p.id] && propPorProyecto[p.id].armado_el ? String(propPorProyecto[p.id].armado_el).slice(0, 10) : "",
         contrato: fin.contrato !== undefined && fin.contrato !== null ? Number(fin.contrato) : null,
         cobrado: fin.cobrado !== undefined && fin.cobrado !== null ? Number(fin.cobrado) : null,
         presupuestoMateriales: fin.presupuesto_materiales !== undefined && fin.presupuesto_materiales !== null
@@ -386,14 +494,25 @@
           id: h.id, titulo: h.titulo, condicion: h.condicion,
           monto: Number(h.monto), estado: h.estado
         })),
-        facturas: (facPor[p.id] || []).map(f => ({
+        // Una factura ANULADA (con su nota de crédito) no se cobra ni suma en
+        // ningún total: sale de «facturas» y queda aparte, solo para verla.
+        facturas: (facPor[p.id] || []).filter(f => f.estado !== "anulada").map(f => ({
           id: f.id, num: f.num, fecha: fechaCorta(f.fecha), fechaISO: f.fecha || "",
-          monto: Number(f.monto), pagada: !!f.pagada, cobradaEl: f.cobrada_el ? String(f.cobrada_el).slice(0, 10) : ""
+          monto: Number(f.monto), pagada: !!f.pagada, cobradaEl: f.cobrada_el ? String(f.cobrada_el).slice(0, 10) : "",
+          // Lo ya abonado de esta factura (P07): una factura puede estar pagada a medias
+          cobrado: f.cobrado === null || f.cobrado === undefined ? 0 : Number(f.cobrado),
+          estado: f.estado || "emitida", enLibro: !!f.contabilizado_en,
+          retencion: f.retencion === null || f.retencion === undefined ? null : Number(f.retencion)
+        })),
+        facturasAnuladas: (facPor[p.id] || []).filter(f => f.estado === "anulada").map(f => ({
+          id: f.id, num: f.num, fecha: fechaCorta(f.fecha), monto: Number(f.monto)
         })),
         docs: docs.filter(d => d.clase === "doc").map(d => ({ id: d.id, titulo: d.titulo, url: d.url, ruta: d.ruta || "", portal: !!d.portal, propuestaId: d.propuesta_id || null,
           pideAprobacion: !!d.pide_aprobacion, aprobadoEl: d.aprobado_el ? String(d.aprobado_el).slice(0, 10) : "",
           pideFirma: !!d.pide_firma, firmadoEl: d.firmado_el ? String(d.firmado_el).slice(0, 10) : "", firmaNombre: d.firma_nombre || "",
           vistoEl: d.visto_el ? String(d.visto_el).slice(0, 10) : "",
+          // P48: hasta cuándo vale (el portal no deja firmar después de esa fecha)
+          validaHasta: d.valida_hasta ? String(d.valida_hasta).slice(0, 10) : "",
           visitas: visitasPorDoc[d.id] || null,
           contrafirmaEl: d.contrafirma_el ? String(d.contrafirma_el).slice(0, 10) : "" })),
         rfis: docs.filter(d => d.clase === "rfi").map(d => ({ id: d.id, titulo: d.titulo, estado: d.estado, url: d.url, ruta: d.ruta || "" })),
@@ -581,7 +700,16 @@
     salir,
     cargarTodo,
     // Escrituras
-    cambiarProyecto: (id, cambios) => actualizar(`proyectos?id=eq.${encodeURIComponent(id)}`, cambios),
+    cambiarProyecto: (id, cambios) => {
+      // P75 (24-sep): al pasar una obra a TERMINADA se apunta el día (hora de
+      // Florida), para contar el año de garantía. Si vuelve a abrirse, se borra.
+      if (cambios && cambios.estado === "completado" && !("completado_el" in cambios)) {
+        cambios = { ...cambios, completado_el: new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }) };
+      } else if (cambios && cambios.estado && cambios.estado !== "completado" && !("completado_el" in cambios)) {
+        cambios = { ...cambios, completado_el: null };
+      }
+      return actualizar(`proyectos?id=eq.${encodeURIComponent(id)}`, cambios);
+    },
   // Contratistas (GC): la libreta con una llave de portal por empresa
   crearContratista: fila => insertar("contratistas", fila),
   cambiarContratista: (id, cambios) => actualizar(`contratistas?id=eq.${encodeURIComponent(id)}`, cambios),
@@ -609,22 +737,14 @@
       metodo: "POST", cuerpo: { proyecto_id: proyectoId, contrato },
       headers: { Prefer: "resolution=merge-duplicates,return=minimal" }
     }),
-    reportarHoras: async fila => {
-      try { return await insertar("horas", { ...fila, usuario_id: uid() }); }
-      catch (e) {
-        // Si la base todavía no tiene la columna llave_cliente (SQL sin pegar),
-        // se manda sin ella para que las horas nunca dejen de entrar.
-        if (fila && fila.llave_cliente && e && e.status !== 409 && /llave_cliente/i.test(String((e && e.crudo) || (e && e.message) || ""))) {
-          const { llave_cliente, ...sin } = fila;
-          return insertar("horas", { ...sin, usuario_id: uid() });
-        }
-        throw e;
-      }
-    },
-    cambiarHoras: (id, cambios) => actualizar(`horas?id=eq.${id}`, cambios),
+    reportarHoras: fila => insertar("horas", { ...conCO(fila), usuario_id: uid() }),
+    cambiarHoras: (id, cambios) => actualizar(`horas?id=eq.${id}`, conCO(cambios)),
     eliminarHoras: id => api(`horas?id=eq.${id}`, { metodo: "DELETE" }),
     crearExterno: fila => insertar("trabajos_externos", fila),
     eliminarExterno: id => api(`trabajos_externos?id=eq.${id}`, { metodo: "DELETE" }),
+    // Anular con su motivo (contabilidad, 24-sep): el papel se queda como
+    // rastro y el libro lo reversa. Solo Edgar; la base lo vuelve a comprobar.
+    anularExterno: (id, motivo) => api("rpc/fn_externo_anular", { metodo: "POST", cuerpo: { p_id: Number(id), p_motivo: motivo } }),
     crearAyudante: fila => insertar("externos_equipo", fila),
     cambiarAyudante: (id, cambios) => actualizar(`externos_equipo?id=eq.${id}`, cambios),
     // Registrar este teléfono para notificaciones (upsert por endpoint)
@@ -632,7 +752,15 @@
       metodo: "POST", cuerpo: { ...fila, usuario_id: uid() },
       headers: { Prefer: "resolution=merge-duplicates,return=minimal" }
     }),
-    // 💬 Chat del equipo
+    // ¿Este teléfono sigue apuntado a mi nombre? (solo leo los míos: la tabla no deja más)
+    miSuscripcion: endpoint => leer(`push_suscripciones?select=id&endpoint=eq.${encodeURIComponent(endpoint)}`)
+      .then(f => f.length > 0),
+    // Cuántos teléfonos tiene apuntados cada persona (solo el dueño; sin las llaves).
+    // { uid: { telefonos, ultimo } } — o null si la base no contesta.
+    avisosPorPersona: () => api("rpc/fn_avisos_por_persona", { metodo: "POST", cuerpo: {} })
+      .then(filas => Object.fromEntries((filas || []).map(f => [f.usuario_id, { telefonos: Number(f.telefonos) || 0, ultimo: f.ultimo || "" }])))
+      .catch(() => null),
+    // Chat del equipo
     miUid: () => uid(),
     leerMensajes: () => leer("mensajes?select=*&order=creado"),
     enviarMensaje: (texto, destinatarioId) =>
@@ -686,7 +814,10 @@
       ]);
       return { propuestas, opciones, textos, pendientes };
     },
-    crearPropuesta: fila => insertar("propuestas", fila),
+    // v252: la base del precio (pricing_basis) es una columna nueva (etapa6/PRICING-BASIS.sql). Si todavía no está
+    // puesta en la base, el guardado NO falla: se reintenta sin ese campo (la elección queda también en
+    // alcance_decisiones, que ya existe).
+    crearPropuesta: fila => sinColumnaNueva(f => insertar("propuestas", f), fila),
     cambiarPropuesta: (id, cambios) => actualizar(`propuestas?id=eq.${id}`, cambios),
     eliminarPropuesta: id => api(`propuestas?id=eq.${id}`, { metodo: "DELETE" }),
     // Las opciones van en una sola petición, no una por una
@@ -694,13 +825,14 @@
     borrarOpciones: propuestaId => api(`propuesta_opciones?propuesta_id=eq.${propuestaId}`, { metodo: "DELETE" }),
     // ---------- La hoja de alcance ----------
     // Todo lo del alcance vive dentro de la propuesta, así que hereda su candado.
-    guardarAlcance: (id, campos) => actualizar(`propuestas?id=eq.${id}`, campos),
+    guardarAlcance: (id, campos) => sinColumnaNueva(c => actualizar(`propuestas?id=eq.${id}`, c), campos),
 
     // La plantilla oficial vive en el almacén de la app, no en el teléfono:
     // así Edgar no tiene que elegir ningún archivo y todos usan la misma.
+    // 13-oct (pliego §9.3): v3.10, con el modo servicio; 13-oct (tarde) v3.11 con el SOW ligero (las viejas se quedan en el almacén)
     plantillaSOW: async () => {
-      const firma = await firmarFotos(["plantillas/SOW_Template_v3.7.html"]);
-      const url = firma["plantillas/SOW_Template_v3.7.html"];
+      const firma = await firmarFotos(["plantillas/SOW_Template_v3.12.html"]);
+      const url = firma["plantillas/SOW_Template_v3.12.html"];
       if (!url) throw new Error("No encuentro la plantilla oficial en la app");
       const r = await fetch(url);
       if (!r.ok) throw new Error("No se pudo bajar la plantilla (" + r.status + ")");
@@ -801,32 +933,77 @@
     crearRecibo: fila => insertar("recibos", { ...fila, autor_id: uid() }),
     cambiarRecibo: (id, cambios) => actualizar(`recibos?id=eq.${id}`, cambios),
     eliminarRecibo: id => api(`recibos?id=eq.${id}`, { metodo: "DELETE" }),
+    // Un recibo no se borra: se anula con su motivo (y vuelve igual, con motivo).
+    anularRecibo: (id, motivo) => api("rpc/fn_recibo_anular", { metodo: "POST", cuerpo: { p_id: Number(id), p_motivo: motivo } }),
+    desanularRecibo: (id, motivo) => api("rpc/fn_recibo_desanular", { metodo: "POST", cuerpo: { p_id: Number(id), p_motivo: motivo } }),
     crearDocumento: fila => insertar("documentos", fila),
     subirDocumento,
+    rutaMini,
+    subirMiniatura,
     tokenSesion: () => (sesion ? sesion.access_token : null),
-    // 🤖 El asistente: manda la conversación al cerebro con el token del
+    // El asistente: manda la conversación al cerebro con el token del
     // usuario. El cerebro mira ese token para saber quién pregunta y qué
     // puede ver (el equipo nunca recibe dinero).
-    async preguntarAsistente(mensajes) {
+    // (26/09, cerebro v30) Un trabajo largo sigue en varias llamadas: la
+    // plataforma corta cada una a los 150 s, así que el cerebro guarda por
+    // dónde va y contesta { sigue }. Aquí se vuelve a llamar sola, hasta 10
+    // veces (~15 min), y alAvanzar(r) le dice a la pantalla por dónde va.
+    // (29-sep, B.3) contexto: { pantalla, proyecto_id, propuesta_id, idioma } —
+    // en qué pantalla está y qué obra tiene abierta. Viaja con la pregunta (y con
+    // cada «sigue», por si el cerebro lo necesita al retomar).
+    async preguntarAsistente(mensajes, alAvanzar, contexto) {
       if (!sesion) throw new Error("Sin sesión");
-      const r = await fetch(`${SB.url}/functions/v1/cerebro?accion=asistente`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sesion.access_token}` },
-        body: JSON.stringify({ mensajes })
-      });
-      if (r.status === 401) {
-        // el token pudo haber caducado: se refresca y se reintenta una vez
-        await refrescar();
-        const r2 = await fetch(`${SB.url}/functions/v1/cerebro?accion=asistente`, {
+      const llamar = async cuerpo => {
+        const pide = () => fetch(`${SB.url}/functions/v1/cerebro?accion=asistente`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${sesion.access_token}` },
-          body: JSON.stringify({ mensajes })
+          body: JSON.stringify(cuerpo)
         });
-        if (!r2.ok) throw new Error("No se pudo conectar con el asistente");
-        return r2.json();
+        let r = await pide();
+        if (r.status === 401) {
+          // el token pudo haber caducado: se refresca y se reintenta una vez
+          await refrescar();
+          r = await pide();
+          if (!r.ok) throw new Error("No se pudo conectar con el asistente");
+          return r.json();
+        }
+        if (!r.ok) throw new Error("El asistente no respondió (" + r.status + ")");
+        return r.json();
+      };
+      const ctx = contexto && typeof contexto === "object" ? {
+        pantalla: String(contexto.pantalla || "").slice(0, 40) || null,
+        proyecto_id: contexto.proyecto_id ? String(contexto.proyecto_id).slice(0, 80) : null,
+        propuesta_id: Number.isInteger(contexto.propuesta_id) ? contexto.propuesta_id : null,
+        idioma: contexto.idioma === "en" ? "en" : "es"
+      } : null;
+      let res = await llamar(ctx ? { mensajes, contexto: ctx } : { mensajes });
+      for (let i = 0; i < 10 && res && res.sigue; i++) {
+        if (typeof alAvanzar === "function") { try { alAvanzar(res); } catch (e) { /* la pantalla no frena el trabajo */ } }
+        res = await llamar(ctx ? { trabajo: res.sigue, contexto: ctx } : { trabajo: res.sigue });
       }
-      if (!r.ok) throw new Error("El asistente no respondió (" + r.status + ")");
-      return r.json();
+      if (res && res.sigue) return { respuesta: "Esto me está llevando demasiado. Lo que alcancé lo recuerdo: dime «sigue» y continúo, o pregúntamelo por partes." };
+      return res;
+    },
+    // La IA decide el reparto de los pagos de un estimado (función «reparto»).
+    // Solo viajan porcentajes, horas, tamaño y el trabajo sin precios.
+    async decidirReparto(cuerpo) {
+      if (!sesion) throw new Error("Sin sesión");
+      const llamar = () => fetch(`${SB.url}/functions/v1/reparto`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sesion.access_token}` },
+        body: JSON.stringify(cuerpo)
+      });
+      let r = await llamar();
+      if (r.status === 401) { await refrescar(); r = await llamar(); }
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.error) {
+        const e = new Error(j.error === "reparto_invalido" ? "La IA no dio un reparto que cumpla tus reglas" + (j.detalle ? ": " + j.detalle : "")
+          : j.error === "dinero_en_el_pedido" ? "El pedido llevaba un monto (no se mandó)"
+          : "La IA no contestó (" + (j.error || r.status) + ")");
+        e.codigo = j.error || String(r.status);
+        throw e;
+      }
+      return j;
     },
     pedirAlCerebro,
     // El lector: «pide y recoge». Se pidió con accion=leer y aquí se recoge por
