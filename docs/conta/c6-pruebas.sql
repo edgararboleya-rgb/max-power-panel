@@ -620,7 +620,7 @@ declare
   v_cobro jsonb;
 begin
   v_m := pg_temp.c6_montar();
-  perform pg_temp.c6_recibo(jsonb_build_object('id', -660001, 'total', 245.37, 'fecha', d + 4, 'proveedor', 'THE HOME DEPOT',
+  perform pg_temp.c6_recibo(jsonb_build_object('id', -660001, 'total', 245.37, 'fecha', d + 4, 'proveedor', 'C6 PRUEBAS FERRETERIA',
                                                'num_recibo', 'C6-HD-1'));
   perform pg_temp.c6_recibo(jsonb_build_object('id', -660002, 'total', 310.00, 'fecha', d + 6, 'metodo_pago', 'zelle'));
   perform pg_temp.c6_recibo(jsonb_build_object('id', -660003, 'total', 850.00, 'fecha', d + 8, 'metodo_pago', 'cuenta_proveedor'));
@@ -665,7 +665,7 @@ set search_path = public, pg_temp
 as $$
   select pg_temp.c6_qfx('tarjeta', '372700000009996', d - 7, d + 22, -1173.26, jsonb_build_array(
     jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 5, 'fecha_usuario', d + 4, 'monto', '-245.37', 'id', 'C6A1',
-                       'nombre', 'THE HOME DEPOT #6311'),
+                       'nombre', 'C6 PRUEBAS FERRETERIA #6311'),
     jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 11, 'monto', '-1320.55', 'id', 'C6A2', 'nombre', 'C6 PRUEBAS SUPPLY'),
     jsonb_build_object('tipo', 'CREDIT', 'fecha', d + 19, 'monto', '500.00', 'id', 'C6A3', 'nombre', 'PAYMENT RECEIVED - THANK YOU'),
     jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 22, 'monto', '-12.34', 'id', 'C6A4', 'nombre', 'INTEREST CHARGE ON PURCHASES'),
@@ -1266,7 +1266,7 @@ begin
                 jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 3, 'monto', '-1.00', 'id', 'C6M1', 'nombre', 'C6 MAL')));
     for v_k, v_t in select * from (values
         ('vacio', '   '),
-        ('no_ofx', 'Fecha,Descripcion,Monto' || chr(10) || '10/03/2026,HOME DEPOT,-12.00'),
+        ('no_ofx', 'Fecha,Descripcion,Monto' || chr(10) || '10/03/2026,C6 PRUEBAS FERRETERIA,-12.00'),
         ('sin_ofx', 'OFXHEADER:100' || chr(10) || 'DATA:OFXSGML' || chr(10) || '<BANKMSGSRSV1>'),
         ('dos', replace(v_base, '</BANKMSGSRSV1>', '</BANKMSGSRSV1><BANKMSGSRSV1><STMTTRNRS><STMTRS></STMTRS></STMTTRNRS></BANKMSGSRSV1>')),
         ('sin_lista', regexp_replace(v_base, '<BANKTRANLIST>.*</BANKTRANLIST>', '')),
@@ -4446,16 +4446,16 @@ begin
   end if;
   begin
     perform pg_temp.c6_montar();
-    perform pg_temp.c6_recibo(jsonb_build_object('id', -660661, 'total', 64.20, 'fecha', d + 2, 'proveedor', 'THE HOME DEPOT',
+    perform pg_temp.c6_recibo(jsonb_build_object('id', -660661, 'total', 64.20, 'fecha', d + 2, 'proveedor', 'C6 PRUEBAS FERRETERIA',
                                                  'num_recibo', 'C6-HD-66'));
     perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 27, null, jsonb_build_array(
               jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 10, 'monto', '-100.00', 'id', 'C6U1', 'nombre', 'FPL DIRECT DEBIT AUTOPAY'))),
             '1098', 'c6-pruebas-u1.qfx');
     perform fn_banco_importar_ofx(pg_temp.c6_qfx('tarjeta', '372700000009996', d, d + 27, null, jsonb_build_array(
-              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 3, 'monto', '-64.20', 'id', 'C6U2', 'nombre', 'THE HOME DEPOT #6311'),
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 3, 'monto', '-64.20', 'id', 'C6U2', 'nombre', 'C6 PRUEBAS FERRETERIA #6311'),
               jsonb_build_object('tipo', 'CREDIT', 'fecha', d + 12, 'monto', '100.00', 'id', 'C6U3', 'nombre', 'LOWES #1234 TAMPA FL',
                                  'memo', 'RETURN'),
-              jsonb_build_object('tipo', 'CREDIT', 'fecha', d + 14, 'monto', '45.00', 'id', 'C6U4', 'nombre', 'THE HOME DEPOT 6345'))),
+              jsonb_build_object('tipo', 'CREDIT', 'fecha', d + 14, 'monto', '45.00', 'id', 'C6U4', 'nombre', 'C6 PRUEBAS FERRETERIA 6345'))),
             null, 'c6-pruebas-u2.qfx');
     perform fn_banco_casar_todo('1098');
     perform fn_banco_casar_todo('2100-9996');
@@ -5179,7 +5179,7 @@ begin
     perform pg_temp.c6_montar();
     perform fn_banco_importar_filas(jsonb_build_object('origen', 'csv', 'cuenta', '9996', 'nombre', 'c6-pruebas-corto.csv',
               'filas', jsonb_build_array(jsonb_build_object('fecha', (d + 17)::text, 'monto', '-64.20',
-                                                            'descripcion', 'THE HOME DEPOT 6345 TAMPA FL', 'tipo', 'DEBIT'))));
+                                                            'descripcion', 'C6 PRUEBAS FERRETERIA 6345 TAMPA FL', 'tipo', 'DEBIT'))));
     v_obt := 'casar=' || case when fn_banco_casar_todo('9996') ? 'completo' then 't' else 'f' end;
     v_c := fn_conciliar('9996', d + 27, '64.20');
     v_obt := v_obt || ' conciliar=' || (v_c->>'cuenta');
@@ -5339,7 +5339,7 @@ end $$;
 -- =====================================================================
 
 -- 83. EL TICKET CON OTRO TOTAL NO DEJA CLASIFICAR SU CARGO: el ticket de
---     THE HOME DEPOT leído sin el tax (100.00) y el cargo de la tarjeta
+--     C6 PRUEBAS FERRETERIA leído sin el tax (100.00) y el cargo de la tarjeta
 --     (107.00) no casan (el dinero no es el mismo), pero la bandeja dice
 --     «otro_total» con ese ticket; clasificarlo sin motivo es MX008 (el
 --     gasto entraría dos veces); corregido el total del recibo (lo que hace
@@ -5360,12 +5360,27 @@ begin
                                  'omitida: falta mes abierto', null);
     return;
   end if;
+  -- (15-oct) Un ticket DE VERDAD que espera en la bandeja de los puentes por
+  -- el monto exacto del cargo de esta prueba (107.00) se le propondría como
+  -- «su ticket ya está subido» (la regla del banco está bien; la prueba no
+  -- mediría lo suyo): «omitida». En producción, el 15-oct, uno de Home Depot
+  -- por 114.47 —a menos del 12 % de 107.00 y con el mismo nombre— puso en
+  -- rojo la 83, la 84 y la 106: los comercios de las pruebas son inventados
+  -- desde entonces (C6 PRUEBAS FERRETERIA), y el parecido ya no se da.
+  if exists (select 1 from puentes_bandeja b where b.tabla = 'recibos' and b.estado = 'pendiente' and b.monto = 107.00) then
+    insert into _pruebas values (83, 'un ticket con otro total (sin el tax) se propone y no deja clasificar su cargo sin motivo', v_esp,
+                                 (select 'omitida: un ticket de verdad por ' || b.monto || ' espera en la bandeja de los puentes (recibo '
+                                         || b.documento_id || ')'
+                                    from puentes_bandeja b where b.tabla = 'recibos' and b.estado = 'pendiente' and b.monto = 107.00
+                                   order by b.fecha_documento limit 1), null);
+    return;
+  end if;
   begin
     perform pg_temp.c6_montar();
-    perform pg_temp.c6_recibo(jsonb_build_object('id', -660831, 'total', 100.00, 'fecha', d + 3, 'proveedor', 'THE HOME DEPOT'));
+    perform pg_temp.c6_recibo(jsonb_build_object('id', -660831, 'total', 100.00, 'fecha', d + 3, 'proveedor', 'C6 PRUEBAS FERRETERIA'));
     perform fn_banco_importar_ofx(pg_temp.c6_qfx('tarjeta', '372700000009996', d, d + 20, null, jsonb_build_array(
               jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 4, 'fecha_usuario', d + 3, 'monto', '-107.00', 'id', 'C6OT1',
-                                 'nombre', 'THE HOME DEPOT #6345 MIAMI FL'))),
+                                 'nombre', 'C6 PRUEBAS FERRETERIA #6345 MIAMI FL'))),
             null, 'c6-pruebas-otro-total.qfx');
     perform fn_banco_casar_todo('2100-9996');
     v_m := pg_temp.c6_mov('2100-9996', 'C6OT1');
@@ -5402,7 +5417,7 @@ end $$;
 
 -- 84. EL TICKET DE OTRO TOTAL QUE LLEGA DESPUÉS DE CLASIFICAR SE DICE: el
 --     cargo de 107.00 se clasificó sin ticket y después sube su ticket de
---     THE HOME DEPOT por 100.00: «llego_su_ticket» con el otro total y sin
+--     C6 PRUEBAS FERRETERIA por 100.00: «llego_su_ticket» con el otro total y sin
 --     el botón de cambiarlo (el dinero no es el mismo: «es su ticket» es
 --     MX008 hasta corregir su total), el cuadre «ningún ticket después de
 --     clasificar» en rojo, y la conciliación de la tarjeta lo marca
@@ -5422,16 +5437,32 @@ begin
                                  v_esp, 'omitida: falta mes abierto', null);
     return;
   end if;
+  -- (15-oct) Un ticket DE VERDAD que espera en la bandeja de los puentes por
+  -- el monto exacto del cargo de esta prueba (107.00) se le propondría como
+  -- «su ticket ya está subido» (la regla del banco está bien; la prueba no
+  -- mediría lo suyo): «omitida». En producción, el 15-oct, uno de Home Depot
+  -- por 114.47 —a menos del 12 % de 107.00 y con el mismo nombre— puso en
+  -- rojo la 83, la 84 y la 106: los comercios de las pruebas son inventados
+  -- desde entonces (C6 PRUEBAS FERRETERIA), y el parecido ya no se da.
+  if exists (select 1 from puentes_bandeja b where b.tabla = 'recibos' and b.estado = 'pendiente' and b.monto = 107.00) then
+    insert into _pruebas values (84, 'el ticket con otro total que llega después de clasificar: se dice, frena el control y la conciliación',
+                                 v_esp,
+                                 (select 'omitida: un ticket de verdad por ' || b.monto || ' espera en la bandeja de los puentes (recibo '
+                                         || b.documento_id || ')'
+                                    from puentes_bandeja b where b.tabla = 'recibos' and b.estado = 'pendiente' and b.monto = 107.00
+                                   order by b.fecha_documento limit 1), null);
+    return;
+  end if;
   begin
     perform pg_temp.c6_montar();
     perform fn_banco_importar_ofx(pg_temp.c6_qfx('tarjeta', '372700000009996', d, d + 20, -107.00, jsonb_build_array(
               jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 4, 'fecha_usuario', d + 3, 'monto', '-107.00', 'id', 'C6OT2',
-                                 'nombre', 'THE HOME DEPOT #6345 MIAMI FL'))),
+                                 'nombre', 'C6 PRUEBAS FERRETERIA #6345 MIAMI FL'))),
             null, 'c6-pruebas-otro-total-2.qfx');
     perform fn_banco_casar_todo('2100-9996');
     v_m := pg_temp.c6_mov('2100-9996', 'C6OT2');
     perform fn_banco_clasificar(v_m, jsonb_build_array(jsonb_build_object('cuenta', '5100', 'proyecto_id', current_setting('mx6.obra'))));
-    perform pg_temp.c6_recibo(jsonb_build_object('id', -660841, 'total', 100.00, 'fecha', d + 3, 'proveedor', 'THE HOME DEPOT'));
+    perform pg_temp.c6_recibo(jsonb_build_object('id', -660841, 'total', 100.00, 'fecha', d + 3, 'proveedor', 'C6 PRUEBAS FERRETERIA'));
     perform fn_banco_casar_todo('2100-9996');
     select format('bandeja=%s otro_total=%s boton=%s', m.propuesta->>'motivo',
                   case when m.propuesta->>'texto' like '%OTRO total%' then 't' else 'f' end,
@@ -6160,7 +6191,7 @@ begin
               jsonb_build_object('tipo', 'DEBIT', 'fecha', v_f1 + 2, 'monto', '-189.73', 'id', 'C6OB1', 'nombre', 'C6 LOWES #01234* TAMPA FL',
                                  'memo', to_char(v_f1, 'MM/DD') || ' C6 LOWES #01234* TAMPA FL CARD 9420'),
               jsonb_build_object('tipo', 'DEBIT', 'fecha', v_f1 + 2, 'monto', '-77.10', 'id', 'C6OB2',
-                                 'nombre', 'C6 HOME DEPOT #6345 TAMPA FL'))),
+                                 'nombre', 'C6 PRUEBAS FERRETERIA #6345 TAMPA FL'))),
             '1098', 'c6-pruebas-obra.qfx');
     perform fn_banco_casar_todo('1098');
     select format('compra=%s sin_fecha=%s dice=%s',
@@ -6698,19 +6729,34 @@ begin
                                  'omitida: falta mes abierto', null);
     return;
   end if;
+  -- (15-oct) Un ticket DE VERDAD que espera en la bandeja de los puentes por
+  -- el monto exacto del cargo de esta prueba (107.00) se le propondría como
+  -- «su ticket ya está subido» (la regla del banco está bien; la prueba no
+  -- mediría lo suyo): «omitida». En producción, el 15-oct, uno de Home Depot
+  -- por 114.47 —a menos del 12 % de 107.00 y con el mismo nombre— puso en
+  -- rojo la 83, la 84 y la 106: los comercios de las pruebas son inventados
+  -- desde entonces (C6 PRUEBAS FERRETERIA), y el parecido ya no se da.
+  if exists (select 1 from puentes_bandeja b where b.tabla = 'recibos' and b.estado = 'pendiente' and b.monto = 107.00) then
+    insert into _pruebas values (106, 'el ticket repartido entre obras que llega después de clasificar se cambia entero', v_esp,
+                                 (select 'omitida: un ticket de verdad por ' || b.monto || ' espera en la bandeja de los puentes (recibo '
+                                         || b.documento_id || ')'
+                                    from puentes_bandeja b where b.tabla = 'recibos' and b.estado = 'pendiente' and b.monto = 107.00
+                                   order by b.fecha_documento limit 1), null);
+    return;
+  end if;
   begin
     perform pg_temp.c6_montar();
     v_pos := (select coalesce(max(cadena_pos), 0) from asientos);
     perform fn_banco_importar_ofx(pg_temp.c6_qfx('tarjeta', '372700000009996', d, d + 30, 107.00, jsonb_build_array(
-              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 5, 'monto', '-107.00', 'id', 'C6TR1', 'nombre', 'THE HOME DEPOT #6345'))),
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 5, 'monto', '-107.00', 'id', 'C6TR1', 'nombre', 'C6 PRUEBAS FERRETERIA #6345'))),
             null, 'c6-pruebas-repartido.qfx');
     perform fn_banco_casar_todo('2100-9996');
     v_m := pg_temp.c6_mov('2100-9996', 'C6TR1');
     perform fn_banco_clasificar(v_m, jsonb_build_array(jsonb_build_object('cuenta', '5100', 'proyecto_id', v_obra)));
     -- Llega su ticket: una foto, dos obras.
-    perform pg_temp.c6_recibo(jsonb_build_object('id', -660761, 'total', 60.00, 'fecha', d + 4, 'proveedor', 'THE HOME DEPOT',
+    perform pg_temp.c6_recibo(jsonb_build_object('id', -660761, 'total', 60.00, 'fecha', d + 4, 'proveedor', 'C6 PRUEBAS FERRETERIA',
                                                  'ruta', 'recibos/c6-pruebas/repartido.jpg', 'proyecto_id', v_obra));
-    perform pg_temp.c6_recibo(jsonb_build_object('id', -660762, 'total', 47.00, 'fecha', d + 4, 'proveedor', 'THE HOME DEPOT',
+    perform pg_temp.c6_recibo(jsonb_build_object('id', -660762, 'total', 47.00, 'fecha', d + 4, 'proveedor', 'C6 PRUEBAS FERRETERIA',
                                                  'ruta', 'recibos/c6-pruebas/repartido.jpg',
                                                  'proyecto_id', current_setting('mx6.obra2', true)));
     perform fn_banco_casar_todo('2100-9996');
@@ -7077,11 +7123,11 @@ begin
     perform pg_temp.c6_montar();
     insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
     values (-660791, v_obra, 'C6-791', d + 1, 1000.00, 0);
-    perform pg_temp.c6_recibo(jsonb_build_object('id', -660792, 'total', 156.78, 'fecha', d + 7, 'proveedor', 'THE HOME DEPOT',
+    perform pg_temp.c6_recibo(jsonb_build_object('id', -660792, 'total', 156.78, 'fecha', d + 7, 'proveedor', 'C6 PRUEBAS FERRETERIA',
                                                  'metodo_pago', 'debito', 'proyecto_id', v_ob2));
     v_pos := (select coalesce(max(cadena_pos), 0) from asientos);
     perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 20, 45.10, jsonb_build_array(
-              jsonb_build_object('tipo', 'CREDIT', 'fecha', d + 12, 'monto', '45.10', 'id', 'C6DV1', 'nombre', 'HOME DEPOT #6345 TAMPA FL'))),
+              jsonb_build_object('tipo', 'CREDIT', 'fecha', d + 12, 'monto', '45.10', 'id', 'C6DV1', 'nombre', 'C6 PRUEBAS FERRETERIA #6345 TAMPA FL'))),
             '1098', 'c6-pruebas-devolucion-debito.qfx');
     perform fn_banco_casar_todo('1098');
     v_m := pg_temp.c6_mov('1098', 'C6DV1');
@@ -7237,7 +7283,7 @@ begin
   end if;
   begin
     perform pg_temp.c6_montar();
-    perform pg_temp.c6_recibo(jsonb_build_object('id', -660821, 'total', 312.40, 'fecha', d + 3, 'proveedor', 'THE HOME DEPOT'));
+    perform pg_temp.c6_recibo(jsonb_build_object('id', -660821, 'total', 312.40, 'fecha', d + 3, 'proveedor', 'C6 PRUEBAS FERRETERIA'));
     perform fn_conciliar('2100-9996', d + 21, '0.00');
     select format('ticket=%s:%s:%s', case when v.lista_para_confirmar then 't' else 'f' end,
                   case when v.identidad like '%(cuadra, pero falta su motivo)%' then 'motivo' else v.identidad end,
@@ -7861,10 +7907,10 @@ begin
   begin
     perform pg_temp.c6_montar();
     perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 7, null, jsonb_build_array(
-              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 5, 'monto', '-45.67', 'id', 'C6MI1', 'nombre', 'HOME DEPOT #6345 MIAMI FL'))),
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 5, 'monto', '-45.67', 'id', 'C6MI1', 'nombre', 'C6 PRUEBAS FERRETERIA #6345 MIAMI FL'))),
             '1098', 'c6-pruebas-mismo-id-1.qfx');
     v_x := fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 30, null, jsonb_build_array(
-              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 6, 'monto', '-45.67', 'id', 'C6MI1', 'nombre', 'HOME DEPOT #6345 MIAMI FL'))),
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 6, 'monto', '-45.67', 'id', 'C6MI1', 'nombre', 'C6 PRUEBAS FERRETERIA #6345 MIAMI FL'))),
             '1098', 'c6-pruebas-mismo-id-2.qfx');
     v_obt := format('fitid=%s aviso=%s', pg_temp.c6_est('1098', 'C6MI1'),
                     case when v_x->'avisos' @? '$[*] ? (@ like_regex "C6MI1")' then 't' else 'f' end);
