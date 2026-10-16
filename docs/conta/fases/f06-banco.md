@@ -216,6 +216,14 @@ tránsito, sin tocar 1010.
   2026100303. Sin rastro; cadena, puentes y banco en verde, y en los estados
   solo el rojo esperado de la apertura. Evidencia en
   `pruebas/conta/resultados/2026-10-05-produccion/`.
+- **En producción (16-oct): el banco arranca.** Con la apertura del 30-sep
+  ya en el libro, las tres conciliaciones de apertura (Chase, Gold, Blue)
+  con el saldo del último statement de cada una y lo que QuickBooks tenía
+  en tránsito, confirmadas con diferencia 0.00 a la primera; la tarjeta
+  básica de la Gold dada de alta para que el archivo de Amex entre solo.
+  Lo que sigue es importar los archivos de octubre (`qfx2sql.py` mientras no
+  hay pantalla) y la pantalla del banco. Evidencia en
+  `pruebas/conta/resultados/2026-10-15-produccion/`.
 
 ## La ronda 5 (9-oct): préstamos de cuota semanal
 - El préstamo de negocio (2540/2550) se paga cada semana, y todo préstamo de

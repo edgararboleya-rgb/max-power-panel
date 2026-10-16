@@ -103,6 +103,22 @@ mandó y de una lectura de producción después:
 - Después: `fn_puentes_verificar()` 13 de 13, `fn_banco_control('hoy')` 18 de
   18, `fn_estados_control('hoy')` 15 de 15, la bandeja de los puentes vacía.
 
-Pendiente en producción: c6-pruebas otra vez (163) y c4-pruebas, los dos
-opcionales; y el banco de octubre (la conciliación de apertura de Chase al
-30-sep y las Amex al cierre de sus estados de cuenta).
+## 16-oct, 10:19 de Miami: el banco arranca
+
+`banco-1-aperturas.sql` (privado, con las cifras): la tarjeta básica de la
+Gold (····1007, la del número que trae el archivo de Amex) dada de alta en
+2100-2013, y las tres **conciliaciones de apertura al 30-sep**
+(`fn_conciliacion_apertura` + `fn_conciliacion_confirmar`), con el saldo del
+último statement de cada cuenta y lo que QuickBooks tenía en tránsito según
+sus reportes de conciliación del 7-oct: Chase (1 cargo en circulación), la
+Gold (23 cargos y 4 pagos del 7 al 30-sep: 27 partidas) y la Blue (10 cargos
+y 2 pagos del 21 al 30-sep: 12 partidas). Las tres **confirmadas con
+diferencia 0.00** a la primera, igual que en el banco de pruebas (16 y 17.6,
+donde además se volvió a pegar sin daño). Después: `fn_banco_control('hoy')`
+18 de 18, `fn_banco_verificar()` 15 de 15, `v_banco_saldos` con la última
+conciliación de las tres al 30-sep, `fn_estados_control('hoy')` 15 de 15.
+
+Pendiente en producción: los archivos del banco de octubre (el QFX de la
+Gold al 8-oct, la Blue al 21, Chase al 31: `qfx2sql.py` los envuelve en el
+SQL que se pega), y c6-pruebas otra vez (163) y c4-pruebas, los dos
+opcionales.
