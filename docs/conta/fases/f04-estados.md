@@ -129,4 +129,14 @@ conciliación de apertura (f06).
   a la vez en el mismo cluster chocaban) y, si no puede, avisa y sigue.
 - c1, c4 y c6 pegados en producción el 15-oct (c4 y c6 en la marca
   2026100901; `pruebas/conta/resultados/2026-10-15-produccion/`).
+- **La apertura, posteada en producción el 16-oct.** Con la balanza de
+  arreglos-5 (Cowork, 15-oct: los últimos arreglos en QuickBooks, sin cifras
+  aquí), los bloques 2 a 5 entraron a la primera: cuadra, 67 filas, el control
+  del Balance Sheet coincide, el asiento de apertura es el 2026-000005 (los
+  cuatro primeros son papeles de octubre que ya habían entrado por los
+  puentes), `v_comparacion` 14 de 14, `fn_estados_control` 40 de 40 (también
+  «apertura en el libro»), la cadena 10 de 10, los dos préstamos con su saldo
+  igual al libro; y los dos papeles que esperaban en la bandeja entraron con
+  `fn_puentes_correr` (una tarjeta personal dada de alta en 2900, una retención
+  en 0). Evidencia en `pruebas/conta/resultados/2026-10-15-produccion/`.
 - ▶ Pendiente: pegar los cinco bloques privados de la apertura.

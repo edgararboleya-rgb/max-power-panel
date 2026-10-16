@@ -72,5 +72,37 @@ suponía que ····1007 no se conocía; usa desde hoy «1066» (y sale «omiti
 si alguna cuenta real lo tuviera). A las 19:51 la 157 había salido en
 `true`: el bloque 1 aún no estaba.
 
-Pendiente en producción: c6-pruebas otra vez (163), c4-pruebas (opcional) y
-los bloques 2 a 5 de la apertura del 30-sep (con la balanza de arreglos-5).
+## 16-oct: la apertura posteada
+
+Con la balanza de arreglos-5 (Cowork, 15-oct por la noche; sus cifras y los
+reportes quedan en el Drive de Edgar, no aquí), los bloques 2 a 5 y las dos
+líneas pendientes se probaron de cero en el banco (16 y 17.6, también con
+papeles de octubre ya en el libro antes de la apertura, como en producción)
+y Edgar los pegó el 16-oct, en orden. Lo que salió, de los resultados que
+mandó y de una lectura de producción después:
+
+- **Bloque 2** (`fn_apertura_balanza_cargar`): `"cuadra": true`, 67 filas,
+  `"sin_mapeo": []`, `"trabajos_sin_mapeo": []`, la fila TOTAL coincide y el
+  control del Balance Sheet coincide en sus cinco cifras.
+- **Bloque 3** (`fn_apertura_revisar`): 88 filas (67 de la balanza, 5 de
+  control, 16 del asiento), las cinco de control en «coincide»; la única sin
+  mapeo, «Account Receivable Contra», viene en 0.00 y a propósito no se mapea.
+- **Bloque 4** (`fn_apertura`): posteada, 16 líneas, asiento **2026-000005**
+  (los cuatro primeros del libro son las dos facturas y los dos recibos de
+  octubre que ya habían entrado por los puentes); `v_comparacion` **14 de 14**
+  en `ok`; `fn_estados_control('2026-09-APERTURA')` **40 de 40** (también
+  «apertura en el libro»); `fn_verificar_cadena()` **10 de 10** (`"asientos": 5`).
+- **Bloque 5**: `v_prestamos` 2 filas (12 y 52 cuotas al año) y «cuadre:
+  préstamos» en `true` («lo mismo que dice el libro»).
+- **Pendientes** (`pendientes-16-oct.sql`): la tarjeta ····7930 del recibo 55
+  dada de alta como personal (2900: no es ninguna de las cuatro de las dos
+  Amex del negocio en los statements de septiembre), la factura
+  #MXP-METRONPR-M1 con retención 0 (en QuickBooks está cobrada entera) y
+  `fn_puentes_correr()`: `"pasados": 2`, `"errores": 0`; los dos papeles
+  entraron como 2026-000006 y 2026-000007.
+- Después: `fn_puentes_verificar()` 13 de 13, `fn_banco_control('hoy')` 18 de
+  18, `fn_estados_control('hoy')` 15 de 15, la bandeja de los puentes vacía.
+
+Pendiente en producción: c6-pruebas otra vez (163) y c4-pruebas, los dos
+opcionales; y el banco de octubre (la conciliación de apertura de Chase al
+30-sep y las Amex al cierre de sus estados de cuenta).
