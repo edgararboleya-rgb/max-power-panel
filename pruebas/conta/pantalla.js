@@ -144,6 +144,7 @@ function rpc(fn, a) {
 // La función de borde `plaid` (supabase/functions/plaid), con la forma de sus respuestas
 function funcionPlaid(b) {
   if (b.accion === 'link_token') return { cuerpo: { ok: true, link_token: 'link-sandbox-prueba', expiration: '2026-10-17T16:00:00Z', reconexion: !!b.item_id } };
+  if (b.accion === 'fijar_cuenta') { estado.plaidFijada = true; return { cuerpo: { ok: true, conexion: { item_id: b.item_id, estado: 'activa', cuentas_sin_fijar: 0 } } }; }
   if (b.accion === 'canjear') return { cuerpo: { ok: true, conexion: { item_id: 'item-nuevo', institucion: (b.metadata && b.metadata.institution && b.metadata.institution.name) || 'Banco', estado: 'activa', cuentas_sin_fijar: 1 } } };
   if (b.accion === 'sincronizar') {
     if (estado.plaidSinFijar) return { estado: 409, cuerpo: { ok: false, codigo: 'SIN_FIJAR', sin_fijar: ['····4392'], error: 'Falta decir a qué cuenta del plan va ····4392 (o «ignorar»). Hasta entonces no se sincroniza.' } };
@@ -386,12 +387,12 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   await p.waitForSelector('.ct-conexion-res .ct-aviso.warn', { timeout: 8000 });
   ok('«Sincronizar ahora» con una cuenta sin fijar: la función dice SIN_FIJAR y la pantalla lo enseña en amarillo, con la sesión en la llamada', /Falta decir a qué cuenta/.test(await texto(p, '.ct-conexion-res')) && desde(n).some(l => l.fn === 'plaid:sincronizar' && l.args.item_id === 'item-prueba' && /^Bearer /.test(l.auth)));
   estado.plaidSinFijar = false;
-  n = llamadas.length; estado.plaidFijada = true;
+  n = llamadas.length;
   await p.locator('.ct-conexion select[data-account="acc-corriente"]').selectOption('1010');
-  await esperarLlamada(p, n, 'fn_plaid_cuenta_fijar');
+  await esperarLlamada(p, n, 'plaid:fijar_cuenta');
   await p.waitForFunction(() => { const e = document.querySelector('#ct-plaid'); return e && !/sin fijar/.test(e.textContent); }, null, { timeout: 8000 });
-  const fij = desde(n).find(l => l.fn === 'fn_plaid_cuenta_fijar');
-  ok('Elegir 1010 llama a fn_plaid_cuenta_fijar con la conexión, la cuenta de Plaid y 1010, y la tarjeta se repinta sin «sin fijar»', !!fij && fij.args.p_item_id === 'item-prueba' && fij.args.p_account_id === 'acc-corriente' && fij.args.p_cuenta === '1010' && !/sin fijar/.test(await texto(p, '#ct-plaid')), JSON.stringify(fij && fij.args));
+  const fij = desde(n).find(l => l.fn === 'plaid:fijar_cuenta');
+  ok('Elegir 1010 se lo pide a la función (fijar_cuenta) con la conexión, la cuenta de Plaid y 1010, con la sesión, y la tarjeta se repinta sin «sin fijar»', !!fij && fij.args.item_id === 'item-prueba' && fij.args.account_id === 'acc-corriente' && fij.args.cuenta === '1010' && /^Bearer /.test(fij.auth) && !/sin fijar/.test(await texto(p, '#ct-plaid')) && !desde(n).some(l => l.fn === 'fn_plaid_cuenta_fijar'), JSON.stringify(fij && fij.args));
   n = llamadas.length;
   await p.locator('.ct-conexion [data-plaid="sincronizar"]').click();
   await p.waitForFunction(() => { const t = document.getElementById('toast'); return t && /Sincronizado/.test(t.textContent); }, null, { timeout: 8000 });

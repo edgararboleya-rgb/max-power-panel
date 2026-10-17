@@ -291,10 +291,10 @@
 
   // ============================================================
   // LA CONEXIÓN AUTOMÁTICA (Plaid) — docs/conta/c7-plaid.sql y la función
-  // de borde supabase/functions/plaid. La pantalla lee v_plaid_conexiones,
-  // fija a qué cuenta del plan va cada cuenta del banco (fn_plaid_cuenta_fijar)
-  // y le pide a la función lo demás (link_token, canjear, sincronizar,
-  // desconectar). Lo ÚNICO que se guarda en el navegador es el link token
+  // de borde supabase/functions/plaid. La pantalla lee v_plaid_conexiones y
+  // todo lo demás se lo pide a la función con la sesión del dueño (link_token,
+  // canjear, fijar_cuenta, sincronizar, desconectar): ninguna función de c7
+  // está en la API. Lo ÚNICO que se guarda en el navegador es el link token
   // de la ventana de Plaid mientras el banco redirige (OAuth, p. ej. Chase):
   // no es dinero ni una clave, y se borra al cerrar la ventana.
   // ============================================================
@@ -375,8 +375,8 @@
         const caja = card.querySelector(".ct-conexion-res");
         sel.disabled = true;
         try {
-          const r = await DB._rpc("fn_plaid_cuenta_fijar", { p_item_id: item, p_account_id: sel.dataset.account, p_cuenta: sel.value });
-          const faltan = Number((r || {}).cuentas_sin_fijar || 0);
+          const r = await DB._funcion("plaid", { accion: "fijar_cuenta", item_id: item, account_id: sel.dataset.account, cuenta: sel.value }, 30000);
+          const faltan = Number(((r || {}).conexion || {}).cuentas_sin_fijar || 0);
           S.hooks.avisar(sel.value === "ignorar" ? `Esa cuenta se ignora${faltan ? ` · faltan ${faltan} por fijar` : ""}` : `Va a ${sel.value}${faltan ? ` · faltan ${faltan} por fijar` : " · lista para sincronizar"}`);
           S.plaid = null;
           await pintarBancos();

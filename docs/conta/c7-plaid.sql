@@ -1,14 +1,23 @@
 -- =====================================================================
 -- c7-plaid.sql — LA CONEXIÓN AUTOMÁTICA CON EL BANCO (Plaid) · f06 azul
--- 17-oct-2026 · se pega en el SQL Editor DESPUÉS de c6. Idempotente: se
--- puede volver a pegar entero.
+-- 17-oct-2026, v2 (ninguna función en la API) · se pega en el SQL Editor
+-- DESPUÉS de c6. Idempotente: se puede volver a pegar entero; pegado encima
+-- de la v1 le quita a la API lo que la v1 le había dado.
 --
 -- Quién hace qué:
 --   · La función de borde `plaid` (supabase/functions/plaid/index.ts) es la
 --     única que habla con Plaid, con las llaves que viven en los secretos de
 --     Edge Functions (PLAID_CLIENT_ID, PLAID_SECRET, PLAID_ENV). Crea el
 --     link token, canjea el public token, pide /transactions/sync y, al
---     desconectar, /item/remove.
+--     desconectar, /item/remove. A ESTA BASE entra directo, como postgres
+--     (SUPABASE_DB_URL, que Supabase le da sola), igual que pg_cron o el SQL
+--     Editor: ninguna función de este archivo está en la API (ni para
+--     service_role). La API solo lee v_plaid_conexiones (el dueño).
+--     Por qué así (17-oct, v2): c2 («permisos») y c6 («protecciones del
+--     banco») tratan como ajena toda función SECURITY DEFINER que la API
+--     pueda ejecutar y que lea el libro o el banco, y la primera versión
+--     las tenía (para service_role); con la función entrando como postgres
+--     no hace falta ninguna, y los dos controles siguen en verde.
 --   · La base guarda cada conexión (plaid_conexiones: institución, cuentas de
 --     Plaid y a qué cuenta del plan va cada una, cursor, último resultado) y
 --     el access_token EN VAULT (vault.secrets, nombre plaid_item_<item_id>):
@@ -20,21 +29,20 @@
 --     duplicado si Plaid lo trae con otro id).
 --   · EN NOMBRE DEL DUEÑO. Las funciones del banco exigen al dueño
 --     (es_dueno()). La sincronización de las 6 de la mañana no tiene a Edgar
---     delante: fn_plaid_recibir (security definer, solo service_role) fija
---     auth.uid() al dueño que conectó esa cuenta mientras importa, y después
---     lo quita. Queda escrito: el lote se llama «Plaid · …», importado_rol
---     es service_role (fn_rol_llamante lee el rol de la llamada, no al
---     dueño de la función) y plaid_conexiones.ultimo_resultado guarda qué
---     entró. La función solo recibe lo que la función de borde le manda, y
---     la función de borde solo la llama con la llave de servicio de Supabase.
+--     delante: fn_plaid_recibir fija auth.uid() al dueño que conectó esa
+--     cuenta mientras importa, y después lo quita. Queda escrito: el lote se
+--     llama «Plaid · …», importado_por es el dueño, importado_rol es el de
+--     la conexión (postgres: la función de borde o pg_cron) y
+--     plaid_conexiones.ultimo_resultado guarda qué entró y por qué
+--     (rutina, pantalla, webhook).
 --   · La rutina diaria: pg_cron (como postgres) → fn_plaid_programado() →
 --     pg_net POST a la función de borde con el secreto plaid_rutina_secreto
 --     (en Vault; el mismo valor va en el secreto PLAID_RUTINA_SECRETO de Edge
 --     Functions). La función sincroniza todas las conexiones activas.
 --
--- Lo que llama conta.js (con la sesión del dueño): v_plaid_conexiones (leer),
--- fn_plaid_cuenta_fijar (a qué cuenta del plan va cada cuenta de Plaid) y la
--- función de borde (link_token, canjear, sincronizar, desconectar).
+-- Lo que llama conta.js (con la sesión del dueño): v_plaid_conexiones (leer)
+-- y la función de borde (link_token, canjear, fijar_cuenta, sincronizar,
+-- desconectar); la función, a su vez, las fn_plaid_* de aquí.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -102,23 +110,21 @@ language sql immutable
 as $$ select 'plaid_item_' || p_item_id $$;
 revoke execute on function public.fn_plaid_vault_nombre(text) from public, anon, authenticated, service_role;
 
--- ¿Quién llama? La función de borde (con la llave de servicio: rol
--- service_role), el SQL Editor / pg_cron (fn_desde_editor), o el dueño con su
--- sesión si p_dueno_vale. Se mira el ROL de la llamada (fn_rol_llamante), no
--- current_user: dentro de una función security definer current_user es el
--- dueño de la función.
-create or replace function public.fn_plaid_exigir(p_dueno_vale boolean) returns void
+-- ¿Quién llama? La función de borde (conectada como postgres), pg_cron o el
+-- SQL Editor: fn_desde_editor(). Nadie de la API: ninguna fn_plaid_* tiene
+-- EXECUTE para anon, authenticated ni service_role (y así c2 y c6 no las
+-- toman por ajenas). Se mira el rol de la llamada, no current_user.
+drop function if exists public.fn_plaid_exigir(boolean);
+create or replace function public.fn_plaid_exigir() returns void
 language plpgsql stable
 set search_path = public, pg_temp
 as $$
 begin
-  if fn_rol_llamante() = 'service_role' or fn_desde_editor() then return; end if;
-  if p_dueno_vale and es_dueno() then return; end if;
+  if fn_desde_editor() then return; end if;
   raise exception using errcode = '42501',
-    message = case when p_dueno_vale then 'Esto lo hace solo Edgar (el dueño) o la función de borde de Plaid.'
-                   else 'Esto lo hace solo la función de borde de Plaid (service_role).' end;
+    message = 'Esto lo hace la función de borde de Plaid (conectada como postgres), pg_cron o el SQL Editor; la app no.';
 end $$;
-revoke execute on function public.fn_plaid_exigir(boolean) from public, anon, authenticated, service_role;
+revoke execute on function public.fn_plaid_exigir() from public, anon, authenticated, service_role;
 
 -- La conexión sin nada secreto (el token está en Vault y nunca sale por aquí)
 create or replace function public.fn_plaid_resumen(p_id uuid) returns jsonb
@@ -157,14 +163,14 @@ $$;
 revoke execute on function public.fn_plaid_cuentas_proponer(jsonb, jsonb) from public, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------
--- 3. Lo que llama la función de borde (service_role)
+-- 3. Lo que llama la función de borde (como postgres)
 -- ---------------------------------------------------------------------
 -- Alta (o reconexión) de un banco: guarda el token en Vault y la conexión.
+-- (Todo lo de esta sección lo llama solo la función de borde: fn_plaid_exigir.)
 create or replace function public.fn_plaid_item_alta(p_item_id text, p_access_token text, p_institucion_id text, p_institucion text,
                                                      p_cuentas jsonb, p_dueno uuid)
 returns jsonb
 language plpgsql
-security definer
 set search_path = public, pg_temp
 as $$
 declare
@@ -173,7 +179,7 @@ declare
   v_sec  uuid;
   c      plaid_conexiones;
 begin
-  perform fn_plaid_exigir(false);
+  perform fn_plaid_exigir();
   if fn_banco_limpio(p_item_id) is null or fn_banco_limpio(p_access_token) is null then
     raise exception using errcode = '22023', message = 'Faltan el item_id o el access_token de Plaid.';
   end if;
@@ -205,17 +211,15 @@ begin
   return fn_plaid_resumen(v_id);
 end $$;
 revoke execute on function public.fn_plaid_item_alta(text, text, text, text, jsonb, uuid) from public, anon, authenticated, service_role;
-grant  execute on function public.fn_plaid_item_alta(text, text, text, text, jsonb, uuid) to service_role;
 
--- El token, solo para la función de borde
+-- El token, solo para la función de borde (nunca sale por la API)
 create or replace function public.fn_plaid_token(p_item_id text) returns text
 language plpgsql stable
-security definer
 set search_path = public, pg_temp
 as $$
 declare v text;
 begin
-  perform fn_plaid_exigir(false);
+  perform fn_plaid_exigir();
   select s.decrypted_secret into v from vault.decrypted_secrets s where s.name = fn_plaid_vault_nombre(p_item_id);
   if v is null then
     raise exception using errcode = 'MX004', message = format('No hay token de Plaid para la conexión %s (¿desconectada?).', p_item_id);
@@ -223,17 +227,15 @@ begin
   return v;
 end $$;
 revoke execute on function public.fn_plaid_token(text) from public, anon, authenticated, service_role;
-grant  execute on function public.fn_plaid_token(text) to service_role;
 
 -- La conexión (cursor y cuentas) para sincronizar
 create or replace function public.fn_plaid_conexion(p_item_id text) returns jsonb
 language plpgsql stable
-security definer
 set search_path = public, pg_temp
 as $$
 declare v uuid;
 begin
-  perform fn_plaid_exigir(true);
+  perform fn_plaid_exigir();
   select id into v from plaid_conexiones where item_id = p_item_id;
   if v is null then
     raise exception using errcode = 'MX004', message = format('No hay conexión de Plaid con el item %s.', p_item_id);
@@ -241,21 +243,18 @@ begin
   return fn_plaid_resumen(v);
 end $$;
 revoke execute on function public.fn_plaid_conexion(text) from public, anon, authenticated, service_role;
-grant  execute on function public.fn_plaid_conexion(text) to service_role, authenticated;
 
 -- Las conexiones que no están desconectadas (para la rutina)
 create or replace function public.fn_plaid_activas() returns jsonb
 language plpgsql stable
-security definer
 set search_path = public, pg_temp
 as $$
 begin
-  perform fn_plaid_exigir(true);
+  perform fn_plaid_exigir();
   return coalesce((select jsonb_agg(fn_plaid_resumen(c.id) order by c.creado_el) from plaid_conexiones c where c.estado <> 'desconectada'),
                   '[]'::jsonb);
 end $$;
 revoke execute on function public.fn_plaid_activas() from public, anon, authenticated, service_role;
-grant  execute on function public.fn_plaid_activas() to service_role, authenticated;
 
 -- LO QUE PLAID TRAJO, al libro. Un lote por cuenta (origen plaid, ver
 -- fn_banco_importar_filas); después «Casar» de cada cuenta. Todo en una
@@ -265,7 +264,6 @@ grant  execute on function public.fn_plaid_activas() to service_role, authentica
 create or replace function public.fn_plaid_recibir(p_item_id text, p_lotes jsonb, p_cursor text, p_resultado jsonb default '{}'::jsonb)
 returns jsonb
 language plpgsql
-security definer
 set search_path = public, pg_temp
 as $$
 declare
@@ -279,7 +277,7 @@ declare
   v_sub    text;
   i        int;
 begin
-  perform fn_plaid_exigir(false);
+  perform fn_plaid_exigir();
   select * into c from plaid_conexiones where item_id = p_item_id for update;
   if c.id is null then
     raise exception using errcode = 'MX004', message = format('No hay conexión de Plaid con el item %s.', p_item_id);
@@ -339,17 +337,15 @@ begin
   return fn_plaid_resumen(c.id);
 end $$;
 revoke execute on function public.fn_plaid_recibir(text, jsonb, text, jsonb) from public, anon, authenticated, service_role;
-grant  execute on function public.fn_plaid_recibir(text, jsonb, text, jsonb) to service_role;
 
 -- Un error de Plaid o de la importación, escrito en la conexión (sin tocar el cursor)
 create or replace function public.fn_plaid_error(p_item_id text, p_error text) returns jsonb
 language plpgsql
-security definer
 set search_path = public, pg_temp
 as $$
 declare v uuid;
 begin
-  perform fn_plaid_exigir(false);
+  perform fn_plaid_exigir();
   update plaid_conexiones
      set ultimo_error = left(coalesce(p_error, 'error'), 600), estado = case when estado = 'desconectada' then estado else 'error' end
    where item_id = p_item_id
@@ -360,20 +356,18 @@ begin
   return fn_plaid_resumen(v);
 end $$;
 revoke execute on function public.fn_plaid_error(text, text) from public, anon, authenticated, service_role;
-grant  execute on function public.fn_plaid_error(text, text) to service_role;
 
 -- Desconectar: la función de borde ya pidió /item/remove a Plaid; aquí se
 -- borra el token de Vault y la conexión queda desconectada, con su motivo.
--- (El dueño también puede marcarla desde la pantalla si Plaid ya no la
--- reconoce; lo normal es por la función de borde, que avisa a Plaid.)
+-- (Desde la pantalla también va por la función de borde, que avisa a Plaid
+-- aunque Plaid ya no reconozca la conexión.)
 create or replace function public.fn_plaid_desconectar(p_item_id text, p_motivo text default null) returns jsonb
 language plpgsql
-security definer
 set search_path = public, pg_temp
 as $$
 declare v uuid;
 begin
-  perform fn_plaid_exigir(true);
+  perform fn_plaid_exigir();
   update plaid_conexiones
      set estado = 'desconectada', desconectada_el = now(), desconectada_motivo = fn_banco_limpio(p_motivo), cursor = null
    where item_id = p_item_id
@@ -385,18 +379,17 @@ begin
   return fn_plaid_resumen(v);
 end $$;
 revoke execute on function public.fn_plaid_desconectar(text, text) from public, anon, authenticated, service_role;
-grant  execute on function public.fn_plaid_desconectar(text, text) to service_role, authenticated;
 
 -- ---------------------------------------------------------------------
--- 4. Lo que llama la pantalla (el dueño)
+-- 4. Lo que la pantalla pide por la función de borde (acción fijar_cuenta)
 -- ---------------------------------------------------------------------
 -- A qué cuenta del plan va cada cuenta de Plaid: un banco (10xx) para una
 -- cuenta depository, una tarjeta de la empresa (2100-…) para una credit, o
 -- 'ignorar' si no es de la empresa (una cuenta personal bajo el mismo
--- usuario del banco). Sin esto, esa cuenta no se importa.
+-- usuario del banco). Sin esto, esa cuenta no se importa. La función de
+-- borde comprueba que quien pide es el dueño (su sesión) y llama aquí.
 create or replace function public.fn_plaid_cuenta_fijar(p_item_id text, p_account_id text, p_cuenta text) returns jsonb
 language plpgsql
-security definer
 set search_path = public, pg_temp
 as $$
 declare
@@ -405,7 +398,7 @@ declare
   v_tipo text;
   v_pl   text;
 begin
-  perform fn_plaid_exigir(true);
+  perform fn_plaid_exigir();
   select * into c from plaid_conexiones where item_id = p_item_id for update;
   if c.id is null then
     raise exception using errcode = 'MX004', message = format('No hay conexión de Plaid con el item %s.', p_item_id);
@@ -448,7 +441,6 @@ begin
   return fn_plaid_resumen(c.id);
 end $$;
 revoke execute on function public.fn_plaid_cuenta_fijar(text, text, text) from public, anon, authenticated, service_role;
-grant  execute on function public.fn_plaid_cuenta_fijar(text, text, text) to authenticated, service_role;
 
 -- La vista de la pantalla
 drop view if exists public.v_plaid_conexiones;
@@ -465,7 +457,6 @@ grant select on public.v_plaid_conexiones to authenticated;
 -- ---------------------------------------------------------------------
 create or replace function public.fn_plaid_programado() returns bigint
 language plpgsql
-security definer
 set search_path = public, pg_temp
 as $$
 declare
@@ -473,7 +464,7 @@ declare
   v_sec text;
   v_id  bigint;
 begin
-  if not fn_desde_editor() and fn_rol_llamante() <> 'service_role' then
+  if not fn_desde_editor() then
     raise exception using errcode = '42501', message = 'La rutina de Plaid la dispara pg_cron (o el SQL Editor).';
   end if;
   select funcion_url into v_url from plaid_config where id = 1 and rutina_activa;
@@ -507,7 +498,6 @@ end $$;
 -- (producción sí; el banco de pruebas no).
 create or replace function public.fn_plaid_pegado() returns table (que text, detalle text)
 language plpgsql stable
-security definer
 set search_path = public, pg_temp
 as $$
 begin

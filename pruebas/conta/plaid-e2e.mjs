@@ -38,7 +38,8 @@ function q(sql) {
 }
 function qDueno(id, sql) { // una llamada como el dueño por la API (rol authenticated + sus claims), en una transacción
   const claims = JSON.stringify({ sub: id, role: 'authenticated' });
-  return q(`begin; select set_config('request.jwt.claims', '${claims}', true); select set_config('request.jwt.claim.sub', '${id}', true); set local role authenticated; ${sql}; commit;`);
+  try { return q(`begin; select set_config('request.jwt.claims', '${claims}', true); select set_config('request.jwt.claim.sub', '${id}', true); set local role authenticated; ${sql}; commit;`); }
+  catch (e) { return 'error: ' + String(e.stderr || e.message).trim(); }
 }
 const b64u = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
 const jwt = (sub) => `${b64u({ alg: 'none', typ: 'JWT' })}.${b64u({ sub, role: 'authenticated', exp: 4102444800 })}.firma`;
@@ -79,7 +80,7 @@ const fn = spawn(DENO, ['run', '--quiet', '-A', path.join(R, 'supabase/functions
   env: {
     ...process.env, PLAID_CLIENT_ID: 'prueba-client', PLAID_SECRET: 'prueba-secret', PLAID_ENV: 'sandbox', PLAID_BASE_URL: `http://127.0.0.1:${P_SIM}`,
     PLAID_RUTINA_SECRETO: SECRETO, PLAID_REDIRECT_URI: 'https://edgararboleya-rgb.github.io/max-power-panel/', PLAID_DIAS: '45',
-    MXP_BANCO_PG: `postgres://editor_sql:editor_sql@127.0.0.1:${PGPORT}/${BD}`, MXP_PUERTO: String(P_FN), SUPABASE_URL: `http://127.0.0.1:${P_FN}`,
+    MXP_DB_URL: `postgres://editor_sql:editor_sql@127.0.0.1:${PGPORT}/${BD}`, MXP_BANCO_PRUEBAS: '1', MXP_PUERTO: String(P_FN), SUPABASE_URL: `http://127.0.0.1:${P_FN}`,
   },
 });
 hijos.push(fn);
@@ -92,7 +93,7 @@ for (let i = 0; i < 120 && !salud; i++) {
   try { const r = await fetch(`http://127.0.0.1:${P_FN}/?paso=salud`); if (r.ok) salud = await r.json(); } catch { /* todavía no */ }
   if (!salud) await new Promise(r => setTimeout(r, 500));
 }
-ok('la función arranca y contesta salud', salud && salud.ok && salud.entorno === 'sandbox' && salud.llaves && salud.rutina && salud.banco_de_pruebas, salud ?? salidaFn.slice(-800));
+ok('la función arranca y contesta salud', salud && salud.ok && salud.entorno === 'sandbox' && salud.llaves && salud.rutina && salud.base && salud.banco_de_pruebas, salud ?? salidaFn.slice(-800));
 if (!salud) { console.error(salidaFn.slice(-3000)); limpiar(); process.exit(2); }
 
 try {
@@ -132,15 +133,21 @@ try {
   r = await llamar({ accion: 'sincronizar', item_id: 'item-sim-1' }, { jwt: D });
   ok('sincronizar con la corriente sin fijar → 409 SIN_FIJAR y Plaid no se toca', r.estado === 409 && r.j.codigo === 'SIN_FIJAR' && /4392/.test(r.j.error) && (await sim('/__estado')).llamadas.filter(l => l.ruta === '/transactions/sync').length === llamadasAntes, r);
   ok('el cursor sigue nulo y la conexión sin error', q(`select coalesce(cursor, 'nulo') || '|' || coalesce(ultimo_error, 'sin error') || '|' || estado from plaid_conexiones where item_id = 'item-sim-1'`) === 'nulo|sin error|activa');
-  const fij = qDueno(dueno, `select fn_plaid_cuenta_fijar('item-sim-1', 'acc-corriente-1', '1010') ->> 'cuentas_sin_fijar'`);
-  ok('el dueño fija la corriente a 1010 (por la API, rol authenticated)', fij.split('\n').includes('0'), fij);
+  r = await llamar({ accion: 'fijar_cuenta', item_id: 'item-sim-1', account_id: 'acc-corriente-1', cuenta: '1010' }, { jwt: E });
+  ok('el equipo no fija cuentas → 403', r.estado === 403, r);
+  r = await llamar({ accion: 'fijar_cuenta', item_id: 'item-sim-1', account_id: 'acc-corriente-1', cuenta: '2100-2013' }, { jwt: D });
+  ok('fijar la corriente a una tarjeta → 409 (MX004)', r.estado === 409 && r.j.codigo === 'MX004', r.j);
+  r = await llamar({ accion: 'fijar_cuenta', item_id: 'item-sim-1', account_id: 'acc-corriente-1', cuenta: '1010' }, { jwt: D });
+  ok('el dueño fija la corriente a 1010 por la función', r.estado === 200 && r.j.ok && r.j.conexion?.cuentas_sin_fijar === 0, r.j);
+  const apiFijar = qDueno(dueno, `select 'pudo' from (select fn_plaid_cuenta_fijar('item-sim-1', 'acc-corriente-1', '1010')) x`).includes('pudo');
+  ok('fn_plaid_cuenta_fijar NO está en la API: el dueño por PostgREST no la ejecuta', !apiFijar);
 
   // ---- 6. la primera sincronización -------------------------------------------
   r = await llamar({ accion: 'sincronizar', item_id: 'item-sim-1' }, { jwt: D });
   ok('sincronizar: dos páginas, 8 agregadas, 2 lotes', r.estado === 200 && r.j.ok && r.j.paginas === 2 && r.j.agregadas === 8 && r.j.lotes === 2, r.j);
   ok('entraron 7 (la pendiente queda fuera) y el cursor avanzó', sumar(r.j, 'filas_nuevas') === 7 && sumar(r.j, 'filas_fuera') === 1 && r.j.conexion?.cursor === 'cursor-r1-fin', r.j?.conexion?.ultimo_resultado);
   const movs = q(`select count(*) || '|' || count(distinct a.importado_por) || '|' || min(a.importado_por::text) || '|' || string_agg(distinct a.importado_rol, ',') from movimientos_banco m join archivos_banco a on a.id = m.archivo_id where m.origen = 'plaid'`);
-  ok('7 movimientos de origen plaid, importados en nombre del dueño con rol service_role', movs === `7|1|${dueno}|service_role`, movs);
+  ok('7 movimientos de origen plaid, importados en nombre del dueño (importado_por) con el rol de la conexión (editor_sql aquí; postgres en producción)', movs === `7|1|${dueno}|editor_sql`, movs);
   ok('2 archivos «Plaid · Platypus Bank ····…» con su saldo', q(`select count(*) || '|' || string_agg(cuenta || '=' || saldo::text, ',' order by cuenta) from archivos_banco where formato = 'plaid' and nombre like 'Plaid · Platypus Bank ····%'`) === '2|1010=15979.78,2100-2013=-15420.33');
   const saldos = r.j.conexion?.ultimo_resultado?.saldos ?? {};
   ok('los saldos de Plaid quedan en el resultado (1010 y 2100-2013)', saldos['1010']?.saldo === 15979.78 && saldos['2100-2013']?.saldo === 15420.33 && saldos['2100-2013']?.mask === '1007', saldos);
@@ -196,6 +203,10 @@ try {
   r = await llamar({ accion: 'sincronizar_todo' }, { rutina: SECRETO });
   ok('la rutina sin conexiones vivas: 0', r.estado === 200 && r.j.conexiones === 0, r.j);
   ok('los movimientos importados siguen en el libro del banco (desconectar no borra nada)', q(`select count(*) from movimientos_banco where origen = 'plaid'`) === '10');
+  const rojos = q(`select coalesce(string_agg(x, '; '), 'ninguno') from (select 'c6 ' || vista as x from fn_banco_control('hoy') where not ok union all select 'c2 ' || control from fn_verificar_cadena() where not ok) r`);
+  ok('los controles de c2 (permisos) y c6 (protecciones del banco) siguen en verde con c7 puesto y usado', rojos === 'ninguno', rojos);
+  const enApi = q(`select coalesce(string_agg(p.proname || ' → ' || g, ', '), 'ninguna') from pg_proc p, unnest(array['anon','authenticated','service_role']) g where p.pronamespace = 'public'::regnamespace and p.proname like 'fn\\_plaid%' and has_function_privilege(g, p.oid, 'execute')`);
+  ok('ninguna fn_plaid_* es ejecutable por la API', enApi === 'ninguna', enApi);
   ok('las llaves de Plaid nunca salieron por la función', !JSON.stringify(resultados).includes('prueba-secret') && !salidaFn.includes('prueba-secret') && !salidaFn.includes('access-sandbox'));
 } catch (e) {
   ok('la prueba corrió entera', false, (e && e.stack) || String(e));

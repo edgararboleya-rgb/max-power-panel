@@ -3,12 +3,15 @@
 -- 17-oct-2026. Se pega DESPUÉS de c7 (o se corre en el banco de pruebas:
 -- ./correr.sh … docs/conta/c7-pruebas.sql). Cada prueba escribe dentro de
 -- una subtransacción y lo deshace (MXT00): nada queda, ni en Vault.
--- Lo que mira: quién puede llamar qué (service_role, el dueño, el equipo,
--- anon), el token en Vault y nunca en la tabla, la propuesta de cuentas por
--- los 4 últimos, fijar la cuenta con sus reglas, recibir lotes EN NOMBRE DEL
--- DUEÑO (importado_por el dueño, importado_rol service_role), todo o nada,
--- lo repetido, lo quitado, el error, desconectar y volver a conectar, y la
--- rutina (pg_net con el secreto de Vault).
+-- Lo que mira: quién puede llamar qué (la función de borde como postgres sí;
+-- service_role, el dueño, el equipo y anon por la API, no), el token en Vault
+-- y nunca en la tabla, la propuesta de cuentas por los 4 últimos, fijar la
+-- cuenta con sus reglas, recibir lotes EN NOMBRE DEL DUEÑO (importado_por el
+-- dueño, importado_rol el de la conexión), todo o nada, lo repetido, lo
+-- quitado, el error, desconectar y volver a conectar, la rutina (pg_net con
+-- el secreto de Vault), el freno de las cuentas sin fijar, y que los
+-- controles de c2 («permisos») y c6 («protecciones del banco») siguen en
+-- verde con c7 puesto.
 -- Última sentencia: select * from _pruebas order by n;
 -- =====================================================================
 create temp table if not exists _pruebas(n int, prueba text, esperado text, obtenido text, ok boolean);
@@ -37,10 +40,14 @@ create or replace function pg_temp.c7_cuentas() returns jsonb language sql as $$
     jsonb_build_object('account_id', 'acc-prueba-tarjeta', 'mask', pg_temp.c7('mask'), 'nombre', 'Business Card', 'oficial', 'Tarjeta de prueba', 'tipo', 'credit', 'subtipo', 'credit card'),
     jsonb_build_object('account_id', 'acc-prueba-personal', 'mask', '9911', 'nombre', 'Personal Savings', 'oficial', null, 'tipo', 'depository', 'subtipo', 'savings'))
 $$;
--- ser la función de borde (service_role) / el dueño / el equipo / anon
+-- ser la función de borde (como postgres) / service_role (que ya no puede nada) / el dueño / el equipo / anon
 create or replace function pg_temp.c7_ser(quien text) returns void language plpgsql as $$
 begin
   if quien = 'servicio' then
+    -- la función de borde entra como postgres (aquí, el dueño del banco de pruebas): sin cambiar de rol
+    perform set_config('request.jwt.claims', '', true);
+    perform set_config('request.jwt.claim.sub', '', true);
+  elsif quien = 'servicio_role' then
     perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
     perform set_config('request.jwt.claim.sub', '', true);
     execute 'set local role service_role';
@@ -153,7 +160,7 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (4, 'service_role: alta, propuesta y token en Vault',
+  insert into _pruebas values (4, 'la función (como postgres): alta, propuesta y token en Vault',
     format('Banco de prueba | tarjeta→%s | sin fijar 2 | token ok | en tabla 0 | estado activa', pg_temp.c7('tarjeta')), v_obt,
     v_obt = format('Banco de prueba | tarjeta→%s | sin fijar 2 | token ok | en tabla 0 | estado activa', pg_temp.c7('tarjeta')));
 end $$;
@@ -166,8 +173,6 @@ begin
   begin
     perform pg_temp.c7_ser('servicio');
     perform fn_plaid_item_alta('item-c7', 'access-c7', 'ins_1', 'Banco de prueba', pg_temp.c7_cuentas(), pg_temp.c7('dueno')::uuid);
-    execute 'reset role';
-    perform pg_temp.c7_ser('dueno');
     begin perform fn_plaid_cuenta_fijar('item-c7', 'acc-prueba-corriente', pg_temp.c7('tarjeta')); e1 := 'entró'; exception when others then e1 := sqlstate; end;
     begin perform fn_plaid_cuenta_fijar('item-c7', 'acc-prueba-tarjeta', pg_temp.c7('banco')); e2 := 'entró'; exception when others then e2 := sqlstate; end;
     begin perform fn_plaid_cuenta_fijar('item-c7', 'acc-prueba-corriente', '6300'); e3 := 'entró'; exception when others then e3 := sqlstate; end;
@@ -183,19 +188,18 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (5, 'dueño fija las cuentas con sus reglas',
+  insert into _pruebas values (5, 'la función fija las cuentas con sus reglas',
     format('MX004 MX004 MX004 MX008 | corriente→%s personal→ignorar | sin fijar 0', pg_temp.c7('banco')), v_obt,
     v_obt = format('MX004 MX004 MX004 MX008 | corriente→%s personal→ignorar | sin fijar 0', pg_temp.c7('banco')));
 end $$;
 
--- 6. El equipo no fija cuentas; anon tampoco
+-- 6. Nadie fija cuentas por la API (ni el dueño: lo pide por la función de borde)
 do $$
-declare v_obt text; e1 text; e2 text;
+declare v_obt text; e1 text; e2 text; e3 text;
 begin
   begin
     perform pg_temp.c7_ser('servicio');
     perform fn_plaid_item_alta('item-c7', 'access-c7', 'ins_1', 'Banco de prueba', pg_temp.c7_cuentas(), pg_temp.c7('dueno')::uuid);
-    execute 'reset role';
     if pg_temp.c7('equipo') is not null then
       perform pg_temp.c7_ser('equipo');
       begin perform fn_plaid_cuenta_fijar('item-c7', 'acc-prueba-corriente', pg_temp.c7('banco')); e1 := 'entró'; exception when others then e1 := sqlstate; end;
@@ -203,13 +207,16 @@ begin
     else e1 := '42501'; end if;
     perform pg_temp.c7_ser('anon');
     begin perform fn_plaid_cuenta_fijar('item-c7', 'acc-prueba-corriente', pg_temp.c7('banco')); e2 := 'entró'; exception when others then e2 := sqlstate; end;
-    v_obt := e1 || ' ' || e2;
+    execute 'reset role';
+    perform pg_temp.c7_ser('dueno');
+    begin perform fn_plaid_cuenta_fijar('item-c7', 'acc-prueba-corriente', pg_temp.c7('banco')); e3 := 'entró'; exception when others then e3 := sqlstate; end;
+    v_obt := e1 || ' ' || e2 || ' ' || e3;
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (6, 'equipo y anon no fijan cuentas', '42501 42501', v_obt, v_obt = '42501 42501');
+  insert into _pruebas values (6, 'equipo, anon y el dueño por la API no fijan cuentas (va por la función)', '42501 42501 42501', v_obt, v_obt = '42501 42501 42501');
 end $$;
 
 -- 7. RECIBIR: dos lotes (banco y tarjeta) entran en nombre del dueño, casan,
@@ -230,7 +237,8 @@ begin
     select count(*) into v_arch from archivos_banco where formato = 'plaid' and nombre like 'Plaid · prueba c7%';
     select saldo_banco into v_saldo from v_banco_saldos where cuenta = pg_temp.c7('banco');
     v_obt := format('%s movs | por %s | rol %s | archivos %s | cursor %s | lotes %s | nuevas %s | fuera %s | paginas %s | saldo banco %s | sync %s | error %s',
-                    v_n, case when v_por = pg_temp.c7('dueno')::uuid then 'dueño' else coalesce(v_por::text, 'nadie') end, v_rol, v_arch,
+                    v_n, case when v_por = pg_temp.c7('dueno')::uuid then 'dueño' else coalesce(v_por::text, 'nadie') end,
+                    case when v_rol = session_user::text then 'el de la conexión' else v_rol end, v_arch,
                     v_res->>'cursor', v_res->'ultimo_resultado'->>'lotes',
                     (select sum((x->>'filas_nuevas')::int) from jsonb_array_elements(v_res->'ultimo_resultado'->'importado') x),
                     (select sum((x->>'filas_fuera')::int) from jsonb_array_elements(v_res->'ultimo_resultado'->'importado') x),
@@ -242,8 +250,8 @@ begin
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (7, 'recibir dos lotes en nombre del dueño',
-    '4 movs | por dueño | rol service_role | archivos 2 | cursor cursor-1 | lotes 2 | nuevas 4 | fuera 2 | paginas 2 | saldo banco 15979.78 | sync con hora | error ninguno', v_obt,
-    v_obt = '4 movs | por dueño | rol service_role | archivos 2 | cursor cursor-1 | lotes 2 | nuevas 4 | fuera 2 | paginas 2 | saldo banco 15979.78 | sync con hora | error ninguno');
+    '4 movs | por dueño | rol el de la conexión | archivos 2 | cursor cursor-1 | lotes 2 | nuevas 4 | fuera 2 | paginas 2 | saldo banco 15979.78 | sync con hora | error ninguno', v_obt,
+    v_obt = '4 movs | por dueño | rol el de la conexión | archivos 2 | cursor cursor-1 | lotes 2 | nuevas 4 | fuera 2 | paginas 2 | saldo banco 15979.78 | sync con hora | error ninguno');
 end $$;
 
 -- 8. Nada queda después de deshacer (ni el token en Vault, ni archivos, ni movimientos)
@@ -338,13 +346,9 @@ begin
   begin
     perform pg_temp.c7_ser('servicio');
     perform fn_plaid_item_alta('item-c7', 'access-c7', 'ins_1', 'Banco de prueba', pg_temp.c7_cuentas(), pg_temp.c7('dueno')::uuid);
-    execute 'reset role';
-    perform pg_temp.c7_ser('dueno');
     perform fn_plaid_cuenta_fijar('item-c7', 'acc-prueba-corriente', pg_temp.c7('banco'));
     v_res := fn_plaid_desconectar('item-c7', 'prueba');
-    execute 'reset role';
     select count(*) into v_sec from vault.secrets where name = 'plaid_item_item-c7';
-    perform pg_temp.c7_ser('servicio');
     begin perform fn_plaid_recibir('item-c7', '[]'::jsonb, 'x'); e_r := 'entró'; exception when others then e_r := sqlstate; end;
     begin perform fn_plaid_token('item-c7'); e_t := 'entró'; exception when others then e_t := sqlstate; end;
     v_obt := format('%s | motivo %s | secretos %s | token %s | recibir %s | tiene_token %s', v_res->>'estado', v_res->>'desconectada_motivo', v_sec, e_t, e_r, v_res->>'tiene_token');
@@ -370,8 +374,6 @@ begin
     perform pg_temp.c7_ser('servicio');
     perform fn_plaid_item_alta('item-c7', 'access-c7', 'ins_1', 'Banco de prueba', pg_temp.c7_cuentas(), pg_temp.c7('dueno')::uuid);
     perform fn_plaid_item_alta('item-c7-b', 'access-c7-b', 'ins_2', 'Otro banco', jsonb_build_array(jsonb_build_object('account_id', 'acc-b', 'mask', '1111', 'tipo', 'depository')), pg_temp.c7('dueno')::uuid);
-    execute 'reset role';
-    perform pg_temp.c7_ser('dueno');
     perform fn_plaid_cuenta_fijar('item-c7', 'acc-prueba-corriente', pg_temp.c7('banco'));
     begin perform fn_plaid_cuenta_fijar('item-c7-b', 'acc-b', pg_temp.c7('banco')); v_obt := 'entró'; exception when others then v_obt := sqlstate; end;
     raise exception using errcode = 'MXT00';
@@ -389,7 +391,6 @@ begin
   begin
     perform pg_temp.c7_ser('servicio');
     perform fn_plaid_item_alta('item-c7', 'access-c7', 'ins_1', 'Banco de prueba', pg_temp.c7_cuentas(), pg_temp.c7('dueno')::uuid);
-    execute 'reset role';
     perform pg_temp.c7_ser('dueno');
     select format('%s fila(s), sin fijar %s', count(*), min(cuentas_sin_fijar)) into v_d from v_plaid_conexiones where item_id = 'item-c7';
     execute 'reset role';
@@ -509,6 +510,49 @@ begin
   end;
   insert into _pruebas values (19, 'el freno: cuentas sin fijar', 'MX008 La conexión Banco de prueba tiene cuentas sin fijar (····4392, ····9911) | cursor nulo | movs 0', v_obt,
                                v_obt = 'MX008 La conexión Banco de prueba tiene cuentas sin fijar (····4392, ····9911) | cursor nulo | movs 0');
+end $$;
+
+-- 20. service_role (la llave de servicio, por la API) tampoco puede nada de c7:
+--     ni alta, ni token, ni recibir, ni error, ni desconectar, ni leer las conexiones
+do $$
+declare v_obt text; e text[] := '{}';
+begin
+  begin
+    perform pg_temp.c7_ser('servicio');
+    perform fn_plaid_item_alta('item-c7', 'access-c7', 'ins_1', 'Banco de prueba', pg_temp.c7_cuentas(), pg_temp.c7('dueno')::uuid);
+    perform pg_temp.c7_ser('servicio_role');
+    begin perform fn_plaid_item_alta('item-c7', 'x', 'ins_1', 'Banco de prueba', pg_temp.c7_cuentas(), pg_temp.c7('dueno')::uuid); e := e || 'entró'; exception when others then e := e || sqlstate; end;
+    begin perform fn_plaid_token('item-c7'); e := e || 'entró'; exception when others then e := e || sqlstate; end;
+    begin perform fn_plaid_recibir('item-c7', '[]'::jsonb, 'c'); e := e || 'entró'; exception when others then e := e || sqlstate; end;
+    begin perform fn_plaid_error('item-c7', 'x'); e := e || 'entró'; exception when others then e := e || sqlstate; end;
+    begin perform fn_plaid_desconectar('item-c7', 'x'); e := e || 'entró'; exception when others then e := e || sqlstate; end;
+    begin perform fn_plaid_activas(); e := e || 'entró'; exception when others then e := e || sqlstate; end;
+    v_obt := array_to_string(e, ' ');
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (20, 'service_role por la API no puede nada de c7', '42501 ×6', v_obt, v_obt = '42501 42501 42501 42501 42501 42501');
+end $$;
+
+-- 21. Con c7 puesto, los controles de c2 («permisos») y c6 («protecciones
+--     del banco») siguen en verde, y ninguna fn_plaid_* es ejecutable por la API
+do $$
+declare v_obt text; v_c2 text; v_c6 text; v_api text;
+begin
+  begin
+    select coalesce(string_agg(control, ', '), 'verde') into v_c2 from fn_verificar_cadena() where not ok and control = 'permisos';
+    select coalesce(string_agg(vista, ', '), 'verde') into v_c6 from fn_banco_control('hoy') where not ok and vista = 'cuadre: protecciones del banco';
+    select coalesce(string_agg(p.proname || '→' || g, ', '), 'ninguna') into v_api
+      from pg_proc p, unnest(array['anon', 'authenticated', 'service_role']) g
+     where p.pronamespace = 'public'::regnamespace and p.proname like 'fn\_plaid%' and has_function_privilege(g, p.oid, 'execute');
+    v_obt := format('c2 %s | c6 %s | en la API: %s', v_c2, v_c6, v_api);
+  exception
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (21, 'c2 «permisos» y c6 «protecciones» en verde con c7; nada de c7 en la API', 'c2 verde | c6 verde | en la API: ninguna', v_obt,
+                               v_obt = 'c2 verde | c6 verde | en la API: ninguna');
 end $$;
 
 select * from _pruebas order by n;

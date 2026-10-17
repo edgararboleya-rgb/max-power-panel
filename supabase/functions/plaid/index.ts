@@ -22,7 +22,8 @@
 //   · Con la sesión del dueño (Authorization: Bearer …, rol «dueno» en
 //     perfiles): link_token (abre Plaid Link en la pantalla), canjear (el
 //     public_token por el access_token, que va a Vault por
-//     fn_plaid_item_alta), sincronizar, desconectar (/item/remove y el token
+//     fn_plaid_item_alta), fijar_cuenta (a qué cuenta del plan va cada
+//     cuenta del banco), sincronizar, desconectar (/item/remove y el token
 //     fuera de Vault), estado.
 //   · Con el secreto de la rutina (cabecera x-mxp-rutina): sincronizar_todo,
 //     lo que dispara pg_cron a las 6 de la mañana (fn_plaid_programado).
@@ -37,10 +38,16 @@
 //     pedir lo mismo. Con una cuenta de Plaid sin fijar (a qué cuenta del
 //     plan va) NO se pide nada a Plaid: el cursor no se consume (SIN_FIJAR).
 //
+// A la base entra DIRECTO, como postgres, por SUPABASE_DB_URL (Supabase se lo
+// da a toda función sin configurar nada; si hiciera falta otra, MXP_DB_URL
+// manda). Ninguna función de c7 está en la API: ni la app ni service_role
+// las ejecutan, solo esta función (c7-plaid.sql, v2). La sesión del dueño se
+// comprueba con Supabase Auth (getUser) y su perfil (rol «dueno»).
+//
 // Lo que NO está en el repositorio: ninguna llave. En el banco de pruebas
-// (MXP_BANCO_PG, un Postgres local; PLAID_BASE_URL, un Plaid simulado) la
-// sesión se lee sin verificar la firma: ESO SOLO PASA con MXP_BANCO_PG, que
-// en Supabase no existe.
+// (MXP_BANCO_PRUEBAS=1, con MXP_DB_URL al Postgres local y PLAID_BASE_URL al
+// Plaid simulado) la sesión se lee sin verificar la firma: ESO SOLO PASA con
+// MXP_BANCO_PRUEBAS=1, que en Supabase no existe.
 // ============================================================
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -56,7 +63,8 @@ const WEBHOOK_URL = Deno.env.get("PLAID_WEBHOOK_URL") ?? "";
 const DIAS = Math.min(730, Math.max(1, Number(Deno.env.get("PLAID_DIAS") ?? 90) || 90));
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const BANCO_PG = Deno.env.get("MXP_BANCO_PG") ?? ""; // SOLO el banco de pruebas
+const DB_URL = Deno.env.get("MXP_DB_URL") ?? Deno.env.get("SUPABASE_DB_URL") ?? "";
+const BANCO_PRUEBAS = Deno.env.get("MXP_BANCO_PRUEBAS") === "1"; // SOLO el banco de pruebas
 const PUERTO = Number(Deno.env.get("MXP_PUERTO") ?? 0);
 
 const CORS = {
@@ -105,6 +113,9 @@ async function plaid(ruta: string, cuerpo: Json): Promise<Json> {
 }
 
 // ---- La base -----------------------------------------------------------
+// Directo a Postgres, como postgres (o como el dueño del banco de pruebas):
+// cada llamada en su transacción. Las fn_plaid_* exigen eso (fn_desde_editor)
+// y no están en la API.
 interface Quien { id: string; rol: string; activo: boolean }
 interface Base {
   rpc(fn: string, args: Json): Promise<unknown>;
@@ -117,26 +128,12 @@ function falloDeLaBase(e: any): Fallo {
   const estado = codigo === "42501" ? 403 : codigo.startsWith("MX") || codigo === "22023" ? 409 : 500;
   return new Fallo(estado, msg, codigo || undefined);
 }
-function baseSupabase(): Base {
-  const sb = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
-  return {
-    async rpc(fn, args) {
-      const { data, error } = await sb.rpc(fn, args);
-      if (error) throw falloDeLaBase(error);
-      return data;
-    },
-    async quien(jwt) {
-      const { data, error } = await sb.auth.getUser(jwt);
-      if (error || !data?.user) return null;
-      const { data: p } = await sb.from("perfiles").select("rol, activo").eq("id", data.user.id).maybeSingle();
-      if (!p) return null;
-      return { id: data.user.id, rol: String(p.rol), activo: p.activo !== false };
-    },
-  };
-}
-async function baseBanco(): Promise<Base> {
+async function abrirBase(): Promise<Base> {
   const postgres = (await import("npm:postgres@3.4.5")).default;
-  const sql = postgres(BANCO_PG, { max: 2, onnotice: () => {} });
+  // el pooler de Supabase en modo transacción no admite sentencias preparadas
+  const pooler = /pooler\.supabase\.com|:6543\//.test(DB_URL);
+  const sql = postgres(DB_URL, { max: 2, idle_timeout: 20, connect_timeout: 10, prepare: !pooler, onnotice: () => {} });
+  const sb = BANCO_PRUEBAS ? null : createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
   return {
     async rpc(fn, args) {
       const nombres = Object.keys(args);
@@ -145,31 +142,37 @@ async function baseBanco(): Promise<Base> {
       const llamada = `select ${fn}(${nombres.map((k, i) => `${k} => $${i + 1}`).join(", ")}) as r`;
       try {
         return await sql.begin(async (t) => {
-          await t.unsafe(`select set_config('request.jwt.claims', '{"role":"service_role"}', true), set_config('request.jwt.claim.sub', '', true)`);
-          await t.unsafe("set local role service_role");
+          await t.unsafe(`select set_config('request.jwt.claims', '', true), set_config('request.jwt.claim.sub', '', true)`);
           const filas = await t.unsafe(llamada, valores as never[]);
           return filas[0]?.r;
         });
       } catch (e) { throw falloDeLaBase(e); }
     },
     async quien(jwt) {
-      // SIN verificar la firma: solo en el banco de pruebas (ver la cabecera)
-      const partes = jwt.split(".");
-      if (partes.length < 2) return null;
-      let carga: Json;
-      try {
-        const b64 = partes[1].replace(/-/g, "+").replace(/_/g, "/");
-        carga = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, "=")), (c) => c.charCodeAt(0))));
-      } catch { return null; }
-      if (typeof carga.sub !== "string") return null;
-      const filas = await sql`select rol, coalesce(activo, true) as activo from perfiles where id = ${carga.sub}::uuid`;
-      return filas[0] ? { id: carga.sub, rol: String(filas[0].rol), activo: Boolean(filas[0].activo) } : null;
+      let id: string | null = null;
+      if (sb) {
+        const { data, error } = await sb.auth.getUser(jwt);
+        if (error || !data?.user) return null;
+        id = data.user.id;
+      } else {
+        // SIN verificar la firma: solo en el banco de pruebas (ver la cabecera)
+        const partes = jwt.split(".");
+        if (partes.length < 2) return null;
+        try {
+          const b64 = partes[1].replace(/-/g, "+").replace(/_/g, "/");
+          const carga = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, "=")), (c) => c.charCodeAt(0))));
+          if (typeof carga.sub === "string") id = carga.sub;
+        } catch { return null; }
+      }
+      if (!id) return null;
+      const filas = await sql`select rol, coalesce(activo, true) as activo from perfiles where id = ${id}::uuid`;
+      return filas[0] ? { id, rol: String(filas[0].rol), activo: Boolean(filas[0].activo) } : null;
     },
   };
 }
 let baseLista: Promise<Base> | null = null;
 function obtenerBase(): Promise<Base> {
-  if (!baseLista) baseLista = BANCO_PG ? baseBanco() : Promise.resolve(baseSupabase());
+  if (!baseLista) baseLista = abrirBase();
   return baseLista;
 }
 
@@ -301,11 +304,12 @@ async function atender(req: Request): Promise<Response> {
     const accion = String(cuerpo.accion ?? url.searchParams.get("accion") ?? url.searchParams.get("paso") ?? "");
     if (accion === "salud") {
       return responder({ ok: true, entorno: PLAID_ENV, llaves: Boolean(PLAID_CLIENT_ID && PLAID_SECRET), rutina: RUTINA_SECRETO.length >= 32,
-                         redirect: Boolean(REDIRECT_URI), banco_de_pruebas: Boolean(BANCO_PG) });
+                         redirect: Boolean(REDIRECT_URI), base: Boolean(DB_URL), sesion: BANCO_PRUEBAS || Boolean(SUPABASE_URL && SERVICE_KEY),
+                         banco_de_pruebas: BANCO_PRUEBAS });
     }
-    if (!PLAID_CLIENT_ID || !PLAID_SECRET || (!BANCO_PG && (!SUPABASE_URL || !SERVICE_KEY))) {
-      console.error("plaid: faltan PLAID_CLIENT_ID / PLAID_SECRET (Edge Functions → Secrets)");
-      throw new Fallo(500, "Falta configurar las llaves de Plaid en Supabase (Edge Functions → Secrets).");
+    if (!PLAID_CLIENT_ID || !PLAID_SECRET || !DB_URL || (!BANCO_PRUEBAS && (!SUPABASE_URL || !SERVICE_KEY))) {
+      console.error("plaid: faltan PLAID_CLIENT_ID / PLAID_SECRET o la base (SUPABASE_DB_URL / MXP_DB_URL) (Edge Functions → Secrets)");
+      throw new Fallo(500, "Falta configurar la función (las llaves de Plaid o la base) en Supabase → Edge Functions → Secrets.");
     }
     const base = await obtenerBase();
 
@@ -368,6 +372,14 @@ async function atender(req: Request): Promise<Response> {
           try { await plaid("/item/remove", { access_token }); } catch { /* se informa el error original */ }
           throw e;
         }
+      }
+      case "fijar_cuenta": {
+        const item_id = typeof cuerpo.item_id === "string" ? cuerpo.item_id : "";
+        const account_id = typeof cuerpo.account_id === "string" ? cuerpo.account_id : "";
+        const cuenta = typeof cuerpo.cuenta === "string" ? cuerpo.cuenta.trim() : "";
+        if (!item_id || !account_id || !cuenta) throw new Fallo(400, "Faltan la conexión, la cuenta de Plaid o la cuenta del plan.");
+        const res = await base.rpc("fn_plaid_cuenta_fijar", { p_item_id: item_id, p_account_id: account_id, p_cuenta: cuenta });
+        return responder({ ok: true, conexion: res });
       }
       case "sincronizar": {
         const item_id = typeof cuerpo.item_id === "string" ? cuerpo.item_id : "";

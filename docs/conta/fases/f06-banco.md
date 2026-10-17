@@ -325,8 +325,24 @@ tránsito, sin tocar 1010.
   el navegador es el link token mientras el banco redirige (no es dinero ni
   una clave; se borra al cerrar la ventana). El canje que no logra guardar el
   token pide `/item/remove` para no dejar una conexión huérfana en Plaid.
-- **Pruebas (17-oct, 17.6).** `docs/conta/c7-pruebas.sql` 19/19;
-  `pruebas/conta/plaid-e2e.mjs` 43/43 con el Plaid simulado
+- **La v2 (17-oct, noche): lo que encontró producción.** Al pegar c7 en
+  producción, c2 («permisos») y c6 («protecciones del banco») se pusieron en
+  rojo: la v1 tenía ocho `fn_plaid_*` SECURITY DEFINER ejecutables por
+  `service_role` (la función de borde entraba por PostgREST con la llave de
+  servicio) y dos por el dueño, y esos controles tratan como ajena toda
+  función así que lea el libro o el banco. El banco de pruebas no lo había
+  visto porque c7-pruebas no corría los controles. Arreglo: la función de
+  borde entra a la base **como `postgres`** (`SUPABASE_DB_URL`, que Supabase
+  da sola a toda función; igual que pg_cron o el SQL Editor), ninguna
+  función de c7 está en la API ni es SECURITY DEFINER (la guarda es
+  `fn_desde_editor()`), la pantalla pide todo por la función (`fijar_cuenta`
+  nuevo) y solo lee `v_plaid_conexiones`; `importado_rol` queda `postgres`.
+  Pruebas 20 (service_role no puede nada) y 21 (los dos controles en verde
+  con c7 puesto; nada de c7 en la API), y el e2e lo comprueba también.
+  Lección: toda capa nueva corre `fn_verificar_cadena()` y
+  `fn_banco_control('hoy')` en su suite.
+- **Pruebas (17-oct, 17.6).** `docs/conta/c7-pruebas.sql` 21/21;
+  `pruebas/conta/plaid-e2e.mjs` 48/48 con el Plaid simulado
   (`plaid-simulado.mjs`) y la función en Deno contra el banco; el arnés de la
   pantalla 57/57; e0 34/34 y e13 42/42. c7 se pega dos veces sin cambios.
 - **Lo que falta, con el visto bueno de Edgar** (`pruebas/conta/README.md`,
