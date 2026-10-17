@@ -1,6 +1,6 @@
 # Information Security Policy — Max Power Panel
 
-**Max Power Electrical Solutions, Inc.** (Ocala, Florida) · Effective October 16, 2026 · Version 1.0
+**Max Power Electrical Solutions, Inc.** (Ocala, Florida) · Effective October 16, 2026 · Version 1.1 (October 17, 2026)
 **Owner of this policy:** Edgar Arboleya, Owner / President · edgararboleya@mxpes.com · info@mxpes.com (monitored)
 
 *Resumen en español al final.*
@@ -83,6 +83,13 @@ stored in code, in the front end, in chat tools or in documents.
   credentials or financial data.
 - Servers, database engine and runtime are patched by the managed providers (Supabase, GitHub, Plaid). The
   owner's computers run a supported operating system with automatic updates and endpoint protection enabled.
+- **Patching SLA for what we control** (application code, SQL, functions, configuration): a vulnerability rated
+  critical is fixed or mitigated within **7 days** of becoming known, high within **30 days**, and anything else in
+  the next release. Provider advisories (Supabase, GitHub, Plaid) are read when received and acted on within the same
+  deadlines.
+- **End-of-life software:** the database engine, runtimes and operating systems in use are kept on supported
+  versions; a version approaching end of support is upgraded before that date (Supabase announces Postgres
+  upgrades; the owner's computers stay on a supported Windows or macOS release).
 - Secrets or data accidentally exposed are treated as an incident (section 8), not as a bug.
 
 ## 8. Incident response
