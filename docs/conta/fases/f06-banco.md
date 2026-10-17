@@ -282,3 +282,59 @@ tránsito, sin tocar 1010.
   primero como recargo con su motivo; «quincenal» es dos al mes (24) y «cada
   dos semanas» 26, con sus textos. Las cifras del préstamo real salieron del
   repo (es público): la prueba usa un préstamo inventado.
+
+## La conexión automática con Plaid (17-oct) — construida y probada, sin pegar
+- **Qué es.** Tres piezas. `docs/conta/c7-plaid.sql`: las tablas
+  `plaid_conexiones` (institución, las cuentas de Plaid y a qué cuenta del plan
+  va cada una, el cursor, el último resultado) y `plaid_config`; el access
+  token **en Vault** (`plaid_item_<item_id>`) y solo legible por la función de
+  borde (`fn_plaid_token`, service_role); `fn_plaid_item_alta` (propone la
+  tarjeta por sus 4 últimos dados de alta en `tarjetas`), `fn_plaid_cuenta_fijar`
+  (el dueño; una tarjeta no va a un banco ni al revés; una cuenta del plan,
+  una sola conexión), `fn_plaid_recibir` (**en nombre del dueño** que conectó:
+  fija `auth.uid()` dentro de la transacción; `importado_rol` queda
+  service_role, `importado_por` el dueño; todo o nada; **el freno**: con una
+  cuenta sin fijar no entra nada y el cursor no avanza), `fn_plaid_error`,
+  `fn_plaid_desconectar` (borra el token de Vault), `v_plaid_conexiones`, y la
+  rutina `fn_plaid_programado()` (pg_cron `mxp-plaid-sync` a las 11:00 UTC →
+  pg_net POST a la función con el secreto `plaid_rutina_secreto` de Vault).
+  `supabase/functions/plaid/index.ts`: la única que habla con Plaid
+  (`link_token`, `canjear`, `sincronizar`, `desconectar`, `estado` con la
+  sesión del dueño; `sincronizar_todo` con el secreto de la rutina; el webhook
+  de Plaid sin sesión, que solo dispara una sincronización; `?paso=salud`).
+  `/transactions/sync` desde el cursor, un lote por cuenta del plan con la
+  forma de `fn_banco_importar_filas` (origen `plaid`, `plaid_monto` y
+  `plaid_saldo` tal cual, `ultimos4` + `confirmo_cuenta` para que el número del
+  banco quede dado de alta, las `removed` como `quitadas`, las pendientes
+  marcadas y c6 las deja fuera). Y la tarjeta en la pantalla del banco
+  (`js/conta.js`): «Conectar un banco» (Plaid Link cargado al tocar; la vuelta
+  del OAuth de Chase con `receivedRedirectUri`; `js/app.js` abre Contabilidad
+  si la URL trae `oauth_state_id`), fijar a qué cuenta va cada cuenta del banco
+  (solo bancos para una depository, solo tarjetas para una credit, «ignorar»),
+  «Sincronizar ahora» con su cuenta, «Volver a conectar» cuando el banco pide
+  entrar otra vez, «Desconectar» con su motivo, y el **enlace a la política
+  de privacidad** (lo declarado a Plaid). `MXP_DB._funcion` en `js/db.js`
+  llama a la función de borde con la sesión.
+- **Decisiones.** Una `modified` de Plaid entra como posible duplicado de la
+  que ya estaba (c6: mismo id, otro monto) y Edgar decide. Si una
+  sincronización no trae filas ni quitadas no se crea un archivo vacío por
+  día: los saldos de Plaid van en `ultimo_resultado.saldos`. `days_requested`
+  90 (`PLAID_DIAS`): lo de antes del corte lo ignora c6 como siempre. El
+  webhook no verifica la firma de Plaid: nada del cuerpo entra, solo provoca
+  una sincronización con nuestras llaves. Lo único que la pantalla guarda en
+  el navegador es el link token mientras el banco redirige (no es dinero ni
+  una clave; se borra al cerrar la ventana). El canje que no logra guardar el
+  token pide `/item/remove` para no dejar una conexión huérfana en Plaid.
+- **Pruebas (17-oct, 17.6).** `docs/conta/c7-pruebas.sql` 19/19;
+  `pruebas/conta/plaid-e2e.mjs` 43/43 con el Plaid simulado
+  (`plaid-simulado.mjs`) y la función en Deno contra el banco; el arnés de la
+  pantalla 57/57; e0 34/34 y e13 42/42. c7 se pega dos veces sin cambios.
+- **Lo que falta, con el visto bueno de Edgar** (`pruebas/conta/README.md`,
+  «Después de c7»): pegar c7 y sus pruebas; los secretos
+  `PLAID_RUTINA_SECRETO` y `PLAID_REDIRECT_URI`; desplegar la función; la
+  redirect URI en el panel de Plaid; «publica» de la pantalla; al llegar la
+  aprobación de producción, `PLAID_SECRET` y `PLAID_ENV`; **MFA (TOTP) en la
+  entrada del dueño** antes de conectar un banco de verdad (lo declarado en
+  el cuestionario de seguridad). Plaid y su CDN no se alcanzan desde este
+  contenedor: el Sandbox real lo prueba Edgar, o se prueba en el banco local
+  con el simulador.

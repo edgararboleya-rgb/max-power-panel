@@ -35,7 +35,7 @@ la 176. Copiar los archivos a ciegas le borra a la otra lo que acababa de public
 |---|---|
 | `js/alcance.js`, `cliente.html`, `gc.html`, `css/portal.css`, `js/portal-frases.js` | App Operativa |
 | `docs/sql/`, `pruebas/e0.js`, `pruebas/e13.js` | MXP Planos |
-| `js/conta.js`, `css/conta.css`, `docs/conta/`, `pruebas/conta/` | Contabilidad |
+| `js/conta.js`, `css/conta.css`, `docs/conta/`, `pruebas/conta/`, `supabase/functions/plaid/` | Contabilidad |
 | `js/app.js`, `js/db.js`, `css/styles.css`, `index.html`, `sw.js` | **compartidos** — mezclar, nunca reemplazar |
 
 En los compartidos: hacer el cambio como un **parche pequeño** (editar las líneas que tocan)

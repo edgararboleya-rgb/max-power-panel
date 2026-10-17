@@ -80,12 +80,20 @@ const T = {
     { conciliacion_id: CONC_AP, cuenta: '2100-2013', fecha_corte: '2026-09-30', conciliacion_estado: 'confirmada', grupo: 'en_libros_no_en_banco', partida_id: PART.p1, clase: 'deposito_en_transito', fecha: '2026-09-21', monto: 500, descripcion: 'Pago desde el banco (09/21)', cheque: null, dias: 0, alarma: false, motivo: 'De la conciliación de QuickBooks al 30-sep', explicacion: 'De la era QuickBooks: en tránsito al 30-sep.', asiento_numero: null, resuelta_en: null, resuelta_por_movimiento: null },
     { conciliacion_id: CONC_AP, cuenta: '2100-2013', fecha_corte: '2026-09-30', conciliacion_estado: 'confirmada', grupo: 'en_libros_no_en_banco', partida_id: PART.p2, clase: 'deposito_en_transito', fecha: '2026-09-22', monto: 500, descripcion: 'Pago desde el banco (09/22)', cheque: null, dias: 0, alarma: false, motivo: 'De la conciliación de QuickBooks al 30-sep', explicacion: 'De la era QuickBooks: en tránsito al 30-sep.', asiento_numero: null, resuelta_en: null, resuelta_por_movimiento: null }
   ],
+  v_plaid_conexiones: [
+    { id: 'px-1', item_id: 'item-prueba', institucion_id: 'ins_1', institucion: 'Platypus Bank', estado: 'activa',
+      cuentas: [
+        { account_id: 'acc-tarjeta', mask: '2013', nombre: 'Business Gold Card', oficial: 'American Express Business Gold', tipo: 'credit', subtipo: 'credit card', cuenta: '2100-2013', propuesta: 'tarjeta ····2013 dada de alta en 2100-2013' },
+        { account_id: 'acc-corriente', mask: '4392', nombre: 'Business Complete Checking', oficial: null, tipo: 'depository', subtipo: 'checking' }
+      ], cuentas_sin_fijar: 1, sincronizada_alguna_vez: false, ultimo_sync: null, ultimo_error: null, ultimo_resultado: null,
+      creado_por: UID, creado_el: '2026-10-17T12:00:00+00:00', desconectada_el: null, desconectada_motivo: null }
+  ],
   v_banco_movimientos: [
     { movimiento_id: MOV.a, cuenta: '2100-2013', fecha: '2026-10-02', monto: -123.45, descripcion: 'FERRETERIA EJEMPLO TAMPA FL', memo: null, cheque: null, tipo_banco: 'DEBIT', estado: 'pendiente', estado_motivo: null, casado_clase: null, casado_regla: null, casado_auto: null, asiento_numero: null, papel_tabla: null, papel_id: null, archivo: 'Archivo de prueba', propuesta_motivo: 'sin_ticket' },
     { movimiento_id: 'm-casado', cuenta: '2100-2013', fecha: '2026-10-01', monto: -31.56, descripcion: 'GASOLINERA EJEMPLO', memo: null, cheque: null, tipo_banco: 'DEBIT', estado: 'casado', estado_motivo: null, casado_clase: 'apertura', casado_regla: 'R0 apertura', casado_auto: true, asiento_numero: null, papel_tabla: null, papel_id: null, archivo: 'Archivo de prueba', propuesta_motivo: null }
   ]
 };
-const estado = { controlMal: false, controlFilas: null, fallar: false, casarRondas: 0, concNueva: false };
+const estado = { controlMal: false, controlFilas: null, fallar: false, casarRondas: 0, concNueva: false, plaidFijada: false, plaidSinVista: false, plaidSinFijar: false };
 const llamadas = [];
 function tabla(nombre, q) {
   let filas = T[nombre] || [];
@@ -96,6 +104,7 @@ function tabla(nombre, q) {
     { conciliacion_id: CONC_NEW, cuenta: '2100-2013', fecha_corte: '2026-10-08', conciliacion_estado: 'abierta', grupo: 'en_libros_no_en_banco', partida_id: 'p-new', clase: 'cargo_en_circulacion', fecha: '2026-10-07', monto: -50.86, descripcion: 'Ticket del 7 oct', cheque: null, dias: 1, alarma: false, motivo: null, explicacion: 'Posteado el 7, el banco aún no lo trae.', asiento_numero: '2026-000009', resuelta_en: null, resuelta_por_movimiento: null },
     { conciliacion_id: CONC_NEW, cuenta: '2100-2013', fecha_corte: '2026-10-08', conciliacion_estado: 'abierta', grupo: 'casado', partida_id: null, clase: 'apertura', fecha: '2026-10-01', monto: -31.56, descripcion: 'GASOLINERA EJEMPLO', cheque: null, dias: null, alarma: false, motivo: null, explicacion: 'Casado por R0 apertura (automático).', asiento_numero: null, resuelta_en: null, resuelta_por_movimiento: null }
   ]);
+  if (nombre === 'v_plaid_conexiones' && estado.plaidFijada) filas = filas.map(c => ({ ...c, cuentas_sin_fijar: 0, cuentas: c.cuentas.map(a => a.account_id === 'acc-corriente' ? { ...a, cuenta: '1010', propuesta: 'la que fijó Edgar' } : a) }));
   // order=col.desc,col2.asc como PostgREST
   const orden = (q.get('order') || '').split(',').filter(Boolean).map(s => s.split('.'));
   if (orden.length) filas = [...filas].sort((x, y) => { for (const [k, d] of orden) { const a = x[k], b = y[k]; if (a === b) continue; const r = a == null ? 1 : b == null ? -1 : (a > b ? 1 : -1); return d === 'desc' ? -r : r; } return 0; });
@@ -132,12 +141,35 @@ function rpc(fn, a) {
   if (fn === 'fn_estuve') return null;
   return { movimiento: a.p_movimiento, estado: 'casado', asiento: '2026-000012' };
 }
+// La función de borde `plaid` (supabase/functions/plaid), con la forma de sus respuestas
+function funcionPlaid(b) {
+  if (b.accion === 'link_token') return { cuerpo: { ok: true, link_token: 'link-sandbox-prueba', expiration: '2026-10-17T16:00:00Z', reconexion: !!b.item_id } };
+  if (b.accion === 'canjear') return { cuerpo: { ok: true, conexion: { item_id: 'item-nuevo', institucion: (b.metadata && b.metadata.institution && b.metadata.institution.name) || 'Banco', estado: 'activa', cuentas_sin_fijar: 1 } } };
+  if (b.accion === 'sincronizar') {
+    if (estado.plaidSinFijar) return { estado: 409, cuerpo: { ok: false, codigo: 'SIN_FIJAR', sin_fijar: ['····4392'], error: 'Falta decir a qué cuenta del plan va ····4392 (o «ignorar»). Hasta entonces no se sincroniza.' } };
+    return { cuerpo: { ok: true, item_id: b.item_id, lotes: 2, agregadas: 4, paginas: 1, conexion: { item_id: b.item_id, estado: 'activa', cursor: 'c1', ultimo_resultado: { por_que: 'pantalla', importado: [{ cuenta: '2100-2013', filas_nuevas: 3, duplicados_posibles: 1 }] } } } };
+  }
+  if (b.accion === 'desconectar') return { cuerpo: { ok: true, conexion: { item_id: b.item_id, estado: 'desconectada', desconectada_motivo: b.motivo } } };
+  return { estado: 400, cuerpo: { ok: false, error: 'Acción desconocida: «' + b.accion + '».' } };
+}
+// Plaid Link de mentira (cdn.plaid.com): «abrir» termina enseguida con éxito
+const PLAID_FALSO = "window.Plaid = { create(cfg) { window.__plaidCfg = cfg; return { open() { window.__plaidAbierto = (window.__plaidAbierto || 0) + 1; setTimeout(() => cfg.onSuccess('public-sandbox-prueba', { institution: { name: 'Platypus Bank', institution_id: 'ins_1' } }), 50); }, exit() {}, destroy() {} }; } };";
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS' };
 async function simular(ctx, rol) {
   await ctx.addInitScript(([s]) => { localStorage.setItem('mxp_sesion', JSON.stringify(s)); localStorage.removeItem('mxp_idioma'); }, [sesion()]);
+  await ctx.route(/cdn\.plaid\.com/, route => route.fulfill({ status: 200, contentType: 'text/javascript', body: PLAID_FALSO }));
   await ctx.route(/supabase\.co/, route => {
     const req = route.request(), u = new URL(req.url());
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS });
+    if (u.pathname === '/functions/v1/plaid') {
+      let b = {}; try { b = JSON.parse(req.postData() || '{}'); } catch { /* vacío */ }
+      llamadas.push({ fn: 'plaid:' + b.accion, args: b, auth: req.headers()['authorization'] || '' });
+      const r = funcionPlaid(b);
+      return route.fulfill({ status: r.estado || 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(r.cuerpo) });
+    }
+    if (u.pathname === '/rest/v1/v_plaid_conexiones' && estado.plaidSinVista) {
+      return route.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST205', message: "Could not find the table 'public.v_plaid_conexiones' in the schema cache", details: null, hint: null }) });
+    }
     if (u.pathname.startsWith('/auth/v1/token')) return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(sesion()) });
     if (u.pathname.startsWith('/rest/v1/rpc/')) {
       const fn = u.pathname.slice('/rest/v1/rpc/'.length); let args = {};
@@ -341,6 +373,51 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   await p.selectOption('#ct-mov-cuenta', '2100-2013'); await p.waitForSelector('.ct-tabla tbody tr', { timeout: 8000 });
   await foto(p, '6-movimientos');
   ok('Movimientos pinta la tabla de la cuenta (2 filas) con su estado', (await p.locator('.ct-tabla tbody tr').count()) === 2 && /casado/.test(await texto(p, '.ct-tabla')));
+
+  // ---- La conexión automática (Plaid) ----
+  n = llamadas.length;
+  await p.locator('.ct-tab[data-pag="bancos"]').click(); await p.waitForSelector('#ct-plaid', { timeout: 8000 });
+  ok('La tarjeta de Plaid pinta el banco conectado, «1 sin fijar» y el enlace a la política de privacidad', /Platypus Bank/.test(await texto(p, '#ct-plaid')) && /1 sin fijar/.test(await texto(p, '#ct-plaid')) && (await p.locator('#ct-plaid a[href*="PRIVACY-POLICY"]').count()) === 1);
+  const opcionesSel = await p.locator('.ct-conexion select[data-account="acc-corriente"] option').allTextContents();
+  ok('La cuenta de banco sin fijar solo ofrece bancos (1010, 1030) e «ignorar»; la tarjeta ya viene fijada a 2100-2013', opcionesSel.some(t => /1010/.test(t)) && opcionesSel.some(t => /1030/.test(t)) && !opcionesSel.some(t => /2100/.test(t)) && opcionesSel.some(t => /Ignorar/.test(t)) && (await p.locator('.ct-conexion select[data-account="acc-tarjeta"]').inputValue()) === '2100-2013', opcionesSel.join(' | '));
+  await foto(p, '9-plaid');
+  estado.plaidSinFijar = true;
+  await p.locator('.ct-conexion [data-plaid="sincronizar"]').click();
+  await p.waitForSelector('.ct-conexion-res .ct-aviso.warn', { timeout: 8000 });
+  ok('«Sincronizar ahora» con una cuenta sin fijar: la función dice SIN_FIJAR y la pantalla lo enseña en amarillo, con la sesión en la llamada', /Falta decir a qué cuenta/.test(await texto(p, '.ct-conexion-res')) && desde(n).some(l => l.fn === 'plaid:sincronizar' && l.args.item_id === 'item-prueba' && /^Bearer /.test(l.auth)));
+  estado.plaidSinFijar = false;
+  n = llamadas.length; estado.plaidFijada = true;
+  await p.locator('.ct-conexion select[data-account="acc-corriente"]').selectOption('1010');
+  await esperarLlamada(p, n, 'fn_plaid_cuenta_fijar');
+  await p.waitForFunction(() => { const e = document.querySelector('#ct-plaid'); return e && !/sin fijar/.test(e.textContent); }, null, { timeout: 8000 });
+  const fij = desde(n).find(l => l.fn === 'fn_plaid_cuenta_fijar');
+  ok('Elegir 1010 llama a fn_plaid_cuenta_fijar con la conexión, la cuenta de Plaid y 1010, y la tarjeta se repinta sin «sin fijar»', !!fij && fij.args.p_item_id === 'item-prueba' && fij.args.p_account_id === 'acc-corriente' && fij.args.p_cuenta === '1010' && !/sin fijar/.test(await texto(p, '#ct-plaid')), JSON.stringify(fij && fij.args));
+  n = llamadas.length;
+  await p.locator('.ct-conexion [data-plaid="sincronizar"]').click();
+  await p.waitForFunction(() => { const t = document.getElementById('toast'); return t && /Sincronizado/.test(t.textContent); }, null, { timeout: 8000 });
+  ok('«Sincronizar ahora» llama a la función y cuenta lo que entró (3 nuevos, 1 posible duplicado)', desde(n).some(l => l.fn === 'plaid:sincronizar') && /3 movimientos nuevos/.test(await texto(p, '#toast')) && /1 posible/.test(await texto(p, '#toast')), await texto(p, '#toast'));
+  n = llamadas.length;
+  await p.waitForSelector('#ct-plaid-conectar', { timeout: 8000 });
+  await p.locator('#ct-plaid-conectar').click();
+  await esperarLlamada(p, n, 'plaid:canjear');
+  const lt = desde(n).find(l => l.fn === 'plaid:link_token'), cj = desde(n).find(l => l.fn === 'plaid:canjear');
+  ok('«Conectar un banco»: pide el link token, abre Plaid Link y canjea el public token con la institución', !!lt && !lt.args.item_id && !!cj && cj.args.public_token === 'public-sandbox-prueba' && cj.args.metadata.institution.name === 'Platypus Bank' && (await p.evaluate(() => window.__plaidAbierto)) === 1, JSON.stringify(cj && cj.args));
+  await p.waitForFunction(() => { const t = document.getElementById('toast'); return t && /conectado/.test(t.textContent); }, null, { timeout: 8000 }).catch(() => {});
+  ok('Y lo avisa: «Platypus Bank conectado: di a qué cuenta…»', /Platypus Bank conectado/.test(await texto(p, '#toast')), await texto(p, '#toast'));
+  n = llamadas.length;
+  await p.waitForSelector('.ct-conexion [data-plaid="desconectar"]', { timeout: 8000 });
+  await p.locator('.ct-conexion [data-plaid="desconectar"]').click();
+  await p.locator('.ct-conexion .ct-form button[type=submit]').click(); await p.waitForTimeout(150);
+  ok('«Desconectar» pide el motivo y sin él no manda nada', /Falta/.test(await texto(p, '.ct-conexion .ct-form')) && !desde(n).some(l => l.fn === 'plaid:desconectar'));
+  await p.locator('.ct-conexion .ct-form [name=p_motivo]').fill('prueba del arnés');
+  await p.locator('.ct-conexion .ct-form button[type=submit]').click();
+  await esperarLlamada(p, n, 'plaid:desconectar');
+  const dc = desde(n).find(l => l.fn === 'plaid:desconectar');
+  ok('Con motivo, llama a la función con la conexión y el motivo', !!dc && dc.args.item_id === 'item-prueba' && dc.args.motivo === 'prueba del arnés', JSON.stringify(dc && dc.args));
+  estado.plaidSinVista = true;
+  await p.locator('.ct-tab[data-pag="bancos"]').click(); await p.waitForSelector('#ct-plaid', { timeout: 8000 });
+  ok('Sin c7 en la base (la vista no existe), la tarjeta dice «sin instalar» y las cuentas se pintan igual', /sin instalar/.test(await texto(p, '#ct-plaid')) && (await p.locator('.ct-cuenta').count()) === 4, await texto(p, '#ct-plaid'));
+  estado.plaidSinVista = false; estado.plaidFijada = false;
 
   // ---- Sin señal ----
   await ctx.setOffline(true);

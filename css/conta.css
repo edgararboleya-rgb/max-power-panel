@@ -124,3 +124,15 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-partida-d small { display: block; color: var(--mp-ink-3); font-size: .78rem; }
 #conta-raiz .ct-partida-m { font-weight: 700; white-space: nowrap; }
 #conta-raiz .ct-detalles summary { cursor: pointer; font-weight: 800; font-size: 1.02rem; }
+
+/* ---- la conexión automática (Plaid) ---- */
+#conta-raiz .ct-plaid { border-left: 4px solid var(--cu-dark); }
+#conta-raiz .ct-plaid a { color: var(--cu-dark); font-weight: 700; }
+#conta-raiz .ct-conexion { padding: .7rem .8rem; border: 1px solid var(--mp-line); border-radius: 12px; background: var(--mp-sky-1, #F6FCFF); }
+#conta-raiz .ct-conexion h3 { margin: 0; flex: 1 1 auto; font-size: .98rem; font-weight: 800; letter-spacing: -.01em; }
+#conta-raiz .ct-conexion.error { border-left: 4px solid var(--bad); }
+#conta-raiz .ct-conexion.desconectada { opacity: .75; }
+#conta-raiz .ct-cuentas-plaid { display: grid; gap: .5rem; margin: .3rem 0 .2rem; }
+@media (min-width: 700px) { #conta-raiz .ct-cuentas-plaid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+#conta-raiz .ct-cuenta-plaid small { font-weight: 500; color: var(--mp-ink-3); }
+#conta-raiz .ct-cuenta-plaid select.sin-fijar { border-color: var(--warn-ink); background: var(--warn-bg); }

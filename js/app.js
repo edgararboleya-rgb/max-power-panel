@@ -767,6 +767,9 @@ function esFalloDeRed(err) {
     $("btn-estimador").hidden = !usuario.finanzas;
     $("btn-levantamiento").hidden = !usuario.finanzas;
     $("btn-conta").hidden = !usuario.finanzas;
+    // La vuelta del banco (Plaid con OAuth, p. ej. Chase) trae ?oauth_state_id=…:
+    // la contabilidad retoma la ventana de Plaid (js/conta.js, reanudarLink)
+    if (usuario.finanzas && /[?&]oauth_state_id=/.test(location.search)) { irConta(); return; }
     pintarInicio();
     pintarCategorias();
     pintarResumen();

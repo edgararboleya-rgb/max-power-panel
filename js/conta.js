@@ -15,7 +15,8 @@
 //   · Falla ruidosa: antes de pintar, fn_banco_control dice si cada vista
 //     devuelve lo que las tablas tienen; si no, un rojo con el detalle y
 //     la pantalla no pinta ceros.
-// La conexión es la de js/db.js (MXP_DB._leer, MXP_DB._rpc).
+// La conexión es la de js/db.js (MXP_DB._leer, MXP_DB._rpc; MXP_DB._funcion
+// para la función de borde `plaid`: la conexión automática con el banco).
 // ============================================================
 
 (function () {
@@ -42,7 +43,8 @@
     hooks: { titulo() {}, avisar() {} },
     saldos: null, cuentas: null, proyectos: null, bandeja: null,
     conc: null, concCuenta: null, movCuenta: null, movEstado: "", filtroCuenta: null,
-    importe: null, ocupado: false
+    importe: null, ocupado: false,
+    plaid: null, plaidErr: null
   };
   const TITULOS = { bancos: "Bancos y tarjetas", bandeja: "Bandeja del banco", conciliar: "Conciliar", movimientos: "Movimientos" };
   const PESTANAS = { bancos: "Bancos y tarjetas", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos" };
@@ -159,9 +161,11 @@
       lista = await leerSaldos();
       await controlar(["v_banco_saldos"], { v_banco_saldos: lista.length });
       if (!lista.length) throw errorControl("La base no devolvió ninguna cuenta de banco ni tarjeta", [{ vista: "v_banco_saldos", filas: 0, esperadas: "1 o más", detalle: "La empresa tiene Chase y las dos Amex. Si la vista no las trae, algo está mal (¿la sesión no es la del dueño?)." }]);
+      await leerPlaid();
     } catch (err) { return pintarError(err, pintarBancos); }
     pintarBadge();
     main().innerHTML = importadorHTML(lista) + (S.importe ? importeHTML(S.importe) : "") +
+      plaidHTML(S.plaid || [], S.plaidErr) +
       `<div class="ct-rejilla">${lista.map(cuentaHTML).join("")}</div>`;
     // el importador general
     $("ct-imp-btn").addEventListener("click", () => {
@@ -177,6 +181,7 @@
       const inp = card.querySelector("input[type=file]");
       if (inp) inp.addEventListener("change", () => { if (inp.files[0]) importar(inp.files[0], cuenta, card.querySelector(".ct-cuenta-res")); });
     });
+    wirePlaid();
   }
 
   function importadorHTML(lista) {
@@ -282,6 +287,202 @@
       if (r.completo !== false) break;
     }
     return total;
+  }
+
+  // ============================================================
+  // LA CONEXIÓN AUTOMÁTICA (Plaid) — docs/conta/c7-plaid.sql y la función
+  // de borde supabase/functions/plaid. La pantalla lee v_plaid_conexiones,
+  // fija a qué cuenta del plan va cada cuenta del banco (fn_plaid_cuenta_fijar)
+  // y le pide a la función lo demás (link_token, canjear, sincronizar,
+  // desconectar). Lo ÚNICO que se guarda en el navegador es el link token
+  // de la ventana de Plaid mientras el banco redirige (OAuth, p. ej. Chase):
+  // no es dinero ni una clave, y se borra al cerrar la ventana.
+  // ============================================================
+  const PRIVACIDAD = "https://github.com/edgararboleya-rgb/max-power-panel/blob/main/docs/PRIVACY-POLICY.md";
+  const PLAID_LINK_JS = "https://cdn.plaid.com/link/v2/stable/link-initialize.js";
+  const LLAVE_LINK = "mxp.plaid.link";
+  const guardarLink = o => { try { sessionStorage.setItem(LLAVE_LINK, JSON.stringify(o)); } catch { /* sin almacenamiento: la vuelta del OAuth no se retoma */ } };
+  const leerLink = () => { try { return JSON.parse(sessionStorage.getItem(LLAVE_LINK) || "null"); } catch { return null; } };
+  const borrarLink = () => { try { sessionStorage.removeItem(LLAVE_LINK); } catch { /* nada */ } };
+  const fechaHora = ts => {
+    if (!ts) return "—";
+    const d = new Date(ts); if (Number.isNaN(d.getTime())) return "—";
+    const f = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
+    const g = k => (f.find(x => x.type === k) || {}).value || "";
+    return `${fechaLarga(`${g("year")}-${g("month")}-${g("day")}`)} ${g("hour")}:${g("minute")}`;
+  };
+
+  async function leerPlaid() {
+    if (S.plaid) return S.plaid;
+    try { S.plaid = await DB._leer("v_plaid_conexiones?select=*&order=creado_el.asc"); S.plaidErr = null; }
+    catch (err) { if (esFalloDeRed(err)) throw err; S.plaid = null; S.plaidErr = err; }
+    return S.plaid;
+  }
+  function plaidHTML(cx, err) {
+    const enlace = `<a href="${PRIVACIDAD}" target="_blank" rel="noopener">política de privacidad</a>`;
+    if (err) {
+      return `<section class="ct-card ct-plaid" id="ct-plaid"><div class="ct-cab"><h2>Conexión automática con el banco (Plaid)</h2>${pill("sin instalar", "warn")}</div>
+        <p class="ct-nota">La base todavía no tiene la conexión con Plaid (docs/conta/c7-plaid.sql) o la vista no contestó: ${esc(err.message)}. Mientras tanto, los archivos del banco se suben arriba.</p></section>`;
+    }
+    const vivas = cx.filter(c => c.estado !== "desconectada");
+    return `<section class="ct-card ct-plaid" id="ct-plaid">
+      <div class="ct-cab"><h2>Conexión automática con el banco (Plaid)</h2>${pill(vivas.length ? plural(vivas.length, "banco conectado", "bancos conectados") : "sin conectar", vivas.length ? "ok" : "")}</div>
+      <p class="ct-nota">Chase y las Amex mandan sus movimientos solos cada mañana, y entran igual que un archivo: casan lo que casa y el resto espera en la bandeja. El banco se conecta en la ventana segura de Plaid: la app nunca ve tu usuario ni tu clave del banco, y las llaves viven en la base, no en el teléfono. Qué se guarda y por cuánto tiempo, en la ${enlace}.</p>
+      ${cx.length ? `<div class="ct-lista">${cx.map(conexionHTML).join("")}</div>` : ""}
+      <div class="ct-acciones"><button type="button" class="accion" id="ct-plaid-conectar">Conectar un banco</button></div>
+      <div id="ct-plaid-res"></div>
+    </section>`;
+  }
+  function conexionHTML(c) {
+    const est = c.estado === "activa" ? pill("activa", "ok") : c.estado === "error" ? pill("con error", "bad") : pill("desconectada", "");
+    const sinFijar = Number(c.cuentas_sin_fijar) > 0;
+    const r = c.ultimo_resultado || {};
+    const viva = c.estado !== "desconectada";
+    return `<article class="ct-conexion ${esc(c.estado)}" data-item="${esc(c.item_id)}">
+      <div class="ct-cab"><h3>${esc(c.institucion || "Banco")}</h3>${est}${sinFijar ? pill(`${c.cuentas_sin_fijar} sin fijar`, "warn") : ""}</div>
+      <ul class="ct-datos">
+        <li>Última sincronización: ${c.ultimo_sync ? fechaHora(c.ultimo_sync) : "ninguna todavía"}${r.agregadas != null ? ` · ${r.agregadas} nueva(s), ${Number(r.modificadas || 0)} cambiada(s), ${Number(r.quitadas || 0)} quitada(s)${r.por_que ? ` (${esc(r.por_que)})` : ""}` : ""}</li>
+        ${c.ultimo_error ? `<li class="bad-txt">Error: ${esc(c.ultimo_error)}</li>` : ""}
+        ${c.desconectada_el ? `<li>Desconectada el ${fechaLarga(String(c.desconectada_el).slice(0, 10))}${c.desconectada_motivo ? `: ${esc(c.desconectada_motivo)}` : ""}</li>` : ""}
+      </ul>
+      ${viva ? `<p class="ct-nota">A qué cuenta del plan va cada cuenta del banco${sinFijar ? " (hasta fijarlas todas no se sincroniza nada)" : ""}:</p><div class="ct-cuentas-plaid">${(c.cuentas || []).map(a => cuentaPlaidHTML(a)).join("")}</div>` : ""}
+      <div class="ct-acciones">
+        ${viva ? `<button type="button" class="accion secundaria chica" data-plaid="sincronizar">Sincronizar ahora</button>` : ""}
+        ${c.estado === "error" ? `<button type="button" class="accion secundaria chica" data-plaid="reconectar">Volver a conectar</button>` : ""}
+        ${viva ? `<button type="button" class="accion secundaria chica" data-plaid="desconectar">Desconectar</button>` : ""}
+      </div>
+      <div class="ct-form" hidden></div>
+      <div class="ct-conexion-res"></div>
+    </article>`;
+  }
+  function cuentaPlaidHTML(a) {
+    const credito = a.tipo === "credit", banco = a.tipo === "depository";
+    const opciones = (S.saldos || []).filter(s => credito ? s.tipo === "tarjeta" : banco ? s.tipo === "banco" : true);
+    const que = credito ? "tarjeta de crédito" : (a.subtipo || a.tipo || "cuenta");
+    return `<label class="ct-campo ct-cuenta-plaid">${esc(a.nombre || a.oficial || "Cuenta")}${a.mask ? ` ····${esc(a.mask)}` : ""} <small>(${esc(que)})</small>
+      <select data-account="${esc(a.account_id)}"${a.cuenta ? "" : ' class="sin-fijar"'}>
+        <option value=""${a.cuenta ? "" : " selected"}>— ¿a qué cuenta va? —</option>
+        ${opciones.map(s => `<option value="${esc(s.cuenta)}"${a.cuenta === s.cuenta ? " selected" : ""}>${esc(s.cuenta)} · ${esc(s.cuenta_nombre)}</option>`).join("")}
+        <option value="ignorar"${a.cuenta === "ignorar" ? " selected" : ""}>Ignorar (no es de la empresa)</option>
+      </select>${a.propuesta && !a.cuenta ? `<small>${esc(a.propuesta)}</small>` : ""}</label>`;
+  }
+  function wirePlaid() {
+    const btn = $("ct-plaid-conectar"); if (btn) btn.addEventListener("click", () => conectarPlaid(null));
+    main().querySelectorAll(".ct-conexion").forEach(card => {
+      const item = card.dataset.item;
+      card.querySelectorAll("select[data-account]").forEach(sel => sel.addEventListener("change", async () => {
+        if (!sel.value) return;
+        const caja = card.querySelector(".ct-conexion-res");
+        sel.disabled = true;
+        try {
+          const r = await DB._rpc("fn_plaid_cuenta_fijar", { p_item_id: item, p_account_id: sel.dataset.account, p_cuenta: sel.value });
+          const faltan = Number((r || {}).cuentas_sin_fijar || 0);
+          S.hooks.avisar(sel.value === "ignorar" ? `Esa cuenta se ignora${faltan ? ` · faltan ${faltan} por fijar` : ""}` : `Va a ${sel.value}${faltan ? ` · faltan ${faltan} por fijar` : " · lista para sincronizar"}`);
+          S.plaid = null;
+          await pintarBancos();
+        } catch (err) {
+          sel.disabled = false;
+          caja.innerHTML = `<p class="ct-aviso bad">${esc(esFalloDeRed(err) ? "Sin señal: no se guardó." : err.message)}</p>`;
+        }
+      }));
+      card.querySelectorAll("[data-plaid]").forEach(b => b.addEventListener("click", () => {
+        const que = b.dataset.plaid;
+        if (que === "sincronizar") return accionPlaid(card, { accion: "sincronizar", item_id: item }, resumenSync);
+        if (que === "reconectar") return conectarPlaid(item);
+        if (que === "desconectar") return montarForma(card, formaHTML("Desconectar este banco (queda escrito por qué; lo ya importado se queda en el libro)", campoHTML("p_motivo", null, null, "required"), "Desconectar"),
+          v => accionPlaid(card, { accion: "desconectar", item_id: item, motivo: v.p_motivo }, () => "Banco desconectado"));
+        return undefined;
+      }));
+    });
+  }
+  function resumenSync(r) {
+    const imp = (((r || {}).conexion || {}).ultimo_resultado || {}).importado || [];
+    const n = k => imp.reduce((s, x) => s + Number(x[k] || 0), 0);
+    if (!imp.length) return "Sincronizado: nada nuevo en el banco";
+    return `Sincronizado: ${plural(n("filas_nuevas"), "movimiento nuevo", "movimientos nuevos")}${n("duplicados_posibles") ? `, ${n("duplicados_posibles")} posible(s) duplicado(s)` : ""}${n("filas_repetidas") ? `, ${n("filas_repetidas")} ya estaba(n)` : ""}`;
+  }
+  async function accionPlaid(card, cuerpo, exito) {
+    if (S.ocupado) return;
+    S.ocupado = true;
+    const caja = card.querySelector(".ct-conexion-res");
+    card.querySelectorAll("button, select").forEach(b => { b.disabled = true; });
+    caja.innerHTML = `<p class="ct-aviso">${cuerpo.accion === "sincronizar" ? "Pidiendo al banco…" : "Un momento…"}</p>`;
+    try {
+      const r = await DB._funcion("plaid", cuerpo, 120000);
+      S.hooks.avisar(exito(r));
+      S.plaid = null; S.saldos = null; S.bandeja = null;
+      await pintarBancos();
+    } catch (err) {
+      card.querySelectorAll("button, select").forEach(b => { b.disabled = false; });
+      const sinFijar = err.codigo === "SIN_FIJAR", reconectar = !!(err.datos && err.datos.hay_que_reconectar);
+      caja.innerHTML = `<p class="ct-aviso ${sinFijar ? "warn" : "bad"}">${esc(esFalloDeRed(err) ? "Sin señal: no se hizo nada." : err.message)}${reconectar ? " El banco pide volver a conectar." : ""}</p>
+        ${reconectar ? `<div class="ct-acciones"><button type="button" class="accion secundaria chica" id="ct-plaid-reconectar-ya">Volver a conectar</button></div>` : ""}`;
+      const re = $("ct-plaid-reconectar-ya"); if (re) re.addEventListener("click", () => conectarPlaid(card.dataset.item));
+    } finally { S.ocupado = false; }
+  }
+  function cargarPlaidLink() {
+    if (window.Plaid) return Promise.resolve(window.Plaid);
+    return new Promise((res, rej) => {
+      const sc = document.createElement("script");
+      sc.src = PLAID_LINK_JS; sc.async = true;
+      sc.onload = () => window.Plaid ? res(window.Plaid) : rej(new Error("La ventana de Plaid no cargó."));
+      sc.onerror = () => rej(new Error("No se pudo cargar la ventana de Plaid (cdn.plaid.com). ¿Hay señal?"));
+      document.head.appendChild(sc);
+    });
+  }
+  async function conectarPlaid(itemId) {
+    const caja = $("ct-plaid-res"); if (!caja || S.ocupado) return;
+    if (!navigator.onLine) { caja.innerHTML = `<p class="ct-aviso bad">Sin señal: la ventana de Plaid necesita internet.</p>`; return; }
+    S.ocupado = true;
+    caja.innerHTML = `<p class="ct-aviso">Abriendo la ventana segura de Plaid…</p>`;
+    try {
+      const [Plaid, r] = await Promise.all([cargarPlaidLink(), DB._funcion("plaid", itemId ? { accion: "link_token", item_id: itemId } : { accion: "link_token" }, 30000)]);
+      guardarLink({ token: r.link_token, item_id: itemId || null });
+      caja.innerHTML = "";
+      abrirLink(Plaid, r.link_token, itemId, null);
+    } catch (err) {
+      caja.innerHTML = `<p class="ct-aviso bad">${esc(esFalloDeRed(err) ? "Sin señal: inténtalo con internet." : err.message)}</p>`;
+    } finally { S.ocupado = false; }
+  }
+  function abrirLink(Plaid, token, itemId, recibido) {
+    const cfg = {
+      token,
+      onSuccess: (public_token, metadata) => { borrarLink(); if (itemId) reconectado(itemId); else canjear(public_token, metadata); },
+      onExit: err => { borrarLink(); if (err) S.hooks.avisar(`Plaid: ${err.display_message || err.error_message || err.error_code || "la ventana se cerró con un error"}`, true); }
+    };
+    if (recibido) cfg.receivedRedirectUri = recibido;
+    Plaid.create(cfg).open();
+  }
+  async function canjear(public_token, metadata) {
+    const caja = $("ct-plaid-res"); if (caja) caja.innerHTML = `<p class="ct-aviso">Guardando la conexión…</p>`;
+    try {
+      const r = await DB._funcion("plaid", { accion: "canjear", public_token, metadata: metadata || {} }, 60000);
+      const c = (r || {}).conexion || {};
+      S.hooks.avisar(`${c.institucion || "Banco"} conectado${Number(c.cuentas_sin_fijar) ? ": di a qué cuenta del plan va cada cuenta" : ""}`);
+      S.plaid = null;
+      await pintarBancos();
+    } catch (err) {
+      if (caja) caja.innerHTML = `<p class="ct-aviso bad">No se guardó la conexión: ${esc(esFalloDeRed(err) ? "sin señal." : err.message)}</p>`;
+    }
+  }
+  async function reconectado(itemId) {
+    S.hooks.avisar("Banco reconectado: sincronizando…");
+    S.plaid = null;
+    await pintarBancos();
+    const card = [...main().querySelectorAll(".ct-conexion")].find(x => x.dataset.item === itemId);
+    if (card) accionPlaid(card, { accion: "sincronizar", item_id: itemId }, resumenSync);
+  }
+  // La vuelta del banco (OAuth): la URL trae ?oauth_state_id=… y la ventana de
+  // Plaid se vuelve a abrir con el mismo link token para que termine.
+  async function reanudarLink() {
+    const q = new URLSearchParams(location.search);
+    if (!q.get("oauth_state_id")) return;
+    const recibido = location.href;
+    const guardado = leerLink();
+    try { history.replaceState(null, "", location.pathname + location.hash); } catch { /* nada */ }
+    if (!guardado || !guardado.token) { S.hooks.avisar("El banco volvió sin su ventana de Plaid: toca «Conectar un banco» otra vez.", true); return; }
+    try { abrirLink(await cargarPlaidLink(), guardado.token, guardado.item_id, recibido); }
+    catch (err) { S.hooks.avisar(err.message, true); }
   }
 
   // ============================================================
@@ -680,6 +881,7 @@
       }
       armar();
       ir(S.pagina);
+      reanudarLink();
     },
     // «←» de la app: true si la pantalla tenía algo que cerrar (la conciliación abierta)
     atras() {

@@ -703,6 +703,34 @@
     // _leer pagina de 1,000 en 1,000; _rpc llama a una función SQL (POST /rest/v1/rpc/…).
     _api: api, _leer: leer,
     _rpc: (fn, args) => api("rpc/" + fn, { metodo: "POST", cuerpo: args || {} }),
+    // Una función de borde con la sesión (Contabilidad → la función `plaid`):
+    // POST /functions/v1/<nombre> con el JSON. Devuelve el JSON; si la función
+    // contesta ok:false o un error HTTP, lanza con su mensaje (err.codigo,
+    // err.estado y err.datos traen el resto). Sin sesión, lanza.
+    _funcion: async (nombre, cuerpo, ms) => {
+      if (!sesion) throw new Error("Sin sesión");
+      const control = (Number(ms) > 0 && typeof AbortController !== "undefined") ? new AbortController() : null;
+      const reloj = control ? setTimeout(() => { try { control.abort(); } catch { /* nada */ } }, Number(ms)) : null;
+      let r;
+      try {
+        r = await fetch(`${SB.url}/functions/v1/${nombre}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${sesion.access_token}` },
+          body: JSON.stringify(cuerpo || {}),
+          ...(control ? { signal: control.signal } : {})
+        });
+      } catch (e) {
+        if (e && e.name === "AbortError") throw new Error(`La función ${nombre} tardó más de ${Math.round(Number(ms) / 1000)} s.`);
+        throw e;
+      } finally { if (reloj) clearTimeout(reloj); }
+      let j = null; try { j = await r.json(); } catch { /* sin json */ }
+      if (!r.ok || !j || j.ok === false) {
+        const e = new Error((j && j.error) || `La función ${nombre} contestó ${r.status}.`);
+        e.codigo = j && j.codigo; e.estado = r.status; e.datos = j;
+        throw e;
+      }
+      return j;
+    },
     // Escrituras
     cambiarProyecto: (id, cambios) => {
       // P75 (24-sep): al pasar una obra a TERMINADA se apunta el día (hora de
