@@ -2858,6 +2858,9 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .alc-rev-motivo{margin:.25rem 0 .1rem;font-size: var(--fs-4);line-height:1.45}
 .alc-rev-hecho{margin:.25rem 0 .1rem;font-size: var(--fs-4);color:var(--ok-ink);font-weight:600}
 .alc-hallazgo .alc-op{font-family:inherit;text-align:left}
+/* 14-oct (corrección tras la segunda revisión, hallazgo 17): los botones de «Así lo hice» y de «Cuéntale el trabajo» con la letra de la app, no la del sistema */
+.alc-asi .alc-op,.alc-cuentale .alc-op{font-family:inherit}
+.alc-asi-formato{margin:.2rem 0 .4rem;padding:.4rem .6rem}
 .alc-hallazgo .alc-op:disabled{opacity:.7;cursor:default}
 .alc-rev-en-hoja p{margin:0 0 .35rem}
 .alc-rev-en-hoja .alc-botones{margin:.4rem 0 0}
@@ -2887,6 +2890,27 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .alc-juicio-lista li{margin:.35rem 0}
 .alc-juicio-lista .alc-fixes{margin-top:.25rem}
 .alc-juicio-no{color:var(--mp-ink-3)}
+/* 14-oct (pliego §10.9): «Ver los dos textos» de una cláusula adaptada: el de la casa y el de la IA, uno debajo del otro */
+.alc-juicio-dos{margin-top:.3rem}
+.alc-juicio-dos summary{cursor:pointer}
+.alc-juicio-texto{margin:.15rem 0 .45rem;font-size:.9em;overflow-wrap:anywhere}
+/* 14-oct (pliego §10.10): «Cuéntale el trabajo» arriba de la hoja y la tarjeta «Así lo hice» arriba del contrato. Igual en el
+   teléfono (390 px) y en la computadora (1440 px): todo se parte en líneas, nada se sale de lado */
+.alc-cuentale{margin:0 0 .8rem}
+.alc-cuentale-boton{width:100%;min-height:48px;font-size:var(--fs-4)}
+.alc-cuentale .alc-charla{margin-top:.5rem}
+.alc-cuentale textarea,.alc-asi textarea{width:100%;box-sizing:border-box}
+.alc-asi{margin:.2rem 0 .9rem;overflow-wrap:anywhere}
+.alc-asi-sub{margin:.75rem 0 .25rem;font-size:var(--fs-4)}
+.alc-asi-texto{margin:.1rem 0 .3rem;line-height:1.5}
+.alc-asi-lista,.alc-asi-preguntas{margin:.15rem 0 .3rem;padding-left:1.1rem}
+.alc-asi-lista li,.alc-asi-preguntas li{margin:.2rem 0;line-height:1.45}
+.alc-asi-pregunta p{margin:.1rem 0}
+.alc-asi-pregunta .alc-charla-campo{display:flex;flex-wrap:wrap;gap:.35rem;margin:.3rem 0}
+.alc-asi-pregunta .alc-charla-campo input{flex:1 1 12rem;min-width:0}
+.alc-asi-botones{flex-wrap:wrap}
+.alc-asi-costo{margin-top:.7rem}
+.alc-rev-detalle > summary{cursor:pointer;margin:.4rem 0;font-weight:700}
 .alc-origen{color:var(--mp-ink-3);font-size: var(--fs-3)}
 .alc-leccion{margin:.5rem 0;padding:.6rem .7rem;border:1px dashed var(--mp-line);border-radius:10px;background:var(--mp-card)}
 .alc-leccion-etq{display:block;margin:0 0 .3rem;font-size: var(--fs-3);font-weight:650;color:var(--mp-ink-2)}

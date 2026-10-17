@@ -21,6 +21,9 @@
 
   let sesion = sesionGuardada();
   let temporizadorRefresco = null;
+  // 14-oct (hallazgo 11): la última plantilla del contrato que se bajó fue la de respaldo (v3.12), porque la nueva no estaba
+  // (17-oct: la nueva es la v3.14)
+  let plantillaDeRespaldo = false;
 
   function programarRefresco() {
     if (temporizadorRefresco) clearTimeout(temporizadorRefresco);
@@ -830,14 +833,34 @@
     // La plantilla oficial vive en el almacén de la app, no en el teléfono:
     // así Edgar no tiene que elegir ningún archivo y todos usan la misma.
     // 13-oct (pliego §9.3): v3.10, con el modo servicio; 13-oct (tarde) v3.11 con el SOW ligero (las viejas se quedan en el almacén)
+    // 14-oct (P199): v3.13 (la visita de la inspección de un servicio con permiso, «drop heights» solo con luminarias, el panel
+    // con circuitos nuevos). Había que subirla al almacén antes de publicar la app (17-oct: nunca se subió; la reemplaza la v3.14).
+    // 14-oct (corrección tras la segunda revisión, hallazgo 11): si la v3.13 todavía no está en el almacén (se publicó la app antes
+    // de subirla), se usa la v3.12 de antes y la app lo avisa («uso la plantilla anterior»): nunca se queda sin contrato.
+    // plantillaAnterior() dice si la última que se bajó fue la de respaldo.
+    // 17-oct (revisión del 16-oct, obras-12 y obras-18): v3.14 = v3.13 + la 9.x del sitio sin circuitos existentes en obra nueva
+    // (@si SIN_CIRCUITOS_EXISTENTES) y la 7.x de una sola movilización (@si UNA_MOVILIZACION). La v3.13 nunca se subió: se sube
+    // la v3.14 (plantillas/SOW_Template_v3.14.html) ANTES de publicar la app. El respaldo sigue siendo la v3.12, la que está en
+    // el almacén (con ella las marcas nuevas no existen y el papel sale como hoy).
     plantillaSOW: async () => {
-      const firma = await firmarFotos(["plantillas/SOW_Template_v3.12.html"]);
-      const url = firma["plantillas/SOW_Template_v3.12.html"];
-      if (!url) throw new Error("No encuentro la plantilla oficial en la app");
-      const r = await fetch(url);
-      if (!r.ok) throw new Error("No se pudo bajar la plantilla (" + r.status + ")");
-      return r.text();
+      const bajar = async ruta => {
+        const firma = await firmarFotos([ruta]);
+        const url = firma[ruta];
+        if (!url) throw new Error("No encuentro la plantilla oficial en la app");
+        const r = await fetch(url);
+        if (!r.ok) throw new Error("No se pudo bajar la plantilla (" + r.status + ")");
+        return r.text();
+      };
+      try { const t = await bajar("plantillas/SOW_Template_v3.14.html"); plantillaDeRespaldo = false; return t; }
+      catch (e) {
+        let t = null;
+        try { t = await bajar("plantillas/SOW_Template_v3.12.html"); } catch { /* sin la de respaldo, el error de la nueva */ }
+        if (t === null) throw e;
+        plantillaDeRespaldo = true;
+        return t;
+      }
     },
+    plantillaAnterior: () => plantillaDeRespaldo,
 
     // La llave del portal: si el proyecto ya tenía una, se respeta (no se
     // le cambia el enlace al cliente por debajo).
@@ -974,7 +997,9 @@
         pantalla: String(contexto.pantalla || "").slice(0, 40) || null,
         proyecto_id: contexto.proyecto_id ? String(contexto.proyecto_id).slice(0, 80) : null,
         propuesta_id: Number.isInteger(contexto.propuesta_id) ? contexto.propuesta_id : null,
-        idioma: contexto.idioma === "en" ? "en" : "es"
+        idioma: contexto.idioma === "en" ? "en" : "es",
+        // 14-oct (pliego §10.10): «Cuéntale el trabajo» va en modo «redactar» (la IA escribe la hoja); sin modo, el chat de siempre
+        ...(contexto.modo === "redactar" ? { modo: "redactar" } : {})
       } : null;
       let res = await llamar(ctx ? { mensajes, contexto: ctx } : { mensajes });
       for (let i = 0; i < 10 && res && res.sigue; i++) {
