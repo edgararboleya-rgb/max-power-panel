@@ -19110,7 +19110,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const s = String(resp || "");
     while ((m = rx.exec(s))) ult = m[1];
     if (ult === null) return null;
-    return ult.replace(/\r/g, "").split("\n").map(l => l.replace(/[ \t ]+/g, " ").trim()).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    // 17-oct (Gong): la letra (c) de una lista llegó como «©» («…; and © any permit registration fee»): vuelve a ser (c)
+    return ult.replace(/(^|[\s;:,])©(?=\s)/g, "$1(c)").replace(/\r/g, "").split("\n").map(l => l.replace(/[ \t ]+/g, " ").trim()).join("\n").replace(/\n{3,}/g, "\n\n").trim();
   }
   // ¿Trae dinero el texto que va a entrar derecho al papel? (regla 3: un texto con monto nunca entra al papel)
   // La regla del armado entera (Alcance.dineroEnTextoArmar: una cifra con forma de monto solo vale si la IA la vio en
@@ -19133,6 +19134,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         const n = m[0].replace(/,+$/, ""), a = m.index, antes = s.slice(0, a), despues = s.slice(a + n.length);
         if (n.replace(/\D/g, "").length < 3 && !/,\d{3}|\.\d/.test(n)) continue;
         if (/[A-Za-z0-9#\/.\-]$/.test(antes) || /^[A-Za-z0-9\/\-]/.test(despues)) continue;      // L1234, 813-555-1234, 200A
+        // 17-oct (Gong): el número de una sección del contrato no es dinero: «9.11 Electric utility. …paid by the Client» al
+        // empezar el texto (seguido del título), o detrás de «Section(s) / § / clause» («Sections 7.1 and 9.4»)
+        if (/^\d{1,2}\.\d{1,2}(?:\.\d{1,2})?$/.test(n) && ((/^\s*$/.test(antes) && /^\s+[A-Z]/.test(despues))
+          || /(?:\bsections?|§|\bclauses?|\bparagraphs?|\bsecci[oó]n(?:es)?)\s*(?:\d{1,2}(?:\.\d{1,2})*(?:\([a-z]\))?\s*(?:,|\band\b|\bor\b|\bthrough\b|\bto\b|\by\b)\s*)*$/i.test(antes))) continue;
         if (Alcance.RX_UNIDAD_ARMAR.test(despues) || Alcance.RX_UNIDAD_ARMAR_MAY.test(despues)) continue;  // 200 amps, 120 V
         if (/^(?:19|20)\d\d$/.test(n) && /\b(?:NEC|NFPA(?:\s*\d+)?|FBC|IBC|IRC|code|edition)\s*$/i.test(antes)) continue;
         return true;
