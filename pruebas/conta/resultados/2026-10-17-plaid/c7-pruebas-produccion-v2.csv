@@ -1,0 +1,22 @@
+n,prueba,esperado,obtenido,ok
+1,anon lee v_plaid_conexiones,error 42501,error 42501,true
+2,equipo: alta y token,42501 y 42501,42501 y 42501,true
+3,"dueño: alta, token y recibir",42501 ×3,42501 42501 42501,true
+4,"la función (como postgres): alta, propuesta y token en Vault",Banco de prueba | tarjeta→2100-2013 | sin fijar 2 | token ok | en tabla 0 | estado activa,Banco de prueba | tarjeta→2100-2013 | sin fijar 2 | token ok | en tabla 0 | estado activa,true
+5,la función fija las cuentas con sus reglas,MX004 MX004 MX004 MX008 | corriente→1010 personal→ignorar | sin fijar 0,MX004 MX004 MX004 MX008 | corriente→1010 personal→ignorar | sin fijar 0,true
+6,"equipo, anon y el dueño por la API no fijan cuentas (va por la función)",42501 42501 42501,42501 42501 42501,true
+7,recibir dos lotes en nombre del dueño,4 movs | por dueño | rol el de la conexión | archivos 2 | cursor cursor-1 | lotes 2 | nuevas 4 | fuera 2 | paginas 2 | saldo banco 15979.78 | sync con hora | error ninguno,4 movs | por dueño | rol el de la conexión | archivos 2 | cursor cursor-1 | lotes 2 | nuevas 4 | fuera 2 | paginas 2 | saldo banco 15979.78 | sync con hora | error ninguno,true
+8,nada queda al deshacer,"0 conexiones de prueba, 0 secretos, 0 archivos, 0 movimientos","0 conexiones de prueba, 0 secretos, 0 archivos, 0 movimientos",true
+9,todo o nada: un lote malo no deja nada,22023 | 0 movimientos | cursor nulo,22023 | 0 movimientos | cursor nulo,true
+10,repetidas y quitadas,repetidas 2 nuevas 0 | quitada: ignorado «Plaid lo quitó» | cursor cursor-2,repetidas 2 nuevas 0 | quitada: ignorado «Plaid lo quitó» | cursor cursor-2,true
+11,el error y su limpieza,error | ITEM_LOGIN_REQUIRED | cursor-1 → activa | ninguno | cursor-2,error | ITEM_LOGIN_REQUIRED | cursor-1 → activa | ninguno | cursor-2,true
+12,desconectar y volver a conectar,desconectada | motivo prueba | secretos 0 | token MX004 | recibir MX008 | tiene_token false → activa | corriente→1010 | Banco de prueba | token nuevo,desconectada | motivo prueba | secretos 0 | token MX004 | recibir MX008 | tiene_token false → activa | corriente→1010 | Banco de prueba | token nuevo,true
+13,la misma cuenta del plan en dos conexiones,MX008,MX008,true
+14,"la vista: dueño sí, equipo no","1 fila(s), sin fijar 2 | equipo 0 fila(s)","1 fila(s), sin fijar 2 | equipo 0 fila(s)",true
+15,la rutina diaria (pg_net con el secreto),"sin conexiones → nada | con una → 1 llamada(s), url, acción y secreto bien",omitida: el stub de pg_net no guarda las llamadas (sin pruebas/seguridad/00-vault-shim.sql),null
+16,el dueño no dispara la rutina por la API,42501,42501,true
+17,alta a nombre de alguien del equipo,42501,42501,true
+18,un lote sin cuenta no entra,MX004,MX004,true
+19,el freno: cuentas sin fijar,"MX008 La conexión Banco de prueba tiene cuentas sin fijar (····4392, ····9911) | cursor nulo | movs 0","MX008 La conexión Banco de prueba tiene cuentas sin fijar (····4392, ····9911) | cursor nulo | movs 0",true
+20,service_role por la API no puede nada de c7,42501 ×6,42501 42501 42501 42501 42501 42501,true
+21,c2 «permisos» y c6 «protecciones» en verde con c7; nada de c7 en la API,c2 verde | c6 verde | en la API: ninguna,c2 verde | c6 verde | en la API: ninguna,true
