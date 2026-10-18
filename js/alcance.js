@@ -447,7 +447,12 @@
     // Un dato de la cabecera («Clave: valor» que la app reconoce), con sus limpiezas de siempre
     const ponDato = (k, valor, i) => {
       // «"New Port Richey"» con comillas: el dato es lo de adentro (v251: antes de sacar la forma corta de la ciudad)
-      let v = String(valor || "").replace(/^\s*["“”'«]+\s*/, "").replace(/\s*["“”'»]+\s*$/, "");
+      // 17-oct (pliego §11.6.5): la comilla del final se queda si cierra una de dentro («Richard Cannyn, PE, nine (9) sheets, "Finals for
+      // Construction 6-25-2026"» perdía la suya y el papel decía «"Finals for Construction 6-25-2026» en la §1 y en la §5)
+      const sinComillas = x => { const s0 = String(x || ""), abre = /^\s*["“”'«]/.test(s0), t0 = s0.replace(/^\s*["“”'«]+\s*/, "");
+        const cierraDentro = !abre && /["“”]\s*$/.test(t0) && (t0.match(/["“”]/g) || []).length % 2 === 0;
+        return cierraDentro ? t0.replace(/\s+$/, "") : t0.replace(/\s*["“”'»]+\s*$/, ""); };
+      let v = sinComillas(valor);
       if (k === "ciudad") {
         // "Pinellas County, Florida — permit held by General Contractor" → la ciudad limpia y el permiso lo saca el GC
         const mPerm = v.match(/\s*[—–\-(,;]*\s*(?:the\s+)?(?:electrical\s+|building\s+)?permit\b[^)]*?(?:held|pulled|obtained|secured|issued|applied)\s+(?:by|to|under)\s+[^)]*$/i);
@@ -457,7 +462,7 @@
         R.datos.ciudad_corta = v.split(/\s+[—–-]\s+|\s*\(/)[0].replace(/,?\s*(?:FL|Florida)\.?\s*$/i, "").replace(/,\s*$/, "").trim();
       }
       // «"New Port Richey"» con comillas: el dato es lo de adentro
-      v = String(v || "").replace(/^\s*["“”'«]+\s*/, "").replace(/\s*["“”'»]+\s*$/, "");
+      v = sinComillas(v);
       if (k === "contratista" && /max power|arboleya|EC13016045/i.test(v)) v = "";
       if (v) { R.datos[k] = v; R.datos_linea[k] = i + 1; }
       // (revisión) un monto en «Ingeniería:», «Planos:» o «Utility:» (su texto sale tal cual en el papel): rojo o ámbar, como en el Alcance
@@ -2150,6 +2155,32 @@
   // (segunda revisión) «any work outside» solo si es fuera de las áreas, la sección 2 o el alcance («outside the property line (by TECO)»
   // es otra cosa), y «fuera del alcance» solo si lo que se excluye es «cualquier / todo trabajo» (no «Pintura y drywall (fuera del alcance)»).
   const RX_EXCL_FUERA_HOJA = /\b(?:any|all) (?:other )?work outside the areas\b|\bany work outside (?:the areas|section 2|this scope|the scope)\b|\b(?:any|all) (?:other |additional )?work (?:that is |which is )?not (?:expressly )?(?:shown|listed|described|included|specified|covered|indicated) (?:in|on|under|by) (?:section 2|this scope|the scope|this proposal|this agreement)\b|\b(?:cualquier|todo)\s+(?:otro\s+)?trabajo\s+(?:que\s+(?:este|quede)\s+)?fuera del alcance\b|\b(?:cualquier|todo) (?:otro )?trabajo (?:que )?no (?:este |esta )?(?:incluido|descrito) en (?:el alcance|la seccion 2)\b/;
+  // 17-oct (pliego §11.6.1): la exclusión general de la hoja que habla de los PLANOS manda también («Any work not shown on the sealed
+  // drawings or not listed in the changes above», la línea 49 de Gong; «any work not indicated in the construction plans»): con ella la
+  // de la casa no sale (salían dos exclusiones generales) y la de la hoja va en su sitio (decidirInterruptores → EXCL_FUERA_GENERAL,
+  // armarTodo la marca y rellenarPlantilla la pone donde iba la de la casa). Lo que la de la casa decía de lo EXISTENTE («and any repair
+  // or warranty of existing electrical equipment or wiring beyond that work») sale como viñeta propia corta (EXCL_COLA_EXISTENTE)
+  // cuando quedan circuitos existentes.
+  // 17-oct (pliego §11.9.6): también la que nombra las HOJAS, con o sin sus identificadores («Any work not shown on sheets E-1 through
+  // E-4», «…not shown on sheet E2»), la que no pone «the» («not indicated on plans») y «any work other than what is shown on the
+  // drawings». (Solo «work other than», pegado: «work for the pool other than as shown» es de otra cosa y la de la casa va igual.)
+  const RX_EXCL_FUERA_PLANOS = /\b(?:any|all) (?:other |additional )?work (?:that is |which is )?not (?:expressly )?(?:shown|indicated|included|listed|described) (?:on|in) (?:the )?(?:(?:sealed|construction|permit|engineering|electrical|approved|signed)\s+)*(?:drawings?|plans?|sheets?)\b|\b(?:(?:any|all) (?:other |additional )?)?work other than (?:what is |that |as )?(?:shown|indicated|included|listed|described) (?:on|in) (?:the )?(?:(?:sealed|construction|permit|engineering|electrical|approved|signed)\s+)*(?:drawings?|plans?|sheets?)\b/;
+  const RX_EXCL_FUERA_TODAS = new RegExp(RX_EXCL_FUERA_HOJA.source + "|" + RX_EXCL_FUERA_PLANOS.source);
+  // 17-oct (pliego §11.6.1): una exclusión de la hoja que ya habla de las luminarias que pone otro («Light fixtures other than the recessed
+  // lights (vanities, chandeliers and fans supplied by GC)», «Owner-supplied fixtures», «fixtures furnished by the Client») apaga la viñeta
+  // de la casa «Decorative light fixtures…» de la §3 (EXCL_FIXTURES_CASA); la 9.x de las luminarias del cliente se queda (protege igual).
+  // 17-oct (pliego §11.9.7): solo si la línea dice QUIÉN las pone (una señal de suministro: «supplied / furnished / provided / purchased
+  // by», «by (the) GC / Client / Owner / others / tenant», «Owner-supplied», «furnished by others»). «Repair or replacement of existing light
+  // fixtures other than those listed in Section 2» no habla de quién las pone: la viñeta de la casa se queda (y la §2 sigue remitiendo
+  // a la §3 sin quedarse colgada). Con «other than» y sin señal, ya no basta. «Furnished by Contractor / Max Power» no es de otro.
+  const RX_EXCL_FIXTURES_HOJA = /\b(?:fixtures?|luminaires?)\b[^.;]{0,80}?(?:\b(?:supplied|furnished|provided|purchased)\s+by\b(?!\s+(?:the\s+)?(?:electrical\s+)?(?:contractor|max power|mxp|us)\b)|\bby\s+(?:the\s+)?(?:gc|general contractor|owner|client|others|builder|tenant|homeowner)\b)|\b(?:supplied|furnished|provided|purchased)\s+by\s+(?:the\s+)?(?:gc|general contractor|owner|client|others|builder|tenant|homeowner)\b[^.;]{0,60}\b(?:fixtures?|luminaires?)\b|\b(?:owner|client|gc|tenant|builder|homeowner)[- ]?(?:supplied|furnished|provided)\b[^.;]{0,40}\b(?:fixtures?|luminaires?)\b|\b(?:luminarias|lamparas)\b[^.;]{0,60}\b(?:del cliente|del gc|del dueno|las pone|las suple|las compra)\b/;
+  // 17-oct (pliego §11.6.2): la hoja dice que Max Power solo se REGISTRA bajo el permiso del cliente (Gong: «Registration as electrical
+  // subcontractor under the GC's combination permit», «Building / combination permit and its fees (by GC). Max Power covers only its own
+  // subcontractor registration fee»): la frase de la 7.1 «If that Authority requires the electrical permit to be applied for by the
+  // electrical contractor, Max Power applies for it…» y su hermana de la (a) del depósito sobran (MXP_PUEDE_PEDIR_PERMISO apagado). Con
+  // «Permiso: cliente» a secas se quedan: es una protección condicional. El «building permit» de OTRA cosa («Building permit for the new
+  // deck (by Owner)») no cuenta, como en EXCL_PERMISO_CASA.
+  const RX_SOLO_REGISTRO = /\bcombination\s+(?:\/\s*\w+\s+)?permits?\b|\bbuilding\s+(?:\/\s*\w+\s+)?permits?\b(?!\s+for\s+the\s+(?!electrical|work|project|job|new service)\w+)[^.;]{0,60}\(?\s*by\s+(?:the\s+)?(?:gc|general contractor|client|owner|builder)\b|\bregistration fees?\b|\bregist(?:ers?|ered|ering|ration)\s+as\s+(?:the\s+|an?\s+)?(?:licensed\s+)?electrical\s+sub-?contractor\b|\bpermiso\s+combinado\b|\bse\s+registra\s+como\s+subcontratista\b/;
   const RX_PAGO_DE_OBRA = /\brough\b|\brough-?\s?in\b|\btrim\b|\btrim-?\s?out\b|\binspec\w*|\bphases?\b|\bfases?\b/;
   function disparadorServicio(L, n, k) {
     const propio = (((L || {}).pagos || {}).disparadores || [])[k];
@@ -2228,7 +2259,8 @@
     const nElec = n.replace(/\b(?:the\s+)?(?:building|master|roofing|roof|plumbing|mechanical|hvac|structural|demolition|demo|pool|fence|gas)\s+(?:sub-?)?permits?\b[^.;,]*/g, " ");
     if (/\bby\s+(?:the\s+)?(?:gc|general contractor|owner|client|cliente|dueno|others|builder)\b/.test(nElec) && !/\b(?:nosotros|lo saco|lo sacamos)\b/.test(n) && !saca
         && (!/\b(?:max power|mxp)\b/.test(n) || soloSeRegistra)) return "cliente";
-    if (/\b(cliente|client|gc|general contractor|owner|dueno|contratista|builder)\b/.test(n) && !/\b(?:max power|mxp|nosotros)\b/.test(n) && !saca) return "cliente";
+    // 17-oct (pliego §11.6.2): «cliente — Max Power registers as electrical subcontractor» también es del cliente (Max Power solo se registra)
+    if (/\b(cliente|client|gc|general contractor|owner|dueno|contratista|builder)\b/.test(n) && (!/\b(?:max power|mxp|nosotros)\b/.test(n) || (soloSeRegistra && !/\bnosotros\b/.test(n))) && !saca) return "cliente";
     return "nosotros";
   }
   // ninguno o no incluido: el papel no habla de la solicitud del permiso
@@ -2674,6 +2706,14 @@
     // 16-oct: lo que queda de lo existente (obra nueva: sin circuitos existentes que modificar ni AFCI que excluir)
     const PO = perfilObra(L, admin);
     const yaExcluye = re => re.test(textoExcl);
+    // 17-oct (pliego §11.6.1): la exclusión general de la hoja (de la sección 2, del alcance o de los planos) manda sobre la de la casa;
+    // solo la de los planos no, si la hoja nombra lo que no se toca o las áreas (eso lo dice la de la casa)
+    const fueraGeneralHoja = !noExcluir.includes("fuera-de-area") && !noExcluir.includes("fuera de area")
+      && (yaExcluye(RX_EXCL_FUERA_HOJA) || (yaExcluye(RX_EXCL_FUERA_PLANOS) && !hay((C.no_tocamos || {}).valor) && !hay((C.areas || {}).valor)));
+    // 17-oct (pliego §11.6.2): Max Power solo se registra bajo el permiso del cliente (lo dice «Permiso:», el alcance o «No incluye»)
+    const textoPermisoHoja = norma(d.permiso || "");
+    const soloRegistroPermiso = permiso === "cliente" && (RX_SOLO_REGISTRO.test(textoPermisoHoja) || RX_SOLO_REGISTRO.test(textoAlcance) || RX_SOLO_REGISTRO.test(textoExcl)
+      || /\b(?:max power|mxp)\s+(?:only\s+)?(?:registers?|is registered|will register|se registra)\b/.test(textoPermisoHoja + " " + textoAlcance + " " + textoExcl));
     const hayItemPermiso = /\bpermit/.test(textoAlcance);
     // v251 (revisión): «Complete trim-out (…), testing, and coordination of the required inspections» ya es el cierre
     const hayCierre = L.items.some(it => /^(testing|startup|closeout|commissioning)\b|\b(closeout|close-out|commissioning)\b/i.test(it.titulo)
@@ -2804,7 +2844,24 @@
       EXCL_APARATOS: !noExcluir.includes("aparato") && residencialInterior,
       // 17-oct (Gong): la de la casa ya no se pega con la de la hoja (dice «Any work not expressly described in Section 2 — …»); solo
       // se quita si la hoja trae la suya sobre la sección 2 o el alcance (RX_EXCL_FUERA_HOJA)
-      EXCL_FUERA_AREAS: !noExcluir.includes("fuera-de-area") && !noExcluir.includes("fuera de area") && !yaExcluye(RX_EXCL_FUERA_HOJA),
+      // 17-oct (pliego §11.6.1): …y también si la suya habla de los planos («Any work not shown on the sealed drawings or not listed in the
+      // changes above»: RX_EXCL_FUERA_PLANOS). Con una línea «No tocamos:» o «Áreas:» de la hoja (que la de la casa nombra) y solo la de los
+      // planos, la de la casa se queda: no se pierde lo que Edgar dijo que no se toca.
+      EXCL_FUERA_AREAS: !noExcluir.includes("fuera-de-area") && !noExcluir.includes("fuera de area") && !fueraGeneralHoja,
+      // 17-oct (pliego §11.6.1, plantilla v3.15): la exclusión general de la hoja va en el sitio de la de la casa; y la cola de la de la casa
+      // (la reparación o garantía de lo existente) sale sola, corta, solo si quedan circuitos existentes (en un rewire u obra nueva sobra).
+      // Las plantillas viejas no traen estas marcas: ahí la de la hoja sale al final, como antes, y la cola no sale.
+      EXCL_FUERA_GENERAL: fueraGeneralHoja, EXCL_COLA_EXISTENTE: fueraGeneralHoja && !PO.sinCircuitosExistentes,
+      // (con una plantilla vieja, sin el sitio de la general de la hoja, la de los planos no apaga la de la casa: rellenarPlantilla)
+      EXCL_FUERA_SOLO_PLANOS: fueraGeneralHoja && !yaExcluye(RX_EXCL_FUERA_HOJA),
+      // 17-oct (pliego §11.6.1, plantilla v3.15): la viñeta de la casa «Decorative light fixtures…» no sale si la hoja ya excluye a su
+      // manera las luminarias que pone otro (RX_EXCL_FIXTURES_HOJA); la 9.x de las luminarias del cliente se queda
+      // (línea por línea; la de las luminarias de FUERA —«Site / landscape / pool lighting fixtures by others»— no cubre las de la casa)
+      EXCL_FIXTURES_CASA: !(L.no_incluye || []).some(x => { const l = norma((x && x.texto) || "");
+        return RX_EXCL_FIXTURES_HOJA.test(l) && !/\b(?:exterior|outdoor|site|landscape|landscaping|poles?|parking|pool|garden|signage|signs?|street)\b/.test(l); }),
+      // 17-oct (pliego §11.6.2, plantilla v3.15): la frase de la 7.1 (y la de la (a) del depósito) de «si el AHJ pide que lo saque el
+      // electricista, Max Power lo pide» solo cuando la hoja no dice que Max Power solo se registra bajo el permiso del cliente
+      MXP_PUEDE_PEDIR_PERMISO: !soloRegistroPermiso, MXP_NO_PIDE_PERMISO: soloRegistroPermiso,
       // 17-oct (Gong): la viñeta del permiso del cliente en la §3 no se repite si la hoja ya excluye el permiso a su manera
       // («Building / combination permit and its fees (by GC)…»): salían dos renglones del permiso que no decían lo mismo
       // (revisión) línea por línea, y solo la que habla del permiso eléctrico o del de la obra (building / combination / master), no el
@@ -2843,6 +2900,9 @@
     // lo que la hoja excluye sale sí o sí (arriba): se enciende y se apunta por qué
     const encendidasPorHoja = [];
     Object.keys(hojaExcluye).forEach(k => { if (hojaExcluye[k] && !bloques[k]) { bloques[k] = true; encendidasPorHoja.push(k); } });
+    // 17-oct (pliego §11.6.1): si la de la casa sale igual (la hoja la trae con sus áreas: «Any work outside … expressly described in
+    // Section 2»), la general de la hoja se queda en su renglón y la cola no se repite
+    if (bloques.EXCL_FUERA_AREAS) { bloques.EXCL_FUERA_GENERAL = false; bloques.EXCL_COLA_EXISTENTE = false; bloques.EXCL_FUERA_SOLO_PLANOS = false; }
     // en servicio, gabinetes, aparatos y el cableado de baja tensión son ruido de obra (salvo que la hoja los excluya ella misma)
     if (esServicio) ["EXCL_GABINETES", "EXCL_APARATOS", "EXCL_LOWVOLT"].forEach(k => { if (!hojaExcluye[k]) bloques[k] = false; });
     // 14-oct (pliego §10.4): quién pone las luminarias (lo usa armarTodo: QUIEN_FIXTURES / FIXTURES_DE). Con «mxp» no sale la
@@ -2913,7 +2973,10 @@
       // (revisión 5) «furnished / provided / supplied / issued» solos no son de otro («E-1 and E-2, issued for permit», «furnished with this
       // proposal»): solo con «by <otro>» o «Owner-furnished»; Gustavo Fundora (la licencia de la casa) es de Max Power
       planos_permiso: bloques.PLANOS && (/\b(?:by|from)\s+(?:us|our|max power|mxp|edgar|gustavo|fundora|g\.?\s*fundora)\b|\b(?:our|ours|we|in[- ]house|nosotros|nuestros?|nuestras?|max power|mxp)\b/i.test(String(d.planos || ""))
-        || !/\bby\s+(?!(?:us|our|ourselves|max power|mxp|edgar)\b)\S|\b(?:owner|client|tenant|gc|builder|architect|engineer)['’]s\b|\b(?:owner|client|customer|tenant|gc|builder|architect|engineer)[- ](?:furnished|provided|supplied|issued)\b|\b(?:general contractor|the gc)\b|\bdel (?:cliente|gc|arquitecto|dueño|dueno|contratista)\b|\bingeniero del\b/i.test(String(d.planos || ""))),
+        || !/\bby\s+(?!(?:us|our|ourselves|max power|mxp|edgar)\b)\S|\b(?:owner|client|tenant|gc|builder|architect|engineer)['’]s\b|\b(?:owner|client|customer|tenant|gc|builder|architect|engineer)[- ](?:furnished|provided|supplied|issued)\b|\b(?:general contractor|the gc)\b|\bdel (?:cliente|gc|arquitecto|dueño|dueno|contratista)\b|\bingeniero del\b/i.test(String(d.planos || ""))
+          // 17-oct (pliego §11.6.5, Gong): la línea que nombra al ingeniero de otro («Richard Cannyn, PE, nine (9) sheets…») tampoco es de
+          // Max Power (la de Gustavo Fundora, la licencia de la casa, sí); «sealed» o «PE» solos siguen sin quitarla
+          && !(/\b[A-Z][a-z]+(?:\s+[A-Z]\.)?\s+[A-Z][A-Za-z'’-]+,?\s+P\.\s?E\.|\b[A-Z][a-z]+(?:\s+[A-Z]\.)?\s+[A-Z][A-Za-z'’-]+,?\s+PE\b/.test(String(d.planos || "")) && !/\b(?:fundora|arboleya)\b/i.test(String(d.planos || "")))),
       // v3.4: las cláusulas propias de la hoja (las que la plantilla no trae)
       propias: propio.propias.length > 0,
       // 9.16 (F.S. 489.126): va en residencial con el dueño directo. 17-oct (Gong, Edgar): en un subcontrato con un GC no va
@@ -2972,6 +3035,21 @@
       J.clausulas_adaptadas.forEach(c => {
         if (!c || typeof c !== "object") return;
         const clave = String(c.clave || "");
+        // 17-oct (pliego §11.6.4): el 2.x de pruebas y cierre (va en la §2, también en el SOW ligero): solo si el papel lleva el de la
+        // casa (la hoja no trae el suyo) y si guarda su núcleo para lo que salió (obra o servicio)
+        if (clave === "cierre" && !CLAUSULAS_ADAPTABLES.includes("cierre")) {
+          if (adaptadas.some(x => x.clave === clave)) return;
+          const ti = String(c.titulo_en || "").replace(/\s+/g, " ").trim().replace(/[.:]\s*$/, ""), te = String(c.texto_en || "").replace(/\s+/g, " ").trim();
+          const modo = esServicio ? "servicio" : "obra";
+          const x = Object.assign({ clave }, ti ? { titulo_en: ti } : {}, { texto_en: te, porque: String(c.porque || ""), casa_titulo: CIERRE_CASA.titulo, casa_texto: CIERRE_CASA[modo] });
+          const enPapel = !!bloques.CIERRE_GENERICO;
+          const malo = maloEnCierre(ti, te, baseL, modo);
+          const nota = casaEdgar.has(clave) ? "lo pediste tú" : malo ? "la IA quiso cambiarla, pero " + malo : !enPapel ? "tu hoja trae su propio renglón de pruebas y cierre" : "";
+          if (nota) { adaptadas.push(Object.assign(x, { aplicado: false, nota })); if (enPapel) clausulasCasa.push({ clave, motivo: nota }); return; }
+          adaptadas.push(Object.assign(x, { aplicado: true }));
+          clausulasTexto[clave] = { titulo: ti, texto: /[.!?]$/.test(te) ? te : te + "." };
+          return;
+        }
         if (!CLAUSULAS_ADAPTABLES.includes(clave) || adaptadas.some(x => x.clave === clave)) return;
         const ti = String(c.titulo_en || "").replace(/\s+/g, " ").trim().replace(/[.:]\s*$/, ""), te = String(c.texto_en || "").replace(/\s+/g, " ").trim();
         const incl = clave === "afci" && afciJ === "incluido";
@@ -3275,6 +3353,16 @@
     Object.keys(textos).forEach(clave => {
       const x = textos[clave];
       if (!x || !String(x.texto || "").trim()) return;
+      // 17-oct (pliego §11.6.4): el cierre es el párrafo «2.{{N_CIERRE}} Testing and closeout.» de la §2 (sin @clausula: ya pasó por
+      // aplicarSi, el número lo pone el hueco N_CIERRE); cambia el título si la IA lo dio y el texto
+      if (clave === "cierre") {
+        const mc = html.match(/(<p><strong>2\.\{\{N_CIERRE\}\} )([\s\S]*?)(\.<\/strong>\s*)([\s\S]*?)(<\/p>)/);
+        if (!mc) return;
+        const tc = String(x.titulo || "").replace(/\s+/g, " ").trim().replace(/[.:]\s*$/, "");
+        const texto = String(x.texto).replace(/\s+/g, " ").trim();
+        html = html.slice(0, mc.index) + mc[1] + (tc || mc[2]) + mc[3] + texto + mc[5] + html.slice(mc.index + mc[0].length);
+        return;
+      }
       const abre = "<!--@clausula " + clave + "-->", i = html.indexOf(abre);
       if (i < 0) return;
       const fin = html.indexOf("<!--@/clausula-->", i);
@@ -3302,13 +3390,25 @@
     let bloquesSi = datos.bloques || {};
     const unaEnVieja = !!bloquesSi.UNA_MOVILIZACION && !String(plantilla).includes("<!--@si UNA_MOVILIZACION-->");
     if (unaEnVieja) bloquesSi = Object.assign({}, bloquesSi, { MOVILIZACIONES: true, UNA_MOVILIZACION: false });
+    // 17-oct (pliego §11.6.1): una plantilla sin el sitio de la exclusión general de la hoja (la v3.14 y las de antes) sale como antes con
+    // la de los planos: la de la casa se queda (con su cola de lo existente) y la de la hoja va en su renglón
+    if (bloquesSi.EXCL_FUERA_SOLO_PLANOS && !String(plantilla).includes("<!--@fila EXCL_FUERA_GENERAL-->")) bloquesSi = Object.assign({}, bloquesSi, { EXCL_FUERA_AREAS: true });
     h = aplicarSi(h, bloquesSi);
     // 17-oct (revisión de la v3.14, v314-respaldo-1-phases): con la plantilla vieja la frase de las fases se cambia por la de UNA
     // movilización (antes salía «performed in 1 phases, and one (1) mobilization is included for each: one mobilization»);
     // el cobro de la de más («billed at $350.00 each by written change order») se queda como está
     if (unaEnVieja) h = h.replace(/This work is performed in \{\{N_FASES\}\} phases, and one \(1\) mobilization is included for each: \{\{LISTA_DE_FASES\}\}\./, "This work is performed in one (1) mobilization.");
     h = repetirFila(h, "ITEM", datos.items || []);
-    h = repetirFila(h, "NO_INCLUYE", datos.no_incluye || []);
+    // 17-oct (pliego §11.6.1, plantilla v3.15): la exclusión general de la hoja (marcada GENERAL por armarTodo) va en el sitio de la de
+    // la casa (@fila EXCL_FUERA_GENERAL); con una plantilla que no trae ese sitio, se queda en su renglón como antes
+    let noIncl = datos.no_incluye || [];
+    const conSitioGeneral = /<!--@fila EXCL_FUERA_GENERAL-->/.test(h);
+    if (conSitioGeneral) {
+      const gen = noIncl.filter(x => x && x.GENERAL).slice(-1);
+      noIncl = noIncl.filter(x => !(x && x.GENERAL) || !gen.includes(x));
+      h = repetirFila(h, "EXCL_FUERA_GENERAL", gen);
+    }
+    h = repetirFila(h, "NO_INCLUYE", noIncl);
     h = repetirFila(h, "ADDON", datos.addons || []);
     h = repetirFila(h, "HITO", datos.hitos || []);
     // v3.4: lo propio de la hoja
@@ -3675,6 +3775,14 @@
     });
     const no_incluye = (S.no_incluye || []).map(x => ({
       TITULO_EXCL: (x.titulo && x.titulo.en) || "", TEXTO_EXCL: (x.texto && x.texto.en) || "" }));
+    // 17-oct (pliego §11.6.1): la exclusión general de la hoja (la última que lo es) se marca GENERAL: con la plantilla v3.15,
+    // rellenarPlantilla la pone donde iba la de la casa (antes de las del inspector y de las demás de la hoja); con una vieja, se queda
+    // en su renglón. Solo si las dos listas son la misma (la de la hoja y la redactada)
+    if (dec.bloques.EXCL_FUERA_GENERAL && no_incluye.length === (L.no_incluye || []).length) {
+      let kGen = -1;
+      (L.no_incluye || []).forEach((x, k) => { if (RX_EXCL_FUERA_TODAS.test(norma((x && x.texto) || ""))) kGen = k; });
+      if (kGen >= 0) no_incluye[kGen].GENERAL = true;
+    }
     const addons = cta.addons.map((a, k) => ({
       LETRA: a.letra, MONTO: dinero(a.centavos),
       ADDON: ((S.opciones || [])[k] && S.opciones[k].titulo && S.opciones[k].titulo.en) || a.titulo }));
@@ -5524,6 +5632,19 @@
     const cita = String((h && h.cita) || "").slice(0, 200);
     return { texto: PREFIJO_PERDON + cita, revisor: true, cita, tipo: String((h && h.tipo) || "otro") };
   }
+  // 17-oct (pliego §11.1, integración): la propuesta del revisor (texto_nuevo, el párrafo entero como tiene que quedar) con LA
+  // MISMA regla que textoNuevoDelRevisor del cerebro: espacios juntos; null si está vacía, pasa de 1,500 letras, o trae «[MONTO]»,
+  // «$», «##», «{{», «<» o dinero (esMontoArmar, traeDineroEstricto). No se tira el hallazgo: solo su propuesta. La app la vuelve
+  // a mirar con el papel delante (alcTextoNuevoOk).
+  const MAX_TEXTO_NUEVO = 1500;
+  function textoNuevoDeHallazgo(t) {
+    if (typeof t !== "string") return null;
+    const s = t.replace(/\s+/g, " ").trim();
+    if (!s || s.length > MAX_TEXTO_NUEVO) return null;
+    if (/\[\s*monto\s*\]|\$|\{\{|<|#{2,}|#[.,]#/i.test(s)) return null;
+    if (esMontoArmar(s) || traeDineroEstricto(s)) return null;
+    return s;
+  }
   // El juez de la app para lo que devuelve el revisor. ctx = { texto (el que se mandó), secciones, ficha, perdonadas }.
   // Se tira: la cita que no está TAL CUAL en el texto, lo que traiga dinero, lo que no tenga motivo.
   // Se ordena: rojos primero. Como mucho 12. Lo perdonado antes (misma cita) no vuelve a salir.
@@ -5556,7 +5677,10 @@
         const valor = valorDeFicha(ctx.ficha, h.arreglo.campo, h.arreglo.valor);
         if (valor) arreglo = { campo: h.arreglo.campo, valor, etiqueta: ca.etiqueta };
       }
-      out.push({ donde, cita, motivo, gravedad: h.gravedad === "rojo" ? "rojo" : "ambar", tipo, arreglo });
+      // 17-oct (pliego §11.1): la propuesta viaja con el hallazgo (vale_para «siempre» solo si lo dijo el revisor)
+      const texto_nuevo = textoNuevoDeHallazgo(h.texto_nuevo);
+      const vale_para = texto_nuevo ? (h.vale_para === "siempre" ? "siempre" : "obra") : null;
+      out.push({ donde, cita, motivo, gravedad: h.gravedad === "rojo" ? "rojo" : "ambar", tipo, arreglo, texto_nuevo, vale_para });
     }
     const orden = out.map((h, i) => [h, i]).sort((a, b) => (a[0].gravedad === b[0].gravedad ? a[1] - b[1] : a[0].gravedad === "rojo" ? -1 : 1)).map(x => x[0]);
     const resumen = String(L.resumen || "").replace(/\s+/g, " ").trim().slice(0, 600);
@@ -5712,7 +5836,7 @@
     (j.clausulas_extra || []).forEach(c => out.push({ clave: "clausulas_extra", valor: c.titulo_en, aplicado: c.aplicado !== false, texto: "Protecciones añadidas: " + c.titulo_en + no(c) + porque(c.porque) }));
     // 14-oct (pliego §10.9): las cláusulas que la IA adaptó a este trabajo; la que no entró dice por qué va la de la casa
     (j.clausulas_adaptadas || []).forEach(c => out.push({ clave: "clausulas_adaptadas", valor: c.clave, aplicado: c.aplicado !== false,
-      texto: "Cláusulas adaptadas: " + (NOMBRE_CLAUSULA_IA[c.clave] || String(c.clave).replace(/_/g, " ")) + (c.aplicado === false && c.nota ? ` (va el texto de la casa: ${c.nota})` : "") + porque(c.porque) }));
+      texto: "Cláusulas adaptadas: " + (NOMBRE_CLAUSULA_IA[c.clave] || (c.clave === "cierre" ? NOMBRE_CIERRE : "") || String(c.clave).replace(/_/g, " ")) + (c.aplicado === false && c.nota ? ` (va el texto de la casa: ${c.nota})` : "") + porque(c.porque) }));
     (j.ignorado || []).forEach(c => out.push({ clave: "ignorado", valor: c.clave, aplicado: false, texto: `La IA pidió quitar «${String(c.clave).replace(/_/g, " ")}»: ${c.motivo}.` }));
     return out;
   }
@@ -5820,7 +5944,12 @@
     cambios: {
       todas: [[/\bin writing\b/, "perdía el «por escrito»"], [/\b(?:both parties|signed)\b/, "perdía la firma de las dos partes"], [/\bbefore\b/, "perdía el «antes de hacerlo»"],
         [/\bchange orders?\b/, "perdía el change order"], [/\b(?:priced separately|quoted)\b/, "perdía que lo nuevo se cobra aparte"], [/\b(?:entire agreement|governs)\b/, "perdía que este contrato manda"]],
-      nunca: [[/\b(?:verbal|oral|text|email)\w* (?:approvals?|authori[sz]ations?|requests?|changes?) (?:is|are) (?:accepted|sufficient|enough|valid)\b|\bwithout (?:a )?(?:written )?change orders?\b/, "aceptaba cambios sin papel firmado"]]
+      nunca: [[/\b(?:verbal|oral|text|email)\w* (?:approvals?|authori[sz]ations?|requests?|changes?) (?:is|are) (?:accepted|sufficient|enough|valid)\b|\bwithout (?:a )?(?:written )?change orders?\b/, "aceptaba cambios sin papel firmado"],
+        // 17-oct (pliego §11.9, revisión adversaria P5): otra vía al lado del «por escrito» («…before the additional work proceeds, or
+        // approved on site by the Client's representative», «or by the Client's foreman», «a field directive»), empezar antes de la
+        // firma («Contractor may start urgent work before the Change Order is signed») o firmar el change order después
+        [/\b(?:or|and\/or)\b[^.;]{0,40}\b(?:approved|authori[sz]ed|agreed|accepted|directed|confirmed|instructed|requested)\b[^.;]{0,60}\b(?:on[- ]site|in the field|in person|by (?:tele)?phone|representative|foreman|superintendent|field directive)\b|\bor by (?:the |a )?(?:client's |owner's |gc's )?(?:on[- ]site )?(?:representative|foreman|superintendent|field directive)\b|\bfield (?:directives?|authori[sz]ations?|approvals?)\b/, "abría otra vía además del «por escrito»"],
+        [/\b(?:start|begin|proceed|perform)\w*\b[^.;]{0,60}\bbefore\b[^.;]{0,30}\b(?:change order|co)\b[^.;]{0,20}\b(?:is |are |has been |have been )?signed\b|\bchange orders?\b[^.;]{0,40}\b(?:afterwards?|after the (?:work|fact)|later|retroactive\w*)\b|\bproceed\w* on the client's (?:instruction|direction|request|word)\b/, "dejaba empezar el trabajo antes de firmar el change order"]]
     },
     limite: {
       todas: [[/\bshall not exceed the total contract price\b/, "perdía el tope (el precio total del contrato)"], [/\bconsequential\b/, "perdía que no responde de los daños indirectos"]],
@@ -5864,7 +5993,9 @@
   const ANCLAS_ADAPTADA = {
     limite: [[/\bcontractor's total liability(?: under this (?:proposal|scope of work|agreement))? shall not exceed the total contract price\.(?: |$)/, "cambiaba el tope (la de la casa dice «…shall not exceed the total contract price.» y ahí se acaba)"],
       [/\bnot liable for indirect, incidental,? or consequential damages\b/, "cambiaba lo de los daños indirectos (la de la casa dice «indirect, incidental, or consequential damages»)"]],
-    cambios: [[/\bmust be authorized in writing (?:and signed )?by both parties before\b/, "perdía el «por escrito y firmado por las dos partes, antes de hacerlo»"]]
+    cambios: [[/\bmust be authorized in writing (?:and signed )?by both parties before\b/, "perdía el «por escrito y firmado por las dos partes, antes de hacerlo»"],
+    // 17-oct (pliego §11.9, P5): la frase que de verdad protege el cobro del extra (lo pedido de palabra no empieza sin la firma)
+    [/\bis not started until the change order is signed\b/, "perdía que lo pedido de palabra no empieza hasta que se firma el change order"]]
   };
   const TITULO_PROHIBIDO_ADAPTADA = /\d|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|hundred|thousand|half|years?|months?|weeks?|days?|lifetime|life|perpetual\w*|unlimited|cover\w*|includ\w*|exclud\w*|not|no|except\w*|unless|however|exceed\w*|caps?|capped|limit\w*|liab\w*|pric\w*|costs?|charg\w*|fees?|pay\w*|deposits?|govern\w*|writing|written|verbal\w*|oral\w*|responsib\w*|all|any|every|entire|change orders?|misuse)\b/;
   const VIGILADAS_ADAPTADA = [
@@ -5942,7 +6073,8 @@
     if (!casa || !nuc) return "no es una cláusula que se adapte";
     const ti = String(titulo || "").replace(/\s+/g, " ").trim(), te = String(texto || "").replace(/\s+/g, " ").trim();
     if (!te) return "no traía texto";
-    if (te.length > 900 || ti.length > 120) return "era demasiado larga";
+    // 17-oct (§11.9, integración): la de los cambios y la de la AHJ ya pasan de 900 letras en la casa: su largo más un poco
+    if (te.length > Math.max(900, casa.texto.length + 200) || ti.length > 120) return "era demasiado larga";
     const t = (ti ? ti + ". " : "") + te, b = String(base || "");
     const deCasa = casa.titulo + ". " + casa.texto + (clave === "afci" ? " " + AFCI_INCLUIDO.texto : "");
     // (las cifras que ya trae la de la casa —el año de la edición del código, Sunshine 811, los 10 días— no son dinero)
@@ -5974,6 +6106,154 @@
     const suelta = vigiladaSuelta(n, casaN);
     if (suelta) return "traía «" + suelta + "», que la de la casa no dice así";
     return "";
+  }
+
+  // ---- 17-oct (pliego §11.6.4): el 2.x «Testing and closeout» también se adapta (clase B de §10.9), para que la IA del armado lo
+  // escriba para ESTE trabajo (los tres paneles de Gong) en vez de dejarlo para el revisor. Va APARTE de la lista B de §10.9
+  // (CLAUSULAS_ADAPTABLES, CLAUSULAS_CASA, NUCLEO_CLAUSULA y maloEnAdaptada son gemelas del cerebro y no se tocan): estas piezas van
+  // aparte, también gemelas. El núcleo = (torque) y (voltage | polarity) y (GFCI | AFCI) y (directory | label) y (inspection) y (clean); el
+  // del directorio y las inspecciones solo en OBRA (el texto de la casa de un servicio no los trae: no se le pide al servicio lo que la
+  // casa no promete). Sin juicio, el de la casa, como siempre. El cerebro tiene las mismas piezas (su molde deja pasar «cierre»,
+  // limpiarArmado lo aparta igual que aquí y SISTEMA_ARMAR lo explica); cerebro-puro.mjs coteja las dos copias.
+  const CIERRE_CASA = {
+    titulo: "Testing and closeout",
+    obra: "Torque all terminations to manufacturer specification, verify voltage and polarity at every circuit worked under this scope, test all GFCI devices, label the directory of every panel installed or worked under this scope, attend the rough and final inspections, and leave all work areas clean.",
+    servicio: "Torque all terminations to manufacturer specification, verify voltage and polarity at every circuit worked under this scope, test all GFCI devices, and leave all work areas clean."
+  };
+  const NOMBRE_CIERRE = "pruebas y cierre";
+  const NUCLEO_CIERRE = {
+    todas: [[/\btorqu\w*/, "perdía el torque de las conexiones"], [/\b(?:voltage|polarity)\b/, "perdía la prueba de voltaje y polaridad"],
+      [/\b(?:gfci|afci)\b/, "perdía la prueba de los GFCI"], [/\bclean\w*/, "perdía dejar limpia la obra"]],
+    obra: [[/\b(?:director(?:y|ies)|label\w*)\b/, "perdía el directorio de los paneles"], [/\binspections?\b/, "perdía las inspecciones"]],
+    nunca: [[/\b(?:warrant\w*|guarant\w*|certif\w*)\b/, "prometía una garantía o un certificado que la de la casa no da"],
+      [/\bpass(?:es|ed|ing)?\b[^.;]{0,40}\binspections?\b|\binspections?\b[^.;]{0,40}\b(?:will|shall) (?:be )?pass\w*/, "prometía que la obra pasa la inspección"]],
+    // 17-oct (pliego §11.9.8): el cierre no puede negar sus deberes. Aunque traiga las palabras del núcleo, si dice que van «by others»,
+    // «not included», «excluded», «not performed», «is not / are not / does not / will not», «without» u «omit», lo quita: se rechaza
+    // ANTES de mirar el núcleo, con su motivo propio.
+    niega: [[/\bby others\b|\bnot (?:included|performed|provided|part of)\b|\bexclud\w*|\b(?:is|are|does|do|will|shall) not\b|\bcannot\b|\b(?:isn't|aren't|doesn't|don't|won't|shan't)\b|\bwithout\b|\bomit\w*/, "quita el cierre"]]
+  };
+  // ¿Qué tiene de malo el cierre que adaptó la IA? "" si nada. Los mismos filtros que maloEnAdaptada (sin dinero, sin «<» ni «{{», sin
+  // remitir a la 9, sin palabras de ley ni promesas ni pagos que la de la casa no traiga, sin cifras nuevas, las vigiladas solo como la
+  // casa) y su núcleo. `modo` = "obra" | "servicio" (lo que salió en el papel); "" (al limpiar el armado, sin saberlo todavía): el núcleo
+  // común y la casa de obra.
+  function maloEnCierre(titulo, texto, base, modo) {
+    const ti = String(titulo || "").replace(/\s+/g, " ").trim(), te = String(texto || "").replace(/\s+/g, " ").trim();
+    if (!te) return "no traía texto";
+    if (te.length > 900 || ti.length > 120) return "era demasiado larga";
+    const t = (ti ? ti + ". " : "") + te, b = String(base || "");
+    const casaTexto = modo === "servicio" ? CIERRE_CASA.servicio : CIERRE_CASA.obra, deCasa = CIERRE_CASA.titulo + ". " + casaTexto;
+    if (dineroEnTextoArmar(t, b + "\n" + deCasa)) return "traía dinero";
+    if (/[<>]|\{\{/.test(t) || /#{2,}|#[.,]#|\$\s*#/.test(t)) return "traía «<», «{{» o una cifra tapada";
+    if (/(?:\b(?:sections?|sec\.?|clauses?|paragraphs?)|§)\s*9\b/i.test(t)) return "remitía a la sección 9";
+    const ley = [...PROHIBIDAS_LEY.map(p => p[0]), /\bguarant(?:y|ies)\b/i].find(rx => rx.test(t) && !rx.test(deCasa));
+    if (ley) return "traía texto de ley («" + String(t.match(ley)[0]).trim() + "») que la de la casa no trae";
+    const promesa = JUICIO_PROMESA.find(rx => rx.test(t) && !rx.test(deCasa));
+    if (promesa) return "obligaba o prometía algo a Max Power («" + String(t.match(promesa)[0]).trim() + "») que la de la casa no dice";
+    if (JUICIO_PAGO.test(t) && !JUICIO_PAGO.test(deCasa)) return "hablaba de pagos («" + String(t.match(JUICIO_PAGO)[0]).trim() + "»)";
+    const vistos = b.replace(/\s*(?:%|percent\b|por\s+ciento\b)/gi, "%");
+    for (const m of t.matchAll(/(\d+(?:\.\d+)?)\s*(?:%|percent\b|per\s+cent\b)/gi)) if (!vistos.includes(m[1] + "%")) return "traía un porcentaje que la hoja no dice";
+    for (const m of t.matchAll(/\bNEC\s*(?:art(?:icle|\.)?\s*)?(\d{3}(?:\.\d+)?)/gi)) if (!b.includes(m[1]) && !deCasa.includes(m[1])) return "citaba un artículo del NEC que la hoja no trae";
+    const tiN = normaClausula(ti);
+    if (ti && tiN !== normaClausula(CIERRE_CASA.titulo) && TITULO_PROHIBIDO_ADAPTADA.test(tiN))
+      return "el título decía cosas que van en el texto («" + String((tiN.match(TITULO_PROHIBIDO_ADAPTADA) || [""])[0]) + "»)";
+    const n = normaClausula(te), casaN = normaClausula(deCasa);
+    for (const [rx, motivo] of NUCLEO_CIERRE.niega) if (rx.test(n)) return motivo;
+    for (const [rx, motivo] of [...NUCLEO_CIERRE.todas, ...(modo === "obra" ? NUCLEO_CIERRE.obra : [])]) if (!rx.test(n)) return motivo;
+    for (const [rx, motivo] of NUCLEO_CIERRE.nunca) if (rx.test(n)) return motivo;
+    const cifra = cifraQueNoEsDeLaCasa(n, casaN);
+    if (cifra) return "traía una cifra o un número («" + cifra + "») que la de la casa no trae";
+    // las palabras del oficio que la lista vigilada toma por otra cosa: «terminations» (no es terminar el contrato) y «each panel /
+    // circuit / device» (no es un cobro por unidad)
+    const nOficio = n.replace(/\bterminations?\b/g, "connections")
+      .replace(/\beach (?=(?:of the )?(?:[a-z0-9()-]+ ){0,2}(?:panels?|panelboards?|circuits?|devices?|gfci|afci|receptacles?|breakers?|disconnects?|meters?|load centers?|units?|subpanels?|sub-panels?|feeders?)\b)/g, "every ");
+    const suelta = vigiladaSuelta(nOficio, casaN);
+    if (suelta) return "traía «" + suelta + "», que la de la casa no dice así";
+    return "";
+  }
+  // Saca el cierre de las adaptadas del juicio (limpiarJuicio, gemela del cerebro, no lo conoce y lo tiraría) y lo limpia aparte.
+  // Devuelve { juicio (sin el cierre), cierre ({clave, titulo_en?, texto_en, porque} o null), aviso ("" o el motivo) }.
+  function apartarCierre(j, base) {
+    if (!j || typeof j !== "object" || Array.isArray(j) || !Array.isArray(j.clausulas_adaptadas) || CLAUSULAS_ADAPTABLES.includes("cierre"))
+      return { juicio: j, cierre: null, aviso: "" };
+    const resto = j.clausulas_adaptadas.filter(c => !(c && typeof c === "object" && String(c.clave || "") === "cierre"));
+    const c = j.clausulas_adaptadas.find(x => x && typeof x === "object" && String(x.clave || "") === "cierre");
+    const juicio = Object.assign({}, j, { clausulas_adaptadas: resto });
+    if (!c) return { juicio, cierre: null, aviso: "" };
+    const ti = String(c.titulo_en || "").replace(/\s+/g, " ").trim().replace(/[.:]\s*$/, "");
+    const te = String(c.texto_en || "").replace(/\s+/g, " ").trim();
+    const p = String(c.porque === undefined || c.porque === null ? "" : c.porque).replace(/\s+/g, " ").trim().slice(0, 400);
+    const nombre = "«" + NOMBRE_CIERRE + "»";
+    if (!te || !p) return { juicio, cierre: null, aviso: "La IA quiso cambiar la cláusula " + nombre + " " + (te ? "sin decir por qué" : "sin escribir el texto") + ": va el texto de la casa." };
+    const malo = maloEnCierre(ti, te, base, "") || (dineroEnTextoArmar(p, base) ? "traía dinero en el porqué" : "");
+    if (malo) return { juicio, cierre: null, aviso: "La IA quiso cambiar la cláusula " + nombre + ", pero " + malo + ": va el texto de la casa." };
+    return { juicio, cierre: Object.assign({ clave: "cierre" }, ti ? { titulo_en: ti } : {}, { texto_en: /[.!?]$/.test(te) ? te : te + ".", porque: p }), aviso: "" };
+  }
+
+  // ---- 17-oct (pliego §11.9.1): ¿qué cláusula es este párrafo? Edgar nunca puede quitar una protección con un botón. La app, antes de
+  // pintar «Arreglar según la IA», saca el título del párrafo citado (su <strong>, con su número: «9.4 Workmanship warranty.») y pregunta
+  // aquí. Devuelve la clave B de §10.9 (y entonces el texto nuevo pasa por maloEnAdaptada), "cierre" para el 2.x «Testing and closeout»
+  // (pasa por maloEnCierre), "ley" para las de la clase A (texto de ley: nunca botón) o null si no es ninguna (el alcance, las exclusiones,
+  // la 7.x, la §1…: siguen como están). Los títulos son los que pinta la plantilla v3.15 (los de CLAUSULAS_CASA y sus variantes); una
+  // adaptada por la IA puede traer otro título (titulo_en): con número 9.x se reconoce también por sus palabras (PISTAS_CLAUSULA). Sin
+  // número solo vale el título exacto, salvo «Arc-fault protection», que sin número es la viñeta de la §3 (una exclusión).
+  const RX_TITULO_LEY = /\bflorida construction lien law\b|\b713\.015\b|\bright to cancel\b|\b501\.0\d*|\bnotice of cancellation\b|\bdeposit\b[^.;]{0,40}\band start of work\b|\b489\.126\b|\belectronic signatures?\b|\b668\.50\b|\bnotice to owner\b|\b713\.06\b|\b713\.20\b|\binsurance and license\b|\bec13016045\b|\bretainage\b/;
+  const TITULOS_CLAUSULA = Object.assign({}, ...CLAUSULAS_ADAPTABLES.filter(k => k !== "fixtures_cliente").map(k => ({ [k]: [CLAUSULAS_CASA[k].titulo] })),
+    { sitio: [CLAUSULAS_CASA.sitio.titulo, "Site condition"], afci: [CLAUSULAS_CASA.afci.titulo, AFCI_INCLUIDO.titulo],
+      fixtures_cliente: ["Client-furnished fixtures", "Owner-furnished fixtures"] });
+  const SIN_NUMERO_ES_OTRA = ["arc-fault protection"];
+  const PISTAS_CLAUSULA = [[/\bcancel\w*\b[^.;]*\b(?:after|period|late)\b/, "cancelacion_tardia"], [/\bcancel\w*/, "cancelacion_gc"],
+    [/\bwarrant\w*/, "garantia"], [/\bliabilit\w*/, "limite"], [/\bchange orders?\b/, "cambios"], [/\barc-?fault\b|\bafci\b/, "afci"],
+    [/\bcode edition\b|\bedition of the code\b/, "edicion"], [/\bsubsurface\b|\bslab\b|\bunderground\b|\bexcavation\b/, "subsuelo"],
+    [/\bopenings?\b|\bpatch\w*/, "aberturas"], [/\bahj\b|\bcode upgrades?\b|\bauthority having jurisdiction\b/, "ahj_upgrades"],
+    [/\bconcealed\b|\blatent\b|\bpre-?existing\b|\bhidden\b|\bexisting conditions?\b/, "existentes"], [/\bsite conditions?\b|\bexisting (?:branch )?circuits\b/, "sitio"],
+    [/\b(?:client|owner|tenant|gc|customer)[- ]?(?:furnished|supplied|provided)\b[^.;]*\bfixtures?\b|\bfixtures?\b[^.;]*\b(?:furnished|supplied|provided) by (?:the )?(?:client|owner|tenant|gc|customer|others)\b/, "fixtures_cliente"],
+    // 17-oct (pliego §11.9, revisión adversaria P4): los títulos que la IA del armado puede dar a una adaptada sin las palabras que
+    // TITULO_PROHIBIDO_ADAPTADA le prohíbe («liab…», «limit…», «change orders»): «9.8 Damages», «9.4 Workmanship», «9.7 Extra work»,
+    // «9.7 What we find behind walls». Lo que siga sin reconocerse en la §9 no lleva botón (la app cierra por defecto)
+    [/\bdamages?\b/, "limite"], [/\bworkmanship\b/, "garantia"], [/\b(?:extra|additional) work\b|\bchanges? (?:to|in) the (?:work|scope)\b/, "cambios"],
+    [/\bbehind (?:the )?walls?\b|\bwhat we find\b/, "existentes"]];
+  function claveDeClausulaPorTitulo(titulo) {
+    let t = normaClausula(String(titulo === undefined || titulo === null ? "" : titulo).replace(/<[^>]*>/g, " ")
+      .replace(/&mdash;|&#8212;/gi, "—").replace(/&ndash;/gi, "–").replace(/&#x27;|&#39;|&apos;/gi, "'").replace(/&quot;/gi, '"').replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&"));
+    if (!t) return null;
+    if (RX_TITULO_LEY.test(t)) return "ley";
+    const m = t.match(/^(\d+)(?:\.\d+)*\.?\s+/), sec = m ? m[1] : "";
+    t = t.slice(m ? m[0].length : 0).replace(/\s*[.:]\s*$/, "").trim();
+    if (!t) return null;
+    if (/^testing and closeout\b/.test(t)) return !sec || sec === "2" ? "cierre" : null;
+    if (sec && sec !== "9") return null;
+    for (const clave of Object.keys(TITULOS_CLAUSULA))
+      if (TITULOS_CLAUSULA[clave].some(x => normaClausula(x) === t)) return !sec && SIN_NUMERO_ES_OTRA.includes(t) ? null : clave;
+    if (!sec) return null;
+    for (const [rx, clave] of PISTAS_CLAUSULA) if (rx.test(t)) return clave;
+    return null;
+  }
+  // 17-oct (pliego §11.9, revisión adversaria P1 y P3): un párrafo que no es de ley ni una cláusula B (el alcance, una exclusión, la §5,
+  // la 7.x) tampoco puede recibir con un botón dinero ni una protección peor metidos en su cuerpo: «Locations the Client adds are
+  // included in the lump sum», «7.5 … included at no extra charge», «All of this work is warranted for two years … liability … not
+  // limited», «Contractor waives any right to record a claim of lien», «shall indemnify and hold harmless». Como en §1.2
+  // (leyQueNoEsta), la palabra solo vale si el párrafo de hoy ya la trae. Devuelve { dinero: «palabra» }, { proteccion: «palabra» } o
+  // null. `base` = lo que dice hoy el párrafo (título y texto) y la cita. Sin «signed» ni «priced»: el change order firmado y con
+  // precio aparte es lo que protege (la línea 49 de Gong lo dice así).
+  const RX_DINERO_PARRAFO = [JUICIO_PAGO, /\binterest\b/i, /\blate (?:payments?|fees?|charges?)\b/i, /\bsurcharges?\b/i, /\bfees?\b/i,
+    /\bbill(?:s|ed|ing|able)?\b/i, /\bcharg(?:e|es|ed|ing)\b/i, /\blump sum\b/i, /(?<!\bnot )\bincluded in the (?:lump sum|price|contract(?: price)?|base (?:price|bid))\b/i,
+    /\bat no (?:additional |extra )?(?:cost|charge)\b|\bfree of charge\b|\bno (?:additional |extra )(?:cost|charge)\b|\bwithout (?:additional |extra |any )?(?:cost|charge)\b/i,
+    /\bmilestones?\b/i, /\brefund\w*|\bnon-?refundable\b/i, /\bdiscount\w*/i, /\bcredit(?:s|ed)?\b/i, /\bcost plus\b|\bat cost\b/i,
+    /\b(?:max power|contractor)(?:'s|’s) (?:sole )?(?:cost|expense|account)\b/i];
+  // (las palabras de ley de PROHIBIDAS_LEY van también, salvo «signed»: se suman al mirar, porque esa lista se define más abajo)
+  const RX_PROTECCION_PARRAFO = [/\bguarant\w*/i, /\bwarrant\w*/i,
+    /\bliab(?:le|ility|ilities)\b/i, /\bconsequential\b|\bdamages\b/i, /\bharmless\b/i, /\bnotwithstanding\b/i,
+    /(?:\b(?:sections?|sec\.?|clauses?|paragraphs?)|§)\s*9\b/i, /\bretain\w*/i, /\bwithh[oe]ld\w*/i,
+    /\b(?:max power|contractor) (?:is|are|remains|shall be|will be) (?:solely |fully |entirely |also )?(?:responsible|liable|answerable)\b/i,
+    /\bresponsib\w+ for (?:all|any and all)\b/i, /\btime is of the essence\b/i, /\bwithout (?:a |any )?(?:written )?change orders?\b/i,
+    /\bverbal\w*|\boral(?:ly)?\b/i, /\bprevail\w*|\bgovern(?:s|ed|ing)?\b/i];
+  function maloEnParrafoLibre(texto, base) {
+    const t = String(texto || "").replace(/[‘’ʼ`]/g, "'"), b = String(base || "").replace(/[‘’ʼ`]/g, "'");
+    if (!t.trim()) return null;
+    for (const rx of RX_DINERO_PARRAFO) { const m = t.match(rx); if (m && !rx.test(b)) return { dinero: m[0].trim() }; }
+    const ley = PROHIBIDAS_LEY.map(p => p[0]).filter(rx => !rx.test("signed"));
+    for (const rx of [...ley, ...RX_PROTECCION_PARRAFO]) { const m = t.match(rx); if (m && !rx.test(b)) return { proteccion: m[0].trim() }; }
+    return null;
   }
 
   // ---- 14-oct (pliego §10.10, Edgar: «que los errores que ella misma encuentre sea capaz de arreglarlos sola») ----
@@ -6530,7 +6810,14 @@
     const base = lineas.map(l => String((l || {}).t || "")).join("\n") + "\n" + JSON.stringify(ficha || {});
     // 14-oct (pliego §10.4): el juicio se limpia aparte y ANTES del candado: una pieza suya mala se tira con aviso y el armado
     // sigue (lo que queda no trae dinero). Sus líneas «de», solo las de la hoja.
-    const lj = limpiarJuicio(armado.juicio, base);
+    // 17-oct (pliego §11.6.4): el cierre adaptado se aparta y se limpia aquí (limpiarJuicio es la del cerebro y no lo conoce)
+    const ac = apartarCierre(armado.juicio, base);
+    const lj = limpiarJuicio(ac.juicio, base);
+    if (ac.aviso) lj.avisos.push({ tipo: "otro", lineas: [], motivo: ac.aviso });
+    if (ac.cierre) {
+      if (!lj.juicio) lj.juicio = {};
+      lj.juicio.clausulas_adaptadas = [...(lj.juicio.clausulas_adaptadas || []), ac.cierre];
+    }
     const sinJuicio = Object.assign({}, armado); delete sinJuicio.juicio;
     const donde = dineroEnElArmado(sinJuicio, "", base);
     if (donde) return { error: "dinero_en_el_armado", donde };
@@ -8225,7 +8512,7 @@
                 // tanda 2: lo que la prueba del molde del cerebro necesita mirar
                 SECCIONES_VALIDAS, NOMBRES_PLANTILLA,
                 // v3.8 (29-sep): la jurisdicción por la dirección y el revisor del contrato armado
-                jurisdiccionDe, ZIP_CONDADO, ZIP_A_CABALLO, CIUDADES_MUNICIPIO, CIUDADES_POSTALES, ZIP_NOMBRE_SIN_CIUDAD, MUNICIPIO_PERMISO_DUDOSO, textoParaRevisar, lineaDeCita, comprobarHallazgos, ponerDatoDeFicha, ponerLineaDato, fichaSinDinero,
+                jurisdiccionDe, ZIP_CONDADO, ZIP_A_CABALLO, CIUDADES_MUNICIPIO, CIUDADES_POSTALES, ZIP_NOMBRE_SIN_CIUDAD, MUNICIPIO_PERMISO_DUDOSO, textoParaRevisar, lineaDeCita, comprobarHallazgos, textoNuevoDeHallazgo, MAX_TEXTO_NUEVO, ponerDatoDeFicha, ponerLineaDato, fichaSinDinero,
                 perdonDeHallazgo, conMontoTapado, subcadenaComun, TIPOS_HALLAZGO, CAMPOS_ARREGLO,
                 // v251 (29-sep, Metro NPR): la ficha manda en la dirección, las reglas por contratista y la cabecera del SOW
                 nutrirHoja, mismaDireccion, partesDireccion, llevaMarcador, DATOS_FICHA, RE_DATO_FICHA, REGLAS_CONTRATISTA, reglaDeContratista,
@@ -8250,6 +8537,13 @@
                 // 14-oct (pliego §10.9): las cláusulas que se adaptan a cada trabajo sin perder su núcleo
                 CLAUSULAS_ADAPTABLES, CLAUSULAS_CASA, AFCI_INCLUIDO, NUCLEO_CLAUSULA, NOMBRE_CLAUSULA_IA, normaClausula, maloEnAdaptada,
                 aplicarTextosAdaptados,
+                // 17-oct (pliego §11.6): el cierre que se adapta (solo del teléfono) y las reglas que obedecen la hoja
+                CIERRE_CASA, NUCLEO_CIERRE, NOMBRE_CIERRE, maloEnCierre, apartarCierre,
+                // 17-oct (pliego §11.9.1): qué cláusula es un párrafo, para que un botón nunca quite una protección
+                claveDeClausulaPorTitulo, RX_TITULO_LEY, TITULOS_CLAUSULA, PISTAS_CLAUSULA,
+                // 17-oct (§11.9, revisión adversaria P1 y P3): dinero o una protección peor metidos en un párrafo libre
+                maloEnParrafoLibre, RX_DINERO_PARRAFO, RX_PROTECCION_PARRAFO,
+                RX_EXCL_FUERA_HOJA, RX_EXCL_FUERA_PLANOS, RX_EXCL_FUERA_TODAS, RX_EXCL_FIXTURES_HOJA, RX_SOLO_REGISTRO,
                 // 14-oct (corrección tras la segunda revisión): la adaptada se niega por defecto
                 contractorAlCliente, ANCLAS_ADAPTADA, TITULO_PROHIBIDO_ADAPTADA, VIGILADAS_ADAPTADA, FRASES_CASA_ADAPTADA, NUM_LETRA_VALOR, cifraQueNoEsDeLaCasa, vigiladaSuelta,
                 // 14-oct (pliego §10.10): «Cuéntale el trabajo» y el contrato que se corrige solo (dos rondas)

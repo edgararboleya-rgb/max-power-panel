@@ -4597,6 +4597,97 @@
     [/^(\d+) cambios tuyos no se volvieron a poner porque llevaban un monto o dejaban algo mal en el papel:$/,
       "$1 changes of yours weren't put back because they had an amount or left something wrong on the paper:"]
   );
+  // 17-oct, versión 6 (pliego §11): el revisor propone el texto («Cómo debería ir») y un botón lo pone; sin «Lo dejo así» ni
+  // «Enséñale» en los puntos. Lo que propone la IA va con data-no-i18n.
+  Object.assign(D, {
+    "Dice el papel:": "The paper says:",
+    "Por qué:": "Why:",
+    "Cómo debería ir:": "How it should read:",
+    "Sale de la plantilla": "Comes from the template",
+    "Arreglar según la IA": "Fix it as the AI proposes",
+    "Cambiado en el papel y aprendido para todos los contratos:": "Changed on the paper and learned for every contract:",
+    "Queda 1 punto rojo: arréglalo con «Arreglar según la IA» o dile a la IA por qué está bien":
+      "1 red point is left: fix it with «Fix it as the AI proposes» or tell the AI why it's fine",
+    "No encontré ese párrafo en el papel: háblale a la IA": "I didn't find that paragraph on the paper: talk to the AI",
+    "Ese párrafo sale varias veces en el papel y no sé cuál cambiar: háblale a la IA":
+      "That paragraph appears several times on the paper and I don't know which one to change: talk to the AI",
+    "1 arreglo tuyo se puso en un párrafo que cambió desde que lo hiciste:": "1 fix of yours went into a paragraph that changed since you made it:",
+    "— míralo": "— check it",
+    "— míralos": "— check them",
+    "Esto se arregla con el dato de la ficha": "This is fixed with the data from the job card",
+    "Esto lo pone el programa: pagos o permiso": "The program puts this in: payments or permit",
+    "La IA no propuso texto: háblale": "The AI didn't propose a text: talk to it",
+    "Arregla los puntos rojos (o dile a la IA por qué están bien) y toca «Arreglar el contrato» una sola vez: se revisa con todo lo cambiado y se guarda solo en la propuesta.":
+      "Fix the red points (or tell the AI why they're fine) and tap «Fix the contract» only once: it's reviewed with everything changed and saved to the proposal by itself.",
+    "≈ 25 ¢, un minuto": "≈ 25 ¢, about a minute",
+    "Puesto en el papel": "Put on the paper",
+    "Deshecho: el papel vuelve a decir lo de antes": "Undone: the paper says what it said before",
+    "No pude deshacerlo aquí: vuelve a armar el contrato": "I couldn't undo it here: build the contract again",
+    "Puse 1 arreglo en el papel": "I put 1 fix on the paper"
+  });
+  REGLAS.push(
+    [/^Arreglar todo lo que propone la IA \((\d+)\)$/, "Fix everything the AI proposes ($1)"],
+    [/^(\d+) (arreglados?) · (\d+) por decidir · (\d+) (dudas?)$/, s => s.replace(/^(\d+) (arreglados?) · (\d+) por decidir · (\d+) (dudas?)$/,
+      (m, n, a, mm, k, d) => `${n} fixed · ${mm} to decide · ${k} ${d === "duda" ? "doubt" : "doubts"}`)],
+    [/^Quedan (\d+) puntos rojos: arréglalos con «Arreglar según la IA» o dile a la IA por qué están bien$/,
+      "$1 red points are left: fix them with «Fix it as the AI proposes» or tell the AI why they're fine"],
+    [/^(\d+) arreglos tuyos se pusieron en párrafos que cambiaron desde que los hiciste:$/, "$1 fixes of yours went into paragraphs that changed since you made them:"],
+    [/^Esto se arregla en la hoja \(línea (\d+)\)$/, "This is fixed on the sheet (line $1)"],
+    [/^Puse (\d+) arreglos en el papel$/, "I put $1 fixes on the paper"],
+    [/^Puse (\d+) en el papel; 1 no se pudo poner: míralo$/, "I put $1 on the paper; 1 couldn't be put in: check it"],
+    [/^Puse (\d+) en el papel; (\d+) no se pudieron poner: míralos$/, "I put $1 on the paper; $2 couldn't be put in: check them"]
+  );
+  // 17-oct (pliego §11.9): un botón nunca quita una protección; «Decidido» perdona; olvidar los arreglos viejos; la línea gris
+  // dice la verdad. El motivo que da el juez de las cláusulas va tal cual (es del programa).
+  Object.assign(D, {
+    "La IA propuso:": "The AI proposed:",
+    "Esto es texto de ley: no se cambia con un botón. Si crees que está mal, háblale a la IA":
+      "This is legal text: it isn't changed with a button. If you think it's wrong, talk to the AI",
+    "La IA propuso un texto demasiado largo para esta cláusula: no se pone con un botón. Háblale":
+      "The AI proposed a text too long for this clause: it isn't put in with a button. Talk to it",
+    "La IA propuso un texto con un monto: el dinero lo pone el programa. Háblale y pídele el texto sin cifras":
+      "The AI proposed a text with an amount: the program puts in the money. Talk to it and ask for the text without figures",
+    "La IA propuso un texto que no se puede poner tal cual: háblale": "The AI proposed a text that can't go in as it is: talk to it",
+    "(no vuelve a salir)": "(won't come up again)",
+    "Olvidarlo": "Forget it",
+    "Olvidarlos": "Forget them",
+    "Olvidé 1 cambio viejo": "I forgot 1 old change",
+    "Es texto de ley: lo decides tú.": "It's legal text: you decide.",
+    "Apuntado como decidido: no te lo vuelvo a marcar. El papel no cambia en este punto; si quieres que cambie, ábrelo y díselo a la IA.":
+      "Marked as decided: I won't flag it again. The paper doesn't change at this point; if you want it changed, open it and tell the AI."
+  });
+  REGLAS.push(
+    [/^La IA propuso un texto que pierde protección \((.+)\): háblale$/, "The AI proposed a text that loses protection ($1): talk to it"],
+    [/^Olvidé (\d+) cambios viejos$/, "I forgot $1 old changes"],
+    // 17-oct (integración §11.9; revisión adversaria P2): en la charla de Edgar, solo si él lo confirma, con un «Ojo»
+    [/^Ojo: lo puse porque lo confirmaste, pero quita una protección del contrato \((.+)\)\. Léelo antes de mandar el contrato$/,
+      "Careful: I put it in because you confirmed it, but it removes a protection from the contract ($1). Read it before sending the contract"],
+    // 17-oct (pliego §11.9, revisión adversaria P1–P3)
+    [/^La IA metió en este párrafo algo de garantía, responsabilidad o gravamen \(«(.+)»\): no se pone con un botón\. Háblale$/,
+      "The AI put something about warranty, liability or lien into this paragraph («$1»): it isn't put in with a button. Talk to it"],
+    [/^Esto quita una protección del contrato \((.+)\): no lo puse en el papel\. Si de verdad lo quieres así, toca «Ponerlo aunque quite la protección»$/,
+      "This removes a protection from the contract ($1): I didn't put it on the paper. If you really want it that way, tap «Put it in even though it removes the protection»"],
+    [/^Esto quita una protección del contrato: (.+)\.$/, "This removes a protection from the contract: $1."],
+    [/^Lo que cambia: «(.+)»\.$/, "What changes: «$1»."]
+  );
+  D["No pude comprobar si este texto quita una protección: no se pone con un botón. Háblale"] =
+    "I couldn't check whether this text removes a protection: it isn't put in with a button. Talk to the AI";
+  // 17-oct (pliego §11.9, revisión adversaria P1–P3): la ley nunca entra por la charla; el dinero de la §6 no lleva botón; lo que
+  // quita una protección se pone solo si Edgar lo confirma
+  Object.assign(D, {
+    "Esto es dinero: lo pone el programa. Háblale": "This is money: the program puts it in. Talk to the AI",
+    "Esto es texto de ley: no lo cambio en el papel. Si de verdad está mal, dímelo y lo miramos":
+      "This is legal text: I won't change it on the paper. If it's really wrong, tell me and we'll look at it",
+    "Esto toca el dinero, que lo pone el programa: no lo puse en el papel. Si de verdad lo quieres así, toca «Ponerlo aunque toque el dinero»":
+      "This touches the money, which the program puts in: I didn't put it on the paper. If you really want it that way, tap «Put it in even though it touches the money»",
+    "Ponerlo aunque quite la protección": "Put it in even though it removes the protection",
+    "Ponerlo aunque toque el dinero": "Put it in even though it touches the money",
+    "Ponerlo": "Put it in",
+    "Esto toca el dinero, que normalmente lo pone el programa.": "This touches the money, which the program normally puts in.",
+    "¿Lo pongo en el papel de todas formas?": "Should I put it on the paper anyway?",
+    "Ojo: lo puse porque lo confirmaste, pero toca el dinero, que lo pone el programa. Léelo antes de mandar el contrato":
+      "Careful: I put it in because you confirmed it, but it touches the money, which the program puts in. Read it before sending the contract"
+  });
   // ---------- El motor ----------
   // Cada texto de la pantalla se busca en el diccionario tal como se ve: con los
   // espacios y saltos de línea juntados en uno solo. Si no está, se prueba sin el

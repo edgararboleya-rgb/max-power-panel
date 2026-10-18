@@ -2857,6 +2857,20 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .alc-rev-donde{display:block;font-size: var(--fs-3);font-weight:650;color:var(--mp-ink-2)}
 .alc-rev-motivo{margin:.25rem 0 .1rem;font-size: var(--fs-4);line-height:1.45}
 .alc-rev-hecho{margin:.25rem 0 .1rem;font-size: var(--fs-4);color:var(--ok-ink);font-weight:600}
+/* 17-oct (pliego §11.2): «Dice el papel», «Por qué» y «Cómo debería ir»; la propuesta del revisor en una caja clara, entera */
+.alc-rev-etq{margin:.5rem 0 0;font-size: var(--fs-3);font-weight:650;color:var(--mp-ink-2)}
+.alc-hallazgo .alc-de-plantilla{margin:.1rem 0 .25rem;font-size: var(--fs-3);color:var(--mp-ink-3)}
+.alc-propuesta{font-size: var(--fs-4);line-height:1.5;color:var(--mp-ink);background:var(--mp-ok-bg);border:1px solid var(--mp-ok-bd);
+  border-radius:8px;padding:.45rem .6rem;margin:.3rem 0 .25rem;white-space:pre-wrap;word-break:break-word}
+.alc-sin-propuesta,.alc-aviso-arreglo{margin:.25rem 0;font-size: var(--fs-3)}
+/* 17-oct (pliego §11.9): la propuesta que no lleva botón (texto de ley, o pierde protección) va en una caja neutra, no en la verde;
+   «Olvidarlos», un botón pequeño debajo del aviso de los cambios viejos */
+.alc-propuesta.alc-propuesta-no{background:var(--mp-sky-1);border-color:var(--mp-gris-bd);color:var(--mp-ink-2)}
+.alc-propuesta-insegura{margin:.25rem 0;font-size: var(--fs-3)}
+.alc-sin-sitio .alc-fixes{margin:.4rem 0 0}.alc-sin-sitio .alc-op{font-family:inherit}
+.alc-perdonado{color:var(--mp-ink-2);font-weight:400}
+.alc-arreglar-todo{margin:.55rem 0 .35rem}
+.alc-parrafo-cambiado{margin:.45rem 0;padding:.45rem .6rem;font-size: var(--fs-3)}
 .alc-hallazgo .alc-op{font-family:inherit;text-align:left}
 /* 14-oct (corrección tras la segunda revisión, hallazgo 17): los botones de «Así lo hice» y de «Cuéntale el trabajo» con la letra de la app, no la del sistema */
 .alc-asi .alc-op,.alc-cuentale .alc-op{font-family:inherit}

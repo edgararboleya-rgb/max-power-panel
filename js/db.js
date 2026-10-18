@@ -840,8 +840,11 @@
     // plantillaAnterior() dice si la última que se bajó fue la de respaldo.
     // 17-oct (revisión del 16-oct, obras-12 y obras-18): v3.14 = v3.13 + la 9.x del sitio sin circuitos existentes en obra nueva
     // (@si SIN_CIRCUITOS_EXISTENTES) y la 7.x de una sola movilización (@si UNA_MOVILIZACION). La v3.13 nunca se subió: se sube
-    // la v3.14 (plantillas/SOW_Template_v3.14.html) ANTES de publicar la app. El respaldo sigue siendo la v3.12, la que está en
+    // la v3.14 (SOW_Template_v3.14.html, en plantillas/) ANTES de publicar la app. El respaldo sigue siendo la v3.12, la que está en
     // el almacén (con ella las marcas nuevas no existen y el papel sale como hoy).
+    // 17-oct (tarde, pliego §11.6): v3.15 = v3.14 + la exclusión general de la hoja en el sitio de la de la casa, las luminarias de la
+    // casa que no se repiten, la frase de la 7.1 del permiso solo cuando Max Power puede pedirlo y los planos nombrados en la §5. Se sube
+    // plantillas/SOW_Template_v3.15.html ANTES de publicar la app; el respaldo sigue siendo la v3.12.
     plantillaSOW: async () => {
       const bajar = async ruta => {
         const firma = await firmarFotos([ruta]);
@@ -851,7 +854,7 @@
         if (!r.ok) throw new Error("No se pudo bajar la plantilla (" + r.status + ")");
         return r.text();
       };
-      try { const t = await bajar("plantillas/SOW_Template_v3.14.html"); plantillaDeRespaldo = false; return t; }
+      try { const t = await bajar("plantillas/SOW_Template_v3.15.html"); plantillaDeRespaldo = false; return t; }
       catch (e) {
         let t = null;
         try { t = await bajar("plantillas/SOW_Template_v3.12.html"); } catch { /* sin la de respaldo, el error de la nueva */ }
