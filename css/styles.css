@@ -2869,7 +2869,16 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .alc-propuesta-insegura{margin:.25rem 0;font-size: var(--fs-3)}
 .alc-sin-sitio .alc-fixes{margin:.4rem 0 0}.alc-sin-sitio .alc-op{font-family:inherit}
 .alc-perdonado{color:var(--mp-ink-2);font-weight:400}
-.alc-arreglar-todo{margin:.55rem 0 .35rem}
+/* 18-oct (pliego §11.11.7): «Arreglar todo» y «Arreglar lo pendiente» van abajo, en la fila de «Arreglar el contrato»; en cada punto,
+   «viene de la línea N de tu hoja» es un enlace pequeño (no un botón), el dato de la ficha va en la caja de «Cómo debería ir» y
+   «Ponerlo aunque…» se distingue de «Arreglar según la IA» con el borde ámbar */
+.alc-botones .alc-arreglar-todo,.alc-botones .alc-arreglar-pendiente{margin:0}
+.alc-hallazgo .alc-de-hoja{margin:.1rem 0 .25rem;font-size: var(--fs-3)}
+.alc-enlace-linea{color:var(--mp-blue);text-decoration:underline;text-underline-offset:2px;display:inline-block;padding:.35rem 0;min-height:24px}
+.alc-propuesta.alc-propuesta-dato{white-space:normal}
+.alc-op.alc-auto.alc-forzar{border-color:var(--mp-yellow);color:var(--warn-ink)}
+.alc-pendiente-costo{margin:.35rem 0 .1rem;font-size: var(--fs-3)}
+.alc-pendiente-aviso,.alc-pendiente-espera{margin:.45rem 0 .2rem}
 .alc-parrafo-cambiado{margin:.45rem 0;padding:.45rem .6rem;font-size: var(--fs-3)}
 .alc-hallazgo .alc-op{font-family:inherit;text-align:left}
 /* 14-oct (corrección tras la segunda revisión, hallazgo 17): los botones de «Así lo hice» y de «Cuéntale el trabajo» con la letra de la app, no la del sistema */

@@ -5637,9 +5637,10 @@
   // «$», «##», «{{», «<» o dinero (esMontoArmar, traeDineroEstricto). No se tira el hallazgo: solo su propuesta. La app la vuelve
   // a mirar con el papel delante (alcTextoNuevoOk).
   const MAX_TEXTO_NUEVO = 1500;
+  // 18-oct (pliego §11.11.5): la letra (c) de una lista que llega como «©» vuelve a ser «(c)», como en el texto de la charla
   function textoNuevoDeHallazgo(t) {
     if (typeof t !== "string") return null;
-    const s = t.replace(/\s+/g, " ").trim();
+    const s = t.replace(/\s+/g, " ").trim().replace(/(^|[\s;:,])©(?=\s|$)/g, "$1(c)");
     if (!s || s.length > MAX_TEXTO_NUEVO) return null;
     if (/\[\s*monto\s*\]|\$|\{\{|<|#{2,}|#[.,]#/i.test(s)) return null;
     if (esMontoArmar(s) || traeDineroEstricto(s)) return null;
@@ -6139,7 +6140,9 @@
   function maloEnCierre(titulo, texto, base, modo) {
     const ti = String(titulo || "").replace(/\s+/g, " ").trim(), te = String(texto || "").replace(/\s+/g, " ").trim();
     if (!te) return "no traía texto";
-    if (te.length > 900 || ti.length > 120) return "era demasiado larga";
+    // 18-oct (pliego §11.11.2): el cierre admite hasta MAX_TEXTO_NUEVO (1,500) letras, no 900: con tres paneles y seis tareas es
+    // largo a propósito (las demás cláusulas B siguen con max(900, casa + 200), en maloEnAdaptada)
+    if (te.length > MAX_TEXTO_NUEVO || ti.length > 120) return "era demasiado larga";
     const t = (ti ? ti + ". " : "") + te, b = String(base || "");
     const casaTexto = modo === "servicio" ? CIERRE_CASA.servicio : CIERRE_CASA.obra, deCasa = CIERRE_CASA.titulo + ". " + casaTexto;
     if (dineroEnTextoArmar(t, b + "\n" + deCasa)) return "traía dinero";

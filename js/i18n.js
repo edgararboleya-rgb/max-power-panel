@@ -4688,6 +4688,56 @@
     "Ojo: lo puse porque lo confirmaste, pero toca el dinero, que lo pone el programa. Léelo antes de mandar el contrato":
       "Careful: I put it in because you confirmed it, but it touches the money, which the program puts in. Read it before sending the contract"
   });
+  // 18-oct (pliego §11.11): punto por punto, siempre con opción. Como mucho dos botones en cada punto («Arreglar según la IA», que
+  // también pone el dato de la ficha o es «Ponerlo aunque…», y «Hablar con la IA»); «viene de la línea N de tu hoja» es un enlace;
+  // abajo, «Arreglar lo pendiente (M)» le pide a la IA el texto de lo que no lo trae; «Arreglar el contrato» solo pregunta por los rojos
+  Object.assign(D, {
+    "Pone el dato de la ficha:": "Puts in the data from the job card:",
+    "Cambiado en el papel (lo confirmaste):": "Changed on the paper (you confirmed it):",
+    "Ponerlo aunque sea largo": "Put it in even though it's long",
+    "Esto toca el dinero, que lo pone el programa. Si de verdad lo quieres así, toca «Ponerlo aunque toque el dinero»; si no, háblale":
+      "This touches the money, which the program puts in. If you really want it that way, tap «Put it in even though it touches the money»; if not, talk to the AI",
+    "La IA propuso un texto más largo de lo que suele llevar esta cláusula. Léelo entero: si te parece bien, toca «Ponerlo aunque sea largo»; si no, háblale":
+      "The AI proposed a text longer than this clause usually is. Read it all: if it looks right, tap «Put it in even though it's long»; if not, talk to the AI",
+    "No pude comprobar si este texto quita una protección. Si de verdad lo quieres así, toca «Ponerlo aunque quite la protección»; si no, háblale":
+      "I couldn't check whether this text removes a protection. If you really want it that way, tap «Put it in even though it removes the protection»; if not, talk to the AI",
+    "Este texto es más largo de lo que suele llevar esta cláusula. Léelo entero antes: lo largo esconde cambios.":
+      "This text is longer than this clause usually is. Read it all first: long texts hide changes.",
+    "Ojo: lo puse porque lo confirmaste, pero es más largo de lo que suele llevar esta cláusula. Léelo antes de mandar el contrato":
+      "Careful: I put it in because you confirmed it, but it's longer than this clause usually is. Read it before sending the contract",
+    "Este texto es más largo de lo que suele llevar esta cláusula: no lo puse en el papel. Si de verdad lo quieres así, toca «Ponerlo aunque sea largo»":
+      "This text is longer than this clause usually is: I didn't put it on the paper. If you really want it that way, tap «Put it in even though it's long»",
+    "La IA no propuso texto todavía: toca «Arreglar lo pendiente», abajo, o háblale":
+      "The AI hasn't proposed a text yet: tap «Fix what's pending», below, or talk to it",
+    "La IA está escribiendo el texto de lo pendiente… (suele tardar un minuto)": "The AI is writing the text for what's pending… (it usually takes a minute)",
+    "«Arreglar lo pendiente» le pide a la IA el texto de los puntos que no lo traen (≈ 10 ¢). No pone nada sola: tú decides en cada punto.":
+      "«Fix what's pending» asks the AI for the text of the points that don't have one (≈ 10 ¢). It doesn't put anything in by itself: you decide on each point.",
+    "La IA no pudo proponer texto para esos puntos: háblale en cada uno": "The AI couldn't propose a text for those points: talk to it on each one",
+    "La IA propuso texto para 1 punto: míralo y toca «Arreglar según la IA»": "The AI proposed a text for 1 point: check it and tap «Fix it as the AI proposes»",
+    "La IA ya está escribiendo el texto de lo pendiente": "The AI is already writing the text for what's pending",
+    "Espera a que la IA te conteste en la charla": "Wait for the AI to answer you in the chat",
+    "Sin señal: «Arreglar lo pendiente» necesita internet": "No signal: «Fix what's pending» needs internet",
+    "Esos puntos ya no están así en el papel: toca «Arreglar el contrato» para que la IA lo revise otra vez":
+      "Those points aren't on the paper like that anymore: tap «Fix the contract» so the AI reviews it again",
+    "Hay 1 punto rojo sin decidir. ¿Arreglo el contrato con lo decidido y dejo ese para la próxima revisión?":
+      "There is 1 red point not decided. Should I fix the contract with what's decided and leave that one for the next review?"
+  });
+  REGLAS.push(
+    [/^viene de la línea (\d+) de tu hoja$/, "comes from line $1 of your sheet"],
+    [/^Arreglar lo pendiente \((\d+)\)$/, "Fix what's pending ($1)"],
+    [/^La IA propuso texto para (\d+) puntos: míralos y toca «Arreglar según la IA» o «Arreglar todo»$/,
+      "The AI proposed a text for $1 points: check them and tap «Fix it as the AI proposes» or «Fix everything»"],
+    [/^Hay (\d+) puntos rojos sin decidir\. ¿Arreglo el contrato con lo decidido y dejo esos para la próxima revisión\?$/,
+      "There are $1 red points not decided. Should I fix the contract with what's decided and leave those for the next review?"],
+    [/^La IA metió en este párrafo algo de cobro \(«(.+)»\), y el dinero lo pone el programa\. Si de verdad lo quieres así, toca «Ponerlo aunque toque el dinero»; si no, háblale$/,
+      "The AI put something about charges into this paragraph («$1»), and the program puts in the money. If you really want it that way, tap «Put it in even though it touches the money»; if not, talk to the AI"],
+    [/^La IA propuso un texto que pierde protección \((.+)\)\. Si de verdad lo quieres así, toca «Ponerlo aunque quite la protección»; si no, háblale$/,
+      "The AI proposed a text that loses protection ($1). If you really want it that way, tap «Put it in even though it removes the protection»; if not, talk to the AI"],
+    [/^La IA metió en este párrafo algo de garantía, responsabilidad o gravamen \(«(.+)»\)\. Si de verdad lo quieres así, toca «Ponerlo aunque quite la protección»; si no, háblale$/,
+      "The AI put something about warranty, liability or lien into this paragraph («$1»). If you really want it that way, tap «Put it in even though it removes the protection»; if not, talk to the AI"],
+    [/^Esto mete en este párrafo algo de garantía, responsabilidad o gravamen \(«(.+)»\) que puede quitar una protección del contrato\.$/,
+      "This puts something about warranty, liability or lien into this paragraph («$1») that can remove a protection from the contract."]
+  );
   // ---------- El motor ----------
   // Cada texto de la pantalla se busca en el diccionario tal como se ve: con los
   // espacios y saltos de línea juntados en uno solo. Si no está, se prueba sin el
