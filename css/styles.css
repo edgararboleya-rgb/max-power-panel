@@ -2934,6 +2934,11 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .alc-asi-botones{flex-wrap:wrap}
 .alc-asi-costo{margin-top:.7rem}
 .alc-rev-detalle > summary{cursor:pointer;margin:.4rem 0;font-weight:700}
+/* 18-oct (pliego §11.12): un solo proceso de revisión: «La IA arregló N puntos» (plegada), «Te toca decidir» y «Dudas» */
+.alc-auto-arreglados{margin:.5rem 0}
+.alc-auto-arreglados > summary{cursor:pointer;font-weight:700;min-height:44px;display:flex;align-items:center}
+.alc-auto-arreglados > ul{padding-left:0;list-style:none}
+.alc-proceso-cuenta{margin:.3rem 0}
 .alc-origen{color:var(--mp-ink-3);font-size: var(--fs-3)}
 .alc-leccion{margin:.5rem 0;padding:.6rem .7rem;border:1px dashed var(--mp-line);border-radius:10px;background:var(--mp-card)}
 .alc-leccion-etq{display:block;margin:0 0 .3rem;font-size: var(--fs-3);font-weight:650;color:var(--mp-ink-2)}

@@ -5648,7 +5648,7 @@
   }
   // El juez de la app para lo que devuelve el revisor. ctx = { texto (el que se mandó), secciones, ficha, perdonadas }.
   // Se tira: la cita que no está TAL CUAL en el texto, lo que traiga dinero, lo que no tenga motivo.
-  // Se ordena: rojos primero. Como mucho 12. Lo perdonado antes (misma cita) no vuelve a salir.
+  // Se ordena: rojos primero. Como mucho 30 (18-oct, §11.12; antes 12). Lo perdonado antes (misma cita) no vuelve a salir.
   function comprobarHallazgos(lectura, ctx) {
     ctx = ctx || {};
     const texto = String(ctx.texto || "");
@@ -5685,7 +5685,8 @@
     }
     const orden = out.map((h, i) => [h, i]).sort((a, b) => (a[0].gravedad === b[0].gravedad ? a[1] - b[1] : a[0].gravedad === "rojo" ? -1 : 1)).map(x => x[0]);
     const resumen = String(L.resumen || "").replace(/\s+/g, " ").trim().slice(0, 600);
-    return { hallazgos: orden.slice(0, 12), resumen: traeDineroEstricto(resumen) ? "" : resumen,
+    // 18-oct (pliego §11.12.2): treinta como mucho (el revisor trae todo de una vez; antes doce), como el cerebro (MAX_HALLAZGOS)
+    return { hallazgos: orden.slice(0, 30), resumen: traeDineroEstricto(resumen) ? "" : resumen,
              tiradas: tiradas + (Number(L.citas_tiradas) || 0), perdonados };
   }
   // «Usar el dato de la ficha»: escribe (o corrige) en la hoja la línea del dato. Si la hoja ya trae esa línea

@@ -4738,6 +4738,45 @@
     [/^Esto mete en este párrafo algo de garantía, responsabilidad o gravamen \(«(.+)»\) que puede quitar una protección del contrato\.$/,
       "This puts something about warranty, liability or lien into this paragraph («$1») that can remove a protection from the contract."]
   );
+  // 18-oct (pliego §11.12): un solo proceso de revisión. El botón revisa, pone solo lo seguro y vuelve a revisar (como mucho tres
+  // vueltas); al final, UNA pantalla: lo que arregló la IA, lo que le toca decidir a Edgar y las dudas
+  Object.assign(D, {
+    "≈ 25–75 ¢, dos o tres minutos": "≈ 25–75 ¢, two or three minutes",
+    "La IA lee el contrato entero y lo compara con la ficha de la obra. Lo que se puede arreglar sin quitar protección ni tocar el dinero lo arregla sola y vuelve a revisar (como mucho tres vueltas); al final te enseña lo que arregló y lo que te toca decidir.":
+      "The AI reads the whole contract and compares it with the job card. What can be fixed without removing a protection or touching the money, it fixes by itself and reviews again (three rounds at most); at the end it shows you what it fixed and what you have to decide.",
+    "Revisado en 1 vuelta": "Reviewed in 1 round",
+    "Llegué al tope de tres vueltas: lo que la IA propuso en la última no lo puse sola. Está abajo, en «Te toca decidir», con su botón.":
+      "I reached the limit of three rounds: what the AI proposed in the last one I didn't put in by myself. It's below, in «Your call», with its button.",
+    "No seguí revisando: el asistente llegó al tope del mes.": "I didn't keep reviewing: the assistant reached the monthly limit.",
+    "No pude volver a armar el papel con el dato de la ficha: míralo en la hoja y toca «Arreglar el contrato».":
+      "I couldn't build the paper again with the job card data: check it on the sheet and tap «Fix the contract».",
+    "La IA arregló 1 punto": "The AI fixed 1 point",
+    "Lo puso en el papel sin quitar protección ni tocar el dinero. Ábrelo para verlo; si algo no te gusta, «Deshacer» lo vuelve a dejar para ti.":
+      "It put it on the paper without removing a protection or touching the money. Open it to see it; if you don't like something, «Undo» leaves it for you again.",
+    "No queda nada para ti: la IA arregló todo lo que encontró.": "Nothing left for you: the AI fixed everything it found.",
+    "La IA lo arregló:": "The AI fixed it:",
+    "Reviso, arreglo sola lo que se puede y vuelvo a revisar (≈ 25–75 ¢, dos o tres minutos)":
+      "I review, fix by myself what can be fixed and review again (≈ 25–75 ¢, two or three minutes)",
+    "· vueltas de revisión:": "· review rounds:"
+  });
+  REGLAS.push(
+    [/^Vuelta (\d+) de (\d+): la IA está revisando el contrato…$/, "Round $1 of $2: the AI is reviewing the contract…"],
+    [/^Vuelta (\d+) de (\d+): la IA está revisando lo que arregló…$/, "Round $1 of $2: the AI is reviewing what it fixed…"],
+    [/^Vuelta (\d+) de (\d+): pongo en el papel el dato de la ficha…$/, "Round $1 of $2: I'm putting the job card data on the paper…"],
+    [/^Revisado en (\d+) vueltas$/, "Reviewed in $1 rounds"],
+    [/^Revisado en (\d+) (vueltas?) · costó (\d+) ¢$/, s => s.replace(/^Revisado en (\d+) (vueltas?) · costó (\d+) ¢$/,
+      (m, n, v, c) => `Reviewed in ${n} ${v === "vuelta" ? "round" : "rounds"} · cost ${c} ¢`)],
+    [/^La vuelta (\d+) no salió \((.+)\): te enseño lo que hay hasta ahí$/, s => s.replace(/^La vuelta (\d+) no salió \((.+)\): te enseño lo que hay hasta ahí$/,
+      (m, n, e) => `Round ${n} didn't come through (${traducirTexto(e)}): I'm showing you what there is so far`)],
+    [/^La vuelta (\d+) no salió \((.+)\): te enseño lo que hay hasta ahí\. Toca «Revisar otra vez con IA» cuando puedas\.$/,
+      s => s.replace(/^La vuelta (\d+) no salió \((.+)\): te enseño lo que hay hasta ahí\. Toca «Revisar otra vez con IA» cuando puedas\.$/,
+        (m, n, e) => `Round ${n} didn't come through (${traducirTexto(e)}): I'm showing you what there is so far. Tap «Review again with AI» when you can.`)],
+    [/^La IA arregló (\d+) puntos$/, "The AI fixed $1 points"],
+    [/^Te toca decidir \((\d+)\)$/, "Your call ($1)"],
+    [/^Dudas \((\d+)\)$/, "Doubts ($1)"],
+    [/^La IA arregló (\d+) (puntos?) · te toca decidir (\d+)$/, s => s.replace(/^La IA arregló (\d+) (puntos?) · te toca decidir (\d+)$/,
+      (m, n, p, k) => `The AI fixed ${n} ${p === "punto" ? "point" : "points"} · your call: ${k}`)]
+  );
   // ---------- El motor ----------
   // Cada texto de la pantalla se busca en el diccionario tal como se ve: con los
   // espacios y saltos de línea juntados en uno solo. Si no está, se prueba sin el

@@ -14685,6 +14685,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       reemplazos: ((prop && prop.alcance_decisiones && Array.isArray(prop.alcance_decisiones.reemplazos)) ? prop.alcance_decisiones.reemplazos
                    : (prop ? [] : alcReemplazosLocal(proy.id))).filter(r => r && r.cita && typeof r.nuevo === "string").slice(-60),
       reemplazos_sin_sitio: [],
+      // 18-oct (pliego §11.12.4): las vueltas del proceso de revisión de antes (tope 30) y lo que Edgar deshizo (no se pone solo otra vez)
+      rondas: alcRondasParaGuardar({ rondas: prop && prop.alcance_decisiones ? prop.alcance_decisiones.rondas : [] }),
+      proceso: null, deshechos: [],
       // 14-oct (pliego §10.9): las cláusulas adaptadas por la IA que Edgar devolvió al texto de la casa (claves de la lista B)
       clausulas_casa: ((prop && prop.alcance_decisiones && Array.isArray(prop.alcance_decisiones.clausulas_casa)) ? prop.alcance_decisiones.clausulas_casa : [])
                       .filter(k => (Alcance.CLAUSULAS_ADAPTABLES || []).includes(k)),
@@ -16039,7 +16042,14 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (inPdf) inPdf.addEventListener("change", () => { if (inPdf.files[0]) alcSubirAlPortal(inPdf.files[0]); });
     // La revisión con IA del contrato armado y sus tres botones por hallazgo
     const bRevIA = $("alc-revisar-ia");
-    if (bRevIA) bRevIA.addEventListener("click", () => { alcRevisarIA().catch(() => { /* la nube nunca frena */ }); });
+    // 18-oct (pliego §11.12): un toque = una vuelta completa (revisa, pone solo lo seguro, vuelve a revisar; tres vueltas como mucho)
+    if (bRevIA) bRevIA.addEventListener("click", () => {
+      const R0 = alcActivo && alcActivo.revision;
+      alcRevisionCompleta(R0 && Array.isArray(R0.hallazgos) ? "otra_vez" : "boton").catch(() => { /* la nube nunca frena */ });
+    });
+    // «La IA arregló N puntos» se queda abierto o plegado al repintar
+    const dAuto = $("alc-auto-arreglados");
+    if (dAuto) dAuto.addEventListener("toggle", () => { const R0 = alcActivo && alcActivo.revision; if (R0) R0.auto_abierto = dAuto.open; });
     // 18-oct (pliego §11.11.7): «viene de la línea N de tu hoja» es un enlace (el mismo manejador que tenía «Ir a la línea»)
     document.querySelectorAll("[data-rev-ir]").forEach(b => b.addEventListener("click", e => { e.preventDefault(); alcRevIrALinea(Number(b.dataset.revIr)); }));
     document.querySelectorAll("[data-rev-dato]").forEach(b => b.addEventListener("click", () => alcRevUsarDato(Number(b.dataset.revDato))));
@@ -17334,7 +17344,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       return false;
     }
     // Sin rojos en el papel, la segunda IA lo revisa sola (pliego §6.1). Una revisión reutilizada no se repite.
-    if (!A.contrato.problemas.length && !A.revision) alcRevisarIA().catch(() => { /* la nube nunca frena */ });
+    // 18-oct (pliego §11.12): si el armado vino de «Arreglar el contrato» (sin el todo seguido de 10.10), el proceso de revisión entero
+    if (!A.contrato.problemas.length && !A.revision)
+      ((A.guardar_al_revisar && !(A.auto && A.auto.activo)) ? alcRevisionCompleta("arreglar") : alcRevisarIA()).catch(() => { /* la nube nunca frena */ });
     // 14-oct (pliego §10.10): con la revisión reutilizada (o un papel con rojos, que no se revisa), el armado todo seguido
     // sigue igual desde aquí
     else if (A.auto && A.auto.activo) alcAutoTrasRevision(A).catch(() => { /* la nube nunca frena */ });
@@ -17912,7 +17924,14 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
                decididos_obra: A && Array.isArray(A.decididos) ? A.decididos.length : 0,
                guardar_al_revisar: !!(A && A.guardar_al_revisar), arreglando: !!(A && A.arreglando),
                guardado_pendiente: !!(A && A.guardado_pendiente), guardado_solo: A && A.guardado_solo ? A.guardado_solo.donde : null,
-               en_marcha: !!(R && R.en_marcha), error: R && R.error ? String(R.error) : null };
+               en_marcha: !!(R && R.en_marcha), error: R && R.error ? String(R.error) : null,
+               // 18-oct (pliego §11.12): el proceso de revisión (sus vueltas), lo que la IA puso sola en cada punto y las vueltas apuntadas
+               proceso: A && A.proceso ? { activo: !!A.proceso.activo, vuelta: A.proceso.vuelta, de: A.proceso.de, arreglados: A.proceso.arreglados.length,
+                                           espera: A.proceso.espera.length, tope: !!A.proceso.tope_alcanzado } : null,
+               final: R && R.proceso ? Object.assign({}, R.proceso, { fallo: R.fallo_vuelta || null }) : null,
+               solos: R && Array.isArray(R.hallazgos) ? R.hallazgos.map(h => h.solo ? h.solo.via : null) : [],
+               deshechos: R && Array.isArray(R.hallazgos) ? R.hallazgos.map(h => !!h.deshecho) : [],
+               rondas: A ? alcRondasParaGuardar(A) : [] };
     },
     async aplicarArmado(paquete, leccionesHecho) {
       const A = alcActivo;
@@ -18498,9 +18517,20 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     }
     const p = alcPaqueteRevisar();
     if (p.error) { A.revision = { error: alcErrorRevisor({ error: p.error }) }; repintar(); return; }
+    // 18-oct (pliego §11.12.1c): dentro del proceso de revisión, cada revisión es una vuelta; de la segunda en adelante viajan lo
+    // que la app ya arregló sola (ya_arreglado) y lo que espera a Edgar (espera_edgar), sin dinero, para que el revisor no lo repita
+    const P = A.proceso && A.proceso.activo ? A.proceso : null;
+    if (P) {
+      P.vuelta++; P.fase = "revisar";
+      if (P.vuelta >= 2) {
+        const L = alcProcesoListas(P);
+        if (L.ya_arreglado.length) p.cuerpo.ya_arreglado = L.ya_arreglado;
+        if (L.espera_edgar.length) p.cuerpo.espera_edgar = L.espera_edgar;
+      }
+    }
     // (§10.10) `prueba`: el armado todo seguido espera a que la prueba inyecte la revisión (MXP_PRUEBA.aplicarRevision)
     if (alcModoPrueba()) { A.revision = { error: "Modo de prueba: no llamo a la IA", prueba: true }; repintar(); return; }
-    const marca = { en_marcha: true, desde: Date.now(), rev: p.rev, ficha: p.cuerpo.ficha };
+    const marca = { en_marcha: true, desde: Date.now(), rev: p.rev, ficha: p.cuerpo.ficha, vuelta: P ? P.vuelta : 0 };
     A.revision = marca;
     repintar();
     const sigueViva = () => alcActivo === A && A.revision === marca;
@@ -18552,6 +18582,189 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     repintar();
   }
 
+  // ============================================================
+  // 18-oct (docs/PLIEGO-CORREGIR-CON-IA.md §11.12, Edgar: «me salió 4 veces distintos errores… no pueden ser todos de una vez y que
+  // sea solo un proceso de revisión»). UN botón = UNA vuelta completa, y una sola pantalla al final:
+  //   (a) revisar; (b) poner SOLA cada propuesta que pase la puerta (alcPropuestaSegura con ok: la misma que da «Arreglar según la
+  //   IA» sin «Ponerlo aunque…») y el dato de la ficha (`arreglo`); lo que no pasa (ley, §6, protección, dinero, una decisión de
+  //   Edgar) se guarda para él; (c) volver a revisar mandando ya_arreglado y espera_edgar; (d) repetir mientras la vuelta traiga
+  //   algo nuevo que se pueda poner solo, como mucho TRES vueltas; (e) la pantalla: «La IA arregló N puntos» (plegada, cada uno con
+  //   «Abrir» y «Deshacer»), «Te toca decidir (M)» (las tarjetas de 11.2/11.11) y «Dudas (K)»; se guarda solo en la propuesta.
+  // En la tercera vuelta ya no se pone nada solo: lo que traiga queda para Edgar con su botón. Así el papel que se manda siempre es
+  // el que la IA revisó (si se pusiera algo en la última, haría falta una cuarta). Lo usan «Revisar con IA antes de enviar»,
+  // «Revisar otra vez con IA», «Arreglar el contrato» y la ronda sola de 10.10 (alcAutoRondaPapel y alcAutoTrasRevision).
+  // ============================================================
+  const ALC_TOPE_VUELTAS = 3;
+  // (pruebas) las baterías de antes miran cada punto suelto, con una sola revisión por botón: window.MXP_PRUEBA_UNA_VUELTA = true
+  const alcSoloUnaVuelta = () => window.MXP_PRUEBA_UNA_VUELTA === true;
+  function alcProcesoEmpezar(A, de, yaRevisado) {
+    A.proceso = { activo: true, de: de || "boton", vuelta: yaRevisado ? 1 : 0, tope: ALC_TOPE_VUELTAS, arreglados: [], espera: [],
+                  notas: [], costo: 0, fallo: null, tope_alcanzado: false, ultimaR: null, fase: "revisar", desde: Date.now() };
+    return A.proceso;
+  }
+  // Lo que viaja al revisor en la vuelta 2 y 3: lo arreglado ({donde, cita: lo que decía, como: cómo quedó}) y lo que espera a Edgar
+  // ({donde, cita, motivo}). Sin cifras de dinero (alcLimpioCorto) y, si aun así algo trae un monto, fuera. Treinta como mucho.
+  function alcProcesoListas(P) {
+    const sinMonto = x => !Alcance.traeDineroEstricto(JSON.stringify(x));
+    const ya = P.arreglados.filter(h => h && h.decidido).map(h => {
+      const r = alcReemplazoDe(h);
+      return { donde: alcLimpioCorto(h.donde, 12), cita: alcLimpioCorto(h.cita, 160), como: alcLimpioCorto(r ? r.nuevo : (h.hecho || h.decidido.como || ""), 300) };
+    }).filter(x => x.cita && sinMonto(x)).slice(-30);
+    const espera = P.espera.filter(h => h && !h.decidido && !h.hecho)
+      .map(h => ({ donde: alcLimpioCorto(h.donde, 12), cita: alcLimpioCorto(h.cita, 160), motivo: alcLimpioCorto(h.motivo, 300) }))
+      .filter(x => x.cita && sinMonto(x)).slice(-30);
+    return { ya_arreglado: ya, espera_edgar: espera };
+  }
+  // Las vueltas como se guardan: solo números, fecha y la vuelta (nada de texto), treinta como mucho
+  function alcRondasParaGuardar(A) {
+    const xs = A && Array.isArray(A.rondas) ? A.rondas : [];
+    const n = v => Math.max(0, Math.round(Number(v) || 0));
+    return xs.filter(r => r && typeof r === "object").map(r => ({ cuando: typeof r.cuando === "string" ? r.cuando.slice(0, 30) : null,
+      vuelta: n(r.vuelta), arreglados: n(r.arreglados), pendientes: n(r.pendientes), costo: n(r.costo) })).slice(-30);
+  }
+  // ¿Ya está en la lista este punto? (la misma cita, o la misma sección con un motivo muy parecido)
+  function alcEnLista(lista, h) { return (Array.isArray(lista) ? lista : []).find(x => x && x !== h && alcMismoHallazgo(x, h)) || null; }
+  // Quita puntos de una revisión (los repetidos) y lleva las charlas con sus puntos
+  function alcRehacerLista(R, nueva) {
+    const A = alcActivo, vieja = R.hallazgos;
+    if (A && A.charlas_de === R && Array.isArray(A.charlas)) A.charlas = nueva.map(h => A.charlas[vieja.indexOf(h)]);
+    R.hallazgos = nueva;
+    R.foco = null;
+  }
+  // (b) Lo que se pone solo en esta vuelta. `ultima`: la vuelta del tope (no se pone nada: queda para Edgar, con su botón).
+  // Lo que la IA vuelve a señalar y ya se arregló (o ya espera a Edgar) no sale dos veces. Un punto que Edgar deshizo no se vuelve a
+  // poner solo. Devuelve { puestos, datos, porPoner } (porPoner: lo que se habría puesto solo si no fuera la última vuelta).
+  function alcProcesoAplicar(A, R, P, ultima) {
+    const hs = R && Array.isArray(R.hallazgos) ? R.hallazgos.slice() : [];
+    let puestos = 0, datos = 0, porPoner = 0;
+    const repetidos = [];
+    for (const h of hs) {
+      if (alcActivo !== A || A.revision !== R) break;
+      if (alcEnLista(P.arreglados, h) || alcEnLista(P.espera, h)) { repetidos.push(h); continue; }
+      if (h.decidido || h.hecho || alcEnLista(A.deshechos, h)) continue;
+      const i = R.hallazgos.indexOf(h);
+      if (i < 0) continue;
+      const dato = !!(h.arreglo && h.arreglo.valor);
+      const seguro = !dato && typeof h.texto_nuevo === "string" && h.texto_nuevo.trim() && alcPropuestaSegura(h).ok;
+      if (!dato && !seguro) continue;
+      if (ultima) { porPoner++; h.al_tope = true; continue; }
+      if (dato) {
+        if (alcRevEscribirDato(i, h.arreglo.campo, h.arreglo.valor)) { h.solo = { vuelta: P.vuelta, via: "dato", en_papel: false }; datos++; }
+        continue;
+      }
+      const x = alcArreglarSegunIA(i, { auto: true });
+      if (x.ok) { h.solo = { vuelta: P.vuelta, via: "papel", de_que: x.de_que || "" }; puestos++; }
+    }
+    if (repetidos.length) alcRehacerLista(R, R.hallazgos.filter(h => !repetidos.includes(h)));
+    alcProcesoRepartir(R, P);
+    return { puestos, datos, porPoner };
+  }
+  // Lo de esta vuelta: lo puesto solo, a «arreglados»; lo demás, a «espera» (viaja en la vuelta siguiente y sale en la pantalla)
+  function alcProcesoRepartir(R, P) {
+    (R && Array.isArray(R.hallazgos) ? R.hallazgos : []).forEach(h => {
+      if (h.solo && h.decidido) { if (!P.arreglados.includes(h)) P.arreglados.push(h); }
+      else if (!P.espera.includes(h) && !P.arreglados.includes(h)) P.espera.push(h);
+    });
+  }
+  // El dato de la ficha se escribió en la hoja: el papel se vuelve a armar SIN IA (el dato ya entró en el paquete) con los arreglos
+  // de antes puestos otra vez (alcArmar los vuelve a aplicar). false si no salió.
+  async function alcProcesoRearmarDatos(A, P) {
+    const c0 = A.contrato;
+    P.fase = "datos";
+    if (alcActivo === A && alcFicha === 2) pintarAlcance();
+    await alcVolverAArmar();
+    if (alcActivo !== A) return false;
+    if (!A.contrato || A.contrato === c0) return false;
+    P.arreglados.forEach(h => { if (h.solo && h.solo.via === "dato") h.solo.en_papel = true; });
+    return true;
+  }
+  // (§11.12.4) Nada se pierde: cada vuelta se apunta en alcance_decisiones.rondas {cuando, vuelta, arreglados, pendientes, costo}
+  function alcApuntarRonda(A, P, R, n) {
+    // pendientes = lo que espera a Edgar hasta esta vuelta (de esta y de las de antes)
+    const fila = { cuando: new Date().toISOString(), vuelta: P.vuelta, arreglados: (n.puestos || 0) + (n.datos || 0),
+                   pendientes: P.espera.filter(h => h && !h.decidido && !h.hecho).length,
+                   costo: Math.round(Number(R && R.costo_centavos) || 0) };
+    A.rondas = [...(Array.isArray(A.rondas) ? A.rondas : []), fila].slice(-30);
+  }
+  // «Revisar con IA antes de enviar», «Revisar otra vez con IA» y «Arreglar el contrato» (sin el armado todo seguido de 10.10)
+  async function alcRevisionCompleta(de) {
+    const A = alcActivo;
+    if (!A || !A.contrato || !(usuario && usuario.finanzas)) return;
+    if (alcSoloUnaVuelta()) return alcRevisarIA();
+    if ((A.revision && A.revision.en_marcha) || (A.proceso && A.proceso.activo)) { avisar("La IA ya está revisando este contrato"); return; }
+    if (A.auto && A.auto.activo && A.auto.fase !== "espera") { avisar("La IA está arreglando el contrato: espera a que termine"); return; }
+    if (navigator.onLine === false) return alcRevisarIA();          // sin señal: lo dice la caja, como siempre
+    const P = alcProcesoEmpezar(A, de);
+    avisar("Reviso, arreglo sola lo que se puede y vuelvo a revisar (≈ 25–75 ¢, dos o tres minutos)");
+    try {
+      for (;;) {
+        await alcRevisarIA0();
+        if (alcActivo !== A || A.proceso !== P) return;
+        const R = A.revision;
+        if (!R || R.error || R.saltada || !Array.isArray(R.hallazgos)) {
+          if (R && R.error && P.ultimaR) P.fallo = R.error;
+          break;
+        }
+        if (R.reutilizada) break;
+        if (Number.isFinite(R.costo_centavos)) P.costo += R.costo_centavos;
+        P.ultimaR = R;
+        if (!P.resumen && R.resumen) P.resumen = R.resumen;      // el resumen de la primera vuelta es el que cuenta el contrato
+        const ultima = P.vuelta >= P.tope;
+        const n = alcProcesoAplicar(A, R, P, ultima);
+        alcApuntarRonda(A, P, R, n);
+        if (ultima) { if (n.porPoner) P.tope_alcanzado = true; break; }
+        if (!n.puestos && !n.datos) break;
+        if (alcTopePasado(null)) { P.notas.push("No seguí revisando: el asistente llegó al tope del mes."); R.papel_cambiado = true; break; }
+        if (n.datos && !(await alcProcesoRearmarDatos(A, P))) {
+          if (alcActivo !== A || A.proceso !== P) return;
+          P.notas.push("No pude volver a armar el papel con el dato de la ficha: míralo en la hoja y toca «Arreglar el contrato».");
+          break;
+        }
+        if (alcActivo !== A || A.proceso !== P) return;
+      }
+    } finally {
+      if (alcActivo === A && A.proceso === P) alcProcesoCerrar(A);
+    }
+  }
+  // (e) La pantalla de al final: lo arreglado en todas las vueltas, lo que espera a Edgar y lo nuevo de la última, en UNA lista (lo
+  // que espera primero, los rojos delante; lo arreglado al final). Si una vuelta falló, lo que hay hasta ahí y se dice. `callado`:
+  // sin aviso ni guardado (el armado todo seguido de 10.10 tiene los suyos).
+  function alcProcesoCerrar(A, callado) {
+    const P = A && A.proceso;
+    if (!P || !P.activo) return;
+    P.activo = false; P.fase = "listo";
+    let R = A.revision;
+    const malo = !R || R.error || R.saltada || !Array.isArray(R.hallazgos);
+    if (malo && P.ultimaR && (P.arreglados.length || P.espera.length)) {
+      const e = (R && R.error) || P.fallo || "La IA falló; vuelve a intentarlo en un minuto";
+      R = P.ultimaR;
+      R.fallo_vuelta = `La vuelta ${P.vuelta} no salió (${e}): te enseño lo que hay hasta ahí`;
+      if (P.arreglados.length) R.papel_cambiado = true;
+      A.revision = R;
+    }
+    if (R && Array.isArray(R.hallazgos) && !R.reutilizada && !R.error) {
+      alcProcesoRepartir(R, P);
+      const quedan = P.espera.filter(h => h && !(h.solo && h.decidido));
+      const orden = [...quedan.filter(h => h.gravedad === "rojo"), ...quedan.filter(h => h.gravedad !== "rojo"), ...P.arreglados];
+      alcRehacerLista(R, orden.filter((h, k) => orden.indexOf(h) === k));
+      R.proceso = { vueltas: P.vuelta, arreglados: P.arreglados.length, costo: Math.round(P.costo || 0), tope: !!P.tope_alcanzado,
+                    notas: P.notas.slice(), de: P.de };
+      if (P.costo > 0) R.costo_centavos = Math.round(P.costo);
+      if (P.resumen) R.resumen = P.resumen;
+    }
+    if (callado) return;
+    // lo que la IA puso sola se guarda solo en la propuesta, como al terminar «Arreglar el contrato» (pliego §7.2)
+    if (P.arreglados.length) A.guardar_al_revisar = true;
+    alcGuardarSiArreglo(A);
+    if (alcActivo !== A) return;
+    if (alcFicha === 2) pintarAlcance();
+    const hs = R && Array.isArray(R.hallazgos) ? R.hallazgos : [];
+    const n = hs.filter(h => h.solo && h.decidido).length, m = hs.filter(h => !(h.solo && h.decidido) && h.gravedad === "rojo").length;
+    if (R && R.fallo_vuelta) avisar(R.fallo_vuelta, true);
+    else if (R && R.proceso) avisar(!n && !hs.length ? "La IA revisó el contrato: no vio nada que arreglar"
+      : `${n === 1 ? "La IA arregló 1 punto" : `La IA arregló ${n} puntos`} · ${m === 1 ? "te toca decidir 1" : `te toca decidir ${m}`}`);
+  }
+
   // (2-oct, Edgar: «la app no te deja guardar ni mandar el contrato hasta pasar “Revisar con IA”»)
   // EL CANDADO. Con el contrato armado, ni se guarda, ni se imprime, ni se baja, ni se sube al portal
   // hasta que la IA lo revisó y cada punto quedó atendido (arreglado y rearmado, o «Lo dejo así»).
@@ -18563,15 +18776,19 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (A.armado && A.armado.vieja) return { ok: false, motivo: "Cambiaste la hoja después de armar: vuelve a armar con IA" };
     // 14-oct (pliego §10.10): mientras la IA se corrige sola (rondas de arreglo), nada sale
     if (A.auto && A.auto.activo && A.auto.fase !== "espera") return { ok: false, motivo: "La IA está arreglando el contrato: espera a que termine" };
+    // 18-oct (pliego §11.12): mientras corre el proceso de revisión (sus vueltas), nada sale
+    if (A.proceso && A.proceso.activo) return { ok: false, motivo: "La IA está revisando el contrato: espera a que termine" };
     if (!R) return { ok: false, motivo: "Falta pasar «Revisar con IA antes de enviar»" };
     if (R.en_marcha) return { ok: false, motivo: "La IA está revisando el contrato: espera a que termine" };
     if (R.saltada) return { ok: true, saltada: true };
     if (R.error) return { ok: false, motivo: R.error, puedeSaltar: true };
+    // (§11.12.1) una vuelta del proceso falló después de que la IA cambiara el papel: lo de ahora no lo revisó nadie
+    if (R.fallo_vuelta) return { ok: false, motivo: R.fallo_vuelta, puedeSaltar: true };
     const hs = Array.isArray(R.hallazgos) ? R.hallazgos : [];
     // 17-oct (pliego §11.4): un punto está atendido si se decidió («Arreglar según la IA», la charla, «Decidido», el dato de
     // la ficha) o se escribió en la hoja. Los ÁMBAR nunca cierran el candado (son dudas); los ROJOS lo cierran hasta que estén
     // atendidos. Lo escrito en la hoja y las órdenes a la IA se ponen en el papel con «Arreglar el contrato».
-    const hechos = hs.filter(h => h.hecho && !alcEsDePapel(h)).length;
+    const hechos = hs.filter(alcHechoSinPapel).length;
     if (hechos) return { ok: false, motivo: hechos === 1 ? "Arreglaste 1 cosa en la hoja: toca «Arreglar el contrato»"
                                                          : `Arreglaste ${hechos} cosas en la hoja: toca «Arreglar el contrato»` };
     const rojos = hs.filter(h => h.gravedad === "rojo" && !h.hecho && !h.decidido).length;
@@ -18584,6 +18801,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (R.papel_cambiado) return { ok: false, motivo: "La IA cambió el papel: toca «Arreglar el contrato» para que lo revise" };
     return { ok: true };
   }
+  // Lo escrito en la hoja que todavía no está en el papel (18-oct, §11.12: el dato que la IA puso sola ya se armó en el papel)
+  function alcHechoSinPapel(h) { return !!(h && h.hecho && !alcEsDePapel(h) && !(h.solo && h.solo.en_papel)); }
   // La huella del papel que la IA revisó: el mismo texto y la misma ficha que viajan a la nube.
   // Si el papel se vuelve a armar y sale idéntico, la revisión buena se reutiliza (no se vuelve a cobrar).
   async function alcHuellaRevision() {
@@ -18594,9 +18813,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   // «Seguir sin la IA»: solo cuando la revisión falló (sin señal, tope del mes). Queda dicho en la propuesta.
   async function alcSeguirSinIA() {
     const A = alcActivo, R = A && A.revision;
-    if (!A || !A.contrato || !R || !R.error) return;
-    if (!await confirmar("La IA no pudo revisar este contrato (" + R.error + ").\n\n¿Lo mandas sin esa revisión? Quedará apuntado en la propuesta.")) return;
-    A.revision = { saltada: R.error, hallazgos: [], cuando: new Date().toISOString() };
+    if (!A || !A.contrato || !R || !(R.error || R.fallo_vuelta)) return;
+    if (!await confirmar("La IA no pudo revisar este contrato (" + (R.error || R.fallo_vuelta) + ").\n\n¿Lo mandas sin esa revisión? Quedará apuntado en la propuesta.")) return;
+    A.revision = { saltada: R.error || R.fallo_vuelta, hallazgos: [], cuando: new Date().toISOString() };
     pintarAlcance();
     avisar("Sigues sin la revisión con IA: queda apuntado");
   }
@@ -18608,15 +18827,33 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     return `<span class="alc-rev-donde"><span>Sección</span> <span data-no-i18n>${esc(donde)}${t ? " · " + esc(t) : ""}</span></span>`;
   }
 
+  // 18-oct (pliego §11.12.1e): por dónde va el proceso de revisión
+  function alcTextoVuelta(v, tope, datos) {
+    const n = Math.max(1, Math.min(Number(v) || 1, Number(tope) || ALC_TOPE_VUELTAS)), t = Number(tope) || ALC_TOPE_VUELTAS;
+    if (datos) return `Vuelta ${n} de ${t}: pongo en el papel el dato de la ficha…`;
+    return n === 1 ? `Vuelta 1 de ${t}: la IA está revisando el contrato…` : `Vuelta ${n} de ${t}: la IA está revisando lo que arregló…`;
+  }
+  // Arriba de la pantalla de al final: en cuántas vueltas, lo que costó y lo que hay que saber (el tope, una vuelta que falló)
+  function alcCabezaProceso(R) {
+    const X = R.proceso, v = Number(X.vueltas) || 1, c = Math.round(Number(X.costo) || Number(R.costo_centavos) || 0);
+    let s = `<p class="alc-sub alc-proceso-cuenta">${v === 1 ? "Revisado en 1 vuelta" : `Revisado en ${v} vueltas`}${c > 0 ? ` · costó ${c} ¢` : ""}</p>`;
+    if (R.fallo_vuelta) s += `<p class="alc-ambar alc-proceso-fallo">${esc(R.fallo_vuelta)}. Toca «Revisar otra vez con IA» cuando puedas.</p>`;
+    if (X.tope) s += `<p class="alc-gris alc-proceso-tope">Llegué al tope de tres vueltas: lo que la IA propuso en la última no lo puse sola. Está abajo, en «Te toca decidir», con su botón.</p>`;
+    (X.notas || []).forEach(t => { s += `<p class="alc-gris">${esc(t)}</p>`; });
+    return s;
+  }
   // La caja de la ficha 3: el botón, la espera, el resumen y los hallazgos con sus botones
   function alcCajaRevision() {
     const A = alcActivo, R = A.revision || null;
     const enMarcha = !!(R && R.en_marcha);
     const hay = !!(R && Array.isArray(R.hallazgos));
+    // 18-oct (pliego §11.12): el botón hace el proceso entero (hasta tres vueltas): el costo se dice antes de tocarlo
+    const P = A.proceso && A.proceso.activo ? A.proceso : null;
+    const unaSola = alcSoloUnaVuelta();
     let s = `<div class="alc-revisor" id="alc-revisor">
       <div class="alc-rev-cabeza">
-        <button type="button" class="btn sm btn-ring alc-revisar-ia" id="alc-revisar-ia"${enMarcha ? " disabled" : ""}>${hay ? "Revisar otra vez con IA" : "Revisar con IA antes de enviar"}</button>
-        <span class="alc-rev-costo">≈ 25 ¢, un minuto</span>
+        <button type="button" class="btn sm btn-ring alc-revisar-ia" id="alc-revisar-ia"${enMarcha || P ? " disabled" : ""}>${hay ? "Revisar otra vez con IA" : "Revisar con IA antes de enviar"}</button>
+        <span class="alc-rev-costo">${unaSola ? "≈ 25 ¢, un minuto" : "≈ 25–75 ¢, dos o tres minutos"}</span>
       </div>`;
     // 14-oct (pliego §10.10): cuando la revisión ya pasó por el armado todo seguido, «Así lo hice» la cuenta arriba y aquí los
     // puntos van plegados («Ver el detalle de la revisión»), salvo que Edgar los abra o tenga una charla abierta
@@ -18625,8 +18862,13 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       && !alcCharlas().some(C => C && C.abierta));
     const cabeza = s;
     s = "";
-    if (!R) s += `<p class="lev-nota">La IA lee el contrato entero y lo compara con la ficha de la obra. Solo te señala lo que no cuadra; lo arreglas tú con un toque.</p>`;
-    if (enMarcha) s += `<div class="alc-gris alc-espera">La IA está revisando el contrato… (suele tardar un minuto; puedes seguir)</div>`;
+    if (!R && !P) s += unaSola ? `<p class="lev-nota">La IA lee el contrato entero y lo compara con la ficha de la obra. Solo te señala lo que no cuadra; lo arreglas tú con un toque.</p>`
+      : `<p class="lev-nota">La IA lee el contrato entero y lo compara con la ficha de la obra. Lo que se puede arreglar sin quitar protección ni tocar el dinero lo arregla sola y vuelve a revisar (como mucho tres vueltas); al final te enseña lo que arregló y lo que te toca decidir.</p>`;
+    // (§11.12) mientras corre: «Vuelta 2 de 3: la IA está revisando lo que arregló…»
+    if (enMarcha) s += Number(R.vuelta) >= 1 && P
+      ? `<div class="alc-gris alc-espera alc-vuelta">${esc(alcTextoVuelta(R.vuelta, P.tope))}</div>`
+      : `<div class="alc-gris alc-espera">La IA está revisando el contrato… (suele tardar un minuto; puedes seguir)</div>`;
+    else if (P && !hay) s += `<div class="alc-gris alc-espera alc-vuelta">${esc(alcTextoVuelta(P.vuelta + 1, P.tope, P.fase === "datos"))}</div>`;
     if (R && R.error) s += `<div class="alc-gris">${esc(R.error)}</div>`;
     if (R && R.saltada) s += `<div class="alc-gris"><span>Sigues sin la revisión con IA:</span> <span data-no-i18n>${esc(String(R.saltada))}</span></div>`;
     if (R && R.reutilizada) s += `<div class="alc-verde">Este papel ya pasó la revisión con IA y no cambió desde entonces.</div>`;
@@ -18634,9 +18876,12 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (hay && !R.reutilizada && A.arreglando) s += `<div class="alc-gris alc-espera">${esc(alcTextoArreglando(A.arreglando))}</div>`;
     else if (hay && !R.reutilizada) {
       if (R.resumen) s += `<p class="alc-rev-resumen" data-no-i18n>${esc(R.resumen)}</p>`;
-      if (Number.isFinite(R.costo_centavos) && R.costo_centavos > 0) s += `<p class="alc-sub">Costó ${Math.round(R.costo_centavos)} ¢</p>`;
+      if (R.proceso) s += alcCabezaProceso(R);
+      else if (Number.isFinite(R.costo_centavos) && R.costo_centavos > 0) s += `<p class="alc-sub">Costó ${Math.round(R.costo_centavos)} ¢</p>`;
       s += alcAvisoSinSitio();
       if (!R.hallazgos.length) s += `<div class="alc-verde">La IA no vio nada que arreglar.</div>`;
+      // mientras el proceso va por la vuelta siguiente (pone lo de esta), la lista de ahora se queda quieta debajo
+      if (P && R === P.ultimaR) s += `<div class="alc-gris alc-espera alc-vuelta">${esc(alcTextoVuelta(P.vuelta + 1, P.tope, P.fase === "datos"))}</div>`;
       // 17-oct (pliego §11.2, Edgar: «arriba el problema y abajo cómo debería ir; si me parece bien, “arréglalo según la IA”;
       // si no, “Hablar con la IA”; y quitar “Lo dejo así” y “Enséñale”»). Cada punto: la sección, «Dice el papel», «Por qué»,
       // «Cómo debería ir» (la propuesta del revisor, entera) y sus botones: «Arreglar según la IA» (pone el párrafo entero en
@@ -18662,7 +18907,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         // para todos los contratos, se dice también
         const dePapel = alcEsDePapel(h);
         // 18-oct (pliego §11.11.3): lo que Edgar puso aunque la puerta lo frenaba, «(lo confirmaste)», con su «Ojo» debajo
-        const etqDecidido = !dePapel ? "Decidido:" : h.decidido.ojo ? "Cambiado en el papel (lo confirmaste):"
+        // 18-oct (pliego §11.12): lo que la IA puso sola en el proceso de revisión
+        const etqDecidido = h.solo ? "La IA lo arregló:" : !dePapel ? "Decidido:" : h.decidido.ojo ? "Cambiado en el papel (lo confirmaste):"
           : h.decidido.aprendido === "general" ? "Cambiado en el papel y aprendido para todos los contratos:" : "Cambiado en el papel:";
         const deshacer = dePapel && alcReemplazoDe(h) ? `<button type="button" class="alc-op" data-rev-deshacer="${i}">Deshacer</button>` : "";
         // 17-oct (pliego §11.9.2): «Decidido» sin cambiar el papel quedó perdonado: «Decidido: … (no vuelve a salir)»
@@ -18710,8 +18956,26 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       const ambar = R.hallazgos.map((h, i) => [h, i]).filter(([h]) => h.gravedad !== "rojo");
       // (§11.2.6) «Arreglar todo lo que propone la IA (N)»: 18-oct (pliego §11.11.7) abajo, en el pie, junto a «Arreglar lo
       // pendiente» y «Arreglar el contrato» (alcPieArreglar)
-      if (rojos.length) s += `<div class="alc-rojo"><b>Esto quedaría mal firmado:</b><ul>${rojos.map(([h, i]) => li(h, i)).join("")}</ul></div>`;
-      if (ambar.length) s += `<div class="alc-ambar"><b>Esto es una duda:</b><ul>${ambar.map(([h, i]) => li(h, i)).join("")}</ul></div>`;
+      if (R.proceso) {
+        // 18-oct (pliego §11.12.1e): UNA sola pantalla: «La IA arregló N puntos» (plegada; cada uno con «Abrir» y «Deshacer»),
+        // «Te toca decidir (M)» (los rojos y lo que Edgar deshizo, con su propuesta y sus dos botones) y «Dudas (K)»
+        const todos = R.hallazgos.map((h, i) => [h, i]);
+        const auto = todos.filter(([h]) => h.solo && h.decidido);
+        const tocaA = h => h.gravedad === "rojo" || h.deshecho || h.al_tope;
+        const toca = todos.filter(([h]) => !(h.solo && h.decidido) && tocaA(h));
+        const dudas = todos.filter(([h]) => !(h.solo && h.decidido) && !tocaA(h));
+        const abierto = !!(R.auto_abierto || auto.some(([, i]) => alcCharlaAbierta(i)));
+        if (auto.length) s += `<details class="alc-auto-arreglados alc-verde" id="alc-auto-arreglados"${abierto ? " open" : ""}>
+          <summary>${auto.length === 1 ? "La IA arregló 1 punto" : `La IA arregló ${auto.length} puntos`}</summary>
+          <p class="alc-sub">Lo puso en el papel sin quitar protección ni tocar el dinero. Ábrelo para verlo; si algo no te gusta, «Deshacer» lo vuelve a dejar para ti.</p>
+          <ul>${auto.map(([h, i]) => li(h, i)).join("")}</ul></details>`;
+        if (toca.length) s += `<div class="alc-rojo alc-te-toca"><b>Te toca decidir (${toca.length})</b><ul>${toca.map(([h, i]) => li(h, i)).join("")}</ul></div>`;
+        if (dudas.length) s += `<div class="alc-ambar alc-dudas"><b>Dudas (${dudas.length})</b><ul>${dudas.map(([h, i]) => li(h, i)).join("")}</ul></div>`;
+        if (auto.length && !toca.length && !dudas.length) s += `<div class="alc-verde alc-nada-para-ti">No queda nada para ti: la IA arregló todo lo que encontró.</div>`;
+      } else {
+        if (rojos.length) s += `<div class="alc-rojo"><b>Esto quedaría mal firmado:</b><ul>${rojos.map(([h, i]) => li(h, i)).join("")}</ul></div>`;
+        if (ambar.length) s += `<div class="alc-ambar"><b>Esto es una duda:</b><ul>${ambar.map(([h, i]) => li(h, i)).join("")}</ul></div>`;
+      }
       if (R.hallazgos.length || R.tocado) s += alcPieArreglar(R) + `
         <p class="lev-nota">Arregla los puntos rojos (o dile a la IA por qué están bien) y toca «Arreglar el contrato» una sola vez: se revisa con todo lo cambiado y se guarda solo en la propuesta.</p>`;
     }
@@ -18736,11 +19000,11 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (!R || !Array.isArray(R.hallazgos) || !(R.hallazgos.length || R.tocado) || !A.contrato) return "";
     const foco = Number.isInteger(R.foco) ? R.hallazgos[R.foco] : null;
     const quedan = R.hallazgos.filter(h => !h.hecho && !h.decidido).length;
-    const enMarcha = !!(A.armado_en_marcha || R.en_marcha || A.arreglando || alcCharlaPensando());
+    const enMarcha = !!(A.armado_en_marcha || R.en_marcha || A.arreglando || alcCharlaPensando() || (A.proceso && A.proceso.activo));
     return `<div class="alc-gris alc-rev-en-hoja">
       ${foco ? `<p><span>La IA dice de esta línea:</span> <span data-no-i18n>${esc(foco.motivo)}</span></p>` : ""}
       <p>${quedan === 1 ? "Queda 1 cosa de la revisión con IA por mirar." : quedan ? `Quedan ${quedan} cosas de la revisión con IA por mirar.` : "Lo de la revisión con IA está atendido: toca «Arreglar el contrato»."}</p>
-      <p class="alc-cuenta-decisiones">${esc(alcTextoCuenta(alcCuentaDecisiones(R)))}</p>
+      <p class="alc-cuenta-decisiones">${esc(alcTextoCuenta(alcCuentaPantalla(R)))}</p>
       <div class="alc-botones">
         <button type="button" class="accion secundaria" data-alcficha="2">Volver al contrato</button>
         <button type="button" class="accion" data-rev-rearmar="1"${enMarcha ? " disabled" : ""}>Arreglar el contrato</button>
@@ -19347,6 +19611,12 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     // si el papel vuelve a ser el que se revisó, la revisión de la vista vale otra vez
     R.papel_cambiado = R.papel_de ? RP.html !== R.papel_de : true;
     h.decidido = null; h.hecho = null; h.aviso_arreglo = null; h.aviso_extra = null;
+    // 18-oct (pliego §11.12.4): lo que la IA puso sola y Edgar deshace queda como «Te toca decidir», con su propuesta, y el proceso
+    // de revisión no lo vuelve a poner solo (A.deshechos, mientras la obra esté abierta)
+    if (h.solo) {
+      h.solo = null; h.deshecho = true;
+      A.deshechos = [...(Array.isArray(A.deshechos) ? A.deshechos : []), { donde: h.donde, cita: h.cita, motivo: h.motivo }].slice(-60);
+    }
     const C = alcCharla(i);
     if (C) C.puestos = 0;
     alcGuardarReemplazosYa(A);
@@ -19390,6 +19660,15 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const m = hs.filter(h => !atendido(h) && h.gravedad === "rojo").length;
     return { n, m, k: hs.length - n - m, dejados: Number(R && R.dejados) || 0 };
   }
+  // 18-oct (pliego §11.12, repaso): después del proceso de revisión, el pie cuenta igual que la pantalla: «por decidir» es lo
+  // de «Te toca decidir» (los rojos, lo que Edgar deshizo y lo que quedó en el tope), no solo los rojos
+  function alcCuentaPantalla(R) {
+    const c = alcCuentaDecisiones(R);
+    if (!(R && R.proceso)) return c;
+    const hs = Array.isArray(R.hallazgos) ? R.hallazgos : [];
+    const m = hs.filter(h => !(h.decidido || h.hecho) && (h.gravedad === "rojo" || h.deshecho || h.al_tope)).length;
+    return Object.assign({}, c, { m, k: hs.length - c.n - m });
+  }
   function alcTextoCuenta(c) {
     return `${c.n} ${c.n === 1 ? "arreglado" : "arreglados"} · ${c.m} por decidir · ${c.k} ${c.k === 1 ? "duda" : "dudas"}`;
   }
@@ -19404,6 +19683,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const A = alcActivo;
     if (A && A.arreglando) { avisar("Ya estoy arreglando el contrato"); return true; }
     if (A && A.armado_en_marcha) { avisar("La IA ya está armando este contrato"); return true; }
+    if (A && A.proceso && A.proceso.activo) { avisar("La IA está revisando el contrato: espera a que termine"); return true; }
     return false;
   }
   // El pie de la caja de revisión: la cuenta y un solo «Arreglar el contrato»
@@ -19412,7 +19692,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   // proponer: ni el dato de la ficha, ni la ley, ni la §6) y «Arreglar el contrato», el de siempre
   function alcPieArreglar(R) {
     const A = alcActivo;
-    const quieto = !!(A.armado_en_marcha || (R && R.en_marcha) || A.arreglando || alcCharlaPensando());
+    const quieto = !!(A.armado_en_marcha || (R && R.en_marcha) || A.arreglando || alcCharlaPensando() || (A.proceso && A.proceso.activo));
     const nTodo = alcPorArreglarSegunIA(R).length;
     const nPend = alcPendientesSinPropuesta(R).length;
     const pidiendo = !!(R && R.pendiente_en_marcha);
@@ -19421,7 +19701,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const nota = pidiendo ? `<p class="alc-gris alc-espera alc-pendiente-espera">La IA está escribiendo el texto de lo pendiente… (suele tardar un minuto)</p>`
       : R && R.pendiente_aviso ? `<p class="alc-gris alc-pendiente-aviso">${esc(R.pendiente_aviso)}</p>`
       : nPend > 0 ? `<p class="alc-sub alc-pendiente-costo">«Arreglar lo pendiente» le pide a la IA el texto de los puntos que no lo traen (≈ 10 ¢). No pone nada sola: tú decides en cada punto.</p>` : "";
-    return `<p class="alc-cuenta-decisiones">${esc(alcTextoCuenta(alcCuentaDecisiones(R)))}</p>
+    return `<p class="alc-cuenta-decisiones">${esc(alcTextoCuenta(alcCuentaPantalla(R)))}</p>
       <div class="alc-botones">${todo}${pend}<button type="button" class="accion" data-rev-rearmar="1"${quieto ? " disabled" : ""}>Arreglar el contrato</button></div>${nota}`;
   }
   // Lo que se apunta de un punto decidido: en una línea, sin cifras de dinero, cortado a n letras
@@ -19465,7 +19745,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (!A || !A.contrato || !(usuario && usuario.finanzas)) return;
     if (A.arreglando) { avisar("Ya estoy arreglando el contrato"); return; }
     if (A.armado_en_marcha) { avisar("La IA ya está armando este contrato"); return; }
-    if (R && R.en_marcha) { avisar("La IA ya está revisando este contrato"); return; }
+    if ((R && R.en_marcha) || (A.proceso && A.proceso.activo)) { avisar("La IA ya está revisando este contrato"); return; }
     // una charla que espera respuesta: sin ella, ese punto quedaría a medias
     if (alcCharlaPensando()) { avisar("Espera a que la IA te conteste en la charla y luego arregla el contrato"); return; }
     alcRecoger();
@@ -19476,14 +19756,16 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     let hojaCambio = false;
     if (conIA) hojaCambio = !!(A.armado.vieja || A.armado.texto !== A.texto);
     else if (A.huella) { try { hojaCambio = (await alcHuella(A.texto)) !== A.huella; } catch { hojaCambio = false; } }
-    if (!c.n && !c.dejados && !hojaCambio) { avisar("Decide primero algún punto", true); return; }
+    // 18-oct (pliego §11.12): lo que la IA puso sola ya está en el papel revisado: no cuenta como decidido por Edgar
+    const deEdgar = hs.filter(h => (h.decidido || h.hecho) && !h.solo).length;
+    if (!deEdgar && !c.dejados && !hojaCambio && !(R && R.papel_cambiado)) { avisar("Decide primero algún punto", true); return; }
     // 18-oct (pliego §11.11.6): solo se pregunta por los ROJOS sin atender; las dudas (ámbar) no frenan ni preguntan
     if (c.m > 0 && !await confirmar(c.m === 1
         ? "Hay 1 punto rojo sin decidir. ¿Arreglo el contrato con lo decidido y dejo ese para la próxima revisión?"
         : `Hay ${c.m} puntos rojos sin decidir. ¿Arreglo el contrato con lo decidido y dejo esos para la próxima revisión?`)) return;
     if (alcActivo !== A || A.revision !== R || A.armado_en_marcha || A.arreglando || alcCharlaPensando()) return;
     // Las decisiones se apuntan YA (la revisión nueva se lleva las charlas): se añaden a las de antes, tope 60
-    const nuevos = hs.filter(h => h.decidido || h.hecho).map(h => ({
+    const nuevos = hs.filter(h => (h.decidido || h.hecho) && !h.solo).map(h => ({
       donde: alcLimpioCorto(h.donde, 20), cita: alcLimpioCorto(h.cita, 80), motivo: alcLimpioCorto(h.motivo, 160),
       como: alcComoLimpio(h.decidido ? h.decidido.como : h.hecho).slice(0, 160), cuando: (h.decidido && h.decidido.cuando) || new Date().toISOString() }));
     const viejos = (Array.isArray(A.decididos) ? A.decididos : []).filter(d => d && !nuevos.some(x => alcClaveCita(x.cita) === alcClaveCita(d.cita)));
@@ -19494,7 +19776,11 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     // Sin IA (lo de la hoja y los perdones): el camino corto de siempre.
     const deCharla = hs.some(h => h.decidido && h.decidido.de === "charla");
     // (pliego §8.3) lo cambiado en el papel ya está puesto: si no hay órdenes a la IA ni cambios de hoja, no se arma
-    const soloPapel = (hs.some(alcEsDePapel) || !!(R && R.papel_cambiado)) && !deCharla && !hojaCambio && !hs.some(h => h.decidido && h.decidido.de === "hoja");
+    const soloPapel = (hs.some(alcEsDePapel) || !!(R && R.papel_cambiado)) && !deCharla && !hojaCambio
+      && !hs.some(h => h.decidido && h.decidido.de === "hoja" && !(h.solo && h.solo.en_papel));
+    // 18-oct (pliego §11.12): la revisión que sigue es el proceso entero (hasta tres vueltas), salvo dentro del armado todo seguido de
+    // 10.10, que tiene el suyo (su ronda del papel usa el mismo proceso)
+    const revisarTodo = () => (A.auto && A.auto.activo ? alcRevisarIA() : alcRevisionCompleta("arreglar"));
     // 14-oct (pliego §10.10): con «Así lo hice» (el armado todo seguido de la IA), lo contestado se pone en el contrato y la IA
     // vuelve a revisar y a corregirse sola; lo arreglado antes no se olvida
     if (conIA && A.auto && !A.auto.activo) alcAutoEmpezar(A, "contestado", A.auto);
@@ -19509,7 +19795,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     try {
       if (soloPapel) {
         // la revisión otra vez sobre el papel ya cambiado (más barata y más rápida); al volver (o fallar) se guarda solo
-        await alcRevisarIA();
+        await revisarTodo();
         if (alcActivo !== A) return;
         alcGuardarSiArreglo(A);
       } else if (deCharla || (conIA && hojaCambio)) {
@@ -19528,7 +19814,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         await alcVolverAArmar();
         if (alcActivo !== A) return;
         if (!A.contrato || A.contrato === c0) { soltar(); return; }
-        if (!A.revision && !A.contrato.problemas.length) alcRevisarIA().catch(() => { /* la nube nunca frena */ });
+        if (!A.revision && !A.contrato.problemas.length) revisarTodo().catch(() => { /* la nube nunca frena */ });
         alcGuardarSiArreglo(A);
       }
     } catch (e) { soltar(); throw e; }
@@ -19548,6 +19834,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (!A || alcActivo !== A || !A.guardar_al_revisar) return;
     if (A.armado_en_marcha || !A.contrato) return;
     if (A.revision && A.revision.en_marcha) return;
+    // 18-oct (pliego §11.12): dentro del proceso de revisión se guarda una vez, al final (alcProcesoCerrar)
+    if (A.proceso && A.proceso.activo) return;
     A.guardar_al_revisar = false;
     A.arreglando = null;
     alcGuardarPropuestaAhora({ silencioso: true }).catch(() => { /* queda el botón «Guardar lo arreglado» */ });
@@ -19904,7 +20192,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     X.enviados.filter(e => !e.visto).forEach(e => {
       e.visto = true;
       if (e.de === "pedido") { X.arreglados.push({ de: "pedido", motivo: alcLimpioCorto(e.texto, 200), como: alcLimpioCorto(comoDe(e.corr), 240) }); return; }
-      if (hs.some(h => alcMismoHallazgo(h, e.h))) { X.no_arreglados.push(e); return; }
+      // 18-oct (pliego §11.12): lo que la IA puso sola (la puerta lo dejó pasar) está en el papel aunque la revisión lo repita (el
+      // proceso no lo saca dos veces)
+      if (!(e.h && e.h.solo) && hs.some(h => alcMismoHallazgo(h, e.h))) { X.no_arreglados.push(e); return; }
       X.arreglados.push({ de: e.de, motivo: alcLimpioCorto(e.h.motivo, 200), como: alcLimpioCorto(e.como || comoDe(e.corr), 240) });
     });
   }
@@ -19929,6 +20219,30 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     }
     const hs = Array.isArray(R.hallazgos) ? R.hallazgos : [];
     alcAutoContarArreglos(A, hs);
+    // 18-oct (pliego §11.12): después de la ronda del papel, el MISMO proceso de revisión que los botones: lo nuevo que pase la puerta
+    // se pone solo y se vuelve a revisar (con ya_arreglado y espera_edgar), como mucho tres vueltas; lo demás queda para Edgar
+    const P = A.proceso && A.proceso.activo ? A.proceso : null;
+    if (P && X.ronda_papel) {
+      if (Number.isFinite(R.costo_centavos)) P.costo += R.costo_centavos;
+      P.ultimaR = R;
+      const ultima = P.vuelta >= P.tope;
+      const n = alcProcesoAplicar(A, R, P, ultima);
+      alcApuntarRonda(A, P, R, n);
+      if (ultima || (!n.puestos && !n.datos)) { if (ultima && n.porPoner) P.tope_alcanzado = true; return alcAutoTerminar(A, ""); }
+      if (alcTopePasado(A)) return alcAutoTerminar(A, "No seguí arreglando: el asistente llegó al tope del mes.");
+      R.hallazgos.filter(h => h.solo && h.solo.vuelta === P.vuelta).forEach(h => X.arreglados.push({ de: h.solo.via === "dato" ? "hoja" : "papel",
+        motivo: alcLimpioCorto(h.motivo, 200), como: h.solo.via === "dato" ? "escribí en la hoja el dato de la ficha (" + alcLimpioCorto(h.hecho, 120) + ")"
+          : h.solo.de_que ? `La IA propuso el texto de ${h.solo.de_que} y lo puse` : "La IA propuso el texto y lo puse" }));
+      X.fase = "final";
+      if (n.datos && !(await alcProcesoRearmarDatos(A, P))) {
+        if (alcActivo !== A || A.auto !== X) return;
+        return alcAutoTerminar(A, "No pude volver a armar el papel con el dato de la ficha: míralo en la hoja.");
+      }
+      if (alcActivo !== A || A.auto !== X) return;
+      pintarAlcance();
+      await alcRevisarIA();
+      return;
+    }
     const cls = hs.map(h => ({ h, c: Alcance.comoSeArregla(h) }));
     const nuevo = x => !X.intentados.some(k => alcMismoHallazgo(k, x.h));
     const hoja = X.ronda_hoja ? [] : cls.filter(x => x.c.via === "hoja" && nuevo(x));
@@ -19984,6 +20298,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const X = A.auto, R = A.revision;
     X.ronda_papel = true; X.rondas++; X.fase = "papel";
     X.intentados.push(...lista.map(x => x.h));
+    // 18-oct (pliego §11.12): desde aquí, el mismo proceso de revisión que los botones (esta revisión es su vuelta 1)
+    const P = alcSoloUnaVuelta() ? null : alcProcesoEmpezar(A, "auto", true);
+    if (P) { P.ultimaR = R; P.resumen = R.resumen || ""; if (Number.isFinite(R.costo_centavos)) P.costo += R.costo_centavos; }
     pintarAlcance();
     let puestos = 0;
     for (const x of lista) {
@@ -19992,7 +20309,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       if (i < 0) continue;                              // Edgar lo dejó así mientras tanto
       if (x.h.texto_nuevo) {
         const y = alcArreglarSegunIA(i, { auto: true });
-        if (y.ok) { puestos++; X.enviados.push({ de: "papel", h: x.h, como: y.de_que ? `La IA propuso el texto de ${y.de_que} y lo puse` : "La IA propuso el texto y lo puse" }); continue; }
+        if (y.ok) {
+          puestos++; if (P) x.h.solo = { vuelta: 1, via: "papel", de_que: y.de_que || "" };
+          X.enviados.push({ de: "papel", h: x.h, como: y.de_que ? `La IA propuso el texto de ${y.de_que} y lo puse` : "La IA propuso el texto y lo puse" }); continue;
+        }
         // 17-oct (pliego §11.9.1): un texto de ley o una propuesta que pierde protección no se pone sola, ni por la charla: queda
         // como pregunta para Edgar
         if (y.error === "proteccion") { X.no_arreglados.push({ de: "papel", h: x.h, visto: true }); continue; }
@@ -20008,9 +20328,11 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       C.auto = true;
       try { await alcCharlaEnviar(i, ALC_ORDEN_PAPEL); } catch { /* sigue con el siguiente */ } finally { C.auto = false; }
       if (alcActivo !== A || A.revision !== R || A.auto !== X) return;
-      if (Number(C.puestos) > 0) { puestos++; X.enviados.push({ de: "papel", h: x.h, como: "lo cambié en el papel" }); }
+      if (Number(C.puestos) > 0) { puestos++; if (P && alcEsDePapel(x.h)) x.h.solo = { vuelta: 1, via: "charla" }; X.enviados.push({ de: "papel", h: x.h, como: "lo cambié en el papel" }); }
       else X.no_arreglados.push({ de: "papel", h: x.h, visto: true });
     }
+    // (§11.12) lo de esta vuelta: lo puesto a «arreglados», lo demás espera a Edgar (y viaja en la vuelta siguiente)
+    if (P && alcActivo === A && A.proceso === P && A.revision === R) { alcProcesoRepartir(R, P); alcApuntarRonda(A, P, R, { puestos, datos: 0 }); }
     if (!puestos) return alcAutoTerminar(A, "");
     // la revisión final, sobre el papel ya cambiado (la de ahora es del papel de antes)
     X.fase = "final";
@@ -20018,6 +20340,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     await alcRevisarIA();
   }
   function alcAutoTerminar(A, nota) {
+    // 18-oct (pliego §11.12): el proceso de revisión de la ronda del papel se cierra aquí (una sola lista; «Así lo hice» la cuenta)
+    if (A && A.proceso && A.proceso.activo && A.proceso.de === "auto") alcProcesoCerrar(A, true);
     const X = A && A.auto;
     if (!X || !X.activo) return;
     X.activo = false; X.fase = "listo"; X.cuando = new Date().toISOString();
@@ -20066,6 +20390,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const j = A.decision && A.decision.juicio;
     const R = A.revision;
     return { cuando: X.cuando || null, rondas: X.rondas, costo_centavos: Math.round(Number(X.costo) || 0),
+             ...(R && R.proceso ? { vueltas: Number(R.proceso.vueltas) || 1 } : {}),
              resumen: j && j.resumen ? alcLimpioCorto(j.resumen, 1500) : "",
              arreglados: X.arreglados.map(x => ({ de: x.de, motivo: x.motivo, como: x.como })).slice(0, 20),
              preguntas: R && Array.isArray(R.hallazgos) ? R.hallazgos.filter(h => !h.decidido).map(h => alcLimpioCorto(h.motivo, 200)).slice(0, 20) : [] };
@@ -20100,7 +20425,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     let encontre;
     if (X.arreglados.length) encontre = `<ul class="alc-asi-lista alc-asi-arreglos">${X.arreglados.map(lineaArreglo).join("")}</ul>`;
     else if (X.activo) encontre = `<p class="lev-nota">Todavía estoy en ello.</p>`;
-    else if (R && R.error) encontre = `<p class="lev-nota">La revisión no salió: mira el detalle de la revisión, abajo.</p>`;
+    else if (R && (R.error || R.fallo_vuelta)) encontre = `<p class="lev-nota">La revisión no salió: mira el detalle de la revisión, abajo.</p>`;
     else if (!hs.length) encontre = `<p class="alc-verde">La IA no vio nada que arreglar.</p>`;
     else encontre = `<p class="lev-nota">No pude arreglar nada sola: te lo pregunto abajo.</p>`;
     if (X.notas.length) encontre += X.notas.map(t => `<p class="alc-gris">${esc(t)}</p>`).join("");
@@ -20108,6 +20433,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     let necesito = "";
     if (!X.activo) {
       const items = hs.map((h, i) => {
+        // 18-oct (pliego §11.12): lo que la IA puso sola ya está en «Lo que encontré y cómo lo arreglé»
+        if (h.solo && h.decidido) return "";
         if (h.decidido) return `<li class="alc-asi-pregunta alc-asi-contestada"><span data-no-i18n>${esc(h.motivo)}</span>
           <div class="alc-verde"><span>Contestado:</span> <span data-no-i18n>${esc(h.decidido.como || "")}</span></div></li>`;
         const pagos = alcCharlaDePagos(h) ? `<div class="alc-fixes">
@@ -20135,14 +20462,14 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
             ${h.texto_nuevo && seg && seg.ok ? `<button type="button" class="alc-op alc-auto" data-rev-arreglar="${i}">Arreglar según la IA</button>` : ""}
             <button type="button" class="alc-op alc-hablar" data-asi-hablar="${i}">Hablar con la IA</button>
           </div></li>`;
-      });
+      }).filter(Boolean);
       // (14-oct, corrección, hallazgo 15: si la revisión no salió, no está «listo»)
       necesito = items.length ? `<ul class="alc-asi-preguntas">${items.join("")}</ul>`
-        : R && R.error ? `<p class="lev-nota">La revisión no salió: toca «Intentar otra vez» o «Seguir sin la IA» en la revisión, abajo.</p>`
+        : R && (R.error || R.fallo_vuelta) ? `<p class="lev-nota">La revisión no salió: toca «Intentar otra vez» o «Seguir sin la IA» en la revisión, abajo.</p>`
         : `<p class="alc-verde">Nada: está listo para mandar.</p>`;
       // contestado en la hoja (un dato, los pagos, el permiso): hay que ponerlo en el contrato, una vez. 17-oct (pliego §11.4):
       // también lo puesto en el papel con «Arreglar según la IA» (hace falta la revisión nueva), y las dudas no lo frenan
-      if ((hs.some(h => h.hecho && !alcEsDePapel(h)) || (R && R.papel_cambiado)) && !hs.some(h => !h.decidido && !h.hecho && h.gravedad === "rojo"))
+      if ((hs.some(alcHechoSinPapel) || (R && R.papel_cambiado)) && !hs.some(h => !h.decidido && !h.hecho && h.gravedad === "rojo"))
         necesito += `<div class="alc-botones"><button type="button" class="accion" data-rev-rearmar="1"${A.arreglando || A.armado_en_marcha ? " disabled" : ""}>Ponerlo en el contrato</button></div>`;
     }
     const K = alcCandadoRevision();
@@ -20170,7 +20497,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         <ul class="alc-asi-lista alc-asi-recuerda">${A.correcciones.map(c => `<li data-no-i18n>${esc(alcLimpioCorto(c.motivo, 200))}</li>`).join("")}</ul>
         <p class="lev-nota">Viaja cada vez que la IA vuelve a armar este contrato.</p>
         <div class="alc-fixes"><button type="button" class="alc-op" data-asi-olvidar="1">Olvidar</button></div>` : ""}
-      <p class="alc-sub alc-asi-costo"><span>Lo que costó:</span> <span data-no-i18n>≈ $${(costo / 100).toFixed(2)}</span>${X.rondas ? ` <span>· rondas de arreglo:</span> <span data-no-i18n>${X.rondas}</span>` : ""}${g
+      <p class="alc-sub alc-asi-costo"><span>Lo que costó:</span> <span data-no-i18n>≈ $${(costo / 100).toFixed(2)}</span>${X.rondas ? ` <span>· rondas de arreglo:</span> <span data-no-i18n>${X.rondas}</span>` : ""}${R && R.proceso ? ` <span>· vueltas de revisión:</span> <span data-no-i18n>${Number(R.proceso.vueltas) || 1}</span>` : ""}${g
         ? ` <span>· este mes:</span> <span data-no-i18n>$${((g.centavos || 0) / 100).toFixed(2)} / $${Math.round(g.tope / 100)}</span>` : ""}</p>
       <div class="alc-botones alc-asi-botones">
         <button type="button" class="accion" id="alc-asi-mandar"${puedeMandar ? "" : " disabled"}>Está bien, mándalo al portal</button>
@@ -21617,6 +21944,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
                               clausulas_casa: alcClausulasCasa(A),
                               // 14-oct (pliego §10.10): las correcciones que viajan con cada armado (sin dinero) y «Así lo hice»
                               correcciones: alcCorreccionesLimpias(A.correcciones),
+                              // 18-oct (pliego §11.12.4): cada vuelta del proceso de revisión {cuando, vuelta, arreglados, pendientes, costo}
+                              rondas: alcRondasParaGuardar(A),
                               ...(alcAsiParaGuardar(A) ? { asi_lo_hice: alcAsiParaGuardar(A) } : {}) },
         // v252: la base del precio de esta propuesta (si la columna aún no existe en la base, db.js guarda sin ella)
         pricing_basis: dec.pricing_basis || "quantities",
