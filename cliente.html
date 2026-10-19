@@ -11,7 +11,7 @@
        botones y tarjetas de «Cobre y luz» (tandas 1 y 2). Con la v221 vieja, un teléfono
        que la tuviera guardada abría el portal sin ellos. -->
   <link rel="stylesheet" href="css/styles.css?v=238">
-  <link rel="stylesheet" href="css/portal.css?v=239">
+  <link rel="stylesheet" href="css/portal.css?v=276">
   <script>
     // «Aa» (letra grande) se pone ANTES de pintar, para que la página no salte al abrir
     (function () { try { if (localStorage.getItem("mp-text-large") === "1") document.documentElement.setAttribute("data-text", "large"); } catch (e) {} })();
@@ -820,9 +820,14 @@
                 (p.gc.puede_firmar ? '' : '<span class="cl-volver-nota">' + esc(TXT.gcSoloMirar) + '</span>') + '</div>' : '') +
         cabecera +
         // En el teléfono todo va en una columna, en el orden del pliego (style="order");
-        // en la computadora, dos columnas: el trabajo a la izquierda, lo demás a la derecha
+        // en la computadora, dos columnas: el trabajo a la izquierda, lo demás a la derecha;
+        // en la pantalla ancha (>=1280) la columna A se parte en dos (cl-sub-1 y cl-sub-2):
+        // la propuesta a la izquierda y lo demás en el centro (sin propuesta: etapas y trabajos a la izquierda)
         '<div class="cl-cuerpo">' +
-          '<div class="cl-col cl-col-a">' + opciones + firmas + etapas + trabajos + visita + decisiones + diario + '</div>' +
+          '<div class="cl-col cl-col-a">' +
+            '<div class="cl-sub cl-sub-1">' + (opciones ? opciones : etapas + trabajos) + '</div>' +
+            '<div class="cl-sub cl-sub-2">' + firmas + (opciones ? etapas + trabajos : '') + visita + decisiones + diario + '</div>' +
+          '</div>' +
           '<div class="cl-col cl-col-b">' + deuda + par + inspecciones + documentos + pagos + garantia + contratista + '</div>' +
         '</div>';
 
