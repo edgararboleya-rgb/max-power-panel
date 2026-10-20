@@ -4777,6 +4777,74 @@
     [/^La IA arregló (\d+) (puntos?) · te toca decidir (\d+)$/, s => s.replace(/^La IA arregló (\d+) (puntos?) · te toca decidir (\d+)$/,
       (m, n, p, k) => `The AI fixed ${n} ${p === "punto" ? "point" : "points"} · your call: ${k}`)]
   );
+  // 20-oct (pliego §12.5): «Aplicar mi orden». Edgar dice qué cambia, la IA lo pasa a una lista, él la aprueba y el programa la pone
+  // sin IA; «N de M bien» dice si quedó. Lo que escribe la IA (el porqué, las dudas, el inglés del papel) va con data-no-i18n
+  Object.assign(D, {
+    "Aplicar mi orden": "Apply my order",
+    "Tu orden para este contrato": "Your order for this contract",
+    "Dime qué cambia, con tus palabras o con el texto exacto en inglés. Ejemplo: “7.6 debe decir: …”, “quitar Cabinet lighting”, “añadir a No incluye: temporary power…”.":
+      "Tell me what changes, in your own words or with the exact English text. Example: “7.6 must say: …”, “remove Cabinet lighting”, “add to Not included: temporary power…”.",
+    "Lo que cambia en el contrato": "What changes in the contract",
+    "Puedes dictarlo con el micrófono del teclado. Los montos no viajan a la IA: los tapo antes de mandar, y el dinero del papel lo pone el programa.":
+      "You can dictate it with the keyboard microphone. Amounts don't travel to the AI: I cover them before sending, and the money on the paper is set by the program.",
+    "La IA está convirtiendo tu orden en una lista… (suele tardar uno o dos minutos; puedes seguir)":
+      "The AI is turning your order into a list… (it usually takes one or two minutes; you can keep going)",
+    "Pongo tu orden en el papel…": "I'm putting your order on the paper…",
+    "Esto de tu orden la IA no lo supo ubicar en el papel:": "The AI couldn't find where this part of your order goes on the paper:",
+    "Lo que voy a poner en el papel (mira cada punto; si alguno no va, quítalo):": "What I'm going to put on the paper (check each point; if one doesn't belong, remove it):",
+    "Párrafo": "Paragraph", "Añadir": "Add", "Dato": "Data", "Aceptación": "Acceptance",
+    "Ver más": "See more", "Ver lo que se quita": "See what is removed",
+    "Quitar de la lista": "Remove from the list",
+    "El dinero del papel": "The money on the paper",
+    "Sobra:": "Should not be there:", "Falta en negrita:": "Missing in bold:", "El dinero no cuadra:": "The money doesn't add up:",
+    "No se puede: texto de ley. Ese párrafo lo pone la ley de Florida y no se cambia con una orden.":
+      "Not allowed: legal text. That paragraph is set by Florida law and is not changed with an order.",
+    "No pude escribir ese dato en la hoja.": "I couldn't write that data on the sheet.",
+    "Escribí el dato en la hoja, pero no pude volver a armar el papel.": "I wrote the data on the sheet, but I couldn't build the paper again.",
+    "El texto nuevo es demasiado largo o trae marcas que no van en el papel.": "The new text is too long or has marks that don't go on the paper.",
+    "No lo puse: la frase que dice qué cambiar junta dos párrafos del papel. Háblale a la IA para que diga cuál es.":
+      "I didn't put it: the phrase that says what to change joins two paragraphs of the paper. Talk to the AI so it says which one.",
+    "No lo puse: eso es el título de una sección, y los títulos de las secciones no se cambian con una orden.":
+      "I didn't put it: that is a section title, and section titles are not changed with an order.",
+    "No lo puse: es la tabla de pagos, y esa la pone el programa desde el estimado.":
+      "I didn't put it: it's the payment table, and the program sets it from the estimate.",
+    "Esa frase junta dos párrafos del papel y no sé cuál cambiar: háblale a la IA": "That phrase joins two paragraphs of the paper and I don't know which one to change: talk to the AI",
+    "Aplicaste tu orden: toca «Revisar otra vez con IA» para que la IA mida el papel contra ella":
+      "You applied your order: tap «Review again with AI» so the AI measures the paper against it",
+    "La IA no pudo convertir tu orden en puntos del papel: mira sus dudas y escríbela de otra manera":
+      "The AI couldn't turn your order into points on the paper: look at its doubts and write it another way",
+    "La IA no sacó ningún punto de tu orden; escríbela de otra manera": "The AI didn't get any point out of your order; write it another way",
+    "La IA no sacó ningún punto de tu orden": "The AI didn't get any point out of your order",
+    "La IA convirtió tu orden en una lista: mírala y apruébala": "The AI turned your order into a list: check it and approve it",
+    "Tu orden lleva un monto que no pude tapar: quítalo y vuelve a mandarla (el dinero lo pone el programa, no la IA)":
+      "Your order has an amount I couldn't cover: remove it and send it again (the program sets the money, not the AI)",
+    "Se me escapó un monto sin tapar; no lo mandé a la IA": "An uncovered amount slipped through; I didn't send it to the AI",
+    "Se me escapó un monto sin tapar en la hoja; no lo mandé a la IA": "An uncovered amount slipped through on the sheet; I didn't send it to the AI",
+    "Escribe primero tu orden": "Write your order first",
+    "Tu orden es muy larga para la IA: pártela en dos": "Your order is too long for the AI: split it in two",
+    "Tu orden llevaba un monto sin tapar: la IA no la aceptó. El dinero lo pone el programa": "Your order had an uncovered amount: the AI didn't accept it. The program sets the money",
+    "La IA ya gastó lo del mes: tu orden no se mandó": "The AI already used this month's budget: your order wasn't sent",
+    "La lista salió cortada; vuelve a intentarlo (o parte tu orden en dos)": "The list came out cut; try again (or split your order in two)",
+    "La IA no quiso convertir tu orden; escríbela de otra manera": "The AI wouldn't convert your order; write it another way",
+    "No encuentro esa orden; vuelve a mandarla": "I can't find that order; send it again",
+    "Sin señal: la orden necesita internet. Cuando vuelva, toca otra vez": "No signal: the order needs internet. When it's back, tap again",
+    "Espera a que la IA termine con el contrato": "Wait for the AI to finish with the contract",
+    "No pude volver a armar el papel con los datos: míralo en la hoja": "I couldn't build the paper again with the data: check it on the sheet",
+    "No pude aplicar la orden": "I couldn't apply the order"
+  });
+  REGLAS.push(
+    [/^Aprobar y aplicar todo \((\d+)\)$/, "Approve and apply all ($1)"],
+    [/^(\d+) de (\d+) bien$/, "$1 of $2 right"],
+    [/^La IA dejó fuera (\d+) (puntos?):$/, s => s.replace(/^La IA dejó fuera (\d+) (puntos?):$/, (m, n, p) => `The AI left out ${n} ${p === "punto" ? "point" : "points"}:`)],
+    [/^Sale (\d+) veces:$/, "Shows up $1 times:"],
+    [/^Apliqué tu orden: (\d+) de (\d+) bien$/, "I applied your order: $1 of $2 right"],
+    [/^Tu orden pasa de (\d+) puntos: no la apliqué$/, "Your order goes over $1 points: I didn't apply it"],
+    [/^Con tu orden de antes serían (\d+) puntos, y como mucho van (\d+)\. Quita de la lista los que sobran \(o junta lo de antes en menos puntos\) y vuelve a aprobar\.$/,
+      "With your earlier order it would be $1 points, and $2 is the most. Remove the extra ones from the list (or combine the earlier ones into fewer points) and approve again."],
+    [/^Puse (\d+) (puntos?) en el papel(?:; (\d+) ya (estaba|estaban))?\. Ahora toca «Revisar otra vez con IA»: la IA mide el papel contra tu orden\.$/,
+      s => s.replace(/^Puse (\d+) (puntos?) en el papel(?:; (\d+) ya (estaba|estaban))?\. Ahora toca «Revisar otra vez con IA»: la IA mide el papel contra tu orden\.$/,
+        (m, n, p, y) => `I put ${n} ${p === "punto" ? "point" : "points"} on the paper` + (y ? `; ${y} ${y === "1" ? "was" : "were"} already there` : "") + ". Now tap «Review again with AI»: the AI measures the paper against your order.")]
+  );
   // ---------- El motor ----------
   // Cada texto de la pantalla se busca en el diccionario tal como se ve: con los
   // espacios y saltos de línea juntados en uno solo. Si no está, se prueba sin el

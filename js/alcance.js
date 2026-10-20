@@ -83,6 +83,28 @@
     if (/\b(acceptance|signature|permit|inspection|insurance|change order|legal|lien|cancel|consent|notice)/.test(n)) return "ignorar";
     return null;
   }
+  // 20-oct (pliego §12.4 C.2, P213): dentro del Alcance o de No incluye, un renglón numerado («2. Permit registration and
+  // inspections») es un renglón, no un título de sección: solo cambia de sección si es EXACTO en TITULO_DE («9. Permits and
+  // inspections», «3. Exclusions») o lleva «#». Sin esto, la palabra «permit» lo mandaba a «ignorar» y se perdía el resto
+  // del Alcance. Lo usan las dos copias de la regla del título (leerAlcance y seccionDeTitulo).
+  // «Exacto» es el título entero o, para las secciones que vienen detrás de una lista (No incluye, Opciones, Precio, Pagos), su cabeza
+  // antes de una raya o de un paréntesis: «3. NOT INCLUDED — BY OTHERS» (Metro) cierra la lista porque «NOT INCLUDED» es un título de la
+  // casa letra por letra (y «2. Inspections — rough and final» no, porque Inspections no es de esas). Lo que solo se adivina por una palabra suelta («2. Dedicated
+  // circuit for payment terminal», «2. Fire alarm not included», «2. Pricing review with GC») ya no corta la lista: es un renglón.
+  // (Corrección de los revisores, 20-oct: antes también cerraban la lista las adivinanzas de No incluye, Opciones, Precio y Pagos, y
+  // con eso P213 seguía abierto para esas palabras.) Un título que no es exacto («3. Warranty and Service Terms») tiene que llevar «#».
+  const SECCIONES_DE_RENGLONES = new Set(["alcance", "no_incluye"]);
+  const FRONTERAS_POR_CABEZA = new Set(["no_incluye", "opciones", "precio_detalle", "pagos_detalle"]);
+  function tituloExacto(t) {
+    if (TITULO_DE[normaTitulo(t)]) return true;
+    const cabeza = String(t || "").split(/\s+[—–-]\s+|\s*\(/)[0];
+    return cabeza !== t && FRONTERAS_POR_CABEZA.has(TITULO_DE[normaTitulo(cabeza)]);
+  }
+  function renglonNoEsTitulo(linea, sec, conAlmohadilla) {
+    if (conAlmohadilla || !SECCIONES_DE_RENGLONES.has(sec)) return false;
+    const t = String(linea || "").replace(/^#+\s*/, "").trim();
+    return /^\d+[.)]\s/.test(t) && !tituloExacto(t);
+  }
 
   // Claves "Nombre: valor" de la cabecera
   const CLAVES_DATOS = {
@@ -109,6 +131,9 @@
     planos:             ["planos", "drawings"],
     ingenieria:         ["ingenieria", "engineering", "load calc"],
     utility:            ["utility", "compania electrica"],
+    // 20-oct (pliego §12.4 C.3): quién tramita la compañía de luz (cliente | dueño | Max Power): decide el título de la 7.6
+    utility_por:        ["compania de luz la tramita", "la compania de luz la tramita", "compania electrica la tramita", "utility la tramita",
+                         "utility by", "utility handled by", "utility coordinated by"],
     layout:             ["layout", "aprobacion de layout"],
     vence:              ["vence", "vigencia", "vale", "valid", "expires", "valid for", "valid through", "valid until", "proposal valid", "expiration", "expiration date", "offer valid"],
     // v3.6: la zona de inundación (7.x Flood elevation cuando es AE / VE / AO / AH)
@@ -464,6 +489,15 @@
       // «"New Port Richey"» con comillas: el dato es lo de adentro
       v = sinComillas(v);
       if (k === "contratista" && /max power|arboleya|EC13016045/i.test(v)) v = "";
+      // 20-oct (pliego §12.4 C.3): «Compañía de luz la tramita:» se guarda como cliente | dueno | max_power; lo demás se avisa
+      if (k === "utility_por" && v) {
+        const u = norma(v).replace(/[.;]+$/, "").trim();
+        const q = /^(?:el\s+|la\s+|the\s+)?(?:max power|nosotros|we|us|contractor|mxp)\b/.test(u) ? "max_power"
+          : /^(?:el\s+|la\s+|the\s+)?(?:dueno|owner|propietario|homeowner)\b/.test(u) ? "dueno"
+          : /^(?:el\s+|la\s+|the\s+)?(?:cliente|client|gc|general contractor|contratista|customer)\b/.test(u) ? "cliente" : "";
+        if (!q) { R.avisos.push({ linea: i + 1, texto: `No entendí «Compañía de luz la tramita: ${v.slice(0, 40)}». Escribe «cliente», «dueño» o «Max Power».` }); return; }
+        v = q;
+      }
       if (v) { R.datos[k] = v; R.datos_linea[k] = i + 1; }
       // (revisión) un monto en «Ingeniería:», «Planos:» o «Utility:» (su texto sale tal cual en el papel): rojo o ámbar, como en el Alcance
       if (v && (k === "ingenieria" || k === "planos" || k === "utility")) avisaDinero(i, lineas[i], "los datos («" + String(lineas[i]).split(":")[0].replace(/^[-*•\s]+/, "").trim() + ":»)");
@@ -589,6 +623,7 @@
         let posible = seccionDe(linea);
         const pareceTitulo = esTitulo || /^(?:\d+[.)]\s+)?[^.:,]{2,45}:?$/.test(linea);
         if (esTituloDelDocumento(linea, posible)) posible = "datos";
+        if (posible && renglonNoEsTitulo(linea, sec, esTitulo)) posible = null;
         if (posible && (pareceTitulo || esTitulo)) { entrarSeccion(posible, linea, i); return; }
       } else if (!pista) {
         // sin pista, una línea que es EXACTAMENTE un título de sección conocido («Not included», «## Scope of Work»)
@@ -1421,6 +1456,17 @@
     return P;
   }
 
+  // 20-oct (pliego §12.4 C.2): el valor de una condición escrito entre comillas («Circuitos existentes: "no"») es lo de adentro.
+  // Solo se quitan las comillas que envuelven TODO el valor (y los espacios): «6" LED canless» se queda como está.
+  function quitarComillasDeValor(v) {
+    let t = String(v == null ? "" : v).trim();
+    for (let k = 0; k < 3; k++) {
+      const m = t.match(/^["“”'‘’«]\s*([\s\S]*?)\s*["“”'‘’»]$/);
+      if (!m || /["“”«»]/.test(m[1])) break;
+      t = m[1].trim();
+    }
+    return t;
+  }
   // «Fotos del panel: sí» · "si" con comillas · «yes, 12 photos» · «no photos» → true / false; lo demás, null (se pregunta)
   function siNo(v) {
     const n = norma(String((v && v.valor) || "").replace(/["'«»“”‘’]/g, ""));
@@ -1588,7 +1634,8 @@
     const noExcluirAfci = norma((C.no_excluir || {}).valor || "").includes("afci");
     // (novena revisión) solo un «no» LIMPIO de Edgar (su línea o su respuesta): «no, menos el de la piscina» o «no — the pool circuits
     // stay» traen algo que se queda, y un «no» que la IA sacó de la prosa no es suyo; en esos casos la protección se queda (y se avisa)
-    const vCirc = norma((C.circuitos_exist || {}).valor || "");
+    // (20-oct, pliego §12.4 C.2) las comillas y los espacios no cuentan: «"no"» es un «no» limpio, igual que en siNo
+    const vCirc = norma(quitarComillasDeValor((C.circuitos_exist || {}).valor || ""));
     const noLimpio = !(C.circuitos_exist || {}).deIA && /^no(?:\s*[,.;:—–-]?\s*(?:todo (?:es )?nuevo|all new|everything (?:is )?new|nada (?:se )?queda|nothing (?:stays|remains)|no queda ninguno|ninguno|none))?\s*\.?$/.test(vCirc);
     const rewireCompleto = rewireSenal && siNo(C.circuitos_exist) === false && noLimpio;
     const noConSalvedad = rewireSenal && siNo(C.circuitos_exist) === false && !noLimpio && !(C.circuitos_exist || {}).deIA
@@ -2046,7 +2093,9 @@
       }
       case "cambiar_condicion": {
         // cambia el valor de una condición «Clave: valor» (por línea, o por clave si la línea no se sabe; si no existe, se escribe)
+        // (20-oct, pliego §12.4 C.2) sin las comillas que lo envuelven: el botón escribe «no», nunca «"no"»
         if (!v) return { error: "escribe el valor" };
+        if (quitarComillasDeValor(v) !== v) return aplicarArreglo(texto, a, quitarComillasDeValor(v) || " ");
         if (hay && /^\s*[^:]{2,42}:/.test(antes)) {
           const mAnt = antes.match(/^(\s*[^:]{2,42}:\s*)(.*)$/);
           const nuevo = a.anadir && mAnt[2].trim() ? mAnt[2].trim().replace(/[.;]$/, "") + ", " + v : v;
@@ -2714,7 +2763,10 @@
     const textoPermisoHoja = norma(d.permiso || "");
     const soloRegistroPermiso = permiso === "cliente" && (RX_SOLO_REGISTRO.test(textoPermisoHoja) || RX_SOLO_REGISTRO.test(textoAlcance) || RX_SOLO_REGISTRO.test(textoExcl)
       || /\b(?:max power|mxp)\s+(?:only\s+)?(?:registers?|is registered|will register|se registra)\b/.test(textoPermisoHoja + " " + textoAlcance + " " + textoExcl));
-    const hayItemPermiso = /\bpermit/.test(textoAlcance);
+    // 20-oct (corrección de los revisores, P213): con el permiso de Max Power, la viñeta de la casa en la §3 es la que dice que el derecho
+    // del permiso va incluido en el precio. Un renglón del §2 que solo nombra el permiso («Permit and inspection.») no lo dice: la viñeta
+    // se queda. Solo sobra si el renglón habla también del derecho («permit fee», «fees»).
+    const hayItemPermiso = /\bpermit/.test(textoAlcance) && (permiso !== "nosotros" || /\bfees?\b/.test(textoAlcance));
     // v251 (revisión): «Complete trim-out (…), testing, and coordination of the required inspections» ya es el cierre
     const hayCierre = L.items.some(it => /^(testing|startup|closeout|commissioning)\b|\b(closeout|close-out|commissioning)\b/i.test(it.titulo)
       || (/\btesting\b/i.test(it.titulo) && /\binspections?\b|\btrim-?\s?out\b/i.test(it.titulo)));
@@ -3437,7 +3489,9 @@
 
   // ====================================================== EL ÚLTIMO CANDADO
   const FIJOS = ["350.00", "2.99", "1.5", "2,500", "18", "10", "30", "90", "713"];
-  function barridoFinal(html, montosPermitidos) {
+  // 20-oct (pliego §12.4 C.1): con la cuenta (tercer argumento, no obligatorio) además frena lo que el dinero pintado no cuadra
+  // con ella (dineroContraCuenta). Las llamadas de dos argumentos siguen igual que antes.
+  function barridoFinal(html, montosPermitidos, cuenta) {
     const problemas = [];
     // los comentarios HTML no se imprimen: lo que haya ahí dentro no cuenta
     const visible = html.replace(/<!--[\s\S]*?-->/g, " ");
@@ -3474,7 +3528,223 @@
       const limpio = m.replace(/[$\s]/g, "");
       if (!permitidos.has(limpio)) problemas.push({ tipo: "monto", texto: `El contrato tiene ${m}, que no lo calculé yo.` });
     });
+    if (cuenta) dineroContraCuenta(html, cuenta).filter(f => !f.ok).forEach(f => problemas.push({ tipo: "cuadre", texto: f.texto }));
     return { problemas, sirve: problemas.length === 0 };
+  }
+
+  // ====================================================== 20-oct · pliego §12.4 C.1 y §12.6: los candados que siempre dan lo mismo
+  // Comillas tipográficas → rectas, guiones largos iguales, ligaduras deshechas y espacios juntos (la norm de comprobar.cjs de Gong)
+  const normaPapel = s => String(s == null ? "" : s).replace(/[‘’‚′]/g, "'").replace(/[“”„″]/g, '"').replace(/ﬁ/g, "fi").replace(/ﬂ/g, "fl")
+    .replace(/ﬀ/g, "ff").replace(/ﬃ/g, "ffi").replace(/ﬄ/g, "ffl").replace(/\s*[—–]\s*/g, " — ").replace(/[    ]/g, " ")
+    .replace(/\s+/g, " ").trim();
+  // El papel sin tapar, en renglones con su sección («1».. «9», «L», «A»; «» antes de la primera)
+  function papelPorSecciones(html) {
+    const P = papelEnTexto(html, false), secs = new Set(P.secciones), out = [];
+    let sec = "";
+    String(P.texto).split("\n").forEach(l => {
+      const m = l.match(/^\[([0-9A-Z]{1,3})\] /);
+      if (m && secs.has(m[1])) sec = m[1];
+      out.push({ sec, texto: l });
+    });
+    return { lineas: out, secciones: P.secciones };
+  }
+  const veces = (texto, frase) => { const f = normaPapel(frase); if (!f) return 0; return normaPapel(texto).split(f).length - 1; };
+  const aCentavos = t => { const m = String(t || "").match(/\$\s?(\d{1,3}(?:,\d{3})*|\d+)(?:\.(\d{2}))?/); return m ? Number(m[1].replace(/,/g, "")) * 100 + Number(m[2] || 0) : null; };
+  // Los montos del papel contra la cuenta: el TOTAL de la §5 = la base; en la §6 cada «Milestone N — P%» con su monto al centavo,
+  // los porcentajes suman 100 (±0.5), el TOTAL = la suma de los hitos = la base. Devuelve filas {frase, ok, texto} (texto = qué falla).
+  function dineroContraCuenta(html, cuenta) {
+    const filas = [];
+    if (!cuenta || !(Number(cuenta.base) > 0)) return filas;
+    const S = papelPorSecciones(html), base = Number(cuenta.base), $ = c => "$" + dinero(c);
+    const de = n => S.lineas.filter(x => x.sec === n).map(x => x.texto);
+    // §5: las filas TOTAL
+    const tot5 = de("5").filter(l => /^TOTAL\b/i.test(l) && aCentavos(l) !== null);
+    const mal5 = tot5.filter(l => aCentavos(l) !== base);
+    filas.push({ frase: "§5 TOTAL " + $(base), ok: tot5.length > 0 && !mal5.length,
+      texto: !tot5.length ? "No encuentro el TOTAL de la sección 5 en el papel." : mal5.length ? `El TOTAL de la sección 5 dice ${(mal5[0].match(/\$\s?[\d,]+(?:\.\d{2})?/) || [""])[0]} y la cuenta da ${$(base)}.` : "" });
+    // §6 solo si el papel la trae (el SOW ligero no lleva pagos)
+    if (S.secciones.includes("6") && (cuenta.hitos || []).length) {
+      const l6 = de("6"), hitosP = [];
+      l6.forEach(l => { const m = l.match(/^Milestone (\d{1,2}) — (\d{1,3}(?:\.\d+)?)%/); if (m) hitosP.push({ n: Number(m[1]), pct: Number(m[2]), c: aCentavos(l), l }); });
+      cuenta.hitos.forEach(h => {
+        const p = hitosP.find(x => x.n === h.n);
+        const ok = !!p && Math.abs(p.pct - Number(h.pct)) < 0.001 && p.c === h.centavos;
+        filas.push({ frase: `Milestone ${h.n} — ${h.pct}% ${$(h.centavos)}`, ok,
+          texto: ok ? "" : !p ? `En la sección 6 falta el hito ${h.n}.` : `El hito ${h.n} de la sección 6 dice ${p.pct}% y ${p.c === null ? "sin monto" : $(p.c)}; la cuenta da ${h.pct}% y ${$(h.centavos)}.` });
+      });
+      const sobran = hitosP.filter(x => !cuenta.hitos.some(h => h.n === x.n));
+      if (sobran.length) filas.push({ frase: "§6 sin hitos de más", ok: false, texto: `La sección 6 tiene ${sobran.length} hito(s) que la cuenta no trae.` });
+      const sumaPct = hitosP.reduce((a, x) => a + x.pct, 0), sumaC = hitosP.reduce((a, x) => a + (x.c || 0), 0);
+      filas.push({ frase: "§6 los porcentajes suman 100", ok: hitosP.length > 0 && Math.abs(sumaPct - 100) <= 0.5,
+        texto: Math.abs(sumaPct - 100) <= 0.5 ? "" : `Los porcentajes de la sección 6 suman ${sumaPct}%, no 100%.` });
+      filas.push({ frase: "§6 la suma de los hitos = " + $(base), ok: sumaC === base, texto: sumaC === base ? "" : `Los hitos de la sección 6 suman ${$(sumaC)} y la base es ${$(base)}.` });
+      const tot6 = l6.filter(l => /^TOTAL\b/i.test(l) && aCentavos(l) !== null);
+      const ok6 = tot6.length > 0 && tot6.every(l => aCentavos(l) === base);
+      filas.push({ frase: "§6 TOTAL " + $(base), ok: ok6, texto: ok6 ? "" : !tot6.length ? "No encuentro el TOTAL de la sección 6." : `El TOTAL de la sección 6 no es ${$(base)}.` });
+    }
+    return filas;
+  }
+
+  // Las siglas que la casa no necesita definir (lo que cualquiera entiende o lo que es un nombre)
+  const SIGLAS_DE_LA_CASA = new Set(["NEC", "NFPA", "FBC", "GFCI", "AFCI", "LED", "HVAC", "EV", "AC", "DC", "KW", "KVA", "EMT", "PVC", "MC", "NM",
+    "THHN", "THWN", "XHHW", "AWG", "MCM", "USA", "US", "FL", "PE", "LLC", "INC", "CORP", "ACH", "TV", "MXP", "SOW", "EC", "FEMA", "BFE", "CO",
+    "SPD", "ATS", "MDP", "UL", "NEMA", "OSHA", "ID", "PDF", "HOA", "RV", "RMC", "IMC", "ENT", "GEC", "EGC", "AIC", "PV", "ESS", "ADU", "UPS",
+    "AM", "PM", "LV", "IT", "CCTV", "USB", "WIFI", "NE", "NW", "SE", "SW", "ST", "AVE", "BLVD", "RD", "DR", "LN", "CT", "CIR", "HWY", "SR",
+    "MCA", "MOCP", "CT", "MLO", "VFD", "BTU", "SEER", "HP", "VA", "LAG", "TECO", "FPL", "DBA", "PA", "OK", "II", "III", "IV", "VI", "VII",
+    "VIII", "IX", "XI", "XII", "AHJ", "ESIGN", "UETA", "CFR", "PLLC", "LLP", "LP", "PC", "MEP", "AL", "CU", "SF", "SQ", "FT", "AE", "VE", "AO", "AH", "NAVD", "NGVD", "FIRM",
+    "ASCE", "ANSI", "IEEE", "SER", "POS", "AV", "LB", "TOTAL", "LUMP", "SUM", "MONTO", "ICC", "UPC", "IRC", "IBC", "NOTICE", "NOT", "AND", "OR", "THE", "OF", "TO",
+    "FOR", "IN", "BY", "A", "AN", "ON", "AT", "WITH", "IS", "BE", "ANY", "ALL", "NO", "YOUR", "YOU", "THIS", "THAT", "IF", "MAY", "ARE"]);
+  // Avisos (ámbar): no frenan el envío ni tumban arreglos; la orden de Edgar manda. datos (opcional): { cliente, con_gc, owner_firma }
+  function avisosFinal(html, datos) {
+    const D = datos || {}, avisos = [];
+    const h = String(html || ""), S = papelPorSecciones(h);
+    const todo = S.lineas.map(x => x.texto).join("\n");
+    // 1) siglas sin definir: una sigla de 2 a 5 letras que no es de la casa y que el papel no define («(the "GC")», «(AHJ)»)
+    const definidas = new Set();
+    (todo.match(/\(\s*(?:the\s+)?["“”']?([A-Z]{2,6})s?["“”']?\s*\)/g) || []).forEach(m => definidas.add(m.replace(/[^A-Z]/g, "").replace(/^THE/, "")));
+    (todo.match(/["“”]([A-Z]{2,6})["“”]\s+means\b/g) || []).forEach(m => definidas.add(m.replace(/[^A-Z]/g, "").replace(/MEANS$/, "")));
+    // lo que sale en la cabecera (el nombre del cliente, de la obra, la dirección) es un nombre, no una sigla que haya que definir
+    S.lineas.filter(x => !x.sec).forEach(({ texto }) => (texto.match(/\b[A-Z]{2,6}\b/g) || []).forEach(sg => definidas.add(sg)));
+    const vistas = new Map();
+    S.lineas.forEach(({ texto }) => {
+      if (/^\[[0-9A-Z]{1,3}\] /.test(texto)) return;   // el título de la sección
+      const letras = texto.replace(/[^A-Za-z]/g, ""); if (letras && letras === letras.toUpperCase()) return;   // un renglón todo en mayúsculas
+      const rx = /(?<![\w\-#/.])([A-Z]{2,5})s?(?![\w\-#/])/g; let m;
+      while ((m = rx.exec(texto))) { const sg = m[1]; if (!SIGLAS_DE_LA_CASA.has(sg) && !vistas.has(sg)) vistas.set(sg, texto.slice(Math.max(0, m.index - 30), m.index + 40)); }
+    });
+    vistas.forEach((cerca, sg) => { if (!definidas.has(sg)) avisos.push({ tipo: "sigla", texto: `«${sg}» sale en el papel sin decir qué es: la primera vez, el nombre entero con la sigla entre paréntesis.`, cerca: cerca.trim() }); });
+    // 2) remisiones «Section N» / «Section N.M» a una sección o párrafo que no existe (solo las del papel: 1 a 9)
+    const secciones = new Set(S.secciones), parrafos = new Set();
+    S.lineas.forEach(({ texto }) => { const m = texto.replace(/^- /, "").match(/^(\d{1,2}\.\d{1,2})\.?\s/); if (m) parrafos.add(m[1]); });
+    const vistasRef = new Set();
+    // (corrección de los revisores, 20-oct) una «Section» del código o de la ley no es una cláusula del papel: «(NFPA 101-2021)
+    // Sections 7.9 / 7.10», «NEC Section 210.8», «Section 7.3 of the Florida Building Code», «Section 2.1, Florida Statutes»
+    const RX_CODIGO_ANTES = /\b(?:NFPA|NEC|FBC|FFPC|IBC|IRC|IECC|NESC|ASCE|ANSI|IEEE|UL|OSHA|CFR|U\.S\.C|F\.S|Statutes|Code|Codes|Standard|Ed|Edition|Chapter|Article)\b[^.;\n]{0,24}$|\b(?:NFPA|FFPC)\s+\d[\w\-]*\)?\s*$|\bEd\.\s*\([^)]*\)\s*$/;
+    const RX_CODIGO_DESPUES = /^[^.;\n]{0,20}?\b(?:of|in|under)\s+(?:the\s+)?(?:NFPA|NEC|FBC|FFPC|IBC|IRC|Florida\s+(?:Building|Fire|Statutes)|National|Code|U\.S\.C)|^\s*,\s*(?:Florida Statutes|F\.S\.)/;
+    [...todo.matchAll(/\bSections?\s+\d{1,2}(?:\.\d{1,2})?(?![\d.]*\d)(?:\s*(?:,|and|or|through|to|–|—|-|\/)\s*\d{1,2}(?:\.\d{1,2})?(?![\d.]*\d))*/g)].forEach(mm => {
+      const m = mm[0], antes = todo.slice(Math.max(0, mm.index - 40), mm.index), despues = todo.slice(mm.index + m.length, mm.index + m.length + 60);
+      if (RX_CODIGO_ANTES.test(antes) || RX_CODIGO_DESPUES.test(despues)) return;
+      (m.match(/\d{1,2}(?:\.\d{1,2})?/g) || []).forEach(r => {
+        if (vistasRef.has(r)) return; vistasRef.add(r);
+        const top = r.split(".")[0];
+        if (Number(top) < 1 || Number(top) > 9) return;
+        const ok = r.includes(".") ? parrafos.has(r) : secciones.has(r);
+        if (!ok) avisos.push({ tipo: "remision", texto: `El papel remite a la «Section ${r}», y esa ${r.includes(".") ? "cláusula" : "sección"} no está en el papel.` });
+      });
+    });
+    // 2b) (corrección de los revisores, 20-oct) los párrafos numerados de cada sección van seguidos: después de quitar o añadir un
+    // párrafo (la orden de Edgar), un salto («2.1, 2.3») o un número repetido se avisa
+    const numerosPorSec = {};
+    S.lineas.forEach(({ sec, texto }) => {
+      const m = texto.replace(/^- /, "").match(/^(\d{1,2})\.(\d{1,2})\.?\s/);
+      if (m && m[1] === sec) (numerosPorSec[sec] = numerosPorSec[sec] || []).push(Number(m[2]));
+    });
+    Object.entries(numerosPorSec).forEach(([sec, ns]) => {
+      for (let k = 1; k < ns.length; k++) {
+        if (ns[k] === ns[k - 1] + 1) continue;
+        avisos.push({ tipo: "numeracion", texto: ns[k] === ns[k - 1] ? `En la sección ${sec} el ${sec}.${ns[k]} sale dos veces.` : `En la sección ${sec} los números no van seguidos: después del ${sec}.${ns[k - 1]} viene el ${sec}.${ns[k]}.` });
+        break;
+      }
+    });
+    // 2c) (corrección de los revisores) la línea de la §5 «Complete electrical scope per Sections 1–4 — … —» nombra los renglones de la §2: si
+    // nombra uno que ya no está (lo quitó un arreglo), se avisa. Solo cuando esa línea es la lista de los títulos (casa todos menos lo que sobra)
+    const titulos2 = S.lineas.filter(x => x.sec === "2").map(x => (x.texto.match(/^2\.\d{1,2}\.?\s+([^.]{2,80})\./) || [])[1]).filter(Boolean).map(t => normaPapel(t).toLowerCase());
+    const lin5 = S.lineas.find(x => x.sec === "5" && /^Complete electrical scope per Sections 1/.test(x.texto));
+    const res5 = lin5 ? (lin5.texto.match(/Sections 1\s*[–—-]\s*4\s*[—–]\s*(.+?)\s*[—–]\s*labor\b/) || [])[1] : null;
+    if (res5 && titulos2.length) {
+      let resto = " " + normaPapel(res5).toLowerCase() + " ", casados = 0;
+      titulos2.slice().sort((a, b) => b.length - a.length).forEach(t => { const k = resto.indexOf(t); if (k >= 0) { casados++; resto = resto.slice(0, k) + " , " + resto.slice(k + t.length); } });
+      const sobra = resto.split(",").map(x => x.trim().replace(/^and\s+|\s+and$/g, "").replace(/^and$/, "").trim()).filter(x => x.length >= 3);
+      if (casados >= 1 && sobra.length && sobra.length <= 2)
+        sobra.forEach(x => avisos.push({ tipo: "resumen", texto: `La línea de la sección 5 todavía nombra «${x.slice(0, 60)}», y la sección 2 ya no tiene ese renglón.` }));
+    }
+    // 3) el mismo nombre del cliente en la cabecera, en «Parties» / «Definitions» y en la firma
+    const nombres = [];
+    const mCab = h.match(/<td class="label">Client<\/td>\s*<td class="val">([\s\S]*?)<\/td>/);
+    if (mCab) nombres.push(["la cabecera", sinEtiquetas(mCab[1])]);
+    // (corrección de los revisores) el nombre se lee dentro de su párrafo, hasta «, the contracting party», el «;» o el punto final del
+    // párrafo: un nombre con un punto en medio («Smith Bros. Electric Co») no se corta en «Smith Bros»
+    let mPar = null;
+    for (const pm of h.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)) {
+      const tx = sinEtiquetas(pm[1]);
+      mPar = tx.match(/["“]Client["”] means (.+?)(?:, the contracting party\b|;|\.\s*$|\.\s+(?=Where\b|["“]))/);
+      if (mPar) break;
+    }
+    if (mPar && !/^the\b/i.test(mPar[1].trim())) nombres.push(["«Parties»", mPar[1].trim()]);
+    // la primera firma del Client (la segunda columna, si la hay, es la del segundo firmante)
+    const firmas = [...h.matchAll(/Client Signature\s*(?:&mdash;|—)\s*([\s\S]*?)<\/div>/g)].map(x => sinEtiquetas(x[1]));
+    if (firmas.length) nombres.push(["la firma", firmas[0]]);
+    if (D.cliente) nombres.unshift(["la hoja", String(D.cliente)]);
+    if (nombres.length >= 2) {
+      const llano = n => normaPapel(n).toLowerCase().replace(/[.,\s]+$/, "");
+      const n0 = llano(nombres[0][1]);
+      const distinto = nombres.slice(1).find(([, n]) => { const x = llano(n); return x !== n0 && !x.startsWith(n0 + " — "); });
+      if (distinto) avisos.push({ tipo: "nombre", texto: `El cliente no se llama igual en ${nombres[0][0]} («${nombres[0][1].slice(0, 60)}») y en ${distinto[0]} («${distinto[1].slice(0, 60)}»).` });
+    }
+    // 4) con contratista y sin la firma del dueño: una obligación cargada a «the Owner», que no firma
+    const conGC = D.con_gc !== undefined ? !!D.con_gc : /<strong>Parties\.<\/strong>/.test(h);
+    const ownerFirma = D.owner_firma !== undefined ? !!D.owner_firma : /class="sig-wrap tres"/.test(h);
+    if (conGC && !ownerFirma) {
+      const frases = todo.split(/(?<=[.;])\s+|\n/).filter(f => /\b(?:the\s+)?Owner\s+(?:shall|must|will|agrees?\s+to|is\s+responsible|is\s+required|provides|furnishes|pays|obtains|grants)\b/.test(f)
+        && !/\b(?:Client|GC|General Contractor)\s+or\s+(?:the\s+)?Owner\b/.test(f));
+      frases.slice(0, 3).forEach(f => avisos.push({ tipo: "owner", texto: `El papel le pone una obligación al Owner, que no firma este contrato: «${f.trim().slice(0, 120)}». Si es lo que quieres, déjalo.` }));
+    }
+    return avisos;
+  }
+
+  // §12.6: ¿quedó el papel como dice la lista? (la lista de la orden de Edgar; la usan la app, tools/contrato y la prueba de Gong)
+  // lista: [{ n, tipo: "parrafo"|"anadir"|"quitar"|"dato", donde, cita, nuevo, negrita, debe_estar[], no_debe_estar[] }]
+  // Devuelve { bien, total, filas: [{ n, tipo, frase, ok, veces, donde }] }. Las filas del dinero salen siempre que llegue la cuenta.
+  function comprobarLista(html, lista, cuenta) {
+    const h = String(html || ""), S = papelPorSecciones(h);
+    const todo = S.lineas.map(x => x.texto).join("\n");
+    const deSec = d => S.lineas.filter(x => x.sec === d).map(x => x.texto).join("\n");
+    const fuertes = [...h.matchAll(/<strong\b[^>]*>([\s\S]*?)<\/strong>/gi)].map(x => normaPapel(sinEtiquetas(x[1])));
+    const filas = [];
+    (Array.isArray(lista) ? lista : []).forEach((p, k) => {
+      if (!p || typeof p !== "object") return;
+      const n = p.n !== undefined ? p.n : k + 1, tipo = String(p.tipo || "parrafo"), donde = p.donde ? String(p.donde).split(".")[0] : "";
+      // (corrección de los revisores, 20-oct) con un `donde` que el papel no trae, la frase NO se busca en todo el papel: la fila sale mal
+      const sinSeccion = !!donde && !S.secciones.includes(donde);
+      const enDonde = donde ? (sinSeccion ? "" : deSec(donde)) : todo;
+      const motivoSec = sinSeccion ? `La sección ${donde} no está en el papel.` : undefined;
+      (Array.isArray(p.debe_estar) ? p.debe_estar : []).forEach(f => {
+        if (!String(f || "").trim()) return;
+        const v = veces(enDonde, f); filas.push({ n, tipo: "debe_estar", frase: String(f), ok: v >= 1, veces: v, donde, motivo: motivoSec });
+      });
+      (Array.isArray(p.no_debe_estar) ? p.no_debe_estar : []).forEach(f => {
+        if (!String(f || "").trim()) return;
+        const v = veces(todo, f); filas.push({ n, tipo: "no_debe_estar", frase: String(f), ok: v === 0, veces: v, donde: "" });
+      });
+      if (p.negrita && String(p.negrita).trim()) {
+        // sin el número y sin el punto o los dos puntos del final en los dos lados: el motor pone el punto si el punto de la lista no lo trae
+        const llano = x => x.replace(/^\d{1,2}(?:\.\d{1,2})?\.?\s+/, "").replace(/\s*[.:]\s*$/, "").trim();
+        const t = llano(normaPapel(p.negrita));
+        const v = t ? fuertes.filter(x => llano(x) === t).length : 0;
+        filas.push({ n, tipo: "negrita", frase: String(p.negrita), ok: v >= 1, veces: v, donde });
+      }
+      if (tipo === "quitar" && String(p.cita || "").trim()) {
+        let v = veces(todo, p.cita);
+        // (corrección de los revisores) si el punto trae el ancla (la cabeza del bloque quitado), esa cabeza tampoco puede seguir en negrita
+        const cab = p.ancla && typeof p.ancla === "object" ? normaPapel(p.ancla.cabeza).toLowerCase().replace(/\s*[.:]\s*$/, "") : "";
+        if (cab.length >= 4) v += fuertes.filter(x => x.toLowerCase().replace(/\s*[.:]\s*$/, "") === cab).length;
+        filas.push({ n, tipo: "quitada", frase: String(p.cita), ok: v === 0, veces: v, donde });
+      }
+      // (corrección de los revisores, 20-oct) el texto nuevo, 1 vez en el papel Y dentro de su sección (si la dice): un añadido que cayó
+      // en otra sección no está bien
+      if ((tipo === "parrafo" || tipo === "anadir") && String(p.nuevo || "").trim()) {
+        const v = veces(todo, p.nuevo), vs = donde ? veces(enDonde, p.nuevo) : v;
+        const ok = v === 1 && vs === 1;
+        filas.push({ n, tipo, frase: String(p.nuevo), ok, veces: v !== 1 ? v : vs, donde,
+                     motivo: motivoSec || (!ok && v === 1 ? `No quedó en la sección ${donde}.` : undefined) });
+      }
+      // (corrección de los revisores, 20-oct) un «dato» sin frases que mirar se comprueba por su valor: tiene que salir en el papel
+      if (tipo === "dato" && String(p.valor || "").trim() && !(Array.isArray(p.debe_estar) && p.debe_estar.some(f => String(f || "").trim()))) {
+        const v = veces(todo, p.valor); filas.push({ n, tipo: "debe_estar", frase: String(p.valor), ok: v >= 1, veces: v, donde: "" });
+      }
+    });
+    dineroContraCuenta(h, cuenta).forEach(f => filas.push({ n: "dinero", tipo: "dinero", frase: f.frase, ok: f.ok, veces: f.ok ? 1 : 0, donde: "", motivo: f.texto || undefined }));
+    return { bien: filas.filter(f => f.ok).length, total: filas.length, filas };
   }
 
   // (hallazgo 19) «Contractor» de la hoja = el GC → «the Client» (al empezar la frase, «The Client»)
@@ -3887,6 +4157,17 @@
       && !/^(?:the\s+|all\s+|any\s+)?(?:work|drawings?|plans?|scope|changes?)\b/i.test(huecos.AREAS_INCLUIDAS)
       // (tercera revisión) un relleno no es un sitio
       && /[a-z]/i.test(huecos.AREAS_INCLUIDAS) && !/^(?:n\/?a|no|none|ningun[oa]?|no aplica|tbd|-+|—+|section\s*2|secci[oó]n\s*2)\.?$/i.test(huecos.AREAS_INCLUIDAS.trim()));
+    // 20-oct (pliego §12.4 C.3, plantilla v3.16): el título de la 7.6 dice quién tramita la compañía de luz («Compañía de luz la
+    // tramita: cliente | dueño | Max Power», datos.utility_por). Sin el dato, el de siempre. Con la v3.15 o la v3.12 el hueco no existe.
+    huecos.TITULO_UTILITY = d.utility_por === "cliente" || d.utility_por === "dueno" ? "Utility service (by Client/Owner)" : "Utility coordination";
+    // 20-oct (pliego §12.4 C.3): la firma del Client. Con contratista, quién firma y su cargo salen de la ficha del contratista
+    // (contratistas.firmante / cargo_firmante, admin.firmante / admin.cargo_firmante); sin la ficha, la raya en blanco. Una empresa
+    // (no CONSUMIDOR) firma con «Title: ____ Date: ____»; el consumidor sigue con «Date».
+    const limpioFicha = t => String(t || "").replace(/[<>{}]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
+    const firmante = dec.esGC ? limpioFicha(admin.firmante) : "", cargo = dec.esGC ? limpioFicha(admin.cargo_firmante) : "";
+    huecos.FIRMA_REP = firmante ? " \u2014 " + firmante : "";
+    huecos.CARGO_FIRMA = cargo || "____________________";
+    dec.bloques.FIRMA_CON_CARGO = !dec.bloques.CONSUMIDOR;
     const montosPermitidos = [dinero(cta.base), ...cta.addons.map(a => dinero(a.centavos)),
                               ...cta.hitos.map(h => dinero(h.centavos))];
     return { cuenta: cta, decision: dec, huecos, items, no_incluye, addons, hitos, montosPermitidos,
@@ -4227,11 +4508,14 @@
   // SOLO tras una línea en blanco o con número / viñeta. Lo demás es la misma frase envuelta y se pega a la de
   // arriba. Nunca se pegan los títulos, las líneas «Clave: valor», las filas de tabla ni las líneas de dinero.
   const RE_RENGLON_SOW = /^\s*[23]\.\d{1,2}[.)]?\s/;
-  const seccionDeTitulo = l => {
+  // (20-oct, P213) «sec», si se sabe, es la sección en la que va la línea: dentro del Alcance o de No incluye un renglón
+  // numerado no es título (renglonNoEsTitulo, la misma regla que leerAlcance)
+  const seccionDeTitulo = (l, sec) => {
     const t = String(l || "").replace(/\*\*|__|`/g, "").trim();
     const conAlmohadilla = /^#{1,6}\s/.test(t);
     const limpio = t.replace(/^#+\s*/, "");
     if (!limpio || /^[-*•]/.test(limpio)) return null;
+    if (renglonNoEsTitulo(limpio, sec, conAlmohadilla)) return null;
     const pareceTitulo = conAlmohadilla || /^(?:\d+[.)]\s+)?[^.:,]{2,45}:?$/.test(limpio);
     return pareceTitulo ? seccionDe(limpio) : null;
   };
@@ -4241,12 +4525,13 @@
     // «SCOPE OF WORK» suelto arriba, con la sección 2 numerada más abajo, es el título del documento (la cabecera)
     const alcanceNumerado = lineas.some(l => { const t = String(l || "").replace(/\*\*|__|`/g, "").replace(/^#+\s*/, "").trim();
       return /^(?:section\s+)?\d+[.)]?\s+\S/i.test(t) && t.length <= 90 && seccionDe(t) === "alcance"; });
-    let enLista = false;
+    let enLista = false, secVigente = null;
     for (const l of lineas) {
       const ant = salida.length ? salida[salida.length - 1] : null;
       const sinBlanco = l.trim();
       // ¿cambia la sección? (un título conocido). Un título nunca se pega, ni se le pega nada por la regla de la lista.
-      const secT = sinBlanco ? seccionDeTitulo(l) : null;
+      const secT = sinBlanco ? seccionDeTitulo(l, secVigente) : null;
+      if (secT) secVigente = secT;
       if (secT) {
         const tituloDoc = secT === "alcance" && alcanceNumerado && /^scope of work$/.test(normaTitulo(sinBlanco.replace(/^#+\s*/, "")));
         enLista = !tituloDoc && (secT === "alcance" || secT === "no_incluye");
@@ -5538,7 +5823,10 @@
   // El contrato armado (el HTML de la plantilla ya rellena) en texto plano para el revisor:
   // una línea por párrafo, las celdas separadas por « | », cada sección con su marca «[N] Título»
   // y los montos como [MONTO]. Devuelve { texto, secciones: ["1", …, "L", "A"], titulos: { "1": "…" } }.
-  function textoParaRevisar(html) {
+  function textoParaRevisar(html) { return papelEnTexto(html, true); }
+  // 20-oct (pliego §12.6): el mismo texto llano del papel; con tapar=false los montos se quedan (lo usan comprobarLista y los
+  // candados del dinero de barridoFinal, que tienen que ver la cifra que de verdad salió pintada). Nunca viaja a la IA.
+  function papelEnTexto(html, tapar) {
     let h = String(html || "");
     h = h.replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|head|title|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, " ");
     const secciones = [], titulos = {};
@@ -5556,7 +5844,7 @@
          .replace(/<\/t[dh]>\s*<t[dh]\b[^>]*>/gi, " | ")
          .replace(/<[^>]+>/g, "");
     const lineas = desentidades(h).replace(/\r/g, "").split("\n")
-      .map(l => conMontoTapado(l.replace(/[ \t    ]+/g, " ").trim()).replace(/^\|\s*|\s*\|$/g, "").trim());
+      .map(l => (tapar ? conMontoTapado : (x => x))(l.replace(/[ \t    ]+/g, " ").trim()).replace(/^\|\s*|\s*\|$/g, "").trim());
     const out = [];
     for (const l of lineas) { if (!l && (!out.length || out[out.length - 1] === "")) continue; out.push(l === "-" ? "" : l); }
     while (out.length && !out[out.length - 1]) out.pop();
@@ -5646,14 +5934,30 @@
     if (esMontoArmar(s) || traeDineroEstricto(s)) return null;
     return s;
   }
-  // El juez de la app para lo que devuelve el revisor. ctx = { texto (el que se mandó), secciones, ficha, perdonadas }.
+  // El juez de la app para lo que devuelve el revisor. ctx = { texto (el que se mandó), secciones, ficha, perdonadas, orden }.
   // Se tira: la cita que no está TAL CUAL en el texto, lo que traiga dinero, lo que no tenga motivo.
   // Se ordena: rojos primero. Como mucho 30 (18-oct, §11.12; antes 12). Lo perdonado antes (misma cita) no vuelve a salir.
+  // 20-oct (pliego §12.5 B.4): ctx.orden = la lista que Edgar aprobó («Aplicar mi orden»; los puntos o lo que viaja como
+  // orden_aprobada, {donde, cita, nuevo}). Lo que él ordenó no es hallazgo: se perdona (no se enseña y cuenta en perdonados) el hallazgo
+  // cuya cita está dentro del texto nuevo de un punto de la orden o es igual a su cita, salvo que sea una «contradiccion» (eso sí lo
+  // tiene que ver). Si el hallazgo y el punto dicen su sección, tiene que ser la misma (una cita corta que se repite en otra sección
+  // no se perdona por error).
   function comprobarHallazgos(lectura, ctx) {
     ctx = ctx || {};
     const texto = String(ctx.texto || "");
     const vivas = Array.isArray(ctx.secciones) ? ctx.secciones.map(String) : [];
     const perdonadas = new Set((ctx.perdonadas || []).filter(x => x && x.revisor).map(x => normaCita(x.cita)));
+    const seccionDe = d => String(d == null ? "" : d).trim().replace(/^(?:§|secci[oó]n|section)\s*/i, "").split(".")[0].toUpperCase();
+    const laOrden = (Array.isArray(ctx.orden) ? ctx.orden : []).filter(o => o && typeof o === "object" && !Array.isArray(o))
+      .map(o => ({ donde: seccionDe(o.donde), cita: normaCita(o.cita), nuevo: normaCita(o.nuevo) })).filter(o => o.cita || o.nuevo);
+    // (corrección de los revisores, 20-oct) una cita que está dentro del texto nuevo solo se perdona si es de ESE párrafo: con 8 letras
+    // o más y sin salir en ningún otro sitio del papel (una frase corta o repetida, «The Client», «by the Client or the Owner.», puede
+    // ser de otra cláusula, y esa se enseña). La cita igual a la del punto se perdona siempre.
+    const lineasPapel = texto.replace(/\r/g, "").split("\n").map(normaCita);
+    const cuantas = (t, k) => { let n = 0, i = -1; while ((i = t.indexOf(k, i + 1)) >= 0) n++; return n; };
+    const enElPapel = k => lineasPapel.reduce((s, l) => s + cuantas(l, k), 0);
+    const deLaOrden = (k, donde) => laOrden.some(o => (!o.donde || !donde || o.donde === donde) &&
+      ((o.cita && o.cita === k) || (o.nuevo && k.length >= 8 && o.nuevo.indexOf(k) >= 0 && enElPapel(k) <= cuantas(o.nuevo, k))));
     const L = lectura && typeof lectura === "object" && !Array.isArray(lectura) ? lectura : {};
     const crudos = Array.isArray(L.hallazgos) ? L.hallazgos : [];
     let tiradas = 0, perdonados = 0;
@@ -5668,6 +5972,8 @@
       const k = normaCita(cita);
       if (perdonadas.has(k)) { perdonados++; continue; }
       const tipo = TIPOS_HALLAZGO.includes(h.tipo) ? h.tipo : "otro";
+      // 20-oct (pliego §12.5 B.4): lo cubierto por la orden aprobada no se enseña (salvo una contradicción)
+      if (laOrden.length && tipo !== "contradiccion" && deLaOrden(k, seccionDe(h.donde))) { perdonados++; continue; }
       if (vistos.has(k + "|" + tipo)) continue;
       vistos.add(k + "|" + tipo);
       let donde = String(h.donde || "").trim().slice(0, 12);
@@ -5688,6 +5994,91 @@
     // 18-oct (pliego §11.12.2): treinta como mucho (el revisor trae todo de una vez; antes doce), como el cerebro (MAX_HALLAZGOS)
     return { hallazgos: orden.slice(0, 30), resumen: traeDineroEstricto(resumen) ? "" : resumen,
              tiradas: tiradas + (Number(L.citas_tiradas) || 0), perdonados };
+  }
+  // 20-oct (pliego §12.5 B.2, «Aplicar mi orden»): la LISTA que sale de la orden de Edgar, ya comprobada. GEMELO EXACTO de
+  // limpiarOrden del cerebro (supabase/functions/cerebro/index.ts, bloque PURO): da lo mismo sobre lo mismo (lo comprueban
+  // pruebas/cerebro-puro.mjs y probar-alcance.mjs). Se tira, con su motivo en llano: el tipo que no es de los cuatro, la sección que
+  // no está en el papel (salvo en «dato»), la cita que no está TAL CUAL en el papel (salvo «anadir» sin cita), lo que trae dinero o
+  // marcas (el texto nuevo, la negrita y cada frase con la regla de textoNuevoDeHallazgo; el porqué y las dudas con la estricta), el
+  // texto nuevo de más de 1,500 letras, el «dato» con un campo que no es de CAMPOS_ARREGLO, los repetidos y lo que pase de cuarenta.
+  // Al final, n = 1..k. Devuelve { lista, dudas, quitados: [{n, motivo}] }.
+  const MAX_ORDEN = 40;
+  const MAX_FRASES_ORDEN = 8;
+  const TIPOS_PUNTO = ["parrafo", "anadir", "quitar", "dato"];
+  function limpiarOrden(crudo, texto, secciones) {
+    const junta = x => (typeof x === "string" || typeof x === "number" ? String(x) : "").replace(/\s+/g, " ").trim();
+    const papel = junta(texto);
+    // (corrección de los revisores, 20-oct) los renglones del papel: la cita tiene que caer dentro de UNO (un párrafo, una viñeta)
+    const renglones = String(texto || "").replace(/\r/g, "").split("\n").map(junta);
+    const vivas = Array.isArray(secciones) ? secciones.map(s => junta(s).toUpperCase()) : [];
+    const v = crudo && typeof crudo === "object" && !Array.isArray(crudo) ? crudo : {};
+    const puntos = Array.isArray(v.lista) ? v.lista : [];
+    const lista = [], quitados = [];
+    const vistos = new Set();
+    const limpio = s => textoNuevoDeHallazgo(s) !== null;
+    const frases = x => (Array.isArray(x) ? x : []).map(junta).filter(f => !!f).slice(0, MAX_FRASES_ORDEN);
+    for (let i = 0; i < puntos.length; i++) {
+      const p = puntos[i];
+      const n = p && Number.isInteger(p.n) && p.n > 0 ? p.n : i + 1;
+      const fuera = motivo => { quitados.push({ n, motivo }); };
+      if (!p || typeof p !== "object" || Array.isArray(p)) { fuera("no tiene la forma de un punto"); continue; }
+      const tipo = TIPOS_PUNTO.indexOf(p.tipo) >= 0 ? p.tipo : "";
+      if (!tipo) { fuera("el tipo no es párrafo, añadir, quitar ni dato"); continue; }
+      let donde = junta(p.donde).replace(/^(?:§|secci[oó]n|section)\s*/i, "").toUpperCase();
+      if (donde.indexOf(".") > 0) donde = donde.split(".")[0];
+      const dondeVale = !!donde && (!vivas.length || vivas.indexOf(donde) >= 0);
+      if (tipo !== "dato" && !dondeVale) { fuera("esa sección no está en el papel"); continue; }
+      const conTexto = tipo === "parrafo" || tipo === "anadir";
+      const cita = tipo === "dato" ? "" : junta(p.cita).slice(0, 160);
+      const nuevo = conTexto ? junta(p.nuevo) : "";
+      const negrita = conTexto ? junta(p.negrita).slice(0, 160) : "";
+      const debe = frases(p.debe_estar), noDebe = frases(p.no_debe_estar);
+      const porque = junta(p.porque).slice(0, 300);
+      if (nuevo.length > MAX_TEXTO_NUEVO) { fuera("el texto nuevo pasa de 1,500 letras"); continue; }
+      if (/\[\s*monto\s*\]/i.test(cita) || traeDineroEstricto(cita) || (nuevo && !limpio(nuevo)) || (negrita && !limpio(negrita)) ||
+          debe.some(f => !limpio(f)) || noDebe.some(f => !limpio(f)) || traeDineroEstricto(porque)) {
+        fuera("trae dinero o marcas que no van en el papel"); continue;
+      }
+      let x, llave;
+      if (tipo === "dato") {
+        const campo = typeof p.campo === "string" && Object.prototype.hasOwnProperty.call(CAMPOS_ARREGLO, p.campo) ? p.campo : "";
+        if (!campo) { fuera("ese dato no se puede escribir en la hoja"); continue; }
+        const valor = junta(p.valor);
+        if (!valor || valor.length > 200) { fuera("el dato viene vacío o es demasiado largo"); continue; }
+        if (!limpio(valor) || esMontoTapable(valor)) { fuera("trae dinero o marcas que no van en el papel"); continue; }
+        llave = "dato|" + campo;
+        x = { n: 0, tipo, donde: dondeVale ? donde : "", cita: "", nuevo: "" };
+        if (debe.length) x.debe_estar = debe;
+        if (noDebe.length) x.no_debe_estar = noDebe;
+        x.campo = campo; x.valor = valor; x.porque = porque;
+      } else {
+        if (!cita && tipo !== "anadir") { fuera("le falta la cita del papel"); continue; }
+        if (cita && papel.indexOf(cita) < 0) { fuera("la cita no está tal cual en el papel"); continue; }
+        // (corrección de los revisores, 20-oct) la cita es de UN párrafo del papel y con 8 letras o más; lo que cambia algo (no el «parrafo»
+        // de solo mirar) no puede caer en el título de una sección ni en la tabla de pagos
+        if (cita && cita.length < 8) { fuera("la cita es muy corta para saber qué párrafo es"); continue; }
+        const suyos = cita ? renglones.filter(l => l.indexOf(cita) >= 0) : [];
+        if (cita && !suyos.length) { fuera("la cita junta dos párrafos"); continue; }
+        if (cita && (tipo !== "parrafo" || nuevo) && suyos.every(l => /^\[[0-9A-Z]{1,3}\] /.test(l))) { fuera("la cita es el título de una sección"); continue; }
+        if (cita && (tipo !== "parrafo" || nuevo) && suyos.every(l => l.indexOf(" | ") >= 0 && (/\[\s*monto/i.test(l) || traeDineroEstricto(l)))) { fuera("la cita es de la tabla de pagos: la pone el programa"); continue; }
+        if (tipo === "anadir" && !nuevo) { fuera("le falta el texto nuevo"); continue; }
+        if (tipo === "parrafo" && !nuevo && !negrita && !debe.length && !noDebe.length) { fuera("no dice cómo tiene que quedar"); continue; }
+        llave = tipo + "|" + donde + "|" + cita.toLowerCase() + (tipo === "anadir" ? "|" + nuevo.toLowerCase() : "");
+        x = { n: 0, tipo, donde, cita, nuevo };
+        if (negrita) x.negrita = negrita;
+        if (debe.length) x.debe_estar = debe;
+        if (noDebe.length) x.no_debe_estar = noDebe;
+        x.porque = porque;
+      }
+      if (vistos.has(llave)) { fuera("repetido"); continue; }
+      if (lista.length >= MAX_ORDEN) { fuera("pasa de cuarenta puntos"); continue; }
+      vistos.add(llave);
+      lista.push(x);
+    }
+    lista.forEach((x, k) => { x.n = k + 1; });
+    const dudas = (Array.isArray(v.dudas) ? v.dudas : []).map(junta)
+      .filter(d => !!d && !traeDineroEstricto(d)).map(d => d.slice(0, 300)).slice(0, 12);
+    return { lista, dudas, quitados };
   }
   // «Usar el dato de la ficha»: escribe (o corrige) en la hoja la línea del dato. Si la hoja ya trae esa línea
   // («Address:», «| ADDRESS | … |», «Dirección:»), se cambia su valor y se deja su etiqueta; si no, se pone arriba.
@@ -6784,9 +7175,6 @@
     const t = String(s || ""), m = t.match(/^\s*(?:\d{1,3}(?:\.\d{1,3})+\.?|\d{1,3}[.)])\s+(?=\S)/);
     return m && !UNIDAD_TRAS_NUMERO.test(t.slice(m[0].length)) ? t.slice(m[0].length) : t;
   };
-  // ¿Es la línea un título de sección que el lector conoce? (no lleva contenido: no hace falta que tenga casa)
-  const esTituloDeSeccion = l => { try { return !!seccionDeTitulo(l); } catch { return false; } };
-
   // ---- El juez del teléfono (pliego §4.3). Nunca revienta: un armado roto se rechaza entero con «armado_invalido».
   // la línea de una deducción «con contratista» (sin «Contrato con:») tiene que hablar de eso (16-oct: builders, construction…)
   const PISTA_GC = /subcontract|general contractor|\bgc\b|contratista|prepared for|contractor|builders?|(?<!new\s)construction(?!\s+(?:drawings?|plans?|documents?|sets?))|constructors|contracting|developers?/i;
@@ -6850,9 +7238,9 @@
     // cuántos renglones, exclusiones y opciones trae). Si las reglas no pueden con la hoja, no se coteja.
     const Lr = (() => { try { return leerAlcance(lineas.map((_, i) => orig(i + 1)).join("\n")); } catch { return null; } })() || {};
     // las líneas que caen bajo un título «Notas» (lo que Edgar se escribe a sí mismo no va al contrato del cliente)
-    const notas = new Set(), seccion = {};
-    { let sec = null; for (let n = 1; n <= N; n++) { let s = null; try { s = seccionDeTitulo(orig(n)); } catch { s = null; }
-        if (s) { sec = s; continue; } seccion[n] = sec; if (sec === "notas" && orig(n).trim()) notas.add(n); } }
+    const notas = new Set(), seccion = {}, titulosN = new Set();
+    { let sec = null; for (let n = 1; n <= N; n++) { let s = null; try { s = seccionDeTitulo(orig(n), sec); } catch { s = null; }
+        if (s) { sec = s; titulosN.add(n); continue; } seccion[n] = sec; if (sec === "notas" && orig(n).trim()) notas.add(n); } }
     // las líneas de dinero: las que leen las reglas (precio, pagos, opciones) y las que traen un monto
     const lrDinero = new Set([...(esObjeto(Lr.precio) && Number.isInteger(Lr.precio.linea) ? [Lr.precio.linea] : []),
       ...((esObjeto(Lr.pagos) && Array.isArray(Lr.pagos.lineas)) ? Lr.pagos.lineas : []), ...(Array.isArray(Lr.opciones) ? Lr.opciones.map(o => o && o.linea) : [])].filter(lineaOk));
@@ -7404,7 +7792,7 @@
     Object.values(a.hechos.evidencia).forEach(n => pon([n], blanda));
     a.preguntas.forEach(p => pon(p.lineas, blanda));
     a.avisos.forEach(x => pon(x.lineas, blanda));
-    const conContenido = n => { const o = orig(n); return !!o.trim() && !esSobranteConfirmada(o) && !esTituloDeSeccion(o) && !notas.has(n); };
+    const conContenido = n => { const o = orig(n); return !!o.trim() && !esSobranteConfirmada(o) && !titulosN.has(n) && !notas.has(n); };
     const sin_casa = [];
     for (let n = 1; n <= N; n++) if (conContenido(n) && !casa.has(n) && !blanda.has(n) && !sobra.has(n)) {
       sin_casa.push(n);
@@ -8506,7 +8894,7 @@
   const API = { leerAlcance, validarAlcance, cuentas, repartir, decidirBasePrecio, leerBasePrecio, esTituloDePlano, HITO2_PERMISO_CLIENTE, condicionesQueImportan, PARA_QUE, leerMonto, pareceDinero, hayDinero, pareceIngles, redactarDirecto,
                 decidirInterruptores, prepararEncargo, validarSalida,
                 rellenarPlantilla, aplicarSi, repetirFila, aplicarClausulas,
-                barridoFinal, marcasEmparejadas, armarTodo, aplicarArreglo, arreglarTodo, leerPermiso, leerFirma, leerVence, DISPARADORES, ORDEN_9, dinero, centavos, norma,
+                barridoFinal, avisosFinal, comprobarLista, normaPapel, papelEnTexto, marcasEmparejadas, armarTodo, aplicarArreglo, arreglarTodo, leerPermiso, leerFirma, leerVence, DISPARADORES, ORDEN_9, dinero, centavos, norma,
                 numerarClausulas, clasificarPropias, renumerarRefs, partirFases, fasesDeLaHoja, juntarNombres, condicionesFicha,
                 // v3.7: el juez y las pistas
                 RX_DINERO_TAPAR, esMontoTapable, taparDinero, traeDineroEstricto, limpiarLinea, desenvolver, hojaParaElLector, citaEnLinea,
@@ -8516,7 +8904,9 @@
                 // tanda 2: lo que la prueba del molde del cerebro necesita mirar
                 SECCIONES_VALIDAS, NOMBRES_PLANTILLA,
                 // v3.8 (29-sep): la jurisdicción por la dirección y el revisor del contrato armado
-                jurisdiccionDe, ZIP_CONDADO, ZIP_A_CABALLO, CIUDADES_MUNICIPIO, CIUDADES_POSTALES, ZIP_NOMBRE_SIN_CIUDAD, MUNICIPIO_PERMISO_DUDOSO, textoParaRevisar, lineaDeCita, comprobarHallazgos, textoNuevoDeHallazgo, MAX_TEXTO_NUEVO, ponerDatoDeFicha, ponerLineaDato, fichaSinDinero,
+                jurisdiccionDe, ZIP_CONDADO, ZIP_A_CABALLO, CIUDADES_MUNICIPIO, CIUDADES_POSTALES, ZIP_NOMBRE_SIN_CIUDAD, MUNICIPIO_PERMISO_DUDOSO, textoParaRevisar, lineaDeCita, comprobarHallazgos, textoNuevoDeHallazgo, MAX_TEXTO_NUEVO,
+                // 20-oct (pliego §12.5 B.2): «Aplicar mi orden»: la limpieza de la lista (gemela de la del cerebro) y su tope
+                limpiarOrden, MAX_ORDEN, ponerDatoDeFicha, ponerLineaDato, fichaSinDinero,
                 perdonDeHallazgo, conMontoTapado, subcadenaComun, TIPOS_HALLAZGO, CAMPOS_ARREGLO,
                 // v251 (29-sep, Metro NPR): la ficha manda en la dirección, las reglas por contratista y la cabecera del SOW
                 nutrirHoja, mismaDireccion, partesDireccion, llevaMarcador, DATOS_FICHA, RE_DATO_FICHA, REGLAS_CONTRATISTA, reglaDeContratista,

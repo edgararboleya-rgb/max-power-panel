@@ -572,6 +572,9 @@
         token: llavePorContratista[c.id] || "", activo: c.activo !== false,
         veDinero: c.ve_dinero !== false, avisos: c.avisos !== false,
         notas: c.notas || "",
+        // 20-oct (pliego §12.4 C.3 y §12.7): la ficha legal del contratista (quién firma y su cargo). Las columnas las pone el SQL
+        // de la etapa D (etapa6/ORDEN-Y-FICHA-LEGAL.sql); mientras no estén en la base, vacías
+        firmante: typeof c.firmante === "string" ? c.firmante : "", cargoFirmante: typeof c.cargo_firmante === "string" ? c.cargo_firmante : "",
         invitadoEl: c.invitado_el ? String(c.invitado_el).slice(0, 10) : "",
         vistoEl: c.visto_el ? String(c.visto_el).slice(0, 16).replace("T", " ") : "" })),
       fotos: fotos.map(f => ({
@@ -644,6 +647,8 @@
   // La hoja de alcance: el cerebro la ordena (accion=ordenar), la redacta en
   // inglés (accion=alcance), la lee (accion=leer) o devuelve la lectura hecha
   // (accion=lectura). Va con el token del usuario, como el asistente.
+  // 20-oct (pliego §12.5): «Aplicar mi orden» pide con accion=orden (la orden TAPADA y el papel tapado) y recoge con
+  // accion=lectura por la huella, con la misma espera que revisar (ms: 30000 al pedir; la pantalla vuelve cada 4 s).
   //
   // Tres cosas que aquí se cuidan, porque la pantalla no puede enseñar jerga:
   //   · el reloj: SOLO si quien llama lo pide (`opciones.ms`). El lector pide y
@@ -844,7 +849,10 @@
     // el almacén (con ella las marcas nuevas no existen y el papel sale como hoy).
     // 17-oct (tarde, pliego §11.6): v3.15 = v3.14 + la exclusión general de la hoja en el sitio de la de la casa, las luminarias de la
     // casa que no se repiten, la frase de la 7.1 del permiso solo cuando Max Power puede pedirlo y los planos nombrados en la §5. Se sube
-    // plantillas/SOW_Template_v3.15.html ANTES de publicar la app; el respaldo sigue siendo la v3.12.
+    // la v3.15 (SOW_Template_v3.15.html, en plantillas/) ANTES de publicar la app; el respaldo sigue siendo la v3.12.
+    // 20-oct (pliego §12.4 C.3): v3.16 = v3.15 + la §6 que no se parte, la firma de una empresa con «Title / Date», el título de la 7.6
+    // según quién tramita la compañía de luz y la exclusión general la última. Se sube plantillas/SOW_Template_v3.16.html ANTES de
+    // publicar la app; el respaldo sigue siendo la v3.12.
     plantillaSOW: async () => {
       const bajar = async ruta => {
         const firma = await firmarFotos([ruta]);
@@ -854,7 +862,7 @@
         if (!r.ok) throw new Error("No se pudo bajar la plantilla (" + r.status + ")");
         return r.text();
       };
-      try { const t = await bajar("plantillas/SOW_Template_v3.15.html"); plantillaDeRespaldo = false; return t; }
+      try { const t = await bajar("plantillas/SOW_Template_v3.16.html"); plantillaDeRespaldo = false; return t; }
       catch (e) {
         let t = null;
         try { t = await bajar("plantillas/SOW_Template_v3.12.html"); } catch { /* sin la de respaldo, el error de la nueva */ }
