@@ -183,6 +183,7 @@
     [/^(.+) contratado activo$/, "$1 active contracted"],
     [/^quedan ([\d.]+) h$/, "$1 h left"],
     [/^de ([\d.]+) h estimadas$/, "of $1 estimated h"],
+    [/^\+ ([\d.]+) h de change orders y service calls$/, "+ $1 h from change orders and service calls"],
     [/^(\d+)% cobrado$/, "$1% collected"],
     [/^(\d+) de (\d+) puntos$/, "$1 of $2 items"],
     [/^Avance de obra:$/, "Job progress:"],
@@ -566,6 +567,10 @@
       "Demolición": "Demolition", "Panel / Servicio": "Panel / Service",
       "Inspección / Correcciones": "Inspection / Corrections",
       "Ej: terminé los recessed del living": "E.g. finished the recessed lights in the living room",
+      // v279 (pliego §13 D8): el cuadro grande de arriba del reporte de horas
+      "¿Qué hiciste hoy?": "What did you do today?",
+      "Ej: 6 horas en lo de Caroline, colgamos 4 luces y movimos una toma. Toca el micrófono del teclado y cuéntalo.":
+        "E.g. 6 hours at Caroline's, we hung 4 lights and moved an outlet. Tap the keyboard microphone and say it.",
       "¿Fue trabajo de un Change Order? (toca la flechita y elígelo)": "Was it change order work? (tap the arrow and pick it)",
       "Contrato base": "Base contract",
       "¿Quedó algún pendiente? (faltó material, circuito sin tirar…)": "Any open items left? (missing material, circuit not pulled…)",
@@ -1223,6 +1228,12 @@
       }],
       [/^(.+): ([\d.]+)h trabajadas de ([\d.]+)h estimadas — se está comiendo el margen$/, "$1: $2h worked of $3h estimated — it's eating the margin"],
       [/^(.+): el labor va al (\d+)% de lo estimado \(([\d.]+)h de ([\d.]+)h\) — vigílalo$/, "$1: labor is at $2% of the estimate ($3h of $4h) — keep an eye on it"],
+      // v279 (pliego §13 E2): desde el 75 %, solo con las horas del contrato base y con el avance por puntos
+      [/^(.+): el labor va al (\d+) % de lo estimado \(([\d.]+)h de ([\d.]+)h\)( · la obra va al (\d+) % de puntos)? — vigílalo$/, s => {
+        const m = s.match(/^(.+): el labor va al (\d+) % de lo estimado \(([\d.]+)h de ([\d.]+)h\)( · la obra va al (\d+) % de puntos)? — vigílalo$/);
+        return `${m[1]}: labor is at ${m[2]}% of the estimate (${m[3]}h of ${m[4]}h)${m[5] ? ` · the job is at ${m[6]}% of the items` : ""} — keep an eye on it`;
+      }],
+      [/^(.+): ([\d.]+)h trabajadas de ([\d.]+)h estimadas · la obra va al (\d+) % de puntos — se está comiendo el margen$/, "$1: $2h worked of $3h estimated · the job is at $4% of the items — it's eating the margin"],
       [/^(.+): materiales PASADOS del presupuesto — (\S+) de (\S+)$/, "$1: materials OVER budget — $2 of $3"],
       [/^(.+): materiales al (\d+)% del presupuesto \((\S+) de (\S+)\)$/, "$1: materials at $2% of budget ($3 of $4)"],
       // Capacidad del equipo: «📊 Próximos 7 días: Jian 3 días · Osbel 1 día · 2 eventos sin asignar»

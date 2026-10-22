@@ -346,6 +346,8 @@
     armarLateral();
     arrancarChat();
     irHome();
+    // v279 (pliego §13 D7): si se entró tocando el aviso de horas, directo a «Mis horas»
+    abrirDesdeDireccion(abrirPendiente || location.href);
   }
 
   function salirApp() {
@@ -496,6 +498,12 @@ function esFalloDeRed(err) {
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (habiaCasco) { habiaCasco = false; location.reload(); }
       else habiaCasco = true;
+    });
+    // v279 (pliego §13 D7): con la app ya abierta, tocar el aviso llega aquí (sw.js
+    // manda {tipo: "abrir", url}) y se abre la misma pantalla que al arrancar.
+    navigator.serviceWorker.addEventListener("message", e => {
+      const d = e.data || {};
+      if (d.tipo === "abrir" && typeof d.url === "string") abrirDesdeDireccion(d.url);
     });
   }
 
@@ -1875,11 +1883,17 @@ function esFalloDeRed(err) {
           avisos.push({ tipo: "propuesta", id: p.id, icono: "reloj", texto: `${p.nombre}: propuesta sin respuesta hace ${plural(dias, "día")} — llama o escribe al cliente, o márcala no aprobada` });
       }
       if (p.estado === "ejecucion" && p.horas && p.horas.estimadas > 0) {
-        const razon = p.horas.reales / p.horas.estimadas;
-        if (razon > 1)
-          avisos.push({ tipo: "labor", id: p.id, pestana: "dinero", icono: "reloj", texto: `${p.nombre}: ${p.horas.reales}h trabajadas de ${p.horas.estimadas}h estimadas — se está comiendo el margen` });
-        else if (razon >= 0.8)
-          avisos.push({ tipo: "labor", id: p.id, pestana: "dinero", icono: "reloj", texto: `${p.nombre}: el labor va al ${Math.round(razon * 100)}% de lo estimado (${p.horas.reales}h de ${p.horas.estimadas}h) — vigílalo` });
+        // v279 (pliego §13 E2): la misma cuenta que el cerebro (solo las horas del
+        // contrato base, sin change orders ni service calls), avisa desde el 75 % y
+        // dice cómo va la obra por puntos del alcance, para ver si el labor cuadra.
+        const hBase = horasDelContrato(p.horas);
+        const razon = hBase / p.horas.estimadas;
+        const av = avanceObra(p.id);
+        const puntos = av ? ` · la obra va al ${av.pct} % de puntos` : "";
+        if (razon >= 1) // justo al 100 % ya se comió el margen (el mismo corte que el cerebro: alta desde el 100 %)
+          avisos.push({ tipo: "labor", id: p.id, pestana: "dinero", icono: "reloj", texto: `${p.nombre}: ${hBase}h trabajadas de ${p.horas.estimadas}h estimadas${puntos} — se está comiendo el margen` });
+        else if (razon >= 0.75)
+          avisos.push({ tipo: "labor", id: p.id, pestana: "dinero", icono: "reloj", texto: `${p.nombre}: el labor va al ${Math.round(razon * 100)} % de lo estimado (${hBase}h de ${p.horas.estimadas}h)${puntos} — vigílalo` });
       }
       if (["ejecucion", "aprobado", "pausa"].includes(p.estado)
           && p.presupuestoMateriales > 0) {
@@ -2718,12 +2732,17 @@ function esFalloDeRed(err) {
     return `<div class="detalle-seccion"><h3>${titulo}</h3><div class="stepper">${pasos}</div></div>`;
   }
 
+  // v279 (pliego §13 E2): las horas que cuentan contra lo estimado son las del
+  // contrato base; las de change orders y service calls van aparte. Con una copia
+  // vieja del teléfono (sin «base») se usa el total, como antes.
+  const horasDelContrato = h => (h && typeof h.base === "number" ? h.base : (h ? h.reales : 0));
   function horasHTML(p) {
     if (!p.horas) return "";
     const h = p.horas;
-    const pct = h.estimadas > 0 ? Math.min(100, Math.round((h.reales / h.estimadas) * 100)) : 0;
-    const indice = h.estimadas > 0 ? h.reales / h.estimadas : null;
-    const restantes = Math.max(0, h.estimadas - h.reales);
+    const hBase = horasDelContrato(h);
+    const pct = h.estimadas > 0 ? Math.min(100, Math.round((hBase / h.estimadas) * 100)) : 0;
+    const indice = h.estimadas > 0 ? hBase / h.estimadas : null;
+    const restantes = Math.max(0, h.estimadas - hBase);
     const color = indice === null ? "" : indice <= 1 ? "ok" : indice <= 1.15 ? "warn" : "bad";
     // Los últimos reportes van plegados: el número se ve sin abrir nada
     const nReg = Math.min(5, (state.registroHoras || []).filter(r => r.proyecto === p.id).length);
@@ -2731,11 +2750,12 @@ function esFalloDeRed(err) {
       <div class="detalle-seccion" id="ficha-horas">
         <h3>Horas — plan vs. real</h3>
         <div class="horas-linea">
-          <span class="horas-num ${color}">${h.reales} h</span>
+          <span class="horas-num ${color}">${hBase} h</span>
           <span class="horas-de">de ${h.estimadas} h estimadas</span>
           ${p.estado !== "completado" ? `<span class="horas-restan">quedan ${Math.round(restantes * 10) / 10} h</span>` : ""}
         </div>
         <div class="barra horas-barra"><div class="barra-relleno ${color}" style="width:${pct}%"></div></div>
+        ${h.aparte > 0 ? `<p class="horas-aparte">+ ${h.aparte} h de change orders y service calls</p>` : ""}
         ${nReg ? plegableHTML(p, "horas-reportes", `Últimos reportes (${nReg})`, "", registroHorasHTML(p), false) : ""}
       </div>`;
   }
@@ -6665,6 +6685,7 @@ function esFalloDeRed(err) {
     // Al ENTRAR siempre se pone la fecha de hoy. Antes, si la pantalla se
     // había quedado abierta de ayer, el reporte se guardaba con la fecha vieja.
     $formHoras.elements.fecha.value = hoyISO();
+    faseHorasDeObra = null; // al entrar, la fase se vuelve a proponer según la obra
     prepararHoras();
     // Desde la tarjeta «Ahora» del campo llega la obra de la visita: se deja
     // elegida (si está en la lista) con sus change orders. Desde un botón
@@ -6673,9 +6694,62 @@ function esFalloDeRed(err) {
     if (typeof proyectoId === "string" && proyectoId && [...sel.options].some(o => o.value === proyectoId)) {
       sel.value = proyectoId;
       llenarCOHoras();
+      ponerFaseDeObra();
     }
   }
   $btnHoras.addEventListener("click", irHoras);
+
+  // v279 (pliego §13 D7): tocar el aviso de horas abre «Mis horas» con la obra del
+  // día. La dirección trae ?abrir=horas&proyecto=<id>: al arrancar la lee la app y,
+  // con la app ya abierta, llega por mensaje del service worker. Se limpia de la
+  // barra para que recargar no vuelva a abrir lo mismo. Si la obra no está entre
+  // las que tienen trabajo, se abre sin ella (la de siempre).
+  let abrirPendiente = "";
+  function abrirDesdeDireccion(direccion) {
+    let u;
+    try { u = new URL(direccion, location.href); } catch { return false; }
+    if (u.origin !== location.origin || u.searchParams.get("abrir") !== "horas") return false;
+    const aqui = new URLSearchParams(location.search);
+    if (aqui.has("abrir") || aqui.has("proyecto")) {
+      aqui.delete("abrir"); aqui.delete("proyecto");
+      const resto = aqui.toString();
+      try { history.replaceState(history.state, "", location.pathname + (resto ? "?" + resto : "") + location.hash); } catch { /* nada */ }
+    }
+    // Sin sesión todavía: se guarda y se abre al entrar
+    if (!usuario || !state) { abrirPendiente = u.href; return false; }
+    abrirPendiente = "";
+    const pidAbrir = u.searchParams.get("proyecto") || undefined;
+    // El dueño sin obra (los avisos «Horas del equipo» y el resumen de la noche de la
+    // E1): al inicio, donde se revisan los reportes del equipo, no a su propio formulario
+    if (usuario.finanzas && !pidAbrir) {
+      irHome();
+      setTimeout(() => { const eq = $("inicio-equipo"); if (eq && eq.scrollIntoView) eq.scrollIntoView({ block: "start" }); }, 300);
+      return true;
+    }
+    irHoras(pidAbrir);
+    return true;
+  }
+
+  // v279 (pliego §13 D2): la fase que se propone sale de la obra elegida (antes era
+  // siempre Rough-in): la fase de la obra, «Service Call» si la obra es un servicio
+  // o un service call, y Rough-in si la obra no tiene fase. Se vuelve a proponer al cambiar de
+  // obra; si la persona la cambió a mano y la pantalla se repinta, se respeta.
+  const FASE_REPORTE_DE_OBRA = { mobilizacion: "Movilización", rough: "Rough-in", "insp-rough": "Inspección / Correcciones",
+    trim: "Trim-out", "insp-final": "Inspección / Correcciones" };
+  function faseReporteDeObra(pid) {
+    const p = proyectos().find(x => x.id === pid);
+    // Un servicio (tipo «servicio» o subtipo service_call, la misma regla de la app)
+    // guarda la clave mobilizacion, pero lo que se hizo fue un Service Call
+    if (p && (p.tipo === "servicio" || p.workSubtype === "service_call")) return "Service Call";
+    return (p && FASE_REPORTE_DE_OBRA[p.fase]) || "Rough-in";
+  }
+  let faseHorasDeObra = null; // la obra para la que ya se propuso la fase
+  function ponerFaseDeObra(forzar) {
+    const pid = $formHoras.elements.proyecto.value;
+    if (!forzar && pid === faseHorasDeObra) return;
+    faseHorasDeObra = pid;
+    $formHoras.elements.fase.value = faseReporteDeObra(pid);
+  }
 
   // Proyectos donde se puede reportar o asociar trabajo: los activos MÁS los
   // que aún tengan pendientes rojos abiertos (trabajos atípicos como Danzig,
@@ -6772,9 +6846,11 @@ function esFalloDeRed(err) {
     const querido = antes || deHoy || ultimo;
     if (querido && lista.some(p => p.id === querido)) sel.value = querido;
     llenarCOHoras();
+    ponerFaseDeObra();
     pintarHistorialHoras();
   }
   $formHoras.elements.proyecto.addEventListener("change", llenarCOHoras);
+  $formHoras.elements.proyecto.addEventListener("change", () => ponerFaseDeObra(true));
 
   function pintarHistorialHoras() {
     const mios = (state.registroHoras || []).filter(r => r.usuarioId === usuario.id);

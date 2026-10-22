@@ -451,6 +451,10 @@
       const horasProyecto = (horPor[p.id] || []);
       const reales = (Number(p.horas_reales_base) || 0) +
         horasProyecto.reduce((s, h) => s + Number(h.horas || 0), 0);
+      // v279 (pliego §13 E2, como el cerebro v46): las horas con `co` (un change order
+      // o un service call que se factura aparte) no se comparan con las estimadas del
+      // contrato base. «reales» sigue siendo el total (el costo de la mano de obra).
+      const aparte = horasProyecto.filter(h => h.co).reduce((s, h) => s + Number(h.horas || 0), 0);
       const docs = (docPor[p.id] || []);
       return {
         id: p.id,
@@ -520,7 +524,8 @@
           contrafirmaEl: d.contrafirma_el ? String(d.contrafirma_el).slice(0, 10) : "" })),
         rfis: docs.filter(d => d.clase === "rfi").map(d => ({ id: d.id, titulo: d.titulo, estado: d.estado, url: d.url, ruta: d.ruta || "" })),
         horas: (Number(p.horas_estimadas) > 0 || reales > 0)
-          ? { estimadas: Number(p.horas_estimadas) || 0, reales: Math.round(reales * 10) / 10 }
+          ? { estimadas: Number(p.horas_estimadas) || 0, reales: Math.round(reales * 10) / 10,
+              base: Math.round((reales - aparte) * 10) / 10, aparte: Math.round(aparte * 10) / 10 }
           : null
       };
     });

@@ -187,6 +187,10 @@
         <div class="horas-dos">
         <div class="horas-form-card">
           <form id="form-horas">
+            <!-- v279 (pliego §13 D8): primero lo que se hizo, en un cuadro grande para dictarlo con el micrófono del teclado -->
+            <label class="horas-que-hiciste">¿Qué hiciste hoy?
+              <textarea name="notas" rows="4" style="font-size: 18px !important; min-height: 44px;" placeholder="Ej: 6 horas en lo de Caroline, colgamos 4 luces y movimos una toma. Toca el micrófono del teclado y cuéntalo." autocomplete="off"></textarea>
+            </label>
             <div class="modal-fila">
               <label>Fecha
                 <input name="fecha" type="date" required>
@@ -211,9 +215,6 @@
                 <option value="Inspección / Correcciones">Inspección / Correcciones</option>
                 <option value="Service Call">Service Call</option>
               </select>
-            </label>
-            <label>Notas (qué se hizo)
-              <textarea name="notas" rows="3" placeholder="Ej: terminé los recessed del living" autocomplete="off"></textarea>
             </label>
             <label>¿Fue trabajo de un Change Order? (toca la flechita y elígelo)
               <select name="co">
@@ -380,10 +381,10 @@
 
   <script src="assets/logo.js?v=236"></script>
   <script src="assets/config.js?v=209"></script>
-  <script src="js/db.js?v=276"></script>
+  <script src="js/db.js?v=279"></script>
   <script src="js/alcance.js?v=278"></script>
-  <script src="js/app.js?v=278"></script>
-  <script src="js/i18n.js?v=278"></script>
+  <script src="js/app.js?v=279"></script>
+  <script src="js/i18n.js?v=279"></script>
   <script src="js/iconos.js?v=242"></script>
 </body>
 </html>
