@@ -16342,7 +16342,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     A.arreglados = [...(A.arreglados || []), r.explicacion];
     alcCalcularSeguro(); pintarAlcance();
     // 22-oct: con el armado de la IA ya viejo (Edgar cambió la hoja después de armar), lo escrito no se toma solo: se dice
-    if (A.armado && A.armado.vieja) avisar("Lo escribí en la hoja. Como cambiaste la hoja después de armar, toca «Volver a armar con IA» para que lo tome.");
+    if (A.armado && A.armado.vieja) avisar("Lo apliqué en la hoja. Como cambiaste la hoja después de armar, toca «Volver a armar con IA» para que lo tome.");
     return true;
   }
 
@@ -16354,12 +16354,12 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   function alcPrecioEnArmado(valor, deEstimado) {
     const A = alcActivo, M = A && A.armado;
     if (!M) return false;
-    if (A.precio_en_marcha) return true;    // un segundo toque mientras se arma el papel no hace nada
+    if (M.precio_en_marcha) return true;    // un segundo toque mientras se arma el papel no hace nada (el candado vive en el armado)
     const m = Alcance.leerMonto(String(valor === undefined || valor === null ? "" : valor).trim());
     if (!m || m.pregunta || !Number.isInteger(m.centavos) || !(m.centavos > 0)) { avisar("escribe el precio así: 16,498.24", true); return false; }
     const r = Alcance.aplicarArreglo(A.texto, { tipo: "poner_precio_base" }, valor);
     if (r.error) { avisar(r.error, true); return false; }
-    A.precio_en_marcha = true;
+    M.precio_en_marcha = true;
     const lineaPrecio = "Precio: " + Alcance.dinero(m.centavos);
     A.texto = r.texto;
     if ($("alc-texto")) $("alc-texto").value = A.texto;
@@ -16369,10 +16369,13 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const lineas = Array.isArray(M.lineas) ? M.lineas.slice() : [];
     const ultima = lineas[lineas.length - 1];
     const fila = { t: lineaPrecio.replace(/\d/g, "#"), original: lineaPrecio };
-    if (ultima && /^Precio: [\d,]+\.\d{2}$/.test(String(ultima.original || ""))) lineas[lineas.length - 1] = Object.assign({}, ultima, fila);
+    const enSuSitio = !!(ultima && /^Precio: [\d,]+\.\d{2}$/.test(String(ultima.original || "")));
+    if (enSuSitio) lineas[lineas.length - 1] = Object.assign({}, ultima, fila);
     else lineas.push(Object.assign({ n: lineas.length + 1 }, fila));
     const n = lineas.length;
     M.lineas = lineas;
+    // la hoja tapada que viajó a la IA (y va al revisor como hoja de origen) lleva la misma línea, tapada
+    if (Array.isArray(M.nube)) { const nb = M.nube.slice(); if (enSuSitio && nb.length) nb[nb.length - 1] = { n, t: fila.t }; else nb.push({ n, t: fila.t }); M.nube = nb; }
     // el paquete dice cuántas líneas tiene la hoja: con una más, el juez (verificarArmado) daría «armado_invalido» al reabrir
     if (M.paquete && typeof M.paquete === "object") M.paquete.lineas_total = n;
     alcApuntarPropia(lineaPrecio);
@@ -16380,7 +16383,12 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     A.arreglados = [...(A.arreglados || []), r.explicacion + (pe ? ` (del estimado ${pe.ref})` : "")];
     A.respuestas = Object.assign({}, A.respuestas || {}, { precio: m.centavos });
     alcContestarArmado("precio_l", n).catch(e => avisar((e && e.message) || "No pude rehacer el contrato", true))
-      .finally(() => { A.precio_en_marcha = false; });
+      .finally(() => {
+        M.precio_en_marcha = false;
+        // si no se llegó al contrato (otra pregunta frena, o el papel no salió), la hoja se repinta: el rojo del precio se va y
+        // los botones renacen; si ya está en el contrato, no se toca
+        if (alcActivo === A && A.armado === M && alcFicha === 0) pintarAlcance();
+      });
     return true;
   }
 
@@ -17718,7 +17726,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         const cand = M.lineas.filter(l => { try { return Alcance.pareceDinero(String(l.original || "")); } catch { return false; } }).slice(0, 6);
         botones = cand.length
           ? cand.map(l => `<button type="button" class="alc-op" data-armado-precio="${l.n}"><span>Línea ${l.n}:</span> <span data-no-i18n>${esc(String(l.original).trim().slice(0, 60))}</span></button>`).join("")
-          : `<p class="lev-nota">Escribe el precio en la hoja («Precio: …») y vuelve a armar con IA, o léela con las reglas.</p>`;
+          : `<p class="lev-nota">Escribe el precio en la casilla del rojo de arriba (o toca «Sí, usar el del estimado»): el contrato se rehace sin volver a pedir a la IA.</p>`;
       } else {
         botones = (p.opciones || []).map((o, k) =>
           `<button type="button" class="alc-op" data-armado-preg="${i}" data-armado-op="${k}"><span data-no-i18n>${esc(o.etiqueta)}</span></button>`).join("");
@@ -17767,7 +17775,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           <div class="alc-fixes"><button type="button" class="alc-op" data-armado-otra="1">Volver a armar con IA</button>
           <button type="button" class="alc-op" data-armado-reglas="1">Leer con las reglas (sin IA)</button></div></li>` : "") +
         rojos.map(x => `<li>${ir(x.linea)}<span data-no-i18n>${esc(x.texto)}</span></li>`).join("") +
-        errores.map((e, i) => `<li>${ir(e.linea)}<span data-no-i18n>${esc(e.texto)}</span>${(e.arreglos || []).length ? `<div class="alc-fixes">${alcBotonesDe(e.arreglos, "ae" + i, A.leido, alcPrecioEstimado(A.proyecto.id))}</div>` : ""}</li>`).join("") +
+        // 22-oct: mientras la IA vuelve a armar, los botones de arreglo no salen (tocarlos a medio armado gastaba otro armado)
+        errores.map((e, i) => `<li>${ir(e.linea)}<span data-no-i18n>${esc(e.texto)}</span>${(e.arreglos || []).length && !A.armado_en_marcha ? `<div class="alc-fixes">${alcBotonesDe(e.arreglos, "ae" + i, A.leido, alcPrecioEstimado(A.proyecto.id))}</div>` : ""}</li>`).join("") +
         `</ul></div>`;
     }
     s += alcPreguntasArmado();

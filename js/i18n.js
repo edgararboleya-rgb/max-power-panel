@@ -4282,8 +4282,8 @@
       "You changed the sheet after building: this is from the old sheet. Tap “Build again with AI”.",
     "Esto frena el contrato": "This stops the contract",
     "Armar el papel": "Build the paper",
-    "Escribe el precio en la hoja («Precio: …») y vuelve a armar con IA, o léela con las reglas.":
-      "Write the price on the sheet (“Precio: …”) and build again with AI, or read it with the rules.",
+    "Escribe el precio en la casilla del rojo de arriba (o toca «Sí, usar el del estimado»): el contrato se rehace sin volver a pedir a la IA.":
+      "Type the price in the box of the red notice above (or tap “Yes, use the one from the estimate”): the contract is rebuilt without asking the AI again.",
     "Lo que la IA entendió": "What the AI understood",
     "de la ficha": "from the job file", "de la hoja": "from the sheet", "regla de la casa": "house rule",
     "por defecto": "by default", "lo contestaste tú": "you answered it",
@@ -4325,7 +4325,7 @@
     "La IA armó la hoja: contéstame lo de arriba y sigo": "The AI built the sheet: answer what's above and I'll go on",
     "No pude rehacer el contrato con esa respuesta": "I couldn't redo the contract with that answer",
     "No pude rehacer el contrato": "I couldn't redo the contract",
-    "Lo escribí en la hoja. Como cambiaste la hoja después de armar, toca «Volver a armar con IA» para que lo tome.": "I wrote it on the sheet. Since you changed the sheet after building, tap “Build again with AI” so it picks it up.",
+    "Lo apliqué en la hoja. Como cambiaste la hoja después de armar, toca «Volver a armar con IA» para que lo tome.": "I applied it on the sheet. Since you changed the sheet after building, tap “Build again with AI” so it picks it up.",
     "No pude armar el papel": "I couldn't build the paper",
     "La hoja cambió después de armar con IA: toca «Volver a armar con IA»": "The sheet changed after building with AI: tap “Build again with AI”",
     "Contéstame primero lo de la hoja": "Answer what's on the sheet first"

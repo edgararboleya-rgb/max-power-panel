@@ -8330,8 +8330,9 @@
 
     // ---- el DINERO, leído aquí de las líneas originales (la IA solo dijo dónde está)
     const montoDe = n => { const hd = hayDinero(o(n)); return hd ? leerMonto(hd.trozo) : leerMonto(o(n).replace(/^[^:]*:\s*/, "")); };
-    // «Precio: 4,638.17» / «Precio: $4,638.17» y nada más en la línea (22-oct, ver abajo)
-    const esPrecioEscrito = t => /^\s*precio\s*:\s*\$?\s*\d{1,3}(?:,?\d{3})*(?:\.\d{1,2})?\s*$/i.test(String(t || ""));
+    // «Precio: 4,638.17» / «Precio: $4,638.17» y nada más en la línea (22-oct, ver abajo). Dos decimales o ninguno, que es lo que
+    // escribe la app: «Precio: 4,638.1» no vale (montoDe lo leería como 4,638.00 y el papel saldría 10 centavos por debajo).
+    const esPrecioEscrito = t => /^\s*precio\s*:\s*\$?\s*\d{1,3}(?:,?\d{3})*(?:\.\d{2})?\s*$/i.test(String(t || ""));
     // Las reglas de siempre leen la misma hoja ORIGINAL: sirven para cotejar la línea de dinero que eligió la IA (la IA
     // no escribe montos, pero puede señalar la línea equivocada: la de una opción en vez de la del precio, o ninguna de
     // pagos cuando la hoja sí los trae). Si las reglas no pueden leer la hoja, no se coteja.
