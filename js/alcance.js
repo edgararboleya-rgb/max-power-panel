@@ -8330,6 +8330,8 @@
 
     // ---- el DINERO, leído aquí de las líneas originales (la IA solo dijo dónde está)
     const montoDe = n => { const hd = hayDinero(o(n)); return hd ? leerMonto(hd.trozo) : leerMonto(o(n).replace(/^[^:]*:\s*/, "")); };
+    // «Precio: 4,638.17» / «Precio: $4,638.17» y nada más en la línea (22-oct, ver abajo)
+    const esPrecioEscrito = t => /^\s*precio\s*:\s*\$?\s*\d{1,3}(?:,?\d{3})*(?:\.\d{1,2})?\s*$/i.test(String(t || ""));
     // Las reglas de siempre leen la misma hoja ORIGINAL: sirven para cotejar la línea de dinero que eligió la IA (la IA
     // no escribe montos, pero puede señalar la línea equivocada: la de una opción en vez de la del precio, o ninguna de
     // pagos cuando la hoja sí los trae). Si las reglas no pueden leer la hoja, no se coteja.
@@ -8338,6 +8340,10 @@
       const pl = lineaOk(R.precio_l) ? R.precio_l : Di.precio_l;
       const m = lineaOk(pl) && (pareceDinero(o(pl)) || kvDinero(o(pl))) ? montoDe(pl) : null;
       const pr = esObjeto(Lr.precio) && Number.isInteger(Lr.precio.centavos) && lineaOk(Lr.precio.linea) ? Lr.precio : null;
+      // 22-oct (Villanti): la última línea del armado, si es «Precio: 4,638.17» tal cual (la que añade la app al final cuando Edgar
+      // aprueba el precio del estimado con el armado vivo, alcPrecioEnArmado). Se lee la línea directamente, no lo que leen las
+      // reglas: una hoja que acaba en «Acceptance» o «Signatures» las reglas la saltan y el precio se perdería al reabrir.
+      const mN = N >= 1 && esPrecioEscrito(o(N)) ? montoDe(N) : null;
       if (Number.isInteger(R.precio) && lineaOk(pl)) L.precio = { centavos: R.precio, linea: pr && pr.centavos === R.precio ? pr.linea : pl };
       // Edgar no marcó la línea, la IA señaló una y las reglas leen OTRO precio en otra línea: se pregunta (frena)
       else if (!lineaOk(R.precio_l) && m && Number.isInteger(m.centavos) && pr && pr.linea !== pl && pr.centavos !== m.centavos) {
@@ -8352,6 +8358,14 @@
           porque: "Del precio salen el total, los pagos y el depósito: no se adivina.", frena: true,
           opciones: m.opciones.map(v => ({ etiqueta: "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2 }), valor: centavos(v) })) });
       } else if (m && Number.isInteger(m.centavos)) L.precio = { centavos: m.centavos, linea: pl };
+      // 22-oct (Villanti): la línea de la IA no dio monto (no señaló ninguna, o señaló una «Precio:» vacía) y la ÚLTIMA línea del
+      // armado es la «Precio: 4,638.17» de la app: esa manda y no se vuelve a preguntar, también al reabrir la hoja sin la respuesta
+      // de aquel día. Solo esa forma (la clave «Precio:» y el monto limpio) y solo al final: una «Precio: …» en medio de la hoja que
+      // la IA no señaló, o un «Price: $4,677.89 (to validate)», siguen siendo pregunta (Edgar toca la línea).
+      else if (mN && Number.isInteger(mN.centavos) && mN.centavos > 0 && !mN.pregunta) {
+        L.precio = { centavos: mN.centavos, linea: N };
+        aviso("El precio lo leí de la línea «Precio: …» que puso la app al final de la hoja: la IA no había señalado ninguna.", N, { informativo: true });
+      }
       else preguntas.push({ clave: "sin_precio", linea: 0, frena: true, texto: "No encuentro el precio en la hoja. Toca la línea del precio.",
           porque: "Sin precio no hay contrato: el total, los pagos y el depósito salen de esa línea.", opciones: [], pide: "linea" });
     }

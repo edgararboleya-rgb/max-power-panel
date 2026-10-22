@@ -4325,6 +4325,7 @@
     "La IA armó la hoja: contéstame lo de arriba y sigo": "The AI built the sheet: answer what's above and I'll go on",
     "No pude rehacer el contrato con esa respuesta": "I couldn't redo the contract with that answer",
     "No pude rehacer el contrato": "I couldn't redo the contract",
+    "Lo escribí en la hoja. Como cambiaste la hoja después de armar, toca «Volver a armar con IA» para que lo tome.": "I wrote it on the sheet. Since you changed the sheet after building, tap “Build again with AI” so it picks it up.",
     "No pude armar el papel": "I couldn't build the paper",
     "La hoja cambió después de armar con IA: toca «Volver a armar con IA»": "The sheet changed after building with AI: tap “Build again with AI”",
     "Contéstame primero lo de la hoja": "Answer what's on the sheet first"

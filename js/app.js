@@ -15901,7 +15901,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     document.querySelectorAll("[data-fix]").forEach(b => b.addEventListener("click", () => {
       const a = alcArreglos[b.dataset.fix]; if (!a) return;
       const inp = document.querySelector(`[data-fix-in="${b.dataset.fix}"]`);
-      alcArreglar(a, inp ? inp.value : undefined);
+      // 22-oct: el botón se apaga mientras se aplica (un doble toque no aplica dos veces); si el arreglo no pudo, vuelve a encenderse
+      b.disabled = true;
+      if (alcArreglar(a, inp ? inp.value : undefined) === false) b.disabled = false;
     }));
     // Las respuestas a las preguntas de hechos del asistente: un toque escribe
     // la respuesta en la hoja, a la vista, y desde ahí mandan las reglas
@@ -16320,8 +16322,13 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   // Un arreglo concreto, con el valor que Edgar haya escrito si hacía falta
   function alcArreglar(a, valor) {
     const A = alcActivo;
+    // 22-oct (Villanti Garage): con el armado de la IA vivo, el precio base que Edgar aprueba («Sí, usar el del estimado» o
+    // el que escribe) no pasa por aquí: escribirlo en la hoja dejaba el armado «viejo» y el rojo «Falta el precio base» no se
+    // iba nunca (ni dejaba seguir sin pagar otro armado). Va por alcPrecioEnArmado, que rehace el contrato sin la IA.
+    if (a && a.tipo === "poner_precio_base" && A && A.armado && !A.armado.vieja)
+      return alcPrecioEnArmado(a.valor !== undefined ? a.valor : valor, a.valor !== undefined);
     const r = Alcance.aplicarArreglo(A.texto, a, valor);
-    if (r.error) { avisar(r.error, true); return; }
+    if (r.error) { avisar(r.error, true); return false; }
     if (r.perdona) { A.perdonadas = [...(A.perdonadas || []), r.perdona]; alcPerdonLocal(A.proyecto.id, A.perdonadas); }
     A.texto = r.texto;
     // si el arreglo escribió una línea («escribí «Tipo de trabajo: service» en
@@ -16334,6 +16341,47 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     alcGuardarLocal(A.proyecto.id, A.texto);
     A.arreglados = [...(A.arreglados || []), r.explicacion];
     alcCalcularSeguro(); pintarAlcance();
+    // 22-oct: con el armado de la IA ya viejo (Edgar cambió la hoja después de armar), lo escrito no se toma solo: se dice
+    if (A.armado && A.armado.vieja) avisar("Lo escribí en la hoja. Como cambiaste la hoja después de armar, toca «Volver a armar con IA» para que lo tome.");
+    return true;
+  }
+
+  // 22-oct (Villanti Garage): el precio base con el armado de la IA vivo. La app escribe «Precio: 4,638.17» en la hoja (como
+  // en el camino de las reglas: también rellena los pagos en blanco), apunta esa línea al armado (M.texto y M.lineas: la
+  // escribió la app, el armado sigue valiendo, como las respuestas que se escriben en la hoja) y rehace el contrato SIN volver
+  // a pedir a la IA, con esa línea como la del precio (respuestas.precio_l) y el monto como respuesta (respuestas.precio). Al
+  // reabrir la hoja, armadoAHoja toma la línea «Precio: …» sola (sin la respuesta de aquel día).
+  function alcPrecioEnArmado(valor, deEstimado) {
+    const A = alcActivo, M = A && A.armado;
+    if (!M) return false;
+    if (A.precio_en_marcha) return true;    // un segundo toque mientras se arma el papel no hace nada
+    const m = Alcance.leerMonto(String(valor === undefined || valor === null ? "" : valor).trim());
+    if (!m || m.pregunta || !Number.isInteger(m.centavos) || !(m.centavos > 0)) { avisar("escribe el precio así: 16,498.24", true); return false; }
+    const r = Alcance.aplicarArreglo(A.texto, { tipo: "poner_precio_base" }, valor);
+    if (r.error) { avisar(r.error, true); return false; }
+    A.precio_en_marcha = true;
+    const lineaPrecio = "Precio: " + Alcance.dinero(m.centavos);
+    A.texto = r.texto;
+    if ($("alc-texto")) $("alc-texto").value = A.texto;
+    M.texto = A.texto;                    // la escribió la app: el armado sigue valiendo
+    // la línea nueva va al final de las del armado (tapada, como las demás): los números de línea que usó la IA no se mueven.
+    // Si la última ya es una «Precio: …» de la app (un doble toque, u otro precio después del del estimado), se cambia en su sitio.
+    const lineas = Array.isArray(M.lineas) ? M.lineas.slice() : [];
+    const ultima = lineas[lineas.length - 1];
+    const fila = { t: lineaPrecio.replace(/\d/g, "#"), original: lineaPrecio };
+    if (ultima && /^Precio: [\d,]+\.\d{2}$/.test(String(ultima.original || ""))) lineas[lineas.length - 1] = Object.assign({}, ultima, fila);
+    else lineas.push(Object.assign({ n: lineas.length + 1 }, fila));
+    const n = lineas.length;
+    M.lineas = lineas;
+    // el paquete dice cuántas líneas tiene la hoja: con una más, el juez (verificarArmado) daría «armado_invalido» al reabrir
+    if (M.paquete && typeof M.paquete === "object") M.paquete.lineas_total = n;
+    alcApuntarPropia(lineaPrecio);
+    const pe = deEstimado ? alcPrecioEstimado(A.proyecto.id) : null;
+    A.arreglados = [...(A.arreglados || []), r.explicacion + (pe ? ` (del estimado ${pe.ref})` : "")];
+    A.respuestas = Object.assign({}, A.respuestas || {}, { precio: m.centavos });
+    alcContestarArmado("precio_l", n).catch(e => avisar((e && e.message) || "No pude rehacer el contrato", true))
+      .finally(() => { A.precio_en_marcha = false; });
+    return true;
   }
 
   // Cuando Edgar contesta a una línea huérfana («Déjala», «Es un renglón», «Es
