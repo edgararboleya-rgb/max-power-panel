@@ -5060,6 +5060,30 @@
     [/^(.+?) ya estaba cerrada\.$/, "$1 was already closed."]
   );
 
+  // v282 (pliego §13 E6): la retención del contratista al facturar un hito, y lo que contesta la función qb v4
+  Object.assign(D, {
+    "Retención del contratista (%)": "Contractor retainage (%)",
+    "Retención del contratista (%) — vacía = 0": "Contractor retainage (%) — empty = 0",
+    "Vacía = 0. La recuerdo para la próxima factura de esta obra.": "Empty = 0. I'll remember it for this job's next invoice.",
+    "La retención tiene que ser un porcentaje entre 0 y 100.": "The retainage has to be a percentage between 0 and 100.",
+    "Ya hay una corrida en marcha con QuickBooks. Prueba en un minuto.": "QuickBooks is already busy with another run. Try again in a minute.",
+    // «QuickBooks: mira esto» en el inicio (solo el dueño): lo que la revisión de QuickBooks dejó por mirar
+    "QuickBooks: mira esto": "QuickBooks: take a look",
+    "factura en QuickBooks que la app no conoce": "invoice in QuickBooks that the app doesn't know",
+    "el monto no cuadra con el hito": "the amount doesn't match the milestone",
+    "pagada en la app y abierta en QuickBooks": "paid in the app and open in QuickBooks",
+    "anulada en QuickBooks": "voided in QuickBooks",
+    "pagada en QuickBooks pero el hito o lo cobrado no se movió": "paid in QuickBooks but the milestone or the collected amount didn't move",
+    "Ya lo miré": "I looked at it",
+    "No pude guardarlo. Vuelve a intentarlo.": "I couldn't save it. Try again."
+  });
+  REGLAS.push(
+    [/^(\d+) cosas? que la revisión de QuickBooks no decidió sola$/, s => {
+      const n = Number(s.match(/^(\d+)/)[1]);
+      return n === 1 ? "1 thing the QuickBooks review didn't decide on its own" : n + " things the QuickBooks review didn't decide on its own";
+    }]
+  );
+
   // Los avisos del navegador (confirmar, alertar, preguntar) también
   const c0 = window.confirm, a0 = window.alert, p0 = window.prompt;
   window.confirm = m => c0.call(window, traducirMensaje(m));

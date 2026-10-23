@@ -393,6 +393,9 @@
   const conCo = h => String((h && h.co) || "").trim() !== "";
   // v281 (pliego §13 E5): los tipos de duda de la revisión diaria (los mismos que TIPOS_DUDA del cerebro v52)
   const TIPOS_DUDA = ["estado", "accionvieja", "sinfacturar", "descuadre", "cobro", "leccion"];
+  // v282 (pliego §13 E6): los motivos con que la función qb v4 apunta en cobros_pendientes lo que no quiso decidir sola
+  // (los mismos textos que MOTIVOS_QB de etapa6/qb-guardian-v4.txt; pruebas/qb-pagadas.mjs comprueba que cuadran)
+  const QB_MOTIVOS = ["factura en QuickBooks que la app no conoce", "el monto no cuadra con el hito", "pagada en la app y abierta en QuickBooks", "anulada en QuickBooks", "pagada en QuickBooks pero el hito o lo cobrado no se movió"];
   // Las horas por fase de UNA obra: [{fase, estimadas, reales, aparte}] (reales = sin co; aparte = con co), en el
   // orden del formulario, solo las fases con algo. La MISMA cuenta que horasPorFase del cerebro v51. Las horas de
   // antes de la app (horas_reales_base) no tienen fase: cuentan en la obra entera, pero aquí no entran.
@@ -451,6 +454,14 @@
     const dudasP = (!parcial || soloEstas.includes("ia_dudas"))
       ? (yoDuenoDudas ? pedirAlCerebro("dudas", {}, { ms: 20000 }).then(j => (j && Array.isArray(j.dudas) ? j.dudas : [])).catch(() => []) : Promise.resolve([]))
       : null;
+    // v282 (pliego §13 E6): lo que la revisión de QuickBooks (qb v4) dejó por mirar en cobros_pendientes. Solo el dueño
+    // (la tabla es solo suya: es_dueno()); al equipo ni se le pide. Va a la par de lo de abajo y, si no se puede leer, vacía.
+    const pideQb = (!parcial || soloEstas.includes("qb_pendientes")) && (nuevo.perfiles || []).some(p => p && p.id === uid() && p.rol === "dueno");
+    const qbP = (!parcial || soloEstas.includes("qb_pendientes"))
+      ? (pideQb ? leer("cobros_pendientes?select=id,proyecto_id,hito_id,motivo,detalle,creado&resuelto=is.false&motivo=" +
+          encodeURIComponent("in.(" + QB_MOTIVOS.map(m => '"' + m + '"').join(",") + ")") + "&order=creado.desc&limit=100").catch(() => [])
+        : Promise.resolve([]))
+      : null;
     // v280 (pliego §13 E4): los renglones del estimado enlazado a cada obra viva, SIN precio (ni se pide la
     // columna): solo para comparar «X de Y» por tarea. Si no se pueden leer (el campo), se queda vacío.
     if (!parcial || soloEstas.includes("estimados_obra") || soloEstas.includes("proyectos")) {
@@ -465,6 +476,7 @@
       nuevo.estimado_de_obra = estDe;
     }
     if (dudasP) nuevo.ia_dudas = await dudasP;
+    if (qbP) nuevo.qb_pendientes = await qbP;
     crudo = nuevo;
     const [perfiles, proyectos, proyectosEquipo, finanzas, alcances, alcancesEquipo,
            hitos, facturas, horas, eventos, pendientes, documentos, fotos,
@@ -741,6 +753,11 @@
             puedeLeccion: o.puede_leccion === true, creado: String(x.creado || "").slice(0, 10)
           };
         }),
+      // v282 (pliego §13 E6): lo de QuickBooks por mirar (solo el dueño; al equipo, vacía). El detalle lleva montos: solo el dueño.
+      qbPendientes: (esDueno && Array.isArray(crudo.qb_pendientes) ? crudo.qb_pendientes : [])
+        .filter(x => x && QB_MOTIVOS.includes(x.motivo))
+        .map(x => ({ id: x.id, proyecto: x.proyecto_id || null, motivo: String(x.motivo), detalle: String(x.detalle || ""),
+          creado: String(x.creado || "").slice(0, 10) })),
       puntos: alcancePuntos.map(a => ({
         id: a.id, proyecto: a.proyecto_id, texto: a.texto,
         hecho: !!a.hecho, orden: a.orden || 0,
@@ -1243,6 +1260,9 @@
     // Cerrar un día del calendario: hecho, cancelado o de vuelta a programado
     cambiarEvento: (id, cambios) => actualizar(`eventos?id=eq.${id}`, cambios),
     crearPendiente: fila => insertar("pendientes", { ...fila, autor_id: uid() }),
+    // v282 (pliego §13 E6): «Ya lo miré» en lo de QuickBooks por mirar (solo el dueño: la tabla es solo suya)
+    resolverCobroQB: id => actualizar(`cobros_pendientes?id=eq.${Number(id)}&resuelto=is.false`,
+      { resuelto: true, resuelto_el: new Date().toISOString() }),
     cambiarPendiente: (id, cambios) => actualizar(`pendientes?id=eq.${id}`, cambios),
     resolverPendiente: id => actualizar(`pendientes?id=eq.${id}`,
       { resuelto: true, resuelto_por: uid(), resuelto_el: new Date().toISOString() }),

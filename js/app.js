@@ -1999,13 +1999,53 @@ function esFalloDeRed(err) {
     const si = d.tipo === "cobro" ? "Ya lo mandé" : d.tipo === "leccion" ? "Guardar la lección" : "Sí";
     return b("si", si, "btn-navy") + b("no", "No", "btn-white") + b("luego", "Todavía no", "btn-white");
   }
+  // v282 (pliego §13 E6): «QuickBooks: mira esto» (solo el dueño): lo que la revisión de QuickBooks (qb v4, 8 AM y 4 PM)
+  // no quiso decidir sola y dejó en cobros_pendientes: la factura que la app no conoce, la que no cuadra con su hito, la
+  // pagada en la app y abierta en QuickBooks, la anulada y la que se pagó pero su hito o lo cobrado no se movió. Nada se
+  // arregla solo desde aquí: Edgar lo mira y toca «Ya lo miré» (resuelto; no vuelve a salir).
+  let cobroQBOcupado = null;
+  function tarjetaQB(lista) {
+    const obraDe = id => { const p = id && state && (state.proyectos || []).find(x => x.id === id); return p ? (p.nombre || p.id) : ""; };
+    return `
+      <div class="inicio-card dudas-ia" id="bandeja-qb">
+        <h2 class="inicio-card-titulo">QuickBooks: mira esto</h2>
+        <p class="dudas-ia-sub">${lista.length === 1 ? "1 cosa que la revisión de QuickBooks no decidió sola" : `${lista.length} cosas que la revisión de QuickBooks no decidió sola`}</p>
+        ${lista.map(c => `
+          <div class="duda-ia" data-cobro-qb="${esc(c.id)}">
+            ${obraDe(c.proyecto) ? `<p class="duda-ia-obra" data-no-i18n>${esc(obraDe(c.proyecto))}</p>` : ""}
+            <p class="duda-ia-texto"><b>${esc(c.motivo)}</b></p>
+            <p class="duda-ia-nota" data-no-i18n>${esc(c.detalle)}</p>
+            <div class="duda-ia-botones"><button type="button" class="btn sm btn-white qb-visto-btn">Ya lo miré</button></div>
+            <p class="duda-ia-error" hidden></p>
+          </div>`).join("")}
+      </div>`;
+  }
+  async function resolverCobroQB(boton) {
+    const tarjeta = boton.closest("[data-cobro-qb]");
+    if (!tarjeta || cobroQBOcupado !== null || !usuario || !usuario.finanzas) return;
+    const id = Number(tarjeta.dataset.cobroQb);
+    cobroQBOcupado = id;
+    boton.disabled = true;
+    try {
+      await DB.resolverCobroQB(id);
+      if (state) state.qbPendientes = (state.qbPendientes || []).filter(x => Number(x.id) !== id);
+      cobroQBOcupado = null;
+      pintarInicioDudas();
+    } catch (e) {
+      cobroQBOcupado = null;
+      boton.disabled = false;
+      const err = tarjeta.querySelector(".duda-ia-error");
+      if (err) { err.textContent = (e && e.message && /\s/.test(e.message)) ? e.message : "No pude guardarlo. Vuelve a intentarlo."; err.hidden = false; }
+    }
+  }
   function pintarInicioDudas() {
     const caja = $("inicio-dudas");
     if (!caja) return;
     const dudas = usuario && usuario.finanzas ? ((state && state.dudasIA) || []) : [];
-    if (!dudas.length) { caja.innerHTML = ""; caja.hidden = true; return; }
+    const deQB = usuario && usuario.finanzas ? ((state && state.qbPendientes) || []) : [];
+    if (!dudas.length && !deQB.length) { caja.innerHTML = ""; caja.hidden = true; return; }
     caja.hidden = false;
-    caja.innerHTML = `
+    caja.innerHTML = (!dudas.length ? "" : `
       <div class="inicio-card dudas-ia" id="bandeja-ia">
         <h2 class="inicio-card-titulo">La IA pregunta</h2>
         <p class="dudas-ia-sub">${dudas.length === 1 ? "1 duda de la revisión diaria" : `${dudas.length} dudas de la revisión diaria`}</p>
@@ -2020,8 +2060,9 @@ function esFalloDeRed(err) {
             <div class="duda-ia-botones">${botonesDeDuda(d)}</div>
             <p class="duda-ia-error" hidden></p>
           </div>`).join("")}
-      </div>`;
+      </div>`) + (deQB.length ? tarjetaQB(deQB) : "");
     caja.querySelectorAll(".duda-ia-btn").forEach(btn => btn.addEventListener("click", () => contestarDuda(btn)));
+    caja.querySelectorAll(".qb-visto-btn").forEach(btn => btn.addEventListener("click", () => resolverCobroQB(btn)));
   }
   async function contestarDuda(boton) {
     const tarjeta = boton.closest("[data-duda]");
@@ -6146,7 +6187,17 @@ function esFalloDeRed(err) {
         // facturaba, el botón nuevo no sabe nada; este apunte sí (P03)
         const clave = String(btn.dataset.hito);
         if (facturandoHitos.has(clave) || cobrandoHitos.has(clave)) { avisar("Ese hito ya se está facturando: espera a que termine.", true); return; }
-        if (!await confirmar(pregunta)) return;
+        // v282 (pliego §13 E6): en una obra por contratista se pregunta también la retención (%) y va a la función qb
+        const esContrato = !!(pF && pF.contratistaModo === "contrato");
+        let extraRet = {};
+        if (esContrato) {
+          const txt = await confirmarConRetencion(pregunta, retencionRecordada(pF.id));
+          if (txt === null) return;
+          const n = txt.trim() === "" ? 0 : Number(txt.replace(",", ".").replace("%", "").trim());
+          if (!Number.isFinite(n) || n < 0 || n > 100) { avisar("La retención tiene que ser un porcentaje entre 0 y 100.", true); return; }
+          recordarRetencion(pF.id, txt.trim() === "" ? "" : String(n));
+          extraRet = { retencion: n };
+        } else if (!await confirmar(pregunta)) return;
         if (facturandoHitos.has(clave) || cobrandoHitos.has(clave)) return;
         facturandoHitos.add(clave);
         // El botón que se ve es el «Facturar ▾» del renglón: se apaga y dice
@@ -6167,7 +6218,7 @@ function esFalloDeRed(err) {
           const pedir = extra => fetch("https://zeogjvwcmstmkwxjvykz.supabase.co/functions/v1/qb", {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${DB.tokenSesion()}` },
-            body: JSON.stringify(Object.assign({ accion: "factura", proyecto_id: btn.dataset.proyecto, hito_id: Number(btn.dataset.hito), enviar: !!destino }, extra || {}))
+            body: JSON.stringify(Object.assign({ accion: "factura", proyecto_id: btn.dataset.proyecto, hito_id: Number(btn.dataset.hito), enviar: !!destino }, extraRet, extra || {}))
           });
           let r = await pedir();
           let d = await r.json().catch(() => ({}));
@@ -6763,6 +6814,27 @@ function esFalloDeRed(err) {
                 <button type="submit" class="accion" value="si">${esc(o.si || "Aceptar")}</button>`,
       alCerrar: (dlg, v) => v === "si" ? dlg.querySelector("[name=dato]").value : null,
     });
+  }
+  // v282 (pliego §13 E6): facturar a un contratista pregunta también su retención (%). Devuelve el texto de la casilla
+  // (vacía = 0) o null si se cancela. La última de cada obra se recuerda en este navegador (si no se puede, empieza vacía).
+  function confirmarConRetencion(mensaje, valor) {
+    const v0 = valor === undefined || valor === null ? "" : String(valor);
+    if (dialogosNativos()) return Promise.resolve(prompt(mensaje + "\n\nRetención del contratista (%) — vacía = 0", v0));
+    return ventana({
+      cuerpo: `<div class="ventana-texto">${parrafos(mensaje)}</div>
+        <div class="ventana-texto"><p style="margin:0">Retención del contratista (%)</p></div>
+        <input name="retencion" type="text" inputmode="decimal" value="${esc(v0)}" aria-label="Retención del contratista (%)" placeholder="0" style="width:100%" autocomplete="off">
+        <p class="modal-nota" style="margin:0">Vacía = 0. La recuerdo para la próxima factura de esta obra.</p>`,
+      botones: `<button type="submit" class="accion secundaria" value="">Cancelar</button>
+                <button type="submit" class="accion" value="si">Aceptar</button>`,
+      alCerrar: (dlg, v) => v === "si" ? dlg.querySelector("[name=retencion]").value : null,
+    });
+  }
+  function retencionRecordada(proyectoId) {
+    try { return localStorage.getItem("mxp_retencion_" + proyectoId) || ""; } catch { return ""; }
+  }
+  function recordarRetencion(proyectoId, valor) {
+    try { localStorage.setItem("mxp_retencion_" + proyectoId, valor); } catch { /* sin memoria: la próxima empieza vacía */ }
   }
   function alertar(mensaje) {
     if (dialogosNativos()) { alert(mensaje); return Promise.resolve(); }
