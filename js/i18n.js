@@ -5020,6 +5020,46 @@
     );
   }
 
+  // v281 (pliego §13 E5): la bandeja «La IA pregunta» del inicio del dueño. La pregunta y la obra las escribe el cerebro (van con
+  // data-no-i18n); aquí solo los botones, las notas y las frases fijas que contesta ?accion=propuesta.
+  Object.assign(D, {
+    "La IA pregunta": "The AI asks",
+    "Abrir el correo": "Open the email",
+    "Revísalo y mándalo tú: va con copia a ti.": "Check it and send it yourself: it copies you.",
+    "Revísalo y mándalo tú: va con copia a ti. Falta el correo del cliente: ponlo al abrirlo.": "Check it and send it yourself: it copies you. The client's email is missing: add it when it opens.",
+    "Guardar como lección": "Save as a lesson",
+    "Cerrar y resolver los pendientes": "Close it and resolve the to-dos",
+    "Cerrar y dejarlos": "Close it and leave them open",
+    "Todavía no": "Not yet",
+    "Ya lo mandé": "I already sent it",
+    "Guardar la lección": "Save the lesson",
+    "No pude guardar tu respuesta. Vuelve a intentarlo.": "I couldn't save your answer. Try again.",
+    "No pude guardar tu respuesta.": "I couldn't save your answer.",
+    "Entendido: no te lo vuelvo a preguntar en 30 días.": "Got it: I won't ask you again for 30 days.",
+    "Te lo vuelvo a preguntar en una semana.": "I'll ask you again in a week.",
+    "Apuntado que mandaste el correo.": "Noted that you sent the email.",
+    "Apuntado: lo haces tú en la app.": "Noted: you'll do it in the app.",
+    "Guardé la lección: la tendré en cuenta en los próximos estimados.": "I saved the lesson: I'll keep it in mind for the next estimates.",
+    "Esa duda ya está contestada.": "That question is already answered.",
+    "No encuentro esa duda.": "I can't find that question.",
+    "No encuentro esa obra.": "I can't find that job.",
+    "No pude guardar la lección.": "I couldn't save the lesson.",
+    "No pude cerrar la obra: alguien la cambió o la base no dejó.": "I couldn't close the job: someone changed it or the database didn't allow it.",
+    "Hecho.": "Done."
+  });
+  REGLAS.push(
+    [/^(\d+) dudas? de la revisión diaria$/, s => {
+      const n = Number(s.match(/^(\d+)/)[1]);
+      return n === 1 ? "1 question from the daily review" : n + " questions from the daily review";
+    }],
+    [/^Cerré (.+?) y marqué (\d+) pendientes? resueltos?\.$/, s => {
+      const m = s.match(/^Cerré (.+?) y marqué (\d+) pendientes? resueltos?\.$/);
+      return `I closed ${m[1]} and marked ${m[2]} to-do${m[2] === "1" ? "" : "s"} as resolved.`;
+    }],
+    [/^Cerré (.+?) y dejé sus pendientes abiertos\.$/, "I closed $1 and left its to-dos open."],
+    [/^(.+?) ya estaba cerrada\.$/, "$1 was already closed."]
+  );
+
   // Los avisos del navegador (confirmar, alertar, preguntar) también
   const c0 = window.confirm, a0 = window.alert, p0 = window.prompt;
   window.confirm = m => c0.call(window, traducirMensaje(m));

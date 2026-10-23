@@ -391,6 +391,8 @@
     "17-INSP": "Inspecciones y correcciones", "18-PERM": "Permisos", "19-EQUIP": "Renta de equipos", "20-MISC": "Misceláneas"
   };
   const conCo = h => String((h && h.co) || "").trim() !== "";
+  // v281 (pliego §13 E5): los tipos de duda de la revisión diaria (los mismos que TIPOS_DUDA del cerebro v52)
+  const TIPOS_DUDA = ["estado", "accionvieja", "sinfacturar", "descuadre", "cobro", "leccion"];
   // Las horas por fase de UNA obra: [{fase, estimadas, reales, aparte}] (reales = sin co; aparte = con co), en el
   // orden del formulario, solo las fases con algo. La MISMA cuenta que horasPorFase del cerebro v51. Las horas de
   // antes de la app (horas_reales_base) no tienen fase: cuentan en la obra entera, pero aquí no entran.
@@ -441,6 +443,14 @@
     const bajado = await Promise.all(pedir.map(([, consulta, suave]) => suave ? leer(consulta).catch(() => []) : leer(consulta)));
     const nuevo = parcial ? { ...crudo } : {};
     pedir.forEach(([nombre], k) => { nuevo[nombre] = bajado[k]; });
+    // v281 (pliego §13 E5): la bandeja «La IA pregunta». Solo el dueño la baja (al equipo ni se le pide): las dudas que la
+    // revisión diaria del cerebro dejó pendientes. Se piden AL CEREBRO (?accion=dudas, con el token), no a la tabla: ia_propuestas
+    // está cerrada a la app porque algunas dudas llevan montos. Va a la par de lo de abajo (no espera a nada) y, si el cerebro no
+    // contesta (o todavía no está subido), vacía.
+    const yoDuenoDudas = (!parcial || soloEstas.includes("ia_dudas")) && (nuevo.perfiles || []).some(p => p && p.id === uid() && p.rol === "dueno");
+    const dudasP = (!parcial || soloEstas.includes("ia_dudas"))
+      ? (yoDuenoDudas ? pedirAlCerebro("dudas", {}, { ms: 20000 }).then(j => (j && Array.isArray(j.dudas) ? j.dudas : [])).catch(() => []) : Promise.resolve([]))
+      : null;
     // v280 (pliego §13 E4): los renglones del estimado enlazado a cada obra viva, SIN precio (ni se pide la
     // columna): solo para comparar «X de Y» por tarea. Si no se pueden leer (el campo), se queda vacío.
     if (!parcial || soloEstas.includes("estimados_obra") || soloEstas.includes("proyectos")) {
@@ -454,6 +464,7 @@
         : [];
       nuevo.estimado_de_obra = estDe;
     }
+    if (dudasP) nuevo.ia_dudas = await dudasP;
     crudo = nuevo;
     const [perfiles, proyectos, proyectosEquipo, finanzas, alcances, alcancesEquipo,
            hitos, facturas, horas, eventos, pendientes, documentos, fotos,
@@ -716,6 +727,20 @@
         estado: r.estado || "por_leer", autor: nombrePorId[r.autor_id] || "",
         fecha: r.fecha || (r.creado ? String(r.creado).slice(0, 10) : "")
       })),
+      // v281 (pliego §13 E5): las dudas de la bandeja «La IA pregunta» (solo el dueño las recibe; al equipo, vacía)
+      dudasIA: (esDueno && Array.isArray(crudo.ia_dudas) ? crudo.ia_dudas : [])
+        .filter(x => x && TIPOS_DUDA.includes(x.tipo) && x.estado === "pendiente")
+        .map(x => {
+          const o = x.objetivo && typeof x.objetivo === "object" ? x.objetivo : {};
+          const c = o.correo && typeof o.correo === "object" ? o.correo : null;
+          return {
+            id: x.id, tipo: x.tipo, clave: String(o.clave || ""), proyecto: o.proyecto_id || null,
+            obra: String(o.obra || o.proyecto_id || ""), texto: String(o.texto || x.razon || ""),
+            opciones: Array.isArray(o.opciones) ? o.opciones.filter(y => y && y.id).map(y => ({ id: String(y.id), texto: String(y.texto || y.id) })) : [],
+            correo: c ? { para: String(c.para || ""), asunto: String(c.asunto || ""), cuerpo: String(c.cuerpo || "") } : null,
+            puedeLeccion: o.puede_leccion === true, creado: String(x.creado || "").slice(0, 10)
+          };
+        }),
       puntos: alcancePuntos.map(a => ({
         id: a.id, proyecto: a.proyecto_id, texto: a.texto,
         hecho: !!a.hecho, orden: a.orden || 0,

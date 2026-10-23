@@ -4354,3 +4354,19 @@ body:has(#toast:not([hidden])) .fab, body:has(#sin-senal:not([hidden])) .fab { d
 .horas-ia-txt { margin: 0; font-size: var(--fs-4); color: var(--mp-ink); line-height: 1.45; }
 .horas-ia-bien { color: var(--mp-ok); font-weight: 650; }
 .horas-ia-obras { display: flex; flex-wrap: wrap; gap: .45rem; }
+
+/* v281 (pliego §13 E5): la bandeja «La IA pregunta» en el inicio del dueño (las dudas de la revisión diaria) */
+.inicio-card.dudas-ia { border-left: 4px solid var(--cu-dark); }
+.dudas-ia-sub { margin: -.2rem 0 .4rem; font-size: var(--fs-3); color: var(--mp-ink-2); }
+.duda-ia { display: grid; gap: .45rem; padding: .7rem 0; border-top: 1px solid var(--mp-sky-2); }
+.duda-ia:first-of-type { border-top: none; }
+.duda-ia-obra { margin: 0; font-size: var(--fs-3); font-weight: 700; color: var(--cu-dark); }
+.duda-ia-texto { margin: 0; font-size: var(--fs-5); color: var(--mp-ink); line-height: 1.45; }
+.duda-ia-nota { margin: 0; font-size: var(--fs-3); color: var(--mp-ink-2); line-height: 1.4; }
+.duda-ia-correo { justify-self: start; display: inline-flex; align-items: center; min-height: var(--tap); text-decoration: none; }
+.duda-ia-leccion { display: flex; align-items: center; gap: .5rem; min-height: var(--tap); font-size: var(--fs-4); color: var(--mp-ink); }
+.duda-ia-leccion input { width: 22px; height: 22px; }
+.duda-ia-botones { display: flex; flex-wrap: wrap; gap: .45rem; }
+.duda-ia-btn { min-height: var(--tap); }
+.duda-ia-btn:disabled { opacity: .6; cursor: progress; }
+.duda-ia-error { margin: 0; font-size: var(--fs-4); color: var(--mp-danger); }

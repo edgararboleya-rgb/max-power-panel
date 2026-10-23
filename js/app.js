@@ -408,6 +408,8 @@
     // v280 (pliego §13 E4): lo que toca la IA al apuntar un reporte dictado, y el reparto de horas por fase
     horas_ia: ["horas", "horas_tareas", "pendientes", "recibos", "recibos_equipo"],
     reparto: ["horas_estimadas_fase"],
+    // v281 (pliego §13 E5): lo que puede cambiar al contestar una duda de la bandeja (la obra, sus pendientes y la bandeja)
+    dudas: ["proyectos", "pendientes", "ia_dudas"],
   };
   async function recargar(abrirId, que) {
     const turno = ++recargaTurno;
@@ -835,6 +837,8 @@ function esFalloDeRed(err) {
       // «Vence esta semana» y «Horas» son del dueño
       $("inicio-vence").innerHTML = "";
       $("inicio-horas").hidden = true;
+      // v281: la bandeja «La IA pregunta» es solo del dueño
+      if ($("inicio-dudas")) { $("inicio-dudas").innerHTML = ""; $("inicio-dudas").hidden = true; }
       pintarInicioCampo();
       return;
     }
@@ -842,6 +846,7 @@ function esFalloDeRed(err) {
     // vence esta semana, horas, inspecciones y después los resúmenes de siempre
     pintarInicioHoy();
     pintarInicioUrgentes();
+    pintarInicioDudas();
     pintarInicioAvisos();
     pintarInicioVence();
     pintarInicioHoras();
@@ -1969,6 +1974,82 @@ function esFalloDeRed(err) {
         else irDetalle(btn.dataset.id, btn.dataset.pestana || undefined);
       });
     });
+  }
+
+  // ---------- v281 (pliego §13 E5): la bandeja «La IA pregunta» (solo el dueño) ----------
+  // Las dudas que la revisión diaria del cerebro (de madrugada y a las 9 PM) dejó en ia_propuestas. Cada botón contesta con
+  // ?accion=propuesta y el token del dueño: Sí / No / Todavía no («no» = no te lo vuelvo a preguntar en 30 días; «todavía no»,
+  // en 7). La de cerrar una obra trae sus tres opciones; la de cobro, «Abrir el correo» (un mailto: al cliente con copia a
+  // Edgar) y «Ya lo mandé». El correo NUNCA se manda solo: lo manda Edgar desde su correo. Al equipo no le sale nunca.
+  const CC_EDGAR = "edgararboleya@mxpes.com";
+  let dudaOcupada = null;
+  function mailtoDeCobro(c) {
+    const enc = x => encodeURIComponent(String(x || "")).replace(/%40/g, "@");
+    // la copia a Edgar va siempre (regla de la casa), venga o no en el borrador
+    return `mailto:${enc(c && c.para)}?cc=${enc(CC_EDGAR)}&subject=${enc(c && c.asunto)}&body=${enc(c && c.cuerpo)}`;
+  }
+  function botonesDeDuda(d) {
+    const b = (decision, texto, clase, opcion) =>
+      `<button type="button" class="btn sm ${clase} duda-ia-btn" data-decision="${decision}"${opcion ? ` data-opcion="${esc(opcion)}"` : ""}>${esc(texto)}</button>`;
+    if (d.tipo === "estado") {
+      const ops = d.opciones.length ? d.opciones : [{ id: "cerrar_resolver", texto: "Cerrar y resolver los pendientes" },
+        { id: "cerrar_dejar", texto: "Cerrar y dejarlos" }, { id: "todavia_no", texto: "Todavía no" }];
+      return ops.map(o => o.id === "todavia_no" ? b("luego", o.texto, "btn-white") : b("si", o.texto, o.id === "cerrar_resolver" ? "btn-navy" : "btn-white", o.id)).join("");
+    }
+    const si = d.tipo === "cobro" ? "Ya lo mandé" : d.tipo === "leccion" ? "Guardar la lección" : "Sí";
+    return b("si", si, "btn-navy") + b("no", "No", "btn-white") + b("luego", "Todavía no", "btn-white");
+  }
+  function pintarInicioDudas() {
+    const caja = $("inicio-dudas");
+    if (!caja) return;
+    const dudas = usuario && usuario.finanzas ? ((state && state.dudasIA) || []) : [];
+    if (!dudas.length) { caja.innerHTML = ""; caja.hidden = true; return; }
+    caja.hidden = false;
+    caja.innerHTML = `
+      <div class="inicio-card dudas-ia" id="bandeja-ia">
+        <h2 class="inicio-card-titulo">La IA pregunta</h2>
+        <p class="dudas-ia-sub">${dudas.length === 1 ? "1 duda de la revisión diaria" : `${dudas.length} dudas de la revisión diaria`}</p>
+        ${dudas.map(d => `
+          <div class="duda-ia" data-duda="${esc(d.id)}" data-tipo="${esc(d.tipo)}">
+            ${d.obra ? `<p class="duda-ia-obra" data-no-i18n>${esc(d.obra)}</p>` : ""}
+            <p class="duda-ia-texto" data-no-i18n>${esc(d.texto)}</p>
+            ${d.tipo === "cobro" && d.correo ? `
+              <a class="btn sm btn-white duda-ia-correo" href="${esc(mailtoDeCobro(d.correo))}" target="_blank" rel="noopener">Abrir el correo</a>
+              <p class="duda-ia-nota">Revísalo y mándalo tú: va con copia a ti.${d.correo.para ? "" : " Falta el correo del cliente: ponlo al abrirlo."}</p>` : ""}
+            ${d.puedeLeccion ? `<label class="duda-ia-leccion"><input type="checkbox" data-leccion> Guardar como lección</label>` : ""}
+            <div class="duda-ia-botones">${botonesDeDuda(d)}</div>
+            <p class="duda-ia-error" hidden></p>
+          </div>`).join("")}
+      </div>`;
+    caja.querySelectorAll(".duda-ia-btn").forEach(btn => btn.addEventListener("click", () => contestarDuda(btn)));
+  }
+  async function contestarDuda(boton) {
+    const tarjeta = boton.closest("[data-duda]");
+    if (!tarjeta || dudaOcupada !== null) return;
+    const id = Number(tarjeta.dataset.duda);
+    const casilla = tarjeta.querySelector("[data-leccion]");
+    const botones = [...tarjeta.querySelectorAll("button")];
+    dudaOcupada = id;
+    botones.forEach(b => { b.disabled = true; });
+    let r = null;
+    try {
+      r = await DB.pedirAlCerebro("propuesta", { id, decision: boton.dataset.decision,
+        ...(boton.dataset.opcion ? { opcion: boton.dataset.opcion } : {}), guardar_leccion: !!(casilla && casilla.checked) }, { ms: 30000 });
+    } catch (e) { r = { ok: false, error: String((e && e.message) || "") }; }
+    dudaOcupada = null;
+    if (r && r.ok) {
+      // se quita ya de la pantalla y después se recarga lo que la respuesta pudo cambiar (la obra, sus pendientes, la bandeja)
+      if (state) state.dudasIA = (state.dudasIA || []).filter(x => Number(x.id) !== id);
+      pintarInicioDudas();
+      avisar(String(r.respuesta || "Hecho."));
+      try { await recargar(undefined, "dudas"); } catch { /* la pantalla se queda como está */ }
+      return;
+    }
+    botones.forEach(b => { b.disabled = false; });
+    const err = tarjeta.querySelector(".duda-ia-error");
+    // (como en «Que la IA lo apunte») un código suelto («no_autorizado») no se enseña: solo una frase
+    const txt = r && typeof r.error === "string" && /\s/.test(r.error.trim()) ? r.error : "No pude guardar tu respuesta. Vuelve a intentarlo.";
+    if (err) { err.textContent = txt; err.hidden = false; }
   }
 
   // ¿Quién reportó horas? (solo dueño)
@@ -6827,10 +6908,13 @@ function esFalloDeRed(err) {
   // barra para que recargar no vuelva a abrir lo mismo. Si la obra no está entre
   // las que tienen trabajo, se abre sin ella (la de siempre).
   let abrirPendiente = "";
+  // v281 (pliego §13 E5): ?abrir=bandeja (el aviso «Edgar, tengo N dudas» de la revisión diaria) lleva al inicio y baja
+  // hasta la bandeja «La IA pregunta».
   function abrirDesdeDireccion(direccion) {
     let u;
     try { u = new URL(direccion, location.href); } catch { return false; }
-    if (u.origin !== location.origin || u.searchParams.get("abrir") !== "horas") return false;
+    const abrir = u.searchParams.get("abrir");
+    if (u.origin !== location.origin || (abrir !== "horas" && abrir !== "bandeja")) return false;
     const aqui = new URLSearchParams(location.search);
     if (aqui.has("abrir") || aqui.has("proyecto")) {
       aqui.delete("abrir"); aqui.delete("proyecto");
@@ -6840,6 +6924,15 @@ function esFalloDeRed(err) {
     // Sin sesión todavía: se guarda y se abre al entrar
     if (!usuario || !state) { abrirPendiente = u.href; return false; }
     abrirPendiente = "";
+    if (abrir === "bandeja") {
+      irHome();
+      setTimeout(() => {
+        const b = $("inicio-dudas");
+        const dest = b && !b.hidden ? b : $("inicio-hoy");
+        if (dest && dest.scrollIntoView) dest.scrollIntoView({ block: "start" });
+      }, 300);
+      return true;
+    }
     const pidAbrir = u.searchParams.get("proyecto") || undefined;
     // El dueño sin obra (los avisos «Horas del equipo» y el resumen de la noche de la
     // E1): al inicio, donde se revisan los reportes del equipo, no a su propio formulario
