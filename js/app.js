@@ -405,6 +405,9 @@
     eventos: ["eventos", "inspecciones"],
     eventos_pend: ["eventos", "inspecciones", "pendientes"],
     cola: ["horas", "pendientes", "alcance_puntos", "materiales", "materiales_equipo", "fotos"],
+    // v280 (pliego §13 E4): lo que toca la IA al apuntar un reporte dictado, y el reparto de horas por fase
+    horas_ia: ["horas", "horas_tareas", "pendientes", "recibos", "recibos_equipo"],
+    reparto: ["horas_estimadas_fase"],
   };
   async function recargar(abrirId, que) {
     const turno = ++recargaTurno;
@@ -1423,6 +1426,9 @@ function esFalloDeRed(err) {
     // El panel: los puntos del alcance de la obra, hechos de cuántos
     const puntos = obra ? (state.puntos || []).filter(x => x.proyecto === pid) : [];
     const hechos = puntos.filter(x => x.hecho).length;
+    // v280 (pliego §13 E4): cómo va cada fase con reparto (horas sin co de la fase / sus horas estimadas, hasta 100 %).
+    // Sin reparto no sale nada. Solo horas y porcentajes: ni un número de dinero.
+    const fasesPanel = obra ? (obra.horasPorFase || []).filter(f => f.estimadas > 0) : [];
 
     // ---- 1. Saludo y resumen ----
     const primerNombre = primerNombreDe(usuario.nombre);
@@ -1529,6 +1535,8 @@ function esFalloDeRed(err) {
           <span class="row-txt">Panel del proyecto · ${hechos}/${puntos.length} encendidos</span>
           <span class="row-flecha" aria-hidden="true">›</span>
         </button>
+        ${fasesPanel.length ? `<div class="hoy-fases-obra">${fasesPanel.map(f =>
+          `<p class="hoy-fase-obra" data-fase="${esc(f.fase)}">${esc(f.fase)} ${Math.min(100, Math.round((f.reales / f.estimadas) * 100))} %</p>`).join("")}</div>` : ""}
       </div>` : ""}`;
     $("inicio-urgentes").querySelectorAll(".chk-toque").forEach(b => b.addEventListener("click", () => {
       const fila = b.closest(".chk-row");
@@ -2756,8 +2764,119 @@ function esFalloDeRed(err) {
         </div>
         <div class="barra horas-barra"><div class="barra-relleno ${color}" style="width:${pct}%"></div></div>
         ${h.aparte > 0 ? `<p class="horas-aparte">+ ${h.aparte} h de change orders y service calls</p>` : ""}
+        ${usuario.finanzas ? horasPorFaseHTML(p) + horasPorTareaHTML(p) : ""}
         ${nReg ? plegableHTML(p, "horas-reportes", `Últimos reportes (${nReg})`, "", registroHorasHTML(p), false) : ""}
       </div>`;
+  }
+
+  // v280 (pliego §13 E4, D3): debajo de la obra entera, plan contra real POR FASE (el reparto de las horas
+  // estimadas que da Edgar, contra las horas sin co de cada fase) y lo hecho POR TAREA, que solo se informa.
+  // Solo el dueño: la pestaña Resumen (y con ella esta sección) también la ve el campo, así que lo nuevo va
+  // detrás de usuario.finanzas. Sin dinero en ningún caso.
+  const colorDeHoras = (reales, estimadas) => {
+    if (!(estimadas > 0)) return "";
+    const i = reales / estimadas;
+    return i <= 1 ? "ok" : i <= 1.15 ? "warn" : "bad";
+  };
+  const FASES_REPARTO = ["Movilización", "Demolición", "Rough-in", "Underground", "Panel / Servicio",
+    "Trim-out", "Low Voltage", "Troubleshooting", "Inspección / Correcciones", "Service Call"];
+  function horasPorFaseHTML(p) {
+    const filas = (p.horasPorFase || []).filter(f => f.estimadas > 0 || f.reales > 0);
+    const h = p.horas || { estimadas: 0 };
+    const tabla = filas.length ? `
+        <h4 class="fa-etq">Por fase</h4>
+        <div class="hf-tabla">${filas.map(f => {
+          const color = colorDeHoras(f.reales, f.estimadas);
+          const pct = f.estimadas > 0 ? Math.min(100, Math.round((f.reales / f.estimadas) * 100)) : 0;
+          return `
+          <div class="hf-fila" data-fase="${esc(f.fase)}">
+            <span class="hf-fase">${esc(f.fase)}</span>
+            <span class="hf-num ${color}">${f.estimadas > 0 ? `${f.reales} h de ${f.estimadas} h` : `${f.reales} h sin estimar`}</span>
+            <div class="barra fina hf-barra"><div class="barra-relleno ${color}" style="width:${pct}%"></div></div>
+          </div>`; }).join("")}
+        </div>` : "";
+    // Repartir (o cambiar el reparto): solo si la obra tiene horas estimadas que repartir
+    const puede = h.estimadas > 0 && p.estado !== "completado";
+    const sinReparto = !p.tieneReparto && puede ? `
+        <p class="hf-sin">Sin reparto por fase: dímelo en el chat (reparto_horas_fase) o aquí</p>` : "";
+    const boton = puede ? `
+        <button type="button" class="accion secundaria hf-abrir" data-reparto-fase="${esc(p.id)}">${p.tieneReparto ? "Cambiar el reparto" : "Repartir las horas por fase"}</button>
+        ${repartoFaseFormHTML(p)}` : "";
+    return tabla || sinReparto || boton ? `<div class="hf">${tabla}${sinReparto}${boton}</div>` : "";
+  }
+  // El formulario sencillo: las 10 fases con su casilla de horas y la suma en vivo contra las horas estimadas
+  function repartoFaseFormHTML(p) {
+    const ya = Object.fromEntries((p.horasPorFase || []).filter(f => f.estimadas > 0).map(f => [f.fase, f.estimadas]));
+    const est = (p.horas && p.horas.estimadas) || 0;
+    return `
+        <form class="hf-form" data-pid="${esc(p.id)}" data-estimadas="${esc(est)}" hidden>
+          ${FASES_REPARTO.map(f => `
+          <label class="hf-casilla"><span>${esc(f)}</span>
+            <input type="number" name="${esc(f)}" min="0" step="any" inputmode="decimal" value="${ya[f] !== undefined ? esc(ya[f]) : ""}" placeholder="0">
+          </label>`).join("")}
+          <p class="hf-suma" aria-live="polite">${sumaRepartoTexto(Object.values(ya).reduce((s, x) => s + Number(x || 0), 0), est)}</p>
+          <div class="hf-botones">
+            <button type="button" class="accion secundaria hf-cancelar">Cancelar</button>
+            <button type="submit" class="accion">Guardar el reparto</button>
+          </div>
+        </form>`;
+  }
+  function sumaRepartoTexto(suma, est) {
+    const r = n => Math.round(n * 10) / 10;
+    const dif = r(suma - est);
+    return `Suma: ${r(suma)} h de ${r(est)} h estimadas` + (Math.abs(dif) <= 1 ? " · cuadra" : dif < 0 ? ` · faltan ${r(-dif)} h` : ` · sobran ${r(dif)} h`);
+  }
+  function horasPorTareaHTML(p) {
+    const ts = p.tareas || [];
+    if (!ts.length) return "";
+    const lista = `<div class="horas-registro">` + ts.map(x => `
+      <div class="alcance-item">
+        <span class="alcance-tipo">${esc(x.codigo)}</span>
+        <span class="alcance-info">
+          <span class="alcance-titulo">${esc(x.nombre)}</span>
+          <span class="alcance-estado">${esc(x.horas)} h${x.cantidad_estimada !== null && x.cantidad_estimada !== undefined
+            ? ` · ${esc(x.cantidad_hecha || 0)} de ${esc(x.cantidad_estimada)}` : (x.cantidad_hecha ? ` · ${esc(x.cantidad_hecha)} hechas` : "")}</span>
+        </span>
+      </div>`).join("") + `</div>`;
+    return plegableHTML(p, "horas-tareas", `Por tarea (${ts.length})`, "", lista, false);
+  }
+  // Los botones del reparto en la ficha (se enganchan en pintarDetalle)
+  function engancharRepartoFase(caja) {
+    caja.querySelectorAll("[data-reparto-fase]").forEach(btn => btn.addEventListener("click", () => {
+      const f = [...caja.querySelectorAll(".hf-form")].find(x => x.dataset.pid === btn.dataset.repartoFase);
+      if (f) { f.hidden = !f.hidden; if (!f.hidden) { const i = f.querySelector("input"); if (i) i.focus(); } }
+    }));
+    caja.querySelectorAll(".hf-form").forEach(f => {
+      const valorDe = fase => String(f.elements[fase].value || "").trim().replace(",", ".");
+      const leerReparto = () => {
+        const r = {};
+        FASES_REPARTO.forEach(fase => { const v = Number(valorDe(fase)); if (v > 0) r[fase] = Math.round(v * 100) / 100; });
+        return r;
+      };
+      const est = Number(f.dataset.estimadas) || 0;
+      f.addEventListener("input", () => {
+        const suma = Object.values(leerReparto()).reduce((s, x) => s + x, 0);
+        f.querySelector(".hf-suma").textContent = sumaRepartoTexto(suma, est);
+      });
+      f.querySelector(".hf-cancelar").addEventListener("click", () => { f.hidden = true; });
+      f.addEventListener("submit", async e => {
+        e.preventDefault();
+        const malas = FASES_REPARTO.filter(fase => valorDe(fase) !== "" && !(Number(valorDe(fase)) >= 0));
+        if (malas.length) { avisar("Las horas de " + malas.join(", ") + " tienen que ser un número de 0 en adelante.", true); return; }
+        const reparto = leerReparto();
+        const suma = Math.round(Object.values(reparto).reduce((s, x) => s + x, 0) * 10) / 10;
+        if (Math.abs(suma - est) > 1 && !await confirmar(`El reparto suma ${suma} h y la obra tiene ${est} h estimadas. ¿Lo guardo así?`)) return;
+        const boton = f.querySelector('button[type="submit"]');
+        if (boton) boton.disabled = true;
+        try {
+          await DB.guardarRepartoFase(f.dataset.pid, reparto);
+          await recargar(f.dataset.pid, "reparto");
+          avisar("Reparto guardado ✓");
+        } catch (err) {
+          avisar("No se pudo guardar: " + err.message, true);
+        } finally { if (boton) boton.disabled = false; }
+      });
+    });
   }
 
   function registroHorasHTML(p) {
@@ -5664,6 +5783,9 @@ function esFalloDeRed(err) {
     if (cajaAlc) engancharTareas(cajaAlc, pintarDetalle);
     const cajaPend = $detalle.querySelector("#ficha-pendientes");
     if (cajaPend) engancharTareas(cajaPend, pintarDetalle);
+    // v280 (pliego §13 E4): «Repartir las horas por fase» (solo el dueño lo tiene en pantalla)
+    const cajaHoras = $detalle.querySelector("#ficha-horas");
+    if (cajaHoras && usuario.finanzas) engancharRepartoFase(cajaHoras);
 
     $detalle.querySelectorAll(".accion").forEach(btn => {
       if (btn.dataset.accion)
@@ -7054,6 +7176,101 @@ function esFalloDeRed(err) {
       if (btnHoras) btnHoras.disabled = false;
     }
   });
+
+  // v280 (pliego §13 E4, D9): «Que la IA lo apunte». El cerebro lee el cuadro «¿Qué hiciste hoy?»
+  // (?accion=interpretar_reporte, con el token de la sesión, como el asistente) y, si lo entiende, lo guarda él con
+  // su rastro; si duda, pregunta en una línea (con un botón por obra si duda de la obra). «No era así, quítalo» lo
+  // deshace (?accion=deshacer_cambio). De lo que vuelve solo se pinta la respuesta, la pregunta y las obras
+  // candidatas. El formulario de abajo sigue igual: es el camino a mano.
+  const $btnHorasIA = $("horas-ia"), $cajaHorasIA = $("horas-ia-caja");
+  const NO_PUDE_IA = "No pude leerlo ahora. Guarda el reporte con el formulario.";
+  const TARDO_IA = "Tardó demasiado. Mira tu historial de abajo antes de volver a apuntarlo: puede que ya haya entrado.";
+  let leyendoIA = false;
+  function cajaHorasIA(html) {
+    if (!$cajaHorasIA) return;
+    $cajaHorasIA.innerHTML = html || "";
+    $cajaHorasIA.hidden = !html;
+  }
+  async function recargarTrasIA() {
+    try { await recargar(undefined, "horas_ia"); } catch { /* la pantalla se queda como está */ }
+    if ($("vista-horas") && !$("vista-horas").hidden) pintarHistorialHoras();
+  }
+  async function horasConIA(pidPista, permitirDuplicado) {
+    if (leyendoIA || !$btnHorasIA) return;
+    const texto = String($formHoras.elements.notas.value || "").trim();
+    if (texto.length < 3) { cajaHorasIA(`<p class="horas-ia-txt">Cuéntalo primero en el cuadro: las horas, la obra y qué hicieron.</p>`); return; }
+    const sel = $formHoras.elements.proyecto;
+    if (pidPista && [...sel.options].some(o => o.value === pidPista)) { sel.value = pidPista; llenarCOHoras(); ponerFaseDeObra(); }
+    leyendoIA = true;
+    $btnHorasIA.disabled = true;
+    $btnHorasIA.textContent = "Leyendo…";
+    if ($cajaHorasIA) $cajaHorasIA.querySelectorAll("button").forEach(b => { b.disabled = true; });
+    let r = null, fallo = "";
+    try {
+      r = await DB.pedirAlCerebro("interpretar_reporte", { texto, fecha: $formHoras.elements.fecha.value || hoyISO(),
+        proyecto_id: pidPista || sel.value || null, ...(permitirDuplicado ? { permitir_duplicado: true } : {}) }, { ms: 120000 });
+    } catch (e) { r = null; fallo = String((e && e.message) || ""); }
+    finally {
+      leyendoIA = false;
+      $btnHorasIA.disabled = false;
+      $btnHorasIA.textContent = "Que la IA lo apunte";
+    }
+    if (!r && /no contestó a tiempo/.test(fallo)) {
+      // (revisión de azul) se agotó la espera, pero el cerebro puede haber guardado igual: se recarga y se pide mirar el historial
+      await recargarTrasIA();
+      cajaHorasIA(`<p class="horas-ia-txt">${esc(TARDO_IA)}</p>`);
+      return;
+    }
+    if (!r || typeof r !== "object" || (typeof r.respuesta !== "string" && typeof r.pregunta !== "string")) { cajaHorasIA(`<p class="horas-ia-txt">${esc(NO_PUDE_IA)}</p>`); return; }
+    if (r.necesita_respuesta) {
+      const cands = (Array.isArray(r.candidatas) ? r.candidatas : []).filter(c => c && typeof c.proyecto_id === "string" && c.proyecto_id);
+      // (revisión del 23-oct) si ya hay horas ese día en esa obra, la pregunta lleva su respuesta: «Sí, son horas aparte» vuelve a
+      // mandar el mismo texto con permitir_duplicado (sin ese botón no había forma de contestarla)
+      const dup = r.duplicado === true;
+      cajaHorasIA(`<p class="horas-ia-txt">${esc(sinMontos(String(r.pregunta || r.respuesta)))}</p>` + (cands.length ? `<div class="horas-ia-obras">${cands.map(c =>
+        `<button type="button" class="accion secundaria horas-ia-obra" data-ia-obra="${esc(c.proyecto_id)}">${esc(nombreVis(String(c.nombre || nombreProyecto(c.proyecto_id) || c.proyecto_id)))}</button>`).join("")}</div>` : "")
+        + (dup ? `<div class="horas-ia-obras"><button type="button" class="accion secundaria horas-ia-obra" data-ia-aparte="1">Sí, son horas aparte</button></div>` : ""));
+      if ($cajaHorasIA) $cajaHorasIA.querySelectorAll("[data-ia-obra]").forEach(b => b.addEventListener("click", () => horasConIA(b.dataset.iaObra)));
+      const ba = dup && $cajaHorasIA && $cajaHorasIA.querySelector("[data-ia-aparte]");
+      if (ba) ba.addEventListener("click", () => horasConIA(pidPista || sel.value || null, true));
+      await recargarTrasIA();
+      return;
+    }
+    if (r.guardado) {
+      const cid = r.cambio_id_horas;
+      cajaHorasIA(`<p class="horas-ia-txt horas-ia-bien">${esc(sinMontos(String(r.respuesta || "")))}</p>` + (cid !== null && cid !== undefined
+        ? `<button type="button" class="accion secundaria horas-ia-quitar" data-ia-quitar="${esc(cid)}">No era así, quítalo</button>` : ""));
+      $formHoras.elements.notas.value = "";
+      const bq = $cajaHorasIA && $cajaHorasIA.querySelector("[data-ia-quitar]");
+      if (bq) bq.addEventListener("click", () => quitarReporteIA(bq, texto));
+      await recargarTrasIA();
+      return;
+    }
+    // el tope del día y lo que no se pudo: la frase que manda el cerebro (ya viene en llano y sin dinero)
+    cajaHorasIA(`<p class="horas-ia-txt">${esc(sinMontos(String(r.respuesta || NO_PUDE_IA)))}</p>`);
+  }
+  async function quitarReporteIA(boton, texto) {
+    if (boton.disabled) return;
+    boton.disabled = true;
+    let r = null;
+    try { r = await DB.pedirAlCerebro("deshacer_cambio", { cambio_id: Number(boton.dataset.iaQuitar) }, { ms: 30000 }); } catch { r = null; }
+    if (r && r.ok) {
+      // (revisión del 23-oct) el cerebro quita el reporte entero (las horas, el posible extra y la compra) y lo dice en frases
+      // fijas (notas), una por línea; solo esas frases se pintan
+      const notas = (Array.isArray(r.notas) ? r.notas : []).filter(x => typeof x === "string" && x.trim()).slice(0, 4);
+      cajaHorasIA(`<p class="horas-ia-txt horas-ia-bien">Quitado</p>` + notas.map(n => `<p class="horas-ia-txt">${esc(sinMontos(n))}</p>`).join(""));
+      if (!$formHoras.elements.notas.value) $formHoras.elements.notas.value = texto;
+      await recargarTrasIA();
+      return;
+    }
+    boton.disabled = false;
+    // (revisión de azul) un código («no_autorizado», «falla») no se enseña: solo una frase
+    const txt = r && typeof r.error === "string" && r.error && /\s/.test(r.error.trim()) ? r.error : "No se pudo quitar ahora. Díselo a Edgar.";
+    const viejo = $cajaHorasIA && $cajaHorasIA.querySelector(".horas-ia-error");
+    if (viejo) viejo.textContent = sinMontos(txt);
+    else if ($cajaHorasIA) $cajaHorasIA.insertAdjacentHTML("beforeend", `<p class="horas-ia-txt horas-ia-error">${esc(sinMontos(txt))}</p>`);
+  }
+  if ($btnHorasIA) $btnHorasIA.addEventListener("click", () => horasConIA());
 
   // ---------- Reportes de horas que quedaron esperando señal ----------
   const LLAVE_COLA = "mxp_horas_pendientes";

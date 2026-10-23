@@ -370,8 +370,64 @@
     ["documento_visitas", "documento_visitas?select=documento_id,quien,cuando&order=cuando.desc&limit=1000", true],
     // P09 (25-sep): solo la vigencia de cada propuesta, para avisar cuando vence o
     // lleva días sin respuesta (el equipo no recibe filas: la lista queda vacía)
-    ["propuestas_vigencia", "propuestas?select=id,proyecto_id,estado,valida_hasta,armado_el,creado&order=creado.desc", true]
+    ["propuestas_vigencia", "propuestas?select=id,proyecto_id,estado,valida_hasta,armado_el,creado&order=creado.desc", true],
+    // v280 (pliego §13 E4): el reparto de las horas estimadas por fase (son horas, no dinero: todos lo leen); el
+    // reparto por tarea de cada reporte (hasta la parte B de etapa6/CREW-REPORTE.sql la base no se lo deja leer a
+    // la app: da error y se queda vacío, sin romper nada); y qué estimado está enlazado a cada obra (solo el id y la
+    // obra: sus renglones, SIN precio, se bajan después y solo para las obras vivas)
+    ["horas_estimadas_fase", "horas_estimadas_fase?select=proyecto_id,fase,horas", true],
+    ["horas_tareas", "horas_tareas?select=id,horas_id,codigo,estimado_item_id,horas,cantidad_hecha", true],
+    ["estimados_obra", "estimados?select=id,proyecto_id&proyecto_id=not.is.null&order=id.desc", true]
   ];
+  // v280 (pliego §13 E4): las 10 fases del reporte de horas (index.html, #form-horas) y las 20 partidas
+  // (codigos_partida): las mismas listas que el cerebro (FASES y CODIGOS_PARTIDA)
+  const FASES_REPORTE = ["Movilización", "Demolición", "Rough-in", "Underground", "Panel / Servicio",
+    "Trim-out", "Low Voltage", "Troubleshooting", "Inspección / Correcciones", "Service Call"];
+  const NOMBRE_PARTIDA = {
+    "01-DEMO": "Demolición eléctrica", "02-TEMP": "Servicio temporal", "03-UG": "Subterráneo", "04-SERV": "Servicio y meter",
+    "05-PANEL": "Paneles y subpaneles", "06-FEED": "Feeders", "07-GND": "Puesta a tierra", "08-ROUGH": "Rough-in de circuitos",
+    "09-COND": "Tubería expuesta", "10-DEV": "Piezas: tomas y switches", "11-LIGHT": "Luminarias", "12-TRIM": "Trim y terminación",
+    "13-LV": "Low voltage", "14-EV": "Cargadores EV", "15-GEN": "Generadores", "16-SMART": "Smart panel",
+    "17-INSP": "Inspecciones y correcciones", "18-PERM": "Permisos", "19-EQUIP": "Renta de equipos", "20-MISC": "Misceláneas"
+  };
+  const conCo = h => String((h && h.co) || "").trim() !== "";
+  // Las horas por fase de UNA obra: [{fase, estimadas, reales, aparte}] (reales = sin co; aparte = con co), en el
+  // orden del formulario, solo las fases con algo. La MISMA cuenta que horasPorFase del cerebro v51. Las horas de
+  // antes de la app (horas_reales_base) no tienen fase: cuentan en la obra entera, pero aquí no entran.
+  function horasPorFaseDeObra(estimadas, horas) {
+    const r1 = n => Math.round(n * 10) / 10;
+    const m = {};
+    const de = f => (m[f] = m[f] || { estimadas: 0, reales: 0, aparte: 0 });
+    for (const e of estimadas || []) if (e && e.fase) de(String(e.fase)).estimadas += Number(e.horas) || 0;
+    for (const h of horas || []) {
+      if (!h || !h.fase) continue;
+      if (conCo(h)) de(String(h.fase)).aparte += Number(h.horas) || 0; else de(String(h.fase)).reales += Number(h.horas) || 0;
+    }
+    const orden = FASES_REPORTE.concat(Object.keys(m).filter(f => !FASES_REPORTE.includes(f)));
+    return orden.filter(f => m[f] && (m[f].estimadas > 0 || m[f].reales > 0 || m[f].aparte > 0))
+      .map(f => ({ fase: f, estimadas: r1(m[f].estimadas), reales: r1(m[f].reales), aparte: r1(m[f].aparte) }));
+  }
+  // Lo hecho por tarea (partida) en UNA obra, con las horas del contrato base (sin co): [{codigo, nombre, horas,
+  // cantidad_hecha, cantidad_estimada|null}]. cantidad_estimada solo si la partida tiene UN renglón en el estimado
+  // enlazado (si tiene dos o más, no se sabe con cuál comparar). Nunca un precio: ni se baja.
+  function tareasDeObra(horasObra, tareasPorHoras, items) {
+    const m = {};
+    for (const h of horasObra || []) {
+      if (conCo(h)) continue;
+      for (const t of tareasPorHoras[h.id] || []) {
+        if (!t || !t.codigo) continue;
+        const x = m[t.codigo] = m[t.codigo] || { codigo: t.codigo, nombre: NOMBRE_PARTIDA[t.codigo] || t.codigo, horas: 0, cantidad_hecha: null };
+        x.horas += Number(t.horas) || 0;
+        if (t.cantidad_hecha !== null && t.cantidad_hecha !== undefined && Number.isFinite(Number(t.cantidad_hecha)))
+          x.cantidad_hecha = Math.round(((x.cantidad_hecha || 0) + Number(t.cantidad_hecha)) * 100) / 100;
+      }
+    }
+    return Object.keys(m).sort().map(k => {
+      const renglones = (items || []).filter(i => i && i.codigo === k);
+      const est = renglones.length === 1 && Number.isFinite(Number(renglones[0].cantidad)) ? Number(renglones[0].cantidad) : null;
+      return { ...m[k], horas: Math.round(m[k].horas * 10) / 10, cantidad_estimada: est };
+    });
+  }
   // Lo último que bajó cada fuente: con esto la recarga parcial vuelve a armar
   // el estado entero bajando solo las tablas que se tocaron.
   let crudo = null;
@@ -385,6 +441,19 @@
     const bajado = await Promise.all(pedir.map(([, consulta, suave]) => suave ? leer(consulta).catch(() => []) : leer(consulta)));
     const nuevo = parcial ? { ...crudo } : {};
     pedir.forEach(([nombre], k) => { nuevo[nombre] = bajado[k]; });
+    // v280 (pliego §13 E4): los renglones del estimado enlazado a cada obra viva, SIN precio (ni se pide la
+    // columna): solo para comparar «X de Y» por tarea. Si no se pueden leer (el campo), se queda vacío.
+    if (!parcial || soloEstas.includes("estimados_obra") || soloEstas.includes("proyectos")) {
+      const obras = (nuevo.proyectos && nuevo.proyectos.length) ? nuevo.proyectos : (nuevo.proyectos_equipo || []);
+      const vivas = new Set(obras.filter(p => ["ejecucion", "aprobado", "pausa"].includes(p.estado)).map(p => p.id));
+      const estDe = {};
+      for (const e of nuevo.estimados_obra || []) if (e && vivas.has(e.proyecto_id) && estDe[e.proyecto_id] === undefined) estDe[e.proyecto_id] = e.id;
+      const ids = Object.values(estDe).filter(x => Number.isFinite(Number(x)));
+      nuevo.estimado_items_obra = ids.length
+        ? await leer(`estimado_items?select=id,estimado_id,codigo,cantidad,unidad&estimado_id=in.(${ids.join(",")})`).catch(() => [])
+        : [];
+      nuevo.estimado_de_obra = estDe;
+    }
     crudo = nuevo;
     const [perfiles, proyectos, proyectosEquipo, finanzas, alcances, alcancesEquipo,
            hitos, facturas, horas, eventos, pendientes, documentos, fotos,
@@ -431,6 +500,11 @@
     const facPor = agrupar(facturas, "proyecto_id");
     const horPor = agrupar(horas, "proyecto_id");
     const docPor = agrupar(documentos, "proyecto_id");
+    // v280 (pliego §13 E4): el reparto por fase y por tarea
+    const estFasePor = agrupar(Array.isArray(crudo.horas_estimadas_fase) ? crudo.horas_estimadas_fase : [], "proyecto_id");
+    const tareasPorHoras = agrupar(Array.isArray(crudo.horas_tareas) ? crudo.horas_tareas : [], "horas_id");
+    const estDeObra = crudo.estimado_de_obra || {};
+    const itemsPorEst = agrupar(Array.isArray(crudo.estimado_items_obra) ? crudo.estimado_items_obra : [], "estimado_id");
 
     // La fecha corta de las facturas, en el idioma de la app («17 sep» / «Sep 17»)
     const EN = (() => { try { return localStorage.getItem("mxp_idioma") === "en"; } catch { return false; } })();
@@ -526,7 +600,11 @@
         horas: (Number(p.horas_estimadas) > 0 || reales > 0)
           ? { estimadas: Number(p.horas_estimadas) || 0, reales: Math.round(reales * 10) / 10,
               base: Math.round((reales - aparte) * 10) / 10, aparte: Math.round(aparte * 10) / 10 }
-          : null
+          : null,
+        // v280 (pliego §13 E4): plan contra real por fase (sin dinero) y lo hecho por tarea
+        horasPorFase: horasPorFaseDeObra(estFasePor[p.id] || [], horasProyecto),
+        tieneReparto: (estFasePor[p.id] || []).some(e => Number(e.horas) > 0),
+        tareas: tareasDeObra(horasProyecto, tareasPorHoras, estDeObra[p.id] !== undefined ? (itemsPorEst[estDeObra[p.id]] || []) : [])
       };
     });
 
@@ -731,6 +809,9 @@
     // Marca "estuve en la app" (última vista del que llama; falla en silencio
     // si la función SQL aún no existe)
     estuve: () => api("rpc/fn_estuve", { metodo: "POST", cuerpo: {} }).catch(() => {}),
+    // v280 (pliego §13 E4): el reparto de las horas estimadas de una obra por fase (solo el dueño: la función lo mira)
+    guardarRepartoFase: (proyectoId, reparto) => api("rpc/fn_reparto_fase_guardar", { metodo: "POST",
+      cuerpo: { p_proyecto: proyectoId, p_reparto: reparto, p_origen: "edgar" } }),
     cambiarLlavePortal: (proyectoId, token) => api("portal_llaves?on_conflict=proyecto_id", {
       metodo: "POST",
       headers: { Prefer: "resolution=merge-duplicates,return=representation" },

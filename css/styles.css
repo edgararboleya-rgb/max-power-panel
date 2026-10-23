@@ -4324,3 +4324,33 @@ body:has(#toast:not([hidden])) .fab, body:has(#sin-senal:not([hidden])) .fab { d
 /* v257 · cuadrilla por composición: filas por rol en el resumen y el tipo de rol */
 .rent-rol { font-size: var(--fs-3); color: var(--mp-ink-2); padding-left: .6rem; }
 .rap-rol select.rap-rol-tipo, .rap-rol select.esc-rol-tipo { font: inherit; font-size: var(--fs-3); padding: .3rem .35rem; border: 1px solid var(--mp-line); border-radius: 8px; background: var(--mp-card); color: var(--mp-ink); }
+
+/* v280 (pliego §13 E4): las horas por fase en la ficha del dueño, el reparto, el panel del campo y «Que la IA lo apunte» */
+.hf { margin-top: .5rem; }
+.hf-tabla { display: grid; gap: .35rem; margin-bottom: .45rem; }
+.hf-fila { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: .1rem .6rem; }
+.hf-fase { font-size: var(--fs-3); color: var(--mp-ink); font-weight: 600; min-width: 0; }
+.hf-num { font-size: var(--fs-3); color: var(--mp-ink-2); font-weight: 650; white-space: nowrap; }
+.hf-num.ok { color: var(--mp-ok); }
+.hf-num.warn { color: var(--mp-warn-tx); }
+.hf-num.bad { color: var(--mp-danger); }
+.hf-barra { grid-column: 1 / -1; margin: .1rem 0 0; }
+.hf-barra .barra-relleno.warn { background: var(--mp-yellow); }
+.hf-barra .barra-relleno.bad { background: var(--mp-danger); }
+.hf-sin { font-size: var(--fs-3); color: var(--mp-ink-2); margin: .3rem 0 .45rem; line-height: 1.45; }
+.hf-abrir { min-height: var(--tap); }
+.hf-form { display: grid; grid-template-columns: 1fr 1fr; gap: .45rem .6rem; margin-top: .6rem; }
+.hf-casilla { display: grid; gap: .15rem; font-size: var(--fs-3); color: var(--mp-ink-2); }
+.hf-casilla input { min-height: var(--tap); font: inherit; font-size: var(--fs-5); }
+.hf-suma { grid-column: 1 / -1; font-size: var(--fs-3); font-weight: 650; color: var(--mp-ink); margin: .2rem 0; }
+.hf-botones { grid-column: 1 / -1; display: flex; gap: .5rem; justify-content: flex-end; flex-wrap: wrap; }
+.hf-botones .accion { min-height: var(--tap); }
+.hoy-fases-obra { display: flex; flex-wrap: wrap; gap: .25rem .9rem; padding: 0 0 .7rem; }
+.hoy-fase-obra { margin: 0; font-size: var(--fs-3); font-weight: 600; color: var(--mp-ink-2); }
+.horas-ia { display: grid; gap: .45rem; margin: -.15rem 0 .35rem; }
+.horas-ia-btn, .horas-ia-obra, .horas-ia-quitar { min-height: var(--tap); }
+.horas-ia-btn:disabled { opacity: .6; cursor: progress; }
+.horas-ia-caja { display: grid; gap: .45rem; }
+.horas-ia-txt { margin: 0; font-size: var(--fs-4); color: var(--mp-ink); line-height: 1.45; }
+.horas-ia-bien { color: var(--mp-ok); font-weight: 650; }
+.horas-ia-obras { display: flex; flex-wrap: wrap; gap: .45rem; }

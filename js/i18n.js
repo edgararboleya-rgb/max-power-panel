@@ -4965,6 +4965,61 @@
     conAttr.forEach(traducirAtributos);
   }
 
+  // v280 (pliego §13 E4): las horas por fase y por tarea, el reparto, el panel del campo y «Que la IA lo apunte»
+  Object.assign(D, {
+    "Que la IA lo apunte": "Let the AI log it",
+    "Leyendo…": "Reading…",
+    "No pude leerlo ahora. Guarda el reporte con el formulario.": "I couldn't read it right now. Save the report with the form.",
+    "Tardó demasiado. Mira tu historial de abajo antes de volver a apuntarlo: puede que ya haya entrado.": "It took too long. Check your history below before entering it again: it may already be in.",
+    "No era así, quítalo": "That's not right, remove it",
+    "Quitado": "Removed",
+    "Sí, son horas aparte": "Yes, they're separate hours",
+    "También quité lo que le pasé a Edgar como posible extra.": "I also removed what I passed to Edgar as a possible extra.",
+    "También anulé la compra que apunté (no se borra: queda anulada).": "I also voided the purchase I logged (it isn't erased: it stays voided).",
+    "Lo demás de ese reporte (el extra o la compra) no lo pude quitar: díselo a Edgar.": "I couldn't remove the rest of that report (the extra or the purchase): tell Edgar.",
+    "También quité esa línea del diario que ve el cliente.": "I also removed that line from the log the client sees.",
+    "Ojo: la línea de ese punto se quedó en el diario que ve el cliente. Díselo a Edgar.": "Heads up: that item's line stayed in the log the client sees. Tell Edgar.",
+    "Cuéntalo primero en el cuadro: las horas, la obra y qué hicieron.": "Tell it in the box first: the hours, the job and what you did.",
+    "No se pudo quitar ahora. Díselo a Edgar.": "Couldn't remove it right now. Tell Edgar.",
+    "No se pudo deshacer. Díselo a Edgar.": "Couldn't undo it. Tell Edgar.",
+    "Por fase": "By phase",
+    "Sin reparto por fase: dímelo en el chat (reparto_horas_fase) o aquí": "No split by phase: tell me in the chat (reparto_horas_fase) or here",
+    "Repartir las horas por fase": "Split the hours by phase",
+    "Cambiar el reparto": "Change the split",
+    "Guardar el reparto": "Save the split",
+    "Reparto guardado ✓": "Split saved ✓",
+    // Las partidas (codigos_partida) en la lista «Por tarea»
+    "Demolición eléctrica": "Electrical demolition", "Servicio temporal": "Temporary service", "Subterráneo": "Underground",
+    "Servicio y meter": "Service and meter", "Paneles y subpaneles": "Panels and subpanels", "Puesta a tierra": "Grounding",
+    "Rough-in de circuitos": "Circuit rough-in", "Tubería expuesta": "Exposed conduit", "Piezas: tomas y switches": "Devices: outlets and switches",
+    "Luminarias": "Light fixtures", "Trim y terminación": "Trim and finish", "Cargadores EV": "EV chargers", "Generadores": "Generators",
+    "Inspecciones y correcciones": "Inspections and corrections", "Permisos": "Permits", "Renta de equipos": "Equipment rental",
+    "Misceláneas": "Miscellaneous"
+  });
+  {
+    const FASE_EN = { "Movilización": "Mobilization", "Demolición": "Demolition", "Panel / Servicio": "Panel / Service",
+      "Inspección / Correcciones": "Inspection / Corrections" };
+    const faseEn = f => FASE_EN[f] || f;
+    const RX_FASE = "(Movilización|Demolición|Rough-in|Underground|Panel \\/ Servicio|Trim-out|Low Voltage|Troubleshooting|Inspección \\/ Correcciones|Service Call)";
+    REGLAS.push(
+      [/^Por tarea \((\d+)\)$/, "By task ($1)"],
+      [/^([\d.]+) h de ([\d.]+) h$/, "$1 h of $2 h"],
+      [/^([\d.]+) h sin estimar$/, "$1 h not estimated"],
+      [/^([\d.]+) h · ([\d.]+) de ([\d.]+)$/, "$1 h · $2 of $3"],
+      [/^([\d.]+) h · ([\d.]+) hechas$/, "$1 h · $2 done"],
+      [/^Suma: ([\d.]+) h de ([\d.]+) h estimadas · (cuadra|faltan ([\d.]+) h|sobran ([\d.]+) h)$/, s => {
+        const m = s.match(/^Suma: ([\d.]+) h de ([\d.]+) h estimadas · (cuadra|faltan ([\d.]+) h|sobran ([\d.]+) h)$/);
+        return `Total: ${m[1]} h of ${m[2]} h estimated · ` + (m[3] === "cuadra" ? "it adds up" : m[4] ? `${m[4]} h short` : `${m[5]} h over`);
+      }],
+      [/^El reparto suma ([\d.]+) h y la obra tiene ([\d.]+) h estimadas\. ¿Lo guardo así\?$/, "The split adds up to $1 h and the job has $2 h estimated. Save it like this?"],
+      // El panel del campo: «Rough-in 60 %»
+      [new RegExp("^" + RX_FASE + " (\\d+) %$"), s => {
+        const m = s.match(new RegExp("^" + RX_FASE + " (\\d+) %$"));
+        return faseEn(m[1]) + " " + m[2] + " %";
+      }]
+    );
+  }
+
   // Los avisos del navegador (confirmar, alertar, preguntar) también
   const c0 = window.confirm, a0 = window.alert, p0 = window.prompt;
   window.confirm = m => c0.call(window, traducirMensaje(m));
