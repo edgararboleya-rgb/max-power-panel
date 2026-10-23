@@ -436,12 +436,22 @@ construye hasta que toque.
 
 🔵 azul = `/effort max` · 🟢 verde = `/effort auto` · ⬆ escalada a Fable si no convence · ▶ necesita a Edgar
 
-- [ ] Fase 1 · Plan de cuentas — 🔵🟢 ▶ reaccionas al borrador y decides los cost codes
-- [ ] Fase 2 · El libro — 🔵🟢 ▶ pegas
-- [ ] Fase 3 · Puentes, cobros y CxP — 🔵🟢 ▶ el mapeo es tuyo
-- [ ] Fase 4 · Estados y apertura al 30-sep — 🔵🟢 ▶ auditas la apertura
-- [ ] Fase 5 · Primera pantalla (solapada con 4 y 6) — 🔵🟢
-- [ ] Fase 6 · Banco, tarjetas, cobros y pagos — 🔵🟢 ▶ mandas los archivos; arrancas Gusto
+**Estado al 23-oct-2026** (semana 6 del calendario): c1–c6 pegados en
+producción y en uso (apertura al 30-sep posteada y conciliada en las tres
+cuentas; octubre de las dos Amex importado; comparación con QuickBooks al
+30-sep sin diferencias); la pantalla del banco construida y probada **sin
+publicar** (espera el «publica»); la conexión con Plaid instalada (c7, la
+función, la rutina diaria) **a la espera de la aprobación de producción de
+Plaid**. Lo que sigue: publicar, Fase 7 (las reglas y la bandeja con sello),
+Fase 8 (cerrar octubre y compararlo con QuickBooks), y la factura de la app
+(Fase 10; su diseño ya está en `docs/conta/f10-factura-vista-previa.html`).
+
+- [x] Fase 1 · Plan de cuentas — pegado (c1, 90 cuentas; 9-oct la 2540/2550)
+- [x] Fase 2 · El libro — pegado (c2)
+- [x] Fase 3 · Puentes, cobros y CxP — pegado (c3)
+- [x] Fase 4 · Estados y apertura al 30-sep — pegado (c4); apertura posteada y auditada (15-oct)
+- [x] Fase 5 · Primera pantalla — construida (`js/conta.js`, 16-oct); **falta publicar**
+- [x] Fase 6 · Banco, tarjetas, cobros y pagos — pegado (c6, rondas 2–5) y c7 Plaid (17-oct); ▶ Gusto sin arrancar
 - [ ] Fase 7 · Categorización y la bandeja — 🔵🟢 ▶ dictas las reglas; despliegas `contador`
 - [ ] Fase 8 · Cierre, ronda y activos fijos — 🔵🟢 ▶ pg_cron; cierras octubre
 - [ ] Fase 9 · Costo por obra + reparto de burden — 🔵🟢 ▶ decides y validas

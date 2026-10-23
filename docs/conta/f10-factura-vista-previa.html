@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Factura y estimado · vista previa (f10)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Vista previa del DISEÑO de la factura de avance y del estimado que la app
+     emitirá desde el 1 de enero (Fase 10). Datos inventados. No es código de
+     la app: es para que Edgar vea cómo quedarían y diga qué cambia. -->
+<style>
+  :root { --night: #0B1F3A; --cu: #B7652C; --cu-2: #E9D3C3; --ink: #15202B; --ink-2: #5B6773; --line: #E2E7EE; --sky: #F4F7FB; --ok: #1B7F4D; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #DDE3EA; font-family: "Manrope", "Segoe UI", system-ui, -apple-system, sans-serif; color: var(--ink); }
+  .hoja { width: 8.5in; min-height: 11in; margin: 24px auto; background: #fff; padding: .55in .6in .5in; box-shadow: 0 12px 40px rgba(11,31,58,.18); position: relative; }
+  .num { font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+  .cab { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; border-bottom: 3px solid var(--night); padding-bottom: 14px; }
+  .marca { display: flex; gap: 12px; align-items: center; }
+  .rayo { width: 44px; height: 44px; border-radius: 12px; background: var(--night); display: grid; place-items: center; color: #FFD166; font-size: 24px; }
+  .marca h1 { margin: 0; font-size: 19px; letter-spacing: -.01em; color: var(--night); line-height: 1.1; }
+  .marca .sub { font-size: 11px; color: var(--ink-2); line-height: 1.45; margin-top: 3px; }
+  .doc { text-align: right; }
+  .doc .tipo { font-size: 26px; font-weight: 800; letter-spacing: .06em; color: var(--cu); margin: 0; }
+  .doc .n { font-size: 15px; font-weight: 700; margin-top: 2px; }
+  .doc .f { font-size: 11px; color: var(--ink-2); margin-top: 6px; line-height: 1.6; }
+  .doc .f b { color: var(--ink); }
+  .pill { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; background: var(--cu-2); color: #6E3A14; }
+  .pill.ok { background: #E3F4EA; color: var(--ok); }
+  .tres { display: grid; grid-template-columns: 1.2fr 1.2fr 1fr; gap: 14px; margin: 18px 0 14px; }
+  .caja { background: var(--sky); border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; font-size: 11.5px; line-height: 1.5; }
+  .caja .t { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 4px; }
+  .caja b { font-size: 12.5px; }
+  .barra { display: flex; align-items: center; gap: 10px; margin: 4px 0 0; font-size: 11px; color: var(--ink-2); }
+  .barra .pista { flex: 1; height: 8px; border-radius: 999px; background: #E6EBF2; overflow: hidden; }
+  .barra .pista i { display: block; height: 100%; background: linear-gradient(90deg, var(--cu), #D98C57); }
+  table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  thead th { text-align: left; font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-2); padding: 8px 8px; border-bottom: 2px solid var(--night); }
+  tbody td { padding: 9px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tbody tr.co td { background: #FFF9F4; }
+  td.r, th.r { text-align: right; }
+  td .d { color: var(--ink-2); font-size: 10.5px; margin-top: 2px; }
+  .totales { display: grid; grid-template-columns: 1.1fr .9fr; gap: 18px; margin-top: 14px; align-items: start; }
+  .tot { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .tot .fila { display: flex; justify-content: space-between; padding: 8px 13px; font-size: 12px; border-bottom: 1px solid var(--line); }
+  .tot .fila.sub { color: var(--ink-2); }
+  .tot .fila.ret { color: #8A4B1F; }
+  .tot .fila.debe { background: var(--night); color: #fff; font-size: 15px; font-weight: 800; border: 0; padding: 12px 13px; }
+  .pago { font-size: 11.5px; line-height: 1.55; }
+  .pago h3 { margin: 0 0 6px; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-2); }
+  .pago .opc { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+  .qr { width: 78px; height: 78px; border: 2px solid var(--night); border-radius: 10px; display: grid; place-items: center; font-size: 9px; text-align: center; color: var(--ink-2); background: repeating-linear-gradient(45deg, #fff 0 4px, #EEF2F7 4px 8px); }
+  .notas { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; font-size: 11px; color: var(--ink-2); line-height: 1.55; }
+  .notas h3 { margin: 0 0 4px; font-size: 10px; letter-spacing: .07em; text-transform: uppercase; }
+  .pie { position: absolute; left: .6in; right: .6in; bottom: .4in; border-top: 1px solid var(--line); padding-top: 8px; display: flex; justify-content: space-between; font-size: 10px; color: var(--ink-2); }
+  .pie b { color: var(--night); }
+  .firma { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 22px; font-size: 11px; }
+  .firma .l { border-top: 1.5px solid var(--night); padding-top: 6px; color: var(--ink-2); }
+  .opciones { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0; }
+  .opcion { border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 12px; font-size: 11px; line-height: 1.5; }
+  .opcion.elegida { border-color: var(--cu); background: #FFF9F4; }
+  .opcion .t { font-weight: 800; font-size: 12px; color: var(--night); }
+  .opcion .p { font-size: 17px; font-weight: 800; margin: 2px 0 4px; }
+  .alcance { font-size: 11.5px; line-height: 1.55; columns: 2; column-gap: 22px; margin: 6px 0 12px; }
+  .alcance li { break-inside: avoid; margin-bottom: 3px; }
+  @media print { body { background: #fff; } .hoja { margin: 0; box-shadow: none; page-break-after: always; } }
+</style>
+</head>
+<body>
+
+<!-- ============================ FACTURA DE AVANCE ============================ -->
+<section class="hoja" id="factura">
+  <header class="cab">
+    <div class="marca">
+      <div class="rayo">⚡</div>
+      <div>
+        <h1>Max Power Electrical Solutions, Inc.</h1>
+        <div class="sub">Licensed Electrical Contractor · FL EC13016045 · Insured<br>Ocala, Florida · info@mxpes.com · (352) 000-0000</div>
+      </div>
+    </div>
+    <div class="doc">
+      <p class="tipo">INVOICE</p>
+      <div class="n num">No. 2027-0003</div>
+      <div class="f"><b>Date</b> Jan 15, 2027 &nbsp;·&nbsp; <b>Due</b> Jan 30, 2027 (Net 15)<br>Progress billing <b>#2 of 4</b> &nbsp;·&nbsp; <span class="pill">Draw 2</span></div>
+    </div>
+  </header>
+
+  <div class="tres">
+    <div class="caja"><div class="t">Bill to</div><b>Pérez Residence</b><br>Juan &amp; María Pérez<br>123 Example Rd, Ocala, FL 34471<br>jperez@example.com</div>
+    <div class="caja"><div class="t">Project</div><b>Casa Pérez · whole-house rewire</b><br>Job 2026-041 · Permit BP-26-01877<br>Contract signed Nov 3, 2026</div>
+    <div class="caja"><div class="t">Contract status</div>
+      Original <span class="num">$48,500.00</span><br>Approved COs <span class="num">+$2,350.00</span><br><b>Revised <span class="num">$50,850.00</span></b>
+      <div class="barra"><span>Billed to date</span><div class="pista"><i style="width:62%"></i></div><span class="num">62%</span></div>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th style="width:38%">Schedule of values</th><th class="r">Scheduled value</th><th class="r">% complete</th><th class="r">Previously billed</th><th class="r">This invoice</th></tr></thead>
+    <tbody>
+      <tr><td><b>1 · Demolition &amp; rough-in</b><div class="d">Circuits, boxes, home runs · inspected Dec 18</div></td><td class="r num">18,500.00</td><td class="r num">100%</td><td class="r num">13,875.00</td><td class="r num">4,625.00</td></tr>
+      <tr><td><b>2 · Service &amp; panel</b><div class="d">200 A service, meter can, 40-space panel</div></td><td class="r num">9,800.00</td><td class="r num">100%</td><td class="r num">4,900.00</td><td class="r num">4,900.00</td></tr>
+      <tr><td><b>3 · Trim-out &amp; devices</b><div class="d">Devices, fixtures, smoke/CO per code</div></td><td class="r num">14,200.00</td><td class="r num">40%</td><td class="r num">0.00</td><td class="r num">5,680.00</td></tr>
+      <tr><td><b>4 · Final &amp; close-out</b><div class="d">Final inspection, labels, walkthrough</div></td><td class="r num">6,000.00</td><td class="r num">0%</td><td class="r num">0.00</td><td class="r num">0.00</td></tr>
+      <tr class="co"><td><b>CO #1 · Generator inlet &amp; interlock</b><div class="d">Approved Dec 9 · <span class="pill">Change order</span></div></td><td class="r num">2,350.00</td><td class="r num">100%</td><td class="r num">0.00</td><td class="r num">2,350.00</td></tr>
+    </tbody>
+  </table>
+
+  <div class="totales">
+    <div class="pago">
+      <h3>How to pay</h3>
+      <div class="opc">
+        <div><b>ACH / Zelle:</b> pay@mxpes.com (Max Power Electrical Solutions, Inc.)<br><b>Check:</b> payable to Max Power Electrical Solutions, Inc. · mail to the address above<br><b>Card:</b> scan the code or use the link in the email (3% processing fee)<br><span style="color:var(--ink-2)">Please reference invoice <span class="num">2027-0003</span>.</span></div>
+        <div class="qr">Pay online<br>(QR)</div>
+      </div>
+    </div>
+    <div class="tot">
+      <div class="fila sub"><span>Work completed this period</span><span class="num">$17,555.00</span></div>
+      <div class="fila ret"><span>Less retainage held (10%)</span><span class="num">−$1,755.50</span></div>
+      <div class="fila sub"><span>Retainage held to date</span><span class="num">$3,633.00</span></div>
+      <div class="fila debe"><span>Amount due</span><span class="num">$15,799.50</span></div>
+    </div>
+  </div>
+
+  <div class="notas">
+    <div><h3>Notes</h3>Rough-in inspection passed Dec 18 (Marion County). Trim-out continues the week of Jan 19. Retainage is released with the final invoice after the final inspection.</div>
+    <div><h3>Terms</h3>Payment due within 15 days of the invoice date. Balances past due accrue 1.5% per month. Work performed under FL EC13016045; lien rights reserved per Florida Statutes Ch. 713.</div>
+  </div>
+
+  <footer class="pie"><span><b>Max Power Electrical Solutions, Inc.</b> · EC13016045 · Thank you for your business</span><span>Invoice 2027-0003 · page 1 of 1</span></footer>
+</section>
+
+<!-- ============================ ESTIMADO ============================ -->
+<section class="hoja" id="estimado">
+  <header class="cab">
+    <div class="marca">
+      <div class="rayo">⚡</div>
+      <div>
+        <h1>Max Power Electrical Solutions, Inc.</h1>
+        <div class="sub">Licensed Electrical Contractor · FL EC13016045 · Insured<br>Ocala, Florida · info@mxpes.com · (352) 000-0000</div>
+      </div>
+    </div>
+    <div class="doc">
+      <p class="tipo">ESTIMATE</p>
+      <div class="n num">No. E-2026-0042</div>
+      <div class="f"><b>Date</b> Oct 23, 2026 &nbsp;·&nbsp; <b>Valid through</b> Nov 22, 2026<br>Prepared by Edgar Arboleya &nbsp;·&nbsp; <span class="pill ok">Ready to sign</span></div>
+    </div>
+  </header>
+
+  <div class="tres">
+    <div class="caja"><div class="t">Prepared for</div><b>Pérez Residence</b><br>Juan &amp; María Pérez<br>123 Example Rd, Ocala, FL 34471</div>
+    <div class="caja"><div class="t">Project</div><b>Whole-house rewire · 2,400 sq ft</b><br>1965 single-family · aluminum branch wiring<br>Permit &amp; inspections included</div>
+    <div class="caja"><div class="t">Schedule</div>Start within <b>2 weeks</b> of signing<br>Duration <b>3–4 weeks</b><br>Deposit <b>30%</b> at signing</div>
+  </div>
+
+  <h3 style="margin:2px 0 4px; font-size:11px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-2)">Choose your option</h3>
+  <div class="opciones">
+    <div class="opcion"><div class="t">A · Code-required rewire</div><div class="p num">$44,900</div>Replace all aluminum branch circuits, new 200 A service &amp; panel, AFCI/GFCI per 2023 NEC, smoke/CO detectors, permit &amp; inspections.</div>
+    <div class="opcion elegida"><div class="t">B · Rewire + modern conveniences <span class="pill">Recommended</span></div><div class="p num">$48,500</div>Everything in A plus: 6 recessed LED kits per main room, USB-C outlets in kitchen &amp; bedrooms, EV-ready 50 A circuit in garage.</div>
+    <div class="opcion"><div class="t">C · B + whole-home surge &amp; generator inlet</div><div class="p num">$52,350</div>Everything in B plus: Type 2 surge protection at the panel, 50 A generator inlet with interlock kit.</div>
+  </div>
+
+  <table>
+    <thead><tr><th style="width:46%">Option B · what's included</th><th class="r">Qty</th><th class="r">Unit</th><th class="r">Amount</th></tr></thead>
+    <tbody>
+      <tr><td><b>Service &amp; panel</b><div class="d">200 A overhead service, meter can, 40-space panel, grounding &amp; bonding</div></td><td class="r num">1</td><td class="r">lot</td><td class="r num">9,800.00</td></tr>
+      <tr><td><b>Branch circuits &amp; rough-in</b><div class="d">All living areas, kitchen (small-appliance, dedicated), laundry, HVAC</div></td><td class="r num">38</td><td class="r">circuits</td><td class="r num">18,500.00</td></tr>
+      <tr><td><b>Devices, fixtures &amp; trim-out</b><div class="d">Decora devices, 24 recessed LED kits, USB-C outlets, smoke/CO</div></td><td class="r num">1</td><td class="r">lot</td><td class="r num">14,200.00</td></tr>
+      <tr><td><b>EV-ready circuit</b><div class="d">50 A, NEMA 14-50 in garage</div></td><td class="r num">1</td><td class="r">ea</td><td class="r num">1,100.00</td></tr>
+      <tr><td><b>Permit, inspections &amp; close-out</b><div class="d">Marion County permit, rough &amp; final inspections, panel directory</div></td><td class="r num">1</td><td class="r">lot</td><td class="r num">4,900.00</td></tr>
+    </tbody>
+  </table>
+
+  <div class="totales">
+    <div class="pago">
+      <h3>Payment schedule (Option B)</h3>
+      <div style="font-size:11.5px; line-height:1.6">Deposit at signing (30%) <span class="num">$14,550</span><br>Rough-in inspection passed (35%) <span class="num">$16,975</span><br>Trim-out complete (25%) <span class="num">$12,125</span><br>Final inspection passed (10%) <span class="num">$4,850</span></div>
+      <h3 style="margin-top:10px">Not included</h3>
+      <div style="font-size:11px; color:var(--ink-2); line-height:1.5">Drywall patching and painting · utility company fees · fixtures not listed (owner-supplied fixtures installed at $85 each) · low-voltage / data cabling.</div>
+    </div>
+    <div class="tot">
+      <div class="fila sub"><span>Option B subtotal</span><span class="num">$48,500.00</span></div>
+      <div class="fila sub"><span>Sales tax</span><span class="num">included (real property improvement)</span></div>
+      <div class="fila debe"><span>Total · Option B</span><span class="num">$48,500.00</span></div>
+    </div>
+  </div>
+
+  <div class="firma">
+    <div class="l">Accepted by (client) · Date &nbsp;&nbsp;&nbsp;&nbsp; Option chosen: ☐ A &nbsp; ☒ B &nbsp; ☐ C</div>
+    <div class="l">Max Power Electrical Solutions, Inc. · Edgar Arboleya · Date</div>
+  </div>
+
+  <footer class="pie"><span><b>Max Power Electrical Solutions, Inc.</b> · EC13016045 · Price valid 30 days · Sign online from the email link</span><span>Estimate E-2026-0042 · page 1 of 1</span></footer>
+</section>
+
+</body>
+</html>
