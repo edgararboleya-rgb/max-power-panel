@@ -133,3 +133,9 @@ servidor y nunca pasan por el chat, el código ni el teléfono. Todas las consol
 GitHub, Plaid, correo) llevan verificación en dos pasos. El libro contable es inalterable y encadenado, con
 controles automáticos cada mañana. Si algo se expone, se rotan las llaves, se evalúa, se avisa y se documenta. Los
 registros contables se guardan siete años. Esta política se revisa cada año.
+
+### Multi-factor authentication for the owner's application login (added 2026-10-24)
+
+The owner account of Max Power Panel enrolls a TOTP second factor (Supabase Auth, authenticator app). Enforcement is server-side, not only in the user interface: a PostgREST pre-request function (`public.fn_mfa_exigir`, `docs/conta/s1-mfa.sql`) rejects every Data API request from an account that has a verified factor unless the session carries assurance level `aal2`, returning HTTP 403 with code `MFA`. Accounts without a factor (field staff) are unaffected. Bank connections through Plaid are only offered in the application once the owner's factor is active and the current session has passed it. Emergency rollback: `alter role authenticator reset pgrst.db_pre_request; notify pgrst, 'reload config';`.
+
+**Resumen en español:** la entrada del dueño a la app lleva un segundo factor (código del teléfono). Lo exige la base en cada petición de la API, no solo la pantalla; al equipo no le cambia nada; conectar un banco por Plaid solo se ofrece con el código activo y pasado.

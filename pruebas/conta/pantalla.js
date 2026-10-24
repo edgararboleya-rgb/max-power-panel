@@ -25,8 +25,11 @@ const R = []; const ok = (n, c, d) => R.push((c ? '  ✓ ' : '  ✗ ') + n + (d 
 // ---------- la base de mentira ----------
 const UID = 'u-edgar-prueba';
 const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
-const JWT = `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub: UID, role: 'authenticated', exp: 4102444800 })}.firma`;
-const sesion = () => ({ access_token: JWT, refresh_token: 'r-prueba', token_type: 'bearer', expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: UID } });
+const jwt = aal => `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub: UID, role: 'authenticated', exp: 4102444800, ...(aal ? { aal } : {}) })}.firma`;
+const JWT = jwt();
+// la sesión que la app guarda: con el nivel (aal) y los factores del segundo factor que diga el estado de la prueba
+const sesion = () => ({ access_token: jwt(estado.sesionAal), refresh_token: 'r-prueba', token_type: 'bearer', expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: UID, factors: estado.mfaFactores } });
+const QR_FALSO = 'data:image/svg+xml;utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="#fff"/><rect x="20" y="20" width="60" height="60"/><rect x="120" y="20" width="60" height="60"/><rect x="20" y="120" width="60" height="60"/></svg>');
 const hoyMiami = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 
 const MOV = { a: '11111111-1111-4111-8111-111111111111', b: '22222222-2222-4222-8222-222222222222', c: '33333333-3333-4333-8333-333333333333' };
@@ -93,7 +96,7 @@ const T = {
     { movimiento_id: 'm-casado', cuenta: '2100-2013', fecha: '2026-10-01', monto: -31.56, descripcion: 'GASOLINERA EJEMPLO', memo: null, cheque: null, tipo_banco: 'DEBIT', estado: 'casado', estado_motivo: null, casado_clase: 'apertura', casado_regla: 'R0 apertura', casado_auto: true, asiento_numero: null, papel_tabla: null, papel_id: null, archivo: 'Archivo de prueba', propuesta_motivo: null }
   ]
 };
-const estado = { controlMal: false, controlFilas: null, fallar: false, casarRondas: 0, concNueva: false, plaidFijada: false, plaidSinVista: false, plaidSinFijar: false };
+const estado = { controlMal: false, controlFilas: null, fallar: false, casarRondas: 0, concNueva: false, plaidFijada: false, plaidSinVista: false, plaidSinFijar: false, mfaFactores: [], sesionAal: undefined };
 const llamadas = [];
 function tabla(nombre, q) {
   let filas = T[nombre] || [];
@@ -172,6 +175,23 @@ async function simular(ctx, rol) {
       return route.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST205', message: "Could not find the table 'public.v_plaid_conexiones' in the schema cache", details: null, hint: null }) });
     }
     if (u.pathname.startsWith('/auth/v1/token')) return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(sesion()) });
+    if (u.pathname === '/auth/v1/user' && req.method() === 'GET') return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify({ id: UID, email: 'edgar@prueba', factors: estado.mfaFactores }) });
+    if (u.pathname === '/auth/v1/factors' && req.method() === 'POST') {
+      let b = {}; try { b = JSON.parse(req.postData() || '{}'); } catch { /* vacío */ }
+      llamadas.push({ fn: 'auth:enrolar', args: b });
+      estado.mfaFactores = [{ id: 'f-1', friendly_name: b.friendly_name || 'Teléfono', factor_type: 'totp', status: 'unverified' }];
+      return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify({ id: 'f-1', type: 'totp', friendly_name: b.friendly_name, totp: { qr_code: QR_FALSO, secret: 'ABCDEFGHIJKLMNOP', uri: 'otpauth://totp/Max%20Power%20Panel:edgar?secret=ABCDEFGHIJKLMNOP&issuer=Max%20Power%20Panel' } }) });
+    }
+    if (u.pathname === '/auth/v1/factors/f-1/challenge') { llamadas.push({ fn: 'auth:reto' }); return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify({ id: 'ch-1', type: 'totp', expires_at: Math.floor(Date.now() / 1000) + 300 }) }); }
+    if (u.pathname === '/auth/v1/factors/f-1/verify') {
+      let b = {}; try { b = JSON.parse(req.postData() || '{}'); } catch { /* vacío */ }
+      llamadas.push({ fn: 'auth:verificar', args: b });
+      if (b.code !== '123456') return route.fulfill({ status: 400, headers: CORS, contentType: 'application/json', body: JSON.stringify({ error: 'invalid_grant', error_description: 'Invalid TOTP code entered' }) });
+      estado.mfaFactores = [{ id: 'f-1', friendly_name: 'Teléfono de Edgar', factor_type: 'totp', status: 'verified' }];
+      estado.sesionAal = 'aal2';
+      return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(sesion()) });
+    }
+    if (u.pathname === '/auth/v1/factors/f-1' && req.method() === 'DELETE') { llamadas.push({ fn: 'auth:quitar' }); estado.mfaFactores = []; return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify({ id: 'f-1' }) }); }
     if (u.pathname.startsWith('/rest/v1/rpc/')) {
       const fn = u.pathname.slice('/rest/v1/rpc/'.length); let args = {};
       try { args = JSON.parse(req.postData() || '{}'); } catch { /* vacío */ }
@@ -375,6 +395,23 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   await foto(p, '6-movimientos');
   ok('Movimientos pinta la tabla de la cuenta (2 filas) con su estado', (await p.locator('.ct-tabla tbody tr').count()) === 2 && /casado/.test(await texto(p, '.ct-tabla')));
 
+  // ---- El código del teléfono (segundo factor) ----
+  n = llamadas.length;
+  await p.locator('.ct-tab[data-pag="bancos"]').click(); await p.waitForSelector('#ct-mfa', { timeout: 8000 });
+  ok('La tarjeta del código del teléfono dice «no activo» y «Conectar un banco» (Plaid) sale apagado', /no activo/.test(await texto(p, '#ct-mfa')) && await p.locator('#ct-plaid-conectar').isDisabled() && /Primero activa el código/.test(await texto(p, '#ct-plaid')));
+  await p.locator('#ct-mfa-activar').click();
+  await p.waitForSelector('#ct-mfa .ct-qr', { timeout: 8000 });
+  const enr = desde(n).find(l => l.fn === 'auth:enrolar');
+  ok('«Activar el código» pide el factor TOTP a Supabase Auth y enseña el QR y la clave', !!enr && enr.args.factor_type === 'totp' && enr.args.issuer === 'Max Power Panel' && (await p.locator('#ct-mfa .ct-qr').getAttribute('src')).startsWith('data:image/svg+xml') && /ABCDEFGHIJKLMNOP/.test(await texto(p, '#ct-mfa .ct-clave')), JSON.stringify(enr && enr.args));
+  await foto(p, '10-codigo-qr');
+  await p.locator('#ct-mfa [name=codigo]').fill('000000');
+  await p.locator('#ct-mfa button[type=submit]').click(); await p.waitForTimeout(250);
+  ok('Un código equivocado lo dice y no activa nada', /no es válido/.test(await texto(p, '#ct-mfa .ct-form')) && desde(n).some(l => l.fn === 'auth:verificar' && l.args.code === '000000' && l.args.challenge_id === 'ch-1'));
+  await p.locator('#ct-mfa [name=codigo]').fill('123456');
+  await p.locator('#ct-mfa button[type=submit]').click();
+  await p.waitForFunction(() => { const e = document.querySelector('#ct-mfa'); return e && /activo/.test(e.textContent) && !/no activo/.test(e.textContent); }, null, { timeout: 8000 });
+  ok('Con el código bueno queda «activo», la sesión guardada pasa a aal2 y «Conectar un banco» se enciende', !(await p.locator('#ct-plaid-conectar').isDisabled()) && (await p.evaluate(() => { try { const s = JSON.parse(localStorage.getItem('mxp_sesion')); return JSON.parse(atob(s.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).aal; } catch { return null; } })) === 'aal2', await texto(p, '#ct-mfa'));
+
   // ---- La conexión automática (Plaid) ----
   n = llamadas.length;
   await p.locator('.ct-tab[data-pag="bancos"]').click(); await p.waitForSelector('#ct-plaid', { timeout: 8000 });
@@ -419,6 +456,36 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   await p.locator('.ct-tab[data-pag="bancos"]').click(); await p.waitForSelector('#ct-plaid', { timeout: 8000 });
   ok('Sin c7 en la base (la vista no existe), la tarjeta dice «sin instalar» y las cuentas se pintan igual', /sin instalar/.test(await texto(p, '#ct-plaid')) && (await p.locator('.ct-cuenta').count()) === 4, await texto(p, '#ct-plaid'));
   estado.plaidSinVista = false; estado.plaidFijada = false;
+  n = llamadas.length;
+  await p.waitForSelector('#ct-mfa-quitar', { timeout: 8000 });
+  await p.locator('#ct-mfa-quitar').click();
+  await p.locator('#ct-mfa .ct-form button[type=submit]').click();
+  await p.waitForFunction(() => { const e = document.querySelector('#ct-mfa'); return e && /no activo/.test(e.textContent); }, null, { timeout: 8000 });
+  ok('«Quitar el código» pregunta, lo quita en Supabase Auth y la tarjeta vuelve a «no activo»', desde(n).some(l => l.fn === 'auth:quitar') && await p.locator('#ct-plaid-conectar').isDisabled());
+
+  // ---- Entrar con el código: una sesión guardada sin el código, con el factor activado ----
+  estado.mfaFactores = [{ id: 'f-1', friendly_name: 'Teléfono de Edgar', factor_type: 'totp', status: 'verified' }]; estado.sesionAal = 'aal1';
+  const ctx2 = await b.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' });
+  await simular(ctx2, 'dueno');
+  // con un robot (navigator.webdriver) la app usa los cuadros nativos del navegador; aquí se prueban sus ventanas propias
+  await ctx2.addInitScript(() => { window.__mxpDialogosNativos = false; });
+  const p2 = await ctx2.newPage(); p2.on('pageerror', e => errs.push('código: ' + String(e).slice(0, 160)));
+  const consola2 = []; p2.on('console', m => { if (m.type() === 'warning' || m.type() === 'error') consola2.push(m.text().slice(0, 160)); });
+  p2.on('dialog', d => { consola2.push('diálogo nativo: ' + d.message().slice(0, 80)); d.dismiss().catch(() => {}); });
+  await p2.goto('http://localhost:8873/index.html');
+  const pidio = await p2.waitForSelector('dialog[open] [name=dato]', { timeout: 15000 }).then(() => true).catch(() => false);
+  const diag2 = async () => JSON.stringify({ login: await p2.locator('#vista-login').isVisible(), app: await p2.locator('#vista-app').isVisible(), dialogos: await p2.locator('dialog[open]').count(),
+    sesion: await p2.evaluate(() => { try { const s = JSON.parse(localStorage.getItem('mxp_sesion')); return s ? { aal: JSON.parse(atob(s.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).aal, factores: (s.user && s.user.factors || []).map(f => f.status) } : null; } catch (e) { return String(e); } }),
+    pendiente: await p2.evaluate(() => window.MXP_DB && window.MXP_DB.mfaPendiente ? window.MXP_DB.mfaPendiente() : 'sin mfaPendiente'), consola: consola2.slice(-4) });
+  ok('Con el código activado y una sesión que entró solo con la contraseña, la app pide los 6 dígitos antes de arrancar', pidio && /Código del teléfono/.test(await texto(p2, 'dialog[open]')) && await p2.locator('#vista-app').isHidden(), await diag2());
+  if (pidio) {
+    await p2.locator('dialog[open] [name=dato]').fill('123456');
+    await p2.locator('dialog[open] button[value=si]').click();
+    await p2.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }).catch(() => {});
+  }
+  ok('Con los 6 dígitos buenos, la sesión pasa a aal2 y la app arranca', pidio && await p2.locator('#vista-app').isVisible() && (await p2.evaluate(() => { try { const s = JSON.parse(localStorage.getItem('mxp_sesion')); return JSON.parse(atob(s.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).aal; } catch { return null; } })) === 'aal2', await diag2());
+  await ctx2.close();
+  estado.mfaFactores = []; estado.sesionAal = undefined;
 
   // ---- Sin señal ----
   await ctx.setOffline(true);

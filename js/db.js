@@ -106,6 +106,74 @@
     return sesion && sesion.user ? sesion.user.id : null;
   }
 
+  // ---------- El código del teléfono (segundo factor, TOTP) ----------
+  // Supabase Auth: enrolar un factor, retarlo y verificarlo con los 6 dígitos.
+  // Verificado, la sesión pasa a «aal2» (el token lo dice) y la base, con
+  // docs/conta/s1-mfa.sql puesto, exige aal2 a quien tiene factor verificado:
+  // si la sesión entró solo con la contraseña, cada petición contesta 403 con
+  // el código MFA y la app pide los 6 dígitos (app.js, pedirCodigoMFA).
+  function cargaJWT(token) {
+    try {
+      const b = String(token || "").split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+      return JSON.parse(atob(b.padEnd(Math.ceil(b.length / 4) * 4, "=")));
+    } catch { return {}; }
+  }
+  const nivelSesion = () => sesion ? (cargaJWT(sesion.access_token).aal || "aal1") : null;
+  const factoresDe = u => (u && Array.isArray(u.factors) ? u.factors : []);
+  const factorVerificado = () => factoresDe(sesion && sesion.user).find(f => f.status === "verified" && (!f.factor_type || f.factor_type === "totp")) || null;
+  // ¿La cuenta tiene el código activado y esta sesión todavía no lo pasó?
+  const mfaPendiente = () => !!(sesion && factorVerificado() && nivelSesion() !== "aal2");
+  async function auth(ruta, metodo, cuerpo) {
+    if (!sesion) throw new Error("Sin sesión");
+    const r = await fetch(`${SB.url}/auth/v1/${ruta}`, {
+      method: metodo || "GET",
+      headers: { apikey: SB.key, Authorization: `Bearer ${sesion.access_token}`, "Content-Type": "application/json" },
+      body: cuerpo ? JSON.stringify(cuerpo) : undefined
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const e = new Error(data.error_description || data.msg || data.message || data.error || `Error ${r.status}`);
+      e.status = r.status;
+      e.codigo = data.error_code || data.code || null;
+      throw e;
+    }
+    return data;
+  }
+  const mfa = {
+    nivel: nivelSesion,
+    pendiente: mfaPendiente,
+    factorVerificado,
+    // Los factores de la cuenta, frescos de Supabase (la sesión guardada se actualiza con ellos)
+    factores: async () => {
+      const u = await auth("user");
+      if (sesion && u && u.id) { sesion.user = u; guardarSesion(sesion); }
+      return factoresDe(u);
+    },
+    // Empezar a activar: devuelve el QR (imagen), la clave para escribirla a mano y el id del factor
+    enrolar: async nombre => {
+      const f = await auth("factors", "POST", { factor_type: "totp", friendly_name: nombre || "Teléfono", issuer: "Max Power Panel" });
+      return { id: f.id, qr: f.totp && f.totp.qr_code, secreto: f.totp && f.totp.secret, uri: f.totp && f.totp.uri };
+    },
+    // Retar y verificar con los 6 dígitos: la sesión pasa a aal2 y se guarda
+    verificar: async (factorId, codigo) => {
+      const reto = await auth(`factors/${factorId}/challenge`, "POST", {});
+      const s = await auth(`factors/${factorId}/verify`, "POST", { challenge_id: reto.id, code: String(codigo || "").replace(/\s+/g, "") });
+      if (!s || !s.access_token) throw new Error("Supabase no devolvió la sesión verificada.");
+      if (!s.user) s.user = sesion.user;
+      sesion = s;
+      guardarSesion(sesion);
+      programarRefresco();
+      try { await mfa.factores(); } catch { /* la sesión ya es aal2 */ }
+      return sesion;
+    },
+    // Quitar un factor (uno verificado solo se quita con la sesión ya en aal2)
+    quitar: async factorId => {
+      await auth(`factors/${factorId}`, "DELETE");
+      try { await mfa.factores(); } catch { /* nada */ }
+      return true;
+    }
+  };
+
   // El change order de las horas se escribe siempre igual: «co#1», «CO-1»,
   // «co 1» y «CO # 1» son «CO #1» (P93, 24-sep). Si no, al agrupar por CO
   // salían dos distintos. Lo que no parece un número de CO se deja tal cual.
@@ -184,6 +252,8 @@
       e.codigo = data.code || null;
       e.crudo = crudo;
       if (typeof console !== "undefined") console.warn("[base]", data.code || r.status, crudo, "·", ruta);
+      // s1-mfa.sql: la cuenta tiene el código del teléfono y esta sesión no lo pasó: la app lo pide
+      if (data.code === "MFA") { e.mfa = true; try { window.dispatchEvent(new CustomEvent("mxp:mfa")); } catch { /* nada */ } }
       throw e;
     }
     if (r.status === 204) return null;
@@ -836,6 +906,8 @@
     // _leer pagina de 1,000 en 1,000; _rpc llama a una función SQL (POST /rest/v1/rpc/…).
     _api: api, _leer: leer,
     _rpc: (fn, args) => api("rpc/" + fn, { metodo: "POST", cuerpo: args || {} }),
+    // El código del teléfono (segundo factor): ver arriba. mfaPendiente() = tiene factor y la sesión no lo pasó.
+    mfa, mfaPendiente,
     // Una función de borde con la sesión (Contabilidad → la función `plaid`):
     // POST /functions/v1/<nombre> con el JSON. Devuelve el JSON; si la función
     // contesta ok:false o un error HTTP, lanza con su mensaje (err.codigo,

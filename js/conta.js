@@ -44,7 +44,7 @@
     saldos: null, cuentas: null, proyectos: null, bandeja: null,
     conc: null, concCuenta: null, movCuenta: null, movEstado: "", filtroCuenta: null,
     importe: null, ocupado: false,
-    plaid: null, plaidErr: null
+    plaid: null, plaidErr: null, mfa: null
   };
   const TITULOS = { bancos: "Bancos y tarjetas", bandeja: "Bandeja del banco", conciliar: "Conciliar", movimientos: "Movimientos" };
   const PESTANAS = { bancos: "Bancos y tarjetas", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos" };
@@ -162,10 +162,11 @@
       await controlar(["v_banco_saldos"], { v_banco_saldos: lista.length });
       if (!lista.length) throw errorControl("La base no devolvió ninguna cuenta de banco ni tarjeta", [{ vista: "v_banco_saldos", filas: 0, esperadas: "1 o más", detalle: "La empresa tiene Chase y las dos Amex. Si la vista no las trae, algo está mal (¿la sesión no es la del dueño?)." }]);
       await leerPlaid();
+      await leerMfa();
     } catch (err) { return pintarError(err, pintarBancos); }
     pintarBadge();
     main().innerHTML = importadorHTML(lista) + (S.importe ? importeHTML(S.importe) : "") +
-      plaidHTML(S.plaid || [], S.plaidErr) +
+      mfaHTML(S.mfa) + plaidHTML(S.plaid || [], S.plaidErr) +
       `<div class="ct-rejilla">${lista.map(cuentaHTML).join("")}</div>`;
     // el importador general
     $("ct-imp-btn").addEventListener("click", () => {
@@ -181,6 +182,7 @@
       const inp = card.querySelector("input[type=file]");
       if (inp) inp.addEventListener("change", () => { if (inp.files[0]) importar(inp.files[0], cuenta, card.querySelector(".ct-cuenta-res")); });
     });
+    wireMfa();
     wirePlaid();
   }
 
@@ -290,6 +292,103 @@
   }
 
   // ============================================================
+  // EL CÓDIGO DEL TELÉFONO (segundo factor, TOTP) — docs/conta/s1-mfa.sql y
+  // MXP_DB.mfa (js/db.js). Se activa aquí una vez: Supabase Auth da el QR,
+  // Edgar lo escanea con Contraseñas del iPhone y escribe los 6 dígitos; la
+  // sesión pasa a aal2 y, desde entonces, entrar a la app pide el código.
+  // «Conectar un banco» (Plaid) solo con el código activo y pasado.
+  // ============================================================
+  const mfaActivo = () => !!(S.mfa && !S.mfa.error && S.mfa.verificados.length && S.mfa.nivel === "aal2");
+  async function leerMfa() {
+    if (S.mfa) return S.mfa;
+    if (!DB.mfa || typeof DB.mfa.factores !== "function") { S.mfa = { verificados: [], sinVerificar: [], nivel: null, error: new Error("js/db.js viejo: recarga la app") }; return S.mfa; }
+    try {
+      const fs = await DB.mfa.factores();
+      S.mfa = { verificados: fs.filter(f => f.status === "verified"), sinVerificar: fs.filter(f => f.status !== "verified"), nivel: DB.mfa.nivel(), error: null };
+    } catch (err) {
+      if (esFalloDeRed(err)) throw err;
+      S.mfa = { verificados: [], sinVerificar: [], nivel: DB.mfa.nivel(), error: err };
+    }
+    return S.mfa;
+  }
+  function mfaHTML(m) {
+    if (!m) return "";
+    const activo = m.verificados.length > 0;
+    const estado = m.error ? pill("sin leer", "warn") : !activo ? pill("no activo", "warn") : m.nivel === "aal2" ? pill("activo", "ok") : pill("activo · esta sesión no lo pasó", "warn");
+    return `<section class="ct-card ct-mfa" id="ct-mfa">
+      <div class="ct-cab"><h2>El código del teléfono (segundo paso para entrar)</h2>${estado}</div>
+      ${m.error
+        ? `<p class="ct-nota">No se pudo leer el estado del código: ${esc(m.error.message)}. Si Supabase dice que el segundo factor está apagado, se enciende en Authentication → Multi-Factor Auth (TOTP).</p>`
+        : activo
+          ? `<p class="ct-nota">Al entrar a la app, después de la contraseña se piden los 6 dígitos de tu teléfono (${esc(m.verificados.map(f => f.friendly_name || "teléfono").join(", "))}). Es lo que protege tus bancos y lo que declaramos a Plaid.${m.nivel === "aal2" ? "" : " Esta sesión entró sin él: sal y vuelve a entrar con el código para conectar un banco."}</p>
+             <div class="ct-acciones"><button type="button" class="accion secundaria chica" id="ct-mfa-quitar"${m.nivel === "aal2" ? "" : " disabled"}>Quitar el código</button></div>`
+          : `<p class="ct-nota">Antes de conectar un banco de verdad, la entrada a la app lleva un segundo paso: los 6 dígitos que da Contraseñas del iPhone (o tu app de códigos). Se activa una sola vez, mejor desde la computadora: sale un código QR y lo escaneas con el teléfono.</p>
+             <div class="ct-acciones"><button type="button" class="accion" id="ct-mfa-activar">Activar el código</button></div>`}
+      <div class="ct-form" hidden></div>
+      <div id="ct-mfa-res"></div>
+    </section>`;
+  }
+  function wireMfa() {
+    const card = $("ct-mfa"); if (!card) return;
+    const act = $("ct-mfa-activar"); if (act) act.addEventListener("click", () => activarMfa(card));
+    const qui = $("ct-mfa-quitar"); if (qui) qui.addEventListener("click", () => montarForma(card,
+      formaHTML("Quitar el código: la entrada vuelve a ser solo con la contraseña y Plaid queda bloqueado hasta activarlo otra vez. ¿Seguro?", "", "Sí, quitarlo"),
+      async () => {
+        if (S.ocupado) return; S.ocupado = true;
+        try {
+          for (const f of S.mfa.verificados) await DB.mfa.quitar(f.id);
+          S.hooks.avisar("Código quitado: la entrada vuelve a ser solo con la contraseña");
+          S.mfa = null; await pintarBancos();
+        } catch (err) { mostrarErrorForma(card, esFalloDeRed(err) ? "Sin señal: no se quitó." : err.message); }
+        finally { S.ocupado = false; }
+      }));
+  }
+  async function activarMfa(card) {
+    if (S.ocupado) return;
+    if (!navigator.onLine) { $("ct-mfa-res").innerHTML = `<p class="ct-aviso bad">Sin señal: activar el código necesita internet.</p>`; return; }
+    S.ocupado = true;
+    const caja = $("ct-mfa-res");
+    caja.innerHTML = `<p class="ct-aviso">Pidiendo el código QR a Supabase…</p>`;
+    let e;
+    try {
+      // un intento anterior a medias se limpia primero (Supabase no deja dos con el mismo nombre)
+      for (const f of (S.mfa && S.mfa.sinVerificar) || []) { try { await DB.mfa.quitar(f.id); } catch { /* sigue */ } }
+      e = await DB.mfa.enrolar("Teléfono de Edgar");
+      caja.innerHTML = "";
+    } catch (err) {
+      caja.innerHTML = `<p class="ct-aviso bad">No se pudo empezar: ${esc(esFalloDeRed(err) ? "sin señal." : err.message)}${/disabled|not enabled|mfa/i.test(err.message) ? " En Supabase: Authentication → Multi-Factor Auth → TOTP encendido." : ""}</p>`;
+      S.ocupado = false; return;
+    }
+    S.ocupado = false;
+    const f = card.querySelector(".ct-form");
+    f.hidden = false;
+    f.innerHTML = `<form class="ct-pide" novalidate>
+      <p class="ct-form-t">1 · En el iPhone, abre <b>Contraseñas</b> → «+» → «Código de verificación» → escanea este código (o pega la clave de abajo).</p>
+      <div class="ct-qr-fila">${e.qr ? `<img class="ct-qr" alt="Código QR para la app de códigos" src="${esc(e.qr)}">` : ""}<div><p class="ct-nota">Si no puedes escanear, escribe esta clave en Contraseñas:</p><div class="ct-clave">${esc(e.secreto || "")}</div></div></div>
+      <p class="ct-form-t">2 · Escribe los 6 dígitos que te enseña el teléfono:</p>
+      <label class="ct-campo">Código de 6 dígitos<input name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required></label>
+      <div class="ct-acciones"><button class="accion" type="submit">Verificar y activar</button><button class="accion secundaria" type="button" data-cerrar>Cancelar</button></div>
+    </form>`;
+    f.querySelector("[data-cerrar]").addEventListener("click", async () => { f.hidden = true; f.innerHTML = ""; try { await DB.mfa.quitar(e.id); } catch { /* quedará como sin verificar y se limpia la próxima vez */ } S.mfa = null; });
+    f.querySelector("form").addEventListener("submit", async ev => {
+      ev.preventDefault();
+      const codigo = String(new FormData(ev.target).get("codigo") || "").replace(/\s+/g, "");
+      if (!/^\d{6}$/.test(codigo)) { mostrarErrorForma(card, "Son 6 dígitos, los que enseña el teléfono ahora mismo."); return; }
+      if (S.ocupado) return; S.ocupado = true;
+      ev.target.querySelectorAll("button").forEach(b => { b.disabled = true; });
+      try {
+        await DB.mfa.verificar(e.id, codigo);
+        S.hooks.avisar("Código activado: desde ahora, al entrar se piden los 6 dígitos");
+        S.mfa = null; await pintarBancos();
+      } catch (err) {
+        ev.target.querySelectorAll("button").forEach(b => { b.disabled = false; });
+        mostrarErrorForma(card, esFalloDeRed(err) ? "Sin señal: no se verificó." : /invalid|incorrect|expired|wrong|code/i.test(err.message) ? "Ese código no es válido: mira el teléfono y escribe los 6 dígitos nuevos." : err.message);
+      } finally { S.ocupado = false; }
+    });
+    f.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  // ============================================================
   // LA CONEXIÓN AUTOMÁTICA (Plaid) — docs/conta/c7-plaid.sql y la función
   // de borde supabase/functions/plaid. La pantalla lee v_plaid_conexiones y
   // todo lo demás se lo pide a la función con la sesión del dueño (link_token,
@@ -329,7 +428,7 @@
       <div class="ct-cab"><h2>Conexión automática con el banco (Plaid)</h2>${pill(vivas.length ? plural(vivas.length, "banco conectado", "bancos conectados") : "sin conectar", vivas.length ? "ok" : "")}</div>
       <p class="ct-nota">Chase y las Amex mandan sus movimientos solos cada mañana, y entran igual que un archivo: casan lo que casa y el resto espera en la bandeja. El banco se conecta en la ventana segura de Plaid: la app nunca ve tu usuario ni tu clave del banco, y las llaves viven en la base, no en el teléfono. Qué se guarda y por cuánto tiempo, en la ${enlace}.</p>
       ${cx.length ? `<div class="ct-lista">${cx.map(conexionHTML).join("")}</div>` : ""}
-      <div class="ct-acciones"><button type="button" class="accion" id="ct-plaid-conectar">Conectar un banco</button></div>
+      <div class="ct-acciones"><button type="button" class="accion" id="ct-plaid-conectar"${mfaActivo() ? "" : " disabled"}>Conectar un banco</button>${mfaActivo() ? "" : `<span class="ct-nota" style="margin:0">Primero activa el código del teléfono (arriba).</span>`}</div>
       <div id="ct-plaid-res"></div>
     </section>`;
   }
@@ -433,6 +532,7 @@
   async function conectarPlaid(itemId) {
     const caja = $("ct-plaid-res"); if (!caja || S.ocupado) return;
     if (!navigator.onLine) { caja.innerHTML = `<p class="ct-aviso bad">Sin señal: la ventana de Plaid necesita internet.</p>`; return; }
+    if (!mfaActivo()) { caja.innerHTML = `<p class="ct-aviso warn">Antes de conectar un banco, activa el código del teléfono (la tarjeta de arriba) y entra con él.</p>`; return; }
     S.ocupado = true;
     caja.innerHTML = `<p class="ct-aviso">Abriendo la ventana segura de Plaid…</p>`;
     try {

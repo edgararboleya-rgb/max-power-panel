@@ -205,11 +205,16 @@
     $btn.textContent = "Entrando…";
     try {
       await DB.entrar(email, clave);
+      // El código del teléfono (segundo factor): si la cuenta lo tiene, se pide antes de arrancar
+      if (DB.mfaPendiente && DB.mfaPendiente() && !(await pedirCodigoMFA())) {
+        DB.salir();
+        const e = new Error("Falta el código del teléfono: vuelve a entrar y escríbelo."); e.mfa = true; throw e;
+      }
       $loginError.hidden = true;
       $formLogin.reset();
       await arrancarApp();
     } catch (err) {
-      $loginError.textContent = /invalid/i.test(err.message)
+      $loginError.textContent = err.mfa ? err.message : /invalid/i.test(err.message)
         ? "Usuario o contraseña incorrectos."
         : "No se pudo conectar: " + err.message;
       $loginError.hidden = false;
@@ -217,6 +222,33 @@
       $btn.disabled = false;
       $btn.textContent = "Entrar";
     }
+  });
+
+  // ---------- El código del teléfono (segundo factor, TOTP) ----------
+  // Si la cuenta tiene el código activado (Contabilidad → «El código del
+  // teléfono») y la sesión entró solo con la contraseña, se piden los 6
+  // dígitos antes de arrancar: docs/conta/s1-mfa.sql exige la sesión
+  // verificada (aal2) a esa cuenta en cada petición. Hasta tres intentos;
+  // «Salir» cierra la sesión. Si la base contesta 403 MFA a media sesión
+  // (db.js avisa con mxp:mfa), se pide igual y la app se recarga ya verificada.
+  let pidiendoCodigo = null;
+  function pedirCodigoMFA() {
+    if (pidiendoCodigo) return pidiendoCodigo;
+    pidiendoCodigo = (async () => {
+      const f = DB.mfa && DB.mfa.factorVerificado ? DB.mfa.factorVerificado() : null;
+      if (!f) return true;
+      for (let i = 0; i < 3; i++) {
+        const codigo = await pedirDato(`Código del teléfono\n\nAbre Contraseñas (o tu app de códigos) y escribe los 6 dígitos de Max Power Panel${i ? ` (intento ${i + 1} de 3)` : ""}.`, "", { si: "Verificar", no: "Salir" });
+        if (codigo === null) return false;
+        try { await DB.mfa.verificar(f.id, codigo); return true; }
+        catch (err) { avisar(/invalid|incorrect|expired|wrong|code/i.test(err.message) ? "Ese código no es válido: mira el teléfono y vuelve a escribirlo." : "No se pudo verificar: " + err.message, true); }
+      }
+      return false;
+    })().finally(() => { pidiendoCodigo = null; });
+    return pidiendoCodigo;
+  }
+  window.addEventListener("mxp:mfa", () => {
+    if (DB.mfaPendiente && DB.mfaPendiente()) pedirCodigoMFA().then(ok => { if (ok) location.reload(); });
   });
 
   // ---------- P82: la copia en el teléfono, para abrir la app sin señal ----------
@@ -24858,7 +24890,11 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   if (DB.haySesion()) {
     // Sesión guardada: refrescar el token y entrar directo
     const arrancarConSesion = () => DB.refrescar()
-      .then(arrancarApp)
+      .then(async () => {
+        // la cuenta con el código del teléfono activado lo pasa antes de arrancar
+        if (DB.mfaPendiente && DB.mfaPendiente() && !(await pedirCodigoMFA())) { DB.salir(); $login.hidden = false; return; }
+        return arrancarApp();
+      })
       .catch(err => {
         if (esFalloDeRed(err)) {
           // Sin señal al abrir: la sesión se queda guardada. Con copia en el

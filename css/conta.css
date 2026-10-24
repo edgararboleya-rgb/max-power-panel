@@ -136,3 +136,9 @@ body[data-vista="conta"] .fab { display: none; }
 @media (min-width: 700px) { #conta-raiz .ct-cuentas-plaid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 #conta-raiz .ct-cuenta-plaid small { font-weight: 500; color: var(--mp-ink-3); }
 #conta-raiz .ct-cuenta-plaid select.sin-fijar { border-color: var(--warn-ink); background: var(--warn-bg); }
+
+/* ---- el código del teléfono (segundo factor) ---- */
+#conta-raiz .ct-mfa { border-left: 4px solid var(--night); }
+#conta-raiz .ct-qr-fila { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin: .3rem 0 .6rem; }
+#conta-raiz .ct-qr { width: 190px; height: 190px; border: 1px solid var(--mp-line); border-radius: 12px; background: #fff; padding: 6px; }
+#conta-raiz .ct-clave { font-family: var(--mono); font-size: .92rem; letter-spacing: .06em; word-break: break-all; padding: .4rem .6rem; border-radius: 10px; background: var(--mp-sky-1, #F6FCFF); border: 1px solid var(--mp-line); user-select: all; }

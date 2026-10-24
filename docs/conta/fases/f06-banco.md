@@ -354,3 +354,28 @@ tránsito, sin tocar 1010.
   el cuestionario de seguridad). Plaid y su CDN no se alcanzan desde este
   contenedor: el Sandbox real lo prueba Edgar, o se prueba en el banco local
   con el simulador.
+
+## El código del teléfono (24-oct) — el segundo factor del dueño, construido
+- **Por qué.** Lo declarado a Plaid: MFA en la entrada del dueño antes de
+  conectar un banco real. Plaid aprobó producción el 23-oct; el 24 Edgar puso
+  `PLAID_SECRET` (production) y `PLAID_ENV=production`, los casos de uso y la
+  redirect URI, y se publicó la pantalla del banco (v283).
+- **Cómo.** `docs/conta/s1-mfa.sql`: `fn_mfa_exigir()` como
+  `pgrst.db_pre_request` del rol `authenticator` (PostgREST la corre antes de
+  cada petición de la API): con un factor TOTP verificado y una sesión aal1,
+  403 con código `MFA`; a quien no tiene factor no le cambia nada. Sin tocar
+  `es_dueno()` (c2 lo sella como «candado»: cambiarlo pondría c2 en rojo
+  hasta volver a pegarlo) ni las policies. Las funciones de borde (entran
+  como postgres), pg_cron y el SQL Editor no pasan por PostgREST. En la app:
+  `MXP_DB.mfa` (db.js: factores, enrolar, reto + verificar, quitar; la
+  sesión pasa a aal2 y se guarda), `pedirCodigoMFA` (app.js: al entrar y al
+  arrancar con sesión guardada; también si la base contesta 403 MFA a media
+  sesión), y en Contabilidad → Bancos y tarjetas la tarjeta «El código del
+  teléfono» (QR de Supabase Auth, la clave para escribirla a mano, los 6
+  dígitos; quitar con la sesión aal2). «Conectar un banco» solo con el código
+  activo y pasado.
+- **Pruebas.** `s1-pruebas.sql` 8/8 en un banco de cero con c1..c7; c2, c3 y
+  c6 en verde con s1 puesto; arnés 64/64 (seis del código); e0 34, e13 42.
+- **Pendiente de Edgar.** TOTP encendido en Supabase Auth; pegar s1 (pasos 14
+  y 15); «publica» (v284); activar el código desde la app; conectar Chase y
+  las Amex.
