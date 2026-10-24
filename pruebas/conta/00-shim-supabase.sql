@@ -144,6 +144,24 @@ grant select, insert, update, delete on auth.users to editor_sql, service_role;
 grant references on auth.users to editor_sql;
 
 -- ---------------------------------------------------------------------
+-- 3b. auth.mfa_factors: la tabla de factores del segundo factor (TOTP) de
+--     Supabase Auth, con las columnas que mira fn_mfa_exigir (s1-mfa.sql).
+--     Vacía de fábrica; las pruebas insertan y deshacen.
+-- ---------------------------------------------------------------------
+create table if not exists auth.mfa_factors (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null,
+  friendly_name text,
+  factor_type   text not null default 'totp',
+  status        text not null default 'unverified',
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  secret        text
+);
+create index if not exists mfa_factors_user_id_idx on auth.mfa_factors (user_id);
+grant select, insert, update, delete on auth.mfa_factors to editor_sql;
+
+-- ---------------------------------------------------------------------
 -- 4. Esquema net: stub de pg_net. En producción net.http_post encola una
 --    llamada HTTP (los avisos al teléfono). Aquí no hace nada y devuelve un
 --    id falso. Firma real de pg_net para que las llamadas con nombre
