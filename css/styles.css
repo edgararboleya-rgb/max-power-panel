@@ -2857,7 +2857,33 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .alc-rev-donde{display:block;font-size: var(--fs-3);font-weight:650;color:var(--mp-ink-2)}
 .alc-rev-motivo{margin:.25rem 0 .1rem;font-size: var(--fs-4);line-height:1.45}
 .alc-rev-hecho{margin:.25rem 0 .1rem;font-size: var(--fs-4);color:var(--ok-ink);font-weight:600}
+/* 17-oct (pliego §11.2): «Dice el papel», «Por qué» y «Cómo debería ir»; la propuesta del revisor en una caja clara, entera */
+.alc-rev-etq{margin:.5rem 0 0;font-size: var(--fs-3);font-weight:650;color:var(--mp-ink-2)}
+.alc-hallazgo .alc-de-plantilla{margin:.1rem 0 .25rem;font-size: var(--fs-3);color:var(--mp-ink-3)}
+.alc-propuesta{font-size: var(--fs-4);line-height:1.5;color:var(--mp-ink);background:var(--mp-ok-bg);border:1px solid var(--mp-ok-bd);
+  border-radius:8px;padding:.45rem .6rem;margin:.3rem 0 .25rem;white-space:pre-wrap;word-break:break-word}
+.alc-sin-propuesta,.alc-aviso-arreglo{margin:.25rem 0;font-size: var(--fs-3)}
+/* 17-oct (pliego §11.9): la propuesta que no lleva botón (texto de ley, o pierde protección) va en una caja neutra, no en la verde;
+   «Olvidarlos», un botón pequeño debajo del aviso de los cambios viejos */
+.alc-propuesta.alc-propuesta-no{background:var(--mp-sky-1);border-color:var(--mp-gris-bd);color:var(--mp-ink-2)}
+.alc-propuesta-insegura{margin:.25rem 0;font-size: var(--fs-3)}
+.alc-sin-sitio .alc-fixes{margin:.4rem 0 0}.alc-sin-sitio .alc-op{font-family:inherit}
+.alc-perdonado{color:var(--mp-ink-2);font-weight:400}
+/* 18-oct (pliego §11.11.7): «Arreglar todo» y «Arreglar lo pendiente» van abajo, en la fila de «Arreglar el contrato»; en cada punto,
+   «viene de la línea N de tu hoja» es un enlace pequeño (no un botón), el dato de la ficha va en la caja de «Cómo debería ir» y
+   «Ponerlo aunque…» se distingue de «Arreglar según la IA» con el borde ámbar */
+.alc-botones .alc-arreglar-todo,.alc-botones .alc-arreglar-pendiente{margin:0}
+.alc-hallazgo .alc-de-hoja{margin:.1rem 0 .25rem;font-size: var(--fs-3)}
+.alc-enlace-linea{color:var(--mp-blue);text-decoration:underline;text-underline-offset:2px;display:inline-block;padding:.35rem 0;min-height:24px}
+.alc-propuesta.alc-propuesta-dato{white-space:normal}
+.alc-op.alc-auto.alc-forzar{border-color:var(--mp-yellow);color:var(--warn-ink)}
+.alc-pendiente-costo{margin:.35rem 0 .1rem;font-size: var(--fs-3)}
+.alc-pendiente-aviso,.alc-pendiente-espera{margin:.45rem 0 .2rem}
+.alc-parrafo-cambiado{margin:.45rem 0;padding:.45rem .6rem;font-size: var(--fs-3)}
 .alc-hallazgo .alc-op{font-family:inherit;text-align:left}
+/* 14-oct (corrección tras la segunda revisión, hallazgo 17): los botones de «Así lo hice» y de «Cuéntale el trabajo» con la letra de la app, no la del sistema */
+.alc-asi .alc-op,.alc-cuentale .alc-op{font-family:inherit}
+.alc-asi-formato{margin:.2rem 0 .4rem;padding:.4rem .6rem}
 .alc-hallazgo .alc-op:disabled{opacity:.7;cursor:default}
 .alc-rev-en-hoja p{margin:0 0 .35rem}
 .alc-rev-en-hoja .alc-botones{margin:.4rem 0 0}
@@ -2887,6 +2913,32 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 .alc-juicio-lista li{margin:.35rem 0}
 .alc-juicio-lista .alc-fixes{margin-top:.25rem}
 .alc-juicio-no{color:var(--mp-ink-3)}
+/* 14-oct (pliego §10.9): «Ver los dos textos» de una cláusula adaptada: el de la casa y el de la IA, uno debajo del otro */
+.alc-juicio-dos{margin-top:.3rem}
+.alc-juicio-dos summary{cursor:pointer}
+.alc-juicio-texto{margin:.15rem 0 .45rem;font-size:.9em;overflow-wrap:anywhere}
+/* 14-oct (pliego §10.10): «Cuéntale el trabajo» arriba de la hoja y la tarjeta «Así lo hice» arriba del contrato. Igual en el
+   teléfono (390 px) y en la computadora (1440 px): todo se parte en líneas, nada se sale de lado */
+.alc-cuentale{margin:0 0 .8rem}
+.alc-cuentale-boton{width:100%;min-height:48px;font-size:var(--fs-4)}
+.alc-cuentale .alc-charla{margin-top:.5rem}
+.alc-cuentale textarea,.alc-asi textarea{width:100%;box-sizing:border-box}
+.alc-asi{margin:.2rem 0 .9rem;overflow-wrap:anywhere}
+.alc-asi-sub{margin:.75rem 0 .25rem;font-size:var(--fs-4)}
+.alc-asi-texto{margin:.1rem 0 .3rem;line-height:1.5}
+.alc-asi-lista,.alc-asi-preguntas{margin:.15rem 0 .3rem;padding-left:1.1rem}
+.alc-asi-lista li,.alc-asi-preguntas li{margin:.2rem 0;line-height:1.45}
+.alc-asi-pregunta p{margin:.1rem 0}
+.alc-asi-pregunta .alc-charla-campo{display:flex;flex-wrap:wrap;gap:.35rem;margin:.3rem 0}
+.alc-asi-pregunta .alc-charla-campo input{flex:1 1 12rem;min-width:0}
+.alc-asi-botones{flex-wrap:wrap}
+.alc-asi-costo{margin-top:.7rem}
+.alc-rev-detalle > summary{cursor:pointer;margin:.4rem 0;font-weight:700}
+/* 18-oct (pliego §11.12): un solo proceso de revisión: «La IA arregló N puntos» (plegada), «Te toca decidir» y «Dudas» */
+.alc-auto-arreglados{margin:.5rem 0}
+.alc-auto-arreglados > summary{cursor:pointer;font-weight:700;min-height:44px;display:flex;align-items:center}
+.alc-auto-arreglados > ul{padding-left:0;list-style:none}
+.alc-proceso-cuenta{margin:.3rem 0}
 .alc-origen{color:var(--mp-ink-3);font-size: var(--fs-3)}
 .alc-leccion{margin:.5rem 0;padding:.6rem .7rem;border:1px dashed var(--mp-line);border-radius:10px;background:var(--mp-card)}
 .alc-leccion-etq{display:block;margin:0 0 .3rem;font-size: var(--fs-3);font-weight:650;color:var(--mp-ink-2)}
@@ -4272,3 +4324,49 @@ body:has(#toast:not([hidden])) .fab, body:has(#sin-senal:not([hidden])) .fab { d
 /* v257 · cuadrilla por composición: filas por rol en el resumen y el tipo de rol */
 .rent-rol { font-size: var(--fs-3); color: var(--mp-ink-2); padding-left: .6rem; }
 .rap-rol select.rap-rol-tipo, .rap-rol select.esc-rol-tipo { font: inherit; font-size: var(--fs-3); padding: .3rem .35rem; border: 1px solid var(--mp-line); border-radius: 8px; background: var(--mp-card); color: var(--mp-ink); }
+
+/* v280 (pliego §13 E4): las horas por fase en la ficha del dueño, el reparto, el panel del campo y «Que la IA lo apunte» */
+.hf { margin-top: .5rem; }
+.hf-tabla { display: grid; gap: .35rem; margin-bottom: .45rem; }
+.hf-fila { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: .1rem .6rem; }
+.hf-fase { font-size: var(--fs-3); color: var(--mp-ink); font-weight: 600; min-width: 0; }
+.hf-num { font-size: var(--fs-3); color: var(--mp-ink-2); font-weight: 650; white-space: nowrap; }
+.hf-num.ok { color: var(--mp-ok); }
+.hf-num.warn { color: var(--mp-warn-tx); }
+.hf-num.bad { color: var(--mp-danger); }
+.hf-barra { grid-column: 1 / -1; margin: .1rem 0 0; }
+.hf-barra .barra-relleno.warn { background: var(--mp-yellow); }
+.hf-barra .barra-relleno.bad { background: var(--mp-danger); }
+.hf-sin { font-size: var(--fs-3); color: var(--mp-ink-2); margin: .3rem 0 .45rem; line-height: 1.45; }
+.hf-abrir { min-height: var(--tap); }
+.hf-form { display: grid; grid-template-columns: 1fr 1fr; gap: .45rem .6rem; margin-top: .6rem; }
+.hf-casilla { display: grid; gap: .15rem; font-size: var(--fs-3); color: var(--mp-ink-2); }
+.hf-casilla input { min-height: var(--tap); font: inherit; font-size: var(--fs-5); }
+.hf-suma { grid-column: 1 / -1; font-size: var(--fs-3); font-weight: 650; color: var(--mp-ink); margin: .2rem 0; }
+.hf-botones { grid-column: 1 / -1; display: flex; gap: .5rem; justify-content: flex-end; flex-wrap: wrap; }
+.hf-botones .accion { min-height: var(--tap); }
+.hoy-fases-obra { display: flex; flex-wrap: wrap; gap: .25rem .9rem; padding: 0 0 .7rem; }
+.hoy-fase-obra { margin: 0; font-size: var(--fs-3); font-weight: 600; color: var(--mp-ink-2); }
+.horas-ia { display: grid; gap: .45rem; margin: -.15rem 0 .35rem; }
+.horas-ia-btn, .horas-ia-obra, .horas-ia-quitar { min-height: var(--tap); }
+.horas-ia-btn:disabled { opacity: .6; cursor: progress; }
+.horas-ia-caja { display: grid; gap: .45rem; }
+.horas-ia-txt { margin: 0; font-size: var(--fs-4); color: var(--mp-ink); line-height: 1.45; }
+.horas-ia-bien { color: var(--mp-ok); font-weight: 650; }
+.horas-ia-obras { display: flex; flex-wrap: wrap; gap: .45rem; }
+
+/* v281 (pliego §13 E5): la bandeja «La IA pregunta» en el inicio del dueño (las dudas de la revisión diaria) */
+.inicio-card.dudas-ia { border-left: 4px solid var(--cu-dark); }
+.dudas-ia-sub { margin: -.2rem 0 .4rem; font-size: var(--fs-3); color: var(--mp-ink-2); }
+.duda-ia { display: grid; gap: .45rem; padding: .7rem 0; border-top: 1px solid var(--mp-sky-2); }
+.duda-ia:first-of-type { border-top: none; }
+.duda-ia-obra { margin: 0; font-size: var(--fs-3); font-weight: 700; color: var(--cu-dark); }
+.duda-ia-texto { margin: 0; font-size: var(--fs-5); color: var(--mp-ink); line-height: 1.45; }
+.duda-ia-nota { margin: 0; font-size: var(--fs-3); color: var(--mp-ink-2); line-height: 1.4; }
+.duda-ia-correo { justify-self: start; display: inline-flex; align-items: center; min-height: var(--tap); text-decoration: none; }
+.duda-ia-leccion { display: flex; align-items: center; gap: .5rem; min-height: var(--tap); font-size: var(--fs-4); color: var(--mp-ink); }
+.duda-ia-leccion input { width: 22px; height: 22px; }
+.duda-ia-botones { display: flex; flex-wrap: wrap; gap: .45rem; }
+.duda-ia-btn { min-height: var(--tap); }
+.duda-ia-btn:disabled { opacity: .6; cursor: progress; }
+.duda-ia-error { margin: 0; font-size: var(--fs-4); color: var(--mp-danger); }

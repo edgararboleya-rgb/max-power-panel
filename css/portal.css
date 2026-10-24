@@ -141,7 +141,7 @@ a.pt-doc-t:hover { text-decoration: underline; }
   html { font-size: 16px; }
   #vista-app { display: flex; flex-direction: column; background: none; }
   #vista-app > .membrete, #vista-app > main, #vista-app > .pie { grid-column: auto; width: 100%; align-self: stretch; }
-  .membrete-inner, .container { max-width: 1440px; padding-left: 2rem; padding-right: 2rem; }
+  .membrete-inner, .container { max-width: 1920px; padding-left: clamp(24px, 2.5vw, 40px); padding-right: clamp(24px, 2.5vw, 40px); }
   .pt-panel { display: grid; grid-template-columns: minmax(0, 1fr) 380px; column-gap: 1.6rem; align-items: start; }
   .pt-panel > .pt-hero, .pt-panel > .cl-cargando, .pt-panel > .gc-cargando { grid-column: 1 / -1; }
   .pt-col-main { grid-column: 1; min-width: 0; }
@@ -158,7 +158,6 @@ a.pt-doc-t:hover { text-decoration: underline; }
   .pt-row-m { padding-left: 1rem; }
 }
 @media (min-width: 1400px) {
-  .membrete-inner, .container { max-width: 1520px; }
   .pt-panel { grid-template-columns: minmax(0, 1fr) 420px; column-gap: 2rem; }
 }
 
@@ -236,6 +235,59 @@ html[data-text="large"] .cl-portal .aa-btn { background: var(--mp-cyan); color: 
   .cl-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 24px; align-items: start; }
   .cl-col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
   .cl-obra { margin-bottom: 24px; }
+}
+/* La columna A lleva dos contenedores (cl-sub-1 y cl-sub-2) que no pintan nada
+   por debajo de 1280 px: sus tarjetas siguen siendo de la columna A o del
+   cuerpo, con su «order» de siempre. */
+.cl-sub { display: contents; }
+
+/* ---- El portal en la computadora (pliego 19-oct): todo el ancho de la ventana ---- */
+@media (min-width: 1024px) {
+  /* Sin el tope de 1160 px: margen lateral de 24–40 px; tope solo a 1920 px (centrado) */
+  .cl-portal .membrete-inner, .cl-portal .container { max-width: 1920px; margin-left: auto; margin-right: auto;
+    padding-left: clamp(24px, 2.5vw, 40px); padding-right: clamp(24px, 2.5vw, 40px); }
+  /* La lectura cómoda: unas 80 letras por renglón como mucho (36em en esta letra);
+     el ancho se limita dentro de las tarjetas, no el de la página */
+  .cl-portal .card p, .cl-portal .card li, .cl-obra-resumen { max-width: 36em; }
+  /* Los nombres de los breakers usan hasta dos renglones antes de cortarse con «…» */
+  .cl-portal .panel .plabel { white-space: normal; overflow-wrap: break-word; display: -webkit-box; -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+}
+/* La pantalla ancha, solo donde el navegador entiende :has() (Chrome 105+, Safari 15.4+,
+   Firefox 121+); si no, se queda con las dos columnas de 1024 px de antes, sin columnas vacías */
+@supports selector(:has(a)) {
+  @media (min-width: 1280px) {
+    /* De 1280 a 1599: dos columnas iguales. A la izquierda la propuesta; a la derecha la firma,
+       los «Work items» (anchos, para que se lean los breakers) y debajo documentos y Max Power */
+    .cl-cuerpo { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto 1fr; gap: 20px 24px; }
+    .cl-col-a { display: contents; }
+    .cl-sub { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+    .cl-sub-1 { grid-column: 1; grid-row: 1 / span 2; }
+    .cl-sub-2 { grid-column: 2; grid-row: 1; }
+    .cl-col-b { grid-column: 2; grid-row: 2; }
+    /* Si una de las dos queda vacía: la que tiene tarjetas a la izquierda, la columna B a la derecha */
+    .cl-sub:empty { display: none; }
+    .cl-cuerpo:has(> .cl-col-a > .cl-sub:empty) > .cl-col-a > .cl-sub { grid-column: 1; grid-row: 1 / span 2; }
+    .cl-cuerpo:has(> .cl-col-a > .cl-sub:empty) > .cl-col-b { grid-column: 2; grid-row: 1 / span 2; }
+  }
+  @media (min-width: 1600px) {
+    /* Desde 1600: tres columnas. La propuesta | la firma y los «Work items» | documentos y Max Power,
+       esta última de 420 px, igual que la columna de contacto de gc.html */
+    .cl-cuerpo { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 420px; grid-template-rows: none; }
+    .cl-sub-1, .cl-sub-2, .cl-col-b { grid-row: 1; }
+    .cl-col-b { grid-column: 3; }
+    .cl-cuerpo:has(> .cl-col-a > .cl-sub:empty) { grid-template-columns: minmax(0, 1fr) 420px; }
+    .cl-cuerpo:has(> .cl-col-a > .cl-sub:empty) > .cl-col-a > .cl-sub,
+    .cl-cuerpo:has(> .cl-col-a > .cl-sub:empty) > .cl-col-b { grid-row: 1; }
+  }
+  @media (min-width: 1024px) {
+    /* Si las dos quedan vacías (no hay nada de la columna A), las tarjetas de la columna B
+       se reparten en rejilla a todo el ancho en vez de dejar una columna vacía */
+    .cl-cuerpo:has(> .cl-col-a > .cl-sub-1:empty):has(> .cl-col-a > .cl-sub-2:empty) { grid-template-columns: minmax(0, 1fr); }
+    .cl-cuerpo:has(> .cl-col-a > .cl-sub-1:empty):has(> .cl-col-a > .cl-sub-2:empty) > .cl-col-a { display: none; }
+    .cl-cuerpo:has(> .cl-col-a > .cl-sub-1:empty):has(> .cl-col-a > .cl-sub-2:empty) > .cl-col-b {
+      grid-column: 1 / -1; grid-row: auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); align-items: start; }
+  }
 }
 
 /* ---- Tarjetas, títulos y notas ---- */

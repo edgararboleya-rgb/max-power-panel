@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#071A2E">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
   <link rel="stylesheet" href="css/styles.css?v=242">
-  <link rel="stylesheet" href="css/portal.css?v=210">
+  <link rel="stylesheet" href="css/portal.css?v=276">
   <style>
     /* ── El portal del contratista: un estado de cuenta, no una galería ── */
     :root { --gc-num: "tnum" 1; }
@@ -152,7 +152,7 @@
       html { font-size: 16px; }
       #vista-app { display: flex; flex-direction: column; background: none; }
       #vista-app > .membrete, #vista-app > main, #vista-app > .pie { grid-column: auto; width: 100%; align-self: stretch; }
-      .membrete-inner, .container { max-width: 1440px; padding-left: 2rem; padding-right: 2rem; }
+      .membrete-inner, .container { max-width: 1920px; padding-left: clamp(24px, 2.5vw, 40px); padding-right: clamp(24px, 2.5vw, 40px); }
       #gc-panel { display: grid; grid-template-columns: minmax(0, 1fr) 320px; column-gap: 1.5rem; align-items: start; }
       .gc-cab, .gc-cargando, .pt-hero { grid-column: 1 / -1; }
       .gc-col-main { grid-column: 1; }
@@ -161,11 +161,13 @@
       .gc-num { padding: 0.85rem 1rem 0.8rem; }
       .gc-num b { font-size: 1.28rem; }
       .gc-lista { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+      /* Una obra sola: su tarjeta, más ancha (hasta 480 px), en vez de una casilla de un cuarto */
+      .gc-lista:has(> :only-child) { grid-template-columns: minmax(280px, 480px); }
+      /* La lectura cómoda: unas 80 letras por renglón como mucho, el botón sigue a la derecha */
+      .gc-nuevo .gc-nuevo-sub, .gc-nuevo-card .que span, .pt-tile-s { max-width: 36em; }
     }
     @media (min-width: 1400px) {
-      .membrete-inner, .container { max-width: 1520px; }
-      #gc-panel { grid-template-columns: minmax(0, 1fr) 420px; column-gap: 2rem; }
-      .gc-lista { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+      #gc-panel { grid-template-columns: minmax(0, 1fr) 420px; column-gap: 1.5rem; }
     }
   </style>
 </head>

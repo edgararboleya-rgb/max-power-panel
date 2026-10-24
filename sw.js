@@ -6,7 +6,7 @@
 //      ABRA sin señal o si GitHub Pages se cae. Antes, sin internet, tocar
 //      el icono dejaba la pantalla en blanco.
 // ============================================================
-const CACHE = "mxp-casco-v178";
+const CACHE = "mxp-casco-v190";
 const CASCO = [
   "./", "./index.html", "./css/styles.css",
   "./js/app.js", "./js/db.js", "./js/i18n.js", "./js/iconos.js", "./js/conta.js", "./css/conta.css",
@@ -69,6 +69,12 @@ self.addEventListener("fetch", e => {
   );
 });
 
+// v279 (22-oct, pliego §13 D7): el aviso puede traer "url" para que tocarlo abra
+// una pantalla (p. ej. "?abrir=horas&proyecto=dicke"). Solo vale una dirección
+// relativa que empiece por "?", "#" o "./": nunca una ajena ni una que suba de carpeta
+// («./../otra»). Si no, abre la app.
+const urlDelAviso = u => (typeof u === "string" && /^[?#]|^\.\//.test(u) && !u.includes("//") && !/(^|[/?#])\.\.([/?#]|$)/.test(u)) ? u : ".";
+
 self.addEventListener("push", e => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (err) { d = { cuerpo: e.data && e.data.text() }; }
@@ -77,12 +83,23 @@ self.addEventListener("push", e => {
     icon: "assets/icon-192.png",
     badge: "assets/icon-192.png",
     tag: d.tag || "mxp",
-    data: { url: "." }
+    data: { url: urlDelAviso(d.url) }
   }));
 });
 
 self.addEventListener("notificationclick", e => {
   e.notification.close();
-  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(ws =>
-    ws.length ? ws[0].focus() : self.clients.openWindow(".")));
+  const rel = urlDelAviso(e.notification.data && e.notification.data.url);
+  let url = new URL(rel, self.registration.scope).href;
+  if (!url.startsWith(self.registration.scope)) url = self.registration.scope; // por si acaso: nunca fuera de la app
+  // Si la app ya está abierta (una ventana DE LA APP, no otra página del mismo dominio), se
+  // enfoca y se le dice qué pantalla abrir; si no, se abre en esa dirección (la app la lee al arrancar).
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(ws => {
+    const w = ws.find(x => typeof x.url === "string" && x.url.startsWith(self.registration.scope));
+    if (w) {
+      return Promise.resolve().then(() => w.focus()).catch(() => {})
+        .then(() => { w.postMessage({ tipo: "abrir", url }); });
+    }
+    return self.clients.openWindow(url);
+  }));
 });

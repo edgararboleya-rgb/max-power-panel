@@ -21,6 +21,9 @@
 
   let sesion = sesionGuardada();
   let temporizadorRefresco = null;
+  // 14-oct (hallazgo 11): la última plantilla del contrato que se bajó fue la de respaldo (v3.12), porque la nueva no estaba
+  // (17-oct: la nueva es la v3.14)
+  let plantillaDeRespaldo = false;
 
   function programarRefresco() {
     if (temporizadorRefresco) clearTimeout(temporizadorRefresco);
@@ -367,8 +370,69 @@
     ["documento_visitas", "documento_visitas?select=documento_id,quien,cuando&order=cuando.desc&limit=1000", true],
     // P09 (25-sep): solo la vigencia de cada propuesta, para avisar cuando vence o
     // lleva días sin respuesta (el equipo no recibe filas: la lista queda vacía)
-    ["propuestas_vigencia", "propuestas?select=id,proyecto_id,estado,valida_hasta,armado_el,creado&order=creado.desc", true]
+    ["propuestas_vigencia", "propuestas?select=id,proyecto_id,estado,valida_hasta,armado_el,creado&order=creado.desc", true],
+    // v280 (pliego §13 E4): el reparto de las horas estimadas por fase (son horas, no dinero: todos lo leen); el
+    // reparto por tarea de cada reporte (hasta la parte B de etapa6/CREW-REPORTE.sql la base no se lo deja leer a
+    // la app: da error y se queda vacío, sin romper nada); y qué estimado está enlazado a cada obra (solo el id y la
+    // obra: sus renglones, SIN precio, se bajan después y solo para las obras vivas)
+    ["horas_estimadas_fase", "horas_estimadas_fase?select=proyecto_id,fase,horas", true],
+    ["horas_tareas", "horas_tareas?select=id,horas_id,codigo,estimado_item_id,horas,cantidad_hecha", true],
+    ["estimados_obra", "estimados?select=id,proyecto_id&proyecto_id=not.is.null&order=id.desc", true]
   ];
+  // v280 (pliego §13 E4): las 10 fases del reporte de horas (index.html, #form-horas) y las 20 partidas
+  // (codigos_partida): las mismas listas que el cerebro (FASES y CODIGOS_PARTIDA)
+  const FASES_REPORTE = ["Movilización", "Demolición", "Rough-in", "Underground", "Panel / Servicio",
+    "Trim-out", "Low Voltage", "Troubleshooting", "Inspección / Correcciones", "Service Call"];
+  const NOMBRE_PARTIDA = {
+    "01-DEMO": "Demolición eléctrica", "02-TEMP": "Servicio temporal", "03-UG": "Subterráneo", "04-SERV": "Servicio y meter",
+    "05-PANEL": "Paneles y subpaneles", "06-FEED": "Feeders", "07-GND": "Puesta a tierra", "08-ROUGH": "Rough-in de circuitos",
+    "09-COND": "Tubería expuesta", "10-DEV": "Piezas: tomas y switches", "11-LIGHT": "Luminarias", "12-TRIM": "Trim y terminación",
+    "13-LV": "Low voltage", "14-EV": "Cargadores EV", "15-GEN": "Generadores", "16-SMART": "Smart panel",
+    "17-INSP": "Inspecciones y correcciones", "18-PERM": "Permisos", "19-EQUIP": "Renta de equipos", "20-MISC": "Misceláneas"
+  };
+  const conCo = h => String((h && h.co) || "").trim() !== "";
+  // v281 (pliego §13 E5): los tipos de duda de la revisión diaria (los mismos que TIPOS_DUDA del cerebro v52)
+  const TIPOS_DUDA = ["estado", "accionvieja", "sinfacturar", "descuadre", "cobro", "leccion"];
+  // v282 (pliego §13 E6): los motivos con que la función qb v4 apunta en cobros_pendientes lo que no quiso decidir sola
+  // (los mismos textos que MOTIVOS_QB de etapa6/qb-guardian-v4.txt; pruebas/qb-pagadas.mjs comprueba que cuadran)
+  const QB_MOTIVOS = ["factura en QuickBooks que la app no conoce", "el monto no cuadra con el hito", "pagada en la app y abierta en QuickBooks", "anulada en QuickBooks", "pagada en QuickBooks pero el hito o lo cobrado no se movió"];
+  // Las horas por fase de UNA obra: [{fase, estimadas, reales, aparte}] (reales = sin co; aparte = con co), en el
+  // orden del formulario, solo las fases con algo. La MISMA cuenta que horasPorFase del cerebro v51. Las horas de
+  // antes de la app (horas_reales_base) no tienen fase: cuentan en la obra entera, pero aquí no entran.
+  function horasPorFaseDeObra(estimadas, horas) {
+    const r1 = n => Math.round(n * 10) / 10;
+    const m = {};
+    const de = f => (m[f] = m[f] || { estimadas: 0, reales: 0, aparte: 0 });
+    for (const e of estimadas || []) if (e && e.fase) de(String(e.fase)).estimadas += Number(e.horas) || 0;
+    for (const h of horas || []) {
+      if (!h || !h.fase) continue;
+      if (conCo(h)) de(String(h.fase)).aparte += Number(h.horas) || 0; else de(String(h.fase)).reales += Number(h.horas) || 0;
+    }
+    const orden = FASES_REPORTE.concat(Object.keys(m).filter(f => !FASES_REPORTE.includes(f)));
+    return orden.filter(f => m[f] && (m[f].estimadas > 0 || m[f].reales > 0 || m[f].aparte > 0))
+      .map(f => ({ fase: f, estimadas: r1(m[f].estimadas), reales: r1(m[f].reales), aparte: r1(m[f].aparte) }));
+  }
+  // Lo hecho por tarea (partida) en UNA obra, con las horas del contrato base (sin co): [{codigo, nombre, horas,
+  // cantidad_hecha, cantidad_estimada|null}]. cantidad_estimada solo si la partida tiene UN renglón en el estimado
+  // enlazado (si tiene dos o más, no se sabe con cuál comparar). Nunca un precio: ni se baja.
+  function tareasDeObra(horasObra, tareasPorHoras, items) {
+    const m = {};
+    for (const h of horasObra || []) {
+      if (conCo(h)) continue;
+      for (const t of tareasPorHoras[h.id] || []) {
+        if (!t || !t.codigo) continue;
+        const x = m[t.codigo] = m[t.codigo] || { codigo: t.codigo, nombre: NOMBRE_PARTIDA[t.codigo] || t.codigo, horas: 0, cantidad_hecha: null };
+        x.horas += Number(t.horas) || 0;
+        if (t.cantidad_hecha !== null && t.cantidad_hecha !== undefined && Number.isFinite(Number(t.cantidad_hecha)))
+          x.cantidad_hecha = Math.round(((x.cantidad_hecha || 0) + Number(t.cantidad_hecha)) * 100) / 100;
+      }
+    }
+    return Object.keys(m).sort().map(k => {
+      const renglones = (items || []).filter(i => i && i.codigo === k);
+      const est = renglones.length === 1 && Number.isFinite(Number(renglones[0].cantidad)) ? Number(renglones[0].cantidad) : null;
+      return { ...m[k], horas: Math.round(m[k].horas * 10) / 10, cantidad_estimada: est };
+    });
+  }
   // Lo último que bajó cada fuente: con esto la recarga parcial vuelve a armar
   // el estado entero bajando solo las tablas que se tocaron.
   let crudo = null;
@@ -382,6 +446,37 @@
     const bajado = await Promise.all(pedir.map(([, consulta, suave]) => suave ? leer(consulta).catch(() => []) : leer(consulta)));
     const nuevo = parcial ? { ...crudo } : {};
     pedir.forEach(([nombre], k) => { nuevo[nombre] = bajado[k]; });
+    // v281 (pliego §13 E5): la bandeja «La IA pregunta». Solo el dueño la baja (al equipo ni se le pide): las dudas que la
+    // revisión diaria del cerebro dejó pendientes. Se piden AL CEREBRO (?accion=dudas, con el token), no a la tabla: ia_propuestas
+    // está cerrada a la app porque algunas dudas llevan montos. Va a la par de lo de abajo (no espera a nada) y, si el cerebro no
+    // contesta (o todavía no está subido), vacía.
+    const yoDuenoDudas = (!parcial || soloEstas.includes("ia_dudas")) && (nuevo.perfiles || []).some(p => p && p.id === uid() && p.rol === "dueno");
+    const dudasP = (!parcial || soloEstas.includes("ia_dudas"))
+      ? (yoDuenoDudas ? pedirAlCerebro("dudas", {}, { ms: 20000 }).then(j => (j && Array.isArray(j.dudas) ? j.dudas : [])).catch(() => []) : Promise.resolve([]))
+      : null;
+    // v282 (pliego §13 E6): lo que la revisión de QuickBooks (qb v4) dejó por mirar en cobros_pendientes. Solo el dueño
+    // (la tabla es solo suya: es_dueno()); al equipo ni se le pide. Va a la par de lo de abajo y, si no se puede leer, vacía.
+    const pideQb = (!parcial || soloEstas.includes("qb_pendientes")) && (nuevo.perfiles || []).some(p => p && p.id === uid() && p.rol === "dueno");
+    const qbP = (!parcial || soloEstas.includes("qb_pendientes"))
+      ? (pideQb ? leer("cobros_pendientes?select=id,proyecto_id,hito_id,motivo,detalle,creado&resuelto=is.false&motivo=" +
+          encodeURIComponent("in.(" + QB_MOTIVOS.map(m => '"' + m + '"').join(",") + ")") + "&order=creado.desc&limit=100").catch(() => [])
+        : Promise.resolve([]))
+      : null;
+    // v280 (pliego §13 E4): los renglones del estimado enlazado a cada obra viva, SIN precio (ni se pide la
+    // columna): solo para comparar «X de Y» por tarea. Si no se pueden leer (el campo), se queda vacío.
+    if (!parcial || soloEstas.includes("estimados_obra") || soloEstas.includes("proyectos")) {
+      const obras = (nuevo.proyectos && nuevo.proyectos.length) ? nuevo.proyectos : (nuevo.proyectos_equipo || []);
+      const vivas = new Set(obras.filter(p => ["ejecucion", "aprobado", "pausa"].includes(p.estado)).map(p => p.id));
+      const estDe = {};
+      for (const e of nuevo.estimados_obra || []) if (e && vivas.has(e.proyecto_id) && estDe[e.proyecto_id] === undefined) estDe[e.proyecto_id] = e.id;
+      const ids = Object.values(estDe).filter(x => Number.isFinite(Number(x)));
+      nuevo.estimado_items_obra = ids.length
+        ? await leer(`estimado_items?select=id,estimado_id,codigo,cantidad,unidad&estimado_id=in.(${ids.join(",")})`).catch(() => [])
+        : [];
+      nuevo.estimado_de_obra = estDe;
+    }
+    if (dudasP) nuevo.ia_dudas = await dudasP;
+    if (qbP) nuevo.qb_pendientes = await qbP;
     crudo = nuevo;
     const [perfiles, proyectos, proyectosEquipo, finanzas, alcances, alcancesEquipo,
            hitos, facturas, horas, eventos, pendientes, documentos, fotos,
@@ -428,6 +523,11 @@
     const facPor = agrupar(facturas, "proyecto_id");
     const horPor = agrupar(horas, "proyecto_id");
     const docPor = agrupar(documentos, "proyecto_id");
+    // v280 (pliego §13 E4): el reparto por fase y por tarea
+    const estFasePor = agrupar(Array.isArray(crudo.horas_estimadas_fase) ? crudo.horas_estimadas_fase : [], "proyecto_id");
+    const tareasPorHoras = agrupar(Array.isArray(crudo.horas_tareas) ? crudo.horas_tareas : [], "horas_id");
+    const estDeObra = crudo.estimado_de_obra || {};
+    const itemsPorEst = agrupar(Array.isArray(crudo.estimado_items_obra) ? crudo.estimado_items_obra : [], "estimado_id");
 
     // La fecha corta de las facturas, en el idioma de la app («17 sep» / «Sep 17»)
     const EN = (() => { try { return localStorage.getItem("mxp_idioma") === "en"; } catch { return false; } })();
@@ -448,6 +548,10 @@
       const horasProyecto = (horPor[p.id] || []);
       const reales = (Number(p.horas_reales_base) || 0) +
         horasProyecto.reduce((s, h) => s + Number(h.horas || 0), 0);
+      // v279 (pliego §13 E2, como el cerebro v46): las horas con `co` (un change order
+      // o un service call que se factura aparte) no se comparan con las estimadas del
+      // contrato base. «reales» sigue siendo el total (el costo de la mano de obra).
+      const aparte = horasProyecto.filter(h => h.co).reduce((s, h) => s + Number(h.horas || 0), 0);
       const docs = (docPor[p.id] || []);
       return {
         id: p.id,
@@ -517,8 +621,13 @@
           contrafirmaEl: d.contrafirma_el ? String(d.contrafirma_el).slice(0, 10) : "" })),
         rfis: docs.filter(d => d.clase === "rfi").map(d => ({ id: d.id, titulo: d.titulo, estado: d.estado, url: d.url, ruta: d.ruta || "" })),
         horas: (Number(p.horas_estimadas) > 0 || reales > 0)
-          ? { estimadas: Number(p.horas_estimadas) || 0, reales: Math.round(reales * 10) / 10 }
-          : null
+          ? { estimadas: Number(p.horas_estimadas) || 0, reales: Math.round(reales * 10) / 10,
+              base: Math.round((reales - aparte) * 10) / 10, aparte: Math.round(aparte * 10) / 10 }
+          : null,
+        // v280 (pliego §13 E4): plan contra real por fase (sin dinero) y lo hecho por tarea
+        horasPorFase: horasPorFaseDeObra(estFasePor[p.id] || [], horasProyecto),
+        tieneReparto: (estFasePor[p.id] || []).some(e => Number(e.horas) > 0),
+        tareas: tareasDeObra(horasProyecto, tareasPorHoras, estDeObra[p.id] !== undefined ? (itemsPorEst[estDeObra[p.id]] || []) : [])
       };
     });
 
@@ -569,6 +678,9 @@
         token: llavePorContratista[c.id] || "", activo: c.activo !== false,
         veDinero: c.ve_dinero !== false, avisos: c.avisos !== false,
         notas: c.notas || "",
+        // 20-oct (pliego §12.4 C.3 y §12.7): la ficha legal del contratista (quién firma y su cargo). Las columnas las pone el SQL
+        // de la etapa D (etapa6/ORDEN-Y-FICHA-LEGAL.sql); mientras no estén en la base, vacías
+        firmante: typeof c.firmante === "string" ? c.firmante : "", cargoFirmante: typeof c.cargo_firmante === "string" ? c.cargo_firmante : "",
         invitadoEl: c.invitado_el ? String(c.invitado_el).slice(0, 10) : "",
         vistoEl: c.visto_el ? String(c.visto_el).slice(0, 16).replace("T", " ") : "" })),
       fotos: fotos.map(f => ({
@@ -627,6 +739,25 @@
         estado: r.estado || "por_leer", autor: nombrePorId[r.autor_id] || "",
         fecha: r.fecha || (r.creado ? String(r.creado).slice(0, 10) : "")
       })),
+      // v281 (pliego §13 E5): las dudas de la bandeja «La IA pregunta» (solo el dueño las recibe; al equipo, vacía)
+      dudasIA: (esDueno && Array.isArray(crudo.ia_dudas) ? crudo.ia_dudas : [])
+        .filter(x => x && TIPOS_DUDA.includes(x.tipo) && x.estado === "pendiente")
+        .map(x => {
+          const o = x.objetivo && typeof x.objetivo === "object" ? x.objetivo : {};
+          const c = o.correo && typeof o.correo === "object" ? o.correo : null;
+          return {
+            id: x.id, tipo: x.tipo, clave: String(o.clave || ""), proyecto: o.proyecto_id || null,
+            obra: String(o.obra || o.proyecto_id || ""), texto: String(o.texto || x.razon || ""),
+            opciones: Array.isArray(o.opciones) ? o.opciones.filter(y => y && y.id).map(y => ({ id: String(y.id), texto: String(y.texto || y.id) })) : [],
+            correo: c ? { para: String(c.para || ""), asunto: String(c.asunto || ""), cuerpo: String(c.cuerpo || "") } : null,
+            puedeLeccion: o.puede_leccion === true, creado: String(x.creado || "").slice(0, 10)
+          };
+        }),
+      // v282 (pliego §13 E6): lo de QuickBooks por mirar (solo el dueño; al equipo, vacía). El detalle lleva montos: solo el dueño.
+      qbPendientes: (esDueno && Array.isArray(crudo.qb_pendientes) ? crudo.qb_pendientes : [])
+        .filter(x => x && QB_MOTIVOS.includes(x.motivo))
+        .map(x => ({ id: x.id, proyecto: x.proyecto_id || null, motivo: String(x.motivo), detalle: String(x.detalle || ""),
+          creado: String(x.creado || "").slice(0, 10) })),
       puntos: alcancePuntos.map(a => ({
         id: a.id, proyecto: a.proyecto_id, texto: a.texto,
         hecho: !!a.hecho, orden: a.orden || 0,
@@ -641,6 +772,8 @@
   // La hoja de alcance: el cerebro la ordena (accion=ordenar), la redacta en
   // inglés (accion=alcance), la lee (accion=leer) o devuelve la lectura hecha
   // (accion=lectura). Va con el token del usuario, como el asistente.
+  // 20-oct (pliego §12.5): «Aplicar mi orden» pide con accion=orden (la orden TAPADA y el papel tapado) y recoge con
+  // accion=lectura por la huella, con la misma espera que revisar (ms: 30000 al pedir; la pantalla vuelve cada 4 s).
   //
   // Tres cosas que aquí se cuidan, porque la pantalla no puede enseñar jerga:
   //   · el reloj: SOLO si quien llama lo pide (`opciones.ms`). El lector pide y
@@ -750,6 +883,9 @@
     // Marca "estuve en la app" (última vista del que llama; falla en silencio
     // si la función SQL aún no existe)
     estuve: () => api("rpc/fn_estuve", { metodo: "POST", cuerpo: {} }).catch(() => {}),
+    // v280 (pliego §13 E4): el reparto de las horas estimadas de una obra por fase (solo el dueño: la función lo mira)
+    guardarRepartoFase: (proyectoId, reparto) => api("rpc/fn_reparto_fase_guardar", { metodo: "POST",
+      cuerpo: { p_proyecto: proyectoId, p_reparto: reparto, p_origen: "edgar" } }),
     cambiarLlavePortal: (proyectoId, token) => api("portal_llaves?on_conflict=proyecto_id", {
       metodo: "POST",
       headers: { Prefer: "resolution=merge-duplicates,return=representation" },
@@ -862,14 +998,40 @@
     // La plantilla oficial vive en el almacén de la app, no en el teléfono:
     // así Edgar no tiene que elegir ningún archivo y todos usan la misma.
     // 13-oct (pliego §9.3): v3.10, con el modo servicio; 13-oct (tarde) v3.11 con el SOW ligero (las viejas se quedan en el almacén)
+    // 14-oct (P199): v3.13 (la visita de la inspección de un servicio con permiso, «drop heights» solo con luminarias, el panel
+    // con circuitos nuevos). Había que subirla al almacén antes de publicar la app (17-oct: nunca se subió; la reemplaza la v3.14).
+    // 14-oct (corrección tras la segunda revisión, hallazgo 11): si la v3.13 todavía no está en el almacén (se publicó la app antes
+    // de subirla), se usa la v3.12 de antes y la app lo avisa («uso la plantilla anterior»): nunca se queda sin contrato.
+    // plantillaAnterior() dice si la última que se bajó fue la de respaldo.
+    // 17-oct (revisión del 16-oct, obras-12 y obras-18): v3.14 = v3.13 + la 9.x del sitio sin circuitos existentes en obra nueva
+    // (@si SIN_CIRCUITOS_EXISTENTES) y la 7.x de una sola movilización (@si UNA_MOVILIZACION). La v3.13 nunca se subió: se sube
+    // la v3.14 (SOW_Template_v3.14.html, en plantillas/) ANTES de publicar la app. El respaldo sigue siendo la v3.12, la que está en
+    // el almacén (con ella las marcas nuevas no existen y el papel sale como hoy).
+    // 17-oct (tarde, pliego §11.6): v3.15 = v3.14 + la exclusión general de la hoja en el sitio de la de la casa, las luminarias de la
+    // casa que no se repiten, la frase de la 7.1 del permiso solo cuando Max Power puede pedirlo y los planos nombrados en la §5. Se sube
+    // la v3.15 (SOW_Template_v3.15.html, en plantillas/) ANTES de publicar la app; el respaldo sigue siendo la v3.12.
+    // 20-oct (pliego §12.4 C.3): v3.16 = v3.15 + la §6 que no se parte, la firma de una empresa con «Title / Date», el título de la 7.6
+    // según quién tramita la compañía de luz y la exclusión general la última. Se sube plantillas/SOW_Template_v3.16.html ANTES de
+    // publicar la app; el respaldo sigue siendo la v3.12.
     plantillaSOW: async () => {
-      const firma = await firmarFotos(["plantillas/SOW_Template_v3.12.html"]);
-      const url = firma["plantillas/SOW_Template_v3.12.html"];
-      if (!url) throw new Error("No encuentro la plantilla oficial en la app");
-      const r = await fetch(url);
-      if (!r.ok) throw new Error("No se pudo bajar la plantilla (" + r.status + ")");
-      return r.text();
+      const bajar = async ruta => {
+        const firma = await firmarFotos([ruta]);
+        const url = firma[ruta];
+        if (!url) throw new Error("No encuentro la plantilla oficial en la app");
+        const r = await fetch(url);
+        if (!r.ok) throw new Error("No se pudo bajar la plantilla (" + r.status + ")");
+        return r.text();
+      };
+      try { const t = await bajar("plantillas/SOW_Template_v3.16.html"); plantillaDeRespaldo = false; return t; }
+      catch (e) {
+        let t = null;
+        try { t = await bajar("plantillas/SOW_Template_v3.12.html"); } catch { /* sin la de respaldo, el error de la nueva */ }
+        if (t === null) throw e;
+        plantillaDeRespaldo = true;
+        return t;
+      }
     },
+    plantillaAnterior: () => plantillaDeRespaldo,
 
     // La llave del portal: si el proyecto ya tenía una, se respeta (no se
     // le cambia el enlace al cliente por debajo).
@@ -1006,7 +1168,9 @@
         pantalla: String(contexto.pantalla || "").slice(0, 40) || null,
         proyecto_id: contexto.proyecto_id ? String(contexto.proyecto_id).slice(0, 80) : null,
         propuesta_id: Number.isInteger(contexto.propuesta_id) ? contexto.propuesta_id : null,
-        idioma: contexto.idioma === "en" ? "en" : "es"
+        idioma: contexto.idioma === "en" ? "en" : "es",
+        // 14-oct (pliego §10.10): «Cuéntale el trabajo» va en modo «redactar» (la IA escribe la hoja); sin modo, el chat de siempre
+        ...(contexto.modo === "redactar" ? { modo: "redactar" } : {})
       } : null;
       let res = await llamar(ctx ? { mensajes, contexto: ctx } : { mensajes });
       for (let i = 0; i < 10 && res && res.sigue; i++) {
@@ -1128,6 +1292,9 @@
     // Cerrar un día del calendario: hecho, cancelado o de vuelta a programado
     cambiarEvento: (id, cambios) => actualizar(`eventos?id=eq.${id}`, cambios),
     crearPendiente: fila => insertar("pendientes", { ...fila, autor_id: uid() }),
+    // v282 (pliego §13 E6): «Ya lo miré» en lo de QuickBooks por mirar (solo el dueño: la tabla es solo suya)
+    resolverCobroQB: id => actualizar(`cobros_pendientes?id=eq.${Number(id)}&resuelto=is.false`,
+      { resuelto: true, resuelto_el: new Date().toISOString() }),
     cambiarPendiente: (id, cambios) => actualizar(`pendientes?id=eq.${id}`, cambios),
     resolverPendiente: id => actualizar(`pendientes?id=eq.${id}`,
       { resuelto: true, resuelto_por: uid(), resuelto_el: new Date().toISOString() }),

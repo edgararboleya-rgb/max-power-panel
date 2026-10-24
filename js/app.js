@@ -346,6 +346,8 @@
     armarLateral();
     arrancarChat();
     irHome();
+    // v279 (pliego §13 D7): si se entró tocando el aviso de horas, directo a «Mis horas»
+    abrirDesdeDireccion(abrirPendiente || location.href);
   }
 
   function salirApp() {
@@ -403,6 +405,11 @@
     eventos: ["eventos", "inspecciones"],
     eventos_pend: ["eventos", "inspecciones", "pendientes"],
     cola: ["horas", "pendientes", "alcance_puntos", "materiales", "materiales_equipo", "fotos"],
+    // v280 (pliego §13 E4): lo que toca la IA al apuntar un reporte dictado, y el reparto de horas por fase
+    horas_ia: ["horas", "horas_tareas", "pendientes", "recibos", "recibos_equipo"],
+    reparto: ["horas_estimadas_fase"],
+    // v281 (pliego §13 E5): lo que puede cambiar al contestar una duda de la bandeja (la obra, sus pendientes y la bandeja)
+    dudas: ["proyectos", "pendientes", "ia_dudas"],
   };
   async function recargar(abrirId, que) {
     const turno = ++recargaTurno;
@@ -497,6 +504,12 @@ function esFalloDeRed(err) {
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (habiaCasco) { habiaCasco = false; location.reload(); }
       else habiaCasco = true;
+    });
+    // v279 (pliego §13 D7): con la app ya abierta, tocar el aviso llega aquí (sw.js
+    // manda {tipo: "abrir", url}) y se abre la misma pantalla que al arrancar.
+    navigator.serviceWorker.addEventListener("message", e => {
+      const d = e.data || {};
+      if (d.tipo === "abrir" && typeof d.url === "string") abrirDesdeDireccion(d.url);
     });
   }
 
@@ -830,6 +843,8 @@ function esFalloDeRed(err) {
       // «Vence esta semana» y «Horas» son del dueño
       $("inicio-vence").innerHTML = "";
       $("inicio-horas").hidden = true;
+      // v281: la bandeja «La IA pregunta» es solo del dueño
+      if ($("inicio-dudas")) { $("inicio-dudas").innerHTML = ""; $("inicio-dudas").hidden = true; }
       pintarInicioCampo();
       return;
     }
@@ -837,6 +852,7 @@ function esFalloDeRed(err) {
     // vence esta semana, horas, inspecciones y después los resúmenes de siempre
     pintarInicioHoy();
     pintarInicioUrgentes();
+    pintarInicioDudas();
     pintarInicioAvisos();
     pintarInicioVence();
     pintarInicioHoras();
@@ -1421,6 +1437,9 @@ function esFalloDeRed(err) {
     // El panel: los puntos del alcance de la obra, hechos de cuántos
     const puntos = obra ? (state.puntos || []).filter(x => x.proyecto === pid) : [];
     const hechos = puntos.filter(x => x.hecho).length;
+    // v280 (pliego §13 E4): cómo va cada fase con reparto (horas sin co de la fase / sus horas estimadas, hasta 100 %).
+    // Sin reparto no sale nada. Solo horas y porcentajes: ni un número de dinero.
+    const fasesPanel = obra ? (obra.horasPorFase || []).filter(f => f.estimadas > 0) : [];
 
     // ---- 1. Saludo y resumen ----
     const primerNombre = primerNombreDe(usuario.nombre);
@@ -1527,6 +1546,8 @@ function esFalloDeRed(err) {
           <span class="row-txt">Panel del proyecto · ${hechos}/${puntos.length} encendidos</span>
           <span class="row-flecha" aria-hidden="true">›</span>
         </button>
+        ${fasesPanel.length ? `<div class="hoy-fases-obra">${fasesPanel.map(f =>
+          `<p class="hoy-fase-obra" data-fase="${esc(f.fase)}">${esc(f.fase)} ${Math.min(100, Math.round((f.reales / f.estimadas) * 100))} %</p>`).join("")}</div>` : ""}
       </div>` : ""}`;
     $("inicio-urgentes").querySelectorAll(".chk-toque").forEach(b => b.addEventListener("click", () => {
       const fila = b.closest(".chk-row");
@@ -1881,11 +1902,17 @@ function esFalloDeRed(err) {
           avisos.push({ tipo: "propuesta", id: p.id, icono: "reloj", texto: `${p.nombre}: propuesta sin respuesta hace ${plural(dias, "día")} — llama o escribe al cliente, o márcala no aprobada` });
       }
       if (p.estado === "ejecucion" && p.horas && p.horas.estimadas > 0) {
-        const razon = p.horas.reales / p.horas.estimadas;
-        if (razon > 1)
-          avisos.push({ tipo: "labor", id: p.id, pestana: "dinero", icono: "reloj", texto: `${p.nombre}: ${p.horas.reales}h trabajadas de ${p.horas.estimadas}h estimadas — se está comiendo el margen` });
-        else if (razon >= 0.8)
-          avisos.push({ tipo: "labor", id: p.id, pestana: "dinero", icono: "reloj", texto: `${p.nombre}: el labor va al ${Math.round(razon * 100)}% de lo estimado (${p.horas.reales}h de ${p.horas.estimadas}h) — vigílalo` });
+        // v279 (pliego §13 E2): la misma cuenta que el cerebro (solo las horas del
+        // contrato base, sin change orders ni service calls), avisa desde el 75 % y
+        // dice cómo va la obra por puntos del alcance, para ver si el labor cuadra.
+        const hBase = horasDelContrato(p.horas);
+        const razon = hBase / p.horas.estimadas;
+        const av = avanceObra(p.id);
+        const puntos = av ? ` · la obra va al ${av.pct} % de puntos` : "";
+        if (razon >= 1) // justo al 100 % ya se comió el margen (el mismo corte que el cerebro: alta desde el 100 %)
+          avisos.push({ tipo: "labor", id: p.id, pestana: "dinero", icono: "reloj", texto: `${p.nombre}: ${hBase}h trabajadas de ${p.horas.estimadas}h estimadas${puntos} — se está comiendo el margen` });
+        else if (razon >= 0.75)
+          avisos.push({ tipo: "labor", id: p.id, pestana: "dinero", icono: "reloj", texto: `${p.nombre}: el labor va al ${Math.round(razon * 100)} % de lo estimado (${hBase}h de ${p.horas.estimadas}h)${puntos} — vigílalo` });
       }
       if (["ejecucion", "aprobado", "pausa"].includes(p.estado)
           && p.presupuestoMateriales > 0) {
@@ -1953,6 +1980,123 @@ function esFalloDeRed(err) {
         else irDetalle(btn.dataset.id, btn.dataset.pestana || undefined);
       });
     });
+  }
+
+  // ---------- v281 (pliego §13 E5): la bandeja «La IA pregunta» (solo el dueño) ----------
+  // Las dudas que la revisión diaria del cerebro (de madrugada y a las 9 PM) dejó en ia_propuestas. Cada botón contesta con
+  // ?accion=propuesta y el token del dueño: Sí / No / Todavía no («no» = no te lo vuelvo a preguntar en 30 días; «todavía no»,
+  // en 7). La de cerrar una obra trae sus tres opciones; la de cobro, «Abrir el correo» (un mailto: al cliente con copia a
+  // Edgar) y «Ya lo mandé». El correo NUNCA se manda solo: lo manda Edgar desde su correo. Al equipo no le sale nunca.
+  const CC_EDGAR = "edgararboleya@mxpes.com";
+  let dudaOcupada = null;
+  function mailtoDeCobro(c) {
+    const enc = x => encodeURIComponent(String(x || "")).replace(/%40/g, "@");
+    // la copia a Edgar va siempre (regla de la casa), venga o no en el borrador
+    return `mailto:${enc(c && c.para)}?cc=${enc(CC_EDGAR)}&subject=${enc(c && c.asunto)}&body=${enc(c && c.cuerpo)}`;
+  }
+  function botonesDeDuda(d) {
+    const b = (decision, texto, clase, opcion) =>
+      `<button type="button" class="btn sm ${clase} duda-ia-btn" data-decision="${decision}"${opcion ? ` data-opcion="${esc(opcion)}"` : ""}>${esc(texto)}</button>`;
+    if (d.tipo === "estado") {
+      const ops = d.opciones.length ? d.opciones : [{ id: "cerrar_resolver", texto: "Cerrar y resolver los pendientes" },
+        { id: "cerrar_dejar", texto: "Cerrar y dejarlos" }, { id: "todavia_no", texto: "Todavía no" }];
+      return ops.map(o => o.id === "todavia_no" ? b("luego", o.texto, "btn-white") : b("si", o.texto, o.id === "cerrar_resolver" ? "btn-navy" : "btn-white", o.id)).join("");
+    }
+    const si = d.tipo === "cobro" ? "Ya lo mandé" : d.tipo === "leccion" ? "Guardar la lección" : "Sí";
+    return b("si", si, "btn-navy") + b("no", "No", "btn-white") + b("luego", "Todavía no", "btn-white");
+  }
+  // v282 (pliego §13 E6): «QuickBooks: mira esto» (solo el dueño): lo que la revisión de QuickBooks (qb v4, 8 AM y 4 PM)
+  // no quiso decidir sola y dejó en cobros_pendientes: la factura que la app no conoce, la que no cuadra con su hito, la
+  // pagada en la app y abierta en QuickBooks, la anulada y la que se pagó pero su hito o lo cobrado no se movió. Nada se
+  // arregla solo desde aquí: Edgar lo mira y toca «Ya lo miré» (resuelto; no vuelve a salir).
+  let cobroQBOcupado = null;
+  function tarjetaQB(lista) {
+    const obraDe = id => { const p = id && state && (state.proyectos || []).find(x => x.id === id); return p ? (p.nombre || p.id) : ""; };
+    return `
+      <div class="inicio-card dudas-ia" id="bandeja-qb">
+        <h2 class="inicio-card-titulo">QuickBooks: mira esto</h2>
+        <p class="dudas-ia-sub">${lista.length === 1 ? "1 cosa que la revisión de QuickBooks no decidió sola" : `${lista.length} cosas que la revisión de QuickBooks no decidió sola`}</p>
+        ${lista.map(c => `
+          <div class="duda-ia" data-cobro-qb="${esc(c.id)}">
+            ${obraDe(c.proyecto) ? `<p class="duda-ia-obra" data-no-i18n>${esc(obraDe(c.proyecto))}</p>` : ""}
+            <p class="duda-ia-texto"><b>${esc(c.motivo)}</b></p>
+            <p class="duda-ia-nota" data-no-i18n>${esc(c.detalle)}</p>
+            <div class="duda-ia-botones"><button type="button" class="btn sm btn-white qb-visto-btn">Ya lo miré</button></div>
+            <p class="duda-ia-error" hidden></p>
+          </div>`).join("")}
+      </div>`;
+  }
+  async function resolverCobroQB(boton) {
+    const tarjeta = boton.closest("[data-cobro-qb]");
+    if (!tarjeta || cobroQBOcupado !== null || !usuario || !usuario.finanzas) return;
+    const id = Number(tarjeta.dataset.cobroQb);
+    cobroQBOcupado = id;
+    boton.disabled = true;
+    try {
+      await DB.resolverCobroQB(id);
+      if (state) state.qbPendientes = (state.qbPendientes || []).filter(x => Number(x.id) !== id);
+      cobroQBOcupado = null;
+      pintarInicioDudas();
+    } catch (e) {
+      cobroQBOcupado = null;
+      boton.disabled = false;
+      const err = tarjeta.querySelector(".duda-ia-error");
+      if (err) { err.textContent = (e && e.message && /\s/.test(e.message)) ? e.message : "No pude guardarlo. Vuelve a intentarlo."; err.hidden = false; }
+    }
+  }
+  function pintarInicioDudas() {
+    const caja = $("inicio-dudas");
+    if (!caja) return;
+    const dudas = usuario && usuario.finanzas ? ((state && state.dudasIA) || []) : [];
+    const deQB = usuario && usuario.finanzas ? ((state && state.qbPendientes) || []) : [];
+    if (!dudas.length && !deQB.length) { caja.innerHTML = ""; caja.hidden = true; return; }
+    caja.hidden = false;
+    caja.innerHTML = (!dudas.length ? "" : `
+      <div class="inicio-card dudas-ia" id="bandeja-ia">
+        <h2 class="inicio-card-titulo">La IA pregunta</h2>
+        <p class="dudas-ia-sub">${dudas.length === 1 ? "1 duda de la revisión diaria" : `${dudas.length} dudas de la revisión diaria`}</p>
+        ${dudas.map(d => `
+          <div class="duda-ia" data-duda="${esc(d.id)}" data-tipo="${esc(d.tipo)}">
+            ${d.obra ? `<p class="duda-ia-obra" data-no-i18n>${esc(d.obra)}</p>` : ""}
+            <p class="duda-ia-texto" data-no-i18n>${esc(d.texto)}</p>
+            ${d.tipo === "cobro" && d.correo ? `
+              <a class="btn sm btn-white duda-ia-correo" href="${esc(mailtoDeCobro(d.correo))}" target="_blank" rel="noopener">Abrir el correo</a>
+              <p class="duda-ia-nota">Revísalo y mándalo tú: va con copia a ti.${d.correo.para ? "" : " Falta el correo del cliente: ponlo al abrirlo."}</p>` : ""}
+            ${d.puedeLeccion ? `<label class="duda-ia-leccion"><input type="checkbox" data-leccion> Guardar como lección</label>` : ""}
+            <div class="duda-ia-botones">${botonesDeDuda(d)}</div>
+            <p class="duda-ia-error" hidden></p>
+          </div>`).join("")}
+      </div>`) + (deQB.length ? tarjetaQB(deQB) : "");
+    caja.querySelectorAll(".duda-ia-btn").forEach(btn => btn.addEventListener("click", () => contestarDuda(btn)));
+    caja.querySelectorAll(".qb-visto-btn").forEach(btn => btn.addEventListener("click", () => resolverCobroQB(btn)));
+  }
+  async function contestarDuda(boton) {
+    const tarjeta = boton.closest("[data-duda]");
+    if (!tarjeta || dudaOcupada !== null) return;
+    const id = Number(tarjeta.dataset.duda);
+    const casilla = tarjeta.querySelector("[data-leccion]");
+    const botones = [...tarjeta.querySelectorAll("button")];
+    dudaOcupada = id;
+    botones.forEach(b => { b.disabled = true; });
+    let r = null;
+    try {
+      r = await DB.pedirAlCerebro("propuesta", { id, decision: boton.dataset.decision,
+        ...(boton.dataset.opcion ? { opcion: boton.dataset.opcion } : {}), guardar_leccion: !!(casilla && casilla.checked) }, { ms: 30000 });
+    } catch (e) { r = { ok: false, error: String((e && e.message) || "") }; }
+    dudaOcupada = null;
+    if (r && r.ok) {
+      // se quita ya de la pantalla y después se recarga lo que la respuesta pudo cambiar (la obra, sus pendientes, la bandeja)
+      if (state) state.dudasIA = (state.dudasIA || []).filter(x => Number(x.id) !== id);
+      pintarInicioDudas();
+      avisar(String(r.respuesta || "Hecho."));
+      try { await recargar(undefined, "dudas"); } catch { /* la pantalla se queda como está */ }
+      return;
+    }
+    botones.forEach(b => { b.disabled = false; });
+    const err = tarjeta.querySelector(".duda-ia-error");
+    // (como en «Que la IA lo apunte») un código suelto («no_autorizado») no se enseña: solo una frase
+    const txt = r && typeof r.error === "string" && /\s/.test(r.error.trim()) ? r.error : "No pude guardar tu respuesta. Vuelve a intentarlo.";
+    if (err) { err.textContent = txt; err.hidden = false; }
   }
 
   // ¿Quién reportó horas? (solo dueño)
@@ -2732,12 +2876,17 @@ function esFalloDeRed(err) {
     return `<div class="detalle-seccion"><h3>${titulo}</h3><div class="stepper">${pasos}</div></div>`;
   }
 
+  // v279 (pliego §13 E2): las horas que cuentan contra lo estimado son las del
+  // contrato base; las de change orders y service calls van aparte. Con una copia
+  // vieja del teléfono (sin «base») se usa el total, como antes.
+  const horasDelContrato = h => (h && typeof h.base === "number" ? h.base : (h ? h.reales : 0));
   function horasHTML(p) {
     if (!p.horas) return "";
     const h = p.horas;
-    const pct = h.estimadas > 0 ? Math.min(100, Math.round((h.reales / h.estimadas) * 100)) : 0;
-    const indice = h.estimadas > 0 ? h.reales / h.estimadas : null;
-    const restantes = Math.max(0, h.estimadas - h.reales);
+    const hBase = horasDelContrato(h);
+    const pct = h.estimadas > 0 ? Math.min(100, Math.round((hBase / h.estimadas) * 100)) : 0;
+    const indice = h.estimadas > 0 ? hBase / h.estimadas : null;
+    const restantes = Math.max(0, h.estimadas - hBase);
     const color = indice === null ? "" : indice <= 1 ? "ok" : indice <= 1.15 ? "warn" : "bad";
     // Los últimos reportes van plegados: el número se ve sin abrir nada
     const nReg = Math.min(5, (state.registroHoras || []).filter(r => r.proyecto === p.id).length);
@@ -2745,13 +2894,125 @@ function esFalloDeRed(err) {
       <div class="detalle-seccion" id="ficha-horas">
         <h3>Horas — plan vs. real</h3>
         <div class="horas-linea">
-          <span class="horas-num ${color}">${h.reales} h</span>
+          <span class="horas-num ${color}">${hBase} h</span>
           <span class="horas-de">de ${h.estimadas} h estimadas</span>
           ${p.estado !== "completado" ? `<span class="horas-restan">quedan ${Math.round(restantes * 10) / 10} h</span>` : ""}
         </div>
         <div class="barra horas-barra"><div class="barra-relleno ${color}" style="width:${pct}%"></div></div>
+        ${h.aparte > 0 ? `<p class="horas-aparte">+ ${h.aparte} h de change orders y service calls</p>` : ""}
+        ${usuario.finanzas ? horasPorFaseHTML(p) + horasPorTareaHTML(p) : ""}
         ${nReg ? plegableHTML(p, "horas-reportes", `Últimos reportes (${nReg})`, "", registroHorasHTML(p), false) : ""}
       </div>`;
+  }
+
+  // v280 (pliego §13 E4, D3): debajo de la obra entera, plan contra real POR FASE (el reparto de las horas
+  // estimadas que da Edgar, contra las horas sin co de cada fase) y lo hecho POR TAREA, que solo se informa.
+  // Solo el dueño: la pestaña Resumen (y con ella esta sección) también la ve el campo, así que lo nuevo va
+  // detrás de usuario.finanzas. Sin dinero en ningún caso.
+  const colorDeHoras = (reales, estimadas) => {
+    if (!(estimadas > 0)) return "";
+    const i = reales / estimadas;
+    return i <= 1 ? "ok" : i <= 1.15 ? "warn" : "bad";
+  };
+  const FASES_REPARTO = ["Movilización", "Demolición", "Rough-in", "Underground", "Panel / Servicio",
+    "Trim-out", "Low Voltage", "Troubleshooting", "Inspección / Correcciones", "Service Call"];
+  function horasPorFaseHTML(p) {
+    const filas = (p.horasPorFase || []).filter(f => f.estimadas > 0 || f.reales > 0);
+    const h = p.horas || { estimadas: 0 };
+    const tabla = filas.length ? `
+        <h4 class="fa-etq">Por fase</h4>
+        <div class="hf-tabla">${filas.map(f => {
+          const color = colorDeHoras(f.reales, f.estimadas);
+          const pct = f.estimadas > 0 ? Math.min(100, Math.round((f.reales / f.estimadas) * 100)) : 0;
+          return `
+          <div class="hf-fila" data-fase="${esc(f.fase)}">
+            <span class="hf-fase">${esc(f.fase)}</span>
+            <span class="hf-num ${color}">${f.estimadas > 0 ? `${f.reales} h de ${f.estimadas} h` : `${f.reales} h sin estimar`}</span>
+            <div class="barra fina hf-barra"><div class="barra-relleno ${color}" style="width:${pct}%"></div></div>
+          </div>`; }).join("")}
+        </div>` : "";
+    // Repartir (o cambiar el reparto): solo si la obra tiene horas estimadas que repartir
+    const puede = h.estimadas > 0 && p.estado !== "completado";
+    const sinReparto = !p.tieneReparto && puede ? `
+        <p class="hf-sin">Sin reparto por fase: dímelo en el chat (reparto_horas_fase) o aquí</p>` : "";
+    const boton = puede ? `
+        <button type="button" class="accion secundaria hf-abrir" data-reparto-fase="${esc(p.id)}">${p.tieneReparto ? "Cambiar el reparto" : "Repartir las horas por fase"}</button>
+        ${repartoFaseFormHTML(p)}` : "";
+    return tabla || sinReparto || boton ? `<div class="hf">${tabla}${sinReparto}${boton}</div>` : "";
+  }
+  // El formulario sencillo: las 10 fases con su casilla de horas y la suma en vivo contra las horas estimadas
+  function repartoFaseFormHTML(p) {
+    const ya = Object.fromEntries((p.horasPorFase || []).filter(f => f.estimadas > 0).map(f => [f.fase, f.estimadas]));
+    const est = (p.horas && p.horas.estimadas) || 0;
+    return `
+        <form class="hf-form" data-pid="${esc(p.id)}" data-estimadas="${esc(est)}" hidden>
+          ${FASES_REPARTO.map(f => `
+          <label class="hf-casilla"><span>${esc(f)}</span>
+            <input type="number" name="${esc(f)}" min="0" step="any" inputmode="decimal" value="${ya[f] !== undefined ? esc(ya[f]) : ""}" placeholder="0">
+          </label>`).join("")}
+          <p class="hf-suma" aria-live="polite">${sumaRepartoTexto(Object.values(ya).reduce((s, x) => s + Number(x || 0), 0), est)}</p>
+          <div class="hf-botones">
+            <button type="button" class="accion secundaria hf-cancelar">Cancelar</button>
+            <button type="submit" class="accion">Guardar el reparto</button>
+          </div>
+        </form>`;
+  }
+  function sumaRepartoTexto(suma, est) {
+    const r = n => Math.round(n * 10) / 10;
+    const dif = r(suma - est);
+    return `Suma: ${r(suma)} h de ${r(est)} h estimadas` + (Math.abs(dif) <= 1 ? " · cuadra" : dif < 0 ? ` · faltan ${r(-dif)} h` : ` · sobran ${r(dif)} h`);
+  }
+  function horasPorTareaHTML(p) {
+    const ts = p.tareas || [];
+    if (!ts.length) return "";
+    const lista = `<div class="horas-registro">` + ts.map(x => `
+      <div class="alcance-item">
+        <span class="alcance-tipo">${esc(x.codigo)}</span>
+        <span class="alcance-info">
+          <span class="alcance-titulo">${esc(x.nombre)}</span>
+          <span class="alcance-estado">${esc(x.horas)} h${x.cantidad_estimada !== null && x.cantidad_estimada !== undefined
+            ? ` · ${esc(x.cantidad_hecha || 0)} de ${esc(x.cantidad_estimada)}` : (x.cantidad_hecha ? ` · ${esc(x.cantidad_hecha)} hechas` : "")}</span>
+        </span>
+      </div>`).join("") + `</div>`;
+    return plegableHTML(p, "horas-tareas", `Por tarea (${ts.length})`, "", lista, false);
+  }
+  // Los botones del reparto en la ficha (se enganchan en pintarDetalle)
+  function engancharRepartoFase(caja) {
+    caja.querySelectorAll("[data-reparto-fase]").forEach(btn => btn.addEventListener("click", () => {
+      const f = [...caja.querySelectorAll(".hf-form")].find(x => x.dataset.pid === btn.dataset.repartoFase);
+      if (f) { f.hidden = !f.hidden; if (!f.hidden) { const i = f.querySelector("input"); if (i) i.focus(); } }
+    }));
+    caja.querySelectorAll(".hf-form").forEach(f => {
+      const valorDe = fase => String(f.elements[fase].value || "").trim().replace(",", ".");
+      const leerReparto = () => {
+        const r = {};
+        FASES_REPARTO.forEach(fase => { const v = Number(valorDe(fase)); if (v > 0) r[fase] = Math.round(v * 100) / 100; });
+        return r;
+      };
+      const est = Number(f.dataset.estimadas) || 0;
+      f.addEventListener("input", () => {
+        const suma = Object.values(leerReparto()).reduce((s, x) => s + x, 0);
+        f.querySelector(".hf-suma").textContent = sumaRepartoTexto(suma, est);
+      });
+      f.querySelector(".hf-cancelar").addEventListener("click", () => { f.hidden = true; });
+      f.addEventListener("submit", async e => {
+        e.preventDefault();
+        const malas = FASES_REPARTO.filter(fase => valorDe(fase) !== "" && !(Number(valorDe(fase)) >= 0));
+        if (malas.length) { avisar("Las horas de " + malas.join(", ") + " tienen que ser un número de 0 en adelante.", true); return; }
+        const reparto = leerReparto();
+        const suma = Math.round(Object.values(reparto).reduce((s, x) => s + x, 0) * 10) / 10;
+        if (Math.abs(suma - est) > 1 && !await confirmar(`El reparto suma ${suma} h y la obra tiene ${est} h estimadas. ¿Lo guardo así?`)) return;
+        const boton = f.querySelector('button[type="submit"]');
+        if (boton) boton.disabled = true;
+        try {
+          await DB.guardarRepartoFase(f.dataset.pid, reparto);
+          await recargar(f.dataset.pid, "reparto");
+          avisar("Reparto guardado ✓");
+        } catch (err) {
+          avisar("No se pudo guardar: " + err.message, true);
+        } finally { if (boton) boton.disabled = false; }
+      });
+    });
   }
 
   function registroHorasHTML(p) {
@@ -5658,6 +5919,9 @@ function esFalloDeRed(err) {
     if (cajaAlc) engancharTareas(cajaAlc, pintarDetalle);
     const cajaPend = $detalle.querySelector("#ficha-pendientes");
     if (cajaPend) engancharTareas(cajaPend, pintarDetalle);
+    // v280 (pliego §13 E4): «Repartir las horas por fase» (solo el dueño lo tiene en pantalla)
+    const cajaHoras = $detalle.querySelector("#ficha-horas");
+    if (cajaHoras && usuario.finanzas) engancharRepartoFase(cajaHoras);
 
     $detalle.querySelectorAll(".accion").forEach(btn => {
       if (btn.dataset.accion)
@@ -5937,7 +6201,17 @@ function esFalloDeRed(err) {
         // facturaba, el botón nuevo no sabe nada; este apunte sí (P03)
         const clave = String(btn.dataset.hito);
         if (facturandoHitos.has(clave) || cobrandoHitos.has(clave)) { avisar("Ese hito ya se está facturando: espera a que termine.", true); return; }
-        if (!await confirmar(pregunta)) return;
+        // v282 (pliego §13 E6): en una obra por contratista se pregunta también la retención (%) y va a la función qb
+        const esContrato = !!(pF && pF.contratistaModo === "contrato");
+        let extraRet = {};
+        if (esContrato) {
+          const txt = await confirmarConRetencion(pregunta, retencionRecordada(pF.id));
+          if (txt === null) return;
+          const n = txt.trim() === "" ? 0 : Number(txt.replace(",", ".").replace("%", "").trim());
+          if (!Number.isFinite(n) || n < 0 || n > 100) { avisar("La retención tiene que ser un porcentaje entre 0 y 100.", true); return; }
+          recordarRetencion(pF.id, txt.trim() === "" ? "" : String(n));
+          extraRet = { retencion: n };
+        } else if (!await confirmar(pregunta)) return;
         if (facturandoHitos.has(clave) || cobrandoHitos.has(clave)) return;
         facturandoHitos.add(clave);
         // El botón que se ve es el «Facturar ▾» del renglón: se apaga y dice
@@ -5958,7 +6232,7 @@ function esFalloDeRed(err) {
           const pedir = extra => fetch("https://zeogjvwcmstmkwxjvykz.supabase.co/functions/v1/qb", {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${DB.tokenSesion()}` },
-            body: JSON.stringify(Object.assign({ accion: "factura", proyecto_id: btn.dataset.proyecto, hito_id: Number(btn.dataset.hito), enviar: !!destino }, extra || {}))
+            body: JSON.stringify(Object.assign({ accion: "factura", proyecto_id: btn.dataset.proyecto, hito_id: Number(btn.dataset.hito), enviar: !!destino }, extraRet, extra || {}))
           });
           let r = await pedir();
           let d = await r.json().catch(() => ({}));
@@ -6555,6 +6829,27 @@ function esFalloDeRed(err) {
       alCerrar: (dlg, v) => v === "si" ? dlg.querySelector("[name=dato]").value : null,
     });
   }
+  // v282 (pliego §13 E6): facturar a un contratista pregunta también su retención (%). Devuelve el texto de la casilla
+  // (vacía = 0) o null si se cancela. La última de cada obra se recuerda en este navegador (si no se puede, empieza vacía).
+  function confirmarConRetencion(mensaje, valor) {
+    const v0 = valor === undefined || valor === null ? "" : String(valor);
+    if (dialogosNativos()) return Promise.resolve(prompt(mensaje + "\n\nRetención del contratista (%) — vacía = 0", v0));
+    return ventana({
+      cuerpo: `<div class="ventana-texto">${parrafos(mensaje)}</div>
+        <div class="ventana-texto"><p style="margin:0">Retención del contratista (%)</p></div>
+        <input name="retencion" type="text" inputmode="decimal" value="${esc(v0)}" aria-label="Retención del contratista (%)" placeholder="0" style="width:100%" autocomplete="off">
+        <p class="modal-nota" style="margin:0">Vacía = 0. La recuerdo para la próxima factura de esta obra.</p>`,
+      botones: `<button type="submit" class="accion secundaria" value="">Cancelar</button>
+                <button type="submit" class="accion" value="si">Aceptar</button>`,
+      alCerrar: (dlg, v) => v === "si" ? dlg.querySelector("[name=retencion]").value : null,
+    });
+  }
+  function retencionRecordada(proyectoId) {
+    try { return localStorage.getItem("mxp_retencion_" + proyectoId) || ""; } catch { return ""; }
+  }
+  function recordarRetencion(proyectoId, valor) {
+    try { localStorage.setItem("mxp_retencion_" + proyectoId, valor); } catch { /* sin memoria: la próxima empieza vacía */ }
+  }
   function alertar(mensaje) {
     if (dialogosNativos()) { alert(mensaje); return Promise.resolve(); }
     return ventana({
@@ -6679,6 +6974,7 @@ function esFalloDeRed(err) {
     // Al ENTRAR siempre se pone la fecha de hoy. Antes, si la pantalla se
     // había quedado abierta de ayer, el reporte se guardaba con la fecha vieja.
     $formHoras.elements.fecha.value = hoyISO();
+    faseHorasDeObra = null; // al entrar, la fase se vuelve a proponer según la obra
     prepararHoras();
     // Desde la tarjeta «Ahora» del campo llega la obra de la visita: se deja
     // elegida (si está en la lista) con sus change orders. Desde un botón
@@ -6687,9 +6983,74 @@ function esFalloDeRed(err) {
     if (typeof proyectoId === "string" && proyectoId && [...sel.options].some(o => o.value === proyectoId)) {
       sel.value = proyectoId;
       llenarCOHoras();
+      ponerFaseDeObra();
     }
   }
   $btnHoras.addEventListener("click", irHoras);
+
+  // v279 (pliego §13 D7): tocar el aviso de horas abre «Mis horas» con la obra del
+  // día. La dirección trae ?abrir=horas&proyecto=<id>: al arrancar la lee la app y,
+  // con la app ya abierta, llega por mensaje del service worker. Se limpia de la
+  // barra para que recargar no vuelva a abrir lo mismo. Si la obra no está entre
+  // las que tienen trabajo, se abre sin ella (la de siempre).
+  let abrirPendiente = "";
+  // v281 (pliego §13 E5): ?abrir=bandeja (el aviso «Edgar, tengo N dudas» de la revisión diaria) lleva al inicio y baja
+  // hasta la bandeja «La IA pregunta».
+  function abrirDesdeDireccion(direccion) {
+    let u;
+    try { u = new URL(direccion, location.href); } catch { return false; }
+    const abrir = u.searchParams.get("abrir");
+    if (u.origin !== location.origin || (abrir !== "horas" && abrir !== "bandeja")) return false;
+    const aqui = new URLSearchParams(location.search);
+    if (aqui.has("abrir") || aqui.has("proyecto")) {
+      aqui.delete("abrir"); aqui.delete("proyecto");
+      const resto = aqui.toString();
+      try { history.replaceState(history.state, "", location.pathname + (resto ? "?" + resto : "") + location.hash); } catch { /* nada */ }
+    }
+    // Sin sesión todavía: se guarda y se abre al entrar
+    if (!usuario || !state) { abrirPendiente = u.href; return false; }
+    abrirPendiente = "";
+    if (abrir === "bandeja") {
+      irHome();
+      setTimeout(() => {
+        const b = $("inicio-dudas");
+        const dest = b && !b.hidden ? b : $("inicio-hoy");
+        if (dest && dest.scrollIntoView) dest.scrollIntoView({ block: "start" });
+      }, 300);
+      return true;
+    }
+    const pidAbrir = u.searchParams.get("proyecto") || undefined;
+    // El dueño sin obra (los avisos «Horas del equipo» y el resumen de la noche de la
+    // E1): al inicio, donde se revisan los reportes del equipo, no a su propio formulario
+    if (usuario.finanzas && !pidAbrir) {
+      irHome();
+      setTimeout(() => { const eq = $("inicio-equipo"); if (eq && eq.scrollIntoView) eq.scrollIntoView({ block: "start" }); }, 300);
+      return true;
+    }
+    irHoras(pidAbrir);
+    return true;
+  }
+
+  // v279 (pliego §13 D2): la fase que se propone sale de la obra elegida (antes era
+  // siempre Rough-in): la fase de la obra, «Service Call» si la obra es un servicio
+  // o un service call, y Rough-in si la obra no tiene fase. Se vuelve a proponer al cambiar de
+  // obra; si la persona la cambió a mano y la pantalla se repinta, se respeta.
+  const FASE_REPORTE_DE_OBRA = { mobilizacion: "Movilización", rough: "Rough-in", "insp-rough": "Inspección / Correcciones",
+    trim: "Trim-out", "insp-final": "Inspección / Correcciones" };
+  function faseReporteDeObra(pid) {
+    const p = proyectos().find(x => x.id === pid);
+    // Un servicio (tipo «servicio» o subtipo service_call, la misma regla de la app)
+    // guarda la clave mobilizacion, pero lo que se hizo fue un Service Call
+    if (p && (p.tipo === "servicio" || p.workSubtype === "service_call")) return "Service Call";
+    return (p && FASE_REPORTE_DE_OBRA[p.fase]) || "Rough-in";
+  }
+  let faseHorasDeObra = null; // la obra para la que ya se propuso la fase
+  function ponerFaseDeObra(forzar) {
+    const pid = $formHoras.elements.proyecto.value;
+    if (!forzar && pid === faseHorasDeObra) return;
+    faseHorasDeObra = pid;
+    $formHoras.elements.fase.value = faseReporteDeObra(pid);
+  }
 
   // Proyectos donde se puede reportar o asociar trabajo: los activos MÁS los
   // que aún tengan pendientes rojos abiertos (trabajos atípicos como Danzig,
@@ -6786,9 +7147,11 @@ function esFalloDeRed(err) {
     const querido = antes || deHoy || ultimo;
     if (querido && lista.some(p => p.id === querido)) sel.value = querido;
     llenarCOHoras();
+    ponerFaseDeObra();
     pintarHistorialHoras();
   }
   $formHoras.elements.proyecto.addEventListener("change", llenarCOHoras);
+  $formHoras.elements.proyecto.addEventListener("change", () => ponerFaseDeObra(true));
 
   function pintarHistorialHoras() {
     const mios = (state.registroHoras || []).filter(r => r.usuarioId === usuario.id);
@@ -6992,6 +7355,101 @@ function esFalloDeRed(err) {
       if (btnHoras) btnHoras.disabled = false;
     }
   });
+
+  // v280 (pliego §13 E4, D9): «Que la IA lo apunte». El cerebro lee el cuadro «¿Qué hiciste hoy?»
+  // (?accion=interpretar_reporte, con el token de la sesión, como el asistente) y, si lo entiende, lo guarda él con
+  // su rastro; si duda, pregunta en una línea (con un botón por obra si duda de la obra). «No era así, quítalo» lo
+  // deshace (?accion=deshacer_cambio). De lo que vuelve solo se pinta la respuesta, la pregunta y las obras
+  // candidatas. El formulario de abajo sigue igual: es el camino a mano.
+  const $btnHorasIA = $("horas-ia"), $cajaHorasIA = $("horas-ia-caja");
+  const NO_PUDE_IA = "No pude leerlo ahora. Guarda el reporte con el formulario.";
+  const TARDO_IA = "Tardó demasiado. Mira tu historial de abajo antes de volver a apuntarlo: puede que ya haya entrado.";
+  let leyendoIA = false;
+  function cajaHorasIA(html) {
+    if (!$cajaHorasIA) return;
+    $cajaHorasIA.innerHTML = html || "";
+    $cajaHorasIA.hidden = !html;
+  }
+  async function recargarTrasIA() {
+    try { await recargar(undefined, "horas_ia"); } catch { /* la pantalla se queda como está */ }
+    if ($("vista-horas") && !$("vista-horas").hidden) pintarHistorialHoras();
+  }
+  async function horasConIA(pidPista, permitirDuplicado) {
+    if (leyendoIA || !$btnHorasIA) return;
+    const texto = String($formHoras.elements.notas.value || "").trim();
+    if (texto.length < 3) { cajaHorasIA(`<p class="horas-ia-txt">Cuéntalo primero en el cuadro: las horas, la obra y qué hicieron.</p>`); return; }
+    const sel = $formHoras.elements.proyecto;
+    if (pidPista && [...sel.options].some(o => o.value === pidPista)) { sel.value = pidPista; llenarCOHoras(); ponerFaseDeObra(); }
+    leyendoIA = true;
+    $btnHorasIA.disabled = true;
+    $btnHorasIA.textContent = "Leyendo…";
+    if ($cajaHorasIA) $cajaHorasIA.querySelectorAll("button").forEach(b => { b.disabled = true; });
+    let r = null, fallo = "";
+    try {
+      r = await DB.pedirAlCerebro("interpretar_reporte", { texto, fecha: $formHoras.elements.fecha.value || hoyISO(),
+        proyecto_id: pidPista || sel.value || null, ...(permitirDuplicado ? { permitir_duplicado: true } : {}) }, { ms: 120000 });
+    } catch (e) { r = null; fallo = String((e && e.message) || ""); }
+    finally {
+      leyendoIA = false;
+      $btnHorasIA.disabled = false;
+      $btnHorasIA.textContent = "Que la IA lo apunte";
+    }
+    if (!r && /no contestó a tiempo/.test(fallo)) {
+      // (revisión de azul) se agotó la espera, pero el cerebro puede haber guardado igual: se recarga y se pide mirar el historial
+      await recargarTrasIA();
+      cajaHorasIA(`<p class="horas-ia-txt">${esc(TARDO_IA)}</p>`);
+      return;
+    }
+    if (!r || typeof r !== "object" || (typeof r.respuesta !== "string" && typeof r.pregunta !== "string")) { cajaHorasIA(`<p class="horas-ia-txt">${esc(NO_PUDE_IA)}</p>`); return; }
+    if (r.necesita_respuesta) {
+      const cands = (Array.isArray(r.candidatas) ? r.candidatas : []).filter(c => c && typeof c.proyecto_id === "string" && c.proyecto_id);
+      // (revisión del 23-oct) si ya hay horas ese día en esa obra, la pregunta lleva su respuesta: «Sí, son horas aparte» vuelve a
+      // mandar el mismo texto con permitir_duplicado (sin ese botón no había forma de contestarla)
+      const dup = r.duplicado === true;
+      cajaHorasIA(`<p class="horas-ia-txt">${esc(sinMontos(String(r.pregunta || r.respuesta)))}</p>` + (cands.length ? `<div class="horas-ia-obras">${cands.map(c =>
+        `<button type="button" class="accion secundaria horas-ia-obra" data-ia-obra="${esc(c.proyecto_id)}">${esc(nombreVis(String(c.nombre || nombreProyecto(c.proyecto_id) || c.proyecto_id)))}</button>`).join("")}</div>` : "")
+        + (dup ? `<div class="horas-ia-obras"><button type="button" class="accion secundaria horas-ia-obra" data-ia-aparte="1">Sí, son horas aparte</button></div>` : ""));
+      if ($cajaHorasIA) $cajaHorasIA.querySelectorAll("[data-ia-obra]").forEach(b => b.addEventListener("click", () => horasConIA(b.dataset.iaObra)));
+      const ba = dup && $cajaHorasIA && $cajaHorasIA.querySelector("[data-ia-aparte]");
+      if (ba) ba.addEventListener("click", () => horasConIA(pidPista || sel.value || null, true));
+      await recargarTrasIA();
+      return;
+    }
+    if (r.guardado) {
+      const cid = r.cambio_id_horas;
+      cajaHorasIA(`<p class="horas-ia-txt horas-ia-bien">${esc(sinMontos(String(r.respuesta || "")))}</p>` + (cid !== null && cid !== undefined
+        ? `<button type="button" class="accion secundaria horas-ia-quitar" data-ia-quitar="${esc(cid)}">No era así, quítalo</button>` : ""));
+      $formHoras.elements.notas.value = "";
+      const bq = $cajaHorasIA && $cajaHorasIA.querySelector("[data-ia-quitar]");
+      if (bq) bq.addEventListener("click", () => quitarReporteIA(bq, texto));
+      await recargarTrasIA();
+      return;
+    }
+    // el tope del día y lo que no se pudo: la frase que manda el cerebro (ya viene en llano y sin dinero)
+    cajaHorasIA(`<p class="horas-ia-txt">${esc(sinMontos(String(r.respuesta || NO_PUDE_IA)))}</p>`);
+  }
+  async function quitarReporteIA(boton, texto) {
+    if (boton.disabled) return;
+    boton.disabled = true;
+    let r = null;
+    try { r = await DB.pedirAlCerebro("deshacer_cambio", { cambio_id: Number(boton.dataset.iaQuitar) }, { ms: 30000 }); } catch { r = null; }
+    if (r && r.ok) {
+      // (revisión del 23-oct) el cerebro quita el reporte entero (las horas, el posible extra y la compra) y lo dice en frases
+      // fijas (notas), una por línea; solo esas frases se pintan
+      const notas = (Array.isArray(r.notas) ? r.notas : []).filter(x => typeof x === "string" && x.trim()).slice(0, 4);
+      cajaHorasIA(`<p class="horas-ia-txt horas-ia-bien">Quitado</p>` + notas.map(n => `<p class="horas-ia-txt">${esc(sinMontos(n))}</p>`).join(""));
+      if (!$formHoras.elements.notas.value) $formHoras.elements.notas.value = texto;
+      await recargarTrasIA();
+      return;
+    }
+    boton.disabled = false;
+    // (revisión de azul) un código («no_autorizado», «falla») no se enseña: solo una frase
+    const txt = r && typeof r.error === "string" && r.error && /\s/.test(r.error.trim()) ? r.error : "No se pudo quitar ahora. Díselo a Edgar.";
+    const viejo = $cajaHorasIA && $cajaHorasIA.querySelector(".horas-ia-error");
+    if (viejo) viejo.textContent = sinMontos(txt);
+    else if ($cajaHorasIA) $cajaHorasIA.insertAdjacentHTML("beforeend", `<p class="horas-ia-txt horas-ia-error">${esc(sinMontos(txt))}</p>`);
+  }
+  if ($btnHorasIA) $btnHorasIA.addEventListener("click", () => horasConIA());
 
   // ---------- Reportes de horas que quedaron esperando señal ----------
   const LLAVE_COLA = "mxp_horas_pendientes";
@@ -14624,20 +15082,26 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     alcAbrir(proy, prop, variantes);
     mostrar("alcance", { kicker: proy.nombre, titulo: "Escribir el alcance", volver: true });
     pintarAlcance();
+    alcSeguirConector();
   }
 
   // El precio que dice el estimado del proyecto: el convertido o congelado si lo
   // hay, si no el más nuevo. null si el proyecto no tiene estimado.
-  function alcPrecioEstimado(proyectoId) {
+  // El estimado de la obra: por enlace (proyecto_id) o, si el estimado viejo no lo trae, por el mismo nombre; el convertido,
+  // si no el congelado, si no el más nuevo. (14-oct, §10.10: lo usan también los pagos de «Cuéntale el trabajo»)
+  function alcEstimadoDe(proyectoId) {
     if (!estData || !Array.isArray(estData.estimados)) return null;
-    // Por enlace (proyecto_id) o, si el estimado viejo no lo trae, por el mismo nombre
     const proy = proyectos().find(x => x.id === proyectoId);
     const nom = t => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
     const lista = estData.estimados.filter(e => e.proyecto_id === proyectoId
         || (!e.proyecto_id && proy && nom(e.nombre) && nom(e.nombre) === nom(proy.nombre)))
       .sort((a, b) => String(b.creado || "").localeCompare(String(a.creado || "")));
     if (!lista.length) return null;
-    const est = lista.find(e => e.estado === "convertido") || lista.find(e => e.estado === "congelado") || lista[0];
+    return lista.find(e => e.estado === "convertido") || lista.find(e => e.estado === "congelado") || lista[0];
+  }
+  function alcPrecioEstimado(proyectoId) {
+    const est = alcEstimadoDe(proyectoId);
+    if (!est) return null;
     try {
       // (12-oct, CCB chandelier) el precio que se ofrece es el que se OFERTÓ (bid_final, la foto del estimado
       // convertido o congelado), no la cuenta de hoy: con un precio pactado por encima del cálculo (935 frente a
@@ -14673,7 +15137,20 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       } catch { lectura = null; }
     }
     // 7-oct: el armado de la IA vuelve del teléfono solo si es de esta misma hoja (con su paquete: no se vuelve a pagar)
-    const armado = (local.armado && local.armado.paquete && local.armado.texto === texto && Array.isArray(local.armado.lineas)) ? local.armado : null;
+    const armadoLocal = (local.armado && local.armado.paquete && local.armado.texto === texto && Array.isArray(local.armado.lineas)) ? local.armado : null;
+    // 14-oct (pliego §10.11): el armado que guardó el chat de Claude (el conector) en la propuesta, con la misma forma que el del
+    // teléfono (alcArmadoParaGuardar). Si es de esta misma hoja, se abre sin volver a pedirlo a la IA (el del teléfono manda).
+    const decProp = (prop && prop.alcance_decisiones) || {};
+    const guardado = decProp.armado_guardado;
+    const delChat = !armadoLocal && guardado && guardado.paquete && guardado.texto === texto && Array.isArray(guardado.lineas)
+      ? Object.assign(JSON.parse(JSON.stringify(guardado)), { de_conector: true }) : null;
+    // 14-oct (corrección tras la segunda revisión, hallazgo 8): el armado guardado (el del teléfono o el que dejó el chat de Claude)
+    // se vuelve a juzgar aquí, con el js/alcance.js de ESTA app: el del conector lo juzgó la copia que se subió con el cerebro (puede
+    // ser otra versión) y cualquiera que escriba en la propuesta podría meter un juicio. Si el juez de aquí lo tira o lo deja
+    // distinto, no vale: se quita y se dice.
+    const armado0 = armadoLocal || delChat;
+    const armado = armado0 && alcArmadoSigueValiendo(armado0) ? armado0 : null;
+    const delChatOk = !!(armado && armado === delChat);
     alcActivo = {
       proyecto: proy, propuesta: prop || null,
       variantes: variantes || alcVariantesDe(proy.id),
@@ -14691,13 +15168,34 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       decididos: ((prop && prop.alcance_decisiones && Array.isArray(prop.alcance_decisiones.decididos)) ? prop.alcance_decisiones.decididos
                   : (prop ? [] : alcDecididosLocal(proy.id))).slice(-60),
       // 13-oct, versión 3 (pliego §8.2): lo que la IA cambió en el papel ({clave, cita, nuevo, donde, cuando}), tope 60
+      // (20-oct, §12.9: tope 120; un «anadir» al final de su sección puede no traer cita)
       reemplazos: ((prop && prop.alcance_decisiones && Array.isArray(prop.alcance_decisiones.reemplazos)) ? prop.alcance_decisiones.reemplazos
-                   : (prop ? [] : alcReemplazosLocal(proy.id))).filter(r => r && r.cita && typeof r.nuevo === "string").slice(-60),
+                   : (prop ? [] : alcReemplazosLocal(proy.id))).filter(r => r && (r.cita || (r.ambito === "anadir" && r.donde)) && typeof r.nuevo === "string").slice(-ALC_TOPE_REEMPLAZOS),
       reemplazos_sin_sitio: [],
+      // 18-oct (pliego §11.12.4): las vueltas del proceso de revisión de antes (tope 30) y lo que Edgar deshizo (no se pone solo otra vez)
+      rondas: alcRondasParaGuardar({ rondas: prop && prop.alcance_decisiones ? prop.alcance_decisiones.rondas : [] }),
+      proceso: null, deshechos: [],
+      // 20-oct (pliego §12.5): la orden de Edgar («Aplicar mi orden») y lo que se mide (§12.8), de la propuesta (se limpian otra vez)
+      orden: alcOrdenDeGuardado(decProp.orden), medida: alcMedidaDeGuardado(decProp.medida),
+      // 14-oct (pliego §10.9): las cláusulas adaptadas por la IA que Edgar devolvió al texto de la casa (claves de la lista B)
+      clausulas_casa: ((prop && prop.alcance_decisiones && Array.isArray(prop.alcance_decisiones.clausulas_casa)) ? prop.alcance_decisiones.clausulas_casa : [])
+                      .filter(k => (Alcance.CLAUSULAS_ADAPTABLES || []).includes(k)),
+      // 14-oct (pliego §10.10): las correcciones de la ronda de arreglo 1 (y lo que Edgar pidió con «Cámbiale algo»): viajan con
+      // cada armado y sobreviven a cualquier rearmado. Se vuelven a tapar al abrir (lo guardado no se cree a la palabra).
+      correcciones: alcCorreccionesLimpias((prop && prop.alcance_decisiones && Array.isArray(prop.alcance_decisiones.correcciones))
+                      ? prop.alcance_decisiones.correcciones : (prop ? [] : alcCorreccionesLocal(proy.id))),
+      // «Cuéntale el trabajo» (la charla de la hoja) y el armado todo seguido con su «Así lo hice»: viven en memoria
+      cuentale: null, auto: null, auto_cambio: null,
+      // 14-oct (pliego §10.11): el armado vino del chat de Claude y todavía no pasó por el papel ni la revisión: la app los
+      // corre sola, una vez, al abrir la obra (alcSeguirConector)
+      conector_pendiente: !!(delChatOk && decProp.conector && decProp.conector.rondas_pendientes && (!prop.estado || prop.estado === "borrador")),
       // v252: la base del precio que Edgar ELIGIÓ para esta propuesta (null = la decide la regla)
       pricing_basis: alcBaseGuardada(prop),
       respuestas: {}, contrato: null
     };
+    // (§10.11) las correcciones que viajaron con ese armado son las de la propuesta («Así lo hice» las cita por su número)
+    if (delChatOk) alcActivo.armado.correcciones = alcActivo.correcciones.slice(-Alcance.MAX_CORRECCIONES);
+    if (armado0 && !armado) setTimeout(() => avisar("El contrato que armó la IA no volvió a pasar los candados de esta app: lo quité. Toca «Armar el contrato con IA».", true), 0);
     alcCargarLevantamientos();
     alcFicha = 0;
     // v251 (revisión): una hoja guardada con líneas partidas (Metro NPR) NO se reescribe al abrirla: se abre tal cual
@@ -14731,6 +15229,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (!prop) return;
     alcAbrir(alcActivo.proyecto, prop, alcActivo.variantes);
     pintarAlcance();
+    alcSeguirConector();   // (§10.11) la variante que se armó desde el chat de Claude sigue sola, una vez
   }
 
   // Un alcance nuevo del MISMO proyecto (el segundo trabajo de la misma casa)
@@ -15178,6 +15677,29 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   }
 
   // ---------------------------------------------------------- FICHA 1: la hoja
+  // Los botones de arreglar de un error: los usan la vista de las reglas y (16-oct) la de la IA
+  function alcBotonesDe(arreglos, sufijo, L, precioEst) {
+    return (arreglos || []).map((a, k) => {
+      const id = `${sufijo}-${k}`;
+      alcArreglos[id] = a;
+      if (a.pide === "monto" || a.pide === "texto") {
+        // Si falta el precio y el proyecto tiene estimado, se le ofrece ese precio:
+        // Edgar lo aprueba con un toque, o escribe otro en la casilla.
+        let ofrecido = "";
+        if (a.tipo === "poner_precio_base" && precioEst) {
+          const oid = `${id}-est`;
+          alcArreglos[oid] = { tipo: "poner_precio_base", valor: precioEst.texto };
+          ofrecido = `<button class="alc-op alc-auto" data-fix="${oid}" title="${esc(precioEst.nombre)}">✓ Sí, usar el del estimado ${esc(precioEst.ref)}: $${precioEst.texto}</button>`;
+        }
+        return `<span class="alc-fix">${ofrecido}<input class="alc-libre alc-fix-in" data-fix-in="${id}" placeholder="${a.pide === "monto" ? "1,850.00" : "escríbelo"}" inputmode="${a.pide === "monto" ? "decimal" : "text"}">
+                <button class="alc-op" data-fix="${id}">${esc(ofrecido ? "No, escribir otro precio" : a.etiqueta)}</button></span>`;
+      }
+      if (a.pide === "renglon")
+        return `<span class="alc-fix"><select class="alc-libre alc-fix-in" data-fix-in="${id}">${L.items.map(it => `<option value="${it.n}">${it.n}. ${esc(it.titulo.slice(0, 40))}</option>`).join("")}</select>
+                <button class="alc-op" data-fix="${id}">${esc(a.etiqueta)}</button></span>`;
+      return `<button class="alc-op${a.auto ? " alc-auto" : ""}" data-fix="${id}">${esc(a.etiqueta)}</button>`;
+    }).join("");
+  }
   function alcFichaHoja() {
     const A = alcActivo;
     const L = A.leido;
@@ -15186,7 +15708,14 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     // Directo/Redactar → Armar) sigue entero, bajo «Más…».
     const g = alcGastoMes && alcGastoMes.tope > 0
       ? ` <span>Este mes el asistente lleva ${Math.round(alcGastoMes.centavos || 0)} ¢ de ${Math.round(alcGastoMes.tope / 100)} $.</span>` : "";
+    // 14-oct (pliego §10.10): «Cuéntale el trabajo», arriba, antes de la hoja: la charla que escribe la hoja por Edgar
+    const C0 = A.cuentale;
     let salida = `<div class="alc-dos"><div class="alc-izq">
+      <div class="alc-cuentale">
+        <button type="button" class="accion alc-cuentale-boton" id="alc-cuentale" aria-expanded="${C0 && C0.abierta ? "true" : "false"}"${A.armado_en_marcha ? " disabled" : ""}>Cuéntale el trabajo</button>
+        ${C0 && C0.abierta ? "" : `<p class="lev-nota">Cuéntale a la IA lo que hay que hacer, como en el chat (escrito o con el micrófono del teclado). Te pregunta lo justo, escribe la hoja aquí abajo y arma el contrato sola.</p>`}
+        ${alcCajaCuentale()}
+      </div>
       <p class="lev-nota">Pega aquí el alcance como te salga: dictado, un SOW viejo, o la hoja con sus títulos,
       en español o en inglés. Toca «Armar el contrato con IA»: el dinero y los textos de la ley los pone la app.</p>
       <textarea id="alc-texto" class="alc-texto" rows="16" placeholder="Pega aquí, o toca «Importar un archivo»">${esc(A.texto)}</textarea>
@@ -15195,7 +15724,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       <div class="alc-botones">
         <button class="accion principal" id="alc-armar-ia"${A.armado_en_marcha ? " disabled" : ""}>${A.armado ? "Volver a armar con IA" : "Armar el contrato con IA"}</button>
       </div>
-      <p class="lev-nota alc-armar-nota"><span>La IA lee la hoja y la ficha de la obra, escribe el contrato y otra IA lo revisa antes de que lo mandes. Tarda 1–2 minutos.</span>${g}</p>
+      <p class="lev-nota alc-armar-nota"><span>La IA lee la hoja y la ficha de la obra, escribe el contrato y otra IA lo revisa antes de que lo mandes. Tarda 1–2 minutos.</span>
+        <span>Lo que encuentre lo arregla sola (como mucho dos rondas) y te cuenta qué hizo.</span>
+        <span>Cuesta ≈ $0.50; si tiene que arreglar algo, hasta ≈ $1.50.</span>${g}</p>
       <div class="alc-botones">
         <button class="accion secundaria" id="alc-importar">Importar un archivo</button>
       </div>
@@ -15232,26 +15763,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       return t ? `<div class="alc-cita" data-ira="${n}">${esc(t.length > 120 ? t.slice(0, 120) + "…" : t)}</div>` : ""; };
     // Los botones de arreglar: uno por cada arreglo que trae el error
     const precioEst = alcPrecioEstimado(A.proyecto.id);
-    const botonesDe = (arreglos, sufijo) => (arreglos || []).map((a, k) => {
-      const id = `${sufijo}-${k}`;
-      alcArreglos[id] = a;
-      if (a.pide === "monto" || a.pide === "texto") {
-        // Si falta el precio y el proyecto tiene estimado, se le ofrece ese precio:
-        // Edgar lo aprueba con un toque, o escribe otro en la casilla.
-        let ofrecido = "";
-        if (a.tipo === "poner_precio_base" && precioEst) {
-          const oid = `${id}-est`;
-          alcArreglos[oid] = { tipo: "poner_precio_base", valor: precioEst.texto };
-          ofrecido = `<button class="alc-op alc-auto" data-fix="${oid}" title="${esc(precioEst.nombre)}">✓ Sí, usar el del estimado ${esc(precioEst.ref)}: $${precioEst.texto}</button>`;
-        }
-        return `<span class="alc-fix">${ofrecido}<input class="alc-libre alc-fix-in" data-fix-in="${id}" placeholder="${a.pide === "monto" ? "1,850.00" : "escríbelo"}" inputmode="${a.pide === "monto" ? "decimal" : "text"}">
-                <button class="alc-op" data-fix="${id}">${esc(ofrecido ? "No, escribir otro precio" : a.etiqueta)}</button></span>`;
-      }
-      if (a.pide === "renglon")
-        return `<span class="alc-fix"><select class="alc-libre alc-fix-in" data-fix-in="${id}">${L.items.map(it => `<option value="${it.n}">${it.n}. ${esc(it.titulo.slice(0, 40))}</option>`).join("")}</select>
-                <button class="alc-op" data-fix="${id}">${esc(a.etiqueta)}</button></span>`;
-      return `<button class="alc-op${a.auto ? " alc-auto" : ""}" data-fix="${id}">${esc(a.etiqueta)}</button>`;
-    }).join("");
+    const botonesDe = (arreglos, sufijo) => alcBotonesDe(arreglos, sufijo, L, precioEst);
     // Debajo de lo que se puede dejar como está: Edgar explica en una línea por qué
     // está bien así, la app lo apunta y no lo vuelve a marcar.
     const explicame = (e, sufijo) => {
@@ -15575,13 +16087,36 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   }
 
   // ------------------------------------------------------ FICHA 3: el contrato
+  // 20-oct (pliego §12.4 C.1): los avisos del papel (Alcance.avisosFinal: siglas sin definir, remisiones a una sección que no está,
+  // el cliente con dos nombres, una obligación al Owner que no firma) y el de los arreglos guardados cerca del tope. Una línea
+  // ámbar por aviso; no frenan nada ni entran en alcProblemasNuevos: la orden de Edgar manda. Se calculan una vez por papel.
+  let alcAvisosCache = { html: null, lista: [] };
+  function alcAvisosDelPapel(A) {
+    const C = A && A.contrato;
+    if (!C || !C.html) return "";
+    if (alcAvisosCache.html !== C.html) {
+      let lista = [];
+      try {
+        const dec = A.decision || {};
+        lista = (Alcance.avisosFinal(C.html, { con_gc: !!dec.esGC, owner_firma: !!(dec.bloques && dec.bloques.CLIENT_2) }) || []).map(x => String((x && x.texto) || ""));
+      } catch { lista = []; }
+      alcAvisosCache = { html: C.html, lista: lista.filter(Boolean).slice(0, 12) };
+    }
+    const lineas = alcAvisosCache.lista.slice();
+    const n = Array.isArray(A.reemplazos) ? A.reemplazos.length : 0;
+    if (n >= ALC_AVISO_REEMPLAZOS)
+      lineas.push(`Llevas ${n} arreglos guardados en este contrato; caben ${ALC_TOPE_REEMPLAZOS}. Si pasas de ahí, los más viejos se pierden.`);
+    if (!lineas.length) return "";
+    return `<div class="alc-ambar alc-avisos-papel"><b>Para que lo mires (no te frena):</b><ul>${lineas.map(t => `<li>${esc(t)}</li>`).join("")}</ul></div>`;
+  }
   function alcFichaContrato() {
     const A = alcActivo;
     if (!A.contrato) return `<p class="lev-nota">Toca «Armar el contrato» en la revisión.</p>`;
     const C = A.contrato;
     const nums = Object.entries(C.numeroClausulas || {});
     // 7-oct: con el armado de la IA, arriba la tarjeta «Lo que la IA entendió» (pliego §2.2)
-    return `${A.armado && A.salida && A.salida.ia ? alcCajaArmado() : ""}
+    // 14-oct (pliego §10.10): y encima de todo, «Así lo hice» (lo que entendió, cómo lo armó, lo que arregló y lo que falta)
+    return `${alcCajaAsiLoHice()}${A.armado && A.salida && A.salida.ia ? alcCajaArmado() : ""}
       <div class="alc-entendi">
         <h3>Contrato armado</h3>
         <p class="alc-sub">${esc(C.archivo)}</p>
@@ -15589,6 +16124,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           ? `<div class="alc-rojo"><b>No lo bajé: hay algo que revisar.</b><ul>${C.problemas.map(p => `<li>${esc(p.texto)}</li>`).join("")}</ul></div>`
           : `<p class="lev-nota">Pasó el repaso: no quedó ningún hueco y cada monto del papel es uno de los que calculé yo.</p>`}
         ${(C.avisos || []).length ? `<div class="alc-ambar"><b>Lo llené yo (no te frena):</b><ul>${C.avisos.map(t => `<li>${esc(t)}</li>`).join("")}</ul></div>` : ""}
+        ${alcAvisosDelPapel(A)}
         ${alcCajaRevision()}
         <p class="alc-sub">La sección 9 quedó así:</p>
         <div class="alc-chips">${nums.map(([k, n]) => `<span class="alc-chip">9.${n} ${esc(NOMBRE_CLAUSULA[k] || k.replace(/_/g, " "))}</span>`).join("")}</div>
@@ -15764,7 +16300,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const bArmarIA = $("alc-armar-ia");
     if (bArmarIA) bArmarIA.addEventListener("click", () => {
       bArmarIA.disabled = true;
-      alcArmarConIA().catch(() => { /* la nube nunca frena */ })
+      // 14-oct (pliego §10.10): todo seguido: arma, revisa y se corrige sola (como mucho dos rondas)
+      alcArmarTodo("boton").catch(() => { /* la nube nunca frena */ })
         .finally(() => { const b = $("alc-armar-ia"); if (b && alcActivo && !alcActivo.armado_en_marcha) b.disabled = false; });
     });
     const dMasH = $("alc-mas");
@@ -15777,6 +16314,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       // del teléfono, con el mismo (la misma huella: si ya terminó por detrás, sale gratis)
       const esf = e && (e.codigo === "tiempo" || e.codigo === "salida_cortada") ? "medium" : ((e && e.esfuerzo) || "high");
       b.disabled = true;
+      // (§10.10) si venía del armado todo seguido, vuelve a empezar todo seguido (con lo arreglado antes)
+      if (alcActivo && alcActivo.auto && !alcActivo.auto.activo) alcAutoEmpezar(alcActivo, alcActivo.auto.de, alcActivo.auto);
       alcArmarConIA(esf).catch(() => { /* la nube nunca frena */ });
     }));
     document.querySelectorAll("[data-armado-reglas]").forEach(b => b.addEventListener("click", alcLeerConReglas));
@@ -15798,6 +16337,11 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     document.querySelectorAll("[data-juicio-resp]").forEach(b => b.addEventListener("click", () => {
       b.disabled = true;
       alcContestarArmado(b.dataset.juicioResp, b.dataset.valor).catch(e => avisar((e && e.message) || "No pude rehacer el contrato", true));
+    }));
+    // 14-oct (pliego §10.9): «Volver al texto de la casa» / «Usar el texto de la IA» en una cláusula adaptada
+    document.querySelectorAll("[data-clausula-casa]").forEach(b => b.addEventListener("click", () => {
+      b.disabled = true;
+      alcClausulaALaCasa(b.dataset.clausulaCasa, b.dataset.volver !== "ia").catch(e => avisar((e && e.message) || "No pude rehacer el contrato", true));
     }));
     const bPapel = $("alc-armado-papel");
     if (bPapel) bPapel.addEventListener("click", () => {
@@ -15843,7 +16387,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     document.querySelectorAll("[data-fix]").forEach(b => b.addEventListener("click", () => {
       const a = alcArreglos[b.dataset.fix]; if (!a) return;
       const inp = document.querySelector(`[data-fix-in="${b.dataset.fix}"]`);
-      alcArreglar(a, inp ? inp.value : undefined);
+      // 22-oct: el botón se apaga mientras se aplica (un doble toque no aplica dos veces); si el arreglo no pudo, vuelve a encenderse
+      b.disabled = true;
+      if (alcArreglar(a, inp ? inp.value : undefined) === false) b.disabled = false;
     }));
     // Las respuestas a las preguntas de hechos del asistente: un toque escribe
     // la respuesta en la hoja, a la vista, y desde ahí mandan las reglas
@@ -16010,10 +16556,28 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (inPdf) inPdf.addEventListener("change", () => { if (inPdf.files[0]) alcSubirAlPortal(inPdf.files[0]); });
     // La revisión con IA del contrato armado y sus tres botones por hallazgo
     const bRevIA = $("alc-revisar-ia");
-    if (bRevIA) bRevIA.addEventListener("click", () => { alcRevisarIA().catch(() => { /* la nube nunca frena */ }); });
-    document.querySelectorAll("[data-rev-ir]").forEach(b => b.addEventListener("click", () => alcRevIrALinea(Number(b.dataset.revIr))));
+    // 18-oct (pliego §11.12): un toque = una vuelta completa (revisa, pone solo lo seguro, vuelve a revisar; tres vueltas como mucho)
+    if (bRevIA) bRevIA.addEventListener("click", () => {
+      const R0 = alcActivo && alcActivo.revision;
+      alcRevisionCompleta(R0 && Array.isArray(R0.hallazgos) ? "otra_vez" : "boton").catch(() => { /* la nube nunca frena */ });
+    });
+    // «La IA arregló N puntos» se queda abierto o plegado al repintar
+    const dAuto = $("alc-auto-arreglados");
+    if (dAuto) dAuto.addEventListener("toggle", () => { const R0 = alcActivo && alcActivo.revision; if (R0) R0.auto_abierto = dAuto.open; });
+    // 18-oct (pliego §11.11.7): «viene de la línea N de tu hoja» es un enlace (el mismo manejador que tenía «Ir a la línea»)
+    document.querySelectorAll("[data-rev-ir]").forEach(b => b.addEventListener("click", e => { e.preventDefault(); alcRevIrALinea(Number(b.dataset.revIr)); }));
     document.querySelectorAll("[data-rev-dato]").forEach(b => b.addEventListener("click", () => alcRevUsarDato(Number(b.dataset.revDato))));
+    // 17-oct (pliego §11.2): «Lo dejo así» ya no tiene botón (alcRevDejar se queda para lo que traen las propuestas viejas);
+    // «Arreglar según la IA», «Arreglar todo lo que propone la IA» y «Deshacer»
     document.querySelectorAll("[data-rev-dejar]").forEach(b => b.addEventListener("click", () => alcRevDejar(Number(b.dataset.revDejar))));
+    document.querySelectorAll("[data-rev-arreglar]").forEach(b => b.addEventListener("click", () => alcRevArreglar(Number(b.dataset.revArreglar))));
+    document.querySelectorAll("[data-rev-arreglar-todo]").forEach(b => b.addEventListener("click", () => alcRevArreglarTodo()));
+    // 18-oct (pliego §11.11.3 y 4): «Ponerlo aunque…» en el punto (pregunta antes, con el motivo) y «Arreglar lo pendiente», abajo
+    document.querySelectorAll("[data-rev-forzar]").forEach(b => b.addEventListener("click", () => { alcRevForzar(Number(b.dataset.revForzar)).catch(() => { /* nada */ }); }));
+    document.querySelectorAll("[data-rev-pendiente]").forEach(b => b.addEventListener("click", () => { alcArreglarPendiente().catch(() => { /* la nube nunca frena */ }); }));
+    // 17-oct (pliego §11.9.4): «Olvidarlos», en el aviso de los cambios que ya no encontraron su frase
+    document.querySelectorAll("[data-rev-olvidar-sin-sitio]").forEach(b => b.addEventListener("click", () => alcOlvidarSinSitio()));
+    document.querySelectorAll("[data-rev-deshacer]").forEach(b => b.addEventListener("click", () => alcRevDeshacer(Number(b.dataset.revDeshacer))));
     // (pliego §7.2) «Arreglar el contrato»: un solo armado con todo lo decidido, la revisión sola y se guarda solo
     document.querySelectorAll("[data-rev-rearmar]").forEach(b => b.addEventListener("click", () => {
       b.disabled = true;
@@ -16036,6 +16600,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     }));
     // (pliego §7.1) «Decidido» pliega el punto; «Abrir» lo vuelve a abrir para hablar otra vez
     document.querySelectorAll("[data-charla-decidido]").forEach(b => b.addEventListener("click", () => alcCharlaDecidido(nCharla(b, "charlaDecidido"))));
+    // 17-oct (pliego §11.9, P2): «Ponerlo aunque quite la protección» (pregunta antes, con el motivo)
+    document.querySelectorAll("[data-charla-forzar]").forEach(b => b.addEventListener("click", () => { alcCharlaForzar(nCharla(b, "charlaForzar")).catch(() => { /* nada */ }); }));
     document.querySelectorAll("[data-charla-abrir]").forEach(b => b.addEventListener("click", () => alcCharlaAbrir(nCharla(b, "charlaAbrir"))));
     document.querySelectorAll("[data-charla-pagos]").forEach(b => b.addEventListener("click", () => alcCharlaPagos(nCharla(b, "charlaPagos"), b.dataset.valor)));
     document.querySelectorAll("[data-charla-otro]").forEach(b => b.addEventListener("click", () => {
@@ -16051,6 +16617,80 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     document.querySelectorAll("[data-charla-permiso]").forEach(b => b.addEventListener("click", () => alcCharlaPermiso(nCharla(b, "charlaPermiso"), b.dataset.valor)));
     document.querySelectorAll("[data-charla-dato-in]").forEach(x => x.addEventListener("input", () => { const C = alcCharla(nCharla(x, "charlaDatoIn")); if (C) C.dato = x.value; }));
     document.querySelectorAll("[data-charla-dato]").forEach(b => b.addEventListener("click", () => alcCharlaDato(nCharla(b, "charlaDato"))));
+    // ---- 20-oct (pliego §12.5): «Aplicar mi orden»: la caja, la lista (un botón por renglón y dos abajo) y lo que falla ----
+    const bOrden = $("alc-orden-abrir");
+    if (bOrden) bOrden.addEventListener("click", alcOrdenAbrir);
+    const tOrden = $("alc-orden-texto");
+    if (tOrden) {
+      tOrden.addEventListener("input", () => { const O = alcOrden(false); if (O) O.borrador = tOrden.value; });
+      tOrden.addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); alcOrdenEnviar().catch(() => { /* la nube nunca frena */ }); } });
+    }
+    document.querySelectorAll("[data-orden-enviar]").forEach(b => b.addEventListener("click", () => alcOrdenEnviar().catch(() => { /* la nube nunca frena */ })));
+    document.querySelectorAll("[data-orden-cerrar]").forEach(b => b.addEventListener("click", () => { const O = alcOrden(false); if (O) O.abierta = false; pintarAlcance(); }));
+    document.querySelectorAll("[data-orden-quitar]").forEach(b => b.addEventListener("click", () => alcOrdenQuitarPunto(Number(b.dataset.ordenQuitar))));
+    document.querySelectorAll("[data-orden-aprobar]").forEach(b => b.addEventListener("click", () => { b.disabled = true;
+      alcOrdenAprobar().catch(e => avisar((e && e.message) || "No pude aplicar la orden", true))
+        .finally(() => { if (document.body.contains(b)) b.disabled = false; }); }));
+    document.querySelectorAll("[data-orden-hablar]").forEach(b => b.addEventListener("click", () => {
+      const v = b.dataset.ordenHablar; alcOrdenHablar(/^\d+$/.test(v) ? Number(v) : v); }));
+    // ---- 14-oct (pliego §10.10): «Cuéntale el trabajo», «Así lo hice», «Está bien, mándalo» y «Cámbiale algo» ----
+    const bCuentale = $("alc-cuentale");
+    if (bCuentale) bCuentale.addEventListener("click", alcCuentaleAbrir);
+    const tCuentale = $("alc-cuentale-texto");
+    if (tCuentale) {
+      tCuentale.addEventListener("input", () => { const C = alcCuentale(false); if (C) C.borrador = tCuentale.value; });
+      // Ctrl/Cmd + Enter manda; Enter solo hace otra línea (como la charla de cada punto)
+      tCuentale.addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); alcCuentaleEnviar().catch(() => { /* la nube nunca frena */ }); } });
+    }
+    document.querySelectorAll("[data-cuentale-enviar]").forEach(b => b.addEventListener("click", () => alcCuentaleEnviar().catch(() => { /* la nube nunca frena */ })));
+    document.querySelectorAll("[data-cuentale-cerrar]").forEach(b => b.addEventListener("click", () => { const C = alcCuentale(false); if (C) C.abierta = false; pintarAlcance(); }));
+    document.querySelectorAll("[data-cuentale-deshacer]").forEach(b => b.addEventListener("click", alcCuentaleDeshacer));
+    const bMandar = $("alc-asi-mandar");
+    if (bMandar) bMandar.addEventListener("click", () => { bMandar.disabled = true; alcMandarAlPortal().catch(e => avisar((e && e.message) || "No pude guardarlo", true)).finally(() => { if (document.body.contains(bMandar)) bMandar.disabled = !alcCandadoRevision().ok; }); });
+    const bCambiar = $("alc-asi-cambiar");
+    if (bCambiar) bCambiar.addEventListener("click", () => {
+      const A = alcActivo; if (!A) return;
+      A.auto_cambio = { texto: "", nota: null };
+      pintarAlcance();
+      const t = $("alc-asi-cambio-texto");
+      if (t) { try { t.focus({ preventScroll: true }); } catch { /* nada */ } t.scrollIntoView({ block: "center" }); }
+    });
+    const tCambio = $("alc-asi-cambio-texto");
+    if (tCambio) tCambio.addEventListener("input", () => { const A = alcActivo; if (A && A.auto_cambio) A.auto_cambio.texto = tCambio.value; });
+    document.querySelectorAll("[data-asi-cambio]").forEach(b => b.addEventListener("click", () => {
+      const A = alcActivo; if (!A) return;
+      if (b.dataset.asiCambio === "cancelar") { A.auto_cambio = null; pintarAlcance(); return; }
+      b.disabled = true;
+      alcCambiarAlgo().catch(e => avisar((e && e.message) || "No pude rehacer el contrato", true));
+    }));
+    // (hallazgo 14) «Olvidar»: lo que la IA recordaba de esta obra ya no viaja
+    document.querySelectorAll("[data-asi-olvidar]").forEach(b => b.addEventListener("click", () => {
+      const A = alcActivo; if (!A) return;
+      alcPonerCorrecciones(A, []);
+      pintarAlcance();
+      avisar("Listo: la IA ya no lo recuerda");
+    }));
+    // «Hablar con la IA» desde la tarjeta: abre el detalle de la revisión con la charla de ese punto
+    document.querySelectorAll("[data-asi-hablar]").forEach(b => b.addEventListener("click", () => {
+      const i = Number(b.dataset.asiHablar);
+      const R = alcActivo && alcActivo.revision;
+      if (R) R.detalle_abierto = true;
+      const C = alcCharla(i, true);
+      if (C && C.abierta) { pintarAlcance(); return; }
+      alcCharlaAbrir(i);
+    }));
+    // el dato que falta, escrito desde la tarjeta: el mismo camino que «Escribe el dato» de la charla
+    document.querySelectorAll("[data-asi-dato]").forEach(b => b.addEventListener("click", () => {
+      const i = Number(b.dataset.asiDato), C = alcCharla(i, true);
+      const x = document.querySelector(`[data-asi-dato-in="${i}"]`);
+      if (!C) return;
+      C.dato = x ? x.value : "";
+      const otro = document.querySelector(`[data-charla-dato-in="${i}"]`);
+      if (otro) otro.value = C.dato;
+      alcCharlaDato(i);
+    }));
+    const dRev = $("alc-rev-detalle");
+    if (dRev) dRev.addEventListener("toggle", () => { const R = alcActivo && alcActivo.revision; if (R) R.detalle_abierto = dRev.open; });
   }
 
   // Lleva el cuadro al renglón N y lo deja seleccionado, para que Edgar vea
@@ -16168,8 +16808,13 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   // Un arreglo concreto, con el valor que Edgar haya escrito si hacía falta
   function alcArreglar(a, valor) {
     const A = alcActivo;
+    // 22-oct (Villanti Garage): con el armado de la IA vivo, el precio base que Edgar aprueba («Sí, usar el del estimado» o
+    // el que escribe) no pasa por aquí: escribirlo en la hoja dejaba el armado «viejo» y el rojo «Falta el precio base» no se
+    // iba nunca (ni dejaba seguir sin pagar otro armado). Va por alcPrecioEnArmado, que rehace el contrato sin la IA.
+    if (a && a.tipo === "poner_precio_base" && A && A.armado && !A.armado.vieja)
+      return alcPrecioEnArmado(a.valor !== undefined ? a.valor : valor, a.valor !== undefined);
     const r = Alcance.aplicarArreglo(A.texto, a, valor);
-    if (r.error) { avisar(r.error, true); return; }
+    if (r.error) { avisar(r.error, true); return false; }
     if (r.perdona) { A.perdonadas = [...(A.perdonadas || []), r.perdona]; alcPerdonLocal(A.proyecto.id, A.perdonadas); }
     A.texto = r.texto;
     // si el arreglo escribió una línea («escribí «Tipo de trabajo: service» en
@@ -16182,6 +16827,55 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     alcGuardarLocal(A.proyecto.id, A.texto);
     A.arreglados = [...(A.arreglados || []), r.explicacion];
     alcCalcularSeguro(); pintarAlcance();
+    // 22-oct: con el armado de la IA ya viejo (Edgar cambió la hoja después de armar), lo escrito no se toma solo: se dice
+    if (A.armado && A.armado.vieja) avisar("Lo apliqué en la hoja. Como cambiaste la hoja después de armar, toca «Volver a armar con IA» para que lo tome.");
+    return true;
+  }
+
+  // 22-oct (Villanti Garage): el precio base con el armado de la IA vivo. La app escribe «Precio: 4,638.17» en la hoja (como
+  // en el camino de las reglas: también rellena los pagos en blanco), apunta esa línea al armado (M.texto y M.lineas: la
+  // escribió la app, el armado sigue valiendo, como las respuestas que se escriben en la hoja) y rehace el contrato SIN volver
+  // a pedir a la IA, con esa línea como la del precio (respuestas.precio_l) y el monto como respuesta (respuestas.precio). Al
+  // reabrir la hoja, armadoAHoja toma la línea «Precio: …» sola (sin la respuesta de aquel día).
+  function alcPrecioEnArmado(valor, deEstimado) {
+    const A = alcActivo, M = A && A.armado;
+    if (!M) return false;
+    if (M.precio_en_marcha) return true;    // un segundo toque mientras se arma el papel no hace nada (el candado vive en el armado)
+    const m = Alcance.leerMonto(String(valor === undefined || valor === null ? "" : valor).trim());
+    if (!m || m.pregunta || !Number.isInteger(m.centavos) || !(m.centavos > 0)) { avisar("escribe el precio así: 16,498.24", true); return false; }
+    const r = Alcance.aplicarArreglo(A.texto, { tipo: "poner_precio_base" }, valor);
+    if (r.error) { avisar(r.error, true); return false; }
+    M.precio_en_marcha = true;
+    const lineaPrecio = "Precio: " + Alcance.dinero(m.centavos);
+    A.texto = r.texto;
+    if ($("alc-texto")) $("alc-texto").value = A.texto;
+    M.texto = A.texto;                    // la escribió la app: el armado sigue valiendo
+    // la línea nueva va al final de las del armado (tapada, como las demás): los números de línea que usó la IA no se mueven.
+    // Si la última ya es una «Precio: …» de la app (un doble toque, u otro precio después del del estimado), se cambia en su sitio.
+    const lineas = Array.isArray(M.lineas) ? M.lineas.slice() : [];
+    const ultima = lineas[lineas.length - 1];
+    const fila = { t: lineaPrecio.replace(/\d/g, "#"), original: lineaPrecio };
+    const enSuSitio = !!(ultima && /^Precio: [\d,]+\.\d{2}$/.test(String(ultima.original || "")));
+    if (enSuSitio) lineas[lineas.length - 1] = Object.assign({}, ultima, fila);
+    else lineas.push(Object.assign({ n: lineas.length + 1 }, fila));
+    const n = lineas.length;
+    M.lineas = lineas;
+    // la hoja tapada que viajó a la IA (y va al revisor como hoja de origen) lleva la misma línea, tapada
+    if (Array.isArray(M.nube)) { const nb = M.nube.slice(); if (enSuSitio && nb.length) nb[nb.length - 1] = { n, t: fila.t }; else nb.push({ n, t: fila.t }); M.nube = nb; }
+    // el paquete dice cuántas líneas tiene la hoja: con una más, el juez (verificarArmado) daría «armado_invalido» al reabrir
+    if (M.paquete && typeof M.paquete === "object") M.paquete.lineas_total = n;
+    alcApuntarPropia(lineaPrecio);
+    const pe = deEstimado ? alcPrecioEstimado(A.proyecto.id) : null;
+    A.arreglados = [...(A.arreglados || []), r.explicacion + (pe ? ` (del estimado ${pe.ref})` : "")];
+    A.respuestas = Object.assign({}, A.respuestas || {}, { precio: m.centavos });
+    alcContestarArmado("precio_l", n).catch(e => avisar((e && e.message) || "No pude rehacer el contrato", true))
+      .finally(() => {
+        M.precio_en_marcha = false;
+        // si no se llegó al contrato (otra pregunta frena, o el papel no salió), la hoja se repinta: el rojo del precio se va y
+        // los botones renacen; si ya está en el contrato, no se toca
+        if (alcActivo === A && A.armado === M && alcFicha === 0) pintarAlcance();
+      });
+    return true;
   }
 
   // Cuando Edgar contesta a una línea huérfana («Déjala», «Es un renglón», «Es
@@ -16354,7 +17048,22 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   // Lo que la regla necesita de la app para decidir la base del precio
   function alcAdminBase(A) {
     return { pricing_basis: A.pricing_basis || null, documento_plano: alcDocumentoPlano(A.proyecto.id), estimado_modo: alcModoEstimado(A),
-             tipo_obra: alcTipoObra(A.proyecto) };
+             tipo_obra: alcTipoObra(A.proyecto),
+             // 14-oct (pliego §10.9): las cláusulas que Edgar devolvió al texto de la casa mandan sobre lo que adaptó la IA
+             clausulas_casa: alcClausulasCasa(A),
+             // 20-oct (pliego §12.4 C.3): quién firma por el contratista y su cargo, de su ficha (vacío si la ficha no lo trae o la
+             // base todavía no tiene esas columnas); armarTodo solo los usa cuando el contrato es con el contratista
+             ...alcFirmanteDeLaFicha(A) };
+  }
+  function alcFirmanteDeLaFicha(A) {
+    let gc = null;
+    try { gc = A && A.proyecto ? gcDeProyecto(proyectos().find(x => x.id === A.proyecto.id) || A.proyecto) : null; } catch { gc = null; }
+    const limpio = t => String(t || "").replace(/[<>{}]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
+    return { firmante: gc ? limpio(gc.firmante) : "", cargo_firmante: gc ? limpio(gc.cargoFirmante) : "" };
+  }
+  // 14-oct (pliego §10.9): la lista limpia de «Volver al texto de la casa» (solo claves de las cláusulas que se adaptan)
+  function alcClausulasCasa(A) {
+    return [...new Set((A && Array.isArray(A.clausulas_casa) ? A.clausulas_casa : []).filter(k => (Alcance.CLAUSULAS_ADAPTABLES || []).includes(k)))];
   }
   // 13-oct (pliego §9.3): ¿la ficha dice que es un servicio? (proyecto de tipo servicio, o la clase de obra service_call).
   // Con «servicio», si la hoja no dice «Tipo de trabajo», el contrato va en modo servicio (una visita, sin fases ni layout).
@@ -16405,7 +17114,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     // v252: si el levantamiento de la obra vio el panel, la pregunta «Fotos del panel» se contesta sola
     const panelVisto = alcPanelVisto(A.proyecto.id);
     if (panelVisto && A.leido) A.leido.panel_visto = panelVisto;
-    A.validado = Alcance.validarAlcance(A.leido);
+    A.validado = Alcance.validarAlcance(A.leido, alcAdminBase(A));   // 16-oct: con la ficha (servicio o no)
     A.cuenta = Alcance.cuentas(A.leido);
     A.decision = Alcance.decidirInterruptores(A.leido, A.cuenta, alcAdminBase(A));
     alcAvisosDeLaFicha();
@@ -16969,6 +17678,16 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     return ad;
   }
 
+  // (hallazgo 8) ¿Sigue valiendo un armado guardado? El juez del teléfono otra vez (verificarArmado: el dinero, el molde y el
+  // juicio con sus cláusulas adaptadas): si da error o deja el juicio distinto del guardado, no vale.
+  function alcArmadoSigueValiendo(M) {
+    try {
+      if (!M || !M.paquete || !Array.isArray(M.lineas)) return false;
+      const V = Alcance.verificarArmado(M.lineas, M.paquete, M.ficha || {}, M.perfil || {});
+      if (!V || V.error || !V.armado_limpio) return false;
+      return JSON.stringify(V.armado_limpio.juicio || null) === JSON.stringify(M.paquete.juicio || null);
+    } catch { return false; }
+  }
   // Lo que se guarda del armado en el teléfono (para volver a abrirlo con su paquete, sin volver a pagar)
   function alcArmadoParaGuardar(M) {
     if (!M) return null;
@@ -16984,7 +17703,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const H = Alcance.armadoAHoja(M.paquete, M.lineas, M.ficha, M.perfil, A.respuestas || {}, alcAdminArmado(A));
     const L = H.L;
     A.leido = L;
-    A.validado = Alcance.validarAlcance(L);
+    A.validado = Alcance.validarAlcance(L, alcAdminBase(A));
     A.cuenta = Alcance.cuentas(L);
     A.decision = Alcance.decidirInterruptores(L, A.cuenta, alcAdminBase(A));
     M.resumen = H.resumen; M.avisos = H.avisos; M.preguntas = H.preguntas; M.S = H.S;
@@ -17088,7 +17807,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       const cuerpo = { lineas: pq.lineas, ficha: pq.ficha, conocidos: alcConocidosParaElAsistente(), perfil_app: perfil, esfuerzo: marca.esfuerzo };
       if (A.proyecto && A.proyecto.id) cuerpo.proyecto_id = String(A.proyecto.id);
       if (A.propuesta && Number.isInteger(A.propuesta.id)) cuerpo.propuesta_id = A.propuesta.id;
-      Object.assign(marca, { huella: await alcHuella(pq.huellaBase), hoja: pq.hoja, L0, texto: A.texto, ficha, perfil, nube: pq.lineas });
+      // 14-oct (pliego §10.10): las correcciones de la revisión (ronda 1) y lo pedido con «Cámbiale algo», tapadas como la hoja
+      const correcciones = alcCorreccionesLimpias(A.correcciones, pq.huellaBase + "\n" + JSON.stringify(pq.ficha || {})).slice(-Alcance.MAX_CORRECCIONES);
+      if (correcciones.length) cuerpo.correcciones = correcciones;
+      Object.assign(marca, { huella: await alcHuella(pq.huellaBase), hoja: pq.hoja, L0, texto: A.texto, ficha, perfil, nube: pq.lineas, correcciones });
       if (!sigueViva()) return;
       alcFicha = 0;
       // Modo de prueba: la pantalla se comporta igual, pero no se llama a nadie (la prueba inyecta el paquete)
@@ -17136,6 +17858,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     } finally {
       if (alcActivo === A && A.armado_en_marcha === marca && !marca.prueba) A.armado_en_marcha = null;
       if (alcActivo === A && !A.armado_en_marcha) { clearInterval(alcRelojArmado); alcRelojArmado = null; }
+      // (§10.10) si el armado no salió, el armado todo seguido se para (la hoja dice qué pasó, con sus botones)
+      if (alcActivo === A && A.armado_error && A.auto && A.auto.activo) alcAutoTerminar(A, "");
       if (alcActivo === A && A.armado_error && alcFicha === 0) pintarAlcance();
     }
   }
@@ -17162,8 +17886,12 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       uso: r.uso || null, costo_centavos: r.costo_centavos ?? null, costo_original: r.costo_original ?? null,
       de_cache: !!r.de_cache, ms: r.ms ?? null, cuando: new Date().toISOString(), esfuerzo: M0.esfuerzo || "high",
       // si Edgar cambió la hoja mientras la IA trabajaba, el armado es de la hoja de antes
-      vieja: A.texto !== M0.texto
+      vieja: A.texto !== M0.texto,
+      // 14-oct (pliego §10.10): las correcciones que viajaron (los «arreglos» de la IA las citan por su número)
+      correcciones: Array.isArray(M0.correcciones) ? M0.correcciones : []
     };
+    // (§10.10) lo que costó, para «Así lo hice» (una respuesta de la caché sale gratis)
+    if (A.auto && A.auto.activo) A.auto.costo += r.de_cache ? 0 : (Number(r.costo_centavos) || 0);
     A.armado_error = null;
     A.respuestas = {}; A.arreglados = []; A.avisos_ficha = [];
     alcArmadoAbierta = null;
@@ -17177,7 +17905,11 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       alcFicha = 0; pintarAlcance(); return false;
     }
     alcGuardarLocal(A.proyecto.id, A.texto);
-    if (A.armado.vieja) { alcFicha = 0; pintarAlcance(); avisar("La IA armó la hoja de antes: cambiaste algo mientras trabajaba. Toca «Volver a armar con IA»", true); return false; }
+    if (A.armado.vieja) {
+      // 14-oct (corrección, hallazgo 12): el armado todo seguido no se queda «activo» esperando un papel que no va a salir
+      if (A.auto && A.auto.activo) alcAutoTerminar(A, "Cambiaste la hoja mientras la IA armaba: vuelve a armar con la hoja nueva.");
+      alcFicha = 0; pintarAlcance(); avisar("La IA armó la hoja de antes: cambiaste algo mientras trabajaba. Toca «Volver a armar con IA»", true); return false;
+    }
     return alcSeguirArmado();
   }
 
@@ -17186,6 +17918,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const A = alcActivo, M = A && A.armado;
     if (!M) return false;
     if (alcArmadoFrena()) {
+      // (§10.10) el armado todo seguido espera a que Edgar conteste; al contestar, sigue solo desde aquí
+      if (A.auto && A.auto.activo) A.auto.fase = "espera";
       alcFicha = 0; pintarAlcance();
       avisar("La IA armó la hoja: contéstame lo de arriba y sigo", true);
       return false;
@@ -17194,9 +17928,21 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     A.uso = null;
     A.huella = await alcHuella(A.texto);
     await alcArmar();
-    if (alcActivo !== A || !A.contrato) return false;
+    if (alcActivo !== A) return false;
+    if (!A.contrato) {
+      // 14-oct (corrección tras la segunda revisión, hallazgo 12): el papel no salió (la plantilla no bajó, una marca coja, la
+      // huella o el inglés no cuadran): el armado todo seguido se cierra; si no, «Cuéntale el trabajo» se quedaba apagado y la
+      // pantalla diciendo «Comprobando el papel…» para siempre
+      if (A.auto && A.auto.activo) { alcAutoTerminar(A, "No pude armar el papel: mira el aviso de la hoja y vuelve a armar."); avisar("No pude armar el papel: mira el aviso de la hoja y vuelve a armar.", true); }
+      return false;
+    }
     // Sin rojos en el papel, la segunda IA lo revisa sola (pliego §6.1). Una revisión reutilizada no se repite.
-    if (!A.contrato.problemas.length && !A.revision) alcRevisarIA().catch(() => { /* la nube nunca frena */ });
+    // 18-oct (pliego §11.12): si el armado vino de «Arreglar el contrato» (sin el todo seguido de 10.10), el proceso de revisión entero
+    if (!A.contrato.problemas.length && !A.revision)
+      ((A.guardar_al_revisar && !(A.auto && A.auto.activo)) ? alcRevisionCompleta("arreglar") : alcRevisarIA()).catch(() => { /* la nube nunca frena */ });
+    // 14-oct (pliego §10.10): con la revisión reutilizada (o un papel con rojos, que no se revisa), el armado todo seguido
+    // sigue igual desde aquí
+    else if (A.auto && A.auto.activo) alcAutoTrasRevision(A).catch(() => { /* la nube nunca frena */ });
     alcGuardarSiArreglo(A);
     return true;
   }
@@ -17212,7 +17958,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     segundo_firmante: ["Segundo firmante", v => String(v)],
     base_precio: ["Base del precio", v => String(v).trim() === "plans" ? "plans" : "quantities"],
     fotos_panel: ["Fotos del panel", v => /^s[ií]$/i.test(String(v).trim()) ? "sí" : "no"],
-    circuitos_exist: ["Circuitos existentes", v => /^s[ií]$/i.test(String(v).trim()) ? "sí" : "no"],
+    circuitos_exist: ["Circuitos existentes", v => /^s[ií]$/i.test(String(v).trim()) ? "sí" : /^no toca\b/i.test(String(v).trim()) ? "no toca" : "no"],
     acceso: ["Acceso", v => String(v)],
     fases: ["Fases", v => String(v)],
     fixtures: ["Fixtures del cliente", v => String(v)]
@@ -17243,6 +17989,25 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     try { alcRehacerArmado(); }
     catch { avisar("No pude rehacer el contrato con esa respuesta", true); return; }
     alcGuardarLocal(A.proyecto.id, A.texto);
+    if (M.vieja) { alcFicha = 0; pintarAlcance(); return; }
+    await alcSeguirArmado();
+  }
+
+  // 14-oct (pliego §10.9): Edgar devuelve una cláusula adaptada al texto de la casa (aCasa) o vuelve a usar el de la IA. Se
+  // guarda en la propuesta (alcance_decisiones.clausulas_casa, como el perdón y lo decidido) para que valga al rearmar, y el
+  // contrato se rehace con el mismo armado: no se vuelve a pagar a la IA.
+  async function alcClausulaALaCasa(clave, aCasa) {
+    const A = alcActivo, M = A && A.armado;
+    if (!M || !(Alcance.CLAUSULAS_ADAPTABLES || []).includes(clave)) return;
+    const resto = alcClausulasCasa(A).filter(k => k !== clave);
+    A.clausulas_casa = aCasa ? [...resto, clave] : resto;
+    if (A.propuesta) {
+      const dec = Object.assign({}, A.propuesta.alcance_decisiones || {}, { clausulas_casa: A.clausulas_casa });
+      A.propuesta.alcance_decisiones = dec;
+      DB.guardarAlcance(A.propuesta.id, { alcance_decisiones: dec }).catch(() => { /* va también con «Guardar en la propuesta» */ });
+    }
+    try { alcRehacerArmado(); }
+    catch { avisar("No pude rehacer el contrato con esa cláusula", true); return; }
     if (M.vieja) { alcFicha = 0; pintarAlcance(); return; }
     await alcSeguirArmado();
   }
@@ -17279,7 +18044,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   const ALC_JUICIO_CHIPS = {
     tipo: { resp: "tipo_trabajo", ops: [["servicio", "Es un servicio (una visita)"], ["obra", "Es una obra (con fases)"]] },
     permiso: { resp: "permiso", ops: [["nosotros", "Lo saca Max Power"], ["cliente", "Lo saca el cliente"], ["ninguno", "No hace falta permiso"]] },
-    afci: { resp: "circuitos_exist", ops: [["sí", "Toca circuitos existentes"], ["no", "No toca circuitos existentes"]] }
+    // 17-oct (décima revisión): «No toca» escribe «no toca» (no un «no» pelado): en un recableado de toda la casa no dice que no queda
+    // ningún circuito viejo (eso solo lo dice el «No, todo es nuevo» de la pregunta de los circuitos)
+    afci: { resp: "circuitos_exist", ops: [["sí", "Toca circuitos existentes"], ["no toca", "No toca circuitos existentes"]] }
   };
   function alcAjustadoJuicio(dec) {
     const j = dec && dec.juicio;
@@ -17292,9 +18059,25 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       const ops = c.ops.filter(([v]) => !(x.clave === "tipo" && v === x.valor) && !(x.clave === "permiso" && v === x.valor));
       return ops.length ? `<div class="alc-fixes">${ops.map(([v, et]) => `<button type="button" class="alc-op" data-juicio-resp="${esc(c.resp)}" data-valor="${esc(v)}">${esc(et)}</button>`).join("")}</div>` : "";
     };
+    // 14-oct (pliego §10.9): cada cláusula que la IA adaptó lleva «Volver al texto de la casa» (o, si Edgar ya la devolvió,
+    // «Usar el texto de la IA») y «Ver los dos textos» (el de la casa y el adaptado, uno debajo del otro). Lo que Edgar elige se
+    // guarda en la propuesta (alcance_decisiones.clausulas_casa) y el contrato se rehace sin volver a pagar a la IA.
+    const casaEdgar = alcClausulasCasa(alcActivo);
+    const adaptada = x => {
+      if (x.clave !== "clausulas_adaptadas") return "";
+      const c = (j.clausulas_adaptadas || []).find(y => y && y.clave === x.valor);
+      if (!c) return "";
+      const devuelta = casaEdgar.includes(c.clave);
+      const boton = conChips && (c.aplicado !== false || devuelta)
+        ? `<button type="button" class="alc-op" data-clausula-casa="${esc(c.clave)}" data-volver="${devuelta ? "ia" : "casa"}">${devuelta ? "Usar el texto de la IA" : "Volver al texto de la casa"}</button>` : "";
+      return `${boton ? `<div class="alc-fixes">${boton}</div>` : ""}<details class="alc-juicio-dos"><summary>Ver los dos textos</summary>
+        <p class="alc-leccion-etq">Texto de la casa</p><p class="alc-juicio-texto" data-no-i18n>${esc((c.casa_titulo ? c.casa_titulo + ". " : "") + (c.casa_texto || ""))}</p>
+        <p class="alc-leccion-etq">Texto adaptado a este trabajo</p><p class="alc-juicio-texto" data-no-i18n>${esc((c.titulo_en || c.casa_titulo ? (c.titulo_en || c.casa_titulo) + ". " : "") + (c.texto_en || ""))}</p>
+      </details>`;
+    };
     return `<div class="alc-gris alc-juicio"><b>Ajustado a este trabajo:</b>
       ${j.resumen ? `<p class="alc-juicio-resumen" data-no-i18n>${esc(j.resumen)}</p>` : ""}
-      ${lineas.length ? `<ul class="alc-juicio-lista">${lineas.map(x => `<li${x.aplicado === false ? ` class="alc-juicio-no"` : ""}><span data-no-i18n>${esc(x.texto)}</span>${chips(x)}</li>`).join("")}</ul>` : ""}
+      ${lineas.length ? `<ul class="alc-juicio-lista">${lineas.map(x => `<li${x.aplicado === false ? ` class="alc-juicio-no"` : ""}><span data-no-i18n>${esc(x.texto)}</span>${chips(x)}${adaptada(x)}</li>`).join("")}</ul>` : ""}
     </div>`;
   }
   function alcCajaArmado() {
@@ -17429,7 +18212,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         const cand = M.lineas.filter(l => { try { return Alcance.pareceDinero(String(l.original || "")); } catch { return false; } }).slice(0, 6);
         botones = cand.length
           ? cand.map(l => `<button type="button" class="alc-op" data-armado-precio="${l.n}"><span>Línea ${l.n}:</span> <span data-no-i18n>${esc(String(l.original).trim().slice(0, 60))}</span></button>`).join("")
-          : `<p class="lev-nota">Escribe el precio en la hoja («Precio: …») y vuelve a armar con IA, o léela con las reglas.</p>`;
+          : `<p class="lev-nota">Escribe el precio en la casilla del rojo de arriba (o toca «Sí, usar el del estimado»): el contrato se rehace sin volver a pedir a la IA.</p>`;
       } else {
         botones = (p.opciones || []).map((o, k) =>
           `<button type="button" class="alc-op" data-armado-preg="${i}" data-armado-op="${k}"><span data-no-i18n>${esc(o.etiqueta)}</span></button>`).join("");
@@ -17478,7 +18261,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           <div class="alc-fixes"><button type="button" class="alc-op" data-armado-otra="1">Volver a armar con IA</button>
           <button type="button" class="alc-op" data-armado-reglas="1">Leer con las reglas (sin IA)</button></div></li>` : "") +
         rojos.map(x => `<li>${ir(x.linea)}<span data-no-i18n>${esc(x.texto)}</span></li>`).join("") +
-        errores.map(e => `<li>${ir(e.linea)}<span data-no-i18n>${esc(e.texto)}</span></li>`).join("") +
+        // 22-oct: mientras la IA vuelve a armar, los botones de arreglo no salen (tocarlos a medio armado gastaba otro armado)
+        errores.map((e, i) => `<li>${ir(e.linea)}<span data-no-i18n>${esc(e.texto)}</span>${(e.arreglos || []).length && !A.armado_en_marcha ? `<div class="alc-fixes">${alcBotonesDe(e.arreglos, "ae" + i, A.leido, alcPrecioEstimado(A.proyecto.id))}</div>` : ""}</li>`).join("") +
         `</ul></div>`;
     }
     s += alcPreguntasArmado();
@@ -17668,22 +18452,110 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
                reemplazos: (Array.isArray(A.reemplazos) ? A.reemplazos : []).map(r => ({ clave: r.clave, cita: r.cita, nuevo: r.nuevo, donde: r.donde })),
                sin_sitio: Array.isArray(A.reemplazos_sin_sitio) ? A.reemplazos_sin_sitio.length : 0,
                motivos_sin_sitio: Array.isArray(A.reemplazos_sin_sitio) ? A.reemplazos_sin_sitio.map(r => r.motivo || "") : [],
-               papel_cambiado: !!(A.revision && A.revision.papel_cambiado) };
+               papel_cambiado: !!(A.revision && A.revision.papel_cambiado),
+               // 17-oct (pliego §11.3): el papel (para mirar el <strong> del párrafo), el ámbito y el ancla de cada arreglo, y los
+               // que se pusieron en un párrafo que cambió
+               html: A.contrato.html, base: A.contrato_base || null,
+               ambitos: (Array.isArray(A.reemplazos) ? A.reemplazos : []).map(r => ({ clave: r.clave, ambito: r.ambito || null, ancla: r.ancla || null })),
+               cambiados: Array.isArray(A.reemplazos_cambiados) ? A.reemplazos_cambiados.map(x => x.cabeza) : [] };
+    },
+    // 17-oct (pliego §11.3): los arreglos guardados puestos en un papel cualquiera (sin pantalla), como al armar
+    aplicarReemplazosEn(html, lista) {
+      if (!(usuario && usuario.finanzas)) return null;
+      const X = { reemplazos: Array.isArray(lista) ? lista : [] };
+      const r = alcAplicarReemplazos(X, html, []);
+      return { html: r.html, puestos: r.puestos, sin_sitio: r.sin_sitio.map(x => x.motivo || ""), cambiados: (X.reemplazos_cambiados || []).map(x => x.cabeza) };
+    },
+    // 20-oct (pliego §12.3, la receta del chat: tools/contrato/aplicar.mjs y pruebas/contrato-gong.mjs): el informe entero del motor
+    // de los arreglos sobre un papel cualquiera, sin copiar el motor fuera de la app. Primero uno a uno sobre el mismo papel (qué hizo
+    // cada uno y el ancla que le pone el motor), después todos juntos como al armar (con el barrido y los montos permitidos), la clave
+    // de la app de cada uno y lo que se guardaría en la propuesta.
+    informeReemplazos(html, lista, permitidos) {
+      if (!(usuario && usuario.finanzas)) return null;
+      const xs = Array.isArray(lista) ? lista : [], perm = Array.isArray(permitidos) ? permitidos : [];
+      let doc = null;
+      try { doc = new DOMParser().parseFromString(String(html || ""), "text/html"); } catch { doc = null; }
+      const uno = xs.map((r, k) => {
+        if (!doc || !r || typeof r.nuevo !== "string") return { k, ya: false, ok: false, ambito: null, por_ancla: false, error: doc ? "sin_texto" : "no_esta", ancla: null };
+        let x;
+        try { x = alcPonerUno(doc, r) || {}; } catch { x = { error: "no_esta" }; }
+        return { k, ya: !!x.ya, ok: !!x.ok, ambito: x.ambito || null, por_ancla: !!x.por_ancla, error: x.error || null, ancla: x.ancla || null };
+      });
+      const X = { reemplazos: xs };
+      const r = alcAplicarReemplazos(X, String(html || ""), perm);
+      return { html: r.html, puestos: r.puestos, por_ancla: r.por_ancla,
+               sin_sitio: r.sin_sitio.map(s => ({ clave: alcClaveCita(s.cita || ""), cita: String(s.cita || "").slice(0, 160), donde: s.donde || "", motivo: s.motivo || "" })),
+               cambiados: (X.reemplazos_cambiados || []).map(x => x.cabeza), uno, claves: xs.map(x => alcClaveCita((x && x.cita) || "")),
+               // la clave del texto nuevo (la receta la usa en «anadir» para que no choque con la del párrafo de la misma cita)
+               claves_nuevo: xs.map(x => alcClaveCita((x && x.nuevo) || "")),
+               guardar: alcReemplazosParaGuardar({ contrato: { html: r.html }, reemplazos: xs }) };
+    },
+    // (pliego §11.2) «Lo dejo así» ya no tiene botón; el programa lo sigue sabiendo hacer (las propuestas viejas traen sus perdones)
+    dejarAsi(i) { if (usuario && usuario.finanzas) alcRevDejar(Number(i)); },
+    // 17-oct (pliego §11.9.1): la puerta de «Arreglar según la IA» del punto i (sin pantalla): { ok, ley, motivo, clave }
+    propuestaSegura(i) {
+      const A = alcActivo, R = A && A.revision;
+      const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[Number(i)] : null;
+      if (!h || !(usuario && usuario.finanzas)) return null;
+      const x = alcPropuestaSegura(h);
+      // 18-oct (pliego §11.11.3): y de qué clase es el «no» (tipo) y si se puede poner confirmando («Ponerlo aunque…»)
+      return { ok: !!x.ok, ley: !!x.ley, dinero: !!x.dinero, motivo: x.motivo || "", clave: x.clave || alcClaseDeCita(h).clave || null,
+               tipo: x.tipo || null, forzable: alcSePuedeForzar(x) };
+    },
+    // …y la misma puerta con un papel cualquiera (sin pantalla): `h` = { cita, donde, texto_nuevo }
+    propuestaSeguraEn(html, h) {
+      if (!(usuario && usuario.finanzas) || !h || typeof h !== "object") return null;
+      const C = alcClaseDeCita(h, String(html || ""));
+      const x = alcPropuestaSegura(h, C);
+      return { ok: !!x.ok, ley: !!x.ley, dinero: !!x.dinero, motivo: x.motivo || "", clave: x.clave || C.clave || null, tipo: x.tipo || null, forzable: alcSePuedeForzar(x) };
+    },
+    // 17-oct (pliego §11.9.4): arreglos viejos de frase (como los 7 de Gong) sumados a los de la obra y el papel vuelto a poner
+    // desde el del armado, como al armar otra vez: los que no encuentran su frase quedan en el aviso con «Olvidarlos»
+    sumarArreglosViejos(lista) {
+      const A = alcActivo;
+      if (!A || !A.contrato || !(usuario && usuario.finanzas) || !Array.isArray(lista)) return null;
+      A.reemplazos = [...(Array.isArray(A.reemplazos) ? A.reemplazos : []), ...lista].slice(-ALC_TOPE_REEMPLAZOS);
+      const perm = Array.isArray(A.contrato.permitidos) ? A.contrato.permitidos : [];
+      const RP = alcAplicarReemplazos(A, A.contrato_base || A.contrato.html, perm);
+      A.contrato.html = RP.html;
+      try { A.contrato.problemas = Alcance.barridoFinal(RP.html, perm, A.contrato.cuenta).problemas; } catch { /* se queda lo de antes */ }
+      pintarAlcance();
+      return { puestos: RP.puestos, sin_sitio: RP.sin_sitio.length };
     },
     // (revisión de la versión 3) las piezas sin pantalla: el candado del dinero y el cambio en un papel cualquiera
     nuevoConMonto(t, base) { return alcNuevoConMonto(t, base); },
-    reemplazarEnPapel(html, cita, nuevo, donde, exacta) { return alcReemplazarEnPapel(html, cita, nuevo, [], donde, exacta); },
+    reemplazarEnPapel(html, cita, nuevo, donde, exacta, ambito, negrita) { return alcReemplazarEnPapel(html, cita, nuevo, [], donde, exacta, ambito, negrita); },
+    // 20-oct (pliego §12.4 C.2): lo que se guardaría de una lista de arreglos sobre un papel (anadir / quitar / ancla.numero / negrita)
+    reemplazosParaGuardar(html, lista) {
+      if (!(usuario && usuario.finanzas)) return null;
+      return alcReemplazosParaGuardar({ contrato: { html: String(html || "") }, reemplazos: Array.isArray(lista) ? lista : [] });
+    },
+    topeReemplazos() { return { tope: ALC_TOPE_REEMPLAZOS, aviso: ALC_AVISO_REEMPLAZOS }; },
+    textoNuevoOk(t, html, cita) { return alcTextoNuevoOk(t, html, cita); },
     estadoRevision() {
       const A = alcActivo, R = A && A.revision;
       return { armado_en_marcha: !!(A && A.armado_en_marcha), revision: !!R,
                hechos: R && Array.isArray(R.hallazgos) ? R.hallazgos.map(h => h.hecho || null) : [],
                charlas: alcCharlas().filter(Boolean).length,
                // 13-oct, versión 2: lo decidido en cada punto, las decisiones de la obra y si falta guardar al revisar
-               decididos: R && Array.isArray(R.hallazgos) ? R.hallazgos.map(h => h.decidido ? { como: h.decidido.como, de: h.decidido.de } : null) : [],
+               decididos: R && Array.isArray(R.hallazgos) ? R.hallazgos.map(h => h.decidido ? { como: h.decidido.como, de: h.decidido.de, aprendido: h.decidido.aprendido || null, perdonado: !!h.decidido.perdonado, ojo: h.decidido.ojo || null } : null) : [],
+               // 18-oct (pliego §11.11.4): los puntos que «Arreglar lo pendiente» pediría ahora, y si está pidiendo
+               pendientes: R && Array.isArray(R.hallazgos) ? alcPendientesSinPropuesta(R) : [], pendiente_en_marcha: !!(R && R.pendiente_en_marcha),
+               // 17-oct (pliego §11.9.2): las citas perdonadas (las de «Decidido» sin cambiar el papel, y las de «Lo dejo así»)
+               perdonadas: A && Array.isArray(A.perdonadas) ? A.perdonadas.filter(x => x && x.revisor).map(x => String(x.cita || "")) : [],
+               // 17-oct (pliego §11.2): la propuesta de cada punto (ya limpia) y para qué vale
+               propuestas: R && Array.isArray(R.hallazgos) ? R.hallazgos.map(h => ({ texto_nuevo: h.texto_nuevo || null, vale_para: h.vale_para || null, tirada: !!h.propuesta_tirada, aviso: h.aviso_arreglo || null })) : [],
                decididos_obra: A && Array.isArray(A.decididos) ? A.decididos.length : 0,
                guardar_al_revisar: !!(A && A.guardar_al_revisar), arreglando: !!(A && A.arreglando),
                guardado_pendiente: !!(A && A.guardado_pendiente), guardado_solo: A && A.guardado_solo ? A.guardado_solo.donde : null,
-               en_marcha: !!(R && R.en_marcha), error: R && R.error ? String(R.error) : null };
+               en_marcha: !!(R && R.en_marcha), error: R && R.error ? String(R.error) : null,
+               // 18-oct (pliego §11.12): el proceso de revisión (sus vueltas), lo que la IA puso sola en cada punto y las vueltas apuntadas
+               proceso: A && A.proceso ? { activo: !!A.proceso.activo, vuelta: A.proceso.vuelta, de: A.proceso.de, arreglados: A.proceso.arreglados.length,
+                                           espera: A.proceso.espera.length, tope: !!A.proceso.tope_alcanzado } : null,
+               final: R && R.proceso ? Object.assign({}, R.proceso, { fallo: R.fallo_vuelta || null }) : null,
+               solos: R && Array.isArray(R.hallazgos) ? R.hallazgos.map(h => h.solo ? h.solo.via : null) : [],
+               deshechos: R && Array.isArray(R.hallazgos) ? R.hallazgos.map(h => !!h.deshecho) : [],
+               rondas: A ? alcRondasParaGuardar(A) : [] };
     },
     async aplicarArmado(paquete, leccionesHecho) {
       const A = alcActivo;
@@ -17700,7 +18572,68 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       if (!alcActivo || !alcModoPrueba()) return null;
       const p = alcPaqueteRevisar();
       return p && p.cuerpo ? JSON.parse(JSON.stringify(p.cuerpo)) : p;
-    }
+    },
+    // 14-oct (pliego §10.9): el papel armado ahora mismo (solo en modo de prueba), para mirar qué texto lleva cada cláusula
+    papelArmado() {
+      if (!alcActivo || !alcModoPrueba() || !alcActivo.contrato) return null;
+      return { html: alcActivo.contrato.html, clausulas_casa: alcClausulasCasa(alcActivo) };
+    },
+    // 14-oct (pliego §10.10): el armado todo seguido por dentro (fase, rondas, lo arreglado, lo que costó y las correcciones que
+    // viajan con cada armado). Solo para el dueño; sin dinero del cliente (el costo es lo que gastó la IA).
+    estadoAuto() {
+      const A = alcActivo, X = A && A.auto;
+      if (!A || !(usuario && usuario.finanzas)) return null;
+      return { activo: !!(X && X.activo), fase: X ? X.fase : null, rondas: X ? X.rondas : 0, costo: X ? X.costo : 0,
+               arreglados: X ? X.arreglados.map(x => ({ de: x.de, motivo: x.motivo, como: x.como })) : [], notas: X ? X.notas.slice() : [],
+               correcciones: (Array.isArray(A.correcciones) ? A.correcciones : []).map(c => ({ cita: c.cita, motivo: c.motivo, donde: c.donde })),
+               candado: alcCandadoRevision() };
+    },
+    // La revisión inyectada como si volviera del cerebro (solo en modo de prueba): pasa por el mismo juez y, dentro del armado
+    // todo seguido, por la misma ronda de arreglo
+    async aplicarRevision(lectura) {
+      const A = alcActivo;
+      if (!A || !alcModoPrueba() || !A.contrato) return false;
+      const p = alcPaqueteRevisar();
+      if (p.error) return false;
+      const V = Alcance.comprobarHallazgos(lectura, { texto: p.cuerpo.texto, secciones: p.rev.secciones, ficha: p.cuerpo.ficha, perdonadas: A.perdonadas || [], orden: alcOrdenParaRevisor(A) });
+      alcPropuestasDelRevisor(V.hallazgos, lectura && Array.isArray(lectura.hallazgos) ? lectura.hallazgos : [], A.contrato.html);
+      A.revision = { hallazgos: V.hallazgos, resumen: V.resumen, tiradas: V.tiradas, perdonados: V.perdonados, rev: p.rev, ficha: p.cuerpo.ficha,
+                     costo_centavos: 0, cuando: new Date().toISOString(), papel_de: A.contrato.html };
+      alcMedirRevision(A, V.hallazgos);
+      if (alcFicha === 2) pintarAlcance();
+      if (A.auto && A.auto.activo) await alcAutoTrasRevision(A);
+      return true;
+    },
+    // 20-oct (pliego §12.5): «Aplicar mi orden» sin cerebro. aplicarOrden(lectura) inyecta la lista como si la hubiera dado el cerebro
+    // ({ lista, dudas, quitados }); aprobarOrden() es «Aprobar y aplicar todo»; estadoOrden() lo que hay por dentro. Solo el dueño.
+    aplicarOrden(lectura) {
+      const A = alcActivo;
+      if (!A || !A.contrato || !(usuario && usuario.finanzas)) return false;
+      const O = alcOrden(true), M = O.en_marcha;
+      O.en_marcha = null;
+      const ok = alcOrdenRecibir(A, lectura, { texto: M ? M.texto : O.texto, costo: 0 });
+      if (alcFicha === 2) pintarAlcance();
+      return ok;
+    },
+    async aprobarOrden() { return usuario && usuario.finanzas ? alcOrdenAprobar() : null; },
+    estadoOrden() {
+      const A = alcActivo, O = A && A.orden;
+      if (!A || !(usuario && usuario.finanzas)) return null;
+      if (!O) return { hay: false };
+      const filas = alcOrdenComprobar(A) || [];
+      return { hay: true, abierta: !!O.abierta, en_marcha: !!O.en_marcha, prueba: !!(O.en_marcha && O.en_marcha.prueba), aplicando: !!O.aplicando,
+               texto: O.texto, error: O.error, lista: JSON.parse(JSON.stringify(O.lista)), dudas: O.dudas.slice(), quitados: O.quitados.slice(),
+               aprobada: !!O.aprobada, aprobada_el: O.aprobada_el, resultado: O.resultado ? Object.assign({}, O.resultado) : null,
+               filas_mal: filas.filter(f => !f.ok).map(f => ({ n: f.n, tipo: f.tipo, frase: f.frase, veces: f.veces })),
+               de_edgar: (Array.isArray(A.reemplazos) ? A.reemplazos : []).filter(r => r && r.de === "edgar").map(r => ({ clave: r.clave, ambito: r.ambito || null, cita: r.cita, nuevo: r.nuevo, ancla: r.ancla || null })),
+               papel_cambiado: !!(A.revision && A.revision.papel_cambiado), candado: alcCandadoRevision(),
+               medida: alcMedidaDeGuardado(A.medida), guardar: alcOrdenParaGuardar(A), revisor: alcOrdenParaRevisor(A),
+               cubre: A.revision && Array.isArray(A.revision.hallazgos) ? A.revision.hallazgos.map(h => !!alcOrdenCubre(A, h)) : [],
+               html: A.contrato ? A.contrato.html : null, cuenta: A.contrato ? A.contrato.cuenta || null : null, texto_hoja: A.texto };
+    },
+    // las piezas sin pantalla de §10.10 (para mirar lo que viaja)
+    contextoCuentale() { return usuario && usuario.finanzas ? alcContextoCuentale() : null; },
+    pagosEstimado(id) { return usuario && usuario.finanzas ? alcPagosEstimado(id || (alcActivo && alcActivo.proyecto.id)) : null; }
   };
 
   // ── Reacomodar el texto: el dinero NO viaja ──
@@ -17862,7 +18795,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     // v252 (revisión): lo mismo que alcCalcular: el panel que vio el levantamiento y la base del precio elegida
     const panelVisto = alcPanelVisto(A.proyecto.id);
     if (panelVisto) L.panel_visto = panelVisto;
-    A.validado = Alcance.validarAlcance(L);
+    A.validado = Alcance.validarAlcance(L, alcAdminBase(A));
     A.cuenta = Alcance.cuentas(L);
     A.decision = Alcance.decidirInterruptores(L, A.cuenta, alcAdminBase(A));
     alcAvisosDeLaFicha();
@@ -18008,6 +18941,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       // contrato ya sale con la nueva sin cerrar la app. Sin señal, se usa la última que se bajó.
       try { alcPlantilla = await DB.plantillaSOW(); }
       catch (e) { if (!alcPlantilla) throw e; }
+      // 14-oct (corrección, hallazgo 11): la plantilla nueva no estaba en el almacén y salió con la de antes: se dice
+      if (DB.plantillaAnterior && DB.plantillaAnterior()) avisar("Uso la plantilla anterior del contrato: la nueva todavía no está subida.", true);
       // (revisión) mientras bajaba la plantilla, Edgar pudo cambiar de obra: el papel de esta obra no se toca con la otra
       if (alcActivo !== A) return;
       if (!Alcance.marcasEmparejadas(alcPlantilla)) throw new Error("La plantilla de la app tiene una marca coja");
@@ -18026,7 +18961,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         items: T.items, no_incluye: T.no_incluye, addons: T.addons, hitos: T.hitos,
         // v3.4: lo propio de la hoja (cláusulas, cronograma, sección 8, condiciones de pago)
         propias: T.propias, programa: T.programa, pre: T.pre, pagos: T.pagos,
-        codigo_grupos: T.codigo_grupos
+        codigo_grupos: T.codigo_grupos,
+        // 14-oct (pliego §10.9): las cláusulas de protección que la IA adaptó a este trabajo (las que conservan su núcleo)
+        clausulas_texto: T.decision.clausulas_texto
       });
       // un $ que Edgar explicó y dejó adrede no es un monto inventado
       const perdonados = (A.perdonadas || []).flatMap(x => (String((x && x.texto) || x || "").match(/\$\s?\d[\d,]*(?:\.\d{2})?/g) || []).map(m => m.replace(/[$\s]/g, "")));
@@ -18034,7 +18971,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       // (pliego §8.2) lo que la IA cambió en el papel se vuelve a poner en el papel nuevo (el que ya no encuentra su
       // frase queda en A.reemplazos_sin_sitio, con su aviso)
       const RP = alcAplicarReemplazos(A, out.html, permitidos);
-      const B = Alcance.barridoFinal(RP.html, permitidos);
+      // 17-oct (pliego §11.2, «Deshacer»): el papel del armado SIN los arreglos, para volver a pintarlo sin el que se deshace
+      A.contrato_base = out.html;
+      // 20-oct (pliego §12.4 C.1): con la cuenta, el barrido frena también lo que el dinero pintado no cuadra con ella
+      const B = Alcance.barridoFinal(RP.html, permitidos, T.cuenta);
       A.contrato = { html: RP.html, numeroClausulas: out.numeroClausulas,
                      archivo: T.archivo, problemas: B.problemas, avisos: T.avisos || [], cuenta: T.cuenta,
                      // 13-oct (revisión): los hitos tal como salen en el papel (DISPARADOR): la ficha se cuadra con ellos
@@ -18055,7 +18995,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       pintarAlcance();
       if (B.problemas.length) avisar("Armado, pero hay algo que revisar", true);
       else avisar("Contrato armado ✓");
-    } catch (e) { avisar(e.message, true); }
+    } catch (e) { avisar(e.message, true); if (alcActivo === A) pintarAlcance(); }   // (hallazgo 12: sin el progreso viejo en pantalla)
   }
 
   // ============================================================
@@ -18110,6 +19050,11 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const extra = (j.clausulas_extra || []).filter(c => c && c.aplicado !== false && sinPlata(c.titulo_en))
       .map(c => Object.assign({ titulo_en: sinPlata(c.titulo_en) }, sinPlata(c.texto_en, 1200) ? { texto_en: sinPlata(c.texto_en, 1200) } : {}, { porque: sinPlata(c.porque) }));
     if (extra.length) out.clausulas_extra = extra;
+    // 14-oct (pliego §10.9): las cláusulas que la IA adaptó y SÍ salen en el papel; el cerebro les pone al lado el texto de la casa
+    // (el suyo) para que el revisor vea si protegen menos
+    const adapt = (j.clausulas_adaptadas || []).filter(c => c && c.aplicado !== false && sinPlata(c.texto_en, 900))
+      .map(c => Object.assign({ clave: c.clave }, sinPlata(c.titulo_en, 120) ? { titulo_en: sinPlata(c.titulo_en, 120) } : {}, { texto_en: sinPlata(c.texto_en, 900), porque: sinPlata(c.porque) }));
+    if (adapt.length) out.clausulas_adaptadas = adapt;
     if (sinPlata(j.resumen, 1500)) out.resumen = sinPlata(j.resumen, 1500);
     return Object.keys(out).length ? out : null;
   }
@@ -18134,9 +19079,12 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       if (/cliente|client|owner|due[nñ]o|gc\b/.test(t)) return "cliente";
       if (/^no\b|no hace falta|not required|none/.test(t)) return "no_hace_falta";
       return ""; };
+    // 17-oct (Gong): «Base del precio: plans» (o el estimado por planos, o un plano en la obra) también es una obra por planos:
+    // la ficha solo miraba la línea «Planos:» y el revisor leía «planos = no» con el precio sacado de planos sellados
     const planosSi = Alcance.siNo({ valor: d.planos }) === true
       || (!!String(d.planos || "").trim() && Alcance.siNo({ valor: d.planos }) === null)
-      || (L.condiciones && L.condiciones.tipo_trabajo && L.condiciones.tipo_trabajo.valor === "planos");
+      || (L.condiciones && L.condiciones.tipo_trabajo && L.condiciones.tipo_trabajo.valor === "planos")
+      || !!bl.BASE_PLANOS;
     const ficha = Alcance.fichaSinDinero({
       nombre: pAct.nombre || A.proyecto.nombre || "",
       direccion: alcVacio(direccionFicha) ? "" : direccionFicha,
@@ -18178,6 +19126,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     // discuta como hallazgos. Sin dinero: lo que lleve un monto no sale del teléfono (la nube lo vuelve a mirar)
     const dj = alcDecisionesParaRevisar(dec.juicio);
     if (dj) cuerpo.decisiones_ia = dj;
+    // 20-oct (pliego §12.5 B.4): con la orden de Edgar aprobada, el revisor mide contra ella (lo que Edgar decidió no es hallazgo).
+    // Sin dinero y con sus largos (la nube la vuelve a limpiar y la mete en la huella)
+    const oa = alcOrdenParaRevisor(A);
+    if (oa.length) cuerpo.orden_aprobada = oa;
     return { cuerpo, rev: R };
   }
 
@@ -18185,6 +19137,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   function alcErrorRevisor(r) {
     const e = String((r && (r.error || r.estado)) || "");
     if (e === "no_autorizado" || e === "sin_llave") return alcErrorEnLlano({ error: e });
+    // 20-oct (pliego §12.5): «Aplicar mi orden» también manda la hoja; el cerebro dice dónde estaba el monto (donde: "hoja")
+    if (e === "dinero_en_el_contrato" && r && (r.donde === "hoja" || r.donde === "hoja_origen")) return "Se me escapó un monto sin tapar en la hoja; no lo mandé a la IA";
     if (e === "dinero_en_el_contrato") return "Se me escapó un monto sin tapar en el contrato; no lo mandé a la IA";
     if (e === "dinero_en_la_ficha") return "Un dato de la ficha de la obra llevaba un monto: la IA no lo aceptó";
     if (e === "tope_mes") return "La IA ya gastó lo del mes: esta revisión no se hizo";
@@ -18196,6 +19150,11 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (e === "salida_cortada") return "La revisión salió cortada; vuelve a intentarlo";
     if (e === "no_existe") return "No encuentro esa revisión; vuelve a intentarlo";
     if (e === "sin_contrato" || e === "sin_texto") return "Arma el contrato primero";
+    // 20-oct (pliego §12.5): los de «Aplicar mi orden»
+    if (e === "sin_orden") return "Escribe primero tu orden";
+    if (e === "orden_larga") return "Tu orden es muy larga para la IA: pártela en dos";
+    if (e === "dinero_en_la_orden") return "Tu orden llevaba un monto sin tapar: la IA no la aceptó. El dinero lo pone el programa";
+    if (e === "sin_pendientes") return "Esos puntos ya no están así en el papel: toca «Arreglar el contrato» para que la IA lo revise otra vez";
     if (e === "molde_rechazado" || e === "lectura_invalida" || e === "dinero_en_la_lectura")
       return "La IA devolvió algo que no cuadra; vuelve a intentarlo";
     try { console.warn("cerebro (revisar):", e || "(sin código)", r && r.detalle ? String(r.detalle).slice(0, 200) : ""); } catch { /* nada */ }
@@ -18207,6 +19166,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const A = alcActivo;
     try { await alcRevisarIA0(); }
     finally { alcGuardarSiArreglo(A); }
+    // 14-oct (pliego §10.10): dentro del armado todo seguido, al volver la revisión toca la ronda de arreglo que corresponda
+    if (A && alcActivo === A && A.auto && A.auto.activo && A.revision && !A.revision.en_marcha) await alcAutoTrasRevision(A);
   }
   async function alcRevisarIA0() {
     const A = alcActivo;
@@ -18219,8 +19180,20 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     }
     const p = alcPaqueteRevisar();
     if (p.error) { A.revision = { error: alcErrorRevisor({ error: p.error }) }; repintar(); return; }
-    if (alcModoPrueba()) { A.revision = { error: "Modo de prueba: no llamo a la IA" }; repintar(); return; }
-    const marca = { en_marcha: true, desde: Date.now(), rev: p.rev, ficha: p.cuerpo.ficha };
+    // 18-oct (pliego §11.12.1c): dentro del proceso de revisión, cada revisión es una vuelta; de la segunda en adelante viajan lo
+    // que la app ya arregló sola (ya_arreglado) y lo que espera a Edgar (espera_edgar), sin dinero, para que el revisor no lo repita
+    const P = A.proceso && A.proceso.activo ? A.proceso : null;
+    if (P) {
+      P.vuelta++; P.fase = "revisar";
+      if (P.vuelta >= 2) {
+        const L = alcProcesoListas(P);
+        if (L.ya_arreglado.length) p.cuerpo.ya_arreglado = L.ya_arreglado;
+        if (L.espera_edgar.length) p.cuerpo.espera_edgar = L.espera_edgar;
+      }
+    }
+    // (§10.10) `prueba`: el armado todo seguido espera a que la prueba inyecte la revisión (MXP_PRUEBA.aplicarRevision)
+    if (alcModoPrueba()) { A.revision = { error: "Modo de prueba: no llamo a la IA", prueba: true }; repintar(); return; }
+    const marca = { en_marcha: true, desde: Date.now(), rev: p.rev, ficha: p.cuerpo.ficha, vuelta: P ? P.vuelta : 0 };
     A.revision = marca;
     repintar();
     const sigueViva = () => alcActivo === A && A.revision === marca;
@@ -18245,7 +19218,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       if (r && r.estado === "en_curso") r = { estado: "tiempo", error: "tiempo" };
       if (r && r.estado === "ok" && r.lectura) {
         const V = Alcance.comprobarHallazgos(r.lectura, { texto: p.cuerpo.texto, secciones: p.rev.secciones,
-                                                         ficha: p.cuerpo.ficha, perdonadas: A.perdonadas || [] });
+                                                         ficha: p.cuerpo.ficha, perdonadas: A.perdonadas || [], orden: alcOrdenParaRevisor(A) });
         // (13-oct) el dato que la IA pidió y la ficha NO tiene (el juez le quita el arreglo): se apunta el campo para
         // que «Hablar con la IA» ofrezca «Escribe el dato»
         const crudos = Array.isArray(r.lectura.hallazgos) ? r.lectura.hallazgos : [];
@@ -18255,8 +19228,12 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
             && String(x.cita || "").trim().slice(0, 160) === h.cita);
           if (c) h.falta_dato = c.arreglo.campo;
         });
+        // 17-oct (pliego §11.2): la propuesta del revisor («Cómo debería ir»), ya limpia
+        alcPropuestasDelRevisor(V.hallazgos, crudos, A.contrato.html);
         A.revision = { hallazgos: V.hallazgos, resumen: V.resumen, tiradas: V.tiradas, perdonados: V.perdonados,
-                       rev: p.rev, ficha: p.cuerpo.ficha, costo_centavos: r.costo_centavos ?? null, cuando: new Date().toISOString() };
+                       rev: p.rev, ficha: p.cuerpo.ficha, costo_centavos: r.costo_centavos ?? null, cuando: new Date().toISOString(),
+                       papel_de: A.contrato.html };
+        alcMedirRevision(A, V.hallazgos);      // (§12.8) los rojos de la primera revisión y cuándo salió limpia
         avisar(V.hallazgos.length ? "La IA terminó de revisar el contrato" : "La IA revisó el contrato: no vio nada que arreglar");
       } else {
         A.revision = { error: alcErrorRevisor(r || {}) };
@@ -18269,6 +19246,888 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     repintar();
   }
 
+  // ============================================================
+  // 18-oct (docs/PLIEGO-CORREGIR-CON-IA.md §11.12, Edgar: «me salió 4 veces distintos errores… no pueden ser todos de una vez y que
+  // sea solo un proceso de revisión»). UN botón = UNA vuelta completa, y una sola pantalla al final:
+  //   (a) revisar; (b) poner SOLA cada propuesta que pase la puerta (alcPropuestaSegura con ok: la misma que da «Arreglar según la
+  //   IA» sin «Ponerlo aunque…») y el dato de la ficha (`arreglo`); lo que no pasa (ley, §6, protección, dinero, una decisión de
+  //   Edgar) se guarda para él; (c) volver a revisar mandando ya_arreglado y espera_edgar; (d) repetir mientras la vuelta traiga
+  //   algo nuevo que se pueda poner solo, como mucho TRES vueltas; (e) la pantalla: «La IA arregló N puntos» (plegada, cada uno con
+  //   «Abrir» y «Deshacer»), «Te toca decidir (M)» (las tarjetas de 11.2/11.11) y «Dudas (K)»; se guarda solo en la propuesta.
+  // En la tercera vuelta ya no se pone nada solo: lo que traiga queda para Edgar con su botón. Así el papel que se manda siempre es
+  // el que la IA revisó (si se pusiera algo en la última, haría falta una cuarta). Lo usan «Revisar con IA antes de enviar»,
+  // «Revisar otra vez con IA», «Arreglar el contrato» y la ronda sola de 10.10 (alcAutoRondaPapel y alcAutoTrasRevision).
+  // ============================================================
+  const ALC_TOPE_VUELTAS = 3;
+  // (pruebas) las baterías de antes miran cada punto suelto, con una sola revisión por botón: window.MXP_PRUEBA_UNA_VUELTA = true
+  const alcSoloUnaVuelta = () => window.MXP_PRUEBA_UNA_VUELTA === true;
+  function alcProcesoEmpezar(A, de, yaRevisado) {
+    A.proceso = { activo: true, de: de || "boton", vuelta: yaRevisado ? 1 : 0, tope: ALC_TOPE_VUELTAS, arreglados: [], espera: [],
+                  notas: [], costo: 0, fallo: null, tope_alcanzado: false, ultimaR: null, fase: "revisar", desde: Date.now() };
+    return A.proceso;
+  }
+  // Lo que viaja al revisor en la vuelta 2 y 3: lo arreglado ({donde, cita: lo que decía, como: cómo quedó}) y lo que espera a Edgar
+  // ({donde, cita, motivo}). Sin cifras de dinero (alcLimpioCorto) y, si aun así algo trae un monto, fuera. Treinta como mucho.
+  function alcProcesoListas(P) {
+    const sinMonto = x => !Alcance.traeDineroEstricto(JSON.stringify(x));
+    const ya = P.arreglados.filter(h => h && h.decidido).map(h => {
+      const r = alcReemplazoDe(h);
+      return { donde: alcLimpioCorto(h.donde, 12), cita: alcLimpioCorto(h.cita, 160), como: alcLimpioCorto(r ? r.nuevo : (h.hecho || h.decidido.como || ""), 300) };
+    }).filter(x => x.cita && sinMonto(x)).slice(-30);
+    const espera = P.espera.filter(h => h && !h.decidido && !h.hecho)
+      .map(h => ({ donde: alcLimpioCorto(h.donde, 12), cita: alcLimpioCorto(h.cita, 160), motivo: alcLimpioCorto(h.motivo, 300) }))
+      .filter(x => x.cita && sinMonto(x)).slice(-30);
+    return { ya_arreglado: ya, espera_edgar: espera };
+  }
+  // Las vueltas como se guardan: solo números, fecha y la vuelta (nada de texto), treinta como mucho
+  function alcRondasParaGuardar(A) {
+    const xs = A && Array.isArray(A.rondas) ? A.rondas : [];
+    const n = v => Math.max(0, Math.round(Number(v) || 0));
+    return xs.filter(r => r && typeof r === "object").map(r => ({ cuando: typeof r.cuando === "string" ? r.cuando.slice(0, 30) : null,
+      vuelta: n(r.vuelta), arreglados: n(r.arreglados), pendientes: n(r.pendientes), costo: n(r.costo) })).slice(-30);
+  }
+  // ¿Ya está en la lista este punto? (la misma cita, o la misma sección con un motivo muy parecido)
+  function alcEnLista(lista, h) { return (Array.isArray(lista) ? lista : []).find(x => x && x !== h && alcMismoHallazgo(x, h)) || null; }
+  // Quita puntos de una revisión (los repetidos) y lleva las charlas con sus puntos
+  function alcRehacerLista(R, nueva) {
+    const A = alcActivo, vieja = R.hallazgos;
+    if (A && A.charlas_de === R && Array.isArray(A.charlas)) A.charlas = nueva.map(h => A.charlas[vieja.indexOf(h)]);
+    R.hallazgos = nueva;
+    R.foco = null;
+  }
+  // (b) Lo que se pone solo en esta vuelta. `ultima`: la vuelta del tope (no se pone nada: queda para Edgar, con su botón).
+  // Lo que la IA vuelve a señalar y ya se arregló (o ya espera a Edgar) no sale dos veces. Un punto que Edgar deshizo no se vuelve a
+  // poner solo. Devuelve { puestos, datos, porPoner } (porPoner: lo que se habría puesto solo si no fuera la última vuelta).
+  function alcProcesoAplicar(A, R, P, ultima) {
+    const hs = R && Array.isArray(R.hallazgos) ? R.hallazgos.slice() : [];
+    let puestos = 0, datos = 0, porPoner = 0;
+    const repetidos = [];
+    for (const h of hs) {
+      if (alcActivo !== A || A.revision !== R) break;
+      if (alcEnLista(P.arreglados, h) || alcEnLista(P.espera, h)) { repetidos.push(h); continue; }
+      if (h.decidido || h.hecho || alcEnLista(A.deshechos, h)) continue;
+      // 20-oct (pliego §12.5 B.4): sobre un párrafo de la orden aprobada de Edgar (la misma cita o la misma cabeza) no se pone nada
+      // solo: ese punto va a «Te toca decidir»
+      if (alcOrdenCubre(A, h)) { h.por_orden = true; continue; }
+      const i = R.hallazgos.indexOf(h);
+      if (i < 0) continue;
+      const dato = !!(h.arreglo && h.arreglo.valor);
+      const seguro = !dato && typeof h.texto_nuevo === "string" && h.texto_nuevo.trim() && alcPropuestaSegura(h).ok;
+      if (!dato && !seguro) continue;
+      if (ultima) { porPoner++; h.al_tope = true; continue; }
+      if (dato) {
+        if (alcRevEscribirDato(i, h.arreglo.campo, h.arreglo.valor)) { h.solo = { vuelta: P.vuelta, via: "dato", en_papel: false }; datos++; }
+        continue;
+      }
+      const x = alcArreglarSegunIA(i, { auto: true });
+      if (x.ok) { h.solo = { vuelta: P.vuelta, via: "papel", de_que: x.de_que || "" }; puestos++; }
+    }
+    if (repetidos.length) alcRehacerLista(R, R.hallazgos.filter(h => !repetidos.includes(h)));
+    alcProcesoRepartir(R, P);
+    return { puestos, datos, porPoner };
+  }
+  // Lo de esta vuelta: lo puesto solo, a «arreglados»; lo demás, a «espera» (viaja en la vuelta siguiente y sale en la pantalla)
+  function alcProcesoRepartir(R, P) {
+    (R && Array.isArray(R.hallazgos) ? R.hallazgos : []).forEach(h => {
+      if (h.solo && h.decidido) { if (!P.arreglados.includes(h)) P.arreglados.push(h); }
+      else if (!P.espera.includes(h) && !P.arreglados.includes(h)) P.espera.push(h);
+    });
+  }
+  // El dato de la ficha se escribió en la hoja: el papel se vuelve a armar SIN IA (el dato ya entró en el paquete) con los arreglos
+  // de antes puestos otra vez (alcArmar los vuelve a aplicar). false si no salió.
+  async function alcProcesoRearmarDatos(A, P) {
+    const c0 = A.contrato;
+    P.fase = "datos";
+    if (alcActivo === A && alcFicha === 2) pintarAlcance();
+    await alcVolverAArmar();
+    if (alcActivo !== A) return false;
+    if (!A.contrato || A.contrato === c0) return false;
+    P.arreglados.forEach(h => { if (h.solo && h.solo.via === "dato") h.solo.en_papel = true; });
+    return true;
+  }
+  // (§11.12.4) Nada se pierde: cada vuelta se apunta en alcance_decisiones.rondas {cuando, vuelta, arreglados, pendientes, costo}
+  function alcApuntarRonda(A, P, R, n) {
+    // pendientes = lo que espera a Edgar hasta esta vuelta (de esta y de las de antes)
+    const fila = { cuando: new Date().toISOString(), vuelta: P.vuelta, arreglados: (n.puestos || 0) + (n.datos || 0),
+                   pendientes: P.espera.filter(h => h && !h.decidido && !h.hecho).length,
+                   costo: Math.round(Number(R && R.costo_centavos) || 0) };
+    A.rondas = [...(Array.isArray(A.rondas) ? A.rondas : []), fila].slice(-30);
+  }
+  // «Revisar con IA antes de enviar», «Revisar otra vez con IA» y «Arreglar el contrato» (sin el armado todo seguido de 10.10)
+  async function alcRevisionCompleta(de) {
+    const A = alcActivo;
+    if (!A || !A.contrato || !(usuario && usuario.finanzas)) return;
+    if (alcSoloUnaVuelta()) return alcRevisarIA();
+    if ((A.revision && A.revision.en_marcha) || (A.proceso && A.proceso.activo)) { avisar("La IA ya está revisando este contrato"); return; }
+    if (A.auto && A.auto.activo && A.auto.fase !== "espera") { avisar("La IA está arreglando el contrato: espera a que termine"); return; }
+    if (navigator.onLine === false) return alcRevisarIA();          // sin señal: lo dice la caja, como siempre
+    const P = alcProcesoEmpezar(A, de);
+    avisar("Reviso, arreglo sola lo que se puede y vuelvo a revisar (≈ 25–75 ¢, dos o tres minutos)");
+    try {
+      for (;;) {
+        await alcRevisarIA0();
+        if (alcActivo !== A || A.proceso !== P) return;
+        const R = A.revision;
+        if (!R || R.error || R.saltada || !Array.isArray(R.hallazgos)) {
+          if (R && R.error && P.ultimaR) P.fallo = R.error;
+          break;
+        }
+        if (R.reutilizada) break;
+        if (Number.isFinite(R.costo_centavos)) P.costo += R.costo_centavos;
+        P.ultimaR = R;
+        if (!P.resumen && R.resumen) P.resumen = R.resumen;      // el resumen de la primera vuelta es el que cuenta el contrato
+        const ultima = P.vuelta >= P.tope;
+        const n = alcProcesoAplicar(A, R, P, ultima);
+        alcApuntarRonda(A, P, R, n);
+        if (ultima) { if (n.porPoner) P.tope_alcanzado = true; break; }
+        if (!n.puestos && !n.datos) break;
+        if (alcTopePasado(null)) { P.notas.push("No seguí revisando: el asistente llegó al tope del mes."); R.papel_cambiado = true; break; }
+        if (n.datos && !(await alcProcesoRearmarDatos(A, P))) {
+          if (alcActivo !== A || A.proceso !== P) return;
+          P.notas.push("No pude volver a armar el papel con el dato de la ficha: míralo en la hoja y toca «Arreglar el contrato».");
+          break;
+        }
+        if (alcActivo !== A || A.proceso !== P) return;
+      }
+    } finally {
+      if (alcActivo === A && A.proceso === P) alcProcesoCerrar(A);
+    }
+  }
+  // (e) La pantalla de al final: lo arreglado en todas las vueltas, lo que espera a Edgar y lo nuevo de la última, en UNA lista (lo
+  // que espera primero, los rojos delante; lo arreglado al final). Si una vuelta falló, lo que hay hasta ahí y se dice. `callado`:
+  // sin aviso ni guardado (el armado todo seguido de 10.10 tiene los suyos).
+  function alcProcesoCerrar(A, callado) {
+    const P = A && A.proceso;
+    if (!P || !P.activo) return;
+    P.activo = false; P.fase = "listo";
+    let R = A.revision;
+    const malo = !R || R.error || R.saltada || !Array.isArray(R.hallazgos);
+    if (malo && P.ultimaR && (P.arreglados.length || P.espera.length)) {
+      const e = (R && R.error) || P.fallo || "La IA falló; vuelve a intentarlo en un minuto";
+      R = P.ultimaR;
+      R.fallo_vuelta = `La vuelta ${P.vuelta} no salió (${e}): te enseño lo que hay hasta ahí`;
+      if (P.arreglados.length) R.papel_cambiado = true;
+      A.revision = R;
+    }
+    if (R && Array.isArray(R.hallazgos) && !R.reutilizada && !R.error) {
+      alcProcesoRepartir(R, P);
+      const quedan = P.espera.filter(h => h && !(h.solo && h.decidido));
+      const orden = [...quedan.filter(h => h.gravedad === "rojo"), ...quedan.filter(h => h.gravedad !== "rojo"), ...P.arreglados];
+      alcRehacerLista(R, orden.filter((h, k) => orden.indexOf(h) === k));
+      R.proceso = { vueltas: P.vuelta, arreglados: P.arreglados.length, costo: Math.round(P.costo || 0), tope: !!P.tope_alcanzado,
+                    notas: P.notas.slice(), de: P.de };
+      if (P.costo > 0) R.costo_centavos = Math.round(P.costo);
+      if (P.resumen) R.resumen = P.resumen;
+    }
+    if (callado) return;
+    // lo que la IA puso sola se guarda solo en la propuesta, como al terminar «Arreglar el contrato» (pliego §7.2)
+    if (P.arreglados.length) A.guardar_al_revisar = true;
+    alcGuardarSiArreglo(A);
+    if (alcActivo !== A) return;
+    if (alcFicha === 2) pintarAlcance();
+    const hs = R && Array.isArray(R.hallazgos) ? R.hallazgos : [];
+    const n = hs.filter(h => h.solo && h.decidido).length, m = hs.filter(h => !(h.solo && h.decidido) && h.gravedad === "rojo").length;
+    if (R && R.fallo_vuelta) avisar(R.fallo_vuelta, true);
+    else if (R && R.proceso) avisar(!n && !hs.length ? "La IA revisó el contrato: no vio nada que arreglar"
+      : `${n === 1 ? "La IA arregló 1 punto" : `La IA arregló ${n} puntos`} · ${m === 1 ? "te toca decidir 1" : `te toca decidir ${m}`}`);
+  }
+
+  // ============================================================
+  // 20-oct (docs/PLIEGO-APLICAR-MI-ORDEN.md §12.5, etapa B): «Aplicar mi orden». Lo que en el chat salió bien con Gong, dentro de
+  // la app: Edgar dice qué cambia (con sus palabras o con el texto exacto en inglés), la IA lo convierte en UNA LISTA de puntos sobre
+  // ESTE papel (cerebro accion=orden, pide y recoge como revisar), Edgar la mira en español y la aprueba, y el programa la pone toda
+  // de una vez SIN IA (los datos en la hoja y se vuelve a armar; los párrafos, lo que se añade y lo que se quita con el motor de los
+  // arreglos de la etapa C, como arreglos «de Edgar»). Después Alcance.comprobarLista dice «N de M bien» y el revisor mide contra
+  // esa orden (orden_aprobada): lo que Edgar decidió no es hallazgo y el proceso automático no lo pisa.
+  // Puertas: el dinero nunca viaja (la orden se tapa y se comprueba con Alcance.traeDineroEstricto antes de mandar; el cerebro lo
+  // vuelve a mirar); cada texto nuevo pasa alcTextoNuevoOk y el barrido con la cuenta; el texto de ley NUNCA se cambia («no se puede:
+  // texto de ley»); la §6 y la 7.x sí entran si no traen dinero (la orden de Edgar manda: NO pasa por alcPropuestaSegura).
+  // A.orden = { abierta, borrador, en_marcha, huella, lista, dudas, quitados, error, aprobada, aprobada_el, resultado, texto, cuando }
+  // Se guarda en la propuesta: alcance_decisiones.orden = { texto (la orden TAPADA), cuando, lista, aprobada_el, resultado }.
+  // ============================================================
+  const ALC_ORDEN_TIPOS = ["parrafo", "anadir", "quitar", "dato"];
+  const ALC_MAX_ORDEN = 40;
+  const ALC_ORDEN_TIPO_ES = { parrafo: "Párrafo", anadir: "Añadir", quitar: "Quitar", dato: "Dato" };
+  // Las etiquetas en la hoja de los datos que no son de la ficha (los demás salen de Alcance.CAMPOS_ARREGLO)
+  const ALC_ETIQUETA_DATO = { utility_por: "Compañía de luz la tramita", permiso: "Permiso", planos: "Planos", firma: "Firma",
+    contrato_con: "Contrato con", propiedad: "Propiedad", vence: "Vence", atencion: "Atención", email: "Email", telefono: "Teléfono",
+    segundo_firmante: "Segundo firmante", ingenieria: "Ingeniería", contratista: "Contratista", inquilino: "Inquilino" };
+  function alcOrden(crear) {
+    const A = alcActivo;
+    if (!A) return null;
+    if (!A.orden && crear) A.orden = alcOrdenNueva();
+    return A.orden || null;
+  }
+  function alcOrdenNueva() {
+    return { abierta: false, borrador: "", en_marcha: null, huella: null, lista: [], dudas: [], quitados: [], error: null,
+             aprobada: false, aprobada_el: null, resultado: null, texto: "", cuando: null, filas: null, filas_de: null, aplicando: false,
+             // una orden nueva sobre una ya aprobada: lo aprobado antes sigue valiendo y se junta con lo nuevo al aprobar
+             previas: [], texto_previo: "" };
+  }
+  // ¿Lleva dinero un texto que va a salir o que se guarda? (la misma regla estricta de la casa, más «$» con cifras y la marca)
+  const alcOrdenConDinero = t => { const s = String(t || ""); return !!s && (/\$\s?\d|\[\s*monto/i.test(s) || s.split("\n").some(l => Alcance.traeDineroEstricto(l))); };
+  // …lo mismo con la marca de lo ya tapado permitida (la orden tapada, el papel tapado: «[MONTO 1]» no es un monto)
+  const alcOrdenConDineroTapado = t => alcOrdenConDinero(String(t || "").replace(/\[MONTO(?: \d+)?\]/g, ""));
+  // (corrección de los revisores, 20-oct) un renglón de la orden con un monto según la regla del armado (sin $ ni comas), sin contar las
+  // marcas [MONTO n] ni un número de cláusula de dos cifras. GEMELO de montoEnOrden del cerebro (lo que pasa aquí, pasa allí)
+  const alcMontoEnOrden = l => { const s = String(l || "").replace(/\[MONTO(?: \d+)?\]/g, "");
+    return Alcance.tramosArmar(s).some(([a, b]) => !/^\d{1,2}\.\d{1,2}$/.test(s.slice(a, b))); };
+  // La lista como la acepta la app (lo mínimo: forma, 40 como mucho y sin dinero; la limpieza de verdad la hace el cerebro con
+  // limpiarOrden). Devuelve { lista, tirados: [{n, motivo}] } con los puntos renumerados 1..k.
+  function alcOrdenListaLimpia(xs) {
+    const lista = [], tirados = [];
+    const texto = (v, n) => { const t = String(v === null || v === undefined ? "" : v).replace(/\r/g, "").trim(); return t.length > n ? null : t; };
+    const frases = v => (Array.isArray(v) ? v : []).map(f => String(f === null || f === undefined ? "" : f).replace(/\s+/g, " ").trim())
+      .filter(f => f && f.length <= 1500 && !alcOrdenConDinero(f)).slice(0, 20);
+    (Array.isArray(xs) ? xs : []).forEach((p0, k) => {
+      const n0 = p0 && Number.isInteger(p0.n) ? p0.n : k + 1;
+      const fuera = motivo => tirados.push({ n: n0, motivo });
+      if (!p0 || typeof p0 !== "object") return fuera("no es un punto");
+      if (lista.length >= ALC_MAX_ORDEN) return fuera("pasa de " + ALC_MAX_ORDEN + " puntos");
+      const tipo = String(p0.tipo || "");
+      if (!ALC_ORDEN_TIPOS.includes(tipo)) return fuera("no sé qué hacer con ese punto");
+      const donde = texto(p0.donde, 12);
+      if (donde === null || (tipo !== "dato" && !/^[0-9A-Za-z]{1,3}(?:\.\d{1,3})?$/.test(donde))) return fuera("no dice en qué sección va");
+      const cita = texto(p0.cita, 160), nuevo = texto(p0.nuevo, 1500);
+      if (cita === null) return fuera("la cita es demasiado larga");
+      if (nuevo === null) return fuera("el texto nuevo pasa de 1,500 letras");
+      const p = { n: lista.length + 1, tipo, donde, cita: cita.replace(/\s+/g, " "), nuevo: tipo === "quitar" || tipo === "dato" ? "" : nuevo };
+      // (corrección de los revisores, 20-oct) los mismos topes que limpiarOrden del cerebro: la cita, si va, con 8 letras o más
+      if (((tipo === "parrafo" || tipo === "quitar") && !p.cita) || (tipo !== "dato" && p.cita && p.cita.length < 8)) return fuera("no dice qué párrafo del papel es");
+      if (tipo === "anadir" && !p.nuevo) return fuera("no dice qué se añade");
+      if (p.nuevo && (p.nuevo.includes("{{") || p.nuevo.includes("<"))) return fuera("el texto nuevo trae marcas que no van en el papel");
+      if ([p.cita, p.nuevo].some(alcOrdenConDinero)) return fuera("trae un monto (el dinero lo pone el programa)");
+      if (tipo === "dato") {
+        const campo = String(p0.campo || ""), valor = String(p0.valor === null || p0.valor === undefined ? "" : p0.valor).replace(/\s+/g, " ").trim();
+        const vale = Object.prototype.hasOwnProperty.call(Alcance.CAMPOS_ARREGLO || {}, campo) || Object.prototype.hasOwnProperty.call(Alcance.CLAVES_DATOS || {}, campo);
+        if (!vale) return fuera("ese dato no lo sé escribir en la hoja");
+        if (!valor || valor.length > 200 || alcOrdenConDinero(valor) || Alcance.esMontoTapable(valor)) return fuera("el dato no vale o trae un monto");
+        p.campo = campo; p.valor = valor;
+      }
+      // la negrita, hasta 160 letras como en el cerebro; si pasa o trae dinero, el punto se tira con su motivo (no se aplica sin ella a
+      // escondidas: «N de M bien» no la comprobaría). Corrección de los revisores, 20-oct
+      if (typeof p0.negrita === "string" && p0.negrita.trim()) {
+        const ng = p0.negrita.replace(/\s+/g, " ").trim();
+        if (ng.length > 160) return fuera("el título en negrita es demasiado largo");
+        if (alcOrdenConDinero(ng)) return fuera("trae un monto (el dinero lo pone el programa)");
+        if (tipo === "parrafo" || tipo === "anadir") p.negrita = ng;
+      }
+      const de = frases(p0.debe_estar), nde = frases(p0.no_debe_estar);
+      if (de.length) p.debe_estar = de;
+      if (nde.length) p.no_debe_estar = nde;
+      if (tipo === "parrafo" && !p.nuevo && !de.length && !nde.length && !p.negrita) return fuera("no dice cómo tiene que quedar");
+      p.porque = alcLimpioCorto(String(p0.porque || ""), 300);
+      // lo que pasó al aplicarlo y la cabeza del párrafo en el papel (para que el revisor no lo pise): solo lo que guardó la app
+      if (typeof p0.hecho === "string" && /^[a-z_]{2,20}$/.test(p0.hecho)) p.hecho = p0.hecho;
+      if (typeof p0.cabeza_papel === "string" && p0.cabeza_papel.length <= 80 && !alcOrdenConDinero(p0.cabeza_papel)) p.cabeza_papel = p0.cabeza_papel;
+      lista.push(p);
+    });
+    return { lista, tirados };
+  }
+  // Lo que se guarda (y lo que vuelve de la propuesta al abrir, que se limpia otra vez: lo guardado no se cree a la palabra)
+  function alcOrdenParaGuardar(A) {
+    const O = A && A.orden;
+    if (!O || (!O.lista.length && !O.aprobada_el && !O.texto)) return null;
+    const texto = String(O.texto || "").slice(0, 12000);
+    const res = O.resultado && Number.isInteger(O.resultado.bien) && Number.isInteger(O.resultado.total)
+      ? { bien: O.resultado.bien, total: O.resultado.total, cuando: String(O.resultado.cuando || "").slice(0, 30) || null } : null;
+    const g = { texto: alcOrdenConDineroTapado(texto) ? "" : texto, cuando: O.cuando || null, lista: alcOrdenListaLimpia(O.lista).lista,
+                aprobada_el: O.aprobada_el || null, resultado: res };
+    // mientras una orden nueva espera, la aprobada de antes se guarda aparte (no se pierde si se cierra la app)
+    if (!O.aprobada && O.previas && O.previas.length) {
+      g.previas = alcOrdenListaLimpia(O.previas).lista;
+      const tp = String(O.texto_previo || "").slice(0, 12000);
+      if (tp && !alcOrdenConDineroTapado(tp)) g.texto_previo = tp;
+    }
+    return g;
+  }
+  function alcOrdenDeGuardado(g) {
+    if (!g || typeof g !== "object") return null;
+    const O = alcOrdenNueva();
+    O.lista = alcOrdenListaLimpia(g.lista).lista;
+    O.texto = typeof g.texto === "string" && !alcOrdenConDineroTapado(g.texto) ? g.texto.slice(0, 12000) : "";
+    O.cuando = typeof g.cuando === "string" ? g.cuando.slice(0, 30) : null;
+    O.aprobada_el = typeof g.aprobada_el === "string" ? g.aprobada_el.slice(0, 30) : null;
+    O.aprobada = !!(O.aprobada_el && O.lista.length);
+    if (!O.aprobada && Array.isArray(g.previas)) {
+      O.previas = alcOrdenListaLimpia(g.previas).lista;
+      O.texto_previo = typeof g.texto_previo === "string" && !alcOrdenConDineroTapado(g.texto_previo) ? g.texto_previo.slice(0, 12000) : "";
+    }
+    const r = g.resultado;
+    O.resultado = r && Number.isInteger(r.bien) && Number.isInteger(r.total) ? { bien: r.bien, total: r.total, cuando: typeof r.cuando === "string" ? r.cuando.slice(0, 30) : null } : null;
+    return O;
+  }
+  // §12.8 (medir): los puntos rojos de la primera revisión de esta propuesta y los arreglos a mano de Edgar después de que la
+  // revisión salió limpia (solo números y fechas). Meta: cero rojos la primera vez que Edgar lo ve.
+  function alcMedidaDeGuardado(m) {
+    const n = v => Number.isInteger(v) && v >= 0 && v < 100000 ? v : null;
+    if (!m || typeof m !== "object") return {};
+    const out = {};
+    if (n(m.primera_revision) !== null) out.primera_revision = n(m.primera_revision);
+    if (n(m.arreglos_a_mano) !== null) out.arreglos_a_mano = n(m.arreglos_a_mano);
+    ["primera_cuando", "limpia_el"].forEach(k => { if (typeof m[k] === "string") out[k] = m[k].slice(0, 30); });
+    return out;
+  }
+  function alcMedirRevision(A, hallazgos) {
+    if (!A) return;
+    const M = A.medida = A.medida || {};
+    const rojos = (Array.isArray(hallazgos) ? hallazgos : []).filter(h => h && h.gravedad === "rojo").length;
+    if (M.primera_revision === undefined) { M.primera_revision = rojos; M.primera_cuando = new Date().toISOString(); }
+    // «listo» = la revisión no trajo NINGÚN punto (ni rojo ni ámbar): arreglar lo que la revisión acaba de señalar es parte de la
+    // revisión, no un arreglo a mano después de listo (corrección de los revisores, 20-oct)
+    const todos = (Array.isArray(hallazgos) ? hallazgos : []).filter(Boolean).length;
+    if (!todos && !M.limpia_el) M.limpia_el = new Date().toISOString();
+  }
+  function alcMedirArregloAMano(A, n) {
+    if (!A || !A.medida || !A.medida.limpia_el || !(n > 0)) return;
+    A.medida.arreglos_a_mano = (Number(A.medida.arreglos_a_mano) || 0) + n;
+  }
+  // Los puntos que Edgar ya aprobó y valen ahora: la lista aprobada o, mientras otra orden espera su aprobación, la de antes
+  function alcOrdenVigente(O) {
+    if (!O) return [];
+    return (O.aprobada ? O.lista : O.previas) || [];
+  }
+  // La orden aprobada como viaja al revisor y al juez (comprobarHallazgos): sin dinero, 40 como mucho, con sus largos
+  // (corrección de los revisores, 20-oct) solo lo que de verdad está en el papel: los puntos puestos, los que ya estaban y los de solo
+  // mirar. Un punto que no se pudo poner (texto de ley, no encontrado, barrido, monto…) no es «lo que Edgar decidió y está en el papel»:
+  // su párrafo sigue igual y el revisor lo tiene que mirar como siempre
+  const ALC_ORDEN_EN_PAPEL = ["puesto", "ya", "solo_mirar"];
+  const alcOrdenEnPapel = p => !!(p && ALC_ORDEN_EN_PAPEL.includes(p.hecho));
+  function alcOrdenParaRevisor(A) {
+    const O = A && A.orden;
+    const vale = alcOrdenVigente(O).filter(alcOrdenEnPapel);
+    if (!vale.length) return [];
+    // en un «anadir» la cita es el ANCLA (la viñeta de antes, que Edgar no tocó): solo viaja lo que se añadió
+    return vale.filter(p => p && p.tipo !== "dato" && (p.cita || p.nuevo || (p.debe_estar || []).length))
+      .map(p => ({ donde: String(p.donde || "").slice(0, 12), cita: p.tipo === "anadir" ? "" : String(p.cita || "").slice(0, 160), nuevo: String(p.nuevo || "").slice(0, 1500),
+                   debe_estar: (p.debe_estar || []).slice(0, 20), no_debe_estar: (p.no_debe_estar || []).slice(0, 20) }))
+      .filter(x => !alcOrdenConDinero(JSON.stringify(x))).slice(0, ALC_MAX_ORDEN);
+  }
+  // ¿Cubre la orden aprobada este hallazgo? (la misma cita, la cita dentro de un párrafo de la orden, o la misma cabeza del párrafo)
+  const alcCabezaLlana = t => alcSinNumero(String(t || "").replace(/\s+/g, " ").trim()).replace(/[.:]+$/, "").trim().toLowerCase();
+  function alcOrdenCubre(A, h) {
+    const O = A && A.orden;
+    const vale = alcOrdenVigente(O).filter(alcOrdenEnPapel);
+    if (!vale.length || !h || !A.contrato) return null;
+    const c = alcPlanoDeTexto(h.cita);
+    if (c.length < 8) return null;
+    let cabs = [];
+    try { cabs = alcBloquesDeCita(A.contrato.html, h.cita, h.donde).map(b => alcCabezaLlana(b.cabeza)).filter(x => x.length >= 4); } catch { cabs = []; }
+    // (corrección de los revisores, 20-oct) la cita dentro del texto nuevo cubre solo si no sale en otro sitio del papel (una frase que
+    // se repite en otra cláusula es de esa otra cláusula)
+    const cuantas = (t, k) => { let n = 0, i = -1; while ((i = t.indexOf(k, i + 1)) >= 0) n++; return n; };
+    const enPapel = alcBloquesCache && alcBloquesCache.html === A.contrato.html && alcBloquesCache.P ? cuantas(alcBloquesCache.P.texto, c) : 1;
+    return vale.find(p => {
+      if (!p || p.tipo === "dato" || p.tipo === "quitar") return false;
+      const nv = alcPlanoDeTexto(p.nuevo);
+      if (nv && nv.includes(c) && enPapel <= cuantas(nv, c)) return true;
+      if (p.tipo !== "parrafo") return false;
+      const q = alcPlanoDeTexto(p.cita);
+      if (q.length >= 8 && (q === c || c.includes(q))) return true;
+      const suyas = [alcCabezaLlana(alcTituloDePropuesta(p.nuevo)), alcCabezaLlana(p.cabeza_papel)].filter(x => x.length >= 4);
+      return cabs.some(x => suyas.includes(x));
+    }) || null;
+  }
+  // De qué párrafo se habla, para el renglón: «§7.6» (el número del párrafo si lo trae el texto y es de esa sección) o «§3»
+  function alcOrdenDonde(p) {
+    const d = String((p && p.donde) || "").trim();
+    if (!d) return "";
+    if (/^a$/i.test(d)) return "Aceptación";
+    const num = (String(p.nuevo || p.cita || "").match(/^\s*(\d{1,2}\.\d{1,3})\b/) || [])[1];
+    return "§" + (num && num.split(".")[0] === d.split(".")[0] ? num : d);
+  }
+  function alcOrdenEtiquetaDato(campo) {
+    const ca = Alcance.CAMPOS_ARREGLO && Alcance.CAMPOS_ARREGLO[campo];
+    if (ca) return ca.etiqueta;
+    if (ALC_ETIQUETA_DATO[campo]) return ALC_ETIQUETA_DATO[campo];
+    const x = ((Alcance.CLAVES_DATOS || {})[campo] || [campo])[0] || campo;
+    return String(x).charAt(0).toUpperCase() + String(x).slice(1);
+  }
+  // La caja de la orden, debajo de la cabeza de la revisión: la textarea (como «Cuéntale el trabajo»), la espera, la lista para
+  // aprobar (un botón por renglón y dos abajo) y, al aplicar, «N de M bien» con las tarjetas ámbar de lo que falla
+  function alcCajaOrden() {
+    const A = alcActivo, O = A && A.orden;
+    if (!O || !O.abierta || !(usuario && usuario.finanzas) || !A.contrato) return "";
+    const pendiente = O.lista.length && !O.aprobada;
+    const dis = O.en_marcha || O.aplicando ? " disabled" : "";
+    let s = `<div class="alc-leccion alc-charla alc-orden" id="alc-orden">`;
+    if (O.en_marcha) s += `<div class="alc-gris alc-espera alc-orden-espera">La IA está convirtiendo tu orden en una lista… (suele tardar uno o dos minutos; puedes seguir)</div>`;
+    if (O.aplicando) s += `<div class="alc-gris alc-espera">Pongo tu orden en el papel…</div>`;
+    if (O.error) s += `<div class="alc-gris alc-orden-error">${esc(O.error)}</div>`;
+    // las dudas de la IA y lo que dejó fuera, arriba como texto: con la lista por aprobar y también cuando la lista volvió vacía (es
+    // justo cuando Edgar tiene que ver por qué su orden no sirvió). Corrección de los revisores, 20-oct
+    if (!O.aprobada && !O.en_marcha && (pendiente || !O.lista.length)) {
+      if (O.dudas.length) s += `<div class="alc-ambar alc-orden-dudas"><p>Esto de tu orden la IA no lo supo ubicar en el papel:</p>${O.dudas.map(d => `<p data-no-i18n>${esc(d)}</p>`).join("")}</div>`;
+      if (O.quitados.length) s += `<p class="alc-gris alc-orden-quitados"><span>${esc(O.quitados.length === 1 ? "La IA dejó fuera 1 punto:" : `La IA dejó fuera ${O.quitados.length} puntos:`)}</span> <span data-no-i18n>${esc(O.quitados.map(q => q.motivo).filter(Boolean).join("; "))}</span></p>`;
+    }
+    if (pendiente) {
+      s += `<p class="alc-rev-etq">Lo que voy a poner en el papel (mira cada punto; si alguno no va, quítalo):</p><div class="alc-orden-lista">`;
+      O.lista.forEach((p, k) => {
+        const ingles = p.tipo === "dato" ? `${alcOrdenEtiquetaDato(p.campo)}: ${p.valor}` : p.tipo === "quitar" ? p.cita : p.nuevo || p.cita;
+        s += `<div class="alc-orden-punto" data-orden-punto="${k}" style="margin:.55rem 0 .8rem">
+          <p class="alc-rev-etq"><span data-no-i18n>${esc(alcOrdenDonde(p))}</span>${alcOrdenDonde(p) ? " · " : ""}<span>${esc(ALC_ORDEN_TIPO_ES[p.tipo] || "")}</span></p>
+          ${p.porque ? `<p class="alc-rev-motivo" data-no-i18n>${esc(p.porque)}</p>` : ""}
+          ${ingles ? `<details class="alc-orden-ingles"><summary>${p.tipo === "quitar" ? "Ver lo que se quita" : "Ver más"}</summary><div class="alc-propuesta" data-no-i18n>${esc(ingles)}</div></details>` : ""}
+          <div class="alc-fixes"><button type="button" class="alc-op" data-orden-quitar="${k}"${dis}>Quitar de la lista</button></div>
+        </div>`;
+      });
+      s += `</div><div class="alc-botones">
+        <button type="button" class="accion" data-orden-aprobar="1"${dis}>Aprobar y aplicar todo (${O.lista.length})</button>
+        <button type="button" class="accion secundaria" data-orden-cerrar="1">Cerrar</button>
+      </div>`;
+    } else {
+      if (O.aprobada) s += alcOrdenResultado(A);
+      if (!O.en_marcha) s += `<label class="alc-leccion-etq" for="alc-orden-texto">Tu orden para este contrato</label>
+      <p class="lev-nota alc-orden-ayuda">Dime qué cambia, con tus palabras o con el texto exacto en inglés. Ejemplo: “7.6 debe decir: …”, “quitar Cabinet lighting”, “añadir a No incluye: temporary power…”.</p>
+      <textarea id="alc-orden-texto" rows="4" maxlength="4000" placeholder="Lo que cambia en el contrato"${dis}>${esc(O.borrador || "")}</textarea>
+      <div class="alc-fixes">
+        <button type="button" class="alc-op elegida" data-orden-enviar="1"${dis}>Enviar</button>
+        <button type="button" class="alc-op" data-orden-cerrar="1">Cerrar</button>
+      </div>
+      <p class="lev-nota">Puedes dictarlo con el micrófono del teclado. Los montos no viajan a la IA: los tapo antes de mandar, y el dinero del papel lo pone el programa.</p>`;
+    }
+    return s + `</div>`;
+  }
+  // «N de M bien», con lo que se puso, y una tarjeta ámbar por cada punto que falla (la frase que falta o que sobra, y UN botón)
+  const ALC_ORDEN_NO_PUESTO = { ley: "No se puede: texto de ley. Ese párrafo lo pone la ley de Florida y no se cambia con una orden.",
+    // (corrección de los revisores, 20-oct)
+    dos_parrafos: "No lo puse: la frase que dice qué cambiar junta dos párrafos del papel. Háblale a la IA para que diga cuál es.",
+    titulo: "No lo puse: eso es el título de una sección, y los títulos de las secciones no se cambian con una orden.",
+    tabla_pagos: "No lo puse: es la tabla de pagos, y esa la pone el programa desde el estimado.",
+    dato: "No pude escribir ese dato en la hoja.", rearmar: "Escribí el dato en la hoja, pero no pude volver a armar el papel.",
+    largo: "El texto nuevo es demasiado largo o trae marcas que no van en el papel." };
+  function alcOrdenComprobar(A) {
+    const O = A && A.orden;
+    if (!O || !O.aprobada || !A.contrato) return null;
+    if (O.filas && O.filas_de === A.contrato.html) return O.filas;
+    let C = null;
+    try { C = Alcance.comprobarLista(A.contrato.html, O.lista, A.contrato.cuenta); } catch { C = null; }
+    if (!C) return null;
+    // (corrección de los revisores, 20-oct) un punto que no se pudo poner y que no tiene ninguna fila que lo diga (un dato que no se
+    // escribió, un párrafo sin frases que mirar) cuenta como una fila mal: «N de M bien» nunca sale en verde con un punto sin poner
+    const filas = C.filas.slice();
+    O.lista.forEach(p => {
+      if (!p || !p.hecho || alcOrdenEnPapel(p) || filas.some(f => f.n === p.n && !f.ok)) return;
+      filas.push({ n: p.n, tipo: "sin_poner", frase: String(p.tipo === "dato" ? p.valor || "" : p.nuevo || p.cita || "").slice(0, 300), ok: false, veces: 0, donde: p.donde || "" });
+    });
+    O.filas = filas; O.filas_de = A.contrato.html;
+    O.resultado = { bien: filas.filter(f => f.ok).length, total: filas.length, cuando: new Date().toISOString() };
+    return O.filas;
+  }
+  function alcOrdenResultado(A) {
+    const O = A.orden, filas = alcOrdenComprobar(A);
+    if (!filas) return "";
+    const bien = filas.filter(f => f.ok).length, total = filas.length;
+    const puestos = O.lista.filter(p => p.hecho === "puesto").length, ya = O.lista.filter(p => p.hecho === "ya").length;
+    let s = `<p class="${bien === total ? "alc-verde" : "alc-ambar"} alc-orden-cuenta">${bien} de ${total} bien</p>`;
+    s += `<p class="alc-sub alc-orden-hecho">${esc(`Puse ${puestos} ${puestos === 1 ? "punto" : "puntos"} en el papel` + (ya ? `; ${ya} ya ${ya === 1 ? "estaba" : "estaban"}` : "") + ". Ahora toca «Revisar otra vez con IA»: la IA mide el papel contra tu orden.")}</p>`;
+    const malas = filas.filter(f => !f.ok);
+    const grupos = [];
+    malas.forEach(f => { let g = grupos.find(x => x.n === f.n); if (!g) { g = { n: f.n, filas: [] }; grupos.push(g); } g.filas.push(f); });
+    // un punto que no se pudo poner sale aunque su comprobación no traiga filas (un párrafo de ley sin frases que mirar)
+    O.lista.forEach(p => { if (p.hecho && !["puesto", "ya", "solo_mirar"].includes(p.hecho) && !grupos.some(g => g.n === p.n)) grupos.push({ n: p.n, filas: [] }); });
+    grupos.forEach(g => {
+      const p = O.lista.find(x => x.n === g.n) || null;
+      const no = p && p.hecho && !["puesto", "ya", "solo_mirar"].includes(p.hecho) ? (ALC_ORDEN_NO_PUESTO[p.hecho] || ALC_NO_SE_PUSO[p.hecho] || ALC_NO_SE_PUSO.no_esta) : "";
+      const linea = f => {
+        if (f.tipo === "sin_poner") return "";      // ya lo dice la línea de «no se pudo poner»
+        const etq = f.tipo === "dinero" ? "El dinero no cuadra:" : f.tipo === "no_debe_estar" || f.tipo === "quitada" ? "Sobra:"
+          : f.tipo === "negrita" ? "Falta en negrita:" : f.veces > 1 ? `Sale ${f.veces} veces:` : "Falta:";
+        return `<p><span>${esc(etq)}</span> <span data-no-i18n>«${esc(String(f.motivo && f.tipo === "dinero" ? f.motivo : f.frase).slice(0, 300))}»</span></p>`;
+      };
+      s += `<div class="alc-ambar alc-orden-falla" data-orden-falla="${esc(String(g.n))}">
+        <p class="alc-rev-etq">${p ? `<span data-no-i18n>${esc(alcOrdenDonde(p))}</span>${alcOrdenDonde(p) ? " · " : ""}<span>${esc(ALC_ORDEN_TIPO_ES[p.tipo] || "")}</span>` : "<span>El dinero del papel</span>"}</p>
+        ${no ? `<p class="alc-orden-no-puesto">${esc(no)}</p>` : ""}${g.filas.map(linea).join("")}
+        <div class="alc-fixes"><button type="button" class="alc-op alc-hablar" data-orden-hablar="${esc(String(g.n))}">Hablar con la IA</button></div>
+      </div>`;
+    });
+    return s;
+  }
+  function alcPintarOrden(A) {
+    if (A && alcActivo !== A) return;
+    if (alcFicha !== 2) return;
+    const a = document.activeElement, foco = !!(a && a.id === "alc-orden-texto");
+    pintarAlcance();
+    const t = foco ? $("alc-orden-texto") : null;
+    if (t && !t.disabled) { try { t.focus({ preventScroll: true }); } catch { /* nada */ } }
+  }
+  function alcOrdenAbrir() {
+    const O = alcOrden(true);
+    if (!O) return;
+    O.abierta = !O.abierta;
+    pintarAlcance();
+    const t = O.abierta ? $("alc-orden-texto") : null;
+    if (t) { try { t.focus({ preventScroll: true }); } catch { /* nada */ } t.scrollIntoView({ block: "center" }); }
+  }
+  // Lo que viaja: la orden TAPADA, el papel tapado (el mismo de revisar), sus secciones, la hoja tapada y la ficha sin dinero.
+  // { cuerpo } o { error } (en llano). Si después de tapar todavía queda dinero en algo, no sale nada.
+  function alcOrdenPaquete(textoOrden) {
+    const A = alcActivo;
+    const t = alcTaparMontos(textoOrden);
+    // (además de lo que tapa alcTaparMontos) una cifra larga con centavos sin comas («16500.00») también es un monto
+    let k = t.originales.length;
+    const orden = t.texto.replace(/\r/g, "").replace(/\b\d{4,}\.\d{2}\b/g, m => { t.originales.push(m); return "[MONTO " + (++k) + "]"; }).slice(0, 12000);
+    if (alcOrdenConDineroTapado(orden)) return { error: "Tu orden lleva un monto que no pude tapar: quítalo y vuelve a mandarla (el dinero lo pone el programa, no la IA)" };
+    // (corrección de los revisores, 20-oct) lo que Edgar dicta sin $ ni comas («16500», «16.500», «16.500,00», «16 500», «16.5k»,
+    // «dieciséis mil quinientos dólares») también es dinero: se tapa con la regla del armado (Alcance.tramosArmar), salvo un número de
+    // cláusula de dos cifras («2.8», «9.15»). El cerebro mira lo mismo (montoEnOrden) y rechaza con 400 si llega algo
+    const ordenT = orden.split("\n").map(l => {
+      if (!alcMontoEnOrden(l)) return l;
+      const tr = Alcance.tramosArmar(l).filter(([a, b]) => !/^\d{1,2}\.\d{1,2}$/.test(l.slice(a, b)) && !/\[MONTO/.test(l.slice(Math.max(0, a - 7), b)));
+      let x = l;
+      for (let j = tr.length - 1; j >= 0; j--) { t.originales.push(l.slice(tr[j][0], tr[j][1])); x = x.slice(0, tr[j][0]) + "[MONTO " + (++k) + "]" + x.slice(tr[j][1]); }
+      return x;
+    }).join("\n").slice(0, 12000);
+    if (alcOrdenConDineroTapado(ordenT) || ordenT.split("\n").some(alcMontoEnOrden))
+      return { error: "Tu orden lleva un monto que no pude tapar: quítalo y vuelve a mandarla (el dinero lo pone el programa, no la IA)" };
+    const p = alcPaqueteRevisar();
+    if (p.error) return { error: alcErrorRevisor({ error: p.error }) };
+    // (corrección de los revisores, 20-oct) la hoja va como la manda «armar»: las líneas del paquete del armado (el precio, los pagos y
+    // las opciones ya tapados, «Precio: ###.##»), sin las que todavía lleven algo con pinta de dinero
+    let hoja = "";
+    try {
+      if (String(A.texto || "").trim()) {
+        const L0 = A.leido || Alcance.leerAlcance(A.texto, { perdonadas: A.perdonadas || [] });
+        hoja = Alcance.paqueteParaArmar(A.texto, L0, {}).lineas.map(l => String(l.t || ""))
+          .filter(l => !alcOrdenConDineroTapado(l) && !Alcance.esMontoArmar(l)).join("\n").slice(0, 20000);
+      }
+    } catch { hoja = ""; }
+    const cuerpo = { texto_orden: ordenT, texto: p.cuerpo.texto, secciones: p.cuerpo.secciones, hoja, perfil: p.cuerpo.perfil, ficha: p.cuerpo.ficha };
+    if (p.cuerpo.proyecto_id) cuerpo.proyecto_id = p.cuerpo.proyecto_id;
+    if (p.cuerpo.propuesta_id !== undefined) cuerpo.propuesta_id = p.cuerpo.propuesta_id;
+    // el candado de ida, sobre todo lo que sale (la nube lo vuelve a mirar)
+    const fuera = [cuerpo.texto_orden, cuerpo.texto, cuerpo.hoja, JSON.stringify(cuerpo.ficha || {}), JSON.stringify(cuerpo.perfil || {})];
+    if (fuera.some(x => alcOrdenConDineroTapado(x)) || cuerpo.hoja.split("\n").some(l => Alcance.esMontoArmar(l)))
+      return { error: "Se me escapó un monto sin tapar; no lo mandé a la IA" };
+    return { cuerpo };
+  }
+  // Los errores de la orden en llano: los mismos códigos que la revisión, con las palabras de la orden donde la revisión diría «revisión»
+  function alcErrorDeOrden(r) {
+    const e = String((r && (r.error || r.estado)) || "");
+    if (e === "tope_mes") return "La IA ya gastó lo del mes: tu orden no se mandó";
+    if (e === "salida_cortada") return "La lista salió cortada; vuelve a intentarlo (o parte tu orden en dos)";
+    if (e === "no_quiso") return "La IA no quiso convertir tu orden; escríbela de otra manera";
+    if (e === "no_existe") return "No encuentro esa orden; vuelve a mandarla";
+    return alcErrorRevisor(r);
+  }
+  // «Enviar»: pide la lista y la recoge por la huella, como la revisión (cada 4 s, hasta 4 min). En modo de prueba espera a que la
+  // prueba la inyecte (MXP_PRUEBA.aplicarOrden).
+  async function alcOrdenEnviar() {
+    if (!(usuario && usuario.finanzas)) return;
+    const A = alcActivo, O = alcOrden(true);
+    if (!A || !O || O.en_marcha || O.aplicando) return;
+    if (!A.contrato) { avisar("Arma el contrato primero", true); return; }
+    if ((A.revision && A.revision.en_marcha) || (A.proceso && A.proceso.activo) || A.arreglando || A.armado_en_marcha) { avisar("Espera a que la IA termine con el contrato"); return; }
+    const caja = $("alc-orden-texto");
+    const texto = String(caja ? caja.value : (O.borrador || "")).trim().slice(0, 4000);
+    O.borrador = texto;
+    if (!texto) { avisar("Escribe primero tu orden", true); return; }
+    if (navigator.onLine === false) { O.error = "Sin señal: la orden necesita internet. Cuando vuelva, toca otra vez"; alcPintarOrden(A); return; }
+    const P = alcOrdenPaquete(texto);
+    if (P.error) { O.error = P.error; alcPintarOrden(A); return; }
+    O.error = null;
+    const marca = { desde: Date.now(), texto: P.cuerpo.texto_orden, prueba: alcModoPrueba() };
+    O.en_marcha = marca;
+    alcPintarOrden(A);
+    if (marca.prueba) return;
+    const sigue = () => alcActivo === A && A.orden === O && O.en_marcha === marca;
+    try {
+      let r = await DB.pedirAlCerebro("orden", P.cuerpo, { ms: 30000 });
+      const huella = r && r.huella;
+      if (huella) O.huella = String(huella);
+      let tropiezos = 0;
+      const hasta = Date.now() + 4 * 60 * 1000;
+      while (r && r.estado === "en_curso" && huella && Date.now() < hasta) {
+        await new Promise(z => setTimeout(z, 4000));
+        if (!sigue()) return;
+        let v = null;
+        try { v = await DB.leerLectura(huella); } catch { v = null; }
+        if (!v || !v.estado || v.estado === "no_existe") {
+          if (++tropiezos <= 3) continue;
+          r = { estado: "error", error: (v && (v.error || v.estado)) || "falla" };
+          break;
+        }
+        tropiezos = 0; r = v;
+      }
+      if (!sigue()) return;
+      if (r && r.estado === "en_curso") r = { estado: "tiempo", error: "tiempo" };
+      O.en_marcha = null;
+      if (r && r.estado === "ok" && r.lectura) alcOrdenRecibir(A, r.lectura, { texto: marca.texto, costo: r.costo_centavos });
+      else O.error = alcErrorDeOrden(r || {});
+    } catch (e) {
+      if (!sigue()) return;
+      O.en_marcha = null;
+      const m = String((e && e.message) || "");
+      O.error = /^(Sin señal|El asistente|Esta parte)/.test(m) ? m : "No pude hablar con la IA";
+    }
+    alcPintarOrden(A);
+  }
+  // La lista llegó (del cerebro, o de la prueba): se limpia aquí también, se guarda en la propuesta y se enseña para aprobar
+  function alcOrdenRecibir(A, lectura, extra) {
+    const O = A && A.orden;
+    if (!O) return false;
+    const L = lectura && typeof lectura === "object" ? lectura : {};
+    const X = alcOrdenListaLimpia(L.lista);
+    const corto = (t, n) => { const x = alcLimpioCorto(String(t || ""), n); return x && !alcOrdenConDinero(x) ? x : ""; };
+    // lo aprobado antes no se pierde: sigue valiendo (el revisor lo ve) y se junta con lo nuevo al aprobar
+    if (O.aprobada && O.lista.length) { O.previas = O.lista; O.texto_previo = O.texto || ""; }
+    O.lista = X.lista;
+    O.dudas = (Array.isArray(L.dudas) ? L.dudas : []).map(d => corto(d, 300)).filter(Boolean).slice(0, 20);
+    O.quitados = [...(Array.isArray(L.quitados) ? L.quitados : []).filter(q => q && typeof q === "object")
+      .map(q => ({ n: Number.isInteger(q.n) ? q.n : null, motivo: corto(q.motivo, 200) })), ...X.tirados].slice(0, ALC_MAX_ORDEN);
+    O.aprobada = false; O.aprobada_el = null; O.resultado = null; O.filas = null; O.filas_de = null;
+    O.texto = String((extra && extra.texto) || O.texto || "").slice(0, 12000);
+    O.cuando = new Date().toISOString();
+    O.costo = extra && Number.isFinite(extra.costo) ? extra.costo : null;
+    O.abierta = true; O.borrador = O.lista.length ? "" : O.borrador;
+    O.error = O.lista.length ? null : O.dudas.length ? "La IA no pudo convertir tu orden en puntos del papel: mira sus dudas y escríbela de otra manera" : "La IA no sacó ningún punto de tu orden; escríbela de otra manera";
+    alcGuardarOrdenYa(A);
+    avisar(O.lista.length ? "La IA convirtió tu orden en una lista: mírala y apruébala" : "La IA no sacó ningún punto de tu orden");
+    return true;
+  }
+  function alcOrdenQuitarPunto(k) {
+    const O = alcOrden(false);
+    if (!O || O.aprobada || O.aplicando || !O.lista[k]) return;
+    O.lista.splice(k, 1);
+    O.lista.forEach((p, j) => { p.n = j + 1; });
+    alcGuardarOrdenYa(alcActivo);
+    pintarAlcance();
+  }
+  // La orden y lo arreglado se guardan YA en la propuesta (como alcGuardarReemplazosYa); sin propuesta, los arreglos en el teléfono
+  function alcGuardarOrdenYa(A) {
+    if (!A) return;
+    if (A.propuesta && A.propuesta.id) {
+      const g = alcOrdenParaGuardar(A);
+      const dec = Object.assign({}, A.propuesta.alcance_decisiones || {}, { reemplazos: alcReemplazosParaGuardar(A), medida: alcMedidaDeGuardado(A.medida) });
+      if (g) dec.orden = g;
+      A.propuesta.alcance_decisiones = dec;
+      DB.guardarAlcance(A.propuesta.id, { alcance_decisiones: dec }).catch(() => { /* va también con «Guardar en la propuesta» */ });
+    } else if (A.proyecto && A.proyecto.id) alcReemplazosLocal(A.proyecto.id, alcReemplazosParaGuardar(A));
+  }
+  // La parte de alcRevEscribirDato que escribe el dato en la hoja, sin hallazgo (la usan el punto de la revisión y la orden).
+  // Con el armado de la IA, el dato entra también en su paquete (al volver a armar sale sin llamar a nadie). `soloFicha`: solo los
+  // datos de la ficha (Alcance.CAMPOS_ARREGLO), como el botón del revisor. { ok, etiqueta, linea, explicacion } o { error }.
+  function alcEscribirDatoEnHoja(campo, valor, soloFicha) {
+    const A = alcActivo;
+    if (!A) return { error: "Abre la hoja primero" };
+    const ca = Alcance.CAMPOS_ARREGLO[campo];
+    const otro = !ca && !soloFicha && Object.prototype.hasOwnProperty.call(Alcance.CLAVES_DATOS || {}, campo) && typeof Alcance.ponerLineaDato === "function";
+    if (!ca && !otro) return { error: "Ese dato no se puede escribir en la hoja" };
+    const conArmado = !!(A.armado && !A.armado.vieja && A.salida && A.salida.ia);
+    let r;
+    if (ca) {
+      let n0 = A.leido && A.leido.datos_linea ? A.leido.datos_linea[ca.clave] : 0;
+      // con el armado de la IA, la línea del dato va en la numeración con la que leyó la IA: se busca en la hoja de ahora
+      if (conArmado && n0) n0 = alcLineaDeArmado(n0);
+      r = Alcance.ponerDatoDeFicha(A.texto, campo, valor, { linea: n0 });
+    } else r = Alcance.ponerLineaDato(A.texto, alcOrdenEtiquetaDato(campo), valor);
+    if (!r || r.error) return { error: (r && r.error) || "No pude escribir ese dato en la hoja" };
+    A.texto = r.texto;
+    if (conArmado) {
+      A.armado.paquete.datos = Object.assign({}, A.armado.paquete.datos || {}, { [ca ? ca.clave : campo]: { valor: String(valor) } });
+      A.armado.texto = A.texto;
+    }
+    if ($("alc-texto")) $("alc-texto").value = A.texto;
+    // la escribió la app por un toque de Edgar: no es una línea nueva de la hoja
+    alcApuntarPropia(alcLineaCruda(r.linea));
+    alcRealinear();
+    alcGuardarLocal(A.proyecto.id, A.texto);
+    A.arreglados = [...(A.arreglados || []), r.explicacion];
+    return { ok: true, etiqueta: r.etiqueta || alcOrdenEtiquetaDato(campo), linea: r.linea, explicacion: r.explicacion };
+  }
+  // La clave de un punto como arreglo guardado (la de la receta, tools/contrato/aplicar.mjs: un «anadir» y un «quitar» no chocan con
+  // el párrafo de su misma cita)
+  function alcOrdenClave(r) {
+    if (r.ambito === "anadir") return ("anadir: " + alcClaveCita(r.nuevo)).slice(0, 80);
+    if (r.ambito === "quitar") return ("quitar: " + alcClaveCita(r.cita)).slice(0, 80);
+    return alcClaveCita(r.cita);
+  }
+  // (corrección de los revisores, 20-oct) ¿Dónde cae la cita de un párrafo de la orden? "" si cae en un solo párrafo o viñeta que se
+  // puede cambiar; «dos_parrafos» si empieza en un bloque y acaba en otro; «titulo» si es el título de una sección; «tabla_pagos» si es
+  // una celda de una tabla que lleva dinero (la de la §6). Si la cita no está, "" (lo dice después el motor con su «no_esta»)
+  function alcOrdenBloqueProhibido(html, cita, donde) {
+    let P;
+    try { P = alcPlanoDelPapel(new DOMParser().parseFromString(String(html || ""), "text/html")); } catch { return ""; }
+    const c = alcPlanoDeTexto(cita);
+    if (c.length < 8) return "";
+    const L = alcBuscarCita(P, c, donde, false);
+    if (L.error) return "";
+    let a = L.ini; while (a < L.fin && (!P.donde[a] || P.texto[a] === " ")) a++;
+    let e = L.fin - 1; while (e >= a && (!P.donde[e] || P.texto[e] === " ")) e--;
+    if (a > e) return "";
+    const b0 = alcBloqueDeNodo(P.nodos[P.donde[a][0]]), b1 = alcBloqueDeNodo(P.nodos[P.donde[e][0]]);
+    if (!b0 || b0 !== b1) return "dos_parrafos";
+    if (/^H[1-6]$/.test(b0.nodeName) || (b0.closest && b0.closest("h1,h2,h3,h4,h5,h6"))) return "titulo";
+    const tabla = b0.closest ? b0.closest("table") : null;
+    if (tabla && /^(?:TD|TH|TR)$/.test(b0.nodeName)) {
+      const fila = b0.closest("tr");
+      if (alcPapelConMonto(fila ? fila.textContent : "") || alcPapelConMonto(tabla.textContent)) return "tabla_pagos";
+    }
+    return "";
+  }
+  // Un punto del papel sobre `html`, sin IA. { html, hecho: "puesto" | "ya" | "solo_mirar" | código del no, ancla, cabeza, r }
+  function alcOrdenPonerPunto(A, html, p, perm, cuenta) {
+    const ambito = p.tipo === "parrafo" ? "parrafo" : p.tipo;
+    if (p.tipo === "parrafo" && !p.nuevo) return { html, hecho: "solo_mirar" };
+    // lo que el papel ya dice no se vuelve a poner (un «anadir» saldría dos veces); un «quitar» cuya cita ya no está, ya está
+    const ya = p.tipo === "quitar" ? !alcPapelDice(html, p.cita) : alcPapelDice(html, p.nuevo);
+    let nuevo = "";
+    if (p.tipo !== "quitar") {
+      nuevo = alcTextoNuevoOk(p.nuevo, html, p.cita);
+      if (!nuevo) return { html, hecho: ya ? "ya" : alcPropuestaConMonto(p.nuevo, html, p.cita) ? "monto" : "largo" };
+    }
+    const r = { de: "edgar", cita: String(p.cita || "").slice(0, 160), donde: alcLimpioCorto(p.donde, 20), nuevo, ambito, cuando: new Date().toISOString() };
+    if (p.negrita) r.negrita = p.negrita;
+    r.clave = alcOrdenClave(r);
+    if (ya) return { html, hecho: "ya", r };
+    // el texto de ley NUNCA (la página legal, un título de ley o las marcas de la ley en el párrafo de la cita o en el título nuevo)
+    if (p.tipo !== "anadir" || p.cita) {
+      const C = alcClaseDeCita({ cita: p.cita, donde: p.donde, texto_nuevo: nuevo }, html);
+      if (C.error) return { html, hecho: "no_esta" };
+      if (C.ley && p.tipo !== "anadir") return { html, hecho: "ley" };
+    }
+    if (nuevo && alcClaveDeTitulo(alcTituloDePropuesta(nuevo)) === "ley") return { html, hecho: "ley" };
+    // (corrección de los revisores, 20-oct) un párrafo de la orden cae en UN bloque del papel que es un párrafo o una viñeta: ni dos
+    // párrafos a la vez, ni el título de una sección, ni una celda de la tabla de pagos (esa la pone el programa)
+    if (p.tipo === "parrafo") { const no = alcOrdenBloqueProhibido(html, p.cita, p.donde); if (no) return { html, hecho: no }; }
+    let x = alcReemplazarEnPapel(html, p.cita, nuevo, perm, p.donde, p.tipo !== "parrafo", ambito, p.negrita);
+    // si ese párrafo ya se cambió antes (un arreglo guardado con la misma clave), lo que dice ahora el papel es su texto de entonces
+    if (x.error === "no_esta" && p.tipo === "parrafo") {
+      const previo = (A.reemplazos || []).find(q => q && q.clave === r.clave && q.nuevo);
+      const no = previo ? alcOrdenBloqueProhibido(html, previo.nuevo, p.donde) : "";
+      if (no) return { html, hecho: no };
+      if (previo) x = alcReemplazarEnPapel(html, previo.nuevo, nuevo, perm, p.donde, true, "parrafo", p.negrita);
+    }
+    if (x.error) return { html, hecho: x.error };
+    // el barrido con la cuenta: lo que el dinero pintado no cuadra con ella frena también
+    try {
+      const antes = Alcance.barridoFinal(html, perm, cuenta).problemas.map(q => q.texto);
+      if (Alcance.barridoFinal(x.html, perm, cuenta).problemas.some(q => !antes.includes(q.texto))) return { html, hecho: "barrido" };
+    } catch { return { html, hecho: "barrido" }; }
+    r.ambito = x.ambito || ambito;
+    if (x.ancla) r.ancla = x.ancla;
+    let cabeza = "";
+    try { const t = alcTituloDePropuesta(nuevo) || (x.ancla && x.ancla.cabeza) || ""; cabeza = alcLimpioCorto(t, 80); } catch { cabeza = ""; }
+    return { html: x.html, hecho: "puesto", r, viejo: x.viejo_bloque || "", cabeza };
+  }
+  // «Aprobar y aplicar todo»: los datos primero (en la hoja, y se vuelve a armar SIN IA con los arreglos de antes), después cada punto
+  // del papel en orden. Todo queda en A.reemplazos «de Edgar» y en alcance_decisiones.orden; al final, comprobarLista.
+  async function alcOrdenAprobar() {
+    const A = alcActivo, O = alcOrden(false);
+    if (!A || !O || !O.lista.length || O.aprobada || O.aplicando || O.en_marcha || !(usuario && usuario.finanzas)) return null;
+    if (!A.contrato) { avisar("Arma el contrato primero", true); return null; }
+    if (alcQuietoPorArreglo()) return null;
+    if (A.revision && A.revision.en_marcha) { avisar("La IA está revisando el contrato: espera a que termine"); return null; }
+    // lo aprobado en una orden de antes sigue (salvo lo que la nueva vuelve a decir sobre la misma cita) y se junta con lo nuevo. Si
+    // entre las dos pasan de 40 puntos, no se aplica nada: se dice en llano (antes se cortaban los más viejos sin avisar; corrección de
+    // los revisores, 20-oct)
+    const misma = (a, b) => a.tipo === b.tipo && alcPlanoDeTexto(a.cita) === alcPlanoDeTexto(b.cita) && (a.tipo !== "anadir" || alcPlanoDeTexto(a.nuevo) === alcPlanoDeTexto(b.nuevo))
+      && (a.tipo !== "dato" || a.campo === b.campo);
+    const viejas = (O.previas || []).filter(v => !O.lista.some(n => misma(n, v)));
+    if (viejas.length + O.lista.length > ALC_MAX_ORDEN) {
+      O.error = `Con tu orden de antes serían ${viejas.length + O.lista.length} puntos, y como mucho van ${ALC_MAX_ORDEN}. Quita de la lista los que sobran (o junta lo de antes en menos puntos) y vuelve a aprobar.`;
+      avisar("Tu orden pasa de " + ALC_MAX_ORDEN + " puntos: no la apliqué", true);
+      alcPintarOrden(A);
+      return null;
+    }
+    O.aplicando = true; O.error = null;
+    alcPintarOrden(A);
+    try {
+      // 1 · los datos, en la hoja
+      let datos = 0;
+      O.lista.filter(p => p.tipo === "dato").forEach(p => {
+        const x = alcEscribirDatoEnHoja(p.campo, p.valor, false);
+        p.hecho = x.ok ? "puesto" : "dato";
+        if (x.ok) datos++;
+      });
+      if (datos) {
+        const c0 = A.contrato, R0 = A.revision;
+        await alcVolverAArmar();
+        if (alcActivo !== A) return null;
+        // el armado nuevo deja la revisión fuera (era del papel de antes): se queda a la vista, marcada como de un papel que cambió
+        if (!A.revision && R0 && Array.isArray(R0.hallazgos) && !R0.en_marcha) A.revision = R0;
+        if (!A.contrato || A.contrato === c0) O.lista.filter(p => p.tipo === "dato" && p.hecho === "puesto").forEach(p => { p.hecho = "rearmar"; });
+        if (!A.contrato) { O.error = "No pude volver a armar el papel con los datos: míralo en la hoja"; return null; }
+      }
+      // 2 · los puntos del papel, uno tras otro sobre el mismo papel
+      const perm = Array.isArray(A.contrato.permitidos) ? A.contrato.permitidos : [];
+      const cuenta = A.contrato.cuenta;
+      const html0 = String(A.contrato.html || "");
+      let html = html0, puestos = 0;
+      if (!Array.isArray(A.reemplazos)) A.reemplazos = [];
+      for (const p of O.lista) {
+        if (p.tipo === "dato") continue;
+        const x = alcOrdenPonerPunto(A, html, p, perm, cuenta);
+        p.hecho = x.hecho;
+        if (x.cabeza) p.cabeza_papel = x.cabeza;
+        if (x.r && (x.hecho === "puesto" || x.hecho === "ya")) {
+          A.reemplazos = [...A.reemplazos.filter(q => q && q.clave !== x.r.clave), x.r].slice(-ALC_TOPE_REEMPLAZOS);
+          if (Array.isArray(A.reemplazos_sin_sitio)) A.reemplazos_sin_sitio = A.reemplazos_sin_sitio.filter(q => q && q.clave !== x.r.clave);
+          if (x.hecho === "puesto") {
+            html = x.html; puestos++;
+            // (§11.9.4) los arreglos de frase viejos de ese párrafo quedaron superados
+            if (x.r.ambito === "parrafo") alcQuitarSuperados(A, x.r, x.viejo);
+          }
+        }
+      }
+      if (html !== html0) {
+        A.contrato.html = html;
+        try { A.contrato.problemas = Alcance.barridoFinal(html, perm, cuenta).problemas; } catch { /* se queda lo de antes */ }
+      }
+      // lo aplicado deja el papel cambiado: hay que revisar otra vez (como cualquier cambio)
+      if ((html !== html0 || datos) && A.revision) { A.revision.papel_cambiado = true; A.revision.por_orden = true; }
+      alcMedirArregloAMano(A, puestos + datos);
+      // lo aprobado en una orden de antes sigue (salvo lo que la nueva vuelve a decir sobre la misma cita), y todo junto se comprueba
+      if (O.previas && O.previas.length) {
+        O.lista = [...viejas, ...O.lista];
+        O.lista.forEach((p, j) => { p.n = j + 1; });
+        O.texto = [O.texto_previo, O.texto].filter(Boolean).join("\n\n").slice(-12000);
+        O.previas = []; O.texto_previo = "";
+      }
+      O.aprobada = true; O.aprobada_el = new Date().toISOString(); O.filas = null; O.filas_de = null;
+      alcOrdenComprobar(A);
+      alcGuardarOrdenYa(A);
+      const R0 = O.resultado || { bien: 0, total: 0 };
+      avisar(`Apliqué tu orden: ${R0.bien} de ${R0.total} bien`, R0.bien !== R0.total);
+      return { puestos, datos, bien: R0.bien, total: R0.total };
+    } finally {
+      O.aplicando = false;
+      if (alcActivo === A) { if (alcFicha === 2) pintarAlcance(); }
+    }
+  }
+  // «Hablar con la IA» en la tarjeta ámbar de un punto que falla: la charla de siempre (la de cada punto de la revisión), con el
+  // contexto del punto. El punto entra en la lista de la revisión como una duda; si no hay revisión, una con solo ese punto y el papel
+  // marcado como cambiado (el candado sigue cerrado hasta revisar otra vez).
+  function alcOrdenHablar(n) {
+    const A = alcActivo, O = alcOrden(false);
+    if (!A || !O || !A.contrato) return;
+    if ((A.revision && A.revision.en_marcha) || (A.proceso && A.proceso.activo)) { avisar("La IA está revisando el contrato: espera a que termine"); return; }
+    const filas = (alcOrdenComprobar(A) || []).filter(f => !f.ok && String(f.n) === String(n));
+    const p = O.lista.find(x => String(x.n) === String(n)) || null;
+    const html = A.contrato.html;
+    const cita = p && p.cita && alcPapelDice(html, p.cita) ? p.cita
+      : p && p.nuevo && alcPapelDice(html, p.nuevo) ? p.nuevo.slice(0, 160)
+      : filas.length ? String(filas[0].frase || "").slice(0, 160) : p ? String(p.cita || p.nuevo || "").slice(0, 160) : "";
+    if (!cita) return;
+    const falta = filas.map(f => (f.tipo === "no_debe_estar" || f.tipo === "quitada" ? "sobra «" : "falta «") + String(f.frase || "").slice(0, 120) + "»").join("; ");
+    const no = p && p.hecho && !["puesto", "ya", "solo_mirar"].includes(p.hecho) ? (p.hecho === "ley" ? "no se pudo poner: es texto de ley" : "no se pudo poner en el papel") : "";
+    const motivo = alcLimpioCorto(`Tu orden (punto ${n}${p && p.porque ? ": " + p.porque : ""}) todavía no está en el papel` + (falta ? ` (${falta})` : "") + (no ? `; ${no}` : "") + ".", 600);
+    let R = A.revision;
+    if (!R || !Array.isArray(R.hallazgos) || R.error || R.saltada || R.reutilizada) {
+      R = A.revision = { hallazgos: [], resumen: "", tiradas: 0, perdonados: 0, solo_orden: true, papel_cambiado: true, por_orden: true, cuando: new Date().toISOString(), papel_de: html };
+    }
+    let i = R.hallazgos.findIndex(h => h && h.de_orden === n);
+    if (i < 0) {
+      const tn = p && p.tipo === "parrafo" && p.nuevo ? alcTextoNuevoOk(p.nuevo, html, cita) : null;
+      R.hallazgos.push({ donde: String((p && p.donde) || ""), cita: alcLimpioCorto(cita, 160), motivo, gravedad: "ambar", tipo: "orden",
+                         texto_nuevo: tn, vale_para: tn ? "obra" : null, de_orden: n });
+      i = R.hallazgos.length - 1;
+    }
+    const C = alcCharla(i, true);
+    if (C && C.abierta) { const t = document.querySelector(`[data-charla-texto="${i}"]`); if (t) t.scrollIntoView({ block: "center" }); return; }
+    alcCharlaAbrir(i);
+  }
+
   // (2-oct, Edgar: «la app no te deja guardar ni mandar el contrato hasta pasar “Revisar con IA”»)
   // EL CANDADO. Con el contrato armado, ni se guarda, ni se imprime, ni se baja, ni se sube al portal
   // hasta que la IA lo revisó y cada punto quedó atendido (arreglado y rearmado, o «Lo dejo así»).
@@ -18278,24 +20137,37 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (!A || !A.contrato) return { ok: false, motivo: "Arma el contrato primero" };
     // (tanda 4) el papel es de la hoja de ANTES: el dinero de la hoja nueva no está en él
     if (A.armado && A.armado.vieja) return { ok: false, motivo: "Cambiaste la hoja después de armar: vuelve a armar con IA" };
+    // 14-oct (pliego §10.10): mientras la IA se corrige sola (rondas de arreglo), nada sale
+    if (A.auto && A.auto.activo && A.auto.fase !== "espera") return { ok: false, motivo: "La IA está arreglando el contrato: espera a que termine" };
+    // 18-oct (pliego §11.12): mientras corre el proceso de revisión (sus vueltas), nada sale
+    if (A.proceso && A.proceso.activo) return { ok: false, motivo: "La IA está revisando el contrato: espera a que termine" };
     if (!R) return { ok: false, motivo: "Falta pasar «Revisar con IA antes de enviar»" };
     if (R.en_marcha) return { ok: false, motivo: "La IA está revisando el contrato: espera a que termine" };
     if (R.saltada) return { ok: true, saltada: true };
     if (R.error) return { ok: false, motivo: R.error, puedeSaltar: true };
+    // (§11.12.1) una vuelta del proceso falló después de que la IA cambiara el papel: lo de ahora no lo revisó nadie
+    if (R.fallo_vuelta) return { ok: false, motivo: R.fallo_vuelta, puedeSaltar: true };
     const hs = Array.isArray(R.hallazgos) ? R.hallazgos : [];
-    // (pliego §7) lo decidido (con la charla, con «Decidido» o escrito en la hoja) se arregla con «Arreglar el contrato»
-    const quedan = hs.filter(h => !h.hecho && !h.decidido).length;
-    if (hs.length && !quedan) return { ok: false, motivo: "Ya decidiste todo: toca «Arreglar el contrato»" };
-    const hechos = hs.filter(h => h.hecho && !alcEsDePapel(h)).length;
+    // 17-oct (pliego §11.4): un punto está atendido si se decidió («Arreglar según la IA», la charla, «Decidido», el dato de
+    // la ficha) o se escribió en la hoja. Los ÁMBAR nunca cierran el candado (son dudas); los ROJOS lo cierran hasta que estén
+    // atendidos. Lo escrito en la hoja y las órdenes a la IA se ponen en el papel con «Arreglar el contrato».
+    const hechos = hs.filter(alcHechoSinPapel).length;
     if (hechos) return { ok: false, motivo: hechos === 1 ? "Arreglaste 1 cosa en la hoja: toca «Arreglar el contrato»"
                                                          : `Arreglaste ${hechos} cosas en la hoja: toca «Arreglar el contrato»` };
-    if (quedan) return { ok: false, motivo: quedan === 1 ? "Queda 1 cosa de la revisión por mirar: arréglala o toca «Lo dejo así»"
-                                                         : `Quedan ${quedan} cosas de la revisión por mirar: arréglalas o toca «Lo dejo así»` };
+    const rojos = hs.filter(h => h.gravedad === "rojo" && !h.hecho && !h.decidido).length;
+    if (rojos) return { ok: false, motivo: rojos === 1 ? "Queda 1 punto rojo: arréglalo con «Arreglar según la IA» o dile a la IA por qué está bien"
+                                                       : `Quedan ${rojos} puntos rojos: arréglalos con «Arreglar según la IA» o dile a la IA por qué están bien` };
+    // (pliego §7) una orden que la IA guardó en la charla todavía no está en el papel: entra al arreglar el contrato
+    if (hs.some(h => h.decidido && h.decidido.de === "charla")) return { ok: false, motivo: "Ya decidiste todo: toca «Arreglar el contrato»" };
     // (versión 3, revisión) la IA cambió el papel después de esta revisión: lo que se manda nadie lo ha revisado todavía.
     // Solo vale una revisión nueva (que llega sin esta marca), aunque los puntos se hayan dejado así.
+    // 20-oct (pliego §12.5 B.3): lo que cambió fue la orden de Edgar: la IA tiene que medir el papel contra ella
+    if (R.papel_cambiado && R.por_orden) return { ok: false, motivo: "Aplicaste tu orden: toca «Revisar otra vez con IA» para que la IA mida el papel contra ella" };
     if (R.papel_cambiado) return { ok: false, motivo: "La IA cambió el papel: toca «Arreglar el contrato» para que lo revise" };
     return { ok: true };
   }
+  // Lo escrito en la hoja que todavía no está en el papel (18-oct, §11.12: el dato que la IA puso sola ya se armó en el papel)
+  function alcHechoSinPapel(h) { return !!(h && h.hecho && !alcEsDePapel(h) && !(h.solo && h.solo.en_papel)); }
   // La huella del papel que la IA revisó: el mismo texto y la misma ficha que viajan a la nube.
   // Si el papel se vuelve a armar y sale idéntico, la revisión buena se reutiliza (no se vuelve a cobrar).
   async function alcHuellaRevision() {
@@ -18306,9 +20178,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   // «Seguir sin la IA»: solo cuando la revisión falló (sin señal, tope del mes). Queda dicho en la propuesta.
   async function alcSeguirSinIA() {
     const A = alcActivo, R = A && A.revision;
-    if (!A || !A.contrato || !R || !R.error) return;
-    if (!await confirmar("La IA no pudo revisar este contrato (" + R.error + ").\n\n¿Lo mandas sin esa revisión? Quedará apuntado en la propuesta.")) return;
-    A.revision = { saltada: R.error, hallazgos: [], cuando: new Date().toISOString() };
+    if (!A || !A.contrato || !R || !(R.error || R.fallo_vuelta)) return;
+    if (!await confirmar("La IA no pudo revisar este contrato (" + (R.error || R.fallo_vuelta) + ").\n\n¿Lo mandas sin esa revisión? Quedará apuntado en la propuesta.")) return;
+    A.revision = { saltada: R.error || R.fallo_vuelta, hallazgos: [], cuando: new Date().toISOString() };
     pintarAlcance();
     avisar("Sigues sin la revisión con IA: queda apuntado");
   }
@@ -18320,18 +20192,49 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     return `<span class="alc-rev-donde"><span>Sección</span> <span data-no-i18n>${esc(donde)}${t ? " · " + esc(t) : ""}</span></span>`;
   }
 
+  // 18-oct (pliego §11.12.1e): por dónde va el proceso de revisión
+  function alcTextoVuelta(v, tope, datos) {
+    const n = Math.max(1, Math.min(Number(v) || 1, Number(tope) || ALC_TOPE_VUELTAS)), t = Number(tope) || ALC_TOPE_VUELTAS;
+    if (datos) return `Vuelta ${n} de ${t}: pongo en el papel el dato de la ficha…`;
+    return n === 1 ? `Vuelta 1 de ${t}: la IA está revisando el contrato…` : `Vuelta ${n} de ${t}: la IA está revisando lo que arregló…`;
+  }
+  // Arriba de la pantalla de al final: en cuántas vueltas, lo que costó y lo que hay que saber (el tope, una vuelta que falló)
+  function alcCabezaProceso(R) {
+    const X = R.proceso, v = Number(X.vueltas) || 1, c = Math.round(Number(X.costo) || Number(R.costo_centavos) || 0);
+    let s = `<p class="alc-sub alc-proceso-cuenta">${v === 1 ? "Revisado en 1 vuelta" : `Revisado en ${v} vueltas`}${c > 0 ? ` · costó ${c} ¢` : ""}</p>`;
+    if (R.fallo_vuelta) s += `<p class="alc-ambar alc-proceso-fallo">${esc(R.fallo_vuelta)}. Toca «Revisar otra vez con IA» cuando puedas.</p>`;
+    if (X.tope) s += `<p class="alc-gris alc-proceso-tope">Llegué al tope de tres vueltas: lo que la IA propuso en la última no lo puse sola. Está abajo, en «Te toca decidir», con su botón.</p>`;
+    (X.notas || []).forEach(t => { s += `<p class="alc-gris">${esc(t)}</p>`; });
+    return s;
+  }
   // La caja de la ficha 3: el botón, la espera, el resumen y los hallazgos con sus botones
   function alcCajaRevision() {
     const A = alcActivo, R = A.revision || null;
     const enMarcha = !!(R && R.en_marcha);
     const hay = !!(R && Array.isArray(R.hallazgos));
+    // 18-oct (pliego §11.12): el botón hace el proceso entero (hasta tres vueltas): el costo se dice antes de tocarlo
+    const P = A.proceso && A.proceso.activo ? A.proceso : null;
+    const unaSola = alcSoloUnaVuelta();
     let s = `<div class="alc-revisor" id="alc-revisor">
       <div class="alc-rev-cabeza">
-        <button type="button" class="btn sm btn-ring alc-revisar-ia" id="alc-revisar-ia"${enMarcha ? " disabled" : ""}>${hay ? "Revisar otra vez con IA" : "Revisar con IA antes de enviar"}</button>
-        <span class="alc-rev-costo">≈ 20 ¢, un minuto</span>
-      </div>`;
-    if (!R) s += `<p class="lev-nota">La IA lee el contrato entero y lo compara con la ficha de la obra. Solo te señala lo que no cuadra; lo arreglas tú con un toque.</p>`;
-    if (enMarcha) s += `<div class="alc-gris alc-espera">La IA está revisando el contrato… (suele tardar un minuto; puedes seguir)</div>`;
+        <button type="button" class="btn sm btn-ring alc-revisar-ia" id="alc-revisar-ia"${enMarcha || P ? " disabled" : ""}>${hay ? "Revisar otra vez con IA" : "Revisar con IA antes de enviar"}</button>
+        <span class="alc-rev-costo">${unaSola ? "≈ 25 ¢, un minuto" : "≈ 25–75 ¢, dos o tres minutos"}</span>
+        ${usuario && usuario.finanzas ? `<button type="button" class="btn sm alc-orden-abrir" id="alc-orden-abrir" aria-expanded="${A.orden && A.orden.abierta ? "true" : "false"}"${enMarcha || P ? " disabled" : ""}>Aplicar mi orden</button>` : ""}
+      </div>${alcCajaOrden()}`;
+    // 14-oct (pliego §10.10): cuando la revisión ya pasó por el armado todo seguido, «Así lo hice» la cuenta arriba y aquí los
+    // puntos van plegados («Ver el detalle de la revisión»), salvo que Edgar los abra o tenga una charla abierta
+    const X = A.auto;
+    const plegar = !!(X && !X.activo && R && !R.error && !R.en_marcha && Array.isArray(R.hallazgos) && X.procesadas.includes(R)
+      && !alcCharlas().some(C => C && C.abierta));
+    const cabeza = s;
+    s = "";
+    if (!R && !P) s += unaSola ? `<p class="lev-nota">La IA lee el contrato entero y lo compara con la ficha de la obra. Solo te señala lo que no cuadra; lo arreglas tú con un toque.</p>`
+      : `<p class="lev-nota">La IA lee el contrato entero y lo compara con la ficha de la obra. Lo que se puede arreglar sin quitar protección ni tocar el dinero lo arregla sola y vuelve a revisar (como mucho tres vueltas); al final te enseña lo que arregló y lo que te toca decidir.</p>`;
+    // (§11.12) mientras corre: «Vuelta 2 de 3: la IA está revisando lo que arregló…»
+    if (enMarcha) s += Number(R.vuelta) >= 1 && P
+      ? `<div class="alc-gris alc-espera alc-vuelta">${esc(alcTextoVuelta(R.vuelta, P.tope))}</div>`
+      : `<div class="alc-gris alc-espera">La IA está revisando el contrato… (suele tardar un minuto; puedes seguir)</div>`;
+    else if (P && !hay) s += `<div class="alc-gris alc-espera alc-vuelta">${esc(alcTextoVuelta(P.vuelta + 1, P.tope, P.fase === "datos"))}</div>`;
     if (R && R.error) s += `<div class="alc-gris">${esc(R.error)}</div>`;
     if (R && R.saltada) s += `<div class="alc-gris"><span>Sigues sin la revisión con IA:</span> <span data-no-i18n>${esc(String(R.saltada))}</span></div>`;
     if (R && R.reutilizada) s += `<div class="alc-verde">Este papel ya pasó la revisión con IA y no cambió desde entonces.</div>`;
@@ -18339,44 +20242,108 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (hay && !R.reutilizada && A.arreglando) s += `<div class="alc-gris alc-espera">${esc(alcTextoArreglando(A.arreglando))}</div>`;
     else if (hay && !R.reutilizada) {
       if (R.resumen) s += `<p class="alc-rev-resumen" data-no-i18n>${esc(R.resumen)}</p>`;
-      if (Number.isFinite(R.costo_centavos) && R.costo_centavos > 0) s += `<p class="alc-sub">Costó ${Math.round(R.costo_centavos)} ¢</p>`;
+      if (R.proceso) s += alcCabezaProceso(R);
+      else if (Number.isFinite(R.costo_centavos) && R.costo_centavos > 0) s += `<p class="alc-sub">Costó ${Math.round(R.costo_centavos)} ¢</p>`;
       s += alcAvisoSinSitio();
       if (!R.hallazgos.length) s += `<div class="alc-verde">La IA no vio nada que arreglar.</div>`;
+      // mientras el proceso va por la vuelta siguiente (pone lo de esta), la lista de ahora se queda quieta debajo
+      if (P && R === P.ultimaR) s += `<div class="alc-gris alc-espera alc-vuelta">${esc(alcTextoVuelta(P.vuelta + 1, P.tope, P.fase === "datos"))}</div>`;
+      // 17-oct (pliego §11.2, Edgar: «arriba el problema y abajo cómo debería ir; si me parece bien, “arréglalo según la IA”;
+      // si no, “Hablar con la IA”; y quitar “Lo dejo así” y “Enséñale”»). Cada punto: la sección, «Dice el papel», «Por qué»,
+      // «Cómo debería ir» (la propuesta del revisor, entera) y sus botones: «Arreglar según la IA» (pone el párrafo entero en
+      // el papel, sin IA), «Usar el dato de la ficha», «Ir a la línea» y «Hablar con la IA» («Decidido», dentro de la charla,
+      // es la manera de dejar un punto sin cambiar el papel). «Lo dejo así» y «Enséñale» ya no están en los puntos.
+      // 18-oct (pliego §11.11.7, Edgar: «botones funcionales y prácticos; no me cargues la pantalla»): en cada punto, como mucho
+      // DOS botones: el primero («Arreglar según la IA») cambia de cara según el caso pero es uno solo (la propuesta que pasa la
+      // puerta; «Ponerlo aunque…» con la que la puerta frena y se puede confirmar; el dato de la ficha), y «Hablar con la IA».
+      // «Ir a la línea» pasa a ser un enlace pequeño bajo «Dice el papel» («viene de la línea N de tu hoja»).
       const li = (h, i) => {
         const n = Alcance.lineaDeCita(A.texto, h.cita);
         // (pliego §7.1) decidido y con la charla cerrada: el punto se pliega a una línea verde con «Abrir»
         const plegado = !!(h.decidido && !alcCharlaAbierta(i));
         const ya = !h.decidido ? alcYaDecidido(h) : null;
         const cabeza = `${alcRevDonde(R, h.donde)}
+          <p class="alc-rev-etq">Dice el papel:</p>
           <div class="alc-cita" data-no-i18n>${esc(h.cita)}</div>
+          ${n ? `<p class="alc-sub alc-de-hoja"><a href="#" class="alc-enlace-linea" data-rev-ir="${i}">viene de la línea ${n} de tu hoja</a></p>`
+              : `<p class="alc-sub alc-de-plantilla">Sale de la plantilla</p>`}
+          <p class="alc-rev-etq">Por qué:</p>
           <p class="alc-rev-motivo" data-no-i18n>${esc(h.motivo)}</p>`;
-        // (pliego §8.2) lo que la IA cambió en el papel se dice así: «Cambiado en el papel: …»
-        const lineaDecidido = h.decidido ? `<div class="alc-verde alc-decidido${alcEsDePapel(h) ? " alc-cambiado" : ""}"><span>${alcEsDePapel(h) ? "Cambiado en el papel:" : "Decidido:"}</span> <span data-no-i18n>${esc(h.decidido.como || "")}</span>
-            ${plegado ? `<div class="alc-fixes"><button type="button" class="alc-op" data-charla-abrir="${i}">Abrir</button></div>` : ""}</div>` : "";
+        // (pliego §8.2) lo que la IA cambió en el papel se dice así: «Cambiado en el papel: …»; (§11.5) y si además se aprendió
+        // para todos los contratos, se dice también
+        const dePapel = alcEsDePapel(h);
+        // 18-oct (pliego §11.11.3): lo que Edgar puso aunque la puerta lo frenaba, «(lo confirmaste)», con su «Ojo» debajo
+        // 18-oct (pliego §11.12): lo que la IA puso sola en el proceso de revisión
+        const etqDecidido = h.solo ? "La IA lo arregló:" : !dePapel ? "Decidido:" : h.decidido.ojo ? "Cambiado en el papel (lo confirmaste):"
+          : h.decidido.aprendido === "general" ? "Cambiado en el papel y aprendido para todos los contratos:" : "Cambiado en el papel:";
+        const deshacer = dePapel && alcReemplazoDe(h) ? `<button type="button" class="alc-op" data-rev-deshacer="${i}">Deshacer</button>` : "";
+        // 17-oct (pliego §11.9.2): «Decidido» sin cambiar el papel quedó perdonado: «Decidido: … (no vuelve a salir)»
+        const perdonado = h.decidido && h.decidido.perdonado && !dePapel ? ` <span class="alc-perdonado">(no vuelve a salir)</span>` : "";
+        const lineaDecidido = h.decidido ? `<div class="alc-verde alc-decidido${dePapel ? " alc-cambiado" : ""}"><span>${esc(etqDecidido)}</span> <span data-no-i18n>${esc(h.decidido.como || "")}</span>${perdonado}
+            ${plegado ? `<div class="alc-fixes"><button type="button" class="alc-op" data-charla-abrir="${i}">Abrir</button>${deshacer}</div>` : ""}</div>`
+          // 17-oct (integración §11.9): lo que la charla de Edgar puso aunque toca texto de ley o quita una protección, a la vista
+          + (h.decidido.ojo && dePapel ? `<div class="alc-ambar alc-ojo-proteccion"><span>${esc(h.decidido.ojo)}</span></div>` : "") : "";
         if (plegado) return `<li class="alc-hallazgo alc-hallazgo-decidido" data-hallazgo="${i}">${cabeza}${lineaDecidido}</li>`;
+        // «Cómo debería ir»: la propuesta entera, o por qué no se arregla en el papel. 17-oct (pliego §11.9.1): si la propuesta
+        // toca texto de ley o pierde una protección, se enseña como «La IA propuso:», sin botón y con la línea gris de por qué
+        // 18-oct (pliego §11.11.3 y 7): con el dato de la ficha, «Cómo debería ir» dice el dato que pone el botón; la propuesta que la
+        // puerta frena pero se puede confirmar (pierde protección, se cuela en un párrafo libre, palabra de cobro, demasiado larga)
+        // lleva «Ponerlo aunque…» y la línea gris lo dice; la ley y la §6 siguen sin botón
+        const conDato = !!(h.arreglo && !h.hecho && !dePapel);
+        const seg = h.texto_nuevo && !dePapel && !conDato ? alcPropuestaSegura(h) : null;
+        const insegura = !!(seg && !seg.ok);
+        const TF = insegura && alcSePuedeForzar(seg) ? alcTextosForzar(seg) : null;
+        const propuesta = conDato
+          ? `<div class="alc-propuesta alc-propuesta-dato"><span>Pone el dato de la ficha:</span> <span data-no-i18n>${esc(h.arreglo.valor)}</span></div>`
+          : h.texto_nuevo
+          ? `<div class="alc-propuesta${insegura ? " alc-propuesta-no" : ""}" data-no-i18n>${esc(h.texto_nuevo)}</div>${insegura ? `<p class="alc-gris alc-propuesta-insegura">${esc(TF ? TF.linea : alcTextoPropuestaInsegura(seg))}</p>` : ""}`
+          : `<p class="alc-gris alc-sin-propuesta">${esc(alcPorQueSinPropuesta(h, n))}</p>`;
+        // el primer botón, uno solo: el dato, la propuesta, o «Ponerlo aunque…» (que pregunta antes, con el motivo)
+        const primero = dePapel ? ""
+          : conDato ? `<button type="button" class="alc-op alc-auto" data-rev-dato="${i}">Arreglar según la IA</button>`
+          : h.texto_nuevo && seg && seg.ok ? `<button type="button" class="alc-op alc-auto" data-rev-arreglar="${i}">Arreglar según la IA</button>`
+          : TF ? `<button type="button" class="alc-op alc-auto alc-forzar" data-rev-forzar="${i}">${esc(TF.boton)}</button>` : "";
         return `<li class="alc-hallazgo${h.decidido ? " alc-hallazgo-decidido" : ""}" data-hallazgo="${i}">
           ${cabeza}
+          <p class="alc-rev-etq">${insegura ? "La IA propuso:" : "Cómo debería ir:"}</p>
+          ${propuesta}
           ${lineaDecidido}
-          ${h.hecho && !alcEsDePapel(h) ? `<p class="alc-rev-hecho"><span>Escrito en la hoja; se verá en el papel al tocar «Arreglar el contrato»:</span> <span data-no-i18n>«${esc(h.hecho)}»</span></p>` : ""}
+          ${h.hecho && !dePapel ? `<p class="alc-rev-hecho"><span>Escrito en la hoja; se verá en el papel al tocar «Arreglar el contrato»:</span> <span data-no-i18n>«${esc(h.hecho)}»</span></p>` : ""}
           ${ya ? `<p class="alc-gris alc-ya-decidido"><span>${esc(alcTextoYaDecidido(ya))}</span> <span data-no-i18n>${esc(ya.como || "")}</span></p>` : ""}
+          ${h.aviso_arreglo ? `<p class="alc-gris alc-aviso-arreglo"><span>${esc(h.aviso_arreglo)}</span>${h.aviso_extra ? ` <span data-no-i18n>${esc(h.aviso_extra)}</span>` : ""}</p>` : ""}
           <div class="alc-fixes">
-            ${n ? `<button type="button" class="alc-op" data-rev-ir="${i}" title="Línea ${n} de la hoja">Ir a la línea</button>`
-                : `<button type="button" class="alc-op" disabled title="La cita no está en tu hoja: sale de la plantilla">Es de la plantilla</button>`}
-            ${h.arreglo && !h.hecho ? `<button type="button" class="alc-op alc-auto" data-rev-dato="${i}"><span>Usar el dato de la ficha:</span> <span data-no-i18n>${esc(h.arreglo.valor)}</span></button>` : ""}
+            ${primero}${deshacer}
             <button type="button" class="alc-op alc-hablar" data-rev-hablar="${i}" aria-expanded="${alcCharlaAbierta(i) ? "true" : "false"}">Hablar con la IA</button>
-            <button type="button" class="alc-op" data-rev-dejar="${i}">Lo dejo así</button>
-            <button type="button" class="alc-op" data-ensenale="${i}">Enséñale</button>
           </div>
-          ${alcCajaLeccion(h.motivo, "h" + i)}
           ${alcCajaCharla(h, i)}
         </li>`;
       };
       const rojos = R.hallazgos.map((h, i) => [h, i]).filter(([h]) => h.gravedad === "rojo");
       const ambar = R.hallazgos.map((h, i) => [h, i]).filter(([h]) => h.gravedad !== "rojo");
-      if (rojos.length) s += `<div class="alc-rojo"><b>Esto quedaría mal firmado:</b><ul>${rojos.map(([h, i]) => li(h, i)).join("")}</ul></div>`;
-      if (ambar.length) s += `<div class="alc-ambar"><b>Esto es una duda:</b><ul>${ambar.map(([h, i]) => li(h, i)).join("")}</ul></div>`;
+      // (§11.2.6) «Arreglar todo lo que propone la IA (N)»: 18-oct (pliego §11.11.7) abajo, en el pie, junto a «Arreglar lo
+      // pendiente» y «Arreglar el contrato» (alcPieArreglar)
+      if (R.proceso) {
+        // 18-oct (pliego §11.12.1e): UNA sola pantalla: «La IA arregló N puntos» (plegada; cada uno con «Abrir» y «Deshacer»),
+        // «Te toca decidir (M)» (los rojos y lo que Edgar deshizo, con su propuesta y sus dos botones) y «Dudas (K)»
+        const todos = R.hallazgos.map((h, i) => [h, i]);
+        const auto = todos.filter(([h]) => h.solo && h.decidido);
+        const tocaA = h => h.gravedad === "rojo" || h.deshecho || h.al_tope || h.por_orden;
+        const toca = todos.filter(([h]) => !(h.solo && h.decidido) && tocaA(h));
+        const dudas = todos.filter(([h]) => !(h.solo && h.decidido) && !tocaA(h));
+        const abierto = !!(R.auto_abierto || auto.some(([, i]) => alcCharlaAbierta(i)));
+        if (auto.length) s += `<details class="alc-auto-arreglados alc-verde" id="alc-auto-arreglados"${abierto ? " open" : ""}>
+          <summary>${auto.length === 1 ? "La IA arregló 1 punto" : `La IA arregló ${auto.length} puntos`}</summary>
+          <p class="alc-sub">Lo puso en el papel sin quitar protección ni tocar el dinero. Ábrelo para verlo; si algo no te gusta, «Deshacer» lo vuelve a dejar para ti.</p>
+          <ul>${auto.map(([h, i]) => li(h, i)).join("")}</ul></details>`;
+        if (toca.length) s += `<div class="alc-rojo alc-te-toca"><b>Te toca decidir (${toca.length})</b><ul>${toca.map(([h, i]) => li(h, i)).join("")}</ul></div>`;
+        if (dudas.length) s += `<div class="alc-ambar alc-dudas"><b>Dudas (${dudas.length})</b><ul>${dudas.map(([h, i]) => li(h, i)).join("")}</ul></div>`;
+        if (auto.length && !toca.length && !dudas.length) s += `<div class="alc-verde alc-nada-para-ti">No queda nada para ti: la IA arregló todo lo que encontró.</div>`;
+      } else {
+        if (rojos.length) s += `<div class="alc-rojo"><b>Esto quedaría mal firmado:</b><ul>${rojos.map(([h, i]) => li(h, i)).join("")}</ul></div>`;
+        if (ambar.length) s += `<div class="alc-ambar"><b>Esto es una duda:</b><ul>${ambar.map(([h, i]) => li(h, i)).join("")}</ul></div>`;
+      }
       if (R.hallazgos.length || R.tocado) s += alcPieArreglar(R) + `
-        <p class="lev-nota">Hasta que atiendas cada punto, el contrato no se manda. Decide cada punto (o «Lo dejo así») y toca «Arreglar el contrato» una sola vez: se arma con todo lo decidido, se revisa y se guarda solo en la propuesta.</p>`;
+        <p class="lev-nota">Arregla los puntos rojos (o dile a la IA por qué están bien) y toca «Arreglar el contrato» una sola vez: se revisa con todo lo cambiado y se guarda solo en la propuesta.</p>`;
     }
     if (A.arreglando && !(hay && !R.reutilizada)) s += `<div class="alc-gris alc-espera">${esc(alcTextoArreglando(A.arreglando))}</div>`;
     // (pliego §8.2) sin la lista de la revisión a la vista, el aviso de los cambios sin sitio va aquí
@@ -18388,7 +20355,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       : `<div class="alc-verde alc-guardado-solo">Lo arreglado quedó guardado en la propuesta.</div>`;
     if (A.guardado_pendiente && !A.arreglando) s += `<div class="alc-gris alc-guardar-pendiente"><p>Lo arreglado todavía no está guardado en la propuesta.</p>
       <div class="alc-botones"><button type="button" class="accion" data-rev-guardar-arreglo="1"${A.guardando_propuesta ? " disabled" : ""}>Guardar lo arreglado</button></div></div>`;
-    return s + `</div>`;
+    if (plegar) return cabeza + `<details class="alc-rev-detalle" id="alc-rev-detalle"${R.detalle_abierto ? " open" : ""}>
+      <summary>Ver el detalle de la revisión</summary>${s}</details></div>`;
+    return cabeza + s + `</div>`;
   }
 
   // En la hoja (ficha 1), mientras quede algo de la revisión por mirar: de qué línea se habla y el camino de vuelta
@@ -18397,11 +20366,11 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (!R || !Array.isArray(R.hallazgos) || !(R.hallazgos.length || R.tocado) || !A.contrato) return "";
     const foco = Number.isInteger(R.foco) ? R.hallazgos[R.foco] : null;
     const quedan = R.hallazgos.filter(h => !h.hecho && !h.decidido).length;
-    const enMarcha = !!(A.armado_en_marcha || R.en_marcha || A.arreglando || alcCharlaPensando());
+    const enMarcha = !!(A.armado_en_marcha || R.en_marcha || A.arreglando || alcCharlaPensando() || (A.proceso && A.proceso.activo));
     return `<div class="alc-gris alc-rev-en-hoja">
       ${foco ? `<p><span>La IA dice de esta línea:</span> <span data-no-i18n>${esc(foco.motivo)}</span></p>` : ""}
       <p>${quedan === 1 ? "Queda 1 cosa de la revisión con IA por mirar." : quedan ? `Quedan ${quedan} cosas de la revisión con IA por mirar.` : "Lo de la revisión con IA está atendido: toca «Arreglar el contrato»."}</p>
-      <p class="alc-cuenta-decisiones">${esc(alcTextoCuenta(alcCuentaDecisiones(R)))}</p>
+      <p class="alc-cuenta-decisiones">${esc(alcTextoCuenta(alcCuentaPantalla(R)))}</p>
       <div class="alc-botones">
         <button type="button" class="accion secundaria" data-alcficha="2">Volver al contrato</button>
         <button type="button" class="accion" data-rev-rearmar="1"${enMarcha ? " disabled" : ""}>Arreglar el contrato</button>
@@ -18438,25 +20407,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const A = alcActivo, R = A && A.revision;
     const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
     if (!h) return false;
-    const ca = Alcance.CAMPOS_ARREGLO[campo];
-    let n0 = ca && A.leido && A.leido.datos_linea ? A.leido.datos_linea[ca.clave] : 0;
-    // con el armado de la IA, la línea del dato va en la numeración con la que leyó la IA: se busca en la hoja de ahora
-    const conArmado = !!(A.armado && !A.armado.vieja && A.salida && A.salida.ia);
-    if (conArmado && n0) n0 = alcLineaDeArmado(n0);
-    const r = Alcance.ponerDatoDeFicha(A.texto, campo, valor, { linea: n0 });
+    // 20-oct (pliego §12.5 B.3): lo que escribe en la hoja (y en el paquete del armado de la IA) es alcEscribirDatoEnHoja, que usa
+    // también «Aplicar mi orden»; aquí solo los datos de la ficha, como siempre
+    const r = alcEscribirDatoEnHoja(campo, valor, true);
     if (r.error) { avisar(r.error, true); return false; }
-    A.texto = r.texto;
-    // …y el dato entra también en el paquete (es de la ficha, no de la IA): al volver a armar sale sin llamar a nadie
-    if (conArmado && ca) {
-      A.armado.paquete.datos = Object.assign({}, A.armado.paquete.datos || {}, { [ca.clave]: { valor: String(valor) } });
-      A.armado.texto = A.texto;
-    }
-    if ($("alc-texto")) $("alc-texto").value = A.texto;
-    // la escribió la app por un toque de Edgar: no es una línea nueva de la hoja
-    alcApuntarPropia(alcLineaCruda(r.linea));
-    alcRealinear();
-    alcGuardarLocal(A.proyecto.id, A.texto);
-    A.arreglados = [...(A.arreglados || []), r.explicacion];
     h.hecho = `${r.etiqueta}: ${String(valor).replace(/\s+/g, " ").trim()}`;
     R.tocado = true;
     // (pliego §7.1) escrito en la hoja = decidido; el contrato se arregla después, una sola vez, con todo lo decidido
@@ -18489,16 +20443,591 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   }
 
   // ============================================================
+  // 17-oct, versión 6 (docs/PLIEGO-CORREGIR-CON-IA.md §11): el revisor propone el texto y un botón lo pone
+  // Edgar: «arriba el problema y abajo cómo debería ir. Si me parece bien, le digo “arréglalo según la IA”. Si no me gusta,
+  // que siga el botón “Hablar con la IA”». «Arreglar según la IA» pone el párrafo ENTERO que propuso el revisor (texto_nuevo)
+  // en el papel, en el acto y sin IA, con el candado del dinero y el barrido (alcReemplazarEnPapel, ámbito "parrafo"). El
+  // arreglo queda amarrado al párrafo (su sección y su cabeza: A.reemplazos[k].ancla) para que sobreviva a otra plantilla, y
+  // la app guarda sola una lección para la obra (y para todos los contratos si el revisor dijo «siempre» y la frase es de la
+  // casa). «Deshacer» vuelve el papel al de antes.
+  // ============================================================
+  // El arreglo guardado de un punto (por la clave de su cita), si lo hay
+  function alcReemplazoDe(h) {
+    const A = alcActivo;
+    const k = h ? alcClaveCita(h.cita) : "";
+    return k && A && Array.isArray(A.reemplazos) ? A.reemplazos.find(r => r && r.clave === k) || null : null;
+  }
+  // Por qué un punto no trae «Cómo debería ir» (una línea gris, en llano)
+  // 17-oct (pliego §11.9.5): si el revisor SÍ propuso un texto y la app lo tiró, la línea lo dice (no «La IA no propuso texto»)
+  // 18-oct (pliego §11.11.1 y 7): «Esto se arregla en la hoja» deja de ser una salida (el revisor propone el párrafo vecino) y lo
+  // que no trae propuesta se le pide a la IA con «Arreglar lo pendiente»; sin propuesta posible (la ley, la §6) se dice por qué
+  function alcPorQueSinPropuesta(h, n) {
+    if (h.arreglo || h.falta_dato) return "Esto se arregla con el dato de la ficha";
+    const no = alcSinPropuestaPosible(h);
+    if (no === "pagos") return "Esto es dinero: lo pone el programa. Háblale";
+    if (no === "ley") return "Esto es texto de ley: no se cambia con un botón. Si crees que está mal, háblale a la IA";
+    if (h.propuesta_tirada === "monto") return "La IA propuso un texto con un monto: el dinero lo pone el programa. Háblale y pídele el texto sin cifras";
+    if (h.propuesta_tirada) return "La IA propuso un texto que no se puede poner tal cual: háblale";
+    return "La IA no propuso texto todavía: toca «Arreglar lo pendiente», abajo, o háblale";
+  }
+  // ¿Por qué un punto no puede llevar nunca una propuesta? "pagos" (la §6 o los pagos: los pone el programa), "ley" (texto de ley,
+  // la clase A) o "" (sí puede)
+  function alcSinPropuestaPosible(h) {
+    if (!h) return "";
+    if (alcCharlaDePagos(h) || String(h.donde || "").trim().split(".")[0] === "6") return "pagos";
+    return alcClaseDeCita(h).ley ? "ley" : "";
+  }
+  // 18-oct (pliego §11.11.4): los puntos que «Arreglar lo pendiente» le pide a la IA: sin atender, sin propuesta, y que no sean el
+  // dato de la ficha, la ley ni la §6 (en el orden de la lista)
+  function alcPendientesSinPropuesta(R) {
+    const hs = R && Array.isArray(R.hallazgos) ? R.hallazgos : [];
+    return hs.map((h, i) => [h, i]).filter(([h]) => h && !h.decidido && !h.hecho && !(typeof h.texto_nuevo === "string" && h.texto_nuevo.trim())
+      && !h.arreglo && !h.falta_dato && !alcSinPropuestaPosible(h)).map(([, i]) => i);
+  }
+  // «Arreglar lo pendiente (M)»: UNA llamada al cerebro (accion=revisar con `pendientes`: el mismo papel tapado y la misma ficha;
+  // el revisor solo propone para esos), pide y recoge como la revisión. Cada texto_nuevo que vuelve (limpio, como el de la revisión)
+  // entra en su tarjeta, que ya trae «Cómo debería ir» y su botón. No se aplica nada solo: Edgar decide punto por punto.
+  async function alcArreglarPendiente() {
+    const A = alcActivo, R = A && A.revision;
+    if (!A || !A.contrato || !R || !Array.isArray(R.hallazgos) || R.en_marcha || !(usuario && usuario.finanzas)) return;
+    if (alcQuietoPorArreglo()) return;
+    if (R.pendiente_en_marcha) { avisar("La IA ya está escribiendo el texto de lo pendiente"); return; }
+    if (alcCharlaPensando()) { avisar("Espera a que la IA te conteste en la charla"); return; }
+    if (navigator.onLine === false) { avisar("Sin señal: «Arreglar lo pendiente» necesita internet", true); return; }
+    const p = alcPaqueteRevisar();
+    if (p.error) { avisar(alcErrorRevisor({ error: p.error }), true); return; }
+    // solo los que siguen en el papel de ahora (la cita tal cual: el cerebro tira los demás)
+    const hs = alcPendientesSinPropuesta(R).map(i => R.hallazgos[i]).filter(h => h.cita && p.cuerpo.texto.includes(h.cita));
+    if (!hs.length) { avisar("Esos puntos ya no están así en el papel: toca «Arreglar el contrato» para que la IA lo revise otra vez", true); return; }
+    p.cuerpo.pendientes = hs.map(h => ({ donde: String(h.donde || "").slice(0, 12), cita: h.cita, motivo: alcLimpioCorto(h.motivo, 300) }));
+    R.pendiente_en_marcha = true; R.pendiente_aviso = null;
+    const repintar = () => { if (alcActivo === A && alcFicha === 2) pintarAlcance(); };
+    repintar();
+    const sigueViva = () => alcActivo === A && A.revision === R;
+    let r = null;
+    try {
+      r = await DB.pedirAlCerebro("revisar", p.cuerpo, { ms: 30000 });
+      const huella = r && r.huella;
+      let tropiezos = 0;
+      const hasta = Date.now() + 4 * 60 * 1000;
+      while (r && r.estado === "en_curso" && huella && Date.now() < hasta) {
+        await new Promise(z => setTimeout(z, 4000));
+        if (!sigueViva()) return;
+        let v = null;
+        try { v = await DB.leerLectura(huella); } catch { v = null; }
+        if (!v || !v.estado || v.estado === "no_existe") {
+          if (++tropiezos <= 3) continue;
+          r = { estado: "error", error: (v && (v.error || v.estado)) || "falla" };
+          break;
+        }
+        tropiezos = 0; r = v;
+      }
+      if (r && r.estado === "en_curso") r = { estado: "tiempo", error: "tiempo" };
+    } catch (e) {
+      const m = String((e && e.message) || "");
+      r = { estado: "error", error: /^(Sin señal|El asistente|Esta parte)/.test(m) ? m : "falla", mensaje: m };
+    } finally {
+      if (sigueViva()) R.pendiente_en_marcha = false;
+    }
+    if (!sigueViva()) return;
+    if (!(r && r.estado === "ok" && r.lectura)) {
+      repintar();
+      avisar(r && r.mensaje && /^(Sin señal|El asistente|Esta parte)/.test(r.mensaje) ? r.mensaje : alcErrorRevisor(r || {}), true);
+      return;
+    }
+    const V = Alcance.comprobarHallazgos(r.lectura, { texto: p.cuerpo.texto, secciones: p.rev.secciones, ficha: p.cuerpo.ficha, perdonadas: [], orden: alcOrdenParaRevisor(A) });
+    alcPropuestasDelRevisor(V.hallazgos, Array.isArray(r.lectura.hallazgos) ? r.lectura.hallazgos : [], A.contrato.html);
+    // cada pendiente recibe lo suyo (por la clave de la cita); lo que no se pidió no entra. La gravedad se queda la de la revisión
+    let puestos = 0;
+    hs.forEach(h => {
+      const k = alcClaveCita(h.cita);
+      const v = V.hallazgos.find(x => x && alcClaveCita(x.cita) === k);
+      if (!v || h.decidido || h.hecho || (typeof h.texto_nuevo === "string" && h.texto_nuevo.trim())) return;
+      if (v.texto_nuevo) {
+        h.texto_nuevo = v.texto_nuevo; h.vale_para = v.vale_para; h.propuesta_tirada = null; h.aviso_arreglo = null; h.aviso_extra = null;
+        if (v.motivo && String(v.motivo).trim()) h.motivo = v.motivo;
+        puestos++;
+      } else if (v.propuesta_tirada) h.propuesta_tirada = v.propuesta_tirada;
+    });
+    if (Number.isFinite(r.costo_centavos) && r.costo_centavos > 0) R.costo_centavos = (Number(R.costo_centavos) || 0) + r.costo_centavos;
+    R.pendiente_aviso = !puestos ? "La IA no pudo proponer texto para esos puntos: háblale en cada uno"
+      : puestos === 1 ? "La IA propuso texto para 1 punto: míralo y toca «Arreglar según la IA»"
+      : `La IA propuso texto para ${puestos} puntos: míralos y toca «Arreglar según la IA» o «Arreglar todo»`;
+    repintar();
+    avisar(R.pendiente_aviso, !puestos);
+  }
+  // Los puntos con propuesta que faltan por poner, los rojos primero (en el orden de la lista). 17-oct (pliego §11.9.1): solo
+  // los que pasan la puerta (alcPropuestaSegura): «Arreglar todo» nunca pone un texto de ley ni uno que pierde protección
+  function alcPorArreglarSegunIA(R) {
+    const hs = R && Array.isArray(R.hallazgos) ? R.hallazgos : [];
+    const xs = hs.map((h, i) => [h, i]).filter(([h]) => h && h.texto_nuevo && !h.decidido && !h.hecho && alcPropuestaSegura(h).ok);
+    return [...xs.filter(([h]) => h.gravedad === "rojo"), ...xs.filter(([h]) => h.gravedad !== "rojo")].map(([, i]) => i);
+  }
+
+  // ---- 17-oct (pliego §11.9.1): un botón nunca quita una protección ----
+  // La segunda puerta de «Arreglar según la IA» (la primera es alcTextoNuevoOk: sin dinero, sin «{{», sin «<»). Mira de qué
+  // párrafo del papel es la cita: si es texto de ley (la clase A de §10.9: el aviso de gravámenes, el derecho a cancelar, el
+  // depósito, la firma electrónica, la Notice to Owner, el seguro y la licencia, el retainage), nunca hay botón; si es una
+  // cláusula de protección (la clase B: la garantía, el límite, los cambios… y el 2.x de pruebas y cierre), la propuesta pasa
+  // por el mismo juez que las adaptadas del armado (Alcance.maloEnAdaptada / maloEnCierre, con base = lo que dice hoy ese
+  // párrafo sin su número) y, si pierde su núcleo, no hay botón y se dice por qué. Lo demás (el alcance, las exclusiones, la
+  // §7, la §1, la §5 sin monto) sigue como estaba. La misma puerta vale para «Arreglar todo» y para la ronda sola de §10.10.
+  // Los títulos y las marcas de la clase A (por el título o por el texto del párrafo, cuando no es una cláusula B)
+  const ALC_RX_LEY = /florida construction lien law|\b713\.0?15\b|right to cancel|\b501\.0\d|\bdeposit\b[^.]{0,60}\band start of work\b|\b489\.126\b|\belectronic signatures?\b|\b668\.50\b|\bnotice to owner\b|\bnotice of cancellation\b|\b713\.06\b|\b713\.20\b|\binsurance and license\b|\bEC13016045\b|\bretainage\b/i;
+  // Las páginas legales de la plantilla (el aviso de gravámenes, la firma electrónica, el derecho a cancelar): todo es de ley
+  const ALC_PAGINA_LEGAL = ".legal-page, .lien-notice, .lien-plain, .esign, .cancel-plain";
+  // La clave de una cláusula por su título CON su número («9.4 Workmanship warranty»: el número dice de qué sección es; sin él,
+  // «Arc-fault protection» es la viñeta de la §3, una exclusión): la de js/alcance.js (claveDeClausulaPorTitulo), sin copia aquí
+  // (17-oct, integración §11.9: si faltara o fallara, la puerta lo sabe y no hay botón; nunca se apaga callada). "ley" para los
+  // de la clase A, "cierre" para «Testing and closeout», o null. Las marcas de ley de aquí valen siempre (por si acaso).
+  function alcClaveDeTitulo(titulo) {
+    const t = String(titulo || "").replace(/\s+/g, " ").trim().replace(/[.:]+$/, "").trim();
+    if (!t) return null;
+    if (ALC_RX_LEY.test(t)) return "ley";
+    const k = Alcance.claveDeClausulaPorTitulo(t);
+    return k ? String(k) : null;
+  }
+  // 17-oct (pliego §11.9, revisión adversaria P4): la IA del armado puede dar a una adaptada otro título («9.8 Damages»), y la
+  // plantilla pinta ese. La clave sale entonces de lo que el armado puso en ese párrafo (A.decision.clausulas_texto: clave → título);
+  // y el 2.x de pruebas y cierre, si el papel lleva el de la casa (CIERRE_GENERICO), también por lo que dice (torque y voltaje o
+  // polaridad), aunque su título sea otro. null si no.
+  function alcClaveAdaptada(cabeza, texto) {
+    const dec = (alcActivo && alcActivo.decision) || {};
+    const ct = dec.clausulas_texto && typeof dec.clausulas_texto === "object" ? dec.clausulas_texto : {};
+    const cab = String(cabeza || "").replace(/\s+/g, " ").trim();
+    const sec = (cab.match(/^(\d+)(?:\.\d+)*\.?\s/) || [, ""])[1];
+    const t = Alcance.normaClausula(alcSinNumero(cab).replace(/[.:]+$/, ""));
+    if (t) for (const k of Object.keys(ct)) {
+      const ti = ct[k] && ct[k].titulo ? Alcance.normaClausula(String(ct[k].titulo).replace(/[.:]+$/, "")) : "";
+      if (ti && ti === t && (k === "cierre" ? !sec || sec === "2" : !sec || sec === "9")) return k;
+    }
+    if (sec === "2" && dec.bloques && dec.bloques.CIERRE_GENERICO && /\btorqu/i.test(String(texto || "")) && /\b(?:voltage|polarity)\b/i.test(String(texto || ""))) return "cierre";
+    return null;
+  }
+  // ¿Es de la §9 un párrafo? (por el número de su título o, sin número, por la sección del punto). En la §9 todo es protección:
+  // un título que no se reconoce no da botón (se cierra por defecto)
+  function alcEsDeLaNueve(b, h) {
+    const sec = (String((b && b.cabeza) || "").match(/^(\d+)(?:\.\d+)*\.?\s/) || [, ""])[1];
+    return sec ? sec === "9" : String((h && h.donde) || "").trim().split(".")[0] === "9";
+  }
+  // Lo que se sabe de un párrafo del papel: su título (el <strong> del principio sin el número; las letras (a), (b), (c) de una
+  // cláusula llevan el de su cláusula), su texto sin el número y si está en una página legal
+  function alcDatosDeBloque(b) {
+    let strong = alcCabezaDe(b, 6).strong;
+    if (!strong && /^\s*\([a-z]\)\s/.test(String(b.textContent || ""))) {
+      let p = b.previousElementSibling;
+      for (let k = 0; p && k < 8 && !strong; k++, p = p.previousElementSibling) {
+        const f = alcPrimerHijo(p);
+        if (f && f.nodeType === 1 && f.nodeName === "STRONG") strong = f;
+      }
+    }
+    const cabeza = strong ? String(strong.textContent || "").replace(/\s+/g, " ").trim().replace(/[.:]+$/, "").trim() : "";
+    const titulo = alcSinNumero(cabeza).replace(/[.:]+$/, "").trim();
+    const texto = alcSinNumero(String(b.textContent || "").replace(/\s+/g, " ").trim());
+    const legal = !!(b.closest && b.closest(ALC_PAGINA_LEGAL));
+    return { cabeza, titulo, texto, legal };
+  }
+  // Los párrafos del papel donde cae la cita (uno; dos si cruza de un párrafo a otro; ninguno si no está). El papel se lee una
+  // vez por papel y cada cita una vez (la tarjeta se pinta muchas veces)
+  let alcBloquesCache = { html: null, P: null, por: new Map() };
+  function alcBloquesDeCita(html, cita, donde) {
+    const H = String(html || "");
+    if (!H || typeof DOMParser === "undefined") return [];
+    if (alcBloquesCache.html !== H) {
+      let P = null;
+      try { P = alcPlanoDelPapel(new DOMParser().parseFromString(H, "text/html")); } catch { P = null; }
+      alcBloquesCache = { html: H, P, por: new Map() };
+    }
+    const K = alcBloquesCache;
+    if (!K.P) return [];
+    const k = String(donde || "") + "|" + String(cita || "");
+    if (K.por.has(k)) return K.por.get(k);
+    let out = [];
+    const c = alcPlanoDeTexto(cita);
+    const L = c.length >= 8 ? alcBuscarCita(K.P, c, donde, false) : { error: "no_esta" };
+    if (!L.error) {
+      let a = L.ini; while (a < L.fin && (!K.P.donde[a] || K.P.texto[a] === " ")) a++;
+      let e = L.fin - 1; while (e >= a && (!K.P.donde[e] || K.P.texto[e] === " ")) e--;
+      if (a <= e) out = [...new Set([alcBloqueDeNodo(K.P.nodos[K.P.donde[a][0]]), alcBloqueDeNodo(K.P.nodos[K.P.donde[e][0]])])].filter(Boolean).map(alcDatosDeBloque);
+    }
+    K.por.set(k, out);
+    return out;
+  }
+  // El título con el que empieza la propuesta, con su número si lo trae («9.5 Workmanship warranty. Contractor…» → «9.5 Workmanship
+  // warranty»), o ""
+  function alcTituloDePropuesta(t) {
+    const x = String(t || "").replace(/^\s*[-*•▪◦]\s+/, "").trim();
+    const num = (x.match(ALC_RX_NUMERO_CABEZA) || [""])[0].trim().replace(/\.$/, "");
+    const m = alcSinNumero(x).match(/^([^.:]{3,120})[.:](?:\s|$)/);
+    return m ? (num ? num + " " : "") + m[1].trim() : "";
+  }
+  // ¿De qué clase es el párrafo de la cita de un punto? { ley, clave (la de la clase B, «cierre» o null), bloque }
+  // 17-oct (integración §11.9): si algo de esto falla, { error: true } y la puerta no da botón (nunca un botón sin mirar)
+  function alcClaseDeCita(h, papel) {
+    try { return alcClaseDeCitaSinRed(h, papel); } catch { return { ley: false, clave: null, bloque: null, error: true }; }
+  }
+  function alcClaseDeCitaSinRed(h, papel) {
+    const A = alcActivo;
+    const html = typeof papel === "string" ? papel : A && A.contrato ? String(A.contrato.html || "") : "";
+    const bs = h ? alcBloquesDeCita(html, h.cita, h.donde) : [];
+    const B = k => !!k && k !== "ley";
+    let ley = false, clave = null, bloque = null, dudosa = false;
+    for (const b of bs) {
+      // 17-oct (§11.9, P4): si el título no se reconoce, el que puso la IA del armado (o el cierre por lo que dice)
+      const k = alcClaveDeTitulo(b.cabeza) || alcClaveAdaptada(b.cabeza, b.texto);
+      if (b.legal || k === "ley" || (!B(k) && ALC_RX_LEY.test(b.titulo + " " + b.texto))) ley = true;
+      if (B(k) && !clave) { clave = k; bloque = b; }
+      // (P4) un párrafo de la §9 que no es de ley ni una cláusula reconocida: no se puede comprobar, no hay botón
+      if (!k && alcEsDeLaNueve(b, h)) dudosa = true;
+    }
+    if (!bs.length && h && ALC_RX_LEY.test(String(h.cita || ""))) ley = true;
+    // el título con el que empieza la propuesta también cuenta (una propuesta que se presenta como «Retainage.» es de ley)
+    const tn = alcTituloDePropuesta(h && h.texto_nuevo);
+    const kn = alcClaveDeTitulo(tn) || alcClaveAdaptada(tn, h && h.texto_nuevo);
+    if (kn === "ley") ley = true;
+    else if (B(kn) && !clave) { clave = kn; bloque = bs[0] || null; }
+    else if (!kn && /^9\.\d/.test(tn)) dudosa = true;
+    // los párrafos de hoy (título y texto) y la cita: lo que el párrafo ya dice, para el juez de los párrafos libres
+    const hoy = bs.map(b => b.cabeza + ". " + b.texto).join(" ") + " " + String((h && h.cita) || "");
+    return { ley, clave, bloque, dudosa, hoy };
+  }
+  // La propuesta partida en título y texto para el juez de las adaptadas: sin el número y, si empieza por el título del
+  // párrafo, el título aparte. Si no empieza por él, todo es texto (el juez mira entonces también lo que ponga de título).
+  function alcPartirPropuesta(t, titulo) {
+    const sinN = String(t || "").replace(/^\s*[-*•▪◦]\s+/, "").replace(ALC_RX_NUMERO_CABEZA, "").trim();
+    const resto = titulo ? alcQuitarPrincipio(sinN, titulo) : null;
+    if (resto !== null && resto.replace(/^[\s.:]+/, "").trim()) return { titulo, texto: resto.replace(/^[\s.:]+/, "").trim() };
+    return { titulo: "", texto: sinN };
+  }
+  // La puerta: { ok: true } o { ok: false, ley: true } (texto de ley) o { ok: false, motivo } (pierde protección; el motivo en
+  // llano, el que da el juez de las adaptadas). `bloque` = lo que ya se sabe de la cita (alcClaseDeCita), si se tiene.
+  // 18-oct (pliego §11.11.3): cada «no» dice además de qué clase es (`tipo`), para que la tarjeta sepa si ofrece «Ponerlo
+  // aunque…»: "ley" y "pagos" (la §6) nunca; "proteccion" (pierde su núcleo, o un párrafo de la §9 que no se reconoce), "libre"
+  // (protección colada en un párrafo libre), "dinero" (palabra de cobro en un párrafo libre) y "largo" sí, con confirmar; "error"
+  // (no se pudo mirar) y "vacio" tampoco.
+  function alcPropuestaSegura(h, bloque) {
+    if (!h || typeof h.texto_nuevo !== "string" || !h.texto_nuevo.trim()) return { ok: false, motivo: "", tipo: "vacio" };
+    const C = bloque && typeof bloque === "object" && "ley" in bloque ? bloque : alcClaseDeCita(h);
+    if (C.error) return { ok: false, motivo: "no la pude comprobar", tipo: "error" };
+    if (C.ley) return { ok: false, ley: true, motivo: "", tipo: "ley" };
+    // 17-oct (pliego §11.9, revisión adversaria P1): los pagos los pone el programa. Un punto de la §6 (el depósito, el hito, los
+    // intereses, el recargo de la tarjeta, el «Inspection delay») o de los pagos nunca lleva botón, aunque el texto no traiga cifras
+    if (alcCharlaDePagos(h) || String(h.donde || "").trim().split(".")[0] === "6") return { ok: false, dinero: true, motivo: "", tipo: "pagos" };
+    // (P4) un párrafo de la §9 que no se reconoce: no se puede comprobar
+    if (C.dudosa && !C.clave) return { ok: false, motivo: "no la pude comprobar", tipo: "proteccion" };
+    // (P1 y P3) un párrafo libre (el alcance, una exclusión, la §5, la 7.x): sin dinero ni protección peor metidos en su cuerpo que
+    // el párrafo de hoy no traiga
+    if (!C.clave) {
+      let r = null;
+      try { r = Alcance.maloEnParrafoLibre(h.texto_nuevo, C.hoy !== undefined ? C.hoy : String(h.cita || "")); }
+      catch { return { ok: false, motivo: "no la pude comprobar", tipo: "error" }; }
+      if (r && r.dinero) return { ok: false, dinero: true, motivo: String(r.dinero), tipo: "dinero" };
+      if (r && r.proteccion) return { ok: false, libre: true, motivo: String(r.proteccion), tipo: "libre" };
+      return { ok: true };
+    }
+    const A = alcActivo, dec = (A && A.decision) || {};
+    const b = C.bloque || { titulo: "", texto: "" };
+    const P = alcPartirPropuesta(h.texto_nuevo, b.titulo);
+    let motivo = "";
+    try {
+      if (C.clave === "cierre") {
+        motivo = Alcance.maloEnCierre(P.titulo, P.texto, b.texto, dec.servicio ? "servicio" : "obra");
+      } else {
+        const j = dec.juicio && dec.juicio.afci && dec.juicio.afci.aplicado !== false ? String(dec.juicio.afci.valor || "") : "";
+        motivo = Alcance.maloEnAdaptada(C.clave, P.titulo, P.texto, b.texto, j);
+      }
+    } catch { return { ok: false, motivo: "no la pude comprobar", clave: C.clave, tipo: "error" }; }
+    if (!motivo) return { ok: true, clave: C.clave };
+    return { ok: false, motivo: String(motivo), clave: C.clave, tipo: motivo === "era demasiado larga" ? "largo" : "proteccion" };
+  }
+  // 18-oct (pliego §11.11.3): ¿se puede poner, si Edgar lo confirma, lo que la puerta no deja poner solo? La ley y la §6, nunca; lo
+  // que no se pudo mirar, tampoco. Lo que pierde protección, lo que se cuela en un párrafo libre (protección o cobro) y lo largo, sí.
+  function alcSePuedeForzar(seg) {
+    return !!(seg && !seg.ok && !seg.ley && ["proteccion", "libre", "dinero", "largo"].includes(seg.tipo));
+  }
+  // Los textos de «Ponerlo aunque…» (en el punto y en la charla, los mismos): el botón, la pregunta con el motivo, el «Ojo» que
+  // queda a la vista, la nota de la charla cuando no lo pone solo y (`linea`) la línea gris del punto, que dice por qué y qué botón
+  function alcTextosForzar(seg) {
+    const m = String((seg && seg.motivo) || "");
+    const SI_NO = "; si no, háblale";
+    if (seg && seg.dinero) return {
+      boton: "Ponerlo aunque toque el dinero",
+      pregunta: "Esto toca el dinero, que normalmente lo pone el programa." + (m ? `\n\nLo que cambia: «${m}».` : "") + "\n\n¿Lo pongo en el papel de todas formas?",
+      ojo: "Ojo: lo puse porque lo confirmaste, pero toca el dinero, que lo pone el programa. Léelo antes de mandar el contrato",
+      nota: "Esto toca el dinero, que lo pone el programa: no lo puse en el papel. Si de verdad lo quieres así, toca «Ponerlo aunque toque el dinero»",
+      linea: (m ? `La IA metió en este párrafo algo de cobro («${m}»), y el dinero lo pone el programa.` : "Esto toca el dinero, que lo pone el programa.")
+        + " Si de verdad lo quieres así, toca «Ponerlo aunque toque el dinero»" + SI_NO };
+    if (seg && (seg.tipo === "largo" || m === "era demasiado larga")) return {
+      boton: "Ponerlo aunque sea largo",
+      pregunta: "Este texto es más largo de lo que suele llevar esta cláusula. Léelo entero antes: lo largo esconde cambios.\n\n¿Lo pongo en el papel de todas formas?",
+      ojo: "Ojo: lo puse porque lo confirmaste, pero es más largo de lo que suele llevar esta cláusula. Léelo antes de mandar el contrato",
+      nota: "Este texto es más largo de lo que suele llevar esta cláusula: no lo puse en el papel. Si de verdad lo quieres así, toca «Ponerlo aunque sea largo»",
+      linea: "La IA propuso un texto más largo de lo que suele llevar esta cláusula. Léelo entero: si te parece bien, toca «Ponerlo aunque sea largo»" + SI_NO };
+    const T = {
+      boton: "Ponerlo aunque quite la protección",
+      pregunta: `Esto quita una protección del contrato: ${m || "no pude comprobar que no la quite"}.\n\n¿Lo pongo en el papel de todas formas?`,
+      ojo: `Ojo: lo puse porque lo confirmaste, pero quita una protección del contrato (${m || "no la pude comprobar"}). Léelo antes de mandar el contrato`,
+      nota: `Esto quita una protección del contrato (${m || "no la pude comprobar"}): no lo puse en el papel. Si de verdad lo quieres así, toca «Ponerlo aunque quite la protección»`,
+      linea: (!m || m === "no la pude comprobar" ? "No pude comprobar si este texto quita una protección." : `La IA propuso un texto que pierde protección (${m}).`)
+        + " Si de verdad lo quieres así, toca «Ponerlo aunque quite la protección»" + SI_NO };
+    // (la protección colada en un párrafo libre: el motivo es la palabra que se coló)
+    if (seg && seg.libre) {
+      T.pregunta = `Esto mete en este párrafo algo de garantía, responsabilidad o gravamen («${m}») que puede quitar una protección del contrato.\n\n¿Lo pongo en el papel de todas formas?`;
+      T.linea = `La IA metió en este párrafo algo de garantía, responsabilidad o gravamen («${m}»). Si de verdad lo quieres así, toca «Ponerlo aunque quite la protección»` + SI_NO;
+    }
+    return T;
+  }
+  // La línea gris de una propuesta que no lleva botón
+  function alcTextoPropuestaInsegura(s) {
+    if (s.ley) return "Esto es texto de ley: no se cambia con un botón. Si crees que está mal, háblale a la IA";
+    // 17-oct (§11.9, P1 y P3)
+    if (s.dinero) return "Esto es dinero: lo pone el programa. Háblale";
+    if (s.libre) return `La IA metió en este párrafo algo de garantía, responsabilidad o gravamen («${s.motivo}»): no se pone con un botón. Háblale`;
+    if (s.motivo === "era demasiado larga") return "La IA propuso un texto demasiado largo para esta cláusula: no se pone con un botón. Háblale";
+    if (!s.motivo || s.motivo === "no la pude comprobar") return "No pude comprobar si este texto quita una protección: no se pone con un botón. Háblale";
+    return `La IA propuso un texto que pierde protección (${s.motivo || "no la pude comprobar"}): háblale`;
+  }
+
+  // ---- 17-oct (pliego §11.9.2): «Decidido» sin cambiar el papel = perdonado ----
+  // Cuando la charla deja un punto decidido («Decidido», o la IA dice que guardó la orden) sin un arreglo en el papel ni una
+  // línea en la hoja, el perdón se apunta como lo hacía «Lo dejo así»: en A.perdonadas (el teléfono) y, con la propuesta, en
+  // alcance_decisiones. Así la revisión siguiente no lo vuelve a sacar ni cierra el candado con él. El perdón es de la cita:
+  // si después cambia el papel en ese párrafo, se queda.
+  function alcApuntarPerdon(A, h) {
+    if (!A || !h || !A.proyecto) return;
+    const p = Alcance.perdonDeHallazgo(h);
+    if (!(A.perdonadas || []).some(x => x && x.revisor && x.cita === p.cita)) A.perdonadas = [...(A.perdonadas || []), p];
+    alcPerdonLocal(A.proyecto.id, A.perdonadas);
+    if (A.propuesta && A.propuesta.id) {
+      const dec = Object.assign({}, A.propuesta.alcance_decisiones || {}, { perdonadas: A.perdonadas, reemplazos: alcReemplazosParaGuardar(A) });
+      A.propuesta.alcance_decisiones = dec;
+      DB.guardarAlcance(A.propuesta.id, { alcance_decisiones: dec }).catch(() => { /* se guarda con «Guardar en la propuesta» */ });
+    }
+  }
+  function alcPerdonarSiNoCambio(i) {
+    const A = alcActivo, R = A && A.revision;
+    const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
+    if (!h || !h.decidido || h.hecho || alcReemplazoDe(h) || h.decidido.de === "papel" || h.decidido.de === "hoja") return false;
+    alcApuntarPerdon(A, h);
+    h.decidido.perdonado = true;
+    return true;
+  }
+
+  // ---- 17-oct (pliego §11.9.4): los arreglos viejos que ya no encuentran su frase no se quedan para siempre ----
+  // Al poner un arreglo de párrafo en un bloque, los de frase de la misma sección cuya cita (sus seis primeras palabras) estaba
+  // en el texto VIEJO de ese bloque quedaron superados: se quitan (y vuelven si se deshace ese arreglo).
+  function alcQuitarSuperados(A, r, viejo) {
+    if (!A || !r || r.ambito !== "parrafo" || !viejo || !Array.isArray(A.reemplazos)) return 0;
+    const sec = d => String(d || "").trim().split(".")[0];
+    const s0 = sec(r.ancla && r.ancla.donde ? r.ancla.donde : r.donde);
+    const v = alcPlanoDeTexto(viejo);
+    const superado = q => {
+      if (!q || q === r || q.clave === r.clave || q.ambito === "parrafo") return false;
+      if (!s0 || sec(q.donde) !== s0) return false;
+      const seis = alcPlanoDeTexto(q.cita).split(" ").slice(0, 6).join(" ");
+      return seis.length >= 12 && v.includes(seis);
+    };
+    const fuera = A.reemplazos.filter(superado);
+    if (!fuera.length) return 0;
+    A.reemplazos = A.reemplazos.filter(q => !fuera.includes(q));
+    if (Array.isArray(A.reemplazos_sin_sitio)) A.reemplazos_sin_sitio = A.reemplazos_sin_sitio.filter(q => !q || !fuera.some(f => f.clave === q.clave));
+    A.superados = Object.assign({}, A.superados || {}, { [r.clave]: fuera });
+    return fuera.length;
+  }
+  // «Olvidarlos»: los arreglos que ya no encontraron su frase se quitan de la lista y se guarda
+  function alcOlvidarSinSitio() {
+    const A = alcActivo;
+    if (!A || alcQuietoPorArreglo()) return;
+    const xs = (Array.isArray(A.reemplazos_sin_sitio) ? A.reemplazos_sin_sitio : []).filter(r => r && r.motivo !== "monto" && r.motivo !== "barrido");
+    if (!xs.length) return;
+    const claves = new Set(xs.map(r => r.clave));
+    A.reemplazos = (Array.isArray(A.reemplazos) ? A.reemplazos : []).filter(r => !r || !claves.has(r.clave));
+    A.reemplazos_sin_sitio = A.reemplazos_sin_sitio.filter(r => r && !claves.has(r.clave));
+    alcGuardarReemplazosYa(A);
+    pintarAlcance();
+    avisar(xs.length === 1 ? "Olvidé 1 cambio viejo" : `Olvidé ${xs.length} cambios viejos`);
+  }
+  // El aviso en llano de por qué no se pudo poner
+  const ALC_NO_SE_PUSO = {
+    no_esta: "No encontré ese párrafo en el papel: háblale a la IA",
+    varias: "Ese párrafo sale varias veces en el papel y no sé cuál cambiar: háblale a la IA",
+    monto: "Ese texto trae un monto: el dinero lo pone el programa. Pídele a la IA el texto sin cifras",
+    barrido: "Ese cambio dejaría algo mal en el papel; no lo puse:",
+    // (corrección de los revisores, 20-oct) quitar un párrafo al que otro remite, o uno que cambió desde la orden
+    remitido: "Otro párrafo del papel remite a ese («See Section…»): no lo quité. Háblale a la IA",
+    cambiado: "Ese párrafo cambió desde que lo pediste: no lo toqué. Háblale a la IA",
+    // (corrección de los revisores, 20-oct) la cita junta dos párrafos del papel: un párrafo entero no se pone ahí
+    dos_parrafos: "Esa frase junta dos párrafos del papel y no sé cuál cambiar: háblale a la IA"
+  };
+  // De qué párrafo se habla, para «Así lo hice»: «la 7.1», o «la sección 3»
+  function alcDeQueParrafo(x, h) {
+    const cab = x && x.ancla ? String(x.ancla.cabeza || "") : "";
+    const num = (cab.match(/^\d{1,2}(?:\.\d{1,3})+/) || [""])[0];
+    return num ? "la " + num : h && h.donde ? "la sección " + alcLimpioCorto(h.donde, 12) : "";
+  }
+  // «Arreglar según la IA» en el punto i. `auto`: lo hace el armado todo seguido (§10.10, ronda 2): sin lección ni aviso.
+  // Devuelve { ok, ancla, de_que } o { error }; el aviso queda en el punto (h.aviso_arreglo) y el punto sigue abierto.
+  function alcArreglarSegunIA(i, opc) {
+    const o = opc || {};
+    const A = alcActivo, R = A && A.revision;
+    const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
+    if (!h || !h.texto_nuevo || !A.contrato || !(usuario && usuario.finanzas)) return { error: "no_esta" };
+    if (!o.auto && !o.todo && alcQuietoPorArreglo()) return { error: "quieto" };
+    const html = String(A.contrato.html || "");
+    const nuevo = alcTextoNuevoOk(h.texto_nuevo, html, h.cita);
+    const falla = (e, extra) => { h.aviso_arreglo = ALC_NO_SE_PUSO[e] || ALC_NO_SE_PUSO.no_esta; h.aviso_extra = extra || null; return { error: e }; };
+    if (!nuevo) return falla("monto");
+    // 17-oct (pliego §11.9.1): la segunda puerta (texto de ley, o una cláusula de protección que pierde su núcleo): no se pone
+    const seg = alcPropuestaSegura(h);
+    // 18-oct (pliego §11.11.3): con `forzar` (Edgar tocó «Ponerlo aunque…» y dijo que sí) entra lo que se puede confirmar; la ley,
+    // la §6 y lo que no se pudo mirar, nunca
+    if (!seg.ok && !(o.forzar && alcSePuedeForzar(seg))) { h.aviso_arreglo = null; h.aviso_extra = null; return { error: "proteccion", ley: !!seg.ley, motivo: seg.motivo || "", tipo: seg.tipo || "" }; }
+    const perm = Array.isArray(A.contrato.permitidos) ? A.contrato.permitidos : [];
+    const clave = alcClaveCita(h.cita);
+    if (!Array.isArray(A.reemplazos)) A.reemplazos = [];
+    const previo = A.reemplazos.find(r => r && r.clave === clave);
+    // si este punto ya se cambió antes (la charla), lo que dice ahora el papel es el texto de entonces: se busca primero
+    let x = { error: "no_esta" };
+    if (previo && previo.nuevo) x = alcReemplazarEnPapel(html, previo.nuevo, nuevo, perm, h.donde, true, "parrafo");
+    if (x.error === "no_esta") x = alcReemplazarEnPapel(html, h.cita, nuevo, perm, h.donde, false, "parrafo");
+    if (x.error) return falla(x.error, x.problema);
+    A.contrato.html = x.html;
+    try { A.contrato.problemas = Alcance.barridoFinal(x.html, perm, A.contrato.cuenta).problemas; } catch { /* se queda lo de antes */ }
+    if (x.html !== html) R.papel_cambiado = true;
+    const r = { clave, cita: String(previo ? previo.cita : h.cita || "").slice(0, 160), nuevo, donde: alcLimpioCorto(h.donde, 20),
+                cuando: new Date().toISOString(), ambito: x.ambito || "frase", de: "revisor" };
+    if (x.ancla) r.ancla = x.ancla;
+    A.reemplazos = [...A.reemplazos.filter(q => q && q.clave !== clave), r].slice(-ALC_TOPE_REEMPLAZOS);
+    if (Array.isArray(A.reemplazos_sin_sitio)) A.reemplazos_sin_sitio = A.reemplazos_sin_sitio.filter(q => q && q.clave !== clave);
+    if (Array.isArray(A.reemplazos_cambiados)) A.reemplazos_cambiados = A.reemplazos_cambiados.filter(q => q && q.clave !== clave);
+    // (§11.9.4) los arreglos de frase viejos de ese párrafo quedaron superados
+    alcQuitarSuperados(A, r, x.viejo_bloque);
+    h.aviso_arreglo = null; h.aviso_extra = null;
+    h.hecho = "La IA lo cambió en el papel";
+    alcDecidir(i, nuevo, "papel");
+    alcGuardarReemplazosYa(A);
+    // (lo puesto «aunque…» no se aprende: sería enseñarle al revisor a proteger menos)
+    if (!o.auto && !o.forzar) alcLeccionDeArreglo(A, h, x).catch(() => { /* si falla la señal, no frena nada */ });
+    if (!o.auto) alcMedirArregloAMano(A, 1);      // (§12.8) lo que Edgar tocó a mano después de una revisión limpia
+    return { ok: true, ancla: x.ancla || null, de_que: alcDeQueParrafo(x, h) };
+  }
+  // 18-oct (pliego §11.11.3): «Ponerlo aunque quite la protección» / «…aunque toque el dinero» / «…aunque sea largo» en el punto:
+  // la misma salida que la charla (alcCharlaForzar), sin entrar a la charla. Pregunta con el motivo y, con el sí, pone el párrafo
+  // con el «Ojo» a la vista y la línea verde «Cambiado en el papel (lo confirmaste): …». La ley y la §6 nunca llegan aquí.
+  async function alcRevForzar(i) {
+    const A = alcActivo, R = A && A.revision;
+    const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
+    if (!h || !h.texto_nuevo || h.decidido || alcQuietoPorArreglo()) return;
+    const seg = alcPropuestaSegura(h);
+    if (seg.ok) { alcRevArreglar(i); return; }
+    if (!alcSePuedeForzar(seg)) { pintarAlcance(); avisar(alcTextoPropuestaInsegura(seg), true); return; }
+    const T = alcTextosForzar(seg);
+    if (!await confirmar(T.pregunta, { si: "Ponerlo", peligro: true })) return;
+    if (alcActivo !== A || A.revision !== R || R.hallazgos[i] !== h || h.decidido || alcQuietoPorArreglo()) return;
+    const x = alcArreglarSegunIA(i, { forzar: true });
+    if (x.ok && h.decidido) h.decidido.ojo = T.ojo;
+    pintarAlcance();
+    if (x.ok) avisar(T.ojo, true);
+  }
+  // El botón: lo pone y lo dice
+  function alcRevArreglar(i) {
+    const x = alcArreglarSegunIA(i);
+    if (x.error === "quieto") return;
+    pintarAlcance();
+    if (x.ok) avisar("Puesto en el papel");
+    // (§11.9.1) por si el botón se quedó pintado de antes: la puerta lo dice y no pone nada
+    else if (x.error === "proteccion") avisar(alcTextoPropuestaInsegura(x), true);
+  }
+  // «Arreglar todo lo que propone la IA (N)»: uno por uno, en orden (los rojos primero); lo que no se pudo poner queda
+  // abierto con su aviso. Cada uno queda con su «Deshacer».
+  function alcRevArreglarTodo() {
+    const A = alcActivo, R = A && A.revision;
+    if (!R || alcQuietoPorArreglo()) return;
+    const hs = alcPorArreglarSegunIA(R).map(i => R.hallazgos[i]);
+    let puestos = 0, fuera = 0;
+    hs.forEach(h => { const i = R.hallazgos.indexOf(h); if (i < 0) return; if (alcArreglarSegunIA(i, { todo: true }).ok) puestos++; else fuera++; });
+    pintarAlcance();
+    avisar(fuera ? `Puse ${puestos} en el papel; ${fuera === 1 ? "1 no se pudo poner: míralo" : fuera + " no se pudieron poner: míralos"}`
+                 : puestos === 1 ? "Puse 1 arreglo en el papel" : `Puse ${puestos} arreglos en el papel`, !!fuera);
+  }
+  // «Deshacer»: se quita ese arreglo y el papel se vuelve a pintar desde el del armado (A.contrato_base) con los demás
+  function alcRevDeshacer(i) {
+    const A = alcActivo, R = A && A.revision;
+    const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
+    if (!h || !A.contrato || alcQuietoPorArreglo()) return;
+    if (!A.contrato_base) { avisar("No pude deshacerlo aquí: vuelve a armar el contrato", true); return; }
+    const clave = alcClaveCita(h.cita);
+    A.reemplazos = (Array.isArray(A.reemplazos) ? A.reemplazos : []).filter(r => r && r.clave !== clave);
+    // (§11.9.4) los arreglos de frase que ese arreglo dejó superados vuelven (al principio: eran de antes)
+    const vuelven = A.superados && Array.isArray(A.superados[clave]) ? A.superados[clave].filter(q => q && !A.reemplazos.some(r => r && r.clave === q.clave)) : [];
+    if (vuelven.length) { A.reemplazos = [...vuelven, ...A.reemplazos].slice(-ALC_TOPE_REEMPLAZOS); delete A.superados[clave]; }
+    const perm = Array.isArray(A.contrato.permitidos) ? A.contrato.permitidos : [];
+    const RP = alcAplicarReemplazos(A, A.contrato_base, perm);
+    A.contrato.html = RP.html;
+    try { A.contrato.problemas = Alcance.barridoFinal(RP.html, perm, A.contrato.cuenta).problemas; } catch { /* se queda lo de antes */ }
+    // si el papel vuelve a ser el que se revisó, la revisión de la vista vale otra vez
+    R.papel_cambiado = R.papel_de ? RP.html !== R.papel_de : true;
+    h.decidido = null; h.hecho = null; h.aviso_arreglo = null; h.aviso_extra = null;
+    // 18-oct (pliego §11.12.4): lo que la IA puso sola y Edgar deshace queda como «Te toca decidir», con su propuesta, y el proceso
+    // de revisión no lo vuelve a poner solo (A.deshechos, mientras la obra esté abierta)
+    if (h.solo) {
+      h.solo = null; h.deshecho = true;
+      A.deshechos = [...(Array.isArray(A.deshechos) ? A.deshechos : []), { donde: h.donde, cita: h.cita, motivo: h.motivo }].slice(-60);
+    }
+    const C = alcCharla(i);
+    if (C) C.puestos = 0;
+    alcGuardarReemplazosYa(A);
+    pintarAlcance();
+    avisar("Deshecho: el papel vuelve a decir lo de antes");
+  }
+  // (§11.5) La lección sola, sin botón (accion=leccion del cerebro, 0 ¢, sin IA): para la obra, y para todos los contratos
+  // si el revisor dijo «siempre» y la frase es de la casa (no de la hoja). Con el candado del dinero; si no pasa, no se guarda
+  // y no pasa nada.
+  async function alcLeccionDeArreglo(A, h, x) {
+    if (!A || !h || !A.proyecto || !(usuario && usuario.finanzas) || navigator.onLine === false) return;
+    const titulo = alcTituloDeHallazgo(h);
+    const sec = h.donde ? `Sección ${alcLimpioCorto(h.donde, 12)}${titulo ? " · " + alcLimpioCorto(titulo, 60) : ""}: ` : "En el contrato: ";
+    const motivo = alcLimpioCorto(h.motivo, 300).replace(/[.\s]+$/, "");
+    const cabeza = `${sec}${motivo}. Va así: «`;
+    const cabe = Math.max(80, Math.min(500, 600 - cabeza.length - 1));
+    const nv = String(h.texto_nuevo || "").replace(/\s+/g, " ").trim();
+    const texto = cabeza + (nv.length > cabe ? nv.slice(0, cabe - 1).trimEnd() + "…" : nv) + "»";
+    if (texto.length > 600 || Alcance.leccionConMonto(texto) || alcNuevoConMonto(nv, alcBaseDeCifras(A.contrato ? A.contrato.html : "", h.cita))) return;
+    const guardar = async sobre => {
+      const r = await DB.pedirAlCerebro("leccion", { texto, sobre }, { ms: 20000 });
+      return !!(r && r.ok && !r.error);
+    };
+    await guardar(String(A.proyecto.id));
+    const deLaCasa = !Alcance.lineaDeCita(A.texto, h.cita);
+    if (h.vale_para === "siempre" && deLaCasa && await guardar("general")) {
+      if (h.decidido && h.decidido.de === "papel") h.decidido.aprendido = "general";
+      if (alcActivo === A) pintarAlcance();
+    }
+  }
+
+  // ============================================================
   // 13-oct, versión 2 (docs/PLIEGO-CORREGIR-CON-IA.md §7): decidir punto por punto, arreglar UNA sola vez, guardar solo
   // ============================================================
   // La cuenta del pie: decididos (con la charla, con «Decidido» o escritos en la hoja) · sin decidir · dejados así
+  // 17-oct (pliego §11.2.7): «N arreglados · M por decidir · K dudas» (M = los rojos sin atender, K = los ámbar sin atender)
   function alcCuentaDecisiones(R) {
     const hs = R && Array.isArray(R.hallazgos) ? R.hallazgos : [];
-    const n = hs.filter(h => h.decidido || h.hecho).length;
-    return { n, m: hs.length - n, k: Number(R && R.dejados) || 0 };
+    const atendido = h => !!(h.decidido || h.hecho);
+    const n = hs.filter(atendido).length;
+    const m = hs.filter(h => !atendido(h) && h.gravedad === "rojo").length;
+    return { n, m, k: hs.length - n - m, dejados: Number(R && R.dejados) || 0 };
+  }
+  // 18-oct (pliego §11.12, repaso): después del proceso de revisión, el pie cuenta igual que la pantalla: «por decidir» es lo
+  // de «Te toca decidir» (los rojos, lo que Edgar deshizo y lo que quedó en el tope), no solo los rojos
+  function alcCuentaPantalla(R) {
+    const c = alcCuentaDecisiones(R);
+    if (!(R && R.proceso)) return c;
+    const hs = Array.isArray(R.hallazgos) ? R.hallazgos : [];
+    const m = hs.filter(h => !(h.decidido || h.hecho) && (h.gravedad === "rojo" || h.deshecho || h.al_tope)).length;
+    return Object.assign({}, c, { m, k: hs.length - c.n - m });
   }
   function alcTextoCuenta(c) {
-    return `${c.n} ${c.n === 1 ? "decidido" : "decididos"} · ${c.m} sin decidir · ${c.k} ${c.k === 1 ? "dejado así" : "dejados así"}`;
+    return `${c.n} ${c.n === 1 ? "arreglado" : "arreglados"} · ${c.m} por decidir · ${c.k} ${c.k === 1 ? "duda" : "dudas"}`;
   }
   function alcTextoArreglando(x) {
     const n = Number(x && x.n) || 0;
@@ -18511,14 +21040,26 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const A = alcActivo;
     if (A && A.arreglando) { avisar("Ya estoy arreglando el contrato"); return true; }
     if (A && A.armado_en_marcha) { avisar("La IA ya está armando este contrato"); return true; }
+    if (A && A.proceso && A.proceso.activo) { avisar("La IA está revisando el contrato: espera a que termine"); return true; }
     return false;
   }
   // El pie de la caja de revisión: la cuenta y un solo «Arreglar el contrato»
+  // 18-oct (pliego §11.11.4 y 7): abajo del todo, como mucho TRES botones: «Arreglar todo lo que propone la IA (N)» (solo con 2 o
+  // más propuestas sin atender que pasan la puerta), «Arreglar lo pendiente (M)» (solo con M puntos sin propuesta que la IA puede
+  // proponer: ni el dato de la ficha, ni la ley, ni la §6) y «Arreglar el contrato», el de siempre
   function alcPieArreglar(R) {
     const A = alcActivo;
-    const quieto = !!(A.armado_en_marcha || (R && R.en_marcha) || A.arreglando || alcCharlaPensando());
-    return `<p class="alc-cuenta-decisiones">${esc(alcTextoCuenta(alcCuentaDecisiones(R)))}</p>
-      <div class="alc-botones"><button type="button" class="accion" data-rev-rearmar="1"${quieto ? " disabled" : ""}>Arreglar el contrato</button></div>`;
+    const quieto = !!(A.armado_en_marcha || (R && R.en_marcha) || A.arreglando || alcCharlaPensando() || (A.proceso && A.proceso.activo));
+    const nTodo = alcPorArreglarSegunIA(R).length;
+    const nPend = alcPendientesSinPropuesta(R).length;
+    const pidiendo = !!(R && R.pendiente_en_marcha);
+    const todo = nTodo >= 2 ? `<button type="button" class="accion secundaria alc-arreglar-todo" data-rev-arreglar-todo="1"${quieto || pidiendo ? " disabled" : ""}>Arreglar todo lo que propone la IA (${nTodo})</button>` : "";
+    const pend = nPend > 0 ? `<button type="button" class="accion secundaria alc-arreglar-pendiente" data-rev-pendiente="1"${quieto || pidiendo ? " disabled" : ""}>Arreglar lo pendiente (${nPend})</button>` : "";
+    const nota = pidiendo ? `<p class="alc-gris alc-espera alc-pendiente-espera">La IA está escribiendo el texto de lo pendiente… (suele tardar un minuto)</p>`
+      : R && R.pendiente_aviso ? `<p class="alc-gris alc-pendiente-aviso">${esc(R.pendiente_aviso)}</p>`
+      : nPend > 0 ? `<p class="alc-sub alc-pendiente-costo">«Arreglar lo pendiente» le pide a la IA el texto de los puntos que no lo traen (≈ 10 ¢). No pone nada sola: tú decides en cada punto.</p>` : "";
+    return `<p class="alc-cuenta-decisiones">${esc(alcTextoCuenta(alcCuentaPantalla(R)))}</p>
+      <div class="alc-botones">${todo}${pend}<button type="button" class="accion" data-rev-rearmar="1"${quieto ? " disabled" : ""}>Arreglar el contrato</button></div>${nota}`;
   }
   // Lo que se apunta de un punto decidido: en una línea, sin cifras de dinero, cortado a n letras
   function alcLimpioCorto(t, n) { return alcSinCifrasDeDinero(String(t || "").replace(/\s+/g, " ").trim()).slice(0, n); }
@@ -18561,7 +21102,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (!A || !A.contrato || !(usuario && usuario.finanzas)) return;
     if (A.arreglando) { avisar("Ya estoy arreglando el contrato"); return; }
     if (A.armado_en_marcha) { avisar("La IA ya está armando este contrato"); return; }
-    if (R && R.en_marcha) { avisar("La IA ya está revisando este contrato"); return; }
+    if ((R && R.en_marcha) || (A.proceso && A.proceso.activo)) { avisar("La IA ya está revisando este contrato"); return; }
     // una charla que espera respuesta: sin ella, ese punto quedaría a medias
     if (alcCharlaPensando()) { avisar("Espera a que la IA te conteste en la charla y luego arregla el contrato"); return; }
     alcRecoger();
@@ -18572,13 +21113,16 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     let hojaCambio = false;
     if (conIA) hojaCambio = !!(A.armado.vieja || A.armado.texto !== A.texto);
     else if (A.huella) { try { hojaCambio = (await alcHuella(A.texto)) !== A.huella; } catch { hojaCambio = false; } }
-    if (!c.n && !c.k && !hojaCambio) { avisar("Decide primero algún punto", true); return; }
+    // 18-oct (pliego §11.12): lo que la IA puso sola ya está en el papel revisado: no cuenta como decidido por Edgar
+    const deEdgar = hs.filter(h => (h.decidido || h.hecho) && !h.solo).length;
+    if (!deEdgar && !c.dejados && !hojaCambio && !(R && R.papel_cambiado)) { avisar("Decide primero algún punto", true); return; }
+    // 18-oct (pliego §11.11.6): solo se pregunta por los ROJOS sin atender; las dudas (ámbar) no frenan ni preguntan
     if (c.m > 0 && !await confirmar(c.m === 1
-        ? "Hay 1 punto sin decidir. ¿Arreglo el contrato con lo decidido y dejo ese para la próxima revisión?"
-        : `Hay ${c.m} puntos sin decidir. ¿Arreglo el contrato con lo decidido y dejo esos para la próxima revisión?`)) return;
+        ? "Hay 1 punto rojo sin decidir. ¿Arreglo el contrato con lo decidido y dejo ese para la próxima revisión?"
+        : `Hay ${c.m} puntos rojos sin decidir. ¿Arreglo el contrato con lo decidido y dejo esos para la próxima revisión?`)) return;
     if (alcActivo !== A || A.revision !== R || A.armado_en_marcha || A.arreglando || alcCharlaPensando()) return;
     // Las decisiones se apuntan YA (la revisión nueva se lleva las charlas): se añaden a las de antes, tope 60
-    const nuevos = hs.filter(h => h.decidido || h.hecho).map(h => ({
+    const nuevos = hs.filter(h => (h.decidido || h.hecho) && !h.solo).map(h => ({
       donde: alcLimpioCorto(h.donde, 20), cita: alcLimpioCorto(h.cita, 80), motivo: alcLimpioCorto(h.motivo, 160),
       como: alcComoLimpio(h.decidido ? h.decidido.como : h.hecho).slice(0, 160), cuando: (h.decidido && h.decidido.cuando) || new Date().toISOString() }));
     const viejos = (Array.isArray(A.decididos) ? A.decididos : []).filter(d => d && !nuevos.some(x => alcClaveCita(x.cita) === alcClaveCita(d.cita)));
@@ -18589,17 +21133,26 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     // Sin IA (lo de la hoja y los perdones): el camino corto de siempre.
     const deCharla = hs.some(h => h.decidido && h.decidido.de === "charla");
     // (pliego §8.3) lo cambiado en el papel ya está puesto: si no hay órdenes a la IA ni cambios de hoja, no se arma
-    const soloPapel = (hs.some(alcEsDePapel) || !!(R && R.papel_cambiado)) && !deCharla && !hojaCambio && !hs.some(h => h.decidido && h.decidido.de === "hoja");
+    const soloPapel = (hs.some(alcEsDePapel) || !!(R && R.papel_cambiado)) && !deCharla && !hojaCambio
+      && !hs.some(h => h.decidido && h.decidido.de === "hoja" && !(h.solo && h.solo.en_papel));
+    // 18-oct (pliego §11.12): la revisión que sigue es el proceso entero (hasta tres vueltas), salvo dentro del armado todo seguido de
+    // 10.10, que tiene el suyo (su ronda del papel usa el mismo proceso)
+    const revisarTodo = () => (A.auto && A.auto.activo ? alcRevisarIA() : alcRevisionCompleta("arreglar"));
+    // 14-oct (pliego §10.10): con «Así lo hice» (el armado todo seguido de la IA), lo contestado se pone en el contrato y la IA
+    // vuelve a revisar y a corregirse sola; lo arreglado antes no se olvida
+    if (conIA && A.auto && !A.auto.activo) alcAutoEmpezar(A, "contestado", A.auto);
     const c0 = A.contrato;
     A.arreglando = { n: c.n, desde: Date.now() };
     A.guardar_al_revisar = true;       // se consume UNA vez, cuando la revisión del papel nuevo vuelve (o falla)
     A.guardado_solo = null; A.guardado_pendiente = false;
     pintarAlcance();
-    const soltar = () => { A.guardar_al_revisar = false; A.arreglando = null; if (alcActivo === A) pintarAlcance(); };
+    const soltar = () => { A.guardar_al_revisar = false; A.arreglando = null;
+      if (A.auto && A.auto.activo && A.auto.fase !== "espera") alcAutoTerminar(A, "");   // (§10.10) no se queda «arreglando»
+      if (alcActivo === A) pintarAlcance(); };
     try {
       if (soloPapel) {
         // la revisión otra vez sobre el papel ya cambiado (más barata y más rápida); al volver (o fallar) se guarda solo
-        await alcRevisarIA();
+        await revisarTodo();
         if (alcActivo !== A) return;
         alcGuardarSiArreglo(A);
       } else if (deCharla || (conIA && hojaCambio)) {
@@ -18618,7 +21171,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         await alcVolverAArmar();
         if (alcActivo !== A) return;
         if (!A.contrato || A.contrato === c0) { soltar(); return; }
-        if (!A.revision && !A.contrato.problemas.length) alcRevisarIA().catch(() => { /* la nube nunca frena */ });
+        if (!A.revision && !A.contrato.problemas.length) revisarTodo().catch(() => { /* la nube nunca frena */ });
         alcGuardarSiArreglo(A);
       }
     } catch (e) { soltar(); throw e; }
@@ -18638,6 +21191,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (!A || alcActivo !== A || !A.guardar_al_revisar) return;
     if (A.armado_en_marcha || !A.contrato) return;
     if (A.revision && A.revision.en_marcha) return;
+    // 18-oct (pliego §11.12): dentro del proceso de revisión se guarda una vez, al final (alcProcesoCerrar)
+    if (A.proceso && A.proceso.activo) return;
     A.guardar_al_revisar = false;
     A.arreglando = null;
     alcGuardarPropuestaAhora({ silencioso: true }).catch(() => { /* queda el botón «Guardar lo arreglado» */ });
@@ -18654,6 +21209,698 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const A = alcActivo;
     if (A && A.guardado_pendiente && !A.guardando_propuesta && !A.arreglando) alcGuardarArregloOtraVez();
   });
+
+  // ============================================================
+  // 14-oct (docs/PLIEGO-CORREGIR-CON-IA.md §10.10, Edgar: «Quisiera que la IA se adapte a cada trabajo y que los errores que
+  // ella misma encuentre sea capaz de arreglarlos sola, sin que yo tenga que decir cómo… “lo hice así, así y así; tenía este
+  // error, este y este, y lo arreglé de esta manera. ¿Qué crees?”»). Hasta hoy la IA armaba, otra IA revisaba y Edgar decidía
+  // punto por punto. Ahora:
+  //   1 · «Cuéntale el trabajo» (ficha Hoja): la charla en modo «redactar» del cerebro. La IA pregunta lo justo, escribe la
+  //       hoja de la casa (entregar_hoja) y la app pone «Precio:» y «Pagos:» desde el estimado enlazado y arma sola.
+  //   2 · «Armar el contrato con IA» todo seguido: arma con juicio → revisión → ronda 1 en la hoja (las correcciones vuelven al
+  //       armado y se quedan para siempre) → ronda 2 en el papel (la charla de cada punto, el camino de v265) → revisión final.
+  //       Como mucho dos rondas. Lo que la IA no arregla sola (dinero, un dato que la ficha no tiene, una lección que choca,
+  //       quitar una protección) no se toca: se le pregunta a Edgar.
+  //   3 · «Así lo hice», arriba de la ficha del contrato: lo que entendió, cómo lo armó, lo que encontró y cómo lo arregló, y lo
+  //       que necesita de Edgar; con «Está bien, mándalo al portal» y «Cámbiale algo».
+  //   4 · El candado: lo arreglado en una ronda ya no sale en la revisión final; lo que se pregunta lo cierra hasta contestar o
+  //       «Lo dejo así». Mientras la IA se corrige, nada sale.
+  // ============================================================
+  // La orden de la ronda 2 a la charla de cada punto (la del pliego, con las marcas que el programa sabe poner en el papel)
+  // 17-oct (pliego §11.2.5): el párrafo entero, como la charla de cada punto
+  const ALC_ORDEN_PAPEL = "Arréglalo tú en el papel, sin quitar protección ni tocar dinero. Escribe entre [[NUEVO]] y [[/NUEVO]] " +
+    "el párrafo entero como tiene que quedar. Si te falta un dato o una decisión de Edgar, dilo en una línea y no cambies nada.";
+
+  // ---- Las correcciones: tapadas como la hoja, sin dinero, las doce más nuevas, sin repetir ----
+  // (14-oct, corrección tras la segunda revisión, hallazgo 10: con `base`, lo que la IA vio, una cifra que no está ahí viaja tapada)
+  function alcCorreccionesLimpias(lista, base) {
+    try { return Alcance.correccionesParaArmar((Array.isArray(lista) ? lista : []).slice().reverse(), base).reverse(); }
+    catch { return []; }
+  }
+  // (hallazgo 10) Lo que la IA ya vio: la hoja tapada y la ficha sin dinero (las cifras de una corrección que no estén aquí viajan
+  // tapadas)
+  function alcBaseTapada(A) {
+    try {
+      const L0 = Alcance.leerAlcance(A.texto || "", { perdonadas: A.perdonadas || [] });
+      const pq = Alcance.paqueteParaArmar(A.texto || "", L0, alcFichaParaArmar());
+      return pq.huellaBase + "\n" + JSON.stringify(pq.ficha || {});
+    } catch { return ""; }
+  }
+  // Sin propuesta todavía, viven en el teléfono (como lo decidido)
+  function alcCorreccionesLocal(id, lista) {
+    try {
+      if (lista) { localStorage.setItem(alcLlaveLocal(id) + "_correcciones", JSON.stringify(lista.slice(-24))); return lista; }
+      const j = JSON.parse(localStorage.getItem(alcLlaveLocal(id) + "_correcciones") || "[]");
+      return Array.isArray(j) ? j : [];
+    } catch { return lista || []; }
+  }
+  // Se guardan YA (como los cambios del papel): lo arreglado en la ronda 1 sobrevive a cualquier rearmado y a cerrar la app
+  function alcSumarCorrecciones(A, nuevas) {
+    alcPonerCorrecciones(A, alcCorreccionesLimpias([...(Array.isArray(A.correcciones) ? A.correcciones : []), ...(nuevas || [])], alcBaseTapada(A)));
+  }
+  // 14-oct (corrección tras la segunda revisión, hallazgo 14): la lista entera, también vacía («Olvidar», o una hoja nueva de
+  // «Cuéntale el trabajo»: lo que se corrigió de la hoja de antes no viaja con la nueva)
+  function alcPonerCorrecciones(A, lista) {
+    A.correcciones = Array.isArray(lista) ? lista : [];
+    if (A.propuesta && A.propuesta.id) {
+      const dec = Object.assign({}, A.propuesta.alcance_decisiones || {}, { correcciones: A.correcciones });
+      A.propuesta.alcance_decisiones = dec;
+      DB.guardarAlcance(A.propuesta.id, { alcance_decisiones: dec }).catch(() => { /* va también con «Guardar en la propuesta» */ });
+    } else if (A.proyecto && A.proyecto.id) alcCorreccionesLocal(A.proyecto.id, A.correcciones);
+  }
+
+  // ---- Los pagos del estimado enlazado (el reparto que decidió la IA del estimado, el de la propuesta o el de respaldo) ----
+  // Solo porcentajes. Con más de tres pagos no se escriben (el programa solo sabe los disparadores de uno, dos o tres).
+  function alcPagosEstimado(proyectoId) {
+    const est = alcEstimadoDe(proyectoId);
+    if (!est) return null;
+    try {
+      const pl = planDePagos(est);
+      const pcts = (pl && Array.isArray(pl.pcts) ? pl.pcts : []).map(Number);
+      if (!pcts.length || pcts.some(p => !Number.isInteger(p) || p <= 0) || pcts.reduce((s, p) => s + p, 0) !== 100) return null;
+      return { pcts, texto: pcts.join("/"), demasiados: pcts.length > 3 };
+    } catch { return null; }
+  }
+
+  // ---- 1 · «Cuéntale el trabajo» ----
+  function alcCuentale(crear) {
+    const A = alcActivo;
+    if (!A) return null;
+    if (!A.cuentale && crear) A.cuentale = { abierta: false, mensajes: [], en_marcha: false, error: null, nota: null, borrador: "", avance: null };
+    return A.cuentale;
+  }
+  // El PRIMER mensaje (lo escribe la app; la cajita no lo pinta): la obra, la ficha sin dinero, de dónde sale el dinero y lo
+  // que ya hay en la hoja, tapado. "" si aun quitando cosas quedara algo con dinero (entonces no se manda nada).
+  function alcContextoCuentale() {
+    const A = alcActivo;
+    if (!A) return "";
+    let ficha = {};
+    try { ficha = Alcance.fichaSinDinero(alcFichaParaArmar() || {}); } catch { ficha = {}; }
+    const sinMonto = x => { const t = String(x || "").replace(/\s+/g, " ").trim();
+      return t && !Alcance.esMontoTapable(t) && !Alcance.traeDineroEstricto(t) && !Alcance.leccionConMonto(t) ? t : ""; };
+    const pid = A.proyecto && A.proyecto.id ? sinMonto(String(A.proyecto.id)) : "";
+    const nombre = sinMonto(ficha.nombre || (A.proyecto && A.proyecto.nombre));
+    if (!sinMonto(ficha.nombre)) delete ficha.nombre;
+    const est = alcPrecioEstimado(A.proyecto.id), pg = alcPagosEstimado(A.proyecto.id);
+    let hoja = [];
+    try {
+      if (String(A.texto || "").trim()) {
+        const L0 = Alcance.leerAlcance(A.texto, { perdonadas: A.perdonadas || [] });
+        hoja = Alcance.paqueteParaArmar(A.texto, L0, {}).lineas
+          .filter(l => String(l.t || "").trim() && !Alcance.RX_LINEA_PRECIO_PAGOS.test(l.t) && !Alcance.esMontoArmar(l.t) && !Alcance.traeDineroEstricto(l.t))
+          .slice(0, 120);
+      }
+    } catch { hoja = []; }
+    const dinero = est
+      ? `La obra tiene estimado enlazado: el precio${pg && !pg.demasiados ? " y los pagos" : ""} los pone la app de ahí.`
+      : "La obra no tiene estimado enlazado: el precio y los pagos los escribo yo después.";
+    const armar = (conFicha, conHoja) => [
+      `Estoy en «Escribir el alcance» de la obra ${pid}${nombre ? " (" + nombre + ")" : ""}, en «Cuéntale el trabajo»: te voy a contar el trabajo para que me escribas la hoja.`,
+      dinero + " Tú no escribas «Precio:» ni «Pagos:», ni montos ni porcentajes que yo no diga.",
+      ...(conFicha ? [`Lo que la app sabe de la obra (sin dinero): ${alcFichaEnUnaLinea(ficha) || "(nada)"}`] : []),
+      ...(conHoja && hoja.length ? ["Lo que ya hay escrito en la hoja (tapado, sin montos):", ...hoja.map(l => "  " + String(l.t).slice(0, 300))] : []),
+      "",
+      "Pregúntame solo lo que cambie el dinero o una cláusula, como mucho tres cosas a la vez. Cuando tengas lo bastante, " +
+      "entrégame la hoja de la casa con entregar_hoja."
+    ].join("\n").slice(0, 11000);
+    if ([nombre, pid].some(x => x && (Alcance.esMontoTapable(x) || Alcance.traeDineroEstricto(x)))) return "";
+    for (const [f, h] of [[true, true], [true, false], [false, false]]) {
+      const t = armar(f, h);
+      if (!Alcance.traeDineroEstricto(t)) return t;
+    }
+    return "";
+  }
+  // La cajita, debajo del botón: lo de la IA y lo de Edgar con esc() y data-no-i18n; las líneas del programa, traducibles
+  function alcCajaCuentale() {
+    const A = alcActivo, C = A && A.cuentale;
+    if (!C || !C.abierta) return "";
+    const dis = C.en_marcha ? " disabled" : "";
+    const quien = m => `<span class="burbuja-quien">${m.rol === "user" ? "Tú" : "La IA"}</span>`;
+    const hilo = C.mensajes.filter(m => !m.contexto).map(m => m.rol === "programa"
+      ? `<p class="alc-verde alc-charla-programa">${esc(m.texto)}</p>`
+      : `<div class="burbuja${m.rol === "user" ? " mia" : ""}">${quien(m)}<span class="burbuja-texto" data-no-i18n>${esc(m.texto)}</span></div>`).join("");
+    const pensando = C.en_marcha ? `<div class="burbuja alc-charla-pensando"><span class="burbuja-texto">${C.avance
+      ? `<span>Sigo trabajando…</span> <span data-no-i18n>${esc(C.avance)}</span>` : "La IA está pensando…"}</span></div>` : "";
+    return `<div class="alc-leccion alc-charla alc-cuentale-charla" id="alc-cuentale-charla">
+      <div class="alc-charla-hilo" aria-live="polite">${hilo}${pensando}</div>
+      ${C.error ? `<div class="alc-gris">${esc(C.error)}</div>` : ""}
+      ${C.nota ? `<div class="alc-gris alc-charla-nota"><span>${esc(C.nota)}</span>${C.nota_extra ? ` <span data-no-i18n>${esc(C.nota_extra)}</span>` : ""}</div>` : ""}
+      <label class="alc-leccion-etq" for="alc-cuentale-texto">Lo que le cuentas a la IA</label>
+      <textarea id="alc-cuentale-texto" rows="4" maxlength="4000" placeholder="El cliente, qué hay hoy, qué se hace, qué no, quién pone qué"${dis}>${esc(C.borrador || "")}</textarea>
+      <div class="alc-fixes">
+        <button type="button" class="alc-op elegida" data-cuentale-enviar="1"${dis}>Enviar</button>
+        <button type="button" class="alc-op" data-cuentale-cerrar="1">Cerrar</button>
+        ${A.hoja_antes ? `<button type="button" class="alc-op" data-cuentale-deshacer="1"${dis}>Volver a la hoja de antes</button>` : ""}
+      </div>
+      <p class="lev-nota">Puedes dictarlo con el micrófono del teclado. La IA nunca escribe el precio ni los pagos: los pongo yo desde el estimado.</p>
+    </div>`;
+  }
+  function alcPintarCuentale() {
+    if (alcFicha !== 0) return;
+    const a = document.activeElement, foco = !!(a && a.id === "alc-cuentale-texto");
+    pintarAlcance();
+    const t = foco ? $("alc-cuentale-texto") : null;
+    if (t && !t.disabled) { try { t.focus({ preventScroll: true }); } catch { /* nada */ } }
+  }
+  function alcCuentaleAbrir() {
+    const C = alcCuentale(true);
+    if (!C) return;
+    C.abierta = !C.abierta;
+    pintarAlcance();
+    const t = C.abierta ? $("alc-cuentale-texto") : null;
+    if (t) { try { t.focus({ preventScroll: true }); } catch { /* nada */ } t.scrollIntoView({ block: "center" }); }
+  }
+  // Manda la charla entera (el contexto + todo lo hablado) al chat del cerebro en modo «redactar»
+  async function alcCuentaleEnviar() {
+    if (!(usuario && usuario.finanzas)) return;
+    const A = alcActivo, C = alcCuentale(true);
+    if (!A || !C || C.en_marcha) return;
+    if (A.armado_en_marcha || (A.auto && A.auto.activo && A.auto.fase !== "espera")) { avisar("La IA ya está armando este contrato"); return; }
+    const caja = $("alc-cuentale-texto");
+    const texto = String(caja ? caja.value : (C.borrador || "")).trim();
+    if (!texto) { avisar("Cuéntale primero el trabajo", true); return; }
+    if (navigator.onLine === false) { C.borrador = texto; C.error = "Sin señal: hablar con la IA necesita internet. Cuando vuelva, toca otra vez"; alcPintarCuentale(); return; }
+    const nuevos = [];
+    if (!C.mensajes.length) {
+      const ctx = alcContextoCuentale();
+      if (!ctx) { C.borrador = texto; C.error = "Se me escapó un monto sin tapar; no lo mandé a la IA"; alcPintarCuentale(); return; }
+      nuevos.push({ rol: "user", texto: ctx, contexto: true });
+    }
+    nuevos.push({ rol: "user", texto: texto.slice(0, 4000) });
+    C.mensajes.push(...nuevos);
+    C.borrador = ""; C.en_marcha = true; C.error = null; C.nota = null; C.nota_extra = null; C.avance = null;
+    alcPintarCuentale();
+    const sigueViva = () => alcActivo === A && A.cuentale === C;
+    const contexto = { pantalla: "alcance", modo: "redactar", proyecto_id: A.proyecto && A.proyecto.id ? String(A.proyecto.id) : null,
+                       propuesta_id: A.propuesta && Number.isInteger(A.propuesta.id) ? A.propuesta.id : null, idioma: EN_APP ? "en" : "es" };
+    const devolver = () => { nuevos.forEach(() => C.mensajes.pop()); C.borrador = texto; };
+    let hoja = null;
+    try {
+      // las líneas del programa no viajan; el cerebro se queda con las 40 últimas (el contexto, el primero, no se cae)
+      const hablados = C.mensajes.filter(m => m.rol !== "programa");
+      const enviar = hablados.length > 40 ? [hablados[0], ...hablados.slice(-39)] : hablados;
+      const r = await DB.preguntarAsistente(enviar.map(m => ({ rol: m.rol, texto: m.texto })), av => {
+        C.avance = "(" + (av && av.tanda ? av.tanda : 2) + ")" + (av && av.avance ? " " + String(av.avance).slice(0, 200) : "");
+        if (sigueViva()) alcPintarCuentale();
+      }, contexto);
+      if (!sigueViva()) return;
+      if (r && r.respuesta) {
+        C.mensajes.push({ rol: "assistant", texto: String(r.respuesta) });
+        if (typeof r.hoja === "string" && r.hoja.trim()) hoja = r.hoja;
+      } else if (r && r.error === "sin_llave") { devolver(); C.error = "Todavía no me han conectado la llave del asistente. Edgar tiene que ponerla en Supabase (ANTHROPIC_API_KEY)."; }
+      else { devolver(); C.error = "No pude contestar eso. Inténtalo otra vez en un momento."; }
+    } catch (err) {
+      if (!sigueViva()) return;
+      devolver();
+      const m = String((err && err.message) || "");
+      C.error = "No hay conexión con el asistente ahora mismo." + (/^(Sin sesión|No se pudo conectar|El asistente)/.test(m) ? " " + m : "");
+    } finally {
+      C.en_marcha = false; C.avance = null;
+    }
+    if (!sigueViva()) return;
+    if (hoja !== null) { alcPonerHojaDelChat(hoja); return; }
+    alcPintarCuentale();
+  }
+  // La hoja llegó: se mira otra vez aquí (la misma regla que el cerebro: sin dinero), se le ponen el precio y los pagos del
+  // estimado enlazado y se arma todo seguido. Sin estimado, el precio lo escribe Edgar: se dice y no se arma (sin precio la IA
+  // solo podría preguntarlo, y cada armado cuesta).
+  function alcPonerHojaDelChat(hoja) {
+    const A = alcActivo, C = A && A.cuentale;
+    if (!A || !C) return false;
+    const dicho = C.mensajes.filter(m => m.rol === "user" && !m.contexto).map(m => m.texto).join("\n");
+    // (14-oct, corrección: la firma, el formato, el trato y la propiedad no los decide la IA: si Edgar no habló de eso, van los de
+    // la hoja que había)
+    const h = Alcance.hojaDelChat(hoja, dicho, A.texto);
+    if (h.error) {
+      C.nota = h.error === "dinero" || h.error === "porcentaje"
+        ? "La hoja que escribió la IA traía dinero: no la puse. Pídele que la escriba sin montos ni porcentajes."
+        : "La hoja que escribió la IA llegó vacía o demasiado larga: no la puse.";
+      alcPintarCuentale(); return false;
+    }
+    let texto = h.hoja;
+    const est = alcPrecioEstimado(A.proyecto.id), pg = alcPagosEstimado(A.proyecto.id);
+    const puesto = { precio: false, pagos: false };
+    if (est) { const r = Alcance.aplicarArreglo(texto, { tipo: "poner_precio_base" }, est.texto); if (r && !r.error && typeof r.texto === "string") { texto = r.texto; puesto.precio = true; } }
+    if (est && pg && !pg.demasiados) { const r = Alcance.aplicarArreglo(texto, { tipo: "poner_pagos" }, pg.texto); if (r && !r.error && typeof r.texto === "string") { texto = r.texto; puesto.pagos = true; } }
+    if (String(A.texto || "").trim() && A.texto !== texto) A.hoja_antes = A.texto;
+    A.texto = texto;
+    if ($("alc-texto")) $("alc-texto").value = texto;
+    alcGuardarLocal(A.proyecto.id, texto);
+    if (A.armado && !A.armado.vieja) A.armado.vieja = true;
+    // (14-oct, corrección, hallazgo 14) una hoja nueva entera: las correcciones de la de antes no viajan con ella
+    if ((A.correcciones || []).length) alcPonerCorrecciones(A, []);
+    C.mensajes.push({ rol: "programa", texto: "Puse la hoja en el cuadro." });
+    C.nota = !puesto.precio ? "No hay estimado enlazado: escribe tú «Precio:» y «Pagos:» en la hoja y toca «Armar el contrato con IA»."
+      : !puesto.pagos ? "Puse el precio del estimado. Los pagos te los pregunto al armar (o escríbelos en la hoja con «Pagos:»)."
+      : "Puse el precio y los pagos del estimado:";
+    C.nota_extra = puesto.precio ? (est.ref + (puesto.pagos ? " · " + pg.texto : "")) : "";
+    if (!puesto.precio) { alcPintarCuentale(); avisar("Escribe el precio en la hoja y arma el contrato", true); return true; }
+    alcArmarTodo("cuentale").catch(() => { /* la nube nunca frena */ });
+    return true;
+  }
+  function alcCuentaleDeshacer() {
+    const A = alcActivo;
+    if (!A || !A.hoja_antes) return;
+    A.texto = A.hoja_antes; A.hoja_antes = null;
+    if ((A.correcciones || []).length) alcPonerCorrecciones(A, []);   // (hallazgo 14: eran de la hoja que se quita)
+    if ($("alc-texto")) $("alc-texto").value = A.texto;
+    alcGuardarLocal(A.proyecto.id, A.texto);
+    if (A.armado && !A.armado.vieja) A.armado.vieja = true;
+    pintarAlcance();
+    avisar("Volví a poner la hoja de antes");
+  }
+
+  // ---- 2 · El armado todo seguido ----
+  // ¿Se pasaría del tope del mes? (lo que llevaba el mes al abrir la pantalla + lo gastado en este armado)
+  function alcTopePasado(A) {
+    const g = alcGastoMes;
+    if (!g || !(Number(g.tope) > 0)) return false;
+    return (Number(g.centavos) || 0) + (A && A.auto ? Number(A.auto.costo) || 0 : 0) >= Number(g.tope);
+  }
+  // `previo`: el «Así lo hice» de antes (con «Cámbiale algo» o al contestar, lo arreglado antes no se olvida)
+  // `pedido`: lo que Edgar pidió con «Cámbiale algo» ({texto, corr})
+  function alcAutoEmpezar(A, de, previo, pedido) {
+    A.auto = { activo: true, de: de || "boton", fase: "armar", ronda_hoja: false, ronda_papel: false, rondas: 0,
+               enviados: pedido ? [{ de: "pedido", texto: pedido.texto, corr: pedido.corr }] : [],
+               arreglados: previo && Array.isArray(previo.arreglados) ? previo.arreglados.slice() : [],
+               no_arreglados: [], intentados: [], notas: [], procesadas: [], costo: 0, desde: Date.now() };
+    return A.auto;
+  }
+  // «Armar el contrato con IA» (y «Cuéntale el trabajo», y «Cámbiale algo»): todo seguido, sin pedirle nada a Edgar
+  async function alcArmarTodo(de, previo, pedido) {
+    const A = alcActivo;
+    if (!A || !(usuario && usuario.finanzas)) return;
+    if ($("alc-texto")) A.texto = $("alc-texto").value;
+    if (!String(A.texto || "").trim()) { avisar("Pega primero la hoja", true); return; }
+    if (A.armado_en_marcha) { avisar("La IA ya está armando este contrato"); return; }
+    if (alcTopePasado(null)) {
+      A.armado_error = { texto: alcErrorArmado({ error: "tope_mes", gastado: alcGastoMes.centavos, tope: alcGastoMes.tope }), codigo: "tope_mes" };
+      alcFicha = 0; pintarAlcance(); return;
+    }
+    const X = alcAutoEmpezar(A, de, previo, pedido);
+    await alcArmarConIA();
+    if (alcActivo !== A || A.auto !== X) return;
+    // el armado no salió (sin señal, el tope, la IA ocupada…): lo dice la hoja con sus botones; el armado todo seguido se para
+    if (A.armado_error) alcAutoTerminar(A, "");
+  }
+  // 14-oct (pliego §10.11, Edgar: «que funcione de la misma manera en todos lados»): lo que se armó desde el chat de Claude
+  // (armar_contrato del conector) se sigue aquí. El armado ya está en la propuesta y NO se vuelve a pedir; el papel, la revisión
+  // con IA y sus dos rondas de arreglo corren solas, UNA vez, con el mismo código del botón «Armar el contrato con IA».
+  function alcSeguirConector() {
+    const A = alcActivo;
+    if (!A || !A.conector_pendiente || !A.armado || A.armado.vieja || A.armado_en_marcha) return;
+    A.conector_pendiente = false;
+    // se apunta ya en la propuesta: la próxima vez que se abra la obra no se vuelve a revisar sola (ni a gastar)
+    if (A.propuesta && A.propuesta.id) {
+      const dec = Object.assign({}, A.propuesta.alcance_decisiones || {});
+      dec.conector = Object.assign({}, dec.conector || {}, { rondas_pendientes: false, seguido_en_la_app: new Date().toISOString() });
+      A.propuesta.alcance_decisiones = dec;
+      DB.guardarAlcance(A.propuesta.id, { alcance_decisiones: dec }).catch(() => { /* va también con «Guardar en la propuesta» */ });
+    }
+    if (alcTopePasado(null)) { avisar("El contrato del chat ya está armado, pero la IA llegó al tope del mes: toca «Armar el papel» para seguir sin revisarlo", true); return; }
+    avisar("Sigo con el contrato que armaste en el chat: pinto el papel y lo reviso");
+    alcAutoEmpezar(A, "conector");
+    alcSeguirArmado().catch(() => { /* la hoja dice qué pasó, con sus botones */ });
+  }
+  // ¿Es el mismo punto? (la misma cita, o la misma sección con un motivo muy parecido)
+  function alcMismoHallazgo(a, b) {
+    if (!a || !b) return false;
+    const ka = alcClaveCita(a.cita), kb = alcClaveCita(b.cita);
+    if (ka.length >= 8 && ka === kb) return true;
+    if (String(a.donde || "") !== String(b.donde || "")) return false;
+    const pa = alcPalabras(a.motivo), pb = alcPalabras(b.motivo);
+    if (pa.size < 3 || pb.size < 3) return false;
+    let comun = 0;
+    pa.forEach(x => { if (pb.has(x)) comun++; });
+    return comun / Math.max(pa.size, pb.size) >= 0.6;
+  }
+  // Lo que se mandó a arreglar en la ronda de antes y la revisión nueva ya NO señala: arreglado (con lo que dijo la IA). Lo que
+  // sigue señalado queda para Edgar.
+  function alcAutoContarArreglos(A, hs) {
+    const X = A.auto, M = A.armado;
+    const corr = M && Array.isArray(M.correcciones) ? M.correcciones : [];
+    const arreglos = M && M.paquete && Array.isArray(M.paquete.arreglos) ? M.paquete.arreglos : [];
+    const comoDe = c => {
+      if (!c) return "";
+      const n = corr.findIndex(x => x && x.motivo === c.motivo && (x.cita || "") === (c.cita || "")) + 1;
+      const a = n ? arreglos.find(x => x && x.n === n) : null;
+      return a ? a.como : "";
+    };
+    X.enviados.filter(e => !e.visto).forEach(e => {
+      e.visto = true;
+      if (e.de === "pedido") { X.arreglados.push({ de: "pedido", motivo: alcLimpioCorto(e.texto, 200), como: alcLimpioCorto(comoDe(e.corr), 240) }); return; }
+      // 18-oct (pliego §11.12): lo que la IA puso sola (la puerta lo dejó pasar) está en el papel aunque la revisión lo repita (el
+      // proceso no lo saca dos veces)
+      if (!(e.h && e.h.solo) && hs.some(h => alcMismoHallazgo(h, e.h))) { X.no_arreglados.push(e); return; }
+      X.arreglados.push({ de: e.de, motivo: alcLimpioCorto(e.h.motivo, 200), como: alcLimpioCorto(e.como || comoDe(e.corr), 240) });
+    });
+  }
+  // La revisión volvió (o se reutilizó, o el papel salió con rojos): ¿qué ronda toca?
+  async function alcAutoTrasRevision(A) {
+    const X = A && A.auto;
+    if (!X || !X.activo || alcActivo !== A) return;
+    const R = A.revision;
+    if (R && (R.en_marcha || R.prueba)) return;        // en el modo de prueba, la revisión la inyecta la prueba
+    if (R && X.procesadas.includes(R)) return;
+    if (R) { X.procesadas.push(R); if (Number.isFinite(R.costo_centavos)) X.costo += R.costo_centavos; }
+    if (!A.contrato) return alcAutoTerminar(A, "");
+    if (A.contrato.problemas.length) return alcAutoTerminar(A, "El papel salió con algo que revisar (mira «Contrato armado»): no seguí arreglando.");
+    // la revisión no salió: su caja lo dice (y ofrece «Seguir sin la IA»). 14-oct (corrección, hallazgo 15): lo que la IA ya
+    // cambió en el papel se cuenta, como cambiado pero sin revisar todavía
+    if (!R || R.error || R.saltada) {
+      X.enviados.filter(e => !e.visto && e.de === "papel").forEach(e => {
+        e.visto = true;
+        X.arreglados.push({ de: "papel", motivo: alcLimpioCorto(e.h.motivo, 200), como: "lo cambié en el papel (sin revisar todavía)" });
+      });
+      return alcAutoTerminar(A, "");
+    }
+    const hs = Array.isArray(R.hallazgos) ? R.hallazgos : [];
+    alcAutoContarArreglos(A, hs);
+    // 18-oct (pliego §11.12): después de la ronda del papel, el MISMO proceso de revisión que los botones: lo nuevo que pase la puerta
+    // se pone solo y se vuelve a revisar (con ya_arreglado y espera_edgar), como mucho tres vueltas; lo demás queda para Edgar
+    const P = A.proceso && A.proceso.activo ? A.proceso : null;
+    if (P && X.ronda_papel) {
+      if (Number.isFinite(R.costo_centavos)) P.costo += R.costo_centavos;
+      P.ultimaR = R;
+      const ultima = P.vuelta >= P.tope;
+      const n = alcProcesoAplicar(A, R, P, ultima);
+      alcApuntarRonda(A, P, R, n);
+      if (ultima || (!n.puestos && !n.datos)) { if (ultima && n.porPoner) P.tope_alcanzado = true; return alcAutoTerminar(A, ""); }
+      if (alcTopePasado(A)) return alcAutoTerminar(A, "No seguí arreglando: el asistente llegó al tope del mes.");
+      R.hallazgos.filter(h => h.solo && h.solo.vuelta === P.vuelta).forEach(h => X.arreglados.push({ de: h.solo.via === "dato" ? "hoja" : "papel",
+        motivo: alcLimpioCorto(h.motivo, 200), como: h.solo.via === "dato" ? "escribí en la hoja el dato de la ficha (" + alcLimpioCorto(h.hecho, 120) + ")"
+          : h.solo.de_que ? `La IA propuso el texto de ${h.solo.de_que} y lo puse` : "La IA propuso el texto y lo puse" }));
+      X.fase = "final";
+      if (n.datos && !(await alcProcesoRearmarDatos(A, P))) {
+        if (alcActivo !== A || A.auto !== X) return;
+        return alcAutoTerminar(A, "No pude volver a armar el papel con el dato de la ficha: míralo en la hoja.");
+      }
+      if (alcActivo !== A || A.auto !== X) return;
+      pintarAlcance();
+      await alcRevisarIA();
+      return;
+    }
+    const cls = hs.map(h => ({ h, c: Alcance.comoSeArregla(h) }));
+    const nuevo = x => !X.intentados.some(k => alcMismoHallazgo(k, x.h));
+    const hoja = X.ronda_hoja ? [] : cls.filter(x => x.c.via === "hoja" && nuevo(x));
+    const papel = X.ronda_papel ? [] : cls.filter(x => x.c.via === "papel" && nuevo(x));
+    if (!hoja.length && !papel.length) return alcAutoTerminar(A, "");
+    if (alcTopePasado(A)) return alcAutoTerminar(A, "No seguí arreglando: el asistente llegó al tope del mes.");
+    if (hoja.length) return alcAutoRondaHoja(A, hoja);
+    return alcAutoRondaPapel(A, papel);
+  }
+  // Ronda 1, en la hoja: los datos que la ficha SÍ tiene los escribe el programa (como «Usar el dato de la ficha») y lo demás
+  // vuelve al armado como correcciones. La revisión sale sola al terminar el papel y vuelve a pasar por alcAutoTrasRevision.
+  async function alcAutoRondaHoja(A, lista) {
+    const X = A.auto, R = A.revision;
+    X.ronda_hoja = true; X.rondas++; X.fase = "hoja";
+    X.intentados.push(...lista.map(x => x.h));
+    lista.filter(x => x.c.dato).forEach(x => {
+      const i = R.hallazgos.indexOf(x.h);
+      if (i >= 0 && x.h.arreglo && alcRevEscribirDato(i, x.h.arreglo.campo, x.h.arreglo.valor))
+        X.enviados.push({ de: "hoja", h: x.h, como: "escribí en la hoja el dato de la ficha (" + (x.h.hecho || "") + ")" });
+    });
+    const resto = lista.filter(x => !x.c.dato);
+    const corr = [];
+    resto.forEach(x => {
+      const c = Alcance.correccionesParaArmar([x.h], alcBaseTapada(A))[0] || null;
+      if (c) corr.push(c);
+      X.enviados.push({ de: "hoja", h: x.h, corr: c });
+    });
+    if (corr.length) alcSumarCorrecciones(A, corr);
+    pintarAlcance();
+    if (corr.length) {
+      await alcArmarConIA((A.armado && A.armado.esfuerzo) || "high");
+      if (alcActivo !== A || A.auto !== X) return;
+      if (A.armado_error) return alcAutoTerminar(A, "");
+      // sin papel nuevo y sin nada en marcha (la hoja cambió mientras armaba): no se queda «arreglando»
+      if (X.activo && X.fase === "hoja" && !A.armado_en_marcha && (!A.contrato || (A.revision && X.procesadas.includes(A.revision))))
+        return alcAutoTerminar(A, "No terminé de arreglar el contrato: mira la hoja y vuelve a armar.");
+      return;
+    }
+    // solo datos de la ficha: el dato ya entró en el paquete, así que se rearma SIN la IA y se revisa otra vez
+    const c0 = A.contrato;
+    await alcVolverAArmar();
+    if (alcActivo !== A || A.auto !== X) return;
+    if (!A.contrato || A.contrato === c0) return alcAutoTerminar(A, "No pude volver a armar el papel con el dato de la ficha: míralo en la hoja.");
+    if (A.contrato.problemas.length || A.revision) return alcAutoTrasRevision(A);
+    await alcRevisarIA();
+  }
+  // Ronda 2, en el papel: la charla de cada punto con la orden de arreglarlo ella (el camino de v265: el texto entre
+  // [[NUEVO]] y [[/NUEVO]] lo pone alcReemplazarEnPapel, con el candado del dinero y el barrido). Lo que no pone, se pregunta.
+  // 17-oct (pliego §11.4): si el revisor ya propuso el párrafo (texto_nuevo), se pone DIRECTAMENTE, sin charla y sin IA (el
+  // mismo camino que «Arreglar según la IA»); solo va a la charla lo que no trae propuesta. «Así lo hice» lo cuenta: «La IA
+  // propuso el texto de la 7.1 y lo puse».
+  async function alcAutoRondaPapel(A, lista) {
+    const X = A.auto, R = A.revision;
+    X.ronda_papel = true; X.rondas++; X.fase = "papel";
+    X.intentados.push(...lista.map(x => x.h));
+    // 18-oct (pliego §11.12): desde aquí, el mismo proceso de revisión que los botones (esta revisión es su vuelta 1)
+    const P = alcSoloUnaVuelta() ? null : alcProcesoEmpezar(A, "auto", true);
+    if (P) { P.ultimaR = R; P.resumen = R.resumen || ""; if (Number.isFinite(R.costo_centavos)) P.costo += R.costo_centavos; }
+    pintarAlcance();
+    let puestos = 0;
+    for (const x of lista) {
+      if (alcActivo !== A || A.revision !== R || A.auto !== X) return;
+      const i = R.hallazgos.indexOf(x.h);
+      if (i < 0) continue;                              // Edgar lo dejó así mientras tanto
+      if (x.h.texto_nuevo) {
+        const y = alcArreglarSegunIA(i, { auto: true });
+        if (y.ok) {
+          puestos++; if (P) x.h.solo = { vuelta: 1, via: "papel", de_que: y.de_que || "" };
+          X.enviados.push({ de: "papel", h: x.h, como: y.de_que ? `La IA propuso el texto de ${y.de_que} y lo puse` : "La IA propuso el texto y lo puse" }); continue;
+        }
+        // 17-oct (pliego §11.9.1): un texto de ley o una propuesta que pierde protección no se pone sola, ni por la charla: queda
+        // como pregunta para Edgar
+        if (y.error === "proteccion") { X.no_arreglados.push({ de: "papel", h: x.h, visto: true }); continue; }
+        // (integración 17-oct) si su texto no se pudo poner (el párrafo no está, trae un monto…), se intenta por la charla, como
+        // un punto sin propuesta, en vez de dejarlo sin probar
+        if (alcActivo !== A || A.revision !== R || A.auto !== X || R.hallazgos.indexOf(x.h) < 0 || x.h.decidido) continue;
+      }
+      // (§11.9.1) el texto de ley tampoco lo reescribe la charla sola
+      if (alcClaseDeCita(x.h).ley) { X.no_arreglados.push({ de: "papel", h: x.h, visto: true }); continue; }
+      const C = alcCharla(i, true);
+      if (!C) continue;
+      // (§11.9.1) lo que la charla sola ponga pasa por la misma puerta (alcCharlaPonerEnPapel mira C.auto)
+      C.auto = true;
+      try { await alcCharlaEnviar(i, ALC_ORDEN_PAPEL); } catch { /* sigue con el siguiente */ } finally { C.auto = false; }
+      if (alcActivo !== A || A.revision !== R || A.auto !== X) return;
+      if (Number(C.puestos) > 0) { puestos++; if (P && alcEsDePapel(x.h)) x.h.solo = { vuelta: 1, via: "charla" }; X.enviados.push({ de: "papel", h: x.h, como: "lo cambié en el papel" }); }
+      else X.no_arreglados.push({ de: "papel", h: x.h, visto: true });
+    }
+    // (§11.12) lo de esta vuelta: lo puesto a «arreglados», lo demás espera a Edgar (y viaja en la vuelta siguiente)
+    if (P && alcActivo === A && A.proceso === P && A.revision === R) { alcProcesoRepartir(R, P); alcApuntarRonda(A, P, R, { puestos, datos: 0 }); }
+    if (!puestos) return alcAutoTerminar(A, "");
+    // la revisión final, sobre el papel ya cambiado (la de ahora es del papel de antes)
+    X.fase = "final";
+    pintarAlcance();
+    await alcRevisarIA();
+  }
+  function alcAutoTerminar(A, nota) {
+    // 18-oct (pliego §11.12): el proceso de revisión de la ronda del papel se cierra aquí (una sola lista; «Así lo hice» la cuenta)
+    if (A && A.proceso && A.proceso.activo && A.proceso.de === "auto") alcProcesoCerrar(A, true);
+    const X = A && A.auto;
+    if (!X || !X.activo) return;
+    X.activo = false; X.fase = "listo"; X.cuando = new Date().toISOString();
+    if (nota) X.notas.push(nota);
+    // 14-oct (pliego §10.11): lo que empezó en el chat de Claude se cuenta allí también: «Así lo hice» (sin dinero) queda en la
+    // propuesta en borrador al terminar, y ver_contrato lo lee
+    if (X.de === "conector" && A.propuesta && A.propuesta.id && (!A.propuesta.estado || A.propuesta.estado === "borrador")) {
+      const asi = alcAsiParaGuardar(A);
+      if (asi) {
+        const dec = Object.assign({}, A.propuesta.alcance_decisiones || {}, { asi_lo_hice: asi });
+        A.propuesta.alcance_decisiones = dec;
+        DB.guardarAlcance(A.propuesta.id, { alcance_decisiones: dec }).catch(() => { /* va también con «Guardar en la propuesta» */ });
+      }
+    }
+    // el gasto del mes se vuelve a pedir: «Así lo hice» lo enseña al lado de lo que costó este armado
+    alcGastoPedido = false; alcPedirGasto();
+    if (alcActivo !== A) return;
+    pintarAlcance();
+    if (A.armado_error || !A.contrato) return;
+    const R = A.revision, quedan = R && Array.isArray(R.hallazgos) ? R.hallazgos.filter(h => !h.decidido).length : 0;
+    avisar(quedan ? "Listo: mira «Así lo hice» y contéstame lo que falta" : "Listo: mira «Así lo hice»");
+  }
+
+  // ---- 3 · «Así lo hice» ----
+  // Por qué no lo arregló sola, en llano
+  const ALC_POR_QUE_NO = {
+    dinero: "Es dinero: lo decides tú (o sale del estimado).",
+    dato: "Me falta un dato que la ficha no tiene.",
+    leccion: "Choca con una de tus lecciones.",
+    proteccion: "Quitaría una protección del contrato."
+  };
+  // (14-oct, corrección, hallazgo 16: «en dos rondas» solo si hubo dos)
+  function alcPorQueNoArreglo(h, rondas) {
+    // 17-oct (pliego §11.9.1): el texto de ley y lo que quitaría una protección no se arreglan solos
+    const seg = h && h.texto_nuevo ? alcPropuestaSegura(h) : null;
+    if ((seg && seg.ley) || (!seg && h && alcClaseDeCita(h).ley)) return "Es texto de ley: lo decides tú.";
+    if (seg && seg.dinero) return ALC_POR_QUE_NO.dinero;
+    if (seg && !seg.ok) return ALC_POR_QUE_NO.proteccion;
+    const c = Alcance.comoSeArregla(h);
+    return c.via === "pregunta" ? (ALC_POR_QUE_NO[c.porque] || "No lo pude arreglar sola.") : Number(rondas) >= 2 ? "No lo pude arreglar sola en dos rondas." : "No lo pude arreglar sola.";
+  }
+  // Lo que se guarda de «Así lo hice» en la propuesta (sin dinero: las frases ya van sin cifras), para verlo desde otro sitio
+  function alcAsiParaGuardar(A) {
+    const X = A && A.auto;
+    if (!X || X.activo) return null;
+    const j = A.decision && A.decision.juicio;
+    const R = A.revision;
+    return { cuando: X.cuando || null, rondas: X.rondas, costo_centavos: Math.round(Number(X.costo) || 0),
+             ...(R && R.proceso ? { vueltas: Number(R.proceso.vueltas) || 1 } : {}),
+             resumen: j && j.resumen ? alcLimpioCorto(j.resumen, 1500) : "",
+             arreglados: X.arreglados.map(x => ({ de: x.de, motivo: x.motivo, como: x.como })).slice(0, 20),
+             preguntas: R && Array.isArray(R.hallazgos) ? R.hallazgos.filter(h => !h.decidido).map(h => alcLimpioCorto(h.motivo, 200)).slice(0, 20) : [] };
+  }
+  function alcCajaAsiLoHice() {
+    const A = alcActivo, X = A && A.auto;
+    if (!X || !A.armado || !(A.salida && A.salida.ia) || !A.contrato) return "";
+    const dec = A.decision || {}, j = dec.juicio || null, M = A.armado, R = A.revision;
+    const enMarcha = X.activo && X.fase !== "espera";
+    // la línea de por dónde va
+    let progreso = "";
+    if (X.activo) progreso = A.armado_en_marcha ? (X.rondas ? "Vuelvo a armar el contrato con lo que encontró la revisión…" : "La IA está armando el contrato…")
+      : R && R.en_marcha ? (X.rondas ? "La IA está revisando el contrato otra vez…" : "La IA está revisando el contrato…")
+      : X.fase === "papel" ? "Arreglando el papel punto por punto…"
+      : X.fase === "espera" ? "Te pregunté algo en la hoja: contéstalo y sigo." : "Trabajando en el contrato…";
+    // Lo que entendí: el resumen de la IA; sin juicio (un armado viejo), los hechos de la tarjeta
+    const entendi = j && j.resumen ? `<p class="alc-asi-texto" data-no-i18n>${esc(j.resumen)}</p>`
+      : (M.resumen || []).length ? `<ul class="alc-asi-lista">${M.resumen.slice(0, 6).map(x => `<li data-no-i18n>${esc(x.texto)}</li>`).join("")}</ul>`
+      : `<p class="lev-nota">La IA no escribió un resumen esta vez.</p>`;
+    // Cómo lo armé: las decisiones con su porqué (y las cláusulas adaptadas, quitadas y añadidas)
+    const decis = dec.motivos && Array.isArray(dec.motivos.juicio) ? dec.motivos.juicio : [];
+    // 14-oct (corrección tras la segunda revisión, hallazgo 6): cuando el contrato no sale completo, se dice en su propia línea
+    const formato = dec.bloques && dec.bloques.FIRMA_LIGERA ? `<p class="alc-ambar alc-asi-formato">El contrato sale ligero: sin la sección 9 (garantía, límite, change orders…), porque la hoja lo dice en «Firma:».</p>`
+      : dec.conFirma === false ? `<p class="alc-ambar alc-asi-formato">El contrato sale sin firma y sin la sección 9 (garantía, límite, change orders…), porque la hoja lo dice en «Firma:».</p>` : "";
+    const arme = formato + (decis.length ? `<ul class="alc-asi-lista">${decis.map(x => `<li${x.aplicado === false ? ` class="alc-juicio-no"` : ""} data-no-i18n>${esc(x.texto)}</li>`).join("")}</ul>`
+      : `<p class="lev-nota">Con la hoja y las reglas de la casa: no tuve que decidir nada aparte.</p>`);
+    // Lo que encontré y cómo lo arreglé
+    const lineaArreglo = x => x.de === "pedido"
+      ? `<li><span>Lo que me pediste:</span> <span data-no-i18n>«${esc(x.motivo)}»${x.como ? " → " + esc(x.como) : ""}</span>${x.como ? "" : ` <span>→ se lo mandé a la IA al volver a armar</span>`}</li>`
+      : `<li><span data-no-i18n>${esc(x.motivo)}${x.como ? " → " + esc(x.como) : ""}</span>${x.como ? "" : ` <span>→ lo arreglé al volver a armar</span>`}</li>`;
+    const hs = R && Array.isArray(R.hallazgos) ? R.hallazgos : [];
+    let encontre;
+    if (X.arreglados.length) encontre = `<ul class="alc-asi-lista alc-asi-arreglos">${X.arreglados.map(lineaArreglo).join("")}</ul>`;
+    else if (X.activo) encontre = `<p class="lev-nota">Todavía estoy en ello.</p>`;
+    else if (R && (R.error || R.fallo_vuelta)) encontre = `<p class="lev-nota">La revisión no salió: mira el detalle de la revisión, abajo.</p>`;
+    else if (!hs.length) encontre = `<p class="alc-verde">La IA no vio nada que arreglar.</p>`;
+    else encontre = `<p class="lev-nota">No pude arreglar nada sola: te lo pregunto abajo.</p>`;
+    if (X.notas.length) encontre += X.notas.map(t => `<p class="alc-gris">${esc(t)}</p>`).join("");
+    // Lo que necesito de ti: lo que quedó en la revisión, con botones cuando se puede
+    let necesito = "";
+    if (!X.activo) {
+      const items = hs.map((h, i) => {
+        // 18-oct (pliego §11.12): lo que la IA puso sola ya está en «Lo que encontré y cómo lo arreglé»
+        if (h.solo && h.decidido) return "";
+        if (h.decidido) return `<li class="alc-asi-pregunta alc-asi-contestada"><span data-no-i18n>${esc(h.motivo)}</span>
+          <div class="alc-verde"><span>Contestado:</span> <span data-no-i18n>${esc(h.decidido.como || "")}</span></div></li>`;
+        const pagos = alcCharlaDePagos(h) ? `<div class="alc-fixes">
+            <button type="button" class="alc-op" data-charla-pagos="${i}" data-valor="100">Pago único al terminar</button>
+            <button type="button" class="alc-op" data-charla-pagos="${i}" data-valor="50/50">Dos pagos 50/50</button>
+            <button type="button" class="alc-op" data-charla-pagos="${i}" data-valor="40/40/20">Tres pagos 40/40/20</button></div>` : "";
+        const permiso = !pagos && alcCharlaDePermiso(h) ? `<div class="alc-fixes">
+            <button type="button" class="alc-op" data-charla-permiso="${i}" data-valor="no hace falta">No hace falta permiso</button>
+            <button type="button" class="alc-op" data-charla-permiso="${i}" data-valor="cliente">Lo saca el cliente / contratista</button>
+            <button type="button" class="alc-op" data-charla-permiso="${i}" data-valor="nosotros">Lo saca Max Power</button></div>` : "";
+        const campo = alcCharlaCampoSinDato(h);
+        // 17-oct (pliego §11.9.1): la misma puerta que en la revisión
+        const seg = h.texto_nuevo ? alcPropuestaSegura(h) : null;
+        const dato = campo && !h.hecho ? `<div class="alc-charla-campo">
+            <input type="text" id="alc-asi-dato-${i}" maxlength="200" data-asi-dato-in="${i}" placeholder="Escribe el dato" aria-label="${esc(Alcance.CAMPOS_ARREGLO[campo].etiqueta)}">
+            <button type="button" class="alc-op" data-asi-dato="${i}">Escribir en la hoja</button></div>` : "";
+        return `<li class="alc-asi-pregunta" data-asi-pregunta="${i}">
+          <p data-no-i18n>${esc(h.motivo)}</p>
+          <p class="alc-sub">${esc(alcPorQueNoArreglo(h, X.rondas))}</p>
+          ${pagos}${permiso}${dato}
+          ${h.texto_nuevo ? `<p class="alc-rev-etq">${seg && !seg.ok ? "La IA propuso:" : "Cómo debería ir:"}</p><div class="alc-propuesta${seg && !seg.ok ? " alc-propuesta-no" : ""}" data-no-i18n>${esc(h.texto_nuevo)}</div>` : ""}
+          ${seg && !seg.ok ? `<p class="alc-gris alc-propuesta-insegura">${esc(alcTextoPropuestaInsegura(seg))}</p>` : ""}
+          ${h.aviso_arreglo ? `<p class="alc-gris alc-aviso-arreglo"><span>${esc(h.aviso_arreglo)}</span>${h.aviso_extra ? ` <span data-no-i18n>${esc(h.aviso_extra)}</span>` : ""}</p>` : ""}
+          <div class="alc-fixes">
+            ${h.texto_nuevo && seg && seg.ok ? `<button type="button" class="alc-op alc-auto" data-rev-arreglar="${i}">Arreglar según la IA</button>` : ""}
+            <button type="button" class="alc-op alc-hablar" data-asi-hablar="${i}">Hablar con la IA</button>
+          </div></li>`;
+      }).filter(Boolean);
+      // (14-oct, corrección, hallazgo 15: si la revisión no salió, no está «listo»)
+      necesito = items.length ? `<ul class="alc-asi-preguntas">${items.join("")}</ul>`
+        : R && (R.error || R.fallo_vuelta) ? `<p class="lev-nota">La revisión no salió: toca «Intentar otra vez» o «Seguir sin la IA» en la revisión, abajo.</p>`
+        : `<p class="alc-verde">Nada: está listo para mandar.</p>`;
+      // contestado en la hoja (un dato, los pagos, el permiso): hay que ponerlo en el contrato, una vez. 17-oct (pliego §11.4):
+      // también lo puesto en el papel con «Arreglar según la IA» (hace falta la revisión nueva), y las dudas no lo frenan
+      if ((hs.some(alcHechoSinPapel) || (R && R.papel_cambiado)) && !hs.some(h => !h.decidido && !h.hecho && h.gravedad === "rojo"))
+        necesito += `<div class="alc-botones"><button type="button" class="accion" data-rev-rearmar="1"${A.arreglando || A.armado_en_marcha ? " disabled" : ""}>Ponerlo en el contrato</button></div>`;
+    }
+    const K = alcCandadoRevision();
+    const puedeMandar = K.ok && !A.contrato.problemas.length && !enMarcha;
+    const costo = Math.round(Number(X.costo) || 0);
+    const g = alcGastoMes && alcGastoMes.tope > 0 ? alcGastoMes : null;
+    const cambio = A.auto_cambio ? `<div class="alc-leccion alc-asi-cambio">
+        <label class="alc-leccion-etq" for="alc-asi-cambio-texto">Qué le cambio</label>
+        <textarea id="alc-asi-cambio-texto" rows="3" maxlength="1500" placeholder="Por ejemplo: quita la nota del estacionamiento">${esc(A.auto_cambio.texto || "")}</textarea>
+        ${A.auto_cambio.nota ? `<p class="alc-gris">${esc(A.auto_cambio.nota)}</p>` : ""}
+        <div class="alc-fixes">
+          <button type="button" class="alc-op elegida" data-asi-cambio="aplicar">Hazlo</button>
+          <button type="button" class="alc-op" data-asi-cambio="cancelar">Cancelar</button>
+        </div>
+        <p class="lev-nota">La IA lo aplica en la hoja, en sus decisiones o en el papel (en ese orden), vuelve a revisar y aquí te cuento lo nuevo. El dinero no: ese lo pones tú en la hoja o en el estimado.</p>
+      </div>` : "";
+    return `<section class="cal-panel-card alc-asi" id="alc-asi" aria-labelledby="alc-asi-titulo">
+      <h3 id="alc-asi-titulo" class="cal-form-titulo">Así lo hice</h3>
+      ${progreso ? `<p class="alc-progreso alc-asi-progreso" role="status">${esc(progreso)}</p>` : ""}
+      <h4 class="alc-asi-sub">Lo que entendí</h4>${entendi}
+      <h4 class="alc-asi-sub">Cómo lo armé</h4>${arme}
+      <h4 class="alc-asi-sub">Lo que encontré y cómo lo arreglé</h4>${encontre}
+      ${X.activo ? "" : `<h4 class="alc-asi-sub">Lo que necesito de ti</h4>${necesito}`}
+      ${!X.activo && (A.correcciones || []).length ? `<h4 class="alc-asi-sub">Lo que la IA recuerda de esta obra</h4>
+        <ul class="alc-asi-lista alc-asi-recuerda">${A.correcciones.map(c => `<li data-no-i18n>${esc(alcLimpioCorto(c.motivo, 200))}</li>`).join("")}</ul>
+        <p class="lev-nota">Viaja cada vez que la IA vuelve a armar este contrato.</p>
+        <div class="alc-fixes"><button type="button" class="alc-op" data-asi-olvidar="1">Olvidar</button></div>` : ""}
+      <p class="alc-sub alc-asi-costo"><span>Lo que costó:</span> <span data-no-i18n>≈ $${(costo / 100).toFixed(2)}</span>${X.rondas ? ` <span>· rondas de arreglo:</span> <span data-no-i18n>${X.rondas}</span>` : ""}${R && R.proceso ? ` <span>· vueltas de revisión:</span> <span data-no-i18n>${Number(R.proceso.vueltas) || 1}</span>` : ""}${g
+        ? ` <span>· este mes:</span> <span data-no-i18n>$${((g.centavos || 0) / 100).toFixed(2)} / $${Math.round(g.tope / 100)}</span>` : ""}</p>
+      <div class="alc-botones alc-asi-botones">
+        <button type="button" class="accion" id="alc-asi-mandar"${puedeMandar ? "" : " disabled"}>Está bien, mándalo al portal</button>
+        <button type="button" class="accion secundaria" id="alc-asi-cambiar"${enMarcha || A.auto_cambio ? " disabled" : ""}>Cámbiale algo</button>
+      </div>
+      ${!puedeMandar && !enMarcha ? `<p class="lev-nota alc-asi-candado"><span>Para mandarlo:</span> <span>${esc(A.contrato.problemas.length ? "El papel tiene algo que revisar" : K.motivo)}</span></p>` : ""}
+      ${cambio}
+    </section>`;
+  }
+  // «Está bien, mándalo al portal»: con el candado abierto, se guarda en la propuesta y se abre la ventana de imprimir (el PDF
+  // que se sube con «Subir el PDF al portal», abajo). El portal solo acepta el PDF: eso no cambia.
+  async function alcMandarAlPortal() {
+    const A = alcActivo;
+    if (!A || !A.contrato) return;
+    const K = alcCandadoRevision();
+    if (!K.ok) { avisar("Candado: " + K.motivo, true); return; }
+    if (A.contrato.problemas.length) { avisar("El papel tiene algo que revisar", true); return; }
+    const ok = await alcGuardarPropuestaAhora({ silencioso: false });
+    if (!ok || alcActivo !== A) return;
+    alcImprimir();
+    const b = $("alc-al-portal");
+    if (b) b.scrollIntoView({ block: "center" });
+  }
+  // «Cámbiale algo»: lo que Edgar pide viaja al armado como una corrección más (y se queda, como las de la ronda 1); el armado
+  // todo seguido vuelve a revisar y «Así lo hice» cuenta lo nuevo. El dinero no: eso es de la hoja o del estimado.
+  async function alcCambiarAlgo() {
+    const A = alcActivo;
+    if (!A || !A.auto_cambio) return;
+    const caja = $("alc-asi-cambio-texto");
+    const texto = String(caja ? caja.value : (A.auto_cambio.texto || "")).replace(/\s+/g, " ").trim();
+    A.auto_cambio.texto = texto;
+    if (texto.length < 3) { avisar("Escribe qué quieres cambiar", true); return; }
+    if (A.armado_en_marcha || A.arreglando || (A.auto && A.auto.activo && A.auto.fase !== "espera")) { avisar("La IA ya está armando este contrato"); return; }
+    const conDinero = Alcance.esMontoArmar(texto) || Alcance.traeDineroEstricto(texto) || Alcance.leccionConMonto(texto) || /\$\s?\d|\d\s?\$/.test(texto)
+      || Alcance.comoSeArregla({ cita: texto, motivo: texto, donde: "" }).porque === "dinero";
+    const corr = conDinero ? [] : Alcance.correccionesParaArmar([{ cita: "", motivo: "Edgar pide este cambio: " + texto, donde: "" }], alcBaseTapada(A));
+    if (!corr.length) {
+      A.auto_cambio.nota = "Eso es dinero: el precio y los pagos los pones tú en la hoja (o salen del estimado). No se lo mandé a la IA.";
+      pintarAlcance(); return;
+    }
+    const previo = A.auto;
+    A.auto_cambio = null;
+    alcSumarCorrecciones(A, corr);
+    alcRecoger();
+    await alcArmarTodo("cambio", previo, { texto, corr: corr[0] });
+  }
 
   // ============================================================
   // 13-oct · «Hablar con la IA» en cada hallazgo (docs/PLIEGO-CORREGIR-CON-IA.md §1)
@@ -18777,6 +22024,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       `· Sección: ${h.donde ? h.donde + (titulo ? " · " + titulo : "") : "(sin sección)"}`,
       `· Dice el papel: «${limpio(h.cita)}»`,
       `· Por qué lo marcó: ${limpio(h.motivo)}`,
+      // 17-oct (pliego §11.2.5): lo que el revisor propuso («Cómo debería ir»), para que la IA parta de ahí
+      ...(h.texto_nuevo ? [`· La IA propuso: «${limpio(h.texto_nuevo)}»`] : []),
       ...(conLineas && L.n ? [`· Viene de la línea ${L.n} de mi hoja: «${L.linea}»`] : []),
       ...(delPrograma ? [`· Esto lo escribe el programa con la plantilla, no la IA: se cambia en la hoja con la línea ${delPrograma} (yo tengo botones para eso). Aconséjame qué conviene.`] : []),
       ...(conFicha ? [`Lo que la app sabe de la obra (sin dinero): ${alcFichaEnUnaLinea(ficha) || "(nada)"}`] : []),
@@ -18785,9 +22034,11 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       // (pliego §8.1, versión 3) la IA tiene manos: el texto que marca entre [[NUEVO]] y [[/NUEVO]] lo pone el programa
       // en el papel en el acto. Sin «¿lo dejamos así?»; la orden se guarda además con recordar, para el rearmado.
       "Cómo quiero que trabajes: evalúa lo que te diga, dime si tiene sentido con la hoja, la ficha, el código y la ley de " +
-      "Florida, y recomiéndame. Cuando tengas el texto para el papel, escríbelo exacto entre las marcas [[NUEVO]] y " +
-      "[[/NUEVO]], en inglés y sin montos: el programa lo pone en el papel en el acto, en el sitio de la frase marcada " +
-      "(si te pido otro cambio en este punto, vuelve a poner las marcas con el texto entero). No preguntes «¿lo dejamos " +
+      // 17-oct (pliego §11.2.5): el párrafo ENTERO entre las marcas (el programa cambia el párrafo entero: sin colas partidas)
+      "Florida, y recomiéndame. Cuando tengas el texto para el papel, escribe entre [[NUEVO]] y [[/NUEVO]] el párrafo " +
+      "ENTERO como tiene que quedar, empezando por su número y título si lo tiene, en inglés y sin montos: el programa " +
+      "cambia el párrafo entero en el papel en el acto (si te pido otro cambio en este punto, vuelve a poner las marcas " +
+      "con el párrafo entero). No preguntes «¿lo dejamos " +
       "así?»: pon el texto y, si quieres, di en una línea por qué. Guarda también la orden para esta obra con la " +
       `herramienta recordar (sobre = ${pid || "la obra"}), una frase clara de cómo tiene que quedar ese punto, para que ` +
       "no se pierda si el contrato se vuelve a armar. Si te pido algo que no se puede escribir en el papel (pagos, " +
@@ -18845,11 +22096,17 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         </div>
         <p class="lev-nota">El dato queda en la hoja; la ficha de la obra la arreglas en su pantalla.</p>
       </div>` : "";
+    // 17-oct (pliego §11.9, P2): lo que la IA escribió y quita una protección (o toca el dinero) se queda a la vista sin poner, con su
+    // botón aparte; al tocarlo se pregunta otra vez con el motivo
+    const forzar = C.pendiente && C.pendiente.nuevo ? `<div class="alc-charla-chips alc-charla-forzar">
+        <div class="alc-propuesta alc-propuesta-no" data-no-i18n>${esc(C.pendiente.nuevo)}</div>
+        <div class="alc-fixes"><button type="button" class="alc-op" data-charla-forzar="${i}"${dis}>${esc(alcTextosForzar(C.pendiente).boton)}</button></div>
+      </div>` : "";
     return `<div class="alc-leccion alc-charla" data-charla="${i}">
       <div class="alc-charla-hilo" aria-live="polite">${hilo}${pensando}</div>
       ${C.error ? `<div class="alc-gris">${esc(C.error)}</div>` : ""}
       ${C.nota ? `<div class="alc-gris alc-charla-nota"><span>${esc(C.nota)}</span>${C.nota_extra ? ` <span data-no-i18n>${esc(C.nota_extra)}</span>` : ""}</div>` : ""}
-      ${pagos}${permiso}${dato}
+      ${forzar}${pagos}${permiso}${dato}
       <label class="alc-leccion-etq" for="alc-charla-texto-${i}">Lo que le dices a la IA</label>
       <textarea id="alc-charla-texto-${i}" data-charla-texto="${i}" rows="3" maxlength="4000" placeholder="Dile qué quieres que diga ahí, o pregúntale qué recomienda"${dis}>${esc(C.borrador || "")}</textarea>
       <div class="alc-fixes">
@@ -18912,7 +22169,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     }
     nuevos.push({ rol: "user", texto: texto.slice(0, 4000) });
     C.mensajes.push(...nuevos);
-    C.borrador = ""; C.en_marcha = true; C.error = null; C.nota = null; C.avance = null;
+    C.borrador = ""; C.en_marcha = true; C.error = null; C.nota = null; C.avance = null; C.pendiente = null;
     alcPintarCharla(i);
     const sigueViva = () => alcActivo === A && A.revision === R;
     const contexto = { pantalla: "alcance", proyecto_id: A.proyecto && A.proyecto.id ? String(A.proyecto.id) : null,
@@ -18947,8 +22204,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         if (puso === "puesto" || (guardo && alcEsDePapel(h))) { if (guardo) C.lecciones++; }
         // con un monto (o un cambio que el papel no aguanta, o lo que pone el programa) no se decide solo: la nota tiene
         // que quedar a la vista
-        else if (["monto", "barrido", "pagos", "permiso"].includes(puso)) { if (guardo) C.lecciones++; }
-        else if (guardo) { C.lecciones++; if (suya) alcDecidir(j, resp, "charla"); }
+        else if (["monto", "barrido", "pagos", "permiso", "proteccion", "ley"].includes(puso)) { if (guardo) C.lecciones++; }
+        // 17-oct (pliego §11.9.2): decidido por la charla sin cambiar el papel = perdonado (no vuelve a salir)
+        else if (guardo) { C.lecciones++; if (suya && alcDecidir(j, resp, "charla")) alcPerdonarSiNoCambio(j); }
         else if (C.decidir_al_contestar && !puso) C.nota = "La IA todavía no guardó la orden: dile «dale» (o «guárdalo así») para que el contrato cambie en este punto.";
       } else if (r && r.error === "sin_llave") { devolver(); C.error = "Todavía no me han conectado la llave del asistente. Edgar tiene que ponerla en Supabase (ANTHROPIC_API_KEY)."; }
       else { devolver(); C.error = "No pude contestar eso. Inténtalo otra vez en un momento."; }
@@ -19012,9 +22270,12 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     }
     const como = ia ? ia.texto : suyo ? suyo.texto : borrador || h.hecho || "";
     alcDecidir(i, como, ia ? "charla" : (h.hecho ? "hoja" : "boton"));
+    // 17-oct (pliego §11.9.2): sin cambiar el papel ni la hoja, «Decidido» perdona el punto, como hacía «Lo dejo así»
+    const perdonado = alcPerdonarSiNoCambio(i);
     if (C) C.borrador = "";
     pintarAlcance();
-    if (!ia && !h.hecho) avisar("Apuntado como decidido. Ojo: no se lo dijiste a la IA, así que el papel no cambia en este punto. Si quieres que cambie, ábrelo y díselo.");
+    if (!ia && !h.hecho) avisar(perdonado ? "Apuntado como decidido: no te lo vuelvo a marcar. El papel no cambia en este punto; si quieres que cambie, ábrelo y díselo a la IA."
+                                         : "Apuntado como decidido. Ojo: no se lo dijiste a la IA, así que el papel no cambia en este punto. Si quieres que cambie, ábrelo y díselo.");
   }
 
   // Lo que la charla escribe en la hoja (pagos, permiso): a la vista, como un arreglo; la app la apunta como suya
@@ -19134,7 +22395,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const s = String(resp || "");
     while ((m = rx.exec(s))) ult = m[1];
     if (ult === null) return null;
-    return ult.replace(/\r/g, "").split("\n").map(l => l.replace(/[ \t ]+/g, " ").trim()).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    // 17-oct (Gong): la letra (c) de una lista llegó como «©» («…; and © any permit registration fee»): vuelve a ser (c)
+    return ult.replace(/(^|[\s;:,])©(?=\s)/g, "$1(c)").replace(/\r/g, "").split("\n").map(l => l.replace(/[ \t ]+/g, " ").trim()).join("\n").replace(/\n{3,}/g, "\n\n").trim();
   }
   // ¿Trae dinero el texto que va a entrar derecho al papel? (regla 3: un texto con monto nunca entra al papel)
   // La regla del armado entera (Alcance.dineroEnTextoArmar: una cifra con forma de monto solo vale si la IA la vio en
@@ -19143,10 +22405,22 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   //   · un número escrito con letras (hundred, thousand, million, «twelve grand», «seis mil»): una cláusula no lo necesita;
   //   · una cifra de 3 o más dígitos (o con coma de miles, o con decimales) en un texto que habla de pagar (pay, due,
   //     remainder, price…), salvo una medida («200 amps», «120 days») o la edición de un código («NEC 2023»).
-  const ALC_RX_PAGAR = /\b(?:pay|pays|paid|paying|payable|due|owe[sd]?|owing|remainder|remaining|refunds?|reimburse\w*)\b/i;
+  // (duodécima revisión) también «billed at 150», «charged 150», «invoiced at 150», «as a service call at 185»: la cifra de 3 o más
+  // dígitos detrás de esas palabras es una tarifa (lo seguro: la charla no la pone, la pone el programa)
+  const ALC_RX_PAGAR = /\b(?:pay|pays|paid|paying|payable|due|owe[sd]?|owing|remainder|remaining|refunds?|reimburse\w*|bill(?:s|ed|ing)?|charged|charging|invoic\w*|service calls?)\b/i;
   const ALC_RX_CIFRA_EN_LETRAS = /\b(?:hundreds?|thousands?|millions?|billions?|doscientos|trescientos|cuatrocientos|quinientos|seiscientos|setecientos|ochocientos|novecientos|mill[oó]n(?:es)?)\b|(?:\d|\b(?:a|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty))\s*grand\b|\b(?:un|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|veinte|treinta|cuarenta|cincuenta|cien)\s+mil\b/i;
   function alcNuevoConMonto(t, base) {
-    const s = String(t || "");
+    // (décima revisión) «as stated in 7.3», «(see 9.12)», «under 9.11»: si el papel trae esa sección, se lee como «Section 7.3» (la forma
+    // que ya entienden las reglas del dinero), salvo que detrás venga una tarifa («per trip», «each», «/»)
+    const seccionesPapel = new Set([...String(base || "").matchAll(/(?:^|\n)\s*(\d{1,2})\.(\d{1,2})\s+[A-Z]/g)].map(x => x[1] + "." + x[2]));
+    const s = String(t || "").replace(/\b(see|under|in|per|of|by|from|with)\s+((?:[1-9]|10)\.\d{1,2})\b(?!\s*(?:per\b|each\b|ea\b|\/|dollars?\b))/gi,
+      (m, w, num) => seccionesPapel.has(num) ? w + " Section " + num : m)
+      // (undécima revisión) las leyes de Florida como las escribe la plantilla: «F.S. 713.06», «Fla. Stat. 489.126», «s. 713.06», «ss.
+      // 501.021», «under 713.015» (si el papel la cita) → «Section …»; «Chapter 713» / «ch. 489» se quedan y no cuentan como monto
+      .replace(/(?:\bF\.\s?S\.|\bFla\.\s*Stat\.(?:\s*(?:§|s\.))?|\bss?\.)\s*(\d{3}\.\d{1,3})\b(?!\s*(?:per\b|each\b|ea\b|\/|dollars?\b))/gi, (m, num) => "Section " + num)
+      .replace(/(?:\bFla\.\s*Stat\.\s*)?\bch\.\s*(\d{3})\b(?!\.\d|\s*(?:per\b|each\b|ea\b|\/|dollars?\b))/gi, (m, num) => "Chapter " + num)
+      .replace(/\b(under|per|of|in|see|pursuant to|by)\s+(\d{3}\.\d{2,3})\b(?!\s*(?:per\b|each\b|ea\b|\/|dollars?\b))/gi,
+        (m, w, num) => new RegExp("(?:^|[^\\d.])" + num.replace(".", "\\.") + "(?![\\d])").test(String(base || "")) ? w + " Section " + num : m);
     if (/\$\s?\d/.test(s) || /\d\s?\$/.test(s)) return true;
     if (Alcance.traeDineroEstricto(s) || Alcance.esMontoArmar(s) || Alcance.dineroEnTextoArmar(s, String(base || ""))) return true;
     if (Alcance.RX_MASCARA.test(s) || /\[\s*monto/i.test(s)) return true;
@@ -19157,6 +22431,28 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         const n = m[0].replace(/,+$/, ""), a = m.index, antes = s.slice(0, a), despues = s.slice(a + n.length);
         if (n.replace(/\D/g, "").length < 3 && !/,\d{3}|\.\d/.test(n)) continue;
         if (/[A-Za-z0-9#\/.\-]$/.test(antes) || /^[A-Za-z0-9\/\-]/.test(despues)) continue;      // L1234, 813-555-1234, 200A
+        // 17-oct (Gong): el número de una sección del contrato no es dinero: «9.11 Electric utility. …paid by the Client» al
+        // empezar el texto (seguido de su título), o detrás de «Section(s) / § / clause» («Sections 7.1 and 9.4»).
+        // (revisiones) solo secciones de la 1 a la 10; nunca con una tarifa detrás («per trip», «each», «/ft»); al principio, solo si
+        // lo que sigue es un título corto con punto y sin palabra de cobro («9.50 Additional trip charge applies…» es dinero); y en una
+        // lista detrás de una coma, solo si sigue la lista («Sections 7.1, 9.4 and 9.5»; «Section 7.4, 9.50 is charged» es dinero)
+        if (/^(?:[1-9]|10)\.\d{1,2}(?:\.\d{1,2})?$/.test(n) && !/^\s*(?:per\s+(?:an?\s+)?(?:additional\s+|extra\s+)?(?:trips?|visits?|foot|feet|ft|lf|hours?|hr|days?|mobilizations?|units?|re-?inspections?|devices?|circuits?|fixtures?|openings?|runs?|each)\b|each\b|ea\b|\/|dollars?\b|usd\b|bucks\b)/i.test(despues)) {
+          const titulo = /^\s*$/.test(antes) ? despues.match(/^\s+([A-Z][^.]{0,60})\./) : null;
+          // (quinta revisión) si el número es una sección del papel (sale como encabezado en la base) o la que sigue a la última de su
+          // sección, el título puede hablar de cobros («9.12 Re-inspection fees.», «9.12 Additional trips.»): es la cláusula, no un monto
+          const secciones = new Set([...String(base || "").matchAll(/(?:^|\n)\s*(\d{1,2})\.(\d{1,2})\s+[A-Z]/g)].map(x => x[1] + "." + x[2]));
+          const [sn, sd] = n.split(".").map(Number);
+          const ultima = Math.max(0, ...[...secciones].filter(x => Number(x.split(".")[0]) === sn).map(x => Number(x.split(".")[1])));
+          const delPapel = secciones.has(n) || (ultima > 0 && sd === ultima + 1);
+          const alPrincipio = !!titulo && (delPapel || !/\b(?:charges?|fees?|trips?|visits?|payable|costs?|prices?|rates?|dollars?|paid|pay|due|billed?)\b/i.test(titulo[1]));
+          const enLista = /(?:\bsections?|§|\bclauses?|\bparagraphs?|\bsecci[oó]n(?:es)?)\s*(?:\d{1,2}(?:\.\d{1,2})*(?:\([a-z]\))?\s*(?:,|\band\b|\bor\b|\bthrough\b|\bto\b|\by\b)\s*)*$/i.test(antes);
+          const trasComa = /,\s*$/.test(antes);
+          if (alPrincipio || (enLista && (!trasComa || /^\s*(?:,|;|\)|\.|and\b|or\b|through\b|to\b|y\b|$)/i.test(despues)))) continue;
+        }
+        // (décima revisión) un artículo o sección del NEC («NEC 210.12(D)», «440.14», «Article 220», «NFPA 70») no es dinero: detrás de
+        // NEC / NFPA / Article / Art. / Section / §, con su letra entre paréntesis detrás, o porque el papel ya lo cita
+        if (/^\d{3}(?:\.\d{1,3})?$/.test(n) && (/(?:\b(?:NEC|NFPA(?:\s*70)?|Articles?|Art\.?|Sections?|Chapters?|ch\.|Part\s+[IVX]+\s+of\s+Chapter)|§|\bFla\.\s*Stat\.\s*(?:ch\.)?)\s*(?:\d{3}(?:\.\d{1,3})?(?:\([A-Za-z0-9]+\))*\s*(?:,|and|or|through|to)\s*)*$/i.test(antes)
+            || /^\([A-Z0-9]{1,3}\)/.test(despues) || (/\./.test(n) && new RegExp("(?:^|[^\\d.])" + n.replace(".", "\\.") + "(?![\\d])").test(String(base || ""))))) continue;
         if (Alcance.RX_UNIDAD_ARMAR.test(despues) || Alcance.RX_UNIDAD_ARMAR_MAY.test(despues)) continue;  // 200 amps, 120 V
         if (/^(?:19|20)\d\d$/.test(n) && /\b(?:NEC|NFPA(?:\s*\d+)?|FBC|IBC|IRC|code|edition)\s*$/i.test(antes)) continue;
         return true;
@@ -19177,6 +22473,51 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   }
   // Un punto que la IA ya cambió en el papel
   const alcEsDePapel = h => !!(h && h.decidido && h.decidido.de === "papel");
+
+  // 17-oct (pliego §11.1, el gemelo de limpiarHallazgos del cerebro): la propuesta del revisor (texto_nuevo, el párrafo
+  // entero como tiene que quedar) solo vale si no trae dinero (el mismo candado que la charla: alcNuevoConMonto con las
+  // cifras que la IA vio, el papel tapado y la cita), ni «{{», ni «<», ni más de 1,500 letras, ni está vacía. Si no vale,
+  // null: se tira la propuesta, nunca el hallazgo.
+  function alcTextoNuevoOk(t, html, cita) {
+    if (typeof t !== "string") return null;
+    // 18-oct (pliego §11.11.5): la letra (c) de una lista que llegó como «©» vuelve a ser «(c)», como en el texto de la charla
+    const x = t.replace(/\r/g, "").split("\n").map(l => l.replace(/[ \t]+/g, " ").trim()).join("\n").replace(/\n{3,}/g, "\n\n").trim()
+      .replace(/(^|[\s;:,])©(?=\s|$)/g, "$1(c)");
+    if (!x || x.length > 1500 || x.includes("{{") || x.includes("<")) return null;
+    // (integración 17-oct) la misma regla que textoNuevoDelRevisor del cerebro: cualquier «$», «##», «#.#» o «[MONTO]» tira la propuesta
+    if (/\[\s*monto\s*\]|\$|#{2,}|#[.,]#/i.test(x) || Alcance.esMontoArmar(x) || Alcance.traeDineroEstricto(x)) return null;
+    if (alcNuevoConMonto(x, alcBaseDeCifras(html, cita))) return null;
+    return x;
+  }
+  // 17-oct (pliego §11.9.5): ¿la propuesta que se tiró traía dinero? (las mismas señales que alcTextoNuevoOk)
+  function alcPropuestaConMonto(t, html, cita) {
+    const x = String(t || "").replace(/\s+/g, " ").trim();
+    if (!x) return false;
+    try {
+      return /\[\s*monto\s*\]|\$|#{2,}|#[.,]#/i.test(x) || Alcance.esMontoArmar(x) || Alcance.traeDineroEstricto(x) || alcNuevoConMonto(x, alcBaseDeCifras(html, cita));
+    } catch { return false; }
+  }
+  // Los hallazgos que pasaron el juez (Alcance.comprobarHallazgos) recuperan la propuesta del revisor (texto_nuevo y
+  // vale_para, de la lectura cruda: el juez de la app no la copia), ya limpia. `vale_para` es «siempre» solo si lo dijo el
+  // revisor; si no, «obra». h.propuesta_tirada = el revisor propuso algo que no pasó (dinero, «<», demasiado largo).
+  function alcPropuestasDelRevisor(hallazgos, crudos, html) {
+    const cs = Array.isArray(crudos) ? crudos : [];
+    (Array.isArray(hallazgos) ? hallazgos : []).forEach(h => {
+      if (!h) return;
+      const c = cs.find(x => x && typeof x === "object" && String(x.cita || "").trim().slice(0, 160) === h.cita);
+      // (integración 17-oct) Alcance.comprobarHallazgos ya trae la propuesta limpia (null si la tiró); si la tiró, se mira la
+      // cruda solo para saber que el revisor propuso algo que no pasó (h.propuesta_tirada)
+      const tieneH = typeof h.texto_nuevo === "string" && h.texto_nuevo.trim();
+      const crudo = tieneH ? h.texto_nuevo : c && c.texto_nuevo !== undefined ? c.texto_nuevo : null;
+      const vp = tieneH && h.vale_para !== undefined ? h.vale_para : c ? c.vale_para : null;
+      const ok = alcTextoNuevoOk(crudo, html, h.cita);
+      h.texto_nuevo = ok;
+      h.vale_para = ok ? (vp === "siempre" ? "siempre" : "obra") : null;
+      // 17-oct (pliego §11.9.5): y por qué se tiró, para que la línea gris diga la verdad («monto» o lo demás)
+      if (!ok && typeof crudo === "string" && crudo.trim()) h.propuesta_tirada = alcPropuestaConMonto(crudo, html, h.cita) ? "monto" : "formato";
+    });
+    return hallazgos;
+  }
 
   // El texto plano con el que se busca: espacios (y la «|» con la que la revisión separa las celdas) juntos en uno,
   // en minúsculas. Letra a letra, para poder volver al sitio exacto del papel.
@@ -19292,8 +22633,20 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   }
   // Pone `nuevo` en el sitio de `cita` dentro del documento ya leído (`P` = su texto plano), como texto (nunca HTML).
   // Si la cita va partida en varios nodos (una negrita en medio), el texto nuevo va en el primero y los demás pierden su
-  // trozo. Devuelve { ok: true } o { error: "no_esta" | "varias" | "monto" }. No pasa el barrido: eso lo hace quien llama.
-  function alcPonerEnDoc(P, cita, nuevo, donde, exacta) {
+  // trozo. Devuelve { ok: true, ambito, ancla? } o { error: "no_esta" | "varias" | "monto" }. No pasa el barrido: eso lo hace
+  // quien llama.
+  // 17-oct (pliego §11.3, la «cola partida» del 2.8 de Gong): con `ambito` "parrafo", lo que se cambia es el BLOQUE entero
+  // donde cae la cita (el P, el LI, la celda), no solo la cita: así no queda media frase vieja pegada detrás. Se conserva el
+  // <strong> del principio (el número y el título: «7.1 Permit.»). Si la cita cae en dos bloques (dos celdas, dos párrafos)
+  // o el bloque lleva otros bloques dentro, se cambia solo la cita, como antes (y se dice: ambito "frase"). Con `ambito`
+  // "auto" (el [[NUEVO]] de la charla), es "parrafo" cuando el texto nuevo empieza por la cabeza del bloque (su número y
+  // título, o sus cuatro primeras palabras); si no, "frase". `ancla` = { donde, cabeza }: la sección y la cabeza del bloque,
+  // para volver a encontrarlo aunque su frase cambie con otra plantilla.
+  // 20-oct (pliego §12.4 C.2): dos ámbitos más, para la orden de Edgar. «anadir» pone un bloque NUEVO (un <li> o un <p> igual al de
+  // la cita) DESPUÉS del bloque de la cita; sin cita, al final de la sección `donde`. «quitar» quita el bloque de la cita (nunca un
+  // título de sección, un bloque con dinero ni texto de ley). `negrita` (opcional) es el título que el punto pide en negrita.
+  function alcPonerEnDoc(P, cita, nuevo, donde, exacta, ambito, negrita) {
+    if (ambito === "anadir" || ambito === "quitar") return alcAnadirOQuitar(P, cita, nuevo, donde, exacta, ambito, negrita);
     const c = alcPlanoDeTexto(cita);
     if (/\[monto/.test(c)) return { error: "monto" };            // la cita trae un monto del programa (tapado)
     if (c.length < 8 || typeof nuevo !== "string" || !nuevo.trim()) return { error: "no_esta" };
@@ -19306,13 +22659,460 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     const viejo = ni === nf ? P.nodos[ni].data.slice(oi, of + 1)
       : [P.nodos[ni].data.slice(oi), ...P.nodos.slice(ni + 1, nf).map(x => x.data), P.nodos[nf].data.slice(0, of + 1)].join(" ");
     if (alcPapelConMonto(viejo)) return { error: "monto" };
+    if (ambito === "parrafo" || ambito === "auto") {
+      const b0 = alcBloqueDeNodo(P.nodos[ni]), b1 = alcBloqueDeNodo(P.nodos[nf]);
+      // (corrección de los revisores, 20-oct) un PÁRRAFO entero nunca se pone sobre una cita que junta dos bloques: vaciaría los de en
+      // medio y pegaría el nuevo dentro del viejo
+      if (ambito === "parrafo" && b0 !== b1) return { error: "dos_parrafos" };
+      if (b0 && b0 === b1 && alcBloqueCambiable(b0)) {
+        const cab = alcCabezaDe(b0, 6);
+        let entero = ambito === "parrafo";
+        if (!entero) {
+          const c4 = cab.strong ? cab.texto : alcCabezaDe(b0, 4).texto;
+          entero = alcEmpiezaPorCabeza(nuevo, c4);
+        }
+        if (entero) {
+          // el bloque entero no puede llevar un monto del programa (un hito, un precio): eso no se toca desde aquí
+          if (alcPapelConMonto(b0.textContent)) return { error: "monto" };
+          const ancla = alcAnclaDe(b0, alcSeccionEn(P, s) || alcLimpioCorto(donde, 20), cab.texto);
+          // 17-oct (pliego §11.9.4): el texto que tenía el párrafo antes, para quitar los arreglos de frase que quedan superados
+          const viejo_bloque = String(b0.textContent || "").replace(/\s+/g, " ").trim();
+          alcCambiarBloque(b0, nuevo, negrita);
+          return { ok: true, ambito: "parrafo", ancla, viejo_bloque };
+        }
+      }
+    }
     if (ni === nf) { const d = P.nodos[ni].data; P.nodos[ni].data = d.slice(0, oi) + nuevo + d.slice(of + 1); }
     else {
       P.nodos[ni].data = P.nodos[ni].data.slice(0, oi) + nuevo;
       for (let k = ni + 1; k < nf; k++) P.nodos[k].data = "";
       P.nodos[nf].data = P.nodos[nf].data.slice(of + 1);
     }
-    return { ok: true };
+    return { ok: true, ambito: "frase" };
+  }
+  // ---- 20-oct (pliego §12.4 C.2): añadir y quitar un bloque entero ----
+  // El ancla de un bloque: su sección, su cabeza y su número de orden entre los bloques de esa sección (ancla.numero: si dos bloques
+  // de la sección tienen la misma cabeza, gana el que esté más cerca de ese número; alcBloquePorAncla)
+  function alcAnclaDe(b, donde, cabeza) {
+    const a = { donde, cabeza };
+    const n = alcNumeroEnSeccion(b);
+    if (n) a.numero = n;
+    return a;
+  }
+  // Los bloques que se pueden cambiar, cada uno con su sección (la del <h2 class="section"> de arriba) y su número de orden en ella
+  function alcBloquesConSeccion(doc) {
+    const raiz = doc.body || doc.documentElement;
+    const tw = doc.createTreeWalker(raiz, NodeFilter.SHOW_ELEMENT);
+    const out = [], cuenta = {};
+    let sec = "", n;
+    while ((n = tw.nextNode())) {
+      if (n.nodeName === "H2" && /(?:^|\s)section(?:\s|$)/.test(n.getAttribute("class") || "")) {
+        const sp = n.querySelector("span.num");
+        sec = sp ? String(sp.textContent || "").replace(/\s+/g, " ").trim().slice(0, 12) : "";
+        continue;
+      }
+      if (!alcBloqueCambiable(n)) continue;
+      cuenta[sec] = (cuenta[sec] || 0) + 1;
+      out.push({ b: n, sec, numero: cuenta[sec] });
+    }
+    return out;
+  }
+  function alcNumeroEnSeccion(b) {
+    if (!b || !b.ownerDocument) return 0;
+    const x = alcBloquesConSeccion(b.ownerDocument).find(y => y.b === b);
+    return x ? x.numero : 0;
+  }
+  // ¿Es de ley este bloque? (una página legal, un título de ley o un texto con las marcas de la ley)
+  function alcBloqueDeLey(b) {
+    const d = alcDatosDeBloque(b);
+    return !!(d.legal || alcClaveDeTitulo(d.cabeza) === "ley" || ALC_RX_LEY.test(d.titulo + " " + d.texto));
+  }
+  // El bloque donde cae la cita (uno solo, que se pueda cambiar) o { error }
+  function alcBloqueDeCitaEn(P, cita, donde, exacta) {
+    const c = alcPlanoDeTexto(cita);
+    if (/\[monto/.test(c)) return { error: "monto" };
+    if (c.length < 8) return { error: "no_esta" };
+    const L = alcBuscarCita(P, c, donde, exacta);
+    if (L.error) return L;
+    let s = L.ini; while (s < L.fin && (!P.donde[s] || P.texto[s] === " ")) s++;
+    let e = L.fin - 1; while (e >= s && (!P.donde[e] || P.texto[e] === " ")) e--;
+    if (s > e) return { error: "no_esta" };
+    const b0 = alcBloqueDeNodo(P.nodos[P.donde[s][0]]), b1 = alcBloqueDeNodo(P.nodos[P.donde[e][0]]);
+    if (!b0 || b0 !== b1 || !alcBloqueCambiable(b0) || !/^(?:P|LI)$/.test(b0.nodeName)) return { error: "no_esta" };
+    return { b: b0, sec: alcSeccionEn(P, s) };
+  }
+  // El último <li> o <p> de la sección `donde` (para «anadir» sin cita): después de él va el bloque nuevo
+  function alcUltimoDeSeccion(doc, donde) {
+    const xs = alcBloquesConSeccion(doc).filter(x => alcEnSeccion(x.sec, donde) && /^(?:P|LI)$/.test(x.b.nodeName) && !x.b.closest(ALC_PAGINA_LEGAL));
+    if (!xs.length) return null;
+    // si la sección tiene una lista (las exclusiones de la §3, los renglones de la §2), lo nuevo va como viñeta al final de ella
+    const lis = xs.filter(x => x.b.nodeName === "LI");
+    return (lis.length ? lis[lis.length - 1] : xs[xs.length - 1]).b;
+  }
+  // Un bloque nuevo igual al de `modelo` (la misma etiqueta y la misma clase), con el texto `nuevo`; si los bloques de ahí llevan
+  // título en negrita, el título del texto nuevo también (alcCambiarBloque)
+  function alcBloqueNuevoComo(modelo, nuevo, negrita) {
+    const doc = modelo.ownerDocument, nb = doc.createElement(modelo.nodeName);
+    ["class", "style"].forEach(k => { if (modelo.getAttribute(k)) nb.setAttribute(k, modelo.getAttribute(k)); });
+    const cabM = alcCabezaDe(modelo, 6), conTitulo = !!cabM.strong;
+    const T = alcTituloDelNuevo(nuevo, negrita);
+    if (T && (T.dado || conTitulo)) {
+      // (corrección de los revisores) si los de al lado van numerados («7.6 …») y el texto nuevo no trae número, lleva el del modelo:
+      // alcRenumerar le da después el que le toca
+      const numM = cabM.strong ? (String(cabM.strong.textContent).match(ALC_RX_NUMERO_CABEZA) || [""])[0].trim() : "";
+      const num = T.numero || (/^\d{1,2}\.\d{1,2}\.?$/.test(numM) ? numM : "");
+      const st = doc.createElement("strong"); st.textContent = (num ? num + " " : "") + T.titulo; nb.appendChild(st);
+      if (T.resto) nb.appendChild(doc.createTextNode(" " + T.resto));
+    } else nb.appendChild(doc.createTextNode(String(nuevo || "").replace(/^\s*[-*•▪◦]\s+/, "").trim()));
+    return nb;
+  }
+  // ---- (corrección de los revisores, 20-oct) la exclusión general la última de la §3, y la numeración seguida ----
+  // La sección de un bloque (la del <h2 class="section"> de arriba)
+  function alcSeccionDeBloque(b) {
+    const x = b && b.ownerDocument ? alcBloquesConSeccion(b.ownerDocument).find(y => y.b === b) : null;
+    return x ? x.sec : "";
+  }
+  // ¿Es esta viñeta la exclusión general («Any work not … described in Section 2», la de la hoja sobre los planos) o su cola («Repair or
+  // warranty of existing electrical equipment…»)? La v3.16 la pone siempre la última de la §3 (pliego §12.4 C.3).
+  function alcEsExclusionGeneral(li) {
+    if (!li || li.nodeName !== "LI") return false;
+    const t = Alcance.norma(String(li.textContent || "").replace(/\s+/g, " ").trim());
+    return Alcance.RX_EXCL_FUERA_TODAS.test(t) || /^repair or warranty of existing electrical equipment\b/.test(t);
+  }
+  // Mete `nb` después de `modelo`; en la §3, nunca detrás de la exclusión general: si el modelo es ella (o su cola), lo nuevo va justo antes
+  function alcMeterDespues(modelo, nb, sec) {
+    let ref = modelo.nextSibling;
+    if (modelo.nodeName === "LI" && /^3(?:\.|$)/.test(String(sec || alcSeccionDeBloque(modelo)))) {
+      let primera = null;
+      for (let x = modelo; x && x.nodeName === "LI" && alcEsExclusionGeneral(x); x = x.previousElementSibling) primera = x;
+      if (primera) ref = primera;
+    }
+    modelo.parentNode.insertBefore(nb, ref);
+  }
+  // Los números «S.N» de los párrafos de la sección S (en el orden del papel): [{ b, strong, n }]
+  function alcNumerados(doc, sec) {
+    const top = String(sec || "").split(".")[0];
+    if (!/^\d{1,2}$/.test(top)) return [];
+    const rx = new RegExp("^\\s*" + top + "\\.(\\d{1,2})(?=[.\\s])");
+    return alcBloquesConSeccion(doc).filter(x => x.sec === top).map(x => {
+      const st = alcCabezaDe(x.b, 6).strong, m = st ? String(st.textContent).match(rx) : null;
+      return m ? { b: x.b, strong: st, n: Number(m[1]) } : null;
+    }).filter(Boolean);
+  }
+  // Después de quitar o añadir un párrafo numerado: si la sección iba seguida (2.1, 2.2, 2.3…), se vuelve a numerar seguida y las
+  // remisiones «Section S.N» del papel cambian con ella (nunca las del código: «NFPA 101 Section 7.9»). Una sección que ya venía con
+  // saltos no se toca (avisosFinal lo avisa).
+  const ALC_RX_CODIGO_ANTES = /\b(?:NFPA|NEC|FBC|FFPC|IBC|IRC|IECC|NESC|ASCE|ANSI|IEEE|UL|OSHA|CFR|U\.S\.C|F\.S|Statutes|Code|Codes|Standard|Ed|Edition|Chapter|Article)\b[^.;\n]{0,24}$|\b(?:NFPA|FFPC)\s+\d[\w\-]*\)?\s*$/;
+  function alcRenumerar(doc, sec, antes) {
+    const top = String(sec || "").split(".")[0];
+    if (!antes || !antes.length) return;
+    for (let k = 1; k < antes.length; k++) if (antes[k].n !== antes[k - 1].n + 1) return;
+    const ahora = alcNumerados(doc, top);
+    if (!ahora.length) return;
+    const viejoDe = new Map(antes.map(x => [x.b, x.n])), cambio = new Map();
+    ahora.forEach((x, k) => {
+      const n = antes[0].n + k;
+      if (viejoDe.has(x.b) && viejoDe.get(x.b) !== n) cambio.set(viejoDe.get(x.b), n);
+      if (x.n !== n) {
+        const tn = [...x.strong.childNodes].find(c => c.nodeType === 3 && c.data.trim());
+        if (tn) tn.data = tn.data.replace(new RegExp("^(\\s*)" + top + "\\.\\d{1,2}"), "$1" + top + "." + n);
+      }
+    });
+    if (!cambio.size) return;
+    const tw = doc.createTreeWalker(doc.body || doc.documentElement, NodeFilter.SHOW_TEXT);
+    const rx = /\bSections?\s+\d{1,2}(?:\.\d{1,2})?(?:\s*(?:,|and|or|through|to|–|—|-|\/)\s*\d{1,2}(?:\.\d{1,2})?)*/g;
+    let t;
+    while ((t = tw.nextNode())) {
+      if (!/\bSection/.test(t.data)) continue;
+      t.data = t.data.replace(rx, (m, off, todo) => {
+        if (ALC_RX_CODIGO_ANTES.test(todo.slice(Math.max(0, off - 40), off))) return m;
+        return m.replace(/\b(\d{1,2})\.(\d{1,2})\b/g, (q, a, b) => a === top && cambio.has(Number(b)) ? a + "." + cambio.get(Number(b)) : q);
+      });
+    }
+  }
+  // ¿Otro sitio del papel remite a este párrafo numerado («See Section 7.2»)? Entonces no se quita: al renumerar, la remisión quedaría
+  // apuntando a otro párrafo sin que nadie lo vea.
+  function alcRemitidoA(b, sec) {
+    const top = String(sec || alcSeccionDeBloque(b)).split(".")[0];
+    const x = alcNumerados(b.ownerDocument, top).find(y => y.b === b);
+    if (!x) return false;
+    const tw = b.ownerDocument.createTreeWalker(b.ownerDocument.body || b.ownerDocument.documentElement, NodeFilter.SHOW_TEXT);
+    const rx = /\bSections?\s+\d{1,2}(?:\.\d{1,2})?(?:\s*(?:,|and|or|through|to|–|—|-|\/)\s*\d{1,2}(?:\.\d{1,2})?)*/g;
+    let t;
+    while ((t = tw.nextNode())) {
+      if (b.contains(t) || !/\bSection/.test(t.data)) continue;
+      for (const mm of t.data.matchAll(rx)) {
+        if (ALC_RX_CODIGO_ANTES.test(t.data.slice(Math.max(0, mm.index - 40), mm.index))) continue;
+        if ((mm[0].match(/\b\d{1,2}\.\d{1,2}\b/g) || []).includes(top + "." + x.n)) return true;
+      }
+    }
+    return false;
+  }
+  // Quita un bloque (con la numeración de su sección al día)
+  function alcQuitarBloque(b, sec) {
+    const doc = b.ownerDocument, s0 = sec || alcSeccionDeBloque(b), antes = alcNumerados(doc, s0);
+    b.parentNode.removeChild(b);
+    alcRenumerar(doc, s0, antes);
+  }
+  // Añade un bloque nuevo como `modelo`, después de él (con la exclusión general la última y la numeración al día)
+  function alcAnadirBloque(modelo, nuevo, negrita, sec) {
+    const doc = modelo.ownerDocument, s0 = sec || alcSeccionDeBloque(modelo), antes = alcNumerados(doc, s0);
+    alcMeterDespues(modelo, alcBloqueNuevoComo(modelo, nuevo, negrita), s0);
+    alcRenumerar(doc, s0, antes);
+  }
+  function alcAnadirOQuitar(P, cita, nuevo, donde, exacta, ambito, negrita) {
+    const doc = P.nodos.length ? P.nodos[0].ownerDocument : null;
+    if (!doc) return { error: "no_esta" };
+    if (ambito === "quitar") {
+      const x = alcBloqueDeCitaEn(P, cita, donde, exacta);
+      if (x.error) return x;
+      if (alcPapelConMonto(x.b.textContent)) return { error: "monto" };
+      if (alcBloqueDeLey(x.b)) return { error: "ley" };
+      if (alcRemitidoA(x.b, x.sec)) return { error: "remitido" };
+      const ancla = alcAnclaDe(x.b, x.sec || alcLimpioCorto(donde, 20), alcCabezaDe(x.b, 6).texto);
+      const viejo_bloque = String(x.b.textContent || "").replace(/\s+/g, " ").trim();
+      alcQuitarBloque(x.b, x.sec);
+      return { ok: true, ambito: "quitar", ancla, viejo_bloque };
+    }
+    if (typeof nuevo !== "string" || !nuevo.trim()) return { error: "no_esta" };
+    let modelo = null, sec = "";
+    if (String(cita || "").trim()) {
+      const x = alcBloqueDeCitaEn(P, cita, donde, exacta);
+      if (x.error) return x;
+      modelo = x.b; sec = x.sec;
+    } else {
+      modelo = alcUltimoDeSeccion(doc, donde);
+      if (!modelo) return { error: "no_esta" };
+      sec = String(donde || "").split(".")[0];
+    }
+    if (modelo.closest(ALC_PAGINA_LEGAL)) return { error: "ley" };
+    const ancla = alcAnclaDe(modelo, sec || alcLimpioCorto(donde, 20), alcCabezaDe(modelo, 6).texto);
+    alcAnadirBloque(modelo, nuevo, negrita, sec);
+    return { ok: true, ambito: "anadir", ancla };
+  }
+  // 17-oct (pliego §11.9.3, la «cola partida» del 2.8 otra vez): ¿el texto nuevo de la charla empieza por la cabeza del párrafo?
+  // Se comparan sin el número del principio en los dos lados («2.8 », «7.1 », «9.12 »: la IA lo cambia o lo quita) y con las
+  // cuatro primeras palabras del título (o las que tenga, si tiene menos); así «Testing and closeout. Torque…» y «2.9 Testing and
+  // closeout…» van al párrafo 2.8 entero. Un título de una sola palabra («Permit.») tiene que venir con su punto.
+  function alcEmpiezaPorCabeza(nuevo, cabeza) {
+    const sinN = t => alcSinNumero(alcPlanoDeTexto(t));
+    const cab = sinN(cabeza).split(" ").filter(Boolean).slice(0, 4);
+    if (!cab.length || cab.join(" ").length < 4) return false;
+    if (cab.length === 1 && !/[.:]$/.test(cab[0])) return false;
+    const nv = sinN(nuevo).split(" ").filter(Boolean).slice(0, cab.length);
+    return nv.join(" ") === cab.join(" ");
+  }
+  // ---- 17-oct (pliego §11.3): los bloques del papel, para cambiar el párrafo entero y amarrar el arreglo al párrafo ----
+  // El bloque donde vive un nodo de texto (P, LI, TD…), el mismo con el que alcPlanoDelPapel separa los párrafos
+  function alcBloqueDeNodo(n) {
+    let e = n && n.parentNode;
+    while (e && e.nodeType === 1 && !ALC_BLOQUES.test(e.nodeName)) e = e.parentNode;
+    return e && e.nodeType === 1 ? e : null;
+  }
+  // Solo se cambia entero un párrafo, una viñeta o una celda que no lleve otros bloques dentro (nunca el cuerpo, una tabla
+  // o una lista entera, ni un título de sección)
+  const ALC_BLOQUE_PARRAFO = /^(?:P|LI|TD|TH|DD|DT|BLOCKQUOTE|FIGCAPTION|CAPTION|DIV)$/;
+  function alcBloqueCambiable(b) {
+    if (!b || b.nodeType !== 1 || !ALC_BLOQUE_PARRAFO.test(b.nodeName)) return false;
+    for (const x of b.querySelectorAll("*")) if (ALC_BLOQUES.test(x.nodeName)) return false;
+    return true;
+  }
+  // El primer hijo que cuenta (sin los blancos ni los comentarios de la plantilla)
+  function alcPrimerHijo(b) {
+    for (const x of b.childNodes) {
+      if (x.nodeType === 8 || (x.nodeType === 3 && !x.data.trim())) continue;
+      return x;
+    }
+    return null;
+  }
+  // La cabeza de un bloque: el texto de su <strong> del principio (el número y el título) o, si no lleva, sus `palabras`
+  // primeras palabras; en minúsculas y con los espacios juntos (como lo compara alcPlanoDeTexto), 80 letras como mucho
+  function alcCabezaDe(b, palabras) {
+    const f = b ? alcPrimerHijo(b) : null;
+    if (f && f.nodeType === 1 && f.nodeName === "STRONG") return { strong: f, texto: alcPlanoDeTexto(f.textContent).slice(0, 80) };
+    return { strong: null, texto: alcPlanoDeTexto(b ? b.textContent : "").split(" ").slice(0, palabras || 6).join(" ").slice(0, 80) };
+  }
+  // La cabeza sin su número: «7.1 permit.» → «permit.» (la numeración se mueve de una plantilla a otra)
+  const ALC_RX_NUMERO_CABEZA = /^\s*\d{1,2}(?:\.\d{1,3})*\.?(?=\s)/;
+  const alcSinNumero = t => String(t || "").replace(ALC_RX_NUMERO_CABEZA, "").trim();
+  // Lo que queda de `nuevo` quitándole el principio que dice lo mismo que `cab` (sin distinguir mayúsculas ni espacios), o
+  // null si no empieza así
+  function alcQuitarPrincipio(nuevo, cab) {
+    const c = alcPlanoDeTexto(cab);
+    if (!c) return null;
+    const t = String(nuevo || "").replace(/^\s*[-*•▪◦]\s+/, "");
+    let k = 0, hueco = true;
+    for (let i = 0; i < t.length; i++) {
+      if (k >= c.length) return t.slice(i);
+      const ch = t[i];
+      if (ALC_RX_HUECO.test(ch)) {
+        if (hueco) continue;
+        hueco = true;
+        if (c[k] === " ") { k++; continue; }
+        return null;
+      }
+      hueco = false;
+      const l = ch.toLowerCase();
+      if ((l.length === 1 ? l : ch) !== c[k]) return null;
+      k++;
+    }
+    return k >= c.length ? "" : null;
+  }
+  // Cambia el bloque entero por `nuevo`, siempre como texto (nunca HTML). Si empieza por un <strong> (el número y el título),
+  // el <strong> se queda y detrás va el resto de `nuevo`: sin su principio si dice lo mismo («7.1 Permit. Work begins…»), o
+  // sin su propio número y título si la numeración cambió («7.2 Permit. …» en la 7.1), o entero si no dice ni el uno ni el
+  // otro. El número del papel no se pierde nunca. Un <strong> sin número (un título como «Any work not…») que `nuevo` no
+  // repite se va con lo demás: si no, el título saldría dos veces. Lo demás del bloque se quita (las remisiones @ver ya
+  // están pintadas como texto; se pierde la negrita de dentro, da igual).
+  // 20-oct (pliego §12.4 C.2, P213: «el título en negrita»): si el texto nuevo empieza por un título corto con punto (≤70 letras,
+  // sin verbo de frase: alcTituloDelNuevo) distinto del <strong>, el <strong> pasa a decir ese título (con el número del papel si el
+  // viejo lo llevaba); antes se quedaba el título viejo («7.6 Utility coordination.» con el nuevo pegado detrás) o, sin número, se
+  // perdía la negrita («Milestones not delayed by others.» de la §6 de Gong). Un bloque sin <strong> solo lo estrena si el punto trae
+  // `negrita` (el título que Edgar pidió en negrita) y el texto nuevo empieza por él.
+  function alcCambiarBloque(b, nuevo0, negrita) {
+    const doc = b.ownerDocument;
+    // la viñeta la pone el papel: un «- » delante del texto propuesto saldría dos veces
+    const nuevo = String(nuevo0 || "").replace(/^\s*[-*•▪◦]\s+/, "");
+    let strong = alcCabezaDe(b, 6).strong, resto = null, tituloNuevo = null;
+    if (strong) {
+      resto = alcQuitarPrincipio(nuevo, strong.textContent);
+      if (resto === null) {
+        const numViejo = (String(strong.textContent).match(ALC_RX_NUMERO_CABEZA) || [""])[0].trim();
+        const T = alcTituloDelNuevo(nuevo, negrita);
+        if (numViejo) {
+          const sinN = String(nuevo).replace(ALC_RX_NUMERO_CABEZA, "").trim();
+          const titulo = alcSinNumero(strong.textContent);
+          const r2 = titulo ? alcQuitarPrincipio(sinN, titulo) : null;
+          if (r2 !== null) resto = r2;
+          else if (T) { tituloNuevo = numViejo + " " + T.titulo; resto = T.resto; }
+          else resto = sinN;
+        } else if (T) { tituloNuevo = (T.numero ? T.numero + " " : "") + T.titulo; resto = T.resto; }
+        else strong = null;
+      }
+    } else {
+      const T = negrita ? alcTituloDelNuevo(nuevo, negrita) : null;
+      if (T && T.dado) { strong = doc.createElement("strong"); tituloNuevo = (T.numero ? T.numero + " " : "") + T.titulo; resto = T.resto; }
+    }
+    [...b.childNodes].forEach(x => { if (x !== strong) b.removeChild(x); });
+    if (strong && tituloNuevo !== null) { strong.textContent = tituloNuevo; if (!strong.parentNode) b.appendChild(strong); }
+    if (strong) { const r = String(resto || "").trim(); if (r) b.appendChild(doc.createTextNode(" " + r)); }
+    else b.appendChild(doc.createTextNode(String(nuevo).trim()));
+  }
+  // El título con el que empieza un texto nuevo: { numero, titulo (con su punto), resto, dado } o null. `negrita` (el del punto de la
+  // orden) manda si el texto empieza por él; si no, vale un principio corto que acaba en punto (≤70 letras, ≤8 palabras) y no tiene
+  // pinta de frase: «Utility service (by Client/Owner).» sí, «The Client obtains the permit.» no.
+  // (Corrección de los revisores, 20-oct: esto corre en cada armado sobre los arreglos de párrafo guardados, así que adivina poco.)
+  // No es título: lo que empieza por quien hace algo («The», «Max Power», «Contractor», «Client», «Owner», «Work»…), lo que lleva un
+  // verbo de frase («is», «shall», «warrants», «begins»…), lo que acaba en una abreviatura («Approx.», «Inc.», «No.») y lo que no
+  // tiene nada detrás (sin cuerpo, la frase entera no es un título). Si no se adivina, el título del papel se queda como antes.
+  const ALC_RX_FRASE_NO_TITULO = new RegExp("^(?:the|a|an|this|that|these|those|it|its|we|you|they|he|she|if|when|where|all|any|each|every|no|our|their|"
+    + "max power|mxp|contractor|client|owner|customer|buyer|gc|general contractor|work|approx(?:imately)?)\\b"
+    + "|\\b(?:is|are|was|were|be|been|will|shall|must|may|can|could|would|should|does|do|did|has|have|had|provides?|obtains?|includes?|applies|"
+    + "pays?|requires?|performs?|furnishes|installs?|attends?|warrants?|begins?|starts?|carries|verifies|ensures?|gives?|makes?|takes?|"
+    + "receives?|agrees?|assumes?|accepts?|retains?|notifies|submits?|keeps?|gets?|bills)\\b", "i");
+  const ALC_RX_ABREVIATURA_FINAL = /\b(?:approx|inc|co|corp|ltd|llc|no|nos|st|ave|dr|rd|blvd|etc|vs|ft|sq|min|max|ea|qty|ref|sec|dept|mr|mrs|ms|jr|sr|e\.g|i\.e|u\.s)\.$/i;
+  function alcTituloDelNuevo(nuevo, negrita) {
+    const t = String(nuevo || "").replace(/^\s*[-*•▪◦]\s+/, "").trim();
+    const numero = (t.match(ALC_RX_NUMERO_CABEZA) || [""])[0].trim();
+    const sinN = numero ? t.replace(ALC_RX_NUMERO_CABEZA, "").trim() : t;
+    if (negrita && String(negrita).trim()) {
+      const ng = alcSinNumero(String(negrita).replace(/\s+/g, " ").trim());
+      const resto = alcQuitarPrincipio(sinN, ng);
+      if (resto !== null) return { numero, titulo: ng.replace(/[.:]?$/, m => m || "."), resto: resto.replace(/^\s*[.:]\s*/, "").trim(), dado: true };
+    }
+    const m = sinN.match(/^([^.:]{2,69}[.:])(?:\s+|$)/);
+    if (!m) return null;
+    const ti = m[1].trim(), resto = sinN.slice(m[0].length).trim();
+    if (!resto || ti.split(/\s+/).length > 8 || ALC_RX_ABREVIATURA_FINAL.test(ti) || ALC_RX_FRASE_NO_TITULO.test(ti.replace(/[.:]$/, ""))) return null;
+    return { numero, titulo: ti, resto, dado: false };
+  }
+
+  // El bloque de la sección `ancla.donde` cuya cabeza es `ancla.cabeza`, o la misma sin el número («permit.» vale para
+  // «7.1 Permit.» y para «7.2 Permit.»). Uno solo: con dos o más, ninguno (no se adivina).
+  function alcBloquePorAncla(doc, ancla) {
+    const cab = alcPlanoDeTexto(ancla && ancla.cabeza);
+    if (cab.length < 4) return null;
+    const cabSin = alcSinNumero(cab);
+    const raiz = doc.body || doc.documentElement;
+    const tw = doc.createTreeWalker(raiz, NodeFilter.SHOW_ELEMENT);
+    const exactos = [], sinNumero = [];
+    let sec = "", n;
+    while ((n = tw.nextNode())) {
+      if (n.nodeName === "H2" && /(?:^|\s)section(?:\s|$)/.test(n.getAttribute("class") || "")) {
+        const sp = n.querySelector("span.num");
+        sec = sp ? String(sp.textContent || "").replace(/\s+/g, " ").trim().slice(0, 12) : "";
+        continue;
+      }
+      if (!alcBloqueCambiable(n)) continue;
+      if (ancla.donde && !alcEnSeccion(sec, ancla.donde)) continue;
+      const c = alcCabezaDe(n, 6).texto;
+      if (c === cab) exactos.push(n);
+      else if (cabSin.length >= 4 && alcSinNumero(c) === cabSin) sinNumero.push(n);
+    }
+    const xs = exactos.length ? exactos : sinNumero;
+    if (xs.length === 1) return xs[0];
+    // 20-oct (pliego §12.4 C.2): la misma cabeza dos veces en la sección: gana el bloque más cerca de su número de orden guardado
+    // (ancla.numero); si siguen empatados (o el ancla no lo trae), ninguno, como antes
+    const num = Number(ancla && ancla.numero);
+    if (xs.length > 1 && Number.isInteger(num) && num > 0) {
+      const orden = new Map(alcBloquesConSeccion(doc).map(x => [x.b, x.numero]));
+      const dist = xs.map(b => ({ b, d: Math.abs((orden.get(b) || 0) - num) })).sort((a, b) => a.d - b.d);
+      if (dist[0].d < dist[1].d) return dist[0].b;
+    }
+    return null;
+  }
+  // Un arreglo de párrafo cuya cita ya no está: se pone en el bloque de su ancla. { ok, por_ancla, cabeza } o { error }
+  function alcPonerPorAncla(doc, r) {
+    const b = r && r.ancla ? alcBloquePorAncla(doc, r.ancla) : null;
+    if (!b) return { error: "no_esta" };
+    const cab = alcCabezaDe(b, 6);
+    const vista = String(cab.strong ? cab.strong.textContent : b.textContent.split(/\s+/).slice(0, 6).join(" ")).replace(/\s+/g, " ").trim().replace(/[.:]+$/, "").slice(0, 80);
+    // 20-oct (§12.4 C.2): un «anadir» cuya cita ya no está va después del bloque de su ancla
+    if (r.ambito === "anadir") {
+      if (!/^(?:P|LI)$/.test(b.nodeName) || b.closest(ALC_PAGINA_LEGAL)) return { error: "no_esta" };
+      alcAnadirBloque(b, r.nuevo, r.negrita);
+      return { ok: true, ambito: "anadir", por_ancla: true, cabeza: vista };
+    }
+    if (alcPapelConMonto(b.textContent)) return { error: "monto" };
+    alcCambiarBloque(b, r.nuevo, r.negrita);
+    return { ok: true, ambito: "parrafo", por_ancla: true, cabeza: vista };
+  }
+  // Un arreglo guardado, puesto en el documento: primero por su cita (como siempre); si es de párrafo y la cita ya no está,
+  // por su ancla. { ya } si el papel ya dice su texto.
+  // 20-oct (§12.4 C.2): «anadir» ya está hecho si el papel ya dice su texto; se pone con la cita exacta (sin la búsqueda aproximada).
+  // «quitar» con la cita exacta. (Corrección de los revisores, 20-oct) Si la cita exacta ya no está, «quitar» NO se da por hecho a
+  // ciegas: si el bloque de su ancla (la misma sección y cabeza) sigue en el papel y dice casi lo mismo (la búsqueda aproximada cae en
+  // él), se quita ese y se dice («se puso en un párrafo que cambió»); si sigue pero dice otra cosa, o sin ancla la frase sale parecida,
+  // queda sin sitio («cambiado», con su aviso). Solo cuando no queda ni la frase ni el bloque, ya está hecho.
+  function alcPonerUno(doc, r) {
+    const P = alcPlanoDelPapel(doc);
+    if (r.ambito === "quitar") {
+      const c = alcPlanoDeTexto(r.cita);
+      if (c.length < 8 || P.texto.includes(c)) return alcPonerEnDoc(P, r.cita, "", r.donde, true, "quitar");
+      const b = r.ancla ? alcBloquePorAncla(doc, r.ancla) : null;
+      const x = alcBloqueDeCitaEn(P, r.cita, r.donde, false);
+      if (b) {
+        if (x.error || x.b !== b) return { error: "cambiado" };
+        if (alcPapelConMonto(b.textContent)) return { error: "monto" };
+        if (alcBloqueDeLey(b)) return { error: "ley" };
+        if (alcRemitidoA(b, x.sec)) return { error: "remitido" };
+        const cab = alcCabezaDe(b, 6);
+        const vista = String(cab.strong ? cab.strong.textContent : b.textContent.split(/\s+/).slice(0, 6).join(" ")).replace(/\s+/g, " ").trim().replace(/[.:]+$/, "").slice(0, 80);
+        alcQuitarBloque(b, x.sec);
+        return { ok: true, ambito: "quitar", por_ancla: true, cabeza: vista };
+      }
+      return x.error === "no_esta" ? { ya: true } : { error: "cambiado" };
+    }
+    if (alcPlanoDice(P, r.nuevo)) return { ya: true };
+    if (r.ambito === "anadir") {
+      const x = alcPonerEnDoc(P, r.cita, r.nuevo, r.donde, true, "anadir", r.negrita);
+      if (x.ok || x.error !== "no_esta" || !r.ancla || !String(r.cita || "").trim()) return x;
+      return alcPonerPorAncla(doc, r);
+    }
+    const parrafo = r.ambito === "parrafo";
+    const x = alcPonerEnDoc(P, r.cita, r.nuevo, r.donde, false, parrafo ? "parrafo" : undefined, r.negrita);
+    if (x.ok || !parrafo || x.error !== "no_esta" || !r.ancla) return x;
+    return alcPonerPorAncla(doc, r);
   }
   // Los problemas que el barrido final saca en el papel nuevo y no estaban en el de antes
   function alcProblemasNuevos(antes, ahora, permitidos) {
@@ -19322,16 +23122,19 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   // Pone `nuevo` en el sitio de `cita` dentro del papel `html` (ver alcBuscarCita y alcPonerEnDoc) y pasa el barrido
   // final con los montos permitidos: si sale un problema que antes no estaba, no se pone.
   // Devuelve { html } o { error: "no_esta" | "varias" | "monto" | "barrido", problema }.
-  function alcReemplazarEnPapel(html, cita, nuevo, permitidos, donde, exacta) {
+  // 17-oct (pliego §11.3): con `ambito` ("parrafo" | "auto"), el párrafo entero (ver alcPonerEnDoc); devuelve también el
+  // ambito que quedó y el ancla del párrafo.
+  // 20-oct (§12.4 C.2): también «anadir» y «quitar», y `negrita` (el título que el punto pide en negrita)
+  function alcReemplazarEnPapel(html, cita, nuevo, permitidos, donde, exacta, ambito, negrita) {
     let doc;
     try { doc = new DOMParser().parseFromString(String(html || ""), "text/html"); } catch { return { error: "no_esta" }; }
-    const x = alcPonerEnDoc(alcPlanoDelPapel(doc), cita, nuevo, donde, exacta);
+    const x = alcPonerEnDoc(alcPlanoDelPapel(doc), cita, nuevo, donde, exacta, ambito, negrita);
     if (x.error) return x;
     const out = alcHtmlDe(doc, html);
     let nuevos = [];
     try { nuevos = alcProblemasNuevos(html, out, permitidos); } catch { return { error: "barrido", problema: "" }; }
     if (nuevos.length) return { error: "barrido", problema: String(nuevos[0].texto || "") };
-    return { html: out };
+    return { html: out, ambito: x.ambito || "frase", ancla: x.ancla || null, viejo_bloque: x.viejo_bloque || "" };
   }
   // ¿El papel ya dice este texto? (la IA rearmó con la orden y ya lo escribió ella, o ya se puso antes)
   function alcPlanoDice(P, texto) {
@@ -19347,23 +23150,29 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   // Un cambio que el papel ya dice no se vuelve a poner (si su texto lleva la frase vieja dentro, saldría dos veces).
   // El que ya no encuentra su frase (la IA rearmó distinto, o la plantilla cambió), sale dos veces sin saber cuál, lleva
   // un monto o deja algo mal en el papel, se salta y queda en A.reemplazos_sin_sitio, con su motivo, para el aviso.
+  // 17-oct (pliego §11.3, los 4 arreglos de Gong que la v3.14 dejó sin su frase): un arreglo de PÁRRAFO cuya cita ya no está se
+  // pone en el párrafo de su ancla (la misma sección y la misma cabeza, con o sin el número) y queda en A.reemplazos_cambiados
+  // para la línea ámbar «1 arreglo tuyo se puso en un párrafo que cambió desde que lo hiciste: 7.1 Permit — míralo».
+  // Los arreglos viejos (sin `ambito`, como los 7 de Gong) siguen siendo de frase, como antes.
   function alcAplicarReemplazos(A, html, permitidos) {
     const lista = A && Array.isArray(A.reemplazos) ? A.reemplazos : [];
     const h0 = String(html || "");
     const sin = [], cambiados = [];
+    let porAncla = [];
     let puestos = 0, out = h0;
     if (lista.length) {
       let doc = null;
       try { doc = new DOMParser().parseFromString(h0, "text/html"); } catch { doc = null; }
       const base = alcBaseDeCifras(h0, "");
       for (const r of lista) {
-        if (!r || !r.cita || typeof r.nuevo !== "string" || !r.nuevo.trim()) continue;
-        if (alcNuevoConMonto(r.nuevo, base + "\n" + r.cita)) { sin.push(Object.assign({}, r, { motivo: "monto" })); continue; }
+        // (20-oct, §12.4 C.2) «quitar» no lleva texto nuevo; «anadir» puede no llevar cita (va al final de su sección)
+        if (!r || typeof r.nuevo !== "string") continue;
+        if (r.ambito === "quitar" ? !r.cita : r.ambito === "anadir" ? !r.nuevo.trim() || !(r.cita || r.donde) : !r.cita || !r.nuevo.trim()) continue;
+        if (r.nuevo && alcNuevoConMonto(r.nuevo, base + "\n" + (r.cita || ""))) { sin.push(Object.assign({}, r, { motivo: "monto" })); continue; }
         if (!doc) { sin.push(Object.assign({}, r, { motivo: "no_esta" })); continue; }
-        const P = alcPlanoDelPapel(doc);
-        if (alcPlanoDice(P, r.nuevo)) { puestos++; continue; }
-        const x = alcPonerEnDoc(P, r.cita, r.nuevo, r.donde, false);
-        if (x.ok) { puestos++; cambiados.push(r); }
+        const x = alcPonerUno(doc, r);
+        if (x.ya) { puestos++; continue; }
+        if (x.ok) { puestos++; cambiados.push(r); if (x.por_ancla) porAncla.push({ r, cabeza: x.cabeza }); }
         else sin.push(Object.assign({}, r, { motivo: x.error }));
       }
       if (cambiados.length) {
@@ -19372,29 +23181,55 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         try { mal = alcProblemasNuevos(h0, out, permitidos).length > 0; } catch { mal = true; }
         if (mal) {
           // uno a uno, con su barrido: el cambio que deja algo mal se queda fuera
-          out = h0;
+          out = h0; porAncla = [];
           for (const r of cambiados) {
-            const x = alcReemplazarEnPapel(out, r.cita, r.nuevo, permitidos, r.donde, false);
-            if (x.html) out = x.html;
-            else { puestos--; sin.push(Object.assign({}, r, { motivo: x.error === "barrido" ? "barrido" : x.error || "no_esta" })); }
+            let d2 = null;
+            try { d2 = new DOMParser().parseFromString(out, "text/html"); } catch { d2 = null; }
+            const x = d2 ? alcPonerUno(d2, r) : { error: "no_esta" };
+            if (x.ya) continue;
+            if (!x.ok) { puestos--; sin.push(Object.assign({}, r, { motivo: x.error || "no_esta" })); continue; }
+            const o2 = alcHtmlDe(d2, out);
+            let malo = true;
+            try { malo = alcProblemasNuevos(out, o2, permitidos).length > 0; } catch { malo = true; }
+            if (malo) { puestos--; sin.push(Object.assign({}, r, { motivo: "barrido" })); continue; }
+            out = o2;
+            if (x.por_ancla) porAncla.push({ r, cabeza: x.cabeza });
           }
         }
       }
     }
-    if (A) A.reemplazos_sin_sitio = sin;
-    return { html: out, puestos, sin_sitio: sin };
+    if (A) {
+      A.reemplazos_sin_sitio = sin;
+      A.reemplazos_cambiados = porAncla.map(p => ({ clave: p.r.clave, cita: p.r.cita, cabeza: p.cabeza, aplicado_a_parrafo_cambiado: true }));
+    }
+    return { html: out, puestos, sin_sitio: sin, por_ancla: porAncla.length };
   }
-  // Lo que se guarda de los cambios: sin dinero (con las cifras que ya vio la IA: el papel y la cita), tope 60
+  // 20-oct (pliego §12.9): caben 120 arreglos guardados (antes 60: una orden larga de Edgar más los del revisor se pasaba y los más
+  // viejos se perdían sin avisar); con 100 o más, la ficha Contrato lo dice en una línea ámbar (alcAvisosDelPapel)
+  const ALC_TOPE_REEMPLAZOS = 120, ALC_AVISO_REEMPLAZOS = 100;
+  // Lo que se guarda de los cambios: sin dinero (con las cifras que ya vio la IA: el papel y la cita), tope ALC_TOPE_REEMPLAZOS
   function alcReemplazosParaGuardar(A) {
     const html = A && A.contrato ? A.contrato.html : "";
     const base = alcBaseDeCifras(html, "");
     return (A && Array.isArray(A.reemplazos) ? A.reemplazos : [])
-      .filter(r => r && r.cita && typeof r.nuevo === "string" && !alcNuevoConMonto(r.nuevo, base + "\n" + r.cita)).slice(-60);
+      .filter(r => r && (r.cita || (r.ambito === "anadir" && r.donde)) && typeof r.nuevo === "string" && !alcNuevoConMonto(r.nuevo, base + "\n" + (r.cita || "")))
+      // 17-oct (pliego §11.3): el ámbito y el ancla del párrafo viajan también (el ancla, sin dinero; si no, el arreglo queda de frase)
+      // 20-oct (§12.4 C.2): también «anadir» y «quitar» (sin ancla siguen siendo lo que son: se ponen por su cita), el número de orden
+      // del ancla (entero) y la negrita (corta y sin dinero)
+      .map(r => {
+        const x = Object.assign({}, r);
+        const conAmbitoPropio = x.ambito === "anadir" || x.ambito === "quitar";
+        if (x.ancla && (typeof x.ancla !== "object" || alcNuevoConMonto(alcSinNumero(String(x.ancla.cabeza || "")), base) || String(x.ancla.cabeza || "").length > 80)) { delete x.ancla; if (!conAmbitoPropio) x.ambito = "frase"; }
+        if (x.ancla && x.ancla.numero !== undefined && !(Number.isInteger(x.ancla.numero) && x.ancla.numero > 0 && x.ancla.numero < 1000)) { x.ancla = Object.assign({}, x.ancla); delete x.ancla.numero; }
+        if (x.negrita !== undefined && !(typeof x.negrita === "string" && x.negrita.trim() && x.negrita.length <= 120 && !alcNuevoConMonto(x.negrita, base))) delete x.negrita;
+        if (!["parrafo", "frase", "anadir", "quitar"].includes(x.ambito)) delete x.ambito;
+        return x;
+      }).slice(-ALC_TOPE_REEMPLAZOS);
   }
   // Sin propuesta todavía, los cambios viven en el teléfono (como lo decidido)
   function alcReemplazosLocal(id, lista) {
     try {
-      if (lista) { localStorage.setItem(alcLlaveLocal(id) + "_reemplazos", JSON.stringify(lista.slice(-60))); return lista; }
+      if (lista) { localStorage.setItem(alcLlaveLocal(id) + "_reemplazos", JSON.stringify(lista.slice(-ALC_TOPE_REEMPLAZOS))); return lista; }
       const j = JSON.parse(localStorage.getItem(alcLlaveLocal(id) + "_reemplazos") || "[]");
       return Array.isArray(j) ? j : [];
     } catch { return lista || []; }
@@ -19420,20 +23255,30 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     let s = "";
     if (perdidos.length) {
       const t = perdidos.length === 1 ? "1 cambio tuyo ya no encontró su frase:" : `${perdidos.length} cambios tuyos ya no encontraron su frase:`;
-      s += `<div class="alc-gris alc-sin-sitio"><span>${esc(t)}</span> <span data-no-i18n>${lista(perdidos)}</span></div>`;
+      // 17-oct (pliego §11.9.4): y un botón pequeño para olvidarlos (los arreglos viejos no se quedan para siempre)
+      s += `<div class="alc-gris alc-sin-sitio"><span>${esc(t)}</span> <span data-no-i18n>${lista(perdidos)}</span>
+        <div class="alc-fixes"><button type="button" class="alc-op alc-olvidar" data-rev-olvidar-sin-sitio="1"${A.arreglando || A.armado_en_marcha ? " disabled" : ""}>${perdidos.length === 1 ? "Olvidarlo" : "Olvidarlos"}</button></div></div>`;
     }
     if (malos.length) {
       const t = malos.length === 1 ? "1 cambio tuyo no se volvió a poner porque llevaba un monto o dejaba algo mal en el papel:"
                                    : `${malos.length} cambios tuyos no se volvieron a poner porque llevaban un monto o dejaban algo mal en el papel:`;
       s += `<div class="alc-gris alc-sin-sitio alc-sin-sitio-malo"><span>${esc(t)}</span> <span data-no-i18n>${lista(malos)}</span></div>`;
     }
+    // 17-oct (pliego §11.3): los arreglos de párrafo que ya no encontraron su frase y se pusieron en el párrafo de su ancla
+    const cs = A && A.contrato && Array.isArray(A.reemplazos_cambiados) ? A.reemplazos_cambiados : [];
+    if (cs.length) {
+      const t = cs.length === 1 ? "1 arreglo tuyo se puso en un párrafo que cambió desde que lo hiciste:"
+                                : `${cs.length} arreglos tuyos se pusieron en párrafos que cambiaron desde que los hiciste:`;
+      s += `<div class="alc-ambar alc-parrafo-cambiado"><span>${esc(t)}</span> <span data-no-i18n>${esc(cs.map(x => x.cabeza).join("; "))}</span> <span>${cs.length === 1 ? "— míralo" : "— míralos"}</span></div>`;
+    }
     return s;
   }
   // La respuesta de la charla trae el texto marcado: se pone en el papel (pliego §8.2). `guardo` = la IA dice que guardó
-  // la orden. Devuelve "puesto", "monto", "barrido", "pagos", "permiso", "vacio", "varias" o "no_esta"; deja la nota dicha.
-  function alcCharlaPonerEnPapel(i, h, C, nuevo, guardo) {
+  // la orden. Devuelve "puesto", "monto", "barrido", "pagos", "permiso", "ley", "proteccion", "vacio", "varias" o "no_esta";
+  // deja la nota dicha. `forzar` = Edgar tocó «Ponerlo aunque quite la protección» y lo confirmó (nunca vale para la ley).
+  function alcCharlaPonerEnPapel(i, h, C, nuevo, guardo, forzar) {
     const A = alcActivo, R = A && A.revision;
-    C.nota = null; C.nota_extra = null;
+    C.nota = null; C.nota_extra = null; C.pendiente = null;
     const SI_GUARDO = "Si la IA guardó la orden, entrará al arreglar el contrato";
     if (nuevo === "") { C.nota = "La IA mandó el texto vacío: desde aquí no quito frases del papel. " + SI_GUARDO; return "vacio"; }
     // los pagos y el permiso los escribe el programa con la plantilla (y la ficha y el portal los leen de ahí)
@@ -19446,6 +23291,22 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
                            : "No encontré esa frase en el papel. Dile a la IA que guarde la orden para que entre al arreglar el contrato";
     if (!html) { C.nota = NO_ESTA; return "no_esta"; }
     const nv = nuevo.slice(0, 3000);
+    // 17-oct (pliego §11.9.1): en la ronda sola de §10.10 (nadie mira), la misma puerta que «Arreglar según la IA».
+    // 17-oct (pliego §11.9, revisión adversaria P2): en la charla de Edgar, el texto de ley NUNCA se pone (lo escribe la IA, no
+    // Edgar: el 713.015 y el 501.0xx tienen su forma fija); y lo que quita una protección (o mete dinero en un párrafo libre)
+    // tampoco entra solo: se queda a la vista con «Ponerlo aunque quite la protección», que pregunta antes con el motivo. Así un
+    // mensaje no basta para quitar una protección.
+    // (P2) lo que se juzga es el párrafo como QUEDA: si la IA cambia solo una frase de una cláusula B, la frase puesta en su párrafo
+    const clase = alcClaseDeCita(h);
+    const seg = alcPropuestaSegura(Object.assign({}, h, { texto_nuevo: alcParrafoQueQueda(clase, h, nv) }), clase);
+    if (C.auto && !seg.ok) { C.nota = alcTextoPropuestaInsegura(seg); return "proteccion"; }
+    if (seg.ley) { C.nota = "Esto es texto de ley: no lo cambio en el papel. Si de verdad está mal, dímelo y lo miramos"; return "ley"; }
+    if (!seg.ok && !forzar) {
+      // 18-oct (pliego §11.11.3): los textos de «Ponerlo aunque…», los mismos que en el punto (también «…aunque sea largo»)
+      C.pendiente = { nuevo: nv, guardo: !!guardo, motivo: String(seg.motivo || ""), dinero: !!seg.dinero, libre: !!seg.libre, tipo: seg.tipo || "" };
+      C.nota = alcTextosForzar(seg).nota;
+      return "proteccion";
+    }
     const clave = alcClaveCita(h.cita);
     if (!Array.isArray(A.reemplazos)) A.reemplazos = [];
     const previo = A.reemplazos.find(r => r && r.clave === clave);
@@ -19457,9 +23318,11 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     else {
       // ya se cambió antes en esta charla: lo que dice ahora el papel es el texto de la vez anterior, y se busca PRIMERO
       // (entero, sin aproximar). Si se buscara antes la cita, se encontraría DENTRO de ese texto y quedaría la cola.
+      // 17-oct (pliego §11.3): con "auto", si el texto empieza por la cabeza del párrafo (su número y título, o sus cuatro
+      // primeras palabras) se cambia el párrafo ENTERO; si no, solo la frase, como antes («Valid Through | October 30, 2026»)
       x = { error: "no_esta" };
-      if (previo && previo.nuevo) x = alcReemplazarEnPapel(html, previo.nuevo, nv, perm, h.donde, true);
-      if (x.error === "no_esta") x = alcReemplazarEnPapel(html, h.cita, nv, perm, h.donde, false);
+      if (previo && previo.nuevo) x = alcReemplazarEnPapel(html, previo.nuevo, nv, perm, h.donde, true, "auto");
+      if (x.error === "no_esta") x = alcReemplazarEnPapel(html, h.cita, nv, perm, h.donde, false, "auto");
     }
     if (x.error === "monto") { C.nota = "Esa frase del papel lleva un monto que pone el programa: no la cambio aquí"; return "monto"; }
     if (x.error === "barrido") { C.nota = "Ese cambio dejaría algo mal en el papel; no lo puse:"; C.nota_extra = x.problema || ""; return "barrido"; }
@@ -19467,20 +23330,68 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     if (x.error || !x.html) { C.nota = NO_ESTA; return "no_esta"; }
     if (x.html !== html) {
       A.contrato.html = x.html;
-      try { A.contrato.problemas = Alcance.barridoFinal(x.html, perm).problemas; } catch { /* se queda lo de antes */ }
+      try { A.contrato.problemas = Alcance.barridoFinal(x.html, perm, A.contrato.cuenta).problemas; } catch { /* se queda lo de antes */ }
       // la revisión que está a la vista es del papel de ANTES: el candado no se abre con ella (hay que revisar otra vez)
       if (R) R.papel_cambiado = true;
     }
     const r = { clave, cita: String(previo ? previo.cita : h.cita || "").slice(0, 160), nuevo: nv,
                 donde: alcLimpioCorto(h.donde, 20), cuando: new Date().toISOString() };
-    A.reemplazos = [...A.reemplazos.filter(q => q && q.clave !== clave), r].slice(-60);
+    // (§11.3) el ámbito con el que entró (y, si fue el párrafo entero, su ancla); si el papel ya lo decía, el de antes
+    if (x.ambito) { r.ambito = x.ambito; if (x.ancla) r.ancla = x.ancla; }
+    else if (previo && previo.ambito) { r.ambito = previo.ambito; if (previo.ancla) r.ancla = previo.ancla; }
+    A.reemplazos = [...A.reemplazos.filter(q => q && q.clave !== clave), r].slice(-ALC_TOPE_REEMPLAZOS);
     if (Array.isArray(A.reemplazos_sin_sitio)) A.reemplazos_sin_sitio = A.reemplazos_sin_sitio.filter(q => q && q.clave !== clave);
+    // 17-oct (pliego §11.9.4): si entró el párrafo entero, los arreglos de frase viejos de ese párrafo quedaron superados
+    alcQuitarSuperados(A, r, x.viejo_bloque);
     h.hecho = "La IA lo cambió en el papel";
     C.puestos = (Number(C.puestos) || 0) + 1;
     C.mensajes.push({ rol: "programa", texto: "Puesto en el papel." });
+    alcMedirArregloAMano(A, 1);      // (§12.8) un arreglo a mano de Edgar después de la revisión limpia
     alcDecidir(i, nv, "papel");
     alcGuardarReemplazosYa(A);
+    // (la charla se pliega al decidir: el «Ojo» se queda en la línea del punto y sale también como aviso). 17-oct (§11.9, P2): solo
+    // llega aquí lo que Edgar confirmó con «Ponerlo aunque…»; la ley nunca
+    if (!seg.ok) {
+      const ojo = alcTextosForzar(seg).ojo;
+      C.nota = ojo;
+      if (h.decidido) h.decidido.ojo = ojo;
+      avisar(ojo, true);
+    }
     return "puesto";
+  }
+
+  // 17-oct (pliego §11.9, revisión adversaria P2): el párrafo de una cláusula B como quedaría con el [[NUEVO]] de la charla. Si el texto
+  // empieza por la cabeza del párrafo, es el párrafo entero; si no, es una frase (como «Valid Through»): se pone en lugar de la cita
+  // (o de lo que se puso la vez anterior) dentro del texto de hoy. Si no se encuentra, se juzga el texto solo (lo más estricto).
+  function alcParrafoQueQueda(clase, h, nv) {
+    const b = clase && clase.clave ? clase.bloque : null;
+    if (!b || !b.texto || alcEmpiezaPorCabeza(nv, b.cabeza ? b.cabeza + "." : "")) return nv;
+    const plano = t => String(t || "").replace(/\s+/g, " ").trim();
+    const A = alcActivo, k = alcClaveCita(h && h.cita);
+    const previo = A && Array.isArray(A.reemplazos) ? A.reemplazos.find(r => r && r.clave === k) : null;
+    const t = plano(b.texto);
+    for (const viejo of [previo && previo.nuevo, h && h.cita]) {
+      const v = plano(viejo);
+      if (v.length >= 8 && t.includes(v)) return t.replace(v, plano(nv));
+    }
+    return nv;
+  }
+  // 17-oct (pliego §11.9, revisión adversaria P2): «Ponerlo aunque quite la protección». Lo que la IA escribió en la charla y la puerta
+  // no deja entrar solo: se pregunta a Edgar con el motivo y, si dice que sí, se pone con el «Ojo» a la vista. El texto de ley no
+  // llega nunca aquí (alcCharlaPonerEnPapel no lo deja pendiente).
+  async function alcCharlaForzar(i) {
+    const A = alcActivo, R = A && A.revision;
+    const h = R && Array.isArray(R.hallazgos) ? R.hallazgos[i] : null;
+    const C = alcCharla(i);
+    if (!h || !C || !C.pendiente || C.en_marcha || alcQuietoPorArreglo()) return;
+    const p = C.pendiente;
+    // 18-oct (pliego §11.11.3): la misma pregunta que «Ponerlo aunque…» en el punto
+    if (!await confirmar(alcTextosForzar(p).pregunta, { si: "Ponerlo", peligro: true })) return;
+    if (alcActivo !== A || A.revision !== R || alcCharla(i) !== C || C.pendiente !== p) return;
+    const puso = alcCharlaPonerEnPapel(i, h, C, p.nuevo, p.guardo, true);
+    if (puso === "puesto") { if (p.guardo) C.lecciones++; }
+    else if (C.nota) avisar(C.nota, true);
+    alcPintarCharla(i);
   }
 
   // «Volver a armar»: con la hoja corregida, se vuelve a pasar por el camino corto y se arma
@@ -19689,7 +23600,17 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
                               // 13-oct (pliego §7.2): lo decidido punto por punto, para la revisión siguiente
                               decididos: (Array.isArray(A.decididos) ? A.decididos : []).slice(-60),
                               // 13-oct, versión 3 (pliego §8.2): lo que la IA cambió en el papel, para volver a ponerlo
-                              reemplazos: alcReemplazosParaGuardar(A) },
+                              reemplazos: alcReemplazosParaGuardar(A),
+                              // 14-oct (pliego §10.9): las cláusulas que Edgar devolvió al texto de la casa (se respetan al rearmar)
+                              clausulas_casa: alcClausulasCasa(A),
+                              // 14-oct (pliego §10.10): las correcciones que viajan con cada armado (sin dinero) y «Así lo hice»
+                              correcciones: alcCorreccionesLimpias(A.correcciones),
+                              // 18-oct (pliego §11.12.4): cada vuelta del proceso de revisión {cuando, vuelta, arreglados, pendientes, costo}
+                              rondas: alcRondasParaGuardar(A),
+                              // 20-oct (pliego §12.5 y §12.8): la orden de Edgar con su lista y su resultado, y lo que se mide
+                              ...(alcOrdenParaGuardar(A) ? { orden: alcOrdenParaGuardar(A) } : {}),
+                              medida: alcMedidaDeGuardado(A.medida),
+                              ...(alcAsiParaGuardar(A) ? { asi_lo_hice: alcAsiParaGuardar(A) } : {}) },
         // v252: la base del precio de esta propuesta (si la columna aún no existe en la base, db.js guarda sin ella)
         pricing_basis: dec.pricing_basis || "quantities",
         alcance_estado: A.contrato ? "armado" : (A.salida ? "redactado" : "leido"),
@@ -19708,6 +23629,11 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           costo_centavos: A.armado.costo_centavos ?? null, de_cache: !!A.armado.de_cache,
           tiradas: (A.armado.tiradas || []).length, lineas_sin_casa: (A.armado.sin_casa || []).slice(0, 60) };
         campos.uso_modelo.armar = { uso: A.armado.uso || null, costo_centavos: A.armado.costo_centavos ?? null, cuando: A.armado.cuando || null };
+        // 14-oct (pliego §10.11): el armado que vino del chat de Claude se queda entero en la propuesta, para que otro teléfono
+        // (o la computadora) lo abra sin volver a pagarlo
+        const gd = A.propuesta && A.propuesta.alcance_decisiones && A.propuesta.alcance_decisiones.armado_guardado;
+        if (!A.armado.vieja && (A.armado.de_conector || (gd && gd.huella && gd.huella === A.armado.huella)))
+          campos.alcance_decisiones.armado_guardado = alcArmadoParaGuardar(A.armado);
       }
       if (silencioso && !abierto) delete campos.reparto_pct;
       if (A.contrato) { campos.armado_el = new Date().toISOString(); campos.archivo = A.contrato.archivo; }

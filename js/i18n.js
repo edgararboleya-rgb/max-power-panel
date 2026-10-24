@@ -183,6 +183,7 @@
     [/^(.+) contratado activo$/, "$1 active contracted"],
     [/^quedan ([\d.]+) h$/, "$1 h left"],
     [/^de ([\d.]+) h estimadas$/, "of $1 estimated h"],
+    [/^\+ ([\d.]+) h de change orders y service calls$/, "+ $1 h from change orders and service calls"],
     [/^(\d+)% cobrado$/, "$1% collected"],
     [/^(\d+) de (\d+) puntos$/, "$1 of $2 items"],
     [/^Avance de obra:$/, "Job progress:"],
@@ -566,6 +567,10 @@
       "Demolición": "Demolition", "Panel / Servicio": "Panel / Service",
       "Inspección / Correcciones": "Inspection / Corrections",
       "Ej: terminé los recessed del living": "E.g. finished the recessed lights in the living room",
+      // v279 (pliego §13 D8): el cuadro grande de arriba del reporte de horas
+      "¿Qué hiciste hoy?": "What did you do today?",
+      "Ej: 6 horas en lo de Caroline, colgamos 4 luces y movimos una toma. Toca el micrófono del teclado y cuéntalo.":
+        "E.g. 6 hours at Caroline's, we hung 4 lights and moved an outlet. Tap the keyboard microphone and say it.",
       "¿Fue trabajo de un Change Order? (toca la flechita y elígelo)": "Was it change order work? (tap the arrow and pick it)",
       "Contrato base": "Base contract",
       "¿Quedó algún pendiente? (faltó material, circuito sin tirar…)": "Any open items left? (missing material, circuit not pulled…)",
@@ -1223,6 +1228,12 @@
       }],
       [/^(.+): ([\d.]+)h trabajadas de ([\d.]+)h estimadas — se está comiendo el margen$/, "$1: $2h worked of $3h estimated — it's eating the margin"],
       [/^(.+): el labor va al (\d+)% de lo estimado \(([\d.]+)h de ([\d.]+)h\) — vigílalo$/, "$1: labor is at $2% of the estimate ($3h of $4h) — keep an eye on it"],
+      // v279 (pliego §13 E2): desde el 75 %, solo con las horas del contrato base y con el avance por puntos
+      [/^(.+): el labor va al (\d+) % de lo estimado \(([\d.]+)h de ([\d.]+)h\)( · la obra va al (\d+) % de puntos)? — vigílalo$/, s => {
+        const m = s.match(/^(.+): el labor va al (\d+) % de lo estimado \(([\d.]+)h de ([\d.]+)h\)( · la obra va al (\d+) % de puntos)? — vigílalo$/);
+        return `${m[1]}: labor is at ${m[2]}% of the estimate (${m[3]}h of ${m[4]}h)${m[5] ? ` · the job is at ${m[6]}% of the items` : ""} — keep an eye on it`;
+      }],
+      [/^(.+): ([\d.]+)h trabajadas de ([\d.]+)h estimadas · la obra va al (\d+) % de puntos — se está comiendo el margen$/, "$1: $2h worked of $3h estimated · the job is at $4% of the items — it's eating the margin"],
       [/^(.+): materiales PASADOS del presupuesto — (\S+) de (\S+)$/, "$1: materials OVER budget — $2 of $3"],
       [/^(.+): materiales al (\d+)% del presupuesto \((\S+) de (\S+)\)$/, "$1: materials at $2% of budget ($3 of $4)"],
       // Capacidad del equipo: «📊 Próximos 7 días: Jian 3 días · Osbel 1 día · 2 eventos sin asignar»
@@ -4282,8 +4293,8 @@
       "You changed the sheet after building: this is from the old sheet. Tap “Build again with AI”.",
     "Esto frena el contrato": "This stops the contract",
     "Armar el papel": "Build the paper",
-    "Escribe el precio en la hoja («Precio: …») y vuelve a armar con IA, o léela con las reglas.":
-      "Write the price on the sheet (“Precio: …”) and build again with AI, or read it with the rules.",
+    "Escribe el precio en la casilla del rojo de arriba (o toca «Sí, usar el del estimado»): el contrato se rehace sin volver a pedir a la IA.":
+      "Type the price in the box of the red notice above (or tap “Yes, use the one from the estimate”): the contract is rebuilt without asking the AI again.",
     "Lo que la IA entendió": "What the AI understood",
     "de la ficha": "from the job file", "de la hoja": "from the sheet", "regla de la casa": "house rule",
     "por defecto": "by default", "lo contestaste tú": "you answered it",
@@ -4325,6 +4336,7 @@
     "La IA armó la hoja: contéstame lo de arriba y sigo": "The AI built the sheet: answer what's above and I'll go on",
     "No pude rehacer el contrato con esa respuesta": "I couldn't redo the contract with that answer",
     "No pude rehacer el contrato": "I couldn't redo the contract",
+    "Lo apliqué en la hoja. Como cambiaste la hoja después de armar, toca «Volver a armar con IA» para que lo tome.": "I applied it on the sheet. Since you changed the sheet after building, tap “Build again with AI” so it picks it up.",
     "No pude armar el papel": "I couldn't build the paper",
     "La hoja cambió después de armar con IA: toca «Volver a armar con IA»": "The sheet changed after building with AI: tap “Build again with AI”",
     "Contéstame primero lo de la hoja": "Answer what's on the sheet first"
@@ -4353,7 +4365,108 @@
     "Es una obra (con fases)": "It's a project (with phases)",
     "Toca circuitos existentes": "It touches existing circuits",
     "No toca circuitos existentes": "It doesn't touch existing circuits",
+    // 14-oct (pliego §10.9): las cláusulas que la IA adaptó a este trabajo, en «Ajustado a este trabajo»
+    "Volver al texto de la casa": "Go back to the house text",
+    "Usar el texto de la IA": "Use the AI's text",
+    "Ver los dos textos": "See both texts",
+    "Texto de la casa": "House text",
+    "Texto adaptado a este trabajo": "Text adapted to this job",
+    "No pude rehacer el contrato con esa cláusula": "I couldn't redo the contract with that clause",
     "Además": "Also"
+  });
+  // 14-oct (pliego §10.10): «Cuéntale el trabajo», el armado que se corrige solo y la tarjeta «Así lo hice». Lo que escriben la
+  // IA y Edgar sigue con data-no-i18n: aquí solo los textos de la app.
+  Object.assign(D, {
+    "Cuéntale el trabajo": "Tell it about the job",
+    "Cuéntale a la IA lo que hay que hacer, como en el chat (escrito o con el micrófono del teclado). Te pregunta lo justo, escribe la hoja aquí abajo y arma el contrato sola.":
+      "Tell the AI what needs to be done, like in the chat (typed or with the keyboard microphone). It asks only what it needs, writes the sheet down here and builds the contract by itself.",
+    "Lo que encuentre lo arregla sola (como mucho dos rondas) y te cuenta qué hizo.": "Whatever it finds, it fixes by itself (two rounds at most) and tells you what it did.",
+    "Cuesta ≈ $0.50; si tiene que arreglar algo, hasta ≈ $1.50.": "It costs ≈ $0.50; if it has to fix something, up to ≈ $1.50.",
+    "Lo que le cuentas a la IA": "What you tell the AI",
+    "El cliente, qué hay hoy, qué se hace, qué no, quién pone qué": "The client, what's there today, what gets done, what doesn't, who supplies what",
+    "Volver a la hoja de antes": "Go back to the previous sheet",
+    "Puedes dictarlo con el micrófono del teclado. La IA nunca escribe el precio ni los pagos: los pongo yo desde el estimado.":
+      "You can dictate it with the keyboard microphone. The AI never writes the price or the payments: I put them in from the estimate.",
+    "La hoja que escribió la IA traía dinero: no la puse. Pídele que la escriba sin montos ni porcentajes.":
+      "The sheet the AI wrote had money in it: I didn't use it. Ask it to write it without amounts or percentages.",
+    "La hoja que escribió la IA llegó vacía o demasiado larga: no la puse.": "The sheet the AI wrote came empty or too long: I didn't use it.",
+    "Puse la hoja en el cuadro.": "I put the sheet in the box.",
+    "No hay estimado enlazado: escribe tú «Precio:» y «Pagos:» en la hoja y toca «Armar el contrato con IA».":
+      "There's no linked estimate: write «Precio:» and «Pagos:» in the sheet yourself and tap «Build the contract with AI».",
+    "Puse el precio del estimado. Los pagos te los pregunto al armar (o escríbelos en la hoja con «Pagos:»).":
+      "I put in the estimate's price. I'll ask you about the payments when building (or write them in the sheet with «Pagos:»).",
+    "Puse el precio y los pagos del estimado:": "I put in the estimate's price and payments:",
+    "Cuéntale primero el trabajo": "Tell it about the job first",
+    "Escribe el precio en la hoja y arma el contrato": "Write the price in the sheet and build the contract",
+    "Volví a poner la hoja de antes": "I put the previous sheet back",
+    "Listo: mira «Así lo hice» y contéstame lo que falta": "Done: look at «Here's what I did» and answer what's missing",
+    "Listo: mira «Así lo hice»": "Done: look at «Here's what I did»",
+    "Así lo hice": "Here's what I did",
+    "Cómo lo armé": "How I built it",
+    "Lo que encontré y cómo lo arreglé": "What I found and how I fixed it",
+    "Lo que necesito de ti": "What I need from you",
+    "Vuelvo a armar el contrato con lo que encontró la revisión…": "Building the contract again with what the review found…",
+    "La IA está armando el contrato…": "The AI is building the contract…",
+    "La IA está revisando el contrato otra vez…": "The AI is reviewing the contract again…",
+    "La IA está revisando el contrato…": "The AI is reviewing the contract…",
+    "Arreglando el papel punto por punto…": "Fixing the document point by point…",
+    "Te pregunté algo en la hoja: contéstalo y sigo.": "I asked you something on the sheet: answer it and I'll continue.",
+    "Trabajando en el contrato…": "Working on the contract…",
+    "La IA no escribió un resumen esta vez.": "The AI didn't write a summary this time.",
+    "Con la hoja y las reglas de la casa: no tuve que decidir nada aparte.": "With the sheet and the house rules: I didn't have to decide anything else.",
+    "Lo que me pediste:": "What you asked me:",
+    "→ se lo mandé a la IA al volver a armar": "→ I sent it to the AI when building again",
+    "→ lo arreglé al volver a armar": "→ I fixed it when building again",
+    "Todavía estoy en ello.": "I'm still on it.",
+    "La revisión no salió: mira el detalle de la revisión, abajo.": "The review didn't come through: see the review details below.",
+    "No pude arreglar nada sola: te lo pregunto abajo.": "I couldn't fix anything by myself: I ask you below.",
+    "El papel salió con algo que revisar (mira «Contrato armado»): no seguí arreglando.": "The document came out with something to check (see «Contract built»): I stopped fixing.",
+    "No seguí arreglando: el asistente llegó al tope del mes.": "I stopped fixing: the assistant reached the month's limit.",
+    "No pude volver a armar el papel con el dato de la ficha: míralo en la hoja.": "I couldn't rebuild the document with the job card's data: check it on the sheet.",
+    "No terminé de arreglar el contrato: mira la hoja y vuelve a armar.": "I didn't finish fixing the contract: check the sheet and build again.",
+    "Contestado:": "Answered:",
+    "Es dinero: lo decides tú (o sale del estimado).": "It's money: you decide it (or it comes from the estimate).",
+    "Me falta un dato que la ficha no tiene.": "I'm missing a piece of data the job card doesn't have.",
+    "Choca con una de tus lecciones.": "It clashes with one of your lessons.",
+    "Quitaría una protección del contrato.": "It would remove a protection from the contract.",
+    "No lo pude arreglar sola.": "I couldn't fix it by myself.",
+    "No lo pude arreglar sola en dos rondas.": "I couldn't fix it by myself in two rounds.",
+    "Nada: está listo para mandar.": "Nothing: it's ready to send.",
+    "Lo que la IA recuerda de esta obra": "What the AI remembers about this job",
+    "Viaja cada vez que la IA vuelve a armar este contrato.": "It goes along every time the AI builds this contract again.",
+    "Olvidar": "Forget",
+    "Uso la plantilla anterior del contrato: la nueva todavía no está subida.": "I'm using the previous contract template: the new one isn't uploaded yet.",
+    "Listo: la IA ya no lo recuerda": "Done: the AI no longer remembers it",
+    "El contrato sale ligero: sin la sección 9 (garantía, límite, change orders…), porque la hoja lo dice en «Firma:».": "The contract comes out light: without section 9 (warranty, limit, change orders…), because the sheet says so in «Firma:».",
+    "El contrato sale sin firma y sin la sección 9 (garantía, límite, change orders…), porque la hoja lo dice en «Firma:».": "The contract comes out without a signature and without section 9 (warranty, limit, change orders…), because the sheet says so in «Firma:».",
+    // 14-oct (corrección tras la segunda revisión): el armado que se corta, la revisión que no salió y el formato del contrato
+    "La revisión no salió: toca «Intentar otra vez» o «Seguir sin la IA» en la revisión, abajo.": "The review didn't come back: tap «Try again» or «Continue without the AI» in the review, below.",
+    "No pude armar el papel: mira el aviso de la hoja y vuelve a armar.": "I couldn't build the paper: check the note on the sheet and build again.",
+    "Cambiaste la hoja mientras la IA armaba: vuelve a armar con la hoja nueva.": "You changed the sheet while the AI was building: build again with the new sheet.",
+    "El contrato que armó la IA no volvió a pasar los candados de esta app: lo quité. Toca «Armar el contrato con IA».": "The contract the AI built didn't pass this app's locks again: I removed it. Tap «Build the contract with AI».",
+    "Ponerlo en el contrato": "Put it in the contract",
+    "Lo que costó:": "What it cost:",
+    "· rondas de arreglo:": "· fixing rounds:",
+    "· este mes:": "· this month:",
+    "Está bien, mándalo al portal": "Looks good, send it to the portal",
+    "Cámbiale algo": "Change something",
+    "Para mandarlo:": "To send it:",
+    "Qué le cambio": "What should I change",
+    "Por ejemplo: quita la nota del estacionamiento": "For example: remove the parking note",
+    "Hazlo": "Do it",
+    "La IA lo aplica en la hoja, en sus decisiones o en el papel (en ese orden), vuelve a revisar y aquí te cuento lo nuevo. El dinero no: ese lo pones tú en la hoja o en el estimado.":
+      "The AI applies it on the sheet, in its decisions or on the document (in that order), reviews again and I tell you here what's new. Not money: you put that on the sheet or in the estimate.",
+    "Eso es dinero: el precio y los pagos los pones tú en la hoja (o salen del estimado). No se lo mandé a la IA.":
+      "That's money: you put the price and payments on the sheet (or they come from the estimate). I didn't send it to the AI.",
+    "Escribe qué quieres cambiar": "Write what you want to change",
+    "El papel tiene algo que revisar": "The document has something to check",
+    "No pude guardarlo": "I couldn't save it",
+    "Ver el detalle de la revisión": "See the review details",
+    "La IA está arreglando el contrato: espera a que termine": "The AI is fixing the contract: wait for it to finish",
+    // 14-oct (pliego §10.11): el contrato que se armó desde el chat de Claude se sigue en la app
+    "Sigo con el contrato que armaste en el chat: pinto el papel y lo reviso": "Picking up the contract you built in the chat: I'm building the paper and reviewing it",
+    "El contrato del chat ya está armado, pero la IA llegó al tope del mes: toca «Armar el papel» para seguir sin revisarlo":
+      "The contract from the chat is already built, but the AI hit this month's limit: tap «Build the paper» to continue without reviewing it"
   });
   REGLAS.push(
     [/^Este mes el asistente lleva (\d+) ¢ de (\d+) \$\.$/, s => s.replace(/^Este mes el asistente lleva (\d+) ¢ de (\d+) \$\.$/, (m, a, b) => `This month the assistant has used ${a} ¢ of ${b} $.`)],
@@ -4496,6 +4609,254 @@
     [/^(\d+) cambios tuyos no se volvieron a poner porque llevaban un monto o dejaban algo mal en el papel:$/,
       "$1 changes of yours weren't put back because they had an amount or left something wrong on the paper:"]
   );
+  // 17-oct, versión 6 (pliego §11): el revisor propone el texto («Cómo debería ir») y un botón lo pone; sin «Lo dejo así» ni
+  // «Enséñale» en los puntos. Lo que propone la IA va con data-no-i18n.
+  Object.assign(D, {
+    "Dice el papel:": "The paper says:",
+    "Por qué:": "Why:",
+    "Cómo debería ir:": "How it should read:",
+    "Sale de la plantilla": "Comes from the template",
+    "Arreglar según la IA": "Fix it as the AI proposes",
+    "Cambiado en el papel y aprendido para todos los contratos:": "Changed on the paper and learned for every contract:",
+    "Queda 1 punto rojo: arréglalo con «Arreglar según la IA» o dile a la IA por qué está bien":
+      "1 red point is left: fix it with «Fix it as the AI proposes» or tell the AI why it's fine",
+    "No encontré ese párrafo en el papel: háblale a la IA": "I didn't find that paragraph on the paper: talk to the AI",
+    "Ese párrafo sale varias veces en el papel y no sé cuál cambiar: háblale a la IA":
+      "That paragraph appears several times on the paper and I don't know which one to change: talk to the AI",
+    "1 arreglo tuyo se puso en un párrafo que cambió desde que lo hiciste:": "1 fix of yours went into a paragraph that changed since you made it:",
+    "— míralo": "— check it",
+    "— míralos": "— check them",
+    "Esto se arregla con el dato de la ficha": "This is fixed with the data from the job card",
+    "Esto lo pone el programa: pagos o permiso": "The program puts this in: payments or permit",
+    "La IA no propuso texto: háblale": "The AI didn't propose a text: talk to it",
+    "Arregla los puntos rojos (o dile a la IA por qué están bien) y toca «Arreglar el contrato» una sola vez: se revisa con todo lo cambiado y se guarda solo en la propuesta.":
+      "Fix the red points (or tell the AI why they're fine) and tap «Fix the contract» only once: it's reviewed with everything changed and saved to the proposal by itself.",
+    "≈ 25 ¢, un minuto": "≈ 25 ¢, about a minute",
+    "Puesto en el papel": "Put on the paper",
+    "Deshecho: el papel vuelve a decir lo de antes": "Undone: the paper says what it said before",
+    "No pude deshacerlo aquí: vuelve a armar el contrato": "I couldn't undo it here: build the contract again",
+    "Puse 1 arreglo en el papel": "I put 1 fix on the paper"
+  });
+  REGLAS.push(
+    [/^Arreglar todo lo que propone la IA \((\d+)\)$/, "Fix everything the AI proposes ($1)"],
+    [/^(\d+) (arreglados?) · (\d+) por decidir · (\d+) (dudas?)$/, s => s.replace(/^(\d+) (arreglados?) · (\d+) por decidir · (\d+) (dudas?)$/,
+      (m, n, a, mm, k, d) => `${n} fixed · ${mm} to decide · ${k} ${d === "duda" ? "doubt" : "doubts"}`)],
+    [/^Quedan (\d+) puntos rojos: arréglalos con «Arreglar según la IA» o dile a la IA por qué están bien$/,
+      "$1 red points are left: fix them with «Fix it as the AI proposes» or tell the AI why they're fine"],
+    [/^(\d+) arreglos tuyos se pusieron en párrafos que cambiaron desde que los hiciste:$/, "$1 fixes of yours went into paragraphs that changed since you made them:"],
+    [/^Esto se arregla en la hoja \(línea (\d+)\)$/, "This is fixed on the sheet (line $1)"],
+    [/^Puse (\d+) arreglos en el papel$/, "I put $1 fixes on the paper"],
+    [/^Puse (\d+) en el papel; 1 no se pudo poner: míralo$/, "I put $1 on the paper; 1 couldn't be put in: check it"],
+    [/^Puse (\d+) en el papel; (\d+) no se pudieron poner: míralos$/, "I put $1 on the paper; $2 couldn't be put in: check them"]
+  );
+  // 17-oct (pliego §11.9): un botón nunca quita una protección; «Decidido» perdona; olvidar los arreglos viejos; la línea gris
+  // dice la verdad. El motivo que da el juez de las cláusulas va tal cual (es del programa).
+  Object.assign(D, {
+    "La IA propuso:": "The AI proposed:",
+    "Esto es texto de ley: no se cambia con un botón. Si crees que está mal, háblale a la IA":
+      "This is legal text: it isn't changed with a button. If you think it's wrong, talk to the AI",
+    "La IA propuso un texto demasiado largo para esta cláusula: no se pone con un botón. Háblale":
+      "The AI proposed a text too long for this clause: it isn't put in with a button. Talk to it",
+    "La IA propuso un texto con un monto: el dinero lo pone el programa. Háblale y pídele el texto sin cifras":
+      "The AI proposed a text with an amount: the program puts in the money. Talk to it and ask for the text without figures",
+    "La IA propuso un texto que no se puede poner tal cual: háblale": "The AI proposed a text that can't go in as it is: talk to it",
+    "(no vuelve a salir)": "(won't come up again)",
+    "Olvidarlo": "Forget it",
+    "Olvidarlos": "Forget them",
+    "Olvidé 1 cambio viejo": "I forgot 1 old change",
+    "Es texto de ley: lo decides tú.": "It's legal text: you decide.",
+    "Apuntado como decidido: no te lo vuelvo a marcar. El papel no cambia en este punto; si quieres que cambie, ábrelo y díselo a la IA.":
+      "Marked as decided: I won't flag it again. The paper doesn't change at this point; if you want it changed, open it and tell the AI."
+  });
+  REGLAS.push(
+    [/^La IA propuso un texto que pierde protección \((.+)\): háblale$/, "The AI proposed a text that loses protection ($1): talk to it"],
+    [/^Olvidé (\d+) cambios viejos$/, "I forgot $1 old changes"],
+    // 17-oct (integración §11.9; revisión adversaria P2): en la charla de Edgar, solo si él lo confirma, con un «Ojo»
+    [/^Ojo: lo puse porque lo confirmaste, pero quita una protección del contrato \((.+)\)\. Léelo antes de mandar el contrato$/,
+      "Careful: I put it in because you confirmed it, but it removes a protection from the contract ($1). Read it before sending the contract"],
+    // 17-oct (pliego §11.9, revisión adversaria P1–P3)
+    [/^La IA metió en este párrafo algo de garantía, responsabilidad o gravamen \(«(.+)»\): no se pone con un botón\. Háblale$/,
+      "The AI put something about warranty, liability or lien into this paragraph («$1»): it isn't put in with a button. Talk to it"],
+    [/^Esto quita una protección del contrato \((.+)\): no lo puse en el papel\. Si de verdad lo quieres así, toca «Ponerlo aunque quite la protección»$/,
+      "This removes a protection from the contract ($1): I didn't put it on the paper. If you really want it that way, tap «Put it in even though it removes the protection»"],
+    [/^Esto quita una protección del contrato: (.+)\.$/, "This removes a protection from the contract: $1."],
+    [/^Lo que cambia: «(.+)»\.$/, "What changes: «$1»."]
+  );
+  D["No pude comprobar si este texto quita una protección: no se pone con un botón. Háblale"] =
+    "I couldn't check whether this text removes a protection: it isn't put in with a button. Talk to the AI";
+  // 17-oct (pliego §11.9, revisión adversaria P1–P3): la ley nunca entra por la charla; el dinero de la §6 no lleva botón; lo que
+  // quita una protección se pone solo si Edgar lo confirma
+  Object.assign(D, {
+    "Esto es dinero: lo pone el programa. Háblale": "This is money: the program puts it in. Talk to the AI",
+    "Esto es texto de ley: no lo cambio en el papel. Si de verdad está mal, dímelo y lo miramos":
+      "This is legal text: I won't change it on the paper. If it's really wrong, tell me and we'll look at it",
+    "Esto toca el dinero, que lo pone el programa: no lo puse en el papel. Si de verdad lo quieres así, toca «Ponerlo aunque toque el dinero»":
+      "This touches the money, which the program puts in: I didn't put it on the paper. If you really want it that way, tap «Put it in even though it touches the money»",
+    "Ponerlo aunque quite la protección": "Put it in even though it removes the protection",
+    "Ponerlo aunque toque el dinero": "Put it in even though it touches the money",
+    "Ponerlo": "Put it in",
+    "Esto toca el dinero, que normalmente lo pone el programa.": "This touches the money, which the program normally puts in.",
+    "¿Lo pongo en el papel de todas formas?": "Should I put it on the paper anyway?",
+    "Ojo: lo puse porque lo confirmaste, pero toca el dinero, que lo pone el programa. Léelo antes de mandar el contrato":
+      "Careful: I put it in because you confirmed it, but it touches the money, which the program puts in. Read it before sending the contract"
+  });
+  // 18-oct (pliego §11.11): punto por punto, siempre con opción. Como mucho dos botones en cada punto («Arreglar según la IA», que
+  // también pone el dato de la ficha o es «Ponerlo aunque…», y «Hablar con la IA»); «viene de la línea N de tu hoja» es un enlace;
+  // abajo, «Arreglar lo pendiente (M)» le pide a la IA el texto de lo que no lo trae; «Arreglar el contrato» solo pregunta por los rojos
+  Object.assign(D, {
+    "Pone el dato de la ficha:": "Puts in the data from the job card:",
+    "Cambiado en el papel (lo confirmaste):": "Changed on the paper (you confirmed it):",
+    "Ponerlo aunque sea largo": "Put it in even though it's long",
+    "Esto toca el dinero, que lo pone el programa. Si de verdad lo quieres así, toca «Ponerlo aunque toque el dinero»; si no, háblale":
+      "This touches the money, which the program puts in. If you really want it that way, tap «Put it in even though it touches the money»; if not, talk to the AI",
+    "La IA propuso un texto más largo de lo que suele llevar esta cláusula. Léelo entero: si te parece bien, toca «Ponerlo aunque sea largo»; si no, háblale":
+      "The AI proposed a text longer than this clause usually is. Read it all: if it looks right, tap «Put it in even though it's long»; if not, talk to the AI",
+    "No pude comprobar si este texto quita una protección. Si de verdad lo quieres así, toca «Ponerlo aunque quite la protección»; si no, háblale":
+      "I couldn't check whether this text removes a protection. If you really want it that way, tap «Put it in even though it removes the protection»; if not, talk to the AI",
+    "Este texto es más largo de lo que suele llevar esta cláusula. Léelo entero antes: lo largo esconde cambios.":
+      "This text is longer than this clause usually is. Read it all first: long texts hide changes.",
+    "Ojo: lo puse porque lo confirmaste, pero es más largo de lo que suele llevar esta cláusula. Léelo antes de mandar el contrato":
+      "Careful: I put it in because you confirmed it, but it's longer than this clause usually is. Read it before sending the contract",
+    "Este texto es más largo de lo que suele llevar esta cláusula: no lo puse en el papel. Si de verdad lo quieres así, toca «Ponerlo aunque sea largo»":
+      "This text is longer than this clause usually is: I didn't put it on the paper. If you really want it that way, tap «Put it in even though it's long»",
+    "La IA no propuso texto todavía: toca «Arreglar lo pendiente», abajo, o háblale":
+      "The AI hasn't proposed a text yet: tap «Fix what's pending», below, or talk to it",
+    "La IA está escribiendo el texto de lo pendiente… (suele tardar un minuto)": "The AI is writing the text for what's pending… (it usually takes a minute)",
+    "«Arreglar lo pendiente» le pide a la IA el texto de los puntos que no lo traen (≈ 10 ¢). No pone nada sola: tú decides en cada punto.":
+      "«Fix what's pending» asks the AI for the text of the points that don't have one (≈ 10 ¢). It doesn't put anything in by itself: you decide on each point.",
+    "La IA no pudo proponer texto para esos puntos: háblale en cada uno": "The AI couldn't propose a text for those points: talk to it on each one",
+    "La IA propuso texto para 1 punto: míralo y toca «Arreglar según la IA»": "The AI proposed a text for 1 point: check it and tap «Fix it as the AI proposes»",
+    "La IA ya está escribiendo el texto de lo pendiente": "The AI is already writing the text for what's pending",
+    "Espera a que la IA te conteste en la charla": "Wait for the AI to answer you in the chat",
+    "Sin señal: «Arreglar lo pendiente» necesita internet": "No signal: «Fix what's pending» needs internet",
+    "Esos puntos ya no están así en el papel: toca «Arreglar el contrato» para que la IA lo revise otra vez":
+      "Those points aren't on the paper like that anymore: tap «Fix the contract» so the AI reviews it again",
+    "Hay 1 punto rojo sin decidir. ¿Arreglo el contrato con lo decidido y dejo ese para la próxima revisión?":
+      "There is 1 red point not decided. Should I fix the contract with what's decided and leave that one for the next review?"
+  });
+  REGLAS.push(
+    [/^viene de la línea (\d+) de tu hoja$/, "comes from line $1 of your sheet"],
+    [/^Arreglar lo pendiente \((\d+)\)$/, "Fix what's pending ($1)"],
+    [/^La IA propuso texto para (\d+) puntos: míralos y toca «Arreglar según la IA» o «Arreglar todo»$/,
+      "The AI proposed a text for $1 points: check them and tap «Fix it as the AI proposes» or «Fix everything»"],
+    [/^Hay (\d+) puntos rojos sin decidir\. ¿Arreglo el contrato con lo decidido y dejo esos para la próxima revisión\?$/,
+      "There are $1 red points not decided. Should I fix the contract with what's decided and leave those for the next review?"],
+    [/^La IA metió en este párrafo algo de cobro \(«(.+)»\), y el dinero lo pone el programa\. Si de verdad lo quieres así, toca «Ponerlo aunque toque el dinero»; si no, háblale$/,
+      "The AI put something about charges into this paragraph («$1»), and the program puts in the money. If you really want it that way, tap «Put it in even though it touches the money»; if not, talk to the AI"],
+    [/^La IA propuso un texto que pierde protección \((.+)\)\. Si de verdad lo quieres así, toca «Ponerlo aunque quite la protección»; si no, háblale$/,
+      "The AI proposed a text that loses protection ($1). If you really want it that way, tap «Put it in even though it removes the protection»; if not, talk to the AI"],
+    [/^La IA metió en este párrafo algo de garantía, responsabilidad o gravamen \(«(.+)»\)\. Si de verdad lo quieres así, toca «Ponerlo aunque quite la protección»; si no, háblale$/,
+      "The AI put something about warranty, liability or lien into this paragraph («$1»). If you really want it that way, tap «Put it in even though it removes the protection»; if not, talk to the AI"],
+    [/^Esto mete en este párrafo algo de garantía, responsabilidad o gravamen \(«(.+)»\) que puede quitar una protección del contrato\.$/,
+      "This puts something about warranty, liability or lien into this paragraph («$1») that can remove a protection from the contract."]
+  );
+  // 18-oct (pliego §11.12): un solo proceso de revisión. El botón revisa, pone solo lo seguro y vuelve a revisar (como mucho tres
+  // vueltas); al final, UNA pantalla: lo que arregló la IA, lo que le toca decidir a Edgar y las dudas
+  Object.assign(D, {
+    "≈ 25–75 ¢, dos o tres minutos": "≈ 25–75 ¢, two or three minutes",
+    "La IA lee el contrato entero y lo compara con la ficha de la obra. Lo que se puede arreglar sin quitar protección ni tocar el dinero lo arregla sola y vuelve a revisar (como mucho tres vueltas); al final te enseña lo que arregló y lo que te toca decidir.":
+      "The AI reads the whole contract and compares it with the job card. What can be fixed without removing a protection or touching the money, it fixes by itself and reviews again (three rounds at most); at the end it shows you what it fixed and what you have to decide.",
+    "Revisado en 1 vuelta": "Reviewed in 1 round",
+    "Llegué al tope de tres vueltas: lo que la IA propuso en la última no lo puse sola. Está abajo, en «Te toca decidir», con su botón.":
+      "I reached the limit of three rounds: what the AI proposed in the last one I didn't put in by myself. It's below, in «Your call», with its button.",
+    "No seguí revisando: el asistente llegó al tope del mes.": "I didn't keep reviewing: the assistant reached the monthly limit.",
+    "No pude volver a armar el papel con el dato de la ficha: míralo en la hoja y toca «Arreglar el contrato».":
+      "I couldn't build the paper again with the job card data: check it on the sheet and tap «Fix the contract».",
+    "La IA arregló 1 punto": "The AI fixed 1 point",
+    "Lo puso en el papel sin quitar protección ni tocar el dinero. Ábrelo para verlo; si algo no te gusta, «Deshacer» lo vuelve a dejar para ti.":
+      "It put it on the paper without removing a protection or touching the money. Open it to see it; if you don't like something, «Undo» leaves it for you again.",
+    "No queda nada para ti: la IA arregló todo lo que encontró.": "Nothing left for you: the AI fixed everything it found.",
+    "La IA lo arregló:": "The AI fixed it:",
+    "Reviso, arreglo sola lo que se puede y vuelvo a revisar (≈ 25–75 ¢, dos o tres minutos)":
+      "I review, fix by myself what can be fixed and review again (≈ 25–75 ¢, two or three minutes)",
+    "· vueltas de revisión:": "· review rounds:"
+  });
+  REGLAS.push(
+    [/^Vuelta (\d+) de (\d+): la IA está revisando el contrato…$/, "Round $1 of $2: the AI is reviewing the contract…"],
+    [/^Vuelta (\d+) de (\d+): la IA está revisando lo que arregló…$/, "Round $1 of $2: the AI is reviewing what it fixed…"],
+    [/^Vuelta (\d+) de (\d+): pongo en el papel el dato de la ficha…$/, "Round $1 of $2: I'm putting the job card data on the paper…"],
+    [/^Revisado en (\d+) vueltas$/, "Reviewed in $1 rounds"],
+    [/^Revisado en (\d+) (vueltas?) · costó (\d+) ¢$/, s => s.replace(/^Revisado en (\d+) (vueltas?) · costó (\d+) ¢$/,
+      (m, n, v, c) => `Reviewed in ${n} ${v === "vuelta" ? "round" : "rounds"} · cost ${c} ¢`)],
+    [/^La vuelta (\d+) no salió \((.+)\): te enseño lo que hay hasta ahí$/, s => s.replace(/^La vuelta (\d+) no salió \((.+)\): te enseño lo que hay hasta ahí$/,
+      (m, n, e) => `Round ${n} didn't come through (${traducirTexto(e)}): I'm showing you what there is so far`)],
+    [/^La vuelta (\d+) no salió \((.+)\): te enseño lo que hay hasta ahí\. Toca «Revisar otra vez con IA» cuando puedas\.$/,
+      s => s.replace(/^La vuelta (\d+) no salió \((.+)\): te enseño lo que hay hasta ahí\. Toca «Revisar otra vez con IA» cuando puedas\.$/,
+        (m, n, e) => `Round ${n} didn't come through (${traducirTexto(e)}): I'm showing you what there is so far. Tap «Review again with AI» when you can.`)],
+    [/^La IA arregló (\d+) puntos$/, "The AI fixed $1 points"],
+    [/^Te toca decidir \((\d+)\)$/, "Your call ($1)"],
+    [/^Dudas \((\d+)\)$/, "Doubts ($1)"],
+    [/^La IA arregló (\d+) (puntos?) · te toca decidir (\d+)$/, s => s.replace(/^La IA arregló (\d+) (puntos?) · te toca decidir (\d+)$/,
+      (m, n, p, k) => `The AI fixed ${n} ${p === "punto" ? "point" : "points"} · your call: ${k}`)]
+  );
+  // 20-oct (pliego §12.5): «Aplicar mi orden». Edgar dice qué cambia, la IA lo pasa a una lista, él la aprueba y el programa la pone
+  // sin IA; «N de M bien» dice si quedó. Lo que escribe la IA (el porqué, las dudas, el inglés del papel) va con data-no-i18n
+  Object.assign(D, {
+    "Aplicar mi orden": "Apply my order",
+    "Tu orden para este contrato": "Your order for this contract",
+    "Dime qué cambia, con tus palabras o con el texto exacto en inglés. Ejemplo: “7.6 debe decir: …”, “quitar Cabinet lighting”, “añadir a No incluye: temporary power…”.":
+      "Tell me what changes, in your own words or with the exact English text. Example: “7.6 must say: …”, “remove Cabinet lighting”, “add to Not included: temporary power…”.",
+    "Lo que cambia en el contrato": "What changes in the contract",
+    "Puedes dictarlo con el micrófono del teclado. Los montos no viajan a la IA: los tapo antes de mandar, y el dinero del papel lo pone el programa.":
+      "You can dictate it with the keyboard microphone. Amounts don't travel to the AI: I cover them before sending, and the money on the paper is set by the program.",
+    "La IA está convirtiendo tu orden en una lista… (suele tardar uno o dos minutos; puedes seguir)":
+      "The AI is turning your order into a list… (it usually takes one or two minutes; you can keep going)",
+    "Pongo tu orden en el papel…": "I'm putting your order on the paper…",
+    "Esto de tu orden la IA no lo supo ubicar en el papel:": "The AI couldn't find where this part of your order goes on the paper:",
+    "Lo que voy a poner en el papel (mira cada punto; si alguno no va, quítalo):": "What I'm going to put on the paper (check each point; if one doesn't belong, remove it):",
+    "Párrafo": "Paragraph", "Añadir": "Add", "Dato": "Data", "Aceptación": "Acceptance",
+    "Ver más": "See more", "Ver lo que se quita": "See what is removed",
+    "Quitar de la lista": "Remove from the list",
+    "El dinero del papel": "The money on the paper",
+    "Sobra:": "Should not be there:", "Falta en negrita:": "Missing in bold:", "El dinero no cuadra:": "The money doesn't add up:",
+    "No se puede: texto de ley. Ese párrafo lo pone la ley de Florida y no se cambia con una orden.":
+      "Not allowed: legal text. That paragraph is set by Florida law and is not changed with an order.",
+    "No pude escribir ese dato en la hoja.": "I couldn't write that data on the sheet.",
+    "Escribí el dato en la hoja, pero no pude volver a armar el papel.": "I wrote the data on the sheet, but I couldn't build the paper again.",
+    "El texto nuevo es demasiado largo o trae marcas que no van en el papel.": "The new text is too long or has marks that don't go on the paper.",
+    "No lo puse: la frase que dice qué cambiar junta dos párrafos del papel. Háblale a la IA para que diga cuál es.":
+      "I didn't put it: the phrase that says what to change joins two paragraphs of the paper. Talk to the AI so it says which one.",
+    "No lo puse: eso es el título de una sección, y los títulos de las secciones no se cambian con una orden.":
+      "I didn't put it: that is a section title, and section titles are not changed with an order.",
+    "No lo puse: es la tabla de pagos, y esa la pone el programa desde el estimado.":
+      "I didn't put it: it's the payment table, and the program sets it from the estimate.",
+    "Esa frase junta dos párrafos del papel y no sé cuál cambiar: háblale a la IA": "That phrase joins two paragraphs of the paper and I don't know which one to change: talk to the AI",
+    "Aplicaste tu orden: toca «Revisar otra vez con IA» para que la IA mida el papel contra ella":
+      "You applied your order: tap «Review again with AI» so the AI measures the paper against it",
+    "La IA no pudo convertir tu orden en puntos del papel: mira sus dudas y escríbela de otra manera":
+      "The AI couldn't turn your order into points on the paper: look at its doubts and write it another way",
+    "La IA no sacó ningún punto de tu orden; escríbela de otra manera": "The AI didn't get any point out of your order; write it another way",
+    "La IA no sacó ningún punto de tu orden": "The AI didn't get any point out of your order",
+    "La IA convirtió tu orden en una lista: mírala y apruébala": "The AI turned your order into a list: check it and approve it",
+    "Tu orden lleva un monto que no pude tapar: quítalo y vuelve a mandarla (el dinero lo pone el programa, no la IA)":
+      "Your order has an amount I couldn't cover: remove it and send it again (the program sets the money, not the AI)",
+    "Se me escapó un monto sin tapar; no lo mandé a la IA": "An uncovered amount slipped through; I didn't send it to the AI",
+    "Se me escapó un monto sin tapar en la hoja; no lo mandé a la IA": "An uncovered amount slipped through on the sheet; I didn't send it to the AI",
+    "Escribe primero tu orden": "Write your order first",
+    "Tu orden es muy larga para la IA: pártela en dos": "Your order is too long for the AI: split it in two",
+    "Tu orden llevaba un monto sin tapar: la IA no la aceptó. El dinero lo pone el programa": "Your order had an uncovered amount: the AI didn't accept it. The program sets the money",
+    "La IA ya gastó lo del mes: tu orden no se mandó": "The AI already used this month's budget: your order wasn't sent",
+    "La lista salió cortada; vuelve a intentarlo (o parte tu orden en dos)": "The list came out cut; try again (or split your order in two)",
+    "La IA no quiso convertir tu orden; escríbela de otra manera": "The AI wouldn't convert your order; write it another way",
+    "No encuentro esa orden; vuelve a mandarla": "I can't find that order; send it again",
+    "Sin señal: la orden necesita internet. Cuando vuelva, toca otra vez": "No signal: the order needs internet. When it's back, tap again",
+    "Espera a que la IA termine con el contrato": "Wait for the AI to finish with the contract",
+    "No pude volver a armar el papel con los datos: míralo en la hoja": "I couldn't build the paper again with the data: check it on the sheet",
+    "No pude aplicar la orden": "I couldn't apply the order"
+  });
+  REGLAS.push(
+    [/^Aprobar y aplicar todo \((\d+)\)$/, "Approve and apply all ($1)"],
+    [/^(\d+) de (\d+) bien$/, "$1 of $2 right"],
+    [/^La IA dejó fuera (\d+) (puntos?):$/, s => s.replace(/^La IA dejó fuera (\d+) (puntos?):$/, (m, n, p) => `The AI left out ${n} ${p === "punto" ? "point" : "points"}:`)],
+    [/^Sale (\d+) veces:$/, "Shows up $1 times:"],
+    [/^Apliqué tu orden: (\d+) de (\d+) bien$/, "I applied your order: $1 of $2 right"],
+    [/^Tu orden pasa de (\d+) puntos: no la apliqué$/, "Your order goes over $1 points: I didn't apply it"],
+    [/^Con tu orden de antes serían (\d+) puntos, y como mucho van (\d+)\. Quita de la lista los que sobran \(o junta lo de antes en menos puntos\) y vuelve a aprobar\.$/,
+      "With your earlier order it would be $1 points, and $2 is the most. Remove the extra ones from the list (or combine the earlier ones into fewer points) and approve again."],
+    [/^Puse (\d+) (puntos?) en el papel(?:; (\d+) ya (estaba|estaban))?\. Ahora toca «Revisar otra vez con IA»: la IA mide el papel contra tu orden\.$/,
+      s => s.replace(/^Puse (\d+) (puntos?) en el papel(?:; (\d+) ya (estaba|estaban))?\. Ahora toca «Revisar otra vez con IA»: la IA mide el papel contra tu orden\.$/,
+        (m, n, p, y) => `I put ${n} ${p === "punto" ? "point" : "points"} on the paper` + (y ? `; ${y} ${y === "1" ? "was" : "were"} already there` : "") + ". Now tap «Review again with AI»: the AI measures the paper against your order.")]
+  );
   // ---------- El motor ----------
   // Cada texto de la pantalla se busca en el diccionario tal como se ve: con los
   // espacios y saltos de línea juntados en uno solo. Si no está, se prueba sin el
@@ -4603,6 +4964,125 @@
     if (raiz.matches(SEL_ATTR)) conAttr.push(raiz);
     conAttr.forEach(traducirAtributos);
   }
+
+  // v280 (pliego §13 E4): las horas por fase y por tarea, el reparto, el panel del campo y «Que la IA lo apunte»
+  Object.assign(D, {
+    "Que la IA lo apunte": "Let the AI log it",
+    "Leyendo…": "Reading…",
+    "No pude leerlo ahora. Guarda el reporte con el formulario.": "I couldn't read it right now. Save the report with the form.",
+    "Tardó demasiado. Mira tu historial de abajo antes de volver a apuntarlo: puede que ya haya entrado.": "It took too long. Check your history below before entering it again: it may already be in.",
+    "No era así, quítalo": "That's not right, remove it",
+    "Quitado": "Removed",
+    "Sí, son horas aparte": "Yes, they're separate hours",
+    "También quité lo que le pasé a Edgar como posible extra.": "I also removed what I passed to Edgar as a possible extra.",
+    "También anulé la compra que apunté (no se borra: queda anulada).": "I also voided the purchase I logged (it isn't erased: it stays voided).",
+    "Lo demás de ese reporte (el extra o la compra) no lo pude quitar: díselo a Edgar.": "I couldn't remove the rest of that report (the extra or the purchase): tell Edgar.",
+    "También quité esa línea del diario que ve el cliente.": "I also removed that line from the log the client sees.",
+    "Ojo: la línea de ese punto se quedó en el diario que ve el cliente. Díselo a Edgar.": "Heads up: that item's line stayed in the log the client sees. Tell Edgar.",
+    "Cuéntalo primero en el cuadro: las horas, la obra y qué hicieron.": "Tell it in the box first: the hours, the job and what you did.",
+    "No se pudo quitar ahora. Díselo a Edgar.": "Couldn't remove it right now. Tell Edgar.",
+    "No se pudo deshacer. Díselo a Edgar.": "Couldn't undo it. Tell Edgar.",
+    "Por fase": "By phase",
+    "Sin reparto por fase: dímelo en el chat (reparto_horas_fase) o aquí": "No split by phase: tell me in the chat (reparto_horas_fase) or here",
+    "Repartir las horas por fase": "Split the hours by phase",
+    "Cambiar el reparto": "Change the split",
+    "Guardar el reparto": "Save the split",
+    "Reparto guardado ✓": "Split saved ✓",
+    // Las partidas (codigos_partida) en la lista «Por tarea»
+    "Demolición eléctrica": "Electrical demolition", "Servicio temporal": "Temporary service", "Subterráneo": "Underground",
+    "Servicio y meter": "Service and meter", "Paneles y subpaneles": "Panels and subpanels", "Puesta a tierra": "Grounding",
+    "Rough-in de circuitos": "Circuit rough-in", "Tubería expuesta": "Exposed conduit", "Piezas: tomas y switches": "Devices: outlets and switches",
+    "Luminarias": "Light fixtures", "Trim y terminación": "Trim and finish", "Cargadores EV": "EV chargers", "Generadores": "Generators",
+    "Inspecciones y correcciones": "Inspections and corrections", "Permisos": "Permits", "Renta de equipos": "Equipment rental",
+    "Misceláneas": "Miscellaneous"
+  });
+  {
+    const FASE_EN = { "Movilización": "Mobilization", "Demolición": "Demolition", "Panel / Servicio": "Panel / Service",
+      "Inspección / Correcciones": "Inspection / Corrections" };
+    const faseEn = f => FASE_EN[f] || f;
+    const RX_FASE = "(Movilización|Demolición|Rough-in|Underground|Panel \\/ Servicio|Trim-out|Low Voltage|Troubleshooting|Inspección \\/ Correcciones|Service Call)";
+    REGLAS.push(
+      [/^Por tarea \((\d+)\)$/, "By task ($1)"],
+      [/^([\d.]+) h de ([\d.]+) h$/, "$1 h of $2 h"],
+      [/^([\d.]+) h sin estimar$/, "$1 h not estimated"],
+      [/^([\d.]+) h · ([\d.]+) de ([\d.]+)$/, "$1 h · $2 of $3"],
+      [/^([\d.]+) h · ([\d.]+) hechas$/, "$1 h · $2 done"],
+      [/^Suma: ([\d.]+) h de ([\d.]+) h estimadas · (cuadra|faltan ([\d.]+) h|sobran ([\d.]+) h)$/, s => {
+        const m = s.match(/^Suma: ([\d.]+) h de ([\d.]+) h estimadas · (cuadra|faltan ([\d.]+) h|sobran ([\d.]+) h)$/);
+        return `Total: ${m[1]} h of ${m[2]} h estimated · ` + (m[3] === "cuadra" ? "it adds up" : m[4] ? `${m[4]} h short` : `${m[5]} h over`);
+      }],
+      [/^El reparto suma ([\d.]+) h y la obra tiene ([\d.]+) h estimadas\. ¿Lo guardo así\?$/, "The split adds up to $1 h and the job has $2 h estimated. Save it like this?"],
+      // El panel del campo: «Rough-in 60 %»
+      [new RegExp("^" + RX_FASE + " (\\d+) %$"), s => {
+        const m = s.match(new RegExp("^" + RX_FASE + " (\\d+) %$"));
+        return faseEn(m[1]) + " " + m[2] + " %";
+      }]
+    );
+  }
+
+  // v281 (pliego §13 E5): la bandeja «La IA pregunta» del inicio del dueño. La pregunta y la obra las escribe el cerebro (van con
+  // data-no-i18n); aquí solo los botones, las notas y las frases fijas que contesta ?accion=propuesta.
+  Object.assign(D, {
+    "La IA pregunta": "The AI asks",
+    "Abrir el correo": "Open the email",
+    "Revísalo y mándalo tú: va con copia a ti.": "Check it and send it yourself: it copies you.",
+    "Revísalo y mándalo tú: va con copia a ti. Falta el correo del cliente: ponlo al abrirlo.": "Check it and send it yourself: it copies you. The client's email is missing: add it when it opens.",
+    "Guardar como lección": "Save as a lesson",
+    "Cerrar y resolver los pendientes": "Close it and resolve the to-dos",
+    "Cerrar y dejarlos": "Close it and leave them open",
+    "Todavía no": "Not yet",
+    "Ya lo mandé": "I already sent it",
+    "Guardar la lección": "Save the lesson",
+    "No pude guardar tu respuesta. Vuelve a intentarlo.": "I couldn't save your answer. Try again.",
+    "No pude guardar tu respuesta.": "I couldn't save your answer.",
+    "Entendido: no te lo vuelvo a preguntar en 30 días.": "Got it: I won't ask you again for 30 days.",
+    "Te lo vuelvo a preguntar en una semana.": "I'll ask you again in a week.",
+    "Apuntado que mandaste el correo.": "Noted that you sent the email.",
+    "Apuntado: lo haces tú en la app.": "Noted: you'll do it in the app.",
+    "Guardé la lección: la tendré en cuenta en los próximos estimados.": "I saved the lesson: I'll keep it in mind for the next estimates.",
+    "Esa duda ya está contestada.": "That question is already answered.",
+    "No encuentro esa duda.": "I can't find that question.",
+    "No encuentro esa obra.": "I can't find that job.",
+    "No pude guardar la lección.": "I couldn't save the lesson.",
+    "No pude cerrar la obra: alguien la cambió o la base no dejó.": "I couldn't close the job: someone changed it or the database didn't allow it.",
+    "Hecho.": "Done."
+  });
+  REGLAS.push(
+    [/^(\d+) dudas? de la revisión diaria$/, s => {
+      const n = Number(s.match(/^(\d+)/)[1]);
+      return n === 1 ? "1 question from the daily review" : n + " questions from the daily review";
+    }],
+    [/^Cerré (.+?) y marqué (\d+) pendientes? resueltos?\.$/, s => {
+      const m = s.match(/^Cerré (.+?) y marqué (\d+) pendientes? resueltos?\.$/);
+      return `I closed ${m[1]} and marked ${m[2]} to-do${m[2] === "1" ? "" : "s"} as resolved.`;
+    }],
+    [/^Cerré (.+?) y dejé sus pendientes abiertos\.$/, "I closed $1 and left its to-dos open."],
+    [/^(.+?) ya estaba cerrada\.$/, "$1 was already closed."]
+  );
+
+  // v282 (pliego §13 E6): la retención del contratista al facturar un hito, y lo que contesta la función qb v4
+  Object.assign(D, {
+    "Retención del contratista (%)": "Contractor retainage (%)",
+    "Retención del contratista (%) — vacía = 0": "Contractor retainage (%) — empty = 0",
+    "Vacía = 0. La recuerdo para la próxima factura de esta obra.": "Empty = 0. I'll remember it for this job's next invoice.",
+    "La retención tiene que ser un porcentaje entre 0 y 100.": "The retainage has to be a percentage between 0 and 100.",
+    "Ya hay una corrida en marcha con QuickBooks. Prueba en un minuto.": "QuickBooks is already busy with another run. Try again in a minute.",
+    // «QuickBooks: mira esto» en el inicio (solo el dueño): lo que la revisión de QuickBooks dejó por mirar
+    "QuickBooks: mira esto": "QuickBooks: take a look",
+    "factura en QuickBooks que la app no conoce": "invoice in QuickBooks that the app doesn't know",
+    "el monto no cuadra con el hito": "the amount doesn't match the milestone",
+    "pagada en la app y abierta en QuickBooks": "paid in the app and open in QuickBooks",
+    "anulada en QuickBooks": "voided in QuickBooks",
+    "pagada en QuickBooks pero el hito o lo cobrado no se movió": "paid in QuickBooks but the milestone or the collected amount didn't move",
+    "Ya lo miré": "I looked at it",
+    "No pude guardarlo. Vuelve a intentarlo.": "I couldn't save it. Try again."
+  });
+  REGLAS.push(
+    [/^(\d+) cosas? que la revisión de QuickBooks no decidió sola$/, s => {
+      const n = Number(s.match(/^(\d+)/)[1]);
+      return n === 1 ? "1 thing the QuickBooks review didn't decide on its own" : n + " things the QuickBooks review didn't decide on its own";
+    }]
+  );
 
   // Los avisos del navegador (confirmar, alertar, preguntar) también
   const c0 = window.confirm, a0 = window.alert, p0 = window.prompt;
