@@ -308,3 +308,36 @@ f06–f12 y f16–f17. Se deciden en el acabado; ninguno cambia los motores.
 22. **Pantalla «Acerca del libro»:** versiones pegadas de c1–c4 (sus marcas),
     cadena, controles y últimas verificaciones: el certificado para el auditor.
 
+## La pestaña Estados (25-oct)
+Quinta pestaña de Contabilidad, solo lectura sobre c4: **Resultados** (mes, mes
+anterior, variación con sentido por sección, acumulado; «Con ajustes» solo si el
+CPA ajustó), **Balance** (cuadre activo − pasivo − capital = 0 visible; el chip
+«Hoy» solo aquí), **Balanza** (debe = haber; clic en una cuenta → **mayor** con el
+saldo corrido de la base → clic en un asiento → sus líneas, su obra y su **papel**
+con la foto del recibo firmada), **Flujo de caja** (directo e indirecto desde la
+misma lectura) y **Contra QuickBooks** (resumen, cuenta por cuenta, Igual /
+Explicada / Centavos / Por explicar / Sin mapeo). Períodos desde `v_cortes`
+(mes, apertura, año; los futuros tras «Más períodos»; la caché vale un día).
+Antes de pintar cada estado se llama `fn_estados_control(p_periodo, p_vistas)`
+con las vistas de esa tarjeta y se coteja el conteo con lo leído; un `ok = null`
+(«Sigue») se vuelve a pedir hasta 6 veces y nunca es verde; ninguna cifra se suma
+en JS; los vacíos dicen de dónde vendrá el dato y no pintan ceros. En el
+teléfono las tablas se apilan (etiqueta arriba, cifras en 2 o 3 columnas) y la
+balanza desplaza dentro de su tarjeta con la columna de la cuenta pegajosa.
+
+**Lo que queda para SQL nuevo (ninguno toca `c4-estados.sql`; cada uno es una
+vista o función encima, con su alta en `fn_estados_control`):**
+1. `v_asiento_totales` (suma debe = haber del asiento) para la fila «Suma».
+2. Control por cuenta y por asiento (`fn_estados_control_cuenta`,
+   `fn_estados_control_asiento`): hoy el control cuenta todo el período y el
+   mayor se coteja contra `v_balanza` (rojo salvo ajuste del CPA de otro año).
+3. Envoltorios con `es_dueno()` para cargar y retirar la balanza de QuickBooks
+   (`fn_comparacion_qb_cargar` está revocada a la API) y para explicar o retirar
+   una diferencia (`fn_diferencia_anotar`): mientras, desde el SQL Editor.
+4. `v_resultados_pct` («% sobre ingresos» del lienzo C1).
+5. `v_comparacion_lado` (libro y QuickBooks «en su lado», no debe − haber).
+6. Conteo de asientos del período en `v_cortes` para la línea de contexto.
+7. Rangos libres (trimestre, mes en curso a hoy fuera del balance): f04/f08.
+8. Bucket privado para los documentos (`docs/apertura/…`, `docs/qb/…`) y un
+   `firmarDocumento` en db.js: hoy la ruta sale como texto.
+

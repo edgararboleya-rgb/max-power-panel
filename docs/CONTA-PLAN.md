@@ -450,7 +450,7 @@ Fase 8 (cerrar octubre y compararlo con QuickBooks), y la factura de la app
 - [x] Fase 2 · El libro — pegado (c2)
 - [x] Fase 3 · Puentes, cobros y CxP — pegado (c3)
 - [x] Fase 4 · Estados y apertura al 30-sep — pegado (c4); apertura posteada y auditada (15-oct)
-- [x] Fase 5 · Primera pantalla — construida (`js/conta.js`, 16-oct); **falta publicar**
+- [x] Fase 5 · Primera pantalla — construida (`js/conta.js`, 16-oct) y publicada; pestaña **Estados** (resultados, balance, balanza → mayor → asiento → papel, flujo de caja, comparación con QuickBooks; 130 comprobaciones en `pruebas/conta/pantalla.js`) construida el 25-oct, **falta publicar** (v286)
 - [x] Fase 6 · Banco, tarjetas, cobros y pagos — pegado (c6, rondas 2–5) y c7 Plaid (17-oct); ▶ Gusto sin arrancar
 - [ ] Fase 7 · Categorización y la bandeja — 🔵🟢 ▶ dictas las reglas; despliegas `contador`
 - [ ] Fase 8 · Cierre, ronda y activos fijos — 🔵🟢 ▶ pg_cron; cierras octubre

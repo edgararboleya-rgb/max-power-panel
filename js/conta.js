@@ -17,6 +17,10 @@
 //     la pantalla no pinta ceros.
 // La conexión es la de js/db.js (MXP_DB._leer, MXP_DB._rpc; MXP_DB._funcion
 // para la función de borde `plaid`: la conexión automática con el banco).
+// Y los estados financieros (c4: v_cortes, v_resultados, v_balance_general,
+// v_balanza, v_mayor, v_libro, v_asiento_papel, v_flujo_caja, v_comparacion,
+// v_comparacion_resumen; control fn_estados_control): solo lectura, cada
+// cifra viene lista de la base y baja hasta su asiento y su papel.
 // ============================================================
 
 (function () {
@@ -44,10 +48,13 @@
     saldos: null, cuentas: null, proyectos: null, bandeja: null,
     conc: null, concCuenta: null, movCuenta: null, movEstado: "", filtroCuenta: null,
     importe: null, ocupado: false,
-    plaid: null, plaidErr: null, mfa: null
+    plaid: null, plaidErr: null, mfa: null,
+    // Estados financieros: qué estado (sub), qué período, la bajada cuenta → asiento,
+    // el método del flujo, la caché de v_cortes (con el día en que se leyó) y la serie contra el doble pintado
+    est: { sub: "resultados", periodo: null, cuenta: null, asiento: null, metodo: "directo", cortes: null, cortesDia: null, todos: false, avisoHoy: false, serie: 0 }
   };
-  const TITULOS = { bancos: "Bancos y tarjetas", bandeja: "Bandeja del banco", conciliar: "Conciliar", movimientos: "Movimientos" };
-  const PESTANAS = { bancos: "Bancos y tarjetas", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos" };
+  const TITULOS = { bancos: "Bancos y tarjetas", bandeja: "Bandeja del banco", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados financieros" };
+  const PESTANAS = { bancos: "Bancos y tarjetas", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados" };
   const KICKER = "Contabilidad · solo dueño";
 
   const raiz = () => $("conta-raiz");
@@ -82,6 +89,14 @@
       if (pag === "conciliar") S.concCuenta = opciones.cuenta;
       if (pag === "movimientos") S.movCuenta = opciones.cuenta;
     }
+    if (pag === "estados") {
+      // la pestaña tocada sin más (o la app recién abierta) vuelve a leer v_cortes: un mes nuevo o un período cerrado se ven sin recargar
+      if (!Object.keys(opciones).length) S.est.cortes = null;
+      for (const k of ["sub", "periodo", "cuenta", "asiento", "metodo"]) if (opciones[k] !== undefined) S.est[k] = opciones[k];
+      // cambiar de estado o de período vuelve a la raíz; ir a una cuenta cierra el asiento
+      if (opciones.sub !== undefined || opciones.periodo !== undefined) { S.est.cuenta = null; S.est.asiento = null; }
+      else if (opciones.cuenta !== undefined && opciones.asiento === undefined) S.est.asiento = null;
+    }
     marcarPestana();
     S.hooks.titulo(KICKER, TITULOS[pag]);
     window.scrollTo(0, 0);
@@ -109,10 +124,11 @@
     if (v && !v.hidden && reintentarPendiente) { const f = reintentarPendiente; reintentarPendiente = null; f(); }
   });
   function errorControl(titulo, mal) { const e = new Error(titulo); e.control = mal || []; return e; }
-  function pintarError(err, reintentar, titulo) {
+  // `cont`: dónde pintar el rojo (por omisión toda la página; los estados lo pintan debajo de su barra)
+  function pintarError(err, reintentar, titulo, cont) {
     if (esFalloDeRed(err) || !navigator.onLine) return sinSenal(reintentar);
     const filas = err.control ? err.control.map(f => `<tr><td>${esc(f.vista)}</td><td class="r ct-num">${f.filas == null ? "—" : esc(f.filas)}</td><td class="r ct-num">${f.esperadas == null ? "—" : esc(f.esperadas)}</td><td>${esc(f.detalle || "")}</td></tr>`).join("") : "";
-    main().innerHTML = `<div class="ct-card ct-rojo" role="alert">
+    (cont || main()).innerHTML = `<div class="ct-card ct-rojo" role="alert">
       <h2>${esc(titulo || (err.control ? err.message : "La base no contestó bien"))}</h2>
       ${err.control ? `<p>La pantalla no pinta nada hasta que esto cuadre: pintar ceros sería mentir. ${err.control.length ? "Lo que no cuadra:" : ""}</p>
         ${filas ? `<div class="ct-tabla-env"><table class="ct-tabla"><thead><tr><th>Vista</th><th class="r">Trajo</th><th class="r">Debía</th><th>Detalle</th></tr></thead><tbody>${filas}</tbody></table></div>` : ""}`
@@ -988,7 +1004,629 @@
     $("ct-mov-estado").addEventListener("change", ev => { S.movEstado = ev.target.value; pintarMovimientos(); });
   }
 
-  const PAGINAS = { bancos: pintarBancos, bandeja: pintarBandeja, conciliar: pintarConciliar, movimientos: pintarMovimientos };
+  // ============================================================
+  // ESTADOS FINANCIEROS (c4: docs/conta/c4-estados.sql) — solo lectura.
+  // Resultados, balance, balanza → mayor → asiento → papel, flujo de caja y
+  // la comparación con QuickBooks. Ninguna cifra se calcula aquí: vienen
+  // listas de la base con su signo (cifra, mes, variacion, acumulado…) y la
+  // pantalla solo las formatea. Antes de pintar cada estado, fn_estados_control
+  // dice si sus vistas cuadran con el libro; con el tope por reloj («Sigue»)
+  // se vuelve a pedir lo que faltó, y ok = null nunca es verde.
+  // ============================================================
+  const MES_LARGO = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+  const cap = s => { s = String(s || ""); return s.charAt(0).toUpperCase() + s.slice(1); };
+  const minus = s => { s = String(s || ""); return s.charAt(0).toLowerCase() + s.slice(1); };
+  const MENOS = "−"; // el menos tipográfico: nunca el guion ni paréntesis
+  const fmtNeg = v => { const n = num(v); return n == null || Number.isNaN(n) ? "—" : money.format(n).replace("-", MENOS); };
+  const fmtSigno = v => { const n = num(v); if (n == null || Number.isNaN(n)) return "—"; return n > 0 ? "+" + money.format(n) : n < 0 ? MENOS + money.format(Math.abs(n)) : money.format(0); };
+  const fmtPct = v => { const n = num(v); if (n == null || Number.isNaN(n)) return "—"; return `${n > 0 ? "+" : n < 0 ? MENOS : ""}${Math.abs(n).toFixed(1)} %`; };
+  // un 0.00 que la vista devolvió se atenúa (es dato, no vacío); un NULL siempre va «—»
+  const cero = v => num(v) === 0 ? " ct-cero" : "";
+  const UMBRAL_CENTAVOS = "1.00"; // comparación para pintar «Centavos», no una suma
+  const FAVORABLE_MAS = { ingresos: true, otros_ingresos: true, totales: true, costo: false, gastos: false, otros_gastos: false };
+  const CAMINO = { mano: "a mano", puente: "puente", ia: "IA aprobada", reverso: "reverso", reverso_automatico: "reverso automático" };
+  const TIPO_AS = { apertura: "apertura", ajuste_cpa: "ajuste del CPA" };
+  const ICO = {
+    check: '<svg class="ct-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>',
+    arriba: '<svg class="ct-ico ct-var-ico" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 8l4-6 4 6z"/></svg>',
+    abajo: '<svg class="ct-ico ct-var-ico" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 2l4 6 4-6z"/></svg>',
+    nota: '<svg class="ct-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2h6l3 3v9H4z M6 8h5M6 11h5"/></svg>',
+    aprox: '<svg class="ct-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6c2-2 4-2 6 0s4 2 6 0M2 10c2-2 4-2 6 0s4 2 6 0"/></svg>',
+    alerta: '<svg class="ct-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v7M8 12v1"/></svg>',
+    equis: '<svg class="ct-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13"/></svg>'
+  };
+  const pillIco = (ico, txt, clase) => `<span class="ct-pill${clase ? " " + clase : ""}">${ico}${esc(txt)}</span>`;
+  const SUBS = { resultados: "Resultados", balance: "Balance", balanza: "Balanza", flujo: "Flujo de caja", comparacion: "Contra QuickBooks" };
+  const H2 = { resultados: "Estado de resultados", balance: "Balance general", balanza: "Balanza de comprobación", flujo: "Flujo de caja", comparacion: "Comparación con QuickBooks" };
+  const VISTAS_SUB = { resultados: ["v_resultados", "v_balance_general"], balance: ["v_balance_general"], balanza: ["v_balanza"], flujo: ["v_flujo_caja"], comparacion: ["v_comparacion", "v_comparacion_resumen"] };
+  // dónde se intercalan los totales del balance (seccion_orden fijos de c4: pasivo desde 400, capital desde 600)
+  const CIERRA = { total_activo: 400, total_pasivo: 600 };
+
+  const nombrePeriodo = c => {
+    if (!c) return "";
+    if (c.tipo === "hoy") return "Hoy";
+    if (c.tipo === "anio") return `Año ${c.anio}`;
+    const [a, m] = partes(c.desde);
+    return `${cap(MES_LARGO[m] || "")} ${a}${c.tipo === "apertura" ? " · apertura" : ""}`;
+  };
+  const nombrePeriodoMin = c => minus(nombrePeriodo(c));
+  function rangoTexto(c, alCorte) {
+    if (!c) return "";
+    const [a, m, d] = partes(c.corte);
+    if (c.tipo === "hoy") return `Al día de hoy, ${fechaLarga(c.corte)} · lo que va del mes`;
+    if (c.tipo === "apertura" || alCorte) return `Al ${d} de ${MES_LARGO[m] || ""} de ${a}`;
+    if (c.tipo === "anio") return `Del 1 de enero al 31 de diciembre de ${a}`;
+    const [, , d0] = partes(c.desde);
+    return `Del ${d0} al ${d} de ${MES_LARGO[m] || ""} de ${a}`;
+  }
+  const cortePill = c => c && c.estado === "cerrado" ? pill("Cerrado", "ok") : pill("Abierto");
+  const diaSiguiente = iso => { const [a, m, d] = partes(iso); return new Date(Date.UTC(a, m - 1, d + 1)).toISOString().slice(0, 10); };
+  const nOrd = v => { const n = Number(v); return v == null || Number.isNaN(n) ? Number.MAX_SAFE_INTEGER : n; };
+  const porClaves = (filas, claves) => [...filas].sort((x, y) => { for (const k of claves) { const d = nOrd(x[k]) - nOrd(y[k]); if (d) return d; } return 0; });
+
+  const P = () => encodeURIComponent(S.est.periodo);
+  const cuerpo = () => $("ct-est-cuerpo");
+  // sigue viva esta pintada: nadie pidió otra cosa después (serie) y la pestaña sigue en pantalla
+  const vivo = mia => mia === S.est.serie && S.pagina === "estados" && !!cuerpo();
+  const cargandoEn = txt => { const c = cuerpo(); if (c) c.innerHTML = `<div class="ct-card ct-cargando">${esc(txt || "Cargando…")}</div>`; };
+  const vacioHTML = (txt, fuente) => `<p class="ct-vacio">${esc(txt)}</p><p class="ct-nota">Dato: ${esc(fuente)}</p>`;
+  const notaFuente = (vistas, corte) => `Fuente: ${vistas.join(" · ")} · controlada con fn_estados_control · ${nombrePeriodo(corte)}`;
+  const chipsOcupados = si => { const b = $("ct-est-barra"); if (b) b.setAttribute("aria-busy", si ? "true" : "false"); };
+  const ctxN = txt => { const n = $("ct-est-ctx-n"); if (n) n.textContent = txt || ""; };
+  const cabHTML = (h2, extra) => `<div class="ct-cab"><h2>${esc(h2)}</h2>${pillIco(ICO.check, "Controlado", "ok")}${extra || ""}</div>`;
+  const kpiHTML = (lbl, val, sub) => `<div class="ct-kpi"><span class="ct-lbl">${esc(lbl)}</span><span class="ct-val ct-num">${val}</span>${sub ? `<span class="ct-sub">${sub}</span>` : ""}</div>`;
+  const cuentaBtn = (cuenta, nombre) => `<button type="button" class="ct-cuenta-btn" data-cuenta="${esc(cuenta)}"><span class="ct-num">${esc(cuenta)}</span> ${esc(nombre || "")}</button>`;
+  const asientoBtn = (id, numero) => `<button type="button" class="ct-asiento-btn ct-num" data-asiento="${esc(id)}">${esc(numero || "ver")}</button>`;
+  function engancharBotones() {
+    const c = cuerpo(); if (!c) return;
+    c.querySelectorAll(".ct-cuenta-btn").forEach(b => b.addEventListener("click", () => ir("estados", { cuenta: b.dataset.cuenta })));
+    c.querySelectorAll(".ct-asiento-btn").forEach(b => b.addEventListener("click", () => { S.est.asiento = b.dataset.asiento; pintarEstados(); }));
+    const v = $("ct-est-volver"); if (v) v.addEventListener("click", () => { if (S.est.asiento) S.est.asiento = null; else S.est.cuenta = null; pintarEstados(); });
+  }
+
+  // FALLA RUIDOSA de los estados: fn_estados_control con las vistas de la
+  // tarjeta. Tope por reloj (3 s desde la API): lo que vuelve con ok = null y
+  // «Sigue: …» no está revisado, se vuelve a pedir (hasta 6 llamadas). Las
+  // filas extra (cuadres entre vistas, protecciones de c4, apertura) que
+  // vengan en false también son rojo.
+  async function controlarEstados(periodo, vistas) {
+    const todas = new Map();
+    let pendientes = vistas.slice();
+    for (let vuelta = 0; vuelta < 6 && pendientes.length; vuelta++) {
+      const filas = await DB._rpc("fn_estados_control", { p_periodo: periodo, p_vistas: pendientes });
+      if (!Array.isArray(filas) || !filas.length) throw errorControl("El control de los estados no devolvió ninguna fila", [{ vista: pendientes.join(", "), detalle: `fn_estados_control('${periodo}', …) contestó vacío` }]);
+      for (const f of filas) if (f.ok !== null || !todas.has(f.vista)) todas.set(f.vista, f);
+      pendientes = pendientes.filter(v => { const f = todas.get(v); return !f || f.ok === null; });
+    }
+    const lista = [...todas.values()];
+    const mal = lista.filter(f => f.ok !== true && f.ok !== null).map(f => ({ vista: f.vista, filas: f.filas, esperadas: f.esperadas, detalle: f.detalle }));
+    for (const v of vistas) {
+      const f = todas.get(v);
+      if (!f) mal.push({ vista: v, detalle: "el control no revisó esta vista" });
+      else if (f.ok === null) mal.push({ vista: v, filas: f.filas, esperadas: f.esperadas, detalle: "el control no alcanzó a revisar esta vista en 6 llamadas (tope por reloj): no se pinta" });
+    }
+    if (mal.length) throw errorControl("El control de los estados no cuadra", mal);
+    return lista;
+  }
+  // Lo que la pantalla trajo de cada vista contra lo que el control contó
+  // (solo vale para las vistas leídas enteras con periodo=eq.; nunca el
+  // mayor por cuenta ni el asiento por id).
+  function cotejar(ctrl, conteos) {
+    const mal = [];
+    for (const v of Object.keys(conteos)) {
+      const f = ctrl.find(x => x.vista === v), n = conteos[v];
+      if (f && n != null && Number(f.filas) !== Number(n)) mal.push({ vista: v, filas: f.filas, esperadas: n, detalle: `la pantalla trajo ${n} fila(s) y el control contó ${f.filas}` });
+    }
+    if (mal.length) throw errorControl("El control de los estados no cuadra", mal);
+  }
+  function pintarErrorEst(err) {
+    const reintentar = () => { S.est.cortes = null; pintarEstados(); };
+    const titulo = err.codigo === "42501" ? "Contabilidad es solo del dueño"
+      : (err.control && err.control.some(f => /apertura en el libro/.test(f.vista || ""))) ? "Falta la apertura en el libro" : undefined;
+    chipsOcupados(false);
+    pintarError(err, reintentar, titulo, cuerpo());
+  }
+
+  // ---------- la barra: qué estado, qué período ----------
+  const enBalance = () => S.est.sub === "balance" && !S.est.cuenta && !S.est.asiento;
+  function periodosOfrecidos(cortes) {
+    const hoy = hoyMiami();
+    const base = cortes.filter(c => ["mes", "apertura", "anio"].includes(c.tipo));
+    const visibles = base.filter(c => S.est.todos || String(c.desde) <= hoy || c.periodo === S.est.periodo);
+    const filaHoy = enBalance() ? cortes.find(c => c.tipo === "hoy") : null;
+    return { lista: (filaHoy ? [filaHoy] : []).concat(visibles), escondidos: base.length - visibles.length };
+  }
+  // el mes que contiene hoy; si no, el mes más reciente ya empezado
+  function mesPorRegla(cortes) {
+    const hoy = hoyMiami();
+    const meses = cortes.filter(c => c.tipo === "mes" && String(c.desde) <= hoy).sort((x, y) => String(y.desde).localeCompare(String(x.desde)));
+    return meses.find(c => String(c.corte) >= hoy) || meses[0] || null;
+  }
+  function resolverPeriodo() {
+    const cortes = S.est.cortes;
+    if (S.est.periodo === "hoy" && !enBalance()) { S.est.periodo = null; S.est.avisoHoy = true; }
+    const { lista } = periodosOfrecidos(cortes);
+    if (!lista.some(c => c.periodo === S.est.periodo)) {
+      const m = mesPorRegla(cortes);
+      S.est.periodo = m ? m.periodo : (lista[0] || cortes[0]).periodo;
+    }
+    return cortes.find(c => c.periodo === S.est.periodo) || cortes[0];
+  }
+  function barraHTML(cortes, corte) {
+    const { lista, escondidos } = periodosOfrecidos(cortes);
+    return `<section class="ct-card ct-est-barra" id="ct-est-barra" aria-busy="false">
+      <div class="ct-chips ct-est-subs" aria-label="Qué estado">${Object.keys(SUBS).map(k => `<button type="button" class="ct-chip" data-sub="${k}" aria-pressed="${k === S.est.sub ? "true" : "false"}">${esc(SUBS[k])}</button>`).join("")}</div>
+      <div class="ct-chips ct-est-periodos" id="ct-est-periodos" aria-label="Qué período">${lista.map(c => `<button type="button" class="ct-chip chica" data-periodo="${esc(c.periodo)}" aria-pressed="${c.periodo === S.est.periodo ? "true" : "false"}">${esc(nombrePeriodo(c))}</button>`).join("")}${escondidos > 0 || S.est.todos ? `<button type="button" class="ct-chip chica" id="ct-est-mas">${S.est.todos ? "Menos períodos" : "Más períodos"}</button>` : ""}</div>
+      <p class="ct-est-ctx" id="ct-est-ctx"><span class="ct-num">${esc(rangoTexto(corte, enBalance()))}</span><span id="ct-est-ctx-n" class="ct-num"></span> ${cortePill(corte)}${S.est.avisoHoy ? `<span class="ct-sub">«Hoy» solo vale para el balance: se enseña el mes completo.</span>` : ""}</p>
+    </section>`;
+  }
+  function engancharBarra() {
+    const b = $("ct-est-barra"); if (!b) return;
+    b.querySelectorAll("[data-sub]").forEach(x => x.addEventListener("click", () => ir("estados", { sub: x.dataset.sub })));
+    b.querySelectorAll("[data-periodo]").forEach(x => x.addEventListener("click", () => ir("estados", { periodo: x.dataset.periodo })));
+    const mas = $("ct-est-mas"); if (mas) mas.addEventListener("click", () => { S.est.todos = !S.est.todos; pintarEstados(); });
+    b.querySelectorAll('.ct-chips [aria-pressed="true"]').forEach(x => { if (typeof x.scrollIntoView === "function") x.scrollIntoView({ inline: "nearest", block: "nearest" }); });
+    chipsOcupados(true);
+  }
+
+  async function pintarEstados() {
+    const mia = ++S.est.serie;
+    if (!navigator.onLine) return sinSenal(pintarEstados);
+    // la caché de v_cortes vale un día: la fila 'hoy' trae la fecha de Miami, y el control y el balance de «hoy» ya corren con el día real
+    if (S.est.cortes && S.est.cortesDia !== hoyMiami()) S.est.cortes = null;
+    if (!S.est.cortes) {
+      cargando("Controlando con la base…");
+      try {
+        const c = await DB._leer("v_cortes?select=periodo,tipo,anio,desde,corte,estado,paralelo&order=desde.desc,tipo.asc");
+        if (mia !== S.est.serie) return;
+        if (!Array.isArray(c) || !c.length) {
+          // El equipo recibe [] con 200 de toda vista: el control dice si es «solo dueño» (42501) o si de verdad no hay períodos
+          await controlarEstados("hoy", ["v_cortes"]);
+          throw errorControl("La base no tiene períodos", [{ vista: "v_cortes", filas: 0, esperadas: "1 o más", detalle: "v_cortes no devolvió ningún período: el libro no está abierto todavía (c2 siembra los períodos). Nada que pintar." }]);
+        }
+        S.est.cortes = c; S.est.cortesDia = hoyMiami();
+      } catch (err) {
+        if (mia !== S.est.serie) return;
+        return pintarError(err, () => { S.est.cortes = null; pintarEstados(); }, err.codigo === "42501" ? "Contabilidad es solo del dueño" : undefined);
+      }
+    }
+    if (mia !== S.est.serie || S.pagina !== "estados") return;
+    const corte = resolverPeriodo();
+    if (!S.est.cuenta && !S.est.asiento) S.hooks.titulo(KICKER, TITULOS.estados);
+    main().innerHTML = barraHTML(S.est.cortes, corte) + `<div id="ct-est-cuerpo"></div>`;
+    engancharBarra();
+    S.est.avisoHoy = false;
+    if (S.est.asiento) return pintarAsiento(S.est.asiento, corte, mia);
+    if (S.est.cuenta) return pintarMayor(S.est.cuenta, corte, mia);
+    const pinta = ({ resultados: pintarResultados, balance: pintarBalance, balanza: pintarBalanza, flujo: pintarFlujo, comparacion: pintarComparacion })[S.est.sub] || pintarResultados;
+    return pinta(corte, mia);
+  }
+
+  // ---------- Estado de resultados ----------
+  function varHTML(f) {
+    const v = num(f.variacion);
+    const hay = v != null && !Number.isNaN(v) && v !== 0;
+    const ico = hay ? (v > 0 ? ICO.arriba : ICO.abajo) : "";
+    const clase = hay ? (((v > 0) === !!FAVORABLE_MAS[f.seccion]) ? " fav" : " desfav") : "";
+    return `<span class="ct-var${clase}">${ico}${fmtSigno(f.variacion)}</span>${f.variacion_pct == null ? "" : `<small class="ct-sub ct-num">${fmtPct(f.variacion_pct)}</small>`}`;
+  }
+  async function pintarResultados(corte, mia) {
+    cargandoEn("Controlando con la base…");
+    const periodo = S.est.periodo;
+    let ctrl, filas;
+    try {
+      [ctrl, filas] = await Promise.all([
+        controlarEstados(periodo, VISTAS_SUB.resultados),
+        DB._leer(`v_resultados?select=nivel,seccion,seccion_orden,linea,linea_orden,orden,cuenta,etiqueta_es,mes,mes_anterior,variacion,variacion_pct,acumulado,acumulado_desde,posteriores,acumulado_ajustado,asientos,desde,hasta,anio,periodo_tipo&periodo=eq.${P()}&order=seccion_orden.asc,linea_orden.asc,orden.asc`)
+      ]);
+      if (!vivo(mia)) return;
+      cotejar(ctrl, { v_resultados: filas.length });
+    } catch (err) { if (!vivo(mia)) return; return pintarErrorEst(err); }
+    chipsOcupados(false);
+    const anio = corte.tipo === "anio";
+    if (!filas.length) {
+      const ap = S.est.cortes.find(c => c.tipo === "apertura");
+      const txt = corte.tipo === "apertura" ? `La apertura no tiene estado de resultados: es la foto del ${fechaLarga(corte.corte)}, no un mes.`
+        : `${nombrePeriodo(corte)} no tiene asientos de resultados en el libro.${ap && Number(corte.anio) === Number(ap.anio) ? ` Los ingresos y gastos de enero a ${MES_LARGO[partes(ap.corte)[1]] || ""} están en QuickBooks; el libro empieza el ${fechaLarga(diaSiguiente(ap.corte))}.` : ""}`;
+      cuerpo().innerHTML = `<section class="ct-card" id="ct-est-resultados">${cabHTML(H2.resultados)}${vacioHTML(txt, "v_resultados")}</section>`;
+      return;
+    }
+    const total = l => filas.find(f => f.nivel === "total" && f.linea === l);
+    const secIng = filas.find(f => f.nivel === "seccion" && f.seccion === "ingresos");
+    const neta = total("utilidad_neta"), bruta = total("utilidad_bruta");
+    const conAjustes = filas.some(f => num(f.acumulado_ajustado) !== num(f.acumulado));
+    const sinAnterior = filas.every(f => f.mes_anterior == null);
+    const colMes = anio ? "Año" : "Mes", colAnt = anio ? "Año anterior" : "Mes anterior";
+    const celda = (v, col) => `<td class="r ct-num${cero(v)}" data-col="${col}">${fmtNeg(v)}</td>`;
+    const cifras = f => `${celda(f.mes, colMes)}${celda(f.mes_anterior, colAnt)}<td class="r ct-num" data-col="Variación">${varHTML(f)}</td>${celda(f.acumulado, "Acumulado")}${conAjustes ? celda(f.acumulado_ajustado, "Con ajustes") : ""}`;
+    const nCols = conAjustes ? 6 : 5;
+    // clave de orden del estado: los totales se intercalan por linea_orden (250 bruta, 350 operación, 600 neta)
+    const bloques = filas.filter(f => f.nivel === "seccion").map(f => ({ clave: nOrd(f.seccion_orden), f, tipo: "seccion" }))
+      .concat(filas.filter(f => f.nivel === "total").map(f => ({ clave: nOrd(f.linea_orden), f, tipo: "total" })))
+      .sort((x, y) => x.clave - y.clave);
+    const tabla = bloques.map(b => {
+      if (b.tipo === "total") {
+        const perdida = b.f.linea === "utilidad_neta" && num(b.f.mes) < 0;
+        return `<tr class="ct-total${b.f.linea === "utilidad_neta" ? " ct-neto" : ""}"><td>${esc(perdida ? "Pérdida neta" : b.f.etiqueta_es)}</td>${cifras(b.f)}</tr>`;
+      }
+      const sec = b.f;
+      const hijas = porClaves(filas.filter(f => f.seccion === sec.seccion && (f.nivel === "linea" || f.nivel === "cuenta")).map(f => ({ ...f, _n: f.nivel === "linea" ? 0 : 1 })), ["linea_orden", "_n", "orden"]);
+      const conLinea = new Set(hijas.filter(f => f.nivel === "linea").map(f => f.linea));
+      return `<tr class="ct-sec"><td colspan="${nCols}">${esc(sec.etiqueta_es)}</td></tr>` +
+        hijas.map(f => f.nivel === "linea"
+          ? `<tr class="ct-linea"><td>${esc(f.etiqueta_es)}</td>${cifras(f)}</tr>`
+          : `<tr class="ct-fila-cuenta${conLinea.has(f.linea) ? " hondo" : ""}"><td>${cuentaBtn(f.cuenta, f.etiqueta_es)}</td>${cifras(f)}</tr>`).join("") +
+        `<tr class="ct-subtotal"><td>Total ${esc(minus(sec.etiqueta_es))}</td>${cifras(sec)}</tr>`;
+    }).join("");
+    const c56 = ctrl.find(f => f.vista === "cuadre: resultado del estado = resultado del balance");
+    const franja = c56 && c56.ok === true ? `<div class="ct-cuadre">${ICO.check} Cuadra · la utilidad neta es la misma que trae el balance</div>` : "";
+    const notas = [];
+    if (sinAnterior) {
+      if (anio) notas.push("Sin año anterior en el libro.");
+      else { const [a, m] = partes(corte.desde); const mp = m === 1 ? 12 : m - 1, ap = m === 1 ? a - 1 : a; const desdeLibro = (neta || filas[0]).acumulado_desde; notas.push(`Sin mes anterior en el libro: ${MES_LARGO[mp]} de ${ap} está en QuickBooks (el libro empieza el ${fechaLarga(desdeLibro)}).`); }
+    }
+    if (!conAjustes) notas.push("Sin ajustes posteriores del CPA en este período.");
+    cuerpo().innerHTML = `<section class="ct-card" id="ct-est-resultados">${cabHTML(H2.resultados)}${franja}
+      <div class="ct-kpis cuatro">
+        ${kpiHTML(anio ? "Ingresos del año" : "Ingresos del mes", fmtNeg(secIng && secIng.mes))}
+        ${kpiHTML("Utilidad bruta", fmtNeg(bruta && bruta.mes))}
+        ${kpiHTML(neta && num(neta.mes) < 0 ? "Pérdida neta" : "Utilidad neta", fmtNeg(neta && neta.mes))}
+        ${kpiHTML("Acumulado del año", fmtNeg(neta && neta.acumulado), neta && neta.acumulado_desde ? `desde el ${fechaLarga(neta.acumulado_desde)}` : "")}
+      </div>
+      <div class="ct-tabla-env"><table class="ct-tabla ct-est-tabla"><thead><tr><th>Cuenta</th><th class="r">${colMes}</th><th class="r">${colAnt}</th><th class="r">Variación</th><th class="r">Acumulado</th>${conAjustes ? `<th class="r">Con ajustes</th>` : ""}</tr></thead><tbody>${tabla}</tbody></table></div>
+      ${notas.map(n => `<p class="ct-nota">${esc(n)}</p>`).join("")}
+      <p class="ct-nota">${esc(notaFuente(["v_resultados", "v_balance_general (el cuadre)"], corte))}</p>
+    </section>`;
+    engancharBotones();
+  }
+
+  // ---------- Balance general ----------
+  async function pintarBalance(corte, mia) {
+    cargandoEn("Controlando con la base…");
+    const periodo = S.est.periodo;
+    let ctrl, filas;
+    try {
+      [ctrl, filas] = await Promise.all([
+        controlarEstados(periodo, VISTAS_SUB.balance),
+        DB._leer(`v_balance_general?select=nivel,seccion,seccion_orden,linea,linea_orden,orden,cuenta,componente,etiqueta_es,saldo,cifra,saldo_ajustado,cifra_ajustada,asientos,cuadra,corte,periodo_tipo&periodo=eq.${P()}&order=seccion_orden.asc,linea_orden.asc,orden.asc`)
+      ]);
+      if (!vivo(mia)) return;
+      cotejar(ctrl, { v_balance_general: filas.length });
+      if (filas.length) {
+        const q = filas.find(f => f.nivel === "total" && f.linea === "cuadra");
+        if (!q || q.cuadra !== true) throw errorControl("El balance no cuadra", [{ vista: "v_balance_general", filas: q ? fmtNeg(q.cifra) : "—", esperadas: "$0.00", detalle: q ? `Activo menos pasivo y capital da ${fmtNeg(q.cifra)} (ajustado ${fmtNeg(q.cifra_ajustada)}): no se pinta un balance descuadrado.` : "La vista no trajo la fila 'cuadra'." }]);
+      }
+    } catch (err) { if (!vivo(mia)) return; return pintarErrorEst(err); }
+    chipsOcupados(false);
+    if (!filas.length) {
+      const ap = S.est.cortes.find(c => c.tipo === "apertura");
+      const [a, m, d] = ap ? partes(ap.corte) : [];
+      cuerpo().innerHTML = `<section class="ct-card" id="ct-est-balance">${cabHTML(H2.balance)}${vacioHTML(`El libro todavía no tiene la apertura. El balance sale cuando se postee la balanza de QuickBooks${ap ? ` al ${d} de ${MES_LARGO[m] || ""} de ${a}` : " de la apertura"}.`, "v_balance_general")}</section>`;
+      return;
+    }
+    const total = l => filas.find(f => f.nivel === "total" && f.linea === l);
+    const q = total("cuadra"), ta = total("total_activo"), tp = total("total_pasivo"), tc = total("total_capital"), tpc = total("pasivo_mas_capital");
+    const efectivo = filas.find(f => f.nivel === "linea" && f.linea === "efectivo");
+    const hoy = corte.tipo === "hoy";
+    const conAjustes = filas.some(f => num(f.cifra_ajustada) !== num(f.cifra));
+    if (q && q.asientos != null) ctxN(` · ${plural(q.asientos, "asiento", "asientos")} al corte`); // v_balance_general cuenta todo el libro hasta el corte
+    const celda = f => `<td class="r ct-num${cero(f.cifra)}" data-col="Al corte">${fmtNeg(f.cifra)}</td>${conAjustes ? `<td class="r ct-num${cero(f.cifra_ajustada)}" data-col="Con ajustes">${fmtNeg(f.cifra_ajustada)}</td>` : ""}`;
+    const nCols = conAjustes ? 3 : 2;
+    const totalTR = (f, neto) => f ? `<tr class="ct-total${neto ? " ct-neto" : ""}"><td>${esc(f.etiqueta_es)}</td>${celda(f)}</tr>` : "";
+    const secciones = porClaves(filas.filter(f => f.nivel === "seccion" && nOrd(f.seccion_orden) < 9000), ["seccion_orden"]);
+    const pintado = {};
+    let tabla = "";
+    for (const sec of secciones) {
+      for (const k of Object.keys(CIERRA)) if (!pintado[k] && nOrd(sec.seccion_orden) >= CIERRA[k]) { tabla += totalTR(total(k)); pintado[k] = true; }
+      const det = filas.filter(f => f.seccion === sec.seccion && ["linea", "cuenta", "componente"].includes(f.nivel));
+      const lineas = porClaves([...new Map(det.map(f => [f.linea, { linea: f.linea, linea_orden: f.linea_orden }])).values()], ["linea_orden"]);
+      tabla += `<tr class="ct-sec"><td colspan="${nCols}">${esc(sec.etiqueta_es)}</td></tr>`;
+      for (const l of lineas) {
+        const fl = det.find(f => f.nivel === "linea" && f.linea === l.linea);
+        if (fl) tabla += `<tr class="ct-linea"><td>${esc(fl.etiqueta_es)}</td>${celda(fl)}</tr>`;
+        for (const f of porClaves(det.filter(f => f.linea === l.linea && f.nivel !== "linea"), ["orden"])) {
+          tabla += f.nivel === "cuenta"
+            ? `<tr class="ct-fila-cuenta${fl ? " hondo" : ""}"><td>${cuentaBtn(f.cuenta, f.etiqueta_es)}</td>${celda(f)}</tr>`
+            : `<tr class="ct-componente"><td>${esc(f.etiqueta_es)}</td>${celda(f)}</tr>`;
+        }
+      }
+      // el subtotal de la sección, salvo que sea la misma fila que un total que viene enseguida («Capital» → «Total capital»)
+      const etSub = `Total ${minus(sec.etiqueta_es)}`;
+      if (!filas.some(f => f.nivel === "total" && String(f.etiqueta_es || "").toLowerCase() === etSub.toLowerCase())) tabla += `<tr class="ct-subtotal"><td>${esc(etSub)}</td>${celda(sec)}</tr>`;
+    }
+    for (const k of Object.keys(CIERRA)) if (!pintado[k]) tabla += totalTR(total(k));
+    tabla += totalTR(tc) + totalTR(tpc, true);
+    cuerpo().innerHTML = `<section class="ct-card" id="ct-est-balance">${cabHTML(H2.balance)}
+      <div class="ct-cuadre">${ICO.check} Cuadra · activo ${fmtNeg(ta && ta.cifra)} ${MENOS} pasivo ${fmtNeg(tp && tp.cifra)} ${MENOS} capital ${fmtNeg(tc && tc.cifra)} = ${fmtNeg(q.cifra)}</div>
+      <div class="ct-kpis cuatro">
+        ${kpiHTML("Activo", fmtNeg(ta && ta.cifra), `al ${fechaLarga(corte.corte)}`)}
+        ${kpiHTML("Pasivo", fmtNeg(tp && tp.cifra))}
+        ${kpiHTML("Capital", fmtNeg(tc && tc.cifra))}
+        ${kpiHTML("Efectivo", fmtNeg(efectivo && efectivo.cifra), efectivo ? "" : "sin renglón de efectivo")}
+      </div>
+      <div class="ct-tabla-env"><table class="ct-tabla angosta"><thead><tr><th>Renglón</th><th class="r">Al corte</th>${conAjustes ? `<th class="r">Con ajustes</th>` : ""}</tr></thead><tbody>${tabla}</tbody></table></div>
+      ${conAjustes ? "" : `<p class="ct-nota">${hoy ? "Con ajustes del CPA no aplica a “hoy”." : "Sin ajustes posteriores del CPA en este período."}</p>`}
+      <p class="ct-nota">${esc(notaFuente(VISTAS_SUB.balance, corte))}</p>
+    </section>`;
+    engancharBotones();
+  }
+
+  // ---------- Balanza de comprobación ----------
+  async function pintarBalanza(corte, mia) {
+    cargandoEn("Controlando con la base…");
+    const periodo = S.est.periodo;
+    let ctrl, filas;
+    try {
+      [ctrl, filas] = await Promise.all([
+        controlarEstados(periodo, VISTAS_SUB.balanza),
+        DB._leer(`v_balanza?select=nivel,orden,cuenta,cuenta_nombre,componente,etiqueta_es,estado,seccion,linea,saldo_inicial,debe,haber,saldo_final,saldo_en_su_lado,asientos,cuadra,desde,hasta,periodo_tipo&periodo=eq.${P()}&order=orden.asc`)
+      ]);
+      if (!vivo(mia)) return;
+      cotejar(ctrl, { v_balanza: filas.length });
+      if (filas.length) {
+        const t = filas.find(f => f.nivel === "total");
+        if (!t || t.cuadra !== true) throw errorControl("La balanza no cuadra", [{ vista: "v_balanza", filas: t ? `${fmtNeg(t.debe)} / ${fmtNeg(t.haber)}` : "—", esperadas: "debe = haber, saldos 0", detalle: t ? `Saldo inicial ${fmtNeg(t.saldo_inicial)}, debe ${fmtNeg(t.debe)}, haber ${fmtNeg(t.haber)}, saldo final ${fmtNeg(t.saldo_final)}.` : "La vista no trajo la fila 'total'." }]);
+      }
+    } catch (err) { if (!vivo(mia)) return; return pintarErrorEst(err); }
+    chipsOcupados(false);
+    if (!filas.length) {
+      cuerpo().innerHTML = `<section class="ct-card" id="ct-est-balanza">${cabHTML(H2.balanza)}${vacioHTML(`Ningún asiento en ${nombrePeriodoMin(corte)}.`, "v_balanza")}</section>`;
+      return;
+    }
+    const t = filas.find(f => f.nivel === "total");
+    if (t.asientos != null) ctxN(` · ${plural(t.asientos, "asiento", "asientos")} del período`); // v_balanza cuenta los fechados en el período
+    const celda = (v, col, extra) => `<td class="r ct-num${extra || ""}${cero(v)}" data-col="${col}">${fmtNeg(v)}</td>`;
+    const cifras = f => celda(f.saldo_inicial, "Saldo inicial") + celda(f.debe, "Debe") + celda(f.haber, "Haber") + celda(f.saldo_final, "Saldo final") + celda(f.saldo_en_su_lado, "En su lado", " ct-lado");
+    const tabla = porClaves(filas, ["orden"]).map(f => f.nivel === "total" ? `<tr class="ct-total ct-neto"><td>${esc(f.etiqueta_es || "Totales")}</td>${cifras(f)}</tr>`
+      : f.nivel === "componente" ? `<tr class="ct-componente"><td>${esc(f.etiqueta_es)}</td>${cifras(f)}</tr>`
+      : `<tr class="ct-fila-cuenta"><td>${cuentaBtn(f.cuenta, f.cuenta_nombre || f.etiqueta_es)}</td>${cifras(f)}</tr>`).join("");
+    cuerpo().innerHTML = `<section class="ct-card" id="ct-est-balanza">${cabHTML(H2.balanza)}
+      <div class="ct-cuadre">${ICO.check} Cuadra · debe ${fmtNeg(t.debe)} = haber ${fmtNeg(t.haber)} · saldo final ${fmtNeg(t.saldo_final)}</div>
+      <div class="ct-kpis">
+        ${kpiHTML("Movimiento del período", fmtNeg(t.debe), "debe = haber")}
+        ${kpiHTML("Asientos", esc(t.asientos == null ? "—" : t.asientos))}
+      </div>
+      <div class="ct-tabla-env"><table class="ct-tabla ancha"><thead><tr><th>Cuenta</th><th class="r">Saldo inicial</th><th class="r">Debe</th><th class="r">Haber</th><th class="r">Saldo final</th><th class="r">En su lado</th></tr></thead><tbody>${tabla}</tbody></table></div>
+      <p class="ct-nota">Saldo final = inicial + debe − haber, calculado por la base. “En su lado” es el saldo como se lee en su estado (una contra-cuenta sale negativa). Toca una cuenta para ver su mayor.</p>
+      <p class="ct-nota">${esc(notaFuente(VISTAS_SUB.balanza, corte))}</p>
+    </section>`;
+    engancharBotones();
+  }
+
+  // ---------- El mayor de una cuenta (saldo corrido por la base) ----------
+  async function pintarMayor(cuenta, corte, mia) {
+    S.hooks.titulo(KICKER, `Mayor · ${cuenta}`);
+    cargandoEn("Controlando con la base…");
+    const periodo = S.est.periodo;
+    const fp = corte.tipo === "anio" ? `&anio=eq.${encodeURIComponent(corte.anio)}` : `&periodo=eq.${P()}`;
+    let filas, b, ajeno;
+    try {
+      const [, m, bs] = await Promise.all([
+        controlarEstados(periodo, ["v_mayor"]),
+        DB._leer(`v_mayor?select=asiento_id,numero,orden,fecha,descripcion,memo,camino,tipo,origen_tabla,monto,debe,haber,saldo,saldo_en_su_lado,reversado,proyecto_id,cadena_pos,ejercicio,cuenta_nombre,saldo_normal&cuenta=eq.${encodeURIComponent(cuenta)}${fp}&order=fecha.asc,cadena_pos.asc,orden.asc`),
+        DB._leer(`v_balanza?select=cuenta,cuenta_nombre,estado,saldo_inicial,debe,haber,saldo_final,saldo_en_su_lado,asientos&periodo=eq.${P()}&cuenta=eq.${encodeURIComponent(cuenta)}`)
+      ]);
+      if (!vivo(mia)) return;
+      filas = m; b = Array.isArray(bs) && bs.length ? bs[0] : null;
+      // un ajuste del CPA de otro ejercicio se lista aquí pero corre con el saldo de su año (v_mayor particiona por ejercicio)
+      ajeno = filas.some(f => f.tipo === "ajuste_cpa" && Number(f.ejercicio) !== Number(corte.anio));
+      const ultima = filas[filas.length - 1];
+      if (b && ultima && num(ultima.saldo) !== num(b.saldo_final) && !ajeno) {
+        throw errorControl("El mayor no termina donde dice la balanza", [{ vista: "v_mayor", filas: fmtNeg(ultima.saldo), esperadas: fmtNeg(b.saldo_final), detalle: `cuenta ${cuenta} · ${nombrePeriodo(corte)}` }]);
+      }
+    } catch (err) { if (!vivo(mia)) return; return pintarErrorEst(err); }
+    chipsOcupados(false);
+    const nombre = b ? b.cuenta_nombre : filas[0] ? filas[0].cuenta_nombre : nombreCuenta(cuenta);
+    S.hooks.titulo(KICKER, `Mayor · ${cuenta} ${nombre}`);
+    // v_balanza guarda el saldo inicial con signo debe − haber; la columna va «en su lado» (como v_mayor.saldo_en_su_lado), así que
+    // se le aplica el lado de la cuenta: lo dice v_mayor (saldo_normal) y, sin movimientos, el signo de saldo_en_su_lado contra saldo_final
+    const lado = filas[0] ? (filas[0].saldo_normal === "haber" ? -1 : 1)
+      : (b && num(b.saldo_final) && num(b.saldo_en_su_lado)) ? Math.sign(num(b.saldo_en_su_lado)) * Math.sign(num(b.saldo_final)) : 1;
+    const trae = b && b.saldo_inicial != null ? fmtNeg((num(b.saldo_inicial) * lado) || 0) : null;
+    const volver = `<div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-est-volver">‹ ${esc(SUBS[S.est.sub] || "Estados")}</button></div>`;
+    if (!filas.length) {
+      cuerpo().innerHTML = `<section class="ct-card" id="ct-est-mayor">${cabHTML(`${cuenta} · ${nombre}`)}${vacioHTML(`La cuenta ${cuenta} no tiene movimientos en ${nombrePeriodoMin(corte)}. Saldo que trae: ${trae || "sin saldo anterior"}.`, "v_mayor")}${volver}</section>`;
+      engancharBotones();
+      return;
+    }
+    const ultima = filas[filas.length - 1];
+    // sin fila en la balanza (una cuenta de resultados cuyas únicas líneas son ajustes del CPA de otro ejercicio), el saldo corrido no es el de este período
+    const sinBalanza = !b && ajeno;
+    const aviso = b && num(ultima.saldo) !== num(b.saldo_final)
+      ? `<p class="ct-aviso warn">El mayor termina en ${fmtNeg(ultima.saldo)} y la balanza dice ${fmtNeg(b.saldo_final)}: un ajuste del CPA de otro ejercicio se lista aquí pero corre con el saldo de su año.</p>`
+      : sinBalanza ? `<p class="ct-aviso warn">La balanza de ${esc(nombrePeriodoMin(corte))} no trae la cuenta ${esc(cuenta)}: sus líneas son ajustes del CPA de otro ejercicio y corren con el saldo de su año, no con el de este período.</p>` : "";
+    const alCorte = sinBalanza ? "—" : fmtNeg(b ? b.saldo_en_su_lado : ultima.saldo_en_su_lado);
+    const celda = (v, col) => `<td class="r ct-num${cero(v)}" data-col="${col}">${fmtNeg(v)}</td>`;
+    // sin colspan ni columna pegajosa: en el teléfono la tabla se apila (fecha, asiento y descripción arriba; debe, haber y saldo debajo)
+    const tabla = `<tr class="ct-trae"><td>Saldo que trae</td><td class="r ct-num" data-col="Debe">—</td><td class="r ct-num" data-col="Haber">—</td><td class="r ct-num ct-lado" data-col="Saldo">${trae || "—"}</td></tr>` +
+      filas.map(f => `<tr><td><span class="ct-num">${fechaLarga(f.fecha)}</span> ${asientoBtn(f.asiento_id, f.numero)} ${esc(f.descripcion || "")}${f.reversado ? ` ${pill("reversado", "warn")}` : ""}<small>${[f.memo, CAMINO[f.camino] || f.camino, f.proyecto_id].filter(Boolean).map(esc).join(" · ")}</small></td>${celda(f.debe, "Debe")}${celda(f.haber, "Haber")}<td class="r ct-num ct-lado" data-col="Saldo">${fmtNeg(f.saldo_en_su_lado)}</td></tr>`).join("") +
+      `<tr class="ct-total ct-neto"><td>Saldo al ${fecha(corte.corte)}</td><td></td><td></td><td class="r ct-num ct-lado" data-col="Saldo">${alCorte}</td></tr>`;
+    cuerpo().innerHTML = `<section class="ct-card" id="ct-est-mayor">${cabHTML(`${cuenta} · ${nombre}`)}${aviso}
+      <div class="ct-kpis tres">
+        ${kpiHTML("Saldo que trae", trae || "—", trae ? "en su lado" : "sin saldo anterior")}
+        ${kpiHTML(`Saldo al ${fecha(corte.corte)}`, alCorte, sinBalanza ? "sin fila en la balanza" : "en su lado")}
+        ${kpiHTML("Asientos", esc(b && b.asientos != null ? b.asientos : new Set(filas.map(f => f.asiento_id)).size))}
+      </div>
+      <div class="ct-tabla-env"><table class="ct-tabla ct-est-tabla tres"><thead><tr><th>Movimiento</th><th class="r">Debe</th><th class="r">Haber</th><th class="r">Saldo</th></tr></thead><tbody>${tabla}</tbody></table></div>
+      <p class="ct-nota">Fuente: v_mayor (saldo corrido por la base) · v_balanza para lo que trae · fn_estados_control · ${esc(nombrePeriodo(corte))}. Toca un asiento para verlo con sus líneas y su papel.</p>
+      ${volver}
+    </section>`;
+    engancharBotones();
+  }
+
+  // ---------- Un asiento con sus líneas y su papel ----------
+  async function pintarAsiento(id, corte, mia) {
+    S.hooks.titulo(KICKER, "Asiento");
+    cargandoEn("Controlando con la base…");
+    const periodo = S.est.periodo;
+    let lineas, papel, url = null, errFoto = null;
+    try {
+      const [, ls, ps] = await Promise.all([
+        controlarEstados(periodo, ["v_libro", "v_asiento_papel"]),
+        DB._leer(`v_libro?select=asiento_id,numero,orden,fecha,periodo,tipo,camino,descripcion,motivo,reversa_a,sustituye_a,origen_tabla,origen_id,documento_ruta,cuenta,cuenta_nombre,debe,haber,monto,memo,proyecto_id,cost_code,tercero_tipo,tercero_id,partida_tabla,partida_id&asiento_id=eq.${encodeURIComponent(id)}&order=orden.asc`),
+        DB._leer(`v_asiento_papel?select=*&asiento_id=eq.${encodeURIComponent(id)}`),
+        proyectos().catch(() => null) // el nombre de la obra de cada línea; si no llega, se enseña el id
+      ]);
+      if (!vivo(mia)) return;
+      if (!Array.isArray(ls) || ls.length < 2) throw errorControl("El asiento no apareció entero", [{ vista: "v_libro", filas: Array.isArray(ls) ? ls.length : 0, esperadas: "2 o más", detalle: id }]);
+      if (!Array.isArray(ps) || ps.length !== 1) throw errorControl("El papel del asiento no apareció", [{ vista: "v_asiento_papel", filas: Array.isArray(ps) ? ps.length : 0, esperadas: 1, detalle: id }]);
+      lineas = ls; papel = ps[0];
+      if (papel.papel_ruta && papel.origen_tabla === "recibos" && typeof DB.firmarFotos === "function") {
+        try { url = (await DB.firmarFotos([papel.papel_ruta]))[papel.papel_ruta] || null; if (!url) errFoto = new Error("la base no firmó la ruta"); }
+        catch (e) { errFoto = e; } // la foto es lo último: si Storage no contesta, el asiento y su papel se pintan igual, con el aviso
+        if (!vivo(mia)) return;
+      }
+    } catch (err) { if (!vivo(mia)) return; return pintarErrorEst(err); }
+    chipsOcupados(false);
+    const a = lineas[0];
+    S.hooks.titulo(KICKER, `Asiento ${a.numero}`);
+    const obra = pid => { const p = (S.proyectos || []).find(x => x.id === pid); return p ? p.nombre : (pid || ""); };
+    const celda = (v, col) => `<td class="r ct-num${cero(v)}" data-col="${col}">${fmtNeg(v)}</td>`;
+    // en el teléfono la tabla se apila: la cuenta arriba, la obra en su renglón y debe | haber debajo (data-col pone las etiquetas)
+    const tabla = lineas.map(l => { const o = obra(l.proyecto_id); return `<tr><td>${cuentaBtn(l.cuenta, l.cuenta_nombre)}<small>${[l.memo, l.tercero_tipo || l.tercero_id ? `${l.tercero_tipo || ""} ${l.tercero_id || ""}`.trim() : "", l.cost_code].filter(Boolean).map(esc).join(" · ")}</small></td><td class="ct-obra"${o ? ` data-col="Obra"` : ""}>${esc(o)}</td>${celda(l.debe, "Debe")}${celda(l.haber, "Haber")}</tr>`; }).join("");
+    const camino = CAMINO[a.camino] || a.camino || "";
+    const ruta = papel.papel_ruta || "";
+    cuerpo().innerHTML = `<section class="ct-card" id="ct-est-asiento">
+      <div class="ct-cab"><h2>Asiento <span class="ct-num">${esc(a.numero)}</span> · ${fechaLarga(a.fecha)}</h2>${pillIco(ICO.check, "Controlado", "ok")}${pill(camino)}${TIPO_AS[a.tipo] ? pill(TIPO_AS[a.tipo]) : ""}${papel.reversado ? pill("Reversado", "warn") : ""}</div>
+      <p class="ct-texto">${esc(a.descripcion || "")}</p>
+      ${a.motivo ? `<p class="ct-nota">Motivo: ${esc(a.motivo)}</p>` : ""}
+      ${a.reversa_a ? `<p class="ct-nota">Reversa al asiento ${asientoBtn(a.reversa_a, "ver")}</p>` : ""}
+      <div class="ct-tabla-env"><table class="ct-tabla ct-est-tabla"><thead><tr><th>Cuenta</th><th>Obra</th><th class="r">Debe</th><th class="r">Haber</th></tr></thead><tbody>${tabla}</tbody></table></div>
+      <p class="ct-nota">${plural(lineas.length, "línea", "líneas")} · la base solo acepta asientos con debe = haber (candado de c2).</p>
+      <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-est-volver">‹ ${S.est.cuenta ? `Mayor ${esc(S.est.cuenta)}` : esc(SUBS[S.est.sub] || "Estados")}</button></div>
+    </section>
+    <section class="ct-card ct-noche" id="ct-est-papel">
+      <p class="ct-noche-lbl">Papel</p>
+      <p class="ct-noche-txt">${esc(papel.papel || "")}</p>
+      <p class="ct-noche-meta">Camino: ${esc(camino)} · <span class="ct-num">${fechaLarga(a.fecha)}</span>${papel.origen_tabla ? ` · ${esc(papel.origen_tabla)} <span class="ct-num">${esc(papel.origen_id || "")}</span>` : ""}</p>
+      ${papel.papel_existe === false ? `<p class="ct-aviso bad">El papel de este asiento ya no está: rastro roto.</p>` : ""}
+      ${url ? `<a class="accion secundaria ct-noche-btn" id="ct-est-papel-foto" href="${esc(url)}" target="_blank" rel="noopener">Ver la foto del recibo</a>` : ""}
+      ${errFoto ? `<p class="ct-aviso warn">La foto no se pudo abrir ahora (${esFalloDeRed(errFoto) ? "sin señal hacia Storage" : esc(errFoto.message)}). Ruta: <span class="ct-num">${esc(ruta)}</span></p>` : ""}
+      ${ruta.startsWith("docs/") ? `<p class="ct-noche-meta">Documento: <span class="ct-num">${esc(ruta)}</span></p>` : ""}
+      ${!ruta && papel.origen_tabla ? `<p class="ct-noche-meta">Se ve en la app: ${esc(papel.origen_tabla)} ${esc(papel.origen_id || "")}</p>` : ""}
+    </section>
+    <p class="ct-nota">Fuente: v_libro · v_asiento_papel · fn_estados_control</p>`;
+    engancharBotones();
+  }
+
+  // ---------- Flujo de caja (los dos métodos vienen en la misma vista) ----------
+  async function pintarFlujo(corte, mia) {
+    cargandoEn("Controlando con la base…");
+    const periodo = S.est.periodo;
+    let ctrl, filas;
+    try {
+      [ctrl, filas] = await Promise.all([
+        controlarEstados(periodo, VISTAS_SUB.flujo),
+        DB._leer(`v_flujo_caja?select=metodo,nivel,seccion,seccion_orden,linea,linea_orden,etiqueta_es,importe,asientos,cuadra,desde,hasta,periodo_tipo&periodo=eq.${P()}&order=metodo.asc,seccion_orden.asc,linea_orden.asc`)
+      ]);
+      if (!vivo(mia)) return;
+      cotejar(ctrl, { v_flujo_caja: filas.length });
+      const malos = filas.filter(f => f.nivel === "control" && f.cuadra !== true);
+      if (malos.length) throw errorControl("El flujo de caja no cuadra", malos.map(c => ({ vista: `v_flujo_caja · ${c.metodo} · ${c.linea}`, filas: fmtNeg(c.importe), esperadas: "$0.00", detalle: c.etiqueta_es })));
+    } catch (err) { if (!vivo(mia)) return; return pintarErrorEst(err); }
+    chipsOcupados(false);
+    if (!filas.length) {
+      cuerpo().innerHTML = `<section class="ct-card" id="ct-est-flujo">${cabHTML(H2.flujo)}${vacioHTML(corte.tipo === "apertura" ? `La apertura no es un flujo: es la foto del ${fechaLarga(corte.corte)}.` : `Sin movimientos de dinero en ${nombrePeriodoMin(corte)}: ni entró ni salió efectivo.`, "v_flujo_caja")}</section>`;
+      return;
+    }
+    const fin = filas.find(f => f.nivel === "total" && f.linea === "efectivo_final");
+    if (fin && fin.asientos != null) ctxN(` · ${plural(fin.asientos, "asiento", "asientos")} con dinero`); // v_flujo_caja cuenta solo los que tocan efectivo
+    pintarFlujoTarjeta(filas, corte);
+  }
+  function pintarFlujoTarjeta(filas, corte) {
+    if (!["directo", "indirecto"].includes(S.est.metodo)) S.est.metodo = "directo";
+    const m = filas.filter(f => f.metodo === S.est.metodo);
+    const total = l => m.find(f => f.nivel === "total" && f.linea === l);
+    const ini = total("efectivo_inicial"), cam = total("cambio"), fin = total("efectivo_final");
+    const subIni = ini && /\(/.test(ini.etiqueta_es || "") ? esc(ini.etiqueta_es.slice(ini.etiqueta_es.indexOf("(") + 1).replace(/\)\s*$/, "")) : "";
+    const celda = v => `<td class="r ct-num${cero(v)}" data-col="Importe">${fmtSigno(v)}</td>`;
+    let tabla = "";
+    for (const sec of porClaves(m.filter(f => f.nivel === "seccion" && nOrd(f.seccion_orden) < 9000), ["seccion_orden"])) {
+      const lineas = porClaves(m.filter(f => f.nivel === "linea" && f.seccion === sec.seccion && f.linea !== f.seccion), ["linea_orden"]);
+      const revela = sec.importe == null; // sin_dinero: se revela, no suma
+      if (!lineas.length) { tabla += `<tr class="ct-subtotal"><td>${esc(sec.etiqueta_es)}</td>${revela ? `<td class="r ct-num">—</td>` : celda(sec.importe)}</tr>`; continue; }
+      tabla += `<tr class="ct-sec"><td colspan="2">${esc(sec.etiqueta_es)}</td></tr>` +
+        lineas.map(f => `<tr${revela ? ` class="ct-componente"` : ""}><td>${esc(f.etiqueta_es)}</td>${celda(f.importe)}</tr>`).join("") +
+        (revela ? "" : `<tr class="ct-subtotal"><td>Total ${esc(minus(sec.etiqueta_es))}</td>${celda(sec.importe)}</tr>`);
+    }
+    for (const t of porClaves(m.filter(f => f.nivel === "total"), ["linea_orden"])) tabla += `<tr class="ct-total${t.linea === "efectivo_final" ? " ct-neto" : ""}"><td>${esc(t.etiqueta_es)}</td>${t.linea === "cambio" ? celda(t.importe) : `<td class="r ct-num${cero(t.importe)}" data-col="Importe">${fmtNeg(t.importe)}</td>`}</tr>`;
+    cuerpo().innerHTML = `<section class="ct-card" id="ct-est-flujo">${cabHTML(H2.flujo)}
+      <div class="ct-cuadre">${ICO.check} Cuadra · cambio en el efectivo ${fmtSigno(cam && cam.importe)} = efectivo al final ${fmtNeg(fin && fin.importe)} ${MENOS} al inicio ${fmtNeg(ini && ini.importe)} · igual por los dos métodos</div>
+      <div class="ct-chips ct-est-metodos" aria-label="Método">${["directo", "indirecto"].map(k => `<button type="button" class="ct-chip chica" data-metodo="${k}" aria-pressed="${k === S.est.metodo ? "true" : "false"}">${cap(k)}</button>`).join("")}</div>
+      <div class="ct-kpis tres">
+        ${kpiHTML("Efectivo al inicio", fmtNeg(ini && ini.importe), subIni)}
+        ${kpiHTML("Cambio en el efectivo", fmtSigno(cam && cam.importe))}
+        ${kpiHTML("Efectivo al final", fmtNeg(fin && fin.importe))}
+      </div>
+      <div class="ct-tabla-env"><table class="ct-tabla angosta"><thead><tr><th>Renglón</th><th class="r">Importe</th></tr></thead><tbody>${tabla}</tbody></table></div>
+      <p class="ct-nota">Positivo = dinero que entra; negativo, que sale. Un 0.00 es un renglón sin movimiento, no un vacío.</p>
+      <p class="ct-nota">Fuente: v_flujo_caja (método ${esc(S.est.metodo)}) · controlada con fn_estados_control · ${esc(nombrePeriodo(corte))}</p>
+    </section>`;
+    cuerpo().querySelectorAll("[data-metodo]").forEach(b => b.addEventListener("click", () => { S.est.metodo = b.dataset.metodo; pintarFlujoTarjeta(filas, corte); }));
+  }
+
+  // ---------- Comparación con QuickBooks ----------
+  function estadoComparacion(f) {
+    if (f.nivel === "sin_mapeo") return pillIco(ICO.equis, "Sin mapeo", "bad");
+    if (f.ok === true) return num(f.diferencia) === 0 ? pillIco(ICO.check, "Igual", "ok") : pillIco(ICO.nota, "Explicada", "ok") + `<small class="ct-sub">explicada: ${esc((f.clases || []).join(", "))}</small>`;
+    if (Math.abs(num(f.sin_explicar) || 0) < Number(UMBRAL_CENTAVOS)) return pillIco(ICO.aprox, "Centavos", "warn");
+    return pillIco(ICO.alerta, "Por explicar", "cu");
+  }
+  async function pintarComparacion(corte, mia) {
+    cargandoEn("Controlando con la base…");
+    const periodo = S.est.periodo;
+    let ctrl, resumen, filas;
+    try {
+      [ctrl, resumen, filas] = await Promise.all([
+        controlarEstados(periodo, VISTAS_SUB.comparacion),
+        DB._leer(`v_comparacion_resumen?select=*&periodo=eq.${P()}`),
+        DB._leer(`v_comparacion?select=nivel,orden,cuenta,cuenta_nombre,estado,cuenta_qb,cuentas_qb,libro,arrastre_apertura,posteriores,comparable,qb,diferencia,explicada,sin_explicar,ok,clases,anotadas,asientos,al,documento&periodo=eq.${P()}&order=orden.asc`)
+      ]);
+      if (!vivo(mia)) return;
+      cotejar(ctrl, { v_comparacion: filas.length, v_comparacion_resumen: resumen.length });
+    } catch (err) { if (!vivo(mia)) return; return pintarErrorEst(err); }
+    chipsOcupados(false);
+    if (!filas.length && !resumen.length) {
+      // cuándo terminó la marcha en paralelo lo dice v_cortes (paralelo es por período): el último corte con paralelo, sin constantes de año
+      const fin = S.est.cortes.filter(c => c.paralelo === true && c.tipo !== "hoy").map(c => String(c.corte)).sort().pop();
+      const txt = corte.paralelo === false ? `La marcha en paralelo con QuickBooks terminó${fin ? ` el ${fechaLarga(fin)}` : ""}: la comparación queda para los períodos ${fin ? "hasta esa fecha" : "que marcharon en paralelo"}.`
+        : `Todavía no hay balanza de QuickBooks para ${nombrePeriodoMin(corte)}. Cuando el contador cierre el mes y la mandes, la comparación sale aquí cuenta por cuenta.`;
+      cuerpo().innerHTML = `<section class="ct-card" id="ct-est-comparacion">${cabHTML(H2.comparacion)}${vacioHTML(txt, "comparacion_qb → v_comparacion")}<p class="ct-nota">La balanza se carga desde el SQL Editor (fn_comparacion_qb_cargar).</p></section>`;
+      return;
+    }
+    const r = resumen[0] || {};
+    const anio = corte.tipo === "anio";
+    // cuentas_mal cuenta también lo sin mapeo (la vista le pone ok = false): aquí se separan para no leer un problema dos veces
+    const nMal = Math.max(0, Number(r.cuentas_mal || 0) - Number(r.sin_mapeo || 0));
+    const franja = r.ok === true
+      ? `<div class="ct-cuadre">${ICO.check} ${esc(nombrePeriodo(corte))} cuadra con QuickBooks: ${esc(r.cuentas_ok)} cuentas iguales, nada por explicar.</div>`
+      : `<div class="ct-cuadre volt">${ICO.alerta} ${nMal} ${nMal === 1 ? "cuenta" : "cuentas"} con diferencia · ${fmtNeg(r.sin_explicar)} sin explicar${Number(r.sin_mapeo) ? ` · ${esc(r.sin_mapeo)} sin mapeo` : ""}</div>`;
+    const conArrastre = filas.some(f => num(f.arrastre_apertura) !== 0 && f.arrastre_apertura != null), conPost = filas.some(f => num(f.posteriores) !== 0 && f.posteriores != null);
+    const celda = (v, col) => `<td class="r ct-num${cero(v)}" data-col="${col}">${fmtNeg(v)}</td>`;
+    const tabla = porClaves(filas, ["orden"]).map(f => {
+      const sinMapeo = f.nivel === "sin_mapeo";
+      const porExplicar = !sinMapeo && f.ok !== true && Math.abs(num(f.sin_explicar) || 0) >= Number(UMBRAL_CENTAVOS);
+      const cuenta = sinMapeo ? `<b>${esc(f.cuenta_qb || "")}</b><small>sin cuenta del plan</small>` : `${cuentaBtn(f.cuenta, f.cuenta_nombre)}${Array.isArray(f.cuentas_qb) && f.cuentas_qb.length ? `<small>${esc(f.cuentas_qb.join(" · "))}</small>` : ""}`;
+      return `<tr class="${sinMapeo ? "ct-sinmapeo" : porExplicar ? "ct-porexplicar" : ""}"><td>${cuenta}</td>${conArrastre ? celda(f.arrastre_apertura, "Arrastre apertura") : ""}${conPost ? celda(f.posteriores, "Posteriores") : ""}${celda(f.comparable, "Libro")}${celda(f.qb, "QuickBooks")}${celda(f.diferencia, "Diferencia")}${celda(f.sin_explicar, "Sin explicar")}<td data-col="Estado">${estadoComparacion(f)}</td></tr>`;
+    }).join("");
+    const doc = filas[0] || {};
+    cuerpo().innerHTML = `<section class="ct-card" id="ct-est-comparacion">${cabHTML(H2.comparacion)}${franja}
+      <div class="ct-kpis cuatro">
+        ${kpiHTML("Cuentas iguales", `${esc(r.cuentas_ok == null ? "—" : r.cuentas_ok)} de ${esc(r.cuentas == null ? "—" : r.cuentas)}`)}
+        ${kpiHTML("Sin explicar", fmtNeg(r.sin_explicar))}
+        ${kpiHTML(anio ? "Utilidad del año · libro" : "Utilidad del mes · libro", fmtNeg(r.utilidad_mes_libro), r.utilidad_mes_libro == null ? "sin mes anterior con balanza" : "")}
+        ${kpiHTML(anio ? "Utilidad del año · QuickBooks" : "Utilidad del mes · QuickBooks", fmtNeg(r.utilidad_mes_qb), `acumulado del año: libro ${fmtNeg(r.utilidad_libro)} · QB ${fmtNeg(r.utilidad_qb)} · diferencia ${fmtSigno(r.utilidad_diferencia)}`)}
+      </div>
+      ${filas.length ? `<div class="ct-tabla-env"><table class="ct-tabla ct-est-tabla"><thead><tr><th>Cuenta</th>${conArrastre ? `<th class="r">Arrastre apertura</th>` : ""}${conPost ? `<th class="r">Posteriores</th>` : ""}<th class="r">Libro</th><th class="r">QuickBooks</th><th class="r">Diferencia</th><th class="r">Sin explicar</th><th>Estado</th></tr></thead><tbody>${tabla}</tbody></table></div>` : `<p class="ct-vacio">La balanza de QuickBooks no trae ninguna cuenta con saldo.</p>`}
+      <p class="ct-nota">Libro = lo del libro más lo que la apertura traía de enero a septiembre, como lo acumula QuickBooks; signo debe − haber “como QuickBooks”: pasivos, capital e ingresos en negativo.</p>
+      ${doc.al || doc.documento ? `<p class="ct-nota">Balanza de QuickBooks al ${fechaLarga(doc.al)} · documento <span class="ct-num">${esc(doc.documento || "")}</span></p>` : ""}
+      <p class="ct-nota">Las diferencias se explican desde el SQL Editor (fn_diferencia_anotar).</p>
+      <p class="ct-nota">${esc(notaFuente(VISTAS_SUB.comparacion, corte))}</p>
+    </section>`;
+    engancharBotones();
+  }
+
+  const PAGINAS = { bancos: pintarBancos, bandeja: pintarBandeja, conciliar: pintarConciliar, movimientos: pintarMovimientos, estados: pintarEstados };
 
   // ---------- Lo que la app llama ----------
   window.MXP_CONTA = {
@@ -1004,9 +1642,12 @@
       ir(S.pagina);
       reanudarLink();
     },
-    // «←» de la app: true si la pantalla tenía algo que cerrar (la conciliación abierta)
+    // «←» de la app: true si la pantalla tenía algo que cerrar (la conciliación abierta, el asiento o el mayor de los estados)
     atras() {
       if (S.conc) { S.conc = null; S.hooks.titulo(KICKER, TITULOS.conciliar); pintarConciliar(); return true; }
+      // la bajada de los estados: asiento → mayor → el estado
+      if (S.pagina === "estados" && S.est.asiento) { S.est.asiento = null; pintarEstados(); return true; }
+      if (S.pagina === "estados" && S.est.cuenta) { S.est.cuenta = null; pintarEstados(); return true; }
       return false;
     },
     ir,

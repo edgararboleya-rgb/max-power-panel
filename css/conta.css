@@ -142,3 +142,91 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-qr-fila { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin: .3rem 0 .6rem; }
 #conta-raiz .ct-qr { width: 190px; height: 190px; border: 1px solid var(--mp-line); border-radius: 12px; background: #fff; padding: 6px; }
 #conta-raiz .ct-clave { font-family: var(--mono); font-size: .92rem; letter-spacing: .06em; word-break: break-all; padding: .4rem .6rem; border-radius: 10px; background: var(--mp-sky-1, #F6FCFF); border: 1px solid var(--mp-line); user-select: all; }
+
+/* ---- estados financieros (c4): la barra, el cuadre, las tablas con niveles, la noche del papel ---- */
+#conta-raiz .ct-est-barra { padding-bottom: .7rem; }
+/* el cuerpo es otro grid: min-width 0 para que una tabla ancha se desplace dentro de su tarjeta y no ensanche la página */
+#conta-raiz #ct-est-cuerpo { display: grid; gap: .8rem; min-width: 0; }
+#conta-raiz .ct-est-subs, #conta-raiz .ct-est-periodos, #conta-raiz .ct-est-metodos { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: .15rem; }
+#conta-raiz .ct-est-subs::-webkit-scrollbar, #conta-raiz .ct-est-periodos::-webkit-scrollbar, #conta-raiz .ct-est-metodos::-webkit-scrollbar { display: none; }
+/* en la computadora los períodos envuelven (con el ratón no hay cómo deslizar una fila sin barra); en el teléfono deslizan con el dedo */
+@media (min-width: 700px) { #conta-raiz .ct-est-periodos { flex-wrap: wrap; overflow-x: visible; } }
+#conta-raiz .ct-est-subs { margin-top: 0; }
+#conta-raiz .ct-est-subs .ct-chip { min-height: var(--tap); font-size: .9rem; flex: none; }
+#conta-raiz .ct-chip.chica { font-size: .82rem; min-height: 36px; flex: none; white-space: nowrap; }
+#conta-raiz .ct-chip:disabled, #conta-raiz .ct-est-barra[aria-busy="true"] .ct-chip { opacity: .6; }
+#conta-raiz .ct-est-ctx { margin: .5rem 0 0; font-size: .88rem; color: var(--mp-ink-2); display: flex; flex-wrap: wrap; gap: .4rem .6rem; align-items: center; }
+#conta-raiz .ct-cuadre { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; padding: .5rem .75rem; border-radius: 10px;
+  background: var(--ok-bg); color: var(--ok-ink); font-weight: 700; font-size: .9rem; margin: .2rem 0 .6rem; }
+#conta-raiz .ct-cuadre.volt { background: var(--warn-bg); color: var(--warn-ink); border: 1px solid var(--mp-warn-bd); }
+#conta-raiz .ct-ico { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vertical-align: -.12em; }
+#conta-raiz .ct-var-ico { fill: currentColor; stroke: none; width: .7em; height: .7em; margin-right: .15em; }
+#conta-raiz .ct-kpis.tres { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 700px) { #conta-raiz .ct-kpis.tres { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* niveles de las vistas → filas de la tabla */
+#conta-raiz .ct-tabla tr.ct-sec td { font-weight: 800; color: var(--cu-dark); font-size: .92rem; padding-top: .8rem; border-bottom: 0; }
+#conta-raiz .ct-tabla tr.ct-linea td { font-weight: 600; }
+#conta-raiz .ct-tabla tr.ct-linea td:first-child, #conta-raiz .ct-tabla tr.ct-fila-cuenta td:first-child { padding-left: 1rem; }
+#conta-raiz .ct-tabla tr.ct-fila-cuenta.hondo td:first-child, #conta-raiz .ct-tabla tr.ct-componente td:first-child { padding-left: 2rem; }
+#conta-raiz .ct-tabla tr.ct-componente td { font-weight: 500; color: var(--mp-ink-2); }
+#conta-raiz .ct-tabla tr.ct-subtotal td { font-weight: 700; border-top: 1px solid var(--mp-line-2); }
+#conta-raiz .ct-tabla tr.ct-total td { font-weight: 800; border-top: 1px solid var(--mp-line-2); }
+#conta-raiz .ct-tabla tr.ct-neto td { font-weight: 800; font-size: .98rem; background: var(--mp-sky-1, #F6FCFF); border-top: 2px solid var(--cu); border-bottom: 2px solid var(--cu); }
+#conta-raiz .ct-tabla tr.ct-trae td { color: var(--mp-ink-3); font-style: italic; }
+#conta-raiz .ct-tabla tr.ct-porexplicar td:first-child { border-left: 3px solid var(--cu); }
+#conta-raiz .ct-tabla tr.ct-sinmapeo td { color: var(--bad); }
+#conta-raiz .ct-tabla td.ct-lado { font-weight: 700; }
+#conta-raiz td.ct-cero, #conta-raiz .ct-cero { color: var(--mp-ink-3); }
+#conta-raiz .ct-tabla td .ct-sub { display: block; }
+#conta-raiz .ct-tabla td small { display: block; font-size: .78rem; }
+/* la puerta hacia abajo: una cuenta, un asiento. El botón mide 36 px para el dedo, pero su caja se mete en el relleno de la celda
+   (margen negativo = padding de td) para que su texto quede a la altura de las cifras y la fila no crezca */
+#conta-raiz .ct-cuenta-btn, #conta-raiz .ct-asiento-btn { font: inherit; background: none; border: 0; padding: .5rem 0; margin: -.5rem 0; min-height: 36px; vertical-align: top; text-align: left; color: var(--mp-ink); cursor: pointer;
+  text-decoration: underline dotted var(--mp-ink-3); text-underline-offset: 3px; }
+#conta-raiz .ct-asiento-btn { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+#conta-raiz .ct-cuenta-btn:hover, #conta-raiz .ct-asiento-btn:hover { color: var(--cu-dark); text-decoration-color: var(--cu); }
+#conta-raiz .ct-cuenta-btn:focus-visible, #conta-raiz .ct-asiento-btn:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: 2px; }
+#conta-raiz .ct-cuenta-btn small { display: block; color: var(--mp-ink-3); font-size: .78rem; }
+#conta-raiz .ct-var { white-space: nowrap; font-weight: 700; }
+#conta-raiz .ct-var.fav { color: var(--ok-ink); }
+#conta-raiz .ct-var.desfav { color: var(--cu-dark); }
+/* la balanza: ancha, con la primera columna pegajosa; las de dos columnas caben en el teléfono */
+#conta-raiz .ct-tabla.ancha { min-width: 760px; }
+#conta-raiz .ct-tabla.ancha td.r { white-space: nowrap; } /* una cifra nunca se parte en dos líneas: la tabla crece y se desplaza */
+#conta-raiz .ct-tabla.ancha th:first-child, #conta-raiz .ct-tabla.ancha td:first-child { position: sticky; left: 0; background: var(--mp-card); z-index: 1; }
+#conta-raiz .ct-tabla.ancha tr.ct-neto td:first-child { background: var(--mp-sky-1, #F6FCFF); }
+#conta-raiz .ct-tabla.angosta { min-width: 0; }
+#conta-raiz .ct-pill.cu { background: #F7E6D8; color: var(--cu-dark); border-color: transparent; }
+#conta-raiz .ct-pill .ct-ico { margin-right: .25em; }
+/* la única tarjeta noche: el papel del asiento */
+#conta-raiz .ct-noche { background: var(--night); color: #fff; border-color: var(--night); }
+#conta-raiz .ct-noche-lbl { margin: 0 0 .3rem; font-size: .72rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--cu-light); }
+#conta-raiz .ct-noche-txt { margin: 0 0 .4rem; font-size: 1rem; font-weight: 700; line-height: 1.45; }
+#conta-raiz .ct-noche-meta { margin: .2rem 0; font-size: .85rem; color: var(--night-ink-2); }
+#conta-raiz .ct-noche .ct-num { color: var(--mp-cyan); }
+#conta-raiz .ct-noche .ct-noche-btn { display: inline-flex; align-items: center; min-height: var(--tap); margin-top: .5rem; background: #fff; color: var(--night); border-color: #fff;
+  text-decoration: none; padding: .5rem .9rem; border-radius: 10px; font-weight: 700; }
+#conta-raiz .ct-noche .ct-aviso.bad { background: #FBE9E9; }
+/* teléfono: resultados, comparación, el mayor y el asiento se apilan (etiqueta arriba, cifras en 2 o 3 columnas) */
+@media (max-width: 699px) {
+  #conta-raiz .ct-tabla.ct-est-tabla { min-width: 0; }
+  #conta-raiz .ct-tabla.ct-est-tabla thead { display: none; }
+  #conta-raiz .ct-tabla.ct-est-tabla tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .15rem .6rem; padding: .5rem 0; border-bottom: 1px solid var(--mp-line); }
+  #conta-raiz .ct-tabla.ct-est-tabla tbody tr td { display: block; border: 0; padding: 0; background: none; }
+  #conta-raiz .ct-tabla.ct-est-tabla tbody tr td:first-child { grid-column: 1 / -1; }
+  #conta-raiz .ct-tabla.ct-est-tabla td[data-col]::before { content: attr(data-col); display: block; font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: var(--mp-ink-2); font-weight: 700; }
+  #conta-raiz .ct-tabla.ct-est-tabla td.r { text-align: left; }
+  #conta-raiz .ct-tabla.ct-est-tabla tbody tr.ct-sec { display: block; border-bottom: 0; padding-bottom: 0; }
+  #conta-raiz .ct-tabla.ct-est-tabla tbody tr.ct-subtotal, #conta-raiz .ct-tabla.ct-est-tabla tbody tr.ct-total { border-top: 1px solid var(--mp-line-2); }
+  #conta-raiz .ct-tabla.ct-est-tabla tbody tr.ct-neto { background: var(--mp-sky-1, #F6FCFF); border-top: 2px solid var(--cu); border-bottom: 2px solid var(--cu); padding-left: .3rem; padding-right: .3rem; }
+  #conta-raiz .ct-tabla.ct-est-tabla tbody tr.ct-porexplicar { border-left: 3px solid var(--cu); padding-left: .5rem; }
+  #conta-raiz .ct-tabla.ct-est-tabla tbody tr.ct-porexplicar td:first-child { border-left: 0; }
+  /* el mayor: debe | haber | saldo en tres columnas; el asiento: la obra en su renglón (el botón conserva su caja: su margen
+     negativo cae en el relleno de la fila y sobre las etiquetas, que no se tocan) */
+  #conta-raiz .ct-tabla.ct-est-tabla.tres tbody tr { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #conta-raiz .ct-tabla.ct-est-tabla tbody tr td.ct-obra { grid-column: 1 / -1; }
+  /* la balanza sigue ancha y pegajosa, pero con la columna de la cuenta estrecha (el nombre pasa a dos líneas) para que quepan cifras al lado */
+  #conta-raiz .ct-tabla.ancha { min-width: 640px; }
+  #conta-raiz .ct-tabla.ancha th:first-child, #conta-raiz .ct-tabla.ancha td:first-child { width: 7.5rem; max-width: 7.5rem; white-space: normal; }
+}
+

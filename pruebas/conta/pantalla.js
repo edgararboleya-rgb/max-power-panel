@@ -5,7 +5,15 @@
    la base con sus argumentos y pide el motivo cuando toca; que el importador
    manda el archivo entero y casa hasta «completo»; que conciliar manda el
    saldo como texto y confirma; y que sin señal no pinta nada de memoria.
-   Los datos son inventados (la forma es la de las vistas de c6).
+   Y la pestaña «Estados» (c4): el selector de período en palabras, el control
+   fn_estados_control con las vistas de cada tarjeta (su rojo, el conteo, el
+   «Sigue» del tope por reloj, «solo dueño»), resultados, balance, balanza →
+   mayor (el saldo que trae en su lado, un ajuste del CPA de otro ejercicio) →
+   asiento (la obra con su nombre) → papel (la foto firmada, el rastro roto y
+   Storage sin contestar), el flujo por los dos métodos, la comparación con
+   QuickBooks y sus vacíos, «←», la carrera de dos clics, sin señal y el
+   teléfono a 390 px (las tablas apiladas, la balanza con su columna pegajosa).
+   Los datos son inventados (la forma es la de las vistas de c4 y c6).
    Uso: NODE_PATH=/opt/node22/lib/node_modules node pruebas/conta/pantalla.js
    (con --fotos guarda capturas de cada pantalla en el temporal del sistema,
    o en FOTOS_DIR; sirven para mirarla sin entrar a producción)              */
@@ -37,6 +45,139 @@ const hoyMiami = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New
 const MOV = { a: '11111111-1111-4111-8111-111111111111', b: '22222222-2222-4222-8222-222222222222', c: '33333333-3333-4333-8333-333333333333' };
 const PART = { p1: 'aaaaaaaa-0000-4000-8000-000000000001', p2: 'aaaaaaaa-0000-4000-8000-000000000002' };
 const CONC_AP = 'cccccccc-0000-4000-8000-00000000000a', CONC_NEW = 'cccccccc-0000-4000-8000-00000000000b';
+// ---- los estados (c4): un octubre inventado que cuadra ----
+// La apertura al 30-sep: 1010 25,000 + 1050 500 = 2010 4,500 + 2100-2013 9,000 + 3000 12,000. En octubre, ocho asientos:
+// a pago a proveedor 1,200 (2010/1010) · f factura 22,000 (1110/4000 20,000 + 4100 2,000) · d recibo 8812 300 (5100/Amex) ·
+// g devengo 4,000 (5200/2010) · b cobro 5,000 (1010/1110) · e trabajo externo 7,700 (5100/2010) · c pago Amex 2,300 (Amex/1010) ·
+// h statement Amex 2,000 (6130 500 + 6300 1,500 / Amex). Resultado 8,000; activo 44,000 = pasivo 24,000 + capital 20,000.
+const ASI = { a: 'aaaaaaaa-1111-4111-8111-111111111111', b: 'aaaaaaaa-2222-4222-8222-222222222222', c: 'aaaaaaaa-3333-4333-8333-333333333333', d: 'aaaaaaaa-4444-4444-8444-444444444444',
+  e: 'aaaaaaaa-5555-4555-8555-555555555555', f: 'aaaaaaaa-6666-4666-8666-666666666666', g: 'aaaaaaaa-7777-4777-8777-777777777777', h: 'aaaaaaaa-8888-4888-8888-888888888888',
+  i: 'aaaaaaaa-9999-4999-8999-999999999999' };
+const HOY = hoyMiami();
+// un mes 13 meses después de hoy: existe en periodos (c2 los siembra) pero la pantalla lo esconde tras «Más períodos»
+const FUTURO = (() => { const [a, m] = HOY.split('-').map(Number); return new Date(Date.UTC(a, m - 1 + 13, 1)).toISOString().slice(0, 7); })();
+const res = (periodo, nivel, seccion, so, linea, lo, orden, cuenta, et, mes, ant, varc, pct, acum, asientos) => ({ periodo, periodo_tipo: 'mes', desde: periodo + '-01', hasta: periodo === '2026-10' ? '2026-10-31' : '2026-11-30', anio: 2026, nivel, seccion, seccion_orden: so, linea, linea_orden: lo, orden, cuenta, etiqueta_es: et, etiqueta_en: et, mes, mes_anterior: ant, variacion: varc, variacion_pct: pct, acumulado: acum, acumulado_desde: '2026-10-01', posteriores: 0, acumulado_ajustado: acum, asientos: nivel === 'cuenta' ? asientos : null, asiento_id: null, numero: null, bajar: {} });
+const RES_OCT = [
+  res('2026-10', 'cuenta', 'ingresos', 100, 'ingresos', 100, 40000, '4000', 'Ingresos por obra', 20000, null, null, null, 20000, 1),
+  res('2026-10', 'cuenta', 'ingresos', 100, 'ingresos', 100, 41000, '4100', 'Cambios de obra', 2000, null, null, null, 2000, 1),
+  res('2026-10', 'seccion', 'ingresos', 100, 'ingresos', 100, 100, null, 'Ingresos', 22000, null, null, null, 22000),
+  res('2026-10', 'cuenta', 'costo', 200, 'costo', 200, 51000, '5100', 'Material de obra', 8000, null, null, null, 8000, 2),
+  res('2026-10', 'cuenta', 'costo', 200, 'costo', 200, 52000, '5200', 'Mano de obra', 4000, null, null, null, 4000, 1),
+  res('2026-10', 'seccion', 'costo', 200, 'costo', 200, 200, null, 'Costo de obra', 12000, null, null, null, 12000),
+  res('2026-10', 'cuenta', 'gastos', 300, 'gastos', 300, 61300, '6130', 'Cargos bancarios', 500, null, null, null, 500, 1),
+  res('2026-10', 'cuenta', 'gastos', 300, 'gastos', 300, 63000, '6300', 'Vehículos', 1500, null, null, null, 1500, 1),
+  res('2026-10', 'seccion', 'gastos', 300, 'gastos', 300, 300, null, 'Gastos de operación', 2000, null, null, null, 2000),
+  res('2026-10', 'total', 'totales', 9000, 'utilidad_bruta', 250, 250, null, 'Utilidad bruta', 10000, null, null, null, 10000),
+  res('2026-10', 'total', 'totales', 9000, 'utilidad_operacion', 350, 350, null, 'Utilidad de operación', 8000, null, null, null, 8000),
+  res('2026-10', 'total', 'totales', 9000, 'utilidad_neta', 600, 600, null, 'Utilidad neta', 8000, null, null, null, 8000)
+];
+// noviembre: las mismas cuentas con su mes anterior (octubre) y la variación que la base calcula
+const RES_NOV = [
+  res('2026-11', 'cuenta', 'ingresos', 100, 'ingresos', 100, 40000, '4000', 'Ingresos por obra', 18000, 20000, -2000, -10.0, 38000, 1),
+  res('2026-11', 'cuenta', 'ingresos', 100, 'ingresos', 100, 41000, '4100', 'Cambios de obra', 2000, 2000, 0, 0.0, 4000, 1),
+  res('2026-11', 'seccion', 'ingresos', 100, 'ingresos', 100, 100, null, 'Ingresos', 20000, 22000, -2000, -9.1, 42000),
+  res('2026-11', 'cuenta', 'costo', 200, 'costo', 200, 51000, '5100', 'Material de obra', 9000, 8000, 1000, 12.5, 17000, 2),
+  res('2026-11', 'cuenta', 'costo', 200, 'costo', 200, 52000, '5200', 'Mano de obra', 4000, 4000, 0, 0.0, 8000, 1),
+  res('2026-11', 'seccion', 'costo', 200, 'costo', 200, 200, null, 'Costo de obra', 13000, 12000, 1000, 8.3, 25000),
+  res('2026-11', 'cuenta', 'gastos', 300, 'gastos', 300, 61300, '6130', 'Cargos bancarios', 400, 500, -100, -20.0, 900, 1),
+  res('2026-11', 'cuenta', 'gastos', 300, 'gastos', 300, 63000, '6300', 'Vehículos', 1500, 1500, 0, 0.0, 3000, 1),
+  res('2026-11', 'seccion', 'gastos', 300, 'gastos', 300, 300, null, 'Gastos de operación', 1900, 2000, -100, -5.0, 3900),
+  res('2026-11', 'total', 'totales', 9000, 'utilidad_bruta', 250, 250, null, 'Utilidad bruta', 7000, 10000, -3000, -30.0, 17000),
+  res('2026-11', 'total', 'totales', 9000, 'utilidad_operacion', 350, 350, null, 'Utilidad de operación', 5100, 8000, -2900, -36.3, 13100),
+  res('2026-11', 'total', 'totales', 9000, 'utilidad_neta', 600, 600, null, 'Utilidad neta', 5100, 8000, -2900, -36.3, 13100)
+];
+const bal = (periodo, nivel, seccion, so, linea, lo, orden, cuenta, comp, et, cifra, asientos, cuadra) => ({ periodo, periodo_tipo: periodo === 'hoy' ? 'hoy' : 'mes', corte: periodo === 'hoy' ? HOY : '2026-10-31', anio: 2026, nivel, seccion, seccion_orden: so, linea, linea_orden: lo, orden, cuenta, componente: comp, etiqueta_es: et, etiqueta_en: et, saldo: nivel === 'total' ? null : cifra, cifra, saldo_ajustado: nivel === 'total' ? null : cifra, cifra_ajustada: cifra, asientos, asiento_id: null, numero: null, cuadra: cuadra === undefined ? null : cuadra, bajar: {} });
+const BAL = p => [
+  bal(p, 'cuenta', 'activo_circulante', 100, 'efectivo', 110, 10100, '1010', null, 'Chase Checking', 26500, 3),
+  bal(p, 'cuenta', 'activo_circulante', 100, 'efectivo', 110, 10500, '1050', null, 'Caja chica', 500, 0),
+  bal(p, 'linea', 'activo_circulante', 100, 'efectivo', 110, 110, null, null, 'Efectivo y equivalentes', 27000, null),
+  bal(p, 'cuenta', 'activo_circulante', 100, 'cuentas_por_cobrar', 120, 11100, '1110', null, 'Cuentas por cobrar', 17000, 2),
+  bal(p, 'linea', 'activo_circulante', 100, 'cuentas_por_cobrar', 120, 120, null, null, 'Cuentas por cobrar', 17000, null),
+  bal(p, 'seccion', 'activo_circulante', 100, 'activo_circulante', 100, 100, null, null, 'Activo circulante', 44000, null),
+  bal(p, 'cuenta', 'pasivo_circulante', 400, 'cuentas_por_pagar', 420, 20100, '2010', null, 'Cuentas por pagar', 15000, 3),
+  bal(p, 'linea', 'pasivo_circulante', 400, 'cuentas_por_pagar', 420, 420, null, null, 'Cuentas por pagar', 15000, null),
+  bal(p, 'cuenta', 'pasivo_circulante', 400, 'tarjetas', 440, 21005, '2100-2013', null, 'Amex Business Gold', 9000, 3),
+  bal(p, 'linea', 'pasivo_circulante', 400, 'tarjetas', 440, 440, null, null, 'Tarjetas de crédito', 9000, null),
+  bal(p, 'seccion', 'pasivo_circulante', 400, 'pasivo_circulante', 400, 400, null, null, 'Pasivo circulante', 24000, null),
+  bal(p, 'cuenta', 'capital', 600, 'capital_social', 610, 30000, '3000', null, 'Capital social', 12000, 0),
+  bal(p, 'linea', 'capital', 600, 'capital_social', 610, 610, null, null, 'Capital social', 12000, null),
+  bal(p, 'componente', 'capital', 600, 'resultado_ejercicio', 660, 0, null, 'resultado', 'Resultado del ejercicio 2026 desde el 01-10-2026 (el libro)', 8000, 8),
+  bal(p, 'linea', 'capital', 600, 'resultado_ejercicio', 660, 660, null, null, 'Resultado del ejercicio', 8000, null),
+  bal(p, 'seccion', 'capital', 600, 'capital', 600, 600, null, null, 'Capital', 20000, null),
+  bal(p, 'total', 'totales', 9000, 'total_activo', 900, 900, null, null, 'Total activo', 44000, 8),
+  bal(p, 'total', 'totales', 9000, 'total_pasivo', 910, 910, null, null, 'Total pasivo', 24000, 8),
+  bal(p, 'total', 'totales', 9000, 'total_capital', 920, 920, null, null, 'Total capital', 20000, 8),
+  bal(p, 'total', 'totales', 9000, 'pasivo_mas_capital', 930, 930, null, null, 'Pasivo más capital', 44000, 8),
+  bal(p, 'total', 'totales', 9000, 'cuadra', 940, 940, null, null, 'Activo menos pasivo y capital (debe ser 0)', 0, 8, true)
+];
+const bza = (orden, cuenta, nombre, estado, seccion, si, d, h, lado, asientos) => ({ periodo: '2026-10', periodo_tipo: 'mes', desde: '2026-10-01', hasta: '2026-10-31', nivel: 'cuenta', orden, cuenta, cuenta_nombre: nombre, componente: null, etiqueta_es: nombre, etiqueta_en: nombre, estado, seccion, linea: seccion, saldo_inicial: si, debe: d, haber: h, saldo_final: si + d - h, saldo_en_su_lado: lado, asientos, asiento_id: null, numero: null, cuadra: null, bajar: {} });
+const BZA = [
+  bza(10100, '1010', 'Chase Checking', 'balance', 'activo_circulante', 25000, 5000, 3500, 26500, 3), bza(10500, '1050', 'Caja chica', 'balance', 'activo_circulante', 500, 0, 0, 500, 0),
+  bza(11100, '1110', 'Cuentas por cobrar', 'balance', 'activo_circulante', 0, 22000, 5000, 17000, 2), bza(20100, '2010', 'Cuentas por pagar', 'balance', 'pasivo_circulante', -4500, 1200, 11700, 15000, 3),
+  bza(21005, '2100-2013', 'Amex Business Gold', 'balance', 'pasivo_circulante', -9000, 2300, 2300, 9000, 3), bza(30000, '3000', 'Capital social', 'balance', 'capital', -12000, 0, 0, 12000, 0),
+  bza(40000, '4000', 'Ingresos por obra', 'resultados', 'ingresos', 0, 0, 20000, 20000, 1), bza(41000, '4100', 'Cambios de obra', 'resultados', 'ingresos', 0, 0, 2000, 2000, 1),
+  bza(51000, '5100', 'Material de obra', 'resultados', 'costo', 0, 8000, 0, 8000, 2), bza(52000, '5200', 'Mano de obra', 'resultados', 'costo', 0, 4000, 0, 4000, 1),
+  bza(61300, '6130', 'Cargos bancarios', 'resultados', 'gastos', 0, 500, 0, 500, 1), bza(63000, '6300', 'Vehículos', 'resultados', 'gastos', 0, 1500, 0, 1500, 1),
+  { ...bza(999999, null, null, null, null, 0, 44500, 44500, null, 8), nivel: 'total', linea: null, etiqueta_es: 'Totales', etiqueta_en: 'Totals', cuadra: true }
+];
+const may = (id, numero, fecha, desc, monto, saldo, cuenta, nombre, normal, pos, extra) => ({ asiento_id: id, numero, orden: 1, fecha, periodo: '2026-10', periodo_efectivo: '2026-10', anio: 2026, ejercicio: 2026, tipo: 'normal', camino: 'puente', descripcion: desc, memo: null, origen_tabla: 'recibos', cuenta, cuenta_nombre: nombre, saldo_normal: normal, monto, debe: monto > 0 ? monto : 0, haber: monto < 0 ? -monto : 0, saldo, saldo_en_su_lado: normal === 'debe' ? saldo : -saldo, reversado: false, proyecto_id: null, cadena_pos: pos, ...(extra || {}) });
+const MAY = [
+  may(ASI.a, '2026-000401', '2026-10-02', 'Pago a proveedor', -1200, 23800, '1010', 'Chase Checking', 'debe', 401), may(ASI.b, '2026-000412', '2026-10-15', 'Cobro de obra', 5000, 28800, '1010', 'Chase Checking', 'debe', 412, { origen_tabla: 'cobros' }),
+  may(ASI.c, '2026-000420', '2026-10-20', 'Pago Amex', -2300, 26500, '1010', 'Chase Checking', 'debe', 420, { origen_tabla: null, camino: 'mano' }),
+  may(ASI.d, '2026-000405', '2026-10-07', 'Recibo 8812 Ferretería Ejemplo', 300, 300, '5100', 'Material de obra', 'debe', 405, { proyecto_id: 'casa-perez-k3m9', memo: 'Recibo 8812' }),
+  may(ASI.e, '2026-000418', '2026-10-18', 'Trabajo externo 51 · material', 7700, 8000, '5100', 'Material de obra', 'debe', 418, { origen_tabla: 'trabajos_externos', proyecto_id: 'casa-perez-k3m9' }),
+  may(ASI.d, '2026-000405', '2026-10-07', 'Recibo 8812 Ferretería Ejemplo', -300, -9300, '2100-2013', 'Amex Business Gold', 'haber', 405), may(ASI.c, '2026-000420', '2026-10-20', 'Pago Amex', 2300, -7000, '2100-2013', 'Amex Business Gold', 'haber', 420, { origen_tabla: null, camino: 'mano' }),
+  may(ASI.h, '2026-000425', '2026-10-22', 'Statement Amex · gastos', -2000, -9000, '2100-2013', 'Amex Business Gold', 'haber', 425, { origen_tabla: 'recibos' }),
+  // un ajuste del CPA al cierre de 2026 posteado en enero de 2027: v_mayor lo lista en 2027 pero lo corre con el saldo de 2026, y v_balanza de 2027 no trae la cuenta
+  may(ASI.i, '2027-000002', '2027-01-15', 'Ajuste del CPA · depreciación 2026', 400, 1900, '6300', 'Vehículos', 'debe', 2, { periodo: '2027-01', periodo_efectivo: '2026-12', anio: 2027, ejercicio: 2026, tipo: 'ajuste_cpa', camino: 'mano', origen_tabla: null })
+];
+const lib = (id, numero, fecha, desc, orden, cuenta, nombre, debe, haber, extra) => ({ asiento_id: id, numero, orden, fecha, periodo: '2026-10', periodo_efectivo: '2026-10', anio: 2026, ejercicio: 2026, tipo: 'normal', camino: 'puente', descripcion: desc, motivo: null, reversa_a: null, sustituye_a: null, origen_tabla: 'recibos', origen_id: id === ASI.d ? '8812' : '7001', documento_ruta: null, cadena_pos: id === ASI.d ? 405 : 401, cuenta, cuenta_nombre: nombre, debe, haber, monto: debe - haber, memo: null, proyecto_id: null, cost_code: null, tercero_tipo: null, tercero_id: null, partida_tabla: null, partida_id: null, ...(extra || {}) });
+const LIB = [
+  lib(ASI.a, '2026-000401', '2026-10-02', 'Pago a proveedor', 1, '2010', 'Cuentas por pagar', 1200, 0), lib(ASI.a, '2026-000401', '2026-10-02', 'Pago a proveedor', 2, '1010', 'Chase Checking', 0, 1200),
+  lib(ASI.d, '2026-000405', '2026-10-07', 'Recibo 8812 Ferretería Ejemplo', 1, '5100', 'Material de obra', 300, 0, { proyecto_id: 'casa-perez-k3m9', memo: 'Recibo 8812', tercero_tipo: 'proveedor', tercero_id: 'Ferretería Ejemplo' }),
+  lib(ASI.d, '2026-000405', '2026-10-07', 'Recibo 8812 Ferretería Ejemplo', 2, '2100-2013', 'Amex Business Gold', 0, 300)
+];
+const PAP = [
+  { asiento_id: ASI.d, numero: '2026-000405', fecha: '2026-10-07', periodo: '2026-10', tipo: 'normal', camino: 'puente', descripcion: 'Recibo 8812 Ferretería Ejemplo', origen_tabla: 'recibos', origen_id: '8812', documento_ruta: 'recibos/casa-perez/1712.jpg', reversa_a: null, sustituye_a: null, reversado: false, papel_existe: true, papel: 'Recibo 8812 · Ferretería Ejemplo · #4471 · 2026-10-07 · aprobado', papel_ruta: 'recibos/casa-perez/1712.jpg' },
+  // el papel de este recibo ya no está en su tabla: rastro roto
+  { asiento_id: ASI.a, numero: '2026-000401', fecha: '2026-10-02', periodo: '2026-10', tipo: 'normal', camino: 'puente', descripcion: 'Pago a proveedor', origen_tabla: 'recibos', origen_id: '7001', documento_ruta: null, reversa_a: null, sustituye_a: null, reversado: false, papel_existe: false, papel: 'recibos 7001 (el papel ya no está)', papel_ruta: null }
+];
+const fl = (metodo, nivel, seccion, so, linea, lo, et, importe, asientos, cuadra) => ({ periodo: '2026-10', periodo_tipo: 'mes', desde: '2026-10-01', hasta: '2026-10-31', metodo, nivel, seccion, seccion_orden: so, linea, linea_orden: lo, etiqueta_es: et, etiqueta_en: et, importe, asientos: asientos == null ? null : asientos, asiento_id: null, numero: null, cuadra: cuadra === undefined ? null : cuadra, bajar: {} });
+// cada método sale ENTERO: sus renglones (aunque valgan 0.00), 5 secciones (la de ajustes se duplica como línea; sin_dinero se revela, importe nulo), 3 totales y 5 controles
+const flujoMetodo = (m, lineas) => [
+  ...lineas,
+  fl(m, 'seccion', 'operacion', 100, 'operacion', 100, 'Actividades de operación', 1500), fl(m, 'seccion', 'inversion', 200, 'inversion', 200, 'Actividades de inversión', 0), fl(m, 'seccion', 'financiamiento', 300, 'financiamiento', 300, 'Actividades de financiamiento', 0),
+  fl(m, 'seccion', 'ajustes', 400, 'ajustes', 400, 'Ajustes', 0), fl(m, 'linea', 'ajustes', 400, 'ajustes', 400, 'Ajustes', 0, 0), fl(m, 'seccion', 'sin_dinero', 500, 'sin_dinero', 500, 'Actividades sin dinero (se revelan; no suman)', null),
+  fl(m, 'linea', 'sin_dinero', 500, 'sd_inversion', 510, 'Inversión sin dinero', 0, 0), fl(m, 'linea', 'sin_dinero', 500, 'sd_financiamiento', 520, 'Financiamiento sin dinero', 0, 0),
+  fl(m, 'total', 'totales', 9000, 'efectivo_inicial', 900, 'Efectivo al inicio (con lo que trajo la apertura del 30-09-2026)', 25500, 1), fl(m, 'total', 'totales', 9000, 'cambio', 910, 'Cambio en el efectivo', 1500, 3), fl(m, 'total', 'totales', 9000, 'efectivo_final', 920, 'Efectivo al final', 27000, 3),
+  fl(m, 'control', 'totales', 9999, 'cuadra', 9999, 'Diferencia contra el cambio del efectivo y contra el otro método (debe ser 0)', 0, null, true),
+  ...['operacion', 'inversion', 'financiamiento', 'ajustes'].map((s, i) => fl(m, 'control', 'totales', 9999, 'cuadra_' + s, 10099 + i * 100, 'Actividades de ' + s + ': indirecto contra directo (debe ser 0)', 0, null, true))
+];
+const FLU = [
+  ...flujoMetodo('directo', [fl('directo', 'linea', 'operacion', 100, 'cobros_clientes', 110, 'Cobros de clientes', 5000, 1), fl('directo', 'linea', 'operacion', 100, 'proveedores', 120, 'Pagos a proveedores', -1200, 1), fl('directo', 'linea', 'operacion', 100, 'tarjetas', 130, 'Pagos de tarjetas', -2300, 1), fl('directo', 'linea', 'operacion', 100, 'nomina', 140, 'Nómina', 0, 0),
+    fl('directo', 'linea', 'inversion', 200, 'activos_fijos', 210, 'Compra de activos fijos', 0, 0), fl('directo', 'linea', 'financiamiento', 300, 'prestamos', 310, 'Préstamos', 0, 0), fl('directo', 'linea', 'financiamiento', 300, 'dueno', 330, 'Aportaciones y retiros del dueño', 0, 0)]),
+  ...flujoMetodo('indirecto', [fl('indirecto', 'linea', 'operacion', 100, 'resultado', 101, 'Utilidad neta del ejercicio', 8000, 8), fl('indirecto', 'linea', 'operacion', 100, 'op_cxc', 120, 'Cuentas por cobrar', -17000, 2), fl('indirecto', 'linea', 'operacion', 100, 'op_cxp', 130, 'Cuentas por pagar', 10500, 3), fl('indirecto', 'linea', 'operacion', 100, 'op_tarjetas', 140, 'Tarjetas', 0, 3),
+    fl('indirecto', 'linea', 'inversion', 200, 'activos_fijos', 210, 'Compra de activos fijos', 0, 0), fl('indirecto', 'linea', 'financiamiento', 300, 'fin_accionista', 320, 'Préstamo del accionista', 0, 0)])
+];
+// la comparación «como QuickBooks»: debe − haber sin el signo del estado (pasivos, capital e ingresos en negativo)
+const cmp = (orden, cuenta, nombre, qbn, libro, qb, expl, okk, clases, extra) => ({ periodo: '2026-10', periodo_tipo: 'mes', corte: '2026-10-31', al: '2026-10-31', documento: 'docs/qb/balanza-2026-10-31.csv', anio: 2026, nivel: 'cuenta', cuenta, cuenta_nombre: nombre, estado: Number(cuenta) >= 4000 ? 'resultados' : 'balance', orden, cuenta_qb: null, cuentas_qb: qbn ? [qbn] : null, libro, arrastre_apertura: 0, posteriores: 0, comparable: libro, qb, diferencia: Math.round((libro - qb) * 100) / 100, explicada: expl, sin_explicar: Math.round((libro - qb - expl) * 100) / 100, ok: okk, clases, anotadas: clases ? clases.length : 0, asientos: 1, asiento_id: null, numero: null, bajar: {}, ...(extra || {}) });
+const CMP = [
+  cmp(10100, '1010', 'Chase Checking', 'Chase Chk 4392', 26500, 26400, 100, true, ['puente']), cmp(10500, '1050', 'Caja chica', 'Petty Cash', 500, 500, 0, true, null), cmp(11100, '1110', 'Cuentas por cobrar', 'Accounts Receivable', 17000, 17000, 0, true, null),
+  cmp(20100, '2010', 'Cuentas por pagar', 'Accounts Payable', -15000, -15000, 0, true, null), cmp(21005, '2100-2013', 'Amex Business Gold', 'Amex Gold', -9000, -9000, 0, true, null), cmp(30000, '3000', 'Capital social', 'Common Stock', -12000, -12000, 0, true, null),
+  cmp(40000, '4000', 'Ingresos por obra', 'Contract Income', -20000, -19900, 0, false, null), cmp(41000, '4100', 'Cambios de obra', 'Change Orders', -2000, -2000, 0, true, null),
+  cmp(51000, '5100', 'Material de obra', 'Job Materials', 8000, 8000.40, 0, false, null), cmp(52000, '5200', 'Mano de obra', 'Labor', 4000, 4000, 0, true, null),
+  cmp(61300, '6130', 'Cargos bancarios', 'Bank Charges', 500, 500, 0, true, null), cmp(63000, '6300', 'Vehículos', 'Vehicles', 1500, 1500, 0, true, null),
+  cmp(999999, null, null, null, 0, 50, 0, false, null, { nivel: 'sin_mapeo', estado: null, cuenta_qb: 'QB Misterio', asientos: 0 })
+];
+const CORTES = [
+  { periodo: 'hoy', tipo: 'hoy', anio: Number(HOY.slice(0, 4)), desde: HOY.slice(0, 8) + '01', corte: HOY, estado: 'abierto', paralelo: true },
+  { periodo: FUTURO, tipo: 'mes', anio: Number(FUTURO.slice(0, 4)), desde: FUTURO + '-01', corte: FUTURO + '-28', estado: 'abierto', paralelo: false },
+  { periodo: '2027', tipo: 'anio', anio: 2027, desde: '2027-01-01', corte: '2027-12-31', estado: 'abierto', paralelo: false },
+  { periodo: '2026-11', tipo: 'mes', anio: 2026, desde: '2026-11-01', corte: '2026-11-30', estado: 'abierto', paralelo: true },
+  { periodo: '2026-10', tipo: 'mes', anio: 2026, desde: '2026-10-01', corte: '2026-10-31', estado: 'abierto', paralelo: true },
+  { periodo: '2026-09-APERTURA', tipo: 'apertura', anio: 2026, desde: '2026-09-30', corte: '2026-09-30', estado: 'cerrado', paralelo: true },
+  { periodo: '2026', tipo: 'anio', anio: 2026, desde: '2026-01-01', corte: '2026-12-31', estado: 'abierto', paralelo: true }
+];
 const saldo = (cuenta, nombre, tipo, libros, banco, al, pend, pendMonto) => ({
   cuenta, cuenta_nombre: nombre, tipo, activa: true, saldo_libros: libros, saldo_libros_como_banco: tipo === 'tarjeta' ? -libros : libros,
   ultimo_archivo_id: banco == null ? null : 'f-' + cuenta, ultimo_archivo: banco == null ? null : `Archivo de prueba ${cuenta}`, ultimo_importado_el: banco == null ? null : '2026-10-16T14:00:00+00:00',
@@ -96,10 +237,18 @@ const T = {
   v_banco_movimientos: [
     { movimiento_id: MOV.a, cuenta: '2100-2013', fecha: '2026-10-02', monto: -123.45, descripcion: 'FERRETERIA EJEMPLO TAMPA FL', memo: null, cheque: null, tipo_banco: 'DEBIT', estado: 'pendiente', estado_motivo: null, casado_clase: null, casado_regla: null, casado_auto: null, asiento_numero: null, papel_tabla: null, papel_id: null, archivo: 'Archivo de prueba', propuesta_motivo: 'sin_ticket' },
     { movimiento_id: 'm-casado', cuenta: '2100-2013', fecha: '2026-10-01', monto: -31.56, descripcion: 'GASOLINERA EJEMPLO', memo: null, cheque: null, tipo_banco: 'DEBIT', estado: 'casado', estado_motivo: null, casado_clase: 'apertura', casado_regla: 'R0 apertura', casado_auto: true, asiento_numero: null, papel_tabla: null, papel_id: null, archivo: 'Archivo de prueba', propuesta_motivo: null }
-  ]
+  ],
+  // los estados (c4): octubre con cifras, noviembre solo en resultados, nada para el año ni la apertura (0 filas = vacío legítimo)
+  v_cortes: CORTES, v_resultados: [...RES_OCT, ...RES_NOV], v_balance_general: [...BAL('2026-10'), ...BAL('hoy')], v_balanza: BZA, v_mayor: MAY, v_libro: LIB, v_asiento_papel: PAP, v_flujo_caja: FLU,
+  v_comparacion_resumen: [{ periodo: '2026-10', periodo_tipo: 'mes', corte: '2026-10-31', cuentas: 12, cuentas_ok: 10, cuentas_mal: 3, sin_mapeo: 1, sin_explicar: 150.40, ok: false, utilidad_libro: 8000, utilidad_qb: 7900, utilidad_diferencia: 100, utilidad_mes_libro: 8000, utilidad_mes_qb: 7900, periodo_anterior: '2026-09-APERTURA', bajar: {} }],
+  v_comparacion: CMP
 };
-const estado = { controlMal: false, controlFilas: null, fallar: false, casarRondas: 0, concNueva: false, plaidFijada: false, plaidSinVista: false, plaidSinFijar: false, mfaFactores: [], sesionAal: undefined };
-const llamadas = [];
+const estado = { controlMal: false, controlFilas: null, fallar: false, casarRondas: 0, concNueva: false, plaidFijada: false, plaidSinVista: false, plaidSinFijar: false, mfaFactores: [], sesionAal: undefined,
+  // los interruptores de los estados: el control en rojo, el conteo distinto para una vista, el «Sigue» del tope por reloj (cuenta llamadas; 90 o más = nunca termina),
+  // el equipo (no dueño), la apertura sin postear, el balance descuadrado, una vista que no existe en la base, un mayor que no termina donde dice la balanza
+  // y Storage que no contesta al firmar la foto
+  estadosMal: false, estadosFilas: null, estadosFilasVista: null, estadosSigue: 0, estadosNoDueno: false, estadosSinApertura: false, estadosDescuadre: false, estadosVistaRota: false, estadosMayorRoto: false, estadosFotoRota: false };
+const llamadas = [], lecturas = []; // lecturas: cada GET a /rest/v1/<vista>?… tal como lo pidió la pantalla
 function tabla(nombre, q) {
   let filas = T[nombre] || [];
   if (nombre === 'v_conciliacion' && estado.concNueva) filas = filas.concat([{
@@ -110,6 +259,9 @@ function tabla(nombre, q) {
     { conciliacion_id: CONC_NEW, cuenta: '2100-2013', fecha_corte: '2026-10-08', conciliacion_estado: 'abierta', grupo: 'casado', partida_id: null, clase: 'apertura', fecha: '2026-10-01', monto: -31.56, descripcion: 'GASOLINERA EJEMPLO', cheque: null, dias: null, alarma: false, motivo: null, explicacion: 'Casado por R0 apertura (automático).', asiento_numero: null, resuelta_en: null, resuelta_por_movimiento: null }
   ]);
   if (nombre === 'v_plaid_conexiones' && estado.plaidFijada) filas = filas.map(c => ({ ...c, cuentas_sin_fijar: 0, cuentas: c.cuentas.map(a => a.account_id === 'acc-corriente' ? { ...a, cuenta: '1010', propuesta: 'la que fijó Edgar' } : a) }));
+  // los estados rotos a propósito: el balance con la fila «cuadra» en false, el mayor de 1010 que no llega al saldo final de la balanza
+  if (nombre === 'v_balance_general' && estado.estadosDescuadre) filas = filas.map(f => f.nivel === 'total' && f.linea === 'cuadra' ? { ...f, cuadra: false, cifra: 100, cifra_ajustada: 100 } : f);
+  if (nombre === 'v_mayor' && estado.estadosMayorRoto) filas = filas.map(f => f.asiento_id === ASI.c && f.cuenta === '1010' ? { ...f, saldo: 26000, saldo_en_su_lado: 26000 } : f);
   // order=col.desc,col2.asc como PostgREST
   const orden = (q.get('order') || '').split(',').filter(Boolean).map(s => s.split('.'));
   if (orden.length) filas = [...filas].sort((x, y) => { for (const [k, d] of orden) { const a = x[k], b = y[k]; if (a === b) continue; const r = a == null ? 1 : b == null ? -1 : (a > b ? 1 : -1); return d === 'desc' ? -r : r; } return 0; });
@@ -144,6 +296,22 @@ function rpc(fn, a) {
   if (fn === 'fn_conciliar') { estado.concNueva = true; return { conciliacion: CONC_NEW, cuenta: a.p_cuenta, fecha_corte: a.p_fecha_corte, estado: 'abierta', diferencia: 0, lista_para_confirmar: true }; }
   if (fn === 'fn_conciliacion_confirmar') return { conciliacion: a.p_conciliacion, estado: 'confirmada', alarmas: [] };
   if (fn === 'fn_estuve') return null;
+  // fn_estados_control(p_periodo, p_vistas): una fila por vista (filas = lo que la vista da con periodo=eq.p, como cuenta la base), más los
+  // cuadres que siempre salen (61 protecciones, 63 apertura) y el 56 cuando resultados y balance van juntas. ok = null con «Sigue: …» es el tope por reloj.
+  if (fn === 'fn_estados_control') {
+    if (estado.estadosNoDueno) return { status: 403, error: { code: '42501', message: 'Los estados los ve solo Edgar (el dueño).', details: null, hint: null } };
+    const cuentaEst = v => tabla(v, new URLSearchParams('periodo=eq.' + a.p_periodo)).length;
+    const sigue = i => estado.estadosSigue > 0 && (i > 0 || estado.estadosSigue >= 90);
+    const filas = (a.p_vistas || []).map((v, i) => ({ orden: 10 + i, vista: v,
+      filas: estado.estadosFilas != null && v === estado.estadosFilasVista ? estado.estadosFilas : cuentaEst(v), esperadas: cuentaEst(v),
+      ok: estado.estadosMal ? false : sigue(i) ? null : true,
+      detalle: estado.estadosMal ? 'La vista ' + v + ' devolvió 3 filas y el libro dice 4: no se pinta. (prueba)' : sigue(i) ? 'Sigue: esta llamada ya llevaba 3100 ms y ' + v + ' no se controló todavía (prueba)' : null }));
+    if (estado.estadosSigue > 0) estado.estadosSigue -= 1;
+    filas.push({ orden: 61, vista: 'cuadre: protecciones de c4', filas: null, esperadas: null, ok: true, detalle: null });
+    filas.push({ orden: 63, vista: 'cuadre: apertura en el libro', filas: null, esperadas: null, ok: !estado.estadosSinApertura, detalle: estado.estadosSinApertura ? 'No cuadra: fn_apertura no ha posteado una apertura viva (prueba)' : null });
+    if ((a.p_vistas || []).includes('v_resultados') && (a.p_vistas || []).includes('v_balance_general')) filas.push({ orden: 56, vista: 'cuadre: resultado del estado = resultado del balance', filas: null, esperadas: null, ok: true, detalle: null });
+    return filas;
+  }
   return { movimiento: a.p_movimiento, estado: 'casado', asiento: '2026-000012' };
 }
 // La función de borde `plaid` (supabase/functions/plaid), con la forma de sus respuestas
@@ -194,19 +362,30 @@ async function simular(ctx, rol) {
       return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(sesion()) });
     }
     if (u.pathname === '/auth/v1/factors/f-1' && req.method() === 'DELETE') { llamadas.push({ fn: 'auth:quitar' }); estado.mfaFactores = []; return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify({ id: 'f-1' }) }); }
+    // Storage: firmar la foto de un recibo (bucket privado «fotos»), como lo pide DB.firmarFotos
+    if (u.pathname === '/storage/v1/object/sign/fotos' && req.method() === 'POST') {
+      let b = {}; try { b = JSON.parse(req.postData() || '{}'); } catch { /* vacío */ }
+      llamadas.push({ fn: 'storage:firmar', args: b });
+      if (estado.estadosFotoRota) return route.abort('failed'); // Storage no contesta (CORS, filtro, caída) con la REST viva
+      return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify((b.paths || []).map(ruta => ({ path: ruta, signedURL: '/object/sign/fotos/' + ruta + '?token=prueba' }))) });
+    }
     if (u.pathname.startsWith('/rest/v1/rpc/')) {
       const fn = u.pathname.slice('/rest/v1/rpc/'.length); let args = {};
       try { args = JSON.parse(req.postData() || '{}'); } catch { /* vacío */ }
       llamadas.push({ fn, args });
       const r = rpc(fn, args);
-      if (r && r.error) return route.fulfill({ status: 400, headers: CORS, contentType: 'application/json', body: JSON.stringify(r.error) });
+      if (r && r.error) return route.fulfill({ status: r.status || 400, headers: CORS, contentType: 'application/json', body: JSON.stringify(r.error) });
       if (r === null) return route.fulfill({ status: 204, headers: CORS });
       return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(r) });
     }
     if (u.pathname.startsWith('/rest/v1/')) {
       const nombre = u.pathname.slice('/rest/v1/'.length);
       if (req.method() !== 'GET') return route.fulfill({ status: 201, headers: CORS, contentType: 'application/json', body: '[]' });
-      let filas = tabla(nombre, u.searchParams);
+      lecturas.push(nombre + u.search);
+      // una vista de c4 que no existe en la base (c4 sin pegar): PostgREST contesta 404 con 42P01
+      if (estado.estadosVistaRota && nombre === 'v_balanza') return route.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: JSON.stringify({ code: '42P01', message: 'relation "v_balanza" does not exist', details: null, hint: null }) });
+      // el equipo (no dueño) recibe [] con 200 de toda vista de c4: la RLS no deja ver el libro
+      let filas = estado.estadosNoDueno && nombre.startsWith('v_') ? [] : tabla(nombre, u.searchParams);
       if (nombre === 'perfiles') filas = [{ id: UID, nombre: rol === 'dueno' ? 'Edgar Prueba' : 'Campo Prueba', rol }];
       return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(filas) });
     }
@@ -396,6 +575,240 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   await p.selectOption('#ct-mov-cuenta', '2100-2013'); await p.waitForSelector('.ct-tabla tbody tr', { timeout: 8000 });
   await foto(p, '6-movimientos');
   ok('Movimientos pinta la tabla de la cuenta (2 filas) con su estado', (await p.locator('.ct-tabla tbody tr').count()) === 2 && /casado/.test(await texto(p, '.ct-tabla')));
+
+  // ---- Estados financieros (c4) ----
+  // el período que la pantalla debe preseleccionar: el mes de v_cortes que contiene hoy; si no, el más reciente ya empezado
+  const mesRegla = (() => { const meses = CORTES.filter(c => c.tipo === 'mes' && c.desde <= HOY).sort((x, y) => y.desde.localeCompare(x.desde)); return (meses.find(c => c.corte >= HOY) || meses[0]).periodo; })();
+  const titulo = async () => (await p.locator('#titulo-vista').textContent()).trim();
+  const estEst = () => p.evaluate(() => window.MXP_CONTA._estado.est);
+  // tocar un chip de período; si está escondido (empieza después de hoy), antes «Más períodos»
+  const elegir = async per => { if (!(await p.locator(`[data-periodo="${per}"]`).count())) { await p.locator('#ct-est-mas').click(); await p.waitForSelector(`[data-periodo="${per}"]`, { timeout: 8000 }); } await p.locator(`[data-periodo="${per}"]`).click(); };
+  const esperarTexto = (sel, re) => p.waitForFunction(([s, r]) => { const e = document.querySelector(s); return e && new RegExp(r).test(e.textContent); }, [sel, re.source], { timeout: 8000 });
+  const nBal = T.v_balance_general.filter(f => f.periodo === '2026-10').length;
+  let nLect = lecturas.length; n = llamadas.length;
+  ok('Estados es la quinta pestaña', (await p.locator('.ct-tab').count()) === 5 && (await p.locator('.ct-tab').nth(4).getAttribute('data-pag')) === 'estados');
+  await p.locator('.ct-tab[data-pag="estados"]').click(); await p.waitForSelector('#ct-est-resultados', { timeout: 8000 });
+  ok('Al tocarla el título es «Estados financieros» y aparece la barra de chips', (await titulo()) === 'Estados financieros' && (await p.locator('#ct-est-barra').count()) === 1, await titulo());
+  const est0 = await estEst();
+  ok('Arranca en Resultados con el mes de hoy preseleccionado por la regla (v_cortes leída con order=desde.desc)', est0.sub === 'resultados' && (await p.locator('[data-sub="resultados"][aria-pressed="true"]').count()) === 1 && est0.periodo === mesRegla && lecturas.slice(nLect).some(l => /^v_cortes\?.*order=desde\.desc/.test(l)), JSON.stringify({ periodo: est0.periodo, regla: mesRegla }));
+  const chips = await texto(p, '#ct-est-periodos');
+  ok('Los chips de período dicen palabras, no códigos; sin «Hoy» fuera del balance; el mes futuro va escondido tras «Más períodos»', /Octubre 2026/.test(chips) && /Septiembre 2026 · apertura/.test(chips) && /Año 2026/.test(chips) && !/2026-10|APERTURA/.test(chips) && !/Hoy/.test(chips) && (await p.locator(`[data-periodo="${FUTURO}"]`).count()) === 0 && /Más períodos/.test(await texto(p, '#ct-est-mas')), chips);
+  n = llamadas.length; nLect = lecturas.length;
+  await p.locator('[data-periodo="2026-10"]').click(); await p.waitForSelector('#ct-est-resultados .ct-kpi', { timeout: 8000 });
+  const ctrlR = desde(n).filter(l => l.fn === 'fn_estados_control');
+  ok('Pidió el control de Resultados con p_periodo 2026-10 y p_vistas [v_resultados, v_balance_general], en una sola llamada', ctrlR.length === 1 && ctrlR[0].args.p_periodo === '2026-10' && JSON.stringify(ctrlR[0].args.p_vistas) === '["v_resultados","v_balance_general"]', JSON.stringify(ctrlR.map(c => c.args)));
+  ok('La lectura de v_resultados va con periodo=eq.2026-10', lecturas.slice(nLect).some(l => /^v_resultados\?.*periodo=eq\.2026-10/.test(l)), lecturas.slice(nLect).join(' | '));
+  const kpiR = await texto(p, '#ct-est-resultados .ct-kpi');
+  ok('KPIs de Resultados desde la vista: ingresos $22,000.00, utilidad bruta $10,000.00, utilidad neta $8,000.00 y el acumulado «desde el 1 oct 2026»', /Ingresos del mes\$22,000\.00/.test(kpiR) && /Utilidad bruta\$10,000\.00/.test(kpiR) && /Utilidad neta\$8,000\.00/.test(kpiR) && /Acumulado del año\$8,000\.00desde el 1 oct 2026/.test(kpiR), kpiR);
+  const tbR = await texto(p, '#ct-est-resultados tbody'), pos = s => tbR.indexOf(s);
+  ok('La tabla intercala secciones, subtotales y totales en el orden del estado, y la única fila cobre es «Utilidad neta»', pos('Ingresos') < pos('Total ingresos') && pos('Total ingresos') < pos('Costo de obra') && pos('Costo de obra') < pos('Utilidad bruta') && pos('Utilidad bruta') < pos('Gastos de operación') && pos('Gastos de operación') < pos('Utilidad de operación') && pos('Utilidad de operación') < pos('Utilidad neta') && (await p.locator('#ct-est-resultados tr.ct-neto').count()) === 1 && /Utilidad neta/.test(await texto(p, '#ct-est-resultados tr.ct-neto')), tbR.slice(0, 160));
+  const antR = await p.locator('#ct-est-resultados td[data-col="Mes anterior"]').allTextContents();
+  ok('Sin mes anterior en el libro: las celdas dicen «—» (ninguna $0.00) y la nota dice que septiembre está en QuickBooks', antR.length === 12 && antR.every(t => t.trim() === '—') && /Sin mes anterior en el libro: septiembre de 2026 está en QuickBooks/.test(await texto(p, '#ct-est-resultados .ct-nota')), antR.join('|'));
+  ok('La franja dice «Cuadra · la utilidad neta es la misma que trae el balance» (cuadre 56), la cabecera lleva «Controlado» y toda cifra va en mono', /Cuadra · la utilidad neta es la misma que trae el balance/.test(await texto(p, '#ct-est-resultados .ct-cuadre')) && /Controlado/.test(await texto(p, '#ct-est-resultados .ct-cab .ct-pill')) && (await p.locator('#ct-est-resultados td.r:not(.ct-num)').count()) === 0);
+  const alin = await p.evaluate(() => { const f = document.querySelector('#ct-est-resultados tr.ct-fila-cuenta'), s = document.querySelector('#ct-est-resultados tr.ct-subtotal'), td = f.querySelector('td.r'), r = document.createRange(); r.selectNodeContents(td);
+    return { fila: f.getBoundingClientRect().height, lisa: s.getBoundingClientRect().height, btn: f.querySelector('.ct-cuenta-btn .ct-num').getBoundingClientRect().top, cifra: r.getBoundingClientRect().top }; });
+  ok('El botón de la cuenta no estira la fila ni baja su etiqueta: la fila mide lo que una sin botón y el número de cuenta queda a la altura de la cifra', Math.abs(alin.fila - alin.lisa) <= 3 && Math.abs(alin.btn - alin.cifra) <= 2, JSON.stringify(alin));
+  await foto(p, '11-estados-resultados');
+  // noviembre: con mes anterior y variación
+  n = llamadas.length;
+  await elegir('2026-11'); await p.waitForSelector('#ct-est-resultados .ct-kpi', { timeout: 8000 });
+  const ctrlN = desde(n).filter(l => l.fn === 'fn_estados_control').pop();
+  const f4000 = p.locator('#ct-est-resultados tr.ct-fila-cuenta', { hasText: '4000' }), t4000 = await f4000.textContent();
+  ok('«Noviembre 2026» vuelve a controlar con 2026-11, el contexto dice «Del 1 al 30 de noviembre de 2026» y la fila 4000 trae −$2,000.00, −10.0 % y la flecha desfavorable', !!ctrlN && ctrlN.args.p_periodo === '2026-11' && /Del 1 al 30 de noviembre de 2026/.test(await texto(p, '#ct-est-ctx')) && /−\$2,000\.00/.test(t4000) && /−10\.0 %/.test(t4000) && (await f4000.locator('.ct-var.desfav .ct-var-ico').count()) === 1, t4000);
+  ok('El sentido depende de la sección: 5100 (costo que sube) desfavorable, 6130 (gasto que baja) favorable', (await p.locator('#ct-est-resultados tr.ct-fila-cuenta', { hasText: '5100' }).locator('.ct-var.desfav').count()) === 1 && (await p.locator('#ct-est-resultados tr.ct-fila-cuenta', { hasText: '6130' }).locator('.ct-var.fav').count()) === 1);
+  ok('Ningún negativo sale con guion ASCII ni paréntesis: todos con el «−» tipográfico', !/-\$|\(\$/.test(await texto(p, '#ct-est-resultados tbody')) && /−\$/.test(await texto(p, '#ct-est-resultados tbody')));
+  // balance
+  await p.locator('[data-periodo="2026-10"]').click(); await p.waitForSelector('#ct-est-resultados .ct-kpi', { timeout: 8000 });
+  n = llamadas.length;
+  await p.locator('[data-sub="balance"]').click(); await p.waitForSelector('#ct-est-balance .ct-kpi', { timeout: 8000 });
+  const ctrlB = desde(n).find(l => l.fn === 'fn_estados_control');
+  ok('Balance: control con [v_balance_general], el chip «Hoy» existe solo aquí y la franja dice «Cuadra · activo $44,000.00 − pasivo $24,000.00 − capital $20,000.00 = $0.00»', !!ctrlB && JSON.stringify(ctrlB.args.p_vistas) === '["v_balance_general"]' && (await p.locator('[data-periodo="hoy"]').count()) === 1 && /Cuadra · activo \$44,000\.00 − pasivo \$24,000\.00 − capital \$20,000\.00 = \$0\.00/.test(await texto(p, '#ct-est-balance .ct-cuadre')), await texto(p, '#ct-est-balance .ct-cuadre'));
+  const tbB = await texto(p, '#ct-est-balance tbody');
+  ok('Balance: KPI Efectivo $27,000.00, la fila «cuadra» no se repite como renglón, «Pasivo más capital» es la fila cobre, el componente del resultado trae su etiqueta larga, «Total activo» va antes de «Pasivo circulante» y el contexto dice «Al 31 de octubre de 2026 · 8 asientos al corte»', /Efectivo\$27,000\.00/.test(await texto(p, '#ct-est-balance .ct-kpi')) && !/debe ser 0/.test(tbB) && /Pasivo más capital/.test(await texto(p, '#ct-est-balance tr.ct-neto')) && /Resultado del ejercicio 2026 desde el 01-10-2026 \(el libro\)/.test(tbB) && tbB.indexOf('Total activo') < tbB.indexOf('Pasivo circulante') && /Al 31 de octubre de 2026 · 8 asientos al corte/.test(await texto(p, '#ct-est-ctx')), await texto(p, '#ct-est-ctx'));
+  ok('Sin ajustes del CPA no hay columna «Con ajustes» y la nota lo dice', (await p.locator('#ct-est-balance th', { hasText: 'Con ajustes' }).count()) === 0 && /Sin ajustes posteriores del CPA/.test(await texto(p, '#ct-est-balance .ct-nota')));
+  n = llamadas.length;
+  await p.locator('[data-periodo="hoy"]').click(); await p.waitForSelector('#ct-est-balance .ct-kpi', { timeout: 8000 });
+  const ctrlH = desde(n).find(l => l.fn === 'fn_estados_control');
+  ok('«Hoy» en el balance controla con p_periodo hoy y el contexto dice «Al día de hoy … lo que va del mes»', !!ctrlH && ctrlH.args.p_periodo === 'hoy' && /Al día de hoy, .* · lo que va del mes/.test(await texto(p, '#ct-est-ctx')), await texto(p, '#ct-est-ctx'));
+  n = llamadas.length;
+  await p.locator('[data-sub="resultados"]').click(); await p.waitForSelector('#ct-est-resultados .ct-kpi', { timeout: 8000 });
+  ok('Al pasar a Resultados con «hoy» elegido, el período cae al mes por la regla, el contexto avisa «“Hoy” solo vale para el balance» y nadie pidió v_resultados con hoy', (await estEst()).periodo === mesRegla && /«Hoy» solo vale para el balance/.test(await texto(p, '#ct-est-ctx')) && !desde(n).some(l => l.fn === 'fn_estados_control' && l.args.p_periodo === 'hoy'), await texto(p, '#ct-est-ctx'));
+  // la falla ruidosa de los estados
+  await p.locator('[data-periodo="2026-10"]').click(); await p.waitForSelector('#ct-est-resultados .ct-kpi', { timeout: 8000 });
+  estado.estadosDescuadre = true;
+  await p.locator('[data-sub="balance"]').click(); await p.waitForSelector('#ct-est-cuerpo .ct-rojo', { timeout: 8000 });
+  ok('Balance descuadrado (la fila cuadra en false, $100.00): rojo «El balance no cuadra», sin KPI ni fila cobre, y los chips siguen arriba', /El balance no cuadra/.test(await texto(p, '.ct-rojo h2')) && /\$100\.00/.test(await texto(p, '.ct-rojo')) && (await p.locator('.ct-kpi').count()) === 0 && (await p.locator('tr.ct-neto').count()) === 0 && (await p.locator('#ct-est-barra [data-periodo]').count()) > 0, await texto(p, '.ct-rojo h2'));
+  await foto(p, '12-estados-descuadre');
+  estado.estadosDescuadre = false; estado.estadosMal = true;
+  await p.locator('#ct-reintentar').click(); await p.waitForSelector('#ct-est-cuerpo .ct-rojo', { timeout: 8000 });
+  ok('Control en rojo: «El control de los estados no cuadra», «pintar ceros sería mentir», el detalle literal de la base en la tabla y ningún KPI', /El control de los estados no cuadra/.test(await texto(p, '.ct-rojo h2')) && /pintar ceros sería mentir/.test(await texto(p, '.ct-rojo')) && /devolvió 3 filas y el libro dice 4/.test(await texto(p, '.ct-rojo .ct-tabla')) && /Vista.*Trajo.*Debía.*Detalle/.test(await texto(p, '.ct-rojo thead')) && (await p.locator('.ct-kpi').count()) === 0, await texto(p, '.ct-rojo'));
+  estado.estadosMal = false; estado.estadosFilas = 99; estado.estadosFilasVista = 'v_balance_general';
+  await p.locator('#ct-reintentar').click(); await p.waitForSelector('#ct-est-cuerpo .ct-rojo', { timeout: 8000 });
+  ok(`Si la pantalla trae ${nBal} filas y el control contó 99, también es rojo`, new RegExp(`trajo ${nBal} fila\\(s\\) y el control contó 99`).test(await texto(p, '.ct-rojo')), await texto(p, '.ct-rojo .ct-tabla'));
+  estado.estadosFilas = null; estado.estadosFilasVista = null; estado.estadosSinApertura = true;
+  await p.locator('#ct-reintentar').click(); await p.waitForSelector('#ct-est-cuerpo .ct-rojo', { timeout: 8000 });
+  ok('El cuadre 63 en false pinta el rojo «Falta la apertura en el libro» con el detalle «fn_apertura no ha posteado»', /Falta la apertura en el libro/.test(await texto(p, '.ct-rojo h2')) && /fn_apertura no ha posteado/.test(await texto(p, '.ct-rojo')), await texto(p, '.ct-rojo h2'));
+  estado.estadosSinApertura = false; estado.estadosSigue = 1; n = llamadas.length;
+  await p.locator('[data-sub="resultados"]').click(); await p.waitForSelector('#ct-est-resultados .ct-kpi', { timeout: 8000 });
+  const sig = desde(n).filter(l => l.fn === 'fn_estados_control').map(l => JSON.stringify(l.args.p_vistas));
+  ok('Con ok = null «Sigue» el control se pide dos veces: las dos vistas y luego solo la que faltó; y Resultados pinta sus 4 KPI', sig.length === 2 && sig[0] === '["v_resultados","v_balance_general"]' && sig[1] === '["v_balance_general"]' && (await p.locator('#ct-est-resultados .ct-kpi').count()) === 4, sig.join(' '));
+  estado.estadosSigue = 99; n = llamadas.length;
+  await p.locator('[data-sub="resultados"]').click(); await p.waitForSelector('#ct-est-cuerpo .ct-rojo', { timeout: 8000 });
+  ok('Con un «Sigue» que nunca termina: exactamente 6 llamadas y rojo «no alcanzó a revisar esta vista en 6 llamadas»', desde(n).filter(l => l.fn === 'fn_estados_control').length === 6 && /no alcanzó a revisar esta vista en 6 llamadas/.test(await texto(p, '.ct-rojo')), desde(n).length);
+  estado.estadosSigue = 0; estado.estadosNoDueno = true; n = llamadas.length;
+  await p.locator('#ct-reintentar').click(); await p.waitForSelector('.ct-rojo', { timeout: 8000 }); await p.waitForTimeout(300);
+  const cnd = desde(n).find(l => l.fn === 'fn_estados_control');
+  ok('No dueño: v_cortes trae [], se pregunta fn_estados_control(hoy, [v_cortes]), la base dice 42501 y el rojo es «Contabilidad es solo del dueño», sin vacíos ni cifras', !!cnd && cnd.args.p_periodo === 'hoy' && JSON.stringify(cnd.args.p_vistas) === '["v_cortes"]' && /Contabilidad es solo del dueño/.test(await texto(p, '.ct-rojo h2')) && /Los estados los ve solo Edgar/.test(await texto(p, '.ct-rojo')) && (await p.locator('.ct-vacio').count()) === 0 && (await p.locator('.ct-kpi').count()) === 0, await texto(p, '.ct-rojo'));
+  estado.estadosNoDueno = false;
+  await p.locator('#ct-reintentar').click(); await p.waitForSelector('#ct-est-resultados .ct-kpi', { timeout: 8000 });
+  // balanza → mayor → asiento → papel
+  n = llamadas.length;
+  await p.locator('[data-sub="balanza"]').click(); await p.waitForSelector('#ct-est-balanza .ct-cuenta-btn', { timeout: 8000 });
+  const ctrlZ = desde(n).find(l => l.fn === 'fn_estados_control'), f2010 = await p.locator('#ct-est-balanza tr.ct-fila-cuenta', { hasText: '2010' }).textContent();
+  ok('Balanza: control con [v_balanza], 12 cuentas con botón, ninguno en la fila «Totales» (cobre), franja «Cuadra · debe $44,500.00 = haber $44,500.00 · saldo final $0.00» y «· 8 asientos del período»', !!ctrlZ && JSON.stringify(ctrlZ.args.p_vistas) === '["v_balanza"]' && (await p.locator('#ct-est-balanza .ct-cuenta-btn').count()) === 12 && (await p.locator('#ct-est-balanza tr.ct-componente button, #ct-est-balanza tr.ct-neto button').count()) === 0 && /Totales/.test(await texto(p, '#ct-est-balanza tr.ct-neto')) && /Cuadra · debe \$44,500\.00 = haber \$44,500\.00 · saldo final \$0\.00/.test(await texto(p, '#ct-est-balanza .ct-cuadre')) && /· 8 asientos del período/.test(await texto(p, '#ct-est-ctx')), await texto(p, '#ct-est-balanza .ct-cuadre'));
+  ok('La fila 2010 muestra el saldo final −$15,000.00 y, en su lado, $15,000.00', /−\$15,000\.00/.test(f2010) && /(^|[^−])\$15,000\.00/.test(f2010), f2010);
+  await foto(p, '13-estados-balanza');
+  n = llamadas.length; nLect = lecturas.length;
+  await p.locator('#ct-est-balanza .ct-cuenta-btn[data-cuenta="1010"]').click(); await p.waitForSelector('#ct-est-mayor .ct-asiento-btn', { timeout: 8000 });
+  const ctrlM = desde(n).find(l => l.fn === 'fn_estados_control');
+  ok('Tocar 1010 abre su mayor: título «Mayor · 1010 Chase Checking», v_mayor por cuenta y período con su orden, v_balanza de la cuenta, control con [v_mayor] y est.cuenta = 1010', (await titulo()) === 'Mayor · 1010 Chase Checking' && lecturas.slice(nLect).some(l => /^v_mayor\?.*cuenta=eq\.1010.*periodo=eq\.2026-10.*order=fecha\.asc,cadena_pos\.asc,orden\.asc/.test(l)) && lecturas.slice(nLect).some(l => /^v_balanza\?.*periodo=eq\.2026-10.*cuenta=eq\.1010/.test(l)) && !!ctrlM && JSON.stringify(ctrlM.args.p_vistas) === '["v_mayor"]' && (await estEst()).cuenta === '1010', await titulo());
+  const tbM = await texto(p, '#ct-est-mayor tbody');
+  ok('El mayor pinta «Saldo que trae» $25,000.00, 3 asientos con el saldo corrido 23,800 → 28,800 → 26,500 y la fila cobre «Saldo al 31 oct» $26,500.00, sin aviso', /Saldo que trae/.test(await texto(p, '#ct-est-mayor tr.ct-trae')) && /\$25,000\.00/.test(await texto(p, '#ct-est-mayor tr.ct-trae')) && (await p.locator('#ct-est-mayor .ct-asiento-btn').count()) === 3 && /23,800\.00.*28,800\.00.*26,500\.00/.test(tbM) && /Saldo al 31 oct\$26,500\.00/.test(await texto(p, '#ct-est-mayor tr.ct-neto')) && (await p.locator('.ct-aviso.warn').count()) === 0, tbM.slice(0, 160));
+  await foto(p, '14-estados-mayor');
+  estado.estadosMayorRoto = true;
+  await p.evaluate(() => window.MXP_CONTA.ir('estados', { cuenta: '1010' })); await p.waitForSelector('#ct-est-cuerpo .ct-rojo', { timeout: 8000 });
+  ok('Si la última línea del mayor no termina donde dice la balanza (y no hay ajuste del CPA): rojo «El mayor no termina donde dice la balanza» con $26,000.00 y $26,500.00', /El mayor no termina donde dice la balanza/.test(await texto(p, '.ct-rojo h2')) && /\$26,000\.00/.test(await texto(p, '.ct-rojo')) && /\$26,500\.00/.test(await texto(p, '.ct-rojo')), await texto(p, '.ct-rojo .ct-tabla'));
+  estado.estadosMayorRoto = false;
+  await p.locator('#ct-reintentar').click(); await p.waitForSelector('#ct-est-mayor .ct-asiento-btn', { timeout: 8000 });
+  n = llamadas.length;
+  await p.locator(`.ct-asiento-btn[data-asiento="${ASI.a}"]`).click(); await p.waitForSelector('#ct-est-asiento', { timeout: 8000 });
+  const ctrlA = desde(n).find(l => l.fn === 'fn_estados_control');
+  ok('Tocar el asiento abre «Asiento 2026-000401»: 2 líneas (2010 por $1,200.00), control con [v_libro, v_asiento_papel], sin fila «Suma» y la nota del candado de c2', (await titulo()) === 'Asiento 2026-000401' && (await p.locator('#ct-est-asiento tbody tr').count()) === 2 && /2010/.test(await texto(p, '#ct-est-asiento tbody')) && /\$1,200\.00/.test(await texto(p, '#ct-est-asiento tbody')) && !!ctrlA && JSON.stringify(ctrlA.args.p_vistas) === '["v_libro","v_asiento_papel"]' && (await p.locator('#ct-est-asiento tr.ct-neto').count()) === 0 && !/Suma/.test(await texto(p, '#ct-est-asiento tbody')) && /debe = haber \(candado de c2\)/.test(await texto(p, '#ct-est-asiento .ct-nota')), await titulo());
+  ok('Papel roto: la tarjeta noche dice «El papel de este asiento ya no está: rastro roto» en rojo, sin botón de foto ni llamada a Storage', /El papel de este asiento ya no está: rastro roto/.test(await texto(p, '#ct-est-papel.ct-noche .ct-aviso.bad')) && (await p.locator('#ct-est-papel-foto').count()) === 0 && !desde(n).some(l => l.fn === 'storage:firmar'));
+  await foto(p, '14-estados-asiento-roto');
+  await p.locator('#btn-volver').click(); await p.waitForSelector('#ct-est-mayor .ct-asiento-btn', { timeout: 8000 });
+  ok('«←» en el asiento vuelve al mayor (sigue en la contabilidad, est.asiento vacío)', await p.locator('#vista-conta').isVisible() && /^Mayor · 1010/.test(await titulo()) && (await estEst()).asiento === null, await titulo());
+  await p.locator('#btn-volver').click(); await p.waitForSelector('#ct-est-balanza .ct-cuenta-btn', { timeout: 8000 });
+  ok('«←» otra vez vuelve a la balanza con sus 12 cuentas y el período 2026-10', (await p.locator('#ct-est-balanza .ct-cuenta-btn').count()) === 12 && (await estEst()).periodo === '2026-10' && (await estEst()).cuenta === null);
+  await p.locator('#btn-volver').click(); await p.waitForTimeout(400);
+  ok('«←» una tercera vez sale de la contabilidad', await p.locator('#vista-conta').isHidden());
+  await p.locator('#btn-conta').evaluate(b => b.click()); await p.waitForSelector('.ct-tab', { timeout: 8000 });
+  n = llamadas.length;
+  await p.evaluate(() => window.MXP_CONTA.ir('estados', { cuenta: '5100' })); await p.waitForSelector('#ct-est-mayor .ct-asiento-btn', { timeout: 8000 });
+  await p.locator(`.ct-asiento-btn[data-asiento="${ASI.d}"]`).click(); await p.waitForSelector('#ct-est-papel', { timeout: 8000 });
+  const firma = desde(n).find(l => l.fn === 'storage:firmar');
+  ok('El recibo 8812: firma la foto en Storage con su ruta, el botón «Ver la foto del recibo» lleva la URL firmada y abre aparte, la noche dice el papel y «Camino: puente», y el asiento lleva la pastilla «puente»', !!firma && JSON.stringify(firma.args.paths) === '["recibos/casa-perez/1712.jpg"]' && /token=prueba/.test(await p.locator('#ct-est-papel-foto').getAttribute('href')) && (await p.locator('#ct-est-papel-foto').getAttribute('target')) === '_blank' && /Recibo 8812 · Ferretería Ejemplo · #4471/.test(await texto(p, '.ct-noche-txt')) && /Camino: puente/.test(await texto(p, '.ct-noche-meta')) && /puente/.test(await texto(p, '#ct-est-asiento .ct-cab .ct-pill')), await texto(p, '#ct-est-papel'));
+  ok('La obra de la línea sale con su nombre (Casa Pérez) y la pastilla «Controlado»', /Casa Pérez/.test(await texto(p, '#ct-est-asiento tbody')) && /Controlado/.test(await texto(p, '#ct-est-asiento .ct-cab')));
+  // Storage no contesta (CORS, un filtro, una caída) con la REST viva: el asiento y su papel se pintan igual, con el aviso; nunca «Sin señal»
+  estado.estadosFotoRota = true; n = llamadas.length;
+  await p.evaluate(a => window.MXP_CONTA.ir('estados', { cuenta: '5100', asiento: a }), ASI.d); await p.waitForSelector('#ct-est-papel .ct-aviso.warn', { timeout: 8000 });
+  ok('Si Storage no contesta al firmar la foto, el asiento se pinta entero con el aviso «La foto no se pudo abrir ahora (sin señal hacia Storage)» y su ruta, sin botón de foto, sin «Sin señal» ni rojo', /La foto no se pudo abrir ahora \(sin señal hacia Storage\)\. Ruta: recibos\/casa-perez\/1712\.jpg/.test(await texto(p, '#ct-est-papel .ct-aviso.warn')) && (await p.locator('#ct-est-asiento tbody tr').count()) === 2 && (await p.locator('#ct-est-papel-foto').count()) === 0 && (await p.locator('.ct-rojo').count()) === 0 && desde(n).some(l => l.fn === 'storage:firmar'), await texto(p, '#ct-est-papel'));
+  estado.estadosFotoRota = false;
+  await p.locator('#ct-est-asiento .ct-cuenta-btn[data-cuenta="2100-2013"]').click(); await p.waitForSelector('#ct-est-mayor .ct-asiento-btn', { timeout: 8000 });
+  ok('Dentro del asiento, tocar la cuenta 2100-2013 abre su mayor (3 asientos, saldo al 31 oct $9,000.00 en su lado) y deja est.asiento vacío', /^Mayor · 2100-2013 Amex Business Gold/.test(await titulo()) && (await estEst()).asiento === null && (await p.locator('#ct-est-mayor .ct-asiento-btn').count()) === 3 && /Saldo al 31 oct\$9,000\.00/.test(await texto(p, '#ct-est-mayor tr.ct-neto')), await titulo());
+  const traeAmex = await texto(p, '#ct-est-mayor tr.ct-trae'), tbAmex = await texto(p, '#ct-est-mayor tbody');
+  ok('En una cuenta de haber el saldo que trae también va en su lado: «Saldo que trae» $9,000.00 (no −$9,000.00, que es como lo guarda v_balanza) y la columna corre 9,300 → 7,000 → 9,000', /\$9,000\.00/.test(traeAmex) && !/−\$9,000\.00/.test(traeAmex) && /9,300\.00.*7,000\.00.*9,000\.00/.test(tbAmex) && /Saldo que trae\$9,000\.00en su lado/.test(await texto(p, '#ct-est-mayor .ct-kpi')), traeAmex);
+  await p.evaluate(() => window.MXP_CONTA.ir('estados', { cuenta: '1050' })); await p.waitForSelector('#ct-est-mayor .ct-vacio', { timeout: 8000 });
+  ok('Una cuenta sin movimientos (1050) dice «no tiene movimientos en octubre 2026. Saldo que trae: $500.00», sin ceros', /La cuenta 1050 no tiene movimientos en octubre 2026\. Saldo que trae: \$500\.00\./.test(await texto(p, '#ct-est-mayor .ct-vacio')) && !/\$0\.00/.test(await texto(p, '#ct-est-mayor')) && /Dato: v_mayor/.test(await texto(p, '#ct-est-mayor .ct-nota')), await texto(p, '#ct-est-mayor .ct-vacio'));
+  // flujo de caja
+  n = llamadas.length; nLect = lecturas.length;
+  await p.locator('[data-sub="flujo"]').click(); await p.waitForSelector('#ct-est-flujo .ct-kpi', { timeout: 8000 });
+  const ctrlF = desde(n).find(l => l.fn === 'fn_estados_control');
+  ok(`Flujo: lectura entera con su orden, control con [v_flujo_caja] (${T.v_flujo_caja.length} filas cotejadas), arranca en «Directo», 3 KPI, franja «Cuadra · cambio en el efectivo +$1,500.00 = …» y «· 3 asientos con dinero»`, lecturas.slice(nLect).some(l => /^v_flujo_caja\?.*periodo=eq\.2026-10.*order=metodo\.asc,seccion_orden\.asc,linea_orden\.asc/.test(l)) && !!ctrlF && JSON.stringify(ctrlF.args.p_vistas) === '["v_flujo_caja"]' && (await p.locator('[data-metodo="directo"][aria-pressed="true"]').count()) === 1 && (await p.locator('#ct-est-flujo .ct-kpi').count()) === 3 && /Cuadra · cambio en el efectivo \+\$1,500\.00 = efectivo al final \$27,000\.00 − al inicio \$25,500\.00 · igual por los dos métodos/.test(await texto(p, '#ct-est-flujo .ct-cuadre')) && /· 3 asientos con dinero/.test(await texto(p, '#ct-est-ctx')), await texto(p, '#ct-est-flujo .ct-cuadre'));
+  const tbF = await texto(p, '#ct-est-flujo tbody');
+  ok('Flujo directo: +$5,000.00 y −$1,200.00 en la tabla, un 0.00 atenuado, la sección sin dinero sin subtotal, «Ajustes» una sola vez, «Efectivo al final» en cobre, ninguna fila «cuadra» y el KPI dice «con lo que trajo la apertura»', /\+\$5,000\.00/.test(tbF) && /−\$1,200\.00/.test(tbF) && (await p.locator('#ct-est-flujo td.ct-cero').count()) >= 1 && /Actividades sin dinero \(se revelan; no suman\)/.test(tbF) && !/Total actividades sin dinero/.test(tbF) && (tbF.match(/Ajustes/g) || []).length === 1 && /Efectivo al final/.test(await texto(p, '#ct-est-flujo tr.ct-neto')) && !/cuadra|debe ser 0/i.test(tbF) && /con lo que trajo la apertura/.test(await texto(p, '#ct-est-flujo .ct-kpi .ct-sub')), tbF.slice(0, 200));
+  n = llamadas.length; nLect = lecturas.length;
+  await p.locator('[data-metodo="indirecto"]').click(); await p.waitForTimeout(200);
+  ok('Cambiar a «Indirecto» pinta «Utilidad neta del ejercicio» $8,000.00 desde memoria: ni control ni lectura nuevos', /Utilidad neta del ejercicio/.test(await texto(p, '#ct-est-flujo tbody')) && /\$8,000\.00/.test(await texto(p, '#ct-est-flujo tbody')) && desde(n).length === 0 && lecturas.length === nLect && (await p.locator('[data-metodo="indirecto"][aria-pressed="true"]').count()) === 1);
+  await foto(p, '15-estados-flujo');
+  // contra QuickBooks
+  n = llamadas.length;
+  await p.locator('[data-sub="comparacion"]').click(); await p.waitForSelector('#ct-est-comparacion .ct-kpi', { timeout: 8000 });
+  const ctrlQ = desde(n).find(l => l.fn === 'fn_estados_control'), kpiQ = await texto(p, '#ct-est-comparacion .ct-kpi');
+  ok('Contra QuickBooks: control con [v_comparacion, v_comparacion_resumen], franja volt «2 cuentas con diferencia · $150.40 sin explicar · 1 sin mapeo» (lo sin mapeo no se cuenta dos veces) y KPIs «10 de 12», $8,000.00 y $7,900.00', !!ctrlQ && JSON.stringify(ctrlQ.args.p_vistas) === '["v_comparacion","v_comparacion_resumen"]' && /2 cuentas con diferencia · \$150\.40 sin explicar · 1 sin mapeo/.test(await texto(p, '#ct-est-comparacion .ct-cuadre.volt')) && /10 de 12/.test(kpiQ) && /\$8,000\.00/.test(kpiQ) && /\$7,900\.00/.test(kpiQ), await texto(p, '#ct-est-comparacion .ct-cuadre'));
+  const filaQ = c => p.locator('#ct-est-comparacion tbody tr', { hasText: c });
+  ok('Cada cuenta lleva su pastilla con icono y texto: Igual (1050), Explicada (1010, «explicada: puente»), Centavos (5100), Por explicar (4000, fila cobre) y Sin mapeo (QB Misterio, rojo)', /Igual/.test(await filaQ('1050').locator('.ct-pill.ok').textContent()) && /Explicada/.test(await filaQ('1010').locator('.ct-pill.ok').textContent()) && /explicada: puente/.test(await filaQ('1010').textContent()) && /Centavos/.test(await filaQ('5100').locator('.ct-pill.warn').textContent()) && /Por explicar/.test(await filaQ('4000').locator('.ct-pill.cu').textContent()) && (await filaQ('4000').evaluate(e => e.classList.contains('ct-porexplicar'))) && /Sin mapeo/.test(await filaQ('QB Misterio').locator('.ct-pill.bad').textContent()) && (await filaQ('QB Misterio').evaluate(e => e.classList.contains('ct-sinmapeo'))) && (await p.locator('#ct-est-comparacion .ct-pill .ct-ico').count()) >= 13);
+  ok('Libro y QuickBooks salen «como QuickBooks» (4000 en −$20,000.00), la nota lo dice, y el documento es texto, sin enlace', /−\$20,000\.00/.test(await filaQ('4000').textContent()) && /como QuickBooks/.test(await texto(p, '#ct-est-comparacion .ct-nota')) && /docs\/qb\/balanza-2026-10-31\.csv/.test(await texto(p, '#ct-est-comparacion .ct-nota')) && (await p.locator('a[href*="docs/qb"]').count()) === 0);
+  await foto(p, '16-estados-quickbooks');
+  // los vacíos legítimos (control 0 = vista 0)
+  await p.locator('[data-periodo="2026"]').click(); await esperarTexto('#ct-est-comparacion', /Todavía no hay balanza/);
+  ok('Sin balanza de QuickBooks para «Año 2026» (0 = 0): el vacío lo dice, con «Dato: comparacion_qb → v_comparacion», sin rojo ni $0.00', /Todavía no hay balanza de QuickBooks para año 2026/.test(await texto(p, '#ct-est-comparacion .ct-vacio')) && /Dato: comparacion_qb → v_comparacion/.test(await texto(p, '#ct-est-comparacion .ct-nota')) && (await p.locator('.ct-rojo').count()) === 0 && !/\$0\.00/.test(await texto(p, '#ct-est-comparacion')), await texto(p, '#ct-est-comparacion .ct-vacio'));
+  await elegir('2027'); await esperarTexto('#ct-est-comparacion', /marcha en paralelo/);
+  ok('Con «Año 2027» (paralelo terminado) el vacío dice «La marcha en paralelo con QuickBooks terminó el 31 dic 2026» (la fecha sale de v_cortes), sin rojo', /La marcha en paralelo con QuickBooks terminó el 31 dic 2026: la comparación queda para los períodos hasta esa fecha\./.test(await texto(p, '#ct-est-comparacion .ct-vacio')) && (await p.locator('.ct-rojo').count()) === 0, await texto(p, '#ct-est-comparacion .ct-vacio'));
+  const perWrap = await p.evaluate(() => { const e = document.querySelector('#ct-est-periodos'); return [e.scrollWidth, e.clientWidth, e.querySelectorAll('.ct-chip').length, (document.querySelector('#ct-est-mas') || {}).textContent]; });
+  ok('En la computadora, con todos los períodos a la vista, los chips envuelven: nada queda fuera del borde ni hace falta deslizar', perWrap[0] <= perWrap[1] && perWrap[2] >= 7 && /Menos períodos/.test(perWrap[3] || ''), JSON.stringify(perWrap));
+  // un ajuste del CPA de otro ejercicio: v_balanza del año no trae la cuenta, el mayor avisa y no da por bueno el saldo corrido
+  await p.evaluate(() => window.MXP_CONTA.ir('estados', { cuenta: '6300' })); await p.waitForSelector('#ct-est-mayor .ct-aviso.warn', { timeout: 8000 });
+  const kpiAj = await texto(p, '#ct-est-mayor .ct-kpi');
+  ok('Mayor de 6300 en «Año 2027» (solo un ajuste del CPA de 2026, sin fila en v_balanza): aviso «no trae la cuenta … corren con el saldo de su año», «—» en «Saldo al» (fila y KPI), KPI Asientos 1 (asientos, no líneas) y sin rojo', /La balanza de año 2027 no trae la cuenta 6300: sus líneas son ajustes del CPA de otro ejercicio y corren con el saldo de su año/.test(await texto(p, '#ct-est-mayor .ct-aviso.warn')) && /Saldo al 31 dic—/.test(await texto(p, '#ct-est-mayor tr.ct-neto')) && /Saldo al 31 dic—sin fila en la balanza/.test(kpiAj) && /Asientos1/.test(kpiAj) && /Ajuste del CPA/.test(await texto(p, '#ct-est-mayor tbody')) && (await p.locator('.ct-rojo').count()) === 0, kpiAj);
+  await p.locator('[data-periodo="2026"]').click(); await esperarTexto('#ct-est-comparacion', /Todavía no hay balanza/);
+  await p.locator('[data-sub="flujo"]').click(); await p.waitForSelector('#ct-est-flujo .ct-vacio', { timeout: 8000 });
+  const vacioF = await texto(p, '#ct-est-flujo .ct-vacio');
+  await p.locator('[data-sub="balanza"]').click(); await p.waitForSelector('#ct-est-balanza .ct-vacio', { timeout: 8000 });
+  ok('Flujo y balanza del año sin movimientos (0 = 0): «Sin movimientos de dinero en año 2026…» y «Ningún asiento en año 2026.», cada uno con su dato', /Sin movimientos de dinero en año 2026: ni entró ni salió efectivo\./.test(vacioF) && /Ningún asiento en año 2026\./.test(await texto(p, '#ct-est-balanza .ct-vacio')) && /Dato: v_balanza/.test(await texto(p, '#ct-est-balanza .ct-nota')) && (await p.locator('.ct-rojo').count()) === 0, vacioF);
+  n = llamadas.length;
+  await p.locator('[data-sub="resultados"]').click(); await p.waitForSelector('#ct-est-resultados', { timeout: 8000 });
+  await p.locator('[data-periodo="2026-09-APERTURA"]').click(); await esperarTexto('#ct-est-resultados', /La apertura no tiene/);
+  ok('Resultados en la apertura: se controla y se lee con 2026-09-APERTURA (0 = 0), el vacío dice «La apertura no tiene estado de resultados», el contexto «Al 30 de septiembre de 2026» con «Cerrado», sin rojo', desde(n).some(l => l.fn === 'fn_estados_control' && l.args.p_periodo === '2026-09-APERTURA') && lecturas.some(l => /^v_resultados\?.*periodo=eq\.2026-09-APERTURA/.test(l)) && /La apertura no tiene estado de resultados/.test(await texto(p, '#ct-est-resultados .ct-vacio')) && /Al 30 de septiembre de 2026/.test(await texto(p, '#ct-est-ctx')) && /Cerrado/.test(await texto(p, '#ct-est-ctx .ct-pill')) && (await p.locator('.ct-rojo').count()) === 0, await texto(p, '#ct-est-ctx'));
+  // una vista que no existe en la base
+  estado.estadosVistaRota = true;
+  await p.locator('[data-periodo="2026-10"]').click(); await p.waitForSelector('#ct-est-resultados .ct-kpi', { timeout: 8000 });
+  await p.locator('[data-sub="balanza"]').click(); await p.waitForSelector('#ct-est-cuerpo .ct-rojo', { timeout: 8000 });
+  ok('Vista rota (v_balanza 404 42P01): rojo «La base no contestó bien» con «le falta el último SQL», sin vacío', /La base no contestó bien/.test(await texto(p, '.ct-rojo h2')) && /le falta el último SQL/.test(await texto(p, '.ct-rojo')) && (await p.locator('.ct-vacio').count()) === 0, await texto(p, '.ct-rojo'));
+  estado.estadosVistaRota = false;
+  await p.locator('#ct-reintentar').click(); await p.waitForSelector('#ct-est-balanza .ct-cuenta-btn', { timeout: 8000 });
+  ok('Al arreglarse y «Reintentar», vuelve a pintar la balanza con sus 12 cuentas', (await p.locator('#ct-est-balanza .ct-cuenta-btn').count()) === 12);
+  // la carrera de dos clics
+  await p.locator('[data-sub="resultados"]').click(); await p.waitForSelector('#ct-est-resultados .ct-kpi', { timeout: 8000 });
+  if (!(await p.locator('[data-periodo="2026-11"]').count())) { await p.locator('#ct-est-mas').click(); await p.waitForSelector('[data-periodo="2026-11"]', { timeout: 8000 }); }
+  await p.locator('[data-periodo="2026-10"]').evaluate(b => b.click()); await p.locator('[data-periodo="2026-11"]').evaluate(b => b.click());
+  await p.waitForSelector('#ct-est-resultados .ct-kpi', { timeout: 8000 }); await p.waitForTimeout(500);
+  ok('Dos clics rápidos de período (2026-10 y enseguida 2026-11) dejan en pantalla el último: noviembre, con su chip marcado', /noviembre/.test(await texto(p, '#ct-est-ctx')) && (await p.locator('[data-periodo="2026-11"][aria-pressed="true"]').count()) === 1 && /\$18,000\.00/.test(await texto(p, '#ct-est-resultados tbody')), await texto(p, '#ct-est-ctx'));
+  // sin señal en los estados
+  await p.locator('[data-periodo="2026-10"]').click(); await p.waitForSelector('#ct-est-resultados .ct-kpi', { timeout: 8000 });
+  await ctx.setOffline(true);
+  await p.locator('[data-sub="flujo"]').click(); await p.waitForSelector('.ct-rojo', { timeout: 8000 });
+  ok('Sin señal en Estados: «Sin señal» en rojo y nada de cifras de memoria', /Sin señal/.test(await texto(p, '.ct-rojo h2')) && (await p.locator('.ct-kpi').count()) === 0 && (await p.locator('.ct-est-tabla, .ct-tabla.angosta').count()) === 0);
+  await ctx.setOffline(false);
+  await p.waitForSelector('#ct-est-flujo .ct-kpi', { timeout: 8000 }).catch(() => {});
+  ok('Al volver la señal reintenta sola y pinta la subvista en la que estaba (el flujo)', (await p.locator('#ct-est-flujo .ct-kpi').count()) === 3);
+  const sinPeriodo = lecturas.filter(l => /^v_(resultados|balance_general|balanza|flujo_caja|comparacion|comparacion_resumen)\?/.test(l) && !/periodo=eq\./.test(l));
+  ok('Ninguna lectura de las vistas de estados fue sin periodo=eq. (sin filtro se calculan para todos los períodos)', sinPeriodo.length === 0, sinPeriodo.join(' | '));
+  // el teléfono: 390 px
+  {
+    const tel = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
+    await simular(tel, 'dueno');
+    const q = await tel.newPage(); q.on('pageerror', e => errs.push('teléfono estados: ' + String(e).slice(0, 160)));
+    await q.goto('http://localhost:8873/index.html'); await q.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await q.waitForTimeout(800);
+    await q.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
+    await q.locator('#btn-conta').evaluate(b => b.click()); await q.waitForSelector('.ct-tab', { timeout: 8000 });
+    await q.locator('.ct-tab[data-pag="estados"]').click(); await q.waitForSelector('#ct-est-resultados', { timeout: 8000 });
+    await q.locator('[data-periodo="2026-10"]').click(); await q.waitForSelector('#ct-est-resultados .ct-kpi', { timeout: 8000 });
+    const medidas = await q.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth, thead: getComputedStyle(document.querySelector('#ct-est-resultados thead')).display,
+      chips: (() => { const e = document.querySelector('.ct-est-subs'); return [e.scrollWidth, e.clientWidth]; })(), before: getComputedStyle(document.querySelector('#ct-est-resultados td[data-col="Mes"]'), '::before').content }));
+    ok('Teléfono (390 px): la tabla de Resultados se apila (sin cabecera, cada cifra con su etiqueta), la página no desplaza de lado y los chips deslizan', medidas.sw <= medidas.iw + 1 && medidas.thead === 'none' && /Mes/.test(medidas.before) && medidas.chips[0] >= medidas.chips[1], JSON.stringify(medidas));
+    await foto(q, '17-tel-estados-resultados');
+    await q.locator('[data-sub="balanza"]').click(); await q.waitForSelector('#ct-est-balanza .ct-cuenta-btn', { timeout: 8000 });
+    const env = await q.evaluate(() => { const e = document.querySelector('#ct-est-balanza .ct-tabla-env'); return [e.scrollWidth, e.clientWidth, document.documentElement.scrollWidth, window.innerWidth]; });
+    ok('Teléfono: la balanza desplaza dentro de su tarjeta (.ct-tabla-env), no la página', env[0] > env[1] && env[2] <= env[3] + 1, JSON.stringify(env));
+    const colZ = await q.evaluate(() => { const th = document.querySelectorAll('#ct-est-balanza thead th'), e = document.querySelector('#ct-est-balanza .ct-tabla-env'), w = th[0].getBoundingClientRect().width; return { cuenta: w, cifra: th[1].getBoundingClientRect().width, ventana: e.clientWidth - w }; });
+    ok('Teléfono: la columna pegajosa de la cuenta es estrecha (el nombre pasa a dos líneas) y deja ventana para las cifras', colZ.cuenta <= 150 && colZ.ventana >= 200, JSON.stringify(colZ));
+    await foto(q, '17-tel-estados-balanza');
+    await q.locator('#ct-est-balanza .ct-cuenta-btn[data-cuenta="5100"]').click(); await q.waitForSelector('#ct-est-mayor .ct-asiento-btn', { timeout: 8000 });
+    await q.locator(`.ct-asiento-btn[data-asiento="${ASI.d}"]`).click(); await q.waitForSelector('#ct-est-papel-foto', { timeout: 8000 });
+    ok('Teléfono: balanza → 5100 → asiento con su papel y el botón de la foto, sin desplazar la página de lado', (await q.locator('#ct-est-papel.ct-noche').count()) === 1 && (await q.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)));
+    const asiTel = await q.evaluate(() => { const d = document.querySelector('#ct-est-asiento td[data-col="Debe"]'); return { debeDer: d.getBoundingClientRect().right, iw: window.innerWidth, antes: getComputedStyle(d, '::before').content, obra: document.querySelector('#ct-est-asiento td.ct-obra').textContent, proyectos: (window.MXP_CONTA._estado.proyectos || []).length }; });
+    ok('Teléfono: el asiento se apila (Debe y Haber en pantalla con su etiqueta) y la obra sale con su nombre (Casa Pérez) aunque la Bandeja no haya corrido', asiTel.debeDer <= asiTel.iw && /Debe/.test(asiTel.antes) && asiTel.obra === 'Casa Pérez' && asiTel.proyectos === 3, JSON.stringify(asiTel));
+    await foto(q, '18-tel-estados-papel');
+    // el mayor en el teléfono, desplazado hasta el final (para mirar la columna pegajosa y las filas «Saldo que trae» / «Saldo al»)
+    await q.locator('#btn-volver').click(); await q.waitForSelector('#ct-est-mayor .ct-asiento-btn', { timeout: 8000 });
+    await q.evaluate(() => { const e = document.querySelector('#ct-est-mayor .ct-tabla-env'); e.scrollLeft = e.scrollWidth; });
+    const mayTel = await q.evaluate(() => { const c = document.querySelector('#ct-est-mayor tr.ct-trae td[data-col="Saldo"]'); c.scrollIntoView({ block: 'center' }); const r = c.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2), d = document.querySelector('#ct-est-mayor tbody tr:not(.ct-trae) td[data-col="Debe"]');
+      return { visto: hit === c || c.contains(hit), saldo: c.textContent, columnas: getComputedStyle(d.parentElement).gridTemplateColumns.split(' ').length, debeDer: d.getBoundingClientRect().right, iw: window.innerWidth, sw: document.documentElement.scrollWidth }; });
+    ok('Teléfono: el mayor se apila en tres columnas (debe | haber | saldo): la cifra de «Saldo que trae» está a la vista (nada la tapa), Debe cabe en pantalla y la página no desplaza de lado', mayTel.visto && /\$/.test(mayTel.saldo) && mayTel.columnas === 3 && mayTel.debeDer <= mayTel.iw && mayTel.sw <= mayTel.iw + 1, JSON.stringify(mayTel));
+    await foto(q, '19-tel-estados-mayor');
+    await tel.close();
+  }
 
   // ---- El código del teléfono (segundo factor) ----
   n = llamadas.length;
