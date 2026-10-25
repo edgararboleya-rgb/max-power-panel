@@ -149,13 +149,13 @@ grant references on auth.users to editor_sql;
 --     Vacía de fábrica; las pruebas insertan y deshacen.
 -- ---------------------------------------------------------------------
 create table if not exists auth.mfa_factors (
-  id            uuid primary key default gen_random_uuid(),
+  id            uuid primary key,               -- sin default, como en producción (los pone GoTrue)
   user_id       uuid not null,
   friendly_name text,
-  factor_type   text not null default 'totp',
-  status        text not null default 'unverified',
-  created_at    timestamptz not null default now(),
-  updated_at    timestamptz not null default now(),
+  factor_type   text not null,
+  status        text not null,
+  created_at    timestamptz not null,
+  updated_at    timestamptz not null,
   secret        text
 );
 create index if not exists mfa_factors_user_id_idx on auth.mfa_factors (user_id);

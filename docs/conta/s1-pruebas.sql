@@ -1,6 +1,7 @@
 -- =====================================================================
 -- s1-pruebas.sql — el código del teléfono se prueba a sí mismo (s1-mfa.sql).
--- 24-oct-2026. Cada prueba escribe en una subtransacción y lo deshace.
+-- 24-oct-2026 (v2 el 25: en producción auth.mfa_factors no pone el id sola; va explícito).
+-- Cada prueba escribe en una subtransacción y lo deshace.
 -- Última sentencia: select * from _pruebas order by n;
 -- =====================================================================
 create temp table if not exists _pruebas(n int, prueba text, esperado text, obtenido text, ok boolean);
@@ -41,7 +42,7 @@ declare v_d uuid; v_obt text;
 begin
   select id into v_d from perfiles where rol = 'dueno' and coalesce(activo, true) order by creado limit 1;
   begin
-    insert into auth.mfa_factors (user_id, friendly_name, factor_type, status) values (v_d, 'prueba s1', 'totp', 'verified');
+    insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at, secret) values (gen_random_uuid(), v_d, 'prueba s1', 'totp', 'verified', now(), now(), 'X');
     perform pg_temp.s1_claims(v_d, 'authenticated', 'aal1');
     v_obt := pg_temp.s1_guarda();
     raise exception using errcode = 'MXT00';
@@ -55,7 +56,7 @@ declare v_d uuid; v_obt text;
 begin
   select id into v_d from perfiles where rol = 'dueno' and coalesce(activo, true) order by creado limit 1;
   begin
-    insert into auth.mfa_factors (user_id, friendly_name, factor_type, status) values (v_d, 'prueba s1', 'totp', 'verified');
+    insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at, secret) values (gen_random_uuid(), v_d, 'prueba s1', 'totp', 'verified', now(), now(), 'X');
     perform pg_temp.s1_claims(v_d, 'authenticated', 'aal2');
     v_obt := pg_temp.s1_guarda();
     raise exception using errcode = 'MXT00';
@@ -69,7 +70,7 @@ declare v_d uuid; v_obt text;
 begin
   select id into v_d from perfiles where rol = 'dueno' and coalesce(activo, true) order by creado limit 1;
   begin
-    insert into auth.mfa_factors (user_id, friendly_name, factor_type, status) values (v_d, 'prueba s1', 'totp', 'unverified');
+    insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at, secret) values (gen_random_uuid(), v_d, 'prueba s1', 'totp', 'unverified', now(), now(), 'X');
     perform pg_temp.s1_claims(v_d, 'authenticated', 'aal1');
     v_obt := pg_temp.s1_guarda();
     raise exception using errcode = 'MXT00';
@@ -83,7 +84,7 @@ declare v_d uuid; a text; b text; c text; v_obt text;
 begin
   select id into v_d from perfiles where rol = 'dueno' and coalesce(activo, true) order by creado limit 1;
   begin
-    insert into auth.mfa_factors (user_id, friendly_name, factor_type, status) values (v_d, 'prueba s1', 'totp', 'verified');
+    insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at, secret) values (gen_random_uuid(), v_d, 'prueba s1', 'totp', 'verified', now(), now(), 'X');
     perform pg_temp.s1_claims(v_d, 'anon', 'aal1'); a := pg_temp.s1_guarda();
     perform pg_temp.s1_claims(v_d, 'service_role', null); b := pg_temp.s1_guarda();
     perform set_config('request.jwt.claims', '', true); c := pg_temp.s1_guarda();
@@ -101,7 +102,7 @@ begin
   select id into v_e from perfiles where rol <> 'dueno' and coalesce(activo, true) order by creado limit 1;
   if v_e is null then insert into _pruebas values (6, 'el equipo sin factor pasa', 'pasa', 'omitida: no hay perfil de equipo', null); return; end if;
   begin
-    insert into auth.mfa_factors (user_id, friendly_name, factor_type, status) values (v_d, 'prueba s1', 'totp', 'verified');
+    insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at, secret) values (gen_random_uuid(), v_d, 'prueba s1', 'totp', 'verified', now(), now(), 'X');
     perform pg_temp.s1_claims(v_e, 'authenticated', 'aal1');
     v_obt := pg_temp.s1_guarda();
     raise exception using errcode = 'MXT00';
@@ -115,7 +116,7 @@ declare v_d uuid; v_e jsonb; v_obt text;
 begin
   select id into v_d from perfiles where rol = 'dueno' and coalesce(activo, true) order by creado limit 1;
   begin
-    insert into auth.mfa_factors (user_id, friendly_name, factor_type, status, secret) values (v_d, 'prueba s1', 'totp', 'verified', 'SECRETO-QUE-NO-SALE');
+    insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at, secret) values (gen_random_uuid(), v_d, 'prueba s1', 'totp', 'verified', now(), now(), 'SECRETO-QUE-NO-SALE');
     perform pg_temp.s1_claims(v_d, 'authenticated', 'aal2');
     execute 'set local role authenticated';
     v_e := fn_mfa_estado();
