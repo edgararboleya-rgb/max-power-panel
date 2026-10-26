@@ -434,6 +434,12 @@ construye hasta que toque.
 
 ## 9. Dónde vamos
 
+**Correcciones del 26-oct (al dar de alta Gusto y Stripe):**
+- **No hubo nómina en 2026.** En Chase (90 días) no hay cargos de ningún proveedor de nómina ni depósitos de impuestos de nómina; los ayudantes cobran por Zelle y QuickBooks los lleva como contract labor. Lo que este plan dice de «los W-2 y el 941 del Q4 los emite quien llevó la nómina en 2026» no aplica: no hay ese proveedor. ▶ CPA: cómo quedan en 2026 los que cobran por Zelle (1099 o regularizar como empleados).
+- **La corporación nueva (constituida en marzo de 2026, EIN propio) figura en el IRS como C-corp:** su carta CP 575 le asigna el formulario 1120. El 2553 que existe es de 2023 y de la LLC anterior. ▶ CPA: confirmar si se presentó el 2553 de la Inc.; si no, pedir la elección tardía con efecto desde la constitución. Mientras, Gusto está como C-corp y se cambia al llegar la CP261. Todo lo que este plan dice de S-corp (1120-S, K-1, salario razonable, distribuciones) depende de esto.
+- **El dueño no tiene cuenta personal**: los gastos personales salen de la cuenta de la empresa (la mitad de la bandeja). ▶ Abrir una cuenta personal; el sueldo por Gusto y las distribuciones van ahí.
+- **Stripe abierto el 26-oct** (cuenta real verificada, tarjetas y ACH activos, depósitos a la cuenta operativa ····4392, sin Radar de pago, sin Tax, sin Treasury). La integración (enlace en la factura y webhook) entra en f10, como dice `docs/conta/QUICKBOOKS-BRECHA.md` §2.
+
 🔵 azul = `/effort max` · 🟢 verde = `/effort auto` · ⬆ escalada a Fable si no convence · ▶ necesita a Edgar
 
 **Estado al 23-oct-2026** (semana 6 del calendario): c1–c6 pegados en
@@ -451,13 +457,13 @@ Fase 8 (cerrar octubre y compararlo con QuickBooks), y la factura de la app
 - [x] Fase 3 · Puentes, cobros y CxP — pegado (c3)
 - [x] Fase 4 · Estados y apertura al 30-sep — pegado (c4); apertura posteada y auditada (15-oct)
 - [x] Fase 5 · Primera pantalla — construida (`js/conta.js`, 16-oct) y publicada; pestaña **Estados** (resultados, balance, balanza → mayor → asiento → papel, flujo de caja, comparación con QuickBooks; 130 comprobaciones en `pruebas/conta/pantalla.js`) construida el 25-oct, **falta publicar** (v286)
-- [x] Fase 6 · Banco, tarjetas, cobros y pagos — pegado (c6, rondas 2–5) y c7 Plaid (17-oct); ▶ Gusto sin arrancar
+- [x] Fase 6 · Banco, tarjetas, cobros y pagos — pegado (c6, rondas 2–5) y c7 Plaid (17-oct); Chase y las dos Amex conectadas por Plaid y sincronizando cada mañana (25-oct)
 - [ ] Fase 7 · Categorización y la bandeja — 🔵🟢 ▶ dictas las reglas; despliegas `contador`
 - [ ] Fase 8 · Cierre, ronda y activos fijos — 🔵🟢 ▶ pg_cron; cierras octubre
 - [ ] Fase 9 · Costo por obra + reparto de burden — 🔵🟢 ▶ decides y validas
 - [ ] Fase 10 · WIP, retención, factura y retiro de `qb` — 🔵🟢 ▶ método de avance
 - [ ] Fase 12a · W-9, COI y 1099 — 🔵🟢 ▶ W-9 y COI
-- [ ] Fase 11 · Puente de nómina — 🔵🟢 ▶ **Gusto contratado (trámite desde la semana 5)**
+- [ ] Fase 11 · Puente de nómina — 🔵🟢 Gusto contratado el 26-oct (plan Simple, cada dos semanas, primera nómina el viernes 8-ene-2027; Chase operativa conectada; 8655 firmado). ▶ Pendiente: alta de los ayudantes antes del 11-dic, cuenta de Reemployment Tax de Florida, cuenta personal del dueño para su sueldo
 - [ ] Fase 12b · Cuadre al 30-nov y cédula de corte — 🟢 ▶ balanza al 30-nov
 - [ ] Fases 13–14 · Marcha en paralelo — 🔵🟢 ▶ casi todo tuyo
 - [ ] Fase 15 · Amarre — 🟢 ▶ visto bueno → **1 de enero en vivo**

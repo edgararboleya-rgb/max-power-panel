@@ -545,13 +545,13 @@ construir. Lo que no depende de nadie sigue el calendario de las fases.
 | # | Trámite | Para qué | Costo | Plazo | Bloquea |
 |---|---|---|---|---|---|
 | 1 | Las pendientes de f07: dictar las reglas de los 35 comercios de Chase (y luego las de las Amex); llave nueva de Anthropic para `contador`; confirmar el plan de Supabase (respaldos) | La fase actual | $0 | Esta semana | f07, f08 |
-| 2 | **Abrir Stripe** (EIN, SSN, Chase, URL) y hacer 2–3 cobros reales chicos en noviembre | Cobrar desde el 2 de enero con límites de ACH ya subidos | $0 fijo | Alta el mismo día; depósito 7–14 días | f10 (enlace en la factura) |
+| 2 | ✅ **Stripe abierto el 26-oct** (verificado; tarjetas y ACH activos; depósitos a la operativa). Falta: 2–3 cobros reales chicos en noviembre | Cobrar desde el 2 de enero con límites de ACH ya subidos | $0 fijo | Alta el mismo día; depósito 7–14 días | f10 (enlace en la factura) |
 | 3 | **Carta EIN**, nombre legal exacto, URL pública, firmar Privacidad y Términos | SMS y Stripe | $0 | 1–2 semanas (147C si no tienes la CP 575) | Campaña 10DLC |
 | 4 | **Twilio**: cuenta, número 352, Brand y campaña | SMS a clientes | $19,50 + ~$5/mes | 2–4 semanas tras el punto 3 | Recordatorios por SMS |
 | 5 | **Resend** (ya es el de `correo`): comprobar el dominio y los registros + DNS de mxpes.com (SPF, DKIM, DMARC, subdominio) | Factura y recordatorios por correo desde la app | $0 | Horas | f10 (envío) |
 | 6 | **Chase**: activar ACH Payment Services, preguntar límite diario, carga NACHA y descriptor; inscribir Zelle for Business | Pagar y cobrar sin comisión | $0 | Una llamada | Pagos salientes (febrero) |
-| 7 | **Gusto** (pendiente desde la semana 5): contratar; empleados con W-4 y banco antes del 11-dic; export del diario | f11 | $49 + $6/persona (terceros) | Semanas | f11 |
-| 8 | **CPA**, una sola llamada con seis preguntas: Regla 12A-1.051 (sales tax); recargo 3 % en crédito o descuento por ACH; ¿el 1120-S va por caja o devengo?; qué ayudante por hora es empleado y no sub (F.S. 440.10) y si el que nombra f12a cobra por W-2 o 1099; el método libro de depreciación (f08/f12); el % de la utilidad para la reserva 1030 y el pago estimado del 15-ene-2027 (f06) | f06, f08, f10, f12a, f17 | $0–consulta | Antes del 16-nov | f10 |
+| 7 | ✅ **Gusto contratado el 26-oct** (Simple, cada dos semanas, primera nómina 8-ene-2027). Falta: empleados con W-4 y banco antes del 11-dic; export del diario | f11 | $49 + $6/persona (terceros) | Semanas | f11 |
+| 8 | **CPA**, una sola llamada con ocho preguntas: **¿se presentó el 2553 de la Inc. nueva?** (el IRS la tiene como C-corp, formulario 1120; si no, elección tardía con efecto desde la constitución); **cómo quedan en 2026 los ayudantes pagados por Zelle sin nómina**; Regla 12A-1.051 (sales tax); recargo 3 % en crédito o descuento por ACH; ¿el 1120-S va por caja o devengo?; qué ayudante por hora es empleado y no sub (F.S. 440.10) y si el que nombra f12a cobra por W-2 o 1099; el método libro de depreciación (f08/f12); el % de la utilidad para la reserva 1030 y el pago estimado del 15-ene-2027 (f06) | f06, f08, f10, f12a, f17 | $0–consulta | Antes del 16-nov | f10 |
 | 9 | **W-9 y COI de cada sub** | f12a y el freno de pagos | $0 | Para la semana 10 | f12a |
 | 10 | IRIS: pedir el TCC | 1099 de 2027 en enero de 2028 | $0 | Con calma, en 2027 | Nada antes de 2028 |
 
