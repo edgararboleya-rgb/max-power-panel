@@ -15723,7 +15723,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           alcArreglos[oid] = { tipo: "poner_precio_base", valor: precioEst.texto };
           ofrecido = `<button class="alc-op alc-auto" data-fix="${oid}" title="${esc(precioEst.nombre)}">✓ Sí, usar el del estimado ${esc(precioEst.ref)}: $${precioEst.texto}</button>`;
         }
-        return `<span class="alc-fix">${ofrecido}<input class="alc-libre alc-fix-in" data-fix-in="${id}" placeholder="${a.pide === "monto" ? "1,850.00" : "escríbelo"}" inputmode="${a.pide === "monto" ? "decimal" : "text"}">
+        return `<span class="alc-fix">${ofrecido}<input class="alc-libre alc-fix-in" data-fix-in="${id}" placeholder="${a.pide === "monto" ? "1,850.00" : a.tipo === "poner_falta" ? "escríbelo en inglés" : "escríbelo"}" inputmode="${a.pide === "monto" ? "decimal" : "text"}">
                 <button class="alc-op" data-fix="${id}">${esc(ofrecido ? "No, escribir otro precio" : a.etiqueta)}</button></span>`;
       }
       if (a.pide === "renglon")
@@ -16845,6 +16845,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     // iba nunca (ni dejaba seguir sin pagar otro armado). Va por alcPrecioEnArmado, que rehace el contrato sin la IA.
     if (a && a.tipo === "poner_precio_base" && A && A.armado && !A.armado.vieja)
       return alcPrecioEnArmado(a.valor !== undefined ? a.valor : valor, a.valor !== undefined);
+    // 26-oct (Villanti Garage): lo mismo con la «Falta» del rojo de las fotos del panel: escrita en la hoja por el camino de las
+    // reglas dejaba el armado «viejo» y el rojo no se iba. Va por alcFaltaEnArmado (al final de la hoja, sin volver a pedir a la IA)
+    if (a && a.tipo === "poner_falta" && A && A.armado && !A.armado.vieja)
+      return alcFaltaEnArmado(a.valor !== undefined ? a.valor : valor, a.valor === undefined);
     const r = Alcance.aplicarArreglo(A.texto, a, valor);
     if (r.error) { avisar(r.error, true); return false; }
     if (r.perdona) { A.perdonadas = [...(A.perdonadas || []), r.perdona]; alcPerdonLocal(A.proyecto.id, A.perdonadas); }
@@ -16905,6 +16909,56 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         M.precio_en_marcha = false;
         // si no se llegó al contrato (otra pregunta frena, o el papel no salió), la hoja se repinta: el rojo del precio se va y
         // los botones renacen; si ya está en el contrato, no se toca
+        if (alcActivo === A && A.armado === M && alcFicha === 0) pintarAlcance();
+      });
+    return true;
+  }
+
+  // 26-oct (Villanti Garage): la «Falta» con el armado de la IA vivo (gemela de alcPrecioEnArmado). El rojo «Dijiste que no
+  // tienes fotos del panel» pide escribir en «Falta» qué faltó al cotizar; la app la escribe al FINAL de la hoja («Falta» y el
+  // texto, o solo el texto si la hoja ya acaba en esa cabecera), apunta esas líneas al final de las del armado (M.texto, M.lineas,
+  // M.nube y lineas_total al día: la escribió la app, el armado sigue valiendo) y rehace el contrato SIN volver a pedir a la IA,
+  // con la línea del texto como la de la «Falta» (respuestas.falta_l). Al reabrir, armadoAHoja la toma sola de la hoja.
+  function alcFaltaEnArmado(valor, escrito) {
+    const A = alcActivo, M = A && A.armado;
+    if (!M) return false;
+    if (M.falta_en_marcha) return true;     // un segundo toque mientras se arma el papel no hace nada (el candado vive en el armado)
+    const v = String(valor === undefined || valor === null ? "" : valor).trim();
+    if (!v) { avisar("escribe qué te faltó", true); return false; }
+    // (corrección) sin tocar la hoja: una «Falta» con un monto no entraría en el contrato (y el rojo no se iría), y la que
+    // escribe Edgar va tal cual al contrato del cliente, que va en inglés (el texto del botón automático ya lo está)
+    if (Alcance.dineroEnLineaArmar(v)) { avisar("La «Falta» no lleva dinero: escríbela sin montos (el precio va en «Precio»)", true); return false; }
+    if (escrito && !Alcance.faltaEnIngles(v)) { avisar("Escríbelo en inglés: va tal cual al contrato del cliente. O toca «Poner «sin fotos ni documentación del panel»».", true); return false; }
+    const r = Alcance.aplicarArreglo(A.texto, { tipo: "poner_falta_final" }, v);
+    if (r.error) { avisar(r.error, true); return false; }
+    M.falta_en_marcha = true;
+    // las líneas nuevas: las del texto nuevo detrás de las de antes (solo se añade al final), sin las vacías
+    const antes = String(A.texto || "").replace(/\r/g, "").split("\n");
+    const ahora = String(r.texto || "").replace(/\r/g, "").split("\n");
+    let k = 0;
+    while (k < antes.length && k < ahora.length && antes[k] === ahora[k]) k++;
+    const nuevas = ahora.slice(k).filter(l => l.trim());
+    A.texto = r.texto;
+    if ($("alc-texto")) $("alc-texto").value = A.texto;
+    M.texto = A.texto;                    // la escribió la app: el armado sigue valiendo
+    // al final de las del armado (tapadas, como las demás): los números de línea que usó la IA no se mueven
+    const lineas = Array.isArray(M.lineas) ? M.lineas.slice() : [];
+    const nube = Array.isArray(M.nube) ? M.nube.slice() : null;
+    nuevas.forEach(l => {
+      const fila = { n: lineas.length + 1, t: l.replace(/\d/g, "#"), original: l };
+      lineas.push(fila);
+      if (nube) nube.push({ n: fila.n, t: fila.t });
+    });
+    M.lineas = lineas;
+    if (nube) M.nube = nube;
+    // el paquete dice cuántas líneas tiene la hoja: con más, el juez (verificarArmado) daría «armado_invalido» al reabrir
+    if (M.paquete && typeof M.paquete === "object") M.paquete.lineas_total = lineas.length;
+    nuevas.forEach(l => alcApuntarPropia(l));
+    A.arreglados = [...(A.arreglados || []), r.explicacion];
+    alcContestarArmado("falta_l", lineas.length).catch(e => avisar((e && e.message) || "No pude rehacer el contrato", true))
+      .finally(() => {
+        M.falta_en_marcha = false;
+        // si no se llegó al contrato (otra pregunta frena, o el papel no salió), la hoja se repinta: el rojo de la «Falta» se va
         if (alcActivo === A && A.armado === M && alcFicha === 0) pintarAlcance();
       });
     return true;
@@ -18281,20 +18335,24 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         s += `<p class="lev-nota">Cuando toques «Armar el contrato con IA», aquí sale lo que la IA entendió y la app pasa sola al contrato.</p>`;
       return s;
     }
-    if (M.vieja) s += `<div class="alc-gris">Cambiaste la hoja después de armar: toca «Volver a armar con IA» para que la IA la lea otra vez. Sin la IA: «Más…» › «Leer con las reglas (sin IA)».</div>`;
+    // 26-oct (Villanti Garage): con el armado viejo, la salida a la vista (los dos botones), no escondida bajo «Más…»
+    if (M.vieja) s += `<div class="alc-gris"><p>Cambiaste la hoja después de armar: lo de abajo es de la hoja de antes. Para seguir, vuelve a armar con IA o lee la hoja con las reglas (sin IA).</p>
+      <div class="alc-fixes"><button type="button" class="alc-op" data-armado-otra="1">Volver a armar con IA</button>
+      <button type="button" class="alc-op" data-armado-reglas="1">Leer con las reglas (sin IA)</button></div></div>`;
     // los rojos que frenan
     const incompleto = (M.avisos_app || []).find(x => x && x.tipo === "alcance_incompleto");
     const errores = (A.validado && A.validado.errores) || [];
     const rojos = (M.avisos || []).filter(x => x && x.gravedad === "rojo");
     if (incompleto || errores.length || rojos.length) {
       const ir = n => Number.isInteger(n) && n >= 1 ? `<button type="button" class="alc-linea" data-armado-ir="${n}" title="Llévame a ese renglón">línea ${n}</button> ` : "";
-      s += `<div class="alc-rojo"><b>Esto frena el contrato:</b><ul>` +
+      s += `<div class="alc-rojo"><b>${M.vieja ? "Esto frenaba el contrato (según la hoja de antes):" : "Esto frena el contrato:"}</b><ul>` +
         (incompleto ? `<li><span data-no-i18n>${esc(incompleto.texto)}</span><div class="alc-fixes">${(incompleto.lineas || []).slice(0, 8).map(n => ir(n)).join("")}</div>
           <div class="alc-fixes"><button type="button" class="alc-op" data-armado-otra="1">Volver a armar con IA</button>
           <button type="button" class="alc-op" data-armado-reglas="1">Leer con las reglas (sin IA)</button></div></li>` : "") +
         rojos.map(x => `<li>${ir(x.linea)}<span data-no-i18n>${esc(x.texto)}</span></li>`).join("") +
         // 22-oct: mientras la IA vuelve a armar, los botones de arreglo no salen (tocarlos a medio armado gastaba otro armado)
-        errores.map((e, i) => `<li>${ir(e.linea)}<span data-no-i18n>${esc(e.texto)}</span>${(e.arreglos || []).length && !A.armado_en_marcha ? `<div class="alc-fixes">${alcBotonesDe(e.arreglos, "ae" + i, A.leido, alcPrecioEstimado(A.proyecto.id))}</div>` : ""}</li>`).join("") +
+        // 26-oct: ni con el armado viejo (tocarlos solo escribía en la hoja y nada se recalculaba: el callejón de Villanti)
+        errores.map((e, i) => `<li>${ir(e.linea)}<span data-no-i18n>${esc(e.texto)}</span>${(e.arreglos || []).length && !A.armado_en_marcha && !M.vieja ? `<div class="alc-fixes">${alcBotonesDe(e.arreglos, "ae" + i, A.leido, alcPrecioEstimado(A.proyecto.id))}</div>` : ""}</li>`).join("") +
         `</ul></div>`;
     }
     s += alcPreguntasArmado();

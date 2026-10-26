@@ -3264,7 +3264,7 @@
     "Leer con el asistente": "Read with the assistant",
     "siempre": "always", "solo cuando la hoja viene rara": "only when the sheet looks odd", "nunca": "never",
     "Cuando toques «Leer», aquí sale lo que la app entendió.": "When you tap «Read», what the app understood shows up here.",
-    "escríbelo": "write it",
+    "escríbelo": "write it", "escríbelo en inglés": "write it in English",
     "No, escribir otro precio": "No, enter another price",
     "o explícame por qué está bien así (ej.: es el año de la casa)": "or tell me why it's fine as is (e.g.: it's the year the house was built)",
     "Déjalo así": "Leave it as is",
@@ -4287,11 +4287,16 @@
     "Intentar otra vez": "Try again",
     "Cuando toques «Armar el contrato con IA», aquí sale lo que la IA entendió y la app pasa sola al contrato.":
       "When you tap “Build the contract with AI”, what the AI understood shows up here and the app moves on to the contract by itself.",
-    "Cambiaste la hoja después de armar: toca «Volver a armar con IA» para que la IA la lea otra vez. Sin la IA: «Más…» › «Leer con las reglas (sin IA)».":
-      "You changed the sheet after building: tap “Build again with AI” so the AI reads it again. Without the AI: “More…” › “Read with the rules (no AI)”.",
+    // 26-oct: la nota del armado viejo trae los dos botones a la vista
+    "Cambiaste la hoja después de armar: lo de abajo es de la hoja de antes. Para seguir, vuelve a armar con IA o lee la hoja con las reglas (sin IA).":
+      "You changed the sheet after building: what is below is from the old sheet. To go on, build again with AI or read the sheet with the rules (no AI).",
     "Cambiaste la hoja después de armar: esto es de la hoja de antes. Toca «Volver a armar con IA».":
       "You changed the sheet after building: this is from the old sheet. Tap “Build again with AI”.",
     "Esto frena el contrato": "This stops the contract",
+    "Esto frenaba el contrato (según la hoja de antes)": "This was stopping the contract (per the old sheet)",
+    "La «Falta» no lleva dinero: escríbela sin montos (el precio va en «Precio»)": "The “Missing” note takes no money: write it without amounts (the price goes in “Price”)",
+    "Escríbelo en inglés: va tal cual al contrato del cliente. O toca «Poner «sin fotos ni documentación del panel»».":
+      "Write it in English: it goes as is into the client's contract. Or tap “Put «no panel photos or documentation»”.",
     "Armar el papel": "Build the paper",
     "Escribe el precio en la casilla del rojo de arriba (o toca «Sí, usar el del estimado»): el contrato se rehace sin volver a pedir a la IA.":
       "Type the price in the box of the red notice above (or tap “Yes, use the one from the estimate”): the contract is rebuilt without asking the AI again.",

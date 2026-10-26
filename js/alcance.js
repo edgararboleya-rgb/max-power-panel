@@ -2029,6 +2029,35 @@
         explicacion = `Falta: «${v.slice(0, 60)}»`;
         break;
       }
+      // 26-oct (Villanti Garage): la misma «Falta», pero SIEMPRE al final de la hoja (la usa la app con el armado de la IA vivo:
+      // así los números de línea que usó la IA no se mueven). Solo se AÑADE: si la hoja ya acaba en la sección «Falta» (su
+      // cabecera es lo último con contenido, o lo que va detrás lo leen las reglas como esa «Falta»), el texto va debajo de la
+      // MISMA cabecera; si no, una línea en blanco (si la última no lo está), «Falta» y el texto. Nunca pisa ni quita una línea
+      // que ya esté (tampoco las vacías del final): la hoja de antes queda entera delante.
+      case "poner_falta_final": {
+        if (!v) return { error: "escribe qué te faltó" };
+        if (lineas.length === 1 && !lineas[0].trim()) lineas.length = 0;
+        const cabecera = /^\s*#*\s*(falta|lo que falta|sin datos|falta informaci[oó]n)\s*:?\s*$/i;
+        let k = -1;
+        lineas.forEach((l, j) => { if (cabecera.test(l)) k = j; });
+        let alFinal = false;
+        if (k >= 0) {
+          const detras = [];
+          for (let j = k + 1; j < lineas.length; j++) if (lineas[j].trim()) detras.push(j + 1);
+          if (!detras.length) alFinal = true;
+          else {
+            try { const pf = new Set(((leerAlcance(lineas.join("\n")) || {}).prosa_lineas || {}).falta || []); alFinal = detras.every(n => pf.has(n)); }
+            catch { alFinal = false; }
+          }
+        }
+        if (alFinal) lineas.push(v);
+        else {
+          if (lineas.length && lineas[lineas.length - 1].trim()) lineas.push("");
+          lineas.push("Falta", v);
+        }
+        explicacion = `Falta: «${v.slice(0, 60)}»`;
+        break;
+      }
       case "corregir_titulo": {
         if (!hay) return { error: "esa línea ya no existe" };
         lineas[i] = v.charAt(0).toUpperCase() + v.slice(1);
@@ -7835,6 +7864,15 @@
   // ---- Del armado a la hoja leída de siempre (pliego §4.4): L y S con la MISMA forma que leerAlcance y redactarDirecto
   // lineasOriginales: las líneas de Edgar SIN tapar (texto o {original}); el dinero se lee de ahí, nunca de la IA.
   // respuestas: lo que Edgar contestó a las preguntas (clave → valor), sin volver a llamar a la IA.
+  // 26-oct (corrección): las dos reglas de la «Falta» que escribe la app con el armado vivo, una sola para alcance.js y app.js.
+  // ¿Lleva dinero esta línea? (la misma cuenta que «conDinero» de armadoAHoja, sin mirar la lectura de las reglas)
+  function dineroEnLineaArmar(t) { t = String(t || ""); return esMontoArmar(t) || pareceDinero(t) || kvDinero(t) || traeDineroEstricto(t) || !!medidaConMonto(t); }
+  // ¿Va en inglés? «no» y «panel» valen en las dos lenguas: no cuentan (si no, «No panel documentation…», el texto del botón
+  // automático, salía como español)
+  function faltaEnIngles(t) {
+    t = String(t || "").replace(/\b(?:no|panel)\b/gi, " ");
+    return !/[áéíóúñ¿¡]/i.test(t) && (t.match(EN_PALABRAS) || []).length >= (t.match(ES_PALABRAS) || []).length;
+  }
   function armadoAHoja(armado, lineasOriginales, ficha, perfilApp, respuestas, admin) {
     const a = esObjeto(armado) ? armado : {};
     ficha = esObjeto(ficha) ? ficha : {};
@@ -8262,6 +8300,57 @@
       ...(lineaOk(Di.precio_l) ? [Di.precio_l] : []), ...(Array.isArray(Di.pagos_l) ? Di.pagos_l : []), ...(Array.isArray(Di.opciones_l) ? Di.opciones_l : [])].filter(lineaOk));
     const conDinero = n => lrDinero.has(n) || esMontoArmar(o(n)) || pareceDinero(o(n)) || kvDinero(o(n)) || traeDineroEstricto(o(n)) || !!medidaConMonto(o(n));
     const sinDineroDe = de => de.filter(n => !conDinero(n));
+    // ---- 26-oct (Villanti Garage): la «Falta» de la hoja que la IA no usó. Con el armado vivo, el botón del rojo «Dijiste que no
+    // tienes fotos del panel» la escribe al final de la hoja (alcFaltaEnArmado, y la señala con R.falta_l); al reabrir sin esa
+    // respuesta, o si Edgar la escribió a mano, o en una hoja vieja con la «Falta» en medio (la ponía «poner_falta»), la toman las
+    // REGLAS. Solo las líneas que la IA no usó en ningún sitio (como «casa» en el juez) y sin dinero: nada sale dos veces.
+    {
+      const usadasIA = new Set();
+      const pon = de => (Array.isArray(de) ? de : [de]).forEach(n => { if (lineaOk(n)) usadasIA.add(n); });
+      const ponT = t => { if (esObjeto(t)) pon(t.de); };
+      TEXTOS_SIMPLES.forEach(k => ponT(T[k]));
+      if (esObjeto(T.utility)) { ponT(T.utility.quien); ponT(T.utility.que_hace); }
+      Object.entries(TEXTOS_LISTA).forEach(([k, campos]) => (Array.isArray(T[k]) ? T[k] : []).forEach(p => { if (esObjeto(p)) campos.forEach(c => ponT(p[c])); }));
+      (Array.isArray(T.disparadores) ? T.disparadores : []).forEach(ponT);
+      PROPIAS_LISTA.forEach(k => (Array.isArray(P[k]) ? P[k] : []).forEach(p => { if (esObjeto(p)) { ponT(p.titulo); ponT(p.texto); } }));
+      ponT(P.pre_titulo);
+      Object.values(D).forEach(x => { if (esObjeto(x)) pon(x.l); });
+      Object.values(Cn).forEach(x => { if (esObjeto(x)) pon(x.l); });
+      pon(Di.precio_l); pon(Di.pagos_l); pon(Di.opciones_l);
+      pon(Co.de);
+      // (corrección) tampoco las que la IA mandó a «sobrantes»: esas no van al contrato (la línea que puso la app sí entra)
+      (Array.isArray(a.sobrantes) ? a.sobrantes : []).forEach(n => { if (n !== R.falta_l) pon(n); });
+      const cabeceraFalta = /^\s*#*\s*(falta|lo que falta|sin datos|falta informaci[oó]n)\s*:?\s*$/i;
+      const yaFalta = new Set(L.prosa_lineas.falta);
+      const deReglas = (esObjeto(Lr.prosa_lineas) && Array.isArray(Lr.prosa_lineas.falta) ? Lr.prosa_lineas.falta : []).filter(lineaOk);
+      const deApp = lineaOk(R.falta_l) && o(R.falta_l).trim() && !cabeceraFalta.test(o(R.falta_l)) ? [R.falta_l] : [];
+      // (corrección) la que se cae solo por llevar un monto se dice: si no, el rojo de las fotos del panel seguía sin explicar por qué
+      [...new Set([...deReglas, ...deApp])].sort((x, y) => x - y)
+        .filter(n => !yaFalta.has(n) && !usadasIA.has(n) && conDinero(n))
+        .forEach(n => aviso(`La «Falta» de la línea ${n} lleva un monto y no la pongo en el contrato: quítale el monto en la hoja.`, n));
+      const nuevas = [...new Set([...deReglas, ...deApp])].sort((x, y) => x - y)
+        .filter(n => !yaFalta.has(n) && !usadasIA.has(n) && !conDinero(n) && limpio(n));
+      if (nuevas.length) {
+        // (corrección) si la IA escribió su propio texto de la «Falta» (no por referencia), las líneas de la MISMA sección que ella
+        // citó ya están dichas aunque citara solo una parte: entran en L.falta (apaga el rojo) pero no se pegan otra vez al papel
+        const Sq = esObjeto(S.que_faltaba) && tiene(S.que_faltaba.en) ? S.que_faltaba : null;
+        const secDe = n => { let s = 0; (Array.isArray(Lr.titulos) ? Lr.titulos : []).forEach(t => { if (esObjeto(t) && t.linea <= n) s = t.linea; }); return s; };
+        const secIA = new Set(Sq && !Sq.ref ? deDe(Sq).map(secDe) : []);
+        const alPapel = nuevas.filter(n => n === R.falta_l || !secIA.has(secDe(n)));
+        nuevas.forEach(n => {
+          L.falta = [L.falta, limpio(n)].filter(Boolean).join(" ");
+          if (n !== R.falta_l && alPapel.includes(n)) aviso(`La «Falta» la tomé de la línea ${n} («${limpio(n).slice(0, 60)}»), que la IA no había usado.`, n, { informativo: true });
+        });
+        L.prosa_lineas.falta = [...new Set([...L.prosa_lineas.falta, ...nuevas])].sort((x, y) => x - y);
+        // y al papel («Basis of information»): sin esto el bloque se encendería (FALTA sale de L.falta) con el texto vacío
+        const enNuevas = alPapel.map(n => fraseRef(limpioRef(n))).filter(Boolean);
+        S.que_faltaba = { en: [Sq ? String(Sq.en).trim() : "", ...enNuevas].filter(Boolean).join(" "),
+                          de: [...new Set([...(Sq ? deDe(Sq) : []), ...nuevas])].sort((x, y) => x - y), ref: Sq ? !!Sq.ref : true };
+        // el contrato va en inglés: una «Falta» escrita en español sale tal cual, y se dice (no frena: Edgar decide)
+        alPapel.forEach(n => { if (!faltaEnIngles(limpio(n)))
+          aviso(`La «Falta» de la línea ${n} está en español y el contrato va en inglés: cámbiala en «Ver y editar los textos» (sin volver a pedir a la IA).`, n); });
+      }
+    }
     // ---- los renglones: el título es la primera línea de «de» (sin viñeta ni número), los detalles, el resto
     const SOW_NUM = /^\s*(?:\*\*)?\s*(\d{1,2})(?:\.(\d{1,2}))?[.)]?\s+/;
     (Array.isArray(T.items) ? T.items : []).forEach((it, k) => {
@@ -8931,7 +9020,7 @@
                 PREGUNTAS_QUE_VALEN, TIPOS_AVISO_ARMADO, MOLDE_ARMADO_CLAVES,
                 // tanda 4 (revisión adversaria): el dinero del armado (la misma regla que el cerebro), las lecciones con monto,
                 // las exclusiones que la plantilla ya trae, los botones fijos de las preguntas y las lecciones de un hecho
-                tramosArmar, esMontoArmar, dineroEnTextoArmar, dineroEnElArmado, leccionConMonto, medidaConMonto, noEsDineroArmar, exclusionFija, leyQueNoEsta,
+                tramosArmar, esMontoArmar, dineroEnLineaArmar, faltaEnIngles, dineroEnTextoArmar, dineroEnElArmado, leccionConMonto, medidaConMonto, noEsDineroArmar, exclusionFija, leyQueNoEsta,
                 RX_UNIDAD_ARMAR, RX_UNIDAD_ARMAR_MAY, RX_UNIDAD_FUERTE, RX_UNIDAD_FUERTE_MAY, RX_MILES_K, RX_MILES_PALABRA, RX_DINERO_CERCA_CIFRAS, RX_UNIDAD_CONTAR, RX_DINERO_SUELTO, montoPelado, RX_PALABRA_DINERO_ARMAR, RX_ANTES_ARTICULO, RX_LECCION_PALABRA, RX_MASCARA,
                 RX_DINERO_CERCA, RX_LINEA_CODIGO, RX_ANTES_ANO, RX_MONTO_EN_PALABRAS, RX_DINERO_PEGADO, RX_MONTO_LETRAS, RX_MAGNITUD_LETRAS, RX_POR_HORA, RX_LECCION_DISPARO, RX_LECCION_POR_UNIDAD,
                 OPCIONES_FIJAS_ARMADO, LECCION_HECHOS, PLANTILLA_PAGOS,
