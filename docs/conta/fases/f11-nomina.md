@@ -43,3 +43,13 @@ corrida de prueba con las llaves demo.
 Una corrida de prueba entra sola al libro desde el diario, repartida sobre las
 obras correctas con su burden real, y **el journal, el 941 y el RT-6 amarran
 contra 5000/5010/2220/2230**.
+
+## Decisión del 26-oct
+Gusto contratado (plan Simple, cada dos semanas, primera nómina el viernes
+8-ene-2027). Gusto no da su API a una app privada de un solo cliente: el
+puente de esta fase es **por archivo** (el «Payroll journal» en CSV que Edgar
+descarga después de cada nómina y sube a la app), con las horas por obra que
+ya lleva la app para repartir el costo y Plaid para casar el cargo de Gusto en
+Chase. En primavera de 2027, con la nómina estable, se pide a Gusto el acceso
+de socio para que el asiento entre solo; correr la nómina dentro de la app
+(Check u otro proveedor embebido) queda descartado para el arranque.
