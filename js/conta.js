@@ -17,6 +17,9 @@
 //     la pantalla no pinta ceros.
 // La conexión es la de js/db.js (MXP_DB._leer, MXP_DB._rpc; MXP_DB._funcion
 // para la función de borde `plaid`: la conexión automática con el banco).
+// Y los cobros en línea (p1: v_stripe_estado, v_stripe_control, v_stripe_facturas,
+// v_stripe_pagos, v_stripe_payouts, v_stripe_avisos; la función de borde `stripe`
+// con la sesión del dueño para todo lo que habla con Stripe).
 // Y los estados financieros (c4: v_cortes, v_resultados, v_balance_general,
 // v_balanza, v_mayor, v_libro, v_asiento_papel, v_flujo_caja, v_comparacion,
 // v_comparacion_resumen; control fn_estados_control): solo lectura, cada
@@ -49,12 +52,14 @@
     conc: null, concCuenta: null, movCuenta: null, movEstado: "", filtroCuenta: null,
     importe: null, ocupado: false,
     plaid: null, plaidErr: null, mfa: null,
+    // Stripe (p1): la fila de v_stripe_estado, por qué no se leyó, la salud de la función, los depósitos asentados (para la bandeja) y la pestaña
+    stripe: null, stripeErr: null, stripeSalud: null, stripePayouts: null, cobros: null,
     // Estados financieros: qué estado (sub), qué período, la bajada cuenta → asiento,
     // el método del flujo, la caché de v_cortes (con el día en que se leyó) y la serie contra el doble pintado
     est: { sub: "resultados", periodo: null, cuenta: null, asiento: null, metodo: "directo", cortes: null, cortesDia: null, todos: false, avisoHoy: false, serie: 0 }
   };
-  const TITULOS = { bancos: "Bancos y tarjetas", bandeja: "Bandeja del banco", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados financieros" };
-  const PESTANAS = { bancos: "Bancos y tarjetas", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados" };
+  const TITULOS = { bancos: "Bancos y tarjetas", bandeja: "Bandeja del banco", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados financieros", cobros: "Cobros en línea" };
+  const PESTANAS = { bancos: "Bancos y tarjetas", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados", cobros: "Cobros en línea" };
   const KICKER = "Contabilidad · solo dueño";
 
   const raiz = () => $("conta-raiz");
@@ -179,11 +184,16 @@
       if (!lista.length) throw errorControl("La base no devolvió ninguna cuenta de banco ni tarjeta", [{ vista: "v_banco_saldos", filas: 0, esperadas: "1 o más", detalle: "La empresa tiene Chase y las dos Amex. Si la vista no las trae, algo está mal (¿la sesión no es la del dueño?)." }]);
       await leerPlaid();
       await leerMfa();
+      // los cobros en línea: la fila de su estado (fresca) y la salud de la función; si p1 no está, la tarjeta lo dice
+      await leerStripe(true);
+      if (S.stripe) await leerSalud();
     } catch (err) { return pintarError(err, pintarBancos); }
     pintarBadge();
-    main().innerHTML = importadorHTML(lista) + (S.importe ? importeHTML(S.importe) : "") +
-      mfaHTML(S.mfa) + plaidHTML(S.plaid || [], S.plaidErr) +
-      `<div class="ct-rejilla">${lista.map(cuentaHTML).join("")}</div>`;
+    // la 1020 y la 1140 (Stripe) no se pintan como bancos; el control de arriba contó la lista entera
+    const vis = visibles(lista);
+    main().innerHTML = importadorHTML(vis) + (S.importe ? importeHTML(S.importe) : "") +
+      mfaHTML(S.mfa) + plaidHTML(S.plaid || [], S.plaidErr) + stripeHTML(S.stripe, S.stripeErr, S.stripeSalud) +
+      `<div class="ct-rejilla">${vis.map(cuentaHTML).join("")}</div>`;
     // el importador general
     $("ct-imp-btn").addEventListener("click", () => {
       const f = $("ct-imp-archivo").files[0];
@@ -200,6 +210,7 @@
     });
     wireMfa();
     wirePlaid();
+    wireStripe();
   }
 
   function importadorHTML(lista) {
@@ -493,7 +504,7 @@
   }
   function cuentaPlaidHTML(a) {
     const credito = a.tipo === "credit", banco = a.tipo === "depository";
-    const opciones = (S.saldos || []).filter(s => credito ? s.tipo === "tarjeta" : banco ? s.tipo === "banco" : true);
+    const opciones = visibles(S.saldos).filter(s => credito ? s.tipo === "tarjeta" : banco ? s.tipo === "banco" : true);
     const que = credito ? "tarjeta de crédito" : (a.subtipo || a.tipo || "cuenta");
     return `<label class="ct-campo ct-cuenta-plaid">${esc(a.nombre || a.oficial || "Cuenta")}${a.mask ? ` ····${esc(a.mask)}` : ""} <small>(${esc(que)})</small>
       <select data-account="${esc(a.account_id)}"${a.cuenta ? "" : ' class="sin-fijar"'}>
@@ -623,6 +634,432 @@
   }
 
   // ============================================================
+  // LOS COBROS EN LÍNEA (Stripe) — docs/conta/p1-stripe.sql y la función de
+  // borde supabase/functions/stripe. La pantalla solo LEE las vistas
+  // v_stripe_* (estado, control, facturas, pagos, depósitos y avisos); todo lo
+  // que mueve algo se lo pide a la función con la sesión del dueño (y su código
+  // del teléfono: la función exige aal2 en cada acción): crear o desactivar un
+  // enlace, decir a qué va un pago, casar un depósito, revisar con Stripe.
+  // Ninguna función de p1 está en la API. Nada de dinero ni enlaces se guarda
+  // en el teléfono. La 1020 (cobros en tránsito) y la 1140 (de paso) son de
+  // Stripe: no se concilian ni se eligen a mano, así que no salen en las listas
+  // de bancos (la base no cambia: el control sigue contando la lista entera).
+  // ============================================================
+  const esStripe = cod => !!cod && !!(S.stripe && S.stripe.estado) && (cod === S.stripe.estado.cuenta_puente || cod === S.stripe.estado.cuenta_paso);
+  const visibles = lista => (lista || []).filter(c => !esStripe(c.cuenta));
+  // una vista que no existe (p1 sin pegar): PostgREST contesta 404 PGRST205 (o 42P01)
+  const sinInstalar = err => !!err && (err.status === 404 || ["PGRST205", "42P01"].includes(err.codigo));
+  const MEDIO = { tarjeta: "Tarjeta", ach: "Cuenta de banco (ACH)", otro: "Otro medio" };
+  const cent = v => Math.round((num(v) || 0) * 100);
+  const diasEntre = (a, b) => Math.round((Date.parse(String(a).slice(0, 10)) - Date.parse(String(b).slice(0, 10))) / 86400000);
+
+  // El estado de la conexión (una fila). `fresco` vuelve a leer; un error que no es de red queda en S.stripeErr
+  // («sin instalar») y la página sigue; sin señal, se lanza.
+  async function leerStripe(fresco) {
+    if (!fresco && (S.stripe || S.stripeErr)) return S.stripe;
+    try {
+      const filas = await DB._leer("v_stripe_estado?select=*");
+      if (!Array.isArray(filas) || filas.length !== 1) throw new Error("la vista v_stripe_estado no devolvió su fila (¿falta stripe_config o la sesión no es la del dueño?)");
+      S.stripe = { estado: filas[0] }; S.stripeErr = null;
+    } catch (err) { if (esFalloDeRed(err)) throw err; S.stripe = null; S.stripeErr = err; }
+    return S.stripe;
+  }
+  // La salud de la función: solo booleanos y el modo (nunca una llave). Si no contesta, null.
+  async function leerSalud() {
+    try { S.stripeSalud = await DB._funcion("stripe", { accion: "salud" }, 15000); }
+    catch { S.stripeSalud = null; }
+    return S.stripeSalud;
+  }
+
+  // ---------- La tarjeta de Bancos y tarjetas ----------
+  function stripeHTML(st, err, salud) {
+    const cab = extra => `<div class="ct-cab"><h2>Cobros en línea (Stripe)</h2>${extra}</div>`;
+    if (!st || !st.estado) {
+      return `<section class="ct-card ct-stripe" id="ct-stripe">${cab(pill("sin instalar", "warn"))}
+        <p class="ct-nota">La base todavía no tiene los cobros en línea (docs/conta/p1-stripe.sql) o la vista no contestó: ${esc(err ? err.message : "sin datos")}.</p></section>`;
+    }
+    const e = st.estado;
+    const faltan = !salud ? [] : [
+      !salud.llave && "la llave (STRIPE_SECRET_KEY)", salud.llave && salud.llave_restringida === false && "una llave RESTRINGIDA (rk_live_…), no la secreta",
+      !salud.webhook && "el secreto del webhook (STRIPE_WEBHOOK_SECRET)", !salud.rutina && "el secreto de la rutina (STRIPE_RUTINA_SECRETO)", !salud.base && "la conexión con la base"
+    ].filter(Boolean);
+    const prueba = e.modo === "prueba" || (salud && salud.modo === "prueba");
+    const pills = (!salud ? pill("la función no contestó", "warn") : faltan.length ? pill("falta configurar", "bad") : pill("conectado", "ok")) +
+      (prueba ? pill("modo de prueba", "warn") : "") +
+      (Number(e.cuadres_rojos) > 0 ? pill("no cuadra", "bad") : pill("cuadra", "ok")) +
+      (Number(e.alarmas) > 0 ? pill(plural(e.alarmas, "alarma", "alarmas"), "warn") : "");
+    const mfa = mfaActivo();
+    return `<section class="ct-card ct-stripe" id="ct-stripe">${cab(pills)}
+      <p class="ct-nota">Tus clientes pagan la factura con un enlace: desde su cuenta de banco (ACH) o con tarjeta. Cada pago confirmado entra solo al libro en la ${esc(e.cuenta_puente || "1020")} (${esc(e.cuenta_puente_nombre || "Stripe — cobros en tránsito")}), y cuando Stripe deposita en Chase el depósito casa solo con su asiento. Las llaves viven en Supabase, nunca en el teléfono.</p>
+      ${!salud ? `<p class="ct-aviso warn">La función «stripe» no contestó: ¿está desplegada en Supabase → Edge Functions?</p>` : faltan.length ? `<p class="ct-aviso bad">Falta en Supabase → Edge Functions → Secrets: ${esc(faltan.join(", "))}.</p>` : ""}
+      ${prueba && !e.acepta_prueba ? `<p class="ct-aviso warn">La función tiene una llave de prueba (rk_test_): no se registra nada. Pon la llave real (rk_live_) en STRIPE_SECRET_KEY.</p>` : ""}
+      <ul class="ct-datos">
+        <li>En Stripe, sin depositar: <span class="ct-num">${fmt(e.por_depositar)}</span> (${plural(Number(e.n_por_depositar || 0), "cobro", "cobros")})</li>
+        <li>En camino por cuenta de banco: <span class="ct-num">${fmt(e.en_camino_monto)}</span> (${Number(e.en_camino_n || 0)})</li>
+        <li>Último aviso de Stripe: ${e.ultimo_evento_el ? `${fechaHora(e.ultimo_evento_el)} (${esc(e.ultimo_evento_tipo || "")})` : "ninguno todavía"}</li>
+        <li>Revisión automática: ${e.ultimo_barrido_el ? fechaHora(e.ultimo_barrido_el) : "todavía no ha corrido"}</li>
+        ${e.ultimo_error ? `<li class="bad-txt">Último error: ${esc(e.ultimo_error)}${e.ultimo_error_el ? ` (${fechaHora(e.ultimo_error_el)})` : ""}</li>` : ""}
+      </ul>
+      <div class="ct-acciones">
+        <button type="button" class="accion" id="ct-stripe-ver">Ver los cobros en línea</button>
+        <button type="button" class="accion secundaria" id="ct-stripe-probar"${mfa ? "" : " disabled"}>Probar la llave</button>
+        <button type="button" class="accion secundaria" id="ct-stripe-barrer"${mfa ? "" : " disabled"}>Revisar con Stripe ahora</button>
+        ${mfa ? "" : `<span class="ct-nota" style="margin:0">Primero activa el código del teléfono (arriba).</span>`}
+      </div>
+      <div class="ct-stripe-res"></div>
+    </section>`;
+  }
+  function permisosHTML(r) {
+    const ps = Array.isArray(r && r.permisos) ? r.permisos : [];
+    const malos = ps.filter(x => !x.ok);
+    return `<p class="ct-aviso ${malos.length ? "warn" : "ok"}">${malos.length ? `La llave${r.restringida === false ? " no es restringida y" : ""} no llega a ${plural(malos.length, "recurso", "recursos")}.` : `La llave contesta en todo lo que la app usa${r && r.modo ? ` (modo ${esc(r.modo === "real" ? "real" : "de prueba")})` : ""}.`}</p>
+      <ul class="ct-permisos">${ps.map(x => `<li class="${x.ok ? "ok" : "bad"}"><span aria-hidden="true">${x.ok ? "✓" : "✗"}</span> ${esc(x.recurso)}${x.ok ? "" : ` — Falta el permiso <span class="ct-num">${esc(x.rak || "?")}</span> en la llave restringida: edítala en Stripe → Developers → API keys.`}</li>`).join("")}</ul>`;
+  }
+  function wireStripe() {
+    const card = $("ct-stripe"); if (!card) return;
+    const ver = $("ct-stripe-ver"); if (ver) ver.addEventListener("click", () => ir("cobros"));
+    const pr = $("ct-stripe-probar"); if (pr) pr.addEventListener("click", () => accionStripe(card, { accion: "probar_llave" }, r => (r && Array.isArray(r.permisos) && r.permisos.some(x => !x.ok)) ? "A la llave le falta algún permiso: mira la lista" : "La llave de Stripe contesta bien", { repintar: false, mostrar: permisosHTML }));
+    const ba = $("ct-stripe-barrer"); if (ba) ba.addEventListener("click", () => accionStripe(card, { accion: "barrer" }, resumenBarrido));
+  }
+  const resumenBarrido = r => `Revisado con Stripe${r && r.resumen && r.resumen.incompleto ? ": quedó a medias, sigue sola en la próxima vuelta" : ""}`;
+
+  // ---------- Una acción de la función (con la sesión del dueño) ----------
+  // `cont`: la tarjeta (sus botones se apagan; el resultado o el error va en su .ct-stripe-res).
+  // Después repinta la página en la que está (salvo repintar: false, que enseña el resultado con `mostrar`).
+  const resStripe = cont => { let c = cont.querySelector(".ct-stripe-res"); if (!c) { c = document.createElement("div"); c.className = "ct-stripe-res"; cont.appendChild(c); } return c; };
+  function errorStripeHTML(err, cuerpo) {
+    if (esFalloDeRed(err) || !navigator.onLine) return `<p class="ct-aviso bad">Sin señal: no se hizo nada.</p>`;
+    const d = err.datos || {};
+    const rak = d.rak || (d.detalle && d.detalle.rak) || (String(err.message || "").match(/rak_[a-z_]+/) || [])[0] || "";
+    if (err.codigo === "MFA") return `<p class="ct-aviso warn">Falta el código del teléfono: entra otra vez con él.</p>`;
+    if (err.codigo === "STRIPE_PERMISO") return `<p class="ct-aviso bad">A la llave de Stripe le falta el permiso <span class="ct-num">${esc(rak || "?")}</span>. Añádelo en Stripe → Developers → API keys (la llave restringida) y vuelve a intentarlo.</p>`;
+    if (err.codigo === "STRIPE_CAIDO") return `<p class="ct-aviso warn">${esc(cuerpo && cuerpo.accion === "crear_enlace" && err.message ? err.message : "Stripe no contestó: no se hizo nada. Inténtalo en un rato.")}</p>`;
+    if (/^MX/i.test(String(err.codigo || "")) || err.estado === 409) return `<p class="ct-aviso warn">${esc(err.message)}</p>`;
+    return `<p class="ct-aviso bad">${esc(err.message)}</p>`;
+  }
+  async function accionStripe(cont, cuerpo, exito, opciones = {}) {
+    if (S.ocupado) return;
+    const caja = resStripe(cont);
+    if (!navigator.onLine) { caja.innerHTML = `<p class="ct-aviso bad">Sin señal: no se hizo nada.</p>`; return; }
+    if (!mfaActivo()) { caja.innerHTML = `<p class="ct-aviso warn">Primero activa el código del teléfono (Bancos y tarjetas) y entra con él: los cobros en línea lo piden.</p>`; return; }
+    S.ocupado = true;
+    const apagados = [...cont.querySelectorAll("button, select, input, textarea")].filter(b => !b.disabled && !b.readOnly);
+    apagados.forEach(b => { b.disabled = true; });
+    caja.innerHTML = `<p class="ct-aviso">${cuerpo.accion === "barrer" ? "Revisando con Stripe…" : cuerpo.accion === "crear_enlace" ? "Creando el enlace en Stripe…" : "Un momento…"}</p>`;
+    let r;
+    try {
+      r = await DB._funcion("stripe", cuerpo, 60000);
+    } catch (err) {
+      apagados.forEach(b => { b.disabled = false; });
+      caja.innerHTML = errorStripeHTML(err, cuerpo);
+      S.ocupado = false;
+      if (typeof opciones.alFallar === "function") opciones.alFallar(err);
+      return;
+    }
+    S.ocupado = false;
+    S.hooks.avisar(exito(r));
+    if (opciones.repintar === false) {
+      apagados.forEach(b => { b.disabled = false; });
+      caja.innerHTML = typeof opciones.mostrar === "function" ? opciones.mostrar(r) : "";
+      return;
+    }
+    S.cobros = null; S.stripe = null; S.stripeErr = null; S.stripeSalud = null; S.saldos = null; S.bandeja = null;
+    await (PAGINAS[S.pagina] || pintarCobros)();
+  }
+
+  // ---------- La bandeja: un depósito de Stripe no se registra como cobro ----------
+  const depositoStripe = m => !!(S.stripe && S.stripe.estado) && num(m.monto) > 0 && /\bSTRIPE\b/i.test(`${m.descripcion || ""} ${m.memo || ""}`) &&
+    String(m.fecha || "") >= String(S.stripe.estado.desde || "").slice(0, 10);
+  const opcionDeCobro = o => !!o && (o.llamar === "fn_banco_cobrar" || (o.llamar === "fn_banco_casar_con" && !!(o.args && o.args.p_con && o.args.p_con.cobro)));
+  // Deja en m.opciones la misma lista que pinta y que usa el clic: sin las que nombran la 1020 o la 1140, y en un depósito
+  // de Stripe sin las de cobro; m._stripe = los depósitos de Stripe asentados con ese monto y su llegada a ±5 días.
+  function prepararMov(m) {
+    const dep = depositoStripe(m);
+    m.opciones = (Array.isArray(m.opciones) ? m.opciones : []).filter(o => !(o && o.args && esStripe(o.args.p_cuenta)) && !(dep && opcionDeCobro(o)));
+    m._esStripe = dep;
+    m._stripe = dep ? (S.stripePayouts || []).filter(q => cent(q.monto) === cent(m.monto) && Math.abs(diasEntre(q.llegada, m.fecha)) <= 5) : [];
+    return m;
+  }
+
+  // ---------- La pestaña «Cobros en línea» ----------
+  // FALLA RUIDOSA: v_stripe_control. Un «cuadre» en false, o una vista que trajo otro número de filas que el que contó el
+  // control (10, 11 y 12), es rojo y no se pinta nada. Las «alarmas» en false van en la caja amarilla de arriba.
+  function controlStripe(control, conteos) {
+    if (!Array.isArray(control) || !control.length) throw errorControl("El control de los cobros en línea no devolvió ninguna fila", [{ vista: "v_stripe_control", detalle: "la vista contestó vacía" }]);
+    const mal = control.filter(f => f.nivel === "cuadre" && f.ok !== true).map(f => ({ vista: f.control, filas: f.filas, esperadas: f.esperadas, detalle: f.detalle }));
+    for (const [vista, n] of Object.entries(conteos)) {
+      const f = control.find(x => x.control === "vista: " + vista);
+      if (!f) mal.push({ vista, detalle: "el control no revisó esta vista" });
+      else if (f.ok === true && Number(f.filas) !== Number(n)) mal.push({ vista, filas: f.filas, esperadas: n, detalle: `la pantalla trajo ${n} fila(s) y el control contó ${f.filas}` });
+    }
+    if (mal.length) throw errorControl("Los cobros en línea no cuadran: no se pinta", mal);
+    return control.filter(f => f.nivel === "alarma" && f.ok === false);
+  }
+  async function pintarCobros() {
+    cargando();
+    if (!navigator.onLine) return sinSenal(pintarCobros);
+    let est, control, facturas, pagos, payouts, avisos, alarmas;
+    try {
+      [est, control, facturas, pagos, payouts, avisos] = await Promise.all([
+        DB._leer("v_stripe_estado?select=*"),
+        DB._leer("v_stripe_control?select=*&order=orden.asc"),
+        DB._leer("v_stripe_facturas?select=*&order=fecha.asc,num.asc"),
+        DB._leer("v_stripe_pagos?select=*&order=creado_el.desc"),
+        DB._leer("v_stripe_payouts?select=*&order=llegada.desc"),
+        DB._leer("v_stripe_avisos?select=*"),
+        leerMfa(),
+        // para las formas de «Decir a qué va» y «A qué cuenta va»; si no llegan, la forma lo dice
+        proyectos().catch(e => { if (esFalloDeRed(e)) throw e; return null; }),
+        cuentas().catch(e => { if (esFalloDeRed(e)) throw e; return null; }),
+        saldos().catch(e => { if (esFalloDeRed(e)) throw e; return null; })
+      ]);
+      if (S.pagina !== "cobros") return;
+      if (!Array.isArray(est) || est.length !== 1) throw errorControl("Los cobros en línea no devolvieron su estado", [{ vista: "v_stripe_estado", filas: Array.isArray(est) ? est.length : 0, esperadas: 1, detalle: "la fila de stripe_config no se ve (¿la sesión no es la del dueño?)" }]);
+      alarmas = controlStripe(control, { v_stripe_facturas: facturas.length, v_stripe_pagos: pagos.length, v_stripe_payouts: payouts.length });
+    } catch (err) {
+      if (S.pagina !== "cobros") return;
+      if (sinInstalar(err) && !esFalloDeRed(err)) {
+        main().innerHTML = `<section class="ct-card ct-stripe" id="ct-cobros-sin"><div class="ct-cab"><h2>Cobros en línea (Stripe)</h2>${pill("sin instalar", "warn")}</div>
+          <p class="ct-nota">Los cobros en línea no están instalados (docs/conta/p1-stripe.sql). Cuando se peguen en el SQL Editor, aquí salen las facturas por cobrar, los pagos y los depósitos de Stripe.</p></section>`;
+        return;
+      }
+      return pintarError(err, pintarCobros);
+    }
+    S.stripe = { estado: est[0] }; S.stripeErr = null;
+    S.cobros = { estado: est[0], facturas, pagos, payouts, avisos: avisos || [] };
+    const e = est[0], mfa = mfaActivo();
+    const porCobrar = facturas.filter(f => num(f.saldo_cxc) + num(f.saldo_retencion) > 0).length;
+    const enCamino = pagos.filter(x => ["iniciado", "en_camino"].includes(x.estado)).length;
+    const aChase = payouts.filter(x => ["en_camino", "asentado"].includes(x.estado_pantalla)).length;
+    const sinMfa = mfa ? "" : `<p class="ct-aviso warn">Primero activa el código del teléfono (Bancos y tarjetas) y entra con él: crear enlaces y todo lo que habla con Stripe lo pide.</p>`;
+    main().innerHTML = `<section class="ct-card ct-barra" id="ct-cobros-barra">
+        <div class="ct-barra-txt"><b>${plural(porCobrar, "factura por cobrar", "facturas por cobrar")}</b> · ${plural(enCamino, "pago en camino", "pagos en camino")} · ${plural(aChase, "depósito esperando a Chase", "depósitos esperando a Chase")}</div>
+        ${e.modo === "prueba" && !e.acepta_prueba ? `<p class="ct-aviso warn">La función tiene una llave de prueba (rk_test_): no se registra nada.</p>` : ""}
+        ${sinMfa}
+        <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-cobros-barrer"${mfa ? "" : " disabled"}>Revisar con Stripe ahora</button></div>
+        <div class="ct-stripe-res"></div>
+      </section>
+      ${alarmas.length ? `<section class="ct-card ct-alarmas" id="ct-cobros-alarmas" role="status"><h2>Hay que mirar esto:</h2><ul class="ct-datos">${alarmas.map(a => `<li><b>${esc(String(a.control || "").replace(/^stripe: /, ""))}</b>${a.filas != null ? ` (${esc(a.filas)})` : ""}${a.detalle ? `: ${esc(a.detalle)}` : ""}</li>`).join("")}</ul></section>` : ""}
+      ${(avisos || []).length ? `<section class="ct-card" id="ct-cobros-avisos"><h2>Avisos de Stripe</h2><ul class="ct-avisos-stripe">${avisos.map(avisoHTML).join("")}</ul></section>` : ""}
+      <section class="ct-card" id="ct-cobros-facturas"><h2>Facturas por cobrar</h2>
+        <p class="ct-nota">El saldo sale del libro (lo que la factura debe), no de la casilla «pagada». El enlace es de un solo uso y por ese saldo: el cliente elige cuenta de banco (ACH) o tarjeta.</p>
+        ${facturas.length ? `<div class="ct-lista">${facturas.map(f => facturaCobroHTML(f, mfa)).join("")}</div>` : `<p class="ct-vacio">No hay facturas con saldo en el libro.</p>`}
+      </section>
+      <section class="ct-card" id="ct-cobros-pagos"><h2>Pagos en línea</h2>
+        ${pagos.length ? `<div class="ct-lista">${pagos.map(x => pagoHTML(x, mfa)).join("")}</div>` : `<p class="ct-vacio">Todavía no hay pagos en línea.</p>`}
+      </section>
+      <section class="ct-card" id="ct-cobros-payouts"><h2>Depósitos de Stripe en Chase</h2>
+        <p class="ct-nota">Stripe junta los cobros, descuenta sus comisiones y deposita el neto en Chase. Cada depósito deja dos asientos (sale de Stripe, llega a Chase) y casa solo con el movimiento «STRIPE» que trae Plaid.</p>
+        ${payouts.length ? `<div class="ct-lista">${payouts.map(x => payoutHTML(x, mfa)).join("")}</div>` : `<p class="ct-vacio">Todavía no hay depósitos de Stripe.</p>`}
+      </section>
+      <p class="ct-nota ct-cobros-pie">La casilla «pagada» y QuickBooks los sigues llevando tú durante el paralelo: esta pantalla no los toca.</p>`;
+    wireCobros();
+  }
+
+  function avisoHTML(a) {
+    return `<li class="ct-aviso-stripe ${esc(a.nivel)}" data-aviso="${esc(a.id)}">
+      <div class="ct-aviso-txt"><span>${esc(a.texto)}</span><small>${fechaHora(a.creado_el)}${Number(a.veces) > 1 ? ` · ${esc(a.veces)} veces, la última ${fechaHora(a.repetido_el)}` : ""}</small></div>
+      <button type="button" class="accion secundaria chica" data-visto>Entendido</button></li>`;
+  }
+
+  function facturaCobroHTML(f, mfa) {
+    const debe = num(f.saldo_cxc), ret = num(f.saldo_retencion);
+    const activo = f.enlace_estado === "activo" && f.enlace_url;
+    const creando = f.enlace_estado === "creando";
+    const titulo = ["#" + (f.num || f.factura_id), f.obra, f.cliente].filter(Boolean).map(esc).join(" · ");
+    let cuerpo;
+    if (activo) {
+      cuerpo = `<p class="ct-nota">Enlace por <span class="ct-num">${fmt(f.enlace_monto)}</span>${f.enlace_con_retencion ? " (con la retención)" : ""} · creado el ${fechaHora(f.enlace_creado_el)}</p>
+        <div class="ct-enlace"><input class="ct-enlace-url" type="text" readonly value="${esc(f.enlace_url)}" aria-label="Enlace de pago de la factura ${esc(f.num || f.factura_id)}">
+          <div class="ct-acciones"><button type="button" class="accion chica" data-copiar>Copiar</button>${typeof navigator.share === "function" ? `<button type="button" class="accion secundaria chica" data-enviar>Enviar</button>` : ""}<button type="button" class="accion secundaria chica" data-desactivar${mfa ? "" : " disabled"}>Desactivar</button></div></div>
+        ${f.enlace_desfasado ? `<p class="ct-aviso warn">El enlace es por ${fmt(f.enlace_monto)} y la factura ahora debe ${fmt(debe + (f.enlace_con_retencion ? ret : 0))}: crea otro (el de ahora se desactiva).</p>
+          <div class="ct-acciones"><button type="button" class="accion secundaria" data-crear="reemplazar"${mfa ? "" : " disabled"}>Crear otro enlace (desactiva el de ahora)</button></div>` : ""}`;
+    } else if (creando) {
+      cuerpo = `<p class="ct-aviso warn">El enlace se está creando en Stripe (desde el ${fechaHora(f.enlace_creado_el)}): si Stripe no contestó, se termina solo cuando vuelva.</p>
+        <div class="ct-acciones"><button type="button" class="accion secundaria" data-crear${mfa ? "" : " disabled"}>Crear enlace de pago</button></div>`;
+    } else if (Number(f.en_camino_n) > 0) {
+      cuerpo = `<p class="ct-nota">Hay un pago por cuenta de banco de <span class="ct-num">${fmt(f.en_camino_monto)}</span> en camino: no se crea otro enlace hasta que se confirme o falle.</p>`;
+    } else if (f.puede_enlace) {
+      cuerpo = `<div class="ct-acciones"><button type="button" class="accion" data-crear${mfa ? "" : " disabled"}>Crear enlace de pago</button>${mfa ? "" : `<span class="ct-nota" style="margin:0">Primero activa el código del teléfono (Bancos y tarjetas).</span>`}</div>`;
+    } else {
+      cuerpo = `<p class="ct-nota">No se crea enlace: ${esc(f.por_que_no || "la base no lo permite")}.</p>`;
+    }
+    return `<article class="ct-cobro ct-factura" data-factura="${esc(f.factura_id)}">
+      <div class="ct-cab"><h3>${titulo}</h3>${activo ? pill("enlace activo", "ok") : ""}${creando ? pill("creando el enlace", "warn") : ""}${Number(f.en_camino_n) > 0 ? pill("pago en camino", "cu") : ""}${f.pagada ? pill("pagada en la app", "warn") : ""}</div>
+      <p class="ct-cobro-debe">Debe <span class="ct-num">${fmt(debe)}</span>${ret > 0 ? ` · retención <span class="ct-num">${fmt(ret)}</span>` : ""}${f.monto_factura != null ? ` <small>de una factura por ${fmt(f.monto_factura)}</small>` : ""}</p>
+      ${cuerpo}
+      <div class="ct-form" hidden></div>
+      <div class="ct-stripe-res"></div>
+    </article>`;
+  }
+
+  const ESTADO_PAGO = {
+    iniciado: ["verificando la cuenta", "warn", () => "El cliente eligió pagar desde su banco y falta verificar la cuenta (hasta 10 días)."],
+    en_camino: ["en camino", "cu", () => "El banco tarda unos 4 días hábiles. No entra al libro hasta que se confirme."],
+    cobrado: ["cobrado", "ok", x => `En el libro${x.cobro_asiento ? ` (asiento ${x.cobro_asiento})` : ""}. Falta que Stripe lo deposite en Chase.`],
+    en_payout: ["en el depósito de Stripe", "ok", x => `En el libro${x.cobro_asiento ? ` (asiento ${x.cobro_asiento})` : ""}. Stripe ya lo metió en un depósito: falta que llegue a Chase.`],
+    depositado: ["depositado", "ok", x => `Llegó a Chase con el depósito del ${fechaLarga(x.deposito_fecha)}.`],
+    devuelto: ["devuelto", "bad", () => "Se devolvió entero en Stripe (reembolso o disputa perdida): el cobro se devolvió en el libro y la factura vuelve a deber."],
+    en_disputa: ["en disputa", "bad", x => `Stripe retiró el dinero y el cobro se devolvió en el libro. Responde en Stripe antes del ${fechaLarga(x.disputa_vence)}.${x.medio === "ach" ? " Las disputas por cuenta de banco no se pueden impugnar." : ""}`],
+    fallido: ["falló", "bad", x => `${x.fallo || "El pago no se completó"}: no entró nada al libro.`],
+    revisar: ["por resolver", "bad", x => `${x.revisar || "No se sabe a qué factura va"}. Hasta que digas a qué va, el depósito que lo lleva espera.`]
+  };
+  function pagoHTML(x, mfa) {
+    const ep = ESTADO_PAGO[x.estado_pantalla] || [x.estado_pantalla || x.estado, ""];
+    const texto = typeof ep[2] === "function" ? ep[2](x) : "";
+    const pos = Array.isArray(x.payouts) ? x.payouts : [];
+    return `<article class="ct-cobro ct-pago ${esc(x.estado_pantalla || "")}" data-pi="${esc(x.pi)}">
+      <div class="ct-cab"><h3>${x.factura_num ? "#" + esc(x.factura_num) : "Sin factura"} · <span class="ct-num">${fmt(x.monto)}</span> · ${esc(MEDIO[x.medio] || x.medio || "")}</h3>${pill(ep[0], ep[1])}${num(x.reembolsado) > 0 && x.estado_pantalla !== "devuelto" ? pill("devuelto " + fmt(x.reembolsado), "warn") : ""}</div>
+      ${texto ? `<p class="ct-nota">${esc(texto)}</p>` : ""}
+      <ul class="ct-datos">
+        ${x.obra ? `<li>Obra: ${esc(x.obra)}</li>` : ""}
+        ${num(x.en_libro) !== num(x.monto) && !["iniciado", "en_camino", "fallido", "devuelto"].includes(x.estado_pantalla) ? `<li>En el libro: <span class="ct-num">${fmt(x.en_libro)}</span></li>` : ""}
+        ${num(x.falta_depositar) !== 0 ? `<li>Falta depositar: <span class="ct-num">${fmt(x.falta_depositar)}</span></li>` : ""}
+        ${pos.length ? `<li>Depósito${pos.length > 1 ? "s" : ""}: <span class="ct-num">${pos.map(esc).join(", ")}</span></li>` : ""}
+        <li>${x.cobrado_el ? `Cobrado el ${fechaLarga(x.cobrado_el)} · ` : ""}hace ${plural(Number(x.dias || 0), "día", "días")} · <span class="ct-num ct-pi">${esc(x.pi)}</span></li>
+      </ul>
+      <div class="ct-acciones">
+        ${x.estado === "revisar" ? `<button type="button" class="accion" data-resolver${mfa ? "" : " disabled"}>Decir a qué va</button>` : ""}
+        ${x.estado_pantalla !== "depositado" ? `<button type="button" class="accion secundaria chica" data-mirar${mfa ? "" : " disabled"}>Volver a mirar en Stripe</button>` : ""}
+      </div>
+      <div class="ct-form" hidden></div>
+      <div class="ct-stripe-res"></div>
+    </article>`;
+  }
+
+  const ESTADO_PAYOUT = {
+    en_camino: ["en camino a Chase", "cu"], esperando_composicion: ["esperando el detalle de Stripe", "warn"], esperando_cobros: ["espera: falta un cobro", "bad"],
+    asentado: ["en el libro; falta que llegue a Chase", "warn"], casado: ["casado con Chase", "ok"], fallido: ["no llegó (falló)", "bad"], revisar: ["por revisar", "bad"]
+  };
+  const CLASE_LINEA = { pago: "cobro", vuelve: "vuelve de un depósito fallido", comision: "comisión", otro: "otro", propio: "el depósito" };
+  function payoutHTML(x, mfa) {
+    const ep = ESTADO_PAYOUT[x.estado_pantalla] || [x.estado_pantalla || x.estado, ""];
+    const lineas = Array.isArray(x.lineas) ? x.lineas : [];
+    const esperando = Array.isArray(x.esperando) ? x.esperando : [];
+    const candidatos = Array.isArray(x.candidatos) ? x.candidatos : [];
+    const sinCuenta = x.estado !== "asentado" ? lineas.filter(l => l.clase === "otro" && !l.cuenta) : [];
+    const asientos = [x.asiento_salida_num && `${esc(x.asiento_salida_num)} (sale de Stripe)`, x.asiento_llegada_num && `${esc(x.asiento_llegada_num)} (llega a Chase)`, x.asiento_vuelta_num && `${esc(x.asiento_vuelta_num)} (vuelve a Stripe)`].filter(Boolean);
+    const mirar = ["en_camino", "esperando_composicion", "esperando_cobros", "revisar"].includes(x.estado);
+    const dis = mfa ? "" : " disabled";
+    return `<article class="ct-cobro ct-payout ${esc(x.estado_pantalla || "")}" data-po="${esc(x.po)}">
+      <div class="ct-cab"><h3>${fechaLarga(x.llegada)} · neto <span class="ct-num">${fmt(x.monto)}</span></h3>${pill(ep[0], ep[1])}${x.reversado ? pill("reversado a mano", "bad") : ""}</div>
+      ${x.bruto != null ? `<p class="ct-nota">${plural(Number(x.n_pagos || 0), "cobro", "cobros")} por <span class="ct-num">${fmt(x.bruto)}</span> − comisiones <span class="ct-num">${fmt(x.comisiones)}</span> = <span class="ct-num">${fmt(x.monto)}</span></p>` : `<p class="ct-nota">Stripe todavía no dio el detalle de este depósito.</p>`}
+      ${asientos.length ? `<p class="ct-nota">Asientos ${asientos.join(" y ")}</p>` : ""}
+      ${x.estado_pantalla === "casado" ? `<p class="ct-aviso ok">Casó con «${esc(x.movimiento_descripcion || "")}» del ${fechaLarga(x.movimiento_fecha)} · ${x.casado_automatico ? "casó solo" : `casó: ${esc(x.casado_regla || "a mano")}`}</p>` : ""}
+      ${x.estado_pantalla === "asentado" ? `<p class="ct-nota">${x.dias_sin_casar != null && Number(x.dias_sin_casar) > 0 ? `Lleva ${plural(Number(x.dias_sin_casar), "día", "días")} sin casar. ` : ""}${candidatos.length ? "Chase ya trajo un depósito que puede ser este:" : "Cuando Plaid traiga el depósito «STRIPE» de Chase, casa solo."}</p>` : ""}
+      ${x.revisar ? `<p class="ct-aviso bad">${esc(x.revisar)}</p>` : ""}
+      ${esperando.length ? `<ul class="ct-datos ct-esperando">${esperando.map(w => `<li>${w.pi ? `Cobro <span class="ct-num">${esc(w.pi)}</span>` : w.po ? `Depósito <span class="ct-num">${esc(w.po)}</span>` : w.txn ? `${esc(w.tipo || "movimiento")} <span class="ct-num">${fmt(w.monto)}</span>` : "Algo"}: ${esc(w.motivo || "")}</li>`).join("")}</ul>` : ""}
+      ${x.estado === "fallido" ? `<p class="ct-nota">Stripe devolvió el dinero a tu saldo y lo manda con el siguiente depósito: revisa la cuenta de banco en Stripe.</p>` : ""}
+      <div class="ct-acciones">
+        ${candidatos.map(c => `<button type="button" class="accion" data-casar="${esc(c.id)}"${dis}>Casar con el depósito de Chase del ${fechaLarga(c.fecha)}</button>`).join("")}
+        ${sinCuenta.map(l => `<button type="button" class="accion" data-linea="${esc(l.txn)}"${dis}>A qué cuenta va: ${esc(l.tipo)} ${fmt(l.monto)}</button>`).join("")}
+        ${x.reversado ? `<button type="button" class="accion secundaria" data-rehacer${dis}>Volver a ponerlo</button>` : ""}
+        ${mirar ? `<button type="button" class="accion secundaria chica" data-mirar${dis}>Volver a mirar en Stripe</button>` : ""}
+      </div>
+      ${lineas.length ? `<details class="ct-payout-det"><summary>El detalle de Stripe (${plural(lineas.length, "línea", "líneas")})</summary>
+        <ul class="ct-payout-lineas">${lineas.map(l => `<li><span class="ct-pl-que">${esc(CLASE_LINEA[l.clase] || l.clase)}${l.factura_num ? ` · #${esc(l.factura_num)}` : ""}${l.cuenta ? ` · a ${esc(l.cuenta)}` : ""}<small class="ct-num">${esc(l.tipo)} · ${esc(l.txn)}</small></span><span class="ct-pl-m ct-num">${fmt(l.monto)}${num(l.comision) ? `<small>comisión ${fmt(l.comision)}</small>` : ""}</span></li>`).join("")}</ul></details>` : ""}
+      <div class="ct-form" hidden></div>
+      <div class="ct-stripe-res"></div>
+    </article>`;
+  }
+
+  // las cuentas a las que puede ir dinero de Stripe «de fuera» o un movimiento que la app no conoce
+  // (la base lo vuelve a comprobar con fn_stripe_cuenta_libre): ingreso, gasto, costo u otro, o pasivo; nunca banco, tarjeta, ni las de Stripe
+  const cuentasLibres = () => (S.cuentas || []).filter(c => ["ingreso", "otro_ingreso", "gasto", "otro_gasto", "costo", "pasivo"].includes(c.tipo) && c.regla_obra !== "obligatoria" &&
+    !esStripe(c.codigo) && !(S.saldos || []).some(s => s.cuenta === c.codigo));
+  const opcionesCuentas = () => cuentasLibres().map(c => `<option value="${esc(c.codigo)}">${esc(c.codigo)} · ${esc(c.nombre)}</option>`).join("");
+
+  function wireCobros() {
+    const m = main();
+    const barra = $("ct-cobros-barra");
+    const ba = $("ct-cobros-barrer"); if (ba) ba.addEventListener("click", () => accionStripe(barra, { accion: "barrer" }, resumenBarrido));
+    m.querySelectorAll(".ct-aviso-stripe").forEach(li => {
+      li.querySelector("[data-visto]").addEventListener("click", () => accionStripe(li, { accion: "aviso_visto", aviso: Number(li.dataset.aviso) }, () => "Aviso visto"));
+    });
+    m.querySelectorAll(".ct-factura").forEach(card => {
+      const f = S.cobros.facturas.find(x => String(x.factura_id) === card.dataset.factura); if (!f) return;
+      card.querySelectorAll("[data-crear]").forEach(b => b.addEventListener("click", () => formaEnlace(card, f, b.dataset.crear === "reemplazar", false)));
+      const cp = card.querySelector("[data-copiar]"); if (cp) cp.addEventListener("click", () => copiarEnlace(card));
+      const en = card.querySelector("[data-enviar]"); if (en) en.addEventListener("click", () => {
+        navigator.share({ title: `Factura ${f.num || f.factura_id} · Max Power Electrical Solutions`, text: `Enlace de pago de la factura ${f.num || f.factura_id}`, url: f.enlace_url }).catch(() => { /* lo cerró */ });
+      });
+      const de = card.querySelector("[data-desactivar]"); if (de) de.addEventListener("click", () => montarForma(card,
+        formaHTML(`Desactivar el enlace de la #${esc(f.num || f.factura_id)}: quien lo abra verá que ya no está activo (queda escrito por qué)`, campoHTML("motivo", "Motivo", "textarea", "required"), "Desactivar"),
+        v => accionStripe(card, { accion: "desactivar_enlace", enlace: f.enlace_id, motivo: v.motivo }, () => `Enlace de la #${f.num || f.factura_id} desactivado`)));
+    });
+    m.querySelectorAll(".ct-pago").forEach(card => {
+      const x = S.cobros.pagos.find(y => y.pi === card.dataset.pi); if (!x) return;
+      const re = card.querySelector("[data-resolver]"); if (re) re.addEventListener("click", () => formaResolver(card, x));
+      const mi = card.querySelector("[data-mirar]"); if (mi) mi.addEventListener("click", () => accionStripe(card, { accion: "reprocesar", pi: x.pi }, () => "Vuelto a mirar en Stripe"));
+    });
+    m.querySelectorAll(".ct-payout").forEach(card => {
+      const x = S.cobros.payouts.find(y => y.po === card.dataset.po); if (!x) return;
+      card.querySelectorAll("[data-casar]").forEach(b => b.addEventListener("click", () => accionStripe(card, { accion: "casar_payout", po: x.po, movimiento_id: b.dataset.casar }, r => r && r.casado === false ? "No casó: mira la bandeja" : `Depósito ${x.po} casado con Chase`)));
+      card.querySelectorAll("[data-linea]").forEach(b => b.addEventListener("click", () => {
+        const l = (x.lineas || []).find(y => y.txn === b.dataset.linea) || { txn: b.dataset.linea };
+        const ops = opcionesCuentas();
+        montarForma(card, formaHTML(`¿A qué cuenta va ${esc(l.tipo || "este movimiento")} de ${fmt(l.monto)} (${esc(l.txn)})? Stripe lo trae en el depósito y la app no lo conoce.`,
+          `<label class="ct-campo">Cuenta<select name="cuenta" required><option value="">Elige la cuenta…</option>${ops}</select></label>${campoHTML("motivo", "Motivo (queda escrito)", "textarea", "required")}`, "Guardar"),
+          v => accionStripe(card, { accion: "resolver_linea", po: x.po, txn: l.txn, cuenta: v.cuenta, motivo: v.motivo }, () => `Va a ${v.cuenta}: el depósito se vuelve a mirar`));
+      }));
+      const rh = card.querySelector("[data-rehacer]"); if (rh) rh.addEventListener("click", () => accionStripe(card, { accion: "reprocesar", po: x.po, rehacer: true }, () => `Depósito ${x.po} puesto otra vez en el libro`));
+      const mi = card.querySelector("[data-mirar]"); if (mi) mi.addEventListener("click", () => accionStripe(card, { accion: "reprocesar", po: x.po }, () => "Vuelto a mirar en Stripe"));
+    });
+  }
+
+  // «Crear enlace de pago»: por el saldo del LIBRO (la función lo calcula; aquí nunca va un monto)
+  function formaEnlace(card, f, reemplazar, forzarPagada) {
+    const ret = num(f.saldo_retencion), debe = num(f.saldo_cxc);
+    const pidePagada = !!f.pagada || forzarPagada;
+    const campos = (ret > 0 ? `<label class="ct-casilla"><input type="checkbox" name="con_retencion" value="si"> Incluir la retención (${fmt(ret)})</label>` : "") +
+      (pidePagada ? `<p class="ct-aviso warn">La casilla «pagada» dice que la #${esc(f.num || f.factura_id)} está pagada (QuickBooks), pero el libro dice que debe ${fmt(debe)}. Si el cliente ya pagó por otro lado, no mandes el enlace.</p>
+        <label class="ct-casilla"><input type="checkbox" name="aunque_pagada" value="si" required data-falta="Falta confirmar que el cliente todavía la debe."> Sí: el cliente todavía la debe</label>` : "");
+    montarForma(card, formaHTML(`Enlace de pago de la #${esc(f.num || f.factura_id)} por ${fmt(debe)} (un solo uso; el cliente elige cuenta de banco o tarjeta)${reemplazar ? ". El enlace de ahora se desactiva." : ""}`, campos, "Crear el enlace"), v => {
+      const cuerpo = { accion: "crear_enlace", factura_id: Number(f.factura_id), con_retencion: v.con_retencion === "si" };
+      if (v.aunque_pagada === "si") cuerpo.aunque_pagada = true;
+      if (reemplazar) cuerpo.reemplazar = true;
+      accionStripe(card, cuerpo, r => r && r.nuevo === false ? `La #${f.num || f.factura_id} ya tenía su enlace: es el mismo` : "Enlace creado: cópialo y mándaselo al cliente.", {
+        // la base dice que la casilla «pagada» está marcada (la vista era vieja): se enseña la casilla de confirmar
+        alFallar: err => { if (err && err.datos && err.datos.pista === "pagada_en_app" && !pidePagada) formaEnlace(card, f, reemplazar, true); }
+      });
+    });
+  }
+
+  // Copiar el enlace: el portapapeles del navegador; si no deja, seleccionar y copiar a la antigua
+  async function copiarEnlace(card) {
+    const inp = card.querySelector(".ct-enlace-url"); if (!inp) return;
+    let bien = false;
+    try { if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") { await navigator.clipboard.writeText(inp.value); bien = true; } } catch { /* respaldo */ }
+    if (!bien) { try { inp.focus(); inp.select(); inp.setSelectionRange(0, inp.value.length); bien = document.execCommand("copy"); } catch { bien = false; } }
+    if (bien) S.hooks.avisar("Enlace copiado: pégalo en el mensaje al cliente.");
+    else { inp.focus(); inp.select(); S.hooks.avisar("No se pudo copiar solo: el enlace quedó seleccionado, cópialo tú.", true); }
+  }
+
+  // «Decir a qué va» un pago que no salió de un enlace de la app (o que su factura no aceptó)
+  function formaResolver(card, x) {
+    const facts = (S.cobros.facturas || []).filter(f => f.en_libro !== false);
+    const obras = S.proyectos || [];
+    const ops = opcionesCuentas();
+    montarForma(card, formaHTML(`¿A qué va el pago ${esc(x.pi)} de ${fmt(x.monto)}? Queda escrito con tu motivo.`,
+      `<label class="ct-campo">¿A qué va?<select name="que" required><option value="">Elige…</option><option value="factura">A la factura…</option><option value="obra">Anticipo de la obra…</option><option value="fuera">Es de antes de la app o ya está en el libro</option></select></label>
+       <label class="ct-campo" data-si="factura" hidden>Factura<select name="factura_id"><option value="">Elige la factura…</option>${facts.map(f => `<option value="${esc(f.factura_id)}">#${esc(f.num || f.factura_id)}${f.obra ? ` · ${esc(f.obra)}` : ""} · debe ${fmt(num(f.saldo_cxc) + num(f.saldo_retencion))}</option>`).join("")}</select></label>
+       <label class="ct-campo" data-si="obra" hidden>Obra<select name="proyecto_id"><option value="">Elige la obra…</option>${obras.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join("")}</select></label>
+       <label class="ct-campo" data-si="fuera" hidden>Cuenta (ingreso, gasto, costo o pasivo)<select name="cuenta"><option value="">Elige la cuenta…</option>${ops}</select></label>
+       ${campoHTML("motivo", "Motivo (queda escrito)", "textarea", "required")}`, "Guardar"), v => {
+      const falta = { factura: ["factura_id", "la factura"], obra: ["proyecto_id", "la obra"], fuera: ["cuenta", "la cuenta"] }[v.que];
+      if (falta && !v[falta[0]]) { mostrarErrorForma(card, `Falta ${falta[1]}.`); return; }
+      const cuerpo = { accion: "resolver_pago", pi: x.pi, motivo: v.motivo };
+      if (v.que === "factura") cuerpo.factura_id = Number(v.factura_id);
+      else if (v.que === "obra") cuerpo.proyecto_id = v.proyecto_id;
+      else cuerpo.fuera = { cuenta: v.cuenta };
+      accionStripe(card, cuerpo, () => "Pago resuelto: entra al libro y su depósito se vuelve a mirar");
+    });
+    const f = card.querySelector(".ct-form");
+    const sel = f.querySelector('select[name="que"]');
+    sel.addEventListener("change", () => f.querySelectorAll("[data-si]").forEach(l => { l.hidden = l.dataset.si !== sel.value; }));
+  }
+
+  // ============================================================
   // LA BANDEJA
   // ============================================================
   const MOTIVOS = {
@@ -643,13 +1080,16 @@
     try {
       const [b] = await Promise.all([
         DB._leer("v_banco_bandeja?select=*&order=alarma.desc,fecha.asc,movimiento_id.asc"),
-        saldos(), cuentas(), proyectos()
+        saldos(), cuentas(), proyectos(), leerStripe(), leerMfa()
       ]);
+      // los depósitos de Stripe ya en el libro y sin casar: el botón «Es el depósito de Stripe del …» (si no contesta, sin botón)
+      S.stripePayouts = S.stripe ? await DB._leer("v_stripe_payouts?select=po,estado_pantalla,monto,llegada&estado_pantalla=eq.asentado").catch(e => { if (esFalloDeRed(e)) throw e; return []; }) : [];
       const hoy = hoyMiami();
       await controlar(["v_banco_bandeja"], { v_banco_bandeja: b.filter(f => String(f.fecha) <= hoy).length });
       if (!S.cuentas.length) throw errorControl("El plan de cuentas no se pudo leer", [{ vista: "cuentas", filas: 0, esperadas: "1 o más", detalle: "sin el plan no se puede clasificar nada" }]);
       filas = b;
     } catch (err) { return pintarError(err, pintarBandeja); }
+    filas.forEach(prepararMov);
     S.bandeja = filas; pintarBadge();
     const conMovs = [...new Set(filas.map(f => f.cuenta))];
     if (S.filtroCuenta && !conMovs.includes(S.filtroCuenta)) S.filtroCuenta = null;
@@ -673,6 +1113,8 @@
       const m = filas.find(f => f.movimiento_id === card.dataset.id);
       card.querySelectorAll("[data-op]").forEach(b => b.addEventListener("click", () => abrirOpcion(card, m, (m.opciones || [])[Number(b.dataset.op)])));
       card.querySelector("[data-otra]").addEventListener("click", () => abrirOtra(card, m));
+      card.querySelectorAll("[data-stripe-po]").forEach(b => b.addEventListener("click", () => accionStripe(card, { accion: "casar_payout", po: b.dataset.stripePo, movimiento_id: m.movimiento_id },
+        r => r && r.casado === false ? "No casó: sigue en la bandeja" : `Casado con el depósito de Stripe ${b.dataset.stripePo}`)));
     });
   }
 
@@ -687,10 +1129,12 @@
       </div>
       <div class="ct-meta"><span>${fechaLarga(m.fecha)}</span><span>${esc(m.cuenta_nombre)}</span>${m.cheque ? `<span>cheque ${esc(m.cheque)}</span>` : ""}${m.tipo_banco ? `<span>${esc(m.tipo_banco)}</span>` : ""}<span>hace ${plural(m.dias, "día", "días")}</span>${pill(motivoLlano(m.motivo), m.motivo === "posible_duplicado" || m.motivo === "quitada" ? "warn" : "")}${m.alarma ? pill("más de 30 días", "bad") : ""}${obra ? pill("obra: " + obra) : ""}</div>
       <p class="ct-texto">${esc(m.texto)}</p>
+      ${m._esStripe ? `<p class="ct-aviso warn ct-aviso-dep">Depósito de Stripe: casa solo con su depósito en «Cobros en línea». No lo registres aquí como cobro: entraría dos veces.</p>` : ""}
       ${m.posible_duplicado_de ? `<p class="ct-aviso warn">Se parece al del ${fecha(m.duplicado_fecha)} «${esc(m.duplicado_descripcion)}»${m.duplicado_origen ? ` (entró por ${esc(m.duplicado_origen)})` : ""}.</p>` : ""}
-      <div class="ct-acciones">${ops.map((o, i) => `<button type="button" class="accion${i ? " secundaria" : ""}" data-op="${i}">${esc(o.texto)}</button>`).join("")}
+      <div class="ct-acciones">${(m._stripe || []).map(q => `<button type="button" class="accion" data-stripe-po="${esc(q.po)}">Es el depósito de Stripe del ${fechaLarga(q.llegada)}: casarlo</button>`).join("")}${ops.map((o, i) => `<button type="button" class="accion${i || (m._stripe || []).length ? " secundaria" : ""}" data-op="${i}">${esc(o.texto)}</button>`).join("")}
         <button type="button" class="accion secundaria ct-otra" data-otra>Otra cosa…</button></div>
       <div class="ct-form" hidden></div>
+      ${m._esStripe ? `<div class="ct-stripe-res"></div>` : ""}
     </article>`;
   }
 
@@ -721,8 +1165,8 @@
       ev.preventDefault();
       const fd = new FormData(ev.target);
       const v = {}; for (const [k, val] of fd.entries()) v[k] = String(val).trim();
-      const falta = [...ev.target.querySelectorAll("[required]")].find(el => !String(el.value || "").trim());
-      if (falta) { mostrarErrorForma(card, "Falta " + (falta.closest("label") ? falta.closest("label").firstChild.textContent.trim().toLowerCase() : "un dato") + "."); return; }
+      const falta = [...ev.target.querySelectorAll("[required]")].find(el => el.type === "checkbox" ? !el.checked : !String(el.value || "").trim());
+      if (falta) { mostrarErrorForma(card, falta.dataset.falta || ("Falta " + (falta.closest("label") ? falta.closest("label").firstChild.textContent.trim().toLowerCase() : "un dato") + ".")); return; }
       alEnviar(v);
     });
     f.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -770,7 +1214,7 @@
     if (que === "clasificar") {
       const orden = ["costo", "gasto", "otro_gasto", "activo", "pasivo", "capital", "otro_ingreso", "ingreso"];
       const grupos = orden.map(t => {
-        const cs = (S.cuentas || []).filter(c => c.tipo === t);
+        const cs = (S.cuentas || []).filter(c => c.tipo === t && !esStripe(c.codigo));
         return cs.length ? `<optgroup label="${esc(grupoCuenta(t))}">${cs.map(c => `<option value="${esc(c.codigo)}">${esc(c.codigo)} · ${esc(c.nombre)}${c.regla_obra === "obligatoria" ? " (pide obra)" : ""}</option>`).join("")}</optgroup>` : "";
       }).join("");
       const activos = (S.proyectos || []).filter(p => ["ejecucion", "aprobado", "pausa"].includes(p.estado));
@@ -787,7 +1231,7 @@
         llamar(card, m, "fn_banco_clasificar", { p_movimiento: m.movimiento_id, p_lineas: [linea], p_motivo: v.p_motivo || null });
       });
     } else if (que === "transferencia") {
-      const otras = (S.saldos || []).filter(c => c.cuenta !== m.cuenta);
+      const otras = visibles(S.saldos).filter(c => c.cuenta !== m.cuenta);
       montarForma(card, formaHTML("Dinero entre cuentas propias (sin gasto): el otro lado casará solo cuando llegue",
         `<label class="ct-campo">${num(m.monto) < 0 ? "Hacia" : "Desde"} la cuenta<select name="cuenta" required><option value="">Elige la cuenta…</option>${otras.map(c => `<option value="${esc(c.cuenta)}">${esc(c.cuenta)} · ${esc(c.cuenta_nombre)}</option>`).join("")}</select></label>
          ${campoHTML("p_motivo", "Motivo (si la base lo pide; queda escrito)", "textarea")}`, "Confirmar la transferencia"), v => {
@@ -854,12 +1298,12 @@
     if (!navigator.onLine) return sinSenal(pintarConciliar);
     let lista;
     try {
-      const [l] = await Promise.all([DB._leer("v_conciliacion?select=*&order=fecha_corte.desc,cuenta.asc"), saldos()]);
+      const [l] = await Promise.all([DB._leer("v_conciliacion?select=*&order=fecha_corte.desc,cuenta.asc"), saldos(), leerStripe()]);
       const hoy = hoyMiami(), desde = hoy.slice(0, 8) + "01";
       await controlar(["v_conciliacion"], { v_conciliacion: l.filter(c => String(c.fecha_corte) >= desde && String(c.fecha_corte) <= hoy).length });
       lista = l;
     } catch (err) { return pintarError(err, pintarConciliar); }
-    const sal = S.saldos;
+    const sal = visibles(S.saldos); // la 1020 y la 1140 no se concilian: no tienen estado de cuenta (las vigila el control de Stripe)
     const def = sal.find(c => c.cuenta === S.concCuenta) || sal[0];
     const fechaDef = c => c && c.saldo_banco_al ? String(c.saldo_banco_al) : ultimoDiaMesAnterior();
     const saldoDef = c => c && c.saldo_banco != null ? String(c.saldo_banco_como_banco) : "";
@@ -984,7 +1428,9 @@
     let filas;
     try {
       await saldos();
-      if (!S.movCuenta || !S.saldos.some(c => c.cuenta === S.movCuenta)) S.movCuenta = S.saldos.length ? S.saldos[0].cuenta : null;
+      await leerStripe();
+      const vis = visibles(S.saldos);
+      if (!S.movCuenta || !vis.some(c => c.cuenta === S.movCuenta)) S.movCuenta = vis.length ? vis[0].cuenta : null;
       const est = S.movEstado ? `&estado=eq.${encodeURIComponent(S.movEstado)}` : "";
       filas = S.movCuenta ? await DB._leer(`v_banco_movimientos?select=movimiento_id,fecha,monto,descripcion,memo,cheque,tipo_banco,estado,estado_motivo,casado_clase,casado_regla,casado_auto,asiento_numero,papel_tabla,papel_id,archivo,propuesta_motivo&cuenta=eq.${encodeURIComponent(S.movCuenta)}${est}&order=fecha.desc,movimiento_id.asc&limit=300`) : [];
       await controlar(["v_banco_movimientos"]);
@@ -992,7 +1438,7 @@
     const estados = Object.keys(ESTADO_MOV);
     main().innerHTML = `<section class="ct-card ct-barra">
         <div class="ct-fila">
-          <label class="ct-campo">Cuenta<select id="ct-mov-cuenta">${S.saldos.map(c => `<option value="${esc(c.cuenta)}"${c.cuenta === S.movCuenta ? " selected" : ""}>${esc(c.cuenta)} · ${esc(c.cuenta_nombre)}</option>`).join("")}</select></label>
+          <label class="ct-campo">Cuenta<select id="ct-mov-cuenta">${visibles(S.saldos).map(c => `<option value="${esc(c.cuenta)}"${c.cuenta === S.movCuenta ? " selected" : ""}>${esc(c.cuenta)} · ${esc(c.cuenta_nombre)}</option>`).join("")}</select></label>
           <label class="ct-campo">Estado<select id="ct-mov-estado"><option value="">Todos</option>${estados.map(e => `<option value="${e}"${e === S.movEstado ? " selected" : ""}>${ESTADO_MOV[e][0]}</option>`).join("")}</select></label>
         </div>
         <p class="ct-nota">${plural(filas.length, "movimiento", "movimientos")}${filas.length >= 300 ? " (los 300 más recientes)" : ""}. Cada uno con lo que la base decidió y el asiento con que casó.</p>
@@ -1626,7 +2072,7 @@
     engancharBotones();
   }
 
-  const PAGINAS = { bancos: pintarBancos, bandeja: pintarBandeja, conciliar: pintarConciliar, movimientos: pintarMovimientos, estados: pintarEstados };
+  const PAGINAS = { bancos: pintarBancos, bandeja: pintarBandeja, conciliar: pintarConciliar, movimientos: pintarMovimientos, estados: pintarEstados, cobros: pintarCobros };
 
   // ---------- Lo que la app llama ----------
   window.MXP_CONTA = {

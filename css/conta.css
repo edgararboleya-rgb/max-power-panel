@@ -230,3 +230,54 @@ body[data-vista="conta"] .fab { display: none; }
   #conta-raiz .ct-tabla.ancha th:first-child, #conta-raiz .ct-tabla.ancha td:first-child { width: 7.5rem; max-width: 7.5rem; white-space: normal; }
 }
 
+
+/* ---- los cobros en línea (Stripe, p1): la tarjeta de Bancos, la pestaña «Cobros en línea» ---- */
+#conta-raiz .ct-stripe { border-left: 4px solid var(--cu); }
+#conta-raiz .ct-campo[hidden] { display: none; }
+#conta-raiz .ct-permisos { list-style: none; margin: .3rem 0 0; padding: 0; display: grid; gap: .25rem; font-size: .86rem; }
+#conta-raiz .ct-permisos li { overflow-wrap: anywhere; }
+#conta-raiz .ct-permisos li.ok { color: var(--ok-ink); }
+#conta-raiz .ct-permisos li.bad { color: var(--bad); }
+#conta-raiz .ct-alarmas { border: 1px solid var(--mp-warn-bd); border-left: 4px solid var(--warn-ink); background: var(--warn-bg); }
+#conta-raiz .ct-alarmas h2 { color: var(--warn-ink); }
+#conta-raiz .ct-alarmas .ct-datos { color: var(--warn-ink); }
+#conta-raiz .ct-avisos-stripe { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+#conta-raiz .ct-aviso-stripe { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .4rem .7rem; padding: .55rem .75rem; border-radius: 10px;
+  background: var(--mp-sky-1, #F6FCFF); border: 1px solid var(--mp-line); border-left: 4px solid var(--mp-line-2, var(--mp-line)); font-size: .88rem; line-height: 1.45; }
+#conta-raiz .ct-aviso-stripe.bad { border-left-color: var(--bad); background: #FFF6F5; }
+#conta-raiz .ct-aviso-stripe.warn { border-left-color: var(--warn-ink); background: var(--warn-bg); }
+#conta-raiz .ct-aviso-stripe.info { border-left-color: var(--mp-blue); }
+#conta-raiz .ct-aviso-txt { flex: 1 1 14rem; min-width: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-aviso-txt small { display: block; color: var(--mp-ink-3); font-size: .78rem; margin-top: .15rem; }
+#conta-raiz .ct-aviso-stripe .accion.chica { min-height: 36px; padding: .3rem .7rem; font-size: .82rem; }
+/* cada factura, pago o depósito: una ficha clara dentro de su tarjeta, con el borde del color de su estado */
+#conta-raiz .ct-cobro { padding: .7rem .8rem; border: 1px solid var(--mp-line); border-left: 4px solid var(--cu-light); border-radius: 12px; background: var(--mp-sky-1, #F6FCFF); min-width: 0; }
+#conta-raiz .ct-cobro h3 { margin: 0; flex: 1 1 12rem; min-width: 0; font-size: .98rem; font-weight: 800; letter-spacing: -.01em; overflow-wrap: anywhere; }
+#conta-raiz .ct-cobro .ct-cab .ct-pill { white-space: normal; }
+#conta-raiz .ct-cobro .ct-datos { overflow-wrap: anywhere; }
+#conta-raiz .ct-pago.cobrado, #conta-raiz .ct-pago.en_payout, #conta-raiz .ct-pago.depositado, #conta-raiz .ct-payout.casado { border-left-color: var(--ok); }
+#conta-raiz .ct-pago.devuelto, #conta-raiz .ct-pago.en_disputa, #conta-raiz .ct-pago.fallido, #conta-raiz .ct-pago.revisar,
+#conta-raiz .ct-payout.esperando_cobros, #conta-raiz .ct-payout.fallido, #conta-raiz .ct-payout.revisar { border-left-color: var(--bad); }
+#conta-raiz .ct-pago.iniciado, #conta-raiz .ct-payout.asentado, #conta-raiz .ct-payout.esperando_composicion { border-left-color: var(--warn-ink); }
+#conta-raiz .ct-cobro-debe { margin: .1rem 0 .3rem; font-size: .95rem; font-weight: 700; }
+#conta-raiz .ct-cobro-debe small { font-weight: 500; color: var(--mp-ink-3); }
+#conta-raiz .ct-pi { font-size: .8rem; color: var(--mp-ink-3); }
+/* el enlace: la URL entera en monoespaciada (se puede seleccionar a mano) y sus botones, que se parten en el teléfono */
+#conta-raiz .ct-enlace { display: grid; gap: .1rem; margin: .3rem 0 .2rem; min-width: 0; }
+#conta-raiz .ct-enlace-url { font-family: var(--mono); font-size: .85rem; color: var(--mp-ink); background: var(--mp-card); border: 1.5px solid var(--cu-light);
+  border-radius: var(--r-field); padding: .55rem .7rem; min-height: var(--tap); width: 100%; min-width: 0; box-sizing: border-box; }
+#conta-raiz .ct-enlace-url:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: 1px; }
+#conta-raiz .ct-enlace .ct-acciones { margin-top: .35rem; }
+#conta-raiz .ct-casilla { display: flex; align-items: center; gap: .55rem; min-height: var(--tap); font-size: .92rem; font-weight: 700; color: var(--mp-ink); cursor: pointer; }
+#conta-raiz .ct-casilla input { width: 22px; height: 22px; flex: none; accent-color: var(--cu-dark); }
+/* el detalle de un depósito: una línea por movimiento de Stripe, el monto a la derecha (sin tabla: cabe en 390 px) */
+#conta-raiz .ct-payout-det { margin-top: .5rem; }
+#conta-raiz .ct-payout-det summary { cursor: pointer; font-weight: 700; font-size: .88rem; color: var(--cu-dark); min-height: 36px; display: flex; align-items: center; }
+#conta-raiz .ct-payout-lineas { list-style: none; margin: .2rem 0 0; padding: 0; }
+#conta-raiz .ct-payout-lineas li { display: flex; justify-content: space-between; gap: .6rem; padding: .4rem 0; border-top: 1px solid var(--mp-line); font-size: .86rem; }
+#conta-raiz .ct-payout-lineas li:first-child { border-top: 0; }
+#conta-raiz .ct-pl-que { min-width: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-pl-que small, #conta-raiz .ct-pl-m small { display: block; color: var(--mp-ink-3); font-size: .76rem; }
+#conta-raiz .ct-pl-m { text-align: right; font-weight: 700; white-space: nowrap; }
+#conta-raiz .ct-esperando { margin-top: .2rem; }
+#conta-raiz .ct-cobros-pie { text-align: center; }
