@@ -37,7 +37,8 @@
 //     entregó, los depósitos por casar y los enlaces por terminar o revisar.
 //   · Edgar, con su sesión de dueño en aal2: estado, probar_llave,
 //     crear_enlace, desactivar_enlace, resolver_pago, resolver_linea,
-//     casar_payout, reprocesar, aviso_visto y barrer.
+//     payout_fuera («Ya está en el libro»), casar_payout, reprocesar,
+//     aviso_visto y barrer.
 //   Cada llamada a Stripe lleva Stripe-Version fija y cada POST su
 //   Idempotency-Key. Nada de la API de Stripe se ejecuta desde la app.
 //
@@ -48,10 +49,13 @@
 // (la base lo hace, como fn_plaid_recibir).
 //
 // Lo que NO está en el repositorio: ninguna llave. Solo en el banco de
-// pruebas (MXP_BANCO_PRUEBAS=1, que en Supabase no existe): la sesión se lee
-// sin verificar la firma, STRIPE_BASE_URL apunta al Stripe simulado
-// (pruebas/conta/stripe-simulado.mjs), MXP_PUERTO sirve en 127.0.0.1 y la
-// base se puede inyectar (usarBaseDePruebas). El archivo también corre en
+// pruebas (esBancoDePruebas: MXP_BANCO_PRUEBAS=1 Y la base en 127.0.0.1 por
+// MXP_DB_URL Y sin SUPABASE_DB_URL Y fuera de Supabase; en Supabase nunca se
+// cumple, y si alguien pone MXP_BANCO_PRUEBAS en Secrets la función contesta
+// 500 CONFIG y no hace nada): la sesión se lee sin verificar la firma,
+// STRIPE_BASE_URL apunta al Stripe simulado (pruebas/conta/stripe-
+// simulado.mjs), MXP_PUERTO sirve en 127.0.0.1 y la base se puede inyectar
+// (usarBaseDePruebas). El archivo también corre en
 // Node 22 (las pruebas sin Deno): por eso lee el entorno con env() y carga
 // npm:postgres y supabase-js dentro de abrirBase.
 // ============================================================
@@ -90,17 +94,32 @@ const INACTIVO = "Este enlace de pago ya no está activo: pida uno nuevo a Max P
 // en las pruebas sin Deno sí).
 interface Conf {
   llave: string; whsec: string; rutina: string; modo: "real" | "prueba" | null; base_url: string; db: string;
-  supabase_url: string; service_key: string; banco_pruebas: boolean;
+  supabase_url: string; service_key: string; banco_pruebas: boolean; banco_mal: string | null;
+}
+// ¿Es el banco de pruebas? TODO a la vez: MXP_BANCO_PRUEBAS=1, la base en
+// 127.0.0.1 (MXP_DB_URL), sin SUPABASE_DB_URL y fuera de Supabase (sin
+// EdgeRuntime ni SB_REGION). En producción nunca: lo que lo pida a medias es
+// un error de configuración (mal), no un modo.
+function esBancoDePruebas(): { vale: boolean; mal: string | null } {
+  const pedido = env("MXP_BANCO_PRUEBAS") === "1";
+  const local = /^postgres(ql)?:\/\/[^@]*@(127\.0\.0\.1|localhost)(:\d+)?\//.test(env("MXP_DB_URL"));
+  const enSupabase = G.EdgeRuntime !== undefined || env("SB_REGION") !== "";
+  const vale = pedido && local && env("SUPABASE_DB_URL") === "" && !enSupabase;
+  const mal = pedido && !vale ? "MXP_BANCO_PRUEBAS no vale fuera del banco de pruebas: bórralo de Supabase → Edge Functions → Secrets."
+    : env("MXP_DB_URL") && env("SUPABASE_DB_URL") ? "MXP_DB_URL es del banco de pruebas: bórralo de Supabase → Edge Functions → Secrets."
+    : null;
+  return { vale, mal };
 }
 function conf(): Conf {
-  const banco = env("MXP_BANCO_PRUEBAS") === "1"; // SOLO el banco de pruebas
+  const b = esBancoDePruebas(); // SOLO el banco de pruebas
+  const banco = b.vale;
   const llave = env("STRIPE_SECRET_KEY").trim();
   return {
     llave, whsec: env("STRIPE_WEBHOOK_SECRET").trim(), rutina: env("STRIPE_RUTINA_SECRETO").trim(),
     modo: /^rk_live_/.test(llave) ? "real" : /^rk_test_/.test(llave) ? "prueba" : null,
     base_url: (banco && env("STRIPE_BASE_URL") ? env("STRIPE_BASE_URL") : "https://api.stripe.com").replace(/\/$/, ""),
-    db: env("MXP_DB_URL") || env("SUPABASE_DB_URL"),
-    supabase_url: env("SUPABASE_URL"), service_key: env("SUPABASE_SERVICE_ROLE_KEY"), banco_pruebas: banco,
+    db: (banco ? env("MXP_DB_URL") : "") || env("SUPABASE_DB_URL"),
+    supabase_url: env("SUPABASE_URL"), service_key: env("SUPABASE_SERVICE_ROLE_KEY"), banco_pruebas: banco, banco_mal: b.mal,
   };
 }
 
@@ -345,7 +364,7 @@ function obtenerBase(): Promise<Base> {
 }
 // Solo el banco de pruebas: la base de mentira (psql) de stripe-e2e.mjs.
 export function usarBaseDePruebas(b: Base): void {
-  if (env("MXP_BANCO_PRUEBAS") !== "1") throw new Error("usarBaseDePruebas es solo del banco de pruebas (MXP_BANCO_PRUEBAS=1).");
+  if (!esBancoDePruebas().vale) throw new Error("usarBaseDePruebas es solo del banco de pruebas (MXP_BANCO_PRUEBAS=1, la base en 127.0.0.1).");
   baseLista = Promise.resolve(b);
 }
 
@@ -388,7 +407,10 @@ function armarFotoPago(pi: Json, cargos: Json[], reembolsos: Json[], disputas: J
       id: d.id, monto: num(d.amount) ?? 0, estado: d.status, motivo: texto(d.reason), vence: num(obj(d.evidence_details).due_by),
       bts: arr(d.balance_transactions).map((b) => ({ id: b.id, categoria: b.reporting_category, monto: num(b.amount) ?? 0, comision: num(b.fee) ?? 0, creado: num(b.created) })),
     })),
-    ultimo_error: pi.last_payment_error ? limpiar({ codigo: lpe.decline_code ?? lpe.code, mensaje: texto(lpe.message) }) : null,
+    // (el código: el del banco si lo hay —insufficient_funds, account_closed…—; la base lo dice en llano)
+    ultimo_error: pi.last_payment_error ? limpiar({
+      codigo: lpe.decline_code ?? texto(cargos.find((c) => c.id === idDe(pi.latest_charge))?.failure_code) ?? lpe.code,
+      mensaje: texto(lpe.message) }) : null,
     cancelacion: texto(pi.cancellation_reason),
   };
 }
@@ -398,7 +420,7 @@ function armarFotoPayout(po: Json, vistoEl: string): Json {
     po: po.id, visto_el: vistoEl, estado: po.status, monto: num(po.amount) ?? 0, moneda: typeof po.currency === "string" ? po.currency : "usd",
     llegada: diaUTC(po.arrival_date), automatico: po.automatic !== false, metodo: typeof po.method === "string" ? po.method : "standard",
     conciliacion: texto(po.reconciliation_status), bt_propio: idDe(po.balance_transaction), bt_fallo: idDe(po.failure_balance_transaction),
-    fallo_codigo: texto(po.failure_code),
+    fallo_codigo: texto(po.failure_code), creado: num(po.created),
   };
 }
 // El pago de una balance transaction: el de su origen (cargo, reembolso o
@@ -477,15 +499,17 @@ function resumenPayout(r: Json): Json {
 }
 
 // ---- Los avisos de Stripe -------------------------------------------------
-interface Evento { id: string; tipo: string; created: number; livemode: boolean; objeto: Json; previos?: Json }
+interface Evento { id: string; tipo: string; created: number; livemode: boolean; objeto: Json; previos?: Json; api_version?: string | null }
 function deStripe(ev: Json): Evento {
   const data = obj(ev.data);
   return { id: String(ev.id), tipo: String(ev.type), created: num(ev.created) ?? 0, livemode: ev.livemode === true,
-           objeto: obj(data.object), previos: data.previous_attributes ? obj(data.previous_attributes) : undefined };
+           objeto: obj(data.object), previos: data.previous_attributes ? obj(data.previous_attributes) : undefined,
+           api_version: texto(ev.api_version) };
 }
 async function guardar(base: Base, ev: Evento, por: string): Promise<Json> {
+  // (la versión con que Stripe mandó el aviso: la del endpoint; la base avisa si no es la que espera)
   return await base.rpc("fn_stripe_evento_guardar", {
-    p_evento: { id: ev.id, tipo: ev.tipo, livemode: ev.livemode, api_version: STRIPE_VERSION, created: ev.created, objeto: ev.objeto, previos: ev.previos ?? null },
+    p_evento: { id: ev.id, tipo: ev.tipo, livemode: ev.livemode, api_version: ev.api_version ?? null, created: ev.created, objeto: ev.objeto, previos: ev.previos ?? null },
     p_por: por, p_modo: conf().modo,
   }) as Json;
 }
@@ -699,7 +723,20 @@ async function barrer(base: Base, por: "barrido" | "pantalla"): Promise<Json> {
     }
     resumen.enlaces_mirados = m;
   }
-  // 3. los pagos por volver a pedir
+  // 3. los enlaces que Stripe dio por usados y cuyo pago no llegó (sus
+  //    avisos van detrás o se perdieron): sus sesiones dicen el pago
+  n = 0;
+  for (const en of arr(k.enlaces_usados)) {
+    if (!tiempo()) break;
+    try {
+      for (const s of await lista("/v1/checkout/sessions", { payment_link: en.plink, limit: 10 })) {
+        const pi = idDe(s.payment_intent);
+        if (pi) { await syncPago(base, pi, { sesion: idDe(s), plink: String(en.plink), sesion_completa: s.status === "complete" }, null); n++; }
+      }
+    } catch (e) { anotar(`usado ${en.plink}`, e); }
+  }
+  resumen.enlaces_usados = n;
+  // 3b. los pagos por volver a pedir
   n = 0;
   for (const pi of Array.isArray(k.pagos) ? k.pagos as string[] : []) {
     if (!tiempo()) break;
@@ -754,20 +791,39 @@ async function barrer(base: Base, por: "barrido" | "pantalla"): Promise<Json> {
 }
 
 // ---- Probar la llave ------------------------------------------------------
-const RECURSOS: [string, string][] = [
-  ["Payment Links", "/v1/payment_links"], ["Checkout Sessions", "/v1/checkout/sessions"], ["PaymentIntents", "/v1/payment_intents"],
-  ["Charges", "/v1/charges"], ["Refunds", "/v1/refunds"], ["Disputes", "/v1/disputes"], ["Payouts", "/v1/payouts"],
-  ["Balance transactions", "/v1/balance_transactions"], ["Events", "/v1/events"],
+// Las MISMAS peticiones que la función hace de verdad (con sus expand: el
+// del depósito pide el origen de cada movimiento, que es otro permiso), y
+// el nombre del permiso en el panel de Stripe.
+const RECURSOS: [string, string, Json, string][] = [
+  ["Payment Links", "/v1/payment_links", { limit: 1 }, "Payment Links: Write"],
+  ["Checkout Sessions", "/v1/checkout/sessions", { limit: 1 }, "Checkout Sessions: Read"],
+  ["PaymentIntents", "/v1/payment_intents", { limit: 1 }, "PaymentIntents: Read"],
+  ["Charges (con su movimiento del saldo)", "/v1/charges", { limit: 1, expand: ["data.balance_transaction"] }, "Charges: Read"],
+  ["Refunds", "/v1/refunds", { limit: 1 }, "Refunds: Read"],
+  ["Disputes", "/v1/disputes", { limit: 1 }, "Disputes: Read"],
+  ["Payouts", "/v1/payouts", { limit: 1 }, "Payouts: Read"],
+  ["Balance", "/v1/balance", {}, "Balance: Read"],
+  ["Balance transactions (con su origen)", "/v1/balance_transactions", { limit: 1, expand: ["data.source"] }, "Balance transaction sources: Read"],
+  ["Events", "/v1/events", { limit: 1 }, "Events: Read"],
 ];
+const PANEL: Record<string, string> = {
+  rak_payment_link_write: "Payment Links: Write", rak_payment_link_read: "Payment Links: Read",
+  rak_checkout_session_read: "Checkout Sessions: Read", rak_payment_intent_read: "PaymentIntents: Read",
+  rak_charge_read: "Charges: Read", rak_refund_read: "Refunds: Read", rak_dispute_read: "Disputes: Read",
+  rak_payout_read: "Payouts: Read", rak_balance_read: "Balance: Read",
+  rak_balance_transaction_source_read: "Balance transaction sources: Read", rak_event_read: "Events: Read",
+  rak_product_write: "Products: Write", rak_price_write: "Prices: Write",
+};
 async function probarLlave(): Promise<Json> {
   const permisos: Json[] = [];
   let caidos = 0;
-  for (const [recurso, ruta] of RECURSOS) {
-    try { await stripe("GET", ruta, { limit: 1 }); permisos.push({ recurso, ruta, ok: true }); }
+  for (const [recurso, ruta, params, panel] of RECURSOS) {
+    try { await stripe("GET", ruta, params); permisos.push({ recurso, ruta, ok: true }); }
     catch (e) {
       const f = e instanceof Fallo ? e : new Fallo(500, mensajeDe(e));
       if (f.codigo === "STRIPE_CAIDO") caidos++;
-      permisos.push(limpiar({ recurso, ruta, ok: false, codigo: f.codigo, rak: f.detalle?.rak, error: f.message }));
+      const rak = typeof f.detalle?.rak === "string" ? f.detalle.rak : undefined;
+      permisos.push(limpiar({ recurso, ruta, ok: false, codigo: f.codigo, rak, panel: (rak && PANEL[rak]) || panel, error: f.message }));
     }
   }
   if (caidos === RECURSOS.length) throw new Fallo(503, "Stripe no contestó: no se pudo probar la llave. Inténtalo en un rato.", "STRIPE_CAIDO");
@@ -786,6 +842,7 @@ function salud(): Json {
   if (c.rutina.length < 32) falta.push("STRIPE_RUTINA_SECRETO (el que enseña p1-stripe.sql)");
   if (!c.db) falta.push("SUPABASE_DB_URL (lo pone Supabase) o MXP_DB_URL");
   if (!c.banco_pruebas && !(c.supabase_url && c.service_key)) falta.push("SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY (los pone Supabase)");
+  if (c.banco_mal) falta.push(c.banco_mal);
   return {
     ok: true, modo: c.modo, llave: Boolean(c.llave), llave_restringida: /^rk_(live|test)_/.test(c.llave), webhook: c.whsec.startsWith("whsec_"),
     rutina: c.rutina.length >= 32, base: Boolean(c.db), sesion: c.banco_pruebas || Boolean(c.supabase_url && c.service_key),
@@ -808,6 +865,10 @@ export async function atender(req: Request): Promise<Response> {
     if (firma === null && accion === "salud") return responder(salud());
 
     const c = conf();
+    if (c.banco_mal) {
+      console.error("stripe: hay secretos del banco de pruebas en producción (MXP_BANCO_PRUEBAS o MXP_DB_URL)");
+      throw new Fallo(500, c.banco_mal, "CONFIG");
+    }
     if (!c.modo || !c.whsec || !c.db || (!c.banco_pruebas && (!c.supabase_url || !c.service_key))) {
       console.error("stripe: falta configurar la función (STRIPE_SECRET_KEY restringida, STRIPE_WEBHOOK_SECRET o la base) en Edge Functions → Secrets");
       throw new Fallo(500, /^sk_/.test(c.llave) ? "Usa una llave RESTRINGIDA (rk_live_…), no la secreta: cámbiala en Supabase → Edge Functions → Secrets."
@@ -908,6 +969,13 @@ export async function atender(req: Request): Promise<Response> {
         await base.rpc("fn_stripe_payout_linea_resolver", { p_po: po, p_txn: txn, p_cuenta: cuenta, p_motivo: motivoDe(), p_dueno: quien.id });
         const r = await syncPayout(base, po, null);
         return responder({ ok: true, estado: r.estado ?? null, payout: r.payout ?? null, casado: r.casado ?? null });
+      }
+      case "payout_fuera": {
+        // «Ya está en el libro»: el depósito no es de la app (sin asientos; su movimiento de Chase va por la bandeja)
+        const po = typeof cuerpo.po === "string" ? cuerpo.po : "";
+        if (!po) throw new Fallo(400, "Falta el depósito (po).", "FORMA");
+        const r = await base.rpc("fn_stripe_payout_fuera", { p_po: po, p_motivo: motivoDe(), p_dueno: quien.id }) as Json;
+        return responder({ ok: true, estado: r.estado ?? null, payout: r.payout ?? null, pagos: r.pagos ?? 0 });
       }
       case "casar_payout": {
         const po = typeof cuerpo.po === "string" ? cuerpo.po : "";

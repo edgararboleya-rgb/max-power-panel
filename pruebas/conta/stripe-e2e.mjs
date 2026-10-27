@@ -106,7 +106,7 @@ if (!process.env.SIN_CONSTRUIR) {
      insert into facturas (proyecto_id, num, fecha, monto, retencion, estado, pagada)
      select 'casa-perez-k3m9', n::text, current_date - 1, m, 0, 'emitida', false
        from (values (1104, 1000.00), (1105, 600.00), (1106, 700.00), (1107, 300.00), (1108, 800.00), (1109, 900.00), (1110, 500.00),
-                    (1111, 450.00), (1112, 350.00), (1113, 250.00)) v(n, m);
+                    (1111, 450.00), (1112, 350.00), (1113, 250.00), (1114, 400.00)) v(n, m);
      select fn_puentes_correr();
      update stripe_config set acepta_prueba = true where id = 1;`);
   // re-pegar las capas con p1 puesto: nada de p1 cuelga de sus vistas
@@ -279,6 +279,14 @@ try {
   r = await conEntorno({ STRIPE_SECRET_KEY: 'sk_test_x' }, (p) => llamar({ accion: 'estado' }, { jwt: D2, puerto: p }));
   ok('E2E-03 con una llave secreta (sk_) → 500 CONFIG «llave RESTRINGIDA»', r.estado === 500 && r.j.codigo === 'CONFIG' && /RESTRINGIDA/.test(r.j.error), r);
   r = await conEntorno({ STRIPE_SECRET_KEY: 'sk_test_x' }, (p) => llamar(null, { metodo: 'GET', consulta: '?paso=salud', puerto: p }));
+  r = await conEntorno({ MXP_DB_URL: 'postgres://u:p@db.ejemplo-prod.supabase.co:5432/postgres' }, (p) => llamar(null, { metodo: 'GET', consulta: '?paso=salud', puerto: p }));
+  const r3b = await conEntorno({ MXP_DB_URL: 'postgres://u:p@db.ejemplo-prod.supabase.co:5432/postgres' }, (p) => llamar({ accion: 'estado' }, { jwt: D2, puerto: p }));
+  const r3c = await conEntorno({ SUPABASE_DB_URL: 'postgres://u:p@db.ejemplo-prod.supabase.co:5432/postgres' }, (p) => llamar({ accion: 'estado' }, { jwt: D2, puerto: p }));
+  ok('E2E-03 MXP_BANCO_PRUEBAS fuera del banco (la base no es 127.0.0.1, o hay SUPABASE_DB_URL): no es el banco, salud lo dice y todo → 500 CONFIG',
+     r.estado === 200 && r.j.banco_de_pruebas === false && r.j.falta.some((f) => /MXP_BANCO_PRUEBAS no vale/.test(f))
+     && r3b.estado === 500 && r3b.j.codigo === 'CONFIG' && /MXP_BANCO_PRUEBAS/.test(r3b.j.error)
+     && r3c.estado === 500 && r3c.j.codigo === 'CONFIG', [r.j, r3b.j, r3c.j]);
+  r = await conEntorno({ STRIPE_SECRET_KEY: 'sk_test_x' }, (p) => llamar(null, { metodo: 'GET', consulta: '?paso=salud', puerto: p }));
   ok('E2E-03 salud dice qué falta (la llave restringida) sin enseñarla', r.estado === 200 && r.j.llave === true && r.j.llave_restringida === false && r.j.falta.some((f) => /RESTRINGIDA/.test(f)) && !JSON.stringify(r.j).includes('sk_test_x'), r.j);
 
   // ---- E2E-04 quién --------------------------------------------------------
@@ -363,8 +371,19 @@ try {
   r = await llamar({ accion: 'probar_llave' }, { jwt: D2 });
   await sim('/__sin_permiso', { limpiar: true });
   const disp = r.j?.permisos?.find((p) => p.recurso === 'Disputes');
-  ok('E2E-07 probar_llave: cada recurso con ✓/✗ y el rak que falta', r.estado === 200 && r.j.ok && r.j.todos === false && r.j.restringida && r.j.permisos.length === 9
-     && disp?.ok === false && disp.rak === 'rak_dispute_read' && r.j.permisos.filter((p) => p.ok).length === 8, r.j);
+  ok('E2E-07 probar_llave: cada recurso con ✓/✗, el rak que falta y su nombre en el panel', r.estado === 200 && r.j.ok && r.j.todos === false && r.j.restringida && r.j.permisos.length === 10
+     && disp?.ok === false && disp.rak === 'rak_dispute_read' && disp.panel === 'Disputes: Read' && r.j.permisos.filter((p) => p.ok).length === 9, r.j);
+  // la llave puede leer movimientos pero no expandir su origen (lo que pide el depósito de verdad)
+  await sim('/__sin_permiso', { ruta: '/v1/balance_transactions', expand: 'data.source', rak: 'rak_balance_transaction_source_read' });
+  antes = (await llamadasSim()).length;
+  r = await llamar({ accion: 'probar_llave' }, { jwt: D2 });
+  await sim('/__sin_permiso', { limpiar: true });
+  const btp = r.j?.permisos?.find((p) => /^Balance transactions/.test(p.recurso));
+  const llProbar = (await llamadasSim()).slice(antes);
+  ok('E2E-07 probar_llave hace las mismas llamadas que la función (con expand) y caza «Balance transaction sources»',
+     r.estado === 200 && btp?.ok === false && btp.rak === 'rak_balance_transaction_source_read' && btp.panel === 'Balance transaction sources: Read'
+     && llProbar.some((l) => l.ruta === '/v1/charges' && JSON.stringify(l.consulta).includes('data.balance_transaction'))
+     && llProbar.some((l) => l.ruta === '/v1/balance') && r.j.permisos.find((p) => p.recurso === 'Balance')?.ok === true, { permisos: r.j?.permisos, llProbar });
 
   // ---- E2E-08 la firma ---------------------------------------------------------
   const evF = { id: 'evt_FIRMA0001', object: 'event', type: 'customer.created', api_version: '2026-09-30.endive', created: Math.floor(Date.now() / 1000), livemode: false, data: { object: { id: 'cus_FIRMA', object: 'customer' } } };
@@ -394,6 +413,9 @@ try {
   ok('E2E-09 seis entregas → todas 200', rs9.every((x) => x.estado === 200 && x.j.ok), rs9);
   ok('E2E-09 un solo cobro vivo de 8,000.00 en la 1020 (referencia = el pi)', vivos(PI_1103) === '1|8000.00' && saldo('1020') === '8000.00', vivos(PI_1103));
   ok('E2E-09 los repetidos contestan repetido:true y el aviso suma sus veces', rs9.filter((x) => x.j?.repetido === true).length >= 2 && q(`select veces from stripe_eventos where id = ${lit(de(ev, 'payment_intent.succeeded').id)}`) === '3', rs9.map((x) => x.j));
+  ok('E2E-09 cada aviso guarda la versión con que Stripe lo mandó, y la de la app no avisa',
+     q(`select api_version from stripe_eventos where id = ${lit(de(ev, 'payment_intent.succeeded').id)}`) === '2026-09-30.endive'
+     && q(`select count(*) from stripe_avisos where clave = 'version'`) === '0');
   ok('E2E-09 los avisos quedan «hecho»', q(`select string_agg(distinct estado, ',') from stripe_eventos where objeto_id in (${lit(PI_1103)}, ${lit(p.sesion)}, ${lit(p.cargo)})`) === 'hecho');
   ok('E2E-09 el pago «cobrado» (objetivo = en el libro = 8,000.00), el enlace «usado», en nombre del dueño con la fecha del aviso',
      pago(PI_1103, `estado || '|' || objetivo || '|' || en_libro || '|' || medio`) === 'cobrado|8000.00|8000.00|tarjeta'
@@ -501,6 +523,19 @@ try {
   ok('E2E-16 y casa en la llamada de casar que sigue al asiento (R1)', /^R1 .*\|t\|sin motivo$/.test(casadoDe(po2.po)) && q(`select estado from movimientos_banco where id = ${lit(mov2)}`) === 'casado', casadoDe(po2.po));
   ok('E2E-16 el ACH fallido (+ y − en el mismo depósito) deja 0, la 1020 y la 1140 en cero, sin cuadres rojos',
      saldo('1020') === '0.00' && saldo('1140') === '0.00' && cuadresRojos() === 'ninguno' && pagoPantalla(PI_1104B) === 'depositado' && pago(PI_1104A) === 'fallido', [saldo('1020'), saldo('1140'), cuadresRojos()]);
+
+  // ---- E2E-16b el aviso del enlace llega antes que los del pago ---------------------
+  const e1114 = (await crearEnlace('1114')).j?.enlace;
+  const p1114 = await sim('/__pagar', { plink: e1114.plink, medio: 'ach' });
+  await mandar(p1114.eventos, ['payment_link.updated']);
+  r = await crearEnlace('1114');
+  ok('E2E-16b payment_link.updated antes que el pago: el enlace «usado» y crear otro → 409 MX008 «ya se usó»',
+     q(`select estado from stripe_enlaces where id = ${lit(e1114.id)}`) === 'usado' && r.estado === 409 && r.j.codigo === 'MX008' && /ya se usó/.test(r.j.error)
+     && q(`select por_que_no from v_stripe_facturas where factura_id = ${fid['1114']}`) === 'pago en camino', r);
+  r = await rutina();
+  ok('E2E-16b la rutina busca el pago del enlace usado por sus sesiones: «en camino», sin otro enlace',
+     r.estado === 200 && r.j.resumen?.enlaces_usados >= 1 && pago(p1114.pi) === 'en_camino'
+     && q(`select count(*) from stripe_enlaces where factura_id = ${fid['1114']}`) === '1', r.j?.resumen);
 
   // ---- E2E-17 el barrido de la rutina -------------------------------------------
   const e1105 = (await crearEnlace('1105')).j.enlace;
@@ -627,6 +662,11 @@ try {
   const e1103b = r.j?.enlace;
   r = await llamar({ accion: 'desactivar_enlace', enlace: e1103b.id }, { jwt: D2 });
   ok('E2E-22 desactivar_enlace sin motivo → 400', r.estado === 400 && r.j.codigo === 'FORMA', r);
+  r = await llamar({ accion: 'payout_fuera', po: po1.po }, { jwt: D2 });
+  const r22b = await llamar({ accion: 'payout_fuera', po: po1.po, motivo: 'prueba e2e' }, { jwt: D2 });
+  ok('E2E-22 payout_fuera («Ya está en el libro»): sin motivo → 400; a un depósito asentado → 409 MX008, sin tocarlo',
+     r.estado === 400 && r.j.codigo === 'FORMA' && r22b.estado === 409 && r22b.j.codigo === 'MX008'
+     && q(`select estado from stripe_payouts where po = ${lit(po1.po)}`) === 'asentado', [r.j, r22b.j]);
   antes = (await llamadasSim()).length;
   r = await llamar({ accion: 'desactivar_enlace', enlace: e1103b.id, motivo: 'el cliente pagará por cheque (prueba)' }, { jwt: D2 });
   ll = (await llamadasSim()).slice(antes);

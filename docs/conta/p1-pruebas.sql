@@ -250,7 +250,8 @@ create or replace function pg_temp.p1_payout(p_po text, p_estado text, p_centavo
 returns jsonb language sql as $$
   select jsonb_build_object('po', p_po, 'visto_el', clock_timestamp(), 'estado', p_estado, 'monto', p_centavos, 'moneda', 'usd',
                             'llegada', pg_temp.p1('llegada'), 'automatico', true, 'metodo', 'standard', 'conciliacion', 'completed',
-                            'bt_propio', 'txn_' || p_po, 'bt_fallo', null, 'fallo_codigo', null) || p_extra
+                            'bt_propio', 'txn_' || p_po, 'bt_fallo', null, 'fallo_codigo', null,
+                            'creado', ceil(extract(epoch from now()))::bigint) || p_extra
 $$;
 create or replace function pg_temp.p1_linea(p_txn text, p_tipo text, p_monto bigint, p_comision bigint default 0, p_pi text default null,
                                              p_fuente text default null)
@@ -482,6 +483,7 @@ declare
     'select fn_stripe_enlace_preparar(1, null, ''real'')',
     'select fn_stripe_payout_casar(''po_x'')',
     'select fn_stripe_pago_resolver(''pi_x'', ''{}''::jsonb, ''x'', null)',
+    'select fn_stripe_payout_fuera(''po_x'', ''x'', null)',
     'select * from fn_stripe_control()',
     'select * from fn_stripe_pegado()',
     'select fn_stripe_programado()',
@@ -607,10 +609,21 @@ end $$;
 
 -- 6. El mismo aviso dos veces (una fila, veces 2); uno de otro modo, o de
 --    prueba en una base que no los acepta, queda ignorado (con aviso); lo
---    guardado no lleva datos personales
+--    guardado no lleva datos personales (tampoco la evidencia de una
+--    disputa, el correo de la sesión, el recibo ni el banco); un aviso de
+--    otra versión de la API lo dice (info)
 do $$
 declare
-  v_obt text; v_r1 jsonb; v_r2 jsonb; v_r3 jsonb; v_r4 jsonb; v_n int; v_av int; v_dp text;
+  v_obt text; v_r1 jsonb; v_r2 jsonb; v_r3 jsonb; v_r4 jsonb; v_n int; v_av int; v_dp text; v_dp2 text; v_ver text;
+  v_disp jsonb := jsonb_build_object('id', 'evt_P1T6D', 'tipo', 'charge.dispute.created', 'livemode', false,
+                                     'api_version', '2025-03-31.basil', 'created', 1793030400,
+                                     'objeto', jsonb_build_object('id', 'dp_P1T6', 'object', 'dispute', 'payment_intent', 'pi_P1T6',
+                                       'evidence', jsonb_build_object('customer_name', 'Juan Prueba', 'customer_email_address', 'juan@ejemplo.com',
+                                                                      'billing_address', '1 Calle Prueba', 'customer_purchase_ip', '10.0.0.1'),
+                                       'customer_email', 'juan@ejemplo.com', 'receipt_url', 'https://pay.stripe.com/receipts/prueba',
+                                       'shipping_details', jsonb_build_object('name', 'Juan Prueba'),
+                                       'payment_method_details', jsonb_build_object('us_bank_account',
+                                                                   jsonb_build_object('bank_name', 'BANCO PRUEBA', 'last4', '6789'))));
   v_ev jsonb := jsonb_build_object('id', 'evt_P1T6A', 'tipo', 'payment_intent.succeeded', 'livemode', false,
                                    'api_version', '2026-09-30.endive', 'created', 1793030400,
                                    'objeto', jsonb_build_object('id', 'pi_P1T6', 'object', 'payment_intent', 'receipt_email', 'cliente@ejemplo.com',
@@ -627,23 +640,30 @@ begin
     select count(*) into v_n from stripe_eventos where id = 'evt_P1T6A';
     select case when e.datos::text ~* '(email|address|phone|billing_details|last4|shipping)' then 'CON datos personales' else 'sin datos personales' end
       into v_dp from stripe_eventos e where e.id = 'evt_P1T6A';
+    perform fn_stripe_evento_guardar(v_disp, 'webhook', 'prueba');
+    select case when e.datos::text ~* '(juan|ejemplo|calle|10\.0\.0\.1|receipt|banco prueba|6789|evidence)' then 'CON datos: ' || e.datos::text
+                else 'sin datos' end
+      into v_dp2 from stripe_eventos e where e.id = 'evt_P1T6D';
+    select case when a.texto like '%2025-03-31.basil%2026-09-30.endive%' then 'aviso ' || a.nivel else 'MAL ' || a.texto end
+      into v_ver from stripe_avisos a where a.clave = 'version';
     -- livemode real con una llave de prueba
     v_r3 := fn_stripe_evento_guardar(v_ev || jsonb_build_object('id', 'evt_P1T6B', 'livemode', true), 'webhook', 'prueba');
     select count(*) into v_av from stripe_avisos where clave = 'modo';
     -- de prueba en una base que no los acepta
     update stripe_config set acepta_prueba = false where id = 1;
     v_r4 := fn_stripe_evento_guardar(v_ev || jsonb_build_object('id', 'evt_P1T6C'), 'webhook', 'prueba');
-    v_obt := format('%s fila, veces %s, la segunda nuevo=%s | real con llave de prueba: %s (%s), aviso modo %s | prueba sin aceptarla: %s | %s',
+    v_obt := format('%s fila, veces %s, la segunda nuevo=%s | real con llave de prueba: %s (%s), aviso modo %s | prueba sin aceptarla: %s | %s | disputa %s | otra versión: %s',
                     v_n, v_r2->>'veces', v_r2->>'nuevo', v_r3->>'estado',
-                    (select e.resultado->>'motivo' from stripe_eventos e where e.id = 'evt_P1T6B'), v_av, v_r4->>'estado', v_dp);
+                    (select e.resultado->>'motivo' from stripe_eventos e where e.id = 'evt_P1T6B'), v_av, v_r4->>'estado', v_dp, v_dp2,
+                    coalesce(v_ver, 'sin aviso'));
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (6, 'el mismo aviso dos veces, otro modo ignorado, sin datos personales',
-    '1 fila, veces 2, la segunda nuevo=false | real con llave de prueba: ignorado (modo), aviso modo 1 | prueba sin aceptarla: ignorado | sin datos personales',
-    v_obt, v_obt = '1 fila, veces 2, la segunda nuevo=false | real con llave de prueba: ignorado (modo), aviso modo 1 | prueba sin aceptarla: ignorado | sin datos personales');
+    '1 fila, veces 2, la segunda nuevo=false | real con llave de prueba: ignorado (modo), aviso modo 1 | prueba sin aceptarla: ignorado | sin datos personales | disputa sin datos | otra versión: aviso info',
+    v_obt, v_obt = '1 fila, veces 2, la segunda nuevo=false | real con llave de prueba: ignorado (modo), aviso modo 1 | prueba sin aceptarla: ignorado | sin datos personales | disputa sin datos | otra versión: aviso info');
 end $$;
 
 -- 7. Cerrar con espera creciente (5 min, 15 min, 1 h); a los 20 intentos
@@ -744,10 +764,12 @@ end $$;
 
 -- 9. Preparar rechaza: anulada, borrador, fuera del libro, sin saldo (con
 --    la pista de la retención), con un pago en camino, a nombre del equipo,
---    y la casilla «pagada» sin confirmarlo. La factura no cambia.
+--    y la casilla «pagada» sin confirmarlo. La factura no cambia. Un
+--    enlace que Stripe ya dio por usado y cuyo pago no llegó: MX008, la
+--    vista dice «pago en camino» y la rutina lo busca.
 do $$
 declare
-  v_obt text; v_r text[] := '{}'; v_x text; v_md5 text; v_md5b text; v_p jsonb; v_h text;
+  v_obt text; v_r text[] := '{}'; v_x text; v_md5 text; v_md5b text; v_p jsonb; v_h text; v_u text;
 begin
   begin
     perform pg_temp.p1_ser('servicio');
@@ -789,16 +811,31 @@ begin
     end;
     v_p := fn_stripe_enlace_preparar(-1601096, pg_temp.p1('dueno')::uuid, 'prueba', false, true);
     select md5(row(f.pagada, f.cobrado, f.cobrada_el, f.metodo_cobro, f.link_pago, f.estado)::text) into v_md5b from facturas f where f.id = -1601096;
-    v_obt := format('anulada %s | borrador %s | fuera del libro %s | sin saldo %s | pago en camino %s | equipo %s | pagada %s → confirmada: %s | la factura %s',
-                    v_r[1], v_r[2], v_r[3], v_r[4], v_r[5], v_r[6], v_r[7], v_p->>'accion', case when v_md5 = v_md5b then 'igual' else 'CAMBIÓ' end);
+    -- el aviso del enlace llega antes que los del pago
+    perform pg_temp.p1_factura(-1601097, 500.00);
+    perform pg_temp.p1_enlace(-1601097, 'plink_P1T9U');
+    perform fn_stripe_enlace_desactivado('plink_P1T9U', 'desactivado en Stripe', 'stripe', true);
+    begin
+      perform fn_stripe_enlace_preparar(-1601097, pg_temp.p1('dueno')::uuid, 'prueba');
+      v_u := 'entró';
+    exception when others then
+      v_u := sqlstate || case when sqlerrm ~ 'ya se usó' then ' ya se usó' else ' ' || sqlerrm end;
+    end;
+    v_u := v_u || format(' | vista: %s, %s | rutina: %s',
+                         (select v.puede_enlace::text from v_stripe_facturas v where v.factura_id = -1601097),
+                         (select v.por_que_no from v_stripe_facturas v where v.factura_id = -1601097),
+                         case when fn_stripe_pendientes()->'enlaces_usados' @> '[{"plink": "plink_P1T9U"}]' then 'lo busca' else 'NO lo busca' end);
+    v_obt := format('anulada %s | borrador %s | fuera del libro %s | sin saldo %s | pago en camino %s | equipo %s | pagada %s → confirmada: %s | la factura %s | usado sin pago: %s',
+                    v_r[1], v_r[2], v_r[3], v_r[4], v_r[5], v_r[6], v_r[7], v_p->>'accion', case when v_md5 = v_md5b then 'igual' else 'CAMBIÓ' end,
+                    v_u);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (9, 'preparar rechaza lo que no se cobra en línea; la casilla pagada pide confirmarlo; la factura no se toca',
-    'anulada MX008 | borrador MX008 | fuera del libro MX008 | sin saldo MX008 (retención) | pago en camino MX008 | equipo 42501 | pagada MX008 pagada_en_app → confirmada: crear | la factura igual',
-    v_obt, v_obt = 'anulada MX008 | borrador MX008 | fuera del libro MX008 | sin saldo MX008 (retención) | pago en camino MX008 | equipo 42501 | pagada MX008 pagada_en_app → confirmada: crear | la factura igual');
+    'anulada MX008 | borrador MX008 | fuera del libro MX008 | sin saldo MX008 (retención) | pago en camino MX008 | equipo 42501 | pagada MX008 pagada_en_app → confirmada: crear | la factura igual | usado sin pago: MX008 ya se usó | vista: false, pago en camino | rutina: lo busca',
+    v_obt, v_obt = 'anulada MX008 | borrador MX008 | fuera del libro MX008 | sin saldo MX008 (retención) | pago en camino MX008 | equipo 42501 | pagada MX008 pagada_en_app → confirmada: crear | la factura igual | usado sin pago: MX008 ya se usó | vista: false, pago en camino | rutina: lo busca');
 end $$;
 
 -- 10. El enlace creado, repetido, de otro, listo, a reemplazar, uno vivo por
@@ -1018,10 +1055,12 @@ end $$;
 
 -- 15. Sobrepago: 1,200.00 a una factura que debe 1,000.00 (200.00 de
 --     anticipo de su obra, con aviso); con retención, el exceso va primero
---     a la retención
+--     a la retención (y lo dice). Un enlace sin retención por 900.00 de una
+--     factura que ya cobró 100.00 por cheque: los 100.00 de más van a su
+--     retención, con aviso.
 do $$
 declare
-  v_obt text; v_a text; v_b text; s stripe_pagos;
+  v_obt text; v_a text; v_b text; v_c text; s stripe_pagos;
 begin
   begin
     perform pg_temp.p1_ser('servicio');
@@ -1034,17 +1073,32 @@ begin
            || ' · aviso ' || coalesce((select a.nivel from stripe_avisos a where a.clave = 'sobra:pi_P1T15A'), 'NINGUNO');
     perform pg_temp.p1_pagar('pi_P1T15B', -1601152, 120000);
     select * into s from stripe_pagos where pi = 'pi_P1T15B';
-    v_b := replace(pg_temp.p1_lineas((select c.contabilizado_en from cobros c where c.id = s.cobro_id)), s.cobro_id::text, '<cobro>');
-    v_obt := v_a || ' || ' || v_b;
+    v_b := replace(pg_temp.p1_lineas((select c.contabilizado_en from cobros c where c.id = s.cobro_id)), s.cobro_id::text, '<cobro>')
+           || ' · aviso ' || coalesce((select a.nivel || case when a.texto like '%$100.00 se aplicó a la retención de la #%'
+                                                              then ' retención' else ' SIN retención' end
+                                         from stripe_avisos a where a.clave = 'sobra:pi_P1T15B'), 'NINGUNO');
+    perform pg_temp.p1_factura(-1601153, 1000.00, 100.00);
+    perform pg_temp.p1_enlace(-1601153, 'plink_P1T15C');
+    perform pg_temp.p1_ser('como_dueno');
+    perform fn_cobro_registrar(jsonb_build_object('fecha', pg_temp.p1('d'), 'monto', '100.00', 'medio', 'cheque', 'referencia', 'P1-PRUEBA-153',
+                                                  'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -1601153, 'monto', '100.00'))));
+    perform pg_temp.p1_ser('servicio');
+    perform fn_stripe_pago_sincronizar(pg_temp.p1_foto('pi_P1T15C', 'succeeded', 90000), 'evt_P1T15C');
+    select * into s from stripe_pagos where pi = 'pi_P1T15C';
+    v_c := pg_temp.p1_lineas((select c.contabilizado_en from cobros c where c.id = s.cobro_id))
+           || ' · aviso ' || coalesce((select a.nivel || case when a.texto like '%más de lo exigible%$100.00 se aplicó a su retención%'
+                                                              then ' retención' else ' MAL: ' || a.texto end
+                                         from stripe_avisos a where a.clave = 'sobra:pi_P1T15C'), 'NINGUNO');
+    v_obt := v_a || ' || ' || v_b || ' || ' || v_c;
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (15, 'sobrepago: lo que sobra, de anticipo de la obra (con la retención primero)',
-    format('%1$s 1200.00 | %2$s -1000.00 facturas/-1601151 obra | %2$s -200.00 cobros/<cobro> obra · aviso warn || %1$s 1200.00 | %2$s -900.00 facturas/-1601152 obra | %3$s -100.00 facturas/-1601152 obra | %2$s -200.00 cobros/<cobro> obra',
+  insert into _pruebas values (15, 'sobrepago: lo que sobra, de anticipo de la obra (con la retención primero), y la retención cobrada de más avisa',
+    format('%1$s 1200.00 | %2$s -1000.00 facturas/-1601151 obra | %2$s -200.00 cobros/<cobro> obra · aviso warn || %1$s 1200.00 | %2$s -900.00 facturas/-1601152 obra | %3$s -100.00 facturas/-1601152 obra | %2$s -200.00 cobros/<cobro> obra · aviso warn retención || %1$s 900.00 | %2$s -800.00 facturas/-1601153 obra | %3$s -100.00 facturas/-1601153 obra · aviso warn retención',
            pg_temp.p1('puente'), pg_temp.p1('cxc'), pg_temp.p1('ret')), v_obt,
-    v_obt = format('%1$s 1200.00 | %2$s -1000.00 facturas/-1601151 obra | %2$s -200.00 cobros/<cobro> obra · aviso warn || %1$s 1200.00 | %2$s -900.00 facturas/-1601152 obra | %3$s -100.00 facturas/-1601152 obra | %2$s -200.00 cobros/<cobro> obra',
+    v_obt = format('%1$s 1200.00 | %2$s -1000.00 facturas/-1601151 obra | %2$s -200.00 cobros/<cobro> obra · aviso warn || %1$s 1200.00 | %2$s -900.00 facturas/-1601152 obra | %3$s -100.00 facturas/-1601152 obra | %2$s -200.00 cobros/<cobro> obra · aviso warn retención || %1$s 900.00 | %2$s -800.00 facturas/-1601153 obra | %3$s -100.00 facturas/-1601153 obra · aviso warn retención',
                    pg_temp.p1('puente'), pg_temp.p1('cxc'), pg_temp.p1('ret')));
 end $$;
 
@@ -1101,7 +1155,8 @@ end $$;
 -- 17. Un pago sin factura: por resolver (sin cobro, aviso, alarma 30); a
 --     una factura con su motivo, cobrado; otra vez, MX008; sin motivo,
 --     22023; «fuera» a un ingreso, sin cobro; «fuera» a un banco, la
---     cuenta por cobrar o la puente, MX004
+--     cuenta por cobrar, la puente o la de paso, MX004; a un activo que no
+--     es un banco (una reserva), sí
 do $$
 declare
   v_obt text; v_a text; v_b text; v_c text; v_d text; v_e text[] := '{}'; v_x text; v_r jsonb;
@@ -1130,23 +1185,35 @@ begin
     v_d := format('%s, %s cobro(s), fuera a %s', v_r->'pago'->>'estado', (select count(*) from cobros where referencia = 'pi_P1T17B'),
                   (select s.resuelto->'fuera'->>'cuenta' from stripe_pagos s where s.pi = 'pi_P1T17B'));
     perform fn_stripe_pago_sincronizar(pg_temp.p1_foto('pi_P1T17C', 'succeeded', 20000), 'evt_P1T17C');
-    foreach v_x in array array[pg_temp.p1('banco'), pg_temp.p1('cxc'), pg_temp.p1('puente')] loop
+    foreach v_x in array array[pg_temp.p1('banco'), pg_temp.p1('cxc'), pg_temp.p1('puente'), pg_temp.p1('paso')] loop
       begin
         perform fn_stripe_pago_resolver('pi_P1T17C', jsonb_build_object('fuera', jsonb_build_object('cuenta', v_x)), 'p1-pruebas',
                                         pg_temp.p1('dueno')::uuid);
         v_e := v_e || 'entró'::text;
       exception when others then v_e := v_e || sqlstate::text; end;
     end loop;
-    v_obt := format('%s | resuelto: %s | otra vez %s | %s | fuera a banco, cxc, puente: %s', v_a, v_b, v_c, v_d, array_to_string(v_e, ' '));
+    -- un activo que no es un banco (una reserva de Stripe, unos fondos por
+    -- depositar de la apertura): sí
+    select c.codigo into v_x from cuentas c
+     where c.tipo = 'activo' and c.activa and c.imputable and c.regla_obra <> 'obligatoria' and left(c.codigo, 2) <> '10'
+       and fn_banco_tipo_cuenta(c.codigo) is null
+       and c.codigo not in (pg_temp.p1('cxc'), pg_temp.p1('ret'), pg_temp.p1('paso'), pg_temp.p1('puente'))
+     order by c.codigo limit 1;
+    begin
+      perform fn_stripe_pago_resolver('pi_P1T17C', jsonb_build_object('fuera', jsonb_build_object('cuenta', v_x)), 'p1-pruebas: una reserva',
+                                      pg_temp.p1('dueno')::uuid);
+      v_e := v_e || '| un activo que no es banco: entra'::text;
+    exception when others then v_e := v_e || ('| un activo que no es banco (' || coalesce(v_x, 'ninguno') || '): ' || sqlstate)::text; end;
+    v_obt := format('%s | resuelto: %s | otra vez %s | %s | fuera a banco, cxc, puente, paso: %s', v_a, v_b, v_c, v_d, array_to_string(v_e, ' '));
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (17, 'un pago sin factura: por resolver; a una factura, fuera, y lo que no se puede',
-    format('revisar, 0 cobro(s), aviso bad, alarma 30 rojo | resuelto: cobrado, 1 cobro(s) | otra vez MX008 · sin motivo 22023 | cobrado, 0 cobro(s), fuera a %s | fuera a banco, cxc, puente: MX004 MX004 MX004',
+    format('revisar, 0 cobro(s), aviso bad, alarma 30 rojo | resuelto: cobrado, 1 cobro(s) | otra vez MX008 · sin motivo 22023 | cobrado, 0 cobro(s), fuera a %s | fuera a banco, cxc, puente, paso: MX004 MX004 MX004 MX004 | un activo que no es banco: entra',
            pg_temp.p1('ingreso')), v_obt,
-    v_obt = format('revisar, 0 cobro(s), aviso bad, alarma 30 rojo | resuelto: cobrado, 1 cobro(s) | otra vez MX008 · sin motivo 22023 | cobrado, 0 cobro(s), fuera a %s | fuera a banco, cxc, puente: MX004 MX004 MX004',
+    v_obt = format('revisar, 0 cobro(s), aviso bad, alarma 30 rojo | resuelto: cobrado, 1 cobro(s) | otra vez MX008 · sin motivo 22023 | cobrado, 0 cobro(s), fuera a %s | fuera a banco, cxc, puente, paso: MX004 MX004 MX004 MX004 | un activo que no es banco: entra',
                    pg_temp.p1('ingreso')));
 end $$;
 
@@ -1183,10 +1250,12 @@ end $$;
 -- 19. Reembolso parcial de 100.00 de 1,000.00: el cobro se devuelve entero y
 --     se registra el nuevo por 900.00 (otra llave, la misma referencia), sin
 --     el MX008 de «el mismo depósito». Contraprueba: otro cobro vivo del
---     mismo pago por lo mismo, sí da MX008.
+--     mismo pago por lo mismo, sí da MX008. Si Edgar ya había aplicado su
+--     anticipo a otra factura, se vuelve a aplicar desde el cobro nuevo
+--     hasta donde alcance, y el aviso dice quién vuelve a deber de verdad.
 do $$
 declare
-  v_obt text; v_p0 numeric; v_dev text; v_c cobros; v_e text;
+  v_obt text; v_p0 numeric; v_dev text; v_c cobros; v_e text; v_ap text;
 begin
   begin
     perform pg_temp.p1_ser('servicio');
@@ -1209,18 +1278,40 @@ begin
       v_e := 'entró';
     exception when others then v_e := sqlstate; end;
     perform pg_temp.p1_ser('servicio');
-    v_obt := format('devuelto %s + cobro %s (%s, ref %s) | la factura debe %s | la puente +%s | otro cobro vivo igual: %s',
+    -- el anticipo aplicado a otra factura (A debe 1,000.00, 200.00 por
+    -- cheque; Stripe 1,000.00 → 800.00 y 200.00 de anticipo, aplicado a B)
+    perform pg_temp.p1_factura(-1601192, 1000.00);
+    perform pg_temp.p1_factura(-1601193, 500.00);
+    perform pg_temp.p1_ser('como_dueno');
+    perform fn_cobro_registrar(jsonb_build_object('fecha', pg_temp.p1('d'), 'monto', '200.00', 'medio', 'cheque', 'referencia', 'P1-PRUEBA-192',
+                                                  'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -1601192, 'monto', '200.00'))));
+    perform pg_temp.p1_ser('servicio');
+    perform pg_temp.p1_pagar('pi_P1T19B', -1601192, 100000);
+    perform pg_temp.p1_ser('como_dueno');
+    perform fn_anticipo_aplicar((select s.cobro_id from stripe_pagos s where s.pi = 'pi_P1T19B'), -1601193, '200.00');
+    perform pg_temp.p1_ser('servicio');
+    perform fn_stripe_pago_sincronizar(pg_temp.p1_foto('pi_P1T19B', 'succeeded', 100000, -1601192)
+                                       || jsonb_build_object('reembolsos', jsonb_build_array(pg_temp.p1_reembolso('re_P1T19B', 10000, 'txn_R_P1T19B'))),
+                                       'evt_P1T19BR');
+    v_ap := format('A debe %s, B debe %s | %s | %s',
+                   (select fc.saldo_cxc from facturas_cobro fc where fc.id = -1601192),
+                   (select fc.saldo_cxc from facturas_cobro fc where fc.id = -1601193),
+                   coalesce((select case when a.texto like '%vuelve a deber: #P1-1601193 $100.00.%' then 'aviso: vuelve a deber B 100.00'
+                                         else 'MAL: ' || a.texto end
+                               from stripe_avisos a where a.clave = 'pago:pi_P1T19B:reembolso:re_P1T19B'), 'sin aviso'),
+                   coalesce((select 'faltan ' || a.nivel from stripe_avisos a where a.clave = 'pago:pi_P1T19B:aplicaciones:v2'), 'sin aviso'));
+    v_obt := format('devuelto %s + cobro %s (%s, ref %s) | la factura debe %s | la puente +%s | otro cobro vivo igual: %s || %s',
                     v_dev, v_c.monto, v_c.llave_cliente, v_c.referencia,
                     (select fc.saldo_cxc from facturas_cobro fc where fc.id = -1601191),
-                    pg_temp.p1_saldo(pg_temp.p1('puente')) - v_p0, v_e);
+                    pg_temp.p1_saldo(pg_temp.p1('puente')) - v_p0 - 900.00, v_e, v_ap);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (19, 'reembolso parcial: devolver el cobro entero y registrar lo que queda (un cobro vivo por pago)',
-    'devuelto 1000.00 + cobro 900.00 (stripe:pi_P1T19:v1, ref pi_P1T19) | la factura debe 100.00 | la puente +900.00 | otro cobro vivo igual: MX008',
-    v_obt, v_obt = 'devuelto 1000.00 + cobro 900.00 (stripe:pi_P1T19:v1, ref pi_P1T19) | la factura debe 100.00 | la puente +900.00 | otro cobro vivo igual: MX008');
+  insert into _pruebas values (19, 'reembolso parcial: devolver el cobro entero y registrar lo que queda (un cobro vivo por pago); el anticipo aplicado a otra factura se vuelve a aplicar',
+    'devuelto 1000.00 + cobro 900.00 (stripe:pi_P1T19:v1, ref pi_P1T19) | la factura debe 100.00 | la puente +900.00 | otro cobro vivo igual: MX008 || A debe 0.00, B debe 400.00 | aviso: vuelve a deber B 100.00 | faltan warn',
+    v_obt, v_obt = 'devuelto 1000.00 + cobro 900.00 (stripe:pi_P1T19:v1, ref pi_P1T19) | la factura debe 100.00 | la puente +900.00 | otro cobro vivo igual: MX008 || A debe 0.00, B debe 400.00 | aviso: vuelve a deber B 100.00 | faltan warn');
 end $$;
 
 -- 20. Reembolso total: devuelto, la puente como antes; un reembolso sin su
@@ -1335,7 +1426,9 @@ begin
     v_a := format('%s %s, aviso %s%s', v_r->>'estado', v_r->>'en_libro',
                   (select a.nivel from stripe_avisos a where a.clave = 'pago:pi_P1T22A:disputa:dp_P1T22A'),
                   case when (select a.texto from stripe_avisos a where a.clave = 'pago:pi_P1T22A:disputa:dp_P1T22A')
-                            like '%antes del ' || (fn_fecha_miami(now() + interval '7 days'))::text || '%' then ' con su fecha' else '' end);
+                            like '%antes del ' || fn_stripe_fecha_llana(fn_fecha_miami(now() + interval '7 days')) || '%' then ' con su fecha' else '' end
+                  || case when (select a.texto from stripe_avisos a where a.clave = 'pago:pi_P1T22A:disputa:dp_P1T22A')
+                               like '%(el cliente dice que no reconoce el cargo)%' then ' en llano' else ' (motivo en crudo)' end);
     v_r := fn_stripe_pago_sincronizar(pg_temp.p1_foto('pi_P1T22A', 'succeeded', 100000)
                                       || jsonb_build_object('disputas', jsonb_build_array(pg_temp.p1_disputa('dp_P1T22A', 100000, 'won',
                                            v_bt || pg_temp.p1_bt('txn_DR_P1T22A', 'dispute_reversal', 100000)))), 'evt_P1T22B');
@@ -1376,8 +1469,8 @@ begin
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (22, 'disputas: al retirarse se devuelve; ganada vuelve; perdida, nada más; parcial; consulta sin retiro',
-    'retirada: en_disputa 0.00, aviso bad con su fecha → ganada: cobrado 1000.00, aviso info | ACH: no se impugna → perdida: devuelto 0.00, 0 cambios, aviso warn | parcial: en_disputa 600.00 (devolucion -1000.00, cobro 600.00) | consulta: en_disputa 1000.00, 0 cambios',
-    v_obt, v_obt = 'retirada: en_disputa 0.00, aviso bad con su fecha → ganada: cobrado 1000.00, aviso info | ACH: no se impugna → perdida: devuelto 0.00, 0 cambios, aviso warn | parcial: en_disputa 600.00 (devolucion -1000.00, cobro 600.00) | consulta: en_disputa 1000.00, 0 cambios');
+    'retirada: en_disputa 0.00, aviso bad con su fecha en llano → ganada: cobrado 1000.00, aviso info | ACH: no se impugna → perdida: devuelto 0.00, 0 cambios, aviso warn | parcial: en_disputa 600.00 (devolucion -1000.00, cobro 600.00) | consulta: en_disputa 1000.00, 0 cambios',
+    v_obt, v_obt = 'retirada: en_disputa 0.00, aviso bad con su fecha en llano → ganada: cobrado 1000.00, aviso info | ACH: no se impugna → perdida: devuelto 0.00, 0 cambios, aviso warn | parcial: en_disputa 600.00 (devolucion -1000.00, cobro 600.00) | consulta: en_disputa 1000.00, 0 cambios');
 end $$;
 
 -- 23. El mes del pago, cerrado: el cobro entra el primer día del mes
@@ -1527,10 +1620,12 @@ end $$;
 
 -- 26. Un depósito que trae un pago que p1 no tiene espera (sin asiento) y se
 --     asienta al llegar el pago; uno que trae un reembolso que el pago no
---     conoce, espera
+--     conoce, espera; uno que trae un pago por cuenta de banco que aquí
+--     sigue «en camino» (su aviso de éxito no llegó), espera y se asienta
+--     con el cobro ya en el libro
 do $$
 declare
-  v_obt text; v_r jsonb; v_a text; v_b text;
+  v_obt text; v_r jsonb; v_a text; v_b text; v_c text;
 begin
   begin
     perform pg_temp.p1_ser('servicio');
@@ -1550,22 +1645,35 @@ begin
              pg_temp.p1_linea('txn_pi_P1T26B', 'charge', 50000, 1480, 'pi_P1T26B'),
              pg_temp.p1_linea('txn_R_P1T26B', 'refund', -5000, 0, 'pi_P1T26B')), 'evt_P1T26D');
     v_b := format('%s: %s', v_r->>'estado', v_r->'esperando'->0->>'motivo');
-    v_obt := v_a || ' | ' || v_b;
+    perform pg_temp.p1_factura(-1601263, 500.00);
+    perform pg_temp.p1_enlace(-1601263, 'plink_P1T26C');
+    perform fn_stripe_pago_sincronizar(pg_temp.p1_foto('pi_P1T26C', 'processing', 50000, -1601263, 'ach'), 'evt_P1T26E');
+    v_r := fn_stripe_payout_sincronizar(pg_temp.p1_payout('po_P1T26C', 'paid', 49600), jsonb_build_array(
+             pg_temp.p1_linea('txn_pi_P1T26C', 'payment', 50000, 400, 'pi_P1T26C'), pg_temp.p1_propio('po_P1T26C', 49600)), 'evt_P1T26F');
+    v_c := format('ACH en camino: %s: %s', v_r->>'estado', v_r->'esperando'->0->>'motivo');
+    perform fn_stripe_pago_sincronizar(pg_temp.p1_foto('pi_P1T26C', 'succeeded', 50000, -1601263, 'ach'), 'evt_P1T26G');
+    v_r := fn_stripe_payout_sincronizar(pg_temp.p1_payout('po_P1T26C', 'paid', 49600), null, 'evt_P1T26H');
+    v_c := v_c || format(' → %s, la factura debe %s', v_r->>'estado', (select fc.saldo_cxc from facturas_cobro fc where fc.id = -1601263));
+    v_obt := v_a || ' | ' || v_b || ' | ' || v_c;
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (26, 'el depósito espera al pago que falta, y al reembolso que el pago no conoce',
-    'esperando_cobros pi_P1T26A, 0 asiento(s) → asentado | esperando_cobros: la composición trae un movimiento que el pago no conoce', v_obt,
-    v_obt = 'esperando_cobros pi_P1T26A, 0 asiento(s) → asentado | esperando_cobros: la composición trae un movimiento que el pago no conoce');
+  insert into _pruebas values (26, 'el depósito espera al pago que falta, al reembolso que el pago no conoce y al pago que aquí sigue en camino',
+    'esperando_cobros pi_P1T26A, 0 asiento(s) → asentado | esperando_cobros: la composición trae un movimiento que el pago no conoce | ACH en camino: esperando_cobros: el pago no está al día → asentado, la factura debe 0.00', v_obt,
+    v_obt = 'esperando_cobros pi_P1T26A, 0 asiento(s) → asentado | esperando_cobros: la composición trae un movimiento que el pago no conoce | ACH en camino: esperando_cobros: el pago no está al día → asentado, la factura debe 0.00');
 end $$;
 
 -- 27. Sin la composición todavía: espera; con ella, se asienta. Un depósito
---     manual, instantáneo o en otra moneda: por revisar
+--     manual, instantáneo o en otra moneda: por revisar. Lo que no es de
+--     p1: uno que Stripe creó antes de instalar sale «fuera» solo (sin
+--     asientos, con aviso); uno cuyo depósito de Chase ya está casado en la
+--     bandeja con otra cosa, por revisar, y «Ya está en el libro» lo saca
+--     (sin asientos, el cuadre 27 verde); a uno asentado, no.
 do $$
 declare
-  v_obt text; v_r jsonb; v_a text; v_b text[] := '{}';
+  v_obt text; v_r jsonb; v_a text; v_b text[] := '{}'; v_f text; v_mov uuid; v_e text;
 begin
   begin
     perform pg_temp.p1_ser('servicio');
@@ -1584,16 +1692,50 @@ begin
                                                 null, 'evt_P1T27D')->>'estado');
     v_b := v_b || (fn_stripe_payout_sincronizar(pg_temp.p1_payout('po_P1T27D', 'paid', 1000, jsonb_build_object('moneda', 'eur')),
                                                 null, 'evt_P1T27E')->>'estado');
-    v_obt := format('%s | manual, instantáneo, eur: %s | aviso «automático» %s', v_a, array_to_string(v_b, ' '),
-                    (select count(*) from stripe_avisos a where a.clave like 'payout:po_P1T27_:revisar' and a.texto like '%deja los payouts en automático%'));
+    -- de antes de instalar
+    v_r := fn_stripe_payout_sincronizar(pg_temp.p1_payout('po_P1T27G', 'paid', 97070,
+                                          jsonb_build_object('creado', extract(epoch from (select c.desde from stripe_config c) - interval '2 days')::bigint)),
+                                        jsonb_build_array(pg_temp.p1_linea('txn_pi_P1T27G', 'charge', 100000, 2930, 'pi_P1T27G'),
+                                                          pg_temp.p1_propio('po_P1T27G', 97070)), 'evt_P1T27G');
+    v_f := format('antes de instalar: %s, %s asiento(s), %s pago(s), aviso %s', v_r->>'estado',
+                  (select count(*) from stripe_payouts p where p.po = 'po_P1T27G' and p.asiento_salida is not null),
+                  (select count(*) from stripe_pagos where pi = 'pi_P1T27G'),
+                  coalesce((select a.nivel from stripe_avisos a where a.clave = 'payout:po_P1T27G:fuera'), 'ninguno'));
+    -- ya en la bandeja (registrado como cobro con su comisión, como antes de p1)
+    perform pg_temp.p1_factura(-1601274, 500.00);
+    v_mov := pg_temp.p1_deposito('p1t27-bandeja', pg_temp.p1('llegada')::date, 485.20);
+    perform pg_temp.p1_ser('como_dueno');
+    perform fn_banco_cobrar(v_mov, jsonb_build_array(jsonb_build_object('factura_id', -1601274, 'monto', '500.00'),
+                                                     jsonb_build_object('comision', '14.80')), 'p1-pruebas: depósito de Stripe en la bandeja');
+    perform pg_temp.p1_ser('servicio');
+    v_r := fn_stripe_payout_sincronizar(pg_temp.p1_payout('po_P1T27H', 'paid', 48520), jsonb_build_array(
+             pg_temp.p1_linea('txn_pi_P1T27H', 'charge', 50000, 1480, 'pi_P1T27H'), pg_temp.p1_propio('po_P1T27H', 48520)), 'evt_P1T27H');
+    v_f := v_f || format(' | en la bandeja: %s (%s), aviso %s, cuadre 27 %s', v_r->>'estado', v_r->>'revisar',
+                         coalesce((select a.nivel from stripe_avisos a where a.clave = 'payout:po_P1T27H:bandeja'), 'ninguno'), pg_temp.p1_fila(27));
+    v_r := fn_stripe_payout_fuera('po_P1T27H', 'p1-pruebas: lo registré en la bandeja', pg_temp.p1('dueno')::uuid);
+    v_f := v_f || format(' → ya está en el libro: %s, %s asiento(s), cuadre 27 %s, alarma 38 %s', v_r->>'estado',
+                         (select count(*) from stripe_payouts p where p.po = 'po_P1T27H' and p.asiento_salida is not null),
+                         pg_temp.p1_fila(27), pg_temp.p1_fila(38));
+    begin
+      perform fn_stripe_payout_fuera('po_P1T27A', 'p1-pruebas', pg_temp.p1('dueno')::uuid);
+      v_e := 'entró';
+    exception when others then v_e := sqlstate; end;
+    begin
+      perform fn_stripe_payout_fuera('po_P1T27H', ' ', pg_temp.p1('dueno')::uuid);
+      v_e := v_e || ' · sin motivo entró';
+    exception when others then v_e := v_e || ' · sin motivo ' || sqlstate; end;
+    v_f := v_f || ' | asentado: ' || v_e;
+    v_obt := format('%s | manual, instantáneo, eur: %s | aviso «automático» %s || %s', v_a, array_to_string(v_b, ' '),
+                    (select count(*) from stripe_avisos a where a.clave like 'payout:po_P1T27_:revisar' and a.texto like '%deja los payouts en automático%'),
+                    v_f);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (27, 'sin composición espera; manual, instantáneo o en otra moneda, por revisar',
-    'esperando_composicion → asentado | manual, instantáneo, eur: revisar revisar revisar | aviso «automático» 3', v_obt,
-    v_obt = 'esperando_composicion → asentado | manual, instantáneo, eur: revisar revisar revisar | aviso «automático» 3');
+  insert into _pruebas values (27, 'sin composición espera; manual, instantáneo o en otra moneda, por revisar; lo de antes de p1 o ya en la bandeja, fuera',
+    'esperando_composicion → asentado | manual, instantáneo, eur: revisar revisar revisar | aviso «automático» 3 || antes de instalar: fuera, 0 asiento(s), 0 pago(s), aviso info | en la bandeja: revisar (ya está en la bandeja), aviso bad, cuadre 27 verde → ya está en el libro: fuera, 0 asiento(s), cuadre 27 verde, alarma 38 verde | asentado: MX008 · sin motivo 22023', v_obt,
+    v_obt = 'esperando_composicion → asentado | manual, instantáneo, eur: revisar revisar revisar | aviso «automático» 3 || antes de instalar: fuera, 0 asiento(s), 0 pago(s), aviso info | en la bandeja: revisar (ya está en la bandeja), aviso bad, cuadre 27 verde → ya está en el libro: fuera, 0 asiento(s), cuadre 27 verde, alarma 38 verde | asentado: MX008 · sin motivo 22023');
 end $$;
 
 -- 28. Un movimiento que la app no conoce (una reserva): por revisar con «a

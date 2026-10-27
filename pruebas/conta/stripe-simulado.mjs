@@ -29,7 +29,7 @@
      /__fee {monto, descripcion}   /__bt {tipo, monto, categoria?}
      /__payout {conciliacion:'completed'|'in_progress'} (junta lo disponible)
      /__payout_conciliar {po}   /__payout_fallar {po, codigo}
-     /__caer {veces}  (503)   /__sin_permiso {ruta, metodo?, rak} | {limpiar:true}
+     /__caer {veces}  (503)   /__sin_permiso {ruta, metodo?, rak, expand?} | {limpiar:true}
      /__no_entregado {evt | evts}   /__pagina {n}
      /__estado (las llamadas: método, ruta, Stripe-Version, Idempotency-Key,
                 si llevaba Bearer —nunca la llave—, y el cuerpo)   /__eventos
@@ -179,6 +179,12 @@ export function crearSimulador({ llave = process.env.STRIPE_SECRET_KEY || 'rk_te
     if (ruta === '/v1/payouts') {
       const desde = gte(q, 'created');
       return listar([...E.payouts.values()].reverse().filter((x) => desde === null || x.created >= desde).map(publico), q, ruta);
+    }
+    if (ruta === '/v1/balance') {
+      const disp = E.bts.filter((b) => !b._payout && b.status === 'available').reduce((t, b) => t + b.net, 0);
+      const pend = E.bts.filter((b) => !b._payout && b.status !== 'available').reduce((t, b) => t + b.net, 0);
+      return { estado: 200, cuerpo: { object: 'balance', livemode: false, available: [{ amount: disp, currency: 'usd' }],
+                                      pending: [{ amount: pend, currency: 'usd' }] } };
     }
     if (ruta === '/v1/balance_transactions') {
       const exp = expandir(q).includes('data.source');
@@ -372,8 +378,9 @@ export function crearSimulador({ llave = process.env.STRIPE_SECRET_KEY || 'rk_te
       return { po: id, eventos: [evento('payout.failed', po)] };
     },
     '/__caer'({ veces = 1 }) { E.caer = Number(veces); return { caer: E.caer }; },
-    '/__sin_permiso'({ ruta, metodo, rak, limpiar }) {
-      if (limpiar) E.sinPermiso = []; else E.sinPermiso.push({ ruta, metodo: metodo || null, rak });
+    '/__sin_permiso'({ ruta, metodo, rak, expand, limpiar }) {
+      // (expand: solo cuando la petición expande eso, p. ej. data.source = «Balance transaction sources»)
+      if (limpiar) E.sinPermiso = []; else E.sinPermiso.push({ ruta, metodo: metodo || null, rak, expand: expand || null });
       return { reglas: E.sinPermiso.length };
     },
     '/__no_entregado'({ evt, evts }) {
@@ -410,7 +417,8 @@ export function crearSimulador({ llave = process.env.STRIPE_SECRET_KEY || 'rk_te
       if (E.caer > 0) { E.caer--; return enviar(503, { error: { type: 'api_error', message: 'Stripe simulado: caído a propósito.' } }); }
       if (auth !== `Bearer ${llave}`) return enviar(401, { error: { type: 'invalid_request_error', message: `Invalid API Key provided: ${enmascarada}` } });
       if (version !== VERSION) return enviar(400, { error: { type: 'invalid_request_error', message: `Invalid Stripe API version: ${version}` } });
-      const regla = E.sinPermiso.find((r) => url.pathname.startsWith(r.ruta) && (!r.metodo || r.metodo === metodo));
+      const regla = E.sinPermiso.find((r) => url.pathname.startsWith(r.ruta) && (!r.metodo || r.metodo === metodo)
+        && (!r.expand || expandir(q).includes(r.expand)));
       if (regla) {
         return enviar(403, { error: { type: 'invalid_request_error', message: `The provided key '${enmascarada}' does not have the required permissions for this endpoint on account 'acct_SIM0001'. Having the '${regla.rak}' permission would allow this request to continue.` } });
       }

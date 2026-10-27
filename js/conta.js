@@ -713,7 +713,7 @@
     const ps = Array.isArray(r && r.permisos) ? r.permisos : [];
     const malos = ps.filter(x => !x.ok);
     return `<p class="ct-aviso ${malos.length ? "warn" : "ok"}">${malos.length ? `La llave${r.restringida === false ? " no es restringida y" : ""} no llega a ${plural(malos.length, "recurso", "recursos")}.` : `La llave contesta en todo lo que la app usa${r && r.modo ? ` (modo ${esc(r.modo === "real" ? "real" : "de prueba")})` : ""}.`}</p>
-      <ul class="ct-permisos">${ps.map(x => `<li class="${x.ok ? "ok" : "bad"}"><span aria-hidden="true">${x.ok ? "✓" : "✗"}</span> ${esc(x.recurso)}${x.ok ? "" : ` — Falta el permiso <span class="ct-num">${esc(x.rak || "?")}</span> en la llave restringida: edítala en Stripe → Developers → API keys.`}</li>`).join("")}</ul>`;
+      <ul class="ct-permisos">${ps.map(x => `<li class="${x.ok ? "ok" : "bad"}"><span aria-hidden="true">${x.ok ? "✓" : "✗"}</span> ${esc(x.recurso)}${x.ok ? "" : ` — Falta el permiso ${x.panel ? `«${esc(x.panel)}» (<span class="ct-num">${esc(x.rak || "?")}</span>)` : `<span class="ct-num">${esc(x.rak || "?")}</span>`} en la llave restringida: edítala en Stripe → Developers → API keys.`}</li>`).join("")}</ul>`;
   }
   function wireStripe() {
     const card = $("ct-stripe"); if (!card) return;
@@ -771,13 +771,21 @@
   const depositoStripe = m => !!(S.stripe && S.stripe.estado) && num(m.monto) > 0 && /\bSTRIPE\b/i.test(`${m.descripcion || ""} ${m.memo || ""}`) &&
     String(m.fecha || "") >= String(S.stripe.estado.desde || "").slice(0, 10);
   const opcionDeCobro = o => !!o && (o.llamar === "fn_banco_cobrar" || (o.llamar === "fn_banco_casar_con" && !!(o.args && o.args.p_con && o.args.p_con.cobro)));
-  // Deja en m.opciones la misma lista que pinta y que usa el clic: sin las que nombran la 1020 o la 1140, y en un depósito
-  // de Stripe sin las de cobro; m._stripe = los depósitos de Stripe asentados con ese monto y su llegada a ±5 días.
+  // Deja en m.opciones la misma lista que pinta y que usa el clic: sin las que nombran la 1020 o la 1140. Un depósito de
+  // Stripe (desde que están los cobros en línea) NO se resuelve aquí: sin ninguna opción de c6 (cobro, préstamo,
+  // aportación, transferencia…), sin «Otra cosa…» y con el texto de p1; solo «Es el depósito de Stripe del …: casarlo»
+  // (m._stripe = los depósitos asentados con ese monto y su llegada a ±5 días). Uno que Edgar sacó de la app («Ya está
+  // en el libro», m._stripeFuera) se lleva aquí como antes.
+  const TEXTO_DEP = "Dinero que llega de Stripe: los cobros en línea de tus clientes, menos sus comisiones.";
   function prepararMov(m) {
-    const dep = depositoStripe(m);
+    let dep = depositoStripe(m);
+    const cerca = q => cent(q.monto) === cent(m.monto) && Math.abs(diasEntre(q.llegada, m.fecha)) <= 5;
+    m._stripeFuera = dep ? (S.stripePayouts || []).find(q => q.estado_pantalla === "fuera" && cerca(q)) || null : null;
+    if (m._stripeFuera) dep = false;
     m.opciones = (Array.isArray(m.opciones) ? m.opciones : []).filter(o => !(o && o.args && esStripe(o.args.p_cuenta)) && !(dep && opcionDeCobro(o)));
+    if (dep) { m.opciones = []; m.texto = TEXTO_DEP; }
     m._esStripe = dep;
-    m._stripe = dep ? (S.stripePayouts || []).filter(q => cent(q.monto) === cent(m.monto) && Math.abs(diasEntre(q.llegada, m.fecha)) <= 5) : [];
+    m._stripe = dep ? (S.stripePayouts || []).filter(q => q.estado_pantalla === "asentado" && cerca(q)) : [];
     return m;
   }
 
@@ -839,7 +847,7 @@
         <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-cobros-barrer"${mfa ? "" : " disabled"}>Revisar con Stripe ahora</button></div>
         <div class="ct-stripe-res"></div>
       </section>
-      ${alarmas.length ? `<section class="ct-card ct-alarmas" id="ct-cobros-alarmas" role="status"><h2>Hay que mirar esto:</h2><ul class="ct-datos">${alarmas.map(a => `<li><b>${esc(String(a.control || "").replace(/^stripe: /, ""))}</b>${a.filas != null ? ` (${esc(a.filas)})` : ""}${a.detalle ? `: ${esc(a.detalle)}` : ""}</li>`).join("")}</ul></section>` : ""}
+      ${alarmas.length ? `<section class="ct-card ct-alarmas" id="ct-cobros-alarmas" role="status"><h2>Hay que mirar esto:</h2><ul class="ct-datos">${alarmas.map(a => `<li><b>${esc(ALARMA_STRIPE[a.orden] || String(a.control || "").replace(/^stripe: /, ""))}</b>${a.detalle ? `<small>${a.filas != null ? `${esc(a.filas)}: ` : ""}${esc(a.detalle)}</small>` : ""}</li>`).join("")}</ul></section>` : ""}
       ${(avisos || []).length ? `<section class="ct-card" id="ct-cobros-avisos"><h2>Avisos de Stripe</h2><ul class="ct-avisos-stripe">${avisos.map(avisoHTML).join("")}</ul></section>` : ""}
       <section class="ct-card" id="ct-cobros-facturas"><h2>Facturas por cobrar</h2>
         <p class="ct-nota">El saldo sale del libro (lo que la factura debe), no de la casilla «pagada». El enlace es de un solo uso y por ese saldo: el cliente elige cuenta de banco (ACH) o tarjeta.</p>
@@ -856,6 +864,19 @@
     wireCobros();
   }
 
+  // Las alarmas en llano: lo que pasa y qué hacer (el control dice la condición que se cumple cuando todo va bien)
+  const ALARMA_STRIPE = {
+    22: "Cobros de Stripe que llevan días sin depositarse en Chase: mira en Stripe → Balances si hay un depósito retenido.",
+    24: "Stripe dice que depositó y el depósito no está en el libro: toca «Revisar con Stripe ahora».",
+    26: "Depósitos de Stripe en el libro que no casan con Chase: mira si Plaid trajo el depósito «STRIPE» o cásalo abajo.",
+    29: "Avisos de Stripe sin procesar: toca «Revisar con Stripe ahora».",
+    30: "Pagos que no sé a qué factura van: «Decir a qué va» en cada uno, abajo.",
+    31: "Pagos por cuenta de banco que tardan demasiado: míralos en Stripe.",
+    32: "La revisión automática no corre desde hace más de 2 horas: mira que STRIPE_RUTINA_SECRETO sea el que enseñó p1-stripe.sql y que la función «stripe» esté desplegada.",
+    35: "Enlaces vivos que ya no sirven (factura anulada, o ya debe menos): la revisión automática los desactiva; si no, desactívalos tú.",
+    38: "Depósitos de Stripe que esperan o están por revisar desde hace días: ábrelos abajo.",
+    39: "La función tiene una llave de prueba (rk_test_): no se registra nada. Pon la real (rk_live_) en STRIPE_SECRET_KEY."
+  };
   function avisoHTML(a) {
     return `<li class="ct-aviso-stripe ${esc(a.nivel)}" data-aviso="${esc(a.id)}">
       <div class="ct-aviso-txt"><span>${esc(a.texto)}</span><small>${fechaHora(a.creado_el)}${Number(a.veces) > 1 ? ` · ${esc(a.veces)} veces, la última ${fechaHora(a.repetido_el)}` : ""}</small></div>
@@ -902,7 +923,8 @@
     devuelto: ["devuelto", "bad", () => "Se devolvió entero en Stripe (reembolso o disputa perdida): el cobro se devolvió en el libro y la factura vuelve a deber."],
     en_disputa: ["en disputa", "bad", x => `Stripe retiró el dinero y el cobro se devolvió en el libro. Responde en Stripe antes del ${fechaLarga(x.disputa_vence)}.${x.medio === "ach" ? " Las disputas por cuenta de banco no se pueden impugnar." : ""}`],
     fallido: ["falló", "bad", x => `${x.fallo || "El pago no se completó"}: no entró nada al libro.`],
-    revisar: ["por resolver", "bad", x => `${x.revisar || "No se sabe a qué factura va"}. Hasta que digas a qué va, el depósito que lo lleva espera.`]
+    revisar: ["por resolver", "bad", x => `${x.revisar || "No se sabe a qué factura va"}. Hasta que digas a qué va, el depósito que lo lleva espera.`],
+    fuera: ["fuera de la app", "cu", () => "Su depósito se sacó de la app («Ya está en el libro»): este pago no entra al libro por aquí."]
   };
   function pagoHTML(x, mfa) {
     const ep = ESTADO_PAGO[x.estado_pantalla] || [x.estado_pantalla || x.estado, ""];
@@ -929,8 +951,16 @@
 
   const ESTADO_PAYOUT = {
     en_camino: ["en camino a Chase", "cu"], esperando_composicion: ["esperando el detalle de Stripe", "warn"], esperando_cobros: ["espera: falta un cobro", "bad"],
-    asentado: ["en el libro; falta que llegue a Chase", "warn"], casado: ["casado con Chase", "ok"], fallido: ["no llegó (falló)", "bad"], revisar: ["por revisar", "bad"]
+    asentado: ["en el libro; falta que llegue a Chase", "warn"], casado: ["casado con Chase", "ok"], fallido: ["no llegó (falló)", "bad"], revisar: ["por revisar", "bad"],
+    fuera: ["fuera de la app", "cu"]
   };
+  // los movimientos del saldo de Stripe en llano (la base guarda el código)
+  const TIPO_BT = {
+    reserve_transaction: "Stripe retuvo (o soltó) una reserva", reserved_funds: "Stripe retuvo (o soltó) una reserva", adjustment: "un ajuste de Stripe",
+    tax_fee: "impuesto sobre las comisiones de Stripe", stripe_fee: "un cargo de Stripe", application_fee: "una comisión de una aplicación",
+    climate_order_purchase: "una contribución de Stripe Climate", topup: "dinero que se puso en el saldo de Stripe", transfer: "una transferencia de Stripe"
+  };
+  const tipoBT = t => TIPO_BT[t] || t || "un movimiento";
   const CLASE_LINEA = { pago: "cobro", vuelve: "vuelve de un depósito fallido", comision: "comisión", otro: "otro", propio: "el depósito" };
   function payoutHTML(x, mfa) {
     const ep = ESTADO_PAYOUT[x.estado_pantalla] || [x.estado_pantalla || x.estado, ""];
@@ -940,33 +970,41 @@
     const sinCuenta = x.estado !== "asentado" ? lineas.filter(l => l.clase === "otro" && !l.cuenta) : [];
     const asientos = [x.asiento_salida_num && `${esc(x.asiento_salida_num)} (sale de Stripe)`, x.asiento_llegada_num && `${esc(x.asiento_llegada_num)} (llega a Chase)`, x.asiento_vuelta_num && `${esc(x.asiento_vuelta_num)} (vuelve a Stripe)`].filter(Boolean);
     const mirar = ["en_camino", "esperando_composicion", "esperando_cobros", "revisar"].includes(x.estado);
+    // «Ya está en el libro»: solo sin asientos y mientras espera o está por revisar
+    const sacar = ["esperando_composicion", "esperando_cobros", "revisar"].includes(x.estado) && !asientos.length;
     const dis = mfa ? "" : " disabled";
     return `<article class="ct-cobro ct-payout ${esc(x.estado_pantalla || "")}" data-po="${esc(x.po)}">
       <div class="ct-cab"><h3>${fechaLarga(x.llegada)} · neto <span class="ct-num">${fmt(x.monto)}</span></h3>${pill(ep[0], ep[1])}${x.reversado ? pill("reversado a mano", "bad") : ""}</div>
-      ${x.bruto != null ? `<p class="ct-nota">${plural(Number(x.n_pagos || 0), "cobro", "cobros")} por <span class="ct-num">${fmt(x.bruto)}</span> − comisiones <span class="ct-num">${fmt(x.comisiones)}</span> = <span class="ct-num">${fmt(x.monto)}</span></p>` : `<p class="ct-nota">Stripe todavía no dio el detalle de este depósito.</p>`}
+      ${x.bruto != null ? `<p class="ct-nota">${plural(Number(x.n_pagos || 0), "cobro", "cobros")} por <span class="ct-num">${fmt(x.bruto)}</span> − comisiones <span class="ct-num">${fmt(x.comisiones)}</span> = <span class="ct-num">${fmt(x.monto)}</span></p>`
+        : lineas.length ? `<p class="ct-nota">Stripe ya dio el detalle de este depósito${x.estado === "esperando_cobros" ? "; falta un cobro que la app no tiene: lo pide sola" : ""}.</p>`
+        : x.estado === "fuera" ? "" : `<p class="ct-nota">Stripe todavía no dio el detalle de este depósito.</p>`}
+      ${x.estado === "fuera" ? `<p class="ct-nota">Fuera de la app${x.fuera_motivo ? ` (${esc(x.fuera_motivo)})` : ""}: no se asienta nada; su movimiento de Chase se lleva en la bandeja, como antes.</p>` : ""}
       ${asientos.length ? `<p class="ct-nota">Asientos ${asientos.join(" y ")}</p>` : ""}
       ${x.estado_pantalla === "casado" ? `<p class="ct-aviso ok">Casó con «${esc(x.movimiento_descripcion || "")}» del ${fechaLarga(x.movimiento_fecha)} · ${x.casado_automatico ? "casó solo" : `casó: ${esc(x.casado_regla || "a mano")}`}</p>` : ""}
-      ${x.estado_pantalla === "asentado" ? `<p class="ct-nota">${x.dias_sin_casar != null && Number(x.dias_sin_casar) > 0 ? `Lleva ${plural(Number(x.dias_sin_casar), "día", "días")} sin casar. ` : ""}${candidatos.length ? "Chase ya trajo un depósito que puede ser este:" : "Cuando Plaid traiga el depósito «STRIPE» de Chase, casa solo."}</p>` : ""}
+      ${x.estado_pantalla === "asentado" ? `<p class="ct-nota">${x.dias_sin_casar != null && Number(x.dias_sin_casar) > 0 ? `Lleva ${plural(Number(x.dias_sin_casar), "día", "días")} sin casar. ` : ""}${x.reversado ? "Alguien reversó su asiento a mano: toca «Volver a ponerlo» para que case con Chase." : candidatos.length ? "Chase ya trajo un depósito que puede ser este:" : "Cuando Plaid traiga el depósito «STRIPE» de Chase, casa solo."}</p>` : ""}
       ${x.revisar ? `<p class="ct-aviso bad">${esc(x.revisar)}</p>` : ""}
-      ${esperando.length ? `<ul class="ct-datos ct-esperando">${esperando.map(w => `<li>${w.pi ? `Cobro <span class="ct-num">${esc(w.pi)}</span>` : w.po ? `Depósito <span class="ct-num">${esc(w.po)}</span>` : w.txn ? `${esc(w.tipo || "movimiento")} <span class="ct-num">${fmt(w.monto)}</span>` : "Algo"}: ${esc(w.motivo || "")}</li>`).join("")}</ul>` : ""}
+      ${esperando.length ? `<ul class="ct-datos ct-esperando">${esperando.map(w => `<li>${w.pi ? `Cobro <span class="ct-num">${esc(w.pi)}</span>` : w.po ? `Depósito <span class="ct-num">${esc(w.po)}</span>` : w.txn ? `${esc(tipoBT(w.tipo))} <span class="ct-num">${fmt(w.monto)}</span>` : w.bandeja ? "El depósito de Chase" : "Algo"}: ${esc(w.motivo || "")}</li>`).join("")}</ul>` : ""}
+      ${sacar ? `<p class="ct-nota">Si el dinero de este depósito ya está en el libro (es de antes de instalar los cobros en línea, lo registraste en la bandeja o lo trae la apertura), sácalo de la app: «Ya está en el libro».</p>` : ""}
       ${x.estado === "fallido" ? `<p class="ct-nota">Stripe devolvió el dinero a tu saldo y lo manda con el siguiente depósito: revisa la cuenta de banco en Stripe.</p>` : ""}
       <div class="ct-acciones">
         ${candidatos.map(c => `<button type="button" class="accion" data-casar="${esc(c.id)}"${dis}>Casar con el depósito de Chase del ${fechaLarga(c.fecha)}</button>`).join("")}
-        ${sinCuenta.map(l => `<button type="button" class="accion" data-linea="${esc(l.txn)}"${dis}>A qué cuenta va: ${esc(l.tipo)} ${fmt(l.monto)}</button>`).join("")}
+        ${sinCuenta.map(l => `<button type="button" class="accion" data-linea="${esc(l.txn)}"${dis}>A qué cuenta va: ${esc(tipoBT(l.tipo))} ${fmt(l.monto)}</button>`).join("")}
+        ${sacar ? `<button type="button" class="accion secundaria" data-fuera${dis}>Ya está en el libro</button>` : ""}
         ${x.reversado ? `<button type="button" class="accion secundaria" data-rehacer${dis}>Volver a ponerlo</button>` : ""}
         ${mirar ? `<button type="button" class="accion secundaria chica" data-mirar${dis}>Volver a mirar en Stripe</button>` : ""}
       </div>
       ${lineas.length ? `<details class="ct-payout-det"><summary>El detalle de Stripe (${plural(lineas.length, "línea", "líneas")})</summary>
-        <ul class="ct-payout-lineas">${lineas.map(l => `<li><span class="ct-pl-que">${esc(CLASE_LINEA[l.clase] || l.clase)}${l.factura_num ? ` · #${esc(l.factura_num)}` : ""}${l.cuenta ? ` · a ${esc(l.cuenta)}` : ""}<small class="ct-num">${esc(l.tipo)} · ${esc(l.txn)}</small></span><span class="ct-pl-m ct-num">${fmt(l.monto)}${num(l.comision) ? `<small>comisión ${fmt(l.comision)}</small>` : ""}</span></li>`).join("")}</ul></details>` : ""}
+        <ul class="ct-payout-lineas">${lineas.map(l => `<li><span class="ct-pl-que">${esc(l.clase === "otro" ? tipoBT(l.tipo) : CLASE_LINEA[l.clase] || l.clase)}${l.factura_num ? ` · #${esc(l.factura_num)}` : ""}${l.cuenta ? ` · a ${esc(l.cuenta)}` : ""}<small class="ct-num">${esc(l.tipo)} · ${esc(l.txn)}</small></span><span class="ct-pl-m ct-num">${fmt(l.monto)}${num(l.comision) ? `<small>comisión ${fmt(l.comision)}</small>` : ""}</span></li>`).join("")}</ul></details>` : ""}
       <div class="ct-form" hidden></div>
       <div class="ct-stripe-res"></div>
     </article>`;
   }
 
   // las cuentas a las que puede ir dinero de Stripe «de fuera» o un movimiento que la app no conoce
-  // (la base lo vuelve a comprobar con fn_stripe_cuenta_libre): ingreso, gasto, costo u otro, o pasivo; nunca banco, tarjeta, ni las de Stripe
-  const cuentasLibres = () => (S.cuentas || []).filter(c => ["ingreso", "otro_ingreso", "gasto", "otro_gasto", "costo", "pasivo"].includes(c.tipo) && c.regla_obra !== "obligatoria" &&
-    !esStripe(c.codigo) && !(S.saldos || []).some(s => s.cuenta === c.codigo));
+  // (la base lo vuelve a comprobar con fn_stripe_cuenta_libre): ingreso, gasto, costo u otro, pasivo, o un activo que no es
+  // un banco (una reserva de Stripe); nunca banco, tarjeta, cobrar a clientes, ni las de Stripe
+  const cuentasLibres = () => (S.cuentas || []).filter(c => ["ingreso", "otro_ingreso", "gasto", "otro_gasto", "costo", "pasivo", "activo"].includes(c.tipo) && c.regla_obra !== "obligatoria" &&
+    !esStripe(c.codigo) && !(S.saldos || []).some(s => s.cuenta === c.codigo) && !(c.tipo === "activo" && (/^10/.test(String(c.codigo)) || ["1110", "1120"].includes(String(c.codigo)))));
   const opcionesCuentas = () => cuentasLibres().map(c => `<option value="${esc(c.codigo)}">${esc(c.codigo)} · ${esc(c.nombre)}</option>`).join("");
 
   function wireCobros() {
@@ -998,10 +1036,14 @@
       card.querySelectorAll("[data-linea]").forEach(b => b.addEventListener("click", () => {
         const l = (x.lineas || []).find(y => y.txn === b.dataset.linea) || { txn: b.dataset.linea };
         const ops = opcionesCuentas();
-        montarForma(card, formaHTML(`¿A qué cuenta va ${esc(l.tipo || "este movimiento")} de ${fmt(l.monto)} (${esc(l.txn)})? Stripe lo trae en el depósito y la app no lo conoce.`,
+        montarForma(card, formaHTML(`¿A qué cuenta va ${esc(tipoBT(l.tipo))} de ${fmt(l.monto)} (${esc(l.tipo || "")} · ${esc(l.txn)})? Stripe lo trae en el depósito y la app no lo conoce.`,
           `<label class="ct-campo">Cuenta<select name="cuenta" required><option value="">Elige la cuenta…</option>${ops}</select></label>${campoHTML("motivo", "Motivo (queda escrito)", "textarea", "required")}`, "Guardar"),
           v => accionStripe(card, { accion: "resolver_linea", po: x.po, txn: l.txn, cuenta: v.cuenta, motivo: v.motivo }, () => `Va a ${v.cuenta}: el depósito se vuelve a mirar`));
       }));
+      const fu = card.querySelector("[data-fuera]"); if (fu) fu.addEventListener("click", () => montarForma(card,
+        formaHTML(`Sacar de la app el depósito ${esc(x.po)} de ${fmt(x.monto)}: su dinero ya está en el libro (de antes de instalar los cobros en línea, la bandeja o la apertura). No se asienta nada y su movimiento de Chase se lleva en la bandeja.`,
+          campoHTML("motivo", "Por qué ya está en el libro (queda escrito)", "textarea", "required"), "Ya está en el libro"),
+        v => accionStripe(card, { accion: "payout_fuera", po: x.po, motivo: v.motivo }, () => `Depósito ${x.po} fuera de la app: llévalo en la bandeja`)));
       const rh = card.querySelector("[data-rehacer]"); if (rh) rh.addEventListener("click", () => accionStripe(card, { accion: "reprocesar", po: x.po, rehacer: true }, () => `Depósito ${x.po} puesto otra vez en el libro`));
       const mi = card.querySelector("[data-mirar]"); if (mi) mi.addEventListener("click", () => accionStripe(card, { accion: "reprocesar", po: x.po }, () => "Vuelto a mirar en Stripe"));
     });
@@ -1041,10 +1083,11 @@
     const obras = S.proyectos || [];
     const ops = opcionesCuentas();
     montarForma(card, formaHTML(`¿A qué va el pago ${esc(x.pi)} de ${fmt(x.monto)}? Queda escrito con tu motivo.`,
-      `<label class="ct-campo">¿A qué va?<select name="que" required><option value="">Elige…</option><option value="factura">A la factura…</option><option value="obra">Anticipo de la obra…</option><option value="fuera">Es de antes de la app o ya está en el libro</option></select></label>
+      `<label class="ct-campo">¿A qué va?<select name="que" required><option value="">Elige…</option><option value="factura">A la factura…</option><option value="obra">Anticipo de la obra…</option><option value="fuera">Va a otra cuenta (no es de una factura)</option></select></label>
        <label class="ct-campo" data-si="factura" hidden>Factura<select name="factura_id"><option value="">Elige la factura…</option>${facts.map(f => `<option value="${esc(f.factura_id)}">#${esc(f.num || f.factura_id)}${f.obra ? ` · ${esc(f.obra)}` : ""} · debe ${fmt(num(f.saldo_cxc) + num(f.saldo_retencion))}</option>`).join("")}</select></label>
        <label class="ct-campo" data-si="obra" hidden>Obra<select name="proyecto_id"><option value="">Elige la obra…</option>${obras.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join("")}</select></label>
-       <label class="ct-campo" data-si="fuera" hidden>Cuenta (ingreso, gasto, costo o pasivo)<select name="cuenta"><option value="">Elige la cuenta…</option>${ops}</select></label>
+       <label class="ct-campo" data-si="fuera" hidden>Cuenta (ingreso, gasto, costo, pasivo o un activo que no es banco)<select name="cuenta"><option value="">Elige la cuenta…</option>${ops}</select></label>
+       <p class="ct-nota" data-si="fuera" hidden>Si el dinero ya está en el libro (lo registraste en la bandeja, o lo trae la apertura), no lo pongas en otra cuenta: estaría dos veces. Sácalo con «Ya está en el libro» en su depósito, abajo.</p>
        ${campoHTML("motivo", "Motivo (queda escrito)", "textarea", "required")}`, "Guardar"), v => {
       const falta = { factura: ["factura_id", "la factura"], obra: ["proyecto_id", "la obra"], fuera: ["cuenta", "la cuenta"] }[v.que];
       if (falta && !v[falta[0]]) { mostrarErrorForma(card, `Falta ${falta[1]}.`); return; }
@@ -1083,7 +1126,8 @@
         saldos(), cuentas(), proyectos(), leerStripe(), leerMfa()
       ]);
       // los depósitos de Stripe ya en el libro y sin casar: el botón «Es el depósito de Stripe del …» (si no contesta, sin botón)
-      S.stripePayouts = S.stripe ? await DB._leer("v_stripe_payouts?select=po,estado_pantalla,monto,llegada&estado_pantalla=eq.asentado").catch(e => { if (esFalloDeRed(e)) throw e; return []; }) : [];
+      // (y los que Edgar sacó de la app: esos se llevan aquí como antes)
+      S.stripePayouts = S.stripe ? await DB._leer("v_stripe_payouts?select=po,estado_pantalla,monto,llegada,fuera_motivo&estado_pantalla=in.(asentado,fuera)").catch(e => { if (esFalloDeRed(e)) throw e; return []; }) : [];
       const hoy = hoyMiami();
       await controlar(["v_banco_bandeja"], { v_banco_bandeja: b.filter(f => String(f.fecha) <= hoy).length });
       if (!S.cuentas.length) throw errorControl("El plan de cuentas no se pudo leer", [{ vista: "cuentas", filas: 0, esperadas: "1 o más", detalle: "sin el plan no se puede clasificar nada" }]);
@@ -1112,7 +1156,7 @@
     main().querySelectorAll(".ct-mov").forEach(card => {
       const m = filas.find(f => f.movimiento_id === card.dataset.id);
       card.querySelectorAll("[data-op]").forEach(b => b.addEventListener("click", () => abrirOpcion(card, m, (m.opciones || [])[Number(b.dataset.op)])));
-      card.querySelector("[data-otra]").addEventListener("click", () => abrirOtra(card, m));
+      const ot = card.querySelector("[data-otra]"); if (ot) ot.addEventListener("click", () => abrirOtra(card, m));
       card.querySelectorAll("[data-stripe-po]").forEach(b => b.addEventListener("click", () => accionStripe(card, { accion: "casar_payout", po: b.dataset.stripePo, movimiento_id: m.movimiento_id },
         r => r && r.casado === false ? "No casó: sigue en la bandeja" : `Casado con el depósito de Stripe ${b.dataset.stripePo}`)));
     });
@@ -1129,10 +1173,11 @@
       </div>
       <div class="ct-meta"><span>${fechaLarga(m.fecha)}</span><span>${esc(m.cuenta_nombre)}</span>${m.cheque ? `<span>cheque ${esc(m.cheque)}</span>` : ""}${m.tipo_banco ? `<span>${esc(m.tipo_banco)}</span>` : ""}<span>hace ${plural(m.dias, "día", "días")}</span>${pill(motivoLlano(m.motivo), m.motivo === "posible_duplicado" || m.motivo === "quitada" ? "warn" : "")}${m.alarma ? pill("más de 30 días", "bad") : ""}${obra ? pill("obra: " + obra) : ""}</div>
       <p class="ct-texto">${esc(m.texto)}</p>
-      ${m._esStripe ? `<p class="ct-aviso warn ct-aviso-dep">Depósito de Stripe: casa solo con su depósito en «Cobros en línea». No lo registres aquí como cobro: entraría dos veces.</p>` : ""}
+      ${m._esStripe ? `<p class="ct-aviso warn ct-aviso-dep">Depósito de Stripe: casa solo con su depósito en «Cobros en línea» (cuando Stripe mande su detalle${(m._stripe || []).length ? ", o con «Es el depósito…» aquí abajo" : ""}). No lo clasifiques ni lo registres aquí: el dinero entraría dos veces. Si es de antes de instalar los cobros en línea, sácalo allí con «Ya está en el libro» y vuelve aquí.</p>` : ""}
+      ${m._stripeFuera ? `<p class="ct-aviso ct-aviso-dep">Depósito de Stripe de fuera de la app (${esc(m._stripeFuera.fuera_motivo || "ya está en el libro")}): regístralo aquí como siempre.</p>` : ""}
       ${m.posible_duplicado_de ? `<p class="ct-aviso warn">Se parece al del ${fecha(m.duplicado_fecha)} «${esc(m.duplicado_descripcion)}»${m.duplicado_origen ? ` (entró por ${esc(m.duplicado_origen)})` : ""}.</p>` : ""}
       <div class="ct-acciones">${(m._stripe || []).map(q => `<button type="button" class="accion" data-stripe-po="${esc(q.po)}">Es el depósito de Stripe del ${fechaLarga(q.llegada)}: casarlo</button>`).join("")}${ops.map((o, i) => `<button type="button" class="accion${i || (m._stripe || []).length ? " secundaria" : ""}" data-op="${i}">${esc(o.texto)}</button>`).join("")}
-        <button type="button" class="accion secundaria ct-otra" data-otra>Otra cosa…</button></div>
+        ${m._esStripe ? "" : `<button type="button" class="accion secundaria ct-otra" data-otra>Otra cosa…</button>`}</div>
       <div class="ct-form" hidden></div>
       ${m._esStripe ? `<div class="ct-stripe-res"></div>` : ""}
     </article>`;
