@@ -141,6 +141,10 @@
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const sinMontos = t => (usuario && usuario.finanzas)
     ? t : String(t ?? "").replace(/\$\s?[\d][\d,.]*/g, "$•••");
+  // Una hora que no es de reloj («Por confirmar», «Todo el día», «8:00 - 10:00 AM», «Después de las
+  // 2 PM») no cabe en una línea en la columna de la hora del teléfono: se parte en dos en vez de
+  // montarse sobre el título (28-oct). Las de reloj («8:00 AM», «10:30 AM», «14:00») siguen igual.
+  const horaSinReloj = h => !!h && !/^\s*\d{1,2}(:\d{2}){0,2}\s*([AaPp]\.?\s?[Mm]\.?)?\s*$/.test(h);
   const facturasPendientes = p => (p.facturas || []).filter(f => !f.pagada);
   // Lo que de verdad falta de una factura: el monto menos lo ya abonado (P07,
   // 24-sep). Antes «Facturado sin pagar» sumaba el monto entero aunque el
@@ -1322,7 +1326,7 @@ function esFalloDeRed(err) {
       if (!lista.length && k > 1) return "";
       const cuerpo = lista.length ? lista.map(e => `
         <div class="agenda-ev${e.alerta ? " alerta" : ""}${e.proyecto ? " abre" : ""}" ${e.proyecto ? `data-proy="${esc(e.proyecto)}"` : ""}>
-          <span class="agenda-hora">${esc(e.hora || "—")}</span>
+          <span class="agenda-hora${horaSinReloj(e.hora) ? " sin-reloj" : ""}">${esc(e.hora || "—")}</span>
           <span class="agenda-que">${esc(sinMontos(e.titulo))}</span>
           <span class="agenda-quien">${(e.asignados || []).length ? esc(e.asignados.map(n => n.split(" ")[0]).join(" + ")) : ""}${e.proyecto ? `${(e.asignados || []).length ? " · " : ""}${esc(nombreProyecto(e.proyecto))}` : ""}</span>
           ${k < 2 ? `<span class="agenda-botones">${enlaceMapa(e.ubicacion || ((proyectos().find(x => x.id === e.proyecto) || {}).direccion))}${k === 0 && e.proyecto ? `<button type="button" class="btn-ir btn-foto-rapida" data-proy="${esc(e.proyecto)}" title="Tomar una foto de esta obra">${ico("camara")}Foto</button>` : ""}</span>` : ""}
@@ -2567,10 +2571,21 @@ function esFalloDeRed(err) {
     const p = proySel ? proyectoPorId(proySel) : null;
     $titulo.textContent = p ? nombreVis(p.nombre) : "Proyectos";
 
+    // ---- «Todos los proyectos», encima de la fila y siempre a la vista ----
+    // Al final de la fila, en el teléfono había que correr todas las obras para llegar (Edgar, 28-oct)
+    let barraTodos = $("proy-todos-barra");
+    if (!barraTodos) {
+      barraTodos = document.createElement("div");
+      barraTodos.id = "proy-todos-barra";
+      barraTodos.className = "proy-todos-barra";
+      $("proy-chips").before(barraTodos);
+    }
+    barraTodos.innerHTML = `
+      <button type="button" class="chipb chipb-todos" id="proy-todos"><span>Todos los proyectos</span> <span aria-hidden="true">›</span></button>`;
+
     // ---- La fila de chips ----
     $("proy-chips").innerHTML = obras.map(o => `
-      <button type="button" class="chipb${o.id === proySel ? " sel" : ""}" data-obra="${esc(o.id)}" aria-pressed="${o.id === proySel}"><span data-no-i18n>${esc(obraCorta(nombreVis(o.nombre)))}</span></button>`).join("") + `
-      <button type="button" class="chipb chipb-todos" id="proy-todos"><span>Todos los proyectos</span> <span aria-hidden="true">›</span></button>`;
+      <button type="button" class="chipb${o.id === proySel ? " sel" : ""}" data-obra="${esc(o.id)}" aria-pressed="${o.id === proySel}"><span data-no-i18n>${esc(obraCorta(nombreVis(o.nombre)))}</span></button>`).join("");
     $("proy-chips").querySelectorAll(".chipb[data-obra]").forEach(b => b.addEventListener("click", () => {
       proySel = b.dataset.obra;
       guardarProySel(proySel);
@@ -14303,7 +14318,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       ? evsDia.map(e => {
           const p = e.proyecto ? proyectos().find(x => x.id === e.proyecto) : null;
           return `<div class="agenda-item${e.alerta ? " alerta" : ""}${e.estadoEv === "cancelado" ? " ev-cancelado" : ""}">
-              <span class="agenda-hora">${esc(e.hora || "")}</span>
+              <span class="agenda-hora${horaSinReloj(e.hora) ? " sin-reloj" : ""}">${esc(e.hora || "")}</span>
               <span class="agenda-info">
                 <span class="agenda-titulo"${e.estadoEv === "cancelado" ? ' style="text-decoration:line-through;opacity:.6"' : ""}>${esc(sinMontos(e.titulo))}${e.estadoEv === "hecho" ? " ✓" : ""}${e.estadoEv === "cancelado" ? " (cancelado)" : ""}</span>
                 ${p ? `<span class="agenda-lugar">${ico("llave")} ${esc(nombreVis(p.nombre))}</span>` : ""}
