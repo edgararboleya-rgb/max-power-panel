@@ -4195,14 +4195,19 @@ body:has(#toast:not([hidden])) .fab, body:has(#sin-senal:not([hidden])) .fab { d
    En el iPad (riel de 88 px) los subtítulos no se ven: quedan los tres títulos. */
 .lateral .lat-extra { display: none; }
 @media (min-width: 1024px) {
-  .lateral { overflow-y: auto; }
+  /* La lista (4 títulos y 15 subtítulos) es más alta que una pantalla de 900 px: desplaza, con la barra fina
+     y un desvanecido pegado al borde de abajo (::after) que avisa de que sigue; al llegar al final el
+     desvanecido cae sobre el margen y «Salir» se ve entero */
+  .lateral { overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--cian-32) transparent; padding-bottom: .4rem; }
+  .lateral::after { content: ""; position: sticky; bottom: 0; flex: none; height: 28px; background: linear-gradient(180deg, transparent, var(--night)); pointer-events: none; }
   .lateral .lat-extra { display: flex; }
-  .lat-item.lat-sub span:first-of-type { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .lat-item.lat-sub { min-height: 44px; padding-left: 30px; font-size: var(--fs-4); font-weight: 600; color: var(--night-ink-2); position: relative; }
+  /* «Conexiones y seguridad» no cabe en una línea de 256 px: envuelve en vez de cortarse con «…» */
+  .lat-item.lat-sub span:first-of-type { min-width: 0; overflow-wrap: anywhere; }
+  .lat-item.lat-sub { min-height: 38px; padding-top: .4rem; padding-bottom: .4rem; padding-left: 30px; font-size: var(--fs-4); font-weight: 600; color: var(--night-ink-2); position: relative; }
   .lat-item.lat-sub svg { width: 20px; height: 20px; flex: none; color: var(--cu-light); filter: none; }
   .lat-item.lat-sub.activo, .lat-item.lat-sub.activo:hover { color: var(--mp-cyan); font-weight: 800; }
   .lat-item.lat-sub.activo svg { color: var(--mp-cyan); }
-  .lat-item:not(.lat-sub) { margin-top: 10px; }
+  .lat-item:not(.lat-sub) { margin-top: 8px; }
   .lat-item:not(.lat-sub):first-child { margin-top: 0; }
   .lat-item .nav-badge { position: static; margin-left: auto; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px;
     background: var(--mp-danger-3); color: var(--mp-white); font-size: var(--fs-1); font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }

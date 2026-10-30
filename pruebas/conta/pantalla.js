@@ -572,7 +572,8 @@ const desde = (n) => llamadas.slice(n);
 const esperarLlamada = async (p, n, fn) => { for (let i = 0; i < 60 && !desde(n).some(l => l.fn === fn); i++) await p.waitForTimeout(100); };
 const FOTOS = process.argv.includes('--fotos') ? (process.env.FOTOS_DIR || path.join(require('os').tmpdir(), 'mxp-pantalla-fotos')) : null;
 if (FOTOS) fs.mkdirSync(FOTOS, { recursive: true });
-const foto = async (p, nombre) => { if (FOTOS) await p.screenshot({ path: path.join(FOTOS, nombre + '.png'), fullPage: true }); };
+// animations: 'disabled' porque el fullPage encoge el viewport un instante, la media query del lateral cambia y la transición de .15 s salía a medias en la imagen
+const foto = async (p, nombre) => { if (FOTOS) await p.screenshot({ path: path.join(FOTOS, nombre + '.png'), fullPage: true, animations: 'disabled' }); };
 const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' ');
 const PAGS = ['resumen', 'bancos', 'bandeja', 'conciliar', 'movimientos', 'estados', 'cobros', 'conexiones'];
 // cambiar de página por su pestaña: en la computadora (≥ 1024 px) las pestañas están escondidas (las enseña el lateral de app.js), así que el clic es del DOM
@@ -626,6 +627,14 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   ok('Al entrar, la vista de la contabilidad se ve, la página es «Resumen» (la portada) y la pestaña «resumen» está marcada', await p.locator('#vista-conta').isVisible() && (await p.locator('#titulo-vista').textContent()).trim() === 'Resumen' && (await p.locator('.ct-tab[data-pag="resumen"][aria-current="page"]').count()) === 1, await p.locator('#titulo-vista').textContent());
   const pags = await p.evaluate(() => window.MXP_CONTA.paginas().map(x => [x.k, x.nombre, /^<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"/.test(x.svg) && /<\/svg>$/.test(x.svg)]));
   ok('MXP_CONTA.paginas() da las 8 páginas en su orden, con su nombre y un svg del estilo del menú', JSON.stringify(pags.map(x => x[0])) === JSON.stringify(PAGS) && pags.every(x => x[2]) && pags.map(x => x[1]).join('|') === 'Resumen|Bancos y tarjetas|Bandeja|Conciliar|Movimientos|Estados financieros|Cobros en línea|Conexiones y seguridad', JSON.stringify(pags));
+  ok('La página no repite el título que ya pone la barra de la app: la cabecera trae la línea de cifras y, como aria-label, el nombre', (await p.locator('.ct-pag-h').count()) === 0 && (await p.locator('.ct-pag-cab').getAttribute('aria-label')) === 'Resumen' && (await p.locator('.ct-pag-sub').count()) === 1);
+  {
+    // la lista de respaldo de app.js (por si conta.js no cargó) lleva los mismos trazos que ICONOS de conta.js: el lateral y las pestañas nunca enseñan iconos distintos para la misma página
+    const appJs = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8'), contaJs = fs.readFileSync(path.join(ROOT, 'js', 'conta.js'), 'utf8');
+    const fijos = Object.fromEntries([...appJs.matchAll(/\{ k: "(\w+)", nombre: "[^"]+", svg: SVG_MENU\('([^']*)'\) \}/g)].map(m => [m[1], m[2]]));
+    const iconos = Object.fromEntries([...contaJs.matchAll(/^\s+(\w+): svgMenu\('([^']*)'\),?$/gm)].map(m => [m[1], m[2]]));
+    ok('La lista de respaldo CONTA_PAGINAS_FIJAS de app.js trae los mismos 8 trazos que ICONOS de conta.js', Object.keys(fijos).length === 8 && PAGS.every(k => fijos[k] && fijos[k] === iconos[k]), PAGS.filter(k => fijos[k] !== iconos[k]).join(','));
+  }
   ok('En la computadora (1280 px) las pestañas de arriba van escondidas (las enseña el lateral), pero siguen en el DOM con sus 8 páginas', (await p.locator('.ct-tabs').evaluate(e => getComputedStyle(e).display)) === 'none' && (await p.locator('.ct-tab').count()) === 8 && JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS));
   await espiar(p);
   const ctrlR0 = desde(n).find(l => l.fn === 'fn_banco_control');
@@ -666,6 +675,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   ok('La Gold dice su deuda en libros ($14,624.26) y la del banco ($14,675.12 al 8 oct), con «3 en la bandeja» y las acciones Bandeja / Conciliar / Movimientos', /\$14,624\.26/.test(await texto(p, '.ct-cuenta[data-cuenta="2100-2013"] .ct-val')) && /\$14,675\.12/.test(await texto(p, '.ct-cuenta[data-cuenta="2100-2013"] .ct-val')) && /8 oct 2026/.test(await texto(p, '.ct-cuenta[data-cuenta="2100-2013"]')) &&
     /3 en la bandeja/.test(await texto(p, '.ct-cuenta[data-cuenta="2100-2013"] .ct-cab')) && JSON.stringify(await p.locator('.ct-cuenta[data-cuenta="2100-2013"] [data-ir]').evaluateAll(bs => bs.map(b => b.dataset.ir))) === '["bandeja","conciliar","movimientos"]');
   ok('El contador de la bandeja dice 3', (await p.locator('#ct-n-bandeja').textContent()).trim() === '3');
+  ok('…y el subtítulo «Bandeja» del lateral lleva el mismo 3 (en la computadora las pestañas van escondidas)', (await p.locator('#lateral [data-lat="conta-bandeja"] #lat-conta-badge').textContent()).trim() === '3' && await p.locator('#lat-conta-badge').isVisible());
   ok('El importador general va plegado detrás de «Importar un estado de cuenta»', (await p.locator('#ct-importar').isHidden()) && (await p.locator('#ct-imp-abrir').getAttribute('aria-expanded')) === 'false');
   await foto(p, '1-bancos');
 
@@ -716,6 +726,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   // desplegar una fila: solo una a la vez
   await cardB.locator('.ct-mov-fila').click(); await p.waitForTimeout(150);
   ok('Tocar la fila la despliega (el texto de la base y sus botones a la vista) y es la única desplegada', (await cardB.locator('.ct-mov-fila').getAttribute('aria-expanded')) === 'true' && await cardB.locator('.ct-mov-det').isVisible() && await cardB.locator('[data-op="0"]').isVisible() && (await p.locator('.ct-mov.abierta').count()) === 1 && /Puede ser una partida en tránsito/.test(await cardB.locator('.ct-texto').textContent()));
+  ok('Desplegada, la descripción envuelve y se lee entera (plegada va en una línea con «…»); la fila lleva la descripción como title', (await cardB.locator('.ct-f-desc b').evaluate(e => getComputedStyle(e).whiteSpace)) === 'normal' && (await p.locator(`.ct-mov[data-id="${MOV.a}"] .ct-f-desc b`).evaluate(e => getComputedStyle(e).whiteSpace)) === 'nowrap' && (await cardB.locator('.ct-f-desc').getAttribute('title')) === (await cardB.locator('.ct-f-desc b').textContent()));
   await p.locator(`.ct-mov[data-id="${MOV.a}"] .ct-mov-fila`).click(); await p.waitForTimeout(150);
   ok('Tocar otra cierra la anterior', (await p.locator('.ct-mov.abierta').count()) === 1 && (await p.locator(`.ct-mov[data-id="${MOV.a}"] .ct-mov-fila`).getAttribute('aria-expanded')) === 'true' && (await cardB.locator('.ct-mov-fila').getAttribute('aria-expanded')) === 'false' && await cardB.locator('.ct-mov-det').isHidden());
   await p.locator(`.ct-mov[data-id="${MOV.a}"] .ct-mov-fila`).click(); await p.waitForTimeout(150);
@@ -747,9 +758,12 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   const dup = desde(n).find(l => l.fn === 'fn_banco_duplicado');
   ok('…y el botón llama igual que siempre: fn_banco_duplicado {p_movimiento, p_es_el_mismo: false}', !!dup && dup.args.p_movimiento === MOV.c && dup.args.p_es_el_mismo === false, JSON.stringify(dup && dup.args));
   ok('Al repintar, la agrupación sigue y la fila tocada sigue desplegada (su grupo abierto)', (await p.locator('#ct-bj-agrupar').isChecked()) && (await p.locator('.ct-grupo').count()) === 3 && (await p.locator(`.ct-mov[data-id="${MOV.c}"] .ct-mov-fila`).getAttribute('aria-expanded')) === 'true' && (await p.locator('.ct-grupo[data-grupo="PEAJE EJEMPLO"]').evaluate(g => g.open)));
+  const cabCols = async () => (await p.locator('.ct-feed-cab span').allTextContents()).filter(Boolean).join(' · ');
+  ok('Agrupado, la cabecera de columnas dice Comercio · Movimientos · Total (lo que hay debajo)', (await p.locator('.ct-feed.agrupada').count()) === 1 && (await cabCols()) === 'Comercio · Movimientos · Total', await cabCols());
   await foto(p, '3b-bandeja-agrupada');
   await p.uncheck('#ct-bj-agrupar'); await p.waitForTimeout(150);
   ok('Sin agrupar vuelven las 3 filas sueltas, en el orden de la base', (await p.locator('.ct-grupo').count()) === 0 && (await p.locator('.ct-mov').count()) === 3 && (await p.locator('.ct-mov').first().getAttribute('data-id')) === MOV.c);
+  ok('…y la cabecera vuelve a las columnas del movimiento: Fecha · Descripción · Cuenta · Motivo · Monto', (await cabCols()) === 'Fecha · Descripción · Cuenta · Motivo · Monto', await cabCols());
   await fila(p, MOV.b);
   await foto(p, '3-bandeja');
   // la opción que pide motivo
@@ -1061,6 +1075,9 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     const tabsTel = await q.evaluate(() => { const t = document.querySelector('.ct-tabs'); return { display: getComputedStyle(t).display, snap: getComputedStyle(t).scrollSnapType, desliza: t.scrollWidth > t.clientWidth, n: t.querySelectorAll('.ct-tab').length }; });
     ok('Teléfono (390 px): las 8 pestañas van arriba, a la vista, deslizan con tope (scroll-snap)', tabsTel.display !== 'none' && tabsTel.n === 8 && tabsTel.desliza && /x/.test(tabsTel.snap), JSON.stringify(tabsTel));
     await tab(q, 'estados'); await q.waitForSelector('#ct-est-resultados', { timeout: 8000 });
+    const tabVis = await q.evaluate(() => { const t = document.querySelector('.ct-tabs'), a = t.querySelector('.ct-tab[aria-current="page"]'), T = t.getBoundingClientRect(), A = a.getBoundingClientRect();
+      return { pag: a.dataset.pag, izq: Math.round(A.left - T.left), der: Math.round(T.right - A.right), tira: [Math.round(T.left), Math.round(T.right)], iw: window.innerWidth, sw: document.documentElement.scrollWidth }; });
+    ok('Teléfono: la pestaña activa («Estados») se ve entera dentro de la tira, fuera de los 14 px del desvanecido de cada borde, y la tira (que se sale al margen) no desplaza la página de lado', tabVis.pag === 'estados' && tabVis.izq >= 14 && tabVis.der >= 14 && tabVis.tira[0] >= 0 && tabVis.tira[1] <= tabVis.iw && tabVis.sw <= tabVis.iw + 1, JSON.stringify(tabVis));
     await q.locator('[data-periodo="2026-10"]').click(); await q.waitForSelector('#ct-est-resultados .ct-kpi', { timeout: 8000 });
     const medidas = await q.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth, thead: getComputedStyle(document.querySelector('#ct-est-resultados thead')).display,
       chips: (() => { const e = document.querySelector('.ct-est-subs'); return [e.scrollWidth, e.clientWidth]; })(), before: getComputedStyle(document.querySelector('#ct-est-resultados td[data-col="Mes"]'), '::before').content }));
@@ -1091,6 +1108,9 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   // ---- Conexiones y seguridad: el código del teléfono (segundo factor) ----
   n = llamadas.length;
   await tab(p, 'conexiones'); await p.waitForSelector('#ct-mfa', { timeout: 8000 });
+  const latCx = await p.evaluate(() => { const l = document.querySelector('#lateral'), sp = l.querySelector('[data-lat="conta-conexiones"] span'), cs = getComputedStyle(l), ps = getComputedStyle(l, '::after');
+    return { cortado: sp.scrollWidth > sp.clientWidth + 1, txt: sp.textContent, desborda: l.scrollHeight > l.clientHeight, barra: cs.scrollbarWidth, pista: ps.position, alto: Math.round(l.querySelector('[data-lat="conta-bandeja"]').getBoundingClientRect().height) }; });
+  ok('Lateral (1280×900): «Conexiones y seguridad» se lee entero (envuelve, sin «…»), los subtítulos van compactos (38 px) y, como la lista no cabe, el lateral desplaza con barra fina y el desvanecido de abajo como pista', !latCx.cortado && latCx.txt === 'Conexiones y seguridad' && latCx.alto === 38 && (!latCx.desborda || (latCx.barra === 'thin' && latCx.pista === 'sticky')), JSON.stringify(latCx));
   ok('«Conexiones y seguridad» trae las tres tarjetas (el código del teléfono, Plaid y Stripe) en ese orden, con su cabecera; pidió el control de v_banco_saldos (las cuentas a las que va cada cuenta de Plaid)',
     (await titulo()) === 'Conexiones y seguridad' && JSON.stringify(await p.locator('#ct-main > section').evaluateAll(ss => ss.map(x => x.id))) === '["ct-mfa","ct-plaid","ct-stripe"]' && /código del teléfono no activo · 1 banco conectado · Stripe conectado/.test(await texto(p, '.ct-pag-sub')) &&
     desde(n).some(l => l.fn === 'fn_banco_control' && JSON.stringify(l.args.p_vistas) === '["v_banco_saldos"]') && (await p.locator('.ct-cuenta').count()) === 0, await texto(p, '.ct-pag-sub'));

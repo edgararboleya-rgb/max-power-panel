@@ -561,17 +561,17 @@ function esFalloDeRed(err) {
   const LATERAL_MAS_SVG = SVG_MENU('<path d="M4 6h16M4 12h16M4 18h16"/>');
   // El libro mayor: el mismo trazo que el botón de la barra de abajo (index.html)
   const LATERAL_CONTA_SVG = SVG_MENU('<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h7"/>');
-  // Las páginas de Contabilidad, por si js/conta.js aún no cargó (los mismos k y nombres
-  // que MXP_CONTA.paginas(); el contrato entre los dos archivos)
+  // Las páginas de Contabilidad, por si js/conta.js aún no cargó (los mismos k, nombres y
+  // trazos que MXP_CONTA.paginas() / ICONOS de conta.js; el contrato entre los dos archivos)
   const CONTA_PAGINAS_FIJAS = [
-    { k: "resumen", nombre: "Resumen", svg: SVG_MENU('<path d="M4 19h16"/><path d="M6 15l4-5 4 3 4-6"/>') },
-    { k: "bancos", nombre: "Bancos y tarjetas", svg: SVG_MENU('<path d="M3 10 12 4l9 6"/><path d="M5 10v9M10 10v9M14 10v9M19 10v9M3 20h18"/>') },
-    { k: "bandeja", nombre: "Bandeja", svg: SVG_MENU('<path d="M3 13l2.5-7h13L21 13v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 13h5l1.5 3h5L16 13h5"/>') },
-    { k: "conciliar", nombre: "Conciliar", svg: SVG_MENU('<path d="M12 3v18"/><path d="M5 7h14"/><path d="M3 15l3-8 3 8a3 3 0 0 1-6 0z"/><path d="M15 15l3-8 3 8a3 3 0 0 1-6 0z"/>') },
-    { k: "movimientos", nombre: "Movimientos", svg: SVG_MENU('<path d="M7 4v16M7 20l-3-3M7 20l3-3"/><path d="M17 20V4M17 4l-3 3M17 4l3 3"/>') },
-    { k: "estados", nombre: "Estados financieros", svg: SVG_MENU('<path d="M6 2h8l5 5v15H6z"/><path d="M14 2v5h5"/><path d="M9 13h6M9 17h6"/>') },
-    { k: "cobros", nombre: "Cobros en línea", svg: SVG_MENU('<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>') },
-    { k: "conexiones", nombre: "Conexiones y seguridad", svg: SVG_MENU('<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/>') }
+    { k: "resumen", nombre: "Resumen", svg: SVG_MENU('<rect x="3" y="3" width="8" height="10" rx="2"/><rect x="13" y="3" width="8" height="6" rx="2"/><rect x="13" y="11" width="8" height="10" rx="2"/><rect x="3" y="15" width="8" height="6" rx="2"/>') },
+    { k: "bancos", nombre: "Bancos y tarjetas", svg: SVG_MENU('<rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10.5h18M7 15.5h4"/>') },
+    { k: "bandeja", nombre: "Bandeja", svg: SVG_MENU('<path d="M3 13l2.5-7h13L21 13v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 13h5l1.5 2.5h5L16 13h5"/>') },
+    { k: "conciliar", nombre: "Conciliar", svg: SVG_MENU('<path d="M4 7h7M4 12h7M4 17h7"/><path d="M14 12.5l2.5 2.5L21 10"/>') },
+    { k: "movimientos", nombre: "Movimientos", svg: SVG_MENU('<path d="M4 8h14M15 5l3 3-3 3"/><path d="M20 16H6M9 13l-3 3 3 3"/>') },
+    { k: "estados", nombre: "Estados financieros", svg: SVG_MENU('<path d="M5 3h9l5 5v13H5z"/><path d="M14 3v5h5"/><path d="M8.5 17v-3M12 17v-6M15.5 17v-4"/>') },
+    { k: "cobros", nombre: "Cobros en línea", svg: SVG_MENU('<circle cx="12" cy="12" r="9"/><path d="M12 6.5v11M9.5 9.5h3.5a1.75 1.75 0 0 1 0 3.5h-2a1.75 1.75 0 0 0 0 3.5H15"/>') },
+    { k: "conexiones", nombre: "Conexiones y seguridad", svg: SVG_MENU('<path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z"/><path d="M9.5 12l2 2 3.5-3.5"/>') }
   ];
   const contaPaginas = () => (window.MXP_CONTA && typeof window.MXP_CONTA.paginas === "function") ? window.MXP_CONTA.paginas() : CONTA_PAGINAS_FIJAS;
   // La vista que está a la vista (la marca mostrar())
@@ -613,10 +613,11 @@ function esFalloDeRed(err) {
     const svgDe = id => { if (SVG_LAT[id]) return SVG_LAT[id]; const b = $(id); const s = b && (b.querySelector(".tile-ico svg") || b.querySelector("svg")); return s ? s.outerHTML : ""; };
     const sub = (lat, txt, dispara, extra = "") => `<button type="button" class="lat-item lat-sub lat-extra" data-lat="${lat}" data-dispara="${dispara}">${svgDe(dispara)}<span>${txt}</span>${extra}</button>`;
     const dueno = !!(usuario && usuario.finanzas);
-    // Contabilidad: el título y, debajo, una entrada por página (data-conta = la página que abre)
+    // Contabilidad: el título y, debajo, una entrada por página (data-conta = la página que abre).
+    // La Bandeja lleva su contador (#lat-conta-badge): lo pinta js/conta.js, que es quien sabe cuántos esperan
     const conta = !dueno ? "" : `
       <button type="button" class="lat-item" data-lat="conta">${LATERAL_CONTA_SVG}<span>Contabilidad</span></button>
-      ${contaPaginas().map(p => `<button type="button" class="lat-item lat-sub lat-extra" data-lat="conta-${p.k}" data-conta="${p.k}">${p.svg}<span>${esc(p.nombre)}</span></button>`).join("")}`;
+      ${contaPaginas().map(p => `<button type="button" class="lat-item lat-sub lat-extra" data-lat="conta-${p.k}" data-conta="${p.k}">${p.svg}<span>${esc(p.nombre)}</span>${p.k === "bandeja" ? `<span id="lat-conta-badge" class="nav-badge" hidden></span>` : ""}</button>`).join("")}`;
     nav.innerHTML = `
       <button type="button" class="lat-item" data-lat="hoy">${LATERAL_HOME_SVG}<span>Hoy</span></button>
       ${sub("btn-horas", "Reportar mis horas", "btn-horas")}

@@ -341,3 +341,38 @@ vista o función encima, con su alta en `fn_estados_control`):**
 8. Bucket privado para los documentos (`docs/apertura/…`, `docs/qb/…`) y un
    `firmarDocumento` en db.js: hoy la ruta sale como texto.
 
+
+## Contabilidad como sección principal (30-oct)
+
+Edgar (30-oct): «que se parezca más a una real aplicación de contabilidad…
+demasiadas informaciones que me cargan la vista». Antes, Contabilidad era una
+sola página larga colgada de Proyectos y de Más, con las conexiones (Plaid, el
+código del teléfono, Stripe) arriba y las cuentas al final. Ahora:
+
+- **Sección principal** de la app, al nivel de Hoy, Proyectos y Más: cuarto
+  botón de la barra de abajo (teléfono, solo dueño), título con subtítulos en
+  el lateral de la computadora, cuatro títulos en el riel del iPad. Ya no hay
+  entrada en Proyectos ni fila en Más (la loseta escondida `#btn-conta` y la
+  de Hoy siguen, por los caminos que las usan: la vuelta de Plaid).
+- **Ocho páginas** (`MXP_CONTA.paginas()`, el orden del menú): Resumen (la
+  portada: Bancos, Tarjetas, Bandeja, Cobros en línea, «Este mes» con
+  ingresos/costo y gastos/resultado de `v_resultados`, y «Qué atender» con las
+  alarmas de c6, p1, el código del teléfono y Plaid), Bancos y tarjetas (solo
+  las cuentas; el importador plegado en un botón), Bandeja (como *bank feed*:
+  buscador, motivo, orden, «Agrupar por comercio», filas de una línea que se
+  despliegan a sus opciones; tabla densa en la computadora, dos líneas en el
+  teléfono), Conciliar, Movimientos, Estados financieros, Cobros en línea y
+  Conexiones y seguridad (el código del teléfono, Plaid y la conexión de
+  Stripe con «Probar la llave»; la vuelta de Plaid con `oauth_state_id` abre
+  aquí). Las pestañas de arriba quedan para teléfono e iPad y se esconden a
+  ≥ 1024 px (ahí las enseña el lateral).
+- **El contrato app.js ↔ conta.js**: `MXP_CONTA.paginas()`,
+  `abrir(hooks, pagina?)`, `ir(k)`, `atras()`; hooks `titulo`, `avisar`,
+  `pagina(k)` (enciende el subtítulo) y `volver(visible)` (el «←» de la app
+  solo con algo interno que cerrar: una conciliación abierta, el mayor o el
+  asiento de los estados). Cada página sigue pasando por su control
+  (`controlar()`) antes de pintar; ninguna acción, lectura ni control se
+  perdió.
+- Verificado con el arnés `pruebas/conta/pantalla.js` (246 comprobaciones; con
+  `--fotos` saca cada página a 390, 820 y 1280 px), e0 y e13 en verde, y una
+  revisión con capturas (14 hallazgos, los 4 visibles y 9 menores corregidos).

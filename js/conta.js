@@ -103,16 +103,18 @@
     r.querySelectorAll(".ct-tab").forEach(b => {
       const activa = b.dataset.pag === S.pagina;
       b.setAttribute("aria-current", activa ? "page" : "false");
-      // con ocho pestañas la activa puede quedar fuera del borde del teléfono: se trae a la vista
-      if (activa && typeof b.scrollIntoView === "function") b.scrollIntoView({ inline: "nearest", block: "nearest" });
+      // con ocho pestañas la activa puede quedar fuera del borde del teléfono: se trae al centro de la tira
+      // (con «nearest» el tope de la tira volvía a alinear la anterior y dejaba la activa cortada por el borde)
+      if (activa && typeof b.scrollIntoView === "function") b.scrollIntoView({ inline: "center", block: "nearest" });
     });
   }
   // «←» de la app: solo cuando hay algo interno que cerrar (una conciliación abierta, el mayor o el asiento de los estados). Se avisa en cada pintada
   const hayAtras = () => !!S.conc || (S.pagina === "estados" && !!(S.est.cuenta || S.est.asiento));
   const marcarVolver = () => S.hooks.volver(hayAtras());
-  // La cabecera común de cada página: el título, una línea con sus cifras (o lo que explica la página), los selectores si los hay y la acción principal a la derecha
-  const cabPagina = (titulo, sub, acciones, controles) => `<header class="ct-pag-cab">
-      <div class="ct-pag-t"><h2 class="ct-pag-h">${esc(titulo)}</h2>${sub ? `<p class="ct-pag-sub">${sub}</p>` : ""}</div>
+  // La cabecera común de cada página: una línea con sus cifras (o lo que explica la página), los selectores si los hay y la acción principal a la derecha.
+  // El título no se repite: ya lo pone la barra de la app (hooks.titulo); queda como aria-label de la cabecera
+  const cabPagina = (titulo, sub, acciones, controles) => `<header class="ct-pag-cab" aria-label="${esc(titulo)}">
+      <div class="ct-pag-t">${sub ? `<p class="ct-pag-sub">${sub}</p>` : ""}</div>
       ${controles ? `<div class="ct-pag-ctl">${controles}</div>` : ""}
       ${acciones ? `<div class="ct-pag-acc">${acciones}</div>` : ""}
     </header>`;
@@ -120,12 +122,15 @@
   const ayudaHTML = (html, resumen) => `<details class="ct-ayuda"><summary>${esc(resumen || "¿Qué es esto?")}</summary><div class="ct-ayuda-txt">${html}</div></details>`;
   // volver a pintar la página en la que se está (después de una acción que cambió algo)
   const repintar = () => (PAGINAS[S.pagina] || pintarResumen)();
+  // el contador de la bandeja: en su pestaña (teléfono e iPad) y en su subtítulo del lateral de la app (computadora; #lat-conta-badge lo arma app.js)
   function pintarBadge() {
-    const n = $("ct-n-bandeja"); if (!n) return;
     const total = S.bandeja ? S.bandeja.length
       : S.saldos ? S.saldos.reduce((s, c) => s + Number(c.pendientes || 0), 0) : null;
-    n.hidden = !total;
-    n.textContent = total || "";
+    for (const n of [$("ct-n-bandeja"), $("lat-conta-badge")]) {
+      if (!n) continue;
+      n.hidden = !total;
+      n.textContent = total || "";
+    }
   }
   function ir(pag, opciones = {}) {
     if (!PAGINAS[pag]) pag = "resumen";
@@ -1310,7 +1315,7 @@
   const obraTexto = o => !o ? "" : typeof o === "string" ? o : (o.nombre || o.proyecto || o.id || "");
 
   // Las herramientas del bank feed: buscar sin acentos, el comercio detrás de una descripción y los órdenes
-  const sinAcentos = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const sinAcentos = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   // el comercio: la descripción en mayúsculas, sin fechas ni números (el banco pega al nombre el día o el número de la operación)
   const comercioDe = d => String(d || "").toUpperCase().replace(/\d{1,2}[/.-]\d{1,2}([/.-]\d{2,4})?/g, " ").replace(/[#*]?\d[\d.,-]*/g, " ").replace(/\s+/g, " ").trim() || "(sin descripción)";
   const ORDENES = { fecha_asc: "Más viejos primero", fecha_desc: "Más nuevos primero", monto_desc: "Monto: de mayor a menor", monto_asc: "Monto: de menor a mayor" };
@@ -1399,7 +1404,10 @@
     const lista = filtrarBandeja(), total = (S.bandeja || []).length;
     const n = $("ct-bj-n"); if (n) n.textContent = lista.length === total ? "" : `${lista.length} de ${plural(total, "movimiento", "movimientos")}`;
     if (!lista.length) { cont.innerHTML = total ? `<section class="ct-card ct-vacio">Nada con ese filtro${S.bj.q ? ` («${esc(S.bj.q)}»)` : ""}.</section>` : ""; return; }
-    const cab = `<div class="ct-feed-cab" aria-hidden="true"><span>Fecha</span><span>Descripción</span><span>Cuenta</span><span>Motivo</span><span class="r">Monto</span><span></span></div>`;
+    // la cabecera de columnas (solo la computadora la enseña) dice lo que hay debajo: las del movimiento o, agrupado, las del comercio
+    const cab = S.bj.agrupar
+      ? `<div class="ct-feed-cab" aria-hidden="true"><span>Comercio</span><span>Movimientos</span><span class="r">Total</span><span></span></div>`
+      : `<div class="ct-feed-cab" aria-hidden="true"><span>Fecha</span><span>Descripción</span><span>Cuenta</span><span>Motivo</span><span class="r">Monto</span><span></span></div>`;
     let cuerpo;
     if (S.bj.agrupar) {
       const grupos = new Map();
@@ -1454,7 +1462,7 @@
     return `<article class="ct-mov${m.alarma ? " alarma" : ""}${abierta ? " abierta" : ""}" data-id="${id}">
       <button type="button" class="ct-mov-fila" aria-expanded="${abierta ? "true" : "false"}" aria-controls="ct-det-${id}">
         <span class="ct-f-main">
-          <span class="ct-f-desc"><b>${esc(m.descripcion || "(sin descripción)")}</b>${m.memo ? `<small>${esc(m.memo)}</small>` : ""}</span>
+          <span class="ct-f-desc" title="${esc(m.descripcion || "")}"><b>${esc(m.descripcion || "(sin descripción)")}</b>${m.memo ? `<small>${esc(m.memo)}</small>` : ""}</span>
           <span class="ct-f-monto ct-num ${neg ? "neg" : "pos"}">${neg ? "−" : "+"}${fmtAbs(m.monto)}</span>
           <span class="ct-f-chev" aria-hidden="true"></span>
         </span>
@@ -1711,7 +1719,7 @@
     const dif = num(c.diferencia);
     const partidaHTML = p => `<li class="ct-partida${p.alarma ? " alarma" : ""}"><span class="ct-partida-f">${fechaLarga(p.fecha)}</span><span class="ct-partida-d"><b>${esc(p.descripcion || "")}</b>${p.cheque ? ` · cheque ${esc(p.cheque)}` : ""}${p.asiento_numero ? ` · asiento ${esc(p.asiento_numero)}` : ""}${p.clase ? ` ${pill(String(p.clase).replace(/_/g, " "), p.clase === "error" ? "bad" : "")}` : ""}${p.alarma ? pill(`${p.dias} días`, "bad") : ""}${p.explicacion ? `<small>${esc(p.explicacion)}</small>` : ""}${p.motivo && p.grupo !== "casado" ? `<small>Motivo: ${esc(p.motivo)}</small>` : ""}</span><span class="ct-partida-m ct-num">${fmt(p.monto)}</span></li>`;
     main().innerHTML = cabPagina(`Conciliación · ${c.cuenta_nombre}`, `corte ${fechaLarga(c.fecha_corte)} · ${estadoPill(c.estado)} ${pill(c.tipo)}`,
-        `<button type="button" class="accion secundaria" id="ct-volver-lista">← Todas las conciliaciones</button>`) +
+        `<button type="button" class="accion secundaria" id="ct-volver-lista">Todas las conciliaciones</button>`) +   // sin flecha: el «←» de la barra de la app ya cierra esta conciliación
       `<section class="ct-card">
         <div class="ct-cab"><h2>Libros contra statement</h2></div>
         <div class="ct-kpis cuatro">

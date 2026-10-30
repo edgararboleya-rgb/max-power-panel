@@ -13,12 +13,15 @@
 body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-/* ---- pestañas: teléfono e iPad (ocho, deslizan con tope); en la computadora las esconde el CSS y las enseña el lateral de la app ---- */
-#conta-raiz .ct-tabs { display: flex; gap: .4rem; overflow-x: auto; padding-bottom: .15rem; scrollbar-width: none; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+/* ---- pestañas: teléfono e iPad (ocho, deslizan con tope); en la computadora las esconde el CSS y las enseña el lateral de la app ----
+   La tira se sale 14 px a cada lado (sobre el margen de la página) y ahí se desvanece: lo que asoma cortado por el borde (una
+   pestaña, el contador amarillo) se funde en vez de verse partido. El padding igual al margen deja las pestañas alineadas con las tarjetas */
+#conta-raiz .ct-tabs { display: flex; gap: .4rem; overflow-x: auto; padding: 0 14px .15rem; margin: 0 -14px; scroll-padding-inline: 14px; scrollbar-width: none; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch;
+  -webkit-mask-image: linear-gradient(90deg, transparent, var(--night) 14px, var(--night) calc(100% - 14px), transparent); mask-image: linear-gradient(90deg, transparent, var(--night) 14px, var(--night) calc(100% - 14px), transparent); }
 #conta-raiz .ct-tabs::-webkit-scrollbar { display: none; }
 #conta-raiz .ct-tab { flex: none; display: inline-flex; align-items: center; gap: .4rem; min-height: var(--tap); padding: .45rem .9rem;
   border-radius: 999px; border: 1.5px solid var(--mp-line); background: var(--mp-card); color: var(--mp-ink-2);
-  font: inherit; font-weight: 700; font-size: .92rem; cursor: pointer; scroll-snap-align: start; }
+  font: inherit; font-weight: 700; font-size: .92rem; cursor: pointer; scroll-snap-align: center; }   /* al centro: con «start» el tope dejaba la activa a medias tras traerla a la vista */
 #conta-raiz .ct-tab svg { width: 18px; height: 18px; flex: none; color: var(--cu-dark); }
 #conta-raiz .ct-tab[aria-current="page"] { background: var(--night); color: #fff; border-color: var(--night); }
 #conta-raiz .ct-tab[aria-current="page"] svg { color: var(--mp-cyan); }
@@ -290,11 +293,10 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz { --ct-feed-cols: 6.5rem minmax(0, 1fr) 10rem 11rem 8rem 1rem; }
 #conta-raiz .ct-card[hidden] { display: none; }
 
-/* ---- la cabecera común de cada página: título, su línea de cifras, selectores y la acción principal a la derecha ---- */
+/* ---- la cabecera común de cada página: la línea de cifras (el título ya lo pone la barra de la app), selectores y la acción principal a la derecha ---- */
 #conta-raiz .ct-pag-cab { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .9rem; padding: .1rem .15rem 0; }
 #conta-raiz .ct-pag-t { flex: 1 1 14rem; min-width: 0; }
-#conta-raiz .ct-pag-h { margin: 0; font-size: var(--fs-7); font-weight: 800; letter-spacing: -.01em; line-height: 1.2; }
-#conta-raiz .ct-pag-sub { margin: .15rem 0 0; font-size: var(--fs-3); color: var(--mp-ink-2); line-height: 1.45; overflow-wrap: anywhere; }
+#conta-raiz .ct-pag-sub { margin: 0; font-size: var(--fs-4); color: var(--mp-ink-2); line-height: 1.45; overflow-wrap: anywhere; }
 #conta-raiz .ct-pag-sub b, #conta-raiz .ct-pag-sub .ct-num { color: var(--mp-ink); }
 #conta-raiz .ct-pag-ctl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; flex: 1 1 100%; }
 #conta-raiz .ct-pag-acc { display: flex; flex-wrap: wrap; gap: .45rem; flex: 1 1 100%; }
@@ -310,7 +312,7 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-ayuda summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: .4rem; min-height: 36px; font-size: .85rem; font-weight: 700; color: var(--cu-dark); }
 #conta-raiz .ct-ayuda summary::-webkit-details-marker { display: none; }
 #conta-raiz .ct-ayuda summary::before { content: "?"; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--cu); font-size: .72rem; line-height: 1; }
-#conta-raiz .ct-ayuda[open] summary::before { background: var(--cu); color: #fff; }
+#conta-raiz .ct-ayuda[open] summary::before { background: var(--cu); color: var(--mp-white); }
 #conta-raiz .ct-ayuda-txt .ct-nota { margin-top: .1rem; }
 
 /* ---- la portada: fichas que llevan a su página y «Qué atender» ---- */
@@ -373,6 +375,8 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-f-desc { min-width: 0; font-size: .95rem; }
 #conta-raiz .ct-f-desc b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #conta-raiz .ct-f-desc small { display: block; color: var(--mp-ink-3); font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* desplegada, la descripción se lee entera: el banco manda textos largos que la fila compacta recorta con «…» */
+#conta-raiz .ct-mov.abierta .ct-f-desc b, #conta-raiz .ct-mov.abierta .ct-f-desc small { white-space: normal; overflow-wrap: anywhere; }
 #conta-raiz .ct-f-monto { font-weight: 800; font-size: 1rem; white-space: nowrap; justify-self: end; }
 #conta-raiz .ct-f-monto.pos, #conta-raiz .ct-g-monto.pos { color: var(--ok-ink); }
 #conta-raiz .ct-f-monto.neg, #conta-raiz .ct-g-monto.neg { color: var(--mp-ink); }
@@ -392,6 +396,7 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-grupo[open] > .ct-grupo-cab { background: var(--mp-sky-2); }
 #conta-raiz .ct-g-desc { min-width: 0; }
 #conta-raiz .ct-g-desc b { display: block; font-size: .95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#conta-raiz .ct-grupo[open] > .ct-grupo-cab .ct-g-desc b { white-space: normal; overflow-wrap: anywhere; }
 #conta-raiz .ct-g-desc small { display: block; color: var(--mp-ink-3); font-size: .8rem; }
 #conta-raiz .ct-g-n { grid-column: 1; font-size: .8rem; color: var(--mp-ink-2); display: inline-flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
 #conta-raiz .ct-g-monto { grid-column: 2; grid-row: 1; font-weight: 800; white-space: nowrap; justify-self: end; }
@@ -412,6 +417,7 @@ body[data-vista="conta"] .fab { display: none; }
   #conta-raiz .ct-f-chev { grid-area: chev; }
   #conta-raiz .ct-grupo-filas .ct-mov-fila { padding-left: .7rem; }
   #conta-raiz .ct-grupo-cab { grid-template-columns: minmax(0, 1fr) 12rem 8rem 1rem; }
+  #conta-raiz .ct-feed.agrupada .ct-feed-cab { grid-template-columns: minmax(0, 1fr) 12rem 8rem 1rem; }   /* Comercio · Movimientos · Total, como las filas de grupo */
   #conta-raiz .ct-g-n { grid-column: 2; grid-row: 1; }
   #conta-raiz .ct-g-monto { grid-column: 3; }
   #conta-raiz .ct-grupo-cab .ct-f-chev { grid-column: 4; }
