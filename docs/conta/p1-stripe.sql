@@ -1,6 +1,8 @@
 -- =====================================================================
 -- p1-stripe.sql — COBROS EN LÍNEA CON STRIPE · p1
--- 27-oct-2026, v1 · se pega en el SQL Editor DESPUÉS de c1, c2, c3, c4,
+-- 27-oct-2026, v1; 30-oct, v2 (la revisión en contra del dinero, con Fable:
+-- 3 revisores, 0 errores de dinero en lo que p1 hace solo, y lo que sí
+-- encontraron, corregido aquí). Se pega en el SQL Editor DESPUÉS de c1, c2, c3, c4,
 -- c6, c7 y s1. Idempotente: se puede volver a pegar entero (no pisa la
 -- configuración, ni las cuentas que Edgar cambie, ni nada de lo que ya
 -- entró al libro).
@@ -137,7 +139,7 @@
 --      permisos de la llave, la rutina de pg_cron y el control («0 cuadres
 --      rojos · 0 alarmas»). Si algo de lo que da por hecho falta, para con
 --      MX000 y no queda nada.
---   2. SQL Editor → pegar docs/conta/p1-pruebas.sql → 42 filas en true (en
+--   2. SQL Editor → pegar docs/conta/p1-pruebas.sql → 46 filas en true (en
 --      producción la 40, y quizá la 32, salen «omitida» y dicen por qué).
 --   3. Stripe → Developers → API keys → «+ Create restricted key», nombre
 --      «Max Power app — cobros en línea», todo en None salvo (la fila
@@ -790,6 +792,8 @@ begin
   perform fn_stripe_exigir();
   if p is null or jsonb_typeof(p) = 'null' then return null; end if;
   if (jsonb_typeof(p) = 'number' and p::text ~ '^[0-9]+$') or (jsonb_typeof(p) = 'string' and p #>> '{}' ~ '^[0-9]{9,11}$') then
+    -- (0 es «sin fecha» para Stripe: el due_by de una disputa que no admite respuesta)
+    if (p #>> '{}')::bigint = 0 then return null; end if;
     return to_timestamp((p #>> '{}')::bigint);
   end if;
   if jsonb_typeof(p) = 'string' and p #>> '{}' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' then
@@ -1842,6 +1846,8 @@ declare
   v_sal_antes   jsonb := '{}'::jsonb;
   v_deben       text;
   v_faltan      text;
+  v_cobro_base  uuid;
+  v_rf_dia      date;
   c_uuid        constant text := '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 begin
   perform fn_stripe_exigir();
@@ -1882,6 +1888,9 @@ begin
   end if;
 
   v_est      := coalesce(p_foto->>'estado', '?');
+  if v_est = 'succeeded' and jsonb_typeof(p_foto->'recibido') is distinct from 'number' then
+    raise exception using errcode = '22023', message = 'La foto de un pago cobrado dice cuánto recibió (recibido, en centavos).';
+  end if;
   v_monto    := fn_stripe_dinero(coalesce(p_foto->'monto', '0'::jsonb));
   v_recibido := fn_stripe_dinero(coalesce(p_foto->'recibido', '0'::jsonb));
   v_moneda   := lower(coalesce(p_foto->>'moneda', 'usd'));
@@ -1953,6 +1962,12 @@ begin
   if v_fid is not null then
     select f.num, f.proyecto_id into v_fnum, v_obra from facturas f where f.id = v_fid;
   end if;
+  -- (succeeded es terminal en Stripe: una foto que diga otra cosa de un pago
+  -- que ya está en el libro es una foto rota —de la función de borde o de un
+  -- aviso mal armado—: no toca el libro; se dice y se vuelve a pedir)
+  if v_revisar is null and v_hay and v_row.en_libro > 0 and v_est <> 'succeeded' then
+    v_revisar := format('Stripe dice «%s» de un pago que ya está en el libro (%s): no toqué el libro', v_est, fn_stripe_usd(v_row.en_libro));
+  end if;
 
   -- e) lo que dice Stripe hoy: lo reembolsado, lo retirado y lo reintegrado
   select coalesce(sum(fn_stripe_dinero(r->'monto')), 0), max(fn_stripe_dia(r->'creado'))
@@ -1960,8 +1975,11 @@ begin
     from jsonb_array_elements(coalesce(p_foto->'reembolsos', '[]'::jsonb)) r
    where nullif(r->>'bt', '') is not null and nullif(r->>'bt_fallo', '') is null
      and coalesce(r->>'estado', '') not in ('failed', 'canceled');
-  select exists (select 1 from jsonb_array_elements(coalesce(p_foto->'reembolsos', '[]'::jsonb)) r where nullif(r->>'bt_fallo', '') is not null)
-    into v_r_fallo;
+  select exists (select 1 from jsonb_array_elements(coalesce(p_foto->'reembolsos', '[]'::jsonb)) r where nullif(r->>'bt_fallo', '') is not null),
+         max(fn_stripe_dia(r->'bt_fallo_creado'))
+    into v_r_fallo, v_rf_dia
+    from jsonb_array_elements(coalesce(p_foto->'reembolsos', '[]'::jsonb)) r
+   where nullif(r->>'bt_fallo', '') is not null;
   select coalesce(sum(-fn_stripe_dinero(b->'monto')) filter (where b->>'categoria' = 'dispute'), 0),
          coalesce(sum(fn_stripe_dinero(b->'monto')) filter (where b->>'categoria' = 'dispute_reversal'), 0),
          max(fn_stripe_dia(b->'creado'))
@@ -1970,7 +1988,9 @@ begin
    cross join lateral jsonb_array_elements(coalesce(d->'bts', '[]'::jsonb)) b;
   v_neto := case when v_est = 'succeeded' then greatest(v_recibido - v_r - v_w + v_rn, 0) else 0 end;
   v_objetivo := case when v_fuera then 0 else v_neto end;
-  v_fcambio := greatest(v_r_dia, v_d_dia, case when v_r_fallo then v_hoy end);
+  -- (el día del hecho: el del reembolso, el de la disputa, el de la vuelta
+  -- del reembolso que falló —o hoy, si la foto no lo trae—)
+  v_fcambio := greatest(v_r_dia, v_d_dia, case when v_r_fallo then coalesce(v_rf_dia, v_hoy) end);
   -- la disputa que se enseña: la abierta, o la última
   select x into v_disp
     from jsonb_array_elements(coalesce(p_foto->'disputas', '[]'::jsonb)) with ordinality t(x, n)
@@ -1989,7 +2009,7 @@ begin
   -- la fecha del éxito (D9): la del aviso; sin ella, la del cargo (tarjeta)
   -- o la de su dinero disponible (cuenta de banco), nunca después de hoy
   if coalesce(p_foto->>'fecha_exito', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then
-    v_fexito := (p_foto->>'fecha_exito')::date;
+    v_fexito := least((p_foto->>'fecha_exito')::date, v_hoy);
   elsif v_est = 'succeeded' then
     select case when v_medio = 'tarjeta' then fn_stripe_dia(x->'creado')
                 else least(v_hoy, coalesce(fn_stripe_dia(coalesce(x->'disponible', x->'available_on')), v_hoy)) end
@@ -2041,25 +2061,36 @@ begin
   --      objetivo. Todo o nada; los errores pasajeros se relanzan.
   if v_revisar is null and not v_fuera and v_objetivo <> v_row.en_libro then
     v_s := fn_stripe_suplantar();
-    if v_row.factura_id is not null then
-      perform 1 from facturas where id = v_row.factura_id for update;
-    end if;
     begin
       v_version := v_row.version;
       v_cobro_nuevo := null;
       v_fecha := null;
       v_faltan := null;
-      -- Lo que Edgar aplicó del anticipo de este cobro a otras facturas
+      -- Los candados, en el orden de c3 (el cobro, las facturas por id y solo
+      -- entonces la cadena): el cobro ANTES de leer sus aplicaciones —si no,
+      -- una que Edgar confirme entre medias (fn_anticipo_aplicar) se deshace
+      -- en silencio—, y TODAS las facturas que se van a tocar antes de
+      -- postear nada —si no, se interbloquea con fn_cobro_registrar, que toma
+      -- sus facturas y después la cadena—.
+      -- El cobro: el vivo o, si el pago pasó por cero (reembolso total,
+      -- disputa retirada), el último del rastro: cuando el dinero vuelve
+      -- (el reembolso falla, la disputa se gana) sus aplicaciones se rehacen.
+      v_cobro_base := coalesce(v_row.cobro_id, (select pl.cobro_id from stripe_pago_libro pl
+                                                  where pl.pago_id = v_row.id and pl.accion = 'cobro' order by pl.id desc limit 1));
+      if v_cobro_base is not null then
+        perform 1 from cobros c where c.id = v_cobro_base for update;
+      end if;
+      -- Lo que Edgar aplicó del anticipo de ese cobro a otras facturas
       -- (fn_anticipo_aplicar): la devolución lo deshace (c3 espeja sus
       -- asientos), así que se vuelve a aplicar desde el cobro nuevo, hasta
       -- donde alcance su anticipo. Y lo que cada factura debía antes, para
       -- decir de verdad cuál vuelve a deber y cuánto.
-      if v_row.en_libro > 0 then
+      if v_cobro_base is not null then
         select coalesce(jsonb_agg(jsonb_build_object('factura_id', a.factura_id, 'monto', a.monto, 'es_retencion', a.es_retencion,
                                                      'fecha', a.fecha) order by a.creado_el, a.id), '[]'::jsonb)
           into v_apli
           from aplicaciones_cobro a
-         where a.cobro_id = v_row.cobro_id and a.desde_anticipo and a.factura_id is not null and a.contabilizado_en is not null
+         where a.cobro_id = v_cobro_base and a.desde_anticipo and a.factura_id is not null and a.contabilizado_en is not null
            and not exists (select 1 from asientos r
                             where r.reversa_a = a.contabilizado_en and r.camino in ('reverso', 'reverso_automatico'));
       end if;
@@ -2067,6 +2098,7 @@ begin
         from (select v_row.factura_id as f
               union all select (e->>'factura_id')::bigint from jsonb_array_elements(v_apli) e) x
        where x.f is not null;
+      perform 1 from facturas f where f.id = any (v_tocadas) order by f.id for update;
       select coalesce(jsonb_object_agg(t.f::text, (fn_stripe_saldo(t.f)->>'saldo_cxc')::numeric
                                                   + (fn_stripe_saldo(t.f)->>'saldo_retencion')::numeric), '{}'::jsonb)
         into v_sal_antes
@@ -2150,11 +2182,13 @@ begin
       end loop;
       -- (si el anticipo del cobro nuevo se fue entero a esas facturas, el
       -- aviso de «lo que sobra» ya no dice nada que hacer)
-      if jsonb_array_length(v_apli) > 0 and v_cobro_nuevo is not null
-         and not exists (select 1 from asiento_lineas l
-                          where l.cuenta = fn_puente_cuenta_de('cxc') and l.partida_tabla = 'cobros'
-                            and l.partida_id = v_cobro_nuevo::text
-                          group by l.proyecto_id having sum(l.monto) <> 0) then
+      -- (y si Stripe devolvió justo lo que sobraba, o todo, tampoco)
+      if v_objetivo = 0
+         or (v_cobro_nuevo is not null
+             and not exists (select 1 from asiento_lineas l
+                              where l.cuenta = fn_puente_cuenta_de('cxc') and l.partida_tabla = 'cobros'
+                                and l.partida_id = v_cobro_nuevo::text
+                              group by l.proyecto_id having sum(l.monto) <> 0)) then
         update stripe_avisos set visto_el = now() where clave = 'sobra:' || v_pi and visto_el is null;
       end if;
       -- quién vuelve a deber, y cuánto (el cambio de verdad en el libro)
@@ -2212,6 +2246,10 @@ begin
          actualizado_el = now()
    where id = v_row.id
   returning * into v_row;
+  -- (si dejó de estar «por resolver», su aviso ya no dice nada que hacer)
+  if v_antes = 'revisar' and v_estado <> 'revisar' then
+    update stripe_avisos set visto_el = now() where clave = 'pago:' || v_pi || ':revisar' and visto_el is null;
+  end if;
 
   -- j) los avisos, por transición
   v_txt := coalesce('#' || v_row.factura_num, 'sin factura');
@@ -2224,8 +2262,11 @@ begin
   end if;
   if v_estado = 'revisar' and (v_antes is distinct from 'revisar' or v_row.revisar is distinct from (v_foto_antes->>'_revisar')) then
     perform fn_stripe_avisar('pago:' || v_pi || ':revisar', 'bad',
-      format('El pago %s de %s no se pudo poner en ninguna factura (%s): dime a qué va en Cobros en línea. Hasta entonces el depósito que '
-             'lo lleva espera.', v_pi, fn_stripe_usd(v_monto), v_row.revisar), v_pi);
+      case when v_row.en_libro > 0
+           then format('El pago %s de %s está en el libro y Stripe ahora dice otra cosa (%s): no toqué el libro. Mira el pago en el panel de '
+                       'Stripe y toca «Revisar con Stripe ahora»; si sigue así, dímelo.', v_pi, fn_stripe_usd(v_monto), v_row.revisar)
+           else format('El pago %s de %s no se pudo poner en ninguna factura (%s): dime a qué va en Cobros en línea. Hasta entonces el '
+                       'depósito que lo lleva espera.', v_pi, fn_stripe_usd(v_monto), v_row.revisar) end, v_pi);
     v_avisos := v_avisos || ('pago:' || v_pi || ':revisar');
   end if;
   if v_libro_ok and v_revisar is null and not v_fuera then
@@ -2258,6 +2299,18 @@ begin
         v_pi);
       v_avisos := v_avisos || ('pago:' || v_pi || ':reembolso_fallo:' || coalesce(v_x.id, '?'));
     end loop;
+    -- los reembolsos que contaban y dejaron de contar (Stripe los canceló)
+    for v_x in select o->>'id' as id, fn_stripe_dinero(o->'monto') as monto
+                 from jsonb_array_elements(coalesce(v_foto_antes->'reembolsos', '[]'::jsonb)) o
+                where nullif(o->>'bt', '') is not null and nullif(o->>'bt_fallo', '') is null
+                  and coalesce(o->>'estado', '') not in ('failed', 'canceled')
+                  and exists (select 1 from jsonb_array_elements(coalesce(p_foto->'reembolsos', '[]'::jsonb)) r
+                               where r->>'id' = o->>'id' and coalesce(r->>'estado', '') = 'canceled' and nullif(r->>'bt_fallo', '') is null) loop
+      perform fn_stripe_avisar('pago:' || v_pi || ':reembolso_cancelado:' || coalesce(v_x.id, '?'), 'warn',
+        format('El reembolso de %s de la %s se canceló en Stripe (no llegó a salir): el cobro volvió al libro.', fn_stripe_usd(v_x.monto),
+               v_txt), v_pi);
+      v_avisos := v_avisos || ('pago:' || v_pi || ':reembolso_cancelado:' || coalesce(v_x.id, '?'));
+    end loop;
     -- las disputas
     for v_x in select d->>'id' as id, d->>'estado' as estado, coalesce(d->>'motivo', 'sin motivo') as motivo,
                       fn_stripe_dinero(coalesce(d->'monto', '0'::jsonb)) as monto, fn_stripe_dia(d->'vence') as vence,
@@ -2273,13 +2326,15 @@ begin
           perform fn_stripe_avisar('pago:' || v_pi || ':disputa:' || coalesce(v_x.id, '?'), 'bad',
             case when v_x.retirada
                  then format('Disputa de %s en la %s (%s): Stripe retiró el dinero (y su comisión). El cobro se devolvió en el libro y %s. '
-                             'Respóndela en Stripe antes del %s.%s', fn_stripe_usd(v_x.monto), v_txt, fn_stripe_llano(v_x.motivo),
+                             '%s%s', fn_stripe_usd(v_x.monto), v_txt, fn_stripe_llano(v_x.motivo),
                              case when v_deben is not null then 'vuelve a deber: ' || v_deben else 'la factura vuelve a deber' end,
-                             fn_stripe_fecha_llana(v_x.vence),
+                             case when v_x.vence is null then 'Stripe no da plazo para responderla (no admite respuesta).'
+                                  else 'Respóndela en Stripe antes del ' || fn_stripe_fecha_llana(v_x.vence) || '.' end,
                              case when v_medio = 'ach' then ' Las disputas por cuenta de banco no se pueden impugnar.' else '' end)
                  else format('Consulta (disputa sin retiro) de %s en la %s (%s): todavía no se retiró dinero y el cobro sigue en el libro. '
-                             'Respóndela en Stripe antes del %s.', fn_stripe_usd(v_x.monto), v_txt, fn_stripe_llano(v_x.motivo),
-                             fn_stripe_fecha_llana(v_x.vence)) end, v_pi);
+                             '%s', fn_stripe_usd(v_x.monto), v_txt, fn_stripe_llano(v_x.motivo),
+                             case when v_x.vence is null then 'Stripe no da plazo para responderla (no admite respuesta).'
+                                  else 'Respóndela en Stripe antes del ' || fn_stripe_fecha_llana(v_x.vence) || '.' end) end, v_pi);
           v_avisos := v_avisos || ('pago:' || v_pi || ':disputa:' || coalesce(v_x.id, '?'));
         end if;
       end if;
@@ -2346,8 +2401,22 @@ begin
   if not found then
     raise exception using errcode = '22023', message = format('No existe el pago %s.', coalesce(p_pi, '(ninguno)'));
   end if;
-  if s.estado <> 'revisar' then
+  -- (un pago que salió de la app con un depósito —«Ya está en el libro»:
+  -- fuera, sin cuenta— puede recibir su cuenta después: la necesita si un
+  -- reembolso o una disputa suya aparece en otro depósito)
+  if s.estado <> 'revisar'
+     and not (p_decision ? 'fuera' and coalesce(s.resuelto ? 'fuera', false) and s.resuelto->'fuera'->>'cuenta' is null) then
     raise exception using errcode = 'MX008', message = 'Ese pago ya está resuelto.';
+  end if;
+  if p_decision ? 'fuera' and s.en_libro <> 0 then
+    raise exception using errcode = 'MX008',
+      message = format('El pago %s tiene un cobro vivo en el libro (%s): no se saca de la app (el dinero quedaría dos veces). Dile a qué '
+                       'factura u obra va, o devuélvelo desde Stripe.', s.pi, fn_stripe_usd(s.en_libro));
+  end if;
+  if s.moneda <> 'usd' and not (p_decision ? 'fuera') then
+    raise exception using errcode = 'MX008',
+      message = format('El pago %s viene en %s: la app solo registra cobros en dólares. Sácalo fuera (fuera:{cuenta}) o devuélvelo desde '
+                       'Stripe.', s.pi, upper(s.moneda));
   end if;
   if p_decision ? 'factura_id' then
     if coalesce(p_decision->>'factura_id', '') !~ '^-?[0-9]{1,18}$' then
@@ -2365,7 +2434,8 @@ begin
     v_res := jsonb_build_object('proyecto_id', p_decision->>'proyecto_id');
   else
     perform fn_stripe_cuenta_libre(p_decision->'fuera'->>'cuenta');
-    v_res := jsonb_build_object('fuera', jsonb_build_object('cuenta', btrim(p_decision->'fuera'->>'cuenta')));
+    v_res := jsonb_build_object('fuera', coalesce(s.resuelto->'fuera', '{}'::jsonb)
+                                         || jsonb_build_object('cuenta', btrim(p_decision->'fuera'->>'cuenta')));
   end if;
   v_res := v_res || jsonb_build_object('motivo', btrim(p_motivo), 'por', p_dueno, 'el', now());
   update stripe_pagos set resuelto = v_res, revisar = null where id = s.id;
@@ -2455,6 +2525,7 @@ declare
   v_avisos    text[] := '{}';
   v_suma      numeric(14,2);
   v_n         int;
+  v_n2        int;
   v_x         record;
   v_cobros    numeric(14,2) := 0;
   v_vuelve    numeric(14,2) := 0;
@@ -2481,6 +2552,7 @@ declare
   v_codigo    text;
   v_cas       jsonb;
   v_mov       uuid;
+  v_txt       text;
 begin
   perform fn_stripe_exigir();
   cfg := fn_stripe_cfg();
@@ -2611,12 +2683,18 @@ begin
                  when v_moneda <> 'usd' then format('viene en %s, no en dólares', upper(v_moneda))
                  when not v_auto then 'es un depósito manual'
                  when v_metodo = 'instant' then 'es un depósito instantáneo'
-                 when v_monto <= 0 then format('su monto es %s', fn_stripe_usd(v_monto)) end;
+                 when v_monto <= 0 then format('su monto es %s', fn_stripe_usd(v_monto))
+                 -- (not_applicable es terminal: Stripe no va a dar su composición nunca)
+                 when p.conciliacion_stripe = 'not_applicable' then 'Stripe no da su composición (reconciliation_status = not_applicable)' end;
   if v_revisar is not null and p.asiento_salida is null then
     update stripe_payouts set estado = 'revisar', revisar = v_revisar where id = p.id;
     perform fn_stripe_avisar('payout:' || v_po || ':revisar', 'bad',
-      format('El depósito de Stripe %s (%s) %s: Stripe solo da la composición de los depósitos automáticos en dólares: deja los payouts en '
-             'automático (Settings → Payouts). No lo asiento.', v_po, fn_stripe_usd(v_monto), v_revisar), v_po);
+      format('El depósito de Stripe %s (%s) %s: %s No lo asiento.', v_po, fn_stripe_usd(v_monto), v_revisar,
+             case when p.conciliacion_stripe = 'not_applicable' and v_auto and v_metodo <> 'instant' and v_moneda = 'usd' and v_monto > 0
+                  then 'Stripe dice que no tiene el detalle de este depósito aunque es automático: míralo en el panel de Stripe; si su dinero '
+                       'ya está en el libro por otro camino, sácalo con «Ya está en el libro».'
+                  else 'Stripe solo da la composición de los depósitos automáticos en dólares: deja los payouts en automático '
+                       '(Settings → Payouts).' end), v_po);
     return jsonb_build_object('payout', (select to_jsonb(v) from v_stripe_payouts v where v.po = v_po), 'estado', 'revisar',
                               'antes', v_antes, 'revisar', v_revisar, 'avisos', jsonb_build_array('payout:' || v_po || ':revisar'));
   end if;
@@ -2646,12 +2724,37 @@ begin
     else
       -- la forma de cada línea
       if exists (select 1 from jsonb_array_elements(p_lineas) x
-                  where jsonb_typeof(x) <> 'object' or coalesce(x->>'txn', '') = '' or coalesce(x->>'tipo', '') = '') then
-        raise exception using errcode = '22023', message = 'Cada línea de la composición lleva su txn y su tipo.';
+                  where jsonb_typeof(x) <> 'object' or coalesce(x->>'txn', '') = '' or coalesce(x->>'tipo', '') = ''
+                     or jsonb_typeof(x->'monto') <> 'number') then
+        raise exception using errcode = '22023', message = 'Cada línea de la composición lleva su txn, su tipo y su monto (centavos).';
       end if;
-      -- cuadra: los netos (sin la propia del depósito) suman su monto
-      select coalesce(sum(coalesce(fn_stripe_dinero(x->'neto'),
-                                   fn_stripe_dinero(x->'monto') - fn_stripe_dinero(coalesce(x->'comision', '0'::jsonb)))), 0)
+      -- Lo que no se guarda (se dice; la próxima entrega se vuelve a mirar):
+      -- una txn repetida, o una línea cuyo neto no es monto − comisión.
+      select string_agg(y.txn, ', ') into v_revisar
+        from (select x->>'txn' as txn from jsonb_array_elements(p_lineas) x group by 1 having count(*) > 1) y;
+      if v_revisar is null then
+        select string_agg(format('%s (neto %s, monto %s, comisión %s)', x->>'txn', fn_stripe_usd(fn_stripe_dinero(x->'neto')),
+                                 fn_stripe_usd(fn_stripe_dinero(x->'monto')), fn_stripe_usd(fn_stripe_dinero(coalesce(x->'comision', '0'::jsonb)))),
+                          '; ')
+          into v_revisar
+          from jsonb_array_elements(p_lineas) x
+         where jsonb_typeof(x->'neto') = 'number'
+           and fn_stripe_dinero(x->'neto') <> fn_stripe_dinero(x->'monto') - fn_stripe_dinero(coalesce(x->'comision', '0'::jsonb));
+        v_revisar := 'una línea no cuadra (neto ≠ monto − comisión): ' || v_revisar;
+      else
+        v_revisar := 'la composición repite movimientos: ' || v_revisar;
+      end if;
+      if v_revisar is not null then
+        update stripe_payouts set estado = 'revisar', revisar = v_revisar where id = p.id;
+        perform fn_stripe_avisar('payout:' || v_po || ':forma', 'bad',
+          format('El detalle del depósito %s llegó mal armado (%s): no lo asiento; la revisión automática lo vuelve a pedir.', v_po, v_revisar),
+          v_po);
+        return jsonb_build_object('payout', (select to_jsonb(v) from v_stripe_payouts v where v.po = v_po), 'estado', 'revisar',
+                                  'antes', v_antes, 'revisar', v_revisar, 'avisos', jsonb_build_array('payout:' || v_po || ':forma'));
+      end if;
+      -- cuadra: los netos (monto − comisión, sin la propia del depósito)
+      -- suman su monto
+      select coalesce(sum(fn_stripe_dinero(x->'monto') - fn_stripe_dinero(coalesce(x->'comision', '0'::jsonb))), 0)
         into v_suma
         from jsonb_array_elements(p_lineas) x
        where not (x->>'txn' in (coalesce(p.bt_propio, '-'), coalesce(p.bt_fallo, '-'))
@@ -2678,13 +2781,15 @@ begin
         return jsonb_build_object('payout', (select to_jsonb(v) from v_stripe_payouts v where v.po = v_po), 'estado', 'revisar',
                                   'antes', v_antes, 'revisar', v_revisar);
       end if;
+      -- (pago_id se rellena DESPUÉS de los candados de los pagos: tomar aquí
+      -- la fila del pago por la llave foránea interbloqueaba con
+      -- fn_stripe_pago_sincronizar, que toma su candado y después la fila)
       insert into stripe_payout_lineas (payout_id, txn, tipo, categoria, monto, comision, neto, fuente, pi, pago_id, clase, creado_stripe,
                                         disponible)
       select p.id, x->>'txn', x->>'tipo', x->>'categoria', fn_stripe_dinero(coalesce(x->'monto', '0'::jsonb)),
              fn_stripe_dinero(coalesce(x->'comision', '0'::jsonb)),
-             coalesce(fn_stripe_dinero(x->'neto'), fn_stripe_dinero(coalesce(x->'monto', '0'::jsonb))
-                                                   - fn_stripe_dinero(coalesce(x->'comision', '0'::jsonb))),
-             nullif(x->>'fuente', ''), nullif(x->>'pi', ''), (select s.id from stripe_pagos s where s.pi = nullif(x->>'pi', '')),
+             fn_stripe_dinero(coalesce(x->'monto', '0'::jsonb)) - fn_stripe_dinero(coalesce(x->'comision', '0'::jsonb)),
+             nullif(x->>'fuente', ''), nullif(x->>'pi', ''), null::uuid,
              case when x->>'txn' in (coalesce(p.bt_propio, '-'), coalesce(p.bt_fallo, '-'))
                        or (x->>'tipo' = 'payout' and coalesce(x->>'fuente', '') = v_po) then 'propio'
                   when nullif(x->>'pi', '') is not null then 'pago'
@@ -2731,9 +2836,11 @@ begin
                               v_fecha)
        where id = p.id;
       perform fn_stripe_avisar('payout:' || v_po || ':bandeja', 'bad',
-        format('El depósito de Stripe %s (%s del %s) ya está registrado en la bandeja (casado con otra cosa): no lo asiento. Si es de antes '
-               'de la app, toca «Ya está en el libro» en Cobros en línea; si no, des-cásalo en la bandeja (el dinero estaría dos veces) y '
-               'toca «Volver a mirar».', v_po, fn_stripe_usd(p.monto), fn_stripe_fecha_llana(v_fecha)), v_po);
+        format('Un depósito STRIPE de Chase de %s (del %s) ya está registrado en la bandeja, casado con otra cosa, y puede ser el %s: no lo '
+               'asiento. Si ES este depósito y es de antes de la app, toca «Ya está en el libro»; si es este y lo registraste a mano, '
+               'des-cásalo en la bandeja (el dinero estaría dos veces) y toca «Volver a mirar»; si es OTRO depósito de Stripe del mismo '
+               'importe, espera a que llegue el de este y toca «Volver a mirar».', fn_stripe_usd(p.monto), fn_stripe_fecha_llana(v_fecha),
+               v_po), v_po);
       return jsonb_build_object('payout', (select to_jsonb(v) from v_stripe_payouts v where v.po = v_po), 'estado', 'revisar',
                                 'antes', v_antes, 'revisar', 'ya está en la bandeja',
                                 'avisos', jsonb_build_array('payout:' || v_po || ':bandeja'));
@@ -2744,13 +2851,13 @@ begin
   -- los pagos
   for v_x in select l.pi, s.id as pago_id, s.estado, s.estado_stripe, s.objetivo, s.en_libro,
                     coalesce(s.resuelto ? 'fuera', false) as fuera, s.resuelto->'fuera'->>'cuenta' as fuera_cuenta,
-                    s.resuelto->'fuera'->>'payout' as fuera_po,
+                    s.resuelto->'fuera'->>'payout' as fuera_po, s.foto_al,
                     s.foto->'bts' as bts, sum(l.monto) as suma,
                     bool_and(coalesce(s.foto->'bts', '[]'::jsonb) ? l.txn) as conoce
                from stripe_payout_lineas l
                left join stripe_pagos s on s.pi = l.pi
               where l.payout_id = p.id and l.clase = 'pago'
-              group by l.pi, s.id, s.estado, s.estado_stripe, s.objetivo, s.en_libro, s.resuelto, s.foto->'bts'
+              group by l.pi, s.id, s.estado, s.estado_stripe, s.objetivo, s.en_libro, s.resuelto, s.foto_al, s.foto->'bts'
               order by l.pi loop
     if v_x.pago_id is null then
       v_esperando := v_esperando || jsonb_build_array(jsonb_build_object('pi', v_x.pi, 'motivo', 'sin datos del pago'));
@@ -2769,15 +2876,35 @@ begin
       -- o su aviso de éxito espera en «reintentar»)
       v_esperando := v_esperando || jsonb_build_array(jsonb_build_object('pi', v_x.pi, 'motivo', 'el pago no está al día'));
     elsif not v_x.conoce then
-      v_esperando := v_esperando || jsonb_build_array(jsonb_build_object('pi', v_x.pi,
-                       'motivo', 'la composición trae un movimiento que el pago no conoce'));
+      -- (si el pago ya se volvió a pedir a Stripe DESPUÉS de que este
+      -- depósito dijera que no lo conocía —su foto es más nueva que la de
+      -- entonces— y sigue sin conocerlo, no lo va a conocer nunca: es un
+      -- movimiento que la foto del pago no refleja, p. ej. una reversión del
+      -- banco (payment_reversal). Se dice, en vez de esperar en silencio.)
+      if v_x.foto_al > coalesce((select (e->>'foto_al')::timestamptz
+                                   from jsonb_array_elements(coalesce(p.esperando, '[]'::jsonb)) e
+                                  where e->>'pi' = v_x.pi and e->>'motivo' like 'la composición trae%' limit 1), 'infinity'::timestamptz) then
+        select string_agg(l9.txn || ' ' || l9.tipo || ' ' || fn_stripe_usd(l9.monto), ', ') into v_txt
+          from stripe_payout_lineas l9
+         where l9.payout_id = p.id and l9.pi = v_x.pi and not (coalesce(v_x.bts, '[]'::jsonb) ? l9.txn);
+        v_revisar := coalesce(v_revisar || '; ', '') || format('el pago %s no refleja un movimiento que trae este depósito (%s) ni después de '
+                                                               'volver a pedirlo a Stripe', v_x.pi, v_txt);
+        perform fn_stripe_avisar('payout:' || v_po || ':desconoce:' || v_x.pi, 'bad',
+          format('El depósito de Stripe %s trae un movimiento del pago %s que ese pago no refleja ni después de volver a pedirlo (%s): mira '
+                 'el pago en el panel de Stripe (¿su banco revirtió el pago?). La app no lo asienta sola: dímelo, es un caso que hay que '
+                 'mirar a mano.', v_po, v_x.pi, v_txt), v_po);
+        v_avisos := v_avisos || ('payout:' || v_po || ':desconoce:' || v_x.pi);
+      else
+        v_esperando := v_esperando || jsonb_build_array(jsonb_build_object('pi', v_x.pi, 'foto_al', v_x.foto_al,
+                         'motivo', 'la composición trae un movimiento que el pago no conoce'));
+      end if;
     elsif v_x.estado = 'fallido' and v_x.suma <> 0 then
       v_revisar := coalesce(v_revisar || '; ', '') || format('el pago %s falló y sus movimientos en este depósito suman %s', v_x.pi,
                                                              fn_stripe_usd(v_x.suma));
     end if;
   end loop;
   -- lo que vuelve de un depósito fallido
-  for v_x in select l.txn, l.fuente, l.monto, q.id as qid, q.estado as qestado, q.asiento_vuelta,
+  for v_x in select l.txn, l.tipo, l.cuenta, l.fuente, l.monto, q.id as qid, q.estado as qestado, q.asiento_vuelta, q.asiento_salida,
                     exists (select 1 from stripe_payout_lineas l2 join stripe_payouts q2 on q2.id = l2.payout_id
                              where l2.clase = 'vuelve' and l2.fuente = l.fuente and l2.payout_id <> p.id
                                and q2.asiento_salida is not null and fn_stripe_reversado(q2.asiento_salida) is null) as ya
@@ -2786,6 +2913,22 @@ begin
               where l.payout_id = p.id and l.clase = 'vuelve' loop
     if v_x.ya then
       v_revisar := coalesce(v_revisar || '; ', '') || format('lo que volvió del depósito %s ya lo liquidó otro depósito', v_x.fuente);
+    elsif v_x.qid is not null and v_x.qestado in ('fuera', 'revisar') and v_x.asiento_vuelta is null and v_x.asiento_salida is null then
+      -- (volvió de un depósito que no es de p1 —de antes de instalar, o
+      -- manual—: su dinero no salió de la puente por aquí, así que no vuelve
+      -- a ella; va a la cuenta que diga Edgar, como un movimiento que la app
+      -- no conoce. Si no, el depósito esperaría para siempre.)
+      if v_x.cuenta is null then
+        v_esperando := v_esperando || jsonb_build_array(jsonb_build_object('txn', v_x.txn, 'tipo', v_x.tipo, 'monto', v_x.monto,
+                         'motivo', format('a qué cuenta va (volvió del depósito %s, que no es de la app)', v_x.fuente)));
+        v_revisar := coalesce(v_revisar || '; ', '') || format('trae lo que volvió del depósito %s, que no es de la app (%s): dime a qué '
+                                                               'cuenta va', v_x.fuente, fn_stripe_usd(v_x.monto));
+        perform fn_stripe_avisar('payout:' || v_po || ':otro:' || v_x.txn, 'bad',
+          format('Stripe trae en el depósito %s lo que volvió del depósito fallido %s (%s), que no es de la app (de antes de instalar, o '
+                 'manual): dime a qué cuenta va (donde esté registrado el dinero de ese depósito).', v_po, v_x.fuente,
+                 fn_stripe_usd(v_x.monto)), v_po);
+        v_avisos := v_avisos || ('payout:' || v_po || ':otro:' || v_x.txn);
+      end if;
     elsif v_x.qid is null or v_x.qestado <> 'fallido' or v_x.asiento_vuelta is null or fn_stripe_reversado(v_x.asiento_vuelta) is not null then
       v_esperando := v_esperando || jsonb_build_array(jsonb_build_object('po', v_x.fuente,
                        'motivo', 'el depósito fallido todavía no está registrado'));
@@ -2824,9 +2967,10 @@ begin
   -- que la app no conoce, ya con su cuenta), C (las comisiones) y N (el
   -- neto que llega a Chase). N + C = L + V + Lf + D.
   select coalesce(sum(l.monto) filter (where l.clase = 'pago' and not coalesce(s.resuelto ? 'fuera', false)), 0),
-         coalesce(sum(l.monto) filter (where l.clase = 'vuelve'), 0),
+         coalesce(sum(l.monto) filter (where l.clase = 'vuelve' and l.cuenta is null), 0),
          coalesce(sum(l.monto) filter (where l.clase = 'pago' and coalesce(s.resuelto ? 'fuera', false)), 0),
-         coalesce(sum(l.monto) filter (where l.clase = 'otro'), 0),
+         -- (lo que volvió de un depósito que no es de p1 va a su cuenta, como lo desconocido)
+         coalesce(sum(l.monto) filter (where l.clase = 'otro' or (l.clase = 'vuelve' and l.cuenta is not null)), 0),
          coalesce(sum(l.comision) filter (where l.clase <> 'propio'), 0) - coalesce(sum(l.monto) filter (where l.clase = 'comision'), 0),
          count(distinct l.pi) filter (where l.clase = 'pago'),
          coalesce(jsonb_agg(distinct l.pi) filter (where l.clase = 'pago'), '[]'::jsonb)
@@ -2847,11 +2991,16 @@ begin
   -- antes; nunca dentro de una conciliación confirmada de la 1010.
   v_fdoc := v_llegada;
   if v_est = 'paid' then
-    select count(*), min(m.fecha) into v_n, v_fecha
+    -- (solo si es el ÚNICO STRIPE pendiente de ese importe cerca de la
+    -- llegada y cae en la ventana estrecha —Chase no lo postea tres días
+    -- antes de lo que dice Stripe—: otro igual cerca es de otro depósito)
+    select count(*), count(*) filter (where m.fecha between v_llegada - 1 and v_llegada + 3),
+           min(m.fecha) filter (where m.fecha between v_llegada - 1 and v_llegada + 3)
+      into v_n, v_n2, v_fecha
       from movimientos_banco m
      where m.cuenta = cfg.cuenta_banco and m.estado = 'pendiente' and m.monto = v_neto
        and m.fecha between v_llegada - 3 and v_llegada + 5 and m.desc_norm ~* '(^| )STRIPE( |$)';
-    if v_n = 1 then
+    if v_n = 1 and v_n2 = 1 then
       v_fdoc := least(v_llegada, v_fecha);
     end if;
   end if;
@@ -2894,7 +3043,7 @@ begin
     end loop;
     for v_x in select l.txn, l.tipo, l.cuenta, l.monto, l.resuelto->>'motivo' as motivo
                  from stripe_payout_lineas l
-                where l.payout_id = p.id and l.clase = 'otro' and l.monto <> 0
+                where l.payout_id = p.id and (l.clase = 'otro' or (l.clase = 'vuelve' and l.cuenta is not null)) and l.monto <> 0
                 order by l.txn loop
       v_lin := v_lin || jsonb_build_array(jsonb_build_object('cuenta', v_x.cuenta, 'monto', (-v_x.monto)::text,
                                                              'memo', left(format('Stripe %s (%s): %s', v_x.txn, v_x.tipo, v_x.motivo), 300)));
@@ -3035,7 +3184,11 @@ begin
     raise exception using errcode = '22023', message = format('No existe el depósito %s.', coalesce(p_po, '(ninguno)'));
   end if;
   select * into l from stripe_payout_lineas where payout_id = p.id and txn = p_txn for update;
-  if not found or l.clase <> 'otro' then
+  if not found
+     or not (l.clase = 'otro'
+             or (l.clase = 'vuelve' and exists (select 1 from stripe_payouts q
+                                                 where q.po = l.fuente and q.estado in ('fuera', 'revisar')
+                                                   and q.asiento_vuelta is null and q.asiento_salida is null))) then
     raise exception using errcode = 'MX008', message = 'Esa no es una línea de este depósito que la app no conoce.';
   end if;
   if p.asiento_salida is not null then
@@ -3100,6 +3253,17 @@ begin
     raise exception using errcode = 'MX008',
       message = format('El depósito %s trae cobros que la app ya puso en el libro: %s. No se saca de la app (la 1020 quedaría colgada); si '
                        'su movimiento de Chase está registrado también en la bandeja, des-cásalo allí y toca «Volver a mirar».', p.po, v_pis);
+  end if;
+  -- (ni uno que trae lo que volvió de un depósito fallido cuya vuelta ya está
+  -- en el libro —P3—: ese dinero sale de la puente con este depósito)
+  select string_agg(format('%s (%s)', l.fuente, fn_stripe_usd(l.monto)), ', ') into v_pis
+    from stripe_payout_lineas l
+    join stripe_payouts q on q.po = l.fuente
+   where l.payout_id = p.id and l.clase = 'vuelve' and q.asiento_vuelta is not null and fn_stripe_reversado(q.asiento_vuelta) is null;
+  if v_pis is not null then
+    raise exception using errcode = 'MX008',
+      message = format('El depósito %s trae lo que volvió del depósito fallido %s, que ya está en el libro (su asiento de vuelta): no se '
+                       'saca de la app (la 1020 quedaría colgada).', p.po, v_pis);
   end if;
   update stripe_pagos s
      set resuelto = jsonb_build_object('fuera', jsonb_build_object('payout', p.po), 'motivo', btrim(p_motivo), 'por', p_dueno, 'el', now()),
@@ -3175,7 +3339,11 @@ begin
       from movimientos_banco x
      where x.cuenta = cfg.cuenta_banco and x.estado = 'pendiente' and x.monto = p.monto
        and x.fecha between p.llegada - 3 and p.llegada + 5 and x.desc_norm ~* '(^| )STRIPE( |$)';
-    if cardinality(v_ids) = 1 then
+    -- (solo si es el único de la ventana ancha y cae en la estrecha: otro
+    -- STRIPE igual cerca puede ser de otro depósito, y casar el que no es
+    -- deja el suyo pendiente sin P2; Edgar elige)
+    if cardinality(v_ids) = 1
+       and (select x.fecha between p.llegada - 1 and p.llegada + 3 from movimientos_banco x where x.id = v_ids[1]) then
       v_mov := v_ids[1];
       perform fn_banco_casar(v_mov);
     end if;
@@ -3423,13 +3591,15 @@ select z.orden, z.control, z.nivel, z.ok, z.filas, z.esperadas, z.detalle
              from public.asiento_lineas l
              join public.asientos a on a.id = l.asiento_id
             where l.cuenta = cfg.cuenta_puente
-              and not (   (a.origen_tabla = 'cobros' and a.origen_id in (select pl.cobro_id::text from public.stripe_pago_libro pl
-                                                                          where pl.accion = 'cobro'))
-                       or (a.origen_tabla = 'cobros_devoluciones'
-                           and a.origen_id in (select pl.devolucion_id::text from public.stripe_pago_libro pl
-                                                where pl.accion = 'devolucion' and pl.devolucion_id is not null))
-                       or a.id in (select ases.id from ases)
-                       or a.reversa_a in (select ases.id from ases))) t
+              -- (coalesce: con origen o reversa_a nulos, «in» da nulo y «not nulo» dejaba
+              -- pasar la fila: el cuadre quedaba ciego en cuanto había un depósito asentado)
+              and not coalesce(   (a.origen_tabla = 'cobros' and a.origen_id in (select pl.cobro_id::text from public.stripe_pago_libro pl
+                                                                                   where pl.accion = 'cobro'))
+                                or (a.origen_tabla = 'cobros_devoluciones'
+                                    and a.origen_id in (select pl.devolucion_id::text from public.stripe_pago_libro pl
+                                                         where pl.accion = 'devolucion' and pl.devolucion_id is not null))
+                                or a.id in (select ases.id from ases)
+                                or a.reversa_a in (select ases.id from ases), false)) t
    union all
    -- 21: la puente = lo que falta depositar (+ lo que volvió de un depósito
    -- fallido y no ha liquidado otro)
@@ -3456,9 +3626,11 @@ select z.orden, z.control, z.nivel, z.ok, z.filas, z.esperadas, z.detalle
    select 23, 'stripe: la cuenta de paso en cero', 'cuadre', t.saldo = 0 and t.ajenas = 0, t.ajenas, 0,
           format('la %s tiene %s%s', cfg.cuenta_paso, t.saldo, coalesce('; ajenos: ' || t.d, ''))
      from (select coalesce(sum(l.monto), 0) as saldo,
-                  count(*) filter (where not (a.id in (select ases.id from ases) or a.reversa_a in (select ases.id from ases))) as ajenas,
-                  left(string_agg(distinct a.numero, ', ') filter (where not (a.id in (select ases.id from ases)
-                                                                              or a.reversa_a in (select ases.id from ases))), 1500) as d
+                  count(*) filter (where not coalesce(a.id in (select ases.id from ases) or a.reversa_a in (select ases.id from ases), false))
+                    as ajenas,
+                  left(string_agg(distinct a.numero, ', ') filter (where not coalesce(a.id in (select ases.id from ases)
+                                                                                      or a.reversa_a in (select ases.id from ases), false)),
+                       1500) as d
              from public.asiento_lineas l
              join public.asientos a on a.id = l.asiento_id
             where l.cuenta = cfg.cuenta_paso) t

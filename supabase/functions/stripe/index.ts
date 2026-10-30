@@ -73,6 +73,8 @@ const STRIPE_VERSION = "2026-09-30.endive";
 const TOLERANCIA = 300; // segundos, como stripe-node
 const MAX_CUERPO = 1_000_000;
 const PRESUPUESTO_BARRIDO_MS = 45_000;
+// (20 justos: GET /v1/events?types[] admite hasta 20; con uno más, el barrido
+// de los avisos no entregados daría 400)
 const EVENTOS = [
   "checkout.session.completed", "checkout.session.async_payment_succeeded", "checkout.session.async_payment_failed",
   "payment_intent.processing", "payment_intent.succeeded", "payment_intent.payment_failed", "payment_intent.canceled",
@@ -392,7 +394,7 @@ function armarFotoPago(pi: Json, cargos: Json[], reembolsos: Json[], disputas: J
   const ultimo = fotosCargo.find((c) => c.id === idDe(pi.latest_charge)) ?? fotosCargo[fotosCargo.length - 1];
   const accion = obj(pi.next_action);
   const medio = (ultimo?.medio as string | undefined)
-    ?? medioDe(lpe.payment_method_type)
+    ?? medioDe(obj(lpe.payment_method).type)
     ?? (accion.type === "verify_with_microdeposits" ? "ach" : null);
   return {
     pi: pi.id, visto_el: vistoEl, estado: pi.status, monto: num(pi.amount) ?? 0, recibido: num(pi.amount_received) ?? 0,
@@ -403,10 +405,12 @@ function armarFotoPago(pi: Json, cargos: Json[], reembolsos: Json[], disputas: J
     cargos: fotosCargo,
     reembolsos: reembolsos.map((r) => ({
       id: r.id, monto: num(r.amount) ?? 0, estado: r.status, creado: num(r.created), bt: idDe(r.balance_transaction),
-      bt_fallo: idDe(r.failure_balance_transaction), motivo_fallo: texto(r.failure_reason),
+      bt_fallo: idDe(r.failure_balance_transaction), bt_fallo_creado: num(obj(r.failure_balance_transaction).created),
+      motivo_fallo: texto(r.failure_reason),
     })),
     disputas: disputas.map((d) => limpiar({
-      id: d.id, monto: num(d.amount) ?? 0, estado: d.status, motivo: texto(d.reason), vence: num(obj(d.evidence_details).due_by),
+      // (due_by 0 = la disputa no admite respuesta —las de cuenta de banco—: sin plazo)
+      id: d.id, monto: num(d.amount) ?? 0, estado: d.status, motivo: texto(d.reason), vence: num(obj(d.evidence_details).due_by) || null,
       bts: arr(d.balance_transactions).map((b) => ({ id: b.id, categoria: b.reporting_category, monto: num(b.amount) ?? 0, comision: num(b.fee) ?? 0, creado: num(b.created) })),
     })),
     // (el código: el del banco si lo hay —insufficient_funds, account_closed…—; la base lo dice en llano)
@@ -434,10 +438,22 @@ function piDeFuente(fuente: unknown): string | null {
   const cargo = obj(f.charge);
   return idDe(cargo.payment_intent);
 }
+// Los tipos de movimiento que la foto del pago conoce (cargos[].bt y bt_fallo,
+// reembolsos[].bt y bt_fallo, disputas[].bts): solo a esos se les pone su
+// pago. Otro movimiento con origen en un cargo (un payment_reversal, un
+// adjustment sobre el cargo…) va sin pago: la base lo deja «a qué cuenta va»
+// y avisa, en vez de esperar a un pago que nunca lo va a conocer.
+const CONOCIDOS = new Set(["charge", "payment", "payment_failure_refund", "refund", "payment_refund", "refund_failure"]);
+function piDeLinea(b: Json): string | null {
+  const tipo = String(b.type ?? "");
+  if (CONOCIDOS.has(tipo)) return piDeFuente(b.source);
+  if (tipo === "adjustment" && obj(b.source).object === "dispute") return piDeFuente(b.source);
+  return null;
+}
 function armarLineas(bts: Json[]): Json[] {
   return bts.map((b) => limpiar({
     txn: b.id, tipo: b.type, categoria: texto(b.reporting_category), monto: num(b.amount) ?? 0, comision: num(b.fee) ?? 0,
-    neto: num(b.net), fuente: idDe(b.source), pi: piDeFuente(b.source), creado: num(b.created), disponible: num(b.available_on),
+    neto: num(b.net), fuente: idDe(b.source), pi: piDeLinea(b), creado: num(b.created), disponible: num(b.available_on),
   }));
 }
 
@@ -446,7 +462,7 @@ async function syncPago(base: Base, pi: string, pistas: Pistas, evento: string |
   const vistoEl = new Date().toISOString(); // ANTES de pedir: una foto vieja no toca nada
   const p = await stripe("GET", `/v1/payment_intents/${encodeURIComponent(pi)}`);
   const cargos = await lista("/v1/charges", { payment_intent: pi, limit: 100, expand: ["data.balance_transaction"] });
-  const reembolsos = await lista("/v1/refunds", { payment_intent: pi, limit: 100 });
+  const reembolsos = await lista("/v1/refunds", { payment_intent: pi, limit: 100, expand: ["data.failure_balance_transaction"] });
   const disputas = (pistas.disputa || cargos.some((c) => c.disputed === true))
     ? await lista("/v1/disputes", { payment_intent: pi, limit: 100 }) : [];
   const meta = obj(p.metadata);

@@ -99,7 +99,7 @@ if (!process.env.SIN_CONSTRUIR) {
       '-c', `select format('total=%s ok=%s fallan=%s omitidas=%s', count(*), count(*) filter (where ok), count(*) filter (where not ok), count(*) filter (where ok is null)) || coalesce(' · ' || string_agg(n || ' ' || prueba, '; ') filter (where ok is not true), '') from _pruebas`],
       { env: PG_ENV, stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 << 20 }).toString().trim();
   } catch (e) { pruebasP1 = 'error: ' + String(e.stderr || e.message).slice(-1500); }
-  ok('E2E-01 p1-pruebas.sql en verde (42 de 42)', /^total=42 ok=42 fallan=0/.test(pruebasP1), pruebasP1);
+  ok('E2E-01 p1-pruebas.sql en verde (46 de 46)', /^total=46 ok=46 fallan=0/.test(pruebasP1), pruebasP1);
   // el banco: las facturas de la semilla en el libro (como la guía del lector 4) y diez de prueba, redondas
   q(`select fn_mapeo_confirmar('tipo_proyecto', 'residencial'); select fn_mapeo_confirmar('tipo_proyecto', 'comercial');
      update facturas set retencion = 0 where id = 2;
@@ -656,6 +656,43 @@ try {
      && / 6110 25\.00/.test(' ' + lineasDe(q(`select asiento_salida from stripe_payouts where po = ${lit(poF.po)}`))), [r.j, lineasDe(q(`select asiento_salida from stripe_payouts where po = ${lit(poF.po)}`))]);
   await deposito('e2e-stripe-poF', poF.llegada, (poF.monto / 100).toFixed(2));
   ok('E2E-21 la 1020 en cero y el depósito casado', saldo('1020') === '0.00' && /\|t\|/.test(casadoDe(poF.po)), [saldo('1020'), casadoDe(poF.po)]);
+
+  // ---- E2E-21b lo que añadió la revisión del 30-oct -------------------------------------
+  q(`insert into facturas (proyecto_id, num, fecha, monto, retencion, estado, pagada) values ('casa-perez-k3m9', '1115', current_date - 1, 300.00, 0, 'emitida', false)`);
+  q(`select fn_puentes_correr()`);
+  r = await llamar({ accion: 'crear_enlace', factura_id: Number(q(`select id from facturas where num = '1115'`)) }, { jwt: D2 });
+  const p1115 = await sim('/__pagar', { plink: r.j.enlace.plink, medio: 'tarjeta' });
+  await mandar(p1115.eventos, ['checkout.session.completed', 'payment_intent.succeeded']);
+  ok('E2E-21b la 1115 cobrada con tarjeta (300.00)', vivos(p1115.pi) === '1|300.00', vivos(p1115.pi));
+  // una disputa sin plazo (due_by 0, como las de cuenta de banco): sin fecha, y el aviso lo dice
+  const dS = await sim('/__disputa', { pi: p1115.pi, fase: 'abrir', sin_plazo: true });
+  await mandar(dS.eventos, ['charge.dispute.created', 'charge.dispute.funds_withdrawn']);
+  ok('E2E-21b disputa sin plazo (due_by 0): sin fecha de vencimiento y el aviso dice que no admite respuesta',
+     pago(p1115.pi, 'disputa_vence') === '' && pago(p1115.pi) === 'en_disputa'
+     && /no da plazo para responderla/.test(q(`select texto from stripe_avisos where clave = ${lit(`pago:${p1115.pi}:disputa:${dS.dp}`)}`)),
+     [pago(p1115.pi, "coalesce(disputa_vence::text, 'nulo') || ' ' || estado")]);
+  const dW = await sim('/__disputa', { pi: p1115.pi, fase: 'ganar' });
+  await mandar(dW.eventos, ['charge.dispute.closed', 'charge.dispute.funds_reinstated']);
+  ok('E2E-21b ganada: el cobro vuelve', vivos(p1115.pi) === '1|300.00' && pago(p1115.pi) === 'cobrado', [vivos(p1115.pi), pago(p1115.pi)]);
+  // un payment_reversal (el banco revierte un pago cobrado): su origen es el cargo, pero el pago no lo conoce →
+  // va SIN pago (clase otro), el depósito pide a qué cuenta va en vez de esperar en silencio, y el pago sigue cobrado
+  const chR = (await sim('/__estado')).pis.find((x) => x.id === p1110.pi)?.latest_charge;
+  const rv = await sim('/__bt', { tipo: 'payment_reversal', monto: -20000, categoria: 'payment_reversal', fuente: chR });
+  const poR = await sim('/__payout', {});
+  await mandar(poR.eventos, ['payout.paid']);
+  ok('E2E-21b payment_reversal con origen en un cargo: la línea va sin pago (otro), el depósito pide a qué cuenta va, el pago sigue cobrado',
+     q(`select l.clase || '|' || coalesce(l.pi, '-') from stripe_payout_lineas l where l.txn = ${lit(rv.txn)}`) === 'otro|-'
+     && q(`select estado from stripe_payouts where po = ${lit(poR.po)}`) === 'revisar'
+     && /a qué cuenta va/.test(q(`select esperando::text from stripe_payouts where po = ${lit(poR.po)}`))
+     && vivos(p1110.pi) === '1|500.00' && pago(p1110.pi) === 'cobrado',
+     [q(`select estado || ' ' || coalesce(revisar, '') from stripe_payouts where po = ${lit(poR.po)}`), q(`select l.clase || '|' || coalesce(l.pi, '-') from stripe_payout_lineas l where l.txn = ${lit(rv.txn)}`), vivos(p1110.pi)]);
+  r = await llamar({ accion: 'resolver_linea', po: poR.po, txn: rv.txn, cuenta: '6110', motivo: 'Reversión del banco (prueba)' }, { jwt: D2 });
+  ok('E2E-21b resuelta la línea, el depósito se asienta: la reversión a su cuenta, la comisión de la disputa ganada devuelta (±15)',
+     r.estado === 200 && r.j.estado === 'asentado'
+     && lineasDe(q(`select asiento_salida from stripe_payouts where po = ${lit(poR.po)}`)) === '1140 91.00 | 6130 9.00 | 1020 -300.00 | 6110 200.00',
+     [r.j, lineasDe(q(`select asiento_salida from stripe_payouts where po = ${lit(poR.po)}`))]);
+  await deposito('e2e-stripe-poR', poR.llegada, (poR.monto / 100).toFixed(2));
+  ok('E2E-21b la 1020 en cero y el depósito casado', saldo('1020') === '0.00' && /\|t\|/.test(casadoDe(poR.po)), [saldo('1020'), casadoDe(poR.po)]);
 
   // ---- E2E-22 las acciones de la pantalla ----------------------------------------------
   r = await crearEnlace('1103');

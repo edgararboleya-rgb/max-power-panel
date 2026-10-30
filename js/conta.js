@@ -921,7 +921,7 @@
     en_payout: ["en el depósito de Stripe", "ok", x => `En el libro${x.cobro_asiento ? ` (asiento ${x.cobro_asiento})` : ""}. Stripe ya lo metió en un depósito: falta que llegue a Chase.`],
     depositado: ["depositado", "ok", x => `Llegó a Chase con el depósito del ${fechaLarga(x.deposito_fecha)}.`],
     devuelto: ["devuelto", "bad", () => "Se devolvió entero en Stripe (reembolso o disputa perdida): el cobro se devolvió en el libro y la factura vuelve a deber."],
-    en_disputa: ["en disputa", "bad", x => `Stripe retiró el dinero y el cobro se devolvió en el libro. Responde en Stripe antes del ${fechaLarga(x.disputa_vence)}.${x.medio === "ach" ? " Las disputas por cuenta de banco no se pueden impugnar." : ""}`],
+    en_disputa: ["en disputa", "bad", x => `Stripe retiró el dinero y el cobro se devolvió en el libro. ${x.disputa_vence ? `Responde en Stripe antes del ${fechaLarga(x.disputa_vence)}.` : "Stripe no da plazo para responderla (no admite respuesta)."}${x.medio === "ach" ? " Las disputas por cuenta de banco no se pueden impugnar." : ""}`],
     fallido: ["falló", "bad", x => `${x.fallo || "El pago no se completó"}: no entró nada al libro.`],
     revisar: ["por resolver", "bad", x => `${x.revisar || "No se sabe a qué factura va"}. Hasta que digas a qué va, el depósito que lo lleva espera.`],
     fuera: ["fuera de la app", "cu", () => "Su depósito se sacó de la app («Ya está en el libro»): este pago no entra al libro por aquí."]
@@ -967,7 +967,9 @@
     const lineas = Array.isArray(x.lineas) ? x.lineas : [];
     const esperando = Array.isArray(x.esperando) ? x.esperando : [];
     const candidatos = Array.isArray(x.candidatos) ? x.candidatos : [];
-    const sinCuenta = x.estado !== "asentado" ? lineas.filter(l => l.clase === "otro" && !l.cuenta) : [];
+    // (y lo que volvió de un depósito que no es de la app: la base lo pide en «esperando»)
+    const pideCuenta = new Set(esperando.filter(w => w.txn && /a qué cuenta va/.test(w.motivo || "")).map(w => w.txn));
+    const sinCuenta = x.estado !== "asentado" ? lineas.filter(l => !l.cuenta && (l.clase === "otro" || pideCuenta.has(l.txn))) : [];
     const asientos = [x.asiento_salida_num && `${esc(x.asiento_salida_num)} (sale de Stripe)`, x.asiento_llegada_num && `${esc(x.asiento_llegada_num)} (llega a Chase)`, x.asiento_vuelta_num && `${esc(x.asiento_vuelta_num)} (vuelve a Stripe)`].filter(Boolean);
     const mirar = ["en_camino", "esperando_composicion", "esperando_cobros", "revisar"].includes(x.estado);
     // «Ya está en el libro»: solo sin asientos y mientras espera o está por revisar

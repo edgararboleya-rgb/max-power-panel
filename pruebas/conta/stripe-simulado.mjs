@@ -173,7 +173,11 @@ export function crearSimulador({ llave = process.env.STRIPE_SECRET_KEY || 'rk_te
         .map((c) => { const x = publico(c); if (exp && x.balance_transaction) x.balance_transaction = publico(E.bts.find((b) => b.id === x.balance_transaction)); return x; });
       return listar(todos, q, ruta);
     }
-    if (ruta === '/v1/refunds') return listar([...E.reembolsos.values()].reverse().filter((r) => !q.payment_intent || r.payment_intent === q.payment_intent).map(publico), q, ruta);
+    if (ruta === '/v1/refunds') {
+      const exp = expandir(q).includes('data.failure_balance_transaction');
+      return listar([...E.reembolsos.values()].reverse().filter((r) => !q.payment_intent || r.payment_intent === q.payment_intent)
+        .map((r) => { const x = publico(r); const b = exp && x.failure_balance_transaction ? E.bts.find((t) => t.id === x.failure_balance_transaction) : null; if (b) x.failure_balance_transaction = publico(b); return x; }), q, ruta);
+    }
     if (ruta === '/v1/disputes') return listar([...E.disputas.values()].reverse().filter((d) => !q.payment_intent || d.payment_intent === q.payment_intent).map(publico), q, ruta);
     if ((m = ruta.match(/^\/v1\/payouts\/([^/]+)$/))) { const o = E.payouts.get(m[1]); return o ? { estado: 200, cuerpo: publico(o) } : noExiste(m[1]); }
     if (ruta === '/v1/payouts') {
@@ -324,7 +328,7 @@ export function crearSimulador({ llave = process.env.STRIPE_SECRET_KEY || 'rk_te
       c.amount_refunded -= r.amount; c.refunded = false;
       return { re, eventos: [evento('refund.failed', r), evento('refund.updated', r)] };
     },
-    '/__disputa'({ pi: id, fase, monto }) {
+    '/__disputa'({ pi: id, fase, monto, sin_plazo }) {
       const pi = pagoCon(id);
       const c = E.cargos.get(pi.latest_charge);
       let d = [...E.disputas.values()].find((x) => x.payment_intent === pi.id && !['won', 'lost'].includes(x.status));
@@ -332,14 +336,17 @@ export function crearSimulador({ llave = process.env.STRIPE_SECRET_KEY || 'rk_te
       if (fase === 'abrir') {
         const cuanto = Number(monto ?? c.amount);
         d = { id: nuevoId('dp'), object: 'dispute', amount: cuanto, charge: c.id, payment_intent: pi.id, currency: 'usd', reason: 'fraudulent',
-              status: 'needs_response', is_charge_refundable: false, created: ahora(), evidence_details: { due_by: ahora() + 7 * 86400 },
+              status: 'needs_response', is_charge_refundable: false, created: ahora(),
+              // (due_by 0: la disputa no admite respuesta, como las de cuenta de banco)
+              evidence_details: { due_by: sin_plazo ? 0 : ahora() + 7 * 86400 },
               balance_transactions: [], livemode: false };
         E.disputas.set(d.id, d);
         d.balance_transactions.push(publico(bt('adjustment', -cuanto, 1500, d.id, 'dispute')));
         c.disputed = true;
         eventos.push(evento('charge.dispute.created', d), evento('charge.dispute.funds_withdrawn', d));
       } else if (fase === 'ganar') {
-        d.balance_transactions.push(publico(bt('adjustment', d.amount, 0, d.id, 'dispute_reversal')));
+        // (ganada: vuelve el importe y Stripe devuelve la comisión de la disputa, como fee negativo)
+        d.balance_transactions.push(publico(bt('adjustment', d.amount, -1500, d.id, 'dispute_reversal')));
         d.status = 'won';
         eventos.push(evento('charge.dispute.funds_reinstated', d), evento('charge.dispute.closed', d));
       } else {
@@ -349,7 +356,7 @@ export function crearSimulador({ llave = process.env.STRIPE_SECRET_KEY || 'rk_te
       return { dp: d.id, eventos };
     },
     '/__fee'({ monto, descripcion }) { const b = bt('stripe_fee', -Number(monto), 0, null, 'fee'); b.description = descripcion || 'Stripe fee'; return { txn: b.id }; },
-    '/__bt'({ tipo, monto, categoria }) { return { txn: bt(tipo, Number(monto), 0, null, categoria || 'other_adjustment').id }; },
+    '/__bt'({ tipo, monto, categoria, fuente }) { return { txn: bt(tipo, Number(monto), 0, fuente || null, categoria || 'other_adjustment').id }; },
     '/__payout'({ conciliacion = 'completed' } = {}) {
       const juntas = E.bts.filter((b) => b._payout === null && b.status === 'available' && b.type !== 'payout');
       const neto = juntas.reduce((s, b) => s + b.net, 0);
