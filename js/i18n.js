@@ -495,7 +495,12 @@
     "Solo:": "Only:", "Quitar el filtro": "Remove the filter",
     "Esta obra todavía no tiene estimados.": "This job has no estimates yet.",
     // Más
-    "Calendario completo": "Full calendar", "Asistente": "Assistant", "Idioma": "Language"
+    "Calendario completo": "Full calendar", "Asistente": "Assistant", "Idioma": "Language",
+    // Contabilidad (pestaña propia del dueño, oct-26): sus páginas en el lateral y la barra
+    // («Contabilidad» y «Resumen» ya estaban arriba)
+    "Bancos y tarjetas": "Banks and cards", "Bandeja": "Inbox", "Conciliar": "Reconcile",
+    "Movimientos": "Transactions", "Estados financieros": "Financial statements",
+    "Cobros en línea": "Online payments", "Conexiones y seguridad": "Connections and security"
   });
   REGLAS.push(
     [/^venció el (\d+)$/, "expired on the $1"],

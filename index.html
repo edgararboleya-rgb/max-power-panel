@@ -84,8 +84,8 @@
       <div class="wire-cu" aria-hidden="true"></div>
     </header>
 
-    <!-- Menú lateral: desde 768 px (iPad y computadora). Las mismas tres entradas de la
-         barra de abajo: Hoy, Proyectos y Más. -->
+    <!-- Menú lateral: desde 768 px (iPad y computadora). Las mismas entradas de la
+         barra de abajo: Hoy, Proyectos, Contabilidad (solo el dueño) y Más. -->
     <nav id="lateral" class="lateral" aria-label="Menú"></nav>
 
     <!-- Migas y acciones de la vista actual -->
@@ -321,12 +321,14 @@
       <div class="licencia">FL Electrical Contractor License <span class="mono">EC13016045</span></div>
     </footer>
 
-    <!-- La barra de abajo («Cobre y luz», opción A): Hoy · Proyectos · Más, para todos,
-         solo en el teléfono (desde 768 px está el menú lateral con las mismas tres).
+    <!-- La barra de abajo («Cobre y luz», opción A): Hoy · Proyectos · Más, para todos, y
+         «Contabilidad» (el libro mayor) solo para el dueño: la enseña app.js (irHome).
+         Solo en el teléfono (desde 768 px está el menú lateral con las mismas entradas).
          La enciende app.js cuando alguien entra. -->
     <nav id="nav-abajo" class="bottom-nav" aria-label="Menú de abajo" hidden>
       <button type="button" data-nav="hoy"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg><span>Hoy</span></button>
       <button type="button" data-nav="proyectos"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="8" height="7" rx="2"/><rect x="13" y="4" width="8" height="7" rx="2"/><rect x="3" y="13" width="8" height="7" rx="2"/><rect x="13" y="13" width="8" height="7" rx="2"/></svg><span>Proyectos</span></button>
+      <button type="button" data-nav="conta" hidden><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h7"/></svg><span>Contabilidad</span></button>
       <button type="button" data-nav="mas"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>Más</span><span id="nav-chat-badge" class="nav-badge" hidden></span></button>
     </nav>
 

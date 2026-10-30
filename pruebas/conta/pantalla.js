@@ -20,10 +20,18 @@
    enlace (sin monto, con la casilla «pagada» y la retención) y copiarlo, cada
    estado de un pago y de un depósito, sus acciones con la función `stripe`,
    los errores de la función, sin aal2, sin señal y el teléfono a 390 px.
+   Y la organización de v290: la portada «Resumen» (fichas con sus cifras y
+   «Qué atender», todo controlado antes de pintar), MXP_CONTA.paginas() y los
+   hooks pagina()/volver() del contrato con app.js, las pestañas escondidas en
+   la computadora, Bancos sin las tarjetas de conexiones y con el importador
+   plegado, «Conexiones y seguridad» con las tres tarjetas, y la bandeja como
+   bank feed (buscador, motivo, orden, agrupar por comercio, una fila
+   desplegada a la vez y sus botones llamando igual que siempre).
    Los datos son inventados (la forma es la de las vistas de c4, c6 y p1).
    Uso: NODE_PATH=/opt/node22/lib/node_modules node pruebas/conta/pantalla.js
-   (con --fotos guarda capturas de cada pantalla en el temporal del sistema,
-   o en FOTOS_DIR; sirven para mirarla sin entrar a producción)              */
+   (con --fotos guarda capturas en el temporal del sistema, o en FOTOS_DIR:
+   las de cada escena numeradas y, al final, CADA página a 390, 820 y 1280 px
+   de ancho como <ancho>-<pagina>.png; sirven para mirarla sin producción)  */
 const { chromium } = require('playwright');
 const http = require('http'), fs = require('fs'), path = require('path');
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -566,6 +574,17 @@ const FOTOS = process.argv.includes('--fotos') ? (process.env.FOTOS_DIR || path.
 if (FOTOS) fs.mkdirSync(FOTOS, { recursive: true });
 const foto = async (p, nombre) => { if (FOTOS) await p.screenshot({ path: path.join(FOTOS, nombre + '.png'), fullPage: true }); };
 const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' ');
+const PAGS = ['resumen', 'bancos', 'bandeja', 'conciliar', 'movimientos', 'estados', 'cobros', 'conexiones'];
+// cambiar de página por su pestaña: en la computadora (≥ 1024 px) las pestañas están escondidas (las enseña el lateral de app.js), así que el clic es del DOM
+const tab = async (pg, k) => { await pg.locator(`.ct-tab[data-pag="${k}"]`).evaluate(b => b.click()); };
+// esperar a que la pantalla termine de pintar (ni «Cargando…» ni una acción en curso)
+const pintado = async pg => { await pg.waitForTimeout(150); await pg.waitForFunction(() => !document.querySelector('#conta-raiz .ct-cargando') && !window.MXP_CONTA._estado.ocupado, null, { timeout: 8000 }); };
+// una fila de la bandeja: se despliega (si no lo está) y devuelve su tarjeta, con los botones a la vista
+const fila = async (pg, id) => { const c = pg.locator(`.ct-mov[data-id="${id}"]`); await c.locator('.ct-mov-fila').waitFor({ state: 'attached', timeout: 8000 });
+  if ((await c.locator('.ct-mov-fila').getAttribute('aria-expanded')) !== 'true') { await c.locator('.ct-mov-fila').evaluate(b => b.click()); await pg.waitForTimeout(120); } return c; };
+// espías sobre los hooks del contrato (app.js los pasa al abrir y los vuelve a pasar en cada entrada; S.hooks los guarda y conta.js los busca en cada llamada)
+const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; window.__vol = window.__vol || []; const h = window.MXP_CONTA._estado.hooks; if (h.__espiado) return; h.__espiado = true;
+  const p0 = h.pagina, v0 = h.volver; h.pagina = k => { window.__pag.push(k); p0(k); }; h.volver = v => { window.__vol.push(v); v0(v); }; });
 
 (async () => {
   await new Promise(r => srv.listen(8873, r));
@@ -580,9 +599,8 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
     await p.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await p.waitForTimeout(800);
     await p.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
     ok('El campo no ve la loseta de Contabilidad', await p.locator('#btn-conta').isHidden());
-    ok('…ni la entrada en el lateral', (await p.locator('#lateral [data-lat="btn-conta"]').count()) === 0);
-    await p.locator('#lateral [data-lat="mas"]').first().evaluate(b => b.click()); await p.waitForTimeout(300);
-    ok('…ni la fila en «Más»', (await p.locator('#mas-filas [data-mas="conta"]').count()) === 0);
+    ok('…ni la pestaña «Contabilidad» del lateral con sus páginas', (await p.locator('#lateral [data-lat="conta"], #lateral [data-lat^="conta-"]').count()) === 0);
+    ok('…ni el botón «Contabilidad» de la barra de abajo', (await p.locator('#nav-abajo button[data-nav="conta"]').getAttribute('hidden')) !== null);
     await ctx.close();
   }
   // ---- Edgar ----
@@ -594,26 +612,68 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   await p.goto('http://localhost:8873/index.html');
   await p.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await p.waitForTimeout(800);
   await p.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
+  // el período que la pantalla debe preseleccionar: el mes de v_cortes que contiene hoy; si no, el más reciente ya empezado
+  const mesRegla = (() => { const meses = CORTES.filter(c => c.tipo === 'mes' && c.desde <= HOY).sort((x, y) => y.desde.localeCompare(x.desde)); return (meses.find(c => c.corte >= HOY) || meses[0]).periodo; })();
+  const titulo = async () => (await p.locator('#titulo-vista').textContent()).trim();
   ok('Edgar tiene la loseta (escondida en Hoy, como las demás del dueño)', !(await p.locator('#btn-conta').getAttribute('hidden')) );
-  ok('…y la entrada «Contabilidad» en el lateral', (await p.locator('#lateral [data-lat="btn-conta"]').count()) === 1);
-  await p.locator('#lateral [data-lat="mas"]').first().evaluate(b => b.click()); await p.waitForTimeout(300);
-  ok('…y la fila en «Más»', (await p.locator('#mas-filas [data-mas="conta"]').count()) === 1);
+  ok('…y la pestaña «Contabilidad» en el lateral con las 8 páginas como subtítulos (conta-<k>, los que da MXP_CONTA.paginas()), y el botón de la barra de abajo', (await p.locator('#lateral [data-lat="conta"]').count()) === 1 &&
+    JSON.stringify(await p.locator('#lateral [data-lat^="conta-"]').evaluateAll(bs => bs.map(b => b.dataset.lat))) === JSON.stringify(PAGS.map(k => 'conta-' + k)) && (await p.locator('#nav-abajo button[data-nav="conta"]').getAttribute('hidden')) === null);
 
-  // ---- Bancos y tarjetas: control antes de pintar ----
-  let n = llamadas.length;
+  // ---- La portada («Resumen»): control antes de pintar, las fichas y «Qué atender» ----
+  let n = llamadas.length; let nLect = lecturas.length;
   await p.locator('#btn-conta').evaluate(b => b.click());
-  await p.waitForSelector('#conta-raiz .ct-cuenta', { timeout: 8000 });
-  ok('Al entrar, la vista de la contabilidad se ve y el título es «Bancos y tarjetas»', await p.locator('#vista-conta').isVisible() && (await p.locator('#titulo-vista').textContent()).trim() === 'Bancos y tarjetas');
-  ok('Pinta una tarjeta por cuenta (4)', (await p.locator('.ct-cuenta').count()) === 4, await p.locator('.ct-cuenta').count());
+  await p.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 });
+  ok('Al entrar, la vista de la contabilidad se ve, la página es «Resumen» (la portada) y la pestaña «resumen» está marcada', await p.locator('#vista-conta').isVisible() && (await p.locator('#titulo-vista').textContent()).trim() === 'Resumen' && (await p.locator('.ct-tab[data-pag="resumen"][aria-current="page"]').count()) === 1, await p.locator('#titulo-vista').textContent());
+  const pags = await p.evaluate(() => window.MXP_CONTA.paginas().map(x => [x.k, x.nombre, /^<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"/.test(x.svg) && /<\/svg>$/.test(x.svg)]));
+  ok('MXP_CONTA.paginas() da las 8 páginas en su orden, con su nombre y un svg del estilo del menú', JSON.stringify(pags.map(x => x[0])) === JSON.stringify(PAGS) && pags.every(x => x[2]) && pags.map(x => x[1]).join('|') === 'Resumen|Bancos y tarjetas|Bandeja|Conciliar|Movimientos|Estados financieros|Cobros en línea|Conexiones y seguridad', JSON.stringify(pags));
+  ok('En la computadora (1280 px) las pestañas de arriba van escondidas (las enseña el lateral), pero siguen en el DOM con sus 8 páginas', (await p.locator('.ct-tabs').evaluate(e => getComputedStyle(e).display)) === 'none' && (await p.locator('.ct-tab').count()) === 8 && JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS));
+  await espiar(p);
+  const ctrlR0 = desde(n).find(l => l.fn === 'fn_banco_control');
+  ok('La portada pidió fn_banco_control(hoy) con las cuatro vistas del banco (v_banco_saldos manda) y fn_estados_control con v_resultados del mes de hoy', !!ctrlR0 && ctrlR0.args.p_periodo === 'hoy' && JSON.stringify(ctrlR0.args.p_vistas) === '["v_banco_saldos","v_banco_bandeja","v_conciliacion","v_banco_movimientos"]' &&
+    desde(n).some(l => l.fn === 'fn_estados_control' && JSON.stringify(l.args.p_vistas) === '["v_resultados"]' && l.args.p_periodo === mesRegla) && lecturas.slice(nLect).some(l => new RegExp('^v_resultados\\?.*periodo=eq\\.' + mesRegla).test(l)), JSON.stringify(ctrlR0 && ctrlR0.args));
+  const fichaTxt = async k => texto(p, `.ct-ficha[data-ir="${k}"]`);
+  const diasViejo = Math.round((Date.parse(HOY) - Date.parse('2026-10-02')) / 86400000);
+  ok('Fichas: Bancos $16,457.20 en libros (1010 + 1030, sin la 1020 de Stripe) «sin archivo del banco todavía»; Tarjetas $23,220.37 (lo que se debe, 2 tarjetas); Bandeja 3, «el más viejo del 2 oct»; Cobros en línea $4,000.00 sin depositar y $4,200.50 en camino',
+    /Bancos\$16,457\.20en libros · sin archivo del banco todavía/.test(await fichaTxt('bancos')) && /Tarjetas\$23,220\.37lo que se debe · 2 tarjetas/.test(await texto(p, '.ct-ficha[data-ir="bancos"] >> nth=1')) &&
+    /^Bandeja3esperan · el más viejo del 2 oct/.test(await fichaTxt('bandeja')) && /Cobros en línea\$4,000\.00en Stripe sin depositar · en camino \$4,200\.50/.test(await fichaTxt('cobros')), (await fichaTxt('bancos')) + ' | ' + (await fichaTxt('bandeja')) + ' | ' + (await fichaTxt('cobros')));
+  ok('La ficha de la bandeja se pone en rojo solo si lo más viejo pasa de 30 días', (await p.locator('.ct-ficha[data-ir="bandeja"]').evaluate(e => e.classList.contains('bad'))) === (diasViejo > 30), diasViejo);
+  const resMes = T.v_resultados.filter(f => f.periodo === mesRegla), ingMes = resMes.find(f => f.nivel === 'seccion' && f.seccion === 'ingresos'), netaMes = resMes.find(f => f.nivel === 'total' && f.linea === 'utilidad_neta');
+  const fmtUS = v => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const mesTxt = await fichaTxt('estados');
+  ok(resMes.length ? `«Este mes» trae ingresos ${fmtUS(ingMes.mes)}, costo y gastos (la suma de las secciones que no son ingresos) y el resultado ${fmtUS(netaMes.mes)} de v_resultados, y lleva a Estados` : '«Este mes» sin asientos lo dice en llano (no pinta ceros)',
+    resMes.length ? new RegExp('Ingresos' + fmtUS(ingMes.mes).replace(/[$.]/g, '\\$&') + 'Costo y gastos' + fmtUS(resMes.filter(f => f.nivel === 'seccion' && f.seccion !== 'ingresos').reduce((a, f) => a + f.mes, 0)).replace(/[$.]/g, '\\$&') + 'Resultado' + fmtUS(netaMes.mes).replace(/[$.]/g, '\\$&')).test(mesTxt) : /no tiene asientos de resultados todavía/.test(mesTxt) && !/\$0\.00/.test(mesTxt), mesTxt);
+  const atn = await p.locator('#ct-atender .ct-atn').allTextContents();
+  ok('«Qué atender»: el código del teléfono no activo (→ Conexiones) y la cuenta de Plaid sin fijar (→ Conexiones); nada de Stripe (su control está en verde)', atn.length === 2 && /El código del teléfono .*no está activo/.test(atn[0]) && /Platypus Bank: 1 cuenta del banco sin fijar/.test(atn[1]) && (await p.locator('#ct-atender .ct-atn button[data-ir="conexiones"]').count()) === 2, atn.join(' | '));
+  await foto(p, '0-resumen');
+  await p.locator('.ct-ficha[data-ir="bandeja"]').click(); await p.waitForSelector('.ct-mov', { timeout: 8000 });
+  const hooks1 = await p.evaluate(() => ({ pag: window.__pag.slice(), vol: window.__vol.slice() }));
+  ok('Tocar la ficha de la bandeja abre la Bandeja: hooks.pagina("bandeja") y hooks.volver(false) (en la raíz de una página no hay nada interno que cerrar)', (await titulo()) === 'Bandeja' && hooks1.pag.join() === 'bandeja' && hooks1.vol.length >= 1 && hooks1.vol.every(v => v === false), JSON.stringify(hooks1));
+  ok('…y el lateral ancho enciende «conta-bandeja» (lo hace app.js con hooks.pagina) y «←» no está a la vista (lo hace app.js con hooks.volver)', (await p.locator('#lateral [data-lat="conta-bandeja"][aria-current="page"]').count()) === 1 && (await p.locator('#lateral .lat-item[aria-current="page"]').count()) === 1 && await p.locator('#btn-volver').isHidden());
+  await p.locator('#lateral [data-lat="conta-conciliar"]').evaluate(b => b.click()); await p.waitForSelector('#ct-conc-form', { timeout: 8000 });
+  // (app.js vuelve a llamar a abrir(hooks, k) con hooks nuevos: los espías se vuelven a poner)
+  await espiar(p);
+  ok('El subtítulo del lateral abre su página (Conciliar) y queda encendido', (await titulo()) === 'Conciliar' && (await p.evaluate(() => window.MXP_CONTA._estado.pagina)) === 'conciliar' && (await p.locator('#lateral [data-lat="conta-conciliar"][aria-current="page"]').count()) === 1);
+  await tab(p, 'resumen'); await p.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 });
+  await p.locator('#ct-atender .ct-atn button[data-ir="conexiones"]').first().click(); await p.waitForSelector('#ct-mfa', { timeout: 8000 });
+  ok('El botón de «Qué atender» lleva a Conexiones y seguridad', (await titulo()) === 'Conexiones y seguridad' && (await p.evaluate(() => window.__pag.slice(-1)[0])) === 'conexiones');
+
+  // ---- Bancos y tarjetas: control antes de pintar, solo las cuentas ----
+  n = llamadas.length;
+  await tab(p, 'bancos'); await p.waitForSelector('#conta-raiz .ct-cuenta', { timeout: 8000 });
+  ok('Bancos y tarjetas: el título, una tarjeta por cuenta (4) y NINGUNA tarjeta del código del teléfono, de Plaid ni de Stripe (viven en Conexiones)', (await p.locator('#titulo-vista').textContent()).trim() === 'Bancos y tarjetas' && (await p.locator('.ct-cuenta').count()) === 4 && (await p.locator('#ct-mfa, #ct-plaid, #ct-stripe').count()) === 0, await p.locator('.ct-cuenta').count());
   const ctrl = desde(n).find(l => l.fn === 'fn_banco_control');
   ok('Pidió el control con la vista que pinta (v_banco_saldos, período hoy)', !!ctrl && ctrl.args.p_periodo === 'hoy' && JSON.stringify(ctrl.args.p_vistas) === '["v_banco_saldos"]', JSON.stringify(ctrl && ctrl.args));
-  ok('La Gold dice su deuda en libros ($14,624.26) y la del banco ($14,675.12 al 8 oct)', /\$14,624\.26/.test(await texto(p, '.ct-cuenta[data-cuenta="2100-2013"] .ct-val')) && /\$14,675\.12/.test(await texto(p, '.ct-cuenta[data-cuenta="2100-2013"] .ct-val')) && /8 oct 2026/.test(await texto(p, '.ct-cuenta[data-cuenta="2100-2013"]')));
+  ok('La Gold dice su deuda en libros ($14,624.26) y la del banco ($14,675.12 al 8 oct), con «3 en la bandeja» y las acciones Bandeja / Conciliar / Movimientos', /\$14,624\.26/.test(await texto(p, '.ct-cuenta[data-cuenta="2100-2013"] .ct-val')) && /\$14,675\.12/.test(await texto(p, '.ct-cuenta[data-cuenta="2100-2013"] .ct-val')) && /8 oct 2026/.test(await texto(p, '.ct-cuenta[data-cuenta="2100-2013"]')) &&
+    /3 en la bandeja/.test(await texto(p, '.ct-cuenta[data-cuenta="2100-2013"] .ct-cab')) && JSON.stringify(await p.locator('.ct-cuenta[data-cuenta="2100-2013"] [data-ir]').evaluateAll(bs => bs.map(b => b.dataset.ir))) === '["bandeja","conciliar","movimientos"]');
   ok('El contador de la bandeja dice 3', (await p.locator('#ct-n-bandeja').textContent()).trim() === '3');
+  ok('El importador general va plegado detrás de «Importar un estado de cuenta»', (await p.locator('#ct-importar').isHidden()) && (await p.locator('#ct-imp-abrir').getAttribute('aria-expanded')) === 'false');
   await foto(p, '1-bancos');
 
   // ---- Falla ruidosa ----
   estado.controlMal = true;
-  await p.locator('.ct-tab[data-pag="bancos"]').click(); await p.waitForSelector('.ct-rojo', { timeout: 8000 });
+  await tab(p, 'resumen'); await p.waitForSelector('.ct-rojo', { timeout: 8000 });
+  ok('Control en rojo en la portada: rojo con el detalle y ninguna ficha ni cifra', (await p.locator('.ct-ficha').count()) === 0 && /no cuadra/.test(await texto(p, '.ct-rojo h2')) && /prueba/.test(await texto(p, '.ct-rojo')));
+  await tab(p, 'bancos'); await p.waitForSelector('.ct-rojo', { timeout: 8000 });
   await foto(p, '2-rojo');
   ok('Control en rojo: la pantalla se pone en rojo y no pinta ninguna cuenta', (await p.locator('.ct-cuenta').count()) === 0 && /no cuadra/.test(await texto(p, '.ct-rojo h2')) && /prueba/.test(await texto(p, '.ct-rojo')));
   estado.controlMal = false; estado.controlFilas = 99;
@@ -625,6 +685,8 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
 
   // ---- Importar ----
   n = llamadas.length;
+  await p.locator('#ct-imp-abrir').click(); await p.waitForSelector('#ct-importar:not([hidden])', { timeout: 8000 });
+  ok('«Importar un estado de cuenta» abre la tarjeta del importador (con su «¿Qué es esto?» plegado)', await p.locator('#ct-importar').isVisible() && (await p.locator('#ct-importar .ct-ayuda').count()) === 1 && !(await p.locator('#ct-importar .ct-ayuda').evaluate(d => d.open)));
   await p.setInputFiles('#ct-imp-archivo', { name: 'gold-2026-10-08.qfx', mimeType: 'application/x-ofx', buffer: Buffer.from(OFX, 'latin1') });
   await p.locator('#ct-imp-btn').click();
   await p.waitForSelector('.ct-ok-box', { timeout: 10000 });
@@ -639,15 +701,57 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   const imp2 = desde(n).find(l => l.fn === 'fn_banco_importar_ofx');
   ok('Subir desde la tarjeta de una cuenta manda esa cuenta (1010)', !!imp2 && imp2.args.p_cuenta === '1010');
 
-  // ---- La bandeja ----
+  // ---- La bandeja (el bank feed) ----
   n = llamadas.length;
-  await p.locator('.ct-tab[data-pag="bandeja"]').click(); await p.waitForSelector('.ct-mov', { timeout: 8000 });
+  await tab(p, 'bandeja'); await p.waitForSelector('.ct-mov', { timeout: 8000 });
   ok('La bandeja pinta los 3 movimientos y pidió su control (v_banco_bandeja)', (await p.locator('.ct-mov').count()) === 3 && desde(n).some(l => l.fn === 'fn_banco_control' && JSON.stringify(l.args.p_vistas) === '["v_banco_bandeja"]'));
   ok('El de más de 30 días va primero, con su alarma', (await p.locator('.ct-mov').first().getAttribute('data-id')) === MOV.c && /más de 30 días/.test(await texto(p, '.ct-mov >> nth=0')));
+  ok('La cabecera dice «3 movimientos del banco esperan tu respuesta por $315.34 · 1 lleva más de 30 días» y «Casar otra vez» es su acción', /3 movimientos del banco esperan tu respuesta por \$315\.34 · 1 lleva más de 30 días/.test(await texto(p, '.ct-pag-sub')) && (await p.locator('.ct-pag-acc #ct-casar').count()) === 1, await texto(p, '.ct-pag-sub'));
+  ok('Filas compactas: cada movimiento es un <article class="ct-mov" data-id> con su cabecera (un botón, aria-expanded) y el detalle plegado; en la computadora la cabecera es una fila de tabla con las columnas alineadas',
+    (await p.locator('.ct-mov .ct-mov-fila[aria-expanded="false"]').count()) === 3 && (await p.locator('.ct-mov .ct-mov-det[hidden]').count()) === 3 && (await p.locator('.ct-feed-cab').isVisible()) &&
+    (await p.locator('.ct-mov-fila').first().evaluate(e => getComputedStyle(e).gridTemplateAreas)).includes('fecha desc cuenta motivo monto chev') && /PEAJE EJEMPLO/.test(await texto(p, '.ct-mov >> nth=0 >> .ct-f-desc')) && /Amex Business Gold/.test(await texto(p, '.ct-mov >> nth=0 >> .ct-f-cuenta')) && /¿Duplicado\?/.test(await texto(p, '.ct-mov >> nth=0 >> .ct-f-motivo')) && /−\$61\.21/.test(await texto(p, '.ct-mov >> nth=0 >> .ct-f-monto')));
   const cardB = p.locator(`.ct-mov[data-id="${MOV.b}"]`);
   ok('El que tiene propuesta pinta un botón por opción (4) más «Otra cosa…»', (await cardB.locator('[data-op]').count()) === 4 && (await cardB.locator('[data-otra]').count()) === 1);
-  await foto(p, '3-bandeja');
   ok('El sin ticket no tiene botones de la base, solo «Otra cosa…»', (await p.locator(`.ct-mov[data-id="${MOV.a}"] [data-op]`).count()) === 0);
+  // desplegar una fila: solo una a la vez
+  await cardB.locator('.ct-mov-fila').click(); await p.waitForTimeout(150);
+  ok('Tocar la fila la despliega (el texto de la base y sus botones a la vista) y es la única desplegada', (await cardB.locator('.ct-mov-fila').getAttribute('aria-expanded')) === 'true' && await cardB.locator('.ct-mov-det').isVisible() && await cardB.locator('[data-op="0"]').isVisible() && (await p.locator('.ct-mov.abierta').count()) === 1 && /Puede ser una partida en tránsito/.test(await cardB.locator('.ct-texto').textContent()));
+  await p.locator(`.ct-mov[data-id="${MOV.a}"] .ct-mov-fila`).click(); await p.waitForTimeout(150);
+  ok('Tocar otra cierra la anterior', (await p.locator('.ct-mov.abierta').count()) === 1 && (await p.locator(`.ct-mov[data-id="${MOV.a}"] .ct-mov-fila`).getAttribute('aria-expanded')) === 'true' && (await cardB.locator('.ct-mov-fila').getAttribute('aria-expanded')) === 'false' && await cardB.locator('.ct-mov-det').isHidden());
+  await p.locator(`.ct-mov[data-id="${MOV.a}"] .ct-mov-fila`).click(); await p.waitForTimeout(150);
+  ok('Tocar la desplegada la pliega', (await p.locator('.ct-mov.abierta').count()) === 0);
+  // la barra: buscador, motivo, orden, agrupar por comercio (sin volver a la base)
+  nLect = lecturas.length; n = llamadas.length;
+  await p.fill('#ct-bj-buscar', 'peaje'); await p.waitForTimeout(150);
+  ok('El buscador filtra por descripción («peaje» → 1) y dice «1 de 3 movimientos», sin volver a leer', (await p.locator('.ct-mov').count()) === 1 && (await p.locator('.ct-mov').first().getAttribute('data-id')) === MOV.c && /1 de 3 movimientos/.test(await texto(p, '#ct-bj-n')) && lecturas.length === nLect && desde(n).length === 0, await texto(p, '#ct-bj-n'));
+  await p.fill('#ct-bj-buscar', '123.45'); await p.waitForTimeout(150);
+  ok('…y por monto («123.45» → la ferretería)', (await p.locator('.ct-mov').count()) === 1 && (await p.locator('.ct-mov').first().getAttribute('data-id')) === MOV.a);
+  await p.fill('#ct-bj-buscar', 'zzz'); await p.waitForTimeout(150);
+  ok('Sin resultado lo dice («Nada con ese filtro (zzz)»)', (await p.locator('.ct-mov').count()) === 0 && /Nada con ese filtro \(«zzz»\)/.test(await texto(p, '#ct-bj-lista .ct-vacio')));
+  await p.fill('#ct-bj-buscar', ''); await p.waitForTimeout(150);
+  const optMotivo = await p.locator('#ct-bj-motivo option').allTextContents();
+  await p.selectOption('#ct-bj-motivo', 'sin_ticket'); await p.waitForTimeout(150);
+  ok('El filtro por motivo ofrece los motivos presentes en llano con su conteo y filtra («Sin ticket» → 1)', optMotivo.length === 4 && optMotivo.some(t => /Sin ticket \(1\)/.test(t)) && optMotivo.some(t => /¿Duplicado\? \(1\)/.test(t)) && (await p.locator('.ct-mov').count()) === 1 && (await p.locator('.ct-mov').first().getAttribute('data-id')) === MOV.a, optMotivo.join(' | '));
+  await p.selectOption('#ct-bj-motivo', ''); await p.selectOption('#ct-bj-orden', 'monto_desc'); await p.waitForTimeout(150);
+  ok('Ordenar por monto (de mayor a menor) pone primero el de $500.00 y último el de $61.21', (await p.locator('.ct-mov').first().getAttribute('data-id')) === MOV.b && (await p.locator('.ct-mov').last().getAttribute('data-id')) === MOV.c);
+  await p.selectOption('#ct-bj-orden', 'fecha_desc'); await p.waitForTimeout(150);
+  ok('«Más nuevos primero» pone primero el del 6 oct', (await p.locator('.ct-mov').first().getAttribute('data-id')) === MOV.c && (await p.locator('.ct-mov').last().getAttribute('data-id')) === MOV.a);
+  await p.selectOption('#ct-bj-orden', 'fecha_asc'); await p.check('#ct-bj-agrupar'); await p.waitForTimeout(150);
+  const grupos = await p.locator('.ct-grupo').evaluateAll(gs => gs.map(g => [g.dataset.grupo, g.open, g.querySelector('.ct-g-n').textContent.trim(), g.querySelector('.ct-g-desc small').textContent, g.querySelector('.ct-g-monto').textContent]));
+  ok('«Agrupar por comercio» arma un grupo por descripción normalizada (3, plegados) con su cuenta, su conteo y su total; las filas siguen dentro', grupos.length === 3 && grupos.every(g => !g[1] && /1 movimiento/.test(g[2]) && g[3] === 'Amex Business Gold') && grupos.some(g => g[0] === 'PEAJE EJEMPLO' && g[4] === '−$61.21') && grupos.some(g => g[0] === 'ONLINE PAYMENT - THANK YOU' && g[4] === '+$500.00') && (await p.locator('.ct-grupo .ct-mov').count()) === 3, JSON.stringify(grupos));
+  await p.locator('.ct-grupo[data-grupo="PEAJE EJEMPLO"] summary').click(); await p.waitForTimeout(150);
+  const cardCg = await fila(p, MOV.c);
+  ok('Un grupo se despliega a sus filas y una fila dentro del grupo se despliega a su detalle con sus botones', (await p.locator('.ct-grupo[data-grupo="PEAJE EJEMPLO"]').evaluate(g => g.open)) && await cardCg.locator('[data-op="1"]').isVisible());
+  n = llamadas.length;
+  await cardCg.locator('[data-op="1"]').click(); await esperarLlamada(p, n, 'fn_banco_duplicado'); await pintado(p);
+  const dup = desde(n).find(l => l.fn === 'fn_banco_duplicado');
+  ok('…y el botón llama igual que siempre: fn_banco_duplicado {p_movimiento, p_es_el_mismo: false}', !!dup && dup.args.p_movimiento === MOV.c && dup.args.p_es_el_mismo === false, JSON.stringify(dup && dup.args));
+  ok('Al repintar, la agrupación sigue y la fila tocada sigue desplegada (su grupo abierto)', (await p.locator('#ct-bj-agrupar').isChecked()) && (await p.locator('.ct-grupo').count()) === 3 && (await p.locator(`.ct-mov[data-id="${MOV.c}"] .ct-mov-fila`).getAttribute('aria-expanded')) === 'true' && (await p.locator('.ct-grupo[data-grupo="PEAJE EJEMPLO"]').evaluate(g => g.open)));
+  await foto(p, '3b-bandeja-agrupada');
+  await p.uncheck('#ct-bj-agrupar'); await p.waitForTimeout(150);
+  ok('Sin agrupar vuelven las 3 filas sueltas, en el orden de la base', (await p.locator('.ct-grupo').count()) === 0 && (await p.locator('.ct-mov').count()) === 3 && (await p.locator('.ct-mov').first().getAttribute('data-id')) === MOV.c);
+  await fila(p, MOV.b);
+  await foto(p, '3-bandeja');
   // la opción que pide motivo
   n = llamadas.length;
   await cardB.locator('[data-op="2"]').click();
@@ -660,6 +764,8 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   const tr = desde(n).find(l => l.fn === 'fn_banco_transferencia');
   ok('Con motivo llama a fn_banco_transferencia con los args de la base más el motivo', !!tr && tr.args.p_movimiento === MOV.b && tr.args.p_cuenta === '1010' && tr.args.p_motivo === 'Pago de la Gold desde Chase el 5 de octubre', JSON.stringify(tr && tr.args));
   ok('…y dice «Hecho: casado · asiento 2026-000012»', /Hecho: casado · asiento 2026-000012/.test(await p.locator('#toast').textContent()));
+  await pintado(p); await p.waitForSelector(`.ct-mov[data-id="${MOV.b}"] .ct-mov-fila`, { state: 'attached', timeout: 8000 });
+  ok('Después de la acción la bandeja se repinta y la fila sigue desplegada (sigue en la lista)', (await cardB.locator('.ct-mov-fila').getAttribute('aria-expanded')) === 'true' && (await p.locator('.ct-mov.abierta').count()) === 1);
   // la opción sin pide: un toque
   await p.waitForSelector(`.ct-mov[data-id="${MOV.b}"] [data-op="0"]`, { timeout: 8000 });
   n = llamadas.length;
@@ -668,8 +774,8 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   const cc = desde(n).find(l => l.fn === 'fn_banco_casar_con');
   ok('La opción sin motivo llama de un toque: fn_banco_casar_con con la partida de apertura', !!cc && cc.args.p_movimiento === MOV.b && cc.args.p_con && cc.args.p_con.partida_apertura === PART.p1, JSON.stringify(cc && cc.args));
   // «Otra cosa…»: clasificar con obra
-  n = llamadas.length;
-  const cardA = p.locator(`.ct-mov[data-id="${MOV.a}"]`);
+  await pintado(p); n = llamadas.length;
+  const cardA = await fila(p, MOV.a);
   await cardA.locator('[data-otra]').click();
   await cardA.locator('[data-que="clasificar"]').click();
   await foto(p, '4-clasificar');
@@ -680,7 +786,7 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   const cl = desde(n).find(l => l.fn === 'fn_banco_clasificar');
   ok('Manda fn_banco_clasificar con una línea {cuenta, proyecto_id} y sin motivo (null)', !!cl && cl.args.p_movimiento === MOV.a && JSON.stringify(cl.args.p_lineas) === JSON.stringify([{ cuenta: '6300', proyecto_id: 'casa-perez-k3m9' }]) && cl.args.p_motivo === null, JSON.stringify(cl && cl.args));
   // ignorar pide motivo
-  await p.waitForSelector(`.ct-mov[data-id="${MOV.a}"] [data-otra]`, { timeout: 8000 });
+  await pintado(p); await fila(p, MOV.a);
   n = llamadas.length;
   await p.locator(`.ct-mov[data-id="${MOV.a}"] [data-otra]`).click();
   await p.locator(`.ct-mov[data-id="${MOV.a}"] [data-que="ignorar"]`).click();
@@ -691,7 +797,7 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   const ig = desde(n).find(l => l.fn === 'fn_banco_ignorar');
   ok('Con motivo, fn_banco_ignorar lo lleva', !!ig && ig.args.p_motivo === 'Es un cargo personal que devolví');
   // la partida del 30-sep a mano
-  await p.waitForSelector(`.ct-mov[data-id="${MOV.a}"] [data-otra]`, { timeout: 8000 });
+  await pintado(p); await fila(p, MOV.a);
   n = llamadas.length;
   await p.locator(`.ct-mov[data-id="${MOV.a}"] [data-otra]`).click();
   await p.locator(`.ct-mov[data-id="${MOV.a}"] [data-que="partida"]`).click();
@@ -702,7 +808,7 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   const cp = desde(n).find(l => l.fn === 'fn_banco_casar_con');
   ok('…y casa con {partida_apertura}', !!cp && cp.args.p_con && cp.args.p_con.partida_apertura === PART.p2);
   // el error de la base se enseña en la tarjeta
-  await p.waitForSelector(`.ct-mov[data-id="${MOV.c}"] [data-op="0"]`, { timeout: 8000 });
+  await pintado(p); await fila(p, MOV.c);
   estado.fallar = true;
   await p.locator(`.ct-mov[data-id="${MOV.c}"] [data-op="0"]`).click();
   await p.waitForSelector(`.ct-mov[data-id="${MOV.c}"] .ct-error`, { timeout: 8000 });
@@ -715,8 +821,9 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
 
   // ---- Conciliar ----
   n = llamadas.length;
-  await p.locator('.ct-tab[data-pag="conciliar"]').click(); await p.waitForSelector('#ct-conc-form', { timeout: 8000 });
-  ok('Conciliar lista la apertura confirmada y pidió su control', (await p.locator('[data-conc]').count()) === 1 && desde(n).some(l => l.fn === 'fn_banco_control' && JSON.stringify(l.args.p_vistas) === '["v_conciliacion"]'));
+  await tab(p, 'conciliar'); await p.waitForSelector('#ct-conc-form', { timeout: 8000 });
+  ok('Conciliar lista la apertura confirmada y pidió su control; la cabecera cuenta «1 conciliación · 0 abiertas · 1 confirmada» y la explicación larga va plegada en «¿Qué es esto?»', (await p.locator('[data-conc]').count()) === 1 && desde(n).some(l => l.fn === 'fn_banco_control' && JSON.stringify(l.args.p_vistas) === '["v_conciliacion"]') &&
+    /1 conciliación · 0 abiertas · 1 confirmada/.test(await texto(p, '.ct-pag-sub')) && /Sube antes el archivo del statement/.test(await texto(p, '.ct-ayuda')) && !(await p.locator('.ct-ayuda').first().evaluate(d => d.open)), await texto(p, '.ct-pag-sub'));
   await p.locator('#ct-conc-form select[name="cuenta"]').selectOption('2100-2013');
   ok('Al elegir la Gold, la fecha y el saldo salen del último archivo (8 oct, 14675.12)', (await p.inputValue('#ct-conc-form input[name="fecha"]')) === '2026-10-08' && (await p.inputValue('#ct-conc-form input[name="saldo"]')) === '14675.12');
   await p.fill('#ct-conc-form input[name="saldo"]', '14,675.12');
@@ -726,37 +833,36 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   const fc = desde(n).find(l => l.fn === 'fn_conciliar');
   ok('fn_conciliar recibe la cuenta, la fecha y el saldo COMO TEXTO, con su coma', !!fc && fc.args.p_cuenta === '2100-2013' && fc.args.p_fecha_corte === '2026-10-08' && fc.args.p_saldo_statement === '14,675.12', JSON.stringify(fc && fc.args));
   await foto(p, '5-conciliacion');
-  ok('Abre la conciliación: título, identidad, las dos listas y «Confirmar» porque está lista', /Conciliación · Amex Business Gold/.test(await p.locator('#titulo-vista').textContent()) && /cuadra/.test(await texto(p, '.ct-nota')) && (await p.locator('.ct-partida').count()) >= 2);
+  ok('Abre la conciliación: título, identidad, las dos listas y «Confirmar» porque está lista; hooks.volver(true) porque hay algo interno que cerrar', /Conciliación · Amex Business Gold/.test(await p.locator('#titulo-vista').textContent()) && /cuadra/.test(await texto(p, '.ct-nota')) && (await p.locator('.ct-partida').count()) >= 2 && (await p.evaluate(() => window.__vol.slice(-1)[0])) === true);
   n = llamadas.length;
   await p.locator('#ct-conf').click(); await p.waitForTimeout(600);
   const cf = desde(n).find(l => l.fn === 'fn_conciliacion_confirmar');
   ok('«Confirmar» llama a fn_conciliacion_confirmar con la conciliación', !!cf && cf.args.p_conciliacion === CONC_NEW);
   // «←»: primero cierra la conciliación, después sale
   await p.locator('#btn-volver').click(); await p.waitForSelector('#ct-conc-form', { timeout: 8000 });
-  ok('«←» con la conciliación abierta vuelve a la lista (sigue en la contabilidad)', await p.locator('#vista-conta').isVisible() && (await p.locator('#titulo-vista').textContent()).trim() === 'Conciliar');
-  await p.locator('#btn-volver').click(); await p.waitForTimeout(400);
-  ok('«←» otra vez sale de la contabilidad', await p.locator('#vista-conta').isHidden());
+  ok('«←» con la conciliación abierta vuelve a la lista (sigue en la contabilidad) y hooks.volver(false)', await p.locator('#vista-conta').isVisible() && (await p.locator('#titulo-vista').textContent()).trim() === 'Conciliar' && (await p.evaluate(() => window.__vol.slice(-1)[0])) === false);
+  ok('En la raíz de la página ya no hay «←» (Contabilidad es una pestaña: app.js lo esconde con hooks.volver(false))', await p.locator('#btn-volver').isHidden());
+  await p.locator('#lateral [data-lat="hoy"]').evaluate(b => b.click()); await p.waitForTimeout(400);
+  ok('Se sale de la contabilidad por el menú (Hoy)', await p.locator('#vista-conta').isHidden());
 
   // ---- Movimientos ----
-  await p.locator('#btn-conta').evaluate(b => b.click()); await p.waitForSelector('.ct-tab', { timeout: 8000 });
-  await p.locator('.ct-tab[data-pag="movimientos"]').click(); await p.waitForSelector('#ct-mov-cuenta', { timeout: 8000 });
-  ok('Movimientos arranca en la primera cuenta (Chase, sin movimientos de prueba) y lo dice', (await p.inputValue('#ct-mov-cuenta')) === '1010' && /Nada con ese filtro/.test(await texto(p, '.ct-vacio')));
+  await p.locator('#btn-conta').evaluate(b => b.click()); await p.waitForSelector('#ct-main', { state: 'attached', timeout: 8000 }); await espiar(p);
+  ok('Volver a entrar abre la última página en la que se estaba (Conciliar), no la portada', (await p.evaluate(() => window.MXP_CONTA._estado.pagina)) === 'conciliar');
+  await tab(p, 'movimientos'); await p.waitForSelector('#ct-mov-cuenta', { timeout: 8000 });
+  ok('Movimientos arranca en la primera cuenta (Chase, sin movimientos de prueba) y lo dice; los selectores van en la cabecera', (await p.inputValue('#ct-mov-cuenta')) === '1010' && /Nada con ese filtro/.test(await texto(p, '.ct-vacio')) && (await p.locator('.ct-pag-ctl #ct-mov-cuenta').count()) === 1);
   await p.selectOption('#ct-mov-cuenta', '2100-2013'); await p.waitForSelector('.ct-tabla tbody tr', { timeout: 8000 });
   await foto(p, '6-movimientos');
-  ok('Movimientos pinta la tabla de la cuenta (2 filas) con su estado', (await p.locator('.ct-tabla tbody tr').count()) === 2 && /casado/.test(await texto(p, '.ct-tabla')));
+  ok('Movimientos pinta la tabla densa de la cuenta (2 filas, cabecera a la vista) con su estado', (await p.locator('.ct-tabla tbody tr').count()) === 2 && /casado/.test(await texto(p, '.ct-tabla')) && (await p.locator('.ct-mov-tabla thead').isVisible()) && /2 movimientos de Amex Business Gold/.test(await texto(p, '.ct-pag-sub')));
 
   // ---- Estados financieros (c4) ----
-  // el período que la pantalla debe preseleccionar: el mes de v_cortes que contiene hoy; si no, el más reciente ya empezado
-  const mesRegla = (() => { const meses = CORTES.filter(c => c.tipo === 'mes' && c.desde <= HOY).sort((x, y) => y.desde.localeCompare(x.desde)); return (meses.find(c => c.corte >= HOY) || meses[0]).periodo; })();
-  const titulo = async () => (await p.locator('#titulo-vista').textContent()).trim();
   const estEst = () => p.evaluate(() => window.MXP_CONTA._estado.est);
   // tocar un chip de período; si está escondido (empieza después de hoy), antes «Más períodos»
   const elegir = async per => { if (!(await p.locator(`[data-periodo="${per}"]`).count())) { await p.locator('#ct-est-mas').click(); await p.waitForSelector(`[data-periodo="${per}"]`, { timeout: 8000 }); } await p.locator(`[data-periodo="${per}"]`).click(); };
   const esperarTexto = (sel, re) => p.waitForFunction(([s, r]) => { const e = document.querySelector(s); return e && new RegExp(r).test(e.textContent); }, [sel, re.source], { timeout: 8000 });
   const nBal = T.v_balance_general.filter(f => f.periodo === '2026-10').length;
-  let nLect = lecturas.length; n = llamadas.length;
-  ok('Estados es la quinta pestaña y «Cobros en línea» la sexta (la última)', (await p.locator('.ct-tab').count()) === 6 && (await p.locator('.ct-tab').nth(4).getAttribute('data-pag')) === 'estados' && (await p.locator('.ct-tab').nth(5).getAttribute('data-pag')) === 'cobros' && /Cobros en línea/.test(await p.locator('.ct-tab').nth(5).textContent()));
-  await p.locator('.ct-tab[data-pag="estados"]').click(); await p.waitForSelector('#ct-est-resultados', { timeout: 8000 });
+  nLect = lecturas.length; n = llamadas.length;
+  ok('Las pestañas van en el orden del menú: Resumen, Bancos, Bandeja, Conciliar, Movimientos, Estados, Cobros, Conexiones (cada una con su icono)', JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS) && (await p.locator('.ct-tab svg').count()) === 8 && /Estados/.test(await p.locator('.ct-tab').nth(5).textContent()));
+  await tab(p, 'estados'); await p.waitForSelector('#ct-est-resultados', { timeout: 8000 });
   ok('Al tocarla el título es «Estados financieros» y aparece la barra de chips', (await titulo()) === 'Estados financieros' && (await p.locator('#ct-est-barra').count()) === 1, await titulo());
   const est0 = await estEst();
   ok('Arranca en Resultados con el mes de hoy preseleccionado por la regla (v_cortes leída con order=desde.desc)', est0.sub === 'resultados' && (await p.locator('[data-sub="resultados"][aria-pressed="true"]').count()) === 1 && est0.periodo === mesRegla && lecturas.slice(nLect).some(l => /^v_cortes\?.*order=desde\.desc/.test(l)), JSON.stringify({ periodo: est0.periodo, regla: mesRegla }));
@@ -856,12 +962,13 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   ok('Papel roto: la tarjeta noche dice «El papel de este asiento ya no está: rastro roto» en rojo, sin botón de foto ni llamada a Storage', /El papel de este asiento ya no está: rastro roto/.test(await texto(p, '#ct-est-papel.ct-noche .ct-aviso.bad')) && (await p.locator('#ct-est-papel-foto').count()) === 0 && !desde(n).some(l => l.fn === 'storage:firmar'));
   await foto(p, '14-estados-asiento-roto');
   await p.locator('#btn-volver').click(); await p.waitForSelector('#ct-est-mayor .ct-asiento-btn', { timeout: 8000 });
-  ok('«←» en el asiento vuelve al mayor (sigue en la contabilidad, est.asiento vacío)', await p.locator('#vista-conta').isVisible() && /^Mayor · 1010/.test(await titulo()) && (await estEst()).asiento === null, await titulo());
+  ok('«←» en el asiento vuelve al mayor (sigue en la contabilidad, est.asiento vacío) y hooks.volver sigue en true (el mayor también se cierra)', await p.locator('#vista-conta').isVisible() && /^Mayor · 1010/.test(await titulo()) && (await estEst()).asiento === null && (await p.evaluate(() => window.__vol.slice(-1)[0])) === true, await titulo());
   await p.locator('#btn-volver').click(); await p.waitForSelector('#ct-est-balanza .ct-cuenta-btn', { timeout: 8000 });
-  ok('«←» otra vez vuelve a la balanza con sus 12 cuentas y el período 2026-10', (await p.locator('#ct-est-balanza .ct-cuenta-btn').count()) === 12 && (await estEst()).periodo === '2026-10' && (await estEst()).cuenta === null);
-  await p.locator('#btn-volver').click(); await p.waitForTimeout(400);
-  ok('«←» una tercera vez sale de la contabilidad', await p.locator('#vista-conta').isHidden());
-  await p.locator('#btn-conta').evaluate(b => b.click()); await p.waitForSelector('.ct-tab', { timeout: 8000 });
+  ok('«←» otra vez vuelve a la balanza con sus 12 cuentas y el período 2026-10, y hooks.volver(false)', (await p.locator('#ct-est-balanza .ct-cuenta-btn').count()) === 12 && (await estEst()).periodo === '2026-10' && (await estEst()).cuenta === null && (await p.evaluate(() => window.__vol.slice(-1)[0])) === false);
+  ok('En la raíz de la balanza ya no hay «←» (hooks.volver(false))', await p.locator('#btn-volver').isHidden());
+  await p.locator('#lateral [data-lat="hoy"]').evaluate(b => b.click()); await p.waitForTimeout(400);
+  ok('Se sale de la contabilidad por el menú (Hoy)', await p.locator('#vista-conta').isHidden());
+  await p.locator('#btn-conta').evaluate(b => b.click()); await p.waitForSelector('#ct-main', { state: 'attached', timeout: 8000 }); await espiar(p);
   n = llamadas.length;
   await p.evaluate(() => window.MXP_CONTA.ir('estados', { cuenta: '5100' })); await p.waitForSelector('#ct-est-mayor .ct-asiento-btn', { timeout: 8000 });
   await p.locator(`.ct-asiento-btn[data-asiento="${ASI.d}"]`).click(); await p.waitForSelector('#ct-est-papel', { timeout: 8000 });
@@ -951,7 +1058,9 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
     await q.goto('http://localhost:8873/index.html'); await q.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await q.waitForTimeout(800);
     await q.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
     await q.locator('#btn-conta').evaluate(b => b.click()); await q.waitForSelector('.ct-tab', { timeout: 8000 });
-    await q.locator('.ct-tab[data-pag="estados"]').click(); await q.waitForSelector('#ct-est-resultados', { timeout: 8000 });
+    const tabsTel = await q.evaluate(() => { const t = document.querySelector('.ct-tabs'); return { display: getComputedStyle(t).display, snap: getComputedStyle(t).scrollSnapType, desliza: t.scrollWidth > t.clientWidth, n: t.querySelectorAll('.ct-tab').length }; });
+    ok('Teléfono (390 px): las 8 pestañas van arriba, a la vista, deslizan con tope (scroll-snap)', tabsTel.display !== 'none' && tabsTel.n === 8 && tabsTel.desliza && /x/.test(tabsTel.snap), JSON.stringify(tabsTel));
+    await tab(q, 'estados'); await q.waitForSelector('#ct-est-resultados', { timeout: 8000 });
     await q.locator('[data-periodo="2026-10"]').click(); await q.waitForSelector('#ct-est-resultados .ct-kpi', { timeout: 8000 });
     const medidas = await q.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth, thead: getComputedStyle(document.querySelector('#ct-est-resultados thead')).display,
       chips: (() => { const e = document.querySelector('.ct-est-subs'); return [e.scrollWidth, e.clientWidth]; })(), before: getComputedStyle(document.querySelector('#ct-est-resultados td[data-col="Mes"]'), '::before').content }));
@@ -979,9 +1088,12 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
     await tel.close();
   }
 
-  // ---- El código del teléfono (segundo factor) ----
+  // ---- Conexiones y seguridad: el código del teléfono (segundo factor) ----
   n = llamadas.length;
-  await p.locator('.ct-tab[data-pag="bancos"]').click(); await p.waitForSelector('#ct-mfa', { timeout: 8000 });
+  await tab(p, 'conexiones'); await p.waitForSelector('#ct-mfa', { timeout: 8000 });
+  ok('«Conexiones y seguridad» trae las tres tarjetas (el código del teléfono, Plaid y Stripe) en ese orden, con su cabecera; pidió el control de v_banco_saldos (las cuentas a las que va cada cuenta de Plaid)',
+    (await titulo()) === 'Conexiones y seguridad' && JSON.stringify(await p.locator('#ct-main > section').evaluateAll(ss => ss.map(x => x.id))) === '["ct-mfa","ct-plaid","ct-stripe"]' && /código del teléfono no activo · 1 banco conectado · Stripe conectado/.test(await texto(p, '.ct-pag-sub')) &&
+    desde(n).some(l => l.fn === 'fn_banco_control' && JSON.stringify(l.args.p_vistas) === '["v_banco_saldos"]') && (await p.locator('.ct-cuenta').count()) === 0, await texto(p, '.ct-pag-sub'));
   ok('La tarjeta del código del teléfono dice «no activo» y «Conectar un banco» (Plaid) sale apagado', /no activo/.test(await texto(p, '#ct-mfa')) && await p.locator('#ct-plaid-conectar').isDisabled() && /Primero activa el código/.test(await texto(p, '#ct-plaid')));
   await p.locator('#ct-mfa-activar').click();
   await p.waitForSelector('#ct-mfa .ct-qr', { timeout: 8000 });
@@ -1000,7 +1112,7 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
 
   // ---- La conexión automática (Plaid) ----
   n = llamadas.length;
-  await p.locator('.ct-tab[data-pag="bancos"]').click(); await p.waitForSelector('#ct-plaid', { timeout: 8000 });
+  await tab(p, 'conexiones'); await p.waitForSelector('#ct-plaid', { timeout: 8000 });
   ok('La tarjeta de Plaid pinta el banco conectado, «1 sin fijar» y el enlace a la política de privacidad', /Platypus Bank/.test(await texto(p, '#ct-plaid')) && /1 sin fijar/.test(await texto(p, '#ct-plaid')) && (await p.locator('#ct-plaid a[href*="PRIVACY-POLICY"]').count()) === 1);
   const opcionesSel = await p.locator('.ct-conexion select[data-account="acc-corriente"] option').allTextContents();
   ok('La cuenta de banco sin fijar solo ofrece bancos (1010, 1030) e «ignorar»; la tarjeta ya viene fijada a 2100-2013', opcionesSel.some(t => /1010/.test(t)) && opcionesSel.some(t => /1030/.test(t)) && !opcionesSel.some(t => /2100/.test(t)) && opcionesSel.some(t => /Ignorar/.test(t)) && (await p.locator('.ct-conexion select[data-account="acc-tarjeta"]').inputValue()) === '2100-2013', opcionesSel.join(' | '));
@@ -1040,25 +1152,30 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   ok('Con motivo, llama a la función con la conexión y el motivo', !!dc && dc.args.item_id === 'item-prueba' && dc.args.motivo === 'prueba del arnés', JSON.stringify(dc && dc.args));
 
   estado.plaidSinVista = true;
-  await p.locator('.ct-tab[data-pag="bancos"]').click(); await p.waitForSelector('#ct-plaid', { timeout: 8000 });
-  ok('Sin c7 en la base (la vista no existe), la tarjeta dice «sin instalar» y las cuentas se pintan igual', /sin instalar/.test(await texto(p, '#ct-plaid')) && (await p.locator('.ct-cuenta').count()) === 4, await texto(p, '#ct-plaid'));
+  await tab(p, 'conexiones'); await p.waitForSelector('#ct-plaid', { timeout: 8000 });
+  ok('Sin c7 en la base (la vista no existe), la tarjeta dice «sin instalar» y las otras dos se pintan igual', /sin instalar/.test(await texto(p, '#ct-plaid')) && /Plaid sin instalar/.test(await texto(p, '.ct-pag-sub')) && (await p.locator('#ct-mfa, #ct-stripe').count()) === 2, await texto(p, '#ct-plaid'));
+  await tab(p, 'bancos'); await p.waitForSelector('.ct-cuenta', { timeout: 8000 });
+  ok('…y Bancos pinta sus 4 cuentas igual', (await p.locator('.ct-cuenta').count()) === 4);
   estado.plaidSinVista = false; estado.plaidFijada = false;
   // ---- Los cobros en línea (Stripe, p1), con el código del teléfono activo (aal2) ----
   const toast = async re => p.waitForFunction(r => { const t = document.getElementById('toast'); return t && !t.hidden && new RegExp(r).test(t.textContent); }, re.source, { timeout: 8000 });
   const ficha = (cls, attr, v) => p.locator(`.${cls}[data-${attr}="${v}"]`);
   // después de una acción, la pantalla avisa y se repinta: esperar a que termine antes de mirar o tocar otra cosa
-  const repintado = async () => { await p.waitForTimeout(150); await p.waitForFunction(() => !document.querySelector('#conta-raiz .ct-cargando') && !window.MXP_CONTA._estado.ocupado, null, { timeout: 8000 }); };
+  const repintado = () => pintado(p);
   n = llamadas.length; nLect = lecturas.length;
-  await p.locator('.ct-tab[data-pag="bancos"]').click(); await p.waitForSelector('#ct-stripe', { timeout: 8000 });
+  await tab(p, 'conexiones'); await p.waitForSelector('#ct-stripe', { timeout: 8000 });
   const tStripe = await texto(p, '#ct-stripe');
-  ok('Bancos: la tarjeta «Cobros en línea (Stripe)» dice «conectado» y «cuadra», lo que está en Stripe sin depositar ($4,000.00, 2 cobros), lo que va en camino por cuenta de banco ($4,200.50) y la última revisión; leyó v_stripe_estado y pidió la salud a la función con la sesión',
+  ok('Conexiones: la tarjeta «Cobros en línea (Stripe)» dice «conectado» y «cuadra», lo que está en Stripe sin depositar ($4,000.00, 2 cobros), lo que va en camino por cuenta de banco ($4,200.50) y la última revisión; leyó v_stripe_estado y pidió la salud a la función con la sesión',
     /conectado/.test(await texto(p, '#ct-stripe .ct-cab')) && /cuadra/.test(await texto(p, '#ct-stripe .ct-cab')) && !/modo de prueba/.test(tStripe) && /En Stripe, sin depositar: \$4,000\.00 \(2 cobros\)/.test(tStripe) && /En camino por cuenta de banco: \$4,200\.50 \(2\)/.test(tStripe) && /Último aviso de Stripe: 26 oct 2026 .*payment_intent\.succeeded/.test(tStripe) && /Revisión automática: 27 oct 2026/.test(tStripe) &&
     lecturas.slice(nLect).some(l => /^v_stripe_estado\?select=\*/.test(l)) && desde(n).some(l => l.fn === 'stripe:salud' && /^Bearer /.test(l.auth)), tStripe.slice(0, 200));
+  const sinMilVeinte = !(await p.locator('.ct-conexion select option').allTextContents()).some(t => /1020/.test(t));
+  await foto(p, '20-stripe-conexiones');
+  await tab(p, 'bancos'); await p.waitForSelector('.ct-cuenta', { timeout: 8000 });
   const ctrlS = desde(n).find(l => l.fn === 'fn_banco_control');
   ok('La 1020 (Stripe — cobros en tránsito) no se pinta como banco: siguen 4 tarjetas y no sale en el importador ni en las cuentas de Plaid; el control de v_banco_saldos sigue verde con la lista entera (5)',
     (await p.locator('.ct-cuenta').count()) === 4 && (await p.locator('.ct-cuenta[data-cuenta="1020"]').count()) === 0 && !(await p.locator('#ct-imp-cuenta option').allTextContents()).some(t => /1020/.test(t)) &&
-    !(await p.locator('.ct-conexion select option').allTextContents()).some(t => /1020/.test(t)) && (await p.locator('.ct-rojo').count()) === 0 && !!ctrlS && T.v_banco_saldos.length === 5, await p.locator('.ct-cuenta').count());
-  await foto(p, '20-stripe-bancos');
+    sinMilVeinte && (await p.locator('.ct-rojo').count()) === 0 && !!ctrlS && T.v_banco_saldos.length === 5, await p.locator('.ct-cuenta').count());
+  await tab(p, 'conexiones'); await p.waitForSelector('#ct-stripe', { timeout: 8000 });
   // «Probar la llave»: cada recurso con ✓ o ✗ y el permiso que falta
   n = llamadas.length;
   await p.locator('#ct-stripe-probar').click(); await p.waitForSelector('#ct-stripe .ct-permisos', { timeout: 8000 });
@@ -1066,15 +1183,16 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   ok('«Probar la llave» llama a la función (probar_llave) y lista cada recurso: ✓ los buenos y ✗ con «Falta el permiso «Balance transaction sources: Read» (rak_…) en la llave restringida» (el nombre del panel y el rak_)',
     desde(n).some(l => l.fn === 'stripe:probar_llave' && /^Bearer /.test(l.auth)) && (await p.locator('#ct-stripe .ct-permisos li.ok').count()) === 8 && (await p.locator('#ct-stripe .ct-permisos li.bad').count()) === 1 && /Falta el permiso «Balance transaction sources: Read» \(rak_balance_transaction_source_read\) en la llave restringida/.test(perm), perm.slice(0, 200));
   // las demás listas de bancos: Conciliar, Movimientos y «Dinero entre cuentas propias» de la bandeja
-  await p.locator('.ct-tab[data-pag="conciliar"]').click(); await p.waitForSelector('#ct-conc-form', { timeout: 8000 });
+  await tab(p, 'conciliar'); await p.waitForSelector('#ct-conc-form', { timeout: 8000 });
   const optConc = await p.locator('#ct-conc-form select[name="cuenta"] option').allTextContents();
-  await p.locator('.ct-tab[data-pag="movimientos"]').click(); await p.waitForSelector('#ct-mov-cuenta', { timeout: 8000 });
+  await tab(p, 'movimientos'); await p.waitForSelector('#ct-mov-cuenta', { timeout: 8000 });
   const optMov = await p.locator('#ct-mov-cuenta option').allTextContents();
   ok('Conciliar y Movimientos no ofrecen la 1020 (no tiene estado de cuenta: la vigila el control de Stripe)', optConc.length === 4 && !optConc.some(t => /1020/.test(t)) && optMov.length === 4 && !optMov.some(t => /1020/.test(t)), optConc.join(' | '));
   // la bandeja: el depósito STRIPE de Chase
   estado.stripeDeposito = true; n = llamadas.length;
-  await p.locator('.ct-tab[data-pag="bandeja"]').click(); await p.waitForSelector(`.ct-mov[data-id="${MOV.s}"]`, { timeout: 8000 });
-  const cardS = p.locator(`.ct-mov[data-id="${MOV.s}"]`);
+  await tab(p, 'bandeja'); await p.waitForSelector(`.ct-mov[data-id="${MOV.s}"]`, { timeout: 8000 });
+  ok('El depósito de Stripe lleva la pastilla «Stripe» en su fila compacta', /Stripe/.test(await texto(p, `.ct-mov[data-id="${MOV.s}"] .ct-f-motivo .ct-pill.cu`)));
+  const cardS = await fila(p, MOV.s);
   const opsS = await cardS.locator('[data-op]').allTextContents();
   const tS = await cardS.textContent();
   ok('Bandeja: el depósito STRIPE (la forma REAL de c6: «otro_lado_nombrado» con préstamo, aportación, 1130 y transferencias) no enseña NINGUNA opción de c6, ni «Otra cosa…», ni el texto de c6: el de p1 y el aviso «Depósito de Stripe: casa solo… No lo clasifiques ni lo registres aquí: el dinero entraría dos veces»; el control de la bandeja contó también este movimiento',
@@ -1088,11 +1206,13 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
     !(await cardSF.locator('[data-op]').allTextContents()).some(t => /1020/.test(t)));
   const opsB = await p.locator(`.ct-mov[data-id="${MOV.b}"] [data-op]`).allTextContents();
   ok('En otro movimiento, la opción de c6 «Desde 1020 (Stripe…)» tampoco sale (siguen las 4 de siempre)', opsB.length === 4 && !opsB.some(t => /1020/.test(t)), opsB.join(' | '));
+  await fila(p, MOV.b);
   await p.locator(`.ct-mov[data-id="${MOV.b}"] [data-otra]`).click(); await p.locator(`.ct-mov[data-id="${MOV.b}"] [data-que="transferencia"]`).click();
   const optTr = await p.locator(`.ct-mov[data-id="${MOV.b}"] select[name="cuenta"] option`).allTextContents();
   ok('«Otra cosa… → Dinero entre cuentas propias» no ofrece la 1020 como destino', optTr.some(t => /1010/.test(t)) && !optTr.some(t => /1020/.test(t)), optTr.join(' | '));
   await foto(p, '21-stripe-bandeja');
   n = llamadas.length;
+  await fila(p, MOV.s);
   await cardS.locator('[data-stripe-po]').click(); await esperarLlamada(p, n, 'stripe:casar_payout'); await repintado();
   const csb = desde(n).find(l => l.fn === 'stripe:casar_payout');
   ok('«Es el depósito de Stripe…: casarlo» llama a la función (casar_payout) con el depósito y el movimiento, con la sesión', !!csb && csb.args.po === 'po_PRUEBA04' && csb.args.movimiento_id === MOV.s && /^Bearer /.test(csb.auth), JSON.stringify(csb && csb.args));
@@ -1101,17 +1221,17 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   // devuelve el depósito asentado a como estaba, para la pestaña
   Object.assign(T.v_stripe_payouts.find(q => q.po === 'po_PRUEBA04'), { estado_pantalla: 'asentado', candidatos: [{ id: MOV.s, fecha: '2026-10-24', descripcion: DEP_STRIPE }], movimiento_id: null, movimiento_fecha: null, movimiento_descripcion: null, casado_regla: null, casado_automatico: null, dias_sin_casar: 4 });
 
-  // la pestaña «Cobros en línea»
+  // la página «Cobros en línea»
   n = llamadas.length; nLect = lecturas.length;
-  await p.locator('.ct-tab[data-pag="bancos"]').click(); await p.waitForSelector('#ct-stripe-ver', { timeout: 8000 });
+  await tab(p, 'conexiones'); await p.waitForSelector('#ct-stripe-ver', { timeout: 8000 });
   await p.locator('#ct-stripe-ver').click(); await p.waitForSelector('#ct-cobros-facturas', { timeout: 8000 });
   const leidas = lecturas.slice(nLect);
-  ok('«Ver los cobros en línea» abre la sexta pestaña («Cobros en línea») y lee sus seis vistas con su orden',
+  ok('«Ver los cobros en línea» (en Conexiones) abre la página «Cobros en línea» y lee sus seis vistas con su orden',
     (await titulo()) === 'Cobros en línea' && (await p.locator('.ct-tab[data-pag="cobros"][aria-current="page"]').count()) === 1 &&
     ['^v_stripe_estado\\?select=\\*', '^v_stripe_control\\?select=\\*&order=orden\\.asc', '^v_stripe_facturas\\?select=\\*&order=fecha\\.asc,num\\.asc', '^v_stripe_pagos\\?select=\\*&order=creado_el\\.desc', '^v_stripe_payouts\\?select=\\*&order=llegada\\.desc', '^v_stripe_avisos\\?select=\\*'].every(r => leidas.some(l => new RegExp(r).test(l))), leidas.join(' | '));
-  ok('La barra dice «4 facturas por cobrar · 2 pagos en camino · 3 depósitos esperando a Chase», sin caja de alarmas (todo verde) y con el pie del paralelo',
-    /4 facturas por cobrar · 2 pagos en camino · 3 depósitos esperando a Chase/.test(await texto(p, '#ct-cobros-barra')) && (await p.locator('#ct-cobros-alarmas').count()) === 0 &&
-    /La casilla «pagada» y QuickBooks los sigues llevando tú durante el paralelo/.test(await texto(p, '.ct-cobros-pie')), await texto(p, '#ct-cobros-barra .ct-barra-txt'));
+  ok('La cabecera dice «4 facturas por cobrar · 2 pagos en camino · 3 depósitos esperando a Chase» con «Revisar con Stripe ahora» a la derecha, sin caja de alarmas (todo verde), las explicaciones largas plegadas y el pie del paralelo',
+    /4 facturas por cobrar · 2 pagos en camino · 3 depósitos esperando a Chase/.test(await texto(p, '#ct-cobros-top .ct-pag-sub')) && (await p.locator('#ct-cobros-top .ct-pag-acc #ct-cobros-barrer').count()) === 1 && (await p.locator('#ct-cobros-alarmas').count()) === 0 &&
+    (await p.locator('#ct-cobros-facturas .ct-ayuda, #ct-cobros-payouts .ct-ayuda').count()) === 2 && /La casilla «pagada» y QuickBooks los sigues llevando tú durante el paralelo/.test(await texto(p, '.ct-cobros-pie')), await texto(p, '#ct-cobros-top .ct-pag-sub'));
   // las facturas
   ok('Facturas: 4 fichas; la 1102 con «pago en camino» y sin botón de crear; la 1104 con su enlace, el aviso de desfasado y «Crear otro enlace»; la 1101 «pagada en la app»',
     (await p.locator('.ct-factura').count()) === 4 && /pago en camino/.test(await ficha('ct-factura', 'factura', 2).textContent()) && (await ficha('ct-factura', 'factura', 2).locator('[data-crear]').count()) === 0 &&
@@ -1282,14 +1402,14 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   await ctx.setOffline(true); n = llamadas.length;
   await ficha('ct-pago', 'pi', 'pi_PRUEBA01').locator('[data-mirar]').click(); await p.waitForTimeout(200);
   ok('Sin señal, una acción dice «Sin señal: no se hizo nada.» y no llama', /Sin señal: no se hizo nada\./.test(await texto(p, '.ct-pago[data-pi="pi_PRUEBA01"] .ct-stripe-res')) && !desde(n).some(l => /^stripe:/.test(l.fn)));
-  await p.locator('.ct-tab[data-pag="cobros"]').click(); await p.waitForSelector('.ct-rojo', { timeout: 8000 });
+  await tab(p, 'cobros'); await p.waitForSelector('.ct-rojo', { timeout: 8000 });
   ok('Sin señal, la pestaña pinta «Sin señal» con «Reintentar» y nada de memoria', /Sin señal/.test(await texto(p, '.ct-rojo h2')) && (await p.locator('.ct-factura, .ct-pago, .ct-payout').count()) === 0 && (await p.locator('#ct-reintentar').count()) === 1);
   await ctx.setOffline(false);
   await p.waitForSelector('#ct-cobros-facturas', { timeout: 8000 }).catch(() => {});
   ok('Al volver la señal, reintenta sola y pinta los cobros', (await p.locator('.ct-factura').count()) === 4);
   // el control: falla ruidosa
   estado.stripeCuadreMal = true;
-  await p.locator('.ct-tab[data-pag="cobros"]').click(); await p.waitForSelector('.ct-rojo', { timeout: 8000 });
+  await tab(p, 'cobros'); await p.waitForSelector('.ct-rojo', { timeout: 8000 });
   ok('Un cuadre en rojo (21): «Los cobros en línea no cuadran: no se pinta», el detalle de la base, y ninguna lista', /Los cobros en línea no cuadran: no se pinta/.test(await texto(p, '.ct-rojo h2')) && /la 1020 dice 4,100\.00/.test(await texto(p, '.ct-rojo')) && (await p.locator('#ct-cobros-facturas, .ct-pago, .ct-payout').count()) === 0);
   await foto(p, '25-cobros-rojo');
   estado.stripeCuadreMal = false; estado.stripeConteo = true;
@@ -1298,25 +1418,33 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   estado.stripeConteo = false; estado.stripeAlarma = true;
   await p.locator('#ct-reintentar').click(); await p.waitForSelector('#ct-cobros-facturas', { timeout: 8000 });
   ok('Una alarma en rojo (30) no tumba la pantalla: la caja «Hay que mirar esto:» arriba, en llano (lo que pasa y qué hacer, no el nombre del control) con su detalle, y las listas debajo', /Hay que mirar esto:/.test(await texto(p, '#ct-cobros-alarmas h2')) && /Pagos que no sé a qué factura van: «Decir a qué va».*pi_PRUEBA09/.test(await texto(p, '#ct-cobros-alarmas')) && !/ningún pago por resolver/.test(await texto(p, '#ct-cobros-alarmas')) && (await p.locator('.ct-factura').count()) === 4 && (await p.locator('.ct-rojo').count()) === 0);
+  // la alarma también sale en la portada, en «Qué atender», con su botón a Cobros
+  await tab(p, 'resumen'); await p.waitForSelector('#ct-atender', { timeout: 8000 });
+  const atnS = await p.locator('#ct-atender .ct-atn').allTextContents();
+  ok('La portada lista la alarma de Stripe (30) en «Qué atender» en llano, con su detalle y el botón a Cobros', atnS.some(t => /Pagos que no sé a qué factura van.*pi_PRUEBA09/.test(t)) && (await p.locator('#ct-atender .ct-atn button[data-ir="cobros"]').count()) === 1 && (await p.locator('.ct-rojo').count()) === 0, atnS.join(' | '));
   estado.stripeAlarma = false;
-  // la tarjeta de Bancos: modo de prueba, falta configurar
+  // la tarjeta de Conexiones: modo de prueba, falta configurar
   estado.stripeModo = 'prueba';
-  await p.locator('.ct-tab[data-pag="bancos"]').click(); await p.waitForSelector('#ct-stripe', { timeout: 8000 });
+  await tab(p, 'conexiones'); await p.waitForSelector('#ct-stripe', { timeout: 8000 });
   ok('Con una llave de prueba la tarjeta dice «modo de prueba» y que no se registra nada', /modo de prueba/.test(await texto(p, '#ct-stripe .ct-cab')) && /no se registra nada/.test(await texto(p, '#ct-stripe')));
   estado.stripeModo = 'real'; estado.stripeSinLlave = true;
-  await p.locator('.ct-tab[data-pag="bancos"]').click(); await p.waitForFunction(() => /falta configurar/.test((document.querySelector('#ct-stripe .ct-cab') || {}).textContent || ''), null, { timeout: 8000 }).catch(() => {});
+  await tab(p, 'conexiones'); await p.waitForFunction(() => /falta configurar/.test((document.querySelector('#ct-stripe .ct-cab') || {}).textContent || ''), null, { timeout: 8000 }).catch(() => {});
   ok('Si la salud dice que falta la llave: «falta configurar» y qué falta en Secrets', /falta configurar/.test(await texto(p, '#ct-stripe .ct-cab')) && /STRIPE_SECRET_KEY/.test(await texto(p, '#ct-stripe .ct-aviso.bad')));
   estado.stripeSinLlave = false;
   // p1 sin pegar
   estado.stripeSinVista = true;
-  await p.locator('.ct-tab[data-pag="bancos"]').click(); await p.waitForFunction(() => /sin instalar/.test((document.querySelector('#ct-stripe') || {}).textContent || ''), null, { timeout: 8000 }).catch(() => {});
-  ok('Sin p1 en la base (404 PGRST205): la tarjeta dice «sin instalar» y las cuentas se pintan igual (4)', /sin instalar/.test(await texto(p, '#ct-stripe')) && /docs\/conta\/p1-stripe\.sql/.test(await texto(p, '#ct-stripe')) && (await p.locator('.ct-cuenta').count()) === 4);
-  await p.locator('.ct-tab[data-pag="cobros"]').click(); await p.waitForSelector('#ct-cobros-sin', { timeout: 8000 });
-  ok('…y la pestaña dice «Los cobros en línea no están instalados», sin rojo', /no están instalados/.test(await texto(p, '#ct-cobros-sin')) && (await p.locator('.ct-rojo').count()) === 0);
+  await tab(p, 'conexiones'); await p.waitForFunction(() => /sin instalar/.test((document.querySelector('#ct-stripe') || {}).textContent || ''), null, { timeout: 8000 }).catch(() => {});
+  ok('Sin p1 en la base (404 PGRST205): la tarjeta dice «sin instalar» y la cabecera «Stripe sin instalar»', /sin instalar/.test(await texto(p, '#ct-stripe')) && /docs\/conta\/p1-stripe\.sql/.test(await texto(p, '#ct-stripe')) && /Stripe sin instalar/.test(await texto(p, '.ct-pag-sub')));
+  await tab(p, 'resumen'); await p.waitForSelector('.ct-ficha', { timeout: 8000 });
+  ok('…la portada dice «sin instalar» en la ficha de cobros, sin rojo', /Cobros en línea—sin instalar/.test(await texto(p, '.ct-ficha[data-ir="cobros"]')) && (await p.locator('.ct-rojo').count()) === 0, await texto(p, '.ct-ficha[data-ir="cobros"]'));
+  await tab(p, 'bancos'); await p.waitForSelector('.ct-cuenta', { timeout: 8000 });
+  ok('…y las cuentas se pintan igual (4)', (await p.locator('.ct-cuenta').count()) === 4);
+  await tab(p, 'cobros'); await p.waitForSelector('#ct-cobros-sin', { timeout: 8000 });
+  ok('…y la página dice «Los cobros en línea no están instalados», sin rojo', /no están instalados/.test(await texto(p, '#ct-cobros-sin')) && (await p.locator('.ct-rojo').count()) === 0);
   estado.stripeSinVista = false;
   const guardado = await p.evaluate(() => { const t = []; for (const st of [localStorage, sessionStorage]) for (let i = 0; i < st.length; i++) t.push(st.key(i) + '=' + st.getItem(st.key(i))); return t.join('\n'); });
   ok('Nada de cobros en el teléfono: localStorage y sessionStorage sin enlaces, pagos ni depósitos', !/buy\.stripe\.com|pi_PRUEBA|po_PRUEBA|v_stripe/.test(guardado));
-  await p.locator('.ct-tab[data-pag="bancos"]').click(); await p.waitForSelector('#ct-stripe', { timeout: 8000 });
+  await tab(p, 'conexiones'); await p.waitForSelector('#ct-stripe', { timeout: 8000 });
   n = llamadas.length;
   await p.waitForSelector('#ct-mfa-quitar', { timeout: 8000 });
   await p.locator('#ct-mfa-quitar').click();
@@ -1326,11 +1454,11 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
   // sin el código del teléfono (aal2), nada de lo que habla con Stripe se puede tocar (la función también lo exige)
   ok('Sin el código: en la tarjeta de Stripe «Probar la llave» y «Revisar con Stripe ahora» salen apagados con «Primero activa el código del teléfono»', await p.locator('#ct-stripe-probar').isDisabled() && await p.locator('#ct-stripe-barrer').isDisabled() && /Primero activa el código del teléfono/.test(await texto(p, '#ct-stripe')) && !(await p.locator('#ct-stripe-ver').isDisabled()));
   n = llamadas.length;
-  await p.locator('.ct-tab[data-pag="cobros"]').click(); await p.waitForSelector('#ct-cobros-facturas', { timeout: 8000 });
+  await tab(p, 'cobros'); await p.waitForSelector('#ct-cobros-facturas', { timeout: 8000 });
   const crearSin = p.locator('.ct-factura [data-crear]').first();
   await crearSin.click({ force: true }).catch(() => {}); await p.waitForTimeout(200);
-  ok('…y en «Cobros en línea» «Crear enlace de pago» sale apagado con «Primero activa el código del teléfono (Bancos y tarjetas).», igual que «Revisar con Stripe ahora»; tocarlo no llama a crear_enlace',
-    (await p.locator('.ct-factura [data-crear]').count()) >= 1 && await crearSin.isDisabled() && /Primero activa el código del teléfono \(Bancos y tarjetas\)\./.test(await texto(p, '#ct-cobros-facturas')) && await p.locator('#ct-cobros-barrer').isDisabled() &&
+  ok('…y en «Cobros en línea» «Crear enlace de pago» sale apagado con «Primero activa el código del teléfono (Conexiones y seguridad).», igual que «Revisar con Stripe ahora»; tocarlo no llama a crear_enlace',
+    (await p.locator('.ct-factura [data-crear]').count()) >= 1 && await crearSin.isDisabled() && /Primero activa el código del teléfono \(Conexiones y seguridad\)\./.test(await texto(p, '#ct-cobros-facturas')) && await p.locator('#ct-cobros-barrer').isDisabled() &&
     !desde(n).some(l => l.fn === 'stripe:crear_enlace') && (await p.locator('.ct-factura .ct-form:not([hidden])').count()) === 0 && !(await p.locator('.ct-factura [data-copiar]').first().isDisabled()));
   await foto(p, '26-cobros-sin-codigo');
 
@@ -1365,12 +1493,19 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
     const q = await tel.newPage(); q.on('pageerror', e => errs.push('teléfono cobros: ' + String(e).slice(0, 160)));
     await q.goto('http://localhost:8873/index.html'); await q.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await q.waitForTimeout(800);
     await q.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
-    await q.locator('#btn-conta').evaluate(b => b.click()); await q.waitForSelector('#ct-stripe', { timeout: 8000 });
+    await q.locator('#btn-conta').evaluate(b => b.click()); await q.waitForSelector('.ct-ficha', { timeout: 8000 });
+    const telR = await q.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth, cols: getComputedStyle(document.querySelector('.ct-fichas')).gridTemplateColumns.split(' ').length, fuera: [...document.querySelectorAll('#conta-raiz *')].filter(e => e.getBoundingClientRect().right > window.innerWidth + 1 && !e.closest('.ct-tabs')).length }));
+    ok('Teléfono (390 px): la portada va a dos columnas de fichas y nada se sale de la pantalla', telR.sw <= telR.iw + 1 && telR.cols === 2 && telR.fuera === 0, JSON.stringify(telR));
+    await tab(q, 'conexiones'); await q.waitForSelector('#ct-stripe', { timeout: 8000 });
     await q.locator('#ct-stripe').scrollIntoViewIfNeeded();
     const telB = await q.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth, der: document.querySelector('#ct-stripe').getBoundingClientRect().right }));
-    ok('Teléfono (390 px): la tarjeta de Stripe en Bancos cabe y la página no desplaza de lado', telB.sw <= telB.iw + 1 && telB.der <= telB.iw, JSON.stringify(telB));
-    await foto(q, '27-tel-stripe-bancos');
-    await q.locator('.ct-tab[data-pag="cobros"]').click(); await q.waitForSelector('#ct-cobros-payouts .ct-payout', { timeout: 8000 });
+    ok('Teléfono (390 px): la tarjeta de Stripe en Conexiones cabe y la página no desplaza de lado', telB.sw <= telB.iw + 1 && telB.der <= telB.iw, JSON.stringify(telB));
+    await foto(q, '27-tel-stripe-conexiones');
+    await tab(q, 'bandeja'); await q.waitForSelector('.ct-mov', { timeout: 8000 });
+    const telF = await q.evaluate(() => { const f = document.querySelector('.ct-mov-fila'); const r = f.getBoundingClientRect(); const desc = f.querySelector('.ct-f-desc').getBoundingClientRect(), meta = f.querySelector('.ct-f-meta').getBoundingClientRect(), monto = f.querySelector('.ct-f-monto').getBoundingClientRect();
+      return { sw: document.documentElement.scrollWidth, iw: window.innerWidth, cab: getComputedStyle(document.querySelector('.ct-feed-cab')).display, dosLineas: meta.top >= desc.bottom - 2 && monto.top < desc.bottom && monto.bottom > desc.top, alto: r.height }; });
+    ok('Teléfono: cada fila de la bandeja va en dos líneas (descripción y monto arriba; fecha, cuenta y motivo debajo), sin la cabecera de tabla y sin desplazar de lado', telF.sw <= telF.iw + 1 && telF.cab === 'none' && telF.dosLineas, JSON.stringify(telF));
+    await tab(q, 'cobros'); await q.waitForSelector('#ct-cobros-payouts .ct-payout', { timeout: 8000 });
     await q.evaluate(() => document.querySelectorAll('.ct-payout-det').forEach(d => { d.open = true; }));
     const telC = await q.evaluate(() => { const u = document.querySelector('.ct-enlace-url'); const fuera = [...document.querySelectorAll('#conta-raiz *')].filter(e => e.getBoundingClientRect().right > window.innerWidth + 1 && getComputedStyle(e).position !== 'fixed' && !e.closest('.ct-tabs')).map(e => e.className || e.tagName).slice(0, 5);
       return { sw: document.documentElement.scrollWidth, iw: window.innerWidth, url: u ? u.getBoundingClientRect().right : null, fuera }; });
@@ -1381,22 +1516,34 @@ const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' 
 
   // ---- Sin señal ----
   await ctx.setOffline(true);
-  await p.locator('.ct-tab[data-pag="bancos"]').click(); await p.waitForSelector('.ct-rojo', { timeout: 8000 });
+  await tab(p, 'bancos'); await p.waitForSelector('.ct-rojo', { timeout: 8000 });
   ok('Sin señal: «Sin señal» en rojo, ninguna cuenta de memoria', /Sin señal/.test(await texto(p, '.ct-rojo h2')) && (await p.locator('.ct-cuenta').count()) === 0);
   await ctx.setOffline(false);
   await p.waitForSelector('.ct-cuenta', { timeout: 8000 }).catch(() => {});
   ok('Al volver la señal, reintenta sola', (await p.locator('.ct-cuenta').count()) === 4);
 
   if (FOTOS) {
-    const tel = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
-    await simular(tel, 'dueno');
-    const q = await tel.newPage(); q.on('pageerror', e => errs.push('teléfono: ' + String(e).slice(0, 160)));
-    await q.goto('http://localhost:8873/index.html'); await q.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await q.waitForTimeout(800);
-    await q.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
-    await q.locator('#btn-conta').evaluate(b => b.click()); await q.waitForSelector('.ct-cuenta', { timeout: 8000 }); await foto(q, '7-tel-bancos');
-    await q.locator('.ct-tab[data-pag="bandeja"]').click(); await q.waitForSelector('.ct-mov', { timeout: 8000 });
-    await q.locator(`.ct-mov[data-id="${MOV.b}"] [data-op="2"]`).click(); await q.waitForTimeout(200); await foto(q, '8-tel-bandeja');
-    await tel.close();
+    // cada página a 390, 820 y 1280 px (<ancho>-<pagina>.png), con el código del teléfono activo, Plaid conectado y la bandeja con el depósito de Stripe
+    estado.mfaFactores = [{ id: 'f-1', friendly_name: 'Teléfono de Edgar', factor_type: 'totp', status: 'verified' }]; estado.sesionAal = 'aal2'; estado.stripeDeposito = true;
+    for (const w of [390, 820, 1280]) {
+      const cx = await b.newContext({ viewport: { width: w, height: w < 700 ? 844 : 1000 }, deviceScaleFactor: w < 1024 ? 2 : 1, isMobile: w < 1024, hasTouch: w < 1024, serviceWorkers: 'block' });
+      await simular(cx, 'dueno');
+      const q = await cx.newPage(); q.on('pageerror', e => errs.push(`fotos ${w}: ` + String(e).slice(0, 160)));
+      await q.goto('http://localhost:8873/index.html'); await q.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await q.waitForTimeout(800);
+      await q.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
+      await q.locator('#btn-conta').evaluate(b => b.click()); await q.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 });
+      for (const k of PAGS) {
+        await q.evaluate(k => window.MXP_CONTA.ir(k), k); await pintado(q); await q.waitForTimeout(300);
+        if (k === 'bancos') await q.locator('#ct-imp-abrir').click().catch(() => {});
+        if (k === 'bandeja') await fila(q, MOV.b).catch(() => {});
+        if (k === 'movimientos') { await q.selectOption('#ct-mov-cuenta', '2100-2013').catch(() => {}); await pintado(q); }
+        if (k === 'estados') { await q.locator('[data-periodo="2026-10"]').click().catch(() => {}); await pintado(q); }
+        await q.waitForTimeout(200);
+        await foto(q, `${w}-${k}`);
+      }
+      await cx.close();
+    }
+    estado.mfaFactores = []; estado.sesionAal = undefined; estado.stripeDeposito = false;
   }
   ok('Sin errores de JavaScript en la página', errs.length === 0, errs.join(' | '));
   await b.close(); srv.close();

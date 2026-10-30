@@ -549,16 +549,35 @@ function esFalloDeRed(err) {
     });
   }
 
-  // ---------- El menú: Hoy · Proyectos · Más («Cobre y luz», opción A) ----------
-  // Las mismas tres entradas en dos sitios: la barra de abajo del teléfono
+  // ---------- El menú: Hoy · Proyectos · Contabilidad · Más («Cobre y luz», opción A) ----------
+  // Las mismas entradas en dos sitios: la barra de abajo del teléfono
   // (#nav-abajo, por debajo de 768 px) y el menú lateral fijo (#lateral, desde
   // 768 px: riel estrecho hasta 1023, ancho desde 1024). Las siete losetas de
-  // antes ya no son el menú: cada una vive dentro de su pestaña.
-  const LATERAL_HOME_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>';
-  const LATERAL_PROY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="8" height="7" rx="2"/><rect x="13" y="4" width="8" height="7" rx="2"/><rect x="3" y="13" width="8" height="7" rx="2"/><rect x="13" y="13" width="8" height="7" rx="2"/></svg>';
-  const LATERAL_MAS_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
+  // antes ya no son el menú: cada una vive dentro de su pestaña. «Contabilidad»
+  // es una pestaña propia del dueño (oct-26): sus ocho páginas las dice js/conta.js.
+  const SVG_MENU = trazos => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${trazos}</svg>`;
+  const LATERAL_HOME_SVG = SVG_MENU('<path d="M3 11 12 4l9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/>');
+  const LATERAL_PROY_SVG = SVG_MENU('<rect x="3" y="4" width="8" height="7" rx="2"/><rect x="13" y="4" width="8" height="7" rx="2"/><rect x="3" y="13" width="8" height="7" rx="2"/><rect x="13" y="13" width="8" height="7" rx="2"/>');
+  const LATERAL_MAS_SVG = SVG_MENU('<path d="M4 6h16M4 12h16M4 18h16"/>');
+  // El libro mayor: el mismo trazo que el botón de la barra de abajo (index.html)
+  const LATERAL_CONTA_SVG = SVG_MENU('<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h7"/>');
+  // Las páginas de Contabilidad, por si js/conta.js aún no cargó (los mismos k y nombres
+  // que MXP_CONTA.paginas(); el contrato entre los dos archivos)
+  const CONTA_PAGINAS_FIJAS = [
+    { k: "resumen", nombre: "Resumen", svg: SVG_MENU('<path d="M4 19h16"/><path d="M6 15l4-5 4 3 4-6"/>') },
+    { k: "bancos", nombre: "Bancos y tarjetas", svg: SVG_MENU('<path d="M3 10 12 4l9 6"/><path d="M5 10v9M10 10v9M14 10v9M19 10v9M3 20h18"/>') },
+    { k: "bandeja", nombre: "Bandeja", svg: SVG_MENU('<path d="M3 13l2.5-7h13L21 13v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 13h5l1.5 3h5L16 13h5"/>') },
+    { k: "conciliar", nombre: "Conciliar", svg: SVG_MENU('<path d="M12 3v18"/><path d="M5 7h14"/><path d="M3 15l3-8 3 8a3 3 0 0 1-6 0z"/><path d="M15 15l3-8 3 8a3 3 0 0 1-6 0z"/>') },
+    { k: "movimientos", nombre: "Movimientos", svg: SVG_MENU('<path d="M7 4v16M7 20l-3-3M7 20l3-3"/><path d="M17 20V4M17 4l-3 3M17 4l3 3"/>') },
+    { k: "estados", nombre: "Estados financieros", svg: SVG_MENU('<path d="M6 2h8l5 5v15H6z"/><path d="M14 2v5h5"/><path d="M9 13h6M9 17h6"/>') },
+    { k: "cobros", nombre: "Cobros en línea", svg: SVG_MENU('<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>') },
+    { k: "conexiones", nombre: "Conexiones y seguridad", svg: SVG_MENU('<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/>') }
+  ];
+  const contaPaginas = () => (window.MXP_CONTA && typeof window.MXP_CONTA.paginas === "function") ? window.MXP_CONTA.paginas() : CONTA_PAGINAS_FIJAS;
   // La vista que está a la vista (la marca mostrar())
   let lateralVista = "home";
+  // La página de Contabilidad a la vista (la dice js/conta.js por hooks.pagina): enciende «conta-<k>»
+  let contaPagina = "resumen";
   // ¿De qué pestaña se abrió la herramienta que está a la vista? «←» vuelve ahí.
   // Lo ponen las losetas de Proyectos y las filas de Más; se borra al volver a
   // una pestaña. Sin origen, «←» hace lo de siempre (el inicio).
@@ -569,21 +588,24 @@ function esFalloDeRed(err) {
     proyectos: "proyectos", "proyectos-todos": "proyectos", etapas: "proyectos", lista: "proyectos",
     detalle: "proyectos", alcance: "proyectos", checklist: "proyectos", materiales: "proyectos",
     gastos: "proyectos", estimador: "proyectos", propuesta: "proyectos", cierre: "proyectos", levantamiento: "proyectos",
-    mas: "mas", calendario: "mas", chat: "mas", asistente: "mas", conta: "mas"
+    conta: "conta",
+    mas: "mas", calendario: "mas", chat: "mas", asistente: "mas"
   };
   const menuDeVista = vista => PESTANA_DE[vista] || "";
   function irPestana(k) {
     if (k === "hoy") irHome();
     else if (k === "proyectos") irProyectos();
+    else if (k === "conta") irConta();
     else if (k === "mas") irMas();
   }
   function armarLateral() {
     const nav = $("lateral");
     if (!nav) return;
     // En la computadora (≥ 1024 px) Edgar quiere TODO a la vista a la izquierda (26-sep), como
-    // títulos con subtítulos: Hoy, Proyectos y Más, y debajo de cada uno lo que tiene dentro.
-    // En el iPad (riel de 88 px) los subtítulos («lat-extra») no se ven: quedan los tres títulos.
-    // Cada subtítulo dispara el botón de siempre (un solo camino de código).
+    // títulos con subtítulos: Hoy, Proyectos, Contabilidad (solo el dueño) y Más, y debajo de
+    // cada uno lo que tiene dentro. En el iPad (riel de 88 px) los subtítulos («lat-extra») no
+    // se ven: quedan los títulos. Cada subtítulo dispara el botón de siempre (un solo camino
+    // de código); los de Contabilidad abren su página (irConta(k)).
     const SVG_LAT = {
       "btn-idioma": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
       "btn-salir": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M10 16l-4-4 4-4M6 12h10"/></svg>'
@@ -591,6 +613,10 @@ function esFalloDeRed(err) {
     const svgDe = id => { if (SVG_LAT[id]) return SVG_LAT[id]; const b = $(id); const s = b && (b.querySelector(".tile-ico svg") || b.querySelector("svg")); return s ? s.outerHTML : ""; };
     const sub = (lat, txt, dispara, extra = "") => `<button type="button" class="lat-item lat-sub lat-extra" data-lat="${lat}" data-dispara="${dispara}">${svgDe(dispara)}<span>${txt}</span>${extra}</button>`;
     const dueno = !!(usuario && usuario.finanzas);
+    // Contabilidad: el título y, debajo, una entrada por página (data-conta = la página que abre)
+    const conta = !dueno ? "" : `
+      <button type="button" class="lat-item" data-lat="conta">${LATERAL_CONTA_SVG}<span>Contabilidad</span></button>
+      ${contaPaginas().map(p => `<button type="button" class="lat-item lat-sub lat-extra" data-lat="conta-${p.k}" data-conta="${p.k}">${p.svg}<span>${esc(p.nombre)}</span></button>`).join("")}`;
     nav.innerHTML = `
       <button type="button" class="lat-item" data-lat="hoy">${LATERAL_HOME_SVG}<span>Hoy</span></button>
       ${sub("btn-horas", "Reportar mis horas", "btn-horas")}
@@ -598,7 +624,8 @@ function esFalloDeRed(err) {
       <button type="button" class="lat-item lat-sub lat-extra" data-lat="proyectos-todos" data-accion="todos">${LATERAL_PROY_SVG}<span>Todos los proyectos</span></button>
       ${sub("btn-checklist", "Checklist", "btn-checklist")}
       ${sub("btn-materiales", "Materiales", "btn-materiales")}
-      ${dueno ? sub("btn-levantamiento", "Levantamiento", "btn-levantamiento") + sub("btn-gastos", "Gastos", "btn-gastos") + sub("btn-estimador", "Estimador", "btn-estimador") + sub("btn-conta", "Contabilidad", "btn-conta") : ""}
+      ${dueno ? sub("btn-levantamiento", "Levantamiento", "btn-levantamiento") + sub("btn-gastos", "Gastos", "btn-gastos") + sub("btn-estimador", "Estimador", "btn-estimador") : ""}
+      ${conta}
       <button type="button" class="lat-item" data-lat="mas">${LATERAL_MAS_SVG}<span>Más</span></button>
       ${sub("btn-calendario", "Calendario completo", "btn-calendario")}
       ${sub("chat", "Chat del equipo", "btn-chat", `<span id="lat-chat-badge" class="nav-badge" hidden></span>`)}
@@ -607,6 +634,7 @@ function esFalloDeRed(err) {
       ${sub("salir", "Salir", "btn-salir")}`;
     nav.querySelectorAll(".lat-item").forEach(it => it.addEventListener("click", () => {
       if (it.dataset.accion === "todos") irProyectosTodos();
+      else if (it.dataset.conta) irConta(it.dataset.conta);
       else if (it.dataset.dispara) { const o = $(it.dataset.dispara); if (o) o.click(); }
       else irPestana(it.dataset.lat);
     }));
@@ -617,7 +645,9 @@ function esFalloDeRed(err) {
   const LATERAL_EXACTA = { horas: "btn-horas", calendario: "btn-calendario", checklist: "btn-checklist",
     "proyectos-todos": "proyectos-todos", etapas: "proyectos-todos", lista: "proyectos-todos",
     materiales: "btn-materiales", levantamiento: "btn-levantamiento", gastos: "btn-gastos",
-    estimador: "btn-estimador", propuesta: "btn-estimador", cierre: "btn-estimador", conta: "btn-conta", chat: "chat", asistente: "asistente" };
+    estimador: "btn-estimador", propuesta: "btn-estimador", cierre: "btn-estimador", chat: "chat", asistente: "asistente" };
+  // En Contabilidad la exacta es la página a la vista («conta-<k>»); en el resto, la tabla
+  const lateralExacta = () => lateralVista === "conta" ? `conta-${contaPagina}` : LATERAL_EXACTA[lateralVista];
   const lateralAncho = window.matchMedia ? window.matchMedia("(min-width: 1024px)") : null;
   if (lateralAncho && lateralAncho.addEventListener) lateralAncho.addEventListener("change", () => pintarLateral());
   // La entrada encendida (cian y aria-current), en el lateral y en la barra de abajo
@@ -631,7 +661,7 @@ function esFalloDeRed(err) {
   function pintarLateral() {
     const nav = $("lateral"); if (!nav) return;
     // En el lateral ancho se enciende la herramienta exacta si está a la vista; si no, su pestaña
-    const exacta = LATERAL_EXACTA[lateralVista];
+    const exacta = lateralExacta();
     const ancho = lateralAncho && lateralAncho.matches;
     const hay = exacta && nav.querySelector(`.lat-item[data-lat="${exacta}"]`);
     marcarPestana(nav.querySelectorAll(".lat-item"), "lat", ancho && hay ? exacta : menuDeVista(lateralVista));
@@ -766,7 +796,7 @@ function esFalloDeRed(err) {
     cerrarHoja();
     lateralVista = vista;
     // Volver a una pestaña borra el origen que recordaba «←»
-    if (["home", "proyectos", "proyectos-todos", "mas"].includes(vista)) volverA = null;
+    if (["home", "proyectos", "proyectos-todos", "conta", "mas"].includes(vista)) volverA = null;
     // La vista a la vista del CSS: en la pantalla «Hoy» del campo la barra de títulos sobra
     document.body.dataset.vista = vista;
     pintarLateral();
@@ -816,6 +846,9 @@ function esFalloDeRed(err) {
     $("btn-estimador").hidden = !usuario.finanzas;
     $("btn-levantamiento").hidden = !usuario.finanzas;
     $("btn-conta").hidden = !usuario.finanzas;
+    // …y la pestaña «Contabilidad» de la barra de abajo es solo del dueño
+    const navConta = $("nav-abajo").querySelector('button[data-nav="conta"]');
+    if (navConta) navConta.hidden = !usuario.finanzas;
     // La vuelta del banco (Plaid con OAuth, p. ej. Chase) trae ?oauth_state_id=…:
     // la contabilidad retoma la ventana de Plaid (js/conta.js, reanudarLink)
     if (usuario.finanzas && /[?&]oauth_state_id=/.test(location.search)) { irConta(); return; }
@@ -2726,7 +2759,6 @@ function esFalloDeRed(err) {
       { k: "calendario", ico: SVG_CAL_MAS, t: "Calendario completo" },
       { k: "chat", ico: SVG_BURBUJA, t: "Chat del equipo", badge: true, oculta: $("btn-chat").hidden },
       { k: "asistente", ico: SVG_CHISPA, t: "Asistente", oculta: $("btn-asistente").hidden },
-      { k: "conta", ico: SVG_CONTA, t: "Contabilidad", detalle: "Bancos, tarjetas y la bandeja del banco", oculta: !(usuario && usuario.finanzas) },
       { k: "idioma", ico: SVG_GLOBO, t: "Idioma", valor: EN_APP ? "English" : "Español" },
       { k: "perfil", ico: SVG_PERSONA, t: "Perfil",
         detalle: `<span data-no-i18n>${esc(usuario.nombre)}</span> · <span>${esc(ROL_LLANO[rol] || usuario.rol || "")}</span> · <span>Versión ${esc(APP_VERSION || "?")}</span>` },
@@ -2745,7 +2777,6 @@ function esFalloDeRed(err) {
       if (k === "calendario") { volverA = "mas"; irCalendario(); }
       else if (k === "chat") { volverA = "mas"; $("btn-chat").click(); }
       else if (k === "asistente") { volverA = "mas"; $("btn-asistente").click(); }
-      else if (k === "conta") { volverA = "mas"; $("btn-conta").click(); }
       else if (k === "idioma") $("btn-idioma").click();
       else if (k === "perfil") abrirPerfil();
       else if (k === "salir") $("btn-salir").click();
@@ -2811,9 +2842,10 @@ function esFalloDeRed(err) {
   // pestaña de donde se vino (volverAlOrigen: Proyectos, Más, o Hoy)
   $btnVolver.addEventListener("click", () => {
     if (!$("vista-conta").hidden) {
-      // La contabilidad cierra lo suyo (una conciliación abierta); si no tenía nada, al origen
-      if (window.MXP_CONTA && window.MXP_CONTA.atras()) return;
-      volverAlOrigen();
+      // La contabilidad es una pestaña: «←» solo cierra lo suyo (la conciliación, el mayor o el
+      // asiento abiertos). En la raíz de cada página no hay «←» a la vista; si aun así llega
+      // (nada que cerrar), se queda donde está y el botón se esconde.
+      if (!(window.MXP_CONTA && window.MXP_CONTA.atras())) $btnVolver.hidden = true;
       return;
     }
     if (!$("vista-asistente").hidden) { volverAlOrigen(); return; }
@@ -8492,13 +8524,27 @@ function esFalloDeRed(err) {
   $("btn-gastos").addEventListener("click", () => irGastos());
 
   // ---------- Contabilidad (js/conta.js): solo dueño, solo con señal ----------
-  // La pantalla vive en js/conta.js (f05/f06); aquí solo la entrada y el título.
-  const SVG_CONTA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10 12 4l9 6"/><path d="M5 10v9M10 10v9M14 10v9M19 10v9M3 20h18"/></svg>';
-  function irConta() {
+  // La pantalla vive en js/conta.js (f05/f06); aquí solo la entrada, el título y los
+  // ganchos del contrato. Es una pestaña (como Hoy, Proyectos y Más): sin «←» en la raíz;
+  // conta.js lo pide con hooks.volver(true) cuando abre algo por dentro.
+  //   irConta()   → la última página (o «resumen»); también la vuelta de Plaid (irHome)
+  //   irConta(k)  → esa página (los subtítulos del lateral)
+  function irConta(pagina) {
     if (!usuario || !usuario.finanzas) return;
-    mostrar("conta", { kicker: "Contabilidad · solo dueño", titulo: "Bancos y tarjetas", volver: true, nuevo: false });
+    const k = typeof pagina === "string" ? pagina : undefined;
+    const pag = k && contaPaginas().find(p => p.k === k);
+    // La página pedida se enciende ya en el lateral (conta.js la confirma por hooks.pagina)
+    if (pag) contaPagina = k;
+    mostrar("conta", { kicker: "Contabilidad · solo dueño", titulo: pag ? pag.nombre : "Contabilidad", volver: false, nuevo: false });
     if (window.MXP_CONTA) {
-      window.MXP_CONTA.abrir({ titulo: (k, t) => { $kicker.textContent = k; $titulo.textContent = t; }, avisar });
+      window.MXP_CONTA.abrir({
+        titulo: (kk, t) => { $kicker.textContent = kk; $titulo.textContent = t; },
+        avisar,
+        // La página que pinta conta.js enciende su subtítulo en el lateral y la pestaña de abajo
+        pagina: p => { contaPagina = p; if (lateralVista === "conta") { pintarLateral(); pintarNavAbajo(); } },
+        // «←» solo con algo interno que cerrar; si ya se salió de la pestaña, no toca el de otra vista
+        volver: v => { if (lateralVista === "conta") $btnVolver.hidden = !v; }
+      }, k);
     } else {
       $("conta-raiz").innerHTML = '<div class="inicio-card"><p class="cal-sin-eventos">La contabilidad no cargó (js/conta.js). Recarga la app.</p></div>';
     }

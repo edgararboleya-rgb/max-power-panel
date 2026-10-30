@@ -3813,18 +3813,23 @@ small { font-size: max(var(--fs-small), 0.8em); }
 .panel-mini i { width: 7px; height: 12px; border-radius: 2px; background: var(--panel-palanca); }
 .panel-mini i.on { background: linear-gradient(180deg, var(--mp-cyan), var(--mp-lime)); box-shadow: 0 0 6px rgba(34,232,224,.9); }
 
-/* Barra de abajo: Hoy · Proyectos · Más (opción A). Para todos, solo por debajo de
-   768 px. 84 px + la zona segura del iPhone; tres tercios del ancho, sin fondo en la activa */
+/* Barra de abajo: Hoy · Proyectos · Más (opción A), y «Contabilidad» para el dueño. Solo por
+   debajo de 768 px. 84 px + la zona segura del iPhone; el ancho se reparte a partes iguales
+   entre los botones a la vista (tres para el equipo, cuatro para el dueño), sin fondo en la activa */
 .bottom-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 150; box-sizing: border-box;
               height: calc(84px + env(safe-area-inset-bottom, 0px));
               background: var(--night); border-top: 1px solid var(--cian-28);
-              display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); align-items: stretch;
+              display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0,1fr); align-items: stretch;
               padding: 0 0 env(safe-area-inset-bottom, 0px); }
 .bottom-nav[hidden] { display: none; }
 .bottom-nav button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
                      min-height: 56px; width: 100%; background: transparent; border: 0; border-radius: 0; cursor: pointer;
                      /* 13 px: lo más chico que se escribe en la app (tanda 4; el brief ponía 12) */
                      font: inherit; font-size: var(--fs-1); font-weight: 700; line-height: 1.2; color: var(--night-ink-3); }
+/* El botón escondido (Contabilidad para el equipo) no ocupa su columna */
+.bottom-nav button[hidden] { display: none; }
+/* La etiqueta en una sola línea: en un teléfono angosto «Contabilidad» se recorta, no se sale */
+.bottom-nav button > span:not(.nav-badge) { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bottom-nav button svg { width: 26px; height: 26px; }
 .bottom-nav button.active { color: var(--mp-cyan); font-weight: 800; }
 .bottom-nav button.active svg { filter: drop-shadow(0 0 6px rgba(34,232,224,.55)); }

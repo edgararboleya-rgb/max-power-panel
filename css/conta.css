@@ -3,19 +3,26 @@
    Tokens de styles.css («Cobre y luz»): el cobre como acento, la noche para
    el botón principal (.accion, de styles.css), Manrope y JetBrains Mono para
    los números. Todo va dentro de #conta-raiz para no tocar el resto.
+   Desde v290 está organizada como un programa de contabilidad: la portada
+   (fichas y «Qué atender»), la cabecera común de cada página, el bank feed
+   de la bandeja (filas compactas, tabla densa en la computadora) y las
+   tarjetas de las conexiones. Lo nuevo va al final del archivo.
    =========================================================================== */
 #conta-raiz { display: grid; gap: .8rem; }
 /* El botón flotante de la app tapa la esquina de las tarjetas: en la contabilidad no hace falta */
 body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-/* ---- pestañas ---- */
-#conta-raiz .ct-tabs { display: flex; gap: .4rem; overflow-x: auto; padding-bottom: .15rem; scrollbar-width: none; }
+/* ---- pestañas: teléfono e iPad (ocho, deslizan con tope); en la computadora las esconde el CSS y las enseña el lateral de la app ---- */
+#conta-raiz .ct-tabs { display: flex; gap: .4rem; overflow-x: auto; padding-bottom: .15rem; scrollbar-width: none; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
 #conta-raiz .ct-tabs::-webkit-scrollbar { display: none; }
-#conta-raiz .ct-tab { flex: none; display: inline-flex; align-items: center; gap: .45rem; min-height: var(--tap); padding: .45rem 1rem;
+#conta-raiz .ct-tab { flex: none; display: inline-flex; align-items: center; gap: .4rem; min-height: var(--tap); padding: .45rem .9rem;
   border-radius: 999px; border: 1.5px solid var(--mp-line); background: var(--mp-card); color: var(--mp-ink-2);
-  font: inherit; font-weight: 700; font-size: .92rem; cursor: pointer; }
+  font: inherit; font-weight: 700; font-size: .92rem; cursor: pointer; scroll-snap-align: start; }
+#conta-raiz .ct-tab svg { width: 18px; height: 18px; flex: none; color: var(--cu-dark); }
 #conta-raiz .ct-tab[aria-current="page"] { background: var(--night); color: #fff; border-color: var(--night); }
+#conta-raiz .ct-tab[aria-current="page"] svg { color: var(--mp-cyan); }
+@media (min-width: 1024px) { #conta-raiz .ct-tabs { display: none; } }
 #conta-raiz .ct-n { min-width: 20px; height: 20px; border-radius: 999px; background: #EFE22E; color: #3B3300;
   font-size: .75rem; font-weight: 800; display: inline-grid; place-items: center; padding: 0 6px; }
 #conta-raiz .ct-n[hidden] { display: none; }
@@ -92,14 +99,9 @@ body[data-vista="conta"] .fab { display: none; }
   border: 1.5px solid var(--mp-line); background: var(--mp-card); color: var(--mp-ink-2); cursor: pointer; }
 #conta-raiz .ct-chip[aria-pressed="true"] { background: var(--cu-dark); border-color: var(--cu-dark); color: #fff; }
 #conta-raiz .ct-lista { display: grid; gap: .7rem; }
-#conta-raiz .ct-mov { border-left: 4px solid var(--mp-blue); }
-#conta-raiz .ct-mov.alarma { border-left-color: var(--bad); }
-#conta-raiz .ct-mov-cab { display: flex; align-items: baseline; gap: .6rem; }
-#conta-raiz .ct-mov-quien { flex: 1; min-width: 0; font-size: .98rem; }
-#conta-raiz .ct-mov-quien small { display: block; color: var(--mp-ink-3); font-size: .8rem; }
-#conta-raiz .ct-monto { font-weight: 800; font-size: 1.05rem; white-space: nowrap; }
-#conta-raiz .ct-monto.neg, #conta-raiz td.neg { color: var(--mp-ink); }
-#conta-raiz .ct-monto.pos, #conta-raiz td.pos { color: var(--ok-ink); }
+/* (las filas de la bandeja, .ct-mov, están al final: el feed de v290) */
+#conta-raiz td.neg { color: var(--mp-ink); }
+#conta-raiz td.pos { color: var(--ok-ink); }
 #conta-raiz .ct-meta { display: flex; flex-wrap: wrap; gap: .3rem .6rem; align-items: center; margin-top: .25rem; font-size: .8rem; color: var(--mp-ink-2); }
 #conta-raiz .ct-texto { margin: .55rem 0 0; font-size: .92rem; line-height: 1.5; }
 #conta-raiz .ct-otra-menu .ct-acciones { flex-direction: column; align-items: stretch; }
@@ -281,3 +283,155 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-pl-m { text-align: right; font-weight: 700; white-space: nowrap; }
 #conta-raiz .ct-esperando { margin-top: .2rem; }
 #conta-raiz .ct-cobros-pie { text-align: center; }
+
+/* ===========================================================================
+   v290 · la organización de programa de contabilidad
+   =========================================================================== */
+#conta-raiz { --ct-feed-cols: 6.5rem minmax(0, 1fr) 10rem 11rem 8rem 1rem; }
+#conta-raiz .ct-card[hidden] { display: none; }
+
+/* ---- la cabecera común de cada página: título, su línea de cifras, selectores y la acción principal a la derecha ---- */
+#conta-raiz .ct-pag-cab { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .9rem; padding: .1rem .15rem 0; }
+#conta-raiz .ct-pag-t { flex: 1 1 14rem; min-width: 0; }
+#conta-raiz .ct-pag-h { margin: 0; font-size: var(--fs-7); font-weight: 800; letter-spacing: -.01em; line-height: 1.2; }
+#conta-raiz .ct-pag-sub { margin: .15rem 0 0; font-size: var(--fs-3); color: var(--mp-ink-2); line-height: 1.45; overflow-wrap: anywhere; }
+#conta-raiz .ct-pag-sub b, #conta-raiz .ct-pag-sub .ct-num { color: var(--mp-ink); }
+#conta-raiz .ct-pag-ctl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; flex: 1 1 100%; }
+#conta-raiz .ct-pag-acc { display: flex; flex-wrap: wrap; gap: .45rem; flex: 1 1 100%; }
+#conta-raiz .ct-pag-acc .accion { min-height: var(--btn2-h); font-size: .9rem; padding: .5rem .9rem; flex: 1 1 auto; }
+#conta-raiz .ct-pag-avisos { display: grid; gap: .3rem; }
+@media (min-width: 700px) {
+  #conta-raiz .ct-pag-ctl { flex: 0 1 auto; grid-template-columns: repeat(2, minmax(10rem, 14rem)); }
+  #conta-raiz .ct-pag-acc { flex: 0 0 auto; }
+  #conta-raiz .ct-pag-acc .accion { flex: none; }
+}
+/* «¿Qué es esto?»: el texto que explica la página, plegado */
+#conta-raiz .ct-ayuda { margin: .1rem 0 .5rem; }
+#conta-raiz .ct-ayuda summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: .4rem; min-height: 36px; font-size: .85rem; font-weight: 700; color: var(--cu-dark); }
+#conta-raiz .ct-ayuda summary::-webkit-details-marker { display: none; }
+#conta-raiz .ct-ayuda summary::before { content: "?"; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--cu); font-size: .72rem; line-height: 1; }
+#conta-raiz .ct-ayuda[open] summary::before { background: var(--cu); color: #fff; }
+#conta-raiz .ct-ayuda-txt .ct-nota { margin-top: .1rem; }
+
+/* ---- la portada: fichas que llevan a su página y «Qué atender» ---- */
+#conta-raiz .ct-fichas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
+#conta-raiz .ct-ficha { display: grid; gap: .15rem; align-content: start; text-align: left; min-width: 0; min-height: 96px; padding: .75rem .85rem;
+  border-radius: var(--r-card); border: 1px solid var(--mp-line); background: var(--mp-card); box-shadow: var(--mp-shadow); color: var(--mp-ink); font: inherit; cursor: pointer; }
+#conta-raiz .ct-ficha:hover { border-color: var(--mp-blue); }
+#conta-raiz .ct-ficha:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: 2px; }
+/* la cifra nunca se parte: 20 px en el teléfono y el iPad (dos y cuatro fichas por fila), 26 px en la computadora, donde cada ficha mide unos 235 px */
+#conta-raiz .ct-ficha .ct-val { font-size: var(--fs-7); white-space: nowrap; min-width: 0; }
+#conta-raiz .ct-ficha .ct-sub { overflow-wrap: anywhere; }
+#conta-raiz .ct-ficha.bad { border-left: 4px solid var(--bad); }
+#conta-raiz .ct-ficha.bad .ct-val { color: var(--bad); }
+#conta-raiz .ct-ficha-mes { grid-column: 1 / -1; }
+#conta-raiz .ct-mes-filas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; margin: .1rem 0; }
+#conta-raiz .ct-mes-filas > span { display: grid; gap: .05rem; font-size: .78rem; color: var(--mp-ink-2); min-width: 0; }
+#conta-raiz .ct-mes-filas b { font-size: var(--fs-5); color: var(--mp-ink); letter-spacing: -.01em; white-space: nowrap; }
+@media (min-width: 700px) { #conta-raiz .ct-fichas { grid-template-columns: repeat(4, minmax(0, 1fr)); } #conta-raiz .ct-mes-filas b { font-size: var(--fs-7); } }
+@media (min-width: 1024px) { #conta-raiz .ct-ficha .ct-val { font-size: var(--fs-8); } }
+#conta-raiz .ct-atender { border-left: 4px solid var(--warn-ink); }
+#conta-raiz .ct-atender.ok { border-left-color: var(--ok); }
+#conta-raiz .ct-atn-lista { list-style: none; margin: 0; padding: 0; }
+#conta-raiz .ct-atn { display: flex; align-items: center; gap: .6rem; padding: .55rem 0; border-top: 1px solid var(--mp-line); font-size: .92rem; line-height: 1.4; }
+#conta-raiz .ct-atn:first-child { border-top: 0; }
+#conta-raiz .ct-atn-txt { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-atn-txt small { display: block; color: var(--mp-ink-3); font-size: .8rem; margin-top: .1rem; }
+#conta-raiz .ct-atn .accion { flex: none; }
+
+/* ---- la tarjeta de una cuenta: la diferencia en una línea y los datos en una ficha de dos columnas ---- */
+#conta-raiz .ct-dif { margin: 0 0 .3rem; font-size: .86rem; color: var(--mp-ink-2); }
+#conta-raiz .ct-ficha-datos { display: grid; grid-template-columns: 1fr; gap: 0 .9rem; margin: .2rem 0 .4rem; font-size: .86rem; }
+#conta-raiz .ct-ficha-datos > div { display: grid; gap: .05rem; padding: .35rem 0; border-top: 1px solid var(--mp-sky-2); min-width: 0; }
+#conta-raiz .ct-ficha-datos dt { font-size: .74rem; font-weight: 700; color: var(--mp-ink-2); }
+#conta-raiz .ct-ficha-datos dd { margin: 0; color: var(--mp-ink); overflow-wrap: anywhere; line-height: 1.45; }
+@media (min-width: 700px) { #conta-raiz .ct-ficha-datos { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ---- la bandeja: la barra de herramientas ---- */
+#conta-raiz .ct-herr { padding-top: .75rem; padding-bottom: .6rem; }
+#conta-raiz .ct-herr-fila { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem .6rem; align-items: end; }
+#conta-raiz .ct-herr-fila .ct-buscar, #conta-raiz .ct-herr-fila .ct-agrupar { grid-column: 1 / -1; }
+#conta-raiz .ct-herr-fila .ct-agrupar { font-size: .88rem; }
+#conta-raiz .ct-herr .ct-chips { margin-top: .5rem; }
+#conta-raiz .ct-bj-n { margin: .4rem 0 0; }
+#conta-raiz .ct-bj-n:empty { display: none; }
+@media (min-width: 700px) {
+  #conta-raiz .ct-herr-fila { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto; }
+  #conta-raiz .ct-herr-fila .ct-buscar, #conta-raiz .ct-herr-fila .ct-agrupar { grid-column: auto; }
+}
+/* ---- la bandeja: el feed. Una tarjeta, filas de una línea (dos en el teléfono) que se despliegan de una en una ---- */
+#conta-raiz .ct-feed { padding: 0; overflow: hidden; }
+#conta-raiz .ct-feed-cab { display: none; }
+#conta-raiz .ct-mov { border-top: 1px solid var(--mp-line); border-left: 4px solid transparent; }
+#conta-raiz .ct-feed > .ct-mov:first-child, #conta-raiz .ct-grupo-filas > .ct-mov:first-child { border-top: 0; }
+#conta-raiz .ct-mov.alarma { border-left-color: var(--bad); }
+#conta-raiz .ct-mov.abierta { border-left-color: var(--cu); background: var(--mp-sky-1); }
+#conta-raiz .ct-mov-fila { display: grid; grid-template-columns: minmax(0, 1fr) auto 1rem; gap: .2rem .6rem; align-items: center; width: 100%; min-height: var(--tap);
+  padding: .6rem .85rem .55rem .7rem; background: none; border: 0; font: inherit; color: var(--mp-ink); text-align: left; cursor: pointer; }
+#conta-raiz .ct-mov-fila:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: -3px; }
+#conta-raiz .ct-f-main { display: contents; }
+#conta-raiz .ct-f-desc { min-width: 0; font-size: .95rem; }
+#conta-raiz .ct-f-desc b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#conta-raiz .ct-f-desc small { display: block; color: var(--mp-ink-3); font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#conta-raiz .ct-f-monto { font-weight: 800; font-size: 1rem; white-space: nowrap; justify-self: end; }
+#conta-raiz .ct-f-monto.pos, #conta-raiz .ct-g-monto.pos { color: var(--ok-ink); }
+#conta-raiz .ct-f-monto.neg, #conta-raiz .ct-g-monto.neg { color: var(--mp-ink); }
+#conta-raiz .ct-f-chev { width: 1rem; height: 1rem; display: inline-grid; place-items: center; }
+#conta-raiz .ct-f-chev::before { content: ""; width: 8px; height: 8px; border-right: 2px solid var(--cu-dark); border-bottom: 2px solid var(--cu-dark); transform: translateY(-2px) rotate(45deg); transition: transform .15s var(--mp-ease); }
+#conta-raiz .ct-mov.abierta .ct-f-chev::before, #conta-raiz .ct-grupo[open] > .ct-grupo-cab .ct-f-chev::before { transform: translateY(2px) rotate(-135deg); }
+#conta-raiz .ct-f-meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .25rem .6rem; align-items: center; font-size: .8rem; color: var(--mp-ink-2); }
+#conta-raiz .ct-f-motivo { display: inline-flex; flex-wrap: wrap; gap: .25rem; }
+#conta-raiz .ct-mov-det { padding: 0 .85rem .8rem .7rem; }
+#conta-raiz .ct-mov-det .ct-meta { margin-top: 0; }
+#conta-raiz .ct-mov-det .ct-texto { margin-top: .4rem; }
+/* un comercio con sus movimientos */
+#conta-raiz .ct-grupo { border-top: 1px solid var(--mp-line); }
+#conta-raiz .ct-feed-cab + .ct-grupo, #conta-raiz .ct-feed > .ct-grupo:first-child { border-top: 0; }
+#conta-raiz .ct-grupo-cab { display: grid; grid-template-columns: minmax(0, 1fr) auto 1rem; gap: .15rem .6rem; align-items: center; min-height: var(--tap); padding: .6rem .85rem .55rem .95rem; cursor: pointer; list-style: none; }
+#conta-raiz .ct-grupo-cab::-webkit-details-marker { display: none; }
+#conta-raiz .ct-grupo[open] > .ct-grupo-cab { background: var(--mp-sky-2); }
+#conta-raiz .ct-g-desc { min-width: 0; }
+#conta-raiz .ct-g-desc b { display: block; font-size: .95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#conta-raiz .ct-g-desc small { display: block; color: var(--mp-ink-3); font-size: .8rem; }
+#conta-raiz .ct-g-n { grid-column: 1; font-size: .8rem; color: var(--mp-ink-2); display: inline-flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
+#conta-raiz .ct-g-monto { grid-column: 2; grid-row: 1; font-weight: 800; white-space: nowrap; justify-self: end; }
+#conta-raiz .ct-grupo-cab .ct-f-chev { grid-column: 3; grid-row: 1; }
+#conta-raiz .ct-grupo-filas .ct-mov { border-left-width: 4px; }
+#conta-raiz .ct-grupo-filas .ct-mov-fila { padding-left: 1.3rem; }
+/* la computadora: una tabla densa de columnas alineadas, con su cabecera */
+@media (min-width: 1024px) {
+  #conta-raiz .ct-feed-cab { display: grid; grid-template-columns: var(--ct-feed-cols); gap: .6rem; padding: .45rem .85rem .45rem .95rem; font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: var(--cu-dark); font-weight: 800; border-bottom: 1px solid var(--mp-line); }
+  #conta-raiz .ct-feed-cab .r { text-align: right; }
+  #conta-raiz .ct-mov-fila { grid-template-columns: var(--ct-feed-cols); grid-template-areas: "fecha desc cuenta motivo monto chev"; padding: .5rem .85rem .5rem .7rem; }
+  #conta-raiz .ct-f-meta { display: contents; }
+  #conta-raiz .ct-f-fecha { grid-area: fecha; font-size: .86rem; color: var(--mp-ink-2); white-space: nowrap; }
+  #conta-raiz .ct-f-desc { grid-area: desc; }
+  #conta-raiz .ct-f-cuenta { grid-area: cuenta; font-size: .86rem; color: var(--mp-ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #conta-raiz .ct-f-motivo { grid-area: motivo; }
+  #conta-raiz .ct-f-monto { grid-area: monto; }
+  #conta-raiz .ct-f-chev { grid-area: chev; }
+  #conta-raiz .ct-grupo-filas .ct-mov-fila { padding-left: .7rem; }
+  #conta-raiz .ct-grupo-cab { grid-template-columns: minmax(0, 1fr) 12rem 8rem 1rem; }
+  #conta-raiz .ct-g-n { grid-column: 2; grid-row: 1; }
+  #conta-raiz .ct-g-monto { grid-column: 3; }
+  #conta-raiz .ct-grupo-cab .ct-f-chev { grid-column: 4; }
+}
+
+/* ---- movimientos: tabla densa en la computadora; en el teléfono cada fila se apila en dos líneas ---- */
+#conta-raiz .ct-densa { padding-top: .3rem; padding-bottom: .3rem; }
+#conta-raiz .ct-mov-tabla td small { display: block; font-size: .78rem; }
+#conta-raiz .ct-mov-tabla td.ct-c-fecha { white-space: nowrap; color: var(--mp-ink-2); }
+@media (max-width: 699px) {
+  #conta-raiz .ct-tabla.ct-mov-tabla { min-width: 0; }
+  #conta-raiz .ct-tabla.ct-mov-tabla thead { display: none; }
+  #conta-raiz .ct-tabla.ct-mov-tabla tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .1rem .6rem; padding: .5rem 0; border-bottom: 1px solid var(--mp-line); }
+  #conta-raiz .ct-tabla.ct-mov-tabla tbody tr td { display: block; border: 0; padding: 0; }
+  #conta-raiz .ct-tabla.ct-mov-tabla td.ct-c-desc { grid-column: 1; grid-row: 1; }
+  #conta-raiz .ct-tabla.ct-mov-tabla td.ct-c-monto { grid-column: 2; grid-row: 1; text-align: right; font-weight: 800; }
+  #conta-raiz .ct-tabla.ct-mov-tabla td.ct-c-fecha { grid-column: 1; grid-row: 2; font-size: .8rem; }
+  #conta-raiz .ct-tabla.ct-mov-tabla td.ct-c-estado { grid-column: 2; grid-row: 2; text-align: right; }
+  #conta-raiz .ct-tabla.ct-mov-tabla td.ct-c-como, #conta-raiz .ct-tabla.ct-mov-tabla td.ct-c-asiento { grid-column: 1 / -1; }
+  #conta-raiz .ct-tabla.ct-mov-tabla td.ct-c-como:empty, #conta-raiz .ct-tabla.ct-mov-tabla td.ct-c-asiento small:empty { display: none; }
+  #conta-raiz .ct-tabla.ct-mov-tabla td[data-col]::before { content: attr(data-col) ": "; font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; color: var(--mp-ink-2); font-weight: 700; }
+  #conta-raiz .ct-tabla.ct-mov-tabla td[data-col] small { display: inline; }
+}

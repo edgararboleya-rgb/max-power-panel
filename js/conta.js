@@ -24,6 +24,14 @@
 // v_balanza, v_mayor, v_libro, v_asiento_papel, v_flujo_caja, v_comparacion,
 // v_comparacion_resumen; control fn_estados_control): solo lectura, cada
 // cifra viene lista de la base y baja hasta su asiento y su papel.
+//
+// Cómo está organizada (v290, «que se parezca a un programa de contabilidad»):
+// una portada («Resumen») con las cifras y lo que hay que atender, y una
+// página por tarea: Bancos y tarjetas, Bandeja (el bank feed), Conciliar,
+// Movimientos, Estados financieros, Cobros en línea y Conexiones y seguridad
+// (el código del teléfono, Plaid y la conexión con Stripe). En el teléfono y
+// el iPad las pestañas van arriba; en la computadora las enseña el lateral de
+// la app (js/app.js) con MXP_CONTA.paginas() y los hooks pagina() y volver().
 // ============================================================
 
 (function () {
@@ -46,11 +54,13 @@
 
   // ---------- Estado en memoria (nada se guarda en el teléfono) ----------
   const S = {
-    pagina: "bancos",
-    hooks: { titulo() {}, avisar() {} },
+    pagina: "resumen",
+    hooks: { titulo() {}, avisar() {}, pagina() {}, volver() {} },
     saldos: null, cuentas: null, proyectos: null, bandeja: null,
     conc: null, concCuenta: null, movCuenta: null, movEstado: "", filtroCuenta: null,
-    importe: null, ocupado: false,
+    importe: null, impAbierto: false, ocupado: false,
+    // la bandeja como bank feed: qué se busca, qué motivo, en qué orden, si se agrupa por comercio y qué fila está desplegada
+    bj: { q: "", motivo: "", orden: "fecha_asc", agrupar: false, abierta: null },
     plaid: null, plaidErr: null, mfa: null,
     // Stripe (p1): la fila de v_stripe_estado, por qué no se leyó, la salud de la función, los depósitos asentados (para la bandeja) y la pestaña
     stripe: null, stripeErr: null, stripeSalud: null, stripePayouts: null, cobros: null,
@@ -58,26 +68,58 @@
     // el método del flujo, la caché de v_cortes (con el día en que se leyó) y la serie contra el doble pintado
     est: { sub: "resultados", periodo: null, cuenta: null, asiento: null, metodo: "directo", cortes: null, cortesDia: null, todos: false, avisoHoy: false, serie: 0 }
   };
-  const TITULOS = { bancos: "Bancos y tarjetas", bandeja: "Bandeja del banco", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados financieros", cobros: "Cobros en línea" };
-  const PESTANAS = { bancos: "Bancos y tarjetas", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados", cobros: "Cobros en línea" };
+  // Las páginas, en el orden del menú. TITULOS va en el membrete de la app y en el lateral; PESTANAS, corto, en las pestañas del teléfono
+  const ORDEN = ["resumen", "bancos", "bandeja", "conciliar", "movimientos", "estados", "cobros", "conexiones"];
+  const TITULOS = { resumen: "Resumen", bancos: "Bancos y tarjetas", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados financieros", cobros: "Cobros en línea", conexiones: "Conexiones y seguridad" };
+  const PESTANAS = { resumen: "Resumen", bancos: "Bancos", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados", cobros: "Cobros", conexiones: "Conexiones" };
+  // el icono de cada página, del mismo trazo que los del menú de la app (24 × 24, línea de 1.8)
+  const svgMenu = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const ICONOS = {
+    resumen: svgMenu('<rect x="3" y="3" width="8" height="10" rx="2"/><rect x="13" y="3" width="8" height="6" rx="2"/><rect x="13" y="11" width="8" height="10" rx="2"/><rect x="3" y="15" width="8" height="6" rx="2"/>'),
+    bancos: svgMenu('<rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10.5h18M7 15.5h4"/>'),
+    bandeja: svgMenu('<path d="M3 13l2.5-7h13L21 13v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 13h5l1.5 2.5h5L16 13h5"/>'),
+    conciliar: svgMenu('<path d="M4 7h7M4 12h7M4 17h7"/><path d="M14 12.5l2.5 2.5L21 10"/>'),
+    movimientos: svgMenu('<path d="M4 8h14M15 5l3 3-3 3"/><path d="M20 16H6M9 13l-3 3 3 3"/>'),
+    estados: svgMenu('<path d="M5 3h9l5 5v13H5z"/><path d="M14 3v5h5"/><path d="M8.5 17v-3M12 17v-6M15.5 17v-4"/>'),
+    cobros: svgMenu('<circle cx="12" cy="12" r="9"/><path d="M12 6.5v11M9.5 9.5h3.5a1.75 1.75 0 0 1 0 3.5h-2a1.75 1.75 0 0 0 0 3.5H15"/>'),
+    conexiones: svgMenu('<path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z"/><path d="M9.5 12l2 2 3.5-3.5"/>')
+  };
   const KICKER = "Contabilidad · solo dueño";
 
   const raiz = () => $("conta-raiz");
   const main = () => $("ct-main");
 
-  // ---------- El marco: pestañas arriba, la página debajo ----------
+  // ---------- El marco: pestañas arriba (teléfono e iPad; en la computadora las esconde el CSS y las enseña el lateral), la página debajo ----------
   function armar() {
     const r = raiz(); if (!r) return;
-    r.innerHTML = `<nav class="ct-tabs" aria-label="Contabilidad">${Object.keys(PESTANAS).map(k =>
-      `<button type="button" class="ct-tab" data-pag="${k}" aria-current="${k === S.pagina ? "page" : "false"}">${esc(PESTANAS[k])}${k === "bandeja" ? `<span class="ct-n" id="ct-n-bandeja" hidden></span>` : ""}</button>`).join("")}</nav>
+    r.innerHTML = `<nav class="ct-tabs" aria-label="Contabilidad">${ORDEN.map(k =>
+      `<button type="button" class="ct-tab" data-pag="${k}" aria-current="${k === S.pagina ? "page" : "false"}">${ICONOS[k]}<span>${esc(PESTANAS[k])}</span>${k === "bandeja" ? `<span class="ct-n" id="ct-n-bandeja" hidden></span>` : ""}</button>`).join("")}</nav>
       <div id="ct-main" class="ct-main"></div>`;
     r.querySelectorAll(".ct-tab").forEach(b => b.addEventListener("click", () => ir(b.dataset.pag)));
     pintarBadge();
   }
   function marcarPestana() {
     const r = raiz(); if (!r) return;
-    r.querySelectorAll(".ct-tab").forEach(b => b.setAttribute("aria-current", b.dataset.pag === S.pagina ? "page" : "false"));
+    r.querySelectorAll(".ct-tab").forEach(b => {
+      const activa = b.dataset.pag === S.pagina;
+      b.setAttribute("aria-current", activa ? "page" : "false");
+      // con ocho pestañas la activa puede quedar fuera del borde del teléfono: se trae a la vista
+      if (activa && typeof b.scrollIntoView === "function") b.scrollIntoView({ inline: "nearest", block: "nearest" });
+    });
   }
+  // «←» de la app: solo cuando hay algo interno que cerrar (una conciliación abierta, el mayor o el asiento de los estados). Se avisa en cada pintada
+  const hayAtras = () => !!S.conc || (S.pagina === "estados" && !!(S.est.cuenta || S.est.asiento));
+  const marcarVolver = () => S.hooks.volver(hayAtras());
+  // La cabecera común de cada página: el título, una línea con sus cifras (o lo que explica la página), los selectores si los hay y la acción principal a la derecha
+  const cabPagina = (titulo, sub, acciones, controles) => `<header class="ct-pag-cab">
+      <div class="ct-pag-t"><h2 class="ct-pag-h">${esc(titulo)}</h2>${sub ? `<p class="ct-pag-sub">${sub}</p>` : ""}</div>
+      ${controles ? `<div class="ct-pag-ctl">${controles}</div>` : ""}
+      ${acciones ? `<div class="ct-pag-acc">${acciones}</div>` : ""}
+    </header>`;
+  // Los textos largos que explican una página se pliegan: quien ya sabe no los lee cada vez
+  const ayudaHTML = (html, resumen) => `<details class="ct-ayuda"><summary>${esc(resumen || "¿Qué es esto?")}</summary><div class="ct-ayuda-txt">${html}</div></details>`;
+  // volver a pintar la página en la que se está (después de una acción que cambió algo)
+  const repintar = () => (PAGINAS[S.pagina] || pintarResumen)();
   function pintarBadge() {
     const n = $("ct-n-bandeja"); if (!n) return;
     const total = S.bandeja ? S.bandeja.length
@@ -86,7 +128,7 @@
     n.textContent = total || "";
   }
   function ir(pag, opciones = {}) {
-    if (!PAGINAS[pag]) pag = "bancos";
+    if (!PAGINAS[pag]) pag = "resumen";
     S.pagina = pag;
     S.conc = null;
     if (opciones.cuenta !== undefined) {
@@ -104,6 +146,8 @@
     }
     marcarPestana();
     S.hooks.titulo(KICKER, TITULOS[pag]);
+    S.hooks.pagina(pag);
+    marcarVolver();
     window.scrollTo(0, 0);
     return PAGINAS[pag]();
   }
@@ -146,8 +190,18 @@
   // pintar. `conteos` es lo que la pantalla trajo de cada vista; si no es lo
   // que el control contó, también es rojo.
   async function controlar(vistas, conteos) {
+    const filas = await controlBanco(vistas);
+    const mal = evaluarControl(filas, vistas, conteos);
+    if (mal.length) throw errorControl("El control del banco no cuadra", mal);
+    return filas;
+  }
+  async function controlBanco(vistas) {
     const filas = await DB._rpc("fn_banco_control", { p_periodo: "hoy", p_vistas: vistas });
     if (!Array.isArray(filas) || !filas.length) throw errorControl("El control del banco no devolvió ninguna fila", [{ vista: vistas.join(", "), detalle: "fn_banco_control('hoy', …) contestó vacío" }]);
+    return filas;
+  }
+  // lo que no cuadra de lo que contestó el control: las filas en falso, las vistas que no revisó y los conteos que no coinciden con lo que trajo la pantalla
+  function evaluarControl(filas, vistas, conteos) {
     const mal = filas.filter(f => !f.ok).map(f => ({ vista: f.vista, filas: f.filas, esperadas: f.esperadas, detalle: f.detalle }));
     for (const vista of vistas) {
       const f = filas.find(x => x.vista === vista);
@@ -157,8 +211,7 @@
         mal.push({ vista, filas: f.filas, esperadas: n, detalle: `la pantalla trajo ${n} fila(s) y el control contó ${f.filas}` });
       }
     }
-    if (mal.length) throw errorControl("El control del banco no cuadra", mal);
-    return filas;
+    return mal;
   }
 
   // ---------- Lecturas que se repiten ----------
@@ -172,7 +225,107 @@
   const estadoPill = e => pill(({ abierta: "abierta", confirmada: "confirmada", anulada: "anulada" })[e] || e, ({ abierta: "warn", confirmada: "ok", anulada: "bad" })[e] || "");
 
   // ============================================================
-  // BANCOS Y TARJETAS
+  // RESUMEN: la portada. Fichas con las cifras (cada una lleva a su página) y
+  // «Qué atender» con las alarmas. Todo pasa por el control antes de pintar:
+  // fn_banco_control con las cuatro vistas del banco (v_banco_saldos manda: si
+  // no cuadra, la portada es roja; las otras tres solo se listan para atender),
+  // fn_estados_control para el mes en curso (si no cuadra, la ficha lo dice y
+  // no pinta cifras: el rojo con el detalle está en Estados).
+  // ============================================================
+  const suma = (lista, k) => lista.reduce((s, c) => s + (num(c[k]) || 0), 0);
+  const diasDesde = iso => iso ? diasEntre(hoyMiami(), iso) : null;
+  const PAGINA_VISTA = { v_banco_saldos: "bancos", v_banco_bandeja: "bandeja", v_conciliacion: "conciliar", v_banco_movimientos: "movimientos" };
+  async function pintarResumen() {
+    cargando("Controlando con la base…");
+    if (!navigator.onLine) return sinSenal(pintarResumen);
+    let lista, suaves, mes, stripeCtl = [];
+    try {
+      lista = await leerSaldos();
+      const vistas = Object.keys(PAGINA_VISTA);
+      const mal = evaluarControl(await controlBanco(vistas), vistas, { v_banco_saldos: lista.length });
+      // la lista de saldos es lo que la portada pinta: si su control no cuadra (o falla un cuadre general), rojo; lo demás se lista
+      const duro = mal.filter(m => m.vista === "v_banco_saldos" || !vistas.includes(m.vista));
+      if (duro.length) throw errorControl("El control del banco no cuadra", duro);
+      suaves = mal.filter(m => !duro.includes(m));
+      if (!lista.length) throw errorControl("La base no devolvió ninguna cuenta de banco ni tarjeta", [{ vista: "v_banco_saldos", filas: 0, esperadas: "1 o más", detalle: "La empresa tiene Chase y las dos Amex. Si la vista no las trae, algo está mal (¿la sesión no es la del dueño?)." }]);
+      // las conexiones, frescas: la portada es donde se mira si algo pide atención
+      S.mfa = null; await leerMfa();
+      S.plaid = null; await leerPlaid();
+      await leerStripe(true);
+      if (S.stripe) stripeCtl = await DB._leer("v_stripe_control?select=*&order=orden.asc").catch(e => { if (esFalloDeRed(e)) throw e; return []; });
+      mes = await leerMes();
+    } catch (err) { return pintarError(err, pintarResumen); }
+    if (S.pagina !== "resumen") return;
+    pintarBadge();
+    const vis = visibles(lista);
+    const bancos = vis.filter(c => c.tipo === "banco"), tarjetas = vis.filter(c => c.tipo === "tarjeta"), conBanco = bancos.filter(c => c.saldo_banco != null);
+    const pend = suma(vis, "pendientes");
+    const viejo = vis.map(c => c.pendiente_mas_viejo).filter(Boolean).sort()[0] || null;
+    const diasViejo = diasDesde(viejo);
+    const bandejaRoja = diasViejo != null && diasViejo > 30;
+    const e = S.stripe && S.stripe.estado;
+    const ficha = (k, lbl, val, sub, clase) => `<button type="button" class="ct-ficha${clase ? " " + clase : ""}" data-ir="${k}"><span class="ct-lbl">${esc(lbl)}</span><span class="ct-val ct-num">${val}</span><span class="ct-sub">${sub || ""}</span></button>`;
+    const perdida = mes && !mes.vacio && !mes.err && num(mes.resultado) < 0;
+    const fichaMes = mes.vacio ? ficha("estados", "Este mes", "—", esc(mes.vacio))
+      : mes.err ? ficha("estados", "Este mes", "—", "el control de los estados no cuadra: el detalle está en Estados", "bad")
+      : `<button type="button" class="ct-ficha ct-ficha-mes" data-ir="estados"><span class="ct-lbl">Este mes · ${esc(nombrePeriodo(mes.corte))}</span>
+          <span class="ct-mes-filas"><span>Ingresos<b class="ct-num">${fmtNeg(mes.ingresos)}</b></span><span>Costo y gastos<b class="ct-num">${fmtNeg(mes.gastos)}</b></span><span>${perdida ? "Pérdida" : "Resultado"}<b class="ct-num ${perdida ? "bad-txt" : "ok-txt"}">${fmtNeg(mes.resultado)}</b></span></span>
+          <span class="ct-sub">lo que va del mes en el libro, de v_resultados</span></button>`;
+    const fichas = `<div class="ct-fichas">
+      ${ficha("bancos", "Bancos", fmt(suma(bancos, "saldo_libros_como_banco")), `en libros · ${conBanco.length ? `según el banco <span class="ct-num">${fmt(suma(conBanco, "saldo_banco_como_banco"))}</span>${conBanco.length < bancos.length ? ` (${conBanco.length} de ${bancos.length} con archivo)` : ""}` : "sin archivo del banco todavía"}`)}
+      ${ficha("bancos", "Tarjetas", fmt(suma(tarjetas, "saldo_libros_como_banco")), `lo que se debe · ${plural(tarjetas.length, "tarjeta", "tarjetas")}`)}
+      ${ficha("bandeja", "Bandeja", esc(String(pend)), pend ? `${pend === 1 ? "espera" : "esperan"} · el más viejo del ${fecha(viejo)}${bandejaRoja ? ` · ${plural(diasViejo, "día", "días")}` : ""}` : "nada espera", bandejaRoja ? "bad" : "")}
+      ${ficha("cobros", "Cobros en línea", e ? fmt(e.por_depositar) : "—", e ? `en Stripe sin depositar · en camino <span class="ct-num">${fmt(e.en_camino_monto)}</span>` : "sin instalar")}
+      ${fichaMes}
+    </div>`;
+    // qué atender: cada alarma con el botón a su página
+    const atender = [];
+    for (const c of vis) if (c.alarma && c.alarma_texto) atender.push({ txt: `${c.cuenta_nombre}: ${c.alarma_texto}`, ir: "bancos" });
+    if (bandejaRoja) atender.push({ txt: `${plural(vis.filter(c => (diasDesde(c.pendiente_mas_viejo) || 0) > 30).length, "cuenta tiene", "cuentas tienen")} movimientos de más de 30 días en la bandeja (el más viejo del ${fechaLarga(viejo)}).`, ir: "bandeja" });
+    for (const m of suaves) atender.push({ txt: `El control del banco no cuadra en ${m.vista}: ${PESTANAS[PAGINA_VISTA[m.vista]]} se pone en rojo hasta que cuadre.`, det: m.detalle, ir: PAGINA_VISTA[m.vista] });
+    if (!mfaActivo()) atender.push({ txt: S.mfa && S.mfa.verificados.length ? "El código del teléfono está activo pero esta sesión entró sin él: sal y vuelve a entrar con el código para conectar bancos y mover cobros." : "El código del teléfono (segundo paso para entrar) no está activo: sin él no se conecta ningún banco ni se tocan los cobros en línea.", ir: "conexiones" });
+    for (const c of S.plaid || []) {
+      if (c.estado === "error") atender.push({ txt: `${c.institucion || "Un banco"} (Plaid) pide volver a conectar.`, det: c.ultimo_error, ir: "conexiones" });
+      else if (c.estado === "activa" && Number(c.cuentas_sin_fijar) > 0) atender.push({ txt: `${c.institucion || "Un banco"}: ${plural(c.cuentas_sin_fijar, "cuenta del banco sin fijar", "cuentas del banco sin fijar")} a una cuenta del plan (hasta fijarlas no se sincroniza nada).`, ir: "conexiones" });
+    }
+    for (const f of stripeCtl) {
+      if (f.nivel === "alarma" && f.ok === false) atender.push({ txt: ALARMA_STRIPE[f.orden] || String(f.control || "").replace(/^stripe: /, ""), det: f.detalle, ir: "cobros" });
+      else if (f.nivel === "cuadre" && f.ok !== true) atender.push({ txt: `Los cobros en línea no cuadran (${String(f.control || "").replace(/^stripe: /, "")}): la página lo explica y no pinta hasta que cuadre.`, det: f.detalle, ir: "cobros" });
+    }
+    main().innerHTML = cabPagina("Resumen", `${plural(vis.length, "cuenta", "cuentas")} · ${pend ? `<b>${plural(pend, "movimiento espera", "movimientos esperan")}</b> en la bandeja` : "la bandeja está al día"} · hoy, ${fechaLarga(hoyMiami())}`) + fichas +
+      `<section class="ct-card ct-atender${atender.length ? "" : " ok"}" id="ct-atender"><h2>Qué atender</h2>
+        ${atender.length ? `<ul class="ct-atn-lista">${atender.map(a => `<li class="ct-atn"><div class="ct-atn-txt">${esc(a.txt)}${a.det ? `<small>${esc(a.det)}</small>` : ""}</div><button type="button" class="accion secundaria chica" data-ir="${a.ir}">${esc(PESTANAS[a.ir])}</button></li>`).join("")}</ul>`
+          : `<p class="ct-nota">Nada urgente: lo que espera en la bandeja no pasa de 30 días, las cuentas no tienen alarmas y las conexiones están bien.</p>`}
+      </section>`;
+    main().querySelectorAll("[data-ir]").forEach(b => b.addEventListener("click", () => ir(b.dataset.ir)));
+  }
+  // El mes en curso para la portada: v_cortes dice qué período es, fn_estados_control lo controla y v_resultados trae las secciones.
+  // Devuelve { corte, ingresos, gastos, resultado } o { vacio } en llano, o { err } si el control no cuadra (sin señal, se lanza).
+  async function leerMes() {
+    const cortes = await leerCortes();
+    const corte = cortes.length ? mesPorRegla(cortes) : null;
+    if (!corte) return { corte: null, vacio: cortes.length ? "El libro no tiene abierto el mes de hoy." : "El libro no tiene períodos todavía." };
+    try {
+      const [ctrl, f] = await Promise.all([
+        controlarEstados(corte.periodo, ["v_resultados"]),
+        DB._leer(`v_resultados?select=nivel,seccion,linea,etiqueta_es,mes&periodo=eq.${encodeURIComponent(corte.periodo)}`)
+      ]);
+      cotejar(ctrl, { v_resultados: f.length });
+      if (!f.length) return { corte, vacio: `${nombrePeriodo(corte)} no tiene asientos de resultados todavía.` };
+      const ing = f.find(x => x.nivel === "seccion" && x.seccion === "ingresos"), neta = f.find(x => x.nivel === "total" && x.linea === "utilidad_neta");
+      // una sola cifra de «costo y gastos»: la suma de las secciones que no son ingresos (costo, gastos, otros gastos); cada una entera está en Estados
+      const gastos = f.filter(x => x.nivel === "seccion" && FAVORABLE_MAS[x.seccion] === false).reduce((s, x) => s + (num(x.mes) || 0), 0);
+      return { corte, ingresos: ing ? num(ing.mes) : null, gastos, resultado: neta ? num(neta.mes) : null };
+    } catch (err) {
+      if (esFalloDeRed(err) || !err.control) throw err;
+      return { corte, err };
+    }
+  }
+
+  // ============================================================
+  // BANCOS Y TARJETAS: primero las cuentas; el importador general, plegado,
+  // detrás de «Importar un estado de cuenta». El código del teléfono, Plaid y
+  // la conexión con Stripe viven en «Conexiones y seguridad».
   // ============================================================
   async function pintarBancos() {
     cargando();
@@ -182,19 +335,27 @@
       lista = await leerSaldos();
       await controlar(["v_banco_saldos"], { v_banco_saldos: lista.length });
       if (!lista.length) throw errorControl("La base no devolvió ninguna cuenta de banco ni tarjeta", [{ vista: "v_banco_saldos", filas: 0, esperadas: "1 o más", detalle: "La empresa tiene Chase y las dos Amex. Si la vista no las trae, algo está mal (¿la sesión no es la del dueño?)." }]);
-      await leerPlaid();
-      await leerMfa();
-      // los cobros en línea: la fila de su estado (fresca) y la salud de la función; si p1 no está, la tarjeta lo dice
-      await leerStripe(true);
-      if (S.stripe) await leerSalud();
+      await leerStripe(); // para saber cuáles son la 1020 y la 1140 (no se pintan como bancos)
     } catch (err) { return pintarError(err, pintarBancos); }
+    if (S.pagina !== "bancos") return;
     pintarBadge();
     // la 1020 y la 1140 (Stripe) no se pintan como bancos; el control de arriba contó la lista entera
     const vis = visibles(lista);
-    main().innerHTML = importadorHTML(vis) + (S.importe ? importeHTML(S.importe) : "") +
-      mfaHTML(S.mfa) + plaidHTML(S.plaid || [], S.plaidErr) + stripeHTML(S.stripe, S.stripeErr, S.stripeSalud) +
+    const pend = suma(vis, "pendientes"), alarmas = vis.filter(c => c.alarma).length;
+    main().innerHTML = cabPagina("Bancos y tarjetas",
+        `${plural(vis.filter(c => c.tipo === "banco").length, "banco", "bancos")} · ${plural(vis.filter(c => c.tipo === "tarjeta").length, "tarjeta", "tarjetas")} · ${pend ? `<b>${plural(pend, "movimiento espera", "movimientos esperan")}</b> en la bandeja` : "la bandeja está al día"}${alarmas ? ` · <span class="bad-txt">${plural(alarmas, "cuenta con alarma", "cuentas con alarma")}</span>` : ""}`,
+        `<button type="button" class="accion${S.impAbierto ? " secundaria" : ""}" id="ct-imp-abrir" aria-expanded="${S.impAbierto ? "true" : "false"}" aria-controls="ct-importar">Importar un estado de cuenta</button>`) +
+      importadorHTML(vis) + (S.importe ? importeHTML(S.importe) : "") +
       `<div class="ct-rejilla">${vis.map(cuentaHTML).join("")}</div>`;
-    // el importador general
+    // el importador general: plegado hasta que se pide
+    $("ct-imp-abrir").addEventListener("click", () => {
+      S.impAbierto = !S.impAbierto;
+      $("ct-importar").hidden = !S.impAbierto;
+      $("ct-imp-abrir").setAttribute("aria-expanded", S.impAbierto ? "true" : "false");
+      $("ct-imp-abrir").classList.toggle("secundaria", S.impAbierto);
+      if (S.impAbierto) $("ct-imp-cuenta").focus();
+    });
+    $("ct-imp-plegar").addEventListener("click", () => { S.impAbierto = false; $("ct-importar").hidden = true; $("ct-imp-abrir").setAttribute("aria-expanded", "false"); $("ct-imp-abrir").classList.remove("secundaria"); });
     $("ct-imp-btn").addEventListener("click", () => {
       const f = $("ct-imp-archivo").files[0];
       if (!f) { $("ct-imp-res").innerHTML = `<p class="ct-aviso bad">Elige primero el archivo.</p>`; return; }
@@ -208,15 +369,12 @@
       const inp = card.querySelector("input[type=file]");
       if (inp) inp.addEventListener("change", () => { if (inp.files[0]) importar(inp.files[0], cuenta, card.querySelector(".ct-cuenta-res")); });
     });
-    wireMfa();
-    wirePlaid();
-    wireStripe();
   }
 
   function importadorHTML(lista) {
-    return `<section class="ct-card ct-importar">
-      <h2>Subir el archivo del banco o de la tarjeta</h2>
-      <p class="ct-nota">El QFX (Quicken) que baja de Chase o de Amex. La cuenta la dice el archivo; el primer archivo de un banco necesita que la elijas aquí. El mismo archivo dos veces no entra dos veces, y lo que ya estaba no se repite.</p>
+    return `<section class="ct-card ct-importar" id="ct-importar"${S.impAbierto ? "" : " hidden"}>
+      <div class="ct-cab"><h2>Importar un estado de cuenta</h2><button type="button" class="ct-x" id="ct-imp-plegar" title="Plegar">×</button></div>
+      ${ayudaHTML(`<p class="ct-nota">El QFX (Quicken) que baja de Chase o de Amex. La cuenta la dice el archivo; el primer archivo de un banco necesita que la elijas aquí. El mismo archivo dos veces no entra dos veces, y lo que ya estaba no se repite. Cada tarjeta de cuenta también tiene su «Subir su archivo».</p>`)}
       <div class="ct-fila">
         <label class="ct-campo">Cuenta<select id="ct-imp-cuenta"><option value="">La que diga el archivo</option>${lista.map(c => `<option value="${esc(c.cuenta)}">${esc(c.cuenta)} · ${esc(c.cuenta_nombre)}</option>`).join("")}</select></label>
         <label class="ct-campo">Archivo<input id="ct-imp-archivo" type="file" accept=".qfx,.ofx,.qbo,.xml,.txt"></label>
@@ -249,18 +407,18 @@
     const bancoCB = num(c.saldo_banco_como_banco);
     const dif = librosAl == null || bancoCB == null ? null : Math.round((librosAl - bancoCB) * 100) / 100;
     return `<article class="ct-card ct-cuenta${c.alarma ? " alarma" : ""}" data-cuenta="${esc(c.cuenta)}">
-      <div class="ct-cab"><h2>${esc(c.cuenta_nombre)}</h2>${pill(`${tarjeta ? "Tarjeta" : "Banco"} · ${c.cuenta}`)}${c.activa === false ? pill("inactiva", "warn") : ""}</div>
+      <div class="ct-cab"><h2>${esc(c.cuenta_nombre)}</h2>${pill(`${tarjeta ? "Tarjeta" : "Banco"} · ${c.cuenta}`)}${c.activa === false ? pill("inactiva", "warn") : ""}${Number(c.pendientes) ? pill(`${c.pendientes} en la bandeja`, c.alarma ? "bad" : "warn") : ""}</div>
       <div class="ct-kpis">
         <div class="ct-kpi"><span class="ct-lbl">${tarjeta ? "Deuda en libros" : "Saldo en libros"}</span><span class="ct-val ct-num">${fmt(c.saldo_libros_como_banco)}</span><span class="ct-sub">hoy</span></div>
         <div class="ct-kpi"><span class="ct-lbl">Según el banco</span><span class="ct-val ct-num">${c.saldo_banco == null ? "—" : fmt(bancoCB)}</span><span class="ct-sub">${c.saldo_banco_al ? "al " + fechaLarga(c.saldo_banco_al) : "sin archivo todavía"}</span></div>
       </div>
-      <ul class="ct-datos">
-        ${dif != null ? `<li>Al ${fecha(c.saldo_banco_al)} los libros decían <span class="ct-num">${fmt(librosAl)}</span>: ${dif === 0 ? `<span class="ct-ok-txt">igual que el banco</span>` : `diferencia <span class="ct-num">${fmt(dif)}</span>${c.pendientes ? " (lo pendiente la explica)" : ""}`}</li>` : ""}
-        <li>Pendientes en la bandeja: <b>${c.pendientes}</b>${Number(c.pendientes) ? ` por <span class="ct-num">${fmt(c.pendientes_monto)}</span>, el más viejo del ${fecha(c.pendiente_mas_viejo)}` : ""}</li>
-        <li>En tránsito: <b>${c.en_transito}</b></li>
-        <li>Última conciliación: ${c.ultima_conciliacion ? `${fechaLarga(c.ultima_conciliacion)} ${estadoPill(c.ultima_conciliacion_estado)} diferencia <span class="ct-num">${fmt(c.ultima_conciliacion_diferencia)}</span>` : "ninguna"}</li>
-        <li>${plural(c.dias_sin_conciliar, "día", "días")} sin conciliación confirmada${c.cubierto_hasta ? ` · archivos hasta el ${fechaLarga(c.cubierto_hasta)}` : ""}${c.ultimo_archivo ? ` · último: ${esc(c.ultimo_archivo)}` : ""}</li>
-      </ul>
+      ${dif != null ? `<p class="ct-dif">Al ${fecha(c.saldo_banco_al)} los libros decían <span class="ct-num">${fmt(librosAl)}</span>: ${dif === 0 ? `<span class="ct-ok-txt">igual que el banco</span>` : `diferencia <span class="ct-num">${fmt(dif)}</span>${c.pendientes ? " (lo pendiente la explica)" : ""}`}</p>` : ""}
+      <dl class="ct-ficha-datos">
+        <div><dt>Pendientes en la bandeja</dt><dd><b>${c.pendientes}</b>${Number(c.pendientes) ? ` · <span class="ct-num">${fmt(c.pendientes_monto)}</span> · el más viejo del ${fecha(c.pendiente_mas_viejo)}` : ""}</dd></div>
+        <div><dt>En tránsito</dt><dd><b>${c.en_transito}</b></dd></div>
+        <div><dt>Última conciliación</dt><dd>${c.ultima_conciliacion ? `${fechaLarga(c.ultima_conciliacion)} ${estadoPill(c.ultima_conciliacion_estado)} diferencia <span class="ct-num">${fmt(c.ultima_conciliacion_diferencia)}</span>` : "ninguna"}</dd></div>
+        <div><dt>Sin conciliación confirmada</dt><dd>${plural(c.dias_sin_conciliar, "día", "días")}${c.cubierto_hasta ? ` · archivos hasta el ${fechaLarga(c.cubierto_hasta)}` : ""}${c.ultimo_archivo ? ` · último: ${esc(c.ultimo_archivo)}` : ""}</dd></div>
+      </dl>
       ${c.alarma && c.alarma_texto ? `<p class="ct-aviso warn">${esc(c.alarma_texto)}</p>` : ""}
       <div class="ct-acciones">
         <button type="button" class="accion secundaria" data-ir="bandeja">Bandeja${Number(c.pendientes) ? ` (${c.pendientes})` : ""}</button>
@@ -386,7 +544,7 @@
         try {
           for (const f of S.mfa.verificados) await DB.mfa.quitar(f.id);
           S.hooks.avisar("Código quitado: la entrada vuelve a ser solo con la contraseña");
-          S.mfa = null; await pintarBancos();
+          S.mfa = null; await repintar();
         } catch (err) { mostrarErrorForma(card, esFalloDeRed(err) ? "Sin señal: no se quitó." : err.message); }
         finally { S.ocupado = false; }
       }));
@@ -427,7 +585,7 @@
       try {
         await DB.mfa.verificar(e.id, codigo);
         S.hooks.avisar("Código activado: desde ahora, al entrar se piden los 6 dígitos");
-        S.mfa = null; await pintarBancos();
+        S.mfa = null; await repintar();
       } catch (err) {
         ev.target.querySelectorAll("button").forEach(b => { b.disabled = false; });
         mostrarErrorForma(card, esFalloDeRed(err) ? "Sin señal: no se verificó." : /invalid|incorrect|expired|wrong|code/i.test(err.message) ? "Ese código no es válido: mira el teléfono y escribe los 6 dígitos nuevos." : err.message);
@@ -469,12 +627,12 @@
     const enlace = `<a href="${PRIVACIDAD}" target="_blank" rel="noopener">política de privacidad</a>`;
     if (err) {
       return `<section class="ct-card ct-plaid" id="ct-plaid"><div class="ct-cab"><h2>Conexión automática con el banco (Plaid)</h2>${pill("sin instalar", "warn")}</div>
-        <p class="ct-nota">La base todavía no tiene la conexión con Plaid (docs/conta/c7-plaid.sql) o la vista no contestó: ${esc(err.message)}. Mientras tanto, los archivos del banco se suben arriba.</p></section>`;
+        <p class="ct-nota">La base todavía no tiene la conexión con Plaid (docs/conta/c7-plaid.sql) o la vista no contestó: ${esc(err.message)}. Mientras tanto, los archivos del banco se suben en Bancos y tarjetas.</p></section>`;
     }
     const vivas = cx.filter(c => c.estado !== "desconectada");
     return `<section class="ct-card ct-plaid" id="ct-plaid">
       <div class="ct-cab"><h2>Conexión automática con el banco (Plaid)</h2>${pill(vivas.length ? plural(vivas.length, "banco conectado", "bancos conectados") : "sin conectar", vivas.length ? "ok" : "")}</div>
-      <p class="ct-nota">Chase y las Amex mandan sus movimientos solos cada mañana, y entran igual que un archivo: casan lo que casa y el resto espera en la bandeja. El banco se conecta en la ventana segura de Plaid: la app nunca ve tu usuario ni tu clave del banco, y las llaves viven en la base, no en el teléfono. Qué se guarda y por cuánto tiempo, en la ${enlace}.</p>
+      ${ayudaHTML(`<p class="ct-nota">Chase y las Amex mandan sus movimientos solos cada mañana, y entran igual que un archivo: casan lo que casa y el resto espera en la bandeja. El banco se conecta en la ventana segura de Plaid: la app nunca ve tu usuario ni tu clave del banco, y las llaves viven en la base, no en el teléfono. Qué se guarda y por cuánto tiempo, en la ${enlace}.</p>`)}
       ${cx.length ? `<div class="ct-lista">${cx.map(conexionHTML).join("")}</div>` : ""}
       <div class="ct-acciones"><button type="button" class="accion" id="ct-plaid-conectar"${mfaActivo() ? "" : " disabled"}>Conectar un banco</button>${mfaActivo() ? "" : `<span class="ct-nota" style="margin:0">Primero activa el código del teléfono (arriba).</span>`}</div>
       <div id="ct-plaid-res"></div>
@@ -526,7 +684,7 @@
           const faltan = Number(((r || {}).conexion || {}).cuentas_sin_fijar || 0);
           S.hooks.avisar(sel.value === "ignorar" ? `Esa cuenta se ignora${faltan ? ` · faltan ${faltan} por fijar` : ""}` : `Va a ${sel.value}${faltan ? ` · faltan ${faltan} por fijar` : " · lista para sincronizar"}`);
           S.plaid = null;
-          await pintarBancos();
+          await repintar();
         } catch (err) {
           sel.disabled = false;
           caja.innerHTML = `<p class="ct-aviso bad">${esc(esFalloDeRed(err) ? "Sin señal: no se guardó." : err.message)}</p>`;
@@ -558,7 +716,7 @@
       const r = await DB._funcion("plaid", cuerpo, 120000);
       S.hooks.avisar(exito(r));
       S.plaid = null; S.saldos = null; S.bandeja = null;
-      await pintarBancos();
+      await repintar();
     } catch (err) {
       card.querySelectorAll("button, select").forEach(b => { b.disabled = false; });
       const sinFijar = err.codigo === "SIN_FIJAR", reconectar = !!(err.datos && err.datos.hay_que_reconectar);
@@ -580,7 +738,7 @@
   async function conectarPlaid(itemId) {
     const caja = $("ct-plaid-res"); if (!caja || S.ocupado) return;
     if (!navigator.onLine) { caja.innerHTML = `<p class="ct-aviso bad">Sin señal: la ventana de Plaid necesita internet.</p>`; return; }
-    if (!mfaActivo()) { caja.innerHTML = `<p class="ct-aviso warn">Antes de conectar un banco, activa el código del teléfono (la tarjeta de arriba) y entra con él.</p>`; return; }
+    if (!mfaActivo()) { caja.innerHTML = `<p class="ct-aviso warn">Antes de conectar un banco, activa el código del teléfono (arriba, en Conexiones y seguridad) y entra con él.</p>`; return; }
     S.ocupado = true;
     caja.innerHTML = `<p class="ct-aviso">Abriendo la ventana segura de Plaid…</p>`;
     try {
@@ -608,7 +766,7 @@
       const c = (r || {}).conexion || {};
       S.hooks.avisar(`${c.institucion || "Banco"} conectado${Number(c.cuentas_sin_fijar) ? ": di a qué cuenta del plan va cada cuenta" : ""}`);
       S.plaid = null;
-      await pintarBancos();
+      await repintar();
     } catch (err) {
       if (caja) caja.innerHTML = `<p class="ct-aviso bad">No se guardó la conexión: ${esc(esFalloDeRed(err) ? "sin señal." : err.message)}</p>`;
     }
@@ -616,7 +774,7 @@
   async function reconectado(itemId) {
     S.hooks.avisar("Banco reconectado: sincronizando…");
     S.plaid = null;
-    await pintarBancos();
+    await repintar();
     const card = [...main().querySelectorAll(".ct-conexion")].find(x => x.dataset.item === itemId);
     if (card) accionPlaid(card, { accion: "sincronizar", item_id: itemId }, resumenSync);
   }
@@ -671,7 +829,7 @@
     return S.stripeSalud;
   }
 
-  // ---------- La tarjeta de Bancos y tarjetas ----------
+  // ---------- La tarjeta de Conexiones y seguridad ----------
   function stripeHTML(st, err, salud) {
     const cab = extra => `<div class="ct-cab"><h2>Cobros en línea (Stripe)</h2>${extra}</div>`;
     if (!st || !st.estado) {
@@ -690,7 +848,7 @@
       (Number(e.alarmas) > 0 ? pill(plural(e.alarmas, "alarma", "alarmas"), "warn") : "");
     const mfa = mfaActivo();
     return `<section class="ct-card ct-stripe" id="ct-stripe">${cab(pills)}
-      <p class="ct-nota">Tus clientes pagan la factura con un enlace: desde su cuenta de banco (ACH) o con tarjeta. Cada pago confirmado entra solo al libro en la ${esc(e.cuenta_puente || "1020")} (${esc(e.cuenta_puente_nombre || "Stripe — cobros en tránsito")}), y cuando Stripe deposita en Chase el depósito casa solo con su asiento. Las llaves viven en Supabase, nunca en el teléfono.</p>
+      ${ayudaHTML(`<p class="ct-nota">Tus clientes pagan la factura con un enlace: desde su cuenta de banco (ACH) o con tarjeta. Cada pago confirmado entra solo al libro en la ${esc(e.cuenta_puente || "1020")} (${esc(e.cuenta_puente_nombre || "Stripe — cobros en tránsito")}), y cuando Stripe deposita en Chase el depósito casa solo con su asiento. Las llaves viven en Supabase, nunca en el teléfono.</p>`)}
       ${!salud ? `<p class="ct-aviso warn">La función «stripe» no contestó: ¿está desplegada en Supabase → Edge Functions?</p>` : faltan.length ? `<p class="ct-aviso bad">Falta en Supabase → Edge Functions → Secrets: ${esc(faltan.join(", "))}.</p>` : ""}
       ${prueba && !e.acepta_prueba ? `<p class="ct-aviso warn">La función tiene una llave de prueba (rk_test_): no se registra nada. Pon la llave real (rk_live_) en STRIPE_SECRET_KEY.</p>` : ""}
       <ul class="ct-datos">
@@ -723,6 +881,36 @@
   }
   const resumenBarrido = r => `Revisado con Stripe${r && r.resumen && r.resumen.incompleto ? ": quedó a medias, sigue sola en la próxima vuelta" : ""}`;
 
+  // ============================================================
+  // CONEXIONES Y SEGURIDAD: el código del teléfono, la conexión automática
+  // (Plaid) y la conexión con Stripe con su salud. Lo que antes iba arriba de
+  // Bancos y tarjetas. La vuelta del banco (OAuth de Plaid) cae aquí.
+  // ============================================================
+  async function pintarConexiones() {
+    cargando();
+    if (!navigator.onLine) return sinSenal(pintarConexiones);
+    try {
+      const lista = await leerSaldos(); // a qué cuenta del plan va cada cuenta del banco (Plaid) se elige entre estas
+      await controlar(["v_banco_saldos"], { v_banco_saldos: lista.length });
+      await leerMfa();
+      await leerPlaid();
+      // la fila de Stripe (fresca) y la salud de la función; si p1 no está, la tarjeta lo dice
+      await leerStripe(true);
+      if (S.stripe) await leerSalud();
+    } catch (err) { return pintarError(err, pintarConexiones); }
+    if (S.pagina !== "conexiones") return;
+    const m = S.mfa, vivas = (S.plaid || []).filter(c => c.estado !== "desconectada");
+    const sub = [
+      mfaActivo() ? "código del teléfono activo" : m && !m.error && m.verificados.length ? "código del teléfono activo, esta sesión sin él" : "código del teléfono no activo",
+      S.plaidErr ? "Plaid sin instalar" : vivas.length ? plural(vivas.length, "banco conectado", "bancos conectados") : "ningún banco conectado",
+      S.stripe ? "Stripe conectado" : "Stripe sin instalar"
+    ].join(" · ");
+    main().innerHTML = cabPagina("Conexiones y seguridad", sub) + mfaHTML(S.mfa) + plaidHTML(S.plaid || [], S.plaidErr) + stripeHTML(S.stripe, S.stripeErr, S.stripeSalud);
+    wireMfa();
+    wirePlaid();
+    wireStripe();
+  }
+
   // ---------- Una acción de la función (con la sesión del dueño) ----------
   // `cont`: la tarjeta (sus botones se apagan; el resultado o el error va en su .ct-stripe-res).
   // Después repinta la página en la que está (salvo repintar: false, que enseña el resultado con `mostrar`).
@@ -741,7 +929,7 @@
     if (S.ocupado) return;
     const caja = resStripe(cont);
     if (!navigator.onLine) { caja.innerHTML = `<p class="ct-aviso bad">Sin señal: no se hizo nada.</p>`; return; }
-    if (!mfaActivo()) { caja.innerHTML = `<p class="ct-aviso warn">Primero activa el código del teléfono (Bancos y tarjetas) y entra con él: los cobros en línea lo piden.</p>`; return; }
+    if (!mfaActivo()) { caja.innerHTML = `<p class="ct-aviso warn">Primero activa el código del teléfono (Conexiones y seguridad) y entra con él: los cobros en línea lo piden.</p>`; return; }
     S.ocupado = true;
     const apagados = [...cont.querySelectorAll("button, select, input, textarea")].filter(b => !b.disabled && !b.readOnly);
     apagados.forEach(b => { b.disabled = true; });
@@ -839,25 +1027,24 @@
     const porCobrar = facturas.filter(f => num(f.saldo_cxc) + num(f.saldo_retencion) > 0).length;
     const enCamino = pagos.filter(x => ["iniciado", "en_camino"].includes(x.estado)).length;
     const aChase = payouts.filter(x => ["en_camino", "asentado"].includes(x.estado_pantalla)).length;
-    const sinMfa = mfa ? "" : `<p class="ct-aviso warn">Primero activa el código del teléfono (Bancos y tarjetas) y entra con él: crear enlaces y todo lo que habla con Stripe lo pide.</p>`;
-    main().innerHTML = `<section class="ct-card ct-barra" id="ct-cobros-barra">
-        <div class="ct-barra-txt"><b>${plural(porCobrar, "factura por cobrar", "facturas por cobrar")}</b> · ${plural(enCamino, "pago en camino", "pagos en camino")} · ${plural(aChase, "depósito esperando a Chase", "depósitos esperando a Chase")}</div>
-        ${e.modo === "prueba" && !e.acepta_prueba ? `<p class="ct-aviso warn">La función tiene una llave de prueba (rk_test_): no se registra nada.</p>` : ""}
-        ${sinMfa}
-        <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-cobros-barrer"${mfa ? "" : " disabled"}>Revisar con Stripe ahora</button></div>
-        <div class="ct-stripe-res"></div>
-      </section>
+    const sinMfa = mfa ? "" : `<p class="ct-aviso warn">Primero activa el código del teléfono (Conexiones y seguridad) y entra con él: crear enlaces y todo lo que habla con Stripe lo pide.</p>`;
+    // la cabecera con las cifras y «Revisar con Stripe ahora»; debajo, los avisos de la página y donde cae el resultado de la revisión
+    main().innerHTML = `<div id="ct-cobros-top">${cabPagina("Cobros en línea",
+        `<b>${plural(porCobrar, "factura por cobrar", "facturas por cobrar")}</b> · ${plural(enCamino, "pago en camino", "pagos en camino")} · ${plural(aChase, "depósito esperando a Chase", "depósitos esperando a Chase")}`,
+        `<button type="button" class="accion secundaria" id="ct-cobros-barrer"${mfa ? "" : " disabled"}>Revisar con Stripe ahora</button>`)}
+        <div id="ct-cobros-barra" class="ct-pag-avisos">${e.modo === "prueba" && !e.acepta_prueba ? `<p class="ct-aviso warn">La función tiene una llave de prueba (rk_test_): no se registra nada.</p>` : ""}${sinMfa}<div class="ct-stripe-res"></div></div>
+      </div>
       ${alarmas.length ? `<section class="ct-card ct-alarmas" id="ct-cobros-alarmas" role="status"><h2>Hay que mirar esto:</h2><ul class="ct-datos">${alarmas.map(a => `<li><b>${esc(ALARMA_STRIPE[a.orden] || String(a.control || "").replace(/^stripe: /, ""))}</b>${a.detalle ? `<small>${a.filas != null ? `${esc(a.filas)}: ` : ""}${esc(a.detalle)}</small>` : ""}</li>`).join("")}</ul></section>` : ""}
       ${(avisos || []).length ? `<section class="ct-card" id="ct-cobros-avisos"><h2>Avisos de Stripe</h2><ul class="ct-avisos-stripe">${avisos.map(avisoHTML).join("")}</ul></section>` : ""}
       <section class="ct-card" id="ct-cobros-facturas"><h2>Facturas por cobrar</h2>
-        <p class="ct-nota">El saldo sale del libro (lo que la factura debe), no de la casilla «pagada». El enlace es de un solo uso y por ese saldo: el cliente elige cuenta de banco (ACH) o tarjeta.</p>
+        ${ayudaHTML(`<p class="ct-nota">El saldo sale del libro (lo que la factura debe), no de la casilla «pagada». El enlace es de un solo uso y por ese saldo: el cliente elige cuenta de banco (ACH) o tarjeta.</p>`)}
         ${facturas.length ? `<div class="ct-lista">${facturas.map(f => facturaCobroHTML(f, mfa)).join("")}</div>` : `<p class="ct-vacio">No hay facturas con saldo en el libro.</p>`}
       </section>
       <section class="ct-card" id="ct-cobros-pagos"><h2>Pagos en línea</h2>
         ${pagos.length ? `<div class="ct-lista">${pagos.map(x => pagoHTML(x, mfa)).join("")}</div>` : `<p class="ct-vacio">Todavía no hay pagos en línea.</p>`}
       </section>
       <section class="ct-card" id="ct-cobros-payouts"><h2>Depósitos de Stripe en Chase</h2>
-        <p class="ct-nota">Stripe junta los cobros, descuenta sus comisiones y deposita el neto en Chase. Cada depósito deja dos asientos (sale de Stripe, llega a Chase) y casa solo con el movimiento «STRIPE» que trae Plaid.</p>
+        ${ayudaHTML(`<p class="ct-nota">Stripe junta los cobros, descuenta sus comisiones y deposita el neto en Chase. Cada depósito deja dos asientos (sale de Stripe, llega a Chase) y casa solo con el movimiento «STRIPE» que trae Plaid.</p>`)}
         ${payouts.length ? `<div class="ct-lista">${payouts.map(x => payoutHTML(x, mfa)).join("")}</div>` : `<p class="ct-vacio">Todavía no hay depósitos de Stripe.</p>`}
       </section>
       <p class="ct-nota ct-cobros-pie">La casilla «pagada» y QuickBooks los sigues llevando tú durante el paralelo: esta pantalla no los toca.</p>`;
@@ -901,7 +1088,7 @@
     } else if (Number(f.en_camino_n) > 0) {
       cuerpo = `<p class="ct-nota">Hay un pago por cuenta de banco de <span class="ct-num">${fmt(f.en_camino_monto)}</span> en camino: no se crea otro enlace hasta que se confirme o falle.</p>`;
     } else if (f.puede_enlace) {
-      cuerpo = `<div class="ct-acciones"><button type="button" class="accion" data-crear${mfa ? "" : " disabled"}>Crear enlace de pago</button>${mfa ? "" : `<span class="ct-nota" style="margin:0">Primero activa el código del teléfono (Bancos y tarjetas).</span>`}</div>`;
+      cuerpo = `<div class="ct-acciones"><button type="button" class="accion" data-crear${mfa ? "" : " disabled"}>Crear enlace de pago</button>${mfa ? "" : `<span class="ct-nota" style="margin:0">Primero activa el código del teléfono (Conexiones y seguridad).</span>`}</div>`;
     } else {
       cuerpo = `<p class="ct-nota">No se crea enlace: ${esc(f.por_que_no || "la base no lo permite")}.</p>`;
     }
@@ -1011,7 +1198,7 @@
 
   function wireCobros() {
     const m = main();
-    const barra = $("ct-cobros-barra");
+    const barra = $("ct-cobros-top"); // la cabecera y sus avisos: el botón se apaga mientras corre y el resultado cae debajo
     const ba = $("ct-cobros-barrer"); if (ba) ba.addEventListener("click", () => accionStripe(barra, { accion: "barrer" }, resumenBarrido));
     m.querySelectorAll(".ct-aviso-stripe").forEach(li => {
       li.querySelector("[data-visto]").addEventListener("click", () => accionStripe(li, { accion: "aviso_visto", aviso: Number(li.dataset.aviso) }, () => "Aviso visto"));
@@ -1105,7 +1292,11 @@
   }
 
   // ============================================================
-  // LA BANDEJA
+  // LA BANDEJA (el bank feed): lo que el banco trajo y espera respuesta.
+  // Cabecera con las cifras, barra de herramientas (buscar, motivo, orden,
+  // agrupar por comercio) y filas compactas que se despliegan de una en una
+  // al detalle con sus botones. La lectura y el control son los de siempre;
+  // la barra solo filtra lo ya leído, sin volver a la base.
   // ============================================================
   const MOTIVOS = {
     sin_ticket: "Sin ticket", sin_propuesta: "Sin propuesta todavía", partida_apertura: "¿Partida del 30-sep?",
@@ -1117,6 +1308,13 @@
   };
   const motivoLlano = m => MOTIVOS[m] || String(m || "").replace(/_/g, " ").replace(/^./, c => c.toUpperCase());
   const obraTexto = o => !o ? "" : typeof o === "string" ? o : (o.nombre || o.proyecto || o.id || "");
+
+  // Las herramientas del bank feed: buscar sin acentos, el comercio detrás de una descripción y los órdenes
+  const sinAcentos = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  // el comercio: la descripción en mayúsculas, sin fechas ni números (el banco pega al nombre el día o el número de la operación)
+  const comercioDe = d => String(d || "").toUpperCase().replace(/\d{1,2}[/.-]\d{1,2}([/.-]\d{2,4})?/g, " ").replace(/[#*]?\d[\d.,-]*/g, " ").replace(/\s+/g, " ").trim() || "(sin descripción)";
+  const ORDENES = { fecha_asc: "Más viejos primero", fecha_desc: "Más nuevos primero", monto_desc: "Monto: de mayor a menor", monto_asc: "Monto: de menor a mayor" };
+  const sumaMonto = ms => ms.reduce((s, m) => s + (num(m.monto) || 0), 0);
 
   async function pintarBandeja() {
     cargando();
@@ -1135,17 +1333,30 @@
       if (!S.cuentas.length) throw errorControl("El plan de cuentas no se pudo leer", [{ vista: "cuentas", filas: 0, esperadas: "1 o más", detalle: "sin el plan no se puede clasificar nada" }]);
       filas = b;
     } catch (err) { return pintarError(err, pintarBandeja); }
+    if (S.pagina !== "bandeja") return;
     filas.forEach(prepararMov);
     S.bandeja = filas; pintarBadge();
     const conMovs = [...new Set(filas.map(f => f.cuenta))];
     if (S.filtroCuenta && !conMovs.includes(S.filtroCuenta)) S.filtroCuenta = null;
-    const visibles = S.filtroCuenta ? filas.filter(f => f.cuenta === S.filtroCuenta) : filas;
-    main().innerHTML = `<section class="ct-card ct-barra">
-        <div class="ct-barra-txt">${filas.length ? `<b>${plural(filas.length, "movimiento del banco espera", "movimientos del banco esperan")}</b> tu respuesta. Lo que no contestes no entra al libro; nada se inventa.` : "<b>La bandeja está vacía.</b> Todo lo que trajo el banco tiene su papel en el libro."}</div>
-        <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-casar">Casar otra vez</button></div>
-        ${conMovs.length > 1 ? `<div class="ct-chips"><button type="button" class="ct-chip" data-filtro="" aria-pressed="${!S.filtroCuenta}">Todas</button>${conMovs.map(c => `<button type="button" class="ct-chip" data-filtro="${esc(c)}" aria-pressed="${S.filtroCuenta === c}">${esc(nombreCuenta(c))} (${filas.filter(f => f.cuenta === c).length})</button>`).join("")}</div>` : ""}
-      </section>
-      ${visibles.length ? `<div class="ct-lista">${visibles.map(movHTML).join("")}</div>` : ""}`;
+    // la fila desplegada sigue desplegada al repintar si sigue en la lista
+    if (S.bj.abierta && !filas.some(f => f.movimiento_id === S.bj.abierta)) S.bj.abierta = null;
+    const motivos = [...new Set(filas.map(f => f.motivo).filter(Boolean))].sort((a, b) => motivoLlano(a).localeCompare(motivoLlano(b)));
+    if (S.bj.motivo && !motivos.includes(S.bj.motivo)) S.bj.motivo = "";
+    const viejos = filas.filter(f => f.alarma).length;
+    main().innerHTML = cabPagina("Bandeja",
+        filas.length ? `<b>${plural(filas.length, "movimiento del banco espera", "movimientos del banco esperan")}</b> tu respuesta por <span class="ct-num">${fmt(sumaMonto(filas))}</span>${viejos ? ` · <span class="bad-txt">${plural(viejos, "lleva", "llevan")} más de 30 días</span>` : ""}. Lo que no contestes no entra al libro; nada se inventa.` : "<b>La bandeja está vacía.</b> Todo lo que trajo el banco tiene su papel en el libro.",
+        `<button type="button" class="accion secundaria" id="ct-casar">Casar otra vez</button>`) +
+      (filas.length ? `<section class="ct-card ct-herr" id="ct-bj-herr">
+        <div class="ct-herr-fila">
+          <label class="ct-campo ct-buscar">Buscar<input id="ct-bj-buscar" type="search" placeholder="Descripción, memo o monto" value="${esc(S.bj.q)}" autocomplete="off"></label>
+          <label class="ct-campo">Motivo<select id="ct-bj-motivo"><option value="">Todos</option>${motivos.map(m => `<option value="${esc(m)}"${m === S.bj.motivo ? " selected" : ""}>${esc(motivoLlano(m))} (${filas.filter(f => f.motivo === m).length})</option>`).join("")}</select></label>
+          <label class="ct-campo">Orden<select id="ct-bj-orden">${Object.keys(ORDENES).map(k => `<option value="${k}"${k === S.bj.orden ? " selected" : ""}>${ORDENES[k]}</option>`).join("")}</select></label>
+          <label class="ct-casilla ct-agrupar"><input type="checkbox" id="ct-bj-agrupar"${S.bj.agrupar ? " checked" : ""}> Agrupar por comercio</label>
+        </div>
+        ${conMovs.length > 1 ? `<div class="ct-chips">${chipsCuentaHTML(filas, conMovs)}</div>` : ""}
+        <p class="ct-sub ct-bj-n" id="ct-bj-n"></p>
+      </section>` : "") +
+      `<div id="ct-bj-lista"></div>`;
     $("ct-casar").addEventListener("click", async () => {
       if (S.ocupado) return;
       S.ocupado = true; $("ct-casar").disabled = true; $("ct-casar").textContent = "Casando…";
@@ -1154,34 +1365,116 @@
       finally { S.ocupado = false; }
       pintarBandeja();
     });
-    main().querySelectorAll(".ct-chip").forEach(b => b.addEventListener("click", () => { S.filtroCuenta = b.dataset.filtro || null; pintarBandeja(); }));
-    main().querySelectorAll(".ct-mov").forEach(card => {
-      const m = filas.find(f => f.movimiento_id === card.dataset.id);
+    // la barra solo filtra lo ya leído: no vuelve a la base y el buscador no pierde el foco
+    const herr = (id, ev, f) => { const el = $(id); if (el) el.addEventListener(ev, f); };
+    herr("ct-bj-buscar", "input", ev => { S.bj.q = ev.target.value; pintarListaBandeja(); });
+    herr("ct-bj-motivo", "change", ev => { S.bj.motivo = ev.target.value; pintarListaBandeja(); });
+    herr("ct-bj-orden", "change", ev => { S.bj.orden = ev.target.value; pintarListaBandeja(); });
+    herr("ct-bj-agrupar", "change", ev => { S.bj.agrupar = ev.target.checked; pintarListaBandeja(); });
+    main().querySelectorAll(".ct-chip[data-filtro]").forEach(b => b.addEventListener("click", () => {
+      S.filtroCuenta = b.dataset.filtro || null;
+      main().querySelectorAll(".ct-chip[data-filtro]").forEach(x => x.setAttribute("aria-pressed", String((x.dataset.filtro || null) === S.filtroCuenta)));
+      pintarListaBandeja();
+    }));
+    pintarListaBandeja();
+  }
+  const chipsCuentaHTML = (filas, conMovs) => `<button type="button" class="ct-chip" data-filtro="" aria-pressed="${!S.filtroCuenta}">Todas</button>` +
+    conMovs.map(c => `<button type="button" class="ct-chip" data-filtro="${esc(c)}" aria-pressed="${S.filtroCuenta === c}">${esc(nombreCuenta(c))} (${filas.filter(f => f.cuenta === c).length})</button>`).join("");
+
+  // lo que la barra deja ver, en el orden pedido («más viejos primero» es el de la base: las alarmas delante y luego la fecha)
+  function filtrarBandeja() {
+    const q = sinAcentos(S.bj.q).trim(), qMonto = q.replace(/[$,\s]/g, "");
+    let lista = S.bandeja || [];
+    if (S.filtroCuenta) lista = lista.filter(f => f.cuenta === S.filtroCuenta);
+    if (S.bj.motivo) lista = lista.filter(f => f.motivo === S.bj.motivo);
+    if (q) lista = lista.filter(f => sinAcentos(`${f.descripcion || ""} ${f.memo || ""} ${f.cheque || ""}`).includes(q) || (qMonto && Math.abs(num(f.monto) || 0).toFixed(2).includes(qMonto)));
+    const k = S.bj.orden, abs = m => Math.abs(num(m.monto) || 0);
+    if (k === "fecha_desc") lista = [...lista].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+    else if (k === "monto_desc") lista = [...lista].sort((a, b) => abs(b) - abs(a));
+    else if (k === "monto_asc") lista = [...lista].sort((a, b) => abs(a) - abs(b));
+    return lista;
+  }
+  function pintarListaBandeja() {
+    const cont = $("ct-bj-lista"); if (!cont) return;
+    const lista = filtrarBandeja(), total = (S.bandeja || []).length;
+    const n = $("ct-bj-n"); if (n) n.textContent = lista.length === total ? "" : `${lista.length} de ${plural(total, "movimiento", "movimientos")}`;
+    if (!lista.length) { cont.innerHTML = total ? `<section class="ct-card ct-vacio">Nada con ese filtro${S.bj.q ? ` («${esc(S.bj.q)}»)` : ""}.</section>` : ""; return; }
+    const cab = `<div class="ct-feed-cab" aria-hidden="true"><span>Fecha</span><span>Descripción</span><span>Cuenta</span><span>Motivo</span><span class="r">Monto</span><span></span></div>`;
+    let cuerpo;
+    if (S.bj.agrupar) {
+      const grupos = new Map();
+      for (const m of lista) { const k = comercioDe(m.descripcion); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(m); }
+      cuerpo = [...grupos.entries()].sort((a, b) => b[1].length - a[1].length || Math.abs(sumaMonto(b[1])) - Math.abs(sumaMonto(a[1]))).map(([k, ms]) => grupoHTML(k, ms)).join("");
+    } else cuerpo = lista.map(movHTML).join("");
+    cont.innerHTML = `<section class="ct-card ct-feed${S.bj.agrupar ? " agrupada" : ""}">${cab}${cuerpo}</section>`;
+    cont.querySelectorAll(".ct-mov").forEach(card => {
+      const m = lista.find(f => f.movimiento_id === card.dataset.id);
+      card.querySelector(".ct-mov-fila").addEventListener("click", () => desplegar(card.dataset.id === S.bj.abierta ? null : card.dataset.id));
       card.querySelectorAll("[data-op]").forEach(b => b.addEventListener("click", () => abrirOpcion(card, m, (m.opciones || [])[Number(b.dataset.op)])));
       const ot = card.querySelector("[data-otra]"); if (ot) ot.addEventListener("click", () => abrirOtra(card, m));
       card.querySelectorAll("[data-stripe-po]").forEach(b => b.addEventListener("click", () => accionStripe(card, { accion: "casar_payout", po: b.dataset.stripePo, movimiento_id: m.movimiento_id },
         r => r && r.casado === false ? "No casó: sigue en la bandeja" : `Casado con el depósito de Stripe ${b.dataset.stripePo}`)));
     });
   }
+  // una sola fila desplegada: la tocada se abre (su grupo también) y la anterior se cierra, sin repintar la lista
+  function desplegar(id) {
+    S.bj.abierta = id;
+    let abierta = null;
+    main().querySelectorAll(".ct-mov").forEach(card => {
+      const si = !!id && card.dataset.id === id;
+      card.classList.toggle("abierta", si);
+      card.querySelector(".ct-mov-fila").setAttribute("aria-expanded", si ? "true" : "false");
+      card.querySelector(".ct-mov-det").hidden = !si;
+      if (si) abierta = card;
+    });
+    if (abierta) {
+      const g = abierta.closest("details"); if (g) g.open = true;
+      if (typeof abierta.scrollIntoView === "function") abierta.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }
+  function grupoHTML(k, ms) {
+    const cuentas = [...new Set(ms.map(m => m.cuenta_nombre))], total = sumaMonto(ms);
+    const abierto = ms.some(m => m.movimiento_id === S.bj.abierta);
+    return `<details class="ct-grupo" data-grupo="${esc(k)}"${abierto ? " open" : ""}><summary class="ct-grupo-cab">
+        <span class="ct-g-desc"><b>${esc(k)}</b><small>${esc(cuentas.join(" · "))}</small></span>
+        <span class="ct-g-n">${plural(ms.length, "movimiento", "movimientos")}${ms.some(m => m.alarma) ? ` ${pill("más de 30 días", "bad")}` : ""}</span>
+        <span class="ct-g-monto ct-num ${total < 0 ? "neg" : "pos"}">${total < 0 ? "−" : "+"}${fmtAbs(total)}</span>
+        <span class="ct-f-chev" aria-hidden="true"></span>
+      </summary><div class="ct-grupo-filas">${ms.map(movHTML).join("")}</div></details>`;
+  }
 
+  // Una fila del feed: la cabecera compacta (un botón, accesible) y debajo el detalle plegado con el texto, los avisos y los botones de siempre.
+  // El <article class="ct-mov" data-id> sigue siendo el contenedor del movimiento: abrirOpcion, abrirOtra y montarForma buscan en él su .ct-form
   function movHTML(m) {
     const neg = num(m.monto) < 0;
     const ops = Array.isArray(m.opciones) ? m.opciones : [];
     const obra = obraTexto(m.obra);
-    return `<article class="ct-card ct-mov${m.alarma ? " alarma" : ""}" data-id="${esc(m.movimiento_id)}">
-      <div class="ct-mov-cab">
-        <div class="ct-mov-quien"><b>${esc(m.descripcion || "(sin descripción)")}</b>${m.memo ? `<small>${esc(m.memo)}</small>` : ""}</div>
-        <div class="ct-monto ct-num ${neg ? "neg" : "pos"}">${neg ? "−" : "+"}${fmtAbs(m.monto)}</div>
+    const abierta = m.movimiento_id === S.bj.abierta;
+    const id = esc(m.movimiento_id);
+    return `<article class="ct-mov${m.alarma ? " alarma" : ""}${abierta ? " abierta" : ""}" data-id="${id}">
+      <button type="button" class="ct-mov-fila" aria-expanded="${abierta ? "true" : "false"}" aria-controls="ct-det-${id}">
+        <span class="ct-f-main">
+          <span class="ct-f-desc"><b>${esc(m.descripcion || "(sin descripción)")}</b>${m.memo ? `<small>${esc(m.memo)}</small>` : ""}</span>
+          <span class="ct-f-monto ct-num ${neg ? "neg" : "pos"}">${neg ? "−" : "+"}${fmtAbs(m.monto)}</span>
+          <span class="ct-f-chev" aria-hidden="true"></span>
+        </span>
+        <span class="ct-f-meta">
+          <span class="ct-f-fecha ct-num">${fechaLarga(m.fecha)}</span>
+          <span class="ct-f-cuenta">${esc(m.cuenta_nombre)}</span>
+          <span class="ct-f-motivo">${pill(motivoLlano(m.motivo), m.motivo === "posible_duplicado" || m.motivo === "quitada" ? "warn" : "")}${m.alarma ? pill("más de 30 días", "bad") : ""}${m._esStripe ? pill("Stripe", "cu") : ""}</span>
+        </span>
+      </button>
+      <div class="ct-mov-det" id="ct-det-${id}"${abierta ? "" : " hidden"}>
+        <div class="ct-meta"><span>hace ${plural(m.dias, "día", "días")}</span>${m.cheque ? `<span>cheque ${esc(m.cheque)}</span>` : ""}${m.tipo_banco ? `<span>${esc(m.tipo_banco)}</span>` : ""}${m.origen ? `<span>entró por ${esc(m.origen)}</span>` : ""}${obra ? pill("obra: " + obra) : ""}</div>
+        <p class="ct-texto">${esc(m.texto)}</p>
+        ${m._esStripe ? `<p class="ct-aviso warn ct-aviso-dep">Depósito de Stripe: casa solo con su depósito en «Cobros en línea» (cuando Stripe mande su detalle${(m._stripe || []).length ? ", o con «Es el depósito…» aquí abajo" : ""}). No lo clasifiques ni lo registres aquí: el dinero entraría dos veces. Si es de antes de instalar los cobros en línea, sácalo allí con «Ya está en el libro» y vuelve aquí.</p>` : ""}
+        ${m._stripeFuera ? `<p class="ct-aviso ct-aviso-dep">Depósito de Stripe de fuera de la app (${esc(m._stripeFuera.fuera_motivo || "ya está en el libro")}): regístralo aquí como siempre.</p>` : ""}
+        ${m.posible_duplicado_de ? `<p class="ct-aviso warn">Se parece al del ${fecha(m.duplicado_fecha)} «${esc(m.duplicado_descripcion)}»${m.duplicado_origen ? ` (entró por ${esc(m.duplicado_origen)})` : ""}.</p>` : ""}
+        <div class="ct-acciones">${(m._stripe || []).map(q => `<button type="button" class="accion" data-stripe-po="${esc(q.po)}">Es el depósito de Stripe del ${fechaLarga(q.llegada)}: casarlo</button>`).join("")}${ops.map((o, i) => `<button type="button" class="accion${i || (m._stripe || []).length ? " secundaria" : ""}" data-op="${i}">${esc(o.texto)}</button>`).join("")}
+          ${m._esStripe ? "" : `<button type="button" class="accion secundaria ct-otra" data-otra>Otra cosa…</button>`}</div>
+        <div class="ct-form" hidden></div>
+        ${m._esStripe ? `<div class="ct-stripe-res"></div>` : ""}
       </div>
-      <div class="ct-meta"><span>${fechaLarga(m.fecha)}</span><span>${esc(m.cuenta_nombre)}</span>${m.cheque ? `<span>cheque ${esc(m.cheque)}</span>` : ""}${m.tipo_banco ? `<span>${esc(m.tipo_banco)}</span>` : ""}<span>hace ${plural(m.dias, "día", "días")}</span>${pill(motivoLlano(m.motivo), m.motivo === "posible_duplicado" || m.motivo === "quitada" ? "warn" : "")}${m.alarma ? pill("más de 30 días", "bad") : ""}${obra ? pill("obra: " + obra) : ""}</div>
-      <p class="ct-texto">${esc(m.texto)}</p>
-      ${m._esStripe ? `<p class="ct-aviso warn ct-aviso-dep">Depósito de Stripe: casa solo con su depósito en «Cobros en línea» (cuando Stripe mande su detalle${(m._stripe || []).length ? ", o con «Es el depósito…» aquí abajo" : ""}). No lo clasifiques ni lo registres aquí: el dinero entraría dos veces. Si es de antes de instalar los cobros en línea, sácalo allí con «Ya está en el libro» y vuelve aquí.</p>` : ""}
-      ${m._stripeFuera ? `<p class="ct-aviso ct-aviso-dep">Depósito de Stripe de fuera de la app (${esc(m._stripeFuera.fuera_motivo || "ya está en el libro")}): regístralo aquí como siempre.</p>` : ""}
-      ${m.posible_duplicado_de ? `<p class="ct-aviso warn">Se parece al del ${fecha(m.duplicado_fecha)} «${esc(m.duplicado_descripcion)}»${m.duplicado_origen ? ` (entró por ${esc(m.duplicado_origen)})` : ""}.</p>` : ""}
-      <div class="ct-acciones">${(m._stripe || []).map(q => `<button type="button" class="accion" data-stripe-po="${esc(q.po)}">Es el depósito de Stripe del ${fechaLarga(q.llegada)}: casarlo</button>`).join("")}${ops.map((o, i) => `<button type="button" class="accion${i || (m._stripe || []).length ? " secundaria" : ""}" data-op="${i}">${esc(o.texto)}</button>`).join("")}
-        ${m._esStripe ? "" : `<button type="button" class="accion secundaria ct-otra" data-otra>Otra cosa…</button>`}</div>
-      <div class="ct-form" hidden></div>
-      ${m._esStripe ? `<div class="ct-stripe-res"></div>` : ""}
     </article>`;
   }
 
@@ -1354,9 +1647,11 @@
     const def = sal.find(c => c.cuenta === S.concCuenta) || sal[0];
     const fechaDef = c => c && c.saldo_banco_al ? String(c.saldo_banco_al) : ultimoDiaMesAnterior();
     const saldoDef = c => c && c.saldo_banco != null ? String(c.saldo_banco_como_banco) : "";
-    main().innerHTML = `<section class="ct-card">
+    const abiertas = lista.filter(c => c.estado === "abierta").length, confirmadas = lista.filter(c => c.estado === "confirmada").length;
+    main().innerHTML = cabPagina("Conciliar", lista.length ? `${plural(lista.length, "conciliación", "conciliaciones")} · ${plural(abiertas, "abierta", "abiertas")} · ${plural(confirmadas, "confirmada", "confirmadas")}` : "Todavía no hay ninguna conciliación: la primera se calcula aquí abajo.") +
+      `<section class="ct-card">
         <h2>Conciliar una cuenta con su statement</h2>
-        <p class="ct-nota">Sube antes el archivo del statement (en Bancos y tarjetas). Aquí van la fecha de corte y el saldo final tal como lo dice el statement (en una tarjeta, lo que debes, en positivo). Cuadra cuando libros = banco + lo que está en libros y no en el banco − lo que está en el banco y no en libros.</p>
+        ${ayudaHTML(`<p class="ct-nota">Sube antes el archivo del statement (en Bancos y tarjetas). Aquí van la fecha de corte y el saldo final tal como lo dice el statement (en una tarjeta, lo que debes, en positivo). Cuadra cuando libros = banco + lo que está en libros y no en el banco − lo que está en el banco y no en libros.</p>`)}
         <form id="ct-conc-form" class="ct-pide" novalidate>
           <div class="ct-fila">
             <label class="ct-campo">Cuenta<select name="cuenta">${sal.map(c => `<option value="${esc(c.cuenta)}"${def && c.cuenta === def.cuenta ? " selected" : ""}>${esc(c.cuenta)} · ${esc(c.cuenta_nombre)}</option>`).join("")}</select></label>
@@ -1372,6 +1667,7 @@
           ${lista.map(c => `<tr><td>${esc(c.cuenta_nombre)}<br><small>${esc(c.cuenta)}</small></td><td>${fechaLarga(c.fecha_corte)}</td><td>${esc(c.tipo)}</td><td>${estadoPill(c.estado)}</td><td class="r ct-num">${fmt(c.saldo_statement)}</td><td class="r ct-num">${fmt(c.saldo_libros)}</td><td class="r ct-num ${num(c.diferencia) === 0 ? "ok-txt" : num(c.diferencia) == null ? "" : "bad-txt"}">${fmt(c.diferencia)}</td><td><button type="button" class="accion secundaria chica" data-conc="${esc(c.conciliacion_id)}">Abrir</button></td></tr>`).join("")}
         </tbody></table></div>` : `<p class="ct-nota">Todavía no hay ninguna.</p>`}
       </section>`;
+    marcarVolver();
     const form = $("ct-conc-form");
     form.cuenta.addEventListener("change", () => { const c = sal.find(x => x.cuenta === form.cuenta.value); S.concCuenta = form.cuenta.value; form.fecha.value = fechaDef(c); form.saldo.value = saldoDef(c); });
     form.addEventListener("submit", async ev => {
@@ -1414,8 +1710,10 @@
     const libroNo = grupo("en_libros_no_en_banco"), bancoNo = grupo("en_banco_no_en_libros"), casados = grupo("casado");
     const dif = num(c.diferencia);
     const partidaHTML = p => `<li class="ct-partida${p.alarma ? " alarma" : ""}"><span class="ct-partida-f">${fechaLarga(p.fecha)}</span><span class="ct-partida-d"><b>${esc(p.descripcion || "")}</b>${p.cheque ? ` · cheque ${esc(p.cheque)}` : ""}${p.asiento_numero ? ` · asiento ${esc(p.asiento_numero)}` : ""}${p.clase ? ` ${pill(String(p.clase).replace(/_/g, " "), p.clase === "error" ? "bad" : "")}` : ""}${p.alarma ? pill(`${p.dias} días`, "bad") : ""}${p.explicacion ? `<small>${esc(p.explicacion)}</small>` : ""}${p.motivo && p.grupo !== "casado" ? `<small>Motivo: ${esc(p.motivo)}</small>` : ""}</span><span class="ct-partida-m ct-num">${fmt(p.monto)}</span></li>`;
-    main().innerHTML = `<section class="ct-card">
-        <div class="ct-cab"><h2>${esc(c.cuenta_nombre)} · corte ${fechaLarga(c.fecha_corte)}</h2>${estadoPill(c.estado)}${pill(c.tipo)}</div>
+    main().innerHTML = cabPagina(`Conciliación · ${c.cuenta_nombre}`, `corte ${fechaLarga(c.fecha_corte)} · ${estadoPill(c.estado)} ${pill(c.tipo)}`,
+        `<button type="button" class="accion secundaria" id="ct-volver-lista">← Todas las conciliaciones</button>`) +
+      `<section class="ct-card">
+        <div class="ct-cab"><h2>Libros contra statement</h2></div>
         <div class="ct-kpis cuatro">
           <div class="ct-kpi"><span class="ct-lbl">Libros al corte</span><span class="ct-val ct-num">${fmt(c.saldo_libros)}</span></div>
           <div class="ct-kpi"><span class="ct-lbl">Statement</span><span class="ct-val ct-num">${c.saldo_statement == null ? "falta" : fmt(c.saldo_statement)}</span><span class="ct-sub">${c.saldo_banco == null ? "" : `con el signo del libro: ${fmt(c.saldo_banco)}`}</span></div>
@@ -1429,7 +1727,6 @@
           ${c.lista_para_confirmar ? `<button type="button" class="accion" id="ct-conf">Confirmar la conciliación</button>` : ""}
           ${c.estado === "abierta" ? `<button type="button" class="accion secundaria" id="ct-recalc">Recalcular</button><button type="button" class="accion secundaria" id="ct-saldo">Cambiar el saldo del statement</button>` : ""}
           ${c.estado === "confirmada" && c.tipo === "normal" ? `<button type="button" class="accion secundaria" id="ct-reabrir">Reabrir (con su motivo)</button>` : ""}
-          <button type="button" class="accion secundaria" id="ct-volver-lista">← Todas las conciliaciones</button>
         </div>
         <div class="ct-form" hidden></div>
       </section>
@@ -1443,6 +1740,7 @@
         ${casados.length ? `<ul class="ct-partidas">${casados.map(partidaHTML).join("")}</ul>` : `<p class="ct-nota">Ninguno.</p>`}
       </details>`;
     const card = main().querySelector(".ct-card");
+    marcarVolver();
     $("ct-volver-lista").addEventListener("click", () => { S.conc = null; S.hooks.titulo(KICKER, TITULOS.conciliar); pintarConciliar(); });
     const ab = $("ct-a-bandeja"); if (ab) ab.addEventListener("click", () => ir("bandeja", { cuenta: c.cuenta }));
     const accion = async (fn, args, exito) => {
@@ -1482,17 +1780,16 @@
       filas = S.movCuenta ? await DB._leer(`v_banco_movimientos?select=movimiento_id,fecha,monto,descripcion,memo,cheque,tipo_banco,estado,estado_motivo,casado_clase,casado_regla,casado_auto,asiento_numero,papel_tabla,papel_id,archivo,propuesta_motivo&cuenta=eq.${encodeURIComponent(S.movCuenta)}${est}&order=fecha.desc,movimiento_id.asc&limit=300`) : [];
       await controlar(["v_banco_movimientos"]);
     } catch (err) { return pintarError(err, pintarMovimientos); }
+    if (S.pagina !== "movimientos") return;
     const estados = Object.keys(ESTADO_MOV);
-    main().innerHTML = `<section class="ct-card ct-barra">
-        <div class="ct-fila">
-          <label class="ct-campo">Cuenta<select id="ct-mov-cuenta">${visibles(S.saldos).map(c => `<option value="${esc(c.cuenta)}"${c.cuenta === S.movCuenta ? " selected" : ""}>${esc(c.cuenta)} · ${esc(c.cuenta_nombre)}</option>`).join("")}</select></label>
-          <label class="ct-campo">Estado<select id="ct-mov-estado"><option value="">Todos</option>${estados.map(e => `<option value="${e}"${e === S.movEstado ? " selected" : ""}>${ESTADO_MOV[e][0]}</option>`).join("")}</select></label>
-        </div>
-        <p class="ct-nota">${plural(filas.length, "movimiento", "movimientos")}${filas.length >= 300 ? " (los 300 más recientes)" : ""}. Cada uno con lo que la base decidió y el asiento con que casó.</p>
-      </section>
-      ${filas.length ? `<section class="ct-card"><div class="ct-tabla-env"><table class="ct-tabla"><thead><tr><th>Fecha</th><th>Descripción</th><th class="r">Monto</th><th>Estado</th><th>Cómo</th><th>Asiento</th></tr></thead><tbody>
-        ${filas.map(m => { const e = ESTADO_MOV[m.estado] || [m.estado, ""]; return `<tr><td>${fechaLarga(m.fecha)}</td><td><b>${esc(m.descripcion || "")}</b>${m.memo ? `<br><small>${esc(m.memo)}</small>` : ""}${m.cheque ? `<br><small>cheque ${esc(m.cheque)}</small>` : ""}</td><td class="r ct-num ${num(m.monto) < 0 ? "neg" : "pos"}">${fmt(m.monto)}</td><td>${pill(e[0], e[1])}</td><td><small>${esc(m.estado === "pendiente" ? motivoLlano(m.propuesta_motivo) : [m.casado_regla || m.casado_clase || "", m.casado_auto === true ? "solo" : m.casado_auto === false ? "Edgar" : "", m.estado_motivo || ""].filter(Boolean).join(" · "))}</small></td><td class="ct-num"><small>${esc(m.asiento_numero || "")}${m.papel_tabla ? `<br>${esc(m.papel_tabla)} ${esc(m.papel_id || "")}` : ""}</small></td></tr>`; }).join("")}
-      </tbody></table></div></section>` : `<section class="ct-card ct-vacio">Nada con ese filtro.</section>`}`;
+    // la cabecera lleva los selectores; la tabla es densa en la computadora y en el teléfono se apila en dos líneas (data-col pone las etiquetas)
+    main().innerHTML = cabPagina("Movimientos",
+        `${plural(filas.length, "movimiento", "movimientos")}${filas.length >= 300 ? " (los 300 más recientes)" : ""} de ${esc(nombreCuenta(S.movCuenta))}${S.movEstado && ESTADO_MOV[S.movEstado] ? ` · ${esc(ESTADO_MOV[S.movEstado][0])}` : ""} · cada uno con lo que la base decidió y el asiento con que casó`, "",
+        `<label class="ct-campo">Cuenta<select id="ct-mov-cuenta">${visibles(S.saldos).map(c => `<option value="${esc(c.cuenta)}"${c.cuenta === S.movCuenta ? " selected" : ""}>${esc(c.cuenta)} · ${esc(c.cuenta_nombre)}</option>`).join("")}</select></label>
+         <label class="ct-campo">Estado<select id="ct-mov-estado"><option value="">Todos</option>${estados.map(e => `<option value="${e}"${e === S.movEstado ? " selected" : ""}>${ESTADO_MOV[e][0]}</option>`).join("")}</select></label>`) +
+      (filas.length ? `<section class="ct-card ct-densa"><div class="ct-tabla-env"><table class="ct-tabla ct-mov-tabla"><thead><tr><th>Fecha</th><th>Descripción</th><th class="r">Monto</th><th>Estado</th><th>Cómo</th><th>Asiento</th></tr></thead><tbody>
+        ${filas.map(m => { const e = ESTADO_MOV[m.estado] || [m.estado, ""]; return `<tr><td class="ct-c-fecha ct-num">${fechaLarga(m.fecha)}</td><td class="ct-c-desc"><b>${esc(m.descripcion || "")}</b>${m.memo ? `<small>${esc(m.memo)}</small>` : ""}${m.cheque ? `<small>cheque ${esc(m.cheque)}</small>` : ""}</td><td class="r ct-num ct-c-monto ${num(m.monto) < 0 ? "neg" : "pos"}">${fmt(m.monto)}</td><td class="ct-c-estado">${pill(e[0], e[1])}</td><td class="ct-c-como" data-col="Cómo"><small>${esc(m.estado === "pendiente" ? motivoLlano(m.propuesta_motivo) : [m.casado_regla || m.casado_clase || "", m.casado_auto === true ? "solo" : m.casado_auto === false ? "Edgar" : "", m.estado_motivo || ""].filter(Boolean).join(" · "))}</small></td><td class="ct-num ct-c-asiento"${m.asiento_numero || m.papel_tabla ? ` data-col="Asiento"` : ""}><small>${esc(m.asiento_numero || "")}${m.papel_tabla ? `<br>${esc(m.papel_tabla)} ${esc(m.papel_id || "")}` : ""}</small></td></tr>`; }).join("")}
+      </tbody></table></div></section>` : `<section class="ct-card ct-vacio">Nada con ese filtro.</section>`);
     $("ct-mov-cuenta").addEventListener("change", ev => { S.movCuenta = ev.target.value; pintarMovimientos(); });
     $("ct-mov-estado").addEventListener("change", ev => { S.movEstado = ev.target.value; pintarMovimientos(); });
   }
@@ -1662,22 +1959,30 @@
     chipsOcupados(true);
   }
 
+  // v_cortes, con caché de un día: la fila 'hoy' trae la fecha de Miami, y el control y el balance de «hoy» ya corren con el día real.
+  // Vacío se devuelve vacío (quien llama decide si es rojo o un «todavía no hay períodos» en llano) y no se guarda
+  async function leerCortes() {
+    if (S.est.cortes && S.est.cortesDia !== hoyMiami()) S.est.cortes = null;
+    if (S.est.cortes) return S.est.cortes;
+    const c = await DB._leer("v_cortes?select=periodo,tipo,anio,desde,corte,estado,paralelo&order=desde.desc,tipo.asc");
+    if (!Array.isArray(c) || !c.length) return [];
+    S.est.cortes = c; S.est.cortesDia = hoyMiami();
+    return c;
+  }
   async function pintarEstados() {
     const mia = ++S.est.serie;
     if (!navigator.onLine) return sinSenal(pintarEstados);
-    // la caché de v_cortes vale un día: la fila 'hoy' trae la fecha de Miami, y el control y el balance de «hoy» ya corren con el día real
     if (S.est.cortes && S.est.cortesDia !== hoyMiami()) S.est.cortes = null;
     if (!S.est.cortes) {
       cargando("Controlando con la base…");
       try {
-        const c = await DB._leer("v_cortes?select=periodo,tipo,anio,desde,corte,estado,paralelo&order=desde.desc,tipo.asc");
+        const c = await leerCortes();
         if (mia !== S.est.serie) return;
-        if (!Array.isArray(c) || !c.length) {
+        if (!c.length) {
           // El equipo recibe [] con 200 de toda vista: el control dice si es «solo dueño» (42501) o si de verdad no hay períodos
           await controlarEstados("hoy", ["v_cortes"]);
           throw errorControl("La base no tiene períodos", [{ vista: "v_cortes", filas: 0, esperadas: "1 o más", detalle: "v_cortes no devolvió ningún período: el libro no está abierto todavía (c2 siembra los períodos). Nada que pintar." }]);
         }
-        S.est.cortes = c; S.est.cortesDia = hoyMiami();
       } catch (err) {
         if (mia !== S.est.serie) return;
         return pintarError(err, () => { S.est.cortes = null; pintarEstados(); }, err.codigo === "42501" ? "Contabilidad es solo del dueño" : undefined);
@@ -1686,8 +1991,10 @@
     if (mia !== S.est.serie || S.pagina !== "estados") return;
     const corte = resolverPeriodo();
     if (!S.est.cuenta && !S.est.asiento) S.hooks.titulo(KICKER, TITULOS.estados);
-    main().innerHTML = barraHTML(S.est.cortes, corte) + `<div id="ct-est-cuerpo"></div>`;
+    main().innerHTML = cabPagina("Estados financieros", "Cada cifra viene lista de la base y se controla antes de pintarse. Toca una cuenta para bajar a su mayor y a cada asiento.") +
+      barraHTML(S.est.cortes, corte) + `<div id="ct-est-cuerpo"></div>`;
     engancharBarra();
+    marcarVolver();
     S.est.avisoHoy = false;
     if (S.est.asiento) return pintarAsiento(S.est.asiento, corte, mia);
     if (S.est.cuenta) return pintarMayor(S.est.cuenta, corte, mia);
@@ -2119,21 +2426,26 @@
     engancharBotones();
   }
 
-  const PAGINAS = { bancos: pintarBancos, bandeja: pintarBandeja, conciliar: pintarConciliar, movimientos: pintarMovimientos, estados: pintarEstados, cobros: pintarCobros };
+  const PAGINAS = { resumen: pintarResumen, bancos: pintarBancos, bandeja: pintarBandeja, conciliar: pintarConciliar, movimientos: pintarMovimientos, estados: pintarEstados, cobros: pintarCobros, conexiones: pintarConexiones };
 
-  // ---------- Lo que la app llama ----------
+  // ---------- Lo que la app llama (el contrato con js/app.js) ----------
   window.MXP_CONTA = {
-    // abrir({ titulo(kicker, titulo), avisar(msg, esError) }): pinta la pantalla en #conta-raiz
-    abrir(hooks) {
-      S.hooks = Object.assign({ titulo() {}, avisar() {} }, hooks || {});
+    // paginas(): la lista ordenada de páginas [{ k, nombre, svg }] para el lateral de la app
+    paginas: () => ORDEN.map(k => ({ k, nombre: TITULOS[k], svg: ICONOS[k] })),
+    // abrir({ titulo(kicker, titulo), avisar(msg, esError), pagina(k), volver(visible) }, pagina?): pinta la pantalla en #conta-raiz;
+    // con `pagina` abre esa, si no la última (o «resumen»). pagina(k) se llama en cada cambio de página y volver(v) en cada pintada
+    abrir(hooks, pagina) {
+      S.hooks = Object.assign({ titulo() {}, avisar() {}, pagina() {}, volver() {} }, hooks || {});
       if (!DB || typeof DB._rpc !== "function" || typeof DB._leer !== "function") {
         const r = raiz();
         if (r) r.innerHTML = `<div class="ct-card ct-rojo" role="alert"><h2>Falta la conexión</h2><p>js/db.js no trae _leer y _rpc: recarga la app (si sigue, la versión de db.js es vieja).</p></div>`;
         return;
       }
       armar();
-      ir(S.pagina);
-      reanudarLink();
+      // la vuelta del banco (OAuth de Plaid) abre Conexiones y seguridad, donde vive su tarjeta
+      const vuelta = !!new URLSearchParams(location.search).get("oauth_state_id");
+      ir(vuelta ? "conexiones" : PAGINAS[pagina] ? pagina : S.pagina);
+      if (vuelta) reanudarLink();
     },
     // «←» de la app: true si la pantalla tenía algo que cerrar (la conciliación abierta, el asiento o el mayor de los estados)
     atras() {
