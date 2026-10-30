@@ -54,7 +54,10 @@
 --   · La función de borde «stripe» (supabase/functions/stripe/index.ts) es
 --     la ÚNICA que habla con Stripe, con la llave RESTRINGIDA y el secreto
 --     del webhook en los secretos de Edge Functions (STRIPE_SECRET_KEY,
---     STRIPE_WEBHOOK_SECRET). A ESTA BASE entra directo, como postgres
+--     STRIPE_WEBHOOK_SECRET). Lo que el CLIENTE ve en Stripe (el nombre del
+--     cobro «Invoice <num> · Max Power Electrical Solutions, Inc.», el
+--     gracias y el aviso de enlace vencido) va SOLO en inglés (regla del
+--     30-oct: todo lo que ve un cliente). A ESTA BASE entra directo, como postgres
 --     (SUPABASE_DB_URL), igual que pg_cron o el SQL Editor. Guarda primero
 --     cada aviso (fn_stripe_evento_guardar), contesta 200 a Stripe, y
 --     después vuelve a pedir a Stripe el objeto VIVO (el pago, el depósito)

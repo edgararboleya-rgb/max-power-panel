@@ -43,7 +43,9 @@
 ## 🟢 Verde — se trabaja encima (`/effort auto`)
 - **Plantilla básica de factura**: por hito (`hitos`), por porcentaje simple y
   T&M — sin línea de impuesto mientras no se venda material suelto. **Es
-  requisito del corte: el 2 de enero hay que poder facturar.**
+  requisito del corte: el 2 de enero hay que poder facturar.** **En inglés**
+  (todo lo que ve el cliente; CONTA-PLAN §1 «Idioma»), con el bloque «How to
+  pay» y, si Edgar lo pide, el enlace de pago de Stripe (p1).
 - `crearAlcance` (hoy `alcances` solo se lee); ligar el `co` de texto de
   `horas`/`recibos` al renglón de `alcances`; la factura de avance lista los
   COs aprobados por renglón.

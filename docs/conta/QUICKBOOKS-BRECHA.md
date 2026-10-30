@@ -484,8 +484,9 @@ Reply-To `info@mxpes.com`) para no tocar el buzón actual.
    avisos salientes (tipo, canal, destinatario, plantilla, estado) y llame a
    Twilio y a Resend, guardando ids y estados de entrega; webhook de Twilio para
    STOP/HELP.
-3. Plantillas en español e inglés, cortas, con «Max Power Electrical:» al frente
-   y STOP al final en los recordatorios.
+3. Plantillas cortas, con «Max Power Electrical:» al frente y STOP al final en
+   los recordatorios. A **clientes, solo en inglés** (regla del 30-oct, CONTA-PLAN
+   §1 «Idioma»); al equipo y a los subs, en el idioma de cada uno.
 4. Páginas públicas de Privacidad (actualizada: comunicaciones por SMS/correo; los
    datos móviles no se comparten para marketing) y Términos (nuevos).
 5. Para tu push: los triggers y la ronda de c8 llaman a `fn_cartero` (f08);

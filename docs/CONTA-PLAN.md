@@ -84,6 +84,7 @@ adversarial (93 hallazgos, 57 confirmados, 9 bloqueantes).
 | **Sales tax** | ▶ Edgar confirma con el CPA: si Max Power contrata como mejora a bien inmueble (Regla 12A-1.051), el impuesto pagado al proveedor es costo de 5100; no se cobra ni se separa en la factura. 2300 queda para use tax de compras sin impuesto de Florida y ventas al detalle. |
 | **Documentos fuente** | Un recibo, hora, factura o proyecto contabilizado no se edita en monto/fecha/obra ni se borra: se reversa y se crea otro. Se guardan al menos **7 años** desde la presentación; los de activos fijos, la vida del activo + 3. |
 | **Quién lee los libros** | Solo el dueño (`es_dueno()`) y, si Edgar lo decide, un rol `contador` de solo lectura para el CPA. El equipo, nada. Lo protege la base, no la pantalla. |
+| **Idioma** | Todo lo que ve un **cliente** sale **solo en inglés**: facturas, scope of work, la página de pago y los recibos de Stripe, los correos y SMS a clientes (regla de Edgar, 30-oct). La app por dentro —Edgar y el equipo— sigue en español. |
 
 ---
 

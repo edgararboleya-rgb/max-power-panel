@@ -85,10 +85,12 @@ const CORS = {
   "Access-Control-Allow-Headers": "authorization, content-type, x-mxp-rutina, stripe-signature",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
-const GRACIAS = "Gracias, recibimos su pago de la factura %N. Si pagó desde su cuenta de banco, el banco tarda unos días hábiles en confirmarlo. / "
-  + "Thank you — we received your payment for invoice %N. Bank payments take a few business days to clear.";
-const INACTIVO = "Este enlace de pago ya no está activo: pida uno nuevo a Max Power Electrical Solutions. / "
-  + "This payment link is no longer active. Please ask Max Power Electrical Solutions for a new one.";
+// Lo que ve el CLIENTE va solo en inglés (regla de Edgar, 30-oct: todo lo que
+// ve un cliente —facturas, scope of work, pagos— sale en inglés).
+const EMPRESA = "Max Power Electrical Solutions, Inc.";
+const GRACIAS = "Thank you — we received your payment for invoice %N. "
+  + "Bank account (ACH) payments take a few business days to clear.";
+const INACTIVO = `This payment link is no longer active. Please contact ${EMPRESA} for a new one.`;
 
 // La configuración se lee en cada llamada (el entorno no cambia en Supabase;
 // en las pruebas sin Deno sí).
@@ -593,14 +595,14 @@ function cargaEnlace(p: Json): Json {
   return {
     line_items: [{
       price_data: { currency: "usd", unit_amount: Number(p.centavos),
-                    product_data: { name: `Factura / Invoice ${num} · Max Power Electrical Solutions${ret ? " (retención / retainage)" : ""}` } },
+                    product_data: { name: `Invoice ${num} · ${EMPRESA}${ret ? " (incl. retainage)" : ""}` } },
       quantity: 1,
     }],
     // el orden («ACH primero») no se impone en Payment Links: Stripe ordena; esto solo restringe
     payment_method_types: ["us_bank_account", "card"],
     restrictions: { completed_sessions: { limit: 1 } },
     metadata: meta,
-    payment_intent_data: { metadata: meta, description: `Factura / Invoice ${num}` },
+    payment_intent_data: { metadata: meta, description: `Invoice ${num} — ${EMPRESA}` },
     after_completion: { type: "hosted_confirmation", hosted_confirmation: { custom_message: GRACIAS.replaceAll("%N", num) } },
     inactive_message: INACTIVO,
   };

@@ -1019,7 +1019,7 @@
       card.querySelectorAll("[data-crear]").forEach(b => b.addEventListener("click", () => formaEnlace(card, f, b.dataset.crear === "reemplazar", false)));
       const cp = card.querySelector("[data-copiar]"); if (cp) cp.addEventListener("click", () => copiarEnlace(card));
       const en = card.querySelector("[data-enviar]"); if (en) en.addEventListener("click", () => {
-        navigator.share({ title: `Factura ${f.num || f.factura_id} · Max Power Electrical Solutions`, text: `Enlace de pago de la factura ${f.num || f.factura_id}`, url: f.enlace_url }).catch(() => { /* lo cerró */ });
+        navigator.share({ title: `Invoice ${f.num || f.factura_id} · Max Power Electrical Solutions, Inc.`, text: `Payment link for invoice ${f.num || f.factura_id} — Max Power Electrical Solutions, Inc.`, url: f.enlace_url }).catch(() => { /* lo cerró */ });
       });
       const de = card.querySelector("[data-desactivar]"); if (de) de.addEventListener("click", () => montarForma(card,
         formaHTML(`Desactivar el enlace de la #${esc(f.num || f.factura_id)}: quien lo abra verá que ya no está activo (queda escrito por qué)`, campoHTML("motivo", "Motivo", "textarea", "required"), "Desactivar"),

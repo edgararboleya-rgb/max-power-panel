@@ -320,11 +320,11 @@ try {
   ok('E2E-05 Stripe recibió UN POST /v1/payment_links con Bearer, la versión, la Idempotency-Key mxp-enlace-<id> y el cuerpo exacto',
      post.length === 1 && post[0].bearer && post[0].version === '2026-09-30.endive' && post[0].idem === `mxp-enlace-${enlace1?.id}`
      && cp.line_items?.[0]?.price_data?.unit_amount === '800000' && cp.line_items[0].price_data.currency === 'usd' && cp.line_items[0].quantity === '1'
-     && /^Factura \/ Invoice 1103 · Max Power Electrical Solutions$/.test(cp.line_items[0].price_data.product_data?.name ?? '')
+     && /^Invoice 1103 · Max Power Electrical Solutions, Inc\.$/.test(cp.line_items[0].price_data.product_data?.name ?? '')
      && JSON.stringify(cp.payment_method_types) === '["us_bank_account","card"]' && cp.restrictions?.completed_sessions?.limit === '1'
      && cp.metadata?.mxp === 'p1' && cp.metadata.enlace === enlace1?.id && cp.metadata.factura_id === String(fid['1103']) && cp.metadata.factura === '1103' && cp.metadata.retencion === 'no'
      && JSON.stringify(cp.payment_intent_data?.metadata) === JSON.stringify(cp.metadata) && cp.after_completion?.type === 'hosted_confirmation' && /1103/.test(cp.after_completion?.hosted_confirmation?.custom_message ?? '')
-     && /ya no está activo/.test(cp.inactive_message ?? ''), post);
+     && /no longer active/.test(cp.inactive_message ?? '') && !/[áéíóñ]/.test(JSON.stringify([cp.inactive_message, cp.after_completion, cp.line_items[0].price_data.product_data?.name, cp.payment_intent_data?.description])), post);
   ok('E2E-05 el enlace queda activo con su plink y su url; la factura no se toca (pagada, cobrado, link_pago…)',
      q(`select estado || '|' || plink || '|' || url from stripe_enlaces where id = ${lit(enlace1?.id)}`) === `activo|${enlace1?.plink}|${enlace1?.url}` && huellaFacturas() === huella0);
   antes = (await llamadasSim()).length;
