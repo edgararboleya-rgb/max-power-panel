@@ -3122,6 +3122,11 @@ button > .ico:only-child, .lev-btn-ico > .ico { margin-right: 0; width: 1.15em; 
 .agenda-ev.abre:hover { background: var(--mp-sky-2); }
 .agenda-ev.alerta .agenda-que { color: var(--mp-danger-tx); }
 .agenda-hora { font-size: var(--fs-3); font-weight: 700; color: var(--mp-teal-text); white-space: nowrap; }
+/* «Por confirmar», «Todo el día»: en dos líneas dentro de su columna, sin montarse sobre el título (28-oct).
+   En el Hoy ocupa los renglones del título y del «quién» (sin hueco); en el calendario, con tope de ancho */
+.agenda-hora.sin-reloj { white-space: normal; overflow-wrap: anywhere; font-size: var(--fs-2); line-height: 1.2; }
+.agenda-ev > .agenda-hora.sin-reloj { grid-row: span 2; }
+.agenda-item > .agenda-hora.sin-reloj { max-width: 5.6rem; }
 .agenda-hora.ambar { color: var(--warn-ink); } .agenda-hora.rojo { color: var(--mp-danger-tx); }
 .agenda-que { font-weight: 600; color: var(--mp-ink); line-height: 1.25; }
 .agenda-quien { grid-column: 2; font-size: var(--fs-3); color: var(--mp-ink-3); }
@@ -4113,6 +4118,8 @@ body:has(#toast:not([hidden])) .fab, body:has(#sin-senal:not([hidden])) .fab { d
 .chipb:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: 2px; }
 .proy-chips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 10px; margin: 0 0 6px; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
 .chipb-todos { color: var(--cu-dark); border-style: dashed; }
+/* «Todos los proyectos» en su renglón, encima de la fila de obras (28-oct) */
+.proy-todos-barra { display: flex; justify-content: flex-end; margin: 0 0 6px; }
 /* La tarjeta de la obra elegida */
 .proy-cab { margin: 0 0 14px; padding-bottom: 6px; }
 .proy-nombre { margin: 0 0 8px; font-size: var(--fs-h2); font-weight: 800; line-height: 1.25; color: var(--mp-ink); overflow-wrap: anywhere; }

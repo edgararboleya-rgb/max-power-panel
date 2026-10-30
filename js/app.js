@@ -141,6 +141,10 @@
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const sinMontos = t => (usuario && usuario.finanzas)
     ? t : String(t ?? "").replace(/\$\s?[\d][\d,.]*/g, "$•••");
+  // Una hora que no es de reloj («Por confirmar», «Todo el día», «8:00 - 10:00 AM», «Después de las
+  // 2 PM») no cabe en una línea en la columna de la hora del teléfono: se parte en dos en vez de
+  // montarse sobre el título (28-oct). Las de reloj («8:00 AM», «10:30 AM», «14:00») siguen igual.
+  const horaSinReloj = h => !!h && !/^\s*\d{1,2}(:\d{2}){0,2}\s*([AaPp]\.?\s?[Mm]\.?)?\s*$/.test(h);
   const facturasPendientes = p => (p.facturas || []).filter(f => !f.pagada);
   // Lo que de verdad falta de una factura: el monto menos lo ya abonado (P07,
   // 24-sep). Antes «Facturado sin pagar» sumaba el monto entero aunque el
@@ -1322,7 +1326,7 @@ function esFalloDeRed(err) {
       if (!lista.length && k > 1) return "";
       const cuerpo = lista.length ? lista.map(e => `
         <div class="agenda-ev${e.alerta ? " alerta" : ""}${e.proyecto ? " abre" : ""}" ${e.proyecto ? `data-proy="${esc(e.proyecto)}"` : ""}>
-          <span class="agenda-hora">${esc(e.hora || "—")}</span>
+          <span class="agenda-hora${horaSinReloj(e.hora) ? " sin-reloj" : ""}">${esc(e.hora || "—")}</span>
           <span class="agenda-que">${esc(sinMontos(e.titulo))}</span>
           <span class="agenda-quien">${(e.asignados || []).length ? esc(e.asignados.map(n => n.split(" ")[0]).join(" + ")) : ""}${e.proyecto ? `${(e.asignados || []).length ? " · " : ""}${esc(nombreProyecto(e.proyecto))}` : ""}</span>
           ${k < 2 ? `<span class="agenda-botones">${enlaceMapa(e.ubicacion || ((proyectos().find(x => x.id === e.proyecto) || {}).direccion))}${k === 0 && e.proyecto ? `<button type="button" class="btn-ir btn-foto-rapida" data-proy="${esc(e.proyecto)}" title="Tomar una foto de esta obra">${ico("camara")}Foto</button>` : ""}</span>` : ""}
@@ -2567,10 +2571,21 @@ function esFalloDeRed(err) {
     const p = proySel ? proyectoPorId(proySel) : null;
     $titulo.textContent = p ? nombreVis(p.nombre) : "Proyectos";
 
+    // ---- «Todos los proyectos», encima de la fila y siempre a la vista ----
+    // Al final de la fila, en el teléfono había que correr todas las obras para llegar (Edgar, 28-oct)
+    let barraTodos = $("proy-todos-barra");
+    if (!barraTodos) {
+      barraTodos = document.createElement("div");
+      barraTodos.id = "proy-todos-barra";
+      barraTodos.className = "proy-todos-barra";
+      $("proy-chips").before(barraTodos);
+    }
+    barraTodos.innerHTML = `
+      <button type="button" class="chipb chipb-todos" id="proy-todos"><span>Todos los proyectos</span> <span aria-hidden="true">›</span></button>`;
+
     // ---- La fila de chips ----
     $("proy-chips").innerHTML = obras.map(o => `
-      <button type="button" class="chipb${o.id === proySel ? " sel" : ""}" data-obra="${esc(o.id)}" aria-pressed="${o.id === proySel}"><span data-no-i18n>${esc(obraCorta(nombreVis(o.nombre)))}</span></button>`).join("") + `
-      <button type="button" class="chipb chipb-todos" id="proy-todos"><span>Todos los proyectos</span> <span aria-hidden="true">›</span></button>`;
+      <button type="button" class="chipb${o.id === proySel ? " sel" : ""}" data-obra="${esc(o.id)}" aria-pressed="${o.id === proySel}"><span data-no-i18n>${esc(obraCorta(nombreVis(o.nombre)))}</span></button>`).join("");
     $("proy-chips").querySelectorAll(".chipb[data-obra]").forEach(b => b.addEventListener("click", () => {
       proySel = b.dataset.obra;
       guardarProySel(proySel);
@@ -14303,7 +14318,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       ? evsDia.map(e => {
           const p = e.proyecto ? proyectos().find(x => x.id === e.proyecto) : null;
           return `<div class="agenda-item${e.alerta ? " alerta" : ""}${e.estadoEv === "cancelado" ? " ev-cancelado" : ""}">
-              <span class="agenda-hora">${esc(e.hora || "")}</span>
+              <span class="agenda-hora${horaSinReloj(e.hora) ? " sin-reloj" : ""}">${esc(e.hora || "")}</span>
               <span class="agenda-info">
                 <span class="agenda-titulo"${e.estadoEv === "cancelado" ? ' style="text-decoration:line-through;opacity:.6"' : ""}>${esc(sinMontos(e.titulo))}${e.estadoEv === "hecho" ? " ✓" : ""}${e.estadoEv === "cancelado" ? " (cancelado)" : ""}</span>
                 ${p ? `<span class="agenda-lugar">${ico("llave")} ${esc(nombreVis(p.nombre))}</span>` : ""}
@@ -15723,7 +15738,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           alcArreglos[oid] = { tipo: "poner_precio_base", valor: precioEst.texto };
           ofrecido = `<button class="alc-op alc-auto" data-fix="${oid}" title="${esc(precioEst.nombre)}">✓ Sí, usar el del estimado ${esc(precioEst.ref)}: $${precioEst.texto}</button>`;
         }
-        return `<span class="alc-fix">${ofrecido}<input class="alc-libre alc-fix-in" data-fix-in="${id}" placeholder="${a.pide === "monto" ? "1,850.00" : "escríbelo"}" inputmode="${a.pide === "monto" ? "decimal" : "text"}">
+        return `<span class="alc-fix">${ofrecido}<input class="alc-libre alc-fix-in" data-fix-in="${id}" placeholder="${a.pide === "monto" ? "1,850.00" : a.tipo === "poner_falta" ? "escríbelo en inglés" : "escríbelo"}" inputmode="${a.pide === "monto" ? "decimal" : "text"}">
                 <button class="alc-op" data-fix="${id}">${esc(ofrecido ? "No, escribir otro precio" : a.etiqueta)}</button></span>`;
       }
       if (a.pide === "renglon")
@@ -16845,6 +16860,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     // iba nunca (ni dejaba seguir sin pagar otro armado). Va por alcPrecioEnArmado, que rehace el contrato sin la IA.
     if (a && a.tipo === "poner_precio_base" && A && A.armado && !A.armado.vieja)
       return alcPrecioEnArmado(a.valor !== undefined ? a.valor : valor, a.valor !== undefined);
+    // 26-oct (Villanti Garage): lo mismo con la «Falta» del rojo de las fotos del panel: escrita en la hoja por el camino de las
+    // reglas dejaba el armado «viejo» y el rojo no se iba. Va por alcFaltaEnArmado (al final de la hoja, sin volver a pedir a la IA)
+    if (a && a.tipo === "poner_falta" && A && A.armado && !A.armado.vieja)
+      return alcFaltaEnArmado(a.valor !== undefined ? a.valor : valor, a.valor === undefined);
     const r = Alcance.aplicarArreglo(A.texto, a, valor);
     if (r.error) { avisar(r.error, true); return false; }
     if (r.perdona) { A.perdonadas = [...(A.perdonadas || []), r.perdona]; alcPerdonLocal(A.proyecto.id, A.perdonadas); }
@@ -16905,6 +16924,56 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         M.precio_en_marcha = false;
         // si no se llegó al contrato (otra pregunta frena, o el papel no salió), la hoja se repinta: el rojo del precio se va y
         // los botones renacen; si ya está en el contrato, no se toca
+        if (alcActivo === A && A.armado === M && alcFicha === 0) pintarAlcance();
+      });
+    return true;
+  }
+
+  // 26-oct (Villanti Garage): la «Falta» con el armado de la IA vivo (gemela de alcPrecioEnArmado). El rojo «Dijiste que no
+  // tienes fotos del panel» pide escribir en «Falta» qué faltó al cotizar; la app la escribe al FINAL de la hoja («Falta» y el
+  // texto, o solo el texto si la hoja ya acaba en esa cabecera), apunta esas líneas al final de las del armado (M.texto, M.lineas,
+  // M.nube y lineas_total al día: la escribió la app, el armado sigue valiendo) y rehace el contrato SIN volver a pedir a la IA,
+  // con la línea del texto como la de la «Falta» (respuestas.falta_l). Al reabrir, armadoAHoja la toma sola de la hoja.
+  function alcFaltaEnArmado(valor, escrito) {
+    const A = alcActivo, M = A && A.armado;
+    if (!M) return false;
+    if (M.falta_en_marcha) return true;     // un segundo toque mientras se arma el papel no hace nada (el candado vive en el armado)
+    const v = String(valor === undefined || valor === null ? "" : valor).trim();
+    if (!v) { avisar("escribe qué te faltó", true); return false; }
+    // (corrección) sin tocar la hoja: una «Falta» con un monto no entraría en el contrato (y el rojo no se iría), y la que
+    // escribe Edgar va tal cual al contrato del cliente, que va en inglés (el texto del botón automático ya lo está)
+    if (Alcance.dineroEnLineaArmar(v)) { avisar("La «Falta» no lleva dinero: escríbela sin montos (el precio va en «Precio»)", true); return false; }
+    if (escrito && !Alcance.faltaEnIngles(v)) { avisar("Escríbelo en inglés: va tal cual al contrato del cliente. O toca «Poner «sin fotos ni documentación del panel»».", true); return false; }
+    const r = Alcance.aplicarArreglo(A.texto, { tipo: "poner_falta_final" }, v);
+    if (r.error) { avisar(r.error, true); return false; }
+    M.falta_en_marcha = true;
+    // las líneas nuevas: las del texto nuevo detrás de las de antes (solo se añade al final), sin las vacías
+    const antes = String(A.texto || "").replace(/\r/g, "").split("\n");
+    const ahora = String(r.texto || "").replace(/\r/g, "").split("\n");
+    let k = 0;
+    while (k < antes.length && k < ahora.length && antes[k] === ahora[k]) k++;
+    const nuevas = ahora.slice(k).filter(l => l.trim());
+    A.texto = r.texto;
+    if ($("alc-texto")) $("alc-texto").value = A.texto;
+    M.texto = A.texto;                    // la escribió la app: el armado sigue valiendo
+    // al final de las del armado (tapadas, como las demás): los números de línea que usó la IA no se mueven
+    const lineas = Array.isArray(M.lineas) ? M.lineas.slice() : [];
+    const nube = Array.isArray(M.nube) ? M.nube.slice() : null;
+    nuevas.forEach(l => {
+      const fila = { n: lineas.length + 1, t: l.replace(/\d/g, "#"), original: l };
+      lineas.push(fila);
+      if (nube) nube.push({ n: fila.n, t: fila.t });
+    });
+    M.lineas = lineas;
+    if (nube) M.nube = nube;
+    // el paquete dice cuántas líneas tiene la hoja: con más, el juez (verificarArmado) daría «armado_invalido» al reabrir
+    if (M.paquete && typeof M.paquete === "object") M.paquete.lineas_total = lineas.length;
+    nuevas.forEach(l => alcApuntarPropia(l));
+    A.arreglados = [...(A.arreglados || []), r.explicacion];
+    alcContestarArmado("falta_l", lineas.length).catch(e => avisar((e && e.message) || "No pude rehacer el contrato", true))
+      .finally(() => {
+        M.falta_en_marcha = false;
+        // si no se llegó al contrato (otra pregunta frena, o el papel no salió), la hoja se repinta: el rojo de la «Falta» se va
         if (alcActivo === A && A.armado === M && alcFicha === 0) pintarAlcance();
       });
     return true;
@@ -18281,20 +18350,24 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         s += `<p class="lev-nota">Cuando toques «Armar el contrato con IA», aquí sale lo que la IA entendió y la app pasa sola al contrato.</p>`;
       return s;
     }
-    if (M.vieja) s += `<div class="alc-gris">Cambiaste la hoja después de armar: toca «Volver a armar con IA» para que la IA la lea otra vez. Sin la IA: «Más…» › «Leer con las reglas (sin IA)».</div>`;
+    // 26-oct (Villanti Garage): con el armado viejo, la salida a la vista (los dos botones), no escondida bajo «Más…»
+    if (M.vieja) s += `<div class="alc-gris"><p>Cambiaste la hoja después de armar: lo de abajo es de la hoja de antes. Para seguir, vuelve a armar con IA o lee la hoja con las reglas (sin IA).</p>
+      <div class="alc-fixes"><button type="button" class="alc-op" data-armado-otra="1">Volver a armar con IA</button>
+      <button type="button" class="alc-op" data-armado-reglas="1">Leer con las reglas (sin IA)</button></div></div>`;
     // los rojos que frenan
     const incompleto = (M.avisos_app || []).find(x => x && x.tipo === "alcance_incompleto");
     const errores = (A.validado && A.validado.errores) || [];
     const rojos = (M.avisos || []).filter(x => x && x.gravedad === "rojo");
     if (incompleto || errores.length || rojos.length) {
       const ir = n => Number.isInteger(n) && n >= 1 ? `<button type="button" class="alc-linea" data-armado-ir="${n}" title="Llévame a ese renglón">línea ${n}</button> ` : "";
-      s += `<div class="alc-rojo"><b>Esto frena el contrato:</b><ul>` +
+      s += `<div class="alc-rojo"><b>${M.vieja ? "Esto frenaba el contrato (según la hoja de antes):" : "Esto frena el contrato:"}</b><ul>` +
         (incompleto ? `<li><span data-no-i18n>${esc(incompleto.texto)}</span><div class="alc-fixes">${(incompleto.lineas || []).slice(0, 8).map(n => ir(n)).join("")}</div>
           <div class="alc-fixes"><button type="button" class="alc-op" data-armado-otra="1">Volver a armar con IA</button>
           <button type="button" class="alc-op" data-armado-reglas="1">Leer con las reglas (sin IA)</button></div></li>` : "") +
         rojos.map(x => `<li>${ir(x.linea)}<span data-no-i18n>${esc(x.texto)}</span></li>`).join("") +
         // 22-oct: mientras la IA vuelve a armar, los botones de arreglo no salen (tocarlos a medio armado gastaba otro armado)
-        errores.map((e, i) => `<li>${ir(e.linea)}<span data-no-i18n>${esc(e.texto)}</span>${(e.arreglos || []).length && !A.armado_en_marcha ? `<div class="alc-fixes">${alcBotonesDe(e.arreglos, "ae" + i, A.leido, alcPrecioEstimado(A.proyecto.id))}</div>` : ""}</li>`).join("") +
+        // 26-oct: ni con el armado viejo (tocarlos solo escribía en la hoja y nada se recalculaba: el callejón de Villanti)
+        errores.map((e, i) => `<li>${ir(e.linea)}<span data-no-i18n>${esc(e.texto)}</span>${(e.arreglos || []).length && !A.armado_en_marcha && !M.vieja ? `<div class="alc-fixes">${alcBotonesDe(e.arreglos, "ae" + i, A.leido, alcPrecioEstimado(A.proyecto.id))}</div>` : ""}</li>`).join("") +
         `</ul></div>`;
     }
     s += alcPreguntasArmado();
