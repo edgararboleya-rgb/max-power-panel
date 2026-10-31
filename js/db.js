@@ -202,7 +202,8 @@
     if ((cod === "42501" || cod === "22023" || cod === "P0001") && txt && !ingles.test(txt)) return crudo;
 
     // Falta una columna o una tabla que la app ya usa = SQL sin pegar
-    if (cod === "42703" || cod === "42P01" || cod === "PGRST204" || cod === "PGRST205") return falta;
+    // (PGRST202 = la función SQL que se llama todavía no está puesta)
+    if (cod === "42703" || cod === "42P01" || cod === "PGRST202" || cod === "PGRST204" || cod === "PGRST205") return falta;
 
     // Un candado de la base rechazó el valor
     if (cod === "23514") {
@@ -446,9 +447,18 @@
     // la app: da error y se queda vacío, sin romper nada); y qué estimado está enlazado a cada obra (solo el id y la
     // obra: sus renglones, SIN precio, se bajan después y solo para las obras vivas)
     ["horas_estimadas_fase", "horas_estimadas_fase?select=proyecto_id,fase,horas", true],
-    ["horas_tareas", "horas_tareas?select=id,horas_id,codigo,estimado_item_id,horas,cantidad_hecha", true],
-    ["estimados_obra", "estimados?select=id,proyecto_id&proyecto_id=not.is.null&order=id.desc", true]
+    ["horas_tareas", "horas_tareas?select=id,horas_id,codigo,estimado_item_id,horas,cantidad_hecha,nota", true],
+    ["estimados_obra", "estimados?select=id,proyecto_id&proyecto_id=not.is.null&order=id.desc", true],
+    // 31-oct (la pestaña «Costos» de cada obra): la casilla «conciliada», la fase elegida y la nota de cada línea de costo
+    // (vista de etapa6/COSTOS-OBRA.sql parte A; solo un dueño recibe filas), y las líneas del libro contable cargadas a una
+    // obra en Material (5100), Subcontratos (5200) y Equipo (5300), con su asiento al lado. SOLO LECTURA: la app nunca escribe
+    // en asientos ni en asiento_lineas (el candado de la base solo deja leerlas al dueño; al equipo le falla y queda vacía).
+    ["v_costos_revision", "v_costos_revision?select=*", true],
+    ["costos_libro", "asiento_lineas?select=asiento_id,orden,cuenta,monto,proyecto_id,fase,co,memo,asientos(numero,fecha_contable,descripcion,tipo,camino,reversa_a,origen_tabla,origen_id)&proyecto_id=not.is.null&cuenta=in.(5100,5200,5300)", true]
   ];
+  // Las fuentes «suaves» que fallaron en la última vez que se bajaron (la pestaña Costos dice «No pude leer el libro
+  // contable» en vez de enseñar una lista vacía como si no hubiera nada)
+  const fuentesFallidas = {};
   // v280 (pliego §13 E4): las 10 fases del reporte de horas (index.html, #form-horas) y las 20 partidas
   // (codigos_partida): las mismas listas que el cerebro (FASES y CODIGOS_PARTIDA)
   const FASES_REPORTE = ["Movilización", "Demolición", "Rough-in", "Underground", "Panel / Servicio",
@@ -506,6 +516,15 @@
   // Lo último que bajó cada fuente: con esto la recarga parcial vuelve a armar
   // el estado entero bajando solo las tablas que se tocaron.
   let crudo = null;
+  // 31-oct (Costos): la marca que acaba de guardar fn_costos_marcar se pone (o se sustituye) en lo último bajado de
+  // v_costos_revision, para que una recarga parcial que no baja esa vista no la deje vieja.
+  function anotarCostoRevision(x) {
+    if (!crudo || !x || typeof x !== "object" || !x.fuente || x.ref === undefined || x.ref === null) return;
+    const lista = Array.isArray(crudo.v_costos_revision) ? crudo.v_costos_revision.slice() : [];
+    const k = lista.findIndex(y => y && y.fuente === x.fuente && String(y.ref) === String(x.ref));
+    if (k >= 0) lista[k] = { ...lista[k], ...x }; else lista.push(x);
+    crudo = { ...crudo, v_costos_revision: lista };
+  }
 
   // cargarTodo()          → baja las 33 fuentes
   // cargarTodo(["horas"]) → baja solo esas (si ya hubo una carga completa) y
@@ -513,7 +532,9 @@
   async function cargarTodo(soloEstas) {
     const parcial = Array.isArray(soloEstas) && soloEstas.length > 0 && crudo !== null;
     const pedir = parcial ? FUENTES.filter(f => soloEstas.includes(f[0])) : FUENTES;
-    const bajado = await Promise.all(pedir.map(([, consulta, suave]) => suave ? leer(consulta).catch(() => []) : leer(consulta)));
+    const bajado = await Promise.all(pedir.map(([nombre, consulta, suave]) => suave
+      ? leer(consulta).then(x => { delete fuentesFallidas[nombre]; return x; }).catch(() => { fuentesFallidas[nombre] = true; return []; })
+      : leer(consulta)));
     const nuevo = parcial ? { ...crudo } : {};
     pedir.forEach(([nombre], k) => { nuevo[nombre] = bajado[k]; });
     // v281 (pliego §13 E5): la bandeja «La IA pregunta». Solo el dueño la baja (al equipo ni se le pide): las dudas que la
@@ -596,6 +617,10 @@
     // v280 (pliego §13 E4): el reparto por fase y por tarea
     const estFasePor = agrupar(Array.isArray(crudo.horas_estimadas_fase) ? crudo.horas_estimadas_fase : [], "proyecto_id");
     const tareasPorHoras = agrupar(Array.isArray(crudo.horas_tareas) ? crudo.horas_tareas : [], "horas_id");
+    // 31-oct (Costos): ¿la base ya tiene las columnas comprado_el / comprado_por? (parte B de etapa6/COSTOS-OBRA.sql, la pega
+    // Edgar). Se sabe porque select=* las trae en cada fila. Sin ellas, la app no las manda al guardar (la base diría que no).
+    const listaMateriales = materiales.length ? materiales : materialesEquipo;
+    const conComprado = listaMateriales.some(m => m && Object.prototype.hasOwnProperty.call(m, "comprado_el"));
     const estDeObra = crudo.estimado_de_obra || {};
     const itemsPorEst = agrupar(Array.isArray(crudo.estimado_items_obra) ? crudo.estimado_items_obra : [], "estimado_id");
 
@@ -733,7 +758,12 @@
         proyecto: h.proyecto_id, fase: h.fase || "",
         horas: Number(h.horas), notas: h.notas || "",
         co: h.co || null,
-        correccion: h.correccion_estado || null
+        correccion: h.correccion_estado || null,
+        // 31-oct (Costos): lo hecho por tarea en este reporte (horas_tareas: solo el dueño lo recibe), sin dinero
+        tareas: (tareasPorHoras[h.id] || []).filter(t => t && t.codigo).map(t => ({
+          codigo: t.codigo, nombre: NOMBRE_PARTIDA[t.codigo] || t.codigo, horas: Number(t.horas) || 0,
+          cantidadHecha: t.cantidad_hecha !== null && t.cantidad_hecha !== undefined && Number.isFinite(Number(t.cantidad_hecha)) ? Number(t.cantidad_hecha) : null,
+          nota: t.nota || "" }))
       })),
       visitasPortal: visitaPorProyecto,
       titulosDocs: (titulosDocs || []).map(t => ({ proyecto: t.proyecto_id, titulo: t.titulo || "" })),
@@ -775,14 +805,23 @@
       })),
       // El dueño lee la tabla completa (con precios); al equipo la
       // base de datos le devuelve vacío y usa la versión sin precios
-      materiales: (materiales.length ? materiales : materialesEquipo).map(m => ({
+      materiales: listaMateriales.map(m => ({
         id: m.id, proyecto: m.proyecto_id, descripcion: m.descripcion,
         cantidad: m.cantidad || "", estado: m.estado || "falta",
         origenPendiente: m.origen_pendiente || null,
         precio: m.precio !== undefined && m.precio !== null ? Number(m.precio) : null,
-        autor: nombrePorId[m.autor_id] || "",
-        fecha: m.creado ? String(m.creado).slice(0, 10) : ""
+        autor: nombrePorId[m.autor_id] || "", autorId: m.autor_id || null,
+        fecha: m.creado ? String(m.creado).slice(0, 10) : "",
+        // 31-oct (Costos): la hora exacta en que se anotó, el ticket con que se compró (solo el dueño lo recibe) y, si la
+        // base ya tiene las columnas, cuándo y quién lo compró
+        creado: m.creado ? String(m.creado) : "",
+        reciboId: m.recibo_id !== undefined && m.recibo_id !== null ? m.recibo_id : null,
+        compradoEl: m.comprado_el ? String(m.comprado_el) : "",
+        compradoPorId: m.comprado_por || null,
+        compradoPor: m.comprado_por ? (nombrePorId[m.comprado_por] || "") : ""
       })),
+      // true = la base ya guarda comprado_el y comprado_por (la app los enseña y el dueño los puede corregir)
+      materialesConComprado: conComprado,
       costos: Object.fromEntries(costos.map(c => [c.usuario_id, Number(c.costo_hora)])),
       externos: externos.map(x => ({
         id: x.id, proyecto: x.proyecto_id, descripcion: x.descripcion,
@@ -807,8 +846,31 @@
         proveedor: r.proveedor || "", notas: r.notas || "",
         co: r.co || null, categoria: r.categoria || "material",
         estado: r.estado || "por_leer", autor: nombrePorId[r.autor_id] || "",
-        fecha: r.fecha || (r.creado ? String(r.creado).slice(0, 10) : "")
+        fecha: r.fecha || (r.creado ? String(r.creado).slice(0, 10) : ""),
+        // 31-oct (Costos): la fecha del papel tal cual (vacía si no la tiene), la hora en que se subió, quién lo subió, la
+        // tarjeta y si ya está en el libro contable
+        fechaDoc: r.fecha || "", creado: r.creado ? String(r.creado) : "",
+        autorId: r.autor_id || null, ultimos4: r.ultimos4 ? String(r.ultimos4) : "",
+        contabilizadoEn: r.contabilizado_en || null
       })),
+      // 31-oct (Costos): solo el dueño. La marca de cada línea de costo, por «fuente:ref» (recibo:12, material:40,
+      // libro:<asiento>#<orden>), y las líneas del libro cargadas a una obra (5100/5200/5300) con su asiento
+      costosRevision: esDueno ? Object.fromEntries((Array.isArray(crudo.v_costos_revision) ? crudo.v_costos_revision : [])
+        .filter(x => x && x.fuente && x.ref !== undefined && x.ref !== null)
+        .map(x => [x.fuente + ":" + x.ref, { proyecto: x.proyecto_id || null, conciliada: x.conciliada === true,
+          fase: x.fase || "", nota: x.nota || "", actualizadoEl: x.actualizado_el ? String(x.actualizado_el) : "" }])) : {},
+      costosLibro: esDueno ? (Array.isArray(crudo.costos_libro) ? crudo.costos_libro : [])
+        .filter(x => x && x.asiento_id && x.proyecto_id)
+        .map(x => {
+          const a = x.asientos && typeof x.asientos === "object" ? x.asientos : {};
+          return { asientoId: String(x.asiento_id), orden: Number(x.orden), ref: x.asiento_id + "#" + x.orden,
+            cuenta: String(x.cuenta || ""), monto: Number(x.monto) || 0, proyecto: x.proyecto_id, fase: x.fase || "",
+            co: x.co || null, memo: x.memo || "", numero: a.numero || "", fecha: a.fecha_contable || "",
+            descripcion: a.descripcion || "", tipo: a.tipo || "", camino: a.camino || "", reversaA: a.reversa_a || null,
+            origenTabla: a.origen_tabla || "", origenId: a.origen_id !== undefined && a.origen_id !== null ? String(a.origen_id) : "" };
+        }) : [],
+      // ¿Se pudo leer cada cosa? (false = la base no contestó: la pestaña lo dice en una línea)
+      costosLeido: { revision: !fuentesFallidas.v_costos_revision, libro: !fuentesFallidas.costos_libro },
       // v281 (pliego §13 E5): las dudas de la bandeja «La IA pregunta» (solo el dueño las recibe; al equipo, vacía)
       dudasIA: (esDueno && Array.isArray(crudo.ia_dudas) ? crudo.ia_dudas : [])
         .filter(x => x && TIPOS_DUDA.includes(x.tipo) && x.estado === "pendiente")
@@ -958,6 +1020,14 @@
     // v280 (pliego §13 E4): el reparto de las horas estimadas de una obra por fase (solo el dueño: la función lo mira)
     guardarRepartoFase: (proyectoId, reparto) => api("rpc/fn_reparto_fase_guardar", { metodo: "POST",
       cuerpo: { p_proyecto: proyectoId, p_reparto: reparto, p_origen: "edgar" } }),
+    // 31-oct (Costos): la casilla «conciliada», la fase o la nota de una línea de costo (solo un dueño: la función lo mira y
+    // comprueba que la línea sea de esa obra). fuente: recibo | material | libro; cambios solo con lo que cambia
+    // ({ conciliada: true } · { fase: "Rough-in" } · { fase: null } = la deducida · { nota: "…" }). Devuelve la fila.
+    // La fila que devuelve se apunta también en lo último bajado (crudo.v_costos_revision): así cualquier recarga parcial
+    // (materiales, recibos, horas…) rearma el estado con la marca nueva y no la borra de la pantalla.
+    marcarCosto: (fuente, ref, proyectoId, cambios) => api("rpc/fn_costos_marcar", { metodo: "POST",
+      cuerpo: { p_fuente: String(fuente), p_ref: String(ref), p_proyecto: String(proyectoId), p_cambios: cambios || {} } })
+      .then(fila => { anotarCostoRevision(Array.isArray(fila) ? fila[0] : fila); return fila; }),
     cambiarLlavePortal: (proyectoId, token) => api("portal_llaves?on_conflict=proyecto_id", {
       metodo: "POST",
       headers: { Prefer: "resolution=merge-duplicates,return=representation" },
