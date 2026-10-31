@@ -7698,7 +7698,13 @@ function esFalloDeRed(err) {
   // MATERIALES — lista de compras de toda la empresa
   // ============================================================
   // Palabras que hacen que un pendiente "suene a material"
-  const REG_MATERIAL = /falt|material|cable|wire|breaker|conduit|emt|romex|tubo|caja|toma|receptacle|luminaria|fixture|comprar|alambre|panel/i;
+  // Pendientes donde FALTA un material, dicho así, explícito (Edgar, 30-oct: «solamente explícito, para cuando se ponga en las notas
+  // "falta este material"; no algo que suena a material»). En una misma frase tiene que decir «falta» / «faltan» / «hace falta» y
+  // nombrar la cosa de material: «Falta tapa ciega triple», «faltan 3 breakers». «Qué falta someter» (un permiso), «cobrar el hito que
+  // falta», cotizar o comprar el material sin decir que falta, y lo que solo «suena» a material, no salen aquí.
+  const MAT_COSA = /(^|[^a-záéíóúñ])(switch(es)?|interruptor(es)?|dimmers?|tomas?|tomacorrientes?|receptacles?|recept[aá]culos?|outlets?|plugs?|gfci|afci|breakers?|cables?|wire|alambre|romex|conduit|emt|pvc|tubos?|tuber[ií]as?|cajas?|cajitas?|box(es)?|tapas?|placas?|plates?|conectores?|connectors?|luminarias?|fixtures?|bombillos?|l[aá]mparas?|pendants?|troffers?|led|recessed|disconnects?|meter|varillas?|grapas?|transformador(es)?|sensor(es)?|detector(es)?|smoke|alarmas?|panel(es)?|mc|nm|rollos?|material(es)?)(?![a-záéíóúñ])/i;
+  const MAT_FALTA = /(^|[^a-záéíóúñ])(falt(a|an|aba|aban)|hace falta)(?![a-záéíóúñ])/i;
+  const esPendienteDeMaterial = t => String(t || "").split(/[.;!?\n]+/).some(fr => MAT_FALTA.test(fr) && MAT_COSA.test(fr));
 
   let filtroMateriales = "";  // "" = todos los proyectos
   function irMateriales(proyectoId) {
@@ -7770,11 +7776,11 @@ function esFalloDeRed(err) {
         </div>
       </form>` : ""}`;
 
-    // Pendientes de obra abiertos que suenan a material (y que no
+    // Pendientes de obra abiertos donde falta un material, dicho explícito (y que no
     // hayan sido pasados ya a la lista)
     const yaPasados = new Set((state.materiales || []).map(m => m.origenPendiente).filter(Boolean));
     const sugeridos = pendientesAbiertos()
-      .filter(x => REG_MATERIAL.test(x.descripcion) && !yaPasados.has(x.id) && pasaFiltro(x));
+      .filter(x => esPendienteDeMaterial(x.descripcion) && !yaPasados.has(x.id) && pasaFiltro(x));
 
     const activosLista = proyectosConTrabajo();
     const opciones = activosLista
@@ -7929,7 +7935,7 @@ function esFalloDeRed(err) {
       </div>
       ${sugeridos.length ? `
       <div class="cal-panel-card">
-        <div class="cal-form-titulo">Pendientes de obra que suenan a material</div>
+        <div class="cal-form-titulo">Pendientes de obra donde falta material</div>
         ${sugeridos.map(s => `
           <div class="pendiente-item">
             <span class="pendiente-icono">${ico("alerta")}</span>
