@@ -55,26 +55,45 @@
    Las cuentas son las de c1-plan-de-cuentas.sql; la base decide si se
    pueden proponer.
 
-   LA OBRA (7b): el movimiento trae pistas_obra (lo que la base sabe por
-   obra activa y su candidata, sin nada personal) y la respuesta lleva
+   LA OBRA (7b, y la 7c con la confianza calibrada y los materiales): el
+   movimiento trae pistas_obra (lo que la base sabe por obra activa —desde
+   la 7c también la fase y hasta ocho materiales de su lista— y su candidata
+   con la confianza calibrada, sin nada personal) y la respuesta lleva
    «obra», como haría la IA con sus instrucciones:
-     · la propuesta va a una cuenta que lleva obra (aquí, las que marcan
-       pide_obra: 5100 y 5200) Y pistas_obra.candidata trae proyecto_id →
-       obra = {proyecto_id: el de la candidata, confianza 0.8, motivo: el
-       motivo de la pista tal cual («la cuadrilla reportó 24 h en Casa Pérez
-       esos días; …»)}, y pide_obra pasa a false (la IA cree que la
-       resolvió; la base lo vuelve a decidir por las cuentas y la obra);
      · OBRA MALA en la descripción → obra = {proyecto_id: 'no-existe', 0.8,
        un motivo} aunque no haya pistas ni la cuenta lleve obra: la base la
        descarta con su nota («no existe»), pide_obra como siempre;
      · SIN OBRA en la descripción → obra = null aunque haya candidata (así
        se prueba «la IA no se atreve» con pistas: pide_obra y pistas_resumen
        en la bandeja);
-     · sin candidata, o una cuenta sin obra (WAWA, NETFLIX, IRS…) → null.
-   La candidata de las pistas no se mira si la cuenta no lleva obra: la
+     · si la propuesta va a una cuenta que lleva obra (aquí, las que marcan
+       pide_obra: 5100 y 5200): (7c) PRIMERO la lista de materiales: si una
+       obra de pistas_obra.obras trae en «materiales» algo que aparece en la
+       descripción del cargo (el material entero, dos palabras seguidas —«MC
+       12/2»— o una palabra de 4 letras o más —«BREAKERS»—; «E2E», «C8» o
+       «20A» no cuentan), obra = esa, confianza 0.85 y motivo «la lista de
+       materiales de <obra> pide <material>[, y está en <fase>]: lo que vende
+       este comercio» (la evidencia fuerte de las instrucciones); si no, la
+       candidata: obra = {proyecto_id: el de la candidata, confianza: LA DE
+       LA CANDIDATA (la calibrada de la base: 0.45 con horas y tickets, 0.6 /
+       0.8 / 0.9 por lo que Edgar eligió, 0.65 tickets exclusivos, 0.7 única
+       obra; antes de la 7c era 0.8 fija), motivo: el de la pista tal cual};
+       en los dos casos pide_obra pasa a false (la IA cree que la resolvió;
+       la base lo vuelve a decidir por las cuentas y la obra, y «fuerte» lo
+       decide la base con la confianza: ≥ 0,80);
+     · sin candidata ni materiales que casen, o una cuenta sin obra (WAWA,
+       NETFLIX, IRS…) → null.
+   La candidata y los materiales no se miran si la cuenta no lleva obra: la
    descripción manda la cuenta, las pistas solo la obra. Cada petición
    anotada dice además pistas_obra (si el mensaje las traía), candidata (el
-   proyecto_id de la pista o null) y obra (lo que contestó, o null).
+   proyecto_id de la pista o null), candidata_confianza, fase y materiales
+   (si alguna obra de las pistas traía fase / materiales: lo que el e2e mira
+   para saber que la 7c viaja), obra (lo que contestó, o null) y obra_por
+   ('materiales', 'candidata', 'mala', 'sin' o null).
+   LA RUTINA (7c) no pasa por aquí: x-mxp-rutina y proponer_todo van de
+   pg_net a la función de borde, y la función le pide a este Anthropic de
+   mentira lo mismo que en una ráfaga de la pantalla (el e2e llama a la
+   función con la cabecera, como hace plaid-e2e).
 
    EL CONTROL (solo 127.0.0.1):
      GET  /__peticiones  cada petición recibida: n, hora, las cabeceras (la
@@ -114,23 +133,57 @@ const sha256 = (s) => createHash('sha256').update(String(s)).digest('hex');
 export function proponerDeMentira(mov) {
   const d = `${mov.descripcion ?? ''} ${mov.memo ?? ''} ${mov.desc_norm ?? ''}`.toUpperCase();
   const p = cuentaDeMentira(mov, d);
+  p.obra_por = null;   // (por qué salió la obra: materiales, candidata, mala, sin, o null; no es parte de la propuesta)
   p.obra = obraDeMentira(mov, d, p);
   // (la IA que propone obra ya no pide obra; la base lo decide de nuevo por las cuentas y la obra que valió)
   if (p.obra) p.flags.pide_obra = false;
   return p;
 }
-// La obra (7b), como haría la IA con sus instrucciones: solo si alguna
-// línea va a una cuenta que lleva obra (aquí, las que marcan pide_obra) y
-// las pistas traen candidata, la copia (confianza 0.8 y el motivo de la
-// pista). OBRA MALA → una obra que no existe (la base la descarta con su
-// nota); SIN OBRA → null aunque haya candidata; sin candidata → null.
+// La obra (7b, 7c), como haría la IA con sus instrucciones: solo si alguna
+// línea va a una cuenta que lleva obra (aquí, las que marcan pide_obra).
+// OBRA MALA → una obra que no existe (la base la descarta con su nota); SIN
+// OBRA → null aunque haya candidata; (7c) la lista de materiales de una obra
+// pide lo que dice el cargo → esa obra con 0.85 (la evidencia fuerte); si
+// no, la candidata con SU confianza (la calibrada de la base) y el motivo de
+// la pista; sin nada de eso → null. p.obra_por dice cuál de los caminos fue
+// (la petición anotada lo copia).
 function obraDeMentira(mov, d, p) {
-  if (d.includes('OBRA MALA')) return { proyecto_id: 'no-existe', confianza: 0.8, motivo: 'A propósito, una obra que no existe: la base la descarta y lo dice en la nota.' };
-  if (d.includes('SIN OBRA')) return null;
-  const cand = mov.pistas_obra && typeof mov.pistas_obra === 'object' ? mov.pistas_obra.candidata : null;
-  if (!cand || typeof cand !== 'object' || typeof cand.proyecto_id !== 'string' || !cand.proyecto_id || p.flags.pide_obra !== true) return null;
-  return { proyecto_id: cand.proyecto_id, confianza: 0.8,
+  if (d.includes('OBRA MALA')) { p.obra_por = 'mala'; return { proyecto_id: 'no-existe', confianza: 0.8, motivo: 'A propósito, una obra que no existe: la base la descarta y lo dice en la nota.' }; }
+  if (d.includes('SIN OBRA')) { p.obra_por = 'sin'; return null; }
+  const pistas = mov.pistas_obra && typeof mov.pistas_obra === 'object' ? mov.pistas_obra : null;
+  if (!pistas || p.flags.pide_obra !== true) return null;
+  const porMateriales = obraPorMateriales(pistas, d);
+  if (porMateriales) { p.obra_por = 'materiales'; return porMateriales; }
+  const cand = pistas.candidata;
+  if (!cand || typeof cand !== 'object' || typeof cand.proyecto_id !== 'string' || !cand.proyecto_id) return null;
+  p.obra_por = 'candidata';
+  return { proyecto_id: cand.proyecto_id, confianza: confianzaDe(cand.confianza),
            motivo: typeof cand.motivo === 'string' && cand.motivo.trim() ? cand.motivo.trim() : `las pistas apuntan a ${cand.nombre ?? cand.proyecto_id}` };
+}
+// La confianza de la candidata tal cual (entre 0 y 1); si no viene o no vale, 0.45 (la base de la calibración)
+const confianzaDe = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0.45;
+// (7c) La obra cuya lista de materiales pide lo que dice el cargo: la
+// primera (en el orden de las pistas, de más a menos puntos) con un material
+// que casa con la descripción (d, en mayúsculas): el material entero, dos
+// palabras seguidas («MC 12/2») o una palabra de 4 letras o más con al menos
+// dos letras («BREAKERS», «CONDUIT»; no «E2E», «C8», «20A»). Devuelve la obra
+// con 0.85 y el motivo que cita el material y la fase, o null.
+function obraPorMateriales(pistas, d) {
+  for (const o of Array.isArray(pistas.obras) ? pistas.obras : []) {
+    if (!o || typeof o !== 'object' || typeof o.proyecto_id !== 'string' || !Array.isArray(o.materiales)) continue;
+    for (const m of o.materiales) {
+      const mat = String(m ?? '').toUpperCase().replace(/\s+/g, ' ').trim();
+      if (!mat) continue;
+      const palabras = mat.split(/[^A-Z0-9/#]+/).filter(Boolean);
+      const pares = palabras.slice(1).map((w, i) => `${palabras[i]} ${w}`);
+      const sueltas = palabras.filter((w) => w.length >= 4 && (w.match(/[A-Z]/g) || []).length >= 2);
+      const casa = d.includes(mat) || pares.some((x) => d.includes(x)) || sueltas.some((w) => new RegExp(`(^|[^A-Z0-9])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Z0-9]|$)`).test(d));
+      if (!casa) continue;
+      return { proyecto_id: o.proyecto_id, confianza: 0.85,
+               motivo: `la lista de materiales de ${o.nombre ?? o.proyecto_id} pide ${String(m).trim()}${typeof o.fase === 'string' && o.fase ? `, y está en ${o.fase}` : ''}: lo que vende este comercio` };
+    }
+  }
+  return null;
 }
 // La cuenta, por las palabras clave de la descripción (d, en mayúsculas).
 function cuentaDeMentira(mov, d) {
@@ -219,7 +272,13 @@ export function crearSimulador({ llave = process.env.ANTHROPIC_API_KEY || 'sk-an
     // (7b) si el mensaje traía las pistas de la obra y qué candidata (el e2e mira que viajen y que no lleven nada personal)
     anot.pistas_obra = !!(mov && typeof mov === 'object' && mov.pistas_obra && typeof mov.pistas_obra === 'object');
     anot.candidata = anot.pistas_obra && mov.pistas_obra.candidata && typeof mov.pistas_obra.candidata === 'object' ? mov.pistas_obra.candidata.proyecto_id ?? null : null;
+    anot.candidata_confianza = anot.candidata ? mov.pistas_obra.candidata.confianza ?? null : null;
+    // (7c) si alguna obra de las pistas traía fase y materiales (así el e2e sabe que la 7c viaja, sin mirar nada personal)
+    const obrasPista = anot.pistas_obra && Array.isArray(mov.pistas_obra.obras) ? mov.pistas_obra.obras : [];
+    anot.fase = obrasPista.some((o) => o && typeof o.fase === 'string' && o.fase.trim() !== '');
+    anot.materiales = obrasPista.some((o) => o && Array.isArray(o.materiales) && o.materiales.length > 0);
     anot.obra = null;   // (lo que se contesta como obra; se queda null si no llega a haber propuesta: refusal, JSON roto)
+    anot.obra_por = null;
     anot.prefijo = { sha256: sha256(s0.text), tokens: tokens(s0.text), tiene_fecha: /\b20\d\d-\d\d-\d\d\b/.test(s0.text),
                      tiene_uuid: /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(s0.text) };
     const d = contenido.toUpperCase();
@@ -251,8 +310,9 @@ export function crearSimulador({ llave = process.env.ANTHROPIC_API_KEY || 'sk-an
       const txt = '{"lineas": [{"cuenta": "5100", esto no es JSON';
       return { estado: 200, cuerpo: { ...base, content: [pensando, { type: 'text', text: txt }], stop_reason: 'end_turn', stop_details: null, usage: usage(tokens(txt)) } };
     }
-    const propuesta = proponerDeMentira(texto);
+    const { obra_por, ...propuesta } = proponerDeMentira(texto);
     anot.obra = propuesta.obra ? propuesta.obra.proyecto_id : null;
+    anot.obra_por = obra_por;
     const txt = JSON.stringify(propuesta);
     if (d.includes('MAXTOKENS')) {
       const corto = txt.slice(0, Math.floor(txt.length / 2));

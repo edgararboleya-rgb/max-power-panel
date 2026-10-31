@@ -30,7 +30,12 @@
 // rechazar y quitar reglas): la IA propone en la bandeja y Edgar decide.
 // Desde la 7b (31-oct) también propone la obra, con las pistas que calcula la
 // base (v_contador_bandeja: obra_propuesta_id, obra_confianza, obra_motivo,
-// pistas_resumen), y Edgar la confirma o la cambia.
+// pistas_resumen), y Edgar la confirma o la cambia. Y desde la 7c (31-oct,
+// tarde) las propuestas salen solas (al abrir la Bandeja la pantalla encadena
+// las ráfagas; la rutina de la base propone cada mañana y cada tarde), solo
+// una obra «fuerte» (≥ 80 %) sale elegida, las demás se eligen de un toque
+// entre las de sus pistas (obras_top), y el marcador del mes dice cuánto
+// acierta de verdad.
 //
 // Cómo está organizada (v290, «que se parezca a un programa de contabilidad»):
 // una portada («Resumen») con las cifras y lo que hay que atender, y una
@@ -74,6 +79,8 @@
     // la IA contable (c8): lo de la bandeja (estado, propuestas, control, cuentas, salud), lo de Conexiones (con las reglas)
     // y el movimiento cuyo «Según yo» se enfoca después de «No es eso»
     ia: null, iaCx: null, iaCxErr: null, iaFoco: null,
+    // (7c) la cadena de ráfagas que propone sola (una a la vez) y lo que recuerda la automática: si Edgar la paró y qué esperaba al terminar
+    cadena: null, iaSola: { parada: false, memo: null },
     // Estados financieros: qué estado (sub), qué período, la bajada cuenta → asiento,
     // el método del flujo, la caché de v_cortes (con el día en que se leyó) y la serie contra el doble pintado
     est: { sub: "resultados", periodo: null, cuenta: null, asiento: null, metodo: "directo", cortes: null, cortesDia: null, todos: false, avisoHoy: false, serie: 0 }
@@ -479,6 +486,8 @@
       S.hooks.avisar(`Archivo subido: ${Number((r || {}).filas_nuevas || 0)} nuevo(s) · ${casar.casados} casaron solos · ${casar.pendientes} en la bandeja`);
       S.bandeja = null;
       await pintarBancos();
+      // (7c) lo que entró y espera propuesta: la IA lo propone sola, sin esperar a la rutina de la tarde
+      proponerTrasImportar();
     } catch (err) {
       caja.innerHTML = `<p class="ct-aviso bad"><b>No entró.</b> ${esc(esFalloDeRed(err) ? "Sin señal: vuelve a intentarlo cuando la tengas (el archivo no subió)." : err.message)}</p>`;
     } finally { S.ocupado = false; }
@@ -742,6 +751,8 @@
       S.hooks.avisar(exito(r));
       S.plaid = null; S.saldos = null; S.bandeja = null;
       await repintar();
+      // (7c) lo que trajo el banco y espera propuesta: la IA lo propone sola, como después de subir un archivo
+      if (cuerpo.accion === "sincronizar") proponerTrasImportar();
     } catch (err) {
       card.querySelectorAll("button, select").forEach(b => { b.disabled = false; });
       const sinFijar = err.codigo === "SIN_FIJAR", reconectar = !!(err.datos && err.datos.hay_que_reconectar);
@@ -1386,6 +1397,8 @@
     if (S.pagina !== "bandeja") return;
     filas.forEach(prepararMov);
     S.bandeja = filas; pintarBadge();
+    // (7c) lo que dijo la última cadena ya se avisó: la franja nueva no lo repite (una en marcha sigue enseñando su avance)
+    if (S.cadena && !S.cadena.activa) S.cadena = null;
     const conMovs = [...new Set(filas.map(f => f.cuenta))];
     if (S.filtroCuenta && !conMovs.includes(S.filtroCuenta)) S.filtroCuenta = null;
     // la fila desplegada sigue desplegada al repintar si sigue en la lista
@@ -1416,9 +1429,8 @@
       finally { S.ocupado = false; }
       pintarBandeja();
     });
-    // «Proponer con la IA» (la franja); el resultado cae en la franja y la bandeja se repinta
-    const fr = $("ct-ia-franja"), pro = $("ct-ia-proponer");
-    if (fr && pro) pro.addEventListener("click", () => proponerIA(fr, pro));
+    // «Proponer ahora» y «Parar» (la franja: la cadena la repinta sola, sin repintar la página)
+    wireFranja();
     // la barra solo filtra lo ya leído: no vuelve a la base y el buscador no pierde el foco
     const herr = (id, ev, f) => { const el = $(id); if (el) el.addEventListener(ev, f); };
     herr("ct-bj-buscar", "input", ev => { S.bj.q = ev.target.value; pintarListaBandeja(); });
@@ -1431,6 +1443,8 @@
       pintarListaBandeja();
     }));
     pintarListaBandeja();
+    // (7c) LAS PROPUESTAS SALEN SOLAS: si algo nuevo espera y nada lo frena, la cadena arranca sin que Edgar toque nada
+    if (S.ia && puedeSola() && nuevosIA().length) cadenaIA("sola");
   }
   const chipsCuentaHTML = (filas, conMovs) => `<button type="button" class="ct-chip" data-filtro="" aria-pressed="${!S.filtroCuenta}">Todas</button>` +
     conMovs.map(c => `<button type="button" class="ct-chip" data-filtro="${esc(c)}" aria-pressed="${S.filtroCuenta === c}">${esc(nombreCuenta(c))} (${filas.filter(f => f.cuenta === c).length})</button>`).join("");
@@ -1464,21 +1478,44 @@
       cuerpo = [...grupos.entries()].sort((a, b) => b[1].length - a[1].length || Math.abs(sumaMonto(b[1])) - Math.abs(sumaMonto(a[1]))).map(([k, ms]) => grupoHTML(k, ms)).join("");
     } else cuerpo = lista.map(movHTML).join("");
     cont.innerHTML = `<section class="ct-card ct-feed${S.bj.agrupar ? " agrupada" : ""}">${cab}${cuerpo}</section>`;
-    cont.querySelectorAll(".ct-mov").forEach(card => {
-      const m = lista.find(f => f.movimiento_id === card.dataset.id);
-      card.querySelector(".ct-mov-fila").addEventListener("click", () => desplegar(card.dataset.id === S.bj.abierta ? null : card.dataset.id));
-      card.querySelectorAll("[data-op]").forEach(b => b.addEventListener("click", () => abrirOpcion(card, m, (m.opciones || [])[Number(b.dataset.op)])));
-      const ot = card.querySelector("[data-otra]"); if (ot) ot.addEventListener("click", () => abrirOtra(card, m));
-      card.querySelectorAll("[data-stripe-po]").forEach(b => b.addEventListener("click", () => accionStripe(card, { accion: "casar_payout", po: b.dataset.stripePo, movimiento_id: m.movimiento_id },
-        r => r && r.casado === false ? "No casó: sigue en la bandeja" : `Casado con el depósito de Stripe ${b.dataset.stripePo}`)));
-      wireIA(card, m);
-    });
+    cont.querySelectorAll(".ct-mov").forEach(card => wireMov(card, lista.find(f => f.movimiento_id === card.dataset.id)));
     // después de «No es eso» el movimiento sigue en la bandeja: su «Según yo» queda a la vista con la cuenta enfocada
     if (S.iaFoco) {
       const card = [...cont.querySelectorAll(".ct-mov")].find(c => c.dataset.id === S.iaFoco), sel = card && card.querySelector("[data-ia-cuenta]");
       S.iaFoco = null;
       if (sel) { sel.focus({ preventScroll: true }); const yo = card.querySelector(".ct-ia-mia"); if (yo && typeof yo.scrollIntoView === "function") yo.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
     }
+  }
+  // los botones de una fila (al pintar la lista, o al repintar solo esa fila cuando la cadena le trae su propuesta)
+  function wireMov(card, m) {
+    card.querySelector(".ct-mov-fila").addEventListener("click", () => desplegar(card.dataset.id === S.bj.abierta ? null : card.dataset.id));
+    card.querySelectorAll("[data-op]").forEach(b => b.addEventListener("click", () => abrirOpcion(card, m, (m.opciones || [])[Number(b.dataset.op)])));
+    const ot = card.querySelector("[data-otra]"); if (ot) ot.addEventListener("click", () => abrirOtra(card, m));
+    card.querySelectorAll("[data-stripe-po]").forEach(b => b.addEventListener("click", () => accionStripe(card, { accion: "casar_payout", po: b.dataset.stripePo, movimiento_id: m.movimiento_id },
+      r => r && r.casado === false ? "No casó: sigue en la bandeja" : `Casado con el depósito de Stripe ${b.dataset.stripePo}`)));
+    wireIA(card, m);
+  }
+  // (7c) la cadena trae propuestas: se repinta SOLO cada fila cuya propuesta cambió (su chip aparece, su «Según la IA» se llena).
+  // La lista, su orden, el desplazamiento y la fila que Edgar tiene a medias (eligió o escribió algo, abrió «Otra cosa…», tiene
+  // el foco dentro) no se tocan: lo suyo se queda y su propuesta nueva sale en la próxima pintada. Proponer no cambia lo que el
+  // banco trajo (v_banco_bandeja), así que las filas son las mismas; si la IA dejó de cuadrar, la lista entera, sin la IA
+  // (sin propuesta pendiente, la fila también cambia cuando la cadena empieza o acaba: su «Proponer ahora» se apaga o vuelve)
+  const claveIA = m => {
+    const f = iaFilaDe(m), corre = S.cadena && S.cadena.activa ? ":c" : "";
+    return !iaViva() ? "x" : f && f.estado === "pendiente" ? `${f.propuesta_id}:pendiente` : `${f ? `${f.propuesta_id}:${f.estado}` : "-"}${corre}`;
+  };
+  function refrescarFilasIA() {
+    const cont = $("ct-bj-lista"); if (!cont) return;
+    if (!iaViva()) { pintarListaBandeja(); return; }
+    cont.querySelectorAll(".ct-mov").forEach(card => {
+      const m = (S.bandeja || []).find(f => f.movimiento_id === card.dataset.id);
+      if (!m || card.dataset.ia === claveIA(m)) return;
+      const det = card.querySelector(".ct-mov-det"), forma = card.querySelector(".ct-form");
+      if (card.dataset.tocada === "1" || (det && det.contains(document.activeElement)) || (forma && !forma.hidden)) return;
+      const t = document.createElement("template"); t.innerHTML = movHTML(m).trim();
+      const nueva = t.content.firstElementChild;
+      card.replaceWith(nueva); wireMov(nueva, m);
+    });
   }
   // una sola fila desplegada: la tocada se abre (su grupo también) y la anterior se cierra, sin repintar la lista
   function desplegar(id) {
@@ -1515,7 +1552,7 @@
     const obra = obraTexto(m.obra);
     const abierta = m.movimiento_id === S.bj.abierta;
     const id = esc(m.movimiento_id);
-    return `<article class="ct-mov${m.alarma ? " alarma" : ""}${abierta ? " abierta" : ""}" data-id="${id}">
+    return `<article class="ct-mov${m.alarma ? " alarma" : ""}${abierta ? " abierta" : ""}" data-id="${id}" data-ia="${esc(claveIA(m))}">
       <button type="button" class="ct-mov-fila" aria-expanded="${abierta ? "true" : "false"}" aria-controls="ct-det-${id}">
         <span class="ct-f-main">
           <span class="ct-f-desc" title="${esc(m.descripcion || "")}"><b>${esc(m.descripcion || "(sin descripción)")}</b>${m.memo ? `<small>${esc(m.memo)}</small>` : ""}</span>
@@ -1723,6 +1760,32 @@
   // obra (la siguiente vez la dicen otra vez las pistas). Una obra propuesta
   // que se cerró después (el cuadre 64) no tapa la IA: la propuesta lo dice,
   // no se preselecciona y «Así es» pide otra (o «No es eso»).
+  //
+  // LA 7c (31-oct, tarde: «que cada partida al lado ya tenga su propuesta» y
+  // «no me sirve que solo estés seguro un 55 %»). Tres cambios aquí:
+  //   · LAS PROPUESTAS SALEN SOLAS: al pintar la Bandeja (y al terminar de
+  //     subir un archivo o de sincronizar con Plaid) la pantalla pide la
+  //     ráfaga sola y encadena la siguiente mientras la función diga que
+  //     quedan (la cadena, más abajo); «Proponer ahora» queda para pedirla a
+  //     mano y el interruptor de Conexiones la apaga. La rutina de la base
+  //     (pg_cron → la función, por la mañana tras el banco y por la tarde)
+  //     hace lo mismo sin la app abierta.
+  //   · LA OBRA, CALIBRADA: con lo medido en producción (las horas y los
+  //     tickets solos aciertan cuatro de cada diez) solo una obra FUERTE
+  //     (obra_fuerte de la base, o su confianza ≥ 80 %) sale elegida y va en
+  //     el chip. Con una débil, sin obra o si la cuenta la pide: «¿De qué
+  //     obra?» con hasta tres botones grandes (obras_top: la obra y su pista
+  //     corta) y «Otra obra…» con el selector de siempre; nada elegido, un
+  //     toque elige. Si la IA se inclinó por una débil, su botón lo dice («la
+  //     IA se inclina por esta (60 %)») pero no va elegida. El chip de la fila
+  //     dice «¿obra?» en ámbar mientras falte elegirla.
+  //   · EL MARCADOR HONESTO: «Este mes: cuenta 18 de 20 · obra 7 de 10
+  //     acertadas (3 elegiste tú)» (v_contador_estado) y la rutina (cuándo
+  //     corre, la última, su error) en la franja y en Conexiones; su alarma
+  //     (la 74) en «Qué atender».
+  // Con la base de la 7b (sin obras_top, obra_fuerte, rutina ni marcador) la
+  // pantalla sigue: la obra fuerte por su confianza, el selector sin botones,
+  // y ni marcador ni rutina.
   // ============================================================
   const MOTIVOS_IA = ["sin_ticket", "dudosa"]; // los que mira la IA (los mismos que fn_contador_candidatos)
   // Los flags de la propuesta en llano: la IA señala y Edgar decide (en la v1 nada de esto se postea solo)
@@ -1750,13 +1813,17 @@
   const obrasActivas = () => (S.proyectos || []).filter(p => OBRAS_ACTIVAS.includes(p.estado));
   // las opciones del selector de la obra: `vacio` (null: sin opción vacía) y las obras activas; `sel` queda elegida
   const opcionesObra = (vacio, sel) => `${vacio == null ? "" : `<option value="">${esc(vacio)}</option>`}${obrasActivas().map(p => `<option value="${esc(p.id)}"${p.id === sel ? " selected" : ""}>${esc(p.nombre)}</option>`).join("")}`;
+  // (7c) «fuerte»: la obra que se puede dar por buena de un toque (≥ 80 %, el mismo umbral que fn_contador_obra_fuerte). La base
+  // lo deja en la propuesta (obra_fuerte); una de antes de la 7c no lo trae y manda su confianza. Con la regla de antes, una
+  // obra por horas y tickets ya salía elegida con 0,60, y en producción esas pistas solas aciertan cuatro de cada diez
+  const OBRA_FUERTE = 0.8;
   // (7b) la obra que trae la propuesta (la de la IA, o la candidata de las pistas en una propuesta por regla), o null:
-  // {id, nombre, confianza, motivo, activa, estado}. «activa», según las obras que la bandeja leyó al pintarse (frescas)
+  // {id, nombre, confianza, motivo, activa, estado, fuerte}. «activa», según las obras que la bandeja leyó al pintarse (frescas)
   const obraPropuesta = f => {
     if (!f || !f.obra_propuesta_id) return null;
     const p = (S.proyectos || []).find(x => x.id === f.obra_propuesta_id);
     return { id: f.obra_propuesta_id, nombre: f.obra_propuesta || (p && p.nombre) || f.obra_propuesta_id, confianza: num(f.obra_confianza), motivo: f.obra_motivo || "",
-      activa: !!p && OBRAS_ACTIVAS.includes(p.estado), estado: p ? p.estado : null };
+      activa: !!p && OBRAS_ACTIVAS.includes(p.estado), estado: p ? p.estado : null, fuerte: f.obra_fuerte === true || num(f.obra_confianza) >= OBRA_FUERTE };
   };
   // la regla de la obra de una cuenta (obligatoria, opcional o prohibida): la de v_contador_cuentas o, si no está ahí, la del plan
   const reglaObra = cod => ((cuentaIA(cod) || (S.cuentas || []).find(c => c.codigo === cod)) || {}).regla_obra || null;
@@ -1764,17 +1831,33 @@
   // ¿alguna cuenta de la propuesta admite obra? Entonces «Según la IA» trae el selector: lo que Edgar deja ahí es lo que entra
   // (fn_contador_aprobar pone la obra que le mandan en toda línea cuya cuenta la admite, nunca en una de obra prohibida)
   const llevaObra = f => (Array.isArray(f.lineas) ? f.lineas : []).some(l => admiteObra(l.cuenta));
-  // con qué obra sale elegido el selector: la propuesta, si sigue activa; sin ella, la única obra activa que traen las líneas
-  // (una regla con su obra); si no, ninguna. Con una elegida no hay opción vacía: «Así es» con el selector vacío aprobaría la
-  // obra de la propuesta igual (la base no quita una obra); dejarlo sin obra es «Según yo»
+  // con qué obra sale elegido el selector: la propuesta, si sigue activa y es fuerte (7c: una débil se enseña, pero la eliges
+  // tú); sin ella, la única obra activa que traen las líneas (una regla con su obra); si no, ninguna. Con una elegida no hay
+  // opción vacía: «Así es» con el selector vacío aprobaría la obra de la propuesta igual (la base no quita una obra); dejarlo
+  // sin obra es «Según yo»
   function obraInicial(f) {
     const ob = obraPropuesta(f);
-    if (ob) return ob.activa ? ob.id : "";
+    if (ob) return ob.activa && ob.fuerte ? ob.id : "";
     const ids = [...new Set((Array.isArray(f.lineas) ? f.lineas : []).map(l => l.proyecto_id).filter(Boolean))];
     return ids.length === 1 && obrasActivas().some(p => p.id === ids[0]) ? ids[0] : "";
   }
-  // ¿«Así es» necesita que se elija la obra? Si la cuenta la pide y no viene, o si la que propuso la IA ya no está activa
-  const obraFalta = f => { const ob = obraPropuesta(f); return pideObraIA(f) || (!!ob && !ob.activa && llevaObra(f)); };
+  // ¿«Así es» necesita que se elija la obra? Si la cuenta la pide y no viene, si la que propuso la IA ya no está activa o
+  // (7c) si es débil: sus líneas la traen (la base la copia) y «Así es» sin elegir la metería sin que Edgar la haya dicho
+  const obraFalta = f => { const ob = obraPropuesta(f); return pideObraIA(f) || (!!ob && (!ob.activa || !ob.fuerte) && llevaObra(f)); };
+  // (7c) las obras para elegir de un toque: hasta tres de las pistas (obras_top de v_contador_bandeja, por puntos, cada una con
+  // su pista corta en llano), solo las que siguen activas; si la IA se inclinó por una débil que no está entre ellas, entra en
+  // el lugar de la tercera. Sin pistas (o con una base de antes de la 7c), ninguna: queda el selector de siempre
+  function obrasChip(f, ob) {
+    const vivas = obrasActivas(), vistas = new Set(), ops = [];
+    for (const o of Array.isArray(f.obras_top) ? f.obras_top : []) {
+      const p = o && vivas.find(x => x.id === o.proyecto_id);
+      if (!p || vistas.has(p.id)) continue;
+      vistas.add(p.id); ops.push({ id: p.id, nombre: p.nombre, pista: String(o.pista || "") });
+    }
+    const inclina = ob && ob.activa && !ob.fuerte ? ob : null;
+    if (inclina && !vistas.has(inclina.id)) ops.splice(Math.min(ops.length, 2), ops.length, { id: inclina.id, nombre: inclina.nombre, pista: "" });
+    return ops.slice(0, 3).map(o => ({ ...o, ia: !!inclina && o.id === inclina.id }));
+  }
   // el texto de «Así es»: con la obra elegida, su nombre
   const textoAsi = (falta, nombre) => nombre ? `✓ Así es · ${nombre}` : falta ? "✓ Así es (elige antes la obra)" : "✓ Así es";
   // el resumen de las pistas que vio la base (fn_contador_pistas_obra), en llano
@@ -1806,8 +1889,9 @@
   }
   // Lo de la IA para la bandeja: null sin c8; { err } si una vista no contestó; si no, el estado, la propuesta de cada movimiento,
   // el control (con `rojo`: lo que no cuadra), las cuentas que se pueden elegir y la salud de la función (solo con el código
-  // del teléfono: sin él no se puede tocar nada y no hace falta preguntarle). Sin señal, se lanza.
-  async function leerContador() {
+  // del teléfono: sin él no se puede tocar nada y no hace falta preguntarle). Sin señal, se lanza. `previa` ({ salud, saludErr }):
+  // la salud que ya se tiene (7c: la cadena relee la IA después de cada ráfaga y la función acaba de contestar: no se le pregunta)
+  async function leerContador(previa) {
     let est, bj, ctl, cts;
     try {
       [est, bj, ctl, cts] = await Promise.all([
@@ -1825,11 +1909,11 @@
     const ia = { estado: (est || [])[0] || null, bandeja: new Map(bj.map(f => [f.movimiento_id, f])), control: ctl, cuentas: cts || [], rojo, salud: null, saludErr: null,
       // (7b) el 64 en rojo: la franja lo avisa y cada propuesta con la obra cerrada lo dice
       obrasCerradas: obrasCerradasDe(ctl) };
-    if (!rojo.length && mfaActivo()) Object.assign(ia, await saludContador());
+    if (!rojo.length && mfaActivo()) Object.assign(ia, previa && previa.salud ? { salud: previa.salud, saludErr: null } : await saludContador());
     return ia;
   }
 
-  // Por qué «Proponer con la IA» no se puede tocar ahora ({ txt, clase }), o null si se puede
+  // Por qué «Proponer ahora» no se puede tocar (ni la cadena arrancar sola) ahora ({ txt, clase }), o null si se puede
   const TOPE_IA = {
     apagado: () => "El contador está apagado (contador_config.activa = false): se enciende desde el SQL Editor.",
     "tope de la app": e => `La IA de la app llegó a su tope del mes (${usdCent(e.tope_global)}): no se propone nada hasta el mes que viene.`,
@@ -1848,7 +1932,9 @@
   // lo que la salud dice que falta configurar (la función lo da en llano y sin llaves), en una línea
   const faltaIA = s => s && Array.isArray(s.falta) && s.falta.length ? s.falta.map(String).join("; ") : "";
   const pillIA = () => `<span class="ct-pill ia">IA</span>`;
-  // La franja de la bandeja: lo que hay listo, lo que falta, el gasto del mes y el botón. Si la IA no cuadra, el rojo con el detalle.
+  // La franja de la bandeja: lo que hay listo, lo que falta, el gasto del mes y «Proponer ahora»; (7c) mientras la cadena propone
+  // sola, su avance con «Parar» (y al terminar, lo que hizo); al pie, el marcador del mes y la rutina. Si la IA no cuadra, el rojo
+  // con el detalle.
   function franjaIAHTML(ia) {
     if (ia.err) return `<section class="ct-card ct-ia-franja mal" id="ct-ia-franja" role="status"><div class="ct-ia-f-txt">${pillIA()}<span>La IA contable no contestó (${esc(ia.err.message)}): la bandeja sigue igual sin ella.</span></div></section>`;
     if (ia.rojo.length) {
@@ -1856,31 +1942,93 @@
         <ul class="ct-datos ct-ia-rojo">${ia.rojo.map(m => `<li><b>${esc(m.vista)}</b>${m.filas != null || m.esperadas != null ? ` (trajo ${esc(m.filas == null ? "—" : m.filas)}, debía ${esc(m.esperadas == null ? "—" : m.esperadas)})` : ""}${m.detalle ? `: ${esc(m.detalle)}` : ""}</li>`).join("")}</ul></section>`;
     }
     const e = ia.estado, freno = frenoIA(ia), falta = nOk(e.pendientes_sin_propuesta), listas = nOk(e.propuestas_pendientes), conObra = nOk(e.propuestas_con_obra);
-    const cerradas = nCerradas(ia);
+    const cerradas = nCerradas(ia), c = S.cadena, corre = !!(c && c.activa);
     return `<section class="ct-card ct-ia-franja" id="ct-ia-franja">
       <div class="ct-ia-f-txt">${pillIA()}<span id="ct-ia-cifras"><b>${plural(listas, "propuesta lista", "propuestas listas")}</b>${conObra ? ` (${conObra} con obra)` : ""} · ${falta} por proponer · este mes <span class="ct-num">${usdCent(e.centavos_mes_contador)}</span> de <span class="ct-num">${usdCent(e.tope_mes_centavos)}</span></span>${e.aviso && !e.bloqueado ? pill(`cerca del tope (${nOk(e.aviso_pct)} %)`, "warn") : ""}</div>
-      <div class="ct-ia-f-acc"><button type="button" class="accion" id="ct-ia-proponer" data-proponer${freno ? " disabled" : ""}>Proponer con la IA (${falta})</button></div>
-      ${freno ? `<p class="ct-ia-freno${freno.clase ? " " + freno.clase : ""}">${esc(freno.txt)}</p>` : ""}
+      <div class="ct-ia-f-acc"><button type="button" class="accion" id="ct-ia-proponer" data-proponer${freno || corre ? " disabled" : ""}${corre ? ` aria-busy="true"` : ""}>Proponer ahora (${falta})</button></div>
+      ${corre ? cadenaHTML(c) : ""}
+      ${freno && !corre ? `<p class="ct-ia-freno${freno.clase ? " " + freno.clase : ""}">${esc(freno.txt)}</p>` : ""}
       ${cerradas ? `<p class="ct-ia-freno warn" id="ct-ia-cerradas">${esc(plural(cerradas, "propuesta trae una obra que ya no está activa (se cerró después de proponerla)", "propuestas traen una obra que ya no está activa (se cerraron después de proponerlas)"))}: ábrela y elige otra obra al aprobarla, o di «No es eso».</p>` : ""}
-      <div class="ct-ia-res"></div>
+      ${pieFranja(e)}
+      <div class="ct-ia-res">${c && !corre && c.fin ? `<p class="ct-aviso ${c.fin.clase}" role="status">${esc(c.fin.txt)}</p>` : ""}</div>
     </section>`;
   }
+  // (7c) el avance de la cadena: «Proponiendo… 40 de 172 · $0.35» con «Parar» (lo que ya pidió a la IA termina y se guarda)
+  const cadenaHTML = c => `<div class="ct-ia-cadena" id="ct-ia-cadena" role="status" aria-live="polite">
+      <p class="ct-ia-avance ct-espera">${esc(c.parar ? "Parando: termina la ráfaga que ya está en marcha (lo que proponga se guarda)…"
+        : c.esperando ? "Otra ráfaga está en marcha (¿la rutina, otra pestaña?): espero 5 s y vuelvo a probar…"
+        : `Proponiendo… ${c.hechas} de ${Math.max(c.total, c.hechas)} · ${usdCent(c.centavos)}`)}</p>
+      <button type="button" class="accion secundaria chica" id="ct-ia-parar"${c.parar ? " disabled" : ""}>Parar</button>
+    </div>`;
+  // (7c) el pie de la franja: el marcador del mes, la rutina y, con el interruptor apagado, que la Bandeja ya no propone sola
+  function pieFranja(e) {
+    const marc = marcadorIA(e), rut = rutinaIA(e, true);
+    const partes = [marc ? esc(marc) : "", rut ? `<span class="ct-ia-rut${rut.clase ? " " + rut.clase : ""}">${esc(rut.txt)}</span>` : "",
+      solaEncendida() ? "" : `<span class="ct-ia-rut warn">no propone sola al abrir la Bandeja (su interruptor, en Conexiones, está apagado)</span>`].filter(Boolean);
+    return partes.length ? `<p class="ct-ia-f-pie" id="ct-ia-pie">${partes.join(" · ")}</p>` : "";
+  }
+  // (7c) EL MARCADOR HONESTO DEL MES (v_contador_estado): de lo que entró este mes por la IA o por una regla, en cuántas acertó
+  // la cuenta (entró tal cual) y en cuántas la cambiaste; de las obras, cuántas acertó, cuántas corregiste y cuántas eligió
+  // Edgar porque la IA no propuso ninguna (cuentan como no acertadas: la IA no la supo). null con una base de antes de la 7c
+  function marcadorIA(e) {
+    if (!e || !("cuenta_acertadas_mes" in e)) return null;
+    const ca = nOk(e.cuenta_acertadas_mes), cc = nOk(e.cuenta_cambiadas_mes), oa = nOk(e.obra_acertadas_mes), oc = nOk(e.obra_cambiadas_mes), oe = nOk(e.obra_elegidas_mes);
+    if (!ca && !cc) return "Este mes: todavía no has decidido ninguna propuesta de la IA";
+    const extra = [oc ? `${oc} corregiste` : "", oe ? `${oe} elegiste tú` : ""].filter(Boolean).join(", ");
+    return `Este mes: cuenta ${ca} de ${ca + cc}${oa + oc + oe ? ` · obra ${oa} de ${oa + oc + oe}` : ""} acertadas${extra ? ` (${extra})` : ""}`;
+  }
+  // (7c) LA RUTINA: pg_cron la programa en UTC (c8: «25 11 * * *», después del banco de Plaid a las 11:00, y «0 21 * * *»), así
+  // que en Miami es 6:25 y las 4 de la tarde en invierno y 7:25 y las 5 en verano: se calcula para hoy en vez de escribirla fija
+  const RUTINA_UTC = [[11, 25], [21, 0]];
+  const horaMiami = (h, m) => {
+    const d = new Date(); d.setUTCHours(h, m, 0, 0);
+    const p = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", hourCycle: "h23" }).formatToParts(d);
+    const g = k => Number((p.find(x => x.type === k) || {}).value || 0);
+    return [g("hour"), g("minute")];
+  };
+  const hhmm = ([h, m]) => `${h}:${String(m).padStart(2, "0")}`;
+  const deLaTarde = ([h, m]) => h >= 12 ? `a las ${h === 12 ? 12 : h - 12}${m ? `:${String(m).padStart(2, "0")}` : ""} de la tarde` : `a las ${hhmm([h, m])}`;
+  // «hoy 6:26», «ayer 17:01» o «29 oct 17:01» (hora de Miami)
+  const cuandoMiami = ts => {
+    const d = new Date(ts); if (!ts || Number.isNaN(d.getTime())) return "—";
+    const dia = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+    const p = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", hourCycle: "h23" }).formatToParts(d);
+    const g = k => Number((p.find(x => x.type === k) || {}).value || 0);
+    const dif = diasEntre(hoyMiami(), dia);
+    return `${dif === 0 ? "hoy" : dif === 1 ? "ayer" : fecha(dia)} ${hhmm([g("hour"), g("minute")])}`;
+  };
+  // cómo va la rutina ({ txt, clase }; `corto`, para el pie de la franja), o null con una base de antes de la 7c. Lo mismo que
+  // mira la alarma 74: con error, o más de 36 horas sin correr (desde la última, o desde que se instaló) con cargos esperando
+  function rutinaIA(e, corto) {
+    if (!e || !("rutina_activa" in e)) return null;
+    if (e.rutina_activa === false) return { txt: corto ? "la rutina está apagada" : "La rutina está apagada (contador_config.rutina_activa = false): la IA propone cuando abres la Bandeja o tocas «Proponer ahora».", clase: "warn" };
+    const [man, tar] = RUTINA_UTC.map(([h, m]) => horaMiami(h, m));
+    const cuando = `Propone sola cada mañana tras el banco (${hhmm(man)}) y ${deLaTarde(tar)}`;
+    const ult = e.rutina_ultima_el, desde = ult || e.rutina_desde;
+    const vieja = !!desde && Date.now() - Date.parse(desde) > 36 * 3600e3 && nOk(e.pendientes_sin_propuesta) > 0;
+    if (e.rutina_ultimo_error) return { txt: corto ? `la rutina de ${cuandoMiami(ult)} terminó con error (en Conexiones)` : `${cuando} · última: ${cuandoMiami(ult)} · con error: ${e.rutina_ultimo_error}`, clase: "bad" };
+    if (!ult) return { txt: corto ? `la rutina no ha corrido todavía${vieja ? " (y ya debía)" : ""}` : `${cuando} · todavía no ha corrido${vieja ? ` y ya debía (instalada el ${fechaHora(e.rutina_desde)}): mira «Qué atender»` : ""}`, clase: vieja ? "warn" : "" };
+    return { txt: corto ? `la rutina: ${cuandoMiami(ult)}, ${vieja ? "hace más de 36 horas" : "bien"}` : `${cuando} · última: ${cuandoMiami(ult)} · ${vieja ? "hace más de 36 horas: mira «Qué atender»" : "bien"}`, clase: vieja ? "warn" : "ok" };
+  }
 
-  // El chip de la fila compacta: «IA · 5100 Material · 92 %», «Regla · WAWA» o «sin propuesta»
+  // El chip de la fila compacta: «IA · 5100 Material · 92 %», «Regla · WAWA» o «sin propuesta». (7b) La obra va entre la cuenta y
+  // la confianza; (7c) SOLO si es fuerte: «IA · 5100 Material · Dicke · 85 %». Si falta elegirla (débil, sin obra y la cuenta la
+  // pide, o cerrada), «¿obra?» en ámbar: lo que queda por decir antes de «Así es»
   function chipIA(m) {
     if (!iaMira(m)) return "";
     const f = iaPendiente(m);
     if (!f) return `<span class="ct-pill ct-ia-chip nada">sin propuesta</span>`;
-    // (7b) la obra propuesta, si sigue activa, va después de la cuenta: «IA · 5100 Material · Calla Terrace · 85 %» (el porcentaje
-    // es el de la propuesta, como siempre; el de la obra va en «Según la IA» y al pasar por encima)
-    const ob = obraPropuesta(f), obra = ob && ob.activa ? ob : null;
-    const tObra = obra ? ` · Obra: ${obra.nombre}${obra.confianza != null ? ` (${pctConf(obra.confianza)})` : ""}${obra.motivo ? `: ${obra.motivo}` : ""}` : "";
+    // (el porcentaje es el de la propuesta, como siempre; el de la obra va en «Según la IA» y al pasar por encima)
+    const ob = obraPropuesta(f), obra = ob && ob.activa && ob.fuerte ? ob : null, falta = !obra && obraFalta(f);
+    const tObra = obra ? ` · Obra: ${obra.nombre}${obra.confianza != null ? ` (${pctConf(obra.confianza)})` : ""}${obra.motivo ? `: ${obra.motivo}` : ""}`
+      : ob && ob.activa ? ` · ¿Obra? La IA se inclina por ${ob.nombre}${ob.confianza != null ? ` (${pctConf(ob.confianza)})` : ""}, sin seguridad: elígela tú` : falta ? " · ¿Obra? Elígela tú" : "";
     // (el separador va en su propio span: en la computadora la obra baja a su renglón dentro del chip y el «·» sobra)
-    const chipObra = obra ? `<span class="ct-ia-chip-o"><span class="ct-ia-sep"> · </span>${esc(obra.nombre)}</span>` : "";
-    if (f.fuente === "regla") return obra ? `<span class="ct-pill ct-ia-chip regla con-obra" title="${esc(lineasTexto(f) + tObra)}"><span class="ct-ia-chip-q">Regla · ${esc(f.regla_nombre || "")}</span>${chipObra}</span>`
+    const chipObra = obra ? `<span class="ct-ia-chip-o"><span class="ct-ia-sep"> · </span>${esc(obra.nombre)}</span>`
+      : falta ? `<span class="ct-ia-chip-f"><span class="ct-ia-sep"> · </span>¿obra?</span>` : "";
+    if (f.fuente === "regla") return obra || falta ? `<span class="ct-pill ct-ia-chip regla${obra ? " con-obra" : " falta"}" title="${esc(lineasTexto(f) + tObra)}"><span class="ct-ia-chip-q">Regla · ${esc(f.regla_nombre || "")}</span>${chipObra}</span>`
       : `<span class="ct-pill ct-ia-chip regla" title="${esc(lineasTexto(f))}">Regla · ${esc(f.regla_nombre || "")}</span>`;
-    // (si no cabe se recorta con «…» la obra; la cuenta, solo si ni así cabe; la confianza siempre se ve)
-    return `<span class="ct-pill ct-ia-chip ia${obra ? " con-obra" : ""}" title="${esc((f.motivo || "") + tObra)}"><span class="ct-ia-chip-q">IA · ${esc(lineasTexto(f))}</span>${chipObra}<span class="ct-ia-chip-p"> · ${pctConf(f.confianza)}</span></span>`;
+    // (si no cabe se recorta con «…» la obra; la cuenta, solo si ni así cabe; la confianza y el «¿obra?» siempre se ven)
+    return `<span class="ct-pill ct-ia-chip ia${obra ? " con-obra" : ""}${falta ? " falta" : ""}" title="${esc((f.motivo || "") + tObra)}"><span class="ct-ia-chip-q">IA · ${esc(lineasTexto(f))}</span>${chipObra}<span class="ct-ia-chip-p"> · ${pctConf(f.confianza)}</span></span>`;
   }
 
   // El bloque del detalle desplegado: «Según la IA» y «Según yo», en dos columnas (una debajo de otra en el teléfono)
@@ -1911,32 +2059,49 @@
     const flags = Object.keys(FLAGS_IA).filter(k => k === "pide_obra" ? pideObraIA(f) : !!(f.flags && f.flags[k] === true));
     const pide = pideObraIA(f), dis = mfaActivo() ? "" : " disabled";
     const alt = Array.isArray(f.alternativas) ? f.alternativas.filter(a => a && a.cuenta) : [];
-    // (7b) la obra: la propuesta con su confianza y su porqué (sin ella, las pistas en gris), y el selector si alguna cuenta la admite
+    // (7b) la obra: la propuesta con su confianza y su porqué (sin ella, las pistas en gris), y el selector si alguna cuenta la admite.
+    // (7c) Elegida solo si es fuerte; si no (débil, sin obra, la cuenta la pide), «¿De qué obra?» con las obras de sus pistas para
+    // elegir de un toque y «Otra obra…» con el selector, nada elegido
     const ob = obraPropuesta(f), conObra = llevaObra(f), ini = conObra ? obraInicial(f) : "", falta = obraFalta(f);
+    const debil = !!ob && ob.activa && !ob.fuerte, ops = conObra && !ini ? obrasChip(f, ob) : [];
     const nIni = ini ? (obrasActivas().find(p => p.id === ini) || {}).nombre || "" : "";
-    const etiqueta = ob && !ob.activa ? `¿De qué obra? (la que propuso la IA, ${ob.nombre}, ya no está activa)` : ob ? `¿De qué obra? (la IA propone ${ob.nombre})`
-      : pide ? "¿De qué obra? (la cuenta la pide)" : ini ? "¿De qué obra? (la trae la propuesta)" : "¿De qué obra? (opcional)";
-    const vacia = ini ? null : ob ? "Elige otra obra…" : pide ? "Elige la obra…" : "Sin obra";
+    const etiqueta = ob && !ob.activa ? `¿De qué obra? (la que propuso la IA, ${ob.nombre}, ya no está activa)` : debil ? `¿De qué obra? (la IA se inclina por ${ob.nombre}, sin seguridad)`
+      : ob ? `¿De qué obra? (la IA propone ${ob.nombre})` : pide ? "¿De qué obra? (la cuenta la pide)" : ini ? "¿De qué obra? (la trae la propuesta)" : "¿De qué obra? (opcional)";
+    const vacia = ini ? null : ob && !ob.activa ? "Elige otra obra…" : pide || debil ? "Elige la obra…" : "Sin obra";
+    const selector = `<label class="ct-campo ct-ia-obra-sel"${ops.length ? " hidden" : ""}>${esc(etiqueta)}<select data-ia-obra>${opcionesObra(vacia, ini)}</select></label>`;
     return `<ul class="ct-ia-lineas">${lineas.map(l => `<li><span class="ct-num">${esc(l.cuenta)}</span> ${esc(l.cuenta_nombre || "")}${l.obra && !(ob && l.proyecto_id === ob.id) ? `<small>obra: ${esc(l.obra)}</small>` : l.pide_obra ? `<small>falta la obra</small>` : ""}${varias && l.monto != null ? `<span class="ct-num ct-ia-m">${fmt(l.monto)}</span>` : ""}</li>`).join("")}</ul>
       ${f.motivo ? `<p class="ct-ia-motivo">${esc(f.motivo)}</p>` : ""}
-      ${ob ? obraIAHTML(ob) : conObra && f.pistas_resumen ? `<p class="ct-ia-pistas">${esc(pistasTexto(f.pistas_resumen))}</p>` : ""}
+      ${ob && !debil ? obraIAHTML(ob) : debil && conObra ? obraDebilHTML(ob) : conObra && f.pistas_resumen && !ops.length ? `<p class="ct-ia-pistas">${esc(pistasTexto(f.pistas_resumen))}</p>` : ""}
       <div class="ct-ia-pills">${pill(`${pctConf(f.confianza)} de confianza`, "ct-conf " + claseConf(f.confianza))}${flags.map(k => `<span class="ct-pill ${FLAGS_IA[k][1]}" title="${esc(FLAGS_IA[k][2])}" data-flag="${k}">${esc(FLAGS_IA[k][0])}</span>`).join("")}</div>
       ${alt.length ? `<p class="ct-ia-alt">Otras posibilidades: ${alt.map(a => `<span class="ct-num">${esc(a.cuenta)}</span>${a.motivo ? ` (${esc(a.motivo)})` : ""}`).join(" · ")}</p>` : ""}
       <p class="ct-ia-fuente">${f.fuente === "regla" ? `Regla: ${esc(f.regla_nombre || "")}` : f.fuente === "edgar" ? "La dijiste tú" : `Propuso ${esc(f.modelo || "la IA")}`}${f.creado_el ? ` · ${fechaHora(f.creado_el)}` : ""}</p>
-      ${conObra ? `<label class="ct-campo ct-ia-obra-sel">${esc(etiqueta)}<select data-ia-obra>${opcionesObra(vacia, ini)}</select></label>
+      ${conObra ? `${ops.length ? obrasChipHTML(ops, ob, pide) : ""}${selector}
         <p class="ct-ia-obra-cambio" data-ia-obra-cambio hidden>Con otra obra entra la tuya y la propuesta queda «editada».</p>` : ""}
       <div class="ct-acciones"><button type="button" class="accion" data-ia-asi${dis}>${esc(textoAsi(falta, nIni))}</button><button type="button" class="accion secundaria" data-ia-no${dis}>No es eso</button></div>
-      <p class="ct-nota ct-ia-pie">${conObra ? "«Así es» lo registra en el libro con esas líneas y la obra del selector, y recuerda la cuenta para este comercio (la obra no: la próxima vez la dicen sus pistas)."
+      <p class="ct-nota ct-ia-pie">${conObra ? "«Así es» lo registra en el libro con esas líneas y la obra elegida, y recuerda la cuenta para este comercio (la obra no: la próxima vez la dicen sus pistas)."
         : "«Así es» lo registra en el libro con esas líneas y lo recuerda para este comercio."}</p>`;
   }
+  // (7c) la obra DÉBIL por la que se inclina la IA: se dice con su porqué, pero no va elegida (eliges tú abajo)
+  const obraDebilHTML = ob => `<div class="ct-ia-obra debil" data-ia-obra-prop>
+      <p class="ct-ia-obra-t">La IA se inclina por <b>${esc(ob.nombre)}</b>${ob.confianza != null ? ` · <span class="ct-ia-obra-p ${claseConf(ob.confianza)}">${pctConf(ob.confianza)}</span>` : ""}, pero no está segura: elige tú.</p>
+      ${ob.motivo ? `<p class="ct-ia-obra-m">${esc(cap(ob.motivo))}</p>` : ""}
+    </div>`;
+  // (7c) «¿De qué obra?»: un botón grande por obra (su nombre y su pista corta), «Otra obra…» y nada elegido. Un toque elige; el
+  // selector de debajo (escondido hasta «Otra obra…») es lo que «Así es» manda, así que los dos caminos dicen lo mismo
+  const obrasChipHTML = (ops, ob, pide) => `<div class="ct-ia-obra-elegir" data-ia-obra-elegir>
+      <p class="ct-ia-obra-q">¿De qué obra?<small>${pide ? "la cuenta la pide: toca la que es" : ob && ob.activa ? "la IA no está segura: toca la que es" : ob ? "la que propuso ya no está activa: toca otra" : "toca la que es (o déjala sin obra)"}</small></p>
+      <div class="ct-ia-obra-ops" role="group" aria-label="¿De qué obra?">${ops.map(o => `<button type="button" class="ct-ia-obra-op${o.ia ? " ia" : ""}" data-ia-obra-op="${esc(o.id)}" aria-pressed="false">
+          <span class="ct-ia-obra-op-n">${esc(o.nombre)}</span>${o.pista ? `<span class="ct-ia-obra-op-p">${esc(o.pista)}</span>` : ""}${o.ia ? `<span class="ct-ia-obra-op-ia">la IA se inclina por esta (${pctConf(ob.confianza)})</span>` : ""}</button>`).join("")}
+        <button type="button" class="ct-ia-obra-op otra" data-ia-obra-otra aria-expanded="false">Otra obra…</button></div>
+    </div>`;
   function sinPropuestaHTML(f) {
-    const freno = frenoIA(S.ia), falta = nOk(S.ia.estado.pendientes_sin_propuesta);
-    const antes = !f ? "La IA no ha propuesto nada todavía."
+    const freno = frenoIA(S.ia), falta = nOk(S.ia.estado.pendientes_sin_propuesta), corre = !!(S.cadena && S.cadena.activa);
+    const antes = !f ? (corre ? "La IA está proponiendo (la franja de arriba dice por dónde va): este cargo llega en su turno." : "La IA no ha propuesto nada todavía.")
       : f.estado === "rechazada" ? `Rechazaste la propuesta (${lineasTexto(f)})${f.motivo_edgar ? `: «${f.motivo_edgar}»` : ""}. La IA puede proponer otra en la próxima ráfaga, o clasifícalo tú.`
       : f.estado === "caducada" ? `La propuesta anterior caducó${f.nota ? ` (${f.nota})` : ""}: la IA no ha propuesto otra todavía.`
       : `Ya se clasificó una vez${f.asiento ? ` (asiento ${f.asiento})` : ""} y el movimiento volvió a la bandeja: clasifícalo otra vez.`;
     return `<p class="ct-ia-vacia">${esc(antes)}</p>
-      <div class="ct-acciones"><button type="button" class="accion secundaria" data-proponer${freno ? " disabled" : ""}>Proponer con la IA (${falta})</button></div>
+      <div class="ct-acciones"><button type="button" class="accion secundaria" data-proponer${freno || corre ? " disabled" : ""}>Proponer ahora (${falta})</button></div>
       ${freno && mfaActivo() ? `<p class="ct-nota">${esc(freno.txt)}</p>` : ""}`;
   }
   // Las cuentas que se pueden elegir (v_contador_cuentas), agrupadas por tipo; `filtro` las acota (el buscador: lo que se busca
@@ -1979,17 +2144,37 @@
     // (7b) la obra de la propuesta (con la que sale el selector, o la cerrada) y si «Así es» necesita que se elija
     const ob = viva ? obraPropuesta(viva) : null, falta = viva ? obraFalta(viva) : false;
     const deLaIA = viva && obraIA ? obraInicial(viva) || (ob ? ob.id : "") : "", cambio = bl.querySelector("[data-ia-obra-cambio]");
+    // (7c) «¿De qué obra?»: los botones de las obras y «Otra obra…» (que despliega el selector); el selector manda
+    const elegir = bl.querySelector("[data-ia-obra-elegir]"), ops = elegir ? [...elegir.querySelectorAll("[data-ia-obra-op]")] : [];
+    const otra = elegir ? elegir.querySelector("[data-ia-obra-otra]") : null, campoSel = bl.querySelector(".ct-ia-obra-sel");
     if (obraIA && asi) obraIA.addEventListener("change", () => {
       const p = obrasActivas().find(x => x.id === obraIA.value);
       asi.textContent = textoAsi(falta, p ? p.nombre : "");
       // otra obra que la de la propuesta: entra la de Edgar y la base deja la propuesta «editada»
       if (cambio) cambio.hidden = !deLaIA || !obraIA.value || obraIA.value === deLaIA;
+      ops.forEach(b => b.setAttribute("aria-pressed", String(!!obraIA.value && b.dataset.iaObraOp === obraIA.value)));
       limpiarErrorIA(bl);
     });
+    // un toque elige esa obra (otro toque en la misma la suelta); el selector toma el valor y avisa como si se hubiera elegido en él
+    if (obraIA) ops.forEach(b => b.addEventListener("click", () => {
+      obraIA.value = b.getAttribute("aria-pressed") === "true" ? "" : b.dataset.iaObraOp;
+      obraIA.dispatchEvent(new Event("change"));
+    }));
+    if (otra && campoSel && obraIA) otra.addEventListener("click", () => {
+      campoSel.hidden = !campoSel.hidden;
+      otra.setAttribute("aria-expanded", String(!campoSel.hidden));
+      if (!campoSel.hidden) obraIA.focus();
+    });
+    // (7c) la fila que Edgar empezó a decidir no se repinta debajo de su dedo cuando la cadena trae más propuestas
+    const tocar = () => { card.dataset.tocada = "1"; };
+    bl.addEventListener("input", tocar); bl.addEventListener("change", tocar);
+    ops.concat(otra ? [otra] : []).forEach(b => b.addEventListener("click", tocar));
     if (asi && viva) asi.addEventListener("click", () => {
       if (obraIA && !obraIA.value && falta) {
-        errorIA(bl, ob && !ob.activa ? `Elige otra obra: la que propuso la IA (${ob.nombre}) ya no está activa.` : "Elige antes la obra: la cuenta de la propuesta la pide.");
-        obraIA.focus(); return;
+        errorIA(bl, ob && !ob.activa ? `Elige otra obra: la que propuso la IA (${ob.nombre}) ya no está activa.`
+          : ob && !ob.fuerte ? `Elige antes la obra: la IA se inclina por ${ob.nombre}${ob.confianza != null ? ` (${pctConf(ob.confianza)})` : ""}, pero no está segura. Toca la que es.`
+          : "Elige antes la obra: la cuenta de la propuesta la pide.");
+        (ops[0] && campoSel && campoSel.hidden ? ops[0] : obraIA).focus(); return;
       }
       // lo que queda en el selector es lo que entra (en toda línea cuya cuenta admite obra); vacío, las líneas como vienen
       const cuerpo = { accion: "aprobar", propuesta: viva.propuesta_id, recordar: true };
@@ -1998,7 +2183,7 @@
     });
     if (no && viva) no.addEventListener("click", () => accionIA(bl, { accion: "rechazar", propuesta: viva.propuesta_id, motivo: "No es eso (Edgar, desde la bandeja)" },
       () => { S.iaFoco = m.movimiento_id; return "Propuesta rechazada: dilo tú en «Según yo»"; }, { boton: no }));
-    bl.querySelectorAll("[data-proponer]").forEach(b => b.addEventListener("click", () => proponerIA(bl, b)));
+    bl.querySelectorAll("[data-proponer]").forEach(b => b.addEventListener("click", () => cadenaIA("manual")));
     // «Según yo»: la cuenta (con su buscador), la obra según lo que pide la cuenta, el motivo, recordar y «Clasificar»
     const form = bl.querySelector(".ct-ia-yo"); if (!form) return;
     const sel = form.querySelector("[data-ia-cuenta]"), obra = form.querySelector("[data-ia-obra-yo]"), et = form.querySelector("[data-ia-obra-et]");
@@ -2054,9 +2239,164 @@
     // (la función dice el porqué de lo que no salió: un 529 dos veces, un rechazo de la IA… se cuenta y no se esconde)
     return x.error ? [`${txt} · ojo: ${String(x.error).slice(0, 140)}`, !nOk(x.propuestas) && !nOk(x.reglas)] : txt;
   };
-  // «Proponer con la IA»: primero las reglas (sin gastar), luego la ráfaga (la función respeta el tope y el máximo por ráfaga)
-  function proponerIA(cont, boton) {
-    return accionIA(cont, { accion: "proponer" }, resumenRafaga, { boton, ms: 180000, girar: true, espera: "La IA está mirando los cargos sin ticket… (puede tardar un minuto)" });
+  // ---------- (7c) LAS PROPUESTAS SALEN SOLAS: la cadena de ráfagas ----------
+  // «Que cada partida al lado ya tenga su propuesta, sin darle a un botón.» Al pintar la Bandeja (y al terminar de subir un
+  // archivo del banco o de sincronizar con Plaid), si hay cargos sin propuesta y nada lo frena (frenoIA: la IA activa y sin
+  // tope, la llave y la función sanas, la sesión con el código del teléfono), la pantalla pide la ráfaga SOLA ({accion:
+  // "proponer"}: primero las reglas, sin gastar; luego la IA, con su tope y su máximo por ráfaga) y, mientras la función diga
+  // que quedan (quedan > 0), la siguiente. Es lo mismo que hace la rutina de la base cada mañana y cada tarde, con la app
+  // abierta: lo que entra a media tarde no espera a la noche. Las reglas que la sostienen:
+  //   · UNA cadena a la vez (S.cadena): repintar la Bandeja, volver a ella o tocar «Proponer ahora» con una en marcha no
+  //     arranca otra. La base tampoco abre dos ráfagas (MX008 «ráfaga en marcha»: la de la rutina, otra pestaña): se
+  //     esperan 5 s y se reintenta UNA vez; si sigue, la cadena se para y lo dice.
+  //   · No tapa la Bandeja: mientras propone, Edgar aprueba o clasifica (S.ocupado es de cada acción, no de la cadena). Cada
+  //     ráfaga relee lo de la IA (v_contador_estado, la bandeja de la IA y su control) y repinta la franja y las filas —los
+  //     chips aparecen—, salvo la fila que Edgar tiene a medias y salvo mientras corre una acción suya (ella repinta al acabar).
+  //   · Se para sola: sin quedan en la respuesta (la función de la 7b: una ráfaga, como antes), con quedan = 0, si la función
+  //     dice que no sigue (sigue: false) o una ráfaga no avanza (ni una propuesta nueva, o quedan los mismos: la IA no contesta
+  //     esos cargos y no se insiste), con el tope,
+  //     con un error (se dice en la franja) o con «Parar» (la ráfaga en vuelo termina en la función y lo suyo se guarda).
+  //   · No vuelve a arrancar sola por lo mismo: al terminar recuerda qué cargos seguían esperando (S.iaSola.memo) y solo
+  //     arranca otra vez si llega uno nuevo; un «No es eso» no hace que la IA proponga otra al instante (lo dices tú en
+  //     «Según yo»). «Parar» apaga lo automático hasta que se abra la app otra vez o se toque «Proponer ahora».
+  //   · El interruptor «Proponer sola al abrir la Bandeja» (Conexiones) es una preferencia de este aparato (localStorage,
+  //     encendido por defecto): ni dinero ni nada del libro.
+  // NUNCA postea: la cadena solo pide «proponer»; lo que entra al libro sigue siendo el toque de Edgar.
+  const LLAVE_SOLA = "mxp.contador.sola";
+  const solaEncendida = () => { try { return localStorage.getItem(LLAVE_SOLA) !== "0"; } catch { return true; } };
+  const guardarSola = si => { try { localStorage.setItem(LLAVE_SOLA, si ? "1" : "0"); } catch { /* sin almacenamiento: vuelve a encendido al recargar */ } };
+  const MAX_RAFAGAS = 40;          // por si acaso (40 × 20 = 800 cargos): la cadena acaba mucho antes por quedan o por no avanzar
+  const ESPERA_EN_MARCHA = 5000;   // MX008 «ráfaga en marcha»: lo que se espera antes del único reintento
+  const dormir = ms => new Promise(r => setTimeout(r, ms));
+  const enMarcha = err => !!err && (err.codigo === "MX008" || err.estado === 409) && /en marcha/i.test(String(err.message || ""));
+  // los cargos que esperan propuesta según lo que pintó la bandeja (los de los motivos de la IA sin propuesta pendiente)
+  const candidatosIA = () => (S.bandeja || []).filter(m => !m._esStripe && MOTIVOS_IA.includes(m.motivo) && !iaPendiente(m));
+  // los NUEVOS: ni rechazados por Edgar («No es eso»: lo dice él) ni los que ya esperaban cuando terminó la última cadena (si
+  // esa corrió fuera de la Bandeja —tras un archivo o Plaid— no sabe cuáles eran: solo cuántos, y con los mismos no arranca)
+  const nuevosIA = () => {
+    const memo = S.iaSola.memo;
+    if (memo && !memo.ids && nOk(S.ia && S.ia.estado && S.ia.estado.pendientes_sin_propuesta) === memo.n) return [];
+    return candidatosIA().filter(m => {
+      const f = S.ia && S.ia.bandeja.get(m.movimiento_id);
+      return !(f && f.estado === "rechazada") && !(memo && memo.ids && memo.ids.has(m.movimiento_id));
+    });
+  };
+  const puedeSola = () => solaEncendida() && !S.iaSola.parada && !(S.cadena && S.cadena.activa) && iaViva() && !frenoIA(S.ia);
+  // después de subir un archivo o de sincronizar: lo de la IA, fresco, y la cadena si algo nuevo espera (sin señal o sin c8, nada)
+  async function proponerTrasImportar() {
+    if (!solaEncendida() || S.iaSola.parada || (S.cadena && S.cadena.activa) || !mfaActivo() || !navigator.onLine) return;
+    try {
+      const ia = await leerContador();
+      if (!ia || ia.err) return;
+      S.ia = ia;
+      const n = nOk(ia.estado && ia.estado.pendientes_sin_propuesta);
+      if (puedeSola() && !(S.iaSola.memo && S.iaSola.memo.n === n)) await cadenaIA("importe");
+    } catch { /* sin señal: la rutina de la tarde o la próxima vez que se abra la Bandeja */ }
+  }
+  // `origen`: "sola" (al pintar la Bandeja), "importe" (tras un archivo o Plaid) o "manual" («Proponer ahora»)
+  async function cadenaIA(origen) {
+    if ((S.cadena && S.cadena.activa) || !iaViva() || frenoIA(S.ia)) return;
+    if (origen === "manual") S.iaSola.parada = false;
+    const c = S.cadena = { activa: true, origen, parar: false, esperando: false, total: nOk(S.ia.estado.pendientes_sin_propuesta), hechas: 0, quedan: null,
+      rafagas: 0, propuestas: 0, conObra: 0, reglas: 0, sinResp: 0, invalidas: 0, centavos: 0, bloqueado: null, frenada: null, error: null, atascada: false, avisos: [], fin: null };
+    pintarCadena(false);
+    let antes = null;
+    try {
+      while (c.rafagas < MAX_RAFAGAS && !c.parar) {
+        const r = await rafagaIA(c);
+        if (!r) break; // «Parar» mientras esperaba el reintento
+        c.rafagas += 1;
+        if (r.bloqueado) {
+          // (las reglas van antes que el tope y pudieron dejar propuestas: se cuentan y se relee)
+          c.bloqueado = r.motivo || "llegó al tope del mes"; c.reglas += nOk(r.reglas); c.hechas += nOk(r.reglas);
+          await refrescarIA(); break;
+        }
+        const avance = nOk(r.propuestas) + nOk(r.reglas);
+        c.propuestas += nOk(r.propuestas); c.conObra += nOk(r.con_obra); c.reglas += nOk(r.reglas); c.sinResp += nOk(r.sin_respuesta);
+        c.invalidas += nOk(r.invalidas); c.centavos += nOk(r.centavos); c.hechas += avance;
+        if (r.error) c.avisos.push(String(r.error));
+        c.quedan = r.quedan == null ? null : nOk(r.quedan);
+        c.total = Math.max(c.total, c.hechas + (c.quedan || 0));
+        // (lo releído, no S.ia: una acción de Edgar que termina a la vez lo vacía un momento para releerlo ella)
+        const ia = await refrescarIA();
+        if (c.quedan == null || c.quedan === 0 || c.parar) break;
+        // la función dice si tiene sentido otra ahora («sigue»: quedan y esta dejó alguna propuesta); sin él, lo mismo a mano: que
+        // haya avanzado y queden menos. Si no, la base volvería a dar los mismos cargos y se pediría sin fin lo que la IA no contesta
+        if (r.sigue === false || !avance || (antes != null && c.quedan >= antes)) { c.atascada = true; break; }
+        antes = c.quedan;
+        // la IA dejó de cuadrar (la franja lo pinta en rojo) o algo la frena entre ráfagas (el tope, el código del teléfono): se para y lo dice
+        if (!ia || ia.err || ia.rojo.length) { c.frenada = "la IA contable dejó de cuadrar (el detalle, arriba)"; break; }
+        const fr = frenoIA(ia);
+        if (fr) { if (nOk(ia.estado.pendientes_sin_propuesta)) c.frenada = fr.txt; break; }
+        pintarCadena(true);
+      }
+    } catch (err) {
+      c.error = err;
+      // (una ráfaga que falla pudo dejar propuestas por regla antes de fallar: se relee lo que haya; sin señal, se queda lo de antes)
+      try { await refrescarIA(); } catch { /* sin señal */ }
+    }
+    c.activa = false;
+    S.iaSola.memo = { ids: S.bandeja ? new Set(candidatosIA().map(m => m.movimiento_id)) : null, n: nOk(S.ia && S.ia.estado && S.ia.estado.pendientes_sin_propuesta) };
+    if (c.parar) S.iaSola.parada = true;
+    c.fin = finCadena(c);
+    S.hooks.avisar(...avisoCadena(c));
+    pintarCadena(true);
+  }
+  // una ráfaga; MX008 «ráfaga en marcha» espera y reintenta una vez (null si se paró mientras esperaba)
+  async function rafagaIA(c) {
+    for (let intento = 0; ; intento++) {
+      try { return await DB._funcion("contador", { accion: "proponer" }, 180000); }
+      catch (err) {
+        if (!enMarcha(err) || intento > 0 || c.parar) throw err;
+        c.esperando = true; pintarCadena(false);
+        await dormir(ESPERA_EN_MARCHA);
+        c.esperando = false;
+        if (c.parar) return null;
+        pintarCadena(false);
+      }
+    }
+  }
+  // lo de la IA, fresco, después de una ráfaga (la salud no se vuelve a preguntar: la función acaba de contestar). Sin señal, lanza
+  async function refrescarIA() {
+    const ia = await leerContador(S.ia && S.ia.salud ? { salud: S.ia.salud } : null);
+    if (ia) S.ia = ia;
+    return ia;
+  }
+  // la franja (y, con `filas`, las filas cuya propuesta cambió) con lo último: solo con la Bandeja a la vista, y las filas no
+  // mientras corre una acción de Edgar (ella repinta la página al terminar, con todo fresco)
+  function pintarCadena(filas) {
+    if (S.pagina !== "bandeja" || !S.ia || !$("ct-ia-franja")) return;
+    const vieja = $("ct-ia-franja");
+    vieja.outerHTML = franjaIAHTML(S.ia);
+    wireFranja();
+    if (filas && !S.ocupado) refrescarFilasIA();
+  }
+  // «Proponer ahora» (la cadena, a mano) y «Parar» (la ráfaga en vuelo termina en la función; no se pide otra)
+  function wireFranja() {
+    const pro = $("ct-ia-proponer"); if (pro) pro.addEventListener("click", () => cadenaIA("manual"));
+    const pa = $("ct-ia-parar"); if (pa) pa.addEventListener("click", () => { if (S.cadena && S.cadena.activa) { S.cadena.parar = true; pintarCadena(false); } });
+  }
+  const errorLlano = err => esFalloDeRed(err) || !navigator.onLine ? "sin señal (o la función «contador» no contestó)" : err.codigo === "MFA" ? "falta el código del teléfono: entra otra vez con él" : String(err.message || err);
+  // lo que hizo la cadena, para el aviso: con una ráfaga, el mismo que antes («1 propuesta · 0 por regla · 0 sin respuesta · $0.12»)
+  function avisoCadena(c) {
+    const r = resumenRafaga({ propuestas: c.propuestas, con_obra: c.conObra, reglas: c.reglas, sin_respuesta: c.sinResp, invalidas: c.invalidas, centavos: c.centavos, error: c.avisos[0] || null });
+    const [txt0, mal] = Array.isArray(r) ? r : [r, false];
+    const txt = c.rafagas > 1 ? `${c.rafagas} ráfagas: ${txt0}` : txt0;
+    if (c.error) return [`La IA se paró: ${errorLlano(c.error)}${c.hechas ? ` (antes, ${txt})` : ""}`, true];
+    if (c.bloqueado) return c.hechas ? [`${txt} · y se paró: ${c.bloqueado}`, true] : [`La IA no propuso nada: ${c.bloqueado}`, true];
+    if (c.frenada) return [`${txt} · y se paró: ${c.frenada}`, true];
+    if (c.parar) return [`Paraste la IA: ${txt}`, false];
+    return [txt, mal];
+  }
+  // lo que queda dicho en la franja hasta la próxima pintada ({ txt, clase })
+  function finCadena(c) {
+    const hecho = `${plural(c.propuestas, "propuesta", "propuestas")}${c.conObra ? ` (${c.conObra} con obra)` : ""}${c.reglas ? ` y ${c.reglas} por regla` : ""} · ${usdCent(c.centavos)}`;
+    if (c.error) return { txt: `La IA se paró: ${errorLlano(c.error)}.${c.hechas ? ` Antes dejó ${hecho}.` : ""} Vuelve a tocar «Proponer ahora» cuando quieras.`, clase: "bad" };
+    if (c.bloqueado) return { txt: `La IA se paró: ${c.bloqueado}.${c.hechas ? ` Antes dejó ${hecho}.` : ""}`, clase: "warn" };
+    if (c.frenada) return { txt: `La IA se paró: ${c.frenada.replace(/[.:]$/, "")}. Antes dejó ${hecho}.`, clase: "warn" };
+    if (c.parar) return { txt: `Paraste la IA (dejó ${hecho}): no vuelve a proponer sola hasta que abras la app otra vez o toques «Proponer ahora».`, clase: "warn" };
+    if (c.atascada) return { txt: `Listo: ${hecho}. ${plural(c.quedan, "cargo sigue", "cargos siguen")} sin propuesta (la IA no los contestó${c.avisos[0] ? `: ${String(c.avisos[0]).slice(0, 120)}` : ""}): clasifícalos tú o vuelve a probar más tarde.`, clase: "warn" };
+    return { txt: `Listo: ${hecho}${c.sinResp ? ` · ${c.sinResp} sin respuesta` : ""}.`, clase: "ok" };
   }
   // Los errores de la función contador en llano
   function errorContadorHTML(err) {
@@ -2100,11 +2440,13 @@
       return `<section class="ct-card ct-ia-card" id="ct-ia">${cab(pill(falta ? "sin instalar" : "no contestó", "warn"))}
         <p class="ct-nota">${falta ? "La base todavía no tiene la IA contable (docs/conta/c8-contador.sql). Cuando se pegue, la Bandeja propone la cuenta de cada cargo sin ticket y aquí se ven su gasto y sus reglas." : `La vista no contestó: ${esc(err.message)}.`}</p></section>`;
     }
-    const e = ia.estado || {}, mfa = mfaActivo(), s = ia.salud;
+    const e = ia.estado || {}, mfa = mfaActivo(), s = ia.salud, rut = rutinaIA(e, false), marc = marcadorIA(e);
     const pills = (!mfa ? pill("sin el código del teléfono", "warn") : !s ? pill("la función no contestó", "warn") : s.llave === false ? pill("falta la llave", "bad") : s.base === false ? pill("sin base", "bad") : pill("conectada", "ok")) +
       (ia.rojo.length ? pill("no cuadra", "bad") : pill("cuadra", "ok")) + (nCerradas(ia) ? pill(plural(nCerradas(ia), "obra propuesta cerrada", "obras propuestas cerradas"), "warn") : "") +
       (e.activa === false ? pill("apagada", "warn") : "") +
-      (e.bloqueado && e.activa !== false ? pill("en el tope", "warn") : "") + (nOk(e.alarmas) > 0 ? pill(plural(e.alarmas, "alarma", "alarmas"), "warn") : "");
+      (e.bloqueado && e.activa !== false ? pill("en el tope", "warn") : "") + (nOk(e.alarmas) > 0 ? pill(plural(e.alarmas, "alarma", "alarmas"), "warn") : "") +
+      // (7c) la rutina que propone sola, si su última corrida falló
+      (rut && rut.clase === "bad" ? pill("rutina con error", "bad") : "");
     const activas = (ia.reglas || []).filter(r => r.activa), bajas = (ia.reglas || []).length - activas.length;
     const dis = mfa ? "" : " disabled";
     const reglas = ia.rojo.length ? "" : `<h3 class="ct-ia-h3">Reglas del contador · ${activas.length}</h3>
@@ -2117,10 +2459,12 @@
       ${bajas ? `<p class="ct-nota">${plural(bajas, "regla dada de baja", "reglas dadas de baja")} (quedan escritas con su motivo).</p>` : ""}`;
     return `<section class="ct-card ct-ia-card" id="ct-ia">${cab(pills)}
       ${ayudaHTML(`<p class="ct-nota">La IA mira cada cargo sin ticket y propone a qué cuenta va, con el motivo de lo que vio: propone, nunca postea. Lo que dice una regla del comercio entra sin gastar IA; nada entra al libro hasta que dices «Así es» o lo clasificas tú. Tiene un tope de gasto al mes, y la llave vive en Supabase, nunca en el teléfono.</p>
-        <p class="ct-nota">También propone la obra cuando las pistas que calcula la base (las horas de la cuadrilla esos días, los tickets del mismo comercio, lo que elegiste antes, los materiales recientes) apuntan a una sola; sin pistas claras no la adivina. A la IA no le llega ningún nombre de persona ni nota: solo totales por obra. Las reglas recuerdan la cuenta, nunca la obra.</p>`)}
+        <p class="ct-nota">También propone la obra cuando las pistas que calcula la base (las horas de la cuadrilla esos días, los tickets del mismo comercio, lo que elegiste antes, los materiales recientes) apuntan a una sola; sin pistas claras no la adivina. A la IA no le llega ningún nombre de persona ni nota: solo totales por obra. Las reglas recuerdan la cuenta, nunca la obra.</p>
+        <p class="ct-nota">Propone sola: al abrir la Bandeja (si el interruptor de abajo está encendido) y con la rutina de la base, cada mañana después del banco y cada tarde. Solo una obra con 80 % o más sale elegida; con menos, la Bandeja te enseña las obras de sus pistas y eliges de un toque. «Este mes» cuenta lo que entró por la IA o por una regla: acertada es lo que entró tal cual lo propuso; «elegiste tú», la obra que la IA no supo y pusiste tú.</p>`)}
       ${ia.rojo.length ? `<p class="ct-aviso bad">La IA contable no cuadra: ${esc(ia.rojo.map(m => `${m.vista}${m.detalle ? ` (${m.detalle})` : ""}`).join("; "))}.</p>` : ""}
       ${mfa && !s ? `<p class="ct-aviso warn">La función «contador» no contestó: ¿está desplegada en Supabase → Edge Functions (con «Verify JWT» apagado)?</p>`
         : s && (s.llave === false || faltaIA(s)) ? `<p class="ct-aviso bad">Falta en Supabase → Edge Functions → Secrets: ${esc(faltaIA(s) || "la llave de Anthropic (ANTHROPIC_API_KEY)")}.</p>` : ""}
+      ${mfa && s && s.rutina === false ? `<p class="ct-aviso warn" id="ct-ia-sin-secreto">Falta el secreto de la rutina en Supabase → Edge Functions → Secrets: CONTADOR_RUTINA_SECRETO (el valor que enseña docs/conta/c8-contador.sql al pegarlo, en la fila «contador_rutina_secreto»); sin él la rutina de la base no propone sola por la mañana y por la tarde (la Bandeja sí propone al abrirla).</p>` : ""}
       <ul class="ct-datos">
         <li>Llave de Anthropic: ${!mfa ? "sin saber (sin el código del teléfono no se le pregunta a la función)" : !s ? "sin saber (la función no contestó)" : s.llave ? "puesta" : `<span class="bad-txt">falta</span>`}</li>
         <li>Modelo: <span class="ct-num">${esc(e.modelo || "—")}</span>${e.effort ? ` (esfuerzo ${esc(e.effort)})` : ""} · como mucho ${plural(nOk(e.max_por_rafaga), "cargo", "cargos")} por ráfaga</li>
@@ -2128,7 +2472,11 @@
         <li>Última ráfaga: ${e.ultima_rafaga_el ? fechaHora(e.ultima_rafaga_el) : "ninguna todavía"}${e.ultimo_lote_centavos != null ? ` (${usdCent(e.ultimo_lote_centavos)})` : ""}</li>
         ${e.ultimo_error ? `<li class="bad-txt">Último error: ${esc(e.ultimo_error)}${e.ultimo_error_el ? ` (${fechaHora(e.ultimo_error_el)})` : ""}</li>` : ""}
         <li>Propuestas: ${plural(nOk(e.propuestas_pendientes), "espera", "esperan")} en la bandeja${nOk(e.propuestas_con_obra) ? ` (${nOk(e.propuestas_con_obra)} con obra)` : ""} · ${nOk(e.aprobadas_total)} en el libro · ${plural(nOk(e.rechazadas_total), "rechazada", "rechazadas")}</li>
+        ${marc ? `<li id="ct-ia-marcador">${esc(marc)}</li>` : ""}
+        ${rut ? `<li id="ct-ia-rutina"${rut.clase === "bad" ? ` class="bad-txt"` : rut.clase === "warn" ? ` class="ct-ia-rut warn"` : ""}>${esc(rut.txt)}</li>` : ""}
       </ul>
+      <label class="ct-casilla ct-ia-sola"><input type="checkbox" id="ct-ia-sola"${solaEncendida() ? " checked" : ""}> Proponer sola al abrir la Bandeja</label>
+      <p class="ct-nota ct-ia-sola-nota">Se guarda solo en este aparato (es una preferencia, no un dato del libro). Apagado, la Bandeja espera a que toques «Proponer ahora»; la rutina de la base sigue igual.</p>
       <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-ia-probar"${dis}>Probar</button><button type="button" class="accion secundaria" id="ct-ia-bandeja">Ver la bandeja</button>${mfa ? "" : `<span class="ct-nota" style="margin:0">Primero activa el código del teléfono (arriba).</span>`}</div>
       <div class="ct-ia-res"></div>
       ${reglas}
@@ -2139,6 +2487,12 @@
     const pr = $("ct-ia-probar"); if (pr) pr.addEventListener("click", () => accionIA(card, { accion: "salud" },
       r => r && r.llave === false ? ["La función contesta, pero le falta la llave de Anthropic", true] : "La IA contable contesta bien", { repintar: false, mostrar: saludIAHTML, ms: 15000 }));
     const vb = $("ct-ia-bandeja"); if (vb) vb.addEventListener("click", () => ir("bandeja"));
+    // (7c) el interruptor «Proponer sola al abrir la Bandeja»: encenderlo también deshace un «Parar» de esta sesión
+    const so = $("ct-ia-sola"); if (so) so.addEventListener("change", () => {
+      guardarSola(so.checked);
+      if (so.checked) S.iaSola.parada = false;
+      S.hooks.avisar(so.checked ? "La Bandeja propone sola al abrirla" : "La Bandeja ya no propone sola: toca «Proponer ahora» cuando quieras");
+    });
     card.querySelectorAll(".ct-ia-regla").forEach(li => {
       const r = (S.iaCx.reglas || []).find(x => String(x.id) === li.dataset.regla); if (!r) return;
       const q = li.querySelector("[data-quitar]"); if (q) q.addEventListener("click", () => montarForma(li,
@@ -2152,7 +2506,9 @@
     70: ["La IA contable llegó al tope de gasto del mes: no propone nada hasta el mes que viene.", "conexiones"],
     71: ["Propuestas de la IA que esperan más de 7 días: di «Así es» o «No es eso» en la Bandeja.", "bandeja"],
     72: ["La última ráfaga de la IA terminó con error: mira el detalle y toca «Probar» en Conexiones.", "conexiones"],
-    73: ["La IA contable no ha propuesto nada nunca y hay cargos esperando: toca «Proponer con la IA» en la Bandeja.", "bandeja"]
+    73: ["La IA contable no ha propuesto nada nunca y hay cargos esperando: abre la Bandeja (propone sola) o toca «Proponer ahora».", "bandeja"],
+    // (7c) la rutina de la base (pg_cron → la función) falló o lleva más de 36 horas sin correr con cargos esperando
+    74: ["La rutina que propone sola (cada mañana tras el banco y cada tarde) no está corriendo bien: mira el detalle y la tarjeta de la IA en Conexiones.", "conexiones"]
   };
 
   // ============================================================

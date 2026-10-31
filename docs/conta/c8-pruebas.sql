@@ -1,12 +1,14 @@
 -- =====================================================================
 -- c8-pruebas.sql — el contador (la IA que propone y nunca postea) se
--- prueba a sí mismo (c8-contador.sql). 31-oct-2026 (v3: la 7b, la obra
--- propuesta con las pistas de la base, pruebas 26 a 30; y por la tarde, lo que
+-- prueba a sí mismo (c8-contador.sql). 31-oct-2026 (v4: la 7b, la obra
+-- propuesta con las pistas de la base, pruebas 26 a 30; por la tarde, lo que
 -- destapó la verificación: la obra que se cierra después de proponerla y la
--- obra de la línea, 31 y 32).
+-- obra de la línea, 31 y 32; y la 7c: la fase y los materiales en las pistas,
+-- la confianza calibrada y «fuerte», «¿De qué obra?» en la bandeja, la
+-- rutina, la alarma 74 y el marcador del mes, 33 a 38).
 --
 -- CÓMO SE CORRE. En el SQL Editor de Supabase: DESPUÉS de c8-contador.sql,
--- pegar este archivo entero → Run. Sale la tabla _pruebas: 32 filas, todas
+-- pegar este archivo entero → Run. Sale la tabla _pruebas: 38 filas, todas
 -- con ok = true. Si el editor se cansa antes del final, la corrida sigue en
 -- el servidor y se lee después en pruebas.c8_resultado (ver el final).
 -- En el banco de pruebas (Postgres 17 en el puerto 5433, con la cadena
@@ -114,7 +116,17 @@
 -- trae la suya manda sobre la obra propuesta (y la nota lo dice así), una
 -- obra inactiva puesta directo en la línea se quita con nota sin perder la
 -- propuesta (y una válida en «obra» ocupa el hueco), una inventada en la
--- línea sigue sin guardarse; y (la
+-- línea sigue sin guardarse; LA 7c (33 a 38): la fase y hasta 8 materiales
+-- de cada obra en las pistas (tapados, sin precio ni autor), la confianza
+-- CALIBRADA de la candidata caso por caso (0,45 horas; 0,70 única obra; 0,60
+-- / 0,80 / 0,90 por lo que Edgar eligió; 0,65 tickets exclusivos) con el
+-- motivo que cita primero la pista que decide y «fuerte» solo desde 0,80 (la
+-- regla toma la candidata solo si es fuerte: la 28, rehecha), obras_top y
+-- obra_fuerte en la bandeja, la rutina (fn_contador_programado: 42501 por la
+-- API, nulo apagada / sin candidatos / bloqueada, MX009 sin funcion_url, sin
+-- secreto o sin pg_net, y con pg_net la llamada con el secreto a un localhost
+-- que no escucha), fn_contador_rutina_marcar con la alarma 74 en rojo y en
+-- verde, y el marcador del mes (acertadas, cambiadas y elegidas); y (la
 -- 25) que al final c2 (fn_verificar_cadena), c3, c6 (fn_banco_control) y
 -- c4 (fn_estados_control, salvo lo que ya estaba en rojo ANTES de empezar,
 -- que la prueba dice: en el banco, «cuadre: apertura en el libro», que no
@@ -285,10 +297,11 @@ create or replace function pg_temp.c8_sin_pistas() returns void language sql as 
 $$;
 -- Horas de la cuadrilla en una obra un día, como las reporta el equipo (a
 -- nombre de alguien, con su nota): la pista que más pesa
-create or replace function pg_temp.c8_horas(p_id bigint, p_fecha date, p_obra text, p_horas numeric, p_nota text default null)
+-- (7c: con su fase, si se dice)
+create or replace function pg_temp.c8_horas(p_id bigint, p_fecha date, p_obra text, p_horas numeric, p_nota text default null, p_fase text default null)
 returns void language sql as $$
-  insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas) overriding system value
-  values (p_id, p_fecha, coalesce(pg_temp.c8('equipo'), pg_temp.c8('dueno'))::uuid, p_obra, p_horas, p_nota)
+  insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas, fase) overriding system value
+  values (p_id, p_fecha, coalesce(pg_temp.c8('equipo'), pg_temp.c8('dueno'))::uuid, p_obra, p_horas, p_nota, p_fase)
 $$;
 -- Un ticket del equipo «por leer» (foto, obra y proveedor; sin total: así
 -- ni el puente lo postea ni el banco lo casa con el cargo) con su fecha: la
@@ -299,10 +312,23 @@ returns void language sql as $$
   values (p_id, p_obra, 'recibos/c8-pruebas/' || p_id || '.jpg', p_proveedor, p_estado, pg_temp.c8('dueno')::uuid, p_fecha,
           (p_fecha::text || ' 12:00 America/New_York')::timestamptz)
 $$;
--- Una fila de la lista de materiales de una obra, apuntada tal día
-create or replace function pg_temp.c8_material(p_id bigint, p_fecha date, p_obra text) returns void language sql as $$
-  insert into materiales (id, proyecto_id, descripcion, estado, autor_id, creado) overriding system value
-  values (p_id, p_obra, 'C8 PRUEBA MATERIAL ' || p_id, 'falta', pg_temp.c8('dueno')::uuid, (p_fecha::text || ' 12:00 America/New_York')::timestamptz)
+-- Una fila de la lista de materiales de una obra, apuntada tal día (7c: con
+-- su descripción, si está comprada y su precio, si se dicen)
+create or replace function pg_temp.c8_material(p_id bigint, p_fecha date, p_obra text, p_desc text default null, p_estado text default 'falta',
+                                                p_precio numeric default null)
+returns void language sql as $$
+  insert into materiales (id, proyecto_id, descripcion, estado, autor_id, creado, precio) overriding system value
+  values (p_id, p_obra, coalesce(p_desc, 'C8 PRUEBA MATERIAL ' || p_id), p_estado, pg_temp.c8('dueno')::uuid,
+          (p_fecha::text || ' 12:00 America/New_York')::timestamptz, p_precio)
+$$;
+-- La candidata de las pistas de un movimiento en una línea (7c): su
+-- confianza, FUERTE o débil, y su motivo; «ninguna» si no la hay
+create or replace function pg_temp.c8_cand(p_mov uuid) returns text language sql as $$
+  select case when jsonb_typeof(z.p->'candidata') = 'object'
+              then format('%s %s «%s»', z.p->'candidata'->>'confianza',
+                          case when (z.p->'candidata'->>'fuerte')::boolean then 'FUERTE' else 'débil' end, z.p->'candidata'->>'motivo')
+              else 'ninguna' end
+    from (select fn_contador_pistas_obra(p_mov) as p) z
 $$;
 -- Los nombres y los ids de las dos obras, tapados (<A>, <B>, <a>, <b>): lo
 -- esperado no depende de cómo se llamen las obras de Edgar. El nombre más
@@ -418,10 +444,11 @@ insert into _c8 select 'rojos_c6', coalesce(string_agg(vista, ', ' order by vist
 --    (la vista de la app sobre asistente_uso, o una tabla), los ajustes de
 --    la app, los índices únicos parciales, las 5 vistas con
 --    security_invoker; nada falta (fn_contador_precondiciones nulo) y el
---    final del pegado dice sus 9 filas.
+--    final del pegado dice sus 12 filas; y (7c) la rutina: su secreto en
+--    Vault, funcion_url copiada de la de Plaid y activa.
 do $$
 declare
-  v_obt text; v_t int; v_cfg text; v_k char; v_uso text; v_aj text; v_idx int; v_v int; v_pre text; v_peg int;
+  v_obt text; v_t int; v_cfg text; v_k char; v_uso text; v_aj text; v_idx int; v_v int; v_pre text; v_peg int; v_rut text;
 begin
   begin
     perform pg_temp.c8_montar();
@@ -452,18 +479,23 @@ begin
        and coalesce((select o.option_value::boolean from pg_options_to_table(c.reloptions) o where o.option_name = 'security_invoker'), false);
     v_pre := coalesce(fn_contador_precondiciones(), 'nada falta');
     select count(*) into v_peg from fn_contador_pegado();
-    v_obt := format('tablas %s | %s | gasto: %s | ajustes %s | índices %s | vistas %s | %s | pegado %s filas', v_t, v_cfg, v_uso, v_aj, v_idx,
-                    v_v, v_pre, v_peg);
+    -- (7c) la rutina: el secreto en Vault (su valor no se mira), la URL copiada de la de Plaid, activa
+    select format('secreto %s · funcion_url %s · rutina %s', (select count(*) from vault.secrets s where s.name = 'contador_rutina_secreto'),
+                  case when c.funcion_url ~ '/contador$' then 'de la de plaid' else coalesce(c.funcion_url, 'vacía') end,
+                  case when c.rutina_activa then 'activa' else 'apagada' end)
+      into v_rut from contador_config c where c.id = 1;
+    v_obt := format('tablas %s | %s | gasto: %s | ajustes %s | índices %s | vistas %s | %s | pegado %s filas | %s', v_t, v_cfg, v_uso, v_aj, v_idx,
+                    v_v, v_pre, v_peg, v_rut);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (1, 'instalación: 4 tablas cerradas, la configuración con su dueño, dónde se anota el gasto, los ajustes, los índices, las vistas, nada falta',
-    'tablas 4 | claude-opus-5-5 · low · activa · hasta 20 · tope 3000 · dueño activo | gasto: vista sobre asistente_uso | ajustes aviso_pct=true tope_mes_centavos=true | índices 2 | vistas 5 | nada falta | pegado 9 filas',
+  insert into _pruebas values (1, 'instalación: 4 tablas cerradas, la configuración con su dueño, dónde se anota el gasto, los ajustes, los índices, las vistas, nada falta; la rutina con su secreto y su URL (7c)',
+    'tablas 4 | claude-opus-5-5 · low · activa · hasta 20 · tope 3000 · dueño activo | gasto: vista sobre asistente_uso | ajustes aviso_pct=true tope_mes_centavos=true | índices 2 | vistas 5 | nada falta | pegado 12 filas | secreto 1 · funcion_url de la de plaid · rutina activa',
     v_obt,
-    v_obt in ('tablas 4 | claude-opus-5-5 · low · activa · hasta 20 · tope 3000 · dueño activo | gasto: vista sobre asistente_uso | ajustes aviso_pct=true tope_mes_centavos=true | índices 2 | vistas 5 | nada falta | pegado 9 filas',
-              'tablas 4 | claude-opus-5-5 · low · activa · hasta 20 · tope 3000 · dueño activo | gasto: tabla | ajustes aviso_pct=true tope_mes_centavos=true | índices 2 | vistas 5 | nada falta | pegado 9 filas'));
+    v_obt in ('tablas 4 | claude-opus-5-5 · low · activa · hasta 20 · tope 3000 · dueño activo | gasto: vista sobre asistente_uso | ajustes aviso_pct=true tope_mes_centavos=true | índices 2 | vistas 5 | nada falta | pegado 12 filas | secreto 1 · funcion_url de la de plaid · rutina activa',
+              'tablas 4 | claude-opus-5-5 · low · activa · hasta 20 · tope 3000 · dueño activo | gasto: tabla | ajustes aviso_pct=true tope_mes_centavos=true | índices 2 | vistas 5 | nada falta | pegado 12 filas | secreto 1 · funcion_url de la de plaid · rutina activa'));
 end $$;
 
 -- 2. Nadie de la API llama a c8 (ni el dueño: lo pide por la función de
@@ -489,7 +521,11 @@ declare
     'select * from fn_contador_pegado()',
     'select fn_contador_nombre_comercio(''X'')',
     'select fn_contador_pistas_obra(gen_random_uuid())',
-    'select fn_contador_mismo_comercio(''X'', ''X'')'];
+    'select fn_contador_mismo_comercio(''X'', ''X'')',
+    'select fn_contador_programado()',
+    'select fn_contador_rutina_marcar(true, null)',
+    'select fn_contador_rutina_dueno()',
+    'select fn_contador_obra_fuerte(0.9)'];
 begin
   begin
     foreach v_q in array array['service_role', 'anon', 'dueno', 'equipo'] loop
@@ -613,9 +649,9 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (4, 'las vistas: el dueño sí (el control con sus 12 filas), el equipo 0 filas, anon nada',
-    'dueño: estado 1, control 12 filas, las demás se leen | equipo: 0 0 0 0 | anon: 42501', v_obt,
-    v_obt = 'dueño: estado 1, control 12 filas, las demás se leen | equipo: 0 0 0 0 | anon: 42501');
+  insert into _pruebas values (4, 'las vistas: el dueño sí (el control con sus 13 filas), el equipo 0 filas, anon nada',
+    'dueño: estado 1, control 13 filas, las demás se leen | equipo: 0 0 0 0 | anon: 42501', v_obt,
+    v_obt = 'dueño: estado 1, control 13 filas, las demás se leen | equipo: 0 0 0 0 | anon: 42501');
 end $$;
 
 -- 5. Las cuentas permitidas (v_contador_cuentas): costo, gasto, otro gasto,
@@ -1249,13 +1285,15 @@ end $$;
 --     (MX008 «elige la obra», y nada entra al libro); con la obra, la línea
 --     la lleva, queda «aprobada» (la obra se puso donde faltaba), su asiento
 --     la lleva; la regla aprendida va sin obra y con pide_obra; el siguiente
---     cargo del comercio sale por regla CON la obra que Edgar eligió la
---     última vez para ese comercio (7b: la pista veces_elegida, 10 puntos
---     sola → confianza 0.71), y como Edgar elige otra, queda «editada» con
---     la suya; clasificar a mano a 5100 sin obra, MX008 también; una obra
---     que no existe, 22023. (El comercio es un supply inventado y las
---     pistas reales se quitan: así la única pista es lo que la propia
---     prueba aprobó.)
+--     cargo del comercio sale por regla y las pistas traen como candidata la
+--     obra que Edgar eligió la última vez para ese comercio (veces_elegida
+--     1, y es la única obra con pistas: 7c, confianza 0,70, DÉBIL), así que
+--     la propuesta PIDE OBRA (la regla solo toma una candidata fuerte) y,
+--     como Edgar la completa con otra, queda «aprobada» con la suya;
+--     clasificar a mano a 5100 sin obra,
+--     MX008 también; una obra que no existe, 22023. (El comercio es un supply
+--     inventado y las pistas reales se quitan: así la única pista es lo que
+--     la propia prueba aprobó.)
 do $$
 declare
   v_obt text; v_m uuid; v_m2 uuid; v_l uuid; v_r jsonb; v_pid uuid; v_a text; v_b text; v_c text; v_d text; v_n0 bigint; v_hint text;
@@ -1290,13 +1328,20 @@ begin
                                   from contador_reglas r where r.id = (v_r->'regla'->>'regla')::uuid));
     v_m2 := pg_temp.c8_cargo('c8-t15-2', pg_temp.c8('d')::date + 1, 120.00, 'C8 PRUEBA ZANCUDO SUPPLY 2051 BELLEVIEW FL');
     perform fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
-    -- (7b: sin pistas pediría la obra; la hay —Edgar acaba de elegir la
-    -- obra para este comercio—, y la regla la trae como candidata)
+    -- (7c: la pista está —Edgar acaba de elegir la obra para este comercio,
+    -- una vez, y es la única obra con pistas— y las pistas la traen como
+    -- candidata con 0,70: débil; la regla no la toma y la propuesta pide
+    -- obra, para que Edgar la elija en un toque entre las obras de las pistas)
     v_c := v_c || format(' | el siguiente: %s', (select format('%s «%s» %s', q.fuente, q.propuesta->>'motivo',
-                                                               case when q.propuesta->'flags'->>'pide_obra' = 'true' then 'pide_obra'
+                                                               case when q.propuesta->'flags'->>'pide_obra' = 'true'
+                                                                    then format('pide_obra (candidata %s conf %s %s «%s»)',
+                                                                                case when q.pistas->'candidata'->>'proyecto_id' = pg_temp.c8('obra') then '<obra>'
+                                                                                     else coalesce(q.pistas->'candidata'->>'proyecto_id', 'ninguna') end,
+                                                                                q.pistas->'candidata'->>'confianza',
+                                                                                case when (q.pistas->'candidata'->>'fuerte')::boolean then 'FUERTE' else 'débil' end,
+                                                                                replace(q.pistas->'candidata'->>'motivo', (select p.nombre from proyectos p where p.id = pg_temp.c8('obra')), '<obra>'))
                                                                     when q.propuesta->'obra'->>'proyecto_id' = pg_temp.c8('obra')
-                                                                    then format('con la obra de la última vez (conf %s, «%s»)', q.propuesta->'obra'->>'confianza',
-                                                                                replace(q.propuesta->'obra'->>'motivo', (select p.nombre from proyectos p where p.id = pg_temp.c8('obra')), '<obra>'))
+                                                                    then format('CON la obra (conf %s)', q.propuesta->'obra'->>'confianza')
                                                                     else 'MAL ' || q.propuesta::text end)
                                                  from contador_propuestas q where q.id = pg_temp.c8_prop('c8-t15-2')));
     begin
@@ -1305,7 +1350,7 @@ begin
     exception when others then v_d := format('a mano sin obra: %s', sqlstate);
     end;
     v_r := fn_contador_aprobar(pg_temp.c8_prop('c8-t15-2'), pg_temp.c8('dueno')::uuid, pg_temp.c8('obra2'));
-    -- (Edgar elige otra obra que la propuesta: la suya manda y queda editada)
+    -- (la propuesta pedía obra y Edgar la completa con la suya: aprobada)
     v_d := v_d || format(' | el siguiente con otra obra: %s, %s', v_r->>'estado',
                          replace(pg_temp.c8_lineas((v_r->>'asiento_id')::uuid), pg_temp.c8('obra2'), '<obra2>'));
     v_obt := format('%s | %s | %s | %s', v_a, v_b, v_c, v_d);
@@ -1314,10 +1359,10 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (15, 'la obra: sin ella MX008 «elige la obra» (nada entra); con ella la línea la lleva y queda aprobada; la regla sin obra y con pide_obra; el siguiente por regla trae la obra de la última vez (7b) y con otra queda editada',
-    'sin obra: MX008 elige la obra, pista «elige la obra», asientos nuevos 0, propuesta pendiente | obra inventada: 22023 | con obra: aprobada, líneas finales [{"cuenta": "5100", "proyecto_id": "<obra>"}], asiento 1010 -87.43 | 5100 87.43 obra:<obra> | regla: C8 PRUEBA ZANCUDO SUPPLY · ^C8 PRUEBA ZANCUDO SUPPLY · [{"cuenta": "5100"}] · pide_obra true | el siguiente: regla «Regla: C8 PRUEBA ZANCUDO SUPPLY» con la obra de la última vez (conf 0.71, «Edgar eligió <obra> la última vez con C8 PRUEBA ZANCUDO SUPPLY») | a mano sin obra: MX008 | el siguiente con otra obra: editada, 1010 -120.00 | 5100 120.00 obra:<obra2>',
+  insert into _pruebas values (15, 'la obra: sin ella MX008 «elige la obra» (nada entra); con ella la línea la lleva y queda aprobada; la regla sin obra y con pide_obra; el siguiente por regla con una sola elección (la única obra: 0,70, débil: 7c) pide obra con la candidata en las pistas, y con la obra de Edgar queda aprobada',
+    'sin obra: MX008 elige la obra, pista «elige la obra», asientos nuevos 0, propuesta pendiente | obra inventada: 22023 | con obra: aprobada, líneas finales [{"cuenta": "5100", "proyecto_id": "<obra>"}], asiento 1010 -87.43 | 5100 87.43 obra:<obra> | regla: C8 PRUEBA ZANCUDO SUPPLY · ^C8 PRUEBA ZANCUDO SUPPLY · [{"cuenta": "5100"}] · pide_obra true | el siguiente: regla «Regla: C8 PRUEBA ZANCUDO SUPPLY» pide_obra (candidata <obra> conf 0.70 débil «<obra> es la única obra con pistas esos días; Edgar eligió esa obra la última vez con C8 PRUEBA ZANCUDO SUPPLY») | a mano sin obra: MX008 | el siguiente con otra obra: aprobada, 1010 -120.00 | 5100 120.00 obra:<obra2>',
     v_obt,
-    v_obt = 'sin obra: MX008 elige la obra, pista «elige la obra», asientos nuevos 0, propuesta pendiente | obra inventada: 22023 | con obra: aprobada, líneas finales [{"cuenta": "5100", "proyecto_id": "<obra>"}], asiento 1010 -87.43 | 5100 87.43 obra:<obra> | regla: C8 PRUEBA ZANCUDO SUPPLY · ^C8 PRUEBA ZANCUDO SUPPLY · [{"cuenta": "5100"}] · pide_obra true | el siguiente: regla «Regla: C8 PRUEBA ZANCUDO SUPPLY» con la obra de la última vez (conf 0.71, «Edgar eligió <obra> la última vez con C8 PRUEBA ZANCUDO SUPPLY») | a mano sin obra: MX008 | el siguiente con otra obra: editada, 1010 -120.00 | 5100 120.00 obra:<obra2>');
+    v_obt = 'sin obra: MX008 elige la obra, pista «elige la obra», asientos nuevos 0, propuesta pendiente | obra inventada: 22023 | con obra: aprobada, líneas finales [{"cuenta": "5100", "proyecto_id": "<obra>"}], asiento 1010 -87.43 | 5100 87.43 obra:<obra> | regla: C8 PRUEBA ZANCUDO SUPPLY · ^C8 PRUEBA ZANCUDO SUPPLY · [{"cuenta": "5100"}] · pide_obra true | el siguiente: regla «Regla: C8 PRUEBA ZANCUDO SUPPLY» pide_obra (candidata <obra> conf 0.70 débil «<obra> es la única obra con pistas esos días; Edgar eligió esa obra la última vez con C8 PRUEBA ZANCUDO SUPPLY») | a mano sin obra: MX008 | el siguiente con otra obra: aprobada, 1010 -120.00 | 5100 120.00 obra:<obra2>');
 end $$;
 
 -- 16. «SEGÚN YO» (clasificar): con una propuesta de la IA a 6300, Edgar
@@ -1839,15 +1884,18 @@ end $$;
 
 -- 26. LAS PISTAS (fn_contador_pistas_obra): sin horas, tickets ni
 --     materiales, obras [] y candidata null («sin pistas»); con horas
---     sembradas, la candidata es la obra con más horas (22 h cerca → 0.90, y
---     el motivo las cita); los tickets del mismo comercio (no los anulados,
---     ni los de hace más de 180 días, ni los de otro comercio) y lo que
---     Edgar eligió antes para ese comercio suman a su obra y bajan la
---     confianza de la candidata; los materiales recientes suman (los de
---     hace 20 días no); cuando la segunda obra pasa de la mitad, no hay
---     candidata; a la IA (fn_contador_pendientes) va sin los puntos y con
---     «candidata: null» a la vista, y nada personal (ni usuario_id, ni la
---     nota de las horas, ni la foto del ticket); solo las obras activas
+--     sembradas, la candidata es la obra con más horas (22 h cerca; 7c:
+--     con horas en dos obras la confianza es la de base, 0,45, y el motivo
+--     las cita); los tickets del mismo comercio (no los anulados, ni los de
+--     hace más de 180 días, ni los de otro comercio) y lo que Edgar eligió
+--     antes para ese comercio suman a su obra (y la candidata sigue en
+--     0,45: lo elegido fue a la otra); los materiales recientes suman (los
+--     de hace 20 días no); basta una vez y media la segunda; cuando se
+--     contradicen, no hay candidata; a la IA (fn_contador_pendientes) va sin
+--     los puntos, con «candidata: null» a la vista, con el comercio y con la
+--     fase y los materiales de cada obra (7c), y nada personal (ni
+--     usuario_id, ni la nota de las horas, ni la foto del ticket); solo las
+--     obras activas (y con una sola obra con pistas, 0,70)
 do $$
 declare
   v_obt text; v_m uuid; v_m0 uuid; v_p jsonb; v_mov jsonb; v_a text; v_b text; v_c text; v_d text; v_e text; v_f text; v_txt text;
@@ -1931,10 +1979,10 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (26, 'las pistas de la obra: sin nada «sin pistas»; con horas la candidata es la obra con más horas; tickets y lo elegido suman; materiales suman; basta una vez y media la segunda (con menos confianza); si se contradicen no hay candidata; a la IA sin puntos ni nada personal; solo activas',
-    'sin nada: obras 0, candidata null, resumen «sin pistas» | horas: obras 2, primera <A> (cerca 22, mes 16, puntos 47.2), segunda <B> (mes 3, puntos 0.6), candidata <A> conf 0.90 «la cuadrilla reportó 22 h en <A> esos días» | tickets y elegida: <B> recibos 2, elegida 1, puntos 22.6; candidata <A> conf 0.64 | materiales: <A> 3, puntos 50.2, conf 0.65 «la cuadrilla reportó 22 h en <A> esos días; hay 3 materiales de su lista apuntados estos días» | una vez y media: puntos 50.2 y 31.4, candidata <A> conf 0.59 | se contradicen: puntos 50.2 y 49.0, candidata null, resumen «<A>: 22 h esos días, 16 h en 30 días, 3 materiales recientes · <B>: 12 h esos días, 15 h en 30 días, 2 tickets de C8 PRUEBA ZANCUDO ELECTRIC, elegida 1 vez» | a la IA: pistas_obra {candidata,obras,resumen}, obra {horas_cerca,horas_mes,materiales_recientes,nombre,proyecto_id,recibos_proveedor,veces_elegida}, personal: nada | solo activas: obras 1, candidata <A> conf 0.90',
+  insert into _pruebas values (26, 'las pistas de la obra: sin nada «sin pistas»; con horas la candidata es la obra con más horas (0,45: 7c); tickets y lo elegido suman; materiales suman; basta una vez y media la segunda; si se contradicen no hay candidata; a la IA sin puntos, con el comercio, la fase y los materiales, y nada personal; solo activas (la única, 0,70)',
+    'sin nada: obras 0, candidata null, resumen «sin pistas» | horas: obras 2, primera <A> (cerca 22, mes 16, puntos 47.2), segunda <B> (mes 3, puntos 0.6), candidata <A> conf 0.45 «la cuadrilla reportó 22 h en <A> esos días» | tickets y elegida: <B> recibos 2, elegida 1, puntos 22.6; candidata <A> conf 0.45 | materiales: <A> 3, puntos 50.2, conf 0.45 «la cuadrilla reportó 22 h en <A> esos días; hay 3 materiales de su lista apuntados estos días» | una vez y media: puntos 50.2 y 31.4, candidata <A> conf 0.45 | se contradicen: puntos 50.2 y 49.0, candidata null, resumen «<A>: 22 h esos días, 16 h en 30 días, 3 materiales recientes · <B>: 12 h esos días, 15 h en 30 días, 2 tickets de C8 PRUEBA ZANCUDO ELECTRIC, elegida 1 vez» | a la IA: pistas_obra {candidata,comercio,obras,resumen}, obra {fase,horas_cerca,horas_mes,materiales,materiales_recientes,nombre,proyecto_id,recibos_proveedor,veces_elegida}, personal: nada | solo activas: obras 1, candidata <A> conf 0.70',
     v_obt,
-    v_obt = 'sin nada: obras 0, candidata null, resumen «sin pistas» | horas: obras 2, primera <A> (cerca 22, mes 16, puntos 47.2), segunda <B> (mes 3, puntos 0.6), candidata <A> conf 0.90 «la cuadrilla reportó 22 h en <A> esos días» | tickets y elegida: <B> recibos 2, elegida 1, puntos 22.6; candidata <A> conf 0.64 | materiales: <A> 3, puntos 50.2, conf 0.65 «la cuadrilla reportó 22 h en <A> esos días; hay 3 materiales de su lista apuntados estos días» | una vez y media: puntos 50.2 y 31.4, candidata <A> conf 0.59 | se contradicen: puntos 50.2 y 49.0, candidata null, resumen «<A>: 22 h esos días, 16 h en 30 días, 3 materiales recientes · <B>: 12 h esos días, 15 h en 30 días, 2 tickets de C8 PRUEBA ZANCUDO ELECTRIC, elegida 1 vez» | a la IA: pistas_obra {candidata,obras,resumen}, obra {horas_cerca,horas_mes,materiales_recientes,nombre,proyecto_id,recibos_proveedor,veces_elegida}, personal: nada | solo activas: obras 1, candidata <A> conf 0.90');
+    v_obt = 'sin nada: obras 0, candidata null, resumen «sin pistas» | horas: obras 2, primera <A> (cerca 22, mes 16, puntos 47.2), segunda <B> (mes 3, puntos 0.6), candidata <A> conf 0.45 «la cuadrilla reportó 22 h en <A> esos días» | tickets y elegida: <B> recibos 2, elegida 1, puntos 22.6; candidata <A> conf 0.45 | materiales: <A> 3, puntos 50.2, conf 0.45 «la cuadrilla reportó 22 h en <A> esos días; hay 3 materiales de su lista apuntados estos días» | una vez y media: puntos 50.2 y 31.4, candidata <A> conf 0.45 | se contradicen: puntos 50.2 y 49.0, candidata null, resumen «<A>: 22 h esos días, 16 h en 30 días, 3 materiales recientes · <B>: 12 h esos días, 15 h en 30 días, 2 tickets de C8 PRUEBA ZANCUDO ELECTRIC, elegida 1 vez» | a la IA: pistas_obra {candidata,comercio,obras,resumen}, obra {fase,horas_cerca,horas_mes,materiales,materiales_recientes,nombre,proyecto_id,recibos_proveedor,veces_elegida}, personal: nada | solo activas: obras 1, candidata <A> conf 0.70');
 end $$;
 
 -- 27. LA IA PROPONE OBRA (fn_contador_propuesta_guardar): válida → la línea
@@ -1960,8 +2008,8 @@ begin
     v_r := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "5100"}]', 'Zancudo Supply: material de obra', 0.9, null, null,
                          jsonb_build_object('proyecto_id', v_oa, 'confianza', 0.82, 'motivo', 'la cuadrilla reportó 22 h en esa obra esos días'));
     select * into p from contador_propuestas where id = (v_r->>'propuesta')::uuid;
-    v_a := format('válida: pide_obra %s, obra %s, línea %s, flags %s, propuesta.obra %s, nota %s', v_r->>'pide_obra',
-                  case when v_r->>'obra' = v_oa then 'la propuesta' else coalesce(v_r->>'obra', '-') end,
+    v_a := format('válida: pide_obra %s, obra %s (fuerte %s), línea %s, flags %s, propuesta.obra %s, nota %s', v_r->>'pide_obra',
+                  case when v_r->>'obra' = v_oa then 'la propuesta' else coalesce(v_r->>'obra', '-') end, v_r->>'obra_fuerte',
                   case when p.propuesta->'lineas'->0->>'proyecto_id' = v_oa then 'con la obra' else 'SIN OBRA' end,
                   (p.propuesta->'flags')::text, (p.propuesta->'obra')::text, coalesce(p.nota, '-'));
     select format('bandeja: obra %s «%s» %s «%s», pistas «%s», pide_obra %s, línea %s', b.obra_propuesta_id, b.obra_propuesta, b.obra_confianza,
@@ -2007,24 +2055,29 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (27, 'la IA propone obra: válida → la línea la lleva, pide_obra false, la bandeja y el estado la enseñan; inactiva o inventada → sin obra, pide_obra y nota; forma mala → 22023; cuenta sin obra → sin obra; null → como siempre',
-    'válida: pide_obra false, obra la propuesta, línea con la obra, flags {"obra_propuesta": true}, propuesta.obra {"motivo": "la cuadrilla reportó 22 h en esa obra esos días", "confianza": 0.820, "proyecto_id": "<a>"}, nota - | bandeja: obra <a> «<A>» 0.820 «la cuadrilla reportó 22 h en esa obra esos días», pistas «sin pistas», pide_obra false, línea <A> | estado: con obra +1 | inactiva: obra -, pide_obra true, flags {"pide_obra": true}, propuesta.obra -, nota «la IA propuso la obra «<b>» (<B>), que no está activa (está completado): la propuesta se guarda sin obra», bandeja obra - | inventada: obra -, pide_obra true, nota «la IA propuso la obra «obra-que-no-existe», que no existe: la propuesta se guarda sin obra» | forma: 22023 22023 22023 22023, guardadas 0 | prohibida: obra -, flags {}, nota «la IA propuso la obra «<a>», pero ninguna cuenta de la propuesta lleva obra: se guarda sin obra» | null: pide_obra true, obra -, nota -',
+  insert into _pruebas values (27, 'la IA propone obra: válida → la línea la lleva, pide_obra false, obra_fuerte (0,82: 7c), la bandeja y el estado la enseñan; inactiva o inventada → sin obra, pide_obra y nota; forma mala → 22023; cuenta sin obra → sin obra; null → como siempre',
+    'válida: pide_obra false, obra la propuesta (fuerte true), línea con la obra, flags {"obra_fuerte": true, "obra_propuesta": true}, propuesta.obra {"motivo": "la cuadrilla reportó 22 h en esa obra esos días", "confianza": 0.820, "proyecto_id": "<a>"}, nota - | bandeja: obra <a> «<A>» 0.820 «la cuadrilla reportó 22 h en esa obra esos días», pistas «sin pistas», pide_obra false, línea <A> | estado: con obra +1 | inactiva: obra -, pide_obra true, flags {"pide_obra": true}, propuesta.obra -, nota «la IA propuso la obra «<b>» (<B>), que no está activa (está completado): la propuesta se guarda sin obra», bandeja obra - | inventada: obra -, pide_obra true, nota «la IA propuso la obra «obra-que-no-existe», que no existe: la propuesta se guarda sin obra» | forma: 22023 22023 22023 22023, guardadas 0 | prohibida: obra -, flags {}, nota «la IA propuso la obra «<a>», pero ninguna cuenta de la propuesta lleva obra: se guarda sin obra» | null: pide_obra true, obra -, nota -',
     v_obt,
-    v_obt = 'válida: pide_obra false, obra la propuesta, línea con la obra, flags {"obra_propuesta": true}, propuesta.obra {"motivo": "la cuadrilla reportó 22 h en esa obra esos días", "confianza": 0.820, "proyecto_id": "<a>"}, nota - | bandeja: obra <a> «<A>» 0.820 «la cuadrilla reportó 22 h en esa obra esos días», pistas «sin pistas», pide_obra false, línea <A> | estado: con obra +1 | inactiva: obra -, pide_obra true, flags {"pide_obra": true}, propuesta.obra -, nota «la IA propuso la obra «<b>» (<B>), que no está activa (está completado): la propuesta se guarda sin obra», bandeja obra - | inventada: obra -, pide_obra true, nota «la IA propuso la obra «obra-que-no-existe», que no existe: la propuesta se guarda sin obra» | forma: 22023 22023 22023 22023, guardadas 0 | prohibida: obra -, flags {}, nota «la IA propuso la obra «<a>», pero ninguna cuenta de la propuesta lleva obra: se guarda sin obra» | null: pide_obra true, obra -, nota -');
+    v_obt = 'válida: pide_obra false, obra la propuesta (fuerte true), línea con la obra, flags {"obra_fuerte": true, "obra_propuesta": true}, propuesta.obra {"motivo": "la cuadrilla reportó 22 h en esa obra esos días", "confianza": 0.820, "proyecto_id": "<a>"}, nota - | bandeja: obra <a> «<A>» 0.820 «la cuadrilla reportó 22 h en esa obra esos días», pistas «sin pistas», pide_obra false, línea <A> | estado: con obra +1 | inactiva: obra -, pide_obra true, flags {"pide_obra": true}, propuesta.obra -, nota «la IA propuso la obra «<b>» (<B>), que no está activa (está completado): la propuesta se guarda sin obra», bandeja obra - | inventada: obra -, pide_obra true, nota «la IA propuso la obra «obra-que-no-existe», que no existe: la propuesta se guarda sin obra» | forma: 22023 22023 22023 22023, guardadas 0 | prohibida: obra -, flags {}, nota «la IA propuso la obra «<a>», pero ninguna cuenta de la propuesta lleva obra: se guarda sin obra» | null: pide_obra true, obra -, nota -');
 end $$;
 
--- 28. REGLA + CANDIDATA (fn_contador_reglas_aplicar): sin pistas, la regla
---     que pide obra deja pide_obra como siempre (y «sin pistas» guardado);
---     con 16 h de la cuadrilla en A, el siguiente cargo del comercio sale
---     por regla CON la obra (la línea la lleva, flags.obra_propuesta,
---     propuesta.obra con confianza 0.90 y motivo, el resumen de las pistas
---     en «entrada» y en «pistas», la bandeja la enseña), y la que ya
---     esperaba no cambia; una regla a una cuenta que no lleva obra no la
---     trae aunque haya pistas; una regla con su propia obra manda sobre
---     las pistas
+-- 28. REGLA + CANDIDATA (fn_contador_reglas_aplicar; 7c: SOLO UNA CANDIDATA
+--     FUERTE): sin pistas, la regla que pide obra deja pide_obra como siempre
+--     (y «sin pistas» guardado); con 16 h de la cuadrilla en A y nada más, la
+--     candidata es DÉBIL (la única obra con pistas: 0,70 < 0,80) y la
+--     propuesta por regla sigue pidiendo obra, con las pistas y su candidata
+--     guardadas (la pantalla enseña «¿De qué obra?» con ellas); cuando Edgar
+--     ya eligió A dos veces con ese comercio, la candidata es FUERTE (0,80) y
+--     el siguiente cargo sale por regla CON la obra (la línea la lleva, flags
+--     obra_propuesta y obra_fuerte, propuesta.obra con su confianza y el
+--     motivo que cita primero lo elegido, el resumen de las pistas en
+--     «entrada» y en «pistas», la bandeja la enseña con obra_fuerte), y las
+--     que ya esperaban no cambian; una regla a una cuenta que no lleva obra
+--     no la trae aunque haya pistas; una regla con su propia obra manda
+--     sobre las pistas
 do $$
 declare
-  v_obt text; v_m1 uuid; v_m2 uuid; v_m3 uuid; v_m4 uuid; p contador_propuestas; v_a text; v_b text; v_c text; v_d text;
+  v_obt text; v_m1 uuid; v_m2 uuid; v_m3 uuid; v_m4 uuid; v_m5 uuid; p contador_propuestas; v_a text; v_b text; v_c text; v_d text; v_e text;
   v_dia date := pg_temp.c8('d')::date; v_oa text := pg_temp.c8('obra'); v_ob text := pg_temp.c8('obra2');
 begin
   begin
@@ -2037,43 +2090,60 @@ begin
     p := pg_temp.c8_ultima('c8-t28-1');
     v_a := format('sin pistas: %s flags %s, obra %s, pistas «%s»', p.fuente, (p.propuesta->'flags')::text, coalesce((p.propuesta->'obra')::text, '-'),
                   p.pistas->>'resumen');
-    -- 16 h en A (8 la víspera, 8 ese día): el siguiente cargo del comercio sale con la obra
+    -- 16 h en A (8 la víspera, 8 ese día) y nada más: la candidata es la
+    -- única obra con pistas, 0,70, débil → la regla no la toma, pide obra
     perform pg_temp.c8_horas(-8280001, v_dia - 1, v_oa, 8);
     perform pg_temp.c8_horas(-8280002, v_dia, v_oa, 8);
     v_m2 := pg_temp.c8_cargo('c8-t28-2', v_dia, 88.00, 'C8 PRUEBA ZANCUDO ELECTRIC 1040 TAMPA FL');
     perform fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
     p := pg_temp.c8_ultima('c8-t28-2');
-    v_b := format('con horas: %s «%s», línea %s, flags %s, obra %s, entrada «%s», pistas «%s»', p.fuente, p.propuesta->>'motivo',
+    v_b := format('con horas (débil): %s flags %s, obra %s, candidata %s conf %s fuerte %s «%s», bandeja pide_obra %s obra_fuerte %s', p.fuente,
+                  (p.propuesta->'flags')::text, coalesce((p.propuesta->'obra')::text, '-'), p.pistas->'candidata'->>'nombre',
+                  p.pistas->'candidata'->>'confianza', p.pistas->'candidata'->>'fuerte', p.pistas->'candidata'->>'motivo',
+                  (select b.pide_obra::text from v_contador_bandeja b where b.propuesta_id = p.id),
+                  (select b.obra_fuerte::text from v_contador_bandeja b where b.propuesta_id = p.id));
+    -- Edgar eligió A dos veces con este comercio (dos cargos clasificados a
+    -- mano, sin recordar): la candidata pasa a fuerte y la regla la toma
+    perform fn_contador_clasificar(pg_temp.c8_cargo('c8-t28-2b', v_dia, 41.00, 'C8 PRUEBA ZANCUDO ELECTRIC 1040 TAMPA FL'), pg_temp.c8('dueno')::uuid,
+                                   jsonb_build_array(jsonb_build_object('cuenta', '5100', 'proyecto_id', v_oa)), 'c8-pruebas', false);
+    perform fn_contador_clasificar(pg_temp.c8_cargo('c8-t28-2c', v_dia, 42.00, 'C8 PRUEBA ZANCUDO ELECTRIC 1040 TAMPA FL'), pg_temp.c8('dueno')::uuid,
+                                   jsonb_build_array(jsonb_build_object('cuenta', '5100', 'proyecto_id', v_oa)), 'c8-pruebas', false);
+    v_m3 := pg_temp.c8_cargo('c8-t28-3', v_dia, 89.00, 'C8 PRUEBA ZANCUDO ELECTRIC 1040 TAMPA FL');
+    perform fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
+    p := pg_temp.c8_ultima('c8-t28-3');
+    v_c := format('elegida 2 veces (fuerte): %s «%s», línea %s, flags %s, obra %s, entrada «%s», pistas «%s»', p.fuente, p.propuesta->>'motivo',
                   p.propuesta->'lineas'->0->>'proyecto_id', (p.propuesta->'flags')::text, (p.propuesta->'obra')::text, p.entrada->>'pistas_resumen',
                   p.pistas->>'resumen');
-    select format(' | bandeja: obra «%s» %s «%s», pide_obra %s', b.obra_propuesta, b.obra_confianza, b.obra_motivo, b.pide_obra::text) into v_c
+    select format(' | bandeja: obra «%s» %s «%s», pide_obra %s, obra_fuerte %s', b.obra_propuesta, b.obra_confianza, b.obra_motivo, b.pide_obra::text,
+                  b.obra_fuerte::text) into v_d
       from v_contador_bandeja b where b.propuesta_id = p.id;
-    v_b := v_b || v_c;
-    p := pg_temp.c8_ultima('c8-t28-1');
-    v_c := format('la que ya esperaba: %s, flags %s, obra %s', p.estado, (p.propuesta->'flags')::text, coalesce((p.propuesta->'obra')::text, '-'));
+    v_c := v_c || v_d;
+    v_d := format('las que ya esperaban: %s', (select string_agg(format('%s flags %s obra %s', q.estado, (q.propuesta->'flags')::text,
+                                                                           coalesce((q.propuesta->'obra')::text, '-')), ' / ' order by q.creado_el, q.id)
+                                                   from contador_propuestas q where q.movimiento_id in (v_m1, v_m2)));
     -- una regla a 6300 (no lleva obra): nada de obra aunque haya pistas; y
     -- una regla con su propia obra (B): manda sobre las pistas (que dicen A)
-    v_m3 := pg_temp.c8_cargo('c8-t28-3', v_dia, 53.00, 'C8 PRUEBA ZANCUDO GAS 5234 BELLEVIEW FL');
+    v_m4 := pg_temp.c8_cargo('c8-t28-4', v_dia, 53.00, 'C8 PRUEBA ZANCUDO GAS 5234 BELLEVIEW FL');
     perform fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Zancudo gas', '^C8 PRUEBA ZANCUDO GAS', '[{"cuenta": "6300"}]');
-    v_m4 := pg_temp.c8_cargo('c8-t28-4', v_dia, 77.00, 'C8 PRUEBA ZANCUDO SUBS 77 OCALA FL');
+    v_m5 := pg_temp.c8_cargo('c8-t28-5', v_dia, 77.00, 'C8 PRUEBA ZANCUDO SUBS 77 OCALA FL');
     perform fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Zancudo subs', '^C8 PRUEBA ZANCUDO SUBS',
                                    jsonb_build_array(jsonb_build_object('cuenta', '5200', 'proyecto_id', v_ob)));
     perform fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
-    p := pg_temp.c8_ultima('c8-t28-3');
-    v_d := format('cuenta sin obra: flags %s, obra %s', (p.propuesta->'flags')::text, coalesce((p.propuesta->'obra')::text, '-'));
     p := pg_temp.c8_ultima('c8-t28-4');
-    v_d := v_d || format(' | la regla con su obra: línea %s, flags %s, obra %s', p.propuesta->'lineas'->0->>'proyecto_id', (p.propuesta->'flags')::text,
+    v_e := format('cuenta sin obra: flags %s, obra %s', (p.propuesta->'flags')::text, coalesce((p.propuesta->'obra')::text, '-'));
+    p := pg_temp.c8_ultima('c8-t28-5');
+    v_e := v_e || format(' | la regla con su obra: línea %s, flags %s, obra %s', p.propuesta->'lineas'->0->>'proyecto_id', (p.propuesta->'flags')::text,
                          coalesce((p.propuesta->'obra')::text, '-'));
-    v_obt := pg_temp.c8_obras_tapar(format('%s | %s | %s | %s', v_a, v_b, v_c, v_d));
+    v_obt := pg_temp.c8_obras_tapar(format('%s | %s | %s | %s | %s', v_a, v_b, v_c, v_d, v_e));
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (28, 'regla + candidata: sin pistas pide_obra como siempre; con horas la propuesta por regla lleva la obra (confianza, motivo, entrada, bandeja) y la que esperaba no cambia; una cuenta sin obra o una regla con su obra no toman la candidata',
-    'sin pistas: regla flags {"pide_obra": true}, obra -, pistas «sin pistas» | con horas: regla «Regla: Zancudo (supply)», línea <a>, flags {"obra_propuesta": true}, obra {"motivo": "la cuadrilla reportó 16 h en <A> esos días", "confianza": 0.90, "proyecto_id": "<a>"}, entrada «<A>: 16 h esos días, 16 h en 30 días», pistas «<A>: 16 h esos días, 16 h en 30 días» | bandeja: obra «<A>» 0.90 «la cuadrilla reportó 16 h en <A> esos días», pide_obra false | la que ya esperaba: pendiente, flags {"pide_obra": true}, obra - | cuenta sin obra: flags {}, obra - | la regla con su obra: línea <b>, flags {}, obra -',
+  insert into _pruebas values (28, 'regla + candidata (7c): sin pistas pide_obra; con solo horas la candidata es débil y la propuesta por regla pide obra con las pistas guardadas; elegida dos veces es fuerte y la propuesta lleva la obra (confianza, motivo, entrada, bandeja con obra_fuerte); las que esperaban no cambian; una cuenta sin obra o una regla con su obra no toman la candidata',
+    'sin pistas: regla flags {"pide_obra": true}, obra -, pistas «sin pistas» | con horas (débil): regla flags {"pide_obra": true}, obra -, candidata <A> conf 0.70 fuerte false «<A> es la única obra con pistas esos días; la cuadrilla reportó 16 h allí esos días», bandeja pide_obra true obra_fuerte false | elegida 2 veces (fuerte): regla «Regla: Zancudo (supply)», línea <a>, flags {"obra_fuerte": true, "obra_propuesta": true}, obra {"motivo": "Edgar eligió <A> 2 veces con C8 PRUEBA ZANCUDO ELECTRIC; la cuadrilla reportó 16 h allí esos días", "confianza": 0.80, "proyecto_id": "<a>"}, entrada «<A>: 16 h esos días, 16 h en 30 días, elegida 2 veces», pistas «<A>: 16 h esos días, 16 h en 30 días, elegida 2 veces» | bandeja: obra «<A>» 0.80 «Edgar eligió <A> 2 veces con C8 PRUEBA ZANCUDO ELECTRIC; la cuadrilla reportó 16 h allí esos días», pide_obra false, obra_fuerte true | las que ya esperaban: pendiente flags {"pide_obra": true} obra - / pendiente flags {"pide_obra": true} obra - | cuenta sin obra: flags {}, obra - | la regla con su obra: línea <b>, flags {}, obra -',
     v_obt,
-    v_obt = 'sin pistas: regla flags {"pide_obra": true}, obra -, pistas «sin pistas» | con horas: regla «Regla: Zancudo (supply)», línea <a>, flags {"obra_propuesta": true}, obra {"motivo": "la cuadrilla reportó 16 h en <A> esos días", "confianza": 0.90, "proyecto_id": "<a>"}, entrada «<A>: 16 h esos días, 16 h en 30 días», pistas «<A>: 16 h esos días, 16 h en 30 días» | bandeja: obra «<A>» 0.90 «la cuadrilla reportó 16 h en <A> esos días», pide_obra false | la que ya esperaba: pendiente, flags {"pide_obra": true}, obra - | cuenta sin obra: flags {}, obra - | la regla con su obra: línea <b>, flags {}, obra -');
+    v_obt = 'sin pistas: regla flags {"pide_obra": true}, obra -, pistas «sin pistas» | con horas (débil): regla flags {"pide_obra": true}, obra -, candidata <A> conf 0.70 fuerte false «<A> es la única obra con pistas esos días; la cuadrilla reportó 16 h allí esos días», bandeja pide_obra true obra_fuerte false | elegida 2 veces (fuerte): regla «Regla: Zancudo (supply)», línea <a>, flags {"obra_fuerte": true, "obra_propuesta": true}, obra {"motivo": "Edgar eligió <A> 2 veces con C8 PRUEBA ZANCUDO ELECTRIC; la cuadrilla reportó 16 h allí esos días", "confianza": 0.80, "proyecto_id": "<a>"}, entrada «<A>: 16 h esos días, 16 h en 30 días, elegida 2 veces», pistas «<A>: 16 h esos días, 16 h en 30 días, elegida 2 veces» | bandeja: obra «<A>» 0.80 «Edgar eligió <A> 2 veces con C8 PRUEBA ZANCUDO ELECTRIC; la cuadrilla reportó 16 h allí esos días», pide_obra false, obra_fuerte true | las que ya esperaban: pendiente flags {"pide_obra": true} obra - / pendiente flags {"pide_obra": true} obra - | cuenta sin obra: flags {}, obra - | la regla con su obra: línea <b>, flags {}, obra -');
 end $$;
 
 -- 29. APROBAR CON LA OBRA PROPUESTA: «Así es» sin obra de Edgar aprueba con
@@ -2081,12 +2151,14 @@ end $$;
 --     va sin obra y con pide_obra); con otra obra, la de Edgar manda y la
 --     propuesta queda editada (el asiento con la suya); con la misma,
 --     aprobada; «Según yo» con otra obra, editada; una propuesta por regla
---     con la candidata se aprueba sin más; con dos líneas, la obra de Edgar
---     va solo a la que la admite (6300 nunca); y el siguiente cargo del
---     comercio sale por la regla aprendida CON la candidata de las pistas
---     (las horas y las dos veces que Edgar eligió esa obra). Los otros
---     comercios de la prueba son distintos y sin recordar: lo que se
---     eligió para ellos no cuenta para el supply.
+--     con la candidata DÉBIL (7c: solo las horas, la única obra, 0,70) pide
+--     obra —«Así es» sin obra, MX008— y con la obra de Edgar queda aprobada;
+--     con dos líneas, la obra de Edgar va solo a la que la admite (6300
+--     nunca); y el siguiente cargo del comercio sale por la regla aprendida
+--     CON la candidata, FUERTE porque Edgar eligió esa obra dos veces con
+--     ese comercio (0,80; el motivo lo cita primero, y después las horas).
+--     Los otros comercios de la prueba son distintos y sin recordar: lo que
+--     se eligió para ellos no cuenta para el supply.
 do $$
 declare
   v_obt text; v_m uuid; v_l uuid; v_r jsonb; p contador_propuestas; v_a text; v_b text; v_c text; v_d text; v_e text; v_f text; v_g text;
@@ -2128,12 +2200,17 @@ begin
     v_r := fn_contador_clasificar(v_m, pg_temp.c8('dueno')::uuid, jsonb_build_array(jsonb_build_object('cuenta', '5100', 'proyecto_id', v_ob)),
                                   'fue para la otra obra', false);
     v_d := format('según yo con otra: %s, asiento %s', v_r->>'estado', pg_temp.c8_lineas((v_r->>'asiento_id')::uuid));
-    -- 5. por regla con la candidata, aprobada sin más
+    -- 5. por regla con la candidata débil (7c: las horas solas, la única obra con pistas, 0,70): pide obra; con la de Edgar, aprobada
     v_m := pg_temp.c8_cargo('c8-t29-5', v_dia, 171.98, 'C8 PRUEBA ZANCUDO ELECTRIC 1040 TAMPA FL');
     perform fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Zancudo (supply)', '^C8 PRUEBA ZANCUDO ELECTRIC', '[{"cuenta": "5100"}]');
     perform fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
-    v_r := fn_contador_aprobar(pg_temp.c8_prop('c8-t29-5'), pg_temp.c8('dueno')::uuid, null, false);
-    v_e := format('por regla con la candidata: %s %s, asiento %s', v_r->>'fuente', v_r->>'estado', pg_temp.c8_lineas((v_r->>'asiento_id')::uuid));
+    begin
+      perform fn_contador_aprobar(pg_temp.c8_prop('c8-t29-5'), pg_temp.c8('dueno')::uuid, null, false);
+      v_e := 'por regla con candidata débil: ENTRÓ sin obra';
+    exception when others then v_e := format('por regla con candidata débil: sin obra %s', sqlstate);
+    end;
+    v_r := fn_contador_aprobar(pg_temp.c8_prop('c8-t29-5'), pg_temp.c8('dueno')::uuid, v_oa, false);
+    v_e := v_e || format(', con la obra de Edgar %s %s, asiento %s', v_r->>'fuente', v_r->>'estado', pg_temp.c8_lineas((v_r->>'asiento_id')::uuid));
     -- 6. dos líneas (5100 y 6300) con la obra A propuesta; Edgar elige B: solo a la que la admite
     v_m := pg_temp.c8_cargo('c8-t29-6', v_dia, 100.00, 'C8 PRUEBA ZANCUDO MIXTO 33 OCALA FL');
     v_r := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "5100", "monto": "60.00"}, {"cuenta": "6300", "monto": "40.00"}]', 'material y gasolina', 0.8, null, null,
@@ -2143,22 +2220,22 @@ begin
                                                   with ordinality t(x, o)));
     v_r := fn_contador_aprobar((v_r->>'propuesta')::uuid, pg_temp.c8('dueno')::uuid, v_ob, false);
     v_f := v_f || format(', con B %s, asiento %s', v_r->>'estado', pg_temp.c8_lineas((v_r->>'asiento_id')::uuid));
-    -- 7. el siguiente del comercio: por la regla aprendida en 1, con la candidata (16 h y dos veces elegida)
+    -- 7. el siguiente del comercio: por la regla aprendida en 1, con la candidata FUERTE (dos veces elegida con ese comercio: 0,80; y 16 h)
     v_m := pg_temp.c8_cargo('c8-t29-7', v_dia, 33.00, 'C8 PRUEBA ZANCUDO SUPPLY 2051 BELLEVIEW FL');
     perform fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
     p := pg_temp.c8_ultima('c8-t29-7');
-    v_g := format('el siguiente del comercio: %s «%s», línea %s, obra conf %s «%s»', p.fuente, p.propuesta->>'motivo', p.propuesta->'lineas'->0->>'proyecto_id',
-                  p.propuesta->'obra'->>'confianza', p.propuesta->'obra'->>'motivo');
+    v_g := format('el siguiente del comercio: %s «%s», línea %s, flags %s, obra conf %s «%s»', p.fuente, p.propuesta->>'motivo',
+                  p.propuesta->'lineas'->0->>'proyecto_id', (p.propuesta->'flags')::text, p.propuesta->'obra'->>'confianza', p.propuesta->'obra'->>'motivo');
     v_obt := pg_temp.c8_obras_tapar(format('%s | %s | %s | %s | %s | %s | %s', v_a, v_b, v_c, v_d, v_e, v_f, v_g));
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (29, 'aprobar con la obra propuesta: sin obra de Edgar aprobada con ella (la regla aprendida sin obra); con otra, editada; con la misma, aprobada; según yo con otra, editada; por regla con la candidata; dos líneas solo a la que admite; el siguiente del comercio por la regla aprendida con la candidata',
-    'sin obra de Edgar: aprobada, asiento 1010 -87.43 | 5100 87.43 obra:<a>, finales [{"cuenta": "5100", "proyecto_id": "<a>"}], regla C8 PRUEBA ZANCUDO SUPPLY → [{"cuenta": "5100"}] pide_obra true | con otra obra: editada, asiento 1010 -87.43 | 5100 87.43 obra:<b> | con la misma: aprobada | según yo con otra: editada, asiento 1010 -40.00 | 5100 40.00 obra:<b> | por regla con la candidata: regla aprobada, asiento 1010 -171.98 | 5100 171.98 obra:<a> | dos líneas: la IA <a>/-, con B editada, asiento 1010 -100.00 | 5100 60.00 obra:<b> | 6300 40.00 | el siguiente del comercio: regla «Regla: C8 PRUEBA ZANCUDO SUPPLY», línea <a>, obra conf 0.90 «la cuadrilla reportó 16 h en <A> esos días; Edgar eligió esa obra 2 veces con C8 PRUEBA ZANCUDO SUPPLY»',
+  insert into _pruebas values (29, 'aprobar con la obra propuesta: sin obra de Edgar aprobada con ella (la regla aprendida sin obra); con otra, editada; con la misma, aprobada; según yo con otra, editada; por regla con candidata débil pide obra y con la de Edgar aprobada (7c); dos líneas solo a la que admite; el siguiente del comercio por la regla aprendida con la candidata fuerte (elegida 2 veces)',
+    'sin obra de Edgar: aprobada, asiento 1010 -87.43 | 5100 87.43 obra:<a>, finales [{"cuenta": "5100", "proyecto_id": "<a>"}], regla C8 PRUEBA ZANCUDO SUPPLY → [{"cuenta": "5100"}] pide_obra true | con otra obra: editada, asiento 1010 -87.43 | 5100 87.43 obra:<b> | con la misma: aprobada | según yo con otra: editada, asiento 1010 -40.00 | 5100 40.00 obra:<b> | por regla con candidata débil: sin obra MX008, con la obra de Edgar regla aprobada, asiento 1010 -171.98 | 5100 171.98 obra:<a> | dos líneas: la IA <a>/-, con B editada, asiento 1010 -100.00 | 5100 60.00 obra:<b> | 6300 40.00 | el siguiente del comercio: regla «Regla: C8 PRUEBA ZANCUDO SUPPLY», línea <a>, flags {"obra_fuerte": true, "obra_propuesta": true}, obra conf 0.80 «Edgar eligió <A> 2 veces con C8 PRUEBA ZANCUDO SUPPLY; la cuadrilla reportó 16 h allí esos días»',
     v_obt,
-    v_obt = 'sin obra de Edgar: aprobada, asiento 1010 -87.43 | 5100 87.43 obra:<a>, finales [{"cuenta": "5100", "proyecto_id": "<a>"}], regla C8 PRUEBA ZANCUDO SUPPLY → [{"cuenta": "5100"}] pide_obra true | con otra obra: editada, asiento 1010 -87.43 | 5100 87.43 obra:<b> | con la misma: aprobada | según yo con otra: editada, asiento 1010 -40.00 | 5100 40.00 obra:<b> | por regla con la candidata: regla aprobada, asiento 1010 -171.98 | 5100 171.98 obra:<a> | dos líneas: la IA <a>/-, con B editada, asiento 1010 -100.00 | 5100 60.00 obra:<b> | 6300 40.00 | el siguiente del comercio: regla «Regla: C8 PRUEBA ZANCUDO SUPPLY», línea <a>, obra conf 0.90 «la cuadrilla reportó 16 h en <A> esos días; Edgar eligió esa obra 2 veces con C8 PRUEBA ZANCUDO SUPPLY»');
+    v_obt = 'sin obra de Edgar: aprobada, asiento 1010 -87.43 | 5100 87.43 obra:<a>, finales [{"cuenta": "5100", "proyecto_id": "<a>"}], regla C8 PRUEBA ZANCUDO SUPPLY → [{"cuenta": "5100"}] pide_obra true | con otra obra: editada, asiento 1010 -87.43 | 5100 87.43 obra:<b> | con la misma: aprobada | según yo con otra: editada, asiento 1010 -40.00 | 5100 40.00 obra:<b> | por regla con candidata débil: sin obra MX008, con la obra de Edgar regla aprobada, asiento 1010 -171.98 | 5100 171.98 obra:<a> | dos líneas: la IA <a>/-, con B editada, asiento 1010 -100.00 | 5100 60.00 obra:<b> | 6300 40.00 | el siguiente del comercio: regla «Regla: C8 PRUEBA ZANCUDO SUPPLY», línea <a>, flags {"obra_fuerte": true, "obra_propuesta": true}, obra conf 0.80 «Edgar eligió <A> 2 veces con C8 PRUEBA ZANCUDO SUPPLY; la cuadrilla reportó 16 h allí esos días»');
 end $$;
 
 -- 30. EL CUADRE 64 y el estado: una propuesta pendiente con obra propuesta
@@ -2311,9 +2388,9 @@ end $$;
 --     DIRECTO en la línea una obra que no está activa (la copió de un ejemplo
 --     viejo, o se cerró en medio), la propuesta no se pierde: se guarda sin
 --     esa obra, con pide_obra y la nota; si además propone en «obra» una
---     válida, esa ocupa el hueco (una sola nota); una obra que no existe en la
---     línea sigue sin guardarse (MX006); la bandeja enseña la línea con su
---     obra y sin obra propuesta
+--     válida, esa ocupa el hueco (una sola nota, y obra_fuerte si llega a
+--     0,80: 7c); una obra que no existe en la línea sigue sin guardarse
+--     (MX006); la bandeja enseña la línea con su obra y sin obra propuesta
 do $$
 declare
   v_obt text; v_m uuid; v_l uuid; v_r jsonb; p contador_propuestas; v_a text; v_b text; v_c text; v_d text; v_est text;
@@ -2361,9 +2438,445 @@ begin
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (32, 'la obra de la línea: la línea que ya trae la suya manda sobre la obra propuesta (y la nota lo dice); una obra inactiva puesta en la línea se quita con nota sin perder la propuesta (una válida en «obra» ocupa el hueco); una inventada en la línea, MX006',
-    'línea A + obra B: línea <a>, obra -, flags {}, propuesta.obra -, nota «la IA propuso la obra «<b>», pero la línea ya trae su propia obra, «<a>» (<A>): se guarda con la de la línea», bandeja: línea <A>, obra propuesta - | línea con B cerrada: guardada sí, línea -, pide_obra true, flags {"pide_obra": true}, nota «la IA puso en la línea 5100 la obra «<b>» (<B>), que no está activa (está completado): se guarda sin ella» | línea con B cerrada + obra A: línea <a>, obra A, flags {"obra_propuesta": true}, nota «la IA puso en la línea 5100 la obra «<b>» (<B>), que no está activa (está completado): se guarda sin ella» | línea con obra inventada: MX006, guardadas 0',
+    'línea A + obra B: línea <a>, obra -, flags {}, propuesta.obra -, nota «la IA propuso la obra «<b>», pero la línea ya trae su propia obra, «<a>» (<A>): se guarda con la de la línea», bandeja: línea <A>, obra propuesta - | línea con B cerrada: guardada sí, línea -, pide_obra true, flags {"pide_obra": true}, nota «la IA puso en la línea 5100 la obra «<b>» (<B>), que no está activa (está completado): se guarda sin ella» | línea con B cerrada + obra A: línea <a>, obra A, flags {"obra_fuerte": true, "obra_propuesta": true}, nota «la IA puso en la línea 5100 la obra «<b>» (<B>), que no está activa (está completado): se guarda sin ella» | línea con obra inventada: MX006, guardadas 0',
     v_obt,
-    v_obt = 'línea A + obra B: línea <a>, obra -, flags {}, propuesta.obra -, nota «la IA propuso la obra «<b>», pero la línea ya trae su propia obra, «<a>» (<A>): se guarda con la de la línea», bandeja: línea <A>, obra propuesta - | línea con B cerrada: guardada sí, línea -, pide_obra true, flags {"pide_obra": true}, nota «la IA puso en la línea 5100 la obra «<b>» (<B>), que no está activa (está completado): se guarda sin ella» | línea con B cerrada + obra A: línea <a>, obra A, flags {"obra_propuesta": true}, nota «la IA puso en la línea 5100 la obra «<b>» (<B>), que no está activa (está completado): se guarda sin ella» | línea con obra inventada: MX006, guardadas 0');
+    v_obt = 'línea A + obra B: línea <a>, obra -, flags {}, propuesta.obra -, nota «la IA propuso la obra «<b>», pero la línea ya trae su propia obra, «<a>» (<A>): se guarda con la de la línea», bandeja: línea <A>, obra propuesta - | línea con B cerrada: guardada sí, línea -, pide_obra true, flags {"pide_obra": true}, nota «la IA puso en la línea 5100 la obra «<b>» (<B>), que no está activa (está completado): se guarda sin ella» | línea con B cerrada + obra A: línea <a>, obra A, flags {"obra_fuerte": true, "obra_propuesta": true}, nota «la IA puso en la línea 5100 la obra «<b>» (<B>), que no está activa (está completado): se guarda sin ella» | línea con obra inventada: MX006, guardadas 0');
+end $$;
+
+
+-- =====================================================================
+-- La 7c: la fase y los materiales en las pistas, la confianza calibrada,
+-- «¿De qué obra?» en la bandeja, la rutina, la alarma 74 y el marcador del
+-- mes. Como las de la 7b: comercios inventados, las pistas reales fuera, y
+-- antes de la 24 y la 25.
+-- =====================================================================
+
+-- 33. (7c) LA FASE Y LOS MATERIALES EN LAS PISTAS: cada obra lleva su fase
+--     (la más frecuente de las horas de esa obra de 7 días antes a 7 después:
+--     dos partes de Rough-in contra una de Trim-out, y una de Panel de hace
+--     10 días no cuenta; sin horas con fase, la de la ficha del proyecto; sin
+--     ninguna, nula) y hasta 8 descripciones de su lista de materiales de 14
+--     días antes a 1 después (las compradas primero, después las más nuevas;
+--     sin repetir; 60 letras como mucho; el teléfono tapado; la de hace 20
+--     días no); nunca el precio, ni quién las apuntó, ni el ticket, ni la
+--     nota de las horas; y a la IA (fn_contador_pendientes) van las dos con
+--     cada obra, sin los puntos
+do $$
+declare
+  v_obt text; v_m uuid; v_p jsonb; v_mov jsonb; v_a text; v_b text; v_c text; v_d text; v_oa_j jsonb; v_ob_j jsonb; v_txt text; v_fase text;
+  v_dia date := pg_temp.c8('d')::date; v_oa text := pg_temp.c8('obra'); v_ob text := pg_temp.c8('obra2');
+begin
+  begin
+    perform pg_temp.c8_montar();
+    perform pg_temp.c8_sin_pistas();
+    v_m := pg_temp.c8_cargo('c8-t33-1', v_dia, 171.98, 'C8 PRUEBA ZANCUDO ELECTRIC 1040 TAMPA FL');
+    -- la fase de A: dos partes de Rough-in y una de Trim-out cerca del cargo,
+    -- y una de Panel hace 10 días (fuera de los ±7, aunque cuente en el mes)
+    perform pg_temp.c8_horas(-8330001, v_dia - 1, v_oa, 8, 'C8 PRUEBA NOTA SECRETA', 'Rough-in');
+    perform pg_temp.c8_horas(-8330002, v_dia, v_oa, 8, null, 'Rough-in');
+    perform pg_temp.c8_horas(-8330003, v_dia + 1, v_oa, 6, null, 'Trim-out');
+    perform pg_temp.c8_horas(-8330004, v_dia - 10, v_oa, 8, null, 'Panel / Servicio');
+    -- B sin horas: la fase de su ficha (trim, puesta aquí; se deshace), y un
+    -- material para que tenga alguna pista
+    select pj.fase into v_fase from proyectos pj where pj.id = v_ob;
+    update proyectos set fase = 'trim' where id = v_ob;
+    perform pg_temp.c8_material(-8330021, v_dia - 1, v_ob, 'C8 PRUEBA MATERIAL DE B');
+    -- la lista de A: 11 filas en la ventana (dos compradas con su precio, una
+    -- repetida en minúsculas, una de más de 60 letras, una con teléfono, una
+    -- de mañana) y una de hace 20 días (fuera)
+    perform pg_temp.c8_material(-8330001, v_dia - 1, v_oa, 'Breakers Homeline 20A 1P', 'comprado', 12.50);
+    perform pg_temp.c8_material(-8330002, v_dia - 2, v_oa, 'MC 12/2, rollo de 250 ft', 'comprado', 89.00);
+    perform pg_temp.c8_material(-8330003, v_dia - 3, v_oa, 'Receptáculo NEMA 5-20R Leviton llamar 352-555-1234');
+    perform pg_temp.c8_material(-8330004, v_dia - 4, v_oa, 'receptáculo nema 5-20r leviton llamar 352-555-1234');
+    perform pg_temp.c8_material(-8330005, v_dia - 5, v_oa, 'Caja 4x4 metálica con tapa ciega y tornillos galvanizados para montaje en superficie');
+    perform pg_temp.c8_material(-8330006, v_dia - 6, v_oa, 'Conduit EMT 3/4 x 10 ft');
+    perform pg_temp.c8_material(-8330007, v_dia - 7, v_oa, 'Grapas EMT 3/4');
+    perform pg_temp.c8_material(-8330008, v_dia - 8, v_oa, 'Cinta Super 33+');
+    perform pg_temp.c8_material(-8330009, v_dia - 9, v_oa, 'Wire nuts rojos (100)');
+    perform pg_temp.c8_material(-8330010, v_dia - 10, v_oa, 'Tornillería');
+    perform pg_temp.c8_material(-8330011, v_dia - 20, v_oa, 'Panel Homeline 200A');
+    perform pg_temp.c8_material(-8330012, v_dia + 1, v_oa, 'Cable THHN 10 AWG negro');
+    v_p := fn_contador_pistas_obra(v_m);
+    select o into v_oa_j from jsonb_array_elements(v_p->'obras') o where o->>'proyecto_id' = v_oa;
+    select o into v_ob_j from jsonb_array_elements(v_p->'obras') o where o->>'proyecto_id' = v_ob;
+    v_a := format('fase: A %s · B de la ficha %s', v_oa_j->>'fase', v_ob_j->>'fase');
+    update proyectos set fase = null where id = v_ob;
+    v_p := fn_contador_pistas_obra(v_m);
+    select o into v_ob_j from jsonb_array_elements(v_p->'obras') o where o->>'proyecto_id' = v_ob;
+    v_a := v_a || format(' · B sin nada %s', coalesce(v_ob_j->>'fase', 'null'));
+    update proyectos set fase = v_fase where id = v_ob;
+    v_b := format('materiales A: %s de %s recientes: %s', jsonb_array_length(v_oa_j->'materiales'), v_oa_j->>'materiales_recientes',
+                  (select string_agg(case when length(x) >= 60 then 'largo:' || length(x) else x end, ' | ' order by n)
+                     from jsonb_array_elements_text(v_oa_j->'materiales') with ordinality t(x, n)));
+    -- nada personal en todo lo que sale: ni el precio, ni el teléfono, ni la
+    -- nota de las horas, ni quién lo apuntó, ni el ticket
+    v_txt := v_p::text;
+    v_c := format('personal: %s', case when v_txt !~ '12\.5|89\.0|352-555|352 555|5551234|NOTA SECRETA' and v_txt !~ pg_temp.c8('dueno')
+                                            and v_txt !~ coalesce(pg_temp.c8('equipo'), pg_temp.c8('dueno'))
+                                            and v_txt !~ '"(usuario_id|notas|ruta|autor_id|precio|recibo_id|cantidad)"'
+                                       then 'nada' else 'ALGO: ' || v_txt end);
+    -- a la IA: cada obra con su fase y sus materiales, sin los puntos
+    perform pg_temp.c8_aparcar(array[v_m]);
+    select x into v_mov from jsonb_array_elements(fn_contador_pendientes(20)->'movimientos') x where (x->>'movimiento_id')::uuid = v_m;
+    select o into v_oa_j from jsonb_array_elements(v_mov->'pistas_obra'->'obras') o where o->>'proyecto_id' = v_oa;
+    v_d := format('a la IA: obra {%s}, fase %s, materiales %s', (select string_agg(k, ',' order by k) from jsonb_object_keys(v_oa_j) k),
+                  v_oa_j->>'fase', jsonb_array_length(v_oa_j->'materiales'));
+    v_obt := pg_temp.c8_obras_tapar(format('%s | %s | %s | %s', v_a, v_b, v_c, v_d));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (33, 'la fase y los materiales en las pistas (7c): la fase más frecuente de las horas de ±7 días (si no, la de la ficha; si no, nula); hasta 8 materiales, comprados primero, sin repetir, 60 letras, tapados; nada personal; a la IA con cada obra',
+    'fase: A Rough-in · B de la ficha trim · B sin nada null | materiales A: 8 de 11 recientes: Breakers Homeline 20A 1P | MC 12/2, rollo de 250 ft | Cable THHN 10 AWG negro | Receptáculo NEMA 5-20R Leviton llamar [teléfono] | largo:60 | Conduit EMT 3/4 x 10 ft | Grapas EMT 3/4 | Cinta Super 33+ | personal: nada | a la IA: obra {fase,horas_cerca,horas_mes,materiales,materiales_recientes,nombre,proyecto_id,recibos_proveedor,veces_elegida}, fase Rough-in, materiales 8',
+    v_obt,
+    v_obt = 'fase: A Rough-in · B de la ficha trim · B sin nada null | materiales A: 8 de 11 recientes: Breakers Homeline 20A 1P | MC 12/2, rollo de 250 ft | Cable THHN 10 AWG negro | Receptáculo NEMA 5-20R Leviton llamar [teléfono] | largo:60 | Conduit EMT 3/4 x 10 ft | Grapas EMT 3/4 | Cinta Super 33+ | personal: nada | a la IA: obra {fase,horas_cerca,horas_mes,materiales,materiales_recientes,nombre,proyecto_id,recibos_proveedor,veces_elegida}, fase Rough-in, materiales 8');
+end $$;
+
+-- 34. (7c) LA CONFIANZA CALIBRADA de la candidata, caso por caso, con el
+--     motivo citando primero la pista que la da y «FUERTE» solo desde 0,80:
+--     con horas en dos obras (A 16 h, B 2 h), 0,45 (débil); A la única obra
+--     con pistas, 0,70; Edgar eligió A una vez con ese comercio (y ninguna
+--     otra), 0,60; si también eligió B una vez, 0,45 otra vez; A dos veces
+--     contra B una (el doble), 0,80 FUERTE; tres veces, 0,90 FUERTE; B dos
+--     veces (3 contra 2: ya no es el doble), 0,45; con otro comercio, 3
+--     tickets suyos a A y ninguno a B, 0,65; uno a B, 0,45. El máximo que
+--     aplique manda (la única obra, 0,70, por encima de elegida una vez)
+do $$
+declare
+  v_obt text; v_m uuid; v_m2 uuid; v_r text[] := '{}';
+  v_dia date := pg_temp.c8('d')::date; v_oa text := pg_temp.c8('obra'); v_ob text := pg_temp.c8('obra2');
+begin
+  begin
+    perform pg_temp.c8_montar();
+    perform pg_temp.c8_sin_pistas();
+    v_m := pg_temp.c8_cargo('c8-t34-1', v_dia, 171.98, 'C8 PRUEBA ZANCUDO ELECTRIC 1040 TAMPA FL');
+    perform pg_temp.c8_horas(-8340001, v_dia - 1, v_oa, 8);
+    perform pg_temp.c8_horas(-8340002, v_dia, v_oa, 8);
+    perform pg_temp.c8_horas(-8340003, v_dia, v_ob, 2);
+    v_r := v_r || ('a horas en dos obras: ' || pg_temp.c8_cand(v_m));
+    delete from horas where id = -8340003;
+    v_r := v_r || ('b la única obra: ' || pg_temp.c8_cand(v_m));
+    perform pg_temp.c8_horas(-8340003, v_dia, v_ob, 2);
+    -- lo que Edgar eligió con este comercio: otros cargos del mismo
+    -- comercio, clasificados a mano (sin recordar), a A o a B
+    perform fn_contador_clasificar(pg_temp.c8_cargo('c8-t34-2', v_dia, 11.00, 'C8 PRUEBA ZANCUDO ELECTRIC 1040 TAMPA FL'), pg_temp.c8('dueno')::uuid,
+                                   jsonb_build_array(jsonb_build_object('cuenta', '5100', 'proyecto_id', v_oa)), 'c8-pruebas', false);
+    v_r := v_r || ('c elegida 1 vez: ' || pg_temp.c8_cand(v_m));
+    perform fn_contador_clasificar(pg_temp.c8_cargo('c8-t34-3', v_dia, 12.00, 'C8 PRUEBA ZANCUDO ELECTRIC 1040 TAMPA FL'), pg_temp.c8('dueno')::uuid,
+                                   jsonb_build_array(jsonb_build_object('cuenta', '5100', 'proyecto_id', v_ob)), 'c8-pruebas', false);
+    v_r := v_r || ('d A 1 y B 1: ' || pg_temp.c8_cand(v_m));
+    perform fn_contador_clasificar(pg_temp.c8_cargo('c8-t34-4', v_dia, 13.00, 'C8 PRUEBA ZANCUDO ELECTRIC 1040 TAMPA FL'), pg_temp.c8('dueno')::uuid,
+                                   jsonb_build_array(jsonb_build_object('cuenta', '5100', 'proyecto_id', v_oa)), 'c8-pruebas', false);
+    v_r := v_r || ('e A 2 y B 1: ' || pg_temp.c8_cand(v_m));
+    perform fn_contador_clasificar(pg_temp.c8_cargo('c8-t34-5', v_dia, 14.00, 'C8 PRUEBA ZANCUDO ELECTRIC 1040 TAMPA FL'), pg_temp.c8('dueno')::uuid,
+                                   jsonb_build_array(jsonb_build_object('cuenta', '5100', 'proyecto_id', v_oa)), 'c8-pruebas', false);
+    v_r := v_r || ('f A 3 y B 1: ' || pg_temp.c8_cand(v_m));
+    perform fn_contador_clasificar(pg_temp.c8_cargo('c8-t34-6', v_dia, 15.00, 'C8 PRUEBA ZANCUDO ELECTRIC 1040 TAMPA FL'), pg_temp.c8('dueno')::uuid,
+                                   jsonb_build_array(jsonb_build_object('cuenta', '5100', 'proyecto_id', v_ob)), 'c8-pruebas', false);
+    v_r := v_r || ('g A 3 y B 2: ' || pg_temp.c8_cand(v_m));
+    -- otro comercio: 3 tickets suyos a A (uno en minúsculas y con el número
+    -- de tienda) y ninguno a B; después uno a B
+    v_m2 := pg_temp.c8_cargo('c8-t34-7', v_dia, 66.00, 'C8 PRUEBA ZANCUDO HARDWARE 11 OCALA FL');
+    perform pg_temp.c8_recibo(-8340001, v_dia - 5, v_oa, 'C8 PRUEBA ZANCUDO HARDWARE');
+    perform pg_temp.c8_recibo(-8340002, v_dia - 15, v_oa, 'C8 PRUEBA ZANCUDO HARDWARE');
+    perform pg_temp.c8_recibo(-8340003, v_dia - 25, v_oa, 'c8 prueba zancudo hardware 11');
+    v_r := v_r || ('h 3 tickets solo a A: ' || pg_temp.c8_cand(v_m2));
+    perform pg_temp.c8_recibo(-8340004, v_dia - 2, v_ob, 'C8 PRUEBA ZANCUDO HARDWARE');
+    v_r := v_r || ('i y uno a B: ' || pg_temp.c8_cand(v_m2));
+    v_obt := pg_temp.c8_obras_tapar(array_to_string(v_r, ' | '));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (34, 'la confianza calibrada (7c): 0,45 con horas; 0,70 la única obra; 0,60 elegida una vez (y ninguna otra); 0,80 y 0,90 elegida dos y tres veces al doble de la otra (fuerte); 0,65 tres tickets solo a esa obra; el motivo cita primero la pista que decide',
+    'a horas en dos obras: 0.45 débil «la cuadrilla reportó 16 h en <A> esos días» | b la única obra: 0.70 débil «<A> es la única obra con pistas esos días; la cuadrilla reportó 16 h allí esos días» | c elegida 1 vez: 0.60 débil «Edgar eligió <A> la última vez con C8 PRUEBA ZANCUDO ELECTRIC; la cuadrilla reportó 16 h allí esos días» | d A 1 y B 1: 0.45 débil «la cuadrilla reportó 16 h en <A> esos días; Edgar eligió esa obra la última vez con C8 PRUEBA ZANCUDO ELECTRIC» | e A 2 y B 1: 0.80 FUERTE «Edgar eligió <A> 2 veces con C8 PRUEBA ZANCUDO ELECTRIC; la cuadrilla reportó 16 h allí esos días» | f A 3 y B 1: 0.90 FUERTE «Edgar eligió <A> 3 veces con C8 PRUEBA ZANCUDO ELECTRIC; la cuadrilla reportó 16 h allí esos días» | g A 3 y B 2: 0.45 débil «la cuadrilla reportó 16 h en <A> esos días; Edgar eligió esa obra 3 veces con C8 PRUEBA ZANCUDO ELECTRIC» | h 3 tickets solo a A: 0.65 débil «las 3 compras anteriores de C8 PRUEBA ZANCUDO HARDWARE fueron todas a <A>; la cuadrilla reportó 16 h allí esos días» | i y uno a B: 0.45 débil «la cuadrilla reportó 16 h en <A> esos días; 3 compras anteriores de C8 PRUEBA ZANCUDO HARDWARE fueron a esa obra»',
+    v_obt,
+    v_obt = 'a horas en dos obras: 0.45 débil «la cuadrilla reportó 16 h en <A> esos días» | b la única obra: 0.70 débil «<A> es la única obra con pistas esos días; la cuadrilla reportó 16 h allí esos días» | c elegida 1 vez: 0.60 débil «Edgar eligió <A> la última vez con C8 PRUEBA ZANCUDO ELECTRIC; la cuadrilla reportó 16 h allí esos días» | d A 1 y B 1: 0.45 débil «la cuadrilla reportó 16 h en <A> esos días; Edgar eligió esa obra la última vez con C8 PRUEBA ZANCUDO ELECTRIC» | e A 2 y B 1: 0.80 FUERTE «Edgar eligió <A> 2 veces con C8 PRUEBA ZANCUDO ELECTRIC; la cuadrilla reportó 16 h allí esos días» | f A 3 y B 1: 0.90 FUERTE «Edgar eligió <A> 3 veces con C8 PRUEBA ZANCUDO ELECTRIC; la cuadrilla reportó 16 h allí esos días» | g A 3 y B 2: 0.45 débil «la cuadrilla reportó 16 h en <A> esos días; Edgar eligió esa obra 3 veces con C8 PRUEBA ZANCUDO ELECTRIC» | h 3 tickets solo a A: 0.65 débil «las 3 compras anteriores de C8 PRUEBA ZANCUDO HARDWARE fueron todas a <A>; la cuadrilla reportó 16 h allí esos días» | i y uno a B: 0.45 débil «la cuadrilla reportó 16 h en <A> esos días; 3 compras anteriores de C8 PRUEBA ZANCUDO HARDWARE fueron a esa obra»');
+end $$;
+
+-- 35. (7c) «¿DE QUÉ OBRA?» EN LA BANDEJA: obras_top trae como mucho tres
+--     obras de las pistas, por puntos, cada una con su pista en llano y corta
+--     («21 h esos días · 2 tickets de …», «8 h esos días · la elegiste 1 vez
+--     con …», «4 h esos días · 3 materiales apuntados»; con cuatro obras con
+--     pistas —dos de la prueba, que se deshacen—, la cuarta no va); y
+--     obra_fuerte dice si la obra propuesta viene con confianza ≥ 0,80 (la IA
+--     con 0,60 → false; con 0,85 → true, y guardar lo dice; una propuesta de
+--     la 7b, sin el flag y sin el comercio en sus pistas → false y «tickets de
+--     este comercio»); sin pistas, obras_top es null
+do $$
+declare
+  v_obt text; v_m uuid; v_m2 uuid; v_m3 uuid; v_l uuid; v_r jsonb; v_a text; v_b text; v_c text; v_d text;
+  v_oc text := 'c8-prueba-obra-c'; v_od text := 'c8-prueba-obra-d';
+  v_dia date := pg_temp.c8('d')::date; v_oa text := pg_temp.c8('obra'); v_ob text := pg_temp.c8('obra2');
+begin
+  begin
+    perform pg_temp.c8_montar();
+    perform pg_temp.c8_sin_pistas();
+    v_l := pg_temp.c8_lote(3);
+    -- sin pistas (antes de sembrar nada; un comercio sin tickets): obras_top null
+    v_m3 := pg_temp.c8_cargo('c8-t35-3', v_dia, 33.00, 'C8 PRUEBA ZANCUDO GAS 5234 BELLEVIEW FL');
+    v_r := pg_temp.c8_ia(v_m3, v_l, '[{"cuenta": "6300"}]', 'combustible', 0.9);
+    select format('sin pistas: obras_top %s, obra_fuerte %s', coalesce(b.obras_top::text, 'null'), b.obra_fuerte::text)
+      into v_c from v_contador_bandeja b where b.propuesta_id = (v_r->>'propuesta')::uuid;
+    -- dos obras más, de la prueba (activas; se deshacen): con A y B, cuatro con pistas
+    insert into proyectos (id, tipo, nombre, estado)
+    values (v_oc, 'residencial', 'C8 PRUEBA OBRA C', 'ejecucion'), (v_od, 'residencial', 'C8 PRUEBA OBRA D', 'ejecucion');
+    v_m := pg_temp.c8_cargo('c8-t35-1', v_dia, 171.98, 'C8 PRUEBA ZANCUDO ELECTRIC 1040 TAMPA FL');
+    -- A: 21 h y 2 tickets del comercio (58.2); B: 8 h y elegida 1 vez (27.6); C: 4 h y 3 materiales (11.8); D: 1 h (2.2)
+    perform pg_temp.c8_horas(-8350001, v_dia - 1, v_oa, 10);
+    perform pg_temp.c8_horas(-8350002, v_dia, v_oa, 11);
+    perform pg_temp.c8_recibo(-8350001, v_dia - 5, v_oa, 'C8 PRUEBA ZANCUDO ELECTRIC');
+    perform pg_temp.c8_recibo(-8350002, v_dia - 9, v_oa, 'C8 PRUEBA ZANCUDO ELECTRIC');
+    perform pg_temp.c8_horas(-8350003, v_dia, v_ob, 8);
+    perform fn_contador_clasificar(pg_temp.c8_cargo('c8-t35-0', v_dia, 11.00, 'C8 PRUEBA ZANCUDO ELECTRIC 1040 TAMPA FL'), pg_temp.c8('dueno')::uuid,
+                                   jsonb_build_array(jsonb_build_object('cuenta', '5100', 'proyecto_id', v_ob)), 'c8-pruebas', false);
+    perform pg_temp.c8_horas(-8350004, v_dia, v_oc, 4);
+    perform pg_temp.c8_material(-8350001, v_dia - 1, v_oc);
+    perform pg_temp.c8_material(-8350002, v_dia - 1, v_oc);
+    perform pg_temp.c8_material(-8350003, v_dia - 1, v_oc);
+    perform pg_temp.c8_horas(-8350005, v_dia, v_od, 1);
+    -- la IA propone A con 0,60: débil
+    v_r := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "5100"}]', 'material de obra', 0.9, null, null,
+                         jsonb_build_object('proyecto_id', v_oa, 'confianza', 0.6, 'motivo', 'por las horas'));
+    select format('débil: obra_fuerte %s, obras_top %s: %s', b.obra_fuerte::text, jsonb_array_length(b.obras_top),
+                  (select string_agg(format('%s «%s»', x->>'nombre', x->>'pista'), ' / ' order by n)
+                     from jsonb_array_elements(b.obras_top) with ordinality t(x, n)))
+      into v_a from v_contador_bandeja b where b.propuesta_id = (v_r->>'propuesta')::uuid;
+    -- con 0,85: fuerte
+    v_m2 := pg_temp.c8_cargo('c8-t35-2', v_dia, 88.00, 'C8 PRUEBA ZANCUDO ELECTRIC 1040 TAMPA FL');
+    v_r := pg_temp.c8_ia(v_m2, v_l, '[{"cuenta": "5100"}]', 'material de obra', 0.9, null, null,
+                         jsonb_build_object('proyecto_id', v_oa, 'confianza', 0.85, 'motivo', 'la lista de materiales de esa obra pide breakers'));
+    select format('fuerte: obra_fuerte %s, flags %s, guardar dijo obra_fuerte %s', b.obra_fuerte::text, b.flags::text, v_r->>'obra_fuerte')
+      into v_b from v_contador_bandeja b where b.propuesta_id = (v_r->>'propuesta')::uuid;
+    -- una propuesta de la 7b (sin el flag en sus flags, y sus pistas sin el
+    -- comercio): débil, y «tickets de este comercio»
+    update contador_propuestas
+       set propuesta = propuesta || jsonb_build_object('flags', (propuesta->'flags') - 'obra_fuerte'), pistas = pistas - 'comercio'
+     where id = (v_r->>'propuesta')::uuid;
+    select format(' | de la 7b: obra_fuerte %s, primera «%s»', b.obra_fuerte::text, b.obras_top->0->>'pista')
+      into v_d from v_contador_bandeja b where b.propuesta_id = (v_r->>'propuesta')::uuid;
+    v_b := v_b || v_d;
+    v_obt := pg_temp.c8_obras_tapar(format('%s | %s | %s', v_a, v_b, v_c));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (35, '«¿De qué obra?» en la bandeja (7c): obras_top con tres obras como mucho, por puntos, cada una con su pista en llano; obra_fuerte solo con la obra propuesta a 0,80 o más (y una propuesta de la 7b, sin el flag, débil); sin pistas, null',
+    'débil: obra_fuerte false, obras_top 3: <A> «21 h esos días · 2 tickets de C8 PRUEBA ZANCUDO ELECTRIC» / <B> «8 h esos días · la elegiste 1 vez con C8 PRUEBA ZANCUDO ELECTRIC» / C8 PRUEBA OBRA C «4 h esos días · 3 materiales apuntados» | fuerte: obra_fuerte true, flags {"obra_fuerte": true, "obra_propuesta": true}, guardar dijo obra_fuerte true | de la 7b: obra_fuerte false, primera «21 h esos días · 2 tickets de este comercio» | sin pistas: obras_top null, obra_fuerte false',
+    v_obt,
+    v_obt = 'débil: obra_fuerte false, obras_top 3: <A> «21 h esos días · 2 tickets de C8 PRUEBA ZANCUDO ELECTRIC» / <B> «8 h esos días · la elegiste 1 vez con C8 PRUEBA ZANCUDO ELECTRIC» / C8 PRUEBA OBRA C «4 h esos días · 3 materiales apuntados» | fuerte: obra_fuerte true, flags {"obra_fuerte": true, "obra_propuesta": true}, guardar dijo obra_fuerte true | de la 7b: obra_fuerte false, primera «21 h esos días · 2 tickets de este comercio» | sin pistas: obras_top null, obra_fuerte false');
+end $$;
+
+-- 36. (7c) LA RUTINA (fn_contador_programado): el dueño por la API, 42501;
+--     con rutina_activa en false, nulo sin llamar; con el contador apagado
+--     (bloqueado), nulo; sin candidatos (todo aparcado), nulo; al día y sin
+--     funcion_url, MX009 que lo dice; con todo, donde hay pg_net (en el
+--     banco, el stub que apunta la llamada; en producción, el de verdad —a un
+--     localhost que no escucha, dentro de la prueba, que se deshace—)
+--     devuelve el id y la llamada va a funcion_url con {accion: proponer_todo,
+--     origen: rutina} y la cabecera x-mxp-rutina igual al secreto de Vault;
+--     donde no hay pg_net, MX009 que lo dice; y sin el secreto, MX009
+do $$
+declare
+  v_obt text; v_m uuid; v_a text; v_b text; v_c text; v_d text; v_id bigint; v_antes int; v_desp int; v_ok text; v_hay_net boolean; v_ll boolean;
+begin
+  begin
+    perform pg_temp.c8_montar();
+    perform pg_temp.c8_al_dia();
+    -- (la rutina real, como esté: se deshace)
+    update contador_config set rutina_activa = true where id = 1;
+    perform pg_temp.c8_ser('dueno');
+    begin
+      perform fn_contador_programado();
+      v_a := 'por la API: ENTRÓ';
+    exception when others then v_a := format('por la API: %s', sqlstate);
+    end;
+    perform pg_temp.c8_ser('servicio');
+    v_m := pg_temp.c8_cargo('c8-t36-1', pg_temp.c8('d')::date, 61.20, 'C8 PRUEBA WAWA 5234 BELLEVIEW FL');
+    update contador_config set rutina_activa = false where id = 1;
+    v_a := v_a || format(' | apagada: %s', coalesce(fn_contador_programado()::text, 'nada'));
+    update contador_config set rutina_activa = true, activa = false where id = 1;
+    v_a := v_a || format(' | bloqueado: %s', coalesce(fn_contador_programado()::text, 'nada'));
+    update contador_config set activa = true where id = 1;
+    perform pg_temp.c8_aparcar('{}'::uuid[]);
+    v_a := v_a || format(' | sin candidatos: %s', coalesce(fn_contador_programado()::text, 'nada'));
+    -- (el sembrado vuelve a esperar: su aparcado, fuera)
+    delete from contador_propuestas where movimiento_id = v_m and estado = 'pendiente' and fuente = 'edgar';
+    update contador_config set funcion_url = null where id = 1;
+    begin
+      perform fn_contador_programado();
+      v_b := 'sin funcion_url: ENTRÓ';
+    exception when others then
+      v_b := format('sin funcion_url: %s%s', sqlstate, case when sqlerrm ~ 'funcion_url' then ' (dice funcion_url)' else ' ' || sqlerrm end);
+    end;
+    update contador_config set funcion_url = 'http://127.0.0.1:9/contador' where id = 1;
+    v_hay_net := exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'net' and p.proname = 'http_post');
+    v_ll := to_regclass('net._llamadas') is not null;
+    begin
+      if v_ll then execute 'select count(*) from net._llamadas' into v_antes; end if;
+      v_id := fn_contador_programado();
+      if v_ll then
+        execute 'select count(*) from net._llamadas' into v_desp;
+        execute $q$ select case when l.url = 'http://127.0.0.1:9/contador' and l.body->>'accion' = 'proponer_todo' and l.body->>'origen' = 'rutina'
+                                     and l.headers->>'Content-Type' = 'application/json'
+                                     and l.headers->>'x-mxp-rutina' = (select s.decrypted_secret from vault.decrypted_secrets s where s.name = 'contador_rutina_secreto')
+                                then 'url, acción, origen y secreto bien' else 'MAL: ' || l.url || ' ' || l.body::text end
+                      from net._llamadas l order by l.id desc limit 1 $q$ into v_ok;
+        v_c := format('con pg_net: id %s, %s llamada(s), %s', case when v_id is not null then 'sí' else 'NO' end, v_desp - v_antes, v_ok);
+      else
+        v_c := format('con pg_net: id %s (sin net._llamadas no se mira la llamada)', case when v_id is not null then 'sí' else 'NO' end);
+      end if;
+    exception when others then
+      v_c := format('%s: %s%s', case when v_hay_net then 'con pg_net' else 'sin pg_net' end, sqlstate,
+                    case when sqlerrm ~ 'pg_net' then ' (dice pg_net)' else ' ' || sqlerrm end);
+    end;
+    delete from vault.secrets where name = 'contador_rutina_secreto';
+    begin
+      perform fn_contador_programado();
+      v_d := 'sin secreto: ENTRÓ';
+    exception when others then
+      v_d := format('sin secreto: %s%s', sqlstate, case when sqlerrm ~ 'secreto' then ' (dice el secreto)' else ' ' || sqlerrm end);
+    end;
+    v_obt := format('%s | %s | %s | %s', v_a, v_b, v_c, v_d);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (36, 'la rutina (7c, fn_contador_programado): 42501 por la API; nulo apagada, bloqueada o sin candidatos; MX009 sin funcion_url, sin pg_net o sin secreto; con pg_net, el id y la llamada con proponer_todo y el secreto',
+    'por la API: 42501 | apagada: nada | bloqueado: nada | sin candidatos: nada | sin funcion_url: MX009 (dice funcion_url) | con pg_net: id sí, 1 llamada(s), url, acción, origen y secreto bien | sin secreto: MX009 (dice el secreto)',
+    v_obt,
+    v_obt in ('por la API: 42501 | apagada: nada | bloqueado: nada | sin candidatos: nada | sin funcion_url: MX009 (dice funcion_url) | con pg_net: id sí, 1 llamada(s), url, acción, origen y secreto bien | sin secreto: MX009 (dice el secreto)',
+              'por la API: 42501 | apagada: nada | bloqueado: nada | sin candidatos: nada | sin funcion_url: MX009 (dice funcion_url) | con pg_net: id sí (sin net._llamadas no se mira la llamada) | sin secreto: MX009 (dice el secreto)',
+              'por la API: 42501 | apagada: nada | bloqueado: nada | sin candidatos: nada | sin funcion_url: MX009 (dice funcion_url) | sin pg_net: MX009 (dice pg_net) | sin secreto: MX009 (dice el secreto)'));
+end $$;
+
+-- 37. (7c) fn_contador_rutina_marcar Y LA ALARMA 74: recién instalada
+--     (rutina_desde ahora, nunca corrió), verde («no ha corrido todavía»); la
+--     función de borde marca un error → rojo y lo dice (y el error queda
+--     recortado); marca que fue bien → verde, el error se limpia y
+--     rutina_ultima_el queda puesta (v_contador_estado lo enseña); la última
+--     corrida hace 40 horas con cargos esperando → rojo («no corre desde»);
+--     con la rutina apagada, verde (no se vigila); activa, nunca corrió y la
+--     instalación hace 40 horas con cargos esperando → rojo («no ha corrido
+--     nunca»); instalada ahora, verde; ningún cuadre nuevo en rojo
+do $$
+declare
+  v_obt text; v_m uuid; v_r jsonb; v_a text; v_b text; v_c text; v_d text; v_antes text; e v_contador_estado;
+begin
+  begin
+    perform pg_temp.c8_montar();
+    perform pg_temp.c8_al_dia();
+    v_antes := pg_temp.c8_rojos('cuadre');
+    v_m := pg_temp.c8_cargo('c8-t37-1', pg_temp.c8('d')::date, 61.20, 'C8 PRUEBA WAWA 5234 BELLEVIEW FL');
+    update contador_config set rutina_activa = true, rutina_ultima_el = null, rutina_ultimo_error = null, rutina_desde = now() where id = 1;
+    v_a := format('recién instalada: 74 %s (%s)', pg_temp.c8_fila(74),
+                  case when (select c.detalle from v_contador_control c where c.orden = 74) ~ 'no ha corrido todavía \(corre a las \d{1,2}:\d\d de la mañana, tras el banco, y a las \d{1,2} de la tarde, hora de Miami\)$' then 'no ha corrido todavía'
+                       else (select c.detalle from v_contador_control c where c.orden = 74) end);
+    v_r := fn_contador_rutina_marcar(false, '  Anthropic contestó 529 dos veces ');
+    v_a := v_a || format(' → con error: 74 %s (%s), marcar dijo «%s»', pg_temp.c8_fila(74),
+                         case when (select c.detalle from v_contador_control c where c.orden = 74) ~ 'terminó con error: Anthropic contestó 529' then 'dice el error'
+                              else (select c.detalle from v_contador_control c where c.orden = 74) end,
+                         v_r->>'rutina_ultimo_error');
+    v_r := fn_contador_rutina_marcar(true);
+    select * into e from v_contador_estado;
+    v_b := format('fue bien: 74 %s, error %s, última %s | estado: activa %s, última %s, error %s', pg_temp.c8_fila(74),
+                  coalesce(v_r->>'rutina_ultimo_error', 'ninguno'), case when (v_r->>'rutina_ultima_el') is not null then 'puesta' else 'MAL' end,
+                  e.rutina_activa::text, case when e.rutina_ultima_el is not null then 'puesta' else 'MAL' end, coalesce(e.rutina_ultimo_error, 'ninguno'));
+    update contador_config set rutina_ultima_el = now() - interval '40 hours' where id = 1;
+    v_c := format('hace 40 h con cargos: 74 %s (%s)', pg_temp.c8_fila(74),
+                  case when (select c.detalle from v_contador_control c where c.orden = 74) ~ 'no corre desde' then 'dice no corre desde'
+                       else (select c.detalle from v_contador_control c where c.orden = 74) end);
+    update contador_config set rutina_activa = false where id = 1;
+    v_c := v_c || format(' → apagada: %s', pg_temp.c8_fila(74));
+    update contador_config set rutina_activa = true, rutina_ultima_el = null, rutina_desde = now() - interval '40 hours' where id = 1;
+    v_d := format('nunca corrió, instalada hace 40 h: 74 %s (%s)', pg_temp.c8_fila(74),
+                  case when (select c.detalle from v_contador_control c where c.orden = 74) ~ 'no ha corrido nunca' then 'dice nunca'
+                       else (select c.detalle from v_contador_control c where c.orden = 74) end);
+    update contador_config set rutina_desde = now() where id = 1;
+    v_d := v_d || format(' → instalada ahora: %s | cuadres rojos nuevos: %s', pg_temp.c8_fila(74),
+                         case when pg_temp.c8_rojos('cuadre') = v_antes then 'ninguno' else pg_temp.c8_rojos('cuadre') end);
+    v_obt := format('%s | %s | %s | %s', v_a, v_b, v_c, v_d);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (37, 'fn_contador_rutina_marcar y la alarma 74 (7c): verde recién instalada; rojo con error (y lo dice); verde cuando fue bien; rojo a las 36 h sin correr con cargos esperando o nunca desde la instalación; verde apagada; el estado lo enseña',
+    'recién instalada: 74 verde (no ha corrido todavía) → con error: 74 rojo (dice el error), marcar dijo «Anthropic contestó 529 dos veces» | fue bien: 74 verde, error ninguno, última puesta | estado: activa true, última puesta, error ninguno | hace 40 h con cargos: 74 rojo (dice no corre desde) → apagada: verde | nunca corrió, instalada hace 40 h: 74 rojo (dice nunca) → instalada ahora: verde | cuadres rojos nuevos: ninguno',
+    v_obt,
+    v_obt = 'recién instalada: 74 verde (no ha corrido todavía) → con error: 74 rojo (dice el error), marcar dijo «Anthropic contestó 529 dos veces» | fue bien: 74 verde, error ninguno, última puesta | estado: activa true, última puesta, error ninguno | hace 40 h con cargos: 74 rojo (dice no corre desde) → apagada: verde | nunca corrió, instalada hace 40 h: 74 rojo (dice nunca) → instalada ahora: verde | cuadres rojos nuevos: ninguno');
+end $$;
+
+-- 38. (7c) EL MARCADOR HONESTO DEL MES (v_contador_estado): una propuesta de
+--     la IA aprobada tal cual → cuenta acertada; una donde Edgar cambió la
+--     cuenta («Según yo» 6400 por 6300) → cuenta cambiada; una con obra
+--     propuesta aprobada con esa obra → obra acertada (y cuenta acertada);
+--     una con obra propuesta aprobada con otra → obra cambiada (y cuenta
+--     acertada: solo cambió la obra); una sin obra propuesta que Edgar
+--     completó con la obra → obra elegida (y cuenta acertada: queda
+--     «aprobada»); una por regla aprobada → cuenta acertada; lo que Edgar
+--     clasifica sin propuesta delante no cuenta (fuente edgar). Deltas
+--     contra el marcador de antes: en producción ya hay de este mes.
+do $$
+declare
+  v_obt text; v_l uuid; v_r jsonb; v_e0 v_contador_estado; e v_contador_estado; v_m uuid;
+  v_dia date := pg_temp.c8('d')::date; v_oa text := pg_temp.c8('obra'); v_ob text := pg_temp.c8('obra2');
+begin
+  begin
+    perform pg_temp.c8_montar();
+    perform pg_temp.c8_solo_mis_reglas();
+    perform pg_temp.c8_sin_reglas('WAWA|SHELL|ZANCUDO');
+    perform pg_temp.c8_sin_pistas();
+    select * into v_e0 from v_contador_estado;
+    v_l := pg_temp.c8_lote(8);
+    -- 1. aprobada tal cual
+    v_m := pg_temp.c8_cargo('c8-t38-1', v_dia, 61.20, 'C8 PRUEBA WAWA 5234 BELLEVIEW FL');
+    v_r := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "6300"}]', 'combustible', 0.9);
+    perform fn_contador_aprobar((v_r->>'propuesta')::uuid, pg_temp.c8('dueno')::uuid, null, false);
+    -- 2. la cuenta cambiada
+    v_m := pg_temp.c8_cargo('c8-t38-2', v_dia, 45.00, 'C8 PRUEBA SHELL OIL 57544 OCALA FL');
+    v_r := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "6300"}]', 'combustible', 0.9);
+    perform fn_contador_clasificar(v_m, pg_temp.c8('dueno')::uuid, '[{"cuenta": "6400"}]', 'fue hielo', false);
+    -- 3. la obra acertada
+    v_m := pg_temp.c8_cargo('c8-t38-3', v_dia, 87.43, 'C8 PRUEBA ZANCUDO SUPPLY 6341 OCALA FL');
+    v_r := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "5100"}]', 'material', 0.9, null, null,
+                         jsonb_build_object('proyecto_id', v_oa, 'confianza', 0.85, 'motivo', 'por lo elegido'));
+    perform fn_contador_aprobar((v_r->>'propuesta')::uuid, pg_temp.c8('dueno')::uuid, null, false);
+    -- 4. la obra cambiada (la cuenta, la misma)
+    v_m := pg_temp.c8_cargo('c8-t38-4', v_dia, 65.10, 'C8 PRUEBA ZANCUDO SUPPLY 6341 OCALA FL');
+    v_r := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "5100"}]', 'material', 0.9, null, null,
+                         jsonb_build_object('proyecto_id', v_oa, 'confianza', 0.85, 'motivo', 'por lo elegido'));
+    perform fn_contador_aprobar((v_r->>'propuesta')::uuid, pg_temp.c8('dueno')::uuid, v_ob, false);
+    -- 5. la obra elegida (la IA no la propuso: pide obra, y Edgar la pone)
+    v_m := pg_temp.c8_cargo('c8-t38-5', v_dia, 40.00, 'C8 PRUEBA ZANCUDO SUPPLY 6341 OCALA FL');
+    v_r := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "5100"}]', 'material', 0.9);
+    perform fn_contador_aprobar((v_r->>'propuesta')::uuid, pg_temp.c8('dueno')::uuid, v_oa, false);
+    -- 6. por regla, aprobada
+    v_m := pg_temp.c8_cargo('c8-t38-6', v_dia, 19.99, 'C8 PRUEBA ZANCUDO GAS 5234 BELLEVIEW FL');
+    perform fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Zancudo gas', '^C8 PRUEBA ZANCUDO GAS', '[{"cuenta": "6300"}]');
+    perform fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
+    perform fn_contador_aprobar(pg_temp.c8_prop('c8-t38-6'), pg_temp.c8('dueno')::uuid, null, false);
+    -- 7. Edgar sin propuesta delante: no cuenta
+    v_m := pg_temp.c8_cargo('c8-t38-7', v_dia, 22.50, 'C8 PRUEBA ZANCUDO SUBS 77 OCALA FL');
+    perform fn_contador_clasificar(v_m, pg_temp.c8('dueno')::uuid, '[{"cuenta": "6350"}]', null, false);
+    select * into e from v_contador_estado;
+    v_obt := format('cuenta: acertadas +%s, cambiadas +%s | obra: acertadas +%s, cambiadas +%s, elegidas +%s',
+                    e.cuenta_acertadas_mes - v_e0.cuenta_acertadas_mes, e.cuenta_cambiadas_mes - v_e0.cuenta_cambiadas_mes,
+                    e.obra_acertadas_mes - v_e0.obra_acertadas_mes, e.obra_cambiadas_mes - v_e0.obra_cambiadas_mes,
+                    e.obra_elegidas_mes - v_e0.obra_elegidas_mes);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (38, 'el marcador del mes (7c): aprobada → cuenta acertada; con la cuenta cambiada → cambiada; con su obra → obra acertada; con otra obra → obra cambiada; sin obra propuesta y Edgar la pone → elegida; por regla aprobada cuenta; lo de Edgar sin propuesta no',
+    'cuenta: acertadas +5, cambiadas +1 | obra: acertadas +1, cambiadas +1, elegidas +1',
+    v_obt,
+    v_obt = 'cuenta: acertadas +5, cambiadas +1 | obra: acertadas +1, cambiadas +1, elegidas +1');
 end $$;
 
 

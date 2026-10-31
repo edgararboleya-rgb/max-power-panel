@@ -1,7 +1,10 @@
 -- =====================================================================
 -- c8-contador.sql — EL CONTADOR: LA IA QUE PROPONE Y NUNCA POSTEA · c8
--- 31-oct-2026, v2 (fase 7, el motor de reglas y la bandeja de propuestas;
--- 7b, la obra propuesta con las pistas que calcula la base).
+-- 31-oct-2026, v3 (fase 7, el motor de reglas y la bandeja de propuestas;
+-- 7b, la obra propuesta con las pistas que calcula la base; 7c, la
+-- confianza de la obra calibrada con lo medido en producción, la fase y los
+-- materiales de cada obra en las pistas, la rutina que propone sola dos
+-- veces al día, el marcador honesto del mes y la alarma 74).
 -- Se pega en el SQL Editor DESPUÉS de c1, c2, c3, c4, c6, c7, s1 y p1.
 -- Idempotente: se puede volver a pegar entero (no pisa la configuración,
 -- ni las reglas que Edgar dicte o apruebe, ni una propuesta, ni nada de lo
@@ -125,14 +128,14 @@
 --     y media lo de la segunda (p1 ≥ 1,5 · p2; o es la única con pistas):
 --     la cuadrilla suele repartirse entre dos o tres obras la misma semana
 --     y exigir el doble dejaba sin candidata a compras claras (31-oct: 7
---     tickets de CES a una obra contra 1 a la otra, 93 contra 57 puntos);
---     la confianza, más baja en esos casos (0,60), lo dice. Confianza =
---     min(0,9, p1 / (p1 + p2 + 4)),
---     a dos decimales (una sola obra con 8 puntos: 0,67; con 24 h cerca y
---     nada alrededor: 0,9); motivo en llano citando las pistas que suman
---     («la cuadrilla reportó 24 h en Calla Terrace esos días; 2 compras
---     anteriores de CES fueron a esa obra»). Sin pistas: obras [], candidata
---     null y resumen «sin pistas».
+--     tickets de CES a una obra contra 1 a la otra, 93 contra 57 puntos).
+--     SU CONFIANZA, desde la 7c, no sale de los puntos (p1 / (p1 + p2 + 4)
+--     daba 0,60 a lo que acierta cuatro de cada diez) sino de lo que cada
+--     pista ha demostrado acertar: la calibración de abajo («LA OBRA EN LA
+--     7c»). El motivo, en llano, cita primero la pista que da la confianza
+--     («Edgar eligió Dicke 2 veces con CES; la cuadrilla reportó 21 h allí
+--     esos días»). Sin pistas: obras [], candidata null y resumen «sin
+--     pistas».
 --   · POR QUÉ LA IA NO ADIVINA SIN PISTAS: la obra de un cargo no está en la
 --     descripción del banco, y una obra inventada mete el costo en la obra
 --     equivocada y descuadra las dos. Por eso la IA propone obra solo cuando
@@ -144,9 +147,21 @@
 --     pide obra lleva la candidata (la regla dice la cuenta; las pistas, la
 --     obra).
 --   · QUÉ NO SALE NUNCA A LA IA: usuario_id, nombres de personas, notas de
---     horas, rutas de fotos, clientes, correos ni teléfonos: solo totales
---     por obra (horas, tickets, veces, materiales) y el nombre de la obra,
---     que ya iba en el contexto.
+--     horas, rutas de fotos, clientes, correos ni teléfonos, ni (7c) el
+--     precio de un material, quién lo apuntó o su ticket: solo totales por
+--     obra (horas, tickets, veces, materiales), la fase, las descripciones
+--     de la lista de materiales (tapadas por fn_contador_sin_datos) y el
+--     nombre de la obra, que ya iba en el contexto.
+--   · LÍMITES QUE SE SABEN (7c, a propósito): (1) una descripción de
+--     material escrita a mano con un nombre de persona («pedir a Juan
+--     Pérez») pasa tal cual (fn_contador_sin_datos tapa correos, teléfonos
+--     y números largos, no nombres). (2) La candidata es la primera POR
+--     PUNTOS y la confianza se calibra sobre ella: lo que Edgar eligió solo
+--     la hace fuerte cuando las horas y los tickets apuntan a la misma obra
+--     (con las pistas en contra, mejor preguntar de un toque que
+--     preseleccionar). (3) La base acepta «Así es» con una obra débil que la
+--     IA propuso (la copia a las líneas): que haya que elegirla de un toque
+--     lo exige la pantalla (obraFalta), no la base.
 --   · LO QUE QUEDA ESCRITO: la propuesta gana «obra» ({proyecto_id,
 --     confianza, motivo}); la obra se copia a las líneas cuya cuenta la
 --     admite (obligatoria u opcional, nunca prohibida) y no la traen;
@@ -184,6 +199,116 @@
 --     con lo que hay cerca de la fecha, no con los años de horas, tickets y
 --     materiales que la app acumule (la verificación midió 6 s por ráfaga de
 --     20 con 2.000 tickets y 2.000 materiales haciéndolo por fila).
+--
+-- LA OBRA EN LA 7c: LA CONFIANZA CALIBRADA (31-oct, tarde). Edgar, viendo
+-- «CES · 55 %»: «no me sirve que solo estés seguro un 55 %: tenemos que estar
+-- más seguros y que la IA funcione mejor; y que cada partida al lado ya
+-- tenga automáticamente su propuesta». LO QUE SE MIDIÓ EN PRODUCCIÓN (solo
+-- leyendo, con los 57 tickets reales que la cuadrilla subió con su obra:
+-- recibos con proyecto_id): la obra correcta sale PRIMERA por puntos en 22
+-- de 57; con la regla de candidata (≥ 8 puntos y 1,5× la segunda) hay
+-- candidata en 30 y acierta 13; con «el doble», 26 y acierta 12; solo los
+-- tickets del proveedor aciertan 12 de 44; solo las horas, 19 de 47; las
+-- horas del propio comprador (±3 días) 11 de 31, y las de ese mismo día 15
+-- de 23. Con horas y tickets se acierta CUATRO DE CADA DIEZ: la cuadrilla
+-- trabaja en dos o tres obras la misma semana y todas compran en CES y Home
+-- Depot; una confianza de 0,60 por las horas era optimista. Lo que sí es
+-- fuerte: lo que Edgar ya eligió antes para ese comercio (veces_elegida),
+-- los tickets de ese proveedor cuando van TODOS a una obra, una sola obra
+-- con actividad y, para la IA, la lista de materiales de cada obra esos
+-- días frente a lo que vende el proveedor. Desde aquí:
+--   · CADA OBRA de las pistas lleva también su FASE (la más frecuente de las
+--     horas de esa obra de 7 días antes a 7 después del cargo —en producción,
+--     Rough-in, Trim-out, Panel / Servicio, Demolición, Movilización, Service
+--     Call, Inspección / Correcciones—; si no hay, la fase de la ficha del
+--     proyecto; puede ser nula) y sus MATERIALES (hasta 8 descripciones de su
+--     lista apuntadas de 14 días antes a 1 después, las compradas primero,
+--     sin repetir, 60 letras como mucho, tapadas por fn_contador_sin_datos;
+--     NUNCA el precio, ni quién las apuntó, ni su ticket). La IA compara esa
+--     lista con lo que vende el proveedor en esa fase («breakers y MC 12/2 en
+--     Rough-in → CES»). Los conteos y los puntos siguen igual.
+--   · LA CANDIDATA sigue siendo la primera si llega a 8 puntos y suma al
+--     menos una vez y media lo de la segunda (o es la única con pistas). SU
+--     CONFIANZA ya no es p1 / (p1 + p2 + 4): es lo que las pistas han
+--     demostrado acertar:
+--       0,45  de base: lo que miden las horas y los tickets (cuatro de diez);
+--       0,60  Edgar eligió esa obra UNA vez con ese comercio y ninguna otra
+--             obra activa con él;
+--       0,65  3 tickets o más de ese comercio fueron a esa obra y ninguno a
+--             otra obra activa;
+--       0,70  es la ÚNICA obra activa con alguna pista (y llega a 8 puntos);
+--       0,80  Edgar eligió esa obra 2 veces o más con ese comercio, y al
+--             menos el doble que cualquier otra obra activa;
+--       0,90  3 veces o más, con esa misma condición.
+--     Se toma el máximo que aplique, a dos decimales, y el motivo cita
+--     primero la pista que da la confianza («Edgar eligió Dicke 2 veces con
+--     CES; la cuadrilla reportó 21 h allí esos días»). Las dos obras que
+--     empatan siguen sin candidata.
+--   · «FUERTE» = confianza ≥ 0,80 (fn_contador_obra_fuerte: candidata.fuerte
+--     en las pistas, flags.obra_fuerte en la propuesta, obra_fuerte en
+--     v_contador_bandeja). SOLO una obra fuerte se preselecciona en la
+--     pantalla, y SOLO una candidata fuerte la toma una regla al aplicarse
+--     (fn_contador_reglas_aplicar): con una candidata más floja la propuesta
+--     por regla pide obra, como antes de la 7b, y las pistas se guardan
+--     igual. Con una obra débil (o sin obra) la pantalla enseña «¿De qué
+--     obra?» con hasta tres obras (v_contador_bandeja.obras_top: las tres
+--     primeras por puntos, cada una con su pista en llano, «21 h esos días ·
+--     7 tickets de CES») y nada preseleccionado: Edgar elige en un toque. La
+--     IA sigue pudiendo proponer obra con cualquier confianza (la base la
+--     valida y la copia a las líneas, como en la 7b); lo que cambia es qué se
+--     da por bueno sin mirar.
+--   · Para comparar con lo medido: en la bandeja de producción del 31-oct
+--     (184 cargos esperando), 91 tenían candidata «al doble» y 134 «a la vez
+--     y media»; de los 6 del 2-oct que pedían obra, dos CES con Dicke 93,2
+--     contra Metro Clinic 57,2 y los otros cuatro empatados 51,2 a 51,2. Con
+--     la calibración, esos dos CES salen 0,45 (débil: «¿De qué obra?» con
+--     Dicke primero) hasta que Edgar la elija una vez (0,60) o dos (0,80: a
+--     partir de ahí, sola).
+--
+-- LA RUTINA: LAS PROPUESTAS SALEN SOLAS (7c). «Que no tengamos que darle a
+-- un botón»: además de la pantalla (que lanza la ráfaga sola al abrir la
+-- Bandeja), pg_cron llama a fn_contador_programado() dos veces al día: a
+-- las 11:25 UTC (en Miami, 6:25 de la mañana en invierno y 7:25 en verano:
+-- pg_cron va en UTC y Miami cambia de horario dos veces al año; DESPUÉS de
+-- la sincronización de Plaid de las 11:00, para que lo que entró del banco
+-- ya tenga su propuesta cuando Edgar abra) y a las 21:00 UTC (las 4 de la
+-- tarde en invierno, las 5 en verano: lo que Edgar importó por CSV durante
+-- el día). La hora de Miami de hoy se calcula donde se escribe (la alarma
+-- 74, el pegado y la pantalla), nunca va fija. El mecanismo es el de c7
+-- (fn_plaid_programado), copiado, no compartido: un secreto en Vault
+-- (contador_rutina_secreto, creado al pegar si no existe; Edgar copia su
+-- valor —lo enseña el final del pegado— a Edge Functions → Secrets →
+-- CONTADOR_RUTINA_SECRETO), la URL de la función en contador_config.
+-- funcion_url (al pegar, si está vacía, se copia de plaid_config.funcion_url
+-- cambiando /plaid por /contador: el mismo proyecto de Supabase), y pg_net:
+-- net.http_post(funcion_url, {accion: proponer_todo, origen: rutina},
+-- cabecera x-mxp-rutina = el secreto, 150 s de plazo). La rutina no llama
+-- si está apagada (contador_config.rutina_activa), si no hay candidatos, o
+-- si el contador está apagado o bloqueado por el tope (fn_contador_tope):
+-- devuelve nulo sin gastar. La función de borde, con esa cabecera y sin
+-- sesión, SOLO hace proponer_todo, en nombre del dueño de contador_config
+-- (fn_contador_rutina_dueno + fn_contador_suplantar), y NUNCA postea nada:
+-- ni aprueba ni clasifica; al terminar llama a fn_contador_rutina_marcar(ok,
+-- error), que deja rutina_ultima_el y rutina_ultimo_error. La alarma 74
+-- («ia: la rutina») sale en rojo si la rutina está activa y su última
+-- corrida terminó con error, o lleva más de 36 horas sin correr (o nunca
+-- corrió desde que se instaló: rutina_desde) con cargos esperando. Las
+-- tareas de pg_cron (mxp-contador-manana, mxp-contador-tarde) se programan
+-- solo donde existe el esquema cron (producción; el banco de pruebas no lo
+-- tiene y todo lo demás funciona igual: fn_contador_programado sin pg_net
+-- contesta MX009 en llano).
+--
+-- EL MARCADOR HONESTO DEL MES (7c, en v_contador_estado), para que Edgar vea
+-- cuánto acierta de verdad: cuenta_acertadas_mes (propuestas de la IA o de
+-- una regla que entraron este mes con la cuenta que traían: las aprobadas,
+-- y las editadas donde solo cambió la obra), cuenta_cambiadas_mes (editadas
+-- donde Edgar cambió alguna cuenta), obra_acertadas_mes (traían obra
+-- propuesta —en «obra» o ya en la línea— y entró esa misma), obra_cambiadas_
+-- mes (traían obra y entró otra) y obra_elegidas_mes (no traían obra y
+-- Edgar la puso). Se cuentan por aprobado_el (mes de Miami), comparando
+-- lineas_finales con propuesta.lineas y propuesta.obra. La pantalla enseña
+-- «Este mes: cuenta 18 de 20 · obra 7 de 10 acertadas (3 elegiste tú)» con
+-- esos números, sin maquillar.
 --
 -- LAS CUENTAS PERMITIDAS (v_contador_cuentas, una sola fuente para la IA,
 -- la validación, el selector «Según yo» de la pantalla y el cuadre 62):
@@ -386,10 +511,10 @@
 --      cuadres rojos · n alarmas») y el paso siguiente. Si ya hay cargos
 --      «sin ticket» de hace más de dos días, sale 1 alarma: la 73 («la
 --      llave y la función»), que es LA ESPERADA hasta la primera ráfaga (en
---      «Qué atender» dice «toca Proponer con la IA») y se apaga sola con
+--      «Qué atender» dice «abre la Bandeja o toca Proponer ahora») y se apaga sola con
 --      ella. Si algo de lo que da por hecho falta, para con MX000 y no
 --      queda nada.
---   2. SQL Editor → pegar docs/conta/c8-pruebas.sql → 32 filas, todas en
+--   2. SQL Editor → pegar docs/conta/c8-pruebas.sql → 38 filas, todas en
 --      true (cada una siembra sus cargos de prueba y los deshace; no toca
 --      la bandeja real).
 --   3. console.anthropic.com → API keys → «Create key» (una NUEVA, solo
@@ -400,8 +525,8 @@
 --   4. La función «contador» (Verify JWT apagado) y …/contador?paso=salud:
 --      ok, llave, base, modelo claude-opus-5-5, effort low, prompt_version
 --      y el tope.
---   5. En la app: Contabilidad → Bandeja → «Proponer con la IA (n)»: la
---      primera ráfaga. Después, en Conexiones y seguridad → «IA contable
+--   5. En la app: Contabilidad → Bandeja (desde la 7c propone sola al
+--      abrirla; si no, «Proponer ahora (n)»): la primera ráfaga. Después, en Conexiones y seguridad → «IA contable
 --      (fase 7)»: el gasto del mes, la última ráfaga y las reglas.
 --   Para apagarla: update contador_config set activa = false where id = 1; (la
 --   bandeja sigue como siempre, y las reglas también).
@@ -410,27 +535,41 @@
 --   redesplegar la función «contador» (sus instrucciones cambian y con ellas
 --   prompt_version: la base lo guarda en la siguiente ráfaga) y publicar la
 --   app (la Bandeja enseña «Obra: … · 78 %» y el selector preseleccionado).
---   Después, c8-pruebas.sql otra vez: 32 filas en true.
+--   Después, c8-pruebas.sql otra vez (entonces 32 filas en true; hoy 38).
 --   Y la tarde del 31-oct (los arreglos de la verificación: la obra que se
 --   cierra después de proponerla no entra por un toque, las pistas por obra
 --   activa, la nota de la línea que ya trae su obra): lo mismo, pegar este
 --   archivo entero otra vez (encima del de la mañana: nada se pierde) y
---   c8-pruebas.sql (32 filas); la función «contador» se redespliega también
+--   c8-pruebas.sql (entonces 32 filas); la función «contador» se redespliega también
 --   (el esquema de «obra» pasa a la forma anyOf que la API documenta;
 --   prompt_version no cambia por eso). Si la primera ráfaga contestara 400
 --   ANTHROPIC_PETICION, lo dice la cabecera de la función: qué mirar.
+--   7c (31-oct, tarde): pegar este archivo entero otra vez (encima del 7b:
+--   nada se pierde; contador_config gana funcion_url, rutina_activa,
+--   rutina_ultima_el, rutina_ultimo_error y rutina_desde, y el secreto de la
+--   rutina nace en Vault); copiar el valor del secreto que enseña el final
+--   del pegado a Edge Functions → Secrets → CONTADOR_RUTINA_SECRETO (y
+--   comprobar en Database → Extensions que pg_cron y pg_net están
+--   habilitados: las dos tareas mxp-contador-manana y mxp-contador-tarde se
+--   programan al pegar); redesplegar la función «contador» (la rutina, las
+--   instrucciones nuevas de la obra y prompt_version cambian) y publicar la
+--   app (la Bandeja propone sola al abrirla y «¿De qué obra?» en un toque).
+--   Después, c8-pruebas.sql: 38 filas en true. Las propuestas pendientes de
+--   hoy siguen como están (una obra propuesta de la 7b sin obra_fuerte se
+--   enseña como débil: «¿De qué obra?»); las siguientes salen calibradas.
 --
 -- Lo que llama la función de borde (como postgres): fn_contador_cfg,
 -- fn_contador_tope, fn_contador_reglas_aplicar, fn_contador_pendientes,
 -- fn_contador_lote_abrir, fn_contador_propuesta_guardar,
 -- fn_contador_lote_cerrar, fn_contador_aprobar, fn_contador_clasificar,
 -- fn_contador_rechazar, fn_contador_caducar, fn_contador_regla_alta,
--- fn_contador_regla_baja, fn_contador_control, fn_contador_resumen y
--- fn_contador_dueno_fijar (fn_contador_pistas_obra no la llama: la recibe
+-- fn_contador_regla_baja, fn_contador_control, fn_contador_resumen,
+-- fn_contador_dueno_fijar y, en la rutina (7c), fn_contador_rutina_dueno y
+-- fn_contador_rutina_marcar (fn_contador_pistas_obra no la llama: la recibe
 -- dentro de cada movimiento de fn_contador_pendientes, y por dentro la usan
--- fn_contador_reglas_aplicar y fn_contador_propuesta_guardar). Montos: en
--- dólares, numeric(14,2); los tokens, enteros; el gasto, en centavos
--- enteros.
+-- fn_contador_reglas_aplicar y fn_contador_propuesta_guardar). Lo que llama
+-- pg_cron: fn_contador_programado. Montos: en dólares, numeric(14,2); los
+-- tokens, enteros; el gasto, en centavos enteros.
 -- =====================================================================
 
 
@@ -476,17 +615,22 @@ begin
   end loop;
   -- (7b) las pistas de la obra se leen de horas, recibos, materiales y
   -- proyectos por estas columnas
-  foreach v_x in array array['horas:proyecto_id', 'horas:fecha', 'horas:horas', 'recibos:proyecto_id', 'recibos:proveedor', 'recibos:fecha',
-                             'recibos:estado', 'recibos:creado', 'materiales:proyecto_id', 'materiales:creado', 'proyectos:estado',
-                             'proyectos:nombre'] loop
+  -- (7c: y la fase y las descripciones de la lista de materiales)
+  foreach v_x in array array['horas:proyecto_id', 'horas:fecha', 'horas:horas', 'horas:fase', 'recibos:proyecto_id', 'recibos:proveedor',
+                             'recibos:fecha', 'recibos:estado', 'recibos:creado', 'materiales:proyecto_id', 'materiales:creado',
+                             'materiales:descripcion', 'materiales:estado', 'proyectos:estado', 'proyectos:nombre', 'proyectos:fase'] loop
     if to_regclass('public.' || split_part(v_x, ':', 1)) is not null
        and not exists (select 1 from information_schema.columns
                         where table_schema = 'public' and table_name = split_part(v_x, ':', 1) and column_name = split_part(v_x, ':', 2)) then
-      v_falta := v_falta || format('%s.%s (las pistas de la obra, 7b)', split_part(v_x, ':', 1), split_part(v_x, ':', 2));
+      v_falta := v_falta || format('%s.%s (las pistas de la obra, 7b y 7c)', split_part(v_x, ':', 1), split_part(v_x, ':', 2));
     end if;
   end loop;
   if to_regclass('public.v_banco_bandeja') is null then
     v_falta := v_falta || 'la vista v_banco_bandeja (c6)'::text;
+  end if;
+  -- (7c) la rutina guarda su secreto en Vault, como c7
+  if to_regclass('vault.secrets') is null or to_regprocedure('vault.create_secret(text,text,text,uuid)') is null then
+    v_falta := v_falta || 'Vault (vault.secrets y vault.create_secret: la rutina guarda ahí su secreto, como c7)'::text;
   end if;
   if to_regclass('public.movimientos_banco') is not null
      and not exists (select 1 from information_schema.columns
@@ -659,7 +803,19 @@ create table if not exists public.contador_config (
   constraint contador_config_rafaga check (max_por_rafaga between 1 and 100),
   constraint contador_config_tope   check (tope_mes_centavos between 0 and 1000000)
 );
-comment on table public.contador_config is 'c8: la configuración del contador (una fila): modelo y esfuerzo, activa, cuántos por ráfaga, el tope propio del mes, el dueño en cuyo nombre se aprueba, la última ráfaga y su error. Sin secretos: la llave vive en Edge Functions.';
+-- (7c) LA RUTINA: la URL de la función de borde a la que pg_cron llama
+-- (funcion_url; se copia de la de Plaid al pegar si está vacía), su
+-- interruptor (rutina_activa: apagada, la Bandeja sigue proponiendo sola al
+-- abrirla y «Proponer ahora» sigue), cuándo corrió por última vez y con qué
+-- error (los marca la función de borde: fn_contador_rutina_marcar), y desde
+-- cuándo existe (rutina_desde: la alarma 74 da 36 horas de gracia desde ahí
+-- a una rutina que nunca ha corrido).
+alter table public.contador_config add column if not exists funcion_url         text;
+alter table public.contador_config add column if not exists rutina_activa       boolean     not null default true;
+alter table public.contador_config add column if not exists rutina_ultima_el    timestamptz;
+alter table public.contador_config add column if not exists rutina_ultimo_error text;
+alter table public.contador_config add column if not exists rutina_desde        timestamptz not null default now();
+comment on table public.contador_config is 'c8: la configuración del contador (una fila): modelo y esfuerzo, activa, cuántos por ráfaga, el tope propio del mes, el dueño en cuyo nombre se aprueba, la última ráfaga y su error; y (7c) la rutina: la URL de la función, si está activa, cuándo corrió y con qué error. Sin secretos: la llave vive en Edge Functions y el secreto de la rutina en Vault.';
 
 -- Las reglas: «este comercio va a esta cuenta». patron es una expresión
 -- regular de Postgres (sin distinguir mayúsculas) contra desc_norm;
@@ -782,6 +938,32 @@ select 1, p.id from public.perfiles p
  order by p.creado
  limit 1
 on conflict (id) do nothing;
+
+-- (7c) La URL de la función de borde para la rutina: si está vacía y c7 ya
+-- tiene la de Plaid, la misma cambiando /plaid por /contador (el mismo
+-- proyecto de Supabase: …/functions/v1/contador). Si Edgar la cambia a
+-- mano, no se pisa.
+do $$
+declare
+  v text;
+begin
+  if to_regclass('public.plaid_config') is not null then
+    execute $q$ select regexp_replace(p.funcion_url, '/plaid/?$', '/contador') from public.plaid_config p where p.id = 1 $q$ into v;
+    update public.contador_config set funcion_url = v where id = 1 and funcion_url is null and v is not null;
+  end if;
+end $$;
+
+-- (7c) El secreto con que la rutina se identifica ante la función de borde
+-- (como el de Plaid en c7). Se crea una vez; Edgar copia su valor (lo enseña
+-- el final del pegado) al secreto CONTADOR_RUTINA_SECRETO de Edge Functions.
+-- Nunca por el chat.
+do $$
+begin
+  if not exists (select 1 from vault.secrets where name = 'contador_rutina_secreto') then
+    perform vault.create_secret(md5(gen_random_uuid()::text) || md5(gen_random_uuid()::text), 'contador_rutina_secreto',
+                                'La rutina del contador (pg_cron → función de borde «contador»). El mismo valor va en CONTADOR_RUTINA_SECRETO.');
+  end if;
+end $$;
 
 
 -- ---------------------------------------------------------------------
@@ -1328,25 +1510,57 @@ end $$;
 revoke execute on function public.fn_contador_mismo_comercio(text, text) from public, anon, authenticated, service_role;
 comment on function public.fn_contador_mismo_comercio(text, text) is 'c8: si el proveedor de un ticket y el comercio de un cargo del banco son el mismo (iguales o uno dentro del otro palabra por palabra, sin el THE; o alias del mismo proveedor de c3).';
 
--- LAS PISTAS DE LA OBRA (7b): lo que la app sabe que apunta a la obra de un
--- cargo, calculado aquí (determinista) para que la IA lo lea y proponga la
--- obra, y Edgar confirme. Por cada obra ACTIVA, alrededor de la fecha del
--- cargo: horas_cerca (las horas de la cuadrilla en esa obra de 3 días antes
--- a 3 después), horas_mes (los 30 días anteriores), recibos_proveedor (los
--- tickets del mismo comercio con esa obra en 180 días, sin los anulados),
--- veces_elegida (las propuestas aprobadas o editadas del mismo comercio que
--- llevan esa obra) y materiales_recientes (la lista de materiales de esa
--- obra, de 14 días antes a 1 después). Puntos = horas_cerca × 2 + horas_mes
--- × 0,2 + recibos_proveedor × 6 + veces_elegida × 10 + materiales_recientes.
--- Devuelve {obras: [las que tienen alguna pista, de más a menos puntos,
--- hasta 6], candidata: {proyecto_id, nombre, confianza, motivo} | null,
--- resumen}: la candidata es la primera si llega a 8 puntos y suma al menos
--- una vez y media lo de la segunda (o es la única), confianza = min(0,9,
--- p1 / (p1 + p2 + 4)) a dos
--- decimales, y el motivo cita en llano las pistas que suman. Sin pistas:
--- obras [], candidata null, resumen «sin pistas». Nada personal: ni
--- usuario_id, ni nombres, ni notas, ni rutas de fotos; solo totales por obra
--- y el nombre de la obra. Una llamada por movimiento (20 por ráfaga).
+-- ¿ES FUERTE una confianza de obra? Una sola fuente del umbral (0,80): la
+-- candidata de las pistas (candidata.fuerte), flags.obra_fuerte al guardar
+-- una propuesta y lo que una regla toma al aplicarse. Lo que mide la 7c:
+-- por debajo, las pistas aciertan cuatro de cada diez y Edgar elige en un
+-- toque («¿De qué obra?»); desde 0,80 (lo que Edgar ya eligió para ese
+-- comercio) la obra sale preseleccionada.
+create or replace function public.fn_contador_obra_fuerte(p_confianza numeric) returns boolean
+language plpgsql immutable
+set search_path = public, pg_temp
+as $$
+begin
+  perform fn_contador_exigir();
+  return coalesce(p_confianza, 0) >= 0.80;
+end $$;
+revoke execute on function public.fn_contador_obra_fuerte(numeric) from public, anon, authenticated, service_role;
+comment on function public.fn_contador_obra_fuerte(numeric) is 'c8: (7c) si una confianza de obra es «fuerte» (≥ 0,80): solo una obra fuerte se preselecciona en la pantalla y solo una candidata fuerte la toma una regla.';
+
+-- LAS PISTAS DE LA OBRA (7b, calibradas en la 7c): lo que la app sabe que
+-- apunta a la obra de un cargo, calculado aquí (determinista) para que la IA
+-- lo lea y proponga la obra, y Edgar confirme. Por cada obra ACTIVA,
+-- alrededor de la fecha del cargo: horas_cerca (las horas de la cuadrilla en
+-- esa obra de 3 días antes a 3 después), horas_mes (los 30 días anteriores),
+-- recibos_proveedor (los tickets del mismo comercio con esa obra en 180 días,
+-- sin los anulados), veces_elegida (las propuestas aprobadas o editadas del
+-- mismo comercio que llevan esa obra), materiales_recientes (la lista de
+-- materiales de esa obra, de 14 días antes a 1 después) y, desde la 7c,
+-- fase (la más frecuente de las horas de esa obra de 7 días antes a 7
+-- después; si no hay, la de la ficha del proyecto; puede ser nula) y
+-- materiales (hasta 8 descripciones de esa lista, las compradas primero, sin
+-- repetir, 60 letras como mucho, tapadas por fn_contador_sin_datos; nunca el
+-- precio, ni quién las apuntó, ni su ticket). Puntos = horas_cerca × 2 +
+-- horas_mes × 0,2 + recibos_proveedor × 6 + veces_elegida × 10 +
+-- materiales_recientes. Devuelve {obras: [las activas con alguna pista, de
+-- más a menos puntos, hasta 6], candidata: {proyecto_id, nombre, confianza,
+-- fuerte, motivo} | null, comercio, resumen}: la candidata es la primera si
+-- llega a 8 puntos y suma al menos una vez y media lo de la segunda (o es la
+-- única con pistas); SU CONFIANZA ES LA CALIBRADA con lo medido en
+-- producción (la cabecera): 0,45 de base (horas y tickets aciertan cuatro de
+-- cada diez); 0,60 si Edgar eligió esa obra una vez con ese comercio y
+-- ninguna otra obra activa con él; 0,65 si 3 tickets o más del comercio
+-- fueron a esa obra y ninguno a otra; 0,70 si es la única obra activa con
+-- alguna pista; 0,80 si Edgar la eligió 2 veces o más y al menos el doble
+-- que cualquier otra; 0,90 si 3 veces o más con esa condición; el máximo que
+-- aplique, a dos decimales; fuerte = ≥ 0,80 (fn_contador_obra_fuerte); y el
+-- motivo cita primero la pista que da la confianza. Las obras que no entran
+-- en las 6 que se enseñan cuentan igual para la confianza (¿alguna otra obra
+-- elegida con este comercio?, ¿tickets suyos en otra?). Sin pistas: obras [],
+-- candidata null, resumen «sin pistas». Nada personal: ni usuario_id, ni
+-- nombres, ni notas, ni rutas de fotos, ni precios; solo totales por obra,
+-- la fase, las descripciones de la lista (tapadas) y el nombre de la obra.
+-- Una llamada por movimiento (20 por ráfaga).
 -- CÓMO LEE (la verificación del 31-oct midió la primera versión, que iba
 -- tabla entera y comparaba el comercio por ticket: 6 s por ráfaga con 2.000
 -- tickets y 2.000 materiales): cada pista es una consulta POR OBRA ACTIVA
@@ -1365,14 +1579,21 @@ declare
   v_provs  text[] := '{}';
   v_desde  timestamptz;
   v_hasta  timestamptz;
-  v_obras  jsonb;
+  v_todas  jsonb;          -- todas las obras activas con alguna pista, de más a menos puntos
+  v_obras  jsonb;          -- las 6 primeras: lo que se enseña, se guarda y va a la IA
   v_1      jsonb;
-  v_2      jsonb;
   p1       numeric;
   p2       numeric;
+  v_ve     int;            -- veces_elegida de la primera
+  v_ve2    int;            -- la mayor veces_elegida de las demás
+  v_rec    int;            -- tickets del comercio a la primera
+  v_rec2   int;            -- tickets del comercio a las demás, sumados
+  v_conf   numeric;
+  v_por    text;           -- la pista que da la confianza: horas, elegida, tickets, unica
   v_cand   jsonb;
   v_partes text[] := '{}';
   v_obra   text;
+  v_nomb   boolean := false;   -- la obra ya se nombró en el motivo (después es «allí» / «esa obra»)
   v_n      int;
   v_res    text;
 begin
@@ -1420,6 +1641,10 @@ begin
        -- por obra activa, cada pista con su consulta sobre su ventana (entra
        -- por el índice (obra, fecha) de cada tabla)
        o as (select p.id, p.nombre,
+                    -- (7c) la fase: la más frecuente de las horas de la obra de 7 días antes a 7 después; si no hay, la de la ficha
+                    coalesce((select h.fase from horas h
+                               where h.proyecto_id = p.id and h.fecha between m.fecha - 7 and m.fecha + 7 and nullif(btrim(h.fase), '') is not null
+                               group by h.fase order by count(*) desc, h.fase limit 1), p.fase) as fase,
                     trim_scale(coalesce((select sum(h.horas) from horas h
                                           where h.proyecto_id = p.id and h.fecha between m.fecha - 3 and m.fecha + 3), 0)) as horas_cerca,
                     trim_scale(coalesce((select sum(h.horas) from horas h
@@ -1429,7 +1654,20 @@ begin
                         and coalesce(r.fecha, fn_fecha_miami(r.creado)) between m.fecha - 180 and m.fecha)::int as recibos_proveedor,
                     coalesce(ve.n, 0)::int as veces_elegida,
                     (select count(*) from materiales t
-                      where t.proyecto_id = p.id and t.creado >= v_desde and t.creado < v_hasta)::int as materiales_recientes
+                      where t.proyecto_id = p.id and t.creado >= v_desde and t.creado < v_hasta)::int as materiales_recientes,
+                    -- (7c) hasta 8 descripciones de su lista en la ventana: las compradas primero, después las más nuevas; sin
+                    -- repetir, 60 letras, tapadas. Nunca el precio, el autor ni el ticket.
+                    (select coalesce(jsonb_agg(fn_contador_sin_datos(d.txt) order by d.comprado desc, d.creado desc, d.txt), '[]'::jsonb)
+                       from (select u.txt, u.comprado, u.creado
+                               from (select distinct on (lower(x.txt)) x.txt, x.comprado, x.creado
+                                       from (select left(regexp_replace(btrim(t.descripcion), '\s+', ' ', 'g'), 60) as txt,
+                                                    coalesce(t.estado = 'comprado', false) as comprado, t.creado
+                                               from materiales t
+                                              where t.proyecto_id = p.id and t.creado >= v_desde and t.creado < v_hasta
+                                                and nullif(btrim(t.descripcion), '') is not null) x
+                                      order by lower(x.txt), x.comprado desc, x.creado desc) u
+                              order by u.comprado desc, u.creado desc, u.txt
+                              limit 8) d) as materiales
                from proyectos p
                left join ve on ve.proyecto_id = p.id
               where p.estado in ('aprobado', 'ejecucion', 'pausa')),
@@ -1437,46 +1675,86 @@ begin
                           + o.materiales_recientes)::numeric(10,1) as puntos
                from o
               where o.horas_cerca + o.horas_mes + o.recibos_proveedor + o.veces_elegida + o.materiales_recientes > 0)
-  select coalesce(jsonb_agg(jsonb_build_object('proyecto_id', y.id, 'nombre', y.nombre, 'horas_cerca', y.horas_cerca, 'horas_mes', y.horas_mes,
-                                               'recibos_proveedor', y.recibos_proveedor, 'veces_elegida', y.veces_elegida,
-                                               'materiales_recientes', y.materiales_recientes, 'puntos', y.puntos)
+  select coalesce(jsonb_agg(jsonb_build_object('proyecto_id', y.id, 'nombre', y.nombre, 'fase', y.fase, 'horas_cerca', y.horas_cerca,
+                                               'horas_mes', y.horas_mes, 'recibos_proveedor', y.recibos_proveedor,
+                                               'veces_elegida', y.veces_elegida, 'materiales_recientes', y.materiales_recientes,
+                                               'materiales', y.materiales, 'puntos', y.puntos)
                             order by y.puntos desc, y.nombre, y.id), '[]'::jsonb)
-    into v_obras
-    from (select * from z order by z.puntos desc, z.nombre, z.id limit 6) y;
-  v_1 := v_obras->0;
-  v_2 := v_obras->1;
+    into v_todas
+    from z y;
+  -- las seis primeras se enseñan, se guardan y van a la IA; las demás solo
+  -- cuentan para la confianza
+  select coalesce(jsonb_agg(t.o order by t.n), '[]'::jsonb) into v_obras
+    from jsonb_array_elements(v_todas) with ordinality t(o, n)
+   where t.n <= 6;
+  v_1 := v_todas->0;
   p1 := coalesce((v_1->>'puntos')::numeric, 0);
-  p2 := coalesce((v_2->>'puntos')::numeric, 0);
+  p2 := coalesce((v_todas->1->>'puntos')::numeric, 0);
+  v_ve  := coalesce((v_1->>'veces_elegida')::int, 0);
+  v_rec := coalesce((v_1->>'recibos_proveedor')::int, 0);
+  select coalesce(max((t.o->>'veces_elegida')::int), 0), coalesce(sum((t.o->>'recibos_proveedor')::int), 0)::int
+    into v_ve2, v_rec2
+    from jsonb_array_elements(v_todas) with ordinality t(o, n)
+   where t.n > 1;
   if p1 >= 8 and (p2 = 0 or p1 >= 1.5 * p2) then
-    -- el motivo, en llano: la obra se nombra en la primera pista; después es «esa obra»
+    -- LA CONFIANZA CALIBRADA (7c): el máximo que aplique, y de dónde sale
+    v_conf := 0.45; v_por := 'horas';
+    if v_ve = 1 and v_ve2 = 0 then
+      v_conf := 0.60; v_por := 'elegida';
+    end if;
+    if v_rec >= 3 and v_rec2 = 0 and v_conf < 0.65 then
+      v_conf := 0.65; v_por := 'tickets';
+    end if;
+    if jsonb_array_length(v_todas) = 1 and v_conf < 0.70 then
+      v_conf := 0.70; v_por := 'unica';
+    end if;
+    if v_ve >= 2 and v_ve >= 2 * v_ve2 then
+      v_conf := case when v_ve >= 3 then 0.90 else 0.80 end; v_por := 'elegida';
+    end if;
+    -- el motivo, en llano: primero la pista que da la confianza; la obra se
+    -- nombra una vez y después es «allí» / «esa obra» / «su lista»
+    if v_por = 'elegida' then
+      v_partes := v_partes || case when v_ve = 1 then format('Edgar eligió %s la última vez con %s', v_1->>'nombre', v_com)
+                                   else format('Edgar eligió %s %s veces con %s', v_1->>'nombre', v_ve, v_com) end;
+      v_nomb := true;
+    elsif v_por = 'tickets' then
+      v_partes := v_partes || format('las %s compras anteriores de %s fueron todas a %s', v_rec, v_com, v_1->>'nombre');
+      v_nomb := true;
+    elsif v_por = 'unica' then
+      v_partes := v_partes || format('%s es la única obra con pistas esos días', v_1->>'nombre');
+      v_nomb := true;
+    end if;
     if (v_1->>'horas_cerca')::numeric > 0 then
-      v_partes := v_partes || format('la cuadrilla reportó %s h en %s esos días%s', v_1->>'horas_cerca', v_1->>'nombre',
+      v_partes := v_partes || format('la cuadrilla reportó %s h %s esos días%s', v_1->>'horas_cerca',
+                                     case when v_nomb then 'allí' else 'en ' || (v_1->>'nombre') end,
                                      case when (v_1->>'horas_mes')::numeric > (v_1->>'horas_cerca')::numeric
                                           then format(' (%s h en los últimos 30 días)', v_1->>'horas_mes') else '' end);
+      v_nomb := true;
     elsif (v_1->>'horas_mes')::numeric > 0 then
-      v_partes := v_partes || format('la cuadrilla reportó %s h en %s en los últimos 30 días', v_1->>'horas_mes', v_1->>'nombre');
+      v_partes := v_partes || format('la cuadrilla reportó %s h %s en los últimos 30 días', v_1->>'horas_mes',
+                                     case when v_nomb then 'allí' else 'en ' || (v_1->>'nombre') end);
+      v_nomb := true;
     end if;
-    v_n := (v_1->>'recibos_proveedor')::int;
-    if v_n > 0 then
-      v_obra := case when cardinality(v_partes) = 0 then v_1->>'nombre' else 'esa obra' end;
-      v_partes := v_partes || case when v_n = 1 then format('1 compra anterior de %s fue a %s', v_com, v_obra)
-                                   else format('%s compras anteriores de %s fueron a %s', v_n, v_com, v_obra) end;
+    if v_rec > 0 and v_por <> 'tickets' then
+      v_obra := case when v_nomb then 'esa obra' else v_1->>'nombre' end;
+      v_partes := v_partes || case when v_rec = 1 then format('1 compra anterior de %s fue a %s', v_com, v_obra)
+                                   else format('%s compras anteriores de %s fueron a %s', v_rec, v_com, v_obra) end;
+      v_nomb := true;
     end if;
-    v_n := (v_1->>'veces_elegida')::int;
-    if v_n > 0 then
-      v_obra := case when cardinality(v_partes) = 0 then v_1->>'nombre' else 'esa obra' end;
-      v_partes := v_partes || case when v_n = 1 then format('Edgar eligió %s la última vez con %s', v_obra, v_com)
-                                   else format('Edgar eligió %s %s veces con %s', v_obra, v_n, v_com) end;
+    if v_ve > 0 and v_por <> 'elegida' then
+      v_obra := case when v_nomb then 'esa obra' else v_1->>'nombre' end;
+      v_partes := v_partes || case when v_ve = 1 then format('Edgar eligió %s la última vez con %s', v_obra, v_com)
+                                   else format('Edgar eligió %s %s veces con %s', v_obra, v_ve, v_com) end;
+      v_nomb := true;
     end if;
     v_n := (v_1->>'materiales_recientes')::int;
     if v_n > 0 then
-      v_obra := case when cardinality(v_partes) = 0 then 'la lista de ' || (v_1->>'nombre') else 'su lista' end;
+      v_obra := case when v_nomb then 'su lista' else 'la lista de ' || (v_1->>'nombre') end;
       v_partes := v_partes || case when v_n = 1 then format('hay 1 material de %s apuntado estos días', v_obra)
                                    else format('hay %s materiales de %s apuntados estos días', v_n, v_obra) end;
     end if;
-    v_cand := jsonb_build_object('proyecto_id', v_1->>'proyecto_id', 'nombre', v_1->>'nombre',
-                                 'confianza', round(least(0.9, p1 / (p1 + p2 + 4)), 2),
-                                 'motivo', array_to_string(v_partes, '; '));
+    v_cand := jsonb_build_object('proyecto_id', v_1->>'proyecto_id', 'nombre', v_1->>'nombre', 'confianza', round(v_conf, 2),
+                                 'fuerte', fn_contador_obra_fuerte(v_conf), 'motivo', array_to_string(v_partes, '; '));
   end if;
   select string_agg(format('%s: %s', o->>'nombre',
                            concat_ws(', ',
@@ -1491,10 +1769,10 @@ begin
                     ' · ' order by n)
     into v_res
     from jsonb_array_elements(v_obras) with ordinality t(o, n);
-  return jsonb_build_object('obras', v_obras, 'candidata', v_cand, 'resumen', coalesce(v_res, 'sin pistas'));
+  return jsonb_build_object('obras', v_obras, 'candidata', v_cand, 'comercio', v_com, 'resumen', coalesce(v_res, 'sin pistas'));
 end $$;
 revoke execute on function public.fn_contador_pistas_obra(uuid) from public, anon, authenticated, service_role;
-comment on function public.fn_contador_pistas_obra(uuid) is 'c8: (7b) las pistas de la obra de un cargo, por obra activa (horas cerca y en el mes, tickets del mismo comercio, veces elegida, materiales recientes) con sus puntos; la candidata (≥ 8 puntos y al menos una vez y media la segunda) con confianza y motivo; y un resumen. Nada personal. Lee por obra activa (los índices contador_*_idx) y compara el comercio una vez por proveedor distinto.';
+comment on function public.fn_contador_pistas_obra(uuid) is 'c8: (7b, calibrada en la 7c) las pistas de la obra de un cargo, por obra activa (horas cerca y en el mes, tickets del mismo comercio, veces elegida, materiales recientes, la fase y hasta 8 materiales de su lista) con sus puntos; la candidata (≥ 8 puntos y al menos una vez y media la segunda) con la confianza calibrada (0,45 de base; 0,60 / 0,80 / 0,90 por lo que Edgar eligió; 0,65 tickets exclusivos; 0,70 única obra), «fuerte» desde 0,80 y el motivo que cita primero la pista que decide; el comercio y un resumen. Nada personal.';
 
 -- LO QUE SE LE DA A LA IA: los movimientos que esperan (hasta el límite,
 -- nunca más que max_por_rafaga) y el contexto: las cuentas permitidas, las
@@ -1505,8 +1783,9 @@ comment on function public.fn_contador_pistas_obra(uuid) is 'c8: (7b) las pistas
 -- fechas ni ids de lote: así el prefijo es idéntico entre llamadas y
 -- cachea. Sin correos, teléfonos ni números de cuenta. Cada movimiento
 -- lleva pistas_obra (7b): fn_contador_pistas_obra sin los puntos internos
--- (las obras con sus totales, la candidata y el resumen), para que la IA
--- proponga la obra solo con lo que la base vio.
+-- (las obras con sus totales y, desde la 7c, su fase y sus materiales; la
+-- candidata con su confianza calibrada y «fuerte»; el comercio y el
+-- resumen), para que la IA proponga la obra solo con lo que la base vio.
 create or replace function public.fn_contador_pendientes(p_limite int default 20) returns jsonb
 language plpgsql stable
 set search_path = public, pg_temp
@@ -1584,7 +1863,7 @@ begin
                                  'prompt_version', cfg.prompt_version, 'prefijo_hash', cfg.prefijo_hash));
 end $$;
 revoke execute on function public.fn_contador_pendientes(int) from public, anon, authenticated, service_role;
-comment on function public.fn_contador_pendientes(int) is 'c8: los movimientos que esperan propuesta (hasta el límite, cada uno con las pistas de su obra) y el contexto para la IA: cuentas permitidas, obras activas, reglas y su versión, los últimos 30 ejemplos de Edgar, y el tope.';
+comment on function public.fn_contador_pendientes(int) is 'c8: los movimientos que esperan propuesta (hasta el límite, cada uno con las pistas de su obra: por obra la fase y los materiales, la candidata calibrada) y el contexto para la IA: cuentas permitidas, obras activas, reglas y su versión, los últimos 30 ejemplos de Edgar, y el tope.';
 
 -- LAS REGLAS, ANTES QUE LA IA (Postgres contesta gratis): para cada
 -- movimiento que espera, la regla activa que casa (desc_norm ~* patron, y
@@ -1594,11 +1873,14 @@ comment on function public.fn_contador_pendientes(int) is 'c8: los movimientos q
 -- lleva confianza 1, «Regla: <nombre>», sus líneas (con el monto de cada
 -- parte, si son varias) y, si alguna cuenta pide obra y la regla no la
 -- trae, LA CANDIDATA de fn_contador_pistas_obra (7b: la regla dice la
--- cuenta; las pistas, la obra), copiada a las líneas que admiten obra, con
--- su confianza y su motivo en «obra» y flags.obra_propuesta; sin candidata,
--- pide_obra como siempre. Las pistas quedan con la propuesta. Una regla
--- cuya cuenta ya no se puede proponer no se aplica (y se dice:
--- reglas_rotas; el cuadre 62 la nombra).
+-- cuenta; las pistas, la obra) SOLO SI ES FUERTE (7c: confianza ≥ 0,80, lo
+-- que Edgar ya eligió para ese comercio), copiada a las líneas que admiten
+-- obra, con su confianza y su motivo en «obra» y flags.obra_propuesta y
+-- obra_fuerte; sin candidata, o con una más floja, pide_obra como siempre
+-- (la pantalla enseña «¿De qué obra?» con las tres primeras de las pistas).
+-- Las pistas quedan con la propuesta en los dos casos. Una regla cuya
+-- cuenta ya no se puede proponer no se aplica (y se dice: reglas_rotas; el
+-- cuadre 62 la nombra).
 create or replace function public.fn_contador_reglas_aplicar(p_dueno uuid) returns jsonb
 language plpgsql
 set search_path = public, pg_temp
@@ -1694,7 +1976,12 @@ begin
     -- pistas quedan guardadas con la propuesta (la bandeja enseña el
     -- resumen) y su resumen va también en «entrada», con la regla.
     v_pistas := fn_contador_pistas_obra(c.movimiento_id);
-    v_cand := case when v_obra and jsonb_typeof(v_pistas->'candidata') = 'object' then v_pistas->'candidata' end;
+    -- (7c) SOLO UNA CANDIDATA FUERTE: las horas y los tickets solos aciertan
+    -- cuatro de cada diez; con una candidata más floja la propuesta pide obra
+    -- como antes de la 7b y Edgar la elige en un toque entre las tres
+    -- primeras (las pistas se guardan igual)
+    v_cand := case when v_obra and jsonb_typeof(v_pistas->'candidata') = 'object'
+                    and coalesce((v_pistas->'candidata'->>'fuerte')::boolean, false) then v_pistas->'candidata' end;
     v_obraj := null;
     if v_cand is not null then
       select jsonb_agg(case when nullif(x->>'proyecto_id', '') is null
@@ -1711,7 +1998,7 @@ begin
       values (c.movimiento_id, 'regla', v_best.id,
               jsonb_strip_nulls(jsonb_build_object('lineas', v_lineas, 'motivo', 'Regla: ' || v_best.nombre, 'confianza', 1,
                                                    'flags', case when v_obra then '{"pide_obra": true}'::jsonb
-                                                                 when v_obraj is not null then '{"obra_propuesta": true}'::jsonb
+                                                                 when v_obraj is not null then '{"obra_propuesta": true, "obra_fuerte": true}'::jsonb
                                                                  else '{}'::jsonb end,
                                                    'obra', v_obraj)),
               jsonb_build_object('regla', v_best.id, 'nombre', v_best.nombre, 'patron', v_best.patron,
@@ -1727,7 +2014,7 @@ begin
   return jsonb_build_object('propuestas', v_n, 'candidatos', v_nc, 'reglas_rotas', to_jsonb(v_rotas));
 end $$;
 revoke execute on function public.fn_contador_reglas_aplicar(uuid) from public, anon, authenticated, service_role;
-comment on function public.fn_contador_reglas_aplicar(uuid) is 'c8: a cada movimiento que espera, la regla activa más específica que casa deja su propuesta (confianza 1; si su cuenta pide obra, con la candidata de las pistas); un empate, ninguna; una rechazada no se repite.';
+comment on function public.fn_contador_reglas_aplicar(uuid) is 'c8: a cada movimiento que espera, la regla activa más específica que casa deja su propuesta (confianza 1; si su cuenta pide obra, con la candidata de las pistas solo si es fuerte —7c—, si no pide obra); un empate, ninguna; una rechazada no se repite.';
 
 
 -- ---------------------------------------------------------------------
@@ -2020,8 +2307,10 @@ comment on function public.fn_contador_lineas_validar(jsonb, numeric) is 'c8: va
 -- codigo} y nada queda): el movimiento sigue pendiente y «sin_ticket»; la
 -- propuesta trae sus líneas válidas, un motivo (3 a 600 letras) y una
 -- confianza entre 0 y 1; los flags son los conocidos (capitalizable,
--- use_tax, personal, irs, pide_obra), y pide_obra y obra_propuesta los
--- decide la base por las cuentas y la obra; las alternativas a una cuenta
+-- use_tax, personal, irs, pide_obra), y pide_obra, obra_propuesta y (7c)
+-- obra_fuerte (la obra propuesta con confianza ≥ 0,80: la única que la
+-- pantalla preselecciona) los decide la base por las cuentas y la obra, no
+-- la IA; las alternativas a una cuenta
 -- que no se puede proponer se quitan (se dice cuántas). LA OBRA (7b):
 -- «obra» = {proyecto_id, confianza, motivo} o null; una forma que no es esa
 -- no se guarda (22023); una obra que no existe o no está activa se descarta
@@ -2118,7 +2407,7 @@ begin
   v_flags := coalesce(p_propuesta->'flags', '{}'::jsonb);
   if jsonb_typeof(v_flags) <> 'object'
      or exists (select 1 from jsonb_each(v_flags) f
-                 where f.key not in ('capitalizable', 'use_tax', 'personal', 'irs', 'pide_obra', 'obra_propuesta')
+                 where f.key not in ('capitalizable', 'use_tax', 'personal', 'irs', 'pide_obra', 'obra_propuesta', 'obra_fuerte')
                     or jsonb_typeof(f.value) <> 'boolean') then
     return jsonb_build_object('error', 'los flags son un objeto con capitalizable, use_tax, personal, irs y pide_obra (true o false)',
                               'codigo', '22023');
@@ -2202,10 +2491,12 @@ begin
   if v_val ? 'error' then
     return jsonb_build_object('error', 'la propuesta no vale: ' || (v_val->>'error'), 'codigo', v_val->>'codigo');
   end if;
-  -- pide_obra y obra_propuesta los decide la base (las cuentas y la obra), no la IA
-  v_flags := (v_flags - 'pide_obra' - 'obra_propuesta')
+  -- pide_obra, obra_propuesta y obra_fuerte los decide la base (las cuentas,
+  -- la obra y su confianza), no la IA
+  v_flags := (v_flags - 'pide_obra' - 'obra_propuesta' - 'obra_fuerte')
              || case when (v_val->>'pide_obra')::boolean then '{"pide_obra": true}'::jsonb else '{}'::jsonb end
-             || case when v_oid is not null then '{"obra_propuesta": true}'::jsonb else '{}'::jsonb end;
+             || case when v_oid is not null then '{"obra_propuesta": true}'::jsonb else '{}'::jsonb end
+             || case when v_oid is not null and fn_contador_obra_fuerte(v_oconf) then '{"obra_fuerte": true}'::jsonb else '{}'::jsonb end;
   -- las alternativas: solo a cuentas que se pueden proponer
   if p_propuesta ? 'alternativas' and jsonb_typeof(p_propuesta->'alternativas') = 'array' then
     select coalesce(jsonb_agg(jsonb_build_object('cuenta', btrim(x->>'cuenta'), 'motivo', left(btrim(coalesce(x->>'motivo', '')), 300))
@@ -2235,11 +2526,12 @@ begin
   returning id into v_id;
   return jsonb_strip_nulls(jsonb_build_object('propuesta', v_id, 'estado', 'pendiente', 'pide_obra', (v_val->>'pide_obra')::boolean,
                                               'caducada', v_prev, 'alternativas_fuera', nullif(v_fuera, 0),
-                                              'obra', v_oid, 'obra_nota', v_nota));
+                                              'obra', v_oid, 'obra_fuerte', case when v_oid is not null then fn_contador_obra_fuerte(v_oconf) end,
+                                              'obra_nota', v_nota));
 end $$;
 revoke execute on function public.fn_contador_propuesta_guardar(uuid, uuid, jsonb, jsonb, jsonb, text, text, text)
   from public, anon, authenticated, service_role;
-comment on function public.fn_contador_propuesta_guardar(uuid, uuid, jsonb, jsonb, jsonb, text, text, text) is 'c8: guarda lo que contestó la IA para un movimiento, validado (cuentas permitidas, obra, montos, motivo, confianza, flags; la obra propuesta solo si es una obra activa y alguna línea la toma, si no se descarta con nota; una obra inactiva puesta en una línea se quita con nota); si no vale, {error, codigo} y no se guarda. La pendiente anterior caduca.';
+comment on function public.fn_contador_propuesta_guardar(uuid, uuid, jsonb, jsonb, jsonb, text, text, text) is 'c8: guarda lo que contestó la IA para un movimiento, validado (cuentas permitidas, obra, montos, motivo, confianza, flags; la obra propuesta solo si es una obra activa y alguna línea la toma, si no se descarta con nota; una obra inactiva puesta en una línea se quita con nota; flags.obra_fuerte si la obra viene con confianza ≥ 0,80); si no vale, {error, codigo} y no se guarda. La pendiente anterior caduca.';
 
 -- LA REGLA QUE NACE DE UNA APROBACIÓN («Recordar para este comercio»):
 -- nombre = el comercio de desc_norm; patrón = «^» + el nombre escapado;
@@ -2761,6 +3053,127 @@ comment on function public.fn_contador_regla_baja(uuid, uuid, text) is 'c8: Edga
 
 
 -- ---------------------------------------------------------------------
+-- 8b. LA RUTINA (7c): pg_cron → fn_contador_programado → pg_net → la
+--     función de borde (proponer_todo, en nombre del dueño) → al terminar,
+--     fn_contador_rutina_marcar. El mecanismo es el de c7 (copiado, no
+--     compartido): el secreto en Vault, la URL en la configuración, la
+--     cabecera x-mxp-rutina. Sin pg_cron (el banco de pruebas) nada se
+--     programa y todo lo demás funciona igual.
+-- ---------------------------------------------------------------------
+-- El dueño en cuyo nombre corre la rutina (el de contador_config), si sigue
+-- siendo un dueño activo; si no, 42501 y la rutina no propone nada (la
+-- función de borde lo pide antes de abrir la ráfaga; cada función lo
+-- vuelve a comprobar con fn_contador_dueno_fijar).
+create or replace function public.fn_contador_rutina_dueno() returns uuid
+language plpgsql stable
+set search_path = public, pg_temp
+as $$
+declare
+  cfg contador_config;
+begin
+  perform fn_contador_exigir();
+  cfg := fn_contador_cfg();
+  if not exists (select 1 from perfiles p where p.id = cfg.dueno and p.rol = 'dueno' and coalesce(p.activo, true)) then
+    raise exception using errcode = '42501',
+      message = 'El dueño en nombre del cual propone el contador (contador_config.dueno) ya no es un dueño activo: la rutina no propone nada. '
+                'Entra a la Bandeja como dueño para fijarlo.';
+  end if;
+  return cfg.dueno;
+end $$;
+revoke execute on function public.fn_contador_rutina_dueno() from public, anon, authenticated, service_role;
+comment on function public.fn_contador_rutina_dueno() is 'c8: (7c) el dueño en cuyo nombre corre la rutina (contador_config.dueno), si sigue siendo un dueño activo; si no, 42501.';
+
+-- Cómo terminó la rutina: la función de borde lo marca al acabar
+-- proponer_todo (ok y, si no, el error en llano). rutina_ultima_el es la
+-- última vez que corrió, bien o mal; rutina_ultimo_error se limpia con la
+-- siguiente corrida limpia. La alarma 74 y la tarjeta de Conexiones leen
+-- los dos.
+create or replace function public.fn_contador_rutina_marcar(p_ok boolean, p_error text default null) returns jsonb
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  c contador_config;
+begin
+  perform fn_contador_exigir();
+  perform fn_contador_cfg();
+  update contador_config
+     set rutina_ultima_el    = now(),
+         rutina_ultimo_error = case when coalesce(p_ok, false) then null
+                                    else coalesce(left(nullif(btrim(p_error), ''), 600), 'la rutina terminó con error (sin más detalle)') end,
+         actualizado         = now()
+   where id = 1
+  returning * into c;
+  return jsonb_build_object('rutina_activa', c.rutina_activa, 'rutina_ultima_el', c.rutina_ultima_el, 'rutina_ultimo_error', c.rutina_ultimo_error);
+end $$;
+revoke execute on function public.fn_contador_rutina_marcar(boolean, text) from public, anon, authenticated, service_role;
+comment on function public.fn_contador_rutina_marcar(boolean, text) is 'c8: (7c) la función de borde marca cómo terminó la rutina: rutina_ultima_el = ahora y rutina_ultimo_error (nulo si fue bien).';
+
+-- LA RUTINA (lo que pg_cron ejecuta a las 11:25 y a las 21:00 UTC): si está
+-- apagada, no hay candidatos, o el contador está apagado o bloqueado por el
+-- tope, nulo sin llamar a nada (no se gasta). Si no, net.http_post a la
+-- función de borde con {accion: proponer_todo, origen: rutina} y la
+-- cabecera x-mxp-rutina = el secreto de Vault, 150 s de plazo (Supabase
+-- corta la función a los 150 s; cada ráfaga lleva su propio reloj), y
+-- devuelve el id de la llamada de pg_net. Sin funcion_url, sin el secreto o
+-- sin pg_net (el banco de pruebas no lo tiene), MX009 en llano. La llamada
+-- va en SQL dinámico para que la función exista también donde no hay
+-- esquema net.
+create or replace function public.fn_contador_programado() returns bigint
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  cfg   contador_config;
+  v_t   jsonb;
+  v_sec text;
+  v_id  bigint;
+begin
+  perform fn_contador_exigir();
+  cfg := fn_contador_cfg();
+  if not cfg.rutina_activa then return null; end if;
+  if not exists (select 1 from fn_contador_candidatos()) then return null; end if;
+  v_t := fn_contador_tope();
+  if (v_t->>'bloqueado')::boolean then return null; end if;
+  if nullif(btrim(coalesce(cfg.funcion_url, '')), '') is null then
+    raise exception using errcode = 'MX009',
+      message = 'La rutina no sabe a dónde llamar: contador_config.funcion_url está vacío. Pon la URL de la función de borde «contador» '
+                '(https://<proyecto>.supabase.co/functions/v1/contador): update contador_config set funcion_url = ''…'' where id = 1;';
+  end if;
+  select s.decrypted_secret into v_sec from vault.decrypted_secrets s where s.name = 'contador_rutina_secreto';
+  if v_sec is null then
+    raise exception using errcode = 'MX009', message = 'Falta el secreto contador_rutina_secreto en Vault: vuelve a pegar c8-contador.sql.';
+  end if;
+  if not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'net' and p.proname = 'http_post') then
+    raise exception using errcode = 'MX009',
+      message = 'Esta base no tiene pg_net (net.http_post): la rutina no puede llamar a la función de borde. En Supabase: Database → '
+                'Extensions → pg_net (y pg_cron); en el banco de pruebas es lo esperado.';
+  end if;
+  execute 'select net.http_post(url := $1, body := $2, headers := $3, timeout_milliseconds := $4)'
+     into v_id
+    using cfg.funcion_url, jsonb_build_object('accion', 'proponer_todo', 'origen', 'rutina'),
+          jsonb_build_object('Content-Type', 'application/json', 'x-mxp-rutina', v_sec), 150000;
+  return v_id;
+end $$;
+revoke execute on function public.fn_contador_programado() from public, anon, authenticated, service_role;
+comment on function public.fn_contador_programado() is 'c8: (7c) la rutina que dispara pg_cron: si hay candidatos y el contador no está apagado ni bloqueado, pg_net POST a la función de borde (proponer_todo, cabecera x-mxp-rutina = el secreto de Vault) y devuelve el id; si no, nulo sin llamar; sin funcion_url, secreto o pg_net, MX009.';
+
+-- Las dos tareas, solo donde hay pg_cron (producción): a las 11:25 UTC (en
+-- Miami 6:25 de la mañana en invierno y 7:25 en verano, después de la
+-- sincronización de Plaid de las 11:00) y a las 21:00 UTC (las 4 de la tarde
+-- en invierno, las 5 en verano: lo que Edgar importó por CSV en el día).
+-- Se vuelven a programar en cada pegado (unschedule antes, como c7).
+do $$
+begin
+  if exists (select 1 from pg_namespace where nspname = 'cron') then
+    perform cron.unschedule(j.jobid) from cron.job j where j.jobname in ('mxp-contador-manana', 'mxp-contador-tarde');
+    perform cron.schedule('mxp-contador-manana', '25 11 * * *', 'select public.fn_contador_programado()');
+    perform cron.schedule('mxp-contador-tarde', '0 21 * * *', 'select public.fn_contador_programado()');
+  end if;
+end $$;
+
+
+-- ---------------------------------------------------------------------
 -- 9. Las vistas de la pantalla (solo leen TABLAS —y asistente_costo_mes,
 --    la de la app—; security_invoker: cada una con los permisos de quien
 --    la lee, y el dueño ve todo). v_contador_cuentas va arriba (3).
@@ -2791,10 +3204,15 @@ comment on view public.v_contador_reglas is 'c8: las reglas del contador (activa
 
 -- La bandeja de la IA: por movimiento, su propuesta viva (la pendiente) o
 -- la última, con las líneas resueltas (cuenta, obra, monto), el motivo, la
--- confianza, los flags, de dónde salió y, si ya entró, su asiento; y (7b)
--- la obra propuesta (id, nombre, confianza, motivo) y el resumen de las
--- pistas que la base vio. Los movimientos pendientes siempre; los demás,
--- 120 días.
+-- confianza, los flags, de dónde salió y, si ya entró, su asiento; (7b) la
+-- obra propuesta (id, nombre, confianza, motivo) y el resumen de las pistas
+-- que la base vio; y (7c) obra_fuerte (la obra propuesta viene con
+-- confianza ≥ 0,80: la única que la pantalla preselecciona) y obras_top
+-- (las tres primeras obras de las pistas por puntos, cada una con su pista
+-- en llano y corta: «21 h esos días · 7 tickets de CES» / «la elegiste 2
+-- veces con CES» / «3 materiales apuntados»; null sin pistas), para que
+-- «¿De qué obra?» se conteste en un toque. Los movimientos pendientes
+-- siempre; los demás, 120 días.
 create view public.v_contador_bandeja with (security_invoker = true) as
 with p as (select q.*, row_number() over (partition by q.movimiento_id order by (q.estado = 'pendiente') desc, q.creado_el desc) as rn
              from public.contador_propuestas q)
@@ -2822,6 +3240,27 @@ select p.movimiento_id, m.cuenta, m.fecha, m.monto, m.descripcion, m.estado as m
        (p.propuesta->'obra'->>'confianza')::numeric as obra_confianza,
        p.propuesta->'obra'->>'motivo' as obra_motivo,
        p.pistas->>'resumen' as pistas_resumen,
+       -- (7c) la obra propuesta es fuerte (≥ 0,80); y las tres primeras obras de las pistas con su pista en llano (una propuesta
+       -- de la 7b guardó las pistas sin el comercio: entonces «tickets de este comercio»)
+       coalesce((p.propuesta->'flags'->>'obra_fuerte')::boolean, false) as obra_fuerte,
+       (select jsonb_agg(jsonb_build_object(
+                 'proyecto_id', s.o->>'proyecto_id', 'nombre', s.o->>'nombre',
+                 'pista', concat_ws(' · ',
+                   case when coalesce((s.o->>'horas_cerca')::numeric, 0) > 0 then (s.o->>'horas_cerca') || ' h esos días'
+                        when coalesce((s.o->>'horas_mes')::numeric, 0) > 0 then (s.o->>'horas_mes') || ' h en 30 días' end,
+                   case when coalesce((s.o->>'recibos_proveedor')::int, 0) = 1 then '1 ticket de ' || k.com
+                        when coalesce((s.o->>'recibos_proveedor')::int, 0) > 1 then (s.o->>'recibos_proveedor') || ' tickets de ' || k.com end,
+                   case when coalesce((s.o->>'veces_elegida')::int, 0) = 1 then 'la elegiste 1 vez con ' || k.com
+                        when coalesce((s.o->>'veces_elegida')::int, 0) > 1 then 'la elegiste ' || (s.o->>'veces_elegida') || ' veces con ' || k.com end,
+                   case when coalesce((s.o->>'materiales_recientes')::int, 0) = 1 then '1 material apuntado'
+                        when coalesce((s.o->>'materiales_recientes')::int, 0) > 1 then (s.o->>'materiales_recientes') || ' materiales apuntados' end))
+               order by s.n)
+          from (select t.o, t.n
+                  from jsonb_array_elements(case when jsonb_typeof(p.pistas->'obras') = 'array' then p.pistas->'obras' else '[]'::jsonb end)
+                       with ordinality t(o, n)
+                 order by (t.o->>'puntos')::numeric desc nulls last, t.n
+                 limit 3) s
+         cross join lateral (select coalesce(p.pistas->>'comercio', 'este comercio') as com) k) as obras_top,
        p.modelo, p.effort, p.prompt_version, p.regla_id, r.nombre as regla_nombre, p.lote_id,
        p.creado_el, p.aprobado_por, p.aprobado_el, p.lineas_finales, p.motivo_edgar, p.nota,
        p.asiento_id, a.numero as asiento,
@@ -2836,7 +3275,7 @@ select p.movimiento_id, m.cuenta, m.fecha, m.monto, m.descripcion, m.estado as m
   left join public.proyectos po on po.id = p.propuesta->'obra'->>'proyecto_id'
  where p.rn = 1
    and (m.estado = 'pendiente' or p.creado_el > now() - interval '120 days');
-comment on view public.v_contador_bandeja is 'c8: por movimiento, su propuesta viva (la pendiente) o la última: líneas resueltas, motivo, confianza, flags, la obra propuesta con su confianza y motivo, el resumen de las pistas, fuente (regla, IA o Edgar), estado y, si entró, su asiento.';
+comment on view public.v_contador_bandeja is 'c8: por movimiento, su propuesta viva (la pendiente) o la última: líneas resueltas, motivo, confianza, flags, la obra propuesta con su confianza y motivo (y si es fuerte, 7c), el resumen de las pistas y sus tres primeras obras con su pista en llano (obras_top), fuente (regla, IA o Edgar), estado y, si entró, su asiento.';
 
 -- EL CONTROL del contador (orden, control, nivel, ok, filas, esperadas,
 -- detalle). Un «cuadre» en rojo: la pantalla no pinta la franja de la IA,
@@ -3017,7 +3456,7 @@ select z.orden, z.control, z.nivel, z.ok, z.filas, z.esperadas, z.detalle
           null, null,
           case when abierta.n > 0
                then format('%s ráfaga(s) abierta(s) desde las %s (hora de Miami) sin cerrar: la función se cortó antes de terminar y su gasto no '
-                           'está anotado; la base la da por perdida al abrir la siguiente («Proponer con la IA»)',
+                           'está anotado; la base la da por perdida al abrir la siguiente (al abrir la Bandeja o con «Proponer ahora»)',
                            abierta.n, to_char(abierta.desde at time zone 'America/New_York', 'DD/MM/YYYY HH24:MI'))
                when cfg.ultimo_error is not null
                then format('el %s: %s', to_char(cfg.ultimo_error_el at time zone 'America/New_York', 'DD/MM/YYYY HH24:MI'), cfg.ultimo_error)
@@ -3029,12 +3468,39 @@ select z.orden, z.control, z.nivel, z.ok, z.filas, z.esperadas, z.detalle
           not (cfg.activa and cfg.ultima_rafaga_el is null and cand.n > 0 and cand.desde < hoy.d - 2), null, null,
           case when cfg.activa and cfg.ultima_rafaga_el is null and cand.n > 0 and cand.desde < hoy.d - 2
                then format('ninguna ráfaga ha corrido nunca y hay %s cargo(s) sin propuesta desde el %s: ¿está ANTHROPIC_API_KEY en los '
-                           'secretos de Edge Functions y la función «contador» desplegada? Toca «Proponer con la IA» en la Bandeja',
+                           'secretos de Edge Functions y la función «contador» desplegada? Abre la Bandeja (propone sola) o toca «Proponer ahora»',
                            cand.n, cand.desde)
                when not cfg.activa then 'el contador está apagado (contador_config.activa = false)'
                else format('%s cargo(s) esperan propuesta', cand.n) end
+   union all
+   -- 74 (7c): la rutina que propone sola (pg_cron → la función de borde) corre y termina bien: en rojo si está activa y su
+   --     última corrida terminó con error, o lleva más de 36 horas sin correr (o nunca corrió desde que se instaló) con
+   --     cargos esperando. Apagada (rutina_activa = false), no se vigila: la Bandeja propone sola al abrirla.
+   select 74, 'ia: la rutina', 'alarma',
+          not (cfg.rutina_activa
+               and (cfg.rutina_ultimo_error is not null
+                    or (coalesce(cfg.rutina_ultima_el, cfg.rutina_desde) < now() - interval '36 hours' and cand.n > 0))),
+          null, null,
+          case when not cfg.rutina_activa
+               then 'la rutina está apagada (contador_config.rutina_activa = false): la Bandeja sigue proponiendo sola al abrirla, y «Proponer ahora» sigue'
+               when cfg.rutina_ultimo_error is not null
+               then format('la rutina de las %s (hora de Miami) terminó con error: %s',
+                           to_char(cfg.rutina_ultima_el at time zone 'America/New_York', 'DD/MM/YYYY HH24:MI'), cfg.rutina_ultimo_error)
+               when cfg.rutina_ultima_el is null and cfg.rutina_desde < now() - interval '36 hours' and cand.n > 0
+               then format('la rutina no ha corrido nunca desde que se instaló (el %s) y hay %s cargo(s) esperando: ¿está CONTADOR_RUTINA_SECRETO '
+                           'en los secretos de Edge Functions, pg_cron y pg_net habilitados, y las tareas mxp-contador-manana y mxp-contador-tarde '
+                           'programadas (select * from cron.job)?',
+                           to_char(cfg.rutina_desde at time zone 'America/New_York', 'DD/MM/YYYY HH24:MI'), cand.n)
+               when cfg.rutina_ultima_el < now() - interval '36 hours' and cand.n > 0
+               then format('la rutina no corre desde el %s (hora de Miami, hace más de 36 horas) y hay %s cargo(s) esperando: mira cron.job_run_details '
+                           'y los logs de la función «contador»',
+                           to_char(cfg.rutina_ultima_el at time zone 'America/New_York', 'DD/MM/YYYY HH24:MI'), cand.n)
+               when cfg.rutina_ultima_el is null
+               then format('la rutina no ha corrido todavía (corre a las %s de la mañana, tras el banco, y a las %s de la tarde, hora de Miami)',
+                           to_char((current_date + time '11:25') at time zone 'UTC' at time zone 'America/New_York', 'FMHH24:MI'), to_char((current_date + time '21:00') at time zone 'UTC' at time zone 'America/New_York', 'FMHH12'))
+               else 'la última corrió el ' || to_char(cfg.rutina_ultima_el at time zone 'America/New_York', 'DD/MM/YYYY HH24:MI') || ' (hora de Miami) sin error' end
  ) z;
-comment on view public.v_contador_control is 'c8: el control del contador: cuadres (si uno sale en rojo, la pantalla no pinta la franja de la IA; salvo el 64 —que toda obra de una propuesta pendiente, la propuesta o la de la línea, siga activa—, que la propia propuesta resuelve con su selector y la base frena al aprobar) y alarmas (el gasto, lo pendiente de más de 7 días, la última ráfaga, la llave y la función).';
+comment on view public.v_contador_control is 'c8: el control del contador: cuadres (si uno sale en rojo, la pantalla no pinta la franja de la IA; salvo el 64 —que toda obra de una propuesta pendiente, la propuesta o la de la línea, siga activa—, que la propia propuesta resuelve con su selector y la base frena al aprobar) y alarmas (el gasto, lo pendiente de más de 7 días, la última ráfaga, la llave y la función, y —7c— la rutina).';
 
 -- El estado del contador, en una fila (la franja de la Bandeja y la
 -- tarjeta de Conexiones).
@@ -3056,10 +3522,43 @@ with hoy as (select to_char((now() at time zone 'America/New_York')::date, 'YYYY
                  and not exists (select 1 from public.contador_propuestas p where p.movimiento_id = m.id and p.estado = 'pendiente')),
      ctl as (select count(*) filter (where c.nivel = 'cuadre' and not c.ok) as rojos,
                     count(*) filter (where c.nivel = 'alarma' and not c.ok) as alarmas
-               from public.v_contador_control c)
+               from public.v_contador_control c),
+     -- (7c) EL MARCADOR HONESTO DEL MES: lo que entró este mes (aprobado_el, mes de Miami) de la IA o de una regla, comparando
+     --      lineas_finales con lo que traía la propuesta (sus líneas y su obra: propuesta.obra, o la obra que ya venía en la línea)
+     marc as (select count(*) filter (where p.estado = 'aprobada' or x.cuentas_fin = x.cuentas_prop) as cuenta_acertadas,
+                     count(*) filter (where p.estado = 'editada' and x.cuentas_fin is distinct from x.cuentas_prop) as cuenta_cambiadas,
+                     count(*) filter (where x.obra_prop is not null and x.obra_fin = x.obra_prop) as obra_acertadas,
+                     count(*) filter (where x.obra_prop is not null and x.obra_fin is not null and x.obra_fin <> x.obra_prop) as obra_cambiadas,
+                     count(*) filter (where x.obra_prop is null and x.obra_fin is not null) as obra_elegidas
+                from public.contador_propuestas p
+               cross join hoy
+               cross join lateral (
+                 select (select array_agg(l->>'cuenta' order by l->>'cuenta')
+                           from jsonb_array_elements(case when jsonb_typeof(p.propuesta->'lineas') = 'array' then p.propuesta->'lineas'
+                                                          else '[]'::jsonb end) l) as cuentas_prop,
+                        (select array_agg(l->>'cuenta' order by l->>'cuenta')
+                           from jsonb_array_elements(case when jsonb_typeof(p.lineas_finales) = 'array' then p.lineas_finales
+                                                          else '[]'::jsonb end) l) as cuentas_fin,
+                        coalesce(p.propuesta->'obra'->>'proyecto_id',
+                                 (select nullif(l->>'proyecto_id', '')
+                                    from jsonb_array_elements(case when jsonb_typeof(p.propuesta->'lineas') = 'array' then p.propuesta->'lineas'
+                                                                   else '[]'::jsonb end) with ordinality t(l, o)
+                                   where nullif(l->>'proyecto_id', '') is not null
+                                   order by o limit 1)) as obra_prop,
+                        (select nullif(l->>'proyecto_id', '')
+                           from jsonb_array_elements(case when jsonb_typeof(p.lineas_finales) = 'array' then p.lineas_finales
+                                                          else '[]'::jsonb end) with ordinality t(l, o)
+                          where nullif(l->>'proyecto_id', '') is not null
+                          order by o limit 1) as obra_fin) x
+               where p.fuente in ('ia', 'regla') and p.estado in ('aprobada', 'editada')
+                 and to_char(p.aprobado_el at time zone 'America/New_York', 'YYYY-MM') = hoy.mes)
 select true as instalado, c.modelo, c.effort, c.activa, c.max_por_rafaga, c.tope_mes_centavos, c.dueno,
        (select p.nombre from public.perfiles p where p.id = c.dueno) as dueno_nombre,
        c.prompt_version, c.prefijo_hash, c.ultima_rafaga_el, c.ultimo_error, c.ultimo_error_el, c.actualizado,
+       -- (7c) la rutina que propone sola, y el marcador del mes
+       c.funcion_url, c.rutina_activa, c.rutina_ultima_el, c.rutina_ultimo_error, c.rutina_desde,
+       marc.cuenta_acertadas as cuenta_acertadas_mes, marc.cuenta_cambiadas as cuenta_cambiadas_mes,
+       marc.obra_acertadas as obra_acertadas_mes, marc.obra_cambiadas as obra_cambiadas_mes, marc.obra_elegidas as obra_elegidas_mes,
        cand.n as pendientes_sin_propuesta, cand.desde as pendientes_desde,
        (select count(*) from public.contador_propuestas p where p.estado = 'pendiente') as propuestas_pendientes,
        (select count(*) from public.contador_propuestas p where p.estado = 'pendiente' and p.fuente = 'regla') as propuestas_por_regla,
@@ -3087,8 +3586,9 @@ select true as instalado, c.modelo, c.effort, c.activa, c.max_por_rafaga, c.tope
  cross join gasto
  cross join cand
  cross join ctl
+ cross join marc
  where c.id = 1;
-comment on view public.v_contador_estado is 'c8: el estado del contador en una fila: configuración, lo que espera, las propuestas pendientes (y cuántas traen obra propuesta), las reglas, el gasto del mes y sus topes, la última ráfaga y el control.';
+comment on view public.v_contador_estado is 'c8: el estado del contador en una fila: configuración, lo que espera, las propuestas pendientes (y cuántas traen obra propuesta), las reglas, el gasto del mes y sus topes, la última ráfaga, el control y (7c) la rutina (activa, última corrida, error) y el marcador honesto del mes (cuenta y obra acertadas, cambiadas y elegidas).';
 
 do $$
 declare
@@ -3178,14 +3678,33 @@ begin
                              (select count(*) from v_contador_control x where x.nivel = 'cuadre' and not x.ok),
                              (select count(*) from v_contador_control x where x.nivel = 'alarma' and not x.ok))
                       || case when c.ultima_rafaga_el is null and exists (select 1 from v_contador_control x where x.orden = 73 and not x.ok)
-                              then ' · la 73 («la llave y la función») es la esperada hasta la primera ráfaga: se apaga sola al tocar «Proponer con la IA»'
+                              then ' · la 73 («la llave y la función») es la esperada hasta la primera ráfaga: se apaga sola al abrir la Bandeja (propone sola) o al tocar «Proponer ahora»'
                               else '' end;
+  -- (7c) la rutina: a dónde llama, si está activa, cuándo corrió, y las
+  -- tareas de pg_cron (solo donde existe el esquema cron: producción)
+  return query select 'rutina (propone sola)'::text,
+                      format('%s · %s · a las 11:25 y a las 21:00 UTC (hoy en Miami: %s de la mañana, tras el banco, y %s de la tarde) · última: %s%s',
+                             coalesce(c.funcion_url, 'SIN funcion_url: update contador_config set funcion_url = ''https://<proyecto>.supabase.co/functions/v1/contador'' where id = 1'),
+                             case when c.rutina_activa then 'activa' else 'APAGADA' end,
+                             to_char((current_date + time '11:25') at time zone 'UTC' at time zone 'America/New_York', 'FMHH24:MI'), to_char((current_date + time '21:00') at time zone 'UTC' at time zone 'America/New_York', 'FMHH12'),
+                             coalesce(to_char(c.rutina_ultima_el at time zone 'America/New_York', 'DD/MM/YYYY HH24:MI') || ' (hora de Miami)', 'nunca todavía'),
+                             coalesce(' · último error: ' || c.rutina_ultimo_error, ''));
+  if exists (select 1 from pg_namespace where nspname = 'cron') then
+    return query execute $q$ select 'rutina pg_cron'::text,
+                                    coalesce((select string_agg(j.jobname || ' (' || j.schedule || ')', ' · ' order by j.jobname) from cron.job j
+                                               where j.jobname in ('mxp-contador-manana', 'mxp-contador-tarde')), 'sin programar') $q$;
+  else
+    return query select 'rutina pg_cron'::text, 'sin pg_cron en esta base (en Supabase: Database → Extensions → pg_cron y pg_net)'::text;
+  end if;
+  return query select 'contador_rutina_secreto (cópialo a Edge Functions → Secrets → CONTADOR_RUTINA_SECRETO)'::text, s.decrypted_secret
+                 from vault.decrypted_secrets s where s.name = 'contador_rutina_secreto';
   return query select 'siguiente paso'::text,
-                      'pega docs/conta/c8-pruebas.sql; pon ANTHROPIC_API_KEY (una llave nueva, solo para el contador) en Supabase → Edge '
-                      'Functions → Secrets; despliega la función «contador» (Verify JWT apagado) y mira …/contador?paso=salud; después, en '
-                      'la Bandeja, «Proponer con la IA».'::text;
+                      'pega docs/conta/c8-pruebas.sql; copia el secreto de arriba a Supabase → Edge Functions → Secrets → CONTADOR_RUTINA_SECRETO '
+                      '(y ANTHROPIC_API_KEY, una llave nueva solo para el contador, si falta); comprueba en Database → Extensions que pg_cron y pg_net '
+                      'están habilitados; despliega la función «contador» (Verify JWT apagado) y mira …/contador?paso=salud (rutina: true); después '
+                      'la Bandeja propone sola al abrirla, y la rutina dos veces al día (por la mañana tras el banco y por la tarde).'::text;
 end $$;
 revoke execute on function public.fn_contador_pegado() from public, anon, authenticated, service_role;
-comment on function public.fn_contador_pegado() is 'c8: lo que enseña el final del pegado: la configuración, el dueño, las tablas, dónde se anota el gasto, las cuentas, lo que espera, la última ráfaga, el control y el paso siguiente.';
+comment on function public.fn_contador_pegado() is 'c8: lo que enseña el final del pegado: la configuración, el dueño, las tablas, dónde se anota el gasto, las cuentas, lo que espera, la última ráfaga, el control, la rutina (su URL, pg_cron y el valor del secreto para CONTADOR_RUTINA_SECRETO) y el paso siguiente.';
 
 select * from public.fn_contador_pegado();

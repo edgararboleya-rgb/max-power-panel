@@ -568,3 +568,58 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-ia-pistas { margin: .35rem 0; font-size: .82rem; line-height: 1.45; color: var(--mp-ink-3); overflow-wrap: anywhere; }
 #conta-raiz .ct-ia-obra-cambio { margin: .3rem 0 0; font-size: .82rem; font-weight: 700; line-height: 1.4; color: var(--cu-dark); }
 #conta-raiz .ct-ia-obra-cambio[hidden] { display: none; }
+
+/* ===========================================================================
+   Fase 7c · las propuestas salen solas y la obra se elige de un toque
+   (31-oct, tarde). En la franja, el avance de la cadena («Proponiendo… 40 de
+   172 · $0.35» con «Parar», girando como el botón) y al pie el marcador del
+   mes y la rutina, en pequeño. En la propuesta, «¿De qué obra?»: un botón
+   grande por obra (su nombre y su pista corta), uno debajo de otro en el
+   teléfono para tocarlos sin fallar y en rejilla desde el iPad; el elegido
+   en cobre (lo dices tú, como «Según yo»), el de la IA con su borde azul
+   punteado (se inclina, no elige) y «Otra obra…» punteado en gris. En el
+   chip de la fila, «¿obra?» en ámbar: nunca se recorta.
+   =========================================================================== */
+#conta-raiz .ct-ia-chip.falta { display: inline-flex; }
+#conta-raiz .ct-ia-chip-f { flex: none; white-space: pre; font-weight: 800; color: var(--warn-ink); }
+#conta-raiz .ct-ia-chip.regla.falta .ct-ia-chip-q { flex: 0 1 auto; }
+/* la computadora: como la obra fuerte, el «¿obra?» baja a su renglón dentro del chip (la columna «Motivo» no da para las
+   tres cosas y recortaba la cuenta en «5100 …») */
+@media (min-width: 1024px) {
+  #conta-raiz .ct-ia-chip.falta { flex-wrap: wrap; border-radius: 10px; }
+  #conta-raiz .ct-ia-chip.ia.falta .ct-ia-chip-q { flex: 1 1 0; max-width: max-content; }
+  #conta-raiz .ct-ia-chip.falta .ct-ia-chip-f { order: 3; flex: 1 1 100%; }
+  #conta-raiz .ct-ia-chip.falta .ct-ia-sep { display: none; }
+}
+/* la cadena: el avance a la izquierda y «Parar» a la derecha (en el teléfono también: el botón es chico) */
+#conta-raiz .ct-ia-cadena { flex: 1 1 100%; display: flex; align-items: center; gap: .5rem .7rem; min-width: 0; }
+#conta-raiz .ct-ia-avance { flex: 1 1 auto; min-width: 0; margin: 0; font-size: .9rem; font-weight: 700; line-height: 1.4; color: var(--mp-ink); overflow-wrap: anywhere; }
+#conta-raiz .ct-ia-cadena .accion.chica { flex: none; min-height: 36px; padding: .3rem .8rem; font-size: .82rem; }
+#conta-raiz .ct-ia-f-pie { flex: 1 1 100%; margin: 0; font-size: .8rem; line-height: 1.45; color: var(--mp-ink-3); overflow-wrap: anywhere; }
+#conta-raiz .ct-ia-rut.ok { color: var(--ok-ink); }
+#conta-raiz .ct-ia-rut.warn { color: var(--warn-ink); }
+#conta-raiz .ct-ia-rut.bad { color: var(--bad); font-weight: 700; }
+/* la obra débil por la que se inclina la IA: la misma tarjeta, con el borde punteado (no está elegida) */
+#conta-raiz .ct-ia-obra.debil { border-left-style: dashed; background: var(--mp-card); }
+/* «¿De qué obra?» */
+#conta-raiz .ct-ia-obra-elegir { margin-top: .55rem; }
+#conta-raiz .ct-ia-obra-q { margin: 0 0 .35rem; font-size: .86rem; font-weight: 800; color: var(--mp-ink); }
+#conta-raiz .ct-ia-obra-q small { display: block; font-size: .78rem; font-weight: 600; color: var(--mp-ink-2); }
+#conta-raiz .ct-ia-obra-ops { display: grid; grid-template-columns: minmax(0, 1fr); gap: .4rem; }
+@media (min-width: 1024px) { #conta-raiz .ct-ia-obra-ops { grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); } }
+#conta-raiz .ct-ia-obra-op { font: inherit; display: grid; gap: .1rem; align-content: center; min-width: 0; min-height: var(--tap); padding: .5rem .75rem;
+  border-radius: 12px; border: 1.5px solid var(--mp-line); background: var(--mp-card); color: var(--mp-ink); text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+#conta-raiz .ct-ia-obra-op-n { font-size: .95rem; font-weight: 800; line-height: 1.3; }
+#conta-raiz .ct-ia-obra-op-p { font-size: .8rem; font-weight: 600; line-height: 1.35; color: var(--mp-ink-2); }
+#conta-raiz .ct-ia-obra-op-ia { font-size: .76rem; font-weight: 700; line-height: 1.3; color: var(--mp-blue); }
+#conta-raiz .ct-ia-obra-op.ia { border-color: var(--mp-blue); border-style: dashed; }
+#conta-raiz .ct-ia-obra-op[aria-pressed="true"] { background: var(--cu-dark); border: 1.5px solid var(--cu-dark); color: var(--mp-white); }
+#conta-raiz .ct-ia-obra-op[aria-pressed="true"] .ct-ia-obra-op-p, #conta-raiz .ct-ia-obra-op[aria-pressed="true"] .ct-ia-obra-op-ia { color: var(--mp-white); }
+#conta-raiz .ct-ia-obra-op.otra { border-style: dashed; color: var(--mp-ink-2); font-size: .9rem; font-weight: 700; }
+#conta-raiz .ct-ia-obra-op.otra[aria-expanded="true"] { border-color: var(--cu-light); background: var(--mp-sky-1); }
+#conta-raiz .ct-ia-obra-op:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: 1px; }
+/* (.ct-campo es una rejilla: sin esto el selector escondido detrás de «Otra obra…» se vería igual) */
+#conta-raiz .ct-ia-obra-sel[hidden] { display: none; }
+/* el interruptor de Conexiones */
+#conta-raiz .ct-ia-sola { margin-top: .3rem; }
+#conta-raiz .ct-ia-sola-nota { margin: .1rem 0 .3rem; font-size: .8rem; }

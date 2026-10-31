@@ -231,3 +231,110 @@ JWT apagado) y mirar `?paso=salud`; 4 publicar (v294). La versión del prompt
 cambia, así que la primera ráfaga vuelve a escribir el caché (centavos de
 más, una vez). Si esa primera ráfaga contestara `ANTHROPIC_PETICION` (400),
 la cabecera de `index.ts` dice qué mirar: el esquema de `obra`.
+
+## Las propuestas solas y la obra en un toque (7c, 31-oct)
+
+Pedido de Edgar, con el cargo de CES todavía pidiendo la obra: «en el de
+CES no me sirve que solo estés seguro un 55 por ciento, tenemos que estar
+más seguros y que la IA funcione mejor, y que no tengamos que darle a un
+botón para que me dé su propuesta: que cada partida al lado ya tenga
+automáticamente su propuesta». Mismo reparto que la 7b (Fable con esfuerzo
+máximo en la base, la función, la verificación y los arreglos; Opus 5.5 en
+la pantalla y el e2e).
+
+**Primero se midió, con los 57 tickets reales que ya tienen obra.** La
+primera obra por puntos acierta 22 de 57; la candidata (una vez y media la
+segunda) sale en 30 y acierta 13; con el doble, 26 y 12; solo los tickets
+del comercio, 12 de 44; solo las horas, 19 de 47. Es decir: las horas y los
+tickets, solos, aciertan cuatro de cada diez veces (la cuadrilla trabaja en
+dos o tres obras la misma semana y todas compran en CES y en Home Depot).
+Por eso la confianza ya no sale de los puntos: se **calibra** con lo que de
+verdad distingue una obra. 0,45 de base (horas y tickets nada más); 0,60 si
+Edgar eligió esa obra una vez con ese comercio y ninguna otra; 0,65 si las
+tres o más compras anteriores del comercio fueron todas a esa obra; 0,70 si
+es la única obra con pistas esos días; **0,80** si la eligió dos veces (y el
+doble que cualquier otra); 0,90 con tres. **Fuerte** es 0,80 o más
+(`fn_contador_obra_fuerte`, la única fuente del umbral: la base lo guarda
+en `flags.obra_fuerte` y `v_contador_bandeja.obra_fuerte`, la pantalla lo
+lee y las instrucciones a la IA lo dicen igual). Solo una obra fuerte sale
+preseleccionada y solo una candidata fuerte la toma una regla; nada débil
+entra solo. Con una obra débil o sin ella, la Bandeja pregunta **«¿De qué
+obra?»** con hasta tres botones (`obras_top`: las obras de las pistas con su
+pista en llano, «21 h esos días · 2 tickets de CES · la elegiste 1 vez con
+CES») y «Otra obra…»; el chip de la fila dice «¿obra?» en ámbar. Así el
+cargo de CES se resuelve de un toque hoy y, a la segunda vez que Edgar
+elija esa obra con CES, la IA la trae sola con 80 %. A la IA le llega
+además, por obra, la **fase** (la más frecuente de las horas de ±7 días; si
+no, la de la ficha) y hasta ocho **materiales** de su lista (los comprados
+primero, tapados por `fn_contador_sin_datos`; nunca el precio, quién lo
+apuntó ni su ticket), y el comercio; sus instrucciones llevan lo medido
+(«con horas y tickets nada más, 0,6 como mucho; con evidencia fuerte, 0,8 o
+más; si dos obras se parecen, null»).
+
+**Las propuestas salen solas.** (1) La Bandeja propone al abrirla: una
+cadena de ráfagas de `max_por_rafaga` mientras la función diga `sigue` (y
+`quedan` baje), con la franja «Proponiendo… 40 de 172 · $0.35» y «Parar»;
+«Proponer ahora (n)» lanza la misma cadena a mano; también arranca tras
+importar un QFX o «Sincronizar ahora» de Plaid; solo con algo nuevo (lo que
+Edgar rechazó o lo que ya esperaba al terminar la última cadena no la
+dispara otra vez) y nunca dos cadenas a la vez; el interruptor «Proponer
+sola al abrir la Bandeja» vive en Conexiones. (2) La **rutina de la base**,
+copiada de la de Plaid (c7): pg_cron llama a `fn_contador_programado()` a
+las 11:25 UTC (tras el banco de las 11:00) y a las 21:00 UTC; si hay
+candidatos y el contador no está apagado ni en el tope, pg_net hace POST a
+`contador_config.funcion_url` con `{accion: proponer_todo, origen: rutina}`
+y la cabecera `x-mxp-rutina` (el secreto nace en Vault al pegar,
+`contador_rutina_secreto`; Edgar copia su valor —lo enseña el final del
+pegado— a Edge Functions → Secrets → `CONTADOR_RUTINA_SECRETO`). La función,
+con esa cabecera y sin sesión, **solo** sabe `proponer_todo` (cualquier otra
+acción, 403; otro secreto, 401; sin secreto en Secrets, 500 en llano y
+`salud.rutina = false`, que Conexiones avisa): encadena ráfagas hasta 110 s
+en nombre del dueño de `contador_config`, nunca postea, y al terminar
+`fn_contador_rutina_marcar(ok, error)`. La alarma **74** («ia: la rutina»)
+sale en rojo si la última corrida terminó con error o lleva más de 36 horas
+sin correr (o nunca desde que se instaló) con cargos esperando; Conexiones
+y el pie de la franja dicen cómo va («Propone sola cada mañana tras el banco
+(7:25) y a las 5 de la tarde · última: hoy 7:26 · bien», con las horas de
+Miami calculadas para hoy: pg_cron va en UTC).
+
+**El marcador honesto.** `v_contador_estado` cuenta el mes (por
+`aprobado_el`, hora de Miami) sobre las propuestas de la IA o de una regla
+que entraron: `cuenta_acertadas_mes` (entró la cuenta que traían),
+`cuenta_cambiadas_mes`, `obra_acertadas_mes`, `obra_cambiadas_mes` y
+`obra_elegidas_mes` (no traían obra y Edgar la puso). La pantalla: «Este
+mes: cuenta 18 de 20 · obra 7 de 11 acertadas (1 corregiste, 3 elegiste
+tú)», sin maquillar. `fn_contador_pegado` pasa a 12 filas (la rutina, pg_cron
+y el valor del secreto para copiarlo).
+
+**Pruebas.** `c8-pruebas.sql` **38/38** (33 fase y materiales, 34 la
+calibración caso por caso, 35 `obras_top` y `obra_fuerte`, 36
+`fn_contador_programado` con el shim de pg_net, 37 `fn_contador_rutina_marcar`
+y la 74, 38 el marcador), limpia y con la bandeja como producción (dos
+veces); c6 163/163; `contador-e2e.mjs` **143/143** desde cero en Node y en
+Deno (140 sobre una base hecha; E2E-129 a E2E-139: `quedan`/`sigue`,
+`obras_top`, la regla que solo toma lo fuerte, los materiales a la IA sin
+nada personal, el marcador, la puerta de la rutina, `fn_contador_programado`
+reproducido contra la función, la 74), `pantalla.js` **369** (46 nuevas «IA
+7c»: la cadena sola, «Parar», el interruptor, MX008, los botones de obra, el
+chip «¿obra?», el marcador, la rutina, el teléfono y el iPad), `e0` 34,
+`e13` 42, `deno check` y `deno lint` limpios. Rendimiento con 10.000 horas,
+2.000 tickets y 2.000 materiales: las 20 pistas de una ráfaga, 0,7 s.
+Verificación desde cero (Fable): 0 hallazgos graves y 8 menores, corregidos
+los que valían (las horas de la rutina calculadas en vez de fijas, el
+botón se llama «Proponer ahora», la ráfaga que abre un lote y corta sin
+guardar cuenta como ráfaga) y documentados los que son a propósito (la
+candidata es la primera por puntos y lo elegido solo la hace fuerte cuando
+las horas apuntan a la misma obra; una descripción de material con un
+nombre escrito a mano pasa tal cual; «Así es» con obra débil lo exige la
+pantalla, no la base).
+
+**Cómo se instala la 7c**: 1 volver a pegar `c8-contador.sql` (encima del
+7b; al final enseña el secreto de la rutina); 2 copiar ese valor a Supabase
+→ Edge Functions → Secrets → `CONTADOR_RUTINA_SECRETO`, y comprobar en
+Database → Extensions que `pg_cron` y `pg_net` están habilitados (las dos
+tareas `mxp-contador-manana` y `mxp-contador-tarde` se programan al pegar);
+3 pegar `c8-pruebas.sql` (38 en `true`); 4 redesplegar la función `contador`
+(Verify JWT apagado) y mirar `?paso=salud` (`rutina: true`); 5 publicar
+(v296). Las propuestas pendientes siguen como están (una de la 7b sale débil
+y pide el toque); la versión del prompt cambia y la primera ráfaga vuelve a
+escribir el caché.

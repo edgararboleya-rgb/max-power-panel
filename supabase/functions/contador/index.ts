@@ -14,6 +14,12 @@
 //   docs/conta/c8-contador.sql, pegar esta función otra vez (redesplegar) y
 //   publicar. El prompt_version cambia (las instrucciones hablan de las
 //   pistas): la base lo guarda en cada propuesta y en contador_config.
+//   7c (31-oct por la tarde: la rutina, la obra calibrada y «quedan»): volver
+//   a pegar c8-contador.sql (crea el secreto contador_rutina_secreto en Vault
+//   y lo enseña al final del pegado), copiarlo a Edge Functions → Secrets →
+//   CONTADOR_RUTINA_SECRETO, pegar esta función otra vez (redesplegar) y
+//   publicar. El prompt_version cambia otra vez (la regla de la obra se
+//   reescribió con lo que se midió en producción, abajo).
 //
 // ANTES de desplegar, en Edge Functions → Secrets tiene que existir:
 //   ANTHROPIC_API_KEY_CONTADOR   (si existe, manda) una llave de
@@ -23,6 +29,12 @@
 //                       de la app (el 31-oct existía desde agosto): vale igual;
 //                       el gasto se separa de todos modos en asistente_uso
 //                       por accion = 'contador_categorizar'. sk-ant-…
+//   CONTADOR_RUTINA_SECRETO   (7c) el que enseña c8-contador.sql al pegarlo
+//                       (Vault: contador_rutina_secreto, 64 letras): con él
+//                       pg_cron, por pg_net, llama a esta función dos veces al
+//                       día (LA RUTINA, abajo). Sin él todo lo demás sigue
+//                       igual; la rutina contesta 500 en llano y salud dice
+//                       rutina: false.
 //   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY y SUPABASE_DB_URL los pone
 //   Supabase solo. Sin la llave, todo lo que no gasta (estado, aprobar,
 //   clasificar, rechazar, las reglas) sigue funcionando; «proponer» aplica
@@ -46,10 +58,19 @@
 //          activa, las horas que la cuadrilla reportó esos días y en el
 //          mes, los tickets del mismo comercio que fueron a esa obra, las
 //          veces que Edgar eligió esa obra para ese comercio y los
-//          materiales recientes de su lista; y la candidata que sale de
-//          los puntos, con su confianza y su motivo. Solo totales por obra
-//          y el nombre de la obra: ningún usuario_id, nombre de persona,
-//          nota ni ruta de foto.
+//          materiales recientes de su lista; (7c) la fase en que está la
+//          obra esos días y hasta ocho materiales de su lista (solo la
+//          descripción: ni el precio ni quién los apuntó), el comercio del
+//          cargo, y la candidata que sale de los puntos con la confianza
+//          CALIBRADA con los 57 tickets reales de la cuadrilla (0,45 con
+//          horas y tickets nada más —aciertan cuatro de cada diez—; 0,60,
+//          0,80 y 0,90 por lo que Edgar ya eligió antes con ese comercio;
+//          0,65 si los tickets del comercio fueron todos a una obra; 0,70 si
+//          es la única obra con pistas) y «fuerte» desde 0,80: solo una
+//          candidata fuerte se preselecciona en la pantalla y solo una
+//          fuerte la toma una regla. Solo totales por obra y el nombre de
+//          la obra: ningún usuario_id, nombre de persona, nota ni ruta de
+//          foto.
 //       4. fn_contador_lote_abrir, y la ráfaga a Anthropic: la PRIMERA
 //          llamada sola (crea el caché del prefijo) y las demás de tres en
 //          tres (leen el caché). Cada respuesta válida →
@@ -113,6 +134,35 @@
 //     llano: dos «Proponer» a la vez —dos pestañas, dos aparatos— pagarían
 //     dos veces los mismos cargos); si una ráfaga anterior se cortó sin
 //     cerrar, la base la da por perdida (con su error) al abrir la siguiente.
+//     (7c) LA RESPUESTA DICE CUÁNTOS SIGUEN ESPERANDO: «quedan» (los
+//     candidatos que la ráfaga no dejó con propuesta) y «sigue» (si tiene
+//     sentido encadenar otra ahora mismo: quedan > 0 Y esta ráfaga dejó
+//     alguna propuesta). La pantalla encadena mientras sigue sea true, NO
+//     mientras quedan > 0: si una ráfaga no deja ninguna propuesta (Anthropic
+//     caído, negativas, propuestas que la base rechaza), la base volvería a
+//     dar los mismos cargos —los más viejos primero— y una cadena que solo
+//     mirara quedan pediría sin fin lo que la IA no contesta, hasta el tope.
+//   · PROPONER_TODO (7c, LA RUTINA): lo que pg_cron dispara a las 11:25 y a
+//     las 21:00 UTC (fn_contador_programado → pg_net), sin sesión y con la
+//     cabecera x-mxp-rutina = CONTADOR_RUTINA_SECRETO (comparada en tiempo
+//     constante, igual()). Actúa por el dueño de contador_config
+//     (fn_contador_rutina_dueno: si ya no es un dueño activo, 42501 y no se
+//     propone nada) y encadena ráfagas de max_por_rafaga mientras «sigue» y
+//     no hayan pasado RUTINA_ENCADENA_MS (110 s) desde que arrancó; cada
+//     ráfaga lleva su reloj de siempre, recortado a lo que quede hasta
+//     RUTINA_PLAZO_MS (140 s: Supabase corta la función a los 150 s y hay que
+//     cerrar el lote y marcar). Al terminar, bien o mal,
+//     fn_contador_rutina_marcar(ok, error): la alarma 74 y la tarjeta de
+//     Conexiones lo leen. Contesta {ok, origen, rafagas, movimientos,
+//     propuestas, reglas, con_obra, sin_respuesta, invalidas, centavos,
+//     quedan, lotes, rutina, ms} y, si paró por un error, el error con el
+//     estado de ese error (nadie lee la respuesta salvo los registros de
+//     pg_net: lo que importa queda marcado en la base). Otra ráfaga en
+//     marcha (MX008: Edgar estaba proponiendo desde la pantalla) no es un
+//     error de la rutina: se anota en «nota» y se marca bien. La rutina NUNCA
+//     postea: con la cabecera solo existe proponer_todo (cualquier otra
+//     acción, 403) y nadie aprueba ni clasifica en su nombre; sin el secreto
+//     en Secrets, 500 en llano; con otro secreto, 401.
 //   · APROBAR, CLASIFICAR, RECHAZAR, CADUCAR, REGLA_ALTA y REGLA_BAJA van
 //     directo a su fn_contador_*: el ÚNICO camino al libro es
 //     fn_contador_clasificar → fn_banco_clasificar (c6), EN NOMBRE DEL
@@ -183,10 +233,13 @@ const ESPERA_REINTENTO_MS = 2_000;  // 429, 529 o 5xx: un reintento, después si
 const TIEMPO_LLAMADA_MS = 90_000;   // una llamada a Anthropic que no contesta en esto, cayó
 const PRESUPUESTO_RAFAGA_MS = 120_000; // el reloj de la ráfaga: lo que no entre espera a la siguiente, y una llamada en vuelo se corta al llegar
 const MINIMO_LLAMADA_MS = 500;      // con menos que esto de reloj no se arranca una llamada (ni un reintento)
+const RUTINA_ENCADENA_MS = 110_000; // (7c) la rutina no arranca otra ráfaga pasado esto desde que empezó
+const RUTINA_PLAZO_MS = 140_000;    // (7c) y ninguna de sus ráfagas pasa de aquí: Supabase corta a los 150 s y quedan 10 s para cerrar el lote y marcar
+const SECRETO_MINIMO = 32;          // (7c) CONTADOR_RUTINA_SECRETO vale con 32 letras o más (el de Vault tiene 64), como en plaid y stripe
 const MAX_CUERPO = 1_000_000;
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, content-type",
+  "Access-Control-Allow-Headers": "authorization, content-type, x-mxp-rutina",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
@@ -200,7 +253,7 @@ Cómo contestas: solo con el JSON del esquema que se te pide (lineas, motivo, co
 
 Las reglas:
 1. LAS CUENTAS. Clasifica el movimiento en UNA línea (lo normal) o en varias (de 2 a 5, cada una con su monto en dólares, en positivo, que sumen el importe del movimiento al centavo; con una sola línea el monto va null). Usa solo los códigos del PLAN DE CUENTAS PERMITIDO de abajo, tal cual están escritos. Nunca inventes una cuenta ni uses una que no esté en la lista: si ninguna encaja, propón 7900 (Otros gastos) con confianza baja y dilo en el motivo.
-2. LA OBRA. Si el comercio vende material, herramienta, equipo o consumibles de obra (un supply eléctrico, Home Depot, Lowe's, CES, Graybar, una ferretería) la cuenta es de costo (5xxx) y pide obra. En la línea, pon proyecto_id solo si la descripción o la nota del movimiento nombran sin duda una de las OBRAS ACTIVAS de abajo (usa su id, no su nombre); si no, déjalo en null. Cada movimiento puede traer pistas_obra, que la app calculó con sus propios datos, no con la descripción: por obra activa, las horas que la cuadrilla reportó en esa obra esos días (horas_cerca) y en los últimos 30 días (horas_mes), las compras anteriores del mismo comercio que fueron a esa obra (recibos_proveedor), las veces que Edgar eligió esa obra para este comercio (veces_elegida) y los materiales recientes de su lista (materiales_recientes); y una candidata, si las pistas apuntan a una sola obra, con su confianza y su motivo. Si la cuenta que propones lleva obra (obligatoria u opcional) y las pistas apuntan con claridad a UNA obra activa, propón «obra»: su proyecto_id (de la lista de OBRAS ACTIVAS), una confianza entre 0 y 1 y un motivo de UNA frase que cite la pista («la cuadrilla reportó 24 h en esa obra esos días; 2 compras anteriores de este comercio fueron a esa obra»). Si no hay pistas, se contradicen (dos obras con pistas parecidas) o la cuenta no lleva obra, obra = null y, si la cuenta la pide, marca pide_obra. Nunca adivines la obra: una obra equivocada mete el costo en la obra que no es y descuadra las dos. Una cuenta con «obra prohibida» nunca lleva proyecto_id ni obra.
+2. LA OBRA. Si el comercio vende material, herramienta, equipo o consumibles de obra (un supply eléctrico, Home Depot, Lowe's, CES, Graybar, una ferretería) la cuenta es de costo (5xxx) y pide obra. En la línea, pon proyecto_id solo si la descripción o la nota del movimiento nombran sin duda una de las OBRAS ACTIVAS de abajo (usa su id, no su nombre); si no, déjalo en null. Cada movimiento puede traer pistas_obra, que la app calculó con sus propios datos, no con la descripción: por obra activa, las horas que la cuadrilla reportó en esa obra esos días (horas_cerca) y en los últimos 30 días (horas_mes), las compras anteriores del mismo comercio que fueron a esa obra (recibos_proveedor), las veces que Edgar eligió esa obra para este comercio (veces_elegida), cuántos materiales apuntó la cuadrilla en la lista de esa obra estos días (materiales_recientes), la fase en que está la obra esos días (fase: Rough-in, Trim-out, Panel / Servicio, Demolición, Movilización, Service Call, Inspección / Correcciones, o null si no se sabe) y hasta ocho materiales de su lista (materiales, los ya comprados primero); el comercio del cargo (comercio); y una candidata, si las pistas apuntan a una sola obra, con la confianza que la app midió (confianza), si es fuerte (fuerte) y su motivo. LO QUE SE MIDIÓ CON LOS TICKETS REALES DE LA CUADRILLA: las horas y los tickets anteriores, solos, aciertan la obra cuatro de cada diez veces (la cuadrilla trabaja en dos o tres obras la misma semana y todas compran en CES y en Home Depot). Por eso, con horas y tickets nada más, propón la obra con confianza de 0.6 como mucho, o déjala en null. La evidencia FUERTE es: lo que Edgar ya eligió antes para ese comercio (veces_elegida), que todos los tickets anteriores de ese proveedor hayan ido a una misma obra, que una sola obra tenga actividad esos días, o que la lista de materiales de una obra pida justo lo que vende ese comercio en esa fase (breakers y MC 12/2 en Rough-in se compran en CES; receptáculos y placas en Trim-out, en Home Depot). Con evidencia fuerte, 0.8 o más. Si dos obras se parecen, obra = null y, si la cuenta la pide, pide_obra: nunca adivines la obra, porque una obra equivocada mete el costo en la obra que no es y descuadra las dos. Cuando propongas «obra»: su proyecto_id (de la lista de OBRAS ACTIVAS), la confianza entre 0 y 1 y un motivo de UNA frase que cite la pista que la sostiene («Edgar eligió esa obra 2 veces con CES; la cuadrilla reportó 21 h allí esos días» / «su lista pide breakers Homeline y MC 12/2, lo que vende CES, y está en Rough-in»). Si no hay pistas o la cuenta no lleva obra, obra = null. Una cuenta con «obra prohibida» nunca lleva proyecto_id ni obra.
 3. LAS REGLAS FIJAS DE LA S-CORP, que no reinterpretas: (a) un pago al IRS por el impuesto sobre la renta de Edgar (IRS, USATAXPYMT) va a 3200 (distribuciones al accionista) con el flag irs: no es gasto de la empresa; el DOR de Florida (sales tax, RT-6) sí es de la empresa. (b) Un cargo personal en una cuenta de la empresa (streaming, supermercado, ropa, un restaurante en fin de semana, una transferencia a Edgar) va a 3200 con el flag personal, y 1130 (cuenta por cobrar al accionista) como alternativa si Edgar lo va a devolver. (c) El sueldo de Edgar y el de la cuadrilla entran solo por la nómina: nunca propongas un pago a una persona como sueldo (las cuentas de nómina no están en la lista); un Zelle o un cheque a una persona que trabaja en obras suele ser un subcontrato (5200, pide obra) y, si no se sabe, dilo con confianza baja.
 4. LA CAPITALIZACIÓN. Una compra de 2,500.00 o más por unidad con vida de más de un año (un vehículo, una herramienta grande, equipo de cómputo, mejoras al local) es un activo fijo (15xx), no un gasto: propón la cuenta 15xx que corresponda y marca capitalizable. Edgar decide.
 5. EL USE TAX. Una compra fuera de Florida o a un comercio que no cobra el impuesto de Florida (compras por internet, un proveedor de otro estado) y sin impuesto visible marca use_tax. No propongas ninguna línea por el impuesto: Edgar lo resuelve con el recibo.
@@ -209,7 +262,7 @@ Las reglas:
 8. LAS REGLAS Y LOS EJEMPLOS DE EDGAR mandan sobre tu criterio: si ese comercio ya fue a una cuenta, propón esa (y dilo en el motivo).
 9. Los flags son solo estos cinco: capitalizable, use_tax, personal, irs y pide_obra; cada uno true o false.
 
-El movimiento llega como JSON: fecha, monto (negativo = un cargo, lo que salió de la cuenta), descripcion (lo que escribió el banco), memo (la nota, si la hay), cuenta_banco (el código de la cuenta de la empresa: 1010 es el banco, 2100-… una tarjeta), cuenta_banco_nombre, tipo_banco (DEBIT, CHECK, FEE…), desc_norm (la descripción normalizada) y pistas_obra (lo de la regla 2: {obras: [{proyecto_id, nombre, horas_cerca, horas_mes, recibos_proveedor, veces_elegida, materiales_recientes}], candidata: {proyecto_id, nombre, confianza, motivo} o null, resumen}; con «sin pistas» en resumen no hay nada que mirar).`;
+El movimiento llega como JSON: fecha, monto (negativo = un cargo, lo que salió de la cuenta), descripcion (lo que escribió el banco), memo (la nota, si la hay), cuenta_banco (el código de la cuenta de la empresa: 1010 es el banco, 2100-… una tarjeta), cuenta_banco_nombre, tipo_banco (DEBIT, CHECK, FEE…), desc_norm (la descripción normalizada) y pistas_obra (lo de la regla 2: {obras: [{proyecto_id, nombre, fase, horas_cerca, horas_mes, recibos_proveedor, veces_elegida, materiales_recientes, materiales: [texto, …]}], candidata: {proyecto_id, nombre, confianza, fuerte, motivo} o null, comercio, resumen}; con «sin pistas» en resumen no hay nada que mirar).`;
 
 // La forma exacta de la respuesta (structured outputs: output_config.format
 // json_schema). Todo required y additionalProperties false, como pide la
@@ -272,7 +325,7 @@ const PROPUESTA_SCHEMA = {
       anyOf: [
         {
           type: "object",
-          description: "La obra, solo si la cuenta que propones lleva obra y pistas_obra apunta con claridad a UNA obra activa: su id (de la lista de OBRAS ACTIVAS), la confianza y una frase que cite la pista.",
+          description: "La obra, solo si la cuenta que propones lleva obra y pistas_obra apunta con claridad a UNA obra activa: su id (de la lista de OBRAS ACTIVAS), la confianza (0.8 o más solo con evidencia fuerte: lo que Edgar eligió, los tickets de ese comercio todos a una obra, una sola obra con actividad, o su lista de materiales; con horas y tickets nada más, 0.6 como mucho) y una frase que cite la pista.",
           additionalProperties: false,
           required: ["proyecto_id", "confianza", "motivo"],
           properties: {
@@ -291,6 +344,7 @@ const PROPUESTA_SCHEMA = {
 // en las pruebas sin Deno sí).
 interface Conf {
   llave: string; llave_nombre: string; base_url: string; db: string; supabase_url: string; service_key: string; banco_pruebas: boolean; banco_mal: string | null;
+  rutina_secreto: string;   // (7c) CONTADOR_RUTINA_SECRETO: con menos de SECRETO_MINIMO letras no hay rutina
 }
 // ¿Es el banco de pruebas? TODO a la vez: MXP_BANCO_PRUEBAS=1, la base en
 // 127.0.0.1 (MXP_DB_URL), sin SUPABASE_DB_URL y fuera de Supabase (sin
@@ -317,6 +371,7 @@ function conf(): Conf {
     base_url: (banco && env("ANTHROPIC_BASE_URL") ? env("ANTHROPIC_BASE_URL") : "https://api.anthropic.com").replace(/\/$/, ""),
     db: (banco ? env("MXP_DB_URL") : "") || env("SUPABASE_DB_URL"),
     supabase_url: env("SUPABASE_URL"), service_key: env("SUPABASE_SERVICE_ROLE_KEY"), banco_pruebas: banco, banco_mal: b.mal,
+    rutina_secreto: env("CONTADOR_RUTINA_SECRETO").trim(),
   };
 }
 
@@ -327,12 +382,30 @@ function presupuestoRafaga(c: Conf): number {
   const v = env("MXP_PRESUPUESTO_MS");
   return c.banco_pruebas && /^\d{3,7}$/.test(v) ? Number(v) : PRESUPUESTO_RAFAGA_MS;
 }
+// (7c) El reloj de la rutina: no se arranca otra ráfaga pasados «encadena» ms
+// desde que empezó, y ninguna ráfaga pasa de «plazo». En el banco de pruebas
+// MXP_RUTINA_MS acorta «encadena» (el plazo deja terminar la ráfaga en
+// marcha) para probar que la cadena para por tiempo sin esperar dos minutos.
+function presupuestoRutina(c: Conf): { encadena: number; plazo: number } {
+  const v = env("MXP_RUTINA_MS");
+  if (c.banco_pruebas && /^\d{1,7}$/.test(v)) return { encadena: Number(v), plazo: Number(v) + presupuestoRafaga(c) };
+  return { encadena: RUTINA_ENCADENA_MS, plazo: RUTINA_PLAZO_MS };
+}
+// (7c) Compara el secreto de la rutina sin delatar por el tiempo cuántas
+// letras acertó quien prueba (la misma de plaid y stripe).
+function igual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
 
 class Fallo extends Error {
   estado: number;
   codigo?: string;
   detalle?: Json;
   pista?: string;
+  lote?: string;            // (7c) la ráfaga que abrió un lote y cortó sin guardar nada lo deja aquí: la rutina lo cuenta
   constructor(estado: number, mensaje: string, codigo?: string, detalle?: Json, pista?: string) {
     super(mensaje);
     this.estado = estado;
@@ -614,11 +687,16 @@ export function usarBaseDePruebas(b: Base): void {
 
 // ---- La ráfaga: proponer ---------------------------------------------------------
 // (obra: cuántas de las guardadas quedaron con obra propuesta, 7b)
+// (7c) p_tope: el plazo absoluto que la rutina le pone a cada ráfaga suya
+// (RUTINA_PLAZO_MS desde que arrancó): el reloj de la ráfaga es el de siempre
+// recortado a eso. La respuesta lleva «quedan» (candidatos que siguen
+// esperando) y «sigue» (quedan > 0 y esta ráfaga dejó alguna propuesta: lo
+// que la pantalla y la rutina miran para encadenar otra).
 interface Conteo { ok: number; sin: number; inv: number; obra: number; fatal: Fallo | null }
-async function proponer(base: Base, c: Conf, dueno: string, cuerpo: Json): Promise<Json> {
+async function proponer(base: Base, c: Conf, dueno: string, cuerpo: Json, p_tope?: number): Promise<Json> {
   const t0 = Date.now();
-  const presupuesto = presupuestoRafaga(c);
-  const plazo = t0 + presupuesto;
+  const plazo = Math.min(t0 + presupuestoRafaga(c), p_tope ?? Number.POSITIVE_INFINITY);
+  const presupuesto = Math.max(plazo - t0, 0);
   // 1. las reglas de Edgar (gratis)
   const reglas = obj(await base.rpc("fn_contador_reglas_aplicar", { p_dueno: dueno }));
   const nReglas = num(reglas.propuestas) ?? 0;
@@ -626,7 +704,7 @@ async function proponer(base: Base, c: Conf, dueno: string, cuerpo: Json): Promi
   // 2. el tope (la tercera regla de la IA): bloqueado = ni un token
   const tope = obj(await base.rpc("fn_contador_tope", {}));
   if (tope.bloqueado === true) {
-    return limpiar({ ok: true, bloqueado: true, motivo: tope.motivo, ...comun, movimientos: 0, propuestas: 0, con_obra: 0, sin_respuesta: 0, invalidas: 0, centavos: 0, tope });
+    return limpiar({ ok: true, bloqueado: true, motivo: tope.motivo, ...comun, movimientos: 0, propuestas: 0, con_obra: 0, sin_respuesta: 0, invalidas: 0, centavos: 0, sigue: false, tope });
   }
   // 3. lo que espera y el contexto (la base recorta el límite a max_por_rafaga)
   const lim = typeof cuerpo.limite === "number" && Number.isInteger(cuerpo.limite) && cuerpo.limite > 0 ? cuerpo.limite
@@ -643,7 +721,7 @@ async function proponer(base: Base, c: Conf, dueno: string, cuerpo: Json): Promi
   const ctx = obj(k.contexto);
   if (!movs.length) {
     return limpiar({ ok: true, bloqueado: false, ...comun, movimientos: 0, total: num(k.total) ?? 0, propuestas: 0, con_obra: 0, sin_respuesta: 0, invalidas: 0, centavos: 0,
-                     tope: k.tope, nota: nReglas ? "todo lo que esperaba salió por regla" : "nada que proponer: ningún cargo espera" });
+                     quedan: num(k.total) ?? 0, sigue: false, tope: k.tope, nota: nReglas ? "todo lo que esperaba salió por regla" : "nada que proponer: ningún cargo espera" });
   }
   if (!c.llave) {
     throw new Fallo(500, "Falta la llave de Anthropic (ANTHROPIC_API_KEY_CONTADOR o ANTHROPIC_API_KEY) en Supabase → Edge Functions → Secrets: la ráfaga no arranca (las reglas sí se aplicaron).", "CONFIG");
@@ -711,27 +789,113 @@ async function proponer(base: Base, c: Conf, dueno: string, cuerpo: Json): Promi
     await Promise.all(movs.slice(i, i + A_LA_VEZ).map(uno));
   }
   const sinIntentar = movs.length - n.ok - n.sin - n.inv;
+  // (7c) quedan = los candidatos que siguen esperando (los que había menos los
+  // que esta ráfaga dejó con propuesta: los que salieron por regla ya no
+  // contaban en «total»); sigue = tiene sentido otra ráfaga ahora mismo:
+  // quedan cargos Y esta dejó alguna propuesta. Si no dejó ninguna (Anthropic
+  // caído, negativas, propuestas que la base rechaza), la base volvería a dar
+  // los mismos —los más viejos primero— y una cadena pediría sin fin lo
+  // mismo hasta el tope: eso se dice en la nota y no se encadena.
+  const quedan = Math.max((num(k.total) ?? movs.length) - n.ok, 0);
+  const sigue = quedan > 0 && n.ok > 0 && !n.fatal;
+  if (quedan > 0 && !sigue && !n.fatal) {
+    notas.push(`${quedan} cargo(s) siguen esperando, pero esta ráfaga no dejó ninguna propuesta: no se encadena otra (vuelve a Proponer más tarde o míralos en la bandeja)`);
+  }
   // 5. cerrar el lote con el uso sumado (la base calcula y anota los centavos)
   const error = n.fatal ? n.fatal.message : errores.length ? errores.slice(0, 3).join(" · ") : null;
   let cierre: Json = {};
   try { cierre = obj(await base.rpc("fn_contador_lote_cerrar", { p_lote: lote, p_usage: uso, p_error: error })); }
   catch (e) { errores.push(`cerrar el lote: ${mensajeDe(e)}`); }
-  if (n.fatal && n.ok === 0) throw n.fatal;
+  if (n.fatal && n.ok === 0) { n.fatal.lote = lote; throw n.fatal; }
   return limpiar({
     ok: true, bloqueado: false, lote, modelo, effort, prompt_version, prefijo_hash, ...comun,
     movimientos: movs.length, total: num(k.total) ?? movs.length, propuestas: n.ok, con_obra: n.obra, sin_respuesta: n.sin, invalidas: n.inv,
-    sin_intentar: sinIntentar || undefined, centavos: num(cierre.centavos) ?? 0, usage: uso,
+    sin_intentar: sinIntentar || undefined, quedan, sigue, centavos: num(cierre.centavos) ?? 0, usage: uso,
     cache: { creacion: uso.cache_creacion, lectura: uso.cache_lectura }, tope: cierre.tope ?? k.tope, detalle,
-    errores: errores.length ? errores.slice(0, 20) : undefined, error: error ?? undefined, nota: notas.length ? notas.join(" · ") : undefined,
+    errores: errores.length ? errores.slice(0, 20) : undefined, error: error ?? undefined, error_codigo: n.fatal?.codigo, nota: notas.length ? notas.join(" · ") : undefined,
     presupuesto_ms: presupuesto, ms: Date.now() - t0,
   });
+}
+
+// ---- La rutina: proponer_todo ---------------------------------------------
+// (7c) Lo que pg_cron dispara dos veces al día (fn_contador_programado →
+// pg_net → aquí, con x-mxp-rutina): en nombre del dueño de contador_config,
+// una ráfaga tras otra mientras «sigue» y no hayan pasado RUTINA_ENCADENA_MS,
+// cada una con su reloj recortado a RUTINA_PLAZO_MS desde que arrancó la
+// rutina (Supabase corta la función a los 150 s: hay que cerrar el lote y
+// marcar antes). Al terminar, bien o mal, fn_contador_rutina_marcar(ok, error)
+// —la alarma 74 lo lee—. Un error en una ráfaga (la llave, la petición, la
+// base, el dueño que ya no lo es; también si cortó a medias después de
+// guardar algo: error_codigo) para la cadena y se marca; otra ráfaga en
+// marcha (MX008: Edgar proponiendo desde la pantalla a esa hora) no es un
+// error: se anota y se marca bien. Lo que ya quedó propuesto en las ráfagas
+// anteriores se queda (cada ráfaga cerró su lote). Devuelve el estado HTTP y
+// el cuerpo: los totales sumados, quedan, los lotes, la marca de la base y,
+// si paró por error, el error con el estado de ese error.
+async function proponerTodo(base: Base, c: Conf): Promise<{ estado: number; cuerpo: Json }> {
+  const t0 = Date.now();
+  const reloj = presupuestoRutina(c);
+  const suma = { rafagas: 0, movimientos: 0, propuestas: 0, reglas: 0, con_obra: 0, sin_respuesta: 0, invalidas: 0, sin_intentar: 0, centavos: 0 };
+  const lotes: string[] = [];
+  const notas: string[] = [];
+  let quedan: number | null = null;
+  let bloqueado = false;
+  let motivo: string | null = null;
+  let fallo: Fallo | null = null;
+  let dueno = "";
+  try { dueno = String(await base.rpc("fn_contador_rutina_dueno", {}) ?? ""); }
+  catch (e) { fallo = falloDeLaBase(e); }
+  if (!fallo && !UUID.test(dueno)) fallo = new Fallo(500, "La base no dijo en nombre de quién corre la rutina (fn_contador_rutina_dueno): vuelve a pegar c8-contador.sql.", "BASE");
+  while (!fallo) {
+    if (suma.rafagas > 0 && Date.now() - t0 > reloj.encadena) {
+      notas.push(`se acabó el tiempo de la rutina (${Math.round(reloj.encadena / 1000)} s): ${quedan ?? "los que"} cargo(s) esperan a la siguiente`);
+      break;
+    }
+    let r: Json;
+    try { r = await proponer(base, c, dueno, {}, t0 + reloj.plazo); }
+    catch (e) {
+      const f = e instanceof Fallo ? e : falloDeLaBase(e);
+      // la ráfaga abrió su lote y cortó sin guardar nada (la llave, el modelo, la petición): el lote quedó cerrado con su error y cuenta
+      if (f.lote) { lotes.push(f.lote); suma.rafagas++; }
+      // otra ráfaga en marcha (la pantalla, o la rutina de la otra hora que aún no cerró): no es un error de la rutina
+      if (f.codigo === "MX008" && /ráfaga en marcha/i.test(f.message)) { notas.push(`otra ráfaga estaba en marcha: la rutina no propuso nada esta vez (${f.message})`); break; }
+      fallo = f;
+      break;
+    }
+    // (una ráfaga es un lote abierto: con el tope gastado o sin nada que proponer no se cuenta)
+    if (typeof r.lote === "string") { lotes.push(r.lote); suma.rafagas++; }
+    for (const k of ["movimientos", "propuestas", "reglas", "con_obra", "sin_respuesta", "invalidas", "sin_intentar", "centavos"] as const) suma[k] += num(r[k]) ?? 0;
+    if (typeof r.nota === "string" && r.nota) notas.push(r.nota);
+    // una ráfaga que cortó por la llave, el modelo o la petición después de guardar algo (error_codigo): la cadena para y queda marcado
+    if (typeof r.error === "string" && r.error && typeof r.error_codigo === "string") { fallo = new Fallo(502, r.error, r.error_codigo); break; }
+    if (typeof r.error === "string" && r.error) notas.push(`la ráfaga ${suma.rafagas} terminó con error: ${r.error}`);
+    if (typeof r.lote !== "string" && suma.rafagas === 0 && !r.bloqueado) notas.push("nada que proponer: ningún cargo esperaba");
+    if (r.bloqueado === true) { bloqueado = true; motivo = texto(r.motivo); break; }
+    quedan = num(r.quedan);
+    if (r.sigue !== true) break;
+  }
+  const error = fallo ? sinLlaves(fallo.message).slice(0, 600) : null;
+  let marca: Json = {};
+  try { marca = obj(await base.rpc("fn_contador_rutina_marcar", { p_ok: !fallo, p_error: error })); }
+  catch (e) { notas.push(`no se pudo marcar cómo terminó la rutina: ${mensajeDe(e)}`); if (!fallo) fallo = falloDeLaBase(e); }
+  return {
+    estado: fallo ? fallo.estado : 200,
+    cuerpo: limpiar({
+      ok: !fallo, origen: "rutina", ...suma, sin_intentar: suma.sin_intentar || undefined, quedan: quedan ?? undefined, bloqueado, motivo,
+      lotes: lotes.length ? lotes : undefined, rutina: marca, nota: notas.length ? notas.join(" · ") : undefined,
+      error: fallo ? sinLlaves(fallo.message) : undefined, codigo: fallo?.codigo, pista: fallo?.pista, ms: Date.now() - t0,
+    }),
+  };
 }
 
 // ---- Salud: qué falta, sin enseñar nada -----------------------------------
 // Sin sesión: lo que hay y lo que falta (la llave, la base, Supabase), el
 // modelo y el esfuerzo de contador_config, la versión del prompt de ESTA función
-// (y la última que la base vio) y el tope del mes. Nada más: lo que lleva
-// datos del libro va en «estado», con sesión.
+// (y la última que la base vio), el tope del mes y (7c) la rutina: si esta
+// función tiene su secreto (rutina), si la base la tiene encendida y cuándo
+// corrió por última vez y si terminó con error (sin el texto del error, que
+// va con sesión en «estado»). Nada más: lo que lleva datos del libro va en
+// «estado», con sesión.
 async function salud(resumen?: Json): Promise<Json> {
   const c = conf();
   const falta: string[] = [];
@@ -756,6 +920,8 @@ async function salud(resumen?: Json): Promise<Json> {
     modelo: cfg.modelo ?? null, effort: cfg.effort ?? null, activa: cfg.activa ?? null, max_por_rafaga: cfg.max_por_rafaga ?? null,
     prompt_version: await versionDelPrompt(), prompt_version_base: cfg.prompt_version ?? null, prefijo_hash_base: cfg.prefijo_hash ?? null,
     ultima_rafaga_el: cfg.ultima_rafaga_el ?? null, con_error: Boolean(cfg.ultimo_error),
+    rutina: c.rutina_secreto.length >= SECRETO_MINIMO, rutina_activa: cfg.rutina_activa ?? null, rutina_ultima_el: cfg.rutina_ultima_el ?? null,
+    rutina_con_error: Boolean(cfg.rutina_ultimo_error),
     tope: base ? limpiar({ mes: t.mes, bloqueado: t.bloqueado, motivo: t.motivo, aviso: t.aviso, centavos_mes_total: t.centavos_mes_total, tope_global: t.tope_global,
                            centavos_mes_contador: t.centavos_mes_contador, tope_contador: t.tope_contador, restante_centavos: t.restante_centavos }) : null,
     version: ANTHROPIC_VERSION, max_tokens: MAX_TOKENS, banco_de_pruebas: c.banco_pruebas, falta,
@@ -786,6 +952,21 @@ export async function atender(req: Request): Promise<Response> {
     }
     const base = await obtenerBase();
 
+    // (7c) La rutina (pg_cron → pg_net), con su secreto y sin sesión: SOLO
+    // proponer_todo. Sin el secreto en Secrets, 500 en llano (y salud dice
+    // rutina: false); con otro, 401; con otra acción, 403: nunca postea.
+    const rutina = req.headers.get("x-mxp-rutina");
+    if (rutina !== null) {
+      if (c.rutina_secreto.length < SECRETO_MINIMO) {
+        console.error("contador: la rutina llamó y falta CONTADOR_RUTINA_SECRETO (Supabase → Edge Functions → Secrets)");
+        throw new Fallo(500, "Falta CONTADOR_RUTINA_SECRETO en Supabase → Edge Functions → Secrets (el que enseña c8-contador.sql al pegarlo, fila «contador_rutina_secreto»): la rutina no propone nada.", "CONFIG");
+      }
+      if (!igual(rutina, c.rutina_secreto)) throw new Fallo(401, "no autorizado", "RUTINA");
+      if (accion !== "proponer_todo") throw new Fallo(403, `La rutina solo sabe «proponer_todo» (propone; nunca aprueba, clasifica ni toca las reglas): llegó «${accion}».`, "RUTINA");
+      const r = await proponerTodo(base, c);
+      return responder(r.cuerpo, r.estado);
+    }
+
     // Edgar, con su sesión de dueño y el código del teléfono (TODO lo pide)
     const jwt = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
     if (!jwt) throw new Fallo(401, "Entra con tu sesión.", "SESION");
@@ -812,6 +993,9 @@ export async function atender(req: Request): Promise<Response> {
       }
       case "proponer":
         return responder(await proponer(base, c, quien.id, cuerpo));
+      case "proponer_todo":
+        // (7c) la cadena de la rutina es de pg_cron; la pantalla encadena «proponer» mientras sigue
+        throw new Fallo(403, "«proponer_todo» es de la rutina (cabecera x-mxp-rutina): desde la pantalla se encadena «proponer» mientras la respuesta traiga sigue.", "RUTINA");
       case "aprobar": {
         const r = obj(await base.rpc("fn_contador_aprobar", {
           p_propuesta: uuidDe(cuerpo.propuesta, "la propuesta"), p_dueno: quien.id, p_proyecto_id: texto(cuerpo.proyecto_id), p_recordar: recordar,
@@ -865,7 +1049,8 @@ export async function atender(req: Request): Promise<Response> {
 // Para las pruebas (contador-e2e.mjs): las piezas puras.
 export const _probar = {
   INSTRUCCIONES, PROPUESTA_SCHEMA, ANTHROPIC_VERSION, MAX_TOKENS, A_LA_VEZ, ESPERA_REINTENTO_MS, PRESUPUESTO_RAFAGA_MS, MINIMO_LLAMADA_MS,
-  armarPrefijo, armarEntrada, normalizarPropuesta, leerRespuesta, usoDe, sha256, versionDelPrompt, salud, sinLlaves,
+  RUTINA_ENCADENA_MS, RUTINA_PLAZO_MS, SECRETO_MINIMO,
+  armarPrefijo, armarEntrada, normalizarPropuesta, leerRespuesta, usoDe, sha256, versionDelPrompt, salud, sinLlaves, igual,
 };
 
 if (G.Deno?.serve) {
