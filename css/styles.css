@@ -4387,3 +4387,113 @@ body:has(#toast:not([hidden])) .fab, body:has(#sin-senal:not([hidden])) .fab { d
 .duda-ia-btn { min-height: var(--tap); }
 .duda-ia-btn:disabled { opacity: .6; cursor: progress; }
 .duda-ia-error { margin: 0; font-size: var(--fs-4); color: var(--mp-danger); }
+
+/* 31-oct: la pestaña «Costos» de la obra (solo el dueño). En el teléfono cada línea es una tarjeta apilada; en la
+   computadora la pestaña usa el ancho entero (compras arriba, horas debajo) y cada línea va en una fila de cuatro partes. */
+.cst-filtros { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem .6rem; align-items: end;
+  margin: 0 0 1rem; padding: .75rem; border: 1px solid var(--mp-line); border-radius: var(--r-card); background: var(--mp-sky-1); }
+.cst-campo { display: grid; gap: .3rem; min-width: 0; font-size: var(--fs-3); font-weight: 700; color: var(--mp-ink); }
+.cst-campo input, .cst-campo select { width: 100%; min-width: 0; min-height: var(--tap); padding: 0 10px; font: inherit; font-size: var(--fs-5); font-weight: 500;
+  color: var(--mp-ink); background: var(--mp-card); border: 1px solid var(--mp-line); border-radius: var(--r-field); }
+/* las fechas, con menos relleno: en el teléfono (dos columnas) la fecha elegida se lee entera */
+.cst-campo input[type="date"] { padding: 0 4px 0 8px; }
+.cst-campo input[type="date"]::-webkit-calendar-picker-indicator { margin: 0; padding: 0 2px; }
+.cst-campo input:focus, .cst-campo select:focus { border-color: var(--mp-blue); outline: 2px solid var(--mp-blue); outline-offset: 1px; }
+.cst-check, .cst-conc { display: inline-flex; align-items: center; gap: .45rem; min-height: var(--tap); font-size: var(--fs-4); font-weight: 650; color: var(--mp-ink); cursor: pointer; }
+.cst-check input, .cst-conc input { width: 22px; height: 22px; margin: 0; flex-shrink: 0; accent-color: var(--mp-ok); }
+.cst-filtros .cst-check { grid-column: 1 / -1; }
+.cst-filtros .cst-limpiar { grid-column: 1 / -1; justify-self: start; }
+.cst-aviso { display: flex; align-items: flex-start; gap: .45rem; margin: 0 0 .6rem; padding: .55rem .7rem; border-radius: var(--r-field);
+  background: var(--mp-warn-bg); border: 1px solid var(--mp-warn-bd); color: var(--mp-warn-tx); font-size: var(--fs-3); line-height: 1.4; }
+.cst-aviso .ico { flex-shrink: 0; width: 18px; height: 18px; }
+.cst-totales { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; margin: 0 0 .5rem; }
+.cst-tot { display: grid; gap: .15rem; padding: .6rem .7rem; border-radius: var(--r-field); background: var(--mp-sky-2); min-width: 0; }
+.cst-tot-etq { font-size: var(--fs-3); font-weight: 700; color: var(--mp-ink-2); }
+.cst-tot-num { display: grid; font-size: var(--fs-6); font-weight: 750; color: var(--mp-ink); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.cst-tot-sub { font-size: var(--fs-3); font-weight: 650; color: var(--mp-ink-2); }
+.cst-sinprecio { grid-column: 1 / -1; display: flex; align-items: center; gap: .4rem; margin: 0; font-size: var(--fs-3); font-weight: 650; color: var(--mp-warn-tx); }
+.cst-sinprecio .ico { width: 14px; height: 14px; }
+.cst-tot-lista { display: grid; }
+.cst-tot-fila { display: flex; justify-content: space-between; gap: .6rem; padding: .4rem 0; border-top: 1px solid var(--mp-sky-2); font-size: var(--fs-4); color: var(--mp-ink); }
+.cst-tot-fila:first-child { border-top: 0; }
+.cst-tot-fila.sin > span:first-child { color: var(--mp-ink-3); font-style: italic; }
+.cst-num { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cst-lista { display: grid; gap: .55rem; margin: .7rem 0 .8rem; }
+.cst-linea { display: grid; gap: .35rem; min-width: 0; padding: .7rem .75rem; border: 1px solid var(--mp-line); border-left: 4px solid var(--mp-line-2);
+  border-radius: var(--r-field); background: var(--mp-card); }
+.cst-linea.fuente-recibo { border-left-color: var(--mp-blue); }
+.cst-linea.fuente-material { border-left-color: var(--cu); }
+.cst-linea.fuente-libro { border-left-color: var(--mp-navy); }
+.cst-linea.conciliada { background: var(--mp-ok-bg); border-color: var(--mp-ok-bd); }
+.cst-cab { display: flex; align-items: center; flex-wrap: wrap; gap: .3rem .5rem; min-width: 0; }
+.cst-fecha { font-size: var(--fs-3); font-weight: 700; color: var(--mp-ink-2); font-variant-numeric: tabular-nums; }
+.cst-hora { font-weight: 600; color: var(--mp-ink-3); }
+.cst-persona { font-size: var(--fs-4); font-weight: 700; color: var(--mp-ink); min-width: 0; overflow-wrap: anywhere; }
+.cst-imp { margin-left: auto; font-size: var(--fs-6); font-weight: 750; color: var(--mp-ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cst-imp.ambar { font-size: var(--fs-3); font-weight: 700; color: var(--mp-warn-tx); background: var(--mp-warn-bg); border: 1px solid var(--mp-warn-bd); border-radius: 999px; padding: .15rem .55rem; }
+.cst-imp.fuera { color: var(--mp-ink-3); text-decoration: line-through; }
+.cst-chip { display: inline-flex; align-items: center; gap: .25rem; max-width: 100%; padding: .18rem .55rem; border-radius: 999px; border: 1px solid var(--mp-line);
+  background: var(--mp-sky-1); color: var(--mp-ink-2); font-size: var(--fs-2); font-weight: 650; overflow-wrap: anywhere; }
+.cst-chip .ico { width: 14px; height: 14px; }
+.cst-chip.fuente { background: var(--mp-sky-2); color: var(--mp-navy); border-color: var(--mp-line-2); }
+.cst-chip.co { background: var(--mp-warn-bg); color: var(--mp-warn-tx); border-color: var(--mp-warn-bd); }
+.cst-chip.libro { background: var(--mp-ok-bg); color: var(--mp-ok-2); border-color: var(--mp-ok-bd); }
+.cst-chip.sin { color: var(--mp-ink-3); font-style: italic; }
+.cst-desc { display: grid; gap: .15rem; min-width: 0; }
+.cst-prov { font-size: var(--fs-5); font-weight: 750; color: var(--mp-ink); overflow-wrap: anywhere; }
+.cst-txt { font-size: var(--fs-4); color: var(--mp-ink-2); line-height: 1.4; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cst-cant { font-size: var(--fs-3); color: var(--mp-ink-2); }
+.cst-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .45rem; font-size: var(--fs-3); color: var(--mp-ink-2); min-width: 0; }
+.cst-quien { display: inline-flex; align-items: center; gap: .25rem; min-width: 0; overflow-wrap: anywhere; }
+.cst-quien .ico { width: 14px; height: 14px; flex-shrink: 0; }
+.cst-tarjeta { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cst-ver { display: inline-flex; align-items: center; gap: .3rem; min-height: var(--tap); padding: 0 .4rem; }
+.cst-ver .ico { width: 16px; height: 16px; }
+.cst-sub { padding: .45rem .6rem; border-radius: var(--r-field); background: var(--mp-sky-1); font-size: var(--fs-3); color: var(--mp-ink-2); }
+.cst-sub-tit { display: block; font-weight: 700; color: var(--mp-ink-2); margin-bottom: .2rem; }
+.cst-sub ul, .cst-tareas { margin: 0; padding-left: 1.1rem; display: grid; gap: .15rem; }
+.cst-sub li, .cst-tareas li { overflow-wrap: anywhere; }
+.cst-sub-cant { color: var(--mp-ink-3); }
+.cst-tareas { font-size: var(--fs-3); color: var(--mp-ink); }
+.cst-t-nom { font-weight: 650; }
+.cst-t-dato { color: var(--mp-ink-2); }
+.cst-t-dato::before { content: " · "; }
+.cst-t-nota { display: block; color: var(--mp-ink-2); font-style: italic; }
+.cst-pista { display: flex; align-items: flex-start; gap: .4rem; margin: 0; font-size: var(--fs-3); font-weight: 650; color: var(--mp-warn-tx); line-height: 1.4; }
+.cst-pista .ico { flex-shrink: 0; width: 16px; height: 16px; }
+.cst-nota { margin: 0; font-size: var(--fs-3); color: var(--mp-ink-2); line-height: 1.45; overflow-wrap: anywhere; }
+.cst-acc { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; min-width: 0; }
+.cst-fase { display: inline-flex; align-items: center; gap: .3rem; min-height: var(--tap); max-width: 100%; padding: 0 .7rem; border-radius: 999px;
+  border: 1px solid var(--mp-line-2); background: var(--mp-sky-1); color: var(--mp-navy); font: inherit; font-size: var(--fs-3); font-weight: 700; cursor: pointer; }
+.cst-fase > span:not(.cst-aprox) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cst-fase .ico { width: 14px; height: 14px; flex-shrink: 0; }
+.cst-fase.deducida { border-style: dashed; color: var(--mp-ink-2); }
+.cst-fase.sin { color: var(--mp-ink-3); font-style: italic; }
+.cst-fase:focus-visible, .cst-enlazar:focus-visible { outline: 2px solid var(--mp-blue); outline-offset: 2px; }
+.cst-aprox { font-weight: 700; }
+.cst-enlazar { min-height: var(--tap); max-width: 100%; min-width: 0; padding: 0 10px; font: inherit; font-size: var(--fs-3); color: var(--mp-ink);
+  background: var(--mp-card); border: 1px solid var(--mp-line); border-radius: var(--r-field); }
+.cst-csv { display: inline-flex; align-items: center; gap: .4rem; min-height: var(--tap); }
+.cst-csv .ico { width: 18px; height: 18px; }
+.mat-comprado-el { display: block; color: var(--mp-ok); font-weight: 650; }
+/* Seis pestañas en el teléfono: cada columna mide lo que pide su nombre (y el sobrante se reparte); con columnas iguales,
+   «Resumen» y «Archivos» no caben en 375 px. Si en una pantalla más estrecha aun así no cabe, el nombre se corta con «…». */
+@media (max-width: 1023px) {
+  .ficha-pestanas.seis { grid-template-columns: repeat(6, auto); gap: 3px; padding: 3px; }
+  .ficha-pestanas.seis .ficha-tab { padding: .3rem .12rem; }
+}
+@media (min-width: 1024px) {
+  /* Costos usa el ancho entero: compras arriba y horas debajo */
+  .proyecto.ficha.abierto .ficha-panel.panel-costos .proyecto-detalle { grid-template-columns: minmax(0, 1fr); }
+  .cst-filtros { grid-template-columns: repeat(4, minmax(0, 1fr)) auto auto; }
+  .cst-filtros .cst-check, .cst-filtros .cst-limpiar { grid-column: auto; }
+  .cst-totales { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cst-sinprecio { grid-column: auto; align-self: center; }
+  .cst-linea { grid-template-columns: 11rem minmax(0, 1fr) minmax(0, 15rem); column-gap: 1rem; row-gap: .3rem; align-items: start; }
+  .cst-linea > * { grid-column: 2; }
+  .cst-linea > .cst-cab { grid-column: 1; grid-row: 1 / span 5; flex-direction: column; align-items: flex-start; }
+  .cst-linea > .cst-cab .cst-imp { margin-left: 0; }
+  .cst-linea > .cst-acc { grid-column: 3; grid-row: 1 / span 5; flex-direction: column; align-items: stretch; }
+  .cst-linea.cst-hora-fila { grid-template-columns: 11rem minmax(0, 1fr); }
+}

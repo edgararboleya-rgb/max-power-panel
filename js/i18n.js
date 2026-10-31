@@ -5096,6 +5096,71 @@
     }]
   );
 
+  // ---------- 31-oct: la pestaña «Costos» de la obra (solo el dueño) y «Comprado el / Lo compró / Ticket» en Materiales ----------
+  // Las fechas de esta pestaña ya salen en inglés desde app.js («Oct 30»); aquí solo las frases que las rodean.
+  Object.assign(D, {
+    "Costos": "Costs", "Filtros de costos": "Cost filters", "Desde": "From", "Hasta": "To", "Proveedor": "Vendor",
+    "Todos": "All", "Todas": "All", "Fase": "Phase", "Sin fase": "No phase", "Solo sin conciliar": "Only unreconciled",
+    "Quitar filtros": "Clear filters",
+    "No pude leer el libro contable: aquí faltan los cargos del banco.": "I couldn't read the accounting books: bank charges are missing here.",
+    "No pude leer qué líneas están conciliadas: las casillas pueden salir sin marcar.": "I couldn't read which lines are reconciled: the boxes may show unchecked.",
+    "Todavía no hay compras en esta obra.": "No purchases on this job yet.", "Ninguna compra con estos filtros.": "No purchases match these filters.",
+    "Todavía no hay horas reportadas en esta obra.": "No hours reported on this job yet.", "Ninguna hora con estos filtros.": "No hours match these filters.",
+    "Compras y materiales": "Purchases and materials", "Conciliado": "Reconciled", "Conciliada": "Reconciled",
+    "Por semana": "By week", "Por persona": "By person", "Sin fecha": "No date", "Sin nombre": "No name", "Reportes": "Reports",
+    "Descargar compras (.csv)": "Download purchases (.csv)", "Descargar horas (.csv)": "Download hours (.csv)",
+    "por leer": "not read yet", "sin precio": "no price",
+    "Sin fecha de compra: es el día en que se anotó": "No purchase date: this is the day it was logged",
+    "Ticket": "Receipt", "Lista": "List", "Banco": "Bank",
+    "Renta de equipo": "Equipment rental", "Labor externa": "Outside labor", "Equipo y renta": "Equipment and rental",
+    "De la lista (ya van en este ticket)": "From the list (already on this receipt)",
+    "Su ticket es de otra obra: no suma aquí.": "Its receipt belongs to another job: it isn't added here.",
+    "Enlazar ticket": "Link a receipt", "Enlazar ticket…": "Link a receipt…",
+    "Deducida de las horas de ese día: toca para elegir otra": "Inferred from that day's hours: tap to choose another",
+    "Toca para elegir la fase": "Tap to choose the phase",
+    "Fase de esta compra": "Phase of this purchase", "La del libro": "The one in the books", "La deducida": "The inferred one",
+    "Sin horas cerca de ese día": "No hours near that day",
+    "Sin señal: no se guardó. Vuelve a intentarlo cuando haya señal.": "No signal: it wasn't saved. Try again when you have signal.",
+    "Sin señal: no se enlazó. Vuelve a intentarlo cuando haya señal.": "No signal: it wasn't linked. Try again when you have signal.",
+    "Material enlazado al ticket ✓": "Material linked to the receipt ✓",
+    "La foto del ticket todavía se está cargando: tócala otra vez en un momento.": "The receipt photo is still loading: tap it again in a moment.",
+    "No se pudieron cargar las fotos de los tickets — revisa la señal.": "Couldn't load the receipt photos — check your signal.",
+    // Los candados de fn_costos_marcar (etapa6/COSTOS-OBRA.sql) contestan en español
+    "Solo el dueño puede conciliar los costos de una obra.": "Only the owner can reconcile a job's costs.",
+    "Esa línea de costo no es de esta obra.": "That cost line isn't from this job.",
+    // Materiales: el lápiz del dueño
+    "Ticket (con qué compra se pagó)": "Receipt (which purchase paid for it)", "— sin ticket —": "— no receipt —",
+    "Lo compró": "Bought by", "— sin apuntar —": "— not set —", "Otra persona": "Someone else",
+    "Comprado el (hora de Florida)": "Bought on (Florida time)",
+    "Esa fecha de compra no se entendió: elígela otra vez en el calendario.": "That purchase date wasn't understood: pick it again in the calendar."
+  });
+  // Una fecha de esta pestaña en inglés: «Oct 30» u «Oct 30, 2025»
+  const FECHA_CST = "[A-Z][a-z]{2} \\d{1,2}(?:, \\d{4})?";
+  REGLAS.push(
+    [/^(\d+) de (\d+) líneas$/, "$1 of $2 lines"],
+    [/^1 sin precio \(no suma\)$/, "1 without a price (not added)"],
+    [/^(\d+) sin precio \(no suman\)$/, "$1 without a price (not added)"],
+    [new RegExp("^Semana del (" + FECHA_CST + ")$"), "Week of $1"],
+    [new RegExp("^anotado el (" + FECHA_CST + ")$"), "logged on $1"],
+    [new RegExp("^Comprado (" + FECHA_CST + ")$"), "Bought $1"],
+    [new RegExp("^¿Es el ticket de (.+) del (" + FECHA_CST + ")\\?$"), "Is it the $1 receipt from $2?"],
+    [new RegExp("^¿Es el ticket del (" + FECHA_CST + ")\\?$"), "Is it the receipt from $1?"],
+    [/^tarjeta ····(\d{2,4})$/, "card ····$1"],
+    [/^en el libro (\d{4}-\d{3,}(?:, \d{4}-\d{3,})*)$/, "in the books $1"],
+    [/^Asiento (\d{4}-\d{3,}(?:, \d{4}-\d{3,})*)$/, "Entry $1"],
+    [/^Cantidad: ([\s\S]+)$/, "Quantity: $1"],
+    [/^(\d+(?:\.\d+)?) hechas$/, "$1 done"], [/^1 hecha$/, "1 done"],
+    [/^Ticket (\d+)$/, "Receipt $1"],
+    // la opción de «Enlazar ticket» / «Ticket» de un ticket sin total: «Oct 28 · CES · por leer»
+    [new RegExp("^(" + FECHA_CST + ") · (.+) · por leer$"), "$1 · $2 · not read yet"],
+    [new RegExp("^(" + FECHA_CST + ") · por leer$"), "$1 · not read yet"],
+    [/^1 ticket por leer \(no suma\)$/, "1 receipt not read yet (not added)"],
+    [/^(\d+) tickets por leer \(no suman\)$/, "$1 receipts not read yet (not added)"],
+    [/^((?:Costos|Horas)-[\w.-]+\.csv) — ábrelo en Excel$/, "$1 — open it in Excel"],
+    [/^La fase «(.+)» no es una de las 10 del reporte de horas\.$/, "The phase «$1» isn't one of the 10 in the hours report."],
+    [/^No se pudo enlazar: ([\s\S]+)$/, s => { const r = s.slice("No se pudo enlazar: ".length); return "Couldn't link it: " + (D[r] !== undefined ? D[r] : r); }]
+  );
+
   // Los avisos del navegador (confirmar, alertar, preguntar) también
   const c0 = window.confirm, a0 = window.alert, p0 = window.prompt;
   window.confirm = m => c0.call(window, traducirMensaje(m));

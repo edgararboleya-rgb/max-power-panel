@@ -435,7 +435,10 @@
     gestiones: ["gestiones"],
     externos: ["trabajos_externos", "externos_equipo", "finanzas_proyecto"],
     materiales: ["materiales", "materiales_equipo", "pendientes"],
-    recibos: ["recibos", "recibos_equipo", "materiales", "materiales_equipo", "finanzas_proyecto"],
+    // (31-oct) un ticket puede contabilizarse y marcar materiales: se baja también lo del libro de la pestaña Costos
+    recibos: ["recibos", "recibos_equipo", "materiales", "materiales_equipo", "finanzas_proyecto", "costos_libro"],
+    // 31-oct (pestaña Costos): un material enlazado a un ticket (y la marca de las líneas)
+    costos_mat: ["materiales", "materiales_equipo", "v_costos_revision"],
     equipo: ["perfiles", "costos_equipo"],
     ayudantes: ["externos_equipo"],
     eventos: ["eventos", "inspecciones"],
@@ -4649,8 +4652,8 @@ function esFalloDeRed(err) {
   // ==== Ficha v2 (P179) ====
   // La ficha de la obra en TABLERO + PESTAÑAS. Arriba, un tablero oscuro con la
   // dirección, el estado, el botón del siguiente paso, la cámara, «Agregar» y las
-  // señales; debajo, cinco pestañas (el equipo de campo ve tres: Resumen, Obra y
-  // Archivos; las de Dinero y Cliente ni se generan). Lo que se usa poco vive en
+  // señales; debajo, seis pestañas (el equipo de campo ve tres: Resumen, Obra y
+  // Archivos; las de Dinero, Costos y Cliente ni se generan). Lo que se usa poco vive en
   // botones escondidos (.herramientas) que las hojas de abajo activan: así cada
   // botón sigue con su candado, su pregunta y su manejador de siempre.
   const ico = n => (window.MXP_ICONO ? window.MXP_ICONO(n) : "");
@@ -4675,6 +4678,8 @@ function esFalloDeRed(err) {
     { k: "resumen", texto: "Resumen", icono: "pulso" },
     { k: "obra", texto: "Obra", icono: "casco" },
     { k: "dinero", texto: "Dinero", icono: "dolar", dinero: true },
+    // 31-oct: el desglose de compras y horas de la obra para conciliar (solo el dueño)
+    { k: "costos", texto: "Costos", icono: "recibo", dinero: true },
     { k: "cliente", texto: "Cliente", icono: "persona", dinero: true },
     { k: "archivos", texto: "Archivos", icono: "carpeta" }
   ];
@@ -4865,7 +4870,8 @@ function esFalloDeRed(err) {
   // ---- Barra de pestañas ----
   function pestanasHTML(p, activa) {
     const ts = pestanasDe();
-    return `<nav class="ficha-pestanas" role="tablist" aria-label="Secciones de la obra" style="--n:${ts.length}">${ts.map(t => {
+    // (31-oct) con seis pestañas (el dueño, desde Costos) cada una mide lo que pide su nombre: iguales no caben en el teléfono
+    return `<nav class="ficha-pestanas${ts.length > 5 ? " seis" : ""}" role="tablist" aria-label="Secciones de la obra" style="--n:${ts.length}">${ts.map(t => {
       const on = t.k === activa;
       return `<button type="button" role="tab" class="ficha-tab" id="tab-${t.k}" aria-controls="panel-${t.k}" aria-selected="${on}" tabindex="${on ? 0 : -1}" data-pestana="${t.k}">${ico(t.icono)}<span>${esc(t.texto)}</span></button>`;
     }).join("")}</nav>`;
@@ -4936,6 +4942,627 @@ function esFalloDeRed(err) {
   function panelArchivosHTML(p) {
     return { izq: fotosHTML(p), der: documentosHTML(p) + rfisHTML(p) };
   }
+
+  // ==== COSTOS DE LA OBRA: LA CUENTA PURA (inicio) ====
+  // (31-oct, Edgar: «dentro de cada proyecto quiero una sección Costos con el desglose completo, para poder conciliar»)
+  // Todo lo que hay entre esta marca y «COSTOS DE LA OBRA: LA CUENTA PURA (fin)» es cuenta sin pantalla: recibe listas y
+  // devuelve listas. No usa NADA de fuera (ni esc, ni state, ni usuario), porque pruebas/costos.mjs lo carga cortando el
+  // archivo entre las dos marcas (como pruebas/reparto-pagos.mjs). Si se toca, se corre: node pruebas/costos.mjs
+  //
+  // De dónde sale cada línea de compra:
+  //   · TICKET  (recibos de la obra que no están anulados): su total. Los materiales de la lista enlazados a ese ticket
+  //             (materiales.recibo_id) van DEBAJO, sin sumar: son el detalle del mismo gasto.
+  //   · LISTA   (materiales «comprado» SIN ticket de la obra): su precio, o «sin precio» (cuenta 0 y se dice cuántos van así).
+  //   · BANCO   (líneas del libro 5100/5200/5300 de la obra que NO vienen de un ticket): su monto. Lo que el puente de la
+  //             contabilidad asentó desde un ticket (asientos.origen_tabla = 'recibos') es EL MISMO gasto que el ticket: no se
+  //             suma otra vez (en el ticket sale «en el libro <número>»); tampoco su reverso (reversa_a = ese asiento).
+  const COSTOS_FASES = ["Movilización", "Demolición", "Rough-in", "Underground", "Panel / Servicio",
+    "Trim-out", "Low Voltage", "Troubleshooting", "Inspección / Correcciones", "Service Call"];
+  const costosR2 = n => Math.round((Number(n) || 0) * 100) / 100;
+  // El día de Florida (AAAA-MM-DD) de una fecha con hora. Una fecha sola se queda igual. Sin zona = hora UTC de la base.
+  function costosDiaFL(v) {
+    const s = String(v || "").trim();
+    if (!s) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const d = new Date(/(Z|[+-]\d{2}:?\d{2})$/i.test(s) ? s : s.replace(" ", "T") + "Z");
+    if (isNaN(d.getTime())) return s.slice(0, 10);
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  }
+  // La hora de Florida de una fecha con hora, para la casilla «Comprado el» (AAAA-MM-DDTHH:MM); vacía si no hay
+  function costosLocalFL(v) {
+    const s = String(v || "").trim();
+    if (!s || /^\d{4}-\d{2}-\d{2}$/.test(s)) return "";
+    const d = new Date(/(Z|[+-]\d{2}:?\d{2})$/i.test(s) ? s : s.replace(" ", "T") + "Z");
+    if (isNaN(d.getTime())) return "";
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hourCycle: "h23",
+      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(d).map(x => [x.type, x.value]));
+    return `${p.year}-${p.month}-${p.day}T${p.hour === "24" ? "00" : p.hour}:${p.minute}`;
+  }
+  // Al revés: lo que se escribió en «Comprado el» (hora de Florida, AAAA-MM-DDTHH:MM) → ISO con su desfase (-04:00 o
+  // -05:00 según el horario de verano de ESE día). null si no se entiende.
+  function costosISOdeFL(local) {
+    const m = String(local || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    if (!m) return null;
+    const comoUTC = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+    const desfase = t => {   // minutos que Florida va detrás de UTC en el instante t
+      const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hourCycle: "h23",
+        year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(new Date(t)).map(x => [x.type, x.value]));
+      return Math.round((t - Date.UTC(+p.year, +p.month - 1, +p.day, +(p.hour === "24" ? 0 : p.hour), +p.minute)) / 60000);
+    };
+    let min = desfase(comoUTC);
+    min = desfase(comoUTC + min * 60000);
+    const signo = min >= 0 ? "-" : "+", a = Math.abs(min);
+    return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00${signo}${String(Math.floor(a / 60)).padStart(2, "0")}:${String(a % 60).padStart(2, "0")}`;
+  }
+  const costosMasDias = (iso, n) => { const d = new Date(iso + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  const costosDias = (a, b) => Math.round((Date.parse(b + "T12:00:00Z") - Date.parse(a + "T12:00:00Z")) / 86400000);
+  // El lunes de la semana (de lunes a domingo) de un día AAAA-MM-DD
+  function costosLunes(iso) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso || ""))) return "";
+    const dow = (new Date(iso + "T12:00:00Z").getUTCDay() + 6) % 7;   // lunes = 0 … domingo = 6
+    return costosMasDias(iso, -dow);
+  }
+  // La fase que se DEDUCE de las horas de la obra para un día: la fase con más horas ese mismo día; si ese día no hay
+  // reportes con fase, la del último día con reportes de los 7 anteriores (con el mismo desempate). Solo las 10 fases.
+  // Empate: la que va antes en el formulario. Sin nada: "".
+  function costosFaseDeducida(dia, horasObra) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dia || ""))) return "";
+    const con = (horasObra || []).filter(h => h && COSTOS_FASES.includes(h.fase) && /^\d{4}-\d{2}-\d{2}/.test(String(h.fecha || "")));
+    const masDe = d => {
+      const suma = {};
+      for (const h of con) if (String(h.fecha).slice(0, 10) === d) suma[h.fase] = (suma[h.fase] || 0) + (Number(h.horas) || 0);
+      const fs = COSTOS_FASES.filter(f => suma[f] !== undefined);
+      fs.sort((a, b) => (suma[b] - suma[a]) || (COSTOS_FASES.indexOf(a) - COSTOS_FASES.indexOf(b)));
+      return fs[0] || "";
+    };
+    const ese = masDe(dia);
+    if (ese) return ese;
+    const desde = costosMasDias(dia, -7);
+    const dias = con.map(h => String(h.fecha).slice(0, 10)).filter(d => d >= desde && d < dia).sort();
+    return dias.length ? masDe(dias[dias.length - 1]) : "";
+  }
+  // Las líneas de compra de UNA obra. d = { proyecto, recibos, materiales, libro, revision, horas } con las listas tal como
+  // las arma js/db.js (state.recibos, state.materiales, state.costosLibro, state.costosRevision, state.registroHoras).
+  // Devuelve { lineas, tickets }: lineas, la más nueva arriba; tickets, los de la obra (para «Enlazar ticket»).
+  function costosArmar(d) {
+    const pid = d.proyecto;
+    const rev = d.revision || {};
+    const horasObra = (d.horas || []).filter(h => h && h.proyecto === pid);
+    const vivos = (d.recibos || []).filter(r => r && r.estado !== "anulado");
+    const tickets = vivos.filter(r => r.proyecto === pid);
+    const ticketAqui = new Map(tickets.map(r => [String(r.id), r]));
+    const ticketVivo = new Map(vivos.map(r => [String(r.id), r]));
+    const libroObra = (d.libro || []).filter(l => l && l.proyecto === pid);
+    // Los asientos que salieron de un ticket (y sus números, por ticket). En «en el libro …» va solo el asiento que vale:
+    // si el ticket dice cuál es (recibos.contabilizado_en), ese; si no, los que ni son un reverso ni están reversados
+    // (al corregir un ticket ya contabilizado quedan el original, su reverso y el nuevo, y solo el nuevo cuenta).
+    const asientosDeTicket = new Set();
+    const reversados = new Set();
+    for (const l of libroObra) if (l.reversaA) reversados.add(String(l.reversaA));
+    const numerosDe = {}, numeroDeAsiento = {};
+    for (const l of libroObra) {
+      if (l.origenTabla !== "recibos") continue;
+      asientosDeTicket.add(String(l.asientoId));
+      if (l.numero) numeroDeAsiento[String(l.asientoId)] = l.numero;
+      const k = String(l.origenId || "");
+      if (!k || !l.numero) continue;
+      if (l.reversaA || reversados.has(String(l.asientoId))) continue;
+      numerosDe[k] = numerosDe[k] || [];
+      if (!numerosDe[k].includes(l.numero)) numerosDe[k].push(l.numero);
+    }
+    const numerosDeTicket = r => {
+      const k = String(r.id);
+      const vale = r.contabilizadoEn ? numeroDeAsiento[String(r.contabilizadoEn)] : "";
+      if (vale) return [vale];
+      return numerosDe[k] || [];
+    };
+    // La fase: la elegida (costos_revision); si no, la de la línea del libro; si no, la deducida de las horas
+    const faseDe = (fuente, ref, faseLibro, dia) => {
+      const r = rev[fuente + ":" + ref] || null;
+      const deducida = costosFaseDeducida(dia, horasObra);
+      if (r && r.fase) return { fase: r.fase, faseOrigen: "elegida", faseDeducida: deducida };
+      if (faseLibro && COSTOS_FASES.includes(faseLibro)) return { fase: faseLibro, faseOrigen: "libro", faseDeducida: deducida };
+      if (deducida) return { fase: deducida, faseOrigen: "deducida", faseDeducida: deducida };
+      return { fase: "", faseOrigen: "", faseDeducida: "" };
+    };
+    const marca = (fuente, ref) => { const r = rev[fuente + ":" + ref] || {}; return { conciliada: r.conciliada === true, nota: r.nota || "" }; };
+    const lineas = [];
+    for (const r of tickets) {
+      const ref = String(r.id);
+      const dia = r.fechaDoc || costosDiaFL(r.creado) || String(r.fecha || "").slice(0, 10);
+      const total = typeof r.total === "number" && Number.isFinite(r.total) ? costosR2(r.total) : null;
+      const sub = (d.materiales || []).filter(m => m && m.estado === "comprado" && m.reciboId !== null && m.reciboId !== undefined && String(m.reciboId) === ref)
+        .map(m => ({ id: m.id, descripcion: m.descripcion || "", cantidad: m.cantidad || "" }));
+      lineas.push({ clave: "recibo:" + ref, fuente: "recibo", ref, dia, hora: "", anotado: false,
+        proveedor: String(r.proveedor || "").trim(), descripcion: String(r.notas || "").trim(), cantidad: "",
+        importe: total, suma: true, porLeer: total === null, sinPrecio: false,
+        quien: r.autor || "", tarjeta: r.ultimos4 || "", ruta: r.ruta || "", categoria: r.categoria || "material", co: r.co || null,
+        numeros: numerosDeTicket(r), sub, reciboId: null, ticketFuera: false, pista: null,
+        ...faseDe("recibo", ref, "", dia), ...marca("recibo", ref) });
+    }
+    for (const m of d.materiales || []) {
+      if (!m || m.proyecto !== pid || m.estado !== "comprado") continue;
+      const rid = m.reciboId !== null && m.reciboId !== undefined ? String(m.reciboId) : "";
+      if (rid && ticketAqui.has(rid)) continue;                  // va debajo de su ticket, sin sumar
+      const ticketFuera = !!(rid && ticketVivo.has(rid));        // su ticket es de otra obra: se cuenta allí, no aquí
+      const ref = String(m.id);
+      const dia = costosDiaFL(m.compradoEl) || costosDiaFL(m.creado) || String(m.fecha || "").slice(0, 10);
+      const precio = typeof m.precio === "number" && Number.isFinite(m.precio) ? costosR2(m.precio) : null;
+      lineas.push({ clave: "material:" + ref, fuente: "material", ref, dia, hora: m.compradoEl || "", anotado: !m.compradoEl,
+        proveedor: "", descripcion: String(m.descripcion || "").trim(), cantidad: m.cantidad || "",
+        importe: precio, suma: !ticketFuera, porLeer: false, sinPrecio: precio === null && !ticketFuera,
+        quien: m.compradoPor || m.autor || "", tarjeta: "", ruta: "", categoria: "material", co: null,
+        numeros: [], sub: [], reciboId: rid || null, ticketFuera, pista: null,
+        ...faseDe("material", ref, "", dia), ...marca("material", ref) });
+    }
+    for (const l of libroObra) {
+      if (l.origenTabla === "recibos") continue;
+      if (l.reversaA && asientosDeTicket.has(String(l.reversaA))) continue;   // el reverso de un asiento de ticket
+      const ref = String(l.ref || (l.asientoId + "#" + l.orden));
+      const dia = String(l.fecha || "").slice(0, 10);
+      const monto = costosR2(l.monto);
+      // ¿Es un ticket de la obra ya subido? Mismo importe (±1 centavo) y fecha a 5 días o menos: se dice, no se decide
+      let pista = null;
+      for (const r of tickets) {
+        if (typeof r.total !== "number" || Math.abs(Math.round(r.total * 100) - Math.round(monto * 100)) > 1) continue;   // en centavos
+        const rd = r.fechaDoc || costosDiaFL(r.creado);
+        if (!rd || !dia || Math.abs(costosDias(rd, dia)) > 5) continue;
+        if (!pista || Math.abs(costosDias(rd, dia)) < Math.abs(costosDias(pista.dia, dia))) pista = { proveedor: String(r.proveedor || "").trim(), dia: rd, ref: String(r.id) };
+      }
+      const desc = [String(l.descripcion || "").trim(), String(l.memo || "").trim()].filter(Boolean).join(" · ");
+      lineas.push({ clave: "libro:" + ref, fuente: "libro", ref, dia, hora: "", anotado: false,
+        proveedor: "", descripcion: desc, cantidad: "", importe: monto, suma: true, porLeer: false, sinPrecio: false,
+        quien: "", tarjeta: "", ruta: "", categoria: "", co: l.co || null, cuenta: l.cuenta || "",
+        numeros: l.numero ? [l.numero] : [], sub: [], reciboId: null, ticketFuera: false, pista,
+        ...faseDe("libro", ref, l.fase || "", dia), ...marca("libro", ref) });
+    }
+    const orden = { recibo: 0, material: 1, libro: 2 };
+    lineas.sort((a, b) => String(b.dia).localeCompare(String(a.dia)) || String(b.hora).localeCompare(String(a.hora)) ||
+      (orden[a.fuente] - orden[b.fuente]) || String(b.ref).localeCompare(String(a.ref), "en", { numeric: true }));
+    return { lineas, tickets };
+  }
+  // Los proveedores de las líneas (sin repetir, sin mirar mayúsculas), en orden alfabético
+  function costosProveedores(lineas) {
+    const m = new Map();
+    for (const l of lineas || []) { const p = String(l.proveedor || "").trim(); if (p && !m.has(p.toLowerCase())) m.set(p.toLowerCase(), p); }
+    return [...m.values()].sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+  }
+  // Los filtros: f = { desde, hasta, proveedor, fase, sinConciliar }. fase "" = todas, "__sin" = sin fase.
+  function costosFiltrar(lineas, f) {
+    f = f || {};
+    const prov = String(f.proveedor || "").trim().toLowerCase();
+    return (lineas || []).filter(l => {
+      if (f.desde && (!l.dia || l.dia < f.desde)) return false;
+      if (f.hasta && (!l.dia || l.dia > f.hasta)) return false;
+      if (prov && String(l.proveedor || "").trim().toLowerCase() !== prov) return false;
+      if (f.fase === "__sin" && l.fase) return false;
+      if (f.fase && f.fase !== "__sin" && l.fase !== f.fase) return false;
+      if (f.sinConciliar && l.conciliada) return false;
+      return true;
+    });
+  }
+  // Los totales de lo que queda tras los filtros. Solo suman las líneas con importe y suma=true.
+  function costosTotales(lineas) {
+    const cuenta = l => (l.suma && typeof l.importe === "number") ? l.importe : 0;
+    const semanas = new Map(), fases = new Map();
+    let total = 0, concN = 0, concImp = 0, sinPrecio = 0, porLeer = 0;
+    for (const l of lineas || []) {
+      const v = cuenta(l);
+      total += v;
+      if (l.conciliada) { concN++; concImp += v; }
+      if (l.suma && l.sinPrecio) sinPrecio++;
+      if (l.suma && l.porLeer) porLeer++;
+      const lu = costosLunes(l.dia) || "";
+      const s = semanas.get(lu) || { lunes: lu, total: 0, n: 0 }; s.total += v; s.n++; semanas.set(lu, s);
+      const fa = l.fase || "";
+      const x = fases.get(fa) || { fase: fa, total: 0, n: 0 }; x.total += v; x.n++; fases.set(fa, x);
+    }
+    const ordenFase = f => f === "" ? 999 : COSTOS_FASES.includes(f) ? COSTOS_FASES.indexOf(f) : 500;
+    return {
+      total: costosR2(total), n: (lineas || []).length, conciliadas: { n: concN, importe: costosR2(concImp) }, sinPrecio, porLeer,
+      semanas: [...semanas.values()].map(s => ({ ...s, total: costosR2(s.total) })).sort((a, b) => String(b.lunes).localeCompare(String(a.lunes))),
+      fases: [...fases.values()].map(s => ({ ...s, total: costosR2(s.total) })).sort((a, b) => ordenFase(a.fase) - ordenFase(b.fase) || a.fase.localeCompare(b.fase))
+    };
+  }
+  // Las horas de UNA obra (state.registroHoras), la más nueva arriba, con los filtros de fecha y fase
+  function costosHoras(registro, pid, f) {
+    f = f || {};
+    return (registro || []).filter(h => h && h.proyecto === pid).filter(h => {
+      const dia = String(h.fecha || "").slice(0, 10);
+      if (f.desde && (!dia || dia < f.desde)) return false;
+      if (f.hasta && (!dia || dia > f.hasta)) return false;
+      if (f.fase === "__sin" && h.fase) return false;
+      if (f.fase && f.fase !== "__sin" && h.fase !== f.fase) return false;
+      return true;
+    }).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || ((Number(b.id) || 0) - (Number(a.id) || 0)));
+  }
+  function costosHorasTotales(horas) {
+    const r1 = n => Math.round((Number(n) || 0) * 10) / 10;
+    const per = new Map(), sem = new Map(), fas = new Map();
+    let total = 0;
+    for (const h of horas || []) {
+      const v = Number(h.horas) || 0;
+      total += v;
+      const quien = h.trabajador || "";
+      per.set(quien, (per.get(quien) || 0) + v);
+      const lu = costosLunes(String(h.fecha || "").slice(0, 10));
+      sem.set(lu, (sem.get(lu) || 0) + v);
+      fas.set(h.fase || "", (fas.get(h.fase || "") || 0) + v);
+    }
+    const ordenFase = f => f === "" ? 999 : COSTOS_FASES.includes(f) ? COSTOS_FASES.indexOf(f) : 500;
+    return {
+      total: r1(total), n: (horas || []).length,
+      personas: [...per].map(([nombre, x]) => ({ nombre, horas: r1(x) })).sort((a, b) => b.horas - a.horas || a.nombre.localeCompare(b.nombre)),
+      semanas: [...sem].map(([lunes, x]) => ({ lunes, horas: r1(x) })).sort((a, b) => String(b.lunes).localeCompare(String(a.lunes))),
+      fases: [...fas].map(([fase, x]) => ({ fase, horas: r1(x) })).sort((a, b) => ordenFase(a.fase) - ordenFase(b.fase) || a.fase.localeCompare(b.fase))
+    };
+  }
+  // El CSV para Excel: UTF-8 con BOM, comas, «"» doblada y entre comillas lo que lleva coma, comilla o salto de línea;
+  // los números con punto decimal; filas = [[cabecera…], [celdas…], …]
+  function costosCSV(filas) {
+    const celda = v => {
+      if (v === null || v === undefined) return "";
+      if (typeof v === "number") return Number.isFinite(v) ? String(v) : "";
+      const t = String(v);
+      return /[",\n\r]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+    };
+    return "﻿" + (filas || []).map(f => f.map(celda).join(",")).join("\r\n") + "\r\n";
+  }
+  const COSTOS_FUENTE_CSV = { recibo: "ticket", material: "lista", libro: "banco" };
+  function costosFilasCSV(lineas) {
+    return [["fecha", "fuente", "proveedor", "descripcion", "cantidad", "importe", "quien", "fase", "fase_deducida", "co", "conciliada", "ticket", "asiento"]]
+      .concat((lineas || []).map(l => [l.dia || "", COSTOS_FUENTE_CSV[l.fuente] || l.fuente, l.proveedor || "",
+        l.descripcion || "", l.cantidad || "", typeof l.importe === "number" ? costosR2(l.importe) : "", l.quien || "",
+        l.fase || "", l.faseOrigen === "deducida" ? "sí" : "no", l.co || "", l.conciliada ? "sí" : "no",
+        l.fuente === "recibo" ? "sí" : "no", (l.numeros || []).join(" ")]));
+  }
+  function costosFilasHorasCSV(horas) {
+    const n = x => Math.round((Number(x) || 0) * 100) / 100;
+    return [["fecha", "persona", "fase", "horas", "co", "tareas", "notas"]]
+      .concat((horas || []).map(h => [String(h.fecha || "").slice(0, 10), h.trabajador || "", h.fase || "", n(h.horas), h.co || "",
+        (h.tareas || []).map(t => `${t.nombre} ${n(t.horas)} h` + (t.cantidadHecha !== null && t.cantidadHecha !== undefined ? ` (${t.cantidadHecha} hechas)` : "")).join(" | "),
+        h.notas || ""]));
+  }
+  // ==== COSTOS DE LA OBRA: LA CUENTA PURA (fin) ====
+
+  // ---- Pestaña «Costos» (31-oct, solo el dueño: para el campo NI SE GENERA) ----
+  // Las compras de la obra (ticket, lista y banco) y las horas, con filtros, la casilla «Conciliada», la fase y el CSV.
+  // La cuenta va arriba, en «COSTOS DE LA OBRA: LA CUENTA PURA»; aquí solo se pinta y se escucha.
+  const costosFiltros = new Map();   // obra → { desde, hasta, proveedor, fase, sinConciliar } (mientras la app está abierta)
+  const costosUltimas = new Map();   // clave de línea → la línea pintada (para la hoja de la fase y la casilla)
+  const costosFirmas = new Map();    // ruta de la foto del ticket → { url, hasta } (los enlaces firmados duran una hora)
+  const filtrosDeCostos = pid => ({ desde: "", hasta: "", proveedor: "", fase: "", sinConciliar: false, ...(costosFiltros.get(pid) || {}) });
+  const hayFiltroCostos = f => !!(f.desde || f.hasta || f.proveedor || f.fase || f.sinConciliar);
+  const MESES_COSTOS = EN_APP ? ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    : ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+  // «30-oct» (en inglés «Oct 30»); con el año si no es el de hoy
+  const costosFechaCorta = iso => {
+    const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return "";
+    const otroAno = Number(m[1]) !== Number(costosDiaFL(new Date().toISOString()).slice(0, 4));
+    return EN_APP ? `${MESES_COSTOS[+m[2] - 1]} ${+m[3]}${otroAno ? ", " + m[1] : ""}` : `${+m[3]}-${MESES_COSTOS[+m[2] - 1]}${otroAno ? "-" + m[1] : ""}`;
+  };
+  // «2:15 PM» en hora de Florida
+  const costosHoraFL = iso => {
+    const s = String(iso || "").trim(); if (!s) return "";
+    const d = new Date(/(Z|[+-]\d{2}:?\d{2})$/i.test(s) ? s : s.replace(" ", "T") + "Z");
+    return isNaN(d.getTime()) ? "" : d.toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
+  };
+  // La opción de un ticket en «Enlazar ticket…» y en el «Ticket» del lápiz de Materiales: «28-oct · CES · $12.00»; sin
+  // proveedor, solo la fecha y el importe (nada de palabras de relleno, que en inglés no se traducirían dentro de la frase)
+  const costosOpcionTicket = r => [costosFechaCorta(r.fechaDoc || costosDiaFL(r.creado) || r.fecha), String(r.proveedor || "").trim(),
+    typeof r.total === "number" ? fmt(r.total) : "por leer"].filter(Boolean).join(" · ");
+  const FUENTE_COSTO = { recibo: "Ticket", material: "Lista", libro: "Banco" };
+  const CATEGORIA_COSTO = { renta_equipo: "Renta de equipo", labor_externo: "Labor externa", permiso: "Permiso" };
+  const CUENTA_COSTO = { "5100": "Material", "5200": "Subcontrato", "5300": "Equipo y renta" };
+  function costosDeObra(p) {
+    return costosArmar({ proyecto: p.id, recibos: state.recibos || [], materiales: state.materiales || [],
+      libro: state.costosLibro || [], revision: state.costosRevision || {}, horas: state.registroHoras || [] });
+  }
+  function panelCostosHTML(p) {
+    if (!usuario.finanzas) return null;
+    const armado = costosDeObra(p);
+    return {
+      izq: costosFiltrosHTML(p, filtrosDeCostos(p.id), costosProveedores(armado.lineas)) +
+        `<div class="cst-caja" id="costos-compras-caja">${costosComprasHTML(p, armado)}</div>`,
+      der: `<div class="cst-caja" id="costos-horas-caja">${costosHorasHTML(p)}</div>`
+    };
+  }
+  function costosFiltrosHTML(p, f, proveedores) {
+    const opc = (v, txt, sel) => `<option value="${esc(v)}"${sel ? " selected" : ""}>${esc(txt)}</option>`;
+    // un proveedor elegido que ya no sale en la lista se queda en el selector (si no, el filtro mentiría)
+    const provs = f.proveedor && !proveedores.some(x => x.toLowerCase() === f.proveedor.toLowerCase()) ? proveedores.concat([f.proveedor]) : proveedores;
+    return `
+      <div class="cst-filtros" id="costos-filtros" role="group" aria-label="Filtros de costos">
+        <label class="cst-campo"><span>Desde</span><input type="date" name="desde" value="${esc(f.desde)}"></label>
+        <label class="cst-campo"><span>Hasta</span><input type="date" name="hasta" value="${esc(f.hasta)}"></label>
+        <label class="cst-campo"><span>Proveedor</span><select name="proveedor">${opc("", "Todos", !f.proveedor)}${provs.map(x => opc(x, x, f.proveedor.toLowerCase() === x.toLowerCase())).join("")}</select></label>
+        <label class="cst-campo"><span>Fase</span><select name="fase">${opc("", "Todas", !f.fase)}${COSTOS_FASES.map(x => opc(x, x, f.fase === x)).join("")}${opc("__sin", "Sin fase", f.fase === "__sin")}</select></label>
+        <label class="cst-check"><input type="checkbox" name="sinConciliar"${f.sinConciliar ? " checked" : ""}><span>Solo sin conciliar</span></label>
+        <button type="button" class="accion secundaria chica cst-limpiar" data-costos-limpiar${hayFiltroCostos(f) ? "" : " hidden"}>${ico("equis")}<span>Quitar filtros</span></button>
+      </div>`;
+  }
+  function costosTotalesFilasHTML(filas) {
+    return `<div class="cst-tot-lista">${filas.map(([etq, val, clase]) =>
+      `<div class="cst-tot-fila${clase ? " " + clase : ""}"><span>${esc(etq)}</span><span class="cst-num">${esc(val)}</span></div>`).join("")}</div>`;
+  }
+  function costosComprasHTML(p, armado) {
+    armado = armado || costosDeObra(p);
+    const f = filtrosDeCostos(p.id);
+    const lineas = costosFiltrar(armado.lineas, f);
+    costosUltimas.clear();
+    armado.lineas.forEach(l => costosUltimas.set(l.clave, l));
+    const leido = state.costosLeido || {};
+    const avisos = [
+      leido.libro === false ? "No pude leer el libro contable: aquí faltan los cargos del banco." : "",
+      leido.revision === false ? "No pude leer qué líneas están conciliadas: las casillas pueden salir sin marcar." : ""
+    ].filter(Boolean).map(t => `<p class="cst-aviso">${ico("alerta")}<span>${esc(t)}</span></p>`).join("");
+    let cuerpo;
+    if (!armado.lineas.length) cuerpo = `<p class="cal-sin-eventos">Todavía no hay compras en esta obra.</p>`;
+    else if (!lineas.length) cuerpo = `<p class="cal-sin-eventos">Ninguna compra con estos filtros.</p>`;
+    else {
+      const t = costosTotales(lineas);
+      const tot = `
+        <div class="cst-totales">
+          <div class="cst-tot"><span class="cst-tot-etq">Total</span><span class="cst-tot-num">${esc(fmt(t.total))}</span></div>
+          <div class="cst-tot"><span class="cst-tot-etq">Conciliado</span><span class="cst-tot-num"><span>${esc(`${t.conciliadas.n} de ${t.n} líneas`)}</span><span class="cst-tot-sub">${esc(fmt(t.conciliadas.importe))}</span></span></div>
+          ${t.sinPrecio ? `<p class="cst-sinprecio">${ico("ambar")}<span>${esc(t.sinPrecio === 1 ? "1 sin precio (no suma)" : `${t.sinPrecio} sin precio (no suman)`)}</span></p>` : ""}
+          ${t.porLeer ? `<p class="cst-sinprecio">${ico("ambar")}<span>${esc(t.porLeer === 1 ? "1 ticket por leer (no suma)" : `${t.porLeer} tickets por leer (no suman)`)}</span></p>` : ""}
+        </div>
+        ${plegableHTML(p, "costos-semanas", "Por semana", "", costosTotalesFilasHTML(t.semanas.map(s => [s.lunes ? `Semana del ${costosFechaCorta(s.lunes)}` : "Sin fecha", fmt(s.total)])), false)}
+        ${plegableHTML(p, "costos-fases", "Por fase", "", costosTotalesFilasHTML(t.fases.map(s => [s.fase || "Sin fase", fmt(s.total), s.fase ? "" : "sin"])), false)}`;
+      cuerpo = tot + `<div class="cst-lista">${lineas.map(l => costosLineaHTML(l, armado.tickets)).join("")}</div>`;
+    }
+    return `
+      <div class="detalle-seccion" id="costos-compras">
+        <h3>Compras y materiales</h3>
+        ${avisos}
+        ${cuerpo}
+        ${lineas.length ? `<button type="button" class="accion secundaria cst-csv" data-costos-csv="compras">${ico("doc")}<span>Descargar compras (.csv)</span></button>` : ""}
+      </div>`;
+  }
+  function costosLineaHTML(l, tickets) {
+    const imp = l.importe === null
+      ? `<span class="cst-imp ambar">${l.porLeer ? "por leer" : "sin precio"}</span>`
+      : `<span class="cst-imp${l.suma ? "" : " fuera"}">${esc(fmt(l.importe))}</span>`;
+    const fecha = l.fuente === "material"
+      ? (l.anotado ? `<span class="cst-fecha" title="Sin fecha de compra: es el día en que se anotó">${esc("anotado el " + costosFechaCorta(l.dia))}</span>`
+        : `<span class="cst-fecha"><span>${esc(costosFechaCorta(l.dia))}</span> <span class="cst-hora">${esc(costosHoraFL(l.hora))}</span></span>`)
+      : `<span class="cst-fecha">${esc(costosFechaCorta(l.dia))}</span>`;
+    const meta = [];
+    if (l.quien) meta.push(`<span class="cst-quien">${ico("persona")}<span>${esc(l.quien)}</span></span>`);
+    if (l.tarjeta) meta.push(`<span class="cst-tarjeta">${esc("tarjeta ····" + l.tarjeta)}</span>`);
+    if (l.fuente === "recibo" && CATEGORIA_COSTO[l.categoria]) meta.push(`<span class="cst-chip">${esc(CATEGORIA_COSTO[l.categoria])}</span>`);
+    if (l.fuente === "libro" && CUENTA_COSTO[l.cuenta] && l.cuenta !== "5100") meta.push(`<span class="cst-chip">${esc(CUENTA_COSTO[l.cuenta])}</span>`);
+    if (l.co) meta.push(`<span class="cst-chip co">${esc(l.co)}</span>`);
+    if (l.fuente === "recibo" && l.numeros.length) meta.push(`<span class="cst-chip libro">${ico("check")}<span>${esc("en el libro " + l.numeros.join(", "))}</span></span>`);
+    if (l.fuente === "libro" && l.numeros.length) meta.push(`<span class="cst-chip libro">${esc("Asiento " + l.numeros.join(", "))}</span>`);
+    if (l.ruta) meta.push(`<a class="doc-link cst-ver" data-ruta="${esc(l.ruta)}" target="_blank" rel="noopener">${ico("camara")}<span>Ver</span></a>`);
+    const sub = l.sub.length ? `
+        <div class="cst-sub">
+          <span class="cst-sub-tit">De la lista (ya van en este ticket)</span>
+          <ul>${l.sub.map(s => `<li><span>${esc(s.descripcion)}</span>${s.cantidad ? ` <span class="cst-sub-cant">${esc("— " + s.cantidad)}</span>` : ""}</li>`).join("")}</ul>
+        </div>` : "";
+    const pista = l.pista
+      ? `<p class="cst-pista">${ico("alerta")}<span>${esc(l.pista.proveedor ? `¿Es el ticket de ${l.pista.proveedor} del ${costosFechaCorta(l.pista.dia)}?` : `¿Es el ticket del ${costosFechaCorta(l.pista.dia)}?`)}</span></p>` : "";
+    const fuera = l.ticketFuera ? `<p class="cst-pista">${ico("alerta")}<span>Su ticket es de otra obra: no suma aquí.</span></p>` : "";
+    const nota = l.nota ? `<p class="cst-nota">${esc(l.nota)}</p>` : "";
+    const enlazar = l.fuente === "material" && !l.reciboId && tickets.length ? `
+          <select class="cst-enlazar" data-costo-enlazar="${esc(l.ref)}" aria-label="Enlazar ticket">
+            <option value="">Enlazar ticket…</option>
+            ${tickets.slice().sort((a, b) => String(b.fechaDoc || b.creado).localeCompare(String(a.fechaDoc || a.creado))).map(r =>
+              `<option value="${esc(r.id)}">${esc(costosOpcionTicket(r))}</option>`).join("")}
+          </select>` : "";
+    const faseTxt = l.fase || "Sin fase";
+    return `
+      <div class="cst-linea fuente-${esc(l.fuente)}${l.conciliada ? " conciliada" : ""}" data-clave="${esc(l.clave)}">
+        <div class="cst-cab">
+          ${fecha}
+          <span class="cst-chip fuente">${esc(FUENTE_COSTO[l.fuente] || l.fuente)}</span>
+          ${imp}
+        </div>
+        <div class="cst-desc">
+          ${l.proveedor ? `<span class="cst-prov">${esc(l.proveedor)}</span>` : ""}
+          ${l.descripcion ? `<span class="cst-txt">${esc(l.descripcion)}</span>` : ""}
+          ${l.cantidad ? `<span class="cst-cant">${esc("Cantidad: " + l.cantidad)}</span>` : ""}
+        </div>
+        ${meta.length ? `<div class="cst-meta">${meta.join("")}</div>` : ""}
+        ${sub}${pista}${fuera}${nota}
+        <div class="cst-acc">
+          <button type="button" class="cst-fase${l.faseOrigen === "deducida" ? " deducida" : ""}${l.fase ? "" : " sin"}" data-costo-fase="${esc(l.clave)}" aria-haspopup="dialog"
+            title="${l.faseOrigen === "deducida" ? "Deducida de las horas de ese día: toca para elegir otra" : "Toca para elegir la fase"}">${l.faseOrigen === "deducida" ? `<span class="cst-aprox" aria-hidden="true">≈</span>` : ""}<span>${esc(faseTxt)}</span>${ico("chevron")}</button>
+          <label class="cst-conc"><input type="checkbox" data-costo-conc="${esc(l.clave)}"${l.conciliada ? " checked" : ""}><span>Conciliada</span></label>
+          ${enlazar}
+        </div>
+      </div>`;
+  }
+  function costosHorasHTML(p) {
+    const f = filtrosDeCostos(p.id);
+    const todas = costosHoras(state.registroHoras || [], p.id, {});
+    const horas = costosHoras(state.registroHoras || [], p.id, f);
+    let cuerpo;
+    if (!todas.length) cuerpo = `<p class="cal-sin-eventos">Todavía no hay horas reportadas en esta obra.</p>`;
+    else if (!horas.length) cuerpo = `<p class="cal-sin-eventos">Ninguna hora con estos filtros.</p>`;
+    else {
+      const t = costosHorasTotales(horas);
+      const h = n => `${n} h`;
+      cuerpo = `
+        <div class="cst-totales">
+          <div class="cst-tot"><span class="cst-tot-etq">Total</span><span class="cst-tot-num">${esc(h(t.total))}</span></div>
+          <div class="cst-tot"><span class="cst-tot-etq">Reportes</span><span class="cst-tot-num">${esc(t.n)}</span></div>
+        </div>
+        ${plegableHTML(p, "costos-h-personas", "Por persona", "", costosTotalesFilasHTML(t.personas.map(x => [x.nombre || "Sin nombre", h(x.horas)])), true)}
+        ${plegableHTML(p, "costos-h-semanas", "Por semana", "", costosTotalesFilasHTML(t.semanas.map(x => [x.lunes ? `Semana del ${costosFechaCorta(x.lunes)}` : "Sin fecha", h(x.horas)])), false)}
+        ${plegableHTML(p, "costos-h-fases", "Por fase", "", costosTotalesFilasHTML(t.fases.map(x => [x.fase || "Sin fase", h(x.horas), x.fase ? "" : "sin"])), false)}
+        <div class="cst-lista">${horas.map(r => `
+          <div class="cst-linea cst-hora-fila">
+            <div class="cst-cab">
+              <span class="cst-fecha">${esc(costosFechaCorta(r.fecha))}</span>
+              <span class="cst-persona">${esc(r.trabajador || "")}</span>
+              <span class="cst-imp">${esc(h(Math.round((Number(r.horas) || 0) * 100) / 100))}</span>
+            </div>
+            <div class="cst-meta">
+              <span class="cst-chip${r.fase ? "" : " sin"}">${esc(r.fase || "Sin fase")}</span>
+              ${r.co ? `<span class="cst-chip co">${esc(r.co)}</span>` : ""}
+            </div>
+            ${(r.tareas || []).length ? `<ul class="cst-tareas">${r.tareas.map(x => `<li><span class="cst-t-nom">${esc(x.nombre)}</span><span class="cst-t-dato">${esc(h(Math.round(x.horas * 100) / 100))}</span>${x.cantidadHecha !== null ? `<span class="cst-t-dato">${esc(x.cantidadHecha === 1 ? "1 hecha" : `${x.cantidadHecha} hechas`)}</span>` : ""}${x.nota ? `<span class="cst-t-nota">${esc(x.nota)}</span>` : ""}</li>`).join("")}</ul>` : ""}
+            ${r.notas ? `<p class="cst-nota">${esc(r.notas)}</p>` : ""}
+          </div>`).join("")}
+        </div>`;
+    }
+    return `
+      <div class="detalle-seccion" id="costos-horas">
+        <h3>Horas</h3>
+        ${cuerpo}
+        ${horas.length ? `<button type="button" class="accion secundaria cst-csv" data-costos-csv="horas">${ico("doc")}<span>Descargar horas (.csv)</span></button>` : ""}
+      </div>`;
+  }
+  // Repinta solo las dos cajas (la barra de filtros se queda: no se pierde lo que se está escribiendo)
+  function repintarCostos(p, { conFiltros = false, foco = "" } = {}) {
+    const sec = $detalle.querySelector("#panel-costos");
+    if (!sec || !p) return;
+    const armado = costosDeObra(p);
+    const c1 = sec.querySelector("#costos-compras-caja"), c2 = sec.querySelector("#costos-horas-caja");
+    if (conFiltros) {
+      const fil = sec.querySelector("#costos-filtros");
+      if (fil) fil.outerHTML = costosFiltrosHTML(p, filtrosDeCostos(p.id), costosProveedores(armado.lineas));
+    }
+    if (c1) c1.innerHTML = costosComprasHTML(p, armado);
+    if (c2) c2.innerHTML = costosHorasHTML(p);
+    if (foco) { const el = sec.querySelector(foco); if (el) el.focus({ preventScroll: true }); }
+    firmarVerCostos();
+  }
+  // Las fotos de los tickets: el enlace firmado (una hora) se pide cuando la pestaña está a la vista
+  function firmarVerCostos() {
+    const sec = $detalle.querySelector("#panel-costos");
+    if (!sec || sec.hidden) return;
+    const ahora = Date.now(), faltan = new Set();
+    sec.querySelectorAll("a.cst-ver[data-ruta]").forEach(a => {
+      const c = costosFirmas.get(a.dataset.ruta);
+      if (c && c.hasta > ahora) a.href = c.url; else faltan.add(a.dataset.ruta);
+    });
+    if (!faltan.size) return;
+    DB.firmarFotos([...faltan]).then(mapa => {
+      for (const r of Object.keys(mapa || {})) costosFirmas.set(r, { url: mapa[r], hasta: Date.now() + 40 * 60000 });
+      sec.querySelectorAll("a.cst-ver[data-ruta]").forEach(a => { if (mapa[a.dataset.ruta]) a.href = mapa[a.dataset.ruta]; });
+    }).catch(() => avisar("No se pudieron cargar las fotos de los tickets — revisa la señal.", true));
+  }
+  // La casilla «Conciliada» y la fase: cambio optimista; si la base dice que no, se deshace y se dice en llano
+  async function marcarCostoEnVivo(p, l, cambios) {
+    state.costosRevision = state.costosRevision || {};
+    const clave = l.fuente + ":" + l.ref;
+    const antes = state.costosRevision[clave] ? { ...state.costosRevision[clave] } : null;
+    const nuevo = { ...(antes || { proyecto: p.id, conciliada: false, fase: "", nota: "" }) };
+    if ("conciliada" in cambios) nuevo.conciliada = !!cambios.conciliada;
+    if ("fase" in cambios) nuevo.fase = cambios.fase || "";
+    state.costosRevision[clave] = nuevo;
+    const foco = "conciliada" in cambios ? `[data-costo-conc="${CSS.escape(l.clave)}"]` : `[data-costo-fase="${CSS.escape(l.clave)}"]`;
+    repintarCostos(p, { foco });
+    try {
+      const fila = await DB.marcarCosto(l.fuente, l.ref, p.id, cambios);
+      const x = Array.isArray(fila) ? fila[0] : fila;
+      if (x && typeof x === "object" && x.fuente) {
+        state.costosRevision[clave] = { proyecto: x.proyecto_id || p.id, conciliada: x.conciliada === true, fase: x.fase || "",
+          nota: x.nota || "", actualizadoEl: x.actualizado_el ? String(x.actualizado_el) : "" };
+        guardarCopia(state);
+        if (proyectoActivo === p.id) repintarCostos(p, { foco });
+      }
+    } catch (err) {
+      if (antes) state.costosRevision[clave] = antes; else delete state.costosRevision[clave];
+      if (proyectoActivo === p.id) repintarCostos(p, { foco });
+      avisar(esFalloDeRed(err) ? "Sin señal: no se guardó. Vuelve a intentarlo cuando haya señal." : "No se pudo guardar: " + err.message, true);
+    }
+  }
+  async function elegirFaseCosto(p, clave) {
+    const l = costosUltimas.get(clave);
+    if (!l) return;
+    const deLibro = l.fuente === "libro" && l.faseOrigen === "libro";
+    const sinElegir = l.faseOrigen !== "elegida";
+    const v = await hojaAcciones({
+      titulo: "Fase de esta compra", sub: l.descripcion || l.proveedor || "",
+      grupos: [{ titulo: "", opciones: [
+        { valor: "__deducida", texto: deLibro ? "La del libro" : "La deducida", icono: "deshacer", clase: sinElegir ? "puesto" : "",
+          sub: deLibro ? l.fase : (l.faseDeducida ? "≈ " + l.faseDeducida : "Sin horas cerca de ese día") },
+        ...COSTOS_FASES.map(f => ({ valor: f, texto: f, clase: !sinElegir && l.fase === f ? "puesto" : "" }))
+      ] }]
+    });
+    if (!v) return;
+    if (v === "__deducida") { if (sinElegir) return; marcarCostoEnVivo(p, l, { fase: null }); return; }
+    if (!sinElegir && l.fase === v) return;
+    marcarCostoEnVivo(p, l, { fase: v });
+  }
+  async function enlazarTicketCosto(p, materialId, reciboId, sel) {
+    if (!reciboId) return;
+    sel.disabled = true;
+    try {
+      await DB.cambiarMaterial(materialId, { recibo_id: Number(reciboId) });
+      await recargar(p.id, "costos_mat");
+      avisar("Material enlazado al ticket ✓");
+    } catch (err) {
+      sel.disabled = false; sel.value = "";
+      avisar(esFalloDeRed(err) ? "Sin señal: no se enlazó. Vuelve a intentarlo cuando haya señal." : "No se pudo enlazar: " + err.message, true);
+    }
+  }
+  function bajarCSVCostos(p, que) {
+    const f = filtrosDeCostos(p.id);
+    const filas = que === "horas" ? costosFilasHorasCSV(costosHoras(state.registroHoras || [], p.id, f))
+      : costosFilasCSV(costosFiltrar(costosDeObra(p).lineas, f));
+    const nom = (que === "horas" ? "Horas-" : "Costos-") + String(p.id).replace(/[^\w\-.]+/g, "") + "-" + costosDiaFL(new Date().toISOString()) + ".csv";
+    const blob = new Blob([costosCSV(filas)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = nom;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    avisar("✓ " + nom + " — ábrelo en Excel");
+  }
+  // Los toques de la pestaña Costos: se escuchan UNA vez sobre #detalle (como engancharFichaDelegada)
+  let costosDelegado = false;
+  function engancharCostosDelegado() {
+    if (costosDelegado) return;
+    costosDelegado = true;
+    $detalle.addEventListener("change", ev => {
+      const t = ev.target;
+      if (!t || !t.closest || !usuario || !usuario.finanzas || !t.closest("#panel-costos")) return;
+      const p = proyectoPorId(proyectoActivo);
+      if (!p) return;
+      const fil = t.closest("#costos-filtros");
+      if (fil) {
+        const v = n => { const e = fil.querySelector(`[name="${n}"]`); return e ? e.value : ""; };
+        const f = { desde: v("desde"), hasta: v("hasta"), proveedor: v("proveedor"), fase: v("fase"),
+          sinConciliar: !!(fil.querySelector('[name="sinConciliar"]') || {}).checked };
+        // Una fecha a medio escribir con el teclado (Chrome avisa con cada número: «0002-10-28») no se aplica todavía
+        if ((t.name === "desde" || t.name === "hasta") && t.value && Number(t.value.slice(0, 4)) < 2000) return;
+        costosFiltros.set(p.id, f);
+        // La barra NO se rehace (se perdería el cursor de la fecha que se está escribiendo): solo el botón «Quitar filtros»
+        const limpiar = fil.querySelector("[data-costos-limpiar]");
+        if (limpiar) limpiar.hidden = !hayFiltroCostos(f);
+        repintarCostos(p);
+        return;
+      }
+      if (t.matches("[data-costo-conc]")) {
+        const l = costosUltimas.get(t.dataset.costoConc);
+        if (l) marcarCostoEnVivo(p, l, { conciliada: t.checked });
+        return;
+      }
+      if (t.matches("[data-costo-enlazar]")) enlazarTicketCosto(p, t.dataset.costoEnlazar, t.value, t);
+    });
+    $detalle.addEventListener("click", ev => {
+      const t = ev.target;
+      if (!t || !t.closest || !usuario || !usuario.finanzas || !t.closest("#panel-costos")) return;
+      const p = proyectoPorId(proyectoActivo);
+      if (!p) return;
+      let el;
+      if ((el = t.closest("[data-costo-fase]"))) { elegirFaseCosto(p, el.dataset.costoFase); return; }
+      if ((el = t.closest("[data-costos-csv]"))) { bajarCSVCostos(p, el.dataset.costosCsv); return; }
+      if ((el = t.closest("[data-costos-limpiar]"))) { costosFiltros.delete(p.id); repintarCostos(p, { conFiltros: true }); return; }
+      if ((el = t.closest("a.cst-ver")) && !el.getAttribute("href")) {
+        ev.preventDefault();
+        avisar("La foto del ticket todavía se está cargando: tócala otra vez en un momento.");
+        firmarVerCostos();
+      }
+    });
+  }
+  engancharCostosDelegado();
 
   // ---- Hoja que sube desde abajo (en la computadora sale centrada) ----
   // grupos: [{ titulo, fichas?: bool, opciones: [{ valor, texto, sub, icono, clase: "principal"|"peligro"|"puesto", dinero, editar, href }] }]
@@ -5210,6 +5837,7 @@ function esFalloDeRed(err) {
     });
     art.querySelectorAll(".ficha-panel").forEach(s => { s.hidden = s.dataset.pestana !== k; });
     guardarPestana(proyectoActivo, k);
+    if (k === "costos") firmarVerCostos();
     if (sinDesplazar) return;
     // Si la barra ya está pegada arriba, el panel nuevo empieza justo debajo de ella
     const barra = art.querySelector(".ficha-pestanas");
@@ -5445,14 +6073,14 @@ function esFalloDeRed(err) {
   const fechaHoraCorta = iso => { const d = new Date(iso || ""); return isNaN(d.getTime()) ? "" :
     d.toLocaleString(LOCALE, { timeZone: "America/New_York", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }); };
   // La ficha: tablero + barra de pestañas + un panel por pestaña. Los paneles de
-  // Dinero y Cliente NI SE GENERAN para el equipo de campo.
+  // Dinero, Costos y Cliente NI SE GENERAN para el equipo de campo.
   function fichaProyectoHTML(p) {
     const activa = pestanaDe(p);
     const paneles = [["resumen", panelResumenHTML(p)], ["obra", panelObraHTML(p)]];
-    if (usuario.finanzas) paneles.push(["dinero", panelDineroHTML(p)], ["cliente", panelClienteHTML(p)]);
+    if (usuario.finanzas) paneles.push(["dinero", panelDineroHTML(p)], ["costos", panelCostosHTML(p)], ["cliente", panelClienteHTML(p)]);
     paneles.push(["archivos", panelArchivosHTML(p)]);
     const panel = ([k, c]) => `
-        <section class="ficha-panel${k === "obra" ? " panel-obra" + (fichaVista.editando.has(p.id) ? " editando" : "") : ""}" id="panel-${k}" role="tabpanel" aria-labelledby="tab-${k}" data-pestana="${k}"${k === activa ? "" : " hidden"}>
+        <section class="ficha-panel${k === "obra" ? " panel-obra" + (fichaVista.editando.has(p.id) ? " editando" : "") : k === "costos" ? " panel-costos" : ""}" id="panel-${k}" role="tabpanel" aria-labelledby="tab-${k}" data-pestana="${k}"${k === activa ? "" : " hidden"}>
           ${k === "archivos" && usuario.finanzas && p.portalCompleto
             ? `<div class="aviso-luzverde">${ico("verde")}<span>Luz verde encendida: el cliente ve todos los documentos, fotos y videos de esta obra.</span></div>` : ""}
           <div class="proyecto-detalle">
@@ -6002,6 +6630,8 @@ function esFalloDeRed(err) {
     // v280 (pliego §13 E4): «Repartir las horas por fase» (solo el dueño lo tiene en pantalla)
     const cajaHoras = $detalle.querySelector("#ficha-horas");
     if (cajaHoras && usuario.finanzas) engancharRepartoFase(cajaHoras);
+    // 31-oct: las fotos de los tickets de la pestaña Costos (solo si está a la vista)
+    if (usuario.finanzas) firmarVerCostos();
 
     $detalle.querySelectorAll(".accion").forEach(btn => {
       if (btn.dataset.accion)
@@ -7741,12 +8371,31 @@ function esFalloDeRed(err) {
           `<option value="${esc(x.id)}"${x.id === m.proyecto ? " selected" : ""}>${esc(nombreVis(x.nombre))}</option>`).join("");
     };
 
+    // 31-oct (Costos): si la base ya guarda cuándo y quién compró (parte B de etapa6/COSTOS-OBRA.sql), los comprados lo
+    // dicen; el dueño los corrige en el lápiz, y ahí también enlaza el material con su ticket
+    const conComprado = state.materialesConComprado === true;
+    const equipoActivo = (state.equipo || []).filter(u => u.activo);
+    const ticketsDe = pid => (state.recibos || []).filter(r => r.estado !== "anulado" && r.proyecto && r.proyecto === pid)
+      .slice().sort((a, b) => String(b.fechaDoc || b.creado || b.fecha).localeCompare(String(a.fechaDoc || a.creado || a.fecha)));
+    const opcionTicket = (r, sel) => `<option value="${esc(r.id)}"${sel ? " selected" : ""}>${esc(costosOpcionTicket(r))}</option>`;
+    const opcionesTicket = m => {
+      const ts = ticketsDe(m.proyecto);
+      const suyo = m.reciboId !== null && m.reciboId !== undefined ? String(m.reciboId) : "";
+      // si su ticket es de otra obra, se queda en la lista para no soltarlo sin querer al guardar
+      const otro = suyo && !ts.some(r => String(r.id) === suyo) ? (state.recibos || []).find(r => String(r.id) === suyo) : null;
+      return `<option value=""${!suyo ? " selected" : ""}>— sin ticket —</option>` + ts.map(r => opcionTicket(r, String(r.id) === suyo)).join("") +
+        (otro ? opcionTicket(otro, true) : suyo && !ts.length ? `<option value="${esc(suyo)}" selected>${esc("Ticket " + suyo)}</option>` : "");
+    };
+    const lineaComprado = m => conComprado && m.estado === "comprado" && m.compradoEl
+      ? `<span class="alcance-estado mat-comprado-el"><span>${esc("Comprado " + costosFechaCorta(costosDiaFL(m.compradoEl)))}</span> <span>${esc(costosHoraFL(m.compradoEl))}</span>${m.compradoPor ? ` <span>${esc("· " + m.compradoPor)}</span>` : ""}</span>` : "";
+
     const filaMat = m => `
       <div class="mat-item ${m.estado}">
         <span class="mat-icono">${m.estado === "falta" ? ico("rojo") : "✓"}</span>
         <span class="alcance-info">
           <span class="alcance-titulo">${esc(sinMontos(m.descripcion))}${m.cantidad ? ` <span class="mat-cant">— ${esc(sinMontos(m.cantidad))}</span>` : ""}</span>
           <span class="alcance-estado">${esc(nombreProy(m.proyecto))} · ${esc(m.autor)} ${esc(m.fecha)}</span>
+          ${lineaComprado(m)}
         </span>
         ${usuario.finanzas && m.estado === "comprado" && typeof m.precio === "number" ? `<span class="mat-precio">${fmt(m.precio)}</span>` : ""}
         ${usuario.editar && m.estado === "falta" ? `<button class="accion btn-mat-comprado" data-id="${m.id}">✓ Comprado</button>` : ""}
@@ -7769,7 +8418,22 @@ function esFalloDeRed(err) {
         <label>Precio pagado ($) — para el control de gastos
           <input name="precio" type="number" min="0" step="0.01" inputmode="decimal"
             value="${typeof m.precio === "number" ? m.precio : ""}" placeholder="Ej: 45.99">
+        </label>
+        ${m.estado === "comprado" || (m.reciboId !== null && m.reciboId !== undefined) ? `
+        <label>Ticket (con qué compra se pagó)
+          <select name="recibo_id">${opcionesTicket(m)}</select>
         </label>` : ""}
+        ${conComprado && m.estado === "comprado" ? `
+          <label>Lo compró
+            <select name="comprado_por">
+              <option value=""${!m.compradoPorId ? " selected" : ""}>— sin apuntar —</option>
+              ${equipoActivo.concat(m.compradoPorId && !equipoActivo.some(u => u.id === m.compradoPorId) ? [{ id: m.compradoPorId, nombre: m.compradoPor || "Otra persona" }] : [])
+                .map(u => `<option value="${esc(u.id)}"${u.id === m.compradoPorId ? " selected" : ""}>${esc(u.nombre)}</option>`).join("")}
+            </select>
+          </label>
+          <label>Comprado el (hora de Florida)
+            <input name="comprado_el" type="datetime-local" value="${esc(costosLocalFL(m.compradoEl))}">
+          </label>` : ""}` : ""}
         <div class="modal-botones">
           <button type="button" class="accion secundaria btn-mat-eliminar" data-id="${m.id}">Eliminar</button>
           <button type="submit" class="accion">Guardar cambios</button>
@@ -8245,6 +8909,18 @@ function esFalloDeRed(err) {
         if (usuario.finanzas) {
           const precioTxt = (d.get("precio") || "").toString().trim();
           cambios.precio = precioTxt !== "" && Number.isFinite(Number(precioTxt)) ? Number(precioTxt) : null;
+          // 31-oct (Costos): el ticket con que se compró y, si la base ya tiene las columnas, cuándo y quién
+          if (form.elements.recibo_id) {
+            const rid = String(d.get("recibo_id") || "").trim();
+            cambios.recibo_id = rid && Number.isFinite(Number(rid)) ? Number(rid) : null;
+          }
+          if (state.materialesConComprado === true && form.elements.comprado_por) {
+            cambios.comprado_por = String(d.get("comprado_por") || "") || null;
+            const cuando = String(d.get("comprado_el") || "").trim();
+            const iso = cuando ? costosISOdeFL(cuando) : null;
+            if (cuando && !iso) { avisar("Esa fecha de compra no se entendió: elígela otra vez en el calendario.", true); return; }
+            cambios.comprado_el = iso;
+          }
         }
         try {
           await DB.cambiarMaterial(form.dataset.id, cambios);
