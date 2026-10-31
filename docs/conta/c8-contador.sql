@@ -131,16 +131,19 @@
 --
 -- EL GASTO. La app ya tiene montado el tope de la IA: asistente_ajustes
 -- (tope_mes_centavos, aviso_pct) y asistente_costo_mes (mes, accion,
--- llamadas, centavos), que en producción (y en el banco de pruebas) es una
--- VISTA sobre la tabla asistente_uso (docs/conta/ESQUEMA-REAL.md). Por
--- eso fn_contador_lote_cerrar anota cada lote donde toque: si
--- asistente_costo_mes es una tabla (una base sin la app: este archivo la
--- crea entonces, con la forma de la app), una fila por mes y acción con
--- «llamadas += n»; si es la vista de la app, una fila en asistente_uso
--- (accion «contador_categorizar», vueltas = las llamadas del lote, sus
--- tokens y sus centavos), que la vista suma. El tope mira siempre
--- asistente_costo_mes: los mismos números que la app enseña en «ojo, ya
--- vas por el 80 % del mes». Los centavos: (entrada × 400 + caché creado ×
+-- llamadas, centavos, …), que en producción (y en el banco de pruebas) es
+-- una VISTA sobre la tabla asistente_uso, una fila por llamada
+-- (docs/conta/ESQUEMA-REAL.md). Por eso fn_contador_lote_cerrar anota cada
+-- lote como una fila en asistente_uso (usuario_id el dueño, rol «dueno»,
+-- el modelo, accion «contador_categorizar», vueltas = las llamadas del
+-- lote, sus tokens de entrada, salida, caché leído y escrito, y sus
+-- centavos), que la vista suma; y el tope mira siempre asistente_costo_mes:
+-- los mismos números que la app enseña en «ojo, ya vas por el 80 % del
+-- mes». Una base sin la app (el banco de pruebas de cero) no trae ninguna
+-- de las dos: este archivo las crea entonces, tabla y vista, con la forma
+-- exacta de la app; las que ya existen no se tocan. (Si en alguna base
+-- asistente_costo_mes fuera una TABLA, el gasto se suma allí, una fila por
+-- mes y acción.) Los centavos: (entrada × 400 + caché creado ×
 -- 500 + caché leído × 20 + salida × 2000) / 1 000 000, redondeado: el
 -- precio de claude-opus-5-5 por millón de tokens ($4 / $20, caché escrito
 -- $5, leído $0.20), en céntimos de dólar. Dos topes: el global de la app
@@ -176,13 +179,17 @@
 --   · EL NOMBRE DEL COMERCIO de una regla aprendida (fn_contador_nombre_
 --     comercio): las primeras palabras de desc_norm hasta la primera que
 --     trae un número (el número de tienda, el de confirmación, una fecha;
---     la primera palabra se conserva aunque lo traiga: «7 ELEVEN»), sin
---     «#», y sin la ciudad ni el estado del final (los estados de EE. UU. y
---     las ciudades de Florida que Edgar pisa; «WWW», «COM» sueltos). «THE
---     HOME DEPOT 6341 OCALA FL» → «THE HOME DEPOT». El patrón es «^» más
---     ese nombre escapado, tal cual pide el contrato (sin cierre de
---     palabra: «^SHELL» casa «SHELL OIL 57544» y también «SHELLFISH»; si
---     eso molesta, Edgar dicta la regla con su patrón).
+--     la primera palabra se conserva aunque lo traiga: «7 ELEVEN»), sin la
+--     forma de pago delante («POS DEBIT»), sin «#», y sin la ciudad ni el
+--     estado del final (los estados de EE. UU. y las ciudades de Florida
+--     que Edgar pisa; «WWW», «COM» sueltos). «THE HOME DEPOT 6341 OCALA
+--     FL» → «THE HOME DEPOT». Un cheque («CHECK 1043»), un Zelle solo, un
+--     número o una ciudad solos no son un comercio: no nace regla (una
+--     «^CHECK» casaría con todos los cheques) y la respuesta lo dice; Edgar
+--     dicta esa regla con su patrón. El patrón es «^» más ese nombre
+--     escapado, tal cual pide el contrato (sin cierre de palabra: «^SHELL»
+--     casa «SHELL OIL 57544» y también «SHELLFISH»; si eso molesta, Edgar
+--     dicta la regla con su patrón).
 --   · LAS PARTES. Una regla con varias líneas guarda la fracción de cada
 --     una («parte», suman 1); al aplicarla, cada línea lleva su monto
 --     (redondeado al centavo; la última absorbe el redondeo). Una regla
@@ -224,8 +231,9 @@
 --      activas, lo que espera en la bandeja sin propuesta, el control («0
 --      cuadres rojos · n alarmas») y el paso siguiente. Si algo de lo que
 --      da por hecho falta, para con MX000 y no queda nada.
---   2. SQL Editor → pegar docs/conta/c8-pruebas.sql → todas las filas en
---      true (el número lo dice su cabecera).
+--   2. SQL Editor → pegar docs/conta/c8-pruebas.sql → 25 filas, todas en
+--      true (cada una siembra sus cargos de prueba y los deshace; no toca
+--      la bandeja real).
 --   3. console.anthropic.com → API keys → «Create key» (una NUEVA, solo
 --      para el contador) → Supabase → Edge Functions → Secrets →
 --      ANTHROPIC_API_KEY. Nunca MXP_BANCO_PRUEBAS, MXP_DB_URL ni
@@ -307,14 +315,18 @@ begin
   if not exists (select 1 from perfiles p where p.rol = 'dueno' and coalesce(p.activo, true)) then
     return 'no hay un dueño activo en perfiles: las propuestas se aprueban en su nombre.';
   end if;
-  -- Dónde se anota el gasto: la tabla asistente_costo_mes (si no está, se
-  -- crea aquí), o la vista de la app sobre asistente_uso (y entonces
-  -- asistente_uso tiene que ser una tabla).
+  -- Dónde se anota el gasto: la vista de la app asistente_costo_mes sobre
+  -- la tabla asistente_uso (si faltan las dos, se crean aquí con su forma;
+  -- si está la tabla y falta la vista, se crea la vista), o una tabla
+  -- asistente_costo_mes.
   select c.relkind into v_k from pg_class c where c.oid = to_regclass('public.asistente_costo_mes');
   if v_k = 'v' and (select r.relkind from pg_class r where r.oid = to_regclass('public.asistente_uso')) is distinct from 'r' then
     return 'asistente_costo_mes es una vista y no hay una tabla asistente_uso donde anotar el gasto: no sé dónde apuntar cada ráfaga.';
   elsif v_k is not null and v_k not in ('r', 'v') then
     return format('asistente_costo_mes existe pero no es una tabla ni una vista (relkind %s).', v_k);
+  elsif v_k is null and to_regclass('public.asistente_uso') is not null
+        and (select r.relkind from pg_class r where r.oid = to_regclass('public.asistente_uso')) <> 'r' then
+    return 'asistente_uso existe pero no es una tabla: no sé dónde apuntar el gasto de cada ráfaga.';
   end if;
   -- Nada ajeno colgado de las vistas de c8 (se borran y se rehacen).
   select string_agg(distinct format('la vista %s', dc.oid::regclass), ', ') into v_x
@@ -353,23 +365,69 @@ end $$;
 --    foráneas solo a movimientos_banco, asientos, cuentas, proyectos y
 --    entre tablas de c8. Para crecer, «add column if not exists».
 -- ---------------------------------------------------------------------
--- El tope de la app, si en esta base no existe (en producción YA existe,
--- de otra sesión, y no se toca: asistente_costo_mes es allí una vista
--- sobre asistente_uso, y asistente_ajustes trae sus filas).
-create table if not exists public.asistente_costo_mes (
-  mes           text   not null,
-  accion        text   not null,
-  llamadas      bigint not null default 0,
-  centavos      bigint not null default 0,
-  entrada       bigint not null default 0,
-  salida        bigint not null default 0,
-  cache_lectura bigint not null default 0,
-  constraint asistente_costo_mes_pk primary key (mes, accion)
-);
-create table if not exists public.asistente_ajustes (
-  clave text primary key,
-  valor text
-);
+-- El gasto y el tope de la app, SOLO si en esta base no existen (en
+-- producción YA existen, de otra sesión, y no se tocan): la tabla
+-- asistente_uso (una fila por llamada a la IA) y su vista
+-- asistente_costo_mes (mes, accion, llamadas, centavos, entrada, salida,
+-- cache_lectura), con la forma exacta de la app (docs/conta/ESQUEMA-REAL.md),
+-- y asistente_ajustes con sus dos filas. Si asistente_uso existe y la
+-- vista no, se crea solo la vista sobre ella.
+do $$
+begin
+  if to_regclass('public.asistente_uso') is null and to_regclass('public.asistente_costo_mes') is null then
+    create table public.asistente_uso (
+      id              bigint      generated always as identity primary key,
+      usuario_id      uuid        references public.perfiles (id),
+      rol             text,
+      modelo          text,
+      entrada         integer     default 0,
+      salida          integer     default 0,
+      vueltas         integer     default 1,
+      creado          timestamptz default now(),
+      accion          text,
+      cache_lectura   integer     default 0,
+      cache_escritura integer     default 0,
+      ms              integer,
+      resultado       text,
+      costo_centavos  integer,
+      letras          integer,
+      proyecto_id     text
+    );
+    comment on table public.asistente_uso is 'La app: cada llamada a la IA con sus tokens y sus centavos (la creó c8 porque esta base no la traía; en producción es de la app).';
+    alter table public.asistente_uso enable row level security;
+    create policy "dueno ve el gasto del asistente" on public.asistente_uso for select using (es_dueno());
+    revoke all on public.asistente_uso from public, anon, authenticated, service_role;
+    grant select on public.asistente_uso to authenticated;
+    revoke all on sequence public.asistente_uso_id_seq from public, anon, authenticated, service_role;
+  end if;
+  if to_regclass('public.asistente_costo_mes') is null
+     and (select c.relkind from pg_class c where c.oid = to_regclass('public.asistente_uso')) = 'r' then
+    create view public.asistente_costo_mes with (security_invoker = true) as
+    select to_char(u.creado at time zone 'America/New_York', 'YYYY-MM') as mes,
+           coalesce(u.accion, 'asistente')                               as accion,
+           count(*)                                                       as llamadas,
+           coalesce(sum(u.costo_centavos), 0)                             as centavos,
+           coalesce(sum(u.entrada), 0)                                    as entrada,
+           coalesce(sum(u.salida), 0)                                     as salida,
+           coalesce(sum(u.cache_lectura), 0)                              as cache_lectura
+      from public.asistente_uso u
+     group by 1, 2;
+    comment on view public.asistente_costo_mes is 'La app: el gasto de la IA por mes y acción, sumado de asistente_uso (la creó c8 porque esta base no la traía).';
+    revoke all on public.asistente_costo_mes from public, anon, authenticated, service_role;
+    grant select on public.asistente_costo_mes to authenticated;
+  end if;
+  if to_regclass('public.asistente_ajustes') is null then
+    create table public.asistente_ajustes (
+      clave text primary key,
+      valor text
+    );
+    comment on table public.asistente_ajustes is 'La app: los ajustes del asistente (tope_mes_centavos, aviso_pct) (la creó c8 porque esta base no la traía).';
+    alter table public.asistente_ajustes enable row level security;
+    create policy "ajustes asistente solo dueno" on public.asistente_ajustes to authenticated using (es_dueno()) with check (es_dueno());
+    revoke all on public.asistente_ajustes from public, anon, authenticated, service_role;
+    grant select on public.asistente_ajustes to authenticated;
+  end if;
+end $$;
 insert into public.asistente_ajustes (clave, valor)
 values ('tope_mes_centavos', '10000'), ('aviso_pct', '80')
 on conflict (clave) do nothing;
@@ -749,10 +807,13 @@ comment on function public.fn_contador_regex_valida(text) is 'c8: nulo si el pat
 -- EL NOMBRE DEL COMERCIO de una descripción normalizada del banco: las
 -- primeras palabras hasta la primera que trae un número (el número de la
 -- tienda, el de confirmación, una fecha; la primera se conserva aunque lo
--- traiga: «7 ELEVEN»), sin «#», y sin la ciudad ni el estado del final
--- («THE HOME DEPOT 6341 OCALA FL» → «THE HOME DEPOT»; «TST FIREHOUSE SUBS
--- OCALA FL» → «TST FIREHOUSE SUBS»). Como mucho cinco palabras. Nulo si no
--- queda nada con sentido (dos letras o menos).
+-- traiga: «7 ELEVEN»), sin la forma de pago delante («POS DEBIT»), sin
+-- «#», y sin la ciudad ni el estado del final («THE HOME DEPOT 6341 OCALA
+-- FL» → «THE HOME DEPOT»; «TST FIREHOUSE SUBS OCALA FL» → «TST FIREHOUSE
+-- SUBS»). Como mucho cinco palabras. Nulo si no queda nada con sentido
+-- (dos letras o menos, un número solo, o una palabra del banco sola:
+-- «CHECK 1043» no es un comercio, y una regla «^CHECK» casaría con todos
+-- los cheques).
 create or replace function public.fn_contador_nombre_comercio(p text) returns text
 language plpgsql immutable
 set search_path = public, pg_temp
@@ -773,6 +834,15 @@ declare
                                       'FORT LAUDERDALE','HOLLYWOOD','WEST PALM BEACH','BOCA RATON','MELBOURNE','PALM BAY','TITUSVILLE',
                                       'COCOA','TALLAHASSEE','PENSACOLA','PANAMA CITY','DESTIN','LAKE CITY','STARKE','PALATKA'];
   c_sueltas constant text[] := array['WWW','COM','NET','ORG','HTTPS','HTTP'];
+  -- lo que el banco pone DELANTE del comercio (la forma de pago, no quién
+  -- cobró): «POS DEBIT WAWA 5234» es WAWA
+  c_delante constant text[] := array['POS','DEBIT','CREDIT','PURCHASE','CHECKCARD','CARD','DBT','CRD','VISA','RECURRING','ONLINE'];
+  -- y lo que, solo, no es ningún comercio: una regla «^CHECK» o «^ZELLE»
+  -- casaría con todos los cheques o todos los Zelle (un cheque es «CHECK
+  -- 1043»: el comercio no está en la descripción; Edgar dicta la regla)
+  c_genericas constant text[] := array['CHECK','CHEQUE','CHK','DEBIT','CREDIT','PURCHASE','POS','ATM','WITHDRAWAL','WITHDRAWL',
+                                       'DEPOSIT','PAYMENT','PMT','TRANSFER','XFER','ONLINE','CARD','FEE','ACH','WIRE','ZELLE','VENMO',
+                                       'PAYPAL','CASHAPP','SQ','TST','APLPAY','GOOGLE','APPLE','PAY'];
   v_t   text[];
   v_out text[] := '{}';
   v_i   int;
@@ -782,12 +852,19 @@ begin
   perform fn_contador_exigir();
   if coalesce(btrim(p), '') = '' then return null; end if;
   v_t := regexp_split_to_array(btrim(regexp_replace(upper(p), '\s+', ' ', 'g')), ' ');
+  while cardinality(v_t) > 1 and v_t[1] = any (c_delante) loop
+    v_t := v_t[2 : cardinality(v_t)];
+  end loop;
   for v_i in 1 .. cardinality(v_t) loop
     exit when v_i > 1 and v_t[v_i] ~ '[0-9]';
     continue when v_t[v_i] in ('#', '&', '*');
     v_out := v_out || regexp_replace(v_t[v_i], '^#', '');
     exit when cardinality(v_out) >= 5;
   end loop;
+  -- (solo un número —«1043»—: no es un comercio)
+  if cardinality(v_out) = 1 and v_out[1] ~ '^[0-9]+$' then
+    return null;
+  end if;
   -- la ciudad y el estado del final
   loop
     v_n := cardinality(v_out);
@@ -810,10 +887,14 @@ begin
   if cardinality(v_out) = 0 or length(array_to_string(v_out, ' ')) <= 2 then
     return null;
   end if;
+  -- (una palabra del banco, una ciudad o un estado solos tampoco)
+  if cardinality(v_out) = 1 and (v_out[1] = any (c_genericas) or v_out[1] = any (c_ciudades) or v_out[1] = any (c_estados)) then
+    return null;
+  end if;
   return array_to_string(v_out, ' ');
 end $$;
 revoke execute on function public.fn_contador_nombre_comercio(text) from public, anon, authenticated, service_role;
-comment on function public.fn_contador_nombre_comercio(text) is 'c8: el comercio de una descripción normalizada del banco (las primeras palabras, sin números, sin «#» y sin la ciudad ni el estado del final), o nulo.';
+comment on function public.fn_contador_nombre_comercio(text) is 'c8: el comercio de una descripción normalizada del banco (las primeras palabras, sin la forma de pago delante, sin números, sin «#» y sin la ciudad ni el estado del final), o nulo (un cheque, un Zelle o un número solos no son un comercio).';
 
 -- ¿Puede proponerse (o elegirse) esta cuenta para un cargo del banco?
 -- Nulo = sí (está en v_contador_cuentas); si no, el porqué en llano, para
@@ -1174,11 +1255,12 @@ end $$;
 revoke execute on function public.fn_contador_lote_abrir(uuid, text, text, text, text, int) from public, anon, authenticated, service_role;
 comment on function public.fn_contador_lote_abrir(uuid, text, text, text, text, int) is 'c8: abre una ráfaga a la IA (modelo, esfuerzo, versión del prompt, hash del prefijo, cuántos); con el tope gastado, MX008.';
 
--- Anota el gasto de una ráfaga donde la app lo lee: en la tabla
--- asistente_costo_mes (si es una tabla: una fila por mes y acción, con
--- llamadas += n) o en asistente_uso (si asistente_costo_mes es la vista
--- de la app: una fila por ráfaga con sus tokens, vueltas = las llamadas y
--- sus centavos; la vista suma). Devuelve dónde quedó.
+-- Anota el gasto de una ráfaga donde la app lo lee: en asistente_uso
+-- (asistente_costo_mes es la vista de la app sobre ella: una fila por
+-- ráfaga con el dueño, el modelo, sus tokens, vueltas = las llamadas y sus
+-- centavos, resultado «ok» o el error; la vista suma) o, si en esa base
+-- asistente_costo_mes fuera una tabla, allí (una fila por mes y acción,
+-- con llamadas += n). Devuelve dónde quedó.
 create or replace function public.fn_contador_gasto_anotar(p_mes text, p_modelo text, p_n int, p_usage jsonb, p_centavos int, p_por uuid,
                                                            p_error text)
 returns text
@@ -1706,8 +1788,8 @@ revoke execute on function public.fn_contador_clasificar(uuid, uuid, jsonb, text
 comment on function public.fn_contador_clasificar(uuid, uuid, jsonb, text, boolean, uuid) is 'c8: EL ÚNICO CAMINO AL LIBRO: fn_banco_clasificar (c6) en nombre del dueño con las líneas de Edgar; la propuesta pendiente queda aprobada o editada (o se inserta una de Edgar), y si se pide, se aprende la regla del comercio.';
 
 -- «ASÍ ES»: aprobar la propuesta con sus propias líneas. Si pide obra, hay
--- que decirla (p_proyecto_id va a las líneas que la piden —o la admiten—
--- y no la traen); sin ella, MX008 «elige la obra».
+-- que decirla (p_proyecto_id va a las líneas que la piden y no la traen);
+-- sin ella, MX008 «elige la obra».
 create or replace function public.fn_contador_aprobar(p_propuesta uuid, p_dueno uuid, p_proyecto_id text default null,
                                                       p_recordar boolean default true)
 returns jsonb
@@ -1743,7 +1825,10 @@ begin
     if not exists (select 1 from proyectos p where p.id = v_obra) then
       raise exception using errcode = '22023', message = format('La obra «%s» no existe.', v_obra);
     end if;
-    select jsonb_agg(case when nullif(x->>'proyecto_id', '') is null and k.regla_obra in ('obligatoria', 'opcional')
+    -- (solo a las líneas que la PIDEN y no la traen: una cuenta con obra
+    -- opcional que la IA dejó sin obra se queda así; si Edgar la quiere con
+    -- obra, lo dice en «Según yo»)
+    select jsonb_agg(case when nullif(x->>'proyecto_id', '') is null and k.regla_obra = 'obligatoria'
                           then x || jsonb_build_object('proyecto_id', v_obra) else x end order by o)
       into v_lineas
       from jsonb_array_elements(v_lineas) with ordinality as a(x, o)
@@ -1904,8 +1989,10 @@ begin
     end if;
     v_parte := null;
     if v_n > 1 then
-      if jsonb_typeof(v_l->'parte') not in ('number', 'string') or (v_l #>> '{parte}') !~ '^0*(\.[0-9]{1,4})?$|^1(\.0{1,4})?$'
-         or (v_l #>> '{parte}')::numeric <= 0 then
+      -- (coalesce: sin «parte», jsonb_typeof da nulo y «not in» no decidía:
+      -- la regla entraba con partes nulas)
+      if coalesce(jsonb_typeof(v_l->'parte'), 'null') not in ('number', 'string')
+         or (v_l #>> '{parte}') !~ '^0*(\.[0-9]{1,4})?$|^1(\.0{1,4})?$' or (v_l #>> '{parte}')::numeric <= 0 then
         raise exception using errcode = '22023',
           message = format('Línea %s: con varias líneas cada una dice su parte (la fracción del monto, entre 0 y 1, hasta 4 decimales).', v_i);
       end if;
@@ -1926,8 +2013,10 @@ begin
       message = format('Ya hay una regla activa con el patrón «%s»%s: dala de baja antes (fn_contador_regla_baja) o cambia el patrón.',
                        btrim(p_patron), coalesce(' para ' || v_cb, ''));
   end;
-  select count(*) into v_casan from fn_contador_candidatos() c
-   where c.desc_norm ~* r.patron and (r.cuenta_banco is null or r.cuenta_banco = c.cuenta);
+  -- (el alias no es «c»: así se llama la variable cuentas de arriba, y
+  -- plpgsql la prefiere sobre el alias —«record c has no field desc_norm»—)
+  select count(*) into v_casan from fn_contador_candidatos() k
+   where k.desc_norm ~* r.patron and (r.cuenta_banco is null or r.cuenta_banco = k.cuenta);
   return to_jsonb(r) || jsonb_build_object('casan_ahora', v_casan);
 end $$;
 revoke execute on function public.fn_contador_regla_alta(uuid, text, text, jsonb, text) from public, anon, authenticated, service_role;
@@ -2092,11 +2181,13 @@ select z.orden, z.control, z.nivel, z.ok, z.filas, z.esperadas, z.detalle
              left join public.asientos a on a.id = p.asiento_id
             where p.estado in ('aprobada', 'editada') and (a.id is null or a.id not in (select v.id from vivo v))) t
    union all
-   -- 61: ningún asiento dice «Propuesta de la IA #…» sin que esa propuesta exista, aprobada y con ese asiento
+   -- 61: ningún asiento VIVO dice «Propuesta de la IA #…» sin que esa propuesta exista, aprobada y con ese asiento (uno
+   --     reversado ya no cuenta: su propuesta queda caducada, y eso lo vigila el 60)
    select 61, 'ia: ningún asiento con «Propuesta de la IA #» en su motivo sin su propuesta aprobada', 'cuadre', t.n = 0, t.n, 0, t.d
      from (select count(*) as n, left(string_agg(a.numero || ' (' || left(a.descripcion, 90) || ')', '; '), 1500) as d
              from public.asientos a
             where a.camino not in ('reverso', 'reverso_automatico')
+              and a.id in (select v.id from vivo v)
               and (a.descripcion ~ 'Propuesta de la IA #[0-9a-f-]{36}' or coalesce(a.procedencia->>'motivo_edgar', '') ~ 'Propuesta de la IA #[0-9a-f-]{36}')
               and not exists (select 1 from public.ia_propuestas p
                                where p.asiento_id = a.id and p.estado in ('aprobada', 'editada')

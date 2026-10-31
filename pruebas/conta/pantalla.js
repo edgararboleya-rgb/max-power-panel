@@ -27,6 +27,18 @@
    plegado, «Conexiones y seguridad» con las tres tarjetas, y la bandeja como
    bank feed (buscador, motivo, orden, agrupar por comercio, una fila
    desplegada a la vez y sus botones llamando igual que siempre).
+   Y la IA contable (c8, fase 7): sin c8 (v_contador_* en 404) la bandeja es
+   la de siempre; con c8, la franja «n propuestas listas · m por proponer ·
+   este mes $x de $y» con «Proponer con la IA» (apagado sin el código del
+   teléfono, sin la función, sin la llave o con el tope; gira mientras
+   espera), el chip de cada fila, «Según la IA» (líneas, motivo, confianza,
+   flags, fuente, «Así es» con la obra si la pide, «No es eso») y «Según yo»
+   (las cuentas de v_contador_cuentas por grupos y con buscador, la obra según
+   la cuenta, el motivo, «Recordar», «Clasificar (igual que la IA)»), cada
+   acción con la función `contador` y la sesión, sus errores, la falla
+   ruidosa de su control (un cuadre o un conteo en rojo y no se pinta nada de
+   la IA), la tarjeta de Conexiones con «Probar» y las reglas con «Quitar»,
+   sus alarmas en «Qué atender», y el teléfono y el iPad.
    Los datos son inventados (la forma es la de las vistas de c4, c6 y p1).
    Uso: NODE_PATH=/opt/node22/lib/node_modules node pruebas/conta/pantalla.js
    (con --fotos guarda capturas en el temporal del sistema, o en FOTOS_DIR:
@@ -335,6 +347,161 @@ const MOV_STRIPE = { movimiento_id: MOV.s, cuenta: '1010', cuenta_nombre: 'Banco
   obra: null, propuesta: { motivo: 'otro_lado_nombrado' }, posible_duplicado_de: null, duplicado_fecha: null, duplicado_descripcion: null, duplicado_origen: null, dias: 3, alarma: false, origen: 'plaid', archivo_id: null, importado_el: '2026-10-25T11:00:00+00:00' };
 // y el de un depósito que Edgar sacó de la app («Ya está en el libro», po_PRUEBA09): se lleva aquí como antes
 const MOV_STRIPE_FUERA = { ...MOV_STRIPE, movimiento_id: MOV.sf, fecha: '2026-10-22', monto: 485.20, descripcion: DEP_STRIPE.replace('PRUEBA0001', 'PRUEBA0009'), opciones: OPS_C6_STRIPE(MOV.sf) };
+// ---- la IA contable (c8, fase 7): la forma de las vistas v_contador_* (docs/conta/c8-contador.sql) y la función `contador` ----
+// Cinco cargos sin ticket del Banco operativo con su propuesta (cuatro de la IA y una de una regla) y el de la ferretería de la
+// Gold sin ninguna. Las cuentas son las de v_contador_cuentas (la única fuente de lo que se puede elegir), con sus nombres de c1.
+const MI = { hd: '77777777-0000-4000-8000-000000000001', wawa: '77777777-0000-4000-8000-000000000002', amz: '77777777-0000-4000-8000-000000000003',
+  irs: '77777777-0000-4000-8000-000000000004', nfx: '77777777-0000-4000-8000-000000000005' };
+const PR = { hd: 'bbbbbbbb-0000-4000-8000-000000000001', wawa: 'bbbbbbbb-0000-4000-8000-000000000002', amz: 'bbbbbbbb-0000-4000-8000-000000000003',
+  irs: 'bbbbbbbb-0000-4000-8000-000000000004', nfx: 'bbbbbbbb-0000-4000-8000-000000000005', fe: 'bbbbbbbb-0000-4000-8000-000000000006' };
+const RG = { wawa: 'dddddddd-0000-4000-8000-000000000001', shell: 'dddddddd-0000-4000-8000-000000000002' };
+const CUENTAS_IA = [
+  ['1130', 'Cuenta por cobrar al accionista', 'activo', 'prohibida'], ['1510', 'Vehículos', 'activo', 'prohibida'], ['2900', 'Préstamo del accionista', 'pasivo', 'prohibida'],
+  ['3200', 'Distribuciones al accionista', 'capital', 'prohibida'], ['5100', 'Material', 'costo', 'obligatoria'], ['5200', 'Subcontratos', 'costo', 'obligatoria'],
+  ['5300', 'Equipo y renta', 'costo', 'opcional'], ['6130', 'Cargos bancarios y comisiones de tarjeta', 'gasto', 'prohibida'], ['6300', 'Vehículos — combustible y mantenimiento', 'gasto', 'opcional'],
+  ['6400', 'Herramienta menor y uniformes', 'gasto', 'opcional'], ['6500', 'Oficina y software', 'gasto', 'prohibida'], ['6600', 'Profesionales — CPA y legal', 'gasto', 'prohibida'],
+  ['7100', 'Intereses', 'otro_gasto', 'prohibida'], ['7900', 'Otros gastos', 'otro_gasto', 'prohibida']
+].map(([codigo, nombre, tipo, regla_obra]) => ({ codigo, nombre, tipo, regla_obra, saldo_normal: 'debe', etiqueta_fiscal: null, pide_obra: regla_obra === 'obligatoria' }));
+const TEXTO_SIN_TICKET = 'Sin ticket ni asiento que lo explique. Si tienes la foto del recibo, súbela: entra por su puente y casa sola. Si no, di de qué es.';
+const movIA = (id, fecha, monto, descripcion, dias) => ({ movimiento_id: id, cuenta: '1010', cuenta_nombre: 'Banco operativo', fecha, periodo: fecha.slice(0, 7), monto, descripcion, memo: null, cheque: null, tipo_banco: 'DEBIT',
+  motivo: 'sin_ticket', texto: TEXTO_SIN_TICKET, opciones: null, obra: null, propuesta: { motivo: 'sin_ticket' }, posible_duplicado_de: null, duplicado_fecha: null, duplicado_descripcion: null, duplicado_origen: null,
+  dias, alarma: false, origen: 'plaid', archivo_id: null, importado_el: '2026-10-29T11:00:00+00:00' });
+// una línea como la resuelve v_contador_bandeja: cuenta, su nombre, su tipo, la obra si la trae y pide_obra (obligatoria y sin obra)
+const linIA = (cuenta, extra) => { const c = CUENTAS_IA.find(x => x.codigo === cuenta) || {}; const l = { cuenta, cuenta_nombre: c.nombre || '?', tipo: c.tipo || null, ...(extra || {}) };
+  l.pide_obra = c.regla_obra === 'obligatoria' && !l.proyecto_id; if (l.proyecto_id) l.obra = (T.proyectos.find(p => p.id === l.proyecto_id) || {}).nombre; return l; };
+const propIA = (id, mov, fuente, lineas, motivo, confianza, flags, extra) => ({ movimiento_id: mov.movimiento_id, cuenta: mov.cuenta, fecha: mov.fecha, monto: mov.monto, descripcion: mov.descripcion, movimiento_estado: 'pendiente',
+  propuesta_id: id, fuente, estado: 'pendiente', accion: 'categorizar', lineas, resumen: lineas.map(l => `${l.cuenta} ${l.cuenta_nombre}`).join(' + '), motivo, confianza, flags: flags || {}, pide_obra: !!(flags && flags.pide_obra),
+  alternativas: null, modelo: fuente === 'ia' ? 'claude-opus-5-5' : null, effort: fuente === 'ia' ? 'low' : null, prompt_version: fuente === 'ia' ? 'pv-prueba' : null, regla_id: null, regla_nombre: null,
+  lote_id: fuente === 'ia' ? 'lote-prueba-1' : null, creado_el: '2026-10-30T18:05:00+00:00', aprobado_por: null, aprobado_el: null, lineas_finales: null, motivo_edgar: null, nota: null,
+  asiento_id: null, asiento: null, asiento_vivo: false, dias: 1, ...(extra || {}) });
+const reglaIA = (id, nombre, lineas, veces, ultima, extra) => ({ id, nombre, patron: '^' + nombre, cuenta_banco: null, cuenta_banco_nombre: null, lineas,
+  cuentas_texto: lineas.map(l => `${l.cuenta} ${(CUENTAS_IA.find(c => c.codigo === l.cuenta) || {}).nombre || '?'}`).join(' + '),
+  pide_obra: lineas.some(l => (CUENTAS_IA.find(c => c.codigo === l.cuenta) || {}).regla_obra === 'obligatoria' && !l.proyecto_id), activa: true, origen: 'aprobacion', creada_por: UID, creada_por_nombre: 'Edgar Prueba',
+  creada_el: '2026-10-20T12:00:00+00:00', veces, ultima_vez: ultima, notas: null, pendientes: 0, aprobadas: veces, ...(extra || {}) });
+// el comercio de cada descripción, como lo saca fn_contador_nombre_comercio
+const COMERCIO_IA = { [MI.hd]: 'THE HOME DEPOT', [MI.wawa]: 'WAWA', [MI.amz]: 'AMAZON MKTPLACE PMTS', [MI.irs]: 'IRS USATAXPYMT', [MI.nfx]: 'NETFLIX.COM', [MOV.a]: 'FERRETERIA EJEMPLO' };
+const IA = {};
+function iaReset() {
+  const m = { hd: movIA(MI.hd, '2026-10-27', -245.18, 'THE HOME DEPOT 6341 OCALA FL', 4), wawa: movIA(MI.wawa, '2026-10-28', -48.10, 'WAWA 5123 OCALA FL', 3),
+    amz: movIA(MI.amz, '2026-10-24', -2890.00, 'AMAZON MKTPLACE PMTS AMZN.COM/BILL WA', 7), irs: movIA(MI.irs, '2026-10-21', -1500.00, 'IRS USATAXPYMT', 10),
+    nfx: movIA(MI.nfx, '2026-10-26', -22.99, 'NETFLIX.COM LOS GATOS CA', 5) };
+  Object.assign(IA, {
+    movs: Object.values(m), fuera: new Set(), seq: 800,
+    props: [
+      propIA(PR.hd, m.hd, 'ia', [linIA('5100')], 'Home Depot vende material eléctrico; $245.18 en Ocala es material de una obra. La 5100 pide la obra y no la adivino.', 0.92, { pide_obra: true }),
+      propIA(PR.wawa, m.wawa, 'regla', [linIA('6300')], 'Regla: WAWA', 1, {}, { regla_id: RG.wawa, regla_nombre: 'WAWA' }),
+      propIA(PR.amz, m.amz, 'ia', [linIA('6400')], 'Amazon sin el detalle de lo comprado; $2,890.00 es mucho para herramienta menor y la factura no trae impuesto.', 0.55, { capitalizable: true, use_tax: true },
+        { alternativas: [{ cuenta: '1510', motivo: 'si es un equipo que dura más de un año' }, { cuenta: '6500', motivo: 'si es una computadora de la oficina' }] }),
+      propIA(PR.irs, m.irs, 'ia', [linIA('3200')], 'Un pago al IRS (USATAXPYMT): en la S-corp es una distribución al accionista, nunca un gasto.', 0.97, { irs: true }),
+      propIA(PR.nfx, m.nfx, 'ia', [linIA('3200')], 'Netflix es una suscripción personal: va a distribuciones (3200), no a gasto de la empresa.', 0.35, { personal: true })
+    ],
+    reglas: [reglaIA(RG.wawa, 'WAWA', [{ cuenta: '6300' }], 12, '2026-10-28T12:00:00+00:00'), reglaIA(RG.shell, 'SHELL OIL', [{ cuenta: '6300' }], 4, '2026-10-12T12:00:00+00:00')],
+    gasto: 420, gastoTotal: 1230, ultimaRafaga: '2026-10-30T18:05:00+00:00'
+  });
+}
+iaReset();
+const iaMovs = () => T.v_banco_bandeja.concat(IA.movs).filter(f => !IA.fuera.has(f.movimiento_id));
+// v_contador_bandeja: por movimiento, la propuesta pendiente o la última
+function iaUltima() {
+  const por = new Map(), viva = p => p.estado === 'pendiente';
+  for (const p of IA.props) { const q = por.get(p.movimiento_id); if (!q || (viva(p) && !viva(q)) || (viva(p) === viva(q) && p.creado_el >= q.creado_el)) por.set(p.movimiento_id, p); }
+  return [...por.values()].map(p => ({ ...p, movimiento_estado: IA.fuera.has(p.movimiento_id) ? 'casado' : 'pendiente' }));
+}
+const iaCandidatos = () => iaMovs().filter(m => ['sin_ticket', 'dudosa'].includes(m.motivo) && !IA.props.some(p => p.movimiento_id === m.movimiento_id && p.estado === 'pendiente'));
+// v_contador_control: 10 y 11 cuentan sus vistas; un cuadre (61) y una alarma (71) que la prueba pone en rojo; 70 sale del gasto
+function iaControl() {
+  const bj = iaUltima().length, rg = IA.reglas.length, tope = IA.gasto >= 3000 || IA.gastoTotal >= 10000;
+  const c = (orden, control, nivel, ok, detalle, filas, esperadas) => ({ orden, control, nivel, ok, filas: filas === undefined ? (nivel === 'cuadre' ? 0 : null) : filas, esperadas: esperadas === undefined ? (nivel === 'cuadre' ? 0 : null) : esperadas, detalle: detalle || null });
+  return [
+    c(10, 'vista: v_contador_bandeja', 'cuadre', true, null, estado.iaConteo ? 99 : bj, estado.iaConteo ? 99 : bj), c(11, 'vista: v_contador_reglas', 'cuadre', true, null, rg, rg),
+    c(12, 'ia: hay cuentas que proponer', 'cuadre', true, null, CUENTAS_IA.length, 1), c(60, 'ia: cada propuesta aprobada o editada tiene su asiento vivo', 'cuadre', true),
+    c(61, 'ia: ningún asiento con «Propuesta de la IA #» en su motivo sin su propuesta aprobada', 'cuadre', !estado.iaCuadreMal, estado.iaCuadreMal ? '2026-000777 (Propuesta de la IA #bbbbbbbb-… aprobada por Edgar) (prueba)' : null, estado.iaCuadreMal ? 1 : 0, 0),
+    c(62, 'ia: las reglas activas van a cuentas activas e imputables', 'cuadre', true), c(63, 'ia: protecciones de la fase 7', 'cuadre', true),
+    c(70, 'ia: el gasto del mes bajo el tope', 'alarma', !tope, `${HOY.slice(0, 7)}: la IA lleva $${(IA.gastoTotal / 100).toFixed(2)} en total (el tope de la app es $100.00) y el contador $${(IA.gasto / 100).toFixed(2)} (su tope, $30.00)`),
+    c(71, 'ia: ninguna propuesta pendiente de más de 7 días', 'alarma', !estado.iaVieja, estado.iaVieja ? '2026-10-21 -1500.00 «IRS USATAXPYMT» (desde el 2026-10-22) (prueba)' : null, estado.iaVieja ? 1 : 0, 0),
+    c(72, 'ia: la última ráfaga sin error', 'alarma', true, 'la última fue el 30/10/2026 14:05 (hora de Miami)'),
+    c(73, 'ia: la llave y la función', 'alarma', true, `${iaCandidatos().length} cargo(s) esperan propuesta`)
+  ];
+}
+// v_contador_estado: una fila
+function iaEstado() {
+  const pend = IA.props.filter(p => p.estado === 'pendiente'), cand = iaCandidatos(), ctl = iaControl();
+  const motivo = IA.gastoTotal >= 10000 ? 'tope de la app' : IA.gasto >= 3000 ? 'tope del contador' : null;
+  return { instalado: true, modelo: 'claude-opus-5-5', effort: 'low', activa: true, max_por_rafaga: 20, tope_mes_centavos: 3000, dueno: UID, dueno_nombre: 'Edgar Prueba', prompt_version: 'pv-prueba', prefijo_hash: 'ph-prueba',
+    ultima_rafaga_el: IA.ultimaRafaga, ultimo_error: null, ultimo_error_el: null, actualizado: IA.ultimaRafaga,
+    pendientes_sin_propuesta: cand.length, pendientes_desde: cand.length ? cand.map(m => m.fecha).sort()[0] : null,
+    propuestas_pendientes: pend.length, propuestas_por_regla: pend.filter(p => p.fuente === 'regla').length, propuestas_por_ia: pend.filter(p => p.fuente === 'ia').length,
+    reglas_activas: IA.reglas.filter(r => r.activa).length, mes: HOY.slice(0, 7), centavos_mes_total: IA.gastoTotal, tope_global: 10000, centavos_mes_contador: IA.gasto, aviso_pct: 80,
+    bloqueado: !!motivo, bloqueado_motivo: motivo, aviso: IA.gasto * 100 >= 3000 * 80 || IA.gastoTotal * 100 >= 10000 * 80, lotes_abiertos: 0, ultimo_lote_el: IA.ultimaRafaga, ultimo_lote_centavos: 42,
+    aprobadas_total: IA.props.filter(p => ['aprobada', 'editada'].includes(p.estado)).length, rechazadas_total: IA.props.filter(p => p.estado === 'rechazada').length, cuentas_permitidas: CUENTAS_IA.length,
+    cuadres_rojos: ctl.filter(f => f.nivel === 'cuadre' && !f.ok).length, alarmas: ctl.filter(f => f.nivel === 'alarma' && !f.ok).length };
+}
+const VISTAS_IA = { v_contador_estado: () => [iaEstado()], v_contador_bandeja: iaUltima, v_contador_control: iaControl, v_contador_reglas: () => IA.reglas, v_contador_cuentas: () => CUENTAS_IA };
+// La función de borde `contador` (supabase/functions/contador), con la forma del contrato: { ok: true, … } o { ok: false, codigo, error, pista? }.
+// La salud contesta sin sesión; todo lo demás pide el dueño con aal2 (la lee del JWT), como `stripe`.
+function funcionContador(b, auth) {
+  if (b.accion === 'salud') return { cuerpo: { ok: true, llave: !estado.iaSinLlave, base: true, modelo: 'claude-opus-5-5', effort: 'low', prompt_version: 'pv-prueba', tope: { bloqueado: iaEstado().bloqueado } } };
+  let aal = null; try { aal = JSON.parse(Buffer.from(String(auth).replace(/^Bearer /, '').split('.')[1], 'base64url').toString()).aal; } catch { /* sin sesión */ }
+  if (aal !== 'aal2') return { estado: 403, cuerpo: { ok: false, codigo: 'MFA', error: 'Falta el código del teléfono: entra otra vez con él (la IA contable lo pide).' } };
+  if (estado.iaFalla) { const f = estado.iaFalla; estado.iaFalla = null; return { estado: f.estado, cuerpo: { ok: false, ...f.cuerpo } }; }
+  const movDe = id => iaMovs().find(m => m.movimiento_id === id);
+  // lo que hace fn_contador_clasificar: el movimiento sale de la bandeja con su asiento, la propuesta queda aprobada o editada y, si se pide, nace la regla
+  const clasificar = (p, mov, lineas, estadoP, recordar) => {
+    IA.seq += 1; IA.fuera.add(mov.movimiento_id);
+    const asiento = '2026-000' + IA.seq, ahora = new Date().toISOString();
+    let pid = p ? p.propuesta_id : 'bbbbbbbb-0000-4000-8000-000000000' + IA.seq;
+    if (p) Object.assign(p, { estado: estadoP, aprobado_por: UID, aprobado_el: ahora, lineas_finales: lineas, asiento, asiento_vivo: true });
+    else IA.props.push(propIA(pid, mov, 'edgar', lineas.map(l => linIA(l.cuenta, l.proyecto_id ? { proyecto_id: l.proyecto_id } : {})), 'Clasificado por Edgar desde la bandeja (fase 7)', 1, {}, { estado: 'aprobada', creado_el: ahora, asiento, asiento_vivo: true }));
+    let regla;
+    if (recordar !== false) {
+      const nombre = COMERCIO_IA[mov.movimiento_id] || mov.descripcion, previa = IA.reglas.find(r => r.activa && r.nombre === nombre);
+      if (previa) regla = { regla: previa.id, nombre, patron: previa.patron, nueva: false, cambio: false };
+      else { const r = reglaIA('dddddddd-0000-4000-8000-000000000' + IA.seq, nombre, lineas.map(l => ({ cuenta: l.cuenta })), 1, ahora, { creada_el: ahora }); IA.reglas.push(r); regla = { regla: r.id, nombre, patron: r.patron, nueva: true, cambio: false }; }
+    }
+    return { ok: true, movimiento: mov.movimiento_id, asiento_id: 'as-' + IA.seq, asiento, propuesta: pid, estado: estadoP, fuente: p ? p.fuente : 'edgar', lineas, motivo: 'Propuesta de la IA … (prueba)', ...(regla ? { regla } : {}) };
+  };
+  if (b.accion === 'proponer') {
+    const e = iaEstado();
+    if (e.bloqueado || estado.iaBloqueaFuncion) return { cuerpo: { ok: true, bloqueado: true, motivo: estado.iaBloqueaFuncion ? 'tope del contador (prueba)' : e.bloqueado_motivo } };
+    let k = 0, sin = 0;
+    for (const m of iaCandidatos()) {
+      if (m.movimiento_id === MOV.a) { IA.props.push(propIA(PR.fe, m, 'ia', [linIA('5100')], 'Ferretería en Tampa: material de obra. La 5100 pide la obra y no la adivino.', 0.81, { pide_obra: true }, { creado_el: new Date().toISOString() })); k += 1; }
+      else sin += 1;
+    }
+    IA.gasto += 12; IA.gastoTotal += 12; IA.ultimaRafaga = new Date().toISOString();
+    return { cuerpo: { ok: true, propuestas: k, reglas: 0, sin_respuesta: sin, invalidas: 0, centavos: 12, cache: { creacion: 1830, lectura: 0 } } };
+  }
+  if (b.accion === 'aprobar') {
+    const p = IA.props.find(x => x.propuesta_id === b.propuesta);
+    if (!p || p.estado !== 'pendiente') return { estado: 409, cuerpo: { ok: false, codigo: 'MX008', error: `Esa propuesta ya está ${p ? p.estado : 'perdida'}: no se aprueba dos veces.` } };
+    if (p.lineas.some(l => l.pide_obra) && !b.proyecto_id) return { estado: 409, cuerpo: { ok: false, codigo: 'MX008', pista: 'elige la obra', error: 'Elige la obra: la propuesta va a 5100 (Material), que pide obra. Elígela en el selector y vuelve a aprobar.' } };
+    const lineas = p.lineas.map(l => ({ cuenta: l.cuenta, ...(l.pide_obra ? { proyecto_id: b.proyecto_id } : l.proyecto_id ? { proyecto_id: l.proyecto_id } : {}) }));
+    return { cuerpo: clasificar(p, movDe(p.movimiento_id), lineas, 'aprobada', b.recordar) };
+  }
+  if (b.accion === 'clasificar') {
+    const mov = movDe(b.movimiento);
+    if (!mov) return { estado: 409, cuerpo: { ok: false, codigo: 'MX008', error: 'Ese movimiento ya no está en la bandeja.' } };
+    if (!Array.isArray(b.lineas) || !b.lineas.length) return { estado: 400, cuerpo: { ok: false, codigo: 'FORMA', error: 'Faltan las líneas.' } };
+    const p = IA.props.find(x => x.movimiento_id === b.movimiento && x.estado === 'pendiente');
+    const igual = !!p && p.lineas.length === b.lineas.length && p.lineas.every((l, i) => l.cuenta === b.lineas[i].cuenta && ((l.proyecto_id || '') === (b.lineas[i].proyecto_id || '') || (!l.proyecto_id && p.pide_obra)));
+    return { cuerpo: clasificar(p, mov, b.lineas, !p || igual ? 'aprobada' : 'editada', b.recordar) };
+  }
+  if (b.accion === 'rechazar') {
+    const p = IA.props.find(x => x.propuesta_id === b.propuesta);
+    if (!p || p.estado !== 'pendiente') return { estado: 409, cuerpo: { ok: false, codigo: 'MX008', error: 'Esa propuesta ya no está pendiente.' } };
+    Object.assign(p, { estado: 'rechazada', aprobado_por: UID, aprobado_el: new Date().toISOString(), motivo_edgar: b.motivo || 'No es eso (Edgar, desde la bandeja)' });
+    return { cuerpo: { ok: true, propuesta: p.propuesta_id, movimiento: p.movimiento_id, estado: 'rechazada', fuente: p.fuente, motivo_edgar: p.motivo_edgar } };
+  }
+  if (b.accion === 'regla_baja') {
+    const r = IA.reglas.find(x => x.id === b.regla);
+    if (!r || !r.activa) return { estado: 409, cuerpo: { ok: false, codigo: 'MX008', error: 'Esa regla ya está dada de baja.' } };
+    if (String(b.motivo || '').trim().length < 3) return { estado: 400, cuerpo: { ok: false, codigo: '22023', error: 'Quitar una regla dice por qué (motivo): queda escrito con ella.' } };
+    Object.assign(r, { activa: false, notas: 'baja: ' + b.motivo });
+    return { cuerpo: { ok: true, ...r, propuestas_caducadas: 0 } };
+  }
+  if (b.accion === 'estado') return { cuerpo: { ok: true, ...iaEstado(), tope: { bloqueado: iaEstado().bloqueado } } };
+  return { estado: 400, cuerpo: { ok: false, codigo: 'ACCION', error: 'Acción desconocida: «' + b.accion + '».' } };
+}
 const estado = { controlMal: false, controlFilas: null, fallar: false, casarRondas: 0, concNueva: false, plaidFijada: false, plaidSinVista: false, plaidSinFijar: false, mfaFactores: [], sesionAal: undefined,
   // los interruptores de los estados: el control en rojo, el conteo distinto para una vista, el «Sigue» del tope por reloj (cuenta llamadas; 90 o más = nunca termina),
   // el equipo (no dueño), la apertura sin postear, el balance descuadrado, una vista que no existe en la base, un mayor que no termina donde dice la balanza
@@ -342,10 +509,17 @@ const estado = { controlMal: false, controlFilas: null, fallar: false, casarRond
   estadosMal: false, estadosFilas: null, estadosFilasVista: null, estadosSigue: 0, estadosNoDueno: false, estadosSinApertura: false, estadosDescuadre: false, estadosVistaRota: false, estadosMayorRoto: false, estadosFotoRota: false,
   // los de Stripe: p1 sin pegar (404), el modo de la llave, la salud sin llave, el depósito STRIPE en la bandeja, un cuadre en rojo, un conteo distinto,
   // una alarma, y el siguiente error que contesta la función ({ estado, cuerpo })
-  stripeSinVista: false, stripeModo: 'real', stripeSinLlave: false, stripeDeposito: false, stripeCuadreMal: false, stripeConteo: false, stripeAlarma: false, stripeFalla: null };
+  stripeSinVista: false, stripeModo: 'real', stripeSinLlave: false, stripeDeposito: false, stripeCuadreMal: false, stripeConteo: false, stripeAlarma: false, stripeFalla: null,
+  // los de la IA contable (c8): pegada o no (sin ella, las vistas v_contador_* contestan 404), un conteo distinto (10), un cuadre en rojo (61),
+  // una propuesta de más de 7 días (alarma 71), la salud sin llave, la función sin desplegar, la función que dice «bloqueado» aunque la vista no,
+  // el siguiente error que contesta la función ({ estado, cuerpo }) y cuánto tarda «proponer» (ms, para ver el botón girar)
+  c8: false, iaConteo: false, iaCuadreMal: false, iaVieja: false, iaSinLlave: false, iaSinFuncion: false, iaBloqueaFuncion: false, iaFalla: null, iaLento: 0 };
 const llamadas = [], lecturas = []; // lecturas: cada GET a /rest/v1/<vista>?… tal como lo pidió la pantalla
 function tabla(nombre, q) {
   let filas = T[nombre] || [];
+  if (nombre.startsWith('v_contador_')) filas = estado.c8 && VISTAS_IA[nombre] ? VISTAS_IA[nombre]() : [];
+  // con c8 la bandeja trae además los cinco cargos sin ticket de la IA; lo que ya se clasificó por la función sale
+  if (nombre === 'v_banco_bandeja' && estado.c8) filas = filas.concat(IA.movs).filter(f => !IA.fuera.has(f.movimiento_id));
   if (nombre === 'v_conciliacion' && estado.concNueva) filas = filas.concat([{
     conciliacion_id: CONC_NEW, cuenta: '2100-2013', cuenta_nombre: 'Amex Business Gold', fecha_corte: '2026-10-08', periodo: '2026-10', tipo: 'normal', estado: 'abierta', saldo_libros: -14624.26, saldo_statement: 14675.12, saldo_banco: -14675.12,
     depositos_transito: 0, cargos_circulacion: 50.86, sin_casar_banco: 0, n_transito: 1, n_sin_casar: 0, n_alarmas: 0, n_dudosas: 0, n_pide_motivo: 0, diferencia: 0, lista_para_confirmar: true, identidad: 'Libros -14624.26 = banco -14675.12 + (0.00 − 50.86) − 0.00 (cuadra)', falta: null }]);
@@ -510,6 +684,21 @@ async function simular(ctx, rol) {
       llamadas.push({ fn: 'stripe:' + b.accion, args: b, auth });
       const r = funcionStripe(b, auth);
       return route.fulfill({ status: r.estado || 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(r.cuerpo) });
+    }
+    if (u.pathname === '/functions/v1/contador') {
+      let b = {}; try { b = JSON.parse(req.postData() || '{}'); } catch { /* vacío */ }
+      const auth = req.headers()['authorization'] || '';
+      llamadas.push({ fn: 'contador:' + b.accion, args: b, auth });
+      if (estado.iaSinFuncion) return route.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: JSON.stringify({ code: 'NOT_FOUND', message: 'Requested function was not found' }) });
+      const r = funcionContador(b, auth);
+      const responder = () => route.fulfill({ status: r.estado || 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(r.cuerpo) });
+      return b.accion === 'proponer' && estado.iaLento ? new Promise(listo => setTimeout(listo, estado.iaLento)).then(responder) : responder();
+    }
+    // c8 sin pegar: las vistas v_contador_* no existen (PostgREST: 404 PGRST205); la lectura se anota igual (la pantalla sí las pidió)
+    if (u.pathname.startsWith('/rest/v1/v_contador_') && !estado.c8) {
+      const v = u.pathname.slice('/rest/v1/'.length);
+      lecturas.push(v + u.search);
+      return route.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST205', message: `Could not find the table 'public.${v}' in the schema cache`, details: null, hint: null }) });
     }
     // p1 sin pegar: las vistas v_stripe_* no existen (PostgREST: 404 PGRST205)
     if (u.pathname.startsWith('/rest/v1/v_stripe_') && estado.stripeSinVista) {
@@ -715,6 +904,8 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   n = llamadas.length;
   await tab(p, 'bandeja'); await p.waitForSelector('.ct-mov', { timeout: 8000 });
   ok('La bandeja pinta los 3 movimientos y pidió su control (v_banco_bandeja)', (await p.locator('.ct-mov').count()) === 3 && desde(n).some(l => l.fn === 'fn_banco_control' && JSON.stringify(l.args.p_vistas) === '["v_banco_bandeja"]'));
+  ok('Sin c8 en la base (v_contador_* contesta 404) la bandeja es la de siempre: la pidió, y no hay franja de la IA, ni chips, ni columnas, ni llamada a la función «contador»',
+    lecturas.some(l => /^v_contador_estado\?/.test(l)) && (await p.locator('#ct-ia-franja, .ct-ia-chip, .ct-ia').count()) === 0 && !desde(n).some(l => /^contador:/.test(l.fn)) && (await p.locator('.ct-rojo').count()) === 0);
   ok('El de más de 30 días va primero, con su alarma', (await p.locator('.ct-mov').first().getAttribute('data-id')) === MOV.c && /más de 30 días/.test(await texto(p, '.ct-mov >> nth=0')));
   ok('La cabecera dice «3 movimientos del banco esperan tu respuesta por $315.34 · 1 lleva más de 30 días» y «Casar otra vez» es su acción', /3 movimientos del banco esperan tu respuesta por \$315\.34 · 1 lleva más de 30 días/.test(await texto(p, '.ct-pag-sub')) && (await p.locator('.ct-pag-acc #ct-casar').count()) === 1, await texto(p, '.ct-pag-sub'));
   ok('Filas compactas: cada movimiento es un <article class="ct-mov" data-id> con su cabecera (un botón, aria-expanded) y el detalle plegado; en la computadora la cabecera es una fila de tabla con las columnas alineadas',
@@ -1111,8 +1302,9 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   const latCx = await p.evaluate(() => { const l = document.querySelector('#lateral'), sp = l.querySelector('[data-lat="conta-conexiones"] span'), cs = getComputedStyle(l), ps = getComputedStyle(l, '::after');
     return { cortado: sp.scrollWidth > sp.clientWidth + 1, txt: sp.textContent, desborda: l.scrollHeight > l.clientHeight, barra: cs.scrollbarWidth, pista: ps.position, alto: Math.round(l.querySelector('[data-lat="conta-bandeja"]').getBoundingClientRect().height) }; });
   ok('Lateral (1280×900): «Conexiones y seguridad» se lee entero (envuelve, sin «…»), los subtítulos van compactos (38 px) y, como la lista no cabe, el lateral desplaza con barra fina y el desvanecido de abajo como pista', !latCx.cortado && latCx.txt === 'Conexiones y seguridad' && latCx.alto === 38 && (!latCx.desborda || (latCx.barra === 'thin' && latCx.pista === 'sticky')), JSON.stringify(latCx));
-  ok('«Conexiones y seguridad» trae las tres tarjetas (el código del teléfono, Plaid y Stripe) en ese orden, con su cabecera; pidió el control de v_banco_saldos (las cuentas a las que va cada cuenta de Plaid)',
-    (await titulo()) === 'Conexiones y seguridad' && JSON.stringify(await p.locator('#ct-main > section').evaluateAll(ss => ss.map(x => x.id))) === '["ct-mfa","ct-plaid","ct-stripe"]' && /código del teléfono no activo · 1 banco conectado · Stripe conectado/.test(await texto(p, '.ct-pag-sub')) &&
+  ok('«Conexiones y seguridad» trae las cuatro tarjetas (el código del teléfono, Plaid, Stripe y la IA contable, sin c8 «sin instalar») en ese orden, con su cabecera; pidió el control de v_banco_saldos (las cuentas a las que va cada cuenta de Plaid)',
+    (await titulo()) === 'Conexiones y seguridad' && JSON.stringify(await p.locator('#ct-main > section').evaluateAll(ss => ss.map(x => x.id))) === '["ct-mfa","ct-plaid","ct-stripe","ct-ia"]' && /código del teléfono no activo · 1 banco conectado · Stripe conectado · IA contable sin instalar/.test(await texto(p, '.ct-pag-sub')) &&
+    /sin instalar/.test(await texto(p, '#ct-ia .ct-cab')) && /docs\/conta\/c8-contador\.sql/.test(await texto(p, '#ct-ia')) &&
     desde(n).some(l => l.fn === 'fn_banco_control' && JSON.stringify(l.args.p_vistas) === '["v_banco_saldos"]') && (await p.locator('.ct-cuenta').count()) === 0, await texto(p, '.ct-pag-sub'));
   ok('La tarjeta del código del teléfono dice «no activo» y «Conectar un banco» (Plaid) sale apagado', /no activo/.test(await texto(p, '#ct-mfa')) && await p.locator('#ct-plaid-conectar').isDisabled() && /Primero activa el código/.test(await texto(p, '#ct-plaid')));
   await p.locator('#ct-mfa-activar').click();
@@ -1534,6 +1726,262 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     await tel.close();
   }
 
+  // ---- La IA contable (c8, fase 7): la franja de la bandeja, el chip de cada fila, «Según la IA» y «Según yo», Conexiones y «Qué atender» ----
+  {
+    estado.c8 = true; iaReset();
+    estado.mfaFactores = [{ id: 'f-1', friendly_name: 'Teléfono de Edgar', factor_type: 'totp', status: 'verified' }]; estado.sesionAal = 'aal2';
+    const cx = await b.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' });
+    await simular(cx, 'dueno');
+    const q = await cx.newPage(); q.on('pageerror', e => errs.push('IA: ' + String(e).slice(0, 160)));
+    await q.goto('http://localhost:8873/index.html'); await q.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await q.waitForTimeout(800);
+    await q.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
+    await q.locator('#btn-conta').evaluate(x => x.click()); await q.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 });
+    const irA = async k => { await q.evaluate(k => window.MXP_CONTA.ir(k), k); await pintado(q); };
+    // el aviso se vacía antes de cada acción: así no se lee el de la anterior
+    const sinToast = () => q.evaluate(() => { const t = document.getElementById('toast'); if (t) t.textContent = ''; });
+    const tostada = async re => { await q.waitForFunction(r => { const t = document.getElementById('toast'); return t && !t.hidden && new RegExp(r).test(t.textContent); }, re.source, { timeout: 8000 }).catch(() => {}); return (await q.locator('#toast').textContent()) || ''; };
+    const movQ = id => q.locator(`.ct-mov[data-id="${id}"]`);
+    const ultima = (n0, fn) => desde(n0).filter(l => l.fn === fn).slice(-1)[0];
+    let n0 = llamadas.length, l0 = lecturas.length;
+    await irA('bandeja');
+    // la franja
+    ok('IA · la bandeja lee v_contador_estado, v_contador_bandeja, v_contador_control y v_contador_cuentas, y con el código del teléfono pide la salud a la función con la sesión',
+      ['v_contador_estado', 'v_contador_bandeja', 'v_contador_control', 'v_contador_cuentas'].every(v => lecturas.slice(l0).some(l => l.startsWith(v + '?'))) && desde(n0).some(l => l.fn === 'contador:salud' && /^Bearer /.test(l.auth)),
+      lecturas.slice(l0).filter(l => /contador/.test(l)).join(' | '));
+    ok('IA · la franja dice «5 propuestas listas · 1 por proponer · este mes $4.20 de $30.00» y «Proponer con la IA (1)» se puede tocar, sin freno',
+      /^5 propuestas listas · 1 por proponer · este mes \$4\.20 de \$30\.00$/.test((await q.locator('#ct-ia-cifras').textContent()).trim()) && /Proponer con la IA \(1\)/.test(await q.locator('#ct-ia-proponer').textContent()) && !(await q.locator('#ct-ia-proponer').isDisabled()) && (await q.locator('.ct-ia-freno').count()) === 0,
+      await q.locator('#ct-ia-franja').textContent());
+    ok('IA · la franja va debajo de la cabecera y antes de la barra de herramientas; la bandeja trae los 8 movimientos (los 3 de siempre y los 5 cargos de la IA)',
+      JSON.stringify(await q.locator('#ct-main > *').evaluateAll(xs => xs.map(x => x.id || x.className).slice(0, 3))) === '["ct-pag-cab","ct-ia-franja","ct-bj-herr"]' && (await q.locator('.ct-mov').count()) === 8,
+      JSON.stringify(await q.locator('#ct-main > *').evaluateAll(xs => xs.map(x => x.id || x.className))));
+    // el chip de cada fila
+    const chip = async id => (await movQ(id).locator('.ct-f-motivo .ct-ia-chip').count()) ? (await movQ(id).locator('.ct-f-motivo .ct-ia-chip').textContent()).trim() : null;
+    const chips = { hd: await chip(MI.hd), wawa: await chip(MI.wawa), amz: await chip(MI.amz), fe: await chip(MOV.a), b: await chip(MOV.b), c: await chip(MOV.c) };
+    ok('IA · el chip de la fila compacta: «IA · 5100 Material · 92 %», «Regla · WAWA», «IA · 6400 Herramienta menor y uniformes · 55 %», «sin propuesta» en la ferretería sin ticket, y ninguno en la partida ni en el duplicado',
+      chips.hd === 'IA · 5100 Material · 92 %' && chips.wawa === 'Regla · WAWA' && chips.amz === 'IA · 6400 Herramienta menor y uniformes · 55 %' && chips.fe === 'sin propuesta' && chips.b === null && chips.c === null, JSON.stringify(chips));
+    // «Proponer con la IA»: la función dice «bloqueado» (no se gasta nada), y después la ráfaga de verdad, con el botón girando
+    estado.iaBloqueaFuncion = true; n0 = llamadas.length;
+    await sinToast(); await q.locator('#ct-ia-proponer').click();
+    const tb = await tostada(/La IA no propuso nada/);
+    await pintado(q);
+    ok('IA · si la función contesta «bloqueado» (el tope), el aviso lo dice en rojo y la ferretería sigue «sin propuesta»', /La IA no propuso nada: tope del contador \(prueba\)/.test(tb) && /error/.test(await q.locator('#toast').getAttribute('class')) && (await chip(MOV.a)) === 'sin propuesta' && desde(n0).some(l => l.fn === 'contador:proponer'), tb);
+    estado.iaBloqueaFuncion = false; estado.iaLento = 700; n0 = llamadas.length;
+    await sinToast(); await q.locator('#ct-ia-proponer').click(); await q.waitForTimeout(250);
+    const girando = await q.evaluate(() => { const bt = document.getElementById('ct-ia-proponer'); return { gira: !!bt && bt.classList.contains('ct-girando') && bt.disabled, espera: /La IA está mirando/.test((document.querySelector('#ct-ia-franja .ct-ia-res') || {}).textContent || '') }; });
+    const tp = await tostada(/propuesta/);
+    await pintado(q); estado.iaLento = 0;
+    const pro = ultima(n0, 'contador:proponer');
+    ok('IA · «Proponer con la IA» llama a la función (proponer) con la sesión; mientras espera el botón gira y la franja dice «La IA está mirando…»', !!pro && JSON.stringify(pro.args) === '{"accion":"proponer"}' && /^Bearer /.test(pro.auth) && girando.gira && girando.espera, JSON.stringify(girando));
+    ok('IA · al terminar avisa «1 propuesta · 0 por regla · 0 sin respuesta · $0.12» y repinta: la ferretería trae «IA · 5100 Material · 81 %» y la franja «6 propuestas listas · 0 por proponer · este mes $4.32»',
+      /^1 propuesta · 0 por regla · 0 sin respuesta · \$0\.12$/.test(tp.trim()) && (await chip(MOV.a)) === 'IA · 5100 Material · 81 %' && /^6 propuestas listas · 0 por proponer · este mes \$4\.32 de \$30\.00$/.test((await q.locator('#ct-ia-cifras').textContent()).trim()), tp);
+    ok('IA · sin nada por proponer el botón se apaga y dice por qué', await q.locator('#ct-ia-proponer').isDisabled() && /Nada por proponer/.test(await texto(q, '.ct-ia-freno')));
+    // Home Depot: las dos columnas y «Así es» con la obra
+    const hd = await fila(q, MI.hd);
+    const cols = await hd.evaluate(c => { const a = c.querySelector('.ct-ia-suya').getBoundingClientRect(), y = c.querySelector('.ct-ia-mia').getBoundingClientRect(); return { lado: Math.abs(a.top - y.top) < 2 && a.right <= y.left, a: Math.round(a.width), y: Math.round(y.width) }; });
+    ok('IA · desplegado, el movimiento trae «Según la IA» y «Según yo» lado a lado en la computadora', cols.lado && (await hd.locator('.ct-ia-suya .ct-ia-h').textContent()) === 'Según la IA' && (await hd.locator('.ct-ia-mia .ct-ia-h').textContent()) === 'Según yo', JSON.stringify(cols));
+    const suya = await hd.locator('.ct-ia-suya').textContent();
+    ok('IA · «Según la IA»: la línea (5100 Material, falta la obra), el motivo en llano, «92 % de confianza» en verde, el chip «Pide obra», «Propuso claude-opus-5-5» y el selector de la obra',
+      /5100\s*Material/.test(suya) && /falta la obra/.test(suya) && /Home Depot vende material eléctrico/.test(suya) && (await hd.locator('.ct-ia-pills .ct-conf').textContent()) === '92 % de confianza' &&
+      (await hd.locator('.ct-ia-pills .ct-conf').getAttribute('class')).includes(' ok') && (await hd.locator('[data-flag="pide_obra"]').textContent()) === 'Pide obra' && /Propuso claude-opus-5-5/.test(suya) &&
+      (await hd.locator('[data-ia-obra] option').count()) === 3, suya.slice(0, 300));
+    ok('IA · con la obra sin elegir el botón lo dice: «✓ Así es (elige antes la obra)», y «No es eso» al lado', (await hd.locator('[data-ia-asi]').textContent()) === '✓ Así es (elige antes la obra)' && (await hd.locator('[data-ia-no]').count()) === 1);
+    n0 = llamadas.length;
+    await hd.locator('[data-ia-asi]').click(); await q.waitForTimeout(150);
+    ok('IA · «Así es» sin obra no llama: pide la obra en la tarjeta', !desde(n0).some(l => l.fn === 'contador:aprobar') && /Elige antes la obra/.test(await texto(q, `.ct-mov[data-id="${MI.hd}"] .ct-ia-res`)));
+    await hd.locator('[data-ia-obra]').selectOption('casa-perez-k3m9');
+    ok('IA · elegida la obra, el botón dice «✓ Así es · Casa Pérez»', (await hd.locator('[data-ia-asi]').textContent()) === '✓ Así es · Casa Pérez');
+    await foto(q, 'ia-1-bandeja-propuesta');
+    await sinToast(); await hd.locator('[data-ia-asi]').click();
+    const ta = await tostada(/Así es/); await pintado(q);
+    const apr = ultima(n0, 'contador:aprobar');
+    ok('IA · «Así es» llama a aprobar {accion, propuesta, recordar: true, proyecto_id} con la sesión', !!apr && JSON.stringify(apr.args) === JSON.stringify({ accion: 'aprobar', propuesta: PR.hd, recordar: true, proyecto_id: 'casa-perez-k3m9' }) && /^Bearer /.test(apr.auth), JSON.stringify(apr && apr.args));
+    ok('IA · …avisa «Así es: en el libro · asiento … · regla nueva «THE HOME DEPOT»» y el movimiento sale de la bandeja', /^Así es: en el libro · asiento 2026-000801 · regla nueva «THE HOME DEPOT»$/.test(ta.trim()) && (await movQ(MI.hd).count()) === 0 && (await q.locator('.ct-mov').count()) === 7, ta);
+    // Amazon: confianza ámbar, los flags, las alternativas y «No es eso»
+    const amz = await fila(q, MI.amz);
+    ok('IA · Amazon: «55 % de confianza» en ámbar, «¿Activo fijo?» y «¿Use tax?» (con su explicación al pasar), y las otras posibilidades (1510, 6500)',
+      (await amz.locator('.ct-ia-pills .ct-conf').getAttribute('class')).includes(' warn') && (await amz.locator('[data-flag="capitalizable"]').textContent()) === '¿Activo fijo?' && (await amz.locator('[data-flag="use_tax"]').textContent()) === '¿Use tax?' &&
+      /2,500/.test(await amz.locator('[data-flag="capitalizable"]').getAttribute('title')) && /Otras posibilidades: 1510 .* · 6500/.test(await amz.locator('.ct-ia-alt').textContent()) && (await amz.locator('[data-ia-asi]').textContent()) === '✓ Así es');
+    const nfx = await fila(q, MI.nfx);
+    ok('IA · Netflix: «35 % de confianza» en gris y el chip «Personal»; el IRS, «IRS» y 97 % en verde', !/ (ok|warn)\b/.test(await nfx.locator('.ct-ia-pills .ct-conf').getAttribute('class')) && (await nfx.locator('[data-flag="personal"]').textContent()) === 'Personal' &&
+      (await (await fila(q, MI.irs)).locator('[data-flag="irs"]').textContent()) === 'IRS' && (await movQ(MI.irs).locator('.ct-conf').getAttribute('class')).includes(' ok'));
+    await fila(q, MI.amz); n0 = llamadas.length;
+    await sinToast(); await movQ(MI.amz).locator('[data-ia-no]').click();
+    const tr = await tostada(/rechazada/); await pintado(q);
+    const rec = ultima(n0, 'contador:rechazar');
+    const foco = await q.evaluate(id => { const a = document.activeElement; return !!a && a.matches('[data-ia-cuenta]') && !!a.closest(`.ct-mov[data-id="${id}"]`); }, MI.amz);
+    ok('IA · «No es eso» llama a rechazar {accion, propuesta, motivo} y avisa; el movimiento sigue (desplegado), su chip dice «sin propuesta», «Según la IA» dice que la rechazaste y el foco queda en la cuenta de «Según yo»',
+      !!rec && rec.args.accion === 'rechazar' && rec.args.propuesta === PR.amz && /No es eso/.test(rec.args.motivo) && /Propuesta rechazada/.test(tr) && (await movQ(MI.amz).count()) === 1 &&
+      (await movQ(MI.amz).getAttribute('class')).includes('abierta') && (await chip(MI.amz)) === 'sin propuesta' && /Rechazaste la propuesta \(6400 Herramienta menor y uniformes\)/.test(await movQ(MI.amz).locator('.ct-ia-suya').textContent()) && foco,
+      JSON.stringify(rec && rec.args) + ' foco=' + foco);
+    // «Según yo»: las cuentas de v_contador_cuentas por grupos, el buscador, la obra según la cuenta, el motivo y «Recordar»
+    const yo = movQ(MI.amz).locator('.ct-ia-mia');
+    const grupos = await yo.locator('[data-ia-cuenta] optgroup').evaluateAll(gs => gs.map(g => g.label));
+    const codigos = await yo.locator('[data-ia-cuenta] option').evaluateAll(os => os.map(o => o.value).filter(Boolean));
+    ok('IA · «Según yo» ofrece SOLO las cuentas de v_contador_cuentas (14), agrupadas por tipo con <optgroup> (costo, gastos, otros gastos, activo, pasivo, capital), sin bancos, tarjetas ni sueldos',
+      JSON.stringify(grupos) === '["Costo de obra","Gastos","Otros gastos","Activo","Pasivo","Capital"]' && codigos.length === 14 && codigos.every(c => CUENTAS_IA.some(x => x.codigo === c)) && !codigos.some(c => /^10|^2100|^6000$/.test(c)), JSON.stringify(grupos) + ' ' + codigos.join(','));
+    await yo.locator('[data-ia-cuenta]').selectOption('5100');
+    ok('IA · con una cuenta que pide obra (5100) la obra se vuelve obligatoria y lo dice', (await yo.locator('[data-ia-obra-et]').textContent()) === 'Obra (esta cuenta la pide)' && !(await yo.locator('[data-ia-obra-yo]').isDisabled()));
+    n0 = llamadas.length;
+    await yo.locator('[data-ia-clasificar]').click(); await q.waitForTimeout(150);
+    ok('IA · «Clasificar» a 5100 sin obra no llama y lo dice', !desde(n0).some(l => l.fn === 'contador:clasificar') && /pide la obra/.test(await texto(q, `.ct-mov[data-id="${MI.amz}"] .ct-ia-res`)));
+    await yo.locator('[data-ia-buscar]').fill('oficina');
+    ok('IA · el buscador acota la lista («oficina» → solo 6500) y, si queda una, la elige; con 6500 (no lleva obra) la obra se apaga', JSON.stringify(await yo.locator('[data-ia-cuenta] option').evaluateAll(os => os.map(o => o.value).filter(Boolean))) === '["6500"]' &&
+      (await yo.locator('[data-ia-cuenta]').inputValue()) === '6500' && await yo.locator('[data-ia-obra-yo]').isDisabled() && (await yo.locator('[data-ia-obra-et]').textContent()) === 'Obra (esta cuenta no lleva obra)');
+    await yo.locator('textarea[name="ia_motivo"]').fill('Laptop de la oficina');
+    ok('IA · «Recordar para este comercio» viene marcada', await yo.locator('input[name="ia_recordar"]').isChecked());
+    await yo.locator('input[name="ia_recordar"]').uncheck();
+    await foto(q, 'ia-2-segun-yo');
+    await sinToast(); await yo.locator('[data-ia-clasificar]').click();
+    const tc = await tostada(/Clasificado/); await pintado(q);
+    const cla = ultima(n0, 'contador:clasificar');
+    ok('IA · «Clasificar» manda {accion, movimiento, lineas: [{cuenta, proyecto_id}], motivo, recordar} con la sesión (sin recordar: false; sin obra: null) y el movimiento sale de la bandeja',
+      !!cla && JSON.stringify(cla.args) === JSON.stringify({ accion: 'clasificar', movimiento: MI.amz, lineas: [{ cuenta: '6500', proyecto_id: null }], motivo: 'Laptop de la oficina', recordar: false }) && /^Bearer /.test(cla.auth) &&
+      /^Clasificado · asiento 2026-000802$/.test(tc.trim()) && (await movQ(MI.amz).count()) === 0, JSON.stringify(cla && cla.args) + ' | ' + tc);
+    // el IRS: lo mismo que la IA → «Clasificar (igual que la IA)»; con recordar y sin motivo
+    const irs = await fila(q, MI.irs), yoI = irs.locator('.ct-ia-mia');
+    await yoI.locator('[data-ia-cuenta]').selectOption('3200');
+    const igual = (await yoI.locator('[data-ia-clasificar]').textContent()).trim();
+    await yoI.locator('[data-ia-cuenta]').selectOption('6600');
+    const distinto = (await yoI.locator('[data-ia-clasificar]').textContent()).trim();
+    ok('IA · si lo elegido coincide con la propuesta, el botón dice «Clasificar (igual que la IA)»; si no, «Clasificar»', igual === 'Clasificar (igual que la IA)' && distinto === 'Clasificar', igual + ' | ' + distinto);
+    await yoI.locator('[data-ia-cuenta]').selectOption('3200');
+    n0 = llamadas.length;
+    await sinToast(); await yoI.locator('[data-ia-clasificar]').click();
+    const ti = await tostada(/Clasificado/); await pintado(q);
+    const claI = ultima(n0, 'contador:clasificar');
+    ok('IA · …y manda {lineas: [{cuenta: 3200, proyecto_id: null}], motivo: null, recordar: true}; la base la deja «aprobada» y el aviso dice «Clasificado (igual que la IA)» con la regla nueva',
+      !!claI && JSON.stringify(claI.args) === JSON.stringify({ accion: 'clasificar', movimiento: MI.irs, lineas: [{ cuenta: '3200', proyecto_id: null }], motivo: null, recordar: true }) && /^Clasificado \(igual que la IA\) · asiento 2026-000803 · regla nueva «IRS USATAXPYMT»$/.test(ti.trim()), ti);
+    // Netflix: Edgar dice otra cosa → «editada»
+    const nf = await fila(q, MI.nfx);
+    await nf.locator('.ct-ia-mia [data-ia-cuenta]').selectOption('6500');
+    await sinToast(); await nf.locator('.ct-ia-mia [data-ia-clasificar]').click();
+    const tn = await tostada(/cambiaste/); await pintado(q);
+    ok('IA · con líneas distintas de la propuesta la base la deja «editada» y el aviso lo dice', /^Clasificado \(cambiaste la propuesta\) · asiento 2026-000804/.test(tn.trim()) && IA.props.find(x => x.propuesta_id === PR.nfx).estado === 'editada', tn);
+    // un error de la función (409 MX008) sale en ámbar en la tarjeta y los botones vuelven
+    const ww = await fila(q, MI.wawa);
+    ok('IA · la propuesta de una regla dice «Regla: WAWA» y «100 % de confianza», sin selector de obra', /Regla: WAWA/.test(await ww.locator('.ct-ia-fuente').textContent()) && (await ww.locator('.ct-conf').textContent()) === '100 % de confianza' && (await ww.locator('[data-ia-obra]').count()) === 0);
+    estado.iaFalla = { estado: 409, cuerpo: { codigo: 'MX008', error: 'Ese movimiento ya está casado con otro asiento: deshazlo antes con fn_banco_descasar (prueba).' } };
+    await ww.locator('[data-ia-asi]').click();
+    await q.waitForSelector(`.ct-mov[data-id="${MI.wawa}"] .ct-ia-res .ct-aviso.warn`, { timeout: 8000 }).catch(() => {});
+    ok('IA · un 409 MX008 de la función sale en ámbar con su mensaje, en la tarjeta, y «Así es» vuelve a poderse tocar', /ya está casado con otro asiento/.test(await texto(q, `.ct-mov[data-id="${MI.wawa}"] .ct-ia-res .ct-aviso.warn`)) && !(await ww.locator('[data-ia-asi]').isDisabled()) && (await movQ(MI.wawa).count()) === 1);
+    // el tope, la función sin desplegar, la llave que falta
+    IA.gasto = 3000;
+    await irA('bandeja');
+    ok('IA · con el tope del contador alcanzado: «este mes $30.00 de $30.00», el botón apagado y por qué', /este mes \$30\.00 de \$30\.00/.test(await q.locator('#ct-ia-cifras').textContent()) && await q.locator('#ct-ia-proponer').isDisabled() && /La IA contable llegó a su tope del mes \(\$30\.00\)/.test(await texto(q, '.ct-ia-freno')));
+    n0 = llamadas.length;
+    await q.locator('#ct-ia-proponer').click({ force: true }).catch(() => {}); await q.waitForTimeout(200);
+    ok('IA · …y tocarlo no llama a la función', !desde(n0).some(l => l.fn === 'contador:proponer'));
+    IA.gasto = 432;
+    estado.iaSinFuncion = true;
+    await irA('bandeja');
+    ok('IA · si la función «contador» no contesta (sin desplegar), el botón se apaga y lo dice', await q.locator('#ct-ia-proponer').isDisabled() && /La función «contador» no contestó/.test(await texto(q, '.ct-ia-freno')));
+    estado.iaSinFuncion = false; estado.iaSinLlave = true;
+    await irA('bandeja');
+    ok('IA · si la salud dice que falta la llave, el botón se apaga y dice dónde ponerla (ANTHROPIC_API_KEY)', await q.locator('#ct-ia-proponer').isDisabled() && /ANTHROPIC_API_KEY/.test(await texto(q, '.ct-ia-freno.bad')));
+    estado.iaSinLlave = false;
+    // la falla ruidosa de la IA: un cuadre en rojo o un conteo distinto y no se pinta nada de ella (la bandeja sigue)
+    estado.iaCuadreMal = true;
+    await irA('bandeja');
+    ok('IA · un cuadre de la IA en rojo (61): la franja en rojo «no se pinta ninguna propuesta» con el detalle, sin chips ni columnas; la bandeja sigue con «Otra cosa…»',
+      /La IA contable no cuadra: no se pinta ninguna propuesta/.test(await texto(q, '#ct-ia-franja')) && /2026-000777/.test(await texto(q, '#ct-ia-franja')) && (await q.locator('.ct-ia-chip, .ct-ia').count()) === 0 &&
+      (await q.locator('#ct-ia-proponer').count()) === 0 && (await q.locator('.ct-mov').count()) === 4 && (await q.locator('.ct-mov [data-otra]').count()) === 4 && (await q.locator('.ct-rojo').count()) === 0);
+    await foto(q, 'ia-3-no-cuadra');
+    estado.iaCuadreMal = false; estado.iaConteo = true;
+    await irA('bandeja');
+    ok('IA · si v_contador_bandeja trae otro número de filas que el que contó el control: también rojo, «la pantalla trajo … y el control contó 99»', /la pantalla trajo \d+ fila\(s\) y el control contó 99/.test(await texto(q, '#ct-ia-franja')) && (await q.locator('.ct-ia-chip').count()) === 0);
+    estado.iaConteo = false;
+    // Conexiones y seguridad: la tarjeta de la IA, «Probar» y las reglas con «Quitar»
+    n0 = llamadas.length; l0 = lecturas.length;
+    await irA('conexiones');
+    const tIA = await texto(q, '#ct-ia');
+    ok('IA · Conexiones: la tarjeta «IA contable (fase 7)» dice «conectada» y «cuadra», la llave puesta, el modelo (claude-opus-5-5, esfuerzo low), el gasto del mes con los dos topes y la última ráfaga; leyó v_contador_reglas',
+      /conectada/.test(await texto(q, '#ct-ia .ct-cab')) && /cuadra/.test(await texto(q, '#ct-ia .ct-cab')) && /Llave de Anthropic: puesta/.test(tIA) && /Modelo: claude-opus-5-5 \(esfuerzo low\)/.test(tIA) &&
+      /la IA contable lleva \$4\.32 de \$30\.00; toda la IA de la app, \$12\.42 de \$100\.00/.test(tIA) && /Última ráfaga: \d+ \w+ 2026 \d\d:\d\d/.test(tIA) && lecturas.slice(l0).some(l => /^v_contador_reglas\?/.test(l)) && /IA contable con 5 reglas/.test(await texto(q, '.ct-pag-sub')) &&
+      !/no cuadra/.test(await texto(q, '#ct-ia .ct-cab')), tIA.slice(0, 400));
+    const reglasTxt = (await q.locator('#ct-ia .ct-ia-regla').allTextContents()).map(x => x.replace(/\s+/g, ' ').trim());
+    ok('IA · las reglas: el comercio → sus cuentas, cuántas veces y la última, cada una con «Quitar» (las dos de antes y las tres que nacieron hoy con «Recordar»: THE HOME DEPOT, IRS y NETFLIX; Amazon no, que iba sin recordar)',
+      reglasTxt.length === 5 && reglasTxt.some(x => /WAWA → 6300 Vehículos — combustible y mantenimiento.*12 veces · la última el 28 oct 2026/.test(x)) && reglasTxt.some(x => /THE HOME DEPOT → 5100 Material.*pide obra/.test(x)) && reglasTxt.some(x => /IRS USATAXPYMT → 3200/.test(x)) &&
+      !reglasTxt.some(x => /AMAZON/.test(x)) && (await q.locator('#ct-ia .ct-ia-regla [data-quitar]').count()) === 5, reglasTxt.join(' | '));
+    n0 = llamadas.length;
+    await q.locator('#ct-ia-probar').click();
+    await q.waitForSelector('#ct-ia > .ct-ia-res .ct-aviso.ok', { timeout: 8000 }).catch(() => {});
+    ok('IA · «Probar» pide la salud a la función con la sesión y enseña «La función «contador» contesta: tiene la llave y llega a la base»', desde(n0).some(l => l.fn === 'contador:salud' && /^Bearer /.test(l.auth)) && /La función «contador» contesta: tiene la llave y llega a la base/.test(await texto(q, '#ct-ia > .ct-ia-res')));
+    const shell = q.locator(`#ct-ia .ct-ia-regla[data-regla="${RG.shell}"]`);
+    n0 = llamadas.length;
+    await shell.locator('[data-quitar]').click();
+    await shell.locator('button[type=submit]').click(); await q.waitForTimeout(150);
+    ok('IA · «Quitar» pide el motivo y sin él no llama', /Falta motivo/.test(await texto(q, `#ct-ia .ct-ia-regla[data-regla="${RG.shell}"] .ct-error`)) && !desde(n0).some(l => l.fn === 'contador:regla_baja'));
+    await shell.locator('textarea[name="motivo"]').fill('Ya no cargamos en Shell con la tarjeta de la empresa');
+    await foto(q, 'ia-4-conexiones-quitar');
+    await sinToast(); await shell.locator('button[type=submit]').click();
+    const tq = await tostada(/quitada/); await pintado(q);
+    const rb = ultima(n0, 'contador:regla_baja');
+    ok('IA · …con motivo llama a regla_baja {accion, regla, motivo} y la tarjeta se repinta sin ella («1 regla dada de baja»)', !!rb && JSON.stringify(rb.args) === JSON.stringify({ accion: 'regla_baja', regla: RG.shell, motivo: 'Ya no cargamos en Shell con la tarjeta de la empresa' }) &&
+      /Regla «SHELL OIL» quitada/.test(tq) && (await q.locator(`#ct-ia .ct-ia-regla[data-regla="${RG.shell}"]`).count()) === 0 && /1 regla dada de baja/.test(await texto(q, '#ct-ia')), JSON.stringify(rb && rb.args));
+    // «Qué atender» en el Resumen: las alarmas y los cuadres de la IA
+    estado.iaVieja = true; IA.gasto = 3000;
+    await irA('resumen');
+    const atnIA = await q.locator('#ct-atender .ct-atn').allTextContents();
+    ok('IA · «Qué atender» lista las alarmas de v_contador_control en llano con su detalle: la propuesta de más de 7 días (→ Bandeja) y el tope del mes (→ Conexiones)',
+      atnIA.some(x => /Propuestas de la IA que esperan más de 7 días.*IRS USATAXPYMT/.test(x)) && atnIA.some(x => /llegó al tope de gasto del mes.*el contador \$30\.00 \(su tope, \$30\.00\)/.test(x)) &&
+      (await q.locator('#ct-atender .ct-atn', { hasText: 'más de 7 días' }).locator('button[data-ir="bandeja"]').count()) === 1 && (await q.locator('#ct-atender .ct-atn', { hasText: 'tope de gasto' }).locator('button[data-ir="conexiones"]').count()) === 1, atnIA.join(' | '));
+    estado.iaVieja = false; IA.gasto = 432; estado.iaCuadreMal = true;
+    await irA('resumen');
+    ok('IA · …y un cuadre de la IA en rojo: «La IA contable no cuadra (…): la Bandeja no pinta sus propuestas»', (await q.locator('#ct-atender .ct-atn').allTextContents()).some(x => /La IA contable no cuadra \(ningún asiento con «Propuesta de la IA #».*\): la Bandeja no pinta sus propuestas/.test(x)));
+    estado.iaCuadreMal = false;
+    const guardadoIA = await q.evaluate(() => { const t = []; for (const st of [localStorage, sessionStorage]) for (let i = 0; i < st.length; i++) t.push(st.key(i) + '=' + st.getItem(st.key(i))); return t.join('\n'); });
+    ok('IA · nada de la IA se guarda en el teléfono (ni propuestas, ni reglas, ni el gasto)', !/v_contador|bbbbbbbb-0000|THE HOME DEPOT|USATAXPYMT|claude-opus/.test(guardadoIA));
+    await cx.close();
+
+    // el teléfono (390 px) y el iPad (820 px): las dos columnas, una debajo de otra en el teléfono y lado a lado en el iPad; nada se sale de la pantalla
+    for (const w of [390, 820]) {
+      const tc2 = await b.newContext({ viewport: { width: w, height: w < 700 ? 844 : 1100 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
+      await simular(tc2, 'dueno');
+      const t2 = await tc2.newPage(); t2.on('pageerror', e => errs.push(`IA ${w}: ` + String(e).slice(0, 160)));
+      await t2.goto('http://localhost:8873/index.html'); await t2.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await t2.waitForTimeout(800);
+      await t2.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
+      await t2.locator('#btn-conta').evaluate(x => x.click()); await t2.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 });
+      await t2.evaluate(() => window.MXP_CONTA.ir('bandeja')); await pintado(t2);
+      const fe = await fila(t2, MOV.a); await t2.waitForTimeout(300);
+      const med = await t2.evaluate(() => {
+        const c = document.querySelector('.ct-mov.abierta'), a = c.querySelector('.ct-ia-suya').getBoundingClientRect(), y = c.querySelector('.ct-ia-mia').getBoundingClientRect();
+        const btn = document.getElementById('ct-ia-proponer').getBoundingClientRect(), fr = document.getElementById('ct-ia-franja').getBoundingClientRect();
+        const fuera = [...document.querySelectorAll('#conta-raiz *')].filter(e => e.getBoundingClientRect().right > window.innerWidth + 1 && getComputedStyle(e).position !== 'fixed' && !e.closest('.ct-tabs')).map(e => e.className || e.tagName).slice(0, 5);
+        const chipsFuera = [...document.querySelectorAll('.ct-ia-chip')].filter(e => e.getBoundingClientRect().right > e.closest('.ct-mov').getBoundingClientRect().right + 1).length;
+        return { sw: document.documentElement.scrollWidth, iw: window.innerWidth, debajo: y.top >= a.bottom - 1, lado: Math.abs(a.top - y.top) < 2 && a.right <= y.left, fuera, chipsFuera, btnAncho: Math.round(btn.width), frAncho: Math.round(fr.width) };
+      });
+      if (w === 390) ok('IA · teléfono (390 px): «Según yo» va debajo de «Según la IA», «Proponer con la IA» va entero a lo ancho de la franja, ningún chip se sale de su fila y la página no desplaza de lado',
+        med.sw <= med.iw + 1 && med.debajo && med.fuera.length === 0 && med.chipsFuera === 0 && med.btnAncho >= med.frAncho - 60, JSON.stringify(med));
+      else ok('IA · iPad (820 px): las dos columnas van lado a lado y nada se sale de la pantalla', med.sw <= med.iw + 1 && med.lado && med.fuera.length === 0 && med.chipsFuera === 0, JSON.stringify(med));
+      await foto(t2, `ia-5-${w}-bandeja-propuesta`);
+      if (w === 390) {
+        await t2.evaluate(() => window.MXP_CONTA.ir('conexiones')); await pintado(t2);
+        await t2.locator('#ct-ia').scrollIntoViewIfNeeded();
+        const cxm = await t2.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth, der: document.querySelector('#ct-ia').getBoundingClientRect().right }));
+        ok('IA · teléfono: la tarjeta de la IA en Conexiones cabe y la página no desplaza de lado', cxm.sw <= cxm.iw + 1 && cxm.der <= cxm.iw, JSON.stringify(cxm));
+        await foto(t2, 'ia-6-390-conexiones');
+      }
+      await tc2.close();
+    }
+
+    // sin el código del teléfono (aal1): se ve todo, no se toca nada, y ni se le pregunta la salud a la función
+    estado.mfaFactores = []; estado.sesionAal = undefined;
+    const sc = await b.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' });
+    await simular(sc, 'dueno');
+    const s2 = await sc.newPage(); s2.on('pageerror', e => errs.push('IA sin código: ' + String(e).slice(0, 160)));
+    await s2.goto('http://localhost:8873/index.html'); await s2.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await s2.waitForTimeout(800);
+    await s2.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
+    await s2.locator('#btn-conta').evaluate(x => x.click()); await s2.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 });
+    n0 = llamadas.length;
+    await s2.evaluate(() => window.MXP_CONTA.ir('bandeja')); await pintado(s2);
+    const fs2 = await fila(s2, MOV.a);
+    ok('IA · sin el código del teléfono: la franja y las propuestas se ven, pero «Proponer», «Así es», «No es eso» y «Clasificar» van apagados con «Primero activa el código del teléfono», y no se llamó a la función',
+      await s2.locator('#ct-ia-proponer').isDisabled() && /Primero activa el código del teléfono/.test(await texto(s2, '.ct-ia-freno')) && await fs2.locator('[data-ia-asi]').isDisabled() && await fs2.locator('[data-ia-no]').isDisabled() &&
+      await fs2.locator('[data-ia-clasificar]').isDisabled() && /Primero activa el código del teléfono/.test(await fs2.locator('.ct-ia-sin').textContent()) && !desde(n0).some(l => /^contador:/.test(l.fn)) && !(await fs2.locator('[data-otra]').isDisabled()));
+    await sc.close();
+    estado.c8 = false; iaReset();
+  }
+
   // ---- Sin señal ----
   await ctx.setOffline(true);
   await tab(p, 'bancos'); await p.waitForSelector('.ct-rojo', { timeout: 8000 });
@@ -1543,8 +1991,10 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   ok('Al volver la señal, reintenta sola', (await p.locator('.ct-cuenta').count()) === 4);
 
   if (FOTOS) {
-    // cada página a 390, 820 y 1280 px (<ancho>-<pagina>.png), con el código del teléfono activo, Plaid conectado y la bandeja con el depósito de Stripe
+    // cada página a 390, 820 y 1280 px (<ancho>-<pagina>.png), con el código del teléfono activo, Plaid conectado, la bandeja con el depósito de Stripe
+    // y la IA contable (c8) pegada: la bandeja con la propuesta de Home Depot desplegada y Conexiones con su tarjeta y sus reglas
     estado.mfaFactores = [{ id: 'f-1', friendly_name: 'Teléfono de Edgar', factor_type: 'totp', status: 'verified' }]; estado.sesionAal = 'aal2'; estado.stripeDeposito = true;
+    estado.c8 = true; iaReset();
     for (const w of [390, 820, 1280]) {
       const cx = await b.newContext({ viewport: { width: w, height: w < 700 ? 844 : 1000 }, deviceScaleFactor: w < 1024 ? 2 : 1, isMobile: w < 1024, hasTouch: w < 1024, serviceWorkers: 'block' });
       await simular(cx, 'dueno');
@@ -1555,7 +2005,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
       for (const k of PAGS) {
         await q.evaluate(k => window.MXP_CONTA.ir(k), k); await pintado(q); await q.waitForTimeout(300);
         if (k === 'bancos') await q.locator('#ct-imp-abrir').click().catch(() => {});
-        if (k === 'bandeja') await fila(q, MOV.b).catch(() => {});
+        if (k === 'bandeja') await fila(q, MI.hd).catch(() => {});
         if (k === 'movimientos') { await q.selectOption('#ct-mov-cuenta', '2100-2013').catch(() => {}); await pintado(q); }
         if (k === 'estados') { await q.locator('[data-periodo="2026-10"]').click().catch(() => {}); await pintado(q); }
         await q.waitForTimeout(200);
@@ -1563,7 +2013,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
       }
       await cx.close();
     }
-    estado.mfaFactores = []; estado.sesionAal = undefined; estado.stripeDeposito = false;
+    estado.mfaFactores = []; estado.sesionAal = undefined; estado.stripeDeposito = false; estado.c8 = false; iaReset();
   }
   ok('Sin errores de JavaScript en la página', errs.length === 0, errs.join(' | '));
   await b.close(); srv.close();
