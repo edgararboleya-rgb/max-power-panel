@@ -459,7 +459,7 @@ Fase 8 (cerrar octubre y compararlo con QuickBooks), y la factura de la app
 - [x] Fase 4 · Estados y apertura al 30-sep — pegado (c4); apertura posteada y auditada (15-oct)
 - [x] Fase 5 · Primera pantalla — construida (`js/conta.js`, 16-oct) y publicada; pestaña **Estados** (resultados, balance, balanza → mayor → asiento → papel, flujo de caja, comparación con QuickBooks; 130 comprobaciones en `pruebas/conta/pantalla.js`) construida el 25-oct y publicada el 26-oct (v286)
 - [x] Fase 6 · Banco, tarjetas, cobros y pagos — pegado (c6, rondas 2–5) y c7 Plaid (17-oct); Chase y las dos Amex conectadas por Plaid y sincronizando cada mañana (25-oct)
-- [ ] Fase 7 · Categorización y la bandeja — 🔵🟢 ▶ dictas las reglas; despliegas `contador`
+- [ ] Fase 7 · Categorización y la bandeja — **construida el 31-oct** (f07, «Lo construido»): `docs/conta/c8-contador.sql` + `c8-pruebas.sql` (25), la función `supabase/functions/contador/` (Opus 5.5, effort low, caché, «propone y nunca postea», sin fallback), y en la Bandeja las dos columnas «Según la IA» / «Según yo» con «Así es» y «Clasificar» (pedido de Edgar: «como en QuickBooks»); las reglas por comercio se aprenden al aprobar. Fable con esfuerzo máximo en la base, la función y la verificación desde cero; Opus 5.5 en la pantalla y el e2e. ▶ Pegar c8 y sus pruebas, la llave `ANTHROPIC_API_KEY`, desplegar `contador`, publicar; después, la primera ráfaga sobre los 185 «sin ticket»
 - [ ] Fase 8 · Cierre, ronda y activos fijos — 🔵🟢 ▶ pg_cron; cierras octubre
 - [ ] Fase 9 · Costo por obra + reparto de burden — 🔵🟢 ▶ decides y validas
 - [ ] Fase 10 · WIP, retención, factura y retiro de `qb` — 🔵🟢 ▶ método de avance
