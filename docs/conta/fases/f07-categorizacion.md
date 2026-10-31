@@ -18,11 +18,11 @@
 - **El motor de reglas determinista**, con reglas que **parten un movimiento en
   varias líneas** (la cuota del vehículo: Dr 2520 + Dr 7100 / Cr 1010, con la
   función de f06).
-- **La bandeja.** `ia_propuestas` (`id, accion, modelo, effort, prompt_version`
+- **La bandeja.** `contador_propuestas` (`id, accion, modelo, effort, prompt_version`
   —hash del texto del prompt que la función calcula al arrancar—, `entrada`
   jsonb con solo lo variable congelado + `prefijo_hash`/`reglas_version`,
   `salida` cruda, `estado` pendiente|aprobada|editada|rechazada,
-  `aprobado_por, aprobado_el, asiento_id, lote_id`) e `ia_lotes` (`usage`,
+  `aprobado_por, aprobado_el, asiento_id, lote_id`) e `contador_lotes` (`usage`,
   centavos, modelo, effort por petición). **La función inserta la fila ANTES de
   devolver la sugerencia**: si no se pudo guardar, no se muestra. `fn_aprobar`
   postea vía `fn_postear` y añade la FK `asientos.propuesta_id`.
@@ -83,8 +83,11 @@ v1: el use tax queda como **aviso** («¿Use tax?») en la propuesta, y Edgar
 decide; nada se postea automático.
 
 **La base (`c8-contador.sql`, 2.400 líneas; `c8-pruebas.sql`, 25 pruebas).**
-Cuatro tablas con RLS y una sola policy de lectura del dueño (`ia_config`,
-`ia_reglas`, `ia_lotes`, `ia_propuestas`), 32 funciones `fn_contador_*`
+Las tablas se llaman `contador_*` y no `ia_*`: producción ya tenía una
+`ia_propuestas` de la revisión diaria del cerebro de Planos, con otras
+columnas, y el primer pegado chocó con ella (31-oct) sin dejar nada.
+Cuatro tablas con RLS y una sola policy de lectura del dueño (`contador_config`,
+`contador_reglas`, `contador_lotes`, `contador_propuestas`), 32 funciones `fn_contador_*`
 (ninguna SECURITY DEFINER, ninguna ejecutable por la API: todo entra por la
 función de borde como `postgres`) y las vistas `v_contador_estado`,
 `v_contador_bandeja`, `v_contador_reglas`, `v_contador_cuentas` y
@@ -100,7 +103,7 @@ el prefijo que la IA recibe y como flags que la base valida. El gasto se anota
 en `asistente_uso` (la tabla real de la app; `asistente_costo_mes` es su
 vista) con `accion = 'contador_categorizar'`, en centavos:
 `round((entrada×400 + caché escrita×500 + caché leída×20 + salida×2000) /
-1.000.000)`. Dos topes: el propio de la IA contable (`ia_config.tope_mes_centavos`,
+1.000.000)`. Dos topes: el propio de la IA contable (`contador_config.tope_mes_centavos`,
 $30 al mes) y el global de la app (`asistente_ajustes.tope_mes_centavos`);
 con cualquiera de los dos alcanzado, «Proponer» no gasta.
 
@@ -155,6 +158,6 @@ todo, y los arreglos que pidió.
 `c8-pruebas.sql` (25 en `true`); 3 llave NUEVA de Anthropic en Supabase →
 Edge Functions → Secrets → `ANTHROPIC_API_KEY`; 4 la función `contador`
 (Verify JWT apagado) y `…/contador?paso=salud`; 5 publicar la app y, en la
-Bandeja, «Proponer con la IA». Para apagarla: `update ia_config set activa =
+Bandeja, «Proponer con la IA». Para apagarla: `update contador_config set activa =
 false where id = 1`. Recién pegado, la alarma 73 («la llave y la función»)
 sale en rojo hasta la primera ráfaga: es la esperada.

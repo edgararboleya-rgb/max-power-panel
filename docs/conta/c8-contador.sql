@@ -10,7 +10,7 @@
 --   · LA BANDEJA DEL BANCO (c6) deja cada cargo sin ticket ni asiento que
 --     lo explique con el motivo «sin_ticket» («di de qué es»). Hasta hoy
 --     Edgar lo clasificaba a mano, uno por uno. Desde aquí, para cada uno
---     de esos cargos la base guarda UNA PROPUESTA (ia_propuestas): a qué
+--     de esos cargos la base guarda UNA PROPUESTA (contador_propuestas): a qué
 --     cuenta(s) va, con qué obra si la cuenta la pide, por qué (un motivo
 --     de una frase que cita lo que se vio) y con qué confianza. Edgar la
 --     aprueba con un toque («Así es»), la corrige («Según yo»: queda
@@ -18,7 +18,7 @@
 --     ese toque: ES LA PRIMERA REGLA DE LA IA (docs/CONTA-PLAN.md §4):
 --     PROPONE, NUNCA POSTEA.
 --   · DE DÓNDE SALE LA PROPUESTA, en este orden:
---       1. UNA REGLA (ia_reglas): «este comercio siempre va a esta cuenta».
+--       1. UNA REGLA (contador_reglas): «este comercio siempre va a esta cuenta».
 --          Es un patrón (una expresión regular de Postgres, sin distinguir
 --          mayúsculas) que se prueba contra la descripción normalizada del
 --          banco (movimientos_banco.desc_norm), con sus líneas (una o
@@ -57,7 +57,7 @@
 --     descripción y en su procedencia «Propuesta de la IA #<id> aprobada
 --     por Edgar: <el motivo de la IA>». Así, abriendo el asiento, se ve
 --     qué vio la IA, qué contestó tal cual y con qué versión del prompt
---     (ia_propuestas.entrada, salida, prompt_version): lo que pide la fase
+--     (contador_propuestas.entrada, salida, prompt_version): lo que pide la fase
 --     7 al terminar.
 --
 -- LAS REGLAS FIJAS DE LA S-CORP que la IA no reinterpreta (f07; van
@@ -121,7 +121,7 @@
 --   · EN NOMBRE DEL DUEÑO (como p1): c6 exige es_dueno(). Lo que Edgar
 --     aprueba lo pide a la función de borde con su sesión en aal2 (el
 --     código del teléfono); la función se lo pide a la base como postgres,
---     y las funciones de aquí fijan auth.uid() al dueño de ia_config
+--     y las funciones de aquí fijan auth.uid() al dueño de contador_config
 --     (request.jwt.claims y claim.sub, solo dentro de la transacción),
 --     comprueban es_dueno() y lo sueltan al terminar. Queda escrito:
 --     asientos.usuario_id dice el dueño, rol_bd dice postgres.
@@ -149,8 +149,8 @@
 -- $5, leído $0.20), en céntimos de dólar. Dos topes: el global de la app
 -- (todas las acciones del mes contra asistente_ajustes.tope_mes_centavos)
 -- y el propio del contador (lo de «contador_%» contra
--- ia_config.tope_mes_centavos, 30.00 al mes de fábrica); y el interruptor
--- ia_config.activa.
+-- contador_config.tope_mes_centavos, 30.00 al mes de fábrica); y el interruptor
+-- contador_config.activa.
 --
 -- Por qué ninguna función de aquí está en la API (la lección de c7 y p1):
 -- c2 («permisos») y c6 («protecciones del banco», cuadre 90) toman por
@@ -261,6 +261,13 @@
 -- (nunca fn_postear ni fn_postear_interno). No postea nada automático: ni
 -- el use tax, ni la capitalización, ni una regla con confianza 1.
 --
+-- Las tablas se llaman contador_* (y no ia_*, como decía el plan de f07):
+-- producción ya tiene una ia_propuestas de otra parte de la app (las dudas
+-- que la revisión diaria del cerebro de Planos deja), con otras columnas.
+-- El primer pegado en producción (31-oct) chocó con ella («column
+-- movimiento_id does not exist», sin dejar nada); c8 no toca esa tabla, y
+-- si una tabla con nombre de c8 ya existe y no es de c8, para con MX000.
+--
 -- Cómo se instala (Edgar, en este orden, con la cadena c1..c7, s1 y p1 ya
 -- pegada como dice pruebas/conta/README.md):
 --   1. SQL Editor → pegar ESTE archivo entero → Run. Al final sale una
@@ -287,7 +294,7 @@
 --   5. En la app: Contabilidad → Bandeja → «Proponer con la IA (n)»: la
 --      primera ráfaga. Después, en Conexiones y seguridad → «IA contable
 --      (fase 7)»: el gasto del mes, la última ráfaga y las reglas.
---   Para apagarla: update ia_config set activa = false where id = 1; (la
+--   Para apagarla: update contador_config set activa = false where id = 1; (la
 --   bandeja sigue como siempre, y las reglas también).
 --
 -- Lo que llama la función de borde (como postgres): fn_contador_cfg,
@@ -351,6 +358,18 @@ begin
   if cardinality(v_falta) > 0 then
     return format('c8 se pega después de c1, c2, c3, c4, c6, c7, s1 y p1: falta %s.', array_to_string(v_falta, ', '));
   end if;
+  -- Una tabla con el nombre de las de c8 que no sea de c8 (producción ya
+  -- tenía una ia_propuestas de otra app: por eso las nuestras se llaman
+  -- contador_*): se para antes de tocar nada, con «if not exists» la
+  -- dejaríamos como está y lo siguiente reventaría a medias.
+  foreach v_x in array array['contador_config:max_por_rafaga', 'contador_reglas:patron', 'contador_lotes:prefijo_hash', 'contador_propuestas:movimiento_id'] loop
+    if to_regclass('public.' || split_part(v_x, ':', 1)) is not null
+       and not exists (select 1 from information_schema.columns
+                        where table_schema = 'public' and table_name = split_part(v_x, ':', 1) and column_name = split_part(v_x, ':', 2)) then
+      return format('la tabla %s ya existe en esta base y no es la de c8 (no tiene la columna %s): otra cosa usa ese nombre. No la toco; avisa antes de seguir.',
+                    split_part(v_x, ':', 1), split_part(v_x, ':', 2));
+    end if;
+  end loop;
   if not fn_desde_editor() then
     return 'Pégalo en el SQL Editor de Supabase: desde la app no se instala nada.';
   end if;
@@ -385,7 +404,7 @@ begin
   return null;
 end $$;
 revoke execute on function public.fn_contador_precondiciones() from public, anon, authenticated, service_role;
-comment on function public.fn_contador_precondiciones() is 'c8: lo que falta para pegar c8-contador.sql (nulo = nada): c2 y c6, el SQL Editor, un dueño activo, dónde anotar el gasto y nada ajeno sobre las vistas v_contador_*.';
+comment on function public.fn_contador_precondiciones() is 'c8: lo que falta para pegar c8-contador.sql (nulo = nada): c2 y c6, el SQL Editor, un dueño activo, dónde anotar el gasto, ninguna tabla ajena con nombre de c8 y nada ajeno sobre las vistas v_contador_*.';
 
 do $$
 declare
@@ -482,7 +501,7 @@ on conflict (clave) do nothing;
 -- app); prompt_version y prefijo_hash, los de la última ráfaga (sha256
 -- del texto de las instrucciones y del prefijo entero: si cambian, las
 -- propuestas viejas se distinguen por el suyo).
-create table if not exists public.ia_config (
+create table if not exists public.contador_config (
   id                int         primary key,
   modelo            text        not null default 'claude-opus-5-5',
   effort            text        not null default 'low',
@@ -496,13 +515,13 @@ create table if not exists public.ia_config (
   ultimo_error      text,
   ultimo_error_el   timestamptz,
   actualizado       timestamptz not null default now(),
-  constraint ia_config_una    check (id = 1),
-  constraint ia_config_modelo check (modelo ~ '^claude-(opus|fable)-' and modelo !~* '(haiku|sonnet)'),
-  constraint ia_config_effort check (effort in ('low', 'medium', 'high', 'xhigh', 'max')),
-  constraint ia_config_rafaga check (max_por_rafaga between 1 and 100),
-  constraint ia_config_tope   check (tope_mes_centavos between 0 and 1000000)
+  constraint contador_config_una    check (id = 1),
+  constraint contador_config_modelo check (modelo ~ '^claude-(opus|fable)-' and modelo !~* '(haiku|sonnet)'),
+  constraint contador_config_effort check (effort in ('low', 'medium', 'high', 'xhigh', 'max')),
+  constraint contador_config_rafaga check (max_por_rafaga between 1 and 100),
+  constraint contador_config_tope   check (tope_mes_centavos between 0 and 1000000)
 );
-comment on table public.ia_config is 'c8: la configuración del contador (una fila): modelo y esfuerzo, activa, cuántos por ráfaga, el tope propio del mes, el dueño en cuyo nombre se aprueba, la última ráfaga y su error. Sin secretos: la llave vive en Edge Functions.';
+comment on table public.contador_config is 'c8: la configuración del contador (una fila): modelo y esfuerzo, activa, cuántos por ráfaga, el tope propio del mes, el dueño en cuyo nombre se aprueba, la última ráfaga y su error. Sin secretos: la llave vive en Edge Functions.';
 
 -- Las reglas: «este comercio va a esta cuenta». patron es una expresión
 -- regular de Postgres (sin distinguir mayúsculas) contra desc_norm;
@@ -511,7 +530,7 @@ comment on table public.ia_config is 'c8: la configuración del contador (una fi
 -- sin parte, una sola línea entera); pide_obra = alguna cuenta de sus
 -- líneas pide obra y la regla no la trae (la propuesta la pedirá);
 -- origen = la dictó Edgar o nació de una aprobación.
-create table if not exists public.ia_reglas (
+create table if not exists public.contador_reglas (
   id           uuid        primary key default gen_random_uuid(),
   nombre       text        not null,
   patron       text        not null,
@@ -525,20 +544,20 @@ create table if not exists public.ia_reglas (
   veces        int         not null default 0,
   ultima_vez   timestamptz,
   notas        text,
-  constraint ia_reglas_origen check (origen in ('edgar', 'aprobacion')),
-  constraint ia_reglas_nombre check (btrim(nombre) <> ''),
-  constraint ia_reglas_patron check (btrim(patron) <> ''),
-  constraint ia_reglas_lineas check (jsonb_typeof(lineas) = 'array' and jsonb_array_length(lineas) between 1 and 5)
+  constraint contador_reglas_origen check (origen in ('edgar', 'aprobacion')),
+  constraint contador_reglas_nombre check (btrim(nombre) <> ''),
+  constraint contador_reglas_patron check (btrim(patron) <> ''),
+  constraint contador_reglas_lineas check (jsonb_typeof(lineas) = 'array' and jsonb_array_length(lineas) between 1 and 5)
 );
-create unique index if not exists ia_reglas_patron_unico on public.ia_reglas (patron, coalesce(cuenta_banco, '')) where activa;
-create index if not exists ia_reglas_activas_idx on public.ia_reglas (activa) where activa;
-comment on table public.ia_reglas is 'c8: las reglas del contador (un patrón contra la descripción del banco → sus líneas), dictadas por Edgar o aprendidas de lo que aprueba. Una activa por patrón y cuenta.';
+create unique index if not exists contador_reglas_patron_unico on public.contador_reglas (patron, coalesce(cuenta_banco, '')) where activa;
+create index if not exists contador_reglas_activas_idx on public.contador_reglas (activa) where activa;
+comment on table public.contador_reglas is 'c8: las reglas del contador (un patrón contra la descripción del banco → sus líneas), dictadas por Edgar o aprendidas de lo que aprueba. Una activa por patrón y cuenta.';
 
 -- Cada ráfaga de la función de borde: el modelo y el esfuerzo con que se
 -- llamó, la versión del prompt y el hash del prefijo, cuántos movimientos
 -- se mandaron, el uso sumado ({"input","output","cache_creacion",
 -- "cache_lectura"} en tokens), sus centavos, quién la pidió y su error.
-create table if not exists public.ia_lotes (
+create table if not exists public.contador_lotes (
   id             uuid        primary key default gen_random_uuid(),
   accion         text        not null default 'categorizar',
   modelo         text        not null,
@@ -552,13 +571,13 @@ create table if not exists public.ia_lotes (
   creado_el      timestamptz not null default now(),
   cerrado_el     timestamptz,
   error          text,
-  constraint ia_lotes_accion check (accion ~ '^[a-z_]{3,40}$'),
-  constraint ia_lotes_modelo check (modelo ~ '^claude-(opus|fable)-' and modelo !~* '(haiku|sonnet)'),
-  constraint ia_lotes_effort check (effort in ('low', 'medium', 'high', 'xhigh', 'max')),
-  constraint ia_lotes_n      check (n >= 0)
+  constraint contador_lotes_accion check (accion ~ '^[a-z_]{3,40}$'),
+  constraint contador_lotes_modelo check (modelo ~ '^claude-(opus|fable)-' and modelo !~* '(haiku|sonnet)'),
+  constraint contador_lotes_effort check (effort in ('low', 'medium', 'high', 'xhigh', 'max')),
+  constraint contador_lotes_n      check (n >= 0)
 );
-create index if not exists ia_lotes_creado_idx on public.ia_lotes (creado_el desc);
-comment on table public.ia_lotes is 'c8: cada ráfaga a la IA: modelo, esfuerzo, versión del prompt, cuántos, el uso en tokens (entrada, salida, caché creado y leído), sus centavos y su error.';
+create index if not exists contador_lotes_creado_idx on public.contador_lotes (creado_el desc);
+comment on table public.contador_lotes is 'c8: cada ráfaga a la IA: modelo, esfuerzo, versión del prompt, cuántos, el uso en tokens (entrada, salida, caché creado y leído), sus centavos y su error.';
 
 -- Cada propuesta: de qué movimiento, de dónde salió (una regla, la IA o
 -- Edgar), con qué se le preguntó a la IA (entrada: lo variable congelado
@@ -567,13 +586,13 @@ comment on table public.ia_lotes is 'c8: cada ráfaga a la IA: modelo, esfuerzo,
 -- "motivo","confianza","flags":{…},"alternativas"?:[…]}), su estado y, si
 -- Edgar la aprobó o la editó, las líneas que entraron, quién, cuándo, su
 -- motivo y el asiento de c6. Una sola «pendiente» por movimiento.
-create table if not exists public.ia_propuestas (
+create table if not exists public.contador_propuestas (
   id             uuid        primary key default gen_random_uuid(),
   movimiento_id  uuid        not null references public.movimientos_banco (id),
   accion         text        not null default 'categorizar',
   fuente         text        not null,
-  regla_id       uuid        references public.ia_reglas (id),
-  lote_id        uuid        references public.ia_lotes (id),
+  regla_id       uuid        references public.contador_reglas (id),
+  lote_id        uuid        references public.contador_lotes (id),
   modelo         text,
   effort         text,
   prompt_version text,
@@ -587,27 +606,27 @@ create table if not exists public.ia_propuestas (
   motivo_edgar   text,
   asiento_id     uuid        references public.asientos (id),
   creado_el      timestamptz not null default now(),
-  constraint ia_propuestas_fuente  check (fuente in ('regla', 'ia', 'edgar')),
-  constraint ia_propuestas_estado  check (estado in ('pendiente', 'aprobada', 'editada', 'rechazada', 'caducada')),
-  constraint ia_propuestas_forma   check (jsonb_typeof(propuesta) = 'object' and jsonb_typeof(propuesta->'lineas') = 'array'),
-  constraint ia_propuestas_de_ia   check (fuente <> 'ia' or (lote_id is not null and modelo is not null)),
-  constraint ia_propuestas_de_regla check (fuente <> 'regla' or regla_id is not null),
-  constraint ia_propuestas_cerrada check (estado not in ('aprobada', 'editada')
+  constraint contador_propuestas_fuente  check (fuente in ('regla', 'ia', 'edgar')),
+  constraint contador_propuestas_estado  check (estado in ('pendiente', 'aprobada', 'editada', 'rechazada', 'caducada')),
+  constraint contador_propuestas_forma   check (jsonb_typeof(propuesta) = 'object' and jsonb_typeof(propuesta->'lineas') = 'array'),
+  constraint contador_propuestas_de_ia   check (fuente <> 'ia' or (lote_id is not null and modelo is not null)),
+  constraint contador_propuestas_de_regla check (fuente <> 'regla' or regla_id is not null),
+  constraint contador_propuestas_cerrada check (estado not in ('aprobada', 'editada')
                                           or (asiento_id is not null and aprobado_el is not null and lineas_finales is not null))
 );
 -- (la nota de la base cuando cierra una propuesta sin Edgar: la IA propuso
 -- otra vez, la regla se dio de baja, su asiento se reversó)
-alter table public.ia_propuestas add column if not exists nota text;
-create unique index if not exists ia_propuestas_una_pendiente on public.ia_propuestas (movimiento_id) where estado = 'pendiente';
-create index if not exists ia_propuestas_mov_idx on public.ia_propuestas (movimiento_id, creado_el desc);
-create index if not exists ia_propuestas_lote_idx on public.ia_propuestas (lote_id) where lote_id is not null;
-create index if not exists ia_propuestas_regla_idx on public.ia_propuestas (regla_id) where regla_id is not null;
-create index if not exists ia_propuestas_asiento_idx on public.ia_propuestas (asiento_id) where asiento_id is not null;
-comment on table public.ia_propuestas is 'c8: cada propuesta de clasificación de un movimiento del banco (de una regla, de la IA o de Edgar): lo que se le dio a la IA, lo que contestó, la propuesta validada, su estado y, aprobada o editada, su asiento de c6.';
+alter table public.contador_propuestas add column if not exists nota text;
+create unique index if not exists contador_propuestas_una_pendiente on public.contador_propuestas (movimiento_id) where estado = 'pendiente';
+create index if not exists contador_propuestas_mov_idx on public.contador_propuestas (movimiento_id, creado_el desc);
+create index if not exists contador_propuestas_lote_idx on public.contador_propuestas (lote_id) where lote_id is not null;
+create index if not exists contador_propuestas_regla_idx on public.contador_propuestas (regla_id) where regla_id is not null;
+create index if not exists contador_propuestas_asiento_idx on public.contador_propuestas (asiento_id) where asiento_id is not null;
+comment on table public.contador_propuestas is 'c8: cada propuesta de clasificación de un movimiento del banco (de una regla, de la IA o de Edgar): lo que se le dio a la IA, lo que contestó, la propuesta validada, su estado y, aprobada o editada, su asiento de c6.';
 
 -- La fila de la configuración: el dueño activo más antiguo. Al volver a
 -- pegar no se pisa nada.
-insert into public.ia_config (id, dueno)
+insert into public.contador_config (id, dueno)
 select 1, p.id from public.perfiles p
  where p.rol = 'dueno' and coalesce(p.activo, true)
  order by p.creado
@@ -623,7 +642,7 @@ do $$
 declare
   t text;
 begin
-  foreach t in array array['ia_config', 'ia_reglas', 'ia_lotes', 'ia_propuestas'] loop
+  foreach t in array array['contador_config', 'contador_reglas', 'contador_lotes', 'contador_propuestas'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists %I on public.%I', t || '_dueno', t);
     execute format('create policy %I on public.%I for select to authenticated using ((select es_dueno()))', t || '_dueno', t);
@@ -673,25 +692,25 @@ comment on view public.v_contador_cuentas is 'c8: las cuentas a las que el conta
 -- ---------------------------------------------------------------------
 -- 4. Lo interno (ninguna en la API; todas empiezan por fn_contador_exigir)
 -- ---------------------------------------------------------------------
-create or replace function public.fn_contador_cfg() returns public.ia_config
+create or replace function public.fn_contador_cfg() returns public.contador_config
 language plpgsql stable
 set search_path = public, pg_temp
 as $$
 declare
-  c ia_config;
+  c contador_config;
 begin
   perform fn_contador_exigir();
-  select * into c from ia_config where id = 1;
+  select * into c from contador_config where id = 1;
   if not found then
-    raise exception using errcode = 'MX009', message = 'Falta la configuración del contador (ia_config): vuelve a pegar c8-contador.sql.';
+    raise exception using errcode = 'MX009', message = 'Falta la configuración del contador (contador_config): vuelve a pegar c8-contador.sql.';
   end if;
   return c;
 end $$;
 revoke execute on function public.fn_contador_cfg() from public, anon, authenticated, service_role;
-comment on function public.fn_contador_cfg() is 'c8: la fila de ia_config.';
+comment on function public.fn_contador_cfg() is 'c8: la fila de contador_config.';
 
 -- EN NOMBRE DEL DUEÑO (como fn_stripe_suplantar, p1): guarda los claims
--- de ahora, fija auth.uid() al dueño de ia_config SOLO dentro de esta
+-- de ahora, fija auth.uid() al dueño de contador_config SOLO dentro de esta
 -- transacción y comprueba que siga siendo el dueño. fn_contador_soltar
 -- los deja como estaban. Siempre en pareja.
 create or replace function public.fn_contador_suplantar() returns jsonb
@@ -699,7 +718,7 @@ language plpgsql
 set search_path = public, pg_temp
 as $$
 declare
-  cfg ia_config;
+  cfg contador_config;
   v   jsonb;
 begin
   perform fn_contador_exigir();
@@ -710,13 +729,13 @@ begin
   perform set_config('request.jwt.claim.sub', cfg.dueno::text, true);
   if not es_dueno() then
     raise exception using errcode = '42501',
-      message = 'El dueño en nombre del cual aprueba el contador (ia_config.dueno) ya no es el dueño: no se clasifica nada. Entra a la '
+      message = 'El dueño en nombre del cual aprueba el contador (contador_config.dueno) ya no es el dueño: no se clasifica nada. Entra a la '
                 'Bandeja como dueño para fijarlo.';
   end if;
   return v;
 end $$;
 revoke execute on function public.fn_contador_suplantar() from public, anon, authenticated, service_role;
-comment on function public.fn_contador_suplantar() is 'c8: fija auth.uid() al dueño de ia_config dentro de la transacción (request.jwt.claims y claim.sub) y devuelve los de antes para fn_contador_soltar.';
+comment on function public.fn_contador_suplantar() is 'c8: fija auth.uid() al dueño de contador_config dentro de la transacción (request.jwt.claims y claim.sub) y devuelve los de antes para fn_contador_soltar.';
 
 create or replace function public.fn_contador_soltar(p jsonb) returns void
 language plpgsql
@@ -741,7 +760,7 @@ begin
   if p_dueno is null or not exists (select 1 from perfiles p where p.id = p_dueno and p.rol = 'dueno' and coalesce(p.activo, true)) then
     raise exception using errcode = '42501', message = 'Solo el dueño maneja el contador (las propuestas y las reglas).';
   end if;
-  update ia_config set dueno = p_dueno, actualizado = now() where id = 1 and dueno is distinct from p_dueno;
+  update contador_config set dueno = p_dueno, actualizado = now() where id = 1 and dueno is distinct from p_dueno;
 end $$;
 revoke execute on function public.fn_contador_dueno_fijar(uuid) from public, anon, authenticated, service_role;
 comment on function public.fn_contador_dueno_fijar(uuid) is 'c8: el dueño activo que pide algo por la función pasa a ser en nombre de quien aprueba el contador; otro, 42501.';
@@ -1067,7 +1086,7 @@ begin
       from v_banco_bandeja b
       join movimientos_banco m on m.id = b.movimiento_id
      where b.motivo in ('sin_ticket', 'dudosa') and m.estado = 'pendiente'
-       and not exists (select 1 from ia_propuestas p where p.movimiento_id = m.id and p.estado = 'pendiente')
+       and not exists (select 1 from contador_propuestas p where p.movimiento_id = m.id and p.estado = 'pendiente')
      order by m.fecha, m.importado_el, m.id;
 end $$;
 revoke execute on function public.fn_contador_candidatos() from public, anon, authenticated, service_role;
@@ -1076,14 +1095,14 @@ comment on function public.fn_contador_candidatos() is 'c8: lo que espera una pr
 -- EL TOPE DE GASTO (la tercera regla de la IA): bloqueado si el contador
 -- está apagado, si el gasto de TODAS las acciones del mes llegó al tope
 -- global de la app (asistente_ajustes.tope_mes_centavos) o si lo del
--- contador (accion contador_%) llegó al suyo (ia_config.tope_mes_centavos).
+-- contador (accion contador_%) llegó al suyo (contador_config.tope_mes_centavos).
 -- «aviso»: ya va por el aviso_pct de alguno de los dos.
 create or replace function public.fn_contador_tope() returns jsonb
 language plpgsql stable
 set search_path = public, pg_temp
 as $$
 declare
-  cfg      ia_config;
+  cfg      contador_config;
   v_mes    text;
   v_total  bigint;
   v_cont   bigint;
@@ -1103,14 +1122,14 @@ begin
   select case when a.valor ~ '^[0-9]{1,3}$' then a.valor::int end into v_pct from asistente_ajustes a where a.clave = 'aviso_pct';
   v_pct := coalesce(v_pct, 80);
   v_motivo := case
-                when not cfg.activa then 'el contador está apagado (ia_config.activa = false): la bandeja sigue como siempre'
+                when not cfg.activa then 'el contador está apagado (contador_config.activa = false): la bandeja sigue como siempre'
                 when v_total >= v_glob
                   then format('el gasto de la IA de este mes (%s, todas las acciones) llegó al tope de la app (%s): hasta el mes que '
                               'viene, o sube asistente_ajustes.tope_mes_centavos', fn_contador_usd(v_total / 100.0),
                               fn_contador_usd(v_glob / 100.0))
                 when v_cont >= cfg.tope_mes_centavos
                   then format('el gasto del contador de este mes (%s) llegó a su tope (%s): hasta el mes que viene, o sube '
-                              'ia_config.tope_mes_centavos', fn_contador_usd(v_cont / 100.0), fn_contador_usd(cfg.tope_mes_centavos / 100.0))
+                              'contador_config.tope_mes_centavos', fn_contador_usd(v_cont / 100.0), fn_contador_usd(cfg.tope_mes_centavos / 100.0))
               end;
   return jsonb_build_object(
     'mes', v_mes, 'centavos_mes_total', v_total, 'tope_global', v_glob, 'centavos_mes_contador', v_cont,
@@ -1135,7 +1154,7 @@ language plpgsql stable
 set search_path = public, pg_temp
 as $$
 declare
-  cfg       ia_config;
+  cfg       contador_config;
   v_lim     int;
   v_total   int;
   v_movs    jsonb;
@@ -1173,7 +1192,7 @@ begin
          md5(coalesce(string_agg(r.patron || '|' || coalesce(r.cuenta_banco, '') || '|' || r.lineas::text || '|' || r.pide_obra::text, E'\n'
                                  order by r.patron, coalesce(r.cuenta_banco, '')), ''))
     into v_reglas, v_version
-    from ia_reglas r
+    from contador_reglas r
    where r.activa;
   -- los ejemplos: lo que Edgar clasificó (por la IA o a mano, c6), vivo en
   -- el libro, uno por comercio distinto, los 30 últimos
@@ -1218,8 +1237,8 @@ set search_path = public, pg_temp
 as $$
 declare
   c        record;
-  r        ia_reglas;
-  v_best   ia_reglas;
+  r        contador_reglas;
+  v_best   contador_reglas;
   v_len    int;
   v_empate boolean;
   v_ok     boolean;
@@ -1246,7 +1265,7 @@ begin
     v_best := null;
     v_len := null;
     v_empate := false;
-    for r in select x.* from ia_reglas x
+    for r in select x.* from contador_reglas x
               where x.activa and (x.cuenta_banco is null or x.cuenta_banco = c.cuenta)
               order by length(x.patron) desc, x.creada_el loop
       begin
@@ -1268,7 +1287,7 @@ begin
       end if;
     end loop;
     continue when v_best.id is null or v_empate;
-    continue when exists (select 1 from ia_propuestas p
+    continue when exists (select 1 from contador_propuestas p
                            where p.movimiento_id = c.movimiento_id and p.regla_id = v_best.id and p.estado = 'rechazada');
     -- sus líneas, con el monto de cada parte (la última absorbe el redondeo)
     v_nl := jsonb_array_length(v_best.lineas);
@@ -1298,7 +1317,7 @@ begin
       continue;
     end if;
     begin
-      insert into ia_propuestas (movimiento_id, fuente, regla_id, propuesta, entrada)
+      insert into contador_propuestas (movimiento_id, fuente, regla_id, propuesta, entrada)
       values (c.movimiento_id, 'regla', v_best.id,
               jsonb_build_object('lineas', v_lineas, 'motivo', 'Regla: ' || v_best.nombre, 'confianza', 1,
                                  'flags', case when v_obra then '{"pide_obra": true}'::jsonb else '{}'::jsonb end),
@@ -1307,7 +1326,7 @@ begin
     exception when unique_violation then
       continue;   -- (otra ráfaga llegó antes a este movimiento)
     end;
-    update ia_reglas set veces = veces + 1, ultima_vez = now() where id = v_best.id;
+    update contador_reglas set veces = veces + 1, ultima_vez = now() where id = v_best.id;
     v_n := v_n + 1;
   end loop;
   return jsonb_build_object('propuestas', v_n, 'candidatos', v_nc, 'reglas_rotas', to_jsonb(v_rotas));
@@ -1336,8 +1355,8 @@ set search_path = public, pg_temp
 as $$
 declare
   c_viva constant interval := interval '5 minutes';   -- (lo que una ráfaga puede durar, de sobra: la función se corta a los 2 min)
-  cfg  ia_config;
-  l    ia_lotes;
+  cfg  contador_config;
+  l    contador_lotes;
   v_t  jsonb;
   v_id uuid;
 begin
@@ -1358,12 +1377,12 @@ begin
   -- una sola ráfaga a la vez: el candado serializa la comprobación; las
   -- perdidas (abiertas hace más de c_viva) se cierran con su error primero
   perform pg_advisory_xact_lock(820261031, hashtext('contador:rafaga'));
-  for l in select * from ia_lotes where cerrado_el is null and creado_el < now() - c_viva order by creado_el loop
+  for l in select * from contador_lotes where cerrado_el is null and creado_el < now() - c_viva order by creado_el loop
     perform fn_contador_lote_cerrar(l.id, '{}'::jsonb,
       format('la ráfaga de las %s (hora de Miami) se cortó sin cerrar (la función no volvió en %s minutos): su gasto no quedó anotado',
              to_char(l.creado_el at time zone 'America/New_York', 'DD/MM/YYYY HH24:MI'), (extract(epoch from c_viva) / 60)::int));
   end loop;
-  select * into l from ia_lotes where cerrado_el is null order by creado_el limit 1;
+  select * into l from contador_lotes where cerrado_el is null order by creado_el limit 1;
   if found then
     raise exception using errcode = 'MX008',
       message = format('Ya hay una ráfaga en marcha (la abrió %s hace %s s): espera a que termine y vuelve a mirar la bandeja. Si la función '
@@ -1375,7 +1394,7 @@ begin
   if (v_t->>'bloqueado')::boolean then
     raise exception using errcode = 'MX008', message = 'No se abre la ráfaga: ' || (v_t->>'motivo') || '.';
   end if;
-  insert into ia_lotes (modelo, effort, prompt_version, prefijo_hash, n, por)
+  insert into contador_lotes (modelo, effort, prompt_version, prefijo_hash, n, por)
   values (p_modelo, p_effort, nullif(btrim(p_prompt_version), ''), nullif(btrim(p_prefijo_hash), ''), p_n, p_por)
   returning id into v_id;
   return v_id;
@@ -1431,14 +1450,14 @@ comment on function public.fn_contador_gasto_anotar(text, text, int, jsonb, int,
 -- si la cortó algo, su error. Los centavos: entrada × 400 + caché creado ×
 -- 500 + caché leído × 20 + salida × 2000, entre un millón, redondeado (los
 -- precios de claude-opus-5-5: $4 / $20, caché $5 / $0.20 por millón). Lo
--- anota en el gasto del mes y guarda en ia_config la versión del prompt,
+-- anota en el gasto del mes y guarda en contador_config la versión del prompt,
 -- el prefijo y la hora de la ráfaga (y su error, si lo hubo).
 create or replace function public.fn_contador_lote_cerrar(p_lote uuid, p_usage jsonb, p_error text default null) returns jsonb
 language plpgsql
 set search_path = public, pg_temp
 as $$
 declare
-  l        ia_lotes;
+  l        contador_lotes;
   v_u      jsonb := '{}'::jsonb;
   v_k      text;
   v_v      jsonb;
@@ -1447,7 +1466,7 @@ declare
   v_donde  text;
 begin
   perform fn_contador_exigir();
-  select * into l from ia_lotes where id = p_lote for update;
+  select * into l from contador_lotes where id = p_lote for update;
   if not found then
     raise exception using errcode = '22023', message = 'No existe esa ráfaga (lote).';
   end if;
@@ -1468,12 +1487,12 @@ begin
   v_cent := round(((v_u->>'input')::numeric * 400 + (v_u->>'cache_creacion')::numeric * 500 + (v_u->>'cache_lectura')::numeric * 20
                    + (v_u->>'output')::numeric * 2000) / 1000000)::int;
   v_mes := to_char(fn_fecha_miami(now()), 'YYYY-MM');
-  update ia_lotes
+  update contador_lotes
      set usage = v_u, centavos = v_cent, cerrado_el = now(), error = left(nullif(btrim(p_error), ''), 600)
    where id = l.id
   returning * into l;
   v_donde := fn_contador_gasto_anotar(v_mes, l.modelo, l.n, v_u, v_cent, l.por, l.error);
-  update ia_config
+  update contador_config
      set prompt_version   = coalesce(l.prompt_version, prompt_version),
          prefijo_hash     = coalesce(l.prefijo_hash, prefijo_hash),
          ultima_rafaga_el = now(),
@@ -1481,12 +1500,12 @@ begin
          ultimo_error_el  = case when l.error is not null then now() else ultimo_error_el end,
          actualizado      = now()
    where id = 1;
-  return jsonb_build_object('lote', l.id, 'n', l.n, 'propuestas', (select count(*) from ia_propuestas p where p.lote_id = l.id),
+  return jsonb_build_object('lote', l.id, 'n', l.n, 'propuestas', (select count(*) from contador_propuestas p where p.lote_id = l.id),
                             'usage', v_u, 'centavos', v_cent, 'mes', v_mes, 'anotado_en', v_donde, 'error', l.error,
                             'tope', fn_contador_tope());
 end $$;
 revoke execute on function public.fn_contador_lote_cerrar(uuid, jsonb, text) from public, anon, authenticated, service_role;
-comment on function public.fn_contador_lote_cerrar(uuid, jsonb, text) is 'c8: cierra una ráfaga con su uso en tokens: calcula sus centavos (precios de claude-opus-5-5), los anota en el gasto del mes y guarda en ia_config la versión del prompt, el prefijo, la hora y el error.';
+comment on function public.fn_contador_lote_cerrar(uuid, jsonb, text) is 'c8: cierra una ráfaga con su uso en tokens: calcula sus centavos (precios de claude-opus-5-5), los anota en el gasto del mes y guarda en contador_config la versión del prompt, el prefijo, la hora y el error.';
 
 
 -- ---------------------------------------------------------------------
@@ -1604,7 +1623,7 @@ language plpgsql
 set search_path = public, pg_temp
 as $$
 declare
-  l       ia_lotes;
+  l       contador_lotes;
   m       movimientos_banco;
   v_bmot  text;
   v_sobra text;
@@ -1620,7 +1639,7 @@ begin
   if p_movimiento is null or p_lote is null then
     raise exception using errcode = '22023', message = 'Guardar una propuesta lleva el movimiento y la ráfaga (lote).';
   end if;
-  select * into l from ia_lotes where id = p_lote;
+  select * into l from contador_lotes where id = p_lote;
   if not found then
     raise exception using errcode = '22023', message = 'No existe esa ráfaga (lote).';
   end if;
@@ -1692,11 +1711,11 @@ begin
     if jsonb_array_length(v_alt) = 0 then v_alt := null; end if;
   end if;
   -- la pendiente anterior, caducada; la nueva, pendiente
-  update ia_propuestas
+  update contador_propuestas
      set estado = 'caducada', nota = format('la IA propuso otra vez (ráfaga %s)', l.id)
    where movimiento_id = m.id and estado = 'pendiente'
   returning id into v_prev;
-  insert into ia_propuestas (movimiento_id, fuente, lote_id, modelo, effort, prompt_version, entrada, salida, propuesta)
+  insert into contador_propuestas (movimiento_id, fuente, lote_id, modelo, effort, prompt_version, entrada, salida, propuesta)
   values (m.id, 'ia', l.id, p_modelo, p_effort, nullif(btrim(p_prompt_version), ''), fn_contador_sin_datos_jsonb(p_entrada), p_salida,
           jsonb_strip_nulls(jsonb_build_object('lineas', v_val->'lineas', 'motivo', btrim(p_propuesta->>'motivo'),
                                                'confianza', round(v_conf, 3), 'flags', v_flags, 'alternativas', v_alt)))
@@ -1720,7 +1739,7 @@ set search_path = public, pg_temp
 as $$
 declare
   m        movimientos_banco;
-  r        ia_reglas;
+  r        contador_reglas;
   v_nombre text;
   v_patron text;
   v_n      int;
@@ -1758,20 +1777,20 @@ begin
   end if;
   select coalesce(bool_or(k.regla_obra = 'obligatoria'), false) into v_pide
     from jsonb_array_elements(v_lineas) x join cuentas k on k.codigo = x->>'cuenta';
-  select * into r from ia_reglas where activa and patron = v_patron and cuenta_banco is null for update;
+  select * into r from contador_reglas where activa and patron = v_patron and cuenta_banco is null for update;
   if found then
     if r.lineas = v_lineas and r.pide_obra = v_pide then
-      update ia_reglas set ultima_vez = coalesce(ultima_vez, now()) where id = r.id;
+      update contador_reglas set ultima_vez = coalesce(ultima_vez, now()) where id = r.id;
       return jsonb_build_object('regla', r.id, 'nombre', r.nombre, 'patron', r.patron, 'nueva', false, 'cambio', false);
     end if;
-    update ia_reglas
+    update contador_reglas
        set lineas = v_lineas, pide_obra = v_pide, ultima_vez = now(),
            notas = left(concat_ws(E'\n', notas, format('%s: al aprobar el movimiento del %s por %s («%s») cambió de %s a %s',
                                                      fn_fecha_miami(now()), m.fecha, m.monto, m.desc_norm, r.lineas::text, v_lineas::text)), 4000)
      where id = r.id;
     return jsonb_build_object('regla', r.id, 'nombre', r.nombre, 'patron', r.patron, 'nueva', false, 'cambio', true, 'antes', r.lineas);
   end if;
-  insert into ia_reglas (nombre, patron, lineas, pide_obra, origen, creada_por, notas)
+  insert into contador_reglas (nombre, patron, lineas, pide_obra, origen, creada_por, notas)
   values (v_nombre, v_patron, v_lineas, v_pide, 'aprobacion', p_dueno,
           format('aprendida al aprobar el movimiento del %s por %s («%s»)', m.fecha, m.monto, m.desc_norm))
   returning id into v_id;
@@ -1800,7 +1819,7 @@ set search_path = public, pg_temp
 as $$
 declare
   m        movimientos_banco;
-  pr       ia_propuestas;
+  pr       contador_propuestas;
   v_val    jsonb;
   v_lineas jsonb;
   v_pl     jsonb;
@@ -1839,7 +1858,7 @@ begin
   end if;
   -- la propuesta pendiente (la que se dice, o la del movimiento)
   if p_propuesta is not null then
-    select * into pr from ia_propuestas where id = p_propuesta for update;
+    select * into pr from contador_propuestas where id = p_propuesta for update;
     if not found then
       raise exception using errcode = '22023', message = 'No existe esa propuesta.';
     end if;
@@ -1850,7 +1869,7 @@ begin
       raise exception using errcode = 'MX008', message = format('Esa propuesta ya está %s: no se aprueba dos veces.', pr.estado);
     end if;
   else
-    select * into pr from ia_propuestas where movimiento_id = m.id and estado = 'pendiente' for update;
+    select * into pr from contador_propuestas where movimiento_id = m.id and estado = 'pendiente' for update;
   end if;
   if pr.id is not null then
     v_pl := pr.propuesta->'lineas';
@@ -1886,19 +1905,19 @@ begin
       message = format('c6 clasificó el movimiento pero no quedó con su asiento (está %s): no se guarda la propuesta.', m.estado);
   end if;
   -- lo aprobado antes para este movimiento cuyo asiento ya no vive
-  update ia_propuestas p
+  update contador_propuestas p
      set estado = 'caducada', nota = format('%s: su asiento se reversó y el movimiento se volvió a clasificar', fn_fecha_miami(now()))
    where p.movimiento_id = m.id and p.estado in ('aprobada', 'editada') and p.id is distinct from pr.id
      and (p.asiento_id is null
           or exists (select 1 from asientos r where r.reversa_a = p.asiento_id and r.camino in ('reverso', 'reverso_automatico')));
   if pr.id is not null then
-    update ia_propuestas
+    update contador_propuestas
        set estado = v_estado, aprobado_por = p_dueno, aprobado_el = now(), lineas_finales = v_lineas, motivo_edgar = v_edgar,
            asiento_id = m.asiento_id
      where id = pr.id;
     v_pid := pr.id;
   else
-    insert into ia_propuestas (movimiento_id, fuente, propuesta, estado, aprobado_por, aprobado_el, lineas_finales, motivo_edgar,
+    insert into contador_propuestas (movimiento_id, fuente, propuesta, estado, aprobado_por, aprobado_el, lineas_finales, motivo_edgar,
                                asiento_id, entrada)
     values (m.id, 'edgar', jsonb_build_object('lineas', v_lineas, 'motivo', v_motivo, 'confianza', 1, 'flags', '{}'::jsonb), 'aprobada',
             p_dueno, now(), v_lineas, v_edgar, m.asiento_id, jsonb_build_object('desc_norm', fn_contador_sin_datos_norm(m.desc_norm, m.descripcion, m.memo)))
@@ -1925,14 +1944,14 @@ language plpgsql
 set search_path = public, pg_temp
 as $$
 declare
-  pr       ia_propuestas;
+  pr       contador_propuestas;
   v_lineas jsonb;
   v_pide   boolean;
   v_obra   text := nullif(btrim(coalesce(p_proyecto_id, '')), '');
 begin
   perform fn_contador_exigir();
   perform fn_contador_dueno_fijar(p_dueno);
-  select * into pr from ia_propuestas where id = p_propuesta;
+  select * into pr from contador_propuestas where id = p_propuesta;
   if not found then
     raise exception using errcode = '22023', message = 'No existe esa propuesta.';
   end if;
@@ -1975,18 +1994,18 @@ language plpgsql
 set search_path = public, pg_temp
 as $$
 declare
-  pr ia_propuestas;
+  pr contador_propuestas;
 begin
   perform fn_contador_exigir();
   perform fn_contador_dueno_fijar(p_dueno);
-  select * into pr from ia_propuestas where id = p_propuesta for update;
+  select * into pr from contador_propuestas where id = p_propuesta for update;
   if not found then
     raise exception using errcode = '22023', message = 'No existe esa propuesta.';
   end if;
   if pr.estado <> 'pendiente' then
     raise exception using errcode = 'MX008', message = format('Esa propuesta ya está %s.', pr.estado);
   end if;
-  update ia_propuestas
+  update contador_propuestas
      set estado = 'rechazada', aprobado_por = p_dueno, aprobado_el = now(),
          motivo_edgar = coalesce(nullif(btrim(p_motivo), ''), 'No es eso (Edgar, desde la bandeja)')
    where id = pr.id
@@ -2006,14 +2025,14 @@ language plpgsql
 set search_path = public, pg_temp
 as $$
 declare
-  pr ia_propuestas;
+  pr contador_propuestas;
 begin
   perform fn_contador_exigir();
   perform fn_contador_dueno_fijar(p_dueno);
   if coalesce(length(btrim(p_motivo)), 0) < 3 then
     raise exception using errcode = '22023', message = 'Cerrar una propuesta aprobada dice por qué (motivo): queda escrito.';
   end if;
-  select * into pr from ia_propuestas where id = p_propuesta for update;
+  select * into pr from contador_propuestas where id = p_propuesta for update;
   if not found then
     raise exception using errcode = '22023', message = 'No existe esa propuesta.';
   end if;
@@ -2029,7 +2048,7 @@ begin
       message = 'Su asiento sigue vivo en el libro: si la clasificación estaba mal, des-cásala en la bandeja (fn_banco_descasar, con su '
                 'motivo) y entonces ciérrala.';
   end if;
-  update ia_propuestas
+  update contador_propuestas
      set estado = 'caducada', nota = format('%s, Edgar: %s', fn_fecha_miami(now()), btrim(p_motivo))
    where id = pr.id
   returning * into pr;
@@ -2066,7 +2085,7 @@ declare
   v_suma   numeric := 0;
   v_lineas jsonb := '[]'::jsonb;
   v_pide   boolean := false;
-  r        ia_reglas;
+  r        contador_reglas;
   v_casan  int;
 begin
   perform fn_contador_exigir();
@@ -2133,7 +2152,7 @@ begin
     raise exception using errcode = 'MX001', message = format('Las partes suman %s: tienen que sumar 1.', v_suma);
   end if;
   begin
-    insert into ia_reglas (nombre, patron, cuenta_banco, lineas, pide_obra, origen, creada_por, notas)
+    insert into contador_reglas (nombre, patron, cuenta_banco, lineas, pide_obra, origen, creada_por, notas)
     values (btrim(p_nombre), btrim(p_patron), v_cb, v_lineas, v_pide, 'edgar', p_dueno, format('la dictó Edgar el %s', fn_fecha_miami(now())))
     returning * into r;
   exception when unique_violation then
@@ -2157,7 +2176,7 @@ language plpgsql
 set search_path = public, pg_temp
 as $$
 declare
-  r   ia_reglas;
+  r   contador_reglas;
   v_n int;
 begin
   perform fn_contador_exigir();
@@ -2165,19 +2184,19 @@ begin
   if coalesce(length(btrim(p_motivo)), 0) < 3 then
     raise exception using errcode = '22023', message = 'Quitar una regla dice por qué (motivo): queda escrito con ella.';
   end if;
-  select * into r from ia_reglas where id = p_regla for update;
+  select * into r from contador_reglas where id = p_regla for update;
   if not found then
     raise exception using errcode = '22023', message = 'No existe esa regla.';
   end if;
   if not r.activa then
     raise exception using errcode = 'MX008', message = format('La regla «%s» ya está dada de baja.', r.nombre);
   end if;
-  update ia_reglas
+  update contador_reglas
      set activa = false,
          notas = left(concat_ws(E'\n', notas, format('baja el %s: %s', fn_fecha_miami(now()), btrim(p_motivo))), 4000)
    where id = r.id
   returning * into r;
-  update ia_propuestas
+  update contador_propuestas
      set estado = 'caducada', nota = format('%s: la regla «%s» se dio de baja (%s)', fn_fecha_miami(now()), r.nombre, btrim(p_motivo))
    where regla_id = r.id and estado = 'pendiente';
   get diagnostics v_n = row_count;
@@ -2208,9 +2227,9 @@ select r.id, r.nombre, r.patron, r.cuenta_banco, cb.nombre as cuenta_banco_nombr
           from jsonb_array_elements(r.lineas) with ordinality as x(l, o)
           left join public.cuentas c on c.codigo = x.l->>'cuenta') as cuentas_texto,
        r.pide_obra, r.activa, r.origen, r.creada_por, p.nombre as creada_por_nombre, r.creada_el, r.veces, r.ultima_vez, r.notas,
-       (select count(*) from public.ia_propuestas q where q.regla_id = r.id and q.estado = 'pendiente') as pendientes,
-       (select count(*) from public.ia_propuestas q where q.regla_id = r.id and q.estado in ('aprobada', 'editada')) as aprobadas
-  from public.ia_reglas r
+       (select count(*) from public.contador_propuestas q where q.regla_id = r.id and q.estado = 'pendiente') as pendientes,
+       (select count(*) from public.contador_propuestas q where q.regla_id = r.id and q.estado in ('aprobada', 'editada')) as aprobadas
+  from public.contador_reglas r
   left join public.cuentas cb on cb.codigo = r.cuenta_banco
   left join public.perfiles p on p.id = r.creada_por
  order by r.activa desc, r.nombre, r.creada_el;
@@ -2222,7 +2241,7 @@ comment on view public.v_contador_reglas is 'c8: las reglas del contador (activa
 -- movimientos pendientes siempre; los demás, 120 días.
 create view public.v_contador_bandeja with (security_invoker = true) as
 with p as (select q.*, row_number() over (partition by q.movimiento_id order by (q.estado = 'pendiente') desc, q.creado_el desc) as rn
-             from public.ia_propuestas q)
+             from public.contador_propuestas q)
 select p.movimiento_id, m.cuenta, m.fecha, m.monto, m.descripcion, m.estado as movimiento_estado,
        p.id as propuesta_id, p.fuente, p.estado, p.accion,
        (select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
@@ -2250,7 +2269,7 @@ select p.movimiento_id, m.cuenta, m.fecha, m.monto, m.descripcion, m.estado as m
        (now() at time zone 'America/New_York')::date - (p.creado_el at time zone 'America/New_York')::date as dias
   from p
   join public.movimientos_banco m on m.id = p.movimiento_id
-  left join public.ia_reglas r on r.id = p.regla_id
+  left join public.contador_reglas r on r.id = p.regla_id
   left join public.asientos a on a.id = p.asiento_id
  where p.rn = 1
    and (m.estado = 'pendiente' or p.creado_el > now() - interval '120 days');
@@ -2260,7 +2279,7 @@ comment on view public.v_contador_bandeja is 'c8: por movimiento, su propuesta v
 -- detalle). Un «cuadre» en rojo: la pantalla no pinta la franja. Una
 -- «alarma» en rojo: «Qué atender» en el Resumen.
 create view public.v_contador_control with (security_invoker = true) as
-with cfg as (select * from public.ia_config where id = 1),
+with cfg as (select * from public.contador_config where id = 1),
      hoy as (select (now() at time zone 'America/New_York')::date as d,
                     to_char((now() at time zone 'America/New_York')::date, 'YYYY-MM') as mes),
      aj as (select coalesce((select case when a.valor ~ '^[0-9]{1,9}$' then a.valor::int end
@@ -2275,13 +2294,13 @@ with cfg as (select * from public.ia_config where id = 1),
                where m.estado = 'pendiente'
                  and not (m.posible_duplicado_de is not null and m.duplicado is null)
                  and m.propuesta->>'motivo' in ('sin_ticket', 'dudosa')
-                 and not exists (select 1 from public.ia_propuestas p where p.movimiento_id = m.id and p.estado = 'pendiente')),
+                 and not exists (select 1 from public.contador_propuestas p where p.movimiento_id = m.id and p.estado = 'pendiente')),
      vivo as (select a.id from public.asientos a
                where not exists (select 1 from public.asientos r where r.reversa_a = a.id and r.camino in ('reverso', 'reverso_automatico'))),
      -- las ráfagas que se quedaron abiertas más de cinco minutos: la función se cortó sin cerrarlas (fn_contador_lote_abrir las da
      -- por perdidas al abrir la siguiente)
      abierta as (select count(*) as n, min(l.creado_el) as desde
-                   from public.ia_lotes l
+                   from public.contador_lotes l
                   where l.cerrado_el is null and l.creado_el < now() - interval '5 minutes')
 select z.orden, z.control, z.nivel, z.ok, z.filas, z.esperadas, z.detalle
   from cfg
@@ -2310,7 +2329,7 @@ select z.orden, z.control, z.nivel, z.ok, z.filas, z.esperadas, z.detalle
                                          case when p.asiento_id is null then 'sin asiento'
                                               when a.id is null then 'su asiento no existe'
                                               else 'su asiento ' || a.numero || ' está reversado' end), '; '), 1500) as d
-             from public.ia_propuestas p
+             from public.contador_propuestas p
              join public.movimientos_banco m on m.id = p.movimiento_id
              left join public.asientos a on a.id = p.asiento_id
             where p.estado in ('aprobada', 'editada') and (a.id is null or a.id not in (select v.id from vivo v))) t
@@ -2323,7 +2342,7 @@ select z.orden, z.control, z.nivel, z.ok, z.filas, z.esperadas, z.detalle
             where a.camino not in ('reverso', 'reverso_automatico')
               and a.id in (select v.id from vivo v)
               and (a.descripcion ~ 'Propuesta de la IA #[0-9a-f-]{36}' or coalesce(a.procedencia->>'motivo_edgar', '') ~ 'Propuesta de la IA #[0-9a-f-]{36}')
-              and not exists (select 1 from public.ia_propuestas p
+              and not exists (select 1 from public.contador_propuestas p
                                where p.asiento_id = a.id and p.estado in ('aprobada', 'editada')
                                  and p.id::text = substring(coalesce(a.procedencia->>'motivo_edgar', a.descripcion)
                                                             from 'Propuesta de la IA #([0-9a-f-]{36})'))) t
@@ -2332,7 +2351,7 @@ select z.orden, z.control, z.nivel, z.ok, z.filas, z.esperadas, z.detalle
    select 62, 'ia: las reglas activas van a cuentas activas e imputables', 'cuadre', t.n = 0, t.n, 0,
           case when t.n > 0 then t.d || ' → da de baja la regla (fn_contador_regla_baja) y dicta otra' end
      from (select count(*) as n, left(string_agg(r.nombre || ' → ' || (x.l->>'cuenta'), '; '), 1500) as d
-             from public.ia_reglas r
+             from public.contador_reglas r
             cross join lateral jsonb_array_elements(r.lineas) x(l)
             where r.activa and not exists (select 1 from public.v_contador_cuentas v where v.codigo = x.l->>'cuenta')) t
    union all
@@ -2349,11 +2368,11 @@ select z.orden, z.control, z.nivel, z.ok, z.filas, z.esperadas, z.detalle
                    union all
                    select c.relname || ' sin RLS'
                      from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'
-                      and c.relname in ('ia_config', 'ia_reglas', 'ia_lotes', 'ia_propuestas') and not c.relrowsecurity
+                      and c.relname in ('contador_config', 'contador_reglas', 'contador_lotes', 'contador_propuestas') and not c.relrowsecurity
                    union all
                    select c.relname || ' no tiene una sola policy «' || c.relname || '_dueno»'
                      from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'
-                      and c.relname in ('ia_config', 'ia_reglas', 'ia_lotes', 'ia_propuestas')
+                      and c.relname in ('contador_config', 'contador_reglas', 'contador_lotes', 'contador_propuestas')
                       and ((select count(*) from pg_policy pl where pl.polrelid = c.oid) <> 1
                            or not exists (select 1 from pg_policy pl where pl.polrelid = c.oid and pl.polname = c.relname || '_dueno'
                                              and pl.polcmd = 'r' and pl.polpermissive))
@@ -2363,13 +2382,13 @@ select z.orden, z.control, z.nivel, z.ok, z.filas, z.esperadas, z.detalle
                     cross join (values ('anon'), ('authenticated'), ('service_role')) r(r)
                     cross join (values ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE')) q(q)
                     where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'
-                      and c.relname in ('ia_config', 'ia_reglas', 'ia_lotes', 'ia_propuestas')
+                      and c.relname in ('contador_config', 'contador_reglas', 'contador_lotes', 'contador_propuestas')
                       and has_table_privilege(r.r, c.oid, q.q)
                    union all
                    select format('%s puede leer %s', r.r, c.relname)
                      from pg_class c cross join (values ('anon'), ('service_role')) r(r)
                     where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'v')
-                      and (c.relname in ('ia_config', 'ia_reglas', 'ia_lotes', 'ia_propuestas') or c.relname like 'v\_contador\_%')
+                      and (c.relname in ('contador_config', 'contador_reglas', 'contador_lotes', 'contador_propuestas') or c.relname like 'v\_contador\_%')
                       and has_table_privilege(r.r, c.oid, 'SELECT')
                    union all
                    select c.relname || ' sin security_invoker'
@@ -2380,7 +2399,7 @@ select z.orden, z.control, z.nivel, z.ok, z.filas, z.esperadas, z.detalle
                    select 'un trigger en ' || c.relname || ': ' || t.tgname
                      from pg_trigger t join pg_class c on c.oid = t.tgrelid
                     where not t.tgisinternal and c.relnamespace = 'public'::regnamespace
-                      and c.relname in ('ia_config', 'ia_reglas', 'ia_lotes', 'ia_propuestas')) y) t
+                      and c.relname in ('contador_config', 'contador_reglas', 'contador_lotes', 'contador_propuestas')) y) t
    union all
    -- 70: el gasto del mes, bajo los dos topes
    select 70, 'ia: el gasto del mes bajo el tope', 'alarma',
@@ -2393,7 +2412,7 @@ select z.orden, z.control, z.nivel, z.ok, z.filas, z.esperadas, z.detalle
      from (select count(*) as n,
                   left(string_agg(format('%s %s «%s» (desde el %s)', m.fecha, m.monto, coalesce(m.descripcion, ''),
                                          (p.creado_el at time zone 'America/New_York')::date), '; '), 1500) as d
-             from public.ia_propuestas p
+             from public.contador_propuestas p
              join public.movimientos_banco m on m.id = p.movimiento_id
             where p.estado = 'pendiente' and p.creado_el < now() - interval '7 days') t
    union all
@@ -2418,7 +2437,7 @@ select z.orden, z.control, z.nivel, z.ok, z.filas, z.esperadas, z.detalle
                then format('ninguna ráfaga ha corrido nunca y hay %s cargo(s) sin propuesta desde el %s: ¿está ANTHROPIC_API_KEY en los '
                            'secretos de Edge Functions y la función «contador» desplegada? Toca «Proponer con la IA» en la Bandeja',
                            cand.n, cand.desde)
-               when not cfg.activa then 'el contador está apagado (ia_config.activa = false)'
+               when not cfg.activa then 'el contador está apagado (contador_config.activa = false)'
                else format('%s cargo(s) esperan propuesta', cand.n) end
  ) z;
 comment on view public.v_contador_control is 'c8: el control del contador: cuadres (si uno sale en rojo, la pantalla no pinta la franja de la IA) y alarmas (el gasto, lo pendiente de más de 7 días, la última ráfaga, la llave y la función).';
@@ -2440,7 +2459,7 @@ with hoy as (select to_char((now() at time zone 'America/New_York')::date, 'YYYY
                where m.estado = 'pendiente'
                  and not (m.posible_duplicado_de is not null and m.duplicado is null)
                  and m.propuesta->>'motivo' in ('sin_ticket', 'dudosa')
-                 and not exists (select 1 from public.ia_propuestas p where p.movimiento_id = m.id and p.estado = 'pendiente')),
+                 and not exists (select 1 from public.contador_propuestas p where p.movimiento_id = m.id and p.estado = 'pendiente')),
      ctl as (select count(*) filter (where c.nivel = 'cuadre' and not c.ok) as rojos,
                     count(*) filter (where c.nivel = 'alarma' and not c.ok) as alarmas
                from public.v_contador_control c)
@@ -2448,24 +2467,24 @@ select true as instalado, c.modelo, c.effort, c.activa, c.max_por_rafaga, c.tope
        (select p.nombre from public.perfiles p where p.id = c.dueno) as dueno_nombre,
        c.prompt_version, c.prefijo_hash, c.ultima_rafaga_el, c.ultimo_error, c.ultimo_error_el, c.actualizado,
        cand.n as pendientes_sin_propuesta, cand.desde as pendientes_desde,
-       (select count(*) from public.ia_propuestas p where p.estado = 'pendiente') as propuestas_pendientes,
-       (select count(*) from public.ia_propuestas p where p.estado = 'pendiente' and p.fuente = 'regla') as propuestas_por_regla,
-       (select count(*) from public.ia_propuestas p where p.estado = 'pendiente' and p.fuente = 'ia') as propuestas_por_ia,
-       (select count(*) from public.ia_reglas r where r.activa) as reglas_activas,
+       (select count(*) from public.contador_propuestas p where p.estado = 'pendiente') as propuestas_pendientes,
+       (select count(*) from public.contador_propuestas p where p.estado = 'pendiente' and p.fuente = 'regla') as propuestas_por_regla,
+       (select count(*) from public.contador_propuestas p where p.estado = 'pendiente' and p.fuente = 'ia') as propuestas_por_ia,
+       (select count(*) from public.contador_reglas r where r.activa) as reglas_activas,
        hoy.mes, gasto.total as centavos_mes_total, aj.tope_global, gasto.contador as centavos_mes_contador, aj.aviso_pct,
        (not c.activa or gasto.total >= aj.tope_global or gasto.contador >= c.tope_mes_centavos) as bloqueado,
        case when not c.activa then 'apagado'
             when gasto.total >= aj.tope_global then 'tope de la app'
             when gasto.contador >= c.tope_mes_centavos then 'tope del contador' end as bloqueado_motivo,
        (gasto.total * 100 >= aj.tope_global * aj.aviso_pct or gasto.contador * 100 >= c.tope_mes_centavos * aj.aviso_pct) as aviso,
-       (select count(*) from public.ia_lotes l where l.cerrado_el is null) as lotes_abiertos,
-       (select max(l.creado_el) from public.ia_lotes l) as ultimo_lote_el,
-       (select l.centavos from public.ia_lotes l where l.cerrado_el is not null order by l.cerrado_el desc limit 1) as ultimo_lote_centavos,
-       (select count(*) from public.ia_propuestas p where p.estado in ('aprobada', 'editada')) as aprobadas_total,
-       (select count(*) from public.ia_propuestas p where p.estado = 'rechazada') as rechazadas_total,
+       (select count(*) from public.contador_lotes l where l.cerrado_el is null) as lotes_abiertos,
+       (select max(l.creado_el) from public.contador_lotes l) as ultimo_lote_el,
+       (select l.centavos from public.contador_lotes l where l.cerrado_el is not null order by l.cerrado_el desc limit 1) as ultimo_lote_centavos,
+       (select count(*) from public.contador_propuestas p where p.estado in ('aprobada', 'editada')) as aprobadas_total,
+       (select count(*) from public.contador_propuestas p where p.estado = 'rechazada') as rechazadas_total,
        (select count(*) from public.v_contador_cuentas) as cuentas_permitidas,
        ctl.rojos as cuadres_rojos, ctl.alarmas
-  from public.ia_config c
+  from public.contador_config c
  cross join hoy
  cross join aj
  cross join gasto
@@ -2510,7 +2529,7 @@ as $$
 begin
   perform fn_contador_exigir();
   return jsonb_build_object(
-    'config', (select to_jsonb(c) from ia_config c where c.id = 1),
+    'config', (select to_jsonb(c) from contador_config c where c.id = 1),
     'estado', (select to_jsonb(e) from v_contador_estado e),
     'tope', fn_contador_tope(),
     'control_rojo', coalesce((select jsonb_agg(to_jsonb(x) order by x.orden) from v_contador_control x where not x.ok), '[]'::jsonb));
@@ -2524,26 +2543,26 @@ language plpgsql stable
 set search_path = public, pg_temp
 as $$
 declare
-  c   ia_config;
+  c   contador_config;
   v_t jsonb;
   v_k char;
 begin
   if not fn_desde_editor() then
     raise exception using errcode = '42501', message = 'Esto se mira desde el SQL Editor.';
   end if;
-  select * into c from ia_config where id = 1;
+  select * into c from contador_config where id = 1;
   v_t := fn_contador_tope();
   select r.relkind into v_k from pg_class r where r.oid = to_regclass('public.asistente_costo_mes');
-  return query select 'ia_config'::text,
+  return query select 'contador_config'::text,
                       format('%s · effort %s · %s · hasta %s por ráfaga · tope propio %s al mes (el de la app: %s)', c.modelo, c.effort,
                              case when c.activa then 'activa' else 'APAGADA' end, c.max_por_rafaga,
                              fn_contador_usd(c.tope_mes_centavos / 100.0), fn_contador_usd((v_t->>'tope_global')::numeric / 100));
   return query select 'dueño'::text, coalesce((select p.nombre || ' · ' || p.id from perfiles p where p.id = c.dueno), c.dueno::text);
   return query select 'tablas'::text,
-                      format('ia_config, ia_reglas (%s activas), ia_lotes (%s), ia_propuestas (%s pendientes, %s aprobadas o editadas)',
-                             (select count(*) from ia_reglas r where r.activa), (select count(*) from ia_lotes),
-                             (select count(*) from ia_propuestas p where p.estado = 'pendiente'),
-                             (select count(*) from ia_propuestas p where p.estado in ('aprobada', 'editada')));
+                      format('contador_config, contador_reglas (%s activas), contador_lotes (%s), contador_propuestas (%s pendientes, %s aprobadas o editadas)',
+                             (select count(*) from contador_reglas r where r.activa), (select count(*) from contador_lotes),
+                             (select count(*) from contador_propuestas p where p.estado = 'pendiente'),
+                             (select count(*) from contador_propuestas p where p.estado in ('aprobada', 'editada')));
   return query select 'el gasto se anota en'::text,
                       case when v_k = 'r' then 'asistente_costo_mes (tabla)' else 'asistente_uso (asistente_costo_mes es la vista de la app)' end
                       || format(' · este mes: %s en total, %s del contador', fn_contador_usd((v_t->>'centavos_mes_total')::numeric / 100),

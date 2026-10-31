@@ -149,10 +149,10 @@ create or replace function pg_temp.c8_mov(p_id text) returns uuid language sql a
   select m.id from movimientos_banco m where m.id_externo = p_id order by m.importado_el desc limit 1
 $$;
 create or replace function pg_temp.c8_prop(p_id text) returns uuid language sql as $$
-  select p.id from ia_propuestas p where p.movimiento_id = pg_temp.c8_mov(p_id) and p.estado = 'pendiente'
+  select p.id from contador_propuestas p where p.movimiento_id = pg_temp.c8_mov(p_id) and p.estado = 'pendiente'
 $$;
-create or replace function pg_temp.c8_ultima(p_id text) returns ia_propuestas language sql as $$
-  select p from ia_propuestas p where p.movimiento_id = pg_temp.c8_mov(p_id) order by p.creado_el desc, p.id desc limit 1
+create or replace function pg_temp.c8_ultima(p_id text) returns contador_propuestas language sql as $$
+  select p from contador_propuestas p where p.movimiento_id = pg_temp.c8_mov(p_id) order by p.creado_el desc, p.id desc limit 1
 $$;
 -- «Des-casar» en nombre del dueño (la bandeja)
 create or replace function pg_temp.c8_descasar(p_mov uuid, p_motivo text) returns void language plpgsql as $$
@@ -170,12 +170,12 @@ end $$;
 -- (dentro de la prueba, se deshace): así lo que la prueba aprende es la
 -- única regla que casa
 create or replace function pg_temp.c8_sin_reglas(p_regex text) returns void language sql as $$
-  update ia_reglas set activa = false where activa and patron ~* p_regex
+  update contador_reglas set activa = false where activa and patron ~* p_regex
 $$;
 -- El contador encendido y lejos de los topes (dentro de la prueba, se
 -- deshace): lo que mira la prueba es lo suyo, no el gasto real del mes
 create or replace function pg_temp.c8_al_dia() returns void language sql as $$
-  update ia_config set activa = true, tope_mes_centavos = 1000000 where id = 1;
+  update contador_config set activa = true, tope_mes_centavos = 1000000 where id = 1;
   update asistente_ajustes set valor = '1000000' where clave = 'tope_mes_centavos';
 $$;
 -- Una ráfaga abierta con la configuración de hoy, por el dueño. La base no
@@ -187,9 +187,9 @@ create or replace function pg_temp.c8_lote(p_n int default 1) returns uuid langu
 declare
   v uuid;
 begin
-  perform fn_contador_lote_cerrar(l.id, '{}'::jsonb) from ia_lotes l where l.cerrado_el is null;
+  perform fn_contador_lote_cerrar(l.id, '{}'::jsonb) from contador_lotes l where l.cerrado_el is null;
   select fn_contador_lote_abrir(pg_temp.c8('dueno')::uuid, c.modelo, c.effort, 'pv-c8-pruebas', 'ph-c8-pruebas', p_n) into v
-    from ia_config c where c.id = 1;
+    from contador_config c where c.id = 1;
   return v;
 end $$;
 -- Lo que la IA contestaría, dado a la base tal cual (lo que hace la función
@@ -204,7 +204,7 @@ returns jsonb language sql as $$
            jsonb_strip_nulls(jsonb_build_object('lineas', p_lineas, 'motivo', p_motivo, 'confianza', p_conf, 'flags', p_flags,
                                                 'alternativas', p_alt)),
            c.modelo, c.effort, 'pv-c8-pruebas')
-    from movimientos_banco m cross join ia_config c where m.id = p_mov and c.id = 1
+    from movimientos_banco m cross join contador_config c where m.id = p_mov and c.id = 1
 $$;
 -- Las líneas de un asiento, en una cadena: cuenta monto [obra]
 create or replace function pg_temp.c8_lineas(p_asiento uuid) returns text language sql as $$
@@ -223,8 +223,8 @@ $$;
 create or replace function pg_temp.c8_conteos() returns text language sql as $$
   select format('config %s · reglas %s · lotes %s · propuestas %s · uso %s · movimientos %s · archivos %s · asientos %s · cuentas %s · '
                 'perfiles %s · ajustes %s',
-                (select count(*) from ia_config), (select count(*) from ia_reglas), (select count(*) from ia_lotes),
-                (select count(*) from ia_propuestas),
+                (select count(*) from contador_config), (select count(*) from contador_reglas), (select count(*) from contador_lotes),
+                (select count(*) from contador_propuestas),
                 (select count(*) from asistente_costo_mes), (select count(*) from movimientos_banco), (select count(*) from archivos_banco),
                 (select count(*) from asientos), (select count(*) from cuentas), (select count(*) from perfiles),
                 (select count(*) from asistente_ajustes))
@@ -258,7 +258,7 @@ begin
     select count(*) into v_t
       from pg_class c
      where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'
-       and c.relname in ('ia_config', 'ia_reglas', 'ia_lotes', 'ia_propuestas')
+       and c.relname in ('contador_config', 'contador_reglas', 'contador_lotes', 'contador_propuestas')
        and c.relrowsecurity
        and (select count(*) from pg_policy p where p.polrelid = c.oid) = 1
        and exists (select 1 from pg_policy p where p.polrelid = c.oid and p.polname = c.relname || '_dueno' and p.polcmd = 'r');
@@ -266,7 +266,7 @@ begin
                   c.max_por_rafaga, c.tope_mes_centavos,
                   case when exists (select 1 from perfiles p where p.id = c.dueno and p.rol = 'dueno' and coalesce(p.activo, true))
                        then 'activo' else 'MAL' end)
-      into v_cfg from ia_config c where c.id = 1;
+      into v_cfg from contador_config c where c.id = 1;
     select r.relkind into v_k from pg_class r where r.oid = to_regclass('public.asistente_costo_mes');
     v_uso := case when v_k = 'v' and (select r.relkind from pg_class r where r.oid = to_regclass('public.asistente_uso')) = 'r'
                     then 'vista sobre asistente_uso'
@@ -274,7 +274,7 @@ begin
     select string_agg(a.clave || '=' || coalesce(nullif(a.valor ~ '^[0-9]+$', false)::text, 'MAL'), ' ' order by a.clave) into v_aj
       from asistente_ajustes a where a.clave in ('tope_mes_centavos', 'aviso_pct');
     select count(*) into v_idx from pg_indexes i
-     where i.schemaname = 'public' and i.indexname in ('ia_reglas_patron_unico', 'ia_propuestas_una_pendiente')
+     where i.schemaname = 'public' and i.indexname in ('contador_reglas_patron_unico', 'contador_propuestas_una_pendiente')
        and i.indexdef ~* 'unique' and i.indexdef ~* 'where';
     select count(*) into v_v from pg_class c
      where c.relnamespace = 'public'::regnamespace and c.relkind = 'v'
@@ -379,14 +379,14 @@ begin
     select count(*) into v_esc from pg_class c
      cross join (values ('anon'), ('authenticated'), ('service_role')) r(r)
      cross join (values ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE')) q(q)
-     where c.relnamespace = 'public'::regnamespace and c.relkind = 'r' and c.relname in ('ia_config', 'ia_reglas', 'ia_lotes', 'ia_propuestas')
+     where c.relnamespace = 'public'::regnamespace and c.relkind = 'r' and c.relname in ('contador_config', 'contador_reglas', 'contador_lotes', 'contador_propuestas')
        and has_table_privilege(r.r, c.oid, q.q);
     select count(*) into v_inv from pg_class c
      where c.relnamespace = 'public'::regnamespace and c.relkind = 'v' and c.relname like 'v\_contador\_%'
        and not coalesce((select o.option_value::boolean from pg_options_to_table(c.reloptions) o where o.option_name = 'security_invoker'), false);
     select count(*) into v_trg from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_proc f on f.oid = t.tgfoid
      where not t.tgisinternal
-       and (c.relname in ('ia_config', 'ia_reglas', 'ia_lotes', 'ia_propuestas') or f.proname like 'fn\_contador\_%' or t.tgname like '%fn\_contador\_%');
+       and (c.relname in ('contador_config', 'contador_reglas', 'contador_lotes', 'contador_propuestas') or f.proname like 'fn\_contador\_%' or t.tgname like '%fn\_contador\_%');
     select count(*) into v_sel from pg_proc p
      where p.pronamespace = 'public'::regnamespace
        and (p.proname like 'fn\_banco\_%' or p.proname like 'fn\_puente\_%' or p.proname like 'fn\_estados\_%' or p.proname like 'fn\_stripe\_%'
@@ -579,7 +579,7 @@ end $$;
 do $$
 declare
   v_obt text; v_m1 uuid; v_m2 uuid; v_m3 uuid; v_m4 uuid; v_r jsonb; v_a text; v_b text; v_c text; v_d text; v_e text; v_corta uuid; v_larga uuid;
-  v_w1 uuid; v_w2 uuid; v_pr ia_propuestas;
+  v_w1 uuid; v_w2 uuid; v_pr contador_propuestas;
 begin
   begin
     perform pg_temp.c8_montar();
@@ -599,34 +599,34 @@ begin
     v_r := fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
     v_pr := pg_temp.c8_ultima('c8-t7-1');
     v_a := format('propuestas %s | shell: %s por %s, confianza %s, «%s», pide_obra %s',
-                  (select count(*) from ia_propuestas q where q.movimiento_id in (v_m1, v_m2, v_m3, v_m4) and q.estado = 'pendiente'), v_pr.estado,
+                  (select count(*) from contador_propuestas q where q.movimiento_id in (v_m1, v_m2, v_m3, v_m4) and q.estado = 'pendiente'), v_pr.estado,
                   case when v_pr.regla_id = v_larga then 'la larga' when v_pr.regla_id = v_corta then 'LA CORTA' else 'otra' end,
                   v_pr.propuesta->>'confianza', v_pr.propuesta->>'motivo', coalesce(v_pr.propuesta->'flags'->>'pide_obra', 'no'));
     v_b := format('wawa (empate): %s | ces en el banco: %s | nfpa: %s',
                   case when pg_temp.c8_prop('c8-t7-2') is null then 'ninguna' else 'PROPUSO' end,
                   case when pg_temp.c8_prop('c8-t7-3') is null then 'ninguna' else 'PROPUSO' end,
-                  coalesce((select p.propuesta->>'motivo' from ia_propuestas p where p.id = pg_temp.c8_prop('c8-t7-4')), 'NINGUNA'));
+                  coalesce((select p.propuesta->>'motivo' from contador_propuestas p where p.id = pg_temp.c8_prop('c8-t7-4')), 'NINGUNA'));
     v_c := format('veces: larga %s, corta %s, última vez %s',
-                  (select r.veces from ia_reglas r where r.id = v_larga), (select r.veces from ia_reglas r where r.id = v_corta),
-                  case when (select r.ultima_vez is not null from ia_reglas r where r.id = v_larga) then 'puesta' else 'MAL' end);
+                  (select r.veces from contador_reglas r where r.id = v_larga), (select r.veces from contador_reglas r where r.id = v_corta),
+                  case when (select r.ultima_vez is not null from contador_reglas r where r.id = v_larga) then 'puesta' else 'MAL' end);
     -- otra vez: nada nuevo (ya tienen propuesta pendiente)
     v_r := fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
-    v_c := v_c || format(' | otra vez: %s nuevas', (select count(*) from ia_propuestas q where q.movimiento_id in (v_m1, v_m2, v_m3, v_m4)) - 2);
+    v_c := v_c || format(' | otra vez: %s nuevas', (select count(*) from contador_propuestas q where q.movimiento_id in (v_m1, v_m2, v_m3, v_m4)) - 2);
     -- rechazada: no se repite, y el movimiento vuelve a esperar (a la IA)
     perform fn_contador_rechazar(pg_temp.c8_prop('c8-t7-1'), pg_temp.c8('dueno')::uuid, 'c8-pruebas: no es eso');
     v_r := fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
-    v_d := format('rechazada: %s nuevas, shell %s', (select count(*) from ia_propuestas q where q.movimiento_id in (v_m1, v_m2, v_m3, v_m4)) - 2,
+    v_d := format('rechazada: %s nuevas, shell %s', (select count(*) from contador_propuestas q where q.movimiento_id in (v_m1, v_m2, v_m3, v_m4)) - 2,
                   case when pg_temp.c8_prop('c8-t7-1') is null and exists (select 1 from fn_contador_candidatos() c where c.movimiento_id = v_m1)
                        then 'espera a la IA' else 'MAL' end);
     -- el empate se rompe dando de baja una: la otra propone
     perform fn_contador_regla_baja(v_w2, pg_temp.c8('dueno')::uuid, 'c8-pruebas: sobraba');
     v_r := fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
-    v_d := v_d || format(' | sin empate: wawa %s', coalesce((select p.propuesta->>'motivo' from ia_propuestas p where p.id = pg_temp.c8_prop('c8-t7-2')), 'NINGUNA'));
+    v_d := v_d || format(' | sin empate: wawa %s', coalesce((select p.propuesta->>'motivo' from contador_propuestas p where p.id = pg_temp.c8_prop('c8-t7-2')), 'NINGUNA'));
     -- una regla rota (su cuenta ya no se propone): no se aplica, y se nombra
     perform fn_contador_rechazar(pg_temp.c8_prop('c8-t7-4'), pg_temp.c8('dueno')::uuid, 'c8-pruebas: para volver a probar');
     update cuentas set activa = false where codigo = '6800';
     perform fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'NFPA bis', '^PRUEBA C8 NFPA NATL', '[{"cuenta": "6350"}]');
-    update ia_reglas set lineas = '[{"cuenta": "6800"}]' where nombre = 'NFPA bis';
+    update contador_reglas set lineas = '[{"cuenta": "6800"}]' where nombre = 'NFPA bis';
     v_r := fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
     v_e := format('rota: %s, nfpa %s', v_r->'reglas_rotas', case when pg_temp.c8_prop('c8-t7-4') is null then 'sin propuesta' else 'PROPUSO' end);
     v_obt := format('%s | %s | %s | %s | %s', v_a, v_b, v_c, v_d, v_e);
@@ -648,7 +648,7 @@ end $$;
 --    líneas guarda sus partes
 do $$
 declare
-  v_obt text; v_m uuid; v_pr ia_propuestas; v_r jsonb; v_a text; v_b text; v_c text; v_m2 uuid;
+  v_obt text; v_m uuid; v_pr contador_propuestas; v_r jsonb; v_a text; v_b text; v_c text; v_m2 uuid;
 begin
   begin
     perform pg_temp.c8_montar();
@@ -667,7 +667,7 @@ begin
                                   'c8-pruebas: la cuota del camión', true);
     v_c := format('aprendida: %s → %s', v_r->'regla'->>'nombre',
                   (select string_agg((x->>'cuenta') || ' ' || (x->>'parte'), ' + ') from jsonb_array_elements(
-                     (select r.lineas from ia_reglas r where r.id = (v_r->'regla'->>'regla')::uuid)) x));
+                     (select r.lineas from contador_reglas r where r.id = (v_r->'regla'->>'regla')::uuid)) x));
     v_obt := format('%s | %s | %s', v_a, v_b, v_c);
     raise exception using errcode = 'MXT00';
   exception
@@ -696,7 +696,7 @@ begin
     v_a := format('al día: bloqueado %s, mes %s, estado %s', v_t->>'bloqueado', case when v_t->>'mes' = to_char(pg_temp.c8('hoy')::date, 'YYYY-MM') then 'el de hoy' else 'OTRO' end,
                   (select case when not e.bloqueado then 'no bloqueado' else 'MAL' end from v_contador_estado e));
     -- el propio: el contador ya gastó más que su tope
-    update ia_config set tope_mes_centavos = 1 where id = 1;
+    update contador_config set tope_mes_centavos = 1 where id = 1;
     select r.relkind into v_k from pg_class r where r.oid = to_regclass('public.asistente_costo_mes');
     if v_k = 'v' then
       insert into asistente_uso (usuario_id, rol, modelo, entrada, salida, vueltas, accion, costo_centavos, resultado)
@@ -715,7 +715,7 @@ begin
     exception when others then
       v_c := format('ráfaga: %s %s', sqlstate, case when sqlerrm ~ '^No se abre la ráfaga' then 'no se abre' else sqlerrm end);
     end;
-    update ia_config set tope_mes_centavos = 1000000 where id = 1;
+    update contador_config set tope_mes_centavos = 1000000 where id = 1;
     -- el de la app: toda la IA del mes contra asistente_ajustes
     update asistente_ajustes set valor = '1' where clave = 'tope_mes_centavos';
     v_t := fn_contador_tope();
@@ -724,12 +724,12 @@ begin
                   (select e.bloqueado_motivo from v_contador_estado e));
     update asistente_ajustes set valor = '1000000' where clave = 'tope_mes_centavos';
     -- apagado
-    update ia_config set activa = false where id = 1;
+    update contador_config set activa = false where id = 1;
     v_t := fn_contador_tope();
     v_e := format('apagado: bloqueado %s, %s, estado %s', v_t->>'bloqueado',
                   case when v_t->>'motivo' ~ 'apagado' then 'dice apagado' else v_t->>'motivo' end,
                   (select e.bloqueado_motivo from v_contador_estado e));
-    update ia_config set activa = true where id = 1;
+    update contador_config set activa = true where id = 1;
     v_t := fn_contador_tope();
     v_e := v_e || format(' | otra vez al día: bloqueado %s', v_t->>'bloqueado');
     v_obt := format('%s | %s | %s | %s | %s', v_a, v_b, v_c, v_d, v_e);
@@ -749,7 +749,7 @@ end $$;
 --     al precio de claude-opus-5-5 (entrada 400, caché creado 500, caché
 --     leído 20, salida 2000 por millón), anota el gasto del mes donde la
 --     app lo lee (asistente_costo_mes sube, con su fila en asistente_uso) y
---     guarda en ia_config la versión del prompt, el prefijo y la hora; una
+--     guarda en contador_config la versión del prompt, el prefijo y la hora; una
 --     ráfaga no se cierra dos veces; un uso que no es entero no entra; con
 --     una ráfaga en marcha no se abre otra (MX008)
 do $$
@@ -796,9 +796,9 @@ begin
     else
       v_b := v_b || ' | asistente_uso: (asistente_costo_mes es una tabla aquí)';
     end if;
-    v_c := format('ia_config: %s', (select format('pv %s · ph %s · ráfaga %s · error %s', c.prompt_version, c.prefijo_hash,
+    v_c := format('contador_config: %s', (select format('pv %s · ph %s · ráfaga %s · error %s', c.prompt_version, c.prefijo_hash,
                                                    case when c.ultima_rafaga_el is not null then 'puesta' else 'MAL' end, coalesce(c.ultimo_error, 'ninguno'))
-                                      from ia_config c where c.id = 1));
+                                      from contador_config c where c.id = 1));
     begin
       perform fn_contador_lote_cerrar(v_l, '{"input": 1}');
       v_d := 'cerró DOS VECES';
@@ -825,11 +825,11 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (10, 'las ráfagas: solo Opus y Fable, el esfuerzo, hasta max_por_rafaga; cerrar calcula los centavos, anota el gasto del mes y guarda en ia_config; no se cierra dos veces; una sola a la vez',
-    'modelos: 22023 22023 22023 22023 entra 22023 22023 | centavos 760 (= 400 + 100 + 60 + 200) | gasto del mes: +760 centavos, +1 llamada(s), anotado en asistente_uso | asistente_uso: contador_categorizar · claude-opus-5-5 · dueno · entrada 1000000 · salida 100000 · leído 3000000 · escrito 200000 · vueltas 3 · 760 · del dueño | ia_config: pv pv-c8-pruebas · ph ph-c8-pruebas · ráfaga puesta · error ninguno | dos veces: MX008 | dos a la vez: MX008 (en marcha) | uso mal: 22023 | sin uso: 0 centavos',
+  insert into _pruebas values (10, 'las ráfagas: solo Opus y Fable, el esfuerzo, hasta max_por_rafaga; cerrar calcula los centavos, anota el gasto del mes y guarda en contador_config; no se cierra dos veces; una sola a la vez',
+    'modelos: 22023 22023 22023 22023 entra 22023 22023 | centavos 760 (= 400 + 100 + 60 + 200) | gasto del mes: +760 centavos, +1 llamada(s), anotado en asistente_uso | asistente_uso: contador_categorizar · claude-opus-5-5 · dueno · entrada 1000000 · salida 100000 · leído 3000000 · escrito 200000 · vueltas 3 · 760 · del dueño | contador_config: pv pv-c8-pruebas · ph ph-c8-pruebas · ráfaga puesta · error ninguno | dos veces: MX008 | dos a la vez: MX008 (en marcha) | uso mal: 22023 | sin uso: 0 centavos',
     v_obt,
-    v_obt in ('modelos: 22023 22023 22023 22023 entra 22023 22023 | centavos 760 (= 400 + 100 + 60 + 200) | gasto del mes: +760 centavos, +1 llamada(s), anotado en asistente_uso | asistente_uso: contador_categorizar · claude-opus-5-5 · dueno · entrada 1000000 · salida 100000 · leído 3000000 · escrito 200000 · vueltas 3 · 760 · del dueño | ia_config: pv pv-c8-pruebas · ph ph-c8-pruebas · ráfaga puesta · error ninguno | dos veces: MX008 | dos a la vez: MX008 (en marcha) | uso mal: 22023 | sin uso: 0 centavos',
-              'modelos: 22023 22023 22023 22023 entra 22023 22023 | centavos 760 (= 400 + 100 + 60 + 200) | gasto del mes: +760 centavos, +3 llamada(s), anotado en asistente_costo_mes | asistente_uso: (asistente_costo_mes es una tabla aquí) | ia_config: pv pv-c8-pruebas · ph ph-c8-pruebas · ráfaga puesta · error ninguno | dos veces: MX008 | dos a la vez: MX008 (en marcha) | uso mal: 22023 | sin uso: 0 centavos'));
+    v_obt in ('modelos: 22023 22023 22023 22023 entra 22023 22023 | centavos 760 (= 400 + 100 + 60 + 200) | gasto del mes: +760 centavos, +1 llamada(s), anotado en asistente_uso | asistente_uso: contador_categorizar · claude-opus-5-5 · dueno · entrada 1000000 · salida 100000 · leído 3000000 · escrito 200000 · vueltas 3 · 760 · del dueño | contador_config: pv pv-c8-pruebas · ph ph-c8-pruebas · ráfaga puesta · error ninguno | dos veces: MX008 | dos a la vez: MX008 (en marcha) | uso mal: 22023 | sin uso: 0 centavos',
+              'modelos: 22023 22023 22023 22023 entra 22023 22023 | centavos 760 (= 400 + 100 + 60 + 200) | gasto del mes: +760 centavos, +3 llamada(s), anotado en asistente_costo_mes | asistente_uso: (asistente_costo_mes es una tabla aquí) | contador_config: pv pv-c8-pruebas · ph ph-c8-pruebas · ráfaga puesta · error ninguno | dos veces: MX008 | dos a la vez: MX008 (en marcha) | uso mal: 22023 | sin uso: 0 centavos'));
 end $$;
 
 
@@ -848,7 +848,7 @@ end $$;
 --     dígitos o más dentro del hex; lo que contestó (salida) tal cual
 do $$
 declare
-  v_obt text; v_m uuid; v_l uuid; v_r jsonb; p ia_propuestas; v_a text; v_b text; v_c text;
+  v_obt text; v_m uuid; v_l uuid; v_r jsonb; p contador_propuestas; v_a text; v_b text; v_c text;
 begin
   begin
     perform pg_temp.c8_montar();
@@ -864,7 +864,7 @@ begin
                                 'confianza', 0.91234, 'flags', '{"pide_obra": false, "capitalizable": false, "use_tax": true}'::jsonb,
                                 'alternativas', '[{"cuenta": "6400", "motivo": "herramienta menor"}, {"cuenta": "6000", "motivo": "no vale"}, {"cuenta": "1010", "motivo": "tampoco"}]'::jsonb),
              'claude-opus-5-5', 'low', 'pv-c8-pruebas');
-    select * into p from ia_propuestas where id = (v_r->>'propuesta')::uuid;
+    select * into p from contador_propuestas where id = (v_r->>'propuesta')::uuid;
     v_a := format('%s %s de la ráfaga %s, %s/%s/%s, pide_obra %s, alternativas fuera %s', p.estado, p.fuente,
                   case when p.lote_id = v_l then 'sí' else 'NO' end, p.modelo, p.effort, p.prompt_version, v_r->>'pide_obra', v_r->>'alternativas_fuera');
     v_b := format('propuesta: %s', p.propuesta::text);
@@ -902,7 +902,7 @@ begin
     perform pg_temp.c8_montar();
     v_m := pg_temp.c8_cargo('c8-t12-1', pg_temp.c8('d')::date, 100.00, 'WAWA 5234 BELLEVIEW FL');
     v_l := pg_temp.c8_lote(1);
-    v_n0 := (select count(*) from ia_propuestas);
+    v_n0 := (select count(*) from contador_propuestas);
     v_casos := jsonb_build_array(
       '{"lineas": [{"cuenta": "6000"}], "motivo": "sueldo", "confianza": 0.5}'::jsonb,
       '{"lineas": [{"cuenta": "1010"}], "motivo": "banco", "confianza": 0.5}'::jsonb,
@@ -934,7 +934,7 @@ begin
     v_r := fn_contador_propuesta_guardar(v_m, v_l, '{}'::jsonb, '{}'::jsonb, '{"lineas": [{"cuenta": "6300"}], "motivo": "combustible", "confianza": 0.5}',
                                          'claude-opus-5-5', 'low', 'pv');
     v_res := v_res || (coalesce(v_r->>'codigo', 'GUARDÓ') || case when v_r->>'error' ~ 'ya no está pendiente' then ' (ya no está pendiente)' else '' end);
-    v_obt := array_to_string(v_res, ' ') || format(' | guardadas %s (la de Edgar al clasificar)', (select count(*) from ia_propuestas) - v_n0);
+    v_obt := array_to_string(v_res, ' ') || format(' | guardadas %s (la de Edgar al clasificar)', (select count(*) from contador_propuestas) - v_n0);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
@@ -960,13 +960,13 @@ begin
     v_r1 := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "6300"}]', 'combustible', 0.8);
     v_r2 := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "6350"}]', 'comida', 0.6);
     v_obt := format('primera %s, segunda %s, caducó %s | pendientes del movimiento %s | nota «%s»',
-                    (select p.estado from ia_propuestas p where p.id = (v_r1->>'propuesta')::uuid),
-                    (select p.estado from ia_propuestas p where p.id = (v_r2->>'propuesta')::uuid),
+                    (select p.estado from contador_propuestas p where p.id = (v_r1->>'propuesta')::uuid),
+                    (select p.estado from contador_propuestas p where p.id = (v_r2->>'propuesta')::uuid),
                     case when (v_r2->>'caducada')::uuid = (v_r1->>'propuesta')::uuid then 'la primera' else 'OTRA' end,
-                    (select count(*) from ia_propuestas p where p.movimiento_id = v_m and p.estado = 'pendiente'),
-                    (select regexp_replace(p.nota, '\(ráfaga [0-9a-f-]+\)', '(ráfaga …)') from ia_propuestas p where p.id = (v_r1->>'propuesta')::uuid));
+                    (select count(*) from contador_propuestas p where p.movimiento_id = v_m and p.estado = 'pendiente'),
+                    (select regexp_replace(p.nota, '\(ráfaga [0-9a-f-]+\)', '(ráfaga …)') from contador_propuestas p where p.id = (v_r1->>'propuesta')::uuid));
     begin
-      insert into ia_propuestas (movimiento_id, fuente, propuesta, estado)
+      insert into contador_propuestas (movimiento_id, fuente, propuesta, estado)
       values (v_m, 'edgar', '{"lineas": [{"cuenta": "6300"}], "motivo": "x", "confianza": 1}', 'pendiente');
       v_e := 'ENTRÓ';
     exception when others then v_e := sqlstate;
@@ -994,7 +994,7 @@ end $$;
 --     sin IA; aprobar dos veces, MX008
 do $$
 declare
-  v_obt text; v_m uuid; v_m2 uuid; v_l uuid; v_r jsonb; p ia_propuestas; a asientos; v_a text; v_b text; v_c text; v_d text; v_e text;
+  v_obt text; v_m uuid; v_m2 uuid; v_l uuid; v_r jsonb; p contador_propuestas; a asientos; v_a text; v_b text; v_c text; v_d text; v_e text;
 begin
   begin
     perform pg_temp.c8_montar();
@@ -1003,7 +1003,7 @@ begin
     v_l := pg_temp.c8_lote(1);
     v_r := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "6300"}]', 'WAWA es una gasolinera: combustible del vehículo', 0.92);
     v_r := fn_contador_aprobar((v_r->>'propuesta')::uuid, pg_temp.c8('dueno')::uuid);
-    select * into p from ia_propuestas where id = (v_r->>'propuesta')::uuid;
+    select * into p from contador_propuestas where id = (v_r->>'propuesta')::uuid;
     select * into a from asientos where id = p.asiento_id;
     v_a := format('%s | asiento %s: %s | %s', v_r->>'estado', case when a.id is not null then 'vivo' else 'NO' end, pg_temp.c8_lineas(a.id),
                   format('usuario %s · rol_bd %s · camino %s · origen %s/%s · reversado %s',
@@ -1022,12 +1022,12 @@ begin
                   (select m.estado || '/' || m.casado_clase from movimientos_banco m where m.id = v_m),
                   case when exists (select 1 from v_banco_bandeja b where b.movimiento_id = v_m) then 'SIGUE' else 'ya no' end);
     v_d := format('regla: %s', (select format('%s · %s · %s · %s · pide_obra %s', r.nombre, r.patron, r.lineas::text, r.origen, r.pide_obra::text)
-                                  from ia_reglas r where r.id = (v_r->'regla'->>'regla')::uuid));
+                                  from contador_reglas r where r.id = (v_r->'regla'->>'regla')::uuid));
     -- el siguiente WAWA: por regla, sin IA
     v_m2 := pg_temp.c8_cargo('c8-t14-2', pg_temp.c8('d')::date + 1, 48.10, 'WAWA 5112 OCALA FL');
     perform fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
     v_d := v_d || format(' | el siguiente WAWA: %s', (select format('%s «%s» confianza %s', q.fuente, q.propuesta->>'motivo', q.propuesta->>'confianza')
-                                                      from ia_propuestas q where q.id = pg_temp.c8_prop('c8-t14-2')));
+                                                      from contador_propuestas q where q.id = pg_temp.c8_prop('c8-t14-2')));
     begin
       perform fn_contador_aprobar(p.id, pg_temp.c8('dueno')::uuid);
       v_e := 'aprobó DOS VECES';
@@ -1070,7 +1070,7 @@ begin
       get stacked diagnostics v_hint = pg_exception_hint;
       v_a := format('sin obra: %s %s, pista «%s»', sqlstate, case when sqlerrm ~ '^Elige la obra' then 'elige la obra' else sqlerrm end, v_hint);
     end;
-    v_a := v_a || format(', asientos nuevos %s, propuesta %s', (select count(*) from asientos) - v_n0, (select q.estado from ia_propuestas q where q.id = v_pid));
+    v_a := v_a || format(', asientos nuevos %s, propuesta %s', (select count(*) from asientos) - v_n0, (select q.estado from contador_propuestas q where q.id = v_pid));
     begin
       perform fn_contador_aprobar(v_pid, pg_temp.c8('dueno')::uuid, 'obra-que-no-existe');
       v_a := v_a || ' | obra inventada: ENTRÓ';
@@ -1078,14 +1078,14 @@ begin
     end;
     v_r := fn_contador_aprobar(v_pid, pg_temp.c8('dueno')::uuid, pg_temp.c8('obra'));
     v_b := format('con obra: %s, líneas finales %s, asiento %s', v_r->>'estado',
-                  replace((select q.lineas_finales::text from ia_propuestas q where q.id = v_pid), pg_temp.c8('obra'), '<obra>'),
+                  replace((select q.lineas_finales::text from contador_propuestas q where q.id = v_pid), pg_temp.c8('obra'), '<obra>'),
                   replace(pg_temp.c8_lineas((v_r->>'asiento_id')::uuid), pg_temp.c8('obra'), '<obra>'));
     v_c := format('regla: %s', (select format('%s · %s · %s · pide_obra %s', r.nombre, r.patron, r.lineas::text, r.pide_obra::text)
-                                  from ia_reglas r where r.id = (v_r->'regla'->>'regla')::uuid));
+                                  from contador_reglas r where r.id = (v_r->'regla'->>'regla')::uuid));
     v_m2 := pg_temp.c8_cargo('c8-t15-2', pg_temp.c8('d')::date + 1, 120.00, 'THE HOME DEPOT 2051 BELLEVIEW FL');
     perform fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
     v_c := v_c || format(' | el siguiente: %s', (select format('%s «%s» pide_obra %s', q.fuente, q.propuesta->>'motivo', q.propuesta->'flags'->>'pide_obra')
-                                                 from ia_propuestas q where q.id = pg_temp.c8_prop('c8-t15-2')));
+                                                 from contador_propuestas q where q.id = pg_temp.c8_prop('c8-t15-2')));
     begin
       perform fn_contador_clasificar(v_m2, pg_temp.c8('dueno')::uuid, '[{"cuenta": "5100"}]', null, false);
       v_d := 'a mano sin obra: ENTRÓ';
@@ -1115,7 +1115,7 @@ end $$;
 --     fn_banco_tomar); una línea con una cuenta prohibida ni llega a c6
 do $$
 declare
-  v_obt text; v_m uuid; v_m2 uuid; v_l uuid; v_r jsonb; p ia_propuestas; a asientos; v_a text; v_b text; v_c text; v_d text; v_n0 bigint;
+  v_obt text; v_m uuid; v_m2 uuid; v_l uuid; v_r jsonb; p contador_propuestas; a asientos; v_a text; v_b text; v_c text; v_d text; v_n0 bigint;
 begin
   begin
     perform pg_temp.c8_montar();
@@ -1124,18 +1124,18 @@ begin
     v_l := pg_temp.c8_lote(1);
     v_r := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "6300"}]', 'WAWA es una gasolinera: combustible', 0.9);
     v_r := fn_contador_clasificar(v_m, pg_temp.c8('dueno')::uuid, '[{"cuenta": "6400"}]', 'fue hielo y guantes para la cuadrilla', true);
-    select * into p from ia_propuestas where id = (v_r->>'propuesta')::uuid;
+    select * into p from contador_propuestas where id = (v_r->>'propuesta')::uuid;
     select * into a from asientos where id = p.asiento_id;
     v_a := format('%s %s, finales %s, asiento %s | «%s» | regla %s', v_r->>'estado', p.fuente, p.lineas_finales::text, pg_temp.c8_lineas(a.id),
                   regexp_replace(a.descripcion, p.id::text, '<id>'),
-                  (select format('%s → %s', r.nombre, r.lineas::text) from ia_reglas r where r.id = (v_r->'regla'->>'regla')::uuid));
+                  (select format('%s → %s', r.nombre, r.lineas::text) from contador_reglas r where r.id = (v_r->'regla'->>'regla')::uuid));
     -- sin propuesta delante, y sin recordar
     v_m2 := pg_temp.c8_cargo('c8-t16-2', pg_temp.c8('d')::date, 45.00, 'SHELL OIL 57544 OCALA FL');
-    v_n0 := (select count(*) from ia_reglas);
+    v_n0 := (select count(*) from contador_reglas);
     v_r := fn_contador_clasificar(v_m2, pg_temp.c8('dueno')::uuid, '[{"cuenta": "6300"}]', null, false);
-    select * into p from ia_propuestas where id = (v_r->>'propuesta')::uuid;
+    select * into p from contador_propuestas where id = (v_r->>'propuesta')::uuid;
     select * into a from asientos where id = p.asiento_id;
-    v_b := format('sin propuesta: %s %s, «%s», reglas nuevas %s', p.fuente, p.estado, a.descripcion, (select count(*) from ia_reglas) - v_n0);
+    v_b := format('sin propuesta: %s %s, «%s», reglas nuevas %s', p.fuente, p.estado, a.descripcion, (select count(*) from contador_reglas) - v_n0);
     -- el error de c6, tal cual
     begin
       perform fn_contador_clasificar(v_m2, pg_temp.c8('dueno')::uuid, '[{"cuenta": "6300"}]', null, false);
@@ -1167,7 +1167,7 @@ end $$;
 --     puede proponer otra cosa después
 do $$
 declare
-  v_obt text; v_m uuid; v_l uuid; v_r jsonb; p ia_propuestas; v_a text; v_b text; v_c text; v_n0 bigint;
+  v_obt text; v_m uuid; v_l uuid; v_r jsonb; p contador_propuestas; v_a text; v_b text; v_c text; v_n0 bigint;
 begin
   begin
     perform pg_temp.c8_montar();
@@ -1176,7 +1176,7 @@ begin
     v_r := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "6350"}]', 'una comida', 0.4);
     v_n0 := (select count(*) from asientos);
     v_r := fn_contador_rechazar((v_r->>'propuesta')::uuid, pg_temp.c8('dueno')::uuid, '  no fue comida, fue gasolina ');
-    select * into p from ia_propuestas where id = (v_r->>'propuesta')::uuid;
+    select * into p from contador_propuestas where id = (v_r->>'propuesta')::uuid;
     v_a := format('%s «%s» por %s %s, asientos nuevos %s | movimiento %s, en la bandeja %s, espera propuesta %s', p.estado, p.motivo_edgar,
                   case when p.aprobado_por = pg_temp.c8('dueno')::uuid then 'el dueño' else 'OTRO' end,
                   case when p.aprobado_el is not null then 'hoy' else 'SIN fecha' end, (select count(*) from asientos) - v_n0,
@@ -1195,7 +1195,7 @@ begin
     end;
     v_r := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "6300"}]', 'combustible', 0.9);
     v_r := fn_contador_rechazar((v_r->>'propuesta')::uuid, pg_temp.c8('dueno')::uuid, null);
-    v_c := format('la IA propone otra: %s | sin motivo: «%s»', (select q.estado from ia_propuestas q where q.id = (v_r->>'propuesta')::uuid),
+    v_c := format('la IA propone otra: %s | sin motivo: «%s»', (select q.estado from contador_propuestas q where q.id = (v_r->>'propuesta')::uuid),
                   v_r->>'motivo_edgar');
     v_c := v_c || format(' | bandeja de la IA: %s %s', (select b.estado from v_contador_bandeja b where b.movimiento_id = v_m),
                          (select count(*) from v_contador_bandeja b where b.movimiento_id = v_m));
@@ -1279,7 +1279,7 @@ begin
     v_m := pg_temp.c8_cargo('c8-t19-1', pg_temp.c8('d')::date, 61.20, 'WAWA 5234 BELLEVIEW FL');
     v_rid := (fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Wawa', '^WAWA', '[{"cuenta": "6300"}]')->>'id')::uuid;
     perform fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
-    v_a := format('antes: propuesta %s', (select q.estado from ia_propuestas q where q.regla_id = v_rid));
+    v_a := format('antes: propuesta %s', (select q.estado from contador_propuestas q where q.regla_id = v_rid));
     begin
       perform fn_contador_regla_baja(v_rid, pg_temp.c8('dueno')::uuid, '');
       v_a := v_a || ' | sin motivo: ENTRÓ';
@@ -1288,15 +1288,15 @@ begin
     v_r := fn_contador_regla_baja(v_rid, pg_temp.c8('dueno')::uuid, 'ya no compro ahí');
     v_b := format('baja: activa %s, caducadas %s, notas «%s», propuesta %s, «%s»', v_r->>'activa', v_r->>'propuestas_caducadas',
                   regexp_replace(v_r->>'notas', '[0-9]{4}-[0-9]{2}-[0-9]{2}', '<fecha>', 'g'),
-                  (select q.estado from ia_propuestas q where q.regla_id = v_rid),
-                  (select regexp_replace(q.nota, '[0-9]{4}-[0-9]{2}-[0-9]{2}', '<fecha>') from ia_propuestas q where q.regla_id = v_rid));
+                  (select q.estado from contador_propuestas q where q.regla_id = v_rid),
+                  (select regexp_replace(q.nota, '[0-9]{4}-[0-9]{2}-[0-9]{2}', '<fecha>') from contador_propuestas q where q.regla_id = v_rid));
     begin
       perform fn_contador_regla_baja(v_rid, pg_temp.c8('dueno')::uuid, 'otra vez');
       v_c := 'dos veces: ENTRÓ';
     exception when others then v_c := format('dos veces: %s', sqlstate);
     end;
     v_c := v_c || format(' | reglas %s (ninguna borrada) | el patrón libre: %s',
-                         (select count(*) from ia_reglas r where r.id = v_rid),
+                         (select count(*) from contador_reglas r where r.id = v_rid),
                          (fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Wawa otra vez', '^WAWA', '[{"cuenta": "6350"}]')->>'activa'));
     v_obt := format('%s | %s | %s', v_a, v_b, v_c);
     raise exception using errcode = 'MXT00';
@@ -1385,7 +1385,7 @@ begin
     perform pg_temp.c8_sin_reglas('WAWA|SHELL|NFPA|NETFLIX|LOWES');
     v_antes := pg_temp.c8_rojos('cuadre');
     -- 73 primero: sin ráfaga nunca y un cargo de hace 3 días sin propuesta
-    update ia_config set ultima_rafaga_el = null, ultimo_error = null, ultimo_error_el = null where id = 1;
+    update contador_config set ultima_rafaga_el = null, ultimo_error = null, ultimo_error_el = null where id = 1;
     v_mv := pg_temp.c8_cargo('c8-t21-0', pg_temp.c8('hoy')::date - 3, 33.00, 'LOWES 1077 OCALA FL');
     v_h := format('73 sin ráfaga: %s', pg_temp.c8_fila(73));
     -- 60: aprobar y des-casar a mano
@@ -1418,9 +1418,9 @@ begin
     v_r := pg_temp.c8_ia(pg_temp.c8_cargo('c8-t21-2', pg_temp.c8('d')::date, 45.00, 'SHELL OIL 57544 OCALA FL'), pg_temp.c8_lote(1), '[{"cuenta": "6300"}]', 'combustible', 0.9);
     v_r := fn_contador_aprobar((v_r->>'propuesta')::uuid, pg_temp.c8('dueno')::uuid, null, false);
     v_b := format('61 aprobada: %s', pg_temp.c8_fila(61));
-    update ia_propuestas set estado = 'rechazada', asiento_id = null where id = (v_r->>'propuesta')::uuid;
+    update contador_propuestas set estado = 'rechazada', asiento_id = null where id = (v_r->>'propuesta')::uuid;
     v_b := v_b || format(' → sin su aprobada: %s', pg_temp.c8_fila(61));
-    update ia_propuestas set estado = 'aprobada', asiento_id = (v_r->>'asiento_id')::uuid where id = (v_r->>'propuesta')::uuid;
+    update contador_propuestas set estado = 'aprobada', asiento_id = (v_r->>'asiento_id')::uuid where id = (v_r->>'propuesta')::uuid;
     v_b := v_b || format(' → otra vez: %s', pg_temp.c8_fila(61));
     -- 62: la cuenta de una regla activa se desactiva
     perform fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'NFPA', '^NFPA', '[{"cuenta": "6800"}]');
@@ -1435,20 +1435,20 @@ begin
     execute 'grant execute on function public.fn_contador_tope() to anon';
     v_d := v_d || format(' → fn en la API: %s', pg_temp.c8_fila(63));
     execute 'revoke execute on function public.fn_contador_tope() from anon';
-    execute 'alter table public.ia_reglas disable row level security';
+    execute 'alter table public.contador_reglas disable row level security';
     v_d := v_d || format(' → sin RLS: %s', pg_temp.c8_fila(63));
-    execute 'alter table public.ia_reglas enable row level security';
+    execute 'alter table public.contador_reglas enable row level security';
     v_d := v_d || format(' → otra vez: %s', pg_temp.c8_fila(63));
     -- 70: el tope
     v_e := format('70: %s', pg_temp.c8_fila(70));
-    update ia_config set tope_mes_centavos = 0 where id = 1;
+    update contador_config set tope_mes_centavos = 0 where id = 1;
     v_e := v_e || format(' → tope 0: %s (%s)', pg_temp.c8_fila(70),
                          case when (select c.detalle from v_contador_control c where c.orden = 70) ~ '\$[0-9,]+\.[0-9]{2}' then 'en dólares' else 'MAL' end);
-    update ia_config set tope_mes_centavos = 1000000 where id = 1;
+    update contador_config set tope_mes_centavos = 1000000 where id = 1;
     -- 71: una pendiente de 8 días
     v_r := pg_temp.c8_ia(pg_temp.c8_cargo('c8-t21-3', pg_temp.c8('d')::date, 19.99, 'NETFLIX COM CA'), pg_temp.c8_lote(1), '[{"cuenta": "6500"}]', 'software', 0.7);
     v_f := format('71: %s', pg_temp.c8_fila(71));
-    update ia_propuestas set creado_el = now() - interval '8 days' where id = (v_r->>'propuesta')::uuid;
+    update contador_propuestas set creado_el = now() - interval '8 days' where id = (v_r->>'propuesta')::uuid;
     v_f := v_f || format(' → 8 días: %s', pg_temp.c8_fila(71));
     -- 72: una ráfaga con error
     v_g := format('72: %s', pg_temp.c8_fila(72));
@@ -1457,7 +1457,7 @@ begin
                          case when (select c.detalle from v_contador_control c where c.orden = 72) ~ '529' then 'dice el error' else 'MAL' end);
     -- (otra ráfaga, más tarde, sin error: en la prueba el reloj no avanza,
     -- se finge que el error fue hace un minuto)
-    update ia_config set ultimo_error_el = ultimo_error_el - interval '1 minute' where id = 1;
+    update contador_config set ultimo_error_el = ultimo_error_el - interval '1 minute' where id = 1;
     perform fn_contador_lote_cerrar(pg_temp.c8_lote(1), '{"input": 10}');
     v_g := v_g || format(' → la siguiente sin error: %s', pg_temp.c8_fila(72));
     -- (una ráfaga que se quedó abierta más de cinco minutos: la función se
@@ -1466,17 +1466,17 @@ begin
     -- con su error y sin uso, y la nueva entra; una ráfaga limpia después
     -- vuelve a poner la alarma en verde)
     v_l := pg_temp.c8_lote(1);
-    update ia_lotes set creado_el = now() - interval '6 minutes' where id = v_l;
+    update contador_lotes set creado_el = now() - interval '6 minutes' where id = v_l;
     v_g := v_g || format(' → una abierta hace 6 min: %s (%s)', pg_temp.c8_fila(72),
                          case when (select c.detalle from v_contador_control c where c.orden = 72) ~ 'abierta.*sin cerrar.*se cortó' then 'dice que se cortó' else 'MAL' end);
     perform fn_contador_lote_abrir(pg_temp.c8('dueno')::uuid, 'claude-opus-5-5', 'low', null, null, 1);
     v_g := v_g || format(' → al abrir otra: %s, %s',
                          (select case when l.cerrado_el is not null and l.error ~ 'se cortó sin cerrar' and l.centavos = 0 then 'la perdida cerrada con su error'
                                       else format('MAL (%s %s)', l.cerrado_el, l.error) end
-                            from ia_lotes l where l.id = v_l),
+                            from contador_lotes l where l.id = v_l),
                          pg_temp.c8_fila(72));
-    update ia_config set ultimo_error_el = ultimo_error_el - interval '1 minute' where id = 1;
-    perform fn_contador_lote_cerrar((select l.id from ia_lotes l where l.cerrado_el is null), '{"input": 10}');
+    update contador_config set ultimo_error_el = ultimo_error_el - interval '1 minute' where id = 1;
+    perform fn_contador_lote_cerrar((select l.id from contador_lotes l where l.cerrado_el is null), '{"input": 10}');
     v_g := v_g || format(' → la siguiente limpia: %s', pg_temp.c8_fila(72));
     v_obt := format('%s | %s | %s | %s | %s | %s | %s | %s | cuadres rojos nuevos: %s', v_h, v_a, v_b, v_c, v_d, v_e, v_f, v_g,
                     case when pg_temp.c8_rojos('cuadre') = v_antes then 'ninguno' else pg_temp.c8_rojos('cuadre') end);
@@ -1514,7 +1514,7 @@ begin
       v_otro := pg_temp.c8('equipo')::uuid;
       update perfiles set rol = 'dueno' where id = v_otro;
       perform fn_contador_reglas_aplicar(v_otro);
-      v_b := format('otro dueño: config.dueno %s', case when (select c.dueno from ia_config c where c.id = 1) = v_otro then 'es el otro' else 'MAL' end);
+      v_b := format('otro dueño: config.dueno %s', case when (select c.dueno from contador_config c where c.id = 1) = v_otro then 'es el otro' else 'MAL' end);
       perform fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
       update perfiles set rol = 'campo' where id = v_otro;
     else

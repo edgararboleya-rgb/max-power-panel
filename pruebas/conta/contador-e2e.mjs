@@ -135,7 +135,7 @@ if (!process.env.SIN_CONSTRUIR) {
   try { psqlArchivo(path.join(D, 'c8-contador.sql')); pegado = psqlArchivo(path.join(D, 'c8-contador.sql'), ['-At']); }
   catch (e) { console.error('c8-contador.sql falló:\n' + String(e.stderr || e.message).slice(-3000)); process.exit(2); }
   ok('E2E-01 c8-contador.sql entra dos veces (idempotente) y enseña su tabla final (claude-opus-5-5 · effort low, las cuentas, 0 cuadres rojos)',
-     /ia_config\|claude-opus-5-5 · effort low · activa/.test(pegado) && /cuentas que se proponen\|\d+ \(v_contador_cuentas\)/.test(pegado) && /control\|0 cuadres rojos/.test(pegado)
+     /contador_config\|claude-opus-5-5 · effort low · activa/.test(pegado) && /cuentas que se proponen\|\d+ \(v_contador_cuentas\)/.test(pegado) && /control\|0 cuadres rojos/.test(pegado)
      && /siguiente paso\|.*c8-pruebas\.sql/.test(pegado), pegado.slice(-900));
   log('c8-pruebas.sql…');
   let pruebasC8;
@@ -145,7 +145,7 @@ if (!process.env.SIN_CONSTRUIR) {
       { env: PG_ENV, stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 << 20 }).toString().trim();
   } catch (e) { pruebasC8 = 'error: ' + String(e.stderr || e.message).slice(-1500); }
   ok('E2E-02 c8-pruebas.sql en verde (25 de 25) y no deja nada (ni propuestas, ni reglas, ni ráfagas)',
-     /^total=25 ok=25 fallan=0/.test(pruebasC8) && q(`select (select count(*) from ia_propuestas) + (select count(*) from ia_reglas) + (select count(*) from ia_lotes)`) === '0', pruebasC8);
+     /^total=25 ok=25 fallan=0/.test(pruebasC8) && q(`select (select count(*) from contador_propuestas) + (select count(*) from contador_reglas) + (select count(*) from contador_lotes)`) === '0', pruebasC8);
   // re-pegar las capas con c8 puesto: nada de c8 cuelga de sus vistas (las de c8 leen solo tablas)
   log('re-pego c1, c3, c4, c6, c7, s1 y p1 con c8 puesto, y c8 otra vez…');
   const repegar = [];
@@ -159,9 +159,9 @@ const equipo = q(`select id from perfiles where rol <> 'dueno' and coalesce(acti
 const OBRAS = q(`select id || '|' || nombre from proyectos where estado in ('aprobado', 'ejecucion', 'pausa') order by nombre, id`).split('\n').filter(Boolean).map((l) => l.split('|'));
 const [OBRA, OBRA_NOMBRE] = OBRAS[0] ?? [];
 const [OBRA2] = OBRAS[1] ?? [];
-const fresca = q(`select (select count(*) from ia_propuestas) || '|' || (select count(*) from ia_reglas) || '|' || (select count(*) from ia_lotes) || '|' || (select count(*) from movimientos_banco where id_externo like 'e2e-c8-%')`);
-const cfg0 = q(`select modelo || '|' || effort || '|' || activa || '|' || max_por_rafaga || '|' || tope_mes_centavos || '|' || dueno || '|' || (ultima_rafaga_el is null) from ia_config where id = 1`);
-ok('E2E-04 la base: dueño, equipo, dos obras activas, c8 pegado (ia_config de fábrica: opus 5.5, low, activa, 20 por ráfaga, $30 al mes, el dueño, ninguna ráfaga) y sin propuestas, reglas ni ráfagas',
+const fresca = q(`select (select count(*) from contador_propuestas) || '|' || (select count(*) from contador_reglas) || '|' || (select count(*) from contador_lotes) || '|' || (select count(*) from movimientos_banco where id_externo like 'e2e-c8-%')`);
+const cfg0 = q(`select modelo || '|' || effort || '|' || activa || '|' || max_por_rafaga || '|' || tope_mes_centavos || '|' || dueno || '|' || (ultima_rafaga_el is null) from contador_config where id = 1`);
+ok('E2E-04 la base: dueño, equipo, dos obras activas, c8 pegado (contador_config de fábrica: opus 5.5, low, activa, 20 por ráfaga, $30 al mes, el dueño, ninguna ráfaga) y sin propuestas, reglas ni ráfagas',
    dueno && equipo && OBRA && OBRA2 && fresca === '0|0|0|0' && cfg0 === `claude-opus-5-5|low|true|20|3000|${dueno}|true`, { dueno, equipo, OBRAS, fresca, cfg0 });
 if (fresca !== '0|0|0|0') {
   console.error(`La base ${BD} ya se usó (propuestas|reglas|ráfagas|cargos e2e = ${fresca}): vuelve a clonarla (createdb -T c8base) o constrúyela (sin SIN_CONSTRUIR).`);
@@ -303,8 +303,8 @@ function descasar(mov, motivo) {
                select fn_banco_descasar(${lit(mov)}, ${lit(motivo)}) is not null; commit;`);
 }
 // La última propuesta de un movimiento (o null), entera
-const propDe = (mov) => qj(`select row_to_json(p)::text from (select * from ia_propuestas where movimiento_id = ${lit(mov)} order by creado_el desc, id desc limit 1) p`);
-const pendienteDe = (mov) => q(`select coalesce((select id::text from ia_propuestas where movimiento_id = ${lit(mov)} and estado = 'pendiente'), '')`);
+const propDe = (mov) => qj(`select row_to_json(p)::text from (select * from contador_propuestas where movimiento_id = ${lit(mov)} order by creado_el desc, id desc limit 1) p`);
+const pendienteDe = (mov) => q(`select coalesce((select id::text from contador_propuestas where movimiento_id = ${lit(mov)} and estado = 'pendiente'), '')`);
 const estadoMov = (mov) => q(`select estado || '|' || coalesce(asiento_id::text, '-') from movimientos_banco where id = ${lit(mov)}`);
 const lineasDe = (asiento) => q(`select string_agg(l.cuenta || ' ' || l.monto || coalesce(' @' || l.proyecto_id, ''), ' | ' order by l.cuenta, l.monto) from asiento_lineas l where l.asiento_id = ${lit(asiento)}`);
 const asientoVivo = (asiento) => q(`select count(*) from asientos a where a.id = ${lit(asiento)} and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino in ('reverso', 'reverso_automatico'))`) === '1';
@@ -404,7 +404,7 @@ try {
   ok('E2E-18 estado (el dueño en aal2): la salud, la fila de v_contador_estado (instalado, lo que espera), el tope y el control en rojo (la alarma 73)',
      r.estado === 200 && r.j.ok && r.j.salud?.ok && r.j.salud.base && r.j.estado?.instalado === true && Number(r.j.estado.pendientes_sin_propuesta) === cands0
      && Number(r.j.estado.propuestas_pendientes) === 0 && r.j.tope?.bloqueado === false && r.j.control_rojo.some((c) => c.orden === 73) && !r.j.control_rojo.some((c) => c.nivel === 'cuadre'), r.j);
-  ok('E2E-19 nada de eso llamó a Anthropic, abrió una ráfaga ni guardó una propuesta', (await llamadasSim()) === 0 && q(`select (select count(*) from ia_lotes) + (select count(*) from ia_propuestas)`) === '0');
+  ok('E2E-19 nada de eso llamó a Anthropic, abrió una ráfaga ni guardó una propuesta', (await llamadasSim()) === 0 && q(`select (select count(*) from contador_lotes) + (select count(*) from contador_propuestas)`) === '0');
 
   // ---- E2E-20 una regla de Edgar antes de la primera ráfaga ------------------------------------
   const casanNfpa = Number(q(`select count(*) from fn_contador_candidatos() where desc_norm ~* '^NFPA'`));
@@ -422,7 +422,7 @@ try {
     ['sin nombre', await llamar({ accion: 'regla_alta', patron: '^SIN NOMBRE', lineas: [{ cuenta: '6300' }] }, { jwt: D2 }), 400, 'FORMA'],
   ];
   ok('E2E-21 regla_alta frena en llano: patrón roto o que casa con todo (22023), 6000 o una cuenta_banco que no es banco (MX004), partes que no suman (MX001), sin nombre (400) — y no entra ninguna',
-     malas21.every(([, x, e, c]) => x.estado === e && x.j?.codigo === c && typeof x.j.error === 'string') && q(`select count(*) from ia_reglas`) === '1',
+     malas21.every(([, x, e, c]) => x.estado === e && x.j?.codigo === c && typeof x.j.error === 'string') && q(`select count(*) from contador_reglas`) === '1',
      malas21.filter(([, x, e, c]) => !(x.estado === e && x.j?.codigo === c)).map(([n, x]) => [n, x.estado, x.j]));
 
   // ---- E2E-22 LA PRIMERA RÁFAGA ---------------------------------------------------------------
@@ -448,7 +448,7 @@ try {
   const nfpaProp = propDe(M.nfpa);
   ok('E2E-23 la regla contesta antes que la IA: NFPA queda pendiente por regla (confianza 1, «Regla: NFPA», 6800, su regla_id), suma veces, y ninguna petición a la IA lo lleva',
      nfpaProp?.estado === 'pendiente' && nfpaProp.fuente === 'regla' && nfpaProp.regla_id === reglaNfpa && nfpaProp.propuesta.confianza === 1 && nfpaProp.propuesta.motivo === 'Regla: NFPA'
-     && isDeepStrictEqual(nfpaProp.propuesta.lineas, [{ cuenta: '6800' }]) && nfpaProp.lote_id === null && q(`select veces || '|' || (ultima_vez is not null) from ia_reglas where id = ${lit(reglaNfpa)}`) === `${casanNfpa}|true`
+     && isDeepStrictEqual(nfpaProp.propuesta.lineas, [{ cuenta: '6800' }]) && nfpaProp.lote_id === null && q(`select veces || '|' || (ultima_vez is not null) from contador_reglas where id = ${lit(reglaNfpa)}`) === `${casanNfpa}|true`
      && !pet1.some((p) => /NFPA/.test(p.cuerpo?.messages?.[0]?.content ?? '')), nfpaProp);
   const repetidas = pet1.filter((p, i) => pet1.findIndex((x) => claveMsg(x) === claveMsg(p)) !== i);
   ok('E2E-24 la ráfaga llama a la IA UNA vez por movimiento (más el reintento del 529: AMAZON CAIDO, dos veces)',
@@ -547,11 +547,11 @@ try {
   ok('E2E-47 un JSON roto → inválida «la IA no devolvió un JSON»; una cuenta inventada (9999) → inválida, la base dice por qué (MX004): ninguna de las dos se guarda',
      det('roto')?.estado === 'invalida' && /no devolvió un JSON/.test(det('roto').motivo) && pRoto === null
      && det('inv')?.estado === 'invalida' && /9999/.test(det('inv').motivo) && det('inv').codigo === 'MX004' && pInv === null, [det('roto'), det('inv')]);
-  const delLote = Number(q(`select count(*) from ia_propuestas where lote_id = ${lit(LOTE1)} and estado = 'pendiente' and fuente = 'ia'`));
+  const delLote = Number(q(`select count(*) from contador_propuestas where lote_id = ${lit(LOTE1)} and estado = 'pendiente' and fuente = 'ia'`));
   ok('E2E-48 los conteos: propuestas = las pendientes de la IA de este lote; sin respuesta = 2 (refusal, max_tokens); inválidas = 2 (JSON roto, 9999)',
      P1.propuestas === delLote && P1.propuestas === iaCands.length - 4 && P1.sin_respuesta === 2 && P1.invalidas === 2 && (P1.detalle ?? []).length === iaCands.length, { propuestas: P1.propuestas, delLote, sin: P1.sin_respuesta, inv: P1.invalidas });
   const obrasEsperadas = OBRAS.map(([id, nombre]) => ({ id, nombre }));
-  const propsLote = qj(`select json_agg(json_build_object('mov', movimiento_id, 'entrada', entrada, 'salida', salida, 'modelo', modelo, 'effort', effort, 'pv', prompt_version, 'lote', lote_id))::text from ia_propuestas where lote_id = ${lit(LOTE1)}`) ?? [];
+  const propsLote = qj(`select json_agg(json_build_object('mov', movimiento_id, 'entrada', entrada, 'salida', salida, 'modelo', modelo, 'effort', effort, 'pv', prompt_version, 'lote', lote_id))::text from contador_propuestas where lote_id = ${lit(LOTE1)}`) ?? [];
   const msgDeMov = (mov) => msgDe(pet1.filter((p) => claveMsg(p) === claveDeMov[mov] && p.respuesta.estado === 200).pop() ?? {});
   ok('E2E-49 la ENTRADA congelada de cada propuesta: el movimiento tal cual se le dio a la IA, las obras activas, y la versión de las reglas, el prefijo_hash y el prompt_version ENTEROS (la máscara no toca el sello)',
      propsLote.length === P1.propuestas && propsLote.every((x) => mismoConjunto(Object.keys(x.entrada), ['movimiento', 'obras', 'reglas_version', 'prefijo_hash', 'prompt_version'])
@@ -561,15 +561,15 @@ try {
   ok('E2E-50 la SALIDA cruda (la respuesta de Anthropic tal cual: id, stop_reason, el bloque thinking delante, el texto y el uso) y modelo/effort/prompt_version íntegros en sus columnas',
      propsLote.every((x) => /^msg_SIM/.test(x.salida?.id ?? '') && x.salida.stop_reason === 'end_turn' && x.salida.content?.[0]?.type === 'thinking' && x.salida.content?.[1]?.type === 'text'
        && typeof x.salida.usage?.input_tokens === 'number' && x.modelo === 'claude-opus-5-5' && x.effort === 'low' && x.pv === PV && x.lote === P1.lote), propsLote[0]?.salida);
-  const lote1 = qj(`select row_to_json(l)::text from ia_lotes l where id = ${lit(LOTE1)}`);
+  const lote1 = qj(`select row_to_json(l)::text from contador_lotes l where id = ${lit(LOTE1)}`);
   ok('E2E-51 el lote: cerrado, n = los movimientos, el uso y los centavos de la ráfaga, sin error, opus 5.5 / low, la versión del prompt, el hash del prefijo y quién',
      lote1?.cerrado_el && lote1.n === iaCands.length && isDeepStrictEqual(lote1.usage, uso1) && lote1.centavos === P1.centavos && lote1.error === null && lote1.modelo === 'claude-opus-5-5'
      && lote1.effort === 'low' && lote1.prompt_version === PV && lote1.prefijo_hash === P1.prefijo_hash && lote1.por === dueno && lote1.accion === 'categorizar', lote1);
   const gasto1 = gastoContador();
   ok('E2E-52 el gasto del mes sube (asistente_costo_mes, acción contador_categorizar): los centavos del lote y una llamada más; el tope lo ve',
      gasto1[0] - gasto0[0] === P1.centavos && gasto1[1] - gasto0[1] === 1 && Number(P1.tope?.centavos_mes_contador) === gasto1[0], { gasto0, gasto1, tope: P1.tope });
-  ok('E2E-53 ia_config guarda la ráfaga: ultima_rafaga_el de ahora, el prompt_version y el prefijo_hash, sin error',
-     q(`select (ultima_rafaga_el > now() - interval '5 minutes') || '|' || prompt_version || '|' || prefijo_hash || '|' || coalesce(ultimo_error, '-') from ia_config`) === `true|${PV}|${P1.prefijo_hash}|-`);
+  ok('E2E-53 contador_config guarda la ráfaga: ultima_rafaga_el de ahora, el prompt_version y el prefijo_hash, sin error',
+     q(`select (ultima_rafaga_el > now() - interval '5 minutes') || '|' || prompt_version || '|' || prefijo_hash || '|' || coalesce(ultimo_error, '-') from contador_config`) === `true|${PV}|${P1.prefijo_hash}|-`);
   const est53 = qj(`select row_to_json(e)::text from v_contador_estado e`);
   const band = qj(`select row_to_json(b)::text from v_contador_bandeja b where movimiento_id = ${lit(M.hd)}`);
   ok('E2E-54 v_contador_estado y v_contador_bandeja: las pendientes (de la IA y de la regla), y por movimiento la propuesta con la cuenta resuelta, la confianza, los flags y el modelo; la alarma 73 en verde',
@@ -601,17 +601,17 @@ try {
      && r.j.detalle?.[0]?.movimiento_id === M2.publix && r.j.detalle[0].intentos === 2 && propDe(M2.publix)?.propuesta?.flags?.personal === true, { ...r.j, pet: pet.map((p) => p.respuesta.estado) });
   await sim('/__caer', { veces: 2, estado: 500 });
   antes = await llamadasSim();
-  const propsAntes = q(`select count(*) from ia_propuestas`);
+  const propsAntes = q(`select count(*) from contador_propuestas`);
   r = await proponer({ limite: 1 });
   pet = await peticiones(antes);
   ok('E2E-59 un 500 dos veces → sin respuesta «Anthropic no contestó (HTTP 500, dos veces)»: exactamente dos peticiones, nada guardado, el lote cerrado (0 centavos)',
      r.estado === 200 && r.j.movimientos === 1 && r.j.sin_respuesta === 1 && /HTTP 500, dos veces/.test(r.j.detalle?.[0]?.motivo ?? '') && r.j.detalle[0].intentos === 2 && pet.length === 2
-     && pet.every((p) => p.respuesta.estado === 500) && claveMsg(pet[0]) === claveMsg(pet[1]) && q(`select count(*) from ia_propuestas`) === propsAntes && r.j.centavos === 0
-     && q(`select (cerrado_el is not null) || '|' || centavos from ia_lotes where id = ${lit(r.j.lote)}`) === 'true|0', { ...r.j, pet: pet.map((p) => p.respuesta.estado) });
-  q(`update ia_config set max_por_rafaga = 2 where id = 1`);
+     && pet.every((p) => p.respuesta.estado === 500) && claveMsg(pet[0]) === claveMsg(pet[1]) && q(`select count(*) from contador_propuestas`) === propsAntes && r.j.centavos === 0
+     && q(`select (cerrado_el is not null) || '|' || centavos from contador_lotes where id = ${lit(r.j.lote)}`) === 'true|0', { ...r.j, pet: pet.map((p) => p.respuesta.estado) });
+  q(`update contador_config set max_por_rafaga = 2 where id = 1`);
   antes = await llamadasSim();
   r = await proponer({ limite: 50 });
-  q(`update ia_config set max_por_rafaga = 20 where id = 1`);
+  q(`update contador_config set max_por_rafaga = 20 where id = 1`);
   ok('E2E-60 el límite nunca pasa de max_por_rafaga (2 aquí, aunque se pidan 50)', r.estado === 200 && r.j.movimientos === 2 && (await llamadasSim()) - antes === 2, { ...r.j, detalle: undefined });
 
   // ---- E2E-61 aprobar («Así es») --------------------------------------------------------------------
@@ -633,7 +633,7 @@ try {
   ok('E2E-64 el asiento es el de c6 (fn_banco_clasificar, origen movimientos_banco) en nombre del dueño, vivo: 5100 +87.43 con la obra y 1010 −87.43, y dice «Propuesta de la IA #<id> aprobada por Edgar: …»',
      asHd?.origen_tabla === 'movimientos_banco' && asHd.usuario_id === dueno && asHd.reversa_a === null && asientoVivo(r.j.asiento_id)
      && lineasDe(r.j.asiento_id) === `1010 -87.43 | 5100 87.43 @${OBRA}` && new RegExp(`^Propuesta de la IA #${pHd.id} aprobada por Edgar: `).test(asHd.descripcion), [asHd, lineasDe(r.j.asiento_id)]);
-  const rgHd = qj(`select row_to_json(x)::text from (select id, nombre, patron, lineas, pide_obra, origen, activa, creada_por from ia_reglas where nombre = 'THE HOME DEPOT') x`);
+  const rgHd = qj(`select row_to_json(x)::text from (select id, nombre, patron, lineas, pide_obra, origen, activa, creada_por from contador_reglas where nombre = 'THE HOME DEPOT') x`);
   ok('E2E-65 «Recordar» (por defecto): nace la regla del comercio «THE HOME DEPOT» (^THE HOME DEPOT), origen aprobacion, con la cuenta y SIN la obra (v1), pide obra',
      r.j.regla?.nueva === true && r.j.regla.nombre === 'THE HOME DEPOT' && rgHd?.patron === '^THE HOME DEPOT' && rgHd.origen === 'aprobacion' && rgHd.activa === true && rgHd.creada_por === dueno
      && isDeepStrictEqual(rgHd.lineas, [{ cuenta: '5100' }]) && rgHd.pide_obra === true, [r.j.regla, rgHd]);
@@ -641,15 +641,15 @@ try {
   ok('E2E-66 aprobar otra vez la misma → 409 MX008 «no se aprueba dos veces»', r.estado === 409 && r.j.codigo === 'MX008' && /dos veces/.test(r.j.error), r);
   r = await llamar({ accion: 'aprobar', propuesta: pWawa.id }, { jwt: D2 });
   const r67 = await llamar({ accion: 'aprobar', propuesta: pAlly.id }, { jwt: D2 });
-  const rgAlly = qj(`select row_to_json(x)::text from (select lineas from ia_reglas where id = ${lit(r67.j?.regla?.regla)}) x`);
+  const rgAlly = qj(`select row_to_json(x)::text from (select lineas from contador_reglas where id = ${lit(r67.j?.regla?.regla)}) x`);
   ok('E2E-67 aprobar WAWA → regla ^WAWA (sin obra); aprobar ALLY (dos líneas) → su asiento con 2520 y 7100, y la regla guarda las partes (suman 1)',
-     r.estado === 200 && r.j.estado === 'aprobada' && q(`select patron || '|' || pide_obra from ia_reglas where nombre = 'WAWA' and activa`) === '^WAWA|false'
+     r.estado === 200 && r.j.estado === 'aprobada' && q(`select patron || '|' || pide_obra from contador_reglas where nombre = 'WAWA' and activa`) === '^WAWA|false'
      && r67.estado === 200 && r67.j.estado === 'aprobada' && lineasDe(r67.j.asiento_id) === `1010 -412.33 | 2520 ${pAlly.propuesta.lineas[0].monto} | 7100 ${pAlly.propuesta.lineas[1].monto}`
      && rgAlly?.lineas?.length === 2 && Math.abs(rgAlly.lineas.reduce((s, l) => s + Number(l.parte), 0) - 1) < 1e-9, [r.j, r67.j, rgAlly, lineasDe(r67.j?.asiento_id)]);
   r = await llamar({ accion: 'aprobar', propuesta: pZelle.id, proyecto_id: OBRA2, recordar: false }, { jwt: D2 });
   ok('E2E-68 aprobar el Zelle (5200, pide obra) con la otra obra y recordar:false → aprobada con esa obra y SIN regla',
      r.estado === 200 && r.j.estado === 'aprobada' && r.j.regla === undefined && lineasDe(r.j.asiento_id) === `1010 -600.00 | 5200 600.00 @${OBRA2}`
-     && q(`select count(*) from ia_reglas where patron like '^ZELLE%'`) === '0', r.j);
+     && q(`select count(*) from contador_reglas where patron like '^ZELLE%'`) === '0', r.j);
 
   // ---- E2E-69 el siguiente del mismo comercio sale por regla, sin IA --------------------------------------
   const M3 = sembrar([
@@ -688,9 +688,9 @@ try {
      r.estado === 200 && r.j.estado === 'editada' && r.j.fuente === 'ia' && eIrs.estado === 'editada' && isDeepStrictEqual(eIrs.lineas_finales, [{ cuenta: '1130' }])
      && eIrs.motivo_edgar === 'Edgar lo devuelve a la empresa' && lineasDe(r.j.asiento_id) === '1010 -1200.00 | 1130 1200.00' && r.j.regla === undefined
      && new RegExp(`^Propuesta de la IA #${pIrs.id} editada por Edgar: .* · Edgar: Edgar lo devuelve a la empresa: IRS USATAXPYMT 240415$`).test(q(`select descripcion from asientos where id = ${lit(r.j.asiento_id)}`))
-     && q(`select count(*) from ia_reglas where patron like '^IRS%'`) === '0', [r.j, eIrs?.estado]);
+     && q(`select count(*) from contador_reglas where patron like '^IRS%'`) === '0', [r.j, eIrs?.estado]);
   r = await llamar({ accion: 'clasificar', movimiento: M.dell, lineas: [{ cuenta: '1530', monto: 2000 }, { cuenta: '6500', monto: 1150 }], motivo: 'La laptop es activo; el resto, accesorios' }, { jwt: D2 });
-  const rgDell = qj(`select row_to_json(x)::text from (select nombre, lineas from ia_reglas where id = ${lit(r.j?.regla?.regla)}) x`);
+  const rgDell = qj(`select row_to_json(x)::text from (select nombre, lineas from contador_reglas where id = ${lit(r.j?.regla?.regla)}) x`);
   ok('E2E-74 clasificar DELL en DOS líneas de Edgar (1530 2,000 + 6500 1,150) → editada, el asiento con las dos, y la regla del comercio con sus partes',
      r.estado === 200 && r.j.estado === 'editada' && lineasDe(r.j.asiento_id) === '1010 -3150.00 | 1530 2000.00 | 6500 1150.00' && rgDell?.nombre === 'DELL MARKETING L P'
      && rgDell.lineas.map((l) => l.cuenta).join('+') === '1530+6500', [r.j, rgDell]);
@@ -712,7 +712,7 @@ try {
   const bRoto = qj(`select row_to_json(b)::text from v_contador_bandeja b where movimiento_id = ${lit(M.roto)}`);
   ok('E2E-77 clasificar {movimiento, lineas:[{cuenta, proyecto_id}], motivo, recordar} → la regla «ROTO STORE» sin la obra (pide obra), y la bandeja enseña la línea con el nombre de la cuenta y de la obra',
      r.estado === 200 && r.j.fuente === 'edgar' && lineasDe(r.j.asiento_id) === `1010 -22.00 | 5100 22.00 @${OBRA}` && r.j.regla?.nombre === 'ROTO STORE'
-     && q(`select lineas::text || '|' || pide_obra from ia_reglas where nombre = 'ROTO STORE'`) === '[{"cuenta": "5100"}]|true'
+     && q(`select lineas::text || '|' || pide_obra from contador_reglas where nombre = 'ROTO STORE'`) === '[{"cuenta": "5100"}]|true'
      && bRoto?.lineas?.[0]?.obra === OBRA_NOMBRE && bRoto.lineas[0].cuenta_nombre && bRoto.asiento_vivo === true, [r.j, bRoto]);
 
   // ---- E2E-78 rechazar («No es eso») ---------------------------------------------------------
@@ -752,7 +752,7 @@ try {
   const M5 = sembrar([{ clave: 'wawa4', desc: 'WAWA 7002 OCALA FL', monto: 47.70, dias: 0 }]);
   await proponer();
   const pW4 = propDe(M5.wawa4);
-  const reglaWawa = q(`select id from ia_reglas where nombre = 'WAWA' and activa`);
+  const reglaWawa = q(`select id from contador_reglas where nombre = 'WAWA' and activa`);
   r = await llamar({ accion: 'regla_baja', regla: reglaWawa }, { jwt: D2 });
   const r84 = await llamar({ accion: 'regla_baja', regla: 'x', motivo: 'no vale' }, { jwt: D2 });
   ok('E2E-84 regla_baja sin motivo → 400 FORMA; con una regla que no es un uuid → 400 FORMA', r.estado === 400 && r.j.codigo === 'FORMA' && r84.estado === 400 && r84.j.codigo === 'FORMA', [r, r84]);
@@ -781,20 +781,20 @@ try {
 
   // ---- E2E-89 el tope ---------------------------------------------------------------------------
   const [cMes] = gastoContador();
-  q(`update ia_config set tope_mes_centavos = ${cMes} where id = 1`);
+  q(`update contador_config set tope_mes_centavos = ${cMes} where id = 1`);
   antes = await llamadasSim();
-  const lotesAntes = q(`select count(*) from ia_lotes`);
+  const lotesAntes = q(`select count(*) from contador_lotes`);
   r = await proponer();
   const s89 = await llamar(null, { metodo: 'GET', consulta: '?paso=salud' });
   const e89 = qj(`select row_to_json(e)::text from v_contador_estado e`);
   const a70 = rojos('alarma').find((x) => /^70 /.test(x)) ?? '';
   ok('E2E-89 con el tope del contador gastado: proponer → bloqueado con su motivo en llano, sin llamar a la IA ni abrir ráfaga; salud y v_contador_estado lo dicen; la alarma 70 en rojo con los dólares',
-     r.estado === 200 && r.j.bloqueado === true && /tope/.test(r.j.motivo) && /ia_config\.tope_mes_centavos/.test(r.j.motivo) && r.j.propuestas === 0 && r.j.centavos === 0
-     && (await llamadasSim()) === antes && q(`select count(*) from ia_lotes`) === lotesAntes && s89.j.tope?.bloqueado === true && e89?.bloqueado === true && e89.bloqueado_motivo === 'tope del contador'
+     r.estado === 200 && r.j.bloqueado === true && /tope/.test(r.j.motivo) && /contador_config\.tope_mes_centavos/.test(r.j.motivo) && r.j.propuestas === 0 && r.j.centavos === 0
+     && (await llamadasSim()) === antes && q(`select count(*) from contador_lotes`) === lotesAntes && s89.j.tope?.bloqueado === true && e89?.bloqueado === true && e89.bloqueado_motivo === 'tope del contador'
      && /^70 ia: el gasto del mes bajo el tope: .*\$[0-9.,]+.*\$[0-9.,]+/.test(a70), [r.j, s89.j?.tope, e89?.bloqueado_motivo, a70]);
   ok('E2E-90 …y la base tampoco abre una ráfaga con el tope gastado (fn_contador_lote_abrir → MX008)',
      /MX008|No se abre la ráfaga/.test(qErr(`select fn_contador_lote_abrir(${lit(dueno)}, 'claude-opus-5-5', 'low', 'x', 'y', 1)`)));
-  q(`update ia_config set tope_mes_centavos = 3000 where id = 1`);
+  q(`update contador_config set tope_mes_centavos = 3000 where id = 1`);
   const topeApp = q(`select valor from asistente_ajustes where clave = 'tope_mes_centavos'`);
   const totalMes = q(`select coalesce(sum(centavos), 0) from asistente_costo_mes where mes = to_char(fn_fecha_miami(now()), 'YYYY-MM')`);
   q(`update asistente_ajustes set valor = ${lit(totalMes)} where clave = 'tope_mes_centavos'`);
@@ -802,11 +802,11 @@ try {
   r = await proponer();
   q(`update asistente_ajustes set valor = ${lit(topeApp)} where clave = 'tope_mes_centavos'`);
   ok('E2E-91 con el tope GLOBAL de la app gastado (todas las acciones del mes): bloqueado «llegó al tope de la app», sin llamar', r.estado === 200 && r.j.bloqueado === true && /tope de la app/.test(r.j.motivo) && (await llamadasSim()) === antes, r.j);
-  q(`update ia_config set activa = false where id = 1`);
+  q(`update contador_config set activa = false where id = 1`);
   antes = await llamadasSim();
   r = await proponer();
-  q(`update ia_config set activa = true where id = 1`);
-  ok('E2E-92 apagado (ia_config.activa = false): bloqueado «el contador está apagado», sin llamar; encendido otra vez, la alarma 70 vuelve a verde',
+  q(`update contador_config set activa = true where id = 1`);
+  ok('E2E-92 apagado (contador_config.activa = false): bloqueado «el contador está apagado», sin llamar; encendido otra vez, la alarma 70 vuelve a verde',
      r.estado === 200 && r.j.bloqueado === true && /apagado/.test(r.j.motivo) && (await llamadasSim()) === antes && !rojos('alarma').some((x) => /^70 /.test(x)), r.j);
 
   // ---- E2E-93 la llave, el modelo, sin llave, la base caída ---------------------------------------------
@@ -814,19 +814,19 @@ try {
   antes = await llamadasSim();
   r = await conEntorno({ ANTHROPIC_API_KEY: LLAVE_MALA }, (p) => llamar({ accion: 'proponer' }, { jwt: D2, puerto: p }));
   pet = await peticiones(antes);
-  const lMal = qj(`select row_to_json(l)::text from (select cerrado_el, error from ia_lotes order by creado_el desc limit 1) l`);
+  const lMal = qj(`select row_to_json(l)::text from (select cerrado_el, error from contador_lotes order by creado_el desc limit 1) l`);
   ok('E2E-93 una llave que Anthropic rechaza (401) → 502 ANTHROPIC_LLAVE en llano (revisa ANTHROPIC_API_KEY): corta la ráfaga en la PRIMERA petición, cierra el lote con el error y no enseña la llave',
      r.estado === 502 && r.j.codigo === 'ANTHROPIC_LLAVE' && /ANTHROPIC_API_KEY/.test(r.j.error) && pet.length === 1 && pet[0]?.cabeceras?.['x-api-key'] === 'mala' && pet[0]?.respuesta?.estado === 401
      && lMal?.cerrado_el && /llave/.test(lMal.error ?? '') && !JSON.stringify(r.j).includes('sk-ant'), [r, pet.length, lMal]);
-  ok('E2E-94 …ia_config guarda el error y la alarma 72 («la última ráfaga sin error») se pone en rojo',
-     q(`select (ultimo_error is not null) || '|' || (ultimo_error_el > now() - interval '5 minutes') from ia_config where id = 1`) === 'true|true' && rojos('alarma').some((x) => /^72 ia: la última ráfaga sin error/.test(x)), rojos('alarma'));
-  q(`update ia_config set modelo = 'claude-fable-5' where id = 1`);
+  ok('E2E-94 …contador_config guarda el error y la alarma 72 («la última ráfaga sin error») se pone en rojo',
+     q(`select (ultimo_error is not null) || '|' || (ultimo_error_el > now() - interval '5 minutes') from contador_config where id = 1`) === 'true|true' && rojos('alarma').some((x) => /^72 ia: la última ráfaga sin error/.test(x)), rojos('alarma'));
+  q(`update contador_config set modelo = 'claude-fable-5' where id = 1`);
   antes = await llamadasSim();
   r = await proponer();
   pet = await peticiones(antes);
-  q(`update ia_config set modelo = 'claude-opus-5-5' where id = 1`);
+  q(`update contador_config set modelo = 'claude-opus-5-5' where id = 1`);
   ok('E2E-95 un modelo que Anthropic no conoce (404) → 502 ANTHROPIC_MODELO: una sola petición con ESE modelo, sin probar otro (nunca un fallback)',
-     r.estado === 502 && r.j.codigo === 'ANTHROPIC_MODELO' && /ia_config/.test(r.j.error) && pet.length === 1 && pet[0]?.cuerpo?.model === 'claude-fable-5', [r, pet.map((p) => p.cuerpo.model)]);
+     r.estado === 502 && r.j.codigo === 'ANTHROPIC_MODELO' && /contador_config/.test(r.j.error) && pet.length === 1 && pet[0]?.cuerpo?.model === 'claude-fable-5', [r, pet.map((p) => p.cuerpo.model)]);
   const sin = await conEntorno({ ANTHROPIC_API_KEY: '' }, async (p) => [await llamar({ accion: 'proponer' }, { jwt: D2, puerto: p }), await llamar({ accion: 'estado' }, { jwt: D2, puerto: p })]);
   ok('E2E-96 sin ANTHROPIC_API_KEY: proponer → 500 CONFIG en llano (las reglas sí se aplicaron) y estado sigue contestando', sin[0].estado === 500 && sin[0].j.codigo === 'CONFIG' && /ANTHROPIC_API_KEY/.test(sin[0].j.error) && sin[1].estado === 200 && sin[1].j.ok, sin.map((x) => x.j));
   r = await proponer();
@@ -858,12 +858,12 @@ try {
   await sim('/__lento', { ms: 0 });
   pet = await peticiones(antes);
   const entro = dos.filter((x) => x.estado === 200 && x.j?.ok), frenada = dos.filter((x) => x.estado === 409);
-  const dobles = q(`select count(*) from (select movimiento_id from ia_propuestas where estado = 'pendiente' group by movimiento_id having count(*) > 1) x`);
+  const dobles = q(`select count(*) from (select movimiento_id from contador_propuestas where estado = 'pendiente' group by movimiento_id having count(*) > 1) x`);
   ok('E2E-99 dos «Proponer» a la vez: UNA entra (200, con todos los que esperaban) y la otra se frena en la base (409 MX008 «ya hay una ráfaga en marcha», en llano, sin gastar): la IA recibe cada cargo UNA vez, los tres nuevos tienen su propuesta, ninguno queda con dos pendientes y los lotes quedan cerrados',
      entro.length === 1 && frenada.length === 1 && frenada[0].j?.codigo === 'MX008' && /Ya hay una ráfaga en marcha/.test(frenada[0].j.error) && /espera a que termine/.test(frenada[0].j.error)
      && entro[0].j.movimientos === cands99 && entro[0].j.propuestas + entro[0].j.sin_respuesta + entro[0].j.invalidas === cands99
      && pet.length === cands99 && new Set(pet.map(claveMsg)).size === cands99 && dobles === '0' && Object.values(M7).every((m) => pendienteDe(m) !== '')
-     && q(`select count(*) from ia_lotes where cerrado_el is null`) === '0' && !/40P01|deadlock/i.test(JSON.stringify(dos.map((x) => x.j)) + salidaFn),
+     && q(`select count(*) from contador_lotes where cerrado_el is null`) === '0' && !/40P01|deadlock/i.test(JSON.stringify(dos.map((x) => x.j)) + salidaFn),
      { cands99, pedidas: pet.length, dos: dos.map((x) => ({ estado: x.estado, ...x.j, detalle: undefined })) });
 
   // ---- E2E-99b el reloj de la ráfaga: una llamada en vuelo se corta al llegar el plazo, lo que no entró espera, nada se reintenta ----
@@ -880,7 +880,7 @@ try {
   r = await conEntorno({ MXP_PRESUPUESTO_MS: '2500' }, (p) => llamar({ accion: 'proponer' }, { jwt: D2, puerto: p }));
   pet = await peticiones(antes);
   const porTiempo = (r.j?.detalle ?? []).filter((d) => d.estado === 'sin_respuesta' && /se acabó el tiempo de la ráfaga/.test(d.motivo ?? ''));
-  const l99b = qj(`select row_to_json(l)::text from (select cerrado_el, error, n from ia_lotes where id = ${lit(r.j?.lote ?? '00000000-0000-4000-8000-000000000000')}) l`);
+  const l99b = qj(`select row_to_json(l)::text from (select cerrado_el, error, n from contador_lotes where id = ${lit(r.j?.lote ?? '00000000-0000-4000-8000-000000000000')}) l`);
   // (la primera contesta al momento; el grupo de tres arranca con reloj de sobra —más de dos segundos— y se corta en vuelo al
   // llegar el plazo; el grupo que sigue ya no arranca: espera a la siguiente ráfaga)
   ok('E2E-99b el reloj de la ráfaga (2,5 s aquí, MXP_PRESUPUESTO_MS solo en el banco): la primera entra; las TRES llamadas en vuelo del grupo se cortan al llegar el plazo (sin reintento) y lo que no arrancó espera a la siguiente (nota, no error); la función vuelve al llegar el plazo y el lote queda cerrado sin error',
@@ -896,24 +896,24 @@ try {
 
   // ---- E2E-99c una ráfaga que se cortó sin cerrar: la alarma 72 lo dice; al abrir la siguiente, la base la da por perdida ----
   const perdida = r.j?.lote;
-  q(`update ia_lotes set cerrado_el = null, creado_el = now() - interval '6 minutes' where id = ${lit(perdida)}`);
+  q(`update contador_lotes set cerrado_el = null, creado_el = now() - interval '6 minutes' where id = ${lit(perdida)}`);
   const a72 = rojos('alarma').find((x) => /^72 /.test(x)) ?? '';
   const abiertos99c = q(`select lotes_abiertos from v_contador_estado`);
   antes = await llamadasSim();
   r = await proponer();
-  const lPerdida = qj(`select row_to_json(l)::text from (select cerrado_el, error, centavos from ia_lotes where id = ${lit(perdida)}) l`);
-  ok('E2E-99c una ráfaga abierta hace más de 5 min (la función se cortó): la alarma 72 lo dice y v_contador_estado la cuenta; el siguiente «Proponer» la da por perdida (cerrada con su error, 0 centavos, el error en ia_config), entra, y como cerró limpio la alarma 72 vuelve a verde',
+  const lPerdida = qj(`select row_to_json(l)::text from (select cerrado_el, error, centavos from contador_lotes where id = ${lit(perdida)}) l`);
+  ok('E2E-99c una ráfaga abierta hace más de 5 min (la función se cortó): la alarma 72 lo dice y v_contador_estado la cuenta; el siguiente «Proponer» la da por perdida (cerrada con su error, 0 centavos, el error en contador_config), entra, y como cerró limpio la alarma 72 vuelve a verde',
      /^72 ia: la última ráfaga sin error: 1 ráfaga\(s\) abierta\(s\) desde las .* sin cerrar: la función se cortó/.test(a72) && abiertos99c === '1'
      && r.estado === 200 && r.j.ok && r.j.propuestas >= 4 && lPerdida?.cerrado_el && /se cortó sin cerrar/.test(lPerdida.error ?? '') && lPerdida.centavos === 0
-     && q(`select (ultimo_error ~ 'se cortó sin cerrar') || '|' || (ultima_rafaga_el > ultimo_error_el) from ia_config`) === 'true|true'
+     && q(`select (ultimo_error ~ 'se cortó sin cerrar') || '|' || (ultima_rafaga_el > ultimo_error_el) from contador_config`) === 'true|true'
      && q(`select lotes_abiertos from v_contador_estado`) === '0' && !rojos('alarma').some((x) => /^72 /.test(x))
      && Object.values(M8).every((m) => pendienteDe(m) !== ''), { a72, abiertos99c, r: { ...r.j, detalle: undefined }, lPerdida });
 
   // ---- E2E-100 el control y sus alarmas ----------------------------------------------------------
   const pend = pendienteDe(M7.shell);
-  q(`update ia_propuestas set creado_el = creado_el - interval '8 days' where id = ${lit(pend)}`);
+  q(`update contador_propuestas set creado_el = creado_el - interval '8 days' where id = ${lit(pend)}`);
   const a71 = rojos('alarma').find((x) => /^71 /.test(x)) ?? '';
-  q(`update ia_propuestas set creado_el = creado_el + interval '8 days' where id = ${lit(pend)}`);
+  q(`update contador_propuestas set creado_el = creado_el + interval '8 days' where id = ${lit(pend)}`);
   ok('E2E-100 una propuesta pendiente de más de 7 días pone en rojo la alarma 71 (con el cargo); al día, verde', /^71 ia: ninguna propuesta pendiente de más de 7 días: .*SHELL OIL/.test(a71) && !rojos('alarma').some((x) => /^71 /.test(x)), a71);
   const ctl = control();
   const nombres = Object.fromEntries(ctl.map((c) => [c.orden, `${c.nivel}|${c.control}`]));
@@ -923,14 +923,14 @@ try {
      && nombres[70] === 'alarma|ia: el gasto del mes bajo el tope' && nombres[71] === 'alarma|ia: ninguna propuesta pendiente de más de 7 días'
      && nombres[72] === 'alarma|ia: la última ráfaga sin error' && nombres[73] === 'alarma|ia: la llave y la función', nombres);
   ok('E2E-102 v_contador_control en verde: ningún cuadre ni alarma en rojo', rojos('cuadre').length === 0 && rojos('alarma').length === 0, [rojos('cuadre'), rojos('alarma')]);
-  const viaIA = qj(`select coalesce(json_agg(json_build_object('p', p.id, 'a', p.asiento_id, 'origen', a.origen_tabla, 'u', a.usuario_id)), '[]')::text from ia_propuestas p join asientos a on a.id = p.asiento_id where p.estado in ('aprobada', 'editada')`);
+  const viaIA = qj(`select coalesce(json_agg(json_build_object('p', p.id, 'a', p.asiento_id, 'origen', a.origen_tabla, 'u', a.usuario_id)), '[]')::text from contador_propuestas p join asientos a on a.id = p.asiento_id where p.estado in ('aprobada', 'editada')`);
   ok('E2E-103 todo lo que entró al libro por el contador es de c6 (origen movimientos_banco), en nombre del dueño, con su asiento vivo (una aprobación = un asiento)',
      viaIA.length >= 10 && viaIA.every((x) => x.origen === 'movimientos_banco' && x.u === dueno && asientoVivo(x.a)) && new Set(viaIA.map((x) => x.a)).size === viaIA.length, viaIA.length);
 
   // ---- E2E-104 la API: lo que lee el dueño y lo que nadie ejecuta ------------------------------------
   const CL_D = { sub: dueno, role: 'authenticated', aal: 'aal2' }, CL_E = { sub: equipo, role: 'authenticated', aal: 'aal2' };
-  const veDueno = qComo(CL_D, 'authenticated', `select (select count(*) from v_contador_bandeja) > 0 and (select count(*) from v_contador_reglas) > 0 and (select count(*) from v_contador_estado) = 1 and (select count(*) from v_contador_control) > 0 and (select count(*) from ia_propuestas) > 0`);
-  const veEquipo = qComo(CL_E, 'authenticated', `select (select count(*) from v_contador_bandeja) + (select count(*) from ia_propuestas) + (select count(*) from ia_reglas) + (select count(*) from ia_config)`);
+  const veDueno = qComo(CL_D, 'authenticated', `select (select count(*) from v_contador_bandeja) > 0 and (select count(*) from v_contador_reglas) > 0 and (select count(*) from v_contador_estado) = 1 and (select count(*) from v_contador_control) > 0 and (select count(*) from contador_propuestas) > 0`);
+  const veEquipo = qComo(CL_E, 'authenticated', `select (select count(*) from v_contador_bandeja) + (select count(*) from contador_propuestas) + (select count(*) from contador_reglas) + (select count(*) from contador_config)`);
   const veAnon = qComo({ role: 'anon' }, 'anon', `select count(*) from v_contador_bandeja`);
   ok('E2E-104 por la API: el dueño (aal2) lee las vistas y las tablas de c8; el equipo no ve ninguna fila; anon ni siquiera puede leer',
      veDueno === 't' && veEquipo === '0' && /permission denied|42501/.test(veAnon), { veDueno, veEquipo, veAnon });
@@ -940,15 +940,15 @@ try {
   const enApi = q(`select coalesce(string_agg(p.oid::regprocedure::text || ' → ' || g, ', '), 'ninguna') from pg_proc p, unnest(array['anon','authenticated','service_role']) g where p.pronamespace = 'public'::regnamespace and p.proname like 'fn\\_contador\\_%' and (has_function_privilege(g, p.oid, 'execute') or p.prosecdef)`);
   ok('E2E-106 ninguna fn_contador_* ejecutable por la API ni SECURITY DEFINER (y son las de c8: todas con su comment «c8:»)',
      enApi === 'ninguna' && q(`select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like 'fn\\_contador\\_%' and coalesce(obj_description(p.oid, 'pg_proc'), '') not like 'c8:%'`) === '0', enApi);
-  const tablasC8 = q(`select string_agg(c.relname || ':' || c.relrowsecurity || ':' || (select string_agg(pl.polname || '/' || pl.polcmd::text, ',') from pg_policy pl where pl.polrelid = c.oid) || ':' || (select count(*) from pg_trigger t where t.tgrelid = c.oid and not t.tgisinternal), ' ' order by c.relname) from pg_class c where c.relnamespace = 'public'::regnamespace and c.relname in ('ia_config', 'ia_reglas', 'ia_lotes', 'ia_propuestas')`);
+  const tablasC8 = q(`select string_agg(c.relname || ':' || c.relrowsecurity || ':' || (select string_agg(pl.polname || '/' || pl.polcmd::text, ',') from pg_policy pl where pl.polrelid = c.oid) || ':' || (select count(*) from pg_trigger t where t.tgrelid = c.oid and not t.tgisinternal), ' ' order by c.relname) from pg_class c where c.relnamespace = 'public'::regnamespace and c.relname in ('contador_config', 'contador_reglas', 'contador_lotes', 'contador_propuestas')`);
   ok('E2E-107 las cuatro tablas con RLS y UNA sola policy «<tabla>_dueno» de lectura, y ningún trigger',
-     tablasC8 === 'ia_config:true:ia_config_dueno/r:0 ia_lotes:true:ia_lotes_dueno/r:0 ia_propuestas:true:ia_propuestas_dueno/r:0 ia_reglas:true:ia_reglas_dueno/r:0', tablasC8);
+     tablasC8 === 'contador_config:true:contador_config_dueno/r:0 contador_lotes:true:contador_lotes_dueno/r:0 contador_propuestas:true:contador_propuestas_dueno/r:0 contador_reglas:true:contador_reglas_dueno/r:0', tablasC8);
 
   // ---- E2E-108 el cierre -------------------------------------------------------------------------
   const rojosOtros = q(`select coalesce(string_agg(x, '; '), 'ninguno') from (select 'c2 ' || control as x from fn_verificar_cadena() where not ok union all select 'c6 ' || vista from fn_banco_control('hoy') where not ok union all select 'c4 ' || vista from fn_estados_control('hoy') where not ok and vista <> 'cuadre: apertura en el libro' union all select 'c3 ' || control from fn_puentes_verificar() where not ok) r`);
   ok('E2E-108 fn_verificar_cadena, fn_banco_control(hoy), fn_puentes_verificar y fn_estados_control(hoy) sin rojos (salvo la apertura de fábrica)', rojosOtros === 'ninguno', rojosOtros);
   const simTexto = JSON.stringify(await sim('/__peticiones')) + JSON.stringify(await sim('/__estado'));
-  const tablas = q(`select coalesce((select string_agg(x::text, '') from ia_propuestas x), '') || coalesce((select string_agg(x::text, '') from ia_lotes x), '') || coalesce((select string_agg(x::text, '') from ia_config x), '') || coalesce((select string_agg(x::text, '') from ia_reglas x), '') || coalesce((select string_agg(x::text, '') from asistente_uso x), '')`);
+  const tablas = q(`select coalesce((select string_agg(x::text, '') from contador_propuestas x), '') || coalesce((select string_agg(x::text, '') from contador_lotes x), '') || coalesce((select string_agg(x::text, '') from contador_config x), '') || coalesce((select string_agg(x::text, '') from contador_reglas x), '') || coalesce((select string_agg(x::text, '') from asistente_uso x), '')`);
   const dondeLlaves = [['respuestas de la función', respuestas.join('\n')], ['salida de la función', salidaFn], ['peticiones y estado del simulador', simTexto], ['tablas ia_* y asistente_uso', tablas], ['salida de esta prueba', salidaE2E]]
     .filter(([, s]) => s.includes(LLAVE)).map(([n]) => n);
   ok('E2E-109 la llave de prueba (sk-ant-prueba…) no sale en ninguna respuesta, ni en la salida de la función ni en la de la prueba, ni en el simulador, ni en las tablas',

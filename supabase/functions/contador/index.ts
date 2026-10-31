@@ -48,7 +48,7 @@
 //     movimiento en el mensaje (fecha, monto, descripción, nota, cuenta del
 //     banco, tipo: la base ya lo deja sin correos, teléfonos ni números de
 //     cuenta). La respuesta viene forzada al esquema PROPUESTA_SCHEMA
-//     (structured outputs). Modelo y esfuerzo los dice ia_config
+//     (structured outputs). Modelo y esfuerzo los dice contador_config
 //     (claude-opus-5-5, effort low): solo Opus y Fable, nunca Haiku ni
 //     Sonnet, y NUNCA se cambia de modelo por una negativa (stop_reason
 //     «refusal» = sin respuesta: se cuenta y no se guarda; sin fallbacks).
@@ -413,7 +413,7 @@ function falloDeAnthropic(estado: number, j: Json): Fallo {
   const msg = sinLlaves(String(err.message ?? `HTTP ${estado}`)).slice(0, 400);
   if (estado === 401) return new Fallo(502, "La llave de Anthropic no vale (contestó 401): revisa ANTHROPIC_API_KEY en Supabase → Edge Functions → Secrets.", "ANTHROPIC_LLAVE");
   if (estado === 403) return new Fallo(502, `La llave de Anthropic no tiene permiso para esto (403): ${msg}`, "ANTHROPIC_PERMISO");
-  if (estado === 404) return new Fallo(502, `Anthropic no conoce eso (404: ${msg}): revisa el modelo en ia_config (claude-opus-5-5).`, "ANTHROPIC_MODELO");
+  if (estado === 404) return new Fallo(502, `Anthropic no conoce eso (404: ${msg}): revisa el modelo en contador_config (claude-opus-5-5).`, "ANTHROPIC_MODELO");
   if (estado === 400) return new Fallo(502, `Anthropic rechazó la petición (400): ${msg}`, "ANTHROPIC_PETICION");
   return new Fallo(502, `Anthropic contestó ${estado}: ${msg}`, `ANTHROPIC_${estado}`);
 }
@@ -554,7 +554,7 @@ async function proponer(base: Base, c: Conf, dueno: string, cuerpo: Json): Promi
   const effort = String(cfg.effort ?? "low");
   // (la base ya lo exige; aquí otra vez: ni Haiku ni Sonnet, en ninguna parte)
   if (!/^claude-(opus|fable)-/.test(modelo) || /haiku|sonnet/i.test(modelo)) {
-    throw new Fallo(500, `El modelo de ia_config («${modelo}») no es Opus ni Fable: no se le pide nada a la IA.`, "CONFIG");
+    throw new Fallo(500, `El modelo de contador_config («${modelo}») no es Opus ni Fable: no se le pide nada a la IA.`, "CONFIG");
   }
   const movs = arr(k.movimientos);
   const ctx = obj(k.contexto);
@@ -643,7 +643,7 @@ async function proponer(base: Base, c: Conf, dueno: string, cuerpo: Json): Promi
 
 // ---- Salud: qué falta, sin enseñar nada -----------------------------------
 // Sin sesión: lo que hay y lo que falta (la llave, la base, Supabase), el
-// modelo y el esfuerzo de ia_config, la versión del prompt de ESTA función
+// modelo y el esfuerzo de contador_config, la versión del prompt de ESTA función
 // (y la última que la base vio) y el tope del mes. Nada más: lo que lleva
 // datos del libro va en «estado», con sesión.
 async function salud(resumen?: Json): Promise<Json> {

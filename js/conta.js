@@ -1763,7 +1763,7 @@
       return sinInstalar(err) ? null : { err, rojo: [] };
     }
     const rojo = controlContador(ctl, { v_contador_bandeja: bj.length });
-    if (!Array.isArray(est) || est.length !== 1) rojo.push({ vista: "v_contador_estado", filas: Array.isArray(est) ? est.length : 0, esperadas: 1, detalle: "no devolvió su fila (¿falta ia_config o la sesión no es la del dueño?)" });
+    if (!Array.isArray(est) || est.length !== 1) rojo.push({ vista: "v_contador_estado", filas: Array.isArray(est) ? est.length : 0, esperadas: 1, detalle: "no devolvió su fila (¿falta contador_config o la sesión no es la del dueño?)" });
     const ia = { estado: (est || [])[0] || null, bandeja: new Map(bj.map(f => [f.movimiento_id, f])), control: ctl, cuentas: cts || [], rojo, salud: null, saludErr: null };
     if (!rojo.length && mfaActivo()) Object.assign(ia, await saludContador());
     return ia;
@@ -1771,7 +1771,7 @@
 
   // Por qué «Proponer con la IA» no se puede tocar ahora ({ txt, clase }), o null si se puede
   const TOPE_IA = {
-    apagado: () => "El contador está apagado (ia_config.activa = false): se enciende desde el SQL Editor.",
+    apagado: () => "El contador está apagado (contador_config.activa = false): se enciende desde el SQL Editor.",
     "tope de la app": e => `La IA de la app llegó a su tope del mes (${usdCent(e.tope_global)}): no se propone nada hasta el mes que viene.`,
     "tope del contador": e => `La IA contable llegó a su tope del mes (${usdCent(e.tope_mes_centavos)}): no se propone nada hasta el mes que viene.`
   };
@@ -1983,7 +1983,7 @@
         DB._leer("v_contador_control?select=*&order=orden.asc")
       ]);
       const rojo = controlContador(ctl, { v_contador_reglas: reglas.length });
-      if (!Array.isArray(est) || est.length !== 1) rojo.push({ vista: "v_contador_estado", filas: Array.isArray(est) ? est.length : 0, esperadas: 1, detalle: "no devolvió su fila (¿falta ia_config o la sesión no es la del dueño?)" });
+      if (!Array.isArray(est) || est.length !== 1) rojo.push({ vista: "v_contador_estado", filas: Array.isArray(est) ? est.length : 0, esperadas: 1, detalle: "no devolvió su fila (¿falta contador_config o la sesión no es la del dueño?)" });
       S.iaCx = { estado: (est || [])[0] || null, reglas, control: ctl, rojo, salud: null, saludErr: null };
       if (mfaActivo()) Object.assign(S.iaCx, await saludContador());
       S.iaCxErr = null;
