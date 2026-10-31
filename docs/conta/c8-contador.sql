@@ -215,7 +215,45 @@
 --     en todo lo que se guarda en «entrada». Un nombre propio que el
 --     banco escribe en su descripción (un Zelle a una persona) es parte de
 --     la descripción del banco y va; la función de borde no manda nada
---     más.
+--     más. Dos detalles que la verificación destapó: (1) c6 normaliza la
+--     descripción ANTES de que c8 la vea, y al quitar la arroba y los
+--     puntos el correo queda irreconocible para la máscara («JPEREZ@MAIL.
+--     COM» → «JPEREZ MAIL COM»): desc_norm pasa siempre por fn_contador_
+--     sin_datos_norm, que saca cada correo de la descripción cruda y de la
+--     nota, lo normaliza como c6 (fn_banco_norm) y tapa esa tira; y, por si
+--     la cruda no está a mano, la máscara también reconoce «<palabra> GMAIL
+--     COM» (los dominios de correo corrientes). (2) La máscara de «8
+--     dígitos o más» tapaba también dentro de los hashes del sello de la
+--     trazabilidad («…71fd[número]e39e…»): un hash entero (md5, sha1,
+--     sha256) o un uuid nunca es un dato de nadie y se deja tal cual, y en
+--     el árbol de «entrada» las claves prompt_version, prefijo_hash y
+--     reglas_version van íntegras por su nombre, pase lo que pase con la
+--     máscara. Lo que la máscara NO alcanza, a sabiendas: un teléfono sin
+--     separadores de siete dígitos («5551234») y una cuenta de siete
+--     dígitos o menos («ACCT 1234567»): raros en una descripción del banco,
+--     y taparlos a ciegas taparía los números de tienda y de cheque.
+--   · UNA SOLA RÁFAGA A LA VEZ. Dos «Proponer» a la vez (dos pestañas, dos
+--     aparatos) mandarían los mismos cargos a Anthropic y pagarían dos
+--     veces: fn_contador_lote_abrir toma un candado y, si hay una ráfaga
+--     abierta hace menos de cinco minutos, no abre otra (MX008 «ya hay una
+--     ráfaga en marcha», que la pantalla enseña en llano). Una abierta hace
+--     más de cinco minutos es una función que se cortó sin cerrar (Supabase
+--     la mató, se cayó la red): al abrir la siguiente la base la da por
+--     perdida, cerrada con su error y sin uso (su gasto no se conoce), y la
+--     alarma 72 lo dice (mientras sigue abierta, y después por el error)
+--     hasta la siguiente ráfaga limpia.
+--   · EL GASTO SE ANOTA EN asistente_uso (desviación del apartado A del
+--     contrato, a propósito): el contrato pedía una tabla asistente_costo_
+--     mes con llave (mes, accion), pero en producción asistente_costo_mes
+--     es una VISTA de la app sobre la tabla asistente_uso (docs/conta/
+--     ESQUEMA-REAL.md), y lo que la app enseña en «ya vas por el 80 % del
+--     mes» sale de ahí. Por eso, si faltan, aquí se crean la tabla y la
+--     vista con la forma de la app (no la tabla del contrato), y el camino
+--     «tabla» queda en fn_contador_gasto_anotar por si en alguna base
+--     asistente_costo_mes fuera una tabla. Lo que ya existe no se toca: ni
+--     se vuelve a dar permiso sobre ello (los grants van dentro del bloque
+--     que crea); solo las dos filas de asistente_ajustes entran si faltan,
+--     como pide el contrato.
 --
 -- Lo que este archivo NO toca: c1..c7, s1, p1, es_dueno(), docs/sql, las
 -- tablas del banco (solo lee movimientos_banco y escribe en él POR c6),
@@ -229,8 +267,12 @@
 --      tabla: la configuración (modelo, esfuerzo, activa, los topes), el
 --      dueño, las cuatro tablas, las cuentas que se proponen, las reglas
 --      activas, lo que espera en la bandeja sin propuesta, el control («0
---      cuadres rojos · n alarmas») y el paso siguiente. Si algo de lo que
---      da por hecho falta, para con MX000 y no queda nada.
+--      cuadres rojos · n alarmas») y el paso siguiente. Si ya hay cargos
+--      «sin ticket» de hace más de dos días, sale 1 alarma: la 73 («la
+--      llave y la función»), que es LA ESPERADA hasta la primera ráfaga (en
+--      «Qué atender» dice «toca Proponer con la IA») y se apaga sola con
+--      ella. Si algo de lo que da por hecho falta, para con MX000 y no
+--      queda nada.
 --   2. SQL Editor → pegar docs/conta/c8-pruebas.sql → 25 filas, todas en
 --      true (cada una siembra sus cargos de prueba y los deshace; no toca
 --      la bandeja real).
@@ -288,7 +330,7 @@ declare
   v_k     char;
 begin
   foreach v_x in array array['fn_desde_editor()', 'es_dueno()', 'fn_fecha_miami(timestamptz)', 'fn_banco_clasificar(uuid,jsonb,text)',
-                             'fn_banco_casar(uuid)', 'fn_banco_descasar(uuid,text)'] loop
+                             'fn_banco_casar(uuid)', 'fn_banco_descasar(uuid,text)', 'fn_banco_norm(text)'] loop
     if to_regprocedure('public.' || v_x) is null then
       v_falta := v_falta || v_x;
     end if;
@@ -722,7 +764,19 @@ comment on function public.fn_contador_usd(numeric) is 'c8: dinero en texto ($1,
 -- y números de cuenta (8 dígitos seguidos o más). El número de una tienda
 -- (6341) o el de un cheque (1043) sí van: son parte de lo que dijo el
 -- banco y la IA los necesita (y las reglas se prueban contra desc_norm,
--- que no se toca).
+-- que no se toca). Un correo se tapa en sus dos formas: tal cual lo
+-- escribe el banco («JPEREZ@MAIL.COM») y como queda en desc_norm después
+-- de que c6 le quite la arroba y los puntos («JPEREZ MAIL COM»: una
+-- palabra, un dominio de correo corriente y COM, NET, ORG o US); para un
+-- dominio cualquiera está fn_contador_sin_datos_norm, abajo, que lo saca
+-- de la descripción cruda. Un hash entero (md5, sha1 o sha256: el sello
+-- prompt_version, prefijo_hash y reglas_version de la trazabilidad) o un
+-- uuid no es un dato de nadie y se deja tal cual: la máscara de «8 dígitos
+-- o más» rompía el sello («…71fd[número]e39e…»). Lo que NO alcanza, a
+-- sabiendas: un teléfono de siete dígitos sin separadores («5551234») y
+-- una cuenta de siete dígitos o menos («ACCT 1234567»): en una descripción
+-- del banco son raros, y taparlos a ciegas taparía números de tienda y de
+-- cheque (3055551234 sí cae: son diez dígitos seguidos).
 create or replace function public.fn_contador_sin_datos(p text) returns text
 language plpgsql immutable
 set search_path = public, pg_temp
@@ -730,17 +784,64 @@ as $$
 begin
   perform fn_contador_exigir();
   if p is null then return null; end if;
+  -- un hash entero (con alguna letra: 32 dígitos seguidos no son un hash) o un uuid: tal cual
+  if (p ~* '^([0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$' and p ~* '[a-f]')
+     or p ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+    return p;
+  end if;
   return regexp_replace(
            regexp_replace(
-             regexp_replace(p, '[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}', '[correo]', 'g'),
+             regexp_replace(
+               regexp_replace(p, '[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}', '[correo]', 'g'),
+               -- (el correo como lo deja c6 al normalizar: «JPEREZ MAIL COM»)
+               '\m[[:alnum:]]+ (GMAIL|YAHOO|YMAIL|HOTMAIL|OUTLOOK|ICLOUD|AOL|MAIL|LIVE|MSN|PROTON|PROTONMAIL|ME) (COM|NET|ORG|US)\M',
+               '[correo]', 'gi'),
              '\(?[0-9]{3}\)?[ .-]?[0-9]{3}[ .-][0-9]{4}', '[teléfono]', 'g'),
            '[0-9]{8,}', '[número]', 'g');
 end $$;
 revoke execute on function public.fn_contador_sin_datos(text) from public, anon, authenticated, service_role;
-comment on function public.fn_contador_sin_datos(text) is 'c8: tapa correos, teléfonos y números de cuenta (8 dígitos o más) en un texto que va a la IA.';
+comment on function public.fn_contador_sin_datos(text) is 'c8: tapa correos (tal cual y en la forma normalizada de c6), teléfonos y números de cuenta (8 dígitos o más) en un texto que va a la IA; un hash o un uuid enteros se dejan.';
+
+-- La descripción NORMALIZADA (desc_norm) que va a la IA o a «entrada»: c6
+-- deshace el correo al normalizar («JPEREZ@MAIL.COM» → «JPEREZ MAIL COM») y
+-- la máscara de arriba solo lo reconoce si el dominio es uno corriente. Aquí
+-- se saca cada correo de la descripción cruda y de la nota, se normaliza
+-- igual que c6 (fn_banco_norm) y se tapa esa tira en desc_norm; después, lo
+-- demás (fn_contador_sin_datos). Siempre que desc_norm salga de la base
+-- hacia la IA o hacia «entrada», pasa por aquí con su descripción y su
+-- nota (fn_contador_pendientes, fn_contador_reglas_aplicar,
+-- fn_contador_clasificar). Las reglas siguen probándose contra el desc_norm
+-- de la tabla, que no se toca.
+create or replace function public.fn_contador_sin_datos_norm(p_norm text, p_descripcion text default null, p_memo text default null)
+returns text
+language plpgsql immutable
+set search_path = public, pg_temp
+as $$
+declare
+  v        text := p_norm;
+  v_correo text;
+begin
+  perform fn_contador_exigir();
+  if v is null then return null; end if;
+  for v_correo in
+    select distinct fn_banco_norm(x[1])
+      from regexp_matches(concat_ws(' ', p_descripcion, p_memo), '[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}', 'g') x
+  loop
+    if v_correo <> '' then
+      v := regexp_replace(v, '\m' || fn_contador_regex_escapar(v_correo) || '\M', '[correo]', 'gi');
+    end if;
+  end loop;
+  return fn_contador_sin_datos(v);
+end $$;
+revoke execute on function public.fn_contador_sin_datos_norm(text, text, text) from public, anon, authenticated, service_role;
+comment on function public.fn_contador_sin_datos_norm(text, text, text) is 'c8: fn_contador_sin_datos sobre desc_norm, tapando antes cada correo de la descripción cruda y de la nota en la forma en que c6 lo normaliza («JPEREZ MAIL COM»).';
 
 -- Lo mismo en todo un árbol JSON (lo que la función de borde congela en
--- «entrada»): cada texto, tapado.
+-- «entrada»): cada texto, tapado; salvo el sello de la trazabilidad
+-- (prompt_version, prefijo_hash y reglas_version: hashes, nunca datos de
+-- nadie), que va entero por su nombre, pase lo que pase con la máscara. El
+-- movimiento ya viene tapado de fn_contador_pendientes: esta segunda pasada
+-- es por si la función de borde algún día mandara algo más.
 create or replace function public.fn_contador_sin_datos_jsonb(p jsonb) returns jsonb
 language plpgsql immutable
 set search_path = public, pg_temp
@@ -751,7 +852,10 @@ begin
   perform fn_contador_exigir();
   if p is null then return null; end if;
   if jsonb_typeof(p) = 'object' then
-    select coalesce(jsonb_object_agg(e.key, fn_contador_sin_datos_jsonb(e.value)), '{}'::jsonb) into v from jsonb_each(p) e;
+    select coalesce(jsonb_object_agg(e.key, case when e.key in ('prompt_version', 'prefijo_hash', 'reglas_version') then e.value
+                                                 else fn_contador_sin_datos_jsonb(e.value) end), '{}'::jsonb)
+      into v
+      from jsonb_each(p) e;
     return v;
   elsif jsonb_typeof(p) = 'array' then
     select coalesce(jsonb_agg(fn_contador_sin_datos_jsonb(x.v) order by x.n), '[]'::jsonb) into v
@@ -763,7 +867,7 @@ begin
   return p;
 end $$;
 revoke execute on function public.fn_contador_sin_datos_jsonb(jsonb) from public, anon, authenticated, service_role;
-comment on function public.fn_contador_sin_datos_jsonb(jsonb) is 'c8: fn_contador_sin_datos sobre cada texto de un árbol JSON.';
+comment on function public.fn_contador_sin_datos_jsonb(jsonb) is 'c8: fn_contador_sin_datos sobre cada texto de un árbol JSON, salvo el sello (prompt_version, prefijo_hash, reglas_version), que va entero.';
 
 -- Un texto, escapado para usarlo literal dentro de una expresión regular.
 create or replace function public.fn_contador_regex_escapar(p text) returns text
@@ -1048,7 +1152,8 @@ begin
   select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
            'movimiento_id', c.movimiento_id, 'cuenta', c.cuenta, 'cuenta_nombre', c.cuenta_nombre, 'fecha', c.fecha, 'monto', c.monto,
            'descripcion', fn_contador_sin_datos(c.descripcion), 'memo', fn_contador_sin_datos(c.memo),
-           'desc_norm', fn_contador_sin_datos(c.desc_norm), 'tipo_banco', c.tipo_banco, 'dias', c.dias, 'motivo', c.motivo))
+           'desc_norm', fn_contador_sin_datos_norm(c.desc_norm, c.descripcion, c.memo), 'tipo_banco', c.tipo_banco, 'dias', c.dias,
+           'motivo', c.motivo))
            order by c.fecha, c.importado_el, c.movimiento_id), '[]'::jsonb)
     into v_movs
     from (select * from fn_contador_candidatos() limit v_lim) c;
@@ -1072,11 +1177,11 @@ begin
    where r.activa;
   -- los ejemplos: lo que Edgar clasificó (por la IA o a mano, c6), vivo en
   -- el libro, uno por comercio distinto, los 30 últimos
-  select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object('desc', fn_contador_sin_datos(e.desc_norm), 'cuenta', e.cuenta,
-                                                                  'proyecto_id', e.proyecto_id))
+  select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object('desc', fn_contador_sin_datos_norm(e.desc_norm, e.descripcion, e.memo),
+                                                                  'cuenta', e.cuenta, 'proyecto_id', e.proyecto_id))
                             order by e.casado_el desc, e.desc_norm), '[]'::jsonb)
     into v_ej
-    from (select x.* from (select distinct on (m.desc_norm) m.desc_norm, l.cuenta, l.proyecto_id, m.casado_el
+    from (select x.* from (select distinct on (m.desc_norm) m.desc_norm, m.descripcion, m.memo, l.cuenta, l.proyecto_id, m.casado_el
                              from movimientos_banco m
                              join lateral (select al.cuenta, al.proyecto_id from asiento_lineas al
                                             where al.asiento_id = m.asiento_id and al.cuenta <> m.cuenta
@@ -1198,7 +1303,7 @@ begin
               jsonb_build_object('lineas', v_lineas, 'motivo', 'Regla: ' || v_best.nombre, 'confianza', 1,
                                  'flags', case when v_obra then '{"pide_obra": true}'::jsonb else '{}'::jsonb end),
               jsonb_build_object('regla', v_best.id, 'nombre', v_best.nombre, 'patron', v_best.patron,
-                                 'desc_norm', fn_contador_sin_datos(c.desc_norm)));
+                                 'desc_norm', fn_contador_sin_datos_norm(c.desc_norm, c.descripcion, c.memo)));
     exception when unique_violation then
       continue;   -- (otra ráfaga llegó antes a este movimiento)
     end;
@@ -1217,7 +1322,12 @@ comment on function public.fn_contador_reglas_aplicar(uuid) is 'c8: a cada movim
 -- Abre una ráfaga: quién, con qué modelo y esfuerzo (solo Opus y Fable:
 -- ni Haiku ni Sonnet, en ninguna parte), la versión del prompt y el hash
 -- del prefijo, y cuántos movimientos se van a mandar. Con el tope del mes
--- gastado no se abre (MX008): no se gasta ni un token.
+-- gastado no se abre (MX008): no se gasta ni un token. UNA SOLA A LA VEZ:
+-- con otra abierta hace menos de cinco minutos tampoco se abre (MX008 «ya
+-- hay una ráfaga en marcha»: dos «Proponer» a la vez mandarían los mismos
+-- cargos a Anthropic y pagarían dos veces); una abierta hace más es una
+-- función que se cortó sin cerrar, y se da por perdida aquí (cerrada con su
+-- error y sin uso: la alarma 72 lo dice).
 create or replace function public.fn_contador_lote_abrir(p_por uuid, p_modelo text, p_effort text, p_prompt_version text,
                                                          p_prefijo_hash text, p_n int)
 returns uuid
@@ -1225,7 +1335,9 @@ language plpgsql
 set search_path = public, pg_temp
 as $$
 declare
+  c_viva constant interval := interval '5 minutes';   -- (lo que una ráfaga puede durar, de sobra: la función se corta a los 2 min)
   cfg  ia_config;
+  l    ia_lotes;
   v_t  jsonb;
   v_id uuid;
 begin
@@ -1243,6 +1355,22 @@ begin
     raise exception using errcode = '22023',
       message = format('Una ráfaga lleva de 0 a %s movimientos (max_por_rafaga); llegó %s.', cfg.max_por_rafaga, coalesce(p_n::text, 'nada'));
   end if;
+  -- una sola ráfaga a la vez: el candado serializa la comprobación; las
+  -- perdidas (abiertas hace más de c_viva) se cierran con su error primero
+  perform pg_advisory_xact_lock(820261031, hashtext('contador:rafaga'));
+  for l in select * from ia_lotes where cerrado_el is null and creado_el < now() - c_viva order by creado_el loop
+    perform fn_contador_lote_cerrar(l.id, '{}'::jsonb,
+      format('la ráfaga de las %s (hora de Miami) se cortó sin cerrar (la función no volvió en %s minutos): su gasto no quedó anotado',
+             to_char(l.creado_el at time zone 'America/New_York', 'DD/MM/YYYY HH24:MI'), (extract(epoch from c_viva) / 60)::int));
+  end loop;
+  select * into l from ia_lotes where cerrado_el is null order by creado_el limit 1;
+  if found then
+    raise exception using errcode = 'MX008',
+      message = format('Ya hay una ráfaga en marcha (la abrió %s hace %s s): espera a que termine y vuelve a mirar la bandeja. Si la función '
+                       'se cortó, la base la da por perdida a los %s minutos.',
+                       coalesce((select p.nombre from perfiles p where p.id = l.por), 'el dueño'),
+                       extract(epoch from now() - l.creado_el)::int, (extract(epoch from c_viva) / 60)::int);
+  end if;
   v_t := fn_contador_tope();
   if (v_t->>'bloqueado')::boolean then
     raise exception using errcode = 'MX008', message = 'No se abre la ráfaga: ' || (v_t->>'motivo') || '.';
@@ -1253,7 +1381,7 @@ begin
   return v_id;
 end $$;
 revoke execute on function public.fn_contador_lote_abrir(uuid, text, text, text, text, int) from public, anon, authenticated, service_role;
-comment on function public.fn_contador_lote_abrir(uuid, text, text, text, text, int) is 'c8: abre una ráfaga a la IA (modelo, esfuerzo, versión del prompt, hash del prefijo, cuántos); con el tope gastado, MX008.';
+comment on function public.fn_contador_lote_abrir(uuid, text, text, text, text, int) is 'c8: abre una ráfaga a la IA (modelo, esfuerzo, versión del prompt, hash del prefijo, cuántos); con el tope gastado o con otra ráfaga en marcha (abierta hace menos de 5 min), MX008; una abierta hace más se da por perdida (cerrada con su error).';
 
 -- Anota el gasto de una ráfaga donde la app lo lee: en asistente_uso
 -- (asistente_costo_mes es la vista de la app sobre ella: una fila por
@@ -1773,7 +1901,7 @@ begin
     insert into ia_propuestas (movimiento_id, fuente, propuesta, estado, aprobado_por, aprobado_el, lineas_finales, motivo_edgar,
                                asiento_id, entrada)
     values (m.id, 'edgar', jsonb_build_object('lineas', v_lineas, 'motivo', v_motivo, 'confianza', 1, 'flags', '{}'::jsonb), 'aprobada',
-            p_dueno, now(), v_lineas, v_edgar, m.asiento_id, jsonb_build_object('desc_norm', fn_contador_sin_datos(m.desc_norm)))
+            p_dueno, now(), v_lineas, v_edgar, m.asiento_id, jsonb_build_object('desc_norm', fn_contador_sin_datos_norm(m.desc_norm, m.descripcion, m.memo)))
     returning id into v_pid;
   end if;
   if coalesce(p_recordar, true) then
@@ -2149,13 +2277,19 @@ with cfg as (select * from public.ia_config where id = 1),
                  and m.propuesta->>'motivo' in ('sin_ticket', 'dudosa')
                  and not exists (select 1 from public.ia_propuestas p where p.movimiento_id = m.id and p.estado = 'pendiente')),
      vivo as (select a.id from public.asientos a
-               where not exists (select 1 from public.asientos r where r.reversa_a = a.id and r.camino in ('reverso', 'reverso_automatico')))
+               where not exists (select 1 from public.asientos r where r.reversa_a = a.id and r.camino in ('reverso', 'reverso_automatico'))),
+     -- las ráfagas que se quedaron abiertas más de cinco minutos: la función se cortó sin cerrarlas (fn_contador_lote_abrir las da
+     -- por perdidas al abrir la siguiente)
+     abierta as (select count(*) as n, min(l.creado_el) as desde
+                   from public.ia_lotes l
+                  where l.cerrado_el is null and l.creado_el < now() - interval '5 minutes')
 select z.orden, z.control, z.nivel, z.ok, z.filas, z.esperadas, z.detalle
   from cfg
  cross join hoy
  cross join aj
  cross join gasto
  cross join cand
+ cross join abierta
  cross join lateral (
    select 10 as orden, 'vista: v_contador_bandeja'::text as control, 'cuadre'::text as nivel, true as ok,
           (select count(*) from public.v_contador_bandeja) as filas, (select count(*) from public.v_contador_bandeja) as esperadas,
@@ -2263,9 +2397,16 @@ select z.orden, z.control, z.nivel, z.ok, z.filas, z.esperadas, z.detalle
              join public.movimientos_banco m on m.id = p.movimiento_id
             where p.estado = 'pendiente' and p.creado_el < now() - interval '7 days') t
    union all
+   -- 72: la última ráfaga cerró sin error, y ninguna lleva más de cinco minutos abierta (esa es una función que se cortó: su gasto
+   --     no está anotado)
    select 72, 'ia: la última ráfaga sin error', 'alarma',
-          cfg.ultimo_error is null or (cfg.ultima_rafaga_el is not null and cfg.ultima_rafaga_el > cfg.ultimo_error_el), null, null,
-          case when cfg.ultimo_error is not null
+          (cfg.ultimo_error is null or (cfg.ultima_rafaga_el is not null and cfg.ultima_rafaga_el > cfg.ultimo_error_el)) and abierta.n = 0,
+          null, null,
+          case when abierta.n > 0
+               then format('%s ráfaga(s) abierta(s) desde las %s (hora de Miami) sin cerrar: la función se cortó antes de terminar y su gasto no '
+                           'está anotado; la base la da por perdida al abrir la siguiente («Proponer con la IA»)',
+                           abierta.n, to_char(abierta.desde at time zone 'America/New_York', 'DD/MM/YYYY HH24:MI'))
+               when cfg.ultimo_error is not null
                then format('el %s: %s', to_char(cfg.ultimo_error_el at time zone 'America/New_York', 'DD/MM/YYYY HH24:MI'), cfg.ultimo_error)
                when cfg.ultima_rafaga_el is null then 'ninguna ráfaga ha corrido todavía'
                else 'la última fue el ' || to_char(cfg.ultima_rafaga_el at time zone 'America/New_York', 'DD/MM/YYYY HH24:MI') || ' (hora de Miami)' end
@@ -2341,9 +2482,9 @@ begin
     execute format('revoke all on public.%I from public, anon, authenticated, service_role', v);
     execute format('grant select on public.%I to authenticated', v);
   end loop;
-  -- (el gasto y el tope: la app ya los lee como authenticated; si aquí se
-  -- crearon como tablas, se leen igual)
-  grant select on public.asistente_costo_mes, public.asistente_ajustes to authenticated;
+  -- (asistente_costo_mes y asistente_ajustes no se tocan: la app ya los lee
+  -- como authenticated, y si los creó este archivo, la sección 1 dio el
+  -- grant al crearlos)
 end $$;
 
 
@@ -2418,7 +2559,10 @@ begin
   return query select 'control'::text,
                       format('%s cuadres rojos · %s alarmas',
                              (select count(*) from v_contador_control x where x.nivel = 'cuadre' and not x.ok),
-                             (select count(*) from v_contador_control x where x.nivel = 'alarma' and not x.ok));
+                             (select count(*) from v_contador_control x where x.nivel = 'alarma' and not x.ok))
+                      || case when c.ultima_rafaga_el is null and exists (select 1 from v_contador_control x where x.orden = 73 and not x.ok)
+                              then ' · la 73 («la llave y la función») es la esperada hasta la primera ráfaga: se apaga sola al tocar «Proponer con la IA»'
+                              else '' end;
   return query select 'siguiente paso'::text,
                       'pega docs/conta/c8-pruebas.sql; pon ANTHROPIC_API_KEY (una llave nueva, solo para el contador) en Supabase → Edge '
                       'Functions → Secrets; despliega la función «contador» (Verify JWT apagado) y mira …/contador?paso=salud; después, en '

@@ -26,7 +26,11 @@
        cuenta del banco y sus partes, baja con sus propuestas caducadas);
        caducar una aprobada cuyo asiento se reversó;
      · la llave que no vale, un modelo que Anthropic no conoce, sin llave, la
-       base caída, dos ráfagas a la vez;
+       base caída; dos ráfagas a la vez (una entra y la otra se frena en la
+       base: ningún cargo se paga dos veces); el reloj de la ráfaga (una
+       llamada en vuelo se corta al llegar el plazo, lo que no entró espera);
+       una ráfaga que se cortó sin cerrar (la alarma 72 lo dice y la base la
+       da por perdida al abrir la siguiente);
      · y el cierre: v_contador_control en verde (y sus alarmas, en rojo cuando
        toca), fn_verificar_cadena, fn_banco_control, fn_puentes_verificar y
        fn_estados_control en verde (salvo la apertura de fábrica), ninguna
@@ -313,11 +317,8 @@ const claveMsg = (p) => { const m = msgDe(p); return m ? `${m.desc_norm}|${m.mon
 const centavosDe = (u) => Math.round((u.input * 400 + u.cache_creacion * 500 + u.cache_lectura * 20 + u.output * 2000) / 1_000_000);
 const usoSim = (ps) => ps.filter((p) => p.respuesta?.usage).reduce((s, p) => ({ input: s.input + p.respuesta.usage.input_tokens, output: s.output + p.respuesta.usage.output_tokens,
   cache_creacion: s.cache_creacion + p.respuesta.usage.cache_creation_input_tokens, cache_lectura: s.cache_lectura + p.respuesta.usage.cache_read_input_tokens }), { input: 0, output: 0, cache_creacion: 0, cache_lectura: 0 });
-// Los hashes que la base guarda en «entrada» pasan por fn_contador_sin_datos_jsonb, que tapa toda tira de
-// 8 dígitos o más también dentro de un hex (defecto de c8 contado en el informe): se acepta el hash entero
-// o el mismo con esa máscara; las columnas (ia_propuestas.prompt_version, ia_lotes.prefijo_hash) van íntegras.
-const tapar = (s) => String(s ?? '').replace(/[0-9]{8,}/g, '[número]');
-const mismoHash = (guardado, real) => guardado === real || guardado === tapar(real);
+// (los hashes que la base guarda en «entrada» —prompt_version, prefijo_hash, reglas_version— van enteros: la máscara de
+// datos personales no toca un hash ni esas tres claves; E2E-49 los compara con ===)
 // Un esquema cerrado: cada objeto con additionalProperties false y todas sus propiedades en required
 function esquemaCerrado(s) {
   if (!s || typeof s !== 'object') return true;
@@ -359,9 +360,9 @@ try {
   // ---- E2E-07 salud, CORS, el banco de pruebas ----------------------------------------
   const PV = sha256(PR.INSTRUCCIONES);
   let r = await llamar(null, { metodo: 'GET', consulta: '?paso=salud' });
-  ok('E2E-07 salud (GET, sin sesión): ok, llave, base, banco de pruebas, claude-opus-5-5, effort low, activa, 20 por ráfaga, la versión 2023-06-01, max_tokens 1024, nada falta',
+  ok('E2E-07 salud (GET, sin sesión): ok, llave, base, banco de pruebas, claude-opus-5-5, effort low, activa, 20 por ráfaga, la versión 2023-06-01, max_tokens 4096, nada falta',
      r.estado === 200 && r.j.ok === true && r.j.llave === true && r.j.base === true && r.j.banco_de_pruebas === true && r.j.modelo === 'claude-opus-5-5' && r.j.effort === 'low'
-     && r.j.activa === true && r.j.max_por_rafaga === 20 && r.j.version === '2023-06-01' && r.j.max_tokens === 1024 && Array.isArray(r.j.falta) && r.j.falta.length === 0, r.j);
+     && r.j.activa === true && r.j.max_por_rafaga === 20 && r.j.version === '2023-06-01' && r.j.max_tokens === 4096 && PR.MAX_TOKENS === 4096 && Array.isArray(r.j.falta) && r.j.falta.length === 0, r.j);
   ok('E2E-08 salud: prompt_version = sha256 de las instrucciones (3920 letras); el tope del mes sin bloquear; ninguna ráfaga todavía',
      r.j.prompt_version === PV && PR.INSTRUCCIONES.length > 3000 && r.j.tope?.bloqueado === false && r.j.tope.tope_contador === 3000 && typeof r.j.tope.centavos_mes_total === 'number'
      && r.j.ultima_rafaga_el === null && r.j.con_error === false, r.j);
@@ -425,7 +426,8 @@ try {
      malas21.filter(([, x, e, c]) => !(x.estado === e && x.j?.codigo === c)).map(([n, x]) => [n, x.estado, x.j]));
 
   // ---- E2E-22 LA PRIMERA RÁFAGA ---------------------------------------------------------------
-  const iaCands = qj(`select coalesce(json_agg(json_build_object('id', movimiento_id, 'clave', fn_contador_sin_datos(desc_norm) || '|' || monto::float8, 'cuenta', cuenta) order by fecha, importado_el, movimiento_id), '[]')::text
+  // (la clave de cada cargo: su desc_norm tal cual se le da a la IA —fn_contador_sin_datos_norm, con la descripción cruda— y su monto)
+  const iaCands = qj(`select coalesce(json_agg(json_build_object('id', movimiento_id, 'clave', fn_contador_sin_datos_norm(desc_norm, descripcion, memo) || '|' || monto::float8, 'cuenta', cuenta) order by fecha, importado_el, movimiento_id), '[]')::text
                         from fn_contador_candidatos() where not (desc_norm ~* '^NFPA')`);
   const claveDeMov = Object.fromEntries(iaCands.map((c) => [c.id, c.clave]));
   const asientos0 = q(`select count(*) from asientos`);
@@ -467,8 +469,8 @@ try {
   ok('E2E-28 las cabeceras: la llave buena (x-api-key), anthropic-version 2023-06-01, content-type JSON y ninguna anthropic-beta',
      pet1.every((p) => p.cabeceras['x-api-key'] === 'ok' && p.cabeceras['anthropic-version'] === '2023-06-01' && /^application\/json/.test(p.cabeceras['content-type'] ?? '') && p.cabeceras['anthropic-beta'] === null),
      pet1.map((p) => p.cabeceras));
-  ok('E2E-29 el cuerpo: solo model (claude-opus-5-5), max_tokens 1024, system, messages y output_config — sin thinking, tool_choice, fallbacks, temperature, tools ni stream',
-     pet1.every((p) => mismoConjunto(Object.keys(p.cuerpo ?? {}), ['model', 'max_tokens', 'system', 'messages', 'output_config']) && p.cuerpo.model === 'claude-opus-5-5' && p.cuerpo.max_tokens === 1024),
+  ok('E2E-29 el cuerpo: solo model (claude-opus-5-5), max_tokens 4096 (el pensamiento adaptativo cuenta contra él), system, messages y output_config — sin thinking, tool_choice, fallbacks, temperature, tools ni stream',
+     pet1.every((p) => mismoConjunto(Object.keys(p.cuerpo ?? {}), ['model', 'max_tokens', 'system', 'messages', 'output_config']) && p.cuerpo.model === 'claude-opus-5-5' && p.cuerpo.max_tokens === 4096),
      pet1.map((p) => Object.keys(p.cuerpo ?? {})));
   const esquema = pet1[0]?.cuerpo?.output_config?.format?.schema;
   ok('E2E-30 output_config = {effort: "low", format: {type: "json_schema", schema}}: el esquema de la función, cerrado (additionalProperties false y todo required en cada objeto)',
@@ -500,11 +502,14 @@ try {
        && mismoConjunto(Object.keys(msgs[i]), CLAVES_MSG) && /^\d{4}-\d{2}-\d{2}$/.test(msgs[i].fecha) && msgs[i].monto < 0 && /^(10\d\d|2100-\d+)$/.test(msgs[i].cuenta_banco)),
      msgs.slice(0, 2));
   const todo1 = JSON.stringify(pet1.map((p) => p.cuerpo)).toUpperCase();
-  const prohibidos = ['JPEREZ@MAIL.COM', '305-555-1234', '305 555 1234', '1234567890', '800-624-9897', '800 624 9897', '888 865 5352', '21813524', '800 344 3555'];
+  // (también el correo como lo deja c6 al normalizar —«JPEREZ MAIL COM»— y su usuario solo)
+  const prohibidos = ['JPEREZ@MAIL.COM', 'JPEREZ MAIL COM', 'JPEREZ', 'MAIL COM', '305-555-1234', '305 555 1234', '1234567890', '800-624-9897', '800 624 9897', '888 865 5352', '21813524', '800 344 3555'];
   const zelleMsg = msgs.find((m) => /^ZELLE PAYMENT TO JUAN PEREZ/.test(m?.descripcion ?? ''));
-  ok('E2E-36 a la IA nunca le llega un correo, un teléfono ni un número de cuenta (la base los tapa): el Zelle va con su nombre del banco y [correo] [teléfono] [número]; el número de tienda sí va',
-     !prohibidos.some((x) => todo1.includes(x)) && /\[correo\].*\[teléfono\].*\[número\]/.test(zelleMsg?.descripcion ?? '') && /JUAN PEREZ/.test(zelleMsg?.desc_norm ?? '')
-     && msgs.some((m) => m?.desc_norm === 'THE HOME DEPOT 6341 OCALA FL'), { zelle: zelleMsg, prohibidos: prohibidos.filter((x) => todo1.includes(x)) });
+  const dellMsg = msgs.find((m) => /^DELL MARKETING/.test(m?.descripcion ?? ''));
+  ok('E2E-36 a la IA nunca le llega un correo, un teléfono ni un número de cuenta (la base los tapa, también en desc_norm, donde c6 ya había deshecho el correo): el Zelle va con su nombre del banco y [correo] [teléfono] [número] en las dos formas; el número de tienda sí va',
+     !prohibidos.some((x) => todo1.includes(x)) && /\[correo\].*\[teléfono\].*\[número\]/.test(zelleMsg?.descripcion ?? '')
+     && zelleMsg?.desc_norm === 'ZELLE PAYMENT TO JUAN PEREZ [correo] [teléfono] ACCT [número]' && dellMsg?.desc_norm === 'DELL MARKETING L P [teléfono] TX'
+     && msgs.some((m) => m?.desc_norm === 'THE HOME DEPOT 6341 OCALA FL'), { zelle: zelleMsg, dell: dellMsg, prohibidos: prohibidos.filter((x) => todo1.includes(x)) });
   const ok200 = pet1.filter((p) => p.respuesta.estado === 200);
   ok('E2E-37 el caché: la primera petición lo CREA (cache_creation > 0, sin lectura) y todas las demás que contestaron lo LEEN (cache_read > 0, sin crear)',
      pet1[0]?.respuesta?.usage?.cache_creation_input_tokens > 0 && pet1[0].respuesta.usage.cache_read_input_tokens === 0
@@ -538,7 +543,7 @@ try {
   ok('E2E-45 la NEGATIVA (stop_reason refusal) → sin respuesta: no se guarda, lo dice en llano («no se cambia de modelo») y no hay otra petición ni otro modelo',
      det('nfx')?.estado === 'sin_respuesta' && /refusal/.test(det('nfx').motivo) && /no se cambia de modelo/.test(det('nfx').motivo) && pNfx === null
      && pet1.filter((p) => /REFUSAL/.test(contenido(p))).length === 1 && pet1.every((p) => p.cuerpo.model === 'claude-opus-5-5'), det('nfx'));
-  ok('E2E-46 el corte (stop_reason max_tokens) → sin respuesta «se cortó (max_tokens 1024)»: no se guarda', det('max')?.estado === 'sin_respuesta' && /max_tokens 1024/.test(det('max').motivo) && pMax === null, det('max'));
+  ok('E2E-46 el corte (stop_reason max_tokens) → sin respuesta «se cortó (max_tokens 4096)»: no se guarda', det('max')?.estado === 'sin_respuesta' && /max_tokens 4096/.test(det('max').motivo) && pMax === null, det('max'));
   ok('E2E-47 un JSON roto → inválida «la IA no devolvió un JSON»; una cuenta inventada (9999) → inválida, la base dice por qué (MX004): ninguna de las dos se guarda',
      det('roto')?.estado === 'invalida' && /no devolvió un JSON/.test(det('roto').motivo) && pRoto === null
      && det('inv')?.estado === 'invalida' && /9999/.test(det('inv').motivo) && det('inv').codigo === 'MX004' && pInv === null, [det('roto'), det('inv')]);
@@ -548,10 +553,10 @@ try {
   const obrasEsperadas = OBRAS.map(([id, nombre]) => ({ id, nombre }));
   const propsLote = qj(`select json_agg(json_build_object('mov', movimiento_id, 'entrada', entrada, 'salida', salida, 'modelo', modelo, 'effort', effort, 'pv', prompt_version, 'lote', lote_id))::text from ia_propuestas where lote_id = ${lit(LOTE1)}`) ?? [];
   const msgDeMov = (mov) => msgDe(pet1.filter((p) => claveMsg(p) === claveDeMov[mov] && p.respuesta.estado === 200).pop() ?? {});
-  ok('E2E-49 la ENTRADA congelada de cada propuesta: el movimiento tal cual se le dio a la IA, las obras activas, la versión de las reglas, el prefijo_hash y el prompt_version',
+  ok('E2E-49 la ENTRADA congelada de cada propuesta: el movimiento tal cual se le dio a la IA, las obras activas, y la versión de las reglas, el prefijo_hash y el prompt_version ENTEROS (la máscara no toca el sello)',
      propsLote.length === P1.propuestas && propsLote.every((x) => mismoConjunto(Object.keys(x.entrada), ['movimiento', 'obras', 'reglas_version', 'prefijo_hash', 'prompt_version'])
        && isDeepStrictEqual(x.entrada.movimiento, msgDeMov(x.mov)) && isDeepStrictEqual(x.entrada.obras, obrasEsperadas)
-       && mismoHash(x.entrada.reglas_version, ctx1.reglas_version) && mismoHash(x.entrada.prefijo_hash, P1.prefijo_hash) && mismoHash(x.entrada.prompt_version, PV)),
+       && x.entrada.reglas_version === ctx1.reglas_version && x.entrada.prefijo_hash === P1.prefijo_hash && x.entrada.prompt_version === PV),
      propsLote.slice(0, 1).map((x) => ({ entrada: x.entrada, enviado: msgDeMov(x.mov) })));
   ok('E2E-50 la SALIDA cruda (la respuesta de Anthropic tal cual: id, stop_reason, el bloque thinking delante, el texto y el uso) y modelo/effort/prompt_version íntegros en sus columnas',
      propsLote.every((x) => /^msg_SIM/.test(x.salida?.id ?? '') && x.salida.stop_reason === 'end_turn' && x.salida.content?.[0]?.type === 'thinking' && x.salida.content?.[1]?.type === 'text'
@@ -839,19 +844,70 @@ try {
   ok('E2E-98 con la base caída: salud contesta 200 con base:false y «la base no contestó»; lo que pide sesión → 500 (y nada se rompe)',
      s98.estado === 200 && s98.j.base === false && s98.j.falta.some((f) => /la base no contestó/.test(f)) && e98.estado >= 500, [s98.j, e98]);
 
-  // ---- E2E-99 dos ráfagas a la vez ------------------------------------------------------------
+  // ---- E2E-99 dos ráfagas a la vez: una sola entra, la otra se frena en la base, ningún cargo se paga dos veces ----------
   const M7 = sembrar([
     { clave: 'shell', desc: 'SHELL OIL 57544 OCALA FL', monto: 52.00, dias: 0 },
     { clave: 'chevron', desc: 'CHEVRON 0099 LEESBURG FL', monto: 44.44, dias: 0 },
     { clave: 'racetrac', desc: 'RACETRAC 2210 OCALA FL', monto: 38.38, dias: 0 },
   ]);
-  await sim('/__lento', { ms: 60 });
+  // (lo que espera ahora: los tres nuevos y los que nunca quedan —MAXTOKENS, INVALIDA—)
+  const cands99 = Number(q(`select count(*) from fn_contador_candidatos()`));
+  await sim('/__lento', { ms: 400 });   // (la primera ráfaga dura más de un segundo: la segunda llega con la primera en marcha)
+  antes = await llamadasSim();
   const dos = await Promise.all([proponer(), proponer()]);
   await sim('/__lento', { ms: 0 });
+  pet = await peticiones(antes);
+  const entro = dos.filter((x) => x.estado === 200 && x.j?.ok), frenada = dos.filter((x) => x.estado === 409);
   const dobles = q(`select count(*) from (select movimiento_id from ia_propuestas where estado = 'pendiente' group by movimiento_id having count(*) > 1) x`);
-  ok('E2E-99 dos «Proponer» a la vez: los dos contestan 200, ningún cargo queda con dos propuestas pendientes y los tres nuevos tienen la suya; los lotes, cerrados',
-     dos.every((x) => x.estado === 200 && x.j.ok) && dobles === '0' && Object.values(M7).every((m) => pendienteDe(m) !== '')
-     && q(`select count(*) from ia_lotes where cerrado_el is null`) === '0' && !/40P01|deadlock/i.test(JSON.stringify(dos.map((x) => x.j)) + salidaFn), dos.map((x) => ({ ...x.j, detalle: undefined })));
+  ok('E2E-99 dos «Proponer» a la vez: UNA entra (200, con todos los que esperaban) y la otra se frena en la base (409 MX008 «ya hay una ráfaga en marcha», en llano, sin gastar): la IA recibe cada cargo UNA vez, los tres nuevos tienen su propuesta, ninguno queda con dos pendientes y los lotes quedan cerrados',
+     entro.length === 1 && frenada.length === 1 && frenada[0].j?.codigo === 'MX008' && /Ya hay una ráfaga en marcha/.test(frenada[0].j.error) && /espera a que termine/.test(frenada[0].j.error)
+     && entro[0].j.movimientos === cands99 && entro[0].j.propuestas + entro[0].j.sin_respuesta + entro[0].j.invalidas === cands99
+     && pet.length === cands99 && new Set(pet.map(claveMsg)).size === cands99 && dobles === '0' && Object.values(M7).every((m) => pendienteDe(m) !== '')
+     && q(`select count(*) from ia_lotes where cerrado_el is null`) === '0' && !/40P01|deadlock/i.test(JSON.stringify(dos.map((x) => x.j)) + salidaFn),
+     { cands99, pedidas: pet.length, dos: dos.map((x) => ({ estado: x.estado, ...x.j, detalle: undefined })) });
+
+  // ---- E2E-99b el reloj de la ráfaga: una llamada en vuelo se corta al llegar el plazo, lo que no entró espera, nada se reintenta ----
+  const M8 = sembrar([
+    { clave: 'exxon', desc: 'EXXON 4471 OCALA FL', monto: 40.00, dias: 0 },
+    { clave: 'sunoco', desc: 'SUNOCO 0912 BELLEVIEW FL', monto: 35.00, dias: 0 },
+    { clave: 'peaje', desc: 'SUNPASS TOLL 8812', monto: 12.50, dias: 0 },
+    { clave: 'racetrac2', desc: 'RACETRAC 2210 OCALA FL', monto: 29.90, dias: 0 },
+  ]);
+  const cands99b = Number(q(`select count(*) from fn_contador_candidatos()`));
+  // la primera petición contesta al momento (el caché); las que siguen tardan 3,5 s, más que el reloj de 2,5 s de esta ráfaga
+  await sim('/__lento', { ms: 3500, tras: 1 });
+  antes = await llamadasSim();
+  r = await conEntorno({ MXP_PRESUPUESTO_MS: '2500' }, (p) => llamar({ accion: 'proponer' }, { jwt: D2, puerto: p }));
+  pet = await peticiones(antes);
+  const porTiempo = (r.j?.detalle ?? []).filter((d) => d.estado === 'sin_respuesta' && /se acabó el tiempo de la ráfaga/.test(d.motivo ?? ''));
+  const l99b = qj(`select row_to_json(l)::text from (select cerrado_el, error, n from ia_lotes where id = ${lit(r.j?.lote ?? '00000000-0000-4000-8000-000000000000')}) l`);
+  // (la primera contesta al momento; el grupo de tres arranca con reloj de sobra —más de dos segundos— y se corta en vuelo al
+  // llegar el plazo; el grupo que sigue ya no arranca: espera a la siguiente ráfaga)
+  ok('E2E-99b el reloj de la ráfaga (2,5 s aquí, MXP_PRESUPUESTO_MS solo en el banco): la primera entra; las TRES llamadas en vuelo del grupo se cortan al llegar el plazo (sin reintento) y lo que no arrancó espera a la siguiente (nota, no error); la función vuelve al llegar el plazo y el lote queda cerrado sin error',
+     r.estado === 200 && r.j.ok && r.j.presupuesto_ms === 2500 && r.j.movimientos === cands99b && r.j.ms >= 2400 && r.j.ms < 4500
+     && porTiempo.length === PR.A_LA_VEZ && porTiempo.every((d) => /en vuelo se cortó al llegar el plazo/.test(d.motivo) && d.intentos === undefined)
+     && (r.j.sin_intentar ?? 0) === Math.max(0, cands99b - 1 - PR.A_LA_VEZ) && ((r.j.sin_intentar ?? 0) === 0 || /esperan a la siguiente/.test(r.j.nota ?? ''))
+     && pet.length === 1 + PR.A_LA_VEZ && new Set(pet.map(claveMsg)).size === pet.length
+     && l99b?.cerrado_el && l99b.error === null && l99b.n === cands99b && !rojos('alarma').some((x) => /^72 /.test(x)),
+     { ...r.j, detalle: undefined, porTiempo: porTiempo.length, pedidas: pet.length, l99b });
+  // (las lentas siguen en vuelo en el simulador hasta que contesten: se esperan, para que lo que sigue las cuente bien)
+  for (let i = 0; i < 60 && (await sim('/__estado')).en_vuelo > 0; i++) await new Promise((res) => setTimeout(res, 100));
+  await sim('/__lento', { ms: 0 });
+
+  // ---- E2E-99c una ráfaga que se cortó sin cerrar: la alarma 72 lo dice; al abrir la siguiente, la base la da por perdida ----
+  const perdida = r.j?.lote;
+  q(`update ia_lotes set cerrado_el = null, creado_el = now() - interval '6 minutes' where id = ${lit(perdida)}`);
+  const a72 = rojos('alarma').find((x) => /^72 /.test(x)) ?? '';
+  const abiertos99c = q(`select lotes_abiertos from v_contador_estado`);
+  antes = await llamadasSim();
+  r = await proponer();
+  const lPerdida = qj(`select row_to_json(l)::text from (select cerrado_el, error, centavos from ia_lotes where id = ${lit(perdida)}) l`);
+  ok('E2E-99c una ráfaga abierta hace más de 5 min (la función se cortó): la alarma 72 lo dice y v_contador_estado la cuenta; el siguiente «Proponer» la da por perdida (cerrada con su error, 0 centavos, el error en ia_config), entra, y como cerró limpio la alarma 72 vuelve a verde',
+     /^72 ia: la última ráfaga sin error: 1 ráfaga\(s\) abierta\(s\) desde las .* sin cerrar: la función se cortó/.test(a72) && abiertos99c === '1'
+     && r.estado === 200 && r.j.ok && r.j.propuestas >= 4 && lPerdida?.cerrado_el && /se cortó sin cerrar/.test(lPerdida.error ?? '') && lPerdida.centavos === 0
+     && q(`select (ultimo_error ~ 'se cortó sin cerrar') || '|' || (ultima_rafaga_el > ultimo_error_el) from ia_config`) === 'true|true'
+     && q(`select lotes_abiertos from v_contador_estado`) === '0' && !rojos('alarma').some((x) => /^72 /.test(x))
+     && Object.values(M8).every((m) => pendienteDe(m) !== ''), { a72, abiertos99c, r: { ...r.j, detalle: undefined }, lPerdida });
 
   // ---- E2E-100 el control y sus alarmas ----------------------------------------------------------
   const pend = pendienteDe(M7.shell);

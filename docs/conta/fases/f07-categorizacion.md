@@ -108,7 +108,11 @@ con cualquiera de los dos alcanzado, «Proponer» no gasta.
 esqueleto de `stripe/`: entra a la base como `postgres`, exige la sesión del
 dueño en aal2 (salvo `?paso=salud`), nunca devuelve llaves. Acciones:
 `salud`, `estado`, `proponer`, `aprobar`, `clasificar`, `rechazar`,
-`regla_alta`, `regla_baja`. `proponer`: primero las reglas (sin IA), luego el
+`caducar`, `regla_alta`, `regla_baja`. **Una sola ráfaga a la vez** (dos
+pestañas → la segunda recibe «Ya hay una ráfaga en marcha… espera»; una
+abierta hace más de 5 minutos se da por perdida y se cierra con su error); la
+ráfaga tiene reloj (lo que no entra a tiempo se queda para la siguiente, sin
+cortar la función ni poner la alarma en rojo). `proponer`: primero las reglas (sin IA), luego el
 tope, luego la ráfaga a `claude-opus-5-5` con `output_config: {effort: "low",
 format: json_schema}`, el prefijo (instrucciones + plan permitido + obras +
 reglas + 30 ejemplos aprobados, ordenado y sin fechas) con `cache_control`,
@@ -119,7 +123,11 @@ respuesta», se cuenta y no se guarda; **nunca otro modelo**. Cada propuesta
 se guarda ANTES de enseñarse, con la entrada congelada (el movimiento, las
 obras, la versión de las reglas, el hash del prefijo, la versión del prompt),
 la salida cruda y el `usage`; el lote cierra con los tokens de caché creada y
-leída. Lo que va a la IA no lleva correos, teléfonos ni números de cuenta.
+leída. Lo que va a la IA no lleva correos (tampoco en la forma «JPEREZ MAIL COM» que
+deja la normalización de c6), teléfonos ni números de cuenta; los hashes del
+sello (versión del prompt, del prefijo y de las reglas) sí van íntegros.
+Lo que la IA no contesta (rechazo, JSON roto, corte) se cuenta y vuelve a
+intentarse en la ráfaga siguiente: acotado por el tope y por el botón.
 
 **La pantalla (`js/conta.js`, `css/conta.css`).** En la Bandeja, una franja
 «IA»: *n propuestas listas · m por proponer · este mes $x de $y* y «Proponer
@@ -148,4 +156,5 @@ todo, y los arreglos que pidió.
 Edge Functions → Secrets → `ANTHROPIC_API_KEY`; 4 la función `contador`
 (Verify JWT apagado) y `…/contador?paso=salud`; 5 publicar la app y, en la
 Bandeja, «Proponer con la IA». Para apagarla: `update ia_config set activa =
-false where id = 1`.
+false where id = 1`. Recién pegado, la alarma 73 («la llave y la función»)
+sale en rojo hasta la primera ráfaga: es la esperada.

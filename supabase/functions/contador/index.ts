@@ -56,14 +56,40 @@
 //     JSON, «inválida»; un 429, 529 o 5xx se reintenta UNA vez tras 2 s y
 //     después es «sin respuesta». Un 401 (la llave no vale) o un 400 (la
 //     petición) corta la ráfaga, cierra el lote con su error y contesta 502
-//     diciéndolo en llano.
+//     diciéndolo en llano. Si la primera ráfaga real contestara 400
+//     (ANTHROPIC_PETICION), lo primero a mirar es la petición misma: el
+//     esquema (tipos ["number", "null"] y description, que structured
+//     outputs admite) y la versión de la API (abajo): el simulador del banco
+//     de pruebas exige la forma del contrato, pero no valida el esquema como
+//     la API de verdad.
+//     max_tokens va en 4096: con Opus 5.5 el pensamiento adaptativo está
+//     siempre encendido y CUENTA contra max_tokens aunque no se devuelva (el
+//     skill claude-api lo documenta como la trampa de la migración); con
+//     1024 una propuesta de cinco líneas con motivo y alternativas podía
+//     cortarse («max_tokens» = sin respuesta, cobrada y sin nada que
+//     guardar, y el mismo cargo volvía a mandarse en cada ráfaga). 4096 es
+//     margen, no gasto: solo se paga lo que se usa.
+//     LA RÁFAGA TIENE RELOJ (PRESUPUESTO_RAFAGA_MS, 2 minutos, para terminar
+//     siempre antes del límite de Supabase y cerrar su lote): entre grupos
+//     no se arranca otro si se acabó (lo que quedó espera a la siguiente
+//     ráfaga: «sin_intentar», una nota, no un error), y una llamada en vuelo
+//     se corta al llegar el plazo, sin reintento («sin respuesta», con su
+//     motivo). UNA SOLA RÁFAGA A LA VEZ: la base no abre un lote mientras
+//     otro siga abierto hace menos de cinco minutos (fn_contador_lote_abrir
+//     → MX008 «ya hay una ráfaga en marcha», que aquí sale como 409 en
+//     llano: dos «Proponer» a la vez —dos pestañas, dos aparatos— pagarían
+//     dos veces los mismos cargos); si una ráfaga anterior se cortó sin
+//     cerrar, la base la da por perdida (con su error) al abrir la siguiente.
 //   · APROBAR, CLASIFICAR, RECHAZAR, CADUCAR, REGLA_ALTA y REGLA_BAJA van
 //     directo a su fn_contador_*: el ÚNICO camino al libro es
 //     fn_contador_clasificar → fn_banco_clasificar (c6), EN NOMBRE DEL
 //     DUEÑO (la base lo hace, como p1). Esta función no toca el libro.
 //   · ESTADO: v_contador_estado, el tope y lo que el control tiene en rojo
 //     (fn_contador_resumen). SALUD (sin sesión): qué falta, sin enseñar
-//     nada; y el modelo, el esfuerzo, la versión del prompt y el tope.
+//     nada; y el modelo, el esfuerzo, la versión del prompt y el tope. Se
+//     pide por GET ?paso=salud (el contrato) y también por POST {accion:
+//     "salud"} (así lo pide la pantalla): las dos contestan lo mismo y
+//     ninguna enseña nada del libro.
 //
 // A la base entra DIRECTO, como postgres, por SUPABASE_DB_URL (MXP_DB_URL
 // manda solo en el banco de pruebas), cada llamada en su transacción.
@@ -77,10 +103,11 @@
 // 500 CONFIG y no hace nada): la sesión se lee sin verificar la firma,
 // ANTHROPIC_BASE_URL apunta al Anthropic simulado (pruebas/conta/contador-
 // simulado.mjs), MXP_PUERTO sirve en 127.0.0.1 y la base se puede inyectar
-// (usarBaseDePruebas). El archivo también corre en Node 22 (las pruebas sin
-// Deno, pruebas/conta/contador-e2e.mjs): por eso lee el entorno con env(),
-// llama a Anthropic con fetch (sin el SDK) y carga npm:postgres y
-// supabase-js dentro de abrirBase, solo en Deno.
+// (usarBaseDePruebas), y MXP_PRESUPUESTO_MS acorta el reloj de la ráfaga
+// para probar el corte sin esperar dos minutos. El archivo también corre en
+// Node 22 (las pruebas sin Deno, pruebas/conta/contador-e2e.mjs): por eso
+// lee el entorno con env(), llama a Anthropic con fetch (sin el SDK) y carga
+// npm:postgres y supabase-js dentro de abrirBase, solo en Deno.
 // ============================================================
 
 type Json = Record<string, unknown>;
@@ -95,17 +122,23 @@ function env(k: string): string {
 // La versión de la API de Anthropic que se manda en cada petición (la del
 // contrato de la fase 7). La más nueva, 2026-10-21, solo cambia lo que esta
 // función no usa (temperature, top_p, top_k, documentos en turnos del
-// asistente): la petición de aquí es idéntica en las dos.
+// asistente): la petición de aquí es idéntica en las dos. (Si una ráfaga
+// real contestara 400, mirar primero el esquema y esta constante: el
+// simulador no valida como la API.)
 const ANTHROPIC_VERSION = "2023-06-01";
-// Lo que se le deja escribir: el JSON de una propuesta son unas decenas de
-// tokens; el resto es margen para el pensamiento corto de effort low (cuenta
-// contra max_tokens aunque no se devuelva). Si llegara a cortarse
-// («max_tokens» = sin respuesta), se sube aquí.
-const MAX_TOKENS = 1024;
+// Lo que se le deja escribir. El JSON de una propuesta son unas decenas o
+// cientos de tokens, pero con Opus 5.5 el pensamiento adaptativo va siempre
+// encendido y cuenta contra max_tokens aunque no se devuelva: con 1024 una
+// propuesta de cinco líneas con motivo y alternativas podía cortarse
+// («max_tokens» = sin respuesta, cobrada y sin nada que guardar). 4096 es
+// margen, no gasto: solo se paga lo que se usa. Si aun así se cortara, se
+// sube aquí (el simulador y el e2e exigen 4096 como mínimo).
+const MAX_TOKENS = 4096;
 const A_LA_VEZ = 3;                 // después de la primera, las demás de tres en tres
 const ESPERA_REINTENTO_MS = 2_000;  // 429, 529 o 5xx: un reintento, después sin respuesta
 const TIEMPO_LLAMADA_MS = 90_000;   // una llamada a Anthropic que no contesta en esto, cayó
-const PRESUPUESTO_RAFAGA_MS = 120_000; // lo que no entre en la ráfaga espera a la siguiente
+const PRESUPUESTO_RAFAGA_MS = 120_000; // el reloj de la ráfaga: lo que no entre espera a la siguiente, y una llamada en vuelo se corta al llegar
+const MINIMO_LLAMADA_MS = 500;      // con menos que esto de reloj no se arranca una llamada (ni un reintento)
 const MAX_CUERPO = 1_000_000;
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -214,6 +247,14 @@ function conf(): Conf {
     db: (banco ? env("MXP_DB_URL") : "") || env("SUPABASE_DB_URL"),
     supabase_url: env("SUPABASE_URL"), service_key: env("SUPABASE_SERVICE_ROLE_KEY"), banco_pruebas: banco, banco_mal: b.mal,
   };
+}
+
+// El reloj de la ráfaga: PRESUPUESTO_RAFAGA_MS, salvo en el banco de pruebas,
+// donde MXP_PRESUPUESTO_MS lo acorta para probar el corte sin esperar dos
+// minutos (en Supabase se ignora, como todo lo MXP_).
+function presupuestoRafaga(c: Conf): number {
+  const v = env("MXP_PRESUPUESTO_MS");
+  return c.banco_pruebas && /^\d{3,7}$/.test(v) ? Number(v) : PRESUPUESTO_RAFAGA_MS;
 }
 
 class Fallo extends Error {
@@ -380,8 +421,11 @@ function falloDeAnthropic(estado: number, j: Json): Fallo {
 // el mensaje, el esquema en output_config.format y el esfuerzo en
 // output_config.effort. Sin thinking (Opus 5.5 lo trae adaptativo), sin
 // tool_choice, sin fallbacks, sin stream. Un 429, 529 o 5xx (o no contestar
-// en 90 s) se reintenta UNA vez tras 2 s y después es «sin respuesta».
-async function llamarIA(c: Conf, modelo: string, effort: string, prefijo: string, mensaje: string): Promise<RespuestaIA> {
+// en 90 s) se reintenta UNA vez tras 2 s y después es «sin respuesta». El
+// plazo es el reloj de la ráfaga: con menos de medio segundo no se arranca
+// una llamada (ni el reintento), y una en vuelo se corta al llegar, para que
+// la función entera termine antes del límite de Supabase y cierre su lote.
+async function llamarIA(c: Conf, modelo: string, effort: string, prefijo: string, mensaje: string, plazo: number): Promise<RespuestaIA> {
   const cuerpo = JSON.stringify({
     model: modelo,
     max_tokens: MAX_TOKENS,
@@ -390,17 +434,23 @@ async function llamarIA(c: Conf, modelo: string, effort: string, prefijo: string
     output_config: { effort, format: { type: "json_schema", schema: PROPUESTA_SCHEMA } },
   });
   const headers = { "x-api-key": c.llave, "anthropic-version": ANTHROPIC_VERSION, "content-type": "application/json" };
-  let ultimo = "sin intento";
+  let ultimo = "antes de llamar";
   for (let intento = 1; intento <= 2; intento++) {
+    // el reloj de la ráfaga: sin tiempo para una llamada entera (y la espera del reintento), no se manda
+    if (plazo - Date.now() < MINIMO_LLAMADA_MS + (intento > 1 ? ESPERA_REINTENTO_MS : 0)) {
+      return { estado: "sin_respuesta", motivo: `se acabó el tiempo de la ráfaga (${ultimo}): este cargo espera a la siguiente`, usage: { ...USO_CERO }, intentos: intento - 1 };
+    }
     if (intento > 1) await dormir(ESPERA_REINTENTO_MS);
     const ctl = new AbortController();
-    const reloj = setTimeout(() => ctl.abort(), TIEMPO_LLAMADA_MS);
+    const reloj = setTimeout(() => ctl.abort(), Math.max(1, Math.min(TIEMPO_LLAMADA_MS, plazo - Date.now())));
     let r: Response, crudo: string;
     try {
       r = await fetch(`${c.base_url}/v1/messages`, { method: "POST", headers, body: cuerpo, signal: ctl.signal });
       crudo = await r.text();
     } catch (e) {
-      ultimo = e instanceof Error && e.name === "AbortError" ? `${TIEMPO_LLAMADA_MS / 1000} s sin respuesta` : "sin conexión";
+      ultimo = e instanceof Error && e.name === "AbortError"
+        ? (Date.now() >= plazo ? "la llamada en vuelo se cortó al llegar el plazo" : `${TIEMPO_LLAMADA_MS / 1000} s sin respuesta`)
+        : "sin conexión";
       continue;
     } finally { clearTimeout(reloj); }
     let j: Json = {};
@@ -484,6 +534,8 @@ export function usarBaseDePruebas(b: Base): void {
 interface Conteo { ok: number; sin: number; inv: number; fatal: Fallo | null }
 async function proponer(base: Base, c: Conf, dueno: string, cuerpo: Json): Promise<Json> {
   const t0 = Date.now();
+  const presupuesto = presupuestoRafaga(c);
+  const plazo = t0 + presupuesto;
   // 1. las reglas de Edgar (gratis)
   const reglas = obj(await base.rpc("fn_contador_reglas_aplicar", { p_dueno: dueno }));
   const nReglas = num(reglas.propuestas) ?? 0;
@@ -523,12 +575,13 @@ async function proponer(base: Base, c: Conf, dueno: string, cuerpo: Json): Promi
   const n: Conteo = { ok: 0, sin: 0, inv: 0, fatal: null };
   const detalle: Json[] = [];
   const errores: string[] = [];
+  const notas: string[] = [];
   const obras = arr(ctx.proyectos).map((p) => ({ id: p.id, nombre: p.nombre }));
   const uno = async (m: Json) => {
     const mid = String(m.movimiento_id);
     const entradaMov = armarEntrada(m);
     let r: RespuestaIA;
-    try { r = await llamarIA(c, modelo, effort, prefijo, JSON.stringify(entradaMov)); }
+    try { r = await llamarIA(c, modelo, effort, prefijo, JSON.stringify(entradaMov), plazo); }
     catch (e) {
       // la llave, el modelo o la petición: no tiene sentido seguir
       n.fatal = e instanceof Fallo ? e : new Fallo(502, mensajeDe(e), "ANTHROPIC");
@@ -564,10 +617,11 @@ async function proponer(base: Base, c: Conf, dueno: string, cuerpo: Json): Promi
       detalle.push({ movimiento_id: mid, estado: "invalida", motivo: msg, codigo: e instanceof Fallo ? e.codigo : undefined });
     }
   };
-  // la primera sola (crea el caché del prefijo); las demás, de tres en tres
+  // la primera sola (crea el caché del prefijo); las demás, de tres en tres,
+  // mientras quede reloj (lo que no entra no es un error: espera a la siguiente)
   await uno(movs[0]);
   for (let i = 1; i < movs.length && !n.fatal; i += A_LA_VEZ) {
-    if (Date.now() - t0 > PRESUPUESTO_RAFAGA_MS) { errores.push(`se acabó el tiempo de la ráfaga: ${movs.length - i} movimiento(s) esperan a la siguiente`); break; }
+    if (Date.now() > plazo) { notas.push(`se acabó el tiempo de la ráfaga (${Math.round(presupuesto / 1000)} s): ${movs.length - i} movimiento(s) esperan a la siguiente`); break; }
     await Promise.all(movs.slice(i, i + A_LA_VEZ).map(uno));
   }
   const sinIntentar = movs.length - n.ok - n.sin - n.inv;
@@ -582,7 +636,8 @@ async function proponer(base: Base, c: Conf, dueno: string, cuerpo: Json): Promi
     movimientos: movs.length, total: num(k.total) ?? movs.length, propuestas: n.ok, sin_respuesta: n.sin, invalidas: n.inv,
     sin_intentar: sinIntentar || undefined, centavos: num(cierre.centavos) ?? 0, usage: uso,
     cache: { creacion: uso.cache_creacion, lectura: uso.cache_lectura }, tope: cierre.tope ?? k.tope, detalle,
-    errores: errores.length ? errores.slice(0, 20) : undefined, error: error ?? undefined, ms: Date.now() - t0,
+    errores: errores.length ? errores.slice(0, 20) : undefined, error: error ?? undefined, nota: notas.length ? notas.join(" · ") : undefined,
+    presupuesto_ms: presupuesto, ms: Date.now() - t0,
   });
 }
 
@@ -723,7 +778,7 @@ export async function atender(req: Request): Promise<Response> {
 
 // Para las pruebas (contador-e2e.mjs): las piezas puras.
 export const _probar = {
-  INSTRUCCIONES, PROPUESTA_SCHEMA, ANTHROPIC_VERSION, MAX_TOKENS, A_LA_VEZ, ESPERA_REINTENTO_MS,
+  INSTRUCCIONES, PROPUESTA_SCHEMA, ANTHROPIC_VERSION, MAX_TOKENS, A_LA_VEZ, ESPERA_REINTENTO_MS, PRESUPUESTO_RAFAGA_MS, MINIMO_LLAMADA_MS,
   armarPrefijo, armarEntrada, normalizarPropuesta, leerRespuesta, usoDe, sha256, versionDelPrompt, salud, sinLlaves,
 };
 

@@ -9,7 +9,10 @@
      · model exactamente claude-opus-5-5 (otro → 404 not_found_error: solo
        Opus y Fable, y la función no cambia de modelo).
      · output_config.effort = low; output_config.format = {type: json_schema,
-       schema: objeto}; max_tokens entero.
+       schema: objeto}; max_tokens entero y de 4096 como mínimo (con Opus 5.5
+       el pensamiento adaptativo cuenta contra max_tokens aunque no se
+       devuelva: con menos, una propuesta larga se cortaría; el contrato de
+       c8 pide 4096).
      · system es una lista y system[0] lleva cache_control {type: ephemeral}.
      · messages: un turno user cuyo content es un texto (el JSON del
        movimiento).
@@ -60,9 +63,13 @@
                           caer, caidos, minimo_cache, lento, en_vuelo, max_en_vuelo}
      POST /__caer {veces, estado?}  las N siguientes contestan 529 (o el
                          estado dado: 429 rate_limit_error, 5xx api_error)
-     POST /__lento {ms}  cada respuesta tarda eso (0 = al momento): así las
-                         peticiones que la función manda a la vez se pisan
-                         de verdad y se ve cuántas iban en vuelo
+     POST /__lento {ms, tras?}  cada respuesta tarda eso (0 = al momento): así
+                         las peticiones que la función manda a la vez se
+                         pisan de verdad y se ve cuántas iban en vuelo; con
+                         «tras» (n), las n peticiones siguientes contestan al
+                         momento y la lentitud empieza después (así el e2e
+                         deja pasar la primera de una ráfaga y frena el grupo
+                         que sigue, para probar el reloj de la función)
      POST /__reiniciar      borra las peticiones, el caché y los contadores
    Cada petición anotada lleva además en_vuelo (cuántas otras estaban sin
    contestar cuando llegó: la primera de la ráfaga, 0; las de tres en tres,
@@ -122,7 +129,7 @@ export function proponerDeMentira(mov) {
 
 export function crearSimulador({ llave = process.env.ANTHROPIC_API_KEY || 'sk-ant-prueba', puerto = 8895 } = {}) {
   const E = { peticiones: [], cache: new Set(), caidos: new Set(), caer: 0, caerEstado: 529, n: 0, creaciones: 0, lecturas: 0,
-              lento: 0, enVuelo: 0, maxEnVuelo: 0 };
+              lento: 0, lentoDesde: 0, enVuelo: 0, maxEnVuelo: 0 };
   // (como hace Anthropic en su 401, pero sin la cola: ni cuatro letras de la llave salen de aquí)
   const enmascarada = `${llave.slice(0, 7)}…`;
   const error = (estado, tipo, mensaje) => ({ estado, cuerpo: { type: 'error', error: { type: tipo, message: mensaje } } });
@@ -137,6 +144,8 @@ export function crearSimulador({ llave = process.env.ANTHROPIC_API_KEY || 'sk-an
     if (!p || typeof p !== 'object') return mal('body must be a JSON object');
     if (p.model !== MODELO) return error(404, 'not_found_error', `model: ${p.model}`);
     if (!Number.isInteger(p.max_tokens) || p.max_tokens < 1) return mal('max_tokens: must be a positive integer');
+    // (el contrato de c8: 4096 como mínimo; el pensamiento adaptativo de Opus 5.5 cuenta contra max_tokens)
+    if (p.max_tokens < 4096) return mal(`max_tokens: el contrato de c8 pide 4096 como mínimo (el pensamiento adaptativo de Opus 5.5 cuenta contra max_tokens); llegó ${p.max_tokens}`);
     for (const k of ['thinking', 'tool_choice', 'fallbacks', 'temperature', 'top_p', 'top_k', 'tools', 'stream']) {
       if (p[k] !== undefined) return mal(`${k}: not supported here (el contrato de c8: sin ${k})`);
     }
@@ -209,10 +218,14 @@ export function crearSimulador({ llave = process.env.ANTHROPIC_API_KEY || 'sk-an
       E.caerEstado = e === 429 || e >= 500 ? e : 529;
       return { caer: E.caer, estado: E.caerEstado };
     },
-    '/__lento'({ ms = 0 } = {}) { E.lento = Math.max(0, Math.min(Number(ms) || 0, 30_000)); return { lento: E.lento }; },
+    '/__lento'({ ms = 0, tras = 0 } = {}) {
+      E.lento = Math.max(0, Math.min(Number(ms) || 0, 30_000));
+      E.lentoDesde = E.peticiones.length + Math.max(0, Number(tras) || 0);   // (las «tras» siguientes, al momento)
+      return { lento: E.lento, tras: Math.max(0, Number(tras) || 0) };
+    },
     '/__reiniciar'() {
       E.peticiones = []; E.cache = new Set(); E.caidos = new Set(); E.caer = 0; E.caerEstado = 529; E.creaciones = 0; E.lecturas = 0;
-      E.lento = 0; E.maxEnVuelo = 0;
+      E.lento = 0; E.lentoDesde = 0; E.maxEnVuelo = 0;
       return { ok: true };
     },
   };
@@ -250,7 +263,7 @@ export function crearSimulador({ llave = process.env.ANTHROPIC_API_KEY || 'sk-an
       E.peticiones.push(anot);
       const extra = r.estado === 529 || r.estado === 429 ? { 'retry-after': '2' } : {};
       const rid = `req_SIM${String(anot.n).padStart(4, '0')}`;
-      if (E.lento) await new Promise((listo) => setTimeout(listo, E.lento));
+      if (E.lento && anot.n > E.lentoDesde) await new Promise((listo) => setTimeout(listo, E.lento));
       // (el prefijo queda en el caché cuando la que lo escribió contesta, no antes)
       if (anot.escribe_cache && r.estado === 200) E.cache.add(anot.escribe_cache);
       anot.terminada_ms = Date.now();

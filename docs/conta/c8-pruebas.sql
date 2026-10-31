@@ -41,9 +41,14 @@
 -- (sin ella MX008 «elige la obra», con ella en la línea); clasificar
 -- (editada, de Edgar sin propuesta, sin recordar, los errores de c6 tal
 -- cual); rechazar; las reglas que dicta Edgar (alta con todos sus frenos y
--- baja con su motivo); el nombre del comercio y lo que se tapa; el control
--- en rojo cuando toca (60 a 63 y 70 a 73, cada uno provocado y vuelto a
--- verde); la suplantación; las vistas del estado y de la bandeja; y (la
+-- baja con su motivo); el nombre del comercio y lo que se tapa (el correo
+-- también en la forma normalizada de c6, «JPEREZ MAIL COM»; un hash o un
+-- uuid enteros, nunca; el sello prompt_version, prefijo_hash y
+-- reglas_version íntegro en «entrada»); una sola ráfaga a la vez (MX008 con
+-- otra en marcha; una abierta hace más de cinco minutos se da por perdida
+-- con su error); el control en rojo cuando toca (60 a 63 y 70 a 73, cada
+-- uno provocado y vuelto a verde); la suplantación; las vistas del estado y
+-- de la bandeja; y (la
 -- 25) que al final c2 (fn_verificar_cadena), c3, c6 (fn_banco_control) y
 -- c4 (fn_estados_control, salvo lo que ya estaba en rojo ANTES de empezar,
 -- que la prueba dice: en el banco, «cuadre: apertura en el libro», que no
@@ -173,10 +178,20 @@ create or replace function pg_temp.c8_al_dia() returns void language sql as $$
   update ia_config set activa = true, tope_mes_centavos = 1000000 where id = 1;
   update asistente_ajustes set valor = '1000000' where clave = 'tope_mes_centavos';
 $$;
--- Una ráfaga abierta con la configuración de hoy, por el dueño
-create or replace function pg_temp.c8_lote(p_n int default 1) returns uuid language sql as $$
-  select fn_contador_lote_abrir(pg_temp.c8('dueno')::uuid, c.modelo, c.effort, 'pv-c8-pruebas', 'ph-c8-pruebas', p_n) from ia_config c where c.id = 1
-$$;
+-- Una ráfaga abierta con la configuración de hoy, por el dueño. La base no
+-- abre una ráfaga mientras otra siga abierta (MX008 «ya hay una ráfaga en
+-- marcha»): la función de borde siempre cierra la suya; aquí, la que una
+-- prueba dejó abierta se cierra antes, sin uso (0 centavos, sin error), como
+-- haría la función.
+create or replace function pg_temp.c8_lote(p_n int default 1) returns uuid language plpgsql as $$
+declare
+  v uuid;
+begin
+  perform fn_contador_lote_cerrar(l.id, '{}'::jsonb) from ia_lotes l where l.cerrado_el is null;
+  select fn_contador_lote_abrir(pg_temp.c8('dueno')::uuid, c.modelo, c.effort, 'pv-c8-pruebas', 'ph-c8-pruebas', p_n) into v
+    from ia_config c where c.id = 1;
+  return v;
+end $$;
 -- Lo que la IA contestaría, dado a la base tal cual (lo que hace la función
 -- de borde por cada respuesta)
 create or replace function pg_temp.c8_ia(p_mov uuid, p_lote uuid, p_lineas jsonb, p_motivo text, p_conf numeric, p_flags jsonb default null,
@@ -525,12 +540,13 @@ begin
                        then 'lista de 30 o menos' else 'MAL' end);
     -- lo que se le da: sin correo ni teléfono (el de Netflix: en la
     -- descripción tal cual se tapan los dos; en desc_norm c6 ya deshizo el
-    -- correo —«JUAN MAIL COM»— y el teléfono se tapa), y con el número de la
-    -- tienda
+    -- correo —«JUAN MAIL COM», que la máscara de la cruda no reconoce— y c8
+    -- lo vuelve a tapar por la descripción cruda, y el teléfono también), y
+    -- con el número de la tienda
     v_d := format('netflix: %s | home depot: %s',
                   (select case when x->>'descripcion' ~ '\[correo\]' and x->>'descripcion' ~ '\[teléfono\]' and x->>'descripcion' !~ 'juan@|866'
-                                    and x->>'desc_norm' ~ '\[teléfono\]' and x->>'desc_norm' !~ '866'
-                               then 'sin correo ni teléfono' else x->>'descripcion' || ' / ' || (x->>'desc_norm') end
+                                    and x->>'desc_norm' = 'NETFLIX COM [teléfono] CA [correo]'
+                               then 'sin correo ni teléfono (también en desc_norm)' else x->>'descripcion' || ' / ' || (x->>'desc_norm') end
                      from jsonb_array_elements(v_p->'movimientos') x where (x->>'movimiento_id')::uuid = v_m3),
                   (select case when x->>'desc_norm' = 'THE HOME DEPOT 6341 OCALA FL' then 'con su número de tienda' else x->>'desc_norm' end
                      from jsonb_array_elements(v_p->'movimientos') x where (x->>'movimiento_id')::uuid = v_m1));
@@ -546,12 +562,13 @@ begin
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (6, 'lo que espera y su contexto: sin_ticket, los más viejos primero hasta el límite, cuentas (nunca 6000 ni bancos), obras, reglas_version, ejemplos, sin datos personales',
-    'bandeja: sin_ticket sin_ticket sin_ticket | límite 2 → 2 movimientos de 3 o más | orden bien, los tres en su orden | límite 99 → 20 | movimiento con {cuenta,cuenta_nombre,desc_norm,descripcion,dias,fecha,monto,motivo,movimiento_id,tipo_banco} | cuentas <n> (6000 no, 1010 no, 5100 sí con regla_obra obligatoria) · obras <n> (las activas) · reglas_version md5 · ejemplos lista de 30 o menos | netflix: sin correo ni teléfono | home depot: con su número de tienda | con propuesta: ya no espera',
+    'bandeja: sin_ticket sin_ticket sin_ticket | límite 2 → 2 movimientos de 3 o más | orden bien, los tres en su orden | límite 99 → 20 | movimiento con {cuenta,cuenta_nombre,desc_norm,descripcion,dias,fecha,monto,motivo,movimiento_id,tipo_banco} | cuentas <n> (6000 no, 1010 no, 5100 sí con regla_obra obligatoria) · obras <n> (las activas) · reglas_version md5 · ejemplos lista de 30 o menos | netflix: sin correo ni teléfono (también en desc_norm) | home depot: con su número de tienda | con propuesta: ya no espera',
     v_obt,
     v_obt ~ ('^bandeja: sin_ticket sin_ticket sin_ticket \| límite 2 → 2 movimientos de 3 o más \| orden bien, los tres en su orden \| límite 99 → 20 \| '
              'movimiento con \{cuenta,cuenta_nombre,desc_norm,descripcion,dias,fecha,monto,motivo,movimiento_id,tipo_banco\} \| '
              'cuentas [0-9]+ \(6000 no, 1010 no, 5100 sí con regla_obra obligatoria\) · obras [0-9]+ \(las activas\) · reglas_version md5 · '
-             'ejemplos lista de 30 o menos \| netflix: sin correo ni teléfono \| home depot: con su número de tienda \| con propuesta: ya no espera$'));
+             'ejemplos lista de 30 o menos \| netflix: sin correo ni teléfono \(también en desc_norm\) \| home depot: con su número de tienda \| '
+             'con propuesta: ya no espera$'));
 end $$;
 
 -- 7. Las reglas antes que la IA: la que casa deja su propuesta (confianza 1,
@@ -733,7 +750,8 @@ end $$;
 --     leído 20, salida 2000 por millón), anota el gasto del mes donde la
 --     app lo lee (asistente_costo_mes sube, con su fila en asistente_uso) y
 --     guarda en ia_config la versión del prompt, el prefijo y la hora; una
---     ráfaga no se cierra dos veces; un uso que no es entero no entra
+--     ráfaga no se cierra dos veces; un uso que no es entero no entra; con
+--     una ráfaga en marcha no se abre otra (MX008)
 do $$
 declare
   v_obt text; v_x text; v_a text[] := '{}'; v_l uuid; v_r jsonb; v_antes bigint; v_antes_n bigint; v_b text; v_c text; v_d text; v_k char;
@@ -743,8 +761,10 @@ begin
     perform pg_temp.c8_montar();
     foreach v_x in array array['claude-haiku-4-5', 'claude-sonnet-5-5', 'gpt-5', 'claude-opus-5-5-sonnet', 'claude-fable-5-1'] loop
       begin
-        perform fn_contador_lote_abrir(pg_temp.c8('dueno')::uuid, v_x, 'low', null, null, 1);
+        v_l := fn_contador_lote_abrir(pg_temp.c8('dueno')::uuid, v_x, 'low', null, null, 1);
         v_a := v_a || 'entra'::text;
+        -- (la base no abre otra mientras esta siga abierta: se cierra sin uso)
+        perform fn_contador_lote_cerrar(v_l, '{}'::jsonb);
       exception when others then
         v_a := v_a || sqlstate::text;
       end;
@@ -785,6 +805,13 @@ begin
     exception when others then v_d := format('dos veces: %s', sqlstate);
     end;
     v_l := fn_contador_lote_abrir(pg_temp.c8('dueno')::uuid, 'claude-opus-5-5', 'low', null, null, 1);
+    -- (con esta abierta, otra no entra: dos «Proponer» a la vez pagarían dos veces)
+    begin
+      perform fn_contador_lote_abrir(pg_temp.c8('dueno')::uuid, 'claude-opus-5-5', 'low', null, null, 1);
+      v_d := v_d || ' | dos a la vez: ENTRÓ';
+    exception when others then
+      v_d := v_d || format(' | dos a la vez: %s (%s)', sqlstate, case when sqlerrm ~ '^Ya hay una ráfaga en marcha .*espera' then 'en marcha' else sqlerrm end);
+    end;
     begin
       perform fn_contador_lote_cerrar(v_l, '{"input": "mil"}');
       v_d := v_d || ' | uso mal: ENTRÓ';
@@ -798,11 +825,11 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (10, 'las ráfagas: solo Opus y Fable, el esfuerzo, hasta max_por_rafaga; cerrar calcula los centavos, anota el gasto del mes y guarda en ia_config; no se cierra dos veces',
-    'modelos: 22023 22023 22023 22023 entra 22023 22023 | centavos 760 (= 400 + 100 + 60 + 200) | gasto del mes: +760 centavos, +1 llamada(s), anotado en asistente_uso | asistente_uso: contador_categorizar · claude-opus-5-5 · dueno · entrada 1000000 · salida 100000 · leído 3000000 · escrito 200000 · vueltas 3 · 760 · del dueño | ia_config: pv pv-c8-pruebas · ph ph-c8-pruebas · ráfaga puesta · error ninguno | dos veces: MX008 | uso mal: 22023 | sin uso: 0 centavos',
+  insert into _pruebas values (10, 'las ráfagas: solo Opus y Fable, el esfuerzo, hasta max_por_rafaga; cerrar calcula los centavos, anota el gasto del mes y guarda en ia_config; no se cierra dos veces; una sola a la vez',
+    'modelos: 22023 22023 22023 22023 entra 22023 22023 | centavos 760 (= 400 + 100 + 60 + 200) | gasto del mes: +760 centavos, +1 llamada(s), anotado en asistente_uso | asistente_uso: contador_categorizar · claude-opus-5-5 · dueno · entrada 1000000 · salida 100000 · leído 3000000 · escrito 200000 · vueltas 3 · 760 · del dueño | ia_config: pv pv-c8-pruebas · ph ph-c8-pruebas · ráfaga puesta · error ninguno | dos veces: MX008 | dos a la vez: MX008 (en marcha) | uso mal: 22023 | sin uso: 0 centavos',
     v_obt,
-    v_obt in ('modelos: 22023 22023 22023 22023 entra 22023 22023 | centavos 760 (= 400 + 100 + 60 + 200) | gasto del mes: +760 centavos, +1 llamada(s), anotado en asistente_uso | asistente_uso: contador_categorizar · claude-opus-5-5 · dueno · entrada 1000000 · salida 100000 · leído 3000000 · escrito 200000 · vueltas 3 · 760 · del dueño | ia_config: pv pv-c8-pruebas · ph ph-c8-pruebas · ráfaga puesta · error ninguno | dos veces: MX008 | uso mal: 22023 | sin uso: 0 centavos',
-              'modelos: 22023 22023 22023 22023 entra 22023 22023 | centavos 760 (= 400 + 100 + 60 + 200) | gasto del mes: +760 centavos, +3 llamada(s), anotado en asistente_costo_mes | asistente_uso: (asistente_costo_mes es una tabla aquí) | ia_config: pv pv-c8-pruebas · ph ph-c8-pruebas · ráfaga puesta · error ninguno | dos veces: MX008 | uso mal: 22023 | sin uso: 0 centavos'));
+    v_obt in ('modelos: 22023 22023 22023 22023 entra 22023 22023 | centavos 760 (= 400 + 100 + 60 + 200) | gasto del mes: +760 centavos, +1 llamada(s), anotado en asistente_uso | asistente_uso: contador_categorizar · claude-opus-5-5 · dueno · entrada 1000000 · salida 100000 · leído 3000000 · escrito 200000 · vueltas 3 · 760 · del dueño | ia_config: pv pv-c8-pruebas · ph ph-c8-pruebas · ráfaga puesta · error ninguno | dos veces: MX008 | dos a la vez: MX008 (en marcha) | uso mal: 22023 | sin uso: 0 centavos',
+              'modelos: 22023 22023 22023 22023 entra 22023 22023 | centavos 760 (= 400 + 100 + 60 + 200) | gasto del mes: +760 centavos, +3 llamada(s), anotado en asistente_costo_mes | asistente_uso: (asistente_costo_mes es una tabla aquí) | ia_config: pv pv-c8-pruebas · ph ph-c8-pruebas · ráfaga puesta · error ninguno | dos veces: MX008 | dos a la vez: MX008 (en marcha) | uso mal: 22023 | sin uso: 0 centavos'));
 end $$;
 
 
@@ -816,7 +843,9 @@ end $$;
 --     flags conocidos y pide_obra puesto por la base según las cuentas, no
 --     por la IA); las alternativas a cuentas que no se proponen se quitan
 --     (y se dice cuántas); lo que se le dio (entrada) queda congelado sin
---     correos ni teléfonos; lo que contestó (salida) tal cual
+--     correos ni teléfonos, y con el sello de la trazabilidad (prompt_version,
+--     prefijo_hash, reglas_version) entero aunque traiga tiras de ocho
+--     dígitos o más dentro del hex; lo que contestó (salida) tal cual
 do $$
 declare
   v_obt text; v_m uuid; v_l uuid; v_r jsonb; p ia_propuestas; v_a text; v_b text; v_c text;
@@ -827,7 +856,9 @@ begin
     v_l := pg_temp.c8_lote(1);
     v_r := fn_contador_propuesta_guardar(v_m, v_l,
              jsonb_build_object('movimiento', jsonb_build_object('desc_norm', 'THE HOME DEPOT 6341 OCALA FL', 'memo', 'tel 352-555-1234 juan@mail.com'),
-                                'proyectos', jsonb_build_array(pg_temp.c8('obra')), 'reglas_version', 'abc', 'prefijo_hash', 'ph-c8-pruebas'),
+                                'proyectos', jsonb_build_array(pg_temp.c8('obra')), 'reglas_version', '9b808f0013a56fdb9b7f8bf12345678b',
+                                'prefijo_hash', 'bf5998663c555f49375d52ee71fd08779266e39e1d9072e95809f711410a6ec6',
+                                'prompt_version', '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'),
              '{"id": "msg_01", "stop_reason": "end_turn", "content": [{"type": "text", "text": "{...}"}]}'::jsonb,
              jsonb_build_object('lineas', '[{"cuenta": "5100"}]'::jsonb, 'motivo', '  Home Depot es material de obra: va a 5100 y pide la obra  ',
                                 'confianza', 0.91234, 'flags', '{"pide_obra": false, "capitalizable": false, "use_tax": true}'::jsonb,
@@ -838,8 +869,11 @@ begin
                   case when p.lote_id = v_l then 'sí' else 'NO' end, p.modelo, p.effort, p.prompt_version, v_r->>'pide_obra', v_r->>'alternativas_fuera');
     v_b := format('propuesta: %s', p.propuesta::text);
     v_c := format('entrada: %s | salida: %s',
-                  case when p.entrada::text !~ '352|juan' and p.entrada->'movimiento'->>'memo' = 'tel [teléfono] [correo]' and p.entrada->>'prefijo_hash' = 'ph-c8-pruebas'
-                       then 'sin teléfono ni correo, con su prefijo' else p.entrada::text end,
+                  case when p.entrada::text !~ '352|juan|número' and p.entrada->'movimiento'->>'memo' = 'tel [teléfono] [correo]'
+                            and p.entrada->>'reglas_version' = '9b808f0013a56fdb9b7f8bf12345678b'
+                            and p.entrada->>'prefijo_hash' = 'bf5998663c555f49375d52ee71fd08779266e39e1d9072e95809f711410a6ec6'
+                            and p.entrada->>'prompt_version' = '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'
+                       then 'sin teléfono ni correo, con su sello entero' else p.entrada::text end,
                   case when p.salida->>'stop_reason' = 'end_turn' then 'tal cual' else 'MAL' end);
     v_c := v_c || format(' | bandeja: %s', (select format('%s · %s · %s · %s · pide_obra %s', b.fuente, b.resumen, b.confianza, b.flags::text, b.pide_obra::text)
                                               from v_contador_bandeja b where b.propuesta_id = p.id));
@@ -849,10 +883,10 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (11, 'una respuesta válida se guarda: pendiente, de su ráfaga, normalizada, pide_obra lo pone la base, alternativas filtradas, entrada sin datos personales, salida tal cual',
-    'pendiente ia de la ráfaga sí, claude-opus-5-5/low/pv-c8-pruebas, pide_obra true, alternativas fuera 2 | propuesta: {"flags": {"use_tax": true, "pide_obra": true, "capitalizable": false}, "lineas": [{"cuenta": "5100"}], "motivo": "Home Depot es material de obra: va a 5100 y pide la obra", "confianza": 0.912, "alternativas": [{"cuenta": "6400", "motivo": "herramienta menor"}]} | entrada: sin teléfono ni correo, con su prefijo | salida: tal cual | bandeja: ia · 5100 Material · 0.912 · {"use_tax": true, "pide_obra": true, "capitalizable": false} · pide_obra true',
+  insert into _pruebas values (11, 'una respuesta válida se guarda: pendiente, de su ráfaga, normalizada, pide_obra lo pone la base, alternativas filtradas, entrada sin datos personales y con su sello entero, salida tal cual',
+    'pendiente ia de la ráfaga sí, claude-opus-5-5/low/pv-c8-pruebas, pide_obra true, alternativas fuera 2 | propuesta: {"flags": {"use_tax": true, "pide_obra": true, "capitalizable": false}, "lineas": [{"cuenta": "5100"}], "motivo": "Home Depot es material de obra: va a 5100 y pide la obra", "confianza": 0.912, "alternativas": [{"cuenta": "6400", "motivo": "herramienta menor"}]} | entrada: sin teléfono ni correo, con su sello entero | salida: tal cual | bandeja: ia · 5100 Material · 0.912 · {"use_tax": true, "pide_obra": true, "capitalizable": false} · pide_obra true',
     v_obt,
-    v_obt = 'pendiente ia de la ráfaga sí, claude-opus-5-5/low/pv-c8-pruebas, pide_obra true, alternativas fuera 2 | propuesta: {"flags": {"use_tax": true, "pide_obra": true, "capitalizable": false}, "lineas": [{"cuenta": "5100"}], "motivo": "Home Depot es material de obra: va a 5100 y pide la obra", "confianza": 0.912, "alternativas": [{"cuenta": "6400", "motivo": "herramienta menor"}]} | entrada: sin teléfono ni correo, con su prefijo | salida: tal cual | bandeja: ia · 5100 Material · 0.912 · {"use_tax": true, "pide_obra": true, "capitalizable": false} · pide_obra true');
+    v_obt = 'pendiente ia de la ráfaga sí, claude-opus-5-5/low/pv-c8-pruebas, pide_obra true, alternativas fuera 2 | propuesta: {"flags": {"use_tax": true, "pide_obra": true, "capitalizable": false}, "lineas": [{"cuenta": "5100"}], "motivo": "Home Depot es material de obra: va a 5100 y pide la obra", "confianza": 0.912, "alternativas": [{"cuenta": "6400", "motivo": "herramienta menor"}]} | entrada: sin teléfono ni correo, con su sello entero | salida: tal cual | bandeja: ia · 5100 Material · 0.912 · {"use_tax": true, "pide_obra": true, "capitalizable": false} · pide_obra true');
 end $$;
 
 -- 12. Lo que no vale NO se guarda, y se dice por qué: una cuenta que no
@@ -1280,10 +1314,13 @@ end $$;
 --     (sin números, sin la forma de pago delante, sin la ciudad ni el
 --     estado del final; un cheque, un número o una palabra del banco solos
 --     no son un comercio), el escape de un texto para un patrón, si un
---     patrón vale, y lo que se tapa antes de dárselo a la IA
+--     patrón vale, y lo que se tapa antes de dárselo a la IA: el correo tal
+--     cual y en la forma normalizada de c6, el teléfono, la cuenta; un hash
+--     o un uuid enteros se dejan; desc_norm con su descripción cruda tapa el
+--     correo de cualquier dominio
 do $$
 declare
-  v_obt text; v_a text; v_b text;
+  v_obt text; v_a text; v_b text; v_c text;
 begin
   begin
     select string_agg(coalesce(fn_contador_nombre_comercio(x), '∅'), ' · ' order by o) into v_a
@@ -1297,14 +1334,28 @@ begin
                   case when fn_contador_regex_valida('.*') ~ 'casa con un texto vacío' then 'casa con todo' else coalesce(fn_contador_regex_valida('.*'), 'VALE') end,
                   coalesce(fn_contador_regex_valida('^WAWA'), 'vale'),
                   fn_contador_sin_datos('juan@mail.com tel 352-555-1234 o (352) 555 1234 acct 12345678 tienda 6341 fecha 10/15 ref 2K3J9'));
-    v_obt := format('%s | %s', v_a, v_b);
+    -- lo que NO se tapa (un hash o un uuid enteros: el sello de la
+    -- trazabilidad, aunque traigan ocho dígitos seguidos), el correo como lo
+    -- deja c6 («JPEREZ MAIL COM»), y desc_norm por fn_contador_sin_datos_norm
+    -- con su descripción cruda: el correo de un dominio cualquiera, el
+    -- teléfono y la cuenta en su forma normalizada, y nada más
+    v_c := format('hash %s · uuid %s · normalizado %s | desc_norm: zelle «%s» · dominio propio «%s» · sin correo «%s»',
+                  case when fn_contador_sin_datos('bf5998663c555f49375d52ee71fd08779266e39e1d9072e95809f711410a6ec6')
+                            = 'bf5998663c555f49375d52ee71fd08779266e39e1d9072e95809f711410a6ec6' then 'entero' else 'TOCADO' end,
+                  case when fn_contador_sin_datos('12345678-1234-4123-8123-123456789012') = '12345678-1234-4123-8123-123456789012' then 'entero' else 'TOCADO' end,
+                  fn_contador_sin_datos('ZELLE A JUAN JPEREZ GMAIL COM Y ANA MARIA HOTMAIL NET'),
+                  fn_contador_sin_datos_norm('ZELLE PAYMENT TO JUAN PEREZ JPEREZ MAIL COM 305 555 1234 ACCT 1234567890',
+                                             'ZELLE PAYMENT TO JUAN PEREZ JPEREZ@MAIL.COM 305-555-1234 ACCT 1234567890'),
+                  fn_contador_sin_datos_norm('PAGO A JUAN PEREZELECTRIC COM REF 44', 'Pago a juan@perezelectric.com ref 44', null),
+                  fn_contador_sin_datos_norm('WAWA 5234 BELLEVIEW FL', 'WAWA 5234 BELLEVIEW FL', 'nota sin correo'));
+    v_obt := format('%s | %s | %s', v_a, v_b, v_c);
   exception when others then
     v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (20, 'el comercio de una descripción del banco, el escape y la validez de un patrón, y lo que se tapa (correos, teléfonos, números de cuenta)',
-    'THE HOME DEPOT · WAWA · 7 ELEVEN · TST FIREHOUSE SUBS · SQ JOES ELECTRIC SUPPLY · WAWA · AMAZON MKTPL · NETFLIX · ∅ · ∅ · ∅ · IRS USATAXPYMT · ZELLE PAYMENT TO JUAN PEREZ · ∅ · ∅ · ∅ | escape A\.B \(C\) \$5\* | patrón: «(» no vale · «.*» casa con todo · «^WAWA» vale | tapa: [correo] tel [teléfono] o [teléfono] acct [número] tienda 6341 fecha 10/15 ref 2K3J9',
+  insert into _pruebas values (20, 'el comercio de una descripción del banco, el escape y la validez de un patrón, y lo que se tapa (correos tal cual y normalizados, teléfonos, números de cuenta; nunca un hash ni un uuid)',
+    'THE HOME DEPOT · WAWA · 7 ELEVEN · TST FIREHOUSE SUBS · SQ JOES ELECTRIC SUPPLY · WAWA · AMAZON MKTPL · NETFLIX · ∅ · ∅ · ∅ · IRS USATAXPYMT · ZELLE PAYMENT TO JUAN PEREZ · ∅ · ∅ · ∅ | escape A\.B \(C\) \$5\* | patrón: «(» no vale · «.*» casa con todo · «^WAWA» vale | tapa: [correo] tel [teléfono] o [teléfono] acct [número] tienda 6341 fecha 10/15 ref 2K3J9 | hash entero · uuid entero · normalizado ZELLE A JUAN [correo] Y ANA [correo] | desc_norm: zelle «ZELLE PAYMENT TO JUAN PEREZ [correo] [teléfono] ACCT [número]» · dominio propio «PAGO A [correo] REF 44» · sin correo «WAWA 5234 BELLEVIEW FL»',
     v_obt,
-    v_obt = 'THE HOME DEPOT · WAWA · 7 ELEVEN · TST FIREHOUSE SUBS · SQ JOES ELECTRIC SUPPLY · WAWA · AMAZON MKTPL · NETFLIX · ∅ · ∅ · ∅ · IRS USATAXPYMT · ZELLE PAYMENT TO JUAN PEREZ · ∅ · ∅ · ∅ | escape A\.B \(C\) \$5\* | patrón: «(» no vale · «.*» casa con todo · «^WAWA» vale | tapa: [correo] tel [teléfono] o [teléfono] acct [número] tienda 6341 fecha 10/15 ref 2K3J9');
+    v_obt = 'THE HOME DEPOT · WAWA · 7 ELEVEN · TST FIREHOUSE SUBS · SQ JOES ELECTRIC SUPPLY · WAWA · AMAZON MKTPL · NETFLIX · ∅ · ∅ · ∅ · IRS USATAXPYMT · ZELLE PAYMENT TO JUAN PEREZ · ∅ · ∅ · ∅ | escape A\.B \(C\) \$5\* | patrón: «(» no vale · «.*» casa con todo · «^WAWA» vale | tapa: [correo] tel [teléfono] o [teléfono] acct [número] tienda 6341 fecha 10/15 ref 2K3J9 | hash entero · uuid entero · normalizado ZELLE A JUAN [correo] Y ANA [correo] | desc_norm: zelle «ZELLE PAYMENT TO JUAN PEREZ [correo] [teléfono] ACCT [número]» · dominio propio «PAGO A [correo] REF 44» · sin correo «WAWA 5234 BELLEVIEW FL»');
 end $$;
 
 
@@ -1319,8 +1370,10 @@ end $$;
 --     sin su propuesta aprobada), 62 (la cuenta de una regla activa se
 --     desactiva), 63 (una fn_contador_* ejecutable por la API; una tabla
 --     sin RLS), 70 (el gasto sobre el tope), 71 (una pendiente de 8 días),
---     72 (una ráfaga con error), 73 (sin ráfaga nunca y cargos de hace más
---     de dos días; tras una ráfaga, verde)
+--     72 (una ráfaga con error; una que se quedó abierta más de cinco
+--     minutos —la función se cortó—, que la base da por perdida con su
+--     error al abrir la siguiente), 73 (sin ráfaga nunca y cargos de hace
+--     más de dos días; tras una ráfaga, verde)
 do $$
 declare
   v_obt text; v_m uuid; v_mv uuid; v_l uuid; v_r jsonb; v_pid uuid; v_a text; v_b text; v_c text; v_d text; v_e text; v_f text; v_g text; v_h text;
@@ -1407,6 +1460,24 @@ begin
     update ia_config set ultimo_error_el = ultimo_error_el - interval '1 minute' where id = 1;
     perform fn_contador_lote_cerrar(pg_temp.c8_lote(1), '{"input": 10}');
     v_g := v_g || format(' → la siguiente sin error: %s', pg_temp.c8_fila(72));
+    -- (una ráfaga que se quedó abierta más de cinco minutos: la función se
+    -- cortó sin cerrarla; al abrir la siguiente —aquí a mano, no por el
+    -- ayudante, que cierra las abiertas— la base la da por perdida, cerrada
+    -- con su error y sin uso, y la nueva entra; una ráfaga limpia después
+    -- vuelve a poner la alarma en verde)
+    v_l := pg_temp.c8_lote(1);
+    update ia_lotes set creado_el = now() - interval '6 minutes' where id = v_l;
+    v_g := v_g || format(' → una abierta hace 6 min: %s (%s)', pg_temp.c8_fila(72),
+                         case when (select c.detalle from v_contador_control c where c.orden = 72) ~ 'abierta.*sin cerrar.*se cortó' then 'dice que se cortó' else 'MAL' end);
+    perform fn_contador_lote_abrir(pg_temp.c8('dueno')::uuid, 'claude-opus-5-5', 'low', null, null, 1);
+    v_g := v_g || format(' → al abrir otra: %s, %s',
+                         (select case when l.cerrado_el is not null and l.error ~ 'se cortó sin cerrar' and l.centavos = 0 then 'la perdida cerrada con su error'
+                                      else format('MAL (%s %s)', l.cerrado_el, l.error) end
+                            from ia_lotes l where l.id = v_l),
+                         pg_temp.c8_fila(72));
+    update ia_config set ultimo_error_el = ultimo_error_el - interval '1 minute' where id = 1;
+    perform fn_contador_lote_cerrar((select l.id from ia_lotes l where l.cerrado_el is null), '{"input": 10}');
+    v_g := v_g || format(' → la siguiente limpia: %s', pg_temp.c8_fila(72));
     v_obt := format('%s | %s | %s | %s | %s | %s | %s | %s | cuadres rojos nuevos: %s', v_h, v_a, v_b, v_c, v_d, v_e, v_f, v_g,
                     case when pg_temp.c8_rojos('cuadre') = v_antes then 'ninguno' else pg_temp.c8_rojos('cuadre') end);
     raise exception using errcode = 'MXT00';
@@ -1415,9 +1486,9 @@ begin
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (21, 'el control en rojo cuando toca y de vuelta a verde: 60 (des-casar, caducar), 61, 62, 63, 70, 71, 72 y 73',
-    '73 sin ráfaga: rojo | tras la ráfaga: verde | caducar la pendiente: MX008 | caducar con el asiento vivo: MX008 | 60 aprobada: verde → des-casada: rojo (dice el asiento reversado y qué hacer) → caducada: verde, movimiento vuelve a esperar | 61 aprobada: verde → sin su aprobada: rojo → otra vez: verde | 62: verde → cuenta inactiva: rojo (nombra la regla) → otra vez: verde | 63: verde → fn en la API: rojo → sin RLS: rojo → otra vez: verde | 70: verde → tope 0: rojo (en dólares) | 71: verde → 8 días: rojo | 72: verde → con error: rojo (dice el error) → la siguiente sin error: verde | cuadres rojos nuevos: ninguno',
+    '73 sin ráfaga: rojo | tras la ráfaga: verde | caducar la pendiente: MX008 | caducar con el asiento vivo: MX008 | 60 aprobada: verde → des-casada: rojo (dice el asiento reversado y qué hacer) → caducada: verde, movimiento vuelve a esperar | 61 aprobada: verde → sin su aprobada: rojo → otra vez: verde | 62: verde → cuenta inactiva: rojo (nombra la regla) → otra vez: verde | 63: verde → fn en la API: rojo → sin RLS: rojo → otra vez: verde | 70: verde → tope 0: rojo (en dólares) | 71: verde → 8 días: rojo | 72: verde → con error: rojo (dice el error) → la siguiente sin error: verde → una abierta hace 6 min: rojo (dice que se cortó) → al abrir otra: la perdida cerrada con su error, rojo → la siguiente limpia: verde | cuadres rojos nuevos: ninguno',
     v_obt,
-    v_obt = '73 sin ráfaga: rojo | tras la ráfaga: verde | caducar la pendiente: MX008 | caducar con el asiento vivo: MX008 | 60 aprobada: verde → des-casada: rojo (dice el asiento reversado y qué hacer) → caducada: verde, movimiento vuelve a esperar | 61 aprobada: verde → sin su aprobada: rojo → otra vez: verde | 62: verde → cuenta inactiva: rojo (nombra la regla) → otra vez: verde | 63: verde → fn en la API: rojo → sin RLS: rojo → otra vez: verde | 70: verde → tope 0: rojo (en dólares) | 71: verde → 8 días: rojo | 72: verde → con error: rojo (dice el error) → la siguiente sin error: verde | cuadres rojos nuevos: ninguno');
+    v_obt = '73 sin ráfaga: rojo | tras la ráfaga: verde | caducar la pendiente: MX008 | caducar con el asiento vivo: MX008 | 60 aprobada: verde → des-casada: rojo (dice el asiento reversado y qué hacer) → caducada: verde, movimiento vuelve a esperar | 61 aprobada: verde → sin su aprobada: rojo → otra vez: verde | 62: verde → cuenta inactiva: rojo (nombra la regla) → otra vez: verde | 63: verde → fn en la API: rojo → sin RLS: rojo → otra vez: verde | 70: verde → tope 0: rojo (en dólares) | 71: verde → 8 días: rojo | 72: verde → con error: rojo (dice el error) → la siguiente sin error: verde → una abierta hace 6 min: rojo (dice que se cortó) → al abrir otra: la perdida cerrada con su error, rojo → la siguiente limpia: verde | cuadres rojos nuevos: ninguno');
 end $$;
 
 -- 22. La suplantación: la función de borde llega sin sesión; al clasificar,

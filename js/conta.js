@@ -1895,6 +1895,7 @@
     if (obraIA && asi) obraIA.addEventListener("change", () => {
       const p = obrasActivas().find(x => x.id === obraIA.value);
       asi.textContent = p ? `✓ Así es · ${p.nombre}` : "✓ Así es (elige antes la obra)";
+      limpiarErrorIA(bl);
     });
     if (asi && viva) asi.addEventListener("click", () => {
       if (obraIA && !obraIA.value) { errorIA(bl, "Elige antes la obra: la cuenta de la propuesta la pide."); obraIA.focus(); return; }
@@ -1917,8 +1918,9 @@
       et.textContent = r === "obligatoria" ? "Obra (esta cuenta la pide)" : r === "prohibida" ? "Obra (esta cuenta no lleva obra)" : r === "opcional" ? "Obra (opcional)" : "Obra (si la cuenta la pide)";
       btn.textContent = igualQueIA(viva, sel.value, obra.value) ? "Clasificar (igual que la IA)" : "Clasificar";
     };
-    sel.addEventListener("change", ajustar);
-    obra.addEventListener("change", ajustar);
+    sel.addEventListener("change", () => { ajustar(); limpiarErrorIA(bl); });
+    obra.addEventListener("change", () => { ajustar(); limpiarErrorIA(bl); });
+    if (form.ia_motivo) form.ia_motivo.addEventListener("input", () => limpiarErrorIA(bl));
     if (buscar) buscar.addEventListener("input", () => {
       sel.innerHTML = opcionesCuentaIA(buscar.value, sel.value);
       // una sola cuenta con lo escrito: queda elegida
@@ -1938,6 +1940,8 @@
     });
   }
   function errorIA(bl, msg) { const c = resCaja(bl, "ct-ia-res"); c.innerHTML = `<p class="ct-aviso bad ct-error">${esc(msg)}</p>`; }
+  // Solo el aviso de validación («falta la cuenta», «elige la obra») se va al corregir; la respuesta de la función se queda.
+  function limpiarErrorIA(bl) { const c = bl.querySelector(".ct-ia-res"); if (c && c.querySelector(".ct-error")) c.innerHTML = ""; }
   // lo que dijo la base al clasificar (fn_contador_clasificar): aprobada o editada, el asiento y la regla que aprendió.
   // `porAsi`: vino de «Así es» (si no, de «Clasificar», que la base marca «aprobada» cuando coincide con la propuesta)
   function resumenClasificado(r, porAsi) {
