@@ -13,12 +13,32 @@
 --
 -- Cada prueba escribe dentro de una subtransacción y lo deshace (MXT00):
 -- nada queda (ni los cargos que siembra, ni sus asientos, ni el gasto que
--- anota); la 24 lo comprueba. Los cargos son inventados (ids c8-…,
--- comercios de Ocala y Belleview, montos redondos) y entran por la cuenta
--- del banco de la empresa (1010) como los trae Plaid, en nombre del dueño;
--- la IA no se llama nunca: lo que contestaría se le da a la base tal cual
--- (fn_contador_propuesta_guardar), que es lo que la función de borde hace.
--- Ningún dato real.
+-- anota); la 24 lo comprueba. Los cargos son inventados (ids c8-…, montos
+-- redondos) y entran por la cuenta del banco de la empresa (1010) como los
+-- trae Plaid, en nombre del dueño; la IA no se llama nunca: lo que
+-- contestaría se le da a la base tal cual (fn_contador_propuesta_guardar),
+-- que es lo que la función de borde hace. Ningún dato real.
+--
+-- VALEN CON LA BANDEJA REAL CARGADA (en producción esperan cientos de
+-- cargos sin ticket —WAWA, HOME DEPOT, SHELL… de verdad— y Edgar tiene sus
+-- reglas): todo comercio de prueba empieza por «C8 PRUEBA» («C8 PRUEBA
+-- WAWA 5234 BELLEVIEW FL»; pg_temp.c8_cargo lo exige), que ningún cargo
+-- real lleva, y los patrones que las pruebas dictan también («^C8 PRUEBA
+-- WAWA»): ninguna regla de las pruebas casa con un cargo real ni al revés,
+-- y lo que se cuenta es solo lo sembrado (por movimiento_id, nunca «todo
+-- lo de este comercio»). El marcador va DELANTE y con el dígito en la
+-- primera palabra a propósito: fn_contador_nombre_comercio corta el nombre
+-- en la primera palabra con número a partir de la segunda («WAWA 5234» →
+-- «WAWA») y la primera la conserva, así que la regla que la base aprende
+-- sale «C8 PRUEBA WAWA» → «^C8 PRUEBA WAWA», tan inconfundible como el
+-- cargo (con «PRUEBA C8» delante saldría «PRUEBA» y casaría con todos los
+-- cargos de prueba). Las reglas reales de Edgar que casarían con un cargo
+-- sembrado (una sin «^», como «SHELL») se aparcan al sembrarlo
+-- (pg_temp.c8_cargo), las de esos comercios también (pg_temp.c8_sin_reglas)
+-- y, en la 6, lo que ya espera se aparca igual (pg_temp.c8_aparcar: la
+-- ráfaga trae 20 —hasta 100— y los sembrados son los más nuevos); todo
+-- dentro de la prueba, se deshace. Ninguna prueba depende de que la
+-- bandeja esté vacía ni de que Edgar no tenga reglas o propuestas.
 --
 -- Lo que mira, una prueba cada una:
 -- la instalación (las cuatro tablas cerradas, la configuración con el dueño,
@@ -28,7 +48,8 @@
 -- función con su comentario, ningún trigger, ningún prefijo sellado) y las
 -- vistas por rol; las cuentas permitidas (nunca 6000, nunca un banco) y el
 -- porqué de cada una que no; lo que espera y su contexto (el límite, el
--- orden, sin datos personales, las obras activas, los ejemplos); las
+-- orden —la ráfaga son los primeros de lo que espera—, sin datos
+-- personales, las obras activas, los ejemplos); las
 -- reglas antes que la IA (la más específica gana, el empate no decide, la
 -- cuenta del banco, una rechazada no se repite, una rota no se aplica, las
 -- partes con su redondeo); el tope (el propio, el de la app, el
@@ -124,14 +145,21 @@ end $$;
 -- Un cargo del banco como lo trae Plaid (en nombre del dueño, como la
 -- sincronización de la mañana), y «Casar» para que la bandeja lo mire (sin
 -- ticket ni asiento que lo explique, queda «sin_ticket»). p_monto en
--- positivo = lo que salió. Devuelve el movimiento.
+-- positivo = lo que salió. La descripción empieza por «C8 PRUEBA» (ver la
+-- cabecera: ningún cargo real lo lleva, y la regla que la base aprende de
+-- él sale «C8 PRUEBA <comercio>»). Devuelve el movimiento.
 create or replace function pg_temp.c8_cargo(p_id text, p_fecha date, p_monto numeric, p_desc text, p_cuenta text default null)
 returns uuid language plpgsql as $$
 declare
   v_claims text := current_setting('request.jwt.claims', true);
   v_sub    text := current_setting('request.jwt.claim.sub', true);
   v_cta    text := coalesce(p_cuenta, pg_temp.c8('banco'));
+  v_mov    uuid;
+  v_dn     text;
 begin
+  if p_desc !~ '^C8 PRUEBA ' then
+    raise exception 'c8-pruebas: el comercio de un cargo de prueba empieza por «C8 PRUEBA » (%), para que ningún cargo ni regla reales casen con él', p_desc;
+  end if;
   perform set_config('request.jwt.claims', json_build_object('sub', pg_temp.c8('dueno'), 'role', 'authenticated')::text, true);
   perform set_config('request.jwt.claim.sub', pg_temp.c8('dueno'), true);
   perform fn_banco_importar_filas(jsonb_build_object(
@@ -142,7 +170,17 @@ begin
   perform fn_banco_casar_todo(v_cta);
   perform set_config('request.jwt.claims', coalesce(v_claims, ''), true);
   perform set_config('request.jwt.claim.sub', coalesce(v_sub, ''), true);
-  return (select m.id from movimientos_banco m where m.id_externo = p_id order by m.importado_el desc limit 1);
+  select m.id, m.desc_norm into v_mov, v_dn from movimientos_banco m where m.id_externo = p_id order by m.importado_el desc limit 1;
+  -- Las reglas REALES de Edgar que casarían con este cargo (una sin «^»,
+  -- como «SHELL», casa con «C8 PRUEBA SHELL OIL …»), aparcadas: se deshace
+  -- con la prueba. Solo las de antes de esta transacción: las que la
+  -- prueba dicta o aprende nacen con creada_el = now(), el de la
+  -- transacción, y esas sí tienen que casar.
+  update contador_reglas r
+     set activa = false
+   where r.activa and r.creada_el < now()
+     and case when fn_contador_regex_valida(r.patron) is null then v_dn ~* r.patron else false end;
+  return v_mov;
 end $$;
 -- El movimiento de un id de Plaid; su propuesta pendiente; la última
 create or replace function pg_temp.c8_mov(p_id text) returns uuid language sql as $$
@@ -167,11 +205,31 @@ begin
   perform set_config('request.jwt.claim.sub', coalesce(v_sub, ''), true);
 end $$;
 -- Las reglas que Edgar ya tenga para un comercio de prueba, aparcadas
--- (dentro de la prueba, se deshace): así lo que la prueba aprende es la
--- única regla que casa
+-- (dentro de la prueba, se deshace): así lo que la prueba aprende o dicta
+-- es la única regla que casa (una regla real sin «^», como «WAWA», casaría
+-- también con «C8 PRUEBA WAWA …»)
 create or replace function pg_temp.c8_sin_reglas(p_regex text) returns void language sql as $$
   update contador_reglas set activa = false where activa and patron ~* p_regex
 $$;
+-- Lo que ya espera en la bandeja REAL, aparcado (una propuesta pendiente
+-- «de Edgar» por movimiento, salvo los que se dicen; dentro de la prueba,
+-- se deshace): en producción esperan cientos de cargos más viejos que los
+-- sembrados y la ráfaga trae 20 (hasta 100: contador_config_rafaga), así
+-- que los sembrados no entrarían en fn_contador_pendientes; aparcado lo
+-- demás, lo que la IA recibiría es solo lo sembrado y se mira de cerca.
+-- Devuelve cuántos aparcó.
+create or replace function pg_temp.c8_aparcar(p_salvo uuid[]) returns int language plpgsql as $$
+declare
+  v_n int;
+begin
+  insert into contador_propuestas (movimiento_id, fuente, propuesta, estado)
+  select c.movimiento_id, 'edgar',
+         '{"lineas": [{"cuenta": "6300"}], "motivo": "c8-pruebas: aparcado mientras dura la prueba", "confianza": 1}', 'pendiente'
+    from fn_contador_candidatos() c
+   where not (c.movimiento_id = any (p_salvo));
+  get diagnostics v_n = row_count;
+  return v_n;
+end $$;
 -- El contador encendido y lejos de los topes (dentro de la prueba, se
 -- deshace): lo que mira la prueba es lo suyo, no el gasto real del mes
 create or replace function pg_temp.c8_al_dia() returns void language sql as $$
@@ -494,35 +552,54 @@ end $$;
 -- =====================================================================
 
 -- 6. Lo que espera y su contexto: tres cargos sembrados salen «sin_ticket»
---    y son candidatos, los más viejos primero, hasta el límite (nunca más
---    que max_por_rafaga); el contexto trae las cuentas permitidas (nunca
---    6000 ni un banco), las obras activas, la versión de las reglas y los
---    ejemplos; lo que se le da no lleva correos ni teléfonos; un cargo con
---    propuesta pendiente ya no espera
+--    y son candidatos; con la bandeja real entera, la ráfaga son los
+--    primeros de lo que espera, los más viejos primero, hasta el límite
+--    (nunca más que max_por_rafaga); aparcado lo demás, los tres en su
+--    orden y con sus campos; el contexto trae las cuentas permitidas
+--    (nunca 6000 ni un banco), las obras activas, la versión de las reglas
+--    y los ejemplos; lo que se le da no lleva correos ni teléfonos; un
+--    cargo con propuesta pendiente ya no espera
 do $$
 declare
-  v_obt text; v_m1 uuid; v_m2 uuid; v_m3 uuid; v_p jsonb; v_a text; v_b text; v_c text; v_d text; v_l uuid;
+  v_obt text; v_m1 uuid; v_m2 uuid; v_m3 uuid; v_p jsonb; v_a text; v_b text; v_c text; v_d text; v_l uuid; v_n int;
 begin
   begin
     perform pg_temp.c8_montar();
-    v_m1 := pg_temp.c8_cargo('c8-t6-1', pg_temp.c8('d')::date, 87.43, 'THE HOME DEPOT 6341 OCALA FL');
-    v_m2 := pg_temp.c8_cargo('c8-t6-2', pg_temp.c8('d')::date + 1, 61.20, 'WAWA 5234 BELLEVIEW FL');
-    v_m3 := pg_temp.c8_cargo('c8-t6-3', pg_temp.c8('d')::date + 2, 19.99, 'NETFLIX.COM 866-579-7172 CA juan@mail.com');
+    v_m1 := pg_temp.c8_cargo('c8-t6-1', pg_temp.c8('d')::date, 87.43, 'C8 PRUEBA THE HOME DEPOT 6341 OCALA FL');
+    v_m2 := pg_temp.c8_cargo('c8-t6-2', pg_temp.c8('d')::date + 1, 61.20, 'C8 PRUEBA WAWA 5234 BELLEVIEW FL');
+    v_m3 := pg_temp.c8_cargo('c8-t6-3', pg_temp.c8('d')::date + 2, 19.99, 'C8 PRUEBA NETFLIX.COM 866-579-7172 CA juan@mail.com');
     v_a := format('bandeja: %s', (select string_agg(b.motivo, ' ' order by b.fecha) from v_banco_bandeja b where b.movimiento_id in (v_m1, v_m2, v_m3)));
+    -- (el tamaño de la ráfaga de fábrica, explícito: «límite 99 → 20» no
+    -- depende de lo que Edgar tenga puesto; se deshace)
+    update contador_config set max_por_rafaga = 20 where id = 1;
     v_p := fn_contador_pendientes(2);
     v_b := format('límite 2 → %s movimientos de %s', jsonb_array_length(v_p->'movimientos'),
                   case when (v_p->>'total')::int >= 3 then '3 o más' else v_p->>'total' end);
-    -- (la lista entera: los más viejos primero, y los tres sembrados en su orden)
+    -- con la bandeja real entera (en producción, cientos de cargos más
+    -- viejos que los tres sembrados): los más viejos primero, y la ráfaga
+    -- son exactamente los primeros de lo que espera, hasta el límite
     v_p := fn_contador_pendientes(20);
-    v_b := v_b || format(' | orden %s, los tres %s | límite 99 → %s | movimiento con {%s}',
+    v_n := least(20, (v_p->>'total')::int);
+    v_b := v_b || format(' | orden %s, la ráfaga %s | límite 99 → %s',
                          case when (select coalesce(bool_and(z.f <= z.sig), true)
                                       from (select (x->>'fecha')::date as f, lead((x->>'fecha')::date) over (order by o) as sig
                                               from jsonb_array_elements(v_p->'movimientos') with ordinality as t(x, o)) z) then 'bien' else 'MAL' end,
+                         case when jsonb_array_length(v_p->'movimientos') = v_n
+                                   and (select array_agg((x->>'movimiento_id')::uuid order by o)
+                                          from jsonb_array_elements(v_p->'movimientos') with ordinality as t(x, o))
+                                       = (select array_agg(c.movimiento_id order by c.fecha, c.importado_el, c.movimiento_id)
+                                            from (select * from fn_contador_candidatos() limit v_n) c)
+                              then 'los primeros que esperan' else 'OTROS' end,
+                         (fn_contador_pendientes(99)->>'limite'));
+    -- aparcado lo demás (se deshace), lo que la IA recibiría es solo lo
+    -- sembrado: los tres, en su orden, y los campos de un movimiento
+    perform pg_temp.c8_aparcar(array[v_m1, v_m2, v_m3]);
+    v_p := fn_contador_pendientes(20);
+    v_b := v_b || format(' | aparcado lo demás: %s movimientos, los tres %s | movimiento con {%s}', jsonb_array_length(v_p->'movimientos'),
                          case when (select string_agg(case when (x->>'movimiento_id')::uuid = v_m1 then '1' when (x->>'movimiento_id')::uuid = v_m2 then '2'
                                                            else '3' end, '' order by o)
                                       from jsonb_array_elements(v_p->'movimientos') with ordinality as t(x, o)
                                      where (x->>'movimiento_id')::uuid in (v_m1, v_m2, v_m3)) = '123' then 'en su orden' else 'DESORDENADOS' end,
-                         (fn_contador_pendientes(99)->>'limite'),
                          (select string_agg(k, ',' order by k) from jsonb_array_elements(v_p->'movimientos') x
                            cross join lateral jsonb_object_keys(x) k where (x->>'movimiento_id')::uuid = v_m1));
     v_c := format('cuentas %s (6000 %s, 1010 %s, 5100 %s con regla_obra %s) · obras %s (%s) · reglas_version %s · ejemplos %s',
@@ -545,10 +622,10 @@ begin
     -- con el número de la tienda
     v_d := format('netflix: %s | home depot: %s',
                   (select case when x->>'descripcion' ~ '\[correo\]' and x->>'descripcion' ~ '\[teléfono\]' and x->>'descripcion' !~ 'juan@|866'
-                                    and x->>'desc_norm' = 'NETFLIX COM [teléfono] CA [correo]'
+                                    and x->>'desc_norm' = 'C8 PRUEBA NETFLIX COM [teléfono] CA [correo]'
                                then 'sin correo ni teléfono (también en desc_norm)' else x->>'descripcion' || ' / ' || (x->>'desc_norm') end
                      from jsonb_array_elements(v_p->'movimientos') x where (x->>'movimiento_id')::uuid = v_m3),
-                  (select case when x->>'desc_norm' = 'THE HOME DEPOT 6341 OCALA FL' then 'con su número de tienda' else x->>'desc_norm' end
+                  (select case when x->>'desc_norm' = 'C8 PRUEBA THE HOME DEPOT 6341 OCALA FL' then 'con su número de tienda' else x->>'desc_norm' end
                      from jsonb_array_elements(v_p->'movimientos') x where (x->>'movimiento_id')::uuid = v_m1));
     -- con una propuesta pendiente, ya no espera
     v_l := pg_temp.c8_lote(1);
@@ -562,9 +639,10 @@ begin
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (6, 'lo que espera y su contexto: sin_ticket, los más viejos primero hasta el límite, cuentas (nunca 6000 ni bancos), obras, reglas_version, ejemplos, sin datos personales',
-    'bandeja: sin_ticket sin_ticket sin_ticket | límite 2 → 2 movimientos de 3 o más | orden bien, los tres en su orden | límite 99 → 20 | movimiento con {cuenta,cuenta_nombre,desc_norm,descripcion,dias,fecha,monto,motivo,movimiento_id,tipo_banco} | cuentas <n> (6000 no, 1010 no, 5100 sí con regla_obra obligatoria) · obras <n> (las activas) · reglas_version md5 · ejemplos lista de 30 o menos | netflix: sin correo ni teléfono (también en desc_norm) | home depot: con su número de tienda | con propuesta: ya no espera',
+    'bandeja: sin_ticket sin_ticket sin_ticket | límite 2 → 2 movimientos de 3 o más | orden bien, la ráfaga los primeros que esperan | límite 99 → 20 | aparcado lo demás: 3 movimientos, los tres en su orden | movimiento con {cuenta,cuenta_nombre,desc_norm,descripcion,dias,fecha,monto,motivo,movimiento_id,tipo_banco} | cuentas <n> (6000 no, 1010 no, 5100 sí con regla_obra obligatoria) · obras <n> (las activas) · reglas_version md5 · ejemplos lista de 30 o menos | netflix: sin correo ni teléfono (también en desc_norm) | home depot: con su número de tienda | con propuesta: ya no espera',
     v_obt,
-    v_obt ~ ('^bandeja: sin_ticket sin_ticket sin_ticket \| límite 2 → 2 movimientos de 3 o más \| orden bien, los tres en su orden \| límite 99 → 20 \| '
+    v_obt ~ ('^bandeja: sin_ticket sin_ticket sin_ticket \| límite 2 → 2 movimientos de 3 o más \| orden bien, la ráfaga los primeros que esperan \| límite 99 → 20 \| '
+             'aparcado lo demás: 3 movimientos, los tres en su orden \| '
              'movimiento con \{cuenta,cuenta_nombre,desc_norm,descripcion,dias,fecha,monto,motivo,movimiento_id,tipo_banco\} \| '
              'cuentas [0-9]+ \(6000 no, 1010 no, 5100 sí con regla_obra obligatoria\) · obras [0-9]+ \(las activas\) · reglas_version md5 · '
              'ejemplos lista de 30 o menos \| netflix: sin correo ni teléfono \(también en desc_norm\) \| home depot: con su número de tienda \| '
@@ -579,23 +657,24 @@ end $$;
 do $$
 declare
   v_obt text; v_m1 uuid; v_m2 uuid; v_m3 uuid; v_m4 uuid; v_r jsonb; v_a text; v_b text; v_c text; v_d text; v_e text; v_corta uuid; v_larga uuid;
-  v_w1 uuid; v_w2 uuid; v_pr contador_propuestas;
+  v_w1 uuid; v_w2 uuid; v_bis uuid; v_pr contador_propuestas;
 begin
   begin
     perform pg_temp.c8_montar();
-    -- (comercios que no existen, para que ningún cargo real de la bandeja
-    -- case con estas reglas: lo que se cuenta es solo lo de la prueba)
-    v_m1 := pg_temp.c8_cargo('c8-t7-1', pg_temp.c8('d')::date, 45.00, 'PRUEBA C8 SHELL OIL 57544 OCALA FL');
-    v_m2 := pg_temp.c8_cargo('c8-t7-2', pg_temp.c8('d')::date, 61.20, 'PRUEBA C8 WAWA 5234 BELLEVIEW FL');
-    v_m3 := pg_temp.c8_cargo('c8-t7-3', pg_temp.c8('d')::date + 1, 171.98, 'PRUEBA C8 CES 1040 TAMPA FL');
-    v_m4 := pg_temp.c8_cargo('c8-t7-4', pg_temp.c8('d')::date + 1, 13.99, 'PRUEBA C8 NFPA NATL FIRE PROTE MA');
-    v_corta := (fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Shell (corta)', '^PRUEBA C8 SHELL', '[{"cuenta": "6350"}]')->>'id')::uuid;
-    v_larga := (fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Shell (larga)', '^PRUEBA C8 SHELL OIL', '[{"cuenta": "6300"}]')->>'id')::uuid;
-    v_w1 := (fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Wawa uno', '^PRUEBA C8 WAWA', '[{"cuenta": "6300"}]')->>'id')::uuid;
-    v_w2 := (fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Wawa dos', '^PRUEBA C8 WAW.', '[{"cuenta": "6350"}]')->>'id')::uuid;
+    -- (las reglas reales de Edgar sobre estos comercios, aparcadas: lo que
+    -- casa es solo lo de la prueba)
+    perform pg_temp.c8_sin_reglas('SHELL|WAWA|CES|NFPA');
+    v_m1 := pg_temp.c8_cargo('c8-t7-1', pg_temp.c8('d')::date, 45.00, 'C8 PRUEBA SHELL OIL 57544 OCALA FL');
+    v_m2 := pg_temp.c8_cargo('c8-t7-2', pg_temp.c8('d')::date, 61.20, 'C8 PRUEBA WAWA 5234 BELLEVIEW FL');
+    v_m3 := pg_temp.c8_cargo('c8-t7-3', pg_temp.c8('d')::date + 1, 171.98, 'C8 PRUEBA CES 1040 TAMPA FL');
+    v_m4 := pg_temp.c8_cargo('c8-t7-4', pg_temp.c8('d')::date + 1, 13.99, 'C8 PRUEBA NFPA NATL FIRE PROTE MA');
+    v_corta := (fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Shell (corta)', '^C8 PRUEBA SHELL', '[{"cuenta": "6350"}]')->>'id')::uuid;
+    v_larga := (fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Shell (larga)', '^C8 PRUEBA SHELL OIL', '[{"cuenta": "6300"}]')->>'id')::uuid;
+    v_w1 := (fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Wawa uno', '^C8 PRUEBA WAWA', '[{"cuenta": "6300"}]')->>'id')::uuid;
+    v_w2 := (fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Wawa dos', '^C8 PRUEBA WAW.', '[{"cuenta": "6350"}]')->>'id')::uuid;
     -- CES: solo en la tarjeta, no en el banco
-    perform fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'CES (tarjeta)', '^PRUEBA C8 CES ', '[{"cuenta": "5100"}]', pg_temp.c8('tarjeta'));
-    perform fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'NFPA', '^PRUEBA C8 NFPA', '[{"cuenta": "6800"}]');
+    perform fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'CES (tarjeta)', '^C8 PRUEBA CES ', '[{"cuenta": "5100"}]', pg_temp.c8('tarjeta'));
+    perform fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'NFPA', '^C8 PRUEBA NFPA', '[{"cuenta": "6800"}]');
     v_r := fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
     v_pr := pg_temp.c8_ultima('c8-t7-1');
     v_a := format('propuestas %s | shell: %s por %s, confianza %s, «%s», pide_obra %s',
@@ -625,10 +704,13 @@ begin
     -- una regla rota (su cuenta ya no se propone): no se aplica, y se nombra
     perform fn_contador_rechazar(pg_temp.c8_prop('c8-t7-4'), pg_temp.c8('dueno')::uuid, 'c8-pruebas: para volver a probar');
     update cuentas set activa = false where codigo = '6800';
-    perform fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'NFPA bis', '^PRUEBA C8 NFPA NATL', '[{"cuenta": "6350"}]');
-    update contador_reglas set lineas = '[{"cuenta": "6800"}]' where nombre = 'NFPA bis';
+    v_bis := (fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'NFPA bis', '^C8 PRUEBA NFPA NATL', '[{"cuenta": "6350"}]')->>'id')::uuid;
+    update contador_reglas set lineas = '[{"cuenta": "6800"}]' where id = v_bis;
     v_r := fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
-    v_e := format('rota: %s, nfpa %s', v_r->'reglas_rotas', case when pg_temp.c8_prop('c8-t7-4') is null then 'sin propuesta' else 'PROPUSO' end);
+    -- (reglas_rotas nombra la de la prueba; una regla real de Edgar que
+    -- estuviera rota saldría también ahí, y el cuadre 62 la diría)
+    v_e := format('rota: %s, nfpa %s', case when v_r->'reglas_rotas' ? 'NFPA bis' then 'nombra «NFPA bis»' else v_r->>'reglas_rotas' end,
+                  case when pg_temp.c8_prop('c8-t7-4') is null then 'sin propuesta' else 'PROPUSO' end);
     v_obt := format('%s | %s | %s | %s | %s', v_a, v_b, v_c, v_d, v_e);
     raise exception using errcode = 'MXT00';
   exception
@@ -636,9 +718,9 @@ begin
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (7, 'las reglas antes que la IA: casa (confianza 1), la más específica gana, el empate no decide, la cuenta del banco, una rechazada no se repite, una rota no se aplica',
-    'propuestas 2 | shell: pendiente por la larga, confianza 1, «Regla: Shell (larga)», pide_obra no | wawa (empate): ninguna | ces en el banco: ninguna | nfpa: Regla: NFPA | veces: larga 1, corta 0, última vez puesta | otra vez: 0 nuevas | rechazada: 0 nuevas, shell espera a la IA | sin empate: wawa Regla: Wawa uno | rota: ["NFPA bis"], nfpa sin propuesta',
+    'propuestas 2 | shell: pendiente por la larga, confianza 1, «Regla: Shell (larga)», pide_obra no | wawa (empate): ninguna | ces en el banco: ninguna | nfpa: Regla: NFPA | veces: larga 1, corta 0, última vez puesta | otra vez: 0 nuevas | rechazada: 0 nuevas, shell espera a la IA | sin empate: wawa Regla: Wawa uno | rota: nombra «NFPA bis», nfpa sin propuesta',
     v_obt,
-    v_obt = 'propuestas 2 | shell: pendiente por la larga, confianza 1, «Regla: Shell (larga)», pide_obra no | wawa (empate): ninguna | ces en el banco: ninguna | nfpa: Regla: NFPA | veces: larga 1, corta 0, última vez puesta | otra vez: 0 nuevas | rechazada: 0 nuevas, shell espera a la IA | sin empate: wawa Regla: Wawa uno | rota: ["NFPA bis"], nfpa sin propuesta');
+    v_obt = 'propuestas 2 | shell: pendiente por la larga, confianza 1, «Regla: Shell (larga)», pide_obra no | wawa (empate): ninguna | ces en el banco: ninguna | nfpa: Regla: NFPA | veces: larga 1, corta 0, última vez puesta | otra vez: 0 nuevas | rechazada: 0 nuevas, shell espera a la IA | sin empate: wawa Regla: Wawa uno | rota: nombra «NFPA bis», nfpa sin propuesta');
 end $$;
 
 -- 8. Las partes: una regla de dos líneas (la cuota del préstamo: capital e
@@ -653,8 +735,8 @@ begin
   begin
     perform pg_temp.c8_montar();
     perform pg_temp.c8_sin_reglas('ALLY|FORD');
-    v_m := pg_temp.c8_cargo('c8-t8-1', pg_temp.c8('d')::date, 333.33, 'ALLY PAYMENT 112233 PPD');
-    perform fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Ally (camioneta)', '^ALLY PAYMENT',
+    v_m := pg_temp.c8_cargo('c8-t8-1', pg_temp.c8('d')::date, 333.33, 'C8 PRUEBA ALLY PAYMENT 112233 PPD');
+    perform fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Ally (camioneta)', '^C8 PRUEBA ALLY PAYMENT',
                                    '[{"cuenta": "2540", "parte": "0.5"}, {"cuenta": "7100", "parte": "0.5"}]');
     perform fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
     v_pr := pg_temp.c8_ultima('c8-t8-1');
@@ -662,7 +744,7 @@ begin
     v_r := fn_contador_aprobar(v_pr.id, pg_temp.c8('dueno')::uuid, null, false);
     v_b := format('%s, asiento: %s', v_r->>'estado', pg_temp.c8_lineas((v_r->>'asiento_id')::uuid));
     -- aprendida de una aprobación con dos líneas (otro comercio): las partes
-    v_m2 := pg_temp.c8_cargo('c8-t8-2', pg_temp.c8('d')::date, 100.00, 'FORD CREDIT 998877 PPD');
+    v_m2 := pg_temp.c8_cargo('c8-t8-2', pg_temp.c8('d')::date, 100.00, 'C8 PRUEBA FORD CREDIT 998877 PPD');
     v_r := fn_contador_clasificar(v_m2, pg_temp.c8('dueno')::uuid, '[{"cuenta": "2520", "monto": "80.00"}, {"cuenta": "7100", "monto": "20.00"}]',
                                   'c8-pruebas: la cuota del camión', true);
     v_c := format('aprendida: %s → %s', v_r->'regla'->>'nombre',
@@ -675,9 +757,9 @@ begin
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (8, 'las partes: la regla de dos líneas reparte el monto (la última absorbe el redondeo), su asiento lleva las dos; la aprendida guarda sus partes',
-    'propuesta: 2540 166.67 + 7100 166.66 | aprobada, asiento: 1010 -333.33 | 2540 166.67 | 7100 166.66 | aprendida: FORD CREDIT → 2520 0.8000 + 7100 0.2000',
+    'propuesta: 2540 166.67 + 7100 166.66 | aprobada, asiento: 1010 -333.33 | 2540 166.67 | 7100 166.66 | aprendida: C8 PRUEBA FORD CREDIT → 2520 0.8000 + 7100 0.2000',
     v_obt,
-    v_obt = 'propuesta: 2540 166.67 + 7100 166.66 | aprobada, asiento: 1010 -333.33 | 2540 166.67 | 7100 166.66 | aprendida: FORD CREDIT → 2520 0.8000 + 7100 0.2000');
+    v_obt = 'propuesta: 2540 166.67 + 7100 166.66 | aprobada, asiento: 1010 -333.33 | 2540 166.67 | 7100 166.66 | aprendida: C8 PRUEBA FORD CREDIT → 2520 0.8000 + 7100 0.2000');
 end $$;
 
 -- 9. El tope de gasto (la tercera regla): con el gasto del contador en su
@@ -852,7 +934,7 @@ declare
 begin
   begin
     perform pg_temp.c8_montar();
-    v_m := pg_temp.c8_cargo('c8-t11-1', pg_temp.c8('d')::date, 87.43, 'THE HOME DEPOT 6341 OCALA FL');
+    v_m := pg_temp.c8_cargo('c8-t11-1', pg_temp.c8('d')::date, 87.43, 'C8 PRUEBA THE HOME DEPOT 6341 OCALA FL');
     v_l := pg_temp.c8_lote(1);
     v_r := fn_contador_propuesta_guardar(v_m, v_l,
              jsonb_build_object('movimiento', jsonb_build_object('desc_norm', 'THE HOME DEPOT 6341 OCALA FL', 'memo', 'tel 352-555-1234 juan@mail.com'),
@@ -900,7 +982,7 @@ declare
 begin
   begin
     perform pg_temp.c8_montar();
-    v_m := pg_temp.c8_cargo('c8-t12-1', pg_temp.c8('d')::date, 100.00, 'WAWA 5234 BELLEVIEW FL');
+    v_m := pg_temp.c8_cargo('c8-t12-1', pg_temp.c8('d')::date, 100.00, 'C8 PRUEBA WAWA 5234 BELLEVIEW FL');
     v_l := pg_temp.c8_lote(1);
     v_n0 := (select count(*) from contador_propuestas);
     v_casos := jsonb_build_array(
@@ -955,7 +1037,7 @@ declare
 begin
   begin
     perform pg_temp.c8_montar();
-    v_m := pg_temp.c8_cargo('c8-t13-1', pg_temp.c8('d')::date, 100.00, 'WAWA 5234 BELLEVIEW FL');
+    v_m := pg_temp.c8_cargo('c8-t13-1', pg_temp.c8('d')::date, 100.00, 'C8 PRUEBA WAWA 5234 BELLEVIEW FL');
     v_l := pg_temp.c8_lote(2);
     v_r1 := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "6300"}]', 'combustible', 0.8);
     v_r2 := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "6350"}]', 'comida', 0.6);
@@ -989,8 +1071,9 @@ end $$;
 --     con «Propuesta de la IA #<id> aprobada por Edgar: <motivo>» en la
 --     descripción y en la procedencia; la propuesta queda aprobada con sus
 --     líneas finales, quién, cuándo y el asiento; el movimiento sale de la
---     bandeja; la regla aprendida es limpia (WAWA, «^WAWA», origen
---     aprobación) y el siguiente cargo del mismo comercio sale por regla,
+--     bandeja; la regla aprendida es limpia (C8 PRUEBA WAWA, «^C8 PRUEBA
+--     WAWA»: sin el número de tienda ni la ciudad; origen aprobación) y el
+--     siguiente cargo del mismo comercio sale por regla,
 --     sin IA; aprobar dos veces, MX008
 do $$
 declare
@@ -999,7 +1082,7 @@ begin
   begin
     perform pg_temp.c8_montar();
     perform pg_temp.c8_sin_reglas('WAWA');
-    v_m := pg_temp.c8_cargo('c8-t14-1', pg_temp.c8('d')::date, 61.20, 'WAWA 5234 BELLEVIEW FL');
+    v_m := pg_temp.c8_cargo('c8-t14-1', pg_temp.c8('d')::date, 61.20, 'C8 PRUEBA WAWA 5234 BELLEVIEW FL');
     v_l := pg_temp.c8_lote(1);
     v_r := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "6300"}]', 'WAWA es una gasolinera: combustible del vehículo', 0.92);
     v_r := fn_contador_aprobar((v_r->>'propuesta')::uuid, pg_temp.c8('dueno')::uuid);
@@ -1024,7 +1107,7 @@ begin
     v_d := format('regla: %s', (select format('%s · %s · %s · %s · pide_obra %s', r.nombre, r.patron, r.lineas::text, r.origen, r.pide_obra::text)
                                   from contador_reglas r where r.id = (v_r->'regla'->>'regla')::uuid));
     -- el siguiente WAWA: por regla, sin IA
-    v_m2 := pg_temp.c8_cargo('c8-t14-2', pg_temp.c8('d')::date + 1, 48.10, 'WAWA 5112 OCALA FL');
+    v_m2 := pg_temp.c8_cargo('c8-t14-2', pg_temp.c8('d')::date + 1, 48.10, 'C8 PRUEBA WAWA 5112 OCALA FL');
     perform fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
     v_d := v_d || format(' | el siguiente WAWA: %s', (select format('%s «%s» confianza %s', q.fuente, q.propuesta->>'motivo', q.propuesta->>'confianza')
                                                       from contador_propuestas q where q.id = pg_temp.c8_prop('c8-t14-2')));
@@ -1040,9 +1123,9 @@ begin
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (14, 'aprobar: el asiento vivo de c6 en nombre del dueño con «Propuesta de la IA #… aprobada por Edgar», la propuesta aprobada, el movimiento fuera de la bandeja, la regla aprendida limpia y el siguiente del comercio por regla',
-    'aprobada | asiento vivo: 1010 -61.20 | 6300 61.20 | usuario el dueño · rol_bd el de la base · camino puente · origen movimientos_banco/el movimiento · reversado false | descripción «Propuesta de la IA #<id> aprobada por Edgar: WAWA es una gasolinera: combustible del vehículo: WAWA 5234 BELLEVIEW FL» | procedencia con el mismo motivo | propuesta: líneas finales [{"cuenta": "6300"}], aprobada por el dueño hoy, asiento el del movimiento | movimiento casado/clasificado, ya no en la bandeja | regla: WAWA · ^WAWA · [{"cuenta": "6300"}] · aprobacion · pide_obra false | el siguiente WAWA: regla «Regla: WAWA» confianza 1 | dos veces: MX008',
+    'aprobada | asiento vivo: 1010 -61.20 | 6300 61.20 | usuario el dueño · rol_bd el de la base · camino puente · origen movimientos_banco/el movimiento · reversado false | descripción «Propuesta de la IA #<id> aprobada por Edgar: WAWA es una gasolinera: combustible del vehículo: C8 PRUEBA WAWA 5234 BELLEVIEW FL» | procedencia con el mismo motivo | propuesta: líneas finales [{"cuenta": "6300"}], aprobada por el dueño hoy, asiento el del movimiento | movimiento casado/clasificado, ya no en la bandeja | regla: C8 PRUEBA WAWA · ^C8 PRUEBA WAWA · [{"cuenta": "6300"}] · aprobacion · pide_obra false | el siguiente WAWA: regla «Regla: C8 PRUEBA WAWA» confianza 1 | dos veces: MX008',
     v_obt,
-    v_obt = 'aprobada | asiento vivo: 1010 -61.20 | 6300 61.20 | usuario el dueño · rol_bd el de la base · camino puente · origen movimientos_banco/el movimiento · reversado false | descripción «Propuesta de la IA #<id> aprobada por Edgar: WAWA es una gasolinera: combustible del vehículo: WAWA 5234 BELLEVIEW FL» | procedencia con el mismo motivo | propuesta: líneas finales [{"cuenta": "6300"}], aprobada por el dueño hoy, asiento el del movimiento | movimiento casado/clasificado, ya no en la bandeja | regla: WAWA · ^WAWA · [{"cuenta": "6300"}] · aprobacion · pide_obra false | el siguiente WAWA: regla «Regla: WAWA» confianza 1 | dos veces: MX008');
+    v_obt = 'aprobada | asiento vivo: 1010 -61.20 | 6300 61.20 | usuario el dueño · rol_bd el de la base · camino puente · origen movimientos_banco/el movimiento · reversado false | descripción «Propuesta de la IA #<id> aprobada por Edgar: WAWA es una gasolinera: combustible del vehículo: C8 PRUEBA WAWA 5234 BELLEVIEW FL» | procedencia con el mismo motivo | propuesta: líneas finales [{"cuenta": "6300"}], aprobada por el dueño hoy, asiento el del movimiento | movimiento casado/clasificado, ya no en la bandeja | regla: C8 PRUEBA WAWA · ^C8 PRUEBA WAWA · [{"cuenta": "6300"}] · aprobacion · pide_obra false | el siguiente WAWA: regla «Regla: C8 PRUEBA WAWA» confianza 1 | dos veces: MX008');
 end $$;
 
 -- 15. LA OBRA: una propuesta a 5100 (pide obra) no se aprueba sin ella
@@ -1058,7 +1141,7 @@ begin
   begin
     perform pg_temp.c8_montar();
     perform pg_temp.c8_sin_reglas('HOME DEPOT');
-    v_m := pg_temp.c8_cargo('c8-t15-1', pg_temp.c8('d')::date, 87.43, 'THE HOME DEPOT 6341 OCALA FL');
+    v_m := pg_temp.c8_cargo('c8-t15-1', pg_temp.c8('d')::date, 87.43, 'C8 PRUEBA THE HOME DEPOT 6341 OCALA FL');
     v_l := pg_temp.c8_lote(1);
     v_r := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "5100"}]', 'Home Depot: material de obra', 0.9);
     v_pid := (v_r->>'propuesta')::uuid;
@@ -1082,7 +1165,7 @@ begin
                   replace(pg_temp.c8_lineas((v_r->>'asiento_id')::uuid), pg_temp.c8('obra'), '<obra>'));
     v_c := format('regla: %s', (select format('%s · %s · %s · pide_obra %s', r.nombre, r.patron, r.lineas::text, r.pide_obra::text)
                                   from contador_reglas r where r.id = (v_r->'regla'->>'regla')::uuid));
-    v_m2 := pg_temp.c8_cargo('c8-t15-2', pg_temp.c8('d')::date + 1, 120.00, 'THE HOME DEPOT 2051 BELLEVIEW FL');
+    v_m2 := pg_temp.c8_cargo('c8-t15-2', pg_temp.c8('d')::date + 1, 120.00, 'C8 PRUEBA THE HOME DEPOT 2051 BELLEVIEW FL');
     perform fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
     v_c := v_c || format(' | el siguiente: %s', (select format('%s «%s» pide_obra %s', q.fuente, q.propuesta->>'motivo', q.propuesta->'flags'->>'pide_obra')
                                                  from contador_propuestas q where q.id = pg_temp.c8_prop('c8-t15-2')));
@@ -1101,9 +1184,9 @@ begin
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (15, 'la obra: sin ella MX008 «elige la obra» (nada entra); con ella la línea la lleva y queda aprobada; la regla sin obra y con pide_obra; el siguiente por regla pide la obra',
-    'sin obra: MX008 elige la obra, pista «elige la obra», asientos nuevos 0, propuesta pendiente | obra inventada: 22023 | con obra: aprobada, líneas finales [{"cuenta": "5100", "proyecto_id": "<obra>"}], asiento 1010 -87.43 | 5100 87.43 obra:<obra> | regla: THE HOME DEPOT · ^THE HOME DEPOT · [{"cuenta": "5100"}] · pide_obra true | el siguiente: regla «Regla: THE HOME DEPOT» pide_obra true | a mano sin obra: MX008 | el siguiente con su obra: aprobada, 1010 -120.00 | 5100 120.00 obra:<obra2>',
+    'sin obra: MX008 elige la obra, pista «elige la obra», asientos nuevos 0, propuesta pendiente | obra inventada: 22023 | con obra: aprobada, líneas finales [{"cuenta": "5100", "proyecto_id": "<obra>"}], asiento 1010 -87.43 | 5100 87.43 obra:<obra> | regla: C8 PRUEBA THE HOME DEPOT · ^C8 PRUEBA THE HOME DEPOT · [{"cuenta": "5100"}] · pide_obra true | el siguiente: regla «Regla: C8 PRUEBA THE HOME DEPOT» pide_obra true | a mano sin obra: MX008 | el siguiente con su obra: aprobada, 1010 -120.00 | 5100 120.00 obra:<obra2>',
     v_obt,
-    v_obt = 'sin obra: MX008 elige la obra, pista «elige la obra», asientos nuevos 0, propuesta pendiente | obra inventada: 22023 | con obra: aprobada, líneas finales [{"cuenta": "5100", "proyecto_id": "<obra>"}], asiento 1010 -87.43 | 5100 87.43 obra:<obra> | regla: THE HOME DEPOT · ^THE HOME DEPOT · [{"cuenta": "5100"}] · pide_obra true | el siguiente: regla «Regla: THE HOME DEPOT» pide_obra true | a mano sin obra: MX008 | el siguiente con su obra: aprobada, 1010 -120.00 | 5100 120.00 obra:<obra2>');
+    v_obt = 'sin obra: MX008 elige la obra, pista «elige la obra», asientos nuevos 0, propuesta pendiente | obra inventada: 22023 | con obra: aprobada, líneas finales [{"cuenta": "5100", "proyecto_id": "<obra>"}], asiento 1010 -87.43 | 5100 87.43 obra:<obra> | regla: C8 PRUEBA THE HOME DEPOT · ^C8 PRUEBA THE HOME DEPOT · [{"cuenta": "5100"}] · pide_obra true | el siguiente: regla «Regla: C8 PRUEBA THE HOME DEPOT» pide_obra true | a mano sin obra: MX008 | el siguiente con su obra: aprobada, 1010 -120.00 | 5100 120.00 obra:<obra2>');
 end $$;
 
 -- 16. «SEGÚN YO» (clasificar): con una propuesta de la IA a 6300, Edgar
@@ -1120,7 +1203,7 @@ begin
   begin
     perform pg_temp.c8_montar();
     perform pg_temp.c8_sin_reglas('WAWA|SHELL');
-    v_m := pg_temp.c8_cargo('c8-t16-1', pg_temp.c8('d')::date, 61.20, 'WAWA 5234 BELLEVIEW FL');
+    v_m := pg_temp.c8_cargo('c8-t16-1', pg_temp.c8('d')::date, 61.20, 'C8 PRUEBA WAWA 5234 BELLEVIEW FL');
     v_l := pg_temp.c8_lote(1);
     v_r := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "6300"}]', 'WAWA es una gasolinera: combustible', 0.9);
     v_r := fn_contador_clasificar(v_m, pg_temp.c8('dueno')::uuid, '[{"cuenta": "6400"}]', 'fue hielo y guantes para la cuadrilla', true);
@@ -1130,7 +1213,7 @@ begin
                   regexp_replace(a.descripcion, p.id::text, '<id>'),
                   (select format('%s → %s', r.nombre, r.lineas::text) from contador_reglas r where r.id = (v_r->'regla'->>'regla')::uuid));
     -- sin propuesta delante, y sin recordar
-    v_m2 := pg_temp.c8_cargo('c8-t16-2', pg_temp.c8('d')::date, 45.00, 'SHELL OIL 57544 OCALA FL');
+    v_m2 := pg_temp.c8_cargo('c8-t16-2', pg_temp.c8('d')::date, 45.00, 'C8 PRUEBA SHELL OIL 57544 OCALA FL');
     v_n0 := (select count(*) from contador_reglas);
     v_r := fn_contador_clasificar(v_m2, pg_temp.c8('dueno')::uuid, '[{"cuenta": "6300"}]', null, false);
     select * into p from contador_propuestas where id = (v_r->>'propuesta')::uuid;
@@ -1155,9 +1238,9 @@ begin
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (16, 'clasificar: con propuesta distinta queda editada (y la regla aprende lo de Edgar); sin propuesta, una de Edgar aprobada; sin recordar no hay regla; los errores de c6 pasan tal cual',
-    'editada ia, finales [{"cuenta": "6400"}], asiento 1010 -61.20 | 6400 61.20 | «Propuesta de la IA #<id> editada por Edgar: WAWA es una gasolinera: combustible · Edgar: fue hielo y guantes para la cuadrilla: WAWA 5234 BELLEVIEW FL» | regla WAWA → [{"cuenta": "6400"}] | sin propuesta: edgar aprobada, «Clasificado por Edgar desde la bandeja (fase 7): SHELL OIL 57544 OCALA FL», reglas nuevas 0 | otra vez: MX008 «ya está casado… fn_banco_descasar» (c6) | a 6000: MX004 «es sueldo»',
+    'editada ia, finales [{"cuenta": "6400"}], asiento 1010 -61.20 | 6400 61.20 | «Propuesta de la IA #<id> editada por Edgar: WAWA es una gasolinera: combustible · Edgar: fue hielo y guantes para la cuadrilla: C8 PRUEBA WAWA 5234 BELLEVIEW FL» | regla C8 PRUEBA WAWA → [{"cuenta": "6400"}] | sin propuesta: edgar aprobada, «Clasificado por Edgar desde la bandeja (fase 7): C8 PRUEBA SHELL OIL 57544 OCALA FL», reglas nuevas 0 | otra vez: MX008 «ya está casado… fn_banco_descasar» (c6) | a 6000: MX004 «es sueldo»',
     v_obt,
-    v_obt = 'editada ia, finales [{"cuenta": "6400"}], asiento 1010 -61.20 | 6400 61.20 | «Propuesta de la IA #<id> editada por Edgar: WAWA es una gasolinera: combustible · Edgar: fue hielo y guantes para la cuadrilla: WAWA 5234 BELLEVIEW FL» | regla WAWA → [{"cuenta": "6400"}] | sin propuesta: edgar aprobada, «Clasificado por Edgar desde la bandeja (fase 7): SHELL OIL 57544 OCALA FL», reglas nuevas 0 | otra vez: MX008 «ya está casado… fn_banco_descasar» (c6) | a 6000: MX004 «es sueldo»');
+    v_obt = 'editada ia, finales [{"cuenta": "6400"}], asiento 1010 -61.20 | 6400 61.20 | «Propuesta de la IA #<id> editada por Edgar: WAWA es una gasolinera: combustible · Edgar: fue hielo y guantes para la cuadrilla: C8 PRUEBA WAWA 5234 BELLEVIEW FL» | regla C8 PRUEBA WAWA → [{"cuenta": "6400"}] | sin propuesta: edgar aprobada, «Clasificado por Edgar desde la bandeja (fase 7): C8 PRUEBA SHELL OIL 57544 OCALA FL», reglas nuevas 0 | otra vez: MX008 «ya está casado… fn_banco_descasar» (c6) | a 6000: MX004 «es sueldo»');
 end $$;
 
 -- 17. «NO ES ESO» (rechazar): la propuesta queda rechazada con el motivo de
@@ -1171,7 +1254,7 @@ declare
 begin
   begin
     perform pg_temp.c8_montar();
-    v_m := pg_temp.c8_cargo('c8-t17-1', pg_temp.c8('d')::date, 61.20, 'WAWA 5234 BELLEVIEW FL');
+    v_m := pg_temp.c8_cargo('c8-t17-1', pg_temp.c8('d')::date, 61.20, 'C8 PRUEBA WAWA 5234 BELLEVIEW FL');
     v_l := pg_temp.c8_lote(1);
     v_r := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "6350"}]', 'una comida', 0.4);
     v_n0 := (select count(*) from asientos);
@@ -1224,14 +1307,15 @@ end $$;
 --     v_contador_reglas la enseña con sus cuentas en texto
 do $$
 declare
-  v_obt text; v_m uuid; v_r jsonb; v_res text[] := '{}'; v_q text; v_a text; v_b text;
+  v_obt text; v_m uuid; v_r jsonb; v_res text[] := '{}'; v_q text; v_a text; v_b text; v_id uuid;
 begin
   begin
     perform pg_temp.c8_montar();
-    v_m := pg_temp.c8_cargo('c8-t18-1', pg_temp.c8('d')::date, 171.98, 'PRUEBA C8 CES 1040 TAMPA FL');
-    v_r := fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, ' CES (supply) ', '^PRUEBA C8 CES ', '[{"cuenta": "5100"}]');
+    v_m := pg_temp.c8_cargo('c8-t18-1', pg_temp.c8('d')::date, 171.98, 'C8 PRUEBA CES 1040 TAMPA FL');
+    v_r := fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, ' CES (supply) ', '^C8 PRUEBA CES ', '[{"cuenta": "5100"}]');
     v_a := format('válida: «%s» %s casan_ahora %s, pide_obra %s', v_r->>'nombre', v_r->>'origen', v_r->>'casan_ahora', v_r->>'pide_obra');
-    v_r := fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'CES en la tarjeta', '^PRUEBA C8 CES 1040', '[{"cuenta": "5100"}]', pg_temp.c8('tarjeta'));
+    v_id := (v_r->>'id')::uuid;
+    v_r := fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'CES en la tarjeta', '^C8 PRUEBA CES 1040', '[{"cuenta": "5100"}]', pg_temp.c8('tarjeta'));
     v_a := v_a || format(' | en la tarjeta: casan_ahora %s', v_r->>'casan_ahora');
     foreach v_q in array array[
       $q$select fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'mal', '(', '[{"cuenta": "5100"}]')$q$,
@@ -1239,7 +1323,7 @@ begin
       $q$select fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'sueldo', '^GUSTO', '[{"cuenta": "6000"}]')$q$,
       $q$select fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'partes', '^ALLY', '[{"cuenta": "2540", "parte": "0.5"}, {"cuenta": "7100", "parte": "0.6"}]')$q$,
       $q$select fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'sin parte', '^ALLY', '[{"cuenta": "2540"}, {"cuenta": "7100"}]')$q$,
-      $q$select fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'repetida', '^PRUEBA C8 CES ', '[{"cuenta": "5500"}]')$q$,
+      $q$select fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'repetida', '^C8 PRUEBA CES ', '[{"cuenta": "5500"}]')$q$,
       $q$select fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'banco raro', '^X', '[{"cuenta": "5100"}]', '6300')$q$,
       $q$select fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'X', '^X', '[{"cuenta": "5100"}]')$q$,
       $q$select fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'obra rara', '^X', '[{"cuenta": "5100", "proyecto_id": "obra-que-no-existe"}]')$q$,
@@ -1252,7 +1336,7 @@ begin
       end;
     end loop;
     v_b := format('vista: %s', (select format('%s → %s · activa %s · pendientes %s', v.nombre, v.cuentas_texto, v.activa::text, v.pendientes)
-                                  from v_contador_reglas v where v.nombre = 'CES (supply)'));
+                                  from v_contador_reglas v where v.id = v_id));   -- (por su id: Edgar podría tener una regla con ese nombre)
     v_obt := format('%s | frenos: %s | %s', v_a, array_to_string(v_res, ' '), v_b);
     raise exception using errcode = 'MXT00';
   exception
@@ -1276,10 +1360,13 @@ begin
   begin
     perform pg_temp.c8_montar();
     perform pg_temp.c8_sin_reglas('WAWA');
-    v_m := pg_temp.c8_cargo('c8-t19-1', pg_temp.c8('d')::date, 61.20, 'WAWA 5234 BELLEVIEW FL');
-    v_rid := (fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Wawa', '^WAWA', '[{"cuenta": "6300"}]')->>'id')::uuid;
+    v_m := pg_temp.c8_cargo('c8-t19-1', pg_temp.c8('d')::date, 61.20, 'C8 PRUEBA WAWA 5234 BELLEVIEW FL');
+    v_rid := (fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Wawa', '^C8 PRUEBA WAWA', '[{"cuenta": "6300"}]')->>'id')::uuid;
     perform fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
-    v_a := format('antes: propuesta %s', (select q.estado from contador_propuestas q where q.regla_id = v_rid));
+    -- (la propuesta del movimiento sembrado, nunca «la de la regla»: en
+    -- producción una regla que casara con cargos reales tendría varias, y
+    -- una subconsulta escalar se caería con 21000)
+    v_a := format('antes: propuesta %s', (select q.estado from contador_propuestas q where q.regla_id = v_rid and q.movimiento_id = v_m));
     begin
       perform fn_contador_regla_baja(v_rid, pg_temp.c8('dueno')::uuid, '');
       v_a := v_a || ' | sin motivo: ENTRÓ';
@@ -1288,8 +1375,9 @@ begin
     v_r := fn_contador_regla_baja(v_rid, pg_temp.c8('dueno')::uuid, 'ya no compro ahí');
     v_b := format('baja: activa %s, caducadas %s, notas «%s», propuesta %s, «%s»', v_r->>'activa', v_r->>'propuestas_caducadas',
                   regexp_replace(v_r->>'notas', '[0-9]{4}-[0-9]{2}-[0-9]{2}', '<fecha>', 'g'),
-                  (select q.estado from contador_propuestas q where q.regla_id = v_rid),
-                  (select regexp_replace(q.nota, '[0-9]{4}-[0-9]{2}-[0-9]{2}', '<fecha>') from contador_propuestas q where q.regla_id = v_rid));
+                  (select q.estado from contador_propuestas q where q.regla_id = v_rid and q.movimiento_id = v_m),
+                  (select regexp_replace(q.nota, '[0-9]{4}-[0-9]{2}-[0-9]{2}', '<fecha>') from contador_propuestas q
+                    where q.regla_id = v_rid and q.movimiento_id = v_m));
     begin
       perform fn_contador_regla_baja(v_rid, pg_temp.c8('dueno')::uuid, 'otra vez');
       v_c := 'dos veces: ENTRÓ';
@@ -1297,7 +1385,7 @@ begin
     end;
     v_c := v_c || format(' | reglas %s (ninguna borrada) | el patrón libre: %s',
                          (select count(*) from contador_reglas r where r.id = v_rid),
-                         (fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Wawa otra vez', '^WAWA', '[{"cuenta": "6350"}]')->>'activa'));
+                         (fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Wawa otra vez', '^C8 PRUEBA WAWA', '[{"cuenta": "6350"}]')->>'activa'));
     v_obt := format('%s | %s | %s', v_a, v_b, v_c);
     raise exception using errcode = 'MXT00';
   exception
@@ -1383,13 +1471,17 @@ begin
     perform pg_temp.c8_montar();
     perform pg_temp.c8_al_dia();
     perform pg_temp.c8_sin_reglas('WAWA|SHELL|NFPA|NETFLIX|LOWES');
+    -- (las propuestas pendientes REALES de más de siete días, como de hoy
+    -- —se deshace—: la 71 se mira con lo que la prueba siembra, no con lo
+    -- que Edgar tenga esperando)
+    update contador_propuestas set creado_el = now() where estado = 'pendiente' and creado_el < now() - interval '7 days';
     v_antes := pg_temp.c8_rojos('cuadre');
     -- 73 primero: sin ráfaga nunca y un cargo de hace 3 días sin propuesta
     update contador_config set ultima_rafaga_el = null, ultimo_error = null, ultimo_error_el = null where id = 1;
-    v_mv := pg_temp.c8_cargo('c8-t21-0', pg_temp.c8('hoy')::date - 3, 33.00, 'LOWES 1077 OCALA FL');
+    v_mv := pg_temp.c8_cargo('c8-t21-0', pg_temp.c8('hoy')::date - 3, 33.00, 'C8 PRUEBA LOWES 1077 OCALA FL');
     v_h := format('73 sin ráfaga: %s', pg_temp.c8_fila(73));
     -- 60: aprobar y des-casar a mano
-    v_m := pg_temp.c8_cargo('c8-t21-1', pg_temp.c8('d')::date, 61.20, 'WAWA 5234 BELLEVIEW FL');
+    v_m := pg_temp.c8_cargo('c8-t21-1', pg_temp.c8('d')::date, 61.20, 'C8 PRUEBA WAWA 5234 BELLEVIEW FL');
     v_l := pg_temp.c8_lote(1);
     v_r := pg_temp.c8_ia(v_m, v_l, '[{"cuenta": "6300"}]', 'combustible', 0.9);
     v_pid := (v_r->>'propuesta')::uuid;
@@ -1415,7 +1507,7 @@ begin
                          case when exists (select 1 from fn_contador_candidatos() c where c.movimiento_id = v_m) then 'vuelve a esperar' else 'MAL' end);
     -- 61: el asiento dice «Propuesta de la IA #…» y la propuesta ya no está aprobada
     v_r := fn_contador_clasificar(v_m, pg_temp.c8('dueno')::uuid, '[{"cuenta": "6300"}]', null, false);
-    v_r := pg_temp.c8_ia(pg_temp.c8_cargo('c8-t21-2', pg_temp.c8('d')::date, 45.00, 'SHELL OIL 57544 OCALA FL'), pg_temp.c8_lote(1), '[{"cuenta": "6300"}]', 'combustible', 0.9);
+    v_r := pg_temp.c8_ia(pg_temp.c8_cargo('c8-t21-2', pg_temp.c8('d')::date, 45.00, 'C8 PRUEBA SHELL OIL 57544 OCALA FL'), pg_temp.c8_lote(1), '[{"cuenta": "6300"}]', 'combustible', 0.9);
     v_r := fn_contador_aprobar((v_r->>'propuesta')::uuid, pg_temp.c8('dueno')::uuid, null, false);
     v_b := format('61 aprobada: %s', pg_temp.c8_fila(61));
     update contador_propuestas set estado = 'rechazada', asiento_id = null where id = (v_r->>'propuesta')::uuid;
@@ -1423,7 +1515,7 @@ begin
     update contador_propuestas set estado = 'aprobada', asiento_id = (v_r->>'asiento_id')::uuid where id = (v_r->>'propuesta')::uuid;
     v_b := v_b || format(' → otra vez: %s', pg_temp.c8_fila(61));
     -- 62: la cuenta de una regla activa se desactiva
-    perform fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'NFPA', '^NFPA', '[{"cuenta": "6800"}]');
+    perform fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'NFPA', '^C8 PRUEBA NFPA', '[{"cuenta": "6800"}]');
     v_c := format('62: %s', pg_temp.c8_fila(62));
     update cuentas set activa = false where codigo = '6800';
     v_c := v_c || format(' → cuenta inactiva: %s (%s)', pg_temp.c8_fila(62),
@@ -1446,7 +1538,7 @@ begin
                          case when (select c.detalle from v_contador_control c where c.orden = 70) ~ '\$[0-9,]+\.[0-9]{2}' then 'en dólares' else 'MAL' end);
     update contador_config set tope_mes_centavos = 1000000 where id = 1;
     -- 71: una pendiente de 8 días
-    v_r := pg_temp.c8_ia(pg_temp.c8_cargo('c8-t21-3', pg_temp.c8('d')::date, 19.99, 'NETFLIX COM CA'), pg_temp.c8_lote(1), '[{"cuenta": "6500"}]', 'software', 0.7);
+    v_r := pg_temp.c8_ia(pg_temp.c8_cargo('c8-t21-3', pg_temp.c8('d')::date, 19.99, 'C8 PRUEBA NETFLIX COM CA'), pg_temp.c8_lote(1), '[{"cuenta": "6500"}]', 'software', 0.7);
     v_f := format('71: %s', pg_temp.c8_fila(71));
     update contador_propuestas set creado_el = now() - interval '8 days' where id = (v_r->>'propuesta')::uuid;
     v_f := v_f || format(' → 8 días: %s', pg_temp.c8_fila(71));
@@ -1502,7 +1594,7 @@ declare
 begin
   begin
     perform pg_temp.c8_montar();
-    v_m := pg_temp.c8_cargo('c8-t22-1', pg_temp.c8('d')::date, 61.20, 'WAWA 5234 BELLEVIEW FL');
+    v_m := pg_temp.c8_cargo('c8-t22-1', pg_temp.c8('d')::date, 61.20, 'C8 PRUEBA WAWA 5234 BELLEVIEW FL');
     perform pg_temp.c8_ser('servicio');
     v_r := fn_contador_clasificar(v_m, pg_temp.c8('dueno')::uuid, '[{"cuenta": "6300"}]', null, false);
     v_a := format('asiento de %s | después, la sesión: claims «%s», sub «%s»',
@@ -1522,7 +1614,7 @@ begin
     end if;
     -- el dueño deja de serlo (el cargo se siembra antes: sembrar es de c6,
     -- y c6 también exige al dueño)
-    v_m := pg_temp.c8_cargo('c8-t22-2', pg_temp.c8('d')::date, 45.00, 'SHELL OIL 57544 OCALA FL', null);
+    v_m := pg_temp.c8_cargo('c8-t22-2', pg_temp.c8('d')::date, 45.00, 'C8 PRUEBA SHELL OIL 57544 OCALA FL', null);
     update perfiles set activo = false where id = pg_temp.c8('dueno')::uuid;
     v_n0 := (select count(*) from asientos);
     begin
@@ -1556,19 +1648,23 @@ begin
   begin
     perform pg_temp.c8_montar();
     perform pg_temp.c8_al_dia();
-    perform pg_temp.c8_sin_reglas('WAWA|HOME DEPOT');
+    perform pg_temp.c8_sin_reglas('WAWA|HOME DEPOT|SHELL');
+    v_m1 := pg_temp.c8_cargo('c8-t23-1', pg_temp.c8('d')::date, 87.43, 'C8 PRUEBA THE HOME DEPOT 6341 OCALA FL');
+    v_m2 := pg_temp.c8_cargo('c8-t23-2', pg_temp.c8('d')::date, 61.20, 'C8 PRUEBA WAWA 5234 BELLEVIEW FL');
+    v_m3 := pg_temp.c8_cargo('c8-t23-3', pg_temp.c8('d')::date + 1, 45.00, 'C8 PRUEBA SHELL OIL 57544 OCALA FL');
+    -- la foto, con los tres sembrados ya esperando (sembrar pasa por
+    -- «Casar», que vuelve a mirar toda la cuenta: lo real que cambie ahí no
+    -- cuenta); de aquí en adelante solo se mueve lo de la prueba: dos
+    -- reciben propuesta (espera -2) y el Shell sigue esperando
     select * into v_e0 from v_contador_estado;
-    v_m1 := pg_temp.c8_cargo('c8-t23-1', pg_temp.c8('d')::date, 87.43, 'THE HOME DEPOT 6341 OCALA FL');
-    v_m2 := pg_temp.c8_cargo('c8-t23-2', pg_temp.c8('d')::date, 61.20, 'WAWA 5234 BELLEVIEW FL');
-    v_m3 := pg_temp.c8_cargo('c8-t23-3', pg_temp.c8('d')::date + 1, 45.00, 'SHELL OIL 57544 OCALA FL');
-    perform fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Wawa', '^WAWA', '[{"cuenta": "6300"}]');
+    perform fn_contador_regla_alta(pg_temp.c8('dueno')::uuid, 'Wawa', '^C8 PRUEBA WAWA', '[{"cuenta": "6300"}]');
     perform fn_contador_reglas_aplicar(pg_temp.c8('dueno')::uuid);
     v_l := pg_temp.c8_lote(1);
     v_r := pg_temp.c8_ia(v_m1, v_l, jsonb_build_array(jsonb_build_object('cuenta', '5100', 'proyecto_id', pg_temp.c8('obra'))),
                          'Home Depot: material para la obra de la visita de ese día', 0.85, '{"use_tax": true}');
     perform fn_contador_lote_cerrar(v_l, '{"input": 1000000, "output": 100000}');
     select * into e from v_contador_estado;
-    v_a := format('estado: espera +%s, pendientes +%s (regla +%s, ia +%s), reglas +%s, gasto del mes +%s centavos, bloqueado %s, cuadres rojos %s',
+    v_a := format('estado: espera %s, pendientes +%s (regla +%s, ia +%s), reglas +%s, gasto del mes +%s centavos, bloqueado %s, cuadres rojos %s',
                   e.pendientes_sin_propuesta - v_e0.pendientes_sin_propuesta, e.propuestas_pendientes - v_e0.propuestas_pendientes,
                   e.propuestas_por_regla - v_e0.propuestas_por_regla, e.propuestas_por_ia - v_e0.propuestas_por_ia,
                   e.reglas_activas - v_e0.reglas_activas, e.centavos_mes_contador - v_e0.centavos_mes_contador, e.bloqueado::text, e.cuadres_rojos);
@@ -1587,9 +1683,9 @@ begin
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (23, 'las vistas: v_contador_estado cuenta lo que espera, las pendientes por fuente, las reglas y el gasto; v_contador_bandeja resuelve cuentas y obras; fn_contador_resumen',
-    'estado: espera +1, pendientes +2 (regla +1, ia +1), reglas +1, gasto del mes +600 centavos, bloqueado false, cuadres rojos 0 | bandeja: ia · pendiente · 5100 Material · [{"obra": "<nombre de la obra>", "tipo": "costo", "cuenta": "5100", "pide_obra": false, "proyecto_id": "<obra>", "cuenta_nombre": "Material"}] · 0.850 · - · {"use_tax": true} || regla · pendiente · 6300 Vehículos — combustible y mantenimiento · [{"tipo": "gasto", "cuenta": "6300", "pide_obra": false, "cuenta_nombre": "Vehículos — combustible y mantenimiento"}] · 1 · Wawa · {} | shell en la bandeja de la IA: 0 | resumen: config,control_rojo,estado,tope',
+    'estado: espera -2, pendientes +2 (regla +1, ia +1), reglas +1, gasto del mes +600 centavos, bloqueado false, cuadres rojos 0 | bandeja: ia · pendiente · 5100 Material · [{"obra": "<nombre de la obra>", "tipo": "costo", "cuenta": "5100", "pide_obra": false, "proyecto_id": "<obra>", "cuenta_nombre": "Material"}] · 0.850 · - · {"use_tax": true} || regla · pendiente · 6300 Vehículos — combustible y mantenimiento · [{"tipo": "gasto", "cuenta": "6300", "pide_obra": false, "cuenta_nombre": "Vehículos — combustible y mantenimiento"}] · 1 · Wawa · {} | shell en la bandeja de la IA: 0 | resumen: config,control_rojo,estado,tope',
     v_obt,
-    v_obt = 'estado: espera +1, pendientes +2 (regla +1, ia +1), reglas +1, gasto del mes +600 centavos, bloqueado false, cuadres rojos 0 | bandeja: ia · pendiente · 5100 Material · [{"obra": "<nombre de la obra>", "tipo": "costo", "cuenta": "5100", "pide_obra": false, "proyecto_id": "<obra>", "cuenta_nombre": "Material"}] · 0.850 · - · {"use_tax": true} || regla · pendiente · 6300 Vehículos — combustible y mantenimiento · [{"tipo": "gasto", "cuenta": "6300", "pide_obra": false, "cuenta_nombre": "Vehículos — combustible y mantenimiento"}] · 1 · Wawa · {} | shell en la bandeja de la IA: 0 | resumen: config,control_rojo,estado,tope');
+    v_obt = 'estado: espera -2, pendientes +2 (regla +1, ia +1), reglas +1, gasto del mes +600 centavos, bloqueado false, cuadres rojos 0 | bandeja: ia · pendiente · 5100 Material · [{"obra": "<nombre de la obra>", "tipo": "costo", "cuenta": "5100", "pide_obra": false, "proyecto_id": "<obra>", "cuenta_nombre": "Material"}] · 0.850 · - · {"use_tax": true} || regla · pendiente · 6300 Vehículos — combustible y mantenimiento · [{"tipo": "gasto", "cuenta": "6300", "pide_obra": false, "cuenta_nombre": "Vehículos — combustible y mantenimiento"}] · 1 · Wawa · {} | shell en la bandeja de la IA: 0 | resumen: config,control_rojo,estado,tope');
 end $$;
 
 
